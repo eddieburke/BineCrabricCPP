@@ -116,5 +116,8 @@ __pycache__/
 *.temp
 .cache/
 
+# Local agent / editor rules (not for the repo)
+RULES FOR AGENTS.md
+
 # Shortcuts / misc
 *.lnk
