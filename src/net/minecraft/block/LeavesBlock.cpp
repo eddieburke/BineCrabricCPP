@@ -1,3 +1,4 @@
+#include "net/minecraft/block/BlockRegistrar.hpp"
 #include "net/minecraft/block/LeavesBlock.hpp"
 
 #include "net/minecraft/block/Block.hpp"
@@ -32,6 +33,17 @@ int LeavesBlock::getTexture(int /*side*/, int meta) const
         return textureId + 80;
     }
     return textureId;
+}
+
+int LeavesBlock::getColor(int meta) const
+{
+    if ((meta & 1) == 1) {
+        return net::minecraft::client::color::world::FoliageColors::getSpruceColor();
+    }
+    if ((meta & 2) == 2) {
+        return net::minecraft::client::color::world::FoliageColors::getBirchColor();
+    }
+    return net::minecraft::client::color::world::FoliageColors::getDefaultColor();
 }
 
 int LeavesBlock::getColorMultiplier(const BlockView* blockView, int x, int y, int z) const
@@ -193,5 +205,15 @@ void LeavesBlock::afterBreak(
     }
     Block::afterBreak(world, player, x, y, z, meta);
 }
+namespace {
 
+void registerLeavesBlock()
+{
+    Block::LEAVES = (new LeavesBlock(18, 52))->setHardness(0.2f)->setOpacity(1)->setSoundGroup(&vanillaDirtSound())->setTranslationKey("leaves")->disableTrackingStatistics()->ignoreMetaUpdates();
+}
+
+MINECRAFT_REGISTER_BLOCK(registerLeavesBlock, 18);
+
+} // namespace
 } // namespace net::minecraft::block
+

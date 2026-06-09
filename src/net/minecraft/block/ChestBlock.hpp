@@ -20,13 +20,7 @@ public:
     [[nodiscard]] int getTextureId(const BlockView* blockView, int x, int y, int z, int side) const override;
     [[nodiscard]] int getTexture(int side) const override
     {
-        if (side == 1 || side == 0) {
-            return textureId - 1;
-        }
-        if (side == 3) {
-            return textureId + 1;
-        }
-        return textureId;
+        return Block::textureForSide(side, textureId, textureId - 1, textureId - 1, FACE_WEST, textureId + 1);
     }
 
     [[nodiscard]] bool canPlaceAt(World* world, int x, int y, int z) const;

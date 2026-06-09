@@ -34,15 +34,24 @@ namespace {
             continue;
         }
         const Box hitBox = candidate->boundingBox.expand(0.3);
-        if (!hitBox.intersects(searchBox)) {
+        const std::optional<HitResult> entityHit = Block::raycastLocalBounds(
+            hitBox.minX,
+            hitBox.minY,
+            hitBox.minZ,
+            hitBox.maxX,
+            hitBox.maxY,
+            hitBox.maxZ,
+            0,
+            0,
+            0,
+            start,
+            end);
+        if (!entityHit.has_value()) {
             continue;
         }
-        const double centerX = (hitBox.minX + hitBox.maxX) * 0.5;
-        const double centerY = (hitBox.minY + hitBox.maxY) * 0.5;
-        const double centerZ = (hitBox.minZ + hitBox.maxZ) * 0.5;
-        const double dx = centerX - start.x;
-        const double dy = centerY - start.y;
-        const double dz = centerZ - start.z;
+        const double dx = entityHit->pos.x - start.x;
+        const double dy = entityHit->pos.y - start.y;
+        const double dz = entityHit->pos.z - start.z;
         const double dist = dx * dx + dy * dy + dz * dz;
         if (closest == nullptr || dist < closestDist) {
             closest = candidate;
@@ -282,14 +291,17 @@ void tickArrowProjectile(Entity& projectile, LivingEntity*& owner, int& inAirTim
             blockZ = hit->blockZ;
             blockId = projectile.world->getBlockId(blockX, blockY, blockZ);
             blockMeta = projectile.world->getBlockMeta(blockX, blockY, blockZ);
-            const double dx = hitPos.x - projectile.x;
-            const double dy = hitPos.y - projectile.y;
-            const double dz = hitPos.z - projectile.z;
-            const float length = MathHelper::sqrt(static_cast<float>(dx * dx + dy * dy + dz * dz));
+            projectile.velocityX = hitPos.x - projectile.x;
+            projectile.velocityY = hitPos.y - projectile.y;
+            projectile.velocityZ = hitPos.z - projectile.z;
+            const float length = MathHelper::sqrt(static_cast<float>(
+                projectile.velocityX * projectile.velocityX
+                + projectile.velocityY * projectile.velocityY
+                + projectile.velocityZ * projectile.velocityZ));
             if (length > 1.0e-4f) {
-                projectile.x -= dx / static_cast<double>(length) * 0.05;
-                projectile.y -= dy / static_cast<double>(length) * 0.05;
-                projectile.z -= dz / static_cast<double>(length) * 0.05;
+                projectile.x -= projectile.velocityX / static_cast<double>(length) * 0.05;
+                projectile.y -= projectile.velocityY / static_cast<double>(length) * 0.05;
+                projectile.z -= projectile.velocityZ / static_cast<double>(length) * 0.05;
             }
             projectile.world->playSound(
                 &projectile,

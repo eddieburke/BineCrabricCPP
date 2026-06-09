@@ -51,11 +51,14 @@ void PistonBlockEntityRenderer::render(const net::minecraft::block::entity::Bloc
         blockRenderManager.renderPistonHeadWithoutCulling(block->id, piston->x, piston->y, piston->z, false);
     } else if (piston->isSource() && !piston->isExtending()) {
         auto* pistonBlock = dynamic_cast<net::minecraft::block::PistonBlock*>(block);
-        auto* pistonHead = dynamic_cast<net::minecraft::block::PistonHeadBlock*>(net::minecraft::block::Block::PISTON_HEAD);
-        if (pistonBlock != nullptr && pistonHead != nullptr) {
-            pistonHead->setSprite(pistonBlock->getTopTexture());
-            blockRenderManager.renderPistonHeadWithoutCulling(pistonHead->id, piston->x, piston->y, piston->z, piston->getProgress(tickDelta) < 0.5f);
-            pistonHead->clearSprite();
+        if (pistonBlock != nullptr && net::minecraft::block::Block::PISTON_HEAD != nullptr) {
+            const int blockMeta = blockRenderManager.ctx.blockView->getBlockMeta(piston->x, piston->y, piston->z);
+            const int facing = net::minecraft::block::PistonHeadBlock::getFacing(blockMeta);
+            blockRenderManager.ctx.faceTextureOverride = pistonBlock->getTopTexture();
+            blockRenderManager.ctx.faceTextureSide = facing;
+            blockRenderManager.renderPistonHeadWithoutCulling(net::minecraft::block::Block::PISTON_HEAD->id, piston->x, piston->y, piston->z, piston->getProgress(tickDelta) < 0.5f);
+            blockRenderManager.ctx.faceTextureOverride = -1;
+            blockRenderManager.ctx.faceTextureSide = -1;
             tessellator.translate(static_cast<double>(static_cast<float>(x) - static_cast<float>(piston->x)),
                 static_cast<double>(static_cast<float>(y) - static_cast<float>(piston->y)),
                 static_cast<double>(static_cast<float>(z) - static_cast<float>(piston->z)));

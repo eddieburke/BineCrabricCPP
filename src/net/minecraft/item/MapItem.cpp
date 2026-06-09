@@ -1,6 +1,7 @@
 #include "net/minecraft/item/MapItem.hpp"
 
 #include "net/minecraft/block/Block.hpp"
+#include "net/minecraft/item/ItemRegistrar.hpp"
 #include "net/minecraft/block/MapColor.hpp"
 #include "net/minecraft/entity/Entity.hpp"
 #include "net/minecraft/entity/player/PlayerEntity.hpp"
@@ -261,5 +262,18 @@ void MapItem::onCraft(ItemStack* stack, World* world, PlayerEntity* player)
     mapState->markDirty();
     world->persistentStateManager.set(stateId, std::move(mapState));
 }
+
+namespace {
+
+void registerMapItem()
+{
+    static MapItem MAP(102);
+    MAP.setTexturePosition(12, 3)->setTranslationKey("map");
+    Item::MAP = &MAP;
+}
+
+MINECRAFT_REGISTER_ITEM(registerMapItem, 102);
+
+} // namespace
 
 } // namespace net::minecraft::item

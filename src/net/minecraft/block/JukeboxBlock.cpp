@@ -1,3 +1,4 @@
+#include "net/minecraft/block/BlockRegistrar.hpp"
 #include "net/minecraft/block/JukeboxBlock.hpp"
 
 #include "net/minecraft/block/entity/JukeboxBlockEntity.hpp"
@@ -14,7 +15,7 @@ JukeboxBlock::JukeboxBlock(int blockId, int textureId) : BlockWithEntity(blockId
 
 int JukeboxBlock::getTexture(int side) const
 {
-    return textureId + (side == 1 ? 1 : 0);
+    return Block::textureForSide(side, textureId, -1, textureId + 1);
 }
 
 bool JukeboxBlock::onUse(World* world, int x, int y, int z, net::minecraft::PlayerEntity* /*player*/)
@@ -85,5 +86,15 @@ void JukeboxBlock::dropStacks(World* world, int x, int y, int z, int meta, float
     }
     BlockWithEntity::dropStacks(world, x, y, z, meta, luck);
 }
+namespace {
 
+void registerJukeboxBlock()
+{
+    Block::JUKEBOX = (new JukeboxBlock(84, 74))->setHardness(2.0f)->setResistance(10.0f)->setSoundGroup(&vanillaStoneSound())->setTranslationKey("jukebox")->ignoreMetaUpdates();
+}
+
+MINECRAFT_REGISTER_BLOCK(registerJukeboxBlock, 84);
+
+} // namespace
 } // namespace net::minecraft::block
+

@@ -10,10 +10,7 @@ public:
 
     [[nodiscard]] int getTexture(int side) const override
     {
-        if (side <= 1) {
-            return 4;
-        }
-        return textureId;
+        return Block::textureForSide(side, textureId, 4, 4);
     }
 
     [[nodiscard]] int getDroppedItemCount(JavaRandom& /*random*/) const override { return 0; }

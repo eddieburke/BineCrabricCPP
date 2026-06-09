@@ -723,6 +723,7 @@ int PlayerEntity::getItemStackTextureId(const ItemStack& stack) const
 
 void PlayerEntity::tickPortalCooldown()
 {
+    touchingPortal = true;
     if (portalCooldown > 0) {
         portalCooldown = 10;
         return;

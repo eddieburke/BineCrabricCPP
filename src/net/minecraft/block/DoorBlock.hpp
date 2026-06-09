@@ -33,10 +33,7 @@ public:
     [[nodiscard]] static int facingFromMeta(int meta);
 
 private:
-    [[nodiscard]] static int getState(const BlockView* blockView, int x, int y, int z);
-    [[nodiscard]] static int getState(const World* world, int x, int y, int z);
-    [[nodiscard]] static std::optional<net::minecraft::Box> collisionShapeForState(int state, int x, int y, int z);
-    void applyBoundsForState(int state);
+    void rotate(int meta);
 };
 
 } // namespace net::minecraft::block

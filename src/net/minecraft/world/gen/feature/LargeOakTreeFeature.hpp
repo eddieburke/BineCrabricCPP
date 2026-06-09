@@ -290,14 +290,14 @@ public:
         return true;
     }
 
-    void prepare(double d0, double d1, double d2) override
+    void prepare(double heightScale, double branchScale, double leafDensity) override
     {
-        maxTrunkHeight = static_cast<int>(d0 * 12.0);
-        if (d0 > 0.5) {
+        maxTrunkHeight = static_cast<int>(heightScale * 12.0);
+        if (heightScale > 0.5) {
             foliageClusterHeight = 5;
         }
-        branchLengthScale = d1;
-        foliageDensity = d2;
+        branchLengthScale = branchScale;
+        foliageDensity = leafDensity;
     }
 
 

@@ -10,21 +10,17 @@ bool RailBlockRenderer::render(net::minecraft::block::RailBlock& rail, int x, in
 {
     Tessellator& tessellator = render::INSTANCE;
     int meta = ctx_.blockView->getBlockMeta(x, y, z);
-    int tex = rail.getTexture(0, meta);
-    if (ctx_.textureOverride >= 0) {
-        tex = ctx_.textureOverride;
-    }
+    const int tex = ctx_.resolveTexture(0, rail.getTexture(0, meta));
     if (rail.alwaysStraight) {
         meta &= 7;
     }
     float brightness = rail.getLuminance(ctx_.blockView, x, y, z);
     tessellator.color(brightness, brightness, brightness);
-    int texU = (tex & 0xF) << 4;
-    int texV = tex & 0xF0;
-    double d = (float)texU / 256.0f;
-    double d2 = ((float)texU + 15.99f) / 256.0f;
-    double d3 = (float)texV / 256.0f;
-    double d4 = ((float)texV + 15.99f) / 256.0f;
+    const net::minecraft::block::TerrainAtlasUv uv = net::minecraft::block::Block::terrainTileUv(tex);
+    const double uMin = uv.uMin;
+    const double uMax = uv.uMax;
+    const double vMin = uv.vMin;
+    const double vMax = uv.vMax;
     const float step = 0.0625f;
     float vx0 = x + 1;
     float vx1 = x + 1;
@@ -61,14 +57,14 @@ bool RailBlockRenderer::render(net::minecraft::block::RailBlock& rail, int x, in
         vy1 += 1.0f;
         vy2 += 1.0f;
     }
-    tessellator.vertex(vx0, vy0, vz0, d2, d3);
-    tessellator.vertex(vx1, vy1, vz1, d2, d4);
-    tessellator.vertex(vx2, vy2, vz2, d, d4);
-    tessellator.vertex(vx3, vy3, vz3, d, d3);
-    tessellator.vertex(vx3, vy3, vz3, d, d3);
-    tessellator.vertex(vx2, vy2, vz2, d, d4);
-    tessellator.vertex(vx1, vy1, vz1, d2, d4);
-    tessellator.vertex(vx0, vy0, vz0, d2, d3);
+    tessellator.vertex(vx0, vy0, vz0, uMax, vMin);
+    tessellator.vertex(vx1, vy1, vz1, uMax, vMax);
+    tessellator.vertex(vx2, vy2, vz2, uMin, vMax);
+    tessellator.vertex(vx3, vy3, vz3, uMin, vMin);
+    tessellator.vertex(vx3, vy3, vz3, uMin, vMin);
+    tessellator.vertex(vx2, vy2, vz2, uMin, vMax);
+    tessellator.vertex(vx1, vy1, vz1, uMax, vMax);
+    tessellator.vertex(vx0, vy0, vz0, uMax, vMin);
     return true;
 }
 

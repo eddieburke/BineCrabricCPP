@@ -1,7 +1,6 @@
 #pragma once
 
 #include "net/minecraft/entity/mob/MonsterEntity.hpp"
-#include "net/minecraft/item/Item.hpp"
 
 namespace net::minecraft::entity::mob {
 
@@ -15,10 +14,7 @@ public:
     [[nodiscard]] std::string getHurtSound() const override { return "mob.zombiehurt"; }
     [[nodiscard]] std::string getDeathSound() const override { return "mob.zombiedeath"; }
 
-    [[nodiscard]] int getDroppedItemId() const override
-    {
-        return Item::FEATHER != nullptr ? Item::FEATHER->id : 288;
-    }
+    [[nodiscard]] int getDroppedItemId() const override;
 };
 
 } // namespace net::minecraft::entity::mob

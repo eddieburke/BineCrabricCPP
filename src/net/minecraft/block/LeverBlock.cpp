@@ -1,3 +1,4 @@
+#include "net/minecraft/block/BlockRegistrar.hpp"
 #include "net/minecraft/block/LeverBlock.hpp"
 
 #include "net/minecraft/entity/player/PlayerEntity.hpp"
@@ -220,5 +221,15 @@ bool LeverBlock::isEmittingRedstonePowerInDirection(
 {
     return blockView != nullptr && (blockView->getBlockMeta(x, y, z) & 8) > 0;
 }
+namespace {
 
+void registerLeverBlock()
+{
+    Block::LEVER = (new LeverBlock(69, 96))->setHardness(0.5f)->setSoundGroup(&vanillaWoodSound())->setTranslationKey("lever")->ignoreMetaUpdates();
+}
+
+MINECRAFT_REGISTER_BLOCK(registerLeverBlock, 69);
+
+} // namespace
 } // namespace net::minecraft::block
+

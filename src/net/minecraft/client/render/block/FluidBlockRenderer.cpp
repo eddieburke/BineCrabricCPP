@@ -17,11 +17,6 @@ namespace option = net::minecraft::client::option;
 
 bool FluidBlockRenderer::renderFluid(net::minecraft::block::Block& block, int x, int y, int z)
 {
-    float f;
-    float f2;
-    float f3;
-    int n;
-    int n2;
     Tessellator& tessellator = render::INSTANCE;
     int colorMult = block.getColorMultiplier(ctx_.blockView, x, y, z);
     float red = (float)(colorMult >> 16 & 0xFF) / 255.0f;
@@ -62,24 +57,24 @@ bool FluidBlockRenderer::renderFluid(net::minecraft::block::Block& block, int x,
         if (flowAngle > -999.0f) {
             topTex = block.getTexture(2, meta);
         }
-        n2 = (topTex & 0xF) << 4;
-        n = topTex & 0xF0;
-        double d3 = ((double)n2 + 8.0) / 256.0;
-        double d4 = ((double)n + 8.0) / 256.0;
+        const int topTexU = (topTex & 0xF) << 4;
+        const int topTexV = topTex & 0xF0;
+        double uvBaseU = (static_cast<double>(topTexU) + 8.0) / 256.0;
+        double uvBaseV = (static_cast<double>(topTexV) + 8.0) / 256.0;
         if (flowAngle < -999.0f) {
             flowAngle = 0.0f;
         } else {
-            d3 = (float)(n2 + 16) / 256.0f;
-            d4 = (float)(n + 16) / 256.0f;
+            uvBaseU = static_cast<float>(topTexU + 16) / 256.0f;
+            uvBaseV = static_cast<float>(topTexV + 16) / 256.0f;
         }
-        f3 = net::minecraft::util::math::MathHelper::sin(flowAngle) * 8.0f / 256.0f;
-        f2 = net::minecraft::util::math::MathHelper::cos(flowAngle) * 8.0f / 256.0f;
-        f = block.getLuminance(ctx_.blockView, x, y, z);
-        tessellator.color(upShade * f * red, upShade * f * green, upShade * f * blue);
-        tessellator.vertex(x + 0, (float)y + h00, z + 0, d3 - (double)f2 - (double)f3, d4 - (double)f2 + (double)f3);
-        tessellator.vertex(x + 0, (float)y + h01, z + 1, d3 - (double)f2 + (double)f3, d4 + (double)f2 + (double)f3);
-        tessellator.vertex(x + 1, (float)y + h11, z + 1, d3 + (double)f2 + (double)f3, d4 + (double)f2 - (double)f3);
-        tessellator.vertex(x + 1, (float)y + h10, z + 0, d3 + (double)f2 - (double)f3, d4 - (double)f2 - (double)f3);
+        const float flowSin = net::minecraft::util::math::MathHelper::sin(flowAngle) * 8.0f / 256.0f;
+        const float flowCos = net::minecraft::util::math::MathHelper::cos(flowAngle) * 8.0f / 256.0f;
+        const float topBrightness = block.getLuminance(ctx_.blockView, x, y, z);
+        tessellator.color(upShade * topBrightness * red, upShade * topBrightness * green, upShade * topBrightness * blue);
+        tessellator.vertex(x + 0, static_cast<float>(y) + h00, z + 0, uvBaseU - static_cast<double>(flowCos) - static_cast<double>(flowSin), uvBaseV - static_cast<double>(flowCos) + static_cast<double>(flowSin));
+        tessellator.vertex(x + 0, static_cast<float>(y) + h01, z + 1, uvBaseU - static_cast<double>(flowCos) + static_cast<double>(flowSin), uvBaseV + static_cast<double>(flowCos) + static_cast<double>(flowSin));
+        tessellator.vertex(x + 1, static_cast<float>(y) + h11, z + 1, uvBaseU + static_cast<double>(flowCos) + static_cast<double>(flowSin), uvBaseV + static_cast<double>(flowCos) - static_cast<double>(flowSin));
+        tessellator.vertex(x + 1, static_cast<float>(y) + h10, z + 0, uvBaseU + static_cast<double>(flowCos) - static_cast<double>(flowSin), uvBaseV - static_cast<double>(flowCos) - static_cast<double>(flowSin));
     }
     if (ctx_.skipFaceCulling || bottomVisible) {
         float brightness = block.getLuminance(ctx_.blockView, x, y - 1, z);
@@ -109,9 +104,9 @@ bool FluidBlockRenderer::renderFluid(net::minecraft::block::Block& block, int x,
         if (i == 3) {
             ++nx;
         }
-        int sideTex = block.getTexture(i + 2, meta);
-        int texU = (sideTex & 0xF) << 4;
-        int texV = sideTex & 0xF0;
+        const int sideTex = ctx_.resolveTexture(i + 2, block.getTexture(i + 2, meta));
+        const net::minecraft::block::TerrainAtlasUv baseUv = net::minecraft::block::Block::terrainTileUv(sideTex);
+        const double tileHeight = baseUv.vMax - baseUv.vMin;
         if (!ctx_.skipFaceCulling && !sideVisible[i]) continue;
         if (i == 0) {
             sideH0 = h00;
@@ -143,11 +138,11 @@ bool FluidBlockRenderer::renderFluid(net::minecraft::block::Block& block, int x,
             sideZ1 = z + 1;
         }
         drewAnyFace = true;
-        double uMin = (float)(texU + 0) / 256.0f;
-        double uMax = ((double)(texU + 16) - 0.01) / 256.0;
-        double vTop0 = ((float)texV + (1.0f - sideH0) * 16.0f) / 256.0f;
-        double vTop1 = ((float)texV + (1.0f - sideH1) * 16.0f) / 256.0f;
-        double vBottom = ((double)(texV + 16) - 0.01) / 256.0;
+        const double uMin = baseUv.uMin;
+        const double uMax = baseUv.uMax;
+        const double vTop0 = baseUv.vMin + static_cast<double>(1.0f - sideH0) * tileHeight;
+        const double vTop1 = baseUv.vMin + static_cast<double>(1.0f - sideH1) * tileHeight;
+        const double vBottom = baseUv.vMax;
         float brightness = block.getLuminance(ctx_.blockView, nx, ny, nz);
         brightness *= i < 2 ? horizShade : nsShade;
         tessellator.color(upShade * brightness * red, upShade * brightness * green, upShade * brightness * blue);
@@ -163,31 +158,33 @@ bool FluidBlockRenderer::renderFluid(net::minecraft::block::Block& block, int x,
 
 float FluidBlockRenderer::getFluidHeight(int x, int y, int z, net::minecraft::block::material::Material& material)
 {
-    int n = 0;
-    float f = 0.0f;
+    int sampleWeight = 0;
+    float heightSum = 0.0f;
     for (int i = 0; i < 4; ++i) {
-        int nx = x - (i & 1);
-        int ny = y;
-        int nz = z - (i >> 1 & 1);
+        const int nx = x - (i & 1);
+        const int ny = y;
+        const int nz = z - (i >> 1 & 1);
         if (&ctx_.blockView->getMaterial(nx, ny + 1, nz) == &material) {
             return 1.0f;
         }
-        net::minecraft::block::material::Material& mat2 = ctx_.blockView->getMaterial(nx, ny, nz);
-        if (&mat2 == &material) {
-            int meta = ctx_.blockView->getBlockMeta(nx, ny, nz);
-            if (meta >= 8 || meta == 0) {
-                f += net::minecraft::block::LiquidBlock::getFluidHeightFromMeta(meta) * 10.0f;
-                n += 10;
+        net::minecraft::block::material::Material& neighborMaterial = ctx_.blockView->getMaterial(nx, ny, nz);
+        if (&neighborMaterial == &material) {
+            const int neighborMeta = ctx_.blockView->getBlockMeta(nx, ny, nz);
+            if (neighborMeta >= 8 || neighborMeta == 0) {
+                heightSum += net::minecraft::block::LiquidBlock::getFluidHeightFromMeta(neighborMeta) * 10.0f;
+                sampleWeight += 10;
             }
-            f += net::minecraft::block::LiquidBlock::getFluidHeightFromMeta(meta);
-            ++n;
+            heightSum += net::minecraft::block::LiquidBlock::getFluidHeightFromMeta(neighborMeta);
+            ++sampleWeight;
             continue;
         }
-        if (mat2.isSolid()) continue;
-        f += 1.0f;
-        ++n;
+        if (neighborMaterial.isSolid()) {
+            continue;
+        }
+        heightSum += 1.0f;
+        ++sampleWeight;
     }
-    return 1.0f - f / (float)n;
+    return 1.0f - heightSum / static_cast<float>(sampleWeight);
 }
 
 } // namespace net::minecraft::client::render::block

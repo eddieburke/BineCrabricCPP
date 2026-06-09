@@ -2,18 +2,17 @@
 
 #include "net/minecraft/block/material/Material.hpp"
 #include "net/minecraft/client/resource/language/I18n.hpp"
-#include "net/minecraft/entity/EntityRegistry.hpp"
 #include "net/minecraft/entity/ItemEntity.hpp"
 #include "net/minecraft/entity/player/PlayerEntity.hpp"
 #include "net/minecraft/item/Item.hpp"
 #include "net/minecraft/item/ItemStack.hpp"
+#include "net/minecraft/registry/VanillaRegistry.hpp"
 #include "net/minecraft/stat/Stats.hpp"
 #include "net/minecraft/world/BlockView.hpp"
 #include "net/minecraft/world/World.hpp"
 
 #include <algorithm>
 #include <cmath>
-#include <mutex>
 
 // Out-of-line bodies for Block. Anything that dereferences World / ItemStack /
 // Entity lives here so Block.hpp stays free of the cycle-forming includes.
@@ -501,16 +500,11 @@ std::optional<net::minecraft::HitResult> Block::raycastLocalBounds(
     return HitResult{x, y, z, side, hit};
 }
 
-std::optional<net::minecraft::HitResult> Block::raycast(World* /*world*/, int x, int y, int z, Vec3d startPos, Vec3d endPos) const
+std::optional<net::minecraft::HitResult> Block::raycast(World* world, int x, int y, int z, Vec3d startPos, Vec3d endPos) const
 {
+    const_cast<Block*>(this)->updateBoundingBox(world, x, y, z);
     return raycastLocalBounds(minX, minY, minZ, maxX, maxY, maxZ, x, y, z, startPos, endPos);
 }
-
-void registerVanillaBlocks();
-
-namespace {
-std::once_flag g_blocksInit;
-} // namespace
 
 void finalizeBlockRegistryProperties()
 {
@@ -531,13 +525,7 @@ void finalizeBlockRegistryProperties()
 
 void initializeBlocks()
 {
-    std::call_once(g_blocksInit, [] {
-        registerVanillaBlocks();
-        finalizeBlockRegistryProperties();
-    });
-    net::minecraft::initializeItems();
-    registerBlockItems();
-    net::minecraft::entity::EntityRegistry::bootstrap();
+    registry::runVanillaBootstrap();
 }
 
 bool Block::usesNeighborLightSampling(int blockId)
@@ -547,7 +535,8 @@ bool Block::usesNeighborLightSampling(int blockId)
     }
     return (SLAB != nullptr && blockId == SLAB->id) || (FARMLAND != nullptr && blockId == FARMLAND->id)
         || (WOODEN_STAIRS != nullptr && blockId == WOODEN_STAIRS->id)
-        || (COBBLESTONE_STAIRS != nullptr && blockId == COBBLESTONE_STAIRS->id);
+        || (COBBLESTONE_STAIRS != nullptr && blockId == COBBLESTONE_STAIRS->id)
+        || (TRAPDOOR != nullptr && blockId == TRAPDOOR->id);
 }
 
 float Block::getLuminance(const BlockView* blockView, int x, int y, int z) const
@@ -603,6 +592,44 @@ int Block::getColorMultiplier(const BlockView* /*blockView*/, int /*x*/, int /*y
 
 void Block::setupRenderBoundingBox()
 {
+}
+
+int Block::textureForSide(int side, int sides, int bottom, int top, int frontSide, int front)
+{
+    if (side == FACE_BOTTOM && bottom >= 0) {
+        return bottom;
+    }
+    if (side == FACE_TOP && top >= 0) {
+        return top;
+    }
+    if (frontSide >= 0 && side == frontSide && front >= 0) {
+        return front;
+    }
+    return sides;
+}
+
+TerrainAtlasUv Block::terrainTileUv(int textureId)
+{
+    const int texU = (textureId & 0xF) << 4;
+    const int texV = textureId & 0xF0;
+    return {
+        static_cast<double>(texU) / 256.0,
+        (static_cast<double>(texU + 16) - 0.01) / 256.0,
+        static_cast<double>(texV) / 256.0,
+        (static_cast<double>(texV + 16) - 0.01) / 256.0,
+    };
+}
+
+TerrainAtlasUv Block::terrainStripUv(int textureId, double scrollU, double stripHeight)
+{
+    const int texU = (textureId & 0xF) << 4;
+    const int texV = textureId & 0xF0;
+    return {
+        static_cast<double>(texU) / 256.0,
+        (static_cast<double>(texU) + scrollU - 0.01) / 256.0,
+        static_cast<double>(texV) / 256.0,
+        (static_cast<double>(texV) + stripHeight - 0.01) / 256.0,
+    };
 }
 
 } // namespace net::minecraft::block

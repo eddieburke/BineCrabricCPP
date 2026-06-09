@@ -37,18 +37,18 @@ inline bool generateRoundedTree(World* world, JavaRandom& random, int x, int y, 
         return false;
     }
 
-    for (int n5 = y; n5 <= y + 1 + height; ++n5) {
+    for (int checkY = y; checkY <= y + 1 + height; ++checkY) {
         int radius = 1;
-        if (n5 == y) {
+        if (checkY == y) {
             radius = 0;
         }
-        if (n5 >= y + 1 + height - 2) {
+        if (checkY >= y + 1 + height - 2) {
             radius = 2;
         }
-        for (int n3 = x - radius; n3 <= x + radius && clear; ++n3) {
-            for (int n2 = z - radius; n2 <= z + radius && clear; ++n2) {
-                if (n5 >= 0 && n5 < 128) {
-                    const int blockId = world->getBlockId(n3, n5, n2);
+        for (int blockX = x - radius; blockX <= x + radius && clear; ++blockX) {
+            for (int blockZ = z - radius; blockZ <= z + radius && clear; ++blockZ) {
+                if (checkY >= 0 && checkY < 128) {
+                    const int blockId = world->getBlockId(blockX, checkY, blockZ);
                     if (canReplaceLeaves(blockId)) {
                         continue;
                     }
@@ -69,28 +69,28 @@ inline bool generateRoundedTree(World* world, JavaRandom& random, int x, int y, 
     }
 
     world->setBlockWithoutNotifyingNeighbors(x, y - 1, z, id(Block::DIRT));
-    for (int n4 = y - 3 + height; n4 <= y + height; ++n4) {
-        const int n3 = n4 - (y + height);
-        const int n2 = 1 - n3 / 2;
-        for (int n = x - n2; n <= x + n2; ++n) {
-            const int n7 = n - x;
-            for (int i = z - n2; i <= z + n2; ++i) {
-                const int n8 = i - z;
-                if ((std::abs(n7) == n2 && std::abs(n8) == n2 && (random.nextInt(2) == 0 || n3 == 0))
-                    || isOpaqueBlock(world->getBlockId(n, n4, i))) {
+    for (int leafY = y - 3 + height; leafY <= y + height; ++leafY) {
+        const int layerOffset = leafY - (y + height);
+        const int leafRadius = 1 - layerOffset / 2;
+        for (int leafX = x - leafRadius; leafX <= x + leafRadius; ++leafX) {
+            const int dx = leafX - x;
+            for (int leafZ = z - leafRadius; leafZ <= z + leafRadius; ++leafZ) {
+                const int dz = leafZ - z;
+                if ((std::abs(dx) == leafRadius && std::abs(dz) == leafRadius && (random.nextInt(2) == 0 || layerOffset == 0))
+                    || isOpaqueBlock(world->getBlockId(leafX, leafY, leafZ))) {
                     continue;
                 }
-                world->setBlockWithoutNotifyingNeighbors(n, n4, i, id(Block::LEAVES), leafMeta);
+                world->setBlockWithoutNotifyingNeighbors(leafX, leafY, leafZ, id(Block::LEAVES), leafMeta);
             }
         }
     }
 
-    for (int n4 = 0; n4 < height; ++n4) {
-        const int blockId = world->getBlockId(x, y + n4, z);
+    for (int logY = 0; logY < height; ++logY) {
+        const int blockId = world->getBlockId(x, y + logY, z);
         if (!canReplaceLeaves(blockId)) {
             continue;
         }
-        world->setBlockWithoutNotifyingNeighbors(x, y + n4, z, id(Block::LOG), logMeta);
+        world->setBlockWithoutNotifyingNeighbors(x, y + logY, z, id(Block::LOG), logMeta);
     }
     return true;
 }

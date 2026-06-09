@@ -62,6 +62,7 @@ public:
     std::optional<Vec3i> spawnPos;
     std::optional<Vec3i> ridingStartPos;
     int portalCooldown = 20;
+    bool touchingPortal = false;
     projectile::FishingBobberEntity* fishHook = nullptr;
     bool inTeleportationState = false;
     float screenDistortion = 0.0f;

@@ -40,9 +40,9 @@ void TerrainPreparePass::run(WorldRenderContext& ctx)
 
     ctx.worldRenderer->cullChunks(ctx.activeCuller, ctx.tickDelta);
 
-    if (ctx.eye == 0) {
-        ctx.worldRenderer->compileChunks(*ctx.camera, false);
-    }
+    // Every eye must reach Compiled before terrain draw. Eye 1 reuses meshes built on eye 0;
+    // compileChunks is cheap when dirtyChunks is empty but still advances the frame phase.
+    ctx.worldRenderer->compileChunks(*ctx.camera, false);
 }
 
 } // namespace net::minecraft::client::render::pipeline::passes

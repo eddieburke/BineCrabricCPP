@@ -11,25 +11,23 @@ FireSprite::FireSprite(int index)
 
 void FireSprite::tick()
 {
-    for (int i = 0; i < 16; ++i) {
-        for (int n5 = 0; n5 < 20; ++n5) {
-            int n6 = 18;
-            float f = current[static_cast<std::size_t>(i + (n5 + 1) % 20 * 16)] * static_cast<float>(n6);
-            for (int n4 = i - 1; n4 <= i + 1; ++n4) {
-                for (int n3 = n5; n3 <= n5 + 1; ++n3) {
-                    const int n2 = n4;
-                    const int n = n3;
-                    if (n2 >= 0 && n >= 0 && n2 < 16 && n < 20) {
-                        f += current[static_cast<std::size_t>(n2 + n * 16)];
+    for (int x = 0; x < 16; ++x) {
+        for (int y = 0; y < 20; ++y) {
+            int neighborCount = 18;
+            float heatSum = current[static_cast<std::size_t>(x + (y + 1) % 20 * 16)] * static_cast<float>(neighborCount);
+            for (int neighborX = x - 1; neighborX <= x + 1; ++neighborX) {
+                for (int neighborY = y; neighborY <= y + 1; ++neighborY) {
+                    if (neighborX >= 0 && neighborY >= 0 && neighborX < 16 && neighborY < 20) {
+                        heatSum += current[static_cast<std::size_t>(neighborX + neighborY * 16)];
                     }
-                    ++n6;
+                    ++neighborCount;
                 }
             }
-            next[static_cast<std::size_t>(i + n5 * 16)] = f / (static_cast<float>(n6) * 1.06f);
-            if (n5 < 19) {
+            next[static_cast<std::size_t>(x + y * 16)] = heatSum / (static_cast<float>(neighborCount) * 1.06f);
+            if (y < 19) {
                 continue;
             }
-            next[static_cast<std::size_t>(i + n5 * 16)] = static_cast<float>(
+            next[static_cast<std::size_t>(x + y * 16)] = static_cast<float>(
                 detail::mathRandom() * detail::mathRandom() * detail::mathRandom() * 4.0 +
                 detail::mathRandom() * 0.1 + 0.2);
         }
@@ -37,24 +35,24 @@ void FireSprite::tick()
 
     std::swap(next, current);
 
-    for (int n5 = 0; n5 < 256; ++n5) {
-        float f2 = current[static_cast<std::size_t>(n5)] * 1.8f;
-        if (f2 > 1.0f) {
-            f2 = 1.0f;
+    for (int pixelIndex = 0; pixelIndex < 256; ++pixelIndex) {
+        float intensity = current[static_cast<std::size_t>(pixelIndex)] * 1.8f;
+        if (intensity > 1.0f) {
+            intensity = 1.0f;
         }
-        if (f2 < 0.0f) {
-            f2 = 0.0f;
+        if (intensity < 0.0f) {
+            intensity = 0.0f;
         }
-        float f = f2;
-        int n4 = static_cast<int>(f * 155.0f + 100.0f);
-        int n3 = static_cast<int>(f * f * 255.0f);
-        int n2 = static_cast<int>(f * f * f * f * f * f * f * f * f * f * 255.0f);
-        int n = 255;
-        if (f < 0.5f) {
-            n = 0;
+        float heat = intensity;
+        int red = static_cast<int>(heat * 155.0f + 100.0f);
+        int green = static_cast<int>(heat * heat * 255.0f);
+        int blue = static_cast<int>(heat * heat * heat * heat * heat * heat * heat * heat * heat * heat * 255.0f);
+        int alpha = 255;
+        if (heat < 0.5f) {
+            alpha = 0;
         }
-        f = (f - 0.5f) * 2.0f;
-        detail::writePixel(pixels, n5, n4, n3, n2, n);
+        heat = (heat - 0.5f) * 2.0f;
+        detail::writePixel(pixels, pixelIndex, red, green, blue, alpha);
     }
 }
 

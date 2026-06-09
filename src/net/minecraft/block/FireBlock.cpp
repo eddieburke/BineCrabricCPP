@@ -1,3 +1,4 @@
+#include "net/minecraft/block/BlockRegistrar.hpp"
 #include "net/minecraft/block/FireBlock.hpp"
 
 #include "net/minecraft/block/Block.hpp"
@@ -307,5 +308,15 @@ void FireBlock::randomDisplayTick(
         }
     }
 }
+namespace {
 
+void registerFireBlock()
+{
+    Block::FIRE = (new FireBlock(51, 31))->setHardness(0.0f)->setLuminance(1.0f)->setSoundGroup(&vanillaWoodSound())->setTranslationKey("fire")->disableTrackingStatistics()->ignoreMetaUpdates();
+}
+
+MINECRAFT_REGISTER_BLOCK(registerFireBlock, 51);
+
+} // namespace
 } // namespace net::minecraft::block
+

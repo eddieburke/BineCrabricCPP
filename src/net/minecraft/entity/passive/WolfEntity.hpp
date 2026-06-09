@@ -139,7 +139,7 @@ public:
     [[nodiscard]] std::string getDeathSound() const override { return "mob.wolf.death"; }
     [[nodiscard]] float getSoundVolume() const override { return 0.4f; }
     [[nodiscard]] float getEyeHeight() const override { return height * 0.8f; }
-    [[nodiscard]] int getDroppedItemId() const override { return -1; }
+    [[nodiscard]] int getDroppedItemId() const override;
     [[nodiscard]] int getLimitPerChunk() const override { return 8; }
     [[nodiscard]] bool bypassesSteppingEffects() const override { return false; }
 

@@ -11,13 +11,7 @@ public:
 
     [[nodiscard]] int getTexture(int side) const override
     {
-        if (side == 1) {
-            return textureId - 16;
-        }
-        if (side == 0) {
-            return textureId + 16;
-        }
-        return textureId;
+        return Block::textureForSide(side, textureId, textureId + 16, textureId - 16);
     }
 };
 

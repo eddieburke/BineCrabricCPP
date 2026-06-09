@@ -2,6 +2,7 @@
 
 #include "net/minecraft/entity/player/PlayerEntity.hpp"
 #include "net/minecraft/entity/projectile/FireballEntity.hpp"
+#include "net/minecraft/item/Item.hpp"
 #include "net/minecraft/util/math/MathHelper.hpp"
 #include "net/minecraft/world/World.hpp"
 
@@ -85,6 +86,7 @@ void GhastEntity::tickLiving()
                 fireball->x = x + look.x * spawnOffset;
                 fireball->y = y + static_cast<double>(height) * 0.5 + 0.5;
                 fireball->z = z + look.z * spawnOffset;
+                fireball->setPosition(fireball->x, fireball->y, fireball->z);
                 world->spawnEntity(fireball);
                 chargeTime = -40;
             }
@@ -128,6 +130,11 @@ bool GhastEntity::canReach(double targetXIn, double targetYIn, double targetZIn,
 bool GhastEntity::canSpawn() const
 {
     return random.nextInt(20) == 0 && FlyingEntity::canSpawn() && world != nullptr && world->difficulty > 0;
+}
+
+int GhastEntity::getDroppedItemId() const
+{
+    return Item::GUNPOWDER != nullptr ? Item::GUNPOWDER->id : 289;
 }
 
 } // namespace net::minecraft::entity::mob

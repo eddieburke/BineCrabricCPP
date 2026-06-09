@@ -76,102 +76,102 @@ public:
     void create(std::vector<double>& map, double x, double y, double z, int width, int height, int depth, double scaleX, double scaleY, double scaleZ, double amplitude) const
     {
         if (height == 1) {
-            int n = 0;
-            int n2 = 0;
-            int n3 = 0;
-            int n4 = 0;
-            double dEdge0 = 0.0;
-            double dEdge1 = 0.0;
+            int permA = 0;
+            int permAA = 0;
+            int permB = 0;
+            int permBB = 0;
+            double edgeLerp0 = 0.0;
+            double edgeLerp1 = 0.0;
             int outIndex = 0;
             const double invAmplitude = 1.0 / amplitude;
             for (int i = 0; i < width; ++i) {
-                double d4 = (x + static_cast<double>(i)) * scaleX + offsetX_;
-                int n6 = static_cast<int>(d4);
-                if (d4 < static_cast<double>(n6)) {
-                    --n6;
+                double fracX = (x + static_cast<double>(i)) * scaleX + offsetX_;
+                int cellX = static_cast<int>(fracX);
+                if (fracX < static_cast<double>(cellX)) {
+                    --cellX;
                 }
-                int n7 = n6 & 0xFF;
-                d4 -= static_cast<double>(n6);
-                double d5 = d4 * d4 * d4 * (d4 * (d4 * 6.0 - 15.0) + 10.0);
+                int xMask = cellX & 0xFF;
+                fracX -= static_cast<double>(cellX);
+                double fadeX = fracX * fracX * fracX * (fracX * (fracX * 6.0 - 15.0) + 10.0);
                 for (int j = 0; j < depth; ++j) {
-                    double d6 = (z + static_cast<double>(j)) * scaleZ + offsetZ_;
-                    int n8 = static_cast<int>(d6);
-                    if (d6 < static_cast<double>(n8)) {
-                        --n8;
+                    double fracZ = (z + static_cast<double>(j)) * scaleZ + offsetZ_;
+                    int cellZ = static_cast<int>(fracZ);
+                    if (fracZ < static_cast<double>(cellZ)) {
+                        --cellZ;
                     }
-                    int n9 = n8 & 0xFF;
-                    d6 -= static_cast<double>(n8);
-                    double d7 = d6 * d6 * d6 * (d6 * (d6 * 6.0 - 15.0) + 10.0);
-                    n = perm_[n7] + 0;
-                    n2 = perm_[n] + n9;
-                    n3 = perm_[n7 + 1] + 0;
-                    n4 = perm_[n3] + n9;
-                    dEdge0 = lerp(d5, grad2(perm_[n2], d4, d6), grad(perm_[n4], d4 - 1.0, 0.0, d6));
-                    dEdge1 = lerp(d5, grad(perm_[n2 + 1], d4, 0.0, d6 - 1.0), grad(perm_[n4 + 1], d4 - 1.0, 0.0, d6 - 1.0));
-                    double d8 = lerp(d7, dEdge0, dEdge1);
-                    map[static_cast<std::size_t>(outIndex++)] += d8 * invAmplitude;
+                    int zMask = cellZ & 0xFF;
+                    fracZ -= static_cast<double>(cellZ);
+                    double fadeZ = fracZ * fracZ * fracZ * (fracZ * (fracZ * 6.0 - 15.0) + 10.0);
+                    permA = perm_[xMask] + 0;
+                    permAA = perm_[permA] + zMask;
+                    permB = perm_[xMask + 1] + 0;
+                    permBB = perm_[permB] + zMask;
+                    edgeLerp0 = lerp(fadeX, grad2(perm_[permAA], fracX, fracZ), grad(perm_[permBB], fracX - 1.0, 0.0, fracZ));
+                    edgeLerp1 = lerp(fadeX, grad(perm_[permAA + 1], fracX, 0.0, fracZ - 1.0), grad(perm_[permBB + 1], fracX - 1.0, 0.0, fracZ - 1.0));
+                    double noiseValue = lerp(fadeZ, edgeLerp0, edgeLerp1);
+                    map[static_cast<std::size_t>(outIndex++)] += noiseValue * invAmplitude;
                 }
             }
             return;
         }
 
-        int n = 0;
-        const double d = 1.0 / amplitude;
-        int n11 = -1;
-        int n12 = 0;
-        int n13 = 0;
-        int n14 = 0;
-        int n15 = 0;
-        int n16 = 0;
-        int n17 = 0;
-        double d9 = 0.0;
-        double d10 = 0.0;
-        double d11 = 0.0;
-        double d12 = 0.0;
+        int outIndex = 0;
+        const double invAmplitude = 1.0 / amplitude;
+        int prevYMask = -1;
+        int permAY = 0;
+        int permAAY = 0;
+        int permABY = 0;
+        int permBY = 0;
+        int permBAY = 0;
+        int permBBY = 0;
+        double edgeLerp00 = 0.0;
+        double edgeLerp01 = 0.0;
+        double edgeLerp10 = 0.0;
+        double edgeLerp11 = 0.0;
         for (int i = 0; i < width; ++i) {
-            double d13 = (x + static_cast<double>(i)) * scaleX + offsetX_;
-            int n18 = static_cast<int>(d13);
-            if (d13 < static_cast<double>(n18)) {
-                --n18;
+            double fracX = (x + static_cast<double>(i)) * scaleX + offsetX_;
+            int cellX = static_cast<int>(fracX);
+            if (fracX < static_cast<double>(cellX)) {
+                --cellX;
             }
-            int n19 = n18 & 0xFF;
-            d13 -= static_cast<double>(n18);
-            double d14 = d13 * d13 * d13 * (d13 * (d13 * 6.0 - 15.0) + 10.0);
+            int xMask = cellX & 0xFF;
+            fracX -= static_cast<double>(cellX);
+            double fadeX = fracX * fracX * fracX * (fracX * (fracX * 6.0 - 15.0) + 10.0);
             for (int j = 0; j < depth; ++j) {
-                double d15 = (z + static_cast<double>(j)) * scaleZ + offsetZ_;
-                int n20 = static_cast<int>(d15);
-                if (d15 < static_cast<double>(n20)) {
-                    --n20;
+                double fracZ = (z + static_cast<double>(j)) * scaleZ + offsetZ_;
+                int cellZ = static_cast<int>(fracZ);
+                if (fracZ < static_cast<double>(cellZ)) {
+                    --cellZ;
                 }
-                int n21 = n20 & 0xFF;
-                d15 -= static_cast<double>(n20);
-                double d16 = d15 * d15 * d15 * (d15 * (d15 * 6.0 - 15.0) + 10.0);
+                int zMask = cellZ & 0xFF;
+                fracZ -= static_cast<double>(cellZ);
+                double fadeZ = fracZ * fracZ * fracZ * (fracZ * (fracZ * 6.0 - 15.0) + 10.0);
                 for (int k = 0; k < height; ++k) {
-                    double d17 = (y + static_cast<double>(k)) * scaleY + offsetY_;
-                    int n22 = static_cast<int>(d17);
-                    if (d17 < static_cast<double>(n22)) {
-                        --n22;
+                    double fracY = (y + static_cast<double>(k)) * scaleY + offsetY_;
+                    int cellY = static_cast<int>(fracY);
+                    if (fracY < static_cast<double>(cellY)) {
+                        --cellY;
                     }
-                    int n23 = n22 & 0xFF;
-                    d17 -= static_cast<double>(n22);
-                    double d18 = d17 * d17 * d17 * (d17 * (d17 * 6.0 - 15.0) + 10.0);
-                    if (k == 0 || n23 != n11) {
-                        n11 = n23;
-                        n12 = perm_[n19] + n23;
-                        n13 = perm_[n12] + n21;
-                        n14 = perm_[n12 + 1] + n21;
-                        n15 = perm_[n19 + 1] + n23;
-                        n16 = perm_[n15] + n21;
-                        n17 = perm_[n15 + 1] + n21;
-                        d9 = lerp(d14, grad(perm_[n13], d13, d17, d15), grad(perm_[n16], d13 - 1.0, d17, d15));
-                        d10 = lerp(d14, grad(perm_[n14], d13, d17 - 1.0, d15), grad(perm_[n17], d13 - 1.0, d17 - 1.0, d15));
-                        d11 = lerp(d14, grad(perm_[n13 + 1], d13, d17, d15 - 1.0), grad(perm_[n16 + 1], d13 - 1.0, d17, d15 - 1.0));
-                        d12 = lerp(d14, grad(perm_[n14 + 1], d13, d17 - 1.0, d15 - 1.0), grad(perm_[n17 + 1], d13 - 1.0, d17 - 1.0, d15 - 1.0));
+                    int yMask = cellY & 0xFF;
+                    fracY -= static_cast<double>(cellY);
+                    double fadeY = fracY * fracY * fracY * (fracY * (fracY * 6.0 - 15.0) + 10.0);
+                    if (k == 0 || yMask != prevYMask) {
+                        prevYMask = yMask;
+                        permAY = perm_[xMask] + yMask;
+                        permAAY = perm_[permAY] + zMask;
+                        permABY = perm_[permAY + 1] + zMask;
+                        permBY = perm_[xMask + 1] + yMask;
+                        permBAY = perm_[permBY] + zMask;
+                        permBBY = perm_[permBY + 1] + zMask;
+                        edgeLerp00 = lerp(fadeX, grad(perm_[permAAY], fracX, fracY, fracZ), grad(perm_[permBAY], fracX - 1.0, fracY, fracZ));
+                        edgeLerp01 = lerp(fadeX, grad(perm_[permABY], fracX, fracY - 1.0, fracZ), grad(perm_[permBBY], fracX - 1.0, fracY - 1.0, fracZ));
+                        edgeLerp10 = lerp(fadeX, grad(perm_[permAAY + 1], fracX, fracY, fracZ - 1.0), grad(perm_[permBAY + 1], fracX - 1.0, fracY, fracZ - 1.0));
+                        edgeLerp11 = lerp(fadeX, grad(perm_[permABY + 1], fracX, fracY - 1.0, fracZ - 1.0), grad(perm_[permBBY + 1], fracX - 1.0, fracY - 1.0, fracZ - 1.0));
                     }
-                    double d19 = lerp(d18, d9, d10);
-                    double d20 = lerp(d18, d11, d12);
-                    double d21 = lerp(d16, d19, d20);
-                    map[static_cast<std::size_t>(n++)] += d21 * d;
+                    double lerpY0 = lerp(fadeY, edgeLerp00, edgeLerp01);
+                    double lerpY1 = lerp(fadeY, edgeLerp10, edgeLerp11);
+                    double noiseValue = lerp(fadeZ, lerpY0, lerpY1);
+                    map[static_cast<std::size_t>(outIndex++)] += noiseValue * invAmplitude;
                 }
             }
         }
@@ -199,10 +199,10 @@ private:
     // Java's 2-arg gradCoord, used by the height==1 path.
     static double grad2(int hash, double x, double y)
     {
-        const int n = hash & 0xF;
-        const double d = static_cast<double>(1 - ((n & 8) >> 3)) * x;
-        const double d2 = n < 4 ? 0.0 : (n == 12 || n == 14 ? x : y);
-        return ((n & 1) == 0 ? d : -d) + ((n & 2) == 0 ? d2 : -d2);
+        const int hashBits = hash & 0xF;
+        const double u = static_cast<double>(1 - ((hashBits & 8) >> 3)) * x;
+        const double v = hashBits < 4 ? 0.0 : (hashBits == 12 || hashBits == 14 ? x : y);
+        return ((hashBits & 1) == 0 ? u : -u) + ((hashBits & 2) == 0 ? v : -v);
     }
 
     std::array<int, 512> perm_ {};

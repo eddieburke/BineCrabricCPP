@@ -7,516 +7,504 @@ namespace net::minecraft::client::render::block {
 void BlockFaceRenderer::renderBottomFace(net::minecraft::block::Block& block, double x, double y, double z, int texture)
 {
     Tessellator& tessellator = Tessellator::INSTANCE;
-    if (ctx_.textureOverride >= 0) {
-        texture = ctx_.textureOverride;
-    }
-    int n = (texture & 0xF) << 4;
-    int n2 = texture & 0xF0;
-    double d = ((double)n + block.minX * 16.0) / 256.0;
-    double d2 = ((double)n + block.maxX * 16.0 - 0.01) / 256.0;
-    double d3 = ((double)n2 + block.minZ * 16.0) / 256.0;
-    double d4 = ((double)n2 + block.maxZ * 16.0 - 0.01) / 256.0;
+    texture = ctx_.resolveTexture(0, texture);
+    int texU = (texture & 0xF) << 4;
+    int texV = texture & 0xF0;
+    double uMin = ((double)texU + block.minX * 16.0) / 256.0;
+    double uMax = ((double)texU + block.maxX * 16.0 - 0.01) / 256.0;
+    double vMin = ((double)texV + block.minZ * 16.0) / 256.0;
+    double vMax = ((double)texV + block.maxZ * 16.0 - 0.01) / 256.0;
     if (block.minX < 0.0 || block.maxX > 1.0) {
-        d = ((float)n + 0.0f) / 256.0f;
-        d2 = ((float)n + 15.99f) / 256.0f;
+        uMin = ((float)texU + 0.0f) / 256.0f;
+        uMax = ((float)texU + 15.99f) / 256.0f;
     }
     if (block.minZ < 0.0 || block.maxZ > 1.0) {
-        d3 = ((float)n2 + 0.0f) / 256.0f;
-        d4 = ((float)n2 + 15.99f) / 256.0f;
+        vMin = ((float)texV + 0.0f) / 256.0f;
+        vMax = ((float)texV + 15.99f) / 256.0f;
     }
-    double d5 = d2;
-    double d6 = d;
-    double d7 = d3;
-    double d8 = d4;
+    double uCornerA = uMax;
+    double uCornerB = uMin;
+    double vCornerA = vMin;
+    double vCornerB = vMax;
     if (ctx_.bottomFaceRotation == 2) {
-        d = ((double)n + block.minZ * 16.0) / 256.0;
-        d3 = ((double)(n2 + 16) - block.maxX * 16.0) / 256.0;
-        d2 = ((double)n + block.maxZ * 16.0) / 256.0;
-        d4 = ((double)(n2 + 16) - block.minX * 16.0) / 256.0;
-        d5 = d2;
-        d6 = d;
-        d7 = d3;
-        d8 = d4;
-        d5 = d;
-        d6 = d2;
-        d3 = d4;
-        d4 = d7;
+        uMin = ((double)texU + block.minZ * 16.0) / 256.0;
+        vMin = ((double)(texV + 16) - block.maxX * 16.0) / 256.0;
+        uMax = ((double)texU + block.maxZ * 16.0) / 256.0;
+        vMax = ((double)(texV + 16) - block.minX * 16.0) / 256.0;
+        uCornerA = uMax;
+        uCornerB = uMin;
+        vCornerA = vMin;
+        vCornerB = vMax;
+        uCornerA = uMin;
+        uCornerB = uMax;
+        vMin = vMax;
+        vMax = vCornerA;
     } else if (ctx_.bottomFaceRotation == 1) {
-        d = ((double)(n + 16) - block.maxZ * 16.0) / 256.0;
-        d3 = ((double)n2 + block.minX * 16.0) / 256.0;
-        d2 = ((double)(n + 16) - block.minZ * 16.0) / 256.0;
-        d4 = ((double)n2 + block.maxX * 16.0) / 256.0;
-        d5 = d2;
-        d6 = d;
-        d7 = d3;
-        d8 = d4;
-        d = d5;
-        d2 = d6;
-        d7 = d4;
-        d8 = d3;
+        uMin = ((double)(texU + 16) - block.maxZ * 16.0) / 256.0;
+        vMin = ((double)texV + block.minX * 16.0) / 256.0;
+        uMax = ((double)(texU + 16) - block.minZ * 16.0) / 256.0;
+        vMax = ((double)texV + block.maxX * 16.0) / 256.0;
+        uCornerA = uMax;
+        uCornerB = uMin;
+        vCornerA = vMin;
+        vCornerB = vMax;
+        uMin = uCornerA;
+        uMax = uCornerB;
+        vCornerA = vMax;
+        vCornerB = vMin;
     } else if (ctx_.bottomFaceRotation == 3) {
-        d = ((double)(n + 16) - block.minX * 16.0) / 256.0;
-        d2 = ((double)(n + 16) - block.maxX * 16.0 - 0.01) / 256.0;
-        d3 = ((double)(n2 + 16) - block.minZ * 16.0) / 256.0;
-        d4 = ((double)(n2 + 16) - block.maxZ * 16.0 - 0.01) / 256.0;
-        d5 = d2;
-        d6 = d;
-        d7 = d3;
-        d8 = d4;
+        uMin = ((double)(texU + 16) - block.minX * 16.0) / 256.0;
+        uMax = ((double)(texU + 16) - block.maxX * 16.0 - 0.01) / 256.0;
+        vMin = ((double)(texV + 16) - block.minZ * 16.0) / 256.0;
+        vMax = ((double)(texV + 16) - block.maxZ * 16.0 - 0.01) / 256.0;
+        uCornerA = uMax;
+        uCornerB = uMin;
+        vCornerA = vMin;
+        vCornerB = vMax;
     }
-    double d9 = x + block.minX;
-    double d10 = x + block.maxX;
-    double d11 = y + block.minY;
-    double d12 = z + block.minZ;
-    double d13 = z + block.maxZ;
+    const double xMin = x + block.minX;
+    const double xMax = x + block.maxX;
+    const double yCoord = y + block.minY;
+    const double zMin = z + block.minZ;
+    const double zMax = z + block.maxZ;
     if (ctx_.faceState.useAo) {
         tessellator.color(ctx_.faceState.colors.red[0], ctx_.faceState.colors.green[0], ctx_.faceState.colors.blue[0]);
-        tessellator.vertex(d9, d11, d13, d6, d8);
+        tessellator.vertex(xMin, yCoord, zMax, uCornerB, vCornerB);
         tessellator.color(ctx_.faceState.colors.red[1], ctx_.faceState.colors.green[1], ctx_.faceState.colors.blue[1]);
-        tessellator.vertex(d9, d11, d12, d, d3);
+        tessellator.vertex(xMin, yCoord, zMin, uMin, vMin);
         tessellator.color(ctx_.faceState.colors.red[2], ctx_.faceState.colors.green[2], ctx_.faceState.colors.blue[2]);
-        tessellator.vertex(d10, d11, d12, d5, d7);
+        tessellator.vertex(xMax, yCoord, zMin, uCornerA, vCornerA);
         tessellator.color(ctx_.faceState.colors.red[3], ctx_.faceState.colors.green[3], ctx_.faceState.colors.blue[3]);
-        tessellator.vertex(d10, d11, d13, d2, d4);
+        tessellator.vertex(xMax, yCoord, zMax, uMax, vMax);
     } else {
-        tessellator.vertex(d9, d11, d13, d6, d8);
-        tessellator.vertex(d9, d11, d12, d, d3);
-        tessellator.vertex(d10, d11, d12, d5, d7);
-        tessellator.vertex(d10, d11, d13, d2, d4);
+        tessellator.vertex(xMin, yCoord, zMax, uCornerB, vCornerB);
+        tessellator.vertex(xMin, yCoord, zMin, uMin, vMin);
+        tessellator.vertex(xMax, yCoord, zMin, uCornerA, vCornerA);
+        tessellator.vertex(xMax, yCoord, zMax, uMax, vMax);
     }
 }
 
 void BlockFaceRenderer::renderTopFace(net::minecraft::block::Block& block, double x, double y, double z, int texture)
 {
     Tessellator& tessellator = Tessellator::INSTANCE;
-    if (ctx_.textureOverride >= 0) {
-        texture = ctx_.textureOverride;
-    }
-    int n = (texture & 0xF) << 4;
-    int n2 = texture & 0xF0;
-    double d = ((double)n + block.minX * 16.0) / 256.0;
-    double d2 = ((double)n + block.maxX * 16.0 - 0.01) / 256.0;
-    double d3 = ((double)n2 + block.minZ * 16.0) / 256.0;
-    double d4 = ((double)n2 + block.maxZ * 16.0 - 0.01) / 256.0;
+    texture = ctx_.resolveTexture(1, texture);
+    int texU = (texture & 0xF) << 4;
+    int texV = texture & 0xF0;
+    double uMin = ((double)texU + block.minX * 16.0) / 256.0;
+    double uMax = ((double)texU + block.maxX * 16.0 - 0.01) / 256.0;
+    double vMin = ((double)texV + block.minZ * 16.0) / 256.0;
+    double vMax = ((double)texV + block.maxZ * 16.0 - 0.01) / 256.0;
     if (block.minX < 0.0 || block.maxX > 1.0) {
-        d = ((float)n + 0.0f) / 256.0f;
-        d2 = ((float)n + 15.99f) / 256.0f;
+        uMin = ((float)texU + 0.0f) / 256.0f;
+        uMax = ((float)texU + 15.99f) / 256.0f;
     }
     if (block.minZ < 0.0 || block.maxZ > 1.0) {
-        d3 = ((float)n2 + 0.0f) / 256.0f;
-        d4 = ((float)n2 + 15.99f) / 256.0f;
+        vMin = ((float)texV + 0.0f) / 256.0f;
+        vMax = ((float)texV + 15.99f) / 256.0f;
     }
-    double d5 = d2;
-    double d6 = d;
-    double d7 = d3;
-    double d8 = d4;
+    double uCornerA = uMax;
+    double uCornerB = uMin;
+    double vCornerA = vMin;
+    double vCornerB = vMax;
     if (ctx_.topFaceRotation == 1) {
-        d = ((double)n + block.minZ * 16.0) / 256.0;
-        d3 = ((double)(n2 + 16) - block.maxX * 16.0) / 256.0;
-        d2 = ((double)n + block.maxZ * 16.0) / 256.0;
-        d4 = ((double)(n2 + 16) - block.minX * 16.0) / 256.0;
-        d5 = d2;
-        d6 = d;
-        d7 = d3;
-        d8 = d4;
-        d5 = d;
-        d6 = d2;
-        d3 = d4;
-        d4 = d7;
+        uMin = ((double)texU + block.minZ * 16.0) / 256.0;
+        vMin = ((double)(texV + 16) - block.maxX * 16.0) / 256.0;
+        uMax = ((double)texU + block.maxZ * 16.0) / 256.0;
+        vMax = ((double)(texV + 16) - block.minX * 16.0) / 256.0;
+        uCornerA = uMax;
+        uCornerB = uMin;
+        vCornerA = vMin;
+        vCornerB = vMax;
+        uCornerA = uMin;
+        uCornerB = uMax;
+        vMin = vMax;
+        vMax = vCornerA;
     } else if (ctx_.topFaceRotation == 2) {
-        d = ((double)(n + 16) - block.maxZ * 16.0) / 256.0;
-        d3 = ((double)n2 + block.minX * 16.0) / 256.0;
-        d2 = ((double)(n + 16) - block.minZ * 16.0) / 256.0;
-        d4 = ((double)n2 + block.maxX * 16.0) / 256.0;
-        d5 = d2;
-        d6 = d;
-        d7 = d3;
-        d8 = d4;
-        d = d5;
-        d2 = d6;
-        d7 = d4;
-        d8 = d3;
+        uMin = ((double)(texU + 16) - block.maxZ * 16.0) / 256.0;
+        vMin = ((double)texV + block.minX * 16.0) / 256.0;
+        uMax = ((double)(texU + 16) - block.minZ * 16.0) / 256.0;
+        vMax = ((double)texV + block.maxX * 16.0) / 256.0;
+        uCornerA = uMax;
+        uCornerB = uMin;
+        vCornerA = vMin;
+        vCornerB = vMax;
+        uMin = uCornerA;
+        uMax = uCornerB;
+        vCornerA = vMax;
+        vCornerB = vMin;
     } else if (ctx_.topFaceRotation == 3) {
-        d = ((double)(n + 16) - block.minX * 16.0) / 256.0;
-        d2 = ((double)(n + 16) - block.maxX * 16.0 - 0.01) / 256.0;
-        d3 = ((double)(n2 + 16) - block.minZ * 16.0) / 256.0;
-        d4 = ((double)(n2 + 16) - block.maxZ * 16.0 - 0.01) / 256.0;
-        d5 = d2;
-        d6 = d;
-        d7 = d3;
-        d8 = d4;
+        uMin = ((double)(texU + 16) - block.minX * 16.0) / 256.0;
+        uMax = ((double)(texU + 16) - block.maxX * 16.0 - 0.01) / 256.0;
+        vMin = ((double)(texV + 16) - block.minZ * 16.0) / 256.0;
+        vMax = ((double)(texV + 16) - block.maxZ * 16.0 - 0.01) / 256.0;
+        uCornerA = uMax;
+        uCornerB = uMin;
+        vCornerA = vMin;
+        vCornerB = vMax;
     }
-    double d9 = x + block.minX;
-    double d10 = x + block.maxX;
-    double d11 = y + block.maxY;
-    double d12 = z + block.minZ;
-    double d13 = z + block.maxZ;
+    const double xMin = x + block.minX;
+    const double xMax = x + block.maxX;
+    const double yCoord = y + block.maxY;
+    const double zMin = z + block.minZ;
+    const double zMax = z + block.maxZ;
     if (ctx_.faceState.useAo) {
         tessellator.color(ctx_.faceState.colors.red[0], ctx_.faceState.colors.green[0], ctx_.faceState.colors.blue[0]);
-        tessellator.vertex(d10, d11, d13, d2, d4);
+        tessellator.vertex(xMax, yCoord, zMax, uMax, vMax);
         tessellator.color(ctx_.faceState.colors.red[1], ctx_.faceState.colors.green[1], ctx_.faceState.colors.blue[1]);
-        tessellator.vertex(d10, d11, d12, d5, d7);
+        tessellator.vertex(xMax, yCoord, zMin, uCornerA, vCornerA);
         tessellator.color(ctx_.faceState.colors.red[2], ctx_.faceState.colors.green[2], ctx_.faceState.colors.blue[2]);
-        tessellator.vertex(d9, d11, d12, d, d3);
+        tessellator.vertex(xMin, yCoord, zMin, uMin, vMin);
         tessellator.color(ctx_.faceState.colors.red[3], ctx_.faceState.colors.green[3], ctx_.faceState.colors.blue[3]);
-        tessellator.vertex(d9, d11, d13, d6, d8);
+        tessellator.vertex(xMin, yCoord, zMax, uCornerB, vCornerB);
     } else {
-        tessellator.vertex(d10, d11, d13, d2, d4);
-        tessellator.vertex(d10, d11, d12, d5, d7);
-        tessellator.vertex(d9, d11, d12, d, d3);
-        tessellator.vertex(d9, d11, d13, d6, d8);
+        tessellator.vertex(xMax, yCoord, zMax, uMax, vMax);
+        tessellator.vertex(xMax, yCoord, zMin, uCornerA, vCornerA);
+        tessellator.vertex(xMin, yCoord, zMin, uMin, vMin);
+        tessellator.vertex(xMin, yCoord, zMax, uCornerB, vCornerB);
     }
 }
 
 void BlockFaceRenderer::renderEastFace(net::minecraft::block::Block& block, double x, double y, double z, int texture)
 {
-    double d;
+    double uMin;
     Tessellator& tessellator = Tessellator::INSTANCE;
-    if (ctx_.textureOverride >= 0) {
-        texture = ctx_.textureOverride;
-    }
-    int n = (texture & 0xF) << 4;
-    int n2 = texture & 0xF0;
-    double d2 = ((double)n + block.minX * 16.0) / 256.0;
-    double d3 = ((double)n + block.maxX * 16.0 - 0.01) / 256.0;
-    double d4 = ((double)(n2 + 16) - block.maxY * 16.0) / 256.0;
-    double d5 = ((double)(n2 + 16) - block.minY * 16.0 - 0.01) / 256.0;
+    texture = ctx_.resolveTexture(2, texture);
+    int texU = (texture & 0xF) << 4;
+    int texV = texture & 0xF0;
+    double uMax = ((double)texU + block.minX * 16.0) / 256.0;
+    double vMin = ((double)texU + block.maxX * 16.0 - 0.01) / 256.0;
+    double vMax = ((double)(texV + 16) - block.maxY * 16.0) / 256.0;
+    double uCornerA = ((double)(texV + 16) - block.minY * 16.0 - 0.01) / 256.0;
     if (ctx_.flipTextureHorizontally) {
-        d = d2;
-        d2 = d3;
-        d3 = d;
+        uMin = uMax;
+        uMax = vMin;
+        vMin = uMin;
     }
     if (block.minX < 0.0 || block.maxX > 1.0) {
-        d2 = ((float)n + 0.0f) / 256.0f;
-        d3 = ((float)n + 15.99f) / 256.0f;
+        uMax = ((float)texU + 0.0f) / 256.0f;
+        vMin = ((float)texU + 15.99f) / 256.0f;
     }
     if (block.minY < 0.0 || block.maxY > 1.0) {
-        d4 = ((float)n2 + 0.0f) / 256.0f;
-        d5 = ((float)n2 + 15.99f) / 256.0f;
+        vMax = ((float)texV + 0.0f) / 256.0f;
+        uCornerA = ((float)texV + 15.99f) / 256.0f;
     }
-    d = d3;
-    double d6 = d2;
-    double d7 = d4;
-    double d8 = d5;
+    uMin = vMin;
+    double uCornerB = uMax;
+    double vCornerA = vMax;
+    double vCornerB = uCornerA;
     if (ctx_.eastFaceRotation == 2) {
-        d2 = ((double)n + block.minY * 16.0) / 256.0;
-        d4 = ((double)(n2 + 16) - block.minX * 16.0) / 256.0;
-        d3 = ((double)n + block.maxY * 16.0) / 256.0;
-        d5 = ((double)(n2 + 16) - block.maxX * 16.0) / 256.0;
-        d = d3;
-        d6 = d2;
-        d7 = d4;
-        d8 = d5;
-        d = d2;
-        d6 = d3;
-        d4 = d5;
-        d5 = d7;
+        uMax = ((double)texU + block.minY * 16.0) / 256.0;
+        vMax = ((double)(texV + 16) - block.minX * 16.0) / 256.0;
+        vMin = ((double)texU + block.maxY * 16.0) / 256.0;
+        uCornerA = ((double)(texV + 16) - block.maxX * 16.0) / 256.0;
+        uMin = vMin;
+        uCornerB = uMax;
+        vCornerA = vMax;
+        vCornerB = uCornerA;
+        uMin = uMax;
+        uCornerB = vMin;
+        vMax = uCornerA;
+        uCornerA = vCornerA;
     } else if (ctx_.eastFaceRotation == 1) {
-        d2 = ((double)(n + 16) - block.maxY * 16.0) / 256.0;
-        d4 = ((double)n2 + block.maxX * 16.0) / 256.0;
-        d3 = ((double)(n + 16) - block.minY * 16.0) / 256.0;
-        d5 = ((double)n2 + block.minX * 16.0) / 256.0;
-        d = d3;
-        d6 = d2;
-        d7 = d4;
-        d8 = d5;
-        d2 = d;
-        d3 = d6;
-        d7 = d5;
-        d8 = d4;
+        uMax = ((double)(texU + 16) - block.maxY * 16.0) / 256.0;
+        vMax = ((double)texV + block.maxX * 16.0) / 256.0;
+        vMin = ((double)(texU + 16) - block.minY * 16.0) / 256.0;
+        uCornerA = ((double)texV + block.minX * 16.0) / 256.0;
+        uMin = vMin;
+        uCornerB = uMax;
+        vCornerA = vMax;
+        vCornerB = uCornerA;
+        uMax = uMin;
+        vMin = uCornerB;
+        vCornerA = uCornerA;
+        vCornerB = vMax;
     } else if (ctx_.eastFaceRotation == 3) {
-        d2 = ((double)(n + 16) - block.minX * 16.0) / 256.0;
-        d3 = ((double)(n + 16) - block.maxX * 16.0 - 0.01) / 256.0;
-        d4 = ((double)n2 + block.maxY * 16.0) / 256.0;
-        d5 = ((double)n2 + block.minY * 16.0 - 0.01) / 256.0;
-        d = d3;
-        d6 = d2;
-        d7 = d4;
-        d8 = d5;
+        uMax = ((double)(texU + 16) - block.minX * 16.0) / 256.0;
+        vMin = ((double)(texU + 16) - block.maxX * 16.0 - 0.01) / 256.0;
+        vMax = ((double)texV + block.maxY * 16.0) / 256.0;
+        uCornerA = ((double)texV + block.minY * 16.0 - 0.01) / 256.0;
+        uMin = vMin;
+        uCornerB = uMax;
+        vCornerA = vMax;
+        vCornerB = uCornerA;
     }
-    double d9 = x + block.minX;
-    double d10 = x + block.maxX;
-    double d11 = y + block.minY;
-    double d12 = y + block.maxY;
-    double d13 = z + block.minZ;
+    const double xMin = x + block.minX;
+    const double xMax = x + block.maxX;
+    const double yMin = y + block.minY;
+    const double yMax = y + block.maxY;
+    const double zCoord = z + block.minZ;
     if (ctx_.faceState.useAo) {
         tessellator.color(ctx_.faceState.colors.red[0], ctx_.faceState.colors.green[0], ctx_.faceState.colors.blue[0]);
-        tessellator.vertex(d9, d12, d13, d, d7);
+        tessellator.vertex(xMin, yMax, zCoord, uMin, vCornerA);
         tessellator.color(ctx_.faceState.colors.red[1], ctx_.faceState.colors.green[1], ctx_.faceState.colors.blue[1]);
-        tessellator.vertex(d10, d12, d13, d2, d4);
+        tessellator.vertex(xMax, yMax, zCoord, uMax, vMax);
         tessellator.color(ctx_.faceState.colors.red[2], ctx_.faceState.colors.green[2], ctx_.faceState.colors.blue[2]);
-        tessellator.vertex(d10, d11, d13, d6, d8);
+        tessellator.vertex(xMax, yMin, zCoord, uCornerB, vCornerB);
         tessellator.color(ctx_.faceState.colors.red[3], ctx_.faceState.colors.green[3], ctx_.faceState.colors.blue[3]);
-        tessellator.vertex(d9, d11, d13, d3, d5);
+        tessellator.vertex(xMin, yMin, zCoord, vMin, uCornerA);
     } else {
-        tessellator.vertex(d9, d12, d13, d, d7);
-        tessellator.vertex(d10, d12, d13, d2, d4);
-        tessellator.vertex(d10, d11, d13, d6, d8);
-        tessellator.vertex(d9, d11, d13, d3, d5);
+        tessellator.vertex(xMin, yMax, zCoord, uMin, vCornerA);
+        tessellator.vertex(xMax, yMax, zCoord, uMax, vMax);
+        tessellator.vertex(xMax, yMin, zCoord, uCornerB, vCornerB);
+        tessellator.vertex(xMin, yMin, zCoord, vMin, uCornerA);
     }
 }
 
 void BlockFaceRenderer::renderWestFace(net::minecraft::block::Block& block, double x, double y, double z, int texture)
 {
-    double d;
+    double uMin;
     Tessellator& tessellator = Tessellator::INSTANCE;
-    if (ctx_.textureOverride >= 0) {
-        texture = ctx_.textureOverride;
-    }
-    int n = (texture & 0xF) << 4;
-    int n2 = texture & 0xF0;
-    double d2 = ((double)n + block.minX * 16.0) / 256.0;
-    double d3 = ((double)n + block.maxX * 16.0 - 0.01) / 256.0;
-    double d4 = ((double)(n2 + 16) - block.maxY * 16.0) / 256.0;
-    double d5 = ((double)(n2 + 16) - block.minY * 16.0 - 0.01) / 256.0;
+    texture = ctx_.resolveTexture(3, texture);
+    int texU = (texture & 0xF) << 4;
+    int texV = texture & 0xF0;
+    double uMax = ((double)texU + block.minX * 16.0) / 256.0;
+    double vMin = ((double)texU + block.maxX * 16.0 - 0.01) / 256.0;
+    double vMax = ((double)(texV + 16) - block.maxY * 16.0) / 256.0;
+    double uCornerA = ((double)(texV + 16) - block.minY * 16.0 - 0.01) / 256.0;
     if (ctx_.flipTextureHorizontally) {
-        d = d2;
-        d2 = d3;
-        d3 = d;
+        uMin = uMax;
+        uMax = vMin;
+        vMin = uMin;
     }
     if (block.minX < 0.0 || block.maxX > 1.0) {
-        d2 = ((float)n + 0.0f) / 256.0f;
-        d3 = ((float)n + 15.99f) / 256.0f;
+        uMax = ((float)texU + 0.0f) / 256.0f;
+        vMin = ((float)texU + 15.99f) / 256.0f;
     }
     if (block.minY < 0.0 || block.maxY > 1.0) {
-        d4 = ((float)n2 + 0.0f) / 256.0f;
-        d5 = ((float)n2 + 15.99f) / 256.0f;
+        vMax = ((float)texV + 0.0f) / 256.0f;
+        uCornerA = ((float)texV + 15.99f) / 256.0f;
     }
-    d = d3;
-    double d6 = d2;
-    double d7 = d4;
-    double d8 = d5;
+    uMin = vMin;
+    double uCornerB = uMax;
+    double vCornerA = vMax;
+    double vCornerB = uCornerA;
     if (ctx_.westFaceRotation == 1) {
-        d2 = ((double)n + block.minY * 16.0) / 256.0;
-        d5 = ((double)(n2 + 16) - block.minX * 16.0) / 256.0;
-        d3 = ((double)n + block.maxY * 16.0) / 256.0;
-        d4 = ((double)(n2 + 16) - block.maxX * 16.0) / 256.0;
-        d = d3;
-        d6 = d2;
-        d7 = d4;
-        d8 = d5;
-        d = d2;
-        d6 = d3;
-        d4 = d5;
-        d5 = d7;
+        uMax = ((double)texU + block.minY * 16.0) / 256.0;
+        uCornerA = ((double)(texV + 16) - block.minX * 16.0) / 256.0;
+        vMin = ((double)texU + block.maxY * 16.0) / 256.0;
+        vMax = ((double)(texV + 16) - block.maxX * 16.0) / 256.0;
+        uMin = vMin;
+        uCornerB = uMax;
+        vCornerA = vMax;
+        vCornerB = uCornerA;
+        uMin = uMax;
+        uCornerB = vMin;
+        vMax = uCornerA;
+        uCornerA = vCornerA;
     } else if (ctx_.westFaceRotation == 2) {
-        d2 = ((double)(n + 16) - block.maxY * 16.0) / 256.0;
-        d4 = ((double)n2 + block.minX * 16.0) / 256.0;
-        d3 = ((double)(n + 16) - block.minY * 16.0) / 256.0;
-        d5 = ((double)n2 + block.maxX * 16.0) / 256.0;
-        d = d3;
-        d6 = d2;
-        d7 = d4;
-        d8 = d5;
-        d2 = d;
-        d3 = d6;
-        d7 = d5;
-        d8 = d4;
+        uMax = ((double)(texU + 16) - block.maxY * 16.0) / 256.0;
+        vMax = ((double)texV + block.minX * 16.0) / 256.0;
+        vMin = ((double)(texU + 16) - block.minY * 16.0) / 256.0;
+        uCornerA = ((double)texV + block.maxX * 16.0) / 256.0;
+        uMin = vMin;
+        uCornerB = uMax;
+        vCornerA = vMax;
+        vCornerB = uCornerA;
+        uMax = uMin;
+        vMin = uCornerB;
+        vCornerA = uCornerA;
+        vCornerB = vMax;
     } else if (ctx_.westFaceRotation == 3) {
-        d2 = ((double)(n + 16) - block.minX * 16.0) / 256.0;
-        d3 = ((double)(n + 16) - block.maxX * 16.0 - 0.01) / 256.0;
-        d4 = ((double)n2 + block.maxY * 16.0) / 256.0;
-        d5 = ((double)n2 + block.minY * 16.0 - 0.01) / 256.0;
-        d = d3;
-        d6 = d2;
-        d7 = d4;
-        d8 = d5;
+        uMax = ((double)(texU + 16) - block.minX * 16.0) / 256.0;
+        vMin = ((double)(texU + 16) - block.maxX * 16.0 - 0.01) / 256.0;
+        vMax = ((double)texV + block.maxY * 16.0) / 256.0;
+        uCornerA = ((double)texV + block.minY * 16.0 - 0.01) / 256.0;
+        uMin = vMin;
+        uCornerB = uMax;
+        vCornerA = vMax;
+        vCornerB = uCornerA;
     }
-    double d9 = x + block.minX;
-    double d10 = x + block.maxX;
-    double d11 = y + block.minY;
-    double d12 = y + block.maxY;
-    double d13 = z + block.maxZ;
+    const double xMin = x + block.minX;
+    const double xMax = x + block.maxX;
+    const double yMin = y + block.minY;
+    const double yMax = y + block.maxY;
+    const double zCoord = z + block.maxZ;
     if (ctx_.faceState.useAo) {
         tessellator.color(ctx_.faceState.colors.red[0], ctx_.faceState.colors.green[0], ctx_.faceState.colors.blue[0]);
-        tessellator.vertex(d9, d12, d13, d2, d4);
+        tessellator.vertex(xMin, yMax, zCoord, uMax, vMax);
         tessellator.color(ctx_.faceState.colors.red[1], ctx_.faceState.colors.green[1], ctx_.faceState.colors.blue[1]);
-        tessellator.vertex(d9, d11, d13, d6, d8);
+        tessellator.vertex(xMin, yMin, zCoord, uCornerB, vCornerB);
         tessellator.color(ctx_.faceState.colors.red[2], ctx_.faceState.colors.green[2], ctx_.faceState.colors.blue[2]);
-        tessellator.vertex(d10, d11, d13, d3, d5);
+        tessellator.vertex(xMax, yMin, zCoord, vMin, uCornerA);
         tessellator.color(ctx_.faceState.colors.red[3], ctx_.faceState.colors.green[3], ctx_.faceState.colors.blue[3]);
-        tessellator.vertex(d10, d12, d13, d, d7);
+        tessellator.vertex(xMax, yMax, zCoord, uMin, vCornerA);
     } else {
-        tessellator.vertex(d9, d12, d13, d2, d4);
-        tessellator.vertex(d9, d11, d13, d6, d8);
-        tessellator.vertex(d10, d11, d13, d3, d5);
-        tessellator.vertex(d10, d12, d13, d, d7);
+        tessellator.vertex(xMin, yMax, zCoord, uMax, vMax);
+        tessellator.vertex(xMin, yMin, zCoord, uCornerB, vCornerB);
+        tessellator.vertex(xMax, yMin, zCoord, vMin, uCornerA);
+        tessellator.vertex(xMax, yMax, zCoord, uMin, vCornerA);
     }
 }
 
 void BlockFaceRenderer::renderNorthFace(net::minecraft::block::Block& block, double x, double y, double z, int texture)
 {
-    double d;
+    double uMin;
     Tessellator& tessellator = Tessellator::INSTANCE;
-    if (ctx_.textureOverride >= 0) {
-        texture = ctx_.textureOverride;
-    }
-    int n = (texture & 0xF) << 4;
-    int n2 = texture & 0xF0;
-    double d2 = ((double)n + block.minZ * 16.0) / 256.0;
-    double d3 = ((double)n + block.maxZ * 16.0 - 0.01) / 256.0;
-    double d4 = ((double)(n2 + 16) - block.maxY * 16.0) / 256.0;
-    double d5 = ((double)(n2 + 16) - block.minY * 16.0 - 0.01) / 256.0;
+    texture = ctx_.resolveTexture(4, texture);
+    int texU = (texture & 0xF) << 4;
+    int texV = texture & 0xF0;
+    double uMax = ((double)texU + block.minZ * 16.0) / 256.0;
+    double vMin = ((double)texU + block.maxZ * 16.0 - 0.01) / 256.0;
+    double vMax = ((double)(texV + 16) - block.maxY * 16.0) / 256.0;
+    double uCornerA = ((double)(texV + 16) - block.minY * 16.0 - 0.01) / 256.0;
     if (ctx_.flipTextureHorizontally) {
-        d = d2;
-        d2 = d3;
-        d3 = d;
+        uMin = uMax;
+        uMax = vMin;
+        vMin = uMin;
     }
     if (block.minZ < 0.0 || block.maxZ > 1.0) {
-        d2 = ((float)n + 0.0f) / 256.0f;
-        d3 = ((float)n + 15.99f) / 256.0f;
+        uMax = ((float)texU + 0.0f) / 256.0f;
+        vMin = ((float)texU + 15.99f) / 256.0f;
     }
     if (block.minY < 0.0 || block.maxY > 1.0) {
-        d4 = ((float)n2 + 0.0f) / 256.0f;
-        d5 = ((float)n2 + 15.99f) / 256.0f;
+        vMax = ((float)texV + 0.0f) / 256.0f;
+        uCornerA = ((float)texV + 15.99f) / 256.0f;
     }
-    d = d3;
-    double d6 = d2;
-    double d7 = d4;
-    double d8 = d5;
+    uMin = vMin;
+    double uCornerB = uMax;
+    double vCornerA = vMax;
+    double vCornerB = uCornerA;
     if (ctx_.northFaceRotation == 1) {
-        d2 = ((double)n + block.minY * 16.0) / 256.0;
-        d4 = ((double)(n2 + 16) - block.maxZ * 16.0) / 256.0;
-        d3 = ((double)n + block.maxY * 16.0) / 256.0;
-        d5 = ((double)(n2 + 16) - block.minZ * 16.0) / 256.0;
-        d = d3;
-        d6 = d2;
-        d7 = d4;
-        d8 = d5;
-        d = d2;
-        d6 = d3;
-        d4 = d5;
-        d5 = d7;
+        uMax = ((double)texU + block.minY * 16.0) / 256.0;
+        vMax = ((double)(texV + 16) - block.maxZ * 16.0) / 256.0;
+        vMin = ((double)texU + block.maxY * 16.0) / 256.0;
+        uCornerA = ((double)(texV + 16) - block.minZ * 16.0) / 256.0;
+        uMin = vMin;
+        uCornerB = uMax;
+        vCornerA = vMax;
+        vCornerB = uCornerA;
+        uMin = uMax;
+        uCornerB = vMin;
+        vMax = uCornerA;
+        uCornerA = vCornerA;
     } else if (ctx_.northFaceRotation == 2) {
-        d2 = ((double)(n + 16) - block.maxY * 16.0) / 256.0;
-        d4 = ((double)n2 + block.minZ * 16.0) / 256.0;
-        d3 = ((double)(n + 16) - block.minY * 16.0) / 256.0;
-        d5 = ((double)n2 + block.maxZ * 16.0) / 256.0;
-        d = d3;
-        d6 = d2;
-        d7 = d4;
-        d8 = d5;
-        d2 = d;
-        d3 = d6;
-        d7 = d5;
-        d8 = d4;
+        uMax = ((double)(texU + 16) - block.maxY * 16.0) / 256.0;
+        vMax = ((double)texV + block.minZ * 16.0) / 256.0;
+        vMin = ((double)(texU + 16) - block.minY * 16.0) / 256.0;
+        uCornerA = ((double)texV + block.maxZ * 16.0) / 256.0;
+        uMin = vMin;
+        uCornerB = uMax;
+        vCornerA = vMax;
+        vCornerB = uCornerA;
+        uMax = uMin;
+        vMin = uCornerB;
+        vCornerA = uCornerA;
+        vCornerB = vMax;
     } else if (ctx_.northFaceRotation == 3) {
-        d2 = ((double)(n + 16) - block.minZ * 16.0) / 256.0;
-        d3 = ((double)(n + 16) - block.maxZ * 16.0 - 0.01) / 256.0;
-        d4 = ((double)n2 + block.maxY * 16.0) / 256.0;
-        d5 = ((double)n2 + block.minY * 16.0 - 0.01) / 256.0;
-        d = d3;
-        d6 = d2;
-        d7 = d4;
-        d8 = d5;
+        uMax = ((double)(texU + 16) - block.minZ * 16.0) / 256.0;
+        vMin = ((double)(texU + 16) - block.maxZ * 16.0 - 0.01) / 256.0;
+        vMax = ((double)texV + block.maxY * 16.0) / 256.0;
+        uCornerA = ((double)texV + block.minY * 16.0 - 0.01) / 256.0;
+        uMin = vMin;
+        uCornerB = uMax;
+        vCornerA = vMax;
+        vCornerB = uCornerA;
     }
-    double d9 = x + block.minX;
-    double d10 = y + block.minY;
-    double d11 = y + block.maxY;
-    double d12 = z + block.minZ;
-    double d13 = z + block.maxZ;
+    const double xCoord = x + block.minX;
+    const double yMin = y + block.minY;
+    const double yMax = y + block.maxY;
+    const double zMin = z + block.minZ;
+    const double zMax = z + block.maxZ;
     if (ctx_.faceState.useAo) {
         tessellator.color(ctx_.faceState.colors.red[0], ctx_.faceState.colors.green[0], ctx_.faceState.colors.blue[0]);
-        tessellator.vertex(d9, d11, d13, d, d7);
+        tessellator.vertex(xCoord, yMax, zMax, uMin, vCornerA);
         tessellator.color(ctx_.faceState.colors.red[1], ctx_.faceState.colors.green[1], ctx_.faceState.colors.blue[1]);
-        tessellator.vertex(d9, d11, d12, d2, d4);
+        tessellator.vertex(xCoord, yMax, zMin, uMax, vMax);
         tessellator.color(ctx_.faceState.colors.red[2], ctx_.faceState.colors.green[2], ctx_.faceState.colors.blue[2]);
-        tessellator.vertex(d9, d10, d12, d6, d8);
+        tessellator.vertex(xCoord, yMin, zMin, uCornerB, vCornerB);
         tessellator.color(ctx_.faceState.colors.red[3], ctx_.faceState.colors.green[3], ctx_.faceState.colors.blue[3]);
-        tessellator.vertex(d9, d10, d13, d3, d5);
+        tessellator.vertex(xCoord, yMin, zMax, vMin, uCornerA);
     } else {
-        tessellator.vertex(d9, d11, d13, d, d7);
-        tessellator.vertex(d9, d11, d12, d2, d4);
-        tessellator.vertex(d9, d10, d12, d6, d8);
-        tessellator.vertex(d9, d10, d13, d3, d5);
+        tessellator.vertex(xCoord, yMax, zMax, uMin, vCornerA);
+        tessellator.vertex(xCoord, yMax, zMin, uMax, vMax);
+        tessellator.vertex(xCoord, yMin, zMin, uCornerB, vCornerB);
+        tessellator.vertex(xCoord, yMin, zMax, vMin, uCornerA);
     }
 }
 
 void BlockFaceRenderer::renderSouthFace(net::minecraft::block::Block& block, double x, double y, double z, int texture)
 {
-    double d;
+    double uMin;
     Tessellator& tessellator = Tessellator::INSTANCE;
-    if (ctx_.textureOverride >= 0) {
-        texture = ctx_.textureOverride;
-    }
-    int n = (texture & 0xF) << 4;
-    int n2 = texture & 0xF0;
-    double d2 = ((double)n + block.minZ * 16.0) / 256.0;
-    double d3 = ((double)n + block.maxZ * 16.0 - 0.01) / 256.0;
-    double d4 = ((double)(n2 + 16) - block.maxY * 16.0) / 256.0;
-    double d5 = ((double)(n2 + 16) - block.minY * 16.0 - 0.01) / 256.0;
+    texture = ctx_.resolveTexture(5, texture);
+    int texU = (texture & 0xF) << 4;
+    int texV = texture & 0xF0;
+    double uMax = ((double)texU + block.minZ * 16.0) / 256.0;
+    double vMin = ((double)texU + block.maxZ * 16.0 - 0.01) / 256.0;
+    double vMax = ((double)(texV + 16) - block.maxY * 16.0) / 256.0;
+    double uCornerA = ((double)(texV + 16) - block.minY * 16.0 - 0.01) / 256.0;
     if (ctx_.flipTextureHorizontally) {
-        d = d2;
-        d2 = d3;
-        d3 = d;
+        uMin = uMax;
+        uMax = vMin;
+        vMin = uMin;
     }
     if (block.minZ < 0.0 || block.maxZ > 1.0) {
-        d2 = ((float)n + 0.0f) / 256.0f;
-        d3 = ((float)n + 15.99f) / 256.0f;
+        uMax = ((float)texU + 0.0f) / 256.0f;
+        vMin = ((float)texU + 15.99f) / 256.0f;
     }
     if (block.minY < 0.0 || block.maxY > 1.0) {
-        d4 = ((float)n2 + 0.0f) / 256.0f;
-        d5 = ((float)n2 + 15.99f) / 256.0f;
+        vMax = ((float)texV + 0.0f) / 256.0f;
+        uCornerA = ((float)texV + 15.99f) / 256.0f;
     }
-    d = d3;
-    double d6 = d2;
-    double d7 = d4;
-    double d8 = d5;
+    uMin = vMin;
+    double uCornerB = uMax;
+    double vCornerA = vMax;
+    double vCornerB = uCornerA;
     if (ctx_.southFaceRotation == 2) {
-        d2 = ((double)n + block.minY * 16.0) / 256.0;
-        d4 = ((double)(n2 + 16) - block.minZ * 16.0) / 256.0;
-        d3 = ((double)n + block.maxY * 16.0) / 256.0;
-        d5 = ((double)(n2 + 16) - block.maxZ * 16.0) / 256.0;
-        d = d3;
-        d6 = d2;
-        d7 = d4;
-        d8 = d5;
-        d = d2;
-        d6 = d3;
-        d4 = d5;
-        d5 = d7;
+        uMax = ((double)texU + block.minY * 16.0) / 256.0;
+        vMax = ((double)(texV + 16) - block.minZ * 16.0) / 256.0;
+        vMin = ((double)texU + block.maxY * 16.0) / 256.0;
+        uCornerA = ((double)(texV + 16) - block.maxZ * 16.0) / 256.0;
+        uMin = vMin;
+        uCornerB = uMax;
+        vCornerA = vMax;
+        vCornerB = uCornerA;
+        uMin = uMax;
+        uCornerB = vMin;
+        vMax = uCornerA;
+        uCornerA = vCornerA;
     } else if (ctx_.southFaceRotation == 1) {
-        d2 = ((double)(n + 16) - block.maxY * 16.0) / 256.0;
-        d4 = ((double)n2 + block.maxZ * 16.0) / 256.0;
-        d3 = ((double)(n + 16) - block.minY * 16.0) / 256.0;
-        d5 = ((double)n2 + block.minZ * 16.0) / 256.0;
-        d = d3;
-        d6 = d2;
-        d7 = d4;
-        d8 = d5;
-        d2 = d;
-        d3 = d6;
-        d7 = d5;
-        d8 = d4;
+        uMax = ((double)(texU + 16) - block.maxY * 16.0) / 256.0;
+        vMax = ((double)texV + block.maxZ * 16.0) / 256.0;
+        vMin = ((double)(texU + 16) - block.minY * 16.0) / 256.0;
+        uCornerA = ((double)texV + block.minZ * 16.0) / 256.0;
+        uMin = vMin;
+        uCornerB = uMax;
+        vCornerA = vMax;
+        vCornerB = uCornerA;
+        uMax = uMin;
+        vMin = uCornerB;
+        vCornerA = uCornerA;
+        vCornerB = vMax;
     } else if (ctx_.southFaceRotation == 3) {
-        d2 = ((double)(n + 16) - block.minZ * 16.0) / 256.0;
-        d3 = ((double)(n + 16) - block.maxZ * 16.0 - 0.01) / 256.0;
-        d4 = ((double)n2 + block.maxY * 16.0) / 256.0;
-        d5 = ((double)n2 + block.minY * 16.0 - 0.01) / 256.0;
-        d = d3;
-        d6 = d2;
-        d7 = d4;
-        d8 = d5;
+        uMax = ((double)(texU + 16) - block.minZ * 16.0) / 256.0;
+        vMin = ((double)(texU + 16) - block.maxZ * 16.0 - 0.01) / 256.0;
+        vMax = ((double)texV + block.maxY * 16.0) / 256.0;
+        uCornerA = ((double)texV + block.minY * 16.0 - 0.01) / 256.0;
+        uMin = vMin;
+        uCornerB = uMax;
+        vCornerA = vMax;
+        vCornerB = uCornerA;
     }
-    double d9 = x + block.maxX;
-    double d10 = y + block.minY;
-    double d11 = y + block.maxY;
-    double d12 = z + block.minZ;
-    double d13 = z + block.maxZ;
+    const double xCoord = x + block.maxX;
+    const double yMin = y + block.minY;
+    const double yMax = y + block.maxY;
+    const double zMin = z + block.minZ;
+    const double zMax = z + block.maxZ;
     if (ctx_.faceState.useAo) {
         tessellator.color(ctx_.faceState.colors.red[0], ctx_.faceState.colors.green[0], ctx_.faceState.colors.blue[0]);
-        tessellator.vertex(d9, d10, d13, d6, d8);
+        tessellator.vertex(xCoord, yMin, zMax, uCornerB, vCornerB);
         tessellator.color(ctx_.faceState.colors.red[1], ctx_.faceState.colors.green[1], ctx_.faceState.colors.blue[1]);
-        tessellator.vertex(d9, d10, d12, d3, d5);
+        tessellator.vertex(xCoord, yMin, zMin, vMin, uCornerA);
         tessellator.color(ctx_.faceState.colors.red[2], ctx_.faceState.colors.green[2], ctx_.faceState.colors.blue[2]);
-        tessellator.vertex(d9, d11, d12, d, d7);
+        tessellator.vertex(xCoord, yMax, zMin, uMin, vCornerA);
         tessellator.color(ctx_.faceState.colors.red[3], ctx_.faceState.colors.green[3], ctx_.faceState.colors.blue[3]);
-        tessellator.vertex(d9, d11, d13, d2, d4);
+        tessellator.vertex(xCoord, yMax, zMax, uMax, vMax);
     } else {
-        tessellator.vertex(d9, d10, d13, d6, d8);
-        tessellator.vertex(d9, d10, d12, d3, d5);
-        tessellator.vertex(d9, d11, d12, d, d7);
-        tessellator.vertex(d9, d11, d13, d2, d4);
+        tessellator.vertex(xCoord, yMin, zMax, uCornerB, vCornerB);
+        tessellator.vertex(xCoord, yMin, zMin, vMin, uCornerA);
+        tessellator.vertex(xCoord, yMax, zMin, uMin, vCornerA);
+        tessellator.vertex(xCoord, yMax, zMax, uMax, vMax);
     }
 }
 

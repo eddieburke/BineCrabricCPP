@@ -11,144 +11,137 @@ namespace net::minecraft::client::render::block {
 bool BedBlockRenderer::render(net::minecraft::block::Block& block, int x, int y, int z)
 {
     Tessellator& tessellator = render::INSTANCE;
-    int n = ctx_.blockView->getBlockMeta(x, y, z);
-    int n2 = net::minecraft::block::BedBlock::getDirection(n);
-    bool bl = net::minecraft::block::BedBlock::isHeadOfBed(n);
-    float f = 0.5f;
-    float f2 = 1.0f;
-    float f3 = 0.8f;
-    float f4 = 0.6f;
-    float f5 = f2;
-    float f6 = f2;
-    float f7 = f2;
-    float f8 = f;
-    float f9 = f3;
-    float f10 = f4;
-    float f11 = f;
-    float f12 = f3;
-    float f13 = f4;
-    float f14 = f;
-    float f15 = f3;
-    float f16 = f4;
-    float f17 = block.getLuminance(ctx_.blockView, x, y, z);
-    tessellator.color(f8 * f17, f11 * f17, f14 * f17);
-    int n3 = block.getTextureId(ctx_.blockView, x, y, z, 0);
-    int n4 = (n3 & 0xF) << 4;
-    int n5 = n3 & 0xF0;
-    double d = (float)n4 / 256.0f;
-    double d2 = ((double)(n4 + 16) - 0.01) / 256.0;
-    double d3 = (float)n5 / 256.0f;
-    double d4 = ((double)(n5 + 16) - 0.01) / 256.0;
-    double d5 = (double)x + block.minX;
-    double d6 = (double)x + block.maxX;
-    double d7 = (double)y + block.minY + 0.1875;
-    double d8 = (double)z + block.minZ;
-    double d9 = (double)z + block.maxZ;
-    tessellator.vertex(d5, d7, d9, d, d4);
-    tessellator.vertex(d5, d7, d8, d, d3);
-    tessellator.vertex(d6, d7, d8, d2, d3);
-    tessellator.vertex(d6, d7, d9, d2, d4);
-    float f18 = block.getLuminance(ctx_.blockView, x, y + 1, z);
-    tessellator.color(f5 * f18, f6 * f18, f7 * f18);
-    n4 = block.getTextureId(ctx_.blockView, x, y, z, 1);
-    n5 = (n4 & 0xF) << 4;
-    int n6 = n4 & 0xF0;
-    double d10 = (float)n5 / 256.0f;
-    double d11 = ((double)(n5 + 16) - 0.01) / 256.0;
-    double d12 = (float)n6 / 256.0f;
-    double d13 = ((double)(n6 + 16) - 0.01) / 256.0;
-    double d14 = d10;
-    double d15 = d11;
-    double d16 = d12;
-    double d17 = d12;
-    double d18 = d10;
-    double d19 = d11;
-    double d20 = d13;
-    double d21 = d13;
-    if (n2 == 0) {
-        d15 = d10;
-        d16 = d13;
-        d18 = d11;
-        d21 = d12;
-    } else if (n2 == 2) {
-        d14 = d11;
-        d17 = d13;
-        d19 = d10;
-        d20 = d12;
-    } else if (n2 == 3) {
-        d14 = d11;
-        d17 = d13;
-        d19 = d10;
-        d20 = d12;
-        d15 = d10;
-        d16 = d13;
-        d18 = d11;
-        d21 = d12;
+    ctx_.textureOverride = -1;
+    ctx_.faceTextureOverride = -1;
+    ctx_.flipTextureHorizontally = false;
+    const int blockMeta = ctx_.blockView->getBlockMeta(x, y, z);
+    const int direction = net::minecraft::block::BedBlock::getDirection(blockMeta);
+    const bool isHead = net::minecraft::block::BedBlock::isHeadOfBed(blockMeta);
+    constexpr float shadeBottom = 0.5f;
+    constexpr float shadeTop = 1.0f;
+    constexpr float shadeNorthSouth = 0.8f;
+    constexpr float shadeEastWest = 0.6f;
+    const float baseBrightness = block.getLuminance(ctx_.blockView, x, y, z);
+    tessellator.color(shadeBottom * baseBrightness, shadeBottom * baseBrightness, shadeBottom * baseBrightness);
+
+    const int footTexture = block.getTexture(0, blockMeta);
+    const int footTexU = net::minecraft::block::Block::textureAtlasU(footTexture);
+    const int footTexV = net::minecraft::block::Block::textureAtlasV(footTexture);
+    const double footUvMin = static_cast<double>(footTexU) / 256.0;
+    const double footUvMax = (static_cast<double>(footTexU + 16) - 0.01) / 256.0;
+    const double footVvMin = static_cast<double>(footTexV) / 256.0;
+    const double footVvMax = (static_cast<double>(footTexV + 16) - 0.01) / 256.0;
+    const double footX0 = static_cast<double>(x) + block.minX;
+    const double footX1 = static_cast<double>(x) + block.maxX;
+    const double footY = static_cast<double>(y) + block.minY + 0.1875;
+    const double footZ0 = static_cast<double>(z) + block.minZ;
+    const double footZ1 = static_cast<double>(z) + block.maxZ;
+    tessellator.vertex(footX0, footY, footZ1, footUvMin, footVvMax);
+    tessellator.vertex(footX0, footY, footZ0, footUvMin, footVvMin);
+    tessellator.vertex(footX1, footY, footZ0, footUvMax, footVvMin);
+    tessellator.vertex(footX1, footY, footZ1, footUvMax, footVvMax);
+
+    const float topBrightness = block.getLuminance(ctx_.blockView, x, y + 1, z);
+    tessellator.color(shadeTop * topBrightness, shadeTop * topBrightness, shadeTop * topBrightness);
+    const int topTexture = block.getTexture(1, blockMeta);
+    const int topTexU = net::minecraft::block::Block::textureAtlasU(topTexture);
+    const int topTexV = net::minecraft::block::Block::textureAtlasV(topTexture);
+    double topUv00 = static_cast<double>(topTexU) / 256.0;
+    double topUv10 = (static_cast<double>(topTexU + 16) - 0.01) / 256.0;
+    double topUv01 = static_cast<double>(topTexV) / 256.0;
+    double topUv11 = (static_cast<double>(topTexV + 16) - 0.01) / 256.0;
+    double topUv20 = topUv00;
+    double topUv21 = topUv10;
+    double topUv30 = topUv01;
+    double topUv31 = topUv01;
+    double topUv40 = topUv00;
+    double topUv41 = topUv10;
+    double topUv50 = topUv11;
+    double topUv51 = topUv11;
+    if (direction == 0) {
+        topUv21 = topUv00;
+        topUv30 = topUv11;
+        topUv40 = topUv10;
+        topUv51 = topUv01;
+    } else if (direction == 2) {
+        topUv20 = topUv10;
+        topUv31 = topUv11;
+        topUv41 = topUv00;
+        topUv50 = topUv01;
+    } else if (direction == 3) {
+        topUv20 = topUv10;
+        topUv31 = topUv11;
+        topUv41 = topUv00;
+        topUv50 = topUv01;
+        topUv21 = topUv00;
+        topUv30 = topUv11;
+        topUv40 = topUv10;
+        topUv51 = topUv01;
     }
-    double d22 = (double)x + block.minX;
-    double d23 = (double)x + block.maxX;
-    double d24 = (double)y + block.maxY;
-    double d25 = (double)z + block.minZ;
-    double d26 = (double)z + block.maxZ;
-    tessellator.vertex(d23, d24, d26, d18, d20);
-    tessellator.vertex(d23, d24, d25, d14, d16);
-    tessellator.vertex(d22, d24, d25, d15, d17);
-    tessellator.vertex(d22, d24, d26, d19, d21);
-    int n7 = net::minecraft::util::math::Facings::TO_DIR[n2];
-    if (bl) {
-        n7 = net::minecraft::util::math::Facings::TO_DIR[net::minecraft::util::math::Facings::OPPOSITE[n2]];
+    const double topX0 = static_cast<double>(x) + block.minX;
+    const double topX1 = static_cast<double>(x) + block.maxX;
+    const double topY = static_cast<double>(y) + block.maxY;
+    const double topZ0 = static_cast<double>(z) + block.minZ;
+    const double topZ1 = static_cast<double>(z) + block.maxZ;
+    tessellator.vertex(topX1, topY, topZ1, topUv40, topUv50);
+    tessellator.vertex(topX1, topY, topZ0, topUv20, topUv30);
+    tessellator.vertex(topX0, topY, topZ0, topUv21, topUv31);
+    tessellator.vertex(topX0, topY, topZ1, topUv41, topUv51);
+
+    int skipFaceDir = net::minecraft::util::math::Facings::TO_DIR[direction];
+    if (isHead) {
+        skipFaceDir = net::minecraft::util::math::Facings::TO_DIR[net::minecraft::util::math::Facings::OPPOSITE[direction]];
     }
-    n4 = 4;
-    switch (n2) {
-    case 2: {
+    int sideFaceTex = 4;
+    switch (direction) {
+    case 2:
         break;
-    }
-    case 0: {
-        n4 = 5;
+    case 0:
+        sideFaceTex = 5;
         break;
-    }
-    case 3: {
-        n4 = 2;
+    case 3:
+        sideFaceTex = 2;
         break;
+    case 1:
+        sideFaceTex = 3;
+        break;
+  default:
+    break;
     }
-    case 1: {
-        n4 = 3;
-    }
-    }
-    if (n7 != 2 && (ctx_.skipFaceCulling || block.isSideVisible(ctx_.blockView, x, y, z - 1, 2))) {
-        float f19 = block.getLuminance(ctx_.blockView, x, y, z - 1);
+    if (skipFaceDir != 2 && (ctx_.skipFaceCulling || block.isSideVisible(ctx_.blockView, x, y, z - 1, 2))) {
+        float northBrightness = block.getLuminance(ctx_.blockView, x, y, z - 1);
         if (block.minZ > 0.0) {
-            f19 = f17;
+            northBrightness = baseBrightness;
         }
-        tessellator.color(f9 * f19, f12 * f19, f15 * f19);
-        ctx_.flipTextureHorizontally = n4 == 2;
+        tessellator.color(shadeNorthSouth * northBrightness, shadeNorthSouth * northBrightness, shadeNorthSouth * northBrightness);
+        ctx_.flipTextureHorizontally = sideFaceTex == 2;
         faces_.renderEastFace(block, x, y, z, block.getTextureId(ctx_.blockView, x, y, z, 2));
     }
-    if (n7 != 3 && (ctx_.skipFaceCulling || block.isSideVisible(ctx_.blockView, x, y, z + 1, 3))) {
-        float f20 = block.getLuminance(ctx_.blockView, x, y, z + 1);
+    if (skipFaceDir != 3 && (ctx_.skipFaceCulling || block.isSideVisible(ctx_.blockView, x, y, z + 1, 3))) {
+        float southBrightness = block.getLuminance(ctx_.blockView, x, y, z + 1);
         if (block.maxZ < 1.0) {
-            f20 = f17;
+            southBrightness = baseBrightness;
         }
-        tessellator.color(f9 * f20, f12 * f20, f15 * f20);
-        ctx_.flipTextureHorizontally = n4 == 3;
+        tessellator.color(shadeNorthSouth * southBrightness, shadeNorthSouth * southBrightness, shadeNorthSouth * southBrightness);
+        ctx_.flipTextureHorizontally = sideFaceTex == 3;
         faces_.renderWestFace(block, x, y, z, block.getTextureId(ctx_.blockView, x, y, z, 3));
     }
-    if (n7 != 4 && (ctx_.skipFaceCulling || block.isSideVisible(ctx_.blockView, x - 1, y, z, 4))) {
-        float f21 = block.getLuminance(ctx_.blockView, x - 1, y, z);
+    if (skipFaceDir != 4 && (ctx_.skipFaceCulling || block.isSideVisible(ctx_.blockView, x - 1, y, z, 4))) {
+        float westBrightness = block.getLuminance(ctx_.blockView, x - 1, y, z);
         if (block.minX > 0.0) {
-            f21 = f17;
+            westBrightness = baseBrightness;
         }
-        tessellator.color(f10 * f21, f13 * f21, f16 * f21);
-        ctx_.flipTextureHorizontally = n4 == 4;
+        tessellator.color(shadeEastWest * westBrightness, shadeEastWest * westBrightness, shadeEastWest * westBrightness);
+        ctx_.flipTextureHorizontally = sideFaceTex == 4;
         faces_.renderNorthFace(block, x, y, z, block.getTextureId(ctx_.blockView, x, y, z, 4));
     }
-    if (n7 != 5 && (ctx_.skipFaceCulling || block.isSideVisible(ctx_.blockView, x + 1, y, z, 5))) {
-        float f22 = block.getLuminance(ctx_.blockView, x + 1, y, z);
+    if (skipFaceDir != 5 && (ctx_.skipFaceCulling || block.isSideVisible(ctx_.blockView, x + 1, y, z, 5))) {
+        float eastBrightness = block.getLuminance(ctx_.blockView, x + 1, y, z);
         if (block.maxX < 1.0) {
-            f22 = f17;
+            eastBrightness = baseBrightness;
         }
-        tessellator.color(f10 * f22, f13 * f22, f16 * f22);
-        ctx_.flipTextureHorizontally = n4 == 5;
+        tessellator.color(shadeEastWest * eastBrightness, shadeEastWest * eastBrightness, shadeEastWest * eastBrightness);
+        ctx_.flipTextureHorizontally = sideFaceTex == 5;
         faces_.renderSouthFace(block, x, y, z, block.getTextureId(ctx_.blockView, x, y, z, 5));
     }
     ctx_.flipTextureHorizontally = false;

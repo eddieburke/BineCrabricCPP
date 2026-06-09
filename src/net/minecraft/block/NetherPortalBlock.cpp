@@ -1,3 +1,4 @@
+#include "net/minecraft/block/BlockRegistrar.hpp"
 #include "net/minecraft/block/NetherPortalBlock.hpp"
 
 #include "net/minecraft/block/Block.hpp"
@@ -187,5 +188,15 @@ void NetherPortalBlock::randomDisplayTick(
         world->addParticle("portal", px, py, pz, vx, vy, vz);
     }
 }
+namespace {
 
+void registerNetherPortalBlock()
+{
+    Block::NETHER_PORTAL = (new NetherPortalBlock(90, 14))->setHardness(-1.0f)->setSoundGroup(&vanillaGlassSound())->setLuminance(0.75f)->setTranslationKey("portal");
+}
+
+MINECRAFT_REGISTER_BLOCK(registerNetherPortalBlock, 90);
+
+} // namespace
 } // namespace net::minecraft::block
+

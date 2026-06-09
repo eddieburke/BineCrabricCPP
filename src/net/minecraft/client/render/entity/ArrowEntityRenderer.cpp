@@ -25,48 +25,48 @@ void ArrowEntityRenderer::render(const net::minecraft::Entity& entity, double x,
     gl::GL11::glRotatef(arrow->prevPitch + (arrow->pitch - arrow->prevPitch) * tickDelta, 0.0f, 0.0f, 1.0f);
 
     Tessellator& tessellator = Tessellator::INSTANCE;
-    constexpr int n = 0;
-    constexpr float f2 = 0.0f;
-    constexpr float f3 = 0.5f;
-    const float f4 = static_cast<float>(0 + n * 10) / 32.0f;
-    const float f5 = static_cast<float>(5 + n * 10) / 32.0f;
-    constexpr float f6 = 0.0f;
-    constexpr float f7 = 0.15625f;
-    const float f8 = static_cast<float>(5 + n * 10) / 32.0f;
-    const float f9 = static_cast<float>(10 + n * 10) / 32.0f;
-    constexpr float f10 = 0.05625f;
+    constexpr int arrowVariant = 0;
+    constexpr float shaftUMin = 0.0f;
+    constexpr float shaftUMax = 0.5f;
+    const float shaftVMin = static_cast<float>(0 + arrowVariant * 10) / 32.0f;
+    const float shaftVMax = static_cast<float>(5 + arrowVariant * 10) / 32.0f;
+    constexpr float headUMin = 0.0f;
+    constexpr float headUMax = 0.15625f;
+    const float headVMin = static_cast<float>(5 + arrowVariant * 10) / 32.0f;
+    const float headVMax = static_cast<float>(10 + arrowVariant * 10) / 32.0f;
+    constexpr float scale = 0.05625f;
 
     gl::GL11::glEnable(32826);
-    const float f11 = arrow->shake - tickDelta;
-    if (f11 > 0.0f) {
-        const float f12 = -MathHelper::sin(f11 * 3.0f) * f11;
-        gl::GL11::glRotatef(f12, 0.0f, 0.0f, 1.0f);
+    const float shake = arrow->shake - tickDelta;
+    if (shake > 0.0f) {
+        const float shakeAngle = -MathHelper::sin(shake * 3.0f) * shake;
+        gl::GL11::glRotatef(shakeAngle, 0.0f, 0.0f, 1.0f);
     }
     gl::GL11::glRotatef(45.0f, 1.0f, 0.0f, 0.0f);
-    gl::GL11::glScalef(f10, f10, f10);
+    gl::GL11::glScalef(scale, scale, scale);
     gl::GL11::glTranslatef(-4.0f, 0.0f, 0.0f);
-    gl::GL11::glNormal3f(f10, 0.0f, 0.0f);
+    gl::GL11::glNormal3f(scale, 0.0f, 0.0f);
     tessellator.startQuads();
-    tessellator.vertex(-7.0, -2.0, -2.0, f6, f8);
-    tessellator.vertex(-7.0, -2.0, 2.0, f7, f8);
-    tessellator.vertex(-7.0, 2.0, 2.0, f7, f9);
-    tessellator.vertex(-7.0, 2.0, -2.0, f6, f9);
+    tessellator.vertex(-7.0, -2.0, -2.0, headUMin, headVMin);
+    tessellator.vertex(-7.0, -2.0, 2.0, headUMax, headVMin);
+    tessellator.vertex(-7.0, 2.0, 2.0, headUMax, headVMax);
+    tessellator.vertex(-7.0, 2.0, -2.0, headUMin, headVMax);
     tessellator.draw();
-    gl::GL11::glNormal3f(-f10, 0.0f, 0.0f);
+    gl::GL11::glNormal3f(-scale, 0.0f, 0.0f);
     tessellator.startQuads();
-    tessellator.vertex(-7.0, 2.0, -2.0, f6, f8);
-    tessellator.vertex(-7.0, 2.0, 2.0, f7, f8);
-    tessellator.vertex(-7.0, -2.0, 2.0, f7, f9);
-    tessellator.vertex(-7.0, -2.0, -2.0, f6, f9);
+    tessellator.vertex(-7.0, 2.0, -2.0, headUMin, headVMin);
+    tessellator.vertex(-7.0, 2.0, 2.0, headUMax, headVMin);
+    tessellator.vertex(-7.0, -2.0, 2.0, headUMax, headVMax);
+    tessellator.vertex(-7.0, -2.0, -2.0, headUMin, headVMax);
     tessellator.draw();
     for (int i = 0; i < 4; ++i) {
         gl::GL11::glRotatef(90.0f, 1.0f, 0.0f, 0.0f);
-        gl::GL11::glNormal3f(0.0f, 0.0f, f10);
+        gl::GL11::glNormal3f(0.0f, 0.0f, scale);
         tessellator.startQuads();
-        tessellator.vertex(-8.0, -2.0, 0.0, f2, f4);
-        tessellator.vertex(8.0, -2.0, 0.0, f3, f4);
-        tessellator.vertex(8.0, 2.0, 0.0, f3, f5);
-        tessellator.vertex(-8.0, 2.0, 0.0, f2, f5);
+        tessellator.vertex(-8.0, -2.0, 0.0, shaftUMin, shaftVMin);
+        tessellator.vertex(8.0, -2.0, 0.0, shaftUMax, shaftVMin);
+        tessellator.vertex(8.0, 2.0, 0.0, shaftUMax, shaftVMax);
+        tessellator.vertex(-8.0, 2.0, 0.0, shaftUMin, shaftVMax);
         tessellator.draw();
     }
     gl::GL11::glDisable(32826);

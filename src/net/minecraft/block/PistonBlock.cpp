@@ -1,3 +1,4 @@
+#include "net/minecraft/block/BlockRegistrar.hpp"
 #include "net/minecraft/block/PistonBlock.hpp"
 
 #include "net/minecraft/block/PistonConstants.hpp"
@@ -14,6 +15,24 @@ PistonBlock::PistonBlock(int id, int textureId, bool stickyIn) : Block(id, textu
 {
     sticky = stickyIn;
     setHardness(0.5f);
+}
+
+int PistonBlock::getTexture(int side, int meta) const
+{
+    const int facing = getFacing(meta);
+    if (facing > 5) {
+        return textureId;
+    }
+    if (side == facing) {
+        if (isExtended(meta) || minX > 0.0 || minY > 0.0 || minZ > 0.0 || maxX < 1.0 || maxY < 1.0 || maxZ < 1.0) {
+            return PistonConstants::TEXTURE_FACE_EXTENDED;
+        }
+        return textureId;
+    }
+    if (side == PistonConstants::TEXTURE_SIDES[static_cast<std::size_t>(facing)]) {
+        return PistonConstants::TEXTURE_INSIDE;
+    }
+    return PistonConstants::TEXTURE_EXTENSION;
 }
 
 int PistonBlock::getFacingForPlacement(World* /*world*/, int x, int y, int z, net::minecraft::PlayerEntity* player)
@@ -364,5 +383,16 @@ void PistonBlock::addIntersectingBoundingBox(
         boxes.push_back(fullCube);
     }
 }
+namespace {
 
+void registerPistonBlocks()
+{
+    Block::STICKY_PISTON = (new PistonBlock(29, 106, true))->setHardness(0.5f)->setSoundGroup(&vanillaStoneSound())->setTranslationKey("pistonStickyBase")->ignoreMetaUpdates();
+    Block::PISTON = (new PistonBlock(33, 107, false))->setHardness(0.5f)->setSoundGroup(&vanillaStoneSound())->setTranslationKey("pistonBase")->ignoreMetaUpdates();
+}
+
+MINECRAFT_REGISTER_BLOCK(registerPistonBlocks, 29);
+
+} // namespace
 } // namespace net::minecraft::block
+

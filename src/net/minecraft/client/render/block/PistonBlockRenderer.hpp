@@ -23,9 +23,8 @@ public:
     bool renderPistonHead(net::minecraft::block::Block& block, int x, int y, int z, bool extendedHalfway);
 
 private:
-    void renderPistonHeadYAxis(double x1, double x2, double y1, double y2, double z1, double z2, float brightness, double shiftU);
-    void renderPistonHeadZAxis(double x1, double x2, double y1, double y2, double z1, double z2, float brightness, double shiftU);
-    void renderPistonHeadXAxis(double x1, double x2, double y1, double y2, double z1, double z2, float brightness, double shiftU);
+    // axis: 0 = Y, 1 = Z, 2 = X
+    void renderExtensionRod(int axis, double x1, double x2, double y1, double y2, double z1, double z2, float brightness, double textureScrollU);
 
     BlockRenderContext& ctx_;
     CubeBlockRenderer& cube_;

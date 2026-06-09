@@ -21,36 +21,36 @@ public:
         }
         static constexpr float PI_F = 3.1415927f;
         const float bc = static_cast<float>(blockCount_);
-        const float f = random.nextFloat() * PI_F;
-        const double d = static_cast<double>(static_cast<float>(x + 8) + MathHelper::sin(f) * bc / 8.0f);
-        const double d2 = static_cast<double>(static_cast<float>(x + 8) - MathHelper::sin(f) * bc / 8.0f);
-        const double d3 = static_cast<double>(static_cast<float>(z + 8) + MathHelper::cos(f) * bc / 8.0f);
-        const double d4 = static_cast<double>(static_cast<float>(z + 8) - MathHelper::cos(f) * bc / 8.0f);
-        const double d5 = static_cast<double>(y + random.nextInt(3) + 2);
-        const double d6 = static_cast<double>(y + random.nextInt(3) + 2);
+        const float angle = random.nextFloat() * PI_F;
+        const double startX = static_cast<double>(static_cast<float>(x + 8) + MathHelper::sin(angle) * bc / 8.0f);
+        const double endX = static_cast<double>(static_cast<float>(x + 8) - MathHelper::sin(angle) * bc / 8.0f);
+        const double startZ = static_cast<double>(static_cast<float>(z + 8) + MathHelper::cos(angle) * bc / 8.0f);
+        const double endZ = static_cast<double>(static_cast<float>(z + 8) - MathHelper::cos(angle) * bc / 8.0f);
+        const double startY = static_cast<double>(y + random.nextInt(3) + 2);
+        const double endY = static_cast<double>(y + random.nextInt(3) + 2);
         for (int i = 0; i <= blockCount_; ++i) {
-            const double d7 = d + (d2 - d) * static_cast<double>(i) / static_cast<double>(blockCount_);
-            const double d8 = d5 + (d6 - d5) * static_cast<double>(i) / static_cast<double>(blockCount_);
-            const double d9 = d3 + (d4 - d3) * static_cast<double>(i) / static_cast<double>(blockCount_);
-            const double d10 = random.nextDouble() * static_cast<double>(blockCount_) / 16.0;
-            const double d11 = static_cast<double>(MathHelper::sin(static_cast<float>(i) * PI_F / bc) + 1.0f) * d10 + 1.0;
-            const double d12 = static_cast<double>(MathHelper::sin(static_cast<float>(i) * PI_F / bc) + 1.0f) * d10 + 1.0;
-            const int n = MathHelper::floor(d7 - d11 / 2.0);
-            const int n2 = MathHelper::floor(d7 + d11 / 2.0);
-            const int n3 = MathHelper::floor(d8 - d12 / 2.0);
-            const int n4 = MathHelper::floor(d8 + d12 / 2.0);
-            const int n5 = MathHelper::floor(d9 - d11 / 2.0);
-            const int n6 = MathHelper::floor(d9 + d11 / 2.0);
-            for (int j = n; j <= n2; ++j) {
-                for (int k = n3; k <= n4; ++k) {
-                    for (int i2 = n5; i2 <= n6; ++i2) {
-                        const double d13 = (static_cast<double>(j) + 0.5 - d7) / (d11 / 2.0);
-                        const double d14 = (static_cast<double>(k) + 0.5 - d8) / (d12 / 2.0);
-                        const double d15 = (static_cast<double>(i2) + 0.5 - d9) / (d11 / 2.0);
-                        if (!(d13 * d13 + d14 * d14 + d15 * d15 < 1.0) || world->getBlockId(j, k, i2) != Block::SAND->id) {
+            const double centerX = startX + (endX - startX) * static_cast<double>(i) / static_cast<double>(blockCount_);
+            const double centerY = startY + (endY - startY) * static_cast<double>(i) / static_cast<double>(blockCount_);
+            const double centerZ = startZ + (endZ - startZ) * static_cast<double>(i) / static_cast<double>(blockCount_);
+            const double sizeNoise = random.nextDouble() * static_cast<double>(blockCount_) / 16.0;
+            const double radiusXZ = static_cast<double>(MathHelper::sin(static_cast<float>(i) * PI_F / bc) + 1.0f) * sizeNoise + 1.0;
+            const double radiusY = static_cast<double>(MathHelper::sin(static_cast<float>(i) * PI_F / bc) + 1.0f) * sizeNoise + 1.0;
+            const int minX = MathHelper::floor(centerX - radiusXZ / 2.0);
+            const int maxX = MathHelper::floor(centerX + radiusXZ / 2.0);
+            const int minY = MathHelper::floor(centerY - radiusY / 2.0);
+            const int maxY = MathHelper::floor(centerY + radiusY / 2.0);
+            const int minZ = MathHelper::floor(centerZ - radiusXZ / 2.0);
+            const int maxZ = MathHelper::floor(centerZ + radiusXZ / 2.0);
+            for (int blockX = minX; blockX <= maxX; ++blockX) {
+                for (int blockY = minY; blockY <= maxY; ++blockY) {
+                    for (int blockZ = minZ; blockZ <= maxZ; ++blockZ) {
+                        const double normX = (static_cast<double>(blockX) + 0.5 - centerX) / (radiusXZ / 2.0);
+                        const double normY = (static_cast<double>(blockY) + 0.5 - centerY) / (radiusY / 2.0);
+                        const double normZ = (static_cast<double>(blockZ) + 0.5 - centerZ) / (radiusXZ / 2.0);
+                        if (!(normX * normX + normY * normY + normZ * normZ < 1.0) || world->getBlockId(blockX, blockY, blockZ) != Block::SAND->id) {
                             continue;
                         }
-                        world->setBlockWithoutNotifyingNeighbors(j, k, i2, clayBlockId_);
+                        world->setBlockWithoutNotifyingNeighbors(blockX, blockY, blockZ, clayBlockId_);
                     }
                 }
             }

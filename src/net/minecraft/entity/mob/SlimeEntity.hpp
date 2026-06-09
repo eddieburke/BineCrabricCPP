@@ -3,7 +3,6 @@
 #include "net/minecraft/entity/LivingEntity.hpp"
 #include "net/minecraft/entity/Monster.hpp"
 #include "net/minecraft/entity/player/PlayerEntity.hpp"
-#include "net/minecraft/item/Item.hpp"
 
 namespace net::minecraft::entity::mob {
 
@@ -33,13 +32,7 @@ public:
     [[nodiscard]] std::string getDeathSound() const override { return "mob.slime"; }
     [[nodiscard]] float getSoundVolume() const override { return 0.6f; }
 
-    [[nodiscard]] int getDroppedItemId() const override
-    {
-        if (getSize() == 1) {
-            return Item::SLIMEBALL != nullptr ? Item::SLIMEBALL->id : 341;
-        }
-        return 0;
-    }
+    [[nodiscard]] int getDroppedItemId() const override;
 
     [[nodiscard]] bool canSpawn() const override;
 

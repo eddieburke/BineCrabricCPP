@@ -2,7 +2,6 @@
 
 #include "net/minecraft/entity/FlyingEntity.hpp"
 #include "net/minecraft/entity/Monster.hpp"
-#include "net/minecraft/item/Item.hpp"
 
 namespace net::minecraft::entity::mob {
 
@@ -30,10 +29,7 @@ public:
     [[nodiscard]] std::string getDeathSound() const override { return "mob.ghast.death"; }
     [[nodiscard]] float getSoundVolume() const override { return 10.0f; }
 
-    [[nodiscard]] int getDroppedItemId() const override
-    {
-        return Item::GUNPOWDER != nullptr ? Item::GUNPOWDER->id : 289;
-    }
+    [[nodiscard]] int getDroppedItemId() const override;
 
     [[nodiscard]] bool canSpawn() const override;
     [[nodiscard]] int getLimitPerChunk() const override { return 1; }

@@ -1,3 +1,4 @@
+#include "net/minecraft/block/BlockRegistrar.hpp"
 #include "net/minecraft/block/WorkbenchBlock.hpp"
 
 #include "net/minecraft/block/Block.hpp"
@@ -8,16 +9,11 @@ namespace net::minecraft::block {
 
 int WorkbenchBlock::getTexture(int side) const
 {
-    if (side == 1) {
-        return textureId - 16;
-    }
-    if (side == 0) {
-        return Block::PLANKS != nullptr ? Block::PLANKS->getTexture(0) : 4;
-    }
-    if (side == 2 || side == 4) {
+    const int planks = Block::PLANKS != nullptr ? Block::PLANKS->getTexture(0) : 4;
+    if (side == FACE_EAST || side == FACE_NORTH) {
         return textureId + 1;
     }
-    return textureId;
+    return Block::textureForSide(side, textureId, planks, textureId - 16);
 }
 
 bool WorkbenchBlock::onUse(World* world, int x, int y, int z, net::minecraft::PlayerEntity* player)
@@ -31,5 +27,15 @@ bool WorkbenchBlock::onUse(World* world, int x, int y, int z, net::minecraft::Pl
     player->openCraftingScreen(x, y, z);
     return true;
 }
+namespace {
 
+void registerWorkbenchBlock()
+{
+    Block::CRAFTING_TABLE = (new WorkbenchBlock(58))->setHardness(2.5f)->setSoundGroup(&vanillaWoodSound())->setTranslationKey("workbench");
+}
+
+MINECRAFT_REGISTER_BLOCK(registerWorkbenchBlock, 58);
+
+} // namespace
 } // namespace net::minecraft::block
+

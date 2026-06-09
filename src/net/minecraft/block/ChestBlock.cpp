@@ -1,3 +1,4 @@
+#include "net/minecraft/block/BlockRegistrar.hpp"
 #include "net/minecraft/block/ChestBlock.hpp"
 
 #include "net/minecraft/block/Block.hpp"
@@ -164,8 +165,9 @@ bool ChestBlock::onUse(World* world, int x, int y, int z, ::net::minecraft::Play
     }
 
     if (world->isRemote()) {
-        player->openChestScreen(x, y, z);
+        return true;
     }
+    player->openChestScreen(x, y, z);
     return true;
 }
 
@@ -207,5 +209,15 @@ void ChestBlock::onBreak(World* world, int x, int y, int z)
     }
     BlockWithEntity::onBreak(world, x, y, z);
 }
+namespace {
 
+void registerChestBlock()
+{
+    Block::CHEST = (new ChestBlock(54))->setHardness(2.5f)->setSoundGroup(&vanillaWoodSound())->setTranslationKey("chest")->ignoreMetaUpdates();
+}
+
+MINECRAFT_REGISTER_BLOCK(registerChestBlock, 54);
+
+} // namespace
 } // namespace net::minecraft::block
+

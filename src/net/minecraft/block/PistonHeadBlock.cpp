@@ -1,3 +1,4 @@
+#include "net/minecraft/block/BlockRegistrar.hpp"
 #include "net/minecraft/block/PistonHeadBlock.hpp"
 
 #include "net/minecraft/block/Block.hpp"
@@ -16,18 +17,15 @@ int PistonHeadBlock::getTexture(int side, int meta) const
 {
     const int facing = getFacing(meta);
     if (side == facing) {
-        if (pistonHeadSprite >= 0) {
-            return pistonHeadSprite;
-        }
         if ((meta & 8) != 0) {
             return textureId - 1;
         }
         return textureId;
     }
     if (side == PistonConstants::TEXTURE_SIDES[static_cast<std::size_t>(facing)]) {
-        return 107;
+        return PistonConstants::TEXTURE_TOP;
     }
-    return 108;
+    return PistonConstants::TEXTURE_EXTENSION;
 }
 
 bool PistonHeadBlock::canPlaceAt(World* /*world*/, int /*x*/, int /*y*/, int /*z*/) const
@@ -157,5 +155,15 @@ void PistonHeadBlock::neighborUpdate(World* world, int x, int y, int z, int neig
     }
     Block::BLOCKS[static_cast<std::size_t>(pistonId)]->neighborUpdate(world, pistonX, pistonY, pistonZ, neighborId);
 }
+namespace {
 
+void registerPistonHeadBlock()
+{
+    Block::PISTON_HEAD = (new PistonHeadBlock(34, 107))->ignoreMetaUpdates();
+}
+
+MINECRAFT_REGISTER_BLOCK(registerPistonHeadBlock, 34);
+
+} // namespace
 } // namespace net::minecraft::block
+

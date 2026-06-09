@@ -8,9 +8,12 @@
 #include "net/minecraft/client/render/item/ItemRenderer.hpp"
 #include "net/minecraft/client/render/platform/Lighting.hpp"
 #include "net/minecraft/client/resource/language/I18n.hpp"
+#include "net/minecraft/entity/player/ClientPlayerEntity.hpp"
 #include "net/minecraft/stat/PlayerStats.hpp"
 #include "net/minecraft/util/math/MathHelper.hpp"
 #include "net/minecraft/util/math/Types.hpp"
+#include "net/minecraft/world/World.hpp"
+#include "net/minecraft/world/chunk/Chunk.hpp"
 #include "net/minecraft/client/input/InputSystem.hpp"
 
 #include <chrono>
@@ -20,10 +23,47 @@ namespace net::minecraft::client::gui::screen {
 
 namespace {
 
-constexpr int kMinColumn = achievement::Achievements::minColumn * 24 - 112;
 constexpr int kMinRow = achievement::Achievements::minRow * 24 - 112;
-constexpr int kMaxColumn = achievement::Achievements::maxColumn * 24 - 77;
 constexpr int kMaxRow = achievement::Achievements::maxRow * 24 - 77;
+constexpr int kDefaultScrollPixelX =
+    achievement::Achievements::OPEN_INVENTORY.column * 24 - 141 / 2 - 12;
+constexpr int kDefaultTileColumn = (kDefaultScrollPixelX + 288) >> 4;
+
+int blockTextureId(int blockId)
+{
+    if (blockId <= 0 || blockId >= block::Block::BLOCK_COUNT) {
+        return block::Block::STONE != nullptr ? block::Block::STONE->textureId : 1;
+    }
+    block::Block* block = block::Block::BLOCKS[static_cast<std::size_t>(blockId)];
+    if (block == nullptr) {
+        return block::Block::STONE != nullptr ? block::Block::STONE->textureId : 1;
+    }
+    return block->textureId;
+}
+
+int proceduralTerrainTexture(int tileColumn, int tileRow, int row, net::minecraft::JavaRandom& random)
+{
+    random.setSeed(1234 + tileColumn + row);
+    [[maybe_unused]] const int discard = random.nextInt();
+    int texture = block::Block::SAND != nullptr ? block::Block::SAND->textureId : 0;
+    const int noise = random.nextInt(1 + tileRow + row) + (tileRow + row) / 2;
+    if (noise > 37 || tileRow + row == 35) {
+        texture = block::Block::BEDROCK != nullptr ? block::Block::BEDROCK->textureId : texture;
+    } else if (noise == 22) {
+        texture = random.nextInt(2) == 0
+            ? (block::Block::DIAMOND_ORE != nullptr ? block::Block::DIAMOND_ORE->textureId : texture)
+            : (block::Block::REDSTONE_ORE != nullptr ? block::Block::REDSTONE_ORE->textureId : texture);
+    } else if (noise == 10) {
+        texture = block::Block::IRON_ORE != nullptr ? block::Block::IRON_ORE->textureId : texture;
+    } else if (noise == 8) {
+        texture = block::Block::COAL_ORE != nullptr ? block::Block::COAL_ORE->textureId : texture;
+    } else if (noise > 4) {
+        texture = block::Block::STONE != nullptr ? block::Block::STONE->textureId : texture;
+    } else if (noise > 0) {
+        texture = block::Block::DIRT != nullptr ? block::Block::DIRT->textureId : texture;
+    }
+    return texture;
+}
 
 std::int64_t nowMillis()
 {
@@ -106,7 +146,6 @@ void AchievementsScreen::renderIcons(int mouseX, int mouseY, float tickDelta)
         static_cast<float>(mouseX_ + (scaledMouseDx_ - mouseX_) * static_cast<double>(tickDelta)));
     int scrollPixelY = net::minecraft::util::math::MathHelper::floor(
         static_cast<float>(mouseY_ + (scaledMouseDy_ - mouseY_) * static_cast<double>(tickDelta)));
-    scrollPixelX = std::max(kMinColumn, std::min(scrollPixelX, kMaxColumn - 1));
     scrollPixelY = std::max(kMinRow, std::min(scrollPixelY, kMaxRow - 1));
 
     zOffset = 0.0f;
@@ -132,28 +171,42 @@ void AchievementsScreen::renderIcons(int mouseX, int mouseY, float tickDelta)
     const int offsetY = (scrollPixelY + 288) % 16;
     net::minecraft::JavaRandom random;
 
+    World* world = minecraft()->world;
+    entity::player::ClientPlayerEntity* player = minecraft()->player;
+    const bool useWorldTerrain = world != nullptr && player != nullptr;
+    const int playerBlockX = useWorldTerrain
+        ? net::minecraft::util::math::MathHelper::floor(static_cast<float>(player->x))
+        : 0;
+    const int playerBlockZ = useWorldTerrain
+        ? net::minecraft::util::math::MathHelper::floor(static_cast<float>(player->z))
+        : 0;
+
     for (int row = 0; row * 16 - offsetY < 155; ++row) {
-        const float shade = 0.6f - static_cast<float>(tileRow + row) / 25.0f * 0.3f;
-        gl::GL11::glColor4f(shade, shade, shade, 1.0f);
         for (int column = 0; column * 16 - offsetX < 224; ++column) {
-            random.setSeed(1234 + tileColumn + column);
-            [[maybe_unused]] const int discard = random.nextInt();
-            int texture = block::Block::SAND != nullptr ? block::Block::SAND->textureId : 0;
-            const int noise = random.nextInt(1 + tileRow + row) + (tileRow + row) / 2;
-            if (noise > 37 || tileRow + row == 35) {
-                texture = block::Block::BEDROCK != nullptr ? block::Block::BEDROCK->textureId : texture;
-            } else if (noise == 22) {
-                texture = random.nextInt(2) == 0
-                    ? (block::Block::DIAMOND_ORE != nullptr ? block::Block::DIAMOND_ORE->textureId : texture)
-                    : (block::Block::REDSTONE_ORE != nullptr ? block::Block::REDSTONE_ORE->textureId : texture);
-            } else if (noise == 10) {
-                texture = block::Block::IRON_ORE != nullptr ? block::Block::IRON_ORE->textureId : texture;
-            } else if (noise == 8) {
-                texture = block::Block::COAL_ORE != nullptr ? block::Block::COAL_ORE->textureId : texture;
-            } else if (noise > 4) {
-                texture = block::Block::STONE != nullptr ? block::Block::STONE->textureId : texture;
-            } else if (noise > 0) {
-                texture = block::Block::DIRT != nullptr ? block::Block::DIRT->textureId : texture;
+            int texture = 0;
+            if (useWorldTerrain) {
+                const int worldX = playerBlockX + tileColumn + column - kDefaultTileColumn;
+                const int depth = tileRow + row;
+                int surfaceY = 63;
+                if (Chunk* chunk = world->getChunkIfLoaded(worldX, playerBlockZ)) {
+                    surfaceY = chunk->getHeight(worldX & 0xF, playerBlockZ & 0xF);
+                }
+                const int worldY = surfaceY - depth;
+                if (worldY < 0 || worldY >= Chunk::height) {
+                    texture = block::Block::BEDROCK != nullptr ? block::Block::BEDROCK->textureId : 1;
+                } else {
+                    const int blockId = world->getBlockId(worldX, worldY, playerBlockZ);
+                    if (blockId == 0) {
+                        continue;
+                    }
+                    texture = blockTextureId(blockId);
+                }
+                const float shade = 0.6f - static_cast<float>(depth) / 25.0f * 0.3f;
+                gl::GL11::glColor4f(shade, shade, shade, 1.0f);
+            } else {
+                const float shade = 0.6f - static_cast<float>(tileRow + row) / 25.0f * 0.3f;
+                gl::GL11::glColor4f(shade, shade, shade, 1.0f);
+                texture = proceduralTerrainTexture(tileColumn + column, tileRow, row, random);
             }
             drawTexture(
                 contentX + column * 16 - offsetX,
@@ -320,9 +373,7 @@ void AchievementsScreen::render(int mouseX, int mouseY, float tickDelta)
             prevMouseX_ = mouseX;
             prevMouseY_ = mouseY;
         }
-        scrollX_ = std::max(static_cast<double>(kMinColumn), scrollX_);
         scrollY_ = std::max(static_cast<double>(kMinRow), scrollY_);
-        scrollX_ = std::min(static_cast<double>(kMaxColumn - 1), scrollX_);
         scrollY_ = std::min(static_cast<double>(kMaxRow - 1), scrollY_);
     } else {
         scroll_ = 0;

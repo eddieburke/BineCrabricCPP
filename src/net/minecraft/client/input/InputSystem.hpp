@@ -210,6 +210,10 @@ public:
 
     [[nodiscard]] int mouseY() const noexcept;
 
+#ifdef _WIN32
+    void syncCursorFromOs();
+#endif
+
 
 
     [[nodiscard]] bool nextMouseEvent();
@@ -250,6 +254,8 @@ private:
 
     void handleKeyboardEdge(int key, bool down);
 
+    void updateMovementKey(int key, bool down);
+
     void onScreenChanged(gui::screen::Screen* screen);
 
     void releaseCapturedKeys();
@@ -266,7 +272,7 @@ private:
 
     void ingestMouseWheel(int delta, int x, int y);
 
-    void updateCursorPosition();
+    void updateCursorPosition(); // beginFrame; use syncCursorFromOs() before UI hover reads
 
     [[nodiscard]] static int clientMouseY(HWND hwnd, int clientY);
 
@@ -285,6 +291,10 @@ private:
     bool guiLeftShiftIntent_ = false;
 
     gui::screen::Screen* activeScreen_ = nullptr;
+
+    option::GameOptions* activeOptions_ = nullptr;
+
+    std::array<bool, 6> movementKeys_ {};
 
 
 

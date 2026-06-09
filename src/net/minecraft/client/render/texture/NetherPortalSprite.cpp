@@ -15,46 +15,46 @@ NetherPortalSprite::NetherPortalSprite()
     : DynamicTexture(detail::blockTextureId(90, 14))
 {
     JavaRandom random(100ULL);
-    for (int i = 0; i < 32; ++i) {
-        for (int j = 0; j < 16; ++j) {
-            for (int k = 0; k < 16; ++k) {
-                float f = 0.0f;
-                for (int n = 0; n < 2; ++n) {
-                    const float f2 = static_cast<float>(n * 8);
-                    const float f3 = static_cast<float>(n * 8);
-                    float f4 = (static_cast<float>(j) - f2) / 16.0f * 2.0f;
-                    float f5 = (static_cast<float>(k) - f3) / 16.0f * 2.0f;
-                    if (f4 < -1.0f) {
-                        f4 += 2.0f;
+    for (int frameIndex = 0; frameIndex < 32; ++frameIndex) {
+        for (int texU = 0; texU < 16; ++texU) {
+            for (int texV = 0; texV < 16; ++texV) {
+                float noise = 0.0f;
+                for (int octave = 0; octave < 2; ++octave) {
+                    const float octaveOffsetU = static_cast<float>(octave * 8);
+                    const float octaveOffsetV = static_cast<float>(octave * 8);
+                    float normU = (static_cast<float>(texU) - octaveOffsetU) / 16.0f * 2.0f;
+                    float normV = (static_cast<float>(texV) - octaveOffsetV) / 16.0f * 2.0f;
+                    if (normU < -1.0f) {
+                        normU += 2.0f;
                     }
-                    if (f4 >= 1.0f) {
-                        f4 -= 2.0f;
+                    if (normU >= 1.0f) {
+                        normU -= 2.0f;
                     }
-                    if (f5 < -1.0f) {
-                        f5 += 2.0f;
+                    if (normV < -1.0f) {
+                        normV += 2.0f;
                     }
-                    if (f5 >= 1.0f) {
-                        f5 -= 2.0f;
+                    if (normV >= 1.0f) {
+                        normV -= 2.0f;
                     }
-                    const float f6 = f4 * f4 + f5 * f5;
-                    float f7 = std::atan2(static_cast<double>(f5), static_cast<double>(f4)) +
-                        (static_cast<float>(i) / 32.0f * kPi * 2.0f - f6 * 10.0f +
-                            static_cast<float>(n * 2)) *
-                            static_cast<float>(n * 2 - 1);
-                    f7 = (MathHelper::sin(f7) + 1.0f) / 2.0f;
-                    f7 /= f6 + 1.0f;
-                    f += f7 * 0.5f;
+                    const float radiusSq = normU * normU + normV * normV;
+                    float swirl = std::atan2(static_cast<double>(normV), static_cast<double>(normU)) +
+                        (static_cast<float>(frameIndex) / 32.0f * kPi * 2.0f - radiusSq * 10.0f +
+                            static_cast<float>(octave * 2)) *
+                            static_cast<float>(octave * 2 - 1);
+                    swirl = (MathHelper::sin(swirl) + 1.0f) / 2.0f;
+                    swirl /= radiusSq + 1.0f;
+                    noise += swirl * 0.5f;
                 }
-                f += random.nextFloat() * 0.1f;
-                const int n = static_cast<int>(f * 100.0f + 155.0f);
-                const int n2 = static_cast<int>(f * f * 200.0f + 55.0f);
-                const int n3 = static_cast<int>(f * f * f * f * 255.0f);
-                const int n4 = static_cast<int>(f * 100.0f + 155.0f);
-                const int n5 = k * 16 + j;
-                frames[static_cast<std::size_t>(i)][static_cast<std::size_t>(n5) * 4 + 0] = static_cast<std::uint8_t>(n2);
-                frames[static_cast<std::size_t>(i)][static_cast<std::size_t>(n5) * 4 + 1] = static_cast<std::uint8_t>(n3);
-                frames[static_cast<std::size_t>(i)][static_cast<std::size_t>(n5) * 4 + 2] = static_cast<std::uint8_t>(n);
-                frames[static_cast<std::size_t>(i)][static_cast<std::size_t>(n5) * 4 + 3] = static_cast<std::uint8_t>(n4);
+                noise += random.nextFloat() * 0.1f;
+                const int blue = static_cast<int>(noise * 100.0f + 155.0f);
+                const int green = static_cast<int>(noise * noise * 200.0f + 55.0f);
+                const int red = static_cast<int>(noise * noise * noise * noise * 255.0f);
+                const int alpha = static_cast<int>(noise * 100.0f + 155.0f);
+                const int pixelIndex = texV * 16 + texU;
+                frames[static_cast<std::size_t>(frameIndex)][static_cast<std::size_t>(pixelIndex) * 4 + 0] = static_cast<std::uint8_t>(green);
+                frames[static_cast<std::size_t>(frameIndex)][static_cast<std::size_t>(pixelIndex) * 4 + 1] = static_cast<std::uint8_t>(red);
+                frames[static_cast<std::size_t>(frameIndex)][static_cast<std::size_t>(pixelIndex) * 4 + 2] = static_cast<std::uint8_t>(blue);
+                frames[static_cast<std::size_t>(frameIndex)][static_cast<std::size_t>(pixelIndex) * 4 + 3] = static_cast<std::uint8_t>(alpha);
             }
         }
     }
@@ -64,12 +64,12 @@ void NetherPortalSprite::tick()
 {
     ++ticks;
     const std::array<std::uint8_t, 1024>& frame = frames[static_cast<std::size_t>(ticks & 0x1F)];
-    for (int i = 0; i < 256; ++i) {
-        int n = frame[static_cast<std::size_t>(i) * 4 + 0] & 0xFF;
-        int n2 = frame[static_cast<std::size_t>(i) * 4 + 1] & 0xFF;
-        int n3 = frame[static_cast<std::size_t>(i) * 4 + 2] & 0xFF;
-        int n4 = frame[static_cast<std::size_t>(i) * 4 + 3] & 0xFF;
-        detail::writePixel(pixels, i, n, n2, n3, n4);
+    for (int pixelIndex = 0; pixelIndex < 256; ++pixelIndex) {
+        const int green = frame[static_cast<std::size_t>(pixelIndex) * 4 + 0] & 0xFF;
+        const int red = frame[static_cast<std::size_t>(pixelIndex) * 4 + 1] & 0xFF;
+        const int blue = frame[static_cast<std::size_t>(pixelIndex) * 4 + 2] & 0xFF;
+        const int alpha = frame[static_cast<std::size_t>(pixelIndex) * 4 + 3] & 0xFF;
+        detail::writePixel(pixels, pixelIndex, green, red, blue, alpha);
     }
 }
 

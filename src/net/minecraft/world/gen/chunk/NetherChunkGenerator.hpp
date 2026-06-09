@@ -119,20 +119,20 @@ private:
         for (int cellX = 0; cellX < cellSize; ++cellX) {
             for (int cellZ = 0; cellZ < cellSize; ++cellZ) {
                 for (int cellY = 0; cellY < 16; ++cellY) {
-                    double d0 = heightMap_[static_cast<std::size_t>(((cellX + 0) * sizeZ + (cellZ + 0)) * sizeY + (cellY + 0))];
-                    double d1 = heightMap_[static_cast<std::size_t>(((cellX + 0) * sizeZ + (cellZ + 1)) * sizeY + (cellY + 0))];
-                    double d2 = heightMap_[static_cast<std::size_t>(((cellX + 1) * sizeZ + (cellZ + 0)) * sizeY + (cellY + 0))];
-                    double d3 = heightMap_[static_cast<std::size_t>(((cellX + 1) * sizeZ + (cellZ + 1)) * sizeY + (cellY + 0))];
-                    const double dy0 = (heightMap_[static_cast<std::size_t>(((cellX + 0) * sizeZ + (cellZ + 0)) * sizeY + (cellY + 1))] - d0) * 0.125;
-                    const double dy1 = (heightMap_[static_cast<std::size_t>(((cellX + 0) * sizeZ + (cellZ + 1)) * sizeY + (cellY + 1))] - d1) * 0.125;
-                    const double dy2 = (heightMap_[static_cast<std::size_t>(((cellX + 1) * sizeZ + (cellZ + 0)) * sizeY + (cellY + 1))] - d2) * 0.125;
-                    const double dy3 = (heightMap_[static_cast<std::size_t>(((cellX + 1) * sizeZ + (cellZ + 1)) * sizeY + (cellY + 1))] - d3) * 0.125;
+                    double density00 = heightMap_[static_cast<std::size_t>(((cellX + 0) * sizeZ + (cellZ + 0)) * sizeY + (cellY + 0))];
+                    double density01 = heightMap_[static_cast<std::size_t>(((cellX + 0) * sizeZ + (cellZ + 1)) * sizeY + (cellY + 0))];
+                    double density10 = heightMap_[static_cast<std::size_t>(((cellX + 1) * sizeZ + (cellZ + 0)) * sizeY + (cellY + 0))];
+                    double density11 = heightMap_[static_cast<std::size_t>(((cellX + 1) * sizeZ + (cellZ + 1)) * sizeY + (cellY + 0))];
+                    const double dy0 = (heightMap_[static_cast<std::size_t>(((cellX + 0) * sizeZ + (cellZ + 0)) * sizeY + (cellY + 1))] - density00) * 0.125;
+                    const double dy1 = (heightMap_[static_cast<std::size_t>(((cellX + 0) * sizeZ + (cellZ + 1)) * sizeY + (cellY + 1))] - density01) * 0.125;
+                    const double dy2 = (heightMap_[static_cast<std::size_t>(((cellX + 1) * sizeZ + (cellZ + 0)) * sizeY + (cellY + 1))] - density10) * 0.125;
+                    const double dy3 = (heightMap_[static_cast<std::size_t>(((cellX + 1) * sizeZ + (cellZ + 1)) * sizeY + (cellY + 1))] - density11) * 0.125;
 
                     for (int subY = 0; subY < 8; ++subY) {
-                        double x0 = d0;
-                        double x1 = d1;
-                        const double dx0 = (d2 - d0) * 0.25;
-                        const double dx1 = (d3 - d1) * 0.25;
+                        double x0 = density00;
+                        double x1 = density01;
+                        const double dx0 = (density10 - density00) * 0.25;
+                        const double dx1 = (density11 - density01) * 0.25;
                         for (int subX = 0; subX < 4; ++subX) {
                             double density = x0;
                             const double dz = (x1 - x0) * 0.25;
@@ -153,10 +153,10 @@ private:
                             x0 += dx0;
                             x1 += dx1;
                         }
-                        d0 += dy0;
-                        d1 += dy1;
-                        d2 += dy2;
-                        d3 += dy3;
+                        density00 += dy0;
+                        density01 += dy1;
+                        density10 += dy2;
+                        density11 += dy3;
                     }
                 }
             }

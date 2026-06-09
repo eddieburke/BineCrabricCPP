@@ -1,4 +1,6 @@
+#include "net/minecraft/block/BlockRegistrar.hpp"
 #include "net/minecraft/block/StairsBlock.hpp"
+#include "net/minecraft/block/Block.hpp"
 
 #include "net/minecraft/entity/Entity.hpp"
 #include "net/minecraft/entity/player/PlayerEntity.hpp"
@@ -229,5 +231,16 @@ void StairsBlock::onDestroyedByExplosion(World* world, int x, int y, int z)
         baseBlock->onDestroyedByExplosion(world, x, y, z);
     }
 }
+namespace {
 
+void registerStairsBlocks()
+{
+    Block::WOODEN_STAIRS = (new StairsBlock(53, *Block::BLOCKS[5]))->setTranslationKey("stairsWood")->ignoreMetaUpdates();
+    Block::COBBLESTONE_STAIRS = (new StairsBlock(67, *Block::BLOCKS[4]))->setTranslationKey("stairsStone")->ignoreMetaUpdates();
+}
+
+MINECRAFT_REGISTER_BLOCK(registerStairsBlocks, 67);
+
+} // namespace
 } // namespace net::minecraft::block
+

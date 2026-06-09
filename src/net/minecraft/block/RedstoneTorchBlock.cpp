@@ -1,3 +1,4 @@
+#include "net/minecraft/block/BlockRegistrar.hpp"
 #include "net/minecraft/block/RedstoneTorchBlock.hpp"
 
 #include "net/minecraft/block/Block.hpp"
@@ -195,5 +196,16 @@ bool RedstoneTorchBlock::isEmittingRedstonePowerInDirection(
     }
     return meta != 2 || direction != 4;
 }
+namespace {
 
+void registerRedstoneTorchBlocks()
+{
+    Block::REDSTONE_TORCH = (new RedstoneTorchBlock(75, 115, false))->setHardness(0.0f)->setSoundGroup(&vanillaWoodSound())->setTranslationKey("notGate")->ignoreMetaUpdates();
+    Block::LIT_REDSTONE_TORCH = (new RedstoneTorchBlock(76, 99, true))->setHardness(0.0f)->setLuminance(0.5f)->setSoundGroup(&vanillaWoodSound())->setTranslationKey("notGate")->ignoreMetaUpdates();
+}
+
+MINECRAFT_REGISTER_BLOCK(registerRedstoneTorchBlocks, 76);
+
+} // namespace
 } // namespace net::minecraft::block
+

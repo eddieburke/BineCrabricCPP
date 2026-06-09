@@ -25,6 +25,7 @@ public:
     void writeNbt(NbtCompound& nbt) const override;
     void readNbt(const NbtCompound& nbt) override;
     [[nodiscard]] bool isCollidable() const override { return true; }
+    [[nodiscard]] float getTargetingMargin() const override { return 1.0f; }
 
     LivingEntity* owner = nullptr;
     double powerX = 0.0;

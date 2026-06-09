@@ -100,22 +100,22 @@ bool WorldRendererCore::compileChunks(WorldRenderer& worldRenderer, LivingEntity
         }
         if (!force) {
             if (chunk->squaredDistanceTo(camera) > pipeline::kNearChunkRebuildDistSq) {
-                int n9 = 0;
-                for (; n9 < pipeline::kDistantRebuildSlots; ++n9) {
-                    if (distantQueue[n9] == nullptr
-                        || dirtyChunkSorter.compare(distantQueue[n9], chunk) <= 0) {
+                int slot = 0;
+                for (; slot < pipeline::kDistantRebuildSlots; ++slot) {
+                    if (distantQueue[slot] == nullptr
+                        || dirtyChunkSorter.compare(distantQueue[slot], chunk) <= 0) {
                         continue;
                     }
                     break;
                 }
-                if (--n9 <= 0) {
+                if (--slot <= 0) {
                     continue;
                 }
-                int n2 = n9;
-                while (--n2 != 0) {
-                    distantQueue[n2 - 1] = distantQueue[n2];
+                int shiftIndex = slot;
+                while (--shiftIndex != 0) {
+                    distantQueue[shiftIndex - 1] = distantQueue[shiftIndex];
                 }
-                distantQueue[n9] = chunk;
+                distantQueue[slot] = chunk;
                 continue;
             }
         } else if (!chunk->inFrustum) {
@@ -145,12 +145,12 @@ bool WorldRendererCore::compileChunks(WorldRenderer& worldRenderer, LivingEntity
     }
 
     int distantRebuildCount = 0;
-    for (int n = pipeline::kDistantRebuildSlots - 1; n >= 0; --n) {
-        chunk::ChunkBuilder* chunk = distantQueue[n];
+    for (int slot = pipeline::kDistantRebuildSlots - 1; slot >= 0; --slot) {
+        chunk::ChunkBuilder* chunk = distantQueue[slot];
         if (chunk == nullptr) {
             continue;
         }
-        if (!force && !chunk->inFrustum && n != pipeline::kDistantRebuildSlots - 1) {
+        if (!force && !chunk->inFrustum && slot != pipeline::kDistantRebuildSlots - 1) {
             distantQueue[0] = nullptr;
             distantQueue[pipeline::kDistantRebuildSlots - 1] = nullptr;
             break;

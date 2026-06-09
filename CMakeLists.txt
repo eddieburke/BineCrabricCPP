@@ -94,7 +94,7 @@ endfunction()
 
 add_executable(minecraft_native
     src/main.cpp
-    src/net/minecraft/client/platform/audio/backend/audio_backend.c
+    src/net/minecraft/client/platform/audio/decode/vorbiscompiler.c
     ${MINECRAFT_PORT_SOURCES}
     ${SEEDFINDER_GUI_SOURCES}
     ${SEEDFINDER_PROBE_ADAPTER_SOURCE}
@@ -111,7 +111,7 @@ endif()
 
 add_executable(block_registry_properties_test
     tests/block_registry_properties_test.cpp
-    src/net/minecraft/client/platform/audio/backend/audio_backend.c
+    src/net/minecraft/client/platform/audio/decode/vorbiscompiler.c
     ${MINECRAFT_PORT_SOURCES}
     ${SEEDFINDER_GUI_SOURCES}
     ${SEEDFINDER_PROBE_ADAPTER_SOURCE}

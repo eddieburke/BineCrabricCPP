@@ -93,6 +93,7 @@ public:
     virtual void applyKnockback(Entity* attacker, int amount, double dx, double dz);
     virtual void onKilledBy(Entity* adversary);
     [[nodiscard]] bool canSee(Entity* entity) const;
+    // Single item id (0-2 rolls): override getDroppedItemId(). Stacks/meta or multiple items: override dropItems().
     virtual void dropItems();
     [[nodiscard]] virtual int getDroppedItemId() const;
     void onLanding(float fallDistanceIn);

@@ -56,26 +56,26 @@ private:
     {
         for (int i = 0; i < 3; ++i) {
             for (int j = 0; j < 3; ++j) {
-                int n = i - offsetX;
-                int n2 = j - offsetY;
-                ItemStack itemStack2{}; // null cell
-                if (n >= 0 && n2 >= 0 && n < this->width && n2 < this->height) {
-                    itemStack2 = flipped ? this->input[this->width - n - 1 + n2 * this->width]
-                                         : this->input[n + n2 * this->width];
+                int patternX = i - offsetX;
+                int patternY = j - offsetY;
+                ItemStack patternStack{}; // null cell
+                if (patternX >= 0 && patternY >= 0 && patternX < this->width && patternY < this->height) {
+                    patternStack = flipped ? this->input[this->width - patternX - 1 + patternY * this->width]
+                                           : this->input[patternX + patternY * this->width];
                 }
-                ItemStack itemStack = inv.getStack(i, j);
-                const bool stackNull = itemStack.empty();
-                const bool patternNull = itemStack2.empty();
+                ItemStack stack = inv.getStack(i, j);
+                const bool stackNull = stack.empty();
+                const bool patternNull = patternStack.empty();
                 if (stackNull && patternNull) {
                     continue;
                 }
                 if ((stackNull && !patternNull) || (!stackNull && patternNull)) {
                     return false;
                 }
-                if (itemStack2.itemId != itemStack.itemId) {
+                if (patternStack.itemId != stack.itemId) {
                     return false;
                 }
-                if (itemStack2.getDamage() == -1 || itemStack2.getDamage() == itemStack.getDamage()) {
+                if (patternStack.getDamage() == -1 || patternStack.getDamage() == stack.getDamage()) {
                     continue;
                 }
                 return false;

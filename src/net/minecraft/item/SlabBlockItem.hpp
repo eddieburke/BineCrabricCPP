@@ -1,5 +1,6 @@
 #pragma once
 
+#include "net/minecraft/block/SlabBlock.hpp"
 #include "net/minecraft/item/BlockItem.hpp"
 
 namespace net::minecraft::item {
@@ -21,8 +22,8 @@ public:
     [[nodiscard]] std::string getTranslationKey(const ItemStack* stack) const override
     {
         const int damage = stack != nullptr ? stack->getDamage() : 0;
-        const auto index = static_cast<std::size_t>(damage) % SlabBlock::names.size();
-        return BlockItem::getTranslationKey(stack) + "." + std::string(SlabBlock::names[index]);
+        const auto index = static_cast<std::size_t>(damage) % block::SlabBlock::names.size();
+        return BlockItem::getTranslationKey(stack) + "." + std::string(block::SlabBlock::names[index]);
     }
 };
 

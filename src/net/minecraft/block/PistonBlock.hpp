@@ -1,6 +1,7 @@
 #pragma once
 
 #include "net/minecraft/block/Block.hpp"
+#include "net/minecraft/block/PistonConstants.hpp"
 #include "net/minecraft/entity/EntityTypes.hpp"
 
 namespace net::minecraft {
@@ -18,7 +19,8 @@ public:
     [[nodiscard]] int getRenderType() const override { return 16; }
     [[nodiscard]] bool isOpaque() const override { return false; }
     [[nodiscard]] bool isFullCube() const override { return false; }
-    [[nodiscard]] int getTopTexture() const { return sticky ? 106 : 107; }
+    [[nodiscard]] int getTopTexture() const { return sticky ? PistonConstants::TEXTURE_STICKY_TOP : PistonConstants::TEXTURE_TOP; }
+    [[nodiscard]] int getTexture(int side, int meta) const override;
 
     void onPlaced(World* world, int x, int y, int z) override;
     void onPlaced(World* world, int x, int y, int z, net::minecraft::PlayerEntity* placer) override;

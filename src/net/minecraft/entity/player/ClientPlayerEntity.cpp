@@ -55,6 +55,18 @@ void ClientPlayerEntity::tickMovement()
         && !minecraft_->stats->hasStat(achievement::Achievements::OPEN_INVENTORY.statId())) {
         minecraft_->toast.setTutorial(achievement::Achievements::OPEN_INVENTORY.statId());
     }
+    touchingPortal = false;
+    const client::input::MovementState& movement = client::input::InputSystem::instance().movement();
+    setSneaking(movement.sneaking && !sleeping);
+    if (movement.sneaking && cameraOffset < 0.2f) {
+        cameraOffset = 0.2f;
+    }
+    pushOutOfBlock(x - static_cast<double>(width) * 0.35, boundingBox.minY + 0.5, z + static_cast<double>(width) * 0.35);
+    pushOutOfBlock(x - static_cast<double>(width) * 0.35, boundingBox.minY + 0.5, z - static_cast<double>(width) * 0.35);
+    pushOutOfBlock(x + static_cast<double>(width) * 0.35, boundingBox.minY + 0.5, z - static_cast<double>(width) * 0.35);
+    pushOutOfBlock(x + static_cast<double>(width) * 0.35, boundingBox.minY + 0.5, z + static_cast<double>(width) * 0.35);
+    PlayerEntity::tickMovement();
+
     lastScreenDistortion = screenDistortion;
     if (inTeleportationState) {
         if (world != nullptr && !world->isRemote() && vehicle != nullptr) {
@@ -76,29 +88,20 @@ void ClientPlayerEntity::tickMovement()
                 minecraft_->audio.play("portal.travel", 1.0f, random.nextFloat() * 0.4f + 0.8f);
                 minecraft_->changeDimension();
             }
+            inTeleportationState = false;
         }
-        inTeleportationState = false;
-    } else {
-        if (screenDistortion > 0.0f) {
-            screenDistortion -= 0.05f;
-        }
+    } else if (screenDistortion > 0.0f) {
+        screenDistortion -= 0.05f;
         if (screenDistortion < 0.0f) {
             screenDistortion = 0.0f;
         }
     }
+    if (!touchingPortal) {
+        inTeleportationState = false;
+    }
     if (portalCooldown > 0) {
         --portalCooldown;
     }
-    const client::input::MovementState& movement = client::input::InputSystem::instance().movement();
-    setSneaking(movement.sneaking && !sleeping);
-    if (movement.sneaking && cameraOffset < 0.2f) {
-        cameraOffset = 0.2f;
-    }
-    pushOutOfBlock(x - static_cast<double>(width) * 0.35, boundingBox.minY + 0.5, z + static_cast<double>(width) * 0.35);
-    pushOutOfBlock(x - static_cast<double>(width) * 0.35, boundingBox.minY + 0.5, z - static_cast<double>(width) * 0.35);
-    pushOutOfBlock(x + static_cast<double>(width) * 0.35, boundingBox.minY + 0.5, z - static_cast<double>(width) * 0.35);
-    pushOutOfBlock(x + static_cast<double>(width) * 0.35, boundingBox.minY + 0.5, z + static_cast<double>(width) * 0.35);
-    PlayerEntity::tickMovement();
 }
 
 void ClientPlayerEntity::writeNbt(NbtCompound& nbt) const

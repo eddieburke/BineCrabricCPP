@@ -1,4 +1,6 @@
+#include "net/minecraft/block/BlockRegistrar.hpp"
 #include "net/minecraft/block/DoorBlock.hpp"
+#include "net/minecraft/block/material/Material.hpp"
 
 #include "net/minecraft/block/Block.hpp"
 #include "net/minecraft/item/Item.hpp"
@@ -42,133 +44,37 @@ int DoorBlock::getTexture(int side, int meta) const
     return tex;
 }
 
-int DoorBlock::getState(const BlockView* blockView, int x, int y, int z)
-{
-    if (blockView == nullptr) {
-        return 0;
-    }
-    const int meta = blockView->getBlockMeta(x, y, z);
-    const bool topHalf = (meta & 8) != 0;
-    const int lower = topHalf ? blockView->getBlockMeta(x, y - 1, z) : meta;
-    const int upper = topHalf ? meta : blockView->getBlockMeta(x, y + 1, z);
-    const bool flipped = (upper & 1) != 0;
-    return (lower & 7) | (topHalf ? 8 : 0) | (flipped ? 16 : 0);
-}
-
-int DoorBlock::getState(const World* world, int x, int y, int z)
-{
-    return getState(static_cast<const BlockView*>(world), x, y, z);
-}
-
-std::optional<net::minecraft::Box> DoorBlock::collisionShapeForState(int state, int x, int y, int z)
-{
-    constexpr double thickness = 0.1875;
-    const bool open = (state & 4) != 0;
-    const bool flipped = (state & 16) != 0;
-    const int facing = facingFromMeta(state);
-
-    if (!open) {
-        switch (facing) {
-        case 0:
-            return net::minecraft::Box {static_cast<double>(x), static_cast<double>(y), static_cast<double>(z),
-                static_cast<double>(x + 1), static_cast<double>(y + 1), static_cast<double>(z) + thickness};
-        case 1:
-            return net::minecraft::Box {static_cast<double>(x + 1) - thickness, static_cast<double>(y), static_cast<double>(z),
-                static_cast<double>(x + 1), static_cast<double>(y + 1), static_cast<double>(z + 1)};
-        case 2:
-            return net::minecraft::Box {static_cast<double>(x), static_cast<double>(y), static_cast<double>(z + 1) - thickness,
-                static_cast<double>(x + 1), static_cast<double>(y + 1), static_cast<double>(z + 1)};
-        default:
-            return net::minecraft::Box {static_cast<double>(x), static_cast<double>(y), static_cast<double>(z),
-                static_cast<double>(x) + thickness, static_cast<double>(y + 1), static_cast<double>(z + 1)};
-        }
-    }
-
-    switch (facing) {
-    case 0:
-        if (flipped) {
-            return net::minecraft::Box {static_cast<double>(x), static_cast<double>(y), static_cast<double>(z),
-                static_cast<double>(x) + thickness, static_cast<double>(y + 1), static_cast<double>(z + 1)};
-        }
-        return net::minecraft::Box {static_cast<double>(x + 1) - thickness, static_cast<double>(y), static_cast<double>(z),
-            static_cast<double>(x + 1), static_cast<double>(y + 1), static_cast<double>(z + 1)};
-    case 1:
-        if (flipped) {
-            return net::minecraft::Box {static_cast<double>(x), static_cast<double>(y), static_cast<double>(z + 1) - thickness,
-                static_cast<double>(x + 1), static_cast<double>(y + 1), static_cast<double>(z + 1)};
-        }
-        return net::minecraft::Box {static_cast<double>(x), static_cast<double>(y), static_cast<double>(z),
-            static_cast<double>(x + 1), static_cast<double>(y + 1), static_cast<double>(z) + thickness};
-    case 2:
-        if (flipped) {
-            return net::minecraft::Box {static_cast<double>(x + 1) - thickness, static_cast<double>(y), static_cast<double>(z),
-                static_cast<double>(x + 1), static_cast<double>(y + 1), static_cast<double>(z + 1)};
-        }
-        return net::minecraft::Box {static_cast<double>(x), static_cast<double>(y), static_cast<double>(z),
-            static_cast<double>(x) + thickness, static_cast<double>(y + 1), static_cast<double>(z + 1)};
-    default:
-        if (flipped) {
-            return net::minecraft::Box {static_cast<double>(x), static_cast<double>(y), static_cast<double>(z),
-                static_cast<double>(x + 1), static_cast<double>(y + 1), static_cast<double>(z) + thickness};
-        }
-        return net::minecraft::Box {static_cast<double>(x), static_cast<double>(y), static_cast<double>(z + 1) - thickness,
-            static_cast<double>(x + 1), static_cast<double>(y + 1), static_cast<double>(z + 1)};
-    }
-}
-
-void DoorBlock::applyBoundsForState(int state)
+void DoorBlock::rotate(int meta)
 {
     constexpr float thickness = 0.1875f;
-    const bool open = (state & 4) != 0;
-    const bool flipped = (state & 16) != 0;
-    const int facing = facingFromMeta(state);
-
-    if (!open) {
-        if (facing == 0) {
-            setBoundingBox(0.0f, 0.0f, 0.0f, 1.0f, 1.0f, thickness);
-        } else if (facing == 1) {
-            setBoundingBox(1.0f - thickness, 0.0f, 0.0f, 1.0f, 1.0f, 1.0f);
-        } else if (facing == 2) {
-            setBoundingBox(0.0f, 0.0f, 1.0f - thickness, 1.0f, 1.0f, 1.0f);
-        } else {
-            setBoundingBox(0.0f, 0.0f, 0.0f, thickness, 1.0f, 1.0f);
-        }
-        return;
-    }
-
-    if (facing == 0) {
-        if (flipped) {
-            setBoundingBox(0.0f, 0.0f, 0.0f, thickness, 1.0f, 1.0f);
-        } else {
-            setBoundingBox(1.0f - thickness, 0.0f, 0.0f, 1.0f, 1.0f, 1.0f);
-        }
-    } else if (facing == 1) {
-        if (flipped) {
-            setBoundingBox(0.0f, 0.0f, 1.0f - thickness, 1.0f, 1.0f, 1.0f);
-        } else {
-            setBoundingBox(0.0f, 0.0f, 0.0f, 1.0f, 1.0f, thickness);
-        }
-    } else if (facing == 2) {
-        if (flipped) {
-            setBoundingBox(1.0f - thickness, 0.0f, 0.0f, 1.0f, 1.0f, 1.0f);
-        } else {
-            setBoundingBox(0.0f, 0.0f, 0.0f, thickness, 1.0f, 1.0f);
-        }
-    } else if (flipped) {
+    const int oriented = facingFromMeta(meta);
+    setBoundingBox(0.0f, 0.0f, 0.0f, 1.0f, 1.0f, 1.0f);
+    if (oriented == 0) {
         setBoundingBox(0.0f, 0.0f, 0.0f, 1.0f, 1.0f, thickness);
-    } else {
+    } else if (oriented == 1) {
+        setBoundingBox(1.0f - thickness, 0.0f, 0.0f, 1.0f, 1.0f, 1.0f);
+    } else if (oriented == 2) {
         setBoundingBox(0.0f, 0.0f, 1.0f - thickness, 1.0f, 1.0f, 1.0f);
+    } else {
+        setBoundingBox(0.0f, 0.0f, 0.0f, thickness, 1.0f, 1.0f);
     }
 }
 
 std::optional<net::minecraft::Box> DoorBlock::getCollisionShape(World* world, int x, int y, int z) const
 {
-    return collisionShapeForState(getState(world, x, y, z), x, y, z);
+    if (world == nullptr) {
+        return std::nullopt;
+    }
+    const_cast<DoorBlock*>(this)->updateBoundingBox(world, x, y, z);
+    return Block::getCollisionShape(world, x, y, z);
 }
 
 void DoorBlock::updateBoundingBox(const BlockView* blockView, int x, int y, int z)
 {
-    applyBoundsForState(getState(blockView, x, y, z));
+    if (blockView == nullptr) {
+        return;
+    }
+    rotate(blockView->getBlockMeta(x, y, z));
 }
 
 bool DoorBlock::canPlaceAt(World* world, int x, int y, int z) const
@@ -291,5 +197,17 @@ void DoorBlock::neighborUpdate(World* world, int x, int y, int z, int blockId)
         setOpen(world, x, y, z, powered);
     }
 }
+namespace {
 
+void registerDoorBlocks()
+{
+    namespace mat = material;
+    Block::DOOR = (new DoorBlock(64, mat::Material::WOOD))->setHardness(3.0f)->setSoundGroup(&vanillaWoodSound())->setTranslationKey("doorWood")->disableTrackingStatistics()->ignoreMetaUpdates();
+    Block::IRON_DOOR = (new DoorBlock(71, mat::Material::METAL))->setHardness(5.0f)->setSoundGroup(&vanillaMetalSound())->setTranslationKey("doorIron")->disableTrackingStatistics()->ignoreMetaUpdates();
+}
+
+MINECRAFT_REGISTER_BLOCK(registerDoorBlocks, 71);
+
+} // namespace
 } // namespace net::minecraft::block
+

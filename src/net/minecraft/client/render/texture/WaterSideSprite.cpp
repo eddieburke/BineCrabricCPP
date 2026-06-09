@@ -13,34 +13,34 @@ WaterSideSprite::WaterSideSprite()
 void WaterSideSprite::tick()
 {
     ++ticks;
-    for (int n4 = 0; n4 < 16; ++n4) {
-        for (int n3 = 0; n3 < 16; ++n3) {
-            float f = 0.0f;
-            for (int i = n3 - 2; i <= n3; ++i) {
-                const int n2 = n4 & 0xF;
-                const int n = i & 0xF;
-                f += current[static_cast<std::size_t>(n2 + n * 16)];
+    for (int x = 0; x < 16; ++x) {
+        for (int y = 0; y < 16; ++y) {
+            float sum = 0.0f;
+            for (int i = y - 2; i <= y; ++i) {
+                const int nx = x & 0xF;
+                const int ny = i & 0xF;
+                sum += current[static_cast<std::size_t>(nx + ny * 16)];
             }
-            next[static_cast<std::size_t>(n4 + n3 * 16)] = f / 3.2f + heat[static_cast<std::size_t>(n4 + n3 * 16)] * 0.8f;
+            next[static_cast<std::size_t>(x + y * 16)] = sum / 3.2f + heat[static_cast<std::size_t>(x + y * 16)] * 0.8f;
         }
     }
-    for (int n4 = 0; n4 < 16; ++n4) {
-        for (int n3 = 0; n3 < 16; ++n3) {
-            integrateHeatCell(n4 + n3 * 16, 0.05f, 0.3f, 0.5f, 0.2);
+    for (int x = 0; x < 16; ++x) {
+        for (int y = 0; y < 16; ++y) {
+            integrateHeatCell(x + y * 16, 0.05f, 0.3f, 0.5f, 0.2);
         }
     }
 
     std::swap(next, current);
 
-    for (int n3 = 0; n3 < 256; ++n3) {
-        float f = current[static_cast<std::size_t>((n3 - ticks * 16) & 0xFF)];
-        detail::clamp01(f);
-        const float f2 = f * f;
-        int n2 = static_cast<int>(32.0f + f2 * 32.0f);
-        int n = static_cast<int>(50.0f + f2 * 64.0f);
-        int n7 = 255;
-        const int n8 = static_cast<int>(146.0f + f2 * 50.0f);
-        detail::writePixel(pixels, n3, n2, n, n7, n8);
+    for (int pixelIndex = 0; pixelIndex < 256; ++pixelIndex) {
+        float brightness = current[static_cast<std::size_t>((pixelIndex - ticks * 16) & 0xFF)];
+        detail::clamp01(brightness);
+        const float intensity = brightness * brightness;
+        int red = static_cast<int>(32.0f + intensity * 32.0f);
+        int green = static_cast<int>(50.0f + intensity * 64.0f);
+        int blue = 255;
+        const int alpha = static_cast<int>(146.0f + intensity * 50.0f);
+        detail::writePixel(pixels, pixelIndex, red, green, blue, alpha);
     }
 }
 

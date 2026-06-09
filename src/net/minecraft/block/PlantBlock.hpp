@@ -2,7 +2,7 @@
 
 #include "net/minecraft/block/Block.hpp"
 #include "net/minecraft/block/material/Material.hpp"
-#include "net/minecraft/world/ports/IBlockWorld.hpp"
+#include "net/minecraft/world/World.hpp"
 
 namespace net::minecraft::block {
 

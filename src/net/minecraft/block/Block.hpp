@@ -32,11 +32,37 @@ class ItemStack;
 
 namespace net::minecraft::block {
 
+// UV bounds for a 16x16 tile in /terrain.png (beta atlas index).
+struct TerrainAtlasUv {
+    double uMin = 0.0;
+    double uMax = 0.0;
+    double vMin = 0.0;
+    double vMax = 0.0;
+};
+
 class Block {
 public:
     using Material = material::Material;
 
     static constexpr int BLOCK_COUNT = 256;
+
+    static constexpr int FACE_BOTTOM = 0;
+    static constexpr int FACE_TOP = 1;
+    static constexpr int FACE_EAST = 2;
+    static constexpr int FACE_WEST = 3;
+    static constexpr int FACE_NORTH = 4;
+    static constexpr int FACE_SOUTH = 5;
+
+    [[nodiscard]] static int textureAtlasU(int textureId) { return (textureId & 0xF) << 4; }
+    [[nodiscard]] static int textureAtlasV(int textureId) { return textureId & 0xF0; }
+
+    [[nodiscard]] static TerrainAtlasUv terrainTileUv(int textureId);
+    [[nodiscard]] static TerrainAtlasUv terrainStripUv(int textureId, double scrollU, double stripHeight = 4.0);
+
+    // Per-face tile selection shared by directional blocks (furnace, dispenser, chest, ...).
+    // Pass -1 for bottom/top/front to fall back to sides.
+    [[nodiscard]] static int textureForSide(
+        int side, int sides, int bottom = -1, int top = -1, int frontSide = -1, int front = -1);
 
     // Java's parallel static arrays.
     static std::array<Block*, BLOCK_COUNT> BLOCKS;
@@ -261,7 +287,7 @@ public:
         net::minecraft::Vec3d startPos,
         net::minecraft::Vec3d endPos);
 
-    // Slabs, farmland, and stairs store unreliable light in their own cell (Java parity).
+    // Slabs, farmland, stairs, and trapdoors store unreliable light in their own cell.
     [[nodiscard]] static bool usesNeighborLightSampling(int blockId);
 
     // Client rendering (net.minecraft.block.Block @Environment CLIENT).
@@ -323,13 +349,9 @@ public:
     }
 };
 
-// Block.java static field initializers (BlocksRegistration.cpp).
-void registerVanillaBlocks();
-void registerBlockItems();
-
-    // C++ static-init shim for Block.java field initializers; also triggers Item.java init.
-    // Idempotent; safe to call from multiple entry points.
-    void initializeBlocks();
+// C++ static-init shim for Block.java field initializers; also triggers Item.java init.
+// Idempotent; safe to call from multiple entry points.
+void initializeBlocks();
 
 // Recomputes registry fields that Java initializes through virtual dispatch
 // from the Block constructor. C++ cannot dispatch to derived overrides during

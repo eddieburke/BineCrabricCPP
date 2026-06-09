@@ -15,7 +15,9 @@
 
 using net::minecraft::client::option::GameOptions;
 using net::minecraft::client::render::platform::StereoRendering;
+using net::minecraft::client::util::mapStereoUiMouse;
 using net::minecraft::client::util::uiFramebufferWidth;
+using net::minecraft::client::util::uiScale;
 
 static void assertBool(bool actual, bool expected, const char* label)
 {
@@ -86,6 +88,33 @@ static void test_viewport_width()
 }
 
 // ---------------------------------------------------------------------------
+// mapStereoUiMouse — SBS folds both halves to the same scaled X per eye pass
+// ---------------------------------------------------------------------------
+static void test_stereo_ui_mouse_mapping()
+{
+    constexpr int displayWidth = 1920;
+    constexpr int displayHeight = 1080;
+
+    GameOptions sbs;
+    sbs.stereoMode = 2;
+    const auto scale = uiScale(sbs, uiFramebufferWidth(sbs, displayWidth), displayHeight);
+
+    const auto left = mapStereoUiMouse(
+        sbs, displayWidth, displayHeight, scale.scaledWidth, scale.scaledHeight, 100, 100);
+    const auto right = mapStereoUiMouse(
+        sbs, displayWidth, displayHeight, scale.scaledWidth, scale.scaledHeight, 1060, 100);
+    assertInt(left.first, right.first, "stereo_mouse_same_relative_x");
+    assertInt(left.second, right.second, "stereo_mouse_same_y");
+
+    GameOptions mono;
+    mono.stereoMode = 0;
+    const auto monoScale = uiScale(mono, displayWidth, displayHeight);
+    const auto monoPos = mapStereoUiMouse(
+        mono, displayWidth, displayHeight, monoScale.scaledWidth, monoScale.scaledHeight, 640, 540);
+    assertInt(monoPos.first, 640 * monoScale.scaledWidth / displayWidth, "mono_mouse_x");
+}
+
+// ---------------------------------------------------------------------------
 // Font spec (documentation-only) — TextRenderer uses extra channel, not b.
 // Formula: gray=(r*30+g*59+extra*11)/100; greenEye=(r*30+g*70)/100;
 //          blueEye=(r*30+extra*70)/100
@@ -108,6 +137,7 @@ int main()
 {
     test_needs_second_eye();
     test_viewport_width();
+    test_stereo_ui_mouse_mapping();
     test_font_glyph_color_spec();
     fprintf(stdout, "All StereoRendering golden tests passed.\n");
     return 0;

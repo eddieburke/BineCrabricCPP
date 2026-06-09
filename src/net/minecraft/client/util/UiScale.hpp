@@ -43,25 +43,6 @@ inline UiScale uiScale(const option::GameOptions& options, int fbWidth, int fbHe
     return s;
 }
 
-inline std::pair<int, int> mapScreenMouse(
-    const option::GameOptions& options,
-    int displayWidth,
-    int displayHeight,
-    int scaledWidth,
-    int scaledHeight,
-    int eventX,
-    int eventY) noexcept
-{
-    const int uiWidth = uiFramebufferWidth(options, displayWidth);
-    if (options.isSideBySideActive()) {
-        eventX %= displayWidth / 2;
-    }
-    return {
-        eventX * scaledWidth / uiWidth,
-        scaledHeight - eventY * scaledHeight / displayHeight - 1,
-    };
-}
-
 inline std::pair<int, int> mapPhysicalMouse(
     int displayWidth,
     int displayHeight,
@@ -76,6 +57,49 @@ inline std::pair<int, int> mapPhysicalMouse(
         ? (physX - viewportX) * scaledWidth / viewportHalfWidth
         : physX * scaledWidth / displayWidth;
     return {scaledX, scaledHeight - physY * scaledHeight / displayHeight - 1};
+}
+
+/// Map window-space cursor coords to scaled GUI coords for stereo or mono UI.
+/// Side-by-side: use the half of the window that contains the cursor, not the eye being drawn.
+inline std::pair<int, int> mapStereoUiMouse(
+    const option::GameOptions& options,
+    int displayWidth,
+    int displayHeight,
+    int scaledWidth,
+    int scaledHeight,
+    int physX,
+    int physY) noexcept
+{
+    int viewportX = 0;
+    int viewportHalfWidth = 0;
+    if (options.isSideBySideActive()) {
+        viewportHalfWidth = displayWidth / 2;
+        if (physX >= viewportHalfWidth) {
+            viewportX = viewportHalfWidth;
+        }
+    }
+    return mapPhysicalMouse(
+        displayWidth,
+        displayHeight,
+        scaledWidth,
+        scaledHeight,
+        viewportX,
+        viewportHalfWidth,
+        physX,
+        physY);
+}
+
+inline std::pair<int, int> mapScreenMouse(
+    const option::GameOptions& options,
+    int displayWidth,
+    int displayHeight,
+    int scaledWidth,
+    int scaledHeight,
+    int eventX,
+    int eventY) noexcept
+{
+    return mapStereoUiMouse(
+        options, displayWidth, displayHeight, scaledWidth, scaledHeight, eventX, eventY);
 }
 
 } // namespace net::minecraft::client::util

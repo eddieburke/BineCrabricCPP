@@ -39,11 +39,11 @@ int getLiquidDepth(const LiquidBlock& self, const BlockView* blockView, int x, i
     if (&blockView->getMaterial(x, y, z) != &self.material) {
         return -1;
     }
-    int n = blockView->getBlockMeta(x, y, z);
-    if (n >= 8) {
-        n = 0;
+    int meta = blockView->getBlockMeta(x, y, z);
+    if (meta >= 8) {
+        meta = 0;
     }
-    return n;
+    return meta;
 }
 
 bool isSolidFace(const LiquidBlock& self, const BlockView* blockView, int x, int y, int z, int face)
@@ -66,73 +66,73 @@ bool isSolidFace(const LiquidBlock& self, const BlockView* blockView, int x, int
 
 net::minecraft::util::math::ClientVec3d& getFlow(const LiquidBlock& self, const BlockView* blockView, int x, int y, int z)
 {
-    net::minecraft::util::math::ClientVec3d& vec3d = net::minecraft::util::math::ClientVec3d::createCached(0.0, 0.0, 0.0);
-    const int n2 = getLiquidDepth(self, blockView, x, y, z);
-    for (int n = 0; n < 4; ++n) {
-        int n5 = x;
-        int n6 = y;
-        int n7 = z;
-        if (n == 0) {
-            --n5;
+    net::minecraft::util::math::ClientVec3d& flowVector = net::minecraft::util::math::ClientVec3d::createCached(0.0, 0.0, 0.0);
+    const int centerDepth = getLiquidDepth(self, blockView, x, y, z);
+    for (int side = 0; side < 4; ++side) {
+        int nx = x;
+        int ny = y;
+        int nz = z;
+        if (side == 0) {
+            --nx;
         }
-        if (n == 1) {
-            --n7;
+        if (side == 1) {
+            --nz;
         }
-        if (n == 2) {
-            ++n5;
+        if (side == 2) {
+            ++nx;
         }
-        if (n == 3) {
-            ++n7;
+        if (side == 3) {
+            ++nz;
         }
-        int n4 = getLiquidDepth(self, blockView, n5, n6, n7);
-        if (n4 < 0) {
-            if (blockView->getMaterial(n5, n6, n7).blocksMovement()
-                || (n4 = getLiquidDepth(self, blockView, n5, n6 - 1, n7)) < 0) {
+        int neighborDepth = getLiquidDepth(self, blockView, nx, ny, nz);
+        if (neighborDepth < 0) {
+            if (blockView->getMaterial(nx, ny, nz).blocksMovement()
+                || (neighborDepth = getLiquidDepth(self, blockView, nx, ny - 1, nz)) < 0) {
                 continue;
             }
-            const int n3 = n4 - (n2 - 8);
-            vecAdd(vec3d, (n5 - x) * n3, (n6 - y) * n3, (n7 - z) * n3);
+            const int depthDelta = neighborDepth - (centerDepth - 8);
+            vecAdd(flowVector, (nx - x) * depthDelta, (ny - y) * depthDelta, (nz - z) * depthDelta);
             continue;
         }
-        if (n4 < 0) {
+        if (neighborDepth < 0) {
             continue;
         }
-        const int n3 = n4 - n2;
-        vecAdd(vec3d, (n5 - x) * n3, (n6 - y) * n3, (n7 - z) * n3);
+        const int depthDelta = neighborDepth - centerDepth;
+        vecAdd(flowVector, (nx - x) * depthDelta, (ny - y) * depthDelta, (nz - z) * depthDelta);
     }
     if (blockView != nullptr && blockView->getBlockMeta(x, y, z) >= 8) {
-        int n = 0;
-        if (n != 0 || isSolidFace(self, blockView, x, y, z - 1, 2)) {
-            n = 1;
+        int openSides = 0;
+        if (openSides != 0 || isSolidFace(self, blockView, x, y, z - 1, 2)) {
+            openSides = 1;
         }
-        if (n != 0 || isSolidFace(self, blockView, x, y, z + 1, 3)) {
-            n = 1;
+        if (openSides != 0 || isSolidFace(self, blockView, x, y, z + 1, 3)) {
+            openSides = 1;
         }
-        if (n != 0 || isSolidFace(self, blockView, x - 1, y, z, 4)) {
-            n = 1;
+        if (openSides != 0 || isSolidFace(self, blockView, x - 1, y, z, 4)) {
+            openSides = 1;
         }
-        if (n != 0 || isSolidFace(self, blockView, x + 1, y, z, 5)) {
-            n = 1;
+        if (openSides != 0 || isSolidFace(self, blockView, x + 1, y, z, 5)) {
+            openSides = 1;
         }
-        if (n != 0 || isSolidFace(self, blockView, x, y + 1, z - 1, 2)) {
-            n = 1;
+        if (openSides != 0 || isSolidFace(self, blockView, x, y + 1, z - 1, 2)) {
+            openSides = 1;
         }
-        if (n != 0 || isSolidFace(self, blockView, x, y + 1, z + 1, 3)) {
-            n = 1;
+        if (openSides != 0 || isSolidFace(self, blockView, x, y + 1, z + 1, 3)) {
+            openSides = 1;
         }
-        if (n != 0 || isSolidFace(self, blockView, x - 1, y + 1, z, 4)) {
-            n = 1;
+        if (openSides != 0 || isSolidFace(self, blockView, x - 1, y + 1, z, 4)) {
+            openSides = 1;
         }
-        if (n != 0 || isSolidFace(self, blockView, x + 1, y + 1, z, 5)) {
-            n = 1;
+        if (openSides != 0 || isSolidFace(self, blockView, x + 1, y + 1, z, 5)) {
+            openSides = 1;
         }
-        if (n != 0) {
-            vecNormalize(vec3d);
-            vecAdd(vec3d, 0.0, -6.0, 0.0);
+        if (openSides != 0) {
+            vecNormalize(flowVector);
+            vecAdd(flowVector, 0.0, -6.0, 0.0);
         }
     }
-    vecNormalize(vec3d);
-    return vec3d;
+    vecNormalize(flowVector);
+    return flowVector;
 }
 
 } // namespace
@@ -183,26 +183,26 @@ float LiquidBlock::getFluidHeightFromMeta(int meta)
 
 double LiquidBlock::getFlowingAngle(const BlockView* view, int x, int y, int z, material::Material& material)
 {
-    net::minecraft::util::math::ClientVec3d* vec3d = nullptr;
+    net::minecraft::util::math::ClientVec3d* flowVector = nullptr;
     if (&material == &material::Material::WATER) {
         auto* water = dynamic_cast<LiquidBlock*>(Block::BLOCKS[8]);
         if (water != nullptr) {
-            vec3d = &getFlow(*water, view, x, y, z);
+            flowVector = &getFlow(*water, view, x, y, z);
         }
     }
     if (&material == &material::Material::LAVA) {
         auto* lava = dynamic_cast<LiquidBlock*>(Block::BLOCKS[10]);
         if (lava != nullptr) {
-            vec3d = &getFlow(*lava, view, x, y, z);
+            flowVector = &getFlow(*lava, view, x, y, z);
         }
     }
-    if (vec3d == nullptr) {
+    if (flowVector == nullptr) {
         return -1000.0;
     }
-    if (vec3d->x == 0.0 && vec3d->z == 0.0) {
+    if (flowVector->x == 0.0 && flowVector->z == 0.0) {
         return -1000.0;
     }
-    return std::atan2(vec3d->z, vec3d->x) - 1.5707963267948966;
+    return std::atan2(flowVector->z, flowVector->x) - 1.5707963267948966;
 }
 
 void LiquidBlock::applyVelocity(World* world, int x, int y, int z, net::minecraft::Entity* /*entity*/, net::minecraft::Vec3d& velocity)
@@ -297,7 +297,7 @@ void LiquidBlock::randomDisplayTick(
                 static_cast<float>(z) + 0.5f,
                 "liquid.water",
                 random.nextFloat() * 0.25f + 0.75f,
-                random.nextFloat() + 0.5f);
+                random.nextFloat() * 1.0f + 0.5f);
         }
     }
     if (&material == &material::Material::LAVA && &world->getMaterial(x, y + 1, z) == &material::Material::AIR

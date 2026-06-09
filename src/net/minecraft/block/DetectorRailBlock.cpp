@@ -1,3 +1,4 @@
+#include "net/minecraft/block/BlockRegistrar.hpp"
 #include "net/minecraft/block/DetectorRailBlock.hpp"
 
 #include "net/minecraft/entity/Entity.hpp"
@@ -78,5 +79,15 @@ void DetectorRailBlock::onTick(World* world, int x, int y, int z, JavaRandom& /*
     }
     updatePoweredStatus(world, x, y, z, meta);
 }
+namespace {
 
+void registerDetectorRailBlock()
+{
+    Block::DETECTOR_RAIL = (new DetectorRailBlock(28, 195))->setHardness(0.7f)->setSoundGroup(&vanillaMetalSound())->setTranslationKey("detectorRail")->ignoreMetaUpdates();
+}
+
+MINECRAFT_REGISTER_BLOCK(registerDetectorRailBlock, 28);
+
+} // namespace
 } // namespace net::minecraft::block
+

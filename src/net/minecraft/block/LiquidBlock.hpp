@@ -18,9 +18,9 @@ public:
     LiquidBlock(int id, Material& mat)
         : Block(id, (&mat == &material::Material::LAVA ? 14 : 12) * 16 + 13, mat)
     {
-        const float f = 0.0f;
-        const float f2 = 0.0f;
-        setBoundingBox(0.0f + f2, 0.0f + f, 0.0f + f2, 1.0f + f2, 1.0f + f, 1.0f + f2);
+        const float offsetY = 0.0f;
+        const float offsetXZ = 0.0f;
+        setBoundingBox(0.0f + offsetXZ, 0.0f + offsetY, 0.0f + offsetXZ, 1.0f + offsetXZ, 1.0f + offsetY, 1.0f + offsetXZ);
         setTickRandomly(true);
     }
 

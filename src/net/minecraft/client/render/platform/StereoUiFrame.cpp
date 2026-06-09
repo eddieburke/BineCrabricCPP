@@ -45,15 +45,16 @@ void renderUiEye(
     ctx.rawScaledHeight = scale.rawHeight;
 
 #ifdef _WIN32
-    const auto [mouseX, mouseY] = util::mapPhysicalMouse(
+    input::InputSystem& input = input::InputSystem::instance();
+    input.syncCursorFromOs();
+    const auto [mouseX, mouseY] = util::mapStereoUiMouse(
+        options,
         displayWidth,
         displayHeight,
         ctx.scaledWidth,
         ctx.scaledHeight,
-        ctx.viewportX,
-        halfWidth,
-        net::minecraft::client::input::InputSystem::instance().mouseX(),
-        net::minecraft::client::input::InputSystem::instance().mouseY());
+        input.mouseX(),
+        input.mouseY());
     ctx.scaledMouseX = mouseX;
     ctx.scaledMouseY = mouseY;
 #endif

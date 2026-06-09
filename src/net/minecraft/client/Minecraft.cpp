@@ -41,6 +41,7 @@
 #include "net/minecraft/util/crash/CrashReport.hpp"
 #include "net/minecraft/util/hit/HitResultType.hpp"
 #include "net/minecraft/util/math/MathHelper.hpp"
+#include "net/minecraft/util/math/Vec3dClient.hpp"
 #include "net/minecraft/world/World.hpp"
 #include "net/minecraft/world/chunk/ChunkSource.hpp"
 #include "net/minecraft/world/chunk/LegacyChunkCache.hpp"
@@ -202,6 +203,9 @@ void Minecraft::unlockMouse()
         return;
     }
     input::InputSystem::instance().resetBindings();
+    if (interactionManager != nullptr) {
+        interactionManager->cancelBlockBreaking();
+    }
     focused = false;
     input::InputSystem::instance().unlockCursor();
 }
@@ -478,6 +482,7 @@ void Minecraft::run()
         int frames = 0;
         while (running.load()) {
             try {
+                ::net::minecraft::util::math::ClientVec3d::resetCacheCount();
                 screenStack_.flushRetired();
                 if (applet != nullptr && !applet->isActive()) {
                     break;
@@ -641,10 +646,12 @@ void Minecraft::changeDimension()
         message = "Leaving the Nether";
     }
     // setWorld must run while the old world is still alive (it saves player data and
-    // tears down listeners). Java keeps both worlds alive until setWorld replaces the
-    // reference; mirror that by deferring ownedWorld_ replacement until after setWorld.
+    // tears down listeners). Java lets the previous dimension linger until GC; keep it
+    // in parkedDimensionWorld_ so chunk/render adapters never dangle mid-travel.
     setWorld(newWorld.get(), message, player);
+    std::unique_ptr<World> previousWorld = std::move(worldSession_.ownedWorldMut());
     worldSession_.ownedWorldMut() = std::move(newWorld);
+    worldSession_.parkedDimensionWorldMut() = std::move(previousWorld);
     player->world = world;
     if (player->isAlive()) {
         player->setPositionAndAnglesKeepPrevAngles(px, player->y, pz, player->yaw, player->pitch);

@@ -3,6 +3,7 @@
 #include "net/minecraft/achievement/Achievements.hpp"
 #include "net/minecraft/entity/mob/PigZombieEntity.hpp"
 #include "net/minecraft/entity/player/PlayerEntity.hpp"
+#include "net/minecraft/item/Item.hpp"
 #include "net/minecraft/world/World.hpp"
 
 namespace net::minecraft::entity::passive {
@@ -54,6 +55,14 @@ void PigEntity::onLanding(float fallDistance)
             player->incrementStat(achievement::Achievements::FLY_PIG.statId());
         }
     }
+}
+
+int PigEntity::getDroppedItemId() const
+{
+    if (fireTicks > 0) {
+        return Item::COOKED_PORKCHOP != nullptr ? Item::COOKED_PORKCHOP->id : 320;
+    }
+    return Item::RAW_PORKCHOP != nullptr ? Item::RAW_PORKCHOP->id : 319;
 }
 
 } // namespace net::minecraft::entity::passive

@@ -204,11 +204,7 @@ public:
         return yPos >= getHeight(localX, localZ);
     }
 
-    [[nodiscard]] block::entity::BlockEntity* getBlockEntity(int localX, int yPos, int localZ)
-    {
-        const auto it = blockEntities.find(Vec3i{localX, yPos, localZ});
-        return it == blockEntities.end() ? nullptr : it->second.get();
-    }
+    [[nodiscard]] block::entity::BlockEntity* getBlockEntity(int localX, int yPos, int localZ);
 
     void addBlockEntity(std::unique_ptr<block::entity::BlockEntity> blockEntity)
     {

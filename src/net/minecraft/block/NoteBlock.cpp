@@ -1,3 +1,4 @@
+#include "net/minecraft/block/BlockRegistrar.hpp"
 #include "net/minecraft/block/NoteBlock.hpp"
 
 #include "net/minecraft/block/Block.hpp"
@@ -88,5 +89,15 @@ void NoteBlock::onBlockAction(World* world, int x, int y, int z, int data1, int 
     world->addParticle("note", static_cast<double>(x) + 0.5, static_cast<double>(y) + 1.2, static_cast<double>(z) + 0.5,
         static_cast<double>(data2) / 24.0, 0.0, 0.0);
 }
+namespace {
 
+void registerNoteBlock()
+{
+    Block::NOTE_BLOCK = (new NoteBlock(25))->setHardness(0.8f)->setTranslationKey("musicBlock")->ignoreMetaUpdates();
+}
+
+MINECRAFT_REGISTER_BLOCK(registerNoteBlock, 25);
+
+} // namespace
 } // namespace net::minecraft::block
+

@@ -9,36 +9,48 @@ namespace net::minecraft::client::render::block {
 void FallingBlockRenderer::renderFallingBlockEntity(net::minecraft::block::Block& block, net::minecraft::World* world, int x, int y, int z)
 {
     ctx_.faceState.useAo = false;
-    float f = 0.5f;
-    float f2 = 1.0f;
-    float f3 = 0.8f;
-    float f4 = 0.6f;
+    constexpr float shadeBottom = 0.5f;
+    constexpr float shadeTop = 1.0f;
+    constexpr float shadeNorthSouth = 0.8f;
+    constexpr float shadeEastWest = 0.6f;
     Tessellator& tessellator = render::INSTANCE;
     tessellator.startQuads();
-    float f5 = block.getLuminance(world, x, y, z);
-    float f6 = block.getLuminance(world, x, y - 1, z);
-    if (f6 < f5) { f6 = f5; }
-    tessellator.color(f * f6, f * f6, f * f6);
+    float blockBrightness = block.getLuminance(world, x, y, z);
+    float neighborBrightness = block.getLuminance(world, x, y - 1, z);
+    if (neighborBrightness < blockBrightness) {
+        neighborBrightness = blockBrightness;
+    }
+    tessellator.color(shadeBottom * neighborBrightness, shadeBottom * neighborBrightness, shadeBottom * neighborBrightness);
     faces_.renderBottomFace(block, -0.5, -0.5, -0.5, block.getTexture(0));
-    f6 = block.getLuminance(world, x, y + 1, z);
-    if (f6 < f5) { f6 = f5; }
-    tessellator.color(f2 * f6, f2 * f6, f2 * f6);
+    neighborBrightness = block.getLuminance(world, x, y + 1, z);
+    if (neighborBrightness < blockBrightness) {
+        neighborBrightness = blockBrightness;
+    }
+    tessellator.color(shadeTop * neighborBrightness, shadeTop * neighborBrightness, shadeTop * neighborBrightness);
     faces_.renderTopFace(block, -0.5, -0.5, -0.5, block.getTexture(1));
-    f6 = block.getLuminance(world, x, y, z - 1);
-    if (f6 < f5) { f6 = f5; }
-    tessellator.color(f3 * f6, f3 * f6, f3 * f6);
+    neighborBrightness = block.getLuminance(world, x, y, z - 1);
+    if (neighborBrightness < blockBrightness) {
+        neighborBrightness = blockBrightness;
+    }
+    tessellator.color(shadeNorthSouth * neighborBrightness, shadeNorthSouth * neighborBrightness, shadeNorthSouth * neighborBrightness);
     faces_.renderEastFace(block, -0.5, -0.5, -0.5, block.getTexture(2));
-    f6 = block.getLuminance(world, x, y, z + 1);
-    if (f6 < f5) { f6 = f5; }
-    tessellator.color(f3 * f6, f3 * f6, f3 * f6);
+    neighborBrightness = block.getLuminance(world, x, y, z + 1);
+    if (neighborBrightness < blockBrightness) {
+        neighborBrightness = blockBrightness;
+    }
+    tessellator.color(shadeNorthSouth * neighborBrightness, shadeNorthSouth * neighborBrightness, shadeNorthSouth * neighborBrightness);
     faces_.renderWestFace(block, -0.5, -0.5, -0.5, block.getTexture(3));
-    f6 = block.getLuminance(world, x - 1, y, z);
-    if (f6 < f5) { f6 = f5; }
-    tessellator.color(f4 * f6, f4 * f6, f4 * f6);
+    neighborBrightness = block.getLuminance(world, x - 1, y, z);
+    if (neighborBrightness < blockBrightness) {
+        neighborBrightness = blockBrightness;
+    }
+    tessellator.color(shadeEastWest * neighborBrightness, shadeEastWest * neighborBrightness, shadeEastWest * neighborBrightness);
     faces_.renderNorthFace(block, -0.5, -0.5, -0.5, block.getTexture(4));
-    f6 = block.getLuminance(world, x + 1, y, z);
-    if (f6 < f5) { f6 = f5; }
-    tessellator.color(f4 * f6, f4 * f6, f4 * f6);
+    neighborBrightness = block.getLuminance(world, x + 1, y, z);
+    if (neighborBrightness < blockBrightness) {
+        neighborBrightness = blockBrightness;
+    }
+    tessellator.color(shadeEastWest * neighborBrightness, shadeEastWest * neighborBrightness, shadeEastWest * neighborBrightness);
     faces_.renderSouthFace(block, -0.5, -0.5, -0.5, block.getTexture(5));
     tessellator.draw();
 }

@@ -18,16 +18,12 @@ bool CropBlockRenderer::render(net::minecraft::block::Block& block, int x, int y
 void CropBlockRenderer::render(net::minecraft::block::Block& block, int metadata, double x, double y, double z)
 {
     Tessellator& tessellator = render::INSTANCE;
-    int tex = block.getTexture(0, metadata);
-    if (ctx_.textureOverride >= 0) {
-        tex = ctx_.textureOverride;
-    }
-    int texU = (tex & 0xF) << 4;
-    int texV = tex & 0xF0;
-    double uMin = (float)texU / 256.0f;
-    double uMax = ((float)texU + 15.99f) / 256.0f;
-    double vMin = (float)texV / 256.0f;
-    double vMax = ((float)texV + 15.99f) / 256.0f;
+    const int tex = ctx_.resolveTexture(0, block.getTexture(0, metadata));
+    const net::minecraft::block::TerrainAtlasUv uv = net::minecraft::block::Block::terrainTileUv(tex);
+    const double uMin = uv.uMin;
+    const double uMax = uv.uMax;
+    const double vMin = uv.vMin;
+    const double vMax = uv.vMax;
     double x0 = x + 0.5 - 0.25;
     double x1 = x + 0.5 + 0.25;
     double z0 = z + 0.5 - 0.5;

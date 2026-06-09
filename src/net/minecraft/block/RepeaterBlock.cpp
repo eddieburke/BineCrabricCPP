@@ -1,3 +1,4 @@
+#include "net/minecraft/block/BlockRegistrar.hpp"
 #include "net/minecraft/block/RepeaterBlock.hpp"
 
 #include "net/minecraft/block/Block.hpp"
@@ -226,5 +227,16 @@ void RepeaterBlock::randomDisplayTick(
     }
     world->addParticle("reddust", px + offsetX, py, pz + offsetZ, 0.0, 0.0, 0.0);
 }
+namespace {
 
+void registerRepeaterBlocks()
+{
+    Block::REPEATER = (new RepeaterBlock(93, false))->setHardness(0.0f)->setSoundGroup(&vanillaWoodSound())->setTranslationKey("diode")->disableTrackingStatistics()->ignoreMetaUpdates();
+    Block::POWERED_REPEATER = (new RepeaterBlock(94, true))->setHardness(0.0f)->setLuminance(0.625f)->setSoundGroup(&vanillaWoodSound())->setTranslationKey("diode")->disableTrackingStatistics()->ignoreMetaUpdates();
+}
+
+MINECRAFT_REGISTER_BLOCK(registerRepeaterBlocks, 94);
+
+} // namespace
 } // namespace net::minecraft::block
+

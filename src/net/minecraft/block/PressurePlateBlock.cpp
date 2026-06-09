@@ -1,4 +1,7 @@
+#include "net/minecraft/block/BlockRegistrar.hpp"
 #include "net/minecraft/block/PressurePlateBlock.hpp"
+#include "net/minecraft/block/material/Material.hpp"
+#include "net/minecraft/block/PressurePlateActivationRule.hpp"
 
 #include "net/minecraft/block/Block.hpp"
 #include "net/minecraft/entity/Entity.hpp"
@@ -132,5 +135,17 @@ bool PressurePlateBlock::canTransferPowerInDirection(
 {
     return world != nullptr && world->getBlockMeta(x, y, z) != 0 && direction == 1;
 }
+namespace {
 
+void registerPressurePlateBlocks()
+{
+    namespace mat = material;
+    Block::STONE_PRESSURE_PLATE = (new PressurePlateBlock(70, Block::BLOCKS[1]->textureId, PressurePlateActivationRule::MOBS, mat::Material::STONE))->setHardness(0.5f)->setSoundGroup(&vanillaStoneSound())->setTranslationKey("pressurePlate")->ignoreMetaUpdates();
+    Block::WOODEN_PRESSURE_PLATE = (new PressurePlateBlock(72, Block::BLOCKS[5]->textureId, PressurePlateActivationRule::EVERYTHING, mat::Material::WOOD))->setHardness(0.5f)->setSoundGroup(&vanillaWoodSound())->setTranslationKey("pressurePlate")->ignoreMetaUpdates();
+}
+
+MINECRAFT_REGISTER_BLOCK(registerPressurePlateBlocks, 72);
+
+} // namespace
 } // namespace net::minecraft::block
+

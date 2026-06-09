@@ -1,3 +1,4 @@
+#include "net/minecraft/block/BlockRegistrar.hpp"
 #include "net/minecraft/block/SignBlock.hpp"
 
 #include "net/minecraft/block/material/Material.hpp"
@@ -10,9 +11,9 @@ SignBlock::SignBlock(int id, bool standingIn) : BlockWithEntity(id, material::Ma
 {
     standing = standingIn;
     textureId = 4;
-    const float f = 0.25f;
-    const float f2 = 1.0f;
-    setBoundingBox(0.5f - f, 0.0f, 0.5f - f, 0.5f + f, f2, 0.5f + f);
+    const float halfWidth = 0.25f;
+    const float height = 1.0f;
+    setBoundingBox(0.5f - halfWidth, 0.0f, 0.5f - halfWidth, 0.5f + halfWidth, height, 0.5f + halfWidth);
 }
 
 void SignBlock::updateBoundingBox(const BlockView* blockView, int x, int y, int z)
@@ -76,5 +77,16 @@ int SignBlock::getDroppedItemId(int /*blockMeta*/, JavaRandom& /*random*/) const
 {
     return Item::SIGN != nullptr ? Item::SIGN->id : 323;
 }
+namespace {
 
+void registerSignBlocks()
+{
+    Block::SIGN = (new SignBlock(63, true))->setHardness(1.0f)->setSoundGroup(&vanillaWoodSound())->setTranslationKey("sign")->disableTrackingStatistics()->ignoreMetaUpdates();
+    Block::WALL_SIGN = (new SignBlock(68, false))->setHardness(1.0f)->setSoundGroup(&vanillaWoodSound())->setTranslationKey("sign")->disableTrackingStatistics()->ignoreMetaUpdates();
+}
+
+MINECRAFT_REGISTER_BLOCK(registerSignBlocks, 63);
+
+} // namespace
 } // namespace net::minecraft::block
+

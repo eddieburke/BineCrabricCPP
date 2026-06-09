@@ -26,55 +26,55 @@ protected:
     {
         const double centerX = chunkX * 16 + 8;
         const double centerZ = chunkZ * 16 + 8;
-        float f = 0.0f;
-        float f2 = 0.0f;
+        float yawDrift = 0.0f;
+        float pitchDrift = 0.0f;
         JavaRandom rng(static_cast<std::uint64_t>(random.nextLong()));
         if (tunnelCount <= 0) {
-            const int n = range * 16 - 16;
-            tunnelCount = n - rng.nextInt(n / 4);
+            const int tunnelCountRange = range * 16 - 16;
+            tunnelCount = tunnelCountRange - rng.nextInt(tunnelCountRange / 4);
         }
-        int n = 0;
+        int splitFlag = 0;
         if (tunnel == -1) {
             tunnel = tunnelCount / 2;
-            n = 1;
+            splitFlag = 1;
         }
         const int splitAt = rng.nextInt(tunnelCount / 2) + tunnelCount / 4;
         const bool steepPitch = rng.nextInt(6) == 0;
         while (tunnel < tunnelCount) {
-            const double d3 = 1.5 + static_cast<double>(MathHelper::sin(static_cast<float>(tunnel) * PI_F / static_cast<float>(tunnelCount)) * baseWidth * 1.0f);
-            const double d4 = d3 * widthHeightRatio;
-            const float f3 = MathHelper::cos(pitch);
-            const float f4 = MathHelper::sin(pitch);
-            x += static_cast<double>(MathHelper::cos(yaw) * f3);
-            y += static_cast<double>(f4);
-            z += static_cast<double>(MathHelper::sin(yaw) * f3);
+            const double tunnelRadius = 1.5 + static_cast<double>(MathHelper::sin(static_cast<float>(tunnel) * PI_F / static_cast<float>(tunnelCount)) * baseWidth * 1.0f);
+            const double tunnelHeight = tunnelRadius * widthHeightRatio;
+            const float cosPitch = MathHelper::cos(pitch);
+            const float sinPitch = MathHelper::sin(pitch);
+            x += static_cast<double>(MathHelper::cos(yaw) * cosPitch);
+            y += static_cast<double>(sinPitch);
+            z += static_cast<double>(MathHelper::sin(yaw) * cosPitch);
             pitch *= steepPitch ? 0.92f : 0.7f;
-            pitch += f2 * 0.1f;
-            yaw += f * 0.1f;
-            f2 *= 0.9f;
-            f *= 0.75f;
-            f2 += (rng.nextFloat() - rng.nextFloat()) * rng.nextFloat() * 2.0f;
-            f += (rng.nextFloat() - rng.nextFloat()) * rng.nextFloat() * 4.0f;
-            if (n == 0 && tunnel == splitAt && baseWidth > 1.0f) {
+            pitch += pitchDrift * 0.1f;
+            yaw += yawDrift * 0.1f;
+            pitchDrift *= 0.9f;
+            yawDrift *= 0.75f;
+            pitchDrift += (rng.nextFloat() - rng.nextFloat()) * rng.nextFloat() * 2.0f;
+            yawDrift += (rng.nextFloat() - rng.nextFloat()) * rng.nextFloat() * 4.0f;
+            if (splitFlag == 0 && tunnel == splitAt && baseWidth > 1.0f) {
                 placeTunnels(chunkX, chunkZ, chunk, x, y, z, rng.nextFloat() * 0.5f + 0.5f, yaw - 1.5707964f, pitch / 3.0f, tunnel, tunnelCount, 1.0);
                 placeTunnels(chunkX, chunkZ, chunk, x, y, z, rng.nextFloat() * 0.5f + 0.5f, yaw + 1.5707964f, pitch / 3.0f, tunnel, tunnelCount, 1.0);
                 return;
             }
-            if (n != 0 || rng.nextInt(4) != 0) {
-                const double d5 = x - centerX;
-                const double d6 = z - centerZ;
-                const double d7 = tunnelCount - tunnel;
-                const double d8 = baseWidth + 2.0f + 16.0f;
-                if (d5 * d5 + d6 * d6 - d7 * d7 > d8 * d8) {
+            if (splitFlag != 0 || rng.nextInt(4) != 0) {
+                const double offsetXFromCenter = x - centerX;
+                const double offsetZFromCenter = z - centerZ;
+                const double remainingSegments = tunnelCount - tunnel;
+                const double maxDistanceFromCenter = baseWidth + 2.0f + 16.0f;
+                if (offsetXFromCenter * offsetXFromCenter + offsetZFromCenter * offsetZFromCenter - remainingSegments * remainingSegments > maxDistanceFromCenter * maxDistanceFromCenter) {
                     return;
                 }
-                if (!(x < centerX - 16.0 - d3 * 2.0 || z < centerZ - 16.0 - d3 * 2.0 || x > centerX + 16.0 + d3 * 2.0 || z > centerZ + 16.0 + d3 * 2.0)) {
-                    int minX = MathHelper::floor(x - d3) - chunkX * 16 - 1;
-                    int maxX = MathHelper::floor(x + d3) - chunkX * 16 + 1;
-                    int minY = MathHelper::floor(y - d4) - 1;
-                    int maxY = MathHelper::floor(y + d4) + 1;
-                    int minZ = MathHelper::floor(z - d3) - chunkZ * 16 - 1;
-                    int maxZ = MathHelper::floor(z + d3) - chunkZ * 16 + 1;
+                if (!(x < centerX - 16.0 - tunnelRadius * 2.0 || z < centerZ - 16.0 - tunnelRadius * 2.0 || x > centerX + 16.0 + tunnelRadius * 2.0 || z > centerZ + 16.0 + tunnelRadius * 2.0)) {
+                    int minX = MathHelper::floor(x - tunnelRadius) - chunkX * 16 - 1;
+                    int maxX = MathHelper::floor(x + tunnelRadius) - chunkX * 16 + 1;
+                    int minY = MathHelper::floor(y - tunnelHeight) - 1;
+                    int maxY = MathHelper::floor(y + tunnelHeight) + 1;
+                    int minZ = MathHelper::floor(z - tunnelRadius) - chunkZ * 16 - 1;
+                    int maxZ = MathHelper::floor(z + tunnelRadius) - chunkZ * 16 + 1;
                     if (minX < 0) { minX = 0; }
                     if (maxX > 16) { maxX = 16; }
                     if (minY < 1) { minY = 1; }
@@ -100,23 +100,23 @@ protected:
                     }
                     if (!blocked) {
                         for (int lx = minX; lx < maxX; ++lx) {
-                            const double dx = (static_cast<double>(lx + chunkX * 16) + 0.5 - x) / d3;
+                            const double normX = (static_cast<double>(lx + chunkX * 16) + 0.5 - x) / tunnelRadius;
                             for (int lz = minZ; lz < maxZ; ++lz) {
-                                const double dz = (static_cast<double>(lz + chunkZ * 16) + 0.5 - z) / d3;
-                                for (int i = maxY - 1; i >= minY; --i) {
-                                    const double dy = (static_cast<double>(i) + 0.5 - y) / d4;
+                                const double normZ = (static_cast<double>(lz + chunkZ * 16) + 0.5 - z) / tunnelRadius;
+                                for (int blockY = maxY - 1; blockY >= minY; --blockY) {
+                                    const double normY = (static_cast<double>(blockY) + 0.5 - y) / tunnelHeight;
                                     // Decompiled quirk: block index lags the sphere
-                                    // coordinate by one (operates on y = i + 1).
-                                    if (dy > -0.7 && dx * dx + dy * dy + dz * dz < 1.0) {
-                                        const int by = rawBlock(chunk, lx, i + 1, lz);
+                                    // coordinate by one (operates on y = blockY + 1).
+                                    if (normY > -0.7 && normX * normX + normY * normY + normZ * normZ < 1.0) {
+                                        const int by = rawBlock(chunk, lx, blockY + 1, lz);
                                         if (by == Block::NETHERRACK->id || by == Block::DIRT->id || by == Block::GRASS_BLOCK->id) {
-                                            setRawBlock(chunk, lx, i + 1, lz, 0);
+                                            setRawBlock(chunk, lx, blockY + 1, lz, 0);
                                         }
                                     }
                                 }
                             }
                         }
-                        if (n != 0) {
+                        if (splitFlag != 0) {
                             break;
                         }
                     }
@@ -128,11 +128,11 @@ protected:
 
     void place(World* /*world*/, int startChunkX, int startChunkZ, int chunkX, int chunkZ, Chunk& chunk) override
     {
-        int n = random.nextInt(random.nextInt(random.nextInt(10) + 1) + 1);
+        int caveCount = random.nextInt(random.nextInt(random.nextInt(10) + 1) + 1);
         if (random.nextInt(5) != 0) {
-            n = 0;
+            caveCount = 0;
         }
-        for (int i = 0; i < n; ++i) {
+        for (int i = 0; i < caveCount; ++i) {
             const double dx = startChunkX * 16 + random.nextInt(16);
             const double dy = random.nextInt(128);
             const double dz = startChunkZ * 16 + random.nextInt(16);

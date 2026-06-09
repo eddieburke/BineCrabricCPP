@@ -2,6 +2,7 @@
 
 #include "net/minecraft/entity/Entity.hpp"
 #include "net/minecraft/entity/player/PlayerEntity.hpp"
+#include "net/minecraft/item/Item.hpp"
 #include "net/minecraft/util/math/MathHelper.hpp"
 #include "net/minecraft/world/World.hpp"
 
@@ -47,6 +48,11 @@ void SpiderEntity::attack(Entity* other, float distance)
     } else {
         MonsterEntity::attack(other, distance);
     }
+}
+
+int SpiderEntity::getDroppedItemId() const
+{
+    return Item::STRING != nullptr ? Item::STRING->id : 287;
 }
 
 } // namespace net::minecraft::entity::mob

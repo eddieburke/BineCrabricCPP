@@ -16,11 +16,6 @@ public:
     [[nodiscard]] std::string getHurtSound() const override { return "mob.skeletonhurt"; }
     [[nodiscard]] std::string getDeathSound() const override { return "mob.skeletonhurt"; }
 
-    [[nodiscard]] int getDroppedItemId() const override
-    {
-        return Item::ARROW != nullptr ? Item::ARROW->id : 262;
-    }
-
     [[nodiscard]] ItemStack getHeldItem() const override
     {
         return ItemStack(Item::BOW, 1);

@@ -17,21 +17,21 @@ public:
 
     GhastEntityModel()
     {
-        const int n = -16;
+        constexpr int bodyYOffset = -16;
         root = net::minecraft::client::model::ModelPart(0, 0);
         root.addCuboid(-8.0f, -8.0f, -8.0f, 16, 16, 16);
-        root.pivotY += static_cast<float>(24 + n);
+        root.pivotY += static_cast<float>(24 + bodyYOffset);
 
         net::minecraft::JavaRandom random(1660ULL);
         for (std::size_t i = 0; i < tentacles.size(); ++i) {
             tentacles[i] = net::minecraft::client::model::ModelPart(0, 0);
-            const float f = (((static_cast<float>(i % 3) - static_cast<float>((i / 3) % 2) * 0.5f + 0.25f) / 2.0f * 2.0f - 1.0f) * 5.0f);
-            const float f2 = ((static_cast<float>(i / 3) / 2.0f * 2.0f - 1.0f) * 5.0f);
-            const int n2 = random.nextInt(7) + 8;
-            tentacles[i].addCuboid(-1.0f, 0.0f, -1.0f, 2, n2, 2);
-            tentacles[i].pivotX = f;
-            tentacles[i].pivotZ = f2;
-            tentacles[i].pivotY = static_cast<float>(31 + n);
+            const float offsetX = (((static_cast<float>(i % 3) - static_cast<float>((i / 3) % 2) * 0.5f + 0.25f) / 2.0f * 2.0f - 1.0f) * 5.0f);
+            const float offsetZ = ((static_cast<float>(i / 3) / 2.0f * 2.0f - 1.0f) * 5.0f);
+            const int tentacleLength = random.nextInt(7) + 8;
+            tentacles[i].addCuboid(-1.0f, 0.0f, -1.0f, 2, tentacleLength, 2);
+            tentacles[i].pivotX = offsetX;
+            tentacles[i].pivotZ = offsetZ;
+            tentacles[i].pivotY = static_cast<float>(31 + bodyYOffset);
         }
     }
 

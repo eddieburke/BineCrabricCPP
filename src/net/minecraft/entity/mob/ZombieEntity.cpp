@@ -1,5 +1,6 @@
 #include "net/minecraft/entity/mob/ZombieEntity.hpp"
 
+#include "net/minecraft/item/Item.hpp"
 #include "net/minecraft/util/math/MathHelper.hpp"
 #include "net/minecraft/world/World.hpp"
 
@@ -23,6 +24,11 @@ void ZombieEntity::tickMovement()
         }
     }
     MonsterEntity::tickMovement();
+}
+
+int ZombieEntity::getDroppedItemId() const
+{
+    return Item::FEATHER != nullptr ? Item::FEATHER->id : 288;
 }
 
 } // namespace net::minecraft::entity::mob

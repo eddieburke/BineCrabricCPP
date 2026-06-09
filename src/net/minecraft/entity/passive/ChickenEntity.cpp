@@ -42,4 +42,9 @@ void ChickenEntity::tickMovement()
     }
 }
 
+int ChickenEntity::getDroppedItemId() const
+{
+    return Item::FEATHER != nullptr ? Item::FEATHER->id : 288;
+}
+
 } // namespace net::minecraft::entity::passive

@@ -639,6 +639,7 @@ void GameRenderer::onFrameUpdate(float tickDelta)
                 dynamic_cast<gui::screen::ChatScreen*>(client->currentScreen()) != nullptr;
             platform::StereoUiFrame ui(client->options, client->displayWidth, client->displayHeight);
             ui.forEachEye([&](const platform::StereoUiEyeContext& ctx) {
+                ctx.setupHudProjection();
                 client->inGameHud.render(tickDelta, chatOpen, ctx.scaledMouseX, ctx.scaledMouseY);
             });
         }
@@ -657,7 +658,8 @@ void GameRenderer::onFrameUpdate(float tickDelta)
     if (client->currentScreen() != nullptr) {
         platform::StereoUiFrame ui(client->options, client->displayWidth, client->displayHeight);
         ui.forEachEye([&](const platform::StereoUiEyeContext& ctx) {
-            ctx.setupHudProjection();            client->currentScreen()->render(ctx.scaledMouseX, ctx.scaledMouseY, tickDelta);
+            ctx.setupHudProjection();
+            client->currentScreen()->render(ctx.scaledMouseX, ctx.scaledMouseY, tickDelta);
         });
     }
 }

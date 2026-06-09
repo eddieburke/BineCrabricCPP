@@ -16,149 +16,147 @@ namespace net::minecraft::client::render::block {
 bool LeverBlockRenderer::render(net::minecraft::block::Block& block, int x, int y, int z)
 {
 
-        bool bl;
-        int n = ctx_.blockView->getBlockMeta(x, y, z);
-        int n2 = n & 7;
-        bool bl2 = (n & 8) > 0;
+        int blockMeta = ctx_.blockView->getBlockMeta(x, y, z);
+        int facing = blockMeta & 7;
+        bool isPowered = (blockMeta & 8) > 0;
         Tessellator& tessellator = render::INSTANCE;
-        bl = ctx_.textureOverride >= 0;
-        if (!bl) {
+        const bool hadTextureOverride = ctx_.textureOverride >= 0;
+        if (!hadTextureOverride) {
             ctx_.textureOverride = net::minecraft::block::Block::BLOCKS[4]->textureId;
         }
-        float f = 0.25f;
-        float f2 = 0.1875f;
-        float f3 = 0.1875f;
-        if (n2 == 5) {
-            block.setBoundingBox(0.5f - f2, 0.0f, 0.5f - f, 0.5f + f2, f3, 0.5f + f);
-        } else if (n2 == 6) {
-            block.setBoundingBox(0.5f - f, 0.0f, 0.5f - f2, 0.5f + f, f3, 0.5f + f2);
-        } else if (n2 == 4) {
-            block.setBoundingBox(0.5f - f2, 0.5f - f, 1.0f - f3, 0.5f + f2, 0.5f + f, 1.0f);
-        } else if (n2 == 3) {
-            block.setBoundingBox(0.5f - f2, 0.5f - f, 0.0f, 0.5f + f2, 0.5f + f, f3);
-        } else if (n2 == 2) {
-            block.setBoundingBox(1.0f - f3, 0.5f - f, 0.5f - f2, 1.0f, 0.5f + f, 0.5f + f2);
-        } else if (n2 == 1) {
-            block.setBoundingBox(0.0f, 0.5f - f, 0.5f - f2, f3, 0.5f + f, 0.5f + f2);
+        constexpr float halfDepth = 0.25f;
+        constexpr float halfWidth = 0.1875f;
+        constexpr float handleHeight = 0.1875f;
+        if (facing == 5) {
+            block.setBoundingBox(0.5f - halfWidth, 0.0f, 0.5f - halfDepth, 0.5f + halfWidth, handleHeight, 0.5f + halfDepth);
+        } else if (facing == 6) {
+            block.setBoundingBox(0.5f - halfDepth, 0.0f, 0.5f - halfWidth, 0.5f + halfDepth, handleHeight, 0.5f + halfWidth);
+        } else if (facing == 4) {
+            block.setBoundingBox(0.5f - halfWidth, 0.5f - halfDepth, 1.0f - handleHeight, 0.5f + halfWidth, 0.5f + halfDepth, 1.0f);
+        } else if (facing == 3) {
+            block.setBoundingBox(0.5f - halfWidth, 0.5f - halfDepth, 0.0f, 0.5f + halfWidth, 0.5f + halfDepth, handleHeight);
+        } else if (facing == 2) {
+            block.setBoundingBox(1.0f - handleHeight, 0.5f - halfDepth, 0.5f - halfWidth, 1.0f, 0.5f + halfDepth, 0.5f + halfWidth);
+        } else if (facing == 1) {
+            block.setBoundingBox(0.0f, 0.5f - halfDepth, 0.5f - halfWidth, handleHeight, 0.5f + halfDepth, 0.5f + halfWidth);
         }
         cube_.renderBlock(block, x, y, z);
-        if (!bl) {
+        if (!hadTextureOverride) {
             ctx_.textureOverride = -1;
         }
-        float f4 = block.getLuminance(ctx_.blockView, x, y, z);
+        float brightness = block.getLuminance(ctx_.blockView, x, y, z);
         if (net::minecraft::block::Block::BLOCKS_LIGHT_LUMINANCE[block.id] > 0) {
-            f4 = 1.0f;
+            brightness = 1.0f;
         }
-        tessellator.color(f4, f4, f4);
-        int n3 = block.getTexture(0);
-        if (ctx_.textureOverride >= 0) {
-            n3 = ctx_.textureOverride;
-        }
-        int n4 = (n3 & 0xF) << 4;
-        int n5 = n3 & 0xF0;
-        float f5 = (float)n4 / 256.0f;
-        float f6 = ((float)n4 + 15.99f) / 256.0f;
-        float f7 = (float)n5 / 256.0f;
-        float f8 = ((float)n5 + 15.99f) / 256.0f;
-        
-        float f9 = 0.0625f;
-        float f10 = 0.0625f;
-        float f11 = 0.625f;
-        std::array<net::minecraft::util::math::ClientVec3d*, 8> vec3dArray {};
-        vec3dArray[0] = &net::minecraft::util::math::ClientVec3d::createCached(-f9, 0.0, -f10);
-        vec3dArray[1] = &net::minecraft::util::math::ClientVec3d::createCached(f9, 0.0, -f10);
-        vec3dArray[2] = &net::minecraft::util::math::ClientVec3d::createCached(f9, 0.0, f10);
-        vec3dArray[3] = &net::minecraft::util::math::ClientVec3d::createCached(-f9, 0.0, f10);
-        vec3dArray[4] = &net::minecraft::util::math::ClientVec3d::createCached(-f9, f11, -f10);
-        vec3dArray[5] = &net::minecraft::util::math::ClientVec3d::createCached(f9, f11, -f10);
-        vec3dArray[6] = &net::minecraft::util::math::ClientVec3d::createCached(f9, f11, f10);
-        vec3dArray[7] = &net::minecraft::util::math::ClientVec3d::createCached(-f9, f11, f10);
-        for (int i = 0; i < 8; ++i) {
-            if (bl2) {
-                vec3dArray[static_cast<std::size_t>(i)]->z -= 0.0625;
-                vec3dArray[static_cast<std::size_t>(i)]->rotateX(0.69813174f);
+        tessellator.color(brightness, brightness, brightness);
+        const int texture = ctx_.resolveTexture(0, block.getTexture(0));
+        const net::minecraft::block::TerrainAtlasUv uv = net::minecraft::block::Block::terrainTileUv(texture);
+        const int texU = net::minecraft::block::Block::textureAtlasU(texture);
+        const int texV = net::minecraft::block::Block::textureAtlasV(texture);
+        float uMin = static_cast<float>(uv.uMin);
+        float uMax = static_cast<float>(uv.uMax);
+        float vMin = static_cast<float>(uv.vMin);
+        float vMax = static_cast<float>(uv.vMax);
+
+        constexpr float stickHalfWidth = 0.0625f;
+        constexpr float stickHalfDepth = 0.0625f;
+        constexpr float stickHeight = 0.625f;
+        std::array<net::minecraft::util::math::ClientVec3d*, 8> handleCorners {};
+        handleCorners[0] = &net::minecraft::util::math::ClientVec3d::createCached(-stickHalfWidth, 0.0, -stickHalfDepth);
+        handleCorners[1] = &net::minecraft::util::math::ClientVec3d::createCached(stickHalfWidth, 0.0, -stickHalfDepth);
+        handleCorners[2] = &net::minecraft::util::math::ClientVec3d::createCached(stickHalfWidth, 0.0, stickHalfDepth);
+        handleCorners[3] = &net::minecraft::util::math::ClientVec3d::createCached(-stickHalfWidth, 0.0, stickHalfDepth);
+        handleCorners[4] = &net::minecraft::util::math::ClientVec3d::createCached(-stickHalfWidth, stickHeight, -stickHalfDepth);
+        handleCorners[5] = &net::minecraft::util::math::ClientVec3d::createCached(stickHalfWidth, stickHeight, -stickHalfDepth);
+        handleCorners[6] = &net::minecraft::util::math::ClientVec3d::createCached(stickHalfWidth, stickHeight, stickHalfDepth);
+        handleCorners[7] = &net::minecraft::util::math::ClientVec3d::createCached(-stickHalfWidth, stickHeight, stickHalfDepth);
+        for (int cornerIndex = 0; cornerIndex < 8; ++cornerIndex) {
+            net::minecraft::util::math::ClientVec3d* corner = handleCorners[static_cast<std::size_t>(cornerIndex)];
+            if (isPowered) {
+                corner->z -= 0.0625;
+                corner->rotateX(0.69813174f);
             } else {
-                vec3dArray[static_cast<std::size_t>(i)]->z += 0.0625;
-                vec3dArray[static_cast<std::size_t>(i)]->rotateX(-0.69813174f);
+                corner->z += 0.0625;
+                corner->rotateX(-0.69813174f);
             }
-            if (n2 == 6) {
-                vec3dArray[static_cast<std::size_t>(i)]->rotateY(1.5707964f);
+            if (facing == 6) {
+                corner->rotateY(1.5707964f);
             }
-            if (n2 < 5) {
-                vec3dArray[static_cast<std::size_t>(i)]->y -= 0.375;
-                vec3dArray[static_cast<std::size_t>(i)]->rotateX(1.5707964f);
-                if (n2 == 4) {
-                    vec3dArray[static_cast<std::size_t>(i)]->rotateY(0.0f);
+            if (facing < 5) {
+                corner->y -= 0.375;
+                corner->rotateX(1.5707964f);
+                if (facing == 4) {
+                    corner->rotateY(0.0f);
                 }
-                if (n2 == 3) {
-                    vec3dArray[static_cast<std::size_t>(i)]->rotateY(static_cast<float>(M_PI));
+                if (facing == 3) {
+                    corner->rotateY(static_cast<float>(M_PI));
                 }
-                if (n2 == 2) {
-                    vec3dArray[static_cast<std::size_t>(i)]->rotateY(1.5707964f);
+                if (facing == 2) {
+                    corner->rotateY(1.5707964f);
                 }
-                if (n2 == 1) {
-                    vec3dArray[static_cast<std::size_t>(i)]->rotateY(-1.5707964f);
+                if (facing == 1) {
+                    corner->rotateY(-1.5707964f);
                 }
-                vec3dArray[static_cast<std::size_t>(i)]->x += static_cast<double>(x) + 0.5;
-                vec3dArray[static_cast<std::size_t>(i)]->y += static_cast<double>(static_cast<float>(y) + 0.5f);
-                vec3dArray[static_cast<std::size_t>(i)]->z += static_cast<double>(z) + 0.5;
+                corner->x += static_cast<double>(x) + 0.5;
+                corner->y += static_cast<double>(static_cast<float>(y) + 0.5f);
+                corner->z += static_cast<double>(z) + 0.5;
                 continue;
             }
-            vec3dArray[static_cast<std::size_t>(i)]->x += static_cast<double>(x) + 0.5;
-            vec3dArray[static_cast<std::size_t>(i)]->y += static_cast<double>(static_cast<float>(y) + 0.125f);
-            vec3dArray[static_cast<std::size_t>(i)]->z += static_cast<double>(z) + 0.5;
+            corner->x += static_cast<double>(x) + 0.5;
+            corner->y += static_cast<double>(static_cast<float>(y) + 0.125f);
+            corner->z += static_cast<double>(z) + 0.5;
         }
-        net::minecraft::util::math::ClientVec3d* vec3d = nullptr;
-        net::minecraft::util::math::ClientVec3d* vec3d2 = nullptr;
-        net::minecraft::util::math::ClientVec3d* vec3d3 = nullptr;
-        net::minecraft::util::math::ClientVec3d* vec3d4 = nullptr;
-        for (int i = 0; i < 6; ++i) {
-            if (i == 0) {
-                f5 = (float)(n4 + 7) / 256.0f;
-                f6 = ((float)(n4 + 9) - 0.01f) / 256.0f;
-                f7 = (float)(n5 + 6) / 256.0f;
-                f8 = ((float)(n5 + 8) - 0.01f) / 256.0f;
-            } else if (i == 2) {
-                f5 = (float)(n4 + 7) / 256.0f;
-                f6 = ((float)(n4 + 9) - 0.01f) / 256.0f;
-                f7 = (float)(n5 + 6) / 256.0f;
-                f8 = ((float)(n5 + 16) - 0.01f) / 256.0f;
+        net::minecraft::util::math::ClientVec3d* cornerA = nullptr;
+        net::minecraft::util::math::ClientVec3d* cornerB = nullptr;
+        net::minecraft::util::math::ClientVec3d* cornerC = nullptr;
+        net::minecraft::util::math::ClientVec3d* cornerD = nullptr;
+        for (int faceIndex = 0; faceIndex < 6; ++faceIndex) {
+            if (faceIndex == 0) {
+                uMin = static_cast<float>(texU + 7) / 256.0f;
+                uMax = (static_cast<float>(texU + 9) - 0.01f) / 256.0f;
+                vMin = static_cast<float>(texV + 6) / 256.0f;
+                vMax = (static_cast<float>(texV + 8) - 0.01f) / 256.0f;
+            } else if (faceIndex == 2) {
+                uMin = static_cast<float>(texU + 7) / 256.0f;
+                uMax = (static_cast<float>(texU + 9) - 0.01f) / 256.0f;
+                vMin = static_cast<float>(texV + 6) / 256.0f;
+                vMax = (static_cast<float>(texV + 16) - 0.01f) / 256.0f;
             }
-            if (i == 0) {
-                vec3d = vec3dArray[0];
-                vec3d2 = vec3dArray[1];
-                vec3d3 = vec3dArray[2];
-                vec3d4 = vec3dArray[3];
-            } else if (i == 1) {
-                vec3d = vec3dArray[7];
-                vec3d2 = vec3dArray[6];
-                vec3d3 = vec3dArray[5];
-                vec3d4 = vec3dArray[4];
-            } else if (i == 2) {
-                vec3d = vec3dArray[1];
-                vec3d2 = vec3dArray[0];
-                vec3d3 = vec3dArray[4];
-                vec3d4 = vec3dArray[5];
-            } else if (i == 3) {
-                vec3d = vec3dArray[2];
-                vec3d2 = vec3dArray[1];
-                vec3d3 = vec3dArray[5];
-                vec3d4 = vec3dArray[6];
-            } else if (i == 4) {
-                vec3d = vec3dArray[3];
-                vec3d2 = vec3dArray[2];
-                vec3d3 = vec3dArray[6];
-                vec3d4 = vec3dArray[7];
-            } else if (i == 5) {
-                vec3d = vec3dArray[0];
-                vec3d2 = vec3dArray[3];
-                vec3d3 = vec3dArray[7];
-                vec3d4 = vec3dArray[4];
+            if (faceIndex == 0) {
+                cornerA = handleCorners[0];
+                cornerB = handleCorners[1];
+                cornerC = handleCorners[2];
+                cornerD = handleCorners[3];
+            } else if (faceIndex == 1) {
+                cornerA = handleCorners[7];
+                cornerB = handleCorners[6];
+                cornerC = handleCorners[5];
+                cornerD = handleCorners[4];
+            } else if (faceIndex == 2) {
+                cornerA = handleCorners[1];
+                cornerB = handleCorners[0];
+                cornerC = handleCorners[4];
+                cornerD = handleCorners[5];
+            } else if (faceIndex == 3) {
+                cornerA = handleCorners[2];
+                cornerB = handleCorners[1];
+                cornerC = handleCorners[5];
+                cornerD = handleCorners[6];
+            } else if (faceIndex == 4) {
+                cornerA = handleCorners[3];
+                cornerB = handleCorners[2];
+                cornerC = handleCorners[6];
+                cornerD = handleCorners[7];
+            } else if (faceIndex == 5) {
+                cornerA = handleCorners[0];
+                cornerB = handleCorners[3];
+                cornerC = handleCorners[7];
+                cornerD = handleCorners[4];
             }
-            tessellator.vertex(vec3d->x, vec3d->y, vec3d->z, f5, f8);
-            tessellator.vertex(vec3d2->x, vec3d2->y, vec3d2->z, f6, f8);
-            tessellator.vertex(vec3d3->x, vec3d3->y, vec3d3->z, f6, f7);
-            tessellator.vertex(vec3d4->x, vec3d4->y, vec3d4->z, f5, f7);
+            tessellator.vertex(cornerA->x, cornerA->y, cornerA->z, uMin, vMax);
+            tessellator.vertex(cornerB->x, cornerB->y, cornerB->z, uMax, vMax);
+            tessellator.vertex(cornerC->x, cornerC->y, cornerC->z, uMax, vMin);
+            tessellator.vertex(cornerD->x, cornerD->y, cornerD->z, uMin, vMin);
         }
         return true;
     

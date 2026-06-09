@@ -1,31 +1,18 @@
 #pragma once
 
-#include "net/minecraft/entity/player/PlayerEntity.hpp"
 #include "net/minecraft/item/Item.hpp"
-#include "net/minecraft/item/ItemStack.hpp"
+
+namespace net::minecraft {
+class World;
+class ItemStack;
+} // namespace net::minecraft
 
 namespace net::minecraft::item {
 
 class FoodItem : public Item {
 public:
-    FoodItem(int rawId, int healAmount, bool wolfFood)
-        : Item(rawId),
-          healAmount_(healAmount),
-          wolfFood_(wolfFood)
-    {
-        setMaxCount(1);
-    }
-
-    ItemStack* use(ItemStack* stack, World* /*world*/, PlayerEntity* user) override
-    {
-        if (stack != nullptr) {
-            --stack->count;
-        }
-        if (user != nullptr) {
-            user->heal(healAmount_);
-        }
-        return stack;
-    }
+    FoodItem(int rawId, int healAmount, bool wolfFood);
+    ItemStack* use(ItemStack* stack, World* world, PlayerEntity* user) override;
 
     [[nodiscard]] int getHealthRestored() const { return healAmount_; }
     [[nodiscard]] bool isMeat() const { return wolfFood_; }

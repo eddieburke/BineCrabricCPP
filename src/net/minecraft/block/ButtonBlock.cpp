@@ -1,4 +1,6 @@
+#include "net/minecraft/block/BlockRegistrar.hpp"
 #include "net/minecraft/block/ButtonBlock.hpp"
+#include "net/minecraft/block/Block.hpp"
 
 #include "net/minecraft/entity/player/PlayerEntity.hpp"
 #include "net/minecraft/world/World.hpp"
@@ -243,5 +245,15 @@ bool ButtonBlock::isEmittingRedstonePowerInDirection(
 {
     return blockView != nullptr && (blockView->getBlockMeta(x, y, z) & 8) > 0;
 }
+namespace {
 
+void registerButtonBlock()
+{
+    Block::BUTTON = (new ButtonBlock(77, Block::BLOCKS[1]->textureId))->setHardness(0.5f)->setSoundGroup(&vanillaStoneSound())->setTranslationKey("button")->ignoreMetaUpdates();
+}
+
+MINECRAFT_REGISTER_BLOCK(registerButtonBlock, 77);
+
+} // namespace
 } // namespace net::minecraft::block
+

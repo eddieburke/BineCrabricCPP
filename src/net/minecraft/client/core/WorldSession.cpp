@@ -31,6 +31,7 @@ void WorldSession::clearWorld(Minecraft& client)
     }
     ownedPlayer_.reset();
     client.player = nullptr;
+    parkedDimensionWorld_.reset();
     ownedWorld_.reset();
     ownedWorldStorage_.reset();
 }

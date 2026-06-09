@@ -1,3 +1,4 @@
+#include "net/minecraft/block/BlockRegistrar.hpp"
 #include "net/minecraft/block/StillLiquidBlock.hpp"
 
 #include "net/minecraft/block/Block.hpp"
@@ -69,5 +70,17 @@ void StillLiquidBlock::onTick(World* world, int x, int y, int z, JavaRandom& ran
         return;
     }
 }
+namespace {
 
+void registerStillLiquidBlocks()
+{
+    namespace mat = material;
+    Block::WATER = (new StillLiquidBlock(9, mat::Material::WATER))->setHardness(100.0f)->setOpacity(3)->setTranslationKey("water")->disableTrackingStatistics()->ignoreMetaUpdates();
+    Block::LAVA = (new StillLiquidBlock(11, mat::Material::LAVA))->setHardness(100.0f)->setLuminance(1.0f)->setOpacity(255)->setTranslationKey("lava")->disableTrackingStatistics()->ignoreMetaUpdates();
+}
+
+MINECRAFT_REGISTER_BLOCK(registerStillLiquidBlocks, 9);
+
+} // namespace
 } // namespace net::minecraft::block
+

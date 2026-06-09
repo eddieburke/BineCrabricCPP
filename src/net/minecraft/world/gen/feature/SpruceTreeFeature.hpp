@@ -23,12 +23,12 @@ public:
         if (world == nullptr || y < 1 || y + height + 1 > 128) {
             return false;
         }
-        for (int n7 = y; n7 <= y + 1 + height && clear; ++n7) {
-            int radius = n7 - y < trunkClearHeight ? 0 : maxRadius;
-            for (int n5 = x - radius; n5 <= x + radius && clear; ++n5) {
-                for (int n4 = z - radius; n4 <= z + radius && clear; ++n4) {
-                    if (n7 >= 0 && n7 < 128) {
-                        const int blockId = world->getBlockId(n5, n7, n4);
+        for (int checkY = y; checkY <= y + 1 + height && clear; ++checkY) {
+            int radius = checkY - y < trunkClearHeight ? 0 : maxRadius;
+            for (int blockX = x - radius; blockX <= x + radius && clear; ++blockX) {
+                for (int blockZ = z - radius; blockZ <= z + radius && clear; ++blockZ) {
+                    if (checkY >= 0 && checkY < 128) {
+                        const int blockId = world->getBlockId(blockX, checkY, blockZ);
                         if (tree_feature::canReplaceLeaves(blockId)) {
                             continue;
                         }
@@ -50,17 +50,17 @@ public:
         int radius = random.nextInt(2);
         int radiusLimit = 1;
         int resetRadius = 0;
-        for (int n3 = 0; n3 <= crownHeight; ++n3) {
-            const int leafY = y + height - n3;
-            for (int n = x - radius; n <= x + radius; ++n) {
-                const int dx = n - x;
-                for (int i = z - radius; i <= z + radius; ++i) {
-                    const int dz = i - z;
+        for (int crownLayer = 0; crownLayer <= crownHeight; ++crownLayer) {
+            const int leafY = y + height - crownLayer;
+            for (int leafX = x - radius; leafX <= x + radius; ++leafX) {
+                const int dx = leafX - x;
+                for (int leafZ = z - radius; leafZ <= z + radius; ++leafZ) {
+                    const int dz = leafZ - z;
                     if ((std::abs(dx) == radius && std::abs(dz) == radius && radius > 0)
-                        || tree_feature::isOpaqueBlock(world->getBlockId(n, leafY, i))) {
+                        || tree_feature::isOpaqueBlock(world->getBlockId(leafX, leafY, leafZ))) {
                         continue;
                     }
-                    world->setBlockWithoutNotifyingNeighbors(n, leafY, i, tree_feature::id(Block::LEAVES), 1);
+                    world->setBlockWithoutNotifyingNeighbors(leafX, leafY, leafZ, tree_feature::id(Block::LEAVES), 1);
                 }
             }
             if (radius >= radiusLimit) {
@@ -74,12 +74,12 @@ public:
             ++radius;
         }
         const int trunkShorten = random.nextInt(3);
-        for (int n2 = 0; n2 < height - trunkShorten; ++n2) {
-            const int blockId = world->getBlockId(x, y + n2, z);
+        for (int logY = 0; logY < height - trunkShorten; ++logY) {
+            const int blockId = world->getBlockId(x, y + logY, z);
             if (!tree_feature::canReplaceLeaves(blockId)) {
                 continue;
             }
-            world->setBlockWithoutNotifyingNeighbors(x, y + n2, z, tree_feature::id(Block::LOG), 1);
+            world->setBlockWithoutNotifyingNeighbors(x, y + logY, z, tree_feature::id(Block::LOG), 1);
         }
         return true;
     }

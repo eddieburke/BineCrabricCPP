@@ -1,3 +1,4 @@
+#include "net/minecraft/block/BlockRegistrar.hpp"
 #include "net/minecraft/block/FlowingLiquidBlock.hpp"
 
 #include "net/minecraft/block/Block.hpp"
@@ -262,5 +263,17 @@ void FlowingLiquidBlock::onTick(World* world, int x, int y, int z, JavaRandom& r
         spreadTo(world, x, y, z + 1, spreadDepth);
     }
 }
+namespace {
 
+void registerFlowingLiquidBlocks()
+{
+    namespace mat = material;
+    Block::FLOWING_WATER = (new FlowingLiquidBlock(8, mat::Material::WATER))->setHardness(100.0f)->setOpacity(3)->setTranslationKey("water")->disableTrackingStatistics()->ignoreMetaUpdates();
+    Block::FLOWING_LAVA = (new FlowingLiquidBlock(10, mat::Material::LAVA))->setHardness(0.0f)->setLuminance(1.0f)->setOpacity(255)->setTranslationKey("lava")->disableTrackingStatistics()->ignoreMetaUpdates();
+}
+
+MINECRAFT_REGISTER_BLOCK(registerFlowingLiquidBlocks, 8);
+
+} // namespace
 } // namespace net::minecraft::block
+

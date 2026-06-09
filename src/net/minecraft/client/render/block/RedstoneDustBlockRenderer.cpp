@@ -12,10 +12,7 @@ bool RedstoneDustBlockRenderer::render(net::minecraft::block::Block& block, int 
     bool connectWest;
     Tessellator& tessellator = render::INSTANCE;
     int meta = ctx_.blockView->getBlockMeta(x, y, z);
-    int tex = block.getTexture(1, meta);
-    if (ctx_.textureOverride >= 0) {
-        tex = ctx_.textureOverride;
-    }
+    const int tex = ctx_.resolveTexture(1, block.getTexture(1, meta));
     float brightness = block.getLuminance(ctx_.blockView, x, y, z);
     float power = (float)meta / 15.0f;
     float colorRed = power * 0.6f + 0.4f;
@@ -31,12 +28,13 @@ bool RedstoneDustBlockRenderer::render(net::minecraft::block::Block& block, int 
         colorBlue = 0.0f;
     }
     tessellator.color(brightness * colorRed, brightness * colorGreen, brightness * colorBlue);
-    int texU = (tex & 0xF) << 4;
-    int texV = tex & 0xF0;
-    double d = (float)texU / 256.0f;
-    double d2 = ((float)texU + 15.99f) / 256.0f;
-    double d3 = (float)texV / 256.0f;
-    double d4 = ((float)texV + 15.99f) / 256.0f;
+    const net::minecraft::block::TerrainAtlasUv uv = net::minecraft::block::Block::terrainTileUv(tex);
+    const int texU = net::minecraft::block::Block::textureAtlasU(tex);
+    const int texV = net::minecraft::block::Block::textureAtlasV(tex);
+    double uMin = uv.uMin;
+    double uMax = uv.uMax;
+    double vMin = uv.vMin;
+    double vMax = uv.vMax;
     bool connectNorth = net::minecraft::block::RedstoneWireBlock::shouldConnectTo(ctx_.blockView, x - 1, y, z, 1)
         || (!ctx_.blockView->shouldSuffocate(x - 1, y, z)
             && net::minecraft::block::RedstoneWireBlock::shouldConnectTo(ctx_.blockView, x - 1, y - 1, z, -1));
@@ -75,112 +73,112 @@ bool RedstoneDustBlockRenderer::render(net::minecraft::block::Block& block, int 
         wireLayout = 2;
     }
     if (wireLayout != 0) {
-        d = (float)(texU + 16) / 256.0f;
-        d2 = ((float)(texU + 16) + 15.99f) / 256.0f;
-        d3 = (float)texV / 256.0f;
-        d4 = ((float)texV + 15.99f) / 256.0f;
+        uMin = (float)(texU + 16) / 256.0f;
+        uMax = ((float)(texU + 16) + 15.99f) / 256.0f;
+        vMin = (float)texV / 256.0f;
+        vMax = ((float)texV + 15.99f) / 256.0f;
     }
     if (wireLayout == 0) {
         if (connectSouth || connectEast || connectWest || connectNorth) {
             if (!connectNorth) {
                 x0 += 0.3125f;
-                d += 0.01953125;
+                uMin += 0.01953125;
             }
             if (!connectSouth) {
                 x1 -= 0.3125f;
-                d2 -= 0.01953125;
+                uMax -= 0.01953125;
             }
             if (!connectEast) {
                 z0 += 0.3125f;
-                d3 += 0.01953125;
+                vMin += 0.01953125;
             }
             if (!connectWest) {
                 z1 -= 0.3125f;
-                d4 -= 0.01953125;
+                vMax -= 0.01953125;
             }
         }
-        tessellator.vertex(x1, (float)y + 0.015625f, z1, d2, d4);
-        tessellator.vertex(x1, (float)y + 0.015625f, z0, d2, d3);
-        tessellator.vertex(x0, (float)y + 0.015625f, z0, d, d3);
-        tessellator.vertex(x0, (float)y + 0.015625f, z1, d, d4);
+        tessellator.vertex(x1, (float)y + 0.015625f, z1, uMax, vMax);
+        tessellator.vertex(x1, (float)y + 0.015625f, z0, uMax, vMin);
+        tessellator.vertex(x0, (float)y + 0.015625f, z0, uMin, vMin);
+        tessellator.vertex(x0, (float)y + 0.015625f, z1, uMin, vMax);
         tessellator.color(brightness, brightness, brightness);
-        tessellator.vertex(x1, (float)y + 0.015625f, z1, d2, d4 + 0.0625);
-        tessellator.vertex(x1, (float)y + 0.015625f, z0, d2, d3 + 0.0625);
-        tessellator.vertex(x0, (float)y + 0.015625f, z0, d, d3 + 0.0625);
-        tessellator.vertex(x0, (float)y + 0.015625f, z1, d, d4 + 0.0625);
+        tessellator.vertex(x1, (float)y + 0.015625f, z1, uMax, vMax + 0.0625);
+        tessellator.vertex(x1, (float)y + 0.015625f, z0, uMax, vMin + 0.0625);
+        tessellator.vertex(x0, (float)y + 0.015625f, z0, uMin, vMin + 0.0625);
+        tessellator.vertex(x0, (float)y + 0.015625f, z1, uMin, vMax + 0.0625);
     } else if (wireLayout == 1) {
-        tessellator.vertex(x1, (float)y + 0.015625f, z1, d2, d4);
-        tessellator.vertex(x1, (float)y + 0.015625f, z0, d2, d3);
-        tessellator.vertex(x0, (float)y + 0.015625f, z0, d, d3);
-        tessellator.vertex(x0, (float)y + 0.015625f, z1, d, d4);
+        tessellator.vertex(x1, (float)y + 0.015625f, z1, uMax, vMax);
+        tessellator.vertex(x1, (float)y + 0.015625f, z0, uMax, vMin);
+        tessellator.vertex(x0, (float)y + 0.015625f, z0, uMin, vMin);
+        tessellator.vertex(x0, (float)y + 0.015625f, z1, uMin, vMax);
         tessellator.color(brightness, brightness, brightness);
-        tessellator.vertex(x1, (float)y + 0.015625f, z1, d2, d4 + 0.0625);
-        tessellator.vertex(x1, (float)y + 0.015625f, z0, d2, d3 + 0.0625);
-        tessellator.vertex(x0, (float)y + 0.015625f, z0, d, d3 + 0.0625);
-        tessellator.vertex(x0, (float)y + 0.015625f, z1, d, d4 + 0.0625);
+        tessellator.vertex(x1, (float)y + 0.015625f, z1, uMax, vMax + 0.0625);
+        tessellator.vertex(x1, (float)y + 0.015625f, z0, uMax, vMin + 0.0625);
+        tessellator.vertex(x0, (float)y + 0.015625f, z0, uMin, vMin + 0.0625);
+        tessellator.vertex(x0, (float)y + 0.015625f, z1, uMin, vMax + 0.0625);
     } else if (wireLayout == 2) {
-        tessellator.vertex(x1, (float)y + 0.015625f, z1, d2, d4);
-        tessellator.vertex(x1, (float)y + 0.015625f, z0, d, d4);
-        tessellator.vertex(x0, (float)y + 0.015625f, z0, d, d3);
-        tessellator.vertex(x0, (float)y + 0.015625f, z1, d2, d3);
+        tessellator.vertex(x1, (float)y + 0.015625f, z1, uMax, vMax);
+        tessellator.vertex(x1, (float)y + 0.015625f, z0, uMin, vMax);
+        tessellator.vertex(x0, (float)y + 0.015625f, z0, uMin, vMin);
+        tessellator.vertex(x0, (float)y + 0.015625f, z1, uMax, vMin);
         tessellator.color(brightness, brightness, brightness);
-        tessellator.vertex(x1, (float)y + 0.015625f, z1, d2, d4 + 0.0625);
-        tessellator.vertex(x1, (float)y + 0.015625f, z0, d, d4 + 0.0625);
-        tessellator.vertex(x0, (float)y + 0.015625f, z0, d, d3 + 0.0625);
-        tessellator.vertex(x0, (float)y + 0.015625f, z1, d2, d3 + 0.0625);
+        tessellator.vertex(x1, (float)y + 0.015625f, z1, uMax, vMax + 0.0625);
+        tessellator.vertex(x1, (float)y + 0.015625f, z0, uMin, vMax + 0.0625);
+        tessellator.vertex(x0, (float)y + 0.015625f, z0, uMin, vMin + 0.0625);
+        tessellator.vertex(x0, (float)y + 0.015625f, z1, uMax, vMin + 0.0625);
     }
     if (!ctx_.blockView->shouldSuffocate(x, y + 1, z)) {
-        d = (float)(texU + 16) / 256.0f;
-        d2 = ((float)(texU + 16) + 15.99f) / 256.0f;
-        d3 = (float)texV / 256.0f;
-        d4 = ((float)texV + 15.99f) / 256.0f;
+        uMin = (float)(texU + 16) / 256.0f;
+        uMax = ((float)(texU + 16) + 15.99f) / 256.0f;
+        vMin = (float)texV / 256.0f;
+        vMax = ((float)texV + 15.99f) / 256.0f;
         if (ctx_.blockView->shouldSuffocate(x - 1, y, z) && ctx_.blockView->getBlockId(x - 1, y + 1, z) == 55) {
             tessellator.color(brightness * colorRed, brightness * colorGreen, brightness * colorBlue);
-            tessellator.vertex((float)x + 0.015625f, (float)(y + 1) + 0.021875f, z + 1, d2, d3);
-            tessellator.vertex((float)x + 0.015625f, y + 0, z + 1, d, d3);
-            tessellator.vertex((float)x + 0.015625f, y + 0, z + 0, d, d4);
-            tessellator.vertex((float)x + 0.015625f, (float)(y + 1) + 0.021875f, z + 0, d2, d4);
+            tessellator.vertex((float)x + 0.015625f, (float)(y + 1) + 0.021875f, z + 1, uMax, vMin);
+            tessellator.vertex((float)x + 0.015625f, y + 0, z + 1, uMin, vMin);
+            tessellator.vertex((float)x + 0.015625f, y + 0, z + 0, uMin, vMax);
+            tessellator.vertex((float)x + 0.015625f, (float)(y + 1) + 0.021875f, z + 0, uMax, vMax);
             tessellator.color(brightness, brightness, brightness);
-            tessellator.vertex((float)x + 0.015625f, (float)(y + 1) + 0.021875f, z + 1, d2, d3 + 0.0625);
-            tessellator.vertex((float)x + 0.015625f, y + 0, z + 1, d, d3 + 0.0625);
-            tessellator.vertex((float)x + 0.015625f, y + 0, z + 0, d, d4 + 0.0625);
-            tessellator.vertex((float)x + 0.015625f, (float)(y + 1) + 0.021875f, z + 0, d2, d4 + 0.0625);
+            tessellator.vertex((float)x + 0.015625f, (float)(y + 1) + 0.021875f, z + 1, uMax, vMin + 0.0625);
+            tessellator.vertex((float)x + 0.015625f, y + 0, z + 1, uMin, vMin + 0.0625);
+            tessellator.vertex((float)x + 0.015625f, y + 0, z + 0, uMin, vMax + 0.0625);
+            tessellator.vertex((float)x + 0.015625f, (float)(y + 1) + 0.021875f, z + 0, uMax, vMax + 0.0625);
         }
         if (ctx_.blockView->shouldSuffocate(x + 1, y, z) && ctx_.blockView->getBlockId(x + 1, y + 1, z) == 55) {
             tessellator.color(brightness * colorRed, brightness * colorGreen, brightness * colorBlue);
-            tessellator.vertex((float)(x + 1) - 0.015625f, y + 0, z + 1, d, d4);
-            tessellator.vertex((float)(x + 1) - 0.015625f, (float)(y + 1) + 0.021875f, z + 1, d2, d4);
-            tessellator.vertex((float)(x + 1) - 0.015625f, (float)(y + 1) + 0.021875f, z + 0, d2, d3);
-            tessellator.vertex((float)(x + 1) - 0.015625f, y + 0, z + 0, d, d3);
+            tessellator.vertex((float)(x + 1) - 0.015625f, y + 0, z + 1, uMin, vMax);
+            tessellator.vertex((float)(x + 1) - 0.015625f, (float)(y + 1) + 0.021875f, z + 1, uMax, vMax);
+            tessellator.vertex((float)(x + 1) - 0.015625f, (float)(y + 1) + 0.021875f, z + 0, uMax, vMin);
+            tessellator.vertex((float)(x + 1) - 0.015625f, y + 0, z + 0, uMin, vMin);
             tessellator.color(brightness, brightness, brightness);
-            tessellator.vertex((float)(x + 1) - 0.015625f, y + 0, z + 1, d, d4 + 0.0625);
-            tessellator.vertex((float)(x + 1) - 0.015625f, (float)(y + 1) + 0.021875f, z + 1, d2, d4 + 0.0625);
-            tessellator.vertex((float)(x + 1) - 0.015625f, (float)(y + 1) + 0.021875f, z + 0, d2, d3 + 0.0625);
-            tessellator.vertex((float)(x + 1) - 0.015625f, y + 0, z + 0, d, d3 + 0.0625);
+            tessellator.vertex((float)(x + 1) - 0.015625f, y + 0, z + 1, uMin, vMax + 0.0625);
+            tessellator.vertex((float)(x + 1) - 0.015625f, (float)(y + 1) + 0.021875f, z + 1, uMax, vMax + 0.0625);
+            tessellator.vertex((float)(x + 1) - 0.015625f, (float)(y + 1) + 0.021875f, z + 0, uMax, vMin + 0.0625);
+            tessellator.vertex((float)(x + 1) - 0.015625f, y + 0, z + 0, uMin, vMin + 0.0625);
         }
         if (ctx_.blockView->shouldSuffocate(x, y, z - 1) && ctx_.blockView->getBlockId(x, y + 1, z - 1) == 55) {
             tessellator.color(brightness * colorRed, brightness * colorGreen, brightness * colorBlue);
-            tessellator.vertex(x + 1, y + 0, (float)z + 0.015625f, d, d4);
-            tessellator.vertex(x + 1, (float)(y + 1) + 0.021875f, (float)z + 0.015625f, d2, d4);
-            tessellator.vertex(x + 0, (float)(y + 1) + 0.021875f, (float)z + 0.015625f, d2, d3);
-            tessellator.vertex(x + 0, y + 0, (float)z + 0.015625f, d, d3);
+            tessellator.vertex(x + 1, y + 0, (float)z + 0.015625f, uMin, vMax);
+            tessellator.vertex(x + 1, (float)(y + 1) + 0.021875f, (float)z + 0.015625f, uMax, vMax);
+            tessellator.vertex(x + 0, (float)(y + 1) + 0.021875f, (float)z + 0.015625f, uMax, vMin);
+            tessellator.vertex(x + 0, y + 0, (float)z + 0.015625f, uMin, vMin);
             tessellator.color(brightness, brightness, brightness);
-            tessellator.vertex(x + 1, y + 0, (float)z + 0.015625f, d, d4 + 0.0625);
-            tessellator.vertex(x + 1, (float)(y + 1) + 0.021875f, (float)z + 0.015625f, d2, d4 + 0.0625);
-            tessellator.vertex(x + 0, (float)(y + 1) + 0.021875f, (float)z + 0.015625f, d2, d3 + 0.0625);
-            tessellator.vertex(x + 0, y + 0, (float)z + 0.015625f, d, d3 + 0.0625);
+            tessellator.vertex(x + 1, y + 0, (float)z + 0.015625f, uMin, vMax + 0.0625);
+            tessellator.vertex(x + 1, (float)(y + 1) + 0.021875f, (float)z + 0.015625f, uMax, vMax + 0.0625);
+            tessellator.vertex(x + 0, (float)(y + 1) + 0.021875f, (float)z + 0.015625f, uMax, vMin + 0.0625);
+            tessellator.vertex(x + 0, y + 0, (float)z + 0.015625f, uMin, vMin + 0.0625);
         }
         if (ctx_.blockView->shouldSuffocate(x, y, z + 1) && ctx_.blockView->getBlockId(x, y + 1, z + 1) == 55) {
             tessellator.color(brightness * colorRed, brightness * colorGreen, brightness * colorBlue);
-            tessellator.vertex(x + 1, (float)(y + 1) + 0.021875f, (float)(z + 1) - 0.015625f, d2, d3);
-            tessellator.vertex(x + 1, y + 0, (float)(z + 1) - 0.015625f, d, d3);
-            tessellator.vertex(x + 0, y + 0, (float)(z + 1) - 0.015625f, d, d4);
-            tessellator.vertex(x + 0, (float)(y + 1) + 0.021875f, (float)(z + 1) - 0.015625f, d2, d4);
+            tessellator.vertex(x + 1, (float)(y + 1) + 0.021875f, (float)(z + 1) - 0.015625f, uMax, vMin);
+            tessellator.vertex(x + 1, y + 0, (float)(z + 1) - 0.015625f, uMin, vMin);
+            tessellator.vertex(x + 0, y + 0, (float)(z + 1) - 0.015625f, uMin, vMax);
+            tessellator.vertex(x + 0, (float)(y + 1) + 0.021875f, (float)(z + 1) - 0.015625f, uMax, vMax);
             tessellator.color(brightness, brightness, brightness);
-            tessellator.vertex(x + 1, (float)(y + 1) + 0.021875f, (float)(z + 1) - 0.015625f, d2, d3 + 0.0625);
-            tessellator.vertex(x + 1, y + 0, (float)(z + 1) - 0.015625f, d, d3 + 0.0625);
-            tessellator.vertex(x + 0, y + 0, (float)(z + 1) - 0.015625f, d, d4 + 0.0625);
-            tessellator.vertex(x + 0, (float)(y + 1) + 0.021875f, (float)(z + 1) - 0.015625f, d2, d4 + 0.0625);
+            tessellator.vertex(x + 1, (float)(y + 1) + 0.021875f, (float)(z + 1) - 0.015625f, uMax, vMin + 0.0625);
+            tessellator.vertex(x + 1, y + 0, (float)(z + 1) - 0.015625f, uMin, vMin + 0.0625);
+            tessellator.vertex(x + 0, y + 0, (float)(z + 1) - 0.015625f, uMin, vMax + 0.0625);
+            tessellator.vertex(x + 0, (float)(y + 1) + 0.021875f, (float)(z + 1) - 0.015625f, uMax, vMax + 0.0625);
         }
     }
     return true;

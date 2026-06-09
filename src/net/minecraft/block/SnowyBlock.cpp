@@ -1,3 +1,4 @@
+#include "net/minecraft/block/BlockRegistrar.hpp"
 #include "net/minecraft/block/SnowyBlock.hpp"
 
 #include "net/minecraft/entity/ItemEntity.hpp"
@@ -115,5 +116,15 @@ bool SnowyBlock::isSideVisible(const BlockView* blockView, int x, int y, int z, 
     }
     return Block::isSideVisible(blockView, x, y, z, side);
 }
+namespace {
 
+void registerSnowyBlock()
+{
+    Block::SNOW = (new SnowyBlock(78, 66))->setHardness(0.1f)->setSoundGroup(&vanillaWoolSound())->setTranslationKey("snow");
+}
+
+MINECRAFT_REGISTER_BLOCK(registerSnowyBlock, 78);
+
+} // namespace
 } // namespace net::minecraft::block
+

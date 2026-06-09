@@ -23,8 +23,8 @@ public:
     LongObjectHashMap& operator=(const LongObjectHashMap&) = delete;
 
     V get(std::int64_t key) {
-        int n = hash(key);
-        Entry* entry = this->entries[indexOf(n, static_cast<int>(this->entries.size()))];
+        int hashValue = hash(key);
+        Entry* entry = this->entries[indexOf(hashValue, static_cast<int>(this->entries.size()))];
         while (entry != nullptr) {
             if (entry->key == key) {
                 return entry->value;
@@ -35,9 +35,9 @@ public:
     }
 
     void put(std::int64_t key, V value) {
-        int n = hash(key);
-        int n2 = indexOf(n, static_cast<int>(this->entries.size()));
-        Entry* entry = this->entries[n2];
+        int hashValue = hash(key);
+        int bucketIndex = indexOf(hashValue, static_cast<int>(this->entries.size()));
+        Entry* entry = this->entries[bucketIndex];
         while (entry != nullptr) {
             if (entry->key == key) {
                 entry->value = value;
@@ -45,7 +45,7 @@ public:
             entry = entry->next;
         }
         ++this->modCount;
-        this->addEntry(n, key, value, n2);
+        this->addEntry(hashValue, key, value, bucketIndex);
     }
 
     V remove(std::int64_t key) {
@@ -59,9 +59,9 @@ public:
     }
 
     Entry* removeEntry(std::int64_t key) {
-        int n = hash(key);
-        int n2 = indexOf(n, static_cast<int>(this->entries.size()));
-        Entry* prev = this->entries[n2];
+        int hashValue = hash(key);
+        int bucketIndex = indexOf(hashValue, static_cast<int>(this->entries.size()));
+        Entry* prev = this->entries[bucketIndex];
         Entry* cur = prev;
         while (cur != nullptr) {
             Entry* next = cur->next;
@@ -69,7 +69,7 @@ public:
                 ++this->modCount;
                 --this->size;
                 if (prev == cur) {
-                    this->entries[n2] = next;
+                    this->entries[bucketIndex] = next;
                 } else {
                     prev->next = next;
                 }
@@ -105,8 +105,8 @@ private:
     }
 
     void resize(int newSize) {
-        int n = static_cast<int>(this->entries.size());
-        if (n == 0x40000000) {
+        int oldCapacity = static_cast<int>(this->entries.size());
+        if (oldCapacity == 0x40000000) {
             this->capacity = 0x7fffffff;
             return;
         }
@@ -117,7 +117,7 @@ private:
     }
 
     void transfer(std::vector<Entry*>& entryArray) {
-        int n = static_cast<int>(entryArray.size());
+        int newCapacity = static_cast<int>(entryArray.size());
         for (std::size_t i = 0; i < this->entries.size(); ++i) {
             Entry* entry = this->entries[i];
             if (entry == nullptr) {
@@ -126,9 +126,9 @@ private:
             this->entries[i] = nullptr;
             do {
                 Entry* nextEntry = entry->next;
-                int n2 = indexOf(entry->hash, n);
-                entry->next = entryArray[n2];
-                entryArray[n2] = entry;
+                int newBucketIndex = indexOf(entry->hash, newCapacity);
+                entry->next = entryArray[newBucketIndex];
+                entryArray[newBucketIndex] = entry;
                 entry = nextEntry;
             } while (entry != nullptr);
         }

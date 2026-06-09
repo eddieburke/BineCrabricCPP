@@ -1,7 +1,6 @@
 #pragma once
 
 #include "net/minecraft/entity/passive/AnimalEntity.hpp"
-#include "net/minecraft/item/Item.hpp"
 
 namespace net::minecraft::entity::passive {
 
@@ -24,10 +23,7 @@ public:
     [[nodiscard]] std::string getHurtSound() const override { return "mob.chickenhurt"; }
     [[nodiscard]] std::string getDeathSound() const override { return "mob.chickenhurt"; }
 
-    [[nodiscard]] int getDroppedItemId() const override
-    {
-        return Item::FEATHER != nullptr ? Item::FEATHER->id : 288;
-    }
+    [[nodiscard]] int getDroppedItemId() const override;
 };
 
 } // namespace net::minecraft::entity::passive

@@ -62,17 +62,17 @@ void WolfEntityModel::animateModel(::net::minecraft::entity::LivingEntity& entit
         rightFrontLeg.pitch = net::minecraft::util::math::MathHelper::cos(limbAngle * 0.6662f + kPi) * 1.4f * limbDistance;
         leftFrontLeg.pitch = net::minecraft::util::math::MathHelper::cos(limbAngle * 0.6662f) * 1.4f * limbDistance;
     }
-    const float f = wolfEntity->getBegAnimationProgress(tickDelta) + wolfEntity->getShakeAnimationProgress(tickDelta, 0.0f);
-    head.roll = f;
-    leftEar.roll = f;
-    rightEar.roll = f;
-    snout.roll = f;
+    const float headRollAngle = wolfEntity->getBegAnimationProgress(tickDelta) + wolfEntity->getShakeAnimationProgress(tickDelta, 0.0f);
+    head.roll = headRollAngle;
+    leftEar.roll = headRollAngle;
+    rightEar.roll = headRollAngle;
+    snout.roll = headRollAngle;
     neck.roll = wolfEntity->getShakeAnimationProgress(tickDelta, -0.08f);
     torso.roll = wolfEntity->getShakeAnimationProgress(tickDelta, -0.16f);
     tail.roll = wolfEntity->getShakeAnimationProgress(tickDelta, -0.2f);
     if (wolfEntity->isFurWet()) {
-        const float f2 = wolfEntity->getBrightnessAtEyes(tickDelta) * wolfEntity->getFurBrightnessMultiplier(tickDelta);
-        net::minecraft::client::gl::GL11::glColor3f(f2, f2, f2);
+        const float furBrightness = wolfEntity->getBrightnessAtEyes(tickDelta) * wolfEntity->getFurBrightnessMultiplier(tickDelta);
+        net::minecraft::client::gl::GL11::glColor3f(furBrightness, furBrightness, furBrightness);
     }
 }
 

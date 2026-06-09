@@ -304,6 +304,8 @@ void InputSystem::resetBindings()
 
 {
 
+    movementKeys_.fill(false);
+
     movement_ = {};
 
 }
@@ -314,47 +316,39 @@ void InputSystem::refreshMovement(option::GameOptions& options)
 
 {
 
-    const bool forward = isBindingDown(options, options.forwardKey);
-
-    const bool back = isBindingDown(options, options.backKey);
-
-    const bool left = isBindingDown(options, options.leftKey);
-
-    const bool right = isBindingDown(options, options.rightKey);
-
-
+    (void)options;
 
     movement_.sideways = 0.0f;
 
     movement_.forward = 0.0f;
 
-    if (forward) {
+    if (movementKeys_[0]) {
 
         movement_.forward += 1.0f;
 
     }
 
-    if (back) {
+    if (movementKeys_[1]) {
 
         movement_.forward -= 1.0f;
 
     }
 
-    if (left) {
+    if (movementKeys_[2]) {
 
         movement_.sideways += 1.0f;
 
     }
 
-    if (right) {
+    if (movementKeys_[3]) {
 
         movement_.sideways -= 1.0f;
 
     }
 
-    movement_.jumping = isBindingDown(options, options.jumpKey);
+    movement_.jumping = movementKeys_[4];
 
-    movement_.sneaking = isBindingDown(options, options.sneakKey);
+    movement_.sneaking = movementKeys_[5];
 
     if (movement_.sneaking) {
 
@@ -506,7 +500,7 @@ LRESULT InputSystem::handleWindowMessage(HWND hwnd, UINT msg, WPARAM wParam, LPA
 
     if (msg == WM_KEYDOWN || msg == WM_SYSKEYDOWN) {
 
-        sys.ingestKey(static_cast<int>(wParam), true);
+        sys.ingestKey(resolveExtendedVirtualKey(static_cast<int>(wParam), lParam), true);
 
         return 0;
 
@@ -514,7 +508,7 @@ LRESULT InputSystem::handleWindowMessage(HWND hwnd, UINT msg, WPARAM wParam, LPA
 
     if (msg == WM_KEYUP || msg == WM_SYSKEYUP) {
 
-        sys.ingestKey(static_cast<int>(wParam), false);
+        sys.ingestKey(resolveExtendedVirtualKey(static_cast<int>(wParam), lParam), false);
 
         return 0;
 
@@ -1014,9 +1008,25 @@ int InputSystem::mouseY() const noexcept
 
 
 
+#ifdef _WIN32
+
+void InputSystem::syncCursorFromOs()
+
+{
+
+    updateCursorPosition();
+
+}
+
+#endif
+
+
+
 void InputSystem::beginFrame(Minecraft& client)
 
 {
+
+    activeOptions_ = &client.options;
 
     gui::screen::Screen* screen = client.currentScreen();
 
@@ -1113,6 +1123,56 @@ void InputSystem::handleKeyboardEdge(int key, bool down)
             guiLeftShiftIntent_ = false;
 
         }
+
+    }
+
+}
+
+
+
+void InputSystem::updateMovementKey(int key, bool down)
+
+{
+
+    if (activeOptions_ == nullptr) {
+
+        return;
+
+    }
+
+    const option::GameOptions& options = *activeOptions_;
+
+    int index = -1;
+
+    if (key == static_cast<int>(options.forwardKey.code)) {
+
+        index = 0;
+
+    } else if (key == static_cast<int>(options.backKey.code)) {
+
+        index = 1;
+
+    } else if (key == static_cast<int>(options.leftKey.code)) {
+
+        index = 2;
+
+    } else if (key == static_cast<int>(options.rightKey.code)) {
+
+        index = 3;
+
+    } else if (key == static_cast<int>(options.jumpKey.code)) {
+
+        index = 4;
+
+    } else if (key == static_cast<int>(options.sneakKey.code)) {
+
+        index = 5;
+
+    }
+
+    if (index >= 0) {
+
+        movementKeys_[static_cast<std::size_t>(index)] = down;
 
     }
 
@@ -1219,6 +1279,8 @@ bool InputSystem::nextKeyboardEvent()
     eventChar_ = ev.character;
 
     handleKeyboardEdge(eventKey_, eventKeyDown_);
+
+    updateMovementKey(eventKey_, eventKeyDown_);
 
     return true;
 

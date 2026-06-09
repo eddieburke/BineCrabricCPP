@@ -22,52 +22,52 @@ public:
 
     WolfEntityModel()
     {
-        const float f = 0.0f;
-        const float f2 = 13.5f;
+        constexpr float inflation = 0.0f;
+        constexpr float headPivotY = 13.5f;
 
         head = net::minecraft::client::model::ModelPart(0, 0);
-        head.addCuboid(-3.0f, -3.0f, -2.0f, 6, 6, 4, f);
-        head.setPivot(-1.0f, f2, -7.0f);
+        head.addCuboid(-3.0f, -3.0f, -2.0f, 6, 6, 4, inflation);
+        head.setPivot(-1.0f, headPivotY, -7.0f);
 
         torso = net::minecraft::client::model::ModelPart(18, 14);
-        torso.addCuboid(-4.0f, -2.0f, -3.0f, 6, 9, 6, f);
+        torso.addCuboid(-4.0f, -2.0f, -3.0f, 6, 9, 6, inflation);
         torso.setPivot(0.0f, 14.0f, 2.0f);
 
         neck = net::minecraft::client::model::ModelPart(21, 0);
-        neck.addCuboid(-4.0f, -3.0f, -3.0f, 8, 6, 7, f);
+        neck.addCuboid(-4.0f, -3.0f, -3.0f, 8, 6, 7, inflation);
         neck.setPivot(-1.0f, 14.0f, 2.0f);
 
         rightHindLeg = net::minecraft::client::model::ModelPart(0, 18);
-        rightHindLeg.addCuboid(-1.0f, 0.0f, -1.0f, 2, 8, 2, f);
+        rightHindLeg.addCuboid(-1.0f, 0.0f, -1.0f, 2, 8, 2, inflation);
         rightHindLeg.setPivot(-2.5f, 16.0f, 7.0f);
 
         leftHindLeg = net::minecraft::client::model::ModelPart(0, 18);
-        leftHindLeg.addCuboid(-1.0f, 0.0f, -1.0f, 2, 8, 2, f);
+        leftHindLeg.addCuboid(-1.0f, 0.0f, -1.0f, 2, 8, 2, inflation);
         leftHindLeg.setPivot(0.5f, 16.0f, 7.0f);
 
         rightFrontLeg = net::minecraft::client::model::ModelPart(0, 18);
-        rightFrontLeg.addCuboid(-1.0f, 0.0f, -1.0f, 2, 8, 2, f);
+        rightFrontLeg.addCuboid(-1.0f, 0.0f, -1.0f, 2, 8, 2, inflation);
         rightFrontLeg.setPivot(-2.5f, 16.0f, -4.0f);
 
         leftFrontLeg = net::minecraft::client::model::ModelPart(0, 18);
-        leftFrontLeg.addCuboid(-1.0f, 0.0f, -1.0f, 2, 8, 2, f);
+        leftFrontLeg.addCuboid(-1.0f, 0.0f, -1.0f, 2, 8, 2, inflation);
         leftFrontLeg.setPivot(0.5f, 16.0f, -4.0f);
 
         tail = net::minecraft::client::model::ModelPart(9, 18);
-        tail.addCuboid(-1.0f, 0.0f, -1.0f, 2, 8, 2, f);
+        tail.addCuboid(-1.0f, 0.0f, -1.0f, 2, 8, 2, inflation);
         tail.setPivot(-1.0f, 12.0f, 8.0f);
 
         leftEar = net::minecraft::client::model::ModelPart(16, 14);
-        leftEar.addCuboid(-3.0f, -5.0f, 0.0f, 2, 2, 1, f);
-        leftEar.setPivot(-1.0f, f2, -7.0f);
+        leftEar.addCuboid(-3.0f, -5.0f, 0.0f, 2, 2, 1, inflation);
+        leftEar.setPivot(-1.0f, headPivotY, -7.0f);
 
         rightEar = net::minecraft::client::model::ModelPart(16, 14);
-        rightEar.addCuboid(1.0f, -5.0f, 0.0f, 2, 2, 1, f);
-        rightEar.setPivot(-1.0f, f2, -7.0f);
+        rightEar.addCuboid(1.0f, -5.0f, 0.0f, 2, 2, 1, inflation);
+        rightEar.setPivot(-1.0f, headPivotY, -7.0f);
 
         snout = net::minecraft::client::model::ModelPart(0, 10);
-        snout.addCuboid(-2.0f, 0.0f, -5.0f, 3, 3, 4, f);
-        snout.setPivot(-0.5f, f2, -7.0f);
+        snout.addCuboid(-2.0f, 0.0f, -5.0f, 3, 3, 4, inflation);
+        snout.setPivot(-0.5f, headPivotY, -7.0f);
     }
 
     void render(float limbAngle, float limbDistance, float animationProgress, float headYaw, float headPitch, float scale) override;

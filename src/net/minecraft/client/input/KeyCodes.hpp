@@ -164,6 +164,29 @@ inline int keyFromVirtualKey(int vk)
     }
 }
 
+/// Windows delivers the generic VK_SHIFT/VK_CONTROL/VK_MENU in wParam for
+/// WM_KEY* messages; the left/right specific code only lives in the scancode +
+/// extended bit of lParam. Resolve the generic codes to their side-specific VK
+/// so keyFromVirtualKey can map LSHIFT(42)/RSHIFT(54)/LCONTROL(29)/RCONTROL(157)/
+/// LMENU(56)/RMENU(184) correctly. Non-modifier keys pass through unchanged.
+inline int resolveExtendedVirtualKey(int vk, LPARAM lParam)
+{
+    const UINT scancode = static_cast<UINT>((lParam >> 16) & 0xFF);
+    const bool extended = (lParam & (1 << 24)) != 0;
+    switch (vk) {
+    case VK_SHIFT: {
+        const UINT mapped = MapVirtualKey(scancode, MAPVK_VSC_TO_VK_EX);
+        return mapped != 0 ? static_cast<int>(mapped) : VK_LSHIFT;
+    }
+    case VK_CONTROL:
+        return extended ? VK_RCONTROL : VK_LCONTROL;
+    case VK_MENU:
+        return extended ? VK_RMENU : VK_LMENU;
+    default:
+        return vk;
+    }
+}
+
 inline int virtualKeyFromKey(int key)
 {
     if (key >= 2 && key <= 10) {

@@ -21,28 +21,28 @@ public:
         parts[4] = net::minecraft::client::model::ModelPart(0, 0);
         parts[5] = net::minecraft::client::model::ModelPart(44, 10);
 
-        const int n = 20;
-        const int n2 = 8;
-        const int n3 = 16;
-        const int n4 = 4;
+        constexpr int bodyWidth = 20;
+        constexpr int wheelHeight = 8;
+        constexpr int bodyLength = 16;
+        constexpr int bodyPivotY = 4;
 
-        parts[0].addCuboid(static_cast<float>(-n / 2), static_cast<float>(-n3 / 2), -1.0f, n, n3, 2, 0.0f);
-        parts[0].setPivot(0.0f, static_cast<float>(n4), 0.0f);
+        parts[0].addCuboid(static_cast<float>(-bodyWidth / 2), static_cast<float>(-bodyLength / 2), -1.0f, bodyWidth, bodyLength, 2, 0.0f);
+        parts[0].setPivot(0.0f, static_cast<float>(bodyPivotY), 0.0f);
 
-        parts[5].addCuboid(static_cast<float>(-n / 2 + 1), static_cast<float>(-n3 / 2 + 1), -1.0f, n - 2, n3 - 2, 1, 0.0f);
-        parts[5].setPivot(0.0f, static_cast<float>(n4), 0.0f);
+        parts[5].addCuboid(static_cast<float>(-bodyWidth / 2 + 1), static_cast<float>(-bodyLength / 2 + 1), -1.0f, bodyWidth - 2, bodyLength - 2, 1, 0.0f);
+        parts[5].setPivot(0.0f, static_cast<float>(bodyPivotY), 0.0f);
 
-        parts[1].addCuboid(static_cast<float>(-n / 2 + 2), static_cast<float>(-n2 - 1), -1.0f, n - 4, n2, 2, 0.0f);
-        parts[1].setPivot(static_cast<float>(-n / 2 + 1), static_cast<float>(n4), 0.0f);
+        parts[1].addCuboid(static_cast<float>(-bodyWidth / 2 + 2), static_cast<float>(-wheelHeight - 1), -1.0f, bodyWidth - 4, wheelHeight, 2, 0.0f);
+        parts[1].setPivot(static_cast<float>(-bodyWidth / 2 + 1), static_cast<float>(bodyPivotY), 0.0f);
 
-        parts[2].addCuboid(static_cast<float>(-n / 2 + 2), static_cast<float>(-n2 - 1), -1.0f, n - 4, n2, 2, 0.0f);
-        parts[2].setPivot(static_cast<float>(n / 2 - 1), static_cast<float>(n4), 0.0f);
+        parts[2].addCuboid(static_cast<float>(-bodyWidth / 2 + 2), static_cast<float>(-wheelHeight - 1), -1.0f, bodyWidth - 4, wheelHeight, 2, 0.0f);
+        parts[2].setPivot(static_cast<float>(bodyWidth / 2 - 1), static_cast<float>(bodyPivotY), 0.0f);
 
-        parts[3].addCuboid(static_cast<float>(-n / 2 + 2), static_cast<float>(-n2 - 1), -1.0f, n - 4, n2, 2, 0.0f);
-        parts[3].setPivot(0.0f, static_cast<float>(n4), static_cast<float>(-n3 / 2 + 1));
+        parts[3].addCuboid(static_cast<float>(-bodyWidth / 2 + 2), static_cast<float>(-wheelHeight - 1), -1.0f, bodyWidth - 4, wheelHeight, 2, 0.0f);
+        parts[3].setPivot(0.0f, static_cast<float>(bodyPivotY), static_cast<float>(-bodyLength / 2 + 1));
 
-        parts[4].addCuboid(static_cast<float>(-n / 2 + 2), static_cast<float>(-n2 - 1), -1.0f, n - 4, n2, 2, 0.0f);
-        parts[4].setPivot(0.0f, static_cast<float>(n4), static_cast<float>(n3 / 2 - 1));
+        parts[4].addCuboid(static_cast<float>(-bodyWidth / 2 + 2), static_cast<float>(-wheelHeight - 1), -1.0f, bodyWidth - 4, wheelHeight, 2, 0.0f);
+        parts[4].setPivot(0.0f, static_cast<float>(bodyPivotY), static_cast<float>(bodyLength / 2 - 1));
 
         parts[0].pitch = 1.5707964f;
         parts[1].yaw = 4.712389f;

@@ -19,39 +19,39 @@ public:
         if (world->getBlockId(x, y, z) != 0 && world->getBlockId(x, y, z) != Block::NETHERRACK->id) {
             return false;
         }
-        int n = 0;
+        int netherrackNeighbors = 0;
         if (world->getBlockId(x - 1, y, z) == Block::NETHERRACK->id) {
-            ++n;
+            ++netherrackNeighbors;
         }
         if (world->getBlockId(x + 1, y, z) == Block::NETHERRACK->id) {
-            ++n;
+            ++netherrackNeighbors;
         }
         if (world->getBlockId(x, y, z - 1) == Block::NETHERRACK->id) {
-            ++n;
+            ++netherrackNeighbors;
         }
         if (world->getBlockId(x, y, z + 1) == Block::NETHERRACK->id) {
-            ++n;
+            ++netherrackNeighbors;
         }
         if (world->getBlockId(x, y - 1, z) == Block::NETHERRACK->id) {
-            ++n;
+            ++netherrackNeighbors;
         }
-        int n2 = 0;
+        int airNeighbors = 0;
         if (world->isAir(x - 1, y, z)) {
-            ++n2;
+            ++airNeighbors;
         }
         if (world->isAir(x + 1, y, z)) {
-            ++n2;
+            ++airNeighbors;
         }
         if (world->isAir(x, y, z - 1)) {
-            ++n2;
+            ++airNeighbors;
         }
         if (world->isAir(x, y, z + 1)) {
-            ++n2;
+            ++airNeighbors;
         }
         if (world->isAir(x, y - 1, z)) {
-            ++n2;
+            ++airNeighbors;
         }
-        if (n == 4 && n2 == 1) {
+        if (netherrackNeighbors == 4 && airNeighbors == 1) {
             world->setBlock(x, y, z, liquidBlockId_);
             world->instantBlockUpdateEnabled = true;
             Block::BLOCKS[static_cast<std::size_t>(liquidBlockId_)]->onTick(world, x, y, z, random);

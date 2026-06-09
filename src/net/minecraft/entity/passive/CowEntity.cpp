@@ -28,4 +28,9 @@ bool CowEntity::interact(player::PlayerEntity* player)
     return false;
 }
 
+int CowEntity::getDroppedItemId() const
+{
+    return Item::LEATHER != nullptr ? Item::LEATHER->id : 334;
+}
+
 } // namespace net::minecraft::entity::passive

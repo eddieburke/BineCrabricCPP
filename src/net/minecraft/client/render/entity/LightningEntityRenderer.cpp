@@ -26,72 +26,72 @@ void LightningEntityRenderer::render(const net::minecraft::Entity& entity, doubl
 
     double offsets[8] {};
     double offsets2[8] {};
-    double d2 = 0.0;
-    double d3 = 0.0;
+    double offsetX = 0.0;
+    double offsetZ = 0.0;
     std::mt19937_64 rng(static_cast<std::uint64_t>(lightning->seed));
     std::uniform_int_distribution<int> jitter(-5, 5);
 
     for (int i = 7; i >= 0; --i) {
-        offsets[i] = d2;
-        offsets2[i] = d3;
-        d2 += static_cast<double>(jitter(rng));
-        d3 += static_cast<double>(jitter(rng));
+        offsets[i] = offsetX;
+        offsets2[i] = offsetZ;
+        offsetX += static_cast<double>(jitter(rng));
+        offsetZ += static_cast<double>(jitter(rng));
     }
 
     for (int pass = 0; pass < 4; ++pass) {
         std::mt19937_64 rng2(static_cast<std::uint64_t>(lightning->seed));
         std::uniform_int_distribution<int> jitterFine(-15, 15);
         for (int branch = 0; branch < 3; ++branch) {
-            int n = 7;
-            int n2 = 0;
+            int segmentEnd = 7;
+            int segmentStart = 0;
             if (branch > 0) {
-                n = 7 - branch;
+                segmentEnd = 7 - branch;
             }
             if (branch > 0) {
-                n2 = n - 2;
+                segmentStart = segmentEnd - 2;
             }
-            double d4 = offsets[n] - d2;
-            double d5 = offsets2[n] - d3;
-            for (int k = n; k >= n2; --k) {
-                double d6 = d4;
-                double d7 = d5;
+            double relX = offsets[segmentEnd] - offsetX;
+            double relZ = offsets2[segmentEnd] - offsetZ;
+            for (int k = segmentEnd; k >= segmentStart; --k) {
+                const double prevRelX = relX;
+                const double prevRelZ = relZ;
                 if (branch == 0) {
-                    d4 += static_cast<double>(jitter(rng2));
-                    d5 += static_cast<double>(jitter(rng2));
+                    relX += static_cast<double>(jitter(rng2));
+                    relZ += static_cast<double>(jitter(rng2));
                 } else {
-                    d4 += static_cast<double>(jitterFine(rng2));
-                    d5 += static_cast<double>(jitterFine(rng2));
+                    relX += static_cast<double>(jitterFine(rng2));
+                    relZ += static_cast<double>(jitterFine(rng2));
                 }
                 tessellator.start(5); // GL_TRIANGLE_STRIP
-                constexpr float f2 = 0.5f;
-                tessellator.color(0.9f * f2, 0.9f * f2, 1.0f * f2, 0.3f);
-                double d8 = 0.1 + static_cast<double>(pass) * 0.2;
+                constexpr float colorScale = 0.5f;
+                tessellator.color(0.9f * colorScale, 0.9f * colorScale, 1.0f * colorScale, 0.3f);
+                double outerRadius = 0.1 + static_cast<double>(pass) * 0.2;
                 if (branch == 0) {
-                    d8 *= static_cast<double>(k) * 0.1 + 1.0;
+                    outerRadius *= static_cast<double>(k) * 0.1 + 1.0;
                 }
-                double d9 = 0.1 + static_cast<double>(pass) * 0.2;
+                double innerRadius = 0.1 + static_cast<double>(pass) * 0.2;
                 if (branch == 0) {
-                    d9 *= static_cast<double>(k - 1) * 0.1 + 1.0;
+                    innerRadius *= static_cast<double>(k - 1) * 0.1 + 1.0;
                 }
                 for (int seg = 0; seg < 5; ++seg) {
-                    double d10 = x + 0.5 - d8;
-                    double d11 = z + 0.5 - d8;
+                    double vtxLowX = x + 0.5 - outerRadius;
+                    double vtxLowZ = z + 0.5 - outerRadius;
                     if (seg == 1 || seg == 2) {
-                        d10 += d8 * 2.0;
+                        vtxLowX += outerRadius * 2.0;
                     }
                     if (seg == 2 || seg == 3) {
-                        d11 += d8 * 2.0;
+                        vtxLowZ += outerRadius * 2.0;
                     }
-                    double d12 = x + 0.5 - d9;
-                    double d13 = z + 0.5 - d9;
+                    double vtxHighX = x + 0.5 - innerRadius;
+                    double vtxHighZ = z + 0.5 - innerRadius;
                     if (seg == 1 || seg == 2) {
-                        d12 += d9 * 2.0;
+                        vtxHighX += innerRadius * 2.0;
                     }
                     if (seg == 2 || seg == 3) {
-                        d13 += d9 * 2.0;
+                        vtxHighZ += innerRadius * 2.0;
                     }
-                    tessellator.vertex(d12 + d4, y + static_cast<double>(k * 16), d13 + d5);
-                    tessellator.vertex(d10 + d6, y + static_cast<double>((k + 1) * 16), d11 + d7);
+                    tessellator.vertex(vtxHighX + relX, y + static_cast<double>(k * 16), vtxHighZ + relZ);
+                    tessellator.vertex(vtxLowX + prevRelX, y + static_cast<double>((k + 1) * 16), vtxLowZ + prevRelZ);
                 }
                 tessellator.draw();
             }

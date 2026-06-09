@@ -1,7 +1,6 @@
 #pragma once
 
 #include "net/minecraft/entity/passive/AnimalEntity.hpp"
-#include "net/minecraft/item/Item.hpp"
 #include "net/minecraft/nbt/NbtCompound.hpp"
 
 namespace net::minecraft::entity::player {
@@ -39,13 +38,7 @@ public:
     [[nodiscard]] std::string getHurtSound() const override { return "mob.pig"; }
     [[nodiscard]] std::string getDeathSound() const override { return "mob.pigdeath"; }
 
-    [[nodiscard]] int getDroppedItemId() const override
-    {
-        if (fireTicks > 0) {
-            return Item::COOKED_PORKCHOP != nullptr ? Item::COOKED_PORKCHOP->id : 320;
-        }
-        return Item::RAW_PORKCHOP != nullptr ? Item::RAW_PORKCHOP->id : 319;
-    }
+    [[nodiscard]] int getDroppedItemId() const override;
 };
 
 } // namespace net::minecraft::entity::passive

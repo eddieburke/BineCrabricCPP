@@ -1,3 +1,4 @@
+#include "net/minecraft/block/BlockRegistrar.hpp"
 #include "net/minecraft/block/RedstoneWireBlock.hpp"
 
 #include "net/minecraft/block/Block.hpp"
@@ -352,5 +353,15 @@ void RedstoneWireBlock::randomDisplayTick(
     }
     world->addParticle("reddust", px, py, pz, static_cast<double>(redIn), static_cast<double>(greenIn), static_cast<double>(blueIn));
 }
+namespace {
 
+void registerRedstoneWireBlock()
+{
+    Block::REDSTONE_WIRE = (new RedstoneWireBlock(55, 164))->setHardness(0.0f)->setSoundGroup(&vanillaDefaultSound())->setTranslationKey("redstoneDust")->disableTrackingStatistics()->ignoreMetaUpdates();
+}
+
+MINECRAFT_REGISTER_BLOCK(registerRedstoneWireBlock, 55);
+
+} // namespace
 } // namespace net::minecraft::block
+

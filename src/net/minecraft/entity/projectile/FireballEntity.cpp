@@ -1,5 +1,6 @@
 #include "net/minecraft/entity/projectile/FireballEntity.hpp"
 
+#include "net/minecraft/block/Block.hpp"
 #include "net/minecraft/entity/projectile/ProjectileUtil.hpp"
 #include "net/minecraft/nbt/NbtCompound.hpp"
 #include "net/minecraft/util/hit/HitResult.hpp"
@@ -28,20 +29,30 @@ Entity* findEntityOnPath(Entity& projectile, LivingEntity* owner, int inAirTime,
             continue;
         }
         const Box hitBox = candidate->boundingBox.expand(0.3, 0.3, 0.3);
-        if (!hitBox.intersects(searchBox)) {
+        const std::optional<HitResult> entityHit = Block::raycastLocalBounds(
+            hitBox.minX,
+            hitBox.minY,
+            hitBox.minZ,
+            hitBox.maxX,
+            hitBox.maxY,
+            hitBox.maxZ,
+            0,
+            0,
+            0,
+            start,
+            end);
+        if (!entityHit.has_value()) {
             continue;
         }
-        const double centerX = (hitBox.minX + hitBox.maxX) * 0.5;
-        const double centerY = (hitBox.minY + hitBox.maxY) * 0.5;
-        const double centerZ = (hitBox.minZ + hitBox.maxZ) * 0.5;
-        const double dx = centerX - start.x;
-        const double dy = centerY - start.y;
-        const double dz = centerZ - start.z;
+        const double dx = entityHit->pos.x - start.x;
+        const double dy = entityHit->pos.y - start.y;
+        const double dz = entityHit->pos.z - start.z;
         const double dist = dx * dx + dy * dy + dz * dz;
-        if (closest == nullptr || dist < closestDist) {
-            closest = candidate;
-            closestDist = dist;
+        if (!(dist < closestDist) && closestDist != -1.0) {
+            continue;
         }
+        closest = candidate;
+        closestDist = dist;
     }
     return closest;
 }
@@ -101,6 +112,7 @@ FireballEntity::FireballEntity(World* world, LivingEntity* ownerIn, double veloc
 void FireballEntity::tick()
 {
     Entity::tick();
+    setPosition(x, y, z);
     fireTicks = 10;
     if (shake > 0) {
         --shake;

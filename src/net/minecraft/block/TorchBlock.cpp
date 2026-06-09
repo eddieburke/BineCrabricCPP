@@ -1,3 +1,4 @@
+#include "net/minecraft/block/BlockRegistrar.hpp"
 #include "net/minecraft/block/TorchBlock.hpp"
 
 #include "net/minecraft/block/Block.hpp"
@@ -178,5 +179,15 @@ void TorchBlock::randomDisplayTick(World* world, int x, int y, int z, JavaRandom
         world->addParticle("flame", centerX, static_cast<double>(y) + 0.7, centerZ, 0.0, 0.0, 0.0);
     }
 }
+namespace {
 
+void registerTorchBlock()
+{
+    Block::TORCH = (new TorchBlock(50, 80))->setHardness(0.0f)->setLuminance(0.9375f)->setSoundGroup(&vanillaWoodSound())->setTranslationKey("torch")->ignoreMetaUpdates();
+}
+
+MINECRAFT_REGISTER_BLOCK(registerTorchBlock, 50);
+
+} // namespace
 } // namespace net::minecraft::block
+

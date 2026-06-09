@@ -7,34 +7,61 @@ namespace net::minecraft::client::render::block {
 
 bool FenceBlockRenderer::render(net::minecraft::block::Block& block, int x, int y, int z)
 {
-    float f2 = 0.375f;
-    float f3 = 0.625f;
-    block.setBoundingBox(f2, 0.0f, f2, f3, 1.0f, f3);
+    bool rendered = false;
+    float barMin = 0.375f;
+    float barMax = 0.625f;
+    block.setBoundingBox(barMin, 0.0f, barMin, barMax, 1.0f, barMax);
     cube_.renderBlock(block, x, y, z);
-    bool bl3 = false;
-    bool bl4 = false;
+    rendered = true;
+
+    bool connectX = false;
+    bool connectZ = false;
     if (ctx_.blockView->getBlockId(x - 1, y, z) == block.id || ctx_.blockView->getBlockId(x + 1, y, z) == block.id) {
-        bl3 = true;
+        connectX = true;
     }
     if (ctx_.blockView->getBlockId(x, y, z - 1) == block.id || ctx_.blockView->getBlockId(x, y, z + 1) == block.id) {
-        bl4 = true;
+        connectZ = true;
     }
-    float f4 = 0.0625f;
-    float f5 = 0.5f;
-    if (bl3) {
-        block.setBoundingBox(0.0f, f5 + f4 * 2.0f, f3 - f4 * 2.0f, f2, f5 + f4 * 4.0f, f2 + f4 * 2.0f);
-        cube_.renderBlock(block, x, y, z);
-        block.setBoundingBox(0.0f, f4 * 3.0f, f3 - f4 * 2.0f, f2, f4 * 5.0f, f2 + f4 * 2.0f);
-        cube_.renderBlock(block, x, y, z);
+    const bool neighborWest = ctx_.blockView->getBlockId(x - 1, y, z) == block.id;
+    const bool neighborEast = ctx_.blockView->getBlockId(x + 1, y, z) == block.id;
+    const bool neighborNorth = ctx_.blockView->getBlockId(x, y, z - 1) == block.id;
+    const bool neighborSouth = ctx_.blockView->getBlockId(x, y, z + 1) == block.id;
+    if (!connectX && !connectZ) {
+        connectX = true;
     }
-    if (bl4) {
-        block.setBoundingBox(f3 - f4 * 2.0f, f5 + f4 * 2.0f, 0.0f, f2 + f4 * 2.0f, f5 + f4 * 4.0f, f2);
+
+    barMin = 0.4375f;
+    barMax = 0.5625f;
+    float barMinY = 0.75f;
+    float barMaxY = 0.9375f;
+    const float xMin = neighborWest ? 0.0f : barMin;
+    const float xMax = neighborEast ? 1.0f : barMax;
+    const float zMin = neighborNorth ? 0.0f : barMin;
+    const float zMax = neighborSouth ? 1.0f : barMax;
+    if (connectX) {
+        block.setBoundingBox(xMin, barMinY, barMin, xMax, barMaxY, barMax);
         cube_.renderBlock(block, x, y, z);
-        block.setBoundingBox(f3 - f4 * 2.0f, f4 * 3.0f, 0.0f, f2 + f4 * 2.0f, f4 * 5.0f, f2);
+        rendered = true;
+    }
+    if (connectZ) {
+        block.setBoundingBox(barMin, barMinY, zMin, barMax, barMaxY, zMax);
         cube_.renderBlock(block, x, y, z);
+        rendered = true;
+    }
+    barMinY = 0.375f;
+    barMaxY = 0.5625f;
+    if (connectX) {
+        block.setBoundingBox(xMin, barMinY, barMin, xMax, barMaxY, barMax);
+        cube_.renderBlock(block, x, y, z);
+        rendered = true;
+    }
+    if (connectZ) {
+        block.setBoundingBox(barMin, barMinY, zMin, barMax, barMaxY, zMax);
+        cube_.renderBlock(block, x, y, z);
+        rendered = true;
     }
     block.setBoundingBox(0.0f, 0.0f, 0.0f, 1.0f, 1.0f, 1.0f);
-    return bl3 || bl4;
+    return rendered;
 }
 
 } // namespace net::minecraft::client::render::block

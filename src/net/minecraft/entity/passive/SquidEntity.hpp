@@ -1,7 +1,6 @@
 #pragma once
 
 #include "net/minecraft/entity/WaterCreatureEntity.hpp"
-#include "net/minecraft/item/ItemStack.hpp"
 
 namespace net::minecraft::entity::passive {
 
@@ -24,7 +23,6 @@ public:
     [[nodiscard]] std::string getHurtSound() const override { return {}; }
     [[nodiscard]] std::string getDeathSound() const override { return {}; }
     [[nodiscard]] float getSoundVolume() const override { return 0.4f; }
-    [[nodiscard]] int getDroppedItemId() const override { return 0; }
 
     void dropItems() override;
 

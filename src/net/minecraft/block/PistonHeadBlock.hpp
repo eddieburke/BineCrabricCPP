@@ -9,7 +9,6 @@ namespace net::minecraft::block {
 class PistonHeadBlock : public Block {
 public:
     using Block::canPlaceAt;
-    int pistonHeadSprite = -1;
 
     PistonHeadBlock(int id, int textureId);
 
@@ -18,8 +17,6 @@ public:
     [[nodiscard]] bool isFullCube() const override { return false; }
     [[nodiscard]] int getDroppedItemCount(JavaRandom& /*random*/) const override { return 0; }
     [[nodiscard]] int getTexture(int side, int meta) const override;
-    void setSprite(int sprite) { pistonHeadSprite = sprite; }
-    void clearSprite() { pistonHeadSprite = -1; }
 
     [[nodiscard]] bool canPlaceAt(World* world, int x, int y, int z) const;
     [[nodiscard]] bool canPlaceAt(World* world, int x, int y, int z, int side) const override;

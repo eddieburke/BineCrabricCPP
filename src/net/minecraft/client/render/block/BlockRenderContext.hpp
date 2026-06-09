@@ -18,9 +18,14 @@ struct BlockRenderContext {
     // World/chunk the blocks are read from while rendering in-place.
     const net::minecraft::BlockView* blockView = nullptr;
 
-    // When >= 0, forces every face to this atlas tile (used by levers, pistons,
-    // fire, redstone, ... that re-skin a block).
+    // When >= 0, forces every face to this atlas tile (used by levers, fire,
+    // redstone, ... that re-skin a block).
     int textureOverride = -1;
+
+    // When >= 0, replaces only faceTextureSide (0-5) — e.g. piston head top
+    // during block-entity animation without retexturing the whole block.
+    int faceTextureOverride = -1;
+    int faceTextureSide = -1;
 
     // Mirrors a face's U axis (beds, some directional faces).
     bool flipTextureHorizontally = false;
@@ -46,6 +51,17 @@ struct BlockRenderContext {
     // Apply the block's per-metadata colour multiplier when drawing inventory
     // icons (disabled by callers that tint themselves).
     bool inventoryColorEnabled = true;
+
+    [[nodiscard]] int resolveTexture(int side, int texture) const
+    {
+        if (faceTextureOverride >= 0 && side == faceTextureSide) {
+            return faceTextureOverride;
+        }
+        if (textureOverride >= 0) {
+            return textureOverride;
+        }
+        return texture;
+    }
 };
 
 } // namespace net::minecraft::client::render::block

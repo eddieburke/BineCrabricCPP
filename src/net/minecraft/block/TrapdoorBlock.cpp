@@ -1,4 +1,6 @@
+#include "net/minecraft/block/BlockRegistrar.hpp"
 #include "net/minecraft/block/TrapdoorBlock.hpp"
+#include "net/minecraft/block/material/Material.hpp"
 
 #include "net/minecraft/block/Block.hpp"
 #include "net/minecraft/world/World.hpp"
@@ -159,5 +161,16 @@ void TrapdoorBlock::onPlaced(World* world, int x, int y, int z, int direction)
     }
     world->setBlockMeta(x, y, z, facing);
 }
+namespace {
 
+void registerTrapdoorBlock()
+{
+    namespace mat = material;
+    Block::TRAPDOOR = (new TrapdoorBlock(96, mat::Material::WOOD))->setHardness(3.0f)->setSoundGroup(&vanillaWoodSound())->setTranslationKey("trapdoor")->disableTrackingStatistics()->ignoreMetaUpdates();
+}
+
+MINECRAFT_REGISTER_BLOCK(registerTrapdoorBlock, 96);
+
+} // namespace
 } // namespace net::minecraft::block
+

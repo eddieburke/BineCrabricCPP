@@ -21,10 +21,7 @@ public:
     [[nodiscard]] std::string getHurtSound() const override { return "mob.zombiepig.zpighurt"; }
     [[nodiscard]] std::string getDeathSound() const override { return "mob.zombiepig.zpigdeath"; }
 
-    [[nodiscard]] int getDroppedItemId() const override
-    {
-        return Item::COOKED_PORKCHOP != nullptr ? Item::COOKED_PORKCHOP->id : 320;
-    }
+    [[nodiscard]] int getDroppedItemId() const override;
 
     [[nodiscard]] ItemStack getHeldItem() const override
     {

@@ -29,25 +29,13 @@ public:
 
     [[nodiscard]] int getTexture(int side) const override
     {
-        if (side == 1 || side == 0) {
-            return textureId + 17;
-        }
-        if (side == 3) {
-            return textureId + 1;
-        }
-        return textureId;
+        return Block::textureForSide(side, textureId, textureId + 17, textureId + 17, FACE_WEST, textureId + 1);
     }
 
     [[nodiscard]] int getTextureId(const BlockView* blockView, int x, int y, int z, int side) const override
     {
-        if (side == 1 || side == 0) {
-            return textureId + 17;
-        }
-        int meta = blockView ? blockView->getBlockMeta(x, y, z) : 3;
-        if (side != meta) {
-            return textureId;
-        }
-        return textureId + 1;
+        const int facing = blockView != nullptr ? blockView->getBlockMeta(x, y, z) : FACE_WEST;
+        return Block::textureForSide(side, textureId, textureId + 17, textureId + 17, facing, textureId + 1);
     }
 
     void onPlaced(World* world, int x, int y, int z) override;

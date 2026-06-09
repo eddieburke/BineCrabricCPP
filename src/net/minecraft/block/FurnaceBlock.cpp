@@ -1,3 +1,4 @@
+#include "net/minecraft/block/BlockRegistrar.hpp"
 #include "net/minecraft/block/FurnaceBlock.hpp"
 
 #include "net/minecraft/block/Block.hpp"
@@ -150,8 +151,9 @@ bool FurnaceBlock::onUse(World* world, int x, int y, int z, PlayerEntity* player
         return true;
     }
     if (world->isRemote()) {
-        player->openFurnaceScreen(furnace);
+        return true;
     }
+    player->openFurnaceScreen(furnace);
     return true;
 }
 
@@ -181,5 +183,16 @@ void FurnaceBlock::randomDisplayTick(
         world->addParticle("flame", px + spread, py, pz + offset, 0.0, 0.0, 0.0);
     }
 }
+namespace {
 
+void registerFurnaceBlocks()
+{
+    Block::FURNACE = (new FurnaceBlock(61, false))->setHardness(3.5f)->setSoundGroup(&vanillaStoneSound())->setTranslationKey("furnace")->ignoreMetaUpdates();
+    Block::LIT_FURNACE = (new FurnaceBlock(62, true))->setHardness(3.5f)->setSoundGroup(&vanillaStoneSound())->setLuminance(0.875f)->setTranslationKey("furnace")->ignoreMetaUpdates();
+}
+
+MINECRAFT_REGISTER_BLOCK(registerFurnaceBlocks, 61);
+
+} // namespace
 } // namespace net::minecraft::block
+

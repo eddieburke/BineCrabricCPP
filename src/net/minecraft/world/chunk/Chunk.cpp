@@ -1,6 +1,7 @@
 #include "net/minecraft/world/chunk/Chunk.hpp"
 
 #include "net/minecraft/block/Block.hpp"
+#include "net/minecraft/block/BlockWithEntity.hpp"
 #include "net/minecraft/block/entity/BlockEntity.hpp"
 #include "net/minecraft/world/World.hpp"
 
@@ -256,6 +257,35 @@ void Chunk::updateHeightMap(int localX, int yPos, int localZ)
         world->queueLightUpdate(LightType::Sky, blockX - 1, newHeight, blockZ - 1, blockX + 1, previousTop, blockZ + 1);
     }
     dirty = true;
+}
+
+block::entity::BlockEntity* Chunk::getBlockEntity(int localX, int yPos, int localZ)
+{
+    const Vec3i pos{localX, yPos, localZ};
+    auto it = blockEntities.find(pos);
+    if (it == blockEntities.end()) {
+        const int blockId = getBlockId(localX, yPos, localZ);
+        if (blockId <= 0 || blockId >= block::Block::BLOCK_COUNT
+            || !block::Block::BLOCKS_WITH_ENTITY[static_cast<std::size_t>(blockId)]) {
+            return nullptr;
+        }
+        auto* blockWithEntity = dynamic_cast<block::BlockWithEntity*>(block::Block::BLOCKS[static_cast<std::size_t>(blockId)]);
+        if (blockWithEntity == nullptr || world == nullptr) {
+            return nullptr;
+        }
+        blockWithEntity->onPlaced(world, x * 16 + localX, yPos, z * 16 + localZ);
+        it = blockEntities.find(pos);
+        if (it == blockEntities.end()) {
+            return nullptr;
+        }
+    }
+
+    block::entity::BlockEntity* blockEntity = it->second.get();
+    if (blockEntity != nullptr && blockEntity->isRemoved()) {
+        blockEntities.erase(it);
+        return nullptr;
+    }
+    return blockEntity;
 }
 
 void Chunk::setBlockEntity(int localX, int yPos, int localZ, std::unique_ptr<block::entity::BlockEntity> blockEntity)

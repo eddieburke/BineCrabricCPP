@@ -37,53 +37,53 @@ ClockSprite::ClockSprite(Minecraft& minecraft)
 
 void ClockSprite::tick()
 {
-    double d2 = 0.0;
+    double targetAngle = 0.0;
     World* world = minecraft_.world;
     Entity* player = minecraft_.player;
     if (world != nullptr && player != nullptr) {
-        const float f = world->getTime(1.0f);
-        d2 = -static_cast<double>(f) * kPi * 2.0;
+        const float dayTime = world->getTime(1.0f);
+        targetAngle = -static_cast<double>(dayTime) * kPi * 2.0;
         if (world->dimension != nullptr && world->dimension->isNether) {
-            d2 = detail::mathRandom() * kPi * 2.0;
+            targetAngle = detail::mathRandom() * kPi * 2.0;
         }
     }
 
-    double d = d2 - angle;
-    for (; d < -kPi; d += kPi * 2.0) {
+    double angleError = targetAngle - angle;
+    for (; angleError < -kPi; angleError += kPi * 2.0) {
     }
-    while (d >= kPi) {
-        d -= kPi * 2.0;
+    while (angleError >= kPi) {
+        angleError -= kPi * 2.0;
     }
-    if (d < -1.0) {
-        d = -1.0;
+    if (angleError < -1.0) {
+        angleError = -1.0;
     }
-    if (d > 1.0) {
-        d = 1.0;
+    if (angleError > 1.0) {
+        angleError = 1.0;
     }
-    angleDelta += d * 0.1;
+    angleDelta += angleError * 0.1;
     angleDelta *= 0.8;
     angle += angleDelta;
-    const double d3 = std::sin(angle);
-    const double d4 = std::cos(angle);
+    const double sinAngle = std::sin(angle);
+    const double cosAngle = std::cos(angle);
 
     for (int i = 0; i < 256; ++i) {
-        int n = static_cast<int>((clock[static_cast<std::size_t>(i)] >> 24) & 0xFFU);
-        int n2 = static_cast<int>((clock[static_cast<std::size_t>(i)] >> 16) & 0xFFU);
-        int n3 = static_cast<int>((clock[static_cast<std::size_t>(i)] >> 8) & 0xFFU);
-        int n4 = static_cast<int>(clock[static_cast<std::size_t>(i)] & 0xFFU);
-        if (n2 == n4 && n3 == 0 && n4 > 0) {
-            const double d5 = -((static_cast<double>(i % 16) / 15.0) - 0.5);
-            const double d6 = static_cast<double>(i / 16) / 15.0 - 0.5;
-            const int n5 = n2;
-            const int n6 = static_cast<int>((d5 * d4 + d6 * d3 + 0.5) * 16.0);
-            const int n7 = static_cast<int>((d6 * d4 - d5 * d3 + 0.5) * 16.0);
-            const int n8 = (n6 & 0xF) + (n7 & 0xF) * 16;
-            n = static_cast<int>((dial[static_cast<std::size_t>(n8)] >> 24) & 0xFFU);
-            n2 = (static_cast<int>((dial[static_cast<std::size_t>(n8)] >> 16) & 0xFFU) * n5) / 255;
-            n3 = (static_cast<int>((dial[static_cast<std::size_t>(n8)] >> 8) & 0xFFU) * n5) / 255;
-            n4 = (static_cast<int>(dial[static_cast<std::size_t>(n8)] & 0xFFU) * n5) / 255;
+        int alpha = static_cast<int>((clock[static_cast<std::size_t>(i)] >> 24) & 0xFFU);
+        int red = static_cast<int>((clock[static_cast<std::size_t>(i)] >> 16) & 0xFFU);
+        int green = static_cast<int>((clock[static_cast<std::size_t>(i)] >> 8) & 0xFFU);
+        int blue = static_cast<int>(clock[static_cast<std::size_t>(i)] & 0xFFU);
+        if (red == blue && green == 0 && blue > 0) {
+            const double normX = -((static_cast<double>(i % 16) / 15.0) - 0.5);
+            const double normY = static_cast<double>(i / 16) / 15.0 - 0.5;
+            const int brightness = red;
+            const int dialX = static_cast<int>((normX * cosAngle + normY * sinAngle + 0.5) * 16.0);
+            const int dialY = static_cast<int>((normY * cosAngle - normX * sinAngle + 0.5) * 16.0);
+            const int dialIndex = (dialX & 0xF) + (dialY & 0xF) * 16;
+            alpha = static_cast<int>((dial[static_cast<std::size_t>(dialIndex)] >> 24) & 0xFFU);
+            red = (static_cast<int>((dial[static_cast<std::size_t>(dialIndex)] >> 16) & 0xFFU) * brightness) / 255;
+            green = (static_cast<int>((dial[static_cast<std::size_t>(dialIndex)] >> 8) & 0xFFU) * brightness) / 255;
+            blue = (static_cast<int>(dial[static_cast<std::size_t>(dialIndex)] & 0xFFU) * brightness) / 255;
         }
-        detail::writePixel(pixels, i, n2, n3, n4, n);
+        detail::writePixel(pixels, i, red, green, blue, alpha);
     }
 }
 

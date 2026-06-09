@@ -1,3 +1,4 @@
+#include "net/minecraft/block/BlockRegistrar.hpp"
 #include "net/minecraft/block/SnowBlock.hpp"
 
 #include "net/minecraft/item/Item.hpp"
@@ -26,5 +27,15 @@ void SnowBlock::onTick(World* world, int x, int y, int z, JavaRandom& /*random*/
         world->setBlock(x, y, z, 0);
     }
 }
+namespace {
 
+void registerSnowBlock()
+{
+    Block::SNOW_BLOCK = (new SnowBlock(80, 66))->setHardness(0.2f)->setSoundGroup(&vanillaWoolSound())->setTranslationKey("snow");
+}
+
+MINECRAFT_REGISTER_BLOCK(registerSnowBlock, 80);
+
+} // namespace
 } // namespace net::minecraft::block
+

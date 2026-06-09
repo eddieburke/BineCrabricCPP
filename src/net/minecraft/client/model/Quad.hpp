@@ -72,12 +72,12 @@ private:
         if (vertices.size() < 4) {
             return;
         }
-        constexpr float f = 0.0015625f;
-        constexpr float f2 = 0.003125f;
-        vertices[0] = vertices[0].remap(static_cast<float>(u2) / 64.0f - f, static_cast<float>(v1) / 32.0f + f2);
-        vertices[1] = vertices[1].remap(static_cast<float>(u1) / 64.0f + f, static_cast<float>(v1) / 32.0f + f2);
-        vertices[2] = vertices[2].remap(static_cast<float>(u1) / 64.0f + f, static_cast<float>(v2) / 32.0f - f2);
-        vertices[3] = vertices[3].remap(static_cast<float>(u2) / 64.0f - f, static_cast<float>(v2) / 32.0f - f2);
+        constexpr float uvInsetU = 0.0015625f;
+        constexpr float uvInsetV = 0.003125f;
+        vertices[0] = vertices[0].remap(static_cast<float>(u2) / 64.0f - uvInsetU, static_cast<float>(v1) / 32.0f + uvInsetV);
+        vertices[1] = vertices[1].remap(static_cast<float>(u1) / 64.0f + uvInsetU, static_cast<float>(v1) / 32.0f + uvInsetV);
+        vertices[2] = vertices[2].remap(static_cast<float>(u1) / 64.0f + uvInsetU, static_cast<float>(v2) / 32.0f - uvInsetV);
+        vertices[3] = vertices[3].remap(static_cast<float>(u2) / 64.0f - uvInsetU, static_cast<float>(v2) / 32.0f - uvInsetV);
     }
 };
 

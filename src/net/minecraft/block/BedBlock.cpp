@@ -1,3 +1,4 @@
+#include "net/minecraft/block/BlockRegistrar.hpp"
 #include "net/minecraft/block/BedBlock.hpp"
 
 #include "net/minecraft/block/Block.hpp"
@@ -189,5 +190,15 @@ std::optional<Vec3i> BedBlock::findWakeUpPosition(World* world, int x, int y, in
     }
     return std::nullopt;
 }
+namespace {
 
+void registerBedBlock()
+{
+    Block::BED = (new BedBlock(26))->setHardness(0.2f)->setTranslationKey("bed")->disableTrackingStatistics()->ignoreMetaUpdates();
+}
+
+MINECRAFT_REGISTER_BLOCK(registerBedBlock, 26);
+
+} // namespace
 } // namespace net::minecraft::block
+

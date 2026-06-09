@@ -636,12 +636,12 @@ bool Entity::isInsideWall() const
         return false;
     }
     for (int i = 0; i < 8; ++i) {
-        const float f = (static_cast<float>((i >> 0) % 2) - 0.5f) * width * 0.9f;
-        const float f2 = (static_cast<float>((i >> 1) % 2) - 0.5f) * 0.1f;
-        const float f3 = (static_cast<float>((i >> 2) % 2) - 0.5f) * width * 0.9f;
-        const int bx = MathHelper::floor(x + static_cast<double>(f));
-        const int by = MathHelper::floor(y + static_cast<double>(getEyeHeight()) + static_cast<double>(f2));
-        const int bz = MathHelper::floor(z + static_cast<double>(f3));
+        const float offsetX = (static_cast<float>((i >> 0) % 2) - 0.5f) * width * 0.9f;
+        const float offsetY = (static_cast<float>((i >> 1) % 2) - 0.5f) * 0.1f;
+        const float offsetZ = (static_cast<float>((i >> 2) % 2) - 0.5f) * width * 0.9f;
+        const int bx = MathHelper::floor(x + static_cast<double>(offsetX));
+        const int by = MathHelper::floor(y + static_cast<double>(getEyeHeight()) + static_cast<double>(offsetY));
+        const int bz = MathHelper::floor(z + static_cast<double>(offsetZ));
         if (world->shouldSuffocate(bx, by, bz)) {
             return true;
         }

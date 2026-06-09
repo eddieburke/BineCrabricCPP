@@ -1,6 +1,7 @@
 #include "net/minecraft/entity/mob/PigZombieEntity.hpp"
 
 #include "net/minecraft/entity/player/PlayerEntity.hpp"
+#include "net/minecraft/item/Item.hpp"
 #include "net/minecraft/world/World.hpp"
 
 namespace net::minecraft::entity::mob {
@@ -71,6 +72,11 @@ void PigZombieEntity::makeAngry(Entity* source)
     target = source;
     anger = 400 + random.nextInt(400);
     angrySoundDelay = random.nextInt(40);
+}
+
+int PigZombieEntity::getDroppedItemId() const
+{
+    return Item::COOKED_PORKCHOP != nullptr ? Item::COOKED_PORKCHOP->id : 320;
 }
 
 } // namespace net::minecraft::entity::mob

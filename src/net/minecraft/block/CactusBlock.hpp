@@ -38,13 +38,7 @@ public:
 
     [[nodiscard]] int getTexture(int side) const override
     {
-        if (side == 1) {
-            return textureId - 1;
-        }
-        if (side == 0) {
-            return textureId + 1;
-        }
-        return textureId;
+        return Block::textureForSide(side, textureId, textureId + 1, textureId - 1);
     }
 
     [[nodiscard]] bool isFullCube() const override { return false; }

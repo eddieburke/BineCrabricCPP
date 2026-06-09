@@ -397,4 +397,9 @@ int WolfEntity::getMaxLookPitchChange() const
     return isInSittingPose() ? 20 : LivingEntity::getMaxLookPitchChange();
 }
 
+int WolfEntity::getDroppedItemId() const
+{
+    return -1;
+}
+
 } // namespace net::minecraft::entity::passive

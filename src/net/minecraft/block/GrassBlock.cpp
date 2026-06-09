@@ -1,3 +1,4 @@
+#include "net/minecraft/block/BlockRegistrar.hpp"
 #include "net/minecraft/block/GrassBlock.hpp"
 
 #include "net/minecraft/block/Block.hpp"
@@ -78,5 +79,15 @@ void GrassBlock::onTick(World* world, int x, int y, int z, JavaRandom& random)
         }
     }
 }
+namespace {
 
+void registerGrassBlock()
+{
+    Block::GRASS_BLOCK = (new GrassBlock(2))->setHardness(0.6f)->setSoundGroup(&vanillaDirtSound())->setTranslationKey("grass");
+}
+
+MINECRAFT_REGISTER_BLOCK(registerGrassBlock, 2);
+
+} // namespace
 } // namespace net::minecraft::block
+

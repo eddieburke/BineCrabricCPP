@@ -1109,25 +1109,9 @@ std::optional<HitResult> World::raycast(const Vec3d& start, const Vec3d& end, bo
                 const std::optional<Box> collisionShape = block->getCollisionShape(const_cast<World*>(this), x, y, z);
                 const bool hasShape = collisionShape.has_value();
                 if ((!ignoreNonFullBlocks || hasShape) && block->hasCollision(meta, ignoreLiquids)) {
-                    std::optional<HitResult> hit;
-                    if (collisionShape.has_value()) {
-                        hit = Block::raycastLocalBounds(
-                            collisionShape->minX - static_cast<double>(x),
-                            collisionShape->minY - static_cast<double>(y),
-                            collisionShape->minZ - static_cast<double>(z),
-                            collisionShape->maxX - static_cast<double>(x),
-                            collisionShape->maxY - static_cast<double>(y),
-                            collisionShape->maxZ - static_cast<double>(z),
-                            x,
-                            y,
-                            z,
-                            start,
-                            end);
-                    } else {
-                        const_cast<Block*>(block)->updateBoundingBox(const_cast<const BlockView*>(static_cast<const BlockView*>(this)), x, y, z);
-                        hit = block->raycast(const_cast<World*>(this), x, y, z, start, end);
-                    }
-                    if (hit.has_value()) {
+                    if (const std::optional<HitResult> hit =
+                            block->raycast(const_cast<World*>(this), x, y, z, start, end);
+                        hit.has_value()) {
                         return hit;
                     }
                 }
@@ -1619,7 +1603,8 @@ void World::tickEntities()
 void World::displayTick(int x, int y, int z)
 {
     constexpr int radius = 16;
-    JavaRandom random;
+    // Java uses new Random() each tick (time-seeded); derive from world RNG so pitch/volume vary.
+    JavaRandom random(static_cast<std::uint64_t>(random_.nextLong()));
     for (int i = 0; i < 1000; ++i) {
         const int blockX = x + random_.nextInt(radius) - random_.nextInt(radius);
         const int blockY = y + random_.nextInt(radius) - random_.nextInt(radius);

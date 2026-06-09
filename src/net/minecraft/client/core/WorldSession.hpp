@@ -33,11 +33,14 @@ public:
     void clearWorld(Minecraft& client);
 
     [[nodiscard]] World* ownedWorld() const noexcept { return ownedWorld_.get(); }
+    /// Previous dimension world kept alive across portal travel (Java GC timing).
+    [[nodiscard]] World* parkedDimensionWorld() const noexcept { return parkedDimensionWorld_.get(); }
     [[nodiscard]] WorldStorage* ownedWorldStorage() const noexcept { return ownedWorldStorage_.get(); }
     [[nodiscard]] entity::player::ClientPlayerEntity* ownedPlayer() const noexcept { return ownedPlayer_.get(); }
 
     std::unique_ptr<WorldStorage>& ownedWorldStorageMut() noexcept { return ownedWorldStorage_; }
     std::unique_ptr<World>& ownedWorldMut() noexcept { return ownedWorld_; }
+    std::unique_ptr<World>& parkedDimensionWorldMut() noexcept { return parkedDimensionWorld_; }
     std::unique_ptr<entity::player::ClientPlayerEntity>& ownedPlayerMut() noexcept { return ownedPlayer_; }
 
     void prepareWorld(Minecraft& client, const std::string& worldName);
@@ -48,6 +51,7 @@ private:
     int joinPlayerCounter_ = 0;
     std::unique_ptr<WorldStorage> ownedWorldStorage_;
     std::unique_ptr<World> ownedWorld_;
+    std::unique_ptr<World> parkedDimensionWorld_;
     std::unique_ptr<entity::player::ClientPlayerEntity> ownedPlayer_;
 };
 

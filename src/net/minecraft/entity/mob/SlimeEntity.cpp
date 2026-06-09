@@ -1,6 +1,7 @@
 #include "net/minecraft/entity/mob/SlimeEntity.hpp"
 
 #include "net/minecraft/entity/player/PlayerEntity.hpp"
+#include "net/minecraft/item/Item.hpp"
 #include "net/minecraft/util/math/MathHelper.hpp"
 #include "net/minecraft/world/World.hpp"
 #include "net/minecraft/world/chunk/Chunk.hpp"
@@ -132,6 +133,14 @@ bool SlimeEntity::canSpawn() const
         && random.nextInt(10) == 0
         && chunk.getSlimeRandom(987234911LL).nextInt(10) == 0
         && y < 16.0;
+}
+
+int SlimeEntity::getDroppedItemId() const
+{
+    if (getSize() == 1) {
+        return Item::SLIMEBALL != nullptr ? Item::SLIMEBALL->id : 341;
+    }
+    return 0;
 }
 
 } // namespace net::minecraft::entity::mob

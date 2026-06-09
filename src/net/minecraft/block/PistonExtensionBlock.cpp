@@ -1,3 +1,4 @@
+#include "net/minecraft/block/BlockRegistrar.hpp"
 #include "net/minecraft/block/PistonExtensionBlock.hpp"
 
 #include "net/minecraft/block/PistonConstants.hpp"
@@ -181,5 +182,15 @@ std::optional<net::minecraft::Box> PistonExtensionBlock::getPushedBlockCollision
     box->maxZ -= offsetZ;
     return box;
 }
+namespace {
 
+void registerPistonExtensionBlock()
+{
+    Block::MOVING_PISTON = new PistonExtensionBlock(36);
+}
+
+MINECRAFT_REGISTER_BLOCK(registerPistonExtensionBlock, 36);
+
+} // namespace
 } // namespace net::minecraft::block
+

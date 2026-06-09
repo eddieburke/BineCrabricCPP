@@ -1,3 +1,4 @@
+#include "net/minecraft/block/BlockRegistrar.hpp"
 #include "net/minecraft/block/RailBlock.hpp"
 
 #include "net/minecraft/world/World.hpp"
@@ -571,5 +572,16 @@ std::optional<net::minecraft::HitResult> RailBlock::raycast(
     }
     return Block::raycast(world, x, y, z, startPos, endPos);
 }
+namespace {
 
+void registerRailBlocks()
+{
+    Block::POWERED_RAIL = (new RailBlock(27, 179, true))->setHardness(0.7f)->setSoundGroup(&vanillaMetalSound())->setTranslationKey("goldenRail")->ignoreMetaUpdates();
+    Block::RAIL = (new RailBlock(66, 128, false))->setHardness(0.7f)->setSoundGroup(&vanillaMetalSound())->setTranslationKey("rail")->ignoreMetaUpdates();
+}
+
+MINECRAFT_REGISTER_BLOCK(registerRailBlocks, 27);
+
+} // namespace
 } // namespace net::minecraft::block
+

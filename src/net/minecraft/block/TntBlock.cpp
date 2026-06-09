@@ -1,3 +1,4 @@
+#include "net/minecraft/block/BlockRegistrar.hpp"
 #include "net/minecraft/block/TntBlock.hpp"
 
 #include "net/minecraft/block/Block.hpp"
@@ -13,13 +14,7 @@ TntBlock::TntBlock(int id, int textureId) : Block(id, textureId, material::Mater
 
 int TntBlock::getTexture(int side) const
 {
-    if (side == 0) {
-        return textureId + 2;
-    }
-    if (side == 1) {
-        return textureId + 1;
-    }
-    return textureId;
+    return Block::textureForSide(side, textureId, textureId + 2, textureId + 1);
 }
 
 void TntBlock::onPlaced(World* world, int x, int y, int z)
@@ -82,5 +77,15 @@ bool TntBlock::onUse(World* world, int x, int y, int z, net::minecraft::PlayerEn
 {
     return Block::onUse(world, x, y, z, player);
 }
+namespace {
 
+void registerTntBlock()
+{
+    Block::TNT = (new TntBlock(46, 8))->setHardness(0.0f)->setSoundGroup(&vanillaDirtSound())->setTranslationKey("tnt");
+}
+
+MINECRAFT_REGISTER_BLOCK(registerTntBlock, 46);
+
+} // namespace
 } // namespace net::minecraft::block
+

@@ -1,6 +1,5 @@
 #pragma once
 
-#include "net/minecraft/block/Block.hpp"
 #include "net/minecraft/entity/passive/AnimalEntity.hpp"
 #include "net/minecraft/nbt/NbtCompound.hpp"
 
@@ -61,11 +60,6 @@ public:
     [[nodiscard]] std::string getRandomSound() override { return "mob.sheep"; }
     [[nodiscard]] std::string getHurtSound() const override { return "mob.sheep"; }
     [[nodiscard]] std::string getDeathSound() const override { return "mob.sheep"; }
-
-    [[nodiscard]] int getDroppedItemId() const override
-    {
-        return block::Block::WOOL != nullptr ? block::Block::WOOL->id : 35;
-    }
 
     static int generateDefaultColor(JavaRandom& random)
     {

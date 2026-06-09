@@ -19,6 +19,7 @@ public:
     [[nodiscard]] int getDroppedItemCount(JavaRandom& random) const override;
     [[nodiscard]] bool isOpaque() const override { return !renderSides; }
     [[nodiscard]] int getTexture(int /*side*/, int meta) const override;
+    [[nodiscard]] int getColor(int meta) const override;
     [[nodiscard]] int getColorMultiplier(const BlockView* blockView, int x, int y, int z) const override;
     void setFancyGraphics(bool fancy);
     void onBreak(World* world, int x, int y, int z) override;

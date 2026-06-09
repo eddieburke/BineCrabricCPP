@@ -111,8 +111,8 @@ public:
         rightArm.yaw = 0.0f;
         leftArm.yaw = 0.0f;
         if (handSwingProgress > -9990.0f) {
-            float f = handSwingProgress;
-            body.yaw = net::minecraft::util::math::MathHelper::sin(net::minecraft::util::math::MathHelper::sqrt(f) * kPi * 2.0f) * 0.2f;
+            float swingProgress = handSwingProgress;
+            body.yaw = net::minecraft::util::math::MathHelper::sin(net::minecraft::util::math::MathHelper::sqrt(swingProgress) * kPi * 2.0f) * 0.2f;
             rightArm.pivotZ = net::minecraft::util::math::MathHelper::sin(body.yaw) * 5.0f;
             rightArm.pivotX = -net::minecraft::util::math::MathHelper::cos(body.yaw) * 5.0f;
             leftArm.pivotZ = -net::minecraft::util::math::MathHelper::sin(body.yaw) * 5.0f;
@@ -120,13 +120,13 @@ public:
             rightArm.yaw += body.yaw;
             leftArm.yaw += body.yaw;
             leftArm.pitch += body.yaw;
-            f = 1.0f - handSwingProgress;
-            f *= f;
-            f *= f;
-            f = 1.0f - f;
-            const float f2 = net::minecraft::util::math::MathHelper::sin(f * kPi);
-            const float f3 = net::minecraft::util::math::MathHelper::sin(handSwingProgress * kPi) * -(head.pitch - 0.7f) * 0.75f;
-            rightArm.pitch = rightArm.pitch - (f2 * 1.2f + f3);
+            swingProgress = 1.0f - handSwingProgress;
+            swingProgress *= swingProgress;
+            swingProgress *= swingProgress;
+            swingProgress = 1.0f - swingProgress;
+            const float armSwingSin = net::minecraft::util::math::MathHelper::sin(swingProgress * kPi);
+            const float armSwingAdjust = net::minecraft::util::math::MathHelper::sin(handSwingProgress * kPi) * -(head.pitch - 0.7f) * 0.75f;
+            rightArm.pitch = rightArm.pitch - (armSwingSin * 1.2f + armSwingAdjust);
             rightArm.yaw += body.yaw * 2.0f;
             rightArm.roll = net::minecraft::util::math::MathHelper::sin(handSwingProgress * kPi) * -0.4f;
         }
