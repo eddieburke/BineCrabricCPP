@@ -1,0 +1,120 @@
+# Build directories
+build/
+build-ninja/
+build-test/
+build-fast/
+build-omega/
+build-omega-fix/
+out/
+dist/
+bin/
+obj/
+
+# CMake / Ninja / CTest
+CMakeCache.txt
+CMakeFiles/
+cmake_install.cmake
+CTestTestfile.cmake
+Testing/
+*.ninja
+.ninja_deps
+.ninja_log
+compile_commands.json
+install_manifest.txt
+install_local_manifest.txt
+
+# Compiled artifacts
+*.obj
+*.o
+*.exe
+*.dll
+*.so
+*.dylib
+*.a
+*.lib
+*.pdb
+*.ilk
+*.exp
+*.iobj
+*.ipdb
+*.gcno
+*.gcda
+*.manifest
+
+# Compiler dependency files
+*.d
+*.rsp
+
+# MSVC / Visual Studio
+.vs/
+*.vcxproj
+*.vcxproj.filters
+*.vcxproj.user
+*.sln
+*.suo
+x64/
+x86/
+x86_64/
+Debug/
+Release/
+RelWithDebInfo/
+MinSizeRel/
+ipch/
+*.opensdf
+*.sdf
+*.ncb
+*.aps
+
+# Build lock
+.build-omega.lock
+
+# Local build logs (use cleanup.ps1)
+_build_out*.txt
+build-out.txt
+build-restore.log
+build-trace.txt
+
+# Game assets (extracted from jar)
+resources/
+
+# Generated refactor baseline output
+docs/refactor-baseline/baseline-*.txt
+docs/refactor-baseline/refactor-report-*.txt
+docs/refactor-baseline/gl-shim-baseline.txt
+
+# OS
+.DS_Store
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+
+# Editor
+.vscode/
+!.vscode/extensions.json
+!.vscode/settings.json
+.idea/
+*.swp
+*.swo
+*~
+
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Secrets
+.env
+.env.*
+!.env.example
+
+# Logs and temp
+*.log
+*.tmp
+*.temp
+.cache/
+
+# Shortcuts / misc
+*.lnk

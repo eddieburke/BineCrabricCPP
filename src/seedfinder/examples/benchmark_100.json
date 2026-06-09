@@ -1,0 +1,9 @@
+{
+  "seed_range_start": 0,
+  "seed_range_end": 99,
+  "scan_radius_chunks": 16,
+  "probe_depth": "biome_only",
+  "threads": 1,
+  "top_k": 1,
+  "advanced_rule_data_nbt": "{\"objectives\":[{\"type\":\"objective\",\"metric\":\"desert_chunk_count\",\"direction\":\"maximize\",\"weight\":1,\"biomes\":[\"desert\"]}]}"
+}

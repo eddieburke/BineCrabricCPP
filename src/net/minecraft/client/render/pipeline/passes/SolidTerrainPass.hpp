@@ -1,0 +1,12 @@
+#pragma once
+
+#include "net/minecraft/client/render/pipeline/WorldRenderContext.hpp"
+
+namespace net::minecraft::client::render::pipeline::passes {
+
+// Java GameRenderer.renderFrame ~478-482: solid terrain layer 0.
+struct SolidTerrainPass {
+    static void run(WorldRenderContext& ctx);
+};
+
+} // namespace net::minecraft::client::render::pipeline::passes

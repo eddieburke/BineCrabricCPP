@@ -1,0 +1,51 @@
+#pragma once
+
+#include "net/minecraft/block/entity/BlockEntity.hpp"
+#include "net/minecraft/client/gl/GL11.hpp"
+
+#include <string>
+
+namespace net::minecraft {
+class World;
+}
+
+namespace net::minecraft::client::font {
+class TextRenderer;
+}
+
+namespace net::minecraft::client::render::block::entity {
+
+class BlockEntityRenderDispatcher;
+
+class BlockEntityRenderer {
+public:
+    virtual ~BlockEntityRenderer() = default;
+
+    virtual void render(const net::minecraft::block::entity::BlockEntity& blockEntity, double x, double y, double z, float tickDelta)
+    {
+        (void)blockEntity;
+        (void)x;
+        (void)y;
+        (void)z;
+        (void)tickDelta;
+    }
+
+    virtual void setDispatcher(BlockEntityRenderDispatcher* dispatcherIn)
+    {
+        dispatcher = dispatcherIn;
+    }
+
+    virtual void setWorld(net::minecraft::World* world)
+    {
+        (void)world;
+    }
+
+    [[nodiscard]] font::TextRenderer* getTextRenderer() const;
+
+protected:
+    void bindTexture(const std::string& path);
+
+    BlockEntityRenderDispatcher* dispatcher = nullptr;
+};
+
+} // namespace net::minecraft::client::render::block::entity

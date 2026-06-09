@@ -1,0 +1,8 @@
+{
+  "seed_range_start": 0,
+  "seed_range_end": 9999,
+  "scan_radius_chunks": 16,
+  "probe_depth": "biome_only",
+  "threads": 8,
+  "top_k": 1
+}

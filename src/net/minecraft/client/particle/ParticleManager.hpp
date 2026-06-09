@@ -1,0 +1,181 @@
+#pragma once
+
+#include "net/minecraft/block/Block.hpp"
+#include "net/minecraft/client/gl/GL11.hpp"
+#include "net/minecraft/client/particle/BlockParticle.hpp"
+#include "net/minecraft/client/particle/Particle.hpp"
+#include "net/minecraft/client/texture/TextureManager.hpp"
+#include "net/minecraft/entity/LivingEntity.hpp"
+#include "net/minecraft/entity/EntityTypes.hpp"
+#include "net/minecraft/world/World.hpp"
+
+#include <algorithm>
+#include <array>
+#include <memory>
+#include <sstream>
+#include <string>
+#include <vector>
+
+namespace net::minecraft::client::particle {
+
+class ParticleManager {
+public:
+    ParticleManager() = default;
+
+    ParticleManager(World* world, texture::TextureManager* textureManager)
+        : world_(world),
+          textureManager_(textureManager)
+    {
+    }
+
+    void addParticle(Particle* particle)
+    {
+        const int group = particle->getGroup();
+        auto& bucket = particles_[static_cast<std::size_t>(group)];
+        if (bucket.size() >= 4000) {
+            bucket.erase(bucket.begin());
+        }
+        bucket.emplace_back(particle);
+    }
+
+    void removeDeadParticles()
+    {
+        for (auto& bucket : particles_) {
+            for (std::size_t i = 0; i < bucket.size();) {
+                bucket[i]->tick();
+                if (bucket[i]->dead) {
+                    bucket.erase(bucket.begin() + static_cast<std::ptrdiff_t>(i));
+                } else {
+                    ++i;
+                }
+            }
+        }
+    }
+
+    void render(Entity* entity, float partialTicks)
+    {
+        const float yawCos = MathHelper::cos(entity->yaw * kPiF / 180.0f);
+        const float yawSin = MathHelper::sin(entity->yaw * kPiF / 180.0f);
+        const float widthOffset = -yawSin * MathHelper::sin(entity->pitch * kPiF / 180.0f);
+        const float heightOffset = yawCos * MathHelper::sin(entity->pitch * kPiF / 180.0f);
+        const float verticalSize = MathHelper::cos(entity->pitch * kPiF / 180.0f);
+        Particle::xOffset = entity->lastTickX + (entity->x - entity->lastTickX) * partialTicks;
+        Particle::yOffset = entity->lastTickY + (entity->y - entity->lastTickY) * partialTicks;
+        Particle::zOffset = entity->lastTickZ + (entity->z - entity->lastTickZ) * partialTicks;
+
+        for (int group = 0; group < 3; ++group) {
+            if (particles_[static_cast<std::size_t>(group)].empty()) {
+                continue;
+            }
+            const char* texture = group == 0 ? "/particles.png" : (group == 1 ? "/terrain.png" : "/gui/items.png");
+            textureManager_->bindTexture(textureManager_->getTextureId(texture));
+            render::Tessellator& tessellator = render::Tessellator::INSTANCE;
+            tessellator.startQuads();
+            for (const auto& particle : particles_[static_cast<std::size_t>(group)]) {
+                particle->render(tessellator, partialTicks, yawCos, verticalSize, yawSin, widthOffset, heightOffset);
+            }
+            tessellator.draw();
+        }
+    }
+
+    void renderLit(Entity* /*entity*/, float partialTicks)
+    {
+        auto& bucket = particles_[3];
+        if (bucket.empty()) {
+            return;
+        }
+        render::Tessellator& tessellator = render::Tessellator::INSTANCE;
+        for (const auto& particle : bucket) {
+            particle->render(tessellator, partialTicks, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f);
+        }
+    }
+
+    void addBlockBreakParticles(int x, int y, int z, int blockId, int blockMeta)
+    {
+        if (blockId == 0) {
+            return;
+        }
+        Block* block = Block::BLOCKS[blockId];
+        constexpr int grid = 4;
+        for (int i = 0; i < grid; ++i) {
+            for (int j = 0; j < grid; ++j) {
+                for (int k = 0; k < grid; ++k) {
+                    // jitter within cell so particles don't spawn on a perfect lattice
+                    const double px = static_cast<double>(x) + (static_cast<double>(i) + random_.nextDouble()) / static_cast<double>(grid);
+                    const double py = static_cast<double>(y) + (static_cast<double>(j) + random_.nextDouble()) / static_cast<double>(grid);
+                    const double pz = static_cast<double>(z) + (static_cast<double>(k) + random_.nextDouble()) / static_cast<double>(grid);
+                    const int side = random_.nextInt(6);
+                    // scale outward velocity so particles burst away from the block
+                    const double vx = (px - static_cast<double>(x) - 0.5) * 3.0;
+                    const double vy = (py - static_cast<double>(y) - 0.5) * 3.0;
+                    const double vz = (pz - static_cast<double>(z) - 0.5) * 3.0;
+                    addParticle((new BlockParticle(world_, px, py, pz, vx, vy, vz, block, side, blockMeta))
+                                    ->color(x, y, z));
+                }
+            }
+        }
+    }
+
+    void addBlockBreakingParticles(int x, int y, int z, int side)
+    {
+        const int blockId = world_->getBlockId(x, y, z);
+        if (blockId == 0) {
+            return;
+        }
+        Block* block = Block::BLOCKS[blockId];
+        JavaRandom& random = random_;
+        constexpr float inset = 0.1f;
+        double px = static_cast<double>(x) + random.nextDouble() * (block->maxX - block->minX - static_cast<double>(inset) * 2.0)
+            + static_cast<double>(inset) + block->minX;
+        double py = static_cast<double>(y) + random.nextDouble() * (block->maxY - block->minY - static_cast<double>(inset) * 2.0)
+            + static_cast<double>(inset) + block->minY;
+        double pz = static_cast<double>(z) + random.nextDouble() * (block->maxZ - block->minZ - static_cast<double>(inset) * 2.0)
+            + static_cast<double>(inset) + block->minZ;
+        if (side == 0) {
+            py = static_cast<double>(y) + block->minY - static_cast<double>(inset);
+        } else if (side == 1) {
+            py = static_cast<double>(y) + block->maxY + static_cast<double>(inset);
+        } else if (side == 2) {
+            pz = static_cast<double>(z) + block->minZ - static_cast<double>(inset);
+        } else if (side == 3) {
+            pz = static_cast<double>(z) + block->maxZ + static_cast<double>(inset);
+        } else if (side == 4) {
+            px = static_cast<double>(x) + block->minX - static_cast<double>(inset);
+        } else if (side == 5) {
+            px = static_cast<double>(x) + block->maxX + static_cast<double>(inset);
+        }
+        addParticle((new BlockParticle(world_, px, py, pz, 0.0, 0.0, 0.0, block, side, world_->getBlockMeta(x, y, z)))
+                        ->color(x, y, z)
+                        ->multiplyVelocity(0.2f)
+                        ->setScale(0.6f));
+    }
+
+    void setWorld(World* world)
+    {
+        world_ = world;
+        for (auto& bucket : particles_) {
+            bucket.clear();
+        }
+    }
+
+    void setTextureManager(texture::TextureManager* textureManager)
+    {
+        textureManager_ = textureManager;
+    }
+
+    [[nodiscard]] std::string toString() const
+    {
+        const std::size_t count = particles_[0].size() + particles_[1].size() + particles_[2].size();
+        return std::to_string(count);
+    }
+
+private:
+    World* world_ = nullptr;
+    texture::TextureManager* textureManager_ = nullptr;
+    std::array<std::vector<std::unique_ptr<Particle>>, 4> particles_ {};
+    // Java: private Random random = new Random(); kept separate from world.random
+    // so spawning block-break particles never perturbs the world RNG stream.
+    JavaRandom random_ {};
+};
+
+} // namespace net::minecraft::client::particle

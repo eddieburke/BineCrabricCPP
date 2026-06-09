@@ -1,0 +1,189 @@
+#include "net/minecraft/client/core/WorldSession.hpp"
+
+#include "net/minecraft/client/Minecraft.hpp"
+#include "net/minecraft/entity/player/ClientPlayerEntity.hpp"
+#include "net/minecraft/stat/PlayerStats.hpp"
+#include "net/minecraft/util/math/MathHelper.hpp"
+#include "net/minecraft/world/chunk/LegacyChunkCache.hpp"
+#include "net/minecraft/world/storage/AlphaWorldStorage.hpp"
+#include "net/minecraft/world/storage/WorldStorageSource.hpp"
+#include "net/minecraft/world/World.hpp"
+
+namespace net::minecraft::client::core {
+
+void WorldSession::setWorld(Minecraft& client, World* worldIn)
+{
+    setWorld(client, worldIn, "");
+}
+
+void WorldSession::setWorld(Minecraft& client, World* worldIn, const std::string& message)
+{
+    setWorld(client, worldIn, message, nullptr);
+}
+
+void WorldSession::clearWorld(Minecraft& client)
+{
+    // Detach render listeners before ownedWorld_ is destroyed. WorldRenderer keeps
+    // its own world pointer; without clearing it first, the next setWorld() call
+    // dereferences freed memory in removeEventListener().
+    if (client.worldRenderer != nullptr) {
+        client.worldRenderer->setWorld(nullptr);
+    }
+    ownedPlayer_.reset();
+    client.player = nullptr;
+    ownedWorld_.reset();
+    ownedWorldStorage_.reset();
+}
+
+void WorldSession::setWorld(Minecraft& client, World* worldIn, const std::string& message, PlayerEntity* existingPlayer)
+{
+    if (client.stats != nullptr) {
+        client.stats->syncStats();
+        client.stats->save();
+    }
+    client.camera = nullptr;
+    client.progressRenderer.progressStart(message);
+    client.progressRenderer.progressStage("");
+    client.audio.playRecord("", 0.0f, 0.0f, 0.0f, 0.0f);
+    if (client.world != nullptr) {
+        if (!client.world->isRemote() && client.player != nullptr) {
+            if (WorldStorage* storage = client.world->getDimensionData()) {
+                if (auto* alphaStorage = dynamic_cast<AlphaWorldStorage*>(storage)) {
+                    alphaStorage->savePlayerData(*client.player);
+                }
+            }
+        }
+        client.world->savingProgress(nullptr);
+    }
+    client.world = worldIn;
+    client.particleManager.setWorld(worldIn);
+    if (worldIn != nullptr) {
+        if (client.interactionManager != nullptr) {
+            client.interactionManager->setWorld(worldIn);
+        }
+        if (!worldIn->isRemote()) {
+            if (existingPlayer == nullptr && client.player == nullptr && client.interactionManager != nullptr) {
+                ownedPlayer_ = std::unique_ptr<entity::player::ClientPlayerEntity>(
+                    static_cast<entity::player::ClientPlayerEntity*>(client.interactionManager->createPlayer(worldIn)));
+                client.player = ownedPlayer_.get();
+            }
+        } else if (client.player != nullptr) {
+            client.player->teleportTop();
+            worldIn->spawnEntity(client.player);
+        }
+        if (client.player == nullptr && client.interactionManager != nullptr) {
+            ownedPlayer_ = std::unique_ptr<entity::player::ClientPlayerEntity>(
+                static_cast<entity::player::ClientPlayerEntity*>(client.interactionManager->createPlayer(worldIn)));
+            client.player = ownedPlayer_.get();
+            client.player->teleportTop();
+            client.interactionManager->preparePlayer(client.player);
+        }
+        if (client.player != nullptr) {
+            if (!worldIn->isRemote() && existingPlayer == nullptr) {
+                if (WorldStorage* storage = worldIn->getDimensionData()) {
+                    if (auto* alphaStorage = dynamic_cast<AlphaWorldStorage*>(storage)) {
+                        alphaStorage->loadPlayerData(*client.player);
+                    }
+                }
+            }
+            if (ChunkSource* chunkSource = worldIn->getChunkSource()) {
+                if (auto* legacyCache = dynamic_cast<LegacyChunkCache*>(chunkSource)) {
+                    const int chunkX = MathHelper::floor(client.player->x) >> 4;
+                    const int chunkZ = MathHelper::floor(client.player->z) >> 4;
+                    legacyCache->setSpawnPoint(chunkX, chunkZ);
+                }
+            }
+            client.camera = client.player;
+        }
+        if (client.worldRenderer != nullptr) {
+            client.worldRenderer->setWorld(worldIn);
+        }
+        if (client.interactionManager != nullptr && client.player != nullptr) {
+            client.interactionManager->preparePlayerRespawn(client.player);
+        }
+        if (existingPlayer != nullptr) {
+            worldIn->saveLevelProperties();
+        }
+        if (!worldIn->isRemote()) {
+            prepareWorld(client, message);
+            if (client.player != nullptr) {
+                worldIn->addPlayer(client.player);
+            }
+        } else if (client.player != nullptr) {
+            worldIn->addPlayer(client.player);
+        }
+        client.options.applyToWorld(worldIn);
+        if (worldIn->newWorld) {
+            worldIn->savingProgress(nullptr);
+        }
+    } else {
+        clearWorld(client);
+    }
+    client.lastTickTime = 0;
+}
+
+void WorldSession::prepareWorld(Minecraft& client, const std::string& worldName)
+{
+    client.progressRenderer.progressStart(worldName);
+    client.progressRenderer.progressStage("Building terrain");
+    if (client.world == nullptr) {
+        return;
+    }
+    constexpr int radius = 128;
+    int progress = 0;
+    const int progressTotal = ((radius * 2 / 16) + 1) * ((radius * 2 / 16) + 1);
+    Vec3i center = client.world->getSpawnPos();
+    if (client.player != nullptr) {
+        center.x = MathHelper::floor(client.player->x);
+        center.z = MathHelper::floor(client.player->z);
+    }
+    if (ChunkSource* chunkSource = client.world->getChunkSource()) {
+        if (auto* legacyCache = dynamic_cast<LegacyChunkCache*>(chunkSource)) {
+            legacyCache->setSpawnPoint(center.x >> 4, center.z >> 4);
+        }
+    }
+    for (int dx = -radius; dx <= radius; dx += 16) {
+        for (int dz = -radius; dz <= radius; dz += 16) {
+            client.progressRenderer.progressStagePercentage(progress++ * 100 / progressTotal);
+            (void)client.world->getBlockId(center.x + dx, 64, center.z + dz);
+            while (client.world->doLightingUpdates()) {
+            }
+        }
+    }
+    if (ChunkSource* chunkSource = client.world->getChunkSource()) {
+        if (auto* legacyCache = dynamic_cast<LegacyChunkCache*>(chunkSource)) {
+            legacyCache->populateReadyChunks();
+        }
+    }
+    while (client.world->doLightingUpdates()) {
+    }
+    client.progressRenderer.progressStage("Simulating world for a bit");
+    client.world->tickChunks();
+    if (client.world->newWorld) {
+        client.world->saveLevelProperties();
+    }
+}
+
+void WorldSession::convertAndSaveWorld(Minecraft& client, const std::string& worldName, const std::string& name)
+{
+    if (client.worldStorageSource != nullptr) {
+        client.progressRenderer.progressStart("Converting World to " + client.worldStorageSource->getName());
+        client.progressRenderer.progressStage("This may take a while :)");
+        client.worldStorageSource->convert(worldName, &client.progressRenderer);
+    }
+    client.startGame(worldName, name, 0);
+}
+
+void WorldSession::tickJoinPlayerCounter(Minecraft& client)
+{
+    if (client.world == nullptr || client.player == nullptr) {
+        return;
+    }
+    ++joinPlayerCounter_;
+    if (joinPlayerCounter_ == 30) {
+        joinPlayerCounter_ = 0;
+        client.world->loadChunksNearEntity(client.player);
+    }
+}
+
+} // namespace net::minecraft::client::core

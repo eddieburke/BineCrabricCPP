@@ -1,0 +1,80 @@
+#include "net/minecraft/block/SignBlock.hpp"
+
+#include "net/minecraft/block/material/Material.hpp"
+#include "net/minecraft/item/Item.hpp"
+#include "net/minecraft/world/World.hpp"
+
+namespace net::minecraft::block {
+
+SignBlock::SignBlock(int id, bool standingIn) : BlockWithEntity(id, material::Material::WOOD)
+{
+    standing = standingIn;
+    textureId = 4;
+    const float f = 0.25f;
+    const float f2 = 1.0f;
+    setBoundingBox(0.5f - f, 0.0f, 0.5f - f, 0.5f + f, f2, 0.5f + f);
+}
+
+void SignBlock::updateBoundingBox(const BlockView* blockView, int x, int y, int z)
+{
+    if (standing) {
+        return;
+    }
+
+    const int meta = blockView != nullptr ? blockView->getBlockMeta(x, y, z) : 0;
+    constexpr float yMin = 0.28125f;
+    constexpr float yMax = 0.78125f;
+    constexpr float thickness = 0.125f;
+    setBoundingBox(0.0f, 0.0f, 0.0f, 1.0f, 1.0f, 1.0f);
+    if (meta == 2) {
+        setBoundingBox(0.0f, yMin, 1.0f - thickness, 1.0f, yMax, 1.0f);
+    } else if (meta == 3) {
+        setBoundingBox(0.0f, yMin, 0.0f, 1.0f, yMax, thickness);
+    } else if (meta == 4) {
+        setBoundingBox(1.0f - thickness, yMin, 0.0f, 1.0f, yMax, 1.0f);
+    } else if (meta == 5) {
+        setBoundingBox(0.0f, yMin, 0.0f, thickness, yMax, 1.0f);
+    }
+}
+
+void SignBlock::neighborUpdate(World* world, int x, int y, int z, int id)
+{
+    if (world == nullptr) {
+        return;
+    }
+
+    bool shouldBreak = false;
+    if (standing) {
+        if (!world->getMaterial(x, y - 1, z).isSolid()) {
+            shouldBreak = true;
+        }
+    } else {
+        const int meta = world->getBlockMeta(x, y, z);
+        shouldBreak = true;
+        if (meta == 2 && world->getMaterial(x, y, z + 1).isSolid()) {
+            shouldBreak = false;
+        }
+        if (meta == 3 && world->getMaterial(x, y, z - 1).isSolid()) {
+            shouldBreak = false;
+        }
+        if (meta == 4 && world->getMaterial(x + 1, y, z).isSolid()) {
+            shouldBreak = false;
+        }
+        if (meta == 5 && world->getMaterial(x - 1, y, z).isSolid()) {
+            shouldBreak = false;
+        }
+    }
+
+    if (shouldBreak) {
+        dropStacks(world, x, y, z, world->getBlockMeta(x, y, z));
+        world->setBlock(x, y, z, 0);
+    }
+    BlockWithEntity::neighborUpdate(world, x, y, z, id);
+}
+
+int SignBlock::getDroppedItemId(int /*blockMeta*/, JavaRandom& /*random*/) const
+{
+    return Item::SIGN != nullptr ? Item::SIGN->id : 323;
+}
+
+} // namespace net::minecraft::block

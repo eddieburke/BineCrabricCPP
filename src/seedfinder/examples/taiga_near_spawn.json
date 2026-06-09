@@ -1,0 +1,16 @@
+{
+  "seed_range_start": "1000",
+  "seed_range_end": "50000",
+  "dimension": "overworld",
+  "scan_origin_x": 0,
+  "scan_origin_z": 0,
+  "scan_radius_chunks": 6,
+  "probe_depth": "terrain",
+  "spawn_biome_in": "taiga,forest,tundra",
+  "spawn_distance_chunks": 8,
+  "required_biomes": "taiga",
+  "temperature_max": 0.4,
+  "avg_surface_y_min": 60,
+  "threads": 1,
+  "top_k": 5
+}

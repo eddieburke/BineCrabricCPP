@@ -1,0 +1,193 @@
+#include "net/minecraft/client/render/block/FluidBlockRenderer.hpp"
+
+#include "net/minecraft/block/Block.hpp"
+#include "net/minecraft/block/LiquidBlock.hpp"
+#include "net/minecraft/world/BlockView.hpp"
+#include "net/minecraft/block/material/Material.hpp"
+#include "net/minecraft/client/Minecraft.hpp"
+#include "net/minecraft/client/option/ResolvedRenderOptions.hpp"
+#include "net/minecraft/client/render/Tessellator.hpp"
+#include "net/minecraft/util/math/MathHelper.hpp"
+
+#include <array>
+
+namespace net::minecraft::client::render::block {
+
+namespace option = net::minecraft::client::option;
+
+bool FluidBlockRenderer::renderFluid(net::minecraft::block::Block& block, int x, int y, int z)
+{
+    float f;
+    float f2;
+    float f3;
+    int n;
+    int n2;
+    Tessellator& tessellator = render::INSTANCE;
+    int colorMult = block.getColorMultiplier(ctx_.blockView, x, y, z);
+    float red = (float)(colorMult >> 16 & 0xFF) / 255.0f;
+    float green = (float)(colorMult >> 8 & 0xFF) / 255.0f;
+    float blue = (float)(colorMult & 0xFF) / 255.0f;
+    bool topVisible = block.isSideVisible(ctx_.blockView, x, y + 1, z, 1);
+    bool bottomVisible = block.isSideVisible(ctx_.blockView, x, y - 1, z, 0);
+    std::array<bool, 4> sideVisible {
+        block.isSideVisible(ctx_.blockView, x, y, z - 1, 2),
+        block.isSideVisible(ctx_.blockView, x, y, z + 1, 3),
+        block.isSideVisible(ctx_.blockView, x - 1, y, z, 4),
+        block.isSideVisible(ctx_.blockView, x + 1, y, z, 5),
+    };
+    if (!(topVisible || bottomVisible || sideVisible[0] || sideVisible[1] || sideVisible[2] || sideVisible[3])) {
+        return false;
+    }
+    bool drewAnyFace = false;
+    const float downShade = 0.5f;
+    const float upShade = 1.0f;
+    const float horizShade = 0.8f;
+    const float nsShade = 0.6f;
+    const double minY = 0.0;
+    const double maxY = 1.0;
+    net::minecraft::block::material::Material& material = block.material;
+    int meta = ctx_.blockView->getBlockMeta(x, y, z);
+    float h00 = getFluidHeight(x, y, z, material);
+    float h01 = getFluidHeight(x, y, z + 1, material);
+    float h11 = getFluidHeight(x + 1, y, z + 1, material);
+    float h10 = getFluidHeight(x + 1, y, z, material);
+    if (ctx_.skipFaceCulling || topVisible) {
+        drewAnyFace = true;
+        int topTex = block.getTexture(1, meta);
+        float flowAngle = 0.0f;
+        if (Minecraft::INSTANCE == nullptr || option::resolve(Minecraft::INSTANCE->options).fancyWater) {
+            flowAngle = static_cast<float>(
+                net::minecraft::block::LiquidBlock::getFlowingAngle(ctx_.blockView, x, y, z, material));
+        }
+        if (flowAngle > -999.0f) {
+            topTex = block.getTexture(2, meta);
+        }
+        n2 = (topTex & 0xF) << 4;
+        n = topTex & 0xF0;
+        double d3 = ((double)n2 + 8.0) / 256.0;
+        double d4 = ((double)n + 8.0) / 256.0;
+        if (flowAngle < -999.0f) {
+            flowAngle = 0.0f;
+        } else {
+            d3 = (float)(n2 + 16) / 256.0f;
+            d4 = (float)(n + 16) / 256.0f;
+        }
+        f3 = net::minecraft::util::math::MathHelper::sin(flowAngle) * 8.0f / 256.0f;
+        f2 = net::minecraft::util::math::MathHelper::cos(flowAngle) * 8.0f / 256.0f;
+        f = block.getLuminance(ctx_.blockView, x, y, z);
+        tessellator.color(upShade * f * red, upShade * f * green, upShade * f * blue);
+        tessellator.vertex(x + 0, (float)y + h00, z + 0, d3 - (double)f2 - (double)f3, d4 - (double)f2 + (double)f3);
+        tessellator.vertex(x + 0, (float)y + h01, z + 1, d3 - (double)f2 + (double)f3, d4 + (double)f2 + (double)f3);
+        tessellator.vertex(x + 1, (float)y + h11, z + 1, d3 + (double)f2 + (double)f3, d4 + (double)f2 - (double)f3);
+        tessellator.vertex(x + 1, (float)y + h10, z + 0, d3 + (double)f2 - (double)f3, d4 - (double)f2 - (double)f3);
+    }
+    if (ctx_.skipFaceCulling || bottomVisible) {
+        float brightness = block.getLuminance(ctx_.blockView, x, y - 1, z);
+        tessellator.color(downShade * brightness, downShade * brightness, downShade * brightness);
+        faces_.renderBottomFace(block, x, y, z, block.getTexture(0));
+        drewAnyFace = true;
+    }
+    for (int i = 0; i < 4; ++i) {
+        float sideH0;
+        float sideH1;
+        float sideX0;
+        float sideX1;
+        float sideZ0;
+        float sideZ1;
+        int nx = x;
+        int ny = y;
+        int nz = z;
+        if (i == 0) {
+            --nz;
+        }
+        if (i == 1) {
+            ++nz;
+        }
+        if (i == 2) {
+            --nx;
+        }
+        if (i == 3) {
+            ++nx;
+        }
+        int sideTex = block.getTexture(i + 2, meta);
+        int texU = (sideTex & 0xF) << 4;
+        int texV = sideTex & 0xF0;
+        if (!ctx_.skipFaceCulling && !sideVisible[i]) continue;
+        if (i == 0) {
+            sideH0 = h00;
+            sideH1 = h10;
+            sideX0 = x;
+            sideX1 = x + 1;
+            sideZ0 = z;
+            sideZ1 = z;
+        } else if (i == 1) {
+            sideH0 = h11;
+            sideH1 = h01;
+            sideX0 = x + 1;
+            sideX1 = x;
+            sideZ0 = z + 1;
+            sideZ1 = z + 1;
+        } else if (i == 2) {
+            sideH0 = h01;
+            sideH1 = h00;
+            sideX0 = x;
+            sideX1 = x;
+            sideZ0 = z + 1;
+            sideZ1 = z;
+        } else {
+            sideH0 = h10;
+            sideH1 = h11;
+            sideX0 = x + 1;
+            sideX1 = x + 1;
+            sideZ0 = z;
+            sideZ1 = z + 1;
+        }
+        drewAnyFace = true;
+        double uMin = (float)(texU + 0) / 256.0f;
+        double uMax = ((double)(texU + 16) - 0.01) / 256.0;
+        double vTop0 = ((float)texV + (1.0f - sideH0) * 16.0f) / 256.0f;
+        double vTop1 = ((float)texV + (1.0f - sideH1) * 16.0f) / 256.0f;
+        double vBottom = ((double)(texV + 16) - 0.01) / 256.0;
+        float brightness = block.getLuminance(ctx_.blockView, nx, ny, nz);
+        brightness *= i < 2 ? horizShade : nsShade;
+        tessellator.color(upShade * brightness * red, upShade * brightness * green, upShade * brightness * blue);
+        tessellator.vertex(sideX0, (float)y + sideH0, sideZ0, uMin, vTop0);
+        tessellator.vertex(sideX1, (float)y + sideH1, sideZ1, uMax, vTop1);
+        tessellator.vertex(sideX1, y + 0, sideZ1, uMax, vBottom);
+        tessellator.vertex(sideX0, y + 0, sideZ0, uMin, vBottom);
+    }
+    block.minY = minY;
+    block.maxY = maxY;
+    return drewAnyFace;
+}
+
+float FluidBlockRenderer::getFluidHeight(int x, int y, int z, net::minecraft::block::material::Material& material)
+{
+    int n = 0;
+    float f = 0.0f;
+    for (int i = 0; i < 4; ++i) {
+        int nx = x - (i & 1);
+        int ny = y;
+        int nz = z - (i >> 1 & 1);
+        if (&ctx_.blockView->getMaterial(nx, ny + 1, nz) == &material) {
+            return 1.0f;
+        }
+        net::minecraft::block::material::Material& mat2 = ctx_.blockView->getMaterial(nx, ny, nz);
+        if (&mat2 == &material) {
+            int meta = ctx_.blockView->getBlockMeta(nx, ny, nz);
+            if (meta >= 8 || meta == 0) {
+                f += net::minecraft::block::LiquidBlock::getFluidHeightFromMeta(meta) * 10.0f;
+                n += 10;
+            }
+            f += net::minecraft::block::LiquidBlock::getFluidHeightFromMeta(meta);
+            ++n;
+            continue;
+        }
+        if (mat2.isSolid()) continue;
+        f += 1.0f;
+        ++n;
+    }
+    return 1.0f - f / (float)n;
+}
+
+} // namespace net::minecraft::client::render::block
