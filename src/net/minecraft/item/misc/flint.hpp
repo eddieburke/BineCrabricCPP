@@ -2,14 +2,17 @@
 
 #include "net/minecraft/item/Item.hpp"
 
+namespace net::minecraft::recipe {
+class CraftingRecipeManager;
+} // namespace net::minecraft::recipe
+
 namespace net::minecraft::item {
 
 class FlintItem : public Item {
-public:
-    static constexpr int ID = 318;
-    FlintItem() : Item(62) {
-        setTexturePosition(6, 0)->setTranslationKey("flint");
-    }
+public:    static void registerClass();
+    static void registerRecipes(recipe::CraftingRecipeManager& recipeManager);
+
+    FlintItem();
 };
 
 } // namespace net::minecraft::item

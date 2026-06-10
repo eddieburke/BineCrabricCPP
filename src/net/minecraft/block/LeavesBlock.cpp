@@ -6,6 +6,8 @@
 #include "net/minecraft/entity/player/PlayerEntity.hpp"
 #include "net/minecraft/item/Item.hpp"
 #include "net/minecraft/item/ItemStack.hpp"
+#include "net/minecraft/item/LeavesBlockItem.hpp"
+#include "net/minecraft/item/ShearsItem.hpp"
 #include "net/minecraft/stat/Stats.hpp"
 #include "net/minecraft/world/World.hpp"
 
@@ -199,15 +201,13 @@ void LeavesBlock::afterBreak(
         return;
     }
     const ItemStack hand = player->getHand();
-    if (Item::SHEARS != nullptr && hand.itemId == Item::SHEARS->id) {
+    if (Item::byRawId(103) != nullptr && hand.itemId == Item::byRawId(103)->id) {
         player->increaseStat(stat::Stats::mineBlockStatId(id), 1);
         dropStack(world, x, y, z, ItemStack(id, 1, meta & 3));
         return;
     }
     Block::afterBreak(world, player, x, y, z, meta);
 }
-namespace {
-
 void LeavesBlock::registerClass()
 {
     Block::LEAVES = (new LeavesBlock(18, 52))->setHardness(0.2f)->setOpacity(1)->setSoundGroup(&vanillaDirtSound())->setTranslationKey("leaves")->disableTrackingStatistics()->ignoreMetaUpdates();
@@ -216,7 +216,11 @@ void LeavesBlock::registerClass()
 
 
 
-static ::net::minecraft::registry::RegisterBlock<LeavesBlock> autoReg(18);
-} // namespace
+void LeavesBlock::registerBlockItems()
+{
+    (new item::LeavesBlockItem(18 - 256))->setTranslationKey("leaves");
+}
+
+namespace {static ::net::minecraft::registry::RegisterBlock<LeavesBlock> autoReg(18);} // namespace
 } // namespace net::minecraft::block
 

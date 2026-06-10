@@ -7,11 +7,12 @@
 #include "net/minecraft/item/Item.hpp"
 #include "net/minecraft/item/ItemRegistrar.hpp"
 #include "net/minecraft/item/ItemStack.hpp"
+#include "net/minecraft/recipe/CraftingRecipeManager.hpp"
 #include "net/minecraft/world/World.hpp"
 
 namespace net::minecraft::item {
 
-MinecartItem::MinecartItem(int rawId, int type) : Item(rawId), type_(type)
+MinecartItem::MinecartItem(int rawId, int type) : Item(rawId, RegistrationMode::Deferred), type_(type)
 {
     setMaxCount(1);
 }
@@ -31,27 +32,22 @@ bool MinecartItem::useOnBlock(ItemStack* stack, PlayerEntity* /*user*/, World* w
     return true;
 }
 
-namespace {
-
 void MinecartItem::registerClass()
 {
     static MinecartItem MINECART(72, 0);
     MINECART.setTexturePosition(7, 8)->setTranslationKey("minecart");
-    Item::MINECART = &MINECART;
+    Item::registerInItemsArray(&MINECART);
+}
 
-    static MinecartItem CHEST_MINECART(86, 1);
-    CHEST_MINECART.setTexturePosition(7, 9)->setTranslationKey("minecartChest");
-    Item::CHEST_MINECART = &CHEST_MINECART;
-
-    static MinecartItem FURNACE_MINECART(87, 2);
-    FURNACE_MINECART.setTexturePosition(7, 10)->setTranslationKey("minecartFurnace");
-    Item::FURNACE_MINECART = &FURNACE_MINECART;
+void MinecartItem::registerRecipes(recipe::CraftingRecipeManager& recipeManager)
+{
+    recipeManager.addShapedRecipe(ItemStack(Item::byRawId(72)),
+        {std::string("# #"), std::string("###"), '#', Item::byRawId(9)});
 }
 
 
 
 
-static ::net::minecraft::registry::RegisterItem<MinecartItem> autoReg(72);
-} // namespace
+namespace {static ::net::minecraft::registry::RegisterItem<MinecartItem> autoReg(72); } // namespace
 
 } // namespace net::minecraft::item

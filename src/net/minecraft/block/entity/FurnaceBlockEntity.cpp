@@ -4,6 +4,8 @@
 #include "net/minecraft/block/FurnaceBlock.hpp"
 #include "net/minecraft/block/material/Material.hpp"
 #include "net/minecraft/item/Item.hpp"
+#include "net/minecraft/item/CoalItem.hpp"
+#include "net/minecraft/item/misc/stick.hpp"
 #include "net/minecraft/recipe/SmeltingRecipeManager.hpp"
 #include "net/minecraft/world/World.hpp"
 
@@ -160,13 +162,13 @@ int FurnaceBlockEntity::getFuelTime(const ItemStack& itemStack)
             return 300;
         }
     }
-    if (Item::STICK != nullptr && id == Item::STICK->id) {
+    if (Item::byRawId(24) != nullptr && id == Item::byRawId(24)->id) {
         return 100;
     }
-    if (Item::COAL != nullptr && id == Item::COAL->id) {
+    if (Item::byRawId(7) != nullptr && id == Item::byRawId(7)->id) {
         return 1600;
     }
-    if (Item::LAVA_BUCKET != nullptr && id == Item::LAVA_BUCKET->id) {
+    if (Item::byRawId(71) != nullptr && id == Item::byRawId(71)->id) {
         return 20000;
     }
     if (Block::SAPLING != nullptr && id == Block::SAPLING->id) {

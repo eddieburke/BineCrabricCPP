@@ -3,6 +3,9 @@
 #include "net/minecraft/block/LadderBlock.hpp"
 
 #include "net/minecraft/world/World.hpp"
+#include "net/minecraft/recipe/CraftingRecipeManager.hpp"
+#include "net/minecraft/block/Block.hpp"
+#include "net/minecraft/item/Item.hpp"
 
 namespace net::minecraft::block {
 
@@ -137,17 +140,20 @@ void LadderBlock::neighborUpdate(World* world, int x, int y, int z, int id)
     }
     Block::neighborUpdate(world, x, y, z, id);
 }
-namespace {
-
 void LadderBlock::registerClass()
 {
     Block::LADDER = (new LadderBlock(65, 83))->setHardness(0.4f)->setSoundGroup(&vanillaWoodSound())->setTranslationKey("ladder")->ignoreMetaUpdates();
+}
+void LadderBlock::registerRecipes(recipe::CraftingRecipeManager& recipeManager)
+{
+    recipeManager.addShapedRecipe(ItemStack(Block::LADDER, 2),
+        {std::string("# #"), std::string("###"), std::string("# #"), '#', Item::byRawId(24)});
 }
 
 
 
 
-static ::net::minecraft::registry::RegisterBlock<LadderBlock> autoReg(65);
-} // namespace
+
+namespace {static ::net::minecraft::registry::RegisterBlock<LadderBlock> autoReg(65);} // namespace
 } // namespace net::minecraft::block
 

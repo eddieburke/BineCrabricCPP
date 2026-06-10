@@ -83,7 +83,7 @@ void PigZombieEntity::makeAngry(Entity* source)
 
 int PigZombieEntity::getDroppedItemId() const
 {
-    return Item::COOKED_PORKCHOP != nullptr ? Item::COOKED_PORKCHOP->id : 320;
+    return Item::byRawId(64) != nullptr ? Item::byRawId(64)->id : 320;
 }
 
 

@@ -6,6 +6,7 @@
 #include "net/minecraft/item/Item.hpp"
 #include "net/minecraft/item/ItemRegistrar.hpp"
 #include "net/minecraft/item/ItemStack.hpp"
+#include "net/minecraft/recipe/CraftingRecipeManager.hpp"
 #include "net/minecraft/world/World.hpp"
 
 #include <memory>
@@ -47,19 +48,21 @@ ItemStack* FishingRodItem::use(ItemStack* stack, World* world, PlayerEntity* use
     return stack;
 }
 
-namespace {
-
 void FishingRodItem::registerClass()
 {
     static FishingRodItem FISHING_ROD(90);
     FISHING_ROD.setTexturePosition(5, 4)->setTranslationKey("fishingRod");
-    Item::FISHING_ROD = &FISHING_ROD;
+}
+
+void FishingRodItem::registerRecipes(recipe::CraftingRecipeManager& recipeManager)
+{
+    recipeManager.addShapedRecipe(ItemStack(Item::byRawId(90)),
+        {std::string("  #"), std::string(" #X"), std::string("# X"), '#', Item::byRawId(24), 'X', Item::byRawId(31)});
 }
 
 
 
 
-static ::net::minecraft::registry::RegisterItem<FishingRodItem> autoReg(90);
-} // namespace
+namespace {static ::net::minecraft::registry::RegisterItem<FishingRodItem> autoReg(90); } // namespace
 
 } // namespace net::minecraft::item

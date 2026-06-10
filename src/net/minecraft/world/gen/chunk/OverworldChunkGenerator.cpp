@@ -25,7 +25,7 @@ namespace net::minecraft {
 
 BiomeSource* OverworldChunkGenerator::activeBiomeSource()
 {
-    if (world_ != nullptr && world_->getBiomeSource() != nullptr) {
+    if (!useLocalBiomeSource_ && world_ != nullptr && world_->getBiomeSource() != nullptr) {
         return world_->getBiomeSource();
     }
     return &biomeSource_;
@@ -33,7 +33,7 @@ BiomeSource* OverworldChunkGenerator::activeBiomeSource()
 
 const BiomeSource* OverworldChunkGenerator::activeBiomeSource() const
 {
-    if (world_ != nullptr && world_->getBiomeSource() != nullptr) {
+    if (!useLocalBiomeSource_ && world_ != nullptr && world_->getBiomeSource() != nullptr) {
         return world_->getBiomeSource();
     }
     return &biomeSource_;

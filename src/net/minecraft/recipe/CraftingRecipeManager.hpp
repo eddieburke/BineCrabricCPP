@@ -49,6 +49,9 @@ class CraftingRecipeManager {
 public:
     [[nodiscard]] static CraftingRecipeManager& getInstance();
 
+    static void registerVanillaRecipes();
+    void finishRegistration();
+
     void addShapedRecipe(ItemStack output, std::vector<RecipeArg> input);
     void addShapelessRecipe(ItemStack output, std::vector<RecipeArg> input);
 

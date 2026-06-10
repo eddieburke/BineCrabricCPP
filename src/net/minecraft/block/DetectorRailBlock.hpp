@@ -3,9 +3,11 @@
 #include "net/minecraft/block/RailBlock.hpp"
 #include "net/minecraft/world/ports/IBlockWorld.hpp"
 
+namespace net::minecraft::recipe { class CraftingRecipeManager; }
 namespace net::minecraft::block {
 
 class DetectorRailBlock : public RailBlock {
+    static void registerRecipes(recipe::CraftingRecipeManager& recipeManager);
 public:
     static void registerClass();
     DetectorRailBlock(int id, int textureId);

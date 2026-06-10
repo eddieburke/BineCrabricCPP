@@ -2,14 +2,17 @@
 
 #include "net/minecraft/item/Item.hpp"
 
+namespace net::minecraft::recipe {
+class CraftingRecipeManager;
+} // namespace net::minecraft::recipe
+
 namespace net::minecraft::item {
 
 class FeatherItem : public Item {
-public:
-    static constexpr int ID = 288;
-    FeatherItem() : Item(32) {
-        setTexturePosition(8, 1)->setTranslationKey("feather");
-    }
+public:    static void registerClass();
+    static void registerRecipes(recipe::CraftingRecipeManager& recipeManager);
+
+    FeatherItem();
 };
 
 } // namespace net::minecraft::item

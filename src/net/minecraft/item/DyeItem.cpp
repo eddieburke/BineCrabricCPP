@@ -10,6 +10,8 @@
 #include "net/minecraft/item/Item.hpp"
 #include "net/minecraft/item/ItemRegistrar.hpp"
 #include "net/minecraft/item/ItemStack.hpp"
+#include "net/minecraft/recipe/CraftingRecipeManager.hpp"
+#include "net/minecraft/recipe/SmeltingRecipeManager.hpp"
 #include "net/minecraft/world/World.hpp"
 
 namespace net::minecraft::item {
@@ -100,19 +102,72 @@ void DyeItem::useOnEntity(ItemStack* stack, LivingEntity* entity)
     }
 }
 
-namespace {
-
 void DyeItem::registerClass()
 {
     static DyeItem DYE(95);
     DYE.setTexturePosition(14, 4)->setTranslationKey("dyePowder");
-    Item::DYE = &DYE;
+}
+
+void DyeItem::registerSmeltingRecipes()
+{
+    if (Block::CACTUS != nullptr) {
+        recipe::SmeltingRecipeManager::instance().addRecipe(
+            Block::CACTUS->id, ItemStack(Item::byRawId(95), 1, 2));
+    }
+}
+
+void DyeItem::registerRecipes(recipe::CraftingRecipeManager& recipeManager)
+{
+    if (Block::WOOL != nullptr) {
+        for (int i = 0; i < 16; ++i) {
+            recipeManager.addShapelessRecipe(
+                ItemStack(Block::WOOL, 1, block::WoolBlock::getItemMeta(i)),
+                {ItemStack(Item::byRawId(95), 1, i), ItemStack(Block::WOOL, 1, 0)});
+        }
+    }
+    if (Block::DANDELION != nullptr) {
+        recipeManager.addShapelessRecipe(ItemStack(Item::byRawId(95), 2, 11), {Block::DANDELION});
+    }
+    if (Block::ROSE != nullptr) {
+        recipeManager.addShapelessRecipe(ItemStack(Item::byRawId(95), 2, 1), {Block::ROSE});
+    }
+    recipeManager.addShapelessRecipe(ItemStack(Item::byRawId(95), 3, 15), {Item::byRawId(96)});
+    recipeManager.addShapelessRecipe(ItemStack(Item::byRawId(95), 2, 9),
+        {ItemStack(Item::byRawId(95), 1, 1), ItemStack(Item::byRawId(95), 1, 15)});
+    recipeManager.addShapelessRecipe(ItemStack(Item::byRawId(95), 2, 14),
+        {ItemStack(Item::byRawId(95), 1, 1), ItemStack(Item::byRawId(95), 1, 11)});
+    recipeManager.addShapelessRecipe(ItemStack(Item::byRawId(95), 2, 10),
+        {ItemStack(Item::byRawId(95), 1, 2), ItemStack(Item::byRawId(95), 1, 15)});
+    recipeManager.addShapelessRecipe(ItemStack(Item::byRawId(95), 2, 8),
+        {ItemStack(Item::byRawId(95), 1, 0), ItemStack(Item::byRawId(95), 1, 15)});
+    recipeManager.addShapelessRecipe(ItemStack(Item::byRawId(95), 2, 7),
+        {ItemStack(Item::byRawId(95), 1, 8), ItemStack(Item::byRawId(95), 1, 15)});
+    recipeManager.addShapelessRecipe(ItemStack(Item::byRawId(95), 3, 7),
+        {ItemStack(Item::byRawId(95), 1, 0), ItemStack(Item::byRawId(95), 1, 15), ItemStack(Item::byRawId(95), 1, 15)});
+    recipeManager.addShapelessRecipe(ItemStack(Item::byRawId(95), 2, 12),
+        {ItemStack(Item::byRawId(95), 1, 4), ItemStack(Item::byRawId(95), 1, 15)});
+    recipeManager.addShapelessRecipe(ItemStack(Item::byRawId(95), 2, 6),
+        {ItemStack(Item::byRawId(95), 1, 4), ItemStack(Item::byRawId(95), 1, 2)});
+    recipeManager.addShapelessRecipe(ItemStack(Item::byRawId(95), 2, 5),
+        {ItemStack(Item::byRawId(95), 1, 4), ItemStack(Item::byRawId(95), 1, 1)});
+    recipeManager.addShapelessRecipe(ItemStack(Item::byRawId(95), 2, 13),
+        {ItemStack(Item::byRawId(95), 1, 5), ItemStack(Item::byRawId(95), 1, 9)});
+    recipeManager.addShapelessRecipe(ItemStack(Item::byRawId(95), 3, 13),
+        {ItemStack(Item::byRawId(95), 1, 4), ItemStack(Item::byRawId(95), 1, 1), ItemStack(Item::byRawId(95), 1, 9)});
+    recipeManager.addShapelessRecipe(ItemStack(Item::byRawId(95), 4, 13),
+        {ItemStack(Item::byRawId(95), 1, 4), ItemStack(Item::byRawId(95), 1, 1), ItemStack(Item::byRawId(95), 1, 1),
+            ItemStack(Item::byRawId(95), 1, 15)});
+    if (Block::LAPIS_BLOCK != nullptr) {
+        recipeManager.addShapedRecipe(ItemStack(Block::LAPIS_BLOCK),
+            {std::string("###"), std::string("###"), std::string("###"), '#', ItemStack(Item::byRawId(95), 9, 4)});
+        recipeManager.addShapedRecipe(ItemStack(Item::byRawId(95), 9, 4),
+            {std::string("#"), '#', Block::LAPIS_BLOCK});
+    }
 }
 
 
 
 
-static ::net::minecraft::registry::RegisterItem<DyeItem> autoReg(95);
-} // namespace
+namespace {static ::net::minecraft::registry::RegisterItem<DyeItem> autoReg(95); } // namespace
 
 } // namespace net::minecraft::item

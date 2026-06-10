@@ -4,6 +4,8 @@
 
 #include "net/minecraft/block/Block.hpp"
 #include "net/minecraft/world/World.hpp"
+#include "net/minecraft/recipe/CraftingRecipeManager.hpp"
+#include "net/minecraft/item/Item.hpp"
 
 namespace net::minecraft::block {
 
@@ -180,17 +182,21 @@ void TorchBlock::randomDisplayTick(World* world, int x, int y, int z, JavaRandom
         world->addParticle("flame", centerX, static_cast<double>(y) + 0.7, centerZ, 0.0, 0.0, 0.0);
     }
 }
-namespace {
-
 void TorchBlock::registerClass()
 {
     Block::TORCH = (new TorchBlock(50, 80))->setHardness(0.0f)->setLuminance(0.9375f)->setSoundGroup(&vanillaWoodSound())->setTranslationKey("torch")->ignoreMetaUpdates();
+}
+void TorchBlock::registerRecipes(recipe::CraftingRecipeManager& recipeManager)
+{
+    recipeManager.addShapedRecipe(ItemStack(Block::TORCH, 4), {std::string("X"), std::string("#"), 'X', Item::byRawId(7), '#', Item::byRawId(24)});
+    recipeManager.addShapedRecipe(ItemStack(Block::TORCH, 4),
+        {std::string("X"), std::string("#"), 'X', ItemStack(Item::byRawId(7), 1, 1), '#', Item::byRawId(24)});
 }
 
 
 
 
-static ::net::minecraft::registry::RegisterBlock<TorchBlock> autoReg(50);
-} // namespace
+
+namespace {static ::net::minecraft::registry::RegisterBlock<TorchBlock> autoReg(50);} // namespace
 } // namespace net::minecraft::block
 

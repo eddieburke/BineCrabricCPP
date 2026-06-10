@@ -6,6 +6,7 @@
 #include "net/minecraft/item/Item.hpp"
 #include "net/minecraft/item/ItemRegistrar.hpp"
 #include "net/minecraft/item/ItemStack.hpp"
+#include "net/minecraft/recipe/CraftingRecipeManager.hpp"
 #include "net/minecraft/util/math/MathHelper.hpp"
 #include "net/minecraft/world/World.hpp"
 
@@ -48,19 +49,21 @@ bool SignItem::useOnBlock(ItemStack* stack, PlayerEntity* user, World* world, in
     return true;
 }
 
-namespace {
-
 void SignItem::registerClass()
 {
     static SignItem SIGN(67);
     SIGN.setTexturePosition(10, 2)->setTranslationKey("sign");
-    Item::SIGN = &SIGN;
+}
+
+void SignItem::registerRecipes(recipe::CraftingRecipeManager& recipeManager)
+{
+    recipeManager.addShapedRecipe(ItemStack(Item::byRawId(67)),
+        {std::string("###"), std::string("###"), std::string(" X "), '#', Block::PLANKS, 'X', Item::byRawId(24)});
 }
 
 
 
 
-static ::net::minecraft::registry::RegisterItem<SignItem> autoReg(67);
-} // namespace
+namespace {static ::net::minecraft::registry::RegisterItem<SignItem> autoReg(67); } // namespace
 
 } // namespace net::minecraft::item

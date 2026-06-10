@@ -1,16 +1,18 @@
 #pragma once
 
 #include "net/minecraft/item/HoeItem.hpp"
-#include "net/minecraft/item/ToolMaterial.hpp"
+
+namespace net::minecraft::recipe {
+class CraftingRecipeManager;
+} // namespace net::minecraft::recipe
 
 namespace net::minecraft::item {
 
 class IronHoeItem : public HoeItem {
-public:
-    static constexpr int ID = 292;
-    IronHoeItem() : HoeItem(36, ToolMaterial::Iron) {
-        setTexturePosition(2, 8)->setTranslationKey("hoeIron");
-    }
+public:    static void registerClass();
+    static void registerRecipes(recipe::CraftingRecipeManager& recipeManager);
+
+    IronHoeItem();
 };
 
 } // namespace net::minecraft::item

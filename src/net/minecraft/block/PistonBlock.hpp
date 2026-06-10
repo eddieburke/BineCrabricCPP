@@ -8,11 +8,14 @@ namespace net::minecraft {
 class World;
 }
 
+namespace net::minecraft::recipe { class CraftingRecipeManager; }
 namespace net::minecraft::block {
 
 class PistonBlock : public Block {
+    static void registerRecipes(recipe::CraftingRecipeManager& recipeManager);
 public:
     static void registerClass();
+    static void registerBlockItems();
     bool sticky = false;
 
     PistonBlock(int id, int textureId, bool stickyIn);

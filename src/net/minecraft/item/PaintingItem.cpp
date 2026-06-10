@@ -1,11 +1,13 @@
 #include "net/minecraft/registry/Registry.hpp"
 #include "net/minecraft/item/PaintingItem.hpp"
 
+#include "net/minecraft/block/Block.hpp"
 #include "net/minecraft/entity/decoration/painting/PaintingEntity.hpp"
 #include "net/minecraft/entity/player/PlayerEntity.hpp"
 #include "net/minecraft/item/Item.hpp"
 #include "net/minecraft/item/ItemRegistrar.hpp"
 #include "net/minecraft/item/ItemStack.hpp"
+#include "net/minecraft/recipe/CraftingRecipeManager.hpp"
 #include "net/minecraft/world/World.hpp"
 
 namespace net::minecraft::item {
@@ -35,19 +37,21 @@ bool PaintingItem::useOnBlock(ItemStack* stack, PlayerEntity* /*user*/, World* w
     return true;
 }
 
-namespace {
-
 void PaintingItem::registerClass()
 {
     static PaintingItem PAINTING(65);
     PAINTING.setTexturePosition(10, 1)->setTranslationKey("painting");
-    Item::PAINTING = &PAINTING;
+}
+
+void PaintingItem::registerRecipes(recipe::CraftingRecipeManager& recipeManager)
+{
+    recipeManager.addShapedRecipe(ItemStack(Item::byRawId(65)),
+        {std::string("###"), std::string("#X#"), std::string("###"), '#', Item::byRawId(24), 'X', Block::WOOL});
 }
 
 
 
 
-static ::net::minecraft::registry::RegisterItem<PaintingItem> autoReg(65);
-} // namespace
+namespace {static ::net::minecraft::registry::RegisterItem<PaintingItem> autoReg(65); } // namespace
 
 } // namespace net::minecraft::item

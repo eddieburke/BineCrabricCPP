@@ -3,6 +3,7 @@
 #include "net/minecraft/block/Block.hpp"
 #include "net/minecraft/entity/Entity.hpp"
 #include "net/minecraft/item/Item.hpp"
+#include "net/minecraft/item/misc/string.hpp"
 
 namespace net::minecraft::block {
 
@@ -21,7 +22,7 @@ public:
 
     [[nodiscard]] int getDroppedItemId(int /*blockMeta*/, JavaRandom& /*random*/) const override
     {
-        return Item::STRING != nullptr ? Item::STRING->id : 287;
+        return Item::byRawId(31) != nullptr ? Item::byRawId(31)->id : 287;
     }
 
     void onEntityCollision(World* /*world*/, int /*x*/, int /*y*/, int /*z*/, net::minecraft::Entity* entity) override

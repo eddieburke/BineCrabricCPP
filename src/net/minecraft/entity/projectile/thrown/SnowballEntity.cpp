@@ -49,11 +49,11 @@ void SnowballEntity::readNbt(const NbtCompound& nbt)
     inGround = nbt.getByte("inGround") == 1;
 }
 
-} // namespace net::minecraft::entity::projectile::thrown
-
 void SnowballEntity::registerClass()
 {
     ::net::minecraft::entity::detail::registerVanillaEntity<SnowballEntity>("Snowball", 11);
 }
 
 static ::net::minecraft::registry::RegisterEntity<SnowballEntity> autoReg(11);
+
+} // namespace net::minecraft::entity::projectile::thrown

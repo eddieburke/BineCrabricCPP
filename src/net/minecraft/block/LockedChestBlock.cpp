@@ -53,8 +53,6 @@ void LockedChestBlock::onTick(World* world, int x, int y, int z, JavaRandom& /*r
         world->setBlock(x, y, z, 0);
     }
 }
-namespace {
-
 void LockedChestBlock::registerClass()
 {
     Block::LOCKED_CHEST = (new LockedChestBlock(95))->setHardness(0.0f)->setLuminance(1.0f)->setSoundGroup(&vanillaWoodSound())->setTranslationKey("lockedchest")->setTickRandomly(true)->ignoreMetaUpdates();
@@ -63,7 +61,6 @@ void LockedChestBlock::registerClass()
 
 
 
-static ::net::minecraft::registry::RegisterBlock<LockedChestBlock> autoReg(95);
-} // namespace
+namespace {static ::net::minecraft::registry::RegisterBlock<LockedChestBlock> autoReg(95);} // namespace
 } // namespace net::minecraft::block
 

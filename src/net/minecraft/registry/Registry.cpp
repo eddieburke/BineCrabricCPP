@@ -1,9 +1,10 @@
 #include "net/minecraft/registry/Registry.hpp"
 
 #include <algorithm>
+#include <cassert>
 #include <mutex>
+#include <unordered_set>
 #include <vector>
-#include <iostream>
 
 namespace net::minecraft::registry {
 
@@ -18,19 +19,40 @@ std::vector<Entry>& entries() {
     return list;
 }
 
+std::unordered_set<int>& usedBlockIds()
+{
+    static std::unordered_set<int> ids;
+    return ids;
+}
+
+std::unordered_set<int>& usedItemIds()
+{
+    static std::unordered_set<int> ids;
+    return ids;
+}
+
+std::unordered_set<int>& usedEntityIds()
+{
+    static std::unordered_set<int> ids;
+    return ids;
+}
+
 std::once_flag g_bootstrapFlag;
 } // namespace
 
 void Registry::addBlock(int id, void (*initFunc)()) {
-    entries().push_back({initFunc, id});
+    assert(usedBlockIds().insert(id).second && "Registry: duplicate block id registration");
+    entries().push_back({initFunc, kBlockRegistrarBase + id});
 }
 
 void Registry::addItem(int id, void (*initFunc)()) {
-    entries().push_back({initFunc, 1000 + id});
+    assert(usedItemIds().insert(id).second && "Registry: duplicate item id registration");
+    entries().push_back({initFunc, kItemRegistrarBase + id});
 }
 
 void Registry::addEntity(int rawId, void (*initFunc)()) {
-    entries().push_back({initFunc, 30000 + rawId});
+    assert(usedEntityIds().insert(rawId).second && "Registry: duplicate entity id registration");
+    entries().push_back({initFunc, kEntityRegistrarBase + rawId});
 }
 
 void Registry::addCustom(int priority, void (*initFunc)()) {
@@ -43,8 +65,7 @@ void Registry::bootstrap() {
         std::sort(list.begin(), list.end(), [](const Entry& a, const Entry& b) {
             return a.priority < b.priority;
         });
-        
-        std::cout << "Bootstrapping " << list.size() << " registered elements...\n";
+
         for (const Entry& entry : list) {
             entry.fn();
         }

@@ -4,6 +4,10 @@
 
 #include "net/minecraft/world/BlockView.hpp"
 #include "net/minecraft/world/World.hpp"
+#include "net/minecraft/recipe/CraftingRecipeManager.hpp"
+#include "net/minecraft/block/Block.hpp"
+#include "net/minecraft/item/Item.hpp"
+#include "net/minecraft/item/SlabBlockItem.hpp"
 
 namespace net::minecraft::block {
 
@@ -89,18 +93,28 @@ bool SlabBlock::isSideVisible(const BlockView* blockView, int x, int y, int z, i
     }
     return blockView == nullptr || blockView->getBlockId(x, y, z) != id;
 }
-namespace {
-
 void SlabBlock::registerClass()
 {
     Block::DOUBLE_SLAB = (new SlabBlock(43, true))->setHardness(2.0f)->setResistance(10.0f)->setSoundGroup(&vanillaStoneSound())->setTranslationKey("stoneSlab");
     Block::SLAB = (new SlabBlock(44, false))->setHardness(2.0f)->setResistance(10.0f)->setSoundGroup(&vanillaStoneSound())->setTranslationKey("stoneSlab");
 }
+void SlabBlock::registerRecipes(recipe::CraftingRecipeManager& recipeManager)
+{
+    recipeManager.addShapedRecipe(ItemStack(Block::SLAB, 3, 3), {std::string("###"), '#', Block::COBBLESTONE});
+    recipeManager.addShapedRecipe(ItemStack(Block::SLAB, 3, 0), {std::string("###"), '#', Block::STONE});
+    recipeManager.addShapedRecipe(ItemStack(Block::SLAB, 3, 1), {std::string("###"), '#', Block::SANDSTONE});
+    recipeManager.addShapedRecipe(ItemStack(Block::SLAB, 3, 2), {std::string("###"), '#', Block::PLANKS});
+}
 
 
 
 
-static ::net::minecraft::registry::RegisterBlock<SlabBlock> autoReg(43);
-} // namespace
+
+void SlabBlock::registerBlockItems()
+{
+    (new item::SlabBlockItem(44 - 256))->setTranslationKey("stoneSlab");
+}
+
+namespace {static ::net::minecraft::registry::RegisterBlock<SlabBlock> autoReg(43);} // namespace
 } // namespace net::minecraft::block
 

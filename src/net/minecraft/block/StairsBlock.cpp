@@ -8,6 +8,8 @@
 #include "net/minecraft/util/math/MathHelper.hpp"
 #include "net/minecraft/world/BlockView.hpp"
 #include "net/minecraft/world/World.hpp"
+#include "net/minecraft/recipe/CraftingRecipeManager.hpp"
+#include "net/minecraft/item/Item.hpp"
 
 namespace net::minecraft::block {
 
@@ -237,18 +239,23 @@ void StairsBlock::onDestroyedByExplosion(World* world, int x, int y, int z)
         baseBlock->onDestroyedByExplosion(world, x, y, z);
     }
 }
-namespace {
-
 void StairsBlock::registerClass()
 {
     Block::WOODEN_STAIRS = (new StairsBlock(53, *Block::BLOCKS[5]))->setTranslationKey("stairsWood")->ignoreMetaUpdates();
     Block::COBBLESTONE_STAIRS = (new StairsBlock(67, *Block::BLOCKS[4]))->setTranslationKey("stairsStone")->ignoreMetaUpdates();
 }
+void StairsBlock::registerRecipes(recipe::CraftingRecipeManager& recipeManager)
+{
+    recipeManager.addShapedRecipe(ItemStack(Block::WOODEN_STAIRS, 4),
+        {std::string("#  "), std::string("## "), std::string("###"), '#', Block::PLANKS});
+    recipeManager.addShapedRecipe(ItemStack(Block::COBBLESTONE_STAIRS, 4),
+        {std::string("#  "), std::string("## "), std::string("###"), '#', Block::COBBLESTONE});
+}
 
 
 
 
-static ::net::minecraft::registry::RegisterBlock<StairsBlock> autoReg(67);
-} // namespace
+
+namespace {static ::net::minecraft::registry::RegisterBlock<StairsBlock> autoReg(67);} // namespace
 } // namespace net::minecraft::block
 

@@ -9,6 +9,7 @@
 #include "net/minecraft/item/ItemPlacement.hpp"
 #include "net/minecraft/item/ItemRegistrar.hpp"
 #include "net/minecraft/item/ItemStack.hpp"
+#include "net/minecraft/recipe/CraftingRecipeManager.hpp"
 #include "net/minecraft/util/hit/HitResult.hpp"
 #include "net/minecraft/util/hit/HitResultType.hpp"
 #include "net/minecraft/world/World.hpp"
@@ -56,15 +57,15 @@ ItemStack* BucketItem::use(ItemStack* stack, World* world, PlayerEntity* user)
             const block::material::Material& material = world->getMaterial(x, y, z);
             if (&material == &block::material::Material::WATER && world->getBlockMeta(x, y, z) == 0) {
                 world->setBlock(x, y, z, 0);
-                return new ItemStack(Item::WATER_BUCKET);
+                return new ItemStack(Item::byRawId(70));
             }
             if (&material == &block::material::Material::LAVA && world->getBlockMeta(x, y, z) == 0) {
                 world->setBlock(x, y, z, 0);
-                return new ItemStack(Item::LAVA_BUCKET);
+                return new ItemStack(Item::byRawId(71));
             }
         } else {
             if (fluidBlockId_ < 0) {
-                return new ItemStack(Item::BUCKET);
+                return new ItemStack(Item::byRawId(69));
             }
             detail::offsetPlacementPos(world, x, y, z, hit->side);
             if (world->isAir(x, y, z) || !world->getMaterial(x, y, z).isSolid()) {
@@ -90,41 +91,37 @@ ItemStack* BucketItem::use(ItemStack* stack, World* world, PlayerEntity* user)
                 } else {
                     world->setBlock(x, y, z, fluidBlockId_, 0);
                 }
-                return new ItemStack(Item::BUCKET);
+                return new ItemStack(Item::byRawId(69));
             }
         }
     } else if (fluidBlockId_ == 0 && hit->entity != nullptr
         && dynamic_cast<entity::passive::CowEntity*>(hit->entity) != nullptr) {
-        return new ItemStack(Item::MILK_BUCKET);
+        return new ItemStack(Item::byRawId(79));
     }
     return stack;
 }
-
-namespace {
 
 void BucketItem::registerClass()
 {
     static BucketItem BUCKET(69, 0);
     BUCKET.setTexturePosition(10, 4)->setTranslationKey("bucket");
-    Item::BUCKET = &BUCKET;
-
     static BucketItem WATER_BUCKET(70, Block::FLOWING_WATER != nullptr ? Block::FLOWING_WATER->id : 8);
-    WATER_BUCKET.setTexturePosition(11, 4)->setTranslationKey("bucketWater")->setCraftingReturnItem(Item::BUCKET);
-    Item::WATER_BUCKET = &WATER_BUCKET;
-
+    WATER_BUCKET.setTexturePosition(11, 4)->setTranslationKey("bucketWater")->setCraftingReturnItem(Item::byRawId(69));
     static BucketItem LAVA_BUCKET(71, Block::FLOWING_LAVA != nullptr ? Block::FLOWING_LAVA->id : 10);
-    LAVA_BUCKET.setTexturePosition(12, 4)->setTranslationKey("bucketLava")->setCraftingReturnItem(Item::BUCKET);
-    Item::LAVA_BUCKET = &LAVA_BUCKET;
-
+    LAVA_BUCKET.setTexturePosition(12, 4)->setTranslationKey("bucketLava")->setCraftingReturnItem(Item::byRawId(69));
     static BucketItem MILK_BUCKET(79, -1);
-    MILK_BUCKET.setTexturePosition(13, 4)->setTranslationKey("milk")->setCraftingReturnItem(Item::BUCKET);
-    Item::MILK_BUCKET = &MILK_BUCKET;
+    MILK_BUCKET.setTexturePosition(13, 4)->setTranslationKey("milk")->setCraftingReturnItem(Item::byRawId(69));
+}
+
+void BucketItem::registerRecipes(recipe::CraftingRecipeManager& recipeManager)
+{
+    recipeManager.addShapedRecipe(ItemStack(Item::byRawId(69)),
+        {std::string("# #"), std::string(" # "), '#', Item::byRawId(9)});
 }
 
 
 
 
-static ::net::minecraft::registry::RegisterItem<BucketItem> autoReg(69);
-} // namespace
+namespace { static ::net::minecraft::registry::RegisterItem<BucketItem> autoReg(69); } // namespace
 
 } // namespace net::minecraft::item

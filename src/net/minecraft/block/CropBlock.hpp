@@ -2,6 +2,8 @@
 
 #include "net/minecraft/block/PlantBlock.hpp"
 #include "net/minecraft/item/Item.hpp"
+#include "net/minecraft/item/SeedsItem.hpp"
+#include "net/minecraft/item/food/wheat.hpp"
 #include "net/minecraft/entity/ItemEntity.hpp"
 #include "net/minecraft/item/ItemStack.hpp"
 #include "net/minecraft/world/ports/IEntityWorld.hpp"
@@ -59,7 +61,7 @@ protected:
     void dropStacks(World* world, int x, int y, int z, int meta, float luck) override
     {
         Block::dropStacks(world, x, y, z, meta, luck);
-        if (world == nullptr || world->isRemote() || Item::SEEDS == nullptr) {
+        if (world == nullptr || world->isRemote() || Item::byRawId(39) == nullptr) {
             return;
         }
         for (int i = 0; i < 3; ++i) {
@@ -72,7 +74,7 @@ protected:
             const float offsetZ = world->random().nextFloat() * spread + (1.0f - spread) * 0.5f;
             auto* itemEntity = new ItemEntity(
                 world, static_cast<double>(x) + offsetX, static_cast<double>(y) + offsetY,
-                static_cast<double>(z) + offsetZ, ItemStack(Item::SEEDS->id, 1));
+                static_cast<double>(z) + offsetZ, ItemStack(Item::byRawId(39)->id, 1));
             itemEntity->pickupDelay = 10;
             world->spawnEntity(itemEntity);
         }
@@ -80,8 +82,8 @@ protected:
 
     [[nodiscard]] int getDroppedItemId(int blockMeta, JavaRandom& /*random*/) const override
     {
-        if (blockMeta == 7 && Item::WHEAT != nullptr) {
-            return Item::WHEAT->id;
+        if (blockMeta == 7 && Item::byRawId(40) != nullptr) {
+            return Item::byRawId(40)->id;
         }
         return -1;
     }

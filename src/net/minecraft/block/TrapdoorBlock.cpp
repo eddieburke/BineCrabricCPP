@@ -5,6 +5,8 @@
 
 #include "net/minecraft/block/Block.hpp"
 #include "net/minecraft/world/World.hpp"
+#include "net/minecraft/recipe/CraftingRecipeManager.hpp"
+#include "net/minecraft/item/Item.hpp"
 
 namespace net::minecraft::block {
 
@@ -173,18 +175,21 @@ void TrapdoorBlock::onPlaced(World* world, int x, int y, int z, int direction)
     }
     world->setBlockMeta(x, y, z, facing);
 }
-namespace {
-
 void TrapdoorBlock::registerClass()
 {
     namespace mat = material;
     Block::TRAPDOOR = (new TrapdoorBlock(96, mat::Material::WOOD))->setHardness(3.0f)->setSoundGroup(&vanillaWoodSound())->setTranslationKey("trapdoor")->disableTrackingStatistics()->ignoreMetaUpdates();
 }
+void TrapdoorBlock::registerRecipes(recipe::CraftingRecipeManager& recipeManager)
+{
+    recipeManager.addShapedRecipe(ItemStack(Block::TRAPDOOR, 2),
+        {std::string("###"), std::string("###"), '#', Block::PLANKS});
+}
 
 
 
 
-static ::net::minecraft::registry::RegisterBlock<TrapdoorBlock> autoReg(96);
-} // namespace
+
+namespace {static ::net::minecraft::registry::RegisterBlock<TrapdoorBlock> autoReg(96);} // namespace
 } // namespace net::minecraft::block
 

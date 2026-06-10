@@ -773,11 +773,11 @@ float LivingEntity::lerpRotation(float from, float to, float maxChange) const
     return from + delta;
 }
 
-} // namespace net::minecraft::entity
-
 void LivingEntity::registerClass()
 {
-    ::net::minecraft::entity::detail::registerVanillaEntity<LivingEntity>("Mob", 48);
+    detail::registerVanillaEntity<LivingEntity>("Mob", 48);
 }
 
 static ::net::minecraft::registry::RegisterEntity<LivingEntity> autoReg(48);
+
+} // namespace net::minecraft::entity

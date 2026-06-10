@@ -6,6 +6,8 @@
 #include "net/minecraft/entity/player/PlayerEntity.hpp"
 #include "net/minecraft/util/math/MathHelper.hpp"
 #include "net/minecraft/world/World.hpp"
+#include "net/minecraft/recipe/CraftingRecipeManager.hpp"
+#include "net/minecraft/item/Item.hpp"
 
 namespace net::minecraft::block {
 
@@ -74,18 +76,21 @@ void PumpkinBlock::onPlaced(
     const int facing = MathHelper::floor(static_cast<double>(placer->yaw * 4.0f / 360.0f) + 2.5) & 3;
     world->setBlockMeta(x, y, z, facing);
 }
-namespace {
-
 void PumpkinBlock::registerClass()
 {
     Block::PUMPKIN = (new PumpkinBlock(86, 102, false))->setHardness(1.0f)->setSoundGroup(&vanillaWoodSound())->setTranslationKey("pumpkin")->ignoreMetaUpdates();
     Block::JACK_O_LANTERN = (new PumpkinBlock(91, 102, true))->setHardness(1.0f)->setSoundGroup(&vanillaWoodSound())->setLuminance(1.0f)->setTranslationKey("litpumpkin")->ignoreMetaUpdates();
 }
+void PumpkinBlock::registerRecipes(recipe::CraftingRecipeManager& recipeManager)
+{
+    recipeManager.addShapedRecipe(ItemStack(Block::JACK_O_LANTERN),
+        {std::string("A"), std::string("B"), 'A', Block::PUMPKIN, 'B', Block::TORCH});
+}
 
 
 
 
-static ::net::minecraft::registry::RegisterBlock<PumpkinBlock> autoReg(91);
-} // namespace
+
+namespace {static ::net::minecraft::registry::RegisterBlock<PumpkinBlock> autoReg(91);} // namespace
 } // namespace net::minecraft::block
 

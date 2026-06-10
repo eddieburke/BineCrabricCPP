@@ -34,23 +34,17 @@ bool MusicDiscItem::useOnBlock(ItemStack* stack, PlayerEntity* /*user*/, World* 
     return false;
 }
 
-namespace {
-
 void MusicDiscItem::registerClass()
 {
     static MusicDiscItem RECORD_THIRTEEN(2000, "13");
     RECORD_THIRTEEN.setTexturePosition(0, 15)->setTranslationKey("record");
-    Item::RECORD_THIRTEEN = &RECORD_THIRTEEN;
-
     static MusicDiscItem RECORD_CAT(2001, "cat");
     RECORD_CAT.setTexturePosition(1, 15)->setTranslationKey("record");
-    Item::RECORD_CAT = &RECORD_CAT;
 }
 
 
 
 
-static ::net::minecraft::registry::RegisterItem<MusicDiscItem> autoReg(2000);
-} // namespace
+namespace {static ::net::minecraft::registry::RegisterItem<MusicDiscItem> autoReg(2000);} // namespace
 
 } // namespace net::minecraft::item

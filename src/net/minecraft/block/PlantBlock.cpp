@@ -3,8 +3,6 @@
 #include "net/minecraft/block/PlantBlock.hpp"
 
 namespace net::minecraft::block {
-namespace {
-
 void PlantBlock::registerClass()
 {
     Block::DANDELION = (new PlantBlock(37, 13))->setHardness(0.0f)->setSoundGroup(&vanillaDirtSound())->setTranslationKey("flower");
@@ -14,7 +12,6 @@ void PlantBlock::registerClass()
 
 
 
-static ::net::minecraft::registry::RegisterBlock<PlantBlock> autoReg(37);
-} // namespace
+namespace {static ::net::minecraft::registry::RegisterBlock<PlantBlock> autoReg(37);} // namespace
 } // namespace net::minecraft::block
 

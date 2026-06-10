@@ -2,14 +2,18 @@
 
 #include "net/minecraft/item/Item.hpp"
 
+namespace net::minecraft::recipe {
+class CraftingRecipeManager;
+} // namespace net::minecraft::recipe
+
 namespace net::minecraft::item {
 
 class DiamondItem : public Item {
-public:
-    static constexpr int ID = 264;
-    DiamondItem() : Item(8) {
-        setTexturePosition(7, 3)->setTranslationKey("emerald");
-    }
+public:    static void registerClass();
+    static void registerRecipes(recipe::CraftingRecipeManager& recipeManager);
+    static void registerSmeltingRecipes();
+
+    DiamondItem();
 };
 
 } // namespace net::minecraft::item

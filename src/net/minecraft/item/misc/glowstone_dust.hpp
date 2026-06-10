@@ -2,14 +2,17 @@
 
 #include "net/minecraft/item/Item.hpp"
 
+namespace net::minecraft::recipe {
+class CraftingRecipeManager;
+} // namespace net::minecraft::recipe
+
 namespace net::minecraft::item {
 
 class GlowstoneDustItem : public Item {
-public:
-    static constexpr int ID = 348;
-    GlowstoneDustItem() : Item(92) {
-        setTexturePosition(9, 4)->setTranslationKey("yellowDust");
-    }
+public:    static void registerClass();
+    static void registerRecipes(recipe::CraftingRecipeManager& recipeManager);
+
+    GlowstoneDustItem();
 };
 
 } // namespace net::minecraft::item

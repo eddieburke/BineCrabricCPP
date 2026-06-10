@@ -4,8 +4,6 @@
 
 
 namespace net::minecraft::block {
-namespace {
-
 void DirtBlock::registerClass()
 {
     Block::DIRT = (new DirtBlock(3, 2))
@@ -17,6 +15,5 @@ void DirtBlock::registerClass()
 
 
 
-static ::net::minecraft::registry::RegisterBlock<DirtBlock> autoReg(3);
-} // namespace
+namespace {static ::net::minecraft::registry::RegisterBlock<DirtBlock> autoReg(3);} // namespace
 } // namespace net::minecraft::block

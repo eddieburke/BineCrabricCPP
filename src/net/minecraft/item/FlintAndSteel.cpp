@@ -7,6 +7,7 @@
 #include "net/minecraft/item/ItemPlacement.hpp"
 #include "net/minecraft/item/ItemRegistrar.hpp"
 #include "net/minecraft/item/ItemStack.hpp"
+#include "net/minecraft/recipe/CraftingRecipeManager.hpp"
 #include "net/minecraft/world/World.hpp"
 
 namespace net::minecraft::item {
@@ -32,19 +33,21 @@ bool FlintAndSteel::useOnBlock(ItemStack* stack, PlayerEntity* /*user*/, World* 
     return true;
 }
 
-namespace {
-
 void FlintAndSteel::registerClass()
 {
     static FlintAndSteel FLINT_AND_STEEL(3);
     FLINT_AND_STEEL.setTexturePosition(5, 0)->setTranslationKey("flintAndSteel");
-    Item::FLINT_AND_STEEL = &FLINT_AND_STEEL;
+}
+
+void FlintAndSteel::registerRecipes(recipe::CraftingRecipeManager& recipeManager)
+{
+    recipeManager.addShapedRecipe(ItemStack(Item::byRawId(3)),
+        {std::string("A "), std::string(" B"), 'A', Item::byRawId(9), 'B', Item::byRawId(62)});
 }
 
 
 
 
-static ::net::minecraft::registry::RegisterItem<FlintAndSteel> autoReg(3);
-} // namespace
+namespace {static ::net::minecraft::registry::RegisterItem<FlintAndSteel> autoReg(3); } // namespace
 
 } // namespace net::minecraft::item

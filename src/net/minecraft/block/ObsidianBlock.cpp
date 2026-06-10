@@ -3,8 +3,6 @@
 #include "net/minecraft/block/ObsidianBlock.hpp"
 
 namespace net::minecraft::block {
-namespace {
-
 void ObsidianBlock::registerClass()
 {
     Block::OBSIDIAN = (new ObsidianBlock(49, 37))->setHardness(10.0f)->setResistance(2000.0f)->setSoundGroup(&vanillaStoneSound())->setTranslationKey("obsidian");
@@ -13,7 +11,6 @@ void ObsidianBlock::registerClass()
 
 
 
-static ::net::minecraft::registry::RegisterBlock<ObsidianBlock> autoReg(49);
-} // namespace
+namespace {static ::net::minecraft::registry::RegisterBlock<ObsidianBlock> autoReg(49);} // namespace
 } // namespace net::minecraft::block
 

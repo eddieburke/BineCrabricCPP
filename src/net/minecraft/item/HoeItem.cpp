@@ -12,10 +12,9 @@
 
 namespace net::minecraft::item {
 
-HoeItem::HoeItem(int rawId, ToolMaterial material) : Item(rawId)
+HoeItem::HoeItem(int rawId, ToolMaterial material)
+    : ToolItem(rawId, 0, material, nullptr, 0)
 {
-    setMaxCount(1);
-    setMaxDamage(toolMaterialDurability(material));
 }
 
 bool HoeItem::useOnBlock(ItemStack* stack, PlayerEntity* /*user*/, World* world, int x, int y, int z, int side)
@@ -37,36 +36,5 @@ bool HoeItem::useOnBlock(ItemStack* stack, PlayerEntity* /*user*/, World* world,
     }
     return false;
 }
-
-namespace {
-
-void HoeItem::registerClass()
-{
-    static HoeItem WOODEN_HOE(34, ToolMaterial::Wood);
-    WOODEN_HOE.setTexturePosition(0, 8)->setTranslationKey("hoeWood");
-    Item::WOODEN_HOE = &WOODEN_HOE;
-
-    static HoeItem STONE_HOE(35, ToolMaterial::Stone);
-    STONE_HOE.setTexturePosition(1, 8)->setTranslationKey("hoeStone");
-    Item::STONE_HOE = &STONE_HOE;
-
-    static HoeItem IRON_HOE(36, ToolMaterial::Iron);
-    IRON_HOE.setTexturePosition(2, 8)->setTranslationKey("hoeIron");
-    Item::IRON_HOE = &IRON_HOE;
-
-    static HoeItem DIAMOND_HOE(37, ToolMaterial::Diamond);
-    DIAMOND_HOE.setTexturePosition(3, 8)->setTranslationKey("hoeDiamond");
-    Item::DIAMOND_HOE = &DIAMOND_HOE;
-
-    static HoeItem GOLDEN_HOE(38, ToolMaterial::Gold);
-    GOLDEN_HOE.setTexturePosition(4, 8)->setTranslationKey("hoeGold");
-    Item::GOLDEN_HOE = &GOLDEN_HOE;
-}
-
-
-
-
-static ::net::minecraft::registry::RegisterItem<HoeItem> autoReg(34);
-} // namespace
 
 } // namespace net::minecraft::item

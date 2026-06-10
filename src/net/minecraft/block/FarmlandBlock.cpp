@@ -3,8 +3,6 @@
 #include "net/minecraft/block/FarmlandBlock.hpp"
 
 namespace net::minecraft::block {
-namespace {
-
 void FarmlandBlock::registerClass()
 {
     Block::FARMLAND = (new FarmlandBlock(60))->setHardness(0.6f)->setSoundGroup(&vanillaGravelSound())->setTranslationKey("farmland");
@@ -13,7 +11,6 @@ void FarmlandBlock::registerClass()
 
 
 
-static ::net::minecraft::registry::RegisterBlock<FarmlandBlock> autoReg(60);
-} // namespace
+namespace {static ::net::minecraft::registry::RegisterBlock<FarmlandBlock> autoReg(60);} // namespace
 } // namespace net::minecraft::block
 

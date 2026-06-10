@@ -4,12 +4,6 @@
 
 namespace net::minecraft::item {
 
-class FlintAndSteelItem : public FlintAndSteel {
-public:
-    static constexpr int ID = 259;
-    FlintAndSteelItem() : FlintAndSteel(3) {
-        setTexturePosition(5, 0)->setTranslationKey("flintAndSteel");
-    }
-};
+using FlintAndSteelItem = FlintAndSteel;
 
 } // namespace net::minecraft::item

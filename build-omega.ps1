@@ -1,35 +1,30 @@
-# Omega (maximum optimization) full build of minecraft_native using Ninja.
+# Omega (maximum optimization) full build of minecraft_native using a bundled MinGW GCC toolchain.
+#
+# On first run this script downloads GCC, CMake, Ninja, and audio/zlib deps into ./toolchain/
+# (relative to this script). No system MSYS2 or Visual Studio compiler is required.
 #
 # Usage:
 #   .\build-omega.ps1              # configure if needed, then optimized release build
 #   .\build-omega.ps1 -Clean       # wipe build dir and rebuild from scratch
 #   .\build-omega.ps1 -Jobs 12     # limit parallel compile jobs
-#   .\build-omega.ps1 -NoLto       # skip link-time optimization (faster link, less perf)
-#   .\build-omega.ps1 -NoNativeCpu # portable binary (no -march=native / /arch:AVX2)
+#   .\build-omega.ps1 -Lto          # opt-in link-time optimization (often fails on MinGW GCC 15)
+#   .\build-omega.ps1 -NoNativeCpu # portable binary (no -march=native / AVX tuning)
 #   .\build-omega.ps1 -RunTests    # run ctest after a successful build
 #
-# Optimizations enabled (GNU/MinGW — primary toolchain for this project):
-#   CMAKE_BUILD_TYPE=Release        -> -O3 -DNDEBUG (max speed, asserts stripped)
-#   CMAKE_INTERPROCEDURAL_OPTIMIZATION=ON -> -flto whole-program optimization
-#   -march=native -mtune=native     -> emit instructions for this CPU (see -NoNativeCpu)
-#   -funroll-loops                  -> aggressive loop unrolling
-#   -fomit-frame-pointer            -> free a register in leaf hot paths
-#   -ffunction-sections -fdata-sections -> per-symbol sections for linker GC
+# Optimizations enabled by default (bundled GCC / Ninja):
+#   CMAKE_BUILD_TYPE=Release        -> -O3 -DNDEBUG
+#   -march=native -mtune=native -mprefer-vector-width=128 (see -NoNativeCpu)
+#   -funroll-loops -fomit-frame-pointer -ffunction-sections -fdata-sections
 #   -Wl,--gc-sections               -> dead code / data elimination at link
-#   -fno-semantic-interposition     -> stronger cross-TU inlining under LTO
-#   -fmerge-all-constants           -> fold duplicate compile-time constants
 #
-# MSVC (when cl.exe is the default and g++ is absent):
-#   /O2 /Ob2 /Oi /Ot                -> max speed, inlining, intrinsic expansion
-#   /GL + CMAKE_INTERPROCEDURAL_OPTIMIZATION -> link-time code generation (/LTCG)
-#   /arch:AVX2                      -> SIMD for this generation (see -NoNativeCpu)
-#
-# Intentionally omitted: -ffast-math / /fp:fast — golden tests depend on stable FP.
+# LTO (-Lto) is opt-in only: MinGW GCC 15 cannot link this codebase with -flto reliably.
+# Intentionally omitted: -ffast-math � golden tests depend on stable FP.
 
 param(
     [string]$BuildDir = "build-omega",
     [int]$Jobs = 0,
     [switch]$Clean,
+    [switch]$Lto,
     [switch]$NoLto,
     [switch]$NoNativeCpu,
     [switch]$RunTests
@@ -39,11 +34,255 @@ $ErrorActionPreference = "Stop"
 $ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 Set-Location $ScriptDir
 
-$Msys2Bin = "C:\msys64\mingw64\bin"
-if (Test-Path $Msys2Bin) {
-    if ($env:PATH -notlike "*$Msys2Bin*") {
-        $env:PATH = "$Msys2Bin;" + $env:PATH
+$ToolchainDir = Join-Path $ScriptDir "toolchain"
+$MingwRoot = Join-Path $ToolchainDir "mingw64"
+$DownloadsDir = Join-Path $ToolchainDir "_downloads"
+$ToolsDir = Join-Path $ToolchainDir "tools"
+$ManifestPath = Join-Path $ToolchainDir "manifest.json"
+$MingwBin = Join-Path $MingwRoot "bin"
+$GppExe = Join-Path $MingwBin "g++.exe"
+$CmakeExe = Join-Path $MingwBin "cmake.exe"
+$NinjaExe = Join-Path $MingwBin "ninja.exe"
+$CtestExe = Join-Path $MingwBin "ctest.exe"
+$DepsMarker = Join-Path $ToolchainDir ".deps-installed"
+
+$RelToolchainRoot = "toolchain/mingw64"
+$RelGpp = "$RelToolchainRoot/bin/g++.exe"
+$RelNinja = "$RelToolchainRoot/bin/ninja.exe"
+
+function Get-Manifest {
+    if (-not (Test-Path -LiteralPath $ManifestPath)) {
+        Write-Error "Missing toolchain manifest: $ManifestPath"
+        exit 1
     }
+    return Get-Content -LiteralPath $ManifestPath -Raw | ConvertFrom-Json
+}
+
+function Ensure-Directory {
+    param([string]$Path)
+    if (-not (Test-Path -LiteralPath $Path)) {
+        New-Item -ItemType Directory -Force -Path $Path | Out-Null
+    }
+}
+
+function Download-File {
+    param(
+        [string]$Url,
+        [string]$Destination
+    )
+
+    Ensure-Directory -Path (Split-Path -Parent $Destination)
+    if (Test-Path -LiteralPath $Destination) {
+        $existing = Get-Item -LiteralPath $Destination
+        if ($existing.Length -gt 0) {
+            return
+        }
+        Remove-Item -LiteralPath $Destination -Force
+    }
+
+    Write-Host "Downloading $(Split-Path -Leaf $Destination) ..."
+    $curl = Get-Command curl.exe -ErrorAction SilentlyContinue
+    if ($curl) {
+        & curl.exe -L --fail --retry 3 --retry-delay 2 -o $Destination $Url
+        if ($LASTEXITCODE -ne 0) {
+            Write-Error "curl failed ($LASTEXITCODE) for $Url"
+            exit 1
+        }
+        return
+    }
+
+    Invoke-WebRequest -Uri $Url -OutFile $Destination -UseBasicParsing
+}
+
+function Ensure-ZstdTool {
+    $manifest = Get-Manifest
+    $zstdExe = Join-Path $ToolsDir "zstd.exe"
+    if (Test-Path -LiteralPath $zstdExe) {
+        return $zstdExe
+    }
+
+    Ensure-Directory -Path $ToolsDir
+    $archive = Join-Path $DownloadsDir $manifest.zstd.archive
+    Download-File -Url $manifest.zstd.url -Destination $archive
+
+    $extractRoot = Join-Path $ToolsDir "zstd-extract"
+    if (Test-Path -LiteralPath $extractRoot) {
+        Remove-Item -LiteralPath $extractRoot -Recurse -Force
+    }
+    Expand-Archive -LiteralPath $archive -DestinationPath $extractRoot -Force
+
+    $sourceExe = Join-Path $extractRoot $manifest.zstd.exe_subpath
+    if (-not (Test-Path -LiteralPath $sourceExe)) {
+        Write-Error "zstd.exe not found in $($manifest.zstd.archive)"
+        exit 1
+    }
+    Copy-Item -LiteralPath $sourceExe -Destination $zstdExe -Force
+    return $zstdExe
+}
+
+function Merge-Ucrt64IntoMingw64 {
+    param(
+        [string]$StageDir,
+        [string]$DestRoot
+    )
+
+    $ucrtRoot = Join-Path $StageDir "ucrt64"
+    if (-not (Test-Path -LiteralPath $ucrtRoot)) {
+        Write-Error "MSYS2 package did not contain ucrt64/: $StageDir"
+        exit 1
+    }
+
+    foreach ($subdir in @("bin", "include", "lib", "share")) {
+        $from = Join-Path $ucrtRoot $subdir
+        if (-not (Test-Path -LiteralPath $from)) {
+            continue
+        }
+        $to = Join-Path $DestRoot $subdir
+        Ensure-Directory -Path $to
+        Copy-Item -Path (Join-Path $from "*") -Destination $to -Recurse -Force
+    }
+}
+
+function Install-MsysUcrtPackage {
+    param(
+        [string]$Url,
+        [string]$PackageName,
+        [string]$MingwDest,
+        [string]$ZstdTool
+    )
+
+    $fileName = Split-Path -Leaf $Url
+    $archivePath = Join-Path $DownloadsDir $fileName
+    Download-File -Url $Url -Destination $archivePath
+
+    $tarPath = Join-Path $DownloadsDir ($fileName + ".tar")
+    if (Test-Path -LiteralPath $tarPath) {
+        Remove-Item -LiteralPath $tarPath -Force
+    }
+
+    & $ZstdTool -d $archivePath -o $tarPath -f
+    if ($LASTEXITCODE -ne 0) {
+        Write-Error "zstd failed extracting $PackageName"
+        exit 1
+    }
+
+    $stageDir = Join-Path $DownloadsDir ("stage-" + $PackageName)
+    if (Test-Path -LiteralPath $stageDir) {
+        Remove-Item -LiteralPath $stageDir -Recurse -Force
+    }
+    Ensure-Directory -Path $stageDir
+
+    tar -xf $tarPath -C $stageDir
+    if ($LASTEXITCODE -ne 0) {
+        Write-Error "tar failed extracting $PackageName"
+        exit 1
+    }
+
+    Merge-Ucrt64IntoMingw64 -StageDir $stageDir -DestRoot $MingwDest
+    Remove-Item -LiteralPath $stageDir -Recurse -Force
+}
+
+function Test-ToolchainDepsPresent {
+    param([string]$MingwDest)
+
+    $requiredLibs = @("libz.a", "libogg.a", "libvorbis.a", "libvorbisfile.a")
+    foreach ($lib in $requiredLibs) {
+        if (-not (Test-Path -LiteralPath (Join-Path $MingwDest "lib\$lib"))) {
+            return $false
+        }
+    }
+    return $true
+}
+
+function Ensure-ToolchainDeps {
+    param([string]$MingwDest)
+
+    if ((Test-Path -LiteralPath $DepsMarker) -or (Test-ToolchainDepsPresent -MingwDest $MingwDest)) {
+        return
+    }
+
+    Write-Host "Installing bundled zlib/vorbis deps into toolchain/mingw64 ..."
+    $manifest = Get-Manifest
+    $zstdTool = Ensure-ZstdTool
+    Ensure-Directory -Path $MingwDest
+
+    foreach ($pkg in $manifest.msys2_ucrt_packages) {
+        Write-Host "  -> $($pkg.name)"
+        Install-MsysUcrtPackage -Url $pkg.url -PackageName $pkg.name -MingwDest $MingwDest -ZstdTool $zstdTool
+    }
+
+    Set-Content -LiteralPath $DepsMarker -Value ("installed " + (Get-Date -Format "o")) -Encoding ASCII
+}
+
+function Test-LocalToolchainPresent {
+    return (Test-Path -LiteralPath $GppExe) -and
+        (Test-Path -LiteralPath $CmakeExe) -and
+        (Test-Path -LiteralPath $NinjaExe)
+}
+
+function Ensure-BundledToolchain {
+    if (Test-LocalToolchainPresent) {
+        Ensure-ToolchainDeps -MingwDest $MingwRoot
+        Write-Host "Using downloaded toolchain: $RelToolchainRoot"
+        return
+    }
+
+    $manifest = Get-Manifest
+    Ensure-Directory -Path $DownloadsDir
+
+    $archivePath = Join-Path $DownloadsDir $manifest.winlibs.archive
+    Download-File -Url $manifest.winlibs.url -Destination $archivePath
+
+    $staging = Join-Path $ToolchainDir "_staging"
+    if (Test-Path -LiteralPath $staging) {
+        Remove-Item -LiteralPath $staging -Recurse -Force
+    }
+    Ensure-Directory -Path $staging
+
+    Write-Host "Extracting bundled GCC toolchain ..."
+    Expand-Archive -LiteralPath $archivePath -DestinationPath $staging -Force
+
+    $extractedMingw = Join-Path $staging "mingw64"
+    if (-not (Test-Path -LiteralPath $extractedMingw)) {
+        $candidate = Get-ChildItem -LiteralPath $staging -Directory | Where-Object { Test-Path (Join-Path $_.FullName "bin\g++.exe") } | Select-Object -First 1
+        if ($null -eq $candidate) {
+            Write-Error "WinLibs archive did not contain mingw64/bin/g++.exe"
+            exit 1
+        }
+        $extractedMingw = $candidate.FullName
+    }
+
+    if (Test-Path -LiteralPath $MingwRoot) {
+        Remove-Item -LiteralPath $MingwRoot -Recurse -Force
+    }
+    Move-Item -LiteralPath $extractedMingw -Destination $MingwRoot
+    Remove-Item -LiteralPath $staging -Recurse -Force -ErrorAction SilentlyContinue
+
+    if (-not (Test-Path -LiteralPath $GppExe)) {
+        Write-Error "Bundled toolchain install failed: $GppExe"
+        exit 1
+    }
+
+    Ensure-ToolchainDeps -MingwDest $MingwRoot
+    Write-Host "Bundled toolchain ready: $MingwRoot"
+}
+
+function Set-BundledToolchainEnvironment {
+    param([string]$MingwBinDir)
+
+    $filtered = @()
+    if ($env:PATH) {
+        $filtered = $env:PATH -split ';' | Where-Object {
+            $_ -ne "" -and
+            $_ -notmatch '(?i)msys64' -and
+            $_ -notmatch '(?i)\\mingw64\\bin' -and
+            $_ -notmatch '(?i)Microsoft Visual Studio'
+        }
+    }
+
+    $env:PATH = ($MingwBinDir + ';' + ($filtered -join ';'))
+    $env:CXX = Join-Path $MingwBinDir "g++.exe"
+    Remove-Item Env:\CC -ErrorAction SilentlyContinue
 }
 
 $BuildOmegaLockPath = Join-Path $ScriptDir ".build-omega.lock"
@@ -91,18 +330,6 @@ function Release-BuildOmegaLock {
     if (Test-Path -LiteralPath $script:BuildOmegaLockPath) {
         Remove-Item -LiteralPath $script:BuildOmegaLockPath -Force -ErrorAction SilentlyContinue
     }
-}
-
-function Get-CompilerFamily {
-    $gpp = Get-Command g++ -ErrorAction SilentlyContinue
-    if ($gpp) {
-        return "GNU"
-    }
-    $cl = Get-Command cl -ErrorAction SilentlyContinue
-    if ($cl) {
-        return "MSVC"
-    }
-    return "GNU"
 }
 
 function Get-ExternalBuildProcesses {
@@ -163,6 +390,76 @@ function Remove-StaleNinjaRestatFile {
     }
 }
 
+function Normalize-ToolPath {
+    param([string]$Path)
+    if (-not $Path) {
+        return ""
+    }
+    return $Path.Replace("\", "/").ToLowerInvariant()
+}
+
+function Test-NeedsConfigure {
+    param(
+        [string]$BuildDirPath,
+        [string]$ExpectedCompiler,
+        [string]$ExpectedToolchainRoot,
+        [bool]$UseLto
+    )
+
+    $cachePath = Join-Path $BuildDirPath "CMakeCache.txt"
+    if (-not (Test-Path -LiteralPath $cachePath)) {
+        return $true
+    }
+    if (-not (Test-Path -LiteralPath (Join-Path $BuildDirPath "build.ninja"))) {
+        return $true
+    }
+
+    $generator = $null
+    $compiler = $null
+    $toolchainRoot = $null
+    $ipo = $null
+    foreach ($line in Get-Content -LiteralPath $cachePath) {
+        if ($line -like "CMAKE_GENERATOR:INTERNAL=*") {
+            $generator = $line.Substring("CMAKE_GENERATOR:INTERNAL=".Length)
+        } elseif ($line -like "CMAKE_CXX_COMPILER:FILEPATH=*") {
+            $compiler = $line.Substring("CMAKE_CXX_COMPILER:FILEPATH=".Length)
+        } elseif ($line -like "MINECRAFT_TOOLCHAIN_ROOT:PATH=*") {
+            $toolchainRoot = $line.Substring("MINECRAFT_TOOLCHAIN_ROOT:PATH=".Length)
+        } elseif ($line -like "CMAKE_INTERPROCEDURAL_OPTIMIZATION:BOOL=*") {
+            $ipo = $line.Substring("CMAKE_INTERPROCEDURAL_OPTIMIZATION:BOOL=".Length)
+        }
+    }
+
+    if ($generator -ne "Ninja") {
+        return $true
+    }
+    if ((Normalize-ToolPath $compiler) -ne (Normalize-ToolPath $ExpectedCompiler)) {
+        return $true
+    }
+    if ($toolchainRoot -and ((Normalize-ToolPath $toolchainRoot) -ne (Normalize-ToolPath $ExpectedToolchainRoot))) {
+        return $true
+    }
+
+    $cachedLto = ($ipo -eq "ON")
+    if ($cachedLto -ne $UseLto) {
+        return $true
+    }
+
+    return $false
+}
+
+Ensure-BundledToolchain
+Set-BundledToolchainEnvironment -MingwBinDir $MingwBin
+
+if (-not (Test-Path -LiteralPath $CmakeExe)) {
+    Write-Error "Bundled cmake not found at $CmakeExe"
+    exit 1
+}
+if (-not (Test-Path -LiteralPath $NinjaExe)) {
+    Write-Error "Bundled ninja not found at $NinjaExe"
+    exit 1
+}
+
 Remove-StaleBuildOmegaLockFile -LockPath $BuildOmegaLockPath
 
 try {
@@ -188,59 +485,73 @@ if ($Clean -and (Test-Path $BuildDir)) {
     Assert-BuildDirAvailable -BuildDirName $BuildDir -ScriptDirPath $ScriptDir
     Write-Host "Removing $BuildDir ..."
     Remove-Item -Recurse -Force $BuildDir
+    $CcacheExe = Join-Path $MingwBin "ccache.exe"
+    if (Test-Path -LiteralPath $CcacheExe) {
+        Write-Host "Clearing ccache (stale LTO objects) ..."
+        & $CcacheExe -C
+    }
 }
 
 Assert-BuildDirAvailable -BuildDirName $BuildDir -ScriptDirPath $ScriptDir
 
-$CompilerFamily = Get-CompilerFamily
-Write-Host "Compiler family: $CompilerFamily"
+Write-Host "Toolchain: $RelToolchainRoot"
+Write-Host "Compiler:  $RelGpp"
 
 $CmakeArgs = @(
     "-S", ".",
     "-B", $BuildDir,
     "-G", "Ninja",
-    "-DCMAKE_BUILD_TYPE=Release"
+    "-DCMAKE_MAKE_PROGRAM=$NinjaExe",
+    "-DCMAKE_CXX_COMPILER=$GppExe",
+    "-DCMAKE_BUILD_TYPE=Release",
+    "-DMINECRAFT_TOOLCHAIN_ROOT=$RelToolchainRoot"
 )
 
-if (-not $NoLto) {
+$UseLto = $Lto -and (-not $NoLto)
+if ($Lto -and $NoLto) {
+    Write-Error "-Lto and -NoLto cannot be used together."
+    exit 1
+}
+
+if ($UseLto) {
+    Write-Host "LTO enabled (opt-in; may fail to link on MinGW GCC 15)"
     $CmakeArgs += "-DCMAKE_INTERPROCEDURAL_OPTIMIZATION=ON"
+    $CmakeArgs += "-DCMAKE_CXX_COMPILER_LAUNCHER="
+    $env:CCACHE_DISABLE = "1"
 }
 
-if ($CompilerFamily -eq "GNU") {
-    $OmegaCxx = "-funroll-loops -fomit-frame-pointer -ffunction-sections -fdata-sections -fno-semantic-interposition -fmerge-all-constants"
-    $OmegaLink = "-Wl,--gc-sections"
-    if (-not $NoNativeCpu) {
-        # -march=native enables AVX2, which raises __BIGGEST_ALIGNMENT__ to 32 and lets
-        # GCC copy 32-byte structs (e.g. BiomeInfo) with a 256-bit *aligned* vmovdqa to a
-        # stack temp. The Win64 ABI only guarantees 16-byte stack alignment, so that move
-        # faults (#GP -> 0xC0000005, fault address 0xffffffffffffffff) ~50% of the time.
-        # Capping vector width at 128 bits keeps AVX scalar/FMA but emits 16-byte moves to
-        # the 16-aligned stack, eliminating the crash. (Repro: enter the Nether.)
-        $OmegaCxx = "-march=native -mtune=native -mprefer-vector-width=128 " + $OmegaCxx
-    }
-    $CmakeArgs += "-DCMAKE_CXX_FLAGS_RELEASE=$OmegaCxx"
+$OmegaCxx = "-funroll-loops -fomit-frame-pointer -ffunction-sections -fdata-sections -fno-semantic-interposition -fmerge-all-constants"
+$OmegaLink = "-Wl,--gc-sections"
+if ($UseLto) {
+    # LTO + --gc-sections triggers duplicate .gnu.lto section errors on MinGW GCC 15.
+    $OmegaLink = ""
+    $OmegaCxx = $OmegaCxx + " -flto-partition=one"
+}
+if (-not $NoNativeCpu) {
+    $OmegaCxx = "-march=native -mtune=native -mprefer-vector-width=128 " + $OmegaCxx
+}
+$CmakeArgs += "-DCMAKE_CXX_FLAGS_RELEASE=$OmegaCxx"
+if ($OmegaLink -ne "") {
     $CmakeArgs += "-DCMAKE_EXE_LINKER_FLAGS_RELEASE=$OmegaLink"
-} else {
-    $OmegaCxx = "/O2 /Ob2 /Oi /Ot"
-    if (-not $NoNativeCpu) {
-        $OmegaCxx = $OmegaCxx + " /arch:AVX2"
-    }
-    $CmakeArgs += "-DCMAKE_CXX_FLAGS_RELEASE=$OmegaCxx"
 }
 
-$NeedsConfigure = -not (Test-Path (Join-Path $BuildDir "build.ninja"))
+$NeedsConfigure = Test-NeedsConfigure `
+    -BuildDirPath (Join-Path $ScriptDir $BuildDir) `
+    -ExpectedCompiler $GppExe `
+    -ExpectedToolchainRoot (Join-Path $ScriptDir $RelToolchainRoot.Replace("/", "\")) `
+    -UseLto $UseLto
 if ($NeedsConfigure) {
     Assert-BuildDirAvailable -BuildDirName $BuildDir -ScriptDirPath $ScriptDir
     Remove-StaleNinjaRestatFile -BuildDirPath (Join-Path $ScriptDir $BuildDir)
-    Write-Host "Configuring $BuildDir (Ninja, Release, omega flags) ..."
-    & cmake @CmakeArgs
+    Write-Host "Configuring $BuildDir (Ninja + bundled GCC, Release, omega flags) ..."
+    & $CmakeExe @CmakeArgs
     if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 }
 
 Assert-BuildDirAvailable -BuildDirName $BuildDir -ScriptDirPath $ScriptDir
 Write-Host "Omega build: minecraft_native (-j $Jobs) ..."
 $sw = [System.Diagnostics.Stopwatch]::StartNew()
-cmake --build $BuildDir --target minecraft_native -j $Jobs
+& $CmakeExe --build $BuildDir --target minecraft_native -j $Jobs
 $exitCode = $LASTEXITCODE
 $sw.Stop()
 
@@ -251,12 +562,12 @@ if ($exitCode -eq 0) {
     }
     if ($RunTests) {
         Write-Host "Building test targets ..."
-        cmake --build $BuildDir -j $Jobs
+        & $CmakeExe --build $BuildDir -j $Jobs
         if ($LASTEXITCODE -ne 0) {
             $exitCode = $LASTEXITCODE
         } else {
             Write-Host "Running tests (ctest) ..."
-            ctest --test-dir $BuildDir --output-on-failure
+            & $CtestExe --test-dir $BuildDir --output-on-failure
             if ($LASTEXITCODE -ne 0) {
                 $exitCode = $LASTEXITCODE
             }

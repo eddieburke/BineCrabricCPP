@@ -5,9 +5,11 @@
 #include "net/minecraft/block/material/Material.hpp"
 #include "net/minecraft/world/BlockView.hpp"
 
+namespace net::minecraft::recipe { class CraftingRecipeManager; }
 namespace net::minecraft::block {
 
 class PressurePlateBlock : public Block {
+    static void registerRecipes(recipe::CraftingRecipeManager& recipeManager);
 public:
     static void registerClass();
     PressurePlateActivationRule activationRule = PressurePlateActivationRule::EVERYTHING;

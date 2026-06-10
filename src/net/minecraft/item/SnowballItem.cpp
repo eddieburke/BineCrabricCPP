@@ -35,19 +35,15 @@ ItemStack* SnowballItem::use(ItemStack* stack, World* world, PlayerEntity* user)
     return stack;
 }
 
-namespace {
-
 void SnowballItem::registerClass()
 {
     static SnowballItem SNOWBALL(76);
     SNOWBALL.setTexturePosition(14, 0)->setTranslationKey("snowball");
-    Item::SNOWBALL = &SNOWBALL;
 }
 
 
 
 
-static ::net::minecraft::registry::RegisterItem<SnowballItem> autoReg(76);
-} // namespace
+namespace {static ::net::minecraft::registry::RegisterItem<SnowballItem> autoReg(76); } // namespace
 
 } // namespace net::minecraft::item

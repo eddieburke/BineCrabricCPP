@@ -141,7 +141,7 @@ bool GhastEntity::canSpawn() const
 
 int GhastEntity::getDroppedItemId() const
 {
-    return Item::GUNPOWDER != nullptr ? Item::GUNPOWDER->id : 289;
+    return Item::byRawId(33) != nullptr ? Item::byRawId(33)->id : 289;
 }
 
 

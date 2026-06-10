@@ -4,9 +4,10 @@
 #include "net/minecraft/client/resource/language/I18n.hpp"
 #include "net/minecraft/entity/ItemEntity.hpp"
 #include "net/minecraft/entity/player/PlayerEntity.hpp"
+#include "net/minecraft/item/BlockItem.hpp"
 #include "net/minecraft/item/Item.hpp"
 #include "net/minecraft/item/ItemStack.hpp"
-#include "net/minecraft/registry/VanillaRegistry.hpp"
+#include "net/minecraft/registry/Registry.hpp"
 #include "net/minecraft/stat/Stats.hpp"
 #include "net/minecraft/world/BlockView.hpp"
 #include "net/minecraft/world/World.hpp"
@@ -504,6 +505,15 @@ std::optional<net::minecraft::HitResult> Block::raycast(World* world, int x, int
 {
     const_cast<Block*>(this)->updateBoundingBox(world, x, y, z);
     return raycastLocalBounds(minX, minY, minZ, maxX, maxY, maxZ, x, y, z, startPos, endPos);
+}
+
+void Block::registerBlockItem()
+{
+    if (Item::ITEMS[static_cast<std::size_t>(id)] != nullptr) {
+        return;
+    }
+    Item::ITEMS[static_cast<std::size_t>(id)] = new item::BlockItem(id - 256);
+    init();
 }
 
 void finalizeBlockRegistryProperties()

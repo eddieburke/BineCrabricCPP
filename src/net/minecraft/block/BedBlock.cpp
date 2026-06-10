@@ -5,6 +5,7 @@
 #include "net/minecraft/block/Block.hpp"
 #include "net/minecraft/entity/player/PlayerEntity.hpp"
 #include "net/minecraft/entity/player/SleepAttemptResult.hpp"
+#include "net/minecraft/item/BedItem.hpp"
 #include "net/minecraft/item/Item.hpp"
 #include "net/minecraft/util/math/Facings.hpp"
 #include "net/minecraft/world/World.hpp"
@@ -51,7 +52,7 @@ int BedBlock::getDroppedItemId(int blockMeta, JavaRandom& /*random*/) const
     if (isHeadOfBed(blockMeta)) {
         return 0;
     }
-    return Item::BED != nullptr ? Item::BED->id : 355;
+    return Item::byRawId(99) != nullptr ? Item::byRawId(99)->id : 355;
 }
 
 void BedBlock::updateBoundingBox(const BlockView* blockView, int x, int y, int z)
@@ -196,8 +197,6 @@ std::optional<Vec3i> BedBlock::findWakeUpPosition(World* world, int x, int y, in
     }
     return std::nullopt;
 }
-namespace {
-
 void BedBlock::registerClass()
 {
     Block::BED = (new BedBlock(26))->setHardness(0.2f)->setTranslationKey("bed")->disableTrackingStatistics()->ignoreMetaUpdates();
@@ -206,7 +205,6 @@ void BedBlock::registerClass()
 
 
 
-static ::net::minecraft::registry::RegisterBlock<BedBlock> autoReg(26);
-} // namespace
+namespace {static ::net::minecraft::registry::RegisterBlock<BedBlock> autoReg(26);} // namespace
 } // namespace net::minecraft::block
 

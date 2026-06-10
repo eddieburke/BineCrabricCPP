@@ -1,16 +1,18 @@
 #pragma once
 
 #include "net/minecraft/item/ShovelItem.hpp"
-#include "net/minecraft/item/ToolMaterial.hpp"
+
+namespace net::minecraft::recipe {
+class CraftingRecipeManager;
+} // namespace net::minecraft::recipe
 
 namespace net::minecraft::item {
 
 class DiamondShovelItem : public ShovelItem {
-public:
-    static constexpr int ID = 277;
-    DiamondShovelItem() : ShovelItem(21, ToolMaterial::Diamond) {
-        setTexturePosition(3, 5)->setTranslationKey("shovelDiamond");
-    }
+public:    static void registerClass();
+    static void registerRecipes(recipe::CraftingRecipeManager& recipeManager);
+
+    DiamondShovelItem();
 };
 
 } // namespace net::minecraft::item

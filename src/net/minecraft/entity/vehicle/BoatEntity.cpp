@@ -59,7 +59,7 @@ bool BoatEntity::damage(Entity* damageSource, int amount)
             passenger->setVehicle(this);
         }
         const int planksId = Block::PLANKS != nullptr ? Block::PLANKS->id : 5;
-        const int stickId = Item::STICK != nullptr ? Item::STICK->id : 280;
+        const int stickId = Item::byRawId(24) != nullptr ? Item::byRawId(24)->id : 280;
         for (int i = 0; i < 3; ++i) {
             dropItem(planksId, 1, 0.0f);
         }
@@ -174,7 +174,7 @@ void BoatEntity::tick()
     }
     if (horizontalCollision && horizontalSpeed > 0.15) {
         const int planksId = Block::PLANKS != nullptr ? Block::PLANKS->id : 5;
-        const int stickId = Item::STICK != nullptr ? Item::STICK->id : 280;
+        const int stickId = Item::byRawId(24) != nullptr ? Item::byRawId(24)->id : 280;
         markDead();
         for (int i = 0; i < 3; ++i) {
             dropItem(planksId, 1, 0.0f);

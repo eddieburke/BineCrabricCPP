@@ -7,6 +7,7 @@
 #include "net/minecraft/item/Item.hpp"
 #include "net/minecraft/item/ItemRegistrar.hpp"
 #include "net/minecraft/item/ItemStack.hpp"
+#include "net/minecraft/recipe/CraftingRecipeManager.hpp"
 #include "net/minecraft/util/math/MathHelper.hpp"
 #include "net/minecraft/world/World.hpp"
 
@@ -62,23 +63,25 @@ bool DoorItem::useOnBlock(ItemStack* stack, PlayerEntity* user, World* world, in
     return true;
 }
 
-namespace {
-
 void DoorItem::registerClass()
 {
     static DoorItem WOODEN_DOOR(68, block::material::Material::WOOD);
     WOODEN_DOOR.setTexturePosition(11, 2)->setTranslationKey("doorWood");
-    Item::WOODEN_DOOR = &WOODEN_DOOR;
-
     static DoorItem IRON_DOOR(74, block::material::Material::METAL);
     IRON_DOOR.setTexturePosition(12, 2)->setTranslationKey("doorIron");
-    Item::IRON_DOOR = &IRON_DOOR;
+}
+
+void DoorItem::registerRecipes(recipe::CraftingRecipeManager& recipeManager)
+{
+    recipeManager.addShapedRecipe(ItemStack(Item::byRawId(68)),
+        {std::string("##"), std::string("##"), std::string("##"), '#', Block::PLANKS});
+    recipeManager.addShapedRecipe(ItemStack(Item::byRawId(74)),
+        {std::string("##"), std::string("##"), std::string("##"), '#', Item::byRawId(9)});
 }
 
 
 
 
-static ::net::minecraft::registry::RegisterItem<DoorItem> autoReg(68);
-} // namespace
+namespace {static ::net::minecraft::registry::RegisterItem<DoorItem> autoReg(68);} // namespace
 
 } // namespace net::minecraft::item

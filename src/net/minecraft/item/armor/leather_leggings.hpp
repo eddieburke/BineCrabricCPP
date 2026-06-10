@@ -2,14 +2,17 @@
 
 #include "net/minecraft/item/ArmorItem.hpp"
 
+namespace net::minecraft::recipe {
+class CraftingRecipeManager;
+} // namespace net::minecraft::recipe
+
 namespace net::minecraft::item {
 
 class LeatherLeggingsItem : public ArmorItem {
-public:
-    static constexpr int ID = 300;
-    LeatherLeggingsItem() : ArmorItem(44, 0, 0, 2) {
-        setTexturePosition(0, 2)->setTranslationKey("leggingsCloth");
-    }
+public:    static void registerClass();
+    static void registerRecipes(recipe::CraftingRecipeManager& recipeManager);
+
+    LeatherLeggingsItem();
 };
 
 } // namespace net::minecraft::item

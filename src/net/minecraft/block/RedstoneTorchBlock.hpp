@@ -7,9 +7,11 @@ class BlockView;
 class World;
 }
 
+namespace net::minecraft::recipe { class CraftingRecipeManager; }
 namespace net::minecraft::block {
 
 class RedstoneTorchBlock : public TorchBlock {
+    static void registerRecipes(recipe::CraftingRecipeManager& recipeManager);
 public:
     static void registerClass();
     bool lit = false;

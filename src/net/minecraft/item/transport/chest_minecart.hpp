@@ -2,14 +2,17 @@
 
 #include "net/minecraft/item/MinecartItem.hpp"
 
+namespace net::minecraft::recipe {
+class CraftingRecipeManager;
+} // namespace net::minecraft::recipe
+
 namespace net::minecraft::item {
 
 class ChestMinecartItem : public MinecartItem {
-public:
-    static constexpr int ID = 342;
-    ChestMinecartItem() : MinecartItem(86, 1) {
-        setTexturePosition(7, 9)->setTranslationKey("minecartChest");
-    }
+public:    static void registerClass();
+    static void registerRecipes(recipe::CraftingRecipeManager& recipeManager);
+
+    ChestMinecartItem();
 };
 
 } // namespace net::minecraft::item

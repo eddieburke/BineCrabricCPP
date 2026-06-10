@@ -2,9 +2,11 @@
 
 #include "net/minecraft/block/Block.hpp"
 
+namespace net::minecraft::recipe { class CraftingRecipeManager; }
 namespace net::minecraft::block {
 
 class WorkbenchBlock : public Block {
+    static void registerRecipes(recipe::CraftingRecipeManager& recipeManager);
 public:
     static void registerClass();
     explicit WorkbenchBlock(int id) : Block(id, 59, material::Material::WOOD) {}

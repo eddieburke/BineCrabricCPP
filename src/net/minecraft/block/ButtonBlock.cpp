@@ -5,6 +5,8 @@
 
 #include "net/minecraft/entity/player/PlayerEntity.hpp"
 #include "net/minecraft/world/World.hpp"
+#include "net/minecraft/recipe/CraftingRecipeManager.hpp"
+#include "net/minecraft/item/Item.hpp"
 
 namespace net::minecraft::block {
 
@@ -255,17 +257,19 @@ bool ButtonBlock::isEmittingRedstonePowerInDirection(
 {
     return blockView != nullptr && (blockView->getBlockMeta(x, y, z) & 8) > 0;
 }
-namespace {
-
 void ButtonBlock::registerClass()
 {
     Block::BUTTON = (new ButtonBlock(77, Block::BLOCKS[1]->textureId))->setHardness(0.5f)->setSoundGroup(&vanillaStoneSound())->setTranslationKey("button")->ignoreMetaUpdates();
+}
+void ButtonBlock::registerRecipes(recipe::CraftingRecipeManager& recipeManager)
+{
+    recipeManager.addShapedRecipe(ItemStack(Block::BUTTON), {std::string("#"), std::string("#"), '#', Block::STONE});
 }
 
 
 
 
-static ::net::minecraft::registry::RegisterBlock<ButtonBlock> autoReg(77);
-} // namespace
+
+namespace {static ::net::minecraft::registry::RegisterBlock<ButtonBlock> autoReg(77);} // namespace
 } // namespace net::minecraft::block
 

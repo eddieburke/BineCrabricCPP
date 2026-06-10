@@ -10,6 +10,8 @@
 #include "net/minecraft/item/ItemStack.hpp"
 #include "net/minecraft/util/math/MathHelper.hpp"
 #include "net/minecraft/world/World.hpp"
+#include "net/minecraft/recipe/CraftingRecipeManager.hpp"
+#include "net/minecraft/item/Item.hpp"
 
 namespace net::minecraft::block {
 
@@ -21,8 +23,6 @@ constexpr int kFurnaceId = 61;
 constexpr int kLitFurnaceId = 62;
 bool ignoreBlockRemoval = false;
 
-
-static ::net::minecraft::registry::RegisterBlock<FurnaceBlock> autoReg(61);
 } // namespace
 
 std::unique_ptr<entity::BlockEntity> FurnaceBlock::createBlockEntity()
@@ -186,16 +186,21 @@ void FurnaceBlock::randomDisplayTick(
         world->addParticle("flame", px + spread, py, pz + offset, 0.0, 0.0, 0.0);
     }
 }
-namespace {
-
 void FurnaceBlock::registerClass()
 {
     Block::FURNACE = (new FurnaceBlock(61, false))->setHardness(3.5f)->setSoundGroup(&vanillaStoneSound())->setTranslationKey("furnace")->ignoreMetaUpdates();
     Block::LIT_FURNACE = (new FurnaceBlock(62, true))->setHardness(3.5f)->setSoundGroup(&vanillaStoneSound())->setLuminance(0.875f)->setTranslationKey("furnace")->ignoreMetaUpdates();
 }
+void FurnaceBlock::registerRecipes(recipe::CraftingRecipeManager& recipeManager)
+{
+    recipeManager.addShapedRecipe(ItemStack(Block::FURNACE),
+        {std::string("###"), std::string("# #"), std::string("###"), '#', Block::COBBLESTONE});
+}
 
 
+namespace {
 
+static ::net::minecraft::registry::RegisterBlock<FurnaceBlock> autoReg(61);
 } // namespace
 } // namespace net::minecraft::block
 

@@ -4,6 +4,7 @@
 
 #include "net/minecraft/block/material/Material.hpp"
 #include "net/minecraft/item/Item.hpp"
+#include "net/minecraft/item/SignItem.hpp"
 #include "net/minecraft/world/World.hpp"
 
 namespace net::minecraft::block {
@@ -87,10 +88,8 @@ void SignBlock::neighborUpdate(World* world, int x, int y, int z, int id)
 
 int SignBlock::getDroppedItemId(int /*blockMeta*/, JavaRandom& /*random*/) const
 {
-    return Item::SIGN != nullptr ? Item::SIGN->id : 323;
+    return Item::byRawId(67) != nullptr ? Item::byRawId(67)->id : 323;
 }
-namespace {
-
 void SignBlock::registerClass()
 {
     Block::SIGN = (new SignBlock(63, true))->setHardness(1.0f)->setSoundGroup(&vanillaWoodSound())->setTranslationKey("sign")->disableTrackingStatistics()->ignoreMetaUpdates();
@@ -100,7 +99,6 @@ void SignBlock::registerClass()
 
 
 
-static ::net::minecraft::registry::RegisterBlock<SignBlock> autoReg(63);
-} // namespace
+namespace {static ::net::minecraft::registry::RegisterBlock<SignBlock> autoReg(63);} // namespace
 } // namespace net::minecraft::block
 

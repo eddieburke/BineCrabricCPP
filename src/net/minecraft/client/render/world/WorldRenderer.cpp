@@ -5,6 +5,8 @@
 #include "net/minecraft/block/Block.hpp"
 #include "net/minecraft/item/Item.hpp"
 #include "net/minecraft/item/MusicDiscItem.hpp"
+#include "net/minecraft/item/SnowballItem.hpp"
+#include "net/minecraft/item/misc/slimeball.hpp"
 #include "net/minecraft/block/LeavesBlock.hpp"
 #include "net/minecraft/client/option/ResolvedRenderOptions.hpp"
 #include "net/minecraft/client/gl/GlExtensions.hpp"
@@ -550,13 +552,13 @@ void WorldRenderer::addParticle(const std::string& particle, double x, double y,
             textureManager, world, x, y, z));
     } else if (particle == "snowballpoof") {
         client->particleManager.addParticle(new ::net::minecraft::client::particle::ItemParticle(
-            world, x, y, z, Item::SNOWBALL));
+            world, x, y, z, Item::byRawId(76)));
     } else if (particle == "snowshovel") {
         client->particleManager.addParticle(new ::net::minecraft::client::particle::SnowParticle(
             world, x, y, z, velocityX, velocityY, velocityZ));
     } else if (particle == "slime") {
         client->particleManager.addParticle(new ::net::minecraft::client::particle::ItemParticle(
-            world, x, y, z, Item::SLIMEBALL));
+            world, x, y, z, Item::byRawId(85)));
     }
 }
 

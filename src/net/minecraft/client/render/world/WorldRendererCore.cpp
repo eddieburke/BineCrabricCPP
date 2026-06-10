@@ -22,6 +22,7 @@
 #include "net/minecraft/world/World.hpp"
 
 #include <algorithm>
+#include <chrono>
 #include <cassert>
 #include <memory>
 #include <vector>
@@ -88,7 +89,13 @@ bool WorldRendererCore::compileChunks(WorldRenderer& worldRenderer, LivingEntity
         client::option::resolve(worldRenderer.activeOptions());
     const bool fancyGraphics = worldRenderer.activeOptions().fancyGraphics;
 
-    constexpr int kMaxUploadsPerFrame = 12;
+    // Uploads compile GL display lists, so they must stay on this thread; cap
+    // them by time, not count, so a fast GPU/driver drains the queue instead
+    // of pinning throughput to (cap x fps).
+    constexpr std::chrono::milliseconds kUploadBudget {4};
+    const auto uploadDeadline = std::chrono::steady_clock::now() + kUploadBudget;
+    constexpr int kMinUploadsPerFrame = 4;
+
     std::vector<std::shared_ptr<chunk::ChunkMeshJob>> completed =
         worldRenderer.meshScheduler_.drainCompleted();
     completed.insert(completed.begin(), worldRenderer.pendingMeshUploads_.begin(),
@@ -100,7 +107,7 @@ bool WorldRendererCore::compileChunks(WorldRenderer& worldRenderer, LivingEntity
     deferredUploads.reserve(completed.size());
 
     for (std::shared_ptr<chunk::ChunkMeshJob>& job : completed) {
-        if (uploadCount >= kMaxUploadsPerFrame) {
+        if (uploadCount >= kMinUploadsPerFrame && std::chrono::steady_clock::now() >= uploadDeadline) {
             deferredUploads.push_back(std::move(job));
             continue;
         }
@@ -138,71 +145,44 @@ bool WorldRendererCore::compileChunks(WorldRenderer& worldRenderer, LivingEntity
         worldRenderer.meshScheduler_.enqueue(std::move(job), priority);
     };
 
-    static_assert(pipeline::kDistantRebuildSlots == 2);
     world::DirtyChunkSorter dirtyChunkSorter(camera);
-    chunk::ChunkBuilder* distantQueue[pipeline::kDistantRebuildSlots] = {};
-    std::vector<chunk::ChunkBuilder*> toRebuild;
 
     if (worldRenderer.world != nullptr && worldRenderer.world->hasPendingLightingUpdates()) {
         worldRenderer.world->doLightingUpdates();
     }
 
-    for (chunk::ChunkBuilder* chunk : worldRenderer.dirtyChunks_) {
-        if (chunk == nullptr) {
-            continue;
-        }
-        if (!force) {
-            if (chunk->squaredDistanceTo(camera) > pipeline::kNearChunkRebuildDistSq) {
-                int slot = 0;
-                for (; slot < pipeline::kDistantRebuildSlots; ++slot) {
-                    if (distantQueue[slot] == nullptr
-                        || dirtyChunkSorter.compare(distantQueue[slot], chunk) <= 0) {
-                        continue;
-                    }
-                    break;
-                }
-                if (--slot <= 0) {
-                    continue;
-                }
-                int shiftIndex = slot;
-                while (--shiftIndex != 0) {
-                    distantQueue[shiftIndex - 1] = distantQueue[shiftIndex];
-                }
-                distantQueue[slot] = chunk;
+    // Keep the worker pool saturated instead of mirroring Java's
+    // 2-distant-chunks-per-frame trickle: top the queue up to a few jobs per
+    // worker every frame so mesh throughput is decoupled from the frame rate.
+    // Snapshot copies happen here (main thread), so the budget also bounds the
+    // per-frame snapshot cost.
+    const std::size_t targetInFlight = force
+        ? worldRenderer.dirtyChunks_.size()
+        : static_cast<std::size_t>(worldRenderer.meshScheduler_.workerCount()) * 3;
+    std::size_t inFlight = worldRenderer.meshScheduler_.pendingJobs();
+
+    if (inFlight < targetInFlight && !worldRenderer.dirtyChunks_.empty()) {
+        std::vector<chunk::ChunkBuilder*> candidates(
+            worldRenderer.dirtyChunks_.begin(), worldRenderer.dirtyChunks_.end());
+        // Best (in-frustum, nearest) first.
+        std::sort(candidates.begin(), candidates.end(),
+            [&](chunk::ChunkBuilder* a, chunk::ChunkBuilder* b) {
+                return dirtyChunkSorter.compare(a, b) > 0;
+            });
+        int priority = 0;
+        for (chunk::ChunkBuilder* chunk : candidates) {
+            if (inFlight >= targetInFlight) {
+                break;
+            }
+            if (chunk == nullptr || (force && !chunk->inFrustum)) {
                 continue;
             }
-        } else if (!chunk->inFrustum) {
-            continue;
+            const bool wasIdle = !chunk->meshJobInFlight && chunk->dirty;
+            enqueueMeshJob(chunk, priority++);
+            if (wasIdle) {
+                ++inFlight;
+            }
         }
-        toRebuild.push_back(chunk);
-    }
-
-    if (!toRebuild.empty()) {
-        if (toRebuild.size() > 1) {
-            std::sort(toRebuild.begin(), toRebuild.end(),
-                [&](chunk::ChunkBuilder* a, chunk::ChunkBuilder* b) {
-                    return dirtyChunkSorter.compare(a, b) < 0;
-                });
-        }
-        for (int i = static_cast<int>(toRebuild.size()) - 1; i >= 0; --i) {
-            chunk::ChunkBuilder* chunk = toRebuild[static_cast<std::size_t>(i)];
-            const int priority = -static_cast<int>(chunk->squaredDistanceTo(camera));
-            enqueueMeshJob(chunk, priority);
-        }
-    }
-
-    for (int slot = pipeline::kDistantRebuildSlots - 1; slot >= 0; --slot) {
-        chunk::ChunkBuilder* chunk = distantQueue[slot];
-        if (chunk == nullptr) {
-            continue;
-        }
-        if (!force && !chunk->inFrustum && slot != pipeline::kDistantRebuildSlots - 1) {
-            distantQueue[0] = nullptr;
-            distantQueue[pipeline::kDistantRebuildSlots - 1] = nullptr;
-            break;
-        }
-        const int priority = 100000 + slot;
-        enqueueMeshJob(chunk, priority);
     }
 
     return worldRenderer.dirtyChunks_.empty() && worldRenderer.pendingMeshUploads_.empty()

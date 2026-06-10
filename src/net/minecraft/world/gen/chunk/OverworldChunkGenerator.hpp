@@ -37,6 +37,13 @@ public:
     {
     }
 
+    // Worker-thread generator clones must sample their own seeded BiomeSource;
+    // the world's source has mutable scratch buffers shared with the main thread.
+    void useLocalBiomeSource(bool value) noexcept
+    {
+        useLocalBiomeSource_ = value;
+    }
+
     void setWorld(World* world) noexcept
     {
         world_ = world;
@@ -176,6 +183,7 @@ private:
     }
 
     World* world_ = nullptr;
+    bool useLocalBiomeSource_ = false;
     std::uint64_t seed_ = 0;
     JavaRandom random_;
     JavaRandom constructionRandom_;

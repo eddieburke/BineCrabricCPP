@@ -50,8 +50,6 @@ void IceBlock::onTick(World* world, int x, int y, int z, JavaRandom& /*random*/)
         world->setBlock(x, y, z, Block::WATER->id);
     }
 }
-namespace {
-
 void IceBlock::registerClass()
 {
     Block::ICE = (new IceBlock(79, 67))->setHardness(0.5f)->setOpacity(3)->setSoundGroup(&vanillaGlassSound())->setTranslationKey("ice");
@@ -60,7 +58,6 @@ void IceBlock::registerClass()
 
 
 
-static ::net::minecraft::registry::RegisterBlock<IceBlock> autoReg(79);
-} // namespace
+namespace {static ::net::minecraft::registry::RegisterBlock<IceBlock> autoReg(79);} // namespace
 } // namespace net::minecraft::block
 

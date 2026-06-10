@@ -10,11 +10,15 @@ namespace net::minecraft::map {
 class MapState;
 }
 
+namespace net::minecraft::recipe {
+class CraftingRecipeManager;
+} // namespace net::minecraft::recipe
+
 namespace net::minecraft::item {
 
 class MapItem : public NetworkSyncedItem {
-public:
-    static void registerClass();
+public:    static void registerClass();
+    static void registerRecipes(recipe::CraftingRecipeManager& recipeManager);
     explicit MapItem(int rawId) : NetworkSyncedItem(rawId)
     {
         setMaxCount(1);

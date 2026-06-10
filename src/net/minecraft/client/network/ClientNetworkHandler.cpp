@@ -924,10 +924,10 @@ void ClientNetworkHandler::onGameStateChange(const GameStateChangeS2CPacket& pac
 
 void ClientNetworkHandler::onMapUpdate(const MapUpdateS2CPacket& packet)
 {
-    if (minecraft == nullptr || minecraft->world == nullptr || Item::MAP == nullptr) {
+    if (minecraft == nullptr || minecraft->world == nullptr || Item::byRawId(102) == nullptr) {
         return;
     }
-    if (packet.itemRawId == Item::MAP->id) {
+    if (packet.itemRawId == Item::byRawId(102)->id) {
         if (map::MapState* mapState =
                 item::MapItem::getMapState(static_cast<std::int16_t>(packet.id), minecraft->world)) {
             mapState->readUpdateData(packet.updateData);

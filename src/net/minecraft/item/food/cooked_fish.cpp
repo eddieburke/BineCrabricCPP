@@ -1,0 +1,38 @@
+#include "net/minecraft/item/food/cooked_fish.hpp"
+
+#include "net/minecraft/item/Item.hpp"
+#include "net/minecraft/item/ItemRegistrar.hpp"
+#include "net/minecraft/recipe/CraftingRecipeManager.hpp"
+
+#include "net/minecraft/item/misc/stick.hpp"
+#include "net/minecraft/recipe/SmeltingRecipeManager.hpp"
+#include "net/minecraft/block/Block.hpp"
+
+namespace net::minecraft::item {
+
+CookedFishItem::CookedFishItem() : FoodItem(94, 5, false) {}
+
+void CookedFishItem::registerClass()
+{
+    static CookedFishItem instance;
+    instance.setTexturePosition(10, 5);
+    instance.setTranslationKey("fishCooked");
+    Item::registerInItemsArray(&instance);
+}
+
+void CookedFishItem::registerSmeltingRecipes()
+{
+    Item* raw = Item::byRawId(93);
+    Item* cooked = Item::byRawId(94);
+    if (raw != nullptr && cooked != nullptr) {
+        recipe::SmeltingRecipeManager::instance().addRecipe(raw->id, ItemStack(cooked));
+    }
+}
+
+void CookedFishItem::registerRecipes(recipe::CraftingRecipeManager& recipeManager)
+{
+    (void)recipeManager;
+}
+
+static registry::RegisterItem<CookedFishItem> s_itemReg(94);
+} // namespace net::minecraft::item

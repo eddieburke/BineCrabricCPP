@@ -3,6 +3,7 @@
 #include "net/minecraft/block/LogBlock.hpp"
 
 #include "net/minecraft/block/Block.hpp"
+#include "net/minecraft/item/LogBlockItem.hpp"
 #include "net/minecraft/world/World.hpp"
 
 namespace net::minecraft::block {
@@ -59,17 +60,19 @@ void LogBlock::onBreak(World* world, int x, int y, int z)
         }
     }
 }
-namespace {
-
 void LogBlock::registerClass()
 {
     Block::LOG = (new LogBlock(17))->setHardness(2.0f)->setSoundGroup(&vanillaWoodSound())->setTranslationKey("log")->ignoreMetaUpdates();
 }
 
+void LogBlock::registerBlockItems()
+{
+    (new item::LogBlockItem(17 - 256))->setTranslationKey("log");
+}
 
 
 
-static ::net::minecraft::registry::RegisterBlock<LogBlock> autoReg(17);
-} // namespace
+
+namespace {static ::net::minecraft::registry::RegisterBlock<LogBlock> autoReg(17);} // namespace
 } // namespace net::minecraft::block
 

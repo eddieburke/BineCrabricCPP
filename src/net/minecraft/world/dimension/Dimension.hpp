@@ -32,7 +32,7 @@ public:
     [[nodiscard]] virtual std::unique_ptr<ChunkSource> createChunkGenerator();
 
     // Create a fresh generator with the given seed for a worker thread.
-    [[nodiscard]] virtual std::unique_ptr<ChunkSource> createChunkGeneratorFromSeed(std::uint64_t seed) = 0;
+    [[nodiscard]] virtual std::unique_ptr<ChunkSource> createChunkGeneratorFromSeed(std::uint64_t seed);
 
     // Save subfolder for this dimension's region/chunk files, relative to the world
     // root. Overworld (id 0) lives in the root (""); others use "DIM<id>" — the

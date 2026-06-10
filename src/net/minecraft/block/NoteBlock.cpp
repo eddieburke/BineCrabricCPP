@@ -6,6 +6,8 @@
 #include "net/minecraft/block/entity/NoteBlockBlockEntity.hpp"
 #include "net/minecraft/entity/player/PlayerEntity.hpp"
 #include "net/minecraft/world/World.hpp"
+#include "net/minecraft/recipe/CraftingRecipeManager.hpp"
+#include "net/minecraft/item/Item.hpp"
 
 namespace net::minecraft::block {
 
@@ -90,17 +92,20 @@ void NoteBlock::onBlockAction(World* world, int x, int y, int z, int data1, int 
     world->addParticle("note", static_cast<double>(x) + 0.5, static_cast<double>(y) + 1.2, static_cast<double>(z) + 0.5,
         static_cast<double>(data2) / 24.0, 0.0, 0.0);
 }
-namespace {
-
 void NoteBlock::registerClass()
 {
     Block::NOTE_BLOCK = (new NoteBlock(25))->setHardness(0.8f)->setTranslationKey("musicBlock")->ignoreMetaUpdates();
+}
+void NoteBlock::registerRecipes(recipe::CraftingRecipeManager& recipeManager)
+{
+    recipeManager.addShapedRecipe(ItemStack(Block::NOTE_BLOCK),
+        {std::string("###"), std::string("#X#"), std::string("###"), '#', Block::PLANKS, 'X', Item::byRawId(75)});
 }
 
 
 
 
-static ::net::minecraft::registry::RegisterBlock<NoteBlock> autoReg(25);
-} // namespace
+
+namespace {static ::net::minecraft::registry::RegisterBlock<NoteBlock> autoReg(25);} // namespace
 } // namespace net::minecraft::block
 

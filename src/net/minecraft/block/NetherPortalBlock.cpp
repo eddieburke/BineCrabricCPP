@@ -193,8 +193,6 @@ void NetherPortalBlock::randomDisplayTick(
         world->addParticle("portal", px, py, pz, vx, vy, vz);
     }
 }
-namespace {
-
 void NetherPortalBlock::registerClass()
 {
     Block::NETHER_PORTAL = (new NetherPortalBlock(90, 14))->setHardness(-1.0f)->setSoundGroup(&vanillaGlassSound())->setLuminance(0.75f)->setTranslationKey("portal");
@@ -203,7 +201,6 @@ void NetherPortalBlock::registerClass()
 
 
 
-static ::net::minecraft::registry::RegisterBlock<NetherPortalBlock> autoReg(90);
-} // namespace
+namespace {static ::net::minecraft::registry::RegisterBlock<NetherPortalBlock> autoReg(90);} // namespace
 } // namespace net::minecraft::block
 

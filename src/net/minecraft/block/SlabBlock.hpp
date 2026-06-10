@@ -5,11 +5,14 @@
 #include <array>
 #include <string_view>
 
+namespace net::minecraft::recipe { class CraftingRecipeManager; }
 namespace net::minecraft::block {
 
 class SlabBlock : public Block {
+    static void registerRecipes(recipe::CraftingRecipeManager& recipeManager);
 public:
     static void registerClass();
+    static void registerBlockItems();
     static constexpr std::array<std::string_view, 4> names {"stone", "sand", "wood", "cobble"};
 
     bool doubleSlab = false;

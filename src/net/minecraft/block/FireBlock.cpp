@@ -309,8 +309,6 @@ void FireBlock::randomDisplayTick(
         }
     }
 }
-namespace {
-
 void FireBlock::registerClass()
 {
     Block::FIRE = (new FireBlock(51, 31))->setHardness(0.0f)->setLuminance(1.0f)->setSoundGroup(&vanillaWoodSound())->setTranslationKey("fire")->disableTrackingStatistics()->ignoreMetaUpdates();
@@ -319,7 +317,6 @@ void FireBlock::registerClass()
 
 
 
-static ::net::minecraft::registry::RegisterBlock<FireBlock> autoReg(51);
-} // namespace
+namespace {static ::net::minecraft::registry::RegisterBlock<FireBlock> autoReg(51);} // namespace
 } // namespace net::minecraft::block
 

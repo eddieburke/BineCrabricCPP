@@ -123,7 +123,7 @@ void FishingBobberEntity::tick()
     }
     if (!world->isRemote() && owner != nullptr) {
         const ItemStack hand = owner->getHand();
-        const int rodId = Item::FISHING_ROD != nullptr ? Item::FISHING_ROD->id : 346;
+        const int rodId = Item::byRawId(90) != nullptr ? Item::byRawId(90)->id : 346;
         if (hand.empty() || hand.itemId != rodId || getSquaredDistance(*owner) > 1024.0) {
             markDead();
             owner->fishHook = nullptr;
@@ -306,7 +306,7 @@ int FishingBobberEntity::use()
         hookedEntity->velocityZ += dz * pull;
         result = 3;
     } else if (hookCountdown > 0 && world != nullptr && owner != nullptr) {
-        const int fishId = Item::RAW_FISH != nullptr ? Item::RAW_FISH->id : 349;
+        const int fishId = Item::byRawId(93) != nullptr ? Item::byRawId(93)->id : 349;
         auto item = std::make_unique<ItemEntity>(world, x, y, z, ItemStack(fishId, 1, 0));
         const double dx = owner->x - x;
         const double dy = owner->y - y;

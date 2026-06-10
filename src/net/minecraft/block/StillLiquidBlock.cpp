@@ -71,8 +71,6 @@ void StillLiquidBlock::onTick(World* world, int x, int y, int z, JavaRandom& ran
         return;
     }
 }
-namespace {
-
 void StillLiquidBlock::registerClass()
 {
     namespace mat = material;
@@ -83,7 +81,6 @@ void StillLiquidBlock::registerClass()
 
 
 
-static ::net::minecraft::registry::RegisterBlock<StillLiquidBlock> autoReg(9);
-} // namespace
+namespace {static ::net::minecraft::registry::RegisterBlock<StillLiquidBlock> autoReg(9);} // namespace
 } // namespace net::minecraft::block
 

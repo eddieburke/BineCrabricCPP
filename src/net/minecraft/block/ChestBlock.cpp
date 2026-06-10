@@ -8,6 +8,8 @@
 #include "net/minecraft/entity/player/PlayerEntity.hpp"
 #include "net/minecraft/item/ItemStack.hpp"
 #include "net/minecraft/world/World.hpp"
+#include "net/minecraft/recipe/CraftingRecipeManager.hpp"
+#include "net/minecraft/item/Item.hpp"
 
 namespace net::minecraft::block {
 
@@ -210,17 +212,20 @@ void ChestBlock::onBreak(World* world, int x, int y, int z)
     }
     BlockWithEntity::onBreak(world, x, y, z);
 }
-namespace {
-
 void ChestBlock::registerClass()
 {
     Block::CHEST = (new ChestBlock(54))->setHardness(2.5f)->setSoundGroup(&vanillaWoodSound())->setTranslationKey("chest")->ignoreMetaUpdates();
+}
+void ChestBlock::registerRecipes(recipe::CraftingRecipeManager& recipeManager)
+{
+    recipeManager.addShapedRecipe(ItemStack(Block::CHEST),
+        {std::string("###"), std::string("# #"), std::string("###"), '#', Block::PLANKS});
 }
 
 
 
 
-static ::net::minecraft::registry::RegisterBlock<ChestBlock> autoReg(54);
-} // namespace
+
+namespace {static ::net::minecraft::registry::RegisterBlock<ChestBlock> autoReg(54);} // namespace
 } // namespace net::minecraft::block
 

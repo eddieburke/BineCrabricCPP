@@ -1,0 +1,36 @@
+#include "net/minecraft/item/armor/golden_boots.hpp"
+
+#include "net/minecraft/item/Item.hpp"
+#include "net/minecraft/item/ItemRegistrar.hpp"
+#include "net/minecraft/recipe/CraftingRecipeManager.hpp"
+
+#include <string>
+
+#include "net/minecraft/item/misc/stick.hpp"
+#include "net/minecraft/block/Block.hpp"
+#include "net/minecraft/item/misc/leather.hpp"
+#include "net/minecraft/item/misc/iron_ingot.hpp"
+#include "net/minecraft/item/misc/diamond.hpp"
+#include "net/minecraft/item/misc/gold_ingot.hpp"
+
+namespace net::minecraft::item {
+
+GoldenBootsItem::GoldenBootsItem() : ArmorItem(61, 1, 4, 3) {}
+
+void GoldenBootsItem::registerClass()
+{
+    static GoldenBootsItem instance;
+    instance.setTexturePosition(4, 3);
+    instance.setTranslationKey("bootsGold");
+    Item::registerInItemsArray(&instance);
+
+}
+
+void GoldenBootsItem::registerRecipes(recipe::CraftingRecipeManager& recipeManager)
+{
+    recipeManager.addShapedRecipe(ItemStack(Item::byRawId(61)),
+        {std::string("X X"), std::string("X X"), 'X', Item::byRawId(10)});
+}
+
+static registry::RegisterItem<GoldenBootsItem> s_itemReg(61);
+} // namespace net::minecraft::item

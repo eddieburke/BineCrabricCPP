@@ -4,17 +4,15 @@
 #include "net/minecraft/block/material/Material.hpp"
 
 namespace net::minecraft::block {
-namespace {
 
-void MossyCobblestoneBlock::registerClass()
-{
-    namespace mat = material;
-    Block::MOSSY_COBBLESTONE = (new Block(48, 36, mat::Material::STONE))->setHardness(2.0f)->setResistance(10.0f)->setSoundGroup(&vanillaStoneSound())->setTranslationKey("stoneMoss");
-}
+struct MossyCobblestoneBlockRegistrar {
+    static void registerClass()
+    {
+        namespace mat = material;
+        Block::MOSSY_COBBLESTONE = (new Block(48, 36, mat::Material::STONE))->setHardness(2.0f)->setResistance(10.0f)->setSoundGroup(&vanillaStoneSound())->setTranslationKey("stoneMoss");
+    }
+};
 
+static registry::RegisterCustom<MossyCobblestoneBlockRegistrar> s_reg(registry::kBlockRegistrarBase + 48);
 
-
-
-static ::net::minecraft::registry::RegisterBlock<MossyCobblestoneBlock> autoReg(48);
-} // namespace
 } // namespace net::minecraft::block

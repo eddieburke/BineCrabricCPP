@@ -2,14 +2,17 @@
 
 #include "net/minecraft/item/ArmorItem.hpp"
 
+namespace net::minecraft::recipe {
+class CraftingRecipeManager;
+} // namespace net::minecraft::recipe
+
 namespace net::minecraft::item {
 
 class ChainChestplateItem : public ArmorItem {
-public:
-    static constexpr int ID = 303;
-    ChainChestplateItem() : ArmorItem(47, 1, 1, 1) {
-        setTexturePosition(1, 1)->setTranslationKey("chestplateChain");
-    }
+public:    static void registerClass();
+    static void registerRecipes(recipe::CraftingRecipeManager& recipeManager);
+
+    ChainChestplateItem();
 };
 
 } // namespace net::minecraft::item

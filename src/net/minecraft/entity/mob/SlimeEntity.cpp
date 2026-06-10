@@ -145,7 +145,7 @@ bool SlimeEntity::canSpawn() const
 int SlimeEntity::getDroppedItemId() const
 {
     if (getSize() == 1) {
-        return Item::SLIMEBALL != nullptr ? Item::SLIMEBALL->id : 341;
+        return Item::byRawId(85) != nullptr ? Item::byRawId(85)->id : 341;
     }
     return 0;
 }

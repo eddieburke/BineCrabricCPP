@@ -3,11 +3,14 @@
 #include "net/minecraft/block/Block.hpp"
 #include "net/minecraft/block/material/Material.hpp"
 
+namespace net::minecraft::recipe { class CraftingRecipeManager; }
 namespace net::minecraft::block {
 
 class WoolBlock : public Block {
+    static void registerRecipes(recipe::CraftingRecipeManager& recipeManager);
 public:
     static void registerClass();
+    static void registerBlockItems();
     WoolBlock() : Block(35, 64, material::Material::WOOL) {}
 
     [[nodiscard]] int getTexture(int /*side*/, int meta) const override

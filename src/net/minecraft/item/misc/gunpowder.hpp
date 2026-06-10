@@ -2,14 +2,17 @@
 
 #include "net/minecraft/item/Item.hpp"
 
+namespace net::minecraft::recipe {
+class CraftingRecipeManager;
+} // namespace net::minecraft::recipe
+
 namespace net::minecraft::item {
 
 class GunpowderItem : public Item {
-public:
-    static constexpr int ID = 289;
-    GunpowderItem() : Item(33) {
-        setTexturePosition(8, 2)->setTranslationKey("sulphur");
-    }
+public:    static void registerClass();
+    static void registerRecipes(recipe::CraftingRecipeManager& recipeManager);
+
+    GunpowderItem();
 };
 
 } // namespace net::minecraft::item

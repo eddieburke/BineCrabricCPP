@@ -4,7 +4,7 @@
 //
 // Item participates in a dependency cycle (Item <-> Block <-> ItemStack <->
 // World/Entity). The base class only needs forward declarations; concrete item
-// Vanilla item statics are registered in Item.cpp (mirrors Item.java static fields).
+// Vanilla items register via per-TU RegisterItem during Registry::bootstrap().
 //
 // ITEMS is a flat array of owning raw pointers, mirroring Java's static Item[].
 // Like the Java statics these are never freed (process-lifetime singletons).
@@ -24,128 +24,36 @@ namespace net::minecraft {
 class World;
 class ItemStack;
 
+enum class RegistrationMode { Immediate, Deferred };
+
 class Item {
 public:
     static constexpr int ITEM_COUNT = 32000;
     static std::array<Item*, ITEM_COUNT> ITEMS;
     static JavaRandom random;
 
-    // Java's named static item instances. Populated from ITEMS[id] once
-    // registerVanillaItems() has run (see Item.cpp).
-    static Item* IRON_SHOVEL;
-    static Item* IRON_PICKAXE;
-    static Item* IRON_AXE;
-    static Item* FLINT_AND_STEEL;
-    static Item* APPLE;
-    static Item* BOW;
-    static Item* ARROW;
-    static Item* COAL;
-    static Item* DIAMOND;
-    static Item* IRON_INGOT;
-    static Item* GOLD_INGOT;
-    static Item* IRON_SWORD;
-    static Item* WOODEN_SWORD;
-    static Item* WOODEN_SHOVEL;
-    static Item* WOODEN_PICKAXE;
-    static Item* WOODEN_AXE;
-    static Item* STONE_SWORD;
-    static Item* STONE_SHOVEL;
-    static Item* STONE_PICKAXE;
-    static Item* STONE_AXE;
-    static Item* DIAMOND_SWORD;
-    static Item* DIAMOND_SHOVEL;
-    static Item* DIAMOND_PICKAXE;
-    static Item* DIAMOND_AXE;
-    static Item* STICK;
-    static Item* BOWL;
-    static Item* MUSHROOM_STEW;
-    static Item* GOLDEN_SWORD;
-    static Item* GOLDEN_SHOVEL;
-    static Item* GOLDEN_PICKAXE;
-    static Item* GOLDEN_AXE;
-    static Item* STRING;
-    static Item* FEATHER;
-    static Item* GUNPOWDER;
-    static Item* WOODEN_HOE;
-    static Item* STONE_HOE;
-    static Item* IRON_HOE;
-    static Item* DIAMOND_HOE;
-    static Item* GOLDEN_HOE;
-    static Item* SEEDS;
-    static Item* WHEAT;
-    static Item* BREAD;
-    static Item* LEATHER_HELMET;
-    static Item* LEATHER_CHESTPLATE;
-    static Item* LEATHER_LEGGINGS;
-    static Item* LEATHER_BOOTS;
-    static Item* CHAIN_HELMET;
-    static Item* CHAIN_CHESTPLATE;
-    static Item* CHAIN_LEGGINGS;
-    static Item* CHAIN_BOOTS;
-    static Item* IRON_HELMET;
-    static Item* IRON_CHESTPLATE;
-    static Item* IRON_LEGGINGS;
-    static Item* IRON_BOOTS;
-    static Item* DIAMOND_HELMET;
-    static Item* DIAMOND_CHESTPLATE;
-    static Item* DIAMOND_LEGGINGS;
-    static Item* DIAMOND_BOOTS;
-    static Item* GOLDEN_HELMET;
-    static Item* GOLDEN_CHESTPLATE;
-    static Item* GOLDEN_LEGGINGS;
-    static Item* GOLDEN_BOOTS;
-    static Item* FLINT;
-    static Item* RAW_PORKCHOP;
-    static Item* COOKED_PORKCHOP;
-    static Item* PAINTING;
-    static Item* GOLDEN_APPLE;
-    static Item* SIGN;
-    static Item* WOODEN_DOOR;
-    static Item* BUCKET;
-    static Item* WATER_BUCKET;
-    static Item* LAVA_BUCKET;
-    static Item* MINECART;
-    static Item* SADDLE;
-    static Item* IRON_DOOR;
-    static Item* REDSTONE;
-    static Item* SNOWBALL;
-    static Item* BOAT;
-    static Item* LEATHER;
-    static Item* MILK_BUCKET;
-    static Item* BRICK;
-    static Item* CLAY;
-    static Item* SUGAR_CANE;
-    static Item* PAPER;
-    static Item* BOOK;
-    static Item* SLIMEBALL;
-    static Item* CHEST_MINECART;
-    static Item* FURNACE_MINECART;
-    static Item* EGG;
-    static Item* COMPASS;
-    static Item* FISHING_ROD;
-    static Item* CLOCK;
-    static Item* GLOWSTONE_DUST;
-    static Item* RAW_FISH;
-    static Item* COOKED_FISH;
-    static Item* DYE;
-    static Item* BONE;
-    static Item* SUGAR;
-    static Item* CAKE;
-    static Item* BED;
-    static Item* REPEATER;
-    static Item* COOKIE;
-    static Item* MAP;
-    static Item* SHEARS;
-    static Item* RECORD_THIRTEEN;
-    static Item* RECORD_CAT;
+    [[nodiscard]] static Item* byRawId(int rawId)
+    {
+        return ITEMS[static_cast<std::size_t>(256 + rawId)];
+    }
+
+    [[nodiscard]] static Item* byId(int id)
+    {
+        return ITEMS[static_cast<std::size_t>(id)];
+    }
 
     const int id;
 
-    explicit Item(int rawId)
+    explicit Item(int rawId, RegistrationMode mode = RegistrationMode::Immediate)
         : id(256 + rawId)
     {
-        ITEMS[static_cast<std::size_t>(256 + rawId)] = this;
+        if (mode == RegistrationMode::Immediate) {
+            registerInItemsArray(this);
+        }
     }
+
+    // Leaf registerClass paths that construct through Deferred bases must call this.
+    static void registerInItemsArray(Item* item);
 
     virtual ~Item() = default;
 

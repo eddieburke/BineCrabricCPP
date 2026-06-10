@@ -1,6 +1,7 @@
 #pragma once
 
 #include "net/minecraft/entity/mob/MonsterEntity.hpp"
+#include "net/minecraft/item/BowItem.hpp"
 #include "net/minecraft/item/Item.hpp"
 #include "net/minecraft/item/ItemStack.hpp"
 
@@ -19,7 +20,7 @@ public:
 
     [[nodiscard]] ItemStack getHeldItem() const override
     {
-        return ItemStack(Item::BOW, 1);
+        return ItemStack(Item::byRawId(5), 1);
     }
 
 protected:

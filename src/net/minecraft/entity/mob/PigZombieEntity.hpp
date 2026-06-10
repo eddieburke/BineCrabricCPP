@@ -26,7 +26,7 @@ public:
 
     [[nodiscard]] ItemStack getHeldItem() const override
     {
-        return ItemStack(Item::GOLDEN_SWORD, 1);
+        return ItemStack(Item::byRawId(27), 1);
     }
 
 protected:

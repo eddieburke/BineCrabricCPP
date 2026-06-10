@@ -13,9 +13,10 @@ class World;
 // Wraps OverworldChunkGenerator as a ChunkSource (Java OverworldChunkGenerator implements ChunkSource).
 class OverworldGeneratorChunkSource : public ChunkSource {
 public:
-    OverworldGeneratorChunkSource(World* world, std::uint64_t seed)
+    OverworldGeneratorChunkSource(World* world, std::uint64_t seed, bool useLocalBiomeSource = false)
         : world_(world), generator_(world, seed)
     {
+        generator_.useLocalBiomeSource(useLocalBiomeSource);
     }
 
     [[nodiscard]] bool isChunkLoaded(int /*chunkX*/, int /*chunkZ*/) const override

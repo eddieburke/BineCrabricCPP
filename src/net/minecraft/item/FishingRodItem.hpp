@@ -7,11 +7,15 @@ class World;
 class ItemStack;
 } // namespace net::minecraft
 
+namespace net::minecraft::recipe {
+class CraftingRecipeManager;
+} // namespace net::minecraft::recipe
+
 namespace net::minecraft::item {
 
 class FishingRodItem : public Item {
-public:
-    static void registerClass();
+public:    static void registerClass();
+    static void registerRecipes(recipe::CraftingRecipeManager& recipeManager);
     explicit FishingRodItem(int rawId);
     [[nodiscard]] bool isHandheldRod() const override;
     ItemStack* use(ItemStack* stack, World* world, PlayerEntity* user) override;

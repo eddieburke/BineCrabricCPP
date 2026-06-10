@@ -264,8 +264,6 @@ void FlowingLiquidBlock::onTick(World* world, int x, int y, int z, JavaRandom& r
         spreadTo(world, x, y, z + 1, spreadDepth);
     }
 }
-namespace {
-
 void FlowingLiquidBlock::registerClass()
 {
     namespace mat = material;
@@ -276,7 +274,6 @@ void FlowingLiquidBlock::registerClass()
 
 
 
-static ::net::minecraft::registry::RegisterBlock<FlowingLiquidBlock> autoReg(8);
-} // namespace
+namespace {static ::net::minecraft::registry::RegisterBlock<FlowingLiquidBlock> autoReg(8);} // namespace
 } // namespace net::minecraft::block
 

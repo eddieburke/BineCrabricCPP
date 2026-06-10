@@ -1,29 +1,37 @@
 cmake_minimum_required(VERSION 3.20)
 
-project(minecraft_native VERSION 0.1.0 LANGUAGES CXX C)
+project(minecraft_native VERSION 0.1.0 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 enable_testing()
 
-find_program(CCACHE_PROGRAM ccache)
-if (CCACHE_PROGRAM)
+if (NOT DEFINED MINECRAFT_TOOLCHAIN_ROOT)
+    set(MINECRAFT_TOOLCHAIN_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/toolchain/mingw64")
+endif()
+if (NOT IS_ABSOLUTE "${MINECRAFT_TOOLCHAIN_ROOT}")
+    set(MINECRAFT_TOOLCHAIN_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/${MINECRAFT_TOOLCHAIN_ROOT}")
+endif()
+file(TO_CMAKE_PATH "${MINECRAFT_TOOLCHAIN_ROOT}" MINECRAFT_TOOLCHAIN_ROOT)
+
+find_program(CCACHE_PROGRAM ccache
+    PATHS "${MINECRAFT_TOOLCHAIN_ROOT}/bin"
+    NO_DEFAULT_PATH
+)
+if (CCACHE_PROGRAM AND CMAKE_INTERPROCEDURAL_OPTIMIZATION)
+    message(STATUS "ccache disabled (incompatible with LTO)")
+elseif (CCACHE_PROGRAM)
     set(CMAKE_CXX_COMPILER_LAUNCHER "${CCACHE_PROGRAM}")
     message(STATUS "Using ccache: ${CCACHE_PROGRAM}")
 endif()
 
 file(TO_CMAKE_PATH "${CMAKE_CURRENT_SOURCE_DIR}" MINECRAFT_NATIVE_SOURCE_DIR)
 file(TO_CMAKE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/resources" MINECRAFT_NATIVE_RESOURCE_DIR)
-set(MINECRAFT_ZLIB_ROOT "C:/msys64/mingw64")
 
 file(GLOB_RECURSE MINECRAFT_PORT_SOURCES CONFIGURE_DEPENDS
     "${CMAKE_CURRENT_SOURCE_DIR}/src/net/minecraft/*.cpp"
 )
-set(MINECRAFT_VORBIS_DECODER_SOURCE
-    "${CMAKE_CURRENT_SOURCE_DIR}/src/net/minecraft/client/platform/audio/decode/VorbisDecoder.cpp"
-)
-list(REMOVE_ITEM MINECRAFT_PORT_SOURCES "${MINECRAFT_VORBIS_DECODER_SOURCE}")
 
 file(GLOB SEEDFINDER_GUI_SOURCES CONFIGURE_DEPENDS
     "${CMAKE_CURRENT_SOURCE_DIR}/src/seedfinder/gui/*.cpp"
@@ -39,29 +47,25 @@ function(minecraft_configure_target target)
         "${CMAKE_CURRENT_SOURCE_DIR}/src"
         "${CMAKE_CURRENT_SOURCE_DIR}/third_party"
         "${CMAKE_CURRENT_SOURCE_DIR}"
+        "${MINECRAFT_TOOLCHAIN_ROOT}/include"
     )
     target_compile_definitions(${target} PRIVATE
         MINECRAFT_NATIVE_SOURCE_DIR="${MINECRAFT_NATIVE_SOURCE_DIR}"
         MINECRAFT_NATIVE_RESOURCE_DIR="${MINECRAFT_NATIVE_RESOURCE_DIR}"
     )
-    if (MSVC)
-        target_compile_options(${target} PRIVATE /W4 /permissive-)
-        target_compile_definitions(${target} PRIVATE _SILENCE_CXX17_CODECVT_HEADER_DEPRECATION_WARNING)
-    else()
-        target_compile_options(${target} PRIVATE -Wall -Wextra -Wpedantic -Wno-deprecated-declarations)
-    endif()
+    target_compile_options(${target} PRIVATE -Wall -Wextra -Wpedantic -Wno-deprecated-declarations)
 endfunction()
 
 find_library(MINECRAFT_ZLIB_LIBRARY
     NAMES z libz
-    PATHS "${MINECRAFT_ZLIB_ROOT}/lib"
+    PATHS "${MINECRAFT_TOOLCHAIN_ROOT}/lib"
     NO_DEFAULT_PATH
 )
 
 function(minecraft_link_zlib target)
     if (MINECRAFT_ZLIB_LIBRARY)
         target_link_libraries(${target} PRIVATE "${MINECRAFT_ZLIB_LIBRARY}")
-        set(MINECRAFT_ZLIB_DLL "C:/msys64/mingw64/bin/zlib1.dll")
+        set(MINECRAFT_ZLIB_DLL "${MINECRAFT_TOOLCHAIN_ROOT}/bin/zlib1.dll")
         if (EXISTS "${MINECRAFT_ZLIB_DLL}")
             add_custom_command(TARGET ${target} POST_BUILD
                 COMMAND ${CMAKE_COMMAND} -E copy_if_different
@@ -74,59 +78,34 @@ function(minecraft_link_zlib target)
     endif()
 endfunction()
 
-set(MINECRAFT_MSYS64_ROOT "C:/msys64/mingw64")
-
 find_library(MINECRAFT_VORBISFILE
     NAMES vorbisfile libvorbisfile
-    PATHS "${MINECRAFT_MSYS64_ROOT}/lib"
+    PATHS "${MINECRAFT_TOOLCHAIN_ROOT}/lib"
     NO_DEFAULT_PATH
 )
 find_library(MINECRAFT_VORBIS
     NAMES vorbis libvorbis
-    PATHS "${MINECRAFT_MSYS64_ROOT}/lib"
+    PATHS "${MINECRAFT_TOOLCHAIN_ROOT}/lib"
     NO_DEFAULT_PATH
 )
 find_library(MINECRAFT_OGG
     NAMES ogg libogg
-    PATHS "${MINECRAFT_MSYS64_ROOT}/lib"
+    PATHS "${MINECRAFT_TOOLCHAIN_ROOT}/lib"
     NO_DEFAULT_PATH
 )
 
+set(MINECRAFT_HAS_VORBIS_LIBS FALSE)
 if (MINECRAFT_VORBISFILE AND MINECRAFT_VORBIS AND MINECRAFT_OGG)
-    set(MINECRAFT_MSYS2_GXX "${MINECRAFT_MSYS64_ROOT}/bin/g++.exe")
-    set(MINECRAFT_VORBIS_DECODER_OBJ
-        "${CMAKE_CURRENT_BINARY_DIR}/minecraft_audio_vorbis/VorbisDecoder.cpp.obj"
-    )
-    file(MAKE_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/minecraft_audio_vorbis")
-    add_custom_command(
-        OUTPUT "${MINECRAFT_VORBIS_DECODER_OBJ}"
-        COMMAND "${MINECRAFT_MSYS2_GXX}"
-            -std=c++20
-            -DMINECRAFT_HAS_VORBIS=1
-            -I"${CMAKE_CURRENT_SOURCE_DIR}/src"
-            -I"${CMAKE_CURRENT_SOURCE_DIR}/third_party"
-            -I"${CMAKE_CURRENT_SOURCE_DIR}"
-            -I"${MINECRAFT_MSYS64_ROOT}/include"
-            -c "${MINECRAFT_VORBIS_DECODER_SOURCE}"
-            -o "${MINECRAFT_VORBIS_DECODER_OBJ}"
-        DEPENDS "${MINECRAFT_VORBIS_DECODER_SOURCE}"
-        COMMENT "Building VorbisDecoder with MSYS2 g++"
-    )
-    add_library(minecraft_audio_vorbis STATIC "${MINECRAFT_VORBIS_DECODER_OBJ}")
-    set_target_properties(minecraft_audio_vorbis PROPERTIES LINKER_LANGUAGE CXX)
-    target_link_libraries(minecraft_audio_vorbis PRIVATE
-        "${MINECRAFT_VORBISFILE}"
-        "${MINECRAFT_VORBIS}"
-        "${MINECRAFT_OGG}"
-    )
-    set(MINECRAFT_HAS_VORBIS_TARGET minecraft_audio_vorbis)
+    set(MINECRAFT_HAS_VORBIS_LIBS TRUE)
+    message(STATUS "Vorbis audio enabled from ${MINECRAFT_TOOLCHAIN_ROOT}")
 else()
-    message(WARNING "libvorbis not found under ${MINECRAFT_MSYS64_ROOT}; OGG/.mus playback disabled")
+    message(WARNING "libvorbis not found under ${MINECRAFT_TOOLCHAIN_ROOT}; OGG/.mus playback disabled")
 endif()
 
+set(MINECRAFT_MINGW_SYSROOT_LIB "${MINECRAFT_TOOLCHAIN_ROOT}/x86_64-w64-mingw32/lib")
 find_library(MINECRAFT_XAUDIO2
-    NAMES xaudio2_8 xaudio2
-    PATHS "${MINECRAFT_MSYS64_ROOT}/lib"
+    NAMES xaudio2_9 xaudio2_8 xaudio2
+    PATHS "${MINECRAFT_MINGW_SYSROOT_LIB}"
     NO_DEFAULT_PATH
 )
 
@@ -136,15 +115,19 @@ function(minecraft_link_audio target)
         if (MINECRAFT_XAUDIO2)
             target_link_libraries(${target} PRIVATE "${MINECRAFT_XAUDIO2}")
         else()
-            target_link_libraries(${target} PRIVATE xaudio2)
+            message(WARNING "XAudio2 import library not found under ${MINECRAFT_MINGW_SYSROOT_LIB}")
         endif()
     endif()
-    if (MINECRAFT_HAS_VORBIS_TARGET)
-        target_link_libraries(${target} PRIVATE "${MINECRAFT_HAS_VORBIS_TARGET}")
+    if (MINECRAFT_HAS_VORBIS_LIBS)
+        target_link_libraries(${target} PRIVATE
+            "${MINECRAFT_VORBISFILE}"
+            "${MINECRAFT_VORBIS}"
+            "${MINECRAFT_OGG}"
+        )
         target_compile_definitions(${target} PRIVATE MINECRAFT_HAS_VORBIS=1)
         if (WIN32)
             foreach(_dll IN ITEMS libogg-0.dll libvorbis-0.dll libvorbisfile-3.dll)
-                set(_dll_path "${MINECRAFT_MSYS64_ROOT}/bin/${_dll}")
+                set(_dll_path "${MINECRAFT_TOOLCHAIN_ROOT}/bin/${_dll}")
                 if (EXISTS "${_dll_path}")
                     add_custom_command(TARGET ${target} POST_BUILD
                         COMMAND ${CMAKE_COMMAND} -E copy_if_different
@@ -168,8 +151,6 @@ minecraft_link_zlib(minecraft_native)
 minecraft_link_audio(minecraft_native)
 if (WIN32)
     target_link_libraries(minecraft_native PRIVATE ws2_32 winhttp gdiplus gdi32 user32 opengl32 glu32)
-endif()
-if (NOT MSVC)
     target_link_options(minecraft_native PRIVATE -static -static-libgcc -static-libstdc++)
 endif()
 
@@ -184,8 +165,6 @@ minecraft_link_zlib(block_registry_properties_test)
 minecraft_link_audio(block_registry_properties_test)
 if (WIN32)
     target_link_libraries(block_registry_properties_test PRIVATE ws2_32 winhttp gdiplus gdi32 user32 opengl32 glu32)
-endif()
-if (NOT MSVC)
     target_link_options(block_registry_properties_test PRIVATE -static -static-libgcc -static-libstdc++)
 endif()
 add_test(NAME block_registry_properties COMMAND block_registry_properties_test)
@@ -251,10 +230,13 @@ file(GLOB_RECURSE SEEDFINDER_ACHIEVEMENT_SOURCES CONFIGURE_DEPENDS
     "${CMAKE_CURRENT_SOURCE_DIR}/src/net/minecraft/achievement/*.cpp")
 file(GLOB_RECURSE SEEDFINDER_SCREEN_SOURCES CONFIGURE_DEPENDS
     "${CMAKE_CURRENT_SOURCE_DIR}/src/net/minecraft/screen/*.cpp")
+file(GLOB_RECURSE SEEDFINDER_REGISTRY_SOURCES CONFIGURE_DEPENDS
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/net/minecraft/registry/*.cpp")
 
 set(SEEDFINDER_PORT_SOURCES
     ${SEEDFINDER_PROBE_ADAPTER_SOURCE}
     src/net/minecraft/client/resource/language/TranslationStorage.cpp
+    ${SEEDFINDER_REGISTRY_SOURCES}
     ${SEEDFINDER_WORLD_SOURCES}
     ${SEEDFINDER_BLOCK_SOURCES}
     ${SEEDFINDER_ENTITY_SOURCES}
@@ -272,7 +254,7 @@ add_executable(seedfinder src/seedfinder/main.cpp ${SEEDFINDER_PORT_SOURCES})
 target_link_libraries(seedfinder PRIVATE seedfinder_engine)
 minecraft_configure_target(seedfinder)
 minecraft_link_zlib(seedfinder)
-if (NOT MSVC)
+if (WIN32)
     target_link_options(seedfinder PRIVATE -static -static-libgcc -static-libstdc++)
 endif()
 
@@ -280,7 +262,7 @@ add_executable(seed_probe_golden_test tests/seed_probe_golden_test.cpp ${SEEDFIN
 target_link_libraries(seed_probe_golden_test PRIVATE seedfinder_engine)
 minecraft_configure_target(seed_probe_golden_test)
 minecraft_link_zlib(seed_probe_golden_test)
-if (NOT MSVC)
+if (WIN32)
     target_link_options(seed_probe_golden_test PRIVATE -static -static-libgcc -static-libstdc++)
 endif()
 add_test(NAME SeedProbeGoldenTest COMMAND seed_probe_golden_test)

@@ -56,8 +56,6 @@
 
 namespace net::minecraft::client {
 
-namespace option = net::minecraft::client::option;
-
 namespace {
 
 std::int64_t currentTimeMillis()
@@ -381,6 +379,7 @@ void Minecraft::tick()
                 const int chunkX = MathHelper::floor(player->x) >> 4;
                 const int chunkZ = MathHelper::floor(player->z) >> 4;
                 legacyCache->setSpawnPoint(chunkX, chunkZ);
+                legacyCache->prefetch(chunkX, chunkZ);
             }
         }
     }
@@ -812,7 +811,7 @@ bool Minecraft::isFancyGraphicsEnabled()
 
 bool Minecraft::isAmbientOcclusionEnabled()
 {
-    return INSTANCE != nullptr && option::resolve(INSTANCE->options).ambientOcclusionActive;
+    return INSTANCE != nullptr && net::minecraft::client::option::resolve(INSTANCE->options).ambientOcclusionActive;
 }
 
 bool Minecraft::isDebugProfilerEnabled()

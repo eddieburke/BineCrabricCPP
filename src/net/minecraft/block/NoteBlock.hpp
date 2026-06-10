@@ -3,9 +3,11 @@
 #include "net/minecraft/block/BlockWithEntity.hpp"
 #include "net/minecraft/block/material/Material.hpp"
 
+namespace net::minecraft::recipe { class CraftingRecipeManager; }
 namespace net::minecraft::block {
 
 class NoteBlock : public BlockWithEntity {
+    static void registerRecipes(recipe::CraftingRecipeManager& recipeManager);
 public:
     static void registerClass();
     NoteBlock(int id);

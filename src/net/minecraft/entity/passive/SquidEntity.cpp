@@ -105,7 +105,7 @@ void SquidEntity::tickLiving()
 void SquidEntity::dropItems()
 {
     const int count = random.nextInt(3) + 1;
-    const int dyeId = Item::DYE != nullptr ? Item::DYE->id : 95;
+    const int dyeId = Item::byRawId(95) != nullptr ? Item::byRawId(95)->id : 95;
     for (int i = 0; i < count; ++i) {
         dropItem(ItemStack(dyeId, 1, 0), 0.0f);
     }

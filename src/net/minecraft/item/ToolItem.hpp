@@ -11,8 +11,9 @@ namespace net::minecraft::item {
 
 class ToolItem : public Item {
 public:
+protected:
     ToolItem(int rawId, int damageBoost, ToolMaterial material, Block** effectiveOn, int effectiveCount)
-        : Item(rawId),
+        : Item(rawId, RegistrationMode::Deferred),
           toolMaterial_(material),
           miningSpeed_(toolMaterialMiningSpeed(material)),
           damage_(damageBoost + toolMaterialAttackDamage(material))

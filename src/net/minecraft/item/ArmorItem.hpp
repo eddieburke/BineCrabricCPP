@@ -6,9 +6,9 @@ namespace net::minecraft::item {
 
 class ArmorItem : public Item {
 public:
-    static void registerClass();
+protected:
     ArmorItem(int rawId, int type, int textureIndex, int equipmentSlot)
-        : Item(rawId),
+        : Item(rawId, RegistrationMode::Deferred),
           type(type),
           equipmentSlot(equipmentSlot),
           maxProtection(PROTECTION_BY_SLOT[equipmentSlot]),
@@ -20,6 +20,13 @@ public:
 
     static constexpr int PROTECTION_BY_SLOT[4] = {3, 8, 6, 3};
     static constexpr int DURABILITY_BY_SLOT[4] = {11, 16, 15, 13};
+
+public:
+    [[nodiscard]] int getMaxProtection() const { return maxProtection; }
+    [[nodiscard]] int getTextureIndex() const { return textureIndex; }
+    [[nodiscard]] int getEquipmentSlot() const { return equipmentSlot; }
+
+protected:
     int type = 0;
     int equipmentSlot = 0;
     int maxProtection = 0;

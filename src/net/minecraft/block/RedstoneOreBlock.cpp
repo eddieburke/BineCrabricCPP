@@ -6,6 +6,7 @@
 #include "net/minecraft/entity/Entity.hpp"
 #include "net/minecraft/entity/player/PlayerEntity.hpp"
 #include "net/minecraft/item/Item.hpp"
+#include "net/minecraft/item/RedstoneItem.hpp"
 #include "net/minecraft/world/World.hpp"
 
 namespace net::minecraft::block {
@@ -20,7 +21,7 @@ RedstoneOreBlock::RedstoneOreBlock(int id, int textureId, bool litIn) : Block(id
 
 int RedstoneOreBlock::getDroppedItemId(int /*blockMeta*/, JavaRandom& /*random*/) const
 {
-    return Item::REDSTONE != nullptr ? Item::REDSTONE->id : 331;
+    return Item::byRawId(75) != nullptr ? Item::byRawId(75)->id : 331;
 }
 
 int RedstoneOreBlock::getDroppedItemCount(JavaRandom& random) const
@@ -111,8 +112,6 @@ void RedstoneOreBlock::spawnParticles(World* world, int x, int y, int z)
         }
     }
 }
-namespace {
-
 void RedstoneOreBlock::registerClass()
 {
     Block::REDSTONE_ORE = (new RedstoneOreBlock(73, 51, false))->setHardness(3.0f)->setResistance(5.0f)->setSoundGroup(&vanillaStoneSound())->setTranslationKey("oreRedstone")->ignoreMetaUpdates();
@@ -122,7 +121,6 @@ void RedstoneOreBlock::registerClass()
 
 
 
-static ::net::minecraft::registry::RegisterBlock<RedstoneOreBlock> autoReg(74);
-} // namespace
+namespace {static ::net::minecraft::registry::RegisterBlock<RedstoneOreBlock> autoReg(74);} // namespace
 } // namespace net::minecraft::block
 

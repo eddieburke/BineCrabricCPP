@@ -4,6 +4,9 @@
 
 #include "net/minecraft/entity/player/PlayerEntity.hpp"
 #include "net/minecraft/world/World.hpp"
+#include "net/minecraft/recipe/CraftingRecipeManager.hpp"
+#include "net/minecraft/block/Block.hpp"
+#include "net/minecraft/item/Item.hpp"
 
 namespace net::minecraft::block {
 
@@ -229,17 +232,20 @@ bool LeverBlock::isEmittingRedstonePowerInDirection(
 {
     return blockView != nullptr && (blockView->getBlockMeta(x, y, z) & 8) > 0;
 }
-namespace {
-
 void LeverBlock::registerClass()
 {
     Block::LEVER = (new LeverBlock(69, 96))->setHardness(0.5f)->setSoundGroup(&vanillaWoodSound())->setTranslationKey("lever")->ignoreMetaUpdates();
+}
+void LeverBlock::registerRecipes(recipe::CraftingRecipeManager& recipeManager)
+{
+    recipeManager.addShapedRecipe(ItemStack(Block::LEVER),
+        {std::string("X"), std::string("#"), '#', Block::COBBLESTONE, 'X', Item::byRawId(24)});
 }
 
 
 
 
-static ::net::minecraft::registry::RegisterBlock<LeverBlock> autoReg(69);
-} // namespace
+
+namespace {static ::net::minecraft::registry::RegisterBlock<LeverBlock> autoReg(69);} // namespace
 } // namespace net::minecraft::block
 

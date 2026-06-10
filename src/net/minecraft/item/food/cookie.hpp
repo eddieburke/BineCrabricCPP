@@ -5,8 +5,7 @@
 namespace net::minecraft::item {
 
 class CookieItem : public StackableFoodItem {
-public:
-    static constexpr int ID = 357;
+public:    static constexpr int ID = 357;
     CookieItem() : StackableFoodItem(101, 1, false, 8) {
         setTexturePosition(12, 5)->setTranslationKey("cookie");
     }

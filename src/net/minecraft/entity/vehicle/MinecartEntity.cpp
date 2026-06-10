@@ -175,7 +175,7 @@ bool MinecartEntity::damage(Entity* damageSource, int amount)
             passenger->setVehicle(this);
         }
         markDead();
-        const int minecartId = Item::MINECART != nullptr ? Item::MINECART->id : 328;
+        const int minecartId = Item::byRawId(72) != nullptr ? Item::byRawId(72)->id : 328;
         dropItem(minecartId, 1, 0.0f);
         if (type == 1) {
             dropInventoryContents();
@@ -655,7 +655,7 @@ bool MinecartEntity::interact(player::PlayerEntity* player)
         }
     } else if (type == 2) {
         ItemStack* hand = player->inventory.getSelectedItem();
-        if (hand != nullptr && Item::COAL != nullptr && hand->itemId == Item::COAL->id) {
+        if (hand != nullptr && Item::byRawId(7) != nullptr && hand->itemId == Item::byRawId(7)->id) {
             --hand->count;
             if (hand->count == 0) {
                 player->inventory.setStack(static_cast<std::size_t>(player->inventory.selectedSlot), {});

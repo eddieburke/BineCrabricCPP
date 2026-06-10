@@ -29,19 +29,15 @@ bool SaddleItem::postHit(ItemStack* stack, LivingEntity* target, LivingEntity* /
     return true;
 }
 
-namespace {
-
 void SaddleItem::registerClass()
 {
     static SaddleItem SADDLE(73);
     SADDLE.setTexturePosition(8, 6)->setTranslationKey("saddle");
-    Item::SADDLE = &SADDLE;
 }
 
 
 
 
-static ::net::minecraft::registry::RegisterItem<SaddleItem> autoReg(73);
-} // namespace
+namespace {static ::net::minecraft::registry::RegisterItem<SaddleItem> autoReg(73); } // namespace
 
 } // namespace net::minecraft::item

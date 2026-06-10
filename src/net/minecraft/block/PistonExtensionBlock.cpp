@@ -19,8 +19,6 @@ entity::PistonBlockEntity* getPistonBlockEntity(const BlockView* blockView, int 
     return dynamic_cast<entity::PistonBlockEntity*>(const_cast<BlockView*>(blockView)->getBlockEntity(x, y, z));
 }
 
-
-static ::net::minecraft::registry::RegisterBlock<PistonExtensionBlock> autoReg(36);
 } // namespace
 
 std::unique_ptr<entity::BlockEntity> PistonExtensionBlock::createBlockEntity()
@@ -186,15 +184,14 @@ std::optional<net::minecraft::Box> PistonExtensionBlock::getPushedBlockCollision
     box->maxZ -= offsetZ;
     return box;
 }
-namespace {
-
 void PistonExtensionBlock::registerClass()
 {
     Block::MOVING_PISTON = new PistonExtensionBlock(36);
 }
 
+namespace {
 
-
+static ::net::minecraft::registry::RegisterBlock<PistonExtensionBlock> autoReg(36);
 } // namespace
 } // namespace net::minecraft::block
 

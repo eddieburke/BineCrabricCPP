@@ -14,6 +14,7 @@ namespace net::minecraft::block {
 class SaplingBlock : public PlantBlock {
 public:
     static void registerClass();
+    static void registerBlockItems();
     SaplingBlock(int id, int textureId) : PlantBlock(id, textureId)
     {
         const float f = 0.4f;

@@ -5,10 +5,14 @@
 #include "net/minecraft/block/PistonConstants.hpp"
 #include "net/minecraft/block/PistonExtensionBlock.hpp"
 #include "net/minecraft/block/entity/PistonBlockEntity.hpp"
+#include "net/minecraft/item/PistonBlockItem.hpp"
 #include "net/minecraft/entity/player/PlayerEntity.hpp"
 #include "net/minecraft/util/math/MathHelper.hpp"
 #include "net/minecraft/world/BlockView.hpp"
 #include "net/minecraft/world/World.hpp"
+#include "net/minecraft/recipe/CraftingRecipeManager.hpp"
+#include "net/minecraft/block/Block.hpp"
+#include "net/minecraft/item/Item.hpp"
 
 namespace net::minecraft::block {
 
@@ -380,18 +384,29 @@ void PistonBlock::addIntersectingBoundingBox(
         boxes.push_back(fullCube);
     }
 }
-namespace {
-
 void PistonBlock::registerClass()
 {
     Block::STICKY_PISTON = (new PistonBlock(29, 106, true))->setHardness(0.5f)->setSoundGroup(&vanillaStoneSound())->setTranslationKey("pistonStickyBase")->ignoreMetaUpdates();
     Block::PISTON = (new PistonBlock(33, 107, false))->setHardness(0.5f)->setSoundGroup(&vanillaStoneSound())->setTranslationKey("pistonBase")->ignoreMetaUpdates();
 }
+void PistonBlock::registerRecipes(recipe::CraftingRecipeManager& recipeManager)
+{
+    recipeManager.addShapedRecipe(ItemStack(Block::PISTON),
+        {std::string("TTT"), std::string("#X#"), std::string("#R#"), '#', Block::COBBLESTONE, 'X', Item::byRawId(9), 'R', Item::byRawId(75), 'T', Block::PLANKS});
+    recipeManager.addShapedRecipe(ItemStack(Block::STICKY_PISTON),
+        {std::string("S"), std::string("P"), 'S', Item::byRawId(85), 'P', Block::PISTON});
+}
 
 
 
 
-static ::net::minecraft::registry::RegisterBlock<PistonBlock> autoReg(29);
-} // namespace
+
+void PistonBlock::registerBlockItems()
+{
+    new item::PistonBlockItem(29 - 256);
+    new item::PistonBlockItem(33 - 256);
+}
+
+namespace {static ::net::minecraft::registry::RegisterBlock<PistonBlock> autoReg(29);} // namespace
 } // namespace net::minecraft::block
 

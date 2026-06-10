@@ -37,7 +37,7 @@ public:
     // Must be called once after construction before tick().
     void initAsync(std::uint64_t seed, std::function<std::unique_ptr<ChunkSource>(std::uint64_t)> genFactory)
     {
-        asyncLoader_ = std::make_unique<AsyncChunkLoader>(seed, storage_.get(), std::move(genFactory));
+        asyncLoader_ = std::make_unique<AsyncChunkLoader>(world_, seed, storage_.get(), std::move(genFactory));
     }
 
     // Ask the async loader to background-load chunks in the active window,

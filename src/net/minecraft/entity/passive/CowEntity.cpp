@@ -26,9 +26,9 @@ bool CowEntity::interact(player::PlayerEntity* player)
         return false;
     }
     ItemStack* itemStack = player->inventory.getSelectedItem();
-    if (itemStack != nullptr && Item::BUCKET != nullptr && itemStack->itemId == Item::BUCKET->id) {
-        if (Item::MILK_BUCKET != nullptr) {
-            player->inventory.setStack(player->inventory.selectedSlot, ItemStack(Item::MILK_BUCKET->id, 1, 0));
+    if (itemStack != nullptr && Item::byRawId(69) != nullptr && itemStack->itemId == Item::byRawId(69)->id) {
+        if (Item::byRawId(79) != nullptr) {
+            player->inventory.setStack(player->inventory.selectedSlot, ItemStack(Item::byRawId(79)->id, 1, 0));
         }
         return true;
     }
@@ -37,7 +37,7 @@ bool CowEntity::interact(player::PlayerEntity* player)
 
 int CowEntity::getDroppedItemId() const
 {
-    return Item::LEATHER != nullptr ? Item::LEATHER->id : 334;
+    return Item::byRawId(78) != nullptr ? Item::byRawId(78)->id : 334;
 }
 
 

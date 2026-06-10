@@ -74,11 +74,11 @@ void TntEntity::readNbt(const NbtCompound& nbt)
     fuse = nbt.getByte("Fuse");
 }
 
-} // namespace net::minecraft::entity
-
 void TntEntity::registerClass()
 {
     ::net::minecraft::entity::detail::registerVanillaEntity<TntEntity>("PrimedTnt", 20);
 }
 
 static ::net::minecraft::registry::RegisterEntity<TntEntity> autoReg(20);
+
+} // namespace net::minecraft::entity

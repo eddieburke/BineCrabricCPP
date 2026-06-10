@@ -54,6 +54,14 @@ std::unique_ptr<ChunkSource> Dimension::createChunkGenerator()
     return std::make_unique<OverworldGeneratorChunkSource>(world, world->seed());
 }
 
+std::unique_ptr<ChunkSource> Dimension::createChunkGeneratorFromSeed(std::uint64_t seed)
+{
+    if (world == nullptr) {
+        return nullptr;
+    }
+    return std::make_unique<OverworldGeneratorChunkSource>(world, seed, /*useLocalBiomeSource=*/true);
+}
+
 bool Dimension::isValidSpawnPoint(int x, int z) const
 {
     if (world == nullptr) {

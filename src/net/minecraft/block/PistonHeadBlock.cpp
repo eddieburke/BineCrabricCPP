@@ -70,8 +70,6 @@ void addBoxIfIntersecting(
     }
 }
 
-
-static ::net::minecraft::registry::RegisterBlock<PistonHeadBlock> autoReg(34);
 } // namespace
 
 void PistonHeadBlock::addIntersectingBoundingBox(
@@ -157,15 +155,14 @@ void PistonHeadBlock::neighborUpdate(World* world, int x, int y, int z, int neig
     }
     Block::BLOCKS[static_cast<std::size_t>(pistonId)]->neighborUpdate(world, pistonX, pistonY, pistonZ, neighborId);
 }
-namespace {
-
 void PistonHeadBlock::registerClass()
 {
     Block::PISTON_HEAD = (new PistonHeadBlock(34, 107))->ignoreMetaUpdates();
 }
 
+namespace {
 
-
+static ::net::minecraft::registry::RegisterBlock<PistonHeadBlock> autoReg(34);
 } // namespace
 } // namespace net::minecraft::block
 

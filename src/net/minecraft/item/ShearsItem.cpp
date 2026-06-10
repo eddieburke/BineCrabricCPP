@@ -6,6 +6,7 @@
 #include "net/minecraft/item/Item.hpp"
 #include "net/minecraft/item/ItemRegistrar.hpp"
 #include "net/minecraft/item/ItemStack.hpp"
+#include "net/minecraft/recipe/CraftingRecipeManager.hpp"
 
 namespace net::minecraft::item {
 
@@ -48,19 +49,21 @@ float ShearsItem::getMiningSpeedMultiplier(ItemStack* stack, Block* block) const
     return Item::getMiningSpeedMultiplier(stack, block);
 }
 
-namespace {
-
 void ShearsItem::registerClass()
 {
     static ShearsItem SHEARS(103);
     SHEARS.setTexturePosition(13, 5)->setTranslationKey("shears");
-    Item::SHEARS = &SHEARS;
+}
+
+void ShearsItem::registerRecipes(recipe::CraftingRecipeManager& recipeManager)
+{
+    recipeManager.addShapedRecipe(ItemStack(Item::byRawId(103)),
+        {std::string(" #"), std::string("# "), '#', Item::byRawId(9)});
 }
 
 
 
 
-static ::net::minecraft::registry::RegisterItem<ShearsItem> autoReg(103);
-} // namespace
+namespace {static ::net::minecraft::registry::RegisterItem<ShearsItem> autoReg(103); } // namespace
 
 } // namespace net::minecraft::item

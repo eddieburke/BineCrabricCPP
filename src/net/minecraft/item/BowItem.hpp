@@ -7,12 +7,16 @@ class World;
 class ItemStack;
 } // namespace net::minecraft
 
+namespace net::minecraft::recipe {
+class CraftingRecipeManager;
+} // namespace net::minecraft::recipe
+
 namespace net::minecraft::item {
 
 class BowItem : public Item {
-public:
-    static void registerClass();
-    explicit BowItem(int rawId);
+public:    static void registerClass();
+    static void registerRecipes(recipe::CraftingRecipeManager& recipeManager);
+    BowItem();
     ItemStack* use(ItemStack* stack, World* world, PlayerEntity* user) override;
 };
 

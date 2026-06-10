@@ -9,6 +9,8 @@
 #include "net/minecraft/entity/LivingEntity.hpp"
 #include "net/minecraft/entity/player/PlayerEntity.hpp"
 #include "net/minecraft/world/World.hpp"
+#include "net/minecraft/recipe/CraftingRecipeManager.hpp"
+#include "net/minecraft/item/Item.hpp"
 
 namespace net::minecraft::block {
 
@@ -141,19 +143,22 @@ bool PressurePlateBlock::canTransferPowerInDirection(
 {
     return world != nullptr && world->getBlockMeta(x, y, z) != 0 && direction == 1;
 }
-namespace {
-
 void PressurePlateBlock::registerClass()
 {
     namespace mat = material;
     Block::STONE_PRESSURE_PLATE = (new PressurePlateBlock(70, Block::BLOCKS[1]->textureId, PressurePlateActivationRule::MOBS, mat::Material::STONE))->setHardness(0.5f)->setSoundGroup(&vanillaStoneSound())->setTranslationKey("pressurePlate")->ignoreMetaUpdates();
     Block::WOODEN_PRESSURE_PLATE = (new PressurePlateBlock(72, Block::BLOCKS[5]->textureId, PressurePlateActivationRule::EVERYTHING, mat::Material::WOOD))->setHardness(0.5f)->setSoundGroup(&vanillaWoodSound())->setTranslationKey("pressurePlate")->ignoreMetaUpdates();
 }
+void PressurePlateBlock::registerRecipes(recipe::CraftingRecipeManager& recipeManager)
+{
+    recipeManager.addShapedRecipe(ItemStack(Block::STONE_PRESSURE_PLATE), {std::string("##"), '#', Block::STONE});
+    recipeManager.addShapedRecipe(ItemStack(Block::WOODEN_PRESSURE_PLATE), {std::string("##"), '#', Block::PLANKS});
+}
 
 
 
 
-static ::net::minecraft::registry::RegisterBlock<PressurePlateBlock> autoReg(72);
-} // namespace
+
+namespace {static ::net::minecraft::registry::RegisterBlock<PressurePlateBlock> autoReg(72);} // namespace
 } // namespace net::minecraft::block
 

@@ -18,9 +18,11 @@ namespace net::minecraft::entity {
 class LivingEntity;
 }
 
+namespace net::minecraft::recipe { class CraftingRecipeManager; }
 namespace net::minecraft::block {
 
 class DispenserBlock : public BlockWithEntity {
+    static void registerRecipes(recipe::CraftingRecipeManager& recipeManager);
 public:
     static void registerClass();
     explicit DispenserBlock(int id) : BlockWithEntity(id, material::Material::STONE) { textureId = 45; }

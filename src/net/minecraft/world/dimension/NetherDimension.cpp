@@ -39,6 +39,14 @@ std::unique_ptr<ChunkSource> NetherDimension::createChunkGenerator()
     return std::make_unique<NetherChunkGenerator>(world, world->seed());
 }
 
+std::unique_ptr<ChunkSource> NetherDimension::createChunkGeneratorFromSeed(std::uint64_t seed)
+{
+    if (world == nullptr) {
+        return nullptr;
+    }
+    return std::make_unique<NetherChunkGenerator>(world, seed);
+}
+
 bool NetherDimension::isValidSpawnPoint(int x, int z) const
 {
     if (world == nullptr) {

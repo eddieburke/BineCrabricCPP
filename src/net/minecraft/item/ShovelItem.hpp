@@ -7,7 +7,7 @@ namespace net::minecraft::item {
 
 class ShovelItem : public ToolItem {
 public:
-    static void registerClass();
+protected:
     ShovelItem(int rawId, ToolMaterial material)
         : ToolItem(rawId, 1, material, nullptr, 0)
     {

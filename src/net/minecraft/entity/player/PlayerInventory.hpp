@@ -247,7 +247,7 @@ public:
             const int remaining = maxDamage - piece.getDamage2();
             durabilitySum += remaining;
             maxDurabilitySum += maxDamage;
-            protection += armorItem->maxProtection;
+            protection += armorItem->getMaxProtection();
         }
         if (maxDurabilitySum == 0) {
             return 0;

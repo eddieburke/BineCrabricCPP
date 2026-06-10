@@ -39,19 +39,19 @@ public:
             crafted.onCraft(player_->world, player_);
             if (Block::CRAFTING_TABLE != nullptr && stack.itemId == Block::CRAFTING_TABLE->id) {
                 player_->increaseStat(achievement::Achievements::CRAFT_WORKBENCH.statId(), 1);
-            } else if (Item::WOODEN_PICKAXE != nullptr && stack.itemId == Item::WOODEN_PICKAXE->id) {
+            } else if (Item::byRawId(14) != nullptr && stack.itemId == Item::byRawId(14)->id) {
                 player_->increaseStat(achievement::Achievements::CRAFT_PICKAXE.statId(), 1);
             } else if (Block::FURNACE != nullptr && stack.itemId == Block::FURNACE->id) {
                 player_->increaseStat(achievement::Achievements::CRAFT_FURNACE.statId(), 1);
-            } else if (Item::WOODEN_HOE != nullptr && stack.itemId == Item::WOODEN_HOE->id) {
+            } else if (Item::byRawId(34) != nullptr && stack.itemId == Item::byRawId(34)->id) {
                 player_->increaseStat(achievement::Achievements::CRAFT_HOE.statId(), 1);
-            } else if (Item::BREAD != nullptr && stack.itemId == Item::BREAD->id) {
+            } else if (Item::byRawId(41) != nullptr && stack.itemId == Item::byRawId(41)->id) {
                 player_->increaseStat(achievement::Achievements::CRAFT_BREAD.statId(), 1);
-            } else if (Item::CAKE != nullptr && stack.itemId == Item::CAKE->id) {
+            } else if (Item::byRawId(98) != nullptr && stack.itemId == Item::byRawId(98)->id) {
                 player_->increaseStat(achievement::Achievements::CRAFT_CAKE.statId(), 1);
-            } else if (Item::STONE_PICKAXE != nullptr && stack.itemId == Item::STONE_PICKAXE->id) {
+            } else if (Item::byRawId(18) != nullptr && stack.itemId == Item::byRawId(18)->id) {
                 player_->increaseStat(achievement::Achievements::CRAFT_STONE_PICKAXE.statId(), 1);
-            } else if (Item::WOODEN_SWORD != nullptr && stack.itemId == Item::WOODEN_SWORD->id) {
+            } else if (Item::byRawId(12) != nullptr && stack.itemId == Item::byRawId(12)->id) {
                 player_->increaseStat(achievement::Achievements::CRAFT_SWORD.statId(), 1);
             }
         }

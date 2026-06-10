@@ -80,8 +80,6 @@ void GrassBlock::onTick(World* world, int x, int y, int z, JavaRandom& random)
         }
     }
 }
-namespace {
-
 void GrassBlock::registerClass()
 {
     Block::GRASS_BLOCK = (new GrassBlock(2))->setHardness(0.6f)->setSoundGroup(&vanillaDirtSound())->setTranslationKey("grass");
@@ -90,7 +88,6 @@ void GrassBlock::registerClass()
 
 
 
-static ::net::minecraft::registry::RegisterBlock<GrassBlock> autoReg(2);
-} // namespace
+namespace {static ::net::minecraft::registry::RegisterBlock<GrassBlock> autoReg(2);} // namespace
 } // namespace net::minecraft::block
 

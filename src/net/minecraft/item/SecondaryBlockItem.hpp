@@ -4,13 +4,18 @@
 #include "net/minecraft/item/Item.hpp"
 #include "net/minecraft/item/ItemPlacement.hpp"
 
+namespace net::minecraft::recipe {
+class CraftingRecipeManager;
+} // namespace net::minecraft::recipe
+
 namespace net::minecraft::item {
 
 class SecondaryBlockItem : public Item {
 public:
     static void registerClass();
+    static void registerRecipes(recipe::CraftingRecipeManager& recipeManager);
     SecondaryBlockItem(int rawId, Block* block)
-        : Item(rawId),
+        : Item(rawId, RegistrationMode::Deferred),
           blockId_(block != nullptr ? block->id : 0)
     {
     }

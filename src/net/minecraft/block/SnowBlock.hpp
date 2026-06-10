@@ -2,9 +2,11 @@
 
 #include "net/minecraft/block/Block.hpp"
 
+namespace net::minecraft::recipe { class CraftingRecipeManager; }
 namespace net::minecraft::block {
 
 class SnowBlock : public Block {
+    static void registerRecipes(recipe::CraftingRecipeManager& recipeManager);
 public:
     static void registerClass();
     SnowBlock(int id, int textureId);

@@ -3,8 +3,6 @@
 #include "net/minecraft/block/SoulSandBlock.hpp"
 
 namespace net::minecraft::block {
-namespace {
-
 void SoulSandBlock::registerClass()
 {
     Block::SOUL_SAND = (new SoulSandBlock(88, 104))->setHardness(0.5f)->setSoundGroup(&vanillaSandSound())->setTranslationKey("hellsand");
@@ -13,7 +11,6 @@ void SoulSandBlock::registerClass()
 
 
 
-static ::net::minecraft::registry::RegisterBlock<SoulSandBlock> autoReg(88);
-} // namespace
+namespace {static ::net::minecraft::registry::RegisterBlock<SoulSandBlock> autoReg(88);} // namespace
 } // namespace net::minecraft::block
 

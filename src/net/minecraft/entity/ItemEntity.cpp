@@ -74,7 +74,7 @@ void ItemEntity::onPlayerInteraction(player::PlayerEntity* player)
     if (Block::LOG != nullptr && stack.itemId == Block::LOG->id) {
         player->increaseStat(achievement::Achievements::MINE_WOOD.statId(), 1);
     }
-    if (Item::LEATHER != nullptr && stack.itemId == Item::LEATHER->id) {
+    if (Item::byRawId(78) != nullptr && stack.itemId == Item::byRawId(78)->id) {
         player->increaseStat(achievement::Achievements::KILL_COW.statId(), 1);
     }
     stack = std::move(pickupStack);
@@ -107,11 +107,11 @@ bool ItemEntity::damage(Entity* /*damageSource*/, int amount)
     return false;
 }
 
-} // namespace net::minecraft::entity
-
 void ItemEntity::registerClass()
 {
     ::net::minecraft::entity::detail::registerVanillaEntity<ItemEntity>("Item", 1);
 }
 
 static ::net::minecraft::registry::RegisterEntity<ItemEntity> autoReg(1);
+
+} // namespace net::minecraft::entity

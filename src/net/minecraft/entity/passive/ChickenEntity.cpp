@@ -42,8 +42,8 @@ void ChickenEntity::tickMovement()
     flapProgress += flapSpeed * 2.0f;
     if (world != nullptr && !world->isRemote() && --eggLayTime <= 0) {
         world->playSound(this, "mob.chickenplop", 1.0f, (random.nextFloat() - random.nextFloat()) * 0.2f + 1.0f);
-        if (Item::EGG != nullptr) {
-            dropItem(Item::EGG->id, 1);
+        if (Item::byRawId(88) != nullptr) {
+            dropItem(Item::byRawId(88)->id, 1);
         }
         eggLayTime = random.nextInt(6000) + 6000;
     }
@@ -51,7 +51,7 @@ void ChickenEntity::tickMovement()
 
 int ChickenEntity::getDroppedItemId() const
 {
-    return Item::FEATHER != nullptr ? Item::FEATHER->id : 288;
+    return Item::byRawId(32) != nullptr ? Item::byRawId(32)->id : 288;
 }
 
 

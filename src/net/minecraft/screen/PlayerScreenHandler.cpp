@@ -30,7 +30,7 @@ public:
     {
         Item* item = stack.getItem();
         if (auto* armor = dynamic_cast<item::ArmorItem*>(item); armor != nullptr) {
-            return armor->equipmentSlot == armorSlotIndex_;
+            return armor->getEquipmentSlot() == armorSlotIndex_;
         }
         if (Block::PUMPKIN != nullptr && stack.itemId == Block::PUMPKIN->id) {
             return armorSlotIndex_ == 0;

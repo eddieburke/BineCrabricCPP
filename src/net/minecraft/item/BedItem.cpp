@@ -7,12 +7,14 @@
 #include "net/minecraft/item/Item.hpp"
 #include "net/minecraft/item/ItemRegistrar.hpp"
 #include "net/minecraft/item/ItemStack.hpp"
+#include "net/minecraft/recipe/CraftingRecipeManager.hpp"
 #include "net/minecraft/util/math/MathHelper.hpp"
 #include "net/minecraft/world/World.hpp"
 
+#include <string>
 namespace net::minecraft::item {
 
-BedItem::BedItem(int rawId) : Item(rawId) {}
+BedItem::BedItem() : Item(99, RegistrationMode::Deferred) {}
 
 bool BedItem::useOnBlock(ItemStack* stack, PlayerEntity* user, World* world, int x, int y, int z, int side)
 {
@@ -42,19 +44,19 @@ bool BedItem::useOnBlock(ItemStack* stack, PlayerEntity* user, World* world, int
     return false;
 }
 
-namespace {
-
 void BedItem::registerClass()
 {
-    static BedItem BED(99);
-    BED.setMaxCount(1)->setTexturePosition(13, 2)->setTranslationKey("bed");
-    Item::BED = &BED;
+    static BedItem instance;
+    instance.setMaxCount(1)->setTexturePosition(13, 2)->setTranslationKey("bed");
+    Item::registerInItemsArray(&instance);
+
 }
 
+void BedItem::registerRecipes(recipe::CraftingRecipeManager& recipeManager)
+{
+    recipeManager.addShapedRecipe(ItemStack(Item::byRawId(99), 1),
+        {std::string("###"), std::string("XXX"), '#', Block::WOOL, 'X', Block::PLANKS});
+}
 
-
-
-static ::net::minecraft::registry::RegisterItem<BedItem> autoReg(99);
-} // namespace
-
+namespace { static ::net::minecraft::registry::RegisterItem<BedItem> autoReg(99); }
 } // namespace net::minecraft::item

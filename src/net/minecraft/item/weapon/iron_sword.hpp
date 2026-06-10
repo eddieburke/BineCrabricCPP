@@ -1,16 +1,18 @@
 #pragma once
 
 #include "net/minecraft/item/SwordItem.hpp"
-#include "net/minecraft/item/ToolMaterial.hpp"
+
+namespace net::minecraft::recipe {
+class CraftingRecipeManager;
+} // namespace net::minecraft::recipe
 
 namespace net::minecraft::item {
 
 class IronSwordItem : public SwordItem {
-public:
-    static constexpr int ID = 267;
-    IronSwordItem() : SwordItem(11, ToolMaterial::Iron) {
-        setTexturePosition(2, 4)->setTranslationKey("swordIron");
-    }
+public:    static void registerClass();
+    static void registerRecipes(recipe::CraftingRecipeManager& recipeManager);
+
+    IronSwordItem();
 };
 
 } // namespace net::minecraft::item

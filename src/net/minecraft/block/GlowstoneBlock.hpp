@@ -2,10 +2,13 @@
 
 #include "net/minecraft/block/Block.hpp"
 #include "net/minecraft/item/Item.hpp"
+#include "net/minecraft/item/misc/glowstone_dust.hpp"
 
+namespace net::minecraft::recipe { class CraftingRecipeManager; }
 namespace net::minecraft::block {
 
 class GlowstoneBlock : public Block {
+    static void registerRecipes(recipe::CraftingRecipeManager& recipeManager);
 public:
     static void registerClass();
     GlowstoneBlock(int id, int textureId, Material& material) : Block(id, textureId, material) {}
@@ -17,7 +20,7 @@ public:
 
     [[nodiscard]] int getDroppedItemId(int /*blockMeta*/, JavaRandom& /*random*/) const override
     {
-        return Item::GLOWSTONE_DUST != nullptr ? Item::GLOWSTONE_DUST->id : 348;
+        return Item::byRawId(92) != nullptr ? Item::byRawId(92)->id : 348;
     }
 };
 

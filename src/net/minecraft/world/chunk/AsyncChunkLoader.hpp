@@ -34,10 +34,11 @@ struct AsyncChunkJob {
 
 class AsyncChunkLoader {
 public:
-    // chunkGeneratorSeed: used to construct per-worker generator clones.
-    // storage: the chunk storage, guarded by its own mutex for worker reads.
-    // genFactory: creates a fresh generator for a worker thread from the seed.
-    AsyncChunkLoader(std::uint64_t seed, ChunkStorage* storage,
+    // world: only its immutable fields (dimension, seed) are read off-thread.
+    // storage: region IO is serialized by RegionIo's mutex.
+    // genFactory: creates a worker-private generator from the seed; instances
+    // are pooled and reused across jobs (octave init is expensive).
+    AsyncChunkLoader(World* world, std::uint64_t seed, ChunkStorage* storage,
         std::function<std::unique_ptr<ChunkSource>(std::uint64_t)> genFactory);
 
     ~AsyncChunkLoader();
@@ -49,10 +50,9 @@ public:
     // in-flight cap is hit or the chunk is already in flight or loaded.
     bool request(int chunkX, int chunkZ);
 
-    // Publish all completed chunks into the owning LegacyChunkCache.
-    // Called from the main thread (LegacyChunkCache::tick).
-    // Returns completed jobs; the caller inserts them into the cache.
-    [[nodiscard]] std::vector<std::unique_ptr<AsyncChunkJob>> pumpCompleted();
+    // Completed jobs for the main thread to publish into the cache. A job's
+    // result may be null if waitForChunk() already claimed it.
+    [[nodiscard]] std::vector<std::shared_ptr<AsyncChunkJob>> pumpCompleted();
 
     // Wait for a specific chunk if it is in flight. Returns nullptr if no job
     // exists for that position (caller should fall back to sync generation).
@@ -77,10 +77,15 @@ private:
         }
     };
 
+    [[nodiscard]] std::unique_ptr<ChunkSource> acquireGenerator();
+    void releaseGenerator(std::unique_ptr<ChunkSource> generator);
+
+    World* world_ = nullptr;
     std::uint64_t seed_;
     ChunkStorage* storage_ = nullptr;
     std::function<std::unique_ptr<ChunkSource>(std::uint64_t)> genFactory_;
     util::concurrent::WorkerPool pool_;
+    std::vector<std::unique_ptr<ChunkSource>> generatorPool_;
 
     mutable std::mutex mutex_;
     std::unordered_map<std::pair<int, int>, std::shared_ptr<AsyncChunkJob>, PositionHash> inFlight_;

@@ -78,11 +78,11 @@ void FallingBlockEntity::tick()
     }
 }
 
-} // namespace net::minecraft::entity
-
 void FallingBlockEntity::registerClass()
 {
     ::net::minecraft::entity::detail::registerVanillaEntity<FallingBlockEntity>("FallingSand", 21);
 }
 
 static ::net::minecraft::registry::RegisterEntity<FallingBlockEntity> autoReg(21);
+
+} // namespace net::minecraft::entity

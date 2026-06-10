@@ -56,7 +56,7 @@ void CreeperEntity::onKilledBy(Entity* adversary)
 {
     MonsterEntity::onKilledBy(adversary);
     if (dynamic_cast<SkeletonEntity*>(adversary) != nullptr) {
-        const int recordBase = Item::RECORD_THIRTEEN != nullptr ? Item::RECORD_THIRTEEN->id : 2256;
+        const int recordBase = Item::byRawId(2000) != nullptr ? Item::byRawId(2000)->id : 2256;
         dropItem(recordBase + random.nextInt(2), 1);
     }
 }
@@ -69,7 +69,7 @@ void CreeperEntity::onStruckByLightning(Entity* lightning)
 
 int CreeperEntity::getDroppedItemId() const
 {
-    return Item::GUNPOWDER != nullptr ? Item::GUNPOWDER->id : 289;
+    return Item::byRawId(33) != nullptr ? Item::byRawId(33)->id : 289;
 }
 
 void CreeperEntity::resetAttack(Entity* /*other*/, float /*distance*/)

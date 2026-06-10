@@ -20,6 +20,7 @@ public:
     void initBiomeSource() override;
     void initBrightnessTable() override;
     [[nodiscard]] std::unique_ptr<ChunkSource> createChunkGenerator() override;
+    [[nodiscard]] std::unique_ptr<ChunkSource> createChunkGeneratorFromSeed(std::uint64_t seed) override;
     [[nodiscard]] bool isValidSpawnPoint(int x, int z) const override;
     [[nodiscard]] float getTimeOfDay(long long time, float tickDelta) const override;
     [[nodiscard]] bool hasWorldSpawn() const override { return false; }

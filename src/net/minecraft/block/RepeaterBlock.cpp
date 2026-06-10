@@ -49,7 +49,7 @@ bool RepeaterBlock::canGrow(World* world, int x, int y, int z) const
 
 int RepeaterBlock::getDroppedItemId(int /*blockMeta*/, JavaRandom& /*random*/) const
 {
-    return Item::REPEATER != nullptr ? Item::REPEATER->id : 356;
+    return Item::byRawId(100) != nullptr ? Item::byRawId(100)->id : 356;
 }
 
 bool RepeaterBlock::isPowered(World* world, int x, int y, int z, int meta) const
@@ -228,8 +228,6 @@ void RepeaterBlock::randomDisplayTick(
     }
     world->addParticle("reddust", px + offsetX, py, pz + offsetZ, 0.0, 0.0, 0.0);
 }
-namespace {
-
 void RepeaterBlock::registerClass()
 {
     Block::REPEATER = (new RepeaterBlock(93, false))->setHardness(0.0f)->setSoundGroup(&vanillaWoodSound())->setTranslationKey("diode")->disableTrackingStatistics()->ignoreMetaUpdates();
@@ -239,7 +237,6 @@ void RepeaterBlock::registerClass()
 
 
 
-static ::net::minecraft::registry::RegisterBlock<RepeaterBlock> autoReg(94);
-} // namespace
+namespace {static ::net::minecraft::registry::RegisterBlock<RepeaterBlock> autoReg(94);} // namespace
 } // namespace net::minecraft::block
 

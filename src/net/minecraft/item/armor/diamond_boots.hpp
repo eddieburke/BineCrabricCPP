@@ -2,14 +2,17 @@
 
 #include "net/minecraft/item/ArmorItem.hpp"
 
+namespace net::minecraft::recipe {
+class CraftingRecipeManager;
+} // namespace net::minecraft::recipe
+
 namespace net::minecraft::item {
 
 class DiamondBootsItem : public ArmorItem {
-public:
-    static constexpr int ID = 313;
-    DiamondBootsItem() : ArmorItem(57, 3, 3, 3) {
-        setTexturePosition(3, 3)->setTranslationKey("bootsDiamond");
-    }
+public:    static void registerClass();
+    static void registerRecipes(recipe::CraftingRecipeManager& recipeManager);
+
+    DiamondBootsItem();
 };
 
 } // namespace net::minecraft::item

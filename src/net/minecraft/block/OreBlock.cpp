@@ -3,8 +3,6 @@
 #include "net/minecraft/block/OreBlock.hpp"
 
 namespace net::minecraft::block {
-namespace {
-
 void OreBlock::registerClass()
 {
     Block::GOLD_ORE = (new OreBlock(14, 32))->setHardness(3.0f)->setResistance(5.0f)->setSoundGroup(&vanillaStoneSound())->setTranslationKey("oreGold");
@@ -17,7 +15,6 @@ void OreBlock::registerClass()
 
 
 
-static ::net::minecraft::registry::RegisterBlock<OreBlock> autoReg(14);
-} // namespace
+namespace {static ::net::minecraft::registry::RegisterBlock<OreBlock> autoReg(14);} // namespace
 } // namespace net::minecraft::block
 

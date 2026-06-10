@@ -2,14 +2,18 @@
 
 #include "net/minecraft/item/Item.hpp"
 
+namespace net::minecraft::recipe {
+class CraftingRecipeManager;
+} // namespace net::minecraft::recipe
+
 namespace net::minecraft::item {
 
 class GoldIngotItem : public Item {
-public:
-    static constexpr int ID = 266;
-    GoldIngotItem() : Item(10) {
-        setTexturePosition(7, 2)->setTranslationKey("ingotGold");
-    }
+public:    static void registerClass();
+    static void registerRecipes(recipe::CraftingRecipeManager& recipeManager);
+    static void registerSmeltingRecipes();
+
+    GoldIngotItem();
 };
 
 } // namespace net::minecraft::item

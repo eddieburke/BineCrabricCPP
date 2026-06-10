@@ -4,9 +4,11 @@
 #include "net/minecraft/world/BlockView.hpp"
 #include "net/minecraft/world/ports/IBlockWorld.hpp"
 
+namespace net::minecraft::recipe { class CraftingRecipeManager; }
 namespace net::minecraft::block {
 
 class TrapdoorBlock : public Block {
+    static void registerRecipes(recipe::CraftingRecipeManager& recipeManager);
 public:
     static void registerClass();
     using Block::canPlaceAt;

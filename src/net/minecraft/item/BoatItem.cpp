@@ -8,6 +8,7 @@
 #include "net/minecraft/item/ItemPlacement.hpp"
 #include "net/minecraft/item/ItemRegistrar.hpp"
 #include "net/minecraft/item/ItemStack.hpp"
+#include "net/minecraft/recipe/CraftingRecipeManager.hpp"
 #include "net/minecraft/util/hit/HitResult.hpp"
 #include "net/minecraft/util/hit/HitResultType.hpp"
 #include "net/minecraft/world/World.hpp"
@@ -48,19 +49,21 @@ ItemStack* BoatItem::use(ItemStack* stack, World* world, PlayerEntity* user)
     return stack;
 }
 
-namespace {
-
 void BoatItem::registerClass()
 {
     static BoatItem BOAT(77);
     BOAT.setTexturePosition(8, 8)->setTranslationKey("boat");
-    Item::BOAT = &BOAT;
+}
+
+void BoatItem::registerRecipes(recipe::CraftingRecipeManager& recipeManager)
+{
+    recipeManager.addShapedRecipe(ItemStack(Item::byRawId(77)),
+        {std::string("# #"), std::string("###"), '#', Block::PLANKS});
 }
 
 
 
 
-static ::net::minecraft::registry::RegisterItem<BoatItem> autoReg(77);
-} // namespace
+namespace {static ::net::minecraft::registry::RegisterItem<BoatItem> autoReg(77); } // namespace
 
 } // namespace net::minecraft::item

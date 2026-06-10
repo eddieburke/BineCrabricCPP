@@ -7,6 +7,9 @@
 #include "net/minecraft/entity/player/PlayerEntity.hpp"
 #include "net/minecraft/item/ItemStack.hpp"
 #include "net/minecraft/world/World.hpp"
+#include "net/minecraft/recipe/CraftingRecipeManager.hpp"
+#include "net/minecraft/block/Block.hpp"
+#include "net/minecraft/item/Item.hpp"
 
 namespace net::minecraft::block {
 
@@ -87,17 +90,20 @@ void JukeboxBlock::dropStacks(World* world, int x, int y, int z, int meta, float
     }
     BlockWithEntity::dropStacks(world, x, y, z, meta, luck);
 }
-namespace {
-
 void JukeboxBlock::registerClass()
 {
     Block::JUKEBOX = (new JukeboxBlock(84, 74))->setHardness(2.0f)->setResistance(10.0f)->setSoundGroup(&vanillaStoneSound())->setTranslationKey("jukebox")->ignoreMetaUpdates();
+}
+void JukeboxBlock::registerRecipes(recipe::CraftingRecipeManager& recipeManager)
+{
+    recipeManager.addShapedRecipe(ItemStack(Block::JUKEBOX),
+        {std::string("###"), std::string("#X#"), std::string("###"), '#', Block::PLANKS, 'X', Item::byRawId(8)});
 }
 
 
 
 
-static ::net::minecraft::registry::RegisterBlock<JukeboxBlock> autoReg(84);
-} // namespace
+
+namespace {static ::net::minecraft::registry::RegisterBlock<JukeboxBlock> autoReg(84);} // namespace
 } // namespace net::minecraft::block
 

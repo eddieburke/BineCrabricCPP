@@ -7,6 +7,8 @@
 #include "net/minecraft/world/World.hpp"
 
 #include <vector>
+#include "net/minecraft/recipe/CraftingRecipeManager.hpp"
+#include "net/minecraft/item/Item.hpp"
 
 namespace net::minecraft::block {
 
@@ -21,8 +23,6 @@ struct RedstoneTorchBurnoutEntry {
 
 std::vector<RedstoneTorchBurnoutEntry> g_burnoutEntries;
 
-
-static ::net::minecraft::registry::RegisterBlock<RedstoneTorchBlock> autoReg(76);
 } // namespace
 
 RedstoneTorchBlock::RedstoneTorchBlock(int id, int textureId, bool litIn) : TorchBlock(id, textureId)
@@ -199,16 +199,21 @@ bool RedstoneTorchBlock::isEmittingRedstonePowerInDirection(
     }
     return meta != 2 || direction != 4;
 }
-namespace {
-
 void RedstoneTorchBlock::registerClass()
 {
     Block::REDSTONE_TORCH = (new RedstoneTorchBlock(75, 115, false))->setHardness(0.0f)->setSoundGroup(&vanillaWoodSound())->setTranslationKey("notGate")->ignoreMetaUpdates();
     Block::LIT_REDSTONE_TORCH = (new RedstoneTorchBlock(76, 99, true))->setHardness(0.0f)->setLuminance(0.5f)->setSoundGroup(&vanillaWoodSound())->setTranslationKey("notGate")->ignoreMetaUpdates();
 }
+void RedstoneTorchBlock::registerRecipes(recipe::CraftingRecipeManager& recipeManager)
+{
+    recipeManager.addShapedRecipe(ItemStack(Block::LIT_REDSTONE_TORCH),
+        {std::string("X"), std::string("#"), '#', Item::byRawId(24), 'X', Item::byRawId(75)});
+}
 
 
+namespace {
 
+static ::net::minecraft::registry::RegisterBlock<RedstoneTorchBlock> autoReg(76);
 } // namespace
 } // namespace net::minecraft::block
 

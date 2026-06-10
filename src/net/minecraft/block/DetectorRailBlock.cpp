@@ -5,6 +5,9 @@
 #include "net/minecraft/entity/Entity.hpp"
 #include "net/minecraft/entity/vehicle/MinecartEntity.hpp"
 #include "net/minecraft/world/World.hpp"
+#include "net/minecraft/recipe/CraftingRecipeManager.hpp"
+#include "net/minecraft/block/Block.hpp"
+#include "net/minecraft/item/Item.hpp"
 
 namespace net::minecraft::block {
 
@@ -80,17 +83,20 @@ void DetectorRailBlock::onTick(World* world, int x, int y, int z, JavaRandom& /*
     }
     updatePoweredStatus(world, x, y, z, meta);
 }
-namespace {
-
 void DetectorRailBlock::registerClass()
 {
     Block::DETECTOR_RAIL = (new DetectorRailBlock(28, 195))->setHardness(0.7f)->setSoundGroup(&vanillaMetalSound())->setTranslationKey("detectorRail")->ignoreMetaUpdates();
+}
+void DetectorRailBlock::registerRecipes(recipe::CraftingRecipeManager& recipeManager)
+{
+    recipeManager.addShapedRecipe(ItemStack(Block::DETECTOR_RAIL, 6),
+        {std::string("X X"), std::string("X#X"), std::string("XRX"), 'X', Item::byRawId(9), 'R', Item::byRawId(75), '#', Block::STONE_PRESSURE_PLATE});
 }
 
 
 
 
-static ::net::minecraft::registry::RegisterBlock<DetectorRailBlock> autoReg(28);
-} // namespace
+
+namespace {static ::net::minecraft::registry::RegisterBlock<DetectorRailBlock> autoReg(28);} // namespace
 } // namespace net::minecraft::block
 

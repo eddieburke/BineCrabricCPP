@@ -95,7 +95,7 @@ bool PlayerEntityRenderer::bindTexture(const net::minecraft::LivingEntity& entit
         return false;
     }
     const int suffix = layer == 2 ? 2 : 1;
-    EntityRenderer::bindTexture(std::string("/armor/") + kArmorTextureNames[armorItem->textureIndex] + "_"
+    EntityRenderer::bindTexture(std::string("/armor/") + kArmorTextureNames[armorItem->getTextureIndex()] + "_"
         + std::to_string(suffix) + ".png");
     model::BipedEntityModel* armorModel = layer == 2 ? armor2 : armor1;
     armorModel->head.visible = layer == 0;

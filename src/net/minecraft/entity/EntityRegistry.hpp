@@ -29,8 +29,6 @@ public:
 
     [[nodiscard]] static int getRawId(const Entity& entity);
     [[nodiscard]] static std::string getId(const Entity& entity);
-
-    static void bootstrap();
 };
 
 } // namespace net::minecraft::entity

@@ -131,9 +131,4 @@ std::string EntityRegistry::getId(const Entity& entity)
     return it->second;
 }
 
-void EntityRegistry::bootstrap()
-{
-    // Vanilla types register via EntityRegistrations.cpp static init.
-}
-
 } // namespace net::minecraft::entity

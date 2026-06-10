@@ -4,6 +4,8 @@
 #include "net/minecraft/entity/player/PlayerEntity.hpp"
 #include "net/minecraft/inventory/Inventory.hpp"
 #include "net/minecraft/item/Item.hpp"
+#include "net/minecraft/item/food/cooked_fish.hpp"
+#include "net/minecraft/item/misc/iron_ingot.hpp"
 #include "net/minecraft/screen/slot/Slot.hpp"
 
 
@@ -28,10 +30,10 @@ public:
         if (player_ != nullptr) {
             ItemStack crafted = stack;
             crafted.onCraft(player_->world, player_);
-            if (Item::IRON_INGOT != nullptr && stack.itemId == Item::IRON_INGOT->id) {
+            if (Item::byRawId(9) != nullptr && stack.itemId == Item::byRawId(9)->id) {
                 player_->increaseStat(achievement::Achievements::ACQUIRE_IRON.statId(), 1);
             }
-            if (Item::COOKED_FISH != nullptr && stack.itemId == Item::COOKED_FISH->id) {
+            if (Item::byRawId(94) != nullptr && stack.itemId == Item::byRawId(94)->id) {
                 player_->increaseStat(achievement::Achievements::COOK_FISH.statId(), 1);
             }
         }

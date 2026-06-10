@@ -4,6 +4,7 @@
 
 #include "net/minecraft/block/Block.hpp"
 #include "net/minecraft/item/Item.hpp"
+#include "net/minecraft/item/RedstoneItem.hpp"
 #include "net/minecraft/util/math/Facings.hpp"
 #include "net/minecraft/world/BlockView.hpp"
 #include "net/minecraft/world/World.hpp"
@@ -22,7 +23,7 @@ bool RedstoneWireBlock::canPlaceAt(World* world, int x, int y, int z) const
 
 int RedstoneWireBlock::getDroppedItemId(int /*blockMeta*/, JavaRandom& /*random*/) const
 {
-    return Item::REDSTONE != nullptr ? Item::REDSTONE->id : 331;
+    return Item::byRawId(75) != nullptr ? Item::byRawId(75)->id : 331;
 }
 
 bool RedstoneWireBlock::shouldConnectTo(const BlockView* blockView, int x, int y, int z, int l)
@@ -354,8 +355,6 @@ void RedstoneWireBlock::randomDisplayTick(
     }
     world->addParticle("reddust", px, py, pz, static_cast<double>(redIn), static_cast<double>(greenIn), static_cast<double>(blueIn));
 }
-namespace {
-
 void RedstoneWireBlock::registerClass()
 {
     Block::REDSTONE_WIRE = (new RedstoneWireBlock(55, 164))->setHardness(0.0f)->setSoundGroup(&vanillaDefaultSound())->setTranslationKey("redstoneDust")->disableTrackingStatistics()->ignoreMetaUpdates();
@@ -364,7 +363,6 @@ void RedstoneWireBlock::registerClass()
 
 
 
-static ::net::minecraft::registry::RegisterBlock<RedstoneWireBlock> autoReg(55);
-} // namespace
+namespace {static ::net::minecraft::registry::RegisterBlock<RedstoneWireBlock> autoReg(55);} // namespace
 } // namespace net::minecraft::block
 

@@ -3,6 +3,7 @@
 #include "net/minecraft/block/Block.hpp"
 #include "net/minecraft/block/material/Material.hpp"
 #include "net/minecraft/item/Item.hpp"
+#include "net/minecraft/item/misc/sugar_cane.hpp"
 #include "net/minecraft/world/ports/IBlockWorld.hpp"
 
 namespace net::minecraft::block {
@@ -77,7 +78,7 @@ public:
     [[nodiscard]] int getRenderType() const override { return 1; }
     [[nodiscard]] int getDroppedItemId(int /*blockMeta*/, JavaRandom& /*random*/) const override
     {
-        return Item::SUGAR_CANE != nullptr ? Item::SUGAR_CANE->id : 338;
+        return Item::byRawId(82) != nullptr ? Item::byRawId(82)->id : 338;
     }
 
     [[nodiscard]] std::optional<net::minecraft::Box> getCollisionShape(World* /*world*/, int /*x*/, int /*y*/, int /*z*/) const override

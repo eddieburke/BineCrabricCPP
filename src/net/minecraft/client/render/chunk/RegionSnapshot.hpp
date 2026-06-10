@@ -27,7 +27,7 @@ public:
 
     // --- BlockView ---
     [[nodiscard]] int getBlockId(int x, int y, int z) const override;
-    [[nodiscard]] net::minecraft::block::entity::BlockEntity* getBlockEntity(int x, int y, int z) override
+    [[nodiscard]] net::minecraft::block::entity::BlockEntity* getBlockEntity(int, int, int) override
     {
         // Block entities are live objects; the mesh job records positions and
         // the main thread resolves pointers at upload time instead.

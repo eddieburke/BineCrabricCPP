@@ -8,6 +8,7 @@
 #include "net/minecraft/entity/player/PlayerEntity.hpp"
 #include "net/minecraft/item/Item.hpp"
 #include "net/minecraft/item/map/MapState.hpp"
+#include "net/minecraft/recipe/CraftingRecipeManager.hpp"
 #include "net/minecraft/network/packet/InventoryPackets.hpp"
 #include "net/minecraft/util/math/MathHelper.hpp"
 #include "net/minecraft/world/World.hpp"
@@ -229,7 +230,7 @@ void MapItem::inventoryTick(ItemStack* stack, World* world, Entity* entity, int 
 
 Packet* MapItem::getUpdatePacket(ItemStack* stack, World* world, PlayerEntity* player)
 {
-    if (stack == nullptr || world == nullptr || player == nullptr || Item::MAP == nullptr) {
+    if (stack == nullptr || world == nullptr || player == nullptr || Item::byRawId(102) == nullptr) {
         return nullptr;
     }
     map::MapState* mapState = getSavedMapState(*stack, world);
@@ -241,7 +242,7 @@ Packet* MapItem::getUpdatePacket(ItemStack* stack, World* world, PlayerEntity* p
         return nullptr;
     }
     auto* packet = new MapUpdateS2CPacket();
-    packet->itemRawId = Item::MAP->id;
+    packet->itemRawId = Item::byRawId(102)->id;
     packet->id = stack->getDamage();
     packet->updateData = updateData;
     return packet;
@@ -264,19 +265,21 @@ void MapItem::onCraft(ItemStack* stack, World* world, PlayerEntity* player)
     world->persistentStateManager.set(stateId, std::move(mapState));
 }
 
-namespace {
-
 void MapItem::registerClass()
 {
     static MapItem MAP(102);
     MAP.setTexturePosition(12, 3)->setTranslationKey("map");
-    Item::MAP = &MAP;
+}
+
+void MapItem::registerRecipes(recipe::CraftingRecipeManager& recipeManager)
+{
+    recipeManager.addShapedRecipe(ItemStack(Item::byRawId(102)),
+        {std::string("###"), std::string("#X#"), std::string("###"), '#', Item::byRawId(83), 'X', Item::byRawId(89)});
 }
 
 
 
 
-static ::net::minecraft::registry::RegisterItem<MapItem> autoReg(102);
-} // namespace
+namespace { static ::net::minecraft::registry::RegisterItem<MapItem> autoReg(102); } // namespace
 
 } // namespace net::minecraft::item

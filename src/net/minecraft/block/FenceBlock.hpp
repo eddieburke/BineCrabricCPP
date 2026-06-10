@@ -3,9 +3,11 @@
 #include "net/minecraft/block/Block.hpp"
 #include "net/minecraft/world/ports/IBlockWorld.hpp"
 
+namespace net::minecraft::recipe { class CraftingRecipeManager; }
 namespace net::minecraft::block {
 
 class FenceBlock : public Block {
+    static void registerRecipes(recipe::CraftingRecipeManager& recipeManager);
 public:
     static void registerClass();
     using Block::canPlaceAt;

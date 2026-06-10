@@ -65,7 +65,7 @@ void ArrowEntity::onPlayerInteraction(player::PlayerEntity* player)
         return;
     }
     if (inGround && pickupAllowed && shake <= 0) {
-        const int arrowId = Item::ARROW != nullptr ? Item::ARROW->id : 262;
+        const int arrowId = Item::byRawId(6) != nullptr ? Item::byRawId(6)->id : 262;
         ItemStack pickupStack(arrowId, 1, 0);
         if (player->inventory.addStack(pickupStack)) {
             world->playSound(

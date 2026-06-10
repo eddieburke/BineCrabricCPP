@@ -30,6 +30,16 @@ std::unique_ptr<ChunkSource> SkylandsDimension::createChunkGenerator()
     return std::make_unique<SkyChunkGenerator>(world, world->seed());
 }
 
+std::unique_ptr<ChunkSource> SkylandsDimension::createChunkGeneratorFromSeed(std::uint64_t seed)
+{
+    if (world == nullptr) {
+        return nullptr;
+    }
+    auto generator = std::make_unique<SkyChunkGenerator>(world, seed);
+    generator->useLocalBiomeSource(true);
+    return generator;
+}
+
 float SkylandsDimension::getTimeOfDay(long long time, float tickDelta) const
 {
     (void)time;

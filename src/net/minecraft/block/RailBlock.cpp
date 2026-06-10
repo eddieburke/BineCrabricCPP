@@ -6,6 +6,9 @@
 
 #include <memory>
 #include <vector>
+#include "net/minecraft/recipe/CraftingRecipeManager.hpp"
+#include "net/minecraft/block/Block.hpp"
+#include "net/minecraft/item/Item.hpp"
 
 namespace net::minecraft::block {
 
@@ -342,8 +345,6 @@ private:
     }
 };
 
-
-static ::net::minecraft::registry::RegisterBlock<RailBlock> autoReg(27);
 } // namespace
 
 RailBlock::RailBlock(int id, int textureId, bool alwaysStraightIn)
@@ -579,16 +580,23 @@ std::optional<net::minecraft::HitResult> RailBlock::raycast(
     }
     return Block::raycast(world, x, y, z, startPos, endPos);
 }
-namespace {
-
 void RailBlock::registerClass()
 {
     Block::POWERED_RAIL = (new RailBlock(27, 179, true))->setHardness(0.7f)->setSoundGroup(&vanillaMetalSound())->setTranslationKey("goldenRail")->ignoreMetaUpdates();
     Block::RAIL = (new RailBlock(66, 128, false))->setHardness(0.7f)->setSoundGroup(&vanillaMetalSound())->setTranslationKey("rail")->ignoreMetaUpdates();
 }
+void RailBlock::registerRecipes(recipe::CraftingRecipeManager& recipeManager)
+{
+    recipeManager.addShapedRecipe(ItemStack(Block::RAIL, 16),
+        {std::string("X X"), std::string("X#X"), std::string("X X"), 'X', Item::byRawId(9), '#', Item::byRawId(24)});
+    recipeManager.addShapedRecipe(ItemStack(Block::POWERED_RAIL, 6),
+        {std::string("X X"), std::string("X#X"), std::string("XRX"), 'X', Item::byRawId(10), 'R', Item::byRawId(75), '#', Item::byRawId(24)});
+}
 
 
+namespace {
 
+static ::net::minecraft::registry::RegisterBlock<RailBlock> autoReg(27);
 } // namespace
 } // namespace net::minecraft::block
 

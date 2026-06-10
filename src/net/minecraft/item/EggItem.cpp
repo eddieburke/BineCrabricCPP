@@ -35,19 +35,15 @@ ItemStack* EggItem::use(ItemStack* stack, World* world, PlayerEntity* user)
     return stack;
 }
 
-namespace {
-
 void EggItem::registerClass()
 {
     static EggItem EGG(88);
     EGG.setTexturePosition(12, 0)->setTranslationKey("egg");
-    Item::EGG = &EGG;
 }
 
 
 
 
-static ::net::minecraft::registry::RegisterItem<EggItem> autoReg(88);
-} // namespace
+namespace {static ::net::minecraft::registry::RegisterItem<EggItem> autoReg(88); } // namespace
 
 } // namespace net::minecraft::item

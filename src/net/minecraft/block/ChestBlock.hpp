@@ -10,9 +10,11 @@ class World;
 class JavaRandom;
 }
 
+namespace net::minecraft::recipe { class CraftingRecipeManager; }
 namespace net::minecraft::block {
 
 class ChestBlock : public BlockWithEntity {
+    static void registerRecipes(recipe::CraftingRecipeManager& recipeManager);
 public:
     static void registerClass();
     using Block::canPlaceAt;

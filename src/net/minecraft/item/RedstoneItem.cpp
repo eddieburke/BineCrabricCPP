@@ -31,19 +31,15 @@ bool RedstoneItem::useOnBlock(ItemStack* stack, PlayerEntity* /*user*/, World* w
     return true;
 }
 
-namespace {
-
 void RedstoneItem::registerClass()
 {
     static RedstoneItem REDSTONE(75);
     REDSTONE.setTexturePosition(8, 3)->setTranslationKey("redstone");
-    Item::REDSTONE = &REDSTONE;
 }
 
 
 
 
-static ::net::minecraft::registry::RegisterItem<RedstoneItem> autoReg(75);
-} // namespace
+namespace {static ::net::minecraft::registry::RegisterItem<RedstoneItem> autoReg(75); } // namespace
 
 } // namespace net::minecraft::item

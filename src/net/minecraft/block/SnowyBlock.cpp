@@ -6,6 +6,7 @@
 #include "net/minecraft/entity/player/PlayerEntity.hpp"
 #include "net/minecraft/item/Item.hpp"
 #include "net/minecraft/item/ItemStack.hpp"
+#include "net/minecraft/item/SnowballItem.hpp"
 #include "net/minecraft/stat/Stats.hpp"
 #include "net/minecraft/world/LightType.hpp"
 #include "net/minecraft/world/World.hpp"
@@ -81,7 +82,7 @@ void SnowyBlock::afterBreak(
         Block::afterBreak(world, player, x, y, z, meta);
         return;
     }
-    const int snowballId = Item::SNOWBALL != nullptr ? Item::SNOWBALL->id : 332;
+    const int snowballId = Item::byRawId(76) != nullptr ? Item::byRawId(76)->id : 332;
     constexpr float spread = 0.7f;
     const double offsetX = static_cast<double>(world->random().nextFloat() * spread) + static_cast<double>(1.0f - spread) * 0.5;
     const double offsetY = static_cast<double>(world->random().nextFloat() * spread) + static_cast<double>(1.0f - spread) * 0.5;
@@ -96,7 +97,7 @@ void SnowyBlock::afterBreak(
 
 int SnowyBlock::getDroppedItemId(int /*blockMeta*/, JavaRandom& /*random*/) const
 {
-    return Item::SNOWBALL != nullptr ? Item::SNOWBALL->id : 332;
+    return Item::byRawId(76) != nullptr ? Item::byRawId(76)->id : 332;
 }
 
 void SnowyBlock::onTick(World* world, int x, int y, int z, JavaRandom& /*random*/)
@@ -117,8 +118,6 @@ bool SnowyBlock::isSideVisible(const BlockView* blockView, int x, int y, int z, 
     }
     return Block::isSideVisible(blockView, x, y, z, side);
 }
-namespace {
-
 void SnowyBlock::registerClass()
 {
     Block::SNOW = (new SnowyBlock(78, 66))->setHardness(0.1f)->setSoundGroup(&vanillaWoolSound())->setTranslationKey("snow");
@@ -127,7 +126,6 @@ void SnowyBlock::registerClass()
 
 
 
-static ::net::minecraft::registry::RegisterBlock<SnowyBlock> autoReg(78);
-} // namespace
+namespace {static ::net::minecraft::registry::RegisterBlock<SnowyBlock> autoReg(78);} // namespace
 } // namespace net::minecraft::block
 

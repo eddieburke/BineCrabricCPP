@@ -6,11 +6,17 @@
 #include <array>
 #include <string>
 
+namespace net::minecraft::recipe {
+class CraftingRecipeManager;
+class SmeltingRecipeManager;
+} // namespace net::minecraft::recipe
+
 namespace net::minecraft::item {
 
 class DyeItem : public Item {
-public:
-    static void registerClass();
+public:    static void registerClass();
+    static void registerRecipes(recipe::CraftingRecipeManager& recipeManager);
+    static void registerSmeltingRecipes();
     static constexpr std::array<const char*, 16> names {
         "black", "red", "green", "brown", "blue", "purple", "cyan", "silver",
         "gray", "pink", "lime", "yellow", "lightBlue", "magenta", "orange", "white"};

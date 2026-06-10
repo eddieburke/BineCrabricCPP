@@ -3,8 +3,6 @@
 #include "net/minecraft/block/DeadBushBlock.hpp"
 
 namespace net::minecraft::block {
-namespace {
-
 void DeadBushBlock::registerClass()
 {
     Block::DEAD_BUSH = (new DeadBushBlock(32, 55))->setHardness(0.0f)->setSoundGroup(&vanillaDirtSound())->setTranslationKey("deadbush");
@@ -13,7 +11,6 @@ void DeadBushBlock::registerClass()
 
 
 
-static ::net::minecraft::registry::RegisterBlock<DeadBushBlock> autoReg(32);
-} // namespace
+namespace {static ::net::minecraft::registry::RegisterBlock<DeadBushBlock> autoReg(32);} // namespace
 } // namespace net::minecraft::block
 

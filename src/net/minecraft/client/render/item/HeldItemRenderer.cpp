@@ -275,7 +275,7 @@ void HeldItemRenderer::render(float tickDelta)
     entity::EntityRenderer* entityRenderer = entity::EntityRenderDispatcher::instance().get(*clientPlayer);
     auto* playerRenderer = dynamic_cast<entity::PlayerEntityRenderer*>(entityRenderer);
 
-    if (selectedItem != nullptr && Item::MAP != nullptr && selectedItem->itemId == Item::MAP->id) {
+    if (selectedItem != nullptr && Item::byRawId(102) != nullptr && selectedItem->itemId == Item::byRawId(102)->id) {
         gl::GL11::glPushMatrix();
         constexpr float scale = 0.8f;
         float swing = handSwingProgress(*clientPlayer, tickDelta);
@@ -326,9 +326,9 @@ void HeldItemRenderer::render(float tickDelta)
         tessellator.vertex(128 + border, 0 - border, 0.0, 1.0, 0.0);
         tessellator.vertex(0 - border, 0 - border, 0.0, 0.0, 0.0);
         tessellator.draw();
-        if (Item::MAP != nullptr) {
+        if (Item::byRawId(102) != nullptr) {
             ItemStack mapStack = *selectedItem;
-            if (auto* mapItem = dynamic_cast<::net::minecraft::item::MapItem*>(Item::MAP)) {
+            if (auto* mapItem = dynamic_cast<::net::minecraft::item::MapItem*>(Item::byRawId(102))) {
                 if (map::MapState* mapState = mapItem->getSavedMapState(mapStack, minecraft->world)) {
                     mapRenderer.render(*clientPlayer, minecraft->textureManager, *mapState);
                 }

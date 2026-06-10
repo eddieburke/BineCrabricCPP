@@ -2,6 +2,9 @@
 
 #include "net/minecraft/block/Block.hpp"
 #include "net/minecraft/item/Item.hpp"
+#include "net/minecraft/item/CoalItem.hpp"
+#include "net/minecraft/item/DyeItem.hpp"
+#include "net/minecraft/item/misc/diamond.hpp"
 
 namespace net::minecraft::block {
 
@@ -13,13 +16,13 @@ public:
     [[nodiscard]] int getDroppedItemId(int /*blockMeta*/, JavaRandom& /*random*/) const override
     {
         if (Block::COAL_ORE != nullptr && id == Block::COAL_ORE->id) {
-            return Item::COAL != nullptr ? Item::COAL->id : 263;
+            return Item::byRawId(7) != nullptr ? Item::byRawId(7)->id : 263;
         }
         if (Block::DIAMOND_ORE != nullptr && id == Block::DIAMOND_ORE->id) {
-            return Item::DIAMOND != nullptr ? Item::DIAMOND->id : 264;
+            return Item::byRawId(8) != nullptr ? Item::byRawId(8)->id : 264;
         }
         if (Block::LAPIS_ORE != nullptr && id == Block::LAPIS_ORE->id) {
-            return Item::DYE != nullptr ? Item::DYE->id : 351;
+            return Item::byRawId(95) != nullptr ? Item::byRawId(95)->id : 351;
         }
         return id;
     }

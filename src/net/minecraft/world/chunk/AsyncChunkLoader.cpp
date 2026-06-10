@@ -5,13 +5,36 @@
 
 namespace net::minecraft {
 
-AsyncChunkLoader::AsyncChunkLoader(std::uint64_t seed, ChunkStorage* storage,
+AsyncChunkLoader::AsyncChunkLoader(World* world, std::uint64_t seed, ChunkStorage* storage,
     std::function<std::unique_ptr<ChunkSource>(std::uint64_t)> genFactory)
-    : seed_(seed),
+    : world_(world),
+      seed_(seed),
       storage_(storage),
       genFactory_(std::move(genFactory)),
       pool_(2, "chunk-gen")
 {
+}
+
+std::unique_ptr<ChunkSource> AsyncChunkLoader::acquireGenerator()
+{
+    {
+        const std::lock_guard lock(mutex_);
+        if (!generatorPool_.empty()) {
+            auto generator = std::move(generatorPool_.back());
+            generatorPool_.pop_back();
+            return generator;
+        }
+    }
+    return genFactory_ ? genFactory_(seed_) : nullptr;
+}
+
+void AsyncChunkLoader::releaseGenerator(std::unique_ptr<ChunkSource> generator)
+{
+    if (generator == nullptr) {
+        return;
+    }
+    const std::lock_guard lock(mutex_);
+    generatorPool_.push_back(std::move(generator));
 }
 
 AsyncChunkLoader::~AsyncChunkLoader()
@@ -43,10 +66,11 @@ bool AsyncChunkLoader::request(int chunkX, int chunkZ)
     }
 
     pool_.submit([this, job, key]() {
-        // Try storage first (storage_ has its own mutex)
+        // Try storage first (region IO is serialized by RegionIo's mutex).
+        // world_ is passed for its immutable dimension/seed reads only.
         if (storage_ != nullptr) {
             try {
-                auto loaded = storage_->loadChunk(nullptr, job->chunkX, job->chunkZ);
+                auto loaded = storage_->loadChunk(world_, job->chunkX, job->chunkZ);
                 auto chunk = std::make_unique<Chunk>(std::move(loaded));
                 if (!chunk->empty && chunk->chunkPosEquals(job->chunkX, job->chunkZ)) {
                     job->result = std::move(chunk);
@@ -57,15 +81,17 @@ bool AsyncChunkLoader::request(int chunkX, int chunkZ)
             }
         }
 
-        // Generate if storage didn't produce a chunk
-        if (job->result == nullptr && genFactory_) {
-            try {
-                auto gen = genFactory_(seed_);
-                job->result = std::make_unique<Chunk>(std::move(gen->getChunk(job->chunkX, job->chunkZ)));
-                // fill() touches only chunk-local arrays
-                job->result->fill();
-            } catch (...) {
-                job->failed = true;
+        // Generate if storage didn't produce a chunk.
+        if (job->result == nullptr) {
+            if (auto gen = acquireGenerator()) {
+                try {
+                    job->result = std::make_unique<Chunk>(std::move(gen->getChunk(job->chunkX, job->chunkZ)));
+                    // fill() touches only chunk-local arrays.
+                    job->result->fill();
+                } catch (...) {
+                    job->failed = true;
+                }
+                releaseGenerator(std::move(gen));
             }
         }
 
@@ -88,34 +114,17 @@ bool AsyncChunkLoader::request(int chunkX, int chunkZ)
     return true;
 }
 
-std::vector<std::unique_ptr<AsyncChunkJob>> AsyncChunkLoader::pumpCompleted()
+std::vector<std::shared_ptr<AsyncChunkJob>> AsyncChunkLoader::pumpCompleted()
 {
     std::vector<std::shared_ptr<AsyncChunkJob>> done;
     {
         const std::lock_guard lock(mutex_);
         done.swap(completed_);
-    }
-
-    std::vector<std::unique_ptr<AsyncChunkJob>> result;
-    result.reserve(done.size());
-
-    for (auto& job : done) {
-        const std::pair key {job->chunkX, job->chunkZ};
-        {
-            const std::lock_guard lock(mutex_);
-            inFlight_.erase(key);
+        for (const auto& job : done) {
+            inFlight_.erase({job->chunkX, job->chunkZ});
         }
-        // Transfer ownership out of the shared_ptr
-        auto owned = std::make_unique<AsyncChunkJob>();
-        owned->chunkX = job->chunkX;
-        owned->chunkZ = job->chunkZ;
-        owned->result = std::move(job->result);
-        owned->storageHit = job->storageHit;
-        owned->failed = job->failed;
-        result.push_back(std::move(owned));
     }
-
-    return result;
+    return done;
 }
 
 std::unique_ptr<Chunk> AsyncChunkLoader::waitForChunk(int chunkX, int chunkZ)

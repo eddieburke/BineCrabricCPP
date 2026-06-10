@@ -35,7 +35,7 @@ void ZombieEntity::tickMovement()
 
 int ZombieEntity::getDroppedItemId() const
 {
-    return Item::FEATHER != nullptr ? Item::FEATHER->id : 288;
+    return Item::byRawId(32) != nullptr ? Item::byRawId(32)->id : 288;
 }
 
 

@@ -116,7 +116,7 @@ void PaintingEntity::dropPaintingItem()
     if (world == nullptr || world->isRemote()) {
         return;
     }
-    const int paintingId = Item::PAINTING != nullptr ? Item::PAINTING->id : 321;
+    const int paintingId = Item::byRawId(65) != nullptr ? Item::byRawId(65)->id : 321;
     dropItem(ItemStack(paintingId, 1, 0), 0.0f);
 }
 
@@ -227,11 +227,11 @@ void PaintingEntity::readNbt(const NbtCompound& nbt)
     setFacing(facing);
 }
 
-} // namespace net::minecraft::entity::decoration::painting
-
 void PaintingEntity::registerClass()
 {
     ::net::minecraft::entity::detail::registerVanillaEntity<PaintingEntity>("Painting", 9);
 }
 
 static ::net::minecraft::registry::RegisterEntity<PaintingEntity> autoReg(9);
+
+} // namespace net::minecraft::entity::decoration::painting

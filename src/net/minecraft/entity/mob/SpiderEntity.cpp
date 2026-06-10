@@ -59,7 +59,7 @@ void SpiderEntity::attack(Entity* other, float distance)
 
 int SpiderEntity::getDroppedItemId() const
 {
-    return Item::STRING != nullptr ? Item::STRING->id : 287;
+    return Item::byRawId(31) != nullptr ? Item::byRawId(31)->id : 287;
 }
 
 

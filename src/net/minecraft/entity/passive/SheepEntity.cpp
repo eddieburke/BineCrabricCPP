@@ -50,7 +50,7 @@ bool SheepEntity::interact(player::PlayerEntity* player)
         return false;
     }
     ItemStack* itemStack = player->inventory.getSelectedItem();
-    if (itemStack != nullptr && Item::SHEARS != nullptr && itemStack->itemId == Item::SHEARS->id && !isSheared()) {
+    if (itemStack != nullptr && Item::byRawId(103) != nullptr && itemStack->itemId == Item::byRawId(103)->id && !isSheared()) {
         if (world != nullptr && !world->isRemote()) {
             setSheared(true);
             const int dropCount = 2 + random.nextInt(3);

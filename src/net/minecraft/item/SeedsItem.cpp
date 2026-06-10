@@ -4,18 +4,14 @@
 #include "net/minecraft/item/SeedsItem.hpp"
 
 namespace net::minecraft::item {
-namespace {
 
 void SeedsItem::registerClass()
 {
-    static SeedsItem SEEDS(39, 59);
-    SEEDS.setTexturePosition(9, 0)->setTranslationKey("seeds");
-    Item::SEEDS = &SEEDS;
+    static SeedsItem instance(39, Block::WHEAT != nullptr ? Block::WHEAT->id : 59);
+    instance.setTexturePosition(9, 0)->setTranslationKey("seeds");
+    Item::registerInItemsArray(&instance);
 }
 
+namespace { static ::net::minecraft::registry::RegisterItem<SeedsItem> autoReg(39); }
 
-
-
-static ::net::minecraft::registry::RegisterItem<SeedsItem> autoReg(39);
-} // namespace
 } // namespace net::minecraft::item

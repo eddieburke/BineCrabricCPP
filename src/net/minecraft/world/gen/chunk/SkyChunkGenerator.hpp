@@ -32,6 +32,10 @@ namespace net::minecraft {
 
 class SkyChunkGenerator : public ChunkSource {
 public:
+    // Worker-thread clones sample their own seeded BiomeSource; the world's
+    // source has mutable scratch buffers shared with the main thread.
+    void useLocalBiomeSource(bool value) noexcept { useLocalBiomeSource_ = value; }
+
     explicit SkyChunkGenerator(World* world, std::uint64_t seed)
         : random_(seed),
           world_(world),
@@ -241,7 +245,7 @@ public:
 private:
     [[nodiscard]] BiomeSource* activeBiomeSource()
     {
-        if (world_ != nullptr && world_->getBiomeSource() != nullptr) {
+        if (!useLocalBiomeSource_ && world_ != nullptr && world_->getBiomeSource() != nullptr) {
             return world_->getBiomeSource();
         }
         return &biomeSource_;
@@ -435,6 +439,7 @@ private:
 
     JavaRandom random_;
     World* world_ = nullptr;
+    bool useLocalBiomeSource_ = false;
     OctavePerlinNoiseSampler minLimitPerlinNoise_;
     OctavePerlinNoiseSampler maxLimitPerlinNoise_;
     OctavePerlinNoiseSampler perlinNoise1_;

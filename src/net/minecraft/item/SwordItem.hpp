@@ -10,9 +10,9 @@ namespace net::minecraft::item {
 
 class SwordItem : public Item {
 public:
-    static void registerClass();
-    explicit SwordItem(int rawId, ToolMaterial material)
-        : Item(rawId),
+protected:
+    SwordItem(int rawId, ToolMaterial material)
+        : Item(rawId, RegistrationMode::Deferred),
           damage_(4 + toolMaterialAttackDamage(material) * 2)
     {
         setMaxCount(1);

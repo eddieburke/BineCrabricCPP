@@ -40,12 +40,12 @@ void SkeletonEntity::dropItems()
         return;
     }
     int count = random.nextInt(3);
-    const int arrowId = Item::ARROW != nullptr ? Item::ARROW->id : 262;
+    const int arrowId = Item::byRawId(6) != nullptr ? Item::byRawId(6)->id : 262;
     for (int i = 0; i < count; ++i) {
         dropItem(arrowId, 1);
     }
     count = random.nextInt(3);
-    const int boneId = Item::BONE != nullptr ? Item::BONE->id : 352;
+    const int boneId = Item::byRawId(96) != nullptr ? Item::byRawId(96)->id : 352;
     for (int i = 0; i < count; ++i) {
         dropItem(boneId, 1);
     }

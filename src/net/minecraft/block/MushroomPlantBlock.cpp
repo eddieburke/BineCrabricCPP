@@ -3,8 +3,6 @@
 #include "net/minecraft/block/MushroomPlantBlock.hpp"
 
 namespace net::minecraft::block {
-namespace {
-
 void MushroomPlantBlock::registerClass()
 {
     Block::BROWN_MUSHROOM = (new MushroomPlantBlock(39, 29))->setHardness(0.0f)->setSoundGroup(&vanillaDirtSound())->setLuminance(0.125f)->setTranslationKey("mushroom");
@@ -14,7 +12,6 @@ void MushroomPlantBlock::registerClass()
 
 
 
-static ::net::minecraft::registry::RegisterBlock<MushroomPlantBlock> autoReg(39);
-} // namespace
+namespace {static ::net::minecraft::registry::RegisterBlock<MushroomPlantBlock> autoReg(39);} // namespace
 } // namespace net::minecraft::block
 

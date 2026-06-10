@@ -102,7 +102,7 @@ void WolfEntity::tickMovement()
         if (auto* player = dynamic_cast<player::PlayerEntity*>(getLookTarget())) {
             ItemStack* itemStack = player->inventory.getSelectedItem();
             if (itemStack != nullptr) {
-                if (!isTamed() && Item::BONE != nullptr && itemStack->itemId == Item::BONE->id) {
+                if (!isTamed() && Item::byRawId(96) != nullptr && itemStack->itemId == Item::byRawId(96)->id) {
                     begging = true;
                 } else if (isTamed() && itemStack->itemId >= 0 && itemStack->itemId < Item::ITEM_COUNT) {
                     if (auto* food = dynamic_cast<item::FoodItem*>(Item::ITEMS[static_cast<std::size_t>(itemStack->itemId)])) {
@@ -272,7 +272,7 @@ bool WolfEntity::interact(player::PlayerEntity* player)
     }
     ItemStack* itemStack = player->inventory.getSelectedItem();
     if (!isTamed()) {
-        if (itemStack != nullptr && Item::BONE != nullptr && itemStack->itemId == Item::BONE->id && !isAngry()) {
+        if (itemStack != nullptr && Item::byRawId(96) != nullptr && itemStack->itemId == Item::byRawId(96)->id && !isAngry()) {
             --itemStack->count;
             if (itemStack->count <= 0) {
                 player->inventory.setStack(static_cast<std::size_t>(player->inventory.selectedSlot), {});
@@ -302,8 +302,8 @@ bool WolfEntity::interact(player::PlayerEntity* player)
                     if (itemStack->count <= 0) {
                         player->inventory.setStack(static_cast<std::size_t>(player->inventory.selectedSlot), {});
                     }
-                    const int healAmount = Item::RAW_PORKCHOP != nullptr
-                        ? dynamic_cast<item::FoodItem*>(Item::RAW_PORKCHOP)->getHealthRestored()
+                    const int healAmount = Item::byRawId(63) != nullptr
+                        ? dynamic_cast<item::FoodItem*>(Item::byRawId(63))->getHealthRestored()
                         : 3;
                     heal(healAmount);
                     return true;

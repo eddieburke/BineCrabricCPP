@@ -1,16 +1,18 @@
 #pragma once
 
 #include "net/minecraft/item/AxeItem.hpp"
-#include "net/minecraft/item/ToolMaterial.hpp"
+
+namespace net::minecraft::recipe {
+class CraftingRecipeManager;
+} // namespace net::minecraft::recipe
 
 namespace net::minecraft::item {
 
 class IronAxeItem : public AxeItem {
-public:
-    static constexpr int ID = 258;
-    IronAxeItem() : AxeItem(2, ToolMaterial::Iron) {
-        setTexturePosition(2, 7)->setTranslationKey("hatchetIron");
-    }
+public:    static void registerClass();
+    static void registerRecipes(recipe::CraftingRecipeManager& recipeManager);
+
+    IronAxeItem();
 };
 
 } // namespace net::minecraft::item

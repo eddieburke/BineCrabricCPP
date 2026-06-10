@@ -67,9 +67,9 @@ void PigEntity::onLanding(float fallDistance)
 int PigEntity::getDroppedItemId() const
 {
     if (fireTicks > 0) {
-        return Item::COOKED_PORKCHOP != nullptr ? Item::COOKED_PORKCHOP->id : 320;
+        return Item::byRawId(64) != nullptr ? Item::byRawId(64)->id : 320;
     }
-    return Item::RAW_PORKCHOP != nullptr ? Item::RAW_PORKCHOP->id : 319;
+    return Item::byRawId(63) != nullptr ? Item::byRawId(63)->id : 319;
 }
 
 

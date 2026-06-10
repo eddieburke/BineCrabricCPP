@@ -6,8 +6,10 @@
 #include "net/minecraft/entity/TntEntity.hpp"
 #include "net/minecraft/entity/player/PlayerEntity.hpp"
 #include "net/minecraft/item/Item.hpp"
+#include "net/minecraft/item/misc/flint_and_steel.hpp"
 #include "net/minecraft/item/ItemStack.hpp"
 #include "net/minecraft/world/World.hpp"
+#include "net/minecraft/recipe/CraftingRecipeManager.hpp"
 
 namespace net::minecraft::block {
 
@@ -65,9 +67,9 @@ void TntBlock::onDestroyedByExplosion(World* world, int x, int y, int z)
 
 void TntBlock::onBlockBreakStart(World* world, int x, int y, int z, net::minecraft::PlayerEntity* player)
 {
-    if (world != nullptr && player != nullptr && Item::FLINT_AND_STEEL != nullptr) {
+    if (world != nullptr && player != nullptr && Item::byRawId(3) != nullptr) {
         const ItemStack hand = player->getHand();
-        if (hand.itemId == Item::FLINT_AND_STEEL->id) {
+        if (hand.itemId == Item::byRawId(3)->id) {
             world->setBlockMetaWithoutNotifyingNeighbors(x, y, z, 1);
         }
     }
@@ -78,17 +80,20 @@ bool TntBlock::onUse(World* world, int x, int y, int z, net::minecraft::PlayerEn
 {
     return Block::onUse(world, x, y, z, player);
 }
-namespace {
-
 void TntBlock::registerClass()
 {
     Block::TNT = (new TntBlock(46, 8))->setHardness(0.0f)->setSoundGroup(&vanillaDirtSound())->setTranslationKey("tnt");
+}
+void TntBlock::registerRecipes(recipe::CraftingRecipeManager& recipeManager)
+{
+    recipeManager.addShapedRecipe(ItemStack(Block::TNT),
+        {std::string("X#X"), std::string("#X#"), std::string("X#X"), 'X', Item::byRawId(33), '#', Block::SAND});
 }
 
 
 
 
-static ::net::minecraft::registry::RegisterBlock<TntBlock> autoReg(46);
-} // namespace
+
+namespace {static ::net::minecraft::registry::RegisterBlock<TntBlock> autoReg(46);} // namespace
 } // namespace net::minecraft::block
 

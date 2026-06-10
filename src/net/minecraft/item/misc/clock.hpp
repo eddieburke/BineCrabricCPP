@@ -2,14 +2,17 @@
 
 #include "net/minecraft/item/Item.hpp"
 
+namespace net::minecraft::recipe {
+class CraftingRecipeManager;
+} // namespace net::minecraft::recipe
+
 namespace net::minecraft::item {
 
 class ClockItem : public Item {
-public:
-    static constexpr int ID = 347;
-    ClockItem() : Item(91) {
-        setTexturePosition(6, 4)->setTranslationKey("clock");
-    }
+public:    static void registerClass();
+    static void registerRecipes(recipe::CraftingRecipeManager& recipeManager);
+
+    ClockItem();
 };
 
 } // namespace net::minecraft::item

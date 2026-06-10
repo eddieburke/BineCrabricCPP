@@ -120,37 +120,37 @@ private:
     {
         const int roll = random.nextInt(11);
         if (roll == 0) {
-            return ItemStack(Item::SADDLE->id);
+            return ItemStack(Item::byRawId(73)->id);
         }
         if (roll == 1) {
-            return ItemStack(Item::IRON_INGOT->id, random.nextInt(4) + 1);
+            return ItemStack(Item::byRawId(9)->id, random.nextInt(4) + 1);
         }
         if (roll == 2) {
-            return ItemStack(Item::BREAD->id);
+            return ItemStack(Item::byRawId(41)->id);
         }
         if (roll == 3) {
-            return ItemStack(Item::WHEAT->id, random.nextInt(4) + 1);
+            return ItemStack(Item::byRawId(40)->id, random.nextInt(4) + 1);
         }
         if (roll == 4) {
-            return ItemStack(Item::GUNPOWDER->id, random.nextInt(4) + 1);
+            return ItemStack(Item::byRawId(33)->id, random.nextInt(4) + 1);
         }
         if (roll == 5) {
-            return ItemStack(Item::STRING->id, random.nextInt(4) + 1);
+            return ItemStack(Item::byRawId(31)->id, random.nextInt(4) + 1);
         }
         if (roll == 6) {
-            return ItemStack(Item::BUCKET->id);
+            return ItemStack(Item::byRawId(69)->id);
         }
         if (roll == 7 && random.nextInt(100) == 0) {
-            return ItemStack(Item::GOLDEN_APPLE->id);
+            return ItemStack(Item::byRawId(66)->id);
         }
         if (roll == 8 && random.nextInt(2) == 0) {
-            return ItemStack(Item::REDSTONE->id, random.nextInt(4) + 1);
+            return ItemStack(Item::byRawId(75)->id, random.nextInt(4) + 1);
         }
         if (roll == 9 && random.nextInt(10) == 0) {
-            return ItemStack(Item::RECORD_THIRTEEN->id + random.nextInt(2));
+            return ItemStack(Item::byRawId(2000)->id + random.nextInt(2));
         }
         if (roll == 10) {
-            return ItemStack(Item::DYE->id, 1, 3);
+            return ItemStack(Item::byRawId(95)->id, 1, 3);
         }
         return {};
     }

@@ -11,9 +11,13 @@
 #include "net/minecraft/entity/projectile/thrown/EggEntity.hpp"
 #include "net/minecraft/entity/projectile/thrown/SnowballEntity.hpp"
 #include "net/minecraft/item/Item.hpp"
+#include "net/minecraft/item/misc/arrow.hpp"
+#include "net/minecraft/item/EggItem.hpp"
+#include "net/minecraft/item/SnowballItem.hpp"
 #include "net/minecraft/item/ItemStack.hpp"
 #include "net/minecraft/util/math/MathHelper.hpp"
 #include "net/minecraft/world/World.hpp"
+#include "net/minecraft/recipe/CraftingRecipeManager.hpp"
 
 namespace net::minecraft::block {
 
@@ -103,9 +107,9 @@ void DispenserBlock::dispense(World* world, int x, int y, int z, JavaRandom& ran
         return;
     }
 
-    const int arrowId = Item::ARROW != nullptr ? Item::ARROW->id : 262;
-    const int eggId = Item::EGG != nullptr ? Item::EGG->id : 344;
-    const int snowballId = Item::SNOWBALL != nullptr ? Item::SNOWBALL->id : 332;
+    const int arrowId = Item::byRawId(6) != nullptr ? Item::byRawId(6)->id : 262;
+    const int eggId = Item::byRawId(88) != nullptr ? Item::byRawId(88)->id : 344;
+    const int snowballId = Item::byRawId(76) != nullptr ? Item::byRawId(76)->id : 332;
 
     if (stack.itemId == arrowId) {
         auto* arrow = new ArrowEntity(world, spawnX, spawnY, spawnZ);
@@ -216,17 +220,20 @@ void DispenserBlock::onBreak(World* world, int x, int y, int z)
     }
     BlockWithEntity::onBreak(world, x, y, z);
 }
-namespace {
-
 void DispenserBlock::registerClass()
 {
     Block::DISPENSER = (new DispenserBlock(23))->setHardness(3.5f)->setSoundGroup(&vanillaStoneSound())->setTranslationKey("dispenser")->ignoreMetaUpdates();
+}
+void DispenserBlock::registerRecipes(recipe::CraftingRecipeManager& recipeManager)
+{
+    recipeManager.addShapedRecipe(ItemStack(Block::DISPENSER),
+        {std::string("###"), std::string("#X#"), std::string("#R#"), '#', Block::COBBLESTONE, 'X', Item::byRawId(5), 'R', Item::byRawId(75)});
 }
 
 
 
 
-static ::net::minecraft::registry::RegisterBlock<DispenserBlock> autoReg(23);
-} // namespace
+
+namespace {static ::net::minecraft::registry::RegisterBlock<DispenserBlock> autoReg(23);} // namespace
 } // namespace net::minecraft::block
 

@@ -2,15 +2,17 @@
 
 #include "net/minecraft/item/Item.hpp"
 
+namespace net::minecraft::recipe {
+class CraftingRecipeManager;
+} // namespace net::minecraft::recipe
+
 namespace net::minecraft::item {
 
 class StickItem : public Item {
-public:
-    static constexpr int ID = 280;
-    StickItem() : Item(24) {
-        setHandheld();
-        setTexturePosition(5, 3)->setTranslationKey("stick");
-    }
+public:    static void registerClass();
+    static void registerRecipes(recipe::CraftingRecipeManager& recipeManager);
+
+    StickItem();
 };
 
 } // namespace net::minecraft::item

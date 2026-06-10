@@ -2,14 +2,17 @@
 
 #include "net/minecraft/item/FoodItem.hpp"
 
+namespace net::minecraft::recipe {
+class CraftingRecipeManager;
+} // namespace net::minecraft::recipe
+
 namespace net::minecraft::item {
 
 class AppleItem : public FoodItem {
-public:
-    static constexpr int ID = 260;
-    AppleItem() : FoodItem(4, 4, false) {
-        setTexturePosition(10, 0)->setTranslationKey("apple");
-    }
+public:    static void registerClass();
+    static void registerRecipes(recipe::CraftingRecipeManager& recipeManager);
+
+    AppleItem();
 };
 
 } // namespace net::minecraft::item

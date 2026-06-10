@@ -105,10 +105,10 @@ int DoorBlock::getDroppedItemId(int blockMeta, JavaRandom& /*random*/) const
     if ((blockMeta & 8) != 0) {
         return 0;
     }
-    if (&material == &material::Material::METAL && Item::IRON_DOOR != nullptr) {
-        return Item::IRON_DOOR->id;
+    if (&material == &material::Material::METAL && Item::byRawId(74) != nullptr) {
+        return Item::byRawId(74)->id;
     }
-    return Item::WOODEN_DOOR != nullptr ? Item::WOODEN_DOOR->id : 324;
+    return Item::byRawId(68) != nullptr ? Item::byRawId(68)->id : 324;
 }
 
 void DoorBlock::onBlockBreakStart(World* world, int x, int y, int z, net::minecraft::PlayerEntity* player)
@@ -211,8 +211,6 @@ void DoorBlock::neighborUpdate(World* world, int x, int y, int z, int blockId)
         setOpen(world, x, y, z, powered);
     }
 }
-namespace {
-
 void DoorBlock::registerClass()
 {
     namespace mat = material;
@@ -223,7 +221,6 @@ void DoorBlock::registerClass()
 
 
 
-static ::net::minecraft::registry::RegisterBlock<DoorBlock> autoReg(71);
-} // namespace
+namespace {static ::net::minecraft::registry::RegisterBlock<DoorBlock> autoReg(71);} // namespace
 } // namespace net::minecraft::block
 

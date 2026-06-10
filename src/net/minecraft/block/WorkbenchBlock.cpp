@@ -5,6 +5,8 @@
 #include "net/minecraft/block/Block.hpp"
 #include "net/minecraft/entity/player/PlayerEntity.hpp"
 #include "net/minecraft/world/World.hpp"
+#include "net/minecraft/recipe/CraftingRecipeManager.hpp"
+#include "net/minecraft/item/Item.hpp"
 
 namespace net::minecraft::block {
 
@@ -28,17 +30,20 @@ bool WorkbenchBlock::onUse(World* world, int x, int y, int z, net::minecraft::Pl
     player->openCraftingScreen(x, y, z);
     return true;
 }
-namespace {
-
 void WorkbenchBlock::registerClass()
 {
     Block::CRAFTING_TABLE = (new WorkbenchBlock(58))->setHardness(2.5f)->setSoundGroup(&vanillaWoodSound())->setTranslationKey("workbench");
+}
+void WorkbenchBlock::registerRecipes(recipe::CraftingRecipeManager& recipeManager)
+{
+    recipeManager.addShapedRecipe(ItemStack(Block::CRAFTING_TABLE),
+        {std::string("##"), std::string("##"), '#', Block::PLANKS});
 }
 
 
 
 
-static ::net::minecraft::registry::RegisterBlock<WorkbenchBlock> autoReg(58);
-} // namespace
+
+namespace {static ::net::minecraft::registry::RegisterBlock<WorkbenchBlock> autoReg(58);} // namespace
 } // namespace net::minecraft::block
 

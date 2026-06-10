@@ -257,6 +257,7 @@ public:
 
     // --- behavior hooks (faithful empty defaults; overridden by subclasses) ---
     virtual void init() {}
+    virtual void registerBlockItem();
     virtual void onTick(net::minecraft::World* /*world*/, int /*x*/, int /*y*/, int /*z*/, net::minecraft::JavaRandom& /*random*/) {}
     virtual void randomDisplayTick(net::minecraft::World* /*world*/, int /*x*/, int /*y*/, int /*z*/, net::minecraft::JavaRandom& /*random*/) {}
     virtual void onMetadataChange(net::minecraft::World* /*world*/, int /*x*/, int /*y*/, int /*z*/, int /*meta*/) {}
@@ -369,8 +370,10 @@ public:
     }
 };
 
-// C++ static-init shim for Block.java field initializers; also triggers Item.java init.
-// Idempotent; safe to call from multiple entry points.
+// Triggers Registry::bootstrap() (std::call_once; idempotent). Safe from any entry point.
+// Call sites: Minecraft ctor/init (client/Minecraft.cpp), World ctors (world/World.cpp),
+// Chunk/BlockSource/AlphaChunkStorage (world/chunk/**), seedfinder::runtime::initialize(),
+// tests/block_registry_properties_test.cpp.
 void initializeBlocks();
 
 // Recomputes registry fields that Java initializes through virtual dispatch

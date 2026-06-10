@@ -48,6 +48,17 @@ public:
         return completed_.empty();
     }
 
+    // Jobs queued or being built (excludes finished jobs awaiting drain).
+    [[nodiscard]] std::size_t pendingJobs() const
+    {
+        return pool_.pendingCount();
+    }
+
+    [[nodiscard]] unsigned workerCount() const noexcept
+    {
+        return pool_.threadCount();
+    }
+
 private:
     [[nodiscard]] static unsigned defaultThreadCount()
     {

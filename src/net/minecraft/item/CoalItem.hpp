@@ -6,8 +6,8 @@
 namespace net::minecraft::item {
 
 class CoalItem : public Item {
-public:
-    static void registerClass();
+public:    static void registerClass();
+    static void registerSmeltingRecipes();
     explicit CoalItem(int rawId) : Item(rawId)
     {
         setHasSubtypes(true);
