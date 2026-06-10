@@ -7,6 +7,7 @@ namespace net::minecraft::block {
 
 class WoolBlock : public Block {
 public:
+    static void registerClass();
     WoolBlock() : Block(35, 64, material::Material::WOOL) {}
 
     [[nodiscard]] int getTexture(int /*side*/, int meta) const override

@@ -1,3 +1,4 @@
+#include "net/minecraft/registry/Registry.hpp"
 #include "net/minecraft/item/Item.hpp"
 #include "net/minecraft/item/ItemRegistrar.hpp"
 #include "net/minecraft/item/ShovelItem.hpp"
@@ -6,7 +7,7 @@
 namespace net::minecraft::item {
 namespace {
 
-void registerShovelItems()
+void ShovelItem::registerClass()
 {
     static ShovelItem IRON_SHOVEL(0, ToolMaterial::Iron);
     IRON_SHOVEL.setTexturePosition(2, 5)->setTranslationKey("shovelIron");
@@ -29,7 +30,9 @@ void registerShovelItems()
     Item::GOLDEN_SHOVEL = &GOLDEN_SHOVEL;
 }
 
-MINECRAFT_REGISTER_ITEM(registerShovelItems, 0);
 
+
+
+static ::net::minecraft::registry::RegisterItem<ShovelItem> autoReg(0);
 } // namespace
 } // namespace net::minecraft::item

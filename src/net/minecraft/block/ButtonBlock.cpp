@@ -1,3 +1,4 @@
+#include "net/minecraft/registry/Registry.hpp"
 #include "net/minecraft/block/BlockRegistrar.hpp"
 #include "net/minecraft/block/ButtonBlock.hpp"
 #include "net/minecraft/block/Block.hpp"
@@ -69,6 +70,11 @@ int ButtonBlock::getPlacementSide(World* world, int x, int y, int z) const
 
 void ButtonBlock::updateBoundingBox(const BlockView* blockView, int x, int y, int z)
 {
+    setBoundingBox(getRenderBounds(blockView, x, y, z));
+}
+
+net::minecraft::Box ButtonBlock::getRenderBounds(const BlockView* blockView, int x, int y, int z) const
+{
     const int meta = blockView != nullptr ? blockView->getBlockMeta(x, y, z) : 0;
     const int face = meta & 7;
     const bool pressed = (meta & 8) != 0;
@@ -78,14 +84,18 @@ void ButtonBlock::updateBoundingBox(const BlockView* blockView, int x, int y, in
     const float depth = pressed ? 0.0625f : 0.125f;
 
     if (face == 1) {
-        setBoundingBox(0.0f, yMin, 0.5f - halfWidth, depth, yMax, 0.5f + halfWidth);
-    } else if (face == 2) {
-        setBoundingBox(1.0f - depth, yMin, 0.5f - halfWidth, 1.0f, yMax, 0.5f + halfWidth);
-    } else if (face == 3) {
-        setBoundingBox(0.5f - halfWidth, yMin, 0.0f, 0.5f + halfWidth, yMax, depth);
-    } else if (face == 4) {
-        setBoundingBox(0.5f - halfWidth, yMin, 1.0f - depth, 0.5f + halfWidth, yMax, 1.0f);
+        return {0.0f, yMin, 0.5f - halfWidth, depth, yMax, 0.5f + halfWidth};
     }
+    if (face == 2) {
+        return {1.0f - depth, yMin, 0.5f - halfWidth, 1.0f, yMax, 0.5f + halfWidth};
+    }
+    if (face == 3) {
+        return {0.5f - halfWidth, yMin, 0.0f, 0.5f + halfWidth, yMax, depth};
+    }
+    if (face == 4) {
+        return {0.5f - halfWidth, yMin, 1.0f - depth, 0.5f + halfWidth, yMax, 1.0f};
+    }
+    return {minX, minY, minZ, maxX, maxY, maxZ};
 }
 
 void ButtonBlock::onPlaced(World* world, int x, int y, int z, int direction)
@@ -247,13 +257,15 @@ bool ButtonBlock::isEmittingRedstonePowerInDirection(
 }
 namespace {
 
-void registerButtonBlock()
+void ButtonBlock::registerClass()
 {
     Block::BUTTON = (new ButtonBlock(77, Block::BLOCKS[1]->textureId))->setHardness(0.5f)->setSoundGroup(&vanillaStoneSound())->setTranslationKey("button")->ignoreMetaUpdates();
 }
 
-MINECRAFT_REGISTER_BLOCK(registerButtonBlock, 77);
 
+
+
+static ::net::minecraft::registry::RegisterBlock<ButtonBlock> autoReg(77);
 } // namespace
 } // namespace net::minecraft::block
 

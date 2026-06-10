@@ -12,6 +12,7 @@ namespace net::minecraft::entity::passive {
 
 class WolfEntity : public AnimalEntity {
 public:
+    static void registerClass();
     explicit WolfEntity(World* world = nullptr);
 
     bool begging = false;

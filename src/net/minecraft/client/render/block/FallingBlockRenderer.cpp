@@ -9,11 +9,12 @@ namespace net::minecraft::client::render::block {
 void FallingBlockRenderer::renderFallingBlockEntity(net::minecraft::block::Block& block, net::minecraft::World* world, int x, int y, int z)
 {
     ctx_.faceState.useAo = false;
+    ctx_.renderBounds = block.getCollisionShapeLocal();
     constexpr float shadeBottom = 0.5f;
     constexpr float shadeTop = 1.0f;
     constexpr float shadeNorthSouth = 0.8f;
     constexpr float shadeEastWest = 0.6f;
-    Tessellator& tessellator = render::INSTANCE;
+    Tessellator& tessellator = *ctx_.tess;
     tessellator.startQuads();
     float blockBrightness = block.getLuminance(world, x, y, z);
     float neighborBrightness = block.getLuminance(world, x, y - 1, z);

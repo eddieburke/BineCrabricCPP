@@ -10,6 +10,7 @@ namespace net::minecraft::entity::vehicle {
 
 class BoatEntity : public Entity {
 public:
+    static void registerClass();
     explicit BoatEntity(World* world = nullptr);
     BoatEntity(World* world, double x, double y, double z);
 

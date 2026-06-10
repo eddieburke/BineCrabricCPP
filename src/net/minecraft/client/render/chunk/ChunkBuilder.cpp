@@ -5,9 +5,8 @@
 #include "net/minecraft/client/render/Tessellator.hpp"
 #include "net/minecraft/client/render/block/BlockRenderManager.hpp"
 #include "net/minecraft/client/render/block/entity/BlockEntityRenderDispatcher.hpp"
+#include "net/minecraft/client/render/chunk/ChunkMeshJob.hpp"
 #include "net/minecraft/world/World.hpp"
-#include "net/minecraft/world/WorldRegion.hpp"
-#include "net/minecraft/world/chunk/Chunk.hpp"
 
 #include <algorithm>
 #include <unordered_set>
@@ -20,50 +19,17 @@ constexpr int kGlCompile = 0x1300;
 
 } // namespace
 
-void ChunkBuilder::endOpenDisplayList() noexcept
+ChunkMeshJob::ChunkMeshJob(ChunkBuilder& owner)
+    : builder(&owner),
+      version(owner.version),
+      x(owner.x),
+      y(owner.y),
+      z(owner.z),
+      sizeX(owner.sizeX),
+      sizeY(owner.sizeY),
+      sizeZ(owner.sizeZ),
+      snapshot(*owner.world, owner.x - 1, owner.z - 1, owner.x + owner.sizeX + 1, owner.z + owner.sizeZ + 1)
 {
-    if (!dlCompileOpen_) {
-        return;
-    }
-
-    auto& tessellator = net::minecraft::client::render::INSTANCE;
-    tessellator.draw();
-    gl::GL11::glPopMatrix();
-    gl::GL11::glEndList();
-    dlCompileOpen_ = false;
-    tessellator.translate(0.0, 0.0, 0.0);
-}
-
-void ChunkBuilder::beginLayerCompile(int baseListId, const ChunkDrawTransform& transform)
-{
-    if (baseListId < 0) {
-        return;
-    }
-
-    gl::GL11::glNewList(baseListId, kGlCompile);
-    dlCompileOpen_ = true;
-    gl::GL11::glPushMatrix();
-    transform.applyGl();
-    net::minecraft::client::render::INSTANCE.startQuads();
-    net::minecraft::client::render::INSTANCE.translate(static_cast<double>(-x), static_cast<double>(-y),
-        static_cast<double>(-z));
-}
-
-void ChunkBuilder::finishLayerCompile()
-{
-    endOpenDisplayList();
-}
-
-void ChunkBuilder::drawCompiledLayer(int layerId, float cameraDx, float cameraDy, float cameraDz) const
-{
-    if (baseRenderList < 0) {
-        return;
-    }
-
-    gl::GL11::glPushMatrix();
-    gl::GL11::glTranslatef(cameraDx, cameraDy, cameraDz);
-    gl::GL11::glCallList(baseRenderList + layerId);
-    gl::GL11::glPopMatrix();
 }
 
 void ChunkBuilder::setPosition(int newX, int newY, int newZ)
@@ -95,38 +61,22 @@ void ChunkBuilder::setPosition(int newX, int newY, int newZ)
     invalidate();
 }
 
-void ChunkBuilder::rebuild()
+void ChunkBuilder::buildMesh(ChunkMeshJob& job)
 {
-    if (!dirty || world == nullptr) {
-        return;
-    }
+    const int minX = job.x;
+    const int minY = job.y;
+    const int minZ = job.z;
+    const int maxX = job.x + job.sizeX;
+    const int maxY = job.y + job.sizeY;
+    const int maxZ = job.z + job.sizeZ;
 
-    ++chunkUpdates;
-    const int minX = x;
-    const int minY = y;
-    const int minZ = z;
-    const int maxX = x + sizeX;
-    const int maxY = y + sizeY;
-    const int maxZ = z + sizeZ;
+    Tessellator tessellator;
+    tessellator.setCaptureOnly(true);
 
-    for (int layer = 0; layer < 2; ++layer) {
-        renderLayerEmpty[static_cast<std::size_t>(layer)] = true;
-    }
+    block::BlockRenderManager blockRenderManager(&job.snapshot, job.opts, job.fancyGraphics);
+    blockRenderManager.ctx.tess = &tessellator;
 
-    net::minecraft::Chunk::hasSkyLight = false;
-
-    std::unordered_set<::net::minecraft::block::entity::BlockEntity*> previousBlockEntities;
-    previousBlockEntities.insert(blockEntities_.begin(), blockEntities_.end());
-    blockEntities_.clear();
-
-    const ChunkDrawTransform transform =
-        ChunkDrawTransform::fromChunkPosition(renderX, renderY, renderZ, sizeX, sizeY, sizeZ);
-
-    constexpr int padding = 1;
-    net::minecraft::WorldRegion region(world, minX - padding, minY - padding, minZ - padding, maxX + padding,
-        maxY + padding, maxZ + padding);
-    net::minecraft::client::render::block::BlockRenderManager blockRenderManager(&region);
-    auto& blockEntityDispatcher = block::entity::BlockEntityRenderDispatcher::instance();
+    ChunkMeshResult& result = job.result;
 
     for (int layer = 0; layer < 2; ++layer) {
         bool hasOtherLayer = false;
@@ -136,22 +86,19 @@ void ChunkBuilder::rebuild()
         for (int blockY = minY; blockY < maxY; ++blockY) {
             for (int blockZ = minZ; blockZ < maxZ; ++blockZ) {
                 for (int blockX = minX; blockX < maxX; ++blockX) {
-                    const int blockId = region.getBlockId(blockX, blockY, blockZ);
+                    const int blockId = job.snapshot.getBlockId(blockX, blockY, blockZ);
                     if (blockId <= 0) {
                         continue;
                     }
 
-                    net::minecraft::block::Block* block = net::minecraft::block::Block::BLOCKS[static_cast<std::size_t>(blockId)];
+                    net::minecraft::block::Block* block =
+                        net::minecraft::block::Block::BLOCKS[static_cast<std::size_t>(blockId)];
                     if (block == nullptr) {
                         continue;
                     }
 
                     if (layer == 0 && Block::BLOCKS_WITH_ENTITY[static_cast<std::size_t>(blockId)]) {
-                        if (::net::minecraft::block::entity::BlockEntity* blockEntity =
-                                region.getBlockEntity(blockX, blockY, blockZ);
-                            blockEntity != nullptr && blockEntityDispatcher.hasRenderer(*blockEntity)) {
-                            blockEntities_.push_back(blockEntity);
-                        }
+                        result.blockEntityPositions.push_back(net::minecraft::Vec3i {blockX, blockY, blockZ});
                     }
 
                     const int blockLayer = block->getRenderLayer();
@@ -162,8 +109,9 @@ void ChunkBuilder::rebuild()
 
                     if (!beganCompile) {
                         beganCompile = true;
-                        const int baseListId = baseRenderList >= 0 ? baseRenderList + layer : -1;
-                        beginLayerCompile(baseListId, transform);
+                        tessellator.startQuads();
+                        tessellator.translate(
+                            static_cast<double>(-job.x), static_cast<double>(-job.y), static_cast<double>(-job.z));
                     }
 
                     drewGeometry |= blockRenderManager.render(*block, blockX, blockY, blockZ);
@@ -172,17 +120,52 @@ void ChunkBuilder::rebuild()
         }
 
         if (beganCompile) {
-            finishLayerCompile();
-        } else {
-            drewGeometry = false;
+            result.layers[static_cast<std::size_t>(layer)] = tessellator.takeMesh();
         }
-
-        if (drewGeometry) {
-            renderLayerEmpty[static_cast<std::size_t>(layer)] = false;
-        }
+        result.layerEmpty[static_cast<std::size_t>(layer)] = !(beganCompile && drewGeometry);
 
         if (!hasOtherLayer) {
             break;
+        }
+    }
+
+    result.hasSkyLight = job.snapshot.sawSkyLight();
+}
+
+void ChunkBuilder::uploadMesh(const ChunkMeshJob& job)
+{
+    ++chunkUpdates;
+
+    const ChunkDrawTransform transform =
+        ChunkDrawTransform::fromChunkPosition(renderX, renderY, renderZ, sizeX, sizeY, sizeZ);
+
+    for (int layer = 0; layer < 2; ++layer) {
+        const TessellatorMesh& mesh = job.result.layers[static_cast<std::size_t>(layer)];
+        renderLayerEmpty[static_cast<std::size_t>(layer)] = job.result.layerEmpty[static_cast<std::size_t>(layer)];
+        if (baseRenderList < 0) {
+            continue;
+        }
+        gl::GL11::glNewList(baseRenderList + layer, kGlCompile);
+        gl::GL11::glPushMatrix();
+        transform.applyGl();
+        Tessellator::drawMesh(mesh);
+        gl::GL11::glPopMatrix();
+        gl::GL11::glEndList();
+    }
+
+    // Resolve block-entity positions against the live world and apply the same
+    // joined/removed diff the old synchronous rebuild kept.
+    std::unordered_set<::net::minecraft::block::entity::BlockEntity*> previousBlockEntities;
+    previousBlockEntities.insert(blockEntities_.begin(), blockEntities_.end());
+    blockEntities_.clear();
+
+    if (world != nullptr) {
+        auto& blockEntityDispatcher = block::entity::BlockEntityRenderDispatcher::instance();
+        for (const net::minecraft::Vec3i& pos : job.result.blockEntityPositions) {
+            ::net::minecraft::block::entity::BlockEntity* blockEntity = world->getBlockEntity(pos.x, pos.y, pos.z);
+            if (blockEntity != nullptr && blockEntityDispatcher.hasRenderer(*blockEntity)) {
+                blockEntities_.push_back(blockEntity);
+            }
         }
     }
 
@@ -204,8 +187,21 @@ void ChunkBuilder::rebuild()
         }
     }
 
-    hasSkyLight = net::minecraft::Chunk::hasSkyLight;
+    hasSkyLight = job.result.hasSkyLight;
     built = true;
+}
+
+void ChunkBuilder::rebuild()
+{
+    if (!dirty || world == nullptr) {
+        return;
+    }
+
+    ChunkMeshJob job(*this);
+    job.opts = block::BlockRenderManager::blockRenderManagerOptionsSnapshot();
+    buildMesh(job);
+    uploadMesh(job);
+    dirty = false;
 }
 
 void ChunkBuilder::renderLayer(int layerId, double interpX, double interpY, double interpZ) const
@@ -217,12 +213,18 @@ void ChunkBuilder::renderLayer(int layerId, double interpX, double interpY, doub
     const float cameraDx = static_cast<float>(cameraOffsetX - interpX);
     const float cameraDy = static_cast<float>(cameraOffsetY - interpY);
     const float cameraDz = static_cast<float>(cameraOffsetZ - interpZ);
-    drawCompiledLayer(layerId, cameraDx, cameraDy, cameraDz);
+
+    if (baseRenderList < 0) {
+        return;
+    }
+    gl::GL11::glPushMatrix();
+    gl::GL11::glTranslatef(cameraDx, cameraDy, cameraDz);
+    gl::GL11::glCallList(baseRenderList + layerId);
+    gl::GL11::glPopMatrix();
 }
 
 void ChunkBuilder::reset()
 {
-    endOpenDisplayList();
     renderLayerEmpty = {true, true};
     inFrustum = false;
     built = false;

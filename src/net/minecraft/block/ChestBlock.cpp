@@ -1,3 +1,4 @@
+#include "net/minecraft/registry/Registry.hpp"
 #include "net/minecraft/block/BlockRegistrar.hpp"
 #include "net/minecraft/block/ChestBlock.hpp"
 
@@ -211,13 +212,15 @@ void ChestBlock::onBreak(World* world, int x, int y, int z)
 }
 namespace {
 
-void registerChestBlock()
+void ChestBlock::registerClass()
 {
     Block::CHEST = (new ChestBlock(54))->setHardness(2.5f)->setSoundGroup(&vanillaWoodSound())->setTranslationKey("chest")->ignoreMetaUpdates();
 }
 
-MINECRAFT_REGISTER_BLOCK(registerChestBlock, 54);
 
+
+
+static ::net::minecraft::registry::RegisterBlock<ChestBlock> autoReg(54);
 } // namespace
 } // namespace net::minecraft::block
 

@@ -8,6 +8,7 @@ namespace net::minecraft::entity::decoration::painting {
 
 class PaintingEntity : public Entity {
 public:
+    static void registerClass();
     explicit PaintingEntity(World* world = nullptr);
     PaintingEntity(World* world, int x, int y, int z, int facingIn);
     PaintingEntity(World* world, int x, int y, int z, int facingIn, const std::string& variantId);

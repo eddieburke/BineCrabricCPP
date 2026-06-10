@@ -1,3 +1,4 @@
+#include "net/minecraft/registry/Registry.hpp"
 #include "net/minecraft/item/Item.hpp"
 #include "net/minecraft/item/AxeItem.hpp"
 #include "net/minecraft/item/ItemRegistrar.hpp"
@@ -6,7 +7,7 @@
 namespace net::minecraft::item {
 namespace {
 
-void registerAxeItems()
+void AxeItem::registerClass()
 {
     static AxeItem IRON_AXE(2, ToolMaterial::Iron);
     IRON_AXE.setTexturePosition(2, 7)->setTranslationKey("hatchetIron");
@@ -29,7 +30,9 @@ void registerAxeItems()
     Item::GOLDEN_AXE = &GOLDEN_AXE;
 }
 
-MINECRAFT_REGISTER_ITEM(registerAxeItems, 2);
 
+
+
+static ::net::minecraft::registry::RegisterItem<AxeItem> autoReg(2);
 } // namespace
 } // namespace net::minecraft::item

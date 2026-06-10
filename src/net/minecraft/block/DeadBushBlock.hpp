@@ -6,6 +6,7 @@ namespace net::minecraft::block {
 
 class DeadBushBlock : public PlantBlock {
 public:
+    static void registerClass();
     DeadBushBlock(int id, int textureId) : PlantBlock(id, textureId)
     {
         const float f = 0.4f;

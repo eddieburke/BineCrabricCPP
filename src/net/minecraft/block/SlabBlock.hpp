@@ -9,6 +9,7 @@ namespace net::minecraft::block {
 
 class SlabBlock : public Block {
 public:
+    static void registerClass();
     static constexpr std::array<std::string_view, 4> names {"stone", "sand", "wood", "cobble"};
 
     bool doubleSlab = false;

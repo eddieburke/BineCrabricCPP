@@ -1,4 +1,11 @@
+#include "net/minecraft/registry/Registry.hpp"
+#include "net/minecraft/entity/EntityRegistrar.hpp"
 #include "net/minecraft/world/World.hpp"
+
+#include "net/minecraft/entity/EntityRegistry.hpp"
+
+#include <memory>
+#include <typeindex>
 
 #include "net/minecraft/entity/projectile/ArrowEntity.hpp"
 
@@ -71,5 +78,13 @@ void ArrowEntity::onPlayerInteraction(player::PlayerEntity* player)
         }
     }
 }
+
+
+void ArrowEntity::registerClass()
+{
+    ::net::minecraft::entity::detail::registerVanillaEntity<ArrowEntity>("Arrow", 10);
+}
+
+static ::net::minecraft::registry::RegisterEntity<ArrowEntity> autoReg(10);
 
 } // namespace net::minecraft::entity::projectile

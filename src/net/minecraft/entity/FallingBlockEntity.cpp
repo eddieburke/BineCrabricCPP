@@ -1,4 +1,11 @@
+#include "net/minecraft/registry/Registry.hpp"
+#include "net/minecraft/entity/EntityRegistrar.hpp"
 #include "net/minecraft/entity/FallingBlockEntity.hpp"
+
+#include "net/minecraft/entity/EntityRegistry.hpp"
+
+#include <memory>
+#include <typeindex>
 
 #include "net/minecraft/block/FallingBlock.hpp"
 #include "net/minecraft/util/math/MathHelper.hpp"
@@ -72,3 +79,10 @@ void FallingBlockEntity::tick()
 }
 
 } // namespace net::minecraft::entity
+
+void FallingBlockEntity::registerClass()
+{
+    ::net::minecraft::entity::detail::registerVanillaEntity<FallingBlockEntity>("FallingSand", 21);
+}
+
+static ::net::minecraft::registry::RegisterEntity<FallingBlockEntity> autoReg(21);

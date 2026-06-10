@@ -1,4 +1,11 @@
+#include "net/minecraft/registry/Registry.hpp"
+#include "net/minecraft/entity/EntityRegistrar.hpp"
 #include "net/minecraft/entity/TntEntity.hpp"
+
+#include "net/minecraft/entity/EntityRegistry.hpp"
+
+#include <memory>
+#include <typeindex>
 
 #include "net/minecraft/util/math/MathHelper.hpp"
 #include "net/minecraft/world/World.hpp"
@@ -68,3 +75,10 @@ void TntEntity::readNbt(const NbtCompound& nbt)
 }
 
 } // namespace net::minecraft::entity
+
+void TntEntity::registerClass()
+{
+    ::net::minecraft::entity::detail::registerVanillaEntity<TntEntity>("PrimedTnt", 20);
+}
+
+static ::net::minecraft::registry::RegisterEntity<TntEntity> autoReg(20);

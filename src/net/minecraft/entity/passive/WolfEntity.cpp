@@ -1,4 +1,11 @@
+#include "net/minecraft/registry/Registry.hpp"
+#include "net/minecraft/entity/EntityRegistrar.hpp"
 #include "net/minecraft/entity/passive/WolfEntity.hpp"
+
+#include "net/minecraft/entity/EntityRegistry.hpp"
+
+#include <memory>
+#include <typeindex>
 
 #include "net/minecraft/entity/passive/SheepEntity.hpp"
 #include "net/minecraft/entity/player/PlayerEntity.hpp"
@@ -401,5 +408,13 @@ int WolfEntity::getDroppedItemId() const
 {
     return -1;
 }
+
+
+void WolfEntity::registerClass()
+{
+    ::net::minecraft::entity::detail::registerVanillaEntity<WolfEntity>("Wolf", 95);
+}
+
+static ::net::minecraft::registry::RegisterEntity<WolfEntity> autoReg(95);
 
 } // namespace net::minecraft::entity::passive

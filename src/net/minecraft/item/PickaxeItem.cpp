@@ -1,3 +1,4 @@
+#include "net/minecraft/registry/Registry.hpp"
 #include "net/minecraft/item/Item.hpp"
 #include "net/minecraft/item/ItemRegistrar.hpp"
 #include "net/minecraft/item/PickaxeItem.hpp"
@@ -6,7 +7,7 @@
 namespace net::minecraft::item {
 namespace {
 
-void registerPickaxeItems()
+void PickaxeItem::registerClass()
 {
     static PickaxeItem IRON_PICKAXE(1, ToolMaterial::Iron);
     IRON_PICKAXE.setTexturePosition(2, 6)->setTranslationKey("pickaxeIron");
@@ -29,7 +30,9 @@ void registerPickaxeItems()
     Item::GOLDEN_PICKAXE = &GOLDEN_PICKAXE;
 }
 
-MINECRAFT_REGISTER_ITEM(registerPickaxeItems, 1);
 
+
+
+static ::net::minecraft::registry::RegisterItem<PickaxeItem> autoReg(1);
 } // namespace
 } // namespace net::minecraft::item

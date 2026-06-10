@@ -8,6 +8,7 @@ namespace net::minecraft::item {
 
 class PickaxeItem : public ToolItem {
 public:
+    static void registerClass();
     PickaxeItem(int rawId, ToolMaterial material)
         : ToolItem(rawId, 2, material, nullptr, 0)
     {

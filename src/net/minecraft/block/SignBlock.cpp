@@ -1,3 +1,4 @@
+#include "net/minecraft/registry/Registry.hpp"
 #include "net/minecraft/block/BlockRegistrar.hpp"
 #include "net/minecraft/block/SignBlock.hpp"
 
@@ -21,21 +22,32 @@ void SignBlock::updateBoundingBox(const BlockView* blockView, int x, int y, int 
     if (standing) {
         return;
     }
+    setBoundingBox(getRenderBounds(blockView, x, y, z));
+}
+
+net::minecraft::Box SignBlock::getRenderBounds(const BlockView* blockView, int x, int y, int z) const
+{
+    if (standing) {
+        return {minX, minY, minZ, maxX, maxY, maxZ};
+    }
 
     const int meta = blockView != nullptr ? blockView->getBlockMeta(x, y, z) : 0;
     constexpr float yMin = 0.28125f;
     constexpr float yMax = 0.78125f;
     constexpr float thickness = 0.125f;
-    setBoundingBox(0.0f, 0.0f, 0.0f, 1.0f, 1.0f, 1.0f);
     if (meta == 2) {
-        setBoundingBox(0.0f, yMin, 1.0f - thickness, 1.0f, yMax, 1.0f);
-    } else if (meta == 3) {
-        setBoundingBox(0.0f, yMin, 0.0f, 1.0f, yMax, thickness);
-    } else if (meta == 4) {
-        setBoundingBox(1.0f - thickness, yMin, 0.0f, 1.0f, yMax, 1.0f);
-    } else if (meta == 5) {
-        setBoundingBox(0.0f, yMin, 0.0f, thickness, yMax, 1.0f);
+        return {0.0f, yMin, 1.0f - thickness, 1.0f, yMax, 1.0f};
     }
+    if (meta == 3) {
+        return {0.0f, yMin, 0.0f, 1.0f, yMax, thickness};
+    }
+    if (meta == 4) {
+        return {1.0f - thickness, yMin, 0.0f, 1.0f, yMax, 1.0f};
+    }
+    if (meta == 5) {
+        return {0.0f, yMin, 0.0f, thickness, yMax, 1.0f};
+    }
+    return {0.0f, 0.0f, 0.0f, 1.0f, 1.0f, 1.0f};
 }
 
 void SignBlock::neighborUpdate(World* world, int x, int y, int z, int id)
@@ -79,14 +91,16 @@ int SignBlock::getDroppedItemId(int /*blockMeta*/, JavaRandom& /*random*/) const
 }
 namespace {
 
-void registerSignBlocks()
+void SignBlock::registerClass()
 {
     Block::SIGN = (new SignBlock(63, true))->setHardness(1.0f)->setSoundGroup(&vanillaWoodSound())->setTranslationKey("sign")->disableTrackingStatistics()->ignoreMetaUpdates();
     Block::WALL_SIGN = (new SignBlock(68, false))->setHardness(1.0f)->setSoundGroup(&vanillaWoodSound())->setTranslationKey("sign")->disableTrackingStatistics()->ignoreMetaUpdates();
 }
 
-MINECRAFT_REGISTER_BLOCK(registerSignBlocks, 63);
 
+
+
+static ::net::minecraft::registry::RegisterBlock<SignBlock> autoReg(63);
 } // namespace
 } // namespace net::minecraft::block
 

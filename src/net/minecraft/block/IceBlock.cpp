@@ -1,3 +1,4 @@
+#include "net/minecraft/registry/Registry.hpp"
 #include "net/minecraft/block/BlockRegistrar.hpp"
 #include "net/minecraft/block/IceBlock.hpp"
 
@@ -51,13 +52,15 @@ void IceBlock::onTick(World* world, int x, int y, int z, JavaRandom& /*random*/)
 }
 namespace {
 
-void registerIceBlock()
+void IceBlock::registerClass()
 {
     Block::ICE = (new IceBlock(79, 67))->setHardness(0.5f)->setOpacity(3)->setSoundGroup(&vanillaGlassSound())->setTranslationKey("ice");
 }
 
-MINECRAFT_REGISTER_BLOCK(registerIceBlock, 79);
 
+
+
+static ::net::minecraft::registry::RegisterBlock<IceBlock> autoReg(79);
 } // namespace
 } // namespace net::minecraft::block
 

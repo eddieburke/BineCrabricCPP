@@ -1,10 +1,11 @@
+#include "net/minecraft/registry/Registry.hpp"
 #include "net/minecraft/item/Item.hpp"
 #include "net/minecraft/item/ItemRegistrar.hpp"
 
 namespace net::minecraft::item {
 namespace {
 
-void registerBasicItems()
+void BasicItems::registerClass()
 {
     static Item DIAMOND(8);
     DIAMOND.setTexturePosition(7, 3)->setTranslationKey("emerald");
@@ -91,7 +92,9 @@ void registerBasicItems()
     Item::SUGAR = &SUGAR;
 }
 
-MINECRAFT_REGISTER_ITEM(registerBasicItems, 8);
 
+
+
+static ::net::minecraft::registry::RegisterItem<BasicItems> autoReg(8);
 } // namespace
 } // namespace net::minecraft::item

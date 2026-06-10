@@ -12,6 +12,7 @@ namespace net::minecraft::block {
 
 class RepeaterBlock : public Block {
 public:
+    static void registerClass();
     static constexpr double RENDER_OFFSET[4] = {-0.0625, 0.0625, 0.1875, 0.3125};
 
     bool lit = false;

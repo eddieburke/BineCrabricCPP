@@ -1,3 +1,4 @@
+#include "net/minecraft/registry/Registry.hpp"
 #include "net/minecraft/item/MushroomStewItem.hpp"
 
 #include "net/minecraft/entity/player/PlayerEntity.hpp"
@@ -22,15 +23,17 @@ ItemStack* MushroomStewItem::use(ItemStack* stack, World* world, PlayerEntity* u
 
 namespace {
 
-void registerMushroomStewItem()
+void MushroomStewItem::registerClass()
 {
     static MushroomStewItem MUSHROOM_STEW(26, 10);
     MUSHROOM_STEW.setTexturePosition(8, 4)->setTranslationKey("mushroomStew");
     Item::MUSHROOM_STEW = &MUSHROOM_STEW;
 }
 
-MINECRAFT_REGISTER_ITEM(registerMushroomStewItem, 26);
 
+
+
+static ::net::minecraft::registry::RegisterItem<MushroomStewItem> autoReg(26);
 } // namespace
 
 } // namespace net::minecraft::item

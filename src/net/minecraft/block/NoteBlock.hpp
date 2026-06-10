@@ -7,6 +7,7 @@ namespace net::minecraft::block {
 
 class NoteBlock : public BlockWithEntity {
 public:
+    static void registerClass();
     NoteBlock(int id);
 
     [[nodiscard]] int getTexture(int side) const override;

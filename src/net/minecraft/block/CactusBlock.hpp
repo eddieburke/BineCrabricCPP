@@ -9,6 +9,7 @@ namespace net::minecraft::block {
 
 class CactusBlock : public Block {
 public:
+    static void registerClass();
     using Block::canPlaceAt;
     CactusBlock(int id, int textureId) : Block(id, textureId, material::Material::CACTUS)
     {
@@ -91,7 +92,7 @@ public:
         return belowId == id || belowId == Block::SAND->id;
     }
 
-    void onEntityCollision(World* /*world*/, int /*x*/, int /*y*/, int /*z*/, net::minecraft::Entity* entity) override
+    void onEntityCollision(World* world, int x, int y, int z, net::minecraft::Entity* entity) override
     {
         if (entity != nullptr) {
             entity->damage(nullptr, 1);

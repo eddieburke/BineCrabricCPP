@@ -6,6 +6,7 @@ namespace net::minecraft::entity {
 
 class TntEntity : public Entity {
 public:
+    static void registerClass();
     explicit TntEntity(World* world = nullptr);
     TntEntity(World* world, double x, double y, double z);
 

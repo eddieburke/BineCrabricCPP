@@ -1,3 +1,4 @@
+#include "net/minecraft/registry/Registry.hpp"
 #include "net/minecraft/block/BlockRegistrar.hpp"
 #include "net/minecraft/block/TrapdoorBlock.hpp"
 #include "net/minecraft/block/material/Material.hpp"
@@ -19,20 +20,25 @@ TrapdoorBlock::TrapdoorBlock(int id, Material& mat) : Block(id, mat)
 
 void TrapdoorBlock::applyBoundsForMeta(int meta)
 {
+    setBoundingBox(boundsForMeta(meta));
+}
+
+net::minecraft::Box TrapdoorBlock::boundsForMeta(int meta) const
+{
     constexpr float thickness = 0.1875f;
-    setBoundingBox(0.0f, 0.0f, 0.0f, 1.0f, thickness, 1.0f);
     if (!isOpen(meta)) {
-        return;
+        return {0.0f, 0.0f, 0.0f, 1.0f, thickness, 1.0f};
     }
     if ((meta & 3) == 0) {
-        setBoundingBox(0.0f, 0.0f, 1.0f - thickness, 1.0f, 1.0f, 1.0f);
-    } else if ((meta & 3) == 1) {
-        setBoundingBox(0.0f, 0.0f, 0.0f, 1.0f, 1.0f, thickness);
-    } else if ((meta & 3) == 2) {
-        setBoundingBox(1.0f - thickness, 0.0f, 0.0f, 1.0f, 1.0f, 1.0f);
-    } else {
-        setBoundingBox(0.0f, 0.0f, 0.0f, thickness, 1.0f, 1.0f);
+        return {0.0f, 0.0f, 1.0f - thickness, 1.0f, 1.0f, 1.0f};
     }
+    if ((meta & 3) == 1) {
+        return {0.0f, 0.0f, 0.0f, 1.0f, 1.0f, thickness};
+    }
+    if ((meta & 3) == 2) {
+        return {1.0f - thickness, 0.0f, 0.0f, 1.0f, 1.0f, 1.0f};
+    }
+    return {0.0f, 0.0f, 0.0f, thickness, 1.0f, 1.0f};
 }
 
 std::optional<net::minecraft::Box> TrapdoorBlock::getCollisionShape(World* world, int x, int y, int z) const
@@ -49,6 +55,12 @@ void TrapdoorBlock::updateBoundingBox(const BlockView* blockView, int x, int y, 
 {
     const int meta = blockView != nullptr ? blockView->getBlockMeta(x, y, z) : 0;
     applyBoundsForMeta(meta);
+}
+
+net::minecraft::Box TrapdoorBlock::getRenderBounds(const BlockView* blockView, int x, int y, int z) const
+{
+    const int meta = blockView != nullptr ? blockView->getBlockMeta(x, y, z) : 0;
+    return boundsForMeta(meta);
 }
 
 void TrapdoorBlock::setupRenderBoundingBox()
@@ -163,14 +175,16 @@ void TrapdoorBlock::onPlaced(World* world, int x, int y, int z, int direction)
 }
 namespace {
 
-void registerTrapdoorBlock()
+void TrapdoorBlock::registerClass()
 {
     namespace mat = material;
     Block::TRAPDOOR = (new TrapdoorBlock(96, mat::Material::WOOD))->setHardness(3.0f)->setSoundGroup(&vanillaWoodSound())->setTranslationKey("trapdoor")->disableTrackingStatistics()->ignoreMetaUpdates();
 }
 
-MINECRAFT_REGISTER_BLOCK(registerTrapdoorBlock, 96);
 
+
+
+static ::net::minecraft::registry::RegisterBlock<TrapdoorBlock> autoReg(96);
 } // namespace
 } // namespace net::minecraft::block
 

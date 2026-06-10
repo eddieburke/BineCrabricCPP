@@ -9,7 +9,7 @@ namespace net::minecraft::client::render::block {
 bool FireBlockRenderer::render(net::minecraft::block::Block& block, int x, int y, int z)
 {
 
-        Tessellator& tessellator = render::INSTANCE;
+        Tessellator& tessellator = *ctx_.tess;
         const int texture = ctx_.resolveTexture(0, block.getTexture(0));
         const net::minecraft::block::TerrainAtlasUv uv = net::minecraft::block::Block::terrainTileUv(texture);
         const int texU = net::minecraft::block::Block::textureAtlasU(texture);

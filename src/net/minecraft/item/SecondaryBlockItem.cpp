@@ -1,3 +1,4 @@
+#include "net/minecraft/registry/Registry.hpp"
 #include "net/minecraft/block/Block.hpp"
 #include "net/minecraft/item/Item.hpp"
 #include "net/minecraft/item/ItemRegistrar.hpp"
@@ -6,7 +7,7 @@
 namespace net::minecraft::item {
 namespace {
 
-void registerSecondaryBlockItems()
+void SecondaryBlockItem::registerClass()
 {
     static SecondaryBlockItem SUGAR_CANE(82, Block::SUGAR_CANE);
     SUGAR_CANE.setTexturePosition(11, 1)->setTranslationKey("reeds");
@@ -21,7 +22,9 @@ void registerSecondaryBlockItems()
     Item::REPEATER = &REPEATER;
 }
 
-MINECRAFT_REGISTER_ITEM(registerSecondaryBlockItems, 82);
 
+
+
+static ::net::minecraft::registry::RegisterItem<SecondaryBlockItem> autoReg(82);
 } // namespace
 } // namespace net::minecraft::item

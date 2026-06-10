@@ -1,4 +1,11 @@
+#include "net/minecraft/registry/Registry.hpp"
+#include "net/minecraft/entity/EntityRegistrar.hpp"
 #include "net/minecraft/entity/mob/MonsterEntity.hpp"
+
+#include "net/minecraft/entity/EntityRegistry.hpp"
+
+#include <memory>
+#include <typeindex>
 
 #include "net/minecraft/entity/player/PlayerEntity.hpp"
 #include "net/minecraft/world/World.hpp"
@@ -63,5 +70,13 @@ float MonsterEntity::getPathfindingFavor(int x, int y, int z) const
     }
     return 0.5f - world->getLightBrightness(x, y, z);
 }
+
+
+void MonsterEntity::registerClass()
+{
+    ::net::minecraft::entity::detail::registerVanillaEntity<MonsterEntity>("Monster", 49);
+}
+
+static ::net::minecraft::registry::RegisterEntity<MonsterEntity> autoReg(49);
 
 } // namespace net::minecraft::entity::mob

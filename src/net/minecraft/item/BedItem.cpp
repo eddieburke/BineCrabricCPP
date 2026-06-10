@@ -1,3 +1,4 @@
+#include "net/minecraft/registry/Registry.hpp"
 #include "net/minecraft/item/BedItem.hpp"
 
 #include "net/minecraft/block/BedBlock.hpp"
@@ -43,15 +44,17 @@ bool BedItem::useOnBlock(ItemStack* stack, PlayerEntity* user, World* world, int
 
 namespace {
 
-void registerBedItem()
+void BedItem::registerClass()
 {
     static BedItem BED(99);
     BED.setMaxCount(1)->setTexturePosition(13, 2)->setTranslationKey("bed");
     Item::BED = &BED;
 }
 
-MINECRAFT_REGISTER_ITEM(registerBedItem, 99);
 
+
+
+static ::net::minecraft::registry::RegisterItem<BedItem> autoReg(99);
 } // namespace
 
 } // namespace net::minecraft::item

@@ -1,3 +1,4 @@
+#include "net/minecraft/registry/Registry.hpp"
 #include "net/minecraft/block/BlockRegistrar.hpp"
 #include "net/minecraft/block/PressurePlateBlock.hpp"
 #include "net/minecraft/block/material/Material.hpp"
@@ -118,10 +119,15 @@ void PressurePlateBlock::onBreak(World* world, int x, int y, int z)
 
 void PressurePlateBlock::updateBoundingBox(const BlockView* blockView, int x, int y, int z)
 {
+    setBoundingBox(getRenderBounds(blockView, x, y, z));
+}
+
+net::minecraft::Box PressurePlateBlock::getRenderBounds(const BlockView* blockView, int x, int y, int z) const
+{
     const bool pressed = blockView != nullptr && blockView->getBlockMeta(x, y, z) == 1;
     const float inset = 0.0625f;
     const float height = pressed ? 0.03125f : 0.0625f;
-    setBoundingBox(inset, 0.0f, inset, 1.0f - inset, height, 1.0f - inset);
+    return {inset, 0.0f, inset, 1.0f - inset, height, 1.0f - inset};
 }
 
 bool PressurePlateBlock::isEmittingRedstonePowerInDirection(
@@ -137,15 +143,17 @@ bool PressurePlateBlock::canTransferPowerInDirection(
 }
 namespace {
 
-void registerPressurePlateBlocks()
+void PressurePlateBlock::registerClass()
 {
     namespace mat = material;
     Block::STONE_PRESSURE_PLATE = (new PressurePlateBlock(70, Block::BLOCKS[1]->textureId, PressurePlateActivationRule::MOBS, mat::Material::STONE))->setHardness(0.5f)->setSoundGroup(&vanillaStoneSound())->setTranslationKey("pressurePlate")->ignoreMetaUpdates();
     Block::WOODEN_PRESSURE_PLATE = (new PressurePlateBlock(72, Block::BLOCKS[5]->textureId, PressurePlateActivationRule::EVERYTHING, mat::Material::WOOD))->setHardness(0.5f)->setSoundGroup(&vanillaWoodSound())->setTranslationKey("pressurePlate")->ignoreMetaUpdates();
 }
 
-MINECRAFT_REGISTER_BLOCK(registerPressurePlateBlocks, 72);
 
+
+
+static ::net::minecraft::registry::RegisterBlock<PressurePlateBlock> autoReg(72);
 } // namespace
 } // namespace net::minecraft::block
 

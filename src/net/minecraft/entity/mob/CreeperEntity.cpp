@@ -1,8 +1,14 @@
+#include "net/minecraft/registry/Registry.hpp"
+#include "net/minecraft/entity/EntityRegistrar.hpp"
 #include "net/minecraft/entity/mob/CreeperEntity.hpp"
 
+#include "net/minecraft/entity/EntityRegistry.hpp"
 #include "net/minecraft/entity/mob/SkeletonEntity.hpp"
 #include "net/minecraft/item/Item.hpp"
 #include "net/minecraft/world/World.hpp"
+
+#include <memory>
+#include <typeindex>
 
 namespace net::minecraft::entity::mob {
 
@@ -109,5 +115,13 @@ void CreeperEntity::attack(Entity* /*other*/, float distance)
         }
     }
 }
+
+
+void CreeperEntity::registerClass()
+{
+    ::net::minecraft::entity::detail::registerVanillaEntity<CreeperEntity>("Creeper", 50);
+}
+
+static ::net::minecraft::registry::RegisterEntity<CreeperEntity> autoReg(50);
 
 } // namespace net::minecraft::entity::mob

@@ -1,4 +1,11 @@
+#include "net/minecraft/registry/Registry.hpp"
+#include "net/minecraft/entity/EntityRegistrar.hpp"
 #include "net/minecraft/entity/mob/ZombieEntity.hpp"
+
+#include "net/minecraft/entity/EntityRegistry.hpp"
+
+#include <memory>
+#include <typeindex>
 
 #include "net/minecraft/item/Item.hpp"
 #include "net/minecraft/util/math/MathHelper.hpp"
@@ -30,5 +37,13 @@ int ZombieEntity::getDroppedItemId() const
 {
     return Item::FEATHER != nullptr ? Item::FEATHER->id : 288;
 }
+
+
+void ZombieEntity::registerClass()
+{
+    ::net::minecraft::entity::detail::registerVanillaEntity<ZombieEntity>("Zombie", 54);
+}
+
+static ::net::minecraft::registry::RegisterEntity<ZombieEntity> autoReg(54);
 
 } // namespace net::minecraft::entity::mob

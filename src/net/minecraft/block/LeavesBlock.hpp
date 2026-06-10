@@ -11,6 +11,7 @@ namespace net::minecraft::block {
 
 class LeavesBlock : public TransparentBlock {
 public:
+    static void registerClass();
     int spriteIndex = 0;
 
     LeavesBlock(int id, int textureId);

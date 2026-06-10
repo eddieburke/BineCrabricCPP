@@ -9,6 +9,7 @@ namespace net::minecraft::block {
 
 class FarmlandBlock : public Block {
 public:
+    static void registerClass();
     explicit FarmlandBlock(int id) : Block(id, material::Material::SOIL)
     {
         textureId = 87;

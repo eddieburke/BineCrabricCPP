@@ -10,7 +10,7 @@ namespace net::minecraft::client::render::block {
 
 bool BedBlockRenderer::render(net::minecraft::block::Block& block, int x, int y, int z)
 {
-    Tessellator& tessellator = render::INSTANCE;
+    Tessellator& tessellator = *ctx_.tess;
     ctx_.textureOverride = -1;
     ctx_.faceTextureOverride = -1;
     ctx_.flipTextureHorizontally = false;
@@ -31,11 +31,11 @@ bool BedBlockRenderer::render(net::minecraft::block::Block& block, int x, int y,
     const double footUvMax = (static_cast<double>(footTexU + 16) - 0.01) / 256.0;
     const double footVvMin = static_cast<double>(footTexV) / 256.0;
     const double footVvMax = (static_cast<double>(footTexV + 16) - 0.01) / 256.0;
-    const double footX0 = static_cast<double>(x) + block.minX;
-    const double footX1 = static_cast<double>(x) + block.maxX;
-    const double footY = static_cast<double>(y) + block.minY + 0.1875;
-    const double footZ0 = static_cast<double>(z) + block.minZ;
-    const double footZ1 = static_cast<double>(z) + block.maxZ;
+    const double footX0 = static_cast<double>(x) + ctx_.renderBounds.minX;
+    const double footX1 = static_cast<double>(x) + ctx_.renderBounds.maxX;
+    const double footY = static_cast<double>(y) + ctx_.renderBounds.minY + 0.1875;
+    const double footZ0 = static_cast<double>(z) + ctx_.renderBounds.minZ;
+    const double footZ1 = static_cast<double>(z) + ctx_.renderBounds.maxZ;
     tessellator.vertex(footX0, footY, footZ1, footUvMin, footVvMax);
     tessellator.vertex(footX0, footY, footZ0, footUvMin, footVvMin);
     tessellator.vertex(footX1, footY, footZ0, footUvMax, footVvMin);
@@ -78,11 +78,11 @@ bool BedBlockRenderer::render(net::minecraft::block::Block& block, int x, int y,
         topUv40 = topUv10;
         topUv51 = topUv01;
     }
-    const double topX0 = static_cast<double>(x) + block.minX;
-    const double topX1 = static_cast<double>(x) + block.maxX;
-    const double topY = static_cast<double>(y) + block.maxY;
-    const double topZ0 = static_cast<double>(z) + block.minZ;
-    const double topZ1 = static_cast<double>(z) + block.maxZ;
+    const double topX0 = static_cast<double>(x) + ctx_.renderBounds.minX;
+    const double topX1 = static_cast<double>(x) + ctx_.renderBounds.maxX;
+    const double topY = static_cast<double>(y) + ctx_.renderBounds.maxY;
+    const double topZ0 = static_cast<double>(z) + ctx_.renderBounds.minZ;
+    const double topZ1 = static_cast<double>(z) + ctx_.renderBounds.maxZ;
     tessellator.vertex(topX1, topY, topZ1, topUv40, topUv50);
     tessellator.vertex(topX1, topY, topZ0, topUv20, topUv30);
     tessellator.vertex(topX0, topY, topZ0, topUv21, topUv31);
@@ -110,7 +110,7 @@ bool BedBlockRenderer::render(net::minecraft::block::Block& block, int x, int y,
     }
     if (skipFaceDir != 2 && (ctx_.skipFaceCulling || block.isSideVisible(ctx_.blockView, x, y, z - 1, 2))) {
         float northBrightness = block.getLuminance(ctx_.blockView, x, y, z - 1);
-        if (block.minZ > 0.0) {
+        if (ctx_.renderBounds.minZ > 0.0) {
             northBrightness = baseBrightness;
         }
         tessellator.color(shadeNorthSouth * northBrightness, shadeNorthSouth * northBrightness, shadeNorthSouth * northBrightness);
@@ -119,7 +119,7 @@ bool BedBlockRenderer::render(net::minecraft::block::Block& block, int x, int y,
     }
     if (skipFaceDir != 3 && (ctx_.skipFaceCulling || block.isSideVisible(ctx_.blockView, x, y, z + 1, 3))) {
         float southBrightness = block.getLuminance(ctx_.blockView, x, y, z + 1);
-        if (block.maxZ < 1.0) {
+        if (ctx_.renderBounds.maxZ < 1.0) {
             southBrightness = baseBrightness;
         }
         tessellator.color(shadeNorthSouth * southBrightness, shadeNorthSouth * southBrightness, shadeNorthSouth * southBrightness);
@@ -128,7 +128,7 @@ bool BedBlockRenderer::render(net::minecraft::block::Block& block, int x, int y,
     }
     if (skipFaceDir != 4 && (ctx_.skipFaceCulling || block.isSideVisible(ctx_.blockView, x - 1, y, z, 4))) {
         float westBrightness = block.getLuminance(ctx_.blockView, x - 1, y, z);
-        if (block.minX > 0.0) {
+        if (ctx_.renderBounds.minX > 0.0) {
             westBrightness = baseBrightness;
         }
         tessellator.color(shadeEastWest * westBrightness, shadeEastWest * westBrightness, shadeEastWest * westBrightness);
@@ -137,7 +137,7 @@ bool BedBlockRenderer::render(net::minecraft::block::Block& block, int x, int y,
     }
     if (skipFaceDir != 5 && (ctx_.skipFaceCulling || block.isSideVisible(ctx_.blockView, x + 1, y, z, 5))) {
         float eastBrightness = block.getLuminance(ctx_.blockView, x + 1, y, z);
-        if (block.maxX < 1.0) {
+        if (ctx_.renderBounds.maxX < 1.0) {
             eastBrightness = baseBrightness;
         }
         tessellator.color(shadeEastWest * eastBrightness, shadeEastWest * eastBrightness, shadeEastWest * eastBrightness);

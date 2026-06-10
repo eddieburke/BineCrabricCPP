@@ -7,6 +7,7 @@ namespace net::minecraft::block {
 
 class JukeboxBlock : public BlockWithEntity {
 public:
+    static void registerClass();
     JukeboxBlock(int id, int textureId);
 
     [[nodiscard]] int getTexture(int side) const override;

@@ -29,10 +29,9 @@ void applyInventoryFaceColor(float shade, float red, float green, float blue, fl
         1.0f);
 }
 
-void drawInventoryCubeFaces(BlockFaceRenderer& faces, net::minecraft::block::Block& block, int metadata, float red, float green,
-    float blue, float brightness)
+void drawInventoryCubeFaces(Tessellator& tessellator, BlockFaceRenderer& faces, net::minecraft::block::Block& block, int metadata,
+    float red, float green, float blue, float brightness)
 {
-    Tessellator& tessellator = render::INSTANCE;
 
     applyInventoryFaceColor(kShadeBottom, red, green, blue, brightness);
     tessellator.startQuads();
@@ -76,7 +75,7 @@ void drawInventoryCubeFaces(BlockFaceRenderer& faces, net::minecraft::block::Blo
 void InventoryBlockRenderer::render(net::minecraft::block::Block& block, int metadata, float brightness)
 {
     const int renderType = block.getRenderType();
-    Tessellator& tessellator = render::INSTANCE;
+    Tessellator& tessellator = *ctx_.tess;
 
     float red = 1.0f;
     float green = 1.0f;
@@ -103,8 +102,9 @@ void InventoryBlockRenderer::render(net::minecraft::block::Block& block, int met
             metadata = 1;
         }
         block.setupRenderBoundingBox();
+        ctx_.renderBounds = block.getCollisionShapeLocal();
         net::minecraft::client::gl::GL11::glTranslatef(-0.5f, -0.5f, -0.5f);
-        drawInventoryCubeFaces(faces_, block, metadata, red, green, blue, brightness);
+        drawInventoryCubeFaces(tessellator, faces_, block, metadata, red, green, blue, brightness);
         net::minecraft::client::gl::GL11::glTranslatef(0.5f, 0.5f, 0.5f);
     } else if (renderType == BlockRenderType::CROSS) {
         applyInventoryFaceColor(1.0f, red, green, blue, brightness);
@@ -114,6 +114,7 @@ void InventoryBlockRenderer::render(net::minecraft::block::Block& block, int met
         tessellator.draw();
     } else if (renderType == BlockRenderType::CACTUS) {
         block.setupRenderBoundingBox();
+        ctx_.renderBounds = block.getCollisionShapeLocal();
         net::minecraft::client::gl::GL11::glTranslatef(-0.5f, -0.5f, -0.5f);
         const float faceInset = 0.0625f;
         applyInventoryFaceColor(kShadeBottom, red, green, blue, brightness);
@@ -170,36 +171,36 @@ void InventoryBlockRenderer::render(net::minecraft::block::Block& block, int met
     } else if (renderType == BlockRenderType::STAIRS) {
         for (int i = 0; i < 2; ++i) {
             if (i == 0) {
-                block.setBoundingBox(0.0f, 0.0f, 0.0f, 1.0f, 1.0f, 0.5f);
+                ctx_.setRenderBounds(0.0f, 0.0f, 0.0f, 1.0f, 1.0f, 0.5f);
             }
             if (i == 1) {
-                block.setBoundingBox(0.0f, 0.0f, 0.5f, 1.0f, 0.5f, 1.0f);
+                ctx_.setRenderBounds(0.0f, 0.0f, 0.5f, 1.0f, 0.5f, 1.0f);
             }
             net::minecraft::client::gl::GL11::glTranslatef(-0.5f, -0.5f, -0.5f);
-            drawInventoryCubeFaces(faces_, block, metadata, red, green, blue, brightness);
+            drawInventoryCubeFaces(tessellator, faces_, block, metadata, red, green, blue, brightness);
             net::minecraft::client::gl::GL11::glTranslatef(0.5f, 0.5f, 0.5f);
         }
     } else if (renderType == BlockRenderType::FENCE) {
         for (int i = 0; i < 4; ++i) {
             float postHalfWidth = 0.125f;
             if (i == 0) {
-                block.setBoundingBox(0.5f - postHalfWidth, 0.0f, 0.0f, 0.5f + postHalfWidth, 1.0f, postHalfWidth * 2.0f);
+                ctx_.setRenderBounds(0.5f - postHalfWidth, 0.0f, 0.0f, 0.5f + postHalfWidth, 1.0f, postHalfWidth * 2.0f);
             }
             if (i == 1) {
-                block.setBoundingBox(0.5f - postHalfWidth, 0.0f, 1.0f - postHalfWidth * 2.0f, 0.5f + postHalfWidth, 1.0f, 1.0f);
+                ctx_.setRenderBounds(0.5f - postHalfWidth, 0.0f, 1.0f - postHalfWidth * 2.0f, 0.5f + postHalfWidth, 1.0f, 1.0f);
             }
             postHalfWidth = 0.0625f;
             if (i == 2) {
-                block.setBoundingBox(0.5f - postHalfWidth, 1.0f - postHalfWidth * 3.0f, -postHalfWidth * 2.0f, 0.5f + postHalfWidth, 1.0f - postHalfWidth, 1.0f + postHalfWidth * 2.0f);
+                ctx_.setRenderBounds(0.5f - postHalfWidth, 1.0f - postHalfWidth * 3.0f, -postHalfWidth * 2.0f, 0.5f + postHalfWidth, 1.0f - postHalfWidth, 1.0f + postHalfWidth * 2.0f);
             }
             if (i == 3) {
-                block.setBoundingBox(0.5f - postHalfWidth, 0.5f - postHalfWidth * 3.0f, -postHalfWidth * 2.0f, 0.5f + postHalfWidth, 0.5f - postHalfWidth, 1.0f + postHalfWidth * 2.0f);
+                ctx_.setRenderBounds(0.5f - postHalfWidth, 0.5f - postHalfWidth * 3.0f, -postHalfWidth * 2.0f, 0.5f + postHalfWidth, 0.5f - postHalfWidth, 1.0f + postHalfWidth * 2.0f);
             }
             net::minecraft::client::gl::GL11::glTranslatef(-0.5f, -0.5f, -0.5f);
-            drawInventoryCubeFaces(faces_, block, metadata, red, green, blue, brightness);
+            drawInventoryCubeFaces(tessellator, faces_, block, metadata, red, green, blue, brightness);
             net::minecraft::client::gl::GL11::glTranslatef(0.5f, 0.5f, 0.5f);
         }
-        block.setBoundingBox(0.0f, 0.0f, 0.0f, 1.0f, 1.0f, 1.0f);
+        ctx_.setRenderBounds(0.0f, 0.0f, 0.0f, 1.0f, 1.0f, 1.0f);
     }
 }
 

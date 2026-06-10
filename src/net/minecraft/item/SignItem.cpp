@@ -1,3 +1,4 @@
+#include "net/minecraft/registry/Registry.hpp"
 #include "net/minecraft/item/SignItem.hpp"
 
 #include "net/minecraft/block/Block.hpp"
@@ -49,15 +50,17 @@ bool SignItem::useOnBlock(ItemStack* stack, PlayerEntity* user, World* world, in
 
 namespace {
 
-void registerSignItem()
+void SignItem::registerClass()
 {
     static SignItem SIGN(67);
     SIGN.setTexturePosition(10, 2)->setTranslationKey("sign");
     Item::SIGN = &SIGN;
 }
 
-MINECRAFT_REGISTER_ITEM(registerSignItem, 67);
 
+
+
+static ::net::minecraft::registry::RegisterItem<SignItem> autoReg(67);
 } // namespace
 
 } // namespace net::minecraft::item

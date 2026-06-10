@@ -18,6 +18,18 @@ struct TessellatorVertex {
     std::int32_t normal = 0;
 };
 
+// Finished tessellation output detached from any GL context. Built on any
+// thread, replayed into GL on the main thread via Tessellator::drawMesh.
+struct TessellatorMesh {
+    std::vector<TessellatorVertex> vertices;
+    int mode = 7;
+    bool hasTexture = false;
+    bool hasColor = false;
+    bool hasNormals = false;
+
+    [[nodiscard]] bool empty() const noexcept { return vertices.empty(); }
+};
+
 class Tessellator {
 public:
     static Tessellator INSTANCE;
@@ -51,6 +63,17 @@ public:
     // Finalize CPU vertex buffer without issuing immediate-mode GL (used for VBO upload).
     void finishWithoutDraw();
 
+    // Finalize and move the buffered geometry out without touching GL.
+    // Safe off the GL thread when the tessellator is in capture mode.
+    [[nodiscard]] TessellatorMesh takeMesh();
+
+    // Replay a captured mesh through immediate-mode GL (GL thread only).
+    static void drawMesh(const TessellatorMesh& mesh);
+
+    // Capture mode: never flush through GL mid-build; the vertex buffer just
+    // grows. Required for tessellators used on worker threads.
+    void setCaptureOnly(bool captureOnly) noexcept { captureOnly_ = captureOnly; }
+
     [[nodiscard]] bool drawing() const noexcept;
     [[nodiscard]] bool hasTexture() const noexcept;
     [[nodiscard]] bool hasColor() const noexcept;
@@ -73,6 +96,7 @@ private:
     bool hasColor_ = false;
     bool hasNormals_ = false;
     bool colorDisabled_ = false;
+    bool captureOnly_ = false;
     int mode_ = 7;
     double u_ = 0.0;
     double v_ = 0.0;

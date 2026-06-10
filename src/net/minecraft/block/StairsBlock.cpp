@@ -1,3 +1,4 @@
+#include "net/minecraft/registry/Registry.hpp"
 #include "net/minecraft/block/BlockRegistrar.hpp"
 #include "net/minecraft/block/StairsBlock.hpp"
 #include "net/minecraft/block/Block.hpp"
@@ -20,9 +21,14 @@ StairsBlock::StairsBlock(int id, Block& base)
     setOpacity(255);
 }
 
-void StairsBlock::updateBoundingBox(const BlockView* /*blockView*/, int /*x*/, int /*y*/, int /*z*/)
+void StairsBlock::updateBoundingBox(const BlockView* blockView, int x, int y, int z)
 {
-    setBoundingBox(0.0f, 0.0f, 0.0f, 1.0f, 1.0f, 1.0f);
+    setBoundingBox(getRenderBounds(blockView, x, y, z));
+}
+
+net::minecraft::Box StairsBlock::getRenderBounds(const BlockView* /*blockView*/, int /*x*/, int /*y*/, int /*z*/) const
+{
+    return {0.0f, 0.0f, 0.0f, 1.0f, 1.0f, 1.0f};
 }
 
 std::optional<net::minecraft::Box> StairsBlock::getCollisionShape(World* world, int x, int y, int z) const
@@ -233,14 +239,16 @@ void StairsBlock::onDestroyedByExplosion(World* world, int x, int y, int z)
 }
 namespace {
 
-void registerStairsBlocks()
+void StairsBlock::registerClass()
 {
     Block::WOODEN_STAIRS = (new StairsBlock(53, *Block::BLOCKS[5]))->setTranslationKey("stairsWood")->ignoreMetaUpdates();
     Block::COBBLESTONE_STAIRS = (new StairsBlock(67, *Block::BLOCKS[4]))->setTranslationKey("stairsStone")->ignoreMetaUpdates();
 }
 
-MINECRAFT_REGISTER_BLOCK(registerStairsBlocks, 67);
 
+
+
+static ::net::minecraft::registry::RegisterBlock<StairsBlock> autoReg(67);
 } // namespace
 } // namespace net::minecraft::block
 

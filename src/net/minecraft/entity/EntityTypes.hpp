@@ -7,7 +7,13 @@
 #include "net/minecraft/entity/EntityForward.hpp"
 #include "net/minecraft/util/math/MathConstants.hpp"
 
+#include <optional>
+#include <typeindex>
+
 namespace net::minecraft {
+
+[[nodiscard]] std::optional<std::type_index> entitySupertype(std::type_index type);
+
 
 using Entity = entity::Entity;
 using LivingEntity = entity::LivingEntity;

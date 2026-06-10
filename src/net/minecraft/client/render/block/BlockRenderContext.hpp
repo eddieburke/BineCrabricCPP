@@ -1,6 +1,9 @@
 #pragma once
 
+#include "net/minecraft/client/option/ResolvedRenderOptions.hpp"
+#include "net/minecraft/client/render/Tessellator.hpp"
 #include "net/minecraft/client/render/block/BlockFaceRenderState.hpp"
+#include "net/minecraft/util/math/Types.hpp"
 
 namespace net::minecraft {
 class BlockView;
@@ -17,6 +20,29 @@ namespace net::minecraft::client::render::block {
 struct BlockRenderContext {
     // World/chunk the blocks are read from while rendering in-place.
     const net::minecraft::BlockView* blockView = nullptr;
+
+    // Tessellator the renderers emit geometry into. Defaults to the shared
+    // main-thread instance; chunk-mesh worker jobs point this at a private
+    // capture-only tessellator so meshing never touches GL or shared state.
+    Tessellator* tess = &Tessellator::INSTANCE;
+
+    // Bounds of the block currently being rendered, in local 0..1 block space.
+    // Owned by the context (not the Block singleton) so concurrent mesh jobs
+    // and the main-thread tick can't race on Block::minX..maxZ.
+    Box renderBounds {0.0, 0.0, 0.0, 1.0, 1.0, 1.0};
+
+    void setRenderBounds(double minX, double minY, double minZ, double maxX, double maxY, double maxZ) noexcept
+    {
+        renderBounds = Box {minX, minY, minZ, maxX, maxY, maxZ};
+    }
+
+    // Render options snapshotted when the owning BlockRenderManager is created
+    // (or when a mesh job is enqueued), so renderers never read the live
+    // GameOptions from a worker thread.
+    option::ResolvedRenderOptions opts {};
+
+    // Per-context copy of BlockRenderManager::fancyGraphics.
+    bool fancyGraphics = true;
 
     // When >= 0, forces every face to this atlas tile (used by levers, fire,
     // redstone, ... that re-skin a block).

@@ -17,7 +17,7 @@ namespace option = net::minecraft::client::option;
 
 bool FluidBlockRenderer::renderFluid(net::minecraft::block::Block& block, int x, int y, int z)
 {
-    Tessellator& tessellator = render::INSTANCE;
+    Tessellator& tessellator = *ctx_.tess;
     int colorMult = block.getColorMultiplier(ctx_.blockView, x, y, z);
     float red = (float)(colorMult >> 16 & 0xFF) / 255.0f;
     float green = (float)(colorMult >> 8 & 0xFF) / 255.0f;
@@ -50,7 +50,7 @@ bool FluidBlockRenderer::renderFluid(net::minecraft::block::Block& block, int x,
         drewAnyFace = true;
         int topTex = block.getTexture(1, meta);
         float flowAngle = 0.0f;
-        if (Minecraft::INSTANCE == nullptr || option::resolve(Minecraft::INSTANCE->options).fancyWater) {
+        if (ctx_.opts.fancyWater) {
             flowAngle = static_cast<float>(
                 net::minecraft::block::LiquidBlock::getFlowingAngle(ctx_.blockView, x, y, z, material));
         }
@@ -151,8 +151,8 @@ bool FluidBlockRenderer::renderFluid(net::minecraft::block::Block& block, int x,
         tessellator.vertex(sideX1, y + 0, sideZ1, uMax, vBottom);
         tessellator.vertex(sideX0, y + 0, sideZ0, uMin, vBottom);
     }
-    block.minY = minY;
-    block.maxY = maxY;
+    ctx_.renderBounds.minY = minY;
+    ctx_.renderBounds.maxY = maxY;
     return drewAnyFace;
 }
 

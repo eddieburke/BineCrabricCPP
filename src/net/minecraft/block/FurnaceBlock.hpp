@@ -14,6 +14,7 @@ namespace net::minecraft::block {
 
 class FurnaceBlock : public BlockWithEntity {
 public:
+    static void registerClass();
     FurnaceBlock(int id, bool lit) : BlockWithEntity(id, material::Material::STONE)
     {
         this->lit = lit;

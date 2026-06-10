@@ -7,6 +7,7 @@ namespace net::minecraft::block {
 
 class FenceBlock : public Block {
 public:
+    static void registerClass();
     using Block::canPlaceAt;
     FenceBlock(int id, int textureId) : Block(id, textureId, material::Material::WOOD) {}
 

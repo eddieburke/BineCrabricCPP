@@ -18,6 +18,7 @@ namespace net::minecraft::entity::vehicle {
 
 class MinecartEntity : public Entity, public Inventory {
 public:
+    static void registerClass();
     explicit MinecartEntity(World* world = nullptr);
     MinecartEntity(World* world, double x, double y, double z, int typeIn);
 

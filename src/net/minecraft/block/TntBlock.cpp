@@ -1,3 +1,4 @@
+#include "net/minecraft/registry/Registry.hpp"
 #include "net/minecraft/block/BlockRegistrar.hpp"
 #include "net/minecraft/block/TntBlock.hpp"
 
@@ -79,13 +80,15 @@ bool TntBlock::onUse(World* world, int x, int y, int z, net::minecraft::PlayerEn
 }
 namespace {
 
-void registerTntBlock()
+void TntBlock::registerClass()
 {
     Block::TNT = (new TntBlock(46, 8))->setHardness(0.0f)->setSoundGroup(&vanillaDirtSound())->setTranslationKey("tnt");
 }
 
-MINECRAFT_REGISTER_BLOCK(registerTntBlock, 46);
 
+
+
+static ::net::minecraft::registry::RegisterBlock<TntBlock> autoReg(46);
 } // namespace
 } // namespace net::minecraft::block
 

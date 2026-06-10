@@ -11,6 +11,7 @@ namespace net::minecraft::block {
 
 class RedstoneTorchBlock : public TorchBlock {
 public:
+    static void registerClass();
     bool lit = false;
 
     RedstoneTorchBlock(int id, int textureId, bool litIn);

@@ -1,3 +1,4 @@
+#include "net/minecraft/registry/Registry.hpp"
 #include "net/minecraft/item/PaintingItem.hpp"
 
 #include "net/minecraft/entity/decoration/painting/PaintingEntity.hpp"
@@ -36,15 +37,17 @@ bool PaintingItem::useOnBlock(ItemStack* stack, PlayerEntity* /*user*/, World* w
 
 namespace {
 
-void registerPaintingItem()
+void PaintingItem::registerClass()
 {
     static PaintingItem PAINTING(65);
     PAINTING.setTexturePosition(10, 1)->setTranslationKey("painting");
     Item::PAINTING = &PAINTING;
 }
 
-MINECRAFT_REGISTER_ITEM(registerPaintingItem, 65);
 
+
+
+static ::net::minecraft::registry::RegisterItem<PaintingItem> autoReg(65);
 } // namespace
 
 } // namespace net::minecraft::item

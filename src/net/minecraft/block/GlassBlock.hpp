@@ -6,6 +6,7 @@ namespace net::minecraft::block {
 
 class GlassBlock : public TranslucentBlock {
 public:
+    static void registerClass();
     GlassBlock(int id, int textureId, Material& material, bool transparent)
         : TranslucentBlock(id, textureId, material, transparent) {}
 

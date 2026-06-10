@@ -7,6 +7,7 @@ namespace net::minecraft::entity::mob {
 
 class CreeperEntity : public MonsterEntity {
 public:
+    static void registerClass();
     explicit CreeperEntity(World* world = nullptr) : MonsterEntity(world)
     {
         initDataTracker();

@@ -1,3 +1,4 @@
+#include "net/minecraft/registry/Registry.hpp"
 #include "net/minecraft/block/BlockRegistrar.hpp"
 #include "net/minecraft/block/RedstoneTorchBlock.hpp"
 
@@ -20,6 +21,8 @@ struct RedstoneTorchBurnoutEntry {
 
 std::vector<RedstoneTorchBurnoutEntry> g_burnoutEntries;
 
+
+static ::net::minecraft::registry::RegisterBlock<RedstoneTorchBlock> autoReg(76);
 } // namespace
 
 RedstoneTorchBlock::RedstoneTorchBlock(int id, int textureId, bool litIn) : TorchBlock(id, textureId)
@@ -198,13 +201,13 @@ bool RedstoneTorchBlock::isEmittingRedstonePowerInDirection(
 }
 namespace {
 
-void registerRedstoneTorchBlocks()
+void RedstoneTorchBlock::registerClass()
 {
     Block::REDSTONE_TORCH = (new RedstoneTorchBlock(75, 115, false))->setHardness(0.0f)->setSoundGroup(&vanillaWoodSound())->setTranslationKey("notGate")->ignoreMetaUpdates();
     Block::LIT_REDSTONE_TORCH = (new RedstoneTorchBlock(76, 99, true))->setHardness(0.0f)->setLuminance(0.5f)->setSoundGroup(&vanillaWoodSound())->setTranslationKey("notGate")->ignoreMetaUpdates();
 }
 
-MINECRAFT_REGISTER_BLOCK(registerRedstoneTorchBlocks, 76);
+
 
 } // namespace
 } // namespace net::minecraft::block

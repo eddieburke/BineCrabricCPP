@@ -11,6 +11,7 @@ namespace net::minecraft::block {
 
 class FireBlock : public Block {
 public:
+    static void registerClass();
     using Block::canPlaceAt;
     FireBlock(int id, int textureId);
 

@@ -6,6 +6,7 @@ namespace net::minecraft::block {
 
 class TntBlock : public Block {
 public:
+    static void registerClass();
     TntBlock(int id, int textureId);
 
     [[nodiscard]] int getTexture(int side) const override;

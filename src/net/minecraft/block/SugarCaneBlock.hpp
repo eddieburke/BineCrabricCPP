@@ -9,6 +9,7 @@ namespace net::minecraft::block {
 
 class SugarCaneBlock : public Block {
 public:
+    static void registerClass();
     using Block::canPlaceAt;
 
     SugarCaneBlock(int id, int textureId) : Block(id, textureId, material::Material::PLANT)

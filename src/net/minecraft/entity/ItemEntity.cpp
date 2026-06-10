@@ -1,4 +1,11 @@
+#include "net/minecraft/registry/Registry.hpp"
+#include "net/minecraft/entity/EntityRegistrar.hpp"
 #include "net/minecraft/entity/ItemEntity.hpp"
+
+#include "net/minecraft/entity/EntityRegistry.hpp"
+
+#include <memory>
+#include <typeindex>
 
 #include "net/minecraft/achievement/Achievements.hpp"
 #include "net/minecraft/block/Block.hpp"
@@ -101,3 +108,10 @@ bool ItemEntity::damage(Entity* /*damageSource*/, int amount)
 }
 
 } // namespace net::minecraft::entity
+
+void ItemEntity::registerClass()
+{
+    ::net::minecraft::entity::detail::registerVanillaEntity<ItemEntity>("Item", 1);
+}
+
+static ::net::minecraft::registry::RegisterEntity<ItemEntity> autoReg(1);

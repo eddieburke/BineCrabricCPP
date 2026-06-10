@@ -1,3 +1,4 @@
+#include "net/minecraft/registry/Registry.hpp"
 #include "net/minecraft/block/BlockRegistrar.hpp"
 #include "net/minecraft/block/PistonBlock.hpp"
 
@@ -340,37 +341,33 @@ void PistonBlock::onBlockAction(World* world, int x, int y, int z, int data1, in
 
 void PistonBlock::updateBoundingBox(const BlockView* blockView, int x, int y, int z)
 {
+    setBoundingBox(getRenderBounds(blockView, x, y, z));
+}
+
+net::minecraft::Box PistonBlock::getRenderBounds(const BlockView* blockView, int x, int y, int z) const
+{
     if (blockView == nullptr) {
-        setBoundingBox(0.0f, 0.0f, 0.0f, 1.0f, 1.0f, 1.0f);
-        return;
+        return {0.0f, 0.0f, 0.0f, 1.0f, 1.0f, 1.0f};
     }
     const int meta = blockView->getBlockMeta(x, y, z);
     if (!isExtended(meta)) {
-        setBoundingBox(0.0f, 0.0f, 0.0f, 1.0f, 1.0f, 1.0f);
-        return;
+        return {0.0f, 0.0f, 0.0f, 1.0f, 1.0f, 1.0f};
     }
     switch (getFacing(meta)) {
     case 0:
-        setBoundingBox(0.0f, 0.25f, 0.0f, 1.0f, 1.0f, 1.0f);
-        break;
+        return {0.0f, 0.25f, 0.0f, 1.0f, 1.0f, 1.0f};
     case 1:
-        setBoundingBox(0.0f, 0.0f, 0.0f, 1.0f, 0.75f, 1.0f);
-        break;
+        return {0.0f, 0.0f, 0.0f, 1.0f, 0.75f, 1.0f};
     case 2:
-        setBoundingBox(0.0f, 0.0f, 0.25f, 1.0f, 1.0f, 1.0f);
-        break;
+        return {0.0f, 0.0f, 0.25f, 1.0f, 1.0f, 1.0f};
     case 3:
-        setBoundingBox(0.0f, 0.0f, 0.0f, 1.0f, 1.0f, 0.75f);
-        break;
+        return {0.0f, 0.0f, 0.0f, 1.0f, 1.0f, 0.75f};
     case 4:
-        setBoundingBox(0.25f, 0.0f, 0.0f, 1.0f, 1.0f, 1.0f);
-        break;
+        return {0.25f, 0.0f, 0.0f, 1.0f, 1.0f, 1.0f};
     case 5:
-        setBoundingBox(0.0f, 0.0f, 0.0f, 0.75f, 1.0f, 1.0f);
-        break;
+        return {0.0f, 0.0f, 0.0f, 0.75f, 1.0f, 1.0f};
     default:
-        setBoundingBox(0.0f, 0.0f, 0.0f, 1.0f, 1.0f, 1.0f);
-        break;
+        return {0.0f, 0.0f, 0.0f, 1.0f, 1.0f, 1.0f};
     }
 }
 
@@ -385,14 +382,16 @@ void PistonBlock::addIntersectingBoundingBox(
 }
 namespace {
 
-void registerPistonBlocks()
+void PistonBlock::registerClass()
 {
     Block::STICKY_PISTON = (new PistonBlock(29, 106, true))->setHardness(0.5f)->setSoundGroup(&vanillaStoneSound())->setTranslationKey("pistonStickyBase")->ignoreMetaUpdates();
     Block::PISTON = (new PistonBlock(33, 107, false))->setHardness(0.5f)->setSoundGroup(&vanillaStoneSound())->setTranslationKey("pistonBase")->ignoreMetaUpdates();
 }
 
-MINECRAFT_REGISTER_BLOCK(registerPistonBlocks, 29);
 
+
+
+static ::net::minecraft::registry::RegisterBlock<PistonBlock> autoReg(29);
 } // namespace
 } // namespace net::minecraft::block
 

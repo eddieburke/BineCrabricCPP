@@ -1,3 +1,4 @@
+#include "net/minecraft/registry/Registry.hpp"
 #include "net/minecraft/item/MusicDiscItem.hpp"
 
 #include "net/minecraft/block/Block.hpp"
@@ -35,7 +36,7 @@ bool MusicDiscItem::useOnBlock(ItemStack* stack, PlayerEntity* /*user*/, World* 
 
 namespace {
 
-void registerMusicDiscItems()
+void MusicDiscItem::registerClass()
 {
     static MusicDiscItem RECORD_THIRTEEN(2000, "13");
     RECORD_THIRTEEN.setTexturePosition(0, 15)->setTranslationKey("record");
@@ -46,8 +47,10 @@ void registerMusicDiscItems()
     Item::RECORD_CAT = &RECORD_CAT;
 }
 
-MINECRAFT_REGISTER_ITEM(registerMusicDiscItems, 2000);
 
+
+
+static ::net::minecraft::registry::RegisterItem<MusicDiscItem> autoReg(2000);
 } // namespace
 
 } // namespace net::minecraft::item

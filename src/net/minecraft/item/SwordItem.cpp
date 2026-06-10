@@ -1,3 +1,4 @@
+#include "net/minecraft/registry/Registry.hpp"
 #include "net/minecraft/item/Item.hpp"
 #include "net/minecraft/item/ItemRegistrar.hpp"
 #include "net/minecraft/item/SwordItem.hpp"
@@ -6,7 +7,7 @@
 namespace net::minecraft::item {
 namespace {
 
-void registerSwordItems()
+void SwordItem::registerClass()
 {
     static SwordItem IRON_SWORD(11, ToolMaterial::Iron);
     IRON_SWORD.setTexturePosition(2, 4)->setTranslationKey("swordIron");
@@ -29,7 +30,9 @@ void registerSwordItems()
     Item::GOLDEN_SWORD = &GOLDEN_SWORD;
 }
 
-MINECRAFT_REGISTER_ITEM(registerSwordItems, 11);
 
+
+
+static ::net::minecraft::registry::RegisterItem<SwordItem> autoReg(11);
 } // namespace
 } // namespace net::minecraft::item

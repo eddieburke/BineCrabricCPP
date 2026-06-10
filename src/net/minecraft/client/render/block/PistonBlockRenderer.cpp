@@ -31,17 +31,17 @@ bool PistonBlockRenderer::renderPiston(net::minecraft::block::Block& block, int 
                     ctx_.westFaceRotation = 3;
                     ctx_.southFaceRotation = 3;
                     ctx_.northFaceRotation = 3;
-                    block.setBoundingBox(0.0f, 0.25f, 0.0f, 1.0f, 1.0f, 1.0f);
+                    ctx_.setRenderBounds(0.0f, 0.25f, 0.0f, 1.0f, 1.0f, 1.0f);
                     break;
                 }
                 case 1: {
-                    block.setBoundingBox(0.0f, 0.0f, 0.0f, 1.0f, 0.75f, 1.0f);
+                    ctx_.setRenderBounds(0.0f, 0.0f, 0.0f, 1.0f, 0.75f, 1.0f);
                     break;
                 }
                 case 2: {
                     ctx_.southFaceRotation = 1;
                     ctx_.northFaceRotation = 2;
-                    block.setBoundingBox(0.0f, 0.0f, 0.25f, 1.0f, 1.0f, 1.0f);
+                    ctx_.setRenderBounds(0.0f, 0.0f, 0.25f, 1.0f, 1.0f, 1.0f);
                     break;
                 }
                 case 3: {
@@ -49,7 +49,7 @@ bool PistonBlockRenderer::renderPiston(net::minecraft::block::Block& block, int 
                     ctx_.northFaceRotation = 1;
                     ctx_.topFaceRotation = 3;
                     ctx_.bottomFaceRotation = 3;
-                    block.setBoundingBox(0.0f, 0.0f, 0.0f, 1.0f, 1.0f, 0.75f);
+                    ctx_.setRenderBounds(0.0f, 0.0f, 0.0f, 1.0f, 1.0f, 0.75f);
                     break;
                 }
                 case 4: {
@@ -57,7 +57,7 @@ bool PistonBlockRenderer::renderPiston(net::minecraft::block::Block& block, int 
                     ctx_.westFaceRotation = 2;
                     ctx_.topFaceRotation = 2;
                     ctx_.bottomFaceRotation = 1;
-                    block.setBoundingBox(0.25f, 0.0f, 0.0f, 1.0f, 1.0f, 1.0f);
+                    ctx_.setRenderBounds(0.25f, 0.0f, 0.0f, 1.0f, 1.0f, 1.0f);
                     break;
                 }
                 case 5: {
@@ -65,7 +65,7 @@ bool PistonBlockRenderer::renderPiston(net::minecraft::block::Block& block, int 
                     ctx_.westFaceRotation = 1;
                     ctx_.topFaceRotation = 1;
                     ctx_.bottomFaceRotation = 2;
-                    block.setBoundingBox(0.0f, 0.0f, 0.0f, 0.75f, 1.0f, 1.0f);
+                    ctx_.setRenderBounds(0.0f, 0.0f, 0.0f, 0.75f, 1.0f, 1.0f);
                 }
             }
             cube_.renderBlock(block, x, y, z);
@@ -75,7 +75,7 @@ bool PistonBlockRenderer::renderPiston(net::minecraft::block::Block& block, int 
             ctx_.northFaceRotation = 0;
             ctx_.topFaceRotation = 0;
             ctx_.bottomFaceRotation = 0;
-            block.setBoundingBox(0.0f, 0.0f, 0.0f, 1.0f, 1.0f, 1.0f);
+            ctx_.setRenderBounds(0.0f, 0.0f, 0.0f, 1.0f, 1.0f, 1.0f);
         } else {
             switch (facing) {
                 case 0: {
@@ -130,7 +130,7 @@ void PistonBlockRenderer::renderExtensionRod(int axis, double x1, double x2, dou
 {
         const net::minecraft::block::TerrainAtlasUv uv = net::minecraft::block::Block::terrainStripUv(
             net::minecraft::block::PistonConstants::TEXTURE_EXTENSION, textureScrollU);
-        Tessellator& tessellator = render::INSTANCE;
+        Tessellator& tessellator = *ctx_.tess;
         tessellator.color(brightness, brightness, brightness);
         switch (axis) {
         case 0:
@@ -178,7 +178,7 @@ bool PistonBlockRenderer::renderPistonHead(net::minecraft::block::Block& block, 
                 ctx_.westFaceRotation = 3;
                 ctx_.southFaceRotation = 3;
                 ctx_.northFaceRotation = 3;
-                block.setBoundingBox(0.0f, 0.0f, 0.0f, 1.0f, 0.25f, 1.0f);
+                ctx_.setRenderBounds(0.0f, 0.0f, 0.0f, 1.0f, 0.25f, 1.0f);
                 cube_.renderBlock(block, x, y, z);
                 renderExtensionRod(0, (float)x + 0.375f, (float)x + 0.625f, (float)y + 0.25f, (float)y + 0.25f + extensionDepth, (float)z + 0.625f, (float)z + 0.625f, brightness * 0.8f, textureScrollU);
                 renderExtensionRod(0, (float)x + 0.625f, (float)x + 0.375f, (float)y + 0.25f, (float)y + 0.25f + extensionDepth, (float)z + 0.375f, (float)z + 0.375f, brightness * 0.8f, textureScrollU);
@@ -187,7 +187,7 @@ bool PistonBlockRenderer::renderPistonHead(net::minecraft::block::Block& block, 
                 break;
             }
             case 1: {
-                block.setBoundingBox(0.0f, 0.75f, 0.0f, 1.0f, 1.0f, 1.0f);
+                ctx_.setRenderBounds(0.0f, 0.75f, 0.0f, 1.0f, 1.0f, 1.0f);
                 cube_.renderBlock(block, x, y, z);
                 renderExtensionRod(0, (float)x + 0.375f, (float)x + 0.625f, (float)y - 0.25f + 1.0f - extensionDepth, (float)y - 0.25f + 1.0f, (float)z + 0.625f, (float)z + 0.625f, brightness * 0.8f, textureScrollU);
                 renderExtensionRod(0, (float)x + 0.625f, (float)x + 0.375f, (float)y - 0.25f + 1.0f - extensionDepth, (float)y - 0.25f + 1.0f, (float)z + 0.375f, (float)z + 0.375f, brightness * 0.8f, textureScrollU);
@@ -198,7 +198,7 @@ bool PistonBlockRenderer::renderPistonHead(net::minecraft::block::Block& block, 
             case 2: {
                 ctx_.southFaceRotation = 1;
                 ctx_.northFaceRotation = 2;
-                block.setBoundingBox(0.0f, 0.0f, 0.0f, 1.0f, 1.0f, 0.25f);
+                ctx_.setRenderBounds(0.0f, 0.0f, 0.0f, 1.0f, 1.0f, 0.25f);
                 cube_.renderBlock(block, x, y, z);
                 renderExtensionRod(1, (float)x + 0.375f, (float)x + 0.375f, (float)y + 0.625f, (float)y + 0.375f, (float)z + 0.25f, (float)z + 0.25f + extensionDepth, brightness * 0.6f, textureScrollU);
                 renderExtensionRod(1, (float)x + 0.625f, (float)x + 0.625f, (float)y + 0.375f, (float)y + 0.625f, (float)z + 0.25f, (float)z + 0.25f + extensionDepth, brightness * 0.6f, textureScrollU);
@@ -211,7 +211,7 @@ bool PistonBlockRenderer::renderPistonHead(net::minecraft::block::Block& block, 
                 ctx_.northFaceRotation = 1;
                 ctx_.topFaceRotation = 3;
                 ctx_.bottomFaceRotation = 3;
-                block.setBoundingBox(0.0f, 0.0f, 0.75f, 1.0f, 1.0f, 1.0f);
+                ctx_.setRenderBounds(0.0f, 0.0f, 0.75f, 1.0f, 1.0f, 1.0f);
                 cube_.renderBlock(block, x, y, z);
                 renderExtensionRod(1, (float)x + 0.375f, (float)x + 0.375f, (float)y + 0.625f, (float)y + 0.375f, (float)z - 0.25f + 1.0f - extensionDepth, (float)z - 0.25f + 1.0f, brightness * 0.6f, textureScrollU);
                 renderExtensionRod(1, (float)x + 0.625f, (float)x + 0.625f, (float)y + 0.375f, (float)y + 0.625f, (float)z - 0.25f + 1.0f - extensionDepth, (float)z - 0.25f + 1.0f, brightness * 0.6f, textureScrollU);
@@ -224,7 +224,7 @@ bool PistonBlockRenderer::renderPistonHead(net::minecraft::block::Block& block, 
                 ctx_.westFaceRotation = 2;
                 ctx_.topFaceRotation = 2;
                 ctx_.bottomFaceRotation = 1;
-                block.setBoundingBox(0.0f, 0.0f, 0.0f, 0.25f, 1.0f, 1.0f);
+                ctx_.setRenderBounds(0.0f, 0.0f, 0.0f, 0.25f, 1.0f, 1.0f);
                 cube_.renderBlock(block, x, y, z);
                 renderExtensionRod(2, (float)x + 0.25f, (float)x + 0.25f + extensionDepth, (float)y + 0.375f, (float)y + 0.375f, (float)z + 0.625f, (float)z + 0.375f, brightness * 0.5f, textureScrollU);
                 renderExtensionRod(2, (float)x + 0.25f, (float)x + 0.25f + extensionDepth, (float)y + 0.625f, (float)y + 0.625f, (float)z + 0.375f, (float)z + 0.625f, brightness, textureScrollU);
@@ -237,7 +237,7 @@ bool PistonBlockRenderer::renderPistonHead(net::minecraft::block::Block& block, 
                 ctx_.westFaceRotation = 1;
                 ctx_.topFaceRotation = 1;
                 ctx_.bottomFaceRotation = 2;
-                block.setBoundingBox(0.75f, 0.0f, 0.0f, 1.0f, 1.0f, 1.0f);
+                ctx_.setRenderBounds(0.75f, 0.0f, 0.0f, 1.0f, 1.0f, 1.0f);
                 cube_.renderBlock(block, x, y, z);
                 renderExtensionRod(2, (float)x - 0.25f + 1.0f - extensionDepth, (float)x - 0.25f + 1.0f, (float)y + 0.375f, (float)y + 0.375f, (float)z + 0.625f, (float)z + 0.375f, brightness * 0.5f, textureScrollU);
                 renderExtensionRod(2, (float)x - 0.25f + 1.0f - extensionDepth, (float)x - 0.25f + 1.0f, (float)y + 0.625f, (float)y + 0.625f, (float)z + 0.375f, (float)z + 0.625f, brightness, textureScrollU);
@@ -251,7 +251,7 @@ bool PistonBlockRenderer::renderPistonHead(net::minecraft::block::Block& block, 
         ctx_.northFaceRotation = 0;
         ctx_.topFaceRotation = 0;
         ctx_.bottomFaceRotation = 0;
-        block.setBoundingBox(0.0f, 0.0f, 0.0f, 1.0f, 1.0f, 1.0f);
+        ctx_.setRenderBounds(0.0f, 0.0f, 0.0f, 1.0f, 1.0f, 1.0f);
         return true;
     
 }

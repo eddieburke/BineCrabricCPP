@@ -130,7 +130,7 @@ chunk::ChunkBuilder* WorldRenderer::chunkAt(int chunkX, int chunkY, int chunkZ)
 
 void WorldRenderer::enqueueDirtyChunk(chunk::ChunkBuilder* chunk)
 {
-    if (chunk == nullptr) {
+    if (chunk == nullptr || chunk->meshJobInFlight) {
         return;
     }
     if (dirtyChunks_.contains(chunk)) {
@@ -161,6 +161,11 @@ void WorldRenderer::setWorld(net::minecraft::World* worldIn)
         world->addEventListener(this);
         reload();
     } else {
+        meshScheduler_.cancelAll();
+        pendingMeshUploads_.clear();
+        for (chunk::ChunkBuilder& chunk : chunks_) {
+            chunk.meshJobInFlight = false;
+        }
         chunks_.clear();
         sortedChunks_.clear();
         dirtyChunks_.clear();
@@ -170,7 +175,10 @@ void WorldRenderer::setWorld(net::minecraft::World* worldIn)
 
 void WorldRenderer::reload()
 {
+    meshScheduler_.cancelAll();
+    pendingMeshUploads_.clear();
     for (chunk::ChunkBuilder& chunk : chunks_) {
+        chunk.meshJobInFlight = false;
         chunk.close();
     }
     chunks_.clear();

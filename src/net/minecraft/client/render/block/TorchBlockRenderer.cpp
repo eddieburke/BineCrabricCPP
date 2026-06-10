@@ -20,7 +20,7 @@ bool TorchBlockRenderer::render(net::minecraft::block::Block& block, int x, int 
 
     const int blockMeta = ctx_.blockView->getBlockMeta(x, y, z);
 
-    Tessellator& tessellator = render::INSTANCE;
+    Tessellator& tessellator = *ctx_.tess;
 
     float brightness = block.getLuminance(ctx_.blockView, x, y, z);
 
@@ -70,7 +70,7 @@ void TorchBlockRenderer::renderTiltedTorch(net::minecraft::block::Block& block, 
 
 {
 
-    Tessellator& tessellator = render::INSTANCE;
+    Tessellator& tessellator = *ctx_.tess;
 
     const net::minecraft::block::TerrainAtlasUv atlasUv = net::minecraft::block::Block::terrainTileUv(
         ctx_.resolveTexture(0, block.getTexture(0)));

@@ -11,6 +11,7 @@ namespace net::minecraft::entity {
 
 class ItemEntity : public Entity {
 public:
+    static void registerClass();
     ItemStack stack {};
     int itemAge = 0;
     int pickupDelay = 0;
@@ -19,7 +20,7 @@ public:
     void tick() override;
     void onPlayerInteraction(player::PlayerEntity* player) override;
     bool damage(Entity* damageSource, int amount) override;
-    [[nodiscard]] bool checkWaterCollisions();
+    [[nodiscard]] bool checkWaterCollisions() override;
     [[nodiscard]] bool bypassesSteppingEffects() const override { return false; }
 
     explicit ItemEntity(World* world = nullptr)

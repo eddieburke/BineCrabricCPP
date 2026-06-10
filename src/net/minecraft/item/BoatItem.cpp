@@ -1,3 +1,4 @@
+#include "net/minecraft/registry/Registry.hpp"
 #include "net/minecraft/item/BoatItem.hpp"
 
 #include "net/minecraft/block/Block.hpp"
@@ -49,15 +50,17 @@ ItemStack* BoatItem::use(ItemStack* stack, World* world, PlayerEntity* user)
 
 namespace {
 
-void registerBoatItem()
+void BoatItem::registerClass()
 {
     static BoatItem BOAT(77);
     BOAT.setTexturePosition(8, 8)->setTranslationKey("boat");
     Item::BOAT = &BOAT;
 }
 
-MINECRAFT_REGISTER_ITEM(registerBoatItem, 77);
 
+
+
+static ::net::minecraft::registry::RegisterItem<BoatItem> autoReg(77);
 } // namespace
 
 } // namespace net::minecraft::item

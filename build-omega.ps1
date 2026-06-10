@@ -39,6 +39,13 @@ $ErrorActionPreference = "Stop"
 $ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 Set-Location $ScriptDir
 
+$Msys2Bin = "C:\msys64\mingw64\bin"
+if (Test-Path $Msys2Bin) {
+    if ($env:PATH -notlike "*$Msys2Bin*") {
+        $env:PATH = "$Msys2Bin;" + $env:PATH
+    }
+}
+
 $BuildOmegaLockPath = Join-Path $ScriptDir ".build-omega.lock"
 $BuildOmegaLockStream = $null
 

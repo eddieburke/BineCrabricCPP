@@ -10,6 +10,7 @@ namespace net::minecraft::block {
 
 class PistonExtensionBlock : public BlockWithEntity {
 public:
+    static void registerClass();
     explicit PistonExtensionBlock(int id) : BlockWithEntity(id, material::Material::PISTON) { setHardness(-1.0f); }
 
     [[nodiscard]] int getRenderType() const override { return -1; }
@@ -24,6 +25,7 @@ public:
     void dropStacks(World* world, int x, int y, int z, int meta, float luck) override;
     void neighborUpdate(World* world, int x, int y, int z, int id) override;
     void updateBoundingBox(const BlockView* blockView, int x, int y, int z) override;
+    [[nodiscard]] net::minecraft::Box getRenderBounds(const BlockView* blockView, int x, int y, int z) const override;
 
     [[nodiscard]] std::optional<net::minecraft::Box> getPushedBlockCollisionShape(
         World* world,

@@ -10,6 +10,7 @@ namespace net::minecraft::item {
 
 class SwordItem : public Item {
 public:
+    static void registerClass();
     explicit SwordItem(int rawId, ToolMaterial material)
         : Item(rawId),
           damage_(4 + toolMaterialAttackDamage(material) * 2)

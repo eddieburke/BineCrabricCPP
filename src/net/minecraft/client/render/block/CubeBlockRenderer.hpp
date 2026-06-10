@@ -14,8 +14,8 @@ namespace net::minecraft::client::render::block {
 // paths extracted from the beta 1.7.3 BlockRenderManager.
 class CubeBlockRenderer {
 public:
-    CubeBlockRenderer(BlockRenderContext& ctx, BlockFaceRenderer& faces, bool& fancyGraphics)
-        : ctx_(ctx), faces_(faces), fancyGraphics_(fancyGraphics)
+    CubeBlockRenderer(BlockRenderContext& ctx, BlockFaceRenderer& faces)
+        : ctx_(ctx), faces_(faces)
     {
     }
 
@@ -28,7 +28,6 @@ public:
 private:
     BlockRenderContext& ctx_;
     BlockFaceRenderer& faces_;
-    bool& fancyGraphics_;
 };
 
 } // namespace net::minecraft::client::render::block

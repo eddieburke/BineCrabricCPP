@@ -10,6 +10,7 @@ namespace net::minecraft::entity::projectile::thrown {
 
 class SnowballEntity : public Entity {
 public:
+    static void registerClass();
     explicit SnowballEntity(World* world = nullptr) : Entity(world)
     {
         setBoundingBoxSpacing(0.25f, 0.25f);

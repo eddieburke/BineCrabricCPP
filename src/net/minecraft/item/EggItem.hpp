@@ -11,6 +11,7 @@ namespace net::minecraft::item {
 
 class EggItem : public Item {
 public:
+    static void registerClass();
     explicit EggItem(int rawId);
     ItemStack* use(ItemStack* stack, World* world, PlayerEntity* user) override;
 };

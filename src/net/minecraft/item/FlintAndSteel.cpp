@@ -1,3 +1,4 @@
+#include "net/minecraft/registry/Registry.hpp"
 #include "net/minecraft/item/FlintAndSteel.hpp"
 
 #include "net/minecraft/block/Block.hpp"
@@ -33,15 +34,17 @@ bool FlintAndSteel::useOnBlock(ItemStack* stack, PlayerEntity* /*user*/, World* 
 
 namespace {
 
-void registerFlintAndSteel()
+void FlintAndSteel::registerClass()
 {
     static FlintAndSteel FLINT_AND_STEEL(3);
     FLINT_AND_STEEL.setTexturePosition(5, 0)->setTranslationKey("flintAndSteel");
     Item::FLINT_AND_STEEL = &FLINT_AND_STEEL;
 }
 
-MINECRAFT_REGISTER_ITEM(registerFlintAndSteel, 3);
 
+
+
+static ::net::minecraft::registry::RegisterItem<FlintAndSteel> autoReg(3);
 } // namespace
 
 } // namespace net::minecraft::item

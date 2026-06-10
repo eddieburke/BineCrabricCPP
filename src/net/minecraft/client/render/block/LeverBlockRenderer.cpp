@@ -19,7 +19,7 @@ bool LeverBlockRenderer::render(net::minecraft::block::Block& block, int x, int 
         int blockMeta = ctx_.blockView->getBlockMeta(x, y, z);
         int facing = blockMeta & 7;
         bool isPowered = (blockMeta & 8) > 0;
-        Tessellator& tessellator = render::INSTANCE;
+        Tessellator& tessellator = *ctx_.tess;
         const bool hadTextureOverride = ctx_.textureOverride >= 0;
         if (!hadTextureOverride) {
             ctx_.textureOverride = net::minecraft::block::Block::BLOCKS[4]->textureId;
@@ -28,17 +28,17 @@ bool LeverBlockRenderer::render(net::minecraft::block::Block& block, int x, int 
         constexpr float halfWidth = 0.1875f;
         constexpr float handleHeight = 0.1875f;
         if (facing == 5) {
-            block.setBoundingBox(0.5f - halfWidth, 0.0f, 0.5f - halfDepth, 0.5f + halfWidth, handleHeight, 0.5f + halfDepth);
+            ctx_.setRenderBounds(0.5f - halfWidth, 0.0f, 0.5f - halfDepth, 0.5f + halfWidth, handleHeight, 0.5f + halfDepth);
         } else if (facing == 6) {
-            block.setBoundingBox(0.5f - halfDepth, 0.0f, 0.5f - halfWidth, 0.5f + halfDepth, handleHeight, 0.5f + halfWidth);
+            ctx_.setRenderBounds(0.5f - halfDepth, 0.0f, 0.5f - halfWidth, 0.5f + halfDepth, handleHeight, 0.5f + halfWidth);
         } else if (facing == 4) {
-            block.setBoundingBox(0.5f - halfWidth, 0.5f - halfDepth, 1.0f - handleHeight, 0.5f + halfWidth, 0.5f + halfDepth, 1.0f);
+            ctx_.setRenderBounds(0.5f - halfWidth, 0.5f - halfDepth, 1.0f - handleHeight, 0.5f + halfWidth, 0.5f + halfDepth, 1.0f);
         } else if (facing == 3) {
-            block.setBoundingBox(0.5f - halfWidth, 0.5f - halfDepth, 0.0f, 0.5f + halfWidth, 0.5f + halfDepth, handleHeight);
+            ctx_.setRenderBounds(0.5f - halfWidth, 0.5f - halfDepth, 0.0f, 0.5f + halfWidth, 0.5f + halfDepth, handleHeight);
         } else if (facing == 2) {
-            block.setBoundingBox(1.0f - handleHeight, 0.5f - halfDepth, 0.5f - halfWidth, 1.0f, 0.5f + halfDepth, 0.5f + halfWidth);
+            ctx_.setRenderBounds(1.0f - handleHeight, 0.5f - halfDepth, 0.5f - halfWidth, 1.0f, 0.5f + halfDepth, 0.5f + halfWidth);
         } else if (facing == 1) {
-            block.setBoundingBox(0.0f, 0.5f - halfDepth, 0.5f - halfWidth, handleHeight, 0.5f + halfDepth, 0.5f + halfWidth);
+            ctx_.setRenderBounds(0.0f, 0.5f - halfDepth, 0.5f - halfWidth, handleHeight, 0.5f + halfDepth, 0.5f + halfWidth);
         }
         cube_.renderBlock(block, x, y, z);
         if (!hadTextureOverride) {

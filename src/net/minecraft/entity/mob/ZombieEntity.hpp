@@ -6,6 +6,7 @@ namespace net::minecraft::entity::mob {
 
 class ZombieEntity : public MonsterEntity {
 public:
+    static void registerClass();
     explicit ZombieEntity(World* world = nullptr);
 
     void tickMovement() override;

@@ -12,6 +12,7 @@ namespace net::minecraft::block {
 
 class TallPlantBlock : public PlantBlock {
 public:
+    static void registerClass();
     TallPlantBlock(int id, int textureId) : PlantBlock(id, textureId)
     {
         const float f = 0.4f;

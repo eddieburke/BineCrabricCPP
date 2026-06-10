@@ -1,3 +1,4 @@
+#include "net/minecraft/registry/Registry.hpp"
 #include "net/minecraft/block/BlockRegistrar.hpp"
 #include "net/minecraft/block/NetherPortalBlock.hpp"
 
@@ -16,18 +17,22 @@ std::optional<Box> NetherPortalBlock::getCollisionShape(
 
 void NetherPortalBlock::updateBoundingBox(const BlockView* blockView, int x, int y, int z)
 {
+    setBoundingBox(getRenderBounds(blockView, x, y, z));
+}
+
+net::minecraft::Box NetherPortalBlock::getRenderBounds(const BlockView* blockView, int x, int y, int z) const
+{
     if (blockView == nullptr) {
-        return;
+        return {minX, minY, minZ, maxX, maxY, maxZ};
     }
     if (blockView->getBlockId(x - 1, y, z) == id || blockView->getBlockId(x + 1, y, z) == id) {
         constexpr float halfWidth = 0.5f;
         constexpr float halfDepth = 0.125f;
-        setBoundingBox(0.5f - halfWidth, 0.0f, 0.5f - halfDepth, 0.5f + halfWidth, 1.0f, 0.5f + halfDepth);
-    } else {
-        constexpr float halfWidth = 0.125f;
-        constexpr float halfDepth = 0.5f;
-        setBoundingBox(0.5f - halfWidth, 0.0f, 0.5f - halfDepth, 0.5f + halfWidth, 1.0f, 0.5f + halfDepth);
+        return {0.5f - halfWidth, 0.0f, 0.5f - halfDepth, 0.5f + halfWidth, 1.0f, 0.5f + halfDepth};
     }
+    constexpr float halfWidth = 0.125f;
+    constexpr float halfDepth = 0.5f;
+    return {0.5f - halfWidth, 0.0f, 0.5f - halfDepth, 0.5f + halfWidth, 1.0f, 0.5f + halfDepth};
 }
 
 bool NetherPortalBlock::create(World* world, int x, int y, int z)
@@ -190,13 +195,15 @@ void NetherPortalBlock::randomDisplayTick(
 }
 namespace {
 
-void registerNetherPortalBlock()
+void NetherPortalBlock::registerClass()
 {
     Block::NETHER_PORTAL = (new NetherPortalBlock(90, 14))->setHardness(-1.0f)->setSoundGroup(&vanillaGlassSound())->setLuminance(0.75f)->setTranslationKey("portal");
 }
 
-MINECRAFT_REGISTER_BLOCK(registerNetherPortalBlock, 90);
 
+
+
+static ::net::minecraft::registry::RegisterBlock<NetherPortalBlock> autoReg(90);
 } // namespace
 } // namespace net::minecraft::block
 

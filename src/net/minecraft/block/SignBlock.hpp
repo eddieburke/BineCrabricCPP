@@ -8,6 +8,7 @@ namespace net::minecraft::block {
 
 class SignBlock : public BlockWithEntity {
 public:
+    static void registerClass();
     SignBlock(int id, bool standing);
 
     bool standing = false;
@@ -21,6 +22,7 @@ public:
     [[nodiscard]] int getDroppedItemId(int blockMeta, JavaRandom& random) const override;
 
     void updateBoundingBox(const BlockView* blockView, int x, int y, int z) override;
+    [[nodiscard]] net::minecraft::Box getRenderBounds(const BlockView* blockView, int x, int y, int z) const override;
     void neighborUpdate(World* world, int x, int y, int z, int id) override;
 
 protected:

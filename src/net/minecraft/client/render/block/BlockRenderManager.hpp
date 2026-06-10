@@ -43,9 +43,38 @@ namespace net::minecraft::client::render::block {
 // Faithful port of net.minecraft.client.render.block.BlockRenderManager (beta 1.7.3).
 class BlockRenderManager {
 public:
-    explicit BlockRenderManager(const net::minecraft::BlockView* view = nullptr) { ctx.blockView = view; }
+    explicit BlockRenderManager(const net::minecraft::BlockView* view = nullptr)
+    {
+        ctx.blockView = view;
+        ctx.tess = &Tessellator::INSTANCE;
+        snapshotGlobals();
+    }
 
-    explicit BlockRenderManager(net::minecraft::World* world) { setBlockView(world); }
+    explicit BlockRenderManager(net::minecraft::World* world)
+    {
+        setBlockView(world);
+        ctx.tess = &Tessellator::INSTANCE;
+        snapshotGlobals();
+    }
+
+    // Worker-thread construction: render settings were captured on the main
+    // thread at job-enqueue time; never touch Minecraft::INSTANCE here.
+    BlockRenderManager(const net::minecraft::BlockView* view, const option::ResolvedRenderOptions& opts,
+        bool useFancyGraphics)
+    {
+        ctx.blockView = view;
+        ctx.opts = opts;
+        ctx.fancyGraphics = useFancyGraphics;
+    }
+
+    // Copy the global render settings (resolved GameOptions, fancy flags) into
+    // the context. Mesh jobs overwrite ctx.opts/ctx.fancyGraphics with values
+    // captured at enqueue time instead.
+    void snapshotGlobals();
+
+    // Snapshot resolved render options from the live client, or defaults when
+    // Minecraft::INSTANCE is unset (sync rebuild fallback).
+    [[nodiscard]] static option::ResolvedRenderOptions blockRenderManagerOptionsSnapshot();
 
     void setBlockView(const net::minecraft::BlockView* view)
     {
@@ -92,7 +121,7 @@ public:
 
 private:
     BlockFaceRenderer faces_ { ctx };
-    CubeBlockRenderer cube_ { ctx, faces_, fancyGraphics };
+    CubeBlockRenderer cube_ { ctx, faces_ };
     FluidBlockRenderer fluid_ { ctx, faces_ };
     CrossBlockRenderer cross_ { ctx };
     CropBlockRenderer crop_ { ctx };

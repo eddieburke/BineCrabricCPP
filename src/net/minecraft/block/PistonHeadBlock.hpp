@@ -8,6 +8,7 @@ namespace net::minecraft::block {
 
 class PistonHeadBlock : public Block {
 public:
+    static void registerClass();
     using Block::canPlaceAt;
 
     PistonHeadBlock(int id, int textureId);
@@ -24,6 +25,7 @@ public:
     void addIntersectingBoundingBox(
         World* world, int x, int y, int z, const net::minecraft::Box& box, std::vector<Box>& boxes) const override;
     void updateBoundingBox(const BlockView* blockView, int x, int y, int z) override;
+    [[nodiscard]] net::minecraft::Box getRenderBounds(const BlockView* blockView, int x, int y, int z) const override;
     void neighborUpdate(World* world, int x, int y, int z, int id) override;
 
     static int getFacing(int meta) { return meta & 7; }

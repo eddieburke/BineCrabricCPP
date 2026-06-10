@@ -6,6 +6,7 @@ namespace net::minecraft::entity {
 
 class FallingBlockEntity : public Entity {
 public:
+    static void registerClass();
     explicit FallingBlockEntity(World* world = nullptr);
     FallingBlockEntity(World* world, double x, double y, double z, int blockIdIn);
 

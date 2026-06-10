@@ -20,6 +20,10 @@ set(MINECRAFT_ZLIB_ROOT "C:/msys64/mingw64")
 file(GLOB_RECURSE MINECRAFT_PORT_SOURCES CONFIGURE_DEPENDS
     "${CMAKE_CURRENT_SOURCE_DIR}/src/net/minecraft/*.cpp"
 )
+set(MINECRAFT_VORBIS_DECODER_SOURCE
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/net/minecraft/client/platform/audio/decode/VorbisDecoder.cpp"
+)
+list(REMOVE_ITEM MINECRAFT_PORT_SOURCES "${MINECRAFT_VORBIS_DECODER_SOURCE}")
 
 file(GLOB SEEDFINDER_GUI_SOURCES CONFIGURE_DEPENDS
     "${CMAKE_CURRENT_SOURCE_DIR}/src/seedfinder/gui/*.cpp"
@@ -70,31 +74,91 @@ function(minecraft_link_zlib target)
     endif()
 endfunction()
 
+set(MINECRAFT_MSYS64_ROOT "C:/msys64/mingw64")
+
+find_library(MINECRAFT_VORBISFILE
+    NAMES vorbisfile libvorbisfile
+    PATHS "${MINECRAFT_MSYS64_ROOT}/lib"
+    NO_DEFAULT_PATH
+)
+find_library(MINECRAFT_VORBIS
+    NAMES vorbis libvorbis
+    PATHS "${MINECRAFT_MSYS64_ROOT}/lib"
+    NO_DEFAULT_PATH
+)
+find_library(MINECRAFT_OGG
+    NAMES ogg libogg
+    PATHS "${MINECRAFT_MSYS64_ROOT}/lib"
+    NO_DEFAULT_PATH
+)
+
+if (MINECRAFT_VORBISFILE AND MINECRAFT_VORBIS AND MINECRAFT_OGG)
+    set(MINECRAFT_MSYS2_GXX "${MINECRAFT_MSYS64_ROOT}/bin/g++.exe")
+    set(MINECRAFT_VORBIS_DECODER_OBJ
+        "${CMAKE_CURRENT_BINARY_DIR}/minecraft_audio_vorbis/VorbisDecoder.cpp.obj"
+    )
+    file(MAKE_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/minecraft_audio_vorbis")
+    add_custom_command(
+        OUTPUT "${MINECRAFT_VORBIS_DECODER_OBJ}"
+        COMMAND "${MINECRAFT_MSYS2_GXX}"
+            -std=c++20
+            -DMINECRAFT_HAS_VORBIS=1
+            -I"${CMAKE_CURRENT_SOURCE_DIR}/src"
+            -I"${CMAKE_CURRENT_SOURCE_DIR}/third_party"
+            -I"${CMAKE_CURRENT_SOURCE_DIR}"
+            -I"${MINECRAFT_MSYS64_ROOT}/include"
+            -c "${MINECRAFT_VORBIS_DECODER_SOURCE}"
+            -o "${MINECRAFT_VORBIS_DECODER_OBJ}"
+        DEPENDS "${MINECRAFT_VORBIS_DECODER_SOURCE}"
+        COMMENT "Building VorbisDecoder with MSYS2 g++"
+    )
+    add_library(minecraft_audio_vorbis STATIC "${MINECRAFT_VORBIS_DECODER_OBJ}")
+    set_target_properties(minecraft_audio_vorbis PROPERTIES LINKER_LANGUAGE CXX)
+    target_link_libraries(minecraft_audio_vorbis PRIVATE
+        "${MINECRAFT_VORBISFILE}"
+        "${MINECRAFT_VORBIS}"
+        "${MINECRAFT_OGG}"
+    )
+    set(MINECRAFT_HAS_VORBIS_TARGET minecraft_audio_vorbis)
+else()
+    message(WARNING "libvorbis not found under ${MINECRAFT_MSYS64_ROOT}; OGG/.mus playback disabled")
+endif()
+
+find_library(MINECRAFT_XAUDIO2
+    NAMES xaudio2_8 xaudio2
+    PATHS "${MINECRAFT_MSYS64_ROOT}/lib"
+    NO_DEFAULT_PATH
+)
+
 function(minecraft_link_audio target)
     if (WIN32)
-        target_link_libraries(${target} PRIVATE ole32 uuid avrt ksuser)
-    elseif (APPLE)
-        find_library(MINECRAFT_AUDIOTOOLBOX AudioToolbox)
-        find_library(MINECRAFT_COREAUDIO CoreAudio)
-        find_library(MINECRAFT_COREFOUNDATION CoreFoundation)
-        target_link_libraries(${target} PRIVATE
-            ${MINECRAFT_AUDIOTOOLBOX}
-            ${MINECRAFT_COREAUDIO}
-            ${MINECRAFT_COREFOUNDATION}
-        )
-    else()
-        find_package(Threads REQUIRED)
-        find_library(MINECRAFT_ASOUND asound)
-        if (NOT MINECRAFT_ASOUND)
-            message(FATAL_ERROR "ALSA (libasound) required for Linux audio playback")
+        target_link_libraries(${target} PRIVATE ole32 uuid avrt)
+        if (MINECRAFT_XAUDIO2)
+            target_link_libraries(${target} PRIVATE "${MINECRAFT_XAUDIO2}")
+        else()
+            target_link_libraries(${target} PRIVATE xaudio2)
         endif()
-        target_link_libraries(${target} PRIVATE Threads::Threads m ${MINECRAFT_ASOUND})
+    endif()
+    if (MINECRAFT_HAS_VORBIS_TARGET)
+        target_link_libraries(${target} PRIVATE "${MINECRAFT_HAS_VORBIS_TARGET}")
+        target_compile_definitions(${target} PRIVATE MINECRAFT_HAS_VORBIS=1)
+        if (WIN32)
+            foreach(_dll IN ITEMS libogg-0.dll libvorbis-0.dll libvorbisfile-3.dll)
+                set(_dll_path "${MINECRAFT_MSYS64_ROOT}/bin/${_dll}")
+                if (EXISTS "${_dll_path}")
+                    add_custom_command(TARGET ${target} POST_BUILD
+                        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                            "${_dll_path}"
+                            "$<TARGET_FILE_DIR:${target}>"
+                    )
+                endif()
+            endforeach()
+        endif()
     endif()
 endfunction()
 
 add_executable(minecraft_native
     src/main.cpp
-    src/net/minecraft/client/platform/audio/decode/vorbiscompiler.c
     ${MINECRAFT_PORT_SOURCES}
     ${SEEDFINDER_GUI_SOURCES}
     ${SEEDFINDER_PROBE_ADAPTER_SOURCE}
@@ -111,7 +175,6 @@ endif()
 
 add_executable(block_registry_properties_test
     tests/block_registry_properties_test.cpp
-    src/net/minecraft/client/platform/audio/decode/vorbiscompiler.c
     ${MINECRAFT_PORT_SOURCES}
     ${SEEDFINDER_GUI_SOURCES}
     ${SEEDFINDER_PROBE_ADAPTER_SOURCE}

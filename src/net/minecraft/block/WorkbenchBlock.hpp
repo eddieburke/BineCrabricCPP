@@ -6,6 +6,7 @@ namespace net::minecraft::block {
 
 class WorkbenchBlock : public Block {
 public:
+    static void registerClass();
     explicit WorkbenchBlock(int id) : Block(id, 59, material::Material::WOOD) {}
 
     [[nodiscard]] int getTexture(int side) const override;

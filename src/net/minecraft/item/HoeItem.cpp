@@ -1,3 +1,4 @@
+#include "net/minecraft/registry/Registry.hpp"
 #include "net/minecraft/item/HoeItem.hpp"
 
 #include "net/minecraft/block/Block.hpp"
@@ -39,7 +40,7 @@ bool HoeItem::useOnBlock(ItemStack* stack, PlayerEntity* /*user*/, World* world,
 
 namespace {
 
-void registerHoeItems()
+void HoeItem::registerClass()
 {
     static HoeItem WOODEN_HOE(34, ToolMaterial::Wood);
     WOODEN_HOE.setTexturePosition(0, 8)->setTranslationKey("hoeWood");
@@ -62,8 +63,10 @@ void registerHoeItems()
     Item::GOLDEN_HOE = &GOLDEN_HOE;
 }
 
-MINECRAFT_REGISTER_ITEM(registerHoeItems, 34);
 
+
+
+static ::net::minecraft::registry::RegisterItem<HoeItem> autoReg(34);
 } // namespace
 
 } // namespace net::minecraft::item

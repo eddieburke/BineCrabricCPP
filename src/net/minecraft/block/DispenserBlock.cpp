@@ -1,3 +1,4 @@
+#include "net/minecraft/registry/Registry.hpp"
 #include "net/minecraft/block/BlockRegistrar.hpp"
 #include "net/minecraft/block/DispenserBlock.hpp"
 
@@ -217,13 +218,15 @@ void DispenserBlock::onBreak(World* world, int x, int y, int z)
 }
 namespace {
 
-void registerDispenserBlock()
+void DispenserBlock::registerClass()
 {
     Block::DISPENSER = (new DispenserBlock(23))->setHardness(3.5f)->setSoundGroup(&vanillaStoneSound())->setTranslationKey("dispenser")->ignoreMetaUpdates();
 }
 
-MINECRAFT_REGISTER_BLOCK(registerDispenserBlock, 23);
 
+
+
+static ::net::minecraft::registry::RegisterBlock<DispenserBlock> autoReg(23);
 } // namespace
 } // namespace net::minecraft::block
 

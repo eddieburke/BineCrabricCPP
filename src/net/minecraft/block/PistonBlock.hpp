@@ -12,6 +12,7 @@ namespace net::minecraft::block {
 
 class PistonBlock : public Block {
 public:
+    static void registerClass();
     bool sticky = false;
 
     PistonBlock(int id, int textureId, bool stickyIn);
@@ -27,6 +28,7 @@ public:
     void neighborUpdate(World* world, int x, int y, int z, int id) override;
     void onBlockAction(World* world, int x, int y, int z, int data1, int data2) override;
     void updateBoundingBox(const BlockView* blockView, int x, int y, int z) override;
+    [[nodiscard]] net::minecraft::Box getRenderBounds(const BlockView* blockView, int x, int y, int z) const override;
     void addIntersectingBoundingBox(
         World* world, int x, int y, int z, const net::minecraft::Box& box, std::vector<Box>& boxes) const override;
 

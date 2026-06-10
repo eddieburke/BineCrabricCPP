@@ -1,3 +1,4 @@
+#include "net/minecraft/registry/Registry.hpp"
 #include "net/minecraft/block/BlockRegistrar.hpp"
 #include "net/minecraft/block/RailBlock.hpp"
 
@@ -341,6 +342,8 @@ private:
     }
 };
 
+
+static ::net::minecraft::registry::RegisterBlock<RailBlock> autoReg(27);
 } // namespace
 
 RailBlock::RailBlock(int id, int textureId, bool alwaysStraightIn)
@@ -556,12 +559,16 @@ bool RailBlock::isPoweredByRail(
 
 void RailBlock::updateBoundingBox(const BlockView* blockView, int x, int y, int z)
 {
+    setBoundingBox(getRenderBounds(blockView, x, y, z));
+}
+
+net::minecraft::Box RailBlock::getRenderBounds(const BlockView* blockView, int x, int y, int z) const
+{
     const int meta = blockView != nullptr ? blockView->getBlockMeta(x, y, z) : 0;
     if (meta >= 2 && meta <= 5) {
-        setBoundingBox(0.0f, 0.0f, 0.0f, 1.0f, 0.625f, 1.0f);
-    } else {
-        setBoundingBox(0.0f, 0.0f, 0.0f, 1.0f, 0.125f, 1.0f);
+        return {0.0f, 0.0f, 0.0f, 1.0f, 0.625f, 1.0f};
     }
+    return {0.0f, 0.0f, 0.0f, 1.0f, 0.125f, 1.0f};
 }
 
 std::optional<net::minecraft::HitResult> RailBlock::raycast(
@@ -574,13 +581,13 @@ std::optional<net::minecraft::HitResult> RailBlock::raycast(
 }
 namespace {
 
-void registerRailBlocks()
+void RailBlock::registerClass()
 {
     Block::POWERED_RAIL = (new RailBlock(27, 179, true))->setHardness(0.7f)->setSoundGroup(&vanillaMetalSound())->setTranslationKey("goldenRail")->ignoreMetaUpdates();
     Block::RAIL = (new RailBlock(66, 128, false))->setHardness(0.7f)->setSoundGroup(&vanillaMetalSound())->setTranslationKey("rail")->ignoreMetaUpdates();
 }
 
-MINECRAFT_REGISTER_BLOCK(registerRailBlocks, 27);
+
 
 } // namespace
 } // namespace net::minecraft::block

@@ -1,3 +1,4 @@
+#include "net/minecraft/registry/Registry.hpp"
 #include "net/minecraft/block/BlockRegistrar.hpp"
 #include "net/minecraft/block/DoorBlock.hpp"
 #include "net/minecraft/block/material/Material.hpp"
@@ -46,18 +47,23 @@ int DoorBlock::getTexture(int side, int meta) const
 
 void DoorBlock::rotate(int meta)
 {
+    setBoundingBox(boundsForMeta(meta));
+}
+
+net::minecraft::Box DoorBlock::boundsForMeta(int meta) const
+{
     constexpr float thickness = 0.1875f;
     const int oriented = facingFromMeta(meta);
-    setBoundingBox(0.0f, 0.0f, 0.0f, 1.0f, 1.0f, 1.0f);
     if (oriented == 0) {
-        setBoundingBox(0.0f, 0.0f, 0.0f, 1.0f, 1.0f, thickness);
-    } else if (oriented == 1) {
-        setBoundingBox(1.0f - thickness, 0.0f, 0.0f, 1.0f, 1.0f, 1.0f);
-    } else if (oriented == 2) {
-        setBoundingBox(0.0f, 0.0f, 1.0f - thickness, 1.0f, 1.0f, 1.0f);
-    } else {
-        setBoundingBox(0.0f, 0.0f, 0.0f, thickness, 1.0f, 1.0f);
+        return {0.0f, 0.0f, 0.0f, 1.0f, 1.0f, thickness};
     }
+    if (oriented == 1) {
+        return {1.0f - thickness, 0.0f, 0.0f, 1.0f, 1.0f, 1.0f};
+    }
+    if (oriented == 2) {
+        return {0.0f, 0.0f, 1.0f - thickness, 1.0f, 1.0f, 1.0f};
+    }
+    return {0.0f, 0.0f, 0.0f, thickness, 1.0f, 1.0f};
 }
 
 std::optional<net::minecraft::Box> DoorBlock::getCollisionShape(World* world, int x, int y, int z) const
@@ -75,6 +81,14 @@ void DoorBlock::updateBoundingBox(const BlockView* blockView, int x, int y, int 
         return;
     }
     rotate(blockView->getBlockMeta(x, y, z));
+}
+
+net::minecraft::Box DoorBlock::getRenderBounds(const BlockView* blockView, int x, int y, int z) const
+{
+    if (blockView == nullptr) {
+        return {minX, minY, minZ, maxX, maxY, maxZ};
+    }
+    return boundsForMeta(blockView->getBlockMeta(x, y, z));
 }
 
 bool DoorBlock::canPlaceAt(World* world, int x, int y, int z) const
@@ -199,15 +213,17 @@ void DoorBlock::neighborUpdate(World* world, int x, int y, int z, int blockId)
 }
 namespace {
 
-void registerDoorBlocks()
+void DoorBlock::registerClass()
 {
     namespace mat = material;
     Block::DOOR = (new DoorBlock(64, mat::Material::WOOD))->setHardness(3.0f)->setSoundGroup(&vanillaWoodSound())->setTranslationKey("doorWood")->disableTrackingStatistics()->ignoreMetaUpdates();
     Block::IRON_DOOR = (new DoorBlock(71, mat::Material::METAL))->setHardness(5.0f)->setSoundGroup(&vanillaMetalSound())->setTranslationKey("doorIron")->disableTrackingStatistics()->ignoreMetaUpdates();
 }
 
-MINECRAFT_REGISTER_BLOCK(registerDoorBlocks, 71);
 
+
+
+static ::net::minecraft::registry::RegisterBlock<DoorBlock> autoReg(71);
 } // namespace
 } // namespace net::minecraft::block
 

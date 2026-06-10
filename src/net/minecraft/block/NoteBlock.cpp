@@ -1,3 +1,4 @@
+#include "net/minecraft/registry/Registry.hpp"
 #include "net/minecraft/block/BlockRegistrar.hpp"
 #include "net/minecraft/block/NoteBlock.hpp"
 
@@ -91,13 +92,15 @@ void NoteBlock::onBlockAction(World* world, int x, int y, int z, int data1, int 
 }
 namespace {
 
-void registerNoteBlock()
+void NoteBlock::registerClass()
 {
     Block::NOTE_BLOCK = (new NoteBlock(25))->setHardness(0.8f)->setTranslationKey("musicBlock")->ignoreMetaUpdates();
 }
 
-MINECRAFT_REGISTER_BLOCK(registerNoteBlock, 25);
 
+
+
+static ::net::minecraft::registry::RegisterBlock<NoteBlock> autoReg(25);
 } // namespace
 } // namespace net::minecraft::block
 

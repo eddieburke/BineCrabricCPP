@@ -8,6 +8,7 @@ namespace net::minecraft::block {
 
 class TrapdoorBlock : public Block {
 public:
+    static void registerClass();
     using Block::canPlaceAt;
     TrapdoorBlock(int id, Material& material);
 
@@ -18,6 +19,7 @@ public:
 
     [[nodiscard]] std::optional<net::minecraft::Box> getCollisionShape(World* world, int x, int y, int z) const override;
     void updateBoundingBox(const BlockView* blockView, int x, int y, int z) override;
+    [[nodiscard]] net::minecraft::Box getRenderBounds(const BlockView* blockView, int x, int y, int z) const override;
     void setupRenderBoundingBox() override;
     [[nodiscard]] std::optional<net::minecraft::HitResult> raycast(
         World* world, int x, int y, int z, net::minecraft::Vec3d startPos, net::minecraft::Vec3d endPos) const override;
@@ -32,6 +34,7 @@ public:
 
 private:
     void applyBoundsForMeta(int meta);
+    [[nodiscard]] net::minecraft::Box boundsForMeta(int meta) const;
 };
 
 } // namespace net::minecraft::block

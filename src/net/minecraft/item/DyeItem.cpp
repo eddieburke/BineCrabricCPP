@@ -1,3 +1,4 @@
+#include "net/minecraft/registry/Registry.hpp"
 #include "net/minecraft/item/DyeItem.hpp"
 
 #include "net/minecraft/block/Block.hpp"
@@ -101,15 +102,17 @@ void DyeItem::useOnEntity(ItemStack* stack, LivingEntity* entity)
 
 namespace {
 
-void registerDyeItem()
+void DyeItem::registerClass()
 {
     static DyeItem DYE(95);
     DYE.setTexturePosition(14, 4)->setTranslationKey("dyePowder");
     Item::DYE = &DYE;
 }
 
-MINECRAFT_REGISTER_ITEM(registerDyeItem, 95);
 
+
+
+static ::net::minecraft::registry::RegisterItem<DyeItem> autoReg(95);
 } // namespace
 
 } // namespace net::minecraft::item

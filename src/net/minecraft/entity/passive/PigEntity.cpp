@@ -1,4 +1,11 @@
+#include "net/minecraft/registry/Registry.hpp"
+#include "net/minecraft/entity/EntityRegistrar.hpp"
 #include "net/minecraft/entity/passive/PigEntity.hpp"
+
+#include "net/minecraft/entity/EntityRegistry.hpp"
+
+#include <memory>
+#include <typeindex>
 
 #include "net/minecraft/achievement/Achievements.hpp"
 #include "net/minecraft/entity/mob/PigZombieEntity.hpp"
@@ -64,5 +71,13 @@ int PigEntity::getDroppedItemId() const
     }
     return Item::RAW_PORKCHOP != nullptr ? Item::RAW_PORKCHOP->id : 319;
 }
+
+
+void PigEntity::registerClass()
+{
+    ::net::minecraft::entity::detail::registerVanillaEntity<PigEntity>("Pig", 90);
+}
+
+static ::net::minecraft::registry::RegisterEntity<PigEntity> autoReg(90);
 
 } // namespace net::minecraft::entity::passive

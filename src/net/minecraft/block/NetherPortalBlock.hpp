@@ -6,11 +6,13 @@ namespace net::minecraft::block {
 
 class NetherPortalBlock : public TranslucentBlock {
 public:
+    static void registerClass();
     NetherPortalBlock(int id, int textureId) : TranslucentBlock(id, textureId, material::Material::NETHER_PORTAL, false) {}
 
     [[nodiscard]] std::optional<net::minecraft::Box> getCollisionShape(
         World* world, int x, int y, int z) const override;
     void updateBoundingBox(const BlockView* blockView, int x, int y, int z) override;
+    [[nodiscard]] net::minecraft::Box getRenderBounds(const BlockView* blockView, int x, int y, int z) const override;
 
     bool create(World* world, int x, int y, int z);
     void neighborUpdate(World* world, int x, int y, int z, int id) override;

@@ -15,6 +15,7 @@ namespace net::minecraft::item {
 
 class DoorItem : public Item {
 public:
+    static void registerClass();
     DoorItem(int rawId, block::material::Material& material);
     bool useOnBlock(ItemStack* stack, PlayerEntity* user, World* world, int x, int y, int z, int side) override;
 

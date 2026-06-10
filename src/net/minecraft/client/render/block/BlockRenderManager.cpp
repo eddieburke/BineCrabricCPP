@@ -23,6 +23,22 @@ net::minecraft::block::Block* blockAt(int blockId)
 
 } // namespace
 
+void BlockRenderManager::snapshotGlobals()
+{
+    ctx.fancyGraphics = fancyGraphics;
+    if (Minecraft::INSTANCE != nullptr) {
+        ctx.opts = option::resolve(Minecraft::INSTANCE->options);
+    }
+}
+
+option::ResolvedRenderOptions BlockRenderManager::blockRenderManagerOptionsSnapshot()
+{
+    if (Minecraft::INSTANCE != nullptr) {
+        return option::resolve(Minecraft::INSTANCE->options);
+    }
+    return {};
+}
+
 void BlockRenderManager::renderWithTexture(int blockId, int x, int y, int z, int textureOverrideIn)
 {
     if (net::minecraft::block::Block* b = blockAt(blockId)) {
@@ -73,6 +89,7 @@ void BlockRenderManager::renderPistonHeadWithoutCulling(int blockId, int x, int 
 bool BlockRenderManager::renderBlock(int blockId, int x, int y, int z)
 {
     if (net::minecraft::block::Block* b = blockAt(blockId)) {
+        ctx.renderBounds = b->getRenderBounds(ctx.blockView, x, y, z);
         return cube_.renderBlock(*b, x, y, z);
     }
     return false;
@@ -96,14 +113,14 @@ bool BlockRenderManager::render(net::minecraft::block::Block& block, int x, int 
 {
     ctx.faceState.useAo = false;
     const int renderType = block.getRenderType();
-    block.updateBoundingBox(ctx.blockView, x, y, z);
+    // Bounds live on the context, not the Block singleton: mesh workers and
+    // the main-thread tick must never race on Block::minX..maxZ.
+    ctx.renderBounds = block.getRenderBounds(ctx.blockView, x, y, z);
     switch (renderType) {
     case BlockRenderType::FULL_CUBE:
         return cube_.renderBlock(block, x, y, z);
     case BlockRenderType::FLUID:
-        if (Minecraft::INSTANCE != nullptr
-            && &block.material == &::net::minecraft::block::material::Material::WATER
-            && !option::resolve(Minecraft::INSTANCE->options).renderWater) {
+        if (&block.material == &::net::minecraft::block::material::Material::WATER && !ctx.opts.renderWater) {
             return false;
         }
         return fluid_.renderFluid(block, x, y, z);

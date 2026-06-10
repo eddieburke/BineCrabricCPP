@@ -9,6 +9,7 @@ namespace net::minecraft::entity::mob {
 
 class PigZombieEntity : public ZombieEntity {
 public:
+    static void registerClass();
     explicit PigZombieEntity(World* world = nullptr);
 
     void tick() override;

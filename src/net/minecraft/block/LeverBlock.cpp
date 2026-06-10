@@ -1,3 +1,4 @@
+#include "net/minecraft/registry/Registry.hpp"
 #include "net/minecraft/block/BlockRegistrar.hpp"
 #include "net/minecraft/block/LeverBlock.hpp"
 
@@ -52,20 +53,27 @@ bool LeverBlock::canPlaceAt(World* world, int x, int y, int z) const
 
 void LeverBlock::updateBoundingBox(const BlockView* blockView, int x, int y, int z)
 {
+    setBoundingBox(getRenderBounds(blockView, x, y, z));
+}
+
+net::minecraft::Box LeverBlock::getRenderBounds(const BlockView* blockView, int x, int y, int z) const
+{
     const int face = blockView != nullptr ? (blockView->getBlockMeta(x, y, z) & 7) : 0;
     constexpr float halfThickness = 0.1875f;
     if (face == 1) {
-        setBoundingBox(0.0f, 0.2f, 0.5f - halfThickness, halfThickness * 2.0f, 0.8f, 0.5f + halfThickness);
-    } else if (face == 2) {
-        setBoundingBox(1.0f - halfThickness * 2.0f, 0.2f, 0.5f - halfThickness, 1.0f, 0.8f, 0.5f + halfThickness);
-    } else if (face == 3) {
-        setBoundingBox(0.5f - halfThickness, 0.2f, 0.0f, 0.5f + halfThickness, 0.8f, halfThickness * 2.0f);
-    } else if (face == 4) {
-        setBoundingBox(0.5f - halfThickness, 0.2f, 1.0f - halfThickness * 2.0f, 0.5f + halfThickness, 0.8f, 1.0f);
-    } else {
-        constexpr float halfWidth = 0.25f;
-        setBoundingBox(0.5f - halfWidth, 0.0f, 0.5f - halfWidth, 0.5f + halfWidth, 0.6f, 0.5f + halfWidth);
+        return {0.0f, 0.2f, 0.5f - halfThickness, halfThickness * 2.0f, 0.8f, 0.5f + halfThickness};
     }
+    if (face == 2) {
+        return {1.0f - halfThickness * 2.0f, 0.2f, 0.5f - halfThickness, 1.0f, 0.8f, 0.5f + halfThickness};
+    }
+    if (face == 3) {
+        return {0.5f - halfThickness, 0.2f, 0.0f, 0.5f + halfThickness, 0.8f, halfThickness * 2.0f};
+    }
+    if (face == 4) {
+        return {0.5f - halfThickness, 0.2f, 1.0f - halfThickness * 2.0f, 0.5f + halfThickness, 0.8f, 1.0f};
+    }
+    constexpr float halfWidth = 0.25f;
+    return {0.5f - halfWidth, 0.0f, 0.5f - halfWidth, 0.5f + halfWidth, 0.6f, 0.5f + halfWidth};
 }
 
 void LeverBlock::onPlaced(World* world, int x, int y, int z, int direction)
@@ -223,13 +231,15 @@ bool LeverBlock::isEmittingRedstonePowerInDirection(
 }
 namespace {
 
-void registerLeverBlock()
+void LeverBlock::registerClass()
 {
     Block::LEVER = (new LeverBlock(69, 96))->setHardness(0.5f)->setSoundGroup(&vanillaWoodSound())->setTranslationKey("lever")->ignoreMetaUpdates();
 }
 
-MINECRAFT_REGISTER_BLOCK(registerLeverBlock, 69);
 
+
+
+static ::net::minecraft::registry::RegisterBlock<LeverBlock> autoReg(69);
 } // namespace
 } // namespace net::minecraft::block
 

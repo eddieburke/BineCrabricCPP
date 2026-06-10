@@ -1,3 +1,4 @@
+#include "net/minecraft/registry/Registry.hpp"
 #include "net/minecraft/item/DoorItem.hpp"
 
 #include "net/minecraft/block/Block.hpp"
@@ -63,7 +64,7 @@ bool DoorItem::useOnBlock(ItemStack* stack, PlayerEntity* user, World* world, in
 
 namespace {
 
-void registerDoorItems()
+void DoorItem::registerClass()
 {
     static DoorItem WOODEN_DOOR(68, block::material::Material::WOOD);
     WOODEN_DOOR.setTexturePosition(11, 2)->setTranslationKey("doorWood");
@@ -74,8 +75,10 @@ void registerDoorItems()
     Item::IRON_DOOR = &IRON_DOOR;
 }
 
-MINECRAFT_REGISTER_ITEM(registerDoorItems, 68);
 
+
+
+static ::net::minecraft::registry::RegisterItem<DoorItem> autoReg(68);
 } // namespace
 
 } // namespace net::minecraft::item

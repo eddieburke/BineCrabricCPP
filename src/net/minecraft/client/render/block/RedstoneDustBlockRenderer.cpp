@@ -10,7 +10,7 @@ namespace net::minecraft::client::render::block {
 bool RedstoneDustBlockRenderer::render(net::minecraft::block::Block& block, int x, int y, int z)
 {
     bool connectWest;
-    Tessellator& tessellator = render::INSTANCE;
+    Tessellator& tessellator = *ctx_.tess;
     int meta = ctx_.blockView->getBlockMeta(x, y, z);
     const int tex = ctx_.resolveTexture(1, block.getTexture(1, meta));
     float brightness = block.getLuminance(ctx_.blockView, x, y, z);

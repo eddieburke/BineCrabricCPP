@@ -13,6 +13,8 @@
 
 namespace net::minecraft::client::render::chunk {
 
+struct ChunkMeshJob;
+
 class ChunkBuilder {
 public:
     ChunkBuilder(World* world, std::vector<::net::minecraft::block::entity::BlockEntity*>& blockEntityUpdateList, int x,
@@ -48,7 +50,17 @@ public:
         return dx * dx + dy * dy + dz * dz;
     }
 
+    // Synchronous main-thread rebuild (forced compiles, fallback path).
+    // Internally: snapshot -> buildMesh -> uploadMesh, same as the async path.
     void rebuild();
+
+    // Worker-thread half: tessellate the job's snapshot into CPU meshes.
+    // Touches no GL and no live world state.
+    static void buildMesh(ChunkMeshJob& job);
+
+    // Main-thread half: compile the captured meshes into this builder's GL
+    // display lists, resolve block entities, and publish flags.
+    void uploadMesh(const ChunkMeshJob& job);
 
     [[nodiscard]] bool hasLayerGeometry(int layerId) const noexcept
     {
@@ -73,6 +85,7 @@ public:
     void invalidate() noexcept
     {
         dirty = true;
+        ++version;
     }
 
     World* world = nullptr;
@@ -102,16 +115,13 @@ public:
     bool hasSkyLight = false;
     bool built = false;
     bool queuedForRebuild = false;
+    // Bumped on every invalidation; mesh results built from an older version
+    // are discarded at upload time.
+    int version = 0;
+    // A mesh job for this builder is queued or running (main-thread bookkeeping).
+    bool meshJobInFlight = false;
     std::vector<::net::minecraft::block::entity::BlockEntity*> blockEntities_ {};
     std::vector<::net::minecraft::block::entity::BlockEntity*>* currentBlockEntities_ = nullptr;
-
-private:
-    void endOpenDisplayList() noexcept;
-    void beginLayerCompile(int baseListId, const ChunkDrawTransform& transform);
-    void finishLayerCompile();
-    void drawCompiledLayer(int layerId, float cameraDx, float cameraDy, float cameraDz) const;
-
-    bool dlCompileOpen_ = false;
 };
 
 } // namespace net::minecraft::client::render::chunk

@@ -6,6 +6,7 @@ namespace net::minecraft::item {
 
 class ArmorItem : public Item {
 public:
+    static void registerClass();
     ArmorItem(int rawId, int type, int textureIndex, int equipmentSlot)
         : Item(rawId),
           type(type),

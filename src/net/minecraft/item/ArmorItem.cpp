@@ -1,3 +1,4 @@
+#include "net/minecraft/registry/Registry.hpp"
 #include "net/minecraft/item/ArmorItem.hpp"
 #include "net/minecraft/item/Item.hpp"
 #include "net/minecraft/item/ItemRegistrar.hpp"
@@ -5,7 +6,7 @@
 namespace net::minecraft::item {
 namespace {
 
-void registerArmorItems()
+void ArmorItem::registerClass()
 {
     static ArmorItem LEATHER_HELMET(42, 0, 0, 0);
     LEATHER_HELMET.setTexturePosition(0, 0)->setTranslationKey("helmetCloth");
@@ -73,7 +74,9 @@ void registerArmorItems()
     Item::GOLDEN_BOOTS = &GOLDEN_BOOTS;
 }
 
-MINECRAFT_REGISTER_ITEM(registerArmorItems, 42);
 
+
+
+static ::net::minecraft::registry::RegisterItem<ArmorItem> autoReg(42);
 } // namespace
 } // namespace net::minecraft::item

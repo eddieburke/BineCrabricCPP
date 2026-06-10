@@ -204,6 +204,16 @@ public:
 
     void setBoundingBox(float minX, float minY, float minZ, float maxX, float maxY, float maxZ);
 
+    void setBoundingBox(const net::minecraft::Box& box)
+    {
+        minX = box.minX;
+        minY = box.minY;
+        minZ = box.minZ;
+        maxX = box.maxX;
+        maxY = box.maxY;
+        maxZ = box.maxZ;
+    }
+
     // --- simple/virtual queries (faithful defaults inline) ---
     [[nodiscard]] virtual bool isFullCube() const { return true; }
     [[nodiscard]] virtual int getRenderType() const { return 0; }
@@ -295,6 +305,16 @@ public:
     [[nodiscard]] virtual bool isSideVisible(const net::minecraft::BlockView* blockView, int x, int y, int z, int side) const;
     [[nodiscard]] virtual int getTextureId(const net::minecraft::BlockView* blockView, int x, int y, int z, int side) const;
     virtual void updateBoundingBox(const net::minecraft::BlockView* blockView, int x, int y, int z);
+
+    // Render-path bounds in local block space, computed without mutating any
+    // shared Block state so chunk meshing can run on worker threads. Default:
+    // the block's current static bounds. State-dependent blocks override this;
+    // their updateBoundingBox forwards here so collision/selection stay in sync.
+    [[nodiscard]] virtual net::minecraft::Box getRenderBounds(
+        const net::minecraft::BlockView* /*blockView*/, int /*x*/, int /*y*/, int /*z*/) const
+    {
+        return {minX, minY, minZ, maxX, maxY, maxZ};
+    }
     [[nodiscard]] virtual int getColorMultiplier(const net::minecraft::BlockView* blockView, int x, int y, int z) const;
     virtual void setupRenderBoundingBox();
 

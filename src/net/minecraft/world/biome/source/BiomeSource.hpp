@@ -7,6 +7,7 @@
 #include <algorithm>
 #include <cstddef>
 #include <cstdint>
+#include <memory>
 #include <vector>
 
 namespace net::minecraft {
@@ -14,7 +15,8 @@ namespace net::minecraft {
 class BiomeSource {
 public:
     explicit BiomeSource(std::uint64_t seed)
-        : temperatureRandom_(seed * 9871ULL),
+        : seed_(seed),
+          temperatureRandom_(seed * 9871ULL),
           downfallRandom_(seed * 39811ULL),
           weirdnessRandom_(seed * 543321ULL),
           temperatureSampler_(temperatureRandom_, 4),
@@ -25,12 +27,20 @@ public:
 
     void setSeed(std::uint64_t seed)
     {
+        seed_ = seed;
         temperatureRandom_.setSeed(seed * 9871ULL);
         downfallRandom_.setSeed(seed * 39811ULL);
         weirdnessRandom_.setSeed(seed * 543321ULL);
     }
 
     virtual ~BiomeSource() = default;
+
+    // Fresh source with identical sampling state. Mesh-snapshot jobs clone the
+    // dimension's source so worker threads never touch its mutable scratch maps.
+    [[nodiscard]] virtual std::unique_ptr<BiomeSource> clone() const
+    {
+        return std::make_unique<BiomeSource>(seed_);
+    }
 
     [[nodiscard]] const std::vector<double>& temperatureMap() const noexcept { return temperatureMap_; }
     [[nodiscard]] const std::vector<double>& downfallMap() const noexcept { return downfallMap_; }
@@ -54,6 +64,7 @@ protected:
     std::vector<double> downfallMap_;
 
 private:
+    std::uint64_t seed_ = 0;
     JavaRandom temperatureRandom_;
     JavaRandom downfallRandom_;
     JavaRandom weirdnessRandom_;
