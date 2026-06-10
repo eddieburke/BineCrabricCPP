@@ -38,22 +38,39 @@ std::optional<net::minecraft::Box> LadderBlock::getCollisionShape(World* world, 
 
 void LadderBlock::applyBoundsForMeta(int meta)
 {
+    if (meta >= 2 && meta <= 5) {
+        setBoundingBox(boundsForMeta(meta));
+    }
+}
+
+net::minecraft::Box LadderBlock::boundsForMeta(int meta) const
+{
     constexpr float thickness = 0.125f;
     if (meta == 2) {
-        setBoundingBox(0.0f, 0.0f, 1.0f - thickness, 1.0f, 1.0f, 1.0f);
-    } else if (meta == 3) {
-        setBoundingBox(0.0f, 0.0f, 0.0f, 1.0f, 1.0f, thickness);
-    } else if (meta == 4) {
-        setBoundingBox(1.0f - thickness, 0.0f, 0.0f, 1.0f, 1.0f, 1.0f);
-    } else if (meta == 5) {
-        setBoundingBox(0.0f, 0.0f, 0.0f, thickness, 1.0f, 1.0f);
+        return {0.0f, 0.0f, 1.0f - thickness, 1.0f, 1.0f, 1.0f};
     }
+    if (meta == 3) {
+        return {0.0f, 0.0f, 0.0f, 1.0f, 1.0f, thickness};
+    }
+    if (meta == 4) {
+        return {1.0f - thickness, 0.0f, 0.0f, 1.0f, 1.0f, 1.0f};
+    }
+    if (meta == 5) {
+        return {0.0f, 0.0f, 0.0f, thickness, 1.0f, 1.0f};
+    }
+    return {minX, minY, minZ, maxX, maxY, maxZ};
 }
 
 void LadderBlock::updateBoundingBox(const BlockView* blockView, int x, int y, int z)
 {
     const int meta = blockView != nullptr ? blockView->getBlockMeta(x, y, z) : 0;
     applyBoundsForMeta(meta);
+}
+
+net::minecraft::Box LadderBlock::getRenderBounds(const BlockView* blockView, int x, int y, int z) const
+{
+    const int meta = blockView != nullptr ? blockView->getBlockMeta(x, y, z) : 0;
+    return boundsForMeta(meta);
 }
 
 bool LadderBlock::canPlaceAt(World* world, int x, int y, int z) const

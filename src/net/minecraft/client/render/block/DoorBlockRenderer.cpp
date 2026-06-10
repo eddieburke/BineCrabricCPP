@@ -8,7 +8,7 @@ namespace net::minecraft::client::render::block {
 
 bool DoorBlockRenderer::render(net::minecraft::block::Block& block, int x, int y, int z)
 {
-    Tessellator& tessellator = render::INSTANCE;
+    Tessellator& tessellator = *ctx_.tess;
     bool drewAnyFace = false;
     const float downShade = 0.5f;
     const float upShade = 1.0f;
@@ -17,7 +17,7 @@ bool DoorBlockRenderer::render(net::minecraft::block::Block& block, int x, int y
     const float selfBrightness = block.getLuminance(ctx_.blockView, x, y, z);
 
     float brightness = block.getLuminance(ctx_.blockView, x, y - 1, z);
-    if (block.minY > 0.0) {
+    if (ctx_.renderBounds.minY > 0.0) {
         brightness = selfBrightness;
     }
     if (net::minecraft::block::Block::BLOCKS_LIGHT_LUMINANCE[static_cast<std::size_t>(block.id)] > 0) {
@@ -28,7 +28,7 @@ bool DoorBlockRenderer::render(net::minecraft::block::Block& block, int x, int y
     drewAnyFace = true;
 
     brightness = block.getLuminance(ctx_.blockView, x, y + 1, z);
-    if (block.maxY < 1.0) {
+    if (ctx_.renderBounds.maxY < 1.0) {
         brightness = selfBrightness;
     }
     if (net::minecraft::block::Block::BLOCKS_LIGHT_LUMINANCE[static_cast<std::size_t>(block.id)] > 0) {
@@ -39,7 +39,7 @@ bool DoorBlockRenderer::render(net::minecraft::block::Block& block, int x, int y
     drewAnyFace = true;
 
     brightness = block.getLuminance(ctx_.blockView, x, y, z - 1);
-    if (block.minZ > 0.0) {
+    if (ctx_.renderBounds.minZ > 0.0) {
         brightness = selfBrightness;
     }
     if (net::minecraft::block::Block::BLOCKS_LIGHT_LUMINANCE[static_cast<std::size_t>(block.id)] > 0) {
@@ -56,7 +56,7 @@ bool DoorBlockRenderer::render(net::minecraft::block::Block& block, int x, int y
     ctx_.flipTextureHorizontally = false;
 
     brightness = block.getLuminance(ctx_.blockView, x, y, z + 1);
-    if (block.maxZ < 1.0) {
+    if (ctx_.renderBounds.maxZ < 1.0) {
         brightness = selfBrightness;
     }
     if (net::minecraft::block::Block::BLOCKS_LIGHT_LUMINANCE[static_cast<std::size_t>(block.id)] > 0) {
@@ -73,7 +73,7 @@ bool DoorBlockRenderer::render(net::minecraft::block::Block& block, int x, int y
     ctx_.flipTextureHorizontally = false;
 
     brightness = block.getLuminance(ctx_.blockView, x - 1, y, z);
-    if (block.minX > 0.0) {
+    if (ctx_.renderBounds.minX > 0.0) {
         brightness = selfBrightness;
     }
     if (net::minecraft::block::Block::BLOCKS_LIGHT_LUMINANCE[static_cast<std::size_t>(block.id)] > 0) {
@@ -90,7 +90,7 @@ bool DoorBlockRenderer::render(net::minecraft::block::Block& block, int x, int y
     ctx_.flipTextureHorizontally = false;
 
     brightness = block.getLuminance(ctx_.blockView, x + 1, y, z);
-    if (block.maxX < 1.0) {
+    if (ctx_.renderBounds.maxX < 1.0) {
         brightness = selfBrightness;
     }
     if (net::minecraft::block::Block::BLOCKS_LIGHT_LUMINANCE[static_cast<std::size_t>(block.id)] > 0) {

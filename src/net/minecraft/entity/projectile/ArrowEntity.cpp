@@ -1,5 +1,10 @@
 #include "net/minecraft/world/World.hpp"
 
+#include "net/minecraft/entity/EntityRegistry.hpp"
+
+#include <memory>
+#include <typeindex>
+
 #include "net/minecraft/entity/projectile/ArrowEntity.hpp"
 
 #include "net/minecraft/entity/player/PlayerEntity.hpp"

@@ -21,6 +21,7 @@ public:
     [[nodiscard]] int getRenderType() const override { return 10; }
 
     void updateBoundingBox(const BlockView* blockView, int x, int y, int z) override;
+    [[nodiscard]] net::minecraft::Box getRenderBounds(const BlockView* blockView, int x, int y, int z) const override;
     [[nodiscard]] std::optional<net::minecraft::Box> getCollisionShape(World* world, int x, int y, int z) const override;
     [[nodiscard]] bool isSideVisible(const BlockView* blockView, int x, int y, int z, int side) const override;
     void addIntersectingBoundingBox(

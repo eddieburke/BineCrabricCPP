@@ -233,6 +233,11 @@ public:
     [[nodiscard]] bool canSave() const override { return true; }
     [[nodiscard]] std::string getDebugInfo() const override { return "RandomLevelSource"; }
 
+    [[nodiscard]] std::unique_ptr<ChunkSource> cloneForWorker(std::uint64_t seed) const override
+    {
+        return std::make_unique<SkyChunkGenerator>(nullptr, seed);
+    }
+
 private:
     [[nodiscard]] BiomeSource* activeBiomeSource()
     {

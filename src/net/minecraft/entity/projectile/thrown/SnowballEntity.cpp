@@ -1,5 +1,11 @@
 #include "net/minecraft/entity/projectile/thrown/SnowballEntity.hpp"
 
+#include "net/minecraft/entity/EntityRegistry.hpp"
+#include "net/minecraft/world/World.hpp"
+
+#include <memory>
+#include <typeindex>
+
 namespace net::minecraft::entity::projectile::thrown {
 
 void SnowballEntity::tick()

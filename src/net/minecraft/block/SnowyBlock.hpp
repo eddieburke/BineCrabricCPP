@@ -27,9 +27,14 @@ private:
 
     void updateBoundingBox(const BlockView* blockView, int x, int y, int z) override
     {
+        setBoundingBox(getRenderBounds(blockView, x, y, z));
+    }
+
+    [[nodiscard]] net::minecraft::Box getRenderBounds(const BlockView* blockView, int x, int y, int z) const override
+    {
         const int layers = blockView != nullptr ? (blockView->getBlockMeta(x, y, z) & 7) : 0;
         const float height = static_cast<float>(2 * (1 + layers)) / 16.0f;
-        setBoundingBox(0.0f, 0.0f, 0.0f, 1.0f, height, 1.0f);
+        return {0.0f, 0.0f, 0.0f, 1.0f, height, 1.0f};
     }
 };
 

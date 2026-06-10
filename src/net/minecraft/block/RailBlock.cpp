@@ -556,12 +556,16 @@ bool RailBlock::isPoweredByRail(
 
 void RailBlock::updateBoundingBox(const BlockView* blockView, int x, int y, int z)
 {
+    setBoundingBox(getRenderBounds(blockView, x, y, z));
+}
+
+net::minecraft::Box RailBlock::getRenderBounds(const BlockView* blockView, int x, int y, int z) const
+{
     const int meta = blockView != nullptr ? blockView->getBlockMeta(x, y, z) : 0;
     if (meta >= 2 && meta <= 5) {
-        setBoundingBox(0.0f, 0.0f, 0.0f, 1.0f, 0.625f, 1.0f);
-    } else {
-        setBoundingBox(0.0f, 0.0f, 0.0f, 1.0f, 0.125f, 1.0f);
+        return {0.0f, 0.0f, 0.0f, 1.0f, 0.625f, 1.0f};
     }
+    return {0.0f, 0.0f, 0.0f, 1.0f, 0.125f, 1.0f};
 }
 
 std::optional<net::minecraft::HitResult> RailBlock::raycast(

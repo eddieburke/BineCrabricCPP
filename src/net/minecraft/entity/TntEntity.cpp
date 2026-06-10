@@ -1,5 +1,10 @@
 #include "net/minecraft/entity/TntEntity.hpp"
 
+#include "net/minecraft/entity/EntityRegistry.hpp"
+
+#include <memory>
+#include <typeindex>
+
 #include "net/minecraft/util/math/MathHelper.hpp"
 #include "net/minecraft/world/World.hpp"
 

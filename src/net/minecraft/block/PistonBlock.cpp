@@ -340,37 +340,33 @@ void PistonBlock::onBlockAction(World* world, int x, int y, int z, int data1, in
 
 void PistonBlock::updateBoundingBox(const BlockView* blockView, int x, int y, int z)
 {
+    setBoundingBox(getRenderBounds(blockView, x, y, z));
+}
+
+net::minecraft::Box PistonBlock::getRenderBounds(const BlockView* blockView, int x, int y, int z) const
+{
     if (blockView == nullptr) {
-        setBoundingBox(0.0f, 0.0f, 0.0f, 1.0f, 1.0f, 1.0f);
-        return;
+        return {0.0f, 0.0f, 0.0f, 1.0f, 1.0f, 1.0f};
     }
     const int meta = blockView->getBlockMeta(x, y, z);
     if (!isExtended(meta)) {
-        setBoundingBox(0.0f, 0.0f, 0.0f, 1.0f, 1.0f, 1.0f);
-        return;
+        return {0.0f, 0.0f, 0.0f, 1.0f, 1.0f, 1.0f};
     }
     switch (getFacing(meta)) {
     case 0:
-        setBoundingBox(0.0f, 0.25f, 0.0f, 1.0f, 1.0f, 1.0f);
-        break;
+        return {0.0f, 0.25f, 0.0f, 1.0f, 1.0f, 1.0f};
     case 1:
-        setBoundingBox(0.0f, 0.0f, 0.0f, 1.0f, 0.75f, 1.0f);
-        break;
+        return {0.0f, 0.0f, 0.0f, 1.0f, 0.75f, 1.0f};
     case 2:
-        setBoundingBox(0.0f, 0.0f, 0.25f, 1.0f, 1.0f, 1.0f);
-        break;
+        return {0.0f, 0.0f, 0.25f, 1.0f, 1.0f, 1.0f};
     case 3:
-        setBoundingBox(0.0f, 0.0f, 0.0f, 1.0f, 1.0f, 0.75f);
-        break;
+        return {0.0f, 0.0f, 0.0f, 1.0f, 1.0f, 0.75f};
     case 4:
-        setBoundingBox(0.25f, 0.0f, 0.0f, 1.0f, 1.0f, 1.0f);
-        break;
+        return {0.25f, 0.0f, 0.0f, 1.0f, 1.0f, 1.0f};
     case 5:
-        setBoundingBox(0.0f, 0.0f, 0.0f, 0.75f, 1.0f, 1.0f);
-        break;
+        return {0.0f, 0.0f, 0.0f, 0.75f, 1.0f, 1.0f};
     default:
-        setBoundingBox(0.0f, 0.0f, 0.0f, 1.0f, 1.0f, 1.0f);
-        break;
+        return {0.0f, 0.0f, 0.0f, 1.0f, 1.0f, 1.0f};
     }
 }
 

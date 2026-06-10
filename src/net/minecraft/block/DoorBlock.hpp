@@ -21,6 +21,7 @@ public:
 
     [[nodiscard]] std::optional<net::minecraft::Box> getCollisionShape(World* world, int x, int y, int z) const override;
     void updateBoundingBox(const BlockView* blockView, int x, int y, int z) override;
+    [[nodiscard]] net::minecraft::Box getRenderBounds(const BlockView* blockView, int x, int y, int z) const override;
 
     void onBlockBreakStart(World* world, int x, int y, int z, net::minecraft::PlayerEntity* player) override;
     bool onUse(World* world, int x, int y, int z, net::minecraft::PlayerEntity* player) override;
@@ -34,6 +35,7 @@ public:
 
 private:
     void rotate(int meta);
+    [[nodiscard]] net::minecraft::Box boundsForMeta(int meta) const;
 };
 
 } // namespace net::minecraft::block

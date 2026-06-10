@@ -11,6 +11,7 @@ public:
     [[nodiscard]] std::optional<net::minecraft::Box> getCollisionShape(
         World* world, int x, int y, int z) const override;
     void updateBoundingBox(const BlockView* blockView, int x, int y, int z) override;
+    [[nodiscard]] net::minecraft::Box getRenderBounds(const BlockView* blockView, int x, int y, int z) const override;
 
     bool create(World* world, int x, int y, int z);
     void neighborUpdate(World* world, int x, int y, int z, int id) override;

@@ -24,6 +24,7 @@ public:
     void dropStacks(World* world, int x, int y, int z, int meta, float luck) override;
     void neighborUpdate(World* world, int x, int y, int z, int id) override;
     void updateBoundingBox(const BlockView* blockView, int x, int y, int z) override;
+    [[nodiscard]] net::minecraft::Box getRenderBounds(const BlockView* blockView, int x, int y, int z) const override;
 
     [[nodiscard]] std::optional<net::minecraft::Box> getPushedBlockCollisionShape(
         World* world,

@@ -106,6 +106,11 @@ public:
     [[nodiscard]] bool canSave() const override { return true; }
     [[nodiscard]] std::string getDebugInfo() const override { return "HellRandomLevelSource"; }
 
+    [[nodiscard]] std::unique_ptr<ChunkSource> cloneForWorker(std::uint64_t seed) const override
+    {
+        return std::make_unique<NetherChunkGenerator>(nullptr, seed);
+    }
+
 private:
     void buildTerrain(int chunkX, int chunkZ, Chunk& chunk)
     {

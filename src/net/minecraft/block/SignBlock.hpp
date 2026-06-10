@@ -21,6 +21,7 @@ public:
     [[nodiscard]] int getDroppedItemId(int blockMeta, JavaRandom& random) const override;
 
     void updateBoundingBox(const BlockView* blockView, int x, int y, int z) override;
+    [[nodiscard]] net::minecraft::Box getRenderBounds(const BlockView* blockView, int x, int y, int z) const override;
     void neighborUpdate(World* world, int x, int y, int z, int id) override;
 
 protected:

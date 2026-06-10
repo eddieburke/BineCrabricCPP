@@ -8,7 +8,7 @@ namespace net::minecraft::client::render::block {
 
 bool LadderBlockRenderer::render(net::minecraft::block::Block& block, int x, int y, int z)
 {
-    Tessellator& tessellator = render::INSTANCE;
+    Tessellator& tessellator = *ctx_.tess;
     const int tex = ctx_.resolveTexture(0, block.getTexture(0));
     const net::minecraft::block::TerrainAtlasUv uv = net::minecraft::block::Block::terrainTileUv(tex);
     float brightness = block.getLuminance(ctx_.blockView, x, y, z);

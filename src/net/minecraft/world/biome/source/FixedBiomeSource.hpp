@@ -4,6 +4,7 @@
 #include "net/minecraft/world/biome/source/BiomeSource.hpp"
 
 #include <algorithm>
+#include <memory>
 #include <vector>
 
 namespace net::minecraft {
@@ -13,6 +14,11 @@ public:
     FixedBiomeSource(BiomeInfo biome, double temperature, double downfall)
         : BiomeSource(0ULL), biome_(biome), temperature_(temperature), downfall_(downfall)
     {
+    }
+
+    [[nodiscard]] std::unique_ptr<BiomeSource> clone() const override
+    {
+        return std::make_unique<FixedBiomeSource>(biome_, temperature_, downfall_);
     }
 
     [[nodiscard]] BiomeInfo getBiome(int x, int z) override

@@ -30,6 +30,7 @@ public:
     }
 
     void updateBoundingBox(const BlockView* blockView, int x, int y, int z) override;
+    [[nodiscard]] net::minecraft::Box getRenderBounds(const BlockView* blockView, int x, int y, int z) const override;
     void onPlaced(World* world, int x, int y, int z) override;
     void neighborUpdate(World* world, int x, int y, int z, int id) override;
     [[nodiscard]] std::optional<net::minecraft::HitResult> raycast(

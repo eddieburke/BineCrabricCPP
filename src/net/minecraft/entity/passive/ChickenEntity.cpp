@@ -1,5 +1,10 @@
 #include "net/minecraft/entity/passive/ChickenEntity.hpp"
 
+#include "net/minecraft/entity/EntityRegistry.hpp"
+
+#include <memory>
+#include <typeindex>
+
 #include "net/minecraft/item/Item.hpp"
 #include "net/minecraft/world/World.hpp"
 

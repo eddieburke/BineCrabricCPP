@@ -18,11 +18,13 @@ public:
     [[nodiscard]] bool canPlaceAt(World* world, int x, int y, int z) const;
     [[nodiscard]] std::optional<net::minecraft::Box> getCollisionShape(World* world, int x, int y, int z) const override;
     void updateBoundingBox(const BlockView* blockView, int x, int y, int z) override;
+    [[nodiscard]] net::minecraft::Box getRenderBounds(const BlockView* blockView, int x, int y, int z) const override;
     void onPlaced(World* world, int x, int y, int z, int direction) override;
     void neighborUpdate(World* world, int x, int y, int z, int id) override;
 
 private:
     void applyBoundsForMeta(int meta);
+    [[nodiscard]] net::minecraft::Box boundsForMeta(int meta) const;
     [[nodiscard]] static std::optional<net::minecraft::Box> collisionShapeForMeta(int meta, int x, int y, int z);
 };
 

@@ -2,6 +2,8 @@
 
 #include "net/minecraft/client/gui/screen/LoadingDisplay.hpp"
 
+#include <cstdint>
+#include <memory>
 #include <string>
 
 namespace net::minecraft {
@@ -20,6 +22,14 @@ public:
     virtual bool tick() = 0;
     [[nodiscard]] virtual bool canSave() const = 0;
     [[nodiscard]] virtual std::string getDebugInfo() const = 0;
+
+    // Create a fresh, independent generator suited for a worker thread.
+    // Must produce terrain identical to the original for the same seed.
+    // Default returns nullptr — worker cloning not supported.
+    [[nodiscard]] virtual std::unique_ptr<ChunkSource> cloneForWorker(std::uint64_t /*seed*/) const
+    {
+        return nullptr;
+    }
 };
 
 } // namespace net::minecraft

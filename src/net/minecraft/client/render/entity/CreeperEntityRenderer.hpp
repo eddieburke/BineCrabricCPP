@@ -17,7 +17,7 @@ protected:
     bool bindDecorationTexture(const net::minecraft::LivingEntity& entity, int layer, float tickDelta) override;
 
 private:
-    model::EntityModel* chargedModel = nullptr;
+    model::EntityModel* chargedModel_ = nullptr;
 };
 
 } // namespace net::minecraft::client::render::entity

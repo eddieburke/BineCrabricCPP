@@ -8,7 +8,7 @@ namespace net::minecraft::client::render::block {
 
 bool CropBlockRenderer::render(net::minecraft::block::Block& block, int x, int y, int z)
 {
-    Tessellator& tessellator = render::INSTANCE;
+    Tessellator& tessellator = *ctx_.tess;
     float brightness = block.getLuminance(ctx_.blockView, x, y, z);
     tessellator.color(brightness, brightness, brightness);
     render(block, ctx_.blockView->getBlockMeta(x, y, z), x, (float)y - 0.0625f, z);
@@ -17,7 +17,7 @@ bool CropBlockRenderer::render(net::minecraft::block::Block& block, int x, int y
 
 void CropBlockRenderer::render(net::minecraft::block::Block& block, int metadata, double x, double y, double z)
 {
-    Tessellator& tessellator = render::INSTANCE;
+    Tessellator& tessellator = *ctx_.tess;
     const int tex = ctx_.resolveTexture(0, block.getTexture(0, metadata));
     const net::minecraft::block::TerrainAtlasUv uv = net::minecraft::block::Block::terrainTileUv(tex);
     const double uMin = uv.uMin;

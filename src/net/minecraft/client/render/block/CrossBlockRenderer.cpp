@@ -12,7 +12,7 @@ namespace option = net::minecraft::client::option;
 
 bool CrossBlockRenderer::render(net::minecraft::block::Block& block, int x, int y, int z)
 {
-    Tessellator& tessellator = render::INSTANCE;
+    Tessellator& tessellator = *ctx_.tess;
     float brightness = block.getLuminance(ctx_.blockView, x, y, z);
     int colorMult = block.getColorMultiplier(ctx_.blockView, x, y, z);
     float red = (float)(colorMult >> 16 & 0xFF) / 255.0f;
@@ -23,7 +23,7 @@ bool CrossBlockRenderer::render(net::minecraft::block::Block& block, int x, int 
     double dy = y;
     double dz = z;
     if (net::minecraft::block::Block::GRASS != nullptr && &block == net::minecraft::block::Block::GRASS
-        && (Minecraft::INSTANCE == nullptr || option::resolve(Minecraft::INSTANCE->options).fancyGrass)) {
+        && ctx_.opts.fancyGrass) {
         std::int64_t l = (long)(x * 3129871) ^ (long)z * 116129781L ^ (long)y;
         l = l * l * 42317861L + l * 11L;
         dx += ((double)((float)(l >> 16 & 0xFL) / 15.0f) - 0.5) * 0.5;
@@ -36,7 +36,7 @@ bool CrossBlockRenderer::render(net::minecraft::block::Block& block, int x, int 
 
 void CrossBlockRenderer::render(net::minecraft::block::Block& block, int metadata, double x, double y, double z)
 {
-    Tessellator& tessellator = render::INSTANCE;
+    Tessellator& tessellator = *ctx_.tess;
     const int tex = ctx_.resolveTexture(0, block.getTexture(0, metadata));
     const net::minecraft::block::TerrainAtlasUv uv = net::minecraft::block::Block::terrainTileUv(tex);
     const double uMin = uv.uMin;

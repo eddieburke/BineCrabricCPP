@@ -29,6 +29,7 @@ public:
 
     bool onUse(World* world, int x, int y, int z, net::minecraft::PlayerEntity* player) override;
     void updateBoundingBox(const BlockView* blockView, int x, int y, int z) override;
+    [[nodiscard]] net::minecraft::Box getRenderBounds(const BlockView* blockView, int x, int y, int z) const override;
     void neighborUpdate(World* world, int x, int y, int z, int id) override;
     void dropStacks(World* world, int x, int y, int z, int meta, float luck) override;
 

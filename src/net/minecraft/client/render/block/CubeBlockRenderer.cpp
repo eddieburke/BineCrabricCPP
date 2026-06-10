@@ -23,16 +23,13 @@ bool edgeAllowsVision(const net::minecraft::BlockView* blockView, int x, int y, 
     return net::minecraft::block::Block::BLOCKS_ALLOW_VISION[static_cast<std::size_t>(blockId)];
 }
 
-void assignAoVertexColors(BlockFaceRenderState& state, float corner0, float corner1, float corner2, float corner3,
-    bool applyTint, float shade, float red, float green, float blue)
+void assignAoVertexColors(const option::ResolvedRenderOptions& resolved, BlockFaceRenderState& state, float corner0,
+    float corner1, float corner2, float corner3, bool applyTint, float shade, float red, float green, float blue)
 {
-    if (Minecraft::INSTANCE != nullptr) {
-        const option::ResolvedRenderOptions resolved = option::resolve(Minecraft::INSTANCE->options);
-        corner0 = option::scaleAoCorner(corner0, resolved);
-        corner1 = option::scaleAoCorner(corner1, resolved);
-        corner2 = option::scaleAoCorner(corner2, resolved);
-        corner3 = option::scaleAoCorner(corner3, resolved);
-    }
+    corner0 = option::scaleAoCorner(corner0, resolved);
+    corner1 = option::scaleAoCorner(corner1, resolved);
+    corner2 = option::scaleAoCorner(corner2, resolved);
+    corner3 = option::scaleAoCorner(corner3, resolved);
     const float baseRed = (applyTint ? red : 1.0f) * shade;
     const float baseGreen = (applyTint ? green : 1.0f) * shade;
     const float baseBlue = (applyTint ? blue : 1.0f) * shade;
@@ -59,17 +56,14 @@ void multiplyAoVertexColors(BlockFaceRenderState& state, float red, float green,
     }
 }
 
-[[nodiscard]] float boostFlatBrightness(float luminance)
+[[nodiscard]] float boostFlatBrightness(const option::ResolvedRenderOptions& resolved, float luminance)
 {
-    if (Minecraft::INSTANCE != nullptr) {
-        return option::applyBrightnessBoost(luminance, option::resolve(Minecraft::INSTANCE->options));
-    }
-    return luminance;
+    return option::applyBrightnessBoost(luminance, resolved);
 }
 
-[[nodiscard]] bool fancyWaterSideOverlayActive()
+[[nodiscard]] bool fancyWaterSideOverlayActive(const option::ResolvedRenderOptions& resolved)
 {
-    return Minecraft::INSTANCE != nullptr && option::resolve(Minecraft::INSTANCE->options).fancyWater;
+    return resolved.fancyWater;
 }
 
 } // namespace
@@ -169,7 +163,7 @@ bool CubeBlockRenderer::renderSmooth(net::minecraft::block::Block& block, int x,
         } else {
             corner2 = corner3 = corner0 = corner1 = bottomBrightness;
         }
-        assignAoVertexColors(ctx_.faceState, corner0, corner1, corner2, corner3, tintDown, 0.5f, red, green, blue);
+        assignAoVertexColors(ctx_.opts, ctx_.faceState, corner0, corner1, corner2, corner3, tintDown, 0.5f, red, green, blue);
         faces_.renderBottomFace(block, x, y, z, block.getTextureId(ctx_.blockView, x, y, z, 0));
         drewAnyFace = true;
     }
@@ -199,7 +193,7 @@ bool CubeBlockRenderer::renderSmooth(net::minecraft::block::Block& block, int x,
         } else {
             corner2 = corner3 = corner0 = corner1 = topBrightness;
         }
-        assignAoVertexColors(ctx_.faceState, corner0, corner1, corner2, corner3, tintUp, 1.0f, red, green, blue);
+        assignAoVertexColors(ctx_.opts, ctx_.faceState, corner0, corner1, corner2, corner3, tintUp, 1.0f, red, green, blue);
         faces_.renderTopFace(block, x, y, z, block.getTextureId(ctx_.blockView, x, y, z, 1));
         drewAnyFace = true;
     }
@@ -229,10 +223,10 @@ bool CubeBlockRenderer::renderSmooth(net::minecraft::block::Block& block, int x,
         } else {
             corner2 = corner3 = corner0 = corner1 = eastBrightness;
         }
-        assignAoVertexColors(ctx_.faceState, corner0, corner1, corner2, corner3, tintEast, 0.8f, red, green, blue);
+        assignAoVertexColors(ctx_.opts, ctx_.faceState, corner0, corner1, corner2, corner3, tintEast, 0.8f, red, green, blue);
         textureId = block.getTextureId(ctx_.blockView, x, y, z, 2);
         faces_.renderEastFace(block, x, y, z, textureId);
-        if (fancyWaterSideOverlayActive() && textureId == 3 && ctx_.textureOverride < 0) {
+        if (fancyWaterSideOverlayActive(ctx_.opts) && textureId == 3 && ctx_.textureOverride < 0) {
             multiplyAoVertexColors(ctx_.faceState, red, green, blue);
             faces_.renderEastFace(block, x, y, z, 38);
         }
@@ -264,10 +258,10 @@ bool CubeBlockRenderer::renderSmooth(net::minecraft::block::Block& block, int x,
         } else {
             corner2 = corner3 = corner0 = corner1 = westBrightness;
         }
-        assignAoVertexColors(ctx_.faceState, corner0, corner1, corner2, corner3, tintWest, 0.8f, red, green, blue);
+        assignAoVertexColors(ctx_.opts, ctx_.faceState, corner0, corner1, corner2, corner3, tintWest, 0.8f, red, green, blue);
         textureId = block.getTextureId(ctx_.blockView, x, y, z, 3);
         faces_.renderWestFace(block, x, y, z, textureId);
-        if (fancyWaterSideOverlayActive() && textureId == 3 && ctx_.textureOverride < 0) {
+        if (fancyWaterSideOverlayActive(ctx_.opts) && textureId == 3 && ctx_.textureOverride < 0) {
             multiplyAoVertexColors(ctx_.faceState, red, green, blue);
             faces_.renderWestFace(block, x, y, z, 38);
         }
@@ -299,10 +293,10 @@ bool CubeBlockRenderer::renderSmooth(net::minecraft::block::Block& block, int x,
         } else {
             corner2 = corner3 = corner0 = corner1 = northBrightness;
         }
-        assignAoVertexColors(ctx_.faceState, corner0, corner1, corner2, corner3, tintNorth, 0.6f, red, green, blue);
+        assignAoVertexColors(ctx_.opts, ctx_.faceState, corner0, corner1, corner2, corner3, tintNorth, 0.6f, red, green, blue);
         textureId = block.getTextureId(ctx_.blockView, x, y, z, 4);
         faces_.renderNorthFace(block, x, y, z, textureId);
-        if (fancyWaterSideOverlayActive() && textureId == 3 && ctx_.textureOverride < 0) {
+        if (fancyWaterSideOverlayActive(ctx_.opts) && textureId == 3 && ctx_.textureOverride < 0) {
             multiplyAoVertexColors(ctx_.faceState, red, green, blue);
             faces_.renderNorthFace(block, x, y, z, 38);
         }
@@ -334,10 +328,10 @@ bool CubeBlockRenderer::renderSmooth(net::minecraft::block::Block& block, int x,
         } else {
             corner2 = corner3 = corner0 = corner1 = southBrightness;
         }
-        assignAoVertexColors(ctx_.faceState, corner0, corner1, corner2, corner3, tintSouth, 0.6f, red, green, blue);
+        assignAoVertexColors(ctx_.opts, ctx_.faceState, corner0, corner1, corner2, corner3, tintSouth, 0.6f, red, green, blue);
         textureId = block.getTextureId(ctx_.blockView, x, y, z, 5);
         faces_.renderSouthFace(block, x, y, z, textureId);
-        if (fancyWaterSideOverlayActive() && textureId == 3 && ctx_.textureOverride < 0) {
+        if (fancyWaterSideOverlayActive(ctx_.opts) && textureId == 3 && ctx_.textureOverride < 0) {
             multiplyAoVertexColors(ctx_.faceState, red, green, blue);
             faces_.renderSouthFace(block, x, y, z, 38);
         }
@@ -357,7 +351,7 @@ bool CubeBlockRenderer::renderFlat(net::minecraft::block::Block& block, int x, i
     }
 
     ctx_.faceState.useAo = false;
-    Tessellator& tessellator = render::INSTANCE;
+    Tessellator& tessellator = *ctx_.tess;
     bool drewAnyFace = false;
     int textureId = 0;
     float brightness = 0.0f;
@@ -392,18 +386,18 @@ bool CubeBlockRenderer::renderFlat(net::minecraft::block::Block& block, int x, i
         nsBlue *= blue;
     }
 
-    const float selfBrightness = boostFlatBrightness(block.getLuminance(ctx_.blockView, x, y, z));
+    const float selfBrightness = boostFlatBrightness(ctx_.opts, block.getLuminance(ctx_.blockView, x, y, z));
 
     if (ctx_.skipFaceCulling || block.isSideVisible(ctx_.blockView, x, y - 1, z, 0)) {
-        brightness = boostFlatBrightness(block.getLuminance(ctx_.blockView, x, y - 1, z));
+        brightness = boostFlatBrightness(ctx_.opts, block.getLuminance(ctx_.blockView, x, y - 1, z));
         tessellator.color(downRed * brightness, downGreen * brightness, downBlue * brightness);
         faces_.renderBottomFace(block, x, y, z, block.getTextureId(ctx_.blockView, x, y, z, 0));
         drewAnyFace = true;
     }
 
     if (ctx_.skipFaceCulling || block.isSideVisible(ctx_.blockView, x, y + 1, z, 1)) {
-        brightness = boostFlatBrightness(block.getLuminance(ctx_.blockView, x, y + 1, z));
-        if (block.maxY != 1.0 && !block.material.isFluid()) {
+        brightness = boostFlatBrightness(ctx_.opts, block.getLuminance(ctx_.blockView, x, y + 1, z));
+        if (ctx_.renderBounds.maxY != 1.0 && !block.material.isFluid()) {
             brightness = selfBrightness;
         }
         tessellator.color(upRed * brightness, upGreen * brightness, upBlue * brightness);
@@ -412,14 +406,14 @@ bool CubeBlockRenderer::renderFlat(net::minecraft::block::Block& block, int x, i
     }
 
     if (ctx_.skipFaceCulling || block.isSideVisible(ctx_.blockView, x, y, z - 1, 2)) {
-        brightness = boostFlatBrightness(block.getLuminance(ctx_.blockView, x, y, z - 1));
-        if (block.minZ > 0.0) {
+        brightness = boostFlatBrightness(ctx_.opts, block.getLuminance(ctx_.blockView, x, y, z - 1));
+        if (ctx_.renderBounds.minZ > 0.0) {
             brightness = selfBrightness;
         }
         tessellator.color(horizRed * brightness, horizGreen * brightness, horizBlue * brightness);
         textureId = block.getTextureId(ctx_.blockView, x, y, z, 2);
         faces_.renderEastFace(block, x, y, z, textureId);
-        if (fancyWaterSideOverlayActive() && textureId == 3 && ctx_.textureOverride < 0) {
+        if (fancyWaterSideOverlayActive(ctx_.opts) && textureId == 3 && ctx_.textureOverride < 0) {
             tessellator.color(horizRed * brightness * red, horizGreen * brightness * green, horizBlue * brightness * blue);
             faces_.renderEastFace(block, x, y, z, 38);
         }
@@ -427,14 +421,14 @@ bool CubeBlockRenderer::renderFlat(net::minecraft::block::Block& block, int x, i
     }
 
     if (ctx_.skipFaceCulling || block.isSideVisible(ctx_.blockView, x, y, z + 1, 3)) {
-        brightness = boostFlatBrightness(block.getLuminance(ctx_.blockView, x, y, z + 1));
-        if (block.maxZ < 1.0) {
+        brightness = boostFlatBrightness(ctx_.opts, block.getLuminance(ctx_.blockView, x, y, z + 1));
+        if (ctx_.renderBounds.maxZ < 1.0) {
             brightness = selfBrightness;
         }
         tessellator.color(horizRed * brightness, horizGreen * brightness, horizBlue * brightness);
         textureId = block.getTextureId(ctx_.blockView, x, y, z, 3);
         faces_.renderWestFace(block, x, y, z, textureId);
-        if (fancyWaterSideOverlayActive() && textureId == 3 && ctx_.textureOverride < 0) {
+        if (fancyWaterSideOverlayActive(ctx_.opts) && textureId == 3 && ctx_.textureOverride < 0) {
             tessellator.color(horizRed * brightness * red, horizGreen * brightness * green, horizBlue * brightness * blue);
             faces_.renderWestFace(block, x, y, z, 38);
         }
@@ -442,14 +436,14 @@ bool CubeBlockRenderer::renderFlat(net::minecraft::block::Block& block, int x, i
     }
 
     if (ctx_.skipFaceCulling || block.isSideVisible(ctx_.blockView, x - 1, y, z, 4)) {
-        brightness = boostFlatBrightness(block.getLuminance(ctx_.blockView, x - 1, y, z));
-        if (block.minX > 0.0) {
+        brightness = boostFlatBrightness(ctx_.opts, block.getLuminance(ctx_.blockView, x - 1, y, z));
+        if (ctx_.renderBounds.minX > 0.0) {
             brightness = selfBrightness;
         }
         tessellator.color(nsRed * brightness, nsGreen * brightness, nsBlue * brightness);
         textureId = block.getTextureId(ctx_.blockView, x, y, z, 4);
         faces_.renderNorthFace(block, x, y, z, textureId);
-        if (fancyWaterSideOverlayActive() && textureId == 3 && ctx_.textureOverride < 0) {
+        if (fancyWaterSideOverlayActive(ctx_.opts) && textureId == 3 && ctx_.textureOverride < 0) {
             tessellator.color(nsRed * brightness * red, nsGreen * brightness * green, nsBlue * brightness * blue);
             faces_.renderNorthFace(block, x, y, z, 38);
         }
@@ -457,14 +451,14 @@ bool CubeBlockRenderer::renderFlat(net::minecraft::block::Block& block, int x, i
     }
 
     if (ctx_.skipFaceCulling || block.isSideVisible(ctx_.blockView, x + 1, y, z, 5)) {
-        brightness = boostFlatBrightness(block.getLuminance(ctx_.blockView, x + 1, y, z));
-        if (block.maxX < 1.0) {
+        brightness = boostFlatBrightness(ctx_.opts, block.getLuminance(ctx_.blockView, x + 1, y, z));
+        if (ctx_.renderBounds.maxX < 1.0) {
             brightness = selfBrightness;
         }
         tessellator.color(nsRed * brightness, nsGreen * brightness, nsBlue * brightness);
         textureId = block.getTextureId(ctx_.blockView, x, y, z, 5);
         faces_.renderSouthFace(block, x, y, z, textureId);
-        if (fancyWaterSideOverlayActive() && textureId == 3 && ctx_.textureOverride < 0) {
+        if (fancyWaterSideOverlayActive(ctx_.opts) && textureId == 3 && ctx_.textureOverride < 0) {
             tessellator.color(nsRed * brightness * red, nsGreen * brightness * green, nsBlue * brightness * blue);
             faces_.renderSouthFace(block, x, y, z, 38);
         }
@@ -488,10 +482,10 @@ bool CubeBlockRenderer::renderCactus(net::minecraft::block::Block& block, int x,
 {
     ctx_.faceState.useAo = false;
     float brightness;
-    Tessellator& tessellator = render::INSTANCE;
+    Tessellator& tessellator = *ctx_.tess;
     bool drewAnyFace = false;
     const float inset = 0.0625f;
-    const float selfBrightness = boostFlatBrightness(block.getLuminance(ctx_.blockView, x, y, z));
+    const float selfBrightness = boostFlatBrightness(ctx_.opts, block.getLuminance(ctx_.blockView, x, y, z));
 
     const float downShade = 0.5f;
     const float upShade = 1.0f;
@@ -499,14 +493,14 @@ bool CubeBlockRenderer::renderCactus(net::minecraft::block::Block& block, int x,
     const float nsShade = 0.6f;
 
     if (ctx_.skipFaceCulling || block.isSideVisible(ctx_.blockView, x, y - 1, z, 0)) {
-        brightness = boostFlatBrightness(block.getLuminance(ctx_.blockView, x, y - 1, z));
+        brightness = boostFlatBrightness(ctx_.opts, block.getLuminance(ctx_.blockView, x, y - 1, z));
         tessellator.color(downShade * red * brightness, downShade * green * brightness, downShade * blue * brightness);
         faces_.renderBottomFace(block, x, y, z, block.getTextureId(ctx_.blockView, x, y, z, 0));
         drewAnyFace = true;
     }
     if (ctx_.skipFaceCulling || block.isSideVisible(ctx_.blockView, x, y + 1, z, 1)) {
-        brightness = boostFlatBrightness(block.getLuminance(ctx_.blockView, x, y + 1, z));
-        if (block.maxY != 1.0 && !block.material.isFluid()) {
+        brightness = boostFlatBrightness(ctx_.opts, block.getLuminance(ctx_.blockView, x, y + 1, z));
+        if (ctx_.renderBounds.maxY != 1.0 && !block.material.isFluid()) {
             brightness = selfBrightness;
         }
         tessellator.color(upShade * red * brightness, upShade * green * brightness, upShade * blue * brightness);
@@ -514,8 +508,8 @@ bool CubeBlockRenderer::renderCactus(net::minecraft::block::Block& block, int x,
         drewAnyFace = true;
     }
     if (ctx_.skipFaceCulling || block.isSideVisible(ctx_.blockView, x, y, z - 1, 2)) {
-        brightness = boostFlatBrightness(block.getLuminance(ctx_.blockView, x, y, z - 1));
-        if (block.minZ > 0.0) {
+        brightness = boostFlatBrightness(ctx_.opts, block.getLuminance(ctx_.blockView, x, y, z - 1));
+        if (ctx_.renderBounds.minZ > 0.0) {
             brightness = selfBrightness;
         }
         tessellator.color(horizShade * red * brightness, horizShade * green * brightness, horizShade * blue * brightness);
@@ -525,8 +519,8 @@ bool CubeBlockRenderer::renderCactus(net::minecraft::block::Block& block, int x,
         drewAnyFace = true;
     }
     if (ctx_.skipFaceCulling || block.isSideVisible(ctx_.blockView, x, y, z + 1, 3)) {
-        brightness = boostFlatBrightness(block.getLuminance(ctx_.blockView, x, y, z + 1));
-        if (block.maxZ < 1.0) {
+        brightness = boostFlatBrightness(ctx_.opts, block.getLuminance(ctx_.blockView, x, y, z + 1));
+        if (ctx_.renderBounds.maxZ < 1.0) {
             brightness = selfBrightness;
         }
         tessellator.color(horizShade * red * brightness, horizShade * green * brightness, horizShade * blue * brightness);
@@ -536,8 +530,8 @@ bool CubeBlockRenderer::renderCactus(net::minecraft::block::Block& block, int x,
         drewAnyFace = true;
     }
     if (ctx_.skipFaceCulling || block.isSideVisible(ctx_.blockView, x - 1, y, z, 4)) {
-        brightness = boostFlatBrightness(block.getLuminance(ctx_.blockView, x - 1, y, z));
-        if (block.minX > 0.0) {
+        brightness = boostFlatBrightness(ctx_.opts, block.getLuminance(ctx_.blockView, x - 1, y, z));
+        if (ctx_.renderBounds.minX > 0.0) {
             brightness = selfBrightness;
         }
         tessellator.color(nsShade * red * brightness, nsShade * green * brightness, nsShade * blue * brightness);
@@ -547,8 +541,8 @@ bool CubeBlockRenderer::renderCactus(net::minecraft::block::Block& block, int x,
         drewAnyFace = true;
     }
     if (ctx_.skipFaceCulling || block.isSideVisible(ctx_.blockView, x + 1, y, z, 5)) {
-        brightness = boostFlatBrightness(block.getLuminance(ctx_.blockView, x + 1, y, z));
-        if (block.maxX < 1.0) {
+        brightness = boostFlatBrightness(ctx_.opts, block.getLuminance(ctx_.blockView, x + 1, y, z));
+        if (ctx_.renderBounds.maxX < 1.0) {
             brightness = selfBrightness;
         }
         tessellator.color(nsShade * red * brightness, nsShade * green * brightness, nsShade * blue * brightness);

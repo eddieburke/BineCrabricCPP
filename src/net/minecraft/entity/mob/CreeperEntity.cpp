@@ -1,8 +1,12 @@
 #include "net/minecraft/entity/mob/CreeperEntity.hpp"
 
+#include "net/minecraft/entity/EntityRegistry.hpp"
 #include "net/minecraft/entity/mob/SkeletonEntity.hpp"
 #include "net/minecraft/item/Item.hpp"
 #include "net/minecraft/world/World.hpp"
+
+#include <memory>
+#include <typeindex>
 
 namespace net::minecraft::entity::mob {
 

@@ -192,7 +192,7 @@ public:
     virtual void updateKilledAchievement(LivingEntity* entityKilled, int score);
     virtual void onKilledOther(LivingEntity* other);
     [[nodiscard]] virtual bool bypassesSteppingEffects() const { return true; }
-    [[nodiscard]] bool checkWaterCollisions();
+    [[nodiscard]] virtual bool checkWaterCollisions();
     [[nodiscard]] bool isWet() const;
     [[nodiscard]] bool getEntitiesInside(double offsetX, double offsetY, double offsetZ);
     virtual void tickInVoid();

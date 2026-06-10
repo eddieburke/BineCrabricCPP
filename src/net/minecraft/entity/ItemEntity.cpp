@@ -1,5 +1,10 @@
 #include "net/minecraft/entity/ItemEntity.hpp"
 
+#include "net/minecraft/entity/EntityRegistry.hpp"
+
+#include <memory>
+#include <typeindex>
+
 #include "net/minecraft/achievement/Achievements.hpp"
 #include "net/minecraft/block/Block.hpp"
 #include "net/minecraft/block/material/Material.hpp"

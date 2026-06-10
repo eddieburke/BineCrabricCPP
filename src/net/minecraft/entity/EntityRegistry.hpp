@@ -6,6 +6,7 @@
 #include <functional>
 #include <memory>
 #include <string>
+#include <typeindex>
 #include <unordered_map>
 
 namespace net::minecraft::entity {
@@ -15,6 +16,11 @@ class EntityRegistry {
 public:
     using Factory = std::function<std::unique_ptr<Entity>(World*)>;
 
+    // Full registration: populates all four lookup maps (id, rawId, typeIndex→id, typeIndex→rawId).
+    static void registerType(std::type_index typeIdx, const std::string& id, int rawId, Factory factory);
+
+    // Legacy overload: does not populate type→id/rawId maps. Use the 4-arg overload instead.
+    [[deprecated("Use 4-arg registerType with std::type_index")]]
     static void registerType(const std::string& id, int rawId, Factory factory);
 
     [[nodiscard]] static std::unique_ptr<Entity> create(const std::string& id, World* world);

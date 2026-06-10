@@ -1,128 +1,75 @@
 #include "net/minecraft/client/render/entity/EntityRenderDispatcher.hpp"
 
 #include "net/minecraft/client/render/item/HeldItemRenderer.hpp"
-#include "net/minecraft/block/Block.hpp"
 #include "net/minecraft/client/gl/GL11.hpp"
-#include "net/minecraft/client/render/entity/ArrowEntityRenderer.hpp"
-#include "net/minecraft/client/render/entity/BoatEntityRenderer.hpp"
 #include "net/minecraft/client/render/entity/BoxEntityRenderer.hpp"
-#include "net/minecraft/client/render/entity/ChickenEntityRenderer.hpp"
-#include "net/minecraft/client/render/entity/CowEntityRenderer.hpp"
-#include "net/minecraft/client/render/entity/CreeperEntityRenderer.hpp"
 #include "net/minecraft/client/render/entity/EntityRenderer.hpp"
-#include "net/minecraft/client/render/entity/FallingBlockEntityRenderer.hpp"
-#include "net/minecraft/client/render/entity/FireballEntityRenderer.hpp"
-#include "net/minecraft/client/render/entity/FishingBobberEntityRenderer.hpp"
-#include "net/minecraft/client/render/entity/GhastEntityRenderer.hpp"
-#include "net/minecraft/client/render/entity/GiantEntityRenderer.hpp"
-#include "net/minecraft/client/render/entity/ItemEntityRenderer.hpp"
-#include "net/minecraft/client/render/entity/LightningEntityRenderer.hpp"
 #include "net/minecraft/client/render/entity/LivingEntityRenderer.hpp"
-#include "net/minecraft/client/render/entity/MinecartEntityRenderer.hpp"
-#include "net/minecraft/client/render/entity/PaintingEntityRenderer.hpp"
-#include "net/minecraft/client/render/entity/PigEntityRenderer.hpp"
 #include "net/minecraft/client/render/entity/PlayerEntityRenderer.hpp"
-#include "net/minecraft/client/render/entity/ProjectileEntityRenderer.hpp"
-#include "net/minecraft/client/render/entity/SheepEntityRenderer.hpp"
-#include "net/minecraft/client/render/entity/SlimeEntityRenderer.hpp"
-#include "net/minecraft/client/render/entity/SpiderEntityRenderer.hpp"
-#include "net/minecraft/client/render/entity/SquidEntityRenderer.hpp"
-#include "net/minecraft/client/render/entity/TntEntityRenderer.hpp"
-#include "net/minecraft/client/render/entity/UndeadEntityRenderer.hpp"
-#include "net/minecraft/client/render/entity/WolfEntityRenderer.hpp"
 #include "net/minecraft/client/render/entity/model/BipedEntityModel.hpp"
-#include "net/minecraft/client/render/entity/model/ChickenEntityModel.hpp"
-#include "net/minecraft/client/render/entity/model/CowEntityModel.hpp"
-#include "net/minecraft/client/render/entity/model/PigEntityModel.hpp"
-#include "net/minecraft/client/render/entity/model/SheepEntityModel.hpp"
-#include "net/minecraft/client/render/entity/model/SheepWoolEntityModel.hpp"
-#include "net/minecraft/client/render/entity/model/SkeletonEntityModel.hpp"
-#include "net/minecraft/client/render/entity/model/SlimeEntityModel.hpp"
-#include "net/minecraft/client/render/entity/model/SquidEntityModel.hpp"
-#include "net/minecraft/client/render/entity/model/WolfEntityModel.hpp"
-#include "net/minecraft/client/render/entity/model/ZombieEntityModel.hpp"
 #include "net/minecraft/entity/Entity.hpp"
-#include "net/minecraft/entity/FallingBlockEntity.hpp"
-#include "net/minecraft/entity/ItemEntity.hpp"
-#include "net/minecraft/entity/LightningEntity.hpp"
-#include "net/minecraft/entity/TntEntity.hpp"
-#include "net/minecraft/entity/decoration/painting/PaintingEntity.hpp"
-#include "net/minecraft/entity/mob/CreeperEntity.hpp"
-#include "net/minecraft/entity/mob/GhastEntity.hpp"
-#include "net/minecraft/entity/mob/GiantEntity.hpp"
-#include "net/minecraft/entity/mob/SkeletonEntity.hpp"
-#include "net/minecraft/entity/mob/SlimeEntity.hpp"
-#include "net/minecraft/entity/mob/SpiderEntity.hpp"
-#include "net/minecraft/entity/mob/ZombieEntity.hpp"
-#include "net/minecraft/entity/passive/ChickenEntity.hpp"
-#include "net/minecraft/entity/passive/CowEntity.hpp"
-#include "net/minecraft/entity/passive/PigEntity.hpp"
-#include "net/minecraft/entity/passive/SheepEntity.hpp"
-#include "net/minecraft/entity/passive/SquidEntity.hpp"
-#include "net/minecraft/entity/passive/WolfEntity.hpp"
-#include "net/minecraft/entity/projectile/ArrowEntity.hpp"
-#include "net/minecraft/entity/projectile/FireballEntity.hpp"
-#include "net/minecraft/entity/projectile/FishingBobberEntity.hpp"
-#include "net/minecraft/entity/projectile/thrown/EggEntity.hpp"
-#include "net/minecraft/entity/projectile/thrown/SnowballEntity.hpp"
-#include "net/minecraft/entity/vehicle/BoatEntity.hpp"
-#include "net/minecraft/entity/vehicle/MinecartEntity.hpp"
+#include "net/minecraft/entity/EntityTypes.hpp"
 #include "net/minecraft/entity/LivingEntity.hpp"
 #include "net/minecraft/entity/player/ClientPlayerEntity.hpp"
 #include "net/minecraft/entity/player/PlayerEntity.hpp"
 #include "net/minecraft/util/math/MathHelper.hpp"
 
+#include <cassert>
+#include <functional>
+#include <iostream>
+#include <unordered_map>
+#include <vector>
+
 namespace net::minecraft::client::render::entity {
 
 namespace {
-constexpr int kSnowballTexture = 14; // Item.SNOWBALL texture index (14, 0)
-constexpr int kEggTexture = 12;      // Item.EGG texture index (12, 0)
+using PendingEntry = std::pair<std::type_index, std::function<std::unique_ptr<EntityRenderer>()>>;
+std::vector<PendingEntry>& pendingRenderers()
+{
+    static std::vector<PendingEntry> v;
+    return v;
+}
+
+std::unordered_map<std::type_index, EntityRenderer*>& rendererAliases()
+{
+    static std::unordered_map<std::type_index, EntityRenderer*> map;
+    return map;
+}
+}
+
+void EntityRenderDispatcher::addPendingRenderer(std::type_index key,
+    std::function<std::unique_ptr<EntityRenderer>()> factory)
+{
+    for (const auto& [existingKey, _] : pendingRenderers()) {
+        if (existingKey == key) {
+            std::cerr << "EntityRenderDispatcher: duplicate pending renderer for type "
+                      << key.name() << '\n';
+            assert(false && "EntityRenderDispatcher: duplicate pending renderer registration");
+            return;
+        }
+    }
+    pendingRenderers().emplace_back(key, std::move(factory));
 }
 
 EntityRenderDispatcher::EntityRenderDispatcher()
     : options_(defaultOptions_)
     , heldItemRenderer_(std::make_unique<net::minecraft::client::render::item::HeldItemRenderer>())
 {
-    registerRenderer<::net::minecraft::entity::mob::SpiderEntity>(std::make_unique<SpiderEntityRenderer>());
-    registerRenderer<::net::minecraft::entity::passive::PigEntity>(std::make_unique<PigEntityRenderer>(
-        new model::PigEntityModel(), new model::PigEntityModel(0.5f), 0.7f));
-    registerRenderer<::net::minecraft::entity::passive::SheepEntity>(std::make_unique<SheepEntityRenderer>(
-        new model::SheepEntityModel(), new model::SheepWoolEntityModel(), 0.7f));
-    registerRenderer<::net::minecraft::entity::passive::CowEntity>(
-        std::make_unique<CowEntityRenderer>(new model::CowEntityModel(), 0.7f));
-    registerRenderer<::net::minecraft::entity::passive::WolfEntity>(
-        std::make_unique<WolfEntityRenderer>(new model::WolfEntityModel(), 0.5f));
-    registerRenderer<::net::minecraft::entity::passive::ChickenEntity>(
-        std::make_unique<ChickenEntityRenderer>(new model::ChickenEntityModel(), 0.3f));
-    registerRenderer<::net::minecraft::entity::mob::CreeperEntity>(std::make_unique<CreeperEntityRenderer>());
-    registerRenderer<::net::minecraft::entity::mob::SkeletonEntity>(
-        std::make_unique<UndeadEntityRenderer>(new model::SkeletonEntityModel(), 0.5f));
-    registerRenderer<::net::minecraft::entity::mob::ZombieEntity>(
-        std::make_unique<UndeadEntityRenderer>(new model::ZombieEntityModel(), 0.5f));
-    registerRenderer<::net::minecraft::entity::mob::SlimeEntity>(std::make_unique<SlimeEntityRenderer>(
-        new model::SlimeEntityModel(16), new model::SlimeEntityModel(0), 0.25f));
-    registerRenderer<net::minecraft::PlayerEntity>(std::make_unique<PlayerEntityRenderer>());
-    registerRenderer<::net::minecraft::entity::mob::GiantEntity>(
-        std::make_unique<GiantEntityRenderer>(new model::ZombieEntityModel(), 0.5f, 6.0f));
-    registerRenderer<::net::minecraft::entity::mob::GhastEntity>(std::make_unique<GhastEntityRenderer>());
-    registerRenderer<::net::minecraft::entity::passive::SquidEntity>(
-        std::make_unique<SquidEntityRenderer>(new model::SquidEntityModel(), 0.7f));
+    // Fallback renderers: catch-all chain when no specific renderer registered.
     registerRenderer<net::minecraft::LivingEntity>(
         std::make_unique<LivingEntityRenderer>(new model::BipedEntityModel(), 0.5f));
     registerRenderer<net::minecraft::Entity>(std::make_unique<BoxEntityRenderer>());
-    registerRenderer<::net::minecraft::entity::decoration::painting::PaintingEntity>(std::make_unique<PaintingEntityRenderer>());
-    registerRenderer<::net::minecraft::entity::projectile::ArrowEntity>(std::make_unique<ArrowEntityRenderer>());
-    registerRenderer<::net::minecraft::entity::projectile::thrown::SnowballEntity>(
-        std::make_unique<ProjectileEntityRenderer>(kSnowballTexture));
-    registerRenderer<::net::minecraft::entity::projectile::thrown::EggEntity>(std::make_unique<ProjectileEntityRenderer>(kEggTexture));
-    registerRenderer<::net::minecraft::entity::projectile::FireballEntity>(std::make_unique<FireballEntityRenderer>());
-    registerRenderer<::net::minecraft::ItemEntity>(std::make_unique<ItemEntityRenderer>());
-    registerRenderer<net::minecraft::TntEntity>(std::make_unique<TntEntityRenderer>());
-    registerRenderer<net::minecraft::FallingBlockEntity>(std::make_unique<FallingBlockEntityRenderer>());
-    registerRenderer<::net::minecraft::entity::vehicle::MinecartEntity>(std::make_unique<MinecartEntityRenderer>());
-    registerRenderer<::net::minecraft::entity::vehicle::BoatEntity>(std::make_unique<BoatEntityRenderer>());
-    registerRenderer<::net::minecraft::entity::projectile::FishingBobberEntity>(std::make_unique<FishingBobberEntityRenderer>());
-    registerRenderer<net::minecraft::LightningEntity>(std::make_unique<LightningEntityRenderer>());
+    registerRenderer<net::minecraft::PlayerEntity>(std::make_unique<PlayerEntityRenderer>());
+}
+
+EntityRenderDispatcher& EntityRenderDispatcher::instance()
+{
+    static EntityRenderDispatcher dispatcher;
+    for (auto& [key, factory] : pendingRenderers()) {
+        dispatcher.registerRenderer(key, factory());
+    }
+    pendingRenderers().clear();
+    return dispatcher;
 }
 
 EntityRenderDispatcher::~EntityRenderDispatcher() = default;
@@ -135,36 +82,46 @@ void EntityRenderDispatcher::setHeldItemRenderer(
 
 void EntityRenderDispatcher::registerRenderer(std::type_index key, std::unique_ptr<EntityRenderer> renderer)
 {
+    if (renderers_.find(key) != renderers_.end()) {
+        std::cerr << "EntityRenderDispatcher: duplicate renderer registration for type "
+                  << key.name() << '\n';
+        assert(false && "EntityRenderDispatcher: duplicate renderer registration");
+        return;
+    }
     renderer->setDispatcher(this);
     renderers_[key] = std::move(renderer);
 }
 
-EntityRenderer* EntityRenderDispatcher::get(const std::type_info& entityType)
+EntityRenderer* EntityRenderDispatcher::get(std::type_index key)
 {
-    const std::type_index key(entityType);
-    const auto it = renderers_.find(key);
-    if (it != renderers_.end()) {
-        return it->second.get();
+    const auto owned = renderers_.find(key);
+    if (owned != renderers_.end()) {
+        return owned->second.get();
     }
-    if (entityType == typeid(net::minecraft::Entity)) {
-        const auto fallback = renderers_.find(std::type_index(typeid(net::minecraft::Entity)));
-        return fallback != renderers_.end() ? fallback->second.get() : nullptr;
+    const auto alias = rendererAliases().find(key);
+    if (alias != rendererAliases().end()) {
+        return alias->second;
     }
-    if (entityType == typeid(net::minecraft::entity::player::ClientPlayerEntity)) {
-        return get(typeid(net::minecraft::PlayerEntity));
+    if (key == std::type_index(typeid(net::minecraft::entity::player::ClientPlayerEntity))) {
+        return get(std::type_index(typeid(net::minecraft::PlayerEntity)));
     }
-    if (entityType == typeid(net::minecraft::Entity)) {
-        return renderers_.at(std::type_index(typeid(net::minecraft::Entity))).get();
+    if (key == std::type_index(typeid(net::minecraft::Entity))) {
+        return nullptr;
     }
-    if (entityType != typeid(net::minecraft::LivingEntity)) {
-        return get(typeid(net::minecraft::LivingEntity));
+    const std::optional<std::type_index> parent = net::minecraft::entitySupertype(key);
+    if (!parent.has_value()) {
+        return nullptr;
     }
-    return get(typeid(net::minecraft::Entity));
+    EntityRenderer* resolved = get(*parent);
+    if (resolved != nullptr) {
+        rendererAliases()[key] = resolved;
+    }
+    return resolved;
 }
 
 EntityRenderer* EntityRenderDispatcher::get(const net::minecraft::Entity& entity)
 {
-    return get(typeid(entity));
+    return get(entity.runtimeType());
 }
 
 void EntityRenderDispatcher::init(net::minecraft::World* world, net::minecraft::client::texture::TextureManager* textureManager,
@@ -230,12 +187,6 @@ double EntityRenderDispatcher::squaredDistanceTo(double x, double y, double z) c
     const double dy = y - y_;
     const double dz = z - z_;
     return dx * dx + dy * dy + dz * dz;
-}
-
-EntityRenderDispatcher& EntityRenderDispatcher::instance()
-{
-    static EntityRenderDispatcher dispatcher;
-    return dispatcher;
 }
 
 } // namespace net::minecraft::client::render::entity

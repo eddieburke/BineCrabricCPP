@@ -1,5 +1,7 @@
 #pragma once
 
+// Game-facing audio API. Owns the device backend, resource registry, and playback.
+
 #include <filesystem>
 #include <memory>
 #include <string>

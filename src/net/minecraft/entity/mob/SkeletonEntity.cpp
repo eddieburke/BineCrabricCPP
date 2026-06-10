@@ -1,5 +1,10 @@
 #include "net/minecraft/entity/mob/SkeletonEntity.hpp"
 
+#include "net/minecraft/entity/EntityRegistry.hpp"
+
+#include <memory>
+#include <typeindex>
+
 #include "net/minecraft/entity/projectile/ArrowEntity.hpp"
 #include "net/minecraft/entity/projectile/ProjectileUtil.hpp"
 #include "net/minecraft/util/math/MathHelper.hpp"

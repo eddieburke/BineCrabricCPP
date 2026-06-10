@@ -232,19 +232,35 @@ void Entity::move(double dx, double dy, double dz)
     const int collisionMaxX = MathHelper::floor(boundingBox.maxX - 0.001);
     const int collisionMaxY = MathHelper::floor(boundingBox.maxY - 0.001);
     const int collisionMaxZ = MathHelper::floor(boundingBox.maxZ - 0.001);
+    const int neighborMinX = collisionMinX - 1;
+    const int neighborMinY = collisionMinY - 1;
+    const int neighborMinZ = collisionMinZ - 1;
+    const int neighborMaxX = collisionMaxX + 1;
+    const int neighborMaxY = collisionMaxY + 1;
+    const int neighborMaxZ = collisionMaxZ + 1;
     if (world->isRegionLoaded(
-            collisionMinX, collisionMinY, collisionMinZ, collisionMaxX, collisionMaxY, collisionMaxZ)) {
-        for (int blockX = collisionMinX; blockX <= collisionMaxX; ++blockX) {
-            for (int blockY = collisionMinY; blockY <= collisionMaxY; ++blockY) {
-                for (int blockZ = collisionMinZ; blockZ <= collisionMaxZ; ++blockZ) {
+            neighborMinX, neighborMinY, neighborMinZ, neighborMaxX, neighborMaxY, neighborMaxZ)) {
+        for (int blockX = neighborMinX; blockX <= neighborMaxX; ++blockX) {
+            for (int blockY = neighborMinY; blockY <= neighborMaxY; ++blockY) {
+                for (int blockZ = neighborMinZ; blockZ <= neighborMaxZ; ++blockZ) {
                     const int blockId = world->getBlockId(blockX, blockY, blockZ);
                     if (blockId <= 0 || blockId >= Block::BLOCK_COUNT) {
                         continue;
                     }
                     Block* block = Block::BLOCKS[static_cast<std::size_t>(blockId)];
-                    if (block != nullptr) {
-                        block->onEntityCollision(world, blockX, blockY, blockZ, this);
+                    if (block == nullptr) {
+                        continue;
                     }
+                    const std::optional<Box> collisionShape = block->getCollisionShape(world, blockX, blockY, blockZ);
+                    if (collisionShape.has_value()) {
+                        if (!collisionShape->intersects(boundingBox)) {
+                            continue;
+                        }
+                    } else if (blockX < collisionMinX || blockX > collisionMaxX || blockY < collisionMinY
+                        || blockY > collisionMaxY || blockZ < collisionMinZ || blockZ > collisionMaxZ) {
+                        continue;
+                    }
+                    block->onEntityCollision(world, blockX, blockY, blockZ, this);
                 }
             }
         }

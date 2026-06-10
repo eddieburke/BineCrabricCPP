@@ -53,9 +53,14 @@ int BedBlock::getDroppedItemId(int blockMeta, JavaRandom& /*random*/) const
     return Item::BED != nullptr ? Item::BED->id : 355;
 }
 
-void BedBlock::updateBoundingBox(const BlockView* /*blockView*/, int /*x*/, int /*y*/, int /*z*/)
+void BedBlock::updateBoundingBox(const BlockView* blockView, int x, int y, int z)
 {
-    setDefaultShape();
+    setBoundingBox(getRenderBounds(blockView, x, y, z));
+}
+
+net::minecraft::Box BedBlock::getRenderBounds(const BlockView* /*blockView*/, int /*x*/, int /*y*/, int /*z*/) const
+{
+    return {0.0f, 0.0f, 0.0f, 1.0f, 0.5625f, 1.0f};
 }
 
 void BedBlock::neighborUpdate(World* world, int x, int y, int z, int /*id*/)

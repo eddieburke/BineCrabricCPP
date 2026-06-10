@@ -1,5 +1,10 @@
 #include "net/minecraft/entity/passive/WolfEntity.hpp"
 
+#include "net/minecraft/entity/EntityRegistry.hpp"
+
+#include <memory>
+#include <typeindex>
+
 #include "net/minecraft/entity/passive/SheepEntity.hpp"
 #include "net/minecraft/entity/player/PlayerEntity.hpp"
 #include "net/minecraft/entity/projectile/ArrowEntity.hpp"

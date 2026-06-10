@@ -7,6 +7,7 @@
 #include "net/minecraft/client/render/block/BlockRenderManager.hpp"
 
 #include "net/minecraft/client/render/chunk/ChunkBuilder.hpp"
+#include "net/minecraft/client/render/chunk/ChunkMeshScheduler.hpp"
 #include "net/minecraft/client/render/pipeline/PipelineConstants.hpp"
 #include "net/minecraft/client/render/world/ChunkRenderer.hpp"
 
@@ -27,6 +28,8 @@
 #include <cstdint>
 
 #include <limits>
+
+#include <memory>
 
 #include <string>
 
@@ -225,6 +228,9 @@ private:
     std::vector<net::minecraft::client::render::chunk::ChunkBuilder> chunks_ {};
 
     std::unordered_set<net::minecraft::client::render::chunk::ChunkBuilder*> dirtyChunks_ {};
+
+    chunk::ChunkMeshScheduler meshScheduler_ {};
+    std::vector<std::shared_ptr<chunk::ChunkMeshJob>> pendingMeshUploads_ {};
 
     std::vector<net::minecraft::client::render::chunk::ChunkBuilder*> sortedChunks_ {};
 

@@ -157,7 +157,10 @@ ChunkSource* World::createChunkCache()
     }
     std::unique_ptr<ChunkStorage> chunkStorage = dimensionData_->getChunkStorage(dimension.get());
     chunkGeneratorSource_ = dimension->createChunkGenerator();
-    setChunkCache(std::make_unique<LegacyChunkCache>(this, std::move(chunkStorage), chunkGeneratorSource_.get()));
+    auto cache = std::make_unique<LegacyChunkCache>(this, std::move(chunkStorage), chunkGeneratorSource_.get());
+    cache->initAsync(getSeed(),
+        [this](std::uint64_t seed) { return dimension->createChunkGeneratorFromSeed(seed); });
+    setChunkCache(std::move(cache));
     return getChunkSource();
 }
 

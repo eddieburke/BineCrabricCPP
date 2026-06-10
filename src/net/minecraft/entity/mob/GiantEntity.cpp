@@ -1,5 +1,10 @@
 #include "net/minecraft/entity/mob/GiantEntity.hpp"
 
+#include "net/minecraft/entity/EntityRegistry.hpp"
+
+#include <memory>
+#include <typeindex>
+
 namespace net::minecraft::entity::mob {
 
 GiantEntity::GiantEntity(World* world) : MonsterEntity(world)

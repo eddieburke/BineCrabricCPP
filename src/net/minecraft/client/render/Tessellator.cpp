@@ -12,7 +12,11 @@ Tessellator& INSTANCE = Tessellator::INSTANCE;
 Tessellator::Tessellator(const std::size_t bufferSize)
     : bufferSize_(bufferSize)
 {
-    vertices_.reserve(bufferSize_);
+    // bufferSize_ mirrors Java's int-buffer length and only sets the flush
+    // threshold (kVertexStride ints per vertex). Reserving it verbatim as a
+    // TessellatorVertex count would pin ~100 MB per instance; let the vector
+    // grow on demand instead.
+    vertices_.reserve(std::min<std::size_t>(bufferSize_ / kVertexStride, 4096));
 }
 
 void Tessellator::startQuads()
@@ -167,34 +171,60 @@ void Tessellator::draw()
 
     drawing_ = false;
     if (!vertices_.empty()) {
-        const int drawMode = mode_ == kGlQuads ? kGlTriangles : mode_;
-        gl::GL11::glBegin(drawMode);
-        for (const TessellatorVertex& vtx : vertices_) {
-            if (hasColor_) {
-                const std::uint32_t c = vtx.color;
-                const auto r = static_cast<std::uint8_t>(c & 0xFFU);
-                const auto g = static_cast<std::uint8_t>((c >> 8U) & 0xFFU);
-                const auto b = static_cast<std::uint8_t>((c >> 16U) & 0xFFU);
-                const auto a = static_cast<std::uint8_t>((c >> 24U) & 0xFFU);
-                gl::GL11::glColor4ub(r, g, b, a);
-            }
-            if (hasNormals_) {
-                const std::int32_t n = vtx.normal;
-                const auto nx = static_cast<std::int8_t>(n & 0xFF);
-                const auto ny = static_cast<std::int8_t>((n >> 8) & 0xFF);
-                const auto nz = static_cast<std::int8_t>((n >> 16) & 0xFF);
-                gl::GL11::glNormal3b(nx, ny, nz);
-            }
-            if (hasTexture_) {
-                gl::GL11::glTexCoord2d(vtx.u, vtx.v);
-            }
-            gl::GL11::glVertex3d(vtx.x, vtx.y, vtx.z);
-        }
-        gl::GL11::glEnd();
+        TessellatorMesh mesh {std::move(vertices_), mode_, hasTexture_, hasColor_, hasNormals_};
+        drawMesh(mesh);
+        vertices_ = std::move(mesh.vertices);
     }
 
     lastDrawnVertices_ = vertices_;
     reset();
+}
+
+void Tessellator::drawMesh(const TessellatorMesh& mesh)
+{
+    if (mesh.vertices.empty()) {
+        return;
+    }
+    const int drawMode = mesh.mode == kGlQuads ? kGlTriangles : mesh.mode;
+    gl::GL11::glBegin(drawMode);
+    for (const TessellatorVertex& vtx : mesh.vertices) {
+        if (mesh.hasColor) {
+            const std::uint32_t c = vtx.color;
+            const auto r = static_cast<std::uint8_t>(c & 0xFFU);
+            const auto g = static_cast<std::uint8_t>((c >> 8U) & 0xFFU);
+            const auto b = static_cast<std::uint8_t>((c >> 16U) & 0xFFU);
+            const auto a = static_cast<std::uint8_t>((c >> 24U) & 0xFFU);
+            gl::GL11::glColor4ub(r, g, b, a);
+        }
+        if (mesh.hasNormals) {
+            const std::int32_t n = vtx.normal;
+            const auto nx = static_cast<std::int8_t>(n & 0xFF);
+            const auto ny = static_cast<std::int8_t>((n >> 8) & 0xFF);
+            const auto nz = static_cast<std::int8_t>((n >> 16) & 0xFF);
+            gl::GL11::glNormal3b(nx, ny, nz);
+        }
+        if (mesh.hasTexture) {
+            gl::GL11::glTexCoord2d(vtx.u, vtx.v);
+        }
+        gl::GL11::glVertex3d(vtx.x, vtx.y, vtx.z);
+    }
+    gl::GL11::glEnd();
+}
+
+TessellatorMesh Tessellator::takeMesh()
+{
+    TessellatorMesh mesh;
+    if (drawing_) {
+        drawing_ = false;
+        mesh.vertices = std::move(vertices_);
+        mesh.mode = mode_;
+        mesh.hasTexture = hasTexture_;
+        mesh.hasColor = hasColor_;
+        mesh.hasNormals = hasNormals_;
+        vertices_ = {};
+    }
+    reset();
+    return mesh;
 }
 
 void Tessellator::finishWithoutDraw()
@@ -246,6 +276,10 @@ void Tessellator::pushVertex(const TessellatorVertex& vertex)
 
 void Tessellator::flush()
 {
+    if (captureOnly_) {
+        // Worker-thread capture: no GL available; let the buffer keep growing.
+        return;
+    }
     const bool wasDrawing = drawing_;
     draw();
     drawing_ = wasDrawing;

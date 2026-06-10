@@ -118,10 +118,15 @@ void PressurePlateBlock::onBreak(World* world, int x, int y, int z)
 
 void PressurePlateBlock::updateBoundingBox(const BlockView* blockView, int x, int y, int z)
 {
+    setBoundingBox(getRenderBounds(blockView, x, y, z));
+}
+
+net::minecraft::Box PressurePlateBlock::getRenderBounds(const BlockView* blockView, int x, int y, int z) const
+{
     const bool pressed = blockView != nullptr && blockView->getBlockMeta(x, y, z) == 1;
     const float inset = 0.0625f;
     const float height = pressed ? 0.03125f : 0.0625f;
-    setBoundingBox(inset, 0.0f, inset, 1.0f - inset, height, 1.0f - inset);
+    return {inset, 0.0f, inset, 1.0f - inset, height, 1.0f - inset};
 }
 
 bool PressurePlateBlock::isEmittingRedstonePowerInDirection(

@@ -109,36 +109,37 @@ void PistonExtensionBlock::neighborUpdate(
 
 void PistonExtensionBlock::updateBoundingBox(const BlockView* blockView, int x, int y, int z)
 {
+    setBoundingBox(getRenderBounds(blockView, x, y, z));
+}
+
+net::minecraft::Box PistonExtensionBlock::getRenderBounds(const BlockView* blockView, int x, int y, int z) const
+{
+    const net::minecraft::Box current {minX, minY, minZ, maxX, maxY, maxZ};
     entity::PistonBlockEntity* piston = getPistonBlockEntity(blockView, x, y, z);
     if (piston == nullptr) {
-        return;
+        return current;
     }
     const int pushedBlockId = piston->getPushedBlockId();
     if (pushedBlockId <= 0 || pushedBlockId >= Block::BLOCK_COUNT) {
-        return;
+        return current;
     }
     Block* pushedBlock = Block::BLOCKS[static_cast<std::size_t>(pushedBlockId)];
     if (pushedBlock == nullptr || pushedBlock == this) {
-        return;
+        return current;
     }
-    pushedBlock->updateBoundingBox(blockView, x, y, z);
+    const net::minecraft::Box pushed = pushedBlock->getRenderBounds(blockView, x, y, z);
     float progress = piston->getProgress(0.0f);
     if (piston->isExtending()) {
         progress = 1.0f - progress;
     }
     const int facing = piston->getFacing();
     if (facing < 0 || facing >= static_cast<int>(PistonConstants::HEAD_OFFSET_X.size())) {
-        return;
+        return current;
     }
     const float offsetX = static_cast<float>(PistonConstants::HEAD_OFFSET_X[static_cast<std::size_t>(facing)]) * progress;
     const float offsetY = static_cast<float>(PistonConstants::HEAD_OFFSET_Y[static_cast<std::size_t>(facing)]) * progress;
     const float offsetZ = static_cast<float>(PistonConstants::HEAD_OFFSET_Z[static_cast<std::size_t>(facing)]) * progress;
-    minX = pushedBlock->minX - static_cast<double>(offsetX);
-    minY = pushedBlock->minY - static_cast<double>(offsetY);
-    minZ = pushedBlock->minZ - static_cast<double>(offsetZ);
-    maxX = pushedBlock->maxX - static_cast<double>(offsetX);
-    maxY = pushedBlock->maxY - static_cast<double>(offsetY);
-    maxZ = pushedBlock->maxZ - static_cast<double>(offsetZ);
+    return pushed.offset(-static_cast<double>(offsetX), -static_cast<double>(offsetY), -static_cast<double>(offsetZ));
 }
 
 std::optional<net::minecraft::Box> PistonExtensionBlock::getPushedBlockCollisionShape(

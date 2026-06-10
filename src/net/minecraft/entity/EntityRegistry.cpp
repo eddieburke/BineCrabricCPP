@@ -1,32 +1,8 @@
 #include "net/minecraft/entity/EntityRegistry.hpp"
 
-#include "net/minecraft/entity/Entity.hpp"
-#include "net/minecraft/entity/FallingBlockEntity.hpp"
-#include "net/minecraft/entity/ItemEntity.hpp"
-#include "net/minecraft/entity/LivingEntity.hpp"
-#include "net/minecraft/entity/TntEntity.hpp"
-#include "net/minecraft/entity/decoration/painting/PaintingEntity.hpp"
-#include "net/minecraft/entity/mob/CreeperEntity.hpp"
-#include "net/minecraft/entity/mob/GhastEntity.hpp"
-#include "net/minecraft/entity/mob/GiantEntity.hpp"
-#include "net/minecraft/entity/mob/MonsterEntity.hpp"
-#include "net/minecraft/entity/mob/PigZombieEntity.hpp"
-#include "net/minecraft/entity/mob/SkeletonEntity.hpp"
-#include "net/minecraft/entity/mob/SlimeEntity.hpp"
-#include "net/minecraft/entity/mob/SpiderEntity.hpp"
-#include "net/minecraft/entity/mob/ZombieEntity.hpp"
-#include "net/minecraft/entity/passive/ChickenEntity.hpp"
-#include "net/minecraft/entity/passive/CowEntity.hpp"
-#include "net/minecraft/entity/passive/PigEntity.hpp"
-#include "net/minecraft/entity/passive/SheepEntity.hpp"
-#include "net/minecraft/entity/passive/SquidEntity.hpp"
-#include "net/minecraft/entity/passive/WolfEntity.hpp"
-#include "net/minecraft/entity/projectile/ArrowEntity.hpp"
-#include "net/minecraft/entity/projectile/thrown/SnowballEntity.hpp"
-#include "net/minecraft/entity/vehicle/BoatEntity.hpp"
-#include "net/minecraft/entity/vehicle/MinecartEntity.hpp"
 #include "net/minecraft/world/World.hpp"
 
+#include <cassert>
 #include <iostream>
 #include <typeindex>
 
@@ -59,32 +35,50 @@ std::unordered_map<std::type_index, int>& typeToRawId()
     return map;
 }
 
-template <typename T>
-void registerEntity(const std::string& id, int rawId)
+} // namespace
+
+void EntityRegistry::registerType(std::type_index typeIdx, const std::string& id, int rawId, Factory factory)
 {
-    Factory factory = [](World* world) -> std::unique_ptr<Entity> {
-        return std::make_unique<T>(world);
-    };
+    if (idToFactory().find(id) != idToFactory().end()) {
+        std::cerr << "EntityRegistry: duplicate id registration for \"" << id << "\"\n";
+        assert(false && "EntityRegistry: duplicate id registration");
+        return;
+    }
+    if (rawIdToFactory().find(rawId) != rawIdToFactory().end()) {
+        std::cerr << "EntityRegistry: duplicate rawId registration for " << rawId << '\n';
+        assert(false && "EntityRegistry: duplicate rawId registration");
+        return;
+    }
+    if (typeToId().find(typeIdx) != typeToId().end()) {
+        std::cerr << "EntityRegistry: duplicate typeIndex registration for \"" << id << "\"\n";
+        assert(false && "EntityRegistry: duplicate typeIndex registration");
+        return;
+    }
+    if (typeToRawId().find(typeIdx) != typeToRawId().end()) {
+        std::cerr << "EntityRegistry: duplicate typeIndex rawId registration for \"" << id << "\"\n";
+        assert(false && "EntityRegistry: duplicate typeIndex rawId registration");
+        return;
+    }
     idToFactory()[id] = factory;
     rawIdToFactory()[rawId] = factory;
-    typeToId()[std::type_index(typeid(T))] = id;
-    typeToRawId()[std::type_index(typeid(T))] = rawId;
+    typeToId()[typeIdx] = id;
+    typeToRawId()[typeIdx] = rawId;
 }
-
-template <typename T>
-void registerEntityById(const std::string& id)
-{
-    Factory factory = [](World* world) -> std::unique_ptr<Entity> {
-        return std::make_unique<T>(world);
-    };
-    idToFactory()[id] = factory;
-    typeToId()[std::type_index(typeid(T))] = id;
-}
-
-} // namespace
 
 void EntityRegistry::registerType(const std::string& id, int rawId, Factory factory)
 {
+    std::cerr << "EntityRegistry: deprecated 3-arg registerType invoked for id \"" << id << "\"\n";
+    assert(false && "EntityRegistry: deprecated 3-arg registerType");
+    if (idToFactory().find(id) != idToFactory().end()) {
+        std::cerr << "EntityRegistry: duplicate id registration for \"" << id << "\"\n";
+        assert(false && "EntityRegistry: duplicate id registration");
+        return;
+    }
+    if (rawIdToFactory().find(rawId) != rawIdToFactory().end()) {
+        std::cerr << "EntityRegistry: duplicate rawId registration for " << rawId << '\n';
+        assert(false && "EntityRegistry: duplicate rawId registration");
+        return;
+    }
     idToFactory()[id] = factory;
     rawIdToFactory()[rawId] = factory;
 }
@@ -139,36 +133,7 @@ std::string EntityRegistry::getId(const Entity& entity)
 
 void EntityRegistry::bootstrap()
 {
-    static bool initialized = false;
-    if (initialized) {
-        return;
-    }
-    initialized = true;
-
-    registerEntity<entity::projectile::ArrowEntity>("Arrow", 10);
-    registerEntity<entity::projectile::thrown::SnowballEntity>("Snowball", 11);
-    registerEntity<ItemEntity>("Item", 1);
-    registerEntity<entity::decoration::painting::PaintingEntity>("Painting", 9);
-    registerEntity<LivingEntity>("Mob", 48);
-    registerEntity<entity::mob::MonsterEntity>("Monster", 49);
-    registerEntity<entity::mob::CreeperEntity>("Creeper", 50);
-    registerEntity<entity::mob::SkeletonEntity>("Skeleton", 51);
-    registerEntity<entity::mob::SpiderEntity>("Spider", 52);
-    registerEntity<entity::mob::GiantEntity>("Giant", 53);
-    registerEntity<entity::mob::ZombieEntity>("Zombie", 54);
-    registerEntity<entity::mob::SlimeEntity>("Slime", 55);
-    registerEntity<entity::mob::GhastEntity>("Ghast", 56);
-    registerEntity<entity::mob::PigZombieEntity>("PigZombie", 57);
-    registerEntity<entity::passive::PigEntity>("Pig", 90);
-    registerEntity<entity::passive::SheepEntity>("Sheep", 91);
-    registerEntity<entity::passive::CowEntity>("Cow", 92);
-    registerEntity<entity::passive::ChickenEntity>("Chicken", 93);
-    registerEntity<entity::passive::SquidEntity>("Squid", 94);
-    registerEntity<net::minecraft::entity::passive::WolfEntity>("Wolf", 95);
-    registerEntity<TntEntity>("PrimedTnt", 20);
-    registerEntity<FallingBlockEntity>("FallingSand", 21);
-    registerEntity<entity::vehicle::MinecartEntity>("Minecart", 40);
-    registerEntity<entity::vehicle::BoatEntity>("Boat", 41);
+    // Vanilla types register via EntityRegistrations.cpp static init.
 }
 
 } // namespace net::minecraft::entity

@@ -55,6 +55,13 @@ public:
         return true;
     }
 
+    // Create a fresh generator instance for a worker thread. Same seed →
+    // identical terrain; null world since workers never call decorate/tick.
+    [[nodiscard]] std::unique_ptr<ChunkSource> cloneForWorker(std::uint64_t seed) const override
+    {
+        return std::make_unique<OverworldGeneratorChunkSource>(nullptr, seed);
+    }
+
     [[nodiscard]] std::string getDebugInfo() const override
     {
         return "RandomLevelSource";

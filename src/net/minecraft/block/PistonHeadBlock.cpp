@@ -112,30 +112,29 @@ void PistonHeadBlock::addIntersectingBoundingBox(
 
 void PistonHeadBlock::updateBoundingBox(const BlockView* blockView, int x, int y, int z)
 {
+    setBoundingBox(getRenderBounds(blockView, x, y, z));
+}
+
+net::minecraft::Box PistonHeadBlock::getRenderBounds(const BlockView* blockView, int x, int y, int z) const
+{
     if (blockView == nullptr) {
-        return;
+        return {minX, minY, minZ, maxX, maxY, maxZ};
     }
     switch (getFacing(blockView->getBlockMeta(x, y, z))) {
     case 0:
-        setBoundingBox(0.0f, 0.0f, 0.0f, 1.0f, 0.25f, 1.0f);
-        break;
+        return {0.0f, 0.0f, 0.0f, 1.0f, 0.25f, 1.0f};
     case 1:
-        setBoundingBox(0.0f, 0.75f, 0.0f, 1.0f, 1.0f, 1.0f);
-        break;
+        return {0.0f, 0.75f, 0.0f, 1.0f, 1.0f, 1.0f};
     case 2:
-        setBoundingBox(0.0f, 0.0f, 0.0f, 1.0f, 1.0f, 0.25f);
-        break;
+        return {0.0f, 0.0f, 0.0f, 1.0f, 1.0f, 0.25f};
     case 3:
-        setBoundingBox(0.0f, 0.0f, 0.75f, 1.0f, 1.0f, 1.0f);
-        break;
+        return {0.0f, 0.0f, 0.75f, 1.0f, 1.0f, 1.0f};
     case 4:
-        setBoundingBox(0.0f, 0.0f, 0.0f, 0.25f, 1.0f, 1.0f);
-        break;
+        return {0.0f, 0.0f, 0.0f, 0.25f, 1.0f, 1.0f};
     case 5:
-        setBoundingBox(0.75f, 0.0f, 0.0f, 1.0f, 1.0f, 1.0f);
-        break;
+        return {0.75f, 0.0f, 0.0f, 1.0f, 1.0f, 1.0f};
     default:
-        break;
+        return {minX, minY, minZ, maxX, maxY, maxZ};
     }
 }
 

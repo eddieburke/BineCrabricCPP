@@ -3,9 +3,11 @@
 #include "net/minecraft/client/option/GameOptions.hpp"
 #include "net/minecraft/entity/EntityTypes.hpp"
 
+#include <functional>
 #include <memory>
 #include <typeindex>
 #include <unordered_map>
+#include <vector>
 
 namespace net::minecraft {
 class World;
@@ -47,7 +49,7 @@ public:
         registerRenderer(std::type_index(typeid(EntityType)), std::move(renderer));
     }
 
-    [[nodiscard]] EntityRenderer* get(const std::type_info& entityType);
+    [[nodiscard]] EntityRenderer* get(std::type_index entityType);
     [[nodiscard]] EntityRenderer* get(const net::minecraft::Entity& entity);
 
     void init(net::minecraft::World* world, net::minecraft::client::texture::TextureManager* textureManager,
@@ -84,6 +86,10 @@ public:
     }
 
     void setHeldItemRenderer(std::unique_ptr<net::minecraft::client::render::item::HeldItemRenderer> renderer);
+
+    // Called by client/entity/EntityRendererRegistrations.cpp (and mod TUs) before instance() is first used.
+    static void addPendingRenderer(std::type_index key,
+        std::function<std::unique_ptr<EntityRenderer>()> factory);
 
     float yaw_ = 0.0f;
     float pitch_ = 0.0f;

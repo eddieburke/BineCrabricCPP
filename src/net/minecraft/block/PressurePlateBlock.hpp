@@ -32,6 +32,7 @@ public:
     void onEntityCollision(World* world, int x, int y, int z, net::minecraft::Entity* entity) override;
     void onBreak(World* world, int x, int y, int z) override;
     void updateBoundingBox(const BlockView* blockView, int x, int y, int z) override;
+    [[nodiscard]] net::minecraft::Box getRenderBounds(const BlockView* blockView, int x, int y, int z) const override;
 
 private:
     void updatePlateState(World* world, int x, int y, int z);

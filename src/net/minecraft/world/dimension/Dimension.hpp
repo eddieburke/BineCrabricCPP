@@ -31,6 +31,9 @@ public:
     virtual void initBiomeSource();
     [[nodiscard]] virtual std::unique_ptr<ChunkSource> createChunkGenerator();
 
+    // Create a fresh generator with the given seed for a worker thread.
+    [[nodiscard]] virtual std::unique_ptr<ChunkSource> createChunkGeneratorFromSeed(std::uint64_t seed) = 0;
+
     // Save subfolder for this dimension's region/chunk files, relative to the world
     // root. Overworld (id 0) lives in the root (""); others use "DIM<id>" — the
     // Nether (-1) -> "DIM-1", Sky (1) -> "DIM1". Single source of truth for the

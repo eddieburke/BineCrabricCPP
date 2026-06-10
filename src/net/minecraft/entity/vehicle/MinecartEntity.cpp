@@ -1,5 +1,10 @@
 #include "net/minecraft/entity/vehicle/MinecartEntity.hpp"
 
+#include "net/minecraft/entity/EntityRegistry.hpp"
+
+#include <memory>
+#include <typeindex>
+
 #include "net/minecraft/block/Block.hpp"
 #include "net/minecraft/block/RailBlock.hpp"
 #include "net/minecraft/entity/ItemEntity.hpp"

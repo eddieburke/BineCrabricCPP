@@ -10,7 +10,7 @@ bool FenceBlockRenderer::render(net::minecraft::block::Block& block, int x, int 
     bool rendered = false;
     float barMin = 0.375f;
     float barMax = 0.625f;
-    block.setBoundingBox(barMin, 0.0f, barMin, barMax, 1.0f, barMax);
+    ctx_.setRenderBounds(barMin, 0.0f, barMin, barMax, 1.0f, barMax);
     cube_.renderBlock(block, x, y, z);
     rendered = true;
 
@@ -39,28 +39,28 @@ bool FenceBlockRenderer::render(net::minecraft::block::Block& block, int x, int 
     const float zMin = neighborNorth ? 0.0f : barMin;
     const float zMax = neighborSouth ? 1.0f : barMax;
     if (connectX) {
-        block.setBoundingBox(xMin, barMinY, barMin, xMax, barMaxY, barMax);
+        ctx_.setRenderBounds(xMin, barMinY, barMin, xMax, barMaxY, barMax);
         cube_.renderBlock(block, x, y, z);
         rendered = true;
     }
     if (connectZ) {
-        block.setBoundingBox(barMin, barMinY, zMin, barMax, barMaxY, zMax);
+        ctx_.setRenderBounds(barMin, barMinY, zMin, barMax, barMaxY, zMax);
         cube_.renderBlock(block, x, y, z);
         rendered = true;
     }
     barMinY = 0.375f;
     barMaxY = 0.5625f;
     if (connectX) {
-        block.setBoundingBox(xMin, barMinY, barMin, xMax, barMaxY, barMax);
+        ctx_.setRenderBounds(xMin, barMinY, barMin, xMax, barMaxY, barMax);
         cube_.renderBlock(block, x, y, z);
         rendered = true;
     }
     if (connectZ) {
-        block.setBoundingBox(barMin, barMinY, zMin, barMax, barMaxY, zMax);
+        ctx_.setRenderBounds(barMin, barMinY, zMin, barMax, barMaxY, zMax);
         cube_.renderBlock(block, x, y, z);
         rendered = true;
     }
-    block.setBoundingBox(0.0f, 0.0f, 0.0f, 1.0f, 1.0f, 1.0f);
+    ctx_.setRenderBounds(0.0f, 0.0f, 0.0f, 1.0f, 1.0f, 1.0f);
     return rendered;
 }
 

@@ -13,7 +13,7 @@ bool RepeaterBlockRenderer::render(net::minecraft::block::Block& block, int x, i
     const int direction = blockMeta & 3;
     const int delayIndex = (blockMeta & 0xC) >> 2;
     cube_.renderBlock(block, x, y, z);
-    Tessellator& tessellator = render::INSTANCE;
+    Tessellator& tessellator = *ctx_.tess;
     float brightness = block.getLuminance(ctx_.blockView, x, y, z);
     if (net::minecraft::block::Block::BLOCKS_LIGHT_LUMINANCE[block.id] > 0) {
         brightness = (brightness + 1.0f) * 0.5f;

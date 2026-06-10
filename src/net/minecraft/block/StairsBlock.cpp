@@ -20,9 +20,14 @@ StairsBlock::StairsBlock(int id, Block& base)
     setOpacity(255);
 }
 
-void StairsBlock::updateBoundingBox(const BlockView* /*blockView*/, int /*x*/, int /*y*/, int /*z*/)
+void StairsBlock::updateBoundingBox(const BlockView* blockView, int x, int y, int z)
 {
-    setBoundingBox(0.0f, 0.0f, 0.0f, 1.0f, 1.0f, 1.0f);
+    setBoundingBox(getRenderBounds(blockView, x, y, z));
+}
+
+net::minecraft::Box StairsBlock::getRenderBounds(const BlockView* /*blockView*/, int /*x*/, int /*y*/, int /*z*/) const
+{
+    return {0.0f, 0.0f, 0.0f, 1.0f, 1.0f, 1.0f};
 }
 
 std::optional<net::minecraft::Box> StairsBlock::getCollisionShape(World* world, int x, int y, int z) const

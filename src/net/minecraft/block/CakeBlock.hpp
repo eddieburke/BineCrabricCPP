@@ -62,9 +62,14 @@ public:
 
     void updateBoundingBox(const BlockView* blockView, int x, int y, int z) override
     {
+        setBoundingBox(getRenderBounds(blockView, x, y, z));
+    }
+
+    [[nodiscard]] net::minecraft::Box getRenderBounds(const BlockView* blockView, int x, int y, int z) const override
+    {
         const int bites = blockView != nullptr ? blockView->getBlockMeta(x, y, z) : 0;
-        const float minX = static_cast<float>(1 + bites * 2) / 16.0f;
-        setBoundingBox(minX, 0.0f, 0.0625f, 0.9375f, 0.5f, 0.9375f);
+        const float boundsMinX = static_cast<float>(1 + bites * 2) / 16.0f;
+        return {boundsMinX, 0.0f, 0.0625f, 0.9375f, 0.5f, 0.9375f};
     }
 
     void setupRenderBoundingBox() override

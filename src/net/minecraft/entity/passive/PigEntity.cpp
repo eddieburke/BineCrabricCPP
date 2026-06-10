@@ -1,5 +1,10 @@
 #include "net/minecraft/entity/passive/PigEntity.hpp"
 
+#include "net/minecraft/entity/EntityRegistry.hpp"
+
+#include <memory>
+#include <typeindex>
+
 #include "net/minecraft/achievement/Achievements.hpp"
 #include "net/minecraft/entity/mob/PigZombieEntity.hpp"
 #include "net/minecraft/entity/player/PlayerEntity.hpp"

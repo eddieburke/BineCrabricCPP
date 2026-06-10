@@ -1,5 +1,10 @@
 #include "net/minecraft/entity/vehicle/BoatEntity.hpp"
 
+#include "net/minecraft/entity/EntityRegistry.hpp"
+
+#include <memory>
+#include <typeindex>
+
 #include "net/minecraft/block/Block.hpp"
 #include "net/minecraft/block/material/Material.hpp"
 #include "net/minecraft/entity/player/PlayerEntity.hpp"

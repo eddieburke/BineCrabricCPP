@@ -6,19 +6,19 @@ namespace net::minecraft::client::render::block {
 
 void BlockFaceRenderer::renderBottomFace(net::minecraft::block::Block& block, double x, double y, double z, int texture)
 {
-    Tessellator& tessellator = Tessellator::INSTANCE;
+    Tessellator& tessellator = *ctx_.tess;
     texture = ctx_.resolveTexture(0, texture);
     int texU = (texture & 0xF) << 4;
     int texV = texture & 0xF0;
-    double uMin = ((double)texU + block.minX * 16.0) / 256.0;
-    double uMax = ((double)texU + block.maxX * 16.0 - 0.01) / 256.0;
-    double vMin = ((double)texV + block.minZ * 16.0) / 256.0;
-    double vMax = ((double)texV + block.maxZ * 16.0 - 0.01) / 256.0;
-    if (block.minX < 0.0 || block.maxX > 1.0) {
+    double uMin = ((double)texU + ctx_.renderBounds.minX * 16.0) / 256.0;
+    double uMax = ((double)texU + ctx_.renderBounds.maxX * 16.0 - 0.01) / 256.0;
+    double vMin = ((double)texV + ctx_.renderBounds.minZ * 16.0) / 256.0;
+    double vMax = ((double)texV + ctx_.renderBounds.maxZ * 16.0 - 0.01) / 256.0;
+    if (ctx_.renderBounds.minX < 0.0 || ctx_.renderBounds.maxX > 1.0) {
         uMin = ((float)texU + 0.0f) / 256.0f;
         uMax = ((float)texU + 15.99f) / 256.0f;
     }
-    if (block.minZ < 0.0 || block.maxZ > 1.0) {
+    if (ctx_.renderBounds.minZ < 0.0 || ctx_.renderBounds.maxZ > 1.0) {
         vMin = ((float)texV + 0.0f) / 256.0f;
         vMax = ((float)texV + 15.99f) / 256.0f;
     }
@@ -27,10 +27,10 @@ void BlockFaceRenderer::renderBottomFace(net::minecraft::block::Block& block, do
     double vCornerA = vMin;
     double vCornerB = vMax;
     if (ctx_.bottomFaceRotation == 2) {
-        uMin = ((double)texU + block.minZ * 16.0) / 256.0;
-        vMin = ((double)(texV + 16) - block.maxX * 16.0) / 256.0;
-        uMax = ((double)texU + block.maxZ * 16.0) / 256.0;
-        vMax = ((double)(texV + 16) - block.minX * 16.0) / 256.0;
+        uMin = ((double)texU + ctx_.renderBounds.minZ * 16.0) / 256.0;
+        vMin = ((double)(texV + 16) - ctx_.renderBounds.maxX * 16.0) / 256.0;
+        uMax = ((double)texU + ctx_.renderBounds.maxZ * 16.0) / 256.0;
+        vMax = ((double)(texV + 16) - ctx_.renderBounds.minX * 16.0) / 256.0;
         uCornerA = uMax;
         uCornerB = uMin;
         vCornerA = vMin;
@@ -40,10 +40,10 @@ void BlockFaceRenderer::renderBottomFace(net::minecraft::block::Block& block, do
         vMin = vMax;
         vMax = vCornerA;
     } else if (ctx_.bottomFaceRotation == 1) {
-        uMin = ((double)(texU + 16) - block.maxZ * 16.0) / 256.0;
-        vMin = ((double)texV + block.minX * 16.0) / 256.0;
-        uMax = ((double)(texU + 16) - block.minZ * 16.0) / 256.0;
-        vMax = ((double)texV + block.maxX * 16.0) / 256.0;
+        uMin = ((double)(texU + 16) - ctx_.renderBounds.maxZ * 16.0) / 256.0;
+        vMin = ((double)texV + ctx_.renderBounds.minX * 16.0) / 256.0;
+        uMax = ((double)(texU + 16) - ctx_.renderBounds.minZ * 16.0) / 256.0;
+        vMax = ((double)texV + ctx_.renderBounds.maxX * 16.0) / 256.0;
         uCornerA = uMax;
         uCornerB = uMin;
         vCornerA = vMin;
@@ -53,20 +53,20 @@ void BlockFaceRenderer::renderBottomFace(net::minecraft::block::Block& block, do
         vCornerA = vMax;
         vCornerB = vMin;
     } else if (ctx_.bottomFaceRotation == 3) {
-        uMin = ((double)(texU + 16) - block.minX * 16.0) / 256.0;
-        uMax = ((double)(texU + 16) - block.maxX * 16.0 - 0.01) / 256.0;
-        vMin = ((double)(texV + 16) - block.minZ * 16.0) / 256.0;
-        vMax = ((double)(texV + 16) - block.maxZ * 16.0 - 0.01) / 256.0;
+        uMin = ((double)(texU + 16) - ctx_.renderBounds.minX * 16.0) / 256.0;
+        uMax = ((double)(texU + 16) - ctx_.renderBounds.maxX * 16.0 - 0.01) / 256.0;
+        vMin = ((double)(texV + 16) - ctx_.renderBounds.minZ * 16.0) / 256.0;
+        vMax = ((double)(texV + 16) - ctx_.renderBounds.maxZ * 16.0 - 0.01) / 256.0;
         uCornerA = uMax;
         uCornerB = uMin;
         vCornerA = vMin;
         vCornerB = vMax;
     }
-    const double xMin = x + block.minX;
-    const double xMax = x + block.maxX;
-    const double yCoord = y + block.minY;
-    const double zMin = z + block.minZ;
-    const double zMax = z + block.maxZ;
+    const double xMin = x + ctx_.renderBounds.minX;
+    const double xMax = x + ctx_.renderBounds.maxX;
+    const double yCoord = y + ctx_.renderBounds.minY;
+    const double zMin = z + ctx_.renderBounds.minZ;
+    const double zMax = z + ctx_.renderBounds.maxZ;
     if (ctx_.faceState.useAo) {
         tessellator.color(ctx_.faceState.colors.red[0], ctx_.faceState.colors.green[0], ctx_.faceState.colors.blue[0]);
         tessellator.vertex(xMin, yCoord, zMax, uCornerB, vCornerB);
@@ -86,19 +86,19 @@ void BlockFaceRenderer::renderBottomFace(net::minecraft::block::Block& block, do
 
 void BlockFaceRenderer::renderTopFace(net::minecraft::block::Block& block, double x, double y, double z, int texture)
 {
-    Tessellator& tessellator = Tessellator::INSTANCE;
+    Tessellator& tessellator = *ctx_.tess;
     texture = ctx_.resolveTexture(1, texture);
     int texU = (texture & 0xF) << 4;
     int texV = texture & 0xF0;
-    double uMin = ((double)texU + block.minX * 16.0) / 256.0;
-    double uMax = ((double)texU + block.maxX * 16.0 - 0.01) / 256.0;
-    double vMin = ((double)texV + block.minZ * 16.0) / 256.0;
-    double vMax = ((double)texV + block.maxZ * 16.0 - 0.01) / 256.0;
-    if (block.minX < 0.0 || block.maxX > 1.0) {
+    double uMin = ((double)texU + ctx_.renderBounds.minX * 16.0) / 256.0;
+    double uMax = ((double)texU + ctx_.renderBounds.maxX * 16.0 - 0.01) / 256.0;
+    double vMin = ((double)texV + ctx_.renderBounds.minZ * 16.0) / 256.0;
+    double vMax = ((double)texV + ctx_.renderBounds.maxZ * 16.0 - 0.01) / 256.0;
+    if (ctx_.renderBounds.minX < 0.0 || ctx_.renderBounds.maxX > 1.0) {
         uMin = ((float)texU + 0.0f) / 256.0f;
         uMax = ((float)texU + 15.99f) / 256.0f;
     }
-    if (block.minZ < 0.0 || block.maxZ > 1.0) {
+    if (ctx_.renderBounds.minZ < 0.0 || ctx_.renderBounds.maxZ > 1.0) {
         vMin = ((float)texV + 0.0f) / 256.0f;
         vMax = ((float)texV + 15.99f) / 256.0f;
     }
@@ -107,10 +107,10 @@ void BlockFaceRenderer::renderTopFace(net::minecraft::block::Block& block, doubl
     double vCornerA = vMin;
     double vCornerB = vMax;
     if (ctx_.topFaceRotation == 1) {
-        uMin = ((double)texU + block.minZ * 16.0) / 256.0;
-        vMin = ((double)(texV + 16) - block.maxX * 16.0) / 256.0;
-        uMax = ((double)texU + block.maxZ * 16.0) / 256.0;
-        vMax = ((double)(texV + 16) - block.minX * 16.0) / 256.0;
+        uMin = ((double)texU + ctx_.renderBounds.minZ * 16.0) / 256.0;
+        vMin = ((double)(texV + 16) - ctx_.renderBounds.maxX * 16.0) / 256.0;
+        uMax = ((double)texU + ctx_.renderBounds.maxZ * 16.0) / 256.0;
+        vMax = ((double)(texV + 16) - ctx_.renderBounds.minX * 16.0) / 256.0;
         uCornerA = uMax;
         uCornerB = uMin;
         vCornerA = vMin;
@@ -120,10 +120,10 @@ void BlockFaceRenderer::renderTopFace(net::minecraft::block::Block& block, doubl
         vMin = vMax;
         vMax = vCornerA;
     } else if (ctx_.topFaceRotation == 2) {
-        uMin = ((double)(texU + 16) - block.maxZ * 16.0) / 256.0;
-        vMin = ((double)texV + block.minX * 16.0) / 256.0;
-        uMax = ((double)(texU + 16) - block.minZ * 16.0) / 256.0;
-        vMax = ((double)texV + block.maxX * 16.0) / 256.0;
+        uMin = ((double)(texU + 16) - ctx_.renderBounds.maxZ * 16.0) / 256.0;
+        vMin = ((double)texV + ctx_.renderBounds.minX * 16.0) / 256.0;
+        uMax = ((double)(texU + 16) - ctx_.renderBounds.minZ * 16.0) / 256.0;
+        vMax = ((double)texV + ctx_.renderBounds.maxX * 16.0) / 256.0;
         uCornerA = uMax;
         uCornerB = uMin;
         vCornerA = vMin;
@@ -133,20 +133,20 @@ void BlockFaceRenderer::renderTopFace(net::minecraft::block::Block& block, doubl
         vCornerA = vMax;
         vCornerB = vMin;
     } else if (ctx_.topFaceRotation == 3) {
-        uMin = ((double)(texU + 16) - block.minX * 16.0) / 256.0;
-        uMax = ((double)(texU + 16) - block.maxX * 16.0 - 0.01) / 256.0;
-        vMin = ((double)(texV + 16) - block.minZ * 16.0) / 256.0;
-        vMax = ((double)(texV + 16) - block.maxZ * 16.0 - 0.01) / 256.0;
+        uMin = ((double)(texU + 16) - ctx_.renderBounds.minX * 16.0) / 256.0;
+        uMax = ((double)(texU + 16) - ctx_.renderBounds.maxX * 16.0 - 0.01) / 256.0;
+        vMin = ((double)(texV + 16) - ctx_.renderBounds.minZ * 16.0) / 256.0;
+        vMax = ((double)(texV + 16) - ctx_.renderBounds.maxZ * 16.0 - 0.01) / 256.0;
         uCornerA = uMax;
         uCornerB = uMin;
         vCornerA = vMin;
         vCornerB = vMax;
     }
-    const double xMin = x + block.minX;
-    const double xMax = x + block.maxX;
-    const double yCoord = y + block.maxY;
-    const double zMin = z + block.minZ;
-    const double zMax = z + block.maxZ;
+    const double xMin = x + ctx_.renderBounds.minX;
+    const double xMax = x + ctx_.renderBounds.maxX;
+    const double yCoord = y + ctx_.renderBounds.maxY;
+    const double zMin = z + ctx_.renderBounds.minZ;
+    const double zMax = z + ctx_.renderBounds.maxZ;
     if (ctx_.faceState.useAo) {
         tessellator.color(ctx_.faceState.colors.red[0], ctx_.faceState.colors.green[0], ctx_.faceState.colors.blue[0]);
         tessellator.vertex(xMax, yCoord, zMax, uMax, vMax);
@@ -167,24 +167,24 @@ void BlockFaceRenderer::renderTopFace(net::minecraft::block::Block& block, doubl
 void BlockFaceRenderer::renderEastFace(net::minecraft::block::Block& block, double x, double y, double z, int texture)
 {
     double uMin;
-    Tessellator& tessellator = Tessellator::INSTANCE;
+    Tessellator& tessellator = *ctx_.tess;
     texture = ctx_.resolveTexture(2, texture);
     int texU = (texture & 0xF) << 4;
     int texV = texture & 0xF0;
-    double uMax = ((double)texU + block.minX * 16.0) / 256.0;
-    double vMin = ((double)texU + block.maxX * 16.0 - 0.01) / 256.0;
-    double vMax = ((double)(texV + 16) - block.maxY * 16.0) / 256.0;
-    double uCornerA = ((double)(texV + 16) - block.minY * 16.0 - 0.01) / 256.0;
+    double uMax = ((double)texU + ctx_.renderBounds.minX * 16.0) / 256.0;
+    double vMin = ((double)texU + ctx_.renderBounds.maxX * 16.0 - 0.01) / 256.0;
+    double vMax = ((double)(texV + 16) - ctx_.renderBounds.maxY * 16.0) / 256.0;
+    double uCornerA = ((double)(texV + 16) - ctx_.renderBounds.minY * 16.0 - 0.01) / 256.0;
     if (ctx_.flipTextureHorizontally) {
         uMin = uMax;
         uMax = vMin;
         vMin = uMin;
     }
-    if (block.minX < 0.0 || block.maxX > 1.0) {
+    if (ctx_.renderBounds.minX < 0.0 || ctx_.renderBounds.maxX > 1.0) {
         uMax = ((float)texU + 0.0f) / 256.0f;
         vMin = ((float)texU + 15.99f) / 256.0f;
     }
-    if (block.minY < 0.0 || block.maxY > 1.0) {
+    if (ctx_.renderBounds.minY < 0.0 || ctx_.renderBounds.maxY > 1.0) {
         vMax = ((float)texV + 0.0f) / 256.0f;
         uCornerA = ((float)texV + 15.99f) / 256.0f;
     }
@@ -193,10 +193,10 @@ void BlockFaceRenderer::renderEastFace(net::minecraft::block::Block& block, doub
     double vCornerA = vMax;
     double vCornerB = uCornerA;
     if (ctx_.eastFaceRotation == 2) {
-        uMax = ((double)texU + block.minY * 16.0) / 256.0;
-        vMax = ((double)(texV + 16) - block.minX * 16.0) / 256.0;
-        vMin = ((double)texU + block.maxY * 16.0) / 256.0;
-        uCornerA = ((double)(texV + 16) - block.maxX * 16.0) / 256.0;
+        uMax = ((double)texU + ctx_.renderBounds.minY * 16.0) / 256.0;
+        vMax = ((double)(texV + 16) - ctx_.renderBounds.minX * 16.0) / 256.0;
+        vMin = ((double)texU + ctx_.renderBounds.maxY * 16.0) / 256.0;
+        uCornerA = ((double)(texV + 16) - ctx_.renderBounds.maxX * 16.0) / 256.0;
         uMin = vMin;
         uCornerB = uMax;
         vCornerA = vMax;
@@ -206,10 +206,10 @@ void BlockFaceRenderer::renderEastFace(net::minecraft::block::Block& block, doub
         vMax = uCornerA;
         uCornerA = vCornerA;
     } else if (ctx_.eastFaceRotation == 1) {
-        uMax = ((double)(texU + 16) - block.maxY * 16.0) / 256.0;
-        vMax = ((double)texV + block.maxX * 16.0) / 256.0;
-        vMin = ((double)(texU + 16) - block.minY * 16.0) / 256.0;
-        uCornerA = ((double)texV + block.minX * 16.0) / 256.0;
+        uMax = ((double)(texU + 16) - ctx_.renderBounds.maxY * 16.0) / 256.0;
+        vMax = ((double)texV + ctx_.renderBounds.maxX * 16.0) / 256.0;
+        vMin = ((double)(texU + 16) - ctx_.renderBounds.minY * 16.0) / 256.0;
+        uCornerA = ((double)texV + ctx_.renderBounds.minX * 16.0) / 256.0;
         uMin = vMin;
         uCornerB = uMax;
         vCornerA = vMax;
@@ -219,20 +219,20 @@ void BlockFaceRenderer::renderEastFace(net::minecraft::block::Block& block, doub
         vCornerA = uCornerA;
         vCornerB = vMax;
     } else if (ctx_.eastFaceRotation == 3) {
-        uMax = ((double)(texU + 16) - block.minX * 16.0) / 256.0;
-        vMin = ((double)(texU + 16) - block.maxX * 16.0 - 0.01) / 256.0;
-        vMax = ((double)texV + block.maxY * 16.0) / 256.0;
-        uCornerA = ((double)texV + block.minY * 16.0 - 0.01) / 256.0;
+        uMax = ((double)(texU + 16) - ctx_.renderBounds.minX * 16.0) / 256.0;
+        vMin = ((double)(texU + 16) - ctx_.renderBounds.maxX * 16.0 - 0.01) / 256.0;
+        vMax = ((double)texV + ctx_.renderBounds.maxY * 16.0) / 256.0;
+        uCornerA = ((double)texV + ctx_.renderBounds.minY * 16.0 - 0.01) / 256.0;
         uMin = vMin;
         uCornerB = uMax;
         vCornerA = vMax;
         vCornerB = uCornerA;
     }
-    const double xMin = x + block.minX;
-    const double xMax = x + block.maxX;
-    const double yMin = y + block.minY;
-    const double yMax = y + block.maxY;
-    const double zCoord = z + block.minZ;
+    const double xMin = x + ctx_.renderBounds.minX;
+    const double xMax = x + ctx_.renderBounds.maxX;
+    const double yMin = y + ctx_.renderBounds.minY;
+    const double yMax = y + ctx_.renderBounds.maxY;
+    const double zCoord = z + ctx_.renderBounds.minZ;
     if (ctx_.faceState.useAo) {
         tessellator.color(ctx_.faceState.colors.red[0], ctx_.faceState.colors.green[0], ctx_.faceState.colors.blue[0]);
         tessellator.vertex(xMin, yMax, zCoord, uMin, vCornerA);
@@ -253,24 +253,24 @@ void BlockFaceRenderer::renderEastFace(net::minecraft::block::Block& block, doub
 void BlockFaceRenderer::renderWestFace(net::minecraft::block::Block& block, double x, double y, double z, int texture)
 {
     double uMin;
-    Tessellator& tessellator = Tessellator::INSTANCE;
+    Tessellator& tessellator = *ctx_.tess;
     texture = ctx_.resolveTexture(3, texture);
     int texU = (texture & 0xF) << 4;
     int texV = texture & 0xF0;
-    double uMax = ((double)texU + block.minX * 16.0) / 256.0;
-    double vMin = ((double)texU + block.maxX * 16.0 - 0.01) / 256.0;
-    double vMax = ((double)(texV + 16) - block.maxY * 16.0) / 256.0;
-    double uCornerA = ((double)(texV + 16) - block.minY * 16.0 - 0.01) / 256.0;
+    double uMax = ((double)texU + ctx_.renderBounds.minX * 16.0) / 256.0;
+    double vMin = ((double)texU + ctx_.renderBounds.maxX * 16.0 - 0.01) / 256.0;
+    double vMax = ((double)(texV + 16) - ctx_.renderBounds.maxY * 16.0) / 256.0;
+    double uCornerA = ((double)(texV + 16) - ctx_.renderBounds.minY * 16.0 - 0.01) / 256.0;
     if (ctx_.flipTextureHorizontally) {
         uMin = uMax;
         uMax = vMin;
         vMin = uMin;
     }
-    if (block.minX < 0.0 || block.maxX > 1.0) {
+    if (ctx_.renderBounds.minX < 0.0 || ctx_.renderBounds.maxX > 1.0) {
         uMax = ((float)texU + 0.0f) / 256.0f;
         vMin = ((float)texU + 15.99f) / 256.0f;
     }
-    if (block.minY < 0.0 || block.maxY > 1.0) {
+    if (ctx_.renderBounds.minY < 0.0 || ctx_.renderBounds.maxY > 1.0) {
         vMax = ((float)texV + 0.0f) / 256.0f;
         uCornerA = ((float)texV + 15.99f) / 256.0f;
     }
@@ -279,10 +279,10 @@ void BlockFaceRenderer::renderWestFace(net::minecraft::block::Block& block, doub
     double vCornerA = vMax;
     double vCornerB = uCornerA;
     if (ctx_.westFaceRotation == 1) {
-        uMax = ((double)texU + block.minY * 16.0) / 256.0;
-        uCornerA = ((double)(texV + 16) - block.minX * 16.0) / 256.0;
-        vMin = ((double)texU + block.maxY * 16.0) / 256.0;
-        vMax = ((double)(texV + 16) - block.maxX * 16.0) / 256.0;
+        uMax = ((double)texU + ctx_.renderBounds.minY * 16.0) / 256.0;
+        uCornerA = ((double)(texV + 16) - ctx_.renderBounds.minX * 16.0) / 256.0;
+        vMin = ((double)texU + ctx_.renderBounds.maxY * 16.0) / 256.0;
+        vMax = ((double)(texV + 16) - ctx_.renderBounds.maxX * 16.0) / 256.0;
         uMin = vMin;
         uCornerB = uMax;
         vCornerA = vMax;
@@ -292,10 +292,10 @@ void BlockFaceRenderer::renderWestFace(net::minecraft::block::Block& block, doub
         vMax = uCornerA;
         uCornerA = vCornerA;
     } else if (ctx_.westFaceRotation == 2) {
-        uMax = ((double)(texU + 16) - block.maxY * 16.0) / 256.0;
-        vMax = ((double)texV + block.minX * 16.0) / 256.0;
-        vMin = ((double)(texU + 16) - block.minY * 16.0) / 256.0;
-        uCornerA = ((double)texV + block.maxX * 16.0) / 256.0;
+        uMax = ((double)(texU + 16) - ctx_.renderBounds.maxY * 16.0) / 256.0;
+        vMax = ((double)texV + ctx_.renderBounds.minX * 16.0) / 256.0;
+        vMin = ((double)(texU + 16) - ctx_.renderBounds.minY * 16.0) / 256.0;
+        uCornerA = ((double)texV + ctx_.renderBounds.maxX * 16.0) / 256.0;
         uMin = vMin;
         uCornerB = uMax;
         vCornerA = vMax;
@@ -305,20 +305,20 @@ void BlockFaceRenderer::renderWestFace(net::minecraft::block::Block& block, doub
         vCornerA = uCornerA;
         vCornerB = vMax;
     } else if (ctx_.westFaceRotation == 3) {
-        uMax = ((double)(texU + 16) - block.minX * 16.0) / 256.0;
-        vMin = ((double)(texU + 16) - block.maxX * 16.0 - 0.01) / 256.0;
-        vMax = ((double)texV + block.maxY * 16.0) / 256.0;
-        uCornerA = ((double)texV + block.minY * 16.0 - 0.01) / 256.0;
+        uMax = ((double)(texU + 16) - ctx_.renderBounds.minX * 16.0) / 256.0;
+        vMin = ((double)(texU + 16) - ctx_.renderBounds.maxX * 16.0 - 0.01) / 256.0;
+        vMax = ((double)texV + ctx_.renderBounds.maxY * 16.0) / 256.0;
+        uCornerA = ((double)texV + ctx_.renderBounds.minY * 16.0 - 0.01) / 256.0;
         uMin = vMin;
         uCornerB = uMax;
         vCornerA = vMax;
         vCornerB = uCornerA;
     }
-    const double xMin = x + block.minX;
-    const double xMax = x + block.maxX;
-    const double yMin = y + block.minY;
-    const double yMax = y + block.maxY;
-    const double zCoord = z + block.maxZ;
+    const double xMin = x + ctx_.renderBounds.minX;
+    const double xMax = x + ctx_.renderBounds.maxX;
+    const double yMin = y + ctx_.renderBounds.minY;
+    const double yMax = y + ctx_.renderBounds.maxY;
+    const double zCoord = z + ctx_.renderBounds.maxZ;
     if (ctx_.faceState.useAo) {
         tessellator.color(ctx_.faceState.colors.red[0], ctx_.faceState.colors.green[0], ctx_.faceState.colors.blue[0]);
         tessellator.vertex(xMin, yMax, zCoord, uMax, vMax);
@@ -339,24 +339,24 @@ void BlockFaceRenderer::renderWestFace(net::minecraft::block::Block& block, doub
 void BlockFaceRenderer::renderNorthFace(net::minecraft::block::Block& block, double x, double y, double z, int texture)
 {
     double uMin;
-    Tessellator& tessellator = Tessellator::INSTANCE;
+    Tessellator& tessellator = *ctx_.tess;
     texture = ctx_.resolveTexture(4, texture);
     int texU = (texture & 0xF) << 4;
     int texV = texture & 0xF0;
-    double uMax = ((double)texU + block.minZ * 16.0) / 256.0;
-    double vMin = ((double)texU + block.maxZ * 16.0 - 0.01) / 256.0;
-    double vMax = ((double)(texV + 16) - block.maxY * 16.0) / 256.0;
-    double uCornerA = ((double)(texV + 16) - block.minY * 16.0 - 0.01) / 256.0;
+    double uMax = ((double)texU + ctx_.renderBounds.minZ * 16.0) / 256.0;
+    double vMin = ((double)texU + ctx_.renderBounds.maxZ * 16.0 - 0.01) / 256.0;
+    double vMax = ((double)(texV + 16) - ctx_.renderBounds.maxY * 16.0) / 256.0;
+    double uCornerA = ((double)(texV + 16) - ctx_.renderBounds.minY * 16.0 - 0.01) / 256.0;
     if (ctx_.flipTextureHorizontally) {
         uMin = uMax;
         uMax = vMin;
         vMin = uMin;
     }
-    if (block.minZ < 0.0 || block.maxZ > 1.0) {
+    if (ctx_.renderBounds.minZ < 0.0 || ctx_.renderBounds.maxZ > 1.0) {
         uMax = ((float)texU + 0.0f) / 256.0f;
         vMin = ((float)texU + 15.99f) / 256.0f;
     }
-    if (block.minY < 0.0 || block.maxY > 1.0) {
+    if (ctx_.renderBounds.minY < 0.0 || ctx_.renderBounds.maxY > 1.0) {
         vMax = ((float)texV + 0.0f) / 256.0f;
         uCornerA = ((float)texV + 15.99f) / 256.0f;
     }
@@ -365,10 +365,10 @@ void BlockFaceRenderer::renderNorthFace(net::minecraft::block::Block& block, dou
     double vCornerA = vMax;
     double vCornerB = uCornerA;
     if (ctx_.northFaceRotation == 1) {
-        uMax = ((double)texU + block.minY * 16.0) / 256.0;
-        vMax = ((double)(texV + 16) - block.maxZ * 16.0) / 256.0;
-        vMin = ((double)texU + block.maxY * 16.0) / 256.0;
-        uCornerA = ((double)(texV + 16) - block.minZ * 16.0) / 256.0;
+        uMax = ((double)texU + ctx_.renderBounds.minY * 16.0) / 256.0;
+        vMax = ((double)(texV + 16) - ctx_.renderBounds.maxZ * 16.0) / 256.0;
+        vMin = ((double)texU + ctx_.renderBounds.maxY * 16.0) / 256.0;
+        uCornerA = ((double)(texV + 16) - ctx_.renderBounds.minZ * 16.0) / 256.0;
         uMin = vMin;
         uCornerB = uMax;
         vCornerA = vMax;
@@ -378,10 +378,10 @@ void BlockFaceRenderer::renderNorthFace(net::minecraft::block::Block& block, dou
         vMax = uCornerA;
         uCornerA = vCornerA;
     } else if (ctx_.northFaceRotation == 2) {
-        uMax = ((double)(texU + 16) - block.maxY * 16.0) / 256.0;
-        vMax = ((double)texV + block.minZ * 16.0) / 256.0;
-        vMin = ((double)(texU + 16) - block.minY * 16.0) / 256.0;
-        uCornerA = ((double)texV + block.maxZ * 16.0) / 256.0;
+        uMax = ((double)(texU + 16) - ctx_.renderBounds.maxY * 16.0) / 256.0;
+        vMax = ((double)texV + ctx_.renderBounds.minZ * 16.0) / 256.0;
+        vMin = ((double)(texU + 16) - ctx_.renderBounds.minY * 16.0) / 256.0;
+        uCornerA = ((double)texV + ctx_.renderBounds.maxZ * 16.0) / 256.0;
         uMin = vMin;
         uCornerB = uMax;
         vCornerA = vMax;
@@ -391,20 +391,20 @@ void BlockFaceRenderer::renderNorthFace(net::minecraft::block::Block& block, dou
         vCornerA = uCornerA;
         vCornerB = vMax;
     } else if (ctx_.northFaceRotation == 3) {
-        uMax = ((double)(texU + 16) - block.minZ * 16.0) / 256.0;
-        vMin = ((double)(texU + 16) - block.maxZ * 16.0 - 0.01) / 256.0;
-        vMax = ((double)texV + block.maxY * 16.0) / 256.0;
-        uCornerA = ((double)texV + block.minY * 16.0 - 0.01) / 256.0;
+        uMax = ((double)(texU + 16) - ctx_.renderBounds.minZ * 16.0) / 256.0;
+        vMin = ((double)(texU + 16) - ctx_.renderBounds.maxZ * 16.0 - 0.01) / 256.0;
+        vMax = ((double)texV + ctx_.renderBounds.maxY * 16.0) / 256.0;
+        uCornerA = ((double)texV + ctx_.renderBounds.minY * 16.0 - 0.01) / 256.0;
         uMin = vMin;
         uCornerB = uMax;
         vCornerA = vMax;
         vCornerB = uCornerA;
     }
-    const double xCoord = x + block.minX;
-    const double yMin = y + block.minY;
-    const double yMax = y + block.maxY;
-    const double zMin = z + block.minZ;
-    const double zMax = z + block.maxZ;
+    const double xCoord = x + ctx_.renderBounds.minX;
+    const double yMin = y + ctx_.renderBounds.minY;
+    const double yMax = y + ctx_.renderBounds.maxY;
+    const double zMin = z + ctx_.renderBounds.minZ;
+    const double zMax = z + ctx_.renderBounds.maxZ;
     if (ctx_.faceState.useAo) {
         tessellator.color(ctx_.faceState.colors.red[0], ctx_.faceState.colors.green[0], ctx_.faceState.colors.blue[0]);
         tessellator.vertex(xCoord, yMax, zMax, uMin, vCornerA);
@@ -425,24 +425,24 @@ void BlockFaceRenderer::renderNorthFace(net::minecraft::block::Block& block, dou
 void BlockFaceRenderer::renderSouthFace(net::minecraft::block::Block& block, double x, double y, double z, int texture)
 {
     double uMin;
-    Tessellator& tessellator = Tessellator::INSTANCE;
+    Tessellator& tessellator = *ctx_.tess;
     texture = ctx_.resolveTexture(5, texture);
     int texU = (texture & 0xF) << 4;
     int texV = texture & 0xF0;
-    double uMax = ((double)texU + block.minZ * 16.0) / 256.0;
-    double vMin = ((double)texU + block.maxZ * 16.0 - 0.01) / 256.0;
-    double vMax = ((double)(texV + 16) - block.maxY * 16.0) / 256.0;
-    double uCornerA = ((double)(texV + 16) - block.minY * 16.0 - 0.01) / 256.0;
+    double uMax = ((double)texU + ctx_.renderBounds.minZ * 16.0) / 256.0;
+    double vMin = ((double)texU + ctx_.renderBounds.maxZ * 16.0 - 0.01) / 256.0;
+    double vMax = ((double)(texV + 16) - ctx_.renderBounds.maxY * 16.0) / 256.0;
+    double uCornerA = ((double)(texV + 16) - ctx_.renderBounds.minY * 16.0 - 0.01) / 256.0;
     if (ctx_.flipTextureHorizontally) {
         uMin = uMax;
         uMax = vMin;
         vMin = uMin;
     }
-    if (block.minZ < 0.0 || block.maxZ > 1.0) {
+    if (ctx_.renderBounds.minZ < 0.0 || ctx_.renderBounds.maxZ > 1.0) {
         uMax = ((float)texU + 0.0f) / 256.0f;
         vMin = ((float)texU + 15.99f) / 256.0f;
     }
-    if (block.minY < 0.0 || block.maxY > 1.0) {
+    if (ctx_.renderBounds.minY < 0.0 || ctx_.renderBounds.maxY > 1.0) {
         vMax = ((float)texV + 0.0f) / 256.0f;
         uCornerA = ((float)texV + 15.99f) / 256.0f;
     }
@@ -451,10 +451,10 @@ void BlockFaceRenderer::renderSouthFace(net::minecraft::block::Block& block, dou
     double vCornerA = vMax;
     double vCornerB = uCornerA;
     if (ctx_.southFaceRotation == 2) {
-        uMax = ((double)texU + block.minY * 16.0) / 256.0;
-        vMax = ((double)(texV + 16) - block.minZ * 16.0) / 256.0;
-        vMin = ((double)texU + block.maxY * 16.0) / 256.0;
-        uCornerA = ((double)(texV + 16) - block.maxZ * 16.0) / 256.0;
+        uMax = ((double)texU + ctx_.renderBounds.minY * 16.0) / 256.0;
+        vMax = ((double)(texV + 16) - ctx_.renderBounds.minZ * 16.0) / 256.0;
+        vMin = ((double)texU + ctx_.renderBounds.maxY * 16.0) / 256.0;
+        uCornerA = ((double)(texV + 16) - ctx_.renderBounds.maxZ * 16.0) / 256.0;
         uMin = vMin;
         uCornerB = uMax;
         vCornerA = vMax;
@@ -464,10 +464,10 @@ void BlockFaceRenderer::renderSouthFace(net::minecraft::block::Block& block, dou
         vMax = uCornerA;
         uCornerA = vCornerA;
     } else if (ctx_.southFaceRotation == 1) {
-        uMax = ((double)(texU + 16) - block.maxY * 16.0) / 256.0;
-        vMax = ((double)texV + block.maxZ * 16.0) / 256.0;
-        vMin = ((double)(texU + 16) - block.minY * 16.0) / 256.0;
-        uCornerA = ((double)texV + block.minZ * 16.0) / 256.0;
+        uMax = ((double)(texU + 16) - ctx_.renderBounds.maxY * 16.0) / 256.0;
+        vMax = ((double)texV + ctx_.renderBounds.maxZ * 16.0) / 256.0;
+        vMin = ((double)(texU + 16) - ctx_.renderBounds.minY * 16.0) / 256.0;
+        uCornerA = ((double)texV + ctx_.renderBounds.minZ * 16.0) / 256.0;
         uMin = vMin;
         uCornerB = uMax;
         vCornerA = vMax;
@@ -477,20 +477,20 @@ void BlockFaceRenderer::renderSouthFace(net::minecraft::block::Block& block, dou
         vCornerA = uCornerA;
         vCornerB = vMax;
     } else if (ctx_.southFaceRotation == 3) {
-        uMax = ((double)(texU + 16) - block.minZ * 16.0) / 256.0;
-        vMin = ((double)(texU + 16) - block.maxZ * 16.0 - 0.01) / 256.0;
-        vMax = ((double)texV + block.maxY * 16.0) / 256.0;
-        uCornerA = ((double)texV + block.minY * 16.0 - 0.01) / 256.0;
+        uMax = ((double)(texU + 16) - ctx_.renderBounds.minZ * 16.0) / 256.0;
+        vMin = ((double)(texU + 16) - ctx_.renderBounds.maxZ * 16.0 - 0.01) / 256.0;
+        vMax = ((double)texV + ctx_.renderBounds.maxY * 16.0) / 256.0;
+        uCornerA = ((double)texV + ctx_.renderBounds.minY * 16.0 - 0.01) / 256.0;
         uMin = vMin;
         uCornerB = uMax;
         vCornerA = vMax;
         vCornerB = uCornerA;
     }
-    const double xCoord = x + block.maxX;
-    const double yMin = y + block.minY;
-    const double yMax = y + block.maxY;
-    const double zMin = z + block.minZ;
-    const double zMax = z + block.maxZ;
+    const double xCoord = x + ctx_.renderBounds.maxX;
+    const double yMin = y + ctx_.renderBounds.minY;
+    const double yMax = y + ctx_.renderBounds.maxY;
+    const double zMin = z + ctx_.renderBounds.minZ;
+    const double zMax = z + ctx_.renderBounds.maxZ;
     if (ctx_.faceState.useAo) {
         tessellator.color(ctx_.faceState.colors.red[0], ctx_.faceState.colors.green[0], ctx_.faceState.colors.blue[0]);
         tessellator.vertex(xCoord, yMin, zMax, uCornerB, vCornerB);
