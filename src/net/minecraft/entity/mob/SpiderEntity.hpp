@@ -6,6 +6,7 @@ namespace net::minecraft::entity::mob {
 
 class SpiderEntity : public MonsterEntity {
 public:
+    static void registerClass();
     explicit SpiderEntity(World* world = nullptr);
 
     [[nodiscard]] double getPassengerRidingHeight() const override

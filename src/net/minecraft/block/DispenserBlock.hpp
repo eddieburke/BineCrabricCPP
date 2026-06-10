@@ -22,6 +22,7 @@ namespace net::minecraft::block {
 
 class DispenserBlock : public BlockWithEntity {
 public:
+    static void registerClass();
     explicit DispenserBlock(int id) : BlockWithEntity(id, material::Material::STONE) { textureId = 45; }
 
     [[nodiscard]] int getTickRate() const override { return 4; }

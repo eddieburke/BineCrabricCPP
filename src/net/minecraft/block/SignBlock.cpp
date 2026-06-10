@@ -1,3 +1,4 @@
+#include "net/minecraft/registry/Registry.hpp"
 #include "net/minecraft/block/BlockRegistrar.hpp"
 #include "net/minecraft/block/SignBlock.hpp"
 
@@ -90,14 +91,16 @@ int SignBlock::getDroppedItemId(int /*blockMeta*/, JavaRandom& /*random*/) const
 }
 namespace {
 
-void registerSignBlocks()
+void SignBlock::registerClass()
 {
     Block::SIGN = (new SignBlock(63, true))->setHardness(1.0f)->setSoundGroup(&vanillaWoodSound())->setTranslationKey("sign")->disableTrackingStatistics()->ignoreMetaUpdates();
     Block::WALL_SIGN = (new SignBlock(68, false))->setHardness(1.0f)->setSoundGroup(&vanillaWoodSound())->setTranslationKey("sign")->disableTrackingStatistics()->ignoreMetaUpdates();
 }
 
-MINECRAFT_REGISTER_BLOCK(registerSignBlocks, 63);
 
+
+
+static ::net::minecraft::registry::RegisterBlock<SignBlock> autoReg(63);
 } // namespace
 } // namespace net::minecraft::block
 

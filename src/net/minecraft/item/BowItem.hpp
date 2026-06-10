@@ -11,6 +11,7 @@ namespace net::minecraft::item {
 
 class BowItem : public Item {
 public:
+    static void registerClass();
     explicit BowItem(int rawId);
     ItemStack* use(ItemStack* stack, World* world, PlayerEntity* user) override;
 };

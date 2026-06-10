@@ -1,3 +1,4 @@
+#include "net/minecraft/registry/Registry.hpp"
 #include "net/minecraft/block/BlockRegistrar.hpp"
 #include "net/minecraft/block/PistonExtensionBlock.hpp"
 
@@ -18,6 +19,8 @@ entity::PistonBlockEntity* getPistonBlockEntity(const BlockView* blockView, int 
     return dynamic_cast<entity::PistonBlockEntity*>(const_cast<BlockView*>(blockView)->getBlockEntity(x, y, z));
 }
 
+
+static ::net::minecraft::registry::RegisterBlock<PistonExtensionBlock> autoReg(36);
 } // namespace
 
 std::unique_ptr<entity::BlockEntity> PistonExtensionBlock::createBlockEntity()
@@ -185,12 +188,12 @@ std::optional<net::minecraft::Box> PistonExtensionBlock::getPushedBlockCollision
 }
 namespace {
 
-void registerPistonExtensionBlock()
+void PistonExtensionBlock::registerClass()
 {
     Block::MOVING_PISTON = new PistonExtensionBlock(36);
 }
 
-MINECRAFT_REGISTER_BLOCK(registerPistonExtensionBlock, 36);
+
 
 } // namespace
 } // namespace net::minecraft::block

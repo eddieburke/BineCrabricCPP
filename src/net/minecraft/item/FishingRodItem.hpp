@@ -11,6 +11,7 @@ namespace net::minecraft::item {
 
 class FishingRodItem : public Item {
 public:
+    static void registerClass();
     explicit FishingRodItem(int rawId);
     [[nodiscard]] bool isHandheldRod() const override;
     ItemStack* use(ItemStack* stack, World* world, PlayerEntity* user) override;

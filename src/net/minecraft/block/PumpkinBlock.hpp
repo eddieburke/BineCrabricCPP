@@ -11,6 +11,7 @@ namespace net::minecraft::block {
 
 class PumpkinBlock : public Block {
 public:
+    static void registerClass();
     using Block::canPlaceAt;
     bool lit = false;
 

@@ -11,6 +11,7 @@ namespace net::minecraft::entity {
 
 class ItemEntity : public Entity {
 public:
+    static void registerClass();
     ItemStack stack {};
     int itemAge = 0;
     int pickupDelay = 0;

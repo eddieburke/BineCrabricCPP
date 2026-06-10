@@ -7,6 +7,7 @@ namespace net::minecraft::block {
 
 class OreBlock : public Block {
 public:
+    static void registerClass();
     OreBlock(int id, int textureId) : Block(id, textureId, material::Material::STONE) {}
 
     [[nodiscard]] int getDroppedItemId(int /*blockMeta*/, JavaRandom& /*random*/) const override

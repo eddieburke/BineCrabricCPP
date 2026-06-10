@@ -6,6 +6,7 @@ namespace net::minecraft::block {
 
 class SnowBlock : public Block {
 public:
+    static void registerClass();
     SnowBlock(int id, int textureId);
 
     [[nodiscard]] int getDroppedItemId(int blockMeta, JavaRandom& random) const override;

@@ -10,6 +10,7 @@ namespace net::minecraft::entity::projectile {
 
 class ArrowEntity : public Entity {
 public:
+    static void registerClass();
     explicit ArrowEntity(World* world = nullptr) : Entity(world)
     {
         setBoundingBoxSpacing(0.5f, 0.5f);

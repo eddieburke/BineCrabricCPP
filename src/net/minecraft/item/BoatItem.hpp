@@ -11,6 +11,7 @@ namespace net::minecraft::item {
 
 class BoatItem : public Item {
 public:
+    static void registerClass();
     explicit BoatItem(int rawId);
     ItemStack* use(ItemStack* stack, World* world, PlayerEntity* user) override;
 };

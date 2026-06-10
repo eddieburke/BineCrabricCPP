@@ -8,6 +8,7 @@ namespace net::minecraft::entity::mob {
 
 class SkeletonEntity : public MonsterEntity {
 public:
+    static void registerClass();
     explicit SkeletonEntity(World* world = nullptr);
 
     void tickMovement() override;

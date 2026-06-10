@@ -1,3 +1,5 @@
+#include "net/minecraft/registry/Registry.hpp"
+#include "net/minecraft/entity/EntityRegistrar.hpp"
 #include "net/minecraft/entity/passive/SheepEntity.hpp"
 
 #include "net/minecraft/entity/EntityRegistry.hpp"
@@ -68,5 +70,13 @@ bool SheepEntity::interact(player::PlayerEntity* player)
     }
     return false;
 }
+
+
+void SheepEntity::registerClass()
+{
+    ::net::minecraft::entity::detail::registerVanillaEntity<SheepEntity>("Sheep", 91);
+}
+
+static ::net::minecraft::registry::RegisterEntity<SheepEntity> autoReg(91);
 
 } // namespace net::minecraft::entity::passive

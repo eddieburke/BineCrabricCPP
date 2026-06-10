@@ -8,6 +8,7 @@ namespace net::minecraft::block {
 
 class RailBlock : public Block {
 public:
+    static void registerClass();
     bool alwaysStraight = false;
 
     RailBlock(int id, int textureId, bool alwaysStraight);

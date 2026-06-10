@@ -1,3 +1,5 @@
+#include "net/minecraft/registry/Registry.hpp"
+#include "net/minecraft/entity/EntityRegistrar.hpp"
 #include "net/minecraft/entity/mob/GhastEntity.hpp"
 
 #include "net/minecraft/entity/EntityRegistry.hpp"
@@ -141,5 +143,13 @@ int GhastEntity::getDroppedItemId() const
 {
     return Item::GUNPOWDER != nullptr ? Item::GUNPOWDER->id : 289;
 }
+
+
+void GhastEntity::registerClass()
+{
+    ::net::minecraft::entity::detail::registerVanillaEntity<GhastEntity>("Ghast", 56);
+}
+
+static ::net::minecraft::registry::RegisterEntity<GhastEntity> autoReg(56);
 
 } // namespace net::minecraft::entity::mob

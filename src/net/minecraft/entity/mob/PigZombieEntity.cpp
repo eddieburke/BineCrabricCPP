@@ -1,3 +1,5 @@
+#include "net/minecraft/registry/Registry.hpp"
+#include "net/minecraft/entity/EntityRegistrar.hpp"
 #include "net/minecraft/entity/mob/PigZombieEntity.hpp"
 
 #include "net/minecraft/entity/EntityRegistry.hpp"
@@ -83,5 +85,13 @@ int PigZombieEntity::getDroppedItemId() const
 {
     return Item::COOKED_PORKCHOP != nullptr ? Item::COOKED_PORKCHOP->id : 320;
 }
+
+
+void PigZombieEntity::registerClass()
+{
+    ::net::minecraft::entity::detail::registerVanillaEntity<PigZombieEntity>("PigZombie", 57);
+}
+
+static ::net::minecraft::registry::RegisterEntity<PigZombieEntity> autoReg(57);
 
 } // namespace net::minecraft::entity::mob

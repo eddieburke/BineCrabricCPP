@@ -1,3 +1,4 @@
+#include "net/minecraft/registry/Registry.hpp"
 #include "net/minecraft/block/BlockRegistrar.hpp"
 #include "net/minecraft/block/SnowyBlock.hpp"
 
@@ -118,13 +119,15 @@ bool SnowyBlock::isSideVisible(const BlockView* blockView, int x, int y, int z, 
 }
 namespace {
 
-void registerSnowyBlock()
+void SnowyBlock::registerClass()
 {
     Block::SNOW = (new SnowyBlock(78, 66))->setHardness(0.1f)->setSoundGroup(&vanillaWoolSound())->setTranslationKey("snow");
 }
 
-MINECRAFT_REGISTER_BLOCK(registerSnowyBlock, 78);
 
+
+
+static ::net::minecraft::registry::RegisterBlock<SnowyBlock> autoReg(78);
 } // namespace
 } // namespace net::minecraft::block
 

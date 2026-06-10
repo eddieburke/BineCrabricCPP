@@ -1,3 +1,4 @@
+#include "net/minecraft/registry/Registry.hpp"
 #include "net/minecraft/block/BlockRegistrar.hpp"
 #include "net/minecraft/block/LogBlock.hpp"
 
@@ -60,13 +61,15 @@ void LogBlock::onBreak(World* world, int x, int y, int z)
 }
 namespace {
 
-void registerLogBlock()
+void LogBlock::registerClass()
 {
     Block::LOG = (new LogBlock(17))->setHardness(2.0f)->setSoundGroup(&vanillaWoodSound())->setTranslationKey("log")->ignoreMetaUpdates();
 }
 
-MINECRAFT_REGISTER_BLOCK(registerLogBlock, 17);
 
+
+
+static ::net::minecraft::registry::RegisterBlock<LogBlock> autoReg(17);
 } // namespace
 } // namespace net::minecraft::block
 

@@ -1,3 +1,4 @@
+#include "net/minecraft/registry/Registry.hpp"
 #include "net/minecraft/item/BucketItem.hpp"
 
 #include "net/minecraft/block/Block.hpp"
@@ -101,7 +102,7 @@ ItemStack* BucketItem::use(ItemStack* stack, World* world, PlayerEntity* user)
 
 namespace {
 
-void registerBucketItems()
+void BucketItem::registerClass()
 {
     static BucketItem BUCKET(69, 0);
     BUCKET.setTexturePosition(10, 4)->setTranslationKey("bucket");
@@ -120,8 +121,10 @@ void registerBucketItems()
     Item::MILK_BUCKET = &MILK_BUCKET;
 }
 
-MINECRAFT_REGISTER_ITEM(registerBucketItems, 69);
 
+
+
+static ::net::minecraft::registry::RegisterItem<BucketItem> autoReg(69);
 } // namespace
 
 } // namespace net::minecraft::item

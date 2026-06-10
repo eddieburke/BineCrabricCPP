@@ -8,6 +8,7 @@ namespace net::minecraft::block {
 
 class CobwebBlock : public Block {
 public:
+    static void registerClass();
     CobwebBlock(int id, int textureId) : Block(id, textureId, material::Material::COBWEB) {}
 
     [[nodiscard]] bool isOpaque() const override { return false; }

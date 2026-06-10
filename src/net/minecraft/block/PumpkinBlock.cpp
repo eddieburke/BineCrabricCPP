@@ -1,3 +1,4 @@
+#include "net/minecraft/registry/Registry.hpp"
 #include "net/minecraft/block/BlockRegistrar.hpp"
 #include "net/minecraft/block/PumpkinBlock.hpp"
 
@@ -75,14 +76,16 @@ void PumpkinBlock::onPlaced(
 }
 namespace {
 
-void registerPumpkinBlocks()
+void PumpkinBlock::registerClass()
 {
     Block::PUMPKIN = (new PumpkinBlock(86, 102, false))->setHardness(1.0f)->setSoundGroup(&vanillaWoodSound())->setTranslationKey("pumpkin")->ignoreMetaUpdates();
     Block::JACK_O_LANTERN = (new PumpkinBlock(91, 102, true))->setHardness(1.0f)->setSoundGroup(&vanillaWoodSound())->setLuminance(1.0f)->setTranslationKey("litpumpkin")->ignoreMetaUpdates();
 }
 
-MINECRAFT_REGISTER_BLOCK(registerPumpkinBlocks, 91);
 
+
+
+static ::net::minecraft::registry::RegisterBlock<PumpkinBlock> autoReg(91);
 } // namespace
 } // namespace net::minecraft::block
 

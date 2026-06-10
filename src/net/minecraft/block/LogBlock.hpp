@@ -7,6 +7,7 @@ namespace net::minecraft::block {
 
 class LogBlock : public Block {
 public:
+    static void registerClass();
     explicit LogBlock(int id);
 
     [[nodiscard]] int getDroppedItemCount(JavaRandom& /*random*/) const override { return 1; }

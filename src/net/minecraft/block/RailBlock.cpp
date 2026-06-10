@@ -1,3 +1,4 @@
+#include "net/minecraft/registry/Registry.hpp"
 #include "net/minecraft/block/BlockRegistrar.hpp"
 #include "net/minecraft/block/RailBlock.hpp"
 
@@ -341,6 +342,8 @@ private:
     }
 };
 
+
+static ::net::minecraft::registry::RegisterBlock<RailBlock> autoReg(27);
 } // namespace
 
 RailBlock::RailBlock(int id, int textureId, bool alwaysStraightIn)
@@ -578,13 +581,13 @@ std::optional<net::minecraft::HitResult> RailBlock::raycast(
 }
 namespace {
 
-void registerRailBlocks()
+void RailBlock::registerClass()
 {
     Block::POWERED_RAIL = (new RailBlock(27, 179, true))->setHardness(0.7f)->setSoundGroup(&vanillaMetalSound())->setTranslationKey("goldenRail")->ignoreMetaUpdates();
     Block::RAIL = (new RailBlock(66, 128, false))->setHardness(0.7f)->setSoundGroup(&vanillaMetalSound())->setTranslationKey("rail")->ignoreMetaUpdates();
 }
 
-MINECRAFT_REGISTER_BLOCK(registerRailBlocks, 27);
+
 
 } // namespace
 } // namespace net::minecraft::block

@@ -11,6 +11,7 @@ namespace net::minecraft::item {
 
 class BedItem : public Item {
 public:
+    static void registerClass();
     explicit BedItem(int rawId);
     bool useOnBlock(ItemStack* stack, PlayerEntity* user, World* world, int x, int y, int z, int side) override;
 };

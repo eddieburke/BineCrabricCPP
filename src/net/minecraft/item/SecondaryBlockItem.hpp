@@ -8,6 +8,7 @@ namespace net::minecraft::item {
 
 class SecondaryBlockItem : public Item {
 public:
+    static void registerClass();
     SecondaryBlockItem(int rawId, Block* block)
         : Item(rawId),
           blockId_(block != nullptr ? block->id : 0)

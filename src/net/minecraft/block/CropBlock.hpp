@@ -10,6 +10,7 @@ namespace net::minecraft::block {
 
 class CropBlock : public PlantBlock {
 public:
+    static void registerClass();
     CropBlock(int id, int textureIdIn) : PlantBlock(id, textureIdIn)
     {
         textureId = textureIdIn;

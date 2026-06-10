@@ -1,3 +1,4 @@
+#include "net/minecraft/registry/Registry.hpp"
 #include "net/minecraft/block/BlockRegistrar.hpp"
 #include "net/minecraft/block/JukeboxBlock.hpp"
 
@@ -88,13 +89,15 @@ void JukeboxBlock::dropStacks(World* world, int x, int y, int z, int meta, float
 }
 namespace {
 
-void registerJukeboxBlock()
+void JukeboxBlock::registerClass()
 {
     Block::JUKEBOX = (new JukeboxBlock(84, 74))->setHardness(2.0f)->setResistance(10.0f)->setSoundGroup(&vanillaStoneSound())->setTranslationKey("jukebox")->ignoreMetaUpdates();
 }
 
-MINECRAFT_REGISTER_BLOCK(registerJukeboxBlock, 84);
 
+
+
+static ::net::minecraft::registry::RegisterBlock<JukeboxBlock> autoReg(84);
 } // namespace
 } // namespace net::minecraft::block
 

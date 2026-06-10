@@ -1,3 +1,4 @@
+#include "net/minecraft/registry/Registry.hpp"
 #include "net/minecraft/item/MinecartItem.hpp"
 
 #include "net/minecraft/block/Block.hpp"
@@ -32,7 +33,7 @@ bool MinecartItem::useOnBlock(ItemStack* stack, PlayerEntity* /*user*/, World* w
 
 namespace {
 
-void registerMinecartItems()
+void MinecartItem::registerClass()
 {
     static MinecartItem MINECART(72, 0);
     MINECART.setTexturePosition(7, 8)->setTranslationKey("minecart");
@@ -47,8 +48,10 @@ void registerMinecartItems()
     Item::FURNACE_MINECART = &FURNACE_MINECART;
 }
 
-MINECRAFT_REGISTER_ITEM(registerMinecartItems, 72);
 
+
+
+static ::net::minecraft::registry::RegisterItem<MinecartItem> autoReg(72);
 } // namespace
 
 } // namespace net::minecraft::item

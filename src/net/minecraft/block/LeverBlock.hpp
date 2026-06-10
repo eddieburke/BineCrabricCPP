@@ -7,6 +7,7 @@ namespace net::minecraft::block {
 
 class LeverBlock : public Block {
 public:
+    static void registerClass();
     using Block::canPlaceAt;
     LeverBlock(int id, int textureId);
 

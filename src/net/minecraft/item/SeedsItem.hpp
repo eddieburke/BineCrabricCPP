@@ -9,6 +9,7 @@ namespace net::minecraft::item {
 
 class SeedsItem : public Item {
 public:
+    static void registerClass();
     SeedsItem(int rawId, int cropBlockId)
         : Item(rawId),
           cropBlockId_(cropBlockId)

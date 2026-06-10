@@ -11,6 +11,7 @@ namespace net::minecraft::item {
 
 class MushroomStewItem : public FoodItem {
 public:
+    static void registerClass();
     MushroomStewItem(int rawId, int healthRestored);
     ItemStack* use(ItemStack* stack, World* world, PlayerEntity* user) override;
 };

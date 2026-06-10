@@ -10,6 +10,7 @@ namespace net::minecraft::entity::passive {
 
 class CowEntity : public AnimalEntity {
 public:
+    static void registerClass();
     explicit CowEntity(World* world = nullptr);
 
     bool interact(player::PlayerEntity* player) override;

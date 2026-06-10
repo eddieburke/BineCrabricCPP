@@ -124,7 +124,7 @@ std::string Item::getTranslatedName() const
 
 void initializeItems()
 {
-    registry::runVanillaBootstrap();
+    // Items are initialized by Registry::bootstrap()
 }
 
 } // namespace net::minecraft

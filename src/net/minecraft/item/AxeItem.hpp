@@ -7,6 +7,7 @@ namespace net::minecraft::item {
 
 class AxeItem : public ToolItem {
 public:
+    static void registerClass();
     AxeItem(int rawId, ToolMaterial material)
         : ToolItem(rawId, 3, material, nullptr, 0)
     {

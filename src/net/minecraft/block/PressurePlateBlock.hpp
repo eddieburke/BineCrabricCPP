@@ -9,6 +9,7 @@ namespace net::minecraft::block {
 
 class PressurePlateBlock : public Block {
 public:
+    static void registerClass();
     PressurePlateActivationRule activationRule = PressurePlateActivationRule::EVERYTHING;
 
     PressurePlateBlock(int id, int textureId, PressurePlateActivationRule activationRule, Material& material);

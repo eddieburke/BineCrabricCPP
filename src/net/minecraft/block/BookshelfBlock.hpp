@@ -6,6 +6,7 @@ namespace net::minecraft::block {
 
 class BookshelfBlock : public Block {
 public:
+    static void registerClass();
     BookshelfBlock(int id, int textureId) : Block(id, textureId, material::Material::WOOD) {}
 
     [[nodiscard]] int getTexture(int side) const override

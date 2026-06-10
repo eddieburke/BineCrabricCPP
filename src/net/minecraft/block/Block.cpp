@@ -525,7 +525,7 @@ void finalizeBlockRegistryProperties()
 
 void initializeBlocks()
 {
-    registry::runVanillaBootstrap();
+    registry::Registry::bootstrap();
 }
 
 bool Block::usesNeighborLightSampling(int blockId)

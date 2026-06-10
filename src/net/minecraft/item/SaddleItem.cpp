@@ -1,3 +1,4 @@
+#include "net/minecraft/registry/Registry.hpp"
 #include "net/minecraft/item/SaddleItem.hpp"
 
 #include "net/minecraft/entity/LivingEntity.hpp"
@@ -30,15 +31,17 @@ bool SaddleItem::postHit(ItemStack* stack, LivingEntity* target, LivingEntity* /
 
 namespace {
 
-void registerSaddleItem()
+void SaddleItem::registerClass()
 {
     static SaddleItem SADDLE(73);
     SADDLE.setTexturePosition(8, 6)->setTranslationKey("saddle");
     Item::SADDLE = &SADDLE;
 }
 
-MINECRAFT_REGISTER_ITEM(registerSaddleItem, 73);
 
+
+
+static ::net::minecraft::registry::RegisterItem<SaddleItem> autoReg(73);
 } // namespace
 
 } // namespace net::minecraft::item

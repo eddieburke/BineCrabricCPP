@@ -8,6 +8,7 @@ namespace net::minecraft::block {
 
 class PistonHeadBlock : public Block {
 public:
+    static void registerClass();
     using Block::canPlaceAt;
 
     PistonHeadBlock(int id, int textureId);

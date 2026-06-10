@@ -7,6 +7,7 @@ namespace net::minecraft::entity::mob {
 
 class GhastEntity : public FlyingEntity, public Monster {
 public:
+    static void registerClass();
     explicit GhastEntity(World* world = nullptr);
 
     int floatDuration = 0;

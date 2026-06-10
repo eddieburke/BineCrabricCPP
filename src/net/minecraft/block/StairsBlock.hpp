@@ -11,6 +11,7 @@ namespace net::minecraft::block {
 
 class StairsBlock : public Block {
 public:
+    static void registerClass();
     using Block::canPlaceAt;
     Block* baseBlock = nullptr;
 

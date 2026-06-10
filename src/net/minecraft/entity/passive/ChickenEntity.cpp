@@ -1,3 +1,5 @@
+#include "net/minecraft/registry/Registry.hpp"
+#include "net/minecraft/entity/EntityRegistrar.hpp"
 #include "net/minecraft/entity/passive/ChickenEntity.hpp"
 
 #include "net/minecraft/entity/EntityRegistry.hpp"
@@ -51,5 +53,13 @@ int ChickenEntity::getDroppedItemId() const
 {
     return Item::FEATHER != nullptr ? Item::FEATHER->id : 288;
 }
+
+
+void ChickenEntity::registerClass()
+{
+    ::net::minecraft::entity::detail::registerVanillaEntity<ChickenEntity>("Chicken", 93);
+}
+
+static ::net::minecraft::registry::RegisterEntity<ChickenEntity> autoReg(93);
 
 } // namespace net::minecraft::entity::passive

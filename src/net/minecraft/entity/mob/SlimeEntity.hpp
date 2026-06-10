@@ -8,6 +8,7 @@ namespace net::minecraft::entity::mob {
 
 class SlimeEntity : public LivingEntity, public Monster {
 public:
+    static void registerClass();
     explicit SlimeEntity(World* world = nullptr);
 
     float lastStretch = 0.0f;

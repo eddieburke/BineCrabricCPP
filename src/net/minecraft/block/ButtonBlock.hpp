@@ -7,6 +7,7 @@ namespace net::minecraft::block {
 
 class ButtonBlock : public Block {
 public:
+    static void registerClass();
     using Block::canPlaceAt;
     ButtonBlock(int id, int textureId);
 

@@ -11,6 +11,7 @@ namespace net::minecraft::item {
 
 class SnowballItem : public Item {
 public:
+    static void registerClass();
     explicit SnowballItem(int rawId);
     ItemStack* use(ItemStack* stack, World* world, PlayerEntity* user) override;
 };

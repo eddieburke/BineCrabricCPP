@@ -1,3 +1,4 @@
+#include "net/minecraft/registry/Registry.hpp"
 #include "net/minecraft/item/FishingRodItem.hpp"
 
 #include "net/minecraft/entity/player/PlayerEntity.hpp"
@@ -48,15 +49,17 @@ ItemStack* FishingRodItem::use(ItemStack* stack, World* world, PlayerEntity* use
 
 namespace {
 
-void registerFishingRodItem()
+void FishingRodItem::registerClass()
 {
     static FishingRodItem FISHING_ROD(90);
     FISHING_ROD.setTexturePosition(5, 4)->setTranslationKey("fishingRod");
     Item::FISHING_ROD = &FISHING_ROD;
 }
 
-MINECRAFT_REGISTER_ITEM(registerFishingRodItem, 90);
 
+
+
+static ::net::minecraft::registry::RegisterItem<FishingRodItem> autoReg(90);
 } // namespace
 
 } // namespace net::minecraft::item

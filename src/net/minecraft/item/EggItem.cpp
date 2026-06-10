@@ -1,3 +1,4 @@
+#include "net/minecraft/registry/Registry.hpp"
 #include "net/minecraft/item/EggItem.hpp"
 
 #include "net/minecraft/entity/player/PlayerEntity.hpp"
@@ -36,15 +37,17 @@ ItemStack* EggItem::use(ItemStack* stack, World* world, PlayerEntity* user)
 
 namespace {
 
-void registerEggItem()
+void EggItem::registerClass()
 {
     static EggItem EGG(88);
     EGG.setTexturePosition(12, 0)->setTranslationKey("egg");
     Item::EGG = &EGG;
 }
 
-MINECRAFT_REGISTER_ITEM(registerEggItem, 88);
 
+
+
+static ::net::minecraft::registry::RegisterItem<EggItem> autoReg(88);
 } // namespace
 
 } // namespace net::minecraft::item

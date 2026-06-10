@@ -8,6 +8,7 @@ namespace net::minecraft::block {
 
 class LadderBlock : public Block {
 public:
+    static void registerClass();
     using Block::canPlaceAt;
     LadderBlock(int id, int textureId);
 

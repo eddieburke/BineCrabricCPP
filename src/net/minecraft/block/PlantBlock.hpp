@@ -8,6 +8,7 @@ namespace net::minecraft::block {
 
 class PlantBlock : public Block {
 public:
+    static void registerClass();
     using Block::canPlaceAt;
     PlantBlock(int id, int textureId)
         : Block(id, material::Material::PLANT)

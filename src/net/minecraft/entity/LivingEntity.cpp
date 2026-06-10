@@ -1,3 +1,5 @@
+#include "net/minecraft/registry/Registry.hpp"
+#include "net/minecraft/entity/EntityRegistrar.hpp"
 #include "net/minecraft/entity/LivingEntity.hpp"
 
 #include "net/minecraft/entity/EntityRegistry.hpp"
@@ -772,3 +774,10 @@ float LivingEntity::lerpRotation(float from, float to, float maxChange) const
 }
 
 } // namespace net::minecraft::entity
+
+void LivingEntity::registerClass()
+{
+    ::net::minecraft::entity::detail::registerVanillaEntity<LivingEntity>("Mob", 48);
+}
+
+static ::net::minecraft::registry::RegisterEntity<LivingEntity> autoReg(48);

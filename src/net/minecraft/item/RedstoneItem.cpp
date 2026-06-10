@@ -1,3 +1,4 @@
+#include "net/minecraft/registry/Registry.hpp"
 #include "net/minecraft/item/RedstoneItem.hpp"
 
 #include "net/minecraft/block/Block.hpp"
@@ -32,15 +33,17 @@ bool RedstoneItem::useOnBlock(ItemStack* stack, PlayerEntity* /*user*/, World* w
 
 namespace {
 
-void registerRedstoneItem()
+void RedstoneItem::registerClass()
 {
     static RedstoneItem REDSTONE(75);
     REDSTONE.setTexturePosition(8, 3)->setTranslationKey("redstone");
     Item::REDSTONE = &REDSTONE;
 }
 
-MINECRAFT_REGISTER_ITEM(registerRedstoneItem, 75);
 
+
+
+static ::net::minecraft::registry::RegisterItem<RedstoneItem> autoReg(75);
 } // namespace
 
 } // namespace net::minecraft::item

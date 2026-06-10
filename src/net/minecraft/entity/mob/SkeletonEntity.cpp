@@ -1,3 +1,5 @@
+#include "net/minecraft/registry/Registry.hpp"
+#include "net/minecraft/entity/EntityRegistrar.hpp"
 #include "net/minecraft/entity/mob/SkeletonEntity.hpp"
 
 #include "net/minecraft/entity/EntityRegistry.hpp"
@@ -73,5 +75,13 @@ void SkeletonEntity::attack(Entity* other, float distance)
     yaw = static_cast<float>(std::atan2(deltaZ, deltaX) * 180.0 / 3.141592653589793) - 90.0f;
     movementBlocked = true;
 }
+
+
+void SkeletonEntity::registerClass()
+{
+    ::net::minecraft::entity::detail::registerVanillaEntity<SkeletonEntity>("Skeleton", 51);
+}
+
+static ::net::minecraft::registry::RegisterEntity<SkeletonEntity> autoReg(51);
 
 } // namespace net::minecraft::entity::mob

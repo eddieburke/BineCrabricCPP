@@ -14,6 +14,7 @@ namespace net::minecraft::block {
 
 class ChestBlock : public BlockWithEntity {
 public:
+    static void registerClass();
     using Block::canPlaceAt;
     explicit ChestBlock(int id) : BlockWithEntity(id, material::Material::WOOD) { textureId = 26; }
 

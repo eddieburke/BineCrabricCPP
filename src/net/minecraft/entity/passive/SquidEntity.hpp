@@ -6,6 +6,7 @@ namespace net::minecraft::entity::passive {
 
 class SquidEntity : public WaterCreatureEntity {
 public:
+    static void registerClass();
     explicit SquidEntity(World* world = nullptr);
 
     float lastTiltAngle = 0.0f;

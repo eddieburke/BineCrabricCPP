@@ -7,6 +7,7 @@ namespace net::minecraft::block {
 
 class SandstoneBlock : public Block {
 public:
+    static void registerClass();
     explicit SandstoneBlock(int id) : Block(id, 192, material::Material::STONE) {}
 
     [[nodiscard]] int getTexture(int side) const override

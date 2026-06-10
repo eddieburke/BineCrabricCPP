@@ -11,6 +11,7 @@ namespace net::minecraft::block {
 
 class TorchBlock : public Block {
 public:
+    static void registerClass();
     using Block::canPlaceAt;
     TorchBlock(int id, int textureId);
 

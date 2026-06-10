@@ -11,6 +11,7 @@ namespace net::minecraft::entity::passive {
 
 class SheepEntity : public AnimalEntity {
 public:
+    static void registerClass();
     explicit SheepEntity(World* world = nullptr);
 
     static constexpr float COLORS[16][3] = {

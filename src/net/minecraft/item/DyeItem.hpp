@@ -10,6 +10,7 @@ namespace net::minecraft::item {
 
 class DyeItem : public Item {
 public:
+    static void registerClass();
     static constexpr std::array<const char*, 16> names {
         "black", "red", "green", "brown", "blue", "purple", "cyan", "silver",
         "gray", "pink", "lime", "yellow", "lightBlue", "magenta", "orange", "white"};

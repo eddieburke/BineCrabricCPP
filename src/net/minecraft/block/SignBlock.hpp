@@ -8,6 +8,7 @@ namespace net::minecraft::block {
 
 class SignBlock : public BlockWithEntity {
 public:
+    static void registerClass();
     SignBlock(int id, bool standing);
 
     bool standing = false;

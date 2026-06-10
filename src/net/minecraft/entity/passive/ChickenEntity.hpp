@@ -6,6 +6,7 @@ namespace net::minecraft::entity::passive {
 
 class ChickenEntity : public AnimalEntity {
 public:
+    static void registerClass();
     explicit ChickenEntity(World* world = nullptr);
 
     bool unused = false;

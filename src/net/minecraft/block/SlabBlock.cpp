@@ -1,3 +1,4 @@
+#include "net/minecraft/registry/Registry.hpp"
 #include "net/minecraft/block/BlockRegistrar.hpp"
 #include "net/minecraft/block/SlabBlock.hpp"
 
@@ -90,14 +91,16 @@ bool SlabBlock::isSideVisible(const BlockView* blockView, int x, int y, int z, i
 }
 namespace {
 
-void registerSlabBlocks()
+void SlabBlock::registerClass()
 {
     Block::DOUBLE_SLAB = (new SlabBlock(43, true))->setHardness(2.0f)->setResistance(10.0f)->setSoundGroup(&vanillaStoneSound())->setTranslationKey("stoneSlab");
     Block::SLAB = (new SlabBlock(44, false))->setHardness(2.0f)->setResistance(10.0f)->setSoundGroup(&vanillaStoneSound())->setTranslationKey("stoneSlab");
 }
 
-MINECRAFT_REGISTER_BLOCK(registerSlabBlocks, 43);
 
+
+
+static ::net::minecraft::registry::RegisterBlock<SlabBlock> autoReg(43);
 } // namespace
 } // namespace net::minecraft::block
 

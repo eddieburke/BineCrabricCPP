@@ -12,6 +12,7 @@ namespace net::minecraft::block {
 
 class PistonBlock : public Block {
 public:
+    static void registerClass();
     bool sticky = false;
 
     PistonBlock(int id, int textureId, bool stickyIn);

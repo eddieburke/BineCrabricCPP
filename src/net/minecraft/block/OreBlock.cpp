@@ -1,10 +1,11 @@
+#include "net/minecraft/registry/Registry.hpp"
 #include "net/minecraft/block/BlockRegistrar.hpp"
 #include "net/minecraft/block/OreBlock.hpp"
 
 namespace net::minecraft::block {
 namespace {
 
-void registerOreBlocks()
+void OreBlock::registerClass()
 {
     Block::GOLD_ORE = (new OreBlock(14, 32))->setHardness(3.0f)->setResistance(5.0f)->setSoundGroup(&vanillaStoneSound())->setTranslationKey("oreGold");
     Block::IRON_ORE = (new OreBlock(15, 33))->setHardness(3.0f)->setResistance(5.0f)->setSoundGroup(&vanillaStoneSound())->setTranslationKey("oreIron");
@@ -13,8 +14,10 @@ void registerOreBlocks()
     Block::DIAMOND_ORE = (new OreBlock(56, 50))->setHardness(3.0f)->setResistance(5.0f)->setSoundGroup(&vanillaStoneSound())->setTranslationKey("oreDiamond");
 }
 
-MINECRAFT_REGISTER_BLOCK(registerOreBlocks, 14);
 
+
+
+static ::net::minecraft::registry::RegisterBlock<OreBlock> autoReg(14);
 } // namespace
 } // namespace net::minecraft::block
 

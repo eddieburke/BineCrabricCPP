@@ -11,6 +11,7 @@ namespace net::minecraft::entity::passive {
 
 class PigEntity : public AnimalEntity {
 public:
+    static void registerClass();
     explicit PigEntity(World* world = nullptr);
 
     void initDataTracker() override

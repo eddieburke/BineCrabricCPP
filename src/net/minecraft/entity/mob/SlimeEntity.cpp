@@ -1,3 +1,5 @@
+#include "net/minecraft/registry/Registry.hpp"
+#include "net/minecraft/entity/EntityRegistrar.hpp"
 #include "net/minecraft/entity/mob/SlimeEntity.hpp"
 
 #include "net/minecraft/entity/EntityRegistry.hpp"
@@ -147,5 +149,13 @@ int SlimeEntity::getDroppedItemId() const
     }
     return 0;
 }
+
+
+void SlimeEntity::registerClass()
+{
+    ::net::minecraft::entity::detail::registerVanillaEntity<SlimeEntity>("Slime", 55);
+}
+
+static ::net::minecraft::registry::RegisterEntity<SlimeEntity> autoReg(55);
 
 } // namespace net::minecraft::entity::mob

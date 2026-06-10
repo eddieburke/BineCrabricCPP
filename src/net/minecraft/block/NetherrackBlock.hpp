@@ -6,6 +6,7 @@ namespace net::minecraft::block {
 
 class NetherrackBlock : public Block {
 public:
+    static void registerClass();
     NetherrackBlock(int id, int textureId) : Block(id, textureId, material::Material::STONE) {}
 };
 

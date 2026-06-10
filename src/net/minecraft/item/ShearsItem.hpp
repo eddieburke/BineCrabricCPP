@@ -7,6 +7,7 @@ namespace net::minecraft::item {
 
 class ShearsItem : public Item {
 public:
+    static void registerClass();
     explicit ShearsItem(int rawId);
     bool postMine(ItemStack* stack, int blockId, int x, int y, int z, LivingEntity* miner) override;
     [[nodiscard]] bool isSuitableFor(Block* block) const override;

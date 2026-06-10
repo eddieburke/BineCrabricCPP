@@ -6,6 +6,7 @@ namespace net::minecraft::entity::mob {
 
 class GiantEntity : public MonsterEntity {
 public:
+    static void registerClass();
     explicit GiantEntity(World* world = nullptr);
 
 protected:

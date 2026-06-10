@@ -1,3 +1,4 @@
+#include "net/minecraft/registry/Registry.hpp"
 #include "net/minecraft/item/ShearsItem.hpp"
 
 #include "net/minecraft/block/Block.hpp"
@@ -49,15 +50,17 @@ float ShearsItem::getMiningSpeedMultiplier(ItemStack* stack, Block* block) const
 
 namespace {
 
-void registerShearsItem()
+void ShearsItem::registerClass()
 {
     static ShearsItem SHEARS(103);
     SHEARS.setTexturePosition(13, 5)->setTranslationKey("shears");
     Item::SHEARS = &SHEARS;
 }
 
-MINECRAFT_REGISTER_ITEM(registerShearsItem, 103);
 
+
+
+static ::net::minecraft::registry::RegisterItem<ShearsItem> autoReg(103);
 } // namespace
 
 } // namespace net::minecraft::item

@@ -6,6 +6,7 @@ namespace net::minecraft::block {
 
 class NetherPortalBlock : public TranslucentBlock {
 public:
+    static void registerClass();
     NetherPortalBlock(int id, int textureId) : TranslucentBlock(id, textureId, material::Material::NETHER_PORTAL, false) {}
 
     [[nodiscard]] std::optional<net::minecraft::Box> getCollisionShape(

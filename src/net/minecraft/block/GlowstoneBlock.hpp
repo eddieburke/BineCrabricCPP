@@ -7,6 +7,7 @@ namespace net::minecraft::block {
 
 class GlowstoneBlock : public Block {
 public:
+    static void registerClass();
     GlowstoneBlock(int id, int textureId, Material& material) : Block(id, textureId, material) {}
 
     [[nodiscard]] int getDroppedItemCount(JavaRandom& random) const override

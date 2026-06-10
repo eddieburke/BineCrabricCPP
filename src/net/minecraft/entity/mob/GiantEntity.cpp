@@ -1,3 +1,5 @@
+#include "net/minecraft/registry/Registry.hpp"
+#include "net/minecraft/entity/EntityRegistrar.hpp"
 #include "net/minecraft/entity/mob/GiantEntity.hpp"
 
 #include "net/minecraft/entity/EntityRegistry.hpp"
@@ -24,5 +26,13 @@ float GiantEntity::getPathfindingFavor(int x, int y, int z) const
     }
     return world->getLightBrightness(x, y, z) - 0.5f;
 }
+
+
+void GiantEntity::registerClass()
+{
+    ::net::minecraft::entity::detail::registerVanillaEntity<GiantEntity>("Giant", 53);
+}
+
+static ::net::minecraft::registry::RegisterEntity<GiantEntity> autoReg(53);
 
 } // namespace net::minecraft::entity::mob

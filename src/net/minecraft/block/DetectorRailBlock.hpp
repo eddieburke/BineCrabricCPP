@@ -7,6 +7,7 @@ namespace net::minecraft::block {
 
 class DetectorRailBlock : public RailBlock {
 public:
+    static void registerClass();
     DetectorRailBlock(int id, int textureId);
 
     [[nodiscard]] int getTickRate() const override { return 20; }

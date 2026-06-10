@@ -1,3 +1,5 @@
+#include "net/minecraft/registry/Registry.hpp"
+#include "net/minecraft/entity/EntityRegistrar.hpp"
 #include "net/minecraft/entity/decoration/painting/PaintingEntity.hpp"
 
 #include "net/minecraft/entity/EntityRegistry.hpp"
@@ -226,3 +228,10 @@ void PaintingEntity::readNbt(const NbtCompound& nbt)
 }
 
 } // namespace net::minecraft::entity::decoration::painting
+
+void PaintingEntity::registerClass()
+{
+    ::net::minecraft::entity::detail::registerVanillaEntity<PaintingEntity>("Painting", 9);
+}
+
+static ::net::minecraft::registry::RegisterEntity<PaintingEntity> autoReg(9);

@@ -1,3 +1,4 @@
+#include "net/minecraft/registry/Registry.hpp"
 #include "net/minecraft/item/BowItem.hpp"
 
 #include "net/minecraft/entity/player/PlayerEntity.hpp"
@@ -35,15 +36,17 @@ ItemStack* BowItem::use(ItemStack* stack, World* world, PlayerEntity* user)
 
 namespace {
 
-void registerBowItem()
+void BowItem::registerClass()
 {
     static BowItem BOW(5);
     BOW.setTexturePosition(5, 1)->setTranslationKey("bow");
     Item::BOW = &BOW;
 }
 
-MINECRAFT_REGISTER_ITEM(registerBowItem, 5);
 
+
+
+static ::net::minecraft::registry::RegisterItem<BowItem> autoReg(5);
 } // namespace
 
 } // namespace net::minecraft::item

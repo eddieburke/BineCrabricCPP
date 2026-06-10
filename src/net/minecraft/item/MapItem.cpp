@@ -1,3 +1,4 @@
+#include "net/minecraft/registry/Registry.hpp"
 #include "net/minecraft/item/MapItem.hpp"
 
 #include "net/minecraft/block/Block.hpp"
@@ -265,15 +266,17 @@ void MapItem::onCraft(ItemStack* stack, World* world, PlayerEntity* player)
 
 namespace {
 
-void registerMapItem()
+void MapItem::registerClass()
 {
     static MapItem MAP(102);
     MAP.setTexturePosition(12, 3)->setTranslationKey("map");
     Item::MAP = &MAP;
 }
 
-MINECRAFT_REGISTER_ITEM(registerMapItem, 102);
 
+
+
+static ::net::minecraft::registry::RegisterItem<MapItem> autoReg(102);
 } // namespace
 
 } // namespace net::minecraft::item

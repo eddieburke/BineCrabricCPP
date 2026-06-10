@@ -1,3 +1,4 @@
+#include "net/minecraft/registry/Registry.hpp"
 #include "net/minecraft/block/BlockRegistrar.hpp"
 #include "net/minecraft/block/FurnaceBlock.hpp"
 
@@ -20,6 +21,8 @@ constexpr int kFurnaceId = 61;
 constexpr int kLitFurnaceId = 62;
 bool ignoreBlockRemoval = false;
 
+
+static ::net::minecraft::registry::RegisterBlock<FurnaceBlock> autoReg(61);
 } // namespace
 
 std::unique_ptr<entity::BlockEntity> FurnaceBlock::createBlockEntity()
@@ -185,13 +188,13 @@ void FurnaceBlock::randomDisplayTick(
 }
 namespace {
 
-void registerFurnaceBlocks()
+void FurnaceBlock::registerClass()
 {
     Block::FURNACE = (new FurnaceBlock(61, false))->setHardness(3.5f)->setSoundGroup(&vanillaStoneSound())->setTranslationKey("furnace")->ignoreMetaUpdates();
     Block::LIT_FURNACE = (new FurnaceBlock(62, true))->setHardness(3.5f)->setSoundGroup(&vanillaStoneSound())->setLuminance(0.875f)->setTranslationKey("furnace")->ignoreMetaUpdates();
 }
 
-MINECRAFT_REGISTER_BLOCK(registerFurnaceBlocks, 61);
+
 
 } // namespace
 } // namespace net::minecraft::block

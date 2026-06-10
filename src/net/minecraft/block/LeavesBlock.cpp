@@ -1,3 +1,4 @@
+#include "net/minecraft/registry/Registry.hpp"
 #include "net/minecraft/block/BlockRegistrar.hpp"
 #include "net/minecraft/block/LeavesBlock.hpp"
 
@@ -207,13 +208,15 @@ void LeavesBlock::afterBreak(
 }
 namespace {
 
-void registerLeavesBlock()
+void LeavesBlock::registerClass()
 {
     Block::LEAVES = (new LeavesBlock(18, 52))->setHardness(0.2f)->setOpacity(1)->setSoundGroup(&vanillaDirtSound())->setTranslationKey("leaves")->disableTrackingStatistics()->ignoreMetaUpdates();
 }
 
-MINECRAFT_REGISTER_BLOCK(registerLeavesBlock, 18);
 
+
+
+static ::net::minecraft::registry::RegisterBlock<LeavesBlock> autoReg(18);
 } // namespace
 } // namespace net::minecraft::block
 

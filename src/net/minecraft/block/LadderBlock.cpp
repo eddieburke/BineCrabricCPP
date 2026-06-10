@@ -1,3 +1,4 @@
+#include "net/minecraft/registry/Registry.hpp"
 #include "net/minecraft/block/BlockRegistrar.hpp"
 #include "net/minecraft/block/LadderBlock.hpp"
 
@@ -138,13 +139,15 @@ void LadderBlock::neighborUpdate(World* world, int x, int y, int z, int id)
 }
 namespace {
 
-void registerLadderBlock()
+void LadderBlock::registerClass()
 {
     Block::LADDER = (new LadderBlock(65, 83))->setHardness(0.4f)->setSoundGroup(&vanillaWoodSound())->setTranslationKey("ladder")->ignoreMetaUpdates();
 }
 
-MINECRAFT_REGISTER_BLOCK(registerLadderBlock, 65);
 
+
+
+static ::net::minecraft::registry::RegisterBlock<LadderBlock> autoReg(65);
 } // namespace
 } // namespace net::minecraft::block
 

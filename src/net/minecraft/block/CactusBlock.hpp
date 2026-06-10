@@ -9,6 +9,7 @@ namespace net::minecraft::block {
 
 class CactusBlock : public Block {
 public:
+    static void registerClass();
     using Block::canPlaceAt;
     CactusBlock(int id, int textureId) : Block(id, textureId, material::Material::CACTUS)
     {

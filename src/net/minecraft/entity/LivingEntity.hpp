@@ -16,6 +16,7 @@ namespace net::minecraft::entity {
 
 class LivingEntity : public Entity {
 public:
+    static void registerClass();
     explicit LivingEntity(World* world = nullptr);
 
     int maxHealth = 20;

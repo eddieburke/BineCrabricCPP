@@ -14,6 +14,7 @@ namespace net::minecraft::entity::mob {
 
 class MonsterEntity : public MobEntity, public Monster {
 public:
+    static void registerClass();
     explicit MonsterEntity(World* world = nullptr) : MobEntity(world)
     {
         health = 20;

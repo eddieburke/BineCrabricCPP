@@ -14,6 +14,7 @@ namespace net::minecraft::item {
 
 class MapItem : public NetworkSyncedItem {
 public:
+    static void registerClass();
     explicit MapItem(int rawId) : NetworkSyncedItem(rawId)
     {
         setMaxCount(1);

@@ -1,3 +1,4 @@
+#include "net/minecraft/registry/Registry.hpp"
 #include "net/minecraft/item/FoodItem.hpp"
 
 #include "net/minecraft/entity/player/PlayerEntity.hpp"
@@ -28,7 +29,7 @@ ItemStack* FoodItem::use(ItemStack* stack, World* /*world*/, PlayerEntity* user)
 
 namespace {
 
-void registerFoodItems()
+void FoodItem::registerClass()
 {
     static FoodItem APPLE(4, 4, false);
     APPLE.setTexturePosition(10, 0)->setTranslationKey("apple");
@@ -59,8 +60,10 @@ void registerFoodItems()
     Item::COOKED_FISH = &COOKED_FISH;
 }
 
-MINECRAFT_REGISTER_ITEM(registerFoodItems, 4);
 
+
+
+static ::net::minecraft::registry::RegisterItem<FoodItem> autoReg(4);
 } // namespace
 
 } // namespace net::minecraft::item

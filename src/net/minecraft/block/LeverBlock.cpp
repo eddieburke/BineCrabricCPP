@@ -1,3 +1,4 @@
+#include "net/minecraft/registry/Registry.hpp"
 #include "net/minecraft/block/BlockRegistrar.hpp"
 #include "net/minecraft/block/LeverBlock.hpp"
 
@@ -230,13 +231,15 @@ bool LeverBlock::isEmittingRedstonePowerInDirection(
 }
 namespace {
 
-void registerLeverBlock()
+void LeverBlock::registerClass()
 {
     Block::LEVER = (new LeverBlock(69, 96))->setHardness(0.5f)->setSoundGroup(&vanillaWoodSound())->setTranslationKey("lever")->ignoreMetaUpdates();
 }
 
-MINECRAFT_REGISTER_BLOCK(registerLeverBlock, 69);
 
+
+
+static ::net::minecraft::registry::RegisterBlock<LeverBlock> autoReg(69);
 } // namespace
 } // namespace net::minecraft::block
 

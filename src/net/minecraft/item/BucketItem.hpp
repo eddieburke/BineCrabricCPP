@@ -11,6 +11,7 @@ namespace net::minecraft::item {
 
 class BucketItem : public Item {
 public:
+    static void registerClass();
     BucketItem(int rawId, int fluidBlockId);
     ItemStack* use(ItemStack* stack, World* world, PlayerEntity* user) override;
 

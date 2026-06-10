@@ -11,6 +11,7 @@ namespace net::minecraft::item {
 
 class MinecartItem : public Item {
 public:
+    static void registerClass();
     MinecartItem(int rawId, int type);
     bool useOnBlock(ItemStack* stack, PlayerEntity* user, World* world, int x, int y, int z, int side) override;
 

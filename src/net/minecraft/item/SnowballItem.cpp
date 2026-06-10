@@ -1,3 +1,4 @@
+#include "net/minecraft/registry/Registry.hpp"
 #include "net/minecraft/item/SnowballItem.hpp"
 
 #include "net/minecraft/entity/player/PlayerEntity.hpp"
@@ -36,15 +37,17 @@ ItemStack* SnowballItem::use(ItemStack* stack, World* world, PlayerEntity* user)
 
 namespace {
 
-void registerSnowballItem()
+void SnowballItem::registerClass()
 {
     static SnowballItem SNOWBALL(76);
     SNOWBALL.setTexturePosition(14, 0)->setTranslationKey("snowball");
     Item::SNOWBALL = &SNOWBALL;
 }
 
-MINECRAFT_REGISTER_ITEM(registerSnowballItem, 76);
 
+
+
+static ::net::minecraft::registry::RegisterItem<SnowballItem> autoReg(76);
 } // namespace
 
 } // namespace net::minecraft::item

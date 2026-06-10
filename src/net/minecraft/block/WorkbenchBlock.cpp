@@ -1,3 +1,4 @@
+#include "net/minecraft/registry/Registry.hpp"
 #include "net/minecraft/block/BlockRegistrar.hpp"
 #include "net/minecraft/block/WorkbenchBlock.hpp"
 
@@ -29,13 +30,15 @@ bool WorkbenchBlock::onUse(World* world, int x, int y, int z, net::minecraft::Pl
 }
 namespace {
 
-void registerWorkbenchBlock()
+void WorkbenchBlock::registerClass()
 {
     Block::CRAFTING_TABLE = (new WorkbenchBlock(58))->setHardness(2.5f)->setSoundGroup(&vanillaWoodSound())->setTranslationKey("workbench");
 }
 
-MINECRAFT_REGISTER_BLOCK(registerWorkbenchBlock, 58);
 
+
+
+static ::net::minecraft::registry::RegisterBlock<WorkbenchBlock> autoReg(58);
 } // namespace
 } // namespace net::minecraft::block
 

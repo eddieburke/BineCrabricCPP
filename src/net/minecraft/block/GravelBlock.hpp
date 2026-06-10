@@ -7,6 +7,7 @@ namespace net::minecraft::block {
 
 class GravelBlock : public FallingBlock {
 public:
+    static void registerClass();
     GravelBlock(int id, int textureId) : FallingBlock(id, textureId, material::Material::SAND) {}
 
     [[nodiscard]] int getDroppedItemId(int /*blockMeta*/, JavaRandom& random) const override

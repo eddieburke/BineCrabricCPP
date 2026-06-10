@@ -7,6 +7,7 @@ namespace net::minecraft::block {
 
 class SoulSandBlock : public Block {
 public:
+    static void registerClass();
     SoulSandBlock(int id, int textureId) : Block(id, textureId, material::Material::SAND) {}
 
     [[nodiscard]] std::optional<net::minecraft::Box> getCollisionShape(World* /*world*/, int x, int y, int z) const override

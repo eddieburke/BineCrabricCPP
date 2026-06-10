@@ -1,3 +1,4 @@
+#include "net/minecraft/registry/Registry.hpp"
 #include "net/minecraft/block/BlockRegistrar.hpp"
 #include "net/minecraft/block/ButtonBlock.hpp"
 #include "net/minecraft/block/Block.hpp"
@@ -256,13 +257,15 @@ bool ButtonBlock::isEmittingRedstonePowerInDirection(
 }
 namespace {
 
-void registerButtonBlock()
+void ButtonBlock::registerClass()
 {
     Block::BUTTON = (new ButtonBlock(77, Block::BLOCKS[1]->textureId))->setHardness(0.5f)->setSoundGroup(&vanillaStoneSound())->setTranslationKey("button")->ignoreMetaUpdates();
 }
 
-MINECRAFT_REGISTER_BLOCK(registerButtonBlock, 77);
 
+
+
+static ::net::minecraft::registry::RegisterBlock<ButtonBlock> autoReg(77);
 } // namespace
 } // namespace net::minecraft::block
 

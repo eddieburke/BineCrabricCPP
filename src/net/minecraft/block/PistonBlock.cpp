@@ -1,3 +1,4 @@
+#include "net/minecraft/registry/Registry.hpp"
 #include "net/minecraft/block/BlockRegistrar.hpp"
 #include "net/minecraft/block/PistonBlock.hpp"
 
@@ -381,14 +382,16 @@ void PistonBlock::addIntersectingBoundingBox(
 }
 namespace {
 
-void registerPistonBlocks()
+void PistonBlock::registerClass()
 {
     Block::STICKY_PISTON = (new PistonBlock(29, 106, true))->setHardness(0.5f)->setSoundGroup(&vanillaStoneSound())->setTranslationKey("pistonStickyBase")->ignoreMetaUpdates();
     Block::PISTON = (new PistonBlock(33, 107, false))->setHardness(0.5f)->setSoundGroup(&vanillaStoneSound())->setTranslationKey("pistonBase")->ignoreMetaUpdates();
 }
 
-MINECRAFT_REGISTER_BLOCK(registerPistonBlocks, 29);
 
+
+
+static ::net::minecraft::registry::RegisterBlock<PistonBlock> autoReg(29);
 } // namespace
 } // namespace net::minecraft::block
 

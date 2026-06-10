@@ -8,6 +8,7 @@ namespace net::minecraft::block {
 
 class TrapdoorBlock : public Block {
 public:
+    static void registerClass();
     using Block::canPlaceAt;
     TrapdoorBlock(int id, Material& material);
 
