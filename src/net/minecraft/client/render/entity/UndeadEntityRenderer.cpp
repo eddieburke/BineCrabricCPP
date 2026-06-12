@@ -70,3 +70,34 @@ void UndeadEntityRenderer::renderMore(const net::minecraft::LivingEntity& entity
 }
 
 } // namespace net::minecraft::client::render::entity
+
+#include "net/minecraft/client/entity/EntityClientRendererRegistration.hpp"
+#include "net/minecraft/client/render/entity/model/SkeletonEntityModel.hpp"
+#include "net/minecraft/client/render/entity/model/ZombieEntityModel.hpp"
+#include "net/minecraft/entity/mob/SkeletonEntity.hpp"
+#include "net/minecraft/entity/mob/ZombieEntity.hpp"
+
+namespace net::minecraft::entity::mob {
+
+std::unique_ptr<::net::minecraft::client::render::entity::EntityRenderer> SkeletonEntity::ClientRenderer::create()
+{
+    using namespace ::net::minecraft::client::render::entity;
+    using namespace ::net::minecraft::client::render::entity::model;
+    return std::make_unique<UndeadEntityRenderer>(new SkeletonEntityModel(), 0.5f);
+}
+
+std::unique_ptr<::net::minecraft::client::render::entity::EntityRenderer> ZombieEntity::ClientRenderer::create()
+{
+    using namespace ::net::minecraft::client::render::entity;
+    using namespace ::net::minecraft::client::render::entity::model;
+    return std::make_unique<UndeadEntityRenderer>(new ZombieEntityModel(), 0.5f);
+}
+
+} // namespace net::minecraft::entity::mob
+
+namespace {
+
+static ::net::minecraft::registry::RegisterEntityRenderer<::net::minecraft::entity::mob::SkeletonEntity> skeletonRendererReg;
+static ::net::minecraft::registry::RegisterEntityRenderer<::net::minecraft::entity::mob::ZombieEntity> zombieRendererReg;
+
+} // namespace

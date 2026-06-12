@@ -175,7 +175,7 @@ void tickThrownProjectile(Entity& projectile, LivingEntity* owner, int& inAirTim
             for (int i = 0; i < chickenCount; ++i) {
                 auto chicken = std::make_unique<net::minecraft::entity::passive::ChickenEntity>(projectile.world);
                 chicken->setPositionAndAnglesKeepPrevAngles(projectile.x, projectile.y, projectile.z, projectile.yaw, 0.0f);
-                if (projectile.world->spawnEntity(chicken.get())) {
+                if (projectile.world->spawnMob(chicken.get())) {
                     chicken.release();
                 }
             }

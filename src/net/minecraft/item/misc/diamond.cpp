@@ -1,7 +1,7 @@
 #include "net/minecraft/item/misc/diamond.hpp"
+#include "net/minecraft/registry/Registry.hpp"
 
 #include "net/minecraft/item/Item.hpp"
-#include "net/minecraft/item/ItemRegistrar.hpp"
 #include "net/minecraft/recipe/CraftingRecipeManager.hpp"
 
 #include "net/minecraft/item/misc/stick.hpp"
@@ -10,7 +10,7 @@
 
 namespace net::minecraft::item {
 
-DiamondItem::DiamondItem() : Item(8, RegistrationMode::Deferred) {}
+DiamondItem::DiamondItem() : Item(kRawId, RegistrationMode::Deferred) {}
 
 void DiamondItem::registerClass()
 {
@@ -35,5 +35,5 @@ void DiamondItem::registerRecipes(recipe::CraftingRecipeManager& recipeManager)
         {std::string("#"), '#', Block::DIAMOND_BLOCK});
 }
 
-static registry::RegisterItem<DiamondItem> s_itemReg(8);
+static registry::RegisterItem<DiamondItem> s_itemReg;
 } // namespace net::minecraft::item

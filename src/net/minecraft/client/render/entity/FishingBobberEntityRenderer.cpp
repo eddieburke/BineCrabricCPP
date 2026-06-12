@@ -60,7 +60,7 @@ void FishingBobberEntityRenderer::render(const net::minecraft::Entity& entity, d
     const float swing = owner.getHandSwingProgress(tickDelta);
     const float swingBob = MathHelper::sin(MathHelper::sqrt(swing) * kPiF);
 
-    util::math::ClientVec3d& vec = util::math::ClientVec3d::createCached(-0.5, 0.03, 0.8);
+    util::math::ClientVec3d vec {-0.5, 0.03, 0.8};
     vec.rotateX(-(owner.prevPitch + (owner.pitch - owner.prevPitch) * tickDelta) * kPiF / 180.0f);
     vec.rotateY(-(owner.prevYaw + (owner.yaw - owner.prevYaw) * tickDelta) * kPiF / 180.0f);
     vec.rotateY(swingBob * 0.5f);
@@ -102,3 +102,21 @@ void FishingBobberEntityRenderer::render(const net::minecraft::Entity& entity, d
 }
 
 } // namespace net::minecraft::client::render::entity
+
+#include "net/minecraft/client/entity/EntityClientRendererRegistration.hpp"
+#include "net/minecraft/entity/projectile/FishingBobberEntity.hpp"
+
+namespace net::minecraft::entity::projectile {
+
+std::unique_ptr<::net::minecraft::client::render::entity::EntityRenderer> FishingBobberEntity::ClientRenderer::create()
+{
+    return std::make_unique<::net::minecraft::client::render::entity::FishingBobberEntityRenderer>();
+}
+
+} // namespace net::minecraft::entity::projectile
+
+namespace {
+
+static ::net::minecraft::registry::RegisterEntityRenderer<net::minecraft::entity::projectile::FishingBobberEntity> autoRendererReg;
+
+} // namespace

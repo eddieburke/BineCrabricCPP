@@ -1,5 +1,5 @@
 #include "net/minecraft/registry/Registry.hpp"
-#include "net/minecraft/block/BlockRegistrar.hpp"
+#include "net/minecraft/block/VanillaBlockSounds.hpp"
 #include "net/minecraft/block/WorkbenchBlock.hpp"
 
 #include "net/minecraft/block/Block.hpp"
@@ -32,7 +32,7 @@ bool WorkbenchBlock::onUse(World* world, int x, int y, int z, net::minecraft::Pl
 }
 void WorkbenchBlock::registerClass()
 {
-    Block::CRAFTING_TABLE = (new WorkbenchBlock(58))->setHardness(2.5f)->setSoundGroup(&vanillaWoodSound())->setTranslationKey("workbench");
+    Block::CRAFTING_TABLE = (new WorkbenchBlock(kBlockId))->setHardness(2.5f)->setSoundGroup(&vanillaWoodSound())->setTranslationKey("workbench");
 }
 void WorkbenchBlock::registerRecipes(recipe::CraftingRecipeManager& recipeManager)
 {
@@ -44,6 +44,6 @@ void WorkbenchBlock::registerRecipes(recipe::CraftingRecipeManager& recipeManage
 
 
 
-namespace {static ::net::minecraft::registry::RegisterBlock<WorkbenchBlock> autoReg(58);} // namespace
+namespace {static ::net::minecraft::registry::RegisterBlock<WorkbenchBlock> autoReg;} // namespace
 } // namespace net::minecraft::block
 

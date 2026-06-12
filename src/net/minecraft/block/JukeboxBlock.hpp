@@ -7,7 +7,10 @@ namespace net::minecraft::recipe { class CraftingRecipeManager; }
 namespace net::minecraft::block {
 
 class JukeboxBlock : public BlockWithEntity {
-    static void registerRecipes(recipe::CraftingRecipeManager& recipeManager);
+public:
+    static constexpr bool kRegisters = true;
+    static constexpr int kBlockId = 84;
+static void registerRecipes(recipe::CraftingRecipeManager& recipeManager);
 public:
     static void registerClass();
     JukeboxBlock(int id, int textureId);

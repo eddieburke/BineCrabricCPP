@@ -31,3 +31,21 @@ void GhastEntityRenderer::applyScale(const net::minecraft::LivingEntity& entity,
 }
 
 } // namespace net::minecraft::client::render::entity
+
+#include "net/minecraft/client/entity/EntityClientRendererRegistration.hpp"
+#include "net/minecraft/entity/mob/GhastEntity.hpp"
+
+namespace net::minecraft::entity::mob {
+
+std::unique_ptr<::net::minecraft::client::render::entity::EntityRenderer> GhastEntity::ClientRenderer::create()
+{
+    return std::make_unique<::net::minecraft::client::render::entity::GhastEntityRenderer>();
+}
+
+} // namespace net::minecraft::entity::mob
+
+namespace {
+
+static ::net::minecraft::registry::RegisterEntityRenderer<net::minecraft::entity::mob::GhastEntity> autoRendererReg;
+
+} // namespace

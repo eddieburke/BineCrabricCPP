@@ -58,6 +58,7 @@ void DisplayManager::setupAndCreateDisplay(Minecraft& client)
     }
     ensureGlContext();
     gl::GlExtensions::ensureLoaded();
+    gl::GlExtensions::setSwapInterval(0);
     const win32::DisplayMode actualMode = win32::Window::getDisplayMode();
     client.displayWidth = actualMode.getWidth();
     client.displayHeight = actualMode.getHeight();

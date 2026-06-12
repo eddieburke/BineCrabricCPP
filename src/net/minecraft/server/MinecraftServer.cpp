@@ -38,8 +38,7 @@ void MinecraftServer::tick()
             continue;
         }
         world->tick();
-        while (world->doLightingUpdates()) {
-        }
+        world->doLightingUpdates();
         world->tickEntities();
     }
     playerManager.updateAllChunks();

@@ -1,7 +1,7 @@
 #include "net/minecraft/item/tool/diamond_shovel.hpp"
+#include "net/minecraft/registry/Registry.hpp"
 
 #include "net/minecraft/item/Item.hpp"
-#include "net/minecraft/item/ItemRegistrar.hpp"
 #include "net/minecraft/recipe/CraftingRecipeManager.hpp"
 
 #include "net/minecraft/item/misc/stick.hpp"
@@ -12,7 +12,7 @@
 
 namespace net::minecraft::item {
 
-DiamondShovelItem::DiamondShovelItem() : ShovelItem(21, ToolMaterial::Diamond) {}
+DiamondShovelItem::DiamondShovelItem() : ShovelItem(kRawId, ToolMaterial::Diamond) {}
 
 void DiamondShovelItem::registerClass()
 {
@@ -29,5 +29,5 @@ void DiamondShovelItem::registerRecipes(recipe::CraftingRecipeManager& recipeMan
         {std::string("X"), std::string("#"), std::string("#"), '#', Item::byRawId(24), 'X', Item::byRawId(8)});
 }
 
-static registry::RegisterItem<DiamondShovelItem> s_itemReg(21);
+static registry::RegisterItem<DiamondShovelItem> s_itemReg;
 } // namespace net::minecraft::item

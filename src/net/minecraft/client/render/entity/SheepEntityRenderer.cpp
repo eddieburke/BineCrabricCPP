@@ -27,3 +27,25 @@ bool SheepEntityRenderer::bindTexture(const net::minecraft::LivingEntity& entity
 }
 
 } // namespace net::minecraft::client::render::entity
+
+#include "net/minecraft/client/entity/EntityClientRendererRegistration.hpp"
+#include "net/minecraft/client/render/entity/model/SheepEntityModel.hpp"
+#include "net/minecraft/client/render/entity/model/SheepWoolEntityModel.hpp"
+#include "net/minecraft/entity/passive/SheepEntity.hpp"
+
+namespace net::minecraft::entity::passive {
+
+std::unique_ptr<::net::minecraft::client::render::entity::EntityRenderer> SheepEntity::ClientRenderer::create()
+{
+    using namespace ::net::minecraft::client::render::entity;
+    using namespace ::net::minecraft::client::render::entity::model;
+    return std::make_unique<SheepEntityRenderer>(new SheepEntityModel(), new SheepWoolEntityModel(), 0.7f);
+}
+
+} // namespace net::minecraft::entity::passive
+
+namespace {
+
+static ::net::minecraft::registry::RegisterEntityRenderer<net::minecraft::entity::passive::SheepEntity> autoRendererReg;
+
+} // namespace

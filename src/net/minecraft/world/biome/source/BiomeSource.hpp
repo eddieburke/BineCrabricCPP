@@ -45,6 +45,15 @@ public:
     [[nodiscard]] const std::vector<double>& temperatureMap() const noexcept { return temperatureMap_; }
     [[nodiscard]] const std::vector<double>& downfallMap() const noexcept { return downfallMap_; }
 
+    // Single-point climate query with no member mutation: const and thread-safe,
+    // so World no longer needs a mutable scratch vector per temperature/downfall
+    // lookup. Byte-identical to getBiomesInArea's per-cell result.
+    struct ClimateSample {
+        double temperature = 0.5;
+        double downfall = 0.5;
+    };
+    [[nodiscard]] ClimateSample sampleClimate(int x, int z) const;
+
     [[nodiscard]] virtual BiomeInfo getBiome(int x, int z);
 
     [[nodiscard]] virtual double getTemperature(int x, int z)

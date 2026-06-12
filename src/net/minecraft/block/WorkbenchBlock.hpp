@@ -6,7 +6,10 @@ namespace net::minecraft::recipe { class CraftingRecipeManager; }
 namespace net::minecraft::block {
 
 class WorkbenchBlock : public Block {
-    static void registerRecipes(recipe::CraftingRecipeManager& recipeManager);
+public:
+    static constexpr bool kRegisters = true;
+    static constexpr int kBlockId = 58;
+static void registerRecipes(recipe::CraftingRecipeManager& recipeManager);
 public:
     static void registerClass();
     explicit WorkbenchBlock(int id) : Block(id, 59, material::Material::WOOD) {}

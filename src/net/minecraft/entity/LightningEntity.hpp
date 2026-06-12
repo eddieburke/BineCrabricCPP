@@ -1,11 +1,16 @@
 #pragma once
 
 #include "net/minecraft/entity/AbstractLightningEntity.hpp"
+#include "net/minecraft/entity/EntityClientRendererDecl.hpp"
 
 namespace net::minecraft::entity {
 
 class LightningEntity : public AbstractLightningEntity {
 public:
+
+    struct ClientRenderer {
+        static std::unique_ptr<::net::minecraft::client::render::entity::EntityRenderer> create();
+    };
     explicit LightningEntity(World* world = nullptr);
     LightningEntity(World* world, double x, double y, double z);
 

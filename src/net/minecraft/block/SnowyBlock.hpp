@@ -8,7 +8,10 @@ namespace net::minecraft::block {
 
 class SnowyBlock : public Block {
 public:
-    static void registerClass();
+    static constexpr bool kRegisters = true;
+    static constexpr int kBlockId = 78;
+
+static void registerClass();
     SnowyBlock(int id, int textureId);
 
     [[nodiscard]] bool isOpaque() const override { return false; }

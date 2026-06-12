@@ -1,5 +1,5 @@
 #include "net/minecraft/registry/Registry.hpp"
-#include "net/minecraft/block/BlockRegistrar.hpp"
+#include "net/minecraft/block/VanillaBlockSounds.hpp"
 #include "net/minecraft/block/LeavesBlock.hpp"
 
 #include "net/minecraft/block/Block.hpp"
@@ -210,7 +210,7 @@ void LeavesBlock::afterBreak(
 }
 void LeavesBlock::registerClass()
 {
-    Block::LEAVES = (new LeavesBlock(18, 52))->setHardness(0.2f)->setOpacity(1)->setSoundGroup(&vanillaDirtSound())->setTranslationKey("leaves")->disableTrackingStatistics()->ignoreMetaUpdates();
+    Block::LEAVES = (new LeavesBlock(kBlockId, 52))->setHardness(0.2f)->setOpacity(1)->setSoundGroup(&vanillaDirtSound())->setTranslationKey("leaves")->disableTrackingStatistics()->ignoreMetaUpdates();
 }
 
 
@@ -221,6 +221,6 @@ void LeavesBlock::registerBlockItems()
     (new item::LeavesBlockItem(18 - 256))->setTranslationKey("leaves");
 }
 
-namespace {static ::net::minecraft::registry::RegisterBlock<LeavesBlock> autoReg(18);} // namespace
+namespace {static ::net::minecraft::registry::RegisterBlock<LeavesBlock> autoReg;} // namespace
 } // namespace net::minecraft::block
 

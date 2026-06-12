@@ -4,9 +4,9 @@
 
 namespace net::minecraft::block {
 
+// Registered in SimpleBlocks.cpp.
 class DirtBlock : public Block {
 public:
-    static void registerClass();
     DirtBlock(int id, int textureId) : Block(id, textureId, material::Material::SOIL) {}
 };
 

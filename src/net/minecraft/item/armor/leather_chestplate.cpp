@@ -1,7 +1,7 @@
 #include "net/minecraft/item/armor/leather_chestplate.hpp"
+#include "net/minecraft/registry/Registry.hpp"
 
 #include "net/minecraft/item/Item.hpp"
-#include "net/minecraft/item/ItemRegistrar.hpp"
 #include "net/minecraft/recipe/CraftingRecipeManager.hpp"
 
 #include <string>
@@ -15,7 +15,7 @@
 
 namespace net::minecraft::item {
 
-LeatherChestplateItem::LeatherChestplateItem() : ArmorItem(43, 0, 0, 1) {}
+LeatherChestplateItem::LeatherChestplateItem() : ArmorItem(kRawId, 0, 0, 1) {}
 
 void LeatherChestplateItem::registerClass()
 {
@@ -32,5 +32,5 @@ void LeatherChestplateItem::registerRecipes(recipe::CraftingRecipeManager& recip
         {std::string("X X"), std::string("XXX"), std::string("XXX"), 'X', Item::byRawId(78)});
 }
 
-static registry::RegisterItem<LeatherChestplateItem> s_itemReg(43);
+static registry::RegisterItem<LeatherChestplateItem> s_itemReg;
 } // namespace net::minecraft::item

@@ -1,5 +1,5 @@
 #include "net/minecraft/registry/Registry.hpp"
-#include "net/minecraft/block/BlockRegistrar.hpp"
+#include "net/minecraft/block/VanillaBlockSounds.hpp"
 #include "net/minecraft/block/RailBlock.hpp"
 
 #include "net/minecraft/world/World.hpp"
@@ -582,7 +582,7 @@ std::optional<net::minecraft::HitResult> RailBlock::raycast(
 }
 void RailBlock::registerClass()
 {
-    Block::POWERED_RAIL = (new RailBlock(27, 179, true))->setHardness(0.7f)->setSoundGroup(&vanillaMetalSound())->setTranslationKey("goldenRail")->ignoreMetaUpdates();
+    Block::POWERED_RAIL = (new RailBlock(kBlockId, 179, true))->setHardness(0.7f)->setSoundGroup(&vanillaMetalSound())->setTranslationKey("goldenRail")->ignoreMetaUpdates();
     Block::RAIL = (new RailBlock(66, 128, false))->setHardness(0.7f)->setSoundGroup(&vanillaMetalSound())->setTranslationKey("rail")->ignoreMetaUpdates();
 }
 void RailBlock::registerRecipes(recipe::CraftingRecipeManager& recipeManager)
@@ -596,7 +596,7 @@ void RailBlock::registerRecipes(recipe::CraftingRecipeManager& recipeManager)
 
 namespace {
 
-static ::net::minecraft::registry::RegisterBlock<RailBlock> autoReg(27);
+static ::net::minecraft::registry::RegisterBlock<RailBlock> autoReg;
 } // namespace
 } // namespace net::minecraft::block
 

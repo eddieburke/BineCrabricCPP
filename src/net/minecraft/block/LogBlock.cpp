@@ -1,5 +1,5 @@
 #include "net/minecraft/registry/Registry.hpp"
-#include "net/minecraft/block/BlockRegistrar.hpp"
+#include "net/minecraft/block/VanillaBlockSounds.hpp"
 #include "net/minecraft/block/LogBlock.hpp"
 
 #include "net/minecraft/block/Block.hpp"
@@ -62,7 +62,7 @@ void LogBlock::onBreak(World* world, int x, int y, int z)
 }
 void LogBlock::registerClass()
 {
-    Block::LOG = (new LogBlock(17))->setHardness(2.0f)->setSoundGroup(&vanillaWoodSound())->setTranslationKey("log")->ignoreMetaUpdates();
+    Block::LOG = (new LogBlock(kBlockId))->setHardness(2.0f)->setSoundGroup(&vanillaWoodSound())->setTranslationKey("log")->ignoreMetaUpdates();
 }
 
 void LogBlock::registerBlockItems()
@@ -73,6 +73,6 @@ void LogBlock::registerBlockItems()
 
 
 
-namespace {static ::net::minecraft::registry::RegisterBlock<LogBlock> autoReg(17);} // namespace
+namespace {static ::net::minecraft::registry::RegisterBlock<LogBlock> autoReg;} // namespace
 } // namespace net::minecraft::block
 

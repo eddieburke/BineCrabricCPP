@@ -6,6 +6,7 @@
 #include "net/minecraft/util/math/Types.hpp"
 
 #include <array>
+#include <memory>
 #include <vector>
 
 namespace net::minecraft::client::render::chunk {
@@ -45,7 +46,11 @@ struct ChunkMeshJob {
     // Set when the worker hit an exception; the main thread reschedules.
     bool failed = false;
 
-    explicit ChunkMeshJob(ChunkBuilder& owner);
+    [[nodiscard]] static std::shared_ptr<ChunkMeshJob> capture(
+        ChunkBuilder& owner, client::option::ResolvedRenderOptions options, bool fancyGraphics);
+
+private:
+    explicit ChunkMeshJob(ChunkBuilder& owner, client::option::ResolvedRenderOptions options, bool fancyGraphics);
 };
 
 } // namespace net::minecraft::client::render::chunk

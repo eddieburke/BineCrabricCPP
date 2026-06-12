@@ -1,6 +1,7 @@
 #pragma once
 
 #include "net/minecraft/entity/Entity.hpp"
+#include "net/minecraft/entity/EntityClientRendererDecl.hpp"
 
 namespace net::minecraft::entity::player {
 class PlayerEntity;
@@ -10,7 +11,15 @@ namespace net::minecraft::entity::vehicle {
 
 class BoatEntity : public Entity {
 public:
-    static void registerClass();
+    static constexpr bool kRegisters = true;
+    static constexpr int kEntityId = 41;
+
+    static constexpr const char* kEntityName = "Boat";
+
+
+    struct ClientRenderer {
+        static std::unique_ptr<::net::minecraft::client::render::entity::EntityRenderer> create();
+    };
     explicit BoatEntity(World* world = nullptr);
     BoatEntity(World* world, double x, double y, double z);
 

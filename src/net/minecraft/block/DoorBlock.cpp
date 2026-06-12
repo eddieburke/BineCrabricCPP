@@ -1,5 +1,5 @@
 #include "net/minecraft/registry/Registry.hpp"
-#include "net/minecraft/block/BlockRegistrar.hpp"
+#include "net/minecraft/block/VanillaBlockSounds.hpp"
 #include "net/minecraft/block/DoorBlock.hpp"
 #include "net/minecraft/block/material/Material.hpp"
 
@@ -215,12 +215,12 @@ void DoorBlock::registerClass()
 {
     namespace mat = material;
     Block::DOOR = (new DoorBlock(64, mat::Material::WOOD))->setHardness(3.0f)->setSoundGroup(&vanillaWoodSound())->setTranslationKey("doorWood")->disableTrackingStatistics()->ignoreMetaUpdates();
-    Block::IRON_DOOR = (new DoorBlock(71, mat::Material::METAL))->setHardness(5.0f)->setSoundGroup(&vanillaMetalSound())->setTranslationKey("doorIron")->disableTrackingStatistics()->ignoreMetaUpdates();
+    Block::IRON_DOOR = (new DoorBlock(kBlockId, mat::Material::METAL))->setHardness(5.0f)->setSoundGroup(&vanillaMetalSound())->setTranslationKey("doorIron")->disableTrackingStatistics()->ignoreMetaUpdates();
 }
 
 
 
 
-namespace {static ::net::minecraft::registry::RegisterBlock<DoorBlock> autoReg(71);} // namespace
+namespace {static ::net::minecraft::registry::RegisterBlock<DoorBlock> autoReg;} // namespace
 } // namespace net::minecraft::block
 

@@ -1,7 +1,7 @@
 #include "net/minecraft/item/tool/diamond_pickaxe.hpp"
+#include "net/minecraft/registry/Registry.hpp"
 
 #include "net/minecraft/item/Item.hpp"
-#include "net/minecraft/item/ItemRegistrar.hpp"
 #include "net/minecraft/recipe/CraftingRecipeManager.hpp"
 
 #include "net/minecraft/item/misc/stick.hpp"
@@ -12,7 +12,7 @@
 
 namespace net::minecraft::item {
 
-DiamondPickaxeItem::DiamondPickaxeItem() : PickaxeItem(22, ToolMaterial::Diamond) {}
+DiamondPickaxeItem::DiamondPickaxeItem() : PickaxeItem(kRawId, ToolMaterial::Diamond) {}
 
 void DiamondPickaxeItem::registerClass()
 {
@@ -29,5 +29,5 @@ void DiamondPickaxeItem::registerRecipes(recipe::CraftingRecipeManager& recipeMa
         {std::string("XXX"), std::string(" # "), std::string(" # "), '#', Item::byRawId(24), 'X', Item::byRawId(8)});
 }
 
-static registry::RegisterItem<DiamondPickaxeItem> s_itemReg(22);
+static registry::RegisterItem<DiamondPickaxeItem> s_itemReg;
 } // namespace net::minecraft::item

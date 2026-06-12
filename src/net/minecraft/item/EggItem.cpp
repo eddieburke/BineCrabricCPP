@@ -4,7 +4,6 @@
 #include "net/minecraft/entity/player/PlayerEntity.hpp"
 #include "net/minecraft/entity/projectile/thrown/EggEntity.hpp"
 #include "net/minecraft/item/Item.hpp"
-#include "net/minecraft/item/ItemRegistrar.hpp"
 #include "net/minecraft/item/ItemStack.hpp"
 #include "net/minecraft/world/World.hpp"
 
@@ -44,6 +43,6 @@ void EggItem::registerClass()
 
 
 
-namespace {static ::net::minecraft::registry::RegisterItem<EggItem> autoReg(88); } // namespace
+namespace {static ::net::minecraft::registry::RegisterItem<EggItem> autoReg; } // namespace
 
 } // namespace net::minecraft::item

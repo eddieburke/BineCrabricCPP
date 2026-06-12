@@ -19,11 +19,19 @@ namespace net::minecraft::client::render::chunk {
 // thread at job-enqueue time. Worker threads tessellate against this view, so
 // they never read live Chunk arrays the tick/lighting code is mutating.
 //
-// Coverage is whole chunks (the 3x3 neighborhood of a 16^3 section), matching
-// the slack Java's ChunkCache gave the AO/neighbor-light sampling at borders.
+// Coverage is whole chunks in X/Z (the 3x3 neighborhood of a 16^3 section),
+// plus the Y band that AO/neighbor-light sampling can touch. That keeps the
+// worker detached from live chunk arrays without copying all 128 vertical
+// levels for every 16-high section.
 class RegionSnapshot final : public net::minecraft::BlockView {
 public:
-    RegionSnapshot(net::minecraft::World& world, int minBlockX, int minBlockZ, int maxBlockX, int maxBlockZ);
+    // True when every world chunk the snapshot would copy is already resident.
+    // Call before constructing a snapshot so mesh capture never triggers sync gen.
+    [[nodiscard]] static bool regionReady(net::minecraft::World& world, int minBlockX, int minBlockY, int minBlockZ,
+        int maxBlockX, int maxBlockY, int maxBlockZ);
+
+    RegionSnapshot(net::minecraft::World& world, int minBlockX, int minBlockY, int minBlockZ, int maxBlockX,
+        int maxBlockY, int maxBlockZ);
 
     // --- BlockView ---
     [[nodiscard]] int getBlockId(int x, int y, int z) const override;
@@ -58,9 +66,9 @@ public:
 private:
     struct ChunkCopy {
         std::vector<std::uint8_t> blocks;
-        std::vector<std::uint8_t> metaBytes;
-        std::vector<std::uint8_t> skyBytes;
-        std::vector<std::uint8_t> blockLightBytes;
+        std::vector<std::uint8_t> meta;
+        std::vector<std::uint8_t> skyLight;
+        std::vector<std::uint8_t> blockLight;
         bool present = false;
     };
 
@@ -75,17 +83,28 @@ private:
         return copy.present ? &copy : nullptr;
     }
 
-    [[nodiscard]] static constexpr std::size_t blockIndex(int localX, int y, int localZ)
+    [[nodiscard]] bool containsY(int y) const noexcept
+    {
+        return y >= minY_ && y < minY_ + ySpan_;
+    }
+
+    [[nodiscard]] std::size_t snapshotIndex(int localX, int y, int localZ) const noexcept
+    {
+        return static_cast<std::size_t>(((localX << 4) | localZ) * ySpan_ + (y - minY_));
+    }
+
+    [[nodiscard]] static constexpr std::size_t fullBlockIndex(int localX, int y, int localZ)
     {
         return static_cast<std::size_t>((localX << 11) | (localZ << 7) | y);
     }
 
     [[nodiscard]] static int nibble(const std::vector<std::uint8_t>& bytes, std::size_t index)
     {
-        if (bytes.empty()) {
+        const std::size_t byteIndex = index >> 1U;
+        if (byteIndex >= bytes.size()) {
             return 0;
         }
-        const std::uint8_t byte = bytes[index >> 1U];
+        const std::uint8_t byte = bytes[byteIndex];
         return (index & 1U) != 0 ? (byte >> 4U) & 0xF : byte & 0xF;
     }
 
@@ -93,6 +112,8 @@ private:
     int chunkZ_ = 0;
     int chunkWidth_ = 0;
     int chunkDepth_ = 0;
+    int minY_ = 0;
+    int ySpan_ = 0;
     std::vector<ChunkCopy> chunks_;
     int ambientDarkness_ = 0;
     std::array<float, 16> lightLevelToLuminance_ {};

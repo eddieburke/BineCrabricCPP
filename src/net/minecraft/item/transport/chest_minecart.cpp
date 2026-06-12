@@ -1,7 +1,7 @@
 #include "net/minecraft/item/transport/chest_minecart.hpp"
+#include "net/minecraft/registry/Registry.hpp"
 
 #include "net/minecraft/item/Item.hpp"
-#include "net/minecraft/item/ItemRegistrar.hpp"
 #include "net/minecraft/recipe/CraftingRecipeManager.hpp"
 
 #include "net/minecraft/item/misc/stick.hpp"
@@ -9,7 +9,7 @@
 
 namespace net::minecraft::item {
 
-ChestMinecartItem::ChestMinecartItem() : MinecartItem(86, 1) {}
+ChestMinecartItem::ChestMinecartItem() : MinecartItem(kRawId, 1) {}
 
 void ChestMinecartItem::registerClass()
 {
@@ -26,5 +26,5 @@ void ChestMinecartItem::registerRecipes(recipe::CraftingRecipeManager& recipeMan
         {std::string("A"), std::string("B"), 'A', Block::CHEST, 'B', Item::byRawId(72)});
 }
 
-static registry::RegisterItem<ChestMinecartItem> s_itemReg(86);
+static registry::RegisterItem<ChestMinecartItem> s_itemReg;
 } // namespace net::minecraft::item

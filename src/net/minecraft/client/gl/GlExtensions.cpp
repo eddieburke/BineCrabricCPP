@@ -29,6 +29,7 @@ using BindRenderbufferFn = void(APIENTRY*)(GLenum, GLuint);
 using RenderbufferStorageFn = void(APIENTRY*)(GLenum, GLenum, GLsizei, GLsizei);
 using FramebufferRenderbufferFn = void(APIENTRY*)(GLenum, GLenum, GLenum, GLuint);
 using CheckFramebufferStatusFn = GLenum(APIENTRY*)(GLenum);
+using SwapIntervalFn = BOOL(APIENTRY*)(int);
 
 GenBuffersFn pfnGenBuffers = nullptr;
 DeleteBuffersFn pfnDeleteBuffers = nullptr;
@@ -49,6 +50,7 @@ CheckFramebufferStatusFn pfnCheckFramebufferStatus = nullptr;
 bool loaded = false;
 bool vboAvailable = false;
 bool fboAvailable = false;
+SwapIntervalFn pfnSwapInterval = nullptr;
 
 template<typename Fn>
 Fn loadProc(const char* name)
@@ -145,6 +147,8 @@ void ensureLoaded() noexcept
         tryLoadProc("glCheckFramebufferStatus", pfnCheckFramebufferStatus);
     }
 
+    tryLoadProc("wglSwapIntervalEXT", pfnSwapInterval);
+
     fboAvailable = pfnGenFramebuffers != nullptr && pfnDeleteFramebuffers != nullptr && pfnBindFramebuffer != nullptr
         && pfnFramebufferTexture2D != nullptr && pfnGenRenderbuffers != nullptr && pfnDeleteRenderbuffers != nullptr
         && pfnBindRenderbuffer != nullptr && pfnRenderbufferStorage != nullptr && pfnFramebufferRenderbuffer != nullptr
@@ -170,6 +174,18 @@ bool isFboAvailable() noexcept
     return fboAvailable;
 #else
     return false;
+#endif
+}
+
+void setSwapInterval(int interval) noexcept
+{
+#if defined(_WIN32) && defined(MINECRAFT_GL_REAL)
+    ensureLoaded();
+    if (pfnSwapInterval != nullptr) {
+        pfnSwapInterval(interval);
+    }
+#else
+    (void)interval;
 #endif
 }
 

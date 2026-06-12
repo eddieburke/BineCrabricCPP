@@ -8,7 +8,6 @@
 #include "net/minecraft/entity/passive/SheepEntity.hpp"
 #include "net/minecraft/entity/player/PlayerEntity.hpp"
 #include "net/minecraft/item/Item.hpp"
-#include "net/minecraft/item/ItemRegistrar.hpp"
 #include "net/minecraft/item/ItemStack.hpp"
 #include "net/minecraft/recipe/CraftingRecipeManager.hpp"
 #include "net/minecraft/recipe/SmeltingRecipeManager.hpp"
@@ -168,6 +167,6 @@ void DyeItem::registerRecipes(recipe::CraftingRecipeManager& recipeManager)
 
 
 
-namespace {static ::net::minecraft::registry::RegisterItem<DyeItem> autoReg(95); } // namespace
+namespace {static ::net::minecraft::registry::RegisterItem<DyeItem> autoReg; } // namespace
 
 } // namespace net::minecraft::item

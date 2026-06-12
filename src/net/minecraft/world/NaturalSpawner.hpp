@@ -1,6 +1,5 @@
 #pragma once
 
-#include "net/minecraft/entity/SpawnGroup.hpp"
 #include "net/minecraft/util/math/Types.hpp"
 
 #include <string>

@@ -1,7 +1,7 @@
 #include "net/minecraft/item/weapon/golden_sword.hpp"
+#include "net/minecraft/registry/Registry.hpp"
 
 #include "net/minecraft/item/Item.hpp"
-#include "net/minecraft/item/ItemRegistrar.hpp"
 #include "net/minecraft/recipe/CraftingRecipeManager.hpp"
 
 #include "net/minecraft/item/misc/stick.hpp"
@@ -12,7 +12,7 @@
 
 namespace net::minecraft::item {
 
-GoldenSwordItem::GoldenSwordItem() : SwordItem(27, ToolMaterial::Gold) {}
+GoldenSwordItem::GoldenSwordItem() : SwordItem(kRawId, ToolMaterial::Gold) {}
 
 void GoldenSwordItem::registerClass()
 {
@@ -29,5 +29,5 @@ void GoldenSwordItem::registerRecipes(recipe::CraftingRecipeManager& recipeManag
         {std::string("X"), std::string("X"), std::string("#"), '#', Item::byRawId(24), 'X', Item::byRawId(10)});
 }
 
-static registry::RegisterItem<GoldenSwordItem> s_itemReg(27);
+static registry::RegisterItem<GoldenSwordItem> s_itemReg;
 } // namespace net::minecraft::item

@@ -1,7 +1,6 @@
 #include "net/minecraft/registry/Registry.hpp"
 #include "net/minecraft/block/Block.hpp"
 #include "net/minecraft/item/Item.hpp"
-#include "net/minecraft/item/ItemRegistrar.hpp"
 #include "net/minecraft/item/StackableFoodItem.hpp"
 #include "net/minecraft/recipe/CraftingRecipeManager.hpp"
 
@@ -22,5 +21,5 @@ void StackableFoodItem::registerRecipes(recipe::CraftingRecipeManager& recipeMan
 
 
 
-namespace {static ::net::minecraft::registry::RegisterItem<StackableFoodItem> autoReg(101);} // namespace
+namespace {static ::net::minecraft::registry::RegisterItem<StackableFoodItem> autoReg;} // namespace
 } // namespace net::minecraft::item

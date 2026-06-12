@@ -22,11 +22,15 @@ ResolvedRenderOptions resolve(const GameOptions& options)
 {
     ResolvedRenderOptions r {};
     const float scale = renderDistanceScale(options);
-    r.viewDistanceBlocks = static_cast<float>(baseViewDistanceBlocks(options.viewDistance)) * scale;
+    const int baseViewDistance = baseViewDistanceBlocks(options.viewDistance);
+    r.viewDistanceBlocks = static_cast<float>(baseViewDistance) * scale;
 
-    int radius = 64 << (3 - (options.viewDistance & 3));
-    radius = static_cast<int>(static_cast<float>(radius) * scale);
-    r.chunkGridRadius = std::clamp(radius, 64, 2000);
+    // Java caps the renderer grid diameter at 400 blocks even when Far's fog
+    // distance is 256. Keeping that cap avoids compiling a much larger torus
+    // than the camera can use.
+    int diameter = std::min(baseViewDistance * 2, 400);
+    diameter = static_cast<int>(static_cast<float>(diameter) * scale);
+    r.chunkGridRadius = std::clamp(diameter, 64, 2000);
 
     r.chunkPreloadRadius = options.ofPreloadedChunks <= 0 ? 2 : 2 + options.ofPreloadedChunks / 2;
     r.fovOffset = options.fieldOfView * 40.0f;

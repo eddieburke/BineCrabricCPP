@@ -1,5 +1,5 @@
 #include "net/minecraft/registry/Registry.hpp"
-#include "net/minecraft/block/BlockRegistrar.hpp"
+#include "net/minecraft/block/VanillaBlockSounds.hpp"
 #include "net/minecraft/block/StoneBlock.hpp"
 #include "net/minecraft/block/Block.hpp"
 #include "net/minecraft/item/ItemStack.hpp"
@@ -8,7 +8,7 @@
 namespace net::minecraft::block {
 void StoneBlock::registerClass()
 {
-    Block::STONE = (new StoneBlock(1, 1))->setHardness(1.5f)->setResistance(10.0f)->setSoundGroup(&vanillaStoneSound())->setTranslationKey("stone");
+    Block::STONE = (new StoneBlock(kBlockId, 1))->setHardness(1.5f)->setResistance(10.0f)->setSoundGroup(&vanillaStoneSound())->setTranslationKey("stone");
 }
 
 void StoneBlock::registerSmeltingRecipes()
@@ -21,6 +21,6 @@ void StoneBlock::registerSmeltingRecipes()
 
 
 
-namespace {static ::net::minecraft::registry::RegisterBlock<StoneBlock> autoReg(1);} // namespace
+namespace {static ::net::minecraft::registry::RegisterBlock<StoneBlock> autoReg;} // namespace
 } // namespace net::minecraft::block
 

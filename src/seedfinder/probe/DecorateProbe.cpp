@@ -132,7 +132,7 @@ void DecorateProbe::probe(std::uint64_t seed, int originChunkX, int originChunkZ
 
     auto storage = std::make_unique<nm::EmptyWorldStorage>();
     nm::World world(storage.get(), "seedfinder", static_cast<std::int64_t>(seed), true);
-    world.eventProcessingEnabled = true;
+    world.setEventProcessingEnabled(true);
 
     auto* cache = dynamic_cast<nm::LegacyChunkCache*>(world.getChunkSource());
     if (cache == nullptr) {

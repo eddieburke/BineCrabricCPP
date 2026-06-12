@@ -1,11 +1,7 @@
 #include "net/minecraft/registry/Registry.hpp"
-#include "net/minecraft/entity/EntityRegistrar.hpp"
 #include "net/minecraft/entity/mob/MonsterEntity.hpp"
 
-#include "net/minecraft/entity/EntityRegistry.hpp"
 
-#include <memory>
-#include <typeindex>
 
 #include "net/minecraft/entity/player/PlayerEntity.hpp"
 #include "net/minecraft/world/World.hpp"
@@ -72,11 +68,6 @@ float MonsterEntity::getPathfindingFavor(int x, int y, int z) const
 }
 
 
-void MonsterEntity::registerClass()
-{
-    ::net::minecraft::entity::detail::registerVanillaEntity<MonsterEntity>("Monster", 49);
-}
-
-static ::net::minecraft::registry::RegisterEntity<MonsterEntity> autoReg(49);
+static ::net::minecraft::registry::RegisterEntity<MonsterEntity> autoReg;
 
 } // namespace net::minecraft::entity::mob

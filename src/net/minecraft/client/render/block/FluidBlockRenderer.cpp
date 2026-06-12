@@ -4,7 +4,6 @@
 #include "net/minecraft/block/LiquidBlock.hpp"
 #include "net/minecraft/world/BlockView.hpp"
 #include "net/minecraft/block/material/Material.hpp"
-#include "net/minecraft/client/Minecraft.hpp"
 #include "net/minecraft/client/option/ResolvedRenderOptions.hpp"
 #include "net/minecraft/client/render/Tessellator.hpp"
 #include "net/minecraft/util/math/MathHelper.hpp"

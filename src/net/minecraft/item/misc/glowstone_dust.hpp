@@ -9,7 +9,10 @@ class CraftingRecipeManager;
 namespace net::minecraft::item {
 
 class GlowstoneDustItem : public Item {
-public:    static void registerClass();
+public:        static constexpr bool kRegisters = true;
+    static constexpr int kRawId = 92;
+
+static void registerClass();
     static void registerRecipes(recipe::CraftingRecipeManager& recipeManager);
 
     GlowstoneDustItem();

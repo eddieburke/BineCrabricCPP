@@ -4,7 +4,6 @@
 #include "net/minecraft/block/Block.hpp"
 #include "net/minecraft/entity/player/PlayerEntity.hpp"
 #include "net/minecraft/item/Item.hpp"
-#include "net/minecraft/item/ItemRegistrar.hpp"
 #include "net/minecraft/item/ItemStack.hpp"
 #include "net/minecraft/item/food/bowl.hpp"
 #include "net/minecraft/recipe/CraftingRecipeManager.hpp"
@@ -42,6 +41,6 @@ void MushroomStewItem::registerRecipes(recipe::CraftingRecipeManager& recipeMana
 
 
 
-namespace { static ::net::minecraft::registry::RegisterItem<MushroomStewItem> autoReg(26); } // namespace
+namespace { static ::net::minecraft::registry::RegisterItem<MushroomStewItem> autoReg; } // namespace
 
 } // namespace net::minecraft::item

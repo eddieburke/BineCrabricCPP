@@ -37,3 +37,21 @@ void FallingBlockEntityRenderer::render(const net::minecraft::Entity& entity, do
 }
 
 } // namespace net::minecraft::client::render::entity
+
+#include "net/minecraft/client/entity/EntityClientRendererRegistration.hpp"
+#include "net/minecraft/entity/FallingBlockEntity.hpp"
+
+namespace net::minecraft::entity {
+
+std::unique_ptr<::net::minecraft::client::render::entity::EntityRenderer> FallingBlockEntity::ClientRenderer::create()
+{
+    return std::make_unique<::net::minecraft::client::render::entity::FallingBlockEntityRenderer>();
+}
+
+} // namespace net::minecraft::entity
+
+namespace {
+
+static ::net::minecraft::registry::RegisterEntityRenderer<net::minecraft::entity::FallingBlockEntity> autoRendererReg;
+
+} // namespace

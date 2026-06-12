@@ -1,11 +1,7 @@
 #include "net/minecraft/registry/Registry.hpp"
-#include "net/minecraft/entity/EntityRegistrar.hpp"
 #include "net/minecraft/entity/LivingEntity.hpp"
 
-#include "net/minecraft/entity/EntityRegistry.hpp"
 
-#include <memory>
-#include <typeindex>
 
 #include "net/minecraft/block/Block.hpp"
 #include "net/minecraft/block/material/Material.hpp"
@@ -220,6 +216,11 @@ void LivingEntity::tickRiding()
     Entity::tickRiding();
     lastWalkProgress = walkProgress;
     walkProgress = 0.0f;
+}
+
+void LivingEntity::initializeSpawnState(JavaRandom& randomSource)
+{
+    (void)randomSource;
 }
 
 void LivingEntity::heal(int amount)
@@ -773,11 +774,6 @@ float LivingEntity::lerpRotation(float from, float to, float maxChange) const
     return from + delta;
 }
 
-void LivingEntity::registerClass()
-{
-    detail::registerVanillaEntity<LivingEntity>("Mob", 48);
-}
-
-static ::net::minecraft::registry::RegisterEntity<LivingEntity> autoReg(48);
+static ::net::minecraft::registry::RegisterEntity<LivingEntity> autoReg;
 
 } // namespace net::minecraft::entity

@@ -1,7 +1,7 @@
 #include "net/minecraft/item/armor/golden_boots.hpp"
+#include "net/minecraft/registry/Registry.hpp"
 
 #include "net/minecraft/item/Item.hpp"
-#include "net/minecraft/item/ItemRegistrar.hpp"
 #include "net/minecraft/recipe/CraftingRecipeManager.hpp"
 
 #include <string>
@@ -15,7 +15,7 @@
 
 namespace net::minecraft::item {
 
-GoldenBootsItem::GoldenBootsItem() : ArmorItem(61, 1, 4, 3) {}
+GoldenBootsItem::GoldenBootsItem() : ArmorItem(kRawId, 1, 4, 3) {}
 
 void GoldenBootsItem::registerClass()
 {
@@ -32,5 +32,5 @@ void GoldenBootsItem::registerRecipes(recipe::CraftingRecipeManager& recipeManag
         {std::string("X X"), std::string("X X"), 'X', Item::byRawId(10)});
 }
 
-static registry::RegisterItem<GoldenBootsItem> s_itemReg(61);
+static registry::RegisterItem<GoldenBootsItem> s_itemReg;
 } // namespace net::minecraft::item

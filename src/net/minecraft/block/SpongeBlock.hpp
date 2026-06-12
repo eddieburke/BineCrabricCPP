@@ -5,9 +5,9 @@
 
 namespace net::minecraft::block {
 
+// Registered in SimpleBlocks.cpp.
 class SpongeBlock : public Block {
 public:
-    static void registerClass();
     explicit SpongeBlock(int id) : Block(id, 48, material::Material::SPONGE) {}
 
     void onBreak(World* world, int x, int y, int z) override

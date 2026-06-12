@@ -1,7 +1,7 @@
 #include "net/minecraft/item/armor/chain_chestplate.hpp"
+#include "net/minecraft/registry/Registry.hpp"
 
 #include "net/minecraft/item/Item.hpp"
-#include "net/minecraft/item/ItemRegistrar.hpp"
 #include "net/minecraft/recipe/CraftingRecipeManager.hpp"
 
 #include <string>
@@ -15,7 +15,7 @@
 
 namespace net::minecraft::item {
 
-ChainChestplateItem::ChainChestplateItem() : ArmorItem(47, 1, 1, 1) {}
+ChainChestplateItem::ChainChestplateItem() : ArmorItem(kRawId, 1, 1, 1) {}
 
 void ChainChestplateItem::registerClass()
 {
@@ -32,5 +32,5 @@ void ChainChestplateItem::registerRecipes(recipe::CraftingRecipeManager& recipeM
         {std::string("X X"), std::string("XXX"), std::string("XXX"), 'X', Block::FIRE});
 }
 
-static registry::RegisterItem<ChainChestplateItem> s_itemReg(47);
+static registry::RegisterItem<ChainChestplateItem> s_itemReg;
 } // namespace net::minecraft::item

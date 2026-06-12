@@ -108,3 +108,21 @@ void MinecartEntityRenderer::render(const net::minecraft::Entity& entity, double
 }
 
 } // namespace net::minecraft::client::render::entity
+
+#include "net/minecraft/client/entity/EntityClientRendererRegistration.hpp"
+#include "net/minecraft/entity/vehicle/MinecartEntity.hpp"
+
+namespace net::minecraft::entity::vehicle {
+
+std::unique_ptr<::net::minecraft::client::render::entity::EntityRenderer> MinecartEntity::ClientRenderer::create()
+{
+    return std::make_unique<::net::minecraft::client::render::entity::MinecartEntityRenderer>();
+}
+
+} // namespace net::minecraft::entity::vehicle
+
+namespace {
+
+static ::net::minecraft::registry::RegisterEntityRenderer<net::minecraft::entity::vehicle::MinecartEntity> autoRendererReg;
+
+} // namespace

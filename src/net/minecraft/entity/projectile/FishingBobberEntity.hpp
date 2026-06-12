@@ -4,11 +4,16 @@
 #include "net/minecraft/entity/player/PlayerEntity.hpp"
 #include "net/minecraft/entity/projectile/ProjectileUtil.hpp"
 #include "net/minecraft/nbt/NbtCompound.hpp"
+#include "net/minecraft/entity/EntityClientRendererDecl.hpp"
 
 namespace net::minecraft::entity::projectile {
 
 class FishingBobberEntity : public Entity {
 public:
+
+    struct ClientRenderer {
+        static std::unique_ptr<::net::minecraft::client::render::entity::EntityRenderer> create();
+    };
     explicit FishingBobberEntity(World* world = nullptr);
     FishingBobberEntity(World* world, player::PlayerEntity* thrower);
 

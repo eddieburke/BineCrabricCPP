@@ -1,14 +1,36 @@
 #include "net/minecraft/client/render/entity/SlimeEntityRenderer.hpp"
 
+#include "net/minecraft/client/entity/EntityClientRendererRegistration.hpp"
 #include "net/minecraft/client/gl/GL11.hpp"
 #include "net/minecraft/client/render/entity/EntityRendererCasts.hpp"
+#include "net/minecraft/client/render/entity/model/SlimeEntityModel.hpp"
+#include "net/minecraft/entity/mob/SlimeEntity.hpp"
+
+namespace net::minecraft::entity::mob {
+
+std::unique_ptr<::net::minecraft::client::render::entity::EntityRenderer> SlimeEntity::ClientRenderer::create()
+{
+    using net::minecraft::client::render::entity::SlimeEntityRenderer;
+    using net::minecraft::client::render::entity::model::SlimeEntityModel;
+    return std::make_unique<SlimeEntityRenderer>(new SlimeEntityModel(16), new SlimeEntityModel(0), 0.25f);
+}
+
+} // namespace net::minecraft::entity::mob
+
+namespace {
+
+static ::net::minecraft::registry::RegisterEntityRenderer<
+    ::net::minecraft::entity::mob::SlimeEntity> autoRendererReg;
+
+} // namespace
 
 namespace net::minecraft::client::render::entity {
 
 SlimeEntityRenderer::SlimeEntityRenderer(model::EntityModel* model, model::EntityModel* innerModel, float shadowRadius)
     : LivingEntityRenderer(model, shadowRadius)
+    , innerModel_(innerModel)
 {
-    setDecorationModel(innerModel);
+    setDecorationModel(innerModel_);
 }
 
 bool SlimeEntityRenderer::bindTexture(const net::minecraft::LivingEntity& entity, int layer, float tickDelta)
@@ -16,6 +38,7 @@ bool SlimeEntityRenderer::bindTexture(const net::minecraft::LivingEntity& entity
     (void)entity;
     (void)tickDelta;
     if (layer == 0) {
+        setDecorationModel(innerModel_);
         gl::GL11::glEnable(2977);
         gl::GL11::glEnable(3042);
         gl::GL11::glBlendFunc(770, 771);

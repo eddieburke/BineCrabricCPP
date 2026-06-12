@@ -34,7 +34,7 @@ public:
         if (input_ == nullptr) {
             return;
         }
-        if (player_ != nullptr) {
+        if (player_ != nullptr && player_->world != nullptr) {
             ItemStack crafted = stack;
             crafted.onCraft(player_->world, player_);
             if (Block::CRAFTING_TABLE != nullptr && stack.itemId == Block::CRAFTING_TABLE->id) {

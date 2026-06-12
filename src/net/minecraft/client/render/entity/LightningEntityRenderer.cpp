@@ -104,3 +104,21 @@ void LightningEntityRenderer::render(const net::minecraft::Entity& entity, doubl
 }
 
 } // namespace net::minecraft::client::render::entity
+
+#include "net/minecraft/client/entity/EntityClientRendererRegistration.hpp"
+#include "net/minecraft/entity/LightningEntity.hpp"
+
+namespace net::minecraft::entity {
+
+std::unique_ptr<::net::minecraft::client::render::entity::EntityRenderer> LightningEntity::ClientRenderer::create()
+{
+    return std::make_unique<::net::minecraft::client::render::entity::LightningEntityRenderer>();
+}
+
+} // namespace net::minecraft::entity
+
+namespace {
+
+static ::net::minecraft::registry::RegisterEntityRenderer<net::minecraft::entity::LightningEntity> autoRendererReg;
+
+} // namespace

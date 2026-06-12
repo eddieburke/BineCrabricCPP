@@ -1,14 +1,14 @@
 #include "net/minecraft/item/food/wheat.hpp"
+#include "net/minecraft/registry/Registry.hpp"
 
 #include "net/minecraft/item/Item.hpp"
-#include "net/minecraft/item/ItemRegistrar.hpp"
 #include "net/minecraft/recipe/CraftingRecipeManager.hpp"
 
 #include "net/minecraft/item/misc/stick.hpp"
 
 namespace net::minecraft::item {
 
-WheatItem::WheatItem() : Item(40, RegistrationMode::Deferred) {}
+WheatItem::WheatItem() : Item(kRawId, RegistrationMode::Deferred) {}
 
 void WheatItem::registerClass()
 {
@@ -24,5 +24,5 @@ void WheatItem::registerRecipes(recipe::CraftingRecipeManager& recipeManager)
     (void)recipeManager;
 }
 
-static registry::RegisterItem<WheatItem> s_itemReg(40);
+static registry::RegisterItem<WheatItem> s_itemReg;
 } // namespace net::minecraft::item

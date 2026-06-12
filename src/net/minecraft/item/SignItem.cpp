@@ -4,7 +4,6 @@
 #include "net/minecraft/block/Block.hpp"
 #include "net/minecraft/entity/player/PlayerEntity.hpp"
 #include "net/minecraft/item/Item.hpp"
-#include "net/minecraft/item/ItemRegistrar.hpp"
 #include "net/minecraft/item/ItemStack.hpp"
 #include "net/minecraft/recipe/CraftingRecipeManager.hpp"
 #include "net/minecraft/util/math/MathHelper.hpp"
@@ -64,6 +63,6 @@ void SignItem::registerRecipes(recipe::CraftingRecipeManager& recipeManager)
 
 
 
-namespace {static ::net::minecraft::registry::RegisterItem<SignItem> autoReg(67); } // namespace
+namespace {static ::net::minecraft::registry::RegisterItem<SignItem> autoReg; } // namespace
 
 } // namespace net::minecraft::item

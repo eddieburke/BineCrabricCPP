@@ -48,7 +48,7 @@ Chunk OverworldChunkGenerator::loadChunk(ChunkSource* source, int chunkX, int ch
     buildTerrain(chunkX, chunkZ, chunk, biomeSource->temperatureMap());
     buildSurfaces(chunkX, chunkZ, chunk, biomes_);
     if (source != nullptr) {
-        cave_.place(source, world_, chunkX, chunkZ, chunk);
+        cave_.place(source, world_, seed_, chunkX, chunkZ, chunk);
     }
     if (world_ != nullptr) {
         chunk.populateHeightMap();
@@ -63,11 +63,11 @@ void OverworldChunkGenerator::decorate(ChunkSource* /*source*/, int chunkX, int 
     const int blockOriginZ = chunkZ * 16;
     BiomeSource* biomeSource = activeBiomeSource();
     const BiomeInfo biome = biomeSource->getBiome(blockOriginX + 16, blockOriginZ + 16);
-    random_.setSeed(world_->getSeed());
+    random_.setSeed(seed_);
     const std::int64_t l = random_.nextLong() / 2LL * 2LL + 1LL;
     const std::int64_t l2 = random_.nextLong() / 2LL * 2LL + 1LL;
     random_.setSeed(static_cast<std::uint64_t>((static_cast<std::int64_t>(chunkX) * l + static_cast<std::int64_t>(chunkZ) * l2)
-        ^ static_cast<std::int64_t>(world_->getSeed())));
+        ^ static_cast<std::int64_t>(seed_)));
 
     if (random_.nextInt(4) == 0) {
         LakeFeature(Block::WATER->id).generate(world_, random_, blockOriginX + random_.nextInt(16) + 8, random_.nextInt(128),

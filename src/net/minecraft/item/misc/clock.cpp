@@ -1,7 +1,7 @@
 #include "net/minecraft/item/misc/clock.hpp"
+#include "net/minecraft/registry/Registry.hpp"
 
 #include "net/minecraft/item/Item.hpp"
-#include "net/minecraft/item/ItemRegistrar.hpp"
 #include "net/minecraft/recipe/CraftingRecipeManager.hpp"
 
 #include "net/minecraft/item/misc/stick.hpp"
@@ -9,7 +9,7 @@
 
 namespace net::minecraft::item {
 
-ClockItem::ClockItem() : Item(91, RegistrationMode::Deferred) {}
+ClockItem::ClockItem() : Item(kRawId, RegistrationMode::Deferred) {}
 
 void ClockItem::registerClass()
 {
@@ -26,5 +26,5 @@ void ClockItem::registerRecipes(recipe::CraftingRecipeManager& recipeManager)
         {std::string(" # "), std::string("#X#"), std::string(" # "), '#', Item::byRawId(10), 'X', Item::byRawId(75)});
 }
 
-static registry::RegisterItem<ClockItem> s_itemReg(91);
+static registry::RegisterItem<ClockItem> s_itemReg;
 } // namespace net::minecraft::item

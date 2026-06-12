@@ -14,7 +14,10 @@ class CraftingRecipeManager;
 namespace net::minecraft::item {
 
 class MinecartItem : public Item {
-public:    static void registerClass();
+public:        static constexpr bool kRegisters = true;
+    static constexpr int kRawId = 72;
+
+static void registerClass();
     static void registerRecipes(recipe::CraftingRecipeManager& recipeManager);
     MinecartItem(int rawId, int type);
     bool useOnBlock(ItemStack* stack, PlayerEntity* user, World* world, int x, int y, int z, int side) override;

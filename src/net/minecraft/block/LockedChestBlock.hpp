@@ -8,7 +8,10 @@ namespace net::minecraft::block {
 
 class LockedChestBlock : public Block {
 public:
-    static void registerClass();
+    static constexpr bool kRegisters = true;
+    static constexpr int kBlockId = 95;
+
+static void registerClass();
     using Block::canPlaceAt;
     explicit LockedChestBlock(int id);
 

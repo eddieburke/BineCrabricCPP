@@ -1,11 +1,7 @@
 #include "net/minecraft/registry/Registry.hpp"
-#include "net/minecraft/entity/EntityRegistrar.hpp"
 #include "net/minecraft/entity/vehicle/MinecartEntity.hpp"
 
-#include "net/minecraft/entity/EntityRegistry.hpp"
 
-#include <memory>
-#include <typeindex>
 
 #include "net/minecraft/block/Block.hpp"
 #include "net/minecraft/block/RailBlock.hpp"
@@ -747,11 +743,6 @@ void MinecartEntity::readNbt(const NbtCompound& nbt)
 }
 
 
-void MinecartEntity::registerClass()
-{
-    ::net::minecraft::entity::detail::registerVanillaEntity<MinecartEntity>("Minecart", 40);
-}
-
-static ::net::minecraft::registry::RegisterEntity<MinecartEntity> autoReg(40);
+static ::net::minecraft::registry::RegisterEntity<MinecartEntity> autoReg;
 
 } // namespace net::minecraft::entity::vehicle

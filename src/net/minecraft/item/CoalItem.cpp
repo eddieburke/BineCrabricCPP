@@ -1,7 +1,6 @@
 #include "net/minecraft/registry/Registry.hpp"
 #include "net/minecraft/item/CoalItem.hpp"
 #include "net/minecraft/item/Item.hpp"
-#include "net/minecraft/item/ItemRegistrar.hpp"
 #include "net/minecraft/item/ItemStack.hpp"
 #include "net/minecraft/block/Block.hpp"
 #include "net/minecraft/recipe/SmeltingRecipeManager.hpp"
@@ -24,5 +23,5 @@ void CoalItem::registerSmeltingRecipes()
 
 
 
-namespace {static ::net::minecraft::registry::RegisterItem<CoalItem> autoReg(7); } // namespace
+namespace {static ::net::minecraft::registry::RegisterItem<CoalItem> autoReg; } // namespace
 } // namespace net::minecraft::item

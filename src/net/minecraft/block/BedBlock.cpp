@@ -1,5 +1,4 @@
 #include "net/minecraft/registry/Registry.hpp"
-#include "net/minecraft/block/BlockRegistrar.hpp"
 #include "net/minecraft/block/BedBlock.hpp"
 
 #include "net/minecraft/block/Block.hpp"
@@ -199,12 +198,12 @@ std::optional<Vec3i> BedBlock::findWakeUpPosition(World* world, int x, int y, in
 }
 void BedBlock::registerClass()
 {
-    Block::BED = (new BedBlock(26))->setHardness(0.2f)->setTranslationKey("bed")->disableTrackingStatistics()->ignoreMetaUpdates();
+    Block::BED = (new BedBlock(kBlockId))->setHardness(0.2f)->setTranslationKey("bed")->disableTrackingStatistics()->ignoreMetaUpdates();
 }
 
 
 
 
-namespace {static ::net::minecraft::registry::RegisterBlock<BedBlock> autoReg(26);} // namespace
+namespace {static ::net::minecraft::registry::RegisterBlock<BedBlock> autoReg;} // namespace
 } // namespace net::minecraft::block
 

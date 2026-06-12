@@ -1,7 +1,7 @@
 #include "net/minecraft/item/weapon/wooden_sword.hpp"
+#include "net/minecraft/registry/Registry.hpp"
 
 #include "net/minecraft/item/Item.hpp"
-#include "net/minecraft/item/ItemRegistrar.hpp"
 #include "net/minecraft/recipe/CraftingRecipeManager.hpp"
 
 #include "net/minecraft/item/misc/stick.hpp"
@@ -12,7 +12,7 @@
 
 namespace net::minecraft::item {
 
-WoodenSwordItem::WoodenSwordItem() : SwordItem(12, ToolMaterial::Wood) {}
+WoodenSwordItem::WoodenSwordItem() : SwordItem(kRawId, ToolMaterial::Wood) {}
 
 void WoodenSwordItem::registerClass()
 {
@@ -29,5 +29,5 @@ void WoodenSwordItem::registerRecipes(recipe::CraftingRecipeManager& recipeManag
         {std::string("X"), std::string("X"), std::string("#"), '#', Item::byRawId(24), 'X', Block::PLANKS});
 }
 
-static registry::RegisterItem<WoodenSwordItem> s_itemReg(12);
+static registry::RegisterItem<WoodenSwordItem> s_itemReg;
 } // namespace net::minecraft::item

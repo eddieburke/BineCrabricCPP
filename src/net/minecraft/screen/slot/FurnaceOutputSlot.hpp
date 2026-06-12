@@ -29,7 +29,9 @@ public:
     {
         if (player_ != nullptr) {
             ItemStack crafted = stack;
-            crafted.onCraft(player_->world, player_);
+            if (player_->world != nullptr) {
+                crafted.onCraft(player_->world, player_);
+            }
             if (Item::byRawId(9) != nullptr && stack.itemId == Item::byRawId(9)->id) {
                 player_->increaseStat(achievement::Achievements::ACQUIRE_IRON.statId(), 1);
             }

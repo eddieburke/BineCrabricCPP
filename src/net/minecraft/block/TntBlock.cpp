@@ -1,5 +1,5 @@
 #include "net/minecraft/registry/Registry.hpp"
-#include "net/minecraft/block/BlockRegistrar.hpp"
+#include "net/minecraft/block/VanillaBlockSounds.hpp"
 #include "net/minecraft/block/TntBlock.hpp"
 
 #include "net/minecraft/block/Block.hpp"
@@ -82,7 +82,7 @@ bool TntBlock::onUse(World* world, int x, int y, int z, net::minecraft::PlayerEn
 }
 void TntBlock::registerClass()
 {
-    Block::TNT = (new TntBlock(46, 8))->setHardness(0.0f)->setSoundGroup(&vanillaDirtSound())->setTranslationKey("tnt");
+    Block::TNT = (new TntBlock(kBlockId, 8))->setHardness(0.0f)->setSoundGroup(&vanillaDirtSound())->setTranslationKey("tnt");
 }
 void TntBlock::registerRecipes(recipe::CraftingRecipeManager& recipeManager)
 {
@@ -94,6 +94,6 @@ void TntBlock::registerRecipes(recipe::CraftingRecipeManager& recipeManager)
 
 
 
-namespace {static ::net::minecraft::registry::RegisterBlock<TntBlock> autoReg(46);} // namespace
+namespace {static ::net::minecraft::registry::RegisterBlock<TntBlock> autoReg;} // namespace
 } // namespace net::minecraft::block
 

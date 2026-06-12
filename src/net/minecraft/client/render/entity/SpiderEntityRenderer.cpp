@@ -37,3 +37,21 @@ bool SpiderEntityRenderer::bindTexture(const net::minecraft::LivingEntity& entit
 }
 
 } // namespace net::minecraft::client::render::entity
+
+#include "net/minecraft/client/entity/EntityClientRendererRegistration.hpp"
+#include "net/minecraft/entity/mob/SpiderEntity.hpp"
+
+namespace net::minecraft::entity::mob {
+
+std::unique_ptr<::net::minecraft::client::render::entity::EntityRenderer> SpiderEntity::ClientRenderer::create()
+{
+    return std::make_unique<::net::minecraft::client::render::entity::SpiderEntityRenderer>();
+}
+
+} // namespace net::minecraft::entity::mob
+
+namespace {
+
+static ::net::minecraft::registry::RegisterEntityRenderer<net::minecraft::entity::mob::SpiderEntity> autoRendererReg;
+
+} // namespace

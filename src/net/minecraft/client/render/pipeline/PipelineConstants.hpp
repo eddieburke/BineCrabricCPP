@@ -11,8 +11,8 @@ constexpr int kDistantRebuildSlots = 2;
 // Java: squaredDistanceTo(camera) > 256.0f marks a chunk as "distant".
 constexpr float kNearChunkRebuildDistSq = 256.0f;
 
-// Java WorldRenderer.render: re-sort when camera delta exceeds 4 blocks (16 = 4^2).
-constexpr double kCameraResortDistanceSq = 16.0;
+// Java WorldRenderer.render: re-sort when camera delta exceeds 8 blocks (64 = 8^2).
+constexpr double kCameraResortDistanceSq = 64.0;
 
 // Java: new ChunkRenderer[4] — one batch renderer per distinct camera-offset group.
 constexpr std::size_t kCameraOffsetGroupCount = 4;

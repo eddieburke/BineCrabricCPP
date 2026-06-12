@@ -1,5 +1,5 @@
 #include "net/minecraft/registry/Registry.hpp"
-#include "net/minecraft/block/BlockRegistrar.hpp"
+#include "net/minecraft/block/VanillaBlockSounds.hpp"
 #include "net/minecraft/block/PressurePlateBlock.hpp"
 #include "net/minecraft/block/material/Material.hpp"
 #include "net/minecraft/block/PressurePlateActivationRule.hpp"
@@ -147,7 +147,7 @@ void PressurePlateBlock::registerClass()
 {
     namespace mat = material;
     Block::STONE_PRESSURE_PLATE = (new PressurePlateBlock(70, Block::BLOCKS[1]->textureId, PressurePlateActivationRule::MOBS, mat::Material::STONE))->setHardness(0.5f)->setSoundGroup(&vanillaStoneSound())->setTranslationKey("pressurePlate")->ignoreMetaUpdates();
-    Block::WOODEN_PRESSURE_PLATE = (new PressurePlateBlock(72, Block::BLOCKS[5]->textureId, PressurePlateActivationRule::EVERYTHING, mat::Material::WOOD))->setHardness(0.5f)->setSoundGroup(&vanillaWoodSound())->setTranslationKey("pressurePlate")->ignoreMetaUpdates();
+    Block::WOODEN_PRESSURE_PLATE = (new PressurePlateBlock(kBlockId, Block::BLOCKS[5]->textureId, PressurePlateActivationRule::EVERYTHING, mat::Material::WOOD))->setHardness(0.5f)->setSoundGroup(&vanillaWoodSound())->setTranslationKey("pressurePlate")->ignoreMetaUpdates();
 }
 void PressurePlateBlock::registerRecipes(recipe::CraftingRecipeManager& recipeManager)
 {
@@ -159,6 +159,6 @@ void PressurePlateBlock::registerRecipes(recipe::CraftingRecipeManager& recipeMa
 
 
 
-namespace {static ::net::minecraft::registry::RegisterBlock<PressurePlateBlock> autoReg(72);} // namespace
+namespace {static ::net::minecraft::registry::RegisterBlock<PressurePlateBlock> autoReg;} // namespace
 } // namespace net::minecraft::block
 

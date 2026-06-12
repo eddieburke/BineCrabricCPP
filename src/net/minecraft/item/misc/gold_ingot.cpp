@@ -1,7 +1,7 @@
 #include "net/minecraft/item/misc/gold_ingot.hpp"
+#include "net/minecraft/registry/Registry.hpp"
 
 #include "net/minecraft/item/Item.hpp"
-#include "net/minecraft/item/ItemRegistrar.hpp"
 #include "net/minecraft/recipe/CraftingRecipeManager.hpp"
 
 #include "net/minecraft/item/misc/stick.hpp"
@@ -10,7 +10,7 @@
 
 namespace net::minecraft::item {
 
-GoldIngotItem::GoldIngotItem() : Item(10, RegistrationMode::Deferred) {}
+GoldIngotItem::GoldIngotItem() : Item(kRawId, RegistrationMode::Deferred) {}
 
 void GoldIngotItem::registerClass()
 {
@@ -35,5 +35,5 @@ void GoldIngotItem::registerRecipes(recipe::CraftingRecipeManager& recipeManager
         {std::string("#"), '#', Block::GOLD_BLOCK});
 }
 
-static registry::RegisterItem<GoldIngotItem> s_itemReg(10);
+static registry::RegisterItem<GoldIngotItem> s_itemReg;
 } // namespace net::minecraft::item

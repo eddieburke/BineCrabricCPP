@@ -7,7 +7,6 @@
 #include "net/minecraft/entity/player/PlayerEntity.hpp"
 #include "net/minecraft/item/Item.hpp"
 #include "net/minecraft/item/ItemPlacement.hpp"
-#include "net/minecraft/item/ItemRegistrar.hpp"
 #include "net/minecraft/item/ItemStack.hpp"
 #include "net/minecraft/recipe/CraftingRecipeManager.hpp"
 #include "net/minecraft/util/hit/HitResult.hpp"
@@ -122,6 +121,6 @@ void BucketItem::registerRecipes(recipe::CraftingRecipeManager& recipeManager)
 
 
 
-namespace { static ::net::minecraft::registry::RegisterItem<BucketItem> autoReg(69); } // namespace
+namespace { static ::net::minecraft::registry::RegisterItem<BucketItem> autoReg; } // namespace
 
 } // namespace net::minecraft::item

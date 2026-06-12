@@ -50,3 +50,21 @@ void BoatEntityRenderer::render(const net::minecraft::Entity& entity, double x, 
 }
 
 } // namespace net::minecraft::client::render::entity
+
+#include "net/minecraft/client/entity/EntityClientRendererRegistration.hpp"
+#include "net/minecraft/entity/vehicle/BoatEntity.hpp"
+
+namespace net::minecraft::entity::vehicle {
+
+std::unique_ptr<::net::minecraft::client::render::entity::EntityRenderer> BoatEntity::ClientRenderer::create()
+{
+    return std::make_unique<::net::minecraft::client::render::entity::BoatEntityRenderer>();
+}
+
+} // namespace net::minecraft::entity::vehicle
+
+namespace {
+
+static ::net::minecraft::registry::RegisterEntityRenderer<net::minecraft::entity::vehicle::BoatEntity> autoRendererReg;
+
+} // namespace

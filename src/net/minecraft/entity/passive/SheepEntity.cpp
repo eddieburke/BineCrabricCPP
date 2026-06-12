@@ -1,11 +1,7 @@
 #include "net/minecraft/registry/Registry.hpp"
-#include "net/minecraft/entity/EntityRegistrar.hpp"
 #include "net/minecraft/entity/passive/SheepEntity.hpp"
 
-#include "net/minecraft/entity/EntityRegistry.hpp"
 
-#include <memory>
-#include <typeindex>
 
 #include "net/minecraft/block/Block.hpp"
 #include "net/minecraft/entity/ItemEntity.hpp"
@@ -71,12 +67,12 @@ bool SheepEntity::interact(player::PlayerEntity* player)
     return false;
 }
 
-
-void SheepEntity::registerClass()
+void SheepEntity::initializeSpawnState(JavaRandom& random)
 {
-    ::net::minecraft::entity::detail::registerVanillaEntity<SheepEntity>("Sheep", 91);
+    setColor(generateDefaultColor(random));
 }
 
-static ::net::minecraft::registry::RegisterEntity<SheepEntity> autoReg(91);
+
+static ::net::minecraft::registry::RegisterEntity<SheepEntity> autoReg;
 
 } // namespace net::minecraft::entity::passive

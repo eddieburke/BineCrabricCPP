@@ -1,12 +1,8 @@
 #include "net/minecraft/registry/Registry.hpp"
-#include "net/minecraft/entity/EntityRegistrar.hpp"
 #include "net/minecraft/entity/projectile/thrown/SnowballEntity.hpp"
 
-#include "net/minecraft/entity/EntityRegistry.hpp"
 #include "net/minecraft/world/World.hpp"
 
-#include <memory>
-#include <typeindex>
 
 namespace net::minecraft::entity::projectile::thrown {
 
@@ -49,11 +45,6 @@ void SnowballEntity::readNbt(const NbtCompound& nbt)
     inGround = nbt.getByte("inGround") == 1;
 }
 
-void SnowballEntity::registerClass()
-{
-    ::net::minecraft::entity::detail::registerVanillaEntity<SnowballEntity>("Snowball", 11);
-}
-
-static ::net::minecraft::registry::RegisterEntity<SnowballEntity> autoReg(11);
+static ::net::minecraft::registry::RegisterEntity<SnowballEntity> autoReg;
 
 } // namespace net::minecraft::entity::projectile::thrown

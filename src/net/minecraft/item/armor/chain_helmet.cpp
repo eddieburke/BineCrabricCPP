@@ -1,7 +1,7 @@
 #include "net/minecraft/item/armor/chain_helmet.hpp"
+#include "net/minecraft/registry/Registry.hpp"
 
 #include "net/minecraft/item/Item.hpp"
-#include "net/minecraft/item/ItemRegistrar.hpp"
 #include "net/minecraft/recipe/CraftingRecipeManager.hpp"
 
 #include <string>
@@ -15,7 +15,7 @@
 
 namespace net::minecraft::item {
 
-ChainHelmetItem::ChainHelmetItem() : ArmorItem(46, 1, 1, 0) {}
+ChainHelmetItem::ChainHelmetItem() : ArmorItem(kRawId, 1, 1, 0) {}
 
 void ChainHelmetItem::registerClass()
 {
@@ -32,5 +32,5 @@ void ChainHelmetItem::registerRecipes(recipe::CraftingRecipeManager& recipeManag
         {std::string("XXX"), std::string("X X"), 'X', Block::FIRE});
 }
 
-static registry::RegisterItem<ChainHelmetItem> s_itemReg(46);
+static registry::RegisterItem<ChainHelmetItem> s_itemReg;
 } // namespace net::minecraft::item

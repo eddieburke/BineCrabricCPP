@@ -1,7 +1,7 @@
 #include "net/minecraft/item/misc/compass.hpp"
+#include "net/minecraft/registry/Registry.hpp"
 
 #include "net/minecraft/item/Item.hpp"
-#include "net/minecraft/item/ItemRegistrar.hpp"
 #include "net/minecraft/recipe/CraftingRecipeManager.hpp"
 
 #include "net/minecraft/item/misc/stick.hpp"
@@ -9,7 +9,7 @@
 
 namespace net::minecraft::item {
 
-CompassItem::CompassItem() : Item(89, RegistrationMode::Deferred) {}
+CompassItem::CompassItem() : Item(kRawId, RegistrationMode::Deferred) {}
 
 void CompassItem::registerClass()
 {
@@ -26,5 +26,5 @@ void CompassItem::registerRecipes(recipe::CraftingRecipeManager& recipeManager)
         {std::string(" # "), std::string("#X#"), std::string(" # "), '#', Item::byRawId(9), 'X', Item::byRawId(75)});
 }
 
-static registry::RegisterItem<CompassItem> s_itemReg(89);
+static registry::RegisterItem<CompassItem> s_itemReg;
 } // namespace net::minecraft::item

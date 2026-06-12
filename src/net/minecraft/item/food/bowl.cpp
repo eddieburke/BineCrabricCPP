@@ -1,14 +1,14 @@
 #include "net/minecraft/item/food/bowl.hpp"
+#include "net/minecraft/registry/Registry.hpp"
 
 #include "net/minecraft/item/Item.hpp"
-#include "net/minecraft/item/ItemRegistrar.hpp"
 #include "net/minecraft/recipe/CraftingRecipeManager.hpp"
 
 #include "net/minecraft/item/misc/stick.hpp"
 
 namespace net::minecraft::item {
 
-BowlItem::BowlItem() : Item(25, RegistrationMode::Deferred) {}
+BowlItem::BowlItem() : Item(kRawId, RegistrationMode::Deferred) {}
 
 void BowlItem::registerClass()
 {
@@ -25,5 +25,5 @@ void BowlItem::registerRecipes(recipe::CraftingRecipeManager& recipeManager)
         {std::string("# #"), std::string(" # "), '#', Block::PLANKS});
 }
 
-static registry::RegisterItem<BowlItem> s_itemReg(25);
+static registry::RegisterItem<BowlItem> s_itemReg;
 } // namespace net::minecraft::item

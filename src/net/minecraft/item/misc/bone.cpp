@@ -1,14 +1,14 @@
 #include "net/minecraft/item/misc/bone.hpp"
+#include "net/minecraft/registry/Registry.hpp"
 
 #include "net/minecraft/item/Item.hpp"
-#include "net/minecraft/item/ItemRegistrar.hpp"
 #include "net/minecraft/recipe/CraftingRecipeManager.hpp"
 
 #include "net/minecraft/item/misc/stick.hpp"
 
 namespace net::minecraft::item {
 
-BoneItem::BoneItem() : Item(96, RegistrationMode::Deferred) {}
+BoneItem::BoneItem() : Item(kRawId, RegistrationMode::Deferred) {}
 
 void BoneItem::registerClass()
 {
@@ -25,5 +25,5 @@ void BoneItem::registerRecipes(recipe::CraftingRecipeManager& recipeManager)
     (void)recipeManager;
 }
 
-static registry::RegisterItem<BoneItem> s_itemReg(96);
+static registry::RegisterItem<BoneItem> s_itemReg;
 } // namespace net::minecraft::item

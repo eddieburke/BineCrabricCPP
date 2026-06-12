@@ -1,7 +1,7 @@
 #include "net/minecraft/item/tool/diamond_axe.hpp"
+#include "net/minecraft/registry/Registry.hpp"
 
 #include "net/minecraft/item/Item.hpp"
-#include "net/minecraft/item/ItemRegistrar.hpp"
 #include "net/minecraft/recipe/CraftingRecipeManager.hpp"
 
 #include "net/minecraft/item/misc/stick.hpp"
@@ -12,7 +12,7 @@
 
 namespace net::minecraft::item {
 
-DiamondAxeItem::DiamondAxeItem() : AxeItem(23, ToolMaterial::Diamond) {}
+DiamondAxeItem::DiamondAxeItem() : AxeItem(kRawId, ToolMaterial::Diamond) {}
 
 void DiamondAxeItem::registerClass()
 {
@@ -29,5 +29,5 @@ void DiamondAxeItem::registerRecipes(recipe::CraftingRecipeManager& recipeManage
         {std::string("XX"), std::string("X#"), std::string(" #"), '#', Item::byRawId(24), 'X', Item::byRawId(8)});
 }
 
-static registry::RegisterItem<DiamondAxeItem> s_itemReg(23);
+static registry::RegisterItem<DiamondAxeItem> s_itemReg;
 } // namespace net::minecraft::item

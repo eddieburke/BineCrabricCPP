@@ -10,13 +10,12 @@ Tessellator Tessellator::INSTANCE {};
 Tessellator& INSTANCE = Tessellator::INSTANCE;
 
 Tessellator::Tessellator(const std::size_t bufferSize)
-    : bufferSize_(bufferSize)
 {
-    // bufferSize_ mirrors Java's int-buffer length and only sets the flush
-    // threshold (kVertexStride ints per vertex). Reserving it verbatim as a
-    // TessellatorVertex count would pin ~100 MB per instance; let the vector
-    // grow on demand instead.
-    vertices_.reserve(std::min<std::size_t>(bufferSize_ / kVertexStride, 4096));
+    // bufferSize mirrors Java's int-buffer length (8 ints per vertex). It only
+    // sets the mid-build flush threshold; reserve a modest slice up front and
+    // let the vector grow on demand.
+    flushThreshold_ = std::max<std::size_t>(bufferSize / 8, 256);
+    vertices_.reserve(std::min<std::size_t>(flushThreshold_, 4096));
 }
 
 void Tessellator::startQuads()
@@ -137,9 +136,10 @@ void Tessellator::vertex(const double x, const double y, const double z)
     }
 
     // Faithful to Beta: vertices carry a color only after an explicit tessellator.color().
-    // When hasColor_ is false, draw() emits no glColor, so the externally-set glColor4f
-    // (inventory icons, font glyphs) shows through — exactly like Java's "no color array".
-    ++addedVertexCount_;
+    // When hasColor_ is false, drawMesh leaves GL_COLOR_ARRAY disabled, so the
+    // externally-set glColor4f (inventory icons, font glyphs) shows through.
+    // Quads are stored verbatim (no 4->6 triangle expansion); drawMesh issues
+    // GL_QUADS directly.
     TessellatorVertex vertex;
     vertex.x = x + xOffset_;
     vertex.y = y + yOffset_;
@@ -148,17 +148,10 @@ void Tessellator::vertex(const double x, const double y, const double z)
     vertex.v = hasTexture_ ? v_ : 0.0;
     vertex.color = hasColor_ ? currentColor_ : 0xFFFFFFFFU;
     vertex.normal = hasNormals_ ? currentNormal_ : 0;
-
-    if (mode_ == kGlQuads && addedVertexCount_ % 4 == 0 && vertices_.size() >= 3) {
-        const std::size_t quadStart = vertices_.size() - 3;
-        const TessellatorVertex first = vertices_[quadStart];
-        const TessellatorVertex third = vertices_[quadStart + 2];
-        pushVertex(first);
-        pushVertex(third);
-    }
     pushVertex(vertex);
 
-    if (vertexCount_ % 4 == 0 && bufferPosition_ >= static_cast<int>(bufferSize_) - 32) {
+    // Flush on a quad/primitive boundary so we never split geometry mid-quad.
+    if (vertices_.size() >= flushThreshold_ && vertices_.size() % 4 == 0) {
         flush();
     }
 }
@@ -171,12 +164,9 @@ void Tessellator::draw()
 
     drawing_ = false;
     if (!vertices_.empty()) {
-        TessellatorMesh mesh {std::move(vertices_), mode_, hasTexture_, hasColor_, hasNormals_};
+        const TessellatorMesh mesh {std::move(vertices_), mode_, hasTexture_, hasColor_, hasNormals_};
         drawMesh(mesh);
-        vertices_ = std::move(mesh.vertices);
     }
-
-    lastDrawnVertices_ = vertices_;
     reset();
 }
 
@@ -185,30 +175,38 @@ void Tessellator::drawMesh(const TessellatorMesh& mesh)
     if (mesh.vertices.empty()) {
         return;
     }
-    const int drawMode = mesh.mode == kGlQuads ? kGlTriangles : mesh.mode;
-    gl::GL11::glBegin(drawMode);
-    for (const TessellatorVertex& vtx : mesh.vertices) {
-        if (mesh.hasColor) {
-            const std::uint32_t c = vtx.color;
-            const auto r = static_cast<std::uint8_t>(c & 0xFFU);
-            const auto g = static_cast<std::uint8_t>((c >> 8U) & 0xFFU);
-            const auto b = static_cast<std::uint8_t>((c >> 16U) & 0xFFU);
-            const auto a = static_cast<std::uint8_t>((c >> 24U) & 0xFFU);
-            gl::GL11::glColor4ub(r, g, b, a);
-        }
-        if (mesh.hasNormals) {
-            const std::int32_t n = vtx.normal;
-            const auto nx = static_cast<std::int8_t>(n & 0xFF);
-            const auto ny = static_cast<std::int8_t>((n >> 8) & 0xFF);
-            const auto nz = static_cast<std::int8_t>((n >> 16) & 0xFF);
-            gl::GL11::glNormal3b(nx, ny, nz);
-        }
-        if (mesh.hasTexture) {
-            gl::GL11::glTexCoord2d(vtx.u, vtx.v);
-        }
-        gl::GL11::glVertex3d(vtx.x, vtx.y, vtx.z);
+
+    const auto* base = mesh.vertices.data();
+    const int stride = static_cast<int>(sizeof(TessellatorVertex));
+
+    gl::GL11::glEnableClientState(gl::GL11::GL_VERTEX_ARRAY);
+    gl::GL11::glVertexPointer(3, gl::GL11::GL_DOUBLE, stride, &base->x);
+
+    if (mesh.hasTexture) {
+        gl::GL11::glEnableClientState(gl::GL11::GL_TEXTURE_COORD_ARRAY);
+        gl::GL11::glTexCoordPointer(2, gl::GL11::GL_DOUBLE, stride, &base->u);
     }
-    gl::GL11::glEnd();
+    if (mesh.hasColor) {
+        gl::GL11::glEnableClientState(gl::GL11::GL_COLOR_ARRAY);
+        gl::GL11::glColorPointer(4, gl::GL11::GL_UNSIGNED_BYTE, stride, &base->color);
+    }
+    if (mesh.hasNormals) {
+        gl::GL11::glEnableClientState(gl::GL11::GL_NORMAL_ARRAY);
+        gl::GL11::glNormalPointer(gl::GL11::GL_BYTE, stride, &base->normal);
+    }
+
+    gl::GL11::glDrawArrays(mesh.mode, 0, static_cast<int>(mesh.vertices.size()));
+
+    gl::GL11::glDisableClientState(gl::GL11::GL_VERTEX_ARRAY);
+    if (mesh.hasTexture) {
+        gl::GL11::glDisableClientState(gl::GL11::GL_TEXTURE_COORD_ARRAY);
+    }
+    if (mesh.hasColor) {
+        gl::GL11::glDisableClientState(gl::GL11::GL_COLOR_ARRAY);
+    }
+    if (mesh.hasNormals) {
+        gl::GL11::glDisableClientState(gl::GL11::GL_NORMAL_ARRAY);
+    }
 }
 
 TessellatorMesh Tessellator::takeMesh()
@@ -227,51 +225,9 @@ TessellatorMesh Tessellator::takeMesh()
     return mesh;
 }
 
-void Tessellator::finishWithoutDraw()
-{
-    if (!drawing_) {
-        return;
-    }
-    drawing_ = false;
-    lastDrawnVertices_ = vertices_;
-    reset();
-}
-
-bool Tessellator::drawing() const noexcept
-{
-    return drawing_;
-}
-
-bool Tessellator::hasTexture() const noexcept
-{
-    return hasTexture_;
-}
-
-bool Tessellator::hasColor() const noexcept
-{
-    return hasColor_;
-}
-
-bool Tessellator::hasNormals() const noexcept
-{
-    return hasNormals_;
-}
-
-int Tessellator::mode() const noexcept
-{
-    return mode_;
-}
-
-const std::vector<TessellatorVertex>& Tessellator::vertices() const noexcept
-{
-    return drawing_ ? vertices_ : lastDrawnVertices_;
-}
-
 void Tessellator::pushVertex(const TessellatorVertex& vertex)
 {
     vertices_.push_back(vertex);
-    ++vertexCount_;
-    bufferPosition_ += kVertexStride;
 }
 
 void Tessellator::flush()
@@ -287,9 +243,6 @@ void Tessellator::flush()
 
 void Tessellator::reset()
 {
-    vertexCount_ = 0;
-    bufferPosition_ = 0;
-    addedVertexCount_ = 0;
     vertices_.clear();
 }
 

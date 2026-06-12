@@ -1,7 +1,7 @@
 #include "net/minecraft/item/tool/golden_shovel.hpp"
+#include "net/minecraft/registry/Registry.hpp"
 
 #include "net/minecraft/item/Item.hpp"
-#include "net/minecraft/item/ItemRegistrar.hpp"
 #include "net/minecraft/recipe/CraftingRecipeManager.hpp"
 
 #include "net/minecraft/item/misc/stick.hpp"
@@ -12,7 +12,7 @@
 
 namespace net::minecraft::item {
 
-GoldenShovelItem::GoldenShovelItem() : ShovelItem(28, ToolMaterial::Gold) {}
+GoldenShovelItem::GoldenShovelItem() : ShovelItem(kRawId, ToolMaterial::Gold) {}
 
 void GoldenShovelItem::registerClass()
 {
@@ -29,5 +29,5 @@ void GoldenShovelItem::registerRecipes(recipe::CraftingRecipeManager& recipeMana
         {std::string("X"), std::string("#"), std::string("#"), '#', Item::byRawId(24), 'X', Item::byRawId(10)});
 }
 
-static registry::RegisterItem<GoldenShovelItem> s_itemReg(28);
+static registry::RegisterItem<GoldenShovelItem> s_itemReg;
 } // namespace net::minecraft::item

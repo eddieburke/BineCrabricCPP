@@ -50,9 +50,9 @@ public:
         }
         if (stoneNeighbors == 3 && airNeighbors == 1) {
             world->setBlock(x, y, z, liquidBlockId_);
-            world->instantBlockUpdateEnabled = true;
+            world->setInstantBlockUpdate(true);
             Block::BLOCKS[static_cast<std::size_t>(liquidBlockId_)]->onTick(world, x, y, z, random);
-            world->instantBlockUpdateEnabled = false;
+            world->setInstantBlockUpdate(false);
         }
         return true;
     }

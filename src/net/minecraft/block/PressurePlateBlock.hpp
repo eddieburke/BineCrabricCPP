@@ -9,7 +9,10 @@ namespace net::minecraft::recipe { class CraftingRecipeManager; }
 namespace net::minecraft::block {
 
 class PressurePlateBlock : public Block {
-    static void registerRecipes(recipe::CraftingRecipeManager& recipeManager);
+public:
+    static constexpr bool kRegisters = true;
+    static constexpr int kBlockId = 72;
+static void registerRecipes(recipe::CraftingRecipeManager& recipeManager);
 public:
     static void registerClass();
     PressurePlateActivationRule activationRule = PressurePlateActivationRule::EVERYTHING;

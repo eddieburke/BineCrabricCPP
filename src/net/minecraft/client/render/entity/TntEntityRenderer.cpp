@@ -59,3 +59,21 @@ void TntEntityRenderer::render(const net::minecraft::Entity& entity, double x, d
 }
 
 } // namespace net::minecraft::client::render::entity
+
+#include "net/minecraft/client/entity/EntityClientRendererRegistration.hpp"
+#include "net/minecraft/entity/TntEntity.hpp"
+
+namespace net::minecraft::entity {
+
+std::unique_ptr<::net::minecraft::client::render::entity::EntityRenderer> TntEntity::ClientRenderer::create()
+{
+    return std::make_unique<::net::minecraft::client::render::entity::TntEntityRenderer>();
+}
+
+} // namespace net::minecraft::entity
+
+namespace {
+
+static ::net::minecraft::registry::RegisterEntityRenderer<net::minecraft::entity::TntEntity> autoRendererReg;
+
+} // namespace

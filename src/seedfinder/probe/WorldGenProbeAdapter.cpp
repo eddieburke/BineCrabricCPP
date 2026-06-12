@@ -73,7 +73,7 @@ void prepareSpawn(net::minecraft::World& world, bool compute_spawn)
     if (!compute_spawn) {
         return;
     }
-    world.eventProcessingEnabled = true;
+    world.setEventProcessingEnabled(true);
     world.initializeSpawnPoint();
 }
 

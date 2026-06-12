@@ -6,7 +6,10 @@ namespace net::minecraft::block {
 
 class FlowingLiquidBlock : public LiquidBlock {
 public:
-    static void registerClass();
+    static constexpr bool kRegisters = true;
+    static constexpr int kBlockId = 8;
+
+static void registerClass();
     int adjacentSources = 0;
     bool spread[4] = {};
     int distanceToGap[4] = {};

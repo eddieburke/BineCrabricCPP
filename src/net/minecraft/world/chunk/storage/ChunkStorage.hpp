@@ -11,6 +11,10 @@ public:
     virtual ~ChunkStorage() = default;
 
     [[nodiscard]] virtual Chunk loadChunk(World* world, int chunkX, int chunkZ) = 0;
+    [[nodiscard]] Chunk loadDetachedChunk(int chunkX, int chunkZ)
+    {
+        return loadChunk(nullptr, chunkX, chunkZ);
+    }
     virtual void saveChunk(World* world, Chunk& chunk) = 0;
     virtual void saveEntities(World* world, Chunk& chunk) = 0;
     virtual void tick() = 0;

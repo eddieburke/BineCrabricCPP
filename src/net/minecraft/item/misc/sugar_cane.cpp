@@ -1,14 +1,14 @@
 #include "net/minecraft/item/misc/sugar_cane.hpp"
+#include "net/minecraft/registry/Registry.hpp"
 
 #include "net/minecraft/item/Item.hpp"
-#include "net/minecraft/item/ItemRegistrar.hpp"
 #include "net/minecraft/recipe/CraftingRecipeManager.hpp"
 
 #include "net/minecraft/item/misc/stick.hpp"
 
 namespace net::minecraft::item {
 
-SugarCaneItem::SugarCaneItem() : SecondaryBlockItem(82, Block::SUGAR_CANE) {}
+SugarCaneItem::SugarCaneItem() : SecondaryBlockItem(kRawId, Block::SUGAR_CANE) {}
 
 void SugarCaneItem::registerClass()
 {
@@ -24,5 +24,5 @@ void SugarCaneItem::registerRecipes(recipe::CraftingRecipeManager& recipeManager
     (void)recipeManager;
 }
 
-static registry::RegisterItem<SugarCaneItem> s_itemReg(82);
+static registry::RegisterItem<SugarCaneItem> s_itemReg;
 } // namespace net::minecraft::item

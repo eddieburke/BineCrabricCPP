@@ -1,7 +1,7 @@
 #include "net/minecraft/item/food/cooked_fish.hpp"
+#include "net/minecraft/registry/Registry.hpp"
 
 #include "net/minecraft/item/Item.hpp"
-#include "net/minecraft/item/ItemRegistrar.hpp"
 #include "net/minecraft/recipe/CraftingRecipeManager.hpp"
 
 #include "net/minecraft/item/misc/stick.hpp"
@@ -10,7 +10,7 @@
 
 namespace net::minecraft::item {
 
-CookedFishItem::CookedFishItem() : FoodItem(94, 5, false) {}
+CookedFishItem::CookedFishItem() : FoodItem(kRawId, 5, false) {}
 
 void CookedFishItem::registerClass()
 {
@@ -34,5 +34,5 @@ void CookedFishItem::registerRecipes(recipe::CraftingRecipeManager& recipeManage
     (void)recipeManager;
 }
 
-static registry::RegisterItem<CookedFishItem> s_itemReg(94);
+static registry::RegisterItem<CookedFishItem> s_itemReg;
 } // namespace net::minecraft::item

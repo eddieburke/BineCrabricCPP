@@ -9,7 +9,10 @@ class CraftingRecipeManager;
 namespace net::minecraft::item {
 
 class BrickItem : public Item {
-public:    static void registerClass();
+public:        static constexpr bool kRegisters = true;
+    static constexpr int kRawId = 80;
+
+static void registerClass();
     static void registerRecipes(recipe::CraftingRecipeManager& recipeManager);
     static void registerSmeltingRecipes();
 

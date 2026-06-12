@@ -10,9 +10,9 @@
 
 namespace net::minecraft::block {
 
+// Registered in SimpleBlocks.cpp.
 class TallPlantBlock : public PlantBlock {
 public:
-    static void registerClass();
     TallPlantBlock(int id, int textureId) : PlantBlock(id, textureId)
     {
         const float f = 0.4f;

@@ -13,7 +13,10 @@ namespace net::minecraft::item {
 
 class MusicDiscItem : public Item {
 public:
-    static void registerClass();
+    static constexpr bool kRegisters = true;
+    static constexpr int kRawId = 2000;
+
+static void registerClass();
     MusicDiscItem(int rawId, std::string sound);
     bool useOnBlock(ItemStack* stack, PlayerEntity* user, World* world, int x, int y, int z, int side) override;
 

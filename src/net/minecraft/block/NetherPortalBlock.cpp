@@ -1,5 +1,5 @@
 #include "net/minecraft/registry/Registry.hpp"
-#include "net/minecraft/block/BlockRegistrar.hpp"
+#include "net/minecraft/block/VanillaBlockSounds.hpp"
 #include "net/minecraft/block/NetherPortalBlock.hpp"
 
 #include "net/minecraft/block/Block.hpp"
@@ -195,12 +195,12 @@ void NetherPortalBlock::randomDisplayTick(
 }
 void NetherPortalBlock::registerClass()
 {
-    Block::NETHER_PORTAL = (new NetherPortalBlock(90, 14))->setHardness(-1.0f)->setSoundGroup(&vanillaGlassSound())->setLuminance(0.75f)->setTranslationKey("portal");
+    Block::NETHER_PORTAL = (new NetherPortalBlock(kBlockId, 14))->setHardness(-1.0f)->setSoundGroup(&vanillaGlassSound())->setLuminance(0.75f)->setTranslationKey("portal");
 }
 
 
 
 
-namespace {static ::net::minecraft::registry::RegisterBlock<NetherPortalBlock> autoReg(90);} // namespace
+namespace {static ::net::minecraft::registry::RegisterBlock<NetherPortalBlock> autoReg;} // namespace
 } // namespace net::minecraft::block
 

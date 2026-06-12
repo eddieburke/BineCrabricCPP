@@ -1,5 +1,5 @@
 #include "net/minecraft/registry/Registry.hpp"
-#include "net/minecraft/block/BlockRegistrar.hpp"
+#include "net/minecraft/block/VanillaBlockSounds.hpp"
 #include "net/minecraft/block/SlabBlock.hpp"
 
 #include "net/minecraft/world/BlockView.hpp"
@@ -95,7 +95,7 @@ bool SlabBlock::isSideVisible(const BlockView* blockView, int x, int y, int z, i
 }
 void SlabBlock::registerClass()
 {
-    Block::DOUBLE_SLAB = (new SlabBlock(43, true))->setHardness(2.0f)->setResistance(10.0f)->setSoundGroup(&vanillaStoneSound())->setTranslationKey("stoneSlab");
+    Block::DOUBLE_SLAB = (new SlabBlock(kBlockId, true))->setHardness(2.0f)->setResistance(10.0f)->setSoundGroup(&vanillaStoneSound())->setTranslationKey("stoneSlab");
     Block::SLAB = (new SlabBlock(44, false))->setHardness(2.0f)->setResistance(10.0f)->setSoundGroup(&vanillaStoneSound())->setTranslationKey("stoneSlab");
 }
 void SlabBlock::registerRecipes(recipe::CraftingRecipeManager& recipeManager)
@@ -115,6 +115,6 @@ void SlabBlock::registerBlockItems()
     (new item::SlabBlockItem(44 - 256))->setTranslationKey("stoneSlab");
 }
 
-namespace {static ::net::minecraft::registry::RegisterBlock<SlabBlock> autoReg(43);} // namespace
+namespace {static ::net::minecraft::registry::RegisterBlock<SlabBlock> autoReg;} // namespace
 } // namespace net::minecraft::block
 

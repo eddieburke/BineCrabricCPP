@@ -8,7 +8,10 @@ namespace net::minecraft::recipe { class CraftingRecipeManager; }
 namespace net::minecraft::block {
 
 class TrapdoorBlock : public Block {
-    static void registerRecipes(recipe::CraftingRecipeManager& recipeManager);
+public:
+    static constexpr bool kRegisters = true;
+    static constexpr int kBlockId = 96;
+static void registerRecipes(recipe::CraftingRecipeManager& recipeManager);
 public:
     static void registerClass();
     using Block::canPlaceAt;

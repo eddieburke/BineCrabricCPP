@@ -1,5 +1,4 @@
 #include "net/minecraft/registry/Registry.hpp"
-#include "net/minecraft/block/BlockRegistrar.hpp"
 #include "net/minecraft/block/NoteBlock.hpp"
 
 #include "net/minecraft/block/Block.hpp"
@@ -94,7 +93,7 @@ void NoteBlock::onBlockAction(World* world, int x, int y, int z, int data1, int 
 }
 void NoteBlock::registerClass()
 {
-    Block::NOTE_BLOCK = (new NoteBlock(25))->setHardness(0.8f)->setTranslationKey("musicBlock")->ignoreMetaUpdates();
+    Block::NOTE_BLOCK = (new NoteBlock(kBlockId))->setHardness(0.8f)->setTranslationKey("musicBlock")->ignoreMetaUpdates();
 }
 void NoteBlock::registerRecipes(recipe::CraftingRecipeManager& recipeManager)
 {
@@ -106,6 +105,6 @@ void NoteBlock::registerRecipes(recipe::CraftingRecipeManager& recipeManager)
 
 
 
-namespace {static ::net::minecraft::registry::RegisterBlock<NoteBlock> autoReg(25);} // namespace
+namespace {static ::net::minecraft::registry::RegisterBlock<NoteBlock> autoReg;} // namespace
 } // namespace net::minecraft::block
 

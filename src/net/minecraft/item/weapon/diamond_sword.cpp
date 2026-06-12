@@ -1,7 +1,7 @@
 #include "net/minecraft/item/weapon/diamond_sword.hpp"
+#include "net/minecraft/registry/Registry.hpp"
 
 #include "net/minecraft/item/Item.hpp"
-#include "net/minecraft/item/ItemRegistrar.hpp"
 #include "net/minecraft/recipe/CraftingRecipeManager.hpp"
 
 #include "net/minecraft/item/misc/stick.hpp"
@@ -12,7 +12,7 @@
 
 namespace net::minecraft::item {
 
-DiamondSwordItem::DiamondSwordItem() : SwordItem(20, ToolMaterial::Diamond) {}
+DiamondSwordItem::DiamondSwordItem() : SwordItem(kRawId, ToolMaterial::Diamond) {}
 
 void DiamondSwordItem::registerClass()
 {
@@ -29,5 +29,5 @@ void DiamondSwordItem::registerRecipes(recipe::CraftingRecipeManager& recipeMana
         {std::string("X"), std::string("X"), std::string("#"), '#', Item::byRawId(24), 'X', Item::byRawId(8)});
 }
 
-static registry::RegisterItem<DiamondSwordItem> s_itemReg(20);
+static registry::RegisterItem<DiamondSwordItem> s_itemReg;
 } // namespace net::minecraft::item

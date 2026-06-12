@@ -125,6 +125,13 @@ void ModelPart::render(float scale)
     if (!compiled_) {
         compileList(scale);
     }
+    const auto renderChildren = [this, scale]() {
+        for (ModelPart* child : children_) {
+            if (child != nullptr) {
+                child->render(scale);
+            }
+        }
+    };
     if (pitch != 0.0f || yaw != 0.0f || roll != 0.0f) {
         gl::GL11::glPushMatrix();
         gl::GL11::glTranslatef(pivotX * scale, pivotY * scale, pivotZ * scale);
@@ -138,19 +145,16 @@ void ModelPart::render(float scale)
             gl::GL11::glRotatef(pitch * 57.295776f, 1.0f, 0.0f, 0.0f);
         }
         gl::GL11::glCallList(list_);
+        renderChildren();
         gl::GL11::glPopMatrix();
     } else if (pivotX != 0.0f || pivotY != 0.0f || pivotZ != 0.0f) {
         gl::GL11::glTranslatef(pivotX * scale, pivotY * scale, pivotZ * scale);
         gl::GL11::glCallList(list_);
+        renderChildren();
         gl::GL11::glTranslatef(-pivotX * scale, -pivotY * scale, -pivotZ * scale);
     } else {
         gl::GL11::glCallList(list_);
-    }
-
-    for (ModelPart* child : children_) {
-        if (child != nullptr) {
-            child->render(scale);
-        }
+        renderChildren();
     }
 }
 

@@ -6,6 +6,9 @@
 #include "net/minecraft/util/IntHashMap.hpp"
 #include "net/minecraft/world/BlockView.hpp"
 
+#include <array>
+#include <deque>
+
 namespace net::minecraft::entity::ai::pathing {
 
 class PathNodeNavigator {
@@ -22,14 +25,14 @@ private:
     PathNode* getNode(Entity* entity, int x, int y, int z, PathNode& sizeNode, int stepHeight);
     PathNode* getNode(int x, int y, int z);
     int isPassable(Entity* entity, int x, int y, int z, PathNode& node);
-    [[nodiscard]] Path createPath(PathNode* startNode, PathNode* endNode);
+    [[nodiscard]] Path createPath(PathNode* endNode);
     void resetSearch();
 
     BlockView* blockView_ = nullptr;
     PathMinHeap minHeap_ {};
     util::IntHashMap<PathNode*> pathNodeCache_ {};
-    PathNode successors_[32] {};
-    std::vector<PathNode*> ownedNodes_ {};
+    std::array<PathNode*, 4> successors_ {};
+    std::deque<PathNode> ownedNodes_ {};
 };
 
 } // namespace net::minecraft::entity::ai::pathing

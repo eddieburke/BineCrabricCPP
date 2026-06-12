@@ -1,5 +1,4 @@
 #include "net/minecraft/registry/Registry.hpp"
-#include "net/minecraft/block/BlockRegistrar.hpp"
 #include "net/minecraft/block/PistonHeadBlock.hpp"
 
 #include "net/minecraft/block/Block.hpp"
@@ -157,12 +156,12 @@ void PistonHeadBlock::neighborUpdate(World* world, int x, int y, int z, int neig
 }
 void PistonHeadBlock::registerClass()
 {
-    Block::PISTON_HEAD = (new PistonHeadBlock(34, 107))->ignoreMetaUpdates();
+    Block::PISTON_HEAD = (new PistonHeadBlock(kBlockId, 107))->ignoreMetaUpdates();
 }
 
 namespace {
 
-static ::net::minecraft::registry::RegisterBlock<PistonHeadBlock> autoReg(34);
+static ::net::minecraft::registry::RegisterBlock<PistonHeadBlock> autoReg;
 } // namespace
 } // namespace net::minecraft::block
 

@@ -1,5 +1,5 @@
 #include "net/minecraft/registry/Registry.hpp"
-#include "net/minecraft/block/BlockRegistrar.hpp"
+#include "net/minecraft/block/VanillaBlockSounds.hpp"
 #include "net/minecraft/block/ButtonBlock.hpp"
 #include "net/minecraft/block/Block.hpp"
 
@@ -259,7 +259,7 @@ bool ButtonBlock::isEmittingRedstonePowerInDirection(
 }
 void ButtonBlock::registerClass()
 {
-    Block::BUTTON = (new ButtonBlock(77, Block::BLOCKS[1]->textureId))->setHardness(0.5f)->setSoundGroup(&vanillaStoneSound())->setTranslationKey("button")->ignoreMetaUpdates();
+    Block::BUTTON = (new ButtonBlock(kBlockId, Block::BLOCKS[1]->textureId))->setHardness(0.5f)->setSoundGroup(&vanillaStoneSound())->setTranslationKey("button")->ignoreMetaUpdates();
 }
 void ButtonBlock::registerRecipes(recipe::CraftingRecipeManager& recipeManager)
 {
@@ -270,6 +270,6 @@ void ButtonBlock::registerRecipes(recipe::CraftingRecipeManager& recipeManager)
 
 
 
-namespace {static ::net::minecraft::registry::RegisterBlock<ButtonBlock> autoReg(77);} // namespace
+namespace {static ::net::minecraft::registry::RegisterBlock<ButtonBlock> autoReg;} // namespace
 } // namespace net::minecraft::block
 

@@ -1,5 +1,5 @@
 #include "net/minecraft/registry/Registry.hpp"
-#include "net/minecraft/block/BlockRegistrar.hpp"
+#include "net/minecraft/block/VanillaBlockSounds.hpp"
 #include "net/minecraft/block/FireBlock.hpp"
 
 #include "net/minecraft/block/Block.hpp"
@@ -311,12 +311,12 @@ void FireBlock::randomDisplayTick(
 }
 void FireBlock::registerClass()
 {
-    Block::FIRE = (new FireBlock(51, 31))->setHardness(0.0f)->setLuminance(1.0f)->setSoundGroup(&vanillaWoodSound())->setTranslationKey("fire")->disableTrackingStatistics()->ignoreMetaUpdates();
+    Block::FIRE = (new FireBlock(kBlockId, 31))->setHardness(0.0f)->setLuminance(1.0f)->setSoundGroup(&vanillaWoodSound())->setTranslationKey("fire")->disableTrackingStatistics()->ignoreMetaUpdates();
 }
 
 
 
 
-namespace {static ::net::minecraft::registry::RegisterBlock<FireBlock> autoReg(51);} // namespace
+namespace {static ::net::minecraft::registry::RegisterBlock<FireBlock> autoReg;} // namespace
 } // namespace net::minecraft::block
 

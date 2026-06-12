@@ -1,7 +1,7 @@
 #include "net/minecraft/item/tool/iron_axe.hpp"
+#include "net/minecraft/registry/Registry.hpp"
 
 #include "net/minecraft/item/Item.hpp"
-#include "net/minecraft/item/ItemRegistrar.hpp"
 #include "net/minecraft/recipe/CraftingRecipeManager.hpp"
 
 #include "net/minecraft/item/misc/stick.hpp"
@@ -12,7 +12,7 @@
 
 namespace net::minecraft::item {
 
-IronAxeItem::IronAxeItem() : AxeItem(2, ToolMaterial::Iron) {}
+IronAxeItem::IronAxeItem() : AxeItem(kRawId, ToolMaterial::Iron) {}
 
 void IronAxeItem::registerClass()
 {
@@ -29,5 +29,5 @@ void IronAxeItem::registerRecipes(recipe::CraftingRecipeManager& recipeManager)
         {std::string("XX"), std::string("X#"), std::string(" #"), '#', Item::byRawId(24), 'X', Item::byRawId(9)});
 }
 
-static registry::RegisterItem<IronAxeItem> s_itemReg(2);
+static registry::RegisterItem<IronAxeItem> s_itemReg;
 } // namespace net::minecraft::item

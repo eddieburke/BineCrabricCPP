@@ -4,7 +4,7 @@
 #include "net/minecraft/client/world/chunk/MultiplayerChunkCache.hpp"
 #include "net/minecraft/entity/Entity.hpp"
 #include "net/minecraft/world/dimension/Dimension.hpp"
-#include "net/minecraft/world/event/listener/GameEventListener.hpp"
+#include "net/minecraft/world/events/GameEventListener.hpp"
 
 #include <algorithm>
 
@@ -190,26 +190,13 @@ void ClientWorld::updateWeatherCycles()
     if (dimension != nullptr && dimension->hasCeiling) {
         return;
     }
-    if (ticksSinceLightning_ > 0) {
-        --ticksSinceLightning_;
+    if (weather_.ticksSinceLightning > 0) {
+        --weather_.ticksSinceLightning;
     }
     if (!hasStorageBackedProperties_) {
         return;
     }
-    rainGradientPrev = rainGradient;
-    if (properties_.getRaining()) {
-        rainGradient = static_cast<float>(static_cast<double>(rainGradient) + 0.01);
-    } else {
-        rainGradient = static_cast<float>(static_cast<double>(rainGradient) - 0.01);
-    }
-    rainGradient = std::clamp(rainGradient, 0.0f, 1.0f);
-    thunderGradientPrev = thunderGradient;
-    if (properties_.getThundering()) {
-        thunderGradient = static_cast<float>(static_cast<double>(thunderGradient) + 0.01);
-    } else {
-        thunderGradient = static_cast<float>(static_cast<double>(thunderGradient) - 0.01);
-    }
-    thunderGradient = std::clamp(thunderGradient, 0.0f, 1.0f);
+    weather_.tickGradients(properties_.getRaining(), properties_.getThundering());
 }
 
 void ClientWorld::disconnect()

@@ -5,18 +5,9 @@
 #include "net/minecraft/block/material/Material.hpp"
 #include "net/minecraft/util/math/MathHelper.hpp"
 
-#include <vector>
+#include <algorithm>
 
 namespace net::minecraft::entity::ai::pathing {
-
-namespace {
-
-bool nodesEqual(PathNode* left, PathNode* right)
-{
-    return left != nullptr && right != nullptr && left->equals(*right);
-}
-
-} // namespace
 
 void PathNodeNavigator::resetSearch()
 {
@@ -68,22 +59,22 @@ Path PathNodeNavigator::findPath(Entity* startEntity, PathNode* startNode, PathN
     minHeap_.clear();
     minHeap_.push(startNode);
     PathNode* closestNode = startNode;
+    float closestDistance = startNode->distanceToNearestTarget;
 
     while (!minHeap_.isEmpty()) {
         PathNode* current = minHeap_.pop();
-        if (nodesEqual(current, endNode)) {
-            return createPath(startNode, endNode);
+        if (current == endNode) {
+            return createPath(endNode);
         }
-        if (current->getDistance(*endNode) < closestNode->getDistance(*endNode)) {
+        const float currentDistance = current->getDistance(*endNode);
+        if (currentDistance < closestDistance) {
             closestNode = current;
+            closestDistance = currentDistance;
         }
         current->visited = true;
         const int successorCount = getSuccessors(startEntity, current, sizeNode, endNode, distance);
         for (int i = 0; i < successorCount; ++i) {
-            PathNode* successor = getNode(successors_[i].x, successors_[i].y, successors_[i].z);
-            if (successor == nullptr) {
-                continue;
-            }
+            PathNode* successor = successors_[static_cast<std::size_t>(i)];
             const float pathLength = current->penalizedPathLength + current->getDistance(*successor);
             if (successor->isInHeap() && !(pathLength < successor->penalizedPathLength)) {
                 continue;
@@ -103,7 +94,7 @@ Path PathNodeNavigator::findPath(Entity* startEntity, PathNode* startNode, PathN
     if (closestNode == startNode) {
         return Path {{}};
     }
-    return createPath(startNode, closestNode);
+    return createPath(closestNode);
 }
 
 int PathNodeNavigator::getSuccessors(Entity* startEntity, PathNode* startNode, PathNode& sizeNode, PathNode* endNode,
@@ -121,16 +112,16 @@ int PathNodeNavigator::getSuccessors(Entity* startEntity, PathNode* startNode, P
     PathNode* south = getNode(startEntity, startNode->x, startNode->y, startNode->z - 1, sizeNode, stepHeight);
 
     if (north != nullptr && !north->visited && north->getDistance(*endNode) < distance) {
-        successors_[count++] = *north;
+        successors_[static_cast<std::size_t>(count++)] = north;
     }
     if (west != nullptr && !west->visited && west->getDistance(*endNode) < distance) {
-        successors_[count++] = *west;
+        successors_[static_cast<std::size_t>(count++)] = west;
     }
     if (east != nullptr && !east->visited && east->getDistance(*endNode) < distance) {
-        successors_[count++] = *east;
+        successors_[static_cast<std::size_t>(count++)] = east;
     }
     if (south != nullptr && !south->visited && south->getDistance(*endNode) < distance) {
-        successors_[count++] = *south;
+        successors_[static_cast<std::size_t>(count++)] = south;
     }
     return count;
 }
@@ -172,8 +163,8 @@ PathNode* PathNodeNavigator::getNode(int x, int y, int z)
         return cached;
     }
 
-    auto* node = new PathNode(x, y, z);
-    ownedNodes_.push_back(node);
+    ownedNodes_.emplace_back(x, y, z);
+    auto* node = &ownedNodes_.back();
     pathNodeCache_.put(hash, node);
     return node;
 }
@@ -218,19 +209,19 @@ int PathNodeNavigator::isPassable(Entity* /*entity*/, int x, int y, int z, PathN
     return 1;
 }
 
-Path PathNodeNavigator::createPath(PathNode* /*unused*/, PathNode* endNode)
+Path PathNodeNavigator::createPath(PathNode* endNode)
 {
     int count = 1;
     for (PathNode* node = endNode; node != nullptr && node->previous != nullptr; node = node->previous) {
         ++count;
     }
 
-    std::vector<PathNode> nodes(static_cast<std::size_t>(count));
-    PathNode* node = endNode;
-    for (int index = count - 1; index >= 0 && node != nullptr; --index) {
-        nodes[static_cast<std::size_t>(index)] = PathNode {node->x, node->y, node->z};
-        node = node->previous;
+    std::vector<PathNode> nodes {};
+    nodes.reserve(static_cast<std::size_t>(count));
+    for (PathNode* node = endNode; node != nullptr; node = node->previous) {
+        nodes.emplace_back(node->x, node->y, node->z);
     }
+    std::reverse(nodes.begin(), nodes.end());
     return Path(std::move(nodes));
 }
 

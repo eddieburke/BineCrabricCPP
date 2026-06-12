@@ -1,11 +1,7 @@
 #include "net/minecraft/registry/Registry.hpp"
-#include "net/minecraft/entity/EntityRegistrar.hpp"
 #include "net/minecraft/entity/vehicle/BoatEntity.hpp"
 
-#include "net/minecraft/entity/EntityRegistry.hpp"
 
-#include <memory>
-#include <typeindex>
 
 #include "net/minecraft/block/Block.hpp"
 #include "net/minecraft/block/material/Material.hpp"
@@ -293,11 +289,6 @@ void BoatEntity::onCollision(Entity* otherEntity)
 }
 
 
-void BoatEntity::registerClass()
-{
-    ::net::minecraft::entity::detail::registerVanillaEntity<BoatEntity>("Boat", 41);
-}
-
-static ::net::minecraft::registry::RegisterEntity<BoatEntity> autoReg(41);
+static ::net::minecraft::registry::RegisterEntity<BoatEntity> autoReg;
 
 } // namespace net::minecraft::entity::vehicle

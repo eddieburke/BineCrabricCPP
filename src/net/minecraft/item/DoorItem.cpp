@@ -5,7 +5,6 @@
 #include "net/minecraft/block/material/Material.hpp"
 #include "net/minecraft/entity/player/PlayerEntity.hpp"
 #include "net/minecraft/item/Item.hpp"
-#include "net/minecraft/item/ItemRegistrar.hpp"
 #include "net/minecraft/item/ItemStack.hpp"
 #include "net/minecraft/recipe/CraftingRecipeManager.hpp"
 #include "net/minecraft/util/math/MathHelper.hpp"
@@ -82,6 +81,6 @@ void DoorItem::registerRecipes(recipe::CraftingRecipeManager& recipeManager)
 
 
 
-namespace {static ::net::minecraft::registry::RegisterItem<DoorItem> autoReg(68);} // namespace
+namespace {static ::net::minecraft::registry::RegisterItem<DoorItem> autoReg;} // namespace
 
 } // namespace net::minecraft::item

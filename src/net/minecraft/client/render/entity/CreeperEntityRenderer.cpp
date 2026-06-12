@@ -83,3 +83,21 @@ bool CreeperEntityRenderer::bindDecorationTexture(const net::minecraft::LivingEn
 }
 
 } // namespace net::minecraft::client::render::entity
+
+#include "net/minecraft/client/entity/EntityClientRendererRegistration.hpp"
+#include "net/minecraft/entity/mob/CreeperEntity.hpp"
+
+namespace net::minecraft::entity::mob {
+
+std::unique_ptr<::net::minecraft::client::render::entity::EntityRenderer> CreeperEntity::ClientRenderer::create()
+{
+    return std::make_unique<::net::minecraft::client::render::entity::CreeperEntityRenderer>();
+}
+
+} // namespace net::minecraft::entity::mob
+
+namespace {
+
+static ::net::minecraft::registry::RegisterEntityRenderer<net::minecraft::entity::mob::CreeperEntity> autoRendererReg;
+
+} // namespace

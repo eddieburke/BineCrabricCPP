@@ -1,11 +1,7 @@
 #include "net/minecraft/registry/Registry.hpp"
-#include "net/minecraft/entity/EntityRegistrar.hpp"
 #include "net/minecraft/entity/mob/SpiderEntity.hpp"
 
-#include "net/minecraft/entity/EntityRegistry.hpp"
 
-#include <memory>
-#include <typeindex>
 
 #include "net/minecraft/entity/Entity.hpp"
 #include "net/minecraft/entity/player/PlayerEntity.hpp"
@@ -63,11 +59,6 @@ int SpiderEntity::getDroppedItemId() const
 }
 
 
-void SpiderEntity::registerClass()
-{
-    ::net::minecraft::entity::detail::registerVanillaEntity<SpiderEntity>("Spider", 52);
-}
-
-static ::net::minecraft::registry::RegisterEntity<SpiderEntity> autoReg(52);
+static ::net::minecraft::registry::RegisterEntity<SpiderEntity> autoReg;
 
 } // namespace net::minecraft::entity::mob

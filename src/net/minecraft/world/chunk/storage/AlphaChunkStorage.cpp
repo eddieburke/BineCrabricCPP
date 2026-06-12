@@ -10,6 +10,7 @@
 
 #include <fstream>
 #include <iostream>
+#include <mutex>
 
 namespace net::minecraft {
 
@@ -21,6 +22,12 @@ AlphaChunkStorage::AlphaChunkStorage(fs::path dir, bool make) : dir_(std::move(d
 }
 
 namespace {
+
+std::mutex& chunkFileMutex()
+{
+    static std::mutex mutex;
+    return mutex;
+}
 
 [[nodiscard]] std::string toBase36(int value)
 {
@@ -74,6 +81,7 @@ fs::path AlphaChunkStorage::getChunkFile(int chunkX, int chunkZ) const
 
 Chunk AlphaChunkStorage::loadChunk(World* world, int chunkX, int chunkZ)
 {
+    const std::lock_guard lock(chunkFileMutex());
     const fs::path file = getChunkFile(chunkX, chunkZ);
     if (file.empty() || !fs::exists(file)) {
         return EmptyChunk(world, chunkX, chunkZ);
@@ -192,6 +200,7 @@ void AlphaChunkStorage::saveChunk(World* world, Chunk& chunk)
     if (world == nullptr) {
         return;
     }
+    const std::lock_guard lock(chunkFileMutex());
     world->checkSessionLock();
 
     const fs::path file = getChunkFile(chunk.x, chunk.z);

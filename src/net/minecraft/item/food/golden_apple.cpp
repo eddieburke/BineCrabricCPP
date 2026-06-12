@@ -1,7 +1,7 @@
 #include "net/minecraft/item/food/golden_apple.hpp"
+#include "net/minecraft/registry/Registry.hpp"
 
 #include "net/minecraft/item/Item.hpp"
-#include "net/minecraft/item/ItemRegistrar.hpp"
 #include "net/minecraft/recipe/CraftingRecipeManager.hpp"
 
 #include "net/minecraft/item/misc/stick.hpp"
@@ -9,7 +9,7 @@
 
 namespace net::minecraft::item {
 
-GoldenAppleItem::GoldenAppleItem() : FoodItem(66, 42, false) {}
+GoldenAppleItem::GoldenAppleItem() : FoodItem(kRawId, 42, false) {}
 
 void GoldenAppleItem::registerClass()
 {
@@ -26,5 +26,5 @@ void GoldenAppleItem::registerRecipes(recipe::CraftingRecipeManager& recipeManag
         {std::string("###"), std::string("#X#"), std::string("###"), '#', Block::GOLD_BLOCK, 'X', Item::byRawId(4)});
 }
 
-static registry::RegisterItem<GoldenAppleItem> s_itemReg(66);
+static registry::RegisterItem<GoldenAppleItem> s_itemReg;
 } // namespace net::minecraft::item

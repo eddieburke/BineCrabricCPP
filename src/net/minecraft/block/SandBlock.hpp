@@ -4,9 +4,9 @@
 
 namespace net::minecraft::block {
 
+// Registered in SimpleBlocks.cpp.
 class SandBlock : public FallingBlock {
 public:
-    static void registerClass();
     SandBlock(int id, int textureId) : FallingBlock(id, textureId, material::Material::SAND) {}
 };
 

@@ -4,6 +4,23 @@
 
 namespace net::minecraft {
 
+BiomeSource::ClimateSample BiomeSource::sampleClimate(int x, int z) const
+{
+    std::vector<double> t(1);
+    std::vector<double> d(1);
+    std::vector<double> w(1);
+    temperatureSampler_.sample(t, x, z, 1, 1, 0.025, 0.025, 0.25);
+    downfallSampler_.sample(d, x, z, 1, 1, 0.05, 0.05, 0.3333333333333333);
+    weirdnessSampler_.sample(w, x, z, 1, 1, 0.25, 0.25, 0.5882352941176471);
+
+    const double weirdness = w[0] * 1.1 + 0.5;
+    double temperature = (t[0] * 0.15 + 0.7) * 0.99 + weirdness * 0.01;
+    double downfall = (d[0] * 0.15 + 0.5) * 0.998 + weirdness * 0.002;
+    temperature = std::clamp(1.0 - (1.0 - temperature) * (1.0 - temperature), 0.0, 1.0);
+    downfall = std::clamp(downfall, 0.0, 1.0);
+    return {temperature, downfall};
+}
+
 BiomeInfo BiomeSource::getBiome(int x, int z)
 {
     getBiomesInArea(queryScratch_, x, z, 1, 1);

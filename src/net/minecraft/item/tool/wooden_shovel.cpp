@@ -1,7 +1,7 @@
 #include "net/minecraft/item/tool/wooden_shovel.hpp"
+#include "net/minecraft/registry/Registry.hpp"
 
 #include "net/minecraft/item/Item.hpp"
-#include "net/minecraft/item/ItemRegistrar.hpp"
 #include "net/minecraft/recipe/CraftingRecipeManager.hpp"
 
 #include "net/minecraft/item/misc/stick.hpp"
@@ -12,7 +12,7 @@
 
 namespace net::minecraft::item {
 
-WoodenShovelItem::WoodenShovelItem() : ShovelItem(13, ToolMaterial::Wood) {}
+WoodenShovelItem::WoodenShovelItem() : ShovelItem(kRawId, ToolMaterial::Wood) {}
 
 void WoodenShovelItem::registerClass()
 {
@@ -29,5 +29,5 @@ void WoodenShovelItem::registerRecipes(recipe::CraftingRecipeManager& recipeMana
         {std::string("X"), std::string("#"), std::string("#"), '#', Item::byRawId(24), 'X', Block::PLANKS});
 }
 
-static registry::RegisterItem<WoodenShovelItem> s_itemReg(13);
+static registry::RegisterItem<WoodenShovelItem> s_itemReg;
 } // namespace net::minecraft::item

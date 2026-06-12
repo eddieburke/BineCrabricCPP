@@ -1,5 +1,5 @@
 #include "net/minecraft/registry/Registry.hpp"
-#include "net/minecraft/block/BlockRegistrar.hpp"
+#include "net/minecraft/block/VanillaBlockSounds.hpp"
 #include "net/minecraft/block/DispenserBlock.hpp"
 
 #include "net/minecraft/block/Block.hpp"
@@ -222,7 +222,7 @@ void DispenserBlock::onBreak(World* world, int x, int y, int z)
 }
 void DispenserBlock::registerClass()
 {
-    Block::DISPENSER = (new DispenserBlock(23))->setHardness(3.5f)->setSoundGroup(&vanillaStoneSound())->setTranslationKey("dispenser")->ignoreMetaUpdates();
+    Block::DISPENSER = (new DispenserBlock(kBlockId))->setHardness(3.5f)->setSoundGroup(&vanillaStoneSound())->setTranslationKey("dispenser")->ignoreMetaUpdates();
 }
 void DispenserBlock::registerRecipes(recipe::CraftingRecipeManager& recipeManager)
 {
@@ -234,6 +234,6 @@ void DispenserBlock::registerRecipes(recipe::CraftingRecipeManager& recipeManage
 
 
 
-namespace {static ::net::minecraft::registry::RegisterBlock<DispenserBlock> autoReg(23);} // namespace
+namespace {static ::net::minecraft::registry::RegisterBlock<DispenserBlock> autoReg;} // namespace
 } // namespace net::minecraft::block
 

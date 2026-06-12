@@ -13,6 +13,8 @@
 #include <GL/glu.h>
 #include <stdexcept>
 
+#include "net/minecraft/client/gl/GlExtensions.hpp"
+
 namespace net::minecraft::client::gl3d {
 
 class GlContext {
@@ -65,6 +67,7 @@ public:
             throw std::runtime_error("gl3d: wglCreateContext failed");
         }
         ::wglMakeCurrent(hdc_, glrc_);
+        net::minecraft::client::gl::GlExtensions::setSwapInterval(0);
     }
 
     void makeCurrent() const

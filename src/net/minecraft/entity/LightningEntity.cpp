@@ -74,7 +74,7 @@ void LightningEntity::tick()
                 entity->onStruckByLightning(this);
             }
         }
-        world->lightningTicksLeft = 2;
+        world->weather().lightningTicks = 2;
     }
 }
 

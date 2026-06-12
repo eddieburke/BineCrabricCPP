@@ -5,7 +5,6 @@
 #include "net/minecraft/entity/player/PlayerEntity.hpp"
 #include "net/minecraft/item/Item.hpp"
 #include "net/minecraft/item/ItemPlacement.hpp"
-#include "net/minecraft/item/ItemRegistrar.hpp"
 #include "net/minecraft/item/ItemStack.hpp"
 #include "net/minecraft/world/World.hpp"
 
@@ -40,6 +39,6 @@ void RedstoneItem::registerClass()
 
 
 
-namespace {static ::net::minecraft::registry::RegisterItem<RedstoneItem> autoReg(75); } // namespace
+namespace {static ::net::minecraft::registry::RegisterItem<RedstoneItem> autoReg; } // namespace
 
 } // namespace net::minecraft::item

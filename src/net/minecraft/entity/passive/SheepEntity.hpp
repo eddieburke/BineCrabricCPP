@@ -2,6 +2,7 @@
 
 #include "net/minecraft/entity/passive/AnimalEntity.hpp"
 #include "net/minecraft/nbt/NbtCompound.hpp"
+#include "net/minecraft/entity/EntityClientRendererDecl.hpp"
 
 namespace net::minecraft::entity::player {
 class PlayerEntity;
@@ -11,7 +12,15 @@ namespace net::minecraft::entity::passive {
 
 class SheepEntity : public AnimalEntity {
 public:
-    static void registerClass();
+    static constexpr bool kRegisters = true;
+    static constexpr int kEntityId = 91;
+
+    static constexpr const char* kEntityName = "Sheep";
+
+
+    struct ClientRenderer {
+        static std::unique_ptr<::net::minecraft::client::render::entity::EntityRenderer> create();
+    };
     explicit SheepEntity(World* world = nullptr);
 
     static constexpr float COLORS[16][3] = {
@@ -31,6 +40,7 @@ public:
     void readNbt(const NbtCompound& nbt) override;
     void dropItems() override;
     bool interact(player::PlayerEntity* player) override;
+    void initializeSpawnState(JavaRandom& random) override;
 
     [[nodiscard]] int getColor() const
     {

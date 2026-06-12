@@ -3,7 +3,7 @@
 #include <string>
 #include <vector>
 
-#include "net/minecraft/world/event/listener/GameEventListener.hpp"
+#include "net/minecraft/world/events/GameEventListener.hpp"
 
 namespace net::minecraft {
 

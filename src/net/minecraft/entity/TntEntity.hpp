@@ -1,12 +1,21 @@
 #pragma once
 
 #include "net/minecraft/entity/Entity.hpp"
+#include "net/minecraft/entity/EntityClientRendererDecl.hpp"
 
 namespace net::minecraft::entity {
 
 class TntEntity : public Entity {
 public:
-    static void registerClass();
+    static constexpr bool kRegisters = true;
+    static constexpr int kEntityId = 20;
+
+    static constexpr const char* kEntityName = "PrimedTnt";
+
+
+    struct ClientRenderer {
+        static std::unique_ptr<::net::minecraft::client::render::entity::EntityRenderer> create();
+    };
     explicit TntEntity(World* world = nullptr);
     TntEntity(World* world, double x, double y, double z);
 

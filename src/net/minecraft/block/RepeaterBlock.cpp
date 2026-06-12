@@ -1,5 +1,5 @@
 #include "net/minecraft/registry/Registry.hpp"
-#include "net/minecraft/block/BlockRegistrar.hpp"
+#include "net/minecraft/block/VanillaBlockSounds.hpp"
 #include "net/minecraft/block/RepeaterBlock.hpp"
 
 #include "net/minecraft/block/Block.hpp"
@@ -231,12 +231,12 @@ void RepeaterBlock::randomDisplayTick(
 void RepeaterBlock::registerClass()
 {
     Block::REPEATER = (new RepeaterBlock(93, false))->setHardness(0.0f)->setSoundGroup(&vanillaWoodSound())->setTranslationKey("diode")->disableTrackingStatistics()->ignoreMetaUpdates();
-    Block::POWERED_REPEATER = (new RepeaterBlock(94, true))->setHardness(0.0f)->setLuminance(0.625f)->setSoundGroup(&vanillaWoodSound())->setTranslationKey("diode")->disableTrackingStatistics()->ignoreMetaUpdates();
+    Block::POWERED_REPEATER = (new RepeaterBlock(kBlockId, true))->setHardness(0.0f)->setLuminance(0.625f)->setSoundGroup(&vanillaWoodSound())->setTranslationKey("diode")->disableTrackingStatistics()->ignoreMetaUpdates();
 }
 
 
 
 
-namespace {static ::net::minecraft::registry::RegisterBlock<RepeaterBlock> autoReg(94);} // namespace
+namespace {static ::net::minecraft::registry::RegisterBlock<RepeaterBlock> autoReg;} // namespace
 } // namespace net::minecraft::block
 

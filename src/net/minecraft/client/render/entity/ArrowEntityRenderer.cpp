@@ -74,3 +74,21 @@ void ArrowEntityRenderer::render(const net::minecraft::Entity& entity, double x,
 }
 
 } // namespace net::minecraft::client::render::entity
+
+#include "net/minecraft/client/entity/EntityClientRendererRegistration.hpp"
+#include "net/minecraft/entity/projectile/ArrowEntity.hpp"
+
+namespace net::minecraft::entity::projectile {
+
+std::unique_ptr<::net::minecraft::client::render::entity::EntityRenderer> ArrowEntity::ClientRenderer::create()
+{
+    return std::make_unique<::net::minecraft::client::render::entity::ArrowEntityRenderer>();
+}
+
+} // namespace net::minecraft::entity::projectile
+
+namespace {
+
+static ::net::minecraft::registry::RegisterEntityRenderer<net::minecraft::entity::projectile::ArrowEntity> autoRendererReg;
+
+} // namespace

@@ -5,12 +5,21 @@
 #include "net/minecraft/entity/projectile/ProjectileUtil.hpp"
 #include "net/minecraft/nbt/NbtCompound.hpp"
 #include "net/minecraft/util/math/MathHelper.hpp"
+#include "net/minecraft/entity/EntityClientRendererDecl.hpp"
 
 namespace net::minecraft::entity::projectile::thrown {
 
 class SnowballEntity : public Entity {
 public:
-    static void registerClass();
+    static constexpr bool kRegisters = true;
+    static constexpr int kEntityId = 11;
+
+    static constexpr const char* kEntityName = "Snowball";
+
+
+    struct ClientRenderer {
+        static std::unique_ptr<::net::minecraft::client::render::entity::EntityRenderer> create();
+    };
     explicit SnowballEntity(World* world = nullptr) : Entity(world)
     {
         setBoundingBoxSpacing(0.25f, 0.25f);

@@ -6,7 +6,10 @@ namespace net::minecraft::block {
 
 class StillLiquidBlock : public LiquidBlock {
 public:
-    static void registerClass();
+    static constexpr bool kRegisters = true;
+    static constexpr int kBlockId = 9;
+
+static void registerClass();
     StillLiquidBlock(int id, Material& mat);
 
     void neighborUpdate(World* world, int x, int y, int z, int id) override;

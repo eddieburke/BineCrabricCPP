@@ -5,7 +5,6 @@
 #include "net/minecraft/entity/player/PlayerEntity.hpp"
 #include "net/minecraft/item/Item.hpp"
 #include "net/minecraft/item/ItemPlacement.hpp"
-#include "net/minecraft/item/ItemRegistrar.hpp"
 #include "net/minecraft/item/ItemStack.hpp"
 #include "net/minecraft/recipe/CraftingRecipeManager.hpp"
 #include "net/minecraft/world/World.hpp"
@@ -48,6 +47,6 @@ void FlintAndSteel::registerRecipes(recipe::CraftingRecipeManager& recipeManager
 
 
 
-namespace {static ::net::minecraft::registry::RegisterItem<FlintAndSteel> autoReg(3); } // namespace
+namespace {static ::net::minecraft::registry::RegisterItem<FlintAndSteel> autoReg; } // namespace
 
 } // namespace net::minecraft::item

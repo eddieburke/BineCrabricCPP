@@ -1,7 +1,7 @@
 #include "net/minecraft/item/tool/golden_hoe.hpp"
+#include "net/minecraft/registry/Registry.hpp"
 
 #include "net/minecraft/item/Item.hpp"
-#include "net/minecraft/item/ItemRegistrar.hpp"
 #include "net/minecraft/recipe/CraftingRecipeManager.hpp"
 
 #include "net/minecraft/item/misc/stick.hpp"
@@ -12,7 +12,7 @@
 
 namespace net::minecraft::item {
 
-GoldenHoeItem::GoldenHoeItem() : HoeItem(38, ToolMaterial::Gold) {}
+GoldenHoeItem::GoldenHoeItem() : HoeItem(kRawId, ToolMaterial::Gold) {}
 
 void GoldenHoeItem::registerClass()
 {
@@ -29,5 +29,5 @@ void GoldenHoeItem::registerRecipes(recipe::CraftingRecipeManager& recipeManager
         {std::string("XX"), std::string(" #"), std::string(" #"), '#', Item::byRawId(24), 'X', Item::byRawId(10)});
 }
 
-static registry::RegisterItem<GoldenHoeItem> s_itemReg(38);
+static registry::RegisterItem<GoldenHoeItem> s_itemReg;
 } // namespace net::minecraft::item

@@ -4,9 +4,9 @@
 
 namespace net::minecraft::block {
 
+// Registered in SimpleBlocks.cpp.
 class DeadBushBlock : public PlantBlock {
 public:
-    static void registerClass();
     DeadBushBlock(int id, int textureId) : PlantBlock(id, textureId)
     {
         const float f = 0.4f;

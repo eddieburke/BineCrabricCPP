@@ -1,5 +1,4 @@
 #include "net/minecraft/registry/Registry.hpp"
-#include "net/minecraft/block/BlockRegistrar.hpp"
 #include "net/minecraft/block/StairsBlock.hpp"
 #include "net/minecraft/block/Block.hpp"
 
@@ -242,7 +241,7 @@ void StairsBlock::onDestroyedByExplosion(World* world, int x, int y, int z)
 void StairsBlock::registerClass()
 {
     Block::WOODEN_STAIRS = (new StairsBlock(53, *Block::BLOCKS[5]))->setTranslationKey("stairsWood")->ignoreMetaUpdates();
-    Block::COBBLESTONE_STAIRS = (new StairsBlock(67, *Block::BLOCKS[4]))->setTranslationKey("stairsStone")->ignoreMetaUpdates();
+    Block::COBBLESTONE_STAIRS = (new StairsBlock(kBlockId, *Block::BLOCKS[4]))->setTranslationKey("stairsStone")->ignoreMetaUpdates();
 }
 void StairsBlock::registerRecipes(recipe::CraftingRecipeManager& recipeManager)
 {
@@ -256,6 +255,6 @@ void StairsBlock::registerRecipes(recipe::CraftingRecipeManager& recipeManager)
 
 
 
-namespace {static ::net::minecraft::registry::RegisterBlock<StairsBlock> autoReg(67);} // namespace
+namespace {static ::net::minecraft::registry::RegisterBlock<StairsBlock> autoReg;} // namespace
 } // namespace net::minecraft::block
 

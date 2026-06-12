@@ -7,9 +7,9 @@
 
 namespace net::minecraft::block {
 
+// Registered in SimpleBlocks.cpp.
 class CobwebBlock : public Block {
 public:
-    static void registerClass();
     CobwebBlock(int id, int textureId) : Block(id, textureId, material::Material::COBWEB) {}
 
     [[nodiscard]] bool isOpaque() const override { return false; }

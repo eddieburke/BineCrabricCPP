@@ -1,5 +1,5 @@
 #include "net/minecraft/registry/Registry.hpp"
-#include "net/minecraft/block/BlockRegistrar.hpp"
+#include "net/minecraft/block/VanillaBlockSounds.hpp"
 #include "net/minecraft/block/WoolBlock.hpp"
 #include "net/minecraft/recipe/CraftingRecipeManager.hpp"
 #include "net/minecraft/block/Block.hpp"
@@ -26,6 +26,6 @@ void WoolBlock::registerRecipes(recipe::CraftingRecipeManager& recipeManager)
 
 
 
-namespace {static ::net::minecraft::registry::RegisterBlock<WoolBlock> autoReg(35);} // namespace
+namespace {static ::net::minecraft::registry::RegisterBlock<WoolBlock> autoReg;} // namespace
 } // namespace net::minecraft::block
 

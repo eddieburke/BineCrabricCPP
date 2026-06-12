@@ -11,7 +11,10 @@ namespace net::minecraft::block {
 
 class LeavesBlock : public TransparentBlock {
 public:
-    static void registerClass();
+    static constexpr bool kRegisters = true;
+    static constexpr int kBlockId = 18;
+
+static void registerClass();
     static void registerBlockItems();
     int spriteIndex = 0;
 

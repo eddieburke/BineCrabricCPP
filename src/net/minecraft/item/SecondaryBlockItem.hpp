@@ -12,7 +12,10 @@ namespace net::minecraft::item {
 
 class SecondaryBlockItem : public Item {
 public:
-    static void registerClass();
+    static constexpr bool kRegisters = true;
+    static constexpr int kRawId = 98;
+
+static void registerClass();
     static void registerRecipes(recipe::CraftingRecipeManager& recipeManager);
     SecondaryBlockItem(int rawId, Block* block)
         : Item(rawId, RegistrationMode::Deferred),

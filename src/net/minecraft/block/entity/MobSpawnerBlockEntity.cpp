@@ -1,7 +1,5 @@
 #include "net/minecraft/block/entity/MobSpawnerBlockEntity.hpp"
 
-#include "net/minecraft/entity/Entity.hpp"
-#include "net/minecraft/entity/EntityRegistry.hpp"
 #include "net/minecraft/entity/LivingEntity.hpp"
 #include "net/minecraft/world/World.hpp"
 
@@ -68,49 +66,49 @@ void MobSpawnerBlockEntity::tick()
 
         constexpr int spawnAttempts = 4;
         for (int attempt = 0; attempt < spawnAttempts; ++attempt) {
-            std::unique_ptr<Entity> entity = EntityRegistry::create(spawnedEntityId_, world);
-            auto* living = dynamic_cast<LivingEntity*>(entity.get());
-            if (living == nullptr) {
-                return;
-            }
-
-            const Box spawnBox {
-                static_cast<double>(x),
-                static_cast<double>(y),
-                static_cast<double>(z),
-                static_cast<double>(x + 1),
-                static_cast<double>(y + 1),
-                static_cast<double>(z + 1)};
-            const Box expandedBox {
-                spawnBox.minX - 8.0,
-                spawnBox.minY - 4.0,
-                spawnBox.minZ - 8.0,
-                spawnBox.maxX + 8.0,
-                spawnBox.maxY + 4.0,
-                spawnBox.maxZ + 8.0};
-            int nearbyCount = 0;
-            for (Entity* nearby : world->getEntities(nullptr, expandedBox)) {
-                if (nearby != nullptr && typeid(*nearby) == typeid(*living)) {
-                    ++nearbyCount;
+            bool tooManyNearby = false;
+            LivingEntity* living = world->spawnMob(spawnedEntityId_, [&](LivingEntity& mob) {
+                const Box spawnBox {
+                    static_cast<double>(x),
+                    static_cast<double>(y),
+                    static_cast<double>(z),
+                    static_cast<double>(x + 1),
+                    static_cast<double>(y + 1),
+                    static_cast<double>(z + 1)};
+                const Box expandedBox {
+                    spawnBox.minX - 8.0,
+                    spawnBox.minY - 4.0,
+                    spawnBox.minZ - 8.0,
+                    spawnBox.maxX + 8.0,
+                    spawnBox.maxY + 4.0,
+                    spawnBox.maxZ + 8.0};
+                int nearbyCount = 0;
+                for (Entity* nearby : world->getEntities(nullptr, expandedBox)) {
+                    if (nearby != nullptr && typeid(*nearby) == typeid(mob)) {
+                        ++nearbyCount;
+                    }
                 }
-            }
-            if (nearbyCount >= 6) {
+                if (nearbyCount >= 6) {
+                    tooManyNearby = true;
+                    return false;
+                }
+
+                const double spawnX =
+                    static_cast<double>(x) + (world->random().nextDouble() - world->random().nextDouble()) * 4.0;
+                const double spawnY = static_cast<double>(y) + world->random().nextInt(3) - 1;
+                const double spawnZ =
+                    static_cast<double>(z) + (world->random().nextDouble() - world->random().nextDouble()) * 4.0;
+                mob.setPositionAndAnglesKeepPrevAngles(
+                    spawnX, spawnY, spawnZ, world->random().nextFloat() * 360.0f, 0.0f);
+                return mob.canSpawn();
+            });
+            if (tooManyNearby) {
                 resetDelay();
                 return;
             }
-
-            const double spawnX =
-                static_cast<double>(x) + (world->random().nextDouble() - world->random().nextDouble()) * 4.0;
-            const double spawnY = static_cast<double>(y) + world->random().nextInt(3) - 1;
-            const double spawnZ =
-                static_cast<double>(z) + (world->random().nextDouble() - world->random().nextDouble()) * 4.0;
-            living->setPositionAndAnglesKeepPrevAngles(
-                spawnX, spawnY, spawnZ, world->random().nextFloat() * 360.0f, 0.0f);
-            if (!living->canSpawn()) {
+            if (living == nullptr) {
                 continue;
             }
-
-            world->spawnEntity(entity.release());
             for (int particle = 0; particle < 20; ++particle) {
                 const double particleX = static_cast<double>(x) + 0.5 + (world->random().nextFloat() - 0.5f) * 2.0f;
                 const double particleY = static_cast<double>(y) + 0.5 + (world->random().nextFloat() - 0.5f) * 2.0f;

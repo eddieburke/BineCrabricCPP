@@ -61,17 +61,18 @@ bool LeverBlockRenderer::render(net::minecraft::block::Block& block, int x, int 
         constexpr float stickHalfWidth = 0.0625f;
         constexpr float stickHalfDepth = 0.0625f;
         constexpr float stickHeight = 0.625f;
-        std::array<net::minecraft::util::math::ClientVec3d*, 8> handleCorners {};
-        handleCorners[0] = &net::minecraft::util::math::ClientVec3d::createCached(-stickHalfWidth, 0.0, -stickHalfDepth);
-        handleCorners[1] = &net::minecraft::util::math::ClientVec3d::createCached(stickHalfWidth, 0.0, -stickHalfDepth);
-        handleCorners[2] = &net::minecraft::util::math::ClientVec3d::createCached(stickHalfWidth, 0.0, stickHalfDepth);
-        handleCorners[3] = &net::minecraft::util::math::ClientVec3d::createCached(-stickHalfWidth, 0.0, stickHalfDepth);
-        handleCorners[4] = &net::minecraft::util::math::ClientVec3d::createCached(-stickHalfWidth, stickHeight, -stickHalfDepth);
-        handleCorners[5] = &net::minecraft::util::math::ClientVec3d::createCached(stickHalfWidth, stickHeight, -stickHalfDepth);
-        handleCorners[6] = &net::minecraft::util::math::ClientVec3d::createCached(stickHalfWidth, stickHeight, stickHalfDepth);
-        handleCorners[7] = &net::minecraft::util::math::ClientVec3d::createCached(-stickHalfWidth, stickHeight, stickHalfDepth);
+        std::array<net::minecraft::util::math::ClientVec3d, 8> handleCorners {{
+            {-stickHalfWidth, 0.0, -stickHalfDepth},
+            {stickHalfWidth, 0.0, -stickHalfDepth},
+            {stickHalfWidth, 0.0, stickHalfDepth},
+            {-stickHalfWidth, 0.0, stickHalfDepth},
+            {-stickHalfWidth, stickHeight, -stickHalfDepth},
+            {stickHalfWidth, stickHeight, -stickHalfDepth},
+            {stickHalfWidth, stickHeight, stickHalfDepth},
+            {-stickHalfWidth, stickHeight, stickHalfDepth},
+        }};
         for (int cornerIndex = 0; cornerIndex < 8; ++cornerIndex) {
-            net::minecraft::util::math::ClientVec3d* corner = handleCorners[static_cast<std::size_t>(cornerIndex)];
+            net::minecraft::util::math::ClientVec3d* corner = &handleCorners[static_cast<std::size_t>(cornerIndex)];
             if (isPowered) {
                 corner->z -= 0.0625;
                 corner->rotateX(0.69813174f);
@@ -123,35 +124,35 @@ bool LeverBlockRenderer::render(net::minecraft::block::Block& block, int x, int 
                 vMax = (static_cast<float>(texV + 16) - 0.01f) / 256.0f;
             }
             if (faceIndex == 0) {
-                cornerA = handleCorners[0];
-                cornerB = handleCorners[1];
-                cornerC = handleCorners[2];
-                cornerD = handleCorners[3];
+                cornerA = &handleCorners[0];
+                cornerB = &handleCorners[1];
+                cornerC = &handleCorners[2];
+                cornerD = &handleCorners[3];
             } else if (faceIndex == 1) {
-                cornerA = handleCorners[7];
-                cornerB = handleCorners[6];
-                cornerC = handleCorners[5];
-                cornerD = handleCorners[4];
+                cornerA = &handleCorners[7];
+                cornerB = &handleCorners[6];
+                cornerC = &handleCorners[5];
+                cornerD = &handleCorners[4];
             } else if (faceIndex == 2) {
-                cornerA = handleCorners[1];
-                cornerB = handleCorners[0];
-                cornerC = handleCorners[4];
-                cornerD = handleCorners[5];
+                cornerA = &handleCorners[1];
+                cornerB = &handleCorners[0];
+                cornerC = &handleCorners[4];
+                cornerD = &handleCorners[5];
             } else if (faceIndex == 3) {
-                cornerA = handleCorners[2];
-                cornerB = handleCorners[1];
-                cornerC = handleCorners[5];
-                cornerD = handleCorners[6];
+                cornerA = &handleCorners[2];
+                cornerB = &handleCorners[1];
+                cornerC = &handleCorners[5];
+                cornerD = &handleCorners[6];
             } else if (faceIndex == 4) {
-                cornerA = handleCorners[3];
-                cornerB = handleCorners[2];
-                cornerC = handleCorners[6];
-                cornerD = handleCorners[7];
+                cornerA = &handleCorners[3];
+                cornerB = &handleCorners[2];
+                cornerC = &handleCorners[6];
+                cornerD = &handleCorners[7];
             } else if (faceIndex == 5) {
-                cornerA = handleCorners[0];
-                cornerB = handleCorners[3];
-                cornerC = handleCorners[7];
-                cornerD = handleCorners[4];
+                cornerA = &handleCorners[0];
+                cornerB = &handleCorners[3];
+                cornerC = &handleCorners[7];
+                cornerD = &handleCorners[4];
             }
             tessellator.vertex(cornerA->x, cornerA->y, cornerA->z, uMin, vMax);
             tessellator.vertex(cornerB->x, cornerB->y, cornerB->z, uMax, vMax);

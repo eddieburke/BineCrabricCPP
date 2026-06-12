@@ -4,7 +4,6 @@
 #include "net/minecraft/block/Block.hpp"
 #include "net/minecraft/entity/player/PlayerEntity.hpp"
 #include "net/minecraft/item/Item.hpp"
-#include "net/minecraft/item/ItemRegistrar.hpp"
 #include "net/minecraft/item/ItemStack.hpp"
 #include "net/minecraft/world/World.hpp"
 
@@ -45,6 +44,6 @@ void MusicDiscItem::registerClass()
 
 
 
-namespace {static ::net::minecraft::registry::RegisterItem<MusicDiscItem> autoReg(2000);} // namespace
+namespace {static ::net::minecraft::registry::RegisterItem<MusicDiscItem> autoReg;} // namespace
 
 } // namespace net::minecraft::item

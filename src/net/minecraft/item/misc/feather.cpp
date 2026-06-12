@@ -1,14 +1,14 @@
 #include "net/minecraft/item/misc/feather.hpp"
+#include "net/minecraft/registry/Registry.hpp"
 
 #include "net/minecraft/item/Item.hpp"
-#include "net/minecraft/item/ItemRegistrar.hpp"
 #include "net/minecraft/recipe/CraftingRecipeManager.hpp"
 
 #include "net/minecraft/item/misc/stick.hpp"
 
 namespace net::minecraft::item {
 
-FeatherItem::FeatherItem() : Item(32, RegistrationMode::Deferred) {}
+FeatherItem::FeatherItem() : Item(kRawId, RegistrationMode::Deferred) {}
 
 void FeatherItem::registerClass()
 {
@@ -24,5 +24,5 @@ void FeatherItem::registerRecipes(recipe::CraftingRecipeManager& recipeManager)
     (void)recipeManager;
 }
 
-static registry::RegisterItem<FeatherItem> s_itemReg(32);
+static registry::RegisterItem<FeatherItem> s_itemReg;
 } // namespace net::minecraft::item

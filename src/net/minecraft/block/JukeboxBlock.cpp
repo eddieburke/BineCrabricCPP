@@ -1,5 +1,5 @@
 #include "net/minecraft/registry/Registry.hpp"
-#include "net/minecraft/block/BlockRegistrar.hpp"
+#include "net/minecraft/block/VanillaBlockSounds.hpp"
 #include "net/minecraft/block/JukeboxBlock.hpp"
 
 #include "net/minecraft/block/entity/JukeboxBlockEntity.hpp"
@@ -92,7 +92,7 @@ void JukeboxBlock::dropStacks(World* world, int x, int y, int z, int meta, float
 }
 void JukeboxBlock::registerClass()
 {
-    Block::JUKEBOX = (new JukeboxBlock(84, 74))->setHardness(2.0f)->setResistance(10.0f)->setSoundGroup(&vanillaStoneSound())->setTranslationKey("jukebox")->ignoreMetaUpdates();
+    Block::JUKEBOX = (new JukeboxBlock(kBlockId, 74))->setHardness(2.0f)->setResistance(10.0f)->setSoundGroup(&vanillaStoneSound())->setTranslationKey("jukebox")->ignoreMetaUpdates();
 }
 void JukeboxBlock::registerRecipes(recipe::CraftingRecipeManager& recipeManager)
 {
@@ -104,6 +104,6 @@ void JukeboxBlock::registerRecipes(recipe::CraftingRecipeManager& recipeManager)
 
 
 
-namespace {static ::net::minecraft::registry::RegisterBlock<JukeboxBlock> autoReg(84);} // namespace
+namespace {static ::net::minecraft::registry::RegisterBlock<JukeboxBlock> autoReg;} // namespace
 } // namespace net::minecraft::block
 

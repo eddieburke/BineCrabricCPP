@@ -1,11 +1,7 @@
 #include "net/minecraft/registry/Registry.hpp"
-#include "net/minecraft/entity/EntityRegistrar.hpp"
 #include "net/minecraft/entity/passive/CowEntity.hpp"
 
-#include "net/minecraft/entity/EntityRegistry.hpp"
 
-#include <memory>
-#include <typeindex>
 
 #include "net/minecraft/entity/player/PlayerEntity.hpp"
 #include "net/minecraft/item/Item.hpp"
@@ -41,11 +37,6 @@ int CowEntity::getDroppedItemId() const
 }
 
 
-void CowEntity::registerClass()
-{
-    ::net::minecraft::entity::detail::registerVanillaEntity<CowEntity>("Cow", 92);
-}
-
-static ::net::minecraft::registry::RegisterEntity<CowEntity> autoReg(92);
+static ::net::minecraft::registry::RegisterEntity<CowEntity> autoReg;
 
 } // namespace net::minecraft::entity::passive

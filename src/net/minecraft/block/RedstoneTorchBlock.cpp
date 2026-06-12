@@ -1,5 +1,5 @@
 #include "net/minecraft/registry/Registry.hpp"
-#include "net/minecraft/block/BlockRegistrar.hpp"
+#include "net/minecraft/block/VanillaBlockSounds.hpp"
 #include "net/minecraft/block/RedstoneTorchBlock.hpp"
 
 #include "net/minecraft/block/Block.hpp"
@@ -202,7 +202,7 @@ bool RedstoneTorchBlock::isEmittingRedstonePowerInDirection(
 void RedstoneTorchBlock::registerClass()
 {
     Block::REDSTONE_TORCH = (new RedstoneTorchBlock(75, 115, false))->setHardness(0.0f)->setSoundGroup(&vanillaWoodSound())->setTranslationKey("notGate")->ignoreMetaUpdates();
-    Block::LIT_REDSTONE_TORCH = (new RedstoneTorchBlock(76, 99, true))->setHardness(0.0f)->setLuminance(0.5f)->setSoundGroup(&vanillaWoodSound())->setTranslationKey("notGate")->ignoreMetaUpdates();
+    Block::LIT_REDSTONE_TORCH = (new RedstoneTorchBlock(kBlockId, 99, true))->setHardness(0.0f)->setLuminance(0.5f)->setSoundGroup(&vanillaWoodSound())->setTranslationKey("notGate")->ignoreMetaUpdates();
 }
 void RedstoneTorchBlock::registerRecipes(recipe::CraftingRecipeManager& recipeManager)
 {
@@ -213,7 +213,7 @@ void RedstoneTorchBlock::registerRecipes(recipe::CraftingRecipeManager& recipeMa
 
 namespace {
 
-static ::net::minecraft::registry::RegisterBlock<RedstoneTorchBlock> autoReg(76);
+static ::net::minecraft::registry::RegisterBlock<RedstoneTorchBlock> autoReg;
 } // namespace
 } // namespace net::minecraft::block
 

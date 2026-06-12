@@ -1,7 +1,7 @@
 #include "net/minecraft/item/transport/furnace_minecart.hpp"
+#include "net/minecraft/registry/Registry.hpp"
 
 #include "net/minecraft/item/Item.hpp"
-#include "net/minecraft/item/ItemRegistrar.hpp"
 #include "net/minecraft/recipe/CraftingRecipeManager.hpp"
 
 #include "net/minecraft/item/misc/stick.hpp"
@@ -9,7 +9,7 @@
 
 namespace net::minecraft::item {
 
-FurnaceMinecartItem::FurnaceMinecartItem() : MinecartItem(87, 2) {}
+FurnaceMinecartItem::FurnaceMinecartItem() : MinecartItem(kRawId, 2) {}
 
 void FurnaceMinecartItem::registerClass()
 {
@@ -26,5 +26,5 @@ void FurnaceMinecartItem::registerRecipes(recipe::CraftingRecipeManager& recipeM
         {std::string("A"), std::string("B"), 'A', Block::FURNACE, 'B', Item::byRawId(72)});
 }
 
-static registry::RegisterItem<FurnaceMinecartItem> s_itemReg(87);
+static registry::RegisterItem<FurnaceMinecartItem> s_itemReg;
 } // namespace net::minecraft::item

@@ -1,5 +1,5 @@
 #include "net/minecraft/registry/Registry.hpp"
-#include "net/minecraft/block/BlockRegistrar.hpp"
+#include "net/minecraft/block/VanillaBlockSounds.hpp"
 #include "net/minecraft/block/RedstoneWireBlock.hpp"
 
 #include "net/minecraft/block/Block.hpp"
@@ -357,12 +357,12 @@ void RedstoneWireBlock::randomDisplayTick(
 }
 void RedstoneWireBlock::registerClass()
 {
-    Block::REDSTONE_WIRE = (new RedstoneWireBlock(55, 164))->setHardness(0.0f)->setSoundGroup(&vanillaDefaultSound())->setTranslationKey("redstoneDust")->disableTrackingStatistics()->ignoreMetaUpdates();
+    Block::REDSTONE_WIRE = (new RedstoneWireBlock(kBlockId, 164))->setHardness(0.0f)->setSoundGroup(&vanillaDefaultSound())->setTranslationKey("redstoneDust")->disableTrackingStatistics()->ignoreMetaUpdates();
 }
 
 
 
 
-namespace {static ::net::minecraft::registry::RegisterBlock<RedstoneWireBlock> autoReg(55);} // namespace
+namespace {static ::net::minecraft::registry::RegisterBlock<RedstoneWireBlock> autoReg;} // namespace
 } // namespace net::minecraft::block
 

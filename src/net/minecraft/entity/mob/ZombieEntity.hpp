@@ -1,12 +1,21 @@
 #pragma once
 
 #include "net/minecraft/entity/mob/MonsterEntity.hpp"
+#include "net/minecraft/entity/EntityClientRendererDecl.hpp"
 
 namespace net::minecraft::entity::mob {
 
 class ZombieEntity : public MonsterEntity {
 public:
-    static void registerClass();
+    static constexpr bool kRegisters = true;
+    static constexpr int kEntityId = 54;
+
+    static constexpr const char* kEntityName = "Zombie";
+
+
+    struct ClientRenderer {
+        static std::unique_ptr<::net::minecraft::client::render::entity::EntityRenderer> create();
+    };
     explicit ZombieEntity(World* world = nullptr);
 
     void tickMovement() override;

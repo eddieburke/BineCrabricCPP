@@ -1,7 +1,7 @@
 #include "net/minecraft/item/tool/stone_pickaxe.hpp"
+#include "net/minecraft/registry/Registry.hpp"
 
 #include "net/minecraft/item/Item.hpp"
-#include "net/minecraft/item/ItemRegistrar.hpp"
 #include "net/minecraft/recipe/CraftingRecipeManager.hpp"
 
 #include "net/minecraft/item/misc/stick.hpp"
@@ -12,7 +12,7 @@
 
 namespace net::minecraft::item {
 
-StonePickaxeItem::StonePickaxeItem() : PickaxeItem(18, ToolMaterial::Stone) {}
+StonePickaxeItem::StonePickaxeItem() : PickaxeItem(kRawId, ToolMaterial::Stone) {}
 
 void StonePickaxeItem::registerClass()
 {
@@ -29,5 +29,5 @@ void StonePickaxeItem::registerRecipes(recipe::CraftingRecipeManager& recipeMana
         {std::string("XXX"), std::string(" # "), std::string(" # "), '#', Item::byRawId(24), 'X', Block::COBBLESTONE});
 }
 
-static registry::RegisterItem<StonePickaxeItem> s_itemReg(18);
+static registry::RegisterItem<StonePickaxeItem> s_itemReg;
 } // namespace net::minecraft::item

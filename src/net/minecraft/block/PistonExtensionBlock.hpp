@@ -10,7 +10,10 @@ namespace net::minecraft::block {
 
 class PistonExtensionBlock : public BlockWithEntity {
 public:
-    static void registerClass();
+    static constexpr bool kRegisters = true;
+    static constexpr int kBlockId = 36;
+
+static void registerClass();
     explicit PistonExtensionBlock(int id) : BlockWithEntity(id, material::Material::PISTON) { setHardness(-1.0f); }
 
     [[nodiscard]] int getRenderType() const override { return -1; }

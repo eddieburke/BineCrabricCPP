@@ -5,11 +5,16 @@
 #include "net/minecraft/entity/projectile/ProjectileUtil.hpp"
 #include "net/minecraft/nbt/NbtCompound.hpp"
 #include "net/minecraft/util/math/MathHelper.hpp"
+#include "net/minecraft/entity/EntityClientRendererDecl.hpp"
 
 namespace net::minecraft::entity::projectile::thrown {
 
 class EggEntity : public Entity {
 public:
+
+    struct ClientRenderer {
+        static std::unique_ptr<::net::minecraft::client::render::entity::EntityRenderer> create();
+    };
     explicit EggEntity(World* world = nullptr) : Entity(world)
     {
         setBoundingBoxSpacing(0.25f, 0.25f);

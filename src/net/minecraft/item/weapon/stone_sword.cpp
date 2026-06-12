@@ -1,7 +1,7 @@
 #include "net/minecraft/item/weapon/stone_sword.hpp"
+#include "net/minecraft/registry/Registry.hpp"
 
 #include "net/minecraft/item/Item.hpp"
-#include "net/minecraft/item/ItemRegistrar.hpp"
 #include "net/minecraft/recipe/CraftingRecipeManager.hpp"
 
 #include "net/minecraft/item/misc/stick.hpp"
@@ -12,7 +12,7 @@
 
 namespace net::minecraft::item {
 
-StoneSwordItem::StoneSwordItem() : SwordItem(16, ToolMaterial::Stone) {}
+StoneSwordItem::StoneSwordItem() : SwordItem(kRawId, ToolMaterial::Stone) {}
 
 void StoneSwordItem::registerClass()
 {
@@ -29,5 +29,5 @@ void StoneSwordItem::registerRecipes(recipe::CraftingRecipeManager& recipeManage
         {std::string("X"), std::string("X"), std::string("#"), '#', Item::byRawId(24), 'X', Block::COBBLESTONE});
 }
 
-static registry::RegisterItem<StoneSwordItem> s_itemReg(16);
+static registry::RegisterItem<StoneSwordItem> s_itemReg;
 } // namespace net::minecraft::item

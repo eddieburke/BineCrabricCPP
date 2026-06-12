@@ -3,6 +3,8 @@
 
 #include "net/minecraft/block/Block.hpp"
 #include "net/minecraft/entity/Entity.hpp"
+#include "net/minecraft/entity/ai/pathing/PathNodeNavigator.hpp"
+#include "net/minecraft/entity/passive/SheepEntity.hpp"
 #include "net/minecraft/world/World.hpp"
 
 #include <cstddef>
@@ -88,4 +90,66 @@ TEST_CASE("sneaking edge clamp is not undone by step-up")
     entity.move(0.3, 0.0, 0.0);
 
     CHECK(entity.x == doctest::Approx(beforeX));
+}
+
+TEST_CASE("world mob spawn hook initializes sheep color through LivingEntity")
+{
+    using net::minecraft::JavaRandom;
+    using net::minecraft::World;
+    using net::minecraft::entity::passive::SheepEntity;
+
+    net::minecraft::block::initializeBlocks();
+
+    World world("sheep-spawn-test", 1);
+    (void)world.getChunk(0, 0);
+
+    JavaRandom expectedRandom = world.random();
+    const int expectedColor = SheepEntity::generateDefaultColor(expectedRandom);
+
+    auto* spawned = dynamic_cast<SheepEntity*>(world.spawnMob("Sheep", 0.5, 64.0, 0.5));
+    REQUIRE(spawned != nullptr);
+    CHECK(spawned->getColor() == expectedColor);
+}
+
+TEST_CASE("path navigator returns stable results across repeated searches")
+{
+    using net::minecraft::World;
+    using net::minecraft::block::Block;
+    using net::minecraft::entity::Entity;
+    using net::minecraft::entity::ai::pathing::PathNodeNavigator;
+
+    net::minecraft::block::initializeBlocks();
+    REQUIRE(Block::STONE != nullptr);
+
+    World world("pathfinding-test", 1);
+    (void)world.getChunk(0, 0);
+    for (int x = -1; x <= 5; ++x) {
+        for (int y = 0; y <= 2; ++y) {
+            for (int z = -1; z <= 1; ++z) {
+                const int blockId = y == 0 ? Block::STONE->id : 0;
+                REQUIRE(world.setBlockWithoutNotifyingNeighbors(x, y, z, blockId));
+            }
+        }
+    }
+
+    Entity entity(&world);
+    entity.setBoundingBoxSpacing(0.6f, 1.8f);
+    entity.setPosition(0.5, 1.0, 0.5);
+
+    PathNodeNavigator navigator(&world);
+    auto firstPath = navigator.findPath(&entity, 3, 1, 0, 16.0f);
+    REQUIRE(firstPath.length == 4);
+    const auto* firstEnd = firstPath.getEnd();
+    REQUIRE(firstEnd != nullptr);
+    CHECK(firstEnd->x == 3);
+    CHECK(firstEnd->y == 1);
+    CHECK(firstEnd->z == 0);
+
+    auto secondPath = navigator.findPath(&entity, 3, 1, 0, 16.0f);
+    REQUIRE(secondPath.length == firstPath.length);
+    const auto* secondEnd = secondPath.getEnd();
+    REQUIRE(secondEnd != nullptr);
+    CHECK(secondEnd->x == firstEnd->x);
+    CHECK(secondEnd->y == firstEnd->y);
+    CHECK(secondEnd->z == firstEnd->z);
 }

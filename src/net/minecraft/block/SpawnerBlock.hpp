@@ -5,9 +5,9 @@
 
 namespace net::minecraft::block {
 
+// Registered in SimpleBlocks.cpp.
 class SpawnerBlock : public BlockWithEntity {
 public:
-    static void registerClass();
     SpawnerBlock(int id, int textureId) : BlockWithEntity(id, textureId, material::Material::STONE) {}
 
     [[nodiscard]] int getDroppedItemId(int /*blockMeta*/, JavaRandom& /*random*/) const override { return 0; }

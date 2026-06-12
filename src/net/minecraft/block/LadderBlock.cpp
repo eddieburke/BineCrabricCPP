@@ -1,5 +1,5 @@
 #include "net/minecraft/registry/Registry.hpp"
-#include "net/minecraft/block/BlockRegistrar.hpp"
+#include "net/minecraft/block/VanillaBlockSounds.hpp"
 #include "net/minecraft/block/LadderBlock.hpp"
 
 #include "net/minecraft/world/World.hpp"
@@ -142,7 +142,7 @@ void LadderBlock::neighborUpdate(World* world, int x, int y, int z, int id)
 }
 void LadderBlock::registerClass()
 {
-    Block::LADDER = (new LadderBlock(65, 83))->setHardness(0.4f)->setSoundGroup(&vanillaWoodSound())->setTranslationKey("ladder")->ignoreMetaUpdates();
+    Block::LADDER = (new LadderBlock(kBlockId, 83))->setHardness(0.4f)->setSoundGroup(&vanillaWoodSound())->setTranslationKey("ladder")->ignoreMetaUpdates();
 }
 void LadderBlock::registerRecipes(recipe::CraftingRecipeManager& recipeManager)
 {
@@ -154,6 +154,6 @@ void LadderBlock::registerRecipes(recipe::CraftingRecipeManager& recipeManager)
 
 
 
-namespace {static ::net::minecraft::registry::RegisterBlock<LadderBlock> autoReg(65);} // namespace
+namespace {static ::net::minecraft::registry::RegisterBlock<LadderBlock> autoReg;} // namespace
 } // namespace net::minecraft::block
 

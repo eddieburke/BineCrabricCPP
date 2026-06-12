@@ -1,5 +1,5 @@
 #include "net/minecraft/registry/Registry.hpp"
-#include "net/minecraft/block/BlockRegistrar.hpp"
+#include "net/minecraft/block/VanillaBlockSounds.hpp"
 #include "net/minecraft/block/ChestBlock.hpp"
 
 #include "net/minecraft/block/Block.hpp"
@@ -214,7 +214,7 @@ void ChestBlock::onBreak(World* world, int x, int y, int z)
 }
 void ChestBlock::registerClass()
 {
-    Block::CHEST = (new ChestBlock(54))->setHardness(2.5f)->setSoundGroup(&vanillaWoodSound())->setTranslationKey("chest")->ignoreMetaUpdates();
+    Block::CHEST = (new ChestBlock(kBlockId))->setHardness(2.5f)->setSoundGroup(&vanillaWoodSound())->setTranslationKey("chest")->ignoreMetaUpdates();
 }
 void ChestBlock::registerRecipes(recipe::CraftingRecipeManager& recipeManager)
 {
@@ -226,6 +226,6 @@ void ChestBlock::registerRecipes(recipe::CraftingRecipeManager& recipeManager)
 
 
 
-namespace {static ::net::minecraft::registry::RegisterBlock<ChestBlock> autoReg(54);} // namespace
+namespace {static ::net::minecraft::registry::RegisterBlock<ChestBlock> autoReg;} // namespace
 } // namespace net::minecraft::block
 

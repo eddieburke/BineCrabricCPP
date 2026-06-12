@@ -1,7 +1,7 @@
 #include "net/minecraft/item/armor/diamond_boots.hpp"
+#include "net/minecraft/registry/Registry.hpp"
 
 #include "net/minecraft/item/Item.hpp"
-#include "net/minecraft/item/ItemRegistrar.hpp"
 #include "net/minecraft/recipe/CraftingRecipeManager.hpp"
 
 #include <string>
@@ -15,7 +15,7 @@
 
 namespace net::minecraft::item {
 
-DiamondBootsItem::DiamondBootsItem() : ArmorItem(57, 3, 3, 3) {}
+DiamondBootsItem::DiamondBootsItem() : ArmorItem(kRawId, 3, 3, 3) {}
 
 void DiamondBootsItem::registerClass()
 {
@@ -32,5 +32,5 @@ void DiamondBootsItem::registerRecipes(recipe::CraftingRecipeManager& recipeMana
         {std::string("X X"), std::string("X X"), 'X', Item::byRawId(8)});
 }
 
-static registry::RegisterItem<DiamondBootsItem> s_itemReg(57);
+static registry::RegisterItem<DiamondBootsItem> s_itemReg;
 } // namespace net::minecraft::item

@@ -25,6 +25,7 @@ void ensureLoaded() noexcept;
 
 [[nodiscard]] bool isVboAvailable() noexcept;
 [[nodiscard]] bool isFboAvailable() noexcept;
+void setSwapInterval(int interval) noexcept;
 
 void genBuffers(int count, unsigned int* names) noexcept;
 void deleteBuffers(int count, const unsigned int* names) noexcept;

@@ -15,7 +15,10 @@ namespace net::minecraft::block {
 
 class RedstoneWireBlock : public Block {
 public:
-    static void registerClass();
+    static constexpr bool kRegisters = true;
+    static constexpr int kBlockId = 55;
+
+static void registerClass();
     RedstoneWireBlock(int id, int textureId);
 
     [[nodiscard]] bool isOpaque() const override { return false; }

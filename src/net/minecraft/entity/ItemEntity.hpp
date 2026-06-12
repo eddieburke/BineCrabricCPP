@@ -2,6 +2,7 @@
 
 #include "net/minecraft/entity/Entity.hpp"
 #include "net/minecraft/item/ItemStack.hpp"
+#include "net/minecraft/entity/EntityClientRendererDecl.hpp"
 
 namespace net::minecraft::entity::player {
 class PlayerEntity;
@@ -11,8 +12,16 @@ namespace net::minecraft::entity {
 
 class ItemEntity : public Entity {
 public:
-    static void registerClass();
-    ItemStack stack {};
+    static constexpr bool kRegisters = true;
+    static constexpr int kEntityId = 1;
+
+    static constexpr const char* kEntityName = "Item";
+
+
+    struct ClientRenderer {
+        static std::unique_ptr<::net::minecraft::client::render::entity::EntityRenderer> create();
+    };
+ItemStack stack {};
     int itemAge = 0;
     int pickupDelay = 0;
     float initialRotationAngle = 0.0f;

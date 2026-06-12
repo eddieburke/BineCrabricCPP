@@ -95,7 +95,7 @@ const std::unordered_map<std::type_index, std::type_index>& parentMap()
         linkParent<GhastEntity, FlyingEntity>(parents);
         linkParent<FlyingEntity, LivingEntity>(parents);
         linkParent<GiantEntity, MonsterEntity>(parents);
-        linkParent<SlimeEntity, MonsterEntity>(parents);
+        linkParent<SlimeEntity, LivingEntity>(parents);
         linkParent<MonsterEntity, MobEntity>(parents);
         linkParent<PigEntity, MobEntity>(parents);
         linkParent<SheepEntity, MobEntity>(parents);

@@ -10,7 +10,10 @@ class CraftingRecipeManager;
 namespace net::minecraft::item {
 
 class ShearsItem : public Item {
-public:    static void registerClass();
+public:        static constexpr bool kRegisters = true;
+    static constexpr int kRawId = 103;
+
+static void registerClass();
     static void registerRecipes(recipe::CraftingRecipeManager& recipeManager);
     explicit ShearsItem(int rawId);
     bool postMine(ItemStack* stack, int blockId, int x, int y, int z, LivingEntity* miner) override;

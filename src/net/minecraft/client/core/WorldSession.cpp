@@ -114,7 +114,7 @@ void WorldSession::setWorld(Minecraft& client, World* worldIn, const std::string
             worldIn->addPlayer(client.player);
         }
         client.options.applyToWorld(worldIn);
-        if (worldIn->newWorld) {
+        if (worldIn->isNewWorld()) {
             worldIn->savingProgress(nullptr);
         }
     } else {
@@ -147,8 +147,6 @@ void WorldSession::prepareWorld(Minecraft& client, const std::string& worldName)
         for (int dz = -radius; dz <= radius; dz += 16) {
             client.progressRenderer.progressStagePercentage(progress++ * 100 / progressTotal);
             (void)client.world->getBlockId(center.x + dx, 64, center.z + dz);
-            while (client.world->doLightingUpdates()) {
-            }
         }
     }
     if (ChunkSource* chunkSource = client.world->getChunkSource()) {
@@ -156,11 +154,11 @@ void WorldSession::prepareWorld(Minecraft& client, const std::string& worldName)
             legacyCache->populateReadyChunks();
         }
     }
-    while (client.world->doLightingUpdates()) {
-    }
+    // Lighting runs on its own thread; wait for the initial flood to settle.
+    client.world->finishLightingUpdates();
     client.progressRenderer.progressStage("Simulating world for a bit");
     client.world->tickChunks();
-    if (client.world->newWorld) {
+    if (client.world->isNewWorld()) {
         client.world->saveLevelProperties();
     }
 }
@@ -180,11 +178,11 @@ void WorldSession::tickJoinPlayerCounter(Minecraft& client)
     if (client.world == nullptr || client.player == nullptr) {
         return;
     }
+    // Drive render-distance chunk residency every tick (budgeted inside
+    // loadChunksNearEntity). The old 30-tick gate starved the loader so chunks
+    // only generated when the player physically walked into them.
+    client.world->loadChunksNearEntity(client.player);
     ++joinPlayerCounter_;
-    if (joinPlayerCounter_ == 30) {
-        joinPlayerCounter_ = 0;
-        client.world->loadChunksNearEntity(client.player);
-    }
 }
 
 } // namespace net::minecraft::client::core

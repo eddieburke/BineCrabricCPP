@@ -117,6 +117,23 @@ public:
     // Re-queue cross-chunk skylight gap fixes once this chunk and neighbors are loaded.
     void relightSkylightGaps();
 
+    void attachToWorld(World* worldIn) noexcept
+    {
+        world = worldIn;
+        for (auto& entry : blockEntities) {
+            if (entry.second != nullptr) {
+                entry.second->world = worldIn;
+            }
+        }
+        for (auto& slice : entities) {
+            for (Entity* entity : slice) {
+                if (entity != nullptr) {
+                    entity->world = worldIn;
+                }
+            }
+        }
+    }
+
     [[nodiscard]] int getBlockId(int localX, int yPos, int localZ) const
     {
         return static_cast<int>(blocks[index(localX, yPos, localZ)] & 0xFFU);

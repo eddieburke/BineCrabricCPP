@@ -7,7 +7,10 @@ namespace net::minecraft::recipe { class CraftingRecipeManager; }
 namespace net::minecraft::block {
 
 class DetectorRailBlock : public RailBlock {
-    static void registerRecipes(recipe::CraftingRecipeManager& recipeManager);
+public:
+    static constexpr bool kRegisters = true;
+    static constexpr int kBlockId = 28;
+static void registerRecipes(recipe::CraftingRecipeManager& recipeManager);
 public:
     static void registerClass();
     DetectorRailBlock(int id, int textureId);

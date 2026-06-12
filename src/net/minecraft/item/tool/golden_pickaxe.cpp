@@ -1,7 +1,7 @@
 #include "net/minecraft/item/tool/golden_pickaxe.hpp"
+#include "net/minecraft/registry/Registry.hpp"
 
 #include "net/minecraft/item/Item.hpp"
-#include "net/minecraft/item/ItemRegistrar.hpp"
 #include "net/minecraft/recipe/CraftingRecipeManager.hpp"
 
 #include "net/minecraft/item/misc/stick.hpp"
@@ -12,7 +12,7 @@
 
 namespace net::minecraft::item {
 
-GoldenPickaxeItem::GoldenPickaxeItem() : PickaxeItem(29, ToolMaterial::Gold) {}
+GoldenPickaxeItem::GoldenPickaxeItem() : PickaxeItem(kRawId, ToolMaterial::Gold) {}
 
 void GoldenPickaxeItem::registerClass()
 {
@@ -29,5 +29,5 @@ void GoldenPickaxeItem::registerRecipes(recipe::CraftingRecipeManager& recipeMan
         {std::string("XXX"), std::string(" # "), std::string(" # "), '#', Item::byRawId(24), 'X', Item::byRawId(10)});
 }
 
-static registry::RegisterItem<GoldenPickaxeItem> s_itemReg(29);
+static registry::RegisterItem<GoldenPickaxeItem> s_itemReg;
 } // namespace net::minecraft::item

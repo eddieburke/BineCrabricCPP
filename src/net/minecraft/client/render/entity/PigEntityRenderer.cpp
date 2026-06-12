@@ -23,3 +23,24 @@ bool PigEntityRenderer::bindTexture(const net::minecraft::LivingEntity& entity, 
 }
 
 } // namespace net::minecraft::client::render::entity
+
+#include "net/minecraft/client/entity/EntityClientRendererRegistration.hpp"
+#include "net/minecraft/client/render/entity/model/PigEntityModel.hpp"
+#include "net/minecraft/entity/passive/PigEntity.hpp"
+
+namespace net::minecraft::entity::passive {
+
+std::unique_ptr<::net::minecraft::client::render::entity::EntityRenderer> PigEntity::ClientRenderer::create()
+{
+    using namespace ::net::minecraft::client::render::entity;
+    using namespace ::net::minecraft::client::render::entity::model;
+    return std::make_unique<PigEntityRenderer>(new PigEntityModel(), new PigEntityModel(0.5f), 0.7f);
+}
+
+} // namespace net::minecraft::entity::passive
+
+namespace {
+
+static ::net::minecraft::registry::RegisterEntityRenderer<net::minecraft::entity::passive::PigEntity> autoRendererReg;
+
+} // namespace

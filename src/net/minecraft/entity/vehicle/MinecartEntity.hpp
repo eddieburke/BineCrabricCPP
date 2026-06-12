@@ -9,6 +9,7 @@
 #include <optional>
 #include <string>
 #include <vector>
+#include "net/minecraft/entity/EntityClientRendererDecl.hpp"
 
 namespace net::minecraft::entity::player {
 class PlayerEntity;
@@ -18,7 +19,14 @@ namespace net::minecraft::entity::vehicle {
 
 class MinecartEntity : public Entity, public Inventory {
 public:
-    static void registerClass();
+    static constexpr bool kRegisters = true;
+    static constexpr int kEntityId = 40;
+    static constexpr const char* kEntityName = "Minecart";
+
+
+    struct ClientRenderer {
+        static std::unique_ptr<::net::minecraft::client::render::entity::EntityRenderer> create();
+    };
     explicit MinecartEntity(World* world = nullptr);
     MinecartEntity(World* world, double x, double y, double z, int typeIn);
 

@@ -1,5 +1,5 @@
 #include "net/minecraft/registry/Registry.hpp"
-#include "net/minecraft/block/BlockRegistrar.hpp"
+#include "net/minecraft/block/VanillaBlockSounds.hpp"
 #include "net/minecraft/block/LeverBlock.hpp"
 
 #include "net/minecraft/entity/player/PlayerEntity.hpp"
@@ -234,7 +234,7 @@ bool LeverBlock::isEmittingRedstonePowerInDirection(
 }
 void LeverBlock::registerClass()
 {
-    Block::LEVER = (new LeverBlock(69, 96))->setHardness(0.5f)->setSoundGroup(&vanillaWoodSound())->setTranslationKey("lever")->ignoreMetaUpdates();
+    Block::LEVER = (new LeverBlock(kBlockId, 96))->setHardness(0.5f)->setSoundGroup(&vanillaWoodSound())->setTranslationKey("lever")->ignoreMetaUpdates();
 }
 void LeverBlock::registerRecipes(recipe::CraftingRecipeManager& recipeManager)
 {
@@ -246,6 +246,6 @@ void LeverBlock::registerRecipes(recipe::CraftingRecipeManager& recipeManager)
 
 
 
-namespace {static ::net::minecraft::registry::RegisterBlock<LeverBlock> autoReg(69);} // namespace
+namespace {static ::net::minecraft::registry::RegisterBlock<LeverBlock> autoReg;} // namespace
 } // namespace net::minecraft::block
 

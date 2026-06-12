@@ -1,12 +1,10 @@
 #pragma once
 
-#include "net/minecraft/entity/SpawnableEntity.hpp"
-
 namespace net::minecraft::entity {
 
-class Monster : public SpawnableEntity {
+class Monster {
 public:
-    ~Monster() override = default;
+    virtual ~Monster() = default;
 };
 
 } // namespace net::minecraft::entity

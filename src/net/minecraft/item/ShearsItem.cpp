@@ -4,7 +4,6 @@
 #include "net/minecraft/block/Block.hpp"
 #include "net/minecraft/entity/LivingEntity.hpp"
 #include "net/minecraft/item/Item.hpp"
-#include "net/minecraft/item/ItemRegistrar.hpp"
 #include "net/minecraft/item/ItemStack.hpp"
 #include "net/minecraft/recipe/CraftingRecipeManager.hpp"
 
@@ -64,6 +63,6 @@ void ShearsItem::registerRecipes(recipe::CraftingRecipeManager& recipeManager)
 
 
 
-namespace {static ::net::minecraft::registry::RegisterItem<ShearsItem> autoReg(103); } // namespace
+namespace {static ::net::minecraft::registry::RegisterItem<ShearsItem> autoReg; } // namespace
 
 } // namespace net::minecraft::item

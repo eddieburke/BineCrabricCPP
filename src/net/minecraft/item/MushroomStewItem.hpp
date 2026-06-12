@@ -14,7 +14,10 @@ class CraftingRecipeManager;
 namespace net::minecraft::item {
 
 class MushroomStewItem : public FoodItem {
-public:    static void registerClass();
+public:        static constexpr bool kRegisters = true;
+    static constexpr int kRawId = 26;
+
+static void registerClass();
     static void registerRecipes(recipe::CraftingRecipeManager& recipeManager);
     MushroomStewItem(int rawId, int healthRestored);
     ItemStack* use(ItemStack* stack, World* world, PlayerEntity* user) override;

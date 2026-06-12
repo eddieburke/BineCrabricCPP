@@ -28,27 +28,36 @@ public:
     {
     }
 
-    void addParticle(Particle* particle)
+    void addParticle(std::unique_ptr<Particle> particle)
     {
+        if (particle == nullptr) {
+            return;
+        }
         const int group = particle->getGroup();
         auto& bucket = particles_[static_cast<std::size_t>(group)];
         if (bucket.size() >= 4000) {
             bucket.erase(bucket.begin());
         }
-        bucket.emplace_back(particle);
+        bucket.push_back(std::move(particle));
+    }
+
+    void addParticle(Particle* particle)
+    {
+        addParticle(std::unique_ptr<Particle>(particle));
     }
 
     void removeDeadParticles()
     {
         for (auto& bucket : particles_) {
-            for (std::size_t i = 0; i < bucket.size();) {
-                bucket[i]->tick();
-                if (bucket[i]->dead) {
-                    bucket.erase(bucket.begin() + static_cast<std::ptrdiff_t>(i));
-                } else {
-                    ++i;
+            const std::size_t tickCount = bucket.size();
+            for (std::size_t i = 0; i < tickCount && i < bucket.size(); ++i) {
+                if (bucket[i] != nullptr) {
+                    bucket[i]->tick();
                 }
             }
+            std::erase_if(bucket, [](const std::unique_ptr<Particle>& particle) {
+                return particle == nullptr || particle->dead;
+            });
         }
     }
 
@@ -109,8 +118,10 @@ public:
                     const double vx = (px - static_cast<double>(x) - 0.5) * 3.0;
                     const double vy = (py - static_cast<double>(y) - 0.5) * 3.0;
                     const double vz = (pz - static_cast<double>(z) - 0.5) * 3.0;
-                    addParticle((new BlockParticle(world_, px, py, pz, vx, vy, vz, block, side, blockMeta))
-                                    ->color(x, y, z));
+                    auto particle = std::make_unique<BlockParticle>(
+                        world_, px, py, pz, vx, vy, vz, block, side, blockMeta);
+                    particle->color(x, y, z);
+                    addParticle(std::move(particle));
                 }
             }
         }
@@ -144,10 +155,10 @@ public:
         } else if (side == 5) {
             px = static_cast<double>(x) + block->maxX + static_cast<double>(inset);
         }
-        addParticle((new BlockParticle(world_, px, py, pz, 0.0, 0.0, 0.0, block, side, world_->getBlockMeta(x, y, z)))
-                        ->color(x, y, z)
-                        ->multiplyVelocity(0.2f)
-                        ->setScale(0.6f));
+        auto particle =
+            std::make_unique<BlockParticle>(world_, px, py, pz, 0.0, 0.0, 0.0, block, side, world_->getBlockMeta(x, y, z));
+        particle->color(x, y, z)->multiplyVelocity(0.2f)->setScale(0.6f);
+        addParticle(std::move(particle));
     }
 
     void setWorld(World* world)

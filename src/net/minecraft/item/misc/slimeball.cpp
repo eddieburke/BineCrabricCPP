@@ -1,14 +1,14 @@
 #include "net/minecraft/item/misc/slimeball.hpp"
+#include "net/minecraft/registry/Registry.hpp"
 
 #include "net/minecraft/item/Item.hpp"
-#include "net/minecraft/item/ItemRegistrar.hpp"
 #include "net/minecraft/recipe/CraftingRecipeManager.hpp"
 
 #include "net/minecraft/item/misc/stick.hpp"
 
 namespace net::minecraft::item {
 
-SlimeballItem::SlimeballItem() : Item(85, RegistrationMode::Deferred) {}
+SlimeballItem::SlimeballItem() : Item(kRawId, RegistrationMode::Deferred) {}
 
 void SlimeballItem::registerClass()
 {
@@ -24,5 +24,5 @@ void SlimeballItem::registerRecipes(recipe::CraftingRecipeManager& recipeManager
     (void)recipeManager;
 }
 
-static registry::RegisterItem<SlimeballItem> s_itemReg(85);
+static registry::RegisterItem<SlimeballItem> s_itemReg;
 } // namespace net::minecraft::item

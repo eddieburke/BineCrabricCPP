@@ -41,7 +41,6 @@
 #include "net/minecraft/util/crash/CrashReport.hpp"
 #include "net/minecraft/util/hit/HitResultType.hpp"
 #include "net/minecraft/util/math/MathHelper.hpp"
-#include "net/minecraft/util/math/Vec3dClient.hpp"
 #include "net/minecraft/world/World.hpp"
 #include "net/minecraft/world/chunk/ChunkSource.hpp"
 #include "net/minecraft/world/chunk/LegacyChunkCache.hpp"
@@ -344,8 +343,8 @@ void Minecraft::runWorldSimulation()
         if (atmosphereRenderer != nullptr) {
             atmosphereRenderer->tick();
         }
-        if (world->lightningTicksLeft > 0) {
-            --world->lightningTicksLeft;
+        if (world->weather().lightningTicks > 0) {
+            --world->weather().lightningTicks;
         }
         world->tickEntities();
     }
@@ -379,7 +378,6 @@ void Minecraft::tick()
                 const int chunkX = MathHelper::floor(player->x) >> 4;
                 const int chunkZ = MathHelper::floor(player->z) >> 4;
                 legacyCache->setSpawnPoint(chunkX, chunkZ);
-                legacyCache->prefetch(chunkX, chunkZ);
             }
         }
     }
@@ -481,7 +479,6 @@ void Minecraft::run()
         int frames = 0;
         while (running.load()) {
             try {
-                ::net::minecraft::util::math::ClientVec3d::resetCacheCount();
                 screenStack_.flushRetired();
                 if (applet != nullptr && !applet->isActive()) {
                     break;
@@ -596,7 +593,7 @@ void Minecraft::startGame(const std::string& worldName, const std::string& name,
     progressRenderer.progressStart("Generating level");
     progressRenderer.progressStage("Preparing world");
     worldSession_.ownedWorldMut() = std::make_unique<World>(worldSession_.ownedWorldStorage(), name, seed);
-    if (worldSession_.ownedWorld()->newWorld) {
+    if (worldSession_.ownedWorld()->isNewWorld()) {
         if (stats != nullptr) {
             stats->increment(stat::Stats::CREATE_WORLD, 1);
             stats->increment(stat::Stats::START_GAME, 1);

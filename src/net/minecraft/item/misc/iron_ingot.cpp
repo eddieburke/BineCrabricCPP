@@ -1,7 +1,7 @@
 #include "net/minecraft/item/misc/iron_ingot.hpp"
+#include "net/minecraft/registry/Registry.hpp"
 
 #include "net/minecraft/item/Item.hpp"
-#include "net/minecraft/item/ItemRegistrar.hpp"
 #include "net/minecraft/recipe/CraftingRecipeManager.hpp"
 
 #include "net/minecraft/item/misc/stick.hpp"
@@ -10,7 +10,7 @@
 
 namespace net::minecraft::item {
 
-IronIngotItem::IronIngotItem() : Item(9, RegistrationMode::Deferred) {}
+IronIngotItem::IronIngotItem() : Item(kRawId, RegistrationMode::Deferred) {}
 
 void IronIngotItem::registerClass()
 {
@@ -35,5 +35,5 @@ void IronIngotItem::registerRecipes(recipe::CraftingRecipeManager& recipeManager
         {std::string("#"), '#', Block::IRON_BLOCK});
 }
 
-static registry::RegisterItem<IronIngotItem> s_itemReg(9);
+static registry::RegisterItem<IronIngotItem> s_itemReg;
 } // namespace net::minecraft::item

@@ -4,7 +4,6 @@
 #include "net/minecraft/entity/player/PlayerEntity.hpp"
 #include "net/minecraft/entity/projectile/ArrowEntity.hpp"
 #include "net/minecraft/item/Item.hpp"
-#include "net/minecraft/item/ItemRegistrar.hpp"
 #include "net/minecraft/item/ItemStack.hpp"
 #include "net/minecraft/item/misc/arrow.hpp"
 #include "net/minecraft/item/misc/stick.hpp"
@@ -16,7 +15,7 @@
 
 namespace net::minecraft::item {
 
-BowItem::BowItem() : Item(5, RegistrationMode::Deferred)
+BowItem::BowItem() : Item(kRawId, RegistrationMode::Deferred)
 {
     setMaxCount(1);
 }
@@ -51,6 +50,6 @@ void BowItem::registerRecipes(recipe::CraftingRecipeManager& recipeManager)
         {std::string(" #X"), std::string("# X"), std::string(" #X"), '#', Item::byRawId(24), 'X', Item::byRawId(31)});
 }
 
-namespace { static ::net::minecraft::registry::RegisterItem<BowItem> autoReg(5); }
+namespace { static ::net::minecraft::registry::RegisterItem<BowItem> autoReg; }
 
 } // namespace net::minecraft::item

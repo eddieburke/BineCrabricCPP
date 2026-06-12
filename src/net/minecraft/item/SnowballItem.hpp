@@ -10,7 +10,10 @@ class ItemStack;
 namespace net::minecraft::item {
 
 class SnowballItem : public Item {
-public:    static void registerClass();
+public:        static constexpr bool kRegisters = true;
+    static constexpr int kRawId = 76;
+
+static void registerClass();
     explicit SnowballItem(int rawId);
     ItemStack* use(ItemStack* stack, World* world, PlayerEntity* user) override;
 };

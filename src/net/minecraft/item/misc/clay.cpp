@@ -1,14 +1,14 @@
 #include "net/minecraft/item/misc/clay.hpp"
+#include "net/minecraft/registry/Registry.hpp"
 
 #include "net/minecraft/item/Item.hpp"
-#include "net/minecraft/item/ItemRegistrar.hpp"
 #include "net/minecraft/recipe/CraftingRecipeManager.hpp"
 
 #include "net/minecraft/item/misc/stick.hpp"
 
 namespace net::minecraft::item {
 
-ClayItem::ClayItem() : Item(81, RegistrationMode::Deferred) {}
+ClayItem::ClayItem() : Item(kRawId, RegistrationMode::Deferred) {}
 
 void ClayItem::registerClass()
 {
@@ -24,5 +24,5 @@ void ClayItem::registerRecipes(recipe::CraftingRecipeManager& recipeManager)
     (void)recipeManager;
 }
 
-static registry::RegisterItem<ClayItem> s_itemReg(81);
+static registry::RegisterItem<ClayItem> s_itemReg;
 } // namespace net::minecraft::item

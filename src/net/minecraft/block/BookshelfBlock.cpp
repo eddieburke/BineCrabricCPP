@@ -1,5 +1,5 @@
 #include "net/minecraft/registry/Registry.hpp"
-#include "net/minecraft/block/BlockRegistrar.hpp"
+#include "net/minecraft/block/VanillaBlockSounds.hpp"
 #include "net/minecraft/block/BookshelfBlock.hpp"
 #include "net/minecraft/recipe/CraftingRecipeManager.hpp"
 #include "net/minecraft/block/Block.hpp"
@@ -8,7 +8,7 @@
 namespace net::minecraft::block {
 void BookshelfBlock::registerClass()
 {
-    Block::BOOKSHELF = (new BookshelfBlock(47, 35))->setHardness(1.5f)->setSoundGroup(&vanillaWoodSound())->setTranslationKey("bookshelf");
+    Block::BOOKSHELF = (new BookshelfBlock(kBlockId, 35))->setHardness(1.5f)->setSoundGroup(&vanillaWoodSound())->setTranslationKey("bookshelf");
 }
 void BookshelfBlock::registerRecipes(recipe::CraftingRecipeManager& recipeManager)
 {
@@ -20,6 +20,6 @@ void BookshelfBlock::registerRecipes(recipe::CraftingRecipeManager& recipeManage
 
 
 
-namespace {static ::net::minecraft::registry::RegisterBlock<BookshelfBlock> autoReg(47);} // namespace
+namespace {static ::net::minecraft::registry::RegisterBlock<BookshelfBlock> autoReg;} // namespace
 } // namespace net::minecraft::block
 

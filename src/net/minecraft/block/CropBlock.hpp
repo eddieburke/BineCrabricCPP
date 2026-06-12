@@ -10,9 +10,9 @@
 
 namespace net::minecraft::block {
 
+// Registered in SimpleBlocks.cpp.
 class CropBlock : public PlantBlock {
 public:
-    static void registerClass();
     CropBlock(int id, int textureIdIn) : PlantBlock(id, textureIdIn)
     {
         textureId = textureIdIn;

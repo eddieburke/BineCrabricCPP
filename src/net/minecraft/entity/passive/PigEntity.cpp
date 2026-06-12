@@ -1,17 +1,15 @@
 #include "net/minecraft/registry/Registry.hpp"
-#include "net/minecraft/entity/EntityRegistrar.hpp"
 #include "net/minecraft/entity/passive/PigEntity.hpp"
 
-#include "net/minecraft/entity/EntityRegistry.hpp"
 
-#include <memory>
-#include <typeindex>
 
 #include "net/minecraft/achievement/Achievements.hpp"
 #include "net/minecraft/entity/mob/PigZombieEntity.hpp"
 #include "net/minecraft/entity/player/PlayerEntity.hpp"
 #include "net/minecraft/item/Item.hpp"
 #include "net/minecraft/world/World.hpp"
+
+#include <memory>
 
 namespace net::minecraft::entity::passive {
 
@@ -48,9 +46,12 @@ void PigEntity::onStruckByLightning(Entity* /*lightning*/)
     if (world == nullptr || world->isRemote()) {
         return;
     }
-    auto* pigZombie = new mob::PigZombieEntity(world);
+    auto pigZombie = std::make_unique<mob::PigZombieEntity>(world);
     pigZombie->setPositionAndAnglesKeepPrevAngles(x, y, z, yaw, pitch);
-    world->spawnEntity(pigZombie);
+    if (!world->spawnMob(pigZombie.get())) {
+        return;
+    }
+    pigZombie.release();
     markDead();
 }
 
@@ -73,11 +74,6 @@ int PigEntity::getDroppedItemId() const
 }
 
 
-void PigEntity::registerClass()
-{
-    ::net::minecraft::entity::detail::registerVanillaEntity<PigEntity>("Pig", 90);
-}
-
-static ::net::minecraft::registry::RegisterEntity<PigEntity> autoReg(90);
+static ::net::minecraft::registry::RegisterEntity<PigEntity> autoReg;
 
 } // namespace net::minecraft::entity::passive

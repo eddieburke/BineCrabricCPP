@@ -10,7 +10,10 @@ namespace net::minecraft::block {
 
 class BedBlock : public Block {
 public:
-    static void registerClass();
+    static constexpr bool kRegisters = true;
+    static constexpr int kBlockId = 26;
+
+static void registerClass();
     static constexpr int BED_OFFSETS[4][2] = {{0, 1}, {-1, 0}, {0, -1}, {1, 0}};
 
     explicit BedBlock(int id);

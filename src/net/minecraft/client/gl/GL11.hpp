@@ -61,6 +61,13 @@
 #undef GL_AMBIENT_AND_DIFFUSE
 #undef GL_NORMALIZE
 #undef GL_POLYGON_OFFSET_FILL
+#undef GL_DOUBLE
+#undef GL_BYTE
+#undef GL_FLOAT
+#undef GL_VERTEX_ARRAY
+#undef GL_NORMAL_ARRAY
+#undef GL_COLOR_ARRAY
+#undef GL_TEXTURE_COORD_ARRAY
 
 namespace net::minecraft::client::gl {
 
@@ -121,6 +128,13 @@ struct GL11 {
     static constexpr int GL_AMBIENT_AND_DIFFUSE = 0x1602;
     static constexpr int GL_NORMALIZE = 0x0BA1;
     static constexpr int GL_POLYGON_OFFSET_FILL = 0x8037;
+    static constexpr int GL_BYTE = 0x1400;
+    static constexpr int GL_FLOAT = 0x1406;
+    static constexpr int GL_DOUBLE = 0x140A;
+    static constexpr int GL_VERTEX_ARRAY = 0x8074;
+    static constexpr int GL_NORMAL_ARRAY = 0x8075;
+    static constexpr int GL_COLOR_ARRAY = 0x8076;
+    static constexpr int GL_TEXTURE_COORD_ARRAY = 0x8078;
 
 #ifdef MINECRAFT_GL_REAL
     static void glEnable(int cap) { ::glEnable(static_cast<GLenum>(cap)); }

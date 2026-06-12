@@ -4,12 +4,21 @@
 #include "net/minecraft/item/BowItem.hpp"
 #include "net/minecraft/item/Item.hpp"
 #include "net/minecraft/item/ItemStack.hpp"
+#include "net/minecraft/entity/EntityClientRendererDecl.hpp"
 
 namespace net::minecraft::entity::mob {
 
 class SkeletonEntity : public MonsterEntity {
 public:
-    static void registerClass();
+    static constexpr bool kRegisters = true;
+    static constexpr int kEntityId = 51;
+
+    static constexpr const char* kEntityName = "Skeleton";
+
+
+    struct ClientRenderer {
+        static std::unique_ptr<::net::minecraft::client::render::entity::EntityRenderer> create();
+    };
     explicit SkeletonEntity(World* world = nullptr);
 
     void tickMovement() override;

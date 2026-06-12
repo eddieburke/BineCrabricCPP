@@ -5,7 +5,8 @@
 
 namespace net::minecraft::util::math {
 
-// Client-only Vec3d helpers (createCached pool + rotation), faithful to Vec3d.java.
+// Vec3d with client-side rotation helpers (faithful to Vec3d.java). Stack-only —
+// no frame pool; safe on any thread.
 struct ClientVec3d : Vec3d {
     using Vec3d::Vec3d;
 
@@ -40,10 +41,6 @@ struct ClientVec3d : Vec3d {
         y = prevY;
         z = newZ;
     }
-
-    static ClientVec3d& createCached(double nx, double ny, double nz);
-    static void clearCache();
-    static void resetCacheCount();
 };
 
 } // namespace net::minecraft::util::math

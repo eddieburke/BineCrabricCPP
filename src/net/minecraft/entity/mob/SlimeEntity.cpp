@@ -1,11 +1,7 @@
 #include "net/minecraft/registry/Registry.hpp"
-#include "net/minecraft/entity/EntityRegistrar.hpp"
 #include "net/minecraft/entity/mob/SlimeEntity.hpp"
 
-#include "net/minecraft/entity/EntityRegistry.hpp"
 
-#include <memory>
-#include <typeindex>
 
 #include "net/minecraft/entity/player/PlayerEntity.hpp"
 #include "net/minecraft/item/Item.hpp"
@@ -14,6 +10,7 @@
 #include "net/minecraft/world/chunk/Chunk.hpp"
 
 #include <cmath>
+#include <memory>
 
 namespace net::minecraft::entity::mob {
 
@@ -111,10 +108,14 @@ void SlimeEntity::markDead()
         for (int i = 0; i < 4; ++i) {
             const float offsetX = (static_cast<float>(i % 2) - 0.5f) * static_cast<float>(size) / 4.0f;
             const float offsetZ = (static_cast<float>(i / 2) - 0.5f) * static_cast<float>(size) / 4.0f;
-            auto* child = new SlimeEntity(world);
+            auto child = std::make_unique<SlimeEntity>(world);
             child->setSize(size / 2);
-            child->setPositionAndAnglesKeepPrevAngles(x + static_cast<double>(offsetX), y + 0.5, z + static_cast<double>(offsetZ), random.nextFloat() * 360.0f, 0.0f);
-            world->spawnEntity(child);
+            child->setPositionAndAnglesKeepPrevAngles(
+                x + static_cast<double>(offsetX), y + 0.5, z + static_cast<double>(offsetZ), random.nextFloat() * 360.0f, 0.0f);
+            if (!world->spawnMob(child.get())) {
+                continue;
+            }
+            child.release();
         }
     }
     LivingEntity::markDead();
@@ -151,11 +152,6 @@ int SlimeEntity::getDroppedItemId() const
 }
 
 
-void SlimeEntity::registerClass()
-{
-    ::net::minecraft::entity::detail::registerVanillaEntity<SlimeEntity>("Slime", 55);
-}
-
-static ::net::minecraft::registry::RegisterEntity<SlimeEntity> autoReg(55);
+static ::net::minecraft::registry::RegisterEntity<SlimeEntity> autoReg;
 
 } // namespace net::minecraft::entity::mob

@@ -114,3 +114,21 @@ void PaintingEntityRenderer::applyBrightness(const ::net::minecraft::entity::dec
 }
 
 } // namespace net::minecraft::client::render::entity
+
+#include "net/minecraft/client/entity/EntityClientRendererRegistration.hpp"
+#include "net/minecraft/entity/decoration/painting/PaintingEntity.hpp"
+
+namespace net::minecraft::entity::decoration::painting {
+
+std::unique_ptr<::net::minecraft::client::render::entity::EntityRenderer> PaintingEntity::ClientRenderer::create()
+{
+    return std::make_unique<::net::minecraft::client::render::entity::PaintingEntityRenderer>();
+}
+
+} // namespace net::minecraft::entity::decoration::painting
+
+namespace {
+
+static ::net::minecraft::registry::RegisterEntityRenderer<net::minecraft::entity::decoration::painting::PaintingEntity> autoRendererReg;
+
+} // namespace

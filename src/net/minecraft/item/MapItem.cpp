@@ -2,7 +2,6 @@
 #include "net/minecraft/item/MapItem.hpp"
 
 #include "net/minecraft/block/Block.hpp"
-#include "net/minecraft/item/ItemRegistrar.hpp"
 #include "net/minecraft/block/MapColor.hpp"
 #include "net/minecraft/entity/Entity.hpp"
 #include "net/minecraft/entity/player/PlayerEntity.hpp"
@@ -280,6 +279,6 @@ void MapItem::registerRecipes(recipe::CraftingRecipeManager& recipeManager)
 
 
 
-namespace { static ::net::minecraft::registry::RegisterItem<MapItem> autoReg(102); } // namespace
+namespace { static ::net::minecraft::registry::RegisterItem<MapItem> autoReg; } // namespace
 
 } // namespace net::minecraft::item

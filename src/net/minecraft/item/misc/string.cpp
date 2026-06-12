@@ -1,14 +1,14 @@
 #include "net/minecraft/item/misc/string.hpp"
+#include "net/minecraft/registry/Registry.hpp"
 
 #include "net/minecraft/item/Item.hpp"
-#include "net/minecraft/item/ItemRegistrar.hpp"
 #include "net/minecraft/recipe/CraftingRecipeManager.hpp"
 
 #include "net/minecraft/item/misc/stick.hpp"
 
 namespace net::minecraft::item {
 
-StringItem::StringItem() : Item(31, RegistrationMode::Deferred) {}
+StringItem::StringItem() : Item(kRawId, RegistrationMode::Deferred) {}
 
 void StringItem::registerClass()
 {
@@ -24,5 +24,5 @@ void StringItem::registerRecipes(recipe::CraftingRecipeManager& recipeManager)
     (void)recipeManager;
 }
 
-static registry::RegisterItem<StringItem> s_itemReg(31);
+static registry::RegisterItem<StringItem> s_itemReg;
 } // namespace net::minecraft::item

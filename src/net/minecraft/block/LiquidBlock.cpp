@@ -3,7 +3,7 @@
 #include "net/minecraft/block/Block.hpp"
 #include "net/minecraft/block/FlowingLiquidBlock.hpp"
 #include "net/minecraft/block/material/Material.hpp"
-#include "net/minecraft/util/math/Vec3dClient.hpp"
+#include "net/minecraft/util/math/Types.hpp"
 #include "net/minecraft/world/BlockView.hpp"
 #include "net/minecraft/world/World.hpp"
 #include "net/minecraft/world/dimension/Dimension.hpp"
@@ -14,14 +14,14 @@ namespace net::minecraft::block {
 
 namespace {
 
-void vecAdd(net::minecraft::util::math::ClientVec3d& v, double ax, double ay, double az)
+void vecAdd(net::minecraft::Vec3d& v, double ax, double ay, double az)
 {
     v.x += ax;
     v.y += ay;
     v.z += az;
 }
 
-void vecNormalize(net::minecraft::util::math::ClientVec3d& v)
+void vecNormalize(net::minecraft::Vec3d& v)
 {
     const double len = std::sqrt(v.x * v.x + v.y * v.y + v.z * v.z);
     if (len > 1.0e-8) {
@@ -64,9 +64,9 @@ bool isSolidFace(const LiquidBlock& self, const BlockView* blockView, int x, int
     return material.isSolid();
 }
 
-net::minecraft::util::math::ClientVec3d& getFlow(const LiquidBlock& self, const BlockView* blockView, int x, int y, int z)
+net::minecraft::Vec3d getFlow(const LiquidBlock& self, const BlockView* blockView, int x, int y, int z)
 {
-    net::minecraft::util::math::ClientVec3d& flowVector = net::minecraft::util::math::ClientVec3d::createCached(0.0, 0.0, 0.0);
+    net::minecraft::Vec3d flowVector {};
     const int centerDepth = getLiquidDepth(self, blockView, x, y, z);
     for (int side = 0; side < 4; ++side) {
         int nx = x;
@@ -183,26 +183,20 @@ float LiquidBlock::getFluidHeightFromMeta(int meta)
 
 double LiquidBlock::getFlowingAngle(const BlockView* view, int x, int y, int z, material::Material& material)
 {
-    net::minecraft::util::math::ClientVec3d* flowVector = nullptr;
+    const LiquidBlock* liquid = nullptr;
     if (&material == &material::Material::WATER) {
-        auto* water = dynamic_cast<LiquidBlock*>(Block::BLOCKS[8]);
-        if (water != nullptr) {
-            flowVector = &getFlow(*water, view, x, y, z);
-        }
+        liquid = dynamic_cast<LiquidBlock*>(Block::BLOCKS[8]);
+    } else if (&material == &material::Material::LAVA) {
+        liquid = dynamic_cast<LiquidBlock*>(Block::BLOCKS[10]);
     }
-    if (&material == &material::Material::LAVA) {
-        auto* lava = dynamic_cast<LiquidBlock*>(Block::BLOCKS[10]);
-        if (lava != nullptr) {
-            flowVector = &getFlow(*lava, view, x, y, z);
-        }
-    }
-    if (flowVector == nullptr) {
+    if (liquid == nullptr) {
         return -1000.0;
     }
-    if (flowVector->x == 0.0 && flowVector->z == 0.0) {
+    const net::minecraft::Vec3d flow = getFlow(*liquid, view, x, y, z);
+    if (flow.x == 0.0 && flow.z == 0.0) {
         return -1000.0;
     }
-    return std::atan2(flowVector->z, flowVector->x) - 1.5707963267948966;
+    return std::atan2(flow.z, flow.x) - 1.5707963267948966;
 }
 
 void LiquidBlock::applyVelocity(World* world, int x, int y, int z, net::minecraft::Entity* /*entity*/, net::minecraft::Vec3d& velocity)
@@ -210,7 +204,7 @@ void LiquidBlock::applyVelocity(World* world, int x, int y, int z, net::minecraf
     if (world == nullptr) {
         return;
     }
-    const net::minecraft::util::math::ClientVec3d& flow = getFlow(*this, static_cast<const BlockView*>(world), x, y, z);
+    const net::minecraft::Vec3d flow = getFlow(*this, static_cast<const BlockView*>(world), x, y, z);
     velocity.x += flow.x;
     velocity.y += flow.y;
     velocity.z += flow.z;

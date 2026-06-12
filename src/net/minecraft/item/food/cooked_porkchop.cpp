@@ -1,7 +1,7 @@
 #include "net/minecraft/item/food/cooked_porkchop.hpp"
+#include "net/minecraft/registry/Registry.hpp"
 
 #include "net/minecraft/item/Item.hpp"
-#include "net/minecraft/item/ItemRegistrar.hpp"
 #include "net/minecraft/recipe/CraftingRecipeManager.hpp"
 
 #include "net/minecraft/item/misc/stick.hpp"
@@ -10,7 +10,7 @@
 
 namespace net::minecraft::item {
 
-CookedPorkchopItem::CookedPorkchopItem() : FoodItem(64, 8, true) {}
+CookedPorkchopItem::CookedPorkchopItem() : FoodItem(kRawId, 8, true) {}
 
 void CookedPorkchopItem::registerClass()
 {
@@ -34,5 +34,5 @@ void CookedPorkchopItem::registerRecipes(recipe::CraftingRecipeManager& recipeMa
     (void)recipeManager;
 }
 
-static registry::RegisterItem<CookedPorkchopItem> s_itemReg(64);
+static registry::RegisterItem<CookedPorkchopItem> s_itemReg;
 } // namespace net::minecraft::item

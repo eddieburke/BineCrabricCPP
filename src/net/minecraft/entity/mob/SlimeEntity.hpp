@@ -2,13 +2,21 @@
 
 #include "net/minecraft/entity/LivingEntity.hpp"
 #include "net/minecraft/entity/Monster.hpp"
+#include "net/minecraft/entity/EntityClientRendererDecl.hpp"
 #include "net/minecraft/entity/player/PlayerEntity.hpp"
 
 namespace net::minecraft::entity::mob {
 
 class SlimeEntity : public LivingEntity, public Monster {
 public:
-    static void registerClass();
+    static constexpr bool kRegisters = true;
+    static constexpr int kEntityId = 55;
+    static constexpr const char* kEntityName = "Slime";
+
+    struct ClientRenderer {
+        static std::unique_ptr<::net::minecraft::client::render::entity::EntityRenderer> create();
+    };
+
     explicit SlimeEntity(World* world = nullptr);
 
     float lastStretch = 0.0f;

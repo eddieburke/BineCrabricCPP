@@ -2,11 +2,16 @@
 
 #include "net/minecraft/entity/Entity.hpp"
 #include "net/minecraft/entity/LivingEntity.hpp"
+#include "net/minecraft/entity/EntityClientRendererDecl.hpp"
 
 namespace net::minecraft::entity::projectile {
 
 class FireballEntity : public Entity {
 public:
+
+    struct ClientRenderer {
+        static std::unique_ptr<::net::minecraft::client::render::entity::EntityRenderer> create();
+    };
     explicit FireballEntity(World* world = nullptr);
 
     FireballEntity(

@@ -1,7 +1,7 @@
 #include "net/minecraft/item/food/bread.hpp"
+#include "net/minecraft/registry/Registry.hpp"
 
 #include "net/minecraft/item/Item.hpp"
-#include "net/minecraft/item/ItemRegistrar.hpp"
 #include "net/minecraft/recipe/CraftingRecipeManager.hpp"
 
 #include "net/minecraft/item/misc/stick.hpp"
@@ -9,7 +9,7 @@
 
 namespace net::minecraft::item {
 
-BreadItem::BreadItem() : FoodItem(41, 5, false) {}
+BreadItem::BreadItem() : FoodItem(kRawId, 5, false) {}
 
 void BreadItem::registerClass()
 {
@@ -26,5 +26,5 @@ void BreadItem::registerRecipes(recipe::CraftingRecipeManager& recipeManager)
         {std::string("###"), '#', Item::byRawId(40)});
 }
 
-static registry::RegisterItem<BreadItem> s_itemReg(41);
+static registry::RegisterItem<BreadItem> s_itemReg;
 } // namespace net::minecraft::item

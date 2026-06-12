@@ -2,10 +2,10 @@
 
 #include "net/minecraft/block/entity/MobSpawnerBlockEntity.hpp"
 #include "net/minecraft/client/Minecraft.hpp"
+#include "net/minecraft/entity/EntityRegistry.hpp"
 #include "net/minecraft/client/gl/GL11.hpp"
 #include "net/minecraft/client/render/entity/EntityRenderDispatcher.hpp"
 #include "net/minecraft/client/render/entity/EntityRenderers.hpp"
-#include "net/minecraft/entity/EntityRegistry.hpp"
 
 namespace net::minecraft::client::render::block::entity {
 

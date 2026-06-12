@@ -1,8 +1,12 @@
 #pragma once
 
+#include "net/minecraft/entity/EntityRegistry.hpp"
 #include "net/minecraft/recipe/CraftingRecipeManager.hpp"
 #include "net/minecraft/recipe/SmeltingRecipeManager.hpp"
+#include "net/minecraft/world/World.hpp"
 
+#include <memory>
+#include <typeindex>
 #include <vector>
 
 namespace net::minecraft::registry {
@@ -95,6 +99,24 @@ void enqueueBlockItems(int blockId)
     }
 }
 
+template<typename EntityType>
+void registerVanillaEntity()
+{
+    entity::EntityRegistry::registerType(
+        std::type_index(typeid(EntityType)),
+        EntityType::kEntityName,
+        EntityType::kEntityId,
+        [](World* world) -> std::unique_ptr<entity::Entity> {
+            return std::make_unique<EntityType>(world);
+        });
+}
+
+template<typename EntityType>
+void bootstrapEntity()
+{
+    registerVanillaEntity<EntityType>();
+}
+
 } // namespace detail
 
 // Trait-based default ctor when T::kRegisters; legacy (int id) ctor otherwise.
@@ -118,7 +140,13 @@ struct RegisterBlock {
 
 template <typename T>
 struct RegisterItem {
-    explicit RegisterItem(int rawId)
+    RegisterItem() requires (requires { T::kRegisters; T::kRawId; } && T::kRegisters)
+    {
+        Registry::addItem(T::kRawId, T::registerClass);
+        detail::enqueueCraftingRecipes<T>(T::kRawId);
+        detail::enqueueSmeltingRecipes<T>(T::kRawId);
+    }
+    explicit RegisterItem(int rawId) requires (!requires { T::kRegisters; } || !T::kRegisters)
     {
         Registry::addItem(rawId, T::registerClass);
         detail::enqueueCraftingRecipes<T>(rawId);
@@ -128,7 +156,11 @@ struct RegisterItem {
 
 template <typename T>
 struct RegisterEntity {
-    explicit RegisterEntity(int rawId)
+    RegisterEntity() requires (requires { T::kRegisters; T::kEntityId; T::kEntityName; } && T::kRegisters)
+    {
+        Registry::addEntity(T::kEntityId, detail::bootstrapEntity<T>);
+    }
+    explicit RegisterEntity(int rawId) requires (!requires { T::kRegisters; } || !T::kRegisters)
     {
         Registry::addEntity(rawId, T::registerClass);
     }

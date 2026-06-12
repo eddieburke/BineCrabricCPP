@@ -3,12 +3,21 @@
 #include "net/minecraft/entity/Entity.hpp"
 #include "net/minecraft/entity/decoration/painting/PaintingVariants.hpp"
 #include "net/minecraft/nbt/NbtCompound.hpp"
+#include "net/minecraft/entity/EntityClientRendererDecl.hpp"
 
 namespace net::minecraft::entity::decoration::painting {
 
 class PaintingEntity : public Entity {
 public:
-    static void registerClass();
+    static constexpr bool kRegisters = true;
+    static constexpr int kEntityId = 9;
+
+    static constexpr const char* kEntityName = "Painting";
+
+
+    struct ClientRenderer {
+        static std::unique_ptr<::net::minecraft::client::render::entity::EntityRenderer> create();
+    };
     explicit PaintingEntity(World* world = nullptr);
     PaintingEntity(World* world, int x, int y, int z, int facingIn);
     PaintingEntity(World* world, int x, int y, int z, int facingIn, const std::string& variantId);

@@ -11,7 +11,10 @@ namespace net::minecraft::block {
 
 class FireBlock : public Block {
 public:
-    static void registerClass();
+    static constexpr bool kRegisters = true;
+    static constexpr int kBlockId = 51;
+
+static void registerClass();
     using Block::canPlaceAt;
     FireBlock(int id, int textureId);
 

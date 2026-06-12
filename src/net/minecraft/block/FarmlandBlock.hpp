@@ -7,9 +7,9 @@
 
 namespace net::minecraft::block {
 
+// Registered in SimpleBlocks.cpp.
 class FarmlandBlock : public Block {
 public:
-    static void registerClass();
     explicit FarmlandBlock(int id) : Block(id, material::Material::SOIL)
     {
         textureId = 87;

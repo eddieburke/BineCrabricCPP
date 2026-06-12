@@ -6,9 +6,9 @@
 
 namespace net::minecraft::block {
 
+// Registered in SimpleBlocks.cpp.
 class PlantBlock : public Block {
 public:
-    static void registerClass();
     using Block::canPlaceAt;
     PlantBlock(int id, int textureId)
         : Block(id, material::Material::PLANT)

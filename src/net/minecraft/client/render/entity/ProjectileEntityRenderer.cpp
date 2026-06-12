@@ -47,3 +47,28 @@ void ProjectileEntityRenderer::render(const net::minecraft::Entity& entity, doub
 }
 
 } // namespace net::minecraft::client::render::entity
+
+#include "net/minecraft/client/entity/EntityClientRendererRegistration.hpp"
+#include "net/minecraft/entity/projectile/thrown/EggEntity.hpp"
+#include "net/minecraft/entity/projectile/thrown/SnowballEntity.hpp"
+
+namespace net::minecraft::entity::projectile::thrown {
+
+std::unique_ptr<::net::minecraft::client::render::entity::EntityRenderer> SnowballEntity::ClientRenderer::create()
+{
+    return std::make_unique<::net::minecraft::client::render::entity::ProjectileEntityRenderer>(14);
+}
+
+std::unique_ptr<::net::minecraft::client::render::entity::EntityRenderer> EggEntity::ClientRenderer::create()
+{
+    return std::make_unique<::net::minecraft::client::render::entity::ProjectileEntityRenderer>(12);
+}
+
+} // namespace net::minecraft::entity::projectile::thrown
+
+namespace {
+
+static ::net::minecraft::registry::RegisterEntityRenderer<::net::minecraft::entity::projectile::thrown::SnowballEntity> snowballRendererReg;
+static ::net::minecraft::registry::RegisterEntityRenderer<::net::minecraft::entity::projectile::thrown::EggEntity> eggRendererReg;
+
+} // namespace

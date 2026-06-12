@@ -18,7 +18,7 @@ class Generator {
 public:
     virtual ~Generator() = default;
 
-    void place(ChunkSource* source, World* world, int chunkX, int chunkZ, Chunk& chunk);
+    void place(ChunkSource* source, World* world, std::uint64_t worldSeed, int chunkX, int chunkZ, Chunk& chunk);
 
     // Raw block accessors on the chunk's storage, matching the Java carver's direct
     // byte[] indexing (no heightmap recompute, no metadata change).

@@ -329,6 +329,7 @@ void Chunk::load()
     if (world == nullptr) {
         return;
     }
+    world->registerChunkForLighting(this);
 
     std::vector<block::entity::BlockEntity*> loadedBlockEntities;
     loadedBlockEntities.reserve(blockEntities.size());
@@ -349,6 +350,11 @@ void Chunk::load()
 void Chunk::unload()
 {
     loaded = false;
+    if (world != nullptr) {
+        // Blocks until the lighting thread is no longer touching this chunk,
+        // so callers may free the chunk right after unload() returns.
+        world->unregisterChunkForLighting(this);
+    }
     for (auto& entry : blockEntities) {
         if (entry.second) {
             entry.second->markRemoved();

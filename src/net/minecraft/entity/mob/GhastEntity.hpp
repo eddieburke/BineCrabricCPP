@@ -2,12 +2,20 @@
 
 #include "net/minecraft/entity/FlyingEntity.hpp"
 #include "net/minecraft/entity/Monster.hpp"
+#include "net/minecraft/entity/EntityClientRendererDecl.hpp"
 
 namespace net::minecraft::entity::mob {
 
 class GhastEntity : public FlyingEntity, public Monster {
 public:
-    static void registerClass();
+    static constexpr bool kRegisters = true;
+    static constexpr int kEntityId = 56;
+    static constexpr const char* kEntityName = "Ghast";
+
+
+    struct ClientRenderer {
+        static std::unique_ptr<::net::minecraft::client::render::entity::EntityRenderer> create();
+    };
     explicit GhastEntity(World* world = nullptr);
 
     int floatDuration = 0;

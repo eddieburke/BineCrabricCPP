@@ -132,7 +132,7 @@ chunk::ChunkBuilder* WorldRenderer::chunkAt(int chunkX, int chunkY, int chunkZ)
 
 void WorldRenderer::enqueueDirtyChunk(chunk::ChunkBuilder* chunk)
 {
-    if (chunk == nullptr || chunk->meshJobInFlight) {
+    if (chunk == nullptr) {
         return;
     }
     if (dirtyChunks_.contains(chunk)) {
@@ -163,11 +163,6 @@ void WorldRenderer::setWorld(net::minecraft::World* worldIn)
         world->addEventListener(this);
         reload();
     } else {
-        meshScheduler_.cancelAll();
-        pendingMeshUploads_.clear();
-        for (chunk::ChunkBuilder& chunk : chunks_) {
-            chunk.meshJobInFlight = false;
-        }
         chunks_.clear();
         sortedChunks_.clear();
         dirtyChunks_.clear();
@@ -177,10 +172,7 @@ void WorldRenderer::setWorld(net::minecraft::World* worldIn)
 
 void WorldRenderer::reload()
 {
-    meshScheduler_.cancelAll();
-    pendingMeshUploads_.clear();
     for (chunk::ChunkBuilder& chunk : chunks_) {
-        chunk.meshJobInFlight = false;
         chunk.close();
     }
     chunks_.clear();
@@ -421,17 +413,18 @@ void WorldRenderer::cullChunks(Culler* culler, float tickDelta)
             chunk.inFrustum = true;
         }
     } else {
+        constexpr int kCullStride = 8;
         for (std::size_t i = 0; i < chunks_.size(); ++i) {
             chunk::ChunkBuilder& chunk = chunks_[i];
             if (chunk.hasNoGeometry()) {
                 continue;
             }
-            if (chunk.inFrustum && static_cast<int>((i + cullStep) & 0xF) != 0) {
+            if (static_cast<int>((i + cullStep) % kCullStride) != 0) {
                 continue;
             }
             chunk.updateFrustum(*culler);
         }
-        ++cullStep;
+        cullStep = (cullStep + 1) % kCullStride;
     }
     advanceFramePhase(pipeline::FramePhase::Culled);
 }
@@ -465,10 +458,12 @@ void WorldRenderer::markDirty(int minX, int minY, int minZ, int maxX, int maxY, 
             for (int chunkZ = startZ; chunkZ <= endZ; ++chunkZ) {
                 const int localZ = MathHelper::floorMod(chunkZ, chunkCountZ);
                 chunk::ChunkBuilder* builder = chunkAt(localX, localY, localZ);
-                if (builder == nullptr || builder->dirty) {
+                if (builder == nullptr) {
                     continue;
                 }
-                builder->invalidate();
+                if (!builder->dirty) {
+                    builder->invalidate();
+                }
                 enqueueDirtyChunk(builder);
             }
         }

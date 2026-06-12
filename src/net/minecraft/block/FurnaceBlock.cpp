@@ -1,5 +1,5 @@
 #include "net/minecraft/registry/Registry.hpp"
-#include "net/minecraft/block/BlockRegistrar.hpp"
+#include "net/minecraft/block/VanillaBlockSounds.hpp"
 #include "net/minecraft/block/FurnaceBlock.hpp"
 
 #include "net/minecraft/block/Block.hpp"
@@ -188,7 +188,7 @@ void FurnaceBlock::randomDisplayTick(
 }
 void FurnaceBlock::registerClass()
 {
-    Block::FURNACE = (new FurnaceBlock(61, false))->setHardness(3.5f)->setSoundGroup(&vanillaStoneSound())->setTranslationKey("furnace")->ignoreMetaUpdates();
+    Block::FURNACE = (new FurnaceBlock(kBlockId, false))->setHardness(3.5f)->setSoundGroup(&vanillaStoneSound())->setTranslationKey("furnace")->ignoreMetaUpdates();
     Block::LIT_FURNACE = (new FurnaceBlock(62, true))->setHardness(3.5f)->setSoundGroup(&vanillaStoneSound())->setLuminance(0.875f)->setTranslationKey("furnace")->ignoreMetaUpdates();
 }
 void FurnaceBlock::registerRecipes(recipe::CraftingRecipeManager& recipeManager)
@@ -200,7 +200,7 @@ void FurnaceBlock::registerRecipes(recipe::CraftingRecipeManager& recipeManager)
 
 namespace {
 
-static ::net::minecraft::registry::RegisterBlock<FurnaceBlock> autoReg(61);
+static ::net::minecraft::registry::RegisterBlock<FurnaceBlock> autoReg;
 } // namespace
 } // namespace net::minecraft::block
 

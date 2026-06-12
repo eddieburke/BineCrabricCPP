@@ -15,7 +15,6 @@ constexpr int kGlModelviewMatrix = 0x0BA6;  // GL_MODELVIEW_MATRIX (2982)
 Frustum& Frustum::getInstance()
 {
     static Frustum instance;
-    instance.compute();
     return instance;
 }
 

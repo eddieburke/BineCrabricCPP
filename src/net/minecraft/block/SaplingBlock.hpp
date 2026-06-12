@@ -13,7 +13,10 @@ namespace net::minecraft::block {
 
 class SaplingBlock : public PlantBlock {
 public:
-    static void registerClass();
+    static constexpr bool kRegisters = true;
+    static constexpr int kBlockId = 6;
+
+static void registerClass();
     static void registerBlockItems();
     SaplingBlock(int id, int textureId) : PlantBlock(id, textureId)
     {

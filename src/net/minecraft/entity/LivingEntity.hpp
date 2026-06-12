@@ -16,7 +16,11 @@ namespace net::minecraft::entity {
 
 class LivingEntity : public Entity {
 public:
-    static void registerClass();
+    static constexpr bool kRegisters = true;
+    static constexpr int kEntityId = 48;
+
+    static constexpr const char* kEntityName = "Mob";
+
     explicit LivingEntity(World* world = nullptr);
 
     int maxHealth = 20;
@@ -82,6 +86,7 @@ public:
     void baseTick() override;
     void tick() override;
     void tickRiding() override;
+    virtual void initializeSpawnState(JavaRandom& random);
     void heal(int amount);
     bool damage(Entity* damageSource, int amount) override;
     void animateHurt() override;

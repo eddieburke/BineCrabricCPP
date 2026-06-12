@@ -8,7 +8,10 @@ namespace net::minecraft::block {
 
 class DoorBlock : public Block {
 public:
-    static void registerClass();
+    static constexpr bool kRegisters = true;
+    static constexpr int kBlockId = 71;
+
+static void registerClass();
     DoorBlock(int id, Material& material);
 
     [[nodiscard]] bool isOpaque() const override { return false; }

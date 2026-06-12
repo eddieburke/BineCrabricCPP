@@ -13,17 +13,12 @@ public:
             const double b = frustum[static_cast<std::size_t>(i)][1];
             const double c = frustum[static_cast<std::size_t>(i)][2];
             const double d = frustum[static_cast<std::size_t>(i)][3];
-            if (a * minX + b * minY + c * minZ + d > 0.0
-                || a * maxX + b * minY + c * minZ + d > 0.0
-                || a * minX + b * maxY + c * minZ + d > 0.0
-                || a * maxX + b * maxY + c * minZ + d > 0.0
-                || a * minX + b * minY + c * maxZ + d > 0.0
-                || a * maxX + b * minY + c * maxZ + d > 0.0
-                || a * minX + b * maxY + c * maxZ + d > 0.0
-                || a * maxX + b * maxY + c * maxZ + d > 0.0) {
-                continue;
+            const double x = a >= 0.0 ? maxX : minX;
+            const double y = b >= 0.0 ? maxY : minY;
+            const double z = c >= 0.0 ? maxZ : minZ;
+            if (a * x + b * y + c * z + d <= 0.0) {
+                return false;
             }
-            return false;
         }
         return true;
     }

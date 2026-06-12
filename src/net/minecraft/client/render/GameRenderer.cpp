@@ -30,7 +30,6 @@
 #include "net/minecraft/item/ItemStack.hpp"
 #include "net/minecraft/util/hit/HitResult.hpp"
 #include "net/minecraft/util/math/MathHelper.hpp"
-#include "net/minecraft/util/math/Vec3dClient.hpp"
 #include "net/minecraft/world/World.hpp"
 #include "net/minecraft/world/biome/Biomes.hpp"
 #include "net/minecraft/world/biome/source/BiomeSource.hpp"
@@ -440,14 +439,14 @@ void GameRenderer::applyCameraTransform(float tickDelta)
                 sy *= 0.1f;
                 sz *= 0.1f;
 
-                const Vec3d rayStart = ::net::minecraft::util::math::ClientVec3d::createCached(
+                const Vec3d rayStart {
                     interpX + static_cast<double>(sx),
                     interpY + static_cast<double>(sy),
-                    interpZ + static_cast<double>(sz));
-                const Vec3d rayEnd = ::net::minecraft::util::math::ClientVec3d::createCached(
+                    interpZ + static_cast<double>(sz)};
+                const Vec3d rayEnd {
                     interpX - offsetX + static_cast<double>(sx) + static_cast<double>(sz),
                     interpY - offsetY + static_cast<double>(sy),
-                    interpZ - offsetZ + static_cast<double>(sz));
+                    interpZ - offsetZ + static_cast<double>(sz)};
 
                 const std::optional<HitResult> hit = worldRaycast(client->world, rayStart, rayEnd);
                 if (!hit.has_value()) {

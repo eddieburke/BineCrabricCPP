@@ -12,7 +12,10 @@ namespace net::minecraft::block {
 
 class GrassBlock : public Block {
 public:
-    static void registerClass();
+    static constexpr bool kRegisters = true;
+    static constexpr int kBlockId = 2;
+
+static void registerClass();
     explicit GrassBlock(int id);
 
     [[nodiscard]] int getDroppedItemId(int blockMeta, JavaRandom& random) const override;

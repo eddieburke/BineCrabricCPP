@@ -1,7 +1,7 @@
 #include "net/minecraft/item/misc/stick.hpp"
+#include "net/minecraft/registry/Registry.hpp"
 
 #include "net/minecraft/item/Item.hpp"
-#include "net/minecraft/item/ItemRegistrar.hpp"
 #include "net/minecraft/recipe/CraftingRecipeManager.hpp"
 
 #include "net/minecraft/block/Block.hpp"
@@ -9,7 +9,7 @@
 
 namespace net::minecraft::item {
 
-StickItem::StickItem() : Item(24, RegistrationMode::Deferred) {}
+StickItem::StickItem() : Item(kRawId, RegistrationMode::Deferred) {}
 
 void StickItem::registerClass()
 {
@@ -27,5 +27,5 @@ void StickItem::registerRecipes(recipe::CraftingRecipeManager& recipeManager)
         {std::string("#"), std::string("#"), '#', Block::PLANKS});
 }
 
-static registry::RegisterItem<StickItem> s_itemReg(24);
+static registry::RegisterItem<StickItem> s_itemReg;
 } // namespace net::minecraft::item

@@ -4,7 +4,6 @@
 #include "net/minecraft/entity/LivingEntity.hpp"
 #include "net/minecraft/entity/passive/PigEntity.hpp"
 #include "net/minecraft/item/Item.hpp"
-#include "net/minecraft/item/ItemRegistrar.hpp"
 #include "net/minecraft/item/ItemStack.hpp"
 
 namespace net::minecraft::item {
@@ -38,6 +37,6 @@ void SaddleItem::registerClass()
 
 
 
-namespace {static ::net::minecraft::registry::RegisterItem<SaddleItem> autoReg(73); } // namespace
+namespace {static ::net::minecraft::registry::RegisterItem<SaddleItem> autoReg; } // namespace
 
 } // namespace net::minecraft::item

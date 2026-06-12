@@ -1,12 +1,21 @@
 #pragma once
 
 #include "net/minecraft/entity/WaterCreatureEntity.hpp"
+#include "net/minecraft/entity/EntityClientRendererDecl.hpp"
 
 namespace net::minecraft::entity::passive {
 
 class SquidEntity : public WaterCreatureEntity {
 public:
-    static void registerClass();
+    static constexpr bool kRegisters = true;
+    static constexpr int kEntityId = 94;
+
+    static constexpr const char* kEntityName = "Squid";
+
+
+    struct ClientRenderer {
+        static std::unique_ptr<::net::minecraft::client::render::entity::EntityRenderer> create();
+    };
     explicit SquidEntity(World* world = nullptr);
 
     float lastTiltAngle = 0.0f;

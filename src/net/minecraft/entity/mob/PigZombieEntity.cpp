@@ -1,11 +1,7 @@
 #include "net/minecraft/registry/Registry.hpp"
-#include "net/minecraft/entity/EntityRegistrar.hpp"
 #include "net/minecraft/entity/mob/PigZombieEntity.hpp"
 
-#include "net/minecraft/entity/EntityRegistry.hpp"
 
-#include <memory>
-#include <typeindex>
 
 #include "net/minecraft/entity/player/PlayerEntity.hpp"
 #include "net/minecraft/item/Item.hpp"
@@ -87,11 +83,6 @@ int PigZombieEntity::getDroppedItemId() const
 }
 
 
-void PigZombieEntity::registerClass()
-{
-    ::net::minecraft::entity::detail::registerVanillaEntity<PigZombieEntity>("PigZombie", 57);
-}
-
-static ::net::minecraft::registry::RegisterEntity<PigZombieEntity> autoReg(57);
+static ::net::minecraft::registry::RegisterEntity<PigZombieEntity> autoReg;
 
 } // namespace net::minecraft::entity::mob

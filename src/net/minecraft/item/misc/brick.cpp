@@ -1,7 +1,7 @@
 #include "net/minecraft/item/misc/brick.hpp"
+#include "net/minecraft/registry/Registry.hpp"
 
 #include "net/minecraft/item/Item.hpp"
-#include "net/minecraft/item/ItemRegistrar.hpp"
 #include "net/minecraft/recipe/CraftingRecipeManager.hpp"
 
 #include "net/minecraft/item/misc/stick.hpp"
@@ -10,7 +10,7 @@
 
 namespace net::minecraft::item {
 
-BrickItem::BrickItem() : Item(80, RegistrationMode::Deferred) {}
+BrickItem::BrickItem() : Item(kRawId, RegistrationMode::Deferred) {}
 
 void BrickItem::registerClass()
 {
@@ -34,5 +34,5 @@ void BrickItem::registerRecipes(recipe::CraftingRecipeManager& recipeManager)
     (void)recipeManager;
 }
 
-static registry::RegisterItem<BrickItem> s_itemReg(80);
+static registry::RegisterItem<BrickItem> s_itemReg;
 } // namespace net::minecraft::item

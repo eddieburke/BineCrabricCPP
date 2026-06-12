@@ -1,14 +1,14 @@
 #include "net/minecraft/item/misc/gunpowder.hpp"
+#include "net/minecraft/registry/Registry.hpp"
 
 #include "net/minecraft/item/Item.hpp"
-#include "net/minecraft/item/ItemRegistrar.hpp"
 #include "net/minecraft/recipe/CraftingRecipeManager.hpp"
 
 #include "net/minecraft/item/misc/stick.hpp"
 
 namespace net::minecraft::item {
 
-GunpowderItem::GunpowderItem() : Item(33, RegistrationMode::Deferred) {}
+GunpowderItem::GunpowderItem() : Item(kRawId, RegistrationMode::Deferred) {}
 
 void GunpowderItem::registerClass()
 {
@@ -24,5 +24,5 @@ void GunpowderItem::registerRecipes(recipe::CraftingRecipeManager& recipeManager
     (void)recipeManager;
 }
 
-static registry::RegisterItem<GunpowderItem> s_itemReg(33);
+static registry::RegisterItem<GunpowderItem> s_itemReg;
 } // namespace net::minecraft::item

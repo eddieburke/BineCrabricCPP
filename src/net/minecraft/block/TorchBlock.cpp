@@ -1,5 +1,5 @@
 #include "net/minecraft/registry/Registry.hpp"
-#include "net/minecraft/block/BlockRegistrar.hpp"
+#include "net/minecraft/block/VanillaBlockSounds.hpp"
 #include "net/minecraft/block/TorchBlock.hpp"
 
 #include "net/minecraft/block/Block.hpp"
@@ -184,7 +184,7 @@ void TorchBlock::randomDisplayTick(World* world, int x, int y, int z, JavaRandom
 }
 void TorchBlock::registerClass()
 {
-    Block::TORCH = (new TorchBlock(50, 80))->setHardness(0.0f)->setLuminance(0.9375f)->setSoundGroup(&vanillaWoodSound())->setTranslationKey("torch")->ignoreMetaUpdates();
+    Block::TORCH = (new TorchBlock(kBlockId, 80))->setHardness(0.0f)->setLuminance(0.9375f)->setSoundGroup(&vanillaWoodSound())->setTranslationKey("torch")->ignoreMetaUpdates();
 }
 void TorchBlock::registerRecipes(recipe::CraftingRecipeManager& recipeManager)
 {
@@ -197,6 +197,6 @@ void TorchBlock::registerRecipes(recipe::CraftingRecipeManager& recipeManager)
 
 
 
-namespace {static ::net::minecraft::registry::RegisterBlock<TorchBlock> autoReg(50);} // namespace
+namespace {static ::net::minecraft::registry::RegisterBlock<TorchBlock> autoReg;} // namespace
 } // namespace net::minecraft::block
 

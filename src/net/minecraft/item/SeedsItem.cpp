@@ -1,6 +1,5 @@
 #include "net/minecraft/registry/Registry.hpp"
 #include "net/minecraft/item/Item.hpp"
-#include "net/minecraft/item/ItemRegistrar.hpp"
 #include "net/minecraft/item/SeedsItem.hpp"
 
 namespace net::minecraft::item {
@@ -12,6 +11,6 @@ void SeedsItem::registerClass()
     Item::registerInItemsArray(&instance);
 }
 
-namespace { static ::net::minecraft::registry::RegisterItem<SeedsItem> autoReg(39); }
+namespace { static ::net::minecraft::registry::RegisterItem<SeedsItem> autoReg; }
 
 } // namespace net::minecraft::item

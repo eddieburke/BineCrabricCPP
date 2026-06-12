@@ -8,7 +8,6 @@
 #include "net/minecraft/util/math/Types.hpp"
 
 #include <cstdint>
-#include <memory>
 #include <optional>
 #include <string>
 #include <typeindex>

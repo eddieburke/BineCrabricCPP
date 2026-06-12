@@ -2,12 +2,21 @@
 
 #include "net/minecraft/entity/mob/MonsterEntity.hpp"
 #include "net/minecraft/nbt/NbtCompound.hpp"
+#include "net/minecraft/entity/EntityClientRendererDecl.hpp"
 
 namespace net::minecraft::entity::mob {
 
 class CreeperEntity : public MonsterEntity {
 public:
-    static void registerClass();
+    static constexpr bool kRegisters = true;
+    static constexpr int kEntityId = 50;
+
+    static constexpr const char* kEntityName = "Creeper";
+
+
+    struct ClientRenderer {
+        static std::unique_ptr<::net::minecraft::client::render::entity::EntityRenderer> create();
+    };
     explicit CreeperEntity(World* world = nullptr) : MonsterEntity(world)
     {
         initDataTracker();

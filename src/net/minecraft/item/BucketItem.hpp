@@ -14,7 +14,10 @@ class CraftingRecipeManager;
 namespace net::minecraft::item {
 
 class BucketItem : public Item {
-public:    static void registerClass();
+public:        static constexpr bool kRegisters = true;
+    static constexpr int kRawId = 69;
+
+static void registerClass();
     static void registerRecipes(recipe::CraftingRecipeManager& recipeManager);
     BucketItem(int rawId, int fluidBlockId);
     ItemStack* use(ItemStack* stack, World* world, PlayerEntity* user) override;

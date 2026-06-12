@@ -1,5 +1,5 @@
 #include "net/minecraft/registry/Registry.hpp"
-#include "net/minecraft/block/BlockRegistrar.hpp"
+#include "net/minecraft/block/VanillaBlockSounds.hpp"
 #include "net/minecraft/block/LockedChestBlock.hpp"
 
 #include "net/minecraft/block/Block.hpp"
@@ -55,12 +55,12 @@ void LockedChestBlock::onTick(World* world, int x, int y, int z, JavaRandom& /*r
 }
 void LockedChestBlock::registerClass()
 {
-    Block::LOCKED_CHEST = (new LockedChestBlock(95))->setHardness(0.0f)->setLuminance(1.0f)->setSoundGroup(&vanillaWoodSound())->setTranslationKey("lockedchest")->setTickRandomly(true)->ignoreMetaUpdates();
+    Block::LOCKED_CHEST = (new LockedChestBlock(kBlockId))->setHardness(0.0f)->setLuminance(1.0f)->setSoundGroup(&vanillaWoodSound())->setTranslationKey("lockedchest")->setTickRandomly(true)->ignoreMetaUpdates();
 }
 
 
 
 
-namespace {static ::net::minecraft::registry::RegisterBlock<LockedChestBlock> autoReg(95);} // namespace
+namespace {static ::net::minecraft::registry::RegisterBlock<LockedChestBlock> autoReg;} // namespace
 } // namespace net::minecraft::block
 

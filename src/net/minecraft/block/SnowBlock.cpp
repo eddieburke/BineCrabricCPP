@@ -1,5 +1,5 @@
 #include "net/minecraft/registry/Registry.hpp"
-#include "net/minecraft/block/BlockRegistrar.hpp"
+#include "net/minecraft/block/VanillaBlockSounds.hpp"
 #include "net/minecraft/block/SnowBlock.hpp"
 
 #include "net/minecraft/item/Item.hpp"
@@ -33,7 +33,7 @@ void SnowBlock::onTick(World* world, int x, int y, int z, JavaRandom& /*random*/
 }
 void SnowBlock::registerClass()
 {
-    Block::SNOW_BLOCK = (new SnowBlock(80, 66))->setHardness(0.2f)->setSoundGroup(&vanillaWoolSound())->setTranslationKey("snow");
+    Block::SNOW_BLOCK = (new SnowBlock(kBlockId, 66))->setHardness(0.2f)->setSoundGroup(&vanillaWoolSound())->setTranslationKey("snow");
 }
 void SnowBlock::registerRecipes(recipe::CraftingRecipeManager& recipeManager)
 {
@@ -45,6 +45,6 @@ void SnowBlock::registerRecipes(recipe::CraftingRecipeManager& recipeManager)
 
 
 
-namespace {static ::net::minecraft::registry::RegisterBlock<SnowBlock> autoReg(80);} // namespace
+namespace {static ::net::minecraft::registry::RegisterBlock<SnowBlock> autoReg;} // namespace
 } // namespace net::minecraft::block
 

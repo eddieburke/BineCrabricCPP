@@ -7,7 +7,10 @@ namespace net::minecraft::block {
 
 class LogBlock : public Block {
 public:
-    static void registerClass();
+    static constexpr bool kRegisters = true;
+    static constexpr int kBlockId = 17;
+
+static void registerClass();
     static void registerBlockItems();
     explicit LogBlock(int id);
 

@@ -1,5 +1,5 @@
 #include "net/minecraft/registry/Registry.hpp"
-#include "net/minecraft/block/BlockRegistrar.hpp"
+#include "net/minecraft/block/VanillaBlockSounds.hpp"
 #include "net/minecraft/block/PistonBlock.hpp"
 
 #include "net/minecraft/block/PistonConstants.hpp"
@@ -386,7 +386,7 @@ void PistonBlock::addIntersectingBoundingBox(
 }
 void PistonBlock::registerClass()
 {
-    Block::STICKY_PISTON = (new PistonBlock(29, 106, true))->setHardness(0.5f)->setSoundGroup(&vanillaStoneSound())->setTranslationKey("pistonStickyBase")->ignoreMetaUpdates();
+    Block::STICKY_PISTON = (new PistonBlock(kBlockId, 106, true))->setHardness(0.5f)->setSoundGroup(&vanillaStoneSound())->setTranslationKey("pistonStickyBase")->ignoreMetaUpdates();
     Block::PISTON = (new PistonBlock(33, 107, false))->setHardness(0.5f)->setSoundGroup(&vanillaStoneSound())->setTranslationKey("pistonBase")->ignoreMetaUpdates();
 }
 void PistonBlock::registerRecipes(recipe::CraftingRecipeManager& recipeManager)
@@ -407,6 +407,6 @@ void PistonBlock::registerBlockItems()
     new item::PistonBlockItem(33 - 256);
 }
 
-namespace {static ::net::minecraft::registry::RegisterBlock<PistonBlock> autoReg(29);} // namespace
+namespace {static ::net::minecraft::registry::RegisterBlock<PistonBlock> autoReg;} // namespace
 } // namespace net::minecraft::block
 

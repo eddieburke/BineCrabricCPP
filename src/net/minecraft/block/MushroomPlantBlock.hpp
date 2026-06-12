@@ -4,9 +4,9 @@
 
 namespace net::minecraft::block {
 
+// Registered in SimpleBlocks.cpp.
 class MushroomPlantBlock : public PlantBlock {
 public:
-    static void registerClass();
     MushroomPlantBlock(int id, int textureId) : PlantBlock(id, textureId)
     {
         const float f = 0.2f;

@@ -117,9 +117,11 @@ void PackScreen::init()
         texturePacksDir_ = Minecraft::getRunDirectory() / "texturepacks";
     }
     addActionButton(layout::listFooterLeftX(width()), height() - 48,
+        layout::kConfirmButtonWidth, layout::kDefaultButtonHeight,
         resource::language::I18n::getTranslation("texturePack.openFolder"),
         [this] { openTexturePacksFolder(); });
     addActionButton(layout::listFooterRightX(width()), height() - 48,
+        layout::kConfirmButtonWidth, layout::kDefaultButtonHeight,
         resource::language::I18n::getTranslation("gui.done"),
         [this] {
             if (minecraft() != nullptr) {
@@ -151,7 +153,7 @@ void PackScreen::render(int mouseX, int mouseY, float tickDelta)
             0xFFFFFF);
         drawCenteredTextWithShadow(*textRenderer(),
             resource::language::I18n::getTranslation("texturePack.folderInfo"),
-            width() / 2 - 77,
+            width() / 2,
             height() - 26,
             0x808080);
     }

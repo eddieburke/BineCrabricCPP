@@ -1,5 +1,5 @@
 #include "net/minecraft/registry/Registry.hpp"
-#include "net/minecraft/block/BlockRegistrar.hpp"
+#include "net/minecraft/block/VanillaBlockSounds.hpp"
 #include "net/minecraft/block/PumpkinBlock.hpp"
 
 #include "net/minecraft/block/Block.hpp"
@@ -79,7 +79,7 @@ void PumpkinBlock::onPlaced(
 void PumpkinBlock::registerClass()
 {
     Block::PUMPKIN = (new PumpkinBlock(86, 102, false))->setHardness(1.0f)->setSoundGroup(&vanillaWoodSound())->setTranslationKey("pumpkin")->ignoreMetaUpdates();
-    Block::JACK_O_LANTERN = (new PumpkinBlock(91, 102, true))->setHardness(1.0f)->setSoundGroup(&vanillaWoodSound())->setLuminance(1.0f)->setTranslationKey("litpumpkin")->ignoreMetaUpdates();
+    Block::JACK_O_LANTERN = (new PumpkinBlock(kBlockId, 102, true))->setHardness(1.0f)->setSoundGroup(&vanillaWoodSound())->setLuminance(1.0f)->setTranslationKey("litpumpkin")->ignoreMetaUpdates();
 }
 void PumpkinBlock::registerRecipes(recipe::CraftingRecipeManager& recipeManager)
 {
@@ -91,6 +91,6 @@ void PumpkinBlock::registerRecipes(recipe::CraftingRecipeManager& recipeManager)
 
 
 
-namespace {static ::net::minecraft::registry::RegisterBlock<PumpkinBlock> autoReg(91);} // namespace
+namespace {static ::net::minecraft::registry::RegisterBlock<PumpkinBlock> autoReg;} // namespace
 } // namespace net::minecraft::block
 

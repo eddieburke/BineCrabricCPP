@@ -19,7 +19,10 @@ namespace net::minecraft::item {
 
 class DoorItem : public Item {
 public:
-    static void registerClass();
+    static constexpr bool kRegisters = true;
+    static constexpr int kRawId = 68;
+
+static void registerClass();
     static void registerRecipes(recipe::CraftingRecipeManager& recipeManager);
     DoorItem(int rawId, block::material::Material& material);
     bool useOnBlock(ItemStack* stack, PlayerEntity* user, World* world, int x, int y, int z, int side) override;

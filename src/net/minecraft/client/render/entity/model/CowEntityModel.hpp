@@ -40,23 +40,22 @@ public:
         leftFrontLeg.pivotX += 1.0f;
         rightFrontLeg.pivotZ -= 1.0f;
         leftFrontLeg.pivotZ -= 1.0f;
+
+        rightHorn.setPivot(0.0f, -1.0f, 1.0f);
+        leftHorn.setPivot(0.0f, -1.0f, 1.0f);
+        head.addChild(rightHorn);
+        head.addChild(leftHorn);
     }
 
     void render(float limbAngle, float limbDistance, float animationProgress, float headYaw, float headPitch, float scale) override
     {
         QuadrupedEntityModel::render(limbAngle, limbDistance, animationProgress, headYaw, headPitch, scale);
-        rightHorn.render(scale);
-        leftHorn.render(scale);
         udder.render(scale);
     }
 
     void setAngles(float limbAngle, float limbDistance, float animationProgress, float headYaw, float headPitch, float scale) override
     {
         QuadrupedEntityModel::setAngles(limbAngle, limbDistance, animationProgress, headYaw, headPitch, scale);
-        rightHorn.yaw = head.yaw;
-        rightHorn.pitch = head.pitch;
-        leftHorn.yaw = head.yaw;
-        leftHorn.pitch = head.pitch;
     }
 };
 

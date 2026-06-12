@@ -10,7 +10,10 @@ class ItemStack;
 namespace net::minecraft::item {
 
 class EggItem : public Item {
-public:    static void registerClass();
+public:        static constexpr bool kRegisters = true;
+    static constexpr int kRawId = 88;
+
+static void registerClass();
     explicit EggItem(int rawId);
     ItemStack* use(ItemStack* stack, World* world, PlayerEntity* user) override;
 };

@@ -1,7 +1,7 @@
 #include "net/minecraft/item/armor/diamond_chestplate.hpp"
+#include "net/minecraft/registry/Registry.hpp"
 
 #include "net/minecraft/item/Item.hpp"
-#include "net/minecraft/item/ItemRegistrar.hpp"
 #include "net/minecraft/recipe/CraftingRecipeManager.hpp"
 
 #include <string>
@@ -15,7 +15,7 @@
 
 namespace net::minecraft::item {
 
-DiamondChestplateItem::DiamondChestplateItem() : ArmorItem(55, 3, 3, 1) {}
+DiamondChestplateItem::DiamondChestplateItem() : ArmorItem(kRawId, 3, 3, 1) {}
 
 void DiamondChestplateItem::registerClass()
 {
@@ -32,5 +32,5 @@ void DiamondChestplateItem::registerRecipes(recipe::CraftingRecipeManager& recip
         {std::string("X X"), std::string("XXX"), std::string("XXX"), 'X', Item::byRawId(8)});
 }
 
-static registry::RegisterItem<DiamondChestplateItem> s_itemReg(55);
+static registry::RegisterItem<DiamondChestplateItem> s_itemReg;
 } // namespace net::minecraft::item

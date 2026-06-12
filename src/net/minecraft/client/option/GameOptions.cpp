@@ -128,7 +128,10 @@ void GameOptions::applyToWorld(World* world) const
     }
     const ResolvedRenderOptions resolved = resolve(*this);
     world->applyWorldSettings(ofWeather, ofAutoSaveTicks, ofTime);
-    world->setChunkPreloadRadius(resolved.chunkPreloadRadius);
+    // Keep the whole render-distance disc resident, plus a small preload margin.
+    // chunkGridRadius is the torus span in blocks; halve to chunks for the radius.
+    const int gridChunkRadius = resolved.chunkGridRadius / 16 / 2;
+    world->setChunkPreloadRadius(gridChunkRadius + resolved.chunkPreloadRadius);
 }
 
 void GameOptions::applyDerivedSettings()

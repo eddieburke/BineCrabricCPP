@@ -1,5 +1,5 @@
 #include "net/minecraft/registry/Registry.hpp"
-#include "net/minecraft/block/BlockRegistrar.hpp"
+#include "net/minecraft/block/VanillaBlockSounds.hpp"
 #include "net/minecraft/block/RedstoneOreBlock.hpp"
 
 #include "net/minecraft/block/Block.hpp"
@@ -115,12 +115,12 @@ void RedstoneOreBlock::spawnParticles(World* world, int x, int y, int z)
 void RedstoneOreBlock::registerClass()
 {
     Block::REDSTONE_ORE = (new RedstoneOreBlock(73, 51, false))->setHardness(3.0f)->setResistance(5.0f)->setSoundGroup(&vanillaStoneSound())->setTranslationKey("oreRedstone")->ignoreMetaUpdates();
-    Block::LIT_REDSTONE_ORE = (new RedstoneOreBlock(74, 51, true))->setLuminance(0.625f)->setHardness(3.0f)->setResistance(5.0f)->setSoundGroup(&vanillaStoneSound())->setTranslationKey("oreRedstone")->ignoreMetaUpdates();
+    Block::LIT_REDSTONE_ORE = (new RedstoneOreBlock(kBlockId, 51, true))->setLuminance(0.625f)->setHardness(3.0f)->setResistance(5.0f)->setSoundGroup(&vanillaStoneSound())->setTranslationKey("oreRedstone")->ignoreMetaUpdates();
 }
 
 
 
 
-namespace {static ::net::minecraft::registry::RegisterBlock<RedstoneOreBlock> autoReg(74);} // namespace
+namespace {static ::net::minecraft::registry::RegisterBlock<RedstoneOreBlock> autoReg;} // namespace
 } // namespace net::minecraft::block
 

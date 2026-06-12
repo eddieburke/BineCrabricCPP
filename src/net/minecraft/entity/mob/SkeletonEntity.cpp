@@ -1,11 +1,7 @@
 #include "net/minecraft/registry/Registry.hpp"
-#include "net/minecraft/entity/EntityRegistrar.hpp"
 #include "net/minecraft/entity/mob/SkeletonEntity.hpp"
 
-#include "net/minecraft/entity/EntityRegistry.hpp"
 
-#include <memory>
-#include <typeindex>
 
 #include "net/minecraft/entity/projectile/ArrowEntity.hpp"
 #include "net/minecraft/entity/projectile/ProjectileUtil.hpp"
@@ -77,11 +73,6 @@ void SkeletonEntity::attack(Entity* other, float distance)
 }
 
 
-void SkeletonEntity::registerClass()
-{
-    ::net::minecraft::entity::detail::registerVanillaEntity<SkeletonEntity>("Skeleton", 51);
-}
-
-static ::net::minecraft::registry::RegisterEntity<SkeletonEntity> autoReg(51);
+static ::net::minecraft::registry::RegisterEntity<SkeletonEntity> autoReg;
 
 } // namespace net::minecraft::entity::mob

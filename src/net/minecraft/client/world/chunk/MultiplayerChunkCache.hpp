@@ -1,6 +1,7 @@
 #pragma once
 
 #include "net/minecraft/util/math/Types.hpp"
+#include "net/minecraft/world/World.hpp"
 #include "net/minecraft/world/chunk/ChunkSource.hpp"
 #include "net/minecraft/world/chunk/EmptyChunk.hpp"
 
@@ -47,8 +48,16 @@ public:
         std::fill(chunk->skyLight.bytes.begin(), chunk->skyLight.bytes.end(), static_cast<std::uint8_t>(0xFF));
         chunk->loaded = true;
         Chunk* raw = chunk.get();
-        chunksByPos_[ChunkPos{chunkX, chunkZ}] = std::move(chunk);
+        auto& slot = chunksByPos_[ChunkPos{chunkX, chunkZ}];
+        if (slot != nullptr) {
+            // Replacing frees the old chunk; pull it out of the lighting
+            // registry first (blocks until the lighting thread lets go).
+            world_->unregisterChunkForLighting(slot.get());
+            chunks_.erase(std::remove(chunks_.begin(), chunks_.end(), slot.get()), chunks_.end());
+        }
+        slot = std::move(chunk);
         chunks_.push_back(raw);
+        world_->registerChunkForLighting(raw);
         return *raw;
     }
 

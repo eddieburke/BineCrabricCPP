@@ -8,7 +8,10 @@
 namespace net::minecraft::item {
 
 class SeedsItem : public Item {
-public:    static void registerClass();
+public:        static constexpr bool kRegisters = true;
+    static constexpr int kRawId = 39;
+
+static void registerClass();
     SeedsItem(int rawId, int cropBlockId)
         : Item(rawId, RegistrationMode::Deferred),
           cropBlockId_(cropBlockId)

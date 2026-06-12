@@ -42,7 +42,7 @@ public:
         const ChunkPos pos{chunkX, chunkZ};
         const auto it = chunkByPos_.find(pos);
         if (it == chunkByPos_.end()) {
-            if (serverWorld_ == nullptr || world_->eventProcessingEnabled || forceLoad) {
+            if (serverWorld_ == nullptr || world_->isEventProcessingEnabled() || forceLoad) {
                 return loadChunk(chunkX, chunkZ);
             }
             return empty_;

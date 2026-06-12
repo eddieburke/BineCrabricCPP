@@ -1,11 +1,7 @@
 #include "net/minecraft/registry/Registry.hpp"
-#include "net/minecraft/entity/EntityRegistrar.hpp"
 #include "net/minecraft/entity/passive/SquidEntity.hpp"
 
-#include "net/minecraft/entity/EntityRegistry.hpp"
 
-#include <memory>
-#include <typeindex>
 
 #include "net/minecraft/block/material/Material.hpp"
 #include "net/minecraft/item/Item.hpp"
@@ -112,11 +108,6 @@ void SquidEntity::dropItems()
 }
 
 
-void SquidEntity::registerClass()
-{
-    ::net::minecraft::entity::detail::registerVanillaEntity<SquidEntity>("Squid", 94);
-}
-
-static ::net::minecraft::registry::RegisterEntity<SquidEntity> autoReg(94);
+static ::net::minecraft::registry::RegisterEntity<SquidEntity> autoReg;
 
 } // namespace net::minecraft::entity::passive

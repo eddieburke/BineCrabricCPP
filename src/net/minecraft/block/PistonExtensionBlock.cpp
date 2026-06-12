@@ -1,5 +1,4 @@
 #include "net/minecraft/registry/Registry.hpp"
-#include "net/minecraft/block/BlockRegistrar.hpp"
 #include "net/minecraft/block/PistonExtensionBlock.hpp"
 
 #include "net/minecraft/block/PistonConstants.hpp"
@@ -186,12 +185,12 @@ std::optional<net::minecraft::Box> PistonExtensionBlock::getPushedBlockCollision
 }
 void PistonExtensionBlock::registerClass()
 {
-    Block::MOVING_PISTON = new PistonExtensionBlock(36);
+    Block::MOVING_PISTON = new PistonExtensionBlock(kBlockId);
 }
 
 namespace {
 
-static ::net::minecraft::registry::RegisterBlock<PistonExtensionBlock> autoReg(36);
+static ::net::minecraft::registry::RegisterBlock<PistonExtensionBlock> autoReg;
 } // namespace
 } // namespace net::minecraft::block
 

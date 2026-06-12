@@ -28,6 +28,7 @@ class NetherChunkGenerator : public ChunkSource {
 public:
     explicit NetherChunkGenerator(World* world, std::uint64_t seed)
         : random_(seed),
+          seed_(seed),
           minLimitPerlinNoise_(random_, 16),
           maxLimitPerlinNoise_(random_, 16),
           perlinNoise1_(random_, 8),
@@ -50,7 +51,7 @@ public:
         Chunk chunk(world_, chunkX, chunkZ);
         buildTerrain(chunkX, chunkZ, chunk);
         buildSurfaces(chunkX, chunkZ, chunk);
-        cave_.place(this, world_, chunkX, chunkZ, chunk);
+        cave_.place(this, world_, seed_, chunkX, chunkZ, chunk);
         if (world_ != nullptr) {
             chunk.populateHeightMap();
         }
@@ -305,6 +306,7 @@ private:
     }
 
     JavaRandom random_;
+    std::uint64_t seed_ = 0;
     OctavePerlinNoiseSampler minLimitPerlinNoise_;
     OctavePerlinNoiseSampler maxLimitPerlinNoise_;
     OctavePerlinNoiseSampler perlinNoise1_;

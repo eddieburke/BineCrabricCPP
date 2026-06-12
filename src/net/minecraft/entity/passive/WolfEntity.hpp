@@ -3,6 +3,7 @@
 #include "net/minecraft/entity/passive/AnimalEntity.hpp"
 #include "net/minecraft/nbt/NbtCompound.hpp"
 #include "net/minecraft/util/math/MathHelper.hpp"
+#include "net/minecraft/entity/EntityClientRendererDecl.hpp"
 
 namespace net::minecraft::entity::player {
 class PlayerEntity;
@@ -12,7 +13,15 @@ namespace net::minecraft::entity::passive {
 
 class WolfEntity : public AnimalEntity {
 public:
-    static void registerClass();
+    static constexpr bool kRegisters = true;
+    static constexpr int kEntityId = 95;
+
+    static constexpr const char* kEntityName = "Wolf";
+
+
+    struct ClientRenderer {
+        static std::unique_ptr<::net::minecraft::client::render::entity::EntityRenderer> create();
+    };
     explicit WolfEntity(World* world = nullptr);
 
     bool begging = false;

@@ -1,5 +1,5 @@
 #include "net/minecraft/registry/Registry.hpp"
-#include "net/minecraft/block/BlockRegistrar.hpp"
+#include "net/minecraft/block/VanillaBlockSounds.hpp"
 #include "net/minecraft/block/SnowyBlock.hpp"
 
 #include "net/minecraft/entity/ItemEntity.hpp"
@@ -120,12 +120,12 @@ bool SnowyBlock::isSideVisible(const BlockView* blockView, int x, int y, int z, 
 }
 void SnowyBlock::registerClass()
 {
-    Block::SNOW = (new SnowyBlock(78, 66))->setHardness(0.1f)->setSoundGroup(&vanillaWoolSound())->setTranslationKey("snow");
+    Block::SNOW = (new SnowyBlock(kBlockId, 66))->setHardness(0.1f)->setSoundGroup(&vanillaWoolSound())->setTranslationKey("snow");
 }
 
 
 
 
-namespace {static ::net::minecraft::registry::RegisterBlock<SnowyBlock> autoReg(78);} // namespace
+namespace {static ::net::minecraft::registry::RegisterBlock<SnowyBlock> autoReg;} // namespace
 } // namespace net::minecraft::block
 

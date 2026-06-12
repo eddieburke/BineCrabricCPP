@@ -1,5 +1,5 @@
 #include "net/minecraft/registry/Registry.hpp"
-#include "net/minecraft/block/BlockRegistrar.hpp"
+#include "net/minecraft/block/VanillaBlockSounds.hpp"
 #include "net/minecraft/block/TrapdoorBlock.hpp"
 #include "net/minecraft/block/material/Material.hpp"
 
@@ -178,7 +178,7 @@ void TrapdoorBlock::onPlaced(World* world, int x, int y, int z, int direction)
 void TrapdoorBlock::registerClass()
 {
     namespace mat = material;
-    Block::TRAPDOOR = (new TrapdoorBlock(96, mat::Material::WOOD))->setHardness(3.0f)->setSoundGroup(&vanillaWoodSound())->setTranslationKey("trapdoor")->disableTrackingStatistics()->ignoreMetaUpdates();
+    Block::TRAPDOOR = (new TrapdoorBlock(kBlockId, mat::Material::WOOD))->setHardness(3.0f)->setSoundGroup(&vanillaWoodSound())->setTranslationKey("trapdoor")->disableTrackingStatistics()->ignoreMetaUpdates();
 }
 void TrapdoorBlock::registerRecipes(recipe::CraftingRecipeManager& recipeManager)
 {
@@ -190,6 +190,6 @@ void TrapdoorBlock::registerRecipes(recipe::CraftingRecipeManager& recipeManager
 
 
 
-namespace {static ::net::minecraft::registry::RegisterBlock<TrapdoorBlock> autoReg(96);} // namespace
+namespace {static ::net::minecraft::registry::RegisterBlock<TrapdoorBlock> autoReg;} // namespace
 } // namespace net::minecraft::block
 

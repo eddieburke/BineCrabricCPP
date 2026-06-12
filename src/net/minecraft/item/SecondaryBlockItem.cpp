@@ -1,7 +1,6 @@
 #include "net/minecraft/registry/Registry.hpp"
 #include "net/minecraft/block/Block.hpp"
 #include "net/minecraft/item/Item.hpp"
-#include "net/minecraft/item/ItemRegistrar.hpp"
 #include "net/minecraft/item/SecondaryBlockItem.hpp"
 #include "net/minecraft/recipe/CraftingRecipeManager.hpp"
 
@@ -28,5 +27,5 @@ void SecondaryBlockItem::registerRecipes(recipe::CraftingRecipeManager& recipeMa
 
 
 
-namespace {static ::net::minecraft::registry::RegisterItem<SecondaryBlockItem> autoReg(98);} // namespace
+namespace {static ::net::minecraft::registry::RegisterItem<SecondaryBlockItem> autoReg;} // namespace
 } // namespace net::minecraft::item

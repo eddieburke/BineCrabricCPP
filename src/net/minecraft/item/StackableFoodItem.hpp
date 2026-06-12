@@ -10,7 +10,10 @@ namespace net::minecraft::item {
 
 class StackableFoodItem : public FoodItem {
 public:
-    static void registerClass();
+    static constexpr bool kRegisters = true;
+    static constexpr int kRawId = 101;
+
+static void registerClass();
     static void registerRecipes(recipe::CraftingRecipeManager& recipeManager);
     StackableFoodItem(int rawId, int healthRestored, bool meat, int maxCount)
         : FoodItem(rawId, healthRestored, meat)

@@ -10,7 +10,7 @@
 #include "net/minecraft/block/entity/PistonBlockEntity.hpp"
 #include "net/minecraft/block/entity/SignBlockEntity.hpp"
 #include "net/minecraft/world/World.hpp"
-#include "net/minecraft/world/event/listener/GameEventListener.hpp"
+#include "net/minecraft/world/events/GameEventListener.hpp"
 
 #include <functional>
 #include <iostream>

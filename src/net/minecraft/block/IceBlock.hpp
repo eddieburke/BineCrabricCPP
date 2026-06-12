@@ -6,7 +6,10 @@ namespace net::minecraft::block {
 
 class IceBlock : public TranslucentBlock {
 public:
-    static void registerClass();
+    static constexpr bool kRegisters = true;
+    static constexpr int kBlockId = 79;
+
+static void registerClass();
     IceBlock(int id, int textureId);
 
     [[nodiscard]] int getRenderLayer() const override { return 1; }

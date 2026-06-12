@@ -6,9 +6,9 @@
 
 namespace net::minecraft::block {
 
+// Registered in SimpleBlocks.cpp.
 class CakeBlock : public Block {
 public:
-    static void registerClass();
     using Block::canPlaceAt;
     CakeBlock(int id, int textureId) : Block(id, textureId, material::Material::CAKE)
     {

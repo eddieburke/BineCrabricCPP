@@ -1,7 +1,7 @@
 #include "net/minecraft/item/tool/wooden_axe.hpp"
+#include "net/minecraft/registry/Registry.hpp"
 
 #include "net/minecraft/item/Item.hpp"
-#include "net/minecraft/item/ItemRegistrar.hpp"
 #include "net/minecraft/recipe/CraftingRecipeManager.hpp"
 
 #include "net/minecraft/item/misc/stick.hpp"
@@ -12,7 +12,7 @@
 
 namespace net::minecraft::item {
 
-WoodenAxeItem::WoodenAxeItem() : AxeItem(15, ToolMaterial::Wood) {}
+WoodenAxeItem::WoodenAxeItem() : AxeItem(kRawId, ToolMaterial::Wood) {}
 
 void WoodenAxeItem::registerClass()
 {
@@ -29,5 +29,5 @@ void WoodenAxeItem::registerRecipes(recipe::CraftingRecipeManager& recipeManager
         {std::string("XX"), std::string("X#"), std::string(" #"), '#', Item::byRawId(24), 'X', Block::PLANKS});
 }
 
-static registry::RegisterItem<WoodenAxeItem> s_itemReg(15);
+static registry::RegisterItem<WoodenAxeItem> s_itemReg;
 } // namespace net::minecraft::item

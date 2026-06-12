@@ -14,7 +14,10 @@ class SmeltingRecipeManager;
 namespace net::minecraft::item {
 
 class DyeItem : public Item {
-public:    static void registerClass();
+public:        static constexpr bool kRegisters = true;
+    static constexpr int kRawId = 95;
+
+static void registerClass();
     static void registerRecipes(recipe::CraftingRecipeManager& recipeManager);
     static void registerSmeltingRecipes();
     static constexpr std::array<const char*, 16> names {

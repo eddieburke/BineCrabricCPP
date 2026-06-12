@@ -6,6 +6,7 @@
 #include "net/minecraft/client/render/block/BlockRenderManager.hpp"
 #include "net/minecraft/client/render/block/entity/BlockEntityRenderDispatcher.hpp"
 #include "net/minecraft/client/render/chunk/ChunkMeshJob.hpp"
+#include "net/minecraft/client/render/chunk/RegionSnapshot.hpp"
 #include "net/minecraft/world/World.hpp"
 
 #include <algorithm>
@@ -19,7 +20,20 @@ constexpr int kGlCompile = 0x1300;
 
 } // namespace
 
-ChunkMeshJob::ChunkMeshJob(ChunkBuilder& owner)
+std::shared_ptr<ChunkMeshJob> ChunkMeshJob::capture(
+    ChunkBuilder& owner, client::option::ResolvedRenderOptions options, bool fancyGraphics)
+{
+    if (owner.world == nullptr) {
+        return nullptr;
+    }
+    if (!RegionSnapshot::regionReady(*owner.world, owner.x - 1, owner.y - 1, owner.z - 1, owner.x + owner.sizeX + 1,
+            owner.y + owner.sizeY, owner.z + owner.sizeZ + 1)) {
+        return nullptr;
+    }
+    return std::shared_ptr<ChunkMeshJob>(new ChunkMeshJob(owner, options, fancyGraphics));
+}
+
+ChunkMeshJob::ChunkMeshJob(ChunkBuilder& owner, client::option::ResolvedRenderOptions options, bool fancyGraphicsIn)
     : builder(&owner),
       version(owner.version),
       x(owner.x),
@@ -28,7 +42,10 @@ ChunkMeshJob::ChunkMeshJob(ChunkBuilder& owner)
       sizeX(owner.sizeX),
       sizeY(owner.sizeY),
       sizeZ(owner.sizeZ),
-      snapshot(*owner.world, owner.x - 1, owner.z - 1, owner.x + owner.sizeX + 1, owner.z + owner.sizeZ + 1)
+      snapshot(*owner.world, owner.x - 1, owner.y - 1, owner.z - 1, owner.x + owner.sizeX + 1,
+          owner.y + owner.sizeY, owner.z + owner.sizeZ + 1),
+      opts(options),
+      fancyGraphics(fancyGraphicsIn)
 {
 }
 
@@ -191,17 +208,23 @@ void ChunkBuilder::uploadMesh(const ChunkMeshJob& job)
     built = true;
 }
 
-void ChunkBuilder::rebuild()
+bool ChunkBuilder::rebuild()
 {
     if (!dirty || world == nullptr) {
-        return;
+        return !dirty;
     }
 
-    ChunkMeshJob job(*this);
-    job.opts = block::BlockRenderManager::blockRenderManagerOptionsSnapshot();
-    buildMesh(job);
-    uploadMesh(job);
+    auto job = ChunkMeshJob::capture(
+        *this,
+        block::BlockRenderManager::blockRenderManagerOptionsSnapshot(),
+        block::BlockRenderManager::fancyGraphics);
+    if (job == nullptr) {
+        return false; // region not resident yet; stay queued
+    }
+    buildMesh(*job);
+    uploadMesh(*job);
     dirty = false;
+    return true;
 }
 
 void ChunkBuilder::renderLayer(int layerId, double interpX, double interpY, double interpZ) const

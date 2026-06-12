@@ -12,6 +12,9 @@ public:
 protected:
     [[nodiscard]] bool bindTexture(const net::minecraft::LivingEntity& entity, int layer, float tickDelta) override;
     void applyScale(const net::minecraft::LivingEntity& entity, float tickDelta) override;
+
+private:
+    model::EntityModel* innerModel_ = nullptr;
 };
 
 } // namespace net::minecraft::client::render::entity

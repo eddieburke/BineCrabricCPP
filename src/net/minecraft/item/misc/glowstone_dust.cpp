@@ -1,14 +1,14 @@
 #include "net/minecraft/item/misc/glowstone_dust.hpp"
+#include "net/minecraft/registry/Registry.hpp"
 
 #include "net/minecraft/item/Item.hpp"
-#include "net/minecraft/item/ItemRegistrar.hpp"
 #include "net/minecraft/recipe/CraftingRecipeManager.hpp"
 
 #include "net/minecraft/item/misc/stick.hpp"
 
 namespace net::minecraft::item {
 
-GlowstoneDustItem::GlowstoneDustItem() : Item(92, RegistrationMode::Deferred) {}
+GlowstoneDustItem::GlowstoneDustItem() : Item(kRawId, RegistrationMode::Deferred) {}
 
 void GlowstoneDustItem::registerClass()
 {
@@ -24,5 +24,5 @@ void GlowstoneDustItem::registerRecipes(recipe::CraftingRecipeManager& recipeMan
     (void)recipeManager;
 }
 
-static registry::RegisterItem<GlowstoneDustItem> s_itemReg(92);
+static registry::RegisterItem<GlowstoneDustItem> s_itemReg;
 } // namespace net::minecraft::item

@@ -1,7 +1,7 @@
 #include "net/minecraft/item/armor/chain_leggings.hpp"
+#include "net/minecraft/registry/Registry.hpp"
 
 #include "net/minecraft/item/Item.hpp"
-#include "net/minecraft/item/ItemRegistrar.hpp"
 #include "net/minecraft/recipe/CraftingRecipeManager.hpp"
 
 #include <string>
@@ -15,7 +15,7 @@
 
 namespace net::minecraft::item {
 
-ChainLeggingsItem::ChainLeggingsItem() : ArmorItem(48, 1, 1, 2) {}
+ChainLeggingsItem::ChainLeggingsItem() : ArmorItem(kRawId, 1, 1, 2) {}
 
 void ChainLeggingsItem::registerClass()
 {
@@ -32,5 +32,5 @@ void ChainLeggingsItem::registerRecipes(recipe::CraftingRecipeManager& recipeMan
         {std::string("XXX"), std::string("X X"), std::string("X X"), 'X', Block::FIRE});
 }
 
-static registry::RegisterItem<ChainLeggingsItem> s_itemReg(48);
+static registry::RegisterItem<ChainLeggingsItem> s_itemReg;
 } // namespace net::minecraft::item

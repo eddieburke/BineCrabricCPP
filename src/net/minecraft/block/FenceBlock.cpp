@@ -1,5 +1,5 @@
 #include "net/minecraft/registry/Registry.hpp"
-#include "net/minecraft/block/BlockRegistrar.hpp"
+#include "net/minecraft/block/VanillaBlockSounds.hpp"
 #include "net/minecraft/block/FenceBlock.hpp"
 #include "net/minecraft/recipe/CraftingRecipeManager.hpp"
 #include "net/minecraft/block/Block.hpp"
@@ -8,7 +8,7 @@
 namespace net::minecraft::block {
 void FenceBlock::registerClass()
 {
-    Block::FENCE = (new FenceBlock(85, 4))->setHardness(2.0f)->setResistance(5.0f)->setSoundGroup(&vanillaWoodSound())->setTranslationKey("fence")->ignoreMetaUpdates();
+    Block::FENCE = (new FenceBlock(kBlockId, 4))->setHardness(2.0f)->setResistance(5.0f)->setSoundGroup(&vanillaWoodSound())->setTranslationKey("fence")->ignoreMetaUpdates();
 }
 void FenceBlock::registerRecipes(recipe::CraftingRecipeManager& recipeManager)
 {
@@ -20,6 +20,6 @@ void FenceBlock::registerRecipes(recipe::CraftingRecipeManager& recipeManager)
 
 
 
-namespace {static ::net::minecraft::registry::RegisterBlock<FenceBlock> autoReg(85);} // namespace
+namespace {static ::net::minecraft::registry::RegisterBlock<FenceBlock> autoReg;} // namespace
 } // namespace net::minecraft::block
 

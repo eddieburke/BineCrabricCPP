@@ -1,7 +1,7 @@
 #include "net/minecraft/item/tool/iron_hoe.hpp"
+#include "net/minecraft/registry/Registry.hpp"
 
 #include "net/minecraft/item/Item.hpp"
-#include "net/minecraft/item/ItemRegistrar.hpp"
 #include "net/minecraft/recipe/CraftingRecipeManager.hpp"
 
 #include "net/minecraft/item/misc/stick.hpp"
@@ -12,7 +12,7 @@
 
 namespace net::minecraft::item {
 
-IronHoeItem::IronHoeItem() : HoeItem(36, ToolMaterial::Iron) {}
+IronHoeItem::IronHoeItem() : HoeItem(kRawId, ToolMaterial::Iron) {}
 
 void IronHoeItem::registerClass()
 {
@@ -29,5 +29,5 @@ void IronHoeItem::registerRecipes(recipe::CraftingRecipeManager& recipeManager)
         {std::string("XX"), std::string(" #"), std::string(" #"), '#', Item::byRawId(24), 'X', Item::byRawId(9)});
 }
 
-static registry::RegisterItem<IronHoeItem> s_itemReg(36);
+static registry::RegisterItem<IronHoeItem> s_itemReg;
 } // namespace net::minecraft::item
