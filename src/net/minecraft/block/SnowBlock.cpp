@@ -45,6 +45,6 @@ void SnowBlock::registerRecipes(recipe::CraftingRecipeManager& recipeManager)
 
 
 
-namespace {static ::net::minecraft::registry::RegisterBlock<SnowBlock> autoReg;} // namespace
+MC_REGISTER_BLOCK(SnowBlock)
 } // namespace net::minecraft::block
 

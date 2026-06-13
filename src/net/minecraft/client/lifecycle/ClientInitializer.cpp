@@ -31,6 +31,7 @@
 #include "net/minecraft/client/resource/pack/TexturePacks.hpp"
 #include "net/minecraft/client/util/DisplayManager.hpp"
 #include "net/minecraft/client/font/TextRenderer.hpp"
+#include "msauth/SessionRestore.hpp"
 #include "net/minecraft/client/util/MinecraftDirectories.hpp"
 #include "net/minecraft/stat/PlayerStats.hpp"
 #include "net/minecraft/world/storage/RegionWorldStorageSource.hpp"
@@ -43,7 +44,7 @@
 #define NOMINMAX
 #endif
 #include <Windows.h>
-#include "net/minecraft/client/platform/win32/Window.hpp"
+#include <dbghelp.h>
 
 #include <cstdint>
 #include <cstdio>
@@ -56,8 +57,6 @@
 #endif
 
 namespace net::minecraft::client::lifecycle {
-
-namespace win32 = net::minecraft::client::platform::win32;
 
 namespace {
 
@@ -157,11 +156,67 @@ std::string captureStackTrace()
     return stream.str();
 }
 
+void appendRegisterDump(std::ostringstream& stream, const CONTEXT* context)
+{
+    if (context == nullptr) {
+        return;
+    }
+    const auto reg = [&stream](const char* name, DWORD64 value) {
+        stream << "  " << name << " = 0x" << std::hex << value << std::dec
+               << " (" << describeModuleAtAddress(reinterpret_cast<const void*>(value)) << ")\n";
+    };
+    stream << "Registers:\n";
+    reg("rip", context->Rip);
+    reg("rsp", context->Rsp);
+    reg("rbp", context->Rbp);
+    reg("rax", context->Rax);
+    reg("rbx", context->Rbx);
+    reg("rcx", context->Rcx);
+    reg("rdx", context->Rdx);
+    reg("rsi", context->Rsi);
+    reg("rdi", context->Rdi);
+    reg("r8 ", context->R8);
+    reg("r9 ", context->R9);
+    reg("r10", context->R10);
+    reg("r11", context->R11);
+    reg("r12", context->R12);
+    reg("r13", context->R13);
+    reg("r14", context->R14);
+    reg("r15", context->R15);
+}
+
+void writeMinidump(EXCEPTION_POINTERS* info)
+{
+    const std::string path = executableDirectory() + "\\crash.dmp";
+    const HANDLE file = CreateFileA(
+        path.c_str(), GENERIC_WRITE, 0, nullptr, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
+    if (file == INVALID_HANDLE_VALUE) {
+        std::cerr << "Failed to open " << path << " for minidump\n";
+        return;
+    }
+    MINIDUMP_EXCEPTION_INFORMATION exceptionInfo {};
+    exceptionInfo.ThreadId = GetCurrentThreadId();
+    exceptionInfo.ExceptionPointers = info;
+    exceptionInfo.ClientPointers = FALSE;
+    const auto dumpType = static_cast<MINIDUMP_TYPE>(
+        MiniDumpWithDataSegs | MiniDumpWithIndirectlyReferencedMemory | MiniDumpWithThreadInfo);
+    const BOOL ok = MiniDumpWriteDump(
+        GetCurrentProcess(), GetCurrentProcessId(), file, dumpType,
+        info != nullptr ? &exceptionInfo : nullptr, nullptr, nullptr);
+    CloseHandle(file);
+    if (ok) {
+        std::cerr << "Minidump written to " << path << '\n';
+    } else {
+        std::cerr << "MiniDumpWriteDump failed: " << GetLastError() << '\n';
+    }
+}
+
 std::string formatUnhandledException(EXCEPTION_POINTERS* info)
 {
     std::ostringstream stream;
     stream << "Unhandled native exception.\n";
     stream << "Startup phase: " << (gStartupPhase != nullptr ? gStartupPhase : "(null)") << '\n';
+    stream << "Faulting thread: " << GetCurrentThreadId() << '\n';
     if (info != nullptr && info->ExceptionRecord != nullptr) {
         const EXCEPTION_RECORD* record = info->ExceptionRecord;
         stream << "Exception code: 0x" << std::hex << record->ExceptionCode << std::dec << '\n';
@@ -172,12 +227,16 @@ std::string formatUnhandledException(EXCEPTION_POINTERS* info)
             stream << "Target address: 0x" << std::hex << record->ExceptionInformation[1] << std::dec << '\n';
         }
     }
+    if (info != nullptr) {
+        appendRegisterDump(stream, info->ContextRecord);
+    }
     stream << captureStackTrace();
     return stream.str();
 }
 
 LONG WINAPI unhandledExceptionFilter(EXCEPTION_POINTERS* info)
 {
+    writeMinidump(info);
     reportFatalError("Minecraft Native - fatal crash", formatUnhandledException(info));
     pauseBeforeExit();
     return EXCEPTION_EXECUTE_HANDLER;
@@ -314,6 +373,7 @@ void ClientInitializer::bootstrap(Minecraft& client)
         client.setScreen(std::make_unique<gui::screen::TitleScreen>());
     }
     setStartupPhase("init: complete");
+    msauth::tryApplySavedAccount(client);
 }
 
 } // namespace net::minecraft::client::lifecycle

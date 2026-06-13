@@ -141,6 +141,6 @@ int GhastEntity::getDroppedItemId() const
 }
 
 
-static ::net::minecraft::registry::RegisterEntity<GhastEntity> autoReg;
 
+MC_REGISTER_ENTITY(GhastEntity)
 } // namespace net::minecraft::entity::mob

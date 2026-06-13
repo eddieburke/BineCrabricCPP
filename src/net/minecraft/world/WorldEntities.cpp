@@ -240,13 +240,7 @@ void World::addPlayer(PlayerEntity* player)
             player->readNbt(*playerNbt);
             properties_.clearPlayerNbt();
         }
-        if (ChunkSource* chunkSource = getChunkSource()) {
-            if (auto* legacyCache = dynamic_cast<LegacyChunkCache*>(chunkSource)) {
-                const int chunkX = MathHelper::floor(player->x) >> 4;
-                const int chunkZ = MathHelper::floor(player->z) >> 4;
-                legacyCache->setSpawnPoint(chunkX, chunkZ);
-            }
-        }
+        setChunkCacheCenterFromBlockPos(MathHelper::floor(player->x), MathHelper::floor(player->z));
         spawnEntity(player);
     } catch (...) {
     }
@@ -503,24 +497,26 @@ void World::loadChunksNearEntity(Entity* entity)
     }
     const int chunkX = MathHelper::floor(entity->x / 16.0);
     const int chunkZ = MathHelper::floor(entity->z / 16.0);
-    const int radius = chunkPreloadRadius_;
-    // Fill the render-distance disc nearest-first (ring by ring). Only newly
-    // generated chunks count against the budget, so already-resident rings are
-    // skipped cheaply and the cursor self-recenters on the entity every call.
-    // Without this, chunks beyond the player only generated when walked into.
-    constexpr int kMaxPreloadsPerCall = 8;
-    int preloaded = 0;
-    for (int ring = 0; ring <= radius && preloaded < kMaxPreloadsPerCall; ++ring) {
-        for (int dx = -ring; dx <= ring && preloaded < kMaxPreloadsPerCall; ++dx) {
-            for (int dz = -ring; dz <= ring && preloaded < kMaxPreloadsPerCall; ++dz) {
-                if (std::max(std::abs(dx), std::abs(dz)) != ring) {
-                    continue; // interior rings already visited
+    setChunkCacheCenter(chunkX, chunkZ);
+    if (auto* legacyCache = dynamic_cast<LegacyChunkCache*>(getChunkSource())) {
+        legacyCache->setActiveRadius(chunkResidentRadiusChunks_);
+        legacyCache->prefetch(chunkX, chunkZ);
+    } else {
+        const int radius = chunkResidentRadiusChunks_;
+        constexpr int kMaxPreloadsPerCall = 8;
+        int preloaded = 0;
+        for (int ring = 0; ring <= radius && preloaded < kMaxPreloadsPerCall; ++ring) {
+            for (int dx = -ring; dx <= ring && preloaded < kMaxPreloadsPerCall; ++dx) {
+                for (int dz = -ring; dz <= ring && preloaded < kMaxPreloadsPerCall; ++dz) {
+                    if (std::max(std::abs(dx), std::abs(dz)) != ring) {
+                        continue;
+                    }
+                    if (hasChunk(chunkX + dx, chunkZ + dz)) {
+                        continue;
+                    }
+                    [[maybe_unused]] Chunk& chunk = getChunk(chunkX + dx, chunkZ + dz);
+                    ++preloaded;
                 }
-                if (hasChunk(chunkX + dx, chunkZ + dz)) {
-                    continue;
-                }
-                [[maybe_unused]] Chunk& chunk = getChunk(chunkX + dx, chunkZ + dz);
-                ++preloaded;
             }
         }
     }

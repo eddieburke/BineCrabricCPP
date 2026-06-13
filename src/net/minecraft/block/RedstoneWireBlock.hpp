@@ -15,7 +15,6 @@ namespace net::minecraft::block {
 
 class RedstoneWireBlock : public Block {
 public:
-    static constexpr bool kRegisters = true;
     static constexpr int kBlockId = 55;
 
 static void registerClass();

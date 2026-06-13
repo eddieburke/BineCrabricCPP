@@ -234,6 +234,6 @@ void DispenserBlock::registerRecipes(recipe::CraftingRecipeManager& recipeManage
 
 
 
-namespace {static ::net::minecraft::registry::RegisterBlock<DispenserBlock> autoReg;} // namespace
+MC_REGISTER_BLOCK(DispenserBlock)
 } // namespace net::minecraft::block
 

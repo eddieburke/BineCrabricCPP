@@ -9,7 +9,7 @@ class CraftingRecipeManager;
 namespace net::minecraft::item {
 
 class FeatherItem : public Item {
-public:        static constexpr bool kRegisters = true;
+public:
     static constexpr int kRawId = 32;
 
 static void registerClass();

@@ -7,7 +7,6 @@ namespace net::minecraft::block {
 
 class SnowBlock : public Block {
 public:
-    static constexpr bool kRegisters = true;
     static constexpr int kBlockId = 80;
 static void registerRecipes(recipe::CraftingRecipeManager& recipeManager);
 public:

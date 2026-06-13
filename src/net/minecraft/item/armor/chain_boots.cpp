@@ -32,5 +32,5 @@ void ChainBootsItem::registerRecipes(recipe::CraftingRecipeManager& recipeManage
         {std::string("X X"), std::string("X X"), 'X', Block::FIRE});
 }
 
-static registry::RegisterItem<ChainBootsItem> s_itemReg;
+MC_REGISTER_ITEM(ChainBootsItem)
 } // namespace net::minecraft::item

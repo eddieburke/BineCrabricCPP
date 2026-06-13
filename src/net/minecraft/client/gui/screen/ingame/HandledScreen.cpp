@@ -50,35 +50,35 @@ void HandledScreen::render(int mouseX, int mouseY, float tickDelta)
     gl::GL11::glPushMatrix();
     gl::GL11::glTranslatef(static_cast<float>(originX), static_cast<float>(originY), 0.0f);
     gl::GL11::glColor4f(1.0f, 1.0f, 1.0f, 1.0f);
-    gl::GL11::glEnable(32826);
 
     ::net::minecraft::screen::slot::Slot* hoveredSlot = nullptr;
-    for (::net::minecraft::screen::slot::Slot* slot : container_->slots) {
-        if (slot == nullptr) {
-            continue;
-        }
-        drawSlot(*slot);
-        if (isPointOverSlot(*slot, mouseX, mouseY)) {
-            hoveredSlot = slot;
-            gl::GL11::glDisable(gl::GL11::GL_LIGHTING);
-            gl::GL11::glDisable(gl::GL11::GL_DEPTH_TEST);
-            fillGradient(slot->x, slot->y, slot->x + 16, slot->y + 16, 0x80FFFFFFU, 0x80FFFFFFU);
-            gl::GL11::glEnable(gl::GL11::GL_LIGHTING);
-            gl::GL11::glEnable(gl::GL11::GL_DEPTH_TEST);
-        }
-    }
-
     PlayerEntity& player = static_cast<PlayerEntity&>(*minecraft_->player);
-    ItemStack cursorStack = player.inventory.getCursorStack();
-    if (!cursorStack.empty()) {
-        gl::GL11::glTranslatef(0.0f, 0.0f, 32.0f);
-        itemRenderer.renderGuiItem(*textRenderer_, minecraft_->textureManager, cursorStack,
-            mouseX - originX - 8, mouseY - originY - 8);
-        itemRenderer.renderGuiItemDecoration(*textRenderer_, minecraft_->textureManager, cursorStack,
-            mouseX - originX - 8, mouseY - originY - 8);
+    const ItemStack cursorStack = player.inventory.getCursorStack();
+    {
+        render::platform::ScopedRescaleNormal rescaleNormal;
+        for (::net::minecraft::screen::slot::Slot* slot : container_->slots) {
+            if (slot == nullptr) {
+                continue;
+            }
+            drawSlot(*slot);
+            if (isPointOverSlot(*slot, mouseX, mouseY)) {
+                hoveredSlot = slot;
+                gl::GL11::glDisable(gl::GL11::GL_LIGHTING);
+                gl::GL11::glDisable(gl::GL11::GL_DEPTH_TEST);
+                fillGradient(slot->x, slot->y, slot->x + 16, slot->y + 16, 0x80FFFFFFU, 0x80FFFFFFU);
+                gl::GL11::glEnable(gl::GL11::GL_LIGHTING);
+                gl::GL11::glEnable(gl::GL11::GL_DEPTH_TEST);
+            }
+        }
+        if (!cursorStack.empty()) {
+            gl::GL11::glTranslatef(0.0f, 0.0f, 32.0f);
+            itemRenderer.renderGuiItem(*textRenderer_, minecraft_->textureManager, cursorStack,
+                mouseX - originX - 8, mouseY - originY - 8);
+            itemRenderer.renderGuiItemDecoration(*textRenderer_, minecraft_->textureManager, cursorStack,
+                mouseX - originX - 8, mouseY - originY - 8);
+        }
     }
 
-    gl::GL11::glDisable(32826);
     render::platform::Lighting::turnOff();
     gl::GL11::glDisable(gl::GL11::GL_LIGHTING);
     gl::GL11::glDisable(gl::GL11::GL_DEPTH_TEST);
@@ -229,11 +229,11 @@ void HandledScreen::keyPressed(char character, int keyCode)
         return;
     }
 #ifdef _WIN32
-    if (keyCode == 1 || keyCode == static_cast<int>(minecraft_->options.inventoryKey.code)) {
+    if (escapePressed(keyCode) || keyCode == static_cast<int>(minecraft_->options.inventoryKey.code)) {
         minecraft_->player->closeHandledScreen();
     }
 #else
-    if (keyCode == 1) {
+    if (escapePressed(keyCode)) {
         minecraft_->player->closeHandledScreen();
     }
 #endif

@@ -7,7 +7,6 @@ namespace net::minecraft::block {
 
 class WorkbenchBlock : public Block {
 public:
-    static constexpr bool kRegisters = true;
     static constexpr int kBlockId = 58;
 static void registerRecipes(recipe::CraftingRecipeManager& recipeManager);
 public:

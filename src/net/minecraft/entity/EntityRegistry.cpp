@@ -1,5 +1,6 @@
 #include "net/minecraft/entity/EntityRegistry.hpp"
 
+#include "net/minecraft/registry/ContentRegistries.hpp"
 #include "net/minecraft/world/World.hpp"
 
 #include <cassert>
@@ -63,6 +64,7 @@ void EntityRegistry::registerType(std::type_index typeIdx, const std::string& id
     rawIdToFactory()[rawId] = factory;
     typeToId()[typeIdx] = id;
     typeToRawId()[typeIdx] = rawId;
+    registry::EntityTypeRegistry::instance().record(typeIdx, id, rawId);
 }
 
 void EntityRegistry::registerType(const std::string& id, int rawId, Factory factory)

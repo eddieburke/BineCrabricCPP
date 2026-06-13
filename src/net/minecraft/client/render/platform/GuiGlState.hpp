@@ -1,5 +1,7 @@
 #pragma once
 
+#include "net/minecraft/client/gl/GL11.hpp"
+
 namespace net::minecraft::client::render::platform {
 
 // Centralizes 2D GUI / HUD GL state for beta 1.7.3.
@@ -18,6 +20,9 @@ public:
     static void beginCrosshairBlend() noexcept;
     static void endCrosshairBlend() noexcept;
 
+    static void beginVignetteBlend() noexcept;
+    static void endVignetteBlend() noexcept;
+
     static void beginFullscreenOverlay() noexcept;
     static void endFullscreenOverlay() noexcept;
 
@@ -32,9 +37,6 @@ public:
 
     static void beginSleepFade() noexcept;
     static void endSleepFade() noexcept;
-
-    static void beginProfilerDraw() noexcept;
-    static void endProfilerDraw() noexcept;
 };
 
 class ScopedLitHotbar {
@@ -62,6 +64,46 @@ public:
 
     ScopedFullscreenOverlay(const ScopedFullscreenOverlay&) = delete;
     ScopedFullscreenOverlay& operator=(const ScopedFullscreenOverlay&) = delete;
+};
+
+class ScopedNoTexture2D {
+public:
+    ScopedNoTexture2D() noexcept { gl::GL11::glDisable(gl::GL11::GL_TEXTURE_2D); }
+    ~ScopedNoTexture2D() { gl::GL11::glEnable(gl::GL11::GL_TEXTURE_2D); }
+
+    ScopedNoTexture2D(const ScopedNoTexture2D&) = delete;
+    ScopedNoTexture2D& operator=(const ScopedNoTexture2D&) = delete;
+};
+
+class ScopedSmoothShade {
+public:
+    ScopedSmoothShade() noexcept { gl::GL11::glShadeModel(gl::GL11::GL_SMOOTH); }
+    ~ScopedSmoothShade() { gl::GL11::glShadeModel(gl::GL11::GL_FLAT); }
+
+    ScopedSmoothShade(const ScopedSmoothShade&) = delete;
+    ScopedSmoothShade& operator=(const ScopedSmoothShade&) = delete;
+};
+
+class ScopedRescaleNormal {
+public:
+    ScopedRescaleNormal() noexcept { gl::GL11::glEnable(gl::GL11::GL_RESCALE_NORMAL); }
+    ~ScopedRescaleNormal() { gl::GL11::glDisable(gl::GL11::GL_RESCALE_NORMAL); }
+
+    ScopedRescaleNormal(const ScopedRescaleNormal&) = delete;
+    ScopedRescaleNormal& operator=(const ScopedRescaleNormal&) = delete;
+};
+
+class ScopedProfilerDraw {
+public:
+    ScopedProfilerDraw() noexcept
+    {
+        gl::GL11::glLineWidth(1.0f);
+        gl::GL11::glDisable(gl::GL11::GL_TEXTURE_2D);
+    }
+    ~ScopedProfilerDraw() { gl::GL11::glEnable(gl::GL11::GL_TEXTURE_2D); }
+
+    ScopedProfilerDraw(const ScopedProfilerDraw&) = delete;
+    ScopedProfilerDraw& operator=(const ScopedProfilerDraw&) = delete;
 };
 
 } // namespace net::minecraft::client::render::platform

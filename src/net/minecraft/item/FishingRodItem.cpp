@@ -62,6 +62,6 @@ void FishingRodItem::registerRecipes(recipe::CraftingRecipeManager& recipeManage
 
 
 
-namespace {static ::net::minecraft::registry::RegisterItem<FishingRodItem> autoReg; } // namespace
 
+MC_REGISTER_ITEM(FishingRodItem)
 } // namespace net::minecraft::item

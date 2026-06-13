@@ -39,6 +39,6 @@ void RedstoneItem::registerClass()
 
 
 
-namespace {static ::net::minecraft::registry::RegisterItem<RedstoneItem> autoReg; } // namespace
 
+MC_REGISTER_ITEM(RedstoneItem)
 } // namespace net::minecraft::item

@@ -13,7 +13,6 @@ namespace net::minecraft::block {
 
 class PistonBlock : public Block {
 public:
-    static constexpr bool kRegisters = true;
     static constexpr int kBlockId = 29;
 static void registerRecipes(recipe::CraftingRecipeManager& recipeManager);
 public:

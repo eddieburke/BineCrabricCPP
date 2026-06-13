@@ -21,6 +21,6 @@ void StoneBlock::registerSmeltingRecipes()
 
 
 
-namespace {static ::net::minecraft::registry::RegisterBlock<StoneBlock> autoReg;} // namespace
+MC_REGISTER_BLOCK(StoneBlock)
 } // namespace net::minecraft::block
 

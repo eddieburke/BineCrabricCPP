@@ -24,5 +24,5 @@ void FeatherItem::registerRecipes(recipe::CraftingRecipeManager& recipeManager)
     (void)recipeManager;
 }
 
-static registry::RegisterItem<FeatherItem> s_itemReg;
+MC_REGISTER_ITEM(FeatherItem)
 } // namespace net::minecraft::item

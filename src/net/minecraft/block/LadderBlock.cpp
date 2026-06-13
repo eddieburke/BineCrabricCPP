@@ -154,6 +154,6 @@ void LadderBlock::registerRecipes(recipe::CraftingRecipeManager& recipeManager)
 
 
 
-namespace {static ::net::minecraft::registry::RegisterBlock<LadderBlock> autoReg;} // namespace
+MC_REGISTER_BLOCK(LadderBlock)
 } // namespace net::minecraft::block
 

@@ -29,5 +29,5 @@ void GoldenHoeItem::registerRecipes(recipe::CraftingRecipeManager& recipeManager
         {std::string("XX"), std::string(" #"), std::string(" #"), '#', Item::byRawId(24), 'X', Item::byRawId(10)});
 }
 
-static registry::RegisterItem<GoldenHoeItem> s_itemReg;
+MC_REGISTER_ITEM(GoldenHoeItem)
 } // namespace net::minecraft::item

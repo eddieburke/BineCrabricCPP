@@ -11,28 +11,38 @@
 
 #ifdef _WIN32
 #include "net/minecraft/client/lifecycle/ClientInitializer.hpp"
+#ifdef MINECRAFT_USE_GLFW
+#include "net/minecraft/client/platform/glfw/Window.hpp"
+#else
 #include "net/minecraft/client/platform/win32/Window.hpp"
+#endif
 #endif
 
 namespace net::minecraft::client::util {
 
 namespace lifecycle = net::minecraft::client::lifecycle;
-namespace win32 = net::minecraft::client::platform::win32;
+#ifdef _WIN32
+#ifdef MINECRAFT_USE_GLFW
+namespace display = net::minecraft::client::platform::glfw;
+#else
+namespace display = net::minecraft::client::platform::win32;
+#endif
+#endif
 
 void DisplayManager::setupAndCreateDisplay(Minecraft& client)
 {
 #ifdef _WIN32
     lifecycle::setStartupPhase("init: display");
-    win32::Window::setResizeCallback([&client](int width, int height) {
+    display::Window::setResizeCallback([&client](int width, int height) {
         resize(client, width, height);
     });
-    win32::Window::setDeactivateCallback([&client]() {
+    display::Window::setDeactivateCallback([&client]() {
         client.unlockMouse();
     });
     if (client.canvas != nullptr) {
-        win32::Window::setParent(client.canvas);
+        display::Window::setParent(client.canvas);
     } else if (client.fullscreen) {
-        const win32::DisplayMode mode = win32::Window::getDesktopDisplayMode();
+        const display::DisplayMode mode = display::Window::getDesktopDisplayMode();
         client.displayWidth = mode.getWidth();
         client.displayHeight = mode.getHeight();
         if (client.displayWidth <= 0) {
@@ -41,25 +51,25 @@ void DisplayManager::setupAndCreateDisplay(Minecraft& client)
         if (client.displayHeight <= 0) {
             client.displayHeight = 1;
         }
-        win32::Window::setDisplayMode(mode);
-        win32::Window::setFullscreen(true);
+        display::Window::setDisplayMode(mode);
+        display::Window::setFullscreen(true);
     } else {
-        win32::DisplayMode mode;
+        display::DisplayMode mode;
         mode.width = client.displayWidth;
         mode.height = client.displayHeight;
-        win32::Window::setDisplayMode(mode);
+        display::Window::setDisplayMode(mode);
     }
-    win32::Window::setTitle("Minecraft Minecraft Beta 1.7.3");
+    display::Window::setTitle("Minecraft Minecraft Beta 1.7.3");
     try {
-        win32::Window::create();
+        display::Window::create();
     } catch (...) {
         std::this_thread::sleep_for(std::chrono::seconds(1));
-        win32::Window::create();
+        display::Window::create();
     }
     ensureGlContext();
     gl::GlExtensions::ensureLoaded();
     gl::GlExtensions::setSwapInterval(0);
-    const win32::DisplayMode actualMode = win32::Window::getDisplayMode();
+    const display::DisplayMode actualMode = display::Window::getDisplayMode();
     client.displayWidth = actualMode.getWidth();
     client.displayHeight = actualMode.getHeight();
     if (client.displayWidth <= 0) {
@@ -92,9 +102,9 @@ void DisplayManager::toggleFullscreen(Minecraft& client)
     try {
         client.fullscreen = !client.fullscreen;
 #ifdef _WIN32
-        win32::DisplayMode targetMode;
+        display::DisplayMode targetMode;
         if (client.fullscreen) {
-            targetMode = win32::Window::getDesktopDisplayMode();
+            targetMode = display::Window::getDesktopDisplayMode();
         } else {
             targetMode.width = client.initWidth;
             targetMode.height = client.initHeight;
@@ -107,10 +117,10 @@ void DisplayManager::toggleFullscreen(Minecraft& client)
         }
         client.displayWidth = targetMode.width;
         client.displayHeight = targetMode.height;
-        win32::Window::setDisplayMode(targetMode);
-        win32::Window::setFullscreen(client.fullscreen);
+        display::Window::setDisplayMode(targetMode);
+        display::Window::setFullscreen(client.fullscreen);
         pumpAndPresent();
-        const win32::DisplayMode actualMode = win32::Window::getDisplayMode();
+        const display::DisplayMode actualMode = display::Window::getDisplayMode();
         client.displayWidth = actualMode.getWidth();
         client.displayHeight = actualMode.getHeight();
         if (client.displayWidth <= 0) {
@@ -158,32 +168,37 @@ void DisplayManager::resize(Minecraft& client, int width, int height)
 
 void DisplayManager::ensureGlContext()
 {
-    win32::Window::ensureGlContext();
+    display::Window::ensureGlContext();
 }
 
 void DisplayManager::present()
 {
-    win32::Window::present();
+    display::Window::present();
 }
 
 void DisplayManager::pumpAndPresent()
 {
-    win32::Window::pumpAndPresent();
+    display::Window::pumpAndPresent();
 }
 
 HWND DisplayManager::hwnd()
 {
-    return win32::Window::hwnd();
+    return display::Window::hwnd();
 }
 
 bool DisplayManager::isActive()
 {
-    return win32::Window::isActive();
+    return display::Window::isActive();
 }
 
 bool DisplayManager::isCloseRequested()
 {
-    return win32::Window::isCloseRequested();
+    return display::Window::isCloseRequested();
+}
+
+void DisplayManager::destroy()
+{
+    display::Window::destroy();
 }
 
 #endif

@@ -3,7 +3,6 @@
 #include "net/minecraft/entity/EntityTypes.hpp"
 #include "net/minecraft/util/math/Types.hpp"
 #include "net/minecraft/world/World.hpp"
-#include "net/minecraft/world/storage/EmptyWorldStorage.hpp"
 
 #include <list>
 #include <unordered_map>
@@ -79,7 +78,6 @@ protected:
 private:
     void addBlockReset(int x, int y, int z, int block, int meta);
 
-    EmptyWorldStorage emptyStorage_;
     std::list<BlockReset> blockResets_;
     client::network::ClientNetworkHandler* networkHandler_ = nullptr;
     std::unordered_map<int, Entity*> entitiesByNetworkId_;

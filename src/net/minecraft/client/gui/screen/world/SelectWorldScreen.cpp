@@ -196,8 +196,6 @@ void SelectWorldScreen::init()
     buttons_.clear();
     if (minecraft() != nullptr) {
         worldList_ = std::make_unique<WorldListWidget>(*this, *minecraft(), width(), height());
-        std::vector<widget::ButtonWidget> scrollButtons;
-        worldList_->registerButtons(scrollButtons, 4, 5);
     }
     addButtons();
 }
@@ -286,13 +284,6 @@ void SelectWorldScreen::confirmDeleteWorld()
         warning,
         deleteButton,
         cancelButton));
-}
-
-void SelectWorldScreen::buttonClicked(widget::ButtonWidget& button)
-{
-    if (worldList_ != nullptr) {
-        worldList_->buttonClicked(button);
-    }
 }
 
 void SelectWorldScreen::confirmed(bool confirmed, int id)

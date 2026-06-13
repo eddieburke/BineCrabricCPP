@@ -12,7 +12,6 @@ namespace net::minecraft::block {
 
 class PumpkinBlock : public Block {
 public:
-    static constexpr bool kRegisters = true;
     static constexpr int kBlockId = 91;
 static void registerRecipes(recipe::CraftingRecipeManager& recipeManager);
 public:

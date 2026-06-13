@@ -29,5 +29,5 @@ void GoldenAxeItem::registerRecipes(recipe::CraftingRecipeManager& recipeManager
         {std::string("XX"), std::string("X#"), std::string(" #"), '#', Item::byRawId(24), 'X', Item::byRawId(10)});
 }
 
-static registry::RegisterItem<GoldenAxeItem> s_itemReg;
+MC_REGISTER_ITEM(GoldenAxeItem)
 } // namespace net::minecraft::item

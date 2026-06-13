@@ -6,6 +6,7 @@
 #include "net/minecraft/item/Item.hpp"
 #include "net/minecraft/item/food/cooked_fish.hpp"
 #include "net/minecraft/item/misc/iron_ingot.hpp"
+#include "net/minecraft/mod/GameHooks.hpp"
 #include "net/minecraft/screen/slot/Slot.hpp"
 
 
@@ -27,6 +28,12 @@ public:
 
     void onTakeItem(const ItemStack& stack) override
     {
+        ItemStack eventStack = stack;
+        mod::FurnaceOutputTakeEvent event {player_, &eventStack, false};
+        mod::hooks().publish(event);
+        if (event.canceled) {
+            return;
+        }
         if (player_ != nullptr) {
             ItemStack crafted = stack;
             if (player_->world != nullptr) {

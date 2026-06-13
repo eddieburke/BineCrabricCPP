@@ -8,7 +8,6 @@ namespace net::minecraft::block {
 
 class FenceBlock : public Block {
 public:
-    static constexpr bool kRegisters = true;
     static constexpr int kBlockId = 85;
 static void registerRecipes(recipe::CraftingRecipeManager& recipeManager);
 public:

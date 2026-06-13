@@ -29,5 +29,5 @@ void GoldenShovelItem::registerRecipes(recipe::CraftingRecipeManager& recipeMana
         {std::string("X"), std::string("#"), std::string("#"), '#', Item::byRawId(24), 'X', Item::byRawId(10)});
 }
 
-static registry::RegisterItem<GoldenShovelItem> s_itemReg;
+MC_REGISTER_ITEM(GoldenShovelItem)
 } // namespace net::minecraft::item

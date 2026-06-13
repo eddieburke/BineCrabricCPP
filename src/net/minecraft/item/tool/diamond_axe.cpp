@@ -29,5 +29,5 @@ void DiamondAxeItem::registerRecipes(recipe::CraftingRecipeManager& recipeManage
         {std::string("XX"), std::string("X#"), std::string(" #"), '#', Item::byRawId(24), 'X', Item::byRawId(8)});
 }
 
-static registry::RegisterItem<DiamondAxeItem> s_itemReg;
+MC_REGISTER_ITEM(DiamondAxeItem)
 } // namespace net::minecraft::item

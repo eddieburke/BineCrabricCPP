@@ -10,7 +10,7 @@ class ItemStack;
 namespace net::minecraft::item {
 
 class SnowballItem : public Item {
-public:        static constexpr bool kRegisters = true;
+public:
     static constexpr int kRawId = 76;
 
 static void registerClass();

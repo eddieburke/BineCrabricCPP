@@ -50,6 +50,6 @@ void BowItem::registerRecipes(recipe::CraftingRecipeManager& recipeManager)
         {std::string(" #X"), std::string("# X"), std::string(" #X"), '#', Item::byRawId(24), 'X', Item::byRawId(31)});
 }
 
-namespace { static ::net::minecraft::registry::RegisterItem<BowItem> autoReg; }
 
+MC_REGISTER_ITEM(BowItem)
 } // namespace net::minecraft::item

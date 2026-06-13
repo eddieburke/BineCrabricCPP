@@ -1,43 +1,73 @@
 #pragma once
 
-#include "net/minecraft/nbt/NbtElement.hpp"
-
-#include <memory>
-#include <vector>
+#include "net/minecraft/nbt/Nbt.hpp"
 
 namespace net::minecraft {
 
-// Faithful port of net.minecraft.nbt.NbtList.
-class NbtList : public NbtElement {
+class NbtList {
 public:
-    NbtList() : tag_(Nbt::list()) {}
+    NbtList() : owned_(Nbt::list()), ptr_(&owned_) {}
 
-    explicit NbtList(Nbt tag)
-        : tag_(std::move(tag))
+    explicit NbtList(Nbt tag) : owned_(tag.isList() ? std::move(tag) : Nbt::list()), ptr_(&owned_) {}
+
+    NbtList(const NbtList& other) : owned_(other.storage()), ptr_(&owned_) {}
+
+    NbtList(NbtList&& other) noexcept : owned_(), ptr_(&owned_)
     {
-        if (!tag_.isList()) {
-            tag_ = Nbt::list();
+        if (other.ptr_ == &other.owned_) {
+            owned_ = std::move(other.owned_);
+            other.owned_ = Nbt::list();
+        } else {
+            owned_ = std::move(*other.ptr_);
         }
+        other.ptr_ = &other.owned_;
     }
 
-    [[nodiscard]] std::uint8_t getType() const override { return 9; }
+    NbtList& operator=(const NbtList& other)
+    {
+        if (this != &other) {
+            *ptr_ = other.storage();
+        }
+        return *this;
+    }
 
-    void write(std::ostream& output) const override;
-    void read(std::istream& input) override;
+    NbtList& operator=(NbtList&& other) noexcept
+    {
+        if (this != &other) {
+            if (other.ptr_ == &other.owned_) {
+                *ptr_ = std::move(other.owned_);
+                other.owned_ = Nbt::list();
+            } else {
+                *ptr_ = std::move(*other.ptr_);
+            }
+            other.ptr_ = &other.owned_;
+        }
+        return *this;
+    }
 
-    [[nodiscard]] Nbt toStorage() const override { return tag_; }
+    [[nodiscard]] static NbtList bind(Nbt& node)
+    {
+        NbtList wrapper;
+        wrapper.ptr_ = &node;
+        if (!wrapper.ptr_->isList()) {
+            *wrapper.ptr_ = Nbt::list();
+        }
+        return wrapper;
+    }
 
-    [[nodiscard]] Nbt& storage() { return tag_; }
-    [[nodiscard]] const Nbt& storage() const { return tag_; }
+    [[nodiscard]] Nbt& storage() noexcept { return *ptr_; }
+    [[nodiscard]] const Nbt& storage() const noexcept { return *ptr_; }
 
-    void add(std::unique_ptr<NbtElement> element);
-    void add(Nbt tag) { tag_.asList().push_back(std::move(tag)); }
+    void add(Nbt value) { ptr_->asList().push_back(std::move(value)); }
 
-    [[nodiscard]] std::size_t size() const { return tag_.asList().size(); }
-    [[nodiscard]] const Nbt::List& entries() const { return tag_.asList(); }
+    [[nodiscard]] std::size_t size() const { return ptr_->asList().size(); }
+    [[nodiscard]] const Nbt::List& entries() const { return ptr_->asList(); }
+
+    void adoptInto(Nbt& slot);
 
 private:
-    Nbt tag_;
+    Nbt owned_ {};
+    Nbt* ptr_ = nullptr;
 };
 
 } // namespace net::minecraft

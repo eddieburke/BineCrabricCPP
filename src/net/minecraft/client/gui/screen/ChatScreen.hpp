@@ -13,7 +13,6 @@ public:
     void tick() override;
     void render(int mouseX, int mouseY, float tickDelta) override;
     void keyPressed(char character, int keyCode) override;
-    void keyPressed(int key) override;
     void mouseClicked(int mouseX, int mouseY, int button) override;
 
 protected:

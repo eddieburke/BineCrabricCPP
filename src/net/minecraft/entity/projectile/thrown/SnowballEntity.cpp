@@ -45,6 +45,6 @@ void SnowballEntity::readNbt(const NbtCompound& nbt)
     inGround = nbt.getByte("inGround") == 1;
 }
 
-static ::net::minecraft::registry::RegisterEntity<SnowballEntity> autoReg;
 
+MC_REGISTER_ENTITY(SnowballEntity)
 } // namespace net::minecraft::entity::projectile::thrown

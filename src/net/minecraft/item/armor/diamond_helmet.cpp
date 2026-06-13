@@ -32,5 +32,5 @@ void DiamondHelmetItem::registerRecipes(recipe::CraftingRecipeManager& recipeMan
         {std::string("XXX"), std::string("X X"), 'X', Item::byRawId(8)});
 }
 
-static registry::RegisterItem<DiamondHelmetItem> s_itemReg;
+MC_REGISTER_ITEM(DiamondHelmetItem)
 } // namespace net::minecraft::item

@@ -59,6 +59,6 @@ int SpiderEntity::getDroppedItemId() const
 }
 
 
-static ::net::minecraft::registry::RegisterEntity<SpiderEntity> autoReg;
 
+MC_REGISTER_ENTITY(SpiderEntity)
 } // namespace net::minecraft::entity::mob

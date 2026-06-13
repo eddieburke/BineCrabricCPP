@@ -9,7 +9,7 @@ class CraftingRecipeManager;
 namespace net::minecraft::item {
 
 class PaperItem : public Item {
-public:        static constexpr bool kRegisters = true;
+public:
     static constexpr int kRawId = 83;
 
 static void registerClass();

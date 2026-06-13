@@ -20,6 +20,6 @@ void BookshelfBlock::registerRecipes(recipe::CraftingRecipeManager& recipeManage
 
 
 
-namespace {static ::net::minecraft::registry::RegisterBlock<BookshelfBlock> autoReg;} // namespace
+MC_REGISTER_BLOCK(BookshelfBlock)
 } // namespace net::minecraft::block
 

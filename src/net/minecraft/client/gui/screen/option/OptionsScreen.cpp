@@ -7,8 +7,6 @@
 #include "net/minecraft/client/gui/screen/option/KeybindsScreen.hpp"
 #include "net/minecraft/client/gui/screen/option/OptionGui.hpp"
 #include "net/minecraft/client/gui/screen/option/VideoOptionsScreen.hpp"
-#include "net/minecraft/client/gui/widget/OptionButtonWidget.hpp"
-#include "net/minecraft/client/gui/widget/SliderWidget.hpp"
 #include "net/minecraft/client/option/OptionRegistry.hpp"
 #include "net/minecraft/client/option/OptionSpec.hpp"
 #include "net/minecraft/client/resource/language/I18n.hpp"
@@ -187,27 +185,6 @@ void OptionsScreen::render(int mouseX, int mouseY, float tickDelta)
         drawCenteredTextWithShadow(*textRenderer(), title_, width() / 2, 20, 0xFFFFFF);
     }
     Screen::render(mouseX, mouseY, tickDelta);
-}
-
-void OptionsScreen::buttonClicked(widget::ButtonWidget& button)
-{
-    if (options_ == nullptr || minecraft() == nullptr) {
-        return;
-    }
-    layout::OptionsBuildContext ctx { *this, *minecraft(), *options_ };
-    if (layout::handleOptionWidgetClick(button, ctx)) {
-        layout::refreshOptionStates(buttons_, *options_);
-        for (const std::unique_ptr<widget::ButtonWidget>& btnPtr : buttons_) {
-            if (btnPtr == nullptr) {
-                continue;
-            }
-            if (auto* optBtn = dynamic_cast<widget::OptionButtonWidget*>(btnPtr.get())) {
-                optBtn->refreshText(*options_);
-            } else if (auto* slider = dynamic_cast<widget::SliderWidget*>(btnPtr.get())) {
-                slider->refreshText(*options_);
-            }
-        }
-    }
 }
 
 } // namespace net::minecraft::client::gui::screen::option

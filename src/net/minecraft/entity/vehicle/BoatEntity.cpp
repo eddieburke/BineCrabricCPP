@@ -289,6 +289,6 @@ void BoatEntity::onCollision(Entity* otherEntity)
 }
 
 
-static ::net::minecraft::registry::RegisterEntity<BoatEntity> autoReg;
 
+MC_REGISTER_ENTITY(BoatEntity)
 } // namespace net::minecraft::entity::vehicle

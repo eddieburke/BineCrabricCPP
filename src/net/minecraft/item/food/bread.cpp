@@ -26,5 +26,5 @@ void BreadItem::registerRecipes(recipe::CraftingRecipeManager& recipeManager)
         {std::string("###"), '#', Item::byRawId(40)});
 }
 
-static registry::RegisterItem<BreadItem> s_itemReg;
+MC_REGISTER_ITEM(BreadItem)
 } // namespace net::minecraft::item

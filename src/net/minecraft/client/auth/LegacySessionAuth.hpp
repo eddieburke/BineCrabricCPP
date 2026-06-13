@@ -1,5 +1,7 @@
 #pragma once
 
+#include "net/minecraft/client/util/Session.hpp"
+
 #include <string>
 
 namespace net::minecraft::client::auth {
@@ -12,8 +14,7 @@ struct JoinServerResult {
 
 // Mirrors Java ClientNetworkHandler.onHandshake online-mode HTTP verification.
 [[nodiscard]] JoinServerResult verifyJoinServer(
-    const std::string& username,
-    const std::string& sessionId,
+    const net::minecraft::client::util::Session& session,
     const std::string& serverId);
 
 } // namespace net::minecraft::client::auth

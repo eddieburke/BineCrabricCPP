@@ -6,6 +6,7 @@
 #include "net/minecraft/entity/player/ClientPlayerEntity.hpp"
 #include "net/minecraft/entity/player/PlayerEntity.hpp"
 #include "net/minecraft/item/ItemStack.hpp"
+#include "net/minecraft/mod/GameHooks.hpp"
 #include "net/minecraft/world/World.hpp"
 
 namespace net::minecraft::client {
@@ -122,6 +123,20 @@ bool InteractionManager::interactBlock(PlayerEntity* player, World* world, ItemS
         return false;
     }
 
+    mod::BlockInteractEvent event {player, world, item, x, y, z, side, true, false, false};
+    mod::hooks().publish(event);
+    if (event.canceled) {
+        return event.handled;
+    }
+    item = event.stack;
+    x = event.x;
+    y = event.y;
+    z = event.z;
+    side = event.side;
+    if (event.handled) {
+        return true;
+    }
+
     const int blockId = world->getBlockId(x, y, z);
     if (blockId > 0) {
         Block* block = Block::BLOCKS[static_cast<std::size_t>(blockId)];
@@ -145,6 +160,11 @@ PlayerEntity* InteractionManager::createPlayer(World* world)
 void InteractionManager::interactEntity(PlayerEntity* player, Entity* entity)
 {
     if (player != nullptr && entity != nullptr) {
+        mod::EntityInteractEvent event {player, entity, false, false};
+        mod::hooks().publish(event);
+        if (event.canceled) {
+            return;
+        }
         player->interact(entity);
     }
 }
@@ -152,6 +172,11 @@ void InteractionManager::interactEntity(PlayerEntity* player, Entity* entity)
 void InteractionManager::attackEntity(PlayerEntity* player, Entity* target)
 {
     if (player != nullptr && target != nullptr) {
+        mod::EntityInteractEvent event {player, target, true, false};
+        mod::hooks().publish(event);
+        if (event.canceled) {
+            return;
+        }
         player->attack(target);
     }
 }

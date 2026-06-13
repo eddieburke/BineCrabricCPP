@@ -4,9 +4,6 @@
 #include "net/minecraft/client/gui/screen/Screen.hpp"
 #include "net/minecraft/util/CharacterUtils.hpp"
 
-#ifdef _WIN32
-#include "net/minecraft/client/input/InputSystem.hpp"
-#endif
 
 namespace net::minecraft::client::gui::widget {
 
@@ -47,7 +44,7 @@ void TextFieldWidget::keyPressed(char character, int keyCode)
     }
     bool paste = character == '\x16';
 #ifdef _WIN32
-    if (!paste && keyCode == 47 && input::InputSystem::instance().modifiers().ctrl) {
+    if (!paste && screen::Screen::pasteChordPressed(keyCode)) {
         paste = true;
     }
 #endif
@@ -61,7 +58,7 @@ void TextFieldWidget::keyPressed(char character, int keyCode)
             text_ += clipboard.substr(0, static_cast<std::size_t>(room));
         }
     }
-    if (keyCode == 14 && !text_.empty()) {
+    if (screen::Screen::backspacePressed(keyCode) && !text_.empty()) {
         text_.pop_back();
     }
     const std::string& valid = CharacterUtils::validCharacters();

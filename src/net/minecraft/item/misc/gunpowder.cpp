@@ -24,5 +24,5 @@ void GunpowderItem::registerRecipes(recipe::CraftingRecipeManager& recipeManager
     (void)recipeManager;
 }
 
-static registry::RegisterItem<GunpowderItem> s_itemReg;
+MC_REGISTER_ITEM(GunpowderItem)
 } // namespace net::minecraft::item

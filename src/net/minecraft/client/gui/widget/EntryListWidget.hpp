@@ -43,8 +43,7 @@ public:
 
     void setViewport(int width, int height, int top, int bottom);
 
-    void registerButtons(std::vector<ButtonWidget>& buttons, int scrollUp, int scrollDown);
-    void buttonClicked(ButtonWidget& button);
+    void scrollBy(float delta);
     void render(int mouseX, int mouseY, float tickDelta);
 
     [[nodiscard]] int getEntryAt(int x, int y) const;
@@ -76,8 +75,6 @@ private:
     void clampScrolling();
     void renderBackgroundStrip(int yStart, int yEnd, int colorTop, int colorBottom);
 
-    int scrollUpButtonId_ = 0;
-    int scrollDownButtonId_ = 0;
     float mostYStart_ = -2.0f;
     float scrollSpeedMultiplier_ = 0.0f;
     float scrollAmount_ = 0.0f;

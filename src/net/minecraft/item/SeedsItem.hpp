@@ -8,7 +8,7 @@
 namespace net::minecraft::item {
 
 class SeedsItem : public Item {
-public:        static constexpr bool kRegisters = true;
+public:
     static constexpr int kRawId = 39;
 
 static void registerClass();

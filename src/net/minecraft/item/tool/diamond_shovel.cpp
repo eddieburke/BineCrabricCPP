@@ -29,5 +29,5 @@ void DiamondShovelItem::registerRecipes(recipe::CraftingRecipeManager& recipeMan
         {std::string("X"), std::string("#"), std::string("#"), '#', Item::byRawId(24), 'X', Item::byRawId(8)});
 }
 
-static registry::RegisterItem<DiamondShovelItem> s_itemReg;
+MC_REGISTER_ITEM(DiamondShovelItem)
 } // namespace net::minecraft::item

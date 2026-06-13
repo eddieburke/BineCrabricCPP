@@ -7,7 +7,6 @@ namespace net::minecraft::entity {
 
 class TntEntity : public Entity {
 public:
-    static constexpr bool kRegisters = true;
     static constexpr int kEntityId = 20;
 
     static constexpr const char* kEntityName = "PrimedTnt";

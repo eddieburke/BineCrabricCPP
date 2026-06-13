@@ -50,7 +50,7 @@ ConnectScreen::ConnectScreen(Minecraft* minecraft, std::string host, int port)
         }
 
         std::lock_guard lock(connectMutex_);
-        networkBridge_ = std::move(bridge);
+        pendingBridge_ = std::move(bridge);
         connectState_ = ConnectState::Connected;
     });
 }
@@ -73,24 +73,39 @@ void ConnectScreen::tick()
             connectState_ = ConnectState::Handled;
             return;
         }
+        // Hand the connected bridge to the persistent owner (WorldSession) so it outlives this
+        // screen's retirement. The bridge owns the ClientNetworkHandler, which owns the live
+        // ClientWorld; if it died with the ConnectScreen, client.world would dangle on the next
+        // tick's raycast.
+        if (pendingBridge_ != nullptr && minecraft() != nullptr) {
+            minecraft()->worldSession().adoptNetworkBridge(std::move(pendingBridge_));
+        }
     }
 
-    if (connectingCancelled_.load(std::memory_order_acquire) || networkBridge_ == nullptr) {
+    if (connectingCancelled_.load(std::memory_order_acquire) || minecraft() == nullptr) {
         return;
     }
-    networkBridge_->tick();
+    if (core::ClientNetworkBridge* bridge = minecraft()->worldSession().networkBridge()) {
+        bridge->tick();
+    }
 }
 
 void ConnectScreen::render(int mouseX, int mouseY, float delta)
 {
     renderBackground();
     if (textRenderer() != nullptr) {
-        const bool connected = networkBridge_ != nullptr;
+        core::ClientNetworkBridge* bridge = nullptr;
+        if (minecraft() != nullptr) {
+            std::lock_guard lock(connectMutex_);
+            bridge = pendingBridge_ != nullptr ? pendingBridge_.get()
+                                               : minecraft()->worldSession().networkBridge();
+        }
+        const bool connected = bridge != nullptr;
         const std::string title = connected ? resource::language::I18n::getTranslation("connect.authorizing")
                                             : resource::language::I18n::getTranslation("connect.connecting");
         drawCenteredTextWithShadow(*textRenderer(), title, width_ / 2, height_ / 2 - 50, 0xFFFFFF);
         const std::string message =
-            connected && networkBridge_->handler() != nullptr ? networkBridge_->handler()->message : "";
+            connected && bridge->handler() != nullptr ? bridge->handler()->message : "";
         drawCenteredTextWithShadow(*textRenderer(), message, width_ / 2, height_ / 2 - 10, 0xFFFFFF);
     }
     Screen::render(mouseX, mouseY, delta);

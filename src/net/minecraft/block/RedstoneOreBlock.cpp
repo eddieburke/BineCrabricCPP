@@ -121,6 +121,6 @@ void RedstoneOreBlock::registerClass()
 
 
 
-namespace {static ::net::minecraft::registry::RegisterBlock<RedstoneOreBlock> autoReg;} // namespace
+MC_REGISTER_BLOCK(RedstoneOreBlock)
 } // namespace net::minecraft::block
 

@@ -25,5 +25,5 @@ void BookItem::registerRecipes(recipe::CraftingRecipeManager& recipeManager)
         {std::string("#"), std::string("#"), std::string("#"), '#', Item::byRawId(83)});
 }
 
-static registry::RegisterItem<BookItem> s_itemReg;
+MC_REGISTER_ITEM(BookItem)
 } // namespace net::minecraft::item

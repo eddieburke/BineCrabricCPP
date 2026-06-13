@@ -8,7 +8,6 @@ namespace net::minecraft::entity::mob {
 
 class CreeperEntity : public MonsterEntity {
 public:
-    static constexpr bool kRegisters = true;
     static constexpr int kEntityId = 50;
 
     static constexpr const char* kEntityName = "Creeper";

@@ -1,5 +1,6 @@
 #include "net/minecraft/client/network/ClientNetworkHandler.hpp"
 
+#include "msauth/SecretProtection.hpp"
 #include "net/minecraft/block/Block.hpp"
 #include "net/minecraft/block/entity/DispenserBlockEntity.hpp"
 #include "net/minecraft/block/entity/FurnaceBlockEntity.hpp"
@@ -118,6 +119,9 @@ void ClientNetworkHandler::processPendingJoinServer()
 
 void ClientNetworkHandler::tick()
 {
+    // Release worlds retired during a previous tick. Safe here: any ClientWorld::tick()
+    // that retired them has fully unwound before this tick begins.
+    retiredWorlds_.clear();
     processPendingJoinServer();
     if (disconnected || connection_ == nullptr) {
         return;
@@ -136,6 +140,7 @@ void ClientNetworkHandler::onHello(std::uint64_t worldSeed, int dimensionId, int
     if (minecraft->stats != nullptr) {
         minecraft->stats->increment(stat::Stats::JOIN_MULTIPLAYER, 1);
     }
+    retireOwnedWorld();
     ownedWorld_ = std::make_unique<ClientWorld>(this, worldSeed, dimensionId);
     world = ownedWorld_.get();
     minecraft->setWorld(world);
@@ -172,7 +177,7 @@ void ClientNetworkHandler::disconnect(const std::string& reason)
     if (minecraft != nullptr) {
         minecraft->setWorld(nullptr);
     }
-    ownedWorld_.reset();
+    retireOwnedWorld();
     world = nullptr;
     openScreenInventory_.reset();
     openScreenFurnace_.reset();
@@ -186,7 +191,7 @@ void ClientNetworkHandler::onDisconnected(const std::string& reason, const std::
     }
     disconnected = true;
     minecraft->setWorld(nullptr);
-    ownedWorld_.reset();
+    retireOwnedWorld();
     world = nullptr;
     minecraft->setScreen(
         std::make_unique<client::gui::screen::DisconnectedScreen>("disconnect.lost", reason, objects));
@@ -210,16 +215,16 @@ void ClientNetworkHandler::onHandshake(const HandshakePacket& packet)
         joinServerState_ = JoinServerState::Pending;
     }
 
-    const std::string username = minecraft->session.username;
-    const std::string sessionId = minecraft->session.sessionId;
+    const client::util::Session session = minecraft->session;
     const std::string serverId = packet.name;
 
     if (joinServerThread_.joinable()) {
         joinServerThread_.join();
     }
 
-    joinServerThread_ = std::thread([this, username, sessionId, serverId]() {
-        auth::JoinServerResult result = auth::verifyJoinServer(username, sessionId, serverId);
+    joinServerThread_ = std::thread([this, session = std::move(session), serverId]() mutable {
+        auth::JoinServerResult result = auth::verifyJoinServer(session, serverId);
+        msauth::secret::wipeString(session.mpPass);
         std::lock_guard lock(joinServerMutex_);
         joinServerResult_ = std::move(result);
         joinServerState_ = joinServerResult_.ok ? JoinServerState::Succeeded : JoinServerState::Failed;
@@ -239,7 +244,7 @@ void ClientNetworkHandler::onDisconnect(const DisconnectPacket& packet)
     disconnected = true;
     if (minecraft != nullptr) {
         minecraft->setWorld(nullptr);
-        ownedWorld_.reset();
+        retireOwnedWorld();
         world = nullptr;
         minecraft->setScreen(std::make_unique<client::gui::screen::DisconnectedScreen>(
             "disconnect.disconnected", "disconnect.genericReason", std::vector<std::string>{packet.reason}));
@@ -732,6 +737,7 @@ void ClientNetworkHandler::onPlayerRespawn(const PlayerRespawnPacket& packet)
     if (packet.dimensionRawId != minecraft->player->dimensionId) {
         started = false;
         const std::uint64_t seed = world->getSeed();
+        retireOwnedWorld();
         ownedWorld_ = std::make_unique<ClientWorld>(this, seed, packet.dimensionRawId);
         world = ownedWorld_.get();
         minecraft->setWorld(world);

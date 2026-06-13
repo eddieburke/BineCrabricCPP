@@ -26,5 +26,5 @@ void ClockItem::registerRecipes(recipe::CraftingRecipeManager& recipeManager)
         {std::string(" # "), std::string("#X#"), std::string(" # "), '#', Item::byRawId(10), 'X', Item::byRawId(75)});
 }
 
-static registry::RegisterItem<ClockItem> s_itemReg;
+MC_REGISTER_ITEM(ClockItem)
 } // namespace net::minecraft::item

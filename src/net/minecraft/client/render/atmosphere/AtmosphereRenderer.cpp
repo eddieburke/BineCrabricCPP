@@ -8,6 +8,7 @@
 #include "net/minecraft/client/render/platform/GlState.hpp"
 #include "net/minecraft/client/render/platform/Lighting.hpp"
 #include "net/minecraft/entity/Entity.hpp"
+#include "net/minecraft/mod/GameHooks.hpp"
 #include "net/minecraft/util/math/MathHelper.hpp"
 #include "net/minecraft/world/World.hpp"
 #include "net/minecraft/world/dimension/Dimension.hpp"
@@ -59,6 +60,11 @@ void AtmosphereRenderer::renderSky(const AtmosphereContext& ctx, float tickDelta
     if (ctx.world == nullptr || ctx.world->dimension == nullptr
         || ctx.textureManager == nullptr || ctx.camera == nullptr
         || ctx.world->dimension->isNether) {
+        return;
+    }
+    mod::SkyRenderEvent event {ctx.world, ctx.camera, tickDelta, false};
+    mod::hooks().publish(event);
+    if (event.canceled) {
         return;
     }
 

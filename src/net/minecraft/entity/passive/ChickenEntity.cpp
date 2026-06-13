@@ -51,6 +51,6 @@ int ChickenEntity::getDroppedItemId() const
 }
 
 
-static ::net::minecraft::registry::RegisterEntity<ChickenEntity> autoReg;
 
+MC_REGISTER_ENTITY(ChickenEntity)
 } // namespace net::minecraft::entity::passive

@@ -64,9 +64,23 @@ public:
 
                 connectingCancelled_.store(true, std::memory_order_release);
 
-                if (networkBridge_ != nullptr) {
+                core::ClientNetworkBridge* bridge = nullptr;
 
-                    networkBridge_->disconnect();
+                {
+
+                    std::lock_guard lock(connectMutex_);
+
+                    bridge = pendingBridge_ != nullptr
+
+                        ? pendingBridge_.get()
+
+                        : minecraft()->worldSession().networkBridge();
+
+                }
+
+                if (bridge != nullptr) {
+
+                    bridge->disconnect();
 
                 }
 
@@ -98,7 +112,9 @@ private:
 
 
 
-    std::unique_ptr<core::ClientNetworkBridge> networkBridge_ {};
+    // Built on the connect thread; moved into Minecraft's WorldSession (the persistent owner)
+    // by tick() on the main thread once connected. Null after that handoff.
+    std::unique_ptr<core::ClientNetworkBridge> pendingBridge_ {};
 
     std::atomic<bool> connectingCancelled_ {false};
 

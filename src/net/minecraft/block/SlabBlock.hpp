@@ -10,7 +10,6 @@ namespace net::minecraft::block {
 
 class SlabBlock : public Block {
 public:
-    static constexpr bool kRegisters = true;
     static constexpr int kBlockId = 43;
 static void registerRecipes(recipe::CraftingRecipeManager& recipeManager);
 public:

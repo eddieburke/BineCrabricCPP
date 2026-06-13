@@ -29,5 +29,5 @@ void StoneSwordItem::registerRecipes(recipe::CraftingRecipeManager& recipeManage
         {std::string("X"), std::string("X"), std::string("#"), '#', Item::byRawId(24), 'X', Block::COBBLESTONE});
 }
 
-static registry::RegisterItem<StoneSwordItem> s_itemReg;
+MC_REGISTER_ITEM(StoneSwordItem)
 } // namespace net::minecraft::item

@@ -9,38 +9,13 @@
 #include "net/minecraft/block/entity/NoteBlockBlockEntity.hpp"
 #include "net/minecraft/block/entity/PistonBlockEntity.hpp"
 #include "net/minecraft/block/entity/SignBlockEntity.hpp"
+#include "net/minecraft/registry/ContentRegistries.hpp"
 #include "net/minecraft/world/World.hpp"
 #include "net/minecraft/world/events/GameEventListener.hpp"
 
-#include <functional>
 #include <iostream>
-#include <unordered_map>
 
 namespace net::minecraft::block::entity {
-
-namespace {
-
-using Factory = std::function<std::unique_ptr<BlockEntity>()>;
-
-std::unordered_map<std::string, Factory>& idFactories()
-{
-    static std::unordered_map<std::string, Factory> factories;
-    static bool initialized = false;
-    if (!initialized) {
-        initialized = true;
-        factories.emplace("Furnace", [] { return std::make_unique<FurnaceBlockEntity>(); });
-        factories.emplace("Chest", [] { return std::make_unique<ChestBlockEntity>(); });
-        factories.emplace("RecordPlayer", [] { return std::make_unique<JukeboxBlockEntity>(); });
-        factories.emplace("Trap", [] { return std::make_unique<DispenserBlockEntity>(); });
-        factories.emplace("Sign", [] { return std::make_unique<SignBlockEntity>(); });
-        factories.emplace("MobSpawner", [] { return std::make_unique<MobSpawnerBlockEntity>(); });
-        factories.emplace("Music", [] { return std::make_unique<NoteBlockBlockEntity>(); });
-        factories.emplace("Piston", [] { return std::make_unique<PistonBlockEntity>(); });
-    }
-    return factories;
-}
-
-} // namespace
 
 void BlockEntity::readNbt(const NbtCompound& nbt)
 {
@@ -87,16 +62,13 @@ void BlockEntity::markDirty()
 std::unique_ptr<BlockEntity> BlockEntity::createFromNbt(const NbtCompound& nbt)
 {
     const std::string typeId = nbt.getString("id");
-    const auto it = idFactories().find(typeId);
-    if (it == idFactories().end()) {
+    std::unique_ptr<BlockEntity> blockEntity = registry::BlockEntityRegistry::instance().create(typeId);
+    if (blockEntity == nullptr) {
         std::cout << "Skipping TileEntity with id " << typeId << '\n';
         return nullptr;
     }
 
-    std::unique_ptr<BlockEntity> blockEntity = it->second();
-    if (blockEntity != nullptr) {
-        blockEntity->readNbt(nbt);
-    }
+    blockEntity->readNbt(nbt);
     return blockEntity;
 }
 

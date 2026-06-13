@@ -8,7 +8,6 @@ namespace net::minecraft::block {
 
 class WoolBlock : public Block {
 public:
-    static constexpr bool kRegisters = true;
     static constexpr int kBlockId = 35;
 static void registerRecipes(recipe::CraftingRecipeManager& recipeManager);
 public:

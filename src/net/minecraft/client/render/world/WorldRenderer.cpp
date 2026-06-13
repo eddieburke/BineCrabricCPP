@@ -23,6 +23,7 @@
 #include "net/minecraft/client/particle/LavaEmberParticle.hpp"
 #include "net/minecraft/client/particle/NoteParticle.hpp"
 #include "net/minecraft/client/particle/PortalParticle.hpp"
+#include "net/minecraft/client/particle/ParticleRegistry.hpp"
 #include "net/minecraft/client/particle/RainSplashParticle.hpp"
 #include "net/minecraft/client/particle/PickupParticle.hpp"
 #include "net/minecraft/client/particle/RedDustParticle.hpp"
@@ -36,8 +37,7 @@
 #include "net/minecraft/client/render/entity/EntityRenderDispatcher.hpp"
 #include "net/minecraft/client/render/platform/GlState.hpp"
 #include "net/minecraft/client/render/platform/Lighting.hpp"
-#include "net/minecraft/client/render/world/DirtyChunkSorter.hpp"
-#include "net/minecraft/client/render/world/DistanceChunkSorter.hpp"
+#include "net/minecraft/client/render/ViewDistance.hpp"
 #include "net/minecraft/entity/Entity.hpp"
 #include "net/minecraft/entity/LivingEntity.hpp"
 #include "net/minecraft/entity/player/ClientPlayerEntity.hpp"
@@ -77,6 +77,8 @@ constexpr int kGlCompile = 0x1300;
 constexpr int kGlTriangleFan = 6;
 constexpr int kGlDstColor = 0x0306;
 constexpr float kPi = 3.14159265f;
+// Java WorldRenderer.render: re-sort when camera delta exceeds 8 blocks (64 = 8^2).
+constexpr double kCameraResortDistanceSq = 64.0;
 
 } // namespace
 
@@ -132,14 +134,36 @@ chunk::ChunkBuilder* WorldRenderer::chunkAt(int chunkX, int chunkY, int chunkZ)
 
 void WorldRenderer::enqueueDirtyChunk(chunk::ChunkBuilder* chunk)
 {
-    if (chunk == nullptr) {
+    if (chunk == nullptr || chunk->meshJobInFlight) {
         return;
     }
-    if (dirtyChunks_.contains(chunk)) {
-        return;
-    }
-    chunk->queuedForRebuild = true;
+    // Near classification runs even when the chunk is already in the dirty
+    // set: a block edit in a chunk the gen backlog dirtied earlier must still
+    // jump to the fast lane.
+    noteNearDirty(chunk);
     dirtyChunks_.insert(chunk);
+}
+
+void WorldRenderer::noteNearDirty(chunk::ChunkBuilder* chunk)
+{
+    // 32 blocks: covers reach distance plus the neighbor sections a
+    // boundary-block edit dirties.
+    constexpr float kNearDirtyDistSq = 32.0f * 32.0f;
+    constexpr std::size_t kNearDirtyCap = 64;
+
+    if (nearDirtyChunks_.size() >= kNearDirtyCap) {
+        return;
+    }
+    const net::minecraft::Entity* camera = cameraEntity_ != nullptr
+        ? cameraEntity_
+        : (client != nullptr ? client->camera : nullptr);
+    if (camera == nullptr || chunk->squaredDistanceTo(camera->x, camera->y, camera->z) > kNearDirtyDistSq) {
+        return;
+    }
+    if (std::find(nearDirtyChunks_.begin(), nearDirtyChunks_.end(), chunk) != nearDirtyChunks_.end()) {
+        return;
+    }
+    nearDirtyChunks_.push_back(chunk);
 }
 
 void WorldRenderer::setWorld(net::minecraft::World* worldIn)
@@ -163,21 +187,35 @@ void WorldRenderer::setWorld(net::minecraft::World* worldIn)
         world->addEventListener(this);
         reload();
     } else {
+        meshScheduler_.cancelAll();
+        pendingMeshUploads_.clear();
+        for (chunk::ChunkBuilder& chunk : chunks_) {
+            chunk.meshJobInFlight = false;
+        }
         chunks_.clear();
+        ++chunkArrayEpoch_;
         sortedChunks_.clear();
         dirtyChunks_.clear();
+        nearDirtyChunks_.clear();
+        chunkRenderers_.clear();
         cameraEntity_ = nullptr;
     }
 }
 
 void WorldRenderer::reload()
 {
+    meshScheduler_.cancelAll();
+    pendingMeshUploads_.clear();
     for (chunk::ChunkBuilder& chunk : chunks_) {
+        chunk.meshJobInFlight = false;
         chunk.close();
     }
     chunks_.clear();
+    ++chunkArrayEpoch_;
     sortedChunks_.clear();
     dirtyChunks_.clear();
+    nearDirtyChunks_.clear();
+    chunkRenderers_.clear();
 
     if (world == nullptr) {
         return;
@@ -185,6 +223,7 @@ void WorldRenderer::reload()
 
     net::minecraft::client::option::GameOptions& opts = activeOptions();
     const option::ResolvedRenderOptions resolved = option::resolve(opts);
+    const ViewDistance viewDistance = ViewDistance::fromOptions(opts);
     if (Block::LEAVES != nullptr) {
         static_cast<net::minecraft::block::LeavesBlock*>(Block::LEAVES)->setFancyGraphics(
             resolved.fancyLeaves);
@@ -192,7 +231,7 @@ void WorldRenderer::reload()
     block::BlockRenderManager::fancyGraphics = opts.fancyGraphics;
     block::BlockRenderManager::fancyLeaves = resolved.fancyLeaves;
     lastViewDistance = opts.viewDistance;
-    lastRenderScale = opts.ofRenderScale;
+    lastRenderScale = viewDistance.renderScale();
 
     gl::GlExtensions::ensureLoaded();
     // Chunks render exclusively through display lists. The VBO path was removed (it produced
@@ -202,7 +241,7 @@ void WorldRenderer::reload()
         chunkGlList = gl::GL11::glGenLists(kReserveLists);
     }
 
-    const int renderDistance = resolved.chunkGridRadius;
+    const int renderDistance = viewDistance.chunkGridDiameterBlocks();
 
     chunkCountX = renderDistance / kChunkSectionSize + 1;
     chunkCountY = kChunkSectionCountY;
@@ -212,6 +251,9 @@ void WorldRenderer::reload()
     chunks_.reserve(totalChunks);
     sortedChunks_.reserve(totalChunks);
     chunksInCurrentLayer_.reserve(totalChunks);
+    constexpr int kCameraOffsetPeriodBlocks = 1024;
+    const int offsetGroupsPerAxis = renderDistance / kCameraOffsetPeriodBlocks + 2;
+    chunkRenderers_.reserve(static_cast<std::size_t>(offsetGroupsPerAxis * offsetGroupsPerAxis));
 
     minChunkX = 0;
     minChunkY = 0;
@@ -221,11 +263,8 @@ void WorldRenderer::reload()
     maxChunkZ = chunkCountZ;
 
     dirtyChunks_.clear();
+    nearDirtyChunks_.clear();
     globalBlockEntities.clear();
-
-    for (chunk::ChunkBuilder& chunk : chunks_) {
-        chunk.queuedForRebuild = false;
-    }
 
     int nextId = 0;
     int glListOffset = 0;
@@ -249,7 +288,8 @@ void WorldRenderer::reload()
     const net::minecraft::LivingEntity* sortCamera = resolveSortCamera();
     if (sortCamera != nullptr) {
         sortChunks(MathHelper::floor(sortCamera->x), MathHelper::floor(sortCamera->y), MathHelper::floor(sortCamera->z));
-        std::sort(sortedChunks_.begin(), sortedChunks_.end(), world::DistanceChunkSorter(*sortCamera));
+        // First frames render in grid order until the background sort lands.
+        submitChunkSort(sortCamera->x, sortCamera->y, sortCamera->z);
     }
 
     prevCameraX = -9999.0;
@@ -262,7 +302,8 @@ void WorldRenderer::reload()
 void WorldRenderer::reloadIfViewDistanceChanged()
 {
     const net::minecraft::client::option::GameOptions& opts = activeOptions();
-    if (opts.viewDistance != lastViewDistance || opts.ofRenderScale != lastRenderScale) {
+    const ViewDistance viewDistance = ViewDistance::fromOptions(opts);
+    if (opts.viewDistance != lastViewDistance || viewDistance.renderScale() != lastRenderScale) {
         reload();
     }
 }
@@ -330,10 +371,10 @@ void WorldRenderer::sortChunks(int cameraX, int cameraY, int cameraZ)
 
 void WorldRenderer::beginWorldRenderFrame() noexcept
 {
-    framePhase_ = pipeline::FramePhase::Idle;
+    framePhase_ = FramePhase::Idle;
 }
 
-void WorldRenderer::expectFramePhase(const pipeline::FramePhase required) const
+void WorldRenderer::expectFramePhase(const FramePhase required) const
 {
 #ifndef NDEBUG
     assert(framePhase_ == required);
@@ -342,7 +383,7 @@ void WorldRenderer::expectFramePhase(const pipeline::FramePhase required) const
 #endif
 }
 
-void WorldRenderer::advanceFramePhase(const pipeline::FramePhase next) noexcept
+void WorldRenderer::advanceFramePhase(const FramePhase next) noexcept
 {
     framePhase_ = next;
 }
@@ -353,7 +394,7 @@ void WorldRenderer::sortChunksOnMove(const net::minecraft::LivingEntity& camera)
     const double cameraDeltaY = camera.y - prevCameraY;
     const double cameraDeltaZ = camera.z - prevCameraZ;
     if (cameraDeltaX * cameraDeltaX + cameraDeltaY * cameraDeltaY + cameraDeltaZ * cameraDeltaZ
-        <= pipeline::kCameraResortDistanceSq) {
+        <= kCameraResortDistanceSq) {
         return;
     }
 
@@ -363,7 +404,40 @@ void WorldRenderer::sortChunksOnMove(const net::minecraft::LivingEntity& camera)
     sortChunks(net::minecraft::util::math::MathHelper::floor(camera.x),
         net::minecraft::util::math::MathHelper::floor(camera.y),
         net::minecraft::util::math::MathHelper::floor(camera.z));
-    std::sort(sortedChunks_.begin(), sortedChunks_.end(), world::DistanceChunkSorter(camera));
+    // Distance sort runs on the background thread; rendering keeps the old
+    // order until pollChunkSort applies the result. A frame or two of stale
+    // draw order is invisible — Java only resorted every 8 blocks anyway.
+    submitChunkSort(camera.x, camera.y, camera.z);
+}
+
+void WorldRenderer::submitChunkSort(double cameraX, double cameraY, double cameraZ)
+{
+    if (!chunkSorter_.canSubmit()) {
+        return;
+    }
+
+    std::vector<world::AsyncChunkSorter::Entry> entries;
+    entries.reserve(chunks_.size());
+    for (std::size_t i = 0; i < chunks_.size(); ++i) {
+        const chunk::ChunkBuilder& chunk = chunks_[i];
+        const float dx = static_cast<float>(cameraX - static_cast<double>(chunk.centerX));
+        const float dy = static_cast<float>(cameraY - static_cast<double>(chunk.centerY));
+        const float dz = static_cast<float>(cameraZ - static_cast<double>(chunk.centerZ));
+        entries.push_back({dx * dx + dy * dy + dz * dz, static_cast<std::int32_t>(i)});
+    }
+    chunkSorter_.submit(std::move(entries), chunkArrayEpoch_);
+}
+
+void WorldRenderer::pollChunkSort()
+{
+    std::optional<world::AsyncChunkSorter::Result> result = chunkSorter_.tryTakeResult();
+    if (!result || result->epoch != chunkArrayEpoch_ || result->entries.size() != chunks_.size()) {
+        return;
+    }
+    sortedChunks_.clear();
+    for (const world::AsyncChunkSorter::Entry& entry : result->entries) {
+        sortedChunks_.push_back(&chunks_[static_cast<std::size_t>(entry.index)]);
+    }
 }
 
 void WorldRenderer::renderLastChunks(int layer, double tickDelta)
@@ -379,22 +453,22 @@ void WorldRenderer::render(const net::minecraft::Entity& camera, int layer, floa
 int WorldRenderer::render(net::minecraft::LivingEntity& camera, int layer, double tickDelta)
 {
     if (layer == 0) {
-        expectFramePhase(pipeline::FramePhase::Compiled);
+        expectFramePhase(FramePhase::Compiled);
     } else {
-        expectFramePhase(pipeline::FramePhase::SolidLayerDone);
+        expectFramePhase(FramePhase::SolidLayerDone);
     }
     const int rendered = internal::WorldRendererCore::render(*this, camera, layer, tickDelta);
     if (layer == 0) {
-        advanceFramePhase(pipeline::FramePhase::SolidLayerDone);
+        advanceFramePhase(FramePhase::SolidLayerDone);
     }
     return rendered;
 }
 
 bool WorldRenderer::compileChunks(net::minecraft::LivingEntity& camera, bool force)
 {
-    expectFramePhase(pipeline::FramePhase::Culled);
+    expectFramePhase(FramePhase::Culled);
     const bool finished = internal::WorldRendererCore::compileChunks(*this, camera, force);
-    advanceFramePhase(pipeline::FramePhase::Compiled);
+    advanceFramePhase(FramePhase::Compiled);
     return finished;
 }
 
@@ -406,27 +480,31 @@ void WorldRenderer::renderEntities(const Vec3d& cameraPos, Culler* culler, float
 void WorldRenderer::cullChunks(Culler* culler, float tickDelta)
 {
     (void)tickDelta;
-    expectFramePhase(pipeline::FramePhase::Idle);
+    expectFramePhase(FramePhase::Idle);
     lastCuller_ = culler;
     if (culler == nullptr || !activeOptions().frustumCulling) {
         for (chunk::ChunkBuilder& chunk : chunks_) {
             chunk.inFrustum = true;
         }
     } else {
+        // Asymmetric cadence: chunks outside the frustum are re-tested every
+        // frame so they appear the moment the camera turns onto them; chunks
+        // already visible are only re-tested every kCullStride frames, since
+        // the worst case there is rendering a stale chunk a few frames longer.
         constexpr int kCullStride = 8;
         for (std::size_t i = 0; i < chunks_.size(); ++i) {
             chunk::ChunkBuilder& chunk = chunks_[i];
             if (chunk.hasNoGeometry()) {
                 continue;
             }
-            if (static_cast<int>((i + cullStep) % kCullStride) != 0) {
+            if (chunk.inFrustum && static_cast<int>((i + cullStep) % kCullStride) != 0) {
                 continue;
             }
             chunk.updateFrustum(*culler);
         }
         cullStep = (cullStep + 1) % kCullStride;
     }
-    advanceFramePhase(pipeline::FramePhase::Culled);
+    advanceFramePhase(FramePhase::Culled);
 }
 
 std::string WorldRenderer::getChunkDebugInfo() const
@@ -461,9 +539,11 @@ void WorldRenderer::markDirty(int minX, int minY, int minZ, int maxX, int maxY, 
                 if (builder == nullptr) {
                     continue;
                 }
-                if (!builder->dirty) {
-                    builder->invalidate();
-                }
+                // Always bump the version: a mesh job may be in flight for this
+                // builder, and only a version mismatch makes its result stale.
+                // Skipping the bump when already dirty would let that job upload
+                // a mesh missing this change and clear the dirty flag.
+                builder->invalidate();
                 enqueueDirtyChunk(builder);
             }
         }
@@ -519,41 +599,12 @@ void WorldRenderer::addParticle(const std::string& particle, double x, double y,
         return;
     }
     World* world = client->world;
-    if (particle == "bubble") {
-        client->particleManager.addParticle(new ::net::minecraft::client::particle::WaterBubbleParticle(world, x, y, z, velocityX, velocityY, velocityZ));
-    } else if (particle == "smoke") {
-        client->particleManager.addParticle(new ::net::minecraft::client::particle::FireSmokeParticle(world, x, y, z, velocityX, velocityY, velocityZ));
-    } else if (particle == "explode") {
-        client->particleManager.addParticle(new ::net::minecraft::client::particle::ExplosionParticle(world, x, y, z, velocityX, velocityY, velocityZ));
-    } else if (particle == "flame") {
-        client->particleManager.addParticle(new ::net::minecraft::client::particle::FlameParticle(world, x, y, z, velocityX, velocityY, velocityZ));
-    } else if (particle == "splash") {
-        client->particleManager.addParticle(new ::net::minecraft::client::particle::WaterSplashParticle(world, x, y, z, velocityX, velocityY, velocityZ));
-    } else if (particle == "largesmoke") {
-        client->particleManager.addParticle(new ::net::minecraft::client::particle::FireSmokeParticle(world, x, y, z, velocityX, velocityY, velocityZ, 2.5f));
-    } else if (particle == "reddust") {
-        client->particleManager.addParticle(new ::net::minecraft::client::particle::RedDustParticle(
-            world, x, y, z, static_cast<float>(velocityX), static_cast<float>(velocityY), static_cast<float>(velocityZ)));
-    } else if (particle == "note") {
-        client->particleManager.addParticle(new ::net::minecraft::client::particle::NoteParticle(world, x, y, z, velocityX, velocityY, velocityZ));
-    } else if (particle == "lava") {
-        client->particleManager.addParticle(new ::net::minecraft::client::particle::LavaEmberParticle(world, x, y, z));
-    } else if (particle == "heart") {
-        client->particleManager.addParticle(new ::net::minecraft::client::particle::HeartParticle(world, x, y, z, velocityX, velocityY, velocityZ));
-    } else if (particle == "portal") {
-        client->particleManager.addParticle(new ::net::minecraft::client::particle::PortalParticle(world, x, y, z, velocityX, velocityY, velocityZ));
-    } else if (particle == "footstep") {
-        client->particleManager.addParticle(new ::net::minecraft::client::particle::FootstepParticle(
-            textureManager, world, x, y, z));
-    } else if (particle == "snowballpoof") {
-        client->particleManager.addParticle(new ::net::minecraft::client::particle::ItemParticle(
-            world, x, y, z, Item::byRawId(76)));
-    } else if (particle == "snowshovel") {
-        client->particleManager.addParticle(new ::net::minecraft::client::particle::SnowParticle(
-            world, x, y, z, velocityX, velocityY, velocityZ));
-    } else if (particle == "slime") {
-        client->particleManager.addParticle(new ::net::minecraft::client::particle::ItemParticle(
-            world, x, y, z, Item::byRawId(85)));
+    client::particle::ParticleSpawnContext context {
+        world, textureManager, x, y, z, velocityX, velocityY, velocityZ};
+    std::unique_ptr<client::particle::Particle> spawned =
+        client::particle::ParticleRegistry::instance().create(particle, context);
+    if (spawned != nullptr) {
+        client->particleManager.addParticle(std::move(spawned));
     }
 }
 

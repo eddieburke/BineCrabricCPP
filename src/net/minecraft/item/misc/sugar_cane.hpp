@@ -9,7 +9,7 @@ class CraftingRecipeManager;
 namespace net::minecraft::item {
 
 class SugarCaneItem : public SecondaryBlockItem {
-public:        static constexpr bool kRegisters = true;
+public:
     static constexpr int kRawId = 82;
 
 static void registerClass();

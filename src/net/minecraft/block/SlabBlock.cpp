@@ -115,6 +115,6 @@ void SlabBlock::registerBlockItems()
     (new item::SlabBlockItem(44 - 256))->setTranslationKey("stoneSlab");
 }
 
-namespace {static ::net::minecraft::registry::RegisterBlock<SlabBlock> autoReg;} // namespace
+MC_REGISTER_BLOCK(SlabBlock)
 } // namespace net::minecraft::block
 

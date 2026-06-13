@@ -35,5 +35,5 @@ void DiamondItem::registerRecipes(recipe::CraftingRecipeManager& recipeManager)
         {std::string("#"), '#', Block::DIAMOND_BLOCK});
 }
 
-static registry::RegisterItem<DiamondItem> s_itemReg;
+MC_REGISTER_ITEM(DiamondItem)
 } // namespace net::minecraft::item

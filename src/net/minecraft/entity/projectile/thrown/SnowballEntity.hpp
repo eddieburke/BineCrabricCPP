@@ -11,7 +11,6 @@ namespace net::minecraft::entity::projectile::thrown {
 
 class SnowballEntity : public Entity {
 public:
-    static constexpr bool kRegisters = true;
     static constexpr int kEntityId = 11;
 
     static constexpr const char* kEntityName = "Snowball";

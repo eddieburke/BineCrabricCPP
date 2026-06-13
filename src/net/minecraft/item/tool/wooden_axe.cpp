@@ -29,5 +29,5 @@ void WoodenAxeItem::registerRecipes(recipe::CraftingRecipeManager& recipeManager
         {std::string("XX"), std::string("X#"), std::string(" #"), '#', Item::byRawId(24), 'X', Block::PLANKS});
 }
 
-static registry::RegisterItem<WoodenAxeItem> s_itemReg;
+MC_REGISTER_ITEM(WoodenAxeItem)
 } // namespace net::minecraft::item

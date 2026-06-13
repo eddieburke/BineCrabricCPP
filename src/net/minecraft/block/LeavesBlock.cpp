@@ -11,7 +11,86 @@
 #include "net/minecraft/stat/Stats.hpp"
 #include "net/minecraft/world/World.hpp"
 
+#include <array>
+#include <cstdint>
+
 namespace net::minecraft::block {
+
+namespace {
+
+constexpr int kDecayRadius = 4;
+constexpr int kRegionSize = kDecayRadius * 2 + 1;
+constexpr int kRegionArea = kRegionSize * kRegionSize;
+constexpr int kRegionVolume = kRegionArea * kRegionSize;
+constexpr int8_t kBlocked = -1;
+constexpr int8_t kPendingLeaf = -2;
+
+inline int regionIndex(int dx, int dy, int dz)
+{
+    return (dx + kDecayRadius) * kRegionArea + (dy + kDecayRadius) * kRegionSize + (dz + kDecayRadius);
+}
+
+// BFS from logs through leaves within a (2*radius+1)^3 neighborhood. Returns distance to
+// the nearest log (0-4), or -1 when the center leaf is not connected within radius.
+int decayDistanceFromLog(World* world, int x, int y, int z)
+{
+    static thread_local std::array<int8_t, kRegionVolume> region {};
+    static thread_local std::array<int, kRegionVolume> queue {};
+
+    region.fill(kBlocked);
+
+    int queueTail = 0;
+    for (int dx = -kDecayRadius; dx <= kDecayRadius; ++dx) {
+        for (int dy = -kDecayRadius; dy <= kDecayRadius; ++dy) {
+            for (int dz = -kDecayRadius; dz <= kDecayRadius; ++dz) {
+                const int blockId = world->getBlockId(x + dx, y + dy, z + dz);
+                const int idx = regionIndex(dx, dy, dz);
+                if (blockId == Block::LOG->id) {
+                    region[static_cast<std::size_t>(idx)] = 0;
+                    queue[static_cast<std::size_t>(queueTail++)] = idx;
+                } else if (blockId == Block::LEAVES->id) {
+                    region[static_cast<std::size_t>(idx)] = kPendingLeaf;
+                }
+            }
+        }
+    }
+
+    for (int queueHead = 0; queueHead < queueTail; ++queueHead) {
+        const int idx = queue[static_cast<std::size_t>(queueHead)];
+        const int dist = region[static_cast<std::size_t>(idx)];
+        if (dist >= kDecayRadius) {
+            continue;
+        }
+
+        const int dz = (idx % kRegionSize) - kDecayRadius;
+        const int tmp = idx / kRegionSize;
+        const int dy = (tmp % kRegionSize) - kDecayRadius;
+        const int dx = (tmp / kRegionSize) - kDecayRadius;
+
+        static constexpr int offsets[6][3] = {
+            {-1, 0, 0}, {1, 0, 0}, {0, -1, 0}, {0, 1, 0}, {0, 0, -1}, {0, 0, 1}};
+        for (const auto& offset : offsets) {
+            const int nx = dx + offset[0];
+            const int ny = dy + offset[1];
+            const int nz = dz + offset[2];
+            if (nx < -kDecayRadius || nx > kDecayRadius || ny < -kDecayRadius || ny > kDecayRadius
+                || nz < -kDecayRadius || nz > kDecayRadius) {
+                continue;
+            }
+            const int neighborIdx = regionIndex(nx, ny, nz);
+            if (region[static_cast<std::size_t>(neighborIdx)] != kPendingLeaf) {
+                continue;
+            }
+            region[static_cast<std::size_t>(neighborIdx)] = static_cast<int8_t>(dist + 1);
+            queue[static_cast<std::size_t>(queueTail++)] = neighborIdx;
+        }
+    }
+
+    const int center = region[static_cast<std::size_t>(regionIndex(0, 0, 0))];
+    return center >= 0 ? center : -1;
+}
+
+} // namespace
 
 LeavesBlock::LeavesBlock(int blockId, int textureId)
     : TransparentBlock(blockId, textureId, material::Material::LEAVES, false)
@@ -118,63 +197,13 @@ void LeavesBlock::onTick(World* world, int x, int y, int z, JavaRandom& /*random
         return;
     }
 
-    constexpr int radius = 4;
-    const int loadedRadius = radius + 1;
-    constexpr int regionSize = 32;
-    constexpr int regionVolume = regionSize * regionSize * regionSize;
-    constexpr int regionHalf = regionSize / 2;
-    const int regionArea = regionSize * regionSize;
-
-    if (decayRegion_.size() != static_cast<std::size_t>(regionVolume)) {
-        decayRegion_.assign(static_cast<std::size_t>(regionVolume), 0);
+    const int loadedRadius = kDecayRadius + 1;
+    if (!world->isRegionLoaded(x - loadedRadius, y - loadedRadius, z - loadedRadius, x + loadedRadius,
+            y + loadedRadius, z + loadedRadius)) {
+        return;
     }
 
-    if (world->isRegionLoaded(x - loadedRadius, y - loadedRadius, z - loadedRadius, x + loadedRadius, y + loadedRadius,
-            z + loadedRadius)) {
-        for (int dx = -radius; dx <= radius; ++dx) {
-            for (int dy = -radius; dy <= radius; ++dy) {
-                for (int dz = -radius; dz <= radius; ++dz) {
-                    const int blockId = world->getBlockId(x + dx, y + dy, z + dz);
-                    const std::size_t index = static_cast<std::size_t>((dx + regionHalf) * regionArea
-                        + (dy + regionHalf) * regionSize + (dz + regionHalf));
-                    if (blockId == Block::LOG->id) {
-                        decayRegion_[index] = 0;
-                    } else if (blockId == Block::LEAVES->id) {
-                        decayRegion_[index] = -2;
-                    } else {
-                        decayRegion_[index] = -1;
-                    }
-                }
-            }
-        }
-
-        for (int distance = 1; distance <= 4; ++distance) {
-            for (int dx = -radius; dx <= radius; ++dx) {
-                for (int dy = -radius; dy <= radius; ++dy) {
-                    for (int dz = -radius; dz <= radius; ++dz) {
-                        const std::size_t center = static_cast<std::size_t>((dx + regionHalf) * regionArea
-                            + (dy + regionHalf) * regionSize + (dz + regionHalf));
-                        if (decayRegion_[center] != distance - 1) {
-                            continue;
-                        }
-                        const int offsets[6][3] = {
-                            {-1, 0, 0}, {1, 0, 0}, {0, -1, 0}, {0, 1, 0}, {0, 0, -1}, {0, 0, 1}};
-                        for (const auto& offset : offsets) {
-                            const std::size_t neighbor = static_cast<std::size_t>(
-                                (dx + offset[0] + regionHalf) * regionArea + (dy + offset[1] + regionHalf) * regionSize
-                                + (dz + offset[2] + regionHalf));
-                            if (decayRegion_[neighbor] == -2) {
-                                decayRegion_[neighbor] = distance;
-                            }
-                        }
-                    }
-                }
-            }
-        }
-    }
-
-    const std::size_t centerIndex = static_cast<std::size_t>(regionHalf * regionArea + regionHalf * regionSize + regionHalf);
-    const int decayDistance = decayRegion_[centerIndex];
+    const int decayDistance = decayDistanceFromLog(world, x, y, z);
     if (decayDistance >= 0) {
         world->setBlockMetaWithoutNotifyingNeighbors(x, y, z, meta & 0xFFFFFFF7);
     } else {
@@ -221,6 +250,6 @@ void LeavesBlock::registerBlockItems()
     (new item::LeavesBlockItem(18 - 256))->setTranslationKey("leaves");
 }
 
-namespace {static ::net::minecraft::registry::RegisterBlock<LeavesBlock> autoReg;} // namespace
+MC_REGISTER_BLOCK(LeavesBlock)
 } // namespace net::minecraft::block
 

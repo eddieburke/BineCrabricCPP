@@ -32,5 +32,5 @@ void GoldenLeggingsItem::registerRecipes(recipe::CraftingRecipeManager& recipeMa
         {std::string("XXX"), std::string("X X"), std::string("X X"), 'X', Item::byRawId(10)});
 }
 
-static registry::RegisterItem<GoldenLeggingsItem> s_itemReg;
+MC_REGISTER_ITEM(GoldenLeggingsItem)
 } // namespace net::minecraft::item

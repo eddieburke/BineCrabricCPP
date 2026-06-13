@@ -201,6 +201,6 @@ void NetherPortalBlock::registerClass()
 
 
 
-namespace {static ::net::minecraft::registry::RegisterBlock<NetherPortalBlock> autoReg;} // namespace
+MC_REGISTER_BLOCK(NetherPortalBlock)
 } // namespace net::minecraft::block
 

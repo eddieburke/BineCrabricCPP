@@ -32,5 +32,5 @@ void LeatherHelmetItem::registerRecipes(recipe::CraftingRecipeManager& recipeMan
         {std::string("XXX"), std::string("X X"), 'X', Item::byRawId(78)});
 }
 
-static registry::RegisterItem<LeatherHelmetItem> s_itemReg;
+MC_REGISTER_ITEM(LeatherHelmetItem)
 } // namespace net::minecraft::item

@@ -73,6 +73,6 @@ void SkeletonEntity::attack(Entity* other, float distance)
 }
 
 
-static ::net::minecraft::registry::RegisterEntity<SkeletonEntity> autoReg;
 
+MC_REGISTER_ENTITY(SkeletonEntity)
 } // namespace net::minecraft::entity::mob

@@ -24,5 +24,5 @@ void PaperItem::registerRecipes(recipe::CraftingRecipeManager& recipeManager)
     recipeManager.addShapedRecipe(ItemStack(Item::byRawId(83), 3), {std::string("###"), '#', Item::byRawId(82)});
 }
 
-static registry::RegisterItem<PaperItem> s_itemReg;
+MC_REGISTER_ITEM(PaperItem)
 } // namespace net::minecraft::item

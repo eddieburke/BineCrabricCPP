@@ -35,5 +35,5 @@ void IronIngotItem::registerRecipes(recipe::CraftingRecipeManager& recipeManager
         {std::string("#"), '#', Block::IRON_BLOCK});
 }
 
-static registry::RegisterItem<IronIngotItem> s_itemReg;
+MC_REGISTER_ITEM(IronIngotItem)
 } // namespace net::minecraft::item

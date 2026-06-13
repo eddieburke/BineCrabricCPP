@@ -57,5 +57,5 @@ void BedItem::registerRecipes(recipe::CraftingRecipeManager& recipeManager)
         {std::string("###"), std::string("XXX"), '#', Block::WOOL, 'X', Block::PLANKS});
 }
 
-namespace { static ::net::minecraft::registry::RegisterItem<BedItem> autoReg; }
+MC_REGISTER_ITEM(BedItem)
 } // namespace net::minecraft::item

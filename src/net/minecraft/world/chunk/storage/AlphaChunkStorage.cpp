@@ -94,34 +94,41 @@ Chunk AlphaChunkStorage::loadChunk(World* world, int chunkX, int chunkZ)
         }
 
         const NbtCompound root = NbtIo::readCompressed(input);
-        if (!root.contains("Level")) {
-            std::cout << "Chunk file at " << chunkX << "," << chunkZ << " is missing level data, skipping\n";
-            return EmptyChunk(world, chunkX, chunkZ);
-        }
-        const NbtCompound level = root.getCompound("Level");
-        if (!level.contains("Blocks")) {
-            std::cout << "Chunk file at " << chunkX << "," << chunkZ << " is missing block data, skipping\n";
-            return EmptyChunk(world, chunkX, chunkZ);
-        }
-
-        Chunk chunk = loadChunkFromNbt(world, level);
-        if (!chunk.chunkPosEquals(chunkX, chunkZ)) {
-            std::cout << "Chunk file at " << chunkX << "," << chunkZ
-                      << " is in the wrong location; relocating. (Expected " << chunkX << ", " << chunkZ << ", got "
-                      << chunk.x << ", " << chunk.z << ")\n";
-            NbtCompound relocated = level;
-            relocated.putInt("xPos", chunkX);
-            relocated.putInt("zPos", chunkZ);
-            Chunk relocatedChunk = loadChunkFromNbt(world, relocated);
-            relocatedChunk.fill();
-            return relocatedChunk;
-        }
-        chunk.fill();
-        return chunk;
+        return loadChunkFromRootNbt(world, root.storage(), chunkX, chunkZ);
     } catch (const std::exception& exception) {
         std::cout << "Failed to load chunk at " << chunkX << "," << chunkZ << ": " << exception.what() << '\n';
         return EmptyChunk(world, chunkX, chunkZ);
     }
+}
+
+Chunk AlphaChunkStorage::loadChunkFromRootNbt(World* world, const Nbt& root, int chunkX, int chunkZ)
+{
+    const Nbt* level = root.get("Level");
+    if (level == nullptr || !level->isCompound()) {
+        std::cout << "Chunk file at " << chunkX << "," << chunkZ << " is missing level data, skipping\n";
+        return EmptyChunk(world, chunkX, chunkZ);
+    }
+
+    NbtCompound levelCompound {Nbt(*level)};
+    if (!levelCompound.contains("Blocks")) {
+        std::cout << "Chunk file at " << chunkX << "," << chunkZ << " is missing block data, skipping\n";
+        return EmptyChunk(world, chunkX, chunkZ);
+    }
+
+    Chunk chunk = loadChunkFromNbt(world, levelCompound);
+    if (!chunk.chunkPosEquals(chunkX, chunkZ)) {
+        std::cout << "Chunk file at " << chunkX << "," << chunkZ
+                  << " is in the wrong location; relocating. (Expected " << chunkX << ", " << chunkZ << ", got "
+                  << chunk.x << ", " << chunk.z << ")\n";
+        NbtCompound relocated = levelCompound;
+        relocated.putInt("xPos", chunkX);
+        relocated.putInt("zPos", chunkZ);
+        Chunk relocatedChunk = loadChunkFromNbt(world, relocated);
+        relocatedChunk.fill();
+        return relocatedChunk;
+    }
+    chunk.fill();
+    return chunk;
 }
 
 Chunk AlphaChunkStorage::loadChunkFromNbt(World* world, const NbtCompound& nbt)
@@ -215,10 +222,7 @@ void AlphaChunkStorage::saveChunk(World* world, Chunk& chunk)
 
     try {
         const fs::path temp = dir_ / "tmp_chunk.dat";
-        NbtCompound root;
-        NbtCompound level;
-        root.put("Level", level);
-        saveChunkToNbt(chunk, world, level);
+        NbtCompound root = saveChunkToRootNbt(chunk, world);
 
         {
             std::ofstream output(temp, std::ios::binary | std::ios::trunc);
@@ -243,7 +247,16 @@ void AlphaChunkStorage::saveChunk(World* world, Chunk& chunk)
     }
 }
 
-NbtCompound AlphaChunkStorage::saveChunkToNbt(Chunk& chunk, World* world, NbtCompound nbt)
+NbtCompound AlphaChunkStorage::saveChunkToRootNbt(Chunk& chunk, World* world)
+{
+    NbtCompound root;
+    NbtCompound level;
+    root.put("Level", level);
+    saveChunkToNbt(chunk, world, level);
+    return root;
+}
+
+void AlphaChunkStorage::saveChunkToNbt(Chunk& chunk, World* world, NbtCompound& nbt)
 {
     if (world != nullptr) {
         world->checkSessionLock();
@@ -289,7 +302,6 @@ NbtCompound AlphaChunkStorage::saveChunkToNbt(Chunk& chunk, World* world, NbtCom
         tileEntities.storage().asList().push_back(tileNbt.storage());
     }
     nbt.put("TileEntities", tileEntities);
-    return nbt;
 }
 
 } // namespace net::minecraft

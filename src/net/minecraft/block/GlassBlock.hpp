@@ -6,7 +6,6 @@ namespace net::minecraft::block {
 
 class GlassBlock : public TranslucentBlock {
 public:
-    static constexpr bool kRegisters = true;
     static constexpr int kBlockId = 20;
 
 static void registerClass();

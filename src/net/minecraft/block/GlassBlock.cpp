@@ -23,6 +23,6 @@ void GlassBlock::registerSmeltingRecipes()
 
 
 
-namespace {static ::net::minecraft::registry::RegisterBlock<GlassBlock> autoReg;} // namespace
+MC_REGISTER_BLOCK(GlassBlock)
 } // namespace net::minecraft::block
 

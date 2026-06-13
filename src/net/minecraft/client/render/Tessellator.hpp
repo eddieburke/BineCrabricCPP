@@ -8,15 +8,14 @@
 
 namespace net::minecraft::client::render {
 
-// Tight, array-uploadable vertex. Positions stay double for pixel-exact parity
-// with the Java port; color/normal are packed so the whole struct streams to GL
-// as interleaved client arrays (one glDrawArrays per layer, no per-vertex calls).
+// GPU-uploadable interleaved vertex (~28 bytes). Public vertex() still accepts
+// double for call-site parity; values narrow to float at capture time.
 struct TessellatorVertex {
-    double x = 0.0;
-    double y = 0.0;
-    double z = 0.0;
-    double u = 0.0;
-    double v = 0.0;
+    float x = 0.0f;
+    float y = 0.0f;
+    float z = 0.0f;
+    float u = 0.0f;
+    float v = 0.0f;
     std::uint32_t color = 0xFFFFFFFFU; // bytes in memory: r,g,b,a
     std::int32_t normal = 0;           // bytes in memory: nx,ny,nz,pad
 };
@@ -92,11 +91,11 @@ private:
     bool colorDisabled_ = false;
     bool captureOnly_ = false;
     int mode_ = 7;
-    double u_ = 0.0;
-    double v_ = 0.0;
-    double xOffset_ = 0.0;
-    double yOffset_ = 0.0;
-    double zOffset_ = 0.0;
+    float u_ = 0.0f;
+    float v_ = 0.0f;
+    float xOffset_ = 0.0f;
+    float yOffset_ = 0.0f;
+    float zOffset_ = 0.0f;
     std::uint32_t currentColor_ = 0xFFFFFFFFU;
     std::int32_t currentNormal_ = 0;
     std::vector<TessellatorVertex> vertices_;

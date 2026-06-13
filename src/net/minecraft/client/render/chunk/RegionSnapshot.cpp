@@ -8,6 +8,7 @@
 #include "net/minecraft/world/dimension/Dimension.hpp"
 
 #include <algorithm>
+#include <cstring>
 
 namespace net::minecraft::client::render::chunk {
 
@@ -45,35 +46,59 @@ RegionSnapshot::RegionSnapshot(net::minecraft::World& world, int minBlockX, int 
     chunkDepth_ = maxChunkZ - chunkZ_ + 1;
     chunks_.resize(static_cast<std::size_t>(chunkWidth_ * chunkDepth_));
 
-    minY_ = std::clamp(minBlockY, 0, Chunk::height - 1);
+    // Force an even Y origin and span so the packed-nibble copies below stay
+    // byte-aligned with the source arrays (2 nibbles per byte along Y).
+    minY_ = std::clamp(minBlockY, 0, Chunk::height - 1) & ~1;
     const int maxY = std::clamp(maxBlockY, 0, Chunk::height - 1);
-    ySpan_ = maxY >= minY_ ? maxY - minY_ + 1 : 0;
-    const std::size_t copiedBlockCount = static_cast<std::size_t>(16 * 16 * ySpan_);
+    int span = maxY >= minY_ ? maxY - minY_ + 1 : 0;
+    span += span & 1;
+    ySpan_ = std::min(span, Chunk::height - minY_);
+    const int halfSpan = ySpan_ >> 1;
+
+    constexpr std::size_t kFullBlockCount = 16 * 16 * static_cast<std::size_t>(Chunk::height);
+    const std::size_t blockBytes = static_cast<std::size_t>(16 * 16 * ySpan_);
+    const std::size_t nibbleBytes = static_cast<std::size_t>(16 * 16 * halfSpan);
 
     for (int cx = chunkX_; cx <= maxChunkX; ++cx) {
         for (int cz = chunkZ_; cz <= maxChunkZ; ++cz) {
             const Chunk& chunk = world.getChunk(cx, cz);
             ChunkCopy& copy = chunks_[static_cast<std::size_t>((cx - chunkX_) + (cz - chunkZ_) * chunkWidth_)];
-            copy.blocks.assign(copiedBlockCount, 0);
-            copy.meta.assign(copiedBlockCount, 0);
-            copy.skyLight.assign(copiedBlockCount, 0);
-            copy.blockLight.assign(copiedBlockCount, 0);
-            for (int localX = 0; localX < 16; ++localX) {
-                for (int localZ = 0; localZ < 16; ++localZ) {
-                    for (int y = minY_; y < minY_ + ySpan_; ++y) {
-                        const std::size_t sourceIndex = fullBlockIndex(localX, y, localZ);
-                        const std::size_t destIndex = snapshotIndex(localX, y, localZ);
-                        if (sourceIndex < chunk.blocks.size()) {
-                            copy.blocks[destIndex] = chunk.blocks[sourceIndex];
-                        }
-                        copy.meta[destIndex] = static_cast<std::uint8_t>(nibble(chunk.meta.bytes, sourceIndex));
-                        copy.skyLight[destIndex] = static_cast<std::uint8_t>(nibble(chunk.skyLight.bytes, sourceIndex));
-                        copy.blockLight[destIndex] =
-                            static_cast<std::uint8_t>(nibble(chunk.blockLight.bytes, sourceIndex));
-                    }
-                }
-            }
             copy.present = true;
+
+            // Empty/blank chunks have no storage; leave the zeroed copies.
+            if (chunk.blocks.size() < kFullBlockCount || chunk.meta.bytes.size() < kFullBlockCount / 2
+                || chunk.skyLight.bytes.size() < kFullBlockCount / 2
+                || chunk.blockLight.bytes.size() < kFullBlockCount / 2) {
+                copy.blocks.assign(blockBytes, 0);
+                copy.meta.assign(nibbleBytes, 0);
+                copy.skyLight.assign(nibbleBytes, 0);
+                copy.blockLight.assign(nibbleBytes, 0);
+                continue;
+            }
+
+            copy.blocks.resize(blockBytes);
+            copy.meta.resize(nibbleBytes);
+            copy.skyLight.resize(nibbleBytes);
+            copy.blockLight.resize(nibbleBytes);
+
+            // Both source and destination keep Y contiguous per (x, z) column,
+            // so each column is three nibble memcpys and one block memcpy.
+            for (int column = 0; column < 16 * 16; ++column) {
+                const int localX = column >> 4;
+                const int localZ = column & 0xF;
+                const std::size_t srcBlockBase = static_cast<std::size_t>((localX << 11) | (localZ << 7) | minY_);
+                const std::size_t srcNibbleBase = srcBlockBase >> 1;
+                const std::size_t dstColumn = static_cast<std::size_t>((localX << 4) | localZ);
+
+                std::memcpy(copy.blocks.data() + dstColumn * static_cast<std::size_t>(ySpan_),
+                    chunk.blocks.data() + srcBlockBase, static_cast<std::size_t>(ySpan_));
+                std::memcpy(copy.meta.data() + dstColumn * static_cast<std::size_t>(halfSpan),
+                    chunk.meta.bytes.data() + srcNibbleBase, static_cast<std::size_t>(halfSpan));
+                std::memcpy(copy.skyLight.data() + dstColumn * static_cast<std::size_t>(halfSpan),
+                    chunk.skyLight.bytes.data() + srcNibbleBase, static_cast<std::size_t>(halfSpan));
+                std::memcpy(copy.blockLight.data() + dstColumn * static_cast<std::size_t>(halfSpan),
+                    chunk.blockLight.bytes.data() + srcNibbleBase, static_cast<std::size_t>(halfSpan));
+            }
         }
     }
 
@@ -88,6 +113,78 @@ RegionSnapshot::RegionSnapshot(net::minecraft::World& world, int minBlockX, int 
             lightLevelToLuminance_[static_cast<std::size_t>(level)] = Dimension::luminanceForLightLevel(level);
         }
     }
+}
+
+RegionSnapshot::RegionSnapshot(std::span<const SourceChunk> sourceChunks, int ambientDarkness,
+    const std::array<float, 16>& lightLevelToLuminance, std::unique_ptr<net::minecraft::BiomeSource> biomeSource,
+    int minBlockX, int minBlockY, int minBlockZ, int maxBlockX, int maxBlockY, int maxBlockZ)
+{
+    chunkX_ = minBlockX >> 4;
+    chunkZ_ = minBlockZ >> 4;
+    const int maxChunkX = maxBlockX >> 4;
+    const int maxChunkZ = maxBlockZ >> 4;
+    chunkWidth_ = maxChunkX - chunkX_ + 1;
+    chunkDepth_ = maxChunkZ - chunkZ_ + 1;
+    chunks_.resize(static_cast<std::size_t>(chunkWidth_ * chunkDepth_));
+
+    minY_ = std::clamp(minBlockY, 0, Chunk::height - 1) & ~1;
+    const int maxY = std::clamp(maxBlockY, 0, Chunk::height - 1);
+    int span = maxY >= minY_ ? maxY - minY_ + 1 : 0;
+    span += span & 1;
+    ySpan_ = std::min(span, Chunk::height - minY_);
+    const int halfSpan = ySpan_ >> 1;
+
+    constexpr std::size_t kFullBlockCount = 16 * 16 * static_cast<std::size_t>(Chunk::height);
+    const std::size_t blockBytes = static_cast<std::size_t>(16 * 16 * ySpan_);
+    const std::size_t nibbleBytes = static_cast<std::size_t>(16 * 16 * halfSpan);
+
+    for (const SourceChunk& source : sourceChunks) {
+        if (source.chunk == nullptr || source.chunkX < chunkX_ || source.chunkZ < chunkZ_
+            || source.chunkX > maxChunkX || source.chunkZ > maxChunkZ) {
+            continue;
+        }
+
+        const Chunk& chunk = *source.chunk;
+        ChunkCopy& copy = chunks_[static_cast<std::size_t>(
+            (source.chunkX - chunkX_) + (source.chunkZ - chunkZ_) * chunkWidth_)];
+        copy.present = true;
+
+        if (chunk.blocks.size() < kFullBlockCount || chunk.meta.bytes.size() < kFullBlockCount / 2
+            || chunk.skyLight.bytes.size() < kFullBlockCount / 2
+            || chunk.blockLight.bytes.size() < kFullBlockCount / 2) {
+            copy.blocks.assign(blockBytes, 0);
+            copy.meta.assign(nibbleBytes, 0);
+            copy.skyLight.assign(nibbleBytes, 0);
+            copy.blockLight.assign(nibbleBytes, 0);
+            continue;
+        }
+
+        copy.blocks.resize(blockBytes);
+        copy.meta.resize(nibbleBytes);
+        copy.skyLight.resize(nibbleBytes);
+        copy.blockLight.resize(nibbleBytes);
+
+        for (int column = 0; column < 16 * 16; ++column) {
+            const int localX = column >> 4;
+            const int localZ = column & 0xF;
+            const std::size_t srcBlockBase = static_cast<std::size_t>((localX << 11) | (localZ << 7) | minY_);
+            const std::size_t srcNibbleBase = srcBlockBase >> 1;
+            const std::size_t dstColumn = static_cast<std::size_t>((localX << 4) | localZ);
+
+            std::memcpy(copy.blocks.data() + dstColumn * static_cast<std::size_t>(ySpan_),
+                chunk.blocks.data() + srcBlockBase, static_cast<std::size_t>(ySpan_));
+            std::memcpy(copy.meta.data() + dstColumn * static_cast<std::size_t>(halfSpan),
+                chunk.meta.bytes.data() + srcNibbleBase, static_cast<std::size_t>(halfSpan));
+            std::memcpy(copy.skyLight.data() + dstColumn * static_cast<std::size_t>(halfSpan),
+                chunk.skyLight.bytes.data() + srcNibbleBase, static_cast<std::size_t>(halfSpan));
+            std::memcpy(copy.blockLight.data() + dstColumn * static_cast<std::size_t>(halfSpan),
+                chunk.blockLight.bytes.data() + srcNibbleBase, static_cast<std::size_t>(halfSpan));
+        }
+    }
+
+    ambientDarkness_ = ambientDarkness;
+    lightLevelToLuminance_ = lightLevelToLuminance;
+    biomeSource_ = std::move(biomeSource);
 }
 
 int RegionSnapshot::getBlockId(int x, int y, int z) const
@@ -111,7 +208,7 @@ int RegionSnapshot::getBlockMeta(int x, int y, int z) const
     if (chunk == nullptr || !containsY(y)) {
         return 0;
     }
-    return static_cast<int>(chunk->meta[snapshotIndex(x & 0xF, y, z & 0xF)] & 0xFU);
+    return nibbleAt(chunk->meta, x & 0xF, y, z & 0xF);
 }
 
 float RegionSnapshot::getNaturalBrightness(int x, int y, int z, int blockLight) const
@@ -155,12 +252,11 @@ int RegionSnapshot::getRawBrightness(int x, int y, int z, bool useNeighborLight)
 
     // Mirrors Chunk::getLight(localX, y, localZ, ambientDarkness), with the
     // skylight detection recorded per-snapshot instead of a global static.
-    const std::size_t index = snapshotIndex(x & 0xF, y, z & 0xF);
-    int sky = static_cast<int>(chunk->skyLight[index] & 0xFU);
+    int sky = nibbleAt(chunk->skyLight, x & 0xF, y, z & 0xF);
     if (sky > 0) {
         sawSkyLight_ = true;
     }
-    const int block = static_cast<int>(chunk->blockLight[index] & 0xFU);
+    const int block = nibbleAt(chunk->blockLight, x & 0xF, y, z & 0xF);
     if (block > (sky -= ambientDarkness_)) {
         sky = block;
     }

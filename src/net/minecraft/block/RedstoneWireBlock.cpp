@@ -363,6 +363,6 @@ void RedstoneWireBlock::registerClass()
 
 
 
-namespace {static ::net::minecraft::registry::RegisterBlock<RedstoneWireBlock> autoReg;} // namespace
+MC_REGISTER_BLOCK(RedstoneWireBlock)
 } // namespace net::minecraft::block
 

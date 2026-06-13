@@ -11,7 +11,6 @@ namespace net::minecraft::entity::projectile {
 
 class ArrowEntity : public Entity {
 public:
-    static constexpr bool kRegisters = true;
     static constexpr int kEntityId = 10;
 
     static constexpr const char* kEntityName = "Arrow";

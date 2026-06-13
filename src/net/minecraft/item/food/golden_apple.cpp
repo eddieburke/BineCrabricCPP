@@ -26,5 +26,5 @@ void GoldenAppleItem::registerRecipes(recipe::CraftingRecipeManager& recipeManag
         {std::string("###"), std::string("#X#"), std::string("###"), '#', Block::GOLD_BLOCK, 'X', Item::byRawId(4)});
 }
 
-static registry::RegisterItem<GoldenAppleItem> s_itemReg;
+MC_REGISTER_ITEM(GoldenAppleItem)
 } // namespace net::minecraft::item

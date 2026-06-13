@@ -137,9 +137,21 @@ private:
         float pitch,
         int steps);
 
+    // Move the live ClientWorld out of ownedWorld_ without freeing it yet. Packet
+    // handlers run inside ClientWorld::tick() (via networkHandler_->tick()), so
+    // destroying the world here would free the object whose tick() is on the stack.
+    // Retired worlds are released at the top of tick(), once that stack has unwound.
+    void retireOwnedWorld()
+    {
+        if (ownedWorld_ != nullptr) {
+            retiredWorlds_.push_back(std::move(ownedWorld_));
+        }
+    }
+
     Connection* connection_ = nullptr;
     ClientPacketSender packetSender_;
     std::unique_ptr<ClientWorld> ownedWorld_;
+    std::vector<std::unique_ptr<ClientWorld>> retiredWorlds_;
     std::unique_ptr<SimpleInventory> openScreenInventory_;
     std::unique_ptr<block::entity::FurnaceBlockEntity> openScreenFurnace_;
     std::unique_ptr<block::entity::DispenserBlockEntity> openScreenDispenser_;

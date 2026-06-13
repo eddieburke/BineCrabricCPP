@@ -1,15 +1,40 @@
 #include "net/minecraft/client/core/WorldSession.hpp"
 
 #include "net/minecraft/client/Minecraft.hpp"
+#include "net/minecraft/client/core/ClientNetworkBridge.hpp"
 #include "net/minecraft/entity/player/ClientPlayerEntity.hpp"
 #include "net/minecraft/stat/PlayerStats.hpp"
 #include "net/minecraft/util/math/MathHelper.hpp"
-#include "net/minecraft/world/chunk/LegacyChunkCache.hpp"
 #include "net/minecraft/world/storage/AlphaWorldStorage.hpp"
 #include "net/minecraft/world/storage/WorldStorageSource.hpp"
 #include "net/minecraft/world/World.hpp"
 
 namespace net::minecraft::client::core {
+
+// Out-of-line: ClientNetworkBridge is incomplete in the header (forward-declared), so the
+// destructor that tears down networkBridge_/retiredNetworkBridges_ must be emitted here.
+WorldSession::~WorldSession() = default;
+
+void WorldSession::adoptNetworkBridge(std::unique_ptr<ClientNetworkBridge> bridge)
+{
+    // Replacing an existing connection (reconnect / dimension reset): park the old bridge for
+    // deferred teardown rather than freeing it inline.
+    retireNetworkBridge();
+    networkBridge_ = std::move(bridge);
+}
+
+void WorldSession::retireNetworkBridge()
+{
+    if (networkBridge_ != nullptr) {
+        retiredNetworkBridges_.push_back(std::move(networkBridge_));
+    }
+}
+
+void WorldSession::flushRetiredNetwork()
+{
+    // Safe point (run loop top): the handler->tick() that retired these has fully unwound.
+    retiredNetworkBridges_.clear();
+}
 
 void WorldSession::setWorld(Minecraft& client, World* worldIn)
 {
@@ -87,13 +112,9 @@ void WorldSession::setWorld(Minecraft& client, World* worldIn, const std::string
                     }
                 }
             }
-            if (ChunkSource* chunkSource = worldIn->getChunkSource()) {
-                if (auto* legacyCache = dynamic_cast<LegacyChunkCache*>(chunkSource)) {
-                    const int chunkX = MathHelper::floor(client.player->x) >> 4;
-                    const int chunkZ = MathHelper::floor(client.player->z) >> 4;
-                    legacyCache->setSpawnPoint(chunkX, chunkZ);
-                }
-            }
+            worldIn->setChunkCacheCenterFromBlockPos(
+                MathHelper::floor(client.player->x),
+                MathHelper::floor(client.player->z));
             client.camera = client.player;
         }
         if (client.worldRenderer != nullptr) {
@@ -138,22 +159,14 @@ void WorldSession::prepareWorld(Minecraft& client, const std::string& worldName)
         center.x = MathHelper::floor(client.player->x);
         center.z = MathHelper::floor(client.player->z);
     }
-    if (ChunkSource* chunkSource = client.world->getChunkSource()) {
-        if (auto* legacyCache = dynamic_cast<LegacyChunkCache*>(chunkSource)) {
-            legacyCache->setSpawnPoint(center.x >> 4, center.z >> 4);
-        }
-    }
+    client.world->setChunkCacheCenterFromBlockPos(center.x, center.z);
     for (int dx = -radius; dx <= radius; dx += 16) {
         for (int dz = -radius; dz <= radius; dz += 16) {
             client.progressRenderer.progressStagePercentage(progress++ * 100 / progressTotal);
             (void)client.world->getBlockId(center.x + dx, 64, center.z + dz);
         }
     }
-    if (ChunkSource* chunkSource = client.world->getChunkSource()) {
-        if (auto* legacyCache = dynamic_cast<LegacyChunkCache*>(chunkSource)) {
-            legacyCache->populateReadyChunks();
-        }
-    }
+    client.world->populateChunkCacheReadyChunks();
     // Lighting runs on its own thread; wait for the initial flood to settle.
     client.world->finishLightingUpdates();
     client.progressRenderer.progressStage("Simulating world for a bit");

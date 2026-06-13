@@ -104,6 +104,6 @@ void JukeboxBlock::registerRecipes(recipe::CraftingRecipeManager& recipeManager)
 
 
 
-namespace {static ::net::minecraft::registry::RegisterBlock<JukeboxBlock> autoReg;} // namespace
+MC_REGISTER_BLOCK(JukeboxBlock)
 } // namespace net::minecraft::block
 

@@ -596,7 +596,7 @@ void RailBlock::registerRecipes(recipe::CraftingRecipeManager& recipeManager)
 
 namespace {
 
-static ::net::minecraft::registry::RegisterBlock<RailBlock> autoReg;
 } // namespace
+MC_REGISTER_BLOCK(RailBlock)
 } // namespace net::minecraft::block
 

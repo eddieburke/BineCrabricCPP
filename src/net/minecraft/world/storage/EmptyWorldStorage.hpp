@@ -58,7 +58,8 @@ public:
     void forceSave() override {}
     [[nodiscard]] fs::path getWorldPropertiesFile(const std::string& name) const override
     {
-        return fs::path(name);
+        (void)name;
+        return {};
     }
 
 };

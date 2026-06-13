@@ -24,5 +24,5 @@ void WheatItem::registerRecipes(recipe::CraftingRecipeManager& recipeManager)
     (void)recipeManager;
 }
 
-static registry::RegisterItem<WheatItem> s_itemReg;
+MC_REGISTER_ITEM(WheatItem)
 } // namespace net::minecraft::item

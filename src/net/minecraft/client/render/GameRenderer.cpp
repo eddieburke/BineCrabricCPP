@@ -22,12 +22,14 @@
 #include "net/minecraft/client/render/platform/GlState.hpp"
 #include "net/minecraft/client/render/platform/GuiGlState.hpp"
 #include "net/minecraft/client/render/platform/StereoRendering.hpp"
+#include "net/minecraft/client/render/ViewDistance.hpp"
 #include "net/minecraft/client/render/platform/Lighting.hpp"
 #include "net/minecraft/client/util/UiScale.hpp"
 #include "net/minecraft/entity/Entity.hpp"
 #include "net/minecraft/entity/LivingEntity.hpp"
 #include "net/minecraft/entity/player/PlayerEntity.hpp"
 #include "net/minecraft/item/ItemStack.hpp"
+#include "net/minecraft/mod/GameHooks.hpp"
 #include "net/minecraft/util/hit/HitResult.hpp"
 #include "net/minecraft/util/math/MathHelper.hpp"
 #include "net/minecraft/world/World.hpp"
@@ -313,7 +315,7 @@ float GameRenderer::getFov(float tickDelta) const
     if (client == nullptr || client->camera == nullptr) {
         return 70.0f;
     }
-    const auto* living = dynamic_cast<const LivingEntity*>(client->camera);
+    auto* living = dynamic_cast<LivingEntity*>(client->camera);
     if (living == nullptr) {
         return 70.0f;
     }
@@ -327,7 +329,9 @@ float GameRenderer::getFov(float tickDelta) const
         fov /= (1.0f - 500.0f / (death + 500.0f)) * 2.0f + 1.0f;
     }
     fov = option::adjustFieldOfView(fov, option::resolve(client->options));
-    return fov + prevCameraRoll + (cameraRoll - prevCameraRoll) * tickDelta;
+    mod::FovEvent event {living, tickDelta, fov};
+    mod::hooks().publish(event);
+    return event.fov + prevCameraRoll + (cameraRoll - prevCameraRoll) * tickDelta;
 }
 
 void GameRenderer::applyDamageTiltEffect(float tickDelta)
@@ -487,7 +491,7 @@ void GameRenderer::renderWorld(float tickDelta, int eye)
         return;
     }
 
-    viewDistance = net::minecraft::client::option::resolve(client->options).viewDistanceBlocks;
+    viewDistance = ViewDistance::fromOptions(client->options);
     const int viewportWidth =
         util::uiFramebufferWidth(client->options, client->displayWidth);
     const float aspect =
@@ -503,9 +507,11 @@ void GameRenderer::renderWorld(float tickDelta, int eye)
     if (zoom != 1.0) {
         gl::GL11::glTranslatef(static_cast<float>(zoomX), static_cast<float>(-zoomY), 0.0f);
         gl::GL11::glScaled(zoom, zoom, 1.0);
-        gluPerspectiveFov(getFov(tickDelta), aspect, 0.05f, viewDistance * 2.0f);
+        gluPerspectiveFov(getFov(tickDelta), aspect, viewDistance.projectionNearClipBlocks(),
+            viewDistance.projectionFarClipBlocks());
     } else {
-        gluPerspectiveFov(getFov(tickDelta), aspect, 0.05f, viewDistance * 2.0f);
+        gluPerspectiveFov(getFov(tickDelta), aspect, viewDistance.projectionNearClipBlocks(),
+            viewDistance.projectionFarClipBlocks());
     }
 
     gl::GL11::glMatrixMode(gl::GL11::GL_MODELVIEW);
@@ -560,6 +566,14 @@ void GameRenderer::renderFirstPersonHand(float tickDelta, int eye)
     }
 
     auto* living = dynamic_cast<LivingEntity*>(client->camera);
+    if (living != nullptr) {
+        mod::FirstPersonHandRenderEvent event {living, tickDelta, eye, false};
+        mod::hooks().publish(event);
+        if (event.canceled) {
+            gl::GL11::glPopMatrix();
+            return;
+        }
+    }
     if (living != nullptr && !client->options.thirdPerson && !living->isSleeping() && !client->options.hideHud) {
         heldItemRenderer->render(tickDelta);
     }

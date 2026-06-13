@@ -47,6 +47,6 @@ void FlintAndSteel::registerRecipes(recipe::CraftingRecipeManager& recipeManager
 
 
 
-namespace {static ::net::minecraft::registry::RegisterItem<FlintAndSteel> autoReg; } // namespace
 
+MC_REGISTER_ITEM(FlintAndSteel)
 } // namespace net::minecraft::item

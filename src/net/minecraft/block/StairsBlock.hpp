@@ -12,7 +12,6 @@ namespace net::minecraft::block {
 
 class StairsBlock : public Block {
 public:
-    static constexpr bool kRegisters = true;
     static constexpr int kBlockId = 67;
 static void registerRecipes(recipe::CraftingRecipeManager& recipeManager);
 public:

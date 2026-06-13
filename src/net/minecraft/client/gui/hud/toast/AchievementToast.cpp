@@ -126,8 +126,8 @@ void AchievementToast::renderOverlay()
                 render::platform::Lighting::turnOn();
                 gl::GL11::glPopMatrix();
                 gl::GL11::glDisable(gl::GL11::GL_LIGHTING);
-                gl::GL11::glEnable(32826);
-                gl::GL11::glEnable(2903);
+                gl::GL11::glEnable(gl::GL11::GL_RESCALE_NORMAL);
+                gl::GL11::glEnable(gl::GL11::GL_COLOR_MATERIAL);
                 gl::GL11::glEnable(gl::GL11::GL_LIGHTING);
                 itemRenderer.renderGuiItem(
                     *client_->textRenderer,

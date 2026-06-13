@@ -5,7 +5,7 @@
 
 namespace net::minecraft::block {
 
-// Registered in SimpleBlocks.cpp.
+// Registered in Block.cpp.
 class SoulSandBlock : public Block {
 public:
     SoulSandBlock(int id, int textureId) : Block(id, textureId, material::Material::SAND) {}

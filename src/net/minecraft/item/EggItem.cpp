@@ -43,6 +43,6 @@ void EggItem::registerClass()
 
 
 
-namespace {static ::net::minecraft::registry::RegisterItem<EggItem> autoReg; } // namespace
 
+MC_REGISTER_ITEM(EggItem)
 } // namespace net::minecraft::item

@@ -8,6 +8,7 @@
 #include "net/minecraft/world/World.hpp"
 #include "net/minecraft/world/dimension/Dimension.hpp"
 
+#include <algorithm>
 #include <cmath>
 #include <cstring>
 
@@ -42,8 +43,7 @@ void FogRenderer::updateClearAndFogColors(const AtmosphereContext& ctx, float ti
 
     net::minecraft::World* world = ctx.world;
 
-    float blend = 1.0f / static_cast<float>(4 - ctx.options.viewDistance);
-    blend = 1.0f - static_cast<float>(std::pow(static_cast<double>(blend), 0.25));
+    const float blend = ctx.viewDistance.fogColorBlendWeight();
 
     const Vec3d sky = world->getSkyColor(ctx.camera, tickDelta);
     const float skyR = static_cast<float>(sky.x);
@@ -194,7 +194,8 @@ void FogRenderer::pushCustomFog(const AtmosphereContext& ctx, FogDistanceProfile
         applyLinearDistances(ctx, resolved.fogStart, resolved.fogEnd, distanceProfile);
     } else {
         gl::GL11::glFogi(gl::GL11::GL_FOG_MODE, kFogModeExp);
-        gl::GL11::glFogf(gl::GL11::GL_FOG_DENSITY, resolved.fogDensity);
+        gl::GL11::glFogf(gl::GL11::GL_FOG_DENSITY,
+            resolved.fogDensity / std::max(1.0f, ctx.viewDistance.renderScale()));
     }
     pushNvFogDistance(ctx);
     pushNetherStartOverride(ctx);
@@ -213,10 +214,10 @@ void FogRenderer::applyLinearDistances(const AtmosphereContext& ctx, float start
     gl::GL11::glFogi(gl::GL11::GL_FOG_MODE, gl::GL11::GL_LINEAR);
     if (distanceProfile == FogDistanceProfile::Sky) {
         gl::GL11::glFogf(gl::GL11::GL_FOG_START, 0.0f);
-        gl::GL11::glFogf(gl::GL11::GL_FOG_END, ctx.viewDistanceBlocks * 0.8f);
+        gl::GL11::glFogf(gl::GL11::GL_FOG_END, ctx.viewDistance.skyFogEndBlocks());
     } else {
-        gl::GL11::glFogf(gl::GL11::GL_FOG_START, ctx.viewDistanceBlocks * startFactor);
-        gl::GL11::glFogf(gl::GL11::GL_FOG_END, ctx.viewDistanceBlocks * endFactor);
+        gl::GL11::glFogf(gl::GL11::GL_FOG_START, ctx.viewDistance.worldFogStartBlocks(startFactor));
+        gl::GL11::glFogf(gl::GL11::GL_FOG_END, ctx.viewDistance.worldFogEndBlocks(endFactor));
     }
 }
 

@@ -7,7 +7,6 @@ namespace net::minecraft::block {
 
 class TntBlock : public Block {
 public:
-    static constexpr bool kRegisters = true;
     static constexpr int kBlockId = 46;
 static void registerRecipes(recipe::CraftingRecipeManager& recipeManager);
 public:

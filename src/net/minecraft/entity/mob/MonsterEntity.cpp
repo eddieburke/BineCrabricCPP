@@ -68,6 +68,6 @@ float MonsterEntity::getPathfindingFavor(int x, int y, int z) const
 }
 
 
-static ::net::minecraft::registry::RegisterEntity<MonsterEntity> autoReg;
 
+MC_REGISTER_ENTITY(MonsterEntity)
 } // namespace net::minecraft::entity::mob

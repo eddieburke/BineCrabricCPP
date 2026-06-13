@@ -774,6 +774,6 @@ float LivingEntity::lerpRotation(float from, float to, float maxChange) const
     return from + delta;
 }
 
-static ::net::minecraft::registry::RegisterEntity<LivingEntity> autoReg;
 
+MC_REGISTER_ENTITY(LivingEntity)
 } // namespace net::minecraft::entity

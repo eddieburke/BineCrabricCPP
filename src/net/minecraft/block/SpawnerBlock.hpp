@@ -5,7 +5,7 @@
 
 namespace net::minecraft::block {
 
-// Registered in SimpleBlocks.cpp.
+// Registered in Block.cpp.
 class SpawnerBlock : public BlockWithEntity {
 public:
     SpawnerBlock(int id, int textureId) : BlockWithEntity(id, textureId, material::Material::STONE) {}

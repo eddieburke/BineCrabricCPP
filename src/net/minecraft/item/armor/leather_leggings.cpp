@@ -32,5 +32,5 @@ void LeatherLeggingsItem::registerRecipes(recipe::CraftingRecipeManager& recipeM
         {std::string("XXX"), std::string("X X"), std::string("X X"), 'X', Item::byRawId(78)});
 }
 
-static registry::RegisterItem<LeatherLeggingsItem> s_itemReg;
+MC_REGISTER_ITEM(LeatherLeggingsItem)
 } // namespace net::minecraft::item

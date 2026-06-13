@@ -1,23 +1,28 @@
 #include "seedfinder/gui/SeedfinderScreen.hpp"
 
+#include "msauth/FilePicker.hpp"
 #include "net/minecraft/client/Minecraft.hpp"
 #include "net/minecraft/client/font/TextRenderer.hpp"
 #include "net/minecraft/client/gui/layout/ScreenLayout.hpp"
 #include "net/minecraft/client/gui/screen/world/CreateWorldScreen.hpp"
 #include "net/minecraft/client/gui/widget/EntryListWidget.hpp"
+#include "net/minecraft/client/gui/widget/TextSizedActionButtonWidget.hpp"
 #include "seedfinder/gui/SeedSpecEditor.hpp"
 #include "net/minecraft/client/render/Tessellator.hpp"
 #include "net/minecraft/client/resource/language/I18n.hpp"
 #include "seedfinder/config/ConfigSchema.hpp"
+#include "seedfinder/config/JsonConfig.hpp"
 #include "seedfinder/engine/BiomeCatalog.hpp"
 #include "seedfinder/engine/Scorer.hpp"
 #include "seedfinder/engine/SearchEngine.hpp"
 
 #include <algorithm>
 #include <array>
+#include <filesystem>
 #include <sstream>
 #include <stdexcept>
 #include <string>
+#include <thread>
 #include <utility>
 
 namespace net::minecraft::client::gui::screen::world {
@@ -204,6 +209,9 @@ SeedfinderScreen::SeedfinderScreen(
 SeedfinderScreen::~SeedfinderScreen()
 {
     stopSearch();
+    if (importThread_.joinable()) {
+        importThread_.join();
+    }
     if (biomeMap_ != nullptr && minecraft() != nullptr) {
         biomeMap_->clear(*minecraft());
     }
@@ -351,6 +359,7 @@ void SeedfinderScreen::layoutForm(const FieldTexts* restore)
     depthButton_ = nullptr;
     spawnBiomeButton_ = nullptr;
     specButton_ = nullptr;
+    importJsonButton_ = nullptr;
 
     if (textRenderer() == nullptr) {
         formBottom_ = 150;
@@ -389,23 +398,46 @@ void SeedfinderScreen::layoutForm(const FieldTexts* restore)
     make(rangeEndField_, "End", false, f1, formTop + 0 * stride, pick("100000", saved.rangeEnd));
     make(scanRadiusField_, "Radius", false, f0, formTop + 1 * stride, pick("4", saved.scanRadius));
     make(minScoreField_, "Min Score", true, f1, formTop + 1 * stride, pick("0", saved.minScore));
-    make(threadsField_, "Threads", false, f0, formTop + 2 * stride, pick("1", saved.threads));
+    const unsigned hwThreads = std::thread::hardware_concurrency();
+    const std::string defaultThreads = std::to_string(hwThreads == 0 ? 1u : hwThreads);
+    make(threadsField_, "Threads", false, f0, formTop + 2 * stride, pick(defaultThreads.c_str(), saved.threads));
     make(topKField_, "Keep Top", false, f1, formTop + 2 * stride, pick("10", saved.topK));
     make(uniqueBiomeMinField_, "Min Biomes", false, f0, formTop + 3 * stride, pick("", saved.uniqueBiomeMin));
     make(minBiomeCoverageField_, "Min Cover %", true, f1, formTop + 3 * stride, pick("", saved.minBiomeCoverage));
     make(minBiomeRadiusField_, "Min Blob R", false, f0, formTop + 4 * stride, pick("", saved.minBiomeRadius));
     make(minBiomeCompactnessField_, "Min Blob %", true, f1, formTop + 4 * stride, pick("", saved.minBiomeCompactness));
 
-    spawnBiomeButton_ = &addActionButton(c0, formTop + 5 * stride, colW, 20, "Spawn: Any",
+    font::TextRenderer& tr = *textRenderer();
+    auto textButtonWidth = [&](const std::string& label, int maxWidth) {
+        return std::min(maxWidth, widget::TextSizedActionButtonWidget::measureWidth(tr, label));
+    };
+    auto addTextButton = [&](int x, int y, int maxWidth, std::string label, std::function<void()> onClick) {
+        const int buttonWidth = textButtonWidth(label, maxWidth);
+        return &addButton<widget::TextSizedActionButtonWidget>(
+            x, y, buttonWidth, layout::kDefaultButtonHeight, std::move(label), std::move(onClick));
+    };
+
+    const std::string spawnLabel =
+        spawnBiomeIndex_ >= 0 && spawnBiomeIndex_ < static_cast<int>(spawnPickerBiomes().size())
+            ? "Spawn: " + prettifyName(spawnPickerBiomes()[static_cast<std::size_t>(spawnBiomeIndex_)])
+            : "Spawn: Any";
+    const std::string depthText = depthLabel(probeDepth_);
+    spawnBiomeButton_ = addTextButton(c0, formTop + 5 * stride, colW, spawnLabel,
         [this] { cycleSpawnBiome(1); });
-    depthButton_ = &addActionButton(c1, formTop + 5 * stride, colW, 20, depthLabel(probeDepth_),
+    depthButton_ = addTextButton(c1, formTop + 5 * stride, colW, depthText,
         [this] {
             probeDepth_ = static_cast<std::uint8_t>((probeDepth_ + 1) % 3);
             if (depthButton_ != nullptr) {
                 depthButton_->text = depthLabel(probeDepth_);
+                depthButton_->width = widget::TextSizedActionButtonWidget::measureWidth(
+                    *textRenderer(), depthButton_->text);
             }
         });
-    specButton_ = &addActionButton(c0, formTop + 6 * stride, panelW_, 20, "Edit rules...",
+    constexpr const char* kImportLabel = "Import JSON...";
+    constexpr const char* kSpecLabel = "Edit rules...";
+    importJsonButton_ = addTextButton(c0, formTop + 6 * stride, colW, kImportLabel,
+        [this] { tryImportJsonConfig(); });
+    specButton_ = addTextButton(c1, formTop + 6 * stride, colW, kSpecLabel,
         [this] { openSpecEditor(); });
 
     formBottom_ = formTop + 7 * stride + 4;
@@ -416,11 +448,19 @@ void SeedfinderScreen::layoutForm(const FieldTexts* restore)
         formBottom_ = std::max(formTop + stride, resultTop_ - 6);
     }
 
-    searchButton_ = &addActionButton(layout::listFooterLeftX(width()), layout::listFooterRow1Y(height()), 90, 20,
-        "Search",
-        [this] { startSearch(); });
-    stopButton_ = &addActionButton(layout::listFooterLeftX(width()) + 96, layout::listFooterRow1Y(height()), 90, 20,
-        "Stop",
+    constexpr int kFooterGap = 4;
+    const int footerY = layout::listFooterRow1Y(height());
+    const std::string doneLabel = resource::language::I18n::getTranslation("gui.done");
+    const int searchW = widget::TextSizedActionButtonWidget::measureWidth(tr, "Search");
+    const int stopW = widget::TextSizedActionButtonWidget::measureWidth(tr, "Stop");
+    const int useSeedW = widget::TextSizedActionButtonWidget::measureWidth(tr, "Use Seed");
+    const int doneW = widget::TextSizedActionButtonWidget::measureWidth(tr, doneLabel);
+    const int footerTotalW = searchW + kFooterGap + stopW + kFooterGap + useSeedW + kFooterGap + doneW;
+    int footerX = std::max(4, (width() - footerTotalW) / 2);
+
+    searchButton_ = addTextButton(footerX, footerY, width(), "Search", [this] { startSearch(); });
+    footerX += searchW + kFooterGap;
+    stopButton_ = addTextButton(footerX, footerY, width(), "Stop",
         [this] {
             stopSearch();
             mergePendingResults();
@@ -438,12 +478,10 @@ void SeedfinderScreen::layoutForm(const FieldTexts* restore)
                 specButton_->active = true;
             }
         });
-    useSeedButton_ = &addActionButton(layout::listFooterRightX(width()), layout::listFooterRow1Y(height()), 90, 20,
-        "Use Seed",
-        [this] { applySelectedSeed(); });
-    addActionButton(width() - 110, layout::listFooterRow1Y(height()), 100, 20,
-        resource::language::I18n::getTranslation("gui.done"),
-        [this] { returnToCreateWorld(returnSeedText_); });
+    footerX += stopW + kFooterGap;
+    useSeedButton_ = addTextButton(footerX, footerY, width(), "Use Seed", [this] { applySelectedSeed(); });
+    footerX += useSeedW + kFooterGap;
+    addTextButton(footerX, footerY, width(), doneLabel, [this] { returnToCreateWorld(returnSeedText_); });
 }
 
 void SeedfinderScreen::layoutResultList()
@@ -518,6 +556,9 @@ void SeedfinderScreen::init()
         if (specButton_ != nullptr) {
             specButton_->active = fieldsEnabled && !specEditorOpen_;
         }
+        if (importJsonButton_ != nullptr) {
+            importJsonButton_->active = fieldsEnabled && !importRunning_.load();
+        }
     }
 }
 
@@ -531,17 +572,19 @@ void SeedfinderScreen::cycleSpawnBiome(int dir)
 
 void SeedfinderScreen::updateSpawnBiomeButton()
 {
-    if (spawnBiomeButton_ == nullptr) {
+    if (spawnBiomeButton_ == nullptr || textRenderer() == nullptr) {
         return;
     }
     const std::vector<std::string>& spawnBiomes = spawnPickerBiomes();
     const std::string& name = spawnBiomes[static_cast<std::size_t>(spawnBiomeIndex_)];
     spawnBiomeButton_->text = "Spawn: " + (spawnBiomeIndex_ == 0 ? std::string("Any") : prettifyName(name));
+    spawnBiomeButton_->width =
+        widget::TextSizedActionButtonWidget::measureWidth(*textRenderer(), spawnBiomeButton_->text);
 }
 
 void SeedfinderScreen::updateSpecButton()
 {
-    if (specButton_ == nullptr) {
+    if (specButton_ == nullptr || textRenderer() == nullptr) {
         return;
     }
     if (specNodes_.empty()) {
@@ -549,6 +592,7 @@ void SeedfinderScreen::updateSpecButton()
     } else {
         specButton_->text = std::to_string(specNodes_.size()) + " rule(s) - edit";
     }
+    specButton_->width = widget::TextSizedActionButtonWidget::measureWidth(*textRenderer(), specButton_->text);
 }
 
 void SeedfinderScreen::openSpecEditor()
@@ -572,6 +616,128 @@ void SeedfinderScreen::closeSpecEditor(bool apply)
     specEditorOpen_ = false;
 }
 
+void SeedfinderScreen::applySearchConfig(const seedfinder::config::SearchConfig& cfg)
+{
+    auto setField = [](std::unique_ptr<widget::TextFieldWidget>& field, const std::string& text) {
+        if (field != nullptr) {
+            field->setText(text);
+        }
+    };
+
+    setField(rangeStartField_, std::to_string(cfg.seed_start));
+    setField(rangeEndField_, std::to_string(cfg.seed_end));
+    setField(scanRadiusField_, std::to_string(std::max(1, cfg.scan_radius_chunks)));
+    setField(threadsField_, std::to_string(std::max(1, cfg.threads)));
+    setField(topKField_, std::to_string(std::max(1, cfg.top_k)));
+
+    if (cfg.unique_biome_min >= 0) {
+        setField(uniqueBiomeMinField_, std::to_string(cfg.unique_biome_min));
+    } else {
+        setField(uniqueBiomeMinField_, "");
+    }
+    if (cfg.required_biome_min_coverage_percent >= 0.f) {
+        setField(minBiomeCoverageField_, std::to_string(cfg.required_biome_min_coverage_percent));
+    } else {
+        setField(minBiomeCoverageField_, "");
+    }
+    if (cfg.required_biome_min_contiguous_radius_chunks >= 1) {
+        setField(minBiomeRadiusField_, std::to_string(cfg.required_biome_min_contiguous_radius_chunks));
+    } else {
+        setField(minBiomeRadiusField_, "");
+    }
+    if (cfg.required_biome_min_compactness_percent >= 0.f) {
+        setField(minBiomeCompactnessField_, std::to_string(cfg.required_biome_min_compactness_percent));
+    } else {
+        setField(minBiomeCompactnessField_, "");
+    }
+
+    probeDepth_ = static_cast<std::uint8_t>(std::min<int>(cfg.probe_depth_max, 2));
+    if (depthButton_ != nullptr && textRenderer() != nullptr) {
+        depthButton_->text = depthLabel(probeDepth_);
+        depthButton_->width =
+            widget::TextSizedActionButtonWidget::measureWidth(*textRenderer(), depthButton_->text);
+    }
+
+    const std::vector<std::string>& spawnBiomes = spawnPickerBiomes();
+    spawnBiomeIndex_ = 0;
+    if (!cfg.spawn_biome.empty()) {
+        for (int i = 1; i < static_cast<int>(spawnBiomes.size()); ++i) {
+            if (spawnBiomes[static_cast<std::size_t>(i)] == cfg.spawn_biome) {
+                spawnBiomeIndex_ = i;
+                break;
+            }
+        }
+    }
+    updateSpawnBiomeButton();
+
+    specNodes_ = cfg.advanced_rule_nodes;
+    updateSpecButton();
+}
+
+void SeedfinderScreen::tryImportJsonConfig()
+{
+    if (searchRunning_.load() || importRunning_.load() || specEditorOpen_) {
+        return;
+    }
+
+    const std::optional<std::filesystem::path> path = msauth::pickJsonFile();
+    if (!path.has_value()) {
+        return;
+    }
+
+    if (importThread_.joinable()) {
+        importThread_.join();
+    }
+
+    importRunning_ = true;
+    importFinished_ = false;
+    importStatus_ = "Loading " + path->filename().string() + "...";
+    if (importJsonButton_ != nullptr) {
+        importJsonButton_->active = false;
+    }
+
+    const std::filesystem::path configPath = *path;
+    importThread_ = std::thread([this, configPath]() {
+        seedfinder::config::LoadResult loaded = seedfinder::config::loadConfigFromFile(configPath.string());
+        {
+            std::lock_guard<std::mutex> lock(importMutex_);
+            pendingImport_ = std::move(loaded);
+        }
+        importFinished_ = true;
+    });
+}
+
+void SeedfinderScreen::mergePendingImport()
+{
+    if (!importFinished_.exchange(false)) {
+        return;
+    }
+    if (importThread_.joinable()) {
+        importThread_.join();
+    }
+    importRunning_ = false;
+
+    seedfinder::config::LoadResult loaded;
+    {
+        std::lock_guard<std::mutex> lock(importMutex_);
+        loaded = std::move(pendingImport_);
+    }
+
+    if (!loaded.ok) {
+        importStatus_ = "JSON error: " + loaded.error;
+    } else {
+        applySearchConfig(loaded.config);
+        importStatus_ = "Loaded config";
+        if (!loaded.config.advanced_rule_errors.empty()) {
+            importStatus_ += " (rule warnings)";
+        }
+    }
+
+    if (importJsonButton_ != nullptr && !searchRunning_.load()) {
+        importJsonButton_->active = true;
+    }
+}
+
 void SeedfinderScreen::tick()
 {
     if (!specEditorOpen_) {
@@ -579,6 +745,7 @@ void SeedfinderScreen::tick()
     }
 
     mergePendingResults();
+    mergePendingImport();
 
     if (searchFinished_.exchange(false)) {
         if (searchThread_.joinable()) {
@@ -598,12 +765,18 @@ void SeedfinderScreen::tick()
         if (specButton_ != nullptr) {
             specButton_->active = true;
         }
+        if (importJsonButton_ != nullptr) {
+            importJsonButton_->active = true;
+        }
     }
 }
 
 void SeedfinderScreen::removed()
 {
     stopSearch();
+    if (importThread_.joinable()) {
+        importThread_.join();
+    }
     if (biomeMap_ != nullptr && minecraft() != nullptr) {
         biomeMap_->clear(*minecraft());
     }
@@ -695,6 +868,9 @@ void SeedfinderScreen::startSearch()
     if (specButton_ != nullptr) {
         specButton_->active = false;
     }
+    if (importJsonButton_ != nullptr) {
+        importJsonButton_->active = false;
+    }
 
     const seedfinder::config::SearchConfig cfg = buildSearchConfig();
     const float minScore = minScoreThreshold();
@@ -704,17 +880,17 @@ void SeedfinderScreen::startSearch()
         engine.setCancelFlag(&cancelFlag_);
         engine.setProgressCounter(&seedsChecked_);
         engine.setHitCallback([this, minScore](const seedfinder::engine::SearchHit& hit) {
-            if (hit.score.partial_match_score < minScore) {
+            if (hit.score < minScore) {
                 return;
             }
             SeedResultRow row;
             row.seed = hit.seed;
-            row.score = hit.score.partial_match_score;
-            row.spawnX = hit.probe.spawn.x;
-            row.spawnY = hit.probe.spawn.y;
-            row.spawnZ = hit.probe.spawn.z;
-            row.biomeId = hit.probe.spawn.biome_id;
-            row.allHard = hit.score.all_hard_constraints_met;
+            row.score = hit.score;
+            row.spawnX = hit.probe.spawn_x;
+            row.spawnY = hit.probe.spawn_y;
+            row.spawnZ = hit.probe.spawn_z;
+            row.biomeId = hit.probe.spawn_biome_id;
+            row.allHard = hit.all_hard;
             std::lock_guard<std::mutex> lock(resultsMutex_);
             pendingResults_.push_back(row);
         });
@@ -754,17 +930,10 @@ void SeedfinderScreen::applySelectedSeed()
     returnToCreateWorld(std::to_string(results_[static_cast<std::size_t>(selectedResultIndex_)].seed));
 }
 
-void SeedfinderScreen::buttonClicked(widget::ButtonWidget& button)
-{
-    if (resultList_ != nullptr) {
-        resultList_->buttonClicked(button);
-    }
-}
-
 void SeedfinderScreen::keyPressed(char character, int keyCode)
 {
     if (specEditorOpen_) {
-        if (keyCode == 1) { // Esc cancels the spec editor
+        if (escapePressed(keyCode)) {
             closeSpecEditor(false);
         }
         return;
@@ -845,11 +1014,15 @@ void SeedfinderScreen::render(int mouseX, int mouseY, float tickDelta)
         std::ostringstream status;
         if (firstInvalid != nullptr) {
             status << "Check \"" << firstInvalid->label << "\": numbers only";
+        } else if (importRunning_.load()) {
+            status << importStatus_;
         } else if (searchRunning_.load()) {
             status << "Searching... checked " << seedsChecked_.load() << " seeds";
             if (!results_.empty()) {
                 status << ", " << results_.size() << " hit(s)";
             }
+        } else if (!importStatus_.empty() && results_.empty()) {
+            status << importStatus_;
         } else if (!results_.empty()) {
             status << results_.size() << " result(s), checked " << seedsChecked_.load() << " seeds";
         } else {

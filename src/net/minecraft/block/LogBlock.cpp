@@ -73,6 +73,6 @@ void LogBlock::registerBlockItems()
 
 
 
-namespace {static ::net::minecraft::registry::RegisterBlock<LogBlock> autoReg;} // namespace
+MC_REGISTER_BLOCK(LogBlock)
 } // namespace net::minecraft::block
 

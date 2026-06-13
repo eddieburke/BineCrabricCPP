@@ -6,6 +6,7 @@
 #include "net/minecraft/item/Item.hpp"
 #include "net/minecraft/item/CoalItem.hpp"
 #include "net/minecraft/item/misc/stick.hpp"
+#include "net/minecraft/registry/ContentRegistries.hpp"
 #include "net/minecraft/recipe/SmeltingRecipeManager.hpp"
 #include "net/minecraft/world/World.hpp"
 
@@ -156,6 +157,9 @@ int FurnaceBlockEntity::getFuelTime(const ItemStack& itemStack)
         return 0;
     }
     const int id = itemStack.itemId;
+    if (const std::optional<int> registeredFuel = registry::FuelRegistry::instance().burnTicks(id)) {
+        return *registeredFuel;
+    }
     if (id < 256) {
         Block* block = Block::BLOCKS[static_cast<std::size_t>(id)];
         if (block != nullptr && &block->material == &block::material::Material::WOOD) {

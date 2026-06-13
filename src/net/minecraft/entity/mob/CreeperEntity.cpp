@@ -113,6 +113,6 @@ void CreeperEntity::attack(Entity* /*other*/, float distance)
 }
 
 
-static ::net::minecraft::registry::RegisterEntity<CreeperEntity> autoReg;
 
+MC_REGISTER_ENTITY(CreeperEntity)
 } // namespace net::minecraft::entity::mob

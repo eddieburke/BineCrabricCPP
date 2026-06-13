@@ -9,7 +9,7 @@ class CraftingRecipeManager;
 namespace net::minecraft::item {
 
 class ChainBootsItem : public ArmorItem {
-public:        static constexpr bool kRegisters = true;
+public:
     static constexpr int kRawId = 49;
 
 static void registerClass();

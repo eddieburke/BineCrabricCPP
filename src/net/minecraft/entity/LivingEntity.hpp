@@ -16,7 +16,6 @@ namespace net::minecraft::entity {
 
 class LivingEntity : public Entity {
 public:
-    static constexpr bool kRegisters = true;
     static constexpr int kEntityId = 48;
 
     static constexpr const char* kEntityName = "Mob";

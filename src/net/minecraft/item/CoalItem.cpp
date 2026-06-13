@@ -23,5 +23,5 @@ void CoalItem::registerSmeltingRecipes()
 
 
 
-namespace {static ::net::minecraft::registry::RegisterItem<CoalItem> autoReg; } // namespace
+MC_REGISTER_ITEM(CoalItem)
 } // namespace net::minecraft::item

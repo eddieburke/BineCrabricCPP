@@ -33,6 +33,7 @@ public:
 
     [[nodiscard]] int rawId() const
     {
+        ensureRegistered();
         const auto& map = typeToId();
         const auto it = map.find(std::type_index(typeid(*this)));
         if (it == map.end()) {

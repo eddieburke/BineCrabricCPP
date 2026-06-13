@@ -9,7 +9,7 @@ class CraftingRecipeManager;
 namespace net::minecraft::item {
 
 class IronBootsItem : public ArmorItem {
-public:        static constexpr bool kRegisters = true;
+public:
     static constexpr int kRawId = 53;
 
 static void registerClass();

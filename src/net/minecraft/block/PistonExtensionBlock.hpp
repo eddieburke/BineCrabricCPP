@@ -10,7 +10,6 @@ namespace net::minecraft::block {
 
 class PistonExtensionBlock : public BlockWithEntity {
 public:
-    static constexpr bool kRegisters = true;
     static constexpr int kBlockId = 36;
 
 static void registerClass();

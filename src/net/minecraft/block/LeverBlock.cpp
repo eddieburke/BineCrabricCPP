@@ -246,6 +246,6 @@ void LeverBlock::registerRecipes(recipe::CraftingRecipeManager& recipeManager)
 
 
 
-namespace {static ::net::minecraft::registry::RegisterBlock<LeverBlock> autoReg;} // namespace
+MC_REGISTER_BLOCK(LeverBlock)
 } // namespace net::minecraft::block
 

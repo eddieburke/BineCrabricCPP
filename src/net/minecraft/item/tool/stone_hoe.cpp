@@ -29,5 +29,5 @@ void StoneHoeItem::registerRecipes(recipe::CraftingRecipeManager& recipeManager)
         {std::string("XX"), std::string(" #"), std::string(" #"), '#', Item::byRawId(24), 'X', Block::COBBLESTONE});
 }
 
-static registry::RegisterItem<StoneHoeItem> s_itemReg;
+MC_REGISTER_ITEM(StoneHoeItem)
 } // namespace net::minecraft::item

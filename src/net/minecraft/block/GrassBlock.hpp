@@ -12,7 +12,6 @@ namespace net::minecraft::block {
 
 class GrassBlock : public Block {
 public:
-    static constexpr bool kRegisters = true;
     static constexpr int kBlockId = 2;
 
 static void registerClass();

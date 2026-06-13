@@ -22,6 +22,6 @@ void GlowstoneBlock::registerRecipes(recipe::CraftingRecipeManager& recipeManage
 
 
 
-namespace {static ::net::minecraft::registry::RegisterBlock<GlowstoneBlock> autoReg;} // namespace
+MC_REGISTER_BLOCK(GlowstoneBlock)
 } // namespace net::minecraft::block
 

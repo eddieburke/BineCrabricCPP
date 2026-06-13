@@ -3,15 +3,28 @@
 #include "net/minecraft/client/network/ClientNetworkHandler.hpp"
 #include "net/minecraft/client/world/chunk/MultiplayerChunkCache.hpp"
 #include "net/minecraft/entity/Entity.hpp"
+#include "net/minecraft/mod/GameHooks.hpp"
 #include "net/minecraft/world/dimension/Dimension.hpp"
 #include "net/minecraft/world/events/GameEventListener.hpp"
+#include "net/minecraft/world/storage/EmptyWorldStorage.hpp"
 
 #include <algorithm>
 
 namespace net::minecraft {
+namespace {
+
+WorldStorage* multiplayerWorldStorage()
+{
+    // Client worlds need a save handler object during World construction, but a
+    // derived member is not alive yet when the base constructor runs.
+    static EmptyWorldStorage storage;
+    return &storage;
+}
+
+} // namespace
 
 ClientWorld::ClientWorld(client::network::ClientNetworkHandler* networkHandler, std::uint64_t seed, int dimensionId)
-    : World(&emptyStorage_, "MpServer", static_cast<std::int64_t>(seed)),
+    : World(multiplayerWorldStorage(), "MpServer", static_cast<std::int64_t>(seed), true),
       networkHandler_(networkHandler)
 {
     dimension = Dimension::fromId(dimensionId);
@@ -21,10 +34,15 @@ ClientWorld::ClientWorld(client::network::ClientNetworkHandler* networkHandler, 
     setChunkCache(std::make_unique<client::world::chunk::MultiplayerChunkCache>(this));
     isRemote_ = true;
     setSpawnPos(Vec3i {8, 64, 8});
+    updateSkyBrightness();
+    prepareWeather();
 }
 
 void ClientWorld::tick()
 {
+    mod::WorldTickEvent beforeTick {this, true, true};
+    mod::hooks().publish(beforeTick);
+
     setTime(time() + 1);
     updateSkyBrightness();
 
@@ -48,6 +66,9 @@ void ClientWorld::tick()
         blockUpdateEvent(it->x, it->y, it->z);
         it = blockResets_.erase(it);
     }
+
+    mod::WorldTickEvent afterTick {this, true, false};
+    mod::hooks().publish(afterTick);
 }
 
 void ClientWorld::clearBlockResets(int minX, int minY, int minZ, int maxX, int maxY, int maxZ)
@@ -187,6 +208,11 @@ bool ClientWorld::setBlockWithMetaFromPacket(int x, int y, int z, int blockId, i
 
 void ClientWorld::updateWeatherCycles()
 {
+    mod::WeatherCycleEvent event {this, true, false};
+    mod::hooks().publish(event);
+    if (event.canceled) {
+        return;
+    }
     if (dimension != nullptr && dimension->hasCeiling) {
         return;
     }

@@ -221,6 +221,6 @@ void DoorBlock::registerClass()
 
 
 
-namespace {static ::net::minecraft::registry::RegisterBlock<DoorBlock> autoReg;} // namespace
+MC_REGISTER_BLOCK(DoorBlock)
 } // namespace net::minecraft::block
 

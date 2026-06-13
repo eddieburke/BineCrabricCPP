@@ -7,7 +7,8 @@
 #include "net/minecraft/client/render/block/BlockRenderManager.hpp"
 
 #include "net/minecraft/client/render/chunk/ChunkBuilder.hpp"
-#include "net/minecraft/client/render/pipeline/PipelineConstants.hpp"
+#include "net/minecraft/client/render/chunk/ChunkMeshScheduler.hpp"
+#include "net/minecraft/client/render/world/AsyncChunkSorter.hpp"
 #include "net/minecraft/client/render/world/ChunkRenderer.hpp"
 
 #include "net/minecraft/entity/EntityTypes.hpp"
@@ -202,6 +203,13 @@ public:
 
 private:
 
+    enum class FramePhase : std::uint8_t {
+        Idle = 0,
+        Culled,
+        Compiled,
+        SolidLayerDone,
+    };
+
     void renderOutline(const net::minecraft::Box& box);
 
 
@@ -218,22 +226,50 @@ private:
 
     void enqueueDirtyChunk(chunk::ChunkBuilder* chunk);
 
-    void sortChunksOnMove(const net::minecraft::LivingEntity& camera);
-    void expectFramePhase(pipeline::FramePhase required) const;
-    void advanceFramePhase(pipeline::FramePhase next) noexcept;
+    // Record chunks dirtied within kNearDirtyDistSq of the camera so
+    // compileChunks can route them to the dedicated near mesh worker.
+    void noteNearDirty(chunk::ChunkBuilder* chunk);
 
-    pipeline::FramePhase framePhase_ = pipeline::FramePhase::Idle;
+    void sortChunksOnMove(const net::minecraft::LivingEntity& camera);
+
+    // Hand the current chunk centers to the background sorter (keys only, no
+    // pointers) and apply its previous result if one is ready.
+    void submitChunkSort(double cameraX, double cameraY, double cameraZ);
+    void pollChunkSort();
+
+    void expectFramePhase(FramePhase required) const;
+    void advanceFramePhase(FramePhase next) noexcept;
+
+    FramePhase framePhase_ = FramePhase::Idle;
 
     std::vector<net::minecraft::client::render::chunk::ChunkBuilder> chunks_ {};
 
     std::unordered_set<net::minecraft::client::render::chunk::ChunkBuilder*> dirtyChunks_ {};
 
+    // Fast lane: dirty chunks near the camera (block edits). Entries also stay
+    // in dirtyChunks_ until a mesh job is enqueued; stale entries are dropped
+    // by compileChunks' dirty/in-flight re-check. Cleared with dirtyChunks_.
+    std::vector<net::minecraft::client::render::chunk::ChunkBuilder*> nearDirtyChunks_ {};
+
+    // Declared after chunks_: destroyed first, so the mesh worker pool drains
+    // before the ChunkBuilders its jobs point at are destroyed.
+    chunk::ChunkMeshScheduler meshScheduler_ {};
+    std::vector<std::shared_ptr<chunk::ChunkMeshJob>> pendingMeshUploads_ {};
+
     std::vector<net::minecraft::client::render::chunk::ChunkBuilder*> sortedChunks_ {};
+
+    // Background distance sorter. It only ever holds (key, index) pairs, so it
+    // has no destruction-order relationship with chunks_; chunkArrayEpoch_ is
+    // bumped whenever chunks_ is rebuilt so stale results are discarded.
+    world::AsyncChunkSorter chunkSorter_ {};
+    // Separate instance prioritizing the dirty backlog for compileChunks, so
+    // a long draw-order sort can't starve mesh scheduling (and vice versa).
+    world::AsyncChunkSorter dirtySorter_ {};
+    std::uint64_t chunkArrayEpoch_ = 0;
 
     std::vector<net::minecraft::client::render::chunk::ChunkBuilder*> chunksInCurrentLayer_ {};
 
-    std::array<world::ChunkRenderer, pipeline::kCameraOffsetGroupCount> chunkRenderers_ {};
-    static_assert(pipeline::kCameraOffsetGroupCount == 4);
+    std::vector<world::ChunkRenderer> chunkRenderers_ {};
 
     int chunkCountX = 0;
 
@@ -256,7 +292,6 @@ private:
     int maxChunkZ = 0;
 
     int lastViewDistance = -1;
-
     float lastRenderScale = -1.0f;
 
     int entityRenderCooldown = 2;
@@ -300,4 +335,3 @@ private:
 
 
 } // namespace net::minecraft::client::render
-

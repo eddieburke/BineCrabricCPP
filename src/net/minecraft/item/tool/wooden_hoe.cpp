@@ -29,5 +29,5 @@ void WoodenHoeItem::registerRecipes(recipe::CraftingRecipeManager& recipeManager
         {std::string("XX"), std::string(" #"), std::string(" #"), '#', Item::byRawId(24), 'X', Block::PLANKS});
 }
 
-static registry::RegisterItem<WoodenHoeItem> s_itemReg;
+MC_REGISTER_ITEM(WoodenHoeItem)
 } // namespace net::minecraft::item

@@ -32,5 +32,5 @@ void ChainLeggingsItem::registerRecipes(recipe::CraftingRecipeManager& recipeMan
         {std::string("XXX"), std::string("X X"), std::string("X X"), 'X', Block::FIRE});
 }
 
-static registry::RegisterItem<ChainLeggingsItem> s_itemReg;
+MC_REGISTER_ITEM(ChainLeggingsItem)
 } // namespace net::minecraft::item

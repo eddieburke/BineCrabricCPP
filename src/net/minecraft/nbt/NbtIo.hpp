@@ -1,6 +1,6 @@
 #pragma once
 
-// Faithful port of net.minecraft.nbt.NbtIo.
+// Root-tag file I/O (named compound, optional gzip).
 #include "net/minecraft/nbt/Nbt.hpp"
 #include "net/minecraft/nbt/NbtCompound.hpp"
 

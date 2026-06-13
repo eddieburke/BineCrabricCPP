@@ -22,7 +22,6 @@ public:
     void render(int mouseX, int mouseY, float tickDelta) override;
 
 protected:
-    void buttonClicked(widget::ButtonWidget& button) override;
     virtual void buildOptions(OptionGuiBuilder& gui) = 0;
     virtual int doneButtonY() const { return height() / 6 + 24 * 8; }
 

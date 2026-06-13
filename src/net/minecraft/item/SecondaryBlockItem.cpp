@@ -27,5 +27,5 @@ void SecondaryBlockItem::registerRecipes(recipe::CraftingRecipeManager& recipeMa
 
 
 
-namespace {static ::net::minecraft::registry::RegisterItem<SecondaryBlockItem> autoReg;} // namespace
+MC_REGISTER_ITEM(SecondaryBlockItem)
 } // namespace net::minecraft::item

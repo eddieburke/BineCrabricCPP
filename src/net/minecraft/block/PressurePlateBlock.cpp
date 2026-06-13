@@ -159,6 +159,6 @@ void PressurePlateBlock::registerRecipes(recipe::CraftingRecipeManager& recipeMa
 
 
 
-namespace {static ::net::minecraft::registry::RegisterBlock<PressurePlateBlock> autoReg;} // namespace
+MC_REGISTER_BLOCK(PressurePlateBlock)
 } // namespace net::minecraft::block
 

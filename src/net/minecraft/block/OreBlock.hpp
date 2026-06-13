@@ -8,7 +8,7 @@
 
 namespace net::minecraft::block {
 
-// Registered in SimpleBlocks.cpp.
+// Registered in Block.cpp.
 class OreBlock : public Block {
 public:
     OreBlock(int id, int textureId) : Block(id, textureId, material::Material::STONE) {}

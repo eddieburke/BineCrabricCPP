@@ -44,6 +44,6 @@ void WorkbenchBlock::registerRecipes(recipe::CraftingRecipeManager& recipeManage
 
 
 
-namespace {static ::net::minecraft::registry::RegisterBlock<WorkbenchBlock> autoReg;} // namespace
+MC_REGISTER_BLOCK(WorkbenchBlock)
 } // namespace net::minecraft::block
 

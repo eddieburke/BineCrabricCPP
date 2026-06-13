@@ -26,6 +26,6 @@ void WoolBlock::registerRecipes(recipe::CraftingRecipeManager& recipeManager)
 
 
 
-namespace {static ::net::minecraft::registry::RegisterBlock<WoolBlock> autoReg;} // namespace
+MC_REGISTER_BLOCK(WoolBlock)
 } // namespace net::minecraft::block
 

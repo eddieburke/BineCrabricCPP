@@ -14,7 +14,7 @@ class CraftingRecipeManager;
 namespace net::minecraft::item {
 
 class MushroomStewItem : public FoodItem {
-public:        static constexpr bool kRegisters = true;
+public:
     static constexpr int kRawId = 26;
 
 static void registerClass();

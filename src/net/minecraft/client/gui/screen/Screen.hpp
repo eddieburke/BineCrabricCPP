@@ -3,8 +3,10 @@
 #include "net/minecraft/client/gui/DrawContext.hpp"
 #include "net/minecraft/client/gui/widget/ActionButtonWidget.hpp"
 #include "net/minecraft/client/gui/widget/ButtonWidget.hpp"
+#include "net/minecraft/client/input/Keys.hpp"
 
 #include <functional>
+#include <initializer_list>
 #include <memory>
 #include <string>
 #include <utility>
@@ -16,6 +18,10 @@ class Minecraft;
 
 namespace net::minecraft::client::font {
 class TextRenderer;
+}
+
+namespace net::minecraft::client::gui::widget {
+class TextFieldWidget;
 }
 
 namespace net::minecraft::client::gui::screen {
@@ -37,7 +43,36 @@ public:
     virtual void onMouseEvent();
     virtual void onKeyboardEvent();
     virtual void keyPressed(char character, int keyCode);
-    virtual void keyPressed(int key);
+
+    [[nodiscard]] static bool escapePressed(int keyCode) noexcept
+    {
+        return keyCode == input::keys::kEscape;
+    }
+
+    [[nodiscard]] static bool submitPressed(int keyCode, char character) noexcept
+    {
+        return keyCode == input::keys::kEnter || character == '\r';
+    }
+
+    [[nodiscard]] static bool backspacePressed(int keyCode) noexcept
+    {
+        return keyCode == input::keys::kBackspace;
+    }
+
+    [[nodiscard]] static bool arrowUpPressed(int keyCode) noexcept
+    {
+        return keyCode == input::keys::kUp;
+    }
+
+    [[nodiscard]] static bool arrowDownPressed(int keyCode) noexcept
+    {
+        return keyCode == input::keys::kDown;
+    }
+
+    [[nodiscard]] static bool pasteChordPressed(int keyCode) noexcept;
+
+    /// Default Escape behavior — closes this screen. Returns true if handled.
+    bool closeOnEscape(int keyCode);
 
     [[nodiscard]] static std::string getClipboard();
     virtual void mouseClicked(int mouseX, int mouseY, int button);
@@ -80,9 +115,15 @@ public:
     bool passEvents = false;
 
 protected:
-    virtual void buttonClicked(widget::ButtonWidget& button);
+    void enableTextInput();
+    void disableTextInput();
 
-    void dispatchButtonPress(widget::ButtonWidget& button);
+    void routeKeyToTextFields(char character, int keyCode, std::initializer_list<widget::TextFieldWidget*> fields);
+    void clickTextFields(int mouseX, int mouseY, int button, std::initializer_list<widget::TextFieldWidget*> fields);
+    void tickTextFields(std::initializer_list<widget::TextFieldWidget*> fields);
+    void handleFormKeyPress(char character, int keyCode, std::initializer_list<widget::TextFieldWidget*> fields,
+        const std::function<void()>& onSubmit);
+
     void closeScreen();
     void navigateTo(ScreenFactory factory);
     void navigateTo(std::unique_ptr<Screen> screen);
@@ -96,6 +137,8 @@ protected:
     std::vector<std::unique_ptr<widget::ButtonWidget>> buttons_ {};
 
 private:
+    void dispatchButtonPress(widget::ButtonWidget& button);
+
     widget::ButtonWidget* selectedButton_ = nullptr;
 };
 

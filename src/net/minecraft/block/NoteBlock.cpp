@@ -105,6 +105,6 @@ void NoteBlock::registerRecipes(recipe::CraftingRecipeManager& recipeManager)
 
 
 
-namespace {static ::net::minecraft::registry::RegisterBlock<NoteBlock> autoReg;} // namespace
+MC_REGISTER_BLOCK(NoteBlock)
 } // namespace net::minecraft::block
 

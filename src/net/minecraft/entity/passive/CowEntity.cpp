@@ -37,6 +37,6 @@ int CowEntity::getDroppedItemId() const
 }
 
 
-static ::net::minecraft::registry::RegisterEntity<CowEntity> autoReg;
 
+MC_REGISTER_ENTITY(CowEntity)
 } // namespace net::minecraft::entity::passive

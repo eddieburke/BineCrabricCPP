@@ -29,5 +29,5 @@ void DiamondPickaxeItem::registerRecipes(recipe::CraftingRecipeManager& recipeMa
         {std::string("XXX"), std::string(" # "), std::string(" # "), '#', Item::byRawId(24), 'X', Item::byRawId(8)});
 }
 
-static registry::RegisterItem<DiamondPickaxeItem> s_itemReg;
+MC_REGISTER_ITEM(DiamondPickaxeItem)
 } // namespace net::minecraft::item

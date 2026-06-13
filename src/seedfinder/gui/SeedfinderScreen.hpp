@@ -4,6 +4,7 @@
 #include "seedfinder/gui/BiomeMapWidget.hpp"
 #include "net/minecraft/client/gui/widget/TextFieldWidget.hpp"
 #include "seedfinder/config/ConfigSchema.hpp"
+#include "seedfinder/config/JsonConfig.hpp"
 
 #include <atomic>
 #include <cstdint>
@@ -36,7 +37,6 @@ public:
     void mouseClicked(int mouseX, int mouseY, int button) override;
 
 protected:
-    void buttonClicked(widget::ButtonWidget& button) override;
 
 private:
     struct SeedResultRow {
@@ -96,6 +96,9 @@ private:
     void updateSpecButton();
     void openSpecEditor();
     void closeSpecEditor(bool apply);
+    void tryImportJsonConfig();
+    void mergePendingImport();
+    void applySearchConfig(const seedfinder::config::SearchConfig& cfg);
     void forEachField(const std::function<void(widget::TextFieldWidget&)>& fn);
     void forEachField(const std::function<void(const widget::TextFieldWidget&)>& fn) const;
 
@@ -135,8 +138,15 @@ private:
     widget::ActionButtonWidget* depthButton_ = nullptr;
     widget::ActionButtonWidget* spawnBiomeButton_ = nullptr;
     widget::ActionButtonWidget* specButton_ = nullptr;
+    widget::ActionButtonWidget* importJsonButton_ = nullptr;
 
     std::uint8_t probeDepth_ = 1;
+    std::string importStatus_;
+    std::atomic<bool> importRunning_ {false};
+    std::atomic<bool> importFinished_ {false};
+    std::mutex importMutex_;
+    seedfinder::config::LoadResult pendingImport_ {};
+    std::thread importThread_;
     int selectedResultIndex_ = -1;
     std::vector<SeedResultRow> results_;
 

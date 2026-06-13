@@ -743,6 +743,6 @@ void MinecartEntity::readNbt(const NbtCompound& nbt)
 }
 
 
-static ::net::minecraft::registry::RegisterEntity<MinecartEntity> autoReg;
 
+MC_REGISTER_ENTITY(MinecartEntity)
 } // namespace net::minecraft::entity::vehicle

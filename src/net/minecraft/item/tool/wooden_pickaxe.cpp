@@ -29,5 +29,5 @@ void WoodenPickaxeItem::registerRecipes(recipe::CraftingRecipeManager& recipeMan
         {std::string("XXX"), std::string(" # "), std::string(" # "), '#', Item::byRawId(24), 'X', Block::PLANKS});
 }
 
-static registry::RegisterItem<WoodenPickaxeItem> s_itemReg;
+MC_REGISTER_ITEM(WoodenPickaxeItem)
 } // namespace net::minecraft::item

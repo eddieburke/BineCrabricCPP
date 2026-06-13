@@ -6,7 +6,6 @@ namespace net::minecraft::block {
 
 class FlowingLiquidBlock : public LiquidBlock {
 public:
-    static constexpr bool kRegisters = true;
     static constexpr int kBlockId = 8;
 
 static void registerClass();

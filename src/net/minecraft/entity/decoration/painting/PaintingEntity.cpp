@@ -223,6 +223,6 @@ void PaintingEntity::readNbt(const NbtCompound& nbt)
     setFacing(facing);
 }
 
-static ::net::minecraft::registry::RegisterEntity<PaintingEntity> autoReg;
 
+MC_REGISTER_ENTITY(PaintingEntity)
 } // namespace net::minecraft::entity::decoration::painting

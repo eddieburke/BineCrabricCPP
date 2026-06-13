@@ -62,19 +62,20 @@ void GrassBlock::onTick(World* world, int x, int y, int z, JavaRandom& random)
     if (world == nullptr || world->isRemote() || Block::DIRT == nullptr || Block::GRASS_BLOCK == nullptr) {
         return;
     }
-    if (world->getLightLevel(x, y + 1, z) < 4
-        && Block::BLOCKS_LIGHT_OPACITY[static_cast<std::size_t>(world->getBlockId(x, y + 1, z))] > 2) {
+    const int lightAbove = world->getLightLevelAbove(x, y, z);
+    const int blockAboveId = world->getBlockId(x, y + 1, z);
+    if (lightAbove < 4 && Block::BLOCKS_LIGHT_OPACITY[static_cast<std::size_t>(blockAboveId)] > 2) {
         if (random.nextInt(4) != 0) {
             return;
         }
         world->setBlock(x, y, z, Block::DIRT->id);
-    } else if (world->getLightLevel(x, y + 1, z) >= 9) {
+    } else if (lightAbove >= 9) {
         const int spreadX = x + random.nextInt(3) - 1;
         const int spreadY = y + random.nextInt(5) - 3;
         const int spreadZ = z + random.nextInt(3) - 1;
         const int aboveId = world->getBlockId(spreadX, spreadY + 1, spreadZ);
         if (world->getBlockId(spreadX, spreadY, spreadZ) == Block::DIRT->id
-            && world->getLightLevel(spreadX, spreadY + 1, spreadZ) >= 4
+            && world->getLightLevelAbove(spreadX, spreadY, spreadZ) >= 4
             && Block::BLOCKS_LIGHT_OPACITY[static_cast<std::size_t>(aboveId)] <= 2) {
             world->setBlock(spreadX, spreadY, spreadZ, Block::GRASS_BLOCK->id);
         }
@@ -88,6 +89,6 @@ void GrassBlock::registerClass()
 
 
 
-namespace {static ::net::minecraft::registry::RegisterBlock<GrassBlock> autoReg;} // namespace
+MC_REGISTER_BLOCK(GrassBlock)
 } // namespace net::minecraft::block
 

@@ -28,6 +28,6 @@ struct PlanksBlockRegistrar {
     }
 };
 
-static registry::RegisterBlock<PlanksBlockRegistrar> s_reg;
+MC_REGISTER_BLOCK(PlanksBlockRegistrar)
 
 } // namespace net::minecraft::block

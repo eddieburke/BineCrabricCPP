@@ -190,7 +190,7 @@ void PistonExtensionBlock::registerClass()
 
 namespace {
 
-static ::net::minecraft::registry::RegisterBlock<PistonExtensionBlock> autoReg;
 } // namespace
+MC_REGISTER_BLOCK(PistonExtensionBlock)
 } // namespace net::minecraft::block
 

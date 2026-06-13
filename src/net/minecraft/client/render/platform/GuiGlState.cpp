@@ -1,21 +1,8 @@
 #include "net/minecraft/client/render/platform/GuiGlState.hpp"
 
-#include "net/minecraft/client/gl/GL11.hpp"
 #include "net/minecraft/client/render/platform/Lighting.hpp"
 
 namespace net::minecraft::client::render::platform {
-
-namespace {
-
-constexpr int kGlRescaleNormal = 32826;
-// InGameHud.java crosshair: GL_ONE_MINUS_DST_COLOR, GL_ONE_MINUS_SRC_COLOR.
-constexpr int kCrosshairBlendSrc = 775;
-constexpr int kCrosshairBlendDst = 769;
-// InGameHud.java vignette: GL_ZERO, GL_ONE_MINUS_SRC_COLOR.
-constexpr int kVignetteBlendSrc = 0;
-constexpr int kVignetteBlendDst = 769;
-
-} // namespace
 
 void GuiGlState::setupHudProjection(const double width, const double height) noexcept
 {
@@ -64,12 +51,22 @@ void GuiGlState::disableBlend() noexcept
 void GuiGlState::beginCrosshairBlend() noexcept
 {
     gl::GL11::glEnable(gl::GL11::GL_BLEND);
-    gl::GL11::glBlendFunc(kCrosshairBlendSrc, kCrosshairBlendDst);
+    gl::GL11::glBlendFunc(gl::GL11::GL_ONE_MINUS_DST_COLOR, gl::GL11::GL_ONE_MINUS_SRC_COLOR);
 }
 
 void GuiGlState::endCrosshairBlend() noexcept
 {
     gl::GL11::glDisable(gl::GL11::GL_BLEND);
+}
+
+void GuiGlState::beginVignetteBlend() noexcept
+{
+    gl::GL11::glBlendFunc(gl::GL11::GL_ZERO, gl::GL11::GL_ONE_MINUS_SRC_COLOR);
+}
+
+void GuiGlState::endVignetteBlend() noexcept
+{
+    enableStandardBlend();
 }
 
 void GuiGlState::beginFullscreenOverlay() noexcept
@@ -93,7 +90,7 @@ void GuiGlState::endFullscreenOverlay() noexcept
 void GuiGlState::beginLitHotbarItems() noexcept
 {
     disableBlend();
-    gl::GL11::glEnable(kGlRescaleNormal);
+    gl::GL11::glEnable(gl::GL11::GL_RESCALE_NORMAL);
     gl::GL11::glPushMatrix();
     gl::GL11::glRotatef(120.0f, 1.0f, 0.0f, 0.0f);
     Lighting::turnOn();
@@ -103,7 +100,7 @@ void GuiGlState::beginLitHotbarItems() noexcept
 void GuiGlState::endLitHotbarItems() noexcept
 {
     Lighting::turnOff();
-    gl::GL11::glDisable(kGlRescaleNormal);
+    gl::GL11::glDisable(gl::GL11::GL_RESCALE_NORMAL);
 }
 
 void GuiGlState::beginUnlitText() noexcept
@@ -139,17 +136,6 @@ void GuiGlState::endSleepFade() noexcept
 {
     gl::GL11::glEnable(gl::GL11::GL_ALPHA_TEST);
     gl::GL11::glEnable(gl::GL11::GL_DEPTH_TEST);
-}
-
-void GuiGlState::beginProfilerDraw() noexcept
-{
-    gl::GL11::glLineWidth(1.0f);
-    gl::GL11::glDisable(gl::GL11::GL_TEXTURE_2D);
-}
-
-void GuiGlState::endProfilerDraw() noexcept
-{
-    gl::GL11::glEnable(gl::GL11::GL_TEXTURE_2D);
 }
 
 } // namespace net::minecraft::client::render::platform

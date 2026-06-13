@@ -1,11 +1,9 @@
 #include "net/minecraft/world/dimension/Dimension.hpp"
 
 #include "net/minecraft/block/Block.hpp"
+#include "net/minecraft/registry/ContentRegistries.hpp"
 #include "net/minecraft/world/World.hpp"
 #include "net/minecraft/world/chunk/ChunkSource.hpp"
-#include "net/minecraft/world/dimension/NetherDimension.hpp"
-#include "net/minecraft/world/dimension/OverworldDimension.hpp"
-#include "net/minecraft/world/dimension/SkylandsDimension.hpp"
 #include "net/minecraft/world/gen/chunk/NetherChunkGenerator.hpp"
 #include "net/minecraft/world/gen/chunk/OverworldGeneratorChunkSource.hpp"
 
@@ -73,16 +71,7 @@ bool Dimension::isValidSpawnPoint(int x, int z) const
 
 std::unique_ptr<Dimension> Dimension::fromId(int dimensionId)
 {
-    if (dimensionId == -1) {
-        return std::make_unique<NetherDimension>();
-    }
-    if (dimensionId == 0) {
-        return std::make_unique<OverworldDimension>();
-    }
-    if (dimensionId == 1) {
-        return std::make_unique<SkylandsDimension>();
-    }
-    return nullptr;
+    return registry::DimensionRegistry::instance().create(dimensionId);
 }
 
 } // namespace net::minecraft

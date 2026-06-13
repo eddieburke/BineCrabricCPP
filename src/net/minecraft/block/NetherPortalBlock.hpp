@@ -6,7 +6,6 @@ namespace net::minecraft::block {
 
 class NetherPortalBlock : public TranslucentBlock {
 public:
-    static constexpr bool kRegisters = true;
     static constexpr int kBlockId = 90;
 
 static void registerClass();

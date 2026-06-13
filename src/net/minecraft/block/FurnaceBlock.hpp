@@ -15,7 +15,6 @@ namespace net::minecraft::block {
 
 class FurnaceBlock : public BlockWithEntity {
 public:
-    static constexpr bool kRegisters = true;
     static constexpr int kBlockId = 61;
 static void registerRecipes(recipe::CraftingRecipeManager& recipeManager);
 public:

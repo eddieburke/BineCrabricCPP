@@ -9,7 +9,6 @@
 
 #include <optional>
 
-#include "net/minecraft/client/input/InputSystem.hpp"
 
 namespace net::minecraft::client::gui::screen::world {
 
@@ -24,7 +23,7 @@ EditWorldScreen::EditWorldScreen(screen::ScreenFactory parentFactory, std::strin
 
 void EditWorldScreen::init()
 {
-    input::InputSystem::instance().setKeyboardRepeat(true);
+    enableTextInput();
     buttons_.clear();
     renameButton_ = &addActionButton(layout::centerBtnX(width()), layout::formPrimaryBtnY(height()),
         resource::language::I18n::getTranslation("selectWorld.renameButton"),
@@ -52,14 +51,12 @@ void EditWorldScreen::init()
 
 void EditWorldScreen::tick()
 {
-    if (levelNameField_ != nullptr) {
-        levelNameField_->tick();
-    }
+    tickTextFields({levelNameField_.get()});
 }
 
 void EditWorldScreen::removed()
 {
-    input::InputSystem::instance().setKeyboardRepeat(false);
+    disableTextInput();
 }
 
 void EditWorldScreen::updateRenameButtonState()
@@ -82,21 +79,14 @@ void EditWorldScreen::renameWorld()
 
 void EditWorldScreen::keyPressed(char character, int keyCode)
 {
-    if (levelNameField_ != nullptr) {
-        levelNameField_->keyPressed(character, keyCode);
-    }
+    handleFormKeyPress(character, keyCode, {levelNameField_.get()}, [this] { renameWorld(); });
     updateRenameButtonState();
-    if (character == '\r') {
-        renameWorld();
-    }
 }
 
 void EditWorldScreen::mouseClicked(int mouseX, int mouseY, int button)
 {
     Screen::mouseClicked(mouseX, mouseY, button);
-    if (levelNameField_ != nullptr) {
-        levelNameField_->mouseClicked(mouseX, mouseY, button);
-    }
+    clickTextFields(mouseX, mouseY, button, {levelNameField_.get()});
 }
 
 void EditWorldScreen::render(int mouseX, int mouseY, float tickDelta)

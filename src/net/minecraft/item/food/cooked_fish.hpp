@@ -9,7 +9,7 @@ class CraftingRecipeManager;
 namespace net::minecraft::item {
 
 class CookedFishItem : public FoodItem {
-public:        static constexpr bool kRegisters = true;
+public:
     static constexpr int kRawId = 94;
 
 static void registerClass();

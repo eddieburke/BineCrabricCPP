@@ -9,7 +9,6 @@ namespace net::minecraft::block {
 
 class GlowstoneBlock : public Block {
 public:
-    static constexpr bool kRegisters = true;
     static constexpr int kBlockId = 89;
 static void registerRecipes(recipe::CraftingRecipeManager& recipeManager);
 public:

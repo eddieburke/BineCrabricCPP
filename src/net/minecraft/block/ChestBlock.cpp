@@ -226,6 +226,6 @@ void ChestBlock::registerRecipes(recipe::CraftingRecipeManager& recipeManager)
 
 
 
-namespace {static ::net::minecraft::registry::RegisterBlock<ChestBlock> autoReg;} // namespace
+MC_REGISTER_BLOCK(ChestBlock)
 } // namespace net::minecraft::block
 

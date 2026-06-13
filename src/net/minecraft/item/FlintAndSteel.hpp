@@ -14,7 +14,7 @@ class CraftingRecipeManager;
 namespace net::minecraft::item {
 
 class FlintAndSteel : public Item {
-public:        static constexpr bool kRegisters = true;
+public:
     static constexpr int kRawId = 3;
 
 static void registerClass();

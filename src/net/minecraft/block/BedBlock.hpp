@@ -10,7 +10,6 @@ namespace net::minecraft::block {
 
 class BedBlock : public Block {
 public:
-    static constexpr bool kRegisters = true;
     static constexpr int kBlockId = 26;
 
 static void registerClass();

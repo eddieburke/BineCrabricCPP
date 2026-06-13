@@ -29,5 +29,5 @@ void GoldenPickaxeItem::registerRecipes(recipe::CraftingRecipeManager& recipeMan
         {std::string("XXX"), std::string(" # "), std::string(" # "), '#', Item::byRawId(24), 'X', Item::byRawId(10)});
 }
 
-static registry::RegisterItem<GoldenPickaxeItem> s_itemReg;
+MC_REGISTER_ITEM(GoldenPickaxeItem)
 } // namespace net::minecraft::item

@@ -1,6 +1,9 @@
 #include "net/minecraft/registry/Registry.hpp"
 
+#include "net/minecraft/mod/ModLifecycle.hpp"
+
 #include <algorithm>
+#include <array>
 #include <cassert>
 #include <mutex>
 #include <unordered_set>
@@ -9,14 +12,16 @@
 namespace net::minecraft::registry {
 
 namespace {
-struct Entry {
-    void (*fn)();
-    int priority;
+
+struct QueuedInit {
+    int order = 0;
+    void (*fn)() = nullptr;
 };
 
-std::vector<Entry>& entries() {
-    static std::vector<Entry> list;
-    return list;
+std::vector<QueuedInit>& phaseBucket(mod::LifecyclePhase phase)
+{
+    static std::array<std::vector<QueuedInit>, static_cast<std::size_t>(mod::LifecyclePhase::Frozen) + 1> buckets;
+    return buckets[static_cast<std::size_t>(phase)];
 }
 
 std::unordered_set<int>& usedBlockIds()
@@ -38,38 +43,79 @@ std::unordered_set<int>& usedEntityIds()
 }
 
 std::once_flag g_bootstrapFlag;
+bool g_bootstrapped = false;
+
+void runPhase(mod::LifecyclePhase phase)
+{
+    mod::ModLifecycle::advanceTo(phase);
+    std::vector<QueuedInit>& bucket = phaseBucket(phase);
+    std::stable_sort(bucket.begin(), bucket.end(), [](const QueuedInit& lhs, const QueuedInit& rhs) {
+        return lhs.order < rhs.order;
+    });
+    for (const QueuedInit& entry : bucket) {
+        entry.fn();
+    }
+}
+
 } // namespace
 
-void Registry::addBlock(int id, void (*initFunc)()) {
+void Registry::enqueue(mod::LifecyclePhase phase, int order, void (*initFunc)())
+{
+    phaseBucket(phase).push_back({order, initFunc});
+}
+
+void Registry::addBlock(int id, void (*initFunc)())
+{
     assert(usedBlockIds().insert(id).second && "Registry: duplicate block id registration");
-    entries().push_back({initFunc, kBlockRegistrarBase + id});
+    enqueue(mod::LifecyclePhase::BlockRegistration, id, initFunc);
 }
 
-void Registry::addItem(int id, void (*initFunc)()) {
+void Registry::addItem(int id, void (*initFunc)())
+{
     assert(usedItemIds().insert(id).second && "Registry: duplicate item id registration");
-    entries().push_back({initFunc, kItemRegistrarBase + id});
+    enqueue(mod::LifecyclePhase::ItemRegistration, id, initFunc);
 }
 
-void Registry::addEntity(int rawId, void (*initFunc)()) {
+void Registry::addEntity(int rawId, void (*initFunc)())
+{
     assert(usedEntityIds().insert(rawId).second && "Registry: duplicate entity id registration");
-    entries().push_back({initFunc, kEntityRegistrarBase + rawId});
+    enqueue(mod::LifecyclePhase::EntityRegistration, rawId, initFunc);
 }
 
-void Registry::addCustom(int priority, void (*initFunc)()) {
-    entries().push_back({initFunc, priority});
-}
-
-void Registry::bootstrap() {
+void Registry::bootstrap()
+{
     std::call_once(g_bootstrapFlag, [] {
-        auto& list = entries();
-        std::sort(list.begin(), list.end(), [](const Entry& a, const Entry& b) {
-            return a.priority < b.priority;
-        });
+        mod::ModLifecycle::advanceTo(mod::LifecyclePhase::BootstrapStarting);
 
-        for (const Entry& entry : list) {
-            entry.fn();
+        // Phases run in this fixed order. Add a phase here (and to the enum)
+        // rather than hand-threading another runPhase() call.
+        static constexpr mod::LifecyclePhase kOrder[] = {
+            mod::LifecyclePhase::BiomeRegistration,
+            mod::LifecyclePhase::BlockRegistration,
+            mod::LifecyclePhase::BlockRegistryFinalize,
+            mod::LifecyclePhase::ItemRegistration,
+            mod::LifecyclePhase::BlockItemRegistration,
+            mod::LifecyclePhase::SmeltingRecipeRegistration,
+            mod::LifecyclePhase::CraftingRecipeRegistration,
+            mod::LifecyclePhase::EntityRegistration,
+            mod::LifecyclePhase::BlockEntityRegistration,
+            mod::LifecyclePhase::DimensionRegistration,
+            mod::LifecyclePhase::FuelRegistration,
+            mod::LifecyclePhase::ClientRendererRegistration,
+            mod::LifecyclePhase::ParticleRegistration,
+        };
+        for (const mod::LifecyclePhase phase : kOrder) {
+            runPhase(phase);
         }
+
+        g_bootstrapped = true;
+        mod::ModLifecycle::advanceTo(mod::LifecyclePhase::Frozen);
     });
+}
+
+bool Registry::isBootstrapped()
+{
+    return g_bootstrapped;
 }
 
 } // namespace net::minecraft::registry

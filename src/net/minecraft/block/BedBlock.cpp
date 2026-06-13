@@ -204,6 +204,6 @@ void BedBlock::registerClass()
 
 
 
-namespace {static ::net::minecraft::registry::RegisterBlock<BedBlock> autoReg;} // namespace
+MC_REGISTER_BLOCK(BedBlock)
 } // namespace net::minecraft::block
 

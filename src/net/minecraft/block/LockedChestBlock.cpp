@@ -61,6 +61,6 @@ void LockedChestBlock::registerClass()
 
 
 
-namespace {static ::net::minecraft::registry::RegisterBlock<LockedChestBlock> autoReg;} // namespace
+MC_REGISTER_BLOCK(LockedChestBlock)
 } // namespace net::minecraft::block
 

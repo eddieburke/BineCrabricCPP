@@ -8,7 +8,6 @@ namespace net::minecraft::block {
 
 class SandstoneBlock : public Block {
 public:
-    static constexpr bool kRegisters = true;
     static constexpr int kBlockId = 24;
 static void registerRecipes(recipe::CraftingRecipeManager& recipeManager);
 public:

@@ -75,6 +75,8 @@ private:
     resource::pack::TexturePacks* texturePacks_ = nullptr;
     std::unordered_map<std::string, int> textures_;
     std::unordered_map<std::string, std::vector<int>> colors_;
+    // CPU copies for textures loaded without a pack path (font, pack icons, etc.).
+    // Pack-path textures reload from the active texture pack via textures_.
     std::unordered_map<int, RasterImage> images_;
     std::unordered_map<std::string, std::unique_ptr<ImageDownload>> downloadedImages_;
     std::vector<net::minecraft::client::render::texture::DynamicTexture*> dynamicTextures_;

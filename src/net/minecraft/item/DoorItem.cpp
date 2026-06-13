@@ -81,6 +81,6 @@ void DoorItem::registerRecipes(recipe::CraftingRecipeManager& recipeManager)
 
 
 
-namespace {static ::net::minecraft::registry::RegisterItem<DoorItem> autoReg;} // namespace
 
+MC_REGISTER_ITEM(DoorItem)
 } // namespace net::minecraft::item

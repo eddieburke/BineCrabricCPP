@@ -13,7 +13,6 @@ namespace net::minecraft::block {
 
 class SaplingBlock : public PlantBlock {
 public:
-    static constexpr bool kRegisters = true;
     static constexpr int kBlockId = 6;
 
 static void registerClass();
@@ -30,7 +29,7 @@ static void registerClass();
             return;
         }
         PlantBlock::onTick(world, x, y, z, random);
-        if (world->getLightLevel(x, y + 1, z) >= 9 && random.nextInt(30) == 0) {
+        if (world->getLightLevelAbove(x, y, z) >= 9 && random.nextInt(30) == 0) {
             const int meta = world->getBlockMeta(x, y, z);
             if ((meta & 8) == 0) {
                 world->setBlockMeta(x, y, z, meta | 8);

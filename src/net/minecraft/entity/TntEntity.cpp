@@ -70,6 +70,6 @@ void TntEntity::readNbt(const NbtCompound& nbt)
     fuse = nbt.getByte("Fuse");
 }
 
-static ::net::minecraft::registry::RegisterEntity<TntEntity> autoReg;
 
+MC_REGISTER_ENTITY(TntEntity)
 } // namespace net::minecraft::entity

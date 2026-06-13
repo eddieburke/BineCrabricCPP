@@ -5,6 +5,7 @@
 #include "net/minecraft/inventory/Inventory.hpp"
 #include "net/minecraft/item/Item.hpp"
 #include "net/minecraft/achievement/Achievements.hpp"
+#include "net/minecraft/mod/GameHooks.hpp"
 #include "net/minecraft/screen/slot/Slot.hpp"
 
 namespace net::minecraft::entity::player {
@@ -31,6 +32,12 @@ public:
 
     void onTakeItem(const ItemStack& stack) override
     {
+        ItemStack eventStack = stack;
+        mod::CraftingTakeEvent event {player_, &eventStack, false};
+        mod::hooks().publish(event);
+        if (event.canceled) {
+            return;
+        }
         if (input_ == nullptr) {
             return;
         }

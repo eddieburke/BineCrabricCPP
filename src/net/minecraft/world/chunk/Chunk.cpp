@@ -9,6 +9,13 @@
 
 namespace net::minecraft {
 
+Chunk::~Chunk()
+{
+    if (loaded) {
+        unload();
+    }
+}
+
 bool Chunk::setBlock(int localX, int yPos, int localZ, int rawId, int metadataValue)
 {
     const int topHeight = static_cast<int>(heightmap[static_cast<std::size_t>((localZ << 4) | localX)] & 0xFFU);
@@ -293,13 +300,24 @@ void Chunk::setBlockEntity(int localX, int yPos, int localZ, std::unique_ptr<blo
     if (!blockEntity) {
         return;
     }
+    const Vec3i pos{localX, yPos, localZ};
+    const auto existing = blockEntities.find(pos);
+    if (existing != blockEntities.end()) {
+        block::entity::BlockEntity* previous = existing->second.get();
+        if (previous != nullptr && world != nullptr) {
+            auto& list = world->blockEntities;
+            list.erase(std::remove(list.begin(), list.end(), previous), list.end());
+            previous->markRemoved();
+        }
+        blockEntities.erase(existing);
+    }
     blockEntity->world = world;
     blockEntity->x = x * 16 + localX;
     blockEntity->y = yPos;
     blockEntity->z = z * 16 + localZ;
     blockEntity->cancelRemoval();
     block::entity::BlockEntity* raw = blockEntity.get();
-    blockEntities[Vec3i{localX, yPos, localZ}] = std::move(blockEntity);
+    blockEntities[pos] = std::move(blockEntity);
     if (loaded && world != nullptr && raw != nullptr) {
         auto& list = world->blockEntities;
         if (std::find(list.begin(), list.end(), raw) == list.end()) {
@@ -354,17 +372,27 @@ void Chunk::unload()
         // Blocks until the lighting thread is no longer touching this chunk,
         // so callers may free the chunk right after unload() returns.
         world->unregisterChunkForLighting(this);
-    }
-    for (auto& entry : blockEntities) {
-        if (entry.second) {
-            entry.second->markRemoved();
+
+        auto& list = world->blockEntities;
+        for (auto& entry : blockEntities) {
+            if (entry.second == nullptr) {
+                continue;
+            }
+            block::entity::BlockEntity* blockEntity = entry.second.get();
+            list.erase(std::remove(list.begin(), list.end(), blockEntity), list.end());
+            blockEntity->markRemoved();
         }
-    }
-    if (world != nullptr) {
+
         for (auto& slice : entities) {
             if (!slice.empty()) {
                 world->unloadEntities(slice);
             }
+        }
+        return;
+    }
+    for (auto& entry : blockEntities) {
+        if (entry.second) {
+            entry.second->markRemoved();
         }
     }
 }

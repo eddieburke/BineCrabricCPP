@@ -4,35 +4,10 @@
 #include <cmath>
 
 namespace net::minecraft::client::option {
-namespace {
-
-int baseViewDistanceBlocks(int viewDistanceSetting) noexcept
-{
-    return 256 >> (viewDistanceSetting & 3);
-}
-
-float renderDistanceScale(const GameOptions& options) noexcept
-{
-    return std::clamp(options.ofRenderScale, 1.0f, 5.0f);
-}
-
-} // namespace
 
 ResolvedRenderOptions resolve(const GameOptions& options)
 {
     ResolvedRenderOptions r {};
-    const float scale = renderDistanceScale(options);
-    const int baseViewDistance = baseViewDistanceBlocks(options.viewDistance);
-    r.viewDistanceBlocks = static_cast<float>(baseViewDistance) * scale;
-
-    // Java caps the renderer grid diameter at 400 blocks even when Far's fog
-    // distance is 256. Keeping that cap avoids compiling a much larger torus
-    // than the camera can use.
-    int diameter = std::min(baseViewDistance * 2, 400);
-    diameter = static_cast<int>(static_cast<float>(diameter) * scale);
-    r.chunkGridRadius = std::clamp(diameter, 64, 2000);
-
-    r.chunkPreloadRadius = options.ofPreloadedChunks <= 0 ? 2 : 2 + options.ofPreloadedChunks / 2;
     r.fovOffset = options.fieldOfView * 40.0f;
 
     r.ambientOcclusionActive = options.ao && options.ofAoLevel > 0.0f;

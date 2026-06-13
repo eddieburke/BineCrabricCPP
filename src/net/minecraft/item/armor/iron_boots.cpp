@@ -32,5 +32,5 @@ void IronBootsItem::registerRecipes(recipe::CraftingRecipeManager& recipeManager
         {std::string("X X"), std::string("X X"), 'X', Item::byRawId(9)});
 }
 
-static registry::RegisterItem<IronBootsItem> s_itemReg;
+MC_REGISTER_ITEM(IronBootsItem)
 } // namespace net::minecraft::item

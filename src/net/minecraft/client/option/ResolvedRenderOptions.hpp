@@ -12,9 +12,6 @@
 namespace net::minecraft::client::option {
 
 struct ResolvedRenderOptions {
-    float viewDistanceBlocks = 0.0f;
-    int chunkGridRadius = 64;
-    int chunkPreloadRadius = 2;
     float fovOffset = 0.0f;
 
     bool ambientOcclusionActive = false;

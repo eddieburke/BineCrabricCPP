@@ -334,42 +334,6 @@ private:
     [[nodiscard]] bool containsInXYPlane(const std::optional<Vec3d>& v) const;
 };
 
-// ---------------------------------------------------------------------------
-// Compatibility view for the legacy data-table API. Existing consumers query
-// byId(id).{blocksMovement,lightOpacity,slipperiness}; these now read through to
-// the polymorphic Block registry. Removed once consumers migrate to Block*.
-// ---------------------------------------------------------------------------
-struct BlockDefinition {
-    bool blocksMovement = false;
-    int lightOpacity = 0;
-    float slipperiness = 0.6f;
-};
-
-class BlockRegistry {
-public:
-    static BlockRegistry& instance()
-    {
-        static BlockRegistry registry;
-        return registry;
-    }
-
-    [[nodiscard]] BlockDefinition byId(int id) const
-    {
-        BlockDefinition def;
-        if (id < 0 || id >= Block::BLOCK_COUNT) {
-            return def;
-        }
-        Block* block = Block::BLOCKS[static_cast<std::size_t>(id)];
-        if (block == nullptr) {
-            return def;
-        }
-        def.blocksMovement = block->material.blocksMovement();
-        def.lightOpacity = Block::BLOCKS_LIGHT_OPACITY[static_cast<std::size_t>(id)];
-        def.slipperiness = block->slipperiness;
-        return def;
-    }
-};
-
 // Triggers Registry::bootstrap() (std::call_once; idempotent). Safe from any entry point.
 // Call sites: Minecraft ctor/init (client/Minecraft.cpp), World ctors (world/World.cpp),
 // Chunk/BlockSource/AlphaChunkStorage (world/chunk/**), seedfinder::runtime::initialize(),

@@ -63,6 +63,6 @@ void ShearsItem::registerRecipes(recipe::CraftingRecipeManager& recipeManager)
 
 
 
-namespace {static ::net::minecraft::registry::RegisterItem<ShearsItem> autoReg; } // namespace
 
+MC_REGISTER_ITEM(ShearsItem)
 } // namespace net::minecraft::item

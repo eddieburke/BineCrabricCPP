@@ -17,6 +17,6 @@ void SaplingBlock::registerBlockItems()
 
 
 
-namespace {static ::net::minecraft::registry::RegisterBlock<SaplingBlock> autoReg;} // namespace
+MC_REGISTER_BLOCK(SaplingBlock)
 } // namespace net::minecraft::block
 

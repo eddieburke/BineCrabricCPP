@@ -32,5 +32,5 @@ void ChainChestplateItem::registerRecipes(recipe::CraftingRecipeManager& recipeM
         {std::string("X X"), std::string("XXX"), std::string("XXX"), 'X', Block::FIRE});
 }
 
-static registry::RegisterItem<ChainChestplateItem> s_itemReg;
+MC_REGISTER_ITEM(ChainChestplateItem)
 } // namespace net::minecraft::item

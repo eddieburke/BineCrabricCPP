@@ -29,7 +29,7 @@ std::string Item::getTranslatedName() const
 
 void initializeItems()
 {
-    // Items register via per-TU RegisterItem / RegisterCustom during Registry::bootstrap().
+// Vanilla items register via per-TU RegisterItem during Registry::bootstrap().
 }
 
 } // namespace net::minecraft

@@ -91,6 +91,6 @@ void PumpkinBlock::registerRecipes(recipe::CraftingRecipeManager& recipeManager)
 
 
 
-namespace {static ::net::minecraft::registry::RegisterBlock<PumpkinBlock> autoReg;} // namespace
+MC_REGISTER_BLOCK(PumpkinBlock)
 } // namespace net::minecraft::block
 

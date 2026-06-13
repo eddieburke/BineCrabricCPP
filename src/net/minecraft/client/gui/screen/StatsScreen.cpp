@@ -6,6 +6,7 @@
 #include "net/minecraft/client/gl/GL11.hpp"
 #include "net/minecraft/client/render/Tessellator.hpp"
 #include "net/minecraft/client/render/item/ItemRenderer.hpp"
+#include "net/minecraft/client/render/platform/GuiGlState.hpp"
 #include "net/minecraft/client/render/platform/Lighting.hpp"
 #include "net/minecraft/client/resource/language/I18n.hpp"
 #include "net/minecraft/item/Item.hpp"
@@ -419,7 +420,7 @@ void StatsScreen::renderItemIcon(int x, int y, int itemOrBlockId)
         return;
     }
     renderIcon(x + 1, y + 1);
-    gl::GL11::glEnable(32826);
+    render::platform::ScopedRescaleNormal rescaleNormal;
     gl::GL11::glPushMatrix();
     gl::GL11::glRotatef(180.0f, 1.0f, 0.0f, 0.0f);
     render::platform::Lighting::turnOn();
@@ -427,7 +428,6 @@ void StatsScreen::renderItemIcon(int x, int y, int itemOrBlockId)
     static render::item::ItemRenderer itemRenderer;
     itemRenderer.renderGuiItem(*minecraft()->textRenderer, minecraft()->textureManager, ItemStack(itemOrBlockId), x + 2, y + 2);
     render::platform::Lighting::turnOff();
-    gl::GL11::glDisable(32826);
 }
 
 void StatsScreen::render(int mouseX, int mouseY, float tickDelta)
@@ -439,14 +439,6 @@ void StatsScreen::render(int mouseX, int mouseY, float tickDelta)
         drawCenteredTextWithShadow(*textRenderer(), title_, width_ / 2, 20, 0xFFFFFF);
     }
     Screen::render(mouseX, mouseY, tickDelta);
-}
-
-void StatsScreen::buttonClicked(widget::ButtonWidget& button)
-{
-    if (selectedStatsList_ != nullptr) {
-        selectedStatsList_->buttonClicked(button);
-    }
-    (void)button;
 }
 
 } // namespace net::minecraft::client::gui::screen

@@ -29,5 +29,5 @@ void DiamondSwordItem::registerRecipes(recipe::CraftingRecipeManager& recipeMana
         {std::string("X"), std::string("X"), std::string("#"), '#', Item::byRawId(24), 'X', Item::byRawId(8)});
 }
 
-static registry::RegisterItem<DiamondSwordItem> s_itemReg;
+MC_REGISTER_ITEM(DiamondSwordItem)
 } // namespace net::minecraft::item

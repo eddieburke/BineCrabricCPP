@@ -10,7 +10,6 @@ namespace net::minecraft::block {
 
 class PressurePlateBlock : public Block {
 public:
-    static constexpr bool kRegisters = true;
     static constexpr int kBlockId = 72;
 static void registerRecipes(recipe::CraftingRecipeManager& recipeManager);
 public:

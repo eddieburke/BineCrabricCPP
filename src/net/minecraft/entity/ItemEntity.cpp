@@ -103,6 +103,6 @@ bool ItemEntity::damage(Entity* /*damageSource*/, int amount)
     return false;
 }
 
-static ::net::minecraft::registry::RegisterEntity<ItemEntity> autoReg;
 
+MC_REGISTER_ENTITY(ItemEntity)
 } // namespace net::minecraft::entity

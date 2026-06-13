@@ -1,5 +1,7 @@
 #pragma once
 
+#include "net/minecraft/client/render/ViewDistance.hpp"
+
 namespace net::minecraft {
 class World;
 }
@@ -31,7 +33,7 @@ struct AtmosphereContext {
     const net::minecraft::entity::LivingEntity* livingCamera;
     const net::minecraft::client::option::GameOptions& options;
     int atmosphereTicks;
-    float viewDistanceBlocks;
+    net::minecraft::client::render::ViewDistance viewDistance;
 };
 
 } // namespace net::minecraft::client::render::atmosphere

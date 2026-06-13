@@ -237,6 +237,6 @@ void RepeaterBlock::registerClass()
 
 
 
-namespace {static ::net::minecraft::registry::RegisterBlock<RepeaterBlock> autoReg;} // namespace
+MC_REGISTER_BLOCK(RepeaterBlock)
 } // namespace net::minecraft::block
 

@@ -29,6 +29,7 @@ public:
     static void ensureGlContext();
     static void present();
     static void pumpAndPresent();
+    static void destroy();
     [[nodiscard]] static HWND hwnd();
     [[nodiscard]] static bool isActive();
     [[nodiscard]] static bool isCloseRequested();

@@ -19,7 +19,6 @@ namespace net::minecraft::entity::vehicle {
 
 class MinecartEntity : public Entity, public Inventory {
 public:
-    static constexpr bool kRegisters = true;
     static constexpr int kEntityId = 40;
     static constexpr const char* kEntityName = "Minecart";
 

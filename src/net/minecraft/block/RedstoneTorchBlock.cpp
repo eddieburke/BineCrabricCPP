@@ -213,7 +213,7 @@ void RedstoneTorchBlock::registerRecipes(recipe::CraftingRecipeManager& recipeMa
 
 namespace {
 
-static ::net::minecraft::registry::RegisterBlock<RedstoneTorchBlock> autoReg;
 } // namespace
+MC_REGISTER_BLOCK(RedstoneTorchBlock)
 } // namespace net::minecraft::block
 

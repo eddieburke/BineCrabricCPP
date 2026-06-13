@@ -35,6 +35,6 @@ int ZombieEntity::getDroppedItemId() const
 }
 
 
-static ::net::minecraft::registry::RegisterEntity<ZombieEntity> autoReg;
 
+MC_REGISTER_ENTITY(ZombieEntity)
 } // namespace net::minecraft::entity::mob

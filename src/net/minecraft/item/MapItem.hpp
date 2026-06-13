@@ -17,7 +17,7 @@ class CraftingRecipeManager;
 namespace net::minecraft::item {
 
 class MapItem : public NetworkSyncedItem {
-public:        static constexpr bool kRegisters = true;
+public:
     static constexpr int kRawId = 102;
 
 static void registerClass();

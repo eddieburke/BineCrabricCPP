@@ -74,6 +74,6 @@ void FallingBlockEntity::tick()
     }
 }
 
-static ::net::minecraft::registry::RegisterEntity<FallingBlockEntity> autoReg;
 
+MC_REGISTER_ENTITY(FallingBlockEntity)
 } // namespace net::minecraft::entity

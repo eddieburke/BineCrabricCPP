@@ -29,5 +29,5 @@ void IronPickaxeItem::registerRecipes(recipe::CraftingRecipeManager& recipeManag
         {std::string("XXX"), std::string(" # "), std::string(" # "), '#', Item::byRawId(24), 'X', Item::byRawId(9)});
 }
 
-static registry::RegisterItem<IronPickaxeItem> s_itemReg;
+MC_REGISTER_ITEM(IronPickaxeItem)
 } // namespace net::minecraft::item

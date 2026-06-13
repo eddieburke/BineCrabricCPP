@@ -3,6 +3,7 @@
 #include "net/minecraft/block/Block.hpp"
 #include "net/minecraft/entity/player/PlayerEntity.hpp"
 #include "net/minecraft/item/ItemStack.hpp"
+#include "net/minecraft/mod/GameHooks.hpp"
 #include "net/minecraft/world/World.hpp"
 
 namespace net::minecraft::server::network {
@@ -147,6 +148,20 @@ bool ServerPlayerInteractionManager::interactBlock(
     if (worldIn == nullptr || playerIn == nullptr) {
         return false;
     }
+    mod::BlockInteractEvent event {playerIn, worldIn, stack, x, y, z, side, true, false, false};
+    mod::hooks().publish(event);
+    if (event.canceled) {
+        return event.handled;
+    }
+    stack = event.stack;
+    x = event.x;
+    y = event.y;
+    z = event.z;
+    side = event.side;
+    if (event.handled) {
+        return true;
+    }
+
     const int blockId = worldIn->getBlockId(x, y, z);
     if (blockId > 0) {
         Block* block = Block::BLOCKS[static_cast<std::size_t>(blockId)];

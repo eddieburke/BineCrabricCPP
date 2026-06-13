@@ -8,7 +8,6 @@ namespace net::minecraft::block {
 
 class PistonHeadBlock : public Block {
 public:
-    static constexpr bool kRegisters = true;
     static constexpr int kBlockId = 34;
 
 static void registerClass();

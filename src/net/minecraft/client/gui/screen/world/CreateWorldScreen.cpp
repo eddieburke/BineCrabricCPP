@@ -13,7 +13,6 @@
 #include "seedfinder/engine/SeedString.hpp"
 #include "net/minecraft/world/storage/WorldStorageSource.hpp"
 
-#include "net/minecraft/client/input/InputSystem.hpp"
 
 #include <stdexcept>
 #include <string>
@@ -47,7 +46,7 @@ std::string CreateWorldScreen::getWorldSaveName(WorldStorageSource* storageSourc
 
 void CreateWorldScreen::init()
 {
-    input::InputSystem::instance().setKeyboardRepeat(true);
+    enableTextInput();
     buttons_.clear();
     createButton_ = &addActionButton(layout::centerBtnX(width()), layout::formPrimaryBtnY(height()),
         resource::language::I18n::getTranslation("selectWorld.create"),
@@ -94,17 +93,12 @@ void CreateWorldScreen::updateCreateButtonState()
 
 void CreateWorldScreen::tick()
 {
-    if (worldNameField_ != nullptr) {
-        worldNameField_->tick();
-    }
-    if (seedField_ != nullptr) {
-        seedField_->tick();
-    }
+    tickTextFields({worldNameField_.get(), seedField_.get()});
 }
 
 void CreateWorldScreen::removed()
 {
-    input::InputSystem::instance().setKeyboardRepeat(false);
+    disableTextInput();
 }
 
 void CreateWorldScreen::getSaveDirectoryNames()
@@ -167,14 +161,7 @@ void CreateWorldScreen::createWorld()
 
 void CreateWorldScreen::keyPressed(char character, int keyCode)
 {
-    if (worldNameField_ != nullptr && worldNameField_->focused) {
-        worldNameField_->keyPressed(character, keyCode);
-    } else if (seedField_ != nullptr) {
-        seedField_->keyPressed(character, keyCode);
-    }
-    if (character == '\r') {
-        createWorld();
-    }
+    handleFormKeyPress(character, keyCode, {worldNameField_.get(), seedField_.get()}, [this] { createWorld(); });
     updateCreateButtonState();
     getSaveDirectoryNames();
 }
@@ -182,12 +169,7 @@ void CreateWorldScreen::keyPressed(char character, int keyCode)
 void CreateWorldScreen::mouseClicked(int mouseX, int mouseY, int button)
 {
     Screen::mouseClicked(mouseX, mouseY, button);
-    if (worldNameField_ != nullptr) {
-        worldNameField_->mouseClicked(mouseX, mouseY, button);
-    }
-    if (seedField_ != nullptr) {
-        seedField_->mouseClicked(mouseX, mouseY, button);
-    }
+    clickTextFields(mouseX, mouseY, button, {worldNameField_.get(), seedField_.get()});
 }
 
 void CreateWorldScreen::render(int mouseX, int mouseY, float tickDelta)

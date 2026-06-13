@@ -54,8 +54,6 @@ class GameOptions;
 
 namespace net::minecraft::client::input {
 
-
-
 enum class InputLayer {
 
     Game,
@@ -158,6 +156,8 @@ public:
 
     [[nodiscard]] SlotClickModifier slotClickModifier() const noexcept;
 
+    [[nodiscard]] bool passesKeyboardToGame() const;
+
 
 
     void pushLayer(InputLayer layer);
@@ -185,6 +185,16 @@ public:
     static void compactQueues();
 
     static LRESULT handleWindowMessage(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam);
+
+    static void pushKeyEvent(int key, bool down);
+
+    static void pushCharEvent(int character);
+
+    static void pushMouseButtonEvent(int button, bool down, int x, int y);
+
+    static void pushMouseWheelEvent(int delta, int x, int y);
+
+    static void setCursorPosition(int x, int y);
 
 
 
@@ -248,8 +258,6 @@ public:
 
 private:
 
-    [[nodiscard]] bool passesKeyboardToGame() const;
-
     void refreshModifiers();
 
     void handleKeyboardEdge(int key, bool down);
@@ -264,7 +272,15 @@ private:
 
 #ifdef _WIN32
 
+    void pollGameMouse(Minecraft& client);
+
+    void pollGameKeyboard(Minecraft& client);
+
+    void dispatchGameKey(Minecraft& client, int key);
+
     void ingestKey(int vk, bool down);
+
+    void ingestKeyCode(int key, bool down);
 
     void ingestChar(int character);
 
@@ -387,5 +403,3 @@ private:
 
 
 } // namespace net::minecraft::client::input
-
-

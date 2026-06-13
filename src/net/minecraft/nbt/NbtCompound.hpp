@@ -1,73 +1,118 @@
 #pragma once
 
-#include "net/minecraft/nbt/NbtElement.hpp"
-#include "net/minecraft/nbt/NbtList.hpp"
+#include "net/minecraft/nbt/Nbt.hpp"
 
 #include <string>
+#include <utility>
 #include <vector>
 
 namespace net::minecraft {
 
 class NbtList;
 
-// Faithful port of net.minecraft.nbt.NbtCompound.
-class NbtCompound : public NbtElement {
+// Compound tag handle. Freestanding compounds own storage; nested handles alias map slots
+// (same reference semantics as Java HashMap<NbtCompound>).
+class NbtCompound {
 public:
-    NbtCompound() : tag_(Nbt::compound()) {}
+    NbtCompound() : owned_(Nbt::compound()), ptr_(&owned_) {}
 
     explicit NbtCompound(Nbt tag)
-        : tag_(std::move(tag))
+        : owned_(tag.isCompound() ? std::move(tag) : Nbt::compound()), ptr_(&owned_)
     {
-        if (!tag_.isCompound()) {
-            tag_ = Nbt::compound();
-        }
     }
 
-    [[nodiscard]] std::uint8_t getType() const override { return 10; }
+    NbtCompound(const NbtCompound& other) : owned_(other.storage()), ptr_(&owned_) {}
 
-    void write(std::ostream& output) const override;
-    void read(std::istream& input) override;
+    NbtCompound(NbtCompound&& other) noexcept : owned_(), ptr_(&owned_)
+    {
+        if (other.ptr_ == &other.owned_) {
+            owned_ = std::move(other.owned_);
+            other.owned_ = Nbt::compound();
+        } else {
+            owned_ = std::move(*other.ptr_);
+        }
+        other.ptr_ = &other.owned_;
+    }
 
-    [[nodiscard]] Nbt toStorage() const override { return tag_; }
+    NbtCompound& operator=(const NbtCompound& other)
+    {
+        if (this != &other) {
+            *ptr_ = other.storage();
+        }
+        return *this;
+    }
 
-    [[nodiscard]] Nbt& storage() { return tag_; }
-    [[nodiscard]] const Nbt& storage() const { return tag_; }
+    NbtCompound& operator=(NbtCompound&& other) noexcept
+    {
+        if (this != &other) {
+            if (other.ptr_ == &other.owned_) {
+                *ptr_ = std::move(other.owned_);
+                other.owned_ = Nbt::compound();
+            } else {
+                *ptr_ = std::move(*other.ptr_);
+            }
+            other.ptr_ = &other.owned_;
+        }
+        return *this;
+    }
 
-    void put(const std::string& key, Nbt value) { tag_.put(key, std::move(value)); }
-    void put(const std::string& key, const NbtCompound& value) { tag_.put(key, value.tag_); }
-    void put(const std::string& key, const NbtList& value) { tag_.put(key, value.storage()); }
-    void put(const std::string& key, std::unique_ptr<NbtElement> value);
+    [[nodiscard]] static NbtCompound bind(Nbt& node)
+    {
+        NbtCompound wrapper;
+        wrapper.ptr_ = &node;
+        if (!wrapper.ptr_->isCompound()) {
+            *wrapper.ptr_ = Nbt::compound();
+        }
+        return wrapper;
+    }
 
-    void putByte(const std::string& key, std::int8_t value) { tag_.putByte(key, value); }
-    void putShort(const std::string& key, std::int16_t value) { tag_.putShort(key, value); }
-    void putInt(const std::string& key, std::int32_t value) { tag_.putInt(key, value); }
-    void putLong(const std::string& key, std::int64_t value) { tag_.putLong(key, value); }
-    void putFloat(const std::string& key, float value) { tag_.putFloat(key, value); }
-    void putDouble(const std::string& key, double value) { tag_.putDouble(key, value); }
-    void putString(const std::string& key, std::string value) { tag_.putString(key, std::move(value)); }
+    [[nodiscard]] Nbt& storage() noexcept { return *ptr_; }
+    [[nodiscard]] const Nbt& storage() const noexcept { return *ptr_; }
+
+    void put(const std::string& key, Nbt value) { ptr_->put(key, std::move(value)); }
+    void put(const std::string& key, NbtCompound& child);
+    void put(const std::string& key, const NbtCompound& child) { ptr_->put(key, child.storage()); }
+    void put(const std::string& key, NbtList& list);
+    void put(const std::string& key, const NbtList& list);
+
+    void putByte(const std::string& key, std::int8_t value) { ptr_->putByte(key, value); }
+    void putShort(const std::string& key, std::int16_t value) { ptr_->putShort(key, value); }
+    void putInt(const std::string& key, std::int32_t value) { ptr_->putInt(key, value); }
+    void putLong(const std::string& key, std::int64_t value) { ptr_->putLong(key, value); }
+    void putFloat(const std::string& key, float value) { ptr_->putFloat(key, value); }
+    void putDouble(const std::string& key, double value) { ptr_->putDouble(key, value); }
+    void putString(const std::string& key, std::string value) { ptr_->putString(key, std::move(value)); }
     void putByteArray(const std::string& key, std::vector<std::uint8_t> value)
     {
-        tag_.putByteArray(key, std::move(value));
+        ptr_->putByteArray(key, std::move(value));
     }
-    void putBoolean(const std::string& key, bool value) { tag_.putBoolean(key, value); }
+    void putBoolean(const std::string& key, bool value) { ptr_->putBoolean(key, value); }
 
-    [[nodiscard]] bool contains(const std::string& key) const { return tag_.contains(key); }
+    [[nodiscard]] bool contains(const std::string& key) const { return ptr_->contains(key); }
 
-    [[nodiscard]] std::int8_t getByte(const std::string& key) const { return tag_.getByte(key); }
-    [[nodiscard]] std::int16_t getShort(const std::string& key) const { return tag_.getShort(key); }
-    [[nodiscard]] std::int32_t getInt(const std::string& key) const { return tag_.getInt(key); }
-    [[nodiscard]] std::int64_t getLong(const std::string& key) const { return tag_.getLong(key); }
-    [[nodiscard]] float getFloat(const std::string& key) const { return tag_.getFloat(key); }
-    [[nodiscard]] double getDouble(const std::string& key) const { return tag_.getDouble(key); }
-    [[nodiscard]] std::string getString(const std::string& key) const { return tag_.getString(key); }
-    [[nodiscard]] std::vector<std::uint8_t> getByteArray(const std::string& key) const;
-    [[nodiscard]] bool getBoolean(const std::string& key) const { return tag_.getBoolean(key); }
+    [[nodiscard]] std::int8_t getByte(const std::string& key) const { return ptr_->getByte(key); }
+    [[nodiscard]] std::int16_t getShort(const std::string& key) const { return ptr_->getShort(key); }
+    [[nodiscard]] std::int32_t getInt(const std::string& key) const { return ptr_->getInt(key); }
+    [[nodiscard]] std::int64_t getLong(const std::string& key) const { return ptr_->getLong(key); }
+    [[nodiscard]] float getFloat(const std::string& key) const { return ptr_->getFloat(key); }
+    [[nodiscard]] double getDouble(const std::string& key) const { return ptr_->getDouble(key); }
+    [[nodiscard]] std::string getString(const std::string& key) const { return ptr_->getString(key); }
+    [[nodiscard]] std::vector<std::uint8_t> getByteArray(const std::string& key) const
+    {
+        return ptr_->getByteArray(key);
+    }
+    [[nodiscard]] bool getBoolean(const std::string& key) const { return ptr_->getBoolean(key); }
 
+    [[nodiscard]] NbtCompound getCompound(const std::string& key);
     [[nodiscard]] NbtCompound getCompound(const std::string& key) const;
+    [[nodiscard]] NbtList getList(const std::string& key);
     [[nodiscard]] NbtList getList(const std::string& key) const;
 
+    void adoptInto(Nbt& slot);
+
 private:
-    Nbt tag_;
+    Nbt owned_ {};
+    Nbt* ptr_ = nullptr;
 };
 
 } // namespace net::minecraft

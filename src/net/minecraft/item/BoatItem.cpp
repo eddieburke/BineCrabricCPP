@@ -63,6 +63,6 @@ void BoatItem::registerRecipes(recipe::CraftingRecipeManager& recipeManager)
 
 
 
-namespace {static ::net::minecraft::registry::RegisterItem<BoatItem> autoReg; } // namespace
 
+MC_REGISTER_ITEM(BoatItem)
 } // namespace net::minecraft::item

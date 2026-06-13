@@ -44,6 +44,6 @@ void MusicDiscItem::registerClass()
 
 
 
-namespace {static ::net::minecraft::registry::RegisterItem<MusicDiscItem> autoReg;} // namespace
 
+MC_REGISTER_ITEM(MusicDiscItem)
 } // namespace net::minecraft::item

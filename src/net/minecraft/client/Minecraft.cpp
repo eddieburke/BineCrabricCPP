@@ -3,9 +3,12 @@
 #include "net/minecraft/achievement/Achievements.hpp"
 #include "net/minecraft/client/debug/ClientProfilerOverlay.hpp"
 #include "net/minecraft/client/input/InputSystem.hpp"
+#include "net/minecraft/client/input/Keys.hpp"
+#include "net/minecraft/client/core/ClientNetworkBridge.hpp"
 #include "net/minecraft/client/lifecycle/ClientInitializer.hpp"
 #include "net/minecraft/client/lifecycle/ClientLaunch.hpp"
 #include "net/minecraft/client/lifecycle/ClientShutdown.hpp"
+#include "net/minecraft/client/network/ClientNetworkHandler.hpp"
 #include "net/minecraft/client/render/LoadingScreenRenderer.hpp"
 #include "net/minecraft/client/session/SessionValidator.hpp"
 #include "net/minecraft/client/util/DisplayManager.hpp"
@@ -29,6 +32,7 @@
 #include "net/minecraft/client/render/ProgressRenderError.hpp"
 #include "net/minecraft/client/render/atmosphere/AtmosphereRenderer.hpp"
 #include "net/minecraft/client/resource/language/TranslationStorage.hpp"
+#include "net/minecraft/mod/GameHooks.hpp"
 #include "net/minecraft/stat/PlayerStats.hpp"
 #include "net/minecraft/world/storage/WorldStorageSource.hpp"
 #include "net/minecraft/client/render/block/BlockRenderManager.hpp"
@@ -42,8 +46,6 @@
 #include "net/minecraft/util/hit/HitResultType.hpp"
 #include "net/minecraft/util/math/MathHelper.hpp"
 #include "net/minecraft/world/World.hpp"
-#include "net/minecraft/world/chunk/ChunkSource.hpp"
-#include "net/minecraft/world/chunk/LegacyChunkCache.hpp"
 #include "net/minecraft/world/dimension/Dimension.hpp"
 #include "net/minecraft/world/dimension/PortalForcer.hpp"
 #include "net/minecraft/world/storage/WorldStorage.hpp"
@@ -164,7 +166,7 @@ void Minecraft::cleanHeap()
 
 void Minecraft::handleScreenshotKey()
 {
-    if (input::InputSystem::instance().isKeyDown(60)) {
+    if (input::InputSystem::instance().isKeyDown(input::keys::kF2)) {
         if (!screenshotKeyDown) {
             screenshotKeyDown = true;
             inGameHud.addChatMessage(Screenshot::take(getRunDirectory(), displayWidth, displayHeight));
@@ -372,15 +374,6 @@ void Minecraft::tick()
     if (gameRenderer != nullptr) {
         gameRenderer->updateTargetedEntity(1.0f);
     }
-    if (player != nullptr && world != nullptr) {
-        if (ChunkSource* chunkSource = world->getChunkSource()) {
-            if (auto* legacyCache = dynamic_cast<LegacyChunkCache*>(chunkSource)) {
-                const int chunkX = MathHelper::floor(player->x) >> 4;
-                const int chunkZ = MathHelper::floor(player->z) >> 4;
-                legacyCache->setSpawnPoint(chunkX, chunkZ);
-            }
-        }
-    }
     if (!paused.load() && world != nullptr && interactionManager != nullptr) {
         interactionManager->tick();
         if (worldRenderer != nullptr) {
@@ -415,7 +408,7 @@ void Minecraft::runRenderPhase(std::int64_t tickDuration, int& frames, std::int6
         world->doLightingUpdates();
     }
     // Key 65 (F7) — defer present until after render when held.
-    if (!input::InputSystem::instance().isKeyDown(65)) {
+    if (!input::InputSystem::instance().isKeyDown(input::keys::kF7)) {
         util::DisplayManager::pumpAndPresent();
     }
     if (!skipGameRender) {
@@ -445,7 +438,7 @@ void Minecraft::runRenderPhase(std::int64_t tickDuration, int& frames, std::int6
     toast.tick();
     std::this_thread::yield();
     handleScreenshotKey();
-    if (input::InputSystem::instance().isKeyDown(65)) {
+    if (input::InputSystem::instance().isKeyDown(input::keys::kF7)) {
         util::DisplayManager::pumpAndPresent();
     }
     util::DisplayManager::logGlError(*this, "Post render");
@@ -480,6 +473,16 @@ void Minecraft::run()
         while (running.load()) {
             try {
                 screenStack_.flushRetired();
+                // Free network bridges retired last iteration, then retire the active one once it
+                // has disconnected. Both happen here (no tick on the stack) so a handler whose
+                // tick() requested teardown is destroyed only after that stack has unwound.
+                worldSession_.flushRetiredNetwork();
+                if (core::ClientNetworkBridge* bridge = worldSession_.networkBridge()) {
+                    network::ClientNetworkHandler* handler = bridge->handler();
+                    if (handler == nullptr || handler->disconnected) {
+                        worldSession_.retireNetworkBridge();
+                    }
+                }
                 if (applet != nullptr && !applet->isActive()) {
                     break;
                 }
@@ -488,6 +491,11 @@ void Minecraft::run()
                     scheduleStop();
                 }
 #endif
+                mod::TickRateEvent tickRateEvent {timer.tps, timer.tpsScale};
+                mod::hooks().publish(tickRateEvent);
+                timer.tps = tickRateEvent.targetTps;
+                timer.tpsScale = tickRateEvent.tpsScale;
+
                 if (paused.load() && world != nullptr) {
                     const float savedPartial = timer.partialTick;
                     timer.advance();
@@ -737,11 +745,7 @@ void Minecraft::respawnPlayer(bool worldSpawn, int dimension)
         useBedSpawn = false;
     }
 
-    if (ChunkSource* chunkSource = world->getChunkSource()) {
-        if (auto* legacyCache = dynamic_cast<LegacyChunkCache*>(chunkSource)) {
-            legacyCache->setSpawnPoint(respawnPos->x >> 4, respawnPos->z >> 4);
-        }
-    }
+    world->setChunkCacheCenterFromBlockPos(respawnPos->x, respawnPos->z);
     world->updateSpawnPosition();
     world->updateEntityLists();
 

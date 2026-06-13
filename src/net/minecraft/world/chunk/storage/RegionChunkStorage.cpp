@@ -20,34 +20,7 @@ Chunk RegionChunkStorage::loadChunk(World* world, int chunkX, int chunkZ)
 
     try {
         const Nbt root = Nbt::read(*raw);
-        const Nbt* level = root.get("Level");
-        if (level == nullptr || !level->isCompound()) {
-            std::cout << "Chunk file at " << chunkX << "," << chunkZ << " is missing level data, skipping\n";
-            return EmptyChunk(world, chunkX, chunkZ);
-        }
-
-        NbtCompound levelCompound(*level);
-        if (!levelCompound.contains("Blocks")) {
-            std::cout << "Chunk file at " << chunkX << "," << chunkZ << " is missing block data, skipping\n";
-            return EmptyChunk(world, chunkX, chunkZ);
-        }
-
-        Chunk chunk = AlphaChunkStorage::loadChunkFromNbt(world, levelCompound);
-        if (!chunk.chunkPosEquals(chunkX, chunkZ)) {
-            std::cout << "Chunk file at " << chunkX << "," << chunkZ
-                      << " is in the wrong location; relocating. (Expected " << chunkX << ", " << chunkZ << ", got "
-                      << chunk.x << ", " << chunk.z << ")\n";
-            NbtCompound relocated = levelCompound;
-            relocated.putInt("xPos", chunkX);
-            relocated.putInt("zPos", chunkZ);
-            Chunk relocatedChunk = AlphaChunkStorage::loadChunkFromNbt(world, relocated);
-            relocatedChunk.world = world;
-            relocatedChunk.fill();
-            return relocatedChunk;
-        }
-        chunk.world = world;
-        chunk.fill();
-        return chunk;
+        return AlphaChunkStorage::loadChunkFromRootNbt(world, root, chunkX, chunkZ);
     } catch (const std::exception& exception) {
         std::cout << "Failed to load chunk at " << chunkX << "," << chunkZ << ": " << exception.what() << '\n';
         return EmptyChunk(world, chunkX, chunkZ);
@@ -62,11 +35,8 @@ void RegionChunkStorage::saveChunk(World* world, Chunk& chunk)
     world->checkSessionLock();
 
     try {
-        NbtCompound root;
-        NbtCompound level;
-        root.put("Level", level);
-        AlphaChunkStorage::saveChunkToNbt(chunk, world, level);
-        const std::vector<std::uint8_t> raw = root.toStorage().toBytes();
+        const NbtCompound root = AlphaChunkStorage::saveChunkToRootNbt(chunk, world);
+        const std::vector<std::uint8_t> raw = root.storage().toBytes();
         RegionIo::writeChunkData(dir_, chunk.x, chunk.z, raw);
 
         WorldProperties& properties = world->getProperties();

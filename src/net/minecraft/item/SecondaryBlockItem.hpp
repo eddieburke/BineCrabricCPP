@@ -12,7 +12,6 @@ namespace net::minecraft::item {
 
 class SecondaryBlockItem : public Item {
 public:
-    static constexpr bool kRegisters = true;
     static constexpr int kRawId = 98;
 
 static void registerClass();

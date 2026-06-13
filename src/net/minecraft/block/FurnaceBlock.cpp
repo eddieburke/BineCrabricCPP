@@ -200,7 +200,7 @@ void FurnaceBlock::registerRecipes(recipe::CraftingRecipeManager& recipeManager)
 
 namespace {
 
-static ::net::minecraft::registry::RegisterBlock<FurnaceBlock> autoReg;
 } // namespace
+MC_REGISTER_BLOCK(FurnaceBlock)
 } // namespace net::minecraft::block
 

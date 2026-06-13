@@ -12,7 +12,6 @@ namespace net::minecraft::block {
 
 class RepeaterBlock : public Block {
 public:
-    static constexpr bool kRegisters = true;
     static constexpr int kBlockId = 94;
 
 static void registerClass();

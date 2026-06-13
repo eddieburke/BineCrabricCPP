@@ -24,5 +24,5 @@ void FlintItem::registerRecipes(recipe::CraftingRecipeManager& recipeManager)
     (void)recipeManager;
 }
 
-static registry::RegisterItem<FlintItem> s_itemReg;
+MC_REGISTER_ITEM(FlintItem)
 } // namespace net::minecraft::item

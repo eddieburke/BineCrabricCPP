@@ -21,5 +21,5 @@ void StackableFoodItem::registerRecipes(recipe::CraftingRecipeManager& recipeMan
 
 
 
-namespace {static ::net::minecraft::registry::RegisterItem<StackableFoodItem> autoReg;} // namespace
+MC_REGISTER_ITEM(StackableFoodItem)
 } // namespace net::minecraft::item

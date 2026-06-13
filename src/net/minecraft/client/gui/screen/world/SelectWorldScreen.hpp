@@ -21,9 +21,6 @@ public:
     void render(int mouseX, int mouseY, float tickDelta) override;
     void confirmed(bool confirmed, int id) override;
 
-protected:
-    void buttonClicked(widget::ButtonWidget& button) override;
-
 private:
     class WorldListWidget;
 

@@ -24,5 +24,5 @@ void GlowstoneDustItem::registerRecipes(recipe::CraftingRecipeManager& recipeMan
     (void)recipeManager;
 }
 
-static registry::RegisterItem<GlowstoneDustItem> s_itemReg;
+MC_REGISTER_ITEM(GlowstoneDustItem)
 } // namespace net::minecraft::item

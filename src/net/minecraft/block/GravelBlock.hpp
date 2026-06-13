@@ -6,7 +6,7 @@
 
 namespace net::minecraft::block {
 
-// Registered in SimpleBlocks.cpp.
+// Registered in Block.cpp.
 class GravelBlock : public FallingBlock {
 public:
     GravelBlock(int id, int textureId) : FallingBlock(id, textureId, material::Material::SAND) {}

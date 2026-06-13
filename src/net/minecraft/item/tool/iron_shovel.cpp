@@ -29,5 +29,5 @@ void IronShovelItem::registerRecipes(recipe::CraftingRecipeManager& recipeManage
         {std::string("X"), std::string("#"), std::string("#"), '#', Item::byRawId(24), 'X', Item::byRawId(9)});
 }
 
-static registry::RegisterItem<IronShovelItem> s_itemReg;
+MC_REGISTER_ITEM(IronShovelItem)
 } // namespace net::minecraft::item

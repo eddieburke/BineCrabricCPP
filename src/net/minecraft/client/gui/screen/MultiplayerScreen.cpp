@@ -6,7 +6,6 @@
 #include "net/minecraft/client/gui/screen/TitleScreen.hpp"
 #include "net/minecraft/client/resource/language/I18n.hpp"
 
-#include "net/minecraft/client/input/InputSystem.hpp"
 
 #include <algorithm>
 #include <sstream>
@@ -23,7 +22,7 @@ MultiplayerScreen::MultiplayerScreen(ScreenFactory parentFactory) : parentFactor
 
 void MultiplayerScreen::init()
 {
-    input::InputSystem::instance().setKeyboardRepeat(true);
+    enableTextInput();
     buttons_.clear();
     connectButton_ = &addActionButton(layout::centerBtnX(width()), layout::formPrimaryBtnY(height()),
         resource::language::I18n::getTranslation("multiplayer.connect"),
@@ -52,15 +51,13 @@ void MultiplayerScreen::init()
 
 void MultiplayerScreen::tick()
 {
-    if (serverField_ != nullptr) {
-        serverField_->tick();
-        updateConnectButtonState();
-    }
+    tickTextFields({serverField_.get()});
+    updateConnectButtonState();
 }
 
 void MultiplayerScreen::removed()
 {
-    input::InputSystem::instance().setKeyboardRepeat(false);
+    disableTextInput();
 }
 
 int MultiplayerScreen::parseInt(const std::string& value, int defaultValue)
@@ -133,21 +130,14 @@ void MultiplayerScreen::connectToServer()
 
 void MultiplayerScreen::keyPressed(char character, int keyCode)
 {
-    if (serverField_ != nullptr) {
-        serverField_->keyPressed(character, keyCode);
-    }
+    handleFormKeyPress(character, keyCode, {serverField_.get()}, [this] { connectToServer(); });
     updateConnectButtonState();
-    if (character == '\r') {
-        connectToServer();
-    }
 }
 
 void MultiplayerScreen::mouseClicked(int mouseX, int mouseY, int button)
 {
     Screen::mouseClicked(mouseX, mouseY, button);
-    if (serverField_ != nullptr) {
-        serverField_->mouseClicked(mouseX, mouseY, button);
-    }
+    clickTextFields(mouseX, mouseY, button, {serverField_.get()});
 }
 
 void MultiplayerScreen::render(int mouseX, int mouseY, float tickDelta)

@@ -26,7 +26,7 @@ std::array<OptionSpec, 9> kSpecs {{
         d::cycleIntMod<&GameOptions::viewDistance, 4>,
         d::loadIntMember<&GameOptions::viewDistance>,
         d::saveIntMember<&GameOptions::viewDistance>),
-    d::makeSlider("ofRenderScale", 16, ApplyFlags::None, ApplyFlags::ReloadWorld,
+    d::makeSlider("ofRenderScale", 16, ApplyFlags::None, ApplyFlags::None,
         d::getRenderScaleSlider, d::setRenderScaleSlider,
         d::loadFloatMember<&GameOptions::ofRenderScale>,
         d::saveFloatMember<&GameOptions::ofRenderScale>),

@@ -113,33 +113,46 @@ std::string encodeUrlPath(std::string path)
     return encoded;
 }
 
+#ifdef _WIN32
+std::wstring buildHeaderBlock(const std::vector<HttpHeader>& headers)
+{
+    std::wstring block;
+    for (const HttpHeader& header : headers) {
+        block += toWide(header.name);
+        block += L": ";
+        block += toWide(header.value);
+        block += L"\r\n";
+    }
+    return block;
+}
+#endif
+
 } // namespace
 
-HttpResponse fetchUrl(const std::string& url, bool useBetacraftProxy)
+HttpResponse httpRequest(const HttpRequest& request)
 {
     HttpResponse response;
 #ifndef _WIN32
-    (void)url;
-    (void)useBetacraftProxy;
+    (void)request;
     return response;
 #else
     std::wstring host;
     std::wstring path;
     INTERNET_PORT port = 0;
     bool secure = false;
-    if (!crackUrl(url, host, path, port, secure)) {
+    if (!crackUrl(request.url, host, path, port, secure)) {
         return response;
     }
 
     const wchar_t* proxyName = WINHTTP_NO_PROXY_NAME;
     std::wstring proxyStorage;
-    if (useBetacraftProxy) {
+    if (request.useBetacraftProxy) {
         proxyStorage = toWide(kBetacraftProxyHost) + L":" + std::to_wstring(kBetacraftProxyPortBeta173);
         proxyName = proxyStorage.c_str();
     }
 
     HINTERNET session = WinHttpOpen(L"MinecraftNative/1.0",
-        useBetacraftProxy ? WINHTTP_ACCESS_TYPE_NAMED_PROXY : WINHTTP_ACCESS_TYPE_DEFAULT_PROXY, proxyName,
+        request.useBetacraftProxy ? WINHTTP_ACCESS_TYPE_NAMED_PROXY : WINHTTP_ACCESS_TYPE_DEFAULT_PROXY, proxyName,
         WINHTTP_NO_PROXY_BYPASS, 0);
     if (session == nullptr) {
         return response;
@@ -152,47 +165,61 @@ HttpResponse fetchUrl(const std::string& url, bool useBetacraftProxy)
     }
 
     const DWORD flags = secure ? WINHTTP_FLAG_SECURE : 0;
-    HINTERNET request = WinHttpOpenRequest(connection, L"GET", path.c_str(), nullptr, WINHTTP_NO_REFERER,
+    const std::wstring method = toWide(request.method.empty() ? "GET" : request.method);
+    HINTERNET httpHandle = WinHttpOpenRequest(connection, method.c_str(), path.c_str(), nullptr, WINHTTP_NO_REFERER,
         WINHTTP_DEFAULT_ACCEPT_TYPES, flags);
-    if (request == nullptr) {
+    if (httpHandle == nullptr) {
         WinHttpCloseHandle(connection);
         WinHttpCloseHandle(session);
         return response;
     }
 
-    if (WinHttpSendRequest(request, WINHTTP_NO_ADDITIONAL_HEADERS, 0, WINHTTP_NO_REQUEST_DATA, 0, 0, 0)
-        && WinHttpReceiveResponse(request, nullptr)) {
+    const std::wstring headerBlock = buildHeaderBlock(request.headers);
+    const wchar_t* headerPtr = headerBlock.empty() ? WINHTTP_NO_ADDITIONAL_HEADERS : headerBlock.c_str();
+    const DWORD headerLength = headerBlock.empty() ? 0 : static_cast<DWORD>(-1);
+    LPVOID bodyPtr = WINHTTP_NO_REQUEST_DATA;
+    DWORD bodyLength = 0;
+    if (!request.body.empty()) {
+        bodyPtr = const_cast<char*>(request.body.data());
+        bodyLength = static_cast<DWORD>(request.body.size());
+    }
+
+    if (WinHttpSendRequest(httpHandle, headerPtr, headerLength, bodyPtr, bodyLength, bodyLength, 0)
+        && WinHttpReceiveResponse(httpHandle, nullptr)) {
         DWORD statusCode = 0;
         DWORD statusSize = sizeof(statusCode);
-        WinHttpQueryHeaders(request, WINHTTP_QUERY_STATUS_CODE | WINHTTP_QUERY_FLAG_NUMBER,
+        WinHttpQueryHeaders(httpHandle, WINHTTP_QUERY_STATUS_CODE | WINHTTP_QUERY_FLAG_NUMBER,
             WINHTTP_HEADER_NAME_BY_INDEX, &statusCode, &statusSize, WINHTTP_NO_HEADER_INDEX);
         response.statusCode = static_cast<int>(statusCode);
-        if (statusCode >= 400 && statusCode < 500) {
-            WinHttpCloseHandle(request);
-            WinHttpCloseHandle(connection);
-            WinHttpCloseHandle(session);
-            return response;
-        }
         for (;;) {
             DWORD available = 0;
-            if (!WinHttpQueryDataAvailable(request, &available) || available == 0) {
+            if (!WinHttpQueryDataAvailable(httpHandle, &available) || available == 0) {
                 break;
             }
             const std::size_t offset = response.body.size();
             response.body.resize(offset + available);
             DWORD read = 0;
-            if (!WinHttpReadData(request, response.body.data() + offset, available, &read) || read == 0) {
+            if (!WinHttpReadData(httpHandle, response.body.data() + offset, available, &read) || read == 0) {
                 break;
             }
             response.body.resize(offset + read);
         }
     }
 
-    WinHttpCloseHandle(request);
+    WinHttpCloseHandle(httpHandle);
     WinHttpCloseHandle(connection);
     WinHttpCloseHandle(session);
     return response;
 #endif
+}
+
+HttpResponse fetchUrl(const std::string& url, bool useBetacraftProxy)
+{
+    HttpRequest request;
+    request.method = "GET";
+    request.url = url;
+    request.useBetacraftProxy = useBetacraftProxy;
+    return httpRequest(request);
 }
 
 ResourceDownloadThread::ResourceDownloadThread(std::filesystem::path runDirectory, Minecraft* minecraft)

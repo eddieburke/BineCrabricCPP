@@ -139,7 +139,7 @@ void DecorateProbe::probe(std::uint64_t seed, int originChunkX, int originChunkZ
         return;
     }
     cache->setSpawnPoint(originChunkX, originChunkZ);
-    cache->setDecorateStep(plan.lastDecorStep > 0 ? plan.lastDecorStep : 7);
+    cache->setActiveRadius(std::min(plan.radiusChunks, kMaxDecorateRadius) + 2);
 
     if (plan.needSpawn) {
         world.initializeSpawnPoint();

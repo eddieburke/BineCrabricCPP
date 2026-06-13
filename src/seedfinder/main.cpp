@@ -12,15 +12,14 @@ void printHitNdjson(const seedfinder::engine::SearchHit& hit)
 {
     std::ostringstream line;
     line << "{\"seed\":\"" << hit.seed << "\""
-         << ",\"score\":" << hit.score.partial_match_score
-         << ",\"spawn_x\":" << hit.probe.spawn.x
-         << ",\"spawn_z\":" << hit.probe.spawn.z
-         << ",\"spawn_biome\":" << static_cast<int>(hit.probe.spawn.biome_id)
+         << ",\"score\":" << hit.score
+         << ",\"spawn_x\":" << hit.probe.spawn_x
+         << ",\"spawn_z\":" << hit.probe.spawn_z
+         << ",\"spawn_biome\":" << static_cast<int>(hit.probe.spawn_biome_id)
          << ",\"dominant_biome\":" << static_cast<int>(hit.probe.dominant_biome_id)
          << ",\"avg_surface_y\":" << hit.probe.avg_surface_y
          << ",\"underwater_percent\":" << hit.probe.underwater_percent
-         << ",\"tier\":" << static_cast<int>(hit.score.search_tier_passed)
-         << ",\"all_hard\":" << (hit.score.all_hard_constraints_met ? "true" : "false")
+         << ",\"all_hard\":" << (hit.all_hard ? "true" : "false")
          << '}';
     std::cout << line.str() << '\n';
 }

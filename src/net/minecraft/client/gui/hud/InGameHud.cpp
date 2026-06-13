@@ -4,6 +4,7 @@
 #include "net/minecraft/block/material/Material.hpp"
 #include "net/minecraft/client/Minecraft.hpp"
 #include "net/minecraft/client/gl/GL11.hpp"
+#include "net/minecraft/client/gui/Draw2D.hpp"
 #include "net/minecraft/client/option/GameOptions.hpp"
 #include "net/minecraft/client/render/GameRenderer.hpp"
 #include "net/minecraft/client/render/Tessellator.hpp"
@@ -24,8 +25,6 @@ namespace {
 
 constexpr int kColorWhite = 0xFFFFFF;
 constexpr int kColorLightGray = 0xE0E0E0;
-constexpr int kVignetteBlendSrc = 0;
-constexpr int kVignetteBlendDst = 769;
 
 int hsbToRgb(float hue, float saturation, float brightness)
 {
@@ -57,12 +56,7 @@ int hsbToRgb(float hue, float saturation, float brightness)
 
 void drawFullscreenTexturedQuad(render::Tessellator& tessellator, int width, int height, float z)
 {
-    tessellator.startQuads();
-    tessellator.vertex(0.0, static_cast<double>(height), z, 0.0, 1.0);
-    tessellator.vertex(static_cast<double>(width), static_cast<double>(height), z, 1.0, 1.0);
-    tessellator.vertex(static_cast<double>(width), 0.0, z, 1.0, 0.0);
-    tessellator.vertex(0.0, 0.0, z, 0.0, 0.0);
-    tessellator.draw();
+    draw::texturedQuad(tessellator, 0, 0, width, height, 0.0f, 0.0f, 1.0f, 1.0f, z);
 }
 
 } // namespace
@@ -151,11 +145,12 @@ void InGameHud::renderVignette(float brightness, int width, int height)
         + static_cast<double>(darkness - vignetteDarkness) * 0.01);
 
     render::platform::ScopedFullscreenOverlay overlay;
-    gl::GL11::glBlendFunc(kVignetteBlendSrc, kVignetteBlendDst);
+    render::platform::GuiGlState::beginVignetteBlend();
     gl::GL11::glColor4f(vignetteDarkness, vignetteDarkness, vignetteDarkness, 1.0f);
     gl::GL11::glBindTexture(gl::GL11::GL_TEXTURE_2D,
         minecraft->textureManager.getTextureId("%blur%/misc/vignette.png"));
     drawFullscreenTexturedQuad(render::Tessellator::INSTANCE, width, height, -90.0f);
+    render::platform::GuiGlState::endVignetteBlend();
 }
 
 void InGameHud::renderPumpkinOverlay(int width, int height)
@@ -188,12 +183,7 @@ void InGameHud::renderPortalOverlay(float strength, int width, int height)
     const float vMax = static_cast<float>(textureIndex / 16 + 1) / 16.0f;
 
     render::Tessellator& tessellator = render::Tessellator::INSTANCE;
-    tessellator.startQuads();
-    tessellator.vertex(0.0, static_cast<double>(height), -90.0, uMin, vMax);
-    tessellator.vertex(static_cast<double>(width), static_cast<double>(height), -90.0, uMax, vMax);
-    tessellator.vertex(static_cast<double>(width), 0.0, -90.0, uMax, vMin);
-    tessellator.vertex(0.0, 0.0, -90.0, uMin, vMin);
-    tessellator.draw();
+    draw::texturedQuad(tessellator, 0, 0, width, height, uMin, vMin, uMax, vMax, -90.0f);
 }
 
 void InGameHud::renderDebugHud(font::TextRenderer& textRenderer, int /*scaledWidth*/,

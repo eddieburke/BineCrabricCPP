@@ -97,6 +97,6 @@ void DetectorRailBlock::registerRecipes(recipe::CraftingRecipeManager& recipeMan
 
 
 
-namespace {static ::net::minecraft::registry::RegisterBlock<DetectorRailBlock> autoReg;} // namespace
+MC_REGISTER_BLOCK(DetectorRailBlock)
 } // namespace net::minecraft::block
 

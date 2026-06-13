@@ -24,5 +24,5 @@ void LeatherItem::registerRecipes(recipe::CraftingRecipeManager& recipeManager)
     (void)recipeManager;
 }
 
-static registry::RegisterItem<LeatherItem> s_itemReg;
+MC_REGISTER_ITEM(LeatherItem)
 } // namespace net::minecraft::item

@@ -94,6 +94,6 @@ void TntBlock::registerRecipes(recipe::CraftingRecipeManager& recipeManager)
 
 
 
-namespace {static ::net::minecraft::registry::RegisterBlock<TntBlock> autoReg;} // namespace
+MC_REGISTER_BLOCK(TntBlock)
 } // namespace net::minecraft::block
 

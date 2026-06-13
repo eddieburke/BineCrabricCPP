@@ -10,7 +10,6 @@ namespace net::minecraft::entity::mob {
 
 class SkeletonEntity : public MonsterEntity {
 public:
-    static constexpr bool kRegisters = true;
     static constexpr int kEntityId = 51;
 
     static constexpr const char* kEntityName = "Skeleton";

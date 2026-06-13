@@ -8,7 +8,7 @@
 
 namespace net::minecraft::block {
 
-// Registered in SimpleBlocks.cpp.
+// Registered in Block.cpp.
 class SugarCaneBlock : public Block {
 public:
     using Block::canPlaceAt;

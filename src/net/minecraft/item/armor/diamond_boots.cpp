@@ -32,5 +32,5 @@ void DiamondBootsItem::registerRecipes(recipe::CraftingRecipeManager& recipeMana
         {std::string("X X"), std::string("X X"), 'X', Item::byRawId(8)});
 }
 
-static registry::RegisterItem<DiamondBootsItem> s_itemReg;
+MC_REGISTER_ITEM(DiamondBootsItem)
 } // namespace net::minecraft::item

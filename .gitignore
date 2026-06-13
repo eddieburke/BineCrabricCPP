@@ -78,6 +78,11 @@ build-out.txt
 build-restore.log
 build-trace.txt
 
+# Local agent/runtime backups
+codex-backups/
+*.bak
+*.orig
+
 # Game assets (extracted from jar)
 resources/
 

@@ -58,6 +58,6 @@ void IceBlock::registerClass()
 
 
 
-namespace {static ::net::minecraft::registry::RegisterBlock<IceBlock> autoReg;} // namespace
+MC_REGISTER_BLOCK(IceBlock)
 } // namespace net::minecraft::block
 

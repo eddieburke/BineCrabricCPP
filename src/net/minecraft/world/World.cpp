@@ -19,6 +19,7 @@
 #include "net/minecraft/world/chunk/LegacyChunkCache.hpp"
 #include "net/minecraft/world/dimension/Dimension.hpp"
 #include "net/minecraft/world/events/GameEventListener.hpp"
+#include "net/minecraft/mod/GameHooks.hpp"
 #include "net/minecraft/world/storage/AlphaWorldStorage.hpp"
 #include "net/minecraft/world/storage/WorldStorage.hpp"
 #include "net/minecraft/util/math/MathHelper.hpp"
@@ -591,13 +592,34 @@ void World::applyWorldSettings(bool weatherEnabled, int autoSaveTicks, int timeM
     }
 }
 
-void World::setChunkPreloadRadius(int radius)
+void World::setChunkResidentRadius(int radiusChunks)
 {
-    chunkPreloadRadius_ = std::max(1, radius);
+    chunkResidentRadiusChunks_ = std::max(1, radiusChunks);
+    if (auto* legacyCache = dynamic_cast<LegacyChunkCache*>(getChunkSource())) {
+        legacyCache->setActiveRadius(chunkResidentRadiusChunks_);
+    }
+}
+
+void World::setTime(std::uint64_t value) noexcept
+{
+    mod::WorldTimeEvent event {this, static_cast<long long>(time_), static_cast<long long>(value), false};
+    mod::hooks().publish(event);
+    if (event.canceled) {
+        return;
+    }
+    time_ = static_cast<std::uint64_t>(event.newTime);
+    if (hasStorageBackedProperties_) {
+        properties_.setTime(time_);
+    }
 }
 
 void World::updateWeatherCycles()
 {
+    mod::WeatherCycleEvent event {this, false, false};
+    mod::hooks().publish(event);
+    if (event.canceled) {
+        return;
+    }
     if (dimension != nullptr && dimension->hasCeiling) {
         return;
     }
@@ -716,6 +738,17 @@ World::~World()
 
 void World::scheduleBlockUpdate(int x, int y, int z, int id, int tickRate)
 {
+    mod::ScheduleBlockUpdateEvent scheduleEvent {this, x, y, z, id, tickRate, false};
+    mod::hooks().publish(scheduleEvent);
+    if (scheduleEvent.canceled) {
+        return;
+    }
+    x = scheduleEvent.x;
+    y = scheduleEvent.y;
+    z = scheduleEvent.z;
+    id = scheduleEvent.blockId;
+    tickRate = scheduleEvent.tickRate;
+
     BlockEvent blockEvent(x, y, z, id);
     constexpr int regionPadding = 8;
     if (instantBlockUpdateEnabled) {
@@ -725,7 +758,12 @@ void World::scheduleBlockUpdate(int x, int y, int z, int id, int tickRate)
             if (currentId == blockEvent.blockId && currentId > 0) {
                 Block* block = Block::BLOCKS[static_cast<std::size_t>(currentId)];
                 if (block != nullptr) {
-                    block->onTick(this, blockEvent.x, blockEvent.y, blockEvent.z, random_);
+                    mod::ScheduledBlockTickEvent tickEvent {
+                        this, block, blockEvent.x, blockEvent.y, blockEvent.z, currentId, true, false};
+                    mod::hooks().publish(tickEvent);
+                    if (!tickEvent.canceled) {
+                        block->onTick(this, blockEvent.x, blockEvent.y, blockEvent.z, random_);
+                    }
                 }
             }
         }
@@ -773,7 +811,12 @@ bool World::processScheduledTicks(bool flush)
         }
         Block* block = Block::BLOCKS[static_cast<std::size_t>(currentId)];
         if (block != nullptr) {
-            block->onTick(this, blockEvent.x, blockEvent.y, blockEvent.z, random_);
+            mod::ScheduledBlockTickEvent tickEvent {
+                this, block, blockEvent.x, blockEvent.y, blockEvent.z, currentId, false, false};
+            mod::hooks().publish(tickEvent);
+            if (!tickEvent.canceled) {
+                block->onTick(this, blockEvent.x, blockEvent.y, blockEvent.z, random_);
+            }
         }
     }
     return !scheduledTicks_.empty();
@@ -891,6 +934,9 @@ float World::calculateSkyLightIntensity(float partialTicks) const
 
 void World::tick()
 {
+    mod::WorldTickEvent beforeTick {this, false, true};
+    mod::hooks().publish(beforeTick);
+
     updateWeatherCycles();
     if (canSkipNight()) {
         int spawned = 0;
@@ -916,13 +962,13 @@ void World::tick()
             chunkCache_->save(false, nullptr);
         }
     }
-    time_ = nextTime;
-    if (hasStorageBackedProperties_) {
-        properties_.setTime(nextTime);
-    }
+    setTime(nextTime);
     updateSkyBrightness();
     processScheduledTicks(false);
     manageChunkUpdatesAndEvents();
+
+    mod::WorldTickEvent afterTick {this, false, false};
+    mod::hooks().publish(afterTick);
 }
 
 } // namespace net::minecraft

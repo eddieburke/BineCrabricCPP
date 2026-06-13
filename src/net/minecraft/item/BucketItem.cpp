@@ -121,6 +121,6 @@ void BucketItem::registerRecipes(recipe::CraftingRecipeManager& recipeManager)
 
 
 
-namespace { static ::net::minecraft::registry::RegisterItem<BucketItem> autoReg; } // namespace
 
+MC_REGISTER_ITEM(BucketItem)
 } // namespace net::minecraft::item

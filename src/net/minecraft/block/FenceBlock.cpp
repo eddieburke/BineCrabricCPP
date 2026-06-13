@@ -20,6 +20,6 @@ void FenceBlock::registerRecipes(recipe::CraftingRecipeManager& recipeManager)
 
 
 
-namespace {static ::net::minecraft::registry::RegisterBlock<FenceBlock> autoReg;} // namespace
+MC_REGISTER_BLOCK(FenceBlock)
 } // namespace net::minecraft::block
 

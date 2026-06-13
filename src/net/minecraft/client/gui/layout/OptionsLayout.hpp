@@ -22,8 +22,6 @@ class GameOptions;
 
 namespace net::minecraft::client::gui::layout {
 
-constexpr int kDoneButtonId = 200;
-
 struct OptionsBuildContext {
     screen::Screen& screen;
     client::Minecraft& minecraft;
@@ -51,7 +49,7 @@ inline void refreshOptionStates(const std::vector<std::unique_ptr<widget::Button
 inline widget::ActionButtonWidget& addDoneButton(OptionsBuildContext& ctx, int y, std::string text,
     std::function<void()> onDone)
 {
-    return ctx.screen.addActionButton(kDoneButtonId, centerBtnX(ctx.screen.width()), y,
+    return ctx.screen.addActionButton(centerBtnX(ctx.screen.width()), y,
         kDefaultButtonWidth, kDefaultButtonHeight, std::move(text), std::move(onDone));
 }
 

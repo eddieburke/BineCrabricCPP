@@ -1,6 +1,10 @@
 #include "net/minecraft/client/gui/screen/TitleScreen.hpp"
 
+#include "msauth/AccountStorage.hpp"
+#include "msauth/LoginScreen.hpp"
+#include "msauth/SessionRestore.hpp"
 #include "net/minecraft/client/Minecraft.hpp"
+#include "net/minecraft/client/util/MinecraftDirectories.hpp"
 #include "net/minecraft/client/font/TextRenderer.hpp"
 #include "net/minecraft/client/gl/GL11.hpp"
 #include "net/minecraft/client/gui/layout/ScreenLayout.hpp"
@@ -101,7 +105,23 @@ void TitleScreen::init()
         resource::language::I18n::getTranslation("menu.quit"),
         [this] { quitGame(); });
 
-    if (multiplayerButton_ != nullptr && minecraft() != nullptr && minecraft()->session.username.empty()) {
+    const bool loggedIn = minecraft() != nullptr && msauth::isAuthenticated(minecraft()->session);
+    constexpr int kAccountButtonWidth = 100;
+    addActionButton(w - kAccountButtonWidth - 2, 2, kAccountButtonWidth, layout::kDefaultButtonHeight,
+        loggedIn ? "Sign out" : "Sign in",
+        [this, returnToTitle, loggedIn] {
+            if (loggedIn) {
+                if (minecraft() != nullptr) {
+                    (void)msauth::clearAccount(net::minecraft::client::util::MinecraftDirectories::getRunDirectory());
+                    msauth::clearSession(minecraft()->session);
+                }
+                navigateTo(returnToTitle());
+                return;
+            }
+            navigateTo(std::make_unique<msauth::LoginScreen>(returnToTitle));
+        });
+
+    if (multiplayerButton_ != nullptr && !loggedIn) {
         multiplayerButton_->active = false;
     }
 }
@@ -109,6 +129,10 @@ void TitleScreen::init()
 void TitleScreen::tick()
 {
     ticks_ += 1.0f;
+    if (multiplayerButton_ != nullptr && minecraft() != nullptr && !multiplayerButton_->active
+        && msauth::isAuthenticated(minecraft()->session)) {
+        multiplayerButton_->active = true;
+    }
 }
 
 void TitleScreen::render(int mouseX, int mouseY, float tickDelta)
@@ -142,6 +166,10 @@ void TitleScreen::render(int mouseX, int mouseY, float tickDelta)
     gl::GL11::glPopMatrix();
 
     drawTextWithShadow(*textRenderer(), "Minecraft Beta 1.7.3", 2, 2, 0xFF505050);
+    if (minecraft() != nullptr && msauth::isAuthenticated(minecraft()->session)) {
+        const std::string accountLine = "Signed in as " + minecraft()->session.username;
+        drawTextWithShadow(*textRenderer(), accountLine, 2, 14, 0xFFAAAAAA);
+    }
     const std::string copyright = "Copyright Mojang AB. Do not distribute.";
     drawTextWithShadow(*textRenderer(), copyright, width() - textRenderer()->getWidth(copyright) - 2, height() - 10,
         0xFFFFFFFF);
@@ -154,12 +182,6 @@ void TitleScreen::keyPressed(char character, int keyCode)
     (void)character;
     (void)keyCode;
 }
-
-void TitleScreen::keyPressed(int key)
-{
-    (void)key;
-}
-
 void TitleScreen::applyCalendarSplash()
 {
     const std::time_t now = std::time(nullptr);

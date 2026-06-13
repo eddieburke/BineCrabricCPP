@@ -7,7 +7,6 @@ namespace net::minecraft::entity::passive {
 
 class SquidEntity : public WaterCreatureEntity {
 public:
-    static constexpr bool kRegisters = true;
     static constexpr int kEntityId = 94;
 
     static constexpr const char* kEntityName = "Squid";

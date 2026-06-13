@@ -152,6 +152,6 @@ int SlimeEntity::getDroppedItemId() const
 }
 
 
-static ::net::minecraft::registry::RegisterEntity<SlimeEntity> autoReg;
 
+MC_REGISTER_ENTITY(SlimeEntity)
 } // namespace net::minecraft::entity::mob

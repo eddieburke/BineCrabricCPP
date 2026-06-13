@@ -18,7 +18,6 @@
 #include "net/minecraft/world/WorldProperties.hpp"
 #include "net/minecraft/world/chunk/ChunkSource.hpp"
 #include "net/minecraft/world/gen/chunk/OverworldChunkGenerator.hpp"
-#include "net/minecraft/world/light/LightUpdate.hpp"
 #include "net/minecraft/world/light/LightingEngine.hpp"
 #include "net/minecraft/world/explosion/Explosion.hpp"
 #include "net/minecraft/world/storage/SavedDataStorage.hpp"
@@ -104,20 +103,15 @@ public:
     [[nodiscard]] float getTime(float partialTicks) const;
 
     void applyWorldSettings(bool weatherEnabled, int autoSaveTicks, int timeMode);
-    void setChunkPreloadRadius(int radius);
+    void setChunkResidentRadius(int radiusChunks);
+    void setChunkPreloadRadius(int radiusChunks) { setChunkResidentRadius(radiusChunks); }
 
     [[nodiscard]] std::uint64_t time() const noexcept
     {
         return time_;
     }
 
-    void setTime(std::uint64_t value) noexcept
-    {
-        time_ = value;
-        if (hasStorageBackedProperties_) {
-            properties_.setTime(value);
-        }
-    }
+    void setTime(std::uint64_t value) noexcept;
 
     [[nodiscard]] Vec3i getSpawnPos() const
     {
@@ -154,6 +148,12 @@ public:
     [[nodiscard]] int getLightLevel(int x, int y, int z) const override;
 
     [[nodiscard]] int getLightLevel(int x, int y, int z, bool useNeighborLight) const;
+
+    // Sunlight at the block above (y + 1); used by grass spread/decay and crop growth.
+    [[nodiscard]] int getLightLevelAbove(int x, int y, int z) const;
+
+    // Plant survival check from PlantBlock::canGrow (brightness or direct sky).
+    [[nodiscard]] bool hasEnoughLightToGrowPlant(int x, int y, int z) const;
     [[nodiscard]] float getNaturalBrightness(int x, int y, int z, int blockLight) const override;
 
     [[nodiscard]] float getLightBrightness(int x, int y, int z) const override;
@@ -195,6 +195,9 @@ public:
     void tickEntities();
     void displayTick(int x, int y, int z);
     void loadChunksNearEntity(Entity* entity);
+    void setChunkCacheCenter(int chunkX, int chunkZ);
+    void setChunkCacheCenterFromBlockPos(int blockX, int blockZ);
+    void populateChunkCacheReadyChunks();
 
     [[nodiscard]] ChunkSource* getChunkSource() noexcept { return chunkCache_.get(); }
     void savingProgress(client::gui::screen::LoadingDisplay* display);
@@ -456,7 +459,7 @@ protected:
     std::vector<block::entity::BlockEntity*> blockEntityUpdateQueue_;
     LightingEngine lighting_;
     int saveInterval_ = 40;
-    int chunkPreloadRadius_ = 2;
+    int chunkResidentRadiusChunks_ = 15;
     WorldWeather weather_;
     int clientTimeMode_ = 0;
     WorldProperties properties_ {};

@@ -21,10 +21,9 @@ public:
     void render(int mouseX, int mouseY, float tickDelta) override;
     void keyPressed(char character, int keyCode) override;
 
-protected:
-    void buttonClicked(widget::ButtonWidget& button) override;
-
 private:
+    void selectKeybind(int index);
+
     [[nodiscard]] int controlsListX() const { return width() / 2 - 155; }
 
     ParentFactory parentFactory_;

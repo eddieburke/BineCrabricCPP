@@ -6,7 +6,6 @@ namespace net::minecraft::block {
 
 class IceBlock : public TranslucentBlock {
 public:
-    static constexpr bool kRegisters = true;
     static constexpr int kBlockId = 79;
 
 static void registerClass();

@@ -279,6 +279,6 @@ void MapItem::registerRecipes(recipe::CraftingRecipeManager& recipeManager)
 
 
 
-namespace { static ::net::minecraft::registry::RegisterItem<MapItem> autoReg; } // namespace
 
+MC_REGISTER_ITEM(MapItem)
 } // namespace net::minecraft::item

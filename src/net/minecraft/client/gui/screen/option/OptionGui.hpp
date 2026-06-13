@@ -1,8 +1,10 @@
 #pragma once
 
 #include "net/minecraft/client/Minecraft.hpp"
+#include "net/minecraft/client/gui/layout/OptionsLayout.hpp"
 #include "net/minecraft/client/gui/layout/ScreenLayout.hpp"
 #include "net/minecraft/client/gui/screen/Screen.hpp"
+#include "net/minecraft/client/gui/widget/ActionButtonWidget.hpp"
 #include "net/minecraft/client/gui/widget/OptionButtonWidget.hpp"
 #include "net/minecraft/client/gui/widget/SliderWidget.hpp"
 #include "net/minecraft/client/option/GameOptions.hpp"
@@ -38,6 +40,35 @@ inline std::string percentLabel(const char* title, float value)
     return optionLabel(title, std::to_string(static_cast<int>(value * 100.0f)) + "%");
 }
 
+inline void refreshOptionLabels(screen::Screen& screen, const client_option::GameOptions& options)
+{
+    for (const std::unique_ptr<widget::ButtonWidget>& btnPtr : screen.buttons()) {
+        if (btnPtr == nullptr) {
+            continue;
+        }
+        if (auto* optBtn = dynamic_cast<widget::OptionButtonWidget*>(btnPtr.get())) {
+            optBtn->refreshText(options);
+        } else if (auto* slider = dynamic_cast<widget::SliderWidget*>(btnPtr.get())) {
+            slider->refreshText(options);
+        }
+    }
+}
+
+inline bool handleOptionButtonClick(screen::Screen& screen, widget::ButtonWidget& button)
+{
+    client::Minecraft* mc = screen.minecraft();
+    if (mc == nullptr || !button.active || !button.getRegistryIndex()) {
+        return false;
+    }
+    layout::OptionsBuildContext ctx { screen, *mc, mc->options };
+    if (!layout::handleOptionWidgetClick(button, ctx)) {
+        return false;
+    }
+    layout::refreshOptionStates(screen.buttons(), mc->options);
+    refreshOptionLabels(screen, mc->options);
+    return true;
+}
+
 class OptionGuiBuilder {
 public:
     OptionGuiBuilder(screen::Screen& screen, client::Minecraft& minecraft, client_option::GameOptions& options)
@@ -71,7 +102,7 @@ public:
                 resource::language::I18n::getTranslation(on ? "options.on" : "options.off"));
         };
         widget::OptionButtonWidget& btn = screen_.addButton<widget::OptionButtonWidget>(
-            static_cast<int>(*idx), x, y, *idx, format(options_), std::move(format));
+            widget::ActionButtonWidget::kNoId, x, y, *idx, format(options_), std::move(format));
         if (isEnabled != nullptr) {
             btn.active = isEnabled(options_);
         }
@@ -89,7 +120,7 @@ public:
             return optionLabel(title.c_str(), o.getBoolean(key) ? on.c_str() : off.c_str());
         };
         widget::OptionButtonWidget& btn = screen_.addButton<widget::OptionButtonWidget>(
-            static_cast<int>(*idx), x, y, *idx, format(options_), std::move(format));
+            widget::ActionButtonWidget::kNoId, x, y, *idx, format(options_), std::move(format));
         if (isEnabled != nullptr) {
             btn.active = isEnabled(options_);
         }
@@ -112,7 +143,7 @@ public:
             return optionLabel(title.c_str(), *it);
         };
         widget::OptionButtonWidget& btn = screen_.addButton<widget::OptionButtonWidget>(
-            static_cast<int>(*idx), x, y, *idx, format(options_), std::move(format));
+            widget::ActionButtonWidget::kNoId, x, y, *idx, format(options_), std::move(format));
         if (isEnabled != nullptr) {
             btn.active = isEnabled(options_);
         }
@@ -135,7 +166,7 @@ public:
             return optionLabel(title.c_str(), resource::language::I18n::getTranslation(*it));
         };
         widget::OptionButtonWidget& btn = screen_.addButton<widget::OptionButtonWidget>(
-            static_cast<int>(*idx), x, y, *idx, format(options_), std::move(format));
+            widget::ActionButtonWidget::kNoId, x, y, *idx, format(options_), std::move(format));
         if (isEnabled != nullptr) {
             btn.active = isEnabled(options_);
         }
@@ -150,7 +181,7 @@ public:
             return;
         }
         widget::OptionButtonWidget& btn = screen_.addButton<widget::OptionButtonWidget>(
-            static_cast<int>(*idx), x, y, *idx, format(options_), std::move(format));
+            widget::ActionButtonWidget::kNoId, x, y, *idx, format(options_), std::move(format));
         if (isEnabled != nullptr) {
             btn.active = isEnabled(options_);
         }
@@ -170,7 +201,7 @@ public:
             };
         }
         widget::SliderWidget& btn = screen_.addButton<widget::SliderWidget>(
-            static_cast<int>(*idx), x, y, *idx, minecraft_, format(options_),
+            widget::ActionButtonWidget::kNoId, x, y, *idx, minecraft_, format(options_),
             options_.getFloat(key), std::move(format));
         if (isEnabled != nullptr) {
             btn.active = isEnabled(options_);
@@ -187,7 +218,7 @@ public:
             return;
         }
         widget::SliderWidget& btn = screen_.addButton<widget::SliderWidget>(
-            static_cast<int>(*idx), x, y, *idx, minecraft_, format(options_),
+            widget::ActionButtonWidget::kNoId, x, y, *idx, minecraft_, format(options_),
             getValue(options_), std::move(format));
         if (isEnabled != nullptr) {
             btn.active = isEnabled(options_);

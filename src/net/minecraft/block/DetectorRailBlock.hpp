@@ -8,7 +8,6 @@ namespace net::minecraft::block {
 
 class DetectorRailBlock : public RailBlock {
 public:
-    static constexpr bool kRegisters = true;
     static constexpr int kBlockId = 28;
 static void registerRecipes(recipe::CraftingRecipeManager& recipeManager);
 public:

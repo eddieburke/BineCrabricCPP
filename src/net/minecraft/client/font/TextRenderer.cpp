@@ -134,18 +134,21 @@ void buildDisplayLists(const texture::RasterImage& fontImage, std::array<int, 25
     }
 }
 
-} // namespace
-
-TextRenderer::TextRenderer(option::GameOptions& options, const std::string& fontPath, texture::TextureManager& textureManager)
+texture::RasterImage loadFontRasterFromPath(const std::string& fontPath)
 {
-    pageBuffer_.reserve(kPageBufferCapacity);
     texture::RasterImage fontImage =
         texture::TextureManager::loadRasterFromFile(texture::TextureManager::resolveResourcePath(fontPath));
     if (fontImage.width <= 0 || fontImage.height <= 0) {
         throw std::runtime_error("TextRenderer: failed to load font image " + fontPath);
     }
-    boundPage_ = util::GlAllocationUtils::generateDisplayLists(288);
-    buildDisplayLists(fontImage, characterWidths_, boundPage_, textureManager, options, boundTexture);
+    return fontImage;
+}
+
+} // namespace
+
+TextRenderer::TextRenderer(option::GameOptions& options, const std::string& fontPath, texture::TextureManager& textureManager)
+    : TextRenderer(options, loadFontRasterFromPath(fontPath), textureManager)
+{
 }
 
 TextRenderer::TextRenderer(option::GameOptions& options, const texture::RasterImage& fontImage,
@@ -165,7 +168,7 @@ std::unique_ptr<TextRenderer> TextRenderer::create(
     texture::RasterImage fontImage =
         texture::TextureManager::loadRasterFromFile(texture::TextureManager::resolveResourcePath(fontPath));
     if (fontImage.width > 0 && fontImage.height > 0) {
-        return std::make_unique<TextRenderer>(options, fontPath, textureManager);
+        return std::make_unique<TextRenderer>(options, fontImage, textureManager);
     }
     texture::RasterImage fallback;
     fallback.width = 128;

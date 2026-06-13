@@ -43,6 +43,6 @@ void SnowballItem::registerClass()
 
 
 
-namespace {static ::net::minecraft::registry::RegisterItem<SnowballItem> autoReg; } // namespace
 
+MC_REGISTER_ITEM(SnowballItem)
 } // namespace net::minecraft::item

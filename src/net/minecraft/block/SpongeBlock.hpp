@@ -5,7 +5,7 @@
 
 namespace net::minecraft::block {
 
-// Registered in SimpleBlocks.cpp.
+// Registered in Block.cpp.
 class SpongeBlock : public Block {
 public:
     explicit SpongeBlock(int id) : Block(id, 48, material::Material::SPONGE) {}

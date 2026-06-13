@@ -161,8 +161,8 @@ void AchievementsScreen::renderIcons(int mouseX, int mouseY, float tickDelta)
     gl::GL11::glTranslatef(0.0f, 0.0f, -200.0f);
     gl::GL11::glEnable(gl::GL11::GL_TEXTURE_2D);
     gl::GL11::glDisable(gl::GL11::GL_LIGHTING);
-    gl::GL11::glEnable(32826);
-    gl::GL11::glEnable(2903);
+    gl::GL11::glEnable(gl::GL11::GL_RESCALE_NORMAL);
+    gl::GL11::glEnable(gl::GL11::GL_COLOR_MATERIAL);
     minecraft()->textureManager.bindTexture(terrainTexture);
 
     const int tileColumn = (scrollPixelX + 288) >> 4;
@@ -250,8 +250,8 @@ void AchievementsScreen::renderIcons(int mouseX, int mouseY, float tickDelta)
     render::platform::Lighting::turnOn();
     gl::GL11::glPopMatrix();
     gl::GL11::glDisable(gl::GL11::GL_LIGHTING);
-    gl::GL11::glEnable(32826);
-    gl::GL11::glEnable(2903);
+    gl::GL11::glEnable(gl::GL11::GL_RESCALE_NORMAL);
+    gl::GL11::glEnable(gl::GL11::GL_COLOR_MATERIAL);
     gl::GL11::glEnable(gl::GL11::GL_TEXTURE_2D);
 
     for (const achievement::AchievementDef& achievement : achievement::Achievements::ALL) {
@@ -283,7 +283,7 @@ void AchievementsScreen::renderIcons(int mouseX, int mouseY, float tickDelta)
             itemRenderer.useCustomDisplayColor = false;
         }
         gl::GL11::glEnable(gl::GL11::GL_LIGHTING);
-        gl::GL11::glEnable(2884);
+        gl::GL11::glEnable(gl::GL11::GL_CULL_FACE);
         itemRenderer.renderGuiItem(
             *textRenderer(), minecraft()->textureManager, achievement::Achievements::iconStack(achievement), drawX + 3, drawY + 3);
         gl::GL11::glDisable(gl::GL11::GL_LIGHTING);
@@ -397,16 +397,6 @@ void AchievementsScreen::keyPressed(char character, int keyCode)
         return;
     }
     Screen::keyPressed(character, keyCode);
-}
-
-void AchievementsScreen::keyPressed(int key)
-{
-    if (minecraft() != nullptr && key == static_cast<int>(minecraft()->options.inventoryKey.code)) {
-        minecraft()->setScreen(nullptr);
-        minecraft()->lockMouse();
-        return;
-    }
-    Screen::keyPressed(key);
 }
 
 } // namespace net::minecraft::client::gui::screen

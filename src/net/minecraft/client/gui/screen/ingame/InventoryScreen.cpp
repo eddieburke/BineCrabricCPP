@@ -7,6 +7,7 @@
 #include "net/minecraft/client/gui/layout/ContainerLayout.hpp"
 #include "net/minecraft/client/gl/GL11.hpp"
 #include "net/minecraft/client/render/entity/EntityRenderDispatcher.hpp"
+#include "net/minecraft/client/render/platform/GuiGlState.hpp"
 #include "net/minecraft/client/render/platform/Lighting.hpp"
 #include "net/minecraft/client/texture/TextureManager.hpp"
 #include "net/minecraft/entity/player/ClientPlayerEntity.hpp"
@@ -49,8 +50,8 @@ void InventoryScreen::drawBackground(float tickDelta)
         return;
     }
 
-    gl::GL11::glEnable(32826);
-    gl::GL11::glEnable(2903);
+    render::platform::ScopedRescaleNormal rescaleNormal;
+    gl::GL11::glEnable(gl::GL11::GL_COLOR_MATERIAL);
     gl::GL11::glPushMatrix();
     gl::GL11::glTranslatef(static_cast<float>(originX + 51), static_cast<float>(originY + 75), 50.0f);
     constexpr float scale = 30.0f;
@@ -86,7 +87,6 @@ void InventoryScreen::drawBackground(float tickDelta)
     player.pitch = savedPitch;
     gl::GL11::glPopMatrix();
     render::platform::Lighting::turnOff();
-    gl::GL11::glDisable(32826);
 }
 
 } // namespace net::minecraft::client::gui::screen::ingame

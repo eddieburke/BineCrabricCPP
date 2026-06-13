@@ -3,7 +3,6 @@
 #include "net/minecraft/client/Minecraft.hpp"
 #include "net/minecraft/client/gui/layout/OptionsLayout.hpp"
 #include "net/minecraft/client/gui/layout/ScreenLayout.hpp"
-#include "net/minecraft/client/gui/widget/OptionButtonWidget.hpp"
 #include "net/minecraft/client/resource/language/I18n.hpp"
 
 namespace net::minecraft::client::gui::screen::option {
@@ -23,8 +22,10 @@ void KeybindsScreen::init()
     }
     const int listX = controlsListX();
     for (int i = 0; i < client_option::GameOptions::kKeybindCount; ++i) {
-        addButton<widget::OptionButtonWidget>(i, listX + (i % 2) * 160, height() / 6 + layout::kRowSpacing * (i / 2),
-            70, 20, gameOptions_->getKeybindKey(i));
+        const int index = i;
+        addActionButton(listX + (i % 2) * 160, height() / 6 + layout::kRowSpacing * (i / 2),
+            70, 20, gameOptions_->getKeybindKey(i),
+            [this, index] { selectKeybind(index); });
     }
     addActionButton(layout::centerBtnX(width()), height() / 6 + 168,
         resource::language::I18n::getTranslation("gui.done"),
@@ -51,9 +52,9 @@ void KeybindsScreen::render(int mouseX, int mouseY, float tickDelta)
     Screen::render(mouseX, mouseY, tickDelta);
 }
 
-void KeybindsScreen::buttonClicked(widget::ButtonWidget& button)
+void KeybindsScreen::selectKeybind(int index)
 {
-    if (gameOptions_ == nullptr) {
+    if (gameOptions_ == nullptr || index < 0 || index >= client_option::GameOptions::kKeybindCount) {
         return;
     }
     for (int i = 0; i < client_option::GameOptions::kKeybindCount; ++i) {
@@ -61,8 +62,9 @@ void KeybindsScreen::buttonClicked(widget::ButtonWidget& button)
             buttons_[static_cast<std::size_t>(i)]->text = gameOptions_->getKeybindKey(i);
         }
     }
-    selectedKeyBinding_ = button.id;
-    button.text = "> " + gameOptions_->getKeybindKey(button.id) + " <";
+    selectedKeyBinding_ = index;
+    buttons_[static_cast<std::size_t>(index)]->text =
+        "> " + gameOptions_->getKeybindKey(index) + " <";
 }
 
 void KeybindsScreen::keyPressed(char character, int keyCode)

@@ -6,7 +6,7 @@
 
 namespace net::minecraft::block {
 
-// Registered in SimpleBlocks.cpp.
+// Registered in Block.cpp.
 class CakeBlock : public Block {
 public:
     using Block::canPlaceAt;

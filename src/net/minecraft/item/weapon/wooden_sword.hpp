@@ -9,7 +9,7 @@ class CraftingRecipeManager;
 namespace net::minecraft::item {
 
 class WoodenSwordItem : public SwordItem {
-public:        static constexpr bool kRegisters = true;
+public:
     static constexpr int kRawId = 12;
 
 static void registerClass();

@@ -24,5 +24,5 @@ void StringItem::registerRecipes(recipe::CraftingRecipeManager& recipeManager)
     (void)recipeManager;
 }
 
-static registry::RegisterItem<StringItem> s_itemReg;
+MC_REGISTER_ITEM(StringItem)
 } // namespace net::minecraft::item

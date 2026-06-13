@@ -3,6 +3,7 @@
 #include "net/minecraft/block/Block.hpp"
 #include "net/minecraft/entity/LightningEntity.hpp"
 #include "net/minecraft/entity/player/PlayerEntity.hpp"
+#include "net/minecraft/mod/GameHooks.hpp"
 #include "net/minecraft/world/biome/Biomes.hpp"
 #include "net/minecraft/world/chunk/Chunk.hpp"
 #include "net/minecraft/world/chunk/ChunkSource.hpp"
@@ -47,6 +48,19 @@ bool World::isRegionLoaded(int minX, int minY, int minZ, int maxX, int maxY, int
 int World::getLightLevel(int x, int y, int z) const
 {
     return getLightLevel(x, y, z, true);
+}
+
+int World::getLightLevelAbove(int x, int y, int z) const
+{
+    return getLightLevel(x, y + 1, z);
+}
+
+bool World::hasEnoughLightToGrowPlant(int x, int y, int z) const
+{
+    if (getBrightness(x, y, z) >= 8) {
+        return true;
+    }
+    return hasSkyLight(x, y, z);
 }
 
 int World::getLightLevel(int x, int y, int z, bool useNeighborLight) const
@@ -393,8 +407,30 @@ ChunkSource* World::createChunkCache()
     std::unique_ptr<ChunkStorage> chunkStorage = dimensionData_->getChunkStorage(dimension.get());
     chunkGeneratorSource_ = dimension->createChunkGenerator();
     auto cache = std::make_unique<LegacyChunkCache>(this, std::move(chunkStorage), chunkGeneratorSource_.get());
+    cache->initAsync(getSeed(),
+        [this](std::uint64_t seed) { return dimension->createChunkGeneratorFromSeed(seed); });
+    cache->setActiveRadius(chunkResidentRadiusChunks_);
     setChunkCache(std::move(cache));
     return getChunkSource();
+}
+
+void World::setChunkCacheCenter(int chunkX, int chunkZ)
+{
+    if (auto* legacyCache = dynamic_cast<LegacyChunkCache*>(getChunkSource())) {
+        legacyCache->setSpawnPoint(chunkX, chunkZ);
+    }
+}
+
+void World::setChunkCacheCenterFromBlockPos(int blockX, int blockZ)
+{
+    setChunkCacheCenter(chunk_coord(blockX), chunk_coord(blockZ));
+}
+
+void World::populateChunkCacheReadyChunks()
+{
+    if (auto* legacyCache = dynamic_cast<LegacyChunkCache*>(getChunkSource())) {
+        legacyCache->populateReadyChunks();
+    }
 }
 
 bool World::isPosLoaded(int x, int y, int z) const
@@ -574,8 +610,12 @@ void World::manageChunkUpdatesAndEvents()
             const int worldZ = chunkOriginZ + ((randomValue >> 8) & 0xF);
             const int worldY = getTopSolidBlockY(worldX, worldZ);
             if (isRaining(worldX, worldY, worldZ)) {
-                spawnGlobalEntity(new LightningEntity(this, worldX, worldY, worldZ));
-                weather_.ticksSinceLightning = 2;
+                mod::LightningStrikeEvent event {this, worldX, worldY, worldZ, false};
+                mod::hooks().publish(event);
+                if (!event.canceled) {
+                    spawnGlobalEntity(new LightningEntity(this, event.x, event.y, event.z));
+                    weather_.ticksSinceLightning = 2;
+                }
             }
         }
 
@@ -595,10 +635,18 @@ void World::manageChunkUpdatesAndEvents()
                     && Block::SNOW->canPlaceAt(this, worldX, worldY, worldZ) && belowId != 0
                     && Block::BLOCKS[static_cast<std::size_t>(belowId)] != nullptr
                     && Block::BLOCKS[static_cast<std::size_t>(belowId)]->material.blocksMovement()) {
-                    setBlock(worldX, worldY, worldZ, Block::SNOW->id);
+                    mod::SnowIcePlacementEvent event {this, worldX, worldY, worldZ, true, false};
+                    mod::hooks().publish(event);
+                    if (event.placeSnow) {
+                        setBlock(event.x, event.y, event.z, Block::SNOW->id);
+                    }
                 }
                 if (Block::WATER != nullptr && belowId == Block::WATER->id && chunk.getBlockMeta(localX, worldY - 1, localZ) == 0) {
-                    setBlock(worldX, worldY - 1, worldZ, Block::ICE->id);
+                    mod::SnowIcePlacementEvent event {this, worldX, worldY - 1, worldZ, false, true};
+                    mod::hooks().publish(event);
+                    if (event.placeIce) {
+                        setBlock(event.x, event.y, event.z, Block::ICE->id);
+                    }
                 }
             }
         }
@@ -615,7 +663,12 @@ void World::manageChunkUpdatesAndEvents()
             }
             Block* block = Block::BLOCKS[static_cast<std::size_t>(blockId)];
             if (block != nullptr) {
-                block->onTick(this, localX + chunkOriginX, localY, localZ + chunkOriginZ, random_);
+                mod::RandomBlockTickEvent event {
+                    this, block, localX + chunkOriginX, localY, localZ + chunkOriginZ, blockId, false};
+                mod::hooks().publish(event);
+                if (!event.canceled) {
+                    block->onTick(this, event.x, event.y, event.z, random_);
+                }
             }
         }
     }

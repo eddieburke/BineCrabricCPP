@@ -32,5 +32,5 @@ void LeatherBootsItem::registerRecipes(recipe::CraftingRecipeManager& recipeMana
         {std::string("X X"), std::string("X X"), 'X', Item::byRawId(78)});
 }
 
-static registry::RegisterItem<LeatherBootsItem> s_itemReg;
+MC_REGISTER_ITEM(LeatherBootsItem)
 } // namespace net::minecraft::item

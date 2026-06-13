@@ -24,5 +24,5 @@ void RawFishItem::registerRecipes(recipe::CraftingRecipeManager& recipeManager)
     (void)recipeManager;
 }
 
-static registry::RegisterItem<RawFishItem> s_itemReg;
+MC_REGISTER_ITEM(RawFishItem)
 } // namespace net::minecraft::item

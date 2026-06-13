@@ -11,7 +11,6 @@ namespace net::minecraft::entity::vehicle {
 
 class BoatEntity : public Entity {
 public:
-    static constexpr bool kRegisters = true;
     static constexpr int kEntityId = 41;
 
     static constexpr const char* kEntityName = "Boat";

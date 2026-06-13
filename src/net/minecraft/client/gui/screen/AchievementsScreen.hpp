@@ -16,7 +16,6 @@ public:
     void tick() override;
     void render(int mouseX, int mouseY, float tickDelta) override;
     void keyPressed(char character, int keyCode) override;
-    void keyPressed(int key) override;
     [[nodiscard]] bool shouldPause() const override { return true; }
 
 private:

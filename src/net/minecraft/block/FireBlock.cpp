@@ -317,6 +317,6 @@ void FireBlock::registerClass()
 
 
 
-namespace {static ::net::minecraft::registry::RegisterBlock<FireBlock> autoReg;} // namespace
+MC_REGISTER_BLOCK(FireBlock)
 } // namespace net::minecraft::block
 

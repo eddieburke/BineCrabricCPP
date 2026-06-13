@@ -32,5 +32,5 @@ void ChainHelmetItem::registerRecipes(recipe::CraftingRecipeManager& recipeManag
         {std::string("XXX"), std::string("X X"), 'X', Block::FIRE});
 }
 
-static registry::RegisterItem<ChainHelmetItem> s_itemReg;
+MC_REGISTER_ITEM(ChainHelmetItem)
 } // namespace net::minecraft::item

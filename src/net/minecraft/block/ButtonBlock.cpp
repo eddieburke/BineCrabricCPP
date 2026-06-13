@@ -270,6 +270,6 @@ void ButtonBlock::registerRecipes(recipe::CraftingRecipeManager& recipeManager)
 
 
 
-namespace {static ::net::minecraft::registry::RegisterBlock<ButtonBlock> autoReg;} // namespace
+MC_REGISTER_BLOCK(ButtonBlock)
 } // namespace net::minecraft::block
 

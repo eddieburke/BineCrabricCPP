@@ -24,6 +24,6 @@ float GiantEntity::getPathfindingFavor(int x, int y, int z) const
 }
 
 
-static ::net::minecraft::registry::RegisterEntity<GiantEntity> autoReg;
 
+MC_REGISTER_ENTITY(GiantEntity)
 } // namespace net::minecraft::entity::mob

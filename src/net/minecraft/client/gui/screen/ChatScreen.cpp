@@ -5,19 +5,18 @@
 #include "net/minecraft/client/network/MultiplayerClientPlayerEntity.hpp"
 #include "net/minecraft/util/CharacterUtils.hpp"
 
-#include "net/minecraft/client/input/InputSystem.hpp"
 
 namespace net::minecraft::client::gui::screen {
 
 void ChatScreen::init()
 {
     text_.clear();
-    input::InputSystem::instance().setKeyboardRepeat(true);
+    enableTextInput();
 }
 
 void ChatScreen::removed()
 {
-    input::InputSystem::instance().setKeyboardRepeat(false);
+    disableTextInput();
 }
 
 void ChatScreen::tick()
@@ -40,25 +39,10 @@ void ChatScreen::render(int mouseX, int mouseY, float tickDelta)
 
 void ChatScreen::keyPressed(char character, int keyCode)
 {
-    (void)keyCode;
-    if (character == '\0') {
+    if (closeOnEscape(keyCode)) {
         return;
     }
-    const std::string& valid = CharacterUtils::validCharacters();
-    if (valid.find(character) != std::string::npos && text_.length() < 100) {
-        text_.push_back(character);
-    }
-}
-
-void ChatScreen::keyPressed(int key)
-{
-    if (key == 1) {
-        if (minecraft() != nullptr) {
-            minecraft()->setScreen(nullptr);
-        }
-        return;
-    }
-    if (key == 28) {
+    if (submitPressed(keyCode, character)) {
         if (minecraft() != nullptr) {
             const std::string trimmed = [&]() {
                 std::size_t start = text_.find_first_not_of(" \t");
@@ -77,8 +61,16 @@ void ChatScreen::keyPressed(int key)
         }
         return;
     }
-    if (key == 14 && !text_.empty()) {
+    if (backspacePressed(keyCode) && !text_.empty()) {
         text_.pop_back();
+        return;
+    }
+    if (character == '\0') {
+        return;
+    }
+    const std::string& valid = CharacterUtils::validCharacters();
+    if (valid.find(character) != std::string::npos && text_.length() < 100) {
+        text_.push_back(character);
     }
 }
 

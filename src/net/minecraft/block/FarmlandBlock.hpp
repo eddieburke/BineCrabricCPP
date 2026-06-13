@@ -7,7 +7,7 @@
 
 namespace net::minecraft::block {
 
-// Registered in SimpleBlocks.cpp.
+// Registered in Block.cpp.
 class FarmlandBlock : public Block {
 public:
     explicit FarmlandBlock(int id) : Block(id, material::Material::SOIL)

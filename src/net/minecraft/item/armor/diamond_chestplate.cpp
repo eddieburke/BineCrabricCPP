@@ -32,5 +32,5 @@ void DiamondChestplateItem::registerRecipes(recipe::CraftingRecipeManager& recip
         {std::string("X X"), std::string("XXX"), std::string("XXX"), 'X', Item::byRawId(8)});
 }
 
-static registry::RegisterItem<DiamondChestplateItem> s_itemReg;
+MC_REGISTER_ITEM(DiamondChestplateItem)
 } // namespace net::minecraft::item

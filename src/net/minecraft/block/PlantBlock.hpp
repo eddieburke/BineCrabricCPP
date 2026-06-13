@@ -6,7 +6,7 @@
 
 namespace net::minecraft::block {
 
-// Registered in SimpleBlocks.cpp.
+// Registered in Block.cpp.
 class PlantBlock : public Block {
 public:
     using Block::canPlaceAt;
@@ -52,8 +52,7 @@ public:
 
     [[nodiscard]] bool canGrow(World* world, int x, int y, int z) const override
     {
-        return (world->getBrightness(x, y, z) >= 8 || world->hasSkyLight(x, y, z))
-            && canPlantOnTop(world->getBlockId(x, y - 1, z));
+        return world->hasEnoughLightToGrowPlant(x, y, z) && canPlantOnTop(world->getBlockId(x, y - 1, z));
     }
 
 protected:

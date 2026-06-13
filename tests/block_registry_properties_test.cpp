@@ -1,6 +1,7 @@
 #define DOCTEST_CONFIG_IMPLEMENT_WITH_MAIN
 #include "doctest.h"
 
+#include "net/minecraft/world/ClientWorld.hpp"
 #include "net/minecraft/block/Block.hpp"
 #include "net/minecraft/entity/Entity.hpp"
 #include "net/minecraft/entity/ai/pathing/PathNodeNavigator.hpp"
@@ -109,6 +110,22 @@ TEST_CASE("world mob spawn hook initializes sheep color through LivingEntity")
     auto* spawned = dynamic_cast<SheepEntity*>(world.spawnMob("Sheep", 0.5, 64.0, 0.5));
     REQUIRE(spawned != nullptr);
     CHECK(spawned->getColor() == expectedColor);
+}
+
+TEST_CASE("client world construction uses a valid multiplayer save handler")
+{
+    using net::minecraft::ClientWorld;
+
+    ClientWorld world(nullptr, 123456789ULL, 0);
+
+    CHECK(world.isRemote());
+    CHECK(world.getChunkSource() != nullptr);
+    CHECK(world.getDimensionData() != nullptr);
+    CHECK(world.getDimensionData()->getWorldPropertiesFile("level.dat").empty());
+    CHECK(world.getSeed() == 123456789ULL);
+    CHECK(world.getSpawnPos().x == 8);
+    CHECK(world.getSpawnPos().y == 64);
+    CHECK(world.getSpawnPos().z == 8);
 }
 
 TEST_CASE("path navigator returns stable results across repeated searches")

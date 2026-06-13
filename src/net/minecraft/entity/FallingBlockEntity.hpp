@@ -7,7 +7,6 @@ namespace net::minecraft::entity {
 
 class FallingBlockEntity : public Entity {
 public:
-    static constexpr bool kRegisters = true;
     static constexpr int kEntityId = 21;
 
     static constexpr const char* kEntityName = "FallingSand";

@@ -27,5 +27,5 @@ void StickItem::registerRecipes(recipe::CraftingRecipeManager& recipeManager)
         {std::string("#"), std::string("#"), '#', Block::PLANKS});
 }
 
-static registry::RegisterItem<StickItem> s_itemReg;
+MC_REGISTER_ITEM(StickItem)
 } // namespace net::minecraft::item

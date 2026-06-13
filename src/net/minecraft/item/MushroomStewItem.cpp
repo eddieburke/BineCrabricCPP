@@ -41,6 +41,6 @@ void MushroomStewItem::registerRecipes(recipe::CraftingRecipeManager& recipeMana
 
 
 
-namespace { static ::net::minecraft::registry::RegisterItem<MushroomStewItem> autoReg; } // namespace
 
+MC_REGISTER_ITEM(MushroomStewItem)
 } // namespace net::minecraft::item

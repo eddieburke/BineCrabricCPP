@@ -7,9 +7,11 @@
 #include <array>
 #include <cstdint>
 #include <memory>
+#include <span>
 #include <vector>
 
 namespace net::minecraft {
+class Chunk;
 class World;
 }
 
@@ -25,6 +27,12 @@ namespace net::minecraft::client::render::chunk {
 // levels for every 16-high section.
 class RegionSnapshot final : public net::minecraft::BlockView {
 public:
+    struct SourceChunk {
+        int chunkX = 0;
+        int chunkZ = 0;
+        const net::minecraft::Chunk* chunk = nullptr;
+    };
+
     // True when every world chunk the snapshot would copy is already resident.
     // Call before constructing a snapshot so mesh capture never triggers sync gen.
     [[nodiscard]] static bool regionReady(net::minecraft::World& world, int minBlockX, int minBlockY, int minBlockZ,
@@ -32,6 +40,9 @@ public:
 
     RegionSnapshot(net::minecraft::World& world, int minBlockX, int minBlockY, int minBlockZ, int maxBlockX,
         int maxBlockY, int maxBlockZ);
+    RegionSnapshot(std::span<const SourceChunk> sourceChunks, int ambientDarkness,
+        const std::array<float, 16>& lightLevelToLuminance, std::unique_ptr<net::minecraft::BiomeSource> biomeSource,
+        int minBlockX, int minBlockY, int minBlockZ, int maxBlockX, int maxBlockY, int maxBlockZ);
 
     // --- BlockView ---
     [[nodiscard]] int getBlockId(int x, int y, int z) const override;
@@ -64,11 +75,16 @@ public:
     [[nodiscard]] bool sawSkyLight() const noexcept { return sawSkyLight_; }
 
 private:
+    // Per-chunk copy of the snapshot's Y band. Blocks are one byte per cell,
+    // column-major (Y contiguous) so the ctor can memcpy column slices out of
+    // the live chunk. The nibble arrays keep the chunk's packed 2-per-byte
+    // layout for the same reason; minY_ is forced even so packing parity in
+    // the copy matches the source.
     struct ChunkCopy {
-        std::vector<std::uint8_t> blocks;
-        std::vector<std::uint8_t> meta;
-        std::vector<std::uint8_t> skyLight;
-        std::vector<std::uint8_t> blockLight;
+        std::vector<std::uint8_t> blocks;      // ySpan_ bytes per column
+        std::vector<std::uint8_t> meta;        // ySpan_/2 bytes per column, packed nibbles
+        std::vector<std::uint8_t> skyLight;    // packed nibbles
+        std::vector<std::uint8_t> blockLight;  // packed nibbles
         bool present = false;
     };
 
@@ -93,19 +109,14 @@ private:
         return static_cast<std::size_t>(((localX << 4) | localZ) * ySpan_ + (y - minY_));
     }
 
-    [[nodiscard]] static constexpr std::size_t fullBlockIndex(int localX, int y, int localZ)
+    // Decode one nibble from a packed copy array. minY_ is even, so the
+    // packing parity of (y - minY_) equals the source chunk's y parity.
+    [[nodiscard]] int nibbleAt(const std::vector<std::uint8_t>& bytes, int localX, int y, int localZ) const noexcept
     {
-        return static_cast<std::size_t>((localX << 11) | (localZ << 7) | y);
-    }
-
-    [[nodiscard]] static int nibble(const std::vector<std::uint8_t>& bytes, std::size_t index)
-    {
-        const std::size_t byteIndex = index >> 1U;
-        if (byteIndex >= bytes.size()) {
-            return 0;
-        }
+        const std::size_t byteIndex =
+            static_cast<std::size_t>(((localX << 4) | localZ) * (ySpan_ >> 1) + ((y - minY_) >> 1));
         const std::uint8_t byte = bytes[byteIndex];
-        return (index & 1U) != 0 ? (byte >> 4U) & 0xF : byte & 0xF;
+        return ((y - minY_) & 1) != 0 ? (byte >> 4U) & 0xF : byte & 0xF;
     }
 
     int chunkX_ = 0;

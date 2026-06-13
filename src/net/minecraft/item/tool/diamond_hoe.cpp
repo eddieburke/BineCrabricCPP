@@ -29,5 +29,5 @@ void DiamondHoeItem::registerRecipes(recipe::CraftingRecipeManager& recipeManage
         {std::string("XX"), std::string(" #"), std::string(" #"), '#', Item::byRawId(24), 'X', Item::byRawId(8)});
 }
 
-static registry::RegisterItem<DiamondHoeItem> s_itemReg;
+MC_REGISTER_ITEM(DiamondHoeItem)
 } // namespace net::minecraft::item

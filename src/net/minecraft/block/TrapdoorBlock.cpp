@@ -190,6 +190,6 @@ void TrapdoorBlock::registerRecipes(recipe::CraftingRecipeManager& recipeManager
 
 
 
-namespace {static ::net::minecraft::registry::RegisterBlock<TrapdoorBlock> autoReg;} // namespace
+MC_REGISTER_BLOCK(TrapdoorBlock)
 } // namespace net::minecraft::block
 

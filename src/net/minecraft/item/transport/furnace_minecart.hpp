@@ -9,7 +9,7 @@ class CraftingRecipeManager;
 namespace net::minecraft::item {
 
 class FurnaceMinecartItem : public MinecartItem {
-public:        static constexpr bool kRegisters = true;
+public:
     static constexpr int kRawId = 87;
 
 static void registerClass();

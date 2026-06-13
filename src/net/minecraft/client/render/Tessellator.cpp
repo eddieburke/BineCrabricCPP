@@ -40,8 +40,8 @@ void Tessellator::start(const int mode)
 void Tessellator::texture(const double u, const double v)
 {
     hasTexture_ = true;
-    u_ = u;
-    v_ = v;
+    u_ = static_cast<float>(u);
+    v_ = static_cast<float>(v);
 }
 
 void Tessellator::color(const float r, const float g, const float b)
@@ -111,16 +111,16 @@ void Tessellator::normal(const float x, const float y, const float z)
 
 void Tessellator::translate(const double x, const double y, const double z)
 {
-    xOffset_ = x;
-    yOffset_ = y;
-    zOffset_ = z;
+    xOffset_ = static_cast<float>(x);
+    yOffset_ = static_cast<float>(y);
+    zOffset_ = static_cast<float>(z);
 }
 
 void Tessellator::translate(const float x, const float y, const float z)
 {
-    xOffset_ += static_cast<double>(x);
-    yOffset_ += static_cast<double>(y);
-    zOffset_ += static_cast<double>(z);
+    xOffset_ += x;
+    yOffset_ += y;
+    zOffset_ += z;
 }
 
 void Tessellator::vertex(const double x, const double y, const double z, const double u, const double v)
@@ -141,11 +141,11 @@ void Tessellator::vertex(const double x, const double y, const double z)
     // Quads are stored verbatim (no 4->6 triangle expansion); drawMesh issues
     // GL_QUADS directly.
     TessellatorVertex vertex;
-    vertex.x = x + xOffset_;
-    vertex.y = y + yOffset_;
-    vertex.z = z + zOffset_;
-    vertex.u = hasTexture_ ? u_ : 0.0;
-    vertex.v = hasTexture_ ? v_ : 0.0;
+    vertex.x = static_cast<float>(x) + xOffset_;
+    vertex.y = static_cast<float>(y) + yOffset_;
+    vertex.z = static_cast<float>(z) + zOffset_;
+    vertex.u = hasTexture_ ? u_ : 0.0f;
+    vertex.v = hasTexture_ ? v_ : 0.0f;
     vertex.color = hasColor_ ? currentColor_ : 0xFFFFFFFFU;
     vertex.normal = hasNormals_ ? currentNormal_ : 0;
     pushVertex(vertex);
@@ -180,11 +180,11 @@ void Tessellator::drawMesh(const TessellatorMesh& mesh)
     const int stride = static_cast<int>(sizeof(TessellatorVertex));
 
     gl::GL11::glEnableClientState(gl::GL11::GL_VERTEX_ARRAY);
-    gl::GL11::glVertexPointer(3, gl::GL11::GL_DOUBLE, stride, &base->x);
+    gl::GL11::glVertexPointer(3, gl::GL11::GL_FLOAT, stride, &base->x);
 
     if (mesh.hasTexture) {
         gl::GL11::glEnableClientState(gl::GL11::GL_TEXTURE_COORD_ARRAY);
-        gl::GL11::glTexCoordPointer(2, gl::GL11::GL_DOUBLE, stride, &base->u);
+        gl::GL11::glTexCoordPointer(2, gl::GL11::GL_FLOAT, stride, &base->u);
     }
     if (mesh.hasColor) {
         gl::GL11::glEnableClientState(gl::GL11::GL_COLOR_ARRAY);

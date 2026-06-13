@@ -34,5 +34,5 @@ void CookedPorkchopItem::registerRecipes(recipe::CraftingRecipeManager& recipeMa
     (void)recipeManager;
 }
 
-static registry::RegisterItem<CookedPorkchopItem> s_itemReg;
+MC_REGISTER_ITEM(CookedPorkchopItem)
 } // namespace net::minecraft::item

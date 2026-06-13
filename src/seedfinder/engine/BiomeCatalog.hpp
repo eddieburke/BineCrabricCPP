@@ -12,6 +12,7 @@ namespace seedfinder::engine {
 constexpr int kBiomeCount = 13;
 
 [[nodiscard]] std::string biomeNameFromId(std::uint8_t biome_id);
+[[nodiscard]] std::uint8_t biomeIdFromName(std::string_view name); // 0 if unknown
 [[nodiscard]] std::string biomeDisplayName(std::uint8_t biome_id);
 [[nodiscard]] bool biomeMatchesName(std::uint8_t biome_id, std::string_view name);
 [[nodiscard]] std::string normalizeBiomeName(std::string_view name);

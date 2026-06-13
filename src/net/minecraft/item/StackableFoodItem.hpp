@@ -10,7 +10,6 @@ namespace net::minecraft::item {
 
 class StackableFoodItem : public FoodItem {
 public:
-    static constexpr bool kRegisters = true;
     static constexpr int kRawId = 101;
 
 static void registerClass();

@@ -35,5 +35,5 @@ void GoldIngotItem::registerRecipes(recipe::CraftingRecipeManager& recipeManager
         {std::string("#"), '#', Block::GOLD_BLOCK});
 }
 
-static registry::RegisterItem<GoldIngotItem> s_itemReg;
+MC_REGISTER_ITEM(GoldIngotItem)
 } // namespace net::minecraft::item

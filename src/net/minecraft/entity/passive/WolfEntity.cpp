@@ -407,6 +407,6 @@ int WolfEntity::getDroppedItemId() const
 }
 
 
-static ::net::minecraft::registry::RegisterEntity<WolfEntity> autoReg;
 
+MC_REGISTER_ENTITY(WolfEntity)
 } // namespace net::minecraft::entity::passive

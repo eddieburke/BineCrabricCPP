@@ -32,5 +32,5 @@ void IronHelmetItem::registerRecipes(recipe::CraftingRecipeManager& recipeManage
         {std::string("XXX"), std::string("X X"), 'X', Item::byRawId(9)});
 }
 
-static registry::RegisterItem<IronHelmetItem> s_itemReg;
+MC_REGISTER_ITEM(IronHelmetItem)
 } // namespace net::minecraft::item

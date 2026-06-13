@@ -20,9 +20,6 @@ public:
     void init() override;
     void render(int mouseX, int mouseY, float tickDelta) override;
 
-protected:
-    void buttonClicked(widget::ButtonWidget& button) override;
-
 private:
     ParentFactory parentFactory_;
     client_option::GameOptions* gameOptions_ = nullptr;

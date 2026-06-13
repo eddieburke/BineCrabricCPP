@@ -11,6 +11,6 @@ void SeedsItem::registerClass()
     Item::registerInItemsArray(&instance);
 }
 
-namespace { static ::net::minecraft::registry::RegisterItem<SeedsItem> autoReg; }
 
+MC_REGISTER_ITEM(SeedsItem)
 } // namespace net::minecraft::item

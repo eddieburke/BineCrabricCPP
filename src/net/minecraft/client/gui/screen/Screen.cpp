@@ -1,7 +1,9 @@
 #include "net/minecraft/client/gui/screen/Screen.hpp"
 
 #include "net/minecraft/client/Minecraft.hpp"
+#include "net/minecraft/client/gui/screen/option/OptionGui.hpp"
 #include "net/minecraft/client/font/TextRenderer.hpp"
+#include "net/minecraft/client/gui/Draw2D.hpp"
 #include "net/minecraft/client/gui/layout/ScreenLayout.hpp"
 #include "net/minecraft/client/gui/screen/TitleScreen.hpp"
 #include "net/minecraft/client/gui/widget/ActionButtonWidget.hpp"
@@ -12,7 +14,9 @@
 
 #include <utility>
 
+#include "net/minecraft/client/gui/widget/TextFieldWidget.hpp"
 #include "net/minecraft/client/input/InputSystem.hpp"
+#include "net/minecraft/client/input/Keys.hpp"
 
 #ifdef _WIN32
 #ifndef NOMINMAX
@@ -92,24 +96,92 @@ void Screen::onKeyboardEvent()
     if (!input.eventKeyDown()) {
         return;
     }
-    if (input.eventKey() == 87 && minecraft_ != nullptr) {
+    if (input.eventKey() == input::keys::kF11 && minecraft_ != nullptr) {
         minecraft_->toggleFullscreen();
         return;
     }
     keyPressed(input.eventChar(), input.eventKey());
 }
 
+bool Screen::pasteChordPressed(int keyCode) noexcept
+{
+#ifdef _WIN32
+    return keyCode == input::keys::kV && input::InputSystem::instance().modifiers().ctrl;
+#else
+    (void)keyCode;
+    return false;
+#endif
+}
+
+bool Screen::closeOnEscape(int keyCode)
+{
+    if (!escapePressed(keyCode) || minecraft_ == nullptr) {
+        return false;
+    }
+    minecraft_->setScreen(nullptr);
+    return true;
+}
+
 void Screen::keyPressed(char character, int keyCode)
 {
     (void)character;
-    keyPressed(keyCode);
+    closeOnEscape(keyCode);
 }
 
-void Screen::keyPressed(int key)
+void Screen::enableTextInput()
 {
-    if (key == 1 && minecraft_ != nullptr) {
-        minecraft_->setScreen(nullptr);
+    input::InputSystem::instance().setKeyboardRepeat(true);
+}
+
+void Screen::disableTextInput()
+{
+    input::InputSystem::instance().setKeyboardRepeat(false);
+}
+
+void Screen::routeKeyToTextFields(char character, int keyCode, std::initializer_list<widget::TextFieldWidget*> fields)
+{
+    for (widget::TextFieldWidget* field : fields) {
+        if (field != nullptr && field->focused) {
+            field->keyPressed(character, keyCode);
+            return;
+        }
     }
+    for (auto it = fields.end(); it != fields.begin();) {
+        --it;
+        if (*it != nullptr) {
+            (*it)->keyPressed(character, keyCode);
+            return;
+        }
+    }
+}
+
+void Screen::clickTextFields(int mouseX, int mouseY, int button, std::initializer_list<widget::TextFieldWidget*> fields)
+{
+    for (widget::TextFieldWidget* field : fields) {
+        if (field != nullptr) {
+            field->mouseClicked(mouseX, mouseY, button);
+        }
+    }
+}
+
+void Screen::tickTextFields(std::initializer_list<widget::TextFieldWidget*> fields)
+{
+    for (widget::TextFieldWidget* field : fields) {
+        if (field != nullptr) {
+            field->tick();
+        }
+    }
+}
+
+void Screen::handleFormKeyPress(char character, int keyCode, std::initializer_list<widget::TextFieldWidget*> fields,
+    const std::function<void()>& onSubmit)
+{
+    routeKeyToTextFields(character, keyCode, fields);
+    if (submitPressed(keyCode, character)) {
+        onSubmit();
+        return;
+    }
+    closeOnEscape(keyCode);
 }
 
 void Screen::mouseClicked(int mouseX, int mouseY, int button)
@@ -172,7 +244,7 @@ void Screen::dispatchButtonPress(widget::ButtonWidget& button)
             return;
         }
     }
-    buttonClicked(button);
+    option::handleOptionButtonClick(*this, button);
 }
 
 void Screen::closeScreen()
@@ -219,11 +291,6 @@ void Screen::mouseReleased(int mouseX, int mouseY, int button)
     }
 }
 
-void Screen::buttonClicked(widget::ButtonWidget& button)
-{
-    (void)button;
-}
-
 void Screen::renderBackground()
 {
     renderBackground(0);
@@ -251,16 +318,10 @@ void Screen::renderBackgroundTexture(int vOffset)
     render::platform::GuiGlState::disableWorldEffects();
     render::platform::GuiGlState::resetColor();
     constexpr float tile = 32.0f;
-    tessellator.startQuads();
-    tessellator.color(0x404040);
-    tessellator.vertex(0.0, static_cast<double>(height_), 0.0, 0.0,
-        static_cast<double>(height_) / tile + static_cast<double>(vOffset));
-    tessellator.vertex(static_cast<double>(width_), static_cast<double>(height_), 0.0,
-        static_cast<double>(width_) / tile, static_cast<double>(height_) / tile + static_cast<double>(vOffset));
-    tessellator.vertex(static_cast<double>(width_), 0.0, 0.0, static_cast<double>(width_) / tile,
-        static_cast<double>(vOffset));
-    tessellator.vertex(0.0, 0.0, 0.0, 0.0, static_cast<double>(vOffset));
-    tessellator.draw();
+    draw::coloredTexturedQuad(tessellator, 0, 0, width_, height_,
+        0.0f, static_cast<float>(vOffset),
+        static_cast<float>(width_) / tile, static_cast<float>(height_) / tile + static_cast<float>(vOffset),
+        0x404040);
 }
 
 void Screen::confirmed(bool confirmed, int id)

@@ -32,5 +32,5 @@ void IronChestplateItem::registerRecipes(recipe::CraftingRecipeManager& recipeMa
         {std::string("X X"), std::string("XXX"), std::string("XXX"), 'X', Item::byRawId(9)});
 }
 
-static registry::RegisterItem<IronChestplateItem> s_itemReg;
+MC_REGISTER_ITEM(IronChestplateItem)
 } // namespace net::minecraft::item

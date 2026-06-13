@@ -76,6 +76,6 @@ void ArrowEntity::onPlayerInteraction(player::PlayerEntity* player)
 }
 
 
-static ::net::minecraft::registry::RegisterEntity<ArrowEntity> autoReg;
 
+MC_REGISTER_ENTITY(ArrowEntity)
 } // namespace net::minecraft::entity::projectile

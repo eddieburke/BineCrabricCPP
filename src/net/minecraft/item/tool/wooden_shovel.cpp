@@ -29,5 +29,5 @@ void WoodenShovelItem::registerRecipes(recipe::CraftingRecipeManager& recipeMana
         {std::string("X"), std::string("#"), std::string("#"), '#', Item::byRawId(24), 'X', Block::PLANKS});
 }
 
-static registry::RegisterItem<WoodenShovelItem> s_itemReg;
+MC_REGISTER_ITEM(WoodenShovelItem)
 } // namespace net::minecraft::item

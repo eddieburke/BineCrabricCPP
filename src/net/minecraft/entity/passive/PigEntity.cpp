@@ -74,6 +74,6 @@ int PigEntity::getDroppedItemId() const
 }
 
 
-static ::net::minecraft::registry::RegisterEntity<PigEntity> autoReg;
 
+MC_REGISTER_ENTITY(PigEntity)
 } // namespace net::minecraft::entity::passive

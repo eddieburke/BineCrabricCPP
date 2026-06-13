@@ -51,6 +51,6 @@ void PaintingItem::registerRecipes(recipe::CraftingRecipeManager& recipeManager)
 
 
 
-namespace {static ::net::minecraft::registry::RegisterItem<PaintingItem> autoReg; } // namespace
 
+MC_REGISTER_ITEM(PaintingItem)
 } // namespace net::minecraft::item

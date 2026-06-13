@@ -8,7 +8,6 @@ namespace net::minecraft::block {
 
 class NoteBlock : public BlockWithEntity {
 public:
-    static constexpr bool kRegisters = true;
     static constexpr int kBlockId = 25;
 static void registerRecipes(recipe::CraftingRecipeManager& recipeManager);
 public:

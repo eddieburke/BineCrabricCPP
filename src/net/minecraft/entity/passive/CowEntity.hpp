@@ -11,7 +11,6 @@ namespace net::minecraft::entity::passive {
 
 class CowEntity : public AnimalEntity {
 public:
-    static constexpr bool kRegisters = true;
     static constexpr int kEntityId = 92;
 
     static constexpr const char* kEntityName = "Cow";

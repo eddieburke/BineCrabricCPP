@@ -6,7 +6,6 @@ namespace net::minecraft::block {
 
 class StoneBlock : public Block {
 public:
-    static constexpr bool kRegisters = true;
     static constexpr int kBlockId = 1;
 
 static void registerClass();

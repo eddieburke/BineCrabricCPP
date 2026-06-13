@@ -63,6 +63,6 @@ void SignItem::registerRecipes(recipe::CraftingRecipeManager& recipeManager)
 
 
 
-namespace {static ::net::minecraft::registry::RegisterItem<SignItem> autoReg; } // namespace
 
+MC_REGISTER_ITEM(SignItem)
 } // namespace net::minecraft::item

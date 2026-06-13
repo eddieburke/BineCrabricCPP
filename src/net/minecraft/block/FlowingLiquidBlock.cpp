@@ -273,6 +273,6 @@ void FlowingLiquidBlock::registerClass()
 
 
 
-namespace {static ::net::minecraft::registry::RegisterBlock<FlowingLiquidBlock> autoReg;} // namespace
+MC_REGISTER_BLOCK(FlowingLiquidBlock)
 } // namespace net::minecraft::block
 

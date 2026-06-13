@@ -26,5 +26,5 @@ void ChestMinecartItem::registerRecipes(recipe::CraftingRecipeManager& recipeMan
         {std::string("A"), std::string("B"), 'A', Block::CHEST, 'B', Item::byRawId(72)});
 }
 
-static registry::RegisterItem<ChestMinecartItem> s_itemReg;
+MC_REGISTER_ITEM(ChestMinecartItem)
 } // namespace net::minecraft::item

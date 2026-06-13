@@ -108,6 +108,6 @@ void SquidEntity::dropItems()
 }
 
 
-static ::net::minecraft::registry::RegisterEntity<SquidEntity> autoReg;
 
+MC_REGISTER_ENTITY(SquidEntity)
 } // namespace net::minecraft::entity::passive

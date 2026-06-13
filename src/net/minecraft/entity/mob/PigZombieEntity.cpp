@@ -83,6 +83,6 @@ int PigZombieEntity::getDroppedItemId() const
 }
 
 
-static ::net::minecraft::registry::RegisterEntity<PigZombieEntity> autoReg;
 
+MC_REGISTER_ENTITY(PigZombieEntity)
 } // namespace net::minecraft::entity::mob

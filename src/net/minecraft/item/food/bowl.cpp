@@ -25,5 +25,5 @@ void BowlItem::registerRecipes(recipe::CraftingRecipeManager& recipeManager)
         {std::string("# #"), std::string(" # "), '#', Block::PLANKS});
 }
 
-static registry::RegisterItem<BowlItem> s_itemReg;
+MC_REGISTER_ITEM(BowlItem)
 } // namespace net::minecraft::item

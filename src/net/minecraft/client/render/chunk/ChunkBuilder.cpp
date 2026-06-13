@@ -8,8 +8,12 @@
 #include "net/minecraft/client/render/chunk/ChunkMeshJob.hpp"
 #include "net/minecraft/client/render/chunk/RegionSnapshot.hpp"
 #include "net/minecraft/world/World.hpp"
+#include "net/minecraft/world/chunk/Chunk.hpp"
+#include "net/minecraft/world/chunk/ChunkSource.hpp"
+#include "net/minecraft/world/dimension/Dimension.hpp"
 
 #include <algorithm>
+#include <array>
 #include <unordered_set>
 
 namespace net::minecraft::client::render::chunk {
@@ -26,14 +30,66 @@ std::shared_ptr<ChunkMeshJob> ChunkMeshJob::capture(
     if (owner.world == nullptr) {
         return nullptr;
     }
-    if (!RegionSnapshot::regionReady(*owner.world, owner.x - 1, owner.y - 1, owner.z - 1, owner.x + owner.sizeX + 1,
-            owner.y + owner.sizeY, owner.z + owner.sizeZ + 1)) {
+    net::minecraft::ChunkSource* source = owner.world->getChunkSource();
+    if (source == nullptr) {
         return nullptr;
     }
-    return std::shared_ptr<ChunkMeshJob>(new ChunkMeshJob(owner, options, fancyGraphics));
+
+    const int minBlockX = owner.x - 1;
+    const int minBlockZ = owner.z - 1;
+    const int maxBlockX = owner.x + owner.sizeX + 1;
+    const int maxBlockZ = owner.z + owner.sizeZ + 1;
+    const int minChunkX = minBlockX >> 4;
+    const int minChunkZ = minBlockZ >> 4;
+    const int maxChunkX = maxBlockX >> 4;
+    const int maxChunkZ = maxBlockZ >> 4;
+
+    std::vector<RegionSnapshot::SourceChunk> sourceChunks;
+    sourceChunks.reserve(static_cast<std::size_t>((maxChunkX - minChunkX + 1) * (maxChunkZ - minChunkZ + 1)));
+
+    const auto releasePinned = [&] {
+        for (const RegionSnapshot::SourceChunk& sourceChunk : sourceChunks) {
+            if (sourceChunk.chunk != nullptr) {
+                const_cast<Chunk*>(sourceChunk.chunk)->releaseRenderPin();
+            }
+        }
+    };
+
+    for (int chunkX = minChunkX; chunkX <= maxChunkX; ++chunkX) {
+        for (int chunkZ = minChunkZ; chunkZ <= maxChunkZ; ++chunkZ) {
+            if (!source->isChunkLoaded(chunkX, chunkZ)) {
+                releasePinned();
+                return nullptr;
+            }
+            Chunk& chunk = source->getChunk(chunkX, chunkZ);
+            if (!chunk.tryAcquireRenderPin()) {
+                releasePinned();
+                return nullptr;
+            }
+            sourceChunks.push_back(RegionSnapshot::SourceChunk {chunkX, chunkZ, &chunk});
+        }
+    }
+
+    std::array<float, 16> lightLevelToLuminance {};
+    std::unique_ptr<net::minecraft::BiomeSource> biomeSource;
+    if (owner.world->dimension != nullptr) {
+        lightLevelToLuminance = owner.world->dimension->lightLevelToLuminance;
+        if (owner.world->dimension->biomeSource) {
+            biomeSource = owner.world->dimension->biomeSource->clone();
+        }
+    } else {
+        for (int level = 0; level < 16; ++level) {
+            lightLevelToLuminance[static_cast<std::size_t>(level)] = Dimension::luminanceForLightLevel(level);
+        }
+    }
+
+    return std::shared_ptr<ChunkMeshJob>(new ChunkMeshJob(owner, options, fancyGraphics, std::move(sourceChunks),
+        owner.world->ambientDarkness, lightLevelToLuminance, std::move(biomeSource)));
 }
 
-ChunkMeshJob::ChunkMeshJob(ChunkBuilder& owner, client::option::ResolvedRenderOptions options, bool fancyGraphicsIn)
+ChunkMeshJob::ChunkMeshJob(ChunkBuilder& owner, client::option::ResolvedRenderOptions options, bool fancyGraphicsIn,
+    std::vector<RegionSnapshot::SourceChunk> sourceChunks, int ambientDarkness,
+    const std::array<float, 16>& lightLevelToLuminance, std::unique_ptr<net::minecraft::BiomeSource> biomeSource)
     : builder(&owner),
       version(owner.version),
       x(owner.x),
@@ -42,11 +98,43 @@ ChunkMeshJob::ChunkMeshJob(ChunkBuilder& owner, client::option::ResolvedRenderOp
       sizeX(owner.sizeX),
       sizeY(owner.sizeY),
       sizeZ(owner.sizeZ),
-      snapshot(*owner.world, owner.x - 1, owner.y - 1, owner.z - 1, owner.x + owner.sizeX + 1,
-          owner.y + owner.sizeY, owner.z + owner.sizeZ + 1),
       opts(options),
-      fancyGraphics(fancyGraphicsIn)
+      fancyGraphics(fancyGraphicsIn),
+      sourceChunks_(std::move(sourceChunks)),
+      ambientDarkness_(ambientDarkness),
+      lightLevelToLuminance_(lightLevelToLuminance),
+      biomeSource_(std::move(biomeSource))
 {
+}
+
+ChunkMeshJob::~ChunkMeshJob()
+{
+    releasePins();
+}
+
+bool ChunkMeshJob::captureSnapshot()
+{
+    if (snapshot != nullptr) {
+        return true;
+    }
+
+    snapshot = std::make_unique<RegionSnapshot>(sourceChunks_, ambientDarkness_, lightLevelToLuminance_,
+        std::move(biomeSource_), x - 1, y - 1, z - 1, x + sizeX + 1, y + sizeY, z + sizeZ + 1);
+    releasePins();
+    return true;
+}
+
+void ChunkMeshJob::releasePins() noexcept
+{
+    if (pinsReleased_) {
+        return;
+    }
+    for (const RegionSnapshot::SourceChunk& sourceChunk : sourceChunks_) {
+        if (sourceChunk.chunk != nullptr) {
+            const_cast<Chunk*>(sourceChunk.chunk)->releaseRenderPin();
+        }
+    }
+    pinsReleased_ = true;
 }
 
 void ChunkBuilder::setPosition(int newX, int newY, int newZ)
@@ -80,6 +168,11 @@ void ChunkBuilder::setPosition(int newX, int newY, int newZ)
 
 void ChunkBuilder::buildMesh(ChunkMeshJob& job)
 {
+    if (!job.captureSnapshot() || job.snapshot == nullptr) {
+        job.failed = true;
+        return;
+    }
+
     const int minX = job.x;
     const int minY = job.y;
     const int minZ = job.z;
@@ -90,7 +183,8 @@ void ChunkBuilder::buildMesh(ChunkMeshJob& job)
     Tessellator tessellator;
     tessellator.setCaptureOnly(true);
 
-    block::BlockRenderManager blockRenderManager(&job.snapshot, job.opts, job.fancyGraphics);
+    RegionSnapshot& snapshot = *job.snapshot;
+    block::BlockRenderManager blockRenderManager(&snapshot, job.opts, job.fancyGraphics);
     blockRenderManager.ctx.tess = &tessellator;
 
     ChunkMeshResult& result = job.result;
@@ -103,7 +197,7 @@ void ChunkBuilder::buildMesh(ChunkMeshJob& job)
         for (int blockY = minY; blockY < maxY; ++blockY) {
             for (int blockZ = minZ; blockZ < maxZ; ++blockZ) {
                 for (int blockX = minX; blockX < maxX; ++blockX) {
-                    const int blockId = job.snapshot.getBlockId(blockX, blockY, blockZ);
+                    const int blockId = snapshot.getBlockId(blockX, blockY, blockZ);
                     if (blockId <= 0) {
                         continue;
                     }
@@ -146,7 +240,7 @@ void ChunkBuilder::buildMesh(ChunkMeshJob& job)
         }
     }
 
-    result.hasSkyLight = job.snapshot.sawSkyLight();
+    result.hasSkyLight = snapshot.sawSkyLight();
 }
 
 void ChunkBuilder::uploadMesh(const ChunkMeshJob& job)
@@ -206,25 +300,6 @@ void ChunkBuilder::uploadMesh(const ChunkMeshJob& job)
 
     hasSkyLight = job.result.hasSkyLight;
     built = true;
-}
-
-bool ChunkBuilder::rebuild()
-{
-    if (!dirty || world == nullptr) {
-        return !dirty;
-    }
-
-    auto job = ChunkMeshJob::capture(
-        *this,
-        block::BlockRenderManager::blockRenderManagerOptionsSnapshot(),
-        block::BlockRenderManager::fancyGraphics);
-    if (job == nullptr) {
-        return false; // region not resident yet; stay queued
-    }
-    buildMesh(*job);
-    uploadMesh(*job);
-    dirty = false;
-    return true;
 }
 
 void ChunkBuilder::renderLayer(int layerId, double interpX, double interpY, double interpZ) const

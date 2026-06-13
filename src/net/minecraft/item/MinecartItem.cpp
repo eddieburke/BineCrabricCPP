@@ -47,6 +47,6 @@ void MinecartItem::registerRecipes(recipe::CraftingRecipeManager& recipeManager)
 
 
 
-namespace {static ::net::minecraft::registry::RegisterItem<MinecartItem> autoReg; } // namespace
 
+MC_REGISTER_ITEM(MinecartItem)
 } // namespace net::minecraft::item

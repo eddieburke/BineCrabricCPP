@@ -20,7 +20,9 @@ public:
     Chunk loadChunk(World* world, int chunkX, int chunkZ) override;
     void saveChunk(World* world, Chunk& chunk) override;
 
-    static NbtCompound saveChunkToNbt(Chunk& chunk, World* world, NbtCompound nbt);
+    static Chunk loadChunkFromRootNbt(World* world, const Nbt& root, int chunkX, int chunkZ);
+    static NbtCompound saveChunkToRootNbt(Chunk& chunk, World* world);
+    static void saveChunkToNbt(Chunk& chunk, World* world, NbtCompound& nbt);
 
     static Chunk loadChunkFromNbt(World* world, const NbtCompound& nbt);
 

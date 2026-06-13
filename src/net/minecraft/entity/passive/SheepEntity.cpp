@@ -73,6 +73,6 @@ void SheepEntity::initializeSpawnState(JavaRandom& random)
 }
 
 
-static ::net::minecraft::registry::RegisterEntity<SheepEntity> autoReg;
 
+MC_REGISTER_ENTITY(SheepEntity)
 } // namespace net::minecraft::entity::passive

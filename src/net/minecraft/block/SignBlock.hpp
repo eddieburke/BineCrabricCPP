@@ -8,7 +8,6 @@ namespace net::minecraft::block {
 
 class SignBlock : public BlockWithEntity {
 public:
-    static constexpr bool kRegisters = true;
     static constexpr int kBlockId = 63;
 
 static void registerClass();

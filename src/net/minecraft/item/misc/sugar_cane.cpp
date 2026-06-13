@@ -24,5 +24,5 @@ void SugarCaneItem::registerRecipes(recipe::CraftingRecipeManager& recipeManager
     (void)recipeManager;
 }
 
-static registry::RegisterItem<SugarCaneItem> s_itemReg;
+MC_REGISTER_ITEM(SugarCaneItem)
 } // namespace net::minecraft::item

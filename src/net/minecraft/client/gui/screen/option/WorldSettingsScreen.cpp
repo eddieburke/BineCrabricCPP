@@ -7,9 +7,6 @@
 #include "net/minecraft/client/gui/screen/option/FogSettingsScreenFactory.hpp"
 
 #include "net/minecraft/client/gui/screen/option/OptionGui.hpp"
-#include "net/minecraft/client/gui/widget/OptionButtonWidget.hpp"
-#include "net/minecraft/client/gui/widget/SliderWidget.hpp"
-
 #include "net/minecraft/client/option/OptionSpec.hpp"
 
 #include "net/minecraft/client/resource/language/I18n.hpp"
@@ -234,48 +231,6 @@ void WorldSettingsScreen::render(int mouseX, int mouseY, float tickDelta)
     }
 
     Screen::render(mouseX, mouseY, tickDelta);
-
-}
-
-
-
-void WorldSettingsScreen::buttonClicked(widget::ButtonWidget& button)
-
-{
-
-    if (gameOptions_ == nullptr || minecraft() == nullptr) {
-
-        return;
-
-    }
-
-    layout::OptionsBuildContext ctx { *this, *minecraft(), *gameOptions_ };
-
-    if (layout::handleOptionWidgetClick(button, ctx)) {
-
-        layout::refreshOptionStates(buttons_, *gameOptions_);
-
-        for (const std::unique_ptr<widget::ButtonWidget>& btnPtr : buttons_) {
-
-            if (btnPtr == nullptr) {
-
-                continue;
-
-            }
-
-            if (auto* optBtn = dynamic_cast<widget::OptionButtonWidget*>(btnPtr.get())) {
-
-                optBtn->refreshText(*gameOptions_);
-
-            } else if (auto* slider = dynamic_cast<widget::SliderWidget*>(btnPtr.get())) {
-
-                slider->refreshText(*gameOptions_);
-
-            }
-
-        }
-
-    }
 
 }
 

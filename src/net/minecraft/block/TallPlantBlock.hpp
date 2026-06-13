@@ -10,7 +10,7 @@
 
 namespace net::minecraft::block {
 
-// Registered in SimpleBlocks.cpp.
+// Registered in Block.cpp.
 class TallPlantBlock : public PlantBlock {
 public:
     TallPlantBlock(int id, int textureId) : PlantBlock(id, textureId)

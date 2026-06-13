@@ -98,6 +98,18 @@ std::string biomeDisplayName(std::uint8_t biome_id)
     return kBiomes[biome_id].display;
 }
 
+std::uint8_t biomeIdFromName(std::string_view name)
+{
+    const std::string normalized = normalizeBiomeName(name);
+    for (int i = 0; i < kBiomeCount; ++i) {
+        if (normalized == kBiomes[i].canonical
+            || normalized == normalizeBiomeName(kBiomes[i].display)) {
+            return static_cast<std::uint8_t>(i);
+        }
+    }
+    return 0;
+}
+
 bool biomeMatchesName(std::uint8_t biome_id, std::string_view name)
 {
     if (biome_id >= kBiomeCount) {

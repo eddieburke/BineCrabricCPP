@@ -24,5 +24,5 @@ void AppleItem::registerRecipes(recipe::CraftingRecipeManager& recipeManager)
     (void)recipeManager;
 }
 
-static registry::RegisterItem<AppleItem> s_itemReg;
+MC_REGISTER_ITEM(AppleItem)
 } // namespace net::minecraft::item

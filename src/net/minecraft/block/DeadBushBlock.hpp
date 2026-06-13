@@ -4,7 +4,7 @@
 
 namespace net::minecraft::block {
 
-// Registered in SimpleBlocks.cpp.
+// Registered in Block.cpp.
 class DeadBushBlock : public PlantBlock {
 public:
     DeadBushBlock(int id, int textureId) : PlantBlock(id, textureId)

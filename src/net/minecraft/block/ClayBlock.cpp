@@ -20,6 +20,6 @@ void ClayBlock::registerRecipes(recipe::CraftingRecipeManager& recipeManager)
 
 
 
-namespace {static ::net::minecraft::registry::RegisterBlock<ClayBlock> autoReg;} // namespace
+MC_REGISTER_BLOCK(ClayBlock)
 } // namespace net::minecraft::block
 

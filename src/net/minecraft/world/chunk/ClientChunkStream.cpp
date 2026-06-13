@@ -1,0 +1,647 @@
+#include "net/minecraft/world/chunk/ClientChunkStream.hpp"
+
+#include "net/minecraft/client/gui/screen/LoadingDisplay.hpp"
+#include "net/minecraft/mod/GameHooks.hpp"
+#include "net/minecraft/world/World.hpp"
+
+#include <algorithm>
+#include <cmath>
+#include <thread>
+
+namespace net::minecraft {
+
+ClientChunkStream::~ClientChunkStream()
+{
+    genPool_.cancelPending();
+    genPool_.drain();
+}
+
+ClientChunkStream::ClientChunkStream(World* world, ChunkStorage* storage, ChunkSource* generator)
+    : world_(world),
+      empty_(world, 0, 0),
+      generator_(generator),
+      storage_(storage),
+      genPool_(std::clamp(std::thread::hardware_concurrency() == 0U ? 2U : std::thread::hardware_concurrency() / 2U, 2U, 4U),
+          "chunk-gen")
+{
+    maxInFlight_ = std::max<std::size_t>(32, static_cast<std::size_t>(genPool_.threadCount()) * 8U);
+}
+
+void ClientChunkStream::initAsync(std::uint64_t seed, std::function<std::unique_ptr<ChunkSource>(std::uint64_t)> genFactory)
+{
+    seed_ = seed;
+    genFactory_ = std::move(genFactory);
+}
+
+void ClientChunkStream::setCenter(int chunkX, int chunkZ) noexcept
+{
+    centerChunkX_ = chunkX;
+    centerChunkZ_ = chunkZ;
+}
+
+void ClientChunkStream::setResidentRadius(int radiusChunks)
+{
+    residentRadiusChunks_ = std::max(1, radiusChunks);
+}
+
+bool ClientChunkStream::isWithinResidentRadius(int chunkX, int chunkZ) const noexcept
+{
+    return chunkX >= centerChunkX_ - residentRadiusChunks_ && chunkZ >= centerChunkZ_ - residentRadiusChunks_
+        && chunkX <= centerChunkX_ + residentRadiusChunks_ && chunkZ <= centerChunkZ_ + residentRadiusChunks_;
+}
+
+bool ClientChunkStream::isManagedChunk(const Chunk* chunk) const
+{
+    return chunk != nullptr && chunk != &empty_;
+}
+
+Chunk* ClientChunkStream::findLoadedChunk(int chunkX, int chunkZ) const
+{
+    const auto it = residentChunks_.find(ChunkPos {chunkX, chunkZ});
+    return it == residentChunks_.end() ? nullptr : it->second;
+}
+
+bool ClientChunkStream::isChunkLoaded(int chunkX, int chunkZ) const
+{
+    if (!isWithinResidentRadius(chunkX, chunkZ)) {
+        return false;
+    }
+    if (cachedChunk_ != nullptr && cachedChunkX_ == chunkX && cachedChunkZ_ == chunkZ) {
+        return true;
+    }
+    return residentChunks_.contains(ChunkPos {chunkX, chunkZ});
+}
+
+int ClientChunkStream::prefetchPriority(int chunkX, int chunkZ) const noexcept
+{
+    return std::max(std::abs(chunkX - centerChunkX_), std::abs(chunkZ - centerChunkZ_));
+}
+
+std::unique_ptr<ChunkSource> ClientChunkStream::acquireGenerator()
+{
+    {
+        const std::lock_guard lock(asyncMutex_);
+        if (!generatorPool_.empty()) {
+            auto generator = std::move(generatorPool_.back());
+            generatorPool_.pop_back();
+            return generator;
+        }
+    }
+    return genFactory_ ? genFactory_(seed_) : nullptr;
+}
+
+void ClientChunkStream::releaseGenerator(std::unique_ptr<ChunkSource> generator)
+{
+    if (generator == nullptr) {
+        return;
+    }
+    const std::lock_guard lock(asyncMutex_);
+    generatorPool_.push_back(std::move(generator));
+}
+
+bool ClientChunkStream::requestAsync(int chunkX, int chunkZ, int priority)
+{
+    const ChunkPos key {chunkX, chunkZ};
+    {
+        const std::lock_guard lock(asyncMutex_);
+        if (inFlight_.contains(key) || inFlight_.size() >= maxInFlight_) {
+            return false;
+        }
+    }
+
+    auto job = std::make_shared<AsyncJob>();
+    job->chunkX = chunkX;
+    job->chunkZ = chunkZ;
+
+    {
+        const std::lock_guard lock(asyncMutex_);
+        inFlight_[key] = job;
+    }
+
+    genPool_.submit([this, job, key]() {
+        if (storage_ != nullptr) {
+            try {
+                auto loaded = storage_->loadDetachedChunk(job->chunkX, job->chunkZ);
+                auto chunk = std::make_unique<Chunk>(std::move(loaded));
+                if (!chunk->empty && chunk->chunkPosEquals(job->chunkX, job->chunkZ)) {
+                    job->result = std::move(chunk);
+                }
+            } catch (...) {
+            }
+        }
+
+        if (job->result == nullptr) {
+            if (auto gen = acquireGenerator()) {
+                try {
+                    job->result = std::make_unique<Chunk>(std::move(gen->getChunk(job->chunkX, job->chunkZ)));
+                    job->result->fill();
+                } catch (...) {
+                    job->failed = true;
+                }
+                releaseGenerator(std::move(gen));
+            }
+        }
+
+        {
+            std::lock_guard lock(job->handoffMutex);
+            if (job->result == nullptr) {
+                job->failed = true;
+            }
+            job->done = true;
+        }
+
+        const std::lock_guard lock(asyncMutex_);
+        completedJobs_.push_back(job);
+    }, priority);
+
+    return true;
+}
+
+std::vector<std::shared_ptr<ClientChunkStream::AsyncJob>> ClientChunkStream::pumpCompleted()
+{
+    std::vector<std::shared_ptr<AsyncJob>> done;
+    {
+        const std::lock_guard lock(asyncMutex_);
+        done.swap(completedJobs_);
+        for (const auto& job : done) {
+            inFlight_.erase(ChunkPos {job->chunkX, job->chunkZ});
+        }
+    }
+    return done;
+}
+
+std::unique_ptr<Chunk> ClientChunkStream::tryClaimAsync(int chunkX, int chunkZ)
+{
+    std::shared_ptr<AsyncJob> job;
+    {
+        const std::lock_guard lock(asyncMutex_);
+        const auto it = inFlight_.find(ChunkPos {chunkX, chunkZ});
+        if (it == inFlight_.end()) {
+            return nullptr;
+        }
+        job = it->second;
+    }
+
+    std::unique_ptr<Chunk> result;
+    {
+        const std::lock_guard lock(job->handoffMutex);
+        if (!job->done) {
+            return nullptr;
+        }
+        result = std::move(job->result);
+    }
+    {
+        const std::lock_guard lock(asyncMutex_);
+        inFlight_.erase(ChunkPos {chunkX, chunkZ});
+    }
+    return result;
+}
+
+bool ClientChunkStream::isAwaitingPublish(int chunkX, int chunkZ) const
+{
+    for (const auto& job : readyToPublish_) {
+        if (job->chunkX == chunkX && job->chunkZ == chunkZ) {
+            return true;
+        }
+    }
+    const std::lock_guard lock(asyncMutex_);
+    return inFlight_.contains(ChunkPos {chunkX, chunkZ});
+}
+
+void ClientChunkStream::prefetchMissing()
+{
+    const auto outstanding = [this] {
+        const std::lock_guard lock(asyncMutex_);
+        return inFlight_.size() + readyToPublish_.size();
+    };
+
+    for (int radius = 0; radius <= residentRadiusChunks_ && outstanding() < maxInFlight_; ++radius) {
+        for (int dx = -radius; dx <= radius && outstanding() < maxInFlight_; ++dx) {
+            for (int dz = -radius; dz <= radius && outstanding() < maxInFlight_; ++dz) {
+                if (radius > 0 && std::abs(dx) != radius && std::abs(dz) != radius) {
+                    continue;
+                }
+                const int chunkX = centerChunkX_ + dx;
+                const int chunkZ = centerChunkZ_ + dz;
+                if (!isWithinResidentRadius(chunkX, chunkZ) || isChunkLoaded(chunkX, chunkZ)
+                    || isAwaitingPublish(chunkX, chunkZ)) {
+                    continue;
+                }
+                requestAsync(chunkX, chunkZ, prefetchPriority(chunkX, chunkZ));
+            }
+        }
+    }
+}
+
+void ClientChunkStream::prefetch()
+{
+    prefetchMissing();
+}
+
+void ClientChunkStream::pumpPublish()
+{
+    for (auto& job : pumpCompleted()) {
+        if (!job->failed && job->result != nullptr && isWithinResidentRadius(job->chunkX, job->chunkZ)) {
+            readyToPublish_.push_back(std::move(job));
+        }
+    }
+
+    constexpr int kMaxPublishPerTick = 8;
+    int published = 0;
+    while (!readyToPublish_.empty() && published < kMaxPublishPerTick) {
+        std::shared_ptr<AsyncJob> job = std::move(readyToPublish_.front());
+        readyToPublish_.pop_front();
+
+        const ChunkPos pos {job->chunkX, job->chunkZ};
+        if (!isWithinResidentRadius(pos.x, pos.z) || job->result == nullptr || isChunkLoaded(pos.x, pos.z)) {
+            continue;
+        }
+
+        if (installChunk(pos, std::move(job->result)) != nullptr) {
+            queueNeighborDecoration(pos.x, pos.z);
+            ++published;
+        }
+    }
+}
+
+void ClientChunkStream::enqueueDecoration(int chunkX, int chunkZ)
+{
+    const ChunkPos pos {chunkX, chunkZ};
+    if (decorationQueued_.insert(pos).second) {
+        decorationQueue_.push_back(pos);
+    }
+}
+
+void ClientChunkStream::pumpDecoration()
+{
+    constexpr int kMaxDecorationsPerTick = 2;
+    const std::size_t attempts = decorationQueue_.size();
+    std::size_t inspected = 0;
+    int decorated = 0;
+
+    while (inspected < attempts && !decorationQueue_.empty() && decorated < kMaxDecorationsPerTick) {
+        const ChunkPos pos = decorationQueue_.front();
+        decorationQueue_.pop_front();
+        ++inspected;
+
+        if (tryDecorate(pos.x, pos.z)) {
+            decorationQueued_.erase(pos);
+            ++decorated;
+            continue;
+        }
+
+        if (!isWithinResidentRadius(pos.x, pos.z) || !isChunkLoaded(pos.x, pos.z)) {
+            decorationQueued_.erase(pos);
+            continue;
+        }
+
+        decorationQueue_.push_back(pos);
+    }
+}
+
+void ClientChunkStream::scheduleEviction()
+{
+    for (int dz = centerChunkZ_ - residentRadiusChunks_ - 1; dz <= centerChunkZ_ + residentRadiusChunks_ + 1; ++dz) {
+        for (int dx = centerChunkX_ - residentRadiusChunks_ - 1; dx <= centerChunkX_ + residentRadiusChunks_ + 1; ++dx) {
+            if (isWithinResidentRadius(dx, dz) || !isChunkLoaded(dx, dz)) {
+                continue;
+            }
+            const ChunkPos pos {dx, dz};
+            if (evictionQueued_.insert(pos).second) {
+                evictionQueue_.push_back(pos);
+            }
+        }
+    }
+}
+
+void ClientChunkStream::pumpEviction()
+{
+    constexpr int kMaxEvictionsPerTick = 4;
+    int evicted = 0;
+    const std::size_t attempts = evictionQueue_.size();
+    std::size_t inspected = 0;
+
+    while (inspected < attempts && !evictionQueue_.empty() && evicted < kMaxEvictionsPerTick) {
+        const ChunkPos pos = evictionQueue_.front();
+        evictionQueue_.pop_front();
+        evictionQueued_.erase(pos);
+        ++inspected;
+
+        if (isWithinResidentRadius(pos.x, pos.z)) {
+            continue;
+        }
+
+        if (!evictChunk(pos)) {
+            if (Chunk* chunk = findLoadedChunk(pos.x, pos.z); isManagedChunk(chunk)) {
+                chunk->cancelRenderEviction();
+            }
+            if (evictionQueued_.insert(pos).second) {
+                evictionQueue_.push_back(pos);
+            }
+            continue;
+        }
+        ++evicted;
+    }
+}
+
+std::unique_ptr<Chunk> ClientChunkStream::takeReadyChunk(int chunkX, int chunkZ)
+{
+    for (auto it = readyToPublish_.begin(); it != readyToPublish_.end(); ++it) {
+        if ((*it)->chunkX != chunkX || (*it)->chunkZ != chunkZ) {
+            continue;
+        }
+        std::unique_ptr<Chunk> chunk = std::move((*it)->result);
+        readyToPublish_.erase(it);
+        return chunk;
+    }
+    return nullptr;
+}
+
+std::unique_ptr<Chunk> ClientChunkStream::loadFromStorage(const ChunkPos& pos)
+{
+    if (storage_ == nullptr) {
+        return nullptr;
+    }
+    try {
+        auto loaded = std::make_unique<Chunk>(std::move(storage_->loadDetachedChunk(pos.x, pos.z)));
+        if (loaded->empty || !loaded->chunkPosEquals(pos.x, pos.z)) {
+            return nullptr;
+        }
+        loaded->attachToWorld(world_);
+        return loaded;
+    } catch (...) {
+        return nullptr;
+    }
+}
+
+std::unique_ptr<Chunk> ClientChunkStream::loadFromGenerator(const ChunkPos& pos)
+{
+    auto generated = std::make_unique<Chunk>(std::move(generator_->getChunk(pos.x, pos.z)));
+    generated->attachToWorld(world_);
+    generated->fill();
+    return generated;
+}
+
+void ClientChunkStream::dropOwnedResident(const ChunkPos& pos)
+{
+    const auto it = ownedChunks_.find(pos);
+    if (it == ownedChunks_.end()) {
+        return;
+    }
+    if (cachedChunk_ == it->second.get()) {
+        cachedChunk_ = nullptr;
+    }
+    ownedChunks_.erase(it);
+}
+
+Chunk* ClientChunkStream::installChunk(const ChunkPos& pos, std::unique_ptr<Chunk> chunk)
+{
+    if (chunk == nullptr) {
+        return installEmptyChunk(pos);
+    }
+
+    dropOwnedResident(pos);
+
+    chunk->attachToWorld(world_);
+    Chunk* raw = chunk.get();
+    raw->populateBlockLight();
+    raw->load();
+    if (!raw->empty) {
+        raw->relightSkylightGaps();
+    }
+
+    ownedChunks_[pos] = std::move(chunk);
+    residentChunks_[pos] = raw;
+    return raw;
+}
+
+Chunk* ClientChunkStream::installEmptyChunk(const ChunkPos& pos)
+{
+    dropOwnedResident(pos);
+    residentChunks_[pos] = &empty_;
+    return &empty_;
+}
+
+bool ClientChunkStream::evictChunk(const ChunkPos& pos)
+{
+    auto residentIt = residentChunks_.find(pos);
+    if (residentIt == residentChunks_.end()) {
+        return true;
+    }
+
+    Chunk* chunk = residentIt->second;
+    if (cachedChunk_ == chunk) {
+        cachedChunk_ = nullptr;
+    }
+
+    if (isManagedChunk(chunk)) {
+        if (!chunk->beginRenderEviction()) {
+            return false;
+        }
+        chunk->unload();
+        saveChunk(*chunk);
+        saveEntitiesForChunk(*chunk);
+    }
+
+    residentChunks_.erase(residentIt);
+    ownedChunks_.erase(pos);
+    return true;
+}
+
+void ClientChunkStream::saveEntitiesForChunk(Chunk& chunk)
+{
+    if (storage_ == nullptr) {
+        return;
+    }
+    try {
+        storage_->saveEntities(world_, chunk);
+    } catch (...) {
+    }
+}
+
+void ClientChunkStream::saveChunk(Chunk& chunk)
+{
+    if (storage_ == nullptr) {
+        return;
+    }
+    try {
+        storage_->saveChunk(world_, chunk);
+    } catch (...) {
+    }
+}
+
+bool ClientChunkStream::canDecorate(int chunkX, int chunkZ) const
+{
+    return isChunkLoaded(chunkX + 1, chunkZ + 1) && isChunkLoaded(chunkX, chunkZ + 1)
+        && isChunkLoaded(chunkX + 1, chunkZ);
+}
+
+bool ClientChunkStream::tryDecorate(int chunkX, int chunkZ)
+{
+    Chunk* chunk = findLoadedChunk(chunkX, chunkZ);
+    if (!isManagedChunk(chunk) || chunk->terrainPopulated) {
+        return true;
+    }
+    if (!canDecorate(chunkX, chunkZ)) {
+        return false;
+    }
+    decorate(generator_, chunkX, chunkZ);
+    return true;
+}
+
+void ClientChunkStream::decorate(ChunkSource* source, int chunkX, int chunkZ)
+{
+    Chunk& chunk = getChunk(chunkX, chunkZ);
+    if (chunk.terrainPopulated) {
+        return;
+    }
+    mod::ChunkDecorateEvent beforeEvent {world_, chunkX, chunkZ, true, false};
+    mod::hooks().publish(beforeEvent);
+    chunk.terrainPopulated = true;
+    if (beforeEvent.canceled) {
+        chunk.markDirty();
+        return;
+    }
+    if (generator_ != nullptr) {
+        generator_->decorate(source, chunkX, chunkZ);
+    }
+    mod::ChunkDecorateEvent afterEvent {world_, chunkX, chunkZ, false, false};
+    mod::hooks().publish(afterEvent);
+    chunk.markDirty();
+}
+
+void ClientChunkStream::enqueueDecorationIfNeeded(int chunkX, int chunkZ)
+{
+    Chunk* chunk = findLoadedChunk(chunkX, chunkZ);
+    if (!isManagedChunk(chunk) || chunk->terrainPopulated) {
+        return;
+    }
+    enqueueDecoration(chunkX, chunkZ);
+}
+
+void ClientChunkStream::queueNeighborDecoration(int chunkX, int chunkZ)
+{
+    enqueueDecorationIfNeeded(chunkX, chunkZ);
+    enqueueDecorationIfNeeded(chunkX - 1, chunkZ);
+    enqueueDecorationIfNeeded(chunkX, chunkZ - 1);
+    enqueueDecorationIfNeeded(chunkX - 1, chunkZ - 1);
+}
+
+Chunk& ClientChunkStream::getChunk(int chunkX, int chunkZ)
+{
+    if (cachedChunk_ != nullptr && cachedChunkX_ == chunkX && cachedChunkZ_ == chunkZ) {
+        return *cachedChunk_;
+    }
+    if (world_ != nullptr && !world_->isEventProcessingEnabled() && !isWithinResidentRadius(chunkX, chunkZ)) {
+        return empty_;
+    }
+
+    const ChunkPos pos {chunkX, chunkZ};
+    if (Chunk* loaded = findLoadedChunk(chunkX, chunkZ)) {
+        cachedChunkX_ = chunkX;
+        cachedChunkZ_ = chunkZ;
+        cachedChunk_ = loaded;
+        return *loaded;
+    }
+
+    std::unique_ptr<Chunk> chunk = takeReadyChunk(chunkX, chunkZ);
+    if (chunk == nullptr) {
+        chunk = tryClaimAsync(chunkX, chunkZ);
+    }
+    if (chunk == nullptr) {
+        chunk = loadFromStorage(pos);
+    }
+    if (chunk == nullptr && generator_ != nullptr) {
+        chunk = loadFromGenerator(pos);
+    }
+
+    Chunk* installed = chunk != nullptr ? installChunk(pos, std::move(chunk)) : installEmptyChunk(pos);
+    queueNeighborDecoration(chunkX, chunkZ);
+
+    cachedChunkX_ = chunkX;
+    cachedChunkZ_ = chunkZ;
+    cachedChunk_ = installed;
+    return *installed;
+}
+
+void ClientChunkStream::populateReadyChunks()
+{
+    for (int dz = centerChunkZ_ - residentRadiusChunks_; dz <= centerChunkZ_ + residentRadiusChunks_; ++dz) {
+        for (int dx = centerChunkX_ - residentRadiusChunks_; dx <= centerChunkX_ + residentRadiusChunks_; ++dx) {
+            Chunk* chunk = findLoadedChunk(dx, dz);
+            if (!isManagedChunk(chunk) || chunk->terrainPopulated) {
+                continue;
+            }
+            if (canDecorate(dx, dz)) {
+                decorate(generator_, dx, dz);
+            }
+        }
+    }
+}
+
+bool ClientChunkStream::tick()
+{
+    pumpPublish();
+    pumpDecoration();
+    scheduleEviction();
+    pumpEviction();
+
+    if (storage_ != nullptr) {
+        storage_->tick();
+    }
+    return generator_ != nullptr && generator_->tick();
+}
+
+bool ClientChunkStream::save(bool saveEntities, client::gui::screen::LoadingDisplay* display)
+{
+    int total = 0;
+    if (display != nullptr) {
+        for (const auto& [pos, chunk] : residentChunks_) {
+            (void)pos;
+            if (isManagedChunk(chunk) && chunk->shouldSave(saveEntities)) {
+                ++total;
+            }
+        }
+    }
+
+    int saved = 0;
+    int index = 0;
+    for (const auto& [pos, chunk] : residentChunks_) {
+        (void)pos;
+        if (!isManagedChunk(chunk)) {
+            continue;
+        }
+        if (saveEntities && !chunk->empty) {
+            saveEntitiesForChunk(*chunk);
+        }
+        if (!chunk->shouldSave(saveEntities)) {
+            continue;
+        }
+        saveChunk(*chunk);
+        chunk->dirty = false;
+        if (!saveEntities && ++saved == 2) {
+            return false;
+        }
+        if (display != nullptr && total > 0 && ++index % 10 == 0) {
+            display->progressStagePercentage(index * 100 / total);
+        }
+    }
+    if (saveEntities && storage_ != nullptr) {
+        storage_->flush();
+    }
+    return true;
+}
+
+std::string ClientChunkStream::debugInfo() const
+{
+    std::size_t inFlight = 0;
+    {
+        const std::lock_guard lock(asyncMutex_);
+        inFlight = inFlight_.size();
+    }
+    return "ChunkCache: resident=" + std::to_string(residentChunks_.size()) + ", radius="
+        + std::to_string(residentRadiusChunks_) + ", inFlight=" + std::to_string(inFlight) + ", publishQ="
+        + std::to_string(readyToPublish_.size());
+}
+
+} // namespace net::minecraft

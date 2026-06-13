@@ -18,18 +18,11 @@ public:
     void init() override;
     void render(int mouseX, int mouseY, float tickDelta) override;
 
-protected:
-    void buttonClicked(widget::ButtonWidget& button) override;
-
-private:
     void createButtons();
-
-public:
     void renderIcon(int x, int y, int u = 0, int v = 0);
     void renderItemIcon(int x, int y, int itemOrBlockId);
 
 private:
-
     ScreenFactory parentFactory_;
     stat::PlayerStats* stats_ = nullptr;
     std::string title_;

@@ -25,10 +25,14 @@
 #undef GL_FOG
 #undef GL_SRC_ALPHA
 #undef GL_ONE_MINUS_SRC_ALPHA
+#undef GL_ONE_MINUS_SRC_COLOR
+#undef GL_ONE_MINUS_DST_COLOR
 #undef GL_SRC_COLOR
 #undef GL_DST_COLOR
 #undef GL_ONE
 #undef GL_ZERO
+#undef GL_COLOR_MATERIAL
+#undef GL_RESCALE_NORMAL
 #undef GL_SMOOTH
 #undef GL_FLAT
 #undef GL_MODELVIEW
@@ -83,10 +87,14 @@ struct GL11 {
     static constexpr int GL_DEPTH_TEST = 0x0B71;
     static constexpr int GL_CULL_FACE = 0x0B44;
     static constexpr int GL_LIGHTING = 0x0B50;
+    static constexpr int GL_COLOR_MATERIAL = 0x0B57;
     static constexpr int GL_FOG = 0x0B60;
+    static constexpr int GL_RESCALE_NORMAL = 0x803A;
 
     static constexpr int GL_SRC_ALPHA = 0x0302;
     static constexpr int GL_ONE_MINUS_SRC_ALPHA = 0x0303;
+    static constexpr int GL_ONE_MINUS_SRC_COLOR = 0x0301;
+    static constexpr int GL_ONE_MINUS_DST_COLOR = 0x0307;
     static constexpr int GL_SRC_COLOR = 0x0300;
     static constexpr int GL_DST_COLOR = 0x0306;
     static constexpr int GL_ONE = 0x0001;

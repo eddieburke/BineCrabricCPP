@@ -19,7 +19,6 @@ namespace net::minecraft::item {
 
 class DoorItem : public Item {
 public:
-    static constexpr bool kRegisters = true;
     static constexpr int kRawId = 68;
 
 static void registerClass();

@@ -29,5 +29,5 @@ void IronHoeItem::registerRecipes(recipe::CraftingRecipeManager& recipeManager)
         {std::string("XX"), std::string(" #"), std::string(" #"), '#', Item::byRawId(24), 'X', Item::byRawId(9)});
 }
 
-static registry::RegisterItem<IronHoeItem> s_itemReg;
+MC_REGISTER_ITEM(IronHoeItem)
 } // namespace net::minecraft::item

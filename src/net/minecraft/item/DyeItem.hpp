@@ -14,7 +14,7 @@ class SmeltingRecipeManager;
 namespace net::minecraft::item {
 
 class DyeItem : public Item {
-public:        static constexpr bool kRegisters = true;
+public:
     static constexpr int kRawId = 95;
 
 static void registerClass();

@@ -10,7 +10,7 @@ class CraftingRecipeManager;
 namespace net::minecraft::item {
 
 class ShearsItem : public Item {
-public:        static constexpr bool kRegisters = true;
+public:
     static constexpr int kRawId = 103;
 
 static void registerClass();

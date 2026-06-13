@@ -12,7 +12,6 @@ namespace net::minecraft::block {
 
 class RedstoneTorchBlock : public TorchBlock {
 public:
-    static constexpr bool kRegisters = true;
     static constexpr int kBlockId = 76;
 static void registerRecipes(recipe::CraftingRecipeManager& recipeManager);
 public:

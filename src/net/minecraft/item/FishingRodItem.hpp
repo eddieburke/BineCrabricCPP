@@ -14,7 +14,7 @@ class CraftingRecipeManager;
 namespace net::minecraft::item {
 
 class FishingRodItem : public Item {
-public:        static constexpr bool kRegisters = true;
+public:
     static constexpr int kRawId = 90;
 
 static void registerClass();

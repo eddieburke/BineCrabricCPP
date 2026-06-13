@@ -255,6 +255,6 @@ void StairsBlock::registerRecipes(recipe::CraftingRecipeManager& recipeManager)
 
 
 
-namespace {static ::net::minecraft::registry::RegisterBlock<StairsBlock> autoReg;} // namespace
+MC_REGISTER_BLOCK(StairsBlock)
 } // namespace net::minecraft::block
 

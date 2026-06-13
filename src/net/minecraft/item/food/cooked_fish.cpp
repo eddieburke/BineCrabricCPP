@@ -34,5 +34,5 @@ void CookedFishItem::registerRecipes(recipe::CraftingRecipeManager& recipeManage
     (void)recipeManager;
 }
 
-static registry::RegisterItem<CookedFishItem> s_itemReg;
+MC_REGISTER_ITEM(CookedFishItem)
 } // namespace net::minecraft::item

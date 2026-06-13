@@ -9,7 +9,7 @@ class CraftingRecipeManager;
 namespace net::minecraft::item {
 
 class DiamondPickaxeItem : public PickaxeItem {
-public:        static constexpr bool kRegisters = true;
+public:
     static constexpr int kRawId = 22;
 
 static void registerClass();

@@ -27,5 +27,5 @@ void SugarItem::registerRecipes(recipe::CraftingRecipeManager& recipeManager)
         {std::string("#"), '#', Item::byRawId(82)});
 }
 
-static registry::RegisterItem<SugarItem> s_itemReg;
+MC_REGISTER_ITEM(SugarItem)
 } // namespace net::minecraft::item

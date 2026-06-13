@@ -23,7 +23,6 @@ namespace net::minecraft::block {
 
 class DispenserBlock : public BlockWithEntity {
 public:
-    static constexpr bool kRegisters = true;
     static constexpr int kBlockId = 23;
 static void registerRecipes(recipe::CraftingRecipeManager& recipeManager);
 public:

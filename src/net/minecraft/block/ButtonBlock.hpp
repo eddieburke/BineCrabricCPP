@@ -8,7 +8,6 @@ namespace net::minecraft::block {
 
 class ButtonBlock : public Block {
 public:
-    static constexpr bool kRegisters = true;
     static constexpr int kBlockId = 77;
 static void registerRecipes(recipe::CraftingRecipeManager& recipeManager);
 public:

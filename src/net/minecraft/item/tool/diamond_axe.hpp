@@ -9,7 +9,7 @@ class CraftingRecipeManager;
 namespace net::minecraft::item {
 
 class DiamondAxeItem : public AxeItem {
-public:        static constexpr bool kRegisters = true;
+public:
     static constexpr int kRawId = 23;
 
 static void registerClass();

@@ -25,6 +25,10 @@ class ClientNetworkBridge {
 public:
     ClientNetworkBridge() = default;
     explicit ClientNetworkBridge(WorldSession* worldSession) noexcept;
+    // Out-of-line: handler_/connection_ are unique_ptrs to forward-declared types, so the
+    // destructor must be emitted in the .cpp where those types are complete (lets owners such
+    // as WorldSession destroy a bridge without pulling in the full network headers).
+    ~ClientNetworkBridge();
 
     void setWorldSession(WorldSession* worldSession) noexcept;
 

@@ -3,6 +3,7 @@
 #include "net/minecraft/client/Minecraft.hpp"
 #include "net/minecraft/client/option/OptionRegistry.hpp"
 #include "net/minecraft/client/option/ResolvedRenderOptions.hpp"
+#include "net/minecraft/client/render/ViewDistance.hpp"
 #include "net/minecraft/client/render/world/WorldRenderer.hpp"
 #include "net/minecraft/client/resource/language/I18n.hpp"
 #include "net/minecraft/client/texture/TextureManager.hpp"
@@ -126,12 +127,9 @@ void GameOptions::applyToWorld(World* world) const
     if (world == nullptr) {
         return;
     }
-    const ResolvedRenderOptions resolved = resolve(*this);
+    const render::ViewDistance viewDistance = render::ViewDistance::fromOptions(*this);
     world->applyWorldSettings(ofWeather, ofAutoSaveTicks, ofTime);
-    // Keep the whole render-distance disc resident, plus a small preload margin.
-    // chunkGridRadius is the torus span in blocks; halve to chunks for the radius.
-    const int gridChunkRadius = resolved.chunkGridRadius / 16 / 2;
-    world->setChunkPreloadRadius(gridChunkRadius + resolved.chunkPreloadRadius);
+    world->setChunkResidentRadius(viewDistance.worldChunkResidentRadiusChunks());
 }
 
 void GameOptions::applyDerivedSettings()

@@ -29,6 +29,36 @@ namespace net::minecraft::client::texture {
 
 namespace {
 
+struct TexturePathSpec {
+    std::string resourcePath;
+    bool blur = false;
+    bool clamp = false;
+};
+
+std::string normalizeResourcePath(std::string path)
+{
+    while (!path.empty() && (path.front() == '/' || path.front() == '\\')) {
+        path.erase(path.begin());
+    }
+    return path;
+}
+
+TexturePathSpec parseTexturePath(const std::string& path)
+{
+    TexturePathSpec spec;
+    spec.resourcePath = path;
+    if (spec.resourcePath.rfind("##", 0) == 0) {
+        spec.resourcePath = spec.resourcePath.substr(2);
+    } else if (spec.resourcePath.rfind("%clamp%", 0) == 0) {
+        spec.clamp = true;
+        spec.resourcePath = spec.resourcePath.substr(7);
+    } else if (spec.resourcePath.rfind("%blur%", 0) == 0) {
+        spec.blur = true;
+        spec.resourcePath = spec.resourcePath.substr(6);
+    }
+    return spec;
+}
+
 #ifdef _WIN32
 void ensureGdiplusStarted()
 {
@@ -42,17 +72,49 @@ void ensureGdiplusStarted()
         started = true;
     }
 }
+
+RasterImage rasterFromGdiplusBitmap(Gdiplus::Bitmap& bitmap)
+{
+    RasterImage out;
+    if (bitmap.GetLastStatus() != Gdiplus::Ok) {
+        return out;
+    }
+
+    out.width = static_cast<int>(bitmap.GetWidth());
+    out.height = static_cast<int>(bitmap.GetHeight());
+    out.argb.resize(static_cast<std::size_t>(out.width) * static_cast<std::size_t>(out.height));
+
+    Gdiplus::Rect rect(0, 0, out.width, out.height);
+    Gdiplus::BitmapData data{};
+    if (bitmap.LockBits(&rect, Gdiplus::ImageLockModeRead, PixelFormat32bppARGB, &data) != Gdiplus::Ok) {
+        out.width = 0;
+        out.height = 0;
+        out.argb.clear();
+        return out;
+    }
+
+    const auto* src = static_cast<const std::uint8_t*>(data.Scan0);
+    for (int y = 0; y < out.height; ++y) {
+        const std::uint8_t* row = src + static_cast<std::size_t>(y) * data.Stride;
+        for (int x = 0; x < out.width; ++x) {
+            const std::uint8_t b = row[x * 4 + 0];
+            const std::uint8_t g = row[x * 4 + 1];
+            const std::uint8_t r = row[x * 4 + 2];
+            const std::uint8_t a = row[x * 4 + 3];
+            out.argb[static_cast<std::size_t>(y) * out.width + x] =
+                (static_cast<std::uint32_t>(a) << 24U) |
+                (static_cast<std::uint32_t>(r) << 16U) |
+                (static_cast<std::uint32_t>(g) << 8U) |
+                static_cast<std::uint32_t>(b);
+        }
+    }
+    bitmap.UnlockBits(&data);
+    return out;
+}
 #endif
 
-constexpr int kGlTexture2D = 0x0DE1;
-constexpr int kGlRgba = 0x1908;
-constexpr int kGlUnsignedByte = 0x1401;
-constexpr int kGlNearest = 0x2600;              // GL_NEAREST (9728)
-constexpr int kGlLinear = 0x2601;               // GL_LINEAR (9729)
 constexpr int kGlNearestMipmapLinear = 0x2702;  // GL_NEAREST_MIPMAP_LINEAR (9986)
 constexpr int kGlLinearMipmapLinear = 0x2703;   // GL_LINEAR_MIPMAP_LINEAR (9987)
-constexpr int kGlClamp = 0x2900;                // GL_CLAMP (10496)
-constexpr int kGlRepeat = 0x2901;               // GL_REPEAT (10497)
 
 int smoothBlend(int color1, int color2)
 {
@@ -101,8 +163,8 @@ void uploadDynamicMipmapLevels(int sprite, std::vector<std::uint8_t>& imageBuffe
             (sprite / 16) * targetSize,
             targetSize,
             targetSize,
-            kGlRgba,
-            kGlUnsignedByte,
+            gl::GL11::GL_RGBA,
+            gl::GL11::GL_UNSIGNED_BYTE,
             imageBuffer.data());
     }
 }
@@ -134,10 +196,7 @@ void TextureManager::setTexturePacks(resource::pack::TexturePacks* texturePacks)
 
 RasterImage TextureManager::loadRasterForResource(const std::string& resourcePath)
 {
-    std::string normalized = resourcePath;
-    while (!normalized.empty() && (normalized.front() == '/' || normalized.front() == '\\')) {
-        normalized.erase(normalized.begin());
-    }
+    const std::string normalized = normalizeResourcePath(resourcePath);
     if (texturePacks_ != nullptr && texturePacks_->selected != nullptr) {
         const std::vector<std::uint8_t> bytes = texturePacks_->selected->getResource(normalized);
         if (!bytes.empty()) {
@@ -168,50 +227,15 @@ void TextureManager::ensureMissingTexture()
 
 std::filesystem::path TextureManager::resolveResourcePath(const std::string& path)
 {
-    std::string normalized = path;
-    while (!normalized.empty() && (normalized.front() == '/' || normalized.front() == '\\')) {
-        normalized.erase(normalized.begin());
-    }
-    return std::filesystem::path(MINECRAFT_NATIVE_RESOURCE_DIR) / normalized;
+    return std::filesystem::path(MINECRAFT_NATIVE_RESOURCE_DIR) / normalizeResourcePath(path);
 }
 
 #ifdef _WIN32
 RasterImage TextureManager::loadRasterFromFile(const std::filesystem::path& filePath)
 {
-    RasterImage out;
     ensureGdiplusStarted();
-
     Gdiplus::Bitmap bitmap(filePath.wstring().c_str());
-    if (bitmap.GetLastStatus() != Gdiplus::Ok) {
-        return out;
-    }
-
-    out.width = static_cast<int>(bitmap.GetWidth());
-    out.height = static_cast<int>(bitmap.GetHeight());
-    out.argb.resize(static_cast<std::size_t>(out.width) * static_cast<std::size_t>(out.height));
-
-    Gdiplus::Rect rect(0, 0, out.width, out.height);
-    Gdiplus::BitmapData data{};
-    if (bitmap.LockBits(&rect, Gdiplus::ImageLockModeRead, PixelFormat32bppARGB, &data) == Gdiplus::Ok) {
-        const auto* src = static_cast<const std::uint8_t*>(data.Scan0);
-        for (int y = 0; y < out.height; ++y) {
-            const std::uint8_t* row = src + static_cast<std::size_t>(y) * data.Stride;
-            for (int x = 0; x < out.width; ++x) {
-                const std::uint8_t b = row[x * 4 + 0];
-                const std::uint8_t g = row[x * 4 + 1];
-                const std::uint8_t r = row[x * 4 + 2];
-                const std::uint8_t a = row[x * 4 + 3];
-                out.argb[static_cast<std::size_t>(y) * out.width + x] =
-                    (static_cast<std::uint32_t>(a) << 24U) |
-                    (static_cast<std::uint32_t>(r) << 16U) |
-                    (static_cast<std::uint32_t>(g) << 8U) |
-                    static_cast<std::uint32_t>(b);
-            }
-        }
-        bitmap.UnlockBits(&data);
-    }
-
-    return out;
+    return rasterFromGdiplusBitmap(bitmap);
 }
 #else
 RasterImage TextureManager::loadRasterFromFile(const std::filesystem::path&)
@@ -248,34 +272,7 @@ RasterImage TextureManager::loadRasterFromBytes(const std::vector<std::uint8_t>&
 
     Gdiplus::Bitmap bitmap(stream);
     stream->Release();
-    if (bitmap.GetLastStatus() != Gdiplus::Ok) {
-        return out;
-    }
-
-    out.width = static_cast<int>(bitmap.GetWidth());
-    out.height = static_cast<int>(bitmap.GetHeight());
-    out.argb.resize(static_cast<std::size_t>(out.width) * static_cast<std::size_t>(out.height));
-    Gdiplus::Rect rect(0, 0, out.width, out.height);
-    Gdiplus::BitmapData data {};
-    if (bitmap.LockBits(&rect, Gdiplus::ImageLockModeRead, PixelFormat32bppARGB, &data) == Gdiplus::Ok) {
-        const auto* src = static_cast<const std::uint8_t*>(data.Scan0);
-        for (int y = 0; y < out.height; ++y) {
-            const std::uint8_t* row = src + static_cast<std::size_t>(y) * data.Stride;
-            for (int x = 0; x < out.width; ++x) {
-                const std::uint8_t b = row[x * 4 + 0];
-                const std::uint8_t g = row[x * 4 + 1];
-                const std::uint8_t r = row[x * 4 + 2];
-                const std::uint8_t a = row[x * 4 + 3];
-                out.argb[static_cast<std::size_t>(y) * out.width + x] =
-                    (static_cast<std::uint32_t>(a) << 24U) |
-                    (static_cast<std::uint32_t>(r) << 16U) |
-                    (static_cast<std::uint32_t>(g) << 8U) |
-                    static_cast<std::uint32_t>(b);
-            }
-        }
-        bitmap.UnlockBits(&data);
-    }
-    return out;
+    return rasterFromGdiplusBitmap(bitmap);
 }
 #else
 RasterImage TextureManager::loadRasterFromBytes(const std::vector<std::uint8_t>&)
@@ -397,17 +394,10 @@ const std::vector<int>& TextureManager::getColors(const std::string& path)
         return cached->second;
     }
 
-    std::string resourcePath = path;
-    if (resourcePath.rfind("##", 0) == 0) {
-        resourcePath = resourcePath.substr(2);
-    } else if (resourcePath.rfind("%clamp%", 0) == 0) {
-        resourcePath = resourcePath.substr(7);
-    } else if (resourcePath.rfind("%blur%", 0) == 0) {
-        resourcePath = resourcePath.substr(6);
-    }
+    const TexturePathSpec spec = parseTexturePath(path);
 
     std::vector<int> colors;
-    const RasterImage image = loadRasterForResource(resourcePath);
+    const RasterImage image = loadRasterForResource(spec.resourcePath);
     if (image.width > 0 && image.height > 0) {
         colors.resize(image.argb.size());
         for (std::size_t i = 0; i < image.argb.size(); ++i) {
@@ -434,34 +424,29 @@ int TextureManager::getTextureId(const std::string& path)
         return it->second;
     }
 
-    std::string resourcePath = path;
-    bool requestedBlur = false;
-    bool requestedClamp = false;
-    if (resourcePath.rfind("##", 0) == 0) {
-        resourcePath = resourcePath.substr(2);
-    } else if (resourcePath.rfind("%clamp%", 0) == 0) {
-        requestedClamp = true;
-        resourcePath = resourcePath.substr(7);
-    } else if (resourcePath.rfind("%blur%", 0) == 0) {
-        requestedBlur = true;
-        resourcePath = resourcePath.substr(6);
-    }
+    const TexturePathSpec spec = parseTexturePath(path);
 
-    RasterImage image = loadRasterForResource(resourcePath);
+    RasterImage image = loadRasterForResource(spec.resourcePath);
     if (image.width <= 0 || image.height <= 0) {
         textures_[path] = missingTextureId_;
         return missingTextureId_;
     }
 
+#ifdef _WIN32
+    util::DisplayManager::ensureGlContext();
+#endif
+    unsigned int id = 0;
+    util::GlAllocationUtils::generateTextureName(id);
+
     const bool previousBlur = blur;
     const bool previousClamp = clamp;
-    blur = requestedBlur;
-    clamp = requestedClamp;
-    const int id = load(image);
+    blur = spec.blur;
+    clamp = spec.clamp;
+    load(image, static_cast<int>(id));
     blur = previousBlur;
     clamp = previousClamp;
-    textures_[path] = id;
-    return id;
+    textures_[path] = static_cast<int>(id);
+    return static_cast<int>(id);
 }
 
 void TextureManager::reload()
@@ -476,40 +461,22 @@ void TextureManager::reload()
         entry.second->uploaded = false;
     }
     for (const auto& [path, textureId] : textures_) {
-        std::string resourcePath = path;
-        bool requestedBlur = false;
-        bool requestedClamp = false;
-        if (resourcePath.rfind("##", 0) == 0) {
-            resourcePath = resourcePath.substr(2);
-        } else if (resourcePath.rfind("%clamp%", 0) == 0) {
-            requestedClamp = true;
-            resourcePath = resourcePath.substr(7);
-        } else if (resourcePath.rfind("%blur%", 0) == 0) {
-            requestedBlur = true;
-            resourcePath = resourcePath.substr(6);
-        }
-        const RasterImage image = loadRasterForResource(resourcePath);
+        const TexturePathSpec spec = parseTexturePath(path);
+        const RasterImage image = loadRasterForResource(spec.resourcePath);
         if (image.width <= 0 || image.height <= 0) {
             continue;
         }
         const bool previousBlur = blur;
         const bool previousClamp = clamp;
-        blur = requestedBlur;
-        clamp = requestedClamp;
+        blur = spec.blur;
+        clamp = spec.clamp;
         load(image, textureId);
         blur = previousBlur;
         clamp = previousClamp;
     }
     for (auto& [path, colors] : colors_) {
-        std::string resourcePath = path;
-        if (resourcePath.rfind("##", 0) == 0) {
-            resourcePath = resourcePath.substr(2);
-        } else if (resourcePath.rfind("%clamp%", 0) == 0) {
-            resourcePath = resourcePath.substr(7);
-        } else if (resourcePath.rfind("%blur%", 0) == 0) {
-            resourcePath = resourcePath.substr(6);
-        }
-        const RasterImage image = loadRasterForResource(resourcePath);
+        const TexturePathSpec spec = parseTexturePath(path);
+        const RasterImage image = loadRasterForResource(spec.resourcePath);
         if (image.width <= 0 || image.height <= 0) {
             continue;
         }
@@ -525,7 +492,7 @@ void TextureManager::bindTexture(int id)
     if (id < 0) {
         return;
     }
-    gl::GL11::glBindTexture(kGlTexture2D, id);
+    gl::GL11::glBindTexture(gl::GL11::GL_TEXTURE_2D, id);
 }
 
 int TextureManager::load(const RasterImage& image)
@@ -563,29 +530,38 @@ void TextureManager::load(const RasterImage& image, int id)
         }
     }
 
-    gl::GL11::glBindTexture(kGlTexture2D, static_cast<unsigned int>(id));
+    gl::GL11::glBindTexture(gl::GL11::GL_TEXTURE_2D, static_cast<unsigned int>(id));
     // Faithful to TextureManager.load: default GL_NEAREST (pixelated), mipmap or
     // blur override it; wrap is REPEAT unless clamp.
     if (MIPMAP) {
         const int minFilter = MIPMAP_LINEAR ? kGlLinearMipmapLinear : kGlNearestMipmapLinear;
-        gl::GL11::glTexParameteri(kGlTexture2D, gl::GL11::GL_TEXTURE_MIN_FILTER, minFilter);
-        gl::GL11::glTexParameteri(kGlTexture2D, gl::GL11::GL_TEXTURE_MAG_FILTER, kGlNearest);
+        gl::GL11::glTexParameteri(gl::GL11::GL_TEXTURE_2D, gl::GL11::GL_TEXTURE_MIN_FILTER, minFilter);
+        gl::GL11::glTexParameteri(gl::GL11::GL_TEXTURE_2D, gl::GL11::GL_TEXTURE_MAG_FILTER, gl::GL11::GL_NEAREST);
     } else {
-        gl::GL11::glTexParameteri(kGlTexture2D, gl::GL11::GL_TEXTURE_MIN_FILTER, kGlNearest);
-        gl::GL11::glTexParameteri(kGlTexture2D, gl::GL11::GL_TEXTURE_MAG_FILTER, kGlNearest);
+        gl::GL11::glTexParameteri(gl::GL11::GL_TEXTURE_2D, gl::GL11::GL_TEXTURE_MIN_FILTER, gl::GL11::GL_NEAREST);
+        gl::GL11::glTexParameteri(gl::GL11::GL_TEXTURE_2D, gl::GL11::GL_TEXTURE_MAG_FILTER, gl::GL11::GL_NEAREST);
     }
     if (blur) {
-        gl::GL11::glTexParameteri(kGlTexture2D, gl::GL11::GL_TEXTURE_MIN_FILTER, kGlLinear);
-        gl::GL11::glTexParameteri(kGlTexture2D, gl::GL11::GL_TEXTURE_MAG_FILTER, kGlLinear);
+        gl::GL11::glTexParameteri(gl::GL11::GL_TEXTURE_2D, gl::GL11::GL_TEXTURE_MIN_FILTER, gl::GL11::GL_LINEAR);
+        gl::GL11::glTexParameteri(gl::GL11::GL_TEXTURE_2D, gl::GL11::GL_TEXTURE_MAG_FILTER, gl::GL11::GL_LINEAR);
     }
     if (clamp) {
-        gl::GL11::glTexParameteri(kGlTexture2D, gl::GL11::GL_TEXTURE_WRAP_S, kGlClamp);
-        gl::GL11::glTexParameteri(kGlTexture2D, gl::GL11::GL_TEXTURE_WRAP_T, kGlClamp);
+        gl::GL11::glTexParameteri(gl::GL11::GL_TEXTURE_2D, gl::GL11::GL_TEXTURE_WRAP_S, gl::GL11::GL_CLAMP);
+        gl::GL11::glTexParameteri(gl::GL11::GL_TEXTURE_2D, gl::GL11::GL_TEXTURE_WRAP_T, gl::GL11::GL_CLAMP);
     } else {
-        gl::GL11::glTexParameteri(kGlTexture2D, gl::GL11::GL_TEXTURE_WRAP_S, kGlRepeat);
-        gl::GL11::glTexParameteri(kGlTexture2D, gl::GL11::GL_TEXTURE_WRAP_T, kGlRepeat);
+        gl::GL11::glTexParameteri(gl::GL11::GL_TEXTURE_2D, gl::GL11::GL_TEXTURE_WRAP_S, gl::GL11::GL_REPEAT);
+        gl::GL11::glTexParameteri(gl::GL11::GL_TEXTURE_2D, gl::GL11::GL_TEXTURE_WRAP_T, gl::GL11::GL_REPEAT);
     }
-    gl::GL11::glTexImage2D(kGlTexture2D, 0, kGlRgba, image.width, image.height, 0, kGlRgba, kGlUnsignedByte, rgba.data());
+    gl::GL11::glTexImage2D(
+        gl::GL11::GL_TEXTURE_2D,
+        0,
+        gl::GL11::GL_RGBA,
+        image.width,
+        image.height,
+        0,
+        gl::GL11::GL_RGBA,
+        gl::GL11::GL_UNSIGNED_BYTE,
+        rgba.data());
 }
 
 namespace {
@@ -650,8 +626,8 @@ void TextureManager::tick()
                     (texture->sprite / 16) * 16 + replicateY * 16,
                     16,
                     16,
-                    kGlRgba,
-                    kGlUnsignedByte,
+                    gl::GL11::GL_RGBA,
+                    gl::GL11::GL_UNSIGNED_BYTE,
                     imageBuffer.data());
 
                 if (MIPMAP) {
@@ -674,8 +650,8 @@ void TextureManager::tick()
             0,
             16,
             16,
-            kGlRgba,
-            kGlUnsignedByte,
+            gl::GL11::GL_RGBA,
+            gl::GL11::GL_UNSIGNED_BYTE,
             imageBuffer.data());
         if (MIPMAP) {
             uploadDynamicMipmapLevels(0, imageBuffer);

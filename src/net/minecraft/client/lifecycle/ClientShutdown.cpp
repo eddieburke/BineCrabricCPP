@@ -4,6 +4,7 @@
 #include "net/minecraft/client/MinecraftApplet.hpp"
 #include "net/minecraft/client/render/atmosphere/AtmosphereRenderer.hpp"
 #include "net/minecraft/client/resource/ResourceDownloadThread.hpp"
+#include "net/minecraft/client/util/DisplayManager.hpp"
 #include "net/minecraft/client/util/GlAllocationUtils.hpp"
 #include "net/minecraft/stat/PlayerStats.hpp"
 
@@ -12,12 +13,9 @@
 
 #ifdef _WIN32
 #include "net/minecraft/client/input/InputSystem.hpp"
-#include "net/minecraft/client/platform/win32/Window.hpp"
 #endif
 
 namespace net::minecraft::client::lifecycle {
-
-namespace win32 = net::minecraft::client::platform::win32;
 
 void ClientShutdown::stop(Minecraft& client)
 {
@@ -51,7 +49,7 @@ void ClientShutdown::stop(Minecraft& client)
     } catch (...) {
     }
 #ifdef _WIN32
-    win32::Window::destroy();
+    util::DisplayManager::destroy();
 #endif
     if (!client.crashed) {
         std::cout.flush();

@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstdint>
+#include <cstring>
 #include <istream>
 #include <iterator>
 #include <ostream>
@@ -109,6 +110,36 @@ inline std::string utf16ToUtf8(std::u16string_view value)
     return result;
 }
 
+inline bool isAsciiUtf8(std::string_view value) noexcept
+{
+    for (const unsigned char ch : value) {
+        if (ch >= 0x80U) {
+            return false;
+        }
+    }
+    return true;
+}
+
+inline bool isAsciiModifiedUtf8(const std::uint8_t* data, std::size_t byteLength) noexcept
+{
+    for (std::size_t i = 0; i < byteLength; ++i) {
+        if (data[i] >= 0x80U) {
+            return false;
+        }
+    }
+    return true;
+}
+
+inline void appendBytes(std::vector<std::uint8_t>& out, const std::uint8_t* data, std::size_t size)
+{
+    if (size == 0U) {
+        return;
+    }
+    const std::size_t oldSize = out.size();
+    out.resize(oldSize + size);
+    std::memcpy(out.data() + oldSize, data, size);
+}
+
 inline void appendU8(std::vector<std::uint8_t>& out, std::uint8_t value)
 {
     out.push_back(value);
@@ -148,6 +179,40 @@ inline void appendI32BE(std::vector<std::uint8_t>& out, std::int32_t value)
 inline void appendI64BE(std::vector<std::uint8_t>& out, std::int64_t value)
 {
     appendU64BE(out, static_cast<std::uint64_t>(value));
+}
+
+inline void appendI32BEArray(std::vector<std::uint8_t>& out, const std::int32_t* values, std::size_t count)
+{
+    if (count == 0U) {
+        return;
+    }
+    const std::size_t oldSize = out.size();
+    out.resize(oldSize + count * 4U);
+    std::uint8_t* dest = out.data() + oldSize;
+    for (std::size_t i = 0; i < count; ++i) {
+        const std::uint32_t value = static_cast<std::uint32_t>(values[i]);
+        dest[0] = static_cast<std::uint8_t>((value >> 24U) & 0xFFU);
+        dest[1] = static_cast<std::uint8_t>((value >> 16U) & 0xFFU);
+        dest[2] = static_cast<std::uint8_t>((value >> 8U) & 0xFFU);
+        dest[3] = static_cast<std::uint8_t>(value & 0xFFU);
+        dest += 4;
+    }
+}
+
+inline void appendI64BEArray(std::vector<std::uint8_t>& out, const std::int64_t* values, std::size_t count)
+{
+    if (count == 0U) {
+        return;
+    }
+    const std::size_t oldSize = out.size();
+    out.resize(oldSize + count * 8U);
+    std::uint8_t* dest = out.data() + oldSize;
+    for (std::size_t i = 0; i < count; ++i) {
+        const std::uint64_t value = static_cast<std::uint64_t>(values[i]);
+        for (int shift = 56; shift >= 0; shift -= 8) {
+            *dest++ = static_cast<std::uint8_t>((value >> shift) & 0xFFU);
+        }
+    }
 }
 
 inline std::uint8_t readU8(const std::vector<std::uint8_t>& data, std::size_t& pos)
@@ -198,6 +263,58 @@ inline std::int64_t readI64BE(const std::vector<std::uint8_t>& data, std::size_t
     return static_cast<std::int64_t>(readU64BE(data, pos));
 }
 
+inline void readBytes(const std::vector<std::uint8_t>& data, std::size_t& pos, std::uint8_t* dest, std::size_t size)
+{
+    if (size == 0U) {
+        return;
+    }
+    if (pos + size > data.size()) {
+        throw std::runtime_error("Unexpected end of buffer");
+    }
+    std::memcpy(dest, data.data() + pos, size);
+    pos += size;
+}
+
+inline void readI32BEArray(const std::vector<std::uint8_t>& data, std::size_t& pos, std::int32_t* dest, std::size_t count)
+{
+    const std::size_t byteCount = count * 4U;
+    if (byteCount == 0U) {
+        return;
+    }
+    if (pos + byteCount > data.size()) {
+        throw std::runtime_error("Unexpected end of buffer");
+    }
+    const std::uint8_t* src = data.data() + pos;
+    for (std::size_t i = 0; i < count; ++i) {
+        dest[i] = static_cast<std::int32_t>(
+            (static_cast<std::uint32_t>(src[0]) << 24U) | (static_cast<std::uint32_t>(src[1]) << 16U)
+            | (static_cast<std::uint32_t>(src[2]) << 8U) | static_cast<std::uint32_t>(src[3]));
+        src += 4;
+    }
+    pos += byteCount;
+}
+
+inline void readI64BEArray(const std::vector<std::uint8_t>& data, std::size_t& pos, std::int64_t* dest, std::size_t count)
+{
+    const std::size_t byteCount = count * 8U;
+    if (byteCount == 0U) {
+        return;
+    }
+    if (pos + byteCount > data.size()) {
+        throw std::runtime_error("Unexpected end of buffer");
+    }
+    const std::uint8_t* src = data.data() + pos;
+    for (std::size_t i = 0; i < count; ++i) {
+        std::uint64_t value = 0;
+        for (int j = 0; j < 8; ++j) {
+            value = (value << 8U) | static_cast<std::uint64_t>(src[j]);
+        }
+        dest[i] = static_cast<std::int64_t>(value);
+        src += 8;
+    }
+    pos += byteCount;
+}
+
 inline std::vector<std::uint8_t> readAllBytes(std::istream& input)
 {
     return std::vector<std::uint8_t>(std::istreambuf_iterator<char>(input), std::istreambuf_iterator<char>());
@@ -212,6 +329,12 @@ inline void writeAllBytes(std::ostream& output, const std::vector<std::uint8_t>&
 
 inline std::vector<std::uint8_t> encodeModifiedUtf8(std::string_view value)
 {
+    if (isAsciiUtf8(value)) {
+        return std::vector<std::uint8_t>(
+            reinterpret_cast<const std::uint8_t*>(value.data()),
+            reinterpret_cast<const std::uint8_t*>(value.data() + value.size()));
+    }
+
     const std::u16string utf16 = utf8ToUtf16(value);
 
     std::vector<std::uint8_t> encoded;
@@ -238,6 +361,16 @@ inline std::string decodeModifiedUtf8(const std::vector<std::uint8_t>& data, std
 {
     if (pos + byteLength > data.size()) {
         throw std::runtime_error("Unexpected end of buffer while reading UTF string");
+    }
+
+    if (byteLength == 0U) {
+        return {};
+    }
+
+    if (isAsciiModifiedUtf8(data.data() + pos, byteLength)) {
+        std::string result(reinterpret_cast<const char*>(data.data() + pos), byteLength);
+        pos += byteLength;
+        return result;
     }
 
     std::u16string utf16;
@@ -277,12 +410,24 @@ inline std::string decodeModifiedUtf8(const std::vector<std::uint8_t>& data, std
 
 inline void writeModifiedUtf8(std::vector<std::uint8_t>& out, std::string_view value)
 {
+    if (value.size() > 0xFFFFU) {
+        throw std::runtime_error("NBT string is too long");
+    }
+    if (isAsciiUtf8(value)) {
+        appendU16BE(out, static_cast<std::uint16_t>(value.size()));
+        appendBytes(
+            out,
+            reinterpret_cast<const std::uint8_t*>(value.data()),
+            value.size());
+        return;
+    }
+
     const std::vector<std::uint8_t> encoded = encodeModifiedUtf8(value);
     if (encoded.size() > 0xFFFFU) {
         throw std::runtime_error("NBT string is too long");
     }
     appendU16BE(out, static_cast<std::uint16_t>(encoded.size()));
-    out.insert(out.end(), encoded.begin(), encoded.end());
+    appendBytes(out, encoded.data(), encoded.size());
 }
 
 inline std::string readModifiedUtf8(const std::vector<std::uint8_t>& data, std::size_t& pos)

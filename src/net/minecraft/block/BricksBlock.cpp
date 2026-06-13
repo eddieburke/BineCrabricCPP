@@ -28,6 +28,6 @@ struct BricksBlockRegistrar {
     }
 };
 
-static registry::RegisterBlock<BricksBlockRegistrar> s_reg;
+MC_REGISTER_BLOCK(BricksBlockRegistrar)
 
 } // namespace net::minecraft::block

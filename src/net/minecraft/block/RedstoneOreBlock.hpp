@@ -10,7 +10,6 @@ namespace net::minecraft::block {
 
 class RedstoneOreBlock : public Block {
 public:
-    static constexpr bool kRegisters = true;
     static constexpr int kBlockId = 74;
 
 static void registerClass();

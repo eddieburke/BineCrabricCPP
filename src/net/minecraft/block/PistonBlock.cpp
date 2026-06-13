@@ -407,6 +407,6 @@ void PistonBlock::registerBlockItems()
     new item::PistonBlockItem(33 - 256);
 }
 
-namespace {static ::net::minecraft::registry::RegisterBlock<PistonBlock> autoReg;} // namespace
+MC_REGISTER_BLOCK(PistonBlock)
 } // namespace net::minecraft::block
 

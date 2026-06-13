@@ -197,6 +197,6 @@ void TorchBlock::registerRecipes(recipe::CraftingRecipeManager& recipeManager)
 
 
 
-namespace {static ::net::minecraft::registry::RegisterBlock<TorchBlock> autoReg;} // namespace
+MC_REGISTER_BLOCK(TorchBlock)
 } // namespace net::minecraft::block
 

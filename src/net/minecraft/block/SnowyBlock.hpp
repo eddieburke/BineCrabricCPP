@@ -8,7 +8,6 @@ namespace net::minecraft::block {
 
 class SnowyBlock : public Block {
 public:
-    static constexpr bool kRegisters = true;
     static constexpr int kBlockId = 78;
 
 static void registerClass();

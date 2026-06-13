@@ -29,5 +29,5 @@ void GoldenSwordItem::registerRecipes(recipe::CraftingRecipeManager& recipeManag
         {std::string("X"), std::string("X"), std::string("#"), '#', Item::byRawId(24), 'X', Item::byRawId(10)});
 }
 
-static registry::RegisterItem<GoldenSwordItem> s_itemReg;
+MC_REGISTER_ITEM(GoldenSwordItem)
 } // namespace net::minecraft::item

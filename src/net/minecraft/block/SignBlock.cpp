@@ -99,6 +99,6 @@ void SignBlock::registerClass()
 
 
 
-namespace {static ::net::minecraft::registry::RegisterBlock<SignBlock> autoReg;} // namespace
+MC_REGISTER_BLOCK(SignBlock)
 } // namespace net::minecraft::block
 

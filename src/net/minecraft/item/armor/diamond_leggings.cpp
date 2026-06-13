@@ -32,5 +32,5 @@ void DiamondLeggingsItem::registerRecipes(recipe::CraftingRecipeManager& recipeM
         {std::string("XXX"), std::string("X X"), std::string("X X"), 'X', Item::byRawId(8)});
 }
 
-static registry::RegisterItem<DiamondLeggingsItem> s_itemReg;
+MC_REGISTER_ITEM(DiamondLeggingsItem)
 } // namespace net::minecraft::item

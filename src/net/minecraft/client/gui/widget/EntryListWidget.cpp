@@ -3,6 +3,7 @@
 #include <algorithm>
 
 #include "net/minecraft/client/Minecraft.hpp"
+#include "net/minecraft/client/gui/Draw2D.hpp"
 #include "net/minecraft/client/render/platform/GuiGlState.hpp"
 #include "net/minecraft/client/render/Tessellator.hpp"
 #include "net/minecraft/client/texture/TextureManager.hpp"
@@ -42,11 +43,11 @@ int EntryListWidget::getEntriesHeight() const
     return getEntryCount() * itemHeight_ + headerHeight_;
 }
 
-void EntryListWidget::registerButtons(std::vector<ButtonWidget>& buttons, int scrollUp, int scrollDown)
+void EntryListWidget::scrollBy(float delta)
 {
-    (void)buttons;
-    scrollUpButtonId_ = scrollUp;
-    scrollDownButtonId_ = scrollDown;
+    scrollAmount_ += delta;
+    mostYStart_ = -2.0f;
+    clampScrolling();
 }
 
 void EntryListWidget::clampScrolling()
@@ -60,22 +61,6 @@ void EntryListWidget::clampScrolling()
     }
     if (scrollAmount_ > static_cast<float>(maxScroll)) {
         scrollAmount_ = static_cast<float>(maxScroll);
-    }
-}
-
-void EntryListWidget::buttonClicked(ButtonWidget& button)
-{
-    if (!button.active) {
-        return;
-    }
-    if (button.id == scrollUpButtonId_) {
-        scrollAmount_ -= static_cast<float>(itemHeight_ * 2 / 3);
-        mostYStart_ = -2.0f;
-        clampScrolling();
-    } else if (button.id == scrollDownButtonId_) {
-        scrollAmount_ += static_cast<float>(itemHeight_ * 2 / 3);
-        mostYStart_ = -2.0f;
-        clampScrolling();
     }
 }
 
@@ -118,16 +103,9 @@ void EntryListWidget::renderBackgroundStrip(int yStart, int yEnd, int colorTop, 
     gl::GL11::glBindTexture(gl::GL11::GL_TEXTURE_2D, textureId);
     gl::GL11::glColor4f(1.0f, 1.0f, 1.0f, 1.0f);
     constexpr float tile = 32.0f;
-    tessellator.startQuads();
-    tessellator.color(0x404040, colorBottom);
-    tessellator.vertex(0.0, static_cast<double>(yEnd), 0.0, 0.0, static_cast<double>(yEnd) / tile);
-    tessellator.vertex(static_cast<double>(width_), static_cast<double>(yEnd), 0.0,
-        static_cast<double>(width_) / tile, static_cast<double>(yEnd) / tile);
-    tessellator.color(0x404040, colorTop);
-    tessellator.vertex(static_cast<double>(width_), static_cast<double>(yStart), 0.0,
-        static_cast<double>(width_) / tile, static_cast<double>(yStart) / tile);
-    tessellator.vertex(0.0, static_cast<double>(yStart), 0.0, 0.0, static_cast<double>(yStart) / tile);
-    tessellator.draw();
+    draw::verticalGradientTexturedQuad(tessellator, 0, yStart, width_, yEnd,
+        0.0f, static_cast<float>(yStart) / tile, static_cast<float>(width_) / tile, static_cast<float>(yEnd) / tile,
+        0x404040, colorTop, 0x404040, colorBottom);
 }
 
 void EntryListWidget::render(int mouseX, int mouseY, float tickDelta)
@@ -201,17 +179,11 @@ void EntryListWidget::render(int mouseX, int mouseY, float tickDelta)
     gl::GL11::glBindTexture(gl::GL11::GL_TEXTURE_2D, textureId);
     gl::GL11::glColor4f(1.0f, 1.0f, 1.0f, 1.0f);
     constexpr float tile = 32.0f;
-    tessellator.startQuads();
-    tessellator.color(0x202020);
-    tessellator.vertex(static_cast<double>(left_), static_cast<double>(bottom_), 0.0,
-        static_cast<double>(left_) / tile, static_cast<double>(bottom_ + static_cast<int>(scrollAmount_)) / tile);
-    tessellator.vertex(static_cast<double>(right_), static_cast<double>(bottom_), 0.0,
-        static_cast<double>(right_) / tile, static_cast<double>(bottom_ + static_cast<int>(scrollAmount_)) / tile);
-    tessellator.vertex(static_cast<double>(right_), static_cast<double>(top_), 0.0,
-        static_cast<double>(right_) / tile, static_cast<double>(top_ + static_cast<int>(scrollAmount_)) / tile);
-    tessellator.vertex(static_cast<double>(left_), static_cast<double>(top_), 0.0,
-        static_cast<double>(left_) / tile, static_cast<double>(top_ + static_cast<int>(scrollAmount_)) / tile);
-    tessellator.draw();
+    const int scroll = static_cast<int>(scrollAmount_);
+    draw::coloredTexturedQuad(tessellator, left_, top_, right_, bottom_,
+        static_cast<float>(left_) / tile, static_cast<float>(top_ + scroll) / tile,
+        static_cast<float>(right_) / tile, static_cast<float>(bottom_ + scroll) / tile,
+        0x202020);
 
     const int entryCount = getEntryCount();
     const int entryX = entryX_;
@@ -229,20 +201,9 @@ void EntryListWidget::render(int mouseX, int mouseY, float tickDelta)
             const int selLeft = listLeft_;
             const int selRight = listRight_;
             gl::GL11::glColor4f(1.0f, 1.0f, 1.0f, 1.0f);
-            gl::GL11::glDisable(gl::GL11::GL_TEXTURE_2D);
-            tessellator.startQuads();
-            tessellator.color(0x808080);
-            tessellator.vertex(static_cast<double>(selLeft), static_cast<double>(rowY + rowHeight + 2), 0.0, 0.0, 1.0);
-            tessellator.vertex(static_cast<double>(selRight), static_cast<double>(rowY + rowHeight + 2), 0.0, 1.0, 1.0);
-            tessellator.vertex(static_cast<double>(selRight), static_cast<double>(rowY - 2), 0.0, 1.0, 0.0);
-            tessellator.vertex(static_cast<double>(selLeft), static_cast<double>(rowY - 2), 0.0, 0.0, 0.0);
-            tessellator.color(0);
-            tessellator.vertex(static_cast<double>(selLeft + 1), static_cast<double>(rowY + rowHeight + 1), 0.0, 0.0, 1.0);
-            tessellator.vertex(static_cast<double>(selRight - 1), static_cast<double>(rowY + rowHeight + 1), 0.0, 1.0, 1.0);
-            tessellator.vertex(static_cast<double>(selRight - 1), static_cast<double>(rowY - 1), 0.0, 1.0, 0.0);
-            tessellator.vertex(static_cast<double>(selLeft + 1), static_cast<double>(rowY - 1), 0.0, 0.0, 0.0);
-            tessellator.draw();
-            gl::GL11::glEnable(gl::GL11::GL_TEXTURE_2D);
+            render::platform::ScopedNoTexture2D noTexture;
+            draw::coloredQuad(tessellator, selLeft, rowY - 2, selRight, rowY + rowHeight + 2, 0x808080);
+            draw::coloredQuad(tessellator, selLeft + 1, rowY - 1, selRight - 1, rowY + rowHeight + 1, 0);
         }
         renderEntry(index, entryX, rowY, rowHeight, tessellator);
     }
@@ -255,23 +216,8 @@ void EntryListWidget::render(int mouseX, int mouseY, float tickDelta)
     gl::GL11::glShadeModel(gl::GL11::GL_SMOOTH);
     gl::GL11::glDisable(gl::GL11::GL_TEXTURE_2D);
 
-    tessellator.startQuads();
-    tessellator.color(0, 0);
-    tessellator.vertex(static_cast<double>(left_), static_cast<double>(top_ + fadeHeight), 0.0, 0.0, 1.0);
-    tessellator.vertex(static_cast<double>(right_), static_cast<double>(top_ + fadeHeight), 0.0, 1.0, 1.0);
-    tessellator.color(0, 255);
-    tessellator.vertex(static_cast<double>(right_), static_cast<double>(top_), 0.0, 1.0, 0.0);
-    tessellator.vertex(static_cast<double>(left_), static_cast<double>(top_), 0.0, 0.0, 0.0);
-    tessellator.draw();
-
-    tessellator.startQuads();
-    tessellator.color(0, 255);
-    tessellator.vertex(static_cast<double>(left_), static_cast<double>(bottom_), 0.0, 0.0, 1.0);
-    tessellator.vertex(static_cast<double>(right_), static_cast<double>(bottom_), 0.0, 1.0, 1.0);
-    tessellator.color(0, 0);
-    tessellator.vertex(static_cast<double>(right_), static_cast<double>(bottom_ - fadeHeight), 0.0, 1.0, 0.0);
-    tessellator.vertex(static_cast<double>(left_), static_cast<double>(bottom_ - fadeHeight), 0.0, 0.0, 0.0);
-    tessellator.draw();
+    draw::verticalGradientQuad(tessellator, left_, top_, right_, top_ + fadeHeight, 0, 255, 0, 0);
+    draw::verticalGradientQuad(tessellator, left_, bottom_ - fadeHeight, right_, bottom_, 0, 0, 0, 255);
 
     const int scrollRange = getEntriesHeight() - (bottom_ - top_ - 4);
     if (scrollRange > 0) {
@@ -290,29 +236,9 @@ void EntryListWidget::render(int mouseX, int mouseY, float tickDelta)
             thumbY = top_;
         }
 
-        tessellator.startQuads();
-        tessellator.color(0, 255);
-        tessellator.vertex(static_cast<double>(scrollbarLeft), static_cast<double>(bottom_), 0.0, 0.0, 1.0);
-        tessellator.vertex(static_cast<double>(scrollbarRight), static_cast<double>(bottom_), 0.0, 1.0, 1.0);
-        tessellator.vertex(static_cast<double>(scrollbarRight), static_cast<double>(top_), 0.0, 1.0, 0.0);
-        tessellator.vertex(static_cast<double>(scrollbarLeft), static_cast<double>(top_), 0.0, 0.0, 0.0);
-        tessellator.draw();
-
-        tessellator.startQuads();
-        tessellator.color(0x808080, 255);
-        tessellator.vertex(static_cast<double>(scrollbarLeft), static_cast<double>(thumbY + thumbHeight), 0.0, 0.0, 1.0);
-        tessellator.vertex(static_cast<double>(scrollbarRight), static_cast<double>(thumbY + thumbHeight), 0.0, 1.0, 1.0);
-        tessellator.vertex(static_cast<double>(scrollbarRight), static_cast<double>(thumbY), 0.0, 1.0, 0.0);
-        tessellator.vertex(static_cast<double>(scrollbarLeft), static_cast<double>(thumbY), 0.0, 0.0, 0.0);
-        tessellator.draw();
-
-        tessellator.startQuads();
-        tessellator.color(0xC0C0C0, 255);
-        tessellator.vertex(static_cast<double>(scrollbarLeft), static_cast<double>(thumbY + thumbHeight - 1), 0.0, 0.0, 1.0);
-        tessellator.vertex(static_cast<double>(scrollbarRight - 1), static_cast<double>(thumbY + thumbHeight - 1), 0.0, 1.0, 1.0);
-        tessellator.vertex(static_cast<double>(scrollbarRight - 1), static_cast<double>(thumbY), 0.0, 1.0, 0.0);
-        tessellator.vertex(static_cast<double>(scrollbarLeft), static_cast<double>(thumbY), 0.0, 0.0, 0.0);
-        tessellator.draw();
+        draw::coloredQuad(tessellator, scrollbarLeft, top_, scrollbarRight, bottom_, 0, 255);
+        draw::coloredQuad(tessellator, scrollbarLeft, thumbY, scrollbarRight, thumbY + thumbHeight, 0x808080, 255);
+        draw::coloredQuad(tessellator, scrollbarLeft, thumbY, scrollbarRight - 1, thumbY + thumbHeight - 1, 0xC0C0C0, 255);
     }
 
     renderDecorations(mouseX, mouseY);

@@ -78,6 +78,8 @@ ClientNetworkBridge::ClientNetworkBridge(WorldSession* worldSession) noexcept
 {
 }
 
+ClientNetworkBridge::~ClientNetworkBridge() = default;
+
 void ClientNetworkBridge::setWorldSession(WorldSession* worldSession) noexcept
 {
     worldSession_ = worldSession;

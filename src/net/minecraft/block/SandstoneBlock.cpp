@@ -20,6 +20,6 @@ void SandstoneBlock::registerRecipes(recipe::CraftingRecipeManager& recipeManage
 
 
 
-namespace {static ::net::minecraft::registry::RegisterBlock<SandstoneBlock> autoReg;} // namespace
+MC_REGISTER_BLOCK(SandstoneBlock)
 } // namespace net::minecraft::block
 

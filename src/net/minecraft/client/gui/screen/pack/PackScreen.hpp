@@ -17,9 +17,6 @@ public:
     void render(int mouseX, int mouseY, float tickDelta) override;
     void tick() override;
 
-protected:
-    void buttonClicked(widget::ButtonWidget& button) override;
-
 private:
     class PackListWidget;
     void openTexturePacksFolder();

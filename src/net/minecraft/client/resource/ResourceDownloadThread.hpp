@@ -17,6 +17,19 @@ namespace net::minecraft::client::resource {
 inline constexpr const char* kBetacraftProxyHost = "betacraft.ee";
 inline constexpr unsigned short kBetacraftProxyPortBeta173 = 11705;
 
+struct HttpHeader {
+    std::string name;
+    std::string value;
+};
+
+struct HttpRequest {
+    std::string method = "GET";
+    std::string url;
+    std::vector<HttpHeader> headers;
+    std::string body;
+    bool useBetacraftProxy = false;
+};
+
 struct HttpResponse {
     int statusCode = 0;
     std::vector<std::uint8_t> body;
@@ -32,6 +45,7 @@ struct HttpResponse {
     }
 };
 
+[[nodiscard]] HttpResponse httpRequest(const HttpRequest& request);
 [[nodiscard]] HttpResponse fetchUrl(const std::string& url, bool useBetacraftProxy = true);
 
 class ResourceDownloadThread {

@@ -75,9 +75,8 @@ net::minecraft::OverworldChunkGenerator& ScanProbe::ensureGenerator(std::uint64_
 
 void ScanProbe::probe(std::uint64_t seed, int originChunkX, int originChunkZ, const PassPlan& plan, ProbeResult& out)
 {
-    out.reset();
     out.seed = seed;
-    out.passesRun = plan.passes;
+    out.passesRun |= plan.passes;
 
     if (plan.has(pass::Biome)) {
         sampleBiomeGrid(seed, originChunkX, originChunkZ, plan, out);
@@ -159,9 +158,11 @@ void ScanProbe::runTerrainSide(
 {
     const int radius = plan.radiusChunks;
     const int side = 2 * radius + 1;
-    const bool doSurface = plan.has(pass::Surface);
-    const bool doCaves = plan.has(pass::Caves);
+    // Caves require cross-chunk carving through a ChunkSource (a World), so they are
+    // measured in the decorate tier; loadChunk(nullptr) yields uncarved terrain+surface.
+    const bool doCaves = false;
     const int gravelId = Block::GRAVEL != nullptr ? Block::GRAVEL->id : -1;
+    (void)gravelId;
 
     net::minecraft::OverworldChunkGenerator& generator = ensureGenerator(seed);
 
@@ -184,15 +185,9 @@ void ScanProbe::runTerrainSide(
             const int chunkX = (originChunkX - radius) + ix;
             const int chunkZ = (originChunkZ - radius) + iz;
 
-            generator.genTerrain(scratch_, chunkX, chunkZ);
-            if (doSurface) {
-                generator.genSurface(scratch_, chunkX, chunkZ);
-            }
-            if (doCaves) {
-                generator.carve(nullptr, chunkX, chunkZ, scratch_);
-            }
+            const Chunk chunk = generator.loadChunk(nullptr, chunkX, chunkZ);
 
-            const int surfaceY = topSolidBlockY(scratch_, 8, 8);
+            const int surfaceY = topSolidBlockY(chunk, 8, 8);
             if (surfaceY >= 0) {
                 surfaceSum += surfaceY;
                 ++surfaceSamples;
@@ -200,7 +195,7 @@ void ScanProbe::runTerrainSide(
                 maxSurface = std::max(maxSurface, surfaceY);
                 surfaceYs.push_back(surfaceY);
             }
-            if (isWaterId(spawnBlockId(scratch_, 8, 8)) || surfaceY <= 62) {
+            if (isWaterId(spawnBlockId(chunk, 8, 8)) || surfaceY <= 62) {
                 ++underwater;
             }
 
@@ -212,13 +207,13 @@ void ScanProbe::runTerrainSide(
             if (doCaves) {
                 for (int lz = 0; lz < 16; ++lz) {
                     for (int lx = 0; lx < 16; ++lx) {
-                        const int colTop = topSolidBlockY(scratch_, lx, lz);
+                        const int colTop = topSolidBlockY(chunk, lx, lz);
                         const int top = colTop > 0 ? colTop : kSeaLevel;
                         ++totalColumns;
                         int run = 0;
                         bool columnHadAir = false;
                         for (int y = 1; y < top; ++y) {
-                            const int id = scratch_.getBlockId(lx, y, lz);
+                            const int id = chunk.getBlockId(lx, y, lz);
                             if (id == 0) {
                                 ++caveAir;
                                 ++run;
@@ -228,7 +223,7 @@ void ScanProbe::runTerrainSide(
                                 run = 0;
                             }
                             if (id == gravelId && gravelId >= 0 && y > 0
-                                && scratch_.getBlockId(lx, y - 1, lz) == 0) {
+                                && chunk.getBlockId(lx, y - 1, lz) == 0) {
                                 ++airBelowGravel;
                             }
                         }

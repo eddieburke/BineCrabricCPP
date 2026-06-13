@@ -29,23 +29,25 @@ void SignEditScreen::render(int mouseX, int mouseY, float tickDelta)
 
 void SignEditScreen::keyPressed(char character, int keyCode)
 {
-    if (keyCode == 200) {
+    if (arrowUpPressed(keyCode)) {
         currentLine = (currentLine + 3) & 3;
         return;
     }
-    if (keyCode == 208 || keyCode == 28) {
+    if (arrowDownPressed(keyCode) || submitPressed(keyCode, character)) {
         currentLine = (currentLine + 1) & 3;
         return;
     }
-    if (keyCode == 14) {
+    if (backspacePressed(keyCode)) {
         if (!text[static_cast<std::size_t>(currentLine)].empty()) {
             text[static_cast<std::size_t>(currentLine)].pop_back();
         }
         return;
     }
-    if (character >= 32 && text[static_cast<std::size_t>(currentLine)].size() < 15) {
+    constexpr int kMaxSignLineLength = 15;
+    if (character >= ' ' && text[static_cast<std::size_t>(currentLine)].size() < kMaxSignLineLength) {
         text[static_cast<std::size_t>(currentLine)].push_back(character);
     }
+    closeOnEscape(keyCode);
 }
 
 } // namespace net::minecraft::client::gui::screen::ingame

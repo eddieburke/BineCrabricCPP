@@ -50,12 +50,6 @@ public:
         return dx * dx + dy * dy + dz * dz;
     }
 
-    // Synchronous main-thread rebuild (forced compiles, fallback path).
-    // Internally: snapshot -> buildMesh -> uploadMesh, same as the async path.
-    // Returns false if the region wasn't resident yet (caller must keep it
-    // queued so it rebuilds once the chunks finish loading).
-    bool rebuild();
-
     // Worker-thread half: tessellate the job's snapshot into CPU meshes.
     // Touches no GL and no live world state.
     static void buildMesh(ChunkMeshJob& job);
@@ -116,9 +110,10 @@ public:
     int id = 0;
     bool hasSkyLight = false;
     bool built = false;
-    bool queuedForRebuild = false;
     // Bumped on every invalidation so stale captures are ignored.
     int version = 0;
+    // A mesh job for this builder is queued or running (main-thread bookkeeping).
+    bool meshJobInFlight = false;
     std::vector<::net::minecraft::block::entity::BlockEntity*> blockEntities_ {};
     std::vector<::net::minecraft::block::entity::BlockEntity*>* currentBlockEntities_ = nullptr;
 };

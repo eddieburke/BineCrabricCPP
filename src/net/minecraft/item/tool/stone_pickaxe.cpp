@@ -29,5 +29,5 @@ void StonePickaxeItem::registerRecipes(recipe::CraftingRecipeManager& recipeMana
         {std::string("XXX"), std::string(" # "), std::string(" # "), '#', Item::byRawId(24), 'X', Block::COBBLESTONE});
 }
 
-static registry::RegisterItem<StonePickaxeItem> s_itemReg;
+MC_REGISTER_ITEM(StonePickaxeItem)
 } // namespace net::minecraft::item

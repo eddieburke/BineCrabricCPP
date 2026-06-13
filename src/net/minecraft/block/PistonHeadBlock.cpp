@@ -161,7 +161,7 @@ void PistonHeadBlock::registerClass()
 
 namespace {
 
-static ::net::minecraft::registry::RegisterBlock<PistonHeadBlock> autoReg;
 } // namespace
+MC_REGISTER_BLOCK(PistonHeadBlock)
 } // namespace net::minecraft::block
 

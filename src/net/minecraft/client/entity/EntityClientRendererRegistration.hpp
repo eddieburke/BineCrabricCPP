@@ -1,5 +1,6 @@
 #pragma once
 
+#include "net/minecraft/mod/ModLifecycle.hpp"
 #include "net/minecraft/client/render/entity/EntityRenderDispatcher.hpp"
 #include "net/minecraft/client/render/entity/EntityRenderer.hpp"
 #include "net/minecraft/registry/Registry.hpp"
@@ -48,8 +49,9 @@ template<typename EntityType>
 struct RegisterEntityRenderer {
     RegisterEntityRenderer()
     {
-        Registry::addCustom(
-            kClientRendererRegistrarBase + detail::entityClientRendererPriority<EntityType>(),
+        Registry::enqueue(
+            mod::LifecyclePhase::ClientRendererRegistration,
+            detail::entityClientRendererPriority<EntityType>(),
             &detail::registerEntityClientRenderer<EntityType>);
     }
 };

@@ -24,5 +24,5 @@ void RawPorkchopItem::registerRecipes(recipe::CraftingRecipeManager& recipeManag
     (void)recipeManager;
 }
 
-static registry::RegisterItem<RawPorkchopItem> s_itemReg;
+MC_REGISTER_ITEM(RawPorkchopItem)
 } // namespace net::minecraft::item

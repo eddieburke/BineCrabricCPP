@@ -26,5 +26,5 @@ void FurnaceMinecartItem::registerRecipes(recipe::CraftingRecipeManager& recipeM
         {std::string("A"), std::string("B"), 'A', Block::FURNACE, 'B', Item::byRawId(72)});
 }
 
-static registry::RegisterItem<FurnaceMinecartItem> s_itemReg;
+MC_REGISTER_ITEM(FurnaceMinecartItem)
 } // namespace net::minecraft::item

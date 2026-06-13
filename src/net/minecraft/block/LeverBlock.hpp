@@ -8,7 +8,6 @@ namespace net::minecraft::block {
 
 class LeverBlock : public Block {
 public:
-    static constexpr bool kRegisters = true;
     static constexpr int kBlockId = 69;
 static void registerRecipes(recipe::CraftingRecipeManager& recipeManager);
 public:

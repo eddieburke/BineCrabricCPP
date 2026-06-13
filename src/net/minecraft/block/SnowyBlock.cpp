@@ -126,6 +126,6 @@ void SnowyBlock::registerClass()
 
 
 
-namespace {static ::net::minecraft::registry::RegisterBlock<SnowyBlock> autoReg;} // namespace
+MC_REGISTER_BLOCK(SnowyBlock)
 } // namespace net::minecraft::block
 

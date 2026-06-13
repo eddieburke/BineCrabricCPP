@@ -1,6 +1,7 @@
 #pragma once
 
 #include "net/minecraft/client/render/item/HeldItemRenderer.hpp"
+#include "net/minecraft/client/render/ViewDistance.hpp"
 #include "net/minecraft/client/util/SmoothUtil.hpp"
 #include "net/minecraft/entity/EntityTypes.hpp"
 #include "net/minecraft/util/math/Types.hpp"
@@ -55,7 +56,7 @@ private:
     void throttleAndTimestamp(int fpsCap);
 
     net::minecraft::client::Minecraft* client = nullptr;
-    float viewDistance = 0.0f;
+    ViewDistance viewDistance {};
     std::unique_ptr<item::HeldItemRenderer> heldItemRenderer;
     int ticks = 0;
     net::minecraft::Entity* targetedEntity = nullptr;

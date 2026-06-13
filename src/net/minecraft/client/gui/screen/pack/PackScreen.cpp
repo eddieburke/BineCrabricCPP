@@ -1,6 +1,7 @@
 #include "net/minecraft/client/gui/screen/pack/PackScreen.hpp"
 
 #include "net/minecraft/client/Minecraft.hpp"
+#include "net/minecraft/client/gui/Draw2D.hpp"
 #include "net/minecraft/client/gui/layout/ScreenLayout.hpp"
 #include "net/minecraft/client/gui/screen/TitleScreen.hpp"
 #include "net/minecraft/client/gl/GL11.hpp"
@@ -83,13 +84,7 @@ protected:
 
         pack->bindIcon(minecraft_.textureManager);
         gl::GL11::glColor4f(1.0f, 1.0f, 1.0f, 1.0f);
-        tessellator.startQuads();
-        tessellator.color(0xFFFFFF);
-        tessellator.vertex(static_cast<double>(x), static_cast<double>(y + height), 0.0, 0.0, 1.0);
-        tessellator.vertex(static_cast<double>(x + 32), static_cast<double>(y + height), 0.0, 1.0, 1.0);
-        tessellator.vertex(static_cast<double>(x + 32), static_cast<double>(y), 0.0, 1.0, 0.0);
-        tessellator.vertex(static_cast<double>(x), static_cast<double>(y), 0.0, 0.0, 0.0);
-        tessellator.draw();
+        draw::coloredTexturedQuad(tessellator, x, y, x + 32, y + height, 0.0f, 0.0f, 1.0f, 1.0f, 0xFFFFFF);
 
         owner_.drawTextWithShadow(*owner_.textRenderer(), pack->name, x + 34, y + 1, 0xFFFFFF);
         owner_.drawTextWithShadow(*owner_.textRenderer(), pack->descriptionLine1, x + 34, y + 12, 0x808080);
@@ -131,8 +126,6 @@ void PackScreen::init()
         });
     if (minecraft() != nullptr) {
         packList_ = std::make_unique<PackListWidget>(*this, *minecraft(), width(), height());
-        std::vector<widget::ButtonWidget> scrollButtons;
-        packList_->registerButtons(scrollButtons, 7, 8);
     }
 }
 
@@ -179,13 +172,6 @@ void PackScreen::openTexturePacksFolder()
             SW_SHOWNORMAL);
     }
 #endif
-}
-
-void PackScreen::buttonClicked(widget::ButtonWidget& button)
-{
-    if (packList_ != nullptr) {
-        packList_->buttonClicked(button);
-    }
 }
 
 } // namespace net::minecraft::client::gui::screen::pack

@@ -25,5 +25,5 @@ void BoneItem::registerRecipes(recipe::CraftingRecipeManager& recipeManager)
     (void)recipeManager;
 }
 
-static registry::RegisterItem<BoneItem> s_itemReg;
+MC_REGISTER_ITEM(BoneItem)
 } // namespace net::minecraft::item

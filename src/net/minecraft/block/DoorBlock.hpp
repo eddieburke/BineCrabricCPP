@@ -8,7 +8,6 @@ namespace net::minecraft::block {
 
 class DoorBlock : public Block {
 public:
-    static constexpr bool kRegisters = true;
     static constexpr int kBlockId = 71;
 
 static void registerClass();

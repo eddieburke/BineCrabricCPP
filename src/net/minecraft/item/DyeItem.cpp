@@ -167,6 +167,6 @@ void DyeItem::registerRecipes(recipe::CraftingRecipeManager& recipeManager)
 
 
 
-namespace {static ::net::minecraft::registry::RegisterItem<DyeItem> autoReg; } // namespace
 
+MC_REGISTER_ITEM(DyeItem)
 } // namespace net::minecraft::item

@@ -24,5 +24,5 @@ void SlimeballItem::registerRecipes(recipe::CraftingRecipeManager& recipeManager
     (void)recipeManager;
 }
 
-static registry::RegisterItem<SlimeballItem> s_itemReg;
+MC_REGISTER_ITEM(SlimeballItem)
 } // namespace net::minecraft::item

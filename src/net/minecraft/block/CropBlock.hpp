@@ -10,7 +10,7 @@
 
 namespace net::minecraft::block {
 
-// Registered in SimpleBlocks.cpp.
+// Registered in Block.cpp.
 class CropBlock : public PlantBlock {
 public:
     CropBlock(int id, int textureIdIn) : PlantBlock(id, textureIdIn)
@@ -43,7 +43,7 @@ protected:
         if (world == nullptr) {
             return;
         }
-        if (world->getLightLevel(x, y + 1, z) < 9) {
+        if (world->getLightLevelAbove(x, y, z) < 9) {
             return;
         }
         int meta = world->getBlockMeta(x, y, z);

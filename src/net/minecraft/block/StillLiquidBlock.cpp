@@ -80,6 +80,6 @@ void StillLiquidBlock::registerClass()
 
 
 
-namespace {static ::net::minecraft::registry::RegisterBlock<StillLiquidBlock> autoReg;} // namespace
+MC_REGISTER_BLOCK(StillLiquidBlock)
 } // namespace net::minecraft::block
 

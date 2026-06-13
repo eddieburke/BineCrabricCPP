@@ -37,6 +37,6 @@ void SaddleItem::registerClass()
 
 
 
-namespace {static ::net::minecraft::registry::RegisterItem<SaddleItem> autoReg; } // namespace
 
+MC_REGISTER_ITEM(SaddleItem)
 } // namespace net::minecraft::item

@@ -13,11 +13,13 @@
 #include "net/minecraft/world/chunk/ChunkNibbleArray.hpp"
 
 #include <algorithm>
+#include <atomic>
 #include <array>
 #include <cstddef>
 #include <cstdint>
 #include <memory>
 #include <unordered_map>
+#include <utility>
 #include <vector>
 
 namespace net::minecraft {
@@ -67,10 +69,33 @@ public:
         std::copy_n(sourceBlocks.begin(), count, blocks.begin());
     }
 
+    ~Chunk();
+
     Chunk(const Chunk&) = delete;
     Chunk& operator=(const Chunk&) = delete;
-    Chunk(Chunk&&) = default;
-    Chunk& operator=(Chunk&&) = default;
+    Chunk(Chunk&& other) noexcept
+        : world(other.world),
+          blocks(std::move(other.blocks)),
+          loaded(other.loaded),
+          meta(std::move(other.meta)),
+          skyLight(std::move(other.skyLight)),
+          blockLight(std::move(other.blockLight)),
+          heightmap(other.heightmap),
+          minHeightmapValue(other.minHeightmapValue),
+          x(other.x),
+          z(other.z),
+          blockEntities(std::move(other.blockEntities)),
+          entities(std::move(other.entities)),
+          terrainPopulated(other.terrainPopulated),
+          dirty(other.dirty),
+          empty(other.empty),
+          lastSaveHadEntities(other.lastSaveHadEntities),
+          lastSaveTime(other.lastSaveTime)
+    {
+        other.world = nullptr;
+        other.loaded = false;
+    }
+    Chunk& operator=(Chunk&&) = delete;
 
     [[nodiscard]] bool chunkPosEquals(int chunkX, int chunkZ) const noexcept
     {
@@ -238,6 +263,35 @@ public:
     void removeBlockEntityAt(int localX, int yPos, int localZ);
     void load();
     void unload();
+
+    [[nodiscard]] bool tryAcquireRenderPin() noexcept
+    {
+        if (renderEvicting_.load(std::memory_order_acquire)) {
+            return false;
+        }
+        renderPinCount_.fetch_add(1, std::memory_order_acquire);
+        if (!renderEvicting_.load(std::memory_order_acquire)) {
+            return true;
+        }
+        releaseRenderPin();
+        return false;
+    }
+
+    void releaseRenderPin() noexcept
+    {
+        renderPinCount_.fetch_sub(1, std::memory_order_release);
+    }
+
+    [[nodiscard]] bool beginRenderEviction() noexcept
+    {
+        renderEvicting_.store(true, std::memory_order_release);
+        return renderPinCount_.load(std::memory_order_acquire) == 0;
+    }
+
+    void cancelRenderEviction() noexcept
+    {
+        renderEvicting_.store(false, std::memory_order_release);
+    }
 
     void markDirty()
     {
@@ -484,6 +538,9 @@ public:
     long long lastSaveTime = 0;
 
 private:
+    std::atomic<int> renderPinCount_ {0};
+    std::atomic<bool> renderEvicting_ {false};
+
     [[nodiscard]] static constexpr std::size_t index(int localX, int yPos, int localZ)
     {
         return static_cast<std::size_t>((localX << 11) | (localZ << 7) | yPos);

@@ -29,5 +29,5 @@ void StoneAxeItem::registerRecipes(recipe::CraftingRecipeManager& recipeManager)
         {std::string("XX"), std::string("X#"), std::string(" #"), '#', Item::byRawId(24), 'X', Block::COBBLESTONE});
 }
 
-static registry::RegisterItem<StoneAxeItem> s_itemReg;
+MC_REGISTER_ITEM(StoneAxeItem)
 } // namespace net::minecraft::item

@@ -5,20 +5,21 @@
 #include "net/minecraft/client/gl/GL11.hpp"
 #include "net/minecraft/client/option/ResolvedRenderOptions.hpp"
 #include "net/minecraft/client/render/GameRenderer.hpp"
+#include "net/minecraft/client/render/atmosphere/AtmosphereContext.hpp"
 #include "net/minecraft/client/render/atmosphere/AtmosphereRenderer.hpp"
 #include "net/minecraft/client/render/culling/Frustum.hpp"
-#include "net/minecraft/client/render/pipeline/WorldRenderHelpers.hpp"
-#include "net/minecraft/client/render/pipeline/WorldRenderContext.hpp"
+#include "net/minecraft/client/render/culling/FrustumCuller.hpp"
 #include "net/minecraft/client/render/platform/GlState.hpp"
 #include "net/minecraft/client/render/platform/Lighting.hpp"
+#include "net/minecraft/client/render/ViewDistance.hpp"
 #include "net/minecraft/client/render/world/WorldRenderer.hpp"
 #include "net/minecraft/entity/LivingEntity.hpp"
 #include "net/minecraft/entity/player/ClientPlayerEntity.hpp"
 #include "net/minecraft/entity/player/PlayerEntity.hpp"
+#include "net/minecraft/item/ItemStack.hpp"
+#include "net/minecraft/mod/GameHooks.hpp"
 #include "net/minecraft/util/math/MathHelper.hpp"
 #include "net/minecraft/util/math/Types.hpp"
-#include "net/minecraft/world/chunk/ChunkSource.hpp"
-#include "net/minecraft/world/chunk/LegacyChunkCache.hpp"
 
 namespace net::minecraft::client::render::pipeline {
 
@@ -34,9 +35,76 @@ constexpr int kBlend = 0x0BE2;
 constexpr int kSrcAlpha = 0x0302;
 constexpr int kOneMinusSrcAlpha = 0x0303;
 
+// Mutable per-eye state threaded through the pass functions below.
+struct WorldRenderContext {
+    GameRenderer& renderer;
+    float tickDelta = 0.0f;
+    std::int64_t timeNs = 0;
+    int eye = 0;
+    ColorMaskRestoreFn restoreColorMask {};
+    bool clearColorBuffer = true;
+
+    net::minecraft::client::Minecraft* client = nullptr;
+    double zoom = 1.0;
+    net::minecraft::entity::LivingEntity* camera = nullptr;
+    WorldRenderer* worldRenderer = nullptr;
+    atmosphere::AtmosphereRenderer* atmosphere = nullptr;
+    double camX = 0.0;
+    double camY = 0.0;
+    double camZ = 0.0;
+    int terrainTextureId = 0;
+    ViewDistance viewDistance {};
+
+    FrustumCuller frustumCuller {};
+    Culler* activeCuller = nullptr;
+};
+
+[[nodiscard]] ItemStack selectedItemOrEmpty(PlayerEntity* player)
+{
+    if (player == nullptr) {
+        return {};
+    }
+    const ItemStack* stack = player->inventory.getSelectedItem();
+    return stack != nullptr ? *stack : ItemStack {};
+}
+
 [[nodiscard]] bool hasWorldScene(const WorldRenderContext& ctx)
 {
     return ctx.client != nullptr && ctx.worldRenderer != nullptr && ctx.camera != nullptr;
+}
+
+[[nodiscard]] bool resolveContext(float tickDelta, int eye, WorldRenderContext& out)
+{
+    if (out.client == nullptr) {
+        return false;
+    }
+
+    auto* living = dynamic_cast<LivingEntity*>(out.client->camera);
+    if (living == nullptr || out.client->world == nullptr || out.client->worldRenderer == nullptr
+        || out.client->atmosphereRenderer == nullptr) {
+        return false;
+    }
+
+    out.tickDelta = tickDelta;
+    out.eye = eye;
+    out.camera = living;
+    out.worldRenderer = out.client->worldRenderer.get();
+    out.atmosphere = out.client->atmosphereRenderer.get();
+    return true;
+}
+
+[[nodiscard]] atmosphere::AtmosphereContext makeAtmosphereContext(const WorldRenderContext& ctx)
+{
+    return atmosphere::AtmosphereContext {
+        .client = ctx.client,
+        .world = ctx.client->world,
+        .textureManager = &ctx.client->textureManager,
+        .camera = ctx.client->camera,
+        .livingCamera = ctx.camera,
+        .options = ctx.client->options,
+        .atmosphereTicks = ctx.atmosphere->atmosphereTicks(),
+        .viewDistance = ctx.viewDistance,
+    };
 }
 
 [[nodiscard]] bool hasAtmosphereScene(const WorldRenderContext& ctx)
@@ -69,10 +137,11 @@ void runSetup(WorldRenderContext& ctx)
         ctx.renderer.updateTargetedEntity(ctx.tickDelta);
     }
 
-    if (!WorldRenderPass::resolveContext(ctx.renderer, ctx.tickDelta, ctx.eye, ctx)) {
+    if (!resolveContext(ctx.tickDelta, ctx.eye, ctx)) {
         return;
     }
 
+    ctx.viewDistance = ViewDistance::fromOptions(ctx.client->options);
     ctx.worldRenderer->setCamera(ctx.camera);
     ctx.camX = ctx.camera->lastTickX
         + (ctx.camera->x - ctx.camera->lastTickX) * static_cast<double>(ctx.tickDelta);
@@ -80,13 +149,16 @@ void runSetup(WorldRenderContext& ctx)
         + (ctx.camera->y - ctx.camera->lastTickY) * static_cast<double>(ctx.tickDelta);
     ctx.camZ = ctx.camera->lastTickZ
         + (ctx.camera->z - ctx.camera->lastTickZ) * static_cast<double>(ctx.tickDelta);
+    mod::CameraSetupEvent cameraEvent {ctx.camera, ctx.camX, ctx.camY, ctx.camZ, ctx.tickDelta};
+    mod::hooks().publish(cameraEvent);
+    ctx.camX = cameraEvent.x;
+    ctx.camY = cameraEvent.y;
+    ctx.camZ = cameraEvent.z;
 
     if (ctx.eye == 0) {
-        if (ChunkSource* chunkSource = ctx.client->world->getChunkSource();
-            auto* legacyCache = dynamic_cast<LegacyChunkCache*>(chunkSource)) {
-            legacyCache->setSpawnPoint(chunk_coord(MathHelper::floor(ctx.camX)),
-                chunk_coord(MathHelper::floor(ctx.camZ)));
-        }
+        ctx.client->world->setChunkCacheCenterFromBlockPos(
+            MathHelper::floor(ctx.camX),
+            MathHelper::floor(ctx.camZ));
     }
 
     ctx.terrainTextureId = ctx.client->textureManager.getTextureId("/terrain.png");
@@ -98,14 +170,9 @@ void runClearAndProjection(WorldRenderContext& ctx)
         return;
     }
 
-    ctx.atmosphere->updateClearAndFogColors(WorldRenderPass::makeAtmosphereContext(ctx), ctx.tickDelta);
+    ctx.atmosphere->updateClearAndFogColors(makeAtmosphereContext(ctx), ctx.tickDelta);
     gl::GL11::glClear(ctx.clearColorBuffer ? kClearColorAndDepth : kDepthBufferBit);
     gl::GL11::glEnable(kCullFace);
-
-    WorldRenderPass::renderWorld(ctx.renderer, ctx.tickDelta, ctx.eye);
-    if (ctx.client != nullptr && ctx.client->options.frustumCulling) {
-        Frustum::getInstance().compute();
-    }
 }
 
 void runSky(WorldRenderContext& ctx)
@@ -114,9 +181,9 @@ void runSky(WorldRenderContext& ctx)
         return;
     }
 
-    if (ctx.client->options.viewDistance < 2
+    if (ctx.viewDistance.shouldRenderSky()
         && client::option::resolve(ctx.client->options).renderSky) {
-        const atmosphere::AtmosphereContext atmosphereCtx = WorldRenderPass::makeAtmosphereContext(ctx);
+        const atmosphere::AtmosphereContext atmosphereCtx = makeAtmosphereContext(ctx);
         ctx.atmosphere->applySkyFog(atmosphereCtx);
         ctx.atmosphere->renderSky(atmosphereCtx, ctx.tickDelta);
     }
@@ -128,7 +195,7 @@ void runTerrainPrepare(WorldRenderContext& ctx)
         return;
     }
 
-    const atmosphere::AtmosphereContext atmosphereCtx = WorldRenderPass::makeAtmosphereContext(ctx);
+    const atmosphere::AtmosphereContext atmosphereCtx = makeAtmosphereContext(ctx);
     platform::GlState::setFogEnabled(true);
     ctx.atmosphere->applyWorldFog(atmosphereCtx);
 
@@ -154,7 +221,7 @@ void runSolidTerrain(WorldRenderContext& ctx)
         return;
     }
 
-    ctx.atmosphere->applyWorldFog(WorldRenderPass::makeAtmosphereContext(ctx));
+    ctx.atmosphere->applyWorldFog(makeAtmosphereContext(ctx));
     platform::GlState::beginSolidTerrainPass(ctx.terrainTextureId);
     ctx.worldRenderer->render(*ctx.camera, 0, static_cast<double>(ctx.tickDelta));
     platform::GlState::endSolidTerrainPass();
@@ -169,7 +236,7 @@ void runEntityParticles(WorldRenderContext& ctx)
     ctx.worldRenderer->renderEntities(ctx.camera->getPosition(ctx.tickDelta), ctx.activeCuller, ctx.tickDelta);
     ctx.client->particleManager.renderLit(ctx.camera, ctx.tickDelta);
     platform::Lighting::turnOff();
-    ctx.atmosphere->applyWorldFog(WorldRenderPass::makeAtmosphereContext(ctx));
+    ctx.atmosphere->applyWorldFog(makeAtmosphereContext(ctx));
     gl::GL11::glEnable(kBlend);
     gl::GL11::glBlendFunc(kSrcAlpha, kOneMinusSrcAlpha);
     ctx.client->particleManager.render(ctx.camera, ctx.tickDelta);
@@ -196,7 +263,7 @@ void runTranslucentTerrain(WorldRenderContext& ctx)
     }
 
     gl::GL11::glBlendFunc(kSrcAlpha, kOneMinusSrcAlpha);
-    ctx.atmosphere->applyWorldFog(WorldRenderPass::makeAtmosphereContext(ctx));
+    ctx.atmosphere->applyWorldFog(makeAtmosphereContext(ctx));
     platform::GlState::beginTranslucentTerrainPass(ctx.terrainTextureId);
 
     if (ctx.client->options.fancyGraphics) {
@@ -241,7 +308,7 @@ void runAtmosphereOverlay(WorldRenderContext& ctx)
         return;
     }
 
-    const atmosphere::AtmosphereContext atmosphereCtx = WorldRenderPass::makeAtmosphereContext(ctx);
+    const atmosphere::AtmosphereContext atmosphereCtx = makeAtmosphereContext(ctx);
     ctx.atmosphere->renderPrecipitation(atmosphereCtx, ctx.tickDelta);
     platform::GlState::beginCloudPass();
     ctx.atmosphere->applyWorldFog(atmosphereCtx);
@@ -254,64 +321,17 @@ void runAtmosphereOverlay(WorldRenderContext& ctx)
     ctx.atmosphere->applyHandFog(atmosphereCtx);
 }
 
-void runHand(WorldRenderContext& ctx)
+[[nodiscard]] bool prepareHandRender(WorldRenderContext& ctx)
 {
     if (ctx.zoom != 1.0) {
-        return;
+        return false;
     }
 
     platform::GlState::clearDepthForHand();
-    WorldRenderPass::renderFirstPersonHand(ctx.renderer, ctx.tickDelta, ctx.eye);
-}
-
-} // namespace
-
-void WorldRenderPass::renderWorld(GameRenderer& renderer, float tickDelta, int eye)
-{
-    renderer.renderWorld(tickDelta, eye);
-}
-
-void WorldRenderPass::renderFirstPersonHand(GameRenderer& renderer, float tickDelta, int eye)
-{
-    renderer.renderFirstPersonHand(tickDelta, eye);
-}
-
-bool WorldRenderPass::resolveContext(GameRenderer& renderer, float tickDelta, int eye, WorldRenderContext& out)
-{
-    if (renderer.client == nullptr) {
-        return false;
-    }
-
-    auto* living = dynamic_cast<LivingEntity*>(renderer.client->camera);
-    if (living == nullptr || renderer.client->world == nullptr || renderer.client->worldRenderer == nullptr
-        || renderer.client->atmosphereRenderer == nullptr) {
-        return false;
-    }
-
-    out.tickDelta = tickDelta;
-    out.eye = eye;
-    out.camera = living;
-    out.worldRenderer = renderer.client->worldRenderer.get();
-    out.atmosphere = renderer.client->atmosphereRenderer.get();
     return true;
 }
 
-atmosphere::AtmosphereContext WorldRenderPass::makeAtmosphereContext(const WorldRenderContext& ctx)
-{
-    const float viewDistanceBlocks = ctx.renderer.viewDistance > 0.0f
-        ? ctx.renderer.viewDistance
-        : client::option::resolve(ctx.client->options).viewDistanceBlocks;
-    return atmosphere::AtmosphereContext {
-        .client = ctx.client,
-        .world = ctx.client->world,
-        .textureManager = &ctx.client->textureManager,
-        .camera = ctx.client->camera,
-        .livingCamera = ctx.camera,
-        .options = ctx.client->options,
-        .atmosphereTicks = ctx.atmosphere->atmosphereTicks(),
-        .viewDistanceBlocks = viewDistanceBlocks,
-    };
-}
+} // namespace
 
 void WorldRenderPass::execute(GameRenderer& renderer, float tickDelta, std::int64_t timeNs, int eye,
     ColorMaskRestoreFn restoreColorMask, bool clearColorBuffer)
@@ -337,6 +357,10 @@ void WorldRenderPass::execute(GameRenderer& renderer, float tickDelta, std::int6
     }
 
     runClearAndProjection(ctx);
+    renderer.renderWorld(tickDelta, eye);
+    if (ctx.client != nullptr && ctx.client->options.frustumCulling) {
+        Frustum::getInstance().compute();
+    }
     runSky(ctx);
     runTerrainPrepare(ctx);
     runSolidTerrain(ctx);
@@ -345,7 +369,9 @@ void WorldRenderPass::execute(GameRenderer& renderer, float tickDelta, std::int6
     runTranslucentTerrain(ctx);
     runLandBlockOverlay(ctx);
     runAtmosphereOverlay(ctx);
-    runHand(ctx);
+    if (prepareHandRender(ctx)) {
+        renderer.renderFirstPersonHand(tickDelta, eye);
+    }
 }
 
 } // namespace net::minecraft::client::render::pipeline

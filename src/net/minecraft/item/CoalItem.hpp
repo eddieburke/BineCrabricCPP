@@ -6,7 +6,7 @@
 namespace net::minecraft::item {
 
 class CoalItem : public Item {
-public:        static constexpr bool kRegisters = true;
+public:
     static constexpr int kRawId = 7;
 
 static void registerClass();

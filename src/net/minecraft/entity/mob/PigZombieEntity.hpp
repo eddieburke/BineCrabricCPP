@@ -9,7 +9,6 @@ namespace net::minecraft::entity::mob {
 
 class PigZombieEntity : public ZombieEntity {
 public:
-    static constexpr bool kRegisters = true;
     static constexpr int kEntityId = 57;
 
     static constexpr const char* kEntityName = "PigZombie";

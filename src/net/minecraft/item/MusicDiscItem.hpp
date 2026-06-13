@@ -13,7 +13,6 @@ namespace net::minecraft::item {
 
 class MusicDiscItem : public Item {
 public:
-    static constexpr bool kRegisters = true;
     static constexpr int kRawId = 2000;
 
 static void registerClass();

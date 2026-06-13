@@ -26,5 +26,5 @@ void CompassItem::registerRecipes(recipe::CraftingRecipeManager& recipeManager)
         {std::string(" # "), std::string("#X#"), std::string(" # "), '#', Item::byRawId(9), 'X', Item::byRawId(75)});
 }
 
-static registry::RegisterItem<CompassItem> s_itemReg;
+MC_REGISTER_ITEM(CompassItem)
 } // namespace net::minecraft::item

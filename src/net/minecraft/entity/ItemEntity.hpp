@@ -12,7 +12,6 @@ namespace net::minecraft::entity {
 
 class ItemEntity : public Entity {
 public:
-    static constexpr bool kRegisters = true;
     static constexpr int kEntityId = 1;
 
     static constexpr const char* kEntityName = "Item";

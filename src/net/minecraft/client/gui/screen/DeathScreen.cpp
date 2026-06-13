@@ -50,10 +50,4 @@ void DeathScreen::keyPressed(char character, int keyCode)
     (void)character;
     (void)keyCode;
 }
-
-void DeathScreen::keyPressed(int key)
-{
-    (void)key;
-}
-
 } // namespace net::minecraft::client::gui::screen

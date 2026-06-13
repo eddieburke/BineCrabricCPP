@@ -4,7 +4,7 @@
 
 namespace net::minecraft::block {
 
-// Registered in SimpleBlocks.cpp.
+// Registered in Block.cpp.
 class ObsidianBlock : public StoneBlock {
 public:
     ObsidianBlock(int id, int textureId) : StoneBlock(id, textureId) {}

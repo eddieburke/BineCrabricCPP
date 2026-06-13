@@ -5,13 +5,10 @@
 #include "net/minecraft/world/BlockView.hpp"
 #include "net/minecraft/world/biome/source/BiomeSource.hpp"
 
-#include <vector>
-
 namespace net::minecraft::block {
 
 class LeavesBlock : public TransparentBlock {
 public:
-    static constexpr bool kRegisters = true;
     static constexpr int kBlockId = 18;
 
 static void registerClass();
@@ -42,7 +39,6 @@ protected:
 
 private:
     void breakLeaves(World* world, int x, int y, int z);
-    std::vector<int> decayRegion_;
 };
 
 } // namespace net::minecraft::block

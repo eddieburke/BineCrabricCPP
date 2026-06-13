@@ -9,7 +9,6 @@ namespace net::minecraft::entity::decoration::painting {
 
 class PaintingEntity : public Entity {
 public:
-    static constexpr bool kRegisters = true;
     static constexpr int kEntityId = 9;
 
     static constexpr const char* kEntityName = "Painting";
