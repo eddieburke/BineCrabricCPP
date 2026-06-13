@@ -1,7 +1,6 @@
 #include "net/minecraft/client/core/WorldSession.hpp"
 
 #include "net/minecraft/client/Minecraft.hpp"
-#include "net/minecraft/client/core/ClientNetworkBridge.hpp"
 #include "net/minecraft/entity/player/ClientPlayerEntity.hpp"
 #include "net/minecraft/stat/PlayerStats.hpp"
 #include "net/minecraft/util/math/MathHelper.hpp"
@@ -10,31 +9,6 @@
 #include "net/minecraft/world/World.hpp"
 
 namespace net::minecraft::client::core {
-
-// Out-of-line: ClientNetworkBridge is incomplete in the header (forward-declared), so the
-// destructor that tears down networkBridge_/retiredNetworkBridges_ must be emitted here.
-WorldSession::~WorldSession() = default;
-
-void WorldSession::adoptNetworkBridge(std::unique_ptr<ClientNetworkBridge> bridge)
-{
-    // Replacing an existing connection (reconnect / dimension reset): park the old bridge for
-    // deferred teardown rather than freeing it inline.
-    retireNetworkBridge();
-    networkBridge_ = std::move(bridge);
-}
-
-void WorldSession::retireNetworkBridge()
-{
-    if (networkBridge_ != nullptr) {
-        retiredNetworkBridges_.push_back(std::move(networkBridge_));
-    }
-}
-
-void WorldSession::flushRetiredNetwork()
-{
-    // Safe point (run loop top): the handler->tick() that retired these has fully unwound.
-    retiredNetworkBridges_.clear();
-}
 
 void WorldSession::setWorld(Minecraft& client, World* worldIn)
 {

@@ -20,14 +20,12 @@ class Minecraft;
 
 namespace net::minecraft::client::core {
 
-class ClientNetworkBridge;
-
 /// Owns client-side world/player/storage lifetime and enforces renderer teardown ordering.
 /// Anchor: Minecraft.cpp L1092–1185 (setWorld), L1173–1177 (clearWorld invariant).
 class WorldSession {
 public:
     WorldSession() = default;
-    ~WorldSession();
+    ~WorldSession() = default;
 
     void setWorld(Minecraft& client, World* worldIn);
     void setWorld(Minecraft& client, World* worldIn, const std::string& message);
@@ -51,24 +49,12 @@ public:
     void convertAndSaveWorld(Minecraft& client, const std::string& worldName, const std::string& name);
     void tickJoinPlayerCounter(Minecraft& client);
 
-    /// Multiplayer network stack ownership. The bridge owns the ClientNetworkHandler, which
-    /// owns the live ClientWorld; it must outlive the transient ConnectScreen that creates it,
-    /// otherwise client.world (and the player/interaction-manager handler pointers) dangle the
-    /// moment that screen is flushed. Teardown is deferred (retiredNetworkBridges_) so a bridge
-    /// whose handler->tick() is on the stack is freed only after the stack unwinds.
-    void adoptNetworkBridge(std::unique_ptr<ClientNetworkBridge> bridge);
-    void retireNetworkBridge();
-    void flushRetiredNetwork();
-    [[nodiscard]] ClientNetworkBridge* networkBridge() const noexcept { return networkBridge_.get(); }
-
 private:
     int joinPlayerCounter_ = 0;
     std::unique_ptr<WorldStorage> ownedWorldStorage_;
     std::unique_ptr<World> ownedWorld_;
     std::unique_ptr<World> parkedDimensionWorld_;
     std::unique_ptr<entity::player::ClientPlayerEntity> ownedPlayer_;
-    std::unique_ptr<ClientNetworkBridge> networkBridge_;
-    std::vector<std::unique_ptr<ClientNetworkBridge>> retiredNetworkBridges_;
 };
 
 } // namespace net::minecraft::client::core

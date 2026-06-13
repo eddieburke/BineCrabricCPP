@@ -19,9 +19,11 @@ public:
         }
         world->setBlock(x, y, z, Block::GLOWSTONE->id);
         for (int i = 0; i < 1500; ++i) {
-            const int nx = x + random.nextInt(8) - random.nextInt(8);
+            const int nxOffset = random.nextInt(8);
+            const int nx = x + nxOffset - random.nextInt(8);
             const int ny = y - random.nextInt(12);
-            const int nz = z + random.nextInt(8) - random.nextInt(8);
+            const int nzOffset = random.nextInt(8);
+            const int nz = z + nzOffset - random.nextInt(8);
             if (world->getBlockId(nx, ny, nz) != 0) {
                 continue;
             }

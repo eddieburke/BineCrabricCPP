@@ -61,9 +61,15 @@ private:
     {
         int rgb = 0xFFFFFF;
         if (blockId == 2) {
-            rgb = color::world::GrassColors::getColor(world.getTemperature(x, z), world.getDownfall(x, z));
+            if (BiomeSource* biomeSource = world.getBiomeSource(); biomeSource != nullptr) {
+                const auto climate = biomeSource->sampleClimate(x, z);
+                rgb = color::world::GrassColors::getColor(climate.temperature, climate.downfall);
+            }
         } else if (blockId == 18) {
-            rgb = color::world::FoliageColors::getColor(world.getTemperature(x, z), world.getDownfall(x, z));
+            if (BiomeSource* biomeSource = world.getBiomeSource(); biomeSource != nullptr) {
+                const auto climate = biomeSource->sampleClimate(x, z);
+                rgb = color::world::FoliageColors::getColor(climate.temperature, climate.downfall);
+            }
         }
         return {
             static_cast<float>((rgb >> 16) & 0xFF) / 255.0f,

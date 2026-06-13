@@ -5,6 +5,7 @@
 #include "net/minecraft/client/core/ClientHost.hpp"
 #include "net/minecraft/client/core/ScreenStack.hpp"
 #include "net/minecraft/client/core/WorldSession.hpp"
+#include "net/minecraft/client/multiplayer/MultiplayerSession.hpp"
 #include "net/minecraft/client/InteractionManager.hpp"
 #include "net/minecraft/client/font/TextRenderer.hpp"
 #include "net/minecraft/client/gui/hud/InGameHud.hpp"
@@ -172,6 +173,8 @@ public:
     [[nodiscard]] core::ClientHost& clientHost() noexcept { return clientHost_; }
     [[nodiscard]] core::WorldSession& worldSession() noexcept { return worldSession_; }
     [[nodiscard]] const core::WorldSession& worldSession() const noexcept { return worldSession_; }
+    [[nodiscard]] multiplayer::MultiplayerSession& multiplayerSession() noexcept { return multiplayerSession_; }
+    [[nodiscard]] const multiplayer::MultiplayerSession& multiplayerSession() const noexcept { return multiplayerSession_; }
 
     // Java public fields.
     std::unique_ptr<InteractionManager> interactionManager;
@@ -238,6 +241,7 @@ public:
     ClientHostAdapter clientHost_{*this};
     core::ScreenStack screenStack_{clientHost_};
     core::WorldSession worldSession_;
+    multiplayer::MultiplayerSession multiplayerSession_;
 
 private:
     void handleScreenshotKey();

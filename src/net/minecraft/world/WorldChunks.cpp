@@ -344,9 +344,10 @@ std::string World::describe() const
 double World::getTemperature(int x, int z) const
 {
     if (BiomeSource* biomeSource = getBiomeSource(); biomeSource != nullptr) {
-        return biomeSource->sampleClimate(x, z).temperature;
+        // Java uses the raw sky-color temperature sampler here, not transformed biome climate.
+        return biomeSource->getTemperature(x, z);
     }
-    return biomeSource_.sampleClimate(x, z).temperature;
+    return biomeSource_.getTemperature(x, z);
 }
 
 double World::getDownfall(int x, int z) const

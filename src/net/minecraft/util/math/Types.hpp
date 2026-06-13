@@ -282,12 +282,13 @@ public:
     void setSeed(std::uint64_t seed)
     {
         state_ = (seed ^ 0x5DEECE66DULL) & mask_;
+        haveNextGaussian_ = false;
     }
 
     [[nodiscard]] int next(int bits) const
     {
         state_ = (state_ * 0x5DEECE66DULL + 0xBULL) & mask_;
-        return static_cast<int>(state_ >> (48U - bits));
+        return javaIntFromBits(static_cast<std::uint32_t>(state_ >> (48U - bits)));
     }
 
     [[nodiscard]] int nextInt() const
@@ -310,7 +311,7 @@ public:
         do {
             bits = next(31);
             value = bits % bound;
-        } while (bits - value + (bound - 1) < 0);
+        } while (javaIntOverflowIsNegative(static_cast<std::uint32_t>(bits - value) + static_cast<std::uint32_t>(bound - 1)));
         return value;
     }
 
@@ -350,11 +351,33 @@ public:
 
     [[nodiscard]] std::int64_t nextLong() const
     {
-        return (static_cast<std::int64_t>(next(32)) << 32U) + static_cast<std::uint32_t>(next(32));
+        const std::uint64_t high = static_cast<std::uint32_t>(next(32));
+        const std::int64_t low = next(32);
+        return javaLongFromBits((high << 32U) + static_cast<std::uint64_t>(low));
     }
 
 private:
     static constexpr std::uint64_t mask_ = (1ULL << 48U) - 1ULL;
+
+    [[nodiscard]] static constexpr int javaIntFromBits(std::uint32_t value) noexcept
+    {
+        return (value & 0x80000000U) == 0U
+            ? static_cast<int>(value)
+            : -1 - static_cast<int>(~value);
+    }
+
+    [[nodiscard]] static constexpr std::int64_t javaLongFromBits(std::uint64_t value) noexcept
+    {
+        return (value & 0x8000000000000000ULL) == 0ULL
+            ? static_cast<std::int64_t>(value)
+            : -1LL - static_cast<std::int64_t>(~value);
+    }
+
+    [[nodiscard]] static constexpr bool javaIntOverflowIsNegative(std::uint32_t value) noexcept
+    {
+        return (value & 0x80000000U) != 0U;
+    }
+
     mutable std::uint64_t state_ = 0;
     mutable bool haveNextGaussian_ = false;
     mutable double nextGaussianValue_ = 0.0;

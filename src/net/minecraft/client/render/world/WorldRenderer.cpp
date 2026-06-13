@@ -31,6 +31,7 @@
 #include "net/minecraft/client/particle/WaterBubbleParticle.hpp"
 #include "net/minecraft/client/particle/WaterSplashParticle.hpp"
 #include "net/minecraft/client/render/culling/Culler.hpp"
+#include "net/minecraft/client/render/culling/FrustumCuller.hpp"
 #include "net/minecraft/client/render/GameRenderer.hpp"
 #include "net/minecraft/client/render/Tessellator.hpp"
 #include "net/minecraft/client/render/block/entity/BlockEntityRenderDispatcher.hpp"
@@ -79,6 +80,7 @@ constexpr int kGlDstColor = 0x0306;
 constexpr float kPi = 3.14159265f;
 // Java WorldRenderer.render: re-sort when camera delta exceeds 8 blocks (64 = 8^2).
 constexpr double kCameraResortDistanceSq = 64.0;
+constexpr int kFrustumCullStride = 8;
 
 } // namespace
 
@@ -194,6 +196,7 @@ void WorldRenderer::setWorld(net::minecraft::World* worldIn)
         }
         chunks_.clear();
         ++chunkArrayEpoch_;
+        invalidateFrustumCull();
         sortedChunks_.clear();
         dirtyChunks_.clear();
         nearDirtyChunks_.clear();
@@ -212,6 +215,7 @@ void WorldRenderer::reload()
     }
     chunks_.clear();
     ++chunkArrayEpoch_;
+    invalidateFrustumCull();
     sortedChunks_.clear();
     dirtyChunks_.clear();
     nearDirtyChunks_.clear();
@@ -360,6 +364,9 @@ void WorldRenderer::sortChunks(int cameraX, int cameraY, int cameraZ)
                 }
                 const bool wasDirty = builder->dirty;
                 builder->setPosition(blockX, blockY, blockZ);
+                // Async frustum results land a frame later; after a toroidal
+                // chunk-grid move, stay conservative until the new boxes are culled.
+                builder->inFrustum = true;
                 if (wasDirty || !builder->dirty) {
                     continue;
                 }
@@ -367,6 +374,7 @@ void WorldRenderer::sortChunks(int cameraX, int cameraY, int cameraZ)
             }
         }
     }
+    invalidateFrustumCull();
 }
 
 void WorldRenderer::beginWorldRenderFrame() noexcept
@@ -440,6 +448,51 @@ void WorldRenderer::pollChunkSort()
     }
 }
 
+void WorldRenderer::submitFrustumCull(const FrustumCuller& culler)
+{
+    const FrustumData* frustum = culler.frustumData();
+    if (frustum == nullptr || chunks_.empty() || !frustumCuller_.canSubmit()) {
+        return;
+    }
+
+    std::vector<world::AsyncFrustumCuller::Entry> entries;
+    entries.reserve(chunks_.size());
+    for (std::size_t i = 0; i < chunks_.size(); ++i) {
+        const chunk::ChunkBuilder& chunk = chunks_[i];
+        entries.push_back(world::AsyncFrustumCuller::Entry {
+            .box = chunk.cullingBox,
+            .index = static_cast<std::int32_t>(i),
+            .currentlyVisible = chunk.inFrustum,
+            .hasNoGeometry = chunk.hasNoGeometry(),
+        });
+    }
+
+    const std::uint64_t requestEpoch = ++frustumCullRequestEpoch_;
+    frustumCuller_.submit(*frustum, culler.offsetX(), culler.offsetY(), culler.offsetZ(),
+        std::move(entries), chunkArrayEpoch_, requestEpoch, cullStep, kFrustumCullStride);
+    cullStep = (cullStep + 1) % kFrustumCullStride;
+}
+
+void WorldRenderer::pollFrustumCull()
+{
+    std::optional<world::AsyncFrustumCuller::Result> result = frustumCuller_.tryTakeResult();
+    if (!result || result->chunkEpoch != chunkArrayEpoch_
+        || result->requestEpoch != frustumCullRequestEpoch_) {
+        return;
+    }
+    for (const world::AsyncFrustumCuller::Visibility& visibility : result->visibility) {
+        if (visibility.index < 0 || static_cast<std::size_t>(visibility.index) >= chunks_.size()) {
+            continue;
+        }
+        chunks_[static_cast<std::size_t>(visibility.index)].inFrustum = visibility.visible;
+    }
+}
+
+void WorldRenderer::invalidateFrustumCull() noexcept
+{
+    ++frustumCullRequestEpoch_;
+}
+
 void WorldRenderer::renderLastChunks(int layer, double tickDelta)
 {
     internal::WorldRendererCore::renderLastChunks(*this, layer, tickDelta);
@@ -482,27 +535,38 @@ void WorldRenderer::cullChunks(Culler* culler, float tickDelta)
     (void)tickDelta;
     expectFramePhase(FramePhase::Idle);
     lastCuller_ = culler;
+    if (const net::minecraft::LivingEntity* sortCamera = resolveSortCamera()) {
+        sortChunksOnMove(*sortCamera);
+    }
+    pollFrustumCull();
+
     if (culler == nullptr || !activeOptions().frustumCulling) {
+        invalidateFrustumCull();
         for (chunk::ChunkBuilder& chunk : chunks_) {
             chunk.inFrustum = true;
         }
+        advanceFramePhase(FramePhase::Culled);
+        return;
+    }
+
+    if (const auto* frustum = dynamic_cast<const FrustumCuller*>(culler)) {
+        submitFrustumCull(*frustum);
     } else {
         // Asymmetric cadence: chunks outside the frustum are re-tested every
         // frame so they appear the moment the camera turns onto them; chunks
         // already visible are only re-tested every kCullStride frames, since
         // the worst case there is rendering a stale chunk a few frames longer.
-        constexpr int kCullStride = 8;
         for (std::size_t i = 0; i < chunks_.size(); ++i) {
             chunk::ChunkBuilder& chunk = chunks_[i];
             if (chunk.hasNoGeometry()) {
                 continue;
             }
-            if (chunk.inFrustum && static_cast<int>((i + cullStep) % kCullStride) != 0) {
+            if (chunk.inFrustum && static_cast<int>((i + cullStep) % kFrustumCullStride) != 0) {
                 continue;
             }
             chunk.updateFrustum(*culler);
         }
-        cullStep = (cullStep + 1) % kCullStride;
+        cullStep = (cullStep + 1) % kFrustumCullStride;
     }
     advanceFramePhase(FramePhase::Culled);
 }

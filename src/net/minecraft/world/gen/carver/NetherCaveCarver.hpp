@@ -53,8 +53,12 @@ protected:
             yaw += yawDrift * 0.1f;
             pitchDrift *= 0.9f;
             yawDrift *= 0.75f;
-            pitchDrift += (rng.nextFloat() - rng.nextFloat()) * rng.nextFloat() * 2.0f;
-            yawDrift += (rng.nextFloat() - rng.nextFloat()) * rng.nextFloat() * 4.0f;
+            const float pitchDriftA = rng.nextFloat();
+            const float pitchDriftB = rng.nextFloat();
+            pitchDrift += (pitchDriftA - pitchDriftB) * rng.nextFloat() * 2.0f;
+            const float yawDriftA = rng.nextFloat();
+            const float yawDriftB = rng.nextFloat();
+            yawDrift += (yawDriftA - yawDriftB) * rng.nextFloat() * 4.0f;
             if (splitFlag == 0 && tunnel == splitAt && baseWidth > 1.0f) {
                 placeTunnels(chunkX, chunkZ, chunk, x, y, z, rng.nextFloat() * 0.5f + 0.5f, yaw - 1.5707964f, pitch / 3.0f, tunnel, tunnelCount, 1.0);
                 placeTunnels(chunkX, chunkZ, chunk, x, y, z, rng.nextFloat() * 0.5f + 0.5f, yaw + 1.5707964f, pitch / 3.0f, tunnel, tunnelCount, 1.0);
@@ -144,7 +148,8 @@ protected:
             for (int j = 0; j < count; ++j) {
                 const float yaw = random.nextFloat() * PI_F * 2.0f;
                 const float pitch = (random.nextFloat() - 0.5f) * 2.0f / 8.0f;
-                const float width = random.nextFloat() * 2.0f + random.nextFloat();
+                const float widthBase = random.nextFloat();
+                const float width = widthBase * 2.0f + random.nextFloat();
                 placeTunnels(chunkX, chunkZ, chunk, dx, dy, dz, width * 2.0f, yaw, pitch, 0, 0, 0.5);
             }
         }

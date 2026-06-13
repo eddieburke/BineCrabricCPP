@@ -19,18 +19,17 @@ namespace net::minecraft::client::network {
 class ClientNetworkHandler;
 }
 
-namespace net::minecraft::client::core {
+namespace net::minecraft::client::multiplayer {
 
 class ClientNetworkBridge {
 public:
     ClientNetworkBridge() = default;
-    explicit ClientNetworkBridge(WorldSession* worldSession) noexcept;
+    explicit ClientNetworkBridge(core::WorldSession* worldSession) noexcept;
     // Out-of-line: handler_/connection_ are unique_ptrs to forward-declared types, so the
-    // destructor must be emitted in the .cpp where those types are complete (lets owners such
-    // as WorldSession destroy a bridge without pulling in the full network headers).
+    // destructor must be emitted in the .cpp where those types are complete.
     ~ClientNetworkBridge();
 
-    void setWorldSession(WorldSession* worldSession) noexcept;
+    void setWorldSession(core::WorldSession* worldSession) noexcept;
 
     bool connect(client::Minecraft* minecraft, const std::string& host, int port, std::string& errorOut);
     void disconnect(const std::string& reason = "Disconnected");
@@ -41,9 +40,9 @@ public:
     [[nodiscard]] bool isConnected() const noexcept;
 
 private:
-    WorldSession* worldSession_ = nullptr;
+    core::WorldSession* worldSession_ = nullptr;
     std::unique_ptr<net::minecraft::Connection> connection_;
     std::unique_ptr<network::ClientNetworkHandler> handler_;
 };
 
-} // namespace net::minecraft::client::core
+} // namespace net::minecraft::client::multiplayer

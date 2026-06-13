@@ -9,6 +9,7 @@
 #include "net/minecraft/client/render/chunk/ChunkBuilder.hpp"
 #include "net/minecraft/client/render/chunk/ChunkMeshScheduler.hpp"
 #include "net/minecraft/client/render/world/AsyncChunkSorter.hpp"
+#include "net/minecraft/client/render/world/AsyncFrustumCuller.hpp"
 #include "net/minecraft/client/render/world/ChunkRenderer.hpp"
 
 #include "net/minecraft/entity/EntityTypes.hpp"
@@ -74,6 +75,7 @@ class TextureManager;
 namespace net::minecraft::client::render {
 
 class Culler;
+class FrustumCuller;
 
 namespace internal {
 class WorldRendererCore;
@@ -236,6 +238,9 @@ private:
     // pointers) and apply its previous result if one is ready.
     void submitChunkSort(double cameraX, double cameraY, double cameraZ);
     void pollChunkSort();
+    void submitFrustumCull(const FrustumCuller& culler);
+    void pollFrustumCull();
+    void invalidateFrustumCull() noexcept;
 
     void expectFramePhase(FramePhase required) const;
     void advanceFramePhase(FramePhase next) noexcept;
@@ -262,10 +267,14 @@ private:
     // has no destruction-order relationship with chunks_; chunkArrayEpoch_ is
     // bumped whenever chunks_ is rebuilt so stale results are discarded.
     world::AsyncChunkSorter chunkSorter_ {};
+    // Dedicated camera/frustum worker. It receives copied boxes and frustum
+    // planes, then the main thread publishes the resulting inFrustum flags.
+    world::AsyncFrustumCuller frustumCuller_ {};
     // Separate instance prioritizing the dirty backlog for compileChunks, so
     // a long draw-order sort can't starve mesh scheduling (and vice versa).
     world::AsyncChunkSorter dirtySorter_ {};
     std::uint64_t chunkArrayEpoch_ = 0;
+    std::uint64_t frustumCullRequestEpoch_ = 0;
 
     std::vector<net::minecraft::client::render::chunk::ChunkBuilder*> chunksInCurrentLayer_ {};
 

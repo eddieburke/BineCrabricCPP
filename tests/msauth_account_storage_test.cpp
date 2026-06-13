@@ -78,6 +78,33 @@ TEST_CASE("launcher accounts json picks the active msa account")
     CHECK(imported->refreshToken == "fresh-refresh");
 }
 
+TEST_CASE("prism account refresh token under msa.token is imported")
+{
+    // Real Prism/PolyMC layout: Minecraft token in ygg.token, MSA refresh token in msa.token.refresh_token.
+    const auto imported = msauth::importAccountFromJsonText(R"({
+        "accounts": [
+            {
+                "active": true,
+                "type": "MSA",
+                "profile": { "name": "Steve", "id": "profile-123" },
+                "ygg": { "token": "mc-access-token" },
+                "msa": {
+                    "token": {
+                        "access_token": "msa-access",
+                        "refresh_token": "msa-refresh"
+                    }
+                },
+                "msa-client-id": "client-123"
+            }
+        ]
+    })");
+
+    REQUIRE(imported.has_value());
+    CHECK(imported->accessToken == "mc-access-token");
+    CHECK(imported->refreshToken == "msa-refresh");
+    CHECK(imported->restorable());
+}
+
 TEST_CASE("saved msauth account protects the refresh token and omits the access token")
 {
     const std::filesystem::path runDirectory = std::filesystem::temp_directory_path() / "msauth-account-storage-test";

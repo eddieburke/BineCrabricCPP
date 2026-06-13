@@ -5,13 +5,10 @@
 #include "msauth/MicrosoftAuth.hpp"
 #include "msauth/SessionRestore.hpp"
 #include "net/minecraft/client/Minecraft.hpp"
-#include "net/minecraft/client/gui/layout/ScreenLayout.hpp"
 #include "net/minecraft/client/gui/widget/ActionButtonWidget.hpp"
 #include "net/minecraft/client/util/MinecraftDirectories.hpp"
 
 namespace msauth {
-
-namespace layout = net::minecraft::client::gui::layout;
 
 LoginScreen::LoginScreen(net::minecraft::client::gui::screen::ScreenFactory returnFactory)
     : returnFactory_(std::move(returnFactory))
@@ -38,13 +35,23 @@ void LoginScreen::init()
         errorMessage_.clear();
     }
 
-    importButton_ = &addCenteredActionButton(layout::menuRowY(height(), 4), "Import account JSON...", [this] {
+    importButton_ = &addCenteredActionButton(height() / 4 + 78, "Import account JSON...", [this] {
         tryImportJsonFile();
     });
     importButton_->active = !importRunning_.load();
-    addCenteredActionButton(layout::menuRowY(height(), 5), "Cancel", [this] {
+    addCenteredActionButton(height() / 4 + 102, "Cancel", [this] {
         navigateTo(returnFactory_);
     });
+}
+
+void LoginScreen::showImportError(std::string line2, std::string error)
+{
+    statusLine1_ = "Could not import account";
+    statusLine2_ = std::move(line2);
+    errorMessage_ = std::move(error);
+    if (importButton_ != nullptr) {
+        importButton_->active = true;
+    }
 }
 
 void LoginScreen::tryImportJsonFile()
@@ -110,17 +117,16 @@ void LoginScreen::mergePendingImport()
     }
 
     if (!imported.has_value()) {
-        statusLine1_ = "Could not import account";
-        statusLine2_ = pathLabel;
-        errorMessage_ = "Pick a Prism/MultiMC accounts.json or msauth-account.json file.";
-        if (importButton_ != nullptr) {
-            importButton_->active = true;
-        }
+        showImportError(pathLabel, "Pick a Prism/MultiMC accounts.json or msauth-account.json file.");
         return;
     }
 
     applyAccount(*imported, minecraft()->session);
-    (void)saveAccount(net::minecraft::client::util::MinecraftDirectories::getRunDirectory(), *imported);
+    if (!saveAccount(net::minecraft::client::util::MinecraftDirectories::getRunDirectory(), *imported)) {
+        // Signed in for this session, but no refresh token to persist for next launch.
+        showImportError(imported->profileName, "Signed in, but no refresh token to save. Re-export from Prism while signed in.");
+        return;
+    }
     navigateTo(returnFactory_);
 }
 
@@ -136,13 +142,15 @@ void LoginScreen::render(int mouseX, int mouseY, float tickDelta)
         return;
     }
 
-    drawCenteredTextWithShadow(*textRenderer(), "Microsoft Account", width() / 2, 40, 0xFFFFFF);
-    drawCenteredTextWithShadow(*textRenderer(), statusLine1_, width() / 2, 70, 0xFFFFFF);
+    const int centerX = width() / 2;
+    const int top = height() / 4;
+    drawCenteredTextWithShadow(*textRenderer(), "Microsoft Account", centerX, top - 30, 0xFFFFFF);
+    drawCenteredTextWithShadow(*textRenderer(), statusLine1_, centerX, top + 8, 0xFFFFFF);
     if (!statusLine2_.empty()) {
-        drawCenteredTextWithShadow(*textRenderer(), statusLine2_, width() / 2, 84, 0xA0A0A0);
+        drawCenteredTextWithShadow(*textRenderer(), statusLine2_, centerX, top + 22, 0xA0A0A0);
     }
     if (!errorMessage_.empty()) {
-        drawCenteredTextWithShadow(*textRenderer(), errorMessage_, width() / 2, 106, 0xFF5555);
+        drawCenteredTextWithShadow(*textRenderer(), errorMessage_, centerX, top + 48, 0xFF5555);
     }
 
     Screen::render(mouseX, mouseY, tickDelta);

@@ -59,7 +59,8 @@ public:
 
     Chunk& getChunk(int chunkX, int chunkZ) override
     {
-        random_.setSeed(static_cast<std::uint64_t>(static_cast<std::int64_t>(chunkX) * 341873128712LL + static_cast<std::int64_t>(chunkZ) * 132897987541LL));
+        random_.setSeed(static_cast<std::uint64_t>(static_cast<std::int64_t>(chunkX)) * 341873128712ULL
+            + static_cast<std::uint64_t>(static_cast<std::int64_t>(chunkZ)) * 132897987541ULL);
         Chunk chunk(world_, chunkX, chunkZ);
         BiomeSource* biomeSource = activeBiomeSource();
         biomes_ = biomeSource->getBiomesInArea(biomes_, chunkX * 16, chunkZ * 16, 16, 16);
@@ -85,63 +86,90 @@ public:
         const int blockOriginZ = chunkZ * 16;
         BiomeSource* biomeSource = activeBiomeSource();
         const BiomeInfo biome = biomeSource->getBiome(blockOriginX + 16, blockOriginZ + 16);
-        random_.setSeed(seed_);
+        const std::uint64_t worldSeed = world_ != nullptr ? world_->getSeed() : seed_;
+        random_.setSeed(worldSeed);
         const std::int64_t l = random_.nextLong() / 2LL * 2LL + 1LL;
         const std::int64_t l2 = random_.nextLong() / 2LL * 2LL + 1LL;
-        random_.setSeed(static_cast<std::uint64_t>(
-            (static_cast<std::int64_t>(chunkX) * l + static_cast<std::int64_t>(chunkZ) * l2)
-            ^ static_cast<std::int64_t>(seed_)));
+        const std::uint64_t chunkSeed =
+            (static_cast<std::uint64_t>(static_cast<std::int64_t>(chunkX)) * static_cast<std::uint64_t>(l)
+                + static_cast<std::uint64_t>(static_cast<std::int64_t>(chunkZ)) * static_cast<std::uint64_t>(l2))
+            ^ worldSeed;
+        random_.setSeed(chunkSeed);
 
         if (random_.nextInt(4) == 0) {
-            LakeFeature(Block::WATER->id).generate(world_, random_, blockOriginX + random_.nextInt(16) + 8, random_.nextInt(128),
-                blockOriginZ + random_.nextInt(16) + 8);
+            const int featureX = blockOriginX + random_.nextInt(16) + 8;
+            const int featureY = random_.nextInt(128);
+            const int featureZ = blockOriginZ + random_.nextInt(16) + 8;
+            LakeFeature(Block::WATER->id).generate(world_, random_, featureX, featureY, featureZ);
         }
         if (random_.nextInt(8) == 0) {
+            const int featureX = blockOriginX + random_.nextInt(16) + 8;
             const int lakeY = random_.nextInt(random_.nextInt(120) + 8);
+            const int featureZ = blockOriginZ + random_.nextInt(16) + 8;
             if (lakeY < 64 || random_.nextInt(10) == 0) {
-                LakeFeature(Block::LAVA->id).generate(world_, random_, blockOriginX + random_.nextInt(16) + 8, lakeY,
-                    blockOriginZ + random_.nextInt(16) + 8);
+                LakeFeature(Block::LAVA->id).generate(world_, random_, featureX, lakeY, featureZ);
             }
         }
         for (int i = 0; i < 8; ++i) {
-            DungeonFeature().generate(world_, random_, blockOriginX + random_.nextInt(16) + 8, random_.nextInt(128),
-                blockOriginZ + random_.nextInt(16) + 8);
+            const int featureX = blockOriginX + random_.nextInt(16) + 8;
+            const int featureY = random_.nextInt(128);
+            const int featureZ = blockOriginZ + random_.nextInt(16) + 8;
+            DungeonFeature().generate(world_, random_, featureX, featureY, featureZ);
         }
         for (int i = 0; i < 10; ++i) {
-            ClayOreFeature(32).generate(world_, random_, blockOriginX + random_.nextInt(16), random_.nextInt(128),
-                blockOriginZ + random_.nextInt(16));
+            const int featureX = blockOriginX + random_.nextInt(16);
+            const int featureY = random_.nextInt(128);
+            const int featureZ = blockOriginZ + random_.nextInt(16);
+            ClayOreFeature(32).generate(world_, random_, featureX, featureY, featureZ);
         }
         for (int i = 0; i < 20; ++i) {
-            OreFeature(Block::DIRT->id, 32).generate(world_, random_, blockOriginX + random_.nextInt(16), random_.nextInt(128),
-                blockOriginZ + random_.nextInt(16));
+            const int featureX = blockOriginX + random_.nextInt(16);
+            const int featureY = random_.nextInt(128);
+            const int featureZ = blockOriginZ + random_.nextInt(16);
+            OreFeature(Block::DIRT->id, 32).generate(world_, random_, featureX, featureY, featureZ);
         }
         for (int i = 0; i < 10; ++i) {
-            OreFeature(Block::GRAVEL->id, 32).generate(world_, random_, blockOriginX + random_.nextInt(16), random_.nextInt(128),
-                blockOriginZ + random_.nextInt(16));
+            const int featureX = blockOriginX + random_.nextInt(16);
+            const int featureY = random_.nextInt(128);
+            const int featureZ = blockOriginZ + random_.nextInt(16);
+            OreFeature(Block::GRAVEL->id, 32).generate(world_, random_, featureX, featureY, featureZ);
         }
         for (int i = 0; i < 20; ++i) {
-            OreFeature(Block::COAL_ORE->id, 16).generate(world_, random_, blockOriginX + random_.nextInt(16), random_.nextInt(128),
-                blockOriginZ + random_.nextInt(16));
+            const int featureX = blockOriginX + random_.nextInt(16);
+            const int featureY = random_.nextInt(128);
+            const int featureZ = blockOriginZ + random_.nextInt(16);
+            OreFeature(Block::COAL_ORE->id, 16).generate(world_, random_, featureX, featureY, featureZ);
         }
         for (int i = 0; i < 20; ++i) {
-            OreFeature(Block::IRON_ORE->id, 8).generate(world_, random_, blockOriginX + random_.nextInt(16), random_.nextInt(64),
-                blockOriginZ + random_.nextInt(16));
+            const int featureX = blockOriginX + random_.nextInt(16);
+            const int featureY = random_.nextInt(64);
+            const int featureZ = blockOriginZ + random_.nextInt(16);
+            OreFeature(Block::IRON_ORE->id, 8).generate(world_, random_, featureX, featureY, featureZ);
         }
         for (int i = 0; i < 2; ++i) {
-            OreFeature(Block::GOLD_ORE->id, 8).generate(world_, random_, blockOriginX + random_.nextInt(16), random_.nextInt(32),
-                blockOriginZ + random_.nextInt(16));
+            const int featureX = blockOriginX + random_.nextInt(16);
+            const int featureY = random_.nextInt(32);
+            const int featureZ = blockOriginZ + random_.nextInt(16);
+            OreFeature(Block::GOLD_ORE->id, 8).generate(world_, random_, featureX, featureY, featureZ);
         }
         for (int i = 0; i < 8; ++i) {
-            OreFeature(Block::REDSTONE_ORE->id, 7).generate(world_, random_, blockOriginX + random_.nextInt(16), random_.nextInt(16),
-                blockOriginZ + random_.nextInt(16));
+            const int featureX = blockOriginX + random_.nextInt(16);
+            const int featureY = random_.nextInt(16);
+            const int featureZ = blockOriginZ + random_.nextInt(16);
+            OreFeature(Block::REDSTONE_ORE->id, 7).generate(world_, random_, featureX, featureY, featureZ);
         }
         for (int i = 0; i < 1; ++i) {
-            OreFeature(Block::DIAMOND_ORE->id, 7).generate(world_, random_, blockOriginX + random_.nextInt(16), random_.nextInt(16),
-                blockOriginZ + random_.nextInt(16));
+            const int featureX = blockOriginX + random_.nextInt(16);
+            const int featureY = random_.nextInt(16);
+            const int featureZ = blockOriginZ + random_.nextInt(16);
+            OreFeature(Block::DIAMOND_ORE->id, 7).generate(world_, random_, featureX, featureY, featureZ);
         }
         for (int i = 0; i < 1; ++i) {
-            OreFeature(Block::LAPIS_ORE->id, 6).generate(world_, random_, blockOriginX + random_.nextInt(16),
-                random_.nextInt(16) + random_.nextInt(16), blockOriginZ + random_.nextInt(16));
+            const int featureX = blockOriginX + random_.nextInt(16);
+            const int firstY = random_.nextInt(16);
+            const int featureY = firstY + random_.nextInt(16);
+            const int featureZ = blockOriginZ + random_.nextInt(16);
+            OreFeature(Block::LAPIS_ORE->id, 6).generate(world_, random_, featureX, featureY, featureZ);
         }
 
         constexpr double forestScale = 0.5;
@@ -168,44 +196,63 @@ public:
             const int treeZ = blockOriginZ + random_.nextInt(16) + 8;
             std::unique_ptr<Feature> feature = getRandomTreeFeature(biome.id, random_);
             feature->prepare(1.0, 1.0, 1.0);
-            feature->generate(world_, random_, treeX, world_->getTopY(treeX, treeZ), treeZ);
+            const int treeY = world_->getTopY(treeX, treeZ);
+            feature->generate(world_, random_, treeX, treeY, treeZ);
         }
         for (int i = 0; i < 2; ++i) {
-            PlantPatchFeature(Block::DANDELION->id).generate(world_, random_, blockOriginX + random_.nextInt(16) + 8, random_.nextInt(128),
-                blockOriginZ + random_.nextInt(16) + 8);
+            const int featureX = blockOriginX + random_.nextInt(16) + 8;
+            const int featureY = random_.nextInt(128);
+            const int featureZ = blockOriginZ + random_.nextInt(16) + 8;
+            PlantPatchFeature(Block::DANDELION->id).generate(world_, random_, featureX, featureY, featureZ);
         }
         if (random_.nextInt(2) == 0) {
-            PlantPatchFeature(Block::ROSE->id).generate(world_, random_, blockOriginX + random_.nextInt(16) + 8, random_.nextInt(128),
-                blockOriginZ + random_.nextInt(16) + 8);
+            const int featureX = blockOriginX + random_.nextInt(16) + 8;
+            const int featureY = random_.nextInt(128);
+            const int featureZ = blockOriginZ + random_.nextInt(16) + 8;
+            PlantPatchFeature(Block::ROSE->id).generate(world_, random_, featureX, featureY, featureZ);
         }
         if (random_.nextInt(4) == 0) {
-            PlantPatchFeature(Block::BROWN_MUSHROOM->id).generate(world_, random_, blockOriginX + random_.nextInt(16) + 8, random_.nextInt(128),
-                blockOriginZ + random_.nextInt(16) + 8);
+            const int featureX = blockOriginX + random_.nextInt(16) + 8;
+            const int featureY = random_.nextInt(128);
+            const int featureZ = blockOriginZ + random_.nextInt(16) + 8;
+            PlantPatchFeature(Block::BROWN_MUSHROOM->id).generate(world_, random_, featureX, featureY, featureZ);
         }
         if (random_.nextInt(8) == 0) {
-            PlantPatchFeature(Block::RED_MUSHROOM->id).generate(world_, random_, blockOriginX + random_.nextInt(16) + 8, random_.nextInt(128),
-                blockOriginZ + random_.nextInt(16) + 8);
+            const int featureX = blockOriginX + random_.nextInt(16) + 8;
+            const int featureY = random_.nextInt(128);
+            const int featureZ = blockOriginZ + random_.nextInt(16) + 8;
+            PlantPatchFeature(Block::RED_MUSHROOM->id).generate(world_, random_, featureX, featureY, featureZ);
         }
         for (int i = 0; i < 10; ++i) {
-            SugarCanePatchFeature().generate(world_, random_, blockOriginX + random_.nextInt(16) + 8, random_.nextInt(128),
-                blockOriginZ + random_.nextInt(16) + 8);
+            const int featureX = blockOriginX + random_.nextInt(16) + 8;
+            const int featureY = random_.nextInt(128);
+            const int featureZ = blockOriginZ + random_.nextInt(16) + 8;
+            SugarCanePatchFeature().generate(world_, random_, featureX, featureY, featureZ);
         }
         if (random_.nextInt(32) == 0) {
-            PumpkinPatchFeature().generate(world_, random_, blockOriginX + random_.nextInt(16) + 8, random_.nextInt(128),
-                blockOriginZ + random_.nextInt(16) + 8);
+            const int featureX = blockOriginX + random_.nextInt(16) + 8;
+            const int featureY = random_.nextInt(128);
+            const int featureZ = blockOriginZ + random_.nextInt(16) + 8;
+            PumpkinPatchFeature().generate(world_, random_, featureX, featureY, featureZ);
         }
         int cactusPatches = biome.id == BiomeId::Desert ? 10 : 0;
         for (int i = 0; i < cactusPatches; ++i) {
-            CactusPatchFeature().generate(world_, random_, blockOriginX + random_.nextInt(16) + 8, random_.nextInt(128),
-                blockOriginZ + random_.nextInt(16) + 8);
+            const int featureX = blockOriginX + random_.nextInt(16) + 8;
+            const int featureY = random_.nextInt(128);
+            const int featureZ = blockOriginZ + random_.nextInt(16) + 8;
+            CactusPatchFeature().generate(world_, random_, featureX, featureY, featureZ);
         }
         for (int i = 0; i < 50; ++i) {
-            SpringFeature(Block::FLOWING_WATER->id).generate(world_, random_, blockOriginX + random_.nextInt(16) + 8,
-                random_.nextInt(random_.nextInt(120) + 8), blockOriginZ + random_.nextInt(16) + 8);
+            const int featureX = blockOriginX + random_.nextInt(16) + 8;
+            const int featureY = random_.nextInt(random_.nextInt(120) + 8);
+            const int featureZ = blockOriginZ + random_.nextInt(16) + 8;
+            SpringFeature(Block::FLOWING_WATER->id).generate(world_, random_, featureX, featureY, featureZ);
         }
         for (int i = 0; i < 20; ++i) {
-            SpringFeature(Block::FLOWING_LAVA->id).generate(world_, random_, blockOriginX + random_.nextInt(16) + 8,
-                random_.nextInt(random_.nextInt(random_.nextInt(112) + 8) + 8), blockOriginZ + random_.nextInt(16) + 8);
+            const int featureX = blockOriginX + random_.nextInt(16) + 8;
+            const int featureY = random_.nextInt(random_.nextInt(random_.nextInt(112) + 8) + 8);
+            const int featureZ = blockOriginZ + random_.nextInt(16) + 8;
+            SpringFeature(Block::FLOWING_LAVA->id).generate(world_, random_, featureX, featureY, featureZ);
         }
 
         decorateTemperatures_ = biomeSource->create(decorateTemperatures_, blockOriginX + 8, blockOriginZ + 8, 16, 16);

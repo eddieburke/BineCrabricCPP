@@ -13,9 +13,11 @@ public:
     bool generate(World* world, JavaRandom& random, int x, int y, int z) override
     {
         for (int i = 0; i < 20; ++i) {
-            const int nx = x + random.nextInt(4) - random.nextInt(4);
+            const int nxOffset = random.nextInt(4);
+            const int nx = x + nxOffset - random.nextInt(4);
             const int ny = y;
-            const int nz = z + random.nextInt(4) - random.nextInt(4);
+            const int nzOffset = random.nextInt(4);
+            const int nz = z + nzOffset - random.nextInt(4);
             if (!world->isAir(nx, ny, nz)
                 || (&world->getMaterial(nx - 1, ny - 1, nz) != &block::material::Material::WATER
                     && &world->getMaterial(nx + 1, ny - 1, nz) != &block::material::Material::WATER

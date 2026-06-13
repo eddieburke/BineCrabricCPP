@@ -168,7 +168,11 @@ void ChunkBuilder::setPosition(int newX, int newY, int newZ)
 
 void ChunkBuilder::buildMesh(ChunkMeshJob& job)
 {
-    if (!job.captureSnapshot() || job.snapshot == nullptr) {
+    // The snapshot is captured on the main thread before dispatch (WorldRendererCore
+    // enqueueMeshJob) so the memcpy of live chunk blocks/light cannot race main-thread
+    // writes. Do NOT capture here on the worker. A null snapshot means a buggy enqueue
+    // path: fail so the job reschedules and gets captured on main next frame.
+    if (job.snapshot == nullptr) {
         job.failed = true;
         return;
     }

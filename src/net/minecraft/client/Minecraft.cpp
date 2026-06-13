@@ -4,7 +4,7 @@
 #include "net/minecraft/client/debug/ClientProfilerOverlay.hpp"
 #include "net/minecraft/client/input/InputSystem.hpp"
 #include "net/minecraft/client/input/Keys.hpp"
-#include "net/minecraft/client/core/ClientNetworkBridge.hpp"
+#include "net/minecraft/client/multiplayer/ClientNetworkBridge.hpp"
 #include "net/minecraft/client/lifecycle/ClientInitializer.hpp"
 #include "net/minecraft/client/lifecycle/ClientLaunch.hpp"
 #include "net/minecraft/client/lifecycle/ClientShutdown.hpp"
@@ -476,11 +476,11 @@ void Minecraft::run()
                 // Free network bridges retired last iteration, then retire the active one once it
                 // has disconnected. Both happen here (no tick on the stack) so a handler whose
                 // tick() requested teardown is destroyed only after that stack has unwound.
-                worldSession_.flushRetiredNetwork();
-                if (core::ClientNetworkBridge* bridge = worldSession_.networkBridge()) {
+                multiplayerSession_.flushRetired();
+                if (multiplayer::ClientNetworkBridge* bridge = multiplayerSession_.bridge()) {
                     network::ClientNetworkHandler* handler = bridge->handler();
                     if (handler == nullptr || handler->disconnected) {
-                        worldSession_.retireNetworkBridge();
+                        multiplayerSession_.retireBridge();
                     }
                 }
                 if (applet != nullptr && !applet->isActive()) {

@@ -47,7 +47,8 @@ public:
 
     Chunk& getChunk(int chunkX, int chunkZ) override
     {
-        random_.setSeed(static_cast<std::uint64_t>(static_cast<std::int64_t>(chunkX) * 341873128712LL + static_cast<std::int64_t>(chunkZ) * 132897987541LL));
+        random_.setSeed(static_cast<std::uint64_t>(static_cast<std::int64_t>(chunkX)) * 341873128712ULL
+            + static_cast<std::uint64_t>(static_cast<std::int64_t>(chunkZ)) * 132897987541ULL);
         Chunk chunk(world_, chunkX, chunkZ);
         buildTerrain(chunkX, chunkZ, chunk);
         buildSurfaces(chunkX, chunkZ, chunk);
@@ -70,30 +71,42 @@ public:
         const int blockOriginX = chunkX * 16;
         const int blockOriginZ = chunkZ * 16;
         for (int i = 0; i < 8; ++i) {
-            NetherLavaSpringFeature(Block::FLOWING_LAVA->id).generate(world_, random_, blockOriginX + random_.nextInt(16) + 8,
-                random_.nextInt(120) + 4, blockOriginZ + random_.nextInt(16) + 8);
+            const int featureX = blockOriginX + random_.nextInt(16) + 8;
+            const int featureY = random_.nextInt(120) + 4;
+            const int featureZ = blockOriginZ + random_.nextInt(16) + 8;
+            NetherLavaSpringFeature(Block::FLOWING_LAVA->id).generate(world_, random_, featureX, featureY, featureZ);
         }
         const int firePatches = random_.nextInt(random_.nextInt(10) + 1) + 1;
         for (int i = 0; i < firePatches; ++i) {
-            NetherFirePatchFeature().generate(world_, random_, blockOriginX + random_.nextInt(16) + 8, random_.nextInt(120) + 4,
-                blockOriginZ + random_.nextInt(16) + 8);
+            const int featureX = blockOriginX + random_.nextInt(16) + 8;
+            const int featureY = random_.nextInt(120) + 4;
+            const int featureZ = blockOriginZ + random_.nextInt(16) + 8;
+            NetherFirePatchFeature().generate(world_, random_, featureX, featureY, featureZ);
         }
         const int glowstoneClusters = random_.nextInt(random_.nextInt(10) + 1);
         for (int i = 0; i < glowstoneClusters; ++i) {
-            GlowstoneClusterFeature().generate(world_, random_, blockOriginX + random_.nextInt(16) + 8, random_.nextInt(120) + 4,
-                blockOriginZ + random_.nextInt(16) + 8);
+            const int featureX = blockOriginX + random_.nextInt(16) + 8;
+            const int featureY = random_.nextInt(120) + 4;
+            const int featureZ = blockOriginZ + random_.nextInt(16) + 8;
+            GlowstoneClusterFeature().generate(world_, random_, featureX, featureY, featureZ);
         }
         for (int i = 0; i < 10; ++i) {
-            GlowstoneClusterRareFeature().generate(world_, random_, blockOriginX + random_.nextInt(16) + 8, random_.nextInt(128),
-                blockOriginZ + random_.nextInt(16) + 8);
+            const int featureX = blockOriginX + random_.nextInt(16) + 8;
+            const int featureY = random_.nextInt(128);
+            const int featureZ = blockOriginZ + random_.nextInt(16) + 8;
+            GlowstoneClusterRareFeature().generate(world_, random_, featureX, featureY, featureZ);
         }
         if (random_.nextInt(1) == 0) {
-            PlantPatchFeature(Block::BROWN_MUSHROOM->id).generate(world_, random_, blockOriginX + random_.nextInt(16) + 8,
-                random_.nextInt(128), blockOriginZ + random_.nextInt(16) + 8);
+            const int featureX = blockOriginX + random_.nextInt(16) + 8;
+            const int featureY = random_.nextInt(128);
+            const int featureZ = blockOriginZ + random_.nextInt(16) + 8;
+            PlantPatchFeature(Block::BROWN_MUSHROOM->id).generate(world_, random_, featureX, featureY, featureZ);
         }
         if (random_.nextInt(1) == 0) {
-            PlantPatchFeature(Block::RED_MUSHROOM->id).generate(world_, random_, blockOriginX + random_.nextInt(16) + 8,
-                random_.nextInt(128), blockOriginZ + random_.nextInt(16) + 8);
+            const int featureX = blockOriginX + random_.nextInt(16) + 8;
+            const int featureY = random_.nextInt(128);
+            const int featureZ = blockOriginZ + random_.nextInt(16) + 8;
+            PlantPatchFeature(Block::RED_MUSHROOM->id).generate(world_, random_, featureX, featureY, featureZ);
         }
         block::FallingBlock::fallInstantly = false;
     }

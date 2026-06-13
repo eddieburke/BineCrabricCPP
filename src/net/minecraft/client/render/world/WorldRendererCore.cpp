@@ -147,6 +147,15 @@ bool WorldRendererCore::compileChunks(WorldRenderer& worldRenderer, LivingEntity
             // retried once the async loader publishes its neighbors.
             return;
         }
+        // Copy the live chunk data into the snapshot HERE, on the main thread. The render
+        // pins only stop the chunk being freed; they do not stop the main thread writing its
+        // blocks/meta/light (packet chunk data, block updates, sky-light heightmap). Doing the
+        // memcpy on a worker tears against those writes and yields corrupt/empty meshes
+        // (chunks intermittently not rendering). The worker then only tessellates the copy.
+        if (!job->captureSnapshot()) {
+            // Capture failed; chunk stays in dirtyChunks_ (not yet erased) and retries.
+            return;
+        }
         chunk->meshJobInFlight = true;
         worldRenderer.dirtyChunks_.erase(chunk);
         worldRenderer.meshScheduler_.enqueue(std::move(job), priority);
@@ -177,6 +186,11 @@ bool WorldRendererCore::compileChunks(WorldRenderer& worldRenderer, LivingEntity
             auto job = chunk::ChunkMeshJob::capture(*chunk, resolvedOpts, fancyGraphics);
             if (job == nullptr) {
                 // Region not resident yet; retry once neighbors publish.
+                worldRenderer.nearDirtyChunks_.push_back(chunk);
+                continue;
+            }
+            // Snapshot on the main thread — see enqueueMeshJob above.
+            if (!job->captureSnapshot()) {
                 worldRenderer.nearDirtyChunks_.push_back(chunk);
                 continue;
             }

@@ -131,6 +131,20 @@ std::optional<MicrosoftAccount> parseAccountSection(const std::string& section)
     if (!refreshToken.has_value()) {
         refreshToken = json::stringField(section, "refresh_token");
     }
+    if (!refreshToken.has_value()) {
+        // Prism/PolyMC/MultiMC serialize the MSA token block (tokenToJSON) under "msa":
+        //   "msa": { "token": "<msa access token>", "refresh_token": "<refresh>", ... }
+        // "token" is the access-token STRING, and refresh_token is its SIBLING — not nested
+        // beneath it. Read the sibling; fall back to the nested form only for safety.
+        if (const std::optional<std::string> msa = json::objectField(section, "msa")) {
+            refreshToken = json::stringField(*msa, "refresh_token");
+            if (!refreshToken.has_value()) {
+                if (const std::optional<std::string> token = json::objectField(*msa, "token")) {
+                    refreshToken = json::stringField(*token, "refresh_token");
+                }
+            }
+        }
+    }
     const std::optional<std::string> clientId = json::stringField(section, "msa-client-id");
 
     if (!profileName.has_value() || !profileId.has_value() || !accessToken.has_value() || accessToken->empty()) {
@@ -196,9 +210,6 @@ std::optional<MicrosoftAccount> parseSavedAccountJson(const std::string& json)
     }
     if (!parsed->hasProfile()) {
         return std::nullopt;
-    }
-    if (parsed->clientId.empty()) {
-        parsed->clientId = loadMicrosoftClientId(std::filesystem::path {});
     }
     if (parsed->refreshToken.empty() && parsed->accessToken.empty()) {
         return std::nullopt;

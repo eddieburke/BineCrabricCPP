@@ -9,7 +9,7 @@
 #include <ws2tcpip.h>
 #endif
 
-#include "net/minecraft/client/core/ClientNetworkBridge.hpp"
+#include "net/minecraft/client/multiplayer/ClientNetworkBridge.hpp"
 
 #include "net/minecraft/client/Minecraft.hpp"
 #include "net/minecraft/client/core/WorldSession.hpp"
@@ -20,7 +20,7 @@
 #include <stdexcept>
 #include <utility>
 
-namespace net::minecraft::client::core {
+namespace net::minecraft::client::multiplayer {
 namespace {
 
 SOCKET openClientSocket(const std::string& host, int port, std::string& errorOut)
@@ -73,14 +73,14 @@ SOCKET openClientSocket(const std::string& host, int port, std::string& errorOut
 
 } // namespace
 
-ClientNetworkBridge::ClientNetworkBridge(WorldSession* worldSession) noexcept
+ClientNetworkBridge::ClientNetworkBridge(core::WorldSession* worldSession) noexcept
     : worldSession_(worldSession)
 {
 }
 
 ClientNetworkBridge::~ClientNetworkBridge() = default;
 
-void ClientNetworkBridge::setWorldSession(WorldSession* worldSession) noexcept
+void ClientNetworkBridge::setWorldSession(core::WorldSession* worldSession) noexcept
 {
     worldSession_ = worldSession;
 }
@@ -155,4 +155,4 @@ bool ClientNetworkBridge::isConnected() const noexcept
     return connection_ != nullptr && connection_->isOpen() && handler_ != nullptr && !handler_->disconnected;
 }
 
-} // namespace net::minecraft::client::core
+} // namespace net::minecraft::client::multiplayer

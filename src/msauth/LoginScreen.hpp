@@ -24,6 +24,7 @@ public:
 private:
     void tryImportJsonFile();
     void mergePendingImport();
+    void showImportError(std::string line2, std::string error);
 
     net::minecraft::client::gui::screen::ScreenFactory returnFactory_;
     std::string statusLine1_;
