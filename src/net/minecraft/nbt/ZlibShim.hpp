@@ -51,6 +51,7 @@ constexpr int Z_BUF_ERROR = -5;
 constexpr int Z_VERSION_ERROR = -6;
 
 constexpr int Z_DEFLATED = 8;
+constexpr int Z_DEFAULT_COMPRESSION = -1;
 constexpr int Z_BEST_COMPRESSION = 9;
 constexpr int Z_DEFAULT_STRATEGY = 0;
 

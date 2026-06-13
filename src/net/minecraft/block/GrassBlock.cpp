@@ -47,7 +47,7 @@ int GrassBlock::getColorMultiplier(const BlockView* blockView, int x, int /*y*/,
     if (biomeSource == nullptr) {
         return 0xFFFFFF;
     }
-    std::vector<net::minecraft::BiomeInfo> scratch;
+    std::vector<net::minecraft::Biome*> scratch;
     biomeSource->getBiomesInArea(scratch, x, z, 1, 1);
     const auto& temperatureMap = biomeSource->temperatureMap();
     const auto& downfallMap = biomeSource->downfallMap();

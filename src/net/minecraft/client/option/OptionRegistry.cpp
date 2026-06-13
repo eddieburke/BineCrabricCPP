@@ -54,11 +54,13 @@ void OptionRegistry::registerAll()
 
 std::span<const OptionSpec> OptionRegistry::all()
 {
+    registerAll();
     return gRegistry;
 }
 
 std::optional<std::size_t> OptionRegistry::indexOf(std::string_view persistKey)
 {
+    registerAll();
     const auto it = gKeyIndex.find(persistKey);
     if (it == gKeyIndex.end()) {
         return std::nullopt;
@@ -68,11 +70,13 @@ std::optional<std::size_t> OptionRegistry::indexOf(std::string_view persistKey)
 
 const OptionSpec& OptionRegistry::at(std::size_t index)
 {
+    registerAll();
     return gRegistry.at(index);
 }
 
 std::optional<const OptionSpec*> OptionRegistry::byKey(std::string_view persistKey)
 {
+    registerAll();
     const std::optional<std::size_t> idx = indexOf(persistKey);
     if (!idx) {
         return std::nullopt;

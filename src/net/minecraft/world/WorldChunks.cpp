@@ -4,7 +4,7 @@
 #include "net/minecraft/entity/LightningEntity.hpp"
 #include "net/minecraft/entity/player/PlayerEntity.hpp"
 #include "net/minecraft/mod/GameHooks.hpp"
-#include "net/minecraft/world/biome/Biomes.hpp"
+#include "net/minecraft/world/biome/Biome.hpp"
 #include "net/minecraft/world/chunk/Chunk.hpp"
 #include "net/minecraft/world/chunk/ChunkSource.hpp"
 #include "net/minecraft/world/chunk/LegacyChunkCache.hpp"
@@ -232,12 +232,12 @@ int World::getTopY(int x, int z) const
     return chunk->getHeight(mod_16(x), mod_16(z));
 }
 
-const BiomeDefinition& World::getBiomeDefinition(int x, int z) const
+const Biome& World::getBiome(int x, int z) const
 {
     if (BiomeSource* biomeSource = getBiomeSource(); biomeSource != nullptr) {
-        return Biomes::byInfo(biomeSource->getBiome(x, z));
+        return biomeSource->getBiome(x, z);
     }
-    return Biomes::byInfo(Biomes::getBiome(0.5, 0.5));
+    return Biome::getBiome(0.5, 0.5);
 }
 
 int World::getSpawnPositionValidityY(int x, int z)
@@ -347,7 +347,7 @@ double World::getTemperature(int x, int z) const
         // Java uses the raw sky-color temperature sampler here, not transformed biome climate.
         return biomeSource->getTemperature(x, z);
     }
-    return biomeSource_.getTemperature(x, z);
+    return 0.5;
 }
 
 double World::getDownfall(int x, int z) const
@@ -355,7 +355,7 @@ double World::getDownfall(int x, int z) const
     if (BiomeSource* biomeSource = getBiomeSource(); biomeSource != nullptr) {
         return biomeSource->sampleClimate(x, z).downfall;
     }
-    return biomeSource_.sampleClimate(x, z).downfall;
+    return 0.5;
 }
 std::vector<std::uint8_t> World::getChunkData(int x, int y, int z, int sizeX, int sizeY, int sizeZ)
 {
@@ -431,6 +431,13 @@ void World::populateChunkCacheReadyChunks()
 {
     if (auto* legacyCache = dynamic_cast<LegacyChunkCache*>(getChunkSource())) {
         legacyCache->populateReadyChunks();
+    }
+}
+
+void World::pumpChunkPublish()
+{
+    if (auto* legacyCache = dynamic_cast<LegacyChunkCache*>(getChunkSource())) {
+        legacyCache->pumpPublishFrame();
     }
 }
 
@@ -628,7 +635,7 @@ void World::manageChunkUpdatesAndEvents()
             const int worldX = localX + chunkOriginX;
             const int worldZ = localZ + chunkOriginZ;
             const int worldY = getTopSolidBlockY(worldX, worldZ);
-            if (getBiomeDefinition(worldX, worldZ).canSnow() && worldY >= 0
+            if (getBiome(worldX, worldZ).canSnow() && worldY >= 0
                 && worldY < Chunk::height && chunk.getLight(LightType::Block, localX, worldY, localZ) < 10) {
                 const int belowId = chunk.getBlockId(localX, worldY - 1, localZ);
                 const int currentId = chunk.getBlockId(localX, worldY, localZ);

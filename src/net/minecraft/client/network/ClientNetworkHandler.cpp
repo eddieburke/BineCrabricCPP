@@ -1,6 +1,7 @@
 #include "net/minecraft/client/network/ClientNetworkHandler.hpp"
 
 #include "msauth/SecretProtection.hpp"
+#include "msauth/SessionRestore.hpp"
 #include "net/minecraft/block/Block.hpp"
 #include "net/minecraft/block/entity/DispenserBlockEntity.hpp"
 #include "net/minecraft/block/entity/FurnaceBlockEntity.hpp"
@@ -31,6 +32,7 @@
 #include "net/minecraft/inventory/SimpleInventory.hpp"
 #include "net/minecraft/item/Item.hpp"
 #include "net/minecraft/item/ItemStack.hpp"
+#include "net/minecraft/item/MusicDiscItem.hpp"
 #include "net/minecraft/item/MapItem.hpp"
 #include "net/minecraft/item/map/MapState.hpp"
 #include "net/minecraft/network/Connection.hpp"
@@ -68,10 +70,8 @@ namespace {
 
 } // namespace
 
-ClientNetworkHandler::ClientNetworkHandler(client::Minecraft* minecraft, std::string address, int port)
-    : minecraft(minecraft),
-      address_(std::move(address)),
-      port_(port)
+ClientNetworkHandler::ClientNetworkHandler(client::Minecraft* minecraft)
+    : minecraft(minecraft)
 {
 }
 
@@ -214,6 +214,8 @@ void ClientNetworkHandler::onHandshake(const HandshakePacket& packet)
         }
         joinServerState_ = JoinServerState::Pending;
     }
+
+    msauth::tryApplySavedAccount(*minecraft);
 
     const client::util::Session session = minecraft->session;
     const std::string serverId = packet.name;
@@ -946,7 +948,93 @@ void ClientNetworkHandler::onWorldEvent(const WorldEventS2CPacket& packet)
     if (minecraft == nullptr || minecraft->world == nullptr) {
         return;
     }
-    minecraft->world->worldEvent(packet.eventId, packet.x, packet.y, packet.z, packet.data);
+    World* world = minecraft->world;
+    const int x = packet.x;
+    const int y = packet.y;
+    const int z = packet.z;
+    const int data = packet.data;
+    switch (packet.eventId) {
+    case 1001:
+        world->playSound(x, y, z, "random.click", 1.0f, 1.2f);
+        break;
+    case 1000:
+        world->playSound(x, y, z, "random.click", 1.0f, 1.0f);
+        break;
+    case 1002:
+        world->playSound(x, y, z, "random.bow", 1.0f, 1.2f);
+        break;
+    case 2001: {
+        const int blockId = data & 0xFF;
+        const int blockMeta = (data >> 8) & 0xFF;
+        if (blockId > 0 && blockId < Block::BLOCK_COUNT && Block::BLOCKS[static_cast<std::size_t>(blockId)] != nullptr) {
+            Block* block = Block::BLOCKS[static_cast<std::size_t>(blockId)];
+            BlockSoundGroup* group = block->soundGroup != nullptr ? block->soundGroup : &Block::DEFAULT_SOUND_GROUP;
+            world->playSound(
+                static_cast<double>(x) + 0.5,
+                static_cast<double>(y) + 0.5,
+                static_cast<double>(z) + 0.5,
+                group->getBreakSound(),
+                (group->getVolume() + 1.0f) / 2.0f,
+                group->getPitch() * 0.8f);
+        }
+        world->spawnBlockBreakParticles(x, y, z, blockId, blockMeta);
+        break;
+    }
+    case 1003: {
+        JavaRandom& random = world->random();
+        const char* sound = random.nextDouble() < 0.5 ? "random.door_open" : "random.door_close";
+        world->playSound(
+            static_cast<double>(x) + 0.5,
+            static_cast<double>(y) + 0.5,
+            static_cast<double>(z) + 0.5,
+            sound,
+            1.0f,
+            random.nextFloat() * 0.1f + 0.9f);
+        break;
+    }
+    case 1004: {
+        JavaRandom& random = world->random();
+        world->playSound(
+            static_cast<double>(x) + 0.5,
+            static_cast<double>(y) + 0.5,
+            static_cast<double>(z) + 0.5,
+            "random.fizz",
+            0.5f,
+            2.6f + (random.nextFloat() - random.nextFloat()) * 0.8f);
+        break;
+    }
+    case 1005:
+        if (data >= 0 && data < static_cast<int>(Item::ITEM_COUNT)) {
+            Item* item = Item::ITEMS[static_cast<std::size_t>(data)];
+            if (auto* disc = dynamic_cast<item::MusicDiscItem*>(item)) {
+                world->playStreaming(disc->sound, x, y, z);
+                break;
+            }
+        }
+        world->playStreaming("", x, y, z);
+        break;
+    case 2000: {
+        const int offsetX = data % 3 - 1;
+        const int offsetZ = data / 3 % 3 - 1;
+        JavaRandom& random = world->random();
+        const double baseX = static_cast<double>(x) + static_cast<double>(offsetX) * 0.6 + 0.5;
+        const double baseY = static_cast<double>(y) + 0.5;
+        const double baseZ = static_cast<double>(z) + static_cast<double>(offsetZ) * 0.6 + 0.5;
+        for (int i = 0; i < 10; ++i) {
+            const double speed = random.nextDouble() * 0.2 + 0.01;
+            const double px = baseX + static_cast<double>(offsetX) * 0.01 + (random.nextDouble() - 0.5) * offsetZ * 0.5;
+            const double py = baseY + (random.nextDouble() - 0.5) * 0.5;
+            const double pz = baseZ + static_cast<double>(offsetZ) * 0.01 + (random.nextDouble() - 0.5) * offsetX * 0.5;
+            const double vx = static_cast<double>(offsetX) * speed + random.nextGaussian() * 0.01;
+            const double vy = -0.03 + random.nextGaussian() * 0.01;
+            const double vz = static_cast<double>(offsetZ) * speed + random.nextGaussian() * 0.01;
+            world->addParticle("smoke", px, py, pz, vx, vy, vz);
+        }
+        break;
+    }
+    default:
+        break;
+    }
 }
 
 void ClientNetworkHandler::onIncreaseStat(const IncreaseStatS2CPacket& packet)

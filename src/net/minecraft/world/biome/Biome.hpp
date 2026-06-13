@@ -1,11 +1,16 @@
 #pragma once
 
-#include <algorithm>
-#include <cmath>
-#include <cstdint>
+#include "net/minecraft/world/biome/EntitySpawnGroup.hpp"
+#include "net/minecraft/util/math/Types.hpp"
+
+#include <memory>
+#include <string>
 #include <string_view>
+#include <vector>
 
 namespace net::minecraft {
+
+class Feature;
 
 enum class BiomeId {
     Rainforest,
@@ -23,110 +28,66 @@ enum class BiomeId {
     Sky,
 };
 
-struct BiomeInfo {
+inline constexpr int kBiomeCount = 13;
+inline constexpr std::uint8_t kBiomeDefaultTopBlockId = 2;
+inline constexpr std::uint8_t kBiomeDefaultSoilBlockId = 3;
+inline constexpr std::uint8_t kBiomeSandSurfaceBlockId = 12;
+
+// Faithful port of net.minecraft.world.biome.Biome (beta 1.7.3).
+class Biome {
+public:
+    Biome();
+
+    Biome& setName(std::string value) { name = std::move(value); return *this; }
+    Biome& setGrassColor(int value) { grassColor = value; return *this; }
+    Biome& setFoliageColor(int value) { foliageColor = value; return *this; }
+    Biome& enableSnow() { hasSnow = true; return *this; }
+    Biome& disableRain() { hasRain = false; return *this; }
+
+    [[nodiscard]] virtual std::unique_ptr<Feature> getRandomTreeFeature(JavaRandom& random) const;
+    [[nodiscard]] virtual int getSkyColor(float brightness) const;
+
+    [[nodiscard]] const std::vector<EntitySpawnGroup>& getSpawnableEntities(int group) const;
+    [[nodiscard]] bool canSnow() const noexcept { return hasSnow; }
+    [[nodiscard]] bool canRain() const noexcept { return hasRain && !hasSnow; }
+    [[nodiscard]] std::string_view wireName() const noexcept { return wireName_; }
+
+    static void init();
+
+    static Biome& rainforest();
+    static Biome& swampland();
+    static Biome& seasonalForest();
+    static Biome& forest();
+    static Biome& savanna();
+    static Biome& shrubland();
+    static Biome& taiga();
+    static Biome& desert();
+    static Biome& plains();
+    static Biome& iceDesert();
+    static Biome& tundra();
+    static Biome& hell();
+    static Biome& sky();
+
+    [[nodiscard]] static Biome& byId(BiomeId id);
+    [[nodiscard]] static Biome& getBiome(double temperature, double downfall);
+    [[nodiscard]] static Biome& locateBiome(float temperature, float downfall);
+
     BiomeId id = BiomeId::Plains;
-    std::string_view name = "Plains";
-    std::uint8_t topBlockId = 2;
-    std::uint8_t soilBlockId = 3;
+    std::string name = "Plains";
+    int grassColor = 0;
+    std::uint8_t topBlockId = kBiomeDefaultTopBlockId;
+    std::uint8_t soilBlockId = kBiomeDefaultSoilBlockId;
+    int foliageColor = 5169201;
 
-    [[nodiscard]] int getSkyColor(float f) const
-    {
-        if ((f /= 3.0f) < -1.0f) {
-            f = -1.0f;
-        }
-        if (f > 1.0f) {
-            f = 1.0f;
-        }
+protected:
+    std::vector<EntitySpawnGroup> spawnableMonsters_;
+    std::vector<EntitySpawnGroup> spawnablePassive_;
+    std::vector<EntitySpawnGroup> spawnableWaterCreatures_;
 
-        const float hue = 0.62222224f - f * 0.05f;
-        const float saturation = 0.5f + f * 0.1f;
-        const float brightness = 1.0f;
-
-        const float wrappedHue = hue - std::floor(hue);
-        const float h = wrappedHue * 6.0f;
-        const int sector = static_cast<int>(std::floor(h));
-        const float fraction = h - static_cast<float>(sector);
-        const float p = brightness * (1.0f - saturation);
-        const float q = brightness * (1.0f - saturation * fraction);
-        const float t = brightness * (1.0f - saturation * (1.0f - fraction));
-
-        float red = 0.0f;
-        float green = 0.0f;
-        float blue = 0.0f;
-        switch (sector) {
-        case 0:
-            red = brightness;
-            green = t;
-            blue = p;
-            break;
-        case 1:
-            red = q;
-            green = brightness;
-            blue = p;
-            break;
-        case 2:
-            red = p;
-            green = brightness;
-            blue = t;
-            break;
-        case 3:
-            red = p;
-            green = q;
-            blue = brightness;
-            break;
-        case 4:
-            red = t;
-            green = p;
-            blue = brightness;
-            break;
-        default:
-            red = brightness;
-            green = p;
-            blue = q;
-            break;
-        }
-
-        const int r = static_cast<int>(red * 255.0f) & 0xFF;
-        const int g = static_cast<int>(green * 255.0f) & 0xFF;
-        const int b = static_cast<int>(blue * 255.0f) & 0xFF;
-        return (r << 16) | (g << 8) | b;
-    }
+private:
+    bool hasSnow = false;
+    bool hasRain = true;
+    std::string_view wireName_ = "plains";
 };
-
-inline BiomeInfo locateBiome(double temperature, double downfall)
-{
-    downfall *= temperature;
-    if (temperature < 0.1) {
-        return {BiomeId::Tundra, "Tundra", 2, 3};
-    }
-    if (downfall < 0.2) {
-        if (temperature < 0.5) {
-            return {BiomeId::Tundra, "Tundra", 2, 3};
-        }
-        if (temperature < 0.95) {
-            return {BiomeId::Savanna, "Savanna", 2, 3};
-        }
-        return {BiomeId::Desert, "Desert", 12, 12};
-    }
-    if (downfall > 0.5 && temperature < 0.7) {
-        return {BiomeId::Swampland, "Swampland", 2, 3};
-    }
-    if (temperature < 0.5) {
-        return {BiomeId::Taiga, "Taiga", 2, 3};
-    }
-    if (temperature < 0.97) {
-        if (downfall < 0.35) {
-            return {BiomeId::Shrubland, "Shrubland", 2, 3};
-        }
-        return {BiomeId::Forest, "Forest", 2, 3};
-    }
-    if (downfall < 0.45) {
-        return {BiomeId::Plains, "Plains", 2, 3};
-    }
-    if (downfall < 0.9) {
-        return {BiomeId::SeasonalForest, "Seasonal Forest", 2, 3};
-    }
-    return {BiomeId::Rainforest, "Rainforest", 2, 3};
-}
 
 } // namespace net::minecraft

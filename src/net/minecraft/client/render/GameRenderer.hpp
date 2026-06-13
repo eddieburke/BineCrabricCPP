@@ -80,7 +80,6 @@ private:
     std::int64_t lastInactiveTime = 0;
     std::int64_t lastFrameTime = 0;
     JavaRandom random {};
-    int rainSoundCounter = 0;
     float lastViewBob = 0.0f;
     float viewBob = 0.0f;
 };

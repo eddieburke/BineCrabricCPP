@@ -22,6 +22,8 @@ private:
     float ticks_ = 0.0f;
     std::string splashText_ {};
     widget::ActionButtonWidget* multiplayerButton_ = nullptr;
+    widget::ActionButtonWidget* accountButton_ = nullptr;
+    bool accountSignedIn_ = false;
 };
 
 } // namespace net::minecraft::client::gui::screen

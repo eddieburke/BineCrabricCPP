@@ -1,6 +1,8 @@
 #pragma once
 
 // Root-tag file I/O (named compound, optional gzip).
+#include "net/minecraft/nbt/BinaryIO.hpp"
+#include "net/minecraft/nbt/Compression.hpp"
 #include "net/minecraft/nbt/Nbt.hpp"
 #include "net/minecraft/nbt/NbtCompound.hpp"
 
@@ -57,6 +59,12 @@ public:
     static void writeCompressed(const NbtCompound& tag, std::ostream& stream)
     {
         tag.storage().writeCompressed(stream);
+    }
+
+    static void writeCompressed(const std::vector<std::uint8_t>& bytes, std::ostream& stream)
+    {
+        const std::vector<std::uint8_t> compressed = gzipCompress(bytes);
+        binary::writeAllBytes(stream, compressed);
     }
 };
 

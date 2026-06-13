@@ -33,10 +33,8 @@
 #include "net/minecraft/util/hit/HitResult.hpp"
 #include "net/minecraft/util/math/MathHelper.hpp"
 #include "net/minecraft/world/World.hpp"
-#include "net/minecraft/world/biome/Biomes.hpp"
+#include "net/minecraft/world/biome/Biome.hpp"
 #include "net/minecraft/world/biome/source/BiomeSource.hpp"
-#include "net/minecraft/world/chunk/ChunkSource.hpp"
-#include "net/minecraft/world/chunk/LegacyChunkCache.hpp"
 
 #ifdef _WIN32
 #include "net/minecraft/client/util/DisplayManager.hpp"
@@ -730,11 +728,6 @@ void GameRenderer::renderRain()
     const int baseZ = MathHelper::floor(living->z);
     constexpr int radius = 10;
 
-    double soundX = 0.0;
-    double soundY = 0.0;
-    double soundZ = 0.0;
-    int rainSamples = 0;
-
     BiomeSource* biomeSource = world->getBiomeSource();
 
     const int particleCount = static_cast<int>(100.0f * rain * rain);
@@ -749,7 +742,7 @@ void GameRenderer::renderRain()
         if (topY > baseY + radius || topY < baseY - radius) {
             continue;
         }
-        if (biomeSource == nullptr || !Biomes::byId(biomeSource->getBiome(px, pz).id).canRain()) {
+        if (biomeSource == nullptr || !biomeSource->getBiome(px, pz).canRain()) {
             continue;
         }
         if (belowId <= 0) {
@@ -771,26 +764,8 @@ void GameRenderer::renderRain()
             continue;
         }
 
-        if (random.nextInt(++rainSamples) == 0) {
-            soundX = static_cast<float>(px) + rx;
-            soundY = py;
-            soundZ = static_cast<float>(pz) + rz;
-        }
         client->particleManager.addParticle(new client::particle::RainSplashParticle(
             world, static_cast<float>(px) + rx, py, static_cast<float>(pz) + rz));
-    }
-
-    if (rainSamples > 0 && random.nextInt(3) < rainSoundCounter++) {
-        rainSoundCounter = 0;
-        if (client->world != nullptr) {
-            if (soundY > living->y + 1.0
-                && world->getTopSolidBlockY(MathHelper::floor(living->x), MathHelper::floor(living->z))
-                    > MathHelper::floor(living->y)) {
-                client->world->playSound(soundX, soundY, soundZ, "ambient.weather.rain", 0.1f, 0.5f);
-            } else {
-                client->world->playSound(soundX, soundY, soundZ, "ambient.weather.rain", 0.2f, 1.0f);
-            }
-        }
     }
 }
 

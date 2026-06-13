@@ -1,32 +1,12 @@
 #include "seedfinder/engine/BiomeCatalog.hpp"
 
+#include "net/minecraft/world/biome/Biome.hpp"
+
 #include <algorithm>
 #include <cctype>
 
 namespace seedfinder::engine {
 namespace {
-
-struct BiomeEntry {
-    const char* canonical;
-    const char* display;
-};
-
-// Matches net::minecraft::BiomeId wire order used by seedfinder_probe.
-constexpr BiomeEntry kBiomes[kBiomeCount] = {
-    {"rainforest", "Rainforest"},
-    {"swampland", "Swampland"},
-    {"seasonal_forest", "Seasonal Forest"},
-    {"forest", "Forest"},
-    {"savanna", "Savanna"},
-    {"shrubland", "Shrubland"},
-    {"taiga", "Taiga"},
-    {"desert", "Desert"},
-    {"plains", "Plains"},
-    {"ice_desert", "Ice Desert"},
-    {"tundra", "Tundra"},
-    {"hell", "Hell"},
-    {"sky", "Sky"},
-};
 
 constexpr const char* kSpawnPickerOrder[] = {
     "plains",
@@ -87,7 +67,7 @@ std::string biomeNameFromId(std::uint8_t biome_id)
     if (biome_id >= kBiomeCount) {
         return "unknown";
     }
-    return kBiomes[biome_id].canonical;
+    return std::string(net::minecraft::Biome::byId(static_cast<net::minecraft::BiomeId>(biome_id)).wireName());
 }
 
 std::string biomeDisplayName(std::uint8_t biome_id)
@@ -95,15 +75,16 @@ std::string biomeDisplayName(std::uint8_t biome_id)
     if (biome_id >= kBiomeCount) {
         return "Unknown";
     }
-    return kBiomes[biome_id].display;
+    return net::minecraft::Biome::byId(static_cast<net::minecraft::BiomeId>(biome_id)).name;
 }
 
 std::uint8_t biomeIdFromName(std::string_view name)
 {
     const std::string normalized = normalizeBiomeName(name);
     for (int i = 0; i < kBiomeCount; ++i) {
-        if (normalized == kBiomes[i].canonical
-            || normalized == normalizeBiomeName(kBiomes[i].display)) {
+        const net::minecraft::Biome& biome = net::minecraft::Biome::byId(static_cast<net::minecraft::BiomeId>(i));
+        if (normalized == biome.wireName()
+            || normalized == normalizeBiomeName(biome.name)) {
             return static_cast<std::uint8_t>(i);
         }
     }
@@ -115,19 +96,20 @@ bool biomeMatchesName(std::uint8_t biome_id, std::string_view name)
     if (biome_id >= kBiomeCount) {
         return false;
     }
+    const net::minecraft::Biome& biome = net::minecraft::Biome::byId(static_cast<net::minecraft::BiomeId>(biome_id));
     const std::string normalized = normalizeBiomeName(name);
-    if (normalized == kBiomes[biome_id].canonical) {
+    if (normalized == biome.wireName()) {
         return true;
     }
-    return normalized == normalizeBiomeName(kBiomes[biome_id].display);
+    return normalized == normalizeBiomeName(biome.name);
 }
 
 std::vector<std::string> allCanonicalBiomeNames()
 {
     std::vector<std::string> names;
     names.reserve(kBiomeCount);
-    for (const BiomeEntry& entry : kBiomes) {
-        names.emplace_back(entry.canonical);
+    for (int i = 0; i < kBiomeCount; ++i) {
+        names.emplace_back(net::minecraft::Biome::byId(static_cast<net::minecraft::BiomeId>(i)).wireName());
     }
     return names;
 }
@@ -154,9 +136,10 @@ std::string_view chunkCountBiomeFromMetric(std::string_view metric)
     if (biome.empty()) {
         return {};
     }
-    for (const BiomeEntry& entry : kBiomes) {
-        if (namesEqualNormalized(biome, entry.canonical)) {
-            return entry.canonical;
+    for (int i = 0; i < kBiomeCount; ++i) {
+        const net::minecraft::Biome& entry = net::minecraft::Biome::byId(static_cast<net::minecraft::BiomeId>(i));
+        if (namesEqualNormalized(biome, entry.wireName())) {
+            return entry.wireName();
         }
     }
     if (pickerNameKnown(biome)) {

@@ -5,7 +5,6 @@
 #include "net/minecraft/block/material/Material.hpp"
 #include "net/minecraft/util/math/noise/OctavePerlinNoiseSampler.hpp"
 #include "net/minecraft/world/World.hpp"
-#include "net/minecraft/world/biome/BiomeTreeFeature.hpp"
 #include "net/minecraft/world/biome/source/BiomeSource.hpp"
 #include "net/minecraft/world/chunk/ChunkSource.hpp"
 #include "net/minecraft/world/gen/carver/CaveWorldCarver.hpp"
@@ -85,7 +84,7 @@ public:
         const int blockOriginX = chunkX * 16;
         const int blockOriginZ = chunkZ * 16;
         BiomeSource* biomeSource = activeBiomeSource();
-        const BiomeInfo biome = biomeSource->getBiome(blockOriginX + 16, blockOriginZ + 16);
+        const Biome& biome = biomeSource->getBiome(blockOriginX + 16, blockOriginZ + 16);
         const std::uint64_t worldSeed = world_ != nullptr ? world_->getSeed() : seed_;
         random_.setSeed(worldSeed);
         const std::int64_t l = random_.nextLong() / 2LL * 2LL + 1LL;
@@ -194,7 +193,7 @@ public:
         for (int i = 0; i < trees; ++i) {
             const int treeX = blockOriginX + random_.nextInt(16) + 8;
             const int treeZ = blockOriginZ + random_.nextInt(16) + 8;
-            std::unique_ptr<Feature> feature = getRandomTreeFeature(biome.id, random_);
+            std::unique_ptr<Feature> feature = biome.getRandomTreeFeature(random_);
             feature->prepare(1.0, 1.0, 1.0);
             const int treeY = world_->getTopY(treeX, treeZ);
             feature->generate(world_, random_, treeX, treeY, treeZ);
@@ -359,17 +358,18 @@ private:
         }
     }
 
-    void buildSurfaces(int chunkX, int chunkZ, Chunk& chunk, const std::vector<BiomeInfo>& biomes)
+    void buildSurfaces(int chunkX, int chunkZ, Chunk& chunk, const std::vector<Biome*>& biomes)
     {
         constexpr double scale = 0.03125;
         sandBuffer_ = perlinNoise2_.create(sandBuffer_, chunkX * 16, chunkZ * 16, 0.0, 16, 16, 1, scale, scale, 1.0);
         gravelBuffer_ = perlinNoise2_.create(gravelBuffer_, chunkX * 16, 109.0134, chunkZ * 16, 16, 1, 16, scale, 1.0, scale);
         depthBuffer_ = perlinNoise3_.create(depthBuffer_, chunkX * 16, chunkZ * 16, 0.0, 16, 16, 1, scale * 2.0, scale * 2.0, scale * 2.0);
 
-        for (int x = 0; x < 16; ++x) {
-            for (int z = 0; z < 16; ++z) {
-                const BiomeInfo& biome = biomes[static_cast<std::size_t>(x + z * 16)];
-                int depth = static_cast<int>(depthBuffer_[static_cast<std::size_t>(x + z * 16)] / 3.0 + 3.0 + random_.nextDouble() * 0.25);
+        for (int z = 0; z < 16; ++z) {
+            for (int x = 0; x < 16; ++x) {
+                const std::size_t surfaceIndex = static_cast<std::size_t>(z + x * 16);
+                const Biome& biome = *biomes[surfaceIndex];
+                int depth = static_cast<int>(depthBuffer_[surfaceIndex] / 3.0 + 3.0 + random_.nextDouble() * 0.25);
                 int run = -1;
                 std::uint8_t top = biome.topBlockId;
                 std::uint8_t soil = biome.soilBlockId;
@@ -499,7 +499,7 @@ private:
     OctavePerlinNoiseSampler forestNoise_;
     BiomeSource biomeSource_;
     std::vector<double> heightMap_;
-    std::vector<BiomeInfo> biomes_;
+    std::vector<Biome*> biomes_;
     std::vector<double> sandBuffer_;
     std::vector<double> gravelBuffer_;
     std::vector<double> depthBuffer_;

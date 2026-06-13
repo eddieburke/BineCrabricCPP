@@ -3,7 +3,6 @@
 #include "net/minecraft/block/entity/BlockEntity.hpp"
 #include "net/minecraft/client/render/chunk/ChunkDrawTransform.hpp"
 #include "net/minecraft/client/render/culling/Culler.hpp"
-#include "net/minecraft/entity/Entity.hpp"
 #include "net/minecraft/util/math/Types.hpp"
 #include "net/minecraft/world/World.hpp"
 
@@ -21,32 +20,40 @@ public:
         int y, int z, int size, int baseRenderListId)
         : world(world),
           baseRenderList(baseRenderListId),
+          x(x),
+          y(y),
+          z(z),
           currentBlockEntities_(&blockEntityUpdateList)
     {
         sizeX = size;
         sizeY = size;
         sizeZ = size;
         radius = std::sqrt(static_cast<float>(sizeX * sizeX + sizeY * sizeY + sizeZ * sizeZ)) / 2.0f;
-        this->x = -999;
-        setPosition(x, y, z);
+        centerX = this->x + sizeX / 2;
+        centerY = this->y + sizeY / 2;
+        centerZ = this->z + sizeZ / 2;
+        renderX = this->x & 0x3FF;
+        renderY = this->y;
+        renderZ = this->z & 0x3FF;
+        cameraOffsetX = this->x - renderX;
+        cameraOffsetY = this->y - renderY;
+        cameraOffsetZ = this->z - renderZ;
+        constexpr float padding = 6.0f;
+        cullingBox = net::minecraft::Box(
+            static_cast<double>(this->x) - padding,
+            static_cast<double>(this->y) - padding,
+            static_cast<double>(this->z) - padding,
+            static_cast<double>(this->x + sizeX) + padding,
+            static_cast<double>(this->y + sizeY) + padding,
+            static_cast<double>(this->z + sizeZ) + padding);
         dirty = false;
     }
-
-    void setPosition(int newX, int newY, int newZ);
 
     [[nodiscard]] float squaredDistanceTo(double entityX, double entityY, double entityZ) const
     {
         const float dx = static_cast<float>(entityX - static_cast<double>(centerX));
         const float dy = static_cast<float>(entityY - static_cast<double>(centerY));
         const float dz = static_cast<float>(entityZ - static_cast<double>(centerZ));
-        return dx * dx + dy * dy + dz * dz;
-    }
-
-    [[nodiscard]] float squaredDistanceTo(const Entity& entity) const
-    {
-        const float dx = static_cast<float>(entity.x - static_cast<double>(centerX));
-        const float dy = static_cast<float>(entity.y - static_cast<double>(centerY));
-        const float dz = static_cast<float>(entity.z - static_cast<double>(centerZ));
         return dx * dx + dy * dy + dz * dz;
     }
 
@@ -57,16 +64,6 @@ public:
     // Main-thread half: compile the captured meshes into this builder's GL
     // display lists, resolve block entities, and publish flags.
     void uploadMesh(const ChunkMeshJob& job);
-
-    [[nodiscard]] bool hasLayerGeometry(int layerId) const noexcept
-    {
-        return inFrustum && !renderLayerEmpty[static_cast<std::size_t>(layerId)];
-    }
-
-    void renderLayer(int layerId, double interpX, double interpY, double interpZ) const;
-
-    void reset();
-    void close();
 
     void updateFrustum(const Culler& culler)
     {
@@ -114,6 +111,9 @@ public:
     int version = 0;
     // A mesh job for this builder is queued or running (main-thread bookkeeping).
     bool meshJobInFlight = false;
+    // Section was evicted while a mesh job was still in flight; the result is
+    // dropped and the display-list pair is recycled once the job completes.
+    bool retired = false;
     std::vector<::net::minecraft::block::entity::BlockEntity*> blockEntities_ {};
     std::vector<::net::minecraft::block::entity::BlockEntity*>* currentBlockEntities_ = nullptr;
 };

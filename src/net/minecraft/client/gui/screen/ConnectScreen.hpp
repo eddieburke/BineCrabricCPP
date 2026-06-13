@@ -13,7 +13,6 @@ namespace net::minecraft::client::gui::screen {
 
 class ConnectScreen : public Screen {
 public:
-    ConnectScreen() = default;
     ConnectScreen(Minecraft* minecraft, std::string host, int port);
     ~ConnectScreen() override;
 

@@ -15,6 +15,9 @@
 #include "net/minecraft/client/util/MinecraftDirectories.hpp"
 #include "net/minecraft/client/util/TimerHackThread.hpp"
 
+#include "msauth/SessionRestore.hpp"
+#include "net/minecraft/client/sound/WorldSoundListener.hpp"
+
 #include <cctype>
 
 #include "net/minecraft/block/Block.hpp"
@@ -364,6 +367,11 @@ void Minecraft::runWorldSimulation()
 
 void Minecraft::tick()
 {
+    msauth::tickRestoreSavedAccount(*this);
+    audio.tick();
+    if (worldSoundListener != nullptr && world != nullptr) {
+        worldSoundListener->tickWeather(*this);
+    }
     if (ticksPlayed == 6000) {
         startSessionCheck();
     }
@@ -406,6 +414,7 @@ void Minecraft::runRenderPhase(std::int64_t tickDuration, int& frames, std::int6
     gl::GL11::glEnable(gl::GL11::GL_TEXTURE_2D);
     if (world != nullptr) {
         world->doLightingUpdates();
+        world->pumpChunkPublish();
     }
     // Key 65 (F7) — defer present until after render when held.
     if (!input::InputSystem::instance().isKeyDown(input::keys::kF7)) {

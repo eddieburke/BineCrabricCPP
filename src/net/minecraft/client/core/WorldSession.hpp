@@ -50,7 +50,6 @@ public:
     void tickJoinPlayerCounter(Minecraft& client);
 
 private:
-    int joinPlayerCounter_ = 0;
     std::unique_ptr<WorldStorage> ownedWorldStorage_;
     std::unique_ptr<World> ownedWorld_;
     std::unique_ptr<World> parkedDimensionWorld_;

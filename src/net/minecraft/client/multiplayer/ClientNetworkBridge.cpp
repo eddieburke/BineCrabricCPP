@@ -80,11 +80,6 @@ ClientNetworkBridge::ClientNetworkBridge(core::WorldSession* worldSession) noexc
 
 ClientNetworkBridge::~ClientNetworkBridge() = default;
 
-void ClientNetworkBridge::setWorldSession(core::WorldSession* worldSession) noexcept
-{
-    worldSession_ = worldSession;
-}
-
 bool ClientNetworkBridge::connect(client::Minecraft* minecraft, const std::string& host, int port, std::string& errorOut)
 {
     disconnect();
@@ -99,7 +94,7 @@ bool ClientNetworkBridge::connect(client::Minecraft* minecraft, const std::strin
         return false;
     }
 
-    handler_ = std::make_unique<network::ClientNetworkHandler>(minecraft, host, port);
+    handler_ = std::make_unique<network::ClientNetworkHandler>(minecraft);
     handler_->message = "Connecting...";
 
     try {
@@ -148,11 +143,6 @@ network::ClientNetworkHandler* ClientNetworkBridge::handler() const noexcept
 net::minecraft::Connection* ClientNetworkBridge::connection() const noexcept
 {
     return connection_.get();
-}
-
-bool ClientNetworkBridge::isConnected() const noexcept
-{
-    return connection_ != nullptr && connection_->isOpen() && handler_ != nullptr && !handler_->disconnected;
 }
 
 } // namespace net::minecraft::client::multiplayer

@@ -497,7 +497,6 @@ void World::loadChunksNearEntity(Entity* entity)
     }
     const int chunkX = MathHelper::floor(entity->x / 16.0);
     const int chunkZ = MathHelper::floor(entity->z / 16.0);
-    setChunkCacheCenter(chunkX, chunkZ);
     if (auto* legacyCache = dynamic_cast<LegacyChunkCache*>(getChunkSource())) {
         legacyCache->setActiveRadius(chunkResidentRadiusChunks_);
         legacyCache->prefetch(chunkX, chunkZ);

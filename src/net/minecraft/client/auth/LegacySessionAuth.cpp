@@ -2,6 +2,7 @@
 
 #include "msauth/MicrosoftAuth.hpp"
 #include "msauth/SecretProtection.hpp"
+#include "msauth/SessionRestore.hpp"
 #include "net/minecraft/client/resource/ResourceDownloadThread.hpp"
 
 #include <algorithm>
@@ -67,7 +68,7 @@ namespace {
         << "&sessionId=" << urlEncodeComponent(sessionId)
         << "&serverId=" << urlEncodeComponent(serverId);
 
-    const resource::HttpResponse response = resource::fetchUrl(url.str(), true);
+    const resource::HttpResponse response = resource::fetchUrl(url.str(), false);
     if (!response.ok()) {
         result.error = "HTTP " + std::to_string(response.statusCode);
         result.responseLine = firstLine(response.bodyAsString());
@@ -93,11 +94,6 @@ namespace {
     return "HTTP " + std::to_string(statusCode);
 }
 
-[[nodiscard]] bool isMicrosoftSession(const net::minecraft::client::util::Session& session)
-{
-    return session.sessionId.rfind("msa:", 0) == 0 && !session.mpPass.empty();
-}
-
 [[nodiscard]] std::string microsoftProfileId(const net::minecraft::client::util::Session& session)
 {
     return session.sessionId.rfind("msa:", 0) == 0 ? session.sessionId.substr(4) : std::string {};
@@ -108,7 +104,7 @@ namespace {
     const std::string& serverId)
 {
     JoinServerResult result;
-    if (!isMicrosoftSession(session)) {
+    if (!msauth::isAuthenticated(session)) {
         result.error = "Missing Microsoft session";
         return result;
     }
@@ -161,7 +157,7 @@ JoinServerResult verifyJoinServer(
     const net::minecraft::client::util::Session& session,
     const std::string& serverId)
 {
-    if (isMicrosoftSession(session)) {
+    if (msauth::isAuthenticated(session)) {
         return verifyMicrosoftJoinServer(session, serverId);
     }
     return verifyLegacyJoinServer(session.username, session.sessionId, serverId);

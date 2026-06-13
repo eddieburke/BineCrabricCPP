@@ -1,6 +1,6 @@
 #pragma once
 
-#include "net/minecraft/world/biome/BiomeDefinition.hpp"
+#include "net/minecraft/world/biome/Biome.hpp"
 #include "net/minecraft/world/gen/feature/BirchTreeFeature.hpp"
 #include "net/minecraft/world/gen/feature/Feature.hpp"
 #include "net/minecraft/world/gen/feature/LargeOakTreeFeature.hpp"
@@ -8,11 +8,11 @@
 
 namespace net::minecraft {
 
-class ForestBiome : public BiomeDefinition {
+class ForestBiome : public Biome {
 public:
     ForestBiome() { spawnablePassive_.push_back({"Wolf", 2}); }
 
-    [[nodiscard]] std::unique_ptr<Feature> getRandomTreeFeature(JavaRandom& random) override
+    [[nodiscard]] std::unique_ptr<Feature> getRandomTreeFeature(JavaRandom& random) const override
     {
         if (random.nextInt(5) == 0) {
             return std::make_unique<BirchTreeFeature>();

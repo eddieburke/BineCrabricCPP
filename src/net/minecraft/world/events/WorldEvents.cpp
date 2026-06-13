@@ -125,11 +125,11 @@ void WorldEvents::playStreaming(const std::string& name, int x, int y, int z)
     }
 }
 
-void WorldEvents::worldEvent(PlayerEntity* player, int type, int x, int y, int z, int data)
+void WorldEvents::blockBreakParticles(int x, int y, int z, int blockId, int blockMeta)
 {
     for (GameEventListener* listener : eventListeners_) {
         if (listener != nullptr) {
-            listener->worldEvent(player, type, x, y, z, data);
+            listener->blockBreakParticles(x, y, z, blockId, blockMeta);
         }
     }
 }

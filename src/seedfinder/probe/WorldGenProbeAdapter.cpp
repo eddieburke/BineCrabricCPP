@@ -3,7 +3,7 @@
 #include "net/minecraft/block/Block.hpp"
 #include "net/minecraft/world/World.hpp"
 #include "net/minecraft/world/biome/Biome.hpp"
-#include "net/minecraft/world/biome/Biomes.hpp"
+#include "net/minecraft/world/biome/Biome.hpp"
 #include "net/minecraft/world/biome/source/BiomeSource.hpp"
 #include "net/minecraft/world/chunk/LegacyChunkCache.hpp"
 #include "net/minecraft/world/storage/EmptyWorldStorage.hpp"
@@ -21,7 +21,7 @@ struct SeedProbeScratchImpl {
     std::unique_ptr<net::minecraft::BiomeSource> biome_source;
     std::uint64_t biome_source_seed = 0;
     bool biome_source_valid = false;
-    std::vector<net::minecraft::BiomeInfo> biome_sample_buffer;
+    std::vector<net::minecraft::Biome*> biome_sample_buffer;
     std::vector<SeedProbePoint> biome_grid_buffer;
     std::vector<SeedProbeFeatureHit> feature_hit_buffer;
 };
@@ -119,10 +119,13 @@ void sampleBiomeOnly(
             const int localX = ix * 16 + 8;
             const int localZ = iz * 16 + 8;
             const std::size_t sampleIndex = static_cast<std::size_t>(localX * blockWidth + localZ);
-            const net::minecraft::BiomeInfo info = sampleIndex < scratch.biome_sample_buffer.size()
+            net::minecraft::Biome* biome = sampleIndex < scratch.biome_sample_buffer.size()
                 ? scratch.biome_sample_buffer[sampleIndex]
-                : net::minecraft::Biomes::getBiome(0.5, 0.5);
-            const std::uint8_t biome_id = biomeIdToWire(info.id);
+                : &net::minecraft::Biome::getBiome(0.5, 0.5);
+            if (biome == nullptr) {
+                biome = &net::minecraft::Biome::getBiome(0.5, 0.5);
+            }
+            const std::uint8_t biome_id = biomeIdToWire(biome->id);
             if (static_cast<std::size_t>(biome_id) < biomeHistogram.size()) {
                 ++biomeHistogram[biome_id];
             }
@@ -305,8 +308,8 @@ void computeDecorateMetrics(
             if (source != nullptr) {
                 const int wx = cx * 16 + 8;
                 const int wz = cz * 16 + 8;
-                const net::minecraft::BiomeInfo info = source->getBiome(wx, wz);
-                if (info.id == net::minecraft::BiomeId::Desert) {
+                const net::minecraft::Biome& biome = source->getBiome(wx, wz);
+                if (biome.id == net::minecraft::BiomeId::Desert) {
                     ++desertChunks;
                 }
             }
@@ -351,8 +354,8 @@ void fillSpawn(net::minecraft::World& world, bool compute_spawn, SeedProbeResult
     out.spawn.surface_block_id = static_cast<std::uint8_t>(world.getSpawnBlockId(spawn.x, spawn.z));
 
     if (net::minecraft::BiomeSource* source = world.getBiomeSource()) {
-        const net::minecraft::BiomeInfo info = source->getBiome(spawn.x, spawn.z);
-        out.spawn.biome_id = biomeIdToWire(info.id);
+        const net::minecraft::Biome& biome = source->getBiome(spawn.x, spawn.z);
+        out.spawn.biome_id = biomeIdToWire(biome.id);
     }
 
     out.spawn.on_sand_beach = net::minecraft::Block::SAND != nullptr

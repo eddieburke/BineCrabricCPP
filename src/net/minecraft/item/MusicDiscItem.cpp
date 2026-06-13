@@ -26,7 +26,7 @@ bool MusicDiscItem::useOnBlock(ItemStack* stack, PlayerEntity* /*user*/, World* 
             return true;
         }
         world->setBlockMetaWithoutNotifyingNeighbors(x, y, z, 1);
-        world->worldEvent(nullptr, 1005, x, y, z, id);
+        world->playStreaming(sound, x, y, z);
         --stack->count;
         return true;
     }

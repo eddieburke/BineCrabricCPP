@@ -1,6 +1,6 @@
 #include "net/minecraft/world/biome/source/BiomeSource.hpp"
 
-#include "net/minecraft/world/biome/Biomes.hpp"
+#include "net/minecraft/world/biome/Biome.hpp"
 
 namespace net::minecraft {
 
@@ -21,10 +21,10 @@ BiomeSource::ClimateSample BiomeSource::sampleClimate(int x, int z) const
     return {temperature, downfall};
 }
 
-BiomeInfo BiomeSource::getBiome(int x, int z)
+Biome& BiomeSource::getBiome(int x, int z)
 {
     getBiomesInArea(queryScratch_, x, z, 1, 1);
-    return queryScratch_.empty() ? Biomes::getBiome(0.5, 0.5) : queryScratch_.front();
+    return queryScratch_.empty() ? Biome::getBiome(0.5, 0.5) : *queryScratch_.front();
 }
 
 std::vector<double>& BiomeSource::create(std::vector<double>& map, int x, int z, int width, int depth)
@@ -54,7 +54,7 @@ std::vector<double>& BiomeSource::create(std::vector<double>& map, int x, int z,
     return map;
 }
 
-std::vector<BiomeInfo>& BiomeSource::getBiomesInArea(std::vector<BiomeInfo>& biomes, int x, int z, int width, int depth)
+std::vector<Biome*>& BiomeSource::getBiomesInArea(std::vector<Biome*>& biomes, int x, int z, int width, int depth)
 {
     const std::size_t size = static_cast<std::size_t>(width * depth);
     if (biomes.size() < size) {
@@ -74,7 +74,7 @@ std::vector<BiomeInfo>& BiomeSource::getBiomesInArea(std::vector<BiomeInfo>& bio
             downfall = std::clamp(downfall, 0.0, 1.0);
             temperatureMap_[static_cast<std::size_t>(index)] = temperature;
             downfallMap_[static_cast<std::size_t>(index)] = downfall;
-            biomes[static_cast<std::size_t>(index)] = Biomes::getBiome(temperature, downfall);
+            biomes[static_cast<std::size_t>(index)] = &Biome::getBiome(temperature, downfall);
             ++index;
         }
     }

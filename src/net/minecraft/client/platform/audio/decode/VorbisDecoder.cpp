@@ -1,4 +1,4 @@
-#include "net/minecraft/client/platform/audio/decode/VorbisDecoder.hpp"
+#include "net/minecraft/client/platform/audio/decode/AudioDecoder.hpp"
 
 #if defined(MINECRAFT_HAS_VORBIS)
 

@@ -90,9 +90,9 @@ void Registry::bootstrap()
         // Phases run in this fixed order. Add a phase here (and to the enum)
         // rather than hand-threading another runPhase() call.
         static constexpr mod::LifecyclePhase kOrder[] = {
-            mod::LifecyclePhase::BiomeRegistration,
             mod::LifecyclePhase::BlockRegistration,
             mod::LifecyclePhase::BlockRegistryFinalize,
+            mod::LifecyclePhase::BiomeRegistration,
             mod::LifecyclePhase::ItemRegistration,
             mod::LifecyclePhase::BlockItemRegistration,
             mod::LifecyclePhase::SmeltingRecipeRegistration,

@@ -19,7 +19,7 @@ public:
     static void renderEntities(WorldRenderer& worldRenderer, const Vec3d& cameraPos, Culler* culler, float tickDelta);
 
 private:
-    static int renderChunks(WorldRenderer& worldRenderer, int from, int to, int layer, double tickDelta);
+    static int renderChunks(WorldRenderer& worldRenderer, int layer, double tickDelta);
 };
 
 } // namespace internal

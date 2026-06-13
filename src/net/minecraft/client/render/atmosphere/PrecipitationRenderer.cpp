@@ -10,7 +10,7 @@
 #include "net/minecraft/entity/LivingEntity.hpp"
 #include "net/minecraft/util/math/MathHelper.hpp"
 #include "net/minecraft/world/World.hpp"
-#include "net/minecraft/world/biome/Biomes.hpp"
+#include "net/minecraft/world/biome/Biome.hpp"
 #include "net/minecraft/world/biome/source/BiomeSource.hpp"
 
 #include <vector>
@@ -61,7 +61,7 @@ void PrecipitationRenderer::renderPrecipitation(const AtmosphereContext& ctx, fl
     const int floorY = MathHelper::floor(interpY);
     int radius = client::option::resolve(ctx.options).fancyPrecipitation ? 10 : 5;
 
-    std::vector<BiomeInfo> biomeScratch;
+    std::vector<Biome*> biomeScratch;
     biomeSource->getBiomesInArea(
         biomeScratch, centerX - radius, centerZ - radius, radius * 2 + 1, radius * 2 + 1);
 
@@ -71,7 +71,8 @@ void PrecipitationRenderer::renderPrecipitation(const AtmosphereContext& ctx, fl
     int biomeIndex = 0;
     for (int x = centerX - radius; x <= centerX + radius; ++x) {
         for (int z = centerZ - radius; z <= centerZ + radius; ++z) {
-            if (!Biomes::byId(biomeScratch[static_cast<std::size_t>(biomeIndex++)].id).canSnow()) {
+            Biome* biome = biomeScratch[static_cast<std::size_t>(biomeIndex++)];
+            if (biome == nullptr || !biome->canSnow()) {
                 continue;
             }
             int top = world->getTopSolidBlockY(x, z);
@@ -146,7 +147,8 @@ void PrecipitationRenderer::renderPrecipitation(const AtmosphereContext& ctx, fl
     biomeIndex = 0;
     for (int x = centerX - radius; x <= centerX + radius; ++x) {
         for (int z = centerZ - radius; z <= centerZ + radius; ++z) {
-            if (!Biomes::byId(biomeScratch[static_cast<std::size_t>(biomeIndex++)].id).canRain()) {
+            Biome* biome = biomeScratch[static_cast<std::size_t>(biomeIndex++)];
+            if (biome == nullptr || !biome->canRain()) {
                 continue;
             }
             const int top = world->getTopSolidBlockY(x, z);

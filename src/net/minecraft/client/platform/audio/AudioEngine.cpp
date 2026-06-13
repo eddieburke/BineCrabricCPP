@@ -2,7 +2,7 @@
 
 #include "net/minecraft/client/option/GameOptions.hpp"
 #include "net/minecraft/client/platform/audio/backend/AudioBackend.hpp"
-#include "net/minecraft/client/platform/audio/decode/MusFile.hpp"
+#include "net/minecraft/client/platform/audio/decode/AudioDecoder.hpp"
 #include "net/minecraft/entity/LivingEntity.hpp"
 #include "net/minecraft/util/math/MathConstants.hpp"
 #include "net/minecraft/util/math/MathHelper.hpp"
@@ -114,12 +114,6 @@ void registerSound(SoundRegistry& registry, const std::string& soundName, const 
 
 bool loadSource(backend::AudioBackend* backend, const char* slot, const std::string& path, backend::SourceParams params)
 {
-    if (decode::isMusPath(path)) {
-        std::vector<std::uint8_t> decrypted;
-        if (decode::loadDecryptedMus(path, decrypted)) {
-            return backend->loadSourceMemory(slot, decrypted.data(), decrypted.size(), path, params);
-        }
-    }
     return backend->loadSourceFile(slot, path, params);
 }
 

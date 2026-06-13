@@ -12,7 +12,9 @@ constexpr int kChunkSectionSize = 16;
 constexpr int kChunkGridCapBlocks = 400;
 constexpr int kMinChunkGridDiameterBlocks = 64;
 constexpr int kMaxChunkGridDiameterBlocks = 2000;
-constexpr int kDefaultChunkPreloadMarginChunks = 2;
+// Margin between the renderer's section radius and the world resident radius, so
+// the leading edge always has resident neighbors to mesh against while moving.
+constexpr int kDefaultChunkPreloadMarginChunks = 3;
 constexpr float kSkyFogEndFactor = 0.8f;
 
 [[nodiscard]] int normalizeSetting(int setting) noexcept

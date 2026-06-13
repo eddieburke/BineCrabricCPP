@@ -58,7 +58,6 @@ void JukeboxBlock::tryEjectRecord(World* world, int x, int y, int z)
     if (recordId == 0) {
         return;
     }
-    world->worldEvent(1005, x, y, z, 0);
     world->playStreaming("", x, y, z);
     jukebox->recordId = 0;
     jukebox->markDirty();

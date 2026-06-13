@@ -3,8 +3,8 @@
 namespace net::minecraft::client::render::chunk {
 
 // Per-chunk model transform applied while compiling a display list:
-// translate to the (toroidally wrapped) render origin, then a tiny uniform
-// scale about the chunk center to close seams between adjacent chunks.
+// translate to the render origin, then a tiny uniform scale about the chunk
+// center to close seams between adjacent sections.
 struct ChunkDrawTransform {
     int renderX = 0;
     int renderY = 0;

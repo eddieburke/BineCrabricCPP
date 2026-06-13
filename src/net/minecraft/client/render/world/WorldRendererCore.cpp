@@ -19,11 +19,8 @@
 #include "net/minecraft/world/World.hpp"
 
 #include <algorithm>
-#include <array>
-#include <cassert>
 #include <chrono>
 #include <memory>
-#include <optional>
 #include <vector>
 
 namespace net::minecraft::client::render::internal {
@@ -47,46 +44,29 @@ void WorldRendererCore::render(WorldRenderer& worldRenderer, const Entity& camer
 
 int WorldRendererCore::render(WorldRenderer& worldRenderer, LivingEntity& camera, int layer, double tickDelta)
 {
-    const std::size_t chunkTotal = worldRenderer.chunks_.size();
-    if (chunkTotal == 0) {
+    if (worldRenderer.sections_.empty()) {
         return 0;
     }
 
-    for (int scan = 0; scan < 10; ++scan) {
-        worldRenderer.chunkRenderIndex = static_cast<int>((worldRenderer.chunkRenderIndex + 1) % chunkTotal);
-        chunk::ChunkBuilder& candidate = worldRenderer.chunks_[static_cast<std::size_t>(worldRenderer.chunkRenderIndex)];
-        if (!candidate.dirty || worldRenderer.dirtyChunks_.contains(&candidate)) {
-            continue;
-        }
-        worldRenderer.enqueueDirtyChunk(&candidate);
-    }
-
-    // Java WorldRenderer.render: reload on view-distance change, reset per-layer-0 counters,
-    // re-sort only when the camera moved. Frustum culling is NOT done here (cullChunks owns it),
-    // so layer 0 and layer 1 see an identical visibility set within a frame.
-    worldRenderer.reloadIfViewDistanceChanged();
-
+    // View-distance reloads and the section frontier are handled in cullChunks
+    // (frame phase Idle), so layer 0 and layer 1 share one section set + order.
     if (layer == 0) {
         worldRenderer.chunkCount = 0;
         worldRenderer.invisibleChunkCount = 0;
         worldRenderer.compiledChunkCount = 0;
         worldRenderer.emptyChunkCount = 0;
-        // Apply a finished background distance sort before this frame's
-        // layers render, so layer 0 and layer 1 share one draw order.
-        worldRenderer.pollChunkSort();
     }
-
-    worldRenderer.sortChunksOnMove(camera);
 
     worldRenderer.cameraEntity_ = &camera;
     platform::Lighting::turnOff();
 
-    const int sortedCount = static_cast<int>(worldRenderer.sortedChunks_.size());
-    return renderChunks(worldRenderer, 0, sortedCount, layer, tickDelta);
+    return renderChunks(worldRenderer, layer, tickDelta);
 }
 
 bool WorldRendererCore::compileChunks(WorldRenderer& worldRenderer, LivingEntity& camera, bool force)
 {
+    (void)camera; // distance priority now comes from the draw-ring order
+
     const client::option::ResolvedRenderOptions resolvedOpts =
         client::option::resolve(worldRenderer.activeOptions());
     const bool fancyGraphics = worldRenderer.activeOptions().fancyGraphics;
@@ -109,16 +89,25 @@ bool WorldRendererCore::compileChunks(WorldRenderer& worldRenderer, LivingEntity
     deferredUploads.reserve(completed.size());
 
     for (std::shared_ptr<chunk::ChunkMeshJob>& job : completed) {
-        // Near-lane jobs (block edits next to the player) are few and skip the
-        // budget so the edit is visible the frame its mesh finishes.
-        if (!job->nearLane && uploadCount >= kMinUploadsPerFrame
-            && std::chrono::steady_clock::now() >= uploadDeadline) {
-            deferredUploads.push_back(std::move(job));
+        chunk::ChunkBuilder* builder = job->builder;
+        if (builder == nullptr) {
             continue;
         }
 
-        chunk::ChunkBuilder* builder = job->builder;
-        if (builder == nullptr) {
+        if (builder->retired) {
+            // Section was evicted while this job was in flight; drop the result.
+            // sweepRetiring() recycles its display-list pair below.
+            builder->meshJobInFlight = false;
+            continue;
+        }
+
+        // Near-lane jobs (block edits next to the player) skip the upload budget
+        // so the edit is visible the frame its mesh finishes. Distant uploads are
+        // time-budgeted: defer the rest to next frame (the job keeps
+        // meshJobInFlight = true so it stays owned and is reprocessed).
+        if (!job->nearLane && uploadCount >= kMinUploadsPerFrame
+            && std::chrono::steady_clock::now() >= uploadDeadline) {
+            deferredUploads.push_back(std::move(job));
             continue;
         }
 
@@ -136,6 +125,7 @@ bool WorldRendererCore::compileChunks(WorldRenderer& worldRenderer, LivingEntity
         ++uploadCount;
     }
     worldRenderer.pendingMeshUploads_ = std::move(deferredUploads);
+    worldRenderer.sweepRetiring();
 
     auto enqueueMeshJob = [&](chunk::ChunkBuilder* chunk, int priority) {
         if (chunk == nullptr || chunk->meshJobInFlight || !chunk->dirty) {
@@ -143,17 +133,15 @@ bool WorldRendererCore::compileChunks(WorldRenderer& worldRenderer, LivingEntity
         }
         auto job = chunk::ChunkMeshJob::capture(*chunk, resolvedOpts, fancyGraphics);
         if (job == nullptr) {
-            // Region not resident yet; the chunk stays in dirtyChunks_ and is
-            // retried once the async loader publishes its neighbors.
+            // The 3x3 neighborhood is not fully resident yet; the section stays
+            // in dirtyChunks_ and is retried once its neighbors become resident.
             return;
         }
-        // Copy the live chunk data into the snapshot HERE, on the main thread. The render
-        // pins only stop the chunk being freed; they do not stop the main thread writing its
-        // blocks/meta/light (packet chunk data, block updates, sky-light heightmap). Doing the
-        // memcpy on a worker tears against those writes and yields corrupt/empty meshes
-        // (chunks intermittently not rendering). The worker then only tessellates the copy.
+        // Copy the live chunk data into the snapshot HERE, on the main thread.
+        // Render pins only stop the chunk being freed; they do not stop the main
+        // thread writing blocks/meta/light. Capturing on a worker tears against
+        // those writes and yields corrupt/empty meshes.
         if (!job->captureSnapshot()) {
-            // Capture failed; chunk stays in dirtyChunks_ (not yet erased) and retries.
             return;
         }
         chunk->meshJobInFlight = true;
@@ -165,11 +153,10 @@ bool WorldRendererCore::compileChunks(WorldRenderer& worldRenderer, LivingEntity
         worldRenderer.world->doLightingUpdates();
     }
 
-    // Fast lane: chunks dirtied near the camera (block edits) go to the
-    // dedicated near worker, bypassing the dirty sorter, the capture budget,
-    // and the shared pool's queue. The in-flight cap bounds this frame's
-    // snapshot cost; overflow retries next frame and meanwhile stays in
-    // dirtyChunks_ as a fallback.
+    // Fast lane: sections the player just edited next to the camera go to the
+    // dedicated near worker, bypassing the distant backlog, the per-frame
+    // in-flight cap, and the capture/upload budgets, so the edit's remesh lands
+    // next frame regardless of render distance.
     if (!worldRenderer.nearDirtyChunks_.empty()) {
         constexpr std::size_t kNearLaneMaxInFlight = 8;
         std::vector<chunk::ChunkBuilder*> nearList = std::move(worldRenderer.nearDirtyChunks_);
@@ -185,11 +172,9 @@ bool WorldRendererCore::compileChunks(WorldRenderer& worldRenderer, LivingEntity
             }
             auto job = chunk::ChunkMeshJob::capture(*chunk, resolvedOpts, fancyGraphics);
             if (job == nullptr) {
-                // Region not resident yet; retry once neighbors publish.
-                worldRenderer.nearDirtyChunks_.push_back(chunk);
+                worldRenderer.nearDirtyChunks_.push_back(chunk); // neighbors not resident yet; retry
                 continue;
             }
-            // Snapshot on the main thread — see enqueueMeshJob above.
             if (!job->captureSnapshot()) {
                 worldRenderer.nearDirtyChunks_.push_back(chunk);
                 continue;
@@ -201,116 +186,60 @@ bool WorldRendererCore::compileChunks(WorldRenderer& worldRenderer, LivingEntity
         }
     }
 
-    // Chunks still waiting on the near lane must not compete with the distant
-    // backlog on the shared pool this frame; they retry on the near worker next
-    // frame (dirtyChunks_ keeps them alive as a last-resort fallback).
-    auto isNearDeferred = [&](const chunk::ChunkBuilder* chunk) -> bool {
-        if (chunk == nullptr || worldRenderer.nearDirtyChunks_.empty()) {
-            return false;
-        }
-        auto* mutableChunk = const_cast<chunk::ChunkBuilder*>(chunk);
-        return std::find(worldRenderer.nearDirtyChunks_.begin(), worldRenderer.nearDirtyChunks_.end(), mutableChunk)
-            != worldRenderer.nearDirtyChunks_.end();
-    };
+    if (!worldRenderer.dirtyChunks_.empty()) {
+        // One distance-prioritized, time-budgeted feed. Iterating the near->far
+        // draw rings yields nearest-first order, so block edits (which are near
+        // the camera) preempt naturally.
+        const std::size_t targetInFlight = force
+            ? worldRenderer.dirtyChunks_.size()
+            : static_cast<std::size_t>(worldRenderer.meshScheduler_.workerCount()) * 3;
+        std::size_t inFlight = worldRenderer.meshScheduler_.pendingJobs();
 
-    // Keep the worker pool saturated instead of mirroring Java's
-    // 2-distant-chunks-per-frame trickle: top the queue up to a few jobs per
-    // worker every frame so mesh throughput is decoupled from the frame rate.
-    // Snapshot copies happen here (main thread), so the budget also bounds the
-    // per-frame snapshot cost.
-    const std::size_t targetInFlight = force
-        ? worldRenderer.dirtyChunks_.size()
-        : static_cast<std::size_t>(worldRenderer.meshScheduler_.workerCount()) * 3;
-    std::size_t inFlight = worldRenderer.meshScheduler_.pendingJobs();
+        if (inFlight < targetInFlight) {
+            // RegionSnapshot memcpy is the remaining main-thread cost; bound it
+            // by time, except under force ("compile everything now").
+            constexpr std::chrono::milliseconds kCaptureBudget {3};
+            const auto captureDeadline = std::chrono::steady_clock::now() + kCaptureBudget;
+            const int minCapturesPerFrame =
+                client::option::chunkUpdatesPerPass(resolvedOpts, static_cast<int>(worldRenderer.dirtyChunks_.size()));
+            int captures = 0;
+            int priority = 0;
 
-    if (inFlight < targetInFlight && !worldRenderer.dirtyChunks_.empty()) {
-        // Region snapshots are the remaining main-thread copy cost; bound
-        // them by time the same way uploads are, except under force, which
-        // means "compile everything now".
-        constexpr std::chrono::milliseconds kCaptureBudget {3};
-        const auto captureDeadline = std::chrono::steady_clock::now() + kCaptureBudget;
-        constexpr int kMinCapturesPerFrame = 2;
-        int captures = 0;
-        int priority = 0;
-
-        // Returns false once this frame's in-flight target or capture budget
-        // is exhausted.
-        auto enqueueBudgeted = [&](chunk::ChunkBuilder* chunk) -> bool {
-            if (inFlight >= targetInFlight) {
-                return false;
-            }
-            if (!force && captures >= kMinCapturesPerFrame
-                && std::chrono::steady_clock::now() >= captureDeadline) {
-                return false;
-            }
-            if (chunk == nullptr || (force && !chunk->inFrustum) || isNearDeferred(chunk)) {
+            // Returns false once this frame's in-flight target or capture budget
+            // is exhausted.
+            const auto tryEnqueue = [&](chunk::ChunkBuilder* chunk) -> bool {
+                if (inFlight >= targetInFlight) {
+                    return false;
+                }
+                if (!force && captures >= minCapturesPerFrame
+                    && std::chrono::steady_clock::now() >= captureDeadline) {
+                    return false;
+                }
+                if (chunk == nullptr || !chunk->dirty || chunk->meshJobInFlight) {
+                    return true;
+                }
+                if (force && !chunk->inFrustum) {
+                    return true;
+                }
+                enqueueMeshJob(chunk, priority++);
+                if (chunk->meshJobInFlight) {
+                    ++inFlight;
+                    ++captures;
+                }
                 return true;
-            }
-            const bool wasIdle = !chunk->meshJobInFlight && chunk->dirty;
-            enqueueMeshJob(chunk, priority++);
-            if (wasIdle && chunk->meshJobInFlight) {
-                ++inFlight;
-                ++captures;
-            }
-            return true;
-        };
+            };
 
-        const std::size_t want = targetInFlight - inFlight;
-        constexpr std::size_t kSelectionSlack = 16;
-
-        if (worldRenderer.dirtyChunks_.size() <= want + kSelectionSlack) {
-            // The whole backlog fits in this frame's budget, so priority order
-            // doesn't matter — enqueue directly. This is the steady-state path
-            // (block edits, lighting), and it keeps edit remeshes same-frame.
-            std::vector<chunk::ChunkBuilder*> dirtySnapshot;
-            dirtySnapshot.reserve(worldRenderer.dirtyChunks_.size());
-            for (chunk::ChunkBuilder* chunk : worldRenderer.dirtyChunks_) {
-                dirtySnapshot.push_back(chunk);
-            }
-            for (chunk::ChunkBuilder* chunk : dirtySnapshot) {
-                if (!enqueueBudgeted(chunk)) {
+            bool budgetLeft = true;
+            for (const std::vector<chunk::ChunkBuilder*>& ring : worldRenderer.drawRings_) {
+                if (!budgetLeft) {
                     break;
                 }
-            }
-        } else {
-            // Big backlog (reload / render-ring move): the background sorter
-            // keeps a priority order. Enqueue from the order it finished last
-            // frame, then hand it the current dirty set for re-sort. Entries
-            // are (key, builder id); ids index chunks_, and the epoch guard
-            // discards orders that outlived a reload. A chunk that went clean
-            // since the sort is skipped by enqueueMeshJob's dirty check.
-            std::optional<world::AsyncChunkSorter::Result> sorted =
-                worldRenderer.dirtySorter_.tryTakeResult();
-            if (sorted && sorted->epoch == worldRenderer.chunkArrayEpoch_) {
-                for (const world::AsyncChunkSorter::Entry& entry : sorted->entries) {
-                    if (entry.index < 0
-                        || static_cast<std::size_t>(entry.index) >= worldRenderer.chunks_.size()) {
-                        continue;
-                    }
-                    if (!enqueueBudgeted(&worldRenderer.chunks_[static_cast<std::size_t>(entry.index)])) {
+                for (chunk::ChunkBuilder* chunk : ring) {
+                    if (!tryEnqueue(chunk)) {
+                        budgetLeft = false;
                         break;
                     }
                 }
-            }
-
-            if (worldRenderer.dirtySorter_.canSubmit()) {
-                // In-frustum nearest first; out-of-frustum chunks sort behind
-                // via a key bias chosen to stay well above any real squared
-                // distance while keeping float precision for the distances.
-                constexpr float kOutOfFrustumKeyBias = 1.0e8f;
-                std::vector<world::AsyncChunkSorter::Entry> entries;
-                entries.reserve(worldRenderer.dirtyChunks_.size());
-                for (const chunk::ChunkBuilder* chunk : worldRenderer.dirtyChunks_) {
-                    if (isNearDeferred(chunk)) {
-                        continue;
-                    }
-                    float key = chunk->squaredDistanceTo(camera);
-                    if (!chunk->inFrustum) {
-                        key += kOutOfFrustumKeyBias;
-                    }
-                    entries.push_back({key, chunk->id});
-                }
-                worldRenderer.dirtySorter_.submit(std::move(entries), worldRenderer.chunkArrayEpoch_);
             }
         }
     }
@@ -368,10 +297,11 @@ void WorldRendererCore::renderEntities(
         if (entity == nullptr) {
             continue;
         }
-        ++worldRenderer.renderedEntityCount;
         if (!client::option::shouldRenderEntity(resolved, *entity, cameraPos)) {
+            ++worldRenderer.culledEntityCount;
             continue;
         }
+        ++worldRenderer.renderedEntityCount;
         entityDispatcher.render(*entity, tickDelta);
     }
     for (Entity* entity : entities) {
@@ -379,6 +309,7 @@ void WorldRendererCore::renderEntities(
             continue;
         }
         if (!client::option::shouldRenderEntity(resolved, *entity, cameraPos)) {
+            ++worldRenderer.culledEntityCount;
             continue;
         }
         if (!entity->ignoreFrustumCull && culler != nullptr && !culler->isVisible(entity->boundingBox)) {
@@ -412,43 +343,42 @@ void WorldRendererCore::renderEntities(
     }
 }
 
-// Mirrors Java WorldRenderer.renderChunks exactly:
-//   1. Collect visible chunks into chunksInCurrentLayer_.
-//   2. Group them into chunkRenderers_ by cameraOffset.
-//   3. Flush via renderLastChunks (one glCallLists per group).
-int WorldRendererCore::renderChunks(WorldRenderer& worldRenderer, int from, int to, int layer, double tickDelta)
+// Collect visible sections from the near->far draw rings, group them into
+// chunkRenderers_ by cameraOffset, and flush via renderLastChunks (one
+// glCallLists per group).
+int WorldRendererCore::renderChunks(WorldRenderer& worldRenderer, int layer, double tickDelta)
 {
     worldRenderer.chunksInCurrentLayer_.clear();
     int rendered = 0;
 
-    for (int i = from; i < to; ++i) {
-        chunk::ChunkBuilder* chunk = worldRenderer.sortedChunks_[static_cast<std::size_t>(i)];
-        if (chunk == nullptr) {
-            continue;
-        }
-
-        if (layer == 0) {
-            ++worldRenderer.chunkCount;
-            if (chunk->renderLayerEmpty[static_cast<std::size_t>(layer)]) {
-                ++worldRenderer.emptyChunkCount;
-            } else if (!chunk->inFrustum) {
-                ++worldRenderer.invisibleChunkCount;
-            } else {
-                ++worldRenderer.compiledChunkCount;
+    for (const std::vector<chunk::ChunkBuilder*>& ring : worldRenderer.drawRings_) {
+        for (chunk::ChunkBuilder* chunk : ring) {
+            if (chunk == nullptr) {
+                continue;
             }
-        }
 
-        if (chunk->renderLayerEmpty[static_cast<std::size_t>(layer)] || !chunk->inFrustum) {
-            continue;
-        }
+            if (layer == 0) {
+                ++worldRenderer.chunkCount;
+                if (chunk->renderLayerEmpty[static_cast<std::size_t>(layer)]) {
+                    ++worldRenderer.emptyChunkCount;
+                } else if (!chunk->inFrustum) {
+                    ++worldRenderer.invisibleChunkCount;
+                } else {
+                    ++worldRenderer.compiledChunkCount;
+                }
+            }
 
-        const int listId = chunk->baseRenderList >= 0 ? chunk->baseRenderList + layer : -1;
-        if (listId < 0) {
-            continue;
-        }
+            if (chunk->renderLayerEmpty[static_cast<std::size_t>(layer)] || !chunk->inFrustum) {
+                continue;
+            }
 
-        worldRenderer.chunksInCurrentLayer_.push_back(chunk);
-        ++rendered;
+            if (chunk->baseRenderList < 0) {
+                continue;
+            }
+
+            worldRenderer.chunksInCurrentLayer_.push_back(chunk);
+            ++rendered;
+        }
     }
 
     // Compute interpolated camera position for the translation.

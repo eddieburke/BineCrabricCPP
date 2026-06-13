@@ -11,8 +11,9 @@
 #include "net/minecraft/entity/player/PlayerEntity.hpp"
 #include "net/minecraft/util/math/MathHelper.hpp"
 #include "net/minecraft/world/World.hpp"
-#include "net/minecraft/world/biome/BiomeDefinition.hpp"
+#include "net/minecraft/world/biome/Biome.hpp"
 
+#include <array>
 #include <cmath>
 #include <optional>
 #include <unordered_set>
@@ -89,26 +90,26 @@ void postSpawnEntity(LivingEntity* entity, World* world, float x, float y, float
     }
 }
 
-[[nodiscard]] int countSpawnBucket(const World& world, int biomeGroup)
+[[nodiscard]] std::array<int, 3> countSpawnBuckets(const World& world)
 {
-    int count = 0;
+    std::array<int, 3> counts {};
     for (Entity* entity : world.entities()) {
-        if (entity == nullptr) {
+        if (entity == nullptr || entity->dead) {
             continue;
         }
-        if (biomeGroup == 0 && dynamic_cast<entity::Monster*>(entity) != nullptr) {
-            ++count;
-        } else if (biomeGroup == 1 && dynamic_cast<entity::passive::AnimalEntity*>(entity) != nullptr) {
-            ++count;
-        } else if (biomeGroup == 2 && dynamic_cast<entity::WaterCreatureEntity*>(entity) != nullptr) {
-            ++count;
+        if (dynamic_cast<entity::Monster*>(entity) != nullptr) {
+            ++counts[0];
+        } else if (dynamic_cast<entity::passive::AnimalEntity*>(entity) != nullptr) {
+            ++counts[1];
+        } else if (dynamic_cast<entity::WaterCreatureEntity*>(entity) != nullptr) {
+            ++counts[2];
         }
     }
-    return count;
+    return counts;
 }
 
-[[nodiscard]] bool shouldSkipSpawnBucket(const SpawnRules& rules, World* world,
-    bool spawnAnimals, bool spawnMonsters, std::size_t chunkCount)
+[[nodiscard]] bool shouldSkipSpawnBucket(const SpawnRules& rules,
+    bool spawnAnimals, bool spawnMonsters, std::size_t chunkCount, const std::array<int, 3>& bucketCounts)
 {
     if (rules.peaceful && !spawnMonsters) {
         return true;
@@ -116,7 +117,7 @@ void postSpawnEntity(LivingEntity* entity, World* world, float x, float y, float
     if (!rules.peaceful && !spawnAnimals) {
         return true;
     }
-    const int population = countSpawnBucket(*world, rules.biomeGroup);
+    const int population = bucketCounts[static_cast<std::size_t>(rules.biomeGroup)];
     const int capacity = rules.capacity * static_cast<int>(chunkCount) / 256;
     return population > capacity;
 }
@@ -161,15 +162,17 @@ int NaturalSpawner::tick(World* world, bool spawnAnimals, bool spawnMonsters)
 
     int spawned = 0;
     const Vec3i spawnPos = world->getSpawnPos();
+    const std::array<int, 3> bucketCounts = countSpawnBuckets(*world);
 
     for (int groupIndex = 0; groupIndex < 3; ++groupIndex) {
         const SpawnRules& rules = kSpawnRules[groupIndex];
-        if (shouldSkipSpawnBucket(rules, world, spawnAnimals, spawnMonsters, mobSpawningChunks_.size())) {
+        const block::material::Material& requiredMaterial = spawnMaterial(rules);
+        if (shouldSkipSpawnBucket(rules, spawnAnimals, spawnMonsters, mobSpawningChunks_.size(), bucketCounts)) {
             continue;
         }
 
         for (const ChunkPos& chunkPos : mobSpawningChunks_) {
-            const BiomeDefinition& biomeDef = world->getBiomeDefinition(chunkPos.x * 16, chunkPos.z * 16);
+            const Biome& biomeDef = world->getBiome(chunkPos.x * 16, chunkPos.z * 16);
             const EntitySpawnGroup* chosen = pickSpawnEntry(biomeDef.getSpawnableEntities(rules.biomeGroup), world->random());
             if (chosen == nullptr) {
                 continue;
@@ -179,7 +182,7 @@ int NaturalSpawner::tick(World* world, bool spawnAnimals, bool spawnMonsters)
             const int bx = blockPos.x;
             const int by = blockPos.y;
             const int bz = blockPos.z;
-            if (world->shouldSuffocate(bx, by, bz) || &world->getMaterial(bx, by, bz) != &spawnMaterial(rules)) {
+            if (world->shouldSuffocate(bx, by, bz) || &world->getMaterial(bx, by, bz) != &requiredMaterial) {
                 continue;
             }
 

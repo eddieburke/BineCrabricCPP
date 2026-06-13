@@ -1,4 +1,4 @@
-#include "msauth/LoginScreen.hpp"
+#include "net/minecraft/client/gui/auth/LoginScreen.hpp"
 
 #include "msauth/AccountStorage.hpp"
 #include "msauth/FilePicker.hpp"
@@ -8,9 +8,9 @@
 #include "net/minecraft/client/gui/widget/ActionButtonWidget.hpp"
 #include "net/minecraft/client/util/MinecraftDirectories.hpp"
 
-namespace msauth {
+namespace net::minecraft::client::gui::auth {
 
-LoginScreen::LoginScreen(net::minecraft::client::gui::screen::ScreenFactory returnFactory)
+LoginScreen::LoginScreen(gui::screen::ScreenFactory returnFactory)
     : returnFactory_(std::move(returnFactory))
 {
 }
@@ -60,7 +60,7 @@ void LoginScreen::tryImportJsonFile()
         return;
     }
 
-    const std::optional<std::filesystem::path> path = pickJsonFile();
+    const std::optional<std::filesystem::path> path = msauth::pickJsonFile();
     if (!path.has_value()) {
         return;
     }
@@ -80,12 +80,12 @@ void LoginScreen::tryImportJsonFile()
 
     const std::filesystem::path importPath = *path;
     importThread_ = std::thread([this, importPath]() {
-        std::optional<MicrosoftAccount> imported = importAccountFromJsonFile(importPath);
-        if (imported.has_value() && !imported->valid() && imported->restorable()) {
-            const AuthResult restored = restoreFromRefreshToken(*imported);
+        std::optional<msauth::MicrosoftAccount> imported = msauth::importAccountFromJsonFile(importPath);
+        if (imported.has_value() && imported->restorable()) {
+            const msauth::AuthResult restored = msauth::restoreFromRefreshToken(*imported);
             if (restored.ok) {
                 imported = restored.account;
-            } else {
+            } else if (!imported->valid()) {
                 imported.reset();
             }
         }
@@ -108,7 +108,7 @@ void LoginScreen::mergePendingImport()
     }
     importRunning_ = false;
 
-    std::optional<MicrosoftAccount> imported;
+    std::optional<msauth::MicrosoftAccount> imported;
     std::string pathLabel;
     {
         std::lock_guard<std::mutex> lock(importMutex_);
@@ -121,10 +121,11 @@ void LoginScreen::mergePendingImport()
         return;
     }
 
-    applyAccount(*imported, minecraft()->session);
-    if (!saveAccount(net::minecraft::client::util::MinecraftDirectories::getRunDirectory(), *imported)) {
-        // Signed in for this session, but no refresh token to persist for next launch.
-        showImportError(imported->profileName, "Signed in, but no refresh token to save. Re-export from Prism while signed in.");
+    msauth::applyAccount(*imported, minecraft()->session);
+    if (!msauth::saveAccount(util::MinecraftDirectories::getRunDirectory(), *imported)) {
+        showImportError(
+            imported->profileName,
+            "Signed in, but no refresh token to save. Re-export from Prism while signed in.");
         return;
     }
     navigateTo(returnFactory_);
@@ -156,4 +157,4 @@ void LoginScreen::render(int mouseX, int mouseY, float tickDelta)
     Screen::render(mouseX, mouseY, tickDelta);
 }
 
-} // namespace msauth
+} // namespace net::minecraft::client::gui::auth

@@ -9,6 +9,22 @@
 #include "net/minecraft/item/Item.hpp"
 
 namespace net::minecraft::block {
+namespace {
+
+void playDoorToggleSound(World* world, int x, int y, int z)
+{
+    JavaRandom& random = world->random();
+    const char* sound = random.nextDouble() < 0.5 ? "random.door_open" : "random.door_close";
+    world->playSound(
+        static_cast<double>(x) + 0.5,
+        static_cast<double>(y) + 0.5,
+        static_cast<double>(z) + 0.5,
+        sound,
+        1.0f,
+        random.nextFloat() * 0.1f + 0.9f);
+}
+
+} // namespace
 
 TrapdoorBlock::TrapdoorBlock(int id, Material& mat) : Block(id, mat)
 {
@@ -112,7 +128,7 @@ bool TrapdoorBlock::onUse(World* world, int x, int y, int z, net::minecraft::Pla
     }
     const int meta = world->getBlockMeta(x, y, z);
     world->setBlockMeta(x, y, z, meta ^ 4);
-    world->worldEvent(player, 1003, x, y, z, 0);
+    playDoorToggleSound(world, x, y, z);
     return true;
 }
 
@@ -127,7 +143,7 @@ void TrapdoorBlock::setOpen(World* world, int x, int y, int z, bool open)
         return;
     }
     world->setBlockMeta(x, y, z, meta ^ 4);
-    world->worldEvent(nullptr, 1003, x, y, z, 0);
+    playDoorToggleSound(world, x, y, z);
 }
 
 void TrapdoorBlock::neighborUpdate(World* world, int x, int y, int z, int blockId)

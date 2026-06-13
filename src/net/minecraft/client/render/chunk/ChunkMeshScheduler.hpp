@@ -11,9 +11,15 @@
 
 namespace net::minecraft::client::render::chunk {
 
-// Runs ChunkBuilder::buildMesh on a worker pool and hands finished jobs back
-// to the main thread. All methods except the worker lambda run on the main
-// thread.
+// Runs ChunkBuilder::buildMesh on a worker pool and hands finished jobs back to
+// the main thread. All methods except the worker lambda run on the main thread.
+//
+// The shared pool_ handles the distance backlog, fed in near->far order at a
+// per-frame budget. A separate single-thread nearPool_ handles sections the
+// player just edited next to the camera: at huge render distance the shared pool
+// is permanently saturated by the distant backlog, so without a dedicated worker
+// an edit's remesh would wait many frames behind it. The near worker is almost
+// always idle, so near edits remesh the next frame.
 class ChunkMeshScheduler {
 public:
     ChunkMeshScheduler()
@@ -34,7 +40,7 @@ public:
 
     void enqueue(std::shared_ptr<ChunkMeshJob> job, int priority);
 
-    // Dedicated single worker for chunks near the camera (block edits), so
+    // Dedicated single worker for sections next to the camera (block edits), so
     // their rebuilds never queue behind the distance backlog on pool_.
     void enqueueNear(std::shared_ptr<ChunkMeshJob> job);
 
@@ -65,7 +71,7 @@ public:
         return completed_.empty();
     }
 
-    // Jobs queued or being built on the main pool (excludes the near lane and
+    // Jobs queued or being built on the shared pool (excludes the near lane and
     // finished jobs awaiting drain).
     [[nodiscard]] std::size_t pendingJobs() const
     {
@@ -89,8 +95,7 @@ private:
         return std::clamp(hw > 2 ? hw - 2 : 1U, 1U, 8U);
     }
 
-    void submitTo(net::minecraft::util::concurrent::WorkerPool& pool,
-        std::shared_ptr<ChunkMeshJob> job, int priority);
+    void submitTo(net::minecraft::util::concurrent::WorkerPool& pool, std::shared_ptr<ChunkMeshJob> job, int priority);
 
     net::minecraft::util::concurrent::WorkerPool pool_;
     net::minecraft::util::concurrent::WorkerPool nearPool_;

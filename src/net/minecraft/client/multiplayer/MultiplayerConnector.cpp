@@ -12,28 +12,25 @@
 namespace net::minecraft::client::multiplayer {
 
 MultiplayerConnector::MultiplayerConnector(Minecraft* minecraft, std::string host, int port)
-    : host_(std::move(host)),
-      port_(port)
 {
     if (minecraft == nullptr) {
         return;
     }
 
     minecraft->setWorld(nullptr);
-    thread_ = std::thread([this, minecraft]() {
+    thread_ = std::thread([this, minecraft, host = std::move(host), port]() {
         if (cancelled_.load(std::memory_order_acquire)) {
             return;
         }
 
         std::string connectError;
         auto bridge = std::make_unique<ClientNetworkBridge>(&minecraft->worldSession());
-        if (!bridge->connect(minecraft, host_, port_, connectError)) {
+        if (!bridge->connect(minecraft, host, port, connectError)) {
             if (cancelled_.load(std::memory_order_acquire)) {
                 return;
             }
             std::lock_guard lock(mutex_);
-            state_ = ConnectState::Failed;
-            error_ = connectError.empty() ? "Failed to connect" : std::move(connectError);
+            connectError_ = connectError.empty() ? "Failed to connect" : std::move(connectError);
             return;
         }
 
@@ -51,7 +48,6 @@ MultiplayerConnector::MultiplayerConnector(Minecraft* minecraft, std::string hos
 
         std::lock_guard lock(mutex_);
         pendingBridge_ = std::move(bridge);
-        state_ = ConnectState::Connected;
     });
 }
 
@@ -85,9 +81,10 @@ void MultiplayerConnector::disconnectActive(Minecraft& client)
 std::string MultiplayerConnector::poll(Minecraft& client)
 {
     std::lock_guard lock(mutex_);
-    if (state_ == ConnectState::Failed) {
-        state_ = ConnectState::Handled;
-        return error_.empty() ? "Failed to connect" : error_;
+    if (connectError_.has_value()) {
+        std::string error = std::move(*connectError_);
+        connectError_.reset();
+        return error.empty() ? "Failed to connect" : std::move(error);
     }
 
     if (pendingBridge_ != nullptr) {

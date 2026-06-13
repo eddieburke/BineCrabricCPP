@@ -37,12 +37,9 @@ public:
         stream_.prefetch();
     }
 
-    void populateReadyChunks() { stream_.populateReadyChunks(); }
+    void pumpPublishFrame() { stream_.pumpPublishFrame(); }
 
-    [[nodiscard]] bool isSpawnChunk(int chunkX, int chunkZ) const
-    {
-        return stream_.isWithinResidentRadius(chunkX, chunkZ);
-    }
+    void populateReadyChunks() { stream_.populateReadyChunks(); }
 
     [[nodiscard]] bool isChunkLoaded(int chunkX, int chunkZ) const override
     {

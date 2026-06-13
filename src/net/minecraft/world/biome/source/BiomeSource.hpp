@@ -31,6 +31,13 @@ public:
         temperatureRandom_.setSeed(seed * 9871ULL);
         downfallRandom_.setSeed(seed * 39811ULL);
         weirdnessRandom_.setSeed(seed * 543321ULL);
+        temperatureSampler_ = OctaveSimplexNoiseSampler(temperatureRandom_, 4);
+        downfallSampler_ = OctaveSimplexNoiseSampler(downfallRandom_, 4);
+        weirdnessSampler_ = OctaveSimplexNoiseSampler(weirdnessRandom_, 2);
+        temperatureMap_.clear();
+        downfallMap_.clear();
+        weirdnessMap_.clear();
+        queryScratch_.clear();
     }
 
     virtual ~BiomeSource() = default;
@@ -54,7 +61,7 @@ public:
     };
     [[nodiscard]] ClimateSample sampleClimate(int x, int z) const;
 
-    [[nodiscard]] virtual BiomeInfo getBiome(int x, int z);
+    [[nodiscard]] virtual Biome& getBiome(int x, int z);
 
     [[nodiscard]] virtual double getTemperature(int x, int z)
     {
@@ -66,7 +73,7 @@ public:
     // used by the snow-layer decoration pass.
     virtual std::vector<double>& create(std::vector<double>& map, int x, int z, int width, int depth);
 
-    virtual std::vector<BiomeInfo>& getBiomesInArea(std::vector<BiomeInfo>& biomes, int x, int z, int width, int depth);
+    virtual std::vector<Biome*>& getBiomesInArea(std::vector<Biome*>& biomes, int x, int z, int width, int depth);
 
 protected:
     std::vector<double> temperatureMap_;
@@ -81,7 +88,7 @@ private:
     OctaveSimplexNoiseSampler downfallSampler_;
     OctaveSimplexNoiseSampler weirdnessSampler_;
     std::vector<double> weirdnessMap_;
-    mutable std::vector<BiomeInfo> queryScratch_;
+    mutable std::vector<Biome*> queryScratch_;
 };
 
 } // namespace net::minecraft

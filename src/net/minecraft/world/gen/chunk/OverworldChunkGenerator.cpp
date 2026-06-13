@@ -3,7 +3,6 @@
 #include "net/minecraft/block/FallingBlock.hpp"
 #include "net/minecraft/block/material/Material.hpp"
 #include "net/minecraft/world/World.hpp"
-#include "net/minecraft/world/biome/BiomeTreeFeature.hpp"
 #include "net/minecraft/world/chunk/ChunkSource.hpp"
 #include "net/minecraft/world/gen/feature/CactusPatchFeature.hpp"
 #include "net/minecraft/world/gen/feature/ClayOreFeature.hpp"
@@ -63,7 +62,7 @@ void OverworldChunkGenerator::decorate(ChunkSource* /*source*/, int chunkX, int 
     const int blockOriginX = chunkX * 16;
     const int blockOriginZ = chunkZ * 16;
     BiomeSource* biomeSource = activeBiomeSource();
-    const BiomeInfo biome = biomeSource->getBiome(blockOriginX + 16, blockOriginZ + 16);
+    const Biome& biome = biomeSource->getBiome(blockOriginX + 16, blockOriginZ + 16);
     const std::uint64_t worldSeed = world_ != nullptr ? world_->getSeed() : seed_;
     random_.setSeed(worldSeed);
     const std::int64_t l = random_.nextLong() / 2LL * 2LL + 1LL;
@@ -172,7 +171,7 @@ void OverworldChunkGenerator::decorate(ChunkSource* /*source*/, int chunkX, int 
     for (int i = 0; i < trees; ++i) {
         const int treeX = blockOriginX + random_.nextInt(16) + 8;
         const int treeZ = blockOriginZ + random_.nextInt(16) + 8;
-        std::unique_ptr<Feature> feature = getRandomTreeFeature(biome.id, random_);
+        std::unique_ptr<Feature> feature = biome.getRandomTreeFeature(random_);
         feature->prepare(1.0, 1.0, 1.0);
         const int treeY = world_->getTopY(treeX, treeZ);
         feature->generate(world_, random_, treeX, treeY, treeZ);

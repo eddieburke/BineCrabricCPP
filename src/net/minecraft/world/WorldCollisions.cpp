@@ -278,7 +278,14 @@ void World::extinguishFire(PlayerEntity* player, int x, int y, int z, int direct
         ++x;
     }
     if (Block::FIRE != nullptr && getBlockId(x, y, z) == Block::FIRE->id) {
-        worldEvent(player, 1004, x, y, z, 0);
+        JavaRandom& rng = random();
+        playSound(
+            static_cast<double>(x) + 0.5,
+            static_cast<double>(y) + 0.5,
+            static_cast<double>(z) + 0.5,
+            "random.fizz",
+            0.5f,
+            2.6f + (rng.nextFloat() - rng.nextFloat()) * 0.8f);
         setBlock(x, y, z, 0);
     }
 }

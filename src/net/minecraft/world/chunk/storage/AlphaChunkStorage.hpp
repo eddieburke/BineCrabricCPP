@@ -1,5 +1,6 @@
 #pragma once
 
+#include "net/minecraft/nbt/Nbt.hpp"
 #include "net/minecraft/nbt/NbtCompound.hpp"
 #include "net/minecraft/world/chunk/Chunk.hpp"
 #include "net/minecraft/world/chunk/storage/ChunkStorage.hpp"
@@ -20,11 +21,7 @@ public:
     Chunk loadChunk(World* world, int chunkX, int chunkZ) override;
     void saveChunk(World* world, Chunk& chunk) override;
 
-    static Chunk loadChunkFromRootNbt(World* world, const Nbt& root, int chunkX, int chunkZ);
-    static NbtCompound saveChunkToRootNbt(Chunk& chunk, World* world);
-    static void saveChunkToNbt(Chunk& chunk, World* world, NbtCompound& nbt);
-
-    static Chunk loadChunkFromNbt(World* world, const NbtCompound& nbt);
+    static Chunk loadChunkFromRootNbt(World* world, NbtCompound& root, int chunkX, int chunkZ);
 
     void tick() override {}
     void flush() override {}

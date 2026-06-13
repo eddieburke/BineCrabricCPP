@@ -2,7 +2,7 @@
 
 #include "net/minecraft/block/Block.hpp"
 #include "net/minecraft/block/material/Material.hpp"
-#include "net/minecraft/world/biome/Biomes.hpp"
+#include "net/minecraft/world/biome/Biome.hpp"
 
 #include <algorithm>
 #include <cmath>
@@ -11,7 +11,7 @@
 namespace seedfinder {
 namespace {
 
-using net::minecraft::BiomeInfo;
+using net::minecraft::Biome;
 using net::minecraft::Block;
 using net::minecraft::Chunk;
 
@@ -113,14 +113,17 @@ void ScanProbe::sampleBiomeGrid(
             const int localX = ix * 16 + 8;
             const int localZ = iz * 16 + 8;
             const std::size_t sampleIndex = static_cast<std::size_t>(localX * blockWidth + localZ);
-            const BiomeInfo info = sampleIndex < biomeArea_.size()
+            Biome* biome = sampleIndex < biomeArea_.size()
                 ? biomeArea_[sampleIndex]
-                : net::minecraft::Biomes::getBiome(0.5, 0.5);
+                : &net::minecraft::Biome::getBiome(0.5, 0.5);
+            if (biome == nullptr) {
+                biome = &net::minecraft::Biome::getBiome(0.5, 0.5);
+            }
 
             BiomeCell cell;
             cell.x = blockStartX + localX;
             cell.z = blockStartZ + localZ;
-            cell.biome_id = static_cast<std::uint8_t>(info.id);
+            cell.biome_id = static_cast<std::uint8_t>(biome->id);
             cell.surface_y = -1;
             cell.temperature = sampleIndex < temperatureMap.size() ? static_cast<float>(temperatureMap[sampleIndex]) : 0.5f;
             cell.downfall = sampleIndex < downfallMap.size() ? static_cast<float>(downfallMap[sampleIndex]) : 0.5f;

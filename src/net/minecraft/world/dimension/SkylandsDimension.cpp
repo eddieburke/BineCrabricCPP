@@ -3,8 +3,6 @@
 #include "net/minecraft/block/Block.hpp"
 #include "net/minecraft/world/World.hpp"
 #include "net/minecraft/world/biome/Biome.hpp"
-#include "net/minecraft/world/biome/BiomeDefinition.hpp"
-#include "net/minecraft/world/biome/Biomes.hpp"
 #include "net/minecraft/world/biome/source/FixedBiomeSource.hpp"
 #include "net/minecraft/world/gen/chunk/SkyChunkGenerator.hpp"
 #include "net/minecraft/util/math/MathHelper.hpp"
@@ -16,9 +14,7 @@ namespace net::minecraft {
 
 void SkylandsDimension::initBiomeSource()
 {
-    const BiomeDefinition& sky = Biomes::sky();
-    const BiomeInfo skyInfo {sky.id, sky.name, sky.topBlockId, sky.soilBlockId};
-    biomeSource = std::make_unique<FixedBiomeSource>(skyInfo, 0.5, 0.0);
+    biomeSource = std::make_unique<FixedBiomeSource>(Biome::sky(), 0.5, 0.0);
     id = 1;
 }
 

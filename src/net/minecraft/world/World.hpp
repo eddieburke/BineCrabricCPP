@@ -12,7 +12,6 @@
 #include "net/minecraft/world/events/WorldEvents.hpp"
 #include "net/minecraft/world/mutation/BlockMutationModule.hpp"
 #include "net/minecraft/world/ports/IEntityWorld.hpp"
-#include "net/minecraft/world/biome/source/BiomeSource.hpp"
 #include "net/minecraft/world/chunk/Chunk.hpp"
 #include "net/minecraft/world/dimension/Dimension.hpp"
 #include "net/minecraft/world/WorldProperties.hpp"
@@ -43,7 +42,7 @@ namespace net::minecraft {
 
 class GameEventListener;
 class WorldStorage;
-class BiomeDefinition;
+class Biome;
 
 class World : public IEntityWorld {
 public:
@@ -135,7 +134,7 @@ public:
 
     [[nodiscard]] float calculateSkyLightIntensity(float partialTicks) const;
     [[nodiscard]] int getTopSolidBlockY(int x, int z) const;
-    [[nodiscard]] const BiomeDefinition& getBiomeDefinition(int x, int z) const;
+    [[nodiscard]] const Biome& getBiome(int x, int z) const;
     [[nodiscard]] bool isMaterialInBox(const Box& boundingBox, block::material::Material& material) const;
     [[nodiscard]] bool isFluidInBox(const Box& boundingBox, block::material::Material& fluid) const;
     [[nodiscard]] bool isBoxSubmergedInFluid(const Box& box) const;
@@ -195,6 +194,7 @@ public:
     void tickEntities();
     void displayTick(int x, int y, int z);
     void loadChunksNearEntity(Entity* entity);
+    void pumpChunkPublish();
     void setChunkCacheCenter(int chunkX, int chunkZ);
     void setChunkCacheCenterFromBlockPos(int blockX, int blockZ);
     void populateChunkCacheReadyChunks();
@@ -299,8 +299,7 @@ public:
         (void)event;
     }
     void playStreaming(const std::string& name, int x, int y, int z);
-    void worldEvent(PlayerEntity* player, int type, int x, int y, int z, int data);
-    void worldEvent(int type, int x, int y, int z, int data) { worldEvent(nullptr, type, x, y, z, data); }
+    void spawnBlockBreakParticles(int x, int y, int z, int blockId, int blockMeta);
 
     Explosion createExplosion(Entity* source, double x, double y, double z, float power);
     Explosion createExplosion(Entity* source, double x, double y, double z, float power, bool fire);
@@ -503,7 +502,6 @@ private:
     Vec3i spawnPos_ {8, 64, 8};
     JavaRandom random_;
     OverworldChunkGenerator chunkGenerator_;
-    mutable BiomeSource biomeSource_;
     std::unordered_map<ChunkPos, Chunk, ChunkPosHash> chunks_;
 };
 

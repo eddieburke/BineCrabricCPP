@@ -3,8 +3,6 @@
 #include "net/minecraft/block/Block.hpp"
 #include "net/minecraft/world/World.hpp"
 #include "net/minecraft/world/biome/Biome.hpp"
-#include "net/minecraft/world/biome/BiomeDefinition.hpp"
-#include "net/minecraft/world/biome/Biomes.hpp"
 #include "net/minecraft/world/biome/source/FixedBiomeSource.hpp"
 #include "net/minecraft/world/gen/chunk/NetherChunkGenerator.hpp"
 
@@ -12,9 +10,7 @@ namespace net::minecraft {
 
 void NetherDimension::initBiomeSource()
 {
-    const BiomeDefinition& hell = Biomes::hell();
-    const BiomeInfo hellInfo {hell.id, hell.name, hell.topBlockId, hell.soilBlockId};
-    biomeSource = std::make_unique<FixedBiomeSource>(hellInfo, 1.0, 0.0);
+    biomeSource = std::make_unique<FixedBiomeSource>(Biome::hell(), 1.0, 0.0);
     isNether = true;
     evaporatesWater = true;
     hasCeiling = true;
@@ -53,16 +49,16 @@ bool NetherDimension::isValidSpawnPoint(int x, int z) const
         return false;
     }
     const int blockId = world->getSpawnBlockId(x, z);
-    if (blockId == Block::BEDROCK->id) {
+    if (Block::BEDROCK != nullptr && blockId == Block::BEDROCK->id) {
         return false;
     }
     if (blockId == 0) {
         return false;
     }
-    if (blockId < 0 || blockId >= static_cast<int>(Block::BLOCKS_OPAQUE.size())) {
+    if (blockId < 0 || blockId >= static_cast<int>(Block::BLOCKS.size())) {
         return false;
     }
-    return Block::BLOCKS_OPAQUE[static_cast<std::size_t>(blockId)];
+    return Block::BLOCKS_LIGHT_OPACITY[static_cast<std::size_t>(blockId)] != 0;
 }
 
 float NetherDimension::getTimeOfDay(long long time, float tickDelta) const

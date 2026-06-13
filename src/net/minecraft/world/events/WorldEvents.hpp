@@ -41,8 +41,7 @@ public:
     void playSound(PlayerEntity* player, const std::string& name, float volume, float pitch);
     void playStreaming(const std::string& name, int x, int y, int z);
 
-    void worldEvent(PlayerEntity* player, int type, int x, int y, int z, int data);
-    void worldEvent(int type, int x, int y, int z, int data) { worldEvent(nullptr, type, x, y, z, data); }
+    void blockBreakParticles(int x, int y, int z, int blockId, int blockMeta);
 
     void setBlocksDirty(int minX, int minY, int minZ, int maxX, int maxY, int maxZ);
     void setBlocksDirtyColumn(int x, int z, int minY, int maxY);

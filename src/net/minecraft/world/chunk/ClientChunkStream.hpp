@@ -7,6 +7,7 @@
 #include "net/minecraft/world/chunk/EmptyChunk.hpp"
 #include "net/minecraft/world/chunk/storage/ChunkStorage.hpp"
 
+#include <chrono>
 #include <cstdint>
 #include <deque>
 #include <functional>
@@ -43,6 +44,7 @@ public:
 
     Chunk& getChunk(int chunkX, int chunkZ);
     void prefetch();
+    void pumpPublishFrame();
     void populateReadyChunks();
     bool tick();
 
@@ -51,11 +53,6 @@ public:
     bool save(bool saveEntities, client::gui::screen::LoadingDisplay* display);
 
     [[nodiscard]] std::string debugInfo() const;
-
-    [[nodiscard]] const std::unordered_map<ChunkPos, Chunk*, ChunkPosHash>& residents() const noexcept
-    {
-        return residentChunks_;
-    }
 
 private:
     struct AsyncJob {
@@ -79,11 +76,11 @@ private:
     void enqueueDecorationIfNeeded(int chunkX, int chunkZ);
     void queueNeighborDecoration(int chunkX, int chunkZ);
     [[nodiscard]] bool isManagedChunk(const Chunk* chunk) const;
-    [[nodiscard]] bool isAwaitingPublish(int chunkX, int chunkZ) const;
     [[nodiscard]] std::unique_ptr<Chunk> takeReadyChunk(int chunkX, int chunkZ);
     [[nodiscard]] std::unique_ptr<Chunk> tryClaimAsync(int chunkX, int chunkZ);
-    void prefetchMissing();
-    void pumpPublish();
+    void resetPrefetchCursor();
+    [[nodiscard]] bool advancePrefetchCursor(int& outDx, int& outDz);
+    void pumpPublish(std::chrono::steady_clock::duration budget, int minPublish);
     void pumpDecoration();
     void scheduleEviction();
     void pumpEviction();
@@ -118,6 +115,18 @@ private:
     int centerChunkX_ = 0;
     int centerChunkZ_ = 0;
     int residentRadiusChunks_ = 15;
+
+    // Last center/radius scheduleEviction scanned. Chunks only leave range when
+    // the center moves or the radius shrinks, so the O(r^2) border scan is
+    // skipped on stationary ticks (radius -1 forces the first scan).
+    int lastEvictScanCenterX_ = 0;
+    int lastEvictScanCenterZ_ = 0;
+    int lastEvictScanRadius_ = -1;
+
+    // Incremental prefetch ring cursor (avoids O(r^2) full-disc rescan each tick).
+    int prefetchRing_ = 0;
+    int prefetchDx_ = 0;
+    int prefetchDz_ = -1;
 
     std::unordered_map<ChunkPos, Chunk*, ChunkPosHash> residentChunks_;
     std::unordered_map<ChunkPos, std::unique_ptr<Chunk>, ChunkPosHash> ownedChunks_;

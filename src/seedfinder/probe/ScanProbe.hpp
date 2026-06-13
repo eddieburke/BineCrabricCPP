@@ -39,7 +39,7 @@ private:
     bool generatorValid_ = false;
 
     net::minecraft::Chunk scratch_ {nullptr, 0, 0};
-    std::vector<net::minecraft::BiomeInfo> biomeArea_;
+    std::vector<net::minecraft::Biome*> biomeArea_;
 };
 
 } // namespace seedfinder

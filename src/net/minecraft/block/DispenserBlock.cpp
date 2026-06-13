@@ -20,6 +20,27 @@
 #include "net/minecraft/recipe/CraftingRecipeManager.hpp"
 
 namespace net::minecraft::block {
+namespace {
+
+void spawnDispenserSmoke(World* world, int x, int y, int z, int offsetX, int offsetZ)
+{
+    JavaRandom& random = world->random();
+    const double baseX = static_cast<double>(x) + static_cast<double>(offsetX) * 0.6 + 0.5;
+    const double baseY = static_cast<double>(y) + 0.5;
+    const double baseZ = static_cast<double>(z) + static_cast<double>(offsetZ) * 0.6 + 0.5;
+    for (int i = 0; i < 10; ++i) {
+        const double speed = random.nextDouble() * 0.2 + 0.01;
+        const double px = baseX + static_cast<double>(offsetX) * 0.01 + (random.nextDouble() - 0.5) * offsetZ * 0.5;
+        const double py = baseY + (random.nextDouble() - 0.5) * 0.5;
+        const double pz = baseZ + static_cast<double>(offsetZ) * 0.01 + (random.nextDouble() - 0.5) * offsetX * 0.5;
+        const double vx = static_cast<double>(offsetX) * speed + random.nextGaussian() * 0.01;
+        const double vy = -0.03 + random.nextGaussian() * 0.01;
+        const double vz = static_cast<double>(offsetZ) * speed + random.nextGaussian() * 0.01;
+        world->addParticle("smoke", px, py, pz, vx, vy, vz);
+    }
+}
+
+} // namespace
 
 using net::minecraft::entity::ItemEntity;
 using net::minecraft::entity::projectile::ArrowEntity;
@@ -103,7 +124,7 @@ void DispenserBlock::dispense(World* world, int x, int y, int z, JavaRandom& ran
     const double spawnZ = static_cast<double>(z) + static_cast<double>(offsetZ) * 0.6 + 0.5;
     ItemStack stack = dispenser->getItemToDispense();
     if (stack.empty()) {
-        world->worldEvent(1001, x, y, z, 0);
+        world->playSound(x, y, z, "random.click", 1.0f, 1.2f);
         return;
     }
 
@@ -115,19 +136,19 @@ void DispenserBlock::dispense(World* world, int x, int y, int z, JavaRandom& ran
         auto* arrow = new ArrowEntity(world, spawnX, spawnY, spawnZ);
         setProjectileVelocity(*arrow, offsetX, 0.1, offsetZ, 1.1f, 6.0f);
         world->spawnEntity(arrow);
-        world->worldEvent(1002, x, y, z, 0);
+        world->playSound(x, y, z, "random.bow", 1.0f, 1.2f);
     } else if (stack.itemId == eggId) {
         auto* egg = new EggEntity(world);
         egg->setPosition(spawnX, spawnY, spawnZ);
         setProjectileVelocity(*egg, offsetX, 0.1, offsetZ, 1.1f, 6.0f);
         world->spawnEntity(egg);
-        world->worldEvent(1002, x, y, z, 0);
+        world->playSound(x, y, z, "random.bow", 1.0f, 1.2f);
     } else if (stack.itemId == snowballId) {
         auto* snowball = new SnowballEntity(world);
         snowball->setPosition(spawnX, spawnY, spawnZ);
         setProjectileVelocity(*snowball, offsetX, 0.1, offsetZ, 1.1f, 6.0f);
         world->spawnEntity(snowball);
-        world->worldEvent(1002, x, y, z, 0);
+        world->playSound(x, y, z, "random.bow", 1.0f, 1.2f);
     } else {
         auto* itemEntity = new ItemEntity(world, spawnX, spawnY - 0.3, spawnZ, stack);
         const double impulse = randomIn.nextDouble() * 0.1 + 0.2;
@@ -138,9 +159,9 @@ void DispenserBlock::dispense(World* world, int x, int y, int z, JavaRandom& ran
         itemEntity->velocityY += randomIn.nextGaussian() * 0.0075 * 6.0;
         itemEntity->velocityZ += randomIn.nextGaussian() * 0.0075 * 6.0;
         world->spawnEntity(itemEntity);
-        world->worldEvent(1000, x, y, z, 0);
+        world->playSound(x, y, z, "random.click", 1.0f, 1.0f);
     }
-    world->worldEvent(2000, x, y, z, offsetX + 1 + (offsetZ + 1) * 3);
+    spawnDispenserSmoke(world, x, y, z, offsetX, offsetZ);
 }
 
 void DispenserBlock::neighborUpdate(World* world, int x, int y, int z, int id)

@@ -5,7 +5,6 @@
 #include "net/minecraft/client/render/Tessellator.hpp"
 #include "net/minecraft/client/texture/TextureManager.hpp"
 #include "net/minecraft/world/biome/Biome.hpp"
-#include "net/minecraft/world/biome/Biomes.hpp"
 #include "net/minecraft/world/biome/source/BiomeSource.hpp"
 
 #include <algorithm>
@@ -35,9 +34,9 @@ void BiomeMapWidget::clear(Minecraft& minecraft)
 
 std::uint32_t BiomeMapWidget::biomeColor(std::uint8_t biomeId)
 {
-    Biomes::init();
+    Biome::init();
     const auto id = static_cast<BiomeId>(biomeId);
-    const int grass = Biomes::byId(id).grassColor;
+    const int grass = Biome::byId(id).grassColor;
     return 0xFF000000U | static_cast<std::uint32_t>(grass & 0xFFFFFF);
 }
 
@@ -59,7 +58,7 @@ void BiomeMapWidget::build(
     const int startZ = centerBlockZ - radiusBlocks;
 
     net::minecraft::BiomeSource source(static_cast<std::int64_t>(seed));
-    std::vector<net::minecraft::BiomeInfo> biomes;
+    std::vector<net::minecraft::Biome*> biomes;
     source.getBiomesInArea(biomes, startX, startZ, blocksPerSide, blocksPerSide);
 
     texture::RasterImage image {};
@@ -76,7 +75,7 @@ void BiomeMapWidget::build(
             if (biomeIndex >= biomes.size()) {
                 continue;
             }
-            const std::uint8_t biomeId = static_cast<std::uint8_t>(biomes[biomeIndex].id);
+            const std::uint8_t biomeId = static_cast<std::uint8_t>(biomes[biomeIndex]->id);
             image.argb[static_cast<std::size_t>(py * textureSize + px)] = biomeColor(biomeId);
         }
     }

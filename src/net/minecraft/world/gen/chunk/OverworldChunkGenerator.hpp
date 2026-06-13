@@ -114,7 +114,7 @@ private:
         }
     }
 
-    void buildSurfaces(int chunkX, int chunkZ, Chunk& chunk, const std::vector<BiomeInfo>& biomes)
+    void buildSurfaces(int chunkX, int chunkZ, Chunk& chunk, const std::vector<Biome*>& biomes)
     {
         static constexpr int seaLevel = 64;
         constexpr double scale = 0.03125;
@@ -122,12 +122,13 @@ private:
         gravelBuffer_ = perlinNoise2_.create(gravelBuffer_, chunkX * 16, 109.0134, chunkZ * 16, 16, 1, 16, scale, 1.0, scale);
         depthBuffer_ = perlinNoise3_.create(depthBuffer_, chunkX * 16, chunkZ * 16, 0.0, 16, 16, 1, scale * 2.0, scale * 2.0, scale * 2.0);
 
-        for (int x = 0; x < 16; ++x) {
-            for (int z = 0; z < 16; ++z) {
-                const BiomeInfo& biome = biomes[static_cast<std::size_t>(x + z * 16)];
-                const bool sand = sandBuffer_[static_cast<std::size_t>(x + z * 16)] + random_.nextDouble() * 0.2 > 0.0;
-                const bool gravel = gravelBuffer_[static_cast<std::size_t>(x + z * 16)] + random_.nextDouble() * 0.2 > 3.0;
-                int depth = static_cast<int>(depthBuffer_[static_cast<std::size_t>(x + z * 16)] / 3.0 + 3.0 + random_.nextDouble() * 0.25);
+        for (int z = 0; z < 16; ++z) {
+            for (int x = 0; x < 16; ++x) {
+                const std::size_t surfaceIndex = static_cast<std::size_t>(z + x * 16);
+                const Biome& biome = *biomes[surfaceIndex];
+                const bool sand = sandBuffer_[surfaceIndex] + random_.nextDouble() * 0.2 > 0.0;
+                const bool gravel = gravelBuffer_[surfaceIndex] + random_.nextDouble() * 0.2 > 3.0;
+                int depth = static_cast<int>(depthBuffer_[surfaceIndex] / 3.0 + 3.0 + random_.nextDouble() * 0.25);
                 int run = -1;
                 std::uint8_t top = biome.topBlockId;
                 std::uint8_t soil = biome.soilBlockId;
@@ -197,7 +198,7 @@ private:
     OctavePerlinNoiseSampler forestNoise_;
     BiomeSource biomeSource_;
     CaveWorldCarver cave_;
-    std::vector<BiomeInfo> biomes_;
+    std::vector<Biome*> biomes_;
     std::vector<double> heightMap_;
     std::vector<double> sandBuffer_;
     std::vector<double> gravelBuffer_;

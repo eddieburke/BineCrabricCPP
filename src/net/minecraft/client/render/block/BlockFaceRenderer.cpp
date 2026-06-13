@@ -4,7 +4,7 @@
 
 namespace net::minecraft::client::render::block {
 
-void BlockFaceRenderer::renderBottomFace(net::minecraft::block::Block& block, double x, double y, double z, int texture)
+void BlockFaceRenderer::renderBottomFace(net::minecraft::block::Block& /*block*/, double x, double y, double z, int texture)
 {
     Tessellator& tessellator = *ctx_.tess;
     texture = ctx_.resolveTexture(0, texture);
@@ -84,7 +84,7 @@ void BlockFaceRenderer::renderBottomFace(net::minecraft::block::Block& block, do
     }
 }
 
-void BlockFaceRenderer::renderTopFace(net::minecraft::block::Block& block, double x, double y, double z, int texture)
+void BlockFaceRenderer::renderTopFace(net::minecraft::block::Block& /*block*/, double x, double y, double z, int texture)
 {
     Tessellator& tessellator = *ctx_.tess;
     texture = ctx_.resolveTexture(1, texture);
@@ -164,7 +164,7 @@ void BlockFaceRenderer::renderTopFace(net::minecraft::block::Block& block, doubl
     }
 }
 
-void BlockFaceRenderer::renderEastFace(net::minecraft::block::Block& block, double x, double y, double z, int texture)
+void BlockFaceRenderer::renderEastFace(net::minecraft::block::Block& /*block*/, double x, double y, double z, int texture)
 {
     double uMin;
     Tessellator& tessellator = *ctx_.tess;
@@ -250,7 +250,7 @@ void BlockFaceRenderer::renderEastFace(net::minecraft::block::Block& block, doub
     }
 }
 
-void BlockFaceRenderer::renderWestFace(net::minecraft::block::Block& block, double x, double y, double z, int texture)
+void BlockFaceRenderer::renderWestFace(net::minecraft::block::Block& /*block*/, double x, double y, double z, int texture)
 {
     double uMin;
     Tessellator& tessellator = *ctx_.tess;
@@ -336,7 +336,7 @@ void BlockFaceRenderer::renderWestFace(net::minecraft::block::Block& block, doub
     }
 }
 
-void BlockFaceRenderer::renderNorthFace(net::minecraft::block::Block& block, double x, double y, double z, int texture)
+void BlockFaceRenderer::renderNorthFace(net::minecraft::block::Block& /*block*/, double x, double y, double z, int texture)
 {
     double uMin;
     Tessellator& tessellator = *ctx_.tess;
@@ -422,7 +422,7 @@ void BlockFaceRenderer::renderNorthFace(net::minecraft::block::Block& block, dou
     }
 }
 
-void BlockFaceRenderer::renderSouthFace(net::minecraft::block::Block& block, double x, double y, double z, int texture)
+void BlockFaceRenderer::renderSouthFace(net::minecraft::block::Block& /*block*/, double x, double y, double z, int texture)
 {
     double uMin;
     Tessellator& tessellator = *ctx_.tess;

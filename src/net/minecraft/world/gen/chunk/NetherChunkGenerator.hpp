@@ -190,11 +190,12 @@ private:
         gravelBuffer_ = perlinNoise2_.create(gravelBuffer_, chunkX * 16, 109.0134, chunkZ * 16, 16, 1, 16, scale, 1.0, scale);
         depthBuffer_ = perlinNoise3_.create(depthBuffer_, chunkX * 16, chunkZ * 16, 0.0, 16, 16, 1, scale * 2.0, scale * 2.0, scale * 2.0);
 
-        for (int x = 0; x < 16; ++x) {
-            for (int z = 0; z < 16; ++z) {
-                const bool sand = sandBuffer_[static_cast<std::size_t>(x + z * 16)] + random_.nextDouble() * 0.2 > 0.0;
-                const bool gravel = gravelBuffer_[static_cast<std::size_t>(x + z * 16)] + random_.nextDouble() * 0.2 > 0.0;
-                int depth = static_cast<int>(depthBuffer_[static_cast<std::size_t>(x + z * 16)] / 3.0 + 3.0 + random_.nextDouble() * 0.25);
+        for (int z = 0; z < 16; ++z) {
+            for (int x = 0; x < 16; ++x) {
+                const std::size_t surfaceIndex = static_cast<std::size_t>(z + x * 16);
+                const bool sand = sandBuffer_[surfaceIndex] + random_.nextDouble() * 0.2 > 0.0;
+                const bool gravel = gravelBuffer_[surfaceIndex] + random_.nextDouble() * 0.2 > 0.0;
+                int depth = static_cast<int>(depthBuffer_[surfaceIndex] / 3.0 + 3.0 + random_.nextDouble() * 0.25);
                 int run = -1;
                 std::uint8_t top = static_cast<std::uint8_t>(Block::NETHERRACK->id);
                 std::uint8_t soil = static_cast<std::uint8_t>(Block::NETHERRACK->id);

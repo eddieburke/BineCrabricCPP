@@ -1,7 +1,9 @@
 #include "net/minecraft/world/chunk/storage/RegionChunkStorage.hpp"
 
 #include "net/minecraft/world/chunk/EmptyChunk.hpp"
+#include "net/minecraft/nbt/NbtCompound.hpp"
 #include "net/minecraft/world/chunk/storage/AlphaChunkStorage.hpp"
+#include "net/minecraft/world/chunk/storage/AlphaChunkNbtCodec.hpp"
 #include "net/minecraft/world/chunk/storage/RegionIo.hpp"
 #include "net/minecraft/world/World.hpp"
 
@@ -19,8 +21,9 @@ Chunk RegionChunkStorage::loadChunk(World* world, int chunkX, int chunkZ)
     }
 
     try {
-        const Nbt root = Nbt::read(*raw);
-        return AlphaChunkStorage::loadChunkFromRootNbt(world, root, chunkX, chunkZ);
+        Nbt root = Nbt::read(*raw);
+        NbtCompound rootCompound = NbtCompound::bind(root);
+        return AlphaChunkStorage::loadChunkFromRootNbt(world, rootCompound, chunkX, chunkZ);
     } catch (const std::exception& exception) {
         std::cout << "Failed to load chunk at " << chunkX << "," << chunkZ << ": " << exception.what() << '\n';
         return EmptyChunk(world, chunkX, chunkZ);
@@ -35,8 +38,8 @@ void RegionChunkStorage::saveChunk(World* world, Chunk& chunk)
     world->checkSessionLock();
 
     try {
-        const NbtCompound root = AlphaChunkStorage::saveChunkToRootNbt(chunk, world);
-        const std::vector<std::uint8_t> raw = root.storage().toBytes();
+        std::vector<std::uint8_t> raw;
+        AlphaChunkNbtCodec::writeRootChunk(raw, chunk, world);
         RegionIo::writeChunkData(dir_, chunk.x, chunk.z, raw);
 
         WorldProperties& properties = world->getProperties();

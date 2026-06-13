@@ -107,7 +107,18 @@ bool ServerPlayerInteractionManager::tryBreakBlock(int x, int y, int z)
     }
     const int blockId = world->getBlockId(x, y, z);
     const int meta = world->getBlockMeta(x, y, z);
-    world->worldEvent(player, 2001, x, y, z, blockId + world->getBlockMeta(x, y, z) * 256);
+    if (blockId > 0 && blockId < Block::BLOCK_COUNT && Block::BLOCKS[static_cast<std::size_t>(blockId)] != nullptr) {
+        Block* block = Block::BLOCKS[static_cast<std::size_t>(blockId)];
+        BlockSoundGroup* group = block->soundGroup != nullptr ? block->soundGroup : &Block::DEFAULT_SOUND_GROUP;
+        world->playSound(
+            static_cast<double>(x) + 0.5,
+            static_cast<double>(y) + 0.5,
+            static_cast<double>(z) + 0.5,
+            group->getBreakSound(),
+            (group->getVolume() + 1.0f) / 2.0f,
+            group->getPitch() * 0.8f);
+        world->spawnBlockBreakParticles(x, y, z, blockId, meta);
+    }
     const bool removed = finishMining(x, y, z);
     ItemStack handStack = player->getHand();
     if (!handStack.empty() && handStack.getItem() != nullptr) {

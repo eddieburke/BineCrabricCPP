@@ -40,7 +40,16 @@ bool InteractionManager::breakBlock(int x, int y, int z, int /*direction*/)
     const int blockId = world->getBlockId(x, y, z);
     Block* block = blockId > 0 ? Block::BLOCKS[static_cast<std::size_t>(blockId)] : nullptr;
     if (block != nullptr) {
-        world->worldEvent(2001, x, y, z, block->id + world->getBlockMeta(x, y, z) * 256);
+        const int meta = world->getBlockMeta(x, y, z);
+        BlockSoundGroup* group = block->soundGroup != nullptr ? block->soundGroup : &Block::DEFAULT_SOUND_GROUP;
+        world->playSound(
+            static_cast<double>(x) + 0.5,
+            static_cast<double>(y) + 0.5,
+            static_cast<double>(z) + 0.5,
+            group->getBreakSound(),
+            (group->getVolume() + 1.0f) / 2.0f,
+            group->getPitch() * 0.8f);
+        world->spawnBlockBreakParticles(x, y, z, block->id, meta);
     }
     const int meta = world->getBlockMeta(x, y, z);
     const bool removed = world->setBlock(x, y, z, 0);

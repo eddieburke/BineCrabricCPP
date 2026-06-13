@@ -32,6 +32,7 @@
 #include "net/minecraft/client/util/DisplayManager.hpp"
 #include "net/minecraft/client/font/TextRenderer.hpp"
 #include "msauth/SessionRestore.hpp"
+#include "net/minecraft/client/sound/WorldSoundListener.hpp"
 #include "net/minecraft/client/util/MinecraftDirectories.hpp"
 #include "net/minecraft/stat/PlayerStats.hpp"
 #include "net/minecraft/world/storage/RegionWorldStorageSource.hpp"
@@ -357,6 +358,7 @@ void ClientInitializer::bootstrap(Minecraft& client)
     client.textureManager.addDynamicTexture(new render::texture::FireSprite(1));
     client.particleManager.setTextureManager(&client.textureManager);
     client.worldRenderer = std::make_unique<render::WorldRenderer>(&client, &client.textureManager);
+    client.worldSoundListener = std::make_unique<sound::WorldSoundListener>(&client);
     client.atmosphereRenderer = std::make_unique<render::atmosphere::AtmosphereRenderer>();
     client.atmosphereRenderer->rebuildStaticGeometry();
     gl::GL11::glViewport(0, 0, client.displayWidth, client.displayHeight);
@@ -367,13 +369,13 @@ void ClientInitializer::bootstrap(Minecraft& client)
     client.inGameHud.setClient(&client);
     client.toast.setClient(&client);
     setStartupPhase("init: title screen");
+    msauth::beginRestoreSavedAccount(client);
     if (!client.startupServerAddress_.empty()) {
         client.setScreen(std::make_unique<gui::screen::ConnectScreen>(&client, client.startupServerAddress_, client.startupServerPort));
     } else {
         client.setScreen(std::make_unique<gui::screen::TitleScreen>());
     }
     setStartupPhase("init: complete");
-    msauth::tryApplySavedAccount(client);
 }
 
 } // namespace net::minecraft::client::lifecycle

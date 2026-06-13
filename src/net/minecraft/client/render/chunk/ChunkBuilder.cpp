@@ -137,35 +137,6 @@ void ChunkMeshJob::releasePins() noexcept
     pinsReleased_ = true;
 }
 
-void ChunkBuilder::setPosition(int newX, int newY, int newZ)
-{
-    if (newX == x && newY == y && newZ == z) {
-        return;
-    }
-    reset();
-    x = newX;
-    y = newY;
-    z = newZ;
-    centerX = x + sizeX / 2;
-    centerY = y + sizeY / 2;
-    centerZ = z + sizeZ / 2;
-    renderX = x & 0x3FF;
-    renderY = y;
-    renderZ = z & 0x3FF;
-    cameraOffsetX = x - renderX;
-    cameraOffsetY = y - renderY;
-    cameraOffsetZ = z - renderZ;
-    constexpr float padding = 6.0f;
-    cullingBox = net::minecraft::Box(
-        static_cast<double>(x) - padding,
-        static_cast<double>(y) - padding,
-        static_cast<double>(z) - padding,
-        static_cast<double>(x + sizeX) + padding,
-        static_cast<double>(y + sizeY) + padding,
-        static_cast<double>(z + sizeZ) + padding);
-    invalidate();
-}
-
 void ChunkBuilder::buildMesh(ChunkMeshJob& job)
 {
     // The snapshot is captured on the main thread before dispatch (WorldRendererCore
@@ -304,38 +275,6 @@ void ChunkBuilder::uploadMesh(const ChunkMeshJob& job)
 
     hasSkyLight = job.result.hasSkyLight;
     built = true;
-}
-
-void ChunkBuilder::renderLayer(int layerId, double interpX, double interpY, double interpZ) const
-{
-    if (!hasLayerGeometry(layerId)) {
-        return;
-    }
-
-    const float cameraDx = static_cast<float>(cameraOffsetX - interpX);
-    const float cameraDy = static_cast<float>(cameraOffsetY - interpY);
-    const float cameraDz = static_cast<float>(cameraOffsetZ - interpZ);
-
-    if (baseRenderList < 0) {
-        return;
-    }
-    gl::GL11::glPushMatrix();
-    gl::GL11::glTranslatef(cameraDx, cameraDy, cameraDz);
-    gl::GL11::glCallList(baseRenderList + layerId);
-    gl::GL11::glPopMatrix();
-}
-
-void ChunkBuilder::reset()
-{
-    renderLayerEmpty = {true, true};
-    inFrustum = false;
-    built = false;
-}
-
-void ChunkBuilder::close()
-{
-    reset();
-    world = nullptr;
 }
 
 } // namespace net::minecraft::client::render::chunk

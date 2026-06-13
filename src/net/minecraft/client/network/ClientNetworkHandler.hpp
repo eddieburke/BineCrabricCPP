@@ -37,7 +37,7 @@ namespace net::minecraft::client::network {
 
 class ClientNetworkHandler : public NetworkHandler {
 public:
-    ClientNetworkHandler(client::Minecraft* minecraft, std::string address, int port);
+    ClientNetworkHandler(client::Minecraft* minecraft);
     ~ClientNetworkHandler();
 
     void tick();
@@ -155,8 +155,6 @@ private:
     std::unique_ptr<SimpleInventory> openScreenInventory_;
     std::unique_ptr<block::entity::FurnaceBlockEntity> openScreenFurnace_;
     std::unique_ptr<block::entity::DispenserBlockEntity> openScreenDispenser_;
-    std::string address_;
-    int port_ = 0;
 
     enum class JoinServerState {
         None,

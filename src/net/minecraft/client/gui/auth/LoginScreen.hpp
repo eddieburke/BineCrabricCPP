@@ -10,11 +10,11 @@
 #include <string>
 #include <thread>
 
-namespace msauth {
+namespace net::minecraft::client::gui::auth {
 
-class LoginScreen : public net::minecraft::client::gui::screen::Screen {
+class LoginScreen : public gui::screen::Screen {
 public:
-    explicit LoginScreen(net::minecraft::client::gui::screen::ScreenFactory returnFactory);
+    explicit LoginScreen(gui::screen::ScreenFactory returnFactory);
     ~LoginScreen() override;
 
     void init() override;
@@ -26,19 +26,19 @@ private:
     void mergePendingImport();
     void showImportError(std::string line2, std::string error);
 
-    net::minecraft::client::gui::screen::ScreenFactory returnFactory_;
+    gui::screen::ScreenFactory returnFactory_;
     std::string statusLine1_;
     std::string statusLine2_;
     std::string errorMessage_;
-    net::minecraft::client::gui::widget::ActionButtonWidget* importButton_ = nullptr;
+    gui::widget::ActionButtonWidget* importButton_ = nullptr;
 
     std::atomic<bool> importRunning_ {false};
     std::atomic<bool> importFinished_ {false};
     std::mutex importMutex_;
-    std::optional<MicrosoftAccount> pendingImport_;
+    std::optional<msauth::MicrosoftAccount> pendingImport_;
     std::string pendingImportPath_;
     std::thread importThread_;
     bool firstInit_ = true;
 };
 
-} // namespace msauth
+} // namespace net::minecraft::client::gui::auth

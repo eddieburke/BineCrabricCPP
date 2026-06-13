@@ -8,6 +8,22 @@
 #include "net/minecraft/world/World.hpp"
 
 namespace net::minecraft::block {
+namespace {
+
+void playDoorToggleSound(World* world, int x, int y, int z)
+{
+    JavaRandom& random = world->random();
+    const char* sound = random.nextDouble() < 0.5 ? "random.door_open" : "random.door_close";
+    world->playSound(
+        static_cast<double>(x) + 0.5,
+        static_cast<double>(y) + 0.5,
+        static_cast<double>(z) + 0.5,
+        sound,
+        1.0f,
+        random.nextFloat() * 0.1f + 0.9f);
+}
+
+} // namespace
 
 DoorBlock::DoorBlock(int id, Material& mat) : Block(id, mat)
 {
@@ -133,7 +149,7 @@ bool DoorBlock::onUse(World* world, int x, int y, int z, net::minecraft::PlayerE
     }
     world->setBlockMeta(x, y, z, meta ^ 4);
     world->setBlocksDirty(x, y - 1, z, x, y, z);
-    world->worldEvent(player, 1003, x, y, z, 0);
+    playDoorToggleSound(world, x, y, z);
     return true;
 }
 
@@ -158,7 +174,7 @@ void DoorBlock::setOpen(World* world, int x, int y, int z, bool open)
     }
     world->setBlockMeta(x, y, z, meta ^ 4);
     world->setBlocksDirty(x, y - 1, z, x, y, z);
-    world->worldEvent(nullptr, 1003, x, y, z, 0);
+    playDoorToggleSound(world, x, y, z);
 }
 
 std::optional<net::minecraft::HitResult> DoorBlock::raycast(

@@ -46,7 +46,7 @@ ResolvedRenderOptions resolve(const GameOptions& options)
     r.cloudHeightScale = options.ofCloudsHeight;
 
     r.fancyPrecipitation = options.ofRain == 0 && options.fancyGraphics;
-    r.entityDistanceScale = options.ofEntityDistanceScale;
+    r.entityDistanceScale = std::clamp(options.ofEntityDistanceScale, 0.25f, 4.0f);
 
     r.weatherEnabled = options.ofWeather;
     r.rainMode = options.ofRain;

@@ -5,6 +5,7 @@
 #include "net/minecraft/world/World.hpp"
 
 #include <algorithm>
+#include <chrono>
 #include <cmath>
 #include <thread>
 
@@ -21,10 +22,12 @@ ClientChunkStream::ClientChunkStream(World* world, ChunkStorage* storage, ChunkS
       empty_(world, 0, 0),
       generator_(generator),
       storage_(storage),
-      genPool_(std::clamp(std::thread::hardware_concurrency() == 0U ? 2U : std::thread::hardware_concurrency() / 2U, 2U, 4U),
+      genPool_(std::clamp(std::thread::hardware_concurrency() == 0U ? 2U : std::thread::hardware_concurrency() / 2U, 2U, 6U),
           "chunk-gen")
 {
-    maxInFlight_ = std::max<std::size_t>(32, static_cast<std::size_t>(genPool_.threadCount()) * 8U);
+    // The resident disc grows quadratically with render distance, so let more
+    // generation run concurrently; publish (main thread) is the real throttle.
+    maxInFlight_ = std::max<std::size_t>(64, static_cast<std::size_t>(genPool_.threadCount()) * 16U);
 }
 
 void ClientChunkStream::initAsync(std::uint64_t seed, std::function<std::unique_ptr<ChunkSource>(std::uint64_t)> genFactory)
@@ -35,13 +38,22 @@ void ClientChunkStream::initAsync(std::uint64_t seed, std::function<std::unique_
 
 void ClientChunkStream::setCenter(int chunkX, int chunkZ) noexcept
 {
+    if (chunkX == centerChunkX_ && chunkZ == centerChunkZ_) {
+        return;
+    }
     centerChunkX_ = chunkX;
     centerChunkZ_ = chunkZ;
+    resetPrefetchCursor();
 }
 
 void ClientChunkStream::setResidentRadius(int radiusChunks)
 {
-    residentRadiusChunks_ = std::max(1, radiusChunks);
+    const int radius = std::max(1, radiusChunks);
+    if (radius == residentRadiusChunks_) {
+        return;
+    }
+    residentRadiusChunks_ = radius;
+    resetPrefetchCursor();
 }
 
 bool ClientChunkStream::isWithinResidentRadius(int chunkX, int chunkZ) const noexcept
@@ -197,48 +209,75 @@ std::unique_ptr<Chunk> ClientChunkStream::tryClaimAsync(int chunkX, int chunkZ)
     return result;
 }
 
-bool ClientChunkStream::isAwaitingPublish(int chunkX, int chunkZ) const
+void ClientChunkStream::resetPrefetchCursor()
 {
-    for (const auto& job : readyToPublish_) {
-        if (job->chunkX == chunkX && job->chunkZ == chunkZ) {
-            return true;
-        }
-    }
-    const std::lock_guard lock(asyncMutex_);
-    return inFlight_.contains(ChunkPos {chunkX, chunkZ});
+    prefetchRing_ = 0;
+    prefetchDx_ = 0;
+    prefetchDz_ = -1;
 }
 
-void ClientChunkStream::prefetchMissing()
+bool ClientChunkStream::advancePrefetchCursor(int& outDx, int& outDz)
 {
-    const auto outstanding = [this] {
-        const std::lock_guard lock(asyncMutex_);
-        return inFlight_.size() + readyToPublish_.size();
-    };
-
-    for (int radius = 0; radius <= residentRadiusChunks_ && outstanding() < maxInFlight_; ++radius) {
-        for (int dx = -radius; dx <= radius && outstanding() < maxInFlight_; ++dx) {
-            for (int dz = -radius; dz <= radius && outstanding() < maxInFlight_; ++dz) {
-                if (radius > 0 && std::abs(dx) != radius && std::abs(dz) != radius) {
+    while (prefetchRing_ <= residentRadiusChunks_) {
+        while (prefetchDx_ <= prefetchRing_) {
+            while (prefetchDz_ < prefetchRing_) {
+                ++prefetchDz_;
+                if (prefetchRing_ > 0 && std::abs(prefetchDx_) != prefetchRing_ && std::abs(prefetchDz_) != prefetchRing_) {
                     continue;
                 }
-                const int chunkX = centerChunkX_ + dx;
-                const int chunkZ = centerChunkZ_ + dz;
-                if (!isWithinResidentRadius(chunkX, chunkZ) || isChunkLoaded(chunkX, chunkZ)
-                    || isAwaitingPublish(chunkX, chunkZ)) {
-                    continue;
-                }
-                requestAsync(chunkX, chunkZ, prefetchPriority(chunkX, chunkZ));
+                outDx = prefetchDx_;
+                outDz = prefetchDz_;
+                return true;
             }
+            ++prefetchDx_;
+            prefetchDz_ = -prefetchRing_ - 1;
         }
+        ++prefetchRing_;
+        prefetchDx_ = -prefetchRing_;
+        prefetchDz_ = -prefetchRing_ - 1;
     }
+    resetPrefetchCursor();
+    return false;
 }
 
 void ClientChunkStream::prefetch()
 {
-    prefetchMissing();
+    std::size_t outstanding = 0;
+    std::unordered_set<ChunkPos, ChunkPosHash> pending;
+    {
+        const std::lock_guard lock(asyncMutex_);
+        outstanding = inFlight_.size() + readyToPublish_.size();
+        pending.reserve(outstanding);
+        for (const auto& [pos, job] : inFlight_) {
+            (void)job;
+            pending.insert(pos);
+        }
+    }
+    for (const auto& job : readyToPublish_) {
+        pending.insert(ChunkPos {job->chunkX, job->chunkZ});
+    }
+
+    constexpr int kCellsPerPrefetch = 128;
+    int cellsBudget = kCellsPerPrefetch;
+    int dx = 0;
+    int dz = 0;
+    while (cellsBudget > 0 && outstanding < maxInFlight_ && advancePrefetchCursor(dx, dz)) {
+        --cellsBudget;
+        const int chunkX = centerChunkX_ + dx;
+        const int chunkZ = centerChunkZ_ + dz;
+        const ChunkPos key {chunkX, chunkZ};
+        if (!isWithinResidentRadius(chunkX, chunkZ) || isChunkLoaded(chunkX, chunkZ) || pending.contains(key)) {
+            continue;
+        }
+        if (!requestAsync(chunkX, chunkZ, prefetchPriority(chunkX, chunkZ))) {
+            continue;
+        }
+        pending.insert(key);
+        ++outstanding;
+    }
 }
 
-void ClientChunkStream::pumpPublish()
+void ClientChunkStream::pumpPublish(std::chrono::steady_clock::duration budget, int minPublish)
 {
     for (auto& job : pumpCompleted()) {
         if (!job->failed && job->result != nullptr && isWithinResidentRadius(job->chunkX, job->chunkZ)) {
@@ -246,9 +285,12 @@ void ClientChunkStream::pumpPublish()
         }
     }
 
-    constexpr int kMaxPublishPerTick = 8;
+    const auto deadline = std::chrono::steady_clock::now() + budget;
     int published = 0;
-    while (!readyToPublish_.empty() && published < kMaxPublishPerTick) {
+    while (!readyToPublish_.empty()) {
+        if (published >= minPublish && std::chrono::steady_clock::now() >= deadline) {
+            break;
+        }
         std::shared_ptr<AsyncJob> job = std::move(readyToPublish_.front());
         readyToPublish_.pop_front();
 
@@ -264,6 +306,11 @@ void ClientChunkStream::pumpPublish()
     }
 }
 
+void ClientChunkStream::pumpPublishFrame()
+{
+    pumpPublish(std::chrono::microseconds(500), 1);
+}
+
 void ClientChunkStream::enqueueDecoration(int chunkX, int chunkZ)
 {
     const ChunkPos pos {chunkX, chunkZ};
@@ -274,12 +321,17 @@ void ClientChunkStream::enqueueDecoration(int chunkX, int chunkZ)
 
 void ClientChunkStream::pumpDecoration()
 {
-    constexpr int kMaxDecorationsPerTick = 2;
+    constexpr std::chrono::milliseconds kDecorationBudget {2};
+    constexpr int kMinDecorationsPerTick = 2;
+    const auto deadline = std::chrono::steady_clock::now() + kDecorationBudget;
     const std::size_t attempts = decorationQueue_.size();
     std::size_t inspected = 0;
     int decorated = 0;
 
-    while (inspected < attempts && !decorationQueue_.empty() && decorated < kMaxDecorationsPerTick) {
+    while (inspected < attempts && !decorationQueue_.empty()) {
+        if (decorated >= kMinDecorationsPerTick && std::chrono::steady_clock::now() >= deadline) {
+            break;
+        }
         const ChunkPos pos = decorationQueue_.front();
         decorationQueue_.pop_front();
         ++inspected;
@@ -301,6 +353,17 @@ void ClientChunkStream::pumpDecoration()
 
 void ClientChunkStream::scheduleEviction()
 {
+    // Nothing leaves the resident square unless the center moved or the radius
+    // shrank; skip the O(r^2) border scan on stationary ticks. pumpEviction
+    // requeues evictions it could not finish, so the queue is not lost.
+    if (centerChunkX_ == lastEvictScanCenterX_ && centerChunkZ_ == lastEvictScanCenterZ_
+        && residentRadiusChunks_ == lastEvictScanRadius_) {
+        return;
+    }
+    lastEvictScanCenterX_ = centerChunkX_;
+    lastEvictScanCenterZ_ = centerChunkZ_;
+    lastEvictScanRadius_ = residentRadiusChunks_;
+
     for (int dz = centerChunkZ_ - residentRadiusChunks_ - 1; dz <= centerChunkZ_ + residentRadiusChunks_ + 1; ++dz) {
         for (int dx = centerChunkX_ - residentRadiusChunks_ - 1; dx <= centerChunkX_ + residentRadiusChunks_ + 1; ++dx) {
             if (isWithinResidentRadius(dx, dz) || !isChunkLoaded(dx, dz)) {
@@ -316,7 +379,7 @@ void ClientChunkStream::scheduleEviction()
 
 void ClientChunkStream::pumpEviction()
 {
-    constexpr int kMaxEvictionsPerTick = 4;
+    constexpr int kMaxEvictionsPerTick = 12;
     int evicted = 0;
     const std::size_t attempts = evictionQueue_.size();
     std::size_t inspected = 0;
@@ -581,7 +644,7 @@ void ClientChunkStream::populateReadyChunks()
 
 bool ClientChunkStream::tick()
 {
-    pumpPublish();
+    pumpPublish(std::chrono::milliseconds(3), 4);
     pumpDecoration();
     scheduleEviction();
     pumpEviction();

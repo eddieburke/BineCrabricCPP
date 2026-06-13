@@ -1,4 +1,4 @@
-#include "net/minecraft/client/platform/audio/backend/XAudio2Backend.hpp"
+#include "net/minecraft/client/platform/audio/backend/AudioBackend.hpp"
 
 #include "net/minecraft/client/platform/audio/decode/AudioDecoder.hpp"
 

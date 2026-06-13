@@ -1,6 +1,7 @@
 #include "net/minecraft/client/core/WorldSession.hpp"
 
 #include "net/minecraft/client/Minecraft.hpp"
+#include "net/minecraft/client/sound/WorldSoundListener.hpp"
 #include "net/minecraft/entity/player/ClientPlayerEntity.hpp"
 #include "net/minecraft/stat/PlayerStats.hpp"
 #include "net/minecraft/util/math/MathHelper.hpp"
@@ -25,6 +26,9 @@ void WorldSession::clearWorld(Minecraft& client)
     // Detach render listeners before ownedWorld_ is destroyed. WorldRenderer keeps
     // its own world pointer; without clearing it first, the next setWorld() call
     // dereferences freed memory in removeEventListener().
+    if (client.worldSoundListener != nullptr && client.world != nullptr) {
+        client.worldSoundListener->detach(client.world);
+    }
     if (client.worldRenderer != nullptr) {
         client.worldRenderer->setWorld(nullptr);
     }
@@ -54,6 +58,9 @@ void WorldSession::setWorld(Minecraft& client, World* worldIn, const std::string
             }
         }
         client.world->savingProgress(nullptr);
+    }
+    if (client.worldSoundListener != nullptr && client.world != nullptr) {
+        client.worldSoundListener->detach(client.world);
     }
     client.world = worldIn;
     client.particleManager.setWorld(worldIn);
@@ -93,6 +100,9 @@ void WorldSession::setWorld(Minecraft& client, World* worldIn, const std::string
         }
         if (client.worldRenderer != nullptr) {
             client.worldRenderer->setWorld(worldIn);
+        }
+        if (client.worldSoundListener != nullptr) {
+            client.worldSoundListener->attach(worldIn);
         }
         if (client.interactionManager != nullptr && client.player != nullptr) {
             client.interactionManager->preparePlayerRespawn(client.player);
@@ -169,7 +179,6 @@ void WorldSession::tickJoinPlayerCounter(Minecraft& client)
     // loadChunksNearEntity). The old 30-tick gate starved the loader so chunks
     // only generated when the player physically walked into them.
     client.world->loadChunksNearEntity(client.player);
-    ++joinPlayerCounter_;
 }
 
 } // namespace net::minecraft::client::core

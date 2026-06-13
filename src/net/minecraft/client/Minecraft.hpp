@@ -78,6 +78,10 @@ namespace net::minecraft::client::render::atmosphere {
 class AtmosphereRenderer;
 }
 
+namespace net::minecraft::client::sound {
+class WorldSoundListener;
+}
+
 namespace net::minecraft::client::session {
 class SessionValidator;
 }
@@ -186,6 +190,7 @@ public:
     util::Timer timer {20.0f};
     World* world = nullptr;
     std::unique_ptr<render::WorldRenderer> worldRenderer;
+    std::unique_ptr<sound::WorldSoundListener> worldSoundListener;
     std::unique_ptr<render::atmosphere::AtmosphereRenderer> atmosphereRenderer;
     entity::player::ClientPlayerEntity* player = nullptr;
     LivingEntity* camera = nullptr;

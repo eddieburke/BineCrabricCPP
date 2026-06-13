@@ -363,6 +363,7 @@ namespace {
 
 // Prism Launcher MSA app (supports device-code flow on consumers tenant).
 constexpr const char* kDefaultClientId = "c36a9fb6-4f2a-41ff-90bd-ae7cc92031eb";
+constexpr const char* kMsaScope = "XboxLive.SignIn XboxLive.offline_access";
 
 std::string readTrimmedFile(const std::filesystem::path& path)
 {
@@ -628,7 +629,8 @@ std::optional<MsaTokenPair> refreshMsaAccessToken(const std::string& clientId, c
 {
     const std::string body = "grant_type=" + urlEncodeForm("refresh_token")
         + "&client_id=" + urlEncodeForm(clientId)
-        + "&refresh_token=" + urlEncodeForm(refreshToken);
+        + "&refresh_token=" + urlEncodeForm(refreshToken)
+        + "&scope=" + urlEncodeForm(kMsaScope);
     const HttpResponse response = httpPostForm(
         "https://login.microsoftonline.com/consumers/oauth2/v2.0/token",
         body);
@@ -657,7 +659,7 @@ DeviceCodeRequestResult requestDeviceCode(const std::string& clientId)
 {
     DeviceCodeRequestResult result;
     const std::string body = "client_id=" + urlEncodeForm(clientId)
-        + "&scope=" + urlEncodeForm("XboxLive.SignIn XboxLive.offline_access");
+        + "&scope=" + urlEncodeForm(kMsaScope);
     const HttpResponse response = httpPostForm(
         "https://login.microsoftonline.com/consumers/oauth2/v2.0/devicecode",
         body);

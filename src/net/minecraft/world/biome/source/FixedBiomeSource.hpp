@@ -11,7 +11,7 @@ namespace net::minecraft {
 
 class FixedBiomeSource : public BiomeSource {
 public:
-    FixedBiomeSource(BiomeInfo biome, double temperature, double downfall)
+    FixedBiomeSource(Biome& biome, double temperature, double downfall)
         : BiomeSource(0ULL), biome_(biome), temperature_(temperature), downfall_(downfall)
     {
     }
@@ -21,7 +21,7 @@ public:
         return std::make_unique<FixedBiomeSource>(biome_, temperature_, downfall_);
     }
 
-    [[nodiscard]] BiomeInfo getBiome(int x, int z) override
+    [[nodiscard]] Biome& getBiome(int x, int z) override
     {
         (void)x;
         (void)z;
@@ -35,7 +35,7 @@ public:
         return temperature_;
     }
 
-    std::vector<BiomeInfo>& getBiomesInArea(std::vector<BiomeInfo>& biomes, int x, int z, int width, int depth) override
+    std::vector<Biome*>& getBiomesInArea(std::vector<Biome*>& biomes, int x, int z, int width, int depth) override
     {
         (void)x;
         (void)z;
@@ -47,7 +47,7 @@ public:
             temperatureMap_.resize(size);
             downfallMap_.resize(size);
         }
-        std::fill(biomes.begin(), biomes.begin() + static_cast<std::ptrdiff_t>(size), biome_);
+        std::fill(biomes.begin(), biomes.begin() + static_cast<std::ptrdiff_t>(size), &biome_);
         std::fill(temperatureMap_.begin(), temperatureMap_.begin() + static_cast<std::ptrdiff_t>(size), temperature_);
         std::fill(downfallMap_.begin(), downfallMap_.begin() + static_cast<std::ptrdiff_t>(size), downfall_);
         return biomes;
@@ -66,7 +66,7 @@ public:
     }
 
 private:
-    BiomeInfo biome_;
+    Biome& biome_;
     double temperature_ = 0.0;
     double downfall_ = 0.0;
 };

@@ -18,7 +18,7 @@ inline std::vector<std::uint8_t> compressZlib(const std::vector<std::uint8_t>& i
 #else
     zlibshim::z_stream stream{};
     const int windowBits = gzip ? (15 + 16) : 15;
-    if (zlibshim::deflateInit2(&stream, zlibshim::Z_BEST_COMPRESSION, zlibshim::Z_DEFLATED, windowBits, 8, zlibshim::Z_DEFAULT_STRATEGY) != zlibshim::Z_OK) {
+    if (zlibshim::deflateInit2(&stream, zlibshim::Z_DEFAULT_COMPRESSION, zlibshim::Z_DEFLATED, windowBits, 8, zlibshim::Z_DEFAULT_STRATEGY) != zlibshim::Z_OK) {
         throw std::runtime_error("Failed to initialize zlib compressor");
     }
 

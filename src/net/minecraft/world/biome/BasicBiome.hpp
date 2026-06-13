@@ -1,10 +1,10 @@
 #pragma once
 
-#include "net/minecraft/world/biome/BiomeDefinition.hpp"
+#include "net/minecraft/world/biome/Biome.hpp"
 
 namespace net::minecraft {
 
-class BasicBiome : public BiomeDefinition {
+class BasicBiome : public Biome {
 public:
     BasicBiome() = default;
 };

@@ -5,6 +5,7 @@
 #include <atomic>
 #include <memory>
 #include <mutex>
+#include <optional>
 #include <string>
 #include <thread>
 #include <utility>
@@ -23,7 +24,6 @@ namespace net::minecraft::client::multiplayer {
 /// MultiplayerSession once the socket is open.
 class MultiplayerConnector {
 public:
-    MultiplayerConnector() = default;
     MultiplayerConnector(Minecraft* minecraft, std::string host, int port);
     ~MultiplayerConnector();
 
@@ -40,21 +40,11 @@ public:
     [[nodiscard]] ClientNetworkBridge* activeBridge(Minecraft* client) const;
 
 private:
-    enum class ConnectState {
-        Connecting,
-        Connected,
-        Failed,
-        Handled,
-    };
-
     std::unique_ptr<ClientNetworkBridge> pendingBridge_;
     std::atomic<bool> cancelled_ {false};
     mutable std::mutex mutex_;
-    ConnectState state_ = ConnectState::Connecting;
-    std::string error_;
+    std::optional<std::string> connectError_;
     std::thread thread_;
-    std::string host_;
-    int port_ = 0;
 };
 
 } // namespace net::minecraft::client::multiplayer

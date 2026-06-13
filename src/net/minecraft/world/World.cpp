@@ -12,7 +12,7 @@
 #include "net/minecraft/block/entity/BlockEntity.hpp"
 #include "net/minecraft/entity/player/PlayerEntity.hpp"
 #include "net/minecraft/world/biome/Biome.hpp"
-#include "net/minecraft/world/biome/Biomes.hpp"
+#include "net/minecraft/world/biome/Biome.hpp"
 #include "net/minecraft/world/chunk/Chunk.hpp"
 #include "net/minecraft/world/chunk/ChunkSource.hpp"
 #include "net/minecraft/world/chunk/storage/ChunkStorage.hpp"
@@ -41,8 +41,7 @@ World::World(std::string name, std::uint64_t seed)
       time_(0),
       spawnPos_ {8, 64, 8},
       random_(seed),
-      chunkGenerator_(nullptr, seed),
-      biomeSource_(seed)
+      chunkGenerator_(nullptr, seed)
 {
     initializeBlocks();
     if (dimension != nullptr) {
@@ -63,8 +62,7 @@ World::World(WorldStorage* dimensionData, const std::string& name, std::int64_t 
       time_(0),
       spawnPos_ {8, 64, 8},
       random_(static_cast<std::uint64_t>(seed)),
-      chunkGenerator_(nullptr, static_cast<std::uint64_t>(seed)),
-      biomeSource_(static_cast<std::uint64_t>(seed))
+      chunkGenerator_(nullptr, static_cast<std::uint64_t>(seed))
 {
     initializeBlocks();
     if (dimensionData_ == nullptr) {
@@ -120,8 +118,7 @@ World::World(World* parentWorld, std::unique_ptr<Dimension> dimensionIn)
       time_(parentWorld != nullptr ? parentWorld->time_ : 0),
       spawnPos_(parentWorld != nullptr ? parentWorld->spawnPos_ : Vec3i {8, 64, 8}),
       random_(parentWorld != nullptr ? parentWorld->seed_ : 0),
-      chunkGenerator_(nullptr, parentWorld != nullptr ? parentWorld->seed_ : 0),
-      biomeSource_(parentWorld != nullptr ? parentWorld->seed_ : 0)
+      chunkGenerator_(nullptr, parentWorld != nullptr ? parentWorld->seed_ : 0)
 {
     if (parentWorld == nullptr) {
         throw std::runtime_error("Parent world is null");
@@ -197,7 +194,7 @@ Vec3d World::getSkyColor(Entity* entity, float partialTicks) const
     const int x = MathHelper::floor(entity->x);
     const int z = MathHelper::floor(entity->z);
     const float temperature = static_cast<float>(getTemperature(x, z));
-    const int skyColor = getBiomeDefinition(x, z).getSkyColor(temperature);
+    const int skyColor = getBiome(x, z).getSkyColor(temperature);
     float red = static_cast<float>((skyColor >> 16) & 0xFF) / 255.0f;
     float green = static_cast<float>((skyColor >> 8) & 0xFF) / 255.0f;
     float blue = static_cast<float>(skyColor & 0xFF) / 255.0f;
@@ -249,7 +246,7 @@ bool World::isRaining(int x, int y, int z) const
     if (getTopSolidBlockY(x, z) > y) {
         return false;
     }
-    const BiomeDefinition& biome = getBiomeDefinition(x, z);
+    const Biome& biome = getBiome(x, z);
     if (biome.canSnow()) {
         return false;
     }
@@ -472,9 +469,9 @@ void World::playStreaming(const std::string& name, int x, int y, int z)
     events_.playStreaming(name, x, y, z);
 }
 
-void World::worldEvent(PlayerEntity* player, int type, int x, int y, int z, int data)
+void World::spawnBlockBreakParticles(int x, int y, int z, int blockId, int blockMeta)
 {
-    events_.worldEvent(player, type, x, y, z, data);
+    events_.blockBreakParticles(x, y, z, blockId, blockMeta);
 }
 
 void World::setBlocksDirty(int minX, int minY, int minZ, int maxX, int maxY, int maxZ)

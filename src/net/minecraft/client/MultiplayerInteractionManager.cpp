@@ -121,7 +121,13 @@ void MultiplayerInteractionManager::processBlockBreakingAction(int x, int y, int
         }
         blockBreakingProgress += block->getHardness(player);
         if (std::fmod(breakingSoundDelayTicks, 4.0f) == 0.0f && block != nullptr) {
-            minecraft->audio.playAt(block->soundGroup->getSound(), static_cast<float>(x) + 0.5f, static_cast<float>(y) + 0.5f, static_cast<float>(z) + 0.5f, (block->soundGroup->getVolume() + 1.0f) / 8.0f, block->soundGroup->getPitch() * 0.5f);
+            world->playSound(
+                static_cast<double>(x) + 0.5,
+                static_cast<double>(y) + 0.5,
+                static_cast<double>(z) + 0.5,
+                block->soundGroup->getSound(),
+                (block->soundGroup->getVolume() + 1.0f) / 8.0f,
+                block->soundGroup->getPitch() * 0.5f);
         }
         breakingSoundDelayTicks += 1.0f;
         if (blockBreakingProgress >= 1.0f) {

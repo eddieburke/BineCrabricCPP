@@ -4,9 +4,6 @@
 #include "net/minecraft/block/entity/BlockEntity.hpp"
 #include "net/minecraft/entity/Entity.hpp"
 #include "net/minecraft/entity/EntityTypes.hpp"
-#include "net/minecraft/nbt/Nbt.hpp"
-#include "net/minecraft/nbt/NbtCompound.hpp"
-#include "net/minecraft/nbt/NbtList.hpp"
 #include "net/minecraft/util/math/Types.hpp"
 #include "net/minecraft/world/LightType.hpp"
 #include "net/minecraft/world/chunk/BlockSource.hpp"
@@ -449,74 +446,6 @@ public:
         std::vector<std::uint8_t> copy(blocks.begin(), blocks.end());
         BlockSource::fill(copy);
         std::copy(copy.begin(), copy.end(), blocks.begin());
-    }
-
-    [[nodiscard]] NbtCompound toNbt(long long lastUpdate = 0) const
-    {
-        NbtCompound nbt;
-        nbt.putInt("xPos", x);
-        nbt.putInt("zPos", z);
-        nbt.putLong("LastUpdate", lastUpdate);
-        nbt.putByteArray("Blocks", blocks);
-        nbt.putByteArray("Data", meta.bytes);
-        nbt.putByteArray("SkyLight", skyLight.bytes);
-        nbt.putByteArray("BlockLight", blockLight.bytes);
-        nbt.putByteArray("HeightMap", std::vector<std::uint8_t>(heightmap.begin(), heightmap.end()));
-        nbt.putBoolean("TerrainPopulated", terrainPopulated);
-        nbt.put("Entities", Nbt::list());
-        NbtList tileEntities;
-        for (const auto& entry : blockEntities) {
-            if (!entry.second) {
-                continue;
-            }
-            NbtCompound tag;
-            entry.second->writeNbt(tag);
-            tileEntities.storage().asList().push_back(tag.storage());
-        }
-        nbt.put("TileEntities", tileEntities);
-        return nbt;
-    }
-
-    [[nodiscard]] static Chunk fromNbt(World* world, const NbtCompound& nbt)
-    {
-        initializeBlocks();
-        Chunk chunk(world, nbt.getInt("xPos"), nbt.getInt("zPos"));
-        chunk.lastSaveTime = static_cast<long long>(nbt.getLong("LastUpdate"));
-        chunk.terrainPopulated = nbt.getBoolean("TerrainPopulated");
-
-        const auto blockBytes = nbt.getByteArray("Blocks");
-        std::copy_n(blockBytes.begin(), std::min(blockBytes.size(), chunk.blocks.size()), chunk.blocks.begin());
-        chunk.meta = ChunkNibbleArray(nbt.getByteArray("Data"));
-        if (!chunk.meta.isArrayInitialized()) {
-            chunk.meta = ChunkNibbleArray(static_cast<int>(chunk.blocks.size()));
-        } else if (!chunk.meta.hasExpectedSizeForBlockCount(chunk.blocks.size())) {
-            chunk.meta.ensureSizeForBlockCount(chunk.blocks.size());
-        }
-        const auto skyBytes = nbt.getByteArray("SkyLight");
-        chunk.skyLight = ChunkNibbleArray(skyBytes);
-        chunk.blockLight = ChunkNibbleArray(nbt.getByteArray("BlockLight"));
-
-        const auto heightBytes = nbt.getByteArray("HeightMap");
-        if (!heightBytes.empty()) {
-            std::copy_n(heightBytes.begin(), std::min(heightBytes.size(), chunk.heightmap.size()), chunk.heightmap.begin());
-        }
-
-        const std::size_t expectedLightBytes = chunk.blocks.size() / 2;
-        const bool skyLightInitialized = chunk.skyLight.isArrayInitialized()
-            && chunk.skyLight.bytes.size() == expectedLightBytes;
-        if (heightBytes.empty() || !skyLightInitialized || chunk.skyLight.isAllZero()) {
-            chunk.heightmap.fill(0);
-            chunk.skyLight = ChunkNibbleArray(static_cast<int>(chunk.blocks.size()));
-            chunk.populateHeightMap();
-        } else {
-            chunk.populateHeightMapOnly();
-        }
-
-        if (!chunk.blockLight.isArrayInitialized() || chunk.blockLight.bytes.size() != expectedLightBytes) {
-            chunk.blockLight = ChunkNibbleArray(static_cast<int>(chunk.blocks.size()));
-            chunk.onLoad();
-        }
-        return chunk;
     }
 
     World* world = nullptr;
