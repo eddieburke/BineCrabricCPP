@@ -57,6 +57,7 @@ const char* gStartupPhase = "before main";
 #ifdef _WIN32
 std::atomic<std::uint64_t> gHeartbeat{0};
 std::atomic<bool> gHangDumpWritten{false};
+std::atomic<bool> gWatchdogDisarmed{false};
 std::string executableDirectory() {
   char path[MAX_PATH] = {};
   const DWORD length = GetModuleFileNameA(nullptr, path, MAX_PATH);
@@ -259,6 +260,9 @@ void pingMainLoopHeartbeat() {
   gHeartbeat.fetch_add(1, std::memory_order_relaxed);
   gHangDumpWritten.store(false, std::memory_order_relaxed);
 }
+void disarmHangWatchdog() {
+  gWatchdogDisarmed.store(true, std::memory_order_relaxed);
+}
 void installHangWatchdog() {
   std::thread([]() {
     std::uint64_t lastSeen = gHeartbeat.load(std::memory_order_relaxed);
@@ -267,6 +271,9 @@ void installHangWatchdog() {
     constexpr int kStallThresholdChecks = 6;
     while(true) {
       std::this_thread::sleep_for(std::chrono::seconds(kCheckIntervalSeconds));
+      if(gWatchdogDisarmed.load(std::memory_order_relaxed)) {
+        return;
+      }
       const std::uint64_t current = gHeartbeat.load(std::memory_order_relaxed);
       if(current != lastSeen) {
         lastSeen = current;

@@ -130,3 +130,9 @@ RULES FOR AGENTS.md
 
 # Shortcuts / misc
 *.lnk
+banned-ips.txt
+banned-players.txt
+ops.txt
+white-list.txt
+server.properties
+server.log

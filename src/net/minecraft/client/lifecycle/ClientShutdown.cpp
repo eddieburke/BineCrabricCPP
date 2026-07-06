@@ -1,4 +1,5 @@
 #include "net/minecraft/client/lifecycle/ClientShutdown.hpp"
+#include "net/minecraft/client/lifecycle/ClientInitializer.hpp"
 #include "net/minecraft/client/Minecraft.hpp"
 #include "net/minecraft/client/MinecraftApplet.hpp"
 #include "net/minecraft/client/resource/ResourceDownloadThread.hpp"
@@ -39,6 +40,9 @@ std::string currentExceptionName() {
 }
 } // namespace
 void ClientShutdown::stop(Minecraft& client) {
+#ifdef _WIN32
+  disarmHangWatchdog();
+#endif
   try {
     if(client.stats != nullptr) {
       client.stats->syncStats();

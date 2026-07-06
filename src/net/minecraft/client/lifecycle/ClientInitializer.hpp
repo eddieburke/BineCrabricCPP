@@ -14,6 +14,7 @@ void pauseBeforeExit();
 /// Call pingMainLoopHeartbeat() once per iteration of Minecraft::run()'s loop.
 void installHangWatchdog();
 void pingMainLoopHeartbeat();
+void disarmHangWatchdog();
 #endif
 /// Client bootstrap after Display.create(): options, textures, renderer, title screen.
 /// Anchor: Minecraft.cpp L204–277.

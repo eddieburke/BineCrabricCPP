@@ -94,7 +94,6 @@ private:
   std::mutex startStateMutex_;
   std::condition_variable startStateCv_;
   std::jthread commandThread_;
-  std::jthread backgroundDaemon_;
   std::thread runThread_;
   std::optional<host::ServerLaunchConfig> launchConfig_;
   std::string lastError_;

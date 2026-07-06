@@ -3,6 +3,7 @@
 #include "net/minecraft/client/font/TextRenderer.hpp"
 #include "net/minecraft/client/gl/GL11.hpp"
 #include "net/minecraft/client/gui/Draw2D.hpp"
+#include "net/minecraft/client/lifecycle/ClientInitializer.hpp"
 #include "net/minecraft/client/render/ProgressRenderError.hpp"
 #include "net/minecraft/client/render/Tessellator.hpp"
 #include "net/minecraft/client/util/UiScale.hpp"
@@ -103,6 +104,9 @@ void ProgressRenderer::progressStagePercentage(int percentage) {
   if(!checkRunningOrAbort()) {
     return;
   }
+#ifdef _WIN32
+  lifecycle::pingMainLoopHeartbeat();
+#endif
   const auto current =
       std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now().time_since_epoch())
           .count();

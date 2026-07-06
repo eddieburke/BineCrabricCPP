@@ -58,21 +58,12 @@ std::mutex MinecraftServer::capturedThreadMutex;
 MinecraftServer::MinecraftServer()
     : playerManager(this),
       entityTrackers{EntityTracker(this, 0), EntityTracker(this, -1)} {
-  backgroundDaemon_ = std::jthread([](const std::stop_token& stopToken) {
-    while(!stopToken.stop_requested()) {
-      std::this_thread::sleep_for(std::chrono::milliseconds(50));
-    }
-  });
 }
 MinecraftServer::MinecraftServer(const host::ServerLaunchConfig& config) : MinecraftServer() {
   launchConfig_ = config;
 }
 MinecraftServer::~MinecraftServer() {
   stopAndJoin();
-  if(backgroundDaemon_.joinable()) {
-    backgroundDaemon_.request_stop();
-    backgroundDaemon_.join();
-  }
   if(commandThread_.joinable()) {
     commandThread_.request_stop();
     commandThread_.join();

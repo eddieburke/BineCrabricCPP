@@ -40,6 +40,7 @@
 #endif
 #include "net/minecraft/nbt/Compression.hpp"
 #include "net/minecraft/nbt/Nbt.hpp"
+#include "net/minecraft/entity/player/PlayerEntity.hpp"
 #include "net/minecraft/util/json/JsonFields.hpp"
 #include "net/minecraft/world/World.hpp"
 #include "net/minecraft/world/gen/GenerationApi.hpp"
@@ -2609,12 +2610,6 @@ void callLuaEvent(const std::shared_ptr<ModHost::LoadedLuaMod>& mod, int ref, Fi
   if(!api.ready() || mod == nullptr) {
     return;
   }
-#ifdef MINECRAFT_NATIVE_EXPORTS
-  if(client::Minecraft* minecraft = client::Minecraft::INSTANCE;
-     minecraft != nullptr && minecraft->isWorldRemote()) {
-    return;
-  }
-#endif
   const std::lock_guard<std::recursive_mutex> lock(mod->stateMutex);
   if(!mod->active || mod->state == nullptr) {
     return;
@@ -2810,6 +2805,9 @@ void subscribeLuaCallback(const std::shared_ptr<ModHost::LoadedLuaMod>& mod,
     });
   } else if(event == "block_interact") {
     hooks().subscribe<BlockInteractEvent>(priority, [mod, ref](BlockInteractEvent& e) {
+      if(e.world != nullptr && e.world->isRemote()) {
+        return;
+      }
       callLuaEvent(
           mod, ref,
           [&e](lua_State* state) {
@@ -2842,6 +2840,9 @@ void subscribeLuaCallback(const std::shared_ptr<ModHost::LoadedLuaMod>& mod,
     });
   } else if(event == "entity_interact") {
     hooks().subscribe<EntityInteractEvent>(priority, [mod, ref](EntityInteractEvent& e) {
+      if(e.player != nullptr && e.player->world != nullptr && e.player->world->isRemote()) {
+        return;
+      }
       callLuaEvent(
           mod, ref,
           [&e](lua_State* state) {
@@ -2949,6 +2950,9 @@ void subscribeLuaCallback(const std::shared_ptr<ModHost::LoadedLuaMod>& mod,
     });
   } else if(event == "chunk_generation") {
     hooks().subscribe<world::gen::ChunkGenerationEvent>(priority, [mod, ref](world::gen::ChunkGenerationEvent& e) {
+      if(e.context.world != nullptr && e.context.world->isRemote()) {
+        return;
+      }
 #ifdef MINECRAFT_NATIVE_EXPORTS
       LuaChunkContext::Scope scope(e.context.chunk, e.context.world, e.context.chunkX, e.context.chunkZ,
                                    chunkWriteModeForStage(e.stage));
@@ -3006,6 +3010,9 @@ void subscribeLuaCallback(const std::shared_ptr<ModHost::LoadedLuaMod>& mod,
     });
   } else if(event == "world_spawn_search") {
     hooks().subscribe<WorldSpawnSearchEvent>(priority, [mod, ref](WorldSpawnSearchEvent& e) {
+      if(e.world != nullptr && e.world->isRemote()) {
+        return;
+      }
       callLuaEvent(
           mod, ref,
           [&e](lua_State* state) {
@@ -3162,6 +3169,7 @@ bool loadLuaMod(ModPackage& info, std::vector<std::shared_ptr<ModHost::LoadedLua
   }
   loadedMods.push_back(std::move(mod));
   info.active = true;
+  runtimeLog(info.id, "info", "loaded " + info.name + " " + info.version);
   return true;
 }
 } // namespace

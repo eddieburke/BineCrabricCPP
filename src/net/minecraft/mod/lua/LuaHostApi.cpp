@@ -97,7 +97,7 @@ void runtimeLog(const std::string& modId, const char* level, const std::string& 
   if(level != nullptr && *level != '\0') {
     std::cout << ':' << level;
   }
-  std::cout << "] " << message << '\n';
+  std::cout << "] " << message << std::endl;
 }
 void pop(lua_State* state, int count) {
   LuaApi& api = luaApi();
