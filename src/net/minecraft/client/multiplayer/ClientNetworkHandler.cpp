@@ -16,6 +16,8 @@
 #include "net/minecraft/client/gui/screen/DownloadingTerrainScreen.hpp"
 #include "net/minecraft/entity/player/ClientPlayerEntity.hpp"
 #include "net/minecraft/inventory/SimpleInventory.hpp"
+#include "net/minecraft/mod/runtime/ModHost.hpp"
+#include "net/minecraft/mod/runtime/WorldRequiredMods.hpp"
 #include "net/minecraft/network/Connection.hpp"
 #include "net/minecraft/network/packet/Packets.hpp"
 #include "net/minecraft/stat/PlayerStats.hpp"
@@ -123,7 +125,34 @@ void ClientNetworkHandler::onHandshake(const HandshakePacket& packet) {
   if(minecraft == nullptr || disconnected) {
     return;
   }
-  if(packet.name == "-") {
+  std::string handshakeName = packet.name;
+  const std::size_t modsMarker = handshakeName.find(";mods=");
+  if(modsMarker != std::string::npos) {
+    const std::string requiredCsv = handshakeName.substr(modsMarker + 6);
+    handshakeName = handshakeName.substr(0, modsMarker);
+    const std::vector<std::string> required = mod::runtime::WorldRequiredMods::splitCsv(requiredCsv);
+    const std::vector<std::string> missing = mod::runtime::WorldRequiredMods::missingMods(required);
+    if(!missing.empty()) {
+      disconnected = true;
+      joinServerCanceled_ = true;
+      minecraft->setWorld(nullptr);
+      retireOwnedWorld();
+      world = nullptr;
+      minecraft->setScreen(std::make_unique<client::gui::screen::DisconnectedScreen>(
+          "disconnect.disconnected", "disconnect.genericReason",
+          std::vector<std::string>{"This world requires Lua mods: " +
+                                   mod::runtime::WorldRequiredMods::joinCsv(missing)}));
+      return;
+    }
+    std::vector<std::string> activeMods;
+    for(const mod::runtime::ModPackage& pkg : mod::runtime::host().packageMods()) {
+      if(pkg.active) {
+        activeMods.push_back(pkg.id);
+      }
+    }
+    sendPacket(ModListPacket(mod::runtime::WorldRequiredMods::joinCsv(activeMods)));
+  }
+  if(handshakeName == "-") {
     sendPacket(::net::minecraft::network::java::makeClientLoginHello(minecraft->session.username));
     return;
   }
@@ -137,7 +166,7 @@ void ClientNetworkHandler::onHandshake(const HandshakePacket& packet) {
   // The connector serializes account refresh before the handshake. Redeeming a
   // rotating refresh token again here can invalidate the connector's result.
   const client::util::Session session = minecraft->session;
-  const std::string serverId = packet.name;
+  const std::string serverId = handshakeName;
   if(joinServerThread_.joinable()) {
     joinServerThread_.join();
   }

@@ -31,6 +31,7 @@ public:
   }
   void onHandshake(const HandshakePacket& packet) override;
   void onHello(const LoginHelloPacket& packet) override;
+  void onModList(const ModListPacket& packet) override;
   void handle(const Packet& packet) override;
   void onDisconnected(const std::string& reason, const std::vector<std::string>& args) override;
   [[nodiscard]] std::string getConnectionInfo() const;
@@ -39,6 +40,7 @@ public:
 private:
   void accept(const LoginHelloPacket& packet);
   void verifyUsernameOnline(const LoginHelloPacket& packet);
+  [[nodiscard]] std::vector<std::string> requiredWorldMods() const;
   [[nodiscard]] static std::string urlEncodeComponent(const std::string& value);
   MinecraftServer* server_ = nullptr;
   ConnectionListener* listener_ = nullptr;
@@ -48,6 +50,7 @@ private:
   std::string username_;
   std::optional<LoginHelloPacket> deferredLoginPacket_;
   std::string serverId_;
+  std::string clientModsCsv_;
   std::thread verifyThread_;
   std::mutex verifyMutex_;
 };

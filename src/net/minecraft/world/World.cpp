@@ -21,6 +21,7 @@
 #include "net/minecraft/world/events/GameEventListener.hpp"
 #include "net/minecraft/mod/GameHooks.hpp"
 #include "net/minecraft/mod/HookBus.hpp"
+#include "net/minecraft/mod/runtime/WorldRequiredMods.hpp"
 #include "net/minecraft/world/storage/AlphaWorldStorage.hpp"
 #include "net/minecraft/world/storage/WorldStorage.hpp"
 #include "net/minecraft/util/math/MathHelper.hpp"
@@ -325,6 +326,9 @@ void World::save(bool blocking) {
     }
   }
   persistentStateManager.save();
+  if(dimensionData_ != nullptr && !isRemote_) {
+    mod::runtime::WorldRequiredMods::writeWorldFile(dimensionData_->worldDirectory(), this);
+  }
   if(dimensionData_ != nullptr) {
     if(auto* alphaStorage = dynamic_cast<AlphaWorldStorage*>(dimensionData_);
        alphaStorage != nullptr && dynamic_cast<ServerWorld*>(this) != nullptr) {
@@ -693,6 +697,7 @@ void World::finishLightingUpdates() {
   doLightingUpdates(std::numeric_limits<std::size_t>::max());
 }
 World::~World() {
+  mod::runtime::WorldRequiredMods::forgetWorld(this);
   lighting_.stop();
 }
 void World::scheduleBlockUpdate(int x, int y, int z, int id, int tickRate) {

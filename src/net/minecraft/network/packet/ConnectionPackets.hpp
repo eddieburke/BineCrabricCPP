@@ -51,7 +51,7 @@ public:
   explicit HandshakePacket(std::string name) : name(std::move(name)) {}
   std::string name;
   void read(std::istream& input) override {
-    name = Packet::readString(input, 32);
+    name = Packet::readString(input, 512);
   }
   void write(std::ostream& output) const override {
     Packet::writeString(name, output);
@@ -61,6 +61,24 @@ public:
   }
   [[nodiscard]] std::size_t size() const override {
     return 4U + name.size() + 4U;
+  }
+};
+class ModListPacket : public Packet {
+public:
+  ModListPacket() = default;
+  explicit ModListPacket(std::string modsCsv) : modsCsv(std::move(modsCsv)) {}
+  std::string modsCsv;
+  void read(std::istream& input) override {
+    modsCsv = Packet::readString(input, 1024);
+  }
+  void write(std::ostream& output) const override {
+    Packet::writeString(modsCsv, output);
+  }
+  void apply(NetworkHandler& networkHandler) const override {
+    networkHandler.onModList(*this);
+  }
+  [[nodiscard]] std::size_t size() const override {
+    return 4U + modsCsv.size();
   }
 };
 class DisconnectPacket : public Packet {

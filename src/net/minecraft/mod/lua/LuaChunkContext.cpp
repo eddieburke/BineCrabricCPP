@@ -1,4 +1,5 @@
 #include "net/minecraft/mod/lua/LuaChunkContext.hpp"
+#include "net/minecraft/mod/runtime/WorldRequiredMods.hpp"
 #include "net/minecraft/world/chunk/Chunk.hpp"
 #include "net/minecraft/world/gen/Generator.hpp"
 namespace net::minecraft::mod::lua {
@@ -70,6 +71,7 @@ bool LuaChunkContext::setBlock(int localX, int y, int localZ, int blockId) {
   if(writeMode() == ChunkWriteMode::RawGeneration) {
     Generator::setRawBlock(*chunk, localX, y, localZ, blockId);
     chunk->dirty = true;
+    runtime::WorldRequiredMods::notePlaced(activeWorld(), blockId);
     return true;
   }
   return chunk->setBlock(localX, y, localZ, blockId);

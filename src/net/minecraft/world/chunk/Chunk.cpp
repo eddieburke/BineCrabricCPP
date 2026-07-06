@@ -2,6 +2,7 @@
 #include "net/minecraft/block/Block.hpp"
 #include "net/minecraft/block/BlockWithEntity.hpp"
 #include "net/minecraft/block/entity/BlockEntity.hpp"
+#include "net/minecraft/mod/runtime/WorldRequiredMods.hpp"
 #include "net/minecraft/registry/Registry.hpp"
 #include "net/minecraft/world/World.hpp"
 #include <algorithm>
@@ -49,6 +50,7 @@ bool Chunk::setBlock(int localX, int yPos, int localZ, int rawId, int metadataVa
     if(placedBlock != nullptr) {
       placedBlock->onPlaced(world, blockX, yPos, blockZ);
     }
+    mod::runtime::WorldRequiredMods::notePlaced(world, rawId);
   }
   if(world != nullptr) {
     world->setBlockDirty(blockX, yPos, blockZ);
@@ -88,6 +90,9 @@ bool Chunk::setBlock(int localX, int yPos, int localZ, int rawId) {
       if(placedBlock != nullptr) {
         placedBlock->onPlaced(world, blockX, yPos, blockZ);
       }
+    }
+    if(rawId != 0) {
+      mod::runtime::WorldRequiredMods::notePlaced(world, rawId);
     }
     world->setBlockDirty(blockX, yPos, blockZ);
   }

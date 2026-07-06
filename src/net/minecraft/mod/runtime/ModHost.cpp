@@ -7,6 +7,7 @@
 #include "net/minecraft/mod/lua/LuaNbtCodec.hpp"
 #include "net/minecraft/mod/runtime/ModRenderScope.hpp"
 #include "net/minecraft/mod/runtime/ModHost.hpp"
+#include "net/minecraft/mod/runtime/WorldRequiredMods.hpp"
 #include "net/minecraft/mod/GameHooks.hpp"
 #include "net/minecraft/mod/HookBus.hpp"
 #include "net/minecraft/mod/ModLifecycle.hpp"
@@ -1752,6 +1753,7 @@ int luaRegisterBlock(lua_State* state) {
     api.pushstring(state, error.c_str());
     return 2;
   }
+  WorldRequiredMods::registerContentBlock(mod->modId, spec.blockId);
   api.pushboolean(state, 1);
   return 1;
 }

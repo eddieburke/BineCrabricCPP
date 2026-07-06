@@ -65,6 +65,7 @@ void PacketRegistry::bootstrap() {
     Packet::registerPacket<UpdateSignPacket>(130, true, true);
     Packet::registerPacket<MapUpdateS2CPacket>(131, true, false);
     Packet::registerPacket<IncreaseStatS2CPacket>(200, true, false);
+    Packet::registerPacket<ModListPacket>(230, false, true);
     Packet::registerPacket<DisconnectPacket>(255, true, true);
   });
 }

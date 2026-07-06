@@ -38,6 +38,7 @@ class GlobalEntitySpawnS2CPacket;
 class MapUpdateS2CPacket;
 class KeepAlivePacket;
 class LoginHelloPacket;
+class ModListPacket;
 class OpenScreenS2CPacket;
 class PaintingEntitySpawnS2CPacket;
 class PlayNoteSoundS2CPacket;
@@ -65,6 +66,7 @@ public:
   virtual void onDisconnected(const std::string&, const std::vector<std::string>&) {}
   virtual void onHandshake(const HandshakePacket&) {}
   virtual void onHello(const LoginHelloPacket&) {}
+  virtual void onModList(const ModListPacket&) {}
   virtual void onChatMessage(const ChatMessagePacket&) {}
   virtual void onDisconnect(const DisconnectPacket&) {}
   virtual void onKeepAlive(const KeepAlivePacket&) {}

@@ -1,5 +1,7 @@
 #include "net/minecraft/client/Minecraft.hpp"
 #include "net/minecraft/mod/GameHooks.hpp"
+#include "net/minecraft/mod/runtime/WorldRequiredMods.hpp"
+#include "net/minecraft/client/gui/screen/DisconnectedScreen.hpp"
 #include "net/minecraft/client/MinecraftApplet.hpp"
 #include "net/minecraft/achievement/Achievements.hpp"
 #include "net/minecraft/client/debug/ClientProfilerOverlay.hpp"
@@ -547,6 +549,19 @@ void Minecraft::startGame(const std::string& worldName, const std::string& name,
   worldSession_.ownedWorldStorageMut() = worldStorageSource->getSaveLoader(worldName, false);
   if(worldSession_.ownedWorldStorage() == nullptr) {
     throw std::runtime_error("Failed to create world storage for save '" + worldName + "'");
+  }
+  {
+    const std::vector<std::string> requiredMods =
+        mod::runtime::WorldRequiredMods::readWorldFile(worldSession_.ownedWorldStorage()->worldDirectory());
+    const std::vector<std::string> missingMods = mod::runtime::WorldRequiredMods::missingMods(requiredMods);
+    if(!missingMods.empty()) {
+      worldSession_.ownedWorldStorageMut().reset();
+      setScreen(std::make_unique<gui::screen::DisconnectedScreen>(
+          "disconnect.disconnected", "disconnect.genericReason",
+          std::vector<std::string>{"This world requires Lua mods: " +
+                                   mod::runtime::WorldRequiredMods::joinCsv(missingMods)}));
+      return;
+    }
   }
   progressRenderer.progressStart("Generating level");
   progressRenderer.progressStage("Preparing world");

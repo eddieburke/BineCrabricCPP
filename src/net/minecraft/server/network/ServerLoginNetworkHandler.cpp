@@ -1,5 +1,7 @@
 #include "net/minecraft/server/network/ServerLoginNetworkHandler.hpp"
 #include "net/minecraft/entity/player/ServerPlayerEntity.hpp"
+#include "net/minecraft/mod/runtime/WorldRequiredMods.hpp"
+#include "net/minecraft/world/storage/WorldStorage.hpp"
 #include "net/minecraft/util/http/HttpClient.hpp"
 #include "net/minecraft/network/Connection.hpp"
 #include "net/minecraft/network/packet/ChatPackets.hpp"
@@ -62,10 +64,28 @@ void ServerLoginNetworkHandler::disconnect(const std::string& reason) {
     std::cerr << error.what() << std::endl;
   }
 }
+std::vector<std::string> ServerLoginNetworkHandler::requiredWorldMods() const {
+  if(server_ == nullptr) {
+    return {};
+  }
+  ServerWorld* world = server_->getWorld(0);
+  if(world == nullptr || world->getDimensionData() == nullptr) {
+    return {};
+  }
+  std::vector<std::string> required =
+      mod::runtime::WorldRequiredMods::readWorldFile(world->getDimensionData()->worldDirectory());
+  for(const std::string& modId : mod::runtime::WorldRequiredMods::sessionMods(world)) {
+    required.push_back(modId);
+  }
+  std::sort(required.begin(), required.end());
+  required.erase(std::unique(required.begin(), required.end()), required.end());
+  return required;
+}
 void ServerLoginNetworkHandler::onHandshake(const HandshakePacket& /*packet*/) {
   if(connection_ == nullptr) {
     return;
   }
+  std::string reply = "-";
   if(onlineMode_) {
     std::random_device device;
     std::mt19937_64 generator(device());
@@ -73,10 +93,16 @@ void ServerLoginNetworkHandler::onHandshake(const HandshakePacket& /*packet*/) {
     std::ostringstream stream;
     stream << std::hex << distribution(generator);
     serverId_ = stream.str();
-    connection_->sendPacket<HandshakePacket>(serverId_);
-  } else {
-    connection_->sendPacket<HandshakePacket>("-");
+    reply = serverId_;
   }
+  const std::vector<std::string> required = requiredWorldMods();
+  if(!required.empty()) {
+    reply += ";mods=" + mod::runtime::WorldRequiredMods::joinCsv(required);
+  }
+  connection_->sendPacket<HandshakePacket>(reply);
+}
+void ServerLoginNetworkHandler::onModList(const ModListPacket& packet) {
+  clientModsCsv_ = packet.modsCsv;
 }
 void ServerLoginNetworkHandler::onHello(const LoginHelloPacket& packet) {
   username_ = packet.username;
@@ -87,6 +113,20 @@ void ServerLoginNetworkHandler::onHello(const LoginHelloPacket& packet) {
       disconnect("Outdated client!");
     }
     return;
+  }
+  const std::vector<std::string> required = requiredWorldMods();
+  if(!required.empty()) {
+    const std::vector<std::string> clientMods = mod::runtime::WorldRequiredMods::splitCsv(clientModsCsv_);
+    std::vector<std::string> missing;
+    for(const std::string& modId : required) {
+      if(std::find(clientMods.begin(), clientMods.end(), modId) == clientMods.end()) {
+        missing.push_back(modId);
+      }
+    }
+    if(!missing.empty()) {
+      disconnect("This world requires Lua mods: " + mod::runtime::WorldRequiredMods::joinCsv(missing));
+      return;
+    }
   }
   if(!onlineMode_) {
     accept(packet);

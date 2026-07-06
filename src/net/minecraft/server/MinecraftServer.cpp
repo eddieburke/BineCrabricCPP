@@ -1,6 +1,7 @@
 #include "net/minecraft/server/MinecraftServer.hpp"
 #include "net/minecraft/block/BlockTypes.hpp"
 #include "net/minecraft/client/gui/screen/LoadingDisplay.hpp"
+#include "net/minecraft/mod/runtime/WorldRequiredMods.hpp"
 #include "net/minecraft/network/packet/WorldPackets.hpp"
 #include "net/minecraft/server/ServerLog.hpp"
 #include "net/minecraft/server/command/Command.hpp"
@@ -250,6 +251,17 @@ bool MinecraftServer::init() {
                           "To change this, set \"online-mode\" to \"true\" in the server.settings file.");
   }
   const auto start = Clock::now();
+  {
+    const std::vector<std::string> requiredMods =
+        mod::runtime::WorldRequiredMods::readWorldFile(storageRoot / worldName);
+    const std::vector<std::string> missingMods = mod::runtime::WorldRequiredMods::missingMods(requiredMods);
+    if(!missingMods.empty()) {
+      ServerLog::LOGGER.log(LogLevel::Severe,
+                            "Cannot load world \"" + worldName + "\": missing required Lua mods: " +
+                                mod::runtime::WorldRequiredMods::joinCsv(missingMods));
+      return false;
+    }
+  }
   ServerLog::LOGGER.info("Preparing level \"" + worldName + "\"");
   loadWorld(storageRoot, worldName, seed);
   const auto elapsed = std::chrono::duration_cast<std::chrono::nanoseconds>(Clock::now() - start).count();

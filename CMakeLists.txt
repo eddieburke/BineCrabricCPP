@@ -316,6 +316,7 @@ add_executable(minecraft_native_tests
     tests/packet_roundtrip_test.cpp
     tests/registry_bootstrap_test.cpp
     tests/lan_host_coordinator_test.cpp
+    tests/world_required_mods_test.cpp
     $<TARGET_OBJECTS:minecraft_client>
 )
 minecraft_link_registry_roots(minecraft_native_tests)
