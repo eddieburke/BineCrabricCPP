@@ -1,0 +1,64 @@
+#pragma once
+namespace net::minecraft {
+class ItemStack;
+class World;
+namespace entity {
+class Entity;
+namespace player {
+class PlayerEntity;
+}
+} // namespace entity
+namespace client {
+class Minecraft;
+}
+} // namespace net::minecraft
+namespace net::minecraft::mod {
+struct BlockInteractEvent {
+  entity::player::PlayerEntity* player = nullptr;
+  World* world = nullptr;
+  ItemStack* stack = nullptr;
+  int x = 0;
+  int y = 0;
+  int z = 0;
+  int side = 0;
+  bool rightClick = true;
+  bool canceled = false;
+  bool handled = false;
+  client::Minecraft* client = nullptr;
+};
+struct EntityInteractEvent {
+  entity::player::PlayerEntity* player = nullptr;
+  entity::Entity* target = nullptr;
+  bool attack = false;
+  bool canceled = false;
+  bool handled = false;
+};
+struct AttackDamageEvent {
+  entity::player::PlayerEntity* player = nullptr;
+  entity::Entity* target = nullptr;
+  int damage = 0;
+  bool critical = false;
+  bool canceled = false;
+  float fallDistance = 0.0f;
+  bool onGround = false;
+  double targetX = 0.0;
+  double targetY = 0.0;
+  double targetZ = 0.0;
+};
+struct PlayerTravelEvent {
+  entity::player::PlayerEntity* player = nullptr;
+  float sideways = 0.0f;
+  float forward = 0.0f;
+  float speedMultiplier = 1.0f;
+};
+struct CraftingTakeEvent {
+  entity::player::PlayerEntity* player = nullptr;
+  ItemStack* stack = nullptr;
+  bool canceled = false;
+};
+struct FurnaceOutputTakeEvent {
+  entity::player::PlayerEntity* player = nullptr;
+  ItemStack* stack = nullptr;
+  bool canceled = false;
+};
+} // namespace net::minecraft::mod

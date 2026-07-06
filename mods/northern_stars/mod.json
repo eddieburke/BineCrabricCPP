@@ -1,0 +1,7 @@
+{
+  "id": "northern_stars",
+  "name": "Northern Stars",
+  "version": "1.0.0",
+  "enabled": true,
+  "entry": "scripts/main.lua"
+}

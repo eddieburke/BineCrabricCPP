@@ -1,5 +1,4 @@
 #pragma once
-
 #include "net/minecraft/network/packet/BlockPackets.hpp"
 #include "net/minecraft/network/packet/ChatPackets.hpp"
 #include "net/minecraft/network/packet/ChunkPackets.hpp"

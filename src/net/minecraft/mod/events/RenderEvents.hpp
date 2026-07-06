@@ -1,0 +1,71 @@
+#pragma once
+#include "net/minecraft/util/math/Types.hpp"
+#include <string>
+namespace net::minecraft {
+class World;
+namespace entity {
+class Entity;
+class LivingEntity;
+namespace player {
+class PlayerEntity;
+}
+} // namespace entity
+} // namespace net::minecraft
+namespace net::minecraft::mod {
+struct CameraSetupEvent {
+  entity::LivingEntity* camera = nullptr;
+  double x = 0.0;
+  double y = 0.0;
+  double z = 0.0;
+  float tickDelta = 0.0f;
+};
+struct FovEvent {
+  entity::LivingEntity* camera = nullptr;
+  float tickDelta = 0.0f;
+  float fov = 70.0f;
+};
+enum class WorldRenderStage {
+  Sky,
+  Stars,
+  Clouds,
+};
+enum class RenderHookMoment {
+  Before,
+  After,
+};
+struct WorldRenderEvent {
+  World* world = nullptr;
+  entity::Entity* camera = nullptr;
+  float tickDelta = 0.0f;
+  WorldRenderStage stage = WorldRenderStage::Sky;
+  RenderHookMoment moment = RenderHookMoment::Before;
+  bool cancelVanilla = false;
+  bool vanillaStageRan = false;
+  float celestialAngle = 0.0f;
+  float skyYawDegrees = 0.0f;
+  float starBrightness = 0.0f;
+  float rainStrength = 0.0f;
+  bool starsEnabled = true;
+  bool astronomyEnabled = false;
+  double astronomyUtcMillis = 0.0;
+  float observerLatitudeDegrees = 0.0f;
+  float observerLongitudeDegrees = 0.0f;
+};
+struct FirstPersonHandRenderEvent {
+  entity::LivingEntity* camera = nullptr;
+  float tickDelta = 0.0f;
+  int eye = 0;
+  bool canceled = false;
+};
+enum class WorldColorKind {
+  Sky,
+  Fog,
+};
+struct WorldColorEvent {
+  const World* world = nullptr;
+  entity::Entity* entity = nullptr;
+  float partialTicks = 0.0f;
+  Vec3d color;
+  WorldColorKind kind = WorldColorKind::Sky;
+};
+} // namespace net::minecraft::mod

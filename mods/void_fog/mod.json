@@ -1,0 +1,7 @@
+{
+  "id": "void_fog",
+  "name": "Void Fog",
+  "version": "1.0.0",
+  "enabled": false,
+  "entry": "scripts/main.lua"
+}

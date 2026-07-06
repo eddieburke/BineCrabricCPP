@@ -1,9 +1,0 @@
-{
-  "seed_range_start": 0,
-  "seed_range_end": 9999,
-  "scan_radius_chunks": 16,
-  "probe_depth": "biome_only",
-  "threads": 8,
-  "top_k": 1,
-  "advanced_rule_data_nbt": "{\"objectives\":[{\"type\":\"objective\",\"metric\":\"max_contiguous_biome_radius\",\"direction\":\"maximize\",\"weight\":3,\"biomes\":[\"desert\"]},{\"type\":\"objective\",\"metric\":\"desert_chunk_count\",\"direction\":\"maximize\",\"weight\":2},{\"type\":\"objective\",\"metric\":\"biome_coverage_percent\",\"direction\":\"maximize\",\"weight\":1,\"biomes\":[\"desert\"]}]}"
-}

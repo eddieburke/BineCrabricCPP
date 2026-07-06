@@ -1,7 +1,5 @@
 #pragma once
-
 namespace net::minecraft::client::render::block {
-
 // Named values for Block::getRenderType(), which returns an int in the faithful
 // beta 1.7.3 port. These replace the magic 0-17 literals scattered through the
 // render dispatch. Values must match the originals exactly.
@@ -25,5 +23,4 @@ inline constexpr int REPEATER = 15;
 inline constexpr int PISTON = 16;
 inline constexpr int PISTON_HEAD = 17;
 } // namespace BlockRenderType
-
 } // namespace net::minecraft::client::render::block

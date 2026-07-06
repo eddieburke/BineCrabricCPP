@@ -1,9 +1,0 @@
-{
-  "seed_range_start": 0,
-  "seed_range_end": 500000,
-  "scan_radius_chunks": 12,
-  "probe_depth": "biome_only",
-  "threads": 4,
-  "top_k": 20,
-  "advanced_rule_data_nbt": "{\"rules\":[{\"type\":\"biome_constraint\",\"op\":\"any_of\",\"biomes\":[\"desert\"],\"min_coverage_percent\":40,\"min_contiguous_radius_chunks\":6}],\"objectives\":[{\"type\":\"objective\",\"metric\":\"max_contiguous_biome_radius\",\"direction\":\"maximize\",\"weight\":2,\"biomes\":[\"desert\"]}]}"
-}

@@ -5,10 +5,10 @@ project(minecraft_native VERSION 0.1.0 LANGUAGES CXX)
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
-enable_testing()
+
+include(FetchContent)
 
 if (WIN32)
-    include(FetchContent)
     set(GLFW_BUILD_DOCS OFF CACHE BOOL "" FORCE)
     set(GLFW_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
     set(GLFW_BUILD_TESTS OFF CACHE BOOL "" FORCE)
@@ -52,31 +52,40 @@ file(GLOB_RECURSE MINECRAFT_PORT_SOURCES CONFIGURE_DEPENDS
     "${CMAKE_CURRENT_SOURCE_DIR}/src/net/minecraft/*.cpp"
 )
 
-file(GLOB SEEDFINDER_GUI_SOURCES CONFIGURE_DEPENDS
-    "${CMAKE_CURRENT_SOURCE_DIR}/src/seedfinder/gui/*.cpp"
+set(MINECRAFT_REGISTRY_ROOT_PATTERNS
+    "MC_REGISTER_BLOCK"
+    "MC_REGISTER_ITEM"
+    "MC_REGISTER_ENTITY"
+    "RegisterPhase<"
+    "Registry::addBlock("
+    "Registry::addItem("
+    "Registry::addEntity("
 )
 
-file(GLOB_RECURSE MSAUTH_SOURCES CONFIGURE_DEPENDS
-    "${CMAKE_CURRENT_SOURCE_DIR}/src/msauth/*.cpp"
-    "${CMAKE_CURRENT_SOURCE_DIR}/src/msauth/**/*.cpp"
-)
+set(MINECRAFT_REGISTRY_ROOT_SOURCES)
+foreach(source ${MINECRAFT_PORT_SOURCES})
+    if (NOT source MATCHES "/(block|item|entity|registry)/.*\\.cpp$")
+        continue()
+    endif()
+    file(READ "${source}" MINECRAFT_REGISTRY_ROOT_CONTENTS)
+    foreach(pattern ${MINECRAFT_REGISTRY_ROOT_PATTERNS})
+        string(FIND "${MINECRAFT_REGISTRY_ROOT_CONTENTS}" "${pattern}" MINECRAFT_REGISTRY_ROOT_MATCH)
+        if (NOT MINECRAFT_REGISTRY_ROOT_MATCH EQUAL -1)
+            list(APPEND MINECRAFT_REGISTRY_ROOT_SOURCES "${source}")
+            break()
+        endif()
+    endforeach()
+endforeach()
+list(REMOVE_DUPLICATES MINECRAFT_REGISTRY_ROOT_SOURCES)
 
-# Game-coupled seedfinder sources (probes, graph, metrics, live engine). Compiled into
-# LTO consumers directly so world headers stay in one link unit.
-set(SEEDFINDER_LIVE_PROBE_SOURCES
-    "${CMAKE_CURRENT_SOURCE_DIR}/src/seedfinder/probe/ScanProbe.cpp"
-    "${CMAKE_CURRENT_SOURCE_DIR}/src/seedfinder/probe/DecorateProbe.cpp"
-    "${CMAKE_CURRENT_SOURCE_DIR}/src/seedfinder/graph/NodeGraph.cpp"
-    "${CMAKE_CURRENT_SOURCE_DIR}/src/seedfinder/graph/GraphBuilder.cpp"
-    "${CMAKE_CURRENT_SOURCE_DIR}/src/seedfinder/metric/Metric.cpp"
-    "${CMAKE_CURRENT_SOURCE_DIR}/src/seedfinder/config/ScanConfigBuilder.cpp"
-    "${CMAKE_CURRENT_SOURCE_DIR}/src/seedfinder/engine/SearchEngine.cpp"
-)
+set(MINECRAFT_CORE_SOURCES ${MINECRAFT_PORT_SOURCES})
+list(FILTER MINECRAFT_CORE_SOURCES EXCLUDE REGEX "/client/")
+list(REMOVE_ITEM MINECRAFT_CORE_SOURCES ${MINECRAFT_REGISTRY_ROOT_SOURCES})
 
-# Legacy C-ABI probe adapter, retained only for the golden faithfulness test.
-set(SEEDFINDER_GOLDEN_ADAPTER_SOURCE
-    "${CMAKE_CURRENT_SOURCE_DIR}/src/seedfinder/probe/WorldGenProbeAdapter.cpp"
-)
+set(MINECRAFT_CLIENT_SOURCES ${MINECRAFT_PORT_SOURCES})
+list(FILTER MINECRAFT_CLIENT_SOURCES INCLUDE REGEX "/client/")
+
+add_subdirectory(mods)
 
 function(minecraft_configure_target target)
     target_include_directories(${target} PRIVATE
@@ -111,6 +120,21 @@ function(minecraft_link_zlib target)
         endif()
     else()
         target_compile_definitions(${target} PRIVATE MINECRAFT_DISABLE_ZLIB)
+    endif()
+endfunction()
+
+function(minecraft_copy_lua_runtime target)
+    if (WIN32)
+        set(MINECRAFT_LUA_DLL "${MINECRAFT_TOOLCHAIN_ROOT}/bin/lua54.dll")
+        if (EXISTS "${MINECRAFT_LUA_DLL}")
+            add_custom_command(TARGET ${target} POST_BUILD
+                COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                    "${MINECRAFT_LUA_DLL}"
+                    "$<TARGET_FILE_DIR:${target}>"
+            )
+        else()
+            message(WARNING "lua54.dll not found under ${MINECRAFT_TOOLCHAIN_ROOT}/bin; Lua mods will require it on PATH")
+        endif()
     endif()
 endfunction()
 
@@ -183,205 +207,149 @@ function(minecraft_link_display target)
     endif()
 endfunction()
 
+function(minecraft_enable_glfw_compile target)
+    if (WIN32)
+        target_compile_definitions(${target} PRIVATE MINECRAFT_USE_GLFW=1)
+        target_link_libraries(${target} PRIVATE glfw)
+    endif()
+endfunction()
+
+function(minecraft_link_platform target)
+    if (WIN32)
+        target_link_libraries(${target} PRIVATE ws2_32 winhttp crypt32 shell32 dbghelp)
+        target_link_options(${target} PRIVATE -static -static-libgcc -static-libstdc++)
+    endif()
+endfunction()
+
+function(minecraft_link_core target)
+    target_link_libraries(${target} PRIVATE minecraft_core)
+endfunction()
+
+function(minecraft_link_registry_roots target)
+    target_sources(${target} PRIVATE $<TARGET_OBJECTS:minecraft_registry_roots>)
+endfunction()
+
+function(minecraft_link_core_whole target)
+    if (CMAKE_CXX_COMPILER_ID STREQUAL "GNU" OR CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+        target_link_libraries(${target} PRIVATE -Wl,--whole-archive minecraft_core -Wl,--no-whole-archive)
+    else()
+        target_link_libraries(${target} PRIVATE minecraft_core)
+    endif()
+endfunction()
+
+function(minecraft_link_core_client target)
+    minecraft_link_core(${target})
+    minecraft_link_zlib(${target})
+    minecraft_link_audio(${target})
+    minecraft_link_display(${target})
+    minecraft_link_platform(${target})
+    if (WIN32)
+        target_link_libraries(${target} PRIVATE opengl32 glu32)
+    endif()
+endfunction()
+
+function(minecraft_link_server target)
+    minecraft_link_core_whole(${target})
+    minecraft_link_zlib(${target})
+    minecraft_link_platform(${target})
+    minecraft_copy_lua_runtime(${target})
+    if (WIN32)
+        target_link_libraries(${target} PRIVATE comctl32 gdi32 user32 gdiplus opengl32 glu32)
+        minecraft_link_audio(${target})
+        minecraft_link_display(${target})
+    endif()
+endfunction()
+
+add_library(minecraft_core STATIC ${MINECRAFT_CORE_SOURCES})
+minecraft_configure_target(minecraft_core)
+minecraft_link_zlib(minecraft_core)
+minecraft_link_platform(minecraft_core)
+
+add_library(minecraft_registry_roots OBJECT ${MINECRAFT_REGISTRY_ROOT_SOURCES})
+minecraft_configure_target(minecraft_registry_roots)
+
+add_library(minecraft_client OBJECT ${MINECRAFT_CLIENT_SOURCES})
+minecraft_configure_target(minecraft_client)
+if (WIN32)
+    target_compile_definitions(minecraft_client PRIVATE MINECRAFT_NATIVE_EXPORTS=1)
+    minecraft_enable_glfw_compile(minecraft_client)
+endif()
+
 add_executable(minecraft_native
     src/main.cpp
-    ${MINECRAFT_PORT_SOURCES}
-    ${SEEDFINDER_GUI_SOURCES}
-    ${SEEDFINDER_LIVE_PROBE_SOURCES}
-    ${MSAUTH_SOURCES}
+    $<TARGET_OBJECTS:minecraft_client>
 )
+minecraft_link_core(minecraft_native)
+minecraft_link_registry_roots(minecraft_native)
 minecraft_configure_target(minecraft_native)
 minecraft_link_zlib(minecraft_native)
 minecraft_link_audio(minecraft_native)
 minecraft_link_display(minecraft_native)
 if (WIN32)
-    target_link_libraries(minecraft_native PRIVATE ws2_32 winhttp crypt32 shell32 comdlg32 gdiplus gdi32 user32 opengl32 glu32 dbghelp)
-    target_link_options(minecraft_native PRIVATE -static -static-libgcc -static-libstdc++)
+    target_compile_definitions(minecraft_native PRIVATE MINECRAFT_NATIVE_EXPORTS=1)
+    target_link_libraries(minecraft_native PRIVATE comdlg32 gdiplus gdi32 user32 opengl32 glu32)
+    minecraft_link_platform(minecraft_native)
 endif()
+minecraft_copy_lua_runtime(minecraft_native)
 
-add_executable(block_registry_properties_test
-    tests/block_registry_properties_test.cpp
-    ${MINECRAFT_PORT_SOURCES}
-    ${SEEDFINDER_GUI_SOURCES}
-    ${SEEDFINDER_LIVE_PROBE_SOURCES}
-    ${MSAUTH_SOURCES}
+add_executable(minecraft_server
+    src/server-main.cpp
+    $<TARGET_OBJECTS:minecraft_client>
 )
-minecraft_configure_target(block_registry_properties_test)
-minecraft_link_zlib(block_registry_properties_test)
-minecraft_link_audio(block_registry_properties_test)
-minecraft_link_display(block_registry_properties_test)
-if (WIN32)
-    target_link_libraries(block_registry_properties_test PRIVATE ws2_32 winhttp shell32 comdlg32 crypt32 gdiplus gdi32 user32 opengl32 glu32 dbghelp)
-    target_link_options(block_registry_properties_test PRIVATE -static -static-libgcc -static-libstdc++)
-endif()
-add_test(NAME block_registry_properties COMMAND block_registry_properties_test)
+minecraft_configure_target(minecraft_server)
+minecraft_link_registry_roots(minecraft_server)
+minecraft_link_server(minecraft_server)
 
-add_executable(mod_lifecycle_registry_test
-    tests/mod_lifecycle_registry_test.cpp
-    ${MINECRAFT_PORT_SOURCES}
-    ${SEEDFINDER_GUI_SOURCES}
-    ${SEEDFINDER_LIVE_PROBE_SOURCES}
-    ${MSAUTH_SOURCES}
+FetchContent_Declare(
+    googletest
+    URL https://github.com/google/googletest/archive/refs/tags/v1.14.0.zip
+    URL_HASH SHA256=1f357c27ca988c3f7c6b4bf68a9395005ac6761f034046e9dde0896e3aba00e4
+    TLS_VERIFY OFF
+    DOWNLOAD_EXTRACT_TIMESTAMP TRUE
 )
-minecraft_configure_target(mod_lifecycle_registry_test)
-minecraft_link_zlib(mod_lifecycle_registry_test)
-minecraft_link_audio(mod_lifecycle_registry_test)
-minecraft_link_display(mod_lifecycle_registry_test)
-if (WIN32)
-    target_link_libraries(mod_lifecycle_registry_test PRIVATE ws2_32 winhttp shell32 comdlg32 crypt32 gdiplus gdi32 user32 opengl32 glu32 dbghelp)
-    target_link_options(mod_lifecycle_registry_test PRIVATE -static -static-libgcc -static-libstdc++)
-endif()
-add_test(NAME ModLifecycleRegistryTest COMMAND mod_lifecycle_registry_test)
+set(gtest_force_shared_crt ON CACHE BOOL "" FORCE)
+FetchContent_MakeAvailable(googletest)
 
-add_executable(java_random_golden_test tests/java_random_golden_test.cpp)
-minecraft_configure_target(java_random_golden_test)
-add_test(NAME JavaRandomGoldenTest COMMAND java_random_golden_test)
+enable_testing()
 
-add_executable(msauth_account_storage_test
-    tests/msauth_account_storage_test.cpp
-    src/msauth/AccountStorage.cpp
-    src/msauth/MicrosoftAuth.cpp
+add_executable(minecraft_native_tests
+    tests/packet_roundtrip_test.cpp
+    tests/registry_bootstrap_test.cpp
+    tests/lan_host_coordinator_test.cpp
+    $<TARGET_OBJECTS:minecraft_client>
 )
-minecraft_configure_target(msauth_account_storage_test)
+minecraft_link_registry_roots(minecraft_native_tests)
+target_link_libraries(minecraft_native_tests PRIVATE GTest::gtest_main)
+minecraft_configure_target(minecraft_native_tests)
+target_include_directories(minecraft_native_tests PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/tests")
+minecraft_link_core_client(minecraft_native_tests)
 if (WIN32)
-    target_link_libraries(msauth_account_storage_test PRIVATE crypt32)
-    target_link_options(msauth_account_storage_test PRIVATE -static -static-libgcc -static-libstdc++)
+    target_link_libraries(minecraft_native_tests PRIVATE comdlg32 gdiplus gdi32 user32)
 endif()
-add_test(NAME MsauthAccountStorageTest COMMAND msauth_account_storage_test)
 
-file(GLOB_RECURSE NBT_TEST_SOURCES CONFIGURE_DEPENDS
-    "${CMAKE_CURRENT_SOURCE_DIR}/src/net/minecraft/nbt/*.cpp")
-add_executable(nbt_roundtrip_test tests/nbt_roundtrip_test.cpp ${NBT_TEST_SOURCES})
-minecraft_configure_target(nbt_roundtrip_test)
-minecraft_link_zlib(nbt_roundtrip_test)
-if (WIN32)
-    target_link_options(nbt_roundtrip_test PRIVATE -static -static-libgcc -static-libstdc++)
-endif()
-add_test(NAME NbtRoundtripTest COMMAND nbt_roundtrip_test)
+include(GoogleTest)
+gtest_discover_tests(minecraft_native_tests)
 
-add_executable(stereo_transform_color_golden_test
-    tests/stereo_transform_color_golden_test.cpp
-    src/net/minecraft/client/render/platform/StereoRendering.cpp
+set(MINECRAFT_SERVER_TEST_SOURCES
+    integrated_server_host_test.cpp
+    server_properties_test.cpp
+    server_command_handler_test.cpp
+    server_chunk_cache_test.cpp
+    server_world_events_test.cpp
 )
-minecraft_configure_target(stereo_transform_color_golden_test)
-if (WIN32)
-    target_link_libraries(stereo_transform_color_golden_test PRIVATE opengl32 glu32)
-endif()
-add_test(NAME StereoTransformColorGoldenTest COMMAND stereo_transform_color_golden_test)
-
-add_executable(view_distance_test
-    tests/view_distance_test.cpp
-    src/net/minecraft/client/render/ViewDistance.cpp
-)
-minecraft_configure_target(view_distance_test)
-if (WIN32)
-    target_link_options(view_distance_test PRIVATE -static -static-libgcc -static-libstdc++)
-endif()
-add_test(NAME ViewDistanceTest COMMAND view_distance_test)
-
-add_library(seedfinder_engine STATIC
-    src/seedfinder/config/JsonConfig.cpp
-    src/seedfinder/config/CliArgs.cpp
-    src/seedfinder/engine/BiomeCatalog.cpp
-    src/seedfinder/engine/Checkpoint.cpp
-    src/seedfinder/runtime/RuntimeInit.cpp
-)
-minecraft_configure_target(seedfinder_engine)
-target_include_directories(seedfinder_engine PUBLIC
-    "${CMAKE_CURRENT_SOURCE_DIR}/src"
-)
-target_link_libraries(minecraft_native PRIVATE seedfinder_engine)
-target_link_libraries(block_registry_properties_test PRIVATE seedfinder_engine)
-target_link_libraries(mod_lifecycle_registry_test PRIVATE seedfinder_engine)
-
-file(GLOB_RECURSE SEEDFINDER_WORLD_SOURCES CONFIGURE_DEPENDS
-    "${CMAKE_CURRENT_SOURCE_DIR}/src/net/minecraft/world/*.cpp")
-list(REMOVE_ITEM SEEDFINDER_WORLD_SOURCES
-    "${CMAKE_CURRENT_SOURCE_DIR}/src/net/minecraft/world/ClientWorld.cpp"
-    "${CMAKE_CURRENT_SOURCE_DIR}/src/net/minecraft/world/ServerWorld.cpp")
-
-file(GLOB_RECURSE SEEDFINDER_ENTITY_SOURCES CONFIGURE_DEPENDS
-    "${CMAKE_CURRENT_SOURCE_DIR}/src/net/minecraft/entity/*.cpp")
-list(REMOVE_ITEM SEEDFINDER_ENTITY_SOURCES
-    "${CMAKE_CURRENT_SOURCE_DIR}/src/net/minecraft/entity/player/ClientPlayerEntity.cpp"
-    "${CMAKE_CURRENT_SOURCE_DIR}/src/net/minecraft/entity/player/ServerPlayerEntity.cpp")
-
-file(GLOB_RECURSE SEEDFINDER_BLOCK_SOURCES CONFIGURE_DEPENDS
-    "${CMAKE_CURRENT_SOURCE_DIR}/src/net/minecraft/block/*.cpp")
-file(GLOB_RECURSE SEEDFINDER_ITEM_SOURCES CONFIGURE_DEPENDS
-    "${CMAKE_CURRENT_SOURCE_DIR}/src/net/minecraft/item/*.cpp")
-file(GLOB_RECURSE SEEDFINDER_NBT_SOURCES CONFIGURE_DEPENDS
-    "${CMAKE_CURRENT_SOURCE_DIR}/src/net/minecraft/nbt/*.cpp")
-file(GLOB_RECURSE SEEDFINDER_INVENTORY_SOURCES CONFIGURE_DEPENDS
-    "${CMAKE_CURRENT_SOURCE_DIR}/src/net/minecraft/inventory/*.cpp")
-file(GLOB_RECURSE SEEDFINDER_RECIPE_SOURCES CONFIGURE_DEPENDS
-    "${CMAKE_CURRENT_SOURCE_DIR}/src/net/minecraft/recipe/*.cpp")
-file(GLOB_RECURSE SEEDFINDER_UTIL_SOURCES CONFIGURE_DEPENDS
-    "${CMAKE_CURRENT_SOURCE_DIR}/src/net/minecraft/util/*.cpp")
-file(GLOB_RECURSE SEEDFINDER_STAT_SOURCES CONFIGURE_DEPENDS
-    "${CMAKE_CURRENT_SOURCE_DIR}/src/net/minecraft/stat/*.cpp")
-file(GLOB_RECURSE SEEDFINDER_ACHIEVEMENT_SOURCES CONFIGURE_DEPENDS
-    "${CMAKE_CURRENT_SOURCE_DIR}/src/net/minecraft/achievement/*.cpp")
-file(GLOB_RECURSE SEEDFINDER_SCREEN_SOURCES CONFIGURE_DEPENDS
-    "${CMAKE_CURRENT_SOURCE_DIR}/src/net/minecraft/screen/*.cpp")
-file(GLOB_RECURSE SEEDFINDER_REGISTRY_SOURCES CONFIGURE_DEPENDS
-    "${CMAKE_CURRENT_SOURCE_DIR}/src/net/minecraft/registry/*.cpp")
-
-set(SEEDFINDER_PORT_SOURCES
-    ${SEEDFINDER_LIVE_PROBE_SOURCES}
-    src/net/minecraft/client/resource/language/TranslationStorage.cpp
-    ${SEEDFINDER_REGISTRY_SOURCES}
-    ${SEEDFINDER_WORLD_SOURCES}
-    ${SEEDFINDER_BLOCK_SOURCES}
-    ${SEEDFINDER_ENTITY_SOURCES}
-    ${SEEDFINDER_ITEM_SOURCES}
-    ${SEEDFINDER_NBT_SOURCES}
-    ${SEEDFINDER_INVENTORY_SOURCES}
-    ${SEEDFINDER_RECIPE_SOURCES}
-    ${SEEDFINDER_UTIL_SOURCES}
-    ${SEEDFINDER_STAT_SOURCES}
-    ${SEEDFINDER_ACHIEVEMENT_SOURCES}
-    ${SEEDFINDER_SCREEN_SOURCES}
-)
-
-add_executable(seedfinder src/seedfinder/main.cpp ${SEEDFINDER_PORT_SOURCES})
-target_link_libraries(seedfinder PRIVATE seedfinder_engine)
-minecraft_configure_target(seedfinder)
-minecraft_link_zlib(seedfinder)
-if (WIN32)
-    target_link_options(seedfinder PRIVATE -static -static-libgcc -static-libstdc++)
-endif()
-
-add_executable(seed_probe_golden_test tests/seed_probe_golden_test.cpp ${SEEDFINDER_PORT_SOURCES} ${SEEDFINDER_GOLDEN_ADAPTER_SOURCE})
-target_link_libraries(seed_probe_golden_test PRIVATE seedfinder_engine)
-minecraft_configure_target(seed_probe_golden_test)
-minecraft_link_zlib(seed_probe_golden_test)
-if (WIN32)
-    target_link_options(seed_probe_golden_test PRIVATE -static -static-libgcc -static-libstdc++)
-endif()
-add_test(NAME SeedProbeGoldenTest COMMAND seed_probe_golden_test)
-
-add_executable(world_gen_parity_test tests/world_gen_parity_test.cpp ${SEEDFINDER_PORT_SOURCES})
-target_link_libraries(world_gen_parity_test PRIVATE seedfinder_engine)
-minecraft_configure_target(world_gen_parity_test)
-minecraft_link_zlib(world_gen_parity_test)
-if (WIN32)
-    target_link_options(world_gen_parity_test PRIVATE -static -static-libgcc -static-libstdc++)
-endif()
-add_test(NAME WorldGenParityTest COMMAND world_gen_parity_test)
-
-add_executable(biome_temperature_parity_test tests/biome_temperature_parity_test.cpp ${SEEDFINDER_PORT_SOURCES})
-target_link_libraries(biome_temperature_parity_test PRIVATE seedfinder_engine)
-minecraft_configure_target(biome_temperature_parity_test)
-minecraft_link_zlib(biome_temperature_parity_test)
-if (WIN32)
-    target_link_options(biome_temperature_parity_test PRIVATE -static -static-libgcc -static-libstdc++)
-endif()
-add_test(NAME BiomeTemperatureParityTest COMMAND biome_temperature_parity_test)
-
-add_executable(generator_rng_parity_test tests/generator_rng_parity_test.cpp)
-minecraft_configure_target(generator_rng_parity_test)
-if (WIN32)
-    target_link_options(generator_rng_parity_test PRIVATE -static -static-libgcc -static-libstdc++)
-endif()
-add_test(NAME GeneratorRngParityTest COMMAND generator_rng_parity_test)
+set(MINECRAFT_SERVER_TEST_TARGETS)
+foreach(test_source ${MINECRAFT_SERVER_TEST_SOURCES})
+    get_filename_component(test_stem ${test_source} NAME_WE)
+    set(test_target "minecraft_server_tests_${test_stem}")
+    add_executable(${test_target}
+        "tests/${test_source}"
+        $<TARGET_OBJECTS:minecraft_client>
+    )
+    minecraft_configure_target(${test_target})
+    target_include_directories(${test_target} PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/tests")
+    minecraft_link_registry_roots(${test_target})
+    minecraft_link_server(${test_target})
+    add_test(NAME ${test_target} COMMAND ${test_target})
+    list(APPEND MINECRAFT_SERVER_TEST_TARGETS ${test_target})
+endforeach()
+add_custom_target(minecraft_server_tests DEPENDS ${MINECRAFT_SERVER_TEST_TARGETS})

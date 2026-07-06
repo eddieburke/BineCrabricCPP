@@ -10,7 +10,11 @@
 #   .\build-omega.ps1 -Jobs 12     # limit parallel compile jobs
 #   .\build-omega.ps1 -Lto          # opt-in link-time optimization (often fails on MinGW GCC 15)
 #   .\build-omega.ps1 -NoNativeCpu # portable binary (no -march=native / AVX tuning)
-#   .\build-omega.ps1 -RunTests    # run ctest after a successful build
+#   .\build-omega.ps1 -SkipModPackaging  # skip generating runtime mod zips
+#   .\build-omega.ps1 -RunTests          # build minecraft_native_tests and run ctest
+#   .\build-omega.ps1 -Target Client     # build minecraft_native.exe only
+#   .\build-omega.ps1 -Target Server     # build minecraft_server.exe only
+#   .\build-client.ps1 / .\build-server.ps1  # thin wrappers (build + optional -Run)
 #
 # Optimizations enabled by default for Release builds (bundled GCC / Ninja):
 #   CMAKE_BUILD_TYPE=Release        -> -O3 -DNDEBUG
@@ -31,7 +35,10 @@ param(
     [switch]$Lto,
     [switch]$NoLto,
     [switch]$NoNativeCpu,
-    [switch]$RunTests
+    [switch]$SkipModPackaging,
+    [switch]$RunTests,
+    [ValidateSet("All", "Client", "Server")]
+    [string]$Target = "All"
 )
 
 $ErrorActionPreference = "Stop"
@@ -501,7 +508,8 @@ try {
     }
 
 if ($Jobs -le 0) {
-    $Jobs = [Math]::Max(1, [Environment]::ProcessorCount - 2)
+    # Cap default parallelism: large link steps and many TUs can OOM if -j is too high.
+    $Jobs = [Math]::Min(12, [Math]::Max(1, [Environment]::ProcessorCount - 2))
 }
 
 if ($Clean -and (Test-Path $BuildDir)) {
@@ -586,32 +594,79 @@ if ($NeedsConfigure) {
 }
 
 Assert-BuildDirAvailable -BuildDirName $BuildDir -ScriptDirPath $ScriptDir
+$buildTargets = @("minecraft_native", "minecraft_server")
+$buildLabel = "minecraft_native + minecraft_server"
+if ($Target -eq "Client") {
+    $buildTargets = @("minecraft_native")
+    $buildLabel = "minecraft_native (client)"
+} elseif ($Target -eq "Server") {
+    $buildTargets = @("minecraft_server")
+    $buildLabel = "minecraft_server"
+}
 if ($BuildType -eq "Release") {
-    Write-Host "Omega build: minecraft_native (-j $Jobs) ..."
+    Write-Host "Omega build: $buildLabel (-j $Jobs) ..."
 } else {
-    Write-Host "$BuildType build: minecraft_native (-j $Jobs) ..."
+    Write-Host "$BuildType build: $buildLabel (-j $Jobs) ..."
 }
 $sw = [System.Diagnostics.Stopwatch]::StartNew()
-& $CmakeExe --build $BuildDir --target minecraft_native -j $Jobs
+& $CmakeExe --build $BuildDir --target @buildTargets -j $Jobs
 $exitCode = $LASTEXITCODE
 $sw.Stop()
 
-if ($exitCode -eq 0) {
-    $exe = Join-Path $BuildDir "minecraft_native.exe"
-    if (Test-Path $exe) {
-        Write-Host "Output: $exe"
+    if ($exitCode -eq 0) {
+    if ($Target -eq "All" -or $Target -eq "Client") {
+        $clientExe = Join-Path $BuildDir "minecraft_native.exe"
+        if (Test-Path $clientExe) {
+            Write-Host "Client: $clientExe"
+        }
     }
-    if ($RunTests) {
-        Write-Host "Building test targets ..."
-        & $CmakeExe --build $BuildDir -j $Jobs
-        if ($LASTEXITCODE -ne 0) {
-            $exitCode = $LASTEXITCODE
-        } else {
-            Write-Host "Running tests (ctest) ..."
-            & $CtestExe --test-dir $BuildDir --output-on-failure
+    if ($Target -eq "All" -or $Target -eq "Server") {
+        $serverExe = Join-Path $BuildDir "minecraft_server.exe"
+        if (Test-Path $serverExe) {
+            Write-Host "Server: $serverExe"
+        }
+    }
+    if (-not $SkipModPackaging -and ($Target -eq "All" -or $Target -eq "Client")) {
+        $packageScript = Join-Path $ScriptDir "package-runtime-mods.ps1"
+        if (Test-Path -LiteralPath $packageScript) {
+            Write-Host "Packaging runtime mod zips into .minecraft/mods ..."
+            & $packageScript
             if ($LASTEXITCODE -ne 0) {
                 $exitCode = $LASTEXITCODE
             }
+        }
+    }
+    if ($RunTests -and $exitCode -eq 0) {
+        $testTargets = @()
+        if ($Target -eq "All" -or $Target -eq "Client") {
+            $testTargets += "minecraft_native_tests"
+        }
+        if ($Target -eq "All" -or $Target -eq "Server") {
+            $testTargets += "minecraft_server_tests"
+        }
+        if ($testTargets.Count -gt 0) {
+        Write-Host "Building $($testTargets -join ', ') (-j $Jobs) ..."
+        & $CmakeExe --build $BuildDir --target @testTargets -j $Jobs
+        if ($LASTEXITCODE -ne 0) {
+            $exitCode = $LASTEXITCODE
+        } else {
+            $buildDirAbs = Join-Path $ScriptDir $BuildDir
+            Write-Host "Running ctest in $BuildDir ..."
+            Push-Location $buildDirAbs
+            try {
+                if (-not (Test-Path -LiteralPath $CtestExe)) {
+                    Write-Error "Bundled ctest not found at $CtestExe"
+                    $exitCode = 1
+                } else {
+                    & $CtestExe --output-on-failure
+                    if ($LASTEXITCODE -ne 0) {
+                        $exitCode = $LASTEXITCODE
+                    }
+                }
+            } finally {
+                Pop-Location
+            }
+        }
         }
     }
 }
