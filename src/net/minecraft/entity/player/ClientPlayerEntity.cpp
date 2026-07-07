@@ -16,6 +16,7 @@
 #include "net/minecraft/achievement/Achievements.hpp"
 #include "net/minecraft/stat/PlayerStats.hpp"
 #include "net/minecraft/stat/Stats.hpp"
+#include "net/minecraft/util/math/MathHelper.hpp"
 namespace net::minecraft::entity::player {
 ClientPlayerEntity::ClientPlayerEntity(client::Minecraft* minecraft, World* world, const client::util::Session& session,
                                        client::option::GameOptions& /*options*/, int dimensionIdIn)

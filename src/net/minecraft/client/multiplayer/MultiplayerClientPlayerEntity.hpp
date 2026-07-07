@@ -38,6 +38,7 @@ protected:
 
 private:
   void syncStateBeforeRespawn();
+  bool waitingForTerrainSupport_ = true;
   int packetSendCounter = 0;
   bool prevJumping = false;
   double lastSentX = 0.0;

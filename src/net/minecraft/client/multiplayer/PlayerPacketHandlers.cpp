@@ -53,7 +53,7 @@ void ClientNetworkHandler::onPlayerMove(const PlayerMovePacket& packet) {
   float pitch = player->pitch;
   if(move.changePosition) {
     x = move.x;
-    y = move.stanceY;
+    y = move.feetY;
     z = move.z;
   }
   if(move.changeLook) {

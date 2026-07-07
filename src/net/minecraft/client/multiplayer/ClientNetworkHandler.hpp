@@ -1,6 +1,6 @@
 #pragma once
 #include "net/minecraft/client/auth/LegacySessionAuth.hpp"
-#include "net/minecraft/client/multiplayer/ClientPacketSender.hpp"
+#include "net/minecraft/network/Connection.hpp"
 #include "net/minecraft/network/NetworkHandler.hpp"
 #include "net/minecraft/util/math/Types.hpp"
 #include "net/minecraft/world/ClientWorld.hpp"
@@ -40,24 +40,23 @@ public:
   void tick();
   void bindConnection(Connection* connection) noexcept {
     connection_ = connection;
-    packetSender_.bind(connection_);
   }
   [[nodiscard]] Connection* connection() const noexcept {
     return connection_;
   }
   void onHello(std::uint64_t worldSeed, int dimensionId, int playerEntityId);
   void sendPacket(std::unique_ptr<Packet> packet) {
-    if(disconnected) {
+    if(disconnected || connection_ == nullptr || !connection_->isOpen()) {
       return;
     }
-    packetSender_.send(std::move(packet));
+    connection_->sendPacket(std::move(packet));
   }
   template <typename PacketT>
   void sendPacket(const PacketT& packet) {
-    if(disconnected) {
+    if(disconnected || connection_ == nullptr || !connection_->isOpen()) {
       return;
     }
-    packetSender_.send(packet);
+    connection_->sendPacket<PacketT>(packet);
   }
   template <typename PacketT>
   void sendPacketAndDisconnect(const PacketT& packet) {
@@ -73,6 +72,7 @@ public:
   void onHello(const LoginHelloPacket& packet) override;
   void onChatMessage(const ChatMessagePacket& packet) override;
   void onDisconnect(const DisconnectPacket& packet) override;
+  void onKeepAlive(const KeepAlivePacket& packet) override;
   void onEntity(const EntityS2CPacket& packet) override;
   void onEntitySpawn(const EntitySpawnS2CPacket& packet) override;
   void onPlayerMove(const PlayerMovePacket& packet) override;
@@ -112,10 +112,6 @@ public:
   void onPlayerSleepUpdate(const PlayerSleepUpdateS2CPacket& packet) override;
   void onEntityAnimation(const EntityAnimationPacket& packet) override;
   void handleUpdateSign(const UpdateSignPacket& packet) override;
-  // Runs a respawn that was deferred out of the packet-handler/world-tick stack.
-  // Minecraft drives this at the top of the main tick, before world->tick(), so the
-  // heavy prepareWorld()/lighting flush runs outside ClientWorld::tick() (where a
-  // synchronous lighting flush would deadlock the worker thread). See onPlayerRespawn.
   void applyDeferredRespawn();
   std::string message;
   bool disconnected = false;
@@ -141,7 +137,6 @@ private:
     }
   }
   Connection* connection_ = nullptr;
-  ClientPacketSender packetSender_;
   std::unique_ptr<ClientWorld> ownedWorld_;
   std::vector<std::unique_ptr<ClientWorld>> retiredWorlds_;
   std::unique_ptr<SimpleInventory> openScreenInventory_;

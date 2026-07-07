@@ -1,4 +1,5 @@
 #include "net/minecraft/network/Connection.hpp"
+#include "net/minecraft/network/packet/ChunkPackets.hpp"
 #include "net/minecraft/server/network/ServerSocket.hpp"
 #include <algorithm>
 #include <chrono>
@@ -155,6 +156,9 @@ void Connection::sendPacket(std::unique_ptr<Packet> packet) {
   if(packet == nullptr || !isOpen()) {
     return;
   }
+  if(auto* chunkPacket = dynamic_cast<ChunkDataS2CPacket*>(packet.get())) {
+    chunkPacket->compressForSend();
+  }
   {
     std::lock_guard lock(writeMutex_);
     sendQueueSize_ += packet->size() + 1;
@@ -177,12 +181,10 @@ void Connection::tick() {
   } else {
     timeoutTicks_ = 0;
   }
-  // Time-boxed adaptive drain. The old fixed 100-packet cap throttled applies to
-  // ~2000/s, which starved both the join-time chunk flood (visible as pop-in) and
-  // bursty steady-state block updates (visible as update lag). Drain until the queue
-  // empties or a wall-clock budget is hit, guaranteeing a floor so steady-state never
-  // backs up, and a ceiling so a single tick can never stall the frame unboundedly.
-  constexpr int kMinDrain = 256;
+  // Time-boxed adaptive drain. Keep a small minimum so steady-state packet flow does
+  // not stall, but honor the wall-clock budget quickly so a burst of expensive packet
+  // applies (notably chunk data during local/LAN joins) cannot freeze the game loop.
+  constexpr int kMinDrain = 8;
   constexpr int kMaxDrain = 4096;
   constexpr auto kDrainBudget = std::chrono::milliseconds(3);
   const auto drainDeadline = std::chrono::steady_clock::now() + kDrainBudget;
@@ -264,18 +266,30 @@ void Connection::readLoop() {
 void Connection::writeLoop() {
   writeThreadCounter.fetch_add(1, std::memory_order_acq_rel);
   try {
+    bool preferImmediate = true;
     while(isOpen() || hasPendingWrites()) {
       std::unique_ptr<Packet> packet;
       {
         std::unique_lock lock(writeMutex_);
         writeCv_.wait_for(lock, std::chrono::milliseconds(20),
                           [this]() { return !isOpen() || !sendQueue_.empty() || !delayedSendQueue_.empty(); });
-        if(!sendQueue_.empty()) {
+        if(!sendQueue_.empty() && !delayedSendQueue_.empty()) {
+          if(preferImmediate) {
+            packet = std::move(sendQueue_.front());
+            sendQueue_.pop_front();
+          } else {
+            packet = std::move(delayedSendQueue_.front());
+            delayedSendQueue_.pop_front();
+          }
+          preferImmediate = !preferImmediate;
+        } else if(!sendQueue_.empty()) {
           packet = std::move(sendQueue_.front());
           sendQueue_.pop_front();
+          preferImmediate = false;
         } else if(!delayedSendQueue_.empty()) {
           packet = std::move(delayedSendQueue_.front());
           delayedSendQueue_.pop_front();
+          preferImmediate = true;
         }
       }
       if(packet != nullptr) {

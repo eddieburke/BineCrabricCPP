@@ -64,8 +64,6 @@ void ClientNetworkHandler::processPendingJoinServer() {
   connection_->disconnect("disconnect.loginFailedInfo", {result.responseLine});
 }
 void ClientNetworkHandler::tick() {
-  // Release worlds retired during a previous tick. Safe here: any ClientWorld::tick()
-  // that retired them has fully unwound before this tick begins.
   retiredWorlds_.clear();
   processPendingJoinServer();
   if(disconnected || connection_ == nullptr) {
@@ -197,6 +195,9 @@ void ClientNetworkHandler::onDisconnect(const DisconnectPacket& packet) {
     minecraft->setScreen(std::make_unique<client::gui::screen::DisconnectedScreen>(
         "disconnect.disconnected", "disconnect.genericReason", std::vector<std::string>{packet.reason}));
   }
+}
+void ClientNetworkHandler::onKeepAlive(const KeepAlivePacket& packet) {
+  sendPacket(packet);
 }
 Entity* ClientNetworkHandler::getEntity(int id) {
   if(minecraft == nullptr || minecraft->player == nullptr || world == nullptr) {

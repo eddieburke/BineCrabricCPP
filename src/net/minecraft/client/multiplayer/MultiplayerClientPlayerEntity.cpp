@@ -3,6 +3,7 @@
 #include "net/minecraft/client/multiplayer/ClientNetworkHandler.hpp"
 #include "net/minecraft/client/option/GameOptions.hpp"
 #include "net/minecraft/client/util/Session.hpp"
+#include "net/minecraft/block/material/Material.hpp"
 #include "net/minecraft/entity/Entity.hpp"
 #include "net/minecraft/item/ItemStack.hpp"
 #include "net/minecraft/network/packet/ChatPackets.hpp"
@@ -23,6 +24,17 @@ client::option::GameOptions& defaultOptions() {
   static client::option::GameOptions options;
   return options;
 }
+bool hasTerrainSupport(entity::player::ClientPlayerEntity& player) {
+  if(player.world == nullptr) {
+    return false;
+  }
+  const Box supportBox = player.boundingBox.contract(0.03125, 0.0, 0.03125).stretch(0.0, -0.55, 0.0);
+  if(!player.world->getEntityCollisions(&player, supportBox).empty()) {
+    return true;
+  }
+  return player.world->isMaterialInBox(player.boundingBox, block::material::Material::WATER) ||
+         player.world->isMaterialInBox(player.boundingBox, block::material::Material::LAVA);
+}
 } // namespace
 MultiplayerClientPlayerEntity::MultiplayerClientPlayerEntity(client::Minecraft* minecraft, World* world,
                                                              const client::util::Session& session,
@@ -40,6 +52,21 @@ void MultiplayerClientPlayerEntity::tick() {
   const bool posLoaded = world->isPosLoaded(MathHelper::floor(x), 64, MathHelper::floor(z));
   if(!posLoaded) {
     return;
+  }
+  if(networkHandler != nullptr && networkHandler->started && waitingForTerrainSupport_) {
+    if(hasTerrainSupport(*this)) {
+      waitingForTerrainSupport_ = false;
+    } else {
+      velocityX = 0.0;
+      velocityY = 0.0;
+      velocityZ = 0.0;
+      fallDistance = 0.0f;
+      prevX = x;
+      prevY = y;
+      prevZ = z;
+      sendMovementPackets();
+      return;
+    }
   }
   entity::player::ClientPlayerEntity::tick();
   sendMovementPackets();

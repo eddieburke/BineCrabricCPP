@@ -79,8 +79,11 @@ std::shared_ptr<ChunkMeshJob> ChunkMeshJob::capture(
   RenderPinGuard pinGuard(sourceChunks);
   for(int chunkX = minChunkX; chunkX <= maxChunkX; ++chunkX) {
     for(int chunkZ = minChunkZ; chunkZ <= maxChunkZ; ++chunkZ) {
-      if(owner.world == nullptr || !source->isChunkLoaded(chunkX, chunkZ)) {
+      if(owner.world == nullptr) {
         return nullptr;
+      }
+      if(!source->isChunkLoaded(chunkX, chunkZ)) {
+        continue;
       }
       Chunk& chunk = source->getChunk(chunkX, chunkZ);
       if(!chunk.tryAcquireRenderPin()) {
@@ -225,7 +228,8 @@ void ChunkBuilder::buildMesh(ChunkMeshJob& job) {
         result.modLayers[static_cast<std::size_t>(layer)].push_back({modEntry.texture, std::move(modMesh)});
       }
     }
-    result.layerEmpty[static_cast<std::size_t>(layer)] = !(beganCompile && drewGeometry);
+    result.layerEmpty[static_cast<std::size_t>(layer)] =
+        !(beganCompile && drewGeometry) && result.modLayers[static_cast<std::size_t>(layer)].empty();
     if(!hasOtherLayer) {
       break;
     }
