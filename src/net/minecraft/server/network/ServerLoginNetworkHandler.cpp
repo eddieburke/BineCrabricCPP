@@ -1,4 +1,5 @@
 #include "net/minecraft/server/network/ServerLoginNetworkHandler.hpp"
+#include "net/minecraft/server/ServerLog.hpp"
 #include "net/minecraft/entity/player/ServerPlayerEntity.hpp"
 #include "net/minecraft/mod/runtime/WorldRequiredMods.hpp"
 #include "net/minecraft/world/storage/WorldStorage.hpp"
@@ -11,8 +12,6 @@
 #include "net/minecraft/server/network/ConnectionListener.hpp"
 #include "net/minecraft/server/network/ServerPlayNetworkHandler.hpp"
 #include "net/minecraft/world/ServerWorld.hpp"
-#include <algorithm>
-#include <cctype>
 #include <iostream>
 #include <random>
 #include <sstream>
@@ -52,7 +51,7 @@ void ServerLoginNetworkHandler::tick() {
 }
 void ServerLoginNetworkHandler::disconnect(const std::string& reason) {
   try {
-    std::cout << "Disconnecting " << getConnectionInfo() << ": " << reason << std::endl;
+    server::ServerLog::LOGGER.info("Disconnecting " + getConnectionInfo() + ": " + reason);
     if(connection_ != nullptr) {
       DisconnectPacket packet;
       packet.reason = reason;
@@ -72,14 +71,7 @@ std::vector<std::string> ServerLoginNetworkHandler::requiredWorldMods() const {
   if(world == nullptr || world->getDimensionData() == nullptr) {
     return {};
   }
-  std::vector<std::string> required =
-      mod::runtime::WorldRequiredMods::readWorldFile(world->getDimensionData()->worldDirectory());
-  for(const std::string& modId : mod::runtime::WorldRequiredMods::sessionMods(world)) {
-    required.push_back(modId);
-  }
-  std::sort(required.begin(), required.end());
-  required.erase(std::unique(required.begin(), required.end()), required.end());
-  return required;
+  return mod::runtime::WorldRequiredMods::requiredForWorld(world->getDimensionData()->worldDirectory(), world);
 }
 void ServerLoginNetworkHandler::onHandshake(const HandshakePacket& /*packet*/) {
   if(connection_ == nullptr) {
@@ -114,19 +106,11 @@ void ServerLoginNetworkHandler::onHello(const LoginHelloPacket& packet) {
     }
     return;
   }
-  const std::vector<std::string> required = requiredWorldMods();
-  if(!required.empty()) {
-    const std::vector<std::string> clientMods = mod::runtime::WorldRequiredMods::splitCsv(clientModsCsv_);
-    std::vector<std::string> missing;
-    for(const std::string& modId : required) {
-      if(std::find(clientMods.begin(), clientMods.end(), modId) == clientMods.end()) {
-        missing.push_back(modId);
-      }
-    }
-    if(!missing.empty()) {
-      disconnect("This world requires Lua mods: " + mod::runtime::WorldRequiredMods::joinCsv(missing));
-      return;
-    }
+  const std::vector<std::string> missing = mod::runtime::WorldRequiredMods::missingFrom(
+      requiredWorldMods(), mod::runtime::WorldRequiredMods::splitCsv(clientModsCsv_));
+  if(!missing.empty()) {
+    disconnect(mod::runtime::WorldRequiredMods::requirementMessage(missing));
+    return;
   }
   if(!onlineMode_) {
     accept(packet);
@@ -171,42 +155,53 @@ void ServerLoginNetworkHandler::accept(const LoginHelloPacket& packet) {
     return;
   }
   ::net::minecraft::entity::player::ServerPlayerEntity* player = server_->playerManager.connectPlayer(this, packet.username);
-  if(player != nullptr) {
-    server_->playerManager.loadPlayerData(player);
-    player->setWorld(server_->getWorld(player->dimensionId));
-    ServerWorld* serverWorld = server_->getWorld(player->dimensionId);
-    std::cout << getConnectionInfo() << " logged in with entity id " << player->id << " at (" << player->x << ", "
-              << player->y << ", " << player->z << ")" << std::endl;
-    if(serverWorld != nullptr) {
-      const Vec3i spawnPos = serverWorld->getSpawnPos();
-      auto playHandler = std::make_unique<ServerPlayNetworkHandler>(server_, connection_.get(), player);
-      const std::int8_t dimensionRawId =
-          serverWorld->dimension != nullptr ? static_cast<std::int8_t>(serverWorld->dimension->id) : 0;
-      LoginHelloPacket loginResponse;
-      loginResponse.username.clear();
-      loginResponse.protocolVersion = player->id;
-      loginResponse.worldSeed = serverWorld->getSeed();
-      loginResponse.dimensionId = dimensionRawId;
-      playHandler->sendPacket(loginResponse);
-      PlayerSpawnPositionS2CPacket spawnPacket;
-      spawnPacket.x = spawnPos.x;
-      spawnPacket.y = spawnPos.y;
-      spawnPacket.z = spawnPos.z;
-      playHandler->sendPacket(spawnPacket);
-      server_->playerManager.sendWorldInfo(player, serverWorld);
-      ChatMessagePacket joinMessage;
-      joinMessage.chatMessage = "\u00a7e" + player->name + " joined the game.";
-      server_->playerManager.sendToAll(joinMessage);
-      server_->playerManager.addPlayer(player);
-      playHandler->teleport(player->x, player->y, player->z, player->yaw, player->pitch);
-      listener_->addConnection(std::move(playHandler), std::move(connection_));
-      WorldTimeUpdateS2CPacket timePacket;
-      timePacket.time = static_cast<std::int64_t>(serverWorld->getTime());
-      if(player->networkHandler != nullptr) {
-        player->networkHandler->sendPacket(timePacket);
-      }
-      player->initScreenHandler();
+  if(player == nullptr) {
+    closed = true;
+    return;
+  }
+  server_->playerManager.loadPlayerData(player);
+  player->setWorld(server_->getWorld(player->dimensionId));
+  ServerWorld* serverWorld = server_->getWorld(player->dimensionId);
+  if(serverWorld == nullptr) {
+    disconnect("Internal server error: world unavailable");
+    closed = true;
+    return;
+  }
+  {
+    std::ostringstream loginMessage;
+    loginMessage << getConnectionInfo() << " logged in with entity id " << player->id << " at (" << player->x << ", "
+                 << player->y << ", " << player->z << ")";
+    server::ServerLog::LOGGER.info(loginMessage.str());
+  }
+  {
+    const Vec3i spawnPos = serverWorld->getSpawnPos();
+    auto playHandler = std::make_unique<ServerPlayNetworkHandler>(server_, connection_.get(), player);
+    const std::int8_t dimensionRawId =
+        serverWorld->dimension != nullptr ? static_cast<std::int8_t>(serverWorld->dimension->id) : 0;
+    LoginHelloPacket loginResponse;
+    loginResponse.username.clear();
+    loginResponse.protocolVersion = player->id;
+    loginResponse.worldSeed = serverWorld->getSeed();
+    loginResponse.dimensionId = dimensionRawId;
+    playHandler->sendPacket(loginResponse);
+    PlayerSpawnPositionS2CPacket spawnPacket;
+    spawnPacket.x = spawnPos.x;
+    spawnPacket.y = spawnPos.y;
+    spawnPacket.z = spawnPos.z;
+    playHandler->sendPacket(spawnPacket);
+    server_->playerManager.sendWorldInfo(player, serverWorld);
+    ChatMessagePacket joinMessage;
+    joinMessage.chatMessage = "\u00a7e" + player->name + " joined the game.";
+    server_->playerManager.sendToAll(joinMessage);
+    server_->playerManager.addPlayer(player);
+    playHandler->teleport(player->x, player->y, player->z, player->yaw, player->pitch);
+    listener_->addConnection(std::move(playHandler), std::move(connection_));
+    WorldTimeUpdateS2CPacket timePacket;
+    timePacket.time = static_cast<std::int64_t>(serverWorld->getTime());
+    if(player->networkHandler != nullptr) {
+      player->networkHandler->sendPacket(timePacket);
     }
+    player->initScreenHandler();
   }
   closed = true;
 }
@@ -214,7 +209,7 @@ void ServerLoginNetworkHandler::handle(const Packet& /*packet*/) {
   disconnect("Protocol error");
 }
 void ServerLoginNetworkHandler::onDisconnected(const std::string& /*reason*/, const std::vector<std::string>& /*args*/) {
-  std::cout << getConnectionInfo() << " lost connection" << std::endl;
+  server::ServerLog::LOGGER.info(getConnectionInfo() + " lost connection");
   closed = true;
 }
 std::string ServerLoginNetworkHandler::getConnectionInfo() const {

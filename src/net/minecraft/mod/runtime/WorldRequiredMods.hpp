@@ -15,8 +15,12 @@ public:
   static std::vector<std::string> sessionMods(const World* world);
   static std::vector<std::string> readWorldFile(const std::filesystem::path& worldDirectory);
   static void writeWorldFile(const std::filesystem::path& worldDirectory, const World* world);
-  static std::vector<std::string> requiredForDirectory(const std::filesystem::path& worldDirectory);
+  static std::vector<std::string> requiredForWorld(const std::filesystem::path& worldDirectory, const World* world);
   static std::vector<std::string> missingMods(const std::vector<std::string>& required);
+  static std::vector<std::string> missingForDirectory(const std::filesystem::path& worldDirectory);
+  static std::vector<std::string> missingFrom(const std::vector<std::string>& required,
+                                              const std::vector<std::string>& available);
+  static std::string requirementMessage(const std::vector<std::string>& missing);
   static std::string joinCsv(const std::vector<std::string>& mods);
   static std::vector<std::string> splitCsv(const std::string& csv);
 };

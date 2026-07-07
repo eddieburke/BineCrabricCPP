@@ -9,6 +9,7 @@
 #include "net/minecraft/item/ItemStack.hpp"
 #include "net/minecraft/world/World.hpp"
 #endif
+#include "net/minecraft/mod/lua/LuaBlockModel.hpp"
 #include <cmath>
 #include <cctype>
 #include <cstring>
@@ -16,7 +17,7 @@
 #include <string>
 #include <unordered_map>
 namespace net::minecraft::mod::lua {
-namespace {
+namespace detail {
 [[nodiscard]] int vanillaBlockIdByToken(const char* token) {
   if(token == nullptr) {
     return 0;
@@ -131,10 +132,44 @@ namespace {
   const auto it = kIds.find(name);
   return it == kIds.end() ? 0 : it->second;
 }
-} // namespace
-int blockIdFromName(const char* name) {
-  return vanillaBlockIdByToken(name);
+[[nodiscard]] int vanillaBlockIdByAlias(const std::string& name) {
+  static const std::unordered_map<std::string, int> kAliases = {
+      {"stonebrick", 4},
+  };
+  const auto it = kAliases.find(name);
+  return it == kAliases.end() ? 0 : it->second;
 }
+} // namespace detail
+int blockIdFromName(const char* name) {
+  if(name == nullptr || *name == '\0') {
+    return 0;
+  }
+  std::string token = name;
+  for(char& ch : token) {
+    ch = static_cast<char>(std::tolower(static_cast<unsigned char>(ch)));
+  }
+  const int vanilla = detail::vanillaBlockIdByToken(name);
+  if(vanilla != 0) {
+    return vanilla;
+  }
+  const int alias = detail::vanillaBlockIdByAlias(token);
+  if(alias != 0) {
+    return alias;
+  }
+  return modBlockIdFromName(name);
+}
+#ifdef MINECRAFT_NATIVE_EXPORTS
+std::string blockWireNameFromId(int blockId) {
+  if(blockId > 0 && blockId < block::Block::BLOCK_COUNT && block::Block::BLOCKS[static_cast<std::size_t>(blockId)] != nullptr) {
+    std::string key = block::Block::BLOCKS[static_cast<std::size_t>(blockId)]->getTranslationKey();
+    if(key.rfind("tile.", 0) == 0) {
+      key = key.substr(5);
+    }
+    return key;
+  }
+  return modBlockWireName(blockId);
+}
+#endif
 #ifdef MINECRAFT_NATIVE_EXPORTS
 bool worldIsNight(const World* world) {
   if(world == nullptr) {

@@ -252,9 +252,8 @@ bool MinecraftServer::init() {
   }
   const auto start = Clock::now();
   {
-    const std::vector<std::string> requiredMods =
-        mod::runtime::WorldRequiredMods::readWorldFile(storageRoot / worldName);
-    const std::vector<std::string> missingMods = mod::runtime::WorldRequiredMods::missingMods(requiredMods);
+    const std::vector<std::string> missingMods =
+        mod::runtime::WorldRequiredMods::missingForDirectory(storageRoot / worldName);
     if(!missingMods.empty()) {
       ServerLog::LOGGER.log(LogLevel::Severe,
                             "Cannot load world \"" + worldName + "\": missing required Lua mods: " +

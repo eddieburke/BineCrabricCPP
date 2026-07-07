@@ -49,6 +49,7 @@ namespace screen_ids {
 inline constexpr std::string_view kCreateWorld = "minecraft:create_world";
 inline constexpr std::string_view kInventory = "minecraft:inventory";
 inline constexpr std::string_view kDetailSettings = "minecraft:detail_settings";
+inline constexpr std::string_view kWorldSettings = "minecraft:world_settings";
 } // namespace screen_ids
 namespace screen_regions {
 inline constexpr std::string_view kFooter = "footer";

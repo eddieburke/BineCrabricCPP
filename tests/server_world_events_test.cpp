@@ -27,16 +27,14 @@ void testEntityNotifyUsesEntityTracker() {
   ServerEventFixture fixture;
   net::minecraft::entity::ItemEntity entity;
   entity.id = 7;
-  fixture.listener.notifyEntityAdded(&entity);
-  bool threwOnDuplicate = false;
+  bool threwOnSpawn = false;
   try {
-    fixture.server.getEntityTracker(fixture.world.dimension->id).onEntityAdded(&entity);
+    fixture.world.notifyEntityAdded(&entity);
   } catch(const std::logic_error&) {
-    threwOnDuplicate = true;
+    threwOnSpawn = true;
   }
-  EXPECT_TRUE(threwOnDuplicate);
-  fixture.listener.notifyEntityRemoved(&entity);
-  fixture.listener.notifyEntityAdded(&entity);
+  EXPECT_TRUE(!threwOnSpawn);
+  fixture.world.notifyEntityRemoved(&entity);
 }
 void testWorldEventSkipsExcludedPlayer() {
   ServerEventFixture fixture;

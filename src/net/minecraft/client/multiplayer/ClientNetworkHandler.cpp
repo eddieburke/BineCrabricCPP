@@ -140,8 +140,7 @@ void ClientNetworkHandler::onHandshake(const HandshakePacket& packet) {
       world = nullptr;
       minecraft->setScreen(std::make_unique<client::gui::screen::DisconnectedScreen>(
           "disconnect.disconnected", "disconnect.genericReason",
-          std::vector<std::string>{"This world requires Lua mods: " +
-                                   mod::runtime::WorldRequiredMods::joinCsv(missing)}));
+          std::vector<std::string>{mod::runtime::WorldRequiredMods::requirementMessage(missing)}));
       return;
     }
     std::vector<std::string> activeMods;

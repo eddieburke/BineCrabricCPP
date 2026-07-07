@@ -44,9 +44,9 @@ local clamp = minecraft.util.clamp
 local function clamp_config()
   config.layer_count = math.floor(clamp(config.layer_count, 1, 12))
   config.base_opacity = clamp(config.base_opacity, 0.0, 1.0)
-  config.cloud_scale = clamp(config.cloud_scale, 0.5, 2.0)
-  config.layer_height_spacing = clamp(config.layer_height_spacing, 4.0, 32.0)
-  config.wind_speed = clamp(config.wind_speed, 0.0, 5.0)
+  config.cloud_scale = clamp(config.cloud_scale, 0.1, 4.0)
+  config.layer_height_spacing = clamp(config.layer_height_spacing, 1.0, 64.0)
+  config.wind_speed = clamp(config.wind_speed, 0.0, 10.0)
 end
 
 local function reset_config()
@@ -82,7 +82,7 @@ load_config()
 local open_settings = minecraft.screen.settings({
   id = SCREEN_ID,
   title = "Cloud Settings",
-  parent_screen = minecraft.screen.ids.detail_settings,
+  parent_screen = minecraft.screen.ids.world_settings,
   parent_region = minecraft.screen.regions.footer,
   button_label = "Cloud Settings...",
   values = function() return config end,
@@ -96,9 +96,6 @@ local open_settings = minecraft.screen.settings({
       format = function(v) return "Spacing: " .. math.floor(v + 0.5) .. " blocks" end },
     { key = "wind_speed", min = 0, max = 5,
       format = function(v) return string.format("Wind Speed: %.1fx", v) end },
-  },
-  toggles = {
-    { key = "enabled", label = "Enabled" },
   },
   on_change = clamp_config,
   on_reset = reset_config,

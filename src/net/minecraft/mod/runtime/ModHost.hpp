@@ -42,6 +42,7 @@ public:
     std::recursive_mutex stateMutex;
     std::vector<Callback> callbacks;
     std::vector<int> buttonCallbackRefs;
+    std::vector<int> blockModelCallbackRefs;
     std::vector<int> ownedTextureIds;
   };
   void initialize(const std::filesystem::path& runDirectory);

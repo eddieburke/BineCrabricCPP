@@ -1,10 +1,14 @@
 #pragma once
+#include <string>
 struct lua_State;
 namespace net::minecraft {
 class World;
 }
 namespace net::minecraft::mod::lua {
 int blockIdFromName(const char* name);
+#ifdef MINECRAFT_NATIVE_EXPORTS
+std::string blockWireNameFromId(int blockId);
+#endif
 bool worldIsNight(const World* world);
 int worldRandomInt(World* world, int bound);
 bool spawnEntityByName(World* world, const char* entityId, double x, double y, double z);

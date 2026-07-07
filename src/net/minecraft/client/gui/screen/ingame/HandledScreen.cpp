@@ -37,6 +37,7 @@ void HandledScreen::render(int mouseX, int mouseY, float tickDelta) {
   gl::GL11::glPushMatrix();
   gl::GL11::glTranslatef(static_cast<float>(originX), static_cast<float>(originY), 0.0f);
   gl::GL11::glColor4f(1.0f, 1.0f, 1.0f, 1.0f);
+  gl::GL11::glEnable(gl::GL11::GL_RESCALE_NORMAL);
   ::net::minecraft::screen::slot::Slot* hoveredSlot = nullptr;
   PlayerEntity& player = static_cast<PlayerEntity&>(*minecraft_->player);
   const ItemStack cursorStack = player.inventory.getCursorStack();
@@ -63,6 +64,7 @@ void HandledScreen::render(int mouseX, int mouseY, float tickDelta) {
                                            mouseX - originX - 8, mouseY - originY - 8);
     }
   }
+  gl::GL11::glDisable(gl::GL11::GL_RESCALE_NORMAL);
   render::platform::Lighting::turnOff();
   // Foreground labels, the hovered-slot tooltip and the button layer all draw
   // unlit and without depth testing; both are restored when render() returns.

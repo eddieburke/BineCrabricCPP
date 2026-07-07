@@ -357,7 +357,8 @@ void ChunkMap::updatePlayerChunks(ServerPlayerEntity* player) {
   player->lastZ = player->z;
 }
 std::int64_t ChunkMap::chunkKey(int chunkX, int chunkZ) {
-  return static_cast<std::int64_t>(chunkX) + INT_MAX |
-         static_cast<std::int64_t>(chunkZ) + (static_cast<std::int64_t>(INT_MAX) << 32);
+  const auto keyX = static_cast<std::uint64_t>(static_cast<std::int64_t>(chunkX) + INT_MAX) & 0xffffffffULL;
+  const auto keyZ = static_cast<std::uint64_t>(static_cast<std::int64_t>(chunkZ) + INT_MAX) & 0xffffffffULL;
+  return static_cast<std::int64_t>((keyZ << 32U) | keyX);
 }
 } // namespace net::minecraft::server

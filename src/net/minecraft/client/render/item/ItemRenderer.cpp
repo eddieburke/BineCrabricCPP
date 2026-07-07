@@ -14,17 +14,30 @@ void ItemRenderer::renderGuiItem(client::font::TextRenderer& textRenderer,
   if(stack.count <= 0 || stack.itemId <= 0) {
     return;
   }
+  const gl::AttribGuard state(gl::GL11::GL_ENABLE_BIT | gl::GL11::GL_LIGHTING_BIT | gl::GL11::GL_CURRENT_BIT |
+                              gl::GL11::GL_TEXTURE_BIT | gl::GL11::GL_COLOR_BUFFER_BIT |
+                              gl::GL11::GL_DEPTH_BUFFER_BIT | gl::GL11::GL_TRANSFORM_BIT);
+  gl::GL11::glEnable(gl::GL11::GL_TEXTURE_2D);
+  gl::GL11::glColor4f(1.0f, 1.0f, 1.0f, 1.0f);
   if(ItemModelRenderer::rendersAsBlockModel(stack)) {
     renderBlockItemInGui(textureManager, stack, x, y);
   } else {
     renderSpriteItemInGui(textureManager, stack, x, y);
   }
   gl::GL11::glEnable(gl::GL11::GL_CULL_FACE);
+  gl::GL11::glColor4f(1.0f, 1.0f, 1.0f, 1.0f);
 }
 void ItemRenderer::renderBlockItemInGui(client::texture::TextureManager& textureManager, const ItemStack& stack, int x,
                                         int y) {
   Block* block = ItemModelRenderer::blockOf(stack);
+  if(block == nullptr) {
+    return;
+  }
   textureManager.bindTexture(textureManager.getTextureId("/terrain.png"));
+  const bool previousUseAo = blockRenderManager.ctx.faceState.useAo;
+  const bool previousInventoryColorEnabled = blockRenderManager.ctx.inventoryColorEnabled;
+  auto* previousTextureManager = blockRenderManager.ctx.textureManager;
+  gl::GL11::glEnable(gl::GL11::GL_RESCALE_NORMAL);
   gl::GL11::glPushMatrix();
   gl::GL11::glTranslatef(static_cast<float>(x - 2), static_cast<float>(y + 3), -3.0f);
   gl::GL11::glScalef(10.0f, 10.0f, 10.0f);
@@ -36,11 +49,14 @@ void ItemRenderer::renderBlockItemInGui(client::texture::TextureManager& texture
   gl::GL11::glRotatef(-90.0f, 0.0f, 1.0f, 0.0f);
   blockRenderManager.ctx.inventoryColorEnabled = useCustomDisplayColor;
   blockRenderManager.ctx.textureManager = &textureManager;
+  blockRenderManager.ctx.faceState.useAo = false;
   blockRenderManager.render(*block, stack.getDamage(), 1.0f);
-  blockRenderManager.ctx.textureManager = nullptr;
-  blockRenderManager.ctx.inventoryColorEnabled = true;
+  blockRenderManager.ctx.textureManager = previousTextureManager;
+  blockRenderManager.ctx.inventoryColorEnabled = previousInventoryColorEnabled;
+  blockRenderManager.ctx.faceState.useAo = previousUseAo;
   textureManager.bindTexture(textureManager.getTextureId("/terrain.png"));
   gl::GL11::glPopMatrix();
+  gl::GL11::glDisable(gl::GL11::GL_RESCALE_NORMAL);
 }
 void ItemRenderer::renderSpriteItemInGui(client::texture::TextureManager& textureManager, const ItemStack& stack, int x,
                                          int y) {

@@ -90,13 +90,32 @@
 #undef GL_LINEAR_MIPMAP_LINEAR
 #undef GL_PROJECTION_MATRIX
 #undef GL_MODELVIEW_MATRIX
+#undef GL_POINTS
+#undef GL_VIEWPORT
+#undef GL_TEXTURE0
+#undef GL_QUAD_STRIP
+#undef GL_LINE_LOOP
+#undef GL_AMBIENT
+#undef GL_NORMALIZE
+#undef GL_POLYGON_OFFSET_FILL
+#undef GL_BYTE
+#undef GL_FLOAT
+#undef GL_DOUBLE
+#undef GL_VERTEX_ARRAY
+#undef GL_NORMAL_ARRAY
+#undef GL_COLOR_ARRAY
+#undef GL_CURRENT_COLOR
+#undef GL_TEXTURE_COORD_ARRAY
 namespace net::minecraft::client::gl {
 namespace math = net::minecraft::util::math;
 struct GL11 {
   static constexpr int GL_QUADS = 0x0007;
   static constexpr int GL_TRIANGLES = 0x0004;
   static constexpr int GL_LINES = 0x0001;
+  static constexpr int GL_POINTS = 0x0000;
   static constexpr int GL_LINE_STRIP = 0x0003;
+  static constexpr int GL_LINE_LOOP = 0x0002;
+  static constexpr int GL_QUAD_STRIP = 0x0008;
   static constexpr int GL_BLEND = 0x0BE2;
   static constexpr int GL_TEXTURE_2D = 0x0DE1;
   static constexpr int GL_ALPHA_TEST = 0x0BC0;
@@ -173,6 +192,7 @@ struct GL11 {
   static constexpr int GL_LINEAR_MIPMAP_LINEAR = 0x2703;
   static constexpr int GL_PROJECTION_MATRIX = 0x0BA7;
   static constexpr int GL_MODELVIEW_MATRIX = 0x0BA6;
+  static constexpr int GL_VIEWPORT = 0x0BA2;
   static constexpr int GL_TEXTURE0 = 0x84C0;
   // CPU matrix stack tracking — updated alongside GL matrix calls.
   inline static math::MatrixStack* s_matrixStack = &math::g_modelView;
@@ -365,6 +385,9 @@ struct GL11 {
   static void glLineWidth(float width) {
     ::glLineWidth(width);
   }
+  static void glPointSize(float size) {
+    ::glPointSize(size);
+  }
   static void glDepthFunc(int func) {
     ::glDepthFunc(static_cast<GLenum>(func));
   }
@@ -390,10 +413,19 @@ public:
 };
 class AttribGuard {
 public:
-  explicit AttribGuard(int mask) { GL11::glPushAttrib(mask); }
-  ~AttribGuard() { GL11::glPopAttrib(); }
+  explicit AttribGuard(int mask) : mask_(mask), matrixStack_(GL11::s_matrixStack) { GL11::glPushAttrib(mask); }
+  ~AttribGuard() {
+    GL11::glPopAttrib();
+    if((mask_ & GL11::GL_TRANSFORM_BIT) != 0) {
+      GL11::s_matrixStack = matrixStack_;
+    }
+  }
   AttribGuard(const AttribGuard&) = delete;
   AttribGuard& operator=(const AttribGuard&) = delete;
+
+private:
+  int mask_;
+  math::MatrixStack* matrixStack_;
 };
 class DisableGuard {
 public:

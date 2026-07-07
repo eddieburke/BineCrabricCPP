@@ -20,6 +20,7 @@
 #include "net/minecraft/client/input/InputSystem.hpp"
 #include "net/minecraft/client/render/platform/Lighting.hpp"
 #include "net/minecraft/client/gui/Draw2D.hpp"
+#include "net/minecraft/client/gui/GlobeUiRenderer.hpp"
 #include "net/minecraft/client/render/Tessellator.hpp"
 #include "net/minecraft/client/render/item/ItemRenderer.hpp"
 #include "net/minecraft/entity/Entity.hpp"
@@ -386,6 +387,8 @@ void sortMods(std::vector<ModPackage>& mods) {
 }
 template <typename Fill, typename Apply>
 void callLuaEvent(const std::shared_ptr<ModHost::LoadedLuaMod>& mod, int ref, Fill fill, Apply apply);
+using LuaEventSubscriber = void (*)(const std::shared_ptr<ModHost::LoadedLuaMod>&, int, int);
+const std::unordered_map<std::string_view, LuaEventSubscriber>& luaEventSubscribers();
 [[nodiscard]] bool luaWorldIsOverworld(const World* world) {
   return world != nullptr && world->dimension != nullptr && !world->dimension->isNether && !world->dimension->hasCeiling;
 }
@@ -493,7 +496,9 @@ using net::minecraft::mod::lua::countEntitiesByName;
 using net::minecraft::mod::lua::getBlockIdAt;
 using net::minecraft::mod::lua::LuaBlockModelSpec;
 using net::minecraft::mod::lua::LuaChunkContext;
+using net::minecraft::mod::lua::ManualBlockVertex;
 using net::minecraft::mod::lua::ModelBox;
+using net::minecraft::mod::lua::emitManualBlockModelQuad;
 using net::minecraft::mod::lua::normalizedCelestial;
 using net::minecraft::mod::lua::readPlayerPosition;
 using net::minecraft::mod::lua::registerBlockSpec;
@@ -942,7 +947,11 @@ void invokeButtonCallback(ModHost::LoadedLuaMod* mod, int ref) {
   }
   return static_cast<std::uint32_t>(static_cast<std::uint64_t>(value));
 }
+constexpr int kLuaGuiDrawStateMask = gl::GL11::GL_ENABLE_BIT | gl::GL11::GL_LIGHTING_BIT |
+                                     gl::GL11::GL_CURRENT_BIT | gl::GL11::GL_TEXTURE_BIT |
+                                     gl::GL11::GL_COLOR_BUFFER_BIT | gl::GL11::GL_DEPTH_BUFFER_BIT;
 void drawGuiFillRect(int x, int y, int width, int height, std::uint32_t color) {
+  const gl::AttribGuard state(kLuaGuiDrawStateMask);
   const int rgb = static_cast<int>(color & 0x00FFFFFFU);
   int alpha = static_cast<int>((color >> 24U) & 0xFFU);
   if(alpha == 0) {
@@ -955,6 +964,73 @@ void drawGuiFillRect(int x, int y, int width, int height, std::uint32_t color) {
   gl::GL11::glBlendFunc(gl::GL11::GL_SRC_ALPHA, gl::GL11::GL_ONE_MINUS_SRC_ALPHA);
   gl::GL11::glDisable(gl::GL11::GL_TEXTURE_2D);
   client::gui::draw::coloredQuad(tess, x, y, x + width, y + height, rgb, alpha, 0.0f);
+}
+int luaGuiDrawGlobe(lua_State* state) {
+  LuaApi& api = luaApi();
+  if(!luaGuiDrawActive() || api.gettop(state) < 1 || api.type(state, 1) != kLuaTTable) {
+    return 0;
+  }
+  client::Minecraft* client = client::Minecraft::INSTANCE;
+  if(client == nullptr) {
+    return 0;
+  }
+  client::gui::globe::DrawParams params{};
+  params.globeX = static_cast<int>(luaFloatField(state, 1, "x", 0.0f));
+  params.globeY = static_cast<int>(luaFloatField(state, 1, "y", 0.0f));
+  params.globeSize = static_cast<int>(luaFloatField(state, 1, "size", 0.0f));
+  params.guiWidth = static_cast<int>(luaFloatField(state, 1, "gui_width", static_cast<float>(client->displayWidth)));
+  params.guiHeight = static_cast<int>(luaFloatField(state, 1, "gui_height", static_cast<float>(client->displayHeight)));
+  params.pinLat = luaFloatField(state, 1, "pin_lat", luaFloatField(state, 1, "lat", 0.0f));
+  params.pinLon = luaFloatField(state, 1, "pin_lon", luaFloatField(state, 1, "lon", 0.0f));
+  params.yawDeg = luaFloatField(state, 1, "yaw_deg", 0.0f);
+  params.pitchDeg = luaFloatField(state, 1, "pitch_deg", 0.0f);
+  params.camDist = luaFloatField(state, 1, "cam_dist", 2.05f);
+  client::gui::globe::render(params);
+  return 0;
+}
+int luaGlobePickLatLon(lua_State* state) {
+  LuaApi& api = luaApi();
+  if(api.gettop(state) < 1 || api.type(state, 1) != kLuaTTable) {
+    api.pushnil(state);
+    return 1;
+  }
+  client::gui::globe::PickParams params{};
+  params.mouseX = static_cast<int>(luaFloatField(state, 1, "mouse_x", 0.0f));
+  params.mouseY = static_cast<int>(luaFloatField(state, 1, "mouse_y", 0.0f));
+  params.globeX = static_cast<int>(luaFloatField(state, 1, "x", 0.0f));
+  params.globeY = static_cast<int>(luaFloatField(state, 1, "y", 0.0f));
+  params.globeSize = static_cast<int>(luaFloatField(state, 1, "size", 0.0f));
+  params.yawDeg = luaFloatField(state, 1, "yaw_deg", 0.0f);
+  params.pitchDeg = luaFloatField(state, 1, "pitch_deg", 0.0f);
+  params.camDist = luaFloatField(state, 1, "cam_dist", 2.05f);
+  float lat = 0.0f;
+  float lon = 0.0f;
+  if(!client::gui::globe::pickLatLon(params, lat, lon)) {
+    api.pushnil(state);
+    return 1;
+  }
+  api.createtable(state, 0, 2);
+  setField(state, "lat", static_cast<double>(lat));
+  setField(state, "lon", static_cast<double>(lon));
+  return 1;
+}
+int luaGlobeLoadCoastlines(lua_State* state) {
+  LuaApi& api = luaApi();
+  const std::string text = luaString(state, 1, "");
+  client::gui::globe::loadCoastText(text);
+  api.pushboolean(state, 1);
+  return 1;
+}
+int luaGlobeContainsPoint(lua_State* state) {
+  LuaApi& api = luaApi();
+  int isNumber = 0;
+  const int mouseX = static_cast<int>(api.tonumberx(state, 1, &isNumber));
+  const int mouseY = static_cast<int>(api.tonumberx(state, 2, &isNumber));
+  const int globeX = static_cast<int>(api.tonumberx(state, 3, &isNumber));
+  const int globeY = static_cast<int>(api.tonumberx(state, 4, &isNumber));
+  const int globeSize = static_cast<int>(api.tonumberx(state, 5, &isNumber));
+  api.pushboolean(state, client::gui::globe::containsGlobePoint(mouseX, mouseY, globeX, globeY, globeSize) ? 1 : 0);
+  return 1;
 }
 } // namespace
 #endif
@@ -1036,6 +1112,12 @@ bool parseBlockModel(lua_State* state, int tableIndex, LuaBlockModelSpec& model,
   }
   if(type == "full_cube" || type == "simple" || type.empty()) {
     model.type = LuaBlockModelSpec::Type::FullCube;
+    return true;
+  }
+  if(type == "manual" || type == "custom" || type == "tessellated") {
+    model.type = LuaBlockModelSpec::Type::Manual;
+    model.opaque = luaBoolField(state, tableIndex, "opaque", false);
+    model.fullCube = luaBoolField(state, tableIndex, "full_cube", false);
     return true;
   }
   if(type == "box_list" || type == "connected_bars") {
@@ -1412,8 +1494,15 @@ int luaWriteGameFile(lua_State* state) {
     api.pushboolean(state, 0);
     return 1;
   }
-  const std::filesystem::path path = host().runDirectory() / "config" / "mods" / sanitizeName(mod->modId) /
-                                     std::filesystem::path(normalizeRelativePath(relativePath));
+  const std::string normalized = normalizeRelativePath(relativePath);
+  const std::string extension = toLowerCopy(std::filesystem::path(normalized).extension().string());
+  std::filesystem::path path;
+  if(normalized.find('/') == std::string::npos && (extension == ".cfg" || extension == ".txt")) {
+    path = host().runDirectory() / normalized;
+  } else {
+    path = host().runDirectory() / "config" / "mods" / sanitizeName(mod->modId) /
+           std::filesystem::path(normalized);
+  }
   api.pushboolean(state, writeFileText(path, content) ? 1 : 0);
   return 1;
 }
@@ -1513,29 +1602,7 @@ int luaReadNbtAsset(lua_State* state) {
   return 2;
 }
 [[nodiscard]] bool isSupportedLuaEvent(std::string_view event) {
-  static const std::set<std::string_view> kEvents = {
-      "attack_damage",
-      "block_interact",
-      "chunk_generation",
-      "client_tick",
-      "create_world",
-      "entity_interact",
-      "fov",
-      "key_press",
-      "mouse_button",
-      "player_travel",
-      "screen_event",
-      "screen_region",
-      "screen_ui",
-      "tick_rate",
-      "world_color",
-      "world_render",
-      "world_spawn_search",
-      "world_open",
-      "world_start",
-      "world_tick",
-  };
-  return kEvents.contains(event);
+  return luaEventSubscribers().contains(event);
 }
 int luaOn(lua_State* state) {
   LuaApi& api = luaApi();
@@ -1735,15 +1802,42 @@ int luaRegisterBlock(lua_State* state) {
   spec.resistance = luaFloatField(state, tableIndex, "resistance", 1.0f);
   spec.luminance = luaFloatField(state, tableIndex, "luminance", 0.0f);
   spec.translationKey = luaStringField(state, tableIndex, "translation_key", "");
+  spec.displayName = luaStringField(state, tableIndex, "name", "");
   spec.material = luaStringField(state, tableIndex, "material", "stone");
+  spec.ownerModId = mod->modId;
   api.getfield(state, tableIndex, "model");
   if(api.type(state, -1) == kLuaTTable) {
+    const int modelIndex = api.gettop(state);
     std::string modelError;
-    if(!parseBlockModel(state, api.gettop(state), spec.model, modelError)) {
+    if(!parseBlockModel(state, modelIndex, spec.model, modelError)) {
       api.settop(state, tableIndex);
       api.pushboolean(state, 0);
       api.pushstring(state, modelError.c_str());
       return 2;
+    }
+    if(spec.model.type == LuaBlockModelSpec::Type::Manual) {
+      api.getfield(state, modelIndex, "draw");
+      if(api.type(state, -1) == kLuaTFunction) {
+        spec.manualDrawRef = api.ref(state, kLuaRegistryIndex);
+        if(spec.manualDrawRef != kLuaNoRef) {
+          mod->blockModelCallbackRefs.push_back(spec.manualDrawRef);
+        }
+      } else {
+        api.settop(state, -2);
+      }
+      api.getfield(state, modelIndex, "inventory");
+      if(api.type(state, -1) != kLuaTFunction) {
+        api.settop(state, -2);
+        api.getfield(state, modelIndex, "inventory_draw");
+      }
+      if(api.type(state, -1) == kLuaTFunction) {
+        spec.manualInventoryRef = api.ref(state, kLuaRegistryIndex);
+        if(spec.manualInventoryRef != kLuaNoRef) {
+          mod->blockModelCallbackRefs.push_back(spec.manualInventoryRef);
+        }
+      } else {
+        api.settop(state, -2);
+      }
     }
   }
   api.settop(state, tableIndex);
@@ -1798,6 +1892,13 @@ int luaRegisterShapedRecipe(lua_State* state) {
   return 1;
 }
 #ifdef MINECRAFT_NATIVE_EXPORTS
+[[nodiscard]] World* luaActiveWorld() {
+  World* world = LuaChunkContext::activeWorld();
+  if(world == nullptr && client::Minecraft::INSTANCE != nullptr) {
+    world = client::Minecraft::INSTANCE->world;
+  }
+  return world;
+}
 int luaWorldBlockId(lua_State* state) {
   LuaApi& api = luaApi();
   if(api.type(state, 1) != kLuaTString) {
@@ -1814,20 +1915,14 @@ int luaWorldRandom(lua_State* state) {
     int isNumber = 0;
     bound = static_cast<int>(api.tonumberx(state, 1, &isNumber));
   }
-  World* world = LuaChunkContext::activeWorld();
-  if(world == nullptr && client::Minecraft::INSTANCE != nullptr) {
-    world = client::Minecraft::INSTANCE->world;
-  }
+  World* world = luaActiveWorld();
   api.pushinteger(state, worldRandomInt(world, bound));
   return 1;
 }
 int luaWorldIsNight(lua_State* state) {
   (void)state;
   LuaApi& api = luaApi();
-  World* world = LuaChunkContext::activeWorld();
-  if(world == nullptr && client::Minecraft::INSTANCE != nullptr) {
-    world = client::Minecraft::INSTANCE->world;
-  }
+  World* world = luaActiveWorld();
   api.pushboolean(state, worldIsNight(world) ? 1 : 0);
   return 1;
 }
@@ -1836,10 +1931,7 @@ int luaWorldTopSolidY(lua_State* state) {
   int isNumber = 0;
   const int x = static_cast<int>(api.tonumberx(state, 1, &isNumber));
   const int z = static_cast<int>(api.tonumberx(state, 2, &isNumber));
-  World* world = LuaChunkContext::activeWorld();
-  if(world == nullptr && client::Minecraft::INSTANCE != nullptr) {
-    world = client::Minecraft::INSTANCE->world;
-  }
+  World* world = luaActiveWorld();
   if(world == nullptr) {
     api.pushinteger(state, -1);
     return 1;
@@ -1882,10 +1974,7 @@ int luaWorldSpawnEntity(lua_State* state) {
     y = api.gettop(state) >= 3 ? api.tonumberx(state, 3, &isNumber) : 64.0;
     z = api.gettop(state) >= 4 ? api.tonumberx(state, 4, &isNumber) : 0.0;
   }
-  World* world = LuaChunkContext::activeWorld();
-  if(world == nullptr && client::Minecraft::INSTANCE != nullptr) {
-    world = client::Minecraft::INSTANCE->world;
-  }
+  World* world = luaActiveWorld();
   api.pushboolean(state, spawnEntityByName(world, entityId.c_str(), x, y, z) ? 1 : 0);
   return 1;
 }
@@ -1895,10 +1984,7 @@ int luaWorldCountEntities(lua_State* state) {
     api.pushinteger(state, 0);
     return 1;
   }
-  World* world = LuaChunkContext::activeWorld();
-  if(world == nullptr && client::Minecraft::INSTANCE != nullptr) {
-    world = client::Minecraft::INSTANCE->world;
-  }
+  World* world = luaActiveWorld();
   api.pushinteger(state, countEntitiesByName(world, luaString(state, 1, "").c_str()));
   return 1;
 }
@@ -1912,10 +1998,7 @@ int luaWorldGetBlock(lua_State* state) {
   const int x = static_cast<int>(api.tonumberx(state, 1, &isNumber));
   const int y = static_cast<int>(api.tonumberx(state, 2, &isNumber));
   const int z = static_cast<int>(api.tonumberx(state, 3, &isNumber));
-  World* world = LuaChunkContext::activeWorld();
-  if(world == nullptr && client::Minecraft::INSTANCE != nullptr) {
-    world = client::Minecraft::INSTANCE->world;
-  }
+  World* world = luaActiveWorld();
   api.pushinteger(state, getBlockIdAt(world, x, y, z));
   return 1;
 }
@@ -1960,6 +2043,7 @@ int luaGuiDrawText(lua_State* state) {
   const int y = static_cast<int>(api.tonumberx(state, 2, &isNumber));
   const std::string text = luaString(state, 3, "");
   const std::uint32_t color = luaArgb(state, 4);
+  const gl::AttribGuard stateScope(kLuaGuiDrawStateMask);
   gl::GL11::glDisable(gl::GL11::GL_DEPTH_TEST);
   client->textRenderer->draw(text, x, y, std::bit_cast<int>(color));
   return 0;
@@ -1982,10 +2066,14 @@ int luaGuiDrawItem(lua_State* state) {
     return 0;
   }
   net::minecraft::ItemStack stack(itemId, count);
-  gl::GL11::glEnable(gl::GL11::GL_LIGHTING);
-  gl::GL11::glDisable(gl::GL11::GL_DEPTH_TEST);
+  const gl::AttribGuard stateScope(kLuaGuiDrawStateMask);
+  gl::GL11::glEnable(gl::GL11::GL_TEXTURE_2D);
+  gl::GL11::glColor4f(1.0f, 1.0f, 1.0f, 1.0f);
+  client::render::platform::Lighting::turnOn();
+  gl::GL11::glEnable(gl::GL11::GL_DEPTH_TEST);
   g_luaItemRenderer.renderGuiItem(*client->textRenderer, client->textureManager, stack, x, y);
   g_luaItemRenderer.renderGuiItemDecoration(*client->textRenderer, client->textureManager, stack, x, y);
+  gl::GL11::glColor4f(1.0f, 1.0f, 1.0f, 1.0f);
   return 0;
 }
 int luaGuiTextWidth(lua_State* state) {
@@ -2012,6 +2100,7 @@ int luaGuiDrawTexture(lua_State* state) {
   if(textureId <= 0) {
     return 0;
   }
+  const gl::AttribGuard stateScope(kLuaGuiDrawStateMask);
   gl::GL11::glDisable(gl::GL11::GL_FOG);
   gl::GL11::glColor4f(1.0f, 1.0f, 1.0f, 1.0f);
   gl::GL11::glEnable(gl::GL11::GL_TEXTURE_2D);
@@ -2247,6 +2336,57 @@ int luaScreenAddButton(lua_State* state) {
   ModHost::LoadedLuaMod* mod = session->mod;
   session->screen->addLuaButton(x, y, width, height, text, [mod, ref]() { invokeButtonCallback(mod, ref); });
   return 0;
+}
+bool readManualBlockVertex(lua_State* state, int tableIndex, ManualBlockVertex& vertex) {
+  LuaApi& api = luaApi();
+  if(api.type(state, tableIndex) != kLuaTTable) {
+    return false;
+  }
+  vertex.x = luaFloatField(state, tableIndex, "x", luaFloatAt(state, tableIndex, 1, 0.0f));
+  vertex.y = luaFloatField(state, tableIndex, "y", luaFloatAt(state, tableIndex, 2, 0.0f));
+  vertex.z = luaFloatField(state, tableIndex, "z", luaFloatAt(state, tableIndex, 3, 0.0f));
+  vertex.u = luaFloatField(state, tableIndex, "u", luaFloatAt(state, tableIndex, 4, 0.0f));
+  vertex.v = luaFloatField(state, tableIndex, "v", luaFloatAt(state, tableIndex, 5, 0.0f));
+  return std::isfinite(vertex.x) && std::isfinite(vertex.y) && std::isfinite(vertex.z) &&
+         std::isfinite(vertex.u) && std::isfinite(vertex.v);
+}
+int luaTessellatorQuad(lua_State* state) {
+  LuaApi& api = luaApi();
+  if(api.type(state, 1) != kLuaTTable) {
+    api.pushboolean(state, 0);
+    return 1;
+  }
+  const int tableIndex = 1;
+  int textureId = luaIntField(state, tableIndex, "texture_id", -1);
+  const std::string texturePath = luaStringField(state, tableIndex, "texture", "");
+  if(!texturePath.empty()) {
+    textureId = texture(texturePath.c_str());
+  }
+  const float red = std::clamp(luaFloatField(state, tableIndex, "r", 1.0f), 0.0f, 1.0f);
+  const float green = std::clamp(luaFloatField(state, tableIndex, "g", 1.0f), 0.0f, 1.0f);
+  const float blue = std::clamp(luaFloatField(state, tableIndex, "b", 1.0f), 0.0f, 1.0f);
+  const float alpha = std::clamp(luaFloatField(state, tableIndex, "a", 1.0f), 0.0f, 1.0f);
+  ManualBlockVertex vertices[4];
+  api.getfield(state, tableIndex, "vertices");
+  if(api.type(state, -1) != kLuaTTable) {
+    api.settop(state, tableIndex);
+    api.pushboolean(state, 0);
+    return 1;
+  }
+  const int verticesIndex = api.gettop(state);
+  for(int i = 0; i < 4; ++i) {
+    api.rawgeti(state, verticesIndex, i + 1);
+    const bool ok = readManualBlockVertex(state, api.gettop(state), vertices[i]);
+    api.settop(state, -2);
+    if(!ok) {
+      api.settop(state, tableIndex);
+      api.pushboolean(state, 0);
+      return 1;
+    }
+  }
+  api.settop(state, tableIndex);
+  api.pushboolean(state, emitManualBlockModelQuad(vertices, textureId, red, green, blue, alpha) ? 1 : 0);
+  return 1;
 }
 int luaRenderDrawQuads(lua_State* state) {
   LuaApi& api = luaApi();
@@ -2553,13 +2693,24 @@ void installMinecraftTable(lua_State* state, ModHost::LoadedLuaMod& mod) {
                                {"draw_item", luaGuiDrawItem},
                                {"text_width", luaGuiTextWidth},
                                {"draw_texture", luaGuiDrawTexture},
+                               {"draw_globe", luaGuiDrawGlobe},
                            });
   api.setfield(state, -2, "gui");
+  pushFunctionTable(state, {
+                               {"pick_lat_lon", luaGlobePickLatLon},
+                               {"load_coastlines", luaGlobeLoadCoastlines},
+                               {"contains_point", luaGlobeContainsPoint},
+                           });
+  api.setfield(state, -2, "globe");
   pushFunctionTable(state, {
                                {"quads", luaRenderDrawQuads},
                                {"billboards", luaRenderDrawBillboards},
                            });
   api.setfield(state, -2, "render");
+  pushFunctionTable(state, {
+                               {"quad", luaTessellatorQuad},
+                           });
+  api.setfield(state, -2, "tessellator");
   pushFunctionTable(state, {{"get", luaOptionsGet}, {"keys", luaOptionsKeys}});
   api.setfield(state, -2, "options");
   pushFunctionTable(state, {{"ids", luaItemIds}});
@@ -2576,10 +2727,11 @@ void installMinecraftTable(lua_State* state, ModHost::LoadedLuaMod& mod) {
                                {"add_button", luaScreenAddButton},
                                {"set_fields_visible", luaScreenSetFieldsVisible},
                            });
-  api.createtable(state, 0, 3);
+  api.createtable(state, 0, 4);
   setField(state, "create_world", std::string(screen_ids::kCreateWorld));
   setField(state, "inventory", std::string(screen_ids::kInventory));
   setField(state, "detail_settings", std::string(screen_ids::kDetailSettings));
+  setField(state, "world_settings", std::string(screen_ids::kWorldSettings));
   api.setfield(state, -2, "ids");
   api.createtable(state, 0, 3);
   setField(state, "footer", std::string(screen_regions::kFooter));
@@ -2671,19 +2823,17 @@ void subscribeWorldColorEvent(const std::shared_ptr<ModHost::LoadedLuaMod>& mod,
         });
   });
 }
-void subscribeLuaCallback(const std::shared_ptr<ModHost::LoadedLuaMod>& mod,
-                          const ModHost::LoadedLuaMod::Callback& callback) {
-  const std::string event = toLowerCopy(callback.event);
-  const int ref = callback.functionRef;
-  const int priority = callback.priority;
-  if(event == "client_tick") {
+const std::unordered_map<std::string_view, LuaEventSubscriber>& luaEventSubscribers() {
+  static const std::unordered_map<std::string_view, LuaEventSubscriber> kSubscribers = {
+      {"client_tick", [](const std::shared_ptr<ModHost::LoadedLuaMod>& mod, int ref, int priority) {
     hooks().subscribe<ClientTickEvent>(priority, [mod, ref](ClientTickEvent& e) {
       callLuaEvent(
           mod, ref,
           [&e](lua_State* state) { setClientTickFields(state, e); },
           [](lua_State*) {});
     });
-  } else if(event == "key_press") {
+  }},
+      {"key_press", [](const std::shared_ptr<ModHost::LoadedLuaMod>& mod, int ref, int priority) {
     hooks().subscribe<KeyPressEvent>(priority, [mod, ref](KeyPressEvent& e) {
       callLuaEvent(
           mod, ref,
@@ -2695,7 +2845,8 @@ void subscribeLuaCallback(const std::shared_ptr<ModHost::LoadedLuaMod>& mod,
           },
           [&e](lua_State* state) { e.handled = luaBoolField(state, -1, "handled", e.handled); });
     });
-  } else if(event == "mouse_button") {
+  }},
+      {"mouse_button", [](const std::shared_ptr<ModHost::LoadedLuaMod>& mod, int ref, int priority) {
     hooks().subscribe<MouseButtonEvent>(priority, [mod, ref](MouseButtonEvent& e) {
       callLuaEvent(
           mod, ref,
@@ -2706,7 +2857,8 @@ void subscribeLuaCallback(const std::shared_ptr<ModHost::LoadedLuaMod>& mod,
           },
           [&e](lua_State* state) { e.handled = luaBoolField(state, -1, "handled", e.handled); });
     });
-  } else if(event == "fov") {
+  }},
+      {"fov", [](const std::shared_ptr<ModHost::LoadedLuaMod>& mod, int ref, int priority) {
     hooks().subscribe<FovEvent>(priority, [mod, ref](FovEvent& e) {
       callLuaEvent(
           mod, ref,
@@ -2716,7 +2868,8 @@ void subscribeLuaCallback(const std::shared_ptr<ModHost::LoadedLuaMod>& mod,
           },
           [&e](lua_State* state) { e.fov = luaFloatField(state, -1, "fov", e.fov); });
     });
-  } else if(event == "player_travel") {
+  }},
+      {"player_travel", [](const std::shared_ptr<ModHost::LoadedLuaMod>& mod, int ref, int priority) {
     hooks().subscribe<PlayerTravelEvent>(priority, [mod, ref](PlayerTravelEvent& e) {
       callLuaEvent(
           mod, ref,
@@ -2740,7 +2893,8 @@ void subscribeLuaCallback(const std::shared_ptr<ModHost::LoadedLuaMod>& mod,
             e.speedMultiplier = luaFloatField(state, -1, "speed_multiplier", e.speedMultiplier);
           });
     });
-  } else if(event == "tick_rate") {
+  }},
+      {"tick_rate", [](const std::shared_ptr<ModHost::LoadedLuaMod>& mod, int ref, int priority) {
     hooks().subscribe<TickRateEvent>(priority, [mod, ref](TickRateEvent& e) {
       callLuaEvent(
           mod, ref,
@@ -2753,7 +2907,8 @@ void subscribeLuaCallback(const std::shared_ptr<ModHost::LoadedLuaMod>& mod,
             e.tpsScale = luaFloatField(state, -1, "tps_scale", e.tpsScale);
           });
     });
-  } else if(event == "world_start") {
+  }},
+      {"world_start", [](const std::shared_ptr<ModHost::LoadedLuaMod>& mod, int ref, int priority) {
     hooks().subscribe<WorldStartEvent>(priority, [mod, ref](WorldStartEvent& e) {
       callLuaEvent(
           mod, ref,
@@ -2763,7 +2918,8 @@ void subscribeLuaCallback(const std::shared_ptr<ModHost::LoadedLuaMod>& mod,
           },
           [](lua_State*) {});
     });
-  } else if(event == "world_open") {
+  }},
+      {"world_open", [](const std::shared_ptr<ModHost::LoadedLuaMod>& mod, int ref, int priority) {
     hooks().subscribe<WorldOpenEvent>(priority, [mod, ref](WorldOpenEvent& e) {
       callLuaEvent(
           mod, ref,
@@ -2779,7 +2935,8 @@ void subscribeLuaCallback(const std::shared_ptr<ModHost::LoadedLuaMod>& mod,
           },
           [](lua_State*) {});
     });
-  } else if(event == "world_tick") {
+  }},
+      {"world_tick", [](const std::shared_ptr<ModHost::LoadedLuaMod>& mod, int ref, int priority) {
     hooks().subscribe<WorldTickEvent>(priority, [mod, ref](WorldTickEvent& e) {
       callLuaEvent(
           mod, ref,
@@ -2789,7 +2946,8 @@ void subscribeLuaCallback(const std::shared_ptr<ModHost::LoadedLuaMod>& mod,
           },
           [](lua_State*) {});
     });
-  } else if(event == "create_world") {
+  }},
+      {"create_world", [](const std::shared_ptr<ModHost::LoadedLuaMod>& mod, int ref, int priority) {
     hooks().subscribe<CreateWorldEvent>(priority, [mod, ref](CreateWorldEvent& e) {
       callLuaEvent(
           mod, ref,
@@ -2805,7 +2963,8 @@ void subscribeLuaCallback(const std::shared_ptr<ModHost::LoadedLuaMod>& mod,
             readStringMapField(state, -1, "options", e.options);
           });
     });
-  } else if(event == "block_interact") {
+  }},
+      {"block_interact", [](const std::shared_ptr<ModHost::LoadedLuaMod>& mod, int ref, int priority) {
     hooks().subscribe<BlockInteractEvent>(priority, [mod, ref](BlockInteractEvent& e) {
       if(e.world != nullptr && e.world->isRemote()) {
         return;
@@ -2840,7 +2999,8 @@ void subscribeLuaCallback(const std::shared_ptr<ModHost::LoadedLuaMod>& mod,
             }
           });
     });
-  } else if(event == "entity_interact") {
+  }},
+      {"entity_interact", [](const std::shared_ptr<ModHost::LoadedLuaMod>& mod, int ref, int priority) {
     hooks().subscribe<EntityInteractEvent>(priority, [mod, ref](EntityInteractEvent& e) {
       if(e.player != nullptr && e.player->world != nullptr && e.player->world->isRemote()) {
         return;
@@ -2859,7 +3019,8 @@ void subscribeLuaCallback(const std::shared_ptr<ModHost::LoadedLuaMod>& mod,
             e.handled = luaBoolField(state, -1, "handled", e.handled);
           });
     });
-  } else if(event == "attack_damage") {
+  }},
+      {"attack_damage", [](const std::shared_ptr<ModHost::LoadedLuaMod>& mod, int ref, int priority) {
     hooks().subscribe<AttackDamageEvent>(priority, [mod, ref](AttackDamageEvent& e) {
       callLuaEvent(
           mod, ref,
@@ -2881,9 +3042,11 @@ void subscribeLuaCallback(const std::shared_ptr<ModHost::LoadedLuaMod>& mod,
             e.canceled = luaBoolField(state, -1, "canceled", e.canceled);
           });
     });
-  } else if(event == "world_color") {
+  }},
+      {"world_color", [](const std::shared_ptr<ModHost::LoadedLuaMod>& mod, int ref, int priority) {
     subscribeWorldColorEvent(mod, ref, priority);
-  } else if(event == "world_render") {
+  }},
+      {"world_render", [](const std::shared_ptr<ModHost::LoadedLuaMod>& mod, int ref, int priority) {
     hooks().subscribe<WorldRenderEvent>(priority, [mod, ref](WorldRenderEvent& e) {
 #ifdef MINECRAFT_NATIVE_EXPORTS
       ScopedModWorldDrawContext worldDrawScope{e.world, e.tickDelta};
@@ -2950,7 +3113,8 @@ void subscribeLuaCallback(const std::shared_ptr<ModHost::LoadedLuaMod>& mod,
             }
           });
     });
-  } else if(event == "chunk_generation") {
+  }},
+      {"chunk_generation", [](const std::shared_ptr<ModHost::LoadedLuaMod>& mod, int ref, int priority) {
     hooks().subscribe<world::gen::ChunkGenerationEvent>(priority, [mod, ref](world::gen::ChunkGenerationEvent& e) {
       if(e.context.world != nullptr && e.context.world->isRemote()) {
         return;
@@ -2976,7 +3140,8 @@ void subscribeLuaCallback(const std::shared_ptr<ModHost::LoadedLuaMod>& mod,
             e.cancelVanilla = luaBoolField(state, -1, "cancel_vanilla", e.cancelVanilla);
           });
     });
-  } else if(event == "screen_region") {
+  }},
+      {"screen_region", [](const std::shared_ptr<ModHost::LoadedLuaMod>& mod, int ref, int priority) {
     hooks().subscribe<ScreenRegionEvent>(priority, [mod, ref](ScreenRegionEvent& e) {
 #ifdef MINECRAFT_NATIVE_EXPORTS
       const bool renderPhase = e.phase == ScreenRegionPhase::Render;
@@ -3010,7 +3175,8 @@ void subscribeLuaCallback(const std::shared_ptr<ModHost::LoadedLuaMod>& mod,
             e.height = luaIntField(state, -1, "height", e.height);
           });
     });
-  } else if(event == "world_spawn_search") {
+  }},
+      {"world_spawn_search", [](const std::shared_ptr<ModHost::LoadedLuaMod>& mod, int ref, int priority) {
     hooks().subscribe<WorldSpawnSearchEvent>(priority, [mod, ref](WorldSpawnSearchEvent& e) {
       if(e.world != nullptr && e.world->isRemote()) {
         return;
@@ -3031,7 +3197,8 @@ void subscribeLuaCallback(const std::shared_ptr<ModHost::LoadedLuaMod>& mod,
             e.resolved = luaBoolField(state, -1, "resolved", e.resolved);
           });
     });
-  } else if(event == "screen_ui") {
+  }},
+      {"screen_ui", [](const std::shared_ptr<ModHost::LoadedLuaMod>& mod, int ref, int priority) {
 #ifdef MINECRAFT_NATIVE_EXPORTS
     hooks().subscribe<ScreenUiEvent>(priority, [mod, ref](ScreenUiEvent& e) {
       if(e.context == nullptr || e.context->screen == nullptr) {
@@ -3063,9 +3230,12 @@ void subscribeLuaCallback(const std::shared_ptr<ModHost::LoadedLuaMod>& mod,
       session->trackStacked = false;
     });
 #else
-    runtimeLog(mod->modId, "warn", "unsupported Lua hook event: " + callback.event);
+    (void)ref;
+    (void)priority;
+    runtimeLog(mod->modId, "warn", "unsupported Lua hook event: screen_ui");
 #endif
-  } else if(event == "screen_event") {
+  }},
+      {"screen_event", [](const std::shared_ptr<ModHost::LoadedLuaMod>& mod, int ref, int priority) {
 #ifdef MINECRAFT_NATIVE_EXPORTS
     hooks().subscribe<LuaScreenEvent>(priority, [mod, ref](LuaScreenEvent& e) {
       if(e.screen == nullptr) {
@@ -3104,11 +3274,23 @@ void subscribeLuaCallback(const std::shared_ptr<ModHost::LoadedLuaMod>& mod,
       activeLuaScreen()->mod = nullptr;
     });
 #else
-    runtimeLog(mod->modId, "warn", "unsupported Lua hook event: " + callback.event);
+    (void)ref;
+    (void)priority;
+    runtimeLog(mod->modId, "warn", "unsupported Lua hook event: screen_event");
 #endif
-  } else {
+  }},
+  };
+  return kSubscribers;
+}
+void subscribeLuaCallback(const std::shared_ptr<ModHost::LoadedLuaMod>& mod,
+                          const ModHost::LoadedLuaMod::Callback& callback) {
+  const auto& subscribers = luaEventSubscribers();
+  const auto it = subscribers.find(toLowerCopy(callback.event));
+  if(it == subscribers.end()) {
     runtimeLog(mod->modId, "warn", "unsupported Lua hook event: " + callback.event);
+    return;
   }
+  it->second(mod, callback.functionRef, callback.priority);
 }
 bool loadLuaMod(ModPackage& info, std::vector<std::shared_ptr<ModHost::LoadedLuaMod>>& loadedMods) {
   if(info.entry.empty()) {
@@ -3227,6 +3409,12 @@ void ModHost::shutdown() {
         }
       }
       mod->buttonCallbackRefs.clear();
+      for(const int ref : mod->blockModelCallbackRefs) {
+        if(ref != kLuaNoRef) {
+          api->unref(state, kLuaRegistryIndex, ref);
+        }
+      }
+      mod->blockModelCallbackRefs.clear();
 #ifdef MINECRAFT_NATIVE_EXPORTS
       if(client::Minecraft::INSTANCE != nullptr) {
         for(const int textureId : mod->ownedTextureIds) {

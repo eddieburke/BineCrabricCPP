@@ -35,6 +35,7 @@ struct LuaBlockModelSpec {
     FullCube = 0,
     BoxList,
     ConnectedBars,
+    Manual,
   };
   Type type = Type::FullCube;
   std::vector<ModelBox> boxes;
@@ -59,11 +60,28 @@ struct BlockRegistrationSpec {
   float resistance = 1.0f;
   float luminance = 0.0f;
   std::string translationKey;
+  std::string displayName;
   std::string material = "stone";
+  std::string ownerModId;
+  int manualDrawRef = -2;
+  int manualInventoryRef = -2;
   LuaBlockModelSpec model;
 };
+struct ManualBlockVertex {
+  double x = 0.0;
+  double y = 0.0;
+  double z = 0.0;
+  double u = 0.0;
+  double v = 0.0;
+};
 bool registerBlockSpec(const BlockRegistrationSpec& spec, std::string& error);
+[[nodiscard]] int modBlockIdFromName(const char* name);
+[[nodiscard]] std::string modBlockWireName(int blockId);
 [[nodiscard]] const BlockRegistrationSpec* blockRegistrationSpecForId(int blockId) noexcept;
+bool invokeManualBlockModelDraw(const BlockRegistrationSpec& spec, bool inventory, int x, int y, int z,
+                                float brightness);
+bool emitManualBlockModelQuad(const ManualBlockVertex* vertices, int textureId, float red, float green, float blue,
+                              float alpha);
 bool drawLuaBlockWorld(client::render::block::BlockRenderManager& manager, block::Block& block, int x, int y, int z);
 void drawLuaBlockInventory(client::render::block::BlockRenderManager& manager, block::Block& block, int metadata,
                            float brightness);

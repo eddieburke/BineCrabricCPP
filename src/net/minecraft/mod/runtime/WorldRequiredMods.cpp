@@ -113,8 +113,31 @@ void WorldRequiredMods::writeWorldFile(const std::filesystem::path& worldDirecto
     output << mod << '\n';
   }
 }
-std::vector<std::string> WorldRequiredMods::requiredForDirectory(const std::filesystem::path& worldDirectory) {
-  return readWorldFile(worldDirectory);
+std::vector<std::string> WorldRequiredMods::requiredForWorld(const std::filesystem::path& worldDirectory,
+                                                             const World* world) {
+  std::vector<std::string> required = readWorldFile(worldDirectory);
+  for(const std::string& modId : sessionMods(world)) {
+    required.push_back(modId);
+  }
+  std::sort(required.begin(), required.end());
+  required.erase(std::unique(required.begin(), required.end()), required.end());
+  return required;
+}
+std::vector<std::string> WorldRequiredMods::missingForDirectory(const std::filesystem::path& worldDirectory) {
+  return missingMods(readWorldFile(worldDirectory));
+}
+std::vector<std::string> WorldRequiredMods::missingFrom(const std::vector<std::string>& required,
+                                                        const std::vector<std::string>& available) {
+  std::vector<std::string> missing;
+  for(const std::string& modId : required) {
+    if(std::find(available.begin(), available.end(), modId) == available.end()) {
+      missing.push_back(modId);
+    }
+  }
+  return missing;
+}
+std::string WorldRequiredMods::requirementMessage(const std::vector<std::string>& missing) {
+  return "This world requires Lua mods: " + joinCsv(missing);
 }
 std::vector<std::string> WorldRequiredMods::missingMods(const std::vector<std::string>& required) {
   std::vector<std::string> missing;

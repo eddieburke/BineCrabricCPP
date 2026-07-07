@@ -67,6 +67,13 @@ void ServerSocket::bindAndListen(const std::string& bindAddress, std::uint16_t p
     }
     const BOOL reuse = TRUE;
     ::setsockopt(listenSocket, SOL_SOCKET, SO_REUSEADDR, reinterpret_cast<const char*>(&reuse), sizeof(reuse));
+    // An empty bind address resolves to IPv6 [::] first, which defaults to IPV6_V6ONLY on
+    // Windows. The LAN loopback handoff dials the IPv4 literal 127.0.0.1, so without a
+    // dual-stack socket the client can never reach its own integrated server.
+    if(candidate->ai_family == AF_INET6) {
+      const DWORD v6Only = 0;
+      ::setsockopt(listenSocket, IPPROTO_IPV6, IPV6_V6ONLY, reinterpret_cast<const char*>(&v6Only), sizeof(v6Only));
+    }
     if(::bind(listenSocket, candidate->ai_addr, static_cast<int>(candidate->ai_addrlen)) == SOCKET_ERROR) {
       ::closesocket(listenSocket);
       listenSocket = INVALID_SOCKET;

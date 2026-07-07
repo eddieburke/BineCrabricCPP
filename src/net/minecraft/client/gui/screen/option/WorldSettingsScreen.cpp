@@ -5,6 +5,7 @@
 #include "net/minecraft/client/gui/screen/option/OptionGui.hpp"
 #include "net/minecraft/client/option/OptionSpec.hpp"
 #include "net/minecraft/client/resource/language/I18n.hpp"
+#include "net/minecraft/mod/ScreenUi.hpp"
 #include <array>
 namespace net::minecraft::client::gui::screen::option {
 using client_option::GameOptions;
@@ -44,6 +45,9 @@ WorldSettingsScreen::WorldSettingsScreen(ParentFactory parentFactory, client_opt
       gameOptions_(gameOptions),
       title_("World Settings") {
 }
+std::string_view WorldSettingsScreen::getScreenUiId() const {
+  return mod::screen_ids::kWorldSettings;
+}
 void WorldSettingsScreen::init() {
   buttons_.clear();
   if(gameOptions_ == nullptr || minecraft() == nullptr) {
@@ -82,8 +86,10 @@ void WorldSettingsScreen::init() {
                               return makeFogSettingsScreen(returnHere, opts);
                             });
                           });
+  int footerY = navY + layout::kRowSpacing;
+  publishScreenUi(mod::screen_regions::kFooter, &footerY);
   layout::OptionsBuildContext ctx{*this, *minecraft(), *gameOptions_};
-  layout::addDoneButton(ctx, navY + layout::kRowSpacing * 2,
+  layout::addDoneButton(ctx, footerY,
                         resource::language::I18n::getTranslation("gui.done"),
                         [this] {
                           if(gameOptions_ == nullptr || minecraft() == nullptr) {

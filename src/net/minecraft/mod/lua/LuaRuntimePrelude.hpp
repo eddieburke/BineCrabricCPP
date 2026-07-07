@@ -414,6 +414,14 @@ function minecraft.screen.settings(spec)
     ui.controls = controls
     return y0 + math.ceil(#controls / 2) * 24 + 24
   end
+  local function apply_change()
+    if spec.on_change then
+      spec.on_change()
+    end
+    if spec.on_save then
+      spec.on_save()
+    end
+  end
   local function set_slider(control, mouse_x)
     local normalized = minecraft.util.clamp((mouse_x - control.x - 4) / (control.w - 8), 0, 1)
     local value = control.min + normalized * (control.max - control.min)
@@ -428,14 +436,6 @@ function minecraft.screen.settings(spec)
       spec.on_save()
     end
     minecraft.screen.close()
-  end
-  local function apply_change()
-    if spec.on_change then
-      spec.on_change()
-    end
-    if spec.on_save then
-      spec.on_save()
-    end
   end
   local function open()
     minecraft.screen.open(spec.id)

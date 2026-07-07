@@ -1,5 +1,6 @@
 #include "net/minecraft/mod/lua/LuaHostApi.hpp"
 #include "net/minecraft/mod/lua/LuaJsonApi.hpp"
+#include "net/minecraft/mod/lua/LuaGameApi.hpp"
 #include "net/minecraft/mod/runtime/ModHost.hpp"
 #include "net/minecraft/util/SeedText.hpp"
 #include "net/minecraft/util/math/MathHelper.hpp"
@@ -12,6 +13,7 @@
 #include "net/minecraft/client/platform/FileDialog.hpp"
 #include "net/minecraft/client/Minecraft.hpp"
 #include "net/minecraft/client/texture/TextureManager.hpp"
+#include "net/minecraft/block/Block.hpp"
 #endif
 #include <algorithm>
 #include <fstream>
@@ -85,6 +87,13 @@ int luaRegistryName(lua_State* state) {
     api.pushstring(state, net::minecraft::biomeWireName(id).c_str());
     return 1;
   }
+#ifdef MINECRAFT_NATIVE_EXPORTS
+  if(domain == "block") {
+    const std::string wire = blockWireNameFromId(id);
+    api.pushstring(state, wire.empty() ? "unknown" : wire.c_str());
+    return 1;
+  }
+#endif
   api.pushstring(state, "unknown");
   return 1;
 }
@@ -95,6 +104,20 @@ int luaRegistryList(lua_State* state) {
   if(domain == "biome") {
     names = net::minecraft::allBiomeWireNames();
   }
+#ifdef MINECRAFT_NATIVE_EXPORTS
+  if(domain == "block") {
+    names.reserve(128);
+    for(int blockId = 1; blockId < block::Block::BLOCK_COUNT; ++blockId) {
+      if(block::Block::BLOCKS[static_cast<std::size_t>(blockId)] == nullptr) {
+        continue;
+      }
+      const std::string wire = blockWireNameFromId(blockId);
+      if(!wire.empty()) {
+        names.push_back(wire);
+      }
+    }
+  }
+#endif
   api.createtable(state, static_cast<int>(names.size()), 0);
   for(std::size_t i = 0; i < names.size(); ++i) {
     api.pushstring(state, names[i].c_str());

@@ -197,6 +197,7 @@ private:
   void handleMouseDown(int button, bool holdingAttack);
   void handleMouseClick(int button);
   void handlePickBlock();
+  void notifyWorldChanged(World* world);
   void startSessionCheck();
   void runRenderPhase(std::int64_t tickDuration, int& frames, std::int64_t& fpsWindowStart);
   void runWorldSimulation();

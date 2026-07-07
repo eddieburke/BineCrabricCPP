@@ -32,6 +32,31 @@ function Copy-IfPresent {
     return $false
 }
 
+function Assert-ModImagesScoped {
+    param(
+        [string]$ResourcesRoot,
+        [string]$ModId
+    )
+    if (-not (Test-Path -LiteralPath $ResourcesRoot)) {
+        return
+    }
+    $modsRoot = Join-Path $ResourcesRoot "mods"
+    if (-not (Test-Path -LiteralPath $modsRoot)) {
+        return
+    }
+    $imageExtensions = @(".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp")
+    $foreignImages = Get-ChildItem -LiteralPath $modsRoot -Recurse -File -ErrorAction SilentlyContinue |
+        Where-Object { $imageExtensions -contains $_.Extension.ToLowerInvariant() } |
+        Where-Object {
+            $relative = $_.FullName.Substring($modsRoot.Length).TrimStart([char[]]@('\', '/'))
+            $namespace = ($relative -split '[\\/]', 2)[0]
+            $namespace -ne $ModId
+        }
+    if ($foreignImages -and $foreignImages.Count -gt 0) {
+        throw ("Lua mod resources contain images outside its namespace: " + $ResourcesRoot + " (" + $foreignImages[0].FullName + ")")
+    }
+}
+
 $resolvedRunDirectory = Resolve-DefaultRunDirectory
 $modsOutputDir = Join-Path $resolvedRunDirectory "mods"
 New-Item -ItemType Directory -Force -Path $modsOutputDir | Out-Null
@@ -83,6 +108,7 @@ foreach ($modDir in Get-ChildItem -LiteralPath $sourceRoot -Directory) {
 
     [void](Copy-IfPresent -Source (Join-Path $modDir.FullName "scripts") -Destination (Join-Path $staging "scripts"))
     [void](Copy-IfPresent -Source (Join-Path $modDir.FullName "assets") -Destination (Join-Path $staging "assets"))
+    Assert-ModImagesScoped -ResourcesRoot (Join-Path $modDir.FullName "resources") -ModId $modDir.Name
     [void](Copy-IfPresent -Source (Join-Path $modDir.FullName "resources") -Destination (Join-Path $staging "resources"))
     [void](Copy-IfPresent -Source (Join-Path $modDir.FullName "lang") -Destination (Join-Path $staging "lang"))
 

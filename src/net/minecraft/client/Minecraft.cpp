@@ -305,6 +305,9 @@ void Minecraft::runWorldSimulation() {
   }
 }
 void Minecraft::tick() {
+  if(lanHostCoordinator_ != nullptr) {
+    lanHostCoordinator_->tickBackground();
+  }
   mod::ClientTickEvent beforeClientTick{this, player, world, paused.load(), true, false};
   mod::hooks().publish(beforeClientTick);
   msauth::tickRestoreSavedAccount(*this);
@@ -492,18 +495,17 @@ bool Minecraft::isWorldRemote() const {
 }
 void Minecraft::setWorld(World* worldIn) {
   worldSession_.setWorld(*this, worldIn);
-  if(lanHostCoordinator_ != nullptr) {
-    lanHostCoordinator_->afterWorldChange(worldIn);
-  }
+  notifyWorldChanged(worldIn);
 }
 void Minecraft::setWorld(World* worldIn, const std::string& message) {
   worldSession_.setWorld(*this, worldIn, message);
-  if(lanHostCoordinator_ != nullptr) {
-    lanHostCoordinator_->afterWorldChange(worldIn);
-  }
+  notifyWorldChanged(worldIn);
 }
 void Minecraft::setWorld(World* worldIn, const std::string& message, PlayerEntity* existingPlayer) {
   worldSession_.setWorld(*this, worldIn, message, existingPlayer);
+  notifyWorldChanged(worldIn);
+}
+void Minecraft::notifyWorldChanged(World* worldIn) {
   if(lanHostCoordinator_ != nullptr) {
     lanHostCoordinator_->afterWorldChange(worldIn);
   }
@@ -551,15 +553,13 @@ void Minecraft::startGame(const std::string& worldName, const std::string& name,
     throw std::runtime_error("Failed to create world storage for save '" + worldName + "'");
   }
   {
-    const std::vector<std::string> requiredMods =
-        mod::runtime::WorldRequiredMods::readWorldFile(worldSession_.ownedWorldStorage()->worldDirectory());
-    const std::vector<std::string> missingMods = mod::runtime::WorldRequiredMods::missingMods(requiredMods);
+    const std::vector<std::string> missingMods =
+        mod::runtime::WorldRequiredMods::missingForDirectory(worldSession_.ownedWorldStorage()->worldDirectory());
     if(!missingMods.empty()) {
       worldSession_.ownedWorldStorageMut().reset();
       setScreen(std::make_unique<gui::screen::DisconnectedScreen>(
           "disconnect.disconnected", "disconnect.genericReason",
-          std::vector<std::string>{"This world requires Lua mods: " +
-                                   mod::runtime::WorldRequiredMods::joinCsv(missingMods)}));
+          std::vector<std::string>{mod::runtime::WorldRequiredMods::requirementMessage(missingMods)}));
       return;
     }
   }

@@ -46,41 +46,79 @@ const LanConnectionInfo& LanHostCoordinator::connectionInfo() const noexcept {
 const std::string& LanHostCoordinator::lastError() const noexcept {
   return lastError_;
 }
-void LanHostCoordinator::stopServer() {
+bool LanHostCoordinator::failBeginHosting(const std::string& error, std::string& errorOut) {
+  errorOut = error;
+  lastError_ = error;
+  return false;
+}
+void LanHostCoordinator::clearServerStartResult() {
+  std::lock_guard lock(serverStartMutex_);
+  serverStartResult_ = {};
+}
+void LanHostCoordinator::beginServerTeardown() {
   if(server_ != nullptr) {
     server_->stop();
-    server_->stopAndJoin();
-    server_.reset();
   }
   if(serverStartThread_.joinable()) {
     serverStartThread_.join();
   }
-  {
-    std::lock_guard lock(serverStartMutex_);
-    serverStartResult_ = {};
+  clearServerStartResult();
+  if(server_ == nullptr) {
+    return;
   }
+  auto done = std::make_shared<std::atomic<bool>>(false);
+  std::thread worker([server = std::move(server_), done]() mutable {
+    server->stopAndJoin();
+    server.reset();
+    done->store(true, std::memory_order_release);
+  });
+  teardowns_.push_back(PendingTeardown{std::move(worker), std::move(done)});
+}
+void LanHostCoordinator::startTeardown(bool restoreLocalWorld) {
+  beginServerTeardown();
+  restoreLocalWorldAfterTeardown_ = restoreLocalWorld && minecraft_ != nullptr;
+  if(restoreLocalWorld) {
+    state_ = State::TearingDown;
+    return;
+  }
+  resetHostFields(false);
+}
+void LanHostCoordinator::failServerStart(std::string error) {
+  if(error.empty()) {
+    error = "Failed to start integrated server";
+  }
+  lastError_ = std::move(error);
+  startTeardown(true);
+}
+void LanHostCoordinator::reapFinishedTeardowns() {
+  auto it = teardowns_.begin();
+  while(it != teardowns_.end()) {
+    if(it->done->load(std::memory_order_acquire)) {
+      if(it->thread.joinable()) {
+        it->thread.join();
+      }
+      it = teardowns_.erase(it);
+    } else {
+      ++it;
+    }
+  }
+}
+void LanHostCoordinator::joinAllTeardowns() {
+  for(PendingTeardown& teardown : teardowns_) {
+    if(teardown.thread.joinable()) {
+      teardown.thread.join();
+    }
+  }
+  teardowns_.clear();
 }
 void LanHostCoordinator::finishServerStart(bool ok, std::uint16_t boundPort, std::string error) {
   if(!ok) {
-    if(error.empty()) {
-      error = "Failed to start integrated server";
-    }
-    lastError_ = error;
-    stopServer();
-    if(minecraft_ != nullptr) {
-      (void)minecraft_->worldSession().restoreParkedLocalWorld(*minecraft_);
-    }
-    clearState(false);
+    failServerStart(std::move(error));
     return;
   }
   boundPort_ = boundPort;
   if(boundPort_ == 0) {
-    lastError_ = "Integrated server did not report a bound port.";
-    stopServer();
-    if(minecraft_ != nullptr) {
-      (void)minecraft_->worldSession().restoreParkedLocalWorld(*minecraft_);
-    }
-    clearState(false);
+    failServerStart("Integrated server did not report a bound port.");
     return;
   }
   connectionInfo_ = LanAddressResolver::resolve(boundPort_);
@@ -90,44 +128,30 @@ bool LanHostCoordinator::beginHosting(std::uint16_t port, std::string& errorOut)
   errorOut.clear();
   lastError_.clear();
   if(minecraft_ == nullptr) {
-    errorOut = "Minecraft client is unavailable.";
-    lastError_ = errorOut;
-    return false;
+    return failBeginHosting("Minecraft client is unavailable.", errorOut);
   }
   if(state_ != State::Inactive) {
-    errorOut = "A LAN host is already running.";
-    lastError_ = errorOut;
-    return false;
+    return failBeginHosting("A LAN host is already running.", errorOut);
   }
   if(port == 0) {
-    errorOut = "Port must be between 1 and 65535.";
-    lastError_ = errorOut;
-    return false;
+    return failBeginHosting("Port must be between 1 and 65535.", errorOut);
   }
   World* world = minecraft_->world;
   if(!canHostWorld(world)) {
-    errorOut = "Open to LAN is only available from a local saved world.";
-    lastError_ = errorOut;
-    return false;
+    return failBeginHosting("Open to LAN is only available from a local saved world.", errorOut);
   }
   WorldStorage* storage = world->getDimensionData();
   if(storage == nullptr) {
-    errorOut = "Current world storage is unavailable.";
-    lastError_ = errorOut;
-    return false;
+    return failBeginHosting("Current world storage is unavailable.", errorOut);
   }
   storageRoot_ = storage->worldDirectory().parent_path();
   worldName_ = storage->worldName();
   worldSeed_ = world->getSeed();
   if(storageRoot_.empty() || worldName_.empty()) {
-    errorOut = "Could not resolve the current world's save directory.";
-    lastError_ = errorOut;
-    return false;
+    return failBeginHosting("Could not resolve the current world's save directory.", errorOut);
   }
   if(!minecraft_->worldSession().parkLocalWorldForRemoteHandoff(*minecraft_)) {
-    errorOut = "Could not release the local world for LAN hosting.";
-    lastError_ = errorOut;
-    return false;
+    return failBeginHosting("Could not release the local world for LAN hosting.", errorOut);
   }
   server::host::ServerLaunchConfig config;
   config.storageRoot = storageRoot_;
@@ -140,10 +164,7 @@ bool LanHostCoordinator::beginHosting(std::uint16_t port, std::string& errorOut)
   config.useGui = false;
   requestedPort_ = port;
   server_ = std::make_unique<server::MinecraftServer>(config);
-  {
-    std::lock_guard lock(serverStartMutex_);
-    serverStartResult_ = {};
-  }
+  clearServerStartResult();
   if(serverStartThread_.joinable()) {
     serverStartThread_.join();
   }
@@ -186,8 +207,7 @@ bool LanHostCoordinator::tickHosting(std::string& errorOut) {
   }
   return true;
 }
-void LanHostCoordinator::clearState(bool clearError) {
-  stopServer();
+void LanHostCoordinator::resetHostFields(bool clearError) {
   hostedRemoteWorld_ = nullptr;
   storageRoot_.clear();
   worldName_.clear();
@@ -200,29 +220,32 @@ void LanHostCoordinator::clearState(bool clearError) {
     lastError_.clear();
   }
 }
-void LanHostCoordinator::onConnectCanceledOrFailed(const std::string& error) {
-  if(state_ == State::StartingServer) {
-    if(!error.empty()) {
-      lastError_ = error;
-    }
-    stopServer();
-    if(minecraft_ != nullptr) {
-      (void)minecraft_->worldSession().restoreParkedLocalWorld(*minecraft_);
-    }
-    clearState(false);
+void LanHostCoordinator::finalizeTeardown() {
+  const bool restore = restoreLocalWorldAfterTeardown_;
+  restoreLocalWorldAfterTeardown_ = false;
+  if(restore && minecraft_ != nullptr) {
+    (void)minecraft_->worldSession().restoreParkedLocalWorld(*minecraft_);
+  }
+  resetHostFields(false);
+}
+void LanHostCoordinator::tickBackground() {
+  reapFinishedTeardowns();
+  if(state_ != State::TearingDown) {
     return;
   }
-  if(state_ != State::AwaitingLoopback) {
+  if(!teardowns_.empty()) {
+    return;
+  }
+  finalizeTeardown();
+}
+void LanHostCoordinator::onConnectCanceledOrFailed(const std::string& error) {
+  if(state_ != State::StartingServer && state_ != State::AwaitingLoopback) {
     return;
   }
   if(!error.empty()) {
     lastError_ = error;
   }
-  stopServer();
-  if(minecraft_ != nullptr) {
-    (void)minecraft_->worldSession().restoreParkedLocalWorld(*minecraft_);
-  }
-  clearState(false);
+  startTeardown(true);
 }
 void LanHostCoordinator::afterWorldChange(World* world) {
   if(state_ == State::AwaitingLoopback) {
@@ -240,16 +263,18 @@ void LanHostCoordinator::afterWorldChange(World* world) {
     return;
   }
   if(state_ == State::Active && world != hostedRemoteWorld_) {
-    stopServer();
-    clearState(false);
+    startTeardown(false);
   }
 }
 void LanHostCoordinator::shutdown() {
-  if(state_ == State::StartingServer || state_ == State::AwaitingLoopback) {
-    onConnectCanceledOrFailed();
-    return;
+  if(server_ != nullptr) {
+    beginServerTeardown();
   }
-  stopServer();
-  clearState(false);
+  if(serverStartThread_.joinable()) {
+    serverStartThread_.join();
+  }
+  joinAllTeardowns();
+  restoreLocalWorldAfterTeardown_ = false;
+  resetHostFields(false);
 }
 } // namespace net::minecraft::client::host

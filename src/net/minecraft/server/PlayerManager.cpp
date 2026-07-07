@@ -155,6 +155,7 @@ void PlayerManager::disconnect(::net::minecraft::entity::player::ServerPlayerEnt
   }
   ServerWorld* overworld = server_->getWorld(0);
   if(overworld == nullptr) {
+    loginNetworkHandler->disconnect("Internal server error: overworld unavailable");
     return nullptr;
   }
   network::ServerPlayerInteractionManager interactionManager(overworld);

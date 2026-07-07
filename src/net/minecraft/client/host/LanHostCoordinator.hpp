@@ -1,11 +1,13 @@
 #pragma once
 #include "net/minecraft/client/host/LanAddressResolver.hpp"
+#include <atomic>
 #include <cstdint>
 #include <filesystem>
 #include <memory>
 #include <mutex>
 #include <string>
 #include <thread>
+#include <vector>
 namespace net::minecraft {
 class World;
 }
@@ -29,10 +31,9 @@ public:
   [[nodiscard]] std::uint16_t boundPort() const noexcept;
   [[nodiscard]] const LanConnectionInfo& connectionInfo() const noexcept;
   [[nodiscard]] const std::string& lastError() const noexcept;
-  /// Parks the local world and starts the integrated server on a worker thread.
   bool beginHosting(std::uint16_t port, std::string& errorOut);
-  /// Poll server startup from the main loop. Returns true once startup finished.
   bool tickHosting(std::string& errorOut);
+  void tickBackground();
   [[nodiscard]] bool isStartingServer() const noexcept;
   void onConnectCanceledOrFailed(const std::string& error = {});
   void afterWorldChange(World* world);
@@ -44,6 +45,7 @@ private:
     StartingServer,
     AwaitingLoopback,
     Active,
+    TearingDown,
   };
   struct ServerStartResult {
     bool done = false;
@@ -51,14 +53,27 @@ private:
     std::string error;
     std::uint16_t boundPort = 0;
   };
-  void stopServer();
-  void clearState(bool clearError);
+  struct PendingTeardown {
+    std::thread thread;
+    std::shared_ptr<std::atomic<bool>> done;
+  };
+  bool failBeginHosting(const std::string& error, std::string& errorOut);
+  void clearServerStartResult();
+  void beginServerTeardown();
+  void startTeardown(bool restoreLocalWorld);
+  void failServerStart(std::string error);
+  void reapFinishedTeardowns();
+  void joinAllTeardowns();
+  void finalizeTeardown();
+  void resetHostFields(bool clearError);
   void finishServerStart(bool ok, std::uint16_t boundPort, std::string error);
   client::Minecraft* minecraft_ = nullptr;
   std::unique_ptr<server::MinecraftServer> server_;
   std::thread serverStartThread_;
   std::mutex serverStartMutex_;
   ServerStartResult serverStartResult_;
+  std::vector<PendingTeardown> teardowns_;
+  bool restoreLocalWorldAfterTeardown_ = false;
   World* hostedRemoteWorld_ = nullptr;
   std::filesystem::path storageRoot_;
   std::string worldName_;

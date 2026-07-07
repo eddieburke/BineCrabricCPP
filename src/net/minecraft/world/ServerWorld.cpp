@@ -95,18 +95,12 @@ void ServerWorld::notifyEntityAdded(Entity* entity) {
   World::notifyEntityAdded(entity);
   if(entity != nullptr) {
     entitiesById_.put(entity->id, entity);
-    if(server_ != nullptr && dimension != nullptr) {
-      server_->getEntityTracker(dimension->id).onEntityAdded(entity);
-    }
   }
 }
 void ServerWorld::notifyEntityRemoved(Entity* entity) {
   World::notifyEntityRemoved(entity);
   if(entity != nullptr) {
     entitiesById_.remove(entity->id);
-    if(server_ != nullptr && dimension != nullptr) {
-      server_->getEntityTracker(dimension->id).onEntityRemoved(entity);
-    }
   }
 }
 Entity* ServerWorld::getEntity(int id) {

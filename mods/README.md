@@ -78,8 +78,13 @@ The screen helpers are Lua compositions over the same filtered event API:
 | `minecraft.screen.on_ui(screen_id, region, fn, priority?)` | Add buttons/widgets to a vanilla screen region (`event.ui`) |
 | `minecraft.screen.on_lua_screen(screen_id, handlers, priority?)` | Own a custom Lua screen (`init`, `render`, `tick`, `key`, `mouse`, `scroll`, `close`) |
 | `minecraft.screen.settings(spec)` | Build a shared two-column slider/toggle settings screen from data |
+| `minecraft.gui.draw_globe(opts)` | Wireframe 3D globe in a Lua screen (`x`, `y`, `size`, `pin_lat`, `pin_lon`, `yaw_deg`, `pitch_deg`, `cam_dist`) |
+| `minecraft.globe.pick_lat_lon(opts)` | Click-pick latitude/longitude on the globe viewport |
+| `minecraft.globe.load_coastlines(text)` | Load generated coast path data (pipe/newline separated) |
 
-Constants: `minecraft.screen.ids.*` (`create_world`, `inventory`, `detail_settings`) and `minecraft.screen.regions.*` (`footer`, `screen`, `side_panel`).
+Constants: `minecraft.screen.ids.*` (`create_world`, `inventory`, `detail_settings`, `world_settings`) and `minecraft.screen.regions.*` (`footer`, `screen`, `side_panel`).
+
+Legacy mod configs such as `realtime_sky.txt` and `mod_LayeredClouds.cfg` are read and written from the game run directory (same layout as MCP 4.3). Other paths resolve under `.minecraft/config/mods/<mod_id>/`.
 
 The underlying `screen_ui`, phased `screen_event`, and reusable `screen_region` events remain available through `minecraft.on` for direct composition. A region event provides `screen_id`, `region`, `phase_name`, bounds, mouse fields, and `handled`; inventory's right-side space is simply the `side_panel` region rather than a dedicated hook type.
 
