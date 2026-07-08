@@ -7,6 +7,7 @@
 #include "net/minecraft/world/chunk/Chunk.hpp"
 #include "net/minecraft/world/chunk/ChunkSource.hpp"
 #include "net/minecraft/world/chunk/LegacyChunkCache.hpp"
+#include "net/minecraft/client/world/chunk/MultiplayerChunkCache.hpp"
 #include "net/minecraft/world/storage/EmptyWorldStorage.hpp"
 #include "net/minecraft/world/chunk/storage/ChunkStorage.hpp"
 #include "net/minecraft/world/dimension/Dimension.hpp"
@@ -407,6 +408,11 @@ void World::handleChunkDataUpdate(
       }
       if(localMaxZ > 16) {
         localMaxZ = 16;
+      }
+      if(auto* multiplayerCache =
+             dynamic_cast<client::world::chunk::MultiplayerChunkCache*>(chunkCache_.get());
+         multiplayerCache != nullptr && !multiplayerCache->hasRealChunk(chunkX, chunkZ)) {
+        multiplayerCache->loadChunk(chunkX, chunkZ);
       }
       offset = getChunk(chunkX, chunkZ).loadFromPacket(chunkData, localMinX, minY, localMinZ, localMaxX, maxY, localMaxZ, offset);
       setBlocksDirty(

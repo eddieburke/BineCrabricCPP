@@ -1,6 +1,6 @@
 #include "net/minecraft/client/render/entity/EntityRenderDispatcher.hpp"
 #include "net/minecraft/client/render/item/HeldItemRenderer.hpp"
-#include "net/minecraft/client/gl/GL11.hpp"
+#include "net/minecraft/client/gl/GlState.hpp"
 #include "net/minecraft/client/render/entity/EntityRenderers.hpp"
 #include "net/minecraft/client/render/entity/EntityRenderer.hpp"
 #include "net/minecraft/client/render/entity/LivingEntityRenderer.hpp"
@@ -130,6 +130,9 @@ void EntityRenderDispatcher::init(net::minecraft::World* world,
 }
 void EntityRenderDispatcher::setWorld(net::minecraft::World* world) {
   world_ = world;
+  // The old world's entities are gone (or about to be); drop the camera pointer so
+  // nothing renders against a freed entity before the next init().
+  cameraEntity_ = nullptr;
 }
 void EntityRenderDispatcher::render(const net::minecraft::Entity& entity, float tickDelta) {
   const double x = entity.lastTickX + (entity.x - entity.lastTickX) * static_cast<double>(tickDelta) - offsetX;
@@ -137,9 +140,9 @@ void EntityRenderDispatcher::render(const net::minecraft::Entity& entity, float 
   const double z = entity.lastTickZ + (entity.z - entity.lastTickZ) * static_cast<double>(tickDelta) - offsetZ;
   const float yaw = entity.prevYaw + (entity.yaw - entity.prevYaw) * tickDelta;
   const float brightness = entity.getBrightnessAtEyes(tickDelta);
-  gl::GL11::glColor3f(brightness, brightness, brightness);
+  gl::color3f(brightness, brightness, brightness);
   float color[4]{brightness, brightness, brightness, 1.0f};
-  gl::GL11::glGetFloatv(gl::GL11::GL_CURRENT_COLOR, color);
+  gl::getFloatv(gl::query::CurrentColor, color);
   render(entity, x, y, z, yaw, tickDelta);
 }
 void EntityRenderDispatcher::render(const net::minecraft::Entity& entity, double x, double y, double z, float yaw,

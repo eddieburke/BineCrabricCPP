@@ -1,6 +1,6 @@
 #include "net/minecraft/client/render/entity/EntityRenderers.hpp"
 #include "net/minecraft/block/Block.hpp"
-#include "net/minecraft/client/gl/GL11.hpp"
+#include "net/minecraft/client/gl/GlState.hpp"
 #include "net/minecraft/client/render/block/BlockRenderManager.hpp"
 #include "net/minecraft/client/render/entity/model/MinecartEntityModel.hpp"
 #include "net/minecraft/entity/vehicle/MinecartEntity.hpp"
@@ -25,7 +25,7 @@ void MinecartEntityRenderer::render(const net::minecraft::Entity& entity, double
   if(cart == nullptr || model_ == nullptr) {
     return;
   }
-  gl::GL11::glPushMatrix();
+  gl::pushMatrix();
   const double interpX = cart->lastTickX + (cart->x - cart->lastTickX) * static_cast<double>(tickDelta);
   const double interpY = cart->lastTickY + (cart->y - cart->lastTickY) * static_cast<double>(tickDelta);
   const double interpZ = cart->lastTickZ + (cart->z - cart->lastTickZ) * static_cast<double>(tickDelta);
@@ -53,25 +53,25 @@ void MinecartEntityRenderer::render(const net::minecraft::Entity& entity, double
       renderPitch = static_cast<float>(std::atan(direction.y) * 73.0);
     }
   }
-  gl::GL11::glTranslatef(static_cast<float>(x), static_cast<float>(y), static_cast<float>(z));
-  gl::GL11::glRotatef(180.0f - renderYaw, 0.0f, 1.0f, 0.0f);
-  gl::GL11::glRotatef(-renderPitch, 0.0f, 0.0f, 1.0f);
+  gl::translatef(static_cast<float>(x), static_cast<float>(y), static_cast<float>(z));
+  gl::rotatef(180.0f - renderYaw, 0.0f, 1.0f, 0.0f);
+  gl::rotatef(-renderPitch, 0.0f, 0.0f, 1.0f);
   float wobbleTicks = static_cast<float>(cart->damageWobbleTicks) - tickDelta;
   float wobbleStrength = cart->damageWobbleStrength - tickDelta;
   if(wobbleStrength < 0.0f) {
     wobbleStrength = 0.0f;
   }
   if(wobbleTicks > 0.0f) {
-    gl::GL11::glRotatef(MathHelper::sin(wobbleTicks) * wobbleTicks * wobbleStrength / 10.0f *
-                            static_cast<float>(cart->damageWobbleSide),
-                        1.0f, 0.0f, 0.0f);
+    gl::rotatef(MathHelper::sin(wobbleTicks) * wobbleTicks * wobbleStrength / 10.0f *
+                    static_cast<float>(cart->damageWobbleSide),
+                1.0f, 0.0f, 0.0f);
   }
   if(cart->type != 0) {
     bindTexture("/terrain.png");
     constexpr float cargoScale = 0.75f;
-    gl::GL11::glScalef(cargoScale, cargoScale, cargoScale);
-    gl::GL11::glTranslatef(0.0f, 0.3125f, 0.0f);
-    gl::GL11::glRotatef(90.0f, 0.0f, 1.0f, 0.0f);
+    gl::scalef(cargoScale, cargoScale, cargoScale);
+    gl::translatef(0.0f, 0.3125f, 0.0f);
+    gl::rotatef(90.0f, 0.0f, 1.0f, 0.0f);
     const float brightness = cart->getBrightnessAtEyes(tickDelta);
     if(cart->type == 1) {
       if(net::minecraft::block::Block* chest = net::minecraft::block::Block::BLOCKS[kChestBlockId]) {
@@ -82,14 +82,14 @@ void MinecartEntityRenderer::render(const net::minecraft::Entity& entity, double
         blockRenderManager_.render(*furnace, 0, brightness);
       }
     }
-    gl::GL11::glRotatef(-90.0f, 0.0f, 1.0f, 0.0f);
-    gl::GL11::glTranslatef(0.0f, -0.3125f, 0.0f);
-    gl::GL11::glScalef(1.0f / cargoScale, 1.0f / cargoScale, 1.0f / cargoScale);
+    gl::rotatef(-90.0f, 0.0f, 1.0f, 0.0f);
+    gl::translatef(0.0f, -0.3125f, 0.0f);
+    gl::scalef(1.0f / cargoScale, 1.0f / cargoScale, 1.0f / cargoScale);
   }
   bindTexture("/item/cart.png");
-  gl::GL11::glScalef(-1.0f, -1.0f, 1.0f);
+  gl::scalef(-1.0f, -1.0f, 1.0f);
   model_->render(0.0f, 0.0f, -0.1f, 0.0f, 0.0f, 0.0625f);
-  gl::GL11::glPopMatrix();
+  gl::popMatrix();
 }
 } // namespace net::minecraft::client::render::entity
 #include "net/minecraft/client/entity/EntityClientRendererRegistration.hpp"

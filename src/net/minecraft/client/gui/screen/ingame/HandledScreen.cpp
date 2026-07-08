@@ -1,7 +1,7 @@
 #include "net/minecraft/client/gui/screen/ingame/HandledScreen.hpp"
 #include "net/minecraft/client/Minecraft.hpp"
 #include "net/minecraft/client/input/InputSystem.hpp"
-#include "net/minecraft/client/gl/GL11.hpp"
+#include "net/minecraft/client/gl/GlState.hpp"
 #include "net/minecraft/client/option/GameOptions.hpp"
 #include "net/minecraft/client/render/item/ItemRenderer.hpp"
 #include "net/minecraft/client/render/platform/Lighting.hpp"
@@ -25,79 +25,75 @@ void HandledScreen::render(int mouseX, int mouseY, float tickDelta) {
     return;
   }
   renderBackground();
-  gl::GL11::glDisable(gl::GL11::GL_FOG);
-  gl::GL11::glColor4f(1.0f, 1.0f, 1.0f, 1.0f);
+  const gl::preset::ContainerScreen screenCaps;
+  gl::color4f(1.0f, 1.0f, 1.0f, 1.0f);
   const int originX = (width_ - backgroundWidth) / 2;
   const int originY = (height_ - backgroundHeight) / 2;
   drawBackground(tickDelta);
-  gl::GL11::glPushMatrix();
-  gl::GL11::glRotatef(120.0f, 1.0f, 0.0f, 0.0f);
-  render::platform::Lighting::turnOn();
-  gl::GL11::glPopMatrix();
-  gl::GL11::glPushMatrix();
-  gl::GL11::glTranslatef(static_cast<float>(originX), static_cast<float>(originY), 0.0f);
-  gl::GL11::glColor4f(1.0f, 1.0f, 1.0f, 1.0f);
-  gl::GL11::glEnable(gl::GL11::GL_RESCALE_NORMAL);
-  ::net::minecraft::screen::slot::Slot* hoveredSlot = nullptr;
-  PlayerEntity& player = static_cast<PlayerEntity&>(*minecraft_->player);
-  const ItemStack cursorStack = player.inventory.getCursorStack();
   {
+    gl::MatrixGuard lightingMatrix;
+    gl::rotatef(120.0f, 1.0f, 0.0f, 0.0f);
+    render::platform::Lighting::turnOn();
+  }
+  {
+    const gl::preset::HandledSlotItem slotCaps;
+    gl::MatrixGuard slotMatrix;
+    gl::translatef(static_cast<float>(originX), static_cast<float>(originY), 0.0f);
+    gl::color4f(1.0f, 1.0f, 1.0f, 1.0f);
+    ::net::minecraft::screen::slot::Slot* hoveredSlot = nullptr;
+    PlayerEntity& player = static_cast<PlayerEntity&>(*minecraft_->player);
+    const ItemStack cursorStack = player.inventory.getCursorStack();
     for(::net::minecraft::screen::slot::Slot* slot : container_->slots) {
       if(slot == nullptr) {
         continue;
       }
-      drawSlot(*slot);
       if(isPointOverSlot(*slot, mouseX, mouseY)) {
         hoveredSlot = slot;
-        render::platform::Lighting::turnOff();
-        gl::GL11::glDisable(gl::GL11::GL_DEPTH_TEST);
+        const gl::preset::SlotHighlight hoverCaps;
         fillGradient(slot->x, slot->y, slot->x + 16, slot->y + 16, 0x80FFFFFFU, 0x80FFFFFFU);
-        render::platform::Lighting::turnOn();
-        gl::GL11::glEnable(gl::GL11::GL_DEPTH_TEST);
+        gl::color4f(1.0f, 1.0f, 1.0f, 1.0f);
       }
+      drawSlot(*slot);
     }
     if(!cursorStack.empty()) {
-      gl::GL11::glTranslatef(0.0f, 0.0f, 32.0f);
+      gl::translatef(0.0f, 0.0f, 32.0f);
       itemRenderer.renderGuiItem(*textRenderer_, minecraft_->textureManager, cursorStack, mouseX - originX - 8,
                                  mouseY - originY - 8);
       itemRenderer.renderGuiItemDecoration(*textRenderer_, minecraft_->textureManager, cursorStack,
                                            mouseX - originX - 8, mouseY - originY - 8);
     }
-  }
-  gl::GL11::glDisable(gl::GL11::GL_RESCALE_NORMAL);
-  render::platform::Lighting::turnOff();
-  // Foreground labels, the hovered-slot tooltip and the button layer all draw
-  // unlit and without depth testing; both are restored when render() returns.
-  gl::GL11::glDisable(gl::GL11::GL_DEPTH_TEST);
-  drawForeground();
-  if(cursorStack.empty() && hoveredSlot != nullptr && hoveredSlot->hasStack()) {
-    std::string label = resource::language::I18n::getClientTranslation(hoveredSlot->getStack().getTranslationKey());
-    const auto trimChar = [](std::string& value, char ch) {
-      while(!value.empty() && value.front() == ch) {
-        value.erase(value.begin());
+    {
+      const gl::preset::HandledSlotDecoration decorationCaps;
+      render::platform::Lighting::turnOff();
+      drawForeground();
+      if(cursorStack.empty() && hoveredSlot != nullptr && hoveredSlot->hasStack()) {
+        std::string label = resource::language::I18n::getClientTranslation(hoveredSlot->getStack().getTranslationKey());
+        const auto trimChar = [](std::string& value, char ch) {
+          while(!value.empty() && value.front() == ch) {
+            value.erase(value.begin());
+          }
+          while(!value.empty() && value.back() == ch) {
+            value.pop_back();
+          }
+        };
+        trimChar(label, ' ');
+        trimChar(label, '\t');
+        if(!label.empty()) {
+          const int tooltipX = mouseX - originX + 12;
+          const int tooltipY = mouseY - originY - 12;
+          const int textWidth = textRenderer_->getWidth(label);
+          fillGradient(tooltipX - 3, tooltipY - 3, tooltipX + textWidth + 3, tooltipY + 8 + 3, 0xC0000000U,
+                       0xC0000000U);
+          {
+            const gl::preset::HandledTooltipDraw tooltipCaps;
+            textRenderer_->drawWithShadow(label, tooltipX, tooltipY, 0xFFFFFF);
+          }
+          gl::color4f(1.0f, 1.0f, 1.0f, 1.0f);
+        }
       }
-      while(!value.empty() && value.back() == ch) {
-        value.pop_back();
-      }
-    };
-    trimChar(label, ' ');
-    trimChar(label, '\t');
-    if(!label.empty()) {
-      const int tooltipX = mouseX - originX + 12;
-      const int tooltipY = mouseY - originY - 12;
-      const int textWidth = textRenderer_->getWidth(label);
-      fillGradient(tooltipX - 3, tooltipY - 3, tooltipX + textWidth + 3, tooltipY + 8 + 3, 0xC0000000U,
-                   0xC0000000U);
-      gl::GL11::glDisable(gl::GL11::GL_FOG);
-      gl::GL11::glEnable(gl::GL11::GL_TEXTURE_2D);
-      textRenderer_->drawWithShadow(label, tooltipX, tooltipY, 0xFFFFFF);
-      gl::GL11::glColor4f(1.0f, 1.0f, 1.0f, 1.0f);
     }
   }
-  gl::GL11::glPopMatrix();
   Screen::render(mouseX, mouseY, tickDelta);
-  gl::GL11::glEnable(gl::GL11::GL_LIGHTING);
-  gl::GL11::glEnable(gl::GL11::GL_DEPTH_TEST);
 }
 void HandledScreen::drawForeground() {}
 int HandledScreen::containerOriginX() const noexcept {
@@ -111,8 +107,8 @@ void HandledScreen::drawContainerTexture(const char* texturePath, int srcU, int 
     return;
   }
   const int textureId = minecraft_->textureManager.getTextureId(texturePath);
-  gl::GL11::glColor4f(1.0f, 1.0f, 1.0f, 1.0f);
-  gl::GL11::glBindTexture(gl::GL11::GL_TEXTURE_2D, textureId);
+  gl::color4f(1.0f, 1.0f, 1.0f, 1.0f);
+  gl::bindTexture(gl::cap::Texture2D, textureId);
   drawTexture(containerOriginX(), containerOriginY(), srcU, srcV, drawW, drawH);
 }
 void HandledScreen::drawContainerTextureSplit(const char* texturePath, int topDrawH, int bottomSrcV, int bottomDrawH) {
@@ -120,8 +116,8 @@ void HandledScreen::drawContainerTextureSplit(const char* texturePath, int topDr
     return;
   }
   const int textureId = minecraft_->textureManager.getTextureId(texturePath);
-  gl::GL11::glColor4f(1.0f, 1.0f, 1.0f, 1.0f);
-  gl::GL11::glBindTexture(gl::GL11::GL_TEXTURE_2D, textureId);
+  gl::color4f(1.0f, 1.0f, 1.0f, 1.0f);
+  gl::bindTexture(gl::cap::Texture2D, textureId);
   const int originX = containerOriginX();
   const int originY = containerOriginY();
   drawTexture(originX, originY, 0, 0, backgroundWidth, topDrawH);
@@ -132,10 +128,11 @@ void HandledScreen::drawSlot(const ::net::minecraft::screen::slot::Slot& slot) {
   if(stack.empty()) {
     const int background = slot.getBackgroundTextureId();
     if(background >= 0) {
-      render::platform::Lighting::turnOff();
-      gl::GL11::glBindTexture(gl::GL11::GL_TEXTURE_2D, minecraft_->textureManager.getTextureId("/gui/items.png"));
+      const gl::CapScope slotBgCaps{gl::cap::Lighting};
+      const gl::BoundTextureScope savedTexture;
+      const gl::preset::ScreenTextOverlay slotOverlayCaps;
+      gl::bindTexture(gl::cap::Texture2D, minecraft_->textureManager.getTextureId("/gui/items.png"));
       drawTexture(slot.x, slot.y, background % 16 * 16, background / 16 * 16, 16, 16);
-      render::platform::Lighting::turnOn();
     }
     return;
   }

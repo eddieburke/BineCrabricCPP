@@ -74,14 +74,17 @@ minecraft.on(minecraft.events.screen_region, {
   screen_id = REGION_FILTER.screen_id,
   region = REGION_FILTER.region,
   phase_name = "mouse_click",
-  button = 0,
   priority = REGION_FILTER.priority,
   when = REGION_FILTER.when,
 }, function(event)
+  if event.button ~= 0 and event.button ~= 1 then
+    return
+  end
   local items = minecraft.items.ids()
   local item_id = item_at(items, event, event.mouse_x, event.mouse_y)
   if item_id ~= nil then
-    minecraft.world.set_cursor(item_id, 64)
+    local count = event.button == 1 and 1 or 64
+    minecraft.inventory.give({id = item_id, count = count})
     event.handled = true
   end
 end)

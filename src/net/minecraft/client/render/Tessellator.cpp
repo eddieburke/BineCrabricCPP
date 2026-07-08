@@ -1,9 +1,9 @@
 #include "net/minecraft/client/render/Tessellator.hpp"
 #include "net/minecraft/client/gl/GLCore.hpp"
-#include "net/minecraft/client/gl/GL11.hpp"
-#include "net/minecraft/client/render/InterleavedVertexLayout.hpp"
+#include "net/minecraft/client/gl/GlState.hpp"
 #include <algorithm>
 #include <cmath>
+#include <cstddef>
 namespace net::minecraft::client::render {
 namespace {
 static int clamp255(float v) {
@@ -29,7 +29,7 @@ void Tessellator::start(const int mode) {
   reset();
 }
 int Tessellator::effectiveDrawMode(const int mode) noexcept {
-  return mode == kGlQuads && kTriangleMode ? gl::GL11::GL_TRIANGLES : mode;
+  return mode == kGlQuads && kTriangleMode ? gl::prim::Triangles : mode;
 }
 void Tessellator::expandQuadToTriangles() {
   if(vertices_.size() < 3) {
@@ -119,22 +119,13 @@ void Tessellator::drawMesh(const TessellatorMesh& mesh) {
     return useVbo ? reinterpret_cast<const void*>(static_cast<std::intptr_t>(o))
                   : reinterpret_cast<const void*>(reinterpret_cast<const char*>(mesh.vertices.data()) + o);
   };
-  const InterleavedVertexLayout layout{
-      .position = ptr(offsetof(TessellatorVertex, x)),
-      .texCoord = ptr(offsetof(TessellatorVertex, u)),
-      .color = ptr(offsetof(TessellatorVertex, color)),
-      .normal = ptr(offsetof(TessellatorVertex, normal)),
-      .stride = stride,
-      .hasTexture = mesh.hasTexture,
-      .hasColor = mesh.hasColor,
-      .hasNormals = mesh.hasNormals,
-  };
   if(!useVbo && gl::GLCore::bindBuffer != nullptr) {
     gl::GLCore::bindBuffer(0x8892, 0);
   }
-  bindGuiVertexLayout(layout);
-  gl::GL11::glDrawArrays(effectiveDrawMode(mesh.mode), 0, static_cast<int>(mesh.vertices.size()));
-  unbindGuiVertexLayout();
+  const gl::ClientArrayBind arrays(ptr(offsetof(TessellatorVertex, x)), ptr(offsetof(TessellatorVertex, u)),
+                                   ptr(offsetof(TessellatorVertex, color)), ptr(offsetof(TessellatorVertex, normal)),
+                                   stride, mesh.hasTexture, mesh.hasColor, mesh.hasNormals);
+  gl::drawArrays(effectiveDrawMode(mesh.mode), 0, static_cast<int>(mesh.vertices.size()));
   if(useVbo) {
     gl::GLCore::bindBuffer(0x8892, 0);
   }

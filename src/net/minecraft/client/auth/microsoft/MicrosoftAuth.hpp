@@ -17,6 +17,7 @@ struct MicrosoftAccount {
   std::string refreshToken;
   std::string skinUrl;
   std::string capeUrl;
+  bool slimArms = false;
   std::string xboxGamertag;
   bool ownsMinecraft = false;
   [[nodiscard]] std::string sessionId() const;

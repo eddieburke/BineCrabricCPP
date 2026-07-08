@@ -1,6 +1,5 @@
 #pragma once
 #include "net/minecraft/block/entity/BlockEntity.hpp"
-#include "net/minecraft/client/gl/GL11.hpp"
 #include <string>
 namespace net::minecraft {
 class World;

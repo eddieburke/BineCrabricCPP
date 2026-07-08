@@ -7,12 +7,12 @@
 #include "net/minecraft/client/render/block/BlockRenderManager.hpp"
 #include "net/minecraft/client/render/block/entity/BlockEntityRenderDispatcher.hpp"
 #include "net/minecraft/block/entity/BlockEntity.hpp"
-#include "net/minecraft/client/gl/GL11.hpp"
+#include "net/minecraft/client/gl/GlState.hpp"
 #include "net/minecraft/client/particle/ParticleRegistry.hpp"
 #include "net/minecraft/client/particle/PickupParticle.hpp"
 #include "net/minecraft/client/render/chunk/ChunkBuilder.hpp"
 #include "net/minecraft/client/render/chunk/ChunkMeshJob.hpp"
-#include "net/minecraft/client/render/culling/Culler.hpp"
+#include "net/minecraft/client/render/culling/Frustum.hpp"
 #include "net/minecraft/client/render/entity/EntityRenderDispatcher.hpp"
 #include "net/minecraft/client/render/platform/Lighting.hpp"
 #include "net/minecraft/client/render/Tessellator.hpp"
@@ -27,7 +27,6 @@
 #include "net/minecraft/world/chunk/ChunkSource.hpp"
 #include "net/minecraft/util/concurrent/FrameBudget.hpp"
 #include <algorithm>
-#include <chrono>
 #include <cmath>
 #include <cstdint>
 #include <cstdlib>
@@ -43,6 +42,7 @@ constexpr int kBaselineRadius = 13;
 WorldRenderer::WorldRenderer(net::minecraft::client::Minecraft* minecraftIn,
                              net::minecraft::client::texture::TextureManager* textureManagerIn)
     : client(minecraftIn), textureManager(textureManagerIn) {
+  blockRenderManager.ctx.textureManager = textureManager;
   if(client != nullptr) {
     options_ = &client->options;
   }
@@ -131,7 +131,7 @@ void WorldRenderer::createColumn(int sectionX, int sectionZ) {
     chunk::ChunkBuilder* raw = builder.get();
     sections_.emplace(pos, std::move(builder));
     drawRings_[static_cast<std::size_t>(ring)].push_back(raw);
-    dirtyChunks_.insert(raw);
+    enqueueDirtyChunk(raw);
   }
 }
 void WorldRenderer::retireOrFreeSection(std::unique_ptr<chunk::ChunkBuilder> section) {
@@ -193,12 +193,21 @@ void WorldRenderer::clearSections() {
   centerSectionZ_ = std::numeric_limits<int>::min();
 }
 void WorldRenderer::updateSectionFrontier() {
-  const net::minecraft::LivingEntity* camera = frontierCamera();
-  if(camera == nullptr) {
-    return;
+  double camX = 0.0;
+  double camZ = 0.0;
+  if(hasFrameCamera_) {
+    camX = frameCamX_;
+    camZ = frameCamZ_;
+  } else {
+    const net::minecraft::LivingEntity* camera = frontierCamera();
+    if(camera == nullptr) {
+      return;
+    }
+    camX = camera->x;
+    camZ = camera->z;
   }
-  const int camSectionX = MathHelper::floor(camera->x) >> 4;
-  const int camSectionZ = MathHelper::floor(camera->z) >> 4;
+  const int camSectionX = MathHelper::floor(camX) >> 4;
+  const int camSectionZ = MathHelper::floor(camZ) >> 4;
   if(camSectionX == centerSectionX_ && camSectionZ == centerSectionZ_) {
     return;
   }
@@ -239,10 +248,6 @@ void WorldRenderer::drainPendingColumns() {
   if(world == nullptr || centerSectionX_ == std::numeric_limits<int>::min()) {
     return;
   }
-  net::minecraft::ChunkSource* source = world->getChunkSource();
-  if(source == nullptr) {
-    return;
-  }
   const int radius = renderRadiusChunks_;
   std::size_t inspected = 0;
   const std::size_t budget = pendingColumns_.size();
@@ -255,12 +260,6 @@ void WorldRenderer::drainPendingColumns() {
       continue;
     }
     if(sectionAt(col.x, 0, col.z) != nullptr) {
-      continue;
-    }
-    if(!source->isChunkLoaded(col.x, col.z)) {
-      if(pendingSet_.insert(col).second) {
-        pendingColumns_.push_back(col);
-      }
       continue;
     }
     createColumn(col.x, col.z);
@@ -335,7 +334,7 @@ void WorldRenderer::render(const net::minecraft::Entity& camera, int layer, floa
   platform::Lighting::turnOff();
   renderChunks(layer, 0.0);
 }
-int WorldRenderer::render(net::minecraft::LivingEntity& camera, int layer, double tickDelta) {
+int WorldRenderer::render(net::minecraft::LivingEntity& camera, int layer, double tickDelta, bool drawModMeshes) {
   if(sections_.empty()) {
     return 0;
   }
@@ -347,7 +346,7 @@ int WorldRenderer::render(net::minecraft::LivingEntity& camera, int layer, doubl
   }
   cameraEntity_ = &camera;
   platform::Lighting::turnOff();
-  renderChunks(layer, tickDelta);
+  renderChunks(layer, tickDelta, drawModMeshes);
   return lastDrawnRegionCount_;
 }
 void WorldRenderer::renderLastChunks(int layer, double tickDelta) {
@@ -387,13 +386,13 @@ int WorldRenderer::renderChunksVbo(int layer, double /*tickDelta*/, double inter
     const float offsetY = static_cast<float>(static_cast<double>(region.offsetY) - interpY);
     const float offsetZ = static_cast<float>(static_cast<double>(region.offsetZ) - interpZ);
     const gl::MatrixGuard matrix;
-    gl::GL11::glTranslatef(offsetX, offsetY, offsetZ);
-    buffer.flush(render::Tessellator::effectiveDrawMode(gl::GL11::GL_QUADS));
+    gl::translatef(offsetX, offsetY, offsetZ);
+    buffer.flush(render::Tessellator::effectiveDrawMode(gl::prim::Quads));
     ++lastDrawnRegionCount_;
   }
   return lastDrawnRegionCount_;
 }
-void WorldRenderer::renderChunks(int layer, double tickDelta) {
+void WorldRenderer::renderChunks(int layer, double tickDelta, bool drawModMeshes) {
   if(layer == 0) {
     if(activeOptions().debugHud) {
       for(const auto& entry : sections_) {
@@ -409,24 +408,24 @@ void WorldRenderer::renderChunks(int layer, double tickDelta) {
       }
     }
   }
-  const double interpX = cameraEntity_ != nullptr
-                             ? cameraEntity_->lastTickX +
-                                   (cameraEntity_->x - cameraEntity_->lastTickX) * tickDelta
-                             : 0.0;
-  const double interpY = cameraEntity_ != nullptr
-                             ? cameraEntity_->lastTickY +
-                                   (cameraEntity_->y - cameraEntity_->lastTickY) * tickDelta
-                             : 0.0;
-  const double interpZ = cameraEntity_ != nullptr
-                             ? cameraEntity_->lastTickZ +
-                                   (cameraEntity_->z - cameraEntity_->lastTickZ) * tickDelta
-                             : 0.0;
-  renderChunksVbo(layer, tickDelta, interpX, interpY, interpZ);
-  renderModChunkMeshes(layer, interpX, interpY, interpZ);
+  double interpX = 0.0;
+  double interpY = 0.0;
+  double interpZ = 0.0;
+  cameraInterpPosition(tickDelta, interpX, interpY, interpZ);
+  lastDrawnRegionCount_ = renderChunksVbo(layer, tickDelta, interpX, interpY, interpZ);
+  if(drawModMeshes) {
+    lastDrawnRegionCount_ += renderModChunkMeshes(layer, interpX, interpY, interpZ);
+  }
 }
-void WorldRenderer::renderModChunkMeshes(int layer, double interpX, double interpY, double interpZ) {
+int WorldRenderer::renderModChunkMeshes(int layer, double interpX, double interpY, double interpZ) {
   if(textureManager == nullptr) {
-    return;
+    return 0;
+  }
+  const gl::preset::ModChunkMesh meshCaps;
+  int drawn = 0;
+  const bool translucentLayer = layer == 1;
+  if(translucentLayer) {
+    gl::blendAlpha();
   }
   for(const std::vector<chunk::ChunkBuilder*>& ring : visibleDrawRings_) {
     for(chunk::ChunkBuilder* chunk : ring) {
@@ -446,11 +445,13 @@ void WorldRenderer::renderModChunkMeshes(int layer, double interpX, double inter
         const float offsetY = static_cast<float>(static_cast<double>(chunk->y) - interpY);
         const float offsetZ = static_cast<float>(static_cast<double>(chunk->z) - interpZ);
         const gl::MatrixGuard matrix;
-        gl::GL11::glTranslatef(offsetX, offsetY, offsetZ);
+        gl::translatef(offsetX, offsetY, offsetZ);
         Tessellator::drawMesh(modMesh.mesh);
+        ++drawn;
       }
     }
   }
+  return drawn;
 }
 bool WorldRenderer::compileChunks(net::minecraft::LivingEntity& /*camera*/, bool force) {
   const client::option::ResolvedRenderOptions resolvedOpts = client::option::resolve(activeOptions());
@@ -555,7 +556,7 @@ bool WorldRenderer::compileChunks(net::minecraft::LivingEntity& /*camera*/, bool
   }
   return dirtyChunks_.empty() && nearDirtyChunks_.empty() && pendingMeshUploads_.empty() && meshScheduler_.idle();
 }
-void WorldRenderer::renderEntities(const Vec3d& cameraPos, Culler* culler, float tickDelta) {
+void WorldRenderer::renderEntities(const Vec3d& cameraPos, FrustumCuller* culler, float tickDelta) {
   if(entityRenderCooldown > 0) {
     --entityRenderCooldown;
     return;
@@ -575,12 +576,13 @@ void WorldRenderer::renderEntities(const Vec3d& cameraPos, Culler* culler, float
   renderedEntityCount = 0;
   culledEntityCount = 0;
   if(livingCamera != nullptr) {
-    entity::EntityRenderDispatcher::offsetX =
-        livingCamera->lastTickX + (livingCamera->x - livingCamera->lastTickX) * static_cast<double>(tickDelta);
-    entity::EntityRenderDispatcher::offsetY =
-        livingCamera->lastTickY + (livingCamera->y - livingCamera->lastTickY) * static_cast<double>(tickDelta);
-    entity::EntityRenderDispatcher::offsetZ =
-        livingCamera->lastTickZ + (livingCamera->z - livingCamera->lastTickZ) * static_cast<double>(tickDelta);
+    double offsetX = 0.0;
+    double offsetY = 0.0;
+    double offsetZ = 0.0;
+    cameraInterpPosition(static_cast<double>(tickDelta), offsetX, offsetY, offsetZ);
+    entity::EntityRenderDispatcher::offsetX = offsetX;
+    entity::EntityRenderDispatcher::offsetY = offsetY;
+    entity::EntityRenderDispatcher::offsetZ = offsetZ;
     block::entity::BlockEntityRenderDispatcher::offsetX = entity::EntityRenderDispatcher::offsetX;
     block::entity::BlockEntityRenderDispatcher::offsetY = entity::EntityRenderDispatcher::offsetY;
     block::entity::BlockEntityRenderDispatcher::offsetZ = entity::EntityRenderDispatcher::offsetZ;
@@ -611,7 +613,7 @@ void WorldRenderer::renderEntities(const Vec3d& cameraPos, Culler* culler, float
       ++culledEntityCount;
       continue;
     }
-    if(entity == cameraEntity_) {
+    if(entity == cameraEntity_ && !renderCameraEntity_) {
       auto* playerCamera = dynamic_cast<PlayerEntity*>(cameraEntity_);
       if(playerCamera != nullptr && !activeOptions().thirdPerson && !playerCamera->isSleeping()) {
         continue;
@@ -636,7 +638,7 @@ void WorldRenderer::renderEntities(const Vec3d& cameraPos, Culler* culler, float
     }
   }
 }
-void WorldRenderer::cullChunks(Culler* culler, float /*tickDelta*/) {
+void WorldRenderer::cullChunks(FrustumCuller* culler, float /*tickDelta*/) {
   constexpr double kNearFrustumBypassBlocks = 96.0;
   constexpr double kNearFrustumBypassDistanceSq =
       kNearFrustumBypassBlocks * kNearFrustumBypassBlocks;
@@ -654,10 +656,10 @@ void WorldRenderer::cullChunks(Culler* culler, float /*tickDelta*/) {
     chunk::ChunkBuilder& chunk = *entry.second;
     chunk.updateFrustum(*culler);
     if(cameraEntity_ != nullptr) {
-      // Keep nearby terrain conservative even if the extracted frustum clips a
-      // steep pitch / high-altitude view a little too tightly.
-      const double dx = cameraEntity_->x - static_cast<double>(chunk.centerX);
-      const double dz = cameraEntity_->z - static_cast<double>(chunk.centerZ);
+      const double camX = hasFrameCamera_ ? frameCamX_ : cameraEntity_->x;
+      const double camZ = hasFrameCamera_ ? frameCamZ_ : cameraEntity_->z;
+      const double dx = camX - static_cast<double>(chunk.centerX);
+      const double dz = camZ - static_cast<double>(chunk.centerZ);
       if(dx * dx + dz * dz <= kNearFrustumBypassDistanceSq) {
         chunk.inFrustum = true;
       }
@@ -776,21 +778,21 @@ void WorldRenderer::blockBreakParticles(int x, int y, int z, int blockId, int bl
 }
 void WorldRenderer::renderOutline(const Box& box) {
   Tessellator& tessellator = INSTANCE;
-  tessellator.start(gl::GL11::GL_LINE_STRIP);
+  tessellator.start(gl::prim::LineStrip);
   tessellator.vertex(box.minX, box.minY, box.minZ);
   tessellator.vertex(box.maxX, box.minY, box.minZ);
   tessellator.vertex(box.maxX, box.minY, box.maxZ);
   tessellator.vertex(box.minX, box.minY, box.maxZ);
   tessellator.vertex(box.minX, box.minY, box.minZ);
   tessellator.draw();
-  tessellator.start(gl::GL11::GL_LINE_STRIP);
+  tessellator.start(gl::prim::LineStrip);
   tessellator.vertex(box.minX, box.maxY, box.minZ);
   tessellator.vertex(box.maxX, box.maxY, box.minZ);
   tessellator.vertex(box.maxX, box.maxY, box.maxZ);
   tessellator.vertex(box.minX, box.maxY, box.maxZ);
   tessellator.vertex(box.minX, box.maxY, box.minZ);
   tessellator.draw();
-  tessellator.start(gl::GL11::GL_LINES);
+  tessellator.start(gl::prim::Lines);
   tessellator.vertex(box.minX, box.minY, box.minZ);
   tessellator.vertex(box.minX, box.maxY, box.minZ);
   tessellator.vertex(box.maxX, box.minY, box.minZ);
@@ -807,53 +809,32 @@ void WorldRenderer::renderMiningProgress(net::minecraft::PlayerEntity* entity, c
   if(entity == nullptr || world == nullptr || textureManager == nullptr) {
     return;
   }
-  gl::GL11::glEnable(gl::GL11::GL_BLEND);
-  gl::GL11::glEnable(gl::GL11::GL_ALPHA_TEST);
-  gl::GL11::glBlendFunc(gl::GL11::GL_SRC_ALPHA, gl::GL11::GL_ONE);
-  const auto nowMs =
-      std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch())
-          .count();
-  const float pulse = std::sin(static_cast<float>(nowMs) / 100.0f) * 0.2f + 0.4f;
-  gl::GL11::glColor4f(1.0f, 1.0f, 1.0f, pulse * 0.5f);
-  if(i == 0 && miningProgress > 0.0f) {
-    gl::GL11::glBlendFunc(gl::GL11::GL_DST_COLOR, gl::GL11::GL_SRC_COLOR);
-    const int terrainTextureId = textureManager->getTextureId("/terrain.png");
-    gl::GL11::glBindTexture(gl::GL11::GL_TEXTURE_2D, terrainTextureId);
-    gl::GL11::glColor4f(1.0f, 1.0f, 1.0f, 0.5f);
-    gl::GL11::glPushMatrix();
-    int blockId = world->getBlockId(hit.blockX, hit.blockY, hit.blockZ);
-    Block* block = (blockId > 0 && blockId < Block::BLOCK_COUNT) ? Block::BLOCKS[blockId] : nullptr;
-    if(block == nullptr) {
-      block = Block::STONE;
-      blockId = Block::STONE->id;
-    }
-    gl::GL11::glDisable(gl::GL11::GL_ALPHA_TEST);
-    gl::GL11::glPolygonOffset(-3.0f, -3.0f);
-    gl::GL11::glEnable(gl::GL11::GL_POLYGON_OFFSET_FILL);
-    const double interpX = entity->lastTickX + (entity->x - entity->lastTickX) * static_cast<double>(tickDelta);
-    const double interpY = entity->lastTickY + (entity->y - entity->lastTickY) * static_cast<double>(tickDelta);
-    const double interpZ = entity->lastTickZ + (entity->z - entity->lastTickZ) * static_cast<double>(tickDelta);
-    if(block != nullptr) {
-      gl::GL11::glEnable(gl::GL11::GL_ALPHA_TEST);
-      Tessellator& tessellator = INSTANCE;
-      tessellator.startQuads();
-      tessellator.translate(-interpX, -interpY, -interpZ);
-      tessellator.disableColor();
-      blockRenderManager.renderWithTexture(*block, hit.blockX, hit.blockY, hit.blockZ,
-                                           240 + static_cast<int>(miningProgress * 10.0f));
-      tessellator.draw();
-      tessellator.translate(0.0, 0.0, 0.0);
-      gl::GL11::glDisable(gl::GL11::GL_ALPHA_TEST);
-    }
-    gl::GL11::glDisable(gl::GL11::GL_POLYGON_OFFSET_FILL);
-    gl::GL11::glPolygonOffset(0.0f, 0.0f);
-    gl::GL11::glEnable(gl::GL11::GL_ALPHA_TEST);
-    gl::GL11::glDepthMask(true);
-    gl::GL11::glPopMatrix();
+  if(i != 0 || miningProgress <= 0.0f) {
+    return;
   }
-  gl::GL11::glDisable(gl::GL11::GL_BLEND);
-  gl::GL11::glDisable(gl::GL11::GL_ALPHA_TEST);
-  gl::GL11::glColor4f(1.0f, 1.0f, 1.0f, 1.0f);
+  const gl::preset::WorldOverlay overlayCaps;
+  const gl::preset::WorldCrackOverlay crackCaps;
+  const int terrainTextureId = textureManager->getTextureId("/terrain.png");
+  gl::bindTexture(gl::cap::Texture2D, terrainTextureId);
+  gl::color4f(1.0f, 1.0f, 1.0f, 0.5f);
+  const gl::MatrixGuard matrix;
+  int blockId = world->getBlockId(hit.blockX, hit.blockY, hit.blockZ);
+  Block* block = (blockId > 0 && blockId < Block::BLOCK_COUNT) ? Block::BLOCKS[blockId] : nullptr;
+  if(block == nullptr) {
+    block = Block::STONE;
+    blockId = Block::STONE->id;
+  }
+  const double interpX = entity->lastTickX + (entity->x - entity->lastTickX) * static_cast<double>(tickDelta);
+  const double interpY = entity->lastTickY + (entity->y - entity->lastTickY) * static_cast<double>(tickDelta);
+  const double interpZ = entity->lastTickZ + (entity->z - entity->lastTickZ) * static_cast<double>(tickDelta);
+  Tessellator& tessellator = INSTANCE;
+  tessellator.startQuads();
+  tessellator.translate(-interpX, -interpY, -interpZ);
+  tessellator.disableColor();
+  blockRenderManager.renderWithTexture(*block, hit.blockX, hit.blockY, hit.blockZ,
+                                       240 + static_cast<int>(miningProgress * 10.0f));
+  tessellator.draw();
+  tessellator.translate(0.0, 0.0, 0.0);
 }
 void WorldRenderer::renderBlockOutline(net::minecraft::PlayerEntity* player, const net::minecraft::HitResult& hitResult,
                                        int i, const net::minecraft::ItemStack& handStack, float tickDelta) {
@@ -861,12 +842,11 @@ void WorldRenderer::renderBlockOutline(net::minecraft::PlayerEntity* player, con
   if(i != 0 || hitResult.type != HitResultType::BLOCK || player == nullptr || world == nullptr) {
     return;
   }
-  gl::GL11::glEnable(gl::GL11::GL_BLEND);
-  gl::GL11::glBlendFunc(gl::GL11::GL_SRC_ALPHA, gl::GL11::GL_ONE_MINUS_SRC_ALPHA);
-  gl::GL11::glColor4f(0.0f, 0.0f, 0.0f, 0.4f);
-  gl::GL11::glLineWidth(2.0f);
-  gl::GL11::glDisable(gl::GL11::GL_TEXTURE_2D);
-  gl::GL11::glDepthMask(false);
+  const gl::preset::BlockOutline outlineCaps;
+  const gl::preset::OutlineTextureOff outlineTextureCaps;
+  gl::color4f(0.0f, 0.0f, 0.0f, 0.4f);
+  gl::lineWidth(2.0f);
+  gl::depthMask(false);
   constexpr float expand = 0.002f;
   const int blockId = world->getBlockId(hitResult.blockX, hitResult.blockY, hitResult.blockZ);
   if(blockId > 0 && blockId < Block::BLOCK_COUNT && Block::BLOCKS[blockId] != nullptr) {
@@ -879,9 +859,23 @@ void WorldRenderer::renderBlockOutline(net::minecraft::PlayerEntity* player, con
     outline = outline.expand(expand).offset(-interpX, -interpY, -interpZ);
     renderOutline(outline);
   }
-  gl::GL11::glDepthMask(true);
-  gl::GL11::glEnable(gl::GL11::GL_TEXTURE_2D);
-  gl::GL11::glDisable(gl::GL11::GL_BLEND);
+}
+void WorldRenderer::cameraInterpPosition(double tickDelta, double& x, double& y, double& z) const {
+  if(hasFrameCamera_) {
+    x = frameCamX_;
+    y = frameCamY_;
+    z = frameCamZ_;
+    return;
+  }
+  if(cameraEntity_ == nullptr) {
+    x = 0.0;
+    y = 0.0;
+    z = 0.0;
+    return;
+  }
+  x = cameraEntity_->lastTickX + (cameraEntity_->x - cameraEntity_->lastTickX) * tickDelta;
+  y = cameraEntity_->lastTickY + (cameraEntity_->y - cameraEntity_->lastTickY) * tickDelta;
+  z = cameraEntity_->lastTickZ + (cameraEntity_->z - cameraEntity_->lastTickZ) * tickDelta;
 }
 void WorldRenderer::releaseSections() {
   clearSections();

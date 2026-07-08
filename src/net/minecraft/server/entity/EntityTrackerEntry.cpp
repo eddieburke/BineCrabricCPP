@@ -77,7 +77,7 @@ void EntityTrackerEntry::notifyNewLocation(const std::vector<ServerPlayerEntity*
     const int deltaX = fixedX - lastX;
     const int deltaY = fixedY - lastY;
     const int deltaZ = fixedZ - lastZ;
-    const bool moved = std::abs(fixedX) >= 8 || std::abs(fixedY) >= 8 || std::abs(fixedZ) >= 8;
+    const bool moved = std::abs(deltaX) >= 8 || std::abs(deltaY) >= 8 || std::abs(deltaZ) >= 8;
     const bool rotated = std::abs(fixedYaw - lastYaw) >= 8 || std::abs(fixedPitch - lastPitch) >= 8;
     if(deltaX < -128 || deltaX >= 128 || deltaY < -128 || deltaY >= 128 || deltaZ < -128 || deltaZ >= 128 ||
        ticksSinceLastDismount_ > 400) {

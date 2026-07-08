@@ -6,6 +6,8 @@
 #include "net/minecraft/world/chunk/Chunk.hpp"
 #include "net/minecraft/world/chunk/ChunkSource.hpp"
 #include "net/minecraft/util/math/MathHelper.hpp"
+#include "net/minecraft/mod/GameHooks.hpp"
+#include "net/minecraft/mod/runtime/LuaBlockEntityBindings.hpp"
 #include <algorithm>
 #include <cmath>
 namespace net::minecraft {
@@ -392,12 +394,25 @@ void World::tickEntities() {
       continue;
     }
     if(!blockEntity->isRemoved()) {
-      blockEntity->tick();
+      bool canceled = false;
+      if(mod::hooks().hasListeners<mod::TileEntityTickEvent>()) {
+        mod::TileEntityTickEvent tileEvent;
+        tileEvent.world = this;
+        tileEvent.entity = blockEntity;
+        tileEvent.clientWorld = isRemote();
+        tileEvent.canceled = false;
+        mod::hooks().publish(tileEvent);
+        canceled = tileEvent.canceled;
+      }
+      if(!canceled) {
+        blockEntity->tick();
+      }
     }
     if(!blockEntity->isRemoved()) {
       continue;
     }
     blockEntities.erase(blockEntities.begin() + static_cast<std::ptrdiff_t>(i));
+    mod::runtime::clearTileEntityAnimation(blockEntity);
     --i;
     Chunk& chunk = getChunk(blockEntity->x >> 4, blockEntity->z >> 4);
     chunk.removeBlockEntityAt(blockEntity->x & 0xF, blockEntity->y, blockEntity->z & 0xF);

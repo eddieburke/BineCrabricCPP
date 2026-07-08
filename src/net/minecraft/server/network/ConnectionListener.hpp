@@ -25,6 +25,7 @@ public:
   ConnectionListener& operator=(const ConnectionListener&) = delete;
   void tick();
   void addConnection(std::unique_ptr<ServerPlayNetworkHandler> handler, std::unique_ptr<Connection> connection);
+  void stopAccepting();
   void close();
   [[nodiscard]] std::uint16_t boundPort() const;
 
@@ -39,6 +40,7 @@ private:
   bool onlineMode_ = false;
   ServerSocket socket_;
   std::thread thread_;
+  std::once_flag acceptStopFlag_;
   std::atomic<bool> open_{false};
   int connectionCounter_ = 0;
   std::mutex mutex_;

@@ -87,6 +87,7 @@ public:
   bool firstTick = true;
   std::string skinUrl;
   std::string capeUrl;
+  bool slimArms = false;
   bool fireImmune = false;
   DataTracker dataTracker;
   float minBrightness = 0.0f;
@@ -117,6 +118,7 @@ public:
   }
   virtual void initDataTracker() {}
   virtual void teleportTop();
+  void teleport(double xIn, double yIn, double zIn, float yawIn, float pitchIn);
   void nudgeOutOfCollision();
   virtual void markDead() {
     dead = true;

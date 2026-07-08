@@ -10,5 +10,6 @@ public:
   void init() override;
   void render(int mouseX, int mouseY, float tickDelta) override;
   void keyPressed(char character, int keyCode) override;
+  [[nodiscard]] std::string_view getScreenUiId() const override { return net::minecraft::mod::screen_ids::kSignEdit; }
 };
 } // namespace net::minecraft::client::gui::screen::ingame

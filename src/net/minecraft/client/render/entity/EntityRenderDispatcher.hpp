@@ -55,6 +55,11 @@ public:
   [[nodiscard]] net::minecraft::LivingEntity* cameraEntity() const noexcept {
     return cameraEntity_;
   }
+  // The camera pointer is non-owning; callers that render outside init() (e.g. the
+  // first-person hand) must refresh it so it never outlives the entity it points at.
+  void setCameraEntity(net::minecraft::LivingEntity* cameraEntity) noexcept {
+    cameraEntity_ = cameraEntity;
+  }
   [[nodiscard]] net::minecraft::client::option::GameOptions& options() const noexcept {
     return options_;
   }

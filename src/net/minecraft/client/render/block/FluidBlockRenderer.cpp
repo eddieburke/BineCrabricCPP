@@ -5,7 +5,6 @@
 #include "net/minecraft/block/material/Material.hpp"
 #include "net/minecraft/client/option/ResolvedRenderOptions.hpp"
 #include "net/minecraft/client/render/Tessellator.hpp"
-#include "net/minecraft/client/render/block/BlockVertexEmitter.hpp"
 #include "net/minecraft/util/math/MathHelper.hpp"
 #include <array>
 namespace net::minecraft::client::render::block {
@@ -16,13 +15,13 @@ bool FluidBlockRenderer::renderFluid(net::minecraft::block::Block& block, int x,
   float red = (float)(colorMult >> 16 & 0xFF) / 255.0f;
   float green = (float)(colorMult >> 8 & 0xFF) / 255.0f;
   float blue = (float)(colorMult & 0xFF) / 255.0f;
-  bool topVisible = block.isSideVisible(ctx_.blockView, x, y + 1, z, 1);
-  bool bottomVisible = block.isSideVisible(ctx_.blockView, x, y - 1, z, 0);
+  bool topVisible = ctx_.isSideVisible(block, x, y + 1, z, 1);
+  bool bottomVisible = ctx_.isSideVisible(block, x, y - 1, z, 0);
   std::array<bool, 4> sideVisible{
-      block.isSideVisible(ctx_.blockView, x, y, z - 1, 2),
-      block.isSideVisible(ctx_.blockView, x, y, z + 1, 3),
-      block.isSideVisible(ctx_.blockView, x - 1, y, z, 4),
-      block.isSideVisible(ctx_.blockView, x + 1, y, z, 5),
+      ctx_.isSideVisible(block, x, y, z - 1, 2),
+      ctx_.isSideVisible(block, x, y, z + 1, 3),
+      ctx_.isSideVisible(block, x - 1, y, z, 4),
+      ctx_.isSideVisible(block, x + 1, y, z, 5),
   };
   if(!(topVisible || bottomVisible || sideVisible[0] || sideVisible[1] || sideVisible[2] || sideVisible[3])) {
     return false;

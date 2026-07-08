@@ -28,14 +28,27 @@ public:
 class PlayerMovePacket : public Packet {
 public:
   double x = 0.0;
-  double y = 0.0;
+  double feetY = 0.0;
   double z = 0.0;
-  double eyeHeight = 0.0;
+  double stance = 0.0;
   float yaw = 0.0f;
   float pitch = 0.0f;
   bool onGround = false;
   bool changePosition = false;
   bool changeLook = false;
+  // Sets the fields shared by every player-move packet (feet + stance + look).
+  // Parameter order matches the game's mental model (feet, then stance), which is
+  // reordered onto the wire (x, feetY, z, stance) by the subclass read/write.
+  void setMove(double xIn, double feetYIn, double stanceIn, double zIn, float yawIn, float pitchIn,
+               bool onGroundIn) {
+    x = xIn;
+    feetY = feetYIn;
+    stance = stanceIn;
+    z = zIn;
+    yaw = yawIn;
+    pitch = pitchIn;
+    onGround = onGroundIn;
+  }
   void read(std::istream& input) override {
     onGround = packetio::readU8(input) != 0;
   }
@@ -56,15 +69,15 @@ public:
   }
   void read(std::istream& input) override {
     x = packetio::readDoubleBE(input);
-    y = packetio::readDoubleBE(input);
-    eyeHeight = packetio::readDoubleBE(input);
+    feetY = packetio::readDoubleBE(input);
+    stance = packetio::readDoubleBE(input);
     z = packetio::readDoubleBE(input);
     PlayerMovePacket::read(input);
   }
   void write(std::ostream& output) const override {
     packetio::writeDoubleBE(output, x);
-    packetio::writeDoubleBE(output, y);
-    packetio::writeDoubleBE(output, eyeHeight);
+    packetio::writeDoubleBE(output, feetY);
+    packetio::writeDoubleBE(output, stance);
     packetio::writeDoubleBE(output, z);
     PlayerMovePacket::write(output);
   }
@@ -99,8 +112,8 @@ public:
   }
   void read(std::istream& input) override {
     x = packetio::readDoubleBE(input);
-    y = packetio::readDoubleBE(input);
-    eyeHeight = packetio::readDoubleBE(input);
+    feetY = packetio::readDoubleBE(input);
+    stance = packetio::readDoubleBE(input);
     z = packetio::readDoubleBE(input);
     yaw = packetio::readFloatBE(input);
     pitch = packetio::readFloatBE(input);
@@ -108,8 +121,8 @@ public:
   }
   void write(std::ostream& output) const override {
     packetio::writeDoubleBE(output, x);
-    packetio::writeDoubleBE(output, y);
-    packetio::writeDoubleBE(output, eyeHeight);
+    packetio::writeDoubleBE(output, feetY);
+    packetio::writeDoubleBE(output, stance);
     packetio::writeDoubleBE(output, z);
     packetio::writeFloatBE(output, yaw);
     packetio::writeFloatBE(output, pitch);

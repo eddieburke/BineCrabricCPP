@@ -15,6 +15,7 @@ public:
     return url_;
   }
   std::optional<RasterImage> image;
+  bool slimArms = false;
   int requestCount = 1;
   int textureId = -1;
   bool uploaded = false;

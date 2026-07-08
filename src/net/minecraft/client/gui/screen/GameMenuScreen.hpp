@@ -6,8 +6,9 @@ public:
   void init() override;
   void tick() override;
   void render(int mouseX, int mouseY, float tickDelta) override;
+  [[nodiscard]] std::string_view getScreenUiId() const override { return net::minecraft::mod::screen_ids::kGameMenu; }
 
-private:
+ private:
   void saveAndQuit();
   void resumeGame();
   void openLanMenu();

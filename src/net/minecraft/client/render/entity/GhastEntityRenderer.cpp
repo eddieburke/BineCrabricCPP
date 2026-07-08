@@ -1,5 +1,5 @@
 #include "net/minecraft/client/render/entity/EntityRenderers.hpp"
-#include "net/minecraft/client/gl/GL11.hpp"
+#include "net/minecraft/client/gl/GlState.hpp"
 #include "net/minecraft/client/render/entity/model/GhastEntityModel.hpp"
 #include "net/minecraft/entity/mob/GhastEntity.hpp"
 namespace net::minecraft::client::render::entity {
@@ -18,8 +18,8 @@ void GhastEntityRenderer::applyScale(const net::minecraft::LivingEntity& entity,
   charge = 1.0f / (charge * charge * charge * charge * charge * 2.0f + 1.0f);
   const float scaleY = (8.0f + charge) / 2.0f;
   const float scaleXZ = (8.0f + 1.0f / charge) / 2.0f;
-  gl::GL11::glScalef(scaleXZ, scaleY, scaleXZ);
-  gl::GL11::glColor4f(1.0f, 1.0f, 1.0f, 1.0f);
+  gl::scalef(scaleXZ, scaleY, scaleXZ);
+  gl::color4f(1.0f, 1.0f, 1.0f, 1.0f);
 }
 } // namespace net::minecraft::client::render::entity
 #include "net/minecraft/client/entity/EntityClientRendererRegistration.hpp"

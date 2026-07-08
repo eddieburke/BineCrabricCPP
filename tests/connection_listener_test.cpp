@@ -8,12 +8,13 @@
 #include <winsock2.h>
 #include <ws2tcpip.h>
 #endif
-#include "TestAssert.hpp"
 #include "net/minecraft/server/MinecraftServer.hpp"
 #include "net/minecraft/server/network/ConnectionListener.hpp"
 #include <chrono>
+#include <gtest/gtest.h>
 #include <mutex>
 #include <sstream>
+#include <stdexcept>
 #include <thread>
 namespace {
 using net::minecraft::server::MinecraftServer;
@@ -54,29 +55,19 @@ SOCKET connectLoopback(std::uint16_t port) {
   ::freeaddrinfo(result);
   return socket;
 }
-void testBindAndAcceptSmoke(TestContext& ctx) {
+} // namespace
+namespace net::minecraft::test {
+TEST(ConnectionListener, BindAndAcceptSmoke) {
   MinecraftServer server;
   ConnectionListener listener(&server, "127.0.0.1", 0, false);
   const std::uint16_t port = listener.boundPort();
-  EXPECT_TRUE(ctx, port != 0, "connection listener should bind to an ephemeral port");
+  ASSERT_NE(port, 0);
   const SOCKET client = connectLoopback(port);
-  EXPECT_TRUE(ctx, client != INVALID_SOCKET, "loopback client should connect to listener");
+  ASSERT_NE(client, INVALID_SOCKET);
   std::this_thread::sleep_for(std::chrono::milliseconds(100));
   listener.tick();
   listener.close();
-  if(client != INVALID_SOCKET) {
-    ::shutdown(client, SD_BOTH);
-    ::closesocket(client);
-  }
+  ::shutdown(client, SD_BOTH);
+  ::closesocket(client);
 }
-} // namespace
-int main() {
-  TestContext ctx;
-  RUN_TEST(ctx, testBindAndAcceptSmoke);
-  if(ctx.failures == 0) {
-    std::cout << "All connection listener tests passed\n";
-    return EXIT_SUCCESS;
-  }
-  std::cerr << ctx.failures << " test failure(s)\n";
-  return EXIT_FAILURE;
-}
+} // namespace net::minecraft::test

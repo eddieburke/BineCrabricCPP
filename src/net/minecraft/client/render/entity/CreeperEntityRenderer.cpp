@@ -1,15 +1,16 @@
 #include "net/minecraft/client/render/entity/EntityRenderers.hpp"
-#include "net/minecraft/client/gl/GL11.hpp"
+#include "net/minecraft/client/gl/GlState.hpp"
 #include "net/minecraft/client/render/entity/model/CreeperEntityModel.hpp"
 #include "net/minecraft/entity/mob/CreeperEntity.hpp"
 #include "net/minecraft/util/math/MathHelper.hpp"
 #include <algorithm>
 namespace net::minecraft::client::render::entity {
-CreeperEntityRenderer::CreeperEntityRenderer()
-    : LivingEntityRenderer(new model::CreeperEntityModel(), 0.5f), chargedModel_(new model::CreeperEntityModel(2.0f)) {
+CreeperEntityRenderer::CreeperEntityRenderer() : LivingEntityRenderer(new model::CreeperEntityModel(), 0.5f) {
+  chargedModel_ = new model::CreeperEntityModel(2.0f);
 }
 CreeperEntityRenderer::~CreeperEntityRenderer() {
   delete chargedModel_;
+  chargedModel_ = nullptr;
 }
 void CreeperEntityRenderer::applyScale(const net::minecraft::LivingEntity& entity, float tickDelta) {
   const auto* creeper = dynamic_cast<const net::minecraft::entity::mob::CreeperEntity*>(&entity);
@@ -23,7 +24,7 @@ void CreeperEntityRenderer::applyScale(const net::minecraft::LivingEntity& entit
   swell *= swell;
   const float sx = (1.0f + swell * 0.4f) * pulse;
   const float sy = (1.0f + swell * 0.1f) / pulse;
-  gl::GL11::glScalef(sx, sy, sx);
+  gl::scalef(sx, sy, sx);
 }
 int CreeperEntityRenderer::getOverlayColor(const net::minecraft::LivingEntity& entity, float /*brightness*/,
                                            float tickDelta) const {
@@ -42,22 +43,22 @@ bool CreeperEntityRenderer::bindTexture(const net::minecraft::LivingEntity& enti
   if(layer == 1) {
     const float time = static_cast<float>(entity.age) + tickDelta;
     EntityRenderer::bindTexture("/armor/power.png");
-    gl::GL11::glMatrixMode(5890);
-    gl::GL11::glLoadIdentity();
+    gl::matrixMode(5890);
+    gl::loadIdentity();
     const float offset = time * 0.01f;
-    gl::GL11::glTranslatef(offset, offset, 0.0f);
+    gl::translatef(offset, offset, 0.0f);
     setDecorationModel(chargedModel_);
-    gl::GL11::glMatrixMode(5888);
-    gl::GL11::glEnable(gl::GL11::GL_BLEND);
-    gl::GL11::glColor4f(0.5f, 0.5f, 0.5f, 1.0f);
-    gl::GL11::glBlendFunc(gl::GL11::GL_ONE, gl::GL11::GL_ONE);
+    gl::matrixMode(5888);
+    gl::setCap(gl::cap::Blend, true);
+    gl::color4f(0.5f, 0.5f, 0.5f, 1.0f);
+    gl::blendFunc(gl::blend::One, gl::blend::One);
     return true;
   }
   if(layer == 2) {
-    gl::GL11::glMatrixMode(5890);
-    gl::GL11::glLoadIdentity();
-    gl::GL11::glMatrixMode(5888);
-    gl::GL11::glDisable(gl::GL11::GL_BLEND);
+    gl::matrixMode(5890);
+    gl::loadIdentity();
+    gl::matrixMode(5888);
+    gl::setCap(gl::cap::Blend, false);
   }
   return false;
 }

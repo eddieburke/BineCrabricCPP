@@ -4,7 +4,6 @@
 #include "net/minecraft/client/render/chunk/ChunkBuilder.hpp"
 #include "net/minecraft/client/render/chunk/ChunkMeshScheduler.hpp"
 #include "net/minecraft/client/render/chunk/ChunkRegionManager.hpp"
-#include "net/minecraft/client/render/world/SectionPos.hpp"
 #include "net/minecraft/item/ItemStack.hpp"
 #include "net/minecraft/util/hit/HitResult.hpp"
 #include "net/minecraft/util/math/Types.hpp"
@@ -30,7 +29,25 @@ namespace net::minecraft::client::texture {
 class TextureManager;
 }
 namespace net::minecraft::client::render {
-class Culler;
+namespace world {
+struct SectionPos {
+  int x = 0;
+  int y = 0;
+  int z = 0;
+  [[nodiscard]] bool operator==(const SectionPos& other) const noexcept {
+    return x == other.x && y == other.y && z == other.z;
+  }
+};
+struct SectionPosHash {
+  [[nodiscard]] std::size_t operator()(const SectionPos& p) const noexcept {
+    std::size_t h = static_cast<std::uint32_t>(p.x) * 0x9E3779B1u;
+    h ^= static_cast<std::uint32_t>(p.z) * 0x85EBCA77u + (h << 6) + (h >> 2);
+    h ^= static_cast<std::uint32_t>(p.y) * 0xC2B2AE3Du + (h << 6) + (h >> 2);
+    return h;
+  }
+};
+} // namespace world
+class FrustumCuller;
 class WorldRenderer : public net::minecraft::GameEventListener {
 public:
   WorldRenderer(net::minecraft::client::Minecraft* minecraft = nullptr,
@@ -38,10 +55,10 @@ public:
   void setWorld(net::minecraft::World* world);
   void reload();
   void reloadIfViewDistanceChanged();
-  void renderEntities(const Vec3d& cameraPos, Culler* culler, float tickDelta);
+  void renderEntities(const Vec3d& cameraPos, FrustumCuller* culler, float tickDelta);
   [[nodiscard]] std::string getChunkDebugInfo() const;
   [[nodiscard]] std::string getEntityDebugInfo() const;
-  int render(net::minecraft::LivingEntity& camera, int layer, double tickDelta);
+  int render(net::minecraft::LivingEntity& camera, int layer, double tickDelta, bool drawModMeshes = true);
   void render(const net::minecraft::Entity& camera, int layer, float tickDelta);
   bool compileChunks(net::minecraft::LivingEntity& camera, bool force);
   void renderLastChunks(int layer, double tickDelta);
@@ -52,7 +69,7 @@ public:
   void markDirty(int minX, int minY, int minZ, int maxX, int maxY, int maxZ);
   void blockUpdate(int x, int y, int z) override;
   void setBlocksDirty(int minX, int minY, int minZ, int maxX, int maxY, int maxZ) override;
-  void cullChunks(Culler* culler, float tickDelta);
+  void cullChunks(FrustumCuller* culler, float tickDelta);
   void addParticle(const std::string& particle, double x, double y, double z, double velocityX, double velocityY,
                    double velocityZ) override;
   void notifyEntityAdded(net::minecraft::Entity* entity) override;
@@ -71,6 +88,21 @@ public:
   void setCamera(net::minecraft::Entity* camera) {
     cameraEntity_ = camera;
   }
+  void setRenderCameraEntity(bool renderCameraEntity) noexcept {
+    renderCameraEntity_ = renderCameraEntity;
+  }
+  void setFrameRenderCamera(double x, double y, double z) noexcept {
+    frameCamX_ = x;
+    frameCamY_ = y;
+    frameCamZ_ = z;
+    hasFrameCamera_ = true;
+  }
+  // Force section columns to rebuild around the next camera position (e.g. first
+  // server teleport after the loading screen tracked a stale position).
+  void resetSectionFrontier() noexcept {
+    centerSectionX_ = std::numeric_limits<int>::min();
+    centerSectionZ_ = std::numeric_limits<int>::min();
+  }
   void setOptions(net::minecraft::client::option::GameOptions* options) {
     options_ = options;
   }
@@ -84,9 +116,9 @@ private:
   void noteNearDirty(chunk::ChunkBuilder* chunk);
   bool startMeshJob(chunk::ChunkBuilder* chunk, bool nearLane, int priority,
                     const client::option::ResolvedRenderOptions& resolvedOpts, bool fancyGraphics);
-  void renderChunks(int layer, double tickDelta);
+  void renderChunks(int layer, double tickDelta, bool drawModMeshes = true);
   int renderChunksVbo(int layer, double tickDelta, double interpX, double interpY, double interpZ);
-  void renderModChunkMeshes(int layer, double interpX, double interpY, double interpZ);
+  int renderModChunkMeshes(int layer, double interpX, double interpY, double interpZ);
   void updateSectionFrontier();
   void drainPendingColumns();
   void createColumn(int sectionX, int sectionZ);
@@ -124,7 +156,13 @@ private:
   int compiledChunkCount = 0;
   int emptyChunkCount = 0;
   int lastDrawnRegionCount_ = 0;
+  void cameraInterpPosition(double tickDelta, double& x, double& y, double& z) const;
+  double frameCamX_ = 0.0;
+  double frameCamY_ = 0.0;
+  double frameCamZ_ = 0.0;
+  bool hasFrameCamera_ = false;
   net::minecraft::Entity* cameraEntity_ = nullptr;
+  bool renderCameraEntity_ = false;
   net::minecraft::client::option::GameOptions* options_ = nullptr;
   net::minecraft::client::option::GameOptions defaultOptions_{};
 };

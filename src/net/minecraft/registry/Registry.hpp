@@ -9,12 +9,12 @@
 #include <vector>
 namespace net::minecraft::registry {
 inline constexpr int kGenericBlockItemOrder = 1000;
-inline constexpr int kCraftingRecipeFinalizeOrder = 10000;
 class Registry {
 public:
   static void enqueue(mod::LifecyclePhase phase, int order, void (*init)());
   [[nodiscard]] static bool tryReserveBlockId(int id);
   static void reserveBlockId(int id);
+  [[nodiscard]] static bool tryReserveItemId(int rawId);
   static void addBlock(int id, void (*init)());
   static void addItem(int id, void (*init)());
   static void addEntity(int rawId, void (*init)());

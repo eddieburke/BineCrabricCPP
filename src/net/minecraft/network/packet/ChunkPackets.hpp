@@ -49,6 +49,15 @@ public:
   ChunkDataS2CPacket() {
     worldPacket = true;
   }
+  // Match Java ChunkDataS2CPacket(World): compress before enqueue so size() and sendQueueSize stay accurate.
+  void compressForSend() {
+    if(chunkDataSize > 0 || chunkData.empty()) {
+      return;
+    }
+    const std::vector<std::uint8_t> compressed = zlibCompress(chunkData);
+    chunkDataSize = static_cast<int>(compressed.size());
+    chunkData = std::move(compressed);
+  }
   void read(std::istream& input) override {
     x = packetio::readI32BE(input);
     y = packetio::readI16BE(input);
@@ -73,10 +82,13 @@ public:
     packetio::writeU8(output, static_cast<std::uint8_t>(sizeX - 1));
     packetio::writeU8(output, static_cast<std::uint8_t>(sizeY - 1));
     packetio::writeU8(output, static_cast<std::uint8_t>(sizeZ - 1));
-    std::vector<std::uint8_t> compressed = zlibCompress(chunkData);
-    chunkDataSize = static_cast<int>(compressed.size());
     packetio::writeI32BE(output, chunkDataSize);
-    packetio::writeBytes(output, compressed);
+    if(chunkDataSize > 0) {
+      output.write(reinterpret_cast<const char*>(chunkData.data()), static_cast<std::streamsize>(chunkDataSize));
+      if(!output) {
+        throw std::runtime_error("Failed to write chunk data");
+      }
+    }
   }
   void apply(NetworkHandler& networkHandler) const override {
     networkHandler.handleChunkData(*this);

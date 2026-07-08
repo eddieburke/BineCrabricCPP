@@ -449,6 +449,10 @@ void finalizeBlockRegistryProperties() {
     if(block == nullptr) {
       continue;
     }
+    // Java sets static render/collision bounds in constructors or
+    // setupRenderBoundingBox(); inventory-only setup in beta still has to run
+    // once so default getRenderBounds() and getCollisionShapeLocal() match.
+    block->setupRenderBoundingBox();
     const bool opaque = block->isOpaque();
     Block::BLOCKS_OPAQUE[i] = opaque;
     if(!g_explicitLightOpacity[i]) {
@@ -476,29 +480,33 @@ float Block::getLuminance(const BlockView* blockView, int x, int y, int z) const
   }
   return blockView->getNaturalBrightness(x, y, z, BLOCKS_LIGHT_LUMINANCE[static_cast<std::size_t>(id)]);
 }
-bool Block::isSideVisible(const BlockView* blockView, int x, int y, int z, int side) const {
-  if(side == 0 && minY > 0.0) {
+bool Block::isSideVisibleForBounds(const BlockView* blockView, int x, int y, int z, int side,
+                                   const Box& bounds) const {
+  if(side == 0 && bounds.minY > 0.0) {
     return true;
   }
-  if(side == 1 && maxY < 1.0) {
+  if(side == 1 && bounds.maxY < 1.0) {
     return true;
   }
-  if(side == 2 && minZ > 0.0) {
+  if(side == 2 && bounds.minZ > 0.0) {
     return true;
   }
-  if(side == 3 && maxZ < 1.0) {
+  if(side == 3 && bounds.maxZ < 1.0) {
     return true;
   }
-  if(side == 4 && minX > 0.0) {
+  if(side == 4 && bounds.minX > 0.0) {
     return true;
   }
-  if(side == 5 && maxX < 1.0) {
+  if(side == 5 && bounds.maxX < 1.0) {
     return true;
   }
   if(blockView == nullptr) {
     return true;
   }
   return !blockView->isBlockOpaqueCube(x, y, z);
+}
+bool Block::isSideVisible(const BlockView* blockView, int x, int y, int z, int side) const {
+  return isSideVisibleForBounds(blockView, x, y, z, side, getCollisionShapeLocal());
 }
 int Block::getTextureId(const BlockView* blockView, int x, int y, int z, int side) const {
   if(blockView == nullptr) {

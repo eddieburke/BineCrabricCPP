@@ -82,6 +82,13 @@ net::minecraft::Box ButtonBlock::getRenderBounds(const BlockView* blockView, int
   }
   return {minX, minY, minZ, maxX, maxY, maxZ};
 }
+void ButtonBlock::setupRenderBoundingBox() {
+  constexpr float halfWidth = 0.1875f;
+  constexpr float halfHeight = 0.125f;
+  constexpr float halfDepth = 0.125f;
+  setBoundingBox(0.5f - halfWidth, 0.5f - halfHeight, 0.5f - halfDepth, 0.5f + halfWidth, 0.5f + halfHeight,
+                 0.5f + halfDepth);
+}
 void ButtonBlock::onPlaced(World* world, int x, int y, int z, int direction) {
   if(world == nullptr) {
     return;

@@ -1,13 +1,13 @@
 #include "net/minecraft/client/render/entity/EntityRenderers.hpp"
-#include "net/minecraft/client/gl/GL11.hpp"
+#include "net/minecraft/client/gl/GlState.hpp"
 #include "net/minecraft/client/render/Tessellator.hpp"
-#include "net/minecraft/client/render/entity/EntityRendererCasts.hpp"
+#include "net/minecraft/entity/projectile/ArrowEntity.hpp"
 #include "net/minecraft/entity/Entity.hpp"
 #include "net/minecraft/util/math/MathHelper.hpp"
 namespace net::minecraft::client::render::entity {
 void ArrowEntityRenderer::render(const net::minecraft::Entity& entity, double x, double y, double z, float /*yaw*/,
                                  float tickDelta) {
-  const auto* arrow = dynamic_cast<const casts::ArrowEntity*>(&entity);
+  const auto* arrow = dynamic_cast<const net::minecraft::entity::projectile::ArrowEntity*>(&entity);
   if(arrow == nullptr) {
     return;
   }
@@ -16,9 +16,9 @@ void ArrowEntityRenderer::render(const net::minecraft::Entity& entity, double x,
   }
   bindTexture("/item/arrows.png");
   const gl::MatrixGuard matrix;
-  gl::GL11::glTranslatef(static_cast<float>(x), static_cast<float>(y), static_cast<float>(z));
-  gl::GL11::glRotatef(arrow->prevYaw + (arrow->yaw - arrow->prevYaw) * tickDelta - 90.0f, 0.0f, 1.0f, 0.0f);
-  gl::GL11::glRotatef(arrow->prevPitch + (arrow->pitch - arrow->prevPitch) * tickDelta, 0.0f, 0.0f, 1.0f);
+  gl::translatef(static_cast<float>(x), static_cast<float>(y), static_cast<float>(z));
+  gl::rotatef(arrow->prevYaw + (arrow->yaw - arrow->prevYaw) * tickDelta - 90.0f, 0.0f, 1.0f, 0.0f);
+  gl::rotatef(arrow->prevPitch + (arrow->pitch - arrow->prevPitch) * tickDelta, 0.0f, 0.0f, 1.0f);
   Tessellator& tessellator = Tessellator::INSTANCE;
   constexpr int arrowVariant = 0;
   constexpr float shaftUMin = 0.0f;
@@ -33,19 +33,19 @@ void ArrowEntityRenderer::render(const net::minecraft::Entity& entity, double x,
   const float shake = arrow->shake - tickDelta;
   if(shake > 0.0f) {
     const float shakeAngle = -MathHelper::sin(shake * 3.0f) * shake;
-    gl::GL11::glRotatef(shakeAngle, 0.0f, 0.0f, 1.0f);
+    gl::rotatef(shakeAngle, 0.0f, 0.0f, 1.0f);
   }
-  gl::GL11::glRotatef(45.0f, 1.0f, 0.0f, 0.0f);
-  gl::GL11::glScalef(scale, scale, scale);
-  gl::GL11::glTranslatef(-4.0f, 0.0f, 0.0f);
-  gl::GL11::glNormal3f(scale, 0.0f, 0.0f);
+  gl::rotatef(45.0f, 1.0f, 0.0f, 0.0f);
+  gl::scalef(scale, scale, scale);
+  gl::translatef(-4.0f, 0.0f, 0.0f);
+  gl::normal3f(scale, 0.0f, 0.0f);
   tessellator.startQuads();
   tessellator.vertex(-7.0, -2.0, -2.0, headUMin, headVMin);
   tessellator.vertex(-7.0, -2.0, 2.0, headUMax, headVMin);
   tessellator.vertex(-7.0, 2.0, 2.0, headUMax, headVMax);
   tessellator.vertex(-7.0, 2.0, -2.0, headUMin, headVMax);
   tessellator.draw();
-  gl::GL11::glNormal3f(-scale, 0.0f, 0.0f);
+  gl::normal3f(-scale, 0.0f, 0.0f);
   tessellator.startQuads();
   tessellator.vertex(-7.0, 2.0, -2.0, headUMin, headVMin);
   tessellator.vertex(-7.0, 2.0, 2.0, headUMax, headVMin);
@@ -53,8 +53,8 @@ void ArrowEntityRenderer::render(const net::minecraft::Entity& entity, double x,
   tessellator.vertex(-7.0, -2.0, -2.0, headUMin, headVMax);
   tessellator.draw();
   for(int i = 0; i < 4; ++i) {
-    gl::GL11::glRotatef(90.0f, 1.0f, 0.0f, 0.0f);
-    gl::GL11::glNormal3f(0.0f, 0.0f, scale);
+    gl::rotatef(90.0f, 1.0f, 0.0f, 0.0f);
+    gl::normal3f(0.0f, 0.0f, scale);
     tessellator.startQuads();
     tessellator.vertex(-8.0, -2.0, 0.0, shaftUMin, shaftVMin);
     tessellator.vertex(8.0, -2.0, 0.0, shaftUMax, shaftVMin);

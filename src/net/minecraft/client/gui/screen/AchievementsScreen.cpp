@@ -2,10 +2,11 @@
 #include "net/minecraft/achievement/Achievements.hpp"
 #include "net/minecraft/block/Block.hpp"
 #include "net/minecraft/client/Minecraft.hpp"
-#include "net/minecraft/client/gl/GL11.hpp"
+#include "net/minecraft/client/gl/GlState.hpp"
 #include "net/minecraft/client/option/GameOptions.hpp"
 #include "net/minecraft/client/render/item/ItemRenderer.hpp"
 #include "net/minecraft/client/render/platform/Lighting.hpp"
+#include "net/minecraft/client/render/texture/DynamicTextureDetail.hpp"
 #include "net/minecraft/client/resource/language/I18n.hpp"
 #include "net/minecraft/entity/player/ClientPlayerEntity.hpp"
 #include "net/minecraft/stat/PlayerStats.hpp"
@@ -22,15 +23,8 @@ constexpr int kMinRow = achievement::Achievements::minRow * 24 - 112;
 constexpr int kMaxRow = achievement::Achievements::maxRow * 24 - 77;
 constexpr int kDefaultScrollPixelX = achievement::Achievements::OPEN_INVENTORY.column * 24 - 141 / 2 - 12;
 constexpr int kDefaultTileColumn = (kDefaultScrollPixelX + 288) >> 4;
-int blockTextureId(int blockId) {
-  if(blockId <= 0 || blockId >= block::Block::BLOCK_COUNT) {
-    return block::Block::STONE != nullptr ? block::Block::STONE->textureId : 1;
-  }
-  block::Block* block = block::Block::BLOCKS[static_cast<std::size_t>(blockId)];
-  if(block == nullptr) {
-    return block::Block::STONE != nullptr ? block::Block::STONE->textureId : 1;
-  }
-  return block->textureId;
+int stoneTextureId() {
+  return block::Block::STONE != nullptr ? block::Block::STONE->textureId : 1;
 }
 int proceduralTerrainTexture(int tileColumn, int tileRow, int row, net::minecraft::JavaRandom& random) {
   random.setSeed(1234 + tileColumn + row);
@@ -126,13 +120,9 @@ void AchievementsScreen::renderIcons(int mouseX, int mouseY, float tickDelta) {
   const int frameY = (height_ - iconHeight_) / 2;
   const int contentX = frameX + 16;
   const int contentY = frameY + 17;
-  gl::GL11::glDepthFunc(gl::GL11::GL_GEQUAL);
-  gl::GL11::glPushMatrix();
-  gl::GL11::glTranslatef(0.0f, 0.0f, -200.0f);
-  gl::GL11::glEnable(gl::GL11::GL_TEXTURE_2D);
-  gl::GL11::glDisable(gl::GL11::GL_LIGHTING);
-  gl::GL11::glEnable(gl::GL11::GL_RESCALE_NORMAL);
-  gl::GL11::glEnable(gl::GL11::GL_COLOR_MATERIAL);
+  const gl::preset::AchievementMap mapCaps;
+  gl::MatrixGuard mapMatrix;
+  gl::translatef(0.0f, 0.0f, -200.0f);
   minecraft()->textureManager.bindTexture(terrainTexture);
   const int tileColumn = (scrollPixelX + 288) >> 4;
   const int tileRow = (scrollPixelY + 288) >> 4;
@@ -164,145 +154,142 @@ void AchievementsScreen::renderIcons(int mouseX, int mouseY, float tickDelta) {
           if(blockId == 0) {
             continue;
           }
-          texture = blockTextureId(blockId);
+          texture = client::render::texture::detail::blockTextureId(blockId, stoneTextureId());
         }
         const float shade = 0.6f - static_cast<float>(depth) / 25.0f * 0.3f;
-        gl::GL11::glColor4f(shade, shade, shade, 1.0f);
+        gl::color4f(shade, shade, shade, 1.0f);
       } else {
         const float shade = 0.6f - static_cast<float>(tileRow + row) / 25.0f * 0.3f;
-        gl::GL11::glColor4f(shade, shade, shade, 1.0f);
+        gl::color4f(shade, shade, shade, 1.0f);
         texture = proceduralTerrainTexture(tileColumn + column, tileRow, row, random);
       }
       drawTexture(contentX + column * 16 - offsetX, contentY + row * 16 - offsetY, (texture % 16) << 4,
                   (texture >> 4) << 4, 16, 16);
     }
   }
-  gl::GL11::glEnable(gl::GL11::GL_DEPTH_TEST);
-  gl::GL11::glDepthFunc(gl::GL11::GL_LEQUAL);
-  gl::GL11::glDisable(gl::GL11::GL_TEXTURE_2D);
-  for(const achievement::AchievementDef& achievement : achievement::Achievements::ALL) {
-    if(achievement.parentIndex < 0) {
-      continue;
+  {
+    const gl::preset::AchievementMapLines lineCaps;
+    for(const achievement::AchievementDef& achievement : achievement::Achievements::ALL) {
+      if(achievement.parentIndex < 0) {
+        continue;
+      }
+      const int childX = achievement.column * 24 - scrollPixelX + 11 + contentX;
+      const int childY = achievement.row * 24 - scrollPixelY + 11 + contentY;
+      const achievement::AchievementDef* parent = achievement::Achievements::getByStatId(achievement.parentStatId());
+      if(parent == nullptr) {
+        continue;
+      }
+      const int parentX = parent->column * 24 - scrollPixelX + 11 + contentX;
+      const int parentY = parent->row * 24 - scrollPixelY + 11 + contentY;
+      const bool unlocked = stats_->hasStat(achievement.statId());
+      const bool parentUnlocked = stats_->hasParentAchievement(achievement.statId());
+      const double pulse = std::sin(static_cast<double>(nowMillis() % 600) / 600.0 * 3.141592653589793 * 2.0);
+      const int pulseAlpha = pulse > 0.6 ? 255 : 130;
+      const int lineColor = unlocked ? 0xFF6F6968 : (parentUnlocked ? (0xFF00FF00 | (pulseAlpha << 24)) : 0xFF000000);
+      drawHorizontalLine(childX, parentX, childY, lineColor);
+      drawVerticalLine(parentX, childY, parentY, lineColor);
     }
-    const int childX = achievement.column * 24 - scrollPixelX + 11 + contentX;
-    const int childY = achievement.row * 24 - scrollPixelY + 11 + contentY;
-    const achievement::AchievementDef* parent = achievement::Achievements::getByStatId(achievement.parentStatId());
-    if(parent == nullptr) {
-      continue;
-    }
-    const int parentX = parent->column * 24 - scrollPixelX + 11 + contentX;
-    const int parentY = parent->row * 24 - scrollPixelY + 11 + contentY;
-    const bool unlocked = stats_->hasStat(achievement.statId());
-    const bool parentUnlocked = stats_->hasParentAchievement(achievement.statId());
-    const double pulse = std::sin(static_cast<double>(nowMillis() % 600) / 600.0 * 3.141592653589793 * 2.0);
-    const int pulseAlpha = pulse > 0.6 ? 255 : 130;
-    const int lineColor = unlocked ? 0xFF6F6968 : (parentUnlocked ? (0xFF00FF00 | (pulseAlpha << 24)) : 0xFF000000);
-    drawHorizontalLine(childX, parentX, childY, lineColor);
-    drawVerticalLine(parentX, childY, parentY, lineColor);
   }
   const achievement::AchievementDef* hovered = nullptr;
   render::item::ItemRenderer itemRenderer;
-  gl::GL11::glPushMatrix();
-  gl::GL11::glRotatef(180.0f, 1.0f, 0.0f, 0.0f);
-  render::platform::Lighting::turnOn();
-  gl::GL11::glPopMatrix();
-  gl::GL11::glDisable(gl::GL11::GL_LIGHTING);
-  gl::GL11::glEnable(gl::GL11::GL_RESCALE_NORMAL);
-  gl::GL11::glEnable(gl::GL11::GL_COLOR_MATERIAL);
-  gl::GL11::glEnable(gl::GL11::GL_TEXTURE_2D);
-  for(const achievement::AchievementDef& achievement : achievement::Achievements::ALL) {
-    const int iconX = achievement.column * 24 - scrollPixelX;
-    const int iconY = achievement.row * 24 - scrollPixelY;
-    if(iconX < -24 || iconY < -24 || iconX > 224 || iconY > 155) {
-      continue;
+  {
+    gl::MatrixGuard lightingMatrix;
+    gl::rotatef(180.0f, 1.0f, 0.0f, 0.0f);
+    render::platform::Lighting::turnOn();
+  }
+  {
+    const gl::preset::AchievementMapIcons iconCaps;
+    for(const achievement::AchievementDef& achievement : achievement::Achievements::ALL) {
+      const int iconX = achievement.column * 24 - scrollPixelX;
+      const int iconY = achievement.row * 24 - scrollPixelY;
+      if(iconX < -24 || iconY < -24 || iconX > 224 || iconY > 155) {
+        continue;
+      }
+      const bool unlocked = stats_->hasStat(achievement.statId());
+      const bool parentUnlocked = stats_->hasParentAchievement(achievement.statId());
+      float shade = 0.3f;
+      if(unlocked) {
+        shade = 1.0f;
+      } else if(parentUnlocked) {
+        const double pulse = std::sin(static_cast<double>(nowMillis() % 600) / 600.0 * 3.141592653589793 * 2.0);
+        shade = pulse < 0.6 ? 0.6f : 0.8f;
+      }
+      gl::color4f(shade, shade, shade, 1.0f);
+      minecraft()->textureManager.bindTexture(achievementTexture);
+      const int drawX = contentX + iconX;
+      const int drawY = contentY + iconY;
+      if(achievement.challenge) {
+        drawTexture(drawX - 2, drawY - 2, 26, 202, 26, 26);
+      } else {
+        drawTexture(drawX - 2, drawY - 2, 0, 202, 26, 26);
+      }
+      if(!parentUnlocked) {
+        gl::color4f(0.1f, 0.1f, 0.1f, 1.0f);
+        itemRenderer.useCustomDisplayColor = false;
+      }
+      {
+        const gl::preset::AchievementIconItem itemCaps;
+        itemRenderer.renderGuiItem(*textRenderer(), minecraft()->textureManager,
+                                   achievement::Achievements::iconStack(achievement), drawX + 3, drawY + 3);
+      }
+      if(!parentUnlocked) {
+        itemRenderer.useCustomDisplayColor = true;
+      }
+      gl::color4f(1.0f, 1.0f, 1.0f, 1.0f);
+      if(mouseX >= contentX && mouseY >= contentY && mouseX < contentX + 224 && mouseY < contentY + 155 &&
+         mouseX >= drawX && mouseX <= drawX + 22 && mouseY >= drawY && mouseY <= drawY + 22) {
+        hovered = &achievement;
+      }
     }
-    const bool unlocked = stats_->hasStat(achievement.statId());
-    const bool parentUnlocked = stats_->hasParentAchievement(achievement.statId());
-    float shade = 0.3f;
-    if(unlocked) {
-      shade = 1.0f;
-    } else if(parentUnlocked) {
-      const double pulse = std::sin(static_cast<double>(nowMillis() % 600) / 600.0 * 3.141592653589793 * 2.0);
-      shade = pulse < 0.6 ? 0.6f : 0.8f;
-    }
-    gl::GL11::glColor4f(shade, shade, shade, 1.0f);
+  }
+  {
+    const gl::preset::AchievementMapFrame frameCaps;
+    gl::color4f(1.0f, 1.0f, 1.0f, 1.0f);
     minecraft()->textureManager.bindTexture(achievementTexture);
-    const int drawX = contentX + iconX;
-    const int drawY = contentY + iconY;
-    if(achievement.challenge) {
-      drawTexture(drawX - 2, drawY - 2, 26, 202, 26, 26);
-    } else {
-      drawTexture(drawX - 2, drawY - 2, 0, 202, 26, 26);
-    }
-    if(!parentUnlocked) {
-      gl::GL11::glColor4f(0.1f, 0.1f, 0.1f, 1.0f);
-      itemRenderer.useCustomDisplayColor = false;
-    }
-    gl::GL11::glEnable(gl::GL11::GL_LIGHTING);
-    gl::GL11::glEnable(gl::GL11::GL_CULL_FACE);
-    itemRenderer.renderGuiItem(*textRenderer(), minecraft()->textureManager,
-                               achievement::Achievements::iconStack(achievement), drawX + 3, drawY + 3);
-    gl::GL11::glDisable(gl::GL11::GL_LIGHTING);
-    if(!parentUnlocked) {
-      itemRenderer.useCustomDisplayColor = true;
-    }
-    gl::GL11::glColor4f(1.0f, 1.0f, 1.0f, 1.0f);
-    if(mouseX >= contentX && mouseY >= contentY && mouseX < contentX + 224 && mouseY < contentY + 155 &&
-       mouseX >= drawX && mouseX <= drawX + 22 && mouseY >= drawY && mouseY <= drawY + 22) {
-      hovered = &achievement;
-    }
+    drawTexture(frameX, frameY, 0, 0, iconWidth_, iconHeight_);
   }
-  gl::GL11::glDisable(gl::GL11::GL_DEPTH_TEST);
-  gl::GL11::glEnable(gl::GL11::GL_BLEND);
-  gl::GL11::glColor4f(1.0f, 1.0f, 1.0f, 1.0f);
-  gl::GL11::glEnable(gl::GL11::GL_TEXTURE_2D);
-  minecraft()->textureManager.bindTexture(achievementTexture);
-  drawTexture(frameX, frameY, 0, 0, iconWidth_, iconHeight_);
-  gl::GL11::glPopMatrix();
   zOffset = 0.0f;
-  gl::GL11::glDepthFunc(gl::GL11::GL_LEQUAL);
-  gl::GL11::glDisable(gl::GL11::GL_DEPTH_TEST);
-  gl::GL11::glEnable(gl::GL11::GL_TEXTURE_2D);
-  Screen::render(mouseX, mouseY, tickDelta);
-  if(hovered != nullptr) {
-    const std::string title = achievement::Achievements::getTranslatedTitle(*hovered);
-    const std::string description = achievement::Achievements::getFormattedDescription(
-        *hovered, static_cast<int>(minecraft()->options.inventoryKey.code));
-    int tooltipX = mouseX + 12;
-    int tooltipY = mouseY - 4;
-    if(stats_->hasParentAchievement(hovered->statId())) {
-      const int width = std::max(textRenderer()->getWidth(title), 120);
-      int bodyHeight = textRenderer()->splitAndGetHeight(description, width);
-      if(stats_->hasStat(hovered->statId())) {
-        bodyHeight += 12;
+  {
+    const gl::preset::ScreenTextOverlay titleCaps;
+    Screen::render(mouseX, mouseY, tickDelta);
+    if(hovered != nullptr) {
+      const std::string title = achievement::Achievements::getTranslatedTitle(*hovered);
+      const std::string description = achievement::Achievements::getFormattedDescription(
+          *hovered, static_cast<int>(minecraft()->options.inventoryKey.code));
+      int tooltipX = mouseX + 12;
+      int tooltipY = mouseY - 4;
+      if(stats_->hasParentAchievement(hovered->statId())) {
+        const int width = std::max(textRenderer()->getWidth(title), 120);
+        int bodyHeight = textRenderer()->splitAndGetHeight(description, width);
+        if(stats_->hasStat(hovered->statId())) {
+          bodyHeight += 12;
+        }
+        fillGradient(tooltipX - 3, tooltipY - 3, tooltipX + width + 3, tooltipY + bodyHeight + 15, 0xC0000000U,
+                     0xC0000000U);
+        textRenderer()->drawSplit(description, tooltipX, tooltipY + 12, width, 0xFFA09FA0);
+        if(stats_->hasStat(hovered->statId())) {
+          textRenderer()->drawWithShadow(resource::language::I18n::getTranslation("achievement.taken"), tooltipX,
+                                         tooltipY + bodyHeight + 4, 0xFF90F7DF);
+        }
+      } else {
+        const achievement::AchievementDef* parent = achievement::Achievements::getByStatId(hovered->parentStatId());
+        const std::string parentTitle =
+            parent != nullptr ? achievement::Achievements::getTranslatedTitle(*parent) : "";
+        const std::string requirementText =
+            resource::language::I18n::getTranslation("achievement.requires", parentTitle);
+        const int width = std::max(textRenderer()->getWidth(title), 120);
+        const int bodyHeight = textRenderer()->splitAndGetHeight(requirementText, width);
+        fillGradient(tooltipX - 3, tooltipY - 3, tooltipX + width + 3, tooltipY + bodyHeight + 15, 0xC0000000U,
+                     0xC0000000U);
+        textRenderer()->drawSplit(requirementText, tooltipX, tooltipY + 12, width, 0xFF6F6E90);
       }
-      fillGradient(tooltipX - 3, tooltipY - 3, tooltipX + width + 3, tooltipY + bodyHeight + 15, 0xC0000000U,
-                   0xC0000000U);
-      textRenderer()->drawSplit(description, tooltipX, tooltipY + 12, width, 0xFFA09FA0);
-      if(stats_->hasStat(hovered->statId())) {
-        textRenderer()->drawWithShadow(resource::language::I18n::getTranslation("achievement.taken"), tooltipX,
-                                       tooltipY + bodyHeight + 4, 0xFF90F7DF);
-      }
-    } else {
-      const achievement::AchievementDef* parent = achievement::Achievements::getByStatId(hovered->parentStatId());
-      const std::string parentTitle =
-          parent != nullptr ? achievement::Achievements::getTranslatedTitle(*parent) : "";
-      const std::string requirementText =
-          resource::language::I18n::getTranslation("achievement.requires", parentTitle);
-      const int width = std::max(textRenderer()->getWidth(title), 120);
-      const int bodyHeight = textRenderer()->splitAndGetHeight(requirementText, width);
-      fillGradient(tooltipX - 3, tooltipY - 3, tooltipX + width + 3, tooltipY + bodyHeight + 15, 0xC0000000U,
-                   0xC0000000U);
-      textRenderer()->drawSplit(requirementText, tooltipX, tooltipY + 12, width, 0xFF6F6E90);
+      const int titleColor = stats_->hasParentAchievement(hovered->statId())
+                                 ? (hovered->challenge ? 0xFFFFFF80 : 0xFFFFFFFF)
+                                 : (hovered->challenge ? 0xFF808080 : 0xFF808080);
+      textRenderer()->drawWithShadow(title, tooltipX, tooltipY, titleColor);
     }
-    const int titleColor = stats_->hasParentAchievement(hovered->statId())
-                               ? (hovered->challenge ? 0xFFFFFF80 : 0xFFFFFFFF)
-                               : (hovered->challenge ? 0xFF808080 : 0xFF808080);
-    textRenderer()->drawWithShadow(title, tooltipX, tooltipY, titleColor);
+    render::platform::Lighting::turnOff();
   }
-  gl::GL11::glEnable(gl::GL11::GL_DEPTH_TEST);
-  gl::GL11::glEnable(gl::GL11::GL_LIGHTING);
-  render::platform::Lighting::turnOff();
 }
 void AchievementsScreen::render(int mouseX, int mouseY, float tickDelta) {
   if(input::InputSystem::instance().isMouseButtonDown(0)) {
@@ -330,11 +317,8 @@ void AchievementsScreen::render(int mouseX, int mouseY, float tickDelta) {
   }
   renderBackground();
   renderIcons(mouseX, mouseY, tickDelta);
-  gl::GL11::glDisable(gl::GL11::GL_LIGHTING);
-  gl::GL11::glDisable(gl::GL11::GL_DEPTH_TEST);
+  const gl::preset::ScreenTextOverlay titleCaps;
   setTitle();
-  gl::GL11::glEnable(gl::GL11::GL_LIGHTING);
-  gl::GL11::glEnable(gl::GL11::GL_DEPTH_TEST);
 }
 void AchievementsScreen::keyPressed(char character, int keyCode) {
   (void)character;

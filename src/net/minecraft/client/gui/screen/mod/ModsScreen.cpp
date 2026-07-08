@@ -94,6 +94,7 @@ ModsScreen::ModsScreen(screen::ScreenFactory parentFactory) : parentFactory_(std
 ModsScreen::~ModsScreen() = default;
 void ModsScreen::init() {
   buttons_.clear();
+  toggleButton_ = nullptr;
   refreshMods();
   toggleButton_ = &addActionButton(layout::listFooterLeftX(width()), height() - 76, layout::kConfirmButtonWidth,
                                    layout::kDefaultButtonHeight, "", [this] { toggleSelected(); });

@@ -29,7 +29,7 @@ void applySessionTextures(net::minecraft::entity::player::PlayerEntity& player,
   }
   player.updateCapeUrl();
 }
-void refreshPlayerTextures(net::minecraft::client::Minecraft& client) {
+void refreshPlayerTextures(net::minecraft::client::Minecraft& client, bool slimArms) {
   if(client.player == nullptr) {
     return;
   }
@@ -37,6 +37,7 @@ void refreshPlayerTextures(net::minecraft::client::Minecraft& client) {
   const std::string previousSkinUrl = player.skinUrl;
   const std::string previousCapeUrl = player.capeUrl;
   applySessionTextures(player, client.session);
+  player.slimArms = slimArms;
   if(!previousSkinUrl.empty() && previousSkinUrl != player.skinUrl) {
     client.textureManager.releaseImage(previousSkinUrl);
   }

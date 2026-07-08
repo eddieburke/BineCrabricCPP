@@ -1,7 +1,7 @@
 #include "net/minecraft/client/render/MapRenderer.hpp"
 #include "net/minecraft/block/MapColor.hpp"
 #include "net/minecraft/client/font/TextRenderer.hpp"
-#include "net/minecraft/client/gl/GL11.hpp"
+#include "net/minecraft/client/gl/GlState.hpp"
 #include "net/minecraft/client/render/Tessellator.hpp"
 #include "net/minecraft/client/texture/TextureManager.hpp"
 #include "net/minecraft/entity/player/PlayerEntity.hpp"
@@ -82,11 +82,10 @@ void MapRenderer::render(net::minecraft::PlayerEntity& player,
   const int originX = 0;
   const int originY = 0;
   Tessellator& tessellator = Tessellator::INSTANCE;
-  const gl::AttribGuard attrib(gl::GL11::GL_ENABLE_BIT | gl::GL11::GL_CURRENT_BIT | gl::GL11::GL_TEXTURE_BIT);
+  const gl::preset::TexturedGuiNoAlphaTest guiCaps;
+  const gl::preset::BlockOverlay alphaCaps;
   const float inset = 0.0f;
-  gl::GL11::glBindTexture(gl::GL11::GL_TEXTURE_2D, texture_);
-  gl::GL11::glEnable(gl::GL11::GL_BLEND);
-  gl::GL11::glDisable(gl::GL11::GL_ALPHA_TEST);
+  gl::bindTexture(gl::cap::Texture2D, texture_);
   tessellator.startQuads();
   tessellator.vertex(static_cast<float>(originX) + inset, static_cast<float>(originY + 128) - inset, -0.01f, 0.0f,
                      1.0f);
@@ -96,12 +95,10 @@ void MapRenderer::render(net::minecraft::PlayerEntity& player,
                      0.0f);
   tessellator.vertex(static_cast<float>(originX) + inset, static_cast<float>(originY) + inset, -0.01f, 0.0f, 0.0f);
   tessellator.draw();
-  gl::GL11::glEnable(gl::GL11::GL_ALPHA_TEST);
-  gl::GL11::glDisable(gl::GL11::GL_BLEND);
   if(!mapState.icons.empty()) {
     textureManagerIn.bindTexture(textureManagerIn.getTextureId("misc/mapicons.png"));
     float baseModelView[16]{};
-    gl::GL11::glGetFloatv(gl::GL11::GL_MODELVIEW_MATRIX, baseModelView);
+    gl::getFloatv(gl::matrix_::ModelViewMatrix, baseModelView);
     tessellator.startQuads();
     for(const net::minecraft::map::MapState::MapIcon& mapIcon : mapState.icons) {
       net::minecraft::util::math::Matrix4f model;
@@ -126,10 +123,10 @@ void MapRenderer::render(net::minecraft::PlayerEntity& player,
     tessellator.draw();
   }
   if(textRenderer_ != nullptr) {
-    gl::GL11::glPushMatrix();
-    gl::GL11::glTranslatef(0.0f, 0.0f, -0.04f);
+    gl::pushMatrix();
+    gl::translatef(0.0f, 0.0f, -0.04f);
     textRenderer_->draw(mapState.id, originX, originY, static_cast<int>(0xFF000000u));
-    gl::GL11::glPopMatrix();
+    gl::popMatrix();
   }
 }
 } // namespace net::minecraft::client::render

@@ -37,8 +37,9 @@ public:
     }
     Screen::render(mouseX, mouseY, tickDelta);
   }
+  [[nodiscard]] std::string_view getScreenUiId() const override { return net::minecraft::mod::screen_ids::kDisconnected; }
 
-private:
+ private:
   std::string title_;
   std::string reason_;
 };

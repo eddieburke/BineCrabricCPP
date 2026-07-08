@@ -1,6 +1,7 @@
 #pragma once
 #include "net/minecraft/client/model/Quad.hpp"
 #include "net/minecraft/client/model/Vertex.hpp"
+#include <string>
 #include <vector>
 namespace net::minecraft::client::model {
 class ModelPart {
@@ -11,6 +12,7 @@ public:
   ModelPart(ModelPart&& other) noexcept = default;
   ModelPart& operator=(ModelPart&& other) noexcept = default;
   void addCuboid(float x, float y, float z, int width, int height, int depth, float dilation = 0.0f);
+  void clearCuboids();
   void setPivot(float x, float y, float z);
   void render(float scale);
   void renderForceTransform(float scale);
@@ -27,6 +29,8 @@ public:
   float pivotX = 0.0f;
   float pivotY = 0.0f;
   float pivotZ = 0.0f;
+  // Optional debug/override name; used by Lua entity_render part overrides.
+  std::string name;
 
 private:
   void renderFaces(float scale) const;

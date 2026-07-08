@@ -1,7 +1,7 @@
 #include "net/minecraft/client/gui/hud/toast/AchievementToast.hpp"
 #include "net/minecraft/achievement/Achievements.hpp"
 #include "net/minecraft/client/Minecraft.hpp"
-#include "net/minecraft/client/gl/GL11.hpp"
+#include "net/minecraft/client/gl/GlState.hpp"
 #include "net/minecraft/client/render/item/ItemRenderer.hpp"
 #include "net/minecraft/client/render/platform/Lighting.hpp"
 #include "net/minecraft/client/util/UiScale.hpp"
@@ -73,30 +73,23 @@ void AchievementToast::renderOverlay() {
   }
   slide *= slide;
   slide *= slide;
-  gl::GL11::glDisable(gl::GL11::GL_DEPTH_TEST);
-  gl::GL11::glDepthMask(false);
-  gl::GL11::glDisable(gl::GL11::GL_FOG);
+  const gl::preset::ToastDraw toastCaps;
   const int textureId = client_->textureManager.getTextureId("/achievement/bg.png");
   const achievement::AchievementDef* achievement = achievement::Achievements::getByStatId(achievementStatId_);
   const util::UiScale scale = util::uiScale(client_->options, client_->displayWidth, client_->displayHeight);
-  gl::GL11::glDisable(gl::GL11::GL_CULL_FACE);
-  gl::GL11::glColor4f(1.0f, 1.0f, 1.0f, 1.0f);
-  gl::GL11::glClear(gl::GL11::GL_DEPTH_BUFFER_BIT);
-  gl::GL11::glMatrixMode(gl::GL11::GL_PROJECTION);
-  gl::GL11::glLoadIdentity();
-  gl::GL11::glOrtho(0.0, scale.rawWidth, scale.rawHeight, 0.0, 1000.0, 3000.0);
-  gl::GL11::glMatrixMode(gl::GL11::GL_MODELVIEW);
-  gl::GL11::glLoadIdentity();
-  gl::GL11::glTranslatef(0.0f, 0.0f, -2000.0f);
+  gl::color4f(1.0f, 1.0f, 1.0f, 1.0f);
+  gl::clear(gl::attrib::DepthBufferBit);
+  gl::matrixMode(gl::matrix_::Projection);
+  gl::loadIdentity();
+  gl::ortho(0.0, scale.rawWidth, scale.rawHeight, 0.0, 1000.0, 3000.0);
+  gl::matrixMode(gl::matrix_::ModelView);
+  gl::loadIdentity();
+  gl::translatef(0.0f, 0.0f, -2000.0f);
   const int x = scale.scaledWidth - 160;
   const int y = 0 - static_cast<int>(slide * 36.0);
-  gl::GL11::glColor4f(1.0f, 1.0f, 1.0f, 1.0f);
-  gl::GL11::glEnable(gl::GL11::GL_TEXTURE_2D);
-  gl::GL11::glBindTexture(gl::GL11::GL_TEXTURE_2D, textureId);
-  gl::GL11::glDisable(gl::GL11::GL_LIGHTING);
+  gl::color4f(1.0f, 1.0f, 1.0f, 1.0f);
+  gl::bindTexture(gl::cap::Texture2D, textureId);
   drawTexture(x, y, 96, 202, 160, 32);
-  gl::GL11::glDisable(gl::GL11::GL_FOG);
-  gl::GL11::glEnable(gl::GL11::GL_TEXTURE_2D);
   if(tutorialMode_) {
     client_->textRenderer->drawSplit(description_, x + 30, y + 7, 120, 0xFFFFFFFF);
   } else {
@@ -105,21 +98,16 @@ void AchievementToast::renderOverlay() {
   }
   if(achievement != nullptr) {
     render::item::ItemRenderer itemRenderer;
-    gl::GL11::glPushMatrix();
-    gl::GL11::glRotatef(180.0f, 1.0f, 0.0f, 0.0f);
+    gl::MatrixGuard itemMatrix;
+    gl::rotatef(180.0f, 1.0f, 0.0f, 0.0f);
     render::platform::Lighting::turnOn();
-    gl::GL11::glPopMatrix();
-    gl::GL11::glDisable(gl::GL11::GL_LIGHTING);
-    gl::GL11::glEnable(gl::GL11::GL_RESCALE_NORMAL);
-    gl::GL11::glEnable(gl::GL11::GL_COLOR_MATERIAL);
-    gl::GL11::glEnable(gl::GL11::GL_LIGHTING);
-    itemRenderer.renderGuiItem(*client_->textRenderer, client_->textureManager,
-                               achievement::Achievements::iconStack(*achievement), x + 8, y + 8);
-    gl::GL11::glDisable(gl::GL11::GL_LIGHTING);
+    {
+      const gl::preset::ToastItemIcon itemCaps;
+      itemRenderer.renderGuiItem(*client_->textRenderer, client_->textureManager,
+                                 achievement::Achievements::iconStack(*achievement), x + 8, y + 8);
+    }
   }
-  gl::GL11::glDepthMask(true);
-  gl::GL11::glEnable(gl::GL11::GL_DEPTH_TEST);
-  gl::GL11::glColor4f(1.0f, 1.0f, 1.0f, 1.0f);
+  gl::color4f(1.0f, 1.0f, 1.0f, 1.0f);
 }
 void AchievementToast::tick() {
   renderOverlay();

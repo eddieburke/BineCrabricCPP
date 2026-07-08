@@ -1,8 +1,8 @@
 #include "net/minecraft/client/render/chunk/ChunkRegionBuffer.hpp"
 #include "net/minecraft/client/Minecraft.hpp"
-#include "net/minecraft/client/gl/GL11.hpp"
+#include "net/minecraft/client/gl/GlState.hpp"
 #include "net/minecraft/client/gl/GLCore.hpp"
-#include "net/minecraft/client/render/InterleavedVertexLayout.hpp"
+#include "net/minecraft/client/render/Tessellator.hpp"
 #include <algorithm>
 #include <cstddef>
 #include <cstdio>
@@ -132,22 +132,15 @@ int ChunkRegionBuffer::flush(int mode) {
   if(firsts_.empty() || handle_ == 0) {
     return 0;
   }
-  const InterleavedVertexLayout layout{
-      .position = attribOffset(offsetof(TessellatorVertex, x)),
-      .texCoord = attribOffset(offsetof(TessellatorVertex, u)),
-      .color = attribOffset(offsetof(TessellatorVertex, color)),
-      .normal = attribOffset(offsetof(TessellatorVertex, normal)),
-      .stride = kStride,
-      .hasTexture = hasTexture_,
-      .hasColor = hasColor_,
-      .hasNormals = hasNormals_,
-  };
   gl::GLCore::bindBuffer(kArrayBuffer, handle_);
-  bindGuiVertexLayout(layout);
+  const gl::ClientArrayBind arrays(attribOffset(offsetof(TessellatorVertex, x)),
+                                   attribOffset(offsetof(TessellatorVertex, u)),
+                                   attribOffset(offsetof(TessellatorVertex, color)),
+                                   attribOffset(offsetof(TessellatorVertex, normal)), kStride, hasTexture_, hasColor_,
+                                   hasNormals_);
   for(std::size_t i = 0; i < firsts_.size(); ++i) {
-    gl::GL11::glDrawArrays(mode, firsts_[i], counts_[i]);
+    gl::drawArrays(mode, firsts_[i], counts_[i]);
   }
-  unbindGuiVertexLayout();
   gl::GLCore::bindBuffer(kArrayBuffer, 0);
   return static_cast<int>(firsts_.size());
 }

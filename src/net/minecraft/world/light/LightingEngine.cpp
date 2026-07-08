@@ -248,7 +248,6 @@ void LightingEngine::runUpdate(const Box& update) {
     }
     return;
   }
-  bool changed = false;
   bool hasLeft = false;
   int leftMinX = 0;
   int leftMinY = 0;
@@ -307,84 +306,90 @@ void LightingEngine::runUpdate(const Box& update) {
     maxBoxY = std::max(maxBoxY, cellY);
     maxBoxZ = std::max(maxBoxZ, cellZ);
   };
-  int lastCx = 0;
-  int lastCz = 0;
-  bool lastLoaded = false;
-  for(int x = update.minX; x <= update.maxX; ++x) {
-    for(int z = update.minZ; z <= update.maxZ; ++z) {
-      bool loaded = false;
-      if(lastLoaded && (x >> 4) == lastCx && (z >> 4) == lastCz) {
-        loaded = true;
-      } else {
-        loaded = true;
-        for(int cx = (x - 1) >> 4; cx <= (x + 1) >> 4 && loaded; ++cx) {
-          for(int cz = (z - 1) >> 4; cz <= (z + 1) >> 4; ++cz) {
-            if(chunkAt(cx, cz) == nullptr) {
-              loaded = false;
-              break;
+  bool anyChanged = false;
+  bool changed = true;
+  while(changed) {
+    changed = false;
+    int lastCx = 0;
+    int lastCz = 0;
+    bool lastLoaded = false;
+    for(int x = update.minX; x <= update.maxX; ++x) {
+      for(int z = update.minZ; z <= update.maxZ; ++z) {
+        bool loaded = false;
+        if(lastLoaded && (x >> 4) == lastCx && (z >> 4) == lastCz) {
+          loaded = true;
+        } else {
+          loaded = true;
+          for(int cx = (x - 1) >> 4; cx <= (x + 1) >> 4 && loaded; ++cx) {
+            for(int cz = (z - 1) >> 4; cz <= (z + 1) >> 4; ++cz) {
+              if(chunkAt(cx, cz) == nullptr) {
+                loaded = false;
+                break;
+              }
             }
           }
+          lastCx = x >> 4;
+          lastCz = z >> 4;
+          lastLoaded = loaded;
         }
-        lastCx = x >> 4;
-        lastCz = z >> 4;
-        lastLoaded = loaded;
-      }
-      if(!loaded) {
-        continue;
-      }
-      for(int y = minY; y <= maxY; ++y) {
-        const int current = brightness(lightType, x, y, z);
-        const int block = blockId(x, y, z);
-        int opacity = Block::BLOCKS_LIGHT_OPACITY[static_cast<std::size_t>(block)];
-        if(opacity == 0) {
-          opacity = 1;
-        }
-        int emission = 0;
-        if(lightType == LightType::Sky) {
-          if(topY(x, y, z)) {
-            emission = 15;
-          }
-        } else {
-          emission = Block::BLOCKS_LIGHT_LUMINANCE[static_cast<std::size_t>(block)];
-        }
-        int newLight = 0;
-        if(opacity < 15 || emission != 0) {
-          int best = brightness(lightType, x - 1, y, z);
-          best = std::max(best, brightness(lightType, x + 1, y, z));
-          best = std::max(best, brightness(lightType, x, y - 1, z));
-          best = std::max(best, brightness(lightType, x, y + 1, z));
-          best = std::max(best, brightness(lightType, x, y, z - 1));
-          best = std::max(best, brightness(lightType, x, y, z + 1));
-          best = std::max(0, best - opacity);
-          newLight = std::max(best, emission);
-        }
-        if(current == newLight) {
+        if(!loaded) {
           continue;
         }
-        setBrightness(lightType, x, y, z, newLight);
-        changed = true;
-        if(x <= update.minX) {
-          includeCell(hasLeft, leftMinX, leftMinY, leftMinZ, leftMaxX, leftMaxY, leftMaxZ, x - 1, y, z);
-        }
-        if(y <= minY) {
-          includeCell(hasDown, downMinX, downMinY, downMinZ, downMaxX, downMaxY, downMaxZ, x, y - 1, z);
-        }
-        if(z <= update.minZ) {
-          includeCell(hasBack, backMinX, backMinY, backMinZ, backMaxX, backMaxY, backMaxZ, x, y, z - 1);
-        }
-        if(x + 1 >= update.maxX) {
-          includeCell(hasRight, rightMinX, rightMinY, rightMinZ, rightMaxX, rightMaxY, rightMaxZ, x + 1, y, z);
-        }
-        if(y + 1 >= maxY) {
-          includeCell(hasUp, upMinX, upMinY, upMinZ, upMaxX, upMaxY, upMaxZ, x, y + 1, z);
-        }
-        if(z + 1 >= update.maxZ) {
-          includeCell(hasFront, frontMinX, frontMinY, frontMinZ, frontMaxX, frontMaxY, frontMaxZ, x, y, z + 1);
+        for(int y = minY; y <= maxY; ++y) {
+          const int current = brightness(lightType, x, y, z);
+          const int block = blockId(x, y, z);
+          int opacity = Block::BLOCKS_LIGHT_OPACITY[static_cast<std::size_t>(block)];
+          if(opacity == 0) {
+            opacity = 1;
+          }
+          int emission = 0;
+          if(lightType == LightType::Sky) {
+            if(topY(x, y, z)) {
+              emission = 15;
+            }
+          } else {
+            emission = Block::BLOCKS_LIGHT_LUMINANCE[static_cast<std::size_t>(block)];
+          }
+          int newLight = 0;
+          if(opacity < 15 || emission != 0) {
+            int best = brightness(lightType, x - 1, y, z);
+            best = std::max(best, brightness(lightType, x + 1, y, z));
+            best = std::max(best, brightness(lightType, x, y - 1, z));
+            best = std::max(best, brightness(lightType, x, y + 1, z));
+            best = std::max(best, brightness(lightType, x, y, z - 1));
+            best = std::max(best, brightness(lightType, x, y, z + 1));
+            best = std::max(0, best - opacity);
+            newLight = std::max(best, emission);
+          }
+          if(current == newLight) {
+            continue;
+          }
+          setBrightness(lightType, x, y, z, newLight);
+          changed = true;
+          anyChanged = true;
+          if(x <= update.minX) {
+            includeCell(hasLeft, leftMinX, leftMinY, leftMinZ, leftMaxX, leftMaxY, leftMaxZ, x - 1, y, z);
+          }
+          if(y <= minY) {
+            includeCell(hasDown, downMinX, downMinY, downMinZ, downMaxX, downMaxY, downMaxZ, x, y - 1, z);
+          }
+          if(z <= update.minZ) {
+            includeCell(hasBack, backMinX, backMinY, backMinZ, backMaxX, backMaxY, backMaxZ, x, y, z - 1);
+          }
+          if(x + 1 >= update.maxX) {
+            includeCell(hasRight, rightMinX, rightMinY, rightMinZ, rightMaxX, rightMaxY, rightMaxZ, x + 1, y, z);
+          }
+          if(y + 1 >= maxY) {
+            includeCell(hasUp, upMinX, upMinY, upMinZ, upMaxX, upMaxY, upMaxZ, x, y + 1, z);
+          }
+          if(z + 1 >= update.maxZ) {
+            includeCell(hasFront, frontMinX, frontMinY, frontMinZ, frontMaxX, frontMaxY, frontMaxZ, x, y, z + 1);
+          }
         }
       }
     }
   }
-  if(!changed) {
+  if(!anyChanged) {
     return;
   }
   if(hasLeft) {

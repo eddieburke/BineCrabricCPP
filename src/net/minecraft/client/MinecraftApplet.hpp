@@ -9,7 +9,12 @@ public:
   [[nodiscard]] virtual bool isActive() const {
     return active_;
   }
-  [[nodiscard]] virtual std::string getParameter(const std::string& name) const;
+  [[nodiscard]] virtual std::string getParameter(const std::string& name) const {
+    if(name == "stand-alone") {
+      return "true";
+    }
+    return {};
+  }
   virtual void clearMemory() {}
   void setActive(bool active) {
     active_ = active;

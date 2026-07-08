@@ -2,7 +2,6 @@
 #include "net/minecraft/block/Block.hpp"
 #include "net/minecraft/client/option/ResolvedRenderOptions.hpp"
 #include "net/minecraft/client/render/Tessellator.hpp"
-#include "net/minecraft/client/render/block/BlockVertexEmitter.hpp"
 #include "net/minecraft/world/BlockView.hpp"
 #include <cmath>
 namespace net::minecraft::client::render::block {

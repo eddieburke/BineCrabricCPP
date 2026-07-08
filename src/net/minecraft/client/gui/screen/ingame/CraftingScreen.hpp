@@ -16,8 +16,9 @@ public:
 protected:
   void drawForeground() override;
   void drawBackground(float tickDelta) override;
+  [[nodiscard]] std::string_view getScreenUiId() const override { return net::minecraft::mod::screen_ids::kCrafting; }
 
-private:
+ private:
   std::unique_ptr<::net::minecraft::screen::CraftingScreenHandler> ownedHandler_;
 };
 } // namespace net::minecraft::client::gui::screen::ingame

@@ -1,7 +1,6 @@
 #include "net/minecraft/client/render/entity/EntityRenderers.hpp"
 #include "net/minecraft/client/entity/EntityClientRendererRegistration.hpp"
-#include "net/minecraft/client/gl/GL11.hpp"
-#include "net/minecraft/client/render/entity/EntityRendererCasts.hpp"
+#include "net/minecraft/client/gl/GlState.hpp"
 #include "net/minecraft/client/render/entity/model/SlimeEntityModel.hpp"
 #include "net/minecraft/entity/mob/SlimeEntity.hpp"
 namespace net::minecraft::entity::mob {
@@ -24,19 +23,18 @@ bool SlimeEntityRenderer::bindTexture(const net::minecraft::LivingEntity& entity
   (void)tickDelta;
   if(layer == 0) {
     setDecorationModel(innerModel_);
-    gl::GL11::glEnable(gl::GL11::GL_NORMALIZE);
-    gl::GL11::glEnable(gl::GL11::GL_BLEND);
-    gl::GL11::glBlendFunc(gl::GL11::GL_SRC_ALPHA, gl::GL11::GL_ONE_MINUS_SRC_ALPHA);
+    gl::setCap(gl::cap::Normalize, true);
+    gl::blendAlpha();
     return true;
   }
   if(layer == 1) {
-    gl::GL11::glDisable(gl::GL11::GL_BLEND);
-    gl::GL11::glColor4f(1.0f, 1.0f, 1.0f, 1.0f);
+    gl::setCap(gl::cap::Blend, false);
+    gl::color4f(1.0f, 1.0f, 1.0f, 1.0f);
   }
   return false;
 }
 void SlimeEntityRenderer::applyScale(const net::minecraft::LivingEntity& entity, float tickDelta) {
-  const auto* slime = dynamic_cast<const casts::SlimeEntity*>(&entity);
+  const auto* slime = dynamic_cast<const ::net::minecraft::entity::mob::SlimeEntity*>(&entity);
   if(slime == nullptr) {
     return;
   }
@@ -45,6 +43,6 @@ void SlimeEntityRenderer::applyScale(const net::minecraft::LivingEntity& entity,
                         (static_cast<float>(size) * 0.5f + 1.0f);
   const float invStretch = 1.0f / (stretch + 1.0f);
   const float sizeScale = static_cast<float>(size);
-  gl::GL11::glScalef(invStretch * sizeScale, (1.0f / invStretch) * sizeScale, invStretch * sizeScale);
+  gl::scalef(invStretch * sizeScale, (1.0f / invStretch) * sizeScale, invStretch * sizeScale);
 }
 } // namespace net::minecraft::client::render::entity

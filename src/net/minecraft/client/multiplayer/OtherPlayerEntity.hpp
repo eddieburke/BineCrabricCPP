@@ -66,12 +66,6 @@ public:
       setPosition(nextX, nextY, nextZ);
       setRotation(yaw, pitch);
     }
-    if(isSneaking() && cameraOffset < 0.2f) {
-      cameraOffset = 0.2f;
-    }
-    velocityX = x - prevX;
-    velocityY = y - prevY;
-    velocityZ = z - prevZ;
     prevStepBobbingAmount = stepBobbingAmount;
     float speed = MathHelper::sqrt(static_cast<float>(velocityX * velocityX + velocityZ * velocityZ));
     float bob = static_cast<float>(std::atan(-velocityY * 0.2) * 15.0);

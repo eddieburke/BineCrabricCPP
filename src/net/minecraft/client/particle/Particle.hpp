@@ -1,5 +1,6 @@
 #pragma once
 #include "net/minecraft/client/render/Tessellator.hpp"
+#include "net/minecraft/client/texture/TextureManager.hpp"
 #include "net/minecraft/entity/Entity.hpp"
 #include "net/minecraft/world/World.hpp"
 #include <algorithm>
@@ -87,6 +88,9 @@ public:
   }
   [[nodiscard]] virtual int getGroup() const {
     return 0;
+  }
+  [[nodiscard]] virtual int boundTextureGl(texture::TextureManager& /*textureManager*/) const {
+    return -1;
   }
   int textureId = 0;
   float prevU = 0.0f;

@@ -1,5 +1,5 @@
 #include "net/minecraft/client/render/culling/Frustum.hpp"
-#include "net/minecraft/client/gl/GL11.hpp"
+#include "net/minecraft/client/gl/GlState.hpp"
 #include "net/minecraft/util/math/MathHelper.hpp"
 namespace net::minecraft::client::render {
 Frustum& Frustum::getInstance() {
@@ -17,8 +17,8 @@ void Frustum::normalize(float plane[4]) {
   plane[3] /= length;
 }
 void Frustum::compute() {
-  gl::GL11::glGetFloatv(gl::GL11::GL_PROJECTION_MATRIX, projectionMatrix.data());
-  gl::GL11::glGetFloatv(gl::GL11::GL_MODELVIEW_MATRIX, modelMatrix.data());
+  gl::getFloatv(gl::matrix_::ProjectionMatrix, projectionMatrix.data());
+  gl::getFloatv(gl::matrix_::ModelViewMatrix, modelMatrix.data());
   clipMatrix[0] = modelMatrix[0] * projectionMatrix[0] + modelMatrix[1] * projectionMatrix[4] +
                   modelMatrix[2] * projectionMatrix[8] + modelMatrix[3] * projectionMatrix[12];
   clipMatrix[1] = modelMatrix[0] * projectionMatrix[1] + modelMatrix[1] * projectionMatrix[5] +

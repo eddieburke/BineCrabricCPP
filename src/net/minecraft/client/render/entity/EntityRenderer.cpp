@@ -2,7 +2,7 @@
 #include "net/minecraft/block/Block.hpp"
 #include "net/minecraft/client/Minecraft.hpp"
 #include "net/minecraft/client/font/TextRenderer.hpp"
-#include "net/minecraft/client/gl/GL11.hpp"
+#include "net/minecraft/client/gl/GlState.hpp"
 #include "net/minecraft/client/option/GameOptions.hpp"
 #include "net/minecraft/client/render/Tessellator.hpp"
 #include "net/minecraft/client/render/entity/EntityRenderDispatcher.hpp"
@@ -39,9 +39,9 @@ void EntityRenderer::bindTexture(std::string_view texturePath) {
     return;
   }
   const int textureId = dispatcher->textureManager()->getTextureId(std::string(texturePath));
-  gl::GL11::glActiveTexture(gl::GL11::GL_TEXTURE0);
-  gl::GL11::glEnable(gl::GL11::GL_TEXTURE_2D);
-  gl::GL11::glBindTexture(gl::GL11::GL_TEXTURE_2D, textureId);
+  gl::activeTexture(gl::tex::Texture0);
+  gl::setCap(gl::cap::Texture2D, true);
+  gl::bindTexture(gl::cap::Texture2D, textureId);
 }
 bool EntityRenderer::bindDownloadedTexture(std::string_view url, std::string_view backup) {
   if(dispatcher == nullptr || dispatcher->textureManager() == nullptr) {
@@ -62,7 +62,7 @@ bool EntityRenderer::bindDownloadedTexture(std::string_view url, std::string_vie
   if(textureId < 0) {
     return false;
   }
-  gl::GL11::glBindTexture(gl::GL11::GL_TEXTURE_2D, textureId);
+  gl::bindTexture(gl::cap::Texture2D, textureId);
   return true;
 }
 font::TextRenderer* EntityRenderer::getTextRenderer() const noexcept {
@@ -79,10 +79,10 @@ void EntityRenderer::renderOnFire(const net::minecraft::Entity& entity, double d
   float uMax = (static_cast<float>(u0) + 15.99f) / 256.0f;
   float vMin = static_cast<float>(v0) / 256.0f;
   float vMax = (static_cast<float>(v0) + 15.99f) / 256.0f;
-  gl::GL11::glPushMatrix();
-  gl::GL11::glTranslatef(static_cast<float>(dx), static_cast<float>(dy), static_cast<float>(dz));
+  gl::pushMatrix();
+  gl::translatef(static_cast<float>(dx), static_cast<float>(dy), static_cast<float>(dz));
   const float scale = entity.width * 1.4f;
-  gl::GL11::glScalef(scale, scale, scale);
+  gl::scalef(scale, scale, scale);
   bindTexture("/terrain.png");
   Tessellator& tessellator = Tessellator::INSTANCE;
   float radius = 0.5f;
@@ -90,10 +90,10 @@ void EntityRenderer::renderOnFire(const net::minecraft::Entity& entity, double d
   float remaining = entity.height / scale;
   const float yBase = static_cast<float>(entity.y - entity.boundingBox.minY);
   if(dispatcher != nullptr) {
-    gl::GL11::glRotatef(-dispatcher->yaw_, 0.0f, 1.0f, 0.0f);
+    gl::rotatef(-dispatcher->yaw_, 0.0f, 1.0f, 0.0f);
   }
-  gl::GL11::glTranslatef(0.0f, 0.0f, -0.3f + static_cast<float>(static_cast<int>(remaining)) * 0.02f);
-  gl::GL11::glColor4f(1.0f, 1.0f, 1.0f, 1.0f);
+  gl::translatef(0.0f, 0.0f, -0.3f + static_cast<float>(static_cast<int>(remaining)) * 0.02f);
+  gl::color4f(1.0f, 1.0f, 1.0f, 1.0f);
   float layerOffset = 0.0f;
   int layer = 0;
   tessellator.startQuads();
@@ -125,27 +125,24 @@ void EntityRenderer::renderOnFire(const net::minecraft::Entity& entity, double d
     ++layer;
   }
   tessellator.draw();
-  gl::GL11::glPopMatrix();
+  gl::popMatrix();
 }
 World* EntityRenderer::getWorld() const {
   return dispatcher != nullptr ? dispatcher->world() : nullptr;
 }
 void EntityRenderer::renderShadow(const net::minecraft::Entity& entity, double dx, double dy, double dz, float yaw,
                                   float tickDelta) {
-  gl::GL11::glEnable(gl::GL11::GL_BLEND);
-  gl::GL11::glBlendFunc(gl::GL11::GL_SRC_ALPHA, gl::GL11::GL_ONE_MINUS_SRC_ALPHA);
+  const gl::preset::EntityShadow shadowCaps;
   if(dispatcher != nullptr && dispatcher->textureManager() != nullptr) {
     const int shadowTex = dispatcher->textureManager()->getTextureId("%clamp%/misc/shadow.png");
-    gl::GL11::glActiveTexture(gl::GL11::GL_TEXTURE0);
-    gl::GL11::glEnable(gl::GL11::GL_TEXTURE_2D);
-    gl::GL11::glBindTexture(gl::GL11::GL_TEXTURE_2D, shadowTex);
+    gl::activeTexture(gl::tex::Texture0);
+    gl::bindTexture(gl::cap::Texture2D, shadowTex);
   }
   World* world = getWorld();
   if(world == nullptr) {
-    gl::GL11::glDisable(gl::GL11::GL_BLEND);
     return;
   }
-  gl::GL11::glDepthMask(false);
+  gl::depthMask(false);
   const float shadowSize = shadowRadius;
   const double ex = entity.lastTickX + (entity.x - entity.lastTickX) * static_cast<double>(tickDelta);
   const double ey = entity.lastTickY + (entity.y - entity.lastTickY) * static_cast<double>(tickDelta) +
@@ -179,9 +176,7 @@ void EntityRenderer::renderShadow(const net::minecraft::Entity& entity, double d
     }
   }
   tessellator.draw();
-  gl::GL11::glColor4f(1.0f, 1.0f, 1.0f, 1.0f);
-  gl::GL11::glDisable(gl::GL11::GL_BLEND);
-  gl::GL11::glDepthMask(true);
+  gl::color4f(1.0f, 1.0f, 1.0f, 1.0f);
 }
 void EntityRenderer::renderShadowOnBlock(net::minecraft::block::Block& block, double dx, double dy, double dz, int x,
                                          int y, int z, float yaw, float shadowSize, double cx, double cy, double cz) {
@@ -217,9 +212,9 @@ void EntityRenderer::renderShadowOnBlock(net::minecraft::block::Block& block, do
   tessellator.vertex(x2, yPlane, z1, u2, v1);
 }
 void EntityRenderer::renderShape(const Box& box, double x, double y, double z) {
-  gl::GL11::glDisable(gl::GL11::GL_TEXTURE_2D);
+  const gl::preset::OutlineTextureOff shapeCaps;
   Tessellator& tessellator = Tessellator::INSTANCE;
-  gl::GL11::glColor4f(1.0f, 1.0f, 1.0f, 1.0f);
+  gl::color4f(1.0f, 1.0f, 1.0f, 1.0f);
   tessellator.startQuads();
   tessellator.translate(x, y, z);
   tessellator.normal(0.0f, 0.0f, -1.0f);
@@ -254,7 +249,6 @@ void EntityRenderer::renderShape(const Box& box, double x, double y, double z) {
   tessellator.vertex(box.maxX, box.minY, box.maxZ);
   tessellator.translate(0.0, 0.0, 0.0);
   tessellator.draw();
-  gl::GL11::glEnable(gl::GL11::GL_TEXTURE_2D);
 }
 void EntityRenderer::renderShapeFlat(const Box& box) {
   Tessellator& tessellator = Tessellator::INSTANCE;

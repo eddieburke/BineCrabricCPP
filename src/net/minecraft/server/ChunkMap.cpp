@@ -13,7 +13,6 @@
 #include "net/minecraft/world/chunk/ChunkSource.hpp"
 #include <algorithm>
 #include <climits>
-#include <iostream>
 #include <memory>
 #include <stdexcept>
 namespace net::minecraft::server {
@@ -80,7 +79,8 @@ public:
     if(pendingIt != player->pendingChunkUpdates.end()) {
       player->pendingChunkUpdates.erase(pendingIt);
     }
-    if(player->activeChunks.contains(chunkPos_) && player->networkHandler != nullptr) {
+    const bool wasActive = player->activeChunks.erase(chunkPos_) > 0;
+    if(wasActive && player->networkHandler != nullptr) {
       ChunkStatusUpdateS2CPacket packet;
       packet.x = chunkX_;
       packet.z = chunkZ_;
@@ -92,23 +92,25 @@ public:
     if(dirtyBlockCount_ == 0) {
       owner_->chunksToUpdate_.push_back(shared_from_this());
       minX_ = minY_ = x;
-      minZ_ = maxX_ = y;
-      maxY_ = maxZ_ = z;
+      minZ_ = z;
+      maxX_ = x;
+      maxY_ = y;
+      maxZ_ = z;
     }
     if(minX_ > x) {
       minX_ = x;
     }
-    if(minY_ < x) {
-      minY_ = x;
+    if(maxX_ < x) {
+      maxX_ = x;
     }
-    if(minZ_ > y) {
-      minZ_ = y;
+    if(minY_ > y) {
+      minY_ = y;
     }
-    if(maxX_ < y) {
-      maxX_ = y;
+    if(maxY_ < y) {
+      maxY_ = y;
     }
-    if(maxY_ > z) {
-      maxY_ = z;
+    if(minZ_ > z) {
+      minZ_ = z;
     }
     if(maxZ_ < z) {
       maxZ_ = z;
@@ -155,14 +157,14 @@ public:
         sendBlockEntityUpdate(serverWorld->getBlockEntity(blockX, blockY, blockZ));
       }
     } else if(dirtyBlockCount_ == 10) {
-      minZ_ = minZ_ / 2 * 2;
-      maxX_ = (maxX_ / 2 + 1) * 2;
+      minY_ = minY_ / 2 * 2;
+      maxY_ = (maxY_ / 2 + 1) * 2;
       const int blockX = minX_ + chunkX_ * 16;
-      const int blockY = minZ_;
-      const int blockZ = maxY_ + chunkZ_ * 16;
-      const int sizeX = minY_ - minX_ + 1;
-      const int sizeY = maxX_ - minZ_ + 2;
-      const int sizeZ = maxZ_ - maxY_ + 1;
+      const int blockY = minY_;
+      const int blockZ = minZ_ + chunkZ_ * 16;
+      const int sizeX = maxX_ - minX_ + 1;
+      const int sizeY = maxY_ - minY_ + 2;
+      const int sizeZ = maxZ_ - minZ_ + 1;
       ChunkDataS2CPacket packet;
       packet.x = blockX;
       packet.y = blockY;
@@ -171,6 +173,7 @@ public:
       packet.sizeY = sizeY;
       packet.sizeZ = sizeZ;
       packet.chunkData = serverWorld->getChunkData(blockX, blockY, blockZ, sizeX, sizeY, sizeZ);
+      packet.compressForSend();
       sendPacketToPlayers(packet);
       const std::vector<BlockEntity*> blockEntities =
           serverWorld->getBlockEntities(blockX, blockY, blockZ, blockX + sizeX, blockY + sizeY, blockZ + sizeZ);
@@ -206,7 +209,6 @@ public:
         if(!Block::BLOCKS_WITH_ENTITY[static_cast<std::size_t>(serverWorld->getBlockId(blockX, blockY, blockZ))]) {
           continue;
         }
-        std::cout << "Sending!" << std::endl;
         sendBlockEntityUpdate(serverWorld->getBlockEntity(blockX, blockY, blockZ));
       }
     }

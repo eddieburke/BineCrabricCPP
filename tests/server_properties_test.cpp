@@ -1,8 +1,7 @@
-#include "support/server_test_macros.hpp"
 #include "net/minecraft/server/ServerProperties.hpp"
 #include <filesystem>
 #include <fstream>
-#include <iostream>
+#include <gtest/gtest.h>
 #include <string>
 namespace {
 std::filesystem::path makeTempPropertiesPath(const std::string& name) {
@@ -10,7 +9,9 @@ std::filesystem::path makeTempPropertiesPath(const std::string& name) {
   std::filesystem::create_directories(directory);
   return directory / name;
 }
-void testLoadsExistingProperties() {
+} // namespace
+namespace net::minecraft::test {
+TEST(ServerProperties, LoadsExistingProperties) {
   const std::filesystem::path path = makeTempPropertiesPath("existing.properties");
   {
     std::ofstream output(path);
@@ -21,14 +22,14 @@ void testLoadsExistingProperties() {
   EXPECT_EQ(properties.getProperty("server-port", 25565), 25566);
   EXPECT_EQ(properties.getProperty("max-players", 20), 8);
 }
-void testCreatesMissingProperties() {
+TEST(ServerProperties, CreatesMissingProperties) {
   const std::filesystem::path path = makeTempPropertiesPath("missing.properties");
   std::filesystem::remove(path);
   net::minecraft::server::ServerProperties properties(path);
   EXPECT_TRUE(std::filesystem::exists(path));
   EXPECT_EQ(properties.getProperty("server-port", 25565), 25565);
 }
-void testBooleanPropertyRoundTrip() {
+TEST(ServerProperties, BooleanPropertyRoundTrip) {
   const std::filesystem::path path = makeTempPropertiesPath("boolean.properties");
   std::filesystem::remove(path);
   net::minecraft::server::ServerProperties properties(path);
@@ -39,7 +40,7 @@ void testBooleanPropertyRoundTrip() {
   net::minecraft::server::ServerProperties reloadedFalse(path);
   EXPECT_FALSE(reloadedFalse.getProperty("white-list", true));
 }
-void testInvalidIntegerFallsBack() {
+TEST(ServerProperties, InvalidIntegerFallsBack) {
   const std::filesystem::path path = makeTempPropertiesPath("invalid_int.properties");
   {
     std::ofstream output(path);
@@ -48,16 +49,4 @@ void testInvalidIntegerFallsBack() {
   net::minecraft::server::ServerProperties properties(path);
   EXPECT_EQ(properties.getProperty("view-distance", 10), 10);
 }
-} // namespace
-int main() {
-  RUN_SERVER_TEST(testLoadsExistingProperties);
-  RUN_SERVER_TEST(testCreatesMissingProperties);
-  RUN_SERVER_TEST(testBooleanPropertyRoundTrip);
-  RUN_SERVER_TEST(testInvalidIntegerFallsBack);
-  if(server_test::failureCount() != 0) {
-    std::cout << server_test::failureCount() << " test(s) failed\n";
-    return 1;
-  }
-  std::cout << "All server properties tests passed\n";
-  return 0;
-}
+} // namespace net::minecraft::test

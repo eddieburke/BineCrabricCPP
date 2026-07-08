@@ -22,6 +22,7 @@
 #include "net/minecraft/mod/GameHooks.hpp"
 #include "net/minecraft/mod/HookBus.hpp"
 #include "net/minecraft/mod/runtime/WorldRequiredMods.hpp"
+#include "net/minecraft/world/storage/RegionWorldStorage.hpp"
 #include "net/minecraft/world/storage/AlphaWorldStorage.hpp"
 #include "net/minecraft/world/storage/WorldStorage.hpp"
 #include "net/minecraft/util/math/MathHelper.hpp"
@@ -304,9 +305,14 @@ void World::save(bool blocking) {
         asyncSaveFuture_.wait();
       }
       try {
-        dimensionData_->save(properties_, players);
-      } catch(const std::exception& e) {
-        std::cerr << "World save failed: " << e.what() << '\n';
+        if(auto* regionStorage = dynamic_cast<RegionWorldStorage*>(dimensionData_)) {
+          regionStorage->saveUnload(properties_, players);
+        } else if(auto* alphaStorage = dynamic_cast<AlphaWorldStorage*>(dimensionData_)) {
+          alphaStorage->saveUnload(properties_, players);
+        } else {
+          dimensionData_->save(properties_, players);
+        }
+      } catch(const std::exception&) {
       }
     } else if(!asyncSaveFuture_.valid() ||
               asyncSaveFuture_.wait_for(std::chrono::seconds(0)) == std::future_status::ready) {
@@ -319,8 +325,7 @@ void World::save(bool blocking) {
                                      playersSnapshot = std::move(playersSnapshot)]() mutable {
                                       try {
                                         dimensionData_->save(snapshot, playersSnapshot);
-                                      } catch(const std::exception& e) {
-                                        std::cerr << "Async world save failed: " << e.what() << '\n';
+                                      } catch(const std::exception&) {
                                       }
                                     });
     }
@@ -590,9 +595,10 @@ void World::setTime(std::uint64_t value) noexcept {
   }
 }
 void World::synchronizeTimeAndUpdates(std::uint64_t time) noexcept {
-  const long long delta = static_cast<long long>(time) - static_cast<long long>(getTime());
-  scheduledTicks_.shiftScheduledTimes(delta);
+  const std::uint64_t previousTime = getTime();
   setTime(time);
+  const long long delta = static_cast<long long>(getTime()) - static_cast<long long>(previousTime);
+  scheduledTicks_.shiftScheduledTimes(delta);
 }
 void World::updateWeatherCycles() {
   mod::WeatherCycleEvent event{this, false, false};
@@ -672,6 +678,11 @@ void World::queueLightUpdate(LightType type, int minX, int minY, int minZ, int m
   queueLightUpdate(type, minX, minY, minZ, maxX, maxY, maxZ, true);
 }
 void World::queueLightUpdate(LightType type, int minX, int minY, int minZ, int maxX, int maxY, int maxZ, bool merge) {
+  // Multiplayer chunks ship block/sky light from the server; client relighting
+  // would overwrite authoritative server values with client-computed ones.
+  if(isRemote_) {
+    return;
+  }
   if(dimension != nullptr && dimension->hasCeiling && type == LightType::Sky) {
     return;
   }
@@ -687,6 +698,11 @@ void World::queueLightUpdate(LightType type, int minX, int minY, int minZ, int m
   lighting_.push(type, minX, minY, minZ, maxX, maxY, maxZ, merge);
 }
 bool World::doLightingUpdates(std::size_t maxDirtyRegions) {
+  if(isRemote_) {
+    // Server sends all lighting data; drain but don't forward (no client-side relighting).
+    (void)lighting_.drainDirtyRegions(maxDirtyRegions);
+    return false;
+  }
   for(const LightingEngine::DirtyRegion& region : lighting_.drainDirtyRegions(maxDirtyRegions)) {
     events_.setBlocksDirty(region.minX, region.minY, region.minZ, region.maxX, region.maxY, region.maxZ);
   }

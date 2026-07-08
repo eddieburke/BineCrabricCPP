@@ -52,7 +52,6 @@ void ConnectScreen::tick() {
                                                                 std::vector<std::string>{connectError}));
     return;
   }
-  connector_.tickBridge(*minecraft());
 }
 void ConnectScreen::render(int mouseX, int mouseY, float delta) {
   renderBackground();

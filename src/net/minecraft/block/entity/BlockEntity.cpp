@@ -12,7 +12,6 @@
 #include "net/minecraft/registry/ContentRegistries.hpp"
 #include "net/minecraft/world/World.hpp"
 #include "net/minecraft/world/events/GameEventListener.hpp"
-#include <iostream>
 namespace net::minecraft::block::entity {
 void BlockEntity::readNbt(const NbtCompound& nbt) {
   x = nbt.getInt("x");
@@ -53,7 +52,6 @@ std::unique_ptr<BlockEntity> BlockEntity::createFromNbt(const NbtCompound& nbt) 
   const std::string typeId = nbt.getString("id");
   std::unique_ptr<BlockEntity> blockEntity = registry::BlockEntityRegistry::instance().create(typeId);
   if(blockEntity == nullptr) {
-    std::cout << "Skipping TileEntity with id " << typeId << '\n';
     return nullptr;
   }
   blockEntity->readNbt(nbt);

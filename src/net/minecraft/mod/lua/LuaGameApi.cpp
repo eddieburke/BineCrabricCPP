@@ -10,6 +10,7 @@
 #include "net/minecraft/world/World.hpp"
 #endif
 #include "net/minecraft/mod/lua/LuaBlockModel.hpp"
+#include "net/minecraft/mod/lua/LuaBlockRegistry.hpp"
 #include <cmath>
 #include <cctype>
 #include <cstring>

@@ -1,5 +1,5 @@
 #include "net/minecraft/client/render/entity/EntityRenderers.hpp"
-#include "net/minecraft/client/gl/GL11.hpp"
+#include "net/minecraft/client/gl/GlState.hpp"
 #include "net/minecraft/client/render/Tessellator.hpp"
 #include "net/minecraft/client/render/entity/EntityRenderDispatcher.hpp"
 #include "net/minecraft/client/render/platform/Lighting.hpp"
@@ -16,9 +16,9 @@ void FishingBobberEntityRenderer::render(const net::minecraft::Entity& entity, d
   if(bobber == nullptr) {
     return;
   }
-  gl::GL11::glPushMatrix();
-  gl::GL11::glTranslatef(static_cast<float>(x), static_cast<float>(y), static_cast<float>(z));
-  gl::GL11::glScalef(0.5f, 0.5f, 0.5f);
+  gl::pushMatrix();
+  gl::translatef(static_cast<float>(x), static_cast<float>(y), static_cast<float>(z));
+  gl::scalef(0.5f, 0.5f, 0.5f);
   constexpr int atlasCol = 1;
   constexpr int atlasRow = 2;
   bindTexture("/particles.png");
@@ -31,8 +31,8 @@ void FishingBobberEntityRenderer::render(const net::minecraft::Entity& entity, d
   constexpr float halfWidth = 0.5f;
   constexpr float halfHeight = 0.5f;
   if(dispatcher != nullptr) {
-    gl::GL11::glRotatef(180.0f - dispatcher->yaw_, 0.0f, 1.0f, 0.0f);
-    gl::GL11::glRotatef(-dispatcher->pitch_, 1.0f, 0.0f, 0.0f);
+    gl::rotatef(180.0f - dispatcher->yaw_, 0.0f, 1.0f, 0.0f);
+    gl::rotatef(-dispatcher->pitch_, 1.0f, 0.0f, 0.0f);
   }
   tessellator.startQuads();
   tessellator.normal(0.0f, 1.0f, 0.0f);
@@ -41,7 +41,7 @@ void FishingBobberEntityRenderer::render(const net::minecraft::Entity& entity, d
   tessellator.vertex(quadWidth - halfWidth, quadWidth - halfHeight, 0.0, uMax, vMin);
   tessellator.vertex(0.0f - halfWidth, quadWidth - halfHeight, 0.0, uMin, vMin);
   tessellator.draw();
-  gl::GL11::glPopMatrix();
+  gl::popMatrix();
   if(bobber->owner == nullptr || dispatcher == nullptr) {
     return;
   }
@@ -51,7 +51,7 @@ void FishingBobberEntityRenderer::render(const net::minecraft::Entity& entity, d
   double cosYaw = MathHelper::cos(ownerYaw);
   const float swing = owner.getHandSwingProgress(tickDelta);
   const float swingBob = MathHelper::sin(MathHelper::sqrt(swing) * kPiF);
-  util::math::ClientVec3d vec{-0.5, 0.03, 0.8};
+  net::minecraft::util::math::ClientVec3d vec{-0.5, 0.03, 0.8};
   vec.rotateX(-(owner.prevPitch + (owner.pitch - owner.prevPitch) * tickDelta) * kPiF / 180.0f);
   vec.rotateY(-(owner.prevYaw + (owner.yaw - owner.prevYaw) * tickDelta) * kPiF / 180.0f);
   vec.rotateY(swingBob * 0.5f);
@@ -75,8 +75,8 @@ void FishingBobberEntityRenderer::render(const net::minecraft::Entity& entity, d
   const double deltaX = static_cast<float>(rodTipX - bobberX);
   const double deltaY = static_cast<float>(rodTipY - bobberY);
   const double deltaZ = static_cast<float>(rodTipZ - bobberZ);
-  const gl::DisableGuard texture(gl::GL11::GL_TEXTURE_2D);
-  const platform::LightingOffGuard lighting;
+  const gl::preset::FishingLine lineCaps;
+  render::platform::Lighting::turnOff();
   tessellator.start(3); // GL_LINE_STRIP
   tessellator.color(0);
   constexpr int segments = 16;
@@ -87,6 +87,7 @@ void FishingBobberEntityRenderer::render(const net::minecraft::Entity& entity, d
                        z + deltaZ * static_cast<double>(t));
   }
   tessellator.draw();
+  render::platform::Lighting::turnOn();
 }
 } // namespace net::minecraft::client::render::entity
 #include "net/minecraft/client/entity/EntityClientRendererRegistration.hpp"

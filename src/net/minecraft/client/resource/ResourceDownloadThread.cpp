@@ -3,7 +3,6 @@
 #include <cstdint>
 #include <fstream>
 #include <functional>
-#include <iostream>
 #include <stdexcept>
 #include <string>
 #include <vector>
@@ -114,9 +113,8 @@ void ResourceDownloadThread::run() {
         return;
       }
     }
-  } catch(const std::exception& exception) {
+  } catch(const std::exception&) {
     loadFromDirectory(resourcesDirectory, "");
-    std::cerr << exception.what() << std::endl;
   }
 }
 void ResourceDownloadThread::loadFromDirectory(const std::filesystem::path& directory, const std::string& type) {
@@ -138,7 +136,6 @@ void ResourceDownloadThread::loadFromDirectory(const std::filesystem::path& dire
     try {
       minecraft_->loadResource(resourcePath, entry.path());
     } catch(const std::exception&) {
-      std::cout << "Failed to add " << resourcePath << '\n';
     }
   }
 }
@@ -161,7 +158,6 @@ void ResourceDownloadThread::loadFromUrl(const std::string& path, long long size
       std::filesystem::create_directories(file.parent_path());
       const std::string url = kResourceBaseUrl + encodeUrlPath(path);
       if(!downloadFile(url, file)) {
-        std::cerr << "ResourceDownloadThread: failed to download " << path << '\n';
         return;
       }
       if(cancelled_.load()) {
@@ -169,8 +165,7 @@ void ResourceDownloadThread::loadFromUrl(const std::string& path, long long size
       }
     }
     minecraft_->loadResource(path, file);
-  } catch(const std::exception& exception) {
-    std::cerr << exception.what() << std::endl;
+  } catch(const std::exception&) {
   }
 }
 } // namespace net::minecraft::client::resource

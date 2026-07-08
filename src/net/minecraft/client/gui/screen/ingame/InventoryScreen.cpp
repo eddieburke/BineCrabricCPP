@@ -3,7 +3,7 @@
 #include "net/minecraft/achievement/Achievements.hpp"
 #include "net/minecraft/client/Minecraft.hpp"
 #include "net/minecraft/client/gui/layout/ContainerLayout.hpp"
-#include "net/minecraft/client/gl/GL11.hpp"
+#include "net/minecraft/client/gl/GlState.hpp"
 #include "net/minecraft/client/input/InputSystem.hpp"
 #include "net/minecraft/client/render/entity/EntityRenderDispatcher.hpp"
 #include "net/minecraft/client/render/platform/Lighting.hpp"
@@ -35,12 +35,9 @@ void InventoryScreen::publishSidePanelEvent(mod::ScreenRegionEvent& event) const
   event.width = available > 0 ? available : 0;
   event.height = backgroundHeight;
   if(event.phase == mod::ScreenRegionPhase::Render) {
-    // Render hooks run raw GL; isolate them so a mod can't leak GUI state.
-    gl::GL11::glMatrixMode(gl::GL11::GL_MODELVIEW);
-    const gl::MatrixGuard matrix;
-    const gl::AttribGuard state(gl::GL11::GL_ENABLE_BIT | gl::GL11::GL_LIGHTING_BIT | gl::GL11::GL_CURRENT_BIT |
-                                gl::GL11::GL_TEXTURE_BIT | gl::GL11::GL_COLOR_BUFFER_BIT |
-                                gl::GL11::GL_DEPTH_BUFFER_BIT | gl::GL11::GL_TRANSFORM_BIT);
+    const gl::preset::ScreenFogOff fogCaps;
+    gl::color4f(1.0f, 1.0f, 1.0f, 1.0f);
+    render::platform::Lighting::turnOff();
     mod::hooks().publish(event);
     return;
   }
@@ -123,29 +120,27 @@ void InventoryScreen::drawBackground(float tickDelta) {
   if(minecraft()->player == nullptr) {
     return;
   }
-  gl::GL11::glEnable(gl::GL11::GL_COLOR_MATERIAL);
-  gl::GL11::glEnable(gl::GL11::GL_DEPTH_TEST);
-  gl::GL11::glDepthMask(true);
-  gl::GL11::glPushMatrix();
-  gl::GL11::glTranslatef(static_cast<float>(originX + 51), static_cast<float>(originY + 75), 50.0f);
+  const gl::preset::PlayerPreview previewCaps;
+  gl::MatrixGuard previewMatrix;
+  gl::translatef(static_cast<float>(originX + 51), static_cast<float>(originY + 75), 50.0f);
   constexpr float scale = 30.0f;
-  gl::GL11::glScalef(-scale, scale, scale);
-  gl::GL11::glRotatef(180.0f, 0.0f, 0.0f, 1.0f);
+  gl::scalef(-scale, scale, scale);
+  gl::rotatef(180.0f, 0.0f, 0.0f, 1.0f);
   entity::player::ClientPlayerEntity& player = *minecraft()->player;
   const float savedBodyYaw = player.bodyYaw;
   const float savedYaw = player.yaw;
   const float savedPitch = player.pitch;
   const float deltaX = static_cast<float>(originX + 51) - mouseX_;
   const float deltaY = static_cast<float>(originY + 75 - 50) - mouseY_;
-  gl::GL11::glRotatef(135.0f, 0.0f, 1.0f, 0.0f);
+  gl::rotatef(135.0f, 0.0f, 1.0f, 0.0f);
   render::platform::Lighting::turnOn();
-  gl::GL11::glRotatef(-135.0f, 0.0f, 1.0f, 0.0f);
-  gl::GL11::glRotatef(-static_cast<float>(std::atan(static_cast<double>(deltaY) / 40.0)) * 20.0f, 1.0f, 0.0f, 0.0f);
+  gl::rotatef(-135.0f, 0.0f, 1.0f, 0.0f);
+  gl::rotatef(-static_cast<float>(std::atan(static_cast<double>(deltaY) / 40.0)) * 20.0f, 1.0f, 0.0f, 0.0f);
   player.bodyYaw = static_cast<float>(std::atan(static_cast<double>(deltaX) / 40.0)) * 20.0f;
   player.yaw = static_cast<float>(std::atan(static_cast<double>(deltaX) / 40.0)) * 40.0f;
   player.pitch = -static_cast<float>(std::atan(static_cast<double>(deltaY) / 40.0)) * 20.0f;
   player.minBrightness = 1.0f;
-  gl::GL11::glTranslatef(0.0f, player.standingEyeHeight, 0.0f);
+  gl::translatef(0.0f, player.standingEyeHeight, 0.0f);
   auto& dispatcher = render::entity::EntityRenderDispatcher::instance();
   dispatcher.init(minecraft()->world, &minecraft()->textureManager, minecraft()->textRenderer.get(), &player,
                   &minecraft()->options, tickDelta);
@@ -155,7 +150,6 @@ void InventoryScreen::drawBackground(float tickDelta) {
   player.bodyYaw = savedBodyYaw;
   player.yaw = savedYaw;
   player.pitch = savedPitch;
-  gl::GL11::glPopMatrix();
   render::platform::Lighting::turnOff();
 }
 } // namespace net::minecraft::client::gui::screen::ingame

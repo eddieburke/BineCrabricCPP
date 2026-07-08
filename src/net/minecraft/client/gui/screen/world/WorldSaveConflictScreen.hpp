@@ -27,8 +27,9 @@ public:
     }
     screen::Screen::render(mouseX, mouseY, delta);
   }
+  [[nodiscard]] std::string_view getScreenUiId() const override { return net::minecraft::mod::screen_ids::kWorldSaveConflict; }
 
-private:
+ private:
   int ticksRan_ = 0;
 };
 } // namespace net::minecraft::client::gui::screen::world

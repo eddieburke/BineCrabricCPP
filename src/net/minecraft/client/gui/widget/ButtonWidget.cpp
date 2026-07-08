@@ -1,7 +1,7 @@
 #include "net/minecraft/client/gui/widget/ButtonWidget.hpp"
 #include "net/minecraft/client/Minecraft.hpp"
 #include "net/minecraft/client/font/TextRenderer.hpp"
-#include "net/minecraft/client/gl/GL11.hpp"
+#include "net/minecraft/client/gl/GlState.hpp"
 #include "net/minecraft/client/gui/DrawContext.hpp"
 #include "net/minecraft/client/texture/TextureManager.hpp"
 namespace net::minecraft::client::gui::widget {
@@ -22,8 +22,7 @@ void ButtonWidget::render(client::Minecraft& minecraft, font::TextRenderer& text
     return;
   }
   const int textureId = minecraft.textureManager.getTextureId("/gui/gui.png");
-  gl::GL11::glBindTexture(gl::GL11::GL_TEXTURE_2D, textureId);
-  gl::GL11::glColor4f(1.0f, 1.0f, 1.0f, 1.0f);
+  gl::pass::bindAtlas2D(textureId);
   // Inline bounds check for hover rendering only; isMouseOver() is reserved for
   // click handling (SliderWidget overrides it to begin dragging on mouse down).
   const bool hovered = mouseX >= x && mouseY >= y && mouseX < x + width && mouseY < y + height;

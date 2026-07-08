@@ -1,6 +1,6 @@
 #include "net/minecraft/client/render/atmosphere/CloudRenderer.hpp"
 #include "net/minecraft/client/render/atmosphere/AtmosphereContext.hpp"
-#include "net/minecraft/client/gl/GL11.hpp"
+#include "net/minecraft/client/gl/GlState.hpp"
 #include "net/minecraft/client/option/GameOptions.hpp"
 #include "net/minecraft/client/option/ResolvedRenderOptions.hpp"
 #include "net/minecraft/client/texture/TextureManager.hpp"
@@ -22,7 +22,6 @@ void CloudRenderer::renderFancyClouds(const AtmosphereContext& ctx, float tickDe
   if(ctx.camera == nullptr) {
     return;
   }
-  gl::GL11::glDisable(gl::GL11::GL_CULL_FACE);
   const float cameraY = static_cast<float>(ctx.camera->lastTickY +
                                            (ctx.camera->y - ctx.camera->lastTickY) * static_cast<double>(tickDelta));
   Tessellator& tessellator = INSTANCE;
@@ -40,9 +39,9 @@ void CloudRenderer::renderFancyClouds(const AtmosphereContext& ctx, float tickDe
   const int originZ = MathHelper::floor(cloudZ / 2048.0);
   cloudX -= static_cast<double>(originX * 2048);
   cloudZ -= static_cast<double>(originZ * 2048);
-  gl::GL11::glBindTexture(gl::GL11::GL_TEXTURE_2D, ctx.textureManager->getTextureId("/environment/clouds.png"));
-  gl::GL11::glEnable(gl::GL11::GL_BLEND);
-  gl::GL11::glBlendFunc(gl::GL11::GL_SRC_ALPHA, gl::GL11::GL_ONE_MINUS_SRC_ALPHA);
+  gl::bindTexture(gl::cap::Texture2D, ctx.textureManager->getTextureId("/environment/clouds.png"));
+  gl::setCap(gl::cap::Blend, true);
+  gl::blendFunc(gl::blend::SrcAlpha, gl::blend::OneMinusSrcAlpha);
   Vec3d cloudColor = cloudColorForWorld(ctx.world, tickDelta);
   float red = static_cast<float>(cloudColor.x);
   float green = static_cast<float>(cloudColor.y);
@@ -55,13 +54,13 @@ void CloudRenderer::renderFancyClouds(const AtmosphereContext& ctx, float tickDe
   constexpr float edgeInset = 9.765625E-4f;
   constexpr int tileSize = 8;
   constexpr int tileRadius = 3;
-  gl::GL11::glPushMatrix();
-  gl::GL11::glScalef(cloudScale, 1.0f, cloudScale);
+  gl::pushMatrix();
+  gl::scalef(cloudScale, 1.0f, cloudScale);
   for(int pass = 0; pass < 2; ++pass) {
     if(pass == 0) {
-      gl::GL11::glColorMask(false, false, false, false);
+      gl::colorMask(false, false, false, false);
     } else {
-      gl::GL11::glColorMask(true, true, true, true);
+      gl::colorMask(true, true, true, true);
     }
     for(int tileX = -tileRadius + 1; tileX <= tileRadius; ++tileX) {
       for(int tileZ = -tileRadius + 1; tileZ <= tileRadius; ++tileZ) {
@@ -186,10 +185,8 @@ void CloudRenderer::renderFancyClouds(const AtmosphereContext& ctx, float tickDe
       }
     }
   }
-  gl::GL11::glPopMatrix();
-  gl::GL11::glColor4f(1.0f, 1.0f, 1.0f, 1.0f);
-  gl::GL11::glDisable(gl::GL11::GL_BLEND);
-  gl::GL11::glEnable(gl::GL11::GL_CULL_FACE);
+  gl::popMatrix();
+  gl::color4f(1.0f, 1.0f, 1.0f, 1.0f);
 }
 void CloudRenderer::renderClouds(const AtmosphereContext& ctx, float tickDelta) {
   if(!client::option::resolve(ctx.options).renderClouds) {
@@ -199,28 +196,19 @@ void CloudRenderer::renderClouds(const AtmosphereContext& ctx, float tickDelta) 
      ctx.camera == nullptr || ctx.world->dimension->isNether) {
     return;
   }
-  const gl::AttribGuard state(gl::GL11::GL_ENABLE_BIT | gl::GL11::GL_COLOR_BUFFER_BIT |
-                              gl::GL11::GL_DEPTH_BUFFER_BIT | gl::GL11::GL_TEXTURE_BIT |
-                              gl::GL11::GL_CURRENT_BIT);
-  gl::GL11::glEnable(gl::GL11::GL_DEPTH_TEST);
-  gl::GL11::glDepthFunc(gl::GL11::GL_LEQUAL);
-  gl::GL11::glDepthMask(true);
-  gl::GL11::glEnable(gl::GL11::GL_TEXTURE_2D);
-  gl::GL11::glColorMask(true, true, true, true);
-  gl::GL11::glColor4f(1.0f, 1.0f, 1.0f, 1.0f);
+  const gl::preset::CloudDraw cloudCaps;
   const bool fancyClouds = client::option::resolve(ctx.options).fancyClouds;
   if(fancyClouds) {
     renderFancyClouds(ctx, tickDelta);
   } else {
-    gl::GL11::glDisable(gl::GL11::GL_CULL_FACE);
     const float cameraY = static_cast<float>(ctx.camera->lastTickY +
                                              (ctx.camera->y - ctx.camera->lastTickY) * static_cast<double>(tickDelta));
     constexpr int tile = 32;
     constexpr int radius = 256 / tile;
     Tessellator& tessellator = INSTANCE;
-    gl::GL11::glBindTexture(gl::GL11::GL_TEXTURE_2D, ctx.textureManager->getTextureId("/environment/clouds.png"));
-    gl::GL11::glEnable(gl::GL11::GL_BLEND);
-    gl::GL11::glBlendFunc(gl::GL11::GL_SRC_ALPHA, gl::GL11::GL_ONE_MINUS_SRC_ALPHA);
+    gl::bindTexture(gl::cap::Texture2D, ctx.textureManager->getTextureId("/environment/clouds.png"));
+    gl::setCap(gl::cap::Blend, true);
+    gl::blendFunc(gl::blend::SrcAlpha, gl::blend::OneMinusSrcAlpha);
     Vec3d cloudColor = cloudColorForWorld(ctx.world, tickDelta);
     float red = static_cast<float>(cloudColor.x);
     float green = static_cast<float>(cloudColor.y);
@@ -253,8 +241,8 @@ void CloudRenderer::renderClouds(const AtmosphereContext& ctx, float tickDelta) 
     }
     tessellator.draw();
   }
-  gl::GL11::glColor4f(1.0f, 1.0f, 1.0f, 1.0f);
-  gl::GL11::glDisable(gl::GL11::GL_BLEND);
-  gl::GL11::glEnable(gl::GL11::GL_CULL_FACE);
+  gl::color4f(1.0f, 1.0f, 1.0f, 1.0f);
+  gl::setCap(gl::cap::Blend, false);
+  gl::setCap(gl::cap::CullFace, true);
 }
 } // namespace net::minecraft::client::render::atmosphere

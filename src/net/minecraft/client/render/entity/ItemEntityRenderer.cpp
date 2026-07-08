@@ -1,6 +1,6 @@
 #include "net/minecraft/client/render/entity/EntityRenderers.hpp"
 #include "net/minecraft/block/Block.hpp"
-#include "net/minecraft/client/gl/GL11.hpp"
+#include "net/minecraft/client/gl/GlState.hpp"
 #include "net/minecraft/client/render/Tessellator.hpp"
 #include "net/minecraft/client/render/block/BlockRenderManager.hpp"
 #include "net/minecraft/client/render/entity/EntityRenderDispatcher.hpp"
@@ -9,6 +9,7 @@
 #include "net/minecraft/item/Item.hpp"
 #include "net/minecraft/item/ItemStack.hpp"
 #include "net/minecraft/mod/ModTexture.hpp"
+#include "net/minecraft/mod/runtime/LuaRenderBindings.hpp"
 #include "net/minecraft/util/math/MathHelper.hpp"
 namespace net::minecraft::client::render::entity {
 ItemEntityRenderer::ItemEntityRenderer() {
@@ -16,7 +17,10 @@ ItemEntityRenderer::ItemEntityRenderer() {
   shadowDarkness = 0.75f;
 }
 void ItemEntityRenderer::render(const net::minecraft::Entity& entity, double x, double y, double z, float /*yaw*/,
-                                float tickDelta) {
+                                 float tickDelta) {
+  if(net::minecraft::mod::runtime::itemModelRenderOverrideActive()) {
+    return;
+  }
   const auto* itemEntity = dynamic_cast<const net::minecraft::ItemEntity*>(&entity);
   if(itemEntity == nullptr || itemEntity->stack.empty()) {
     return;
@@ -40,15 +44,15 @@ void ItemEntityRenderer::render(const net::minecraft::Entity& entity, double x, 
   if(stack.count > 20) {
     duplicateCount = 4;
   }
-  gl::GL11::glTranslatef(static_cast<float>(x), static_cast<float>(y) + bob, static_cast<float>(z));
+  gl::translatef(static_cast<float>(x), static_cast<float>(y) + bob, static_cast<float>(z));
   if(item::ItemModelRenderer::rendersAsBlockModel(stack)) {
-    gl::GL11::glRotatef(spin, 0.0f, 1.0f, 0.0f);
+    gl::rotatef(spin, 0.0f, 1.0f, 0.0f);
     net::minecraft::block::Block* block = item::ItemModelRenderer::blockOf(stack);
     if(block != nullptr && net::minecraft::mod::isMod(block->textureId) && dispatcher != nullptr &&
        dispatcher->textureManager() != nullptr) {
       const int glId = net::minecraft::mod::glId(*dispatcher->textureManager(), block->textureId);
       if(glId >= 0) {
-        gl::GL11::glBindTexture(gl::GL11::GL_TEXTURE_2D, glId);
+        gl::bindTexture(gl::cap::Texture2D, glId);
       }
     } else {
       bindTexture("/terrain.png");
@@ -57,22 +61,22 @@ void ItemEntityRenderer::render(const net::minecraft::Entity& entity, double x, 
     if(block != nullptr && !block->isFullCube() && stack.itemId != 44 && block->getRenderType() != 16) {
       scale = 0.5f;
     }
-    gl::GL11::glScalef(scale, scale, scale);
+    gl::scalef(scale, scale, scale);
     for(int i = 0; i < duplicateCount; ++i) {
-      gl::GL11::glPushMatrix();
+      gl::pushMatrix();
       if(i > 0) {
         const float offsetX = (random_.nextFloat() * 2.0f - 1.0f) * 0.2f / scale;
         const float offsetY = (random_.nextFloat() * 2.0f - 1.0f) * 0.2f / scale;
         const float offsetZ = (random_.nextFloat() * 2.0f - 1.0f) * 0.2f / scale;
-        gl::GL11::glTranslatef(offsetX, offsetY, offsetZ);
+        gl::translatef(offsetX, offsetY, offsetZ);
       }
       if(block != nullptr) {
         blockRenderManager_.render(*block, stack.getDamage(), entity.getBrightnessAtEyes(tickDelta));
       }
-      gl::GL11::glPopMatrix();
+      gl::popMatrix();
     }
   } else {
-    gl::GL11::glScalef(0.5f, 0.5f, 0.5f);
+    gl::scalef(0.5f, 0.5f, 0.5f);
     const int textureId = stack.getTextureId();
     if(stack.itemId < Block::BLOCK_COUNT && Block::BLOCKS[static_cast<std::size_t>(stack.itemId)] != nullptr) {
       bindTexture("/terrain.png");
@@ -90,20 +94,20 @@ void ItemEntityRenderer::render(const net::minecraft::Entity& entity, double x, 
     const float brightness = entity.getBrightnessAtEyes(tickDelta);
     if(useCustomDisplayColor_ && stack.getItem() != nullptr) {
       const item::ItemTint tint = item::ItemModelRenderer::tintColor(stack);
-      gl::GL11::glColor4f(tint.red * brightness, tint.green * brightness, tint.blue * brightness, 1.0f);
+      gl::color4f(tint.red * brightness, tint.green * brightness, tint.blue * brightness, 1.0f);
     } else {
-      gl::GL11::glColor4f(brightness, brightness, brightness, 1.0f);
+      gl::color4f(brightness, brightness, brightness, 1.0f);
     }
     for(int i = 0; i < duplicateCount; ++i) {
-      gl::GL11::glPushMatrix();
+      gl::pushMatrix();
       if(i > 0) {
         const float offsetX = (random_.nextFloat() * 2.0f - 1.0f) * 0.3f;
         const float offsetY = (random_.nextFloat() * 2.0f - 1.0f) * 0.3f;
         const float offsetZ = (random_.nextFloat() * 2.0f - 1.0f) * 0.3f;
-        gl::GL11::glTranslatef(offsetX, offsetY, offsetZ);
+        gl::translatef(offsetX, offsetY, offsetZ);
       }
       if(dispatcher != nullptr) {
-        gl::GL11::glRotatef(180.0f - dispatcher->yaw_, 0.0f, 1.0f, 0.0f);
+        gl::rotatef(180.0f - dispatcher->yaw_, 0.0f, 1.0f, 0.0f);
       }
       tessellator.startQuads();
       tessellator.normal(0.0f, 1.0f, 0.0f);
@@ -112,10 +116,10 @@ void ItemEntityRenderer::render(const net::minecraft::Entity& entity, double x, 
       tessellator.vertex(width - halfWidth, 1.0f - quarterHeight, 0.0, uMax, vMin);
       tessellator.vertex(0.0f - halfWidth, 1.0f - quarterHeight, 0.0, uMin, vMin);
       tessellator.draw();
-      gl::GL11::glPopMatrix();
+      gl::popMatrix();
     }
   }
-  gl::GL11::glColor4f(1.0f, 1.0f, 1.0f, 1.0f);
+  gl::color4f(1.0f, 1.0f, 1.0f, 1.0f);
 }
 } // namespace net::minecraft::client::render::entity
 #include "net/minecraft/client/entity/EntityClientRendererRegistration.hpp"

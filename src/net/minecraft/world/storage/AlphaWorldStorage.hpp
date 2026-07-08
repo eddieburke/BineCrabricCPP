@@ -1,5 +1,6 @@
 #pragma once
 #include "net/minecraft/nbt/Nbt.hpp"
+#include "net/minecraft/nbt/NbtFileIo.hpp"
 #include "net/minecraft/server/world/PlayerSaveHandler.hpp"
 #include "net/minecraft/world/WorldProperties.hpp"
 #include "net/minecraft/world/chunk/storage/AlphaChunkStorage.hpp"
@@ -33,6 +34,7 @@ public:
   [[nodiscard]] std::optional<WorldProperties> loadProperties() override;
   void save(const WorldProperties& properties, const std::vector<entity::player::PlayerEntity*>& players) override;
   void save(const WorldProperties& properties) override;
+  void saveUnload(const WorldProperties& properties, const std::vector<entity::player::PlayerEntity*>& players);
   void savePlayerData(entity::player::PlayerEntity& player) override;
   void loadPlayerData(entity::player::PlayerEntity& player) override;
   void refreshSessionLock() override;
@@ -45,7 +47,8 @@ public:
 
 protected:
   void writeSessionLock();
-  void writeLevelDat(const WorldProperties& properties, const std::vector<entity::player::PlayerEntity*>& players);
+  void writeLevelDat(const WorldProperties& properties, const std::vector<entity::player::PlayerEntity*>& players,
+                     AtomicWriteOptions options = {});
   [[nodiscard]] static std::optional<WorldProperties> loadPropertiesFrom(const fs::path& file);
   fs::path dir_;
   fs::path playerDataDir_;

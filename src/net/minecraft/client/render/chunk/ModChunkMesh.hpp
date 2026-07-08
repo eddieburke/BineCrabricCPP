@@ -20,7 +20,7 @@ struct ModMeshCollector {
   double chunkOffZ = 0.0;
   ModMeshCollector() { entries.reserve(kMaxModTextures); }
   Tessellator& tessFor(int textureId, Tessellator& terrain) {
-    if(!mod::isMod(textureId)) {
+    if(!net::minecraft::mod::isMod(textureId)) {
       return terrain;
     }
     for(Entry& e : entries) {

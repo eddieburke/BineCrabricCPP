@@ -2,7 +2,7 @@
 #include "net/minecraft/block/Block.hpp"
 #include "net/minecraft/block/material/Material.hpp"
 #include "net/minecraft/client/Minecraft.hpp"
-#include "net/minecraft/client/gl/GL11.hpp"
+#include "net/minecraft/client/gl/GlState.hpp"
 #include "net/minecraft/client/gui/Draw2D.hpp"
 #include "net/minecraft/client/option/GameOptions.hpp"
 #include "net/minecraft/client/render/GameRenderer.hpp"
@@ -128,15 +128,15 @@ void InGameHud::renderHotbarItem(int slot, int x, int y, float tickDelta) {
   static render::item::ItemRenderer itemRenderer;
   const float bobTime = static_cast<float>(stack.bobbingAnimationTime) - tickDelta;
   if(bobTime > 0.0f) {
-    gl::GL11::glPushMatrix();
+    gl::pushMatrix();
     const float scale = 1.0f + bobTime / 5.0f;
-    gl::GL11::glTranslatef(static_cast<float>(x + 8), static_cast<float>(y + 12), 0.0f);
-    gl::GL11::glScalef(1.0f / scale, (scale + 1.0f) / 2.0f, 1.0f);
-    gl::GL11::glTranslatef(static_cast<float>(-(x + 8)), static_cast<float>(-(y + 12)), 0.0f);
+    gl::translatef(static_cast<float>(x + 8), static_cast<float>(y + 12), 0.0f);
+    gl::scalef(1.0f / scale, (scale + 1.0f) / 2.0f, 1.0f);
+    gl::translatef(static_cast<float>(-(x + 8)), static_cast<float>(-(y + 12)), 0.0f);
   }
   itemRenderer.renderGuiItem(*minecraft->textRenderer, minecraft->textureManager, stack, x, y);
   if(bobTime > 0.0f) {
-    gl::GL11::glPopMatrix();
+    gl::popMatrix();
   }
   itemRenderer.renderGuiItemDecoration(*minecraft->textRenderer, minecraft->textureManager, stack, x, y);
 }
@@ -145,34 +145,19 @@ void InGameHud::renderVignette(float brightness, int width, int height) {
   darkness = std::clamp(darkness, 0.0f, 1.0f);
   vignetteDarkness = static_cast<float>(static_cast<double>(vignetteDarkness) +
                                         static_cast<double>(darkness - vignetteDarkness) * 0.01);
-  gl::GL11::glDisable(gl::GL11::GL_DEPTH_TEST);
-  gl::GL11::glDepthMask(false);
-  gl::GL11::glEnable(gl::GL11::GL_BLEND);
-  gl::GL11::glDisable(gl::GL11::GL_ALPHA_TEST);
-  gl::GL11::glBlendFunc(gl::GL11::GL_ZERO, gl::GL11::GL_ONE_MINUS_SRC_COLOR);
-  gl::GL11::glColor4f(vignetteDarkness, vignetteDarkness, vignetteDarkness, 1.0f);
-  gl::GL11::glBindTexture(gl::GL11::GL_TEXTURE_2D,
-                          minecraft->textureManager.getTextureId("%blur%/misc/vignette.png"));
+  const gl::preset::HudVignette overlayCaps;
+  gl::color4f(vignetteDarkness, vignetteDarkness, vignetteDarkness, 1.0f);
+  gl::bindTexture(gl::cap::Texture2D,
+                  minecraft->textureManager.getTextureId("%blur%/misc/vignette.png"));
   drawFullscreenTexturedQuad(render::Tessellator::INSTANCE, width, height, -90.0f);
-  gl::GL11::glBlendFunc(gl::GL11::GL_SRC_ALPHA, gl::GL11::GL_ONE_MINUS_SRC_ALPHA);
-  gl::GL11::glDepthMask(true);
-  gl::GL11::glEnable(gl::GL11::GL_DEPTH_TEST);
-  gl::GL11::glEnable(gl::GL11::GL_ALPHA_TEST);
-  gl::GL11::glColor4f(1.0f, 1.0f, 1.0f, 1.0f);
+  gl::color4f(1.0f, 1.0f, 1.0f, 1.0f);
 }
 void InGameHud::renderPumpkinOverlay(int width, int height) {
-  gl::GL11::glDisable(gl::GL11::GL_DEPTH_TEST);
-  gl::GL11::glDepthMask(false);
-  gl::GL11::glEnable(gl::GL11::GL_BLEND);
-  gl::GL11::glBlendFunc(gl::GL11::GL_SRC_ALPHA, gl::GL11::GL_ONE_MINUS_SRC_ALPHA);
-  gl::GL11::glDisable(gl::GL11::GL_ALPHA_TEST);
-  gl::GL11::glBindTexture(gl::GL11::GL_TEXTURE_2D,
-                          minecraft->textureManager.getTextureId("%blur%/misc/pumpkinblur.png"));
+  const gl::preset::HudOverlay overlayCaps;
+  gl::bindTexture(gl::cap::Texture2D,
+                  minecraft->textureManager.getTextureId("%blur%/misc/pumpkinblur.png"));
   drawFullscreenTexturedQuad(render::Tessellator::INSTANCE, width, height, -90.0f);
-  gl::GL11::glDepthMask(true);
-  gl::GL11::glEnable(gl::GL11::GL_DEPTH_TEST);
-  gl::GL11::glEnable(gl::GL11::GL_ALPHA_TEST);
-  gl::GL11::glColor4f(1.0f, 1.0f, 1.0f, 1.0f);
+  gl::color4f(1.0f, 1.0f, 1.0f, 1.0f);
 }
 void InGameHud::renderPortalOverlay(float strength, int width, int height) {
   float alpha = strength;
@@ -184,13 +169,9 @@ void InGameHud::renderPortalOverlay(float strength, int width, int height) {
   if(Block::NETHER_PORTAL == nullptr) {
     return;
   }
-  gl::GL11::glDisable(gl::GL11::GL_DEPTH_TEST);
-  gl::GL11::glDepthMask(false);
-  gl::GL11::glEnable(gl::GL11::GL_BLEND);
-  gl::GL11::glBlendFunc(gl::GL11::GL_SRC_ALPHA, gl::GL11::GL_ONE_MINUS_SRC_ALPHA);
-  gl::GL11::glDisable(gl::GL11::GL_ALPHA_TEST);
-  gl::GL11::glColor4f(1.0f, 1.0f, 1.0f, alpha);
-  gl::GL11::glBindTexture(gl::GL11::GL_TEXTURE_2D, minecraft->textureManager.getTextureId("/terrain.png"));
+  const gl::preset::HudOverlay overlayCaps;
+  gl::color4f(1.0f, 1.0f, 1.0f, alpha);
+  gl::bindTexture(gl::cap::Texture2D, minecraft->textureManager.getTextureId("/terrain.png"));
   const int textureIndex = Block::NETHER_PORTAL->textureId;
   const float uMin = static_cast<float>(textureIndex % 16) / 16.0f;
   const float vMin = static_cast<float>(textureIndex / 16) / 16.0f;
@@ -198,18 +179,14 @@ void InGameHud::renderPortalOverlay(float strength, int width, int height) {
   const float vMax = static_cast<float>(textureIndex / 16 + 1) / 16.0f;
   render::Tessellator& tessellator = render::Tessellator::INSTANCE;
   draw::texturedQuad(tessellator, 0, 0, width, height, uMin, vMin, uMax, vMax, -90.0f);
-  gl::GL11::glDepthMask(true);
-  gl::GL11::glEnable(gl::GL11::GL_DEPTH_TEST);
-  gl::GL11::glEnable(gl::GL11::GL_ALPHA_TEST);
-  gl::GL11::glColor4f(1.0f, 1.0f, 1.0f, 1.0f);
+  gl::color4f(1.0f, 1.0f, 1.0f, 1.0f);
 }
 void InGameHud::renderDebugHud(font::TextRenderer& textRenderer, int /*scaledWidth*/,
                                const entity::player::PlayerEntity& player) {
-  gl::GL11::glDisable(gl::GL11::GL_FOG);
-  gl::GL11::glEnable(gl::GL11::GL_TEXTURE_2D);
-  gl::GL11::glPushMatrix();
+  const gl::preset::DebugHud debugCaps;
+  gl::MatrixGuard debugMatrix;
   if(Minecraft::failedSessionCheckTime().load(std::memory_order_relaxed) > 0) {
-    gl::GL11::glTranslatef(0.0f, 32.0f, 0.0f);
+    gl::translatef(0.0f, 32.0f, 0.0f);
   }
   drawTextWithShadow(textRenderer, "Minecraft Beta 1.7.3 (" + minecraft->debugText + ")", 2, 2, kColorWhite);
   drawTextWithShadow(textRenderer, minecraft->getRenderChunkDebugInfo(), 2, 12, kColorWhite);
@@ -221,8 +198,7 @@ void InGameHud::renderDebugHud(font::TextRenderer& textRenderer, int /*scaledWid
   drawTextWithShadow(textRenderer, "z: " + std::to_string(player.z), 2, 80, kColorLightGray);
   const int facing = (MathHelper::floor(static_cast<double>(player.yaw * 4.0f / 360.0f) + 0.5) & 3);
   drawTextWithShadow(textRenderer, "f: " + std::to_string(facing), 2, 88, kColorLightGray);
-  gl::GL11::glPopMatrix();
-  gl::GL11::glColor4f(1.0f, 1.0f, 1.0f, 1.0f);
+  gl::color4f(1.0f, 1.0f, 1.0f, 1.0f);
 }
 void InGameHud::renderRecordOverlay(font::TextRenderer& textRenderer, float tickDelta, int scaledWidth,
                                     int scaledHeight) {
@@ -234,19 +210,14 @@ void InGameHud::renderRecordOverlay(font::TextRenderer& textRenderer, float tick
   if(alpha <= 0) {
     return;
   }
-  gl::GL11::glPushMatrix();
-  gl::GL11::glTranslatef(static_cast<float>(scaledWidth) / 2.0f, static_cast<float>(scaledHeight - 48), 0.0f);
-  gl::GL11::glEnable(gl::GL11::GL_BLEND);
-  gl::GL11::glBlendFunc(gl::GL11::GL_SRC_ALPHA, gl::GL11::GL_ONE_MINUS_SRC_ALPHA);
-  gl::GL11::glDisable(gl::GL11::GL_ALPHA_TEST);
+  gl::MatrixGuard recordMatrix;
+  gl::translatef(static_cast<float>(scaledWidth) / 2.0f, static_cast<float>(scaledHeight - 48), 0.0f);
+  const gl::preset::HudFadeText fadeCaps;
   int color = kColorWhite;
   if(overlayTinted) {
     color = hsbToRgb(remaining / 50.0f, 0.7f, 0.6f);
   }
   textRenderer.draw(overlayMessage, -textRenderer.getWidth(overlayMessage) / 2, -4, color + (alpha << 24));
-  gl::GL11::glEnable(gl::GL11::GL_ALPHA_TEST);
-  gl::GL11::glDisable(gl::GL11::GL_BLEND);
-  gl::GL11::glPopMatrix();
 }
 void InGameHud::renderChat(font::TextRenderer& textRenderer, bool chatOpen, int scaledWidth, int scaledHeight) {
   (void)scaledWidth;
@@ -254,11 +225,10 @@ void InGameHud::renderChat(font::TextRenderer& textRenderer, bool chatOpen, int 
   if(chatOpen) {
     maxLines = 20;
   }
-  gl::GL11::glEnable(gl::GL11::GL_BLEND);
-  gl::GL11::glBlendFunc(gl::GL11::GL_SRC_ALPHA, gl::GL11::GL_ONE_MINUS_SRC_ALPHA);
-  gl::GL11::glDisable(gl::GL11::GL_ALPHA_TEST);
-  gl::GL11::glPushMatrix();
-  gl::GL11::glTranslatef(0.0f, static_cast<float>(scaledHeight - 48), 0.0f);
+  const gl::preset::HudFadeText chatCaps;
+  const gl::CapScope chatTextureCaps{gl::cap::Texture2D};
+  gl::MatrixGuard chatMatrix;
+  gl::translatef(0.0f, static_cast<float>(scaledHeight - 48), 0.0f);
   struct VisibleLine {
     int y = 0;
     int alpha = 0;
@@ -286,20 +256,18 @@ void InGameHud::renderChat(font::TextRenderer& textRenderer, bool chatOpen, int 
   }
   if(!visible.empty()) {
     render::Tessellator& tessellator = render::Tessellator::INSTANCE;
-    gl::GL11::glDisable(gl::GL11::GL_TEXTURE_2D);
+    const gl::preset::HudChatBackground chatBg;
     tessellator.startQuads();
     for(const VisibleLine& line : visible) {
       draw::appendColoredQuad(tessellator, 2, line.y - 1, 322, line.y + 8, 0, line.alpha / 2, zOffset);
     }
     tessellator.draw();
-    gl::GL11::glEnable(gl::GL11::GL_TEXTURE_2D);
   }
   for(const VisibleLine& line : visible) {
     drawTextWithShadow(textRenderer, messages[line.index].text, 2, line.y, kColorWhite + (line.alpha << 24));
   }
-  gl::GL11::glPopMatrix();
-  gl::GL11::glEnable(gl::GL11::GL_ALPHA_TEST);
-  gl::GL11::glDisable(gl::GL11::GL_BLEND);
+  gl::setCap(gl::cap::AlphaTest, true);
+  gl::setCap(gl::cap::Blend, false);
 }
 void InGameHud::render(float tickDelta, bool screenOpen, int mouseX, int mouseY) {
   (void)mouseX;
@@ -319,8 +287,7 @@ void InGameHud::render(float tickDelta, bool screenOpen, int mouseX, int mouseY)
   if(minecraft->gameRenderer != nullptr) {
     minecraft->gameRenderer->setupHudRender();
   }
-  gl::GL11::glEnable(gl::GL11::GL_BLEND);
-  gl::GL11::glBlendFunc(gl::GL11::GL_SRC_ALPHA, gl::GL11::GL_ONE_MINUS_SRC_ALPHA);
+  const gl::preset::HudPass hudPass;
   if(Minecraft::isFancyGraphicsEnabled()) {
     renderVignette(player.getBrightnessAtEyes(tickDelta), scaledWidth, scaledHeight);
   }
@@ -334,8 +301,8 @@ void InGameHud::render(float tickDelta, bool screenOpen, int mouseX, int mouseY)
   if(portalStrength > 0.0f) {
     renderPortalOverlay(portalStrength, scaledWidth, scaledHeight);
   }
-  gl::GL11::glColor4f(1.0f, 1.0f, 1.0f, 1.0f);
-  gl::GL11::glBindTexture(gl::GL11::GL_TEXTURE_2D, minecraft->textureManager.getTextureId("/gui/gui.png"));
+  gl::color4f(1.0f, 1.0f, 1.0f, 1.0f);
+  gl::bindTexture(gl::cap::Texture2D, minecraft->textureManager.getTextureId("/gui/gui.png"));
   zOffset = -90.0f;
   const std::array<draw::AtlasRect, 2> hotbarSprites{
       draw::AtlasRect{scaledWidth / 2 - 91, scaledHeight - 22, 0, 0, 182, 22},
@@ -343,11 +310,11 @@ void InGameHud::render(float tickDelta, bool screenOpen, int mouseX, int mouseY)
                       22},
   };
   drawTextures(hotbarSprites);
-  gl::GL11::glBindTexture(gl::GL11::GL_TEXTURE_2D, minecraft->textureManager.getTextureId("/gui/icons.png"));
-  gl::GL11::glEnable(gl::GL11::GL_BLEND);
-  gl::GL11::glBlendFunc(gl::GL11::GL_ONE_MINUS_DST_COLOR, gl::GL11::GL_ONE_MINUS_SRC_COLOR);
-  drawTexture(scaledWidth / 2 - 7, scaledHeight / 2 - 7, 0, 0, 16, 16);
-  gl::GL11::glDisable(gl::GL11::GL_BLEND);
+  gl::bindTexture(gl::cap::Texture2D, minecraft->textureManager.getTextureId("/gui/icons.png"));
+  {
+    const gl::preset::HudCrosshairBlend crosshairCaps;
+    drawTexture(scaledWidth / 2 - 7, scaledHeight / 2 - 7, 0, 0, 16, 16);
+  }
   bool blinkHearts = player.hearts / 3 % 2 == 1;
   if(player.hearts < 10) {
     blinkHearts = false;
@@ -406,7 +373,6 @@ void InGameHud::render(float tickDelta, bool screenOpen, int mouseX, int mouseY)
     }
     drawTextures(statusSprites);
   }
-  gl::GL11::glDisable(gl::GL11::GL_BLEND);
   render::platform::Lighting::turnOn();
   for(int slot = 0; slot < 9; ++slot) {
     const int x = scaledWidth / 2 - 90 + slot * 20 + 2;
@@ -415,8 +381,7 @@ void InGameHud::render(float tickDelta, bool screenOpen, int mouseX, int mouseY)
   }
   render::platform::Lighting::turnOff();
   if(player.getSleepTimer() > 0) {
-    gl::GL11::glDisable(gl::GL11::GL_DEPTH_TEST);
-    gl::GL11::glDisable(gl::GL11::GL_ALPHA_TEST);
+    const gl::preset::HudSleepOverlay sleepCaps;
     const int sleepTimer = player.getSleepTimer();
     float fade = static_cast<float>(sleepTimer) / 100.0f;
     if(fade > 1.0f) {
@@ -424,8 +389,6 @@ void InGameHud::render(float tickDelta, bool screenOpen, int mouseX, int mouseY)
     }
     const int color = (static_cast<int>(220.0f * fade) << 24) | 0x101020;
     fill(0, 0, scaledWidth, scaledHeight, static_cast<std::uint32_t>(color));
-    gl::GL11::glEnable(gl::GL11::GL_ALPHA_TEST);
-    gl::GL11::glEnable(gl::GL11::GL_DEPTH_TEST);
   }
   if(minecraft->options.debugHud) {
     renderDebugHud(textRenderer, scaledWidth, player);
@@ -434,7 +397,6 @@ void InGameHud::render(float tickDelta, bool screenOpen, int mouseX, int mouseY)
     renderRecordOverlay(textRenderer, tickDelta, scaledWidth, scaledHeight);
   }
   renderChat(textRenderer, screenOpen, scaledWidth, scaledHeight);
-  gl::GL11::glDisable(gl::GL11::GL_BLEND);
-  gl::GL11::glColor4f(1.0f, 1.0f, 1.0f, 1.0f);
+  gl::color4f(1.0f, 1.0f, 1.0f, 1.0f);
 }
 } // namespace net::minecraft::client::gui::hud

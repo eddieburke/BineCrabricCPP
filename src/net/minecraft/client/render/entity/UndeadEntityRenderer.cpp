@@ -1,6 +1,6 @@
 #include "net/minecraft/client/render/entity/UndeadEntityRenderer.hpp"
 #include "net/minecraft/block/Block.hpp"
-#include "net/minecraft/client/gl/GL11.hpp"
+#include "net/minecraft/client/gl/GlState.hpp"
 #include "net/minecraft/client/render/block/BlockRenderManager.hpp"
 #include "net/minecraft/client/render/entity/EntityRenderDispatcher.hpp"
 #include "net/minecraft/client/render/item/HeldItemRenderer.hpp"
@@ -17,49 +17,49 @@ void UndeadEntityRenderer::renderMore(const net::minecraft::LivingEntity& entity
   if(itemStack.itemId == 0 || entityModel_ == nullptr || dispatcher == nullptr) {
     return;
   }
-  gl::GL11::glPushMatrix();
+  gl::pushMatrix();
   entityModel_->rightArm.transform(0.0625f);
-  gl::GL11::glTranslatef(-0.0625f, 0.4375f, 0.0625f);
+  gl::translatef(-0.0625f, 0.4375f, 0.0625f);
   if(itemStack.itemId < 256) {
     net::minecraft::block::Block* block =
         net::minecraft::block::Block::BLOCKS[static_cast<std::size_t>(itemStack.itemId)];
     if(block != nullptr && block::BlockRenderManager::isSideLit(block->getRenderType())) {
       float scale = 0.5f;
-      gl::GL11::glTranslatef(0.0f, 0.1875f, -0.3125f);
-      gl::GL11::glRotatef(20.0f, 1.0f, 0.0f, 0.0f);
-      gl::GL11::glRotatef(45.0f, 0.0f, 1.0f, 0.0f);
+      gl::translatef(0.0f, 0.1875f, -0.3125f);
+      gl::rotatef(20.0f, 1.0f, 0.0f, 0.0f);
+      gl::rotatef(45.0f, 0.0f, 1.0f, 0.0f);
       scale *= 0.75f;
-      gl::GL11::glScalef(scale, -scale, scale);
+      gl::scalef(scale, -scale, scale);
     } else if(Item* item = itemStack.getItem(); item != nullptr && item->isHandheld()) {
       float scale = 0.625f;
-      gl::GL11::glTranslatef(0.0f, 0.1875f, 0.0f);
-      gl::GL11::glScalef(scale, -scale, scale);
-      gl::GL11::glRotatef(-100.0f, 1.0f, 0.0f, 0.0f);
-      gl::GL11::glRotatef(45.0f, 0.0f, 1.0f, 0.0f);
+      gl::translatef(0.0f, 0.1875f, 0.0f);
+      gl::scalef(scale, -scale, scale);
+      gl::rotatef(-100.0f, 1.0f, 0.0f, 0.0f);
+      gl::rotatef(45.0f, 0.0f, 1.0f, 0.0f);
     } else {
       const float scale = 0.375f;
-      gl::GL11::glTranslatef(0.25f, 0.1875f, -0.1875f);
-      gl::GL11::glScalef(scale, scale, scale);
-      gl::GL11::glRotatef(60.0f, 0.0f, 0.0f, 1.0f);
-      gl::GL11::glRotatef(-90.0f, 1.0f, 0.0f, 0.0f);
-      gl::GL11::glRotatef(20.0f, 0.0f, 0.0f, 1.0f);
+      gl::translatef(0.25f, 0.1875f, -0.1875f);
+      gl::scalef(scale, scale, scale);
+      gl::rotatef(60.0f, 0.0f, 0.0f, 1.0f);
+      gl::rotatef(-90.0f, 1.0f, 0.0f, 0.0f);
+      gl::rotatef(20.0f, 0.0f, 0.0f, 1.0f);
     }
   } else if(Item* item = itemStack.getItem(); item != nullptr && item->isHandheld()) {
     float scale = 0.625f;
-    gl::GL11::glTranslatef(0.0f, 0.1875f, 0.0f);
-    gl::GL11::glScalef(scale, -scale, scale);
-    gl::GL11::glRotatef(-100.0f, 1.0f, 0.0f, 0.0f);
-    gl::GL11::glRotatef(45.0f, 0.0f, 1.0f, 0.0f);
+    gl::translatef(0.0f, 0.1875f, 0.0f);
+    gl::scalef(scale, -scale, scale);
+    gl::rotatef(-100.0f, 1.0f, 0.0f, 0.0f);
+    gl::rotatef(45.0f, 0.0f, 1.0f, 0.0f);
   } else {
     const float scale = 0.375f;
-    gl::GL11::glTranslatef(0.25f, 0.1875f, -0.1875f);
-    gl::GL11::glScalef(scale, scale, scale);
-    gl::GL11::glRotatef(60.0f, 0.0f, 0.0f, 1.0f);
-    gl::GL11::glRotatef(-90.0f, 1.0f, 0.0f, 0.0f);
-    gl::GL11::glRotatef(20.0f, 0.0f, 0.0f, 1.0f);
+    gl::translatef(0.25f, 0.1875f, -0.1875f);
+    gl::scalef(scale, scale, scale);
+    gl::rotatef(60.0f, 0.0f, 0.0f, 1.0f);
+    gl::rotatef(-90.0f, 1.0f, 0.0f, 0.0f);
+    gl::rotatef(20.0f, 0.0f, 0.0f, 1.0f);
   }
   dispatcher->heldItemRenderer()->renderItem(entity, itemStack);
-  gl::GL11::glPopMatrix();
+  gl::popMatrix();
 }
 } // namespace net::minecraft::client::render::entity
 #include "net/minecraft/client/entity/EntityClientRendererRegistration.hpp"

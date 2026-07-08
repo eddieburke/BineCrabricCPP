@@ -7,11 +7,14 @@
 #include <ostream>
 #include <string>
 namespace net::minecraft {
+inline constexpr int kProtocolVersionBeta173 = 14;
 class KeepAlivePacket : public Packet {
 public:
   void read(std::istream&) override {}
   void write(std::ostream&) const override {}
-  void apply(NetworkHandler&) const override {}
+  void apply(NetworkHandler& networkHandler) const override {
+    networkHandler.onKeepAlive(*this);
+  }
   [[nodiscard]] std::size_t size() const override {
     return 0;
   }
@@ -51,7 +54,7 @@ public:
   explicit HandshakePacket(std::string name) : name(std::move(name)) {}
   std::string name;
   void read(std::istream& input) override {
-    name = Packet::readString(input, 512);
+    name = Packet::readString(input, 4096);
   }
   void write(std::ostream& output) const override {
     Packet::writeString(name, output);

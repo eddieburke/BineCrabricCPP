@@ -1,5 +1,5 @@
 #include "net/minecraft/client/render/entity/model/WolfEntityModel.hpp"
-#include "net/minecraft/client/gl/GL11.hpp"
+#include "net/minecraft/client/gl/GlState.hpp"
 #include "net/minecraft/entity/passive/WolfEntity.hpp"
 #include "net/minecraft/util/math/MathHelper.hpp"
 namespace net::minecraft::client::render::entity::model {
@@ -72,7 +72,7 @@ void WolfEntityModel::animateModel(::net::minecraft::entity::LivingEntity& entit
   if(wolfEntity->isFurWet()) {
     const float furBrightness =
         wolfEntity->getBrightnessAtEyes(tickDelta) * wolfEntity->getFurBrightnessMultiplier(tickDelta);
-    net::minecraft::client::gl::GL11::glColor3f(furBrightness, furBrightness, furBrightness);
+    net::minecraft::client::gl::color3f(furBrightness, furBrightness, furBrightness);
   }
 }
 void WolfEntityModel::setAngles(float limbAngle, float limbDistance, float animationProgress, float headYaw,

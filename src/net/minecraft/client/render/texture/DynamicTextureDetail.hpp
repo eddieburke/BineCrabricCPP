@@ -1,5 +1,6 @@
 #pragma once
 // Shared helpers for dynamic texture sprite ports (beta 1.7.3).
+#include "net/minecraft/block/Block.hpp"
 #include "net/minecraft/util/math/Types.hpp"
 #include <array>
 #include <cmath>
@@ -10,10 +11,11 @@ inline double mathRandom() {
   static JavaRandom random;
   return random.nextDouble();
 }
-// Resolves Block::BLOCKS[blockId]->textureId, falling back when that registry
-// slot is null. Defined in DynamicTextureDetail.cpp so this shared header stays
-// free of the heavy Block dependency (and sprite TUs need not include Block).
-int blockTextureId(int blockId, int fallback);
+inline int blockTextureId(int blockId, int fallback) {
+  using net::minecraft::block::Block;
+  const std::size_t i = static_cast<std::size_t>(blockId);
+  return Block::BLOCKS[i] != nullptr ? Block::BLOCKS[i]->textureId : fallback;
+}
 inline void clamp01(float& f) {
   if(f > 1.0f) {
     f = 1.0f;

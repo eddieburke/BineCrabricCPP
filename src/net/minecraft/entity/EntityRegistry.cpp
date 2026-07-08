@@ -1,7 +1,6 @@
 #include "net/minecraft/entity/EntityRegistry.hpp"
 #include "net/minecraft/world/World.hpp"
 #include <cassert>
-#include <iostream>
 #include <typeindex>
 namespace net::minecraft::entity {
 namespace {
@@ -55,7 +54,6 @@ std::unique_ptr<Entity> EntityRegistry::create(const std::string& id, World* wor
 std::unique_ptr<Entity> EntityRegistry::create(const int rawId, World* world) {
   const auto it = rawIdToFactory().find(rawId);
   if(it == rawIdToFactory().end()) {
-    std::cout << "Skipping Entity with id " << rawId << '\n';
     return nullptr;
   }
   return it->second(world);
@@ -64,8 +62,6 @@ std::unique_ptr<Entity> EntityRegistry::getEntityFromNbt(const NbtCompound& nbt,
   std::unique_ptr<Entity> entity = create(nbt.getString("id"), world);
   if(entity != nullptr) {
     entity->readNbt(nbt);
-  } else {
-    std::cout << "Skipping Entity with id " << nbt.getString("id") << '\n';
   }
   return entity;
 }

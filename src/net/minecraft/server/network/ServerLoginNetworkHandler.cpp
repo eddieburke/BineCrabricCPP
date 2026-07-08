@@ -11,10 +11,12 @@
 #include "net/minecraft/server/PlayerManager.hpp"
 #include "net/minecraft/server/network/ConnectionListener.hpp"
 #include "net/minecraft/server/network/ServerPlayNetworkHandler.hpp"
+#include "net/minecraft/network/HandshakeMetadata.hpp"
+#include "net/minecraft/mod/runtime/ModHost.hpp"
 #include "net/minecraft/world/ServerWorld.hpp"
-#include <iostream>
 #include <random>
 #include <sstream>
+#include <unordered_map>
 namespace net::minecraft::server::network {
 namespace http = net::minecraft::util::http;
 ServerLoginNetworkHandler::ServerLoginNetworkHandler(MinecraftServer* server, ConnectionListener* listener,
@@ -59,8 +61,7 @@ void ServerLoginNetworkHandler::disconnect(const std::string& reason) {
       connection_->disconnect();
     }
     closed = true;
-  } catch(const std::exception& error) {
-    std::cerr << error.what() << std::endl;
+  } catch(const std::exception&) {
   }
 }
 std::vector<std::string> ServerLoginNetworkHandler::requiredWorldMods() const {
@@ -73,6 +74,21 @@ std::vector<std::string> ServerLoginNetworkHandler::requiredWorldMods() const {
   }
   return mod::runtime::WorldRequiredMods::requiredForWorld(world->getDimensionData()->worldDirectory(), world);
 }
+namespace {
+std::unordered_map<std::string, std::string> downloadUrlsForRequiredMods(const std::vector<std::string>& required) {
+  std::unordered_map<std::string, std::string> urls;
+  const std::vector<mod::runtime::ModPackage> packages = mod::runtime::host().packageMods();
+  for(const std::string& modId : required) {
+    const auto it = std::find_if(packages.begin(), packages.end(), [&modId](const mod::runtime::ModPackage& pkg) {
+      return pkg.id == modId && !pkg.downloadUrl.empty();
+    });
+    if(it != packages.end()) {
+      urls.emplace(modId, it->downloadUrl);
+    }
+  }
+  return urls;
+}
+} // namespace
 void ServerLoginNetworkHandler::onHandshake(const HandshakePacket& /*packet*/) {
   if(connection_ == nullptr) {
     return;
@@ -89,7 +105,8 @@ void ServerLoginNetworkHandler::onHandshake(const HandshakePacket& /*packet*/) {
   }
   const std::vector<std::string> required = requiredWorldMods();
   if(!required.empty()) {
-    reply += ";mods=" + mod::runtime::WorldRequiredMods::joinCsv(required);
+    reply = ::net::minecraft::network::appendHandshakeMetadata(reply, true, true, required,
+                                                               downloadUrlsForRequiredMods(required));
   }
   connection_->sendPacket<HandshakePacket>(reply);
 }
@@ -145,7 +162,6 @@ void ServerLoginNetworkHandler::verifyUsernameOnline(const LoginHelloPacket& pac
       }
     } catch(const std::exception& error) {
       self->disconnect("Failed to verify username! [internal error " + std::string(error.what()) + "]");
-      std::cerr << error.what() << std::endl;
     }
   });
 }

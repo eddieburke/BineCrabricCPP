@@ -1,6 +1,5 @@
 #include "net/minecraft/client/render/block/BlockRenderers.hpp"
 #include "net/minecraft/client/render/Tessellator.hpp"
-#include "net/minecraft/client/render/block/BlockVertexEmitter.hpp"
 #include "net/minecraft/mod/ModTexture.hpp"
 namespace net::minecraft::client::render::block {
 namespace {

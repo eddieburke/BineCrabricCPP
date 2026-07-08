@@ -67,7 +67,7 @@ bool PortalForcer::teleportToValidPortal(World* world, Entity* entity) {
   if(world->getBlockId(bestX, bestY, bestZ + 1) == Block::NETHER_PORTAL->id) {
     targetZ += 0.5;
   }
-  entity->setPositionAndAnglesKeepPrevAngles(targetX, targetY, targetZ, entity->yaw, 0.0f);
+  entity->teleport(targetX, targetY, targetZ, entity->yaw, 0.0f);
   entity->velocityX = 0.0;
   entity->velocityY = 0.0;
   entity->velocityZ = 0.0;

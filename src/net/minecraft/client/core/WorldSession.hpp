@@ -20,12 +20,11 @@ class WorldSession {
 public:
   WorldSession() = default;
   ~WorldSession() = default;
-  void setWorld(Minecraft& client, World* worldIn);
-  void setWorld(Minecraft& client, World* worldIn, const std::string& message);
   void setWorld(Minecraft& client, World* worldIn, const std::string& message,
                 entity::player::PlayerEntity* existingPlayer, bool skipTerrainPrepare = false);
   /// worldRenderer->setWorld(nullptr) before ownedPlayer_/ownedWorld_ destruction.
   void clearWorld(Minecraft& client);
+  void unloadWorld(Minecraft& client);
   [[nodiscard]] World* ownedWorld() const noexcept {
     return ownedWorld_.get();
   }

@@ -2,6 +2,8 @@
 #include "net/minecraft/block/Block.hpp"
 #include "net/minecraft/client/particle/Particle.hpp"
 #include "net/minecraft/client/render/Tessellator.hpp"
+#include "net/minecraft/client/texture/TextureManager.hpp"
+#include "net/minecraft/mod/ModTexture.hpp"
 namespace net::minecraft::client::particle {
 class BlockParticle : public Particle {
 public:
@@ -28,12 +30,32 @@ public:
   [[nodiscard]] int getGroup() const override {
     return 1;
   }
+  [[nodiscard]] int boundTextureGl(texture::TextureManager& textureManager) const override {
+    if(!mod::isMod(textureId)) {
+      return -1;
+    }
+    return mod::glId(textureManager, textureId);
+  }
   void render(render::Tessellator& tessellator, float partialTicks, float horizontalSize, float verticalSize,
               float depthSize, float widthOffset, float heightOffset) override {
-    const float u0 = (static_cast<float>(textureId % 16) + prevU / 4.0f) / 16.0f;
-    const float u1 = u0 + 0.015609375f;
-    const float v0 = (static_cast<float>(textureId / 16) + prevV / 4.0f) / 16.0f;
-    const float v1 = v0 + 0.015609375f;
+    float u0 = 0.0f;
+    float u1 = 0.0f;
+    float v0 = 0.0f;
+    float v1 = 0.0f;
+    if(mod::isMod(textureId)) {
+      const mod::TileScale tile = mod::tileScale(textureId);
+      const float inv = static_cast<float>(tile.inv);
+      // Match vanilla BlockParticle sampling: 4x4 sub-tiles inside a 16x16 tile.
+      u0 = (static_cast<float>(tile.u) + prevU * 4.0f) * inv;
+      u1 = u0 + 3.99f * inv;
+      v0 = (static_cast<float>(tile.v) + prevV * 4.0f) * inv;
+      v1 = v0 + 3.99f * inv;
+    } else {
+      u0 = (static_cast<float>(textureId % 16) + prevU / 4.0f) / 16.0f;
+      u1 = u0 + 0.015609375f;
+      v0 = (static_cast<float>(textureId / 16) + prevV / 4.0f) / 16.0f;
+      v1 = v0 + 0.015609375f;
+    }
     const float size = 0.1f * scale;
     const float px = static_cast<float>(prevX + (x - prevX) * partialTicks - xOffset);
     const float py = static_cast<float>(prevY + (y - prevY) * partialTicks - yOffset);

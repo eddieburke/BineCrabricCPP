@@ -51,6 +51,10 @@ void GameOptions::load() {
         lastServer = val;
         continue;
       }
+      if(key == "modsEnabled") {
+        modsEnabled = val != "0";
+        continue;
+      }
       if(const std::optional<const OptionSpec*> spec = OptionRegistry::byKey(key)) {
         if((*spec)->load != nullptr) {
           (*spec)->load(*this, val);
@@ -92,7 +96,8 @@ void GameOptions::save() {
     out << '\n';
   }
   out << "skin:" << skin << "\n"
-      << "lastServer:" << lastServer << "\n";
+      << "lastServer:" << lastServer << "\n"
+      << "modsEnabled:" << (modsEnabled ? "1" : "0") << "\n";
   for(KeyBinding* kb : allKeys) {
     out << "key_" << kb->translationKey << ":" << kb->code << "\n";
   }

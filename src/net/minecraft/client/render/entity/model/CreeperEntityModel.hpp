@@ -60,6 +60,16 @@ public:
     rightFrontLeg.pitch =
         net::minecraft::util::math::MathHelper::cos(limbAngle * 0.6662f + kPi) * 1.4f * limbDistance;
     leftFrontLeg.pitch = net::minecraft::util::math::MathHelper::cos(limbAngle * 0.6662f) * 1.4f * limbDistance;
+    applyPartOverrides();
+  }
+  void collectNamedParts(std::unordered_map<std::string, net::minecraft::client::model::ModelPart*>& parts) override {
+    parts["head"] = &head;
+    parts["hat"] = &hat;
+    parts["body"] = &body;
+    parts["rightHindLeg"] = &rightHindLeg;
+    parts["leftHindLeg"] = &leftHindLeg;
+    parts["rightFrontLeg"] = &rightFrontLeg;
+    parts["leftFrontLeg"] = &leftFrontLeg;
   }
 };
 } // namespace net::minecraft::client::render::entity::model

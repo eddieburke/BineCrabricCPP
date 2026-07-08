@@ -1,5 +1,6 @@
 #pragma once
 #include "net/minecraft/client/render/block/BlockRenderManager.hpp"
+#include "net/minecraft/client/gl/GlState.hpp"
 #include "net/minecraft/client/render/entity/EntityRenderer.hpp"
 #include "net/minecraft/client/render/entity/LivingEntityRenderer.hpp"
 #include "net/minecraft/util/math/Types.hpp"
@@ -19,7 +20,11 @@ public:
 class BoxEntityRenderer : public EntityRenderer {
 public:
   using EntityRenderer::EntityRenderer;
-  void render(const net::minecraft::Entity&, double, double, double, float, float) override;
+  void render(const net::minecraft::Entity& entity, double x, double y, double z, float /*yaw*/,
+              float /*tickDelta*/) override {
+    const gl::MatrixGuard matrix;
+    renderShape(entity.boundingBox, x - entity.lastTickX, y - entity.lastTickY, z - entity.lastTickZ);
+  }
 };
 class FireballEntityRenderer : public EntityRenderer {
 public:

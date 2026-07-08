@@ -6,7 +6,7 @@ namespace net::minecraft::client {
 class Minecraft;
 }
 namespace net::minecraft::client::render {
-// Faithful port of net.minecraft.client.render.ProgressRenderer (beta 1.7.3 MCP).
+struct ProgressRenderError {};
 class ProgressRenderer : public gui::screen::LoadingDisplay {
 public:
   explicit ProgressRenderer(Minecraft* minecraft = nullptr);

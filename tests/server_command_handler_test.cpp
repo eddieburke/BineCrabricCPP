@@ -1,9 +1,8 @@
-#include "support/server_test_macros.hpp"
 #include "net/minecraft/server/command/Command.hpp"
 #include "net/minecraft/server/command/CommandOutput.hpp"
 #include "net/minecraft/server/command/ServerCommandHandler.hpp"
 #include "net/minecraft/server/MinecraftServer.hpp"
-#include <iostream>
+#include <gtest/gtest.h>
 #include <string>
 #include <vector>
 namespace {
@@ -24,7 +23,9 @@ private:
   std::string name_;
   std::vector<std::string> messages_;
 };
-void testHelpCommandListsKickSyntax() {
+} // namespace
+namespace net::minecraft::test {
+TEST(ServerCommandHandler, HelpCommandListsKickSyntax) {
   net::minecraft::server::MinecraftServer server;
   net::minecraft::server::command::ServerCommandHandler handler(&server);
   RecordingCommandOutput output("Console");
@@ -39,7 +40,7 @@ void testHelpCommandListsKickSyntax() {
   }
   EXPECT_TRUE(foundKick);
 }
-void testQuestionMarkAliasShowsHelp() {
+TEST(ServerCommandHandler, QuestionMarkAliasShowsHelp) {
   net::minecraft::server::MinecraftServer server;
   net::minecraft::server::command::ServerCommandHandler handler(&server);
   RecordingCommandOutput output("Console");
@@ -55,7 +56,7 @@ void testQuestionMarkAliasShowsHelp() {
   }
   EXPECT_TRUE(foundHelpHeader);
 }
-void testGiveWithInvalidArityIsSilent() {
+TEST(ServerCommandHandler, GiveWithInvalidArityIsSilent) {
   net::minecraft::server::MinecraftServer server;
   net::minecraft::server::command::ServerCommandHandler handler(&server);
   RecordingCommandOutput output("Console");
@@ -63,32 +64,19 @@ void testGiveWithInvalidArityIsSilent() {
   handler.executeCommand(command);
   EXPECT_TRUE(output.messages().empty());
 }
-void testTpSyntaxErrorMessage() {
+TEST(ServerCommandHandler, TpSyntaxErrorMessage) {
   net::minecraft::server::MinecraftServer server;
   net::minecraft::server::command::ServerCommandHandler handler(&server);
   RecordingCommandOutput output("Console");
   net::minecraft::server::command::Command command("tp onlyonearg", output);
   handler.executeCommand(command);
-  EXPECT_EQ(output.messages().size(), 1U);
-  EXPECT_TRUE(output.messages().front().find("Syntax error") != std::string::npos);
+  ASSERT_EQ(output.messages().size(), 1U);
+  EXPECT_NE(output.messages().front().find("Syntax error"), std::string::npos);
 }
-void testCommandStoresCommandAndOutput() {
+TEST(ServerCommandHandler, CommandStoresCommandAndOutput) {
   RecordingCommandOutput output("Admin");
   net::minecraft::server::command::Command command("say hello", output);
   EXPECT_EQ(command.commandAndArgs, "say hello");
   EXPECT_EQ(&command.output, &output);
 }
-} // namespace
-int main() {
-  RUN_SERVER_TEST(testHelpCommandListsKickSyntax);
-  RUN_SERVER_TEST(testQuestionMarkAliasShowsHelp);
-  RUN_SERVER_TEST(testGiveWithInvalidArityIsSilent);
-  RUN_SERVER_TEST(testTpSyntaxErrorMessage);
-  RUN_SERVER_TEST(testCommandStoresCommandAndOutput);
-  if(server_test::failureCount() != 0) {
-    std::cout << server_test::failureCount() << " test(s) failed\n";
-    return 1;
-  }
-  std::cout << "All server command handler tests passed\n";
-  return 0;
-}
+} // namespace net::minecraft::test

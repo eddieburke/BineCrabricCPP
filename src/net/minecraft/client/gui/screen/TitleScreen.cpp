@@ -3,7 +3,7 @@
 #include "net/minecraft/client/gui/auth/AccountUiState.hpp"
 #include "net/minecraft/client/Minecraft.hpp"
 #include "net/minecraft/client/font/TextRenderer.hpp"
-#include "net/minecraft/client/gl/GL11.hpp"
+#include "net/minecraft/client/gl/GlState.hpp"
 #include "net/minecraft/client/gui/layout/ScreenLayout.hpp"
 #include "net/minecraft/client/gui/screen/mod/ModsScreen.hpp"
 #include "net/minecraft/client/gui/screen/MultiplayerScreen.hpp"
@@ -123,14 +123,14 @@ void TitleScreen::render(int mouseX, int mouseY, float tickDelta) {
   const int logoX = width() / 2 - logoWidth / 2;
   constexpr int logoY = 30;
   const int logoTexture = minecraft()->textureManager.getTextureId("/title/mclogo.png");
-  gl::GL11::glBindTexture(gl::GL11::GL_TEXTURE_2D, logoTexture);
-  gl::GL11::glColor4f(1.0f, 1.0f, 1.0f, 1.0f);
+  gl::bindTexture(gl::cap::Texture2D, logoTexture);
+  gl::color4f(1.0f, 1.0f, 1.0f, 1.0f);
   drawTexture(logoX + 0, logoY + 0, 0, 0, 155, 44);
   drawTexture(logoX + 155, logoY + 0, 0, 45, 155, 44);
   render::INSTANCE.color(0xFFFFFF);
-  gl::GL11::glPushMatrix();
-  gl::GL11::glTranslatef(static_cast<float>(width() / 2 + 90), 70.0f, 0.0f);
-  gl::GL11::glRotatef(-20.0f, 0.0f, 0.0f, 1.0f);
+  gl::pushMatrix();
+  gl::translatef(static_cast<float>(width() / 2 + 90), 70.0f, 0.0f);
+  gl::rotatef(-20.0f, 0.0f, 0.0f, 1.0f);
   const std::int64_t nowMillis =
       std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch())
           .count();
@@ -140,9 +140,9 @@ void TitleScreen::render(int mouseX, int mouseY, float tickDelta) {
       0.1f);
   float scale = 1.8f - wave;
   scale = scale * 100.0f / static_cast<float>(textRenderer()->getWidth(splashText_) + 32);
-  gl::GL11::glScalef(scale, scale, scale);
+  gl::scalef(scale, scale, scale);
   drawCenteredTextWithShadow(*textRenderer(), splashText_, 0, -8, 0xFFFF00);
-  gl::GL11::glPopMatrix();
+  gl::popMatrix();
   drawTextWithShadow(*textRenderer(), "Minecraft Beta 1.7.3", 2, 2, 0xFF505050);
   const auth::AccountUiSnapshot accountUi = auth::pollAccountUi(*minecraft());
   if(!accountUi.statusLine.empty()) {

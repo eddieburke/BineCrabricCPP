@@ -1,6 +1,8 @@
 #pragma once
 #include "net/minecraft/client/render/atmosphere/CloudRenderer.hpp"
+#include "net/minecraft/client/render/RenderTargetManager.hpp"
 #include "net/minecraft/client/render/atmosphere/PrecipitationRenderer.hpp"
+#include "net/minecraft/client/render/FrameRenderCamera.hpp"
 #include "net/minecraft/client/render/item/HeldItemRenderer.hpp"
 #include "net/minecraft/client/util/SmoothUtil.hpp"
 #include "net/minecraft/entity/EntityTypes.hpp"
@@ -20,6 +22,11 @@ public:
   void onFrameUpdate(float tickDelta);
   void setupHudRender();
   void renderFrame(float tickDelta, std::int64_t timeNs = 0);
+  void renderToCurrentTarget(float tickDelta, const FrameRenderCamera& camera, float fov, int viewportWidth,
+                             int viewportHeight, bool renderCameraEntity);
+  [[nodiscard]] RenderTargetManager& renderTargets() noexcept {
+    return renderTargets_;
+  }
   [[nodiscard]] item::HeldItemRenderer* heldItemRendererPtr() {
     return heldItemRenderer.get();
   }
@@ -34,7 +41,7 @@ private:
   void applyCameraTransform(float tickDelta);
   void updateSkyAndFogColors(float tickDelta);
   void applyFog(int mode);
-  void renderWorld(float tickDelta);
+  void renderWorld(float tickDelta, float fov);
   void renderFirstPersonHand(float tickDelta);
   void renderRain();
   void throttleAndTimestamp(int fpsCap);
@@ -69,5 +76,7 @@ private:
   float fogRed = 0.0f;
   float fogGreen = 0.0f;
   float fogBlue = 0.0f;
+  FrameRenderCamera frameCamera_{};
+  RenderTargetManager renderTargets_{};
 };
 } // namespace net::minecraft::client::render

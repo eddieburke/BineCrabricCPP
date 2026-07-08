@@ -1,10 +1,9 @@
 #include "net/minecraft/client/render/ProgressRenderer.hpp"
 #include "net/minecraft/client/Minecraft.hpp"
 #include "net/minecraft/client/font/TextRenderer.hpp"
-#include "net/minecraft/client/gl/GL11.hpp"
+#include "net/minecraft/client/gl/GlState.hpp"
 #include "net/minecraft/client/gui/Draw2D.hpp"
-#include "net/minecraft/client/lifecycle/ClientInitializer.hpp"
-#include "net/minecraft/client/render/ProgressRenderError.hpp"
+#include "net/minecraft/client/diagnostics/ClientDiagnostics.hpp"
 #include "net/minecraft/client/render/Tessellator.hpp"
 #include "net/minecraft/client/util/UiScale.hpp"
 #ifdef _WIN32
@@ -14,7 +13,7 @@
 #include <thread>
 namespace net::minecraft::client::render {
 namespace {
-constexpr int kColorDepthClearMask = gl::GL11::GL_COLOR_BUFFER_BIT | gl::GL11::GL_DEPTH_BUFFER_BIT;
+constexpr int kColorDepthClearMask = gl::attrib::ColorBufferBit | gl::attrib::DepthBufferBit;
 } // namespace
 ProgressRenderer::ProgressRenderer(Minecraft* minecraftIn) : minecraft(minecraftIn) {}
 bool ProgressRenderer::checkRunningOrAbort() const {
@@ -31,13 +30,13 @@ void ProgressRenderer::setupLoadingProjection() {
     return;
   }
   const util::UiScale scale = util::uiScale(minecraft->options, minecraft->displayWidth, minecraft->displayHeight);
-  gl::GL11::glClear(gl::GL11::GL_DEPTH_BUFFER_BIT);
-  gl::GL11::glMatrixMode(gl::GL11::GL_PROJECTION);
-  gl::GL11::glLoadIdentity();
-  gl::GL11::glOrtho(0.0, scale.rawWidth, scale.rawHeight, 0.0, 100.0, 300.0);
-  gl::GL11::glMatrixMode(gl::GL11::GL_MODELVIEW);
-  gl::GL11::glLoadIdentity();
-  gl::GL11::glTranslatef(0.0f, 0.0f, -200.0f);
+  gl::clear(gl::attrib::DepthBufferBit);
+  gl::matrixMode(gl::matrix_::Projection);
+  gl::loadIdentity();
+  gl::ortho(0.0, scale.rawWidth, scale.rawHeight, 0.0, 100.0, 300.0);
+  gl::matrixMode(gl::matrix_::ModelView);
+  gl::loadIdentity();
+  gl::translatef(0.0f, 0.0f, -200.0f);
 }
 void ProgressRenderer::progressStart(const std::string& titleIn) {
   noAbort = false;
@@ -72,18 +71,19 @@ void ProgressRenderer::renderLoadingFrame(int percentage) {
   const int scaledWidth = scale.scaledWidth;
   const int scaledHeight = scale.scaledHeight;
   setupLoadingProjection();
-  gl::GL11::glClear(kColorDepthClearMask);
-  const gl::AttribGuard attrib(gl::GL11::GL_ENABLE_BIT | gl::GL11::GL_CURRENT_BIT | gl::GL11::GL_TEXTURE_BIT);
+  gl::clear(kColorDepthClearMask);
   Tessellator& tessellator = Tessellator::INSTANCE;
-  gl::GL11::glEnable(gl::GL11::GL_TEXTURE_2D);
-  gl::GL11::glBindTexture(gl::GL11::GL_TEXTURE_2D, minecraft->textureManager.getTextureId("/gui/background.png"));
-  gui::draw::tiledPanel(tessellator, 0, 0, scaledWidth, scaledHeight, 0.0f, 0x404040);
+  {
+    const gl::preset::LoadingScreenDraw loadingCaps;
+    gl::bindTexture(gl::cap::Texture2D, minecraft->textureManager.getTextureId("/gui/background.png"));
+    gui::draw::tiledPanel(tessellator, 0, 0, scaledWidth, scaledHeight, 0.0f, 0x404040);
+  }
   if(percentage >= 0) {
     constexpr int barWidth = 100;
     constexpr int barHeight = 2;
     const int barX = scaledWidth / 2 - barWidth / 2;
     const int barY = scaledHeight / 2 + 16;
-    gl::GL11::glDisable(gl::GL11::GL_TEXTURE_2D);
+    const gl::preset::ProgressBarSolid barCaps;
     tessellator.startQuads();
     gui::draw::appendProgressBar(tessellator, barX, barY, barWidth, barHeight, percentage);
     tessellator.draw();
@@ -105,7 +105,7 @@ void ProgressRenderer::progressStagePercentage(int percentage) {
     return;
   }
 #ifdef _WIN32
-  lifecycle::pingMainLoopHeartbeat();
+  client::diagnostics::pingMainLoopHeartbeat();
 #endif
   const auto current =
       std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now().time_since_epoch())

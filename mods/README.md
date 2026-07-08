@@ -69,6 +69,30 @@ Block declarations may use a packaged resource path in `texture` or an existing
 vanilla terrain-atlas tile in `texture_id`; registration rejects missing texture
 declarations and duplicate/reserved block IDs instead of asserting later in bootstrap.
 
+## Items and audio
+
+Item registration is native now, so Lua mods can declare custom inventory models
+without bouncing through a compatibility wrapper:
+
+- `minecraft.register_item(spec)` returns `true` on success, or `false, error_message`
+- `spec.texture` or `spec.texture_id` is required
+- `spec.model.type` may be `flat`, `box_list`, or `manual`
+- `box_list` uses `boxes = { { min = {x, y, z}, max = {x, y, z} }, ... }`
+- `manual` requires `model.draw(info)`, where `info` includes `item_id`, `texture`,
+  `texture_id`, and `brightness`
+
+Sound APIs live directly under `minecraft.sound`:
+
+- `minecraft.sound.register(id, path, kind?)`
+- `minecraft.sound.play(id, volume?, pitch?)`
+- `minecraft.sound.play_at(id, x, y, z, volume?, pitch?)`
+- `minecraft.sound.play_loop_at(id, x, y, z, volume?, pitch?)`
+- `minecraft.sound.stop(handle)`
+
+`kind` accepts `effect`, `streaming`, `music`, and aliases such as `record`, `stream`, and `bgm`.
+`play` and `play_at` return a boolean, `play_loop_at` returns a loop handle, and `stop` ends that handle.
+Resource paths are package-relative; in Lua mod zips, `resources/mods/<mod_id>/...` is the preferred place for textures and audio.
+
 ## GUI composition
 
 The screen helpers are Lua compositions over the same filtered event API:
@@ -78,9 +102,14 @@ The screen helpers are Lua compositions over the same filtered event API:
 | `minecraft.screen.on_ui(screen_id, region, fn, priority?)` | Add buttons/widgets to a vanilla screen region (`event.ui`) |
 | `minecraft.screen.on_lua_screen(screen_id, handlers, priority?)` | Own a custom Lua screen (`init`, `render`, `tick`, `key`, `mouse`, `scroll`, `close`) |
 | `minecraft.screen.settings(spec)` | Build a shared two-column slider/toggle settings screen from data |
-| `minecraft.gui.draw_globe(opts)` | Wireframe 3D globe in a Lua screen (`x`, `y`, `size`, `pin_lat`, `pin_lon`, `yaw_deg`, `pitch_deg`, `cam_dist`) |
-| `minecraft.globe.pick_lat_lon(opts)` | Click-pick latitude/longitude on the globe viewport |
-| `minecraft.globe.load_coastlines(text)` | Load generated coast path data (pipe/newline separated) |
+| `minecraft.gui.draw_button` / `draw_slider` / `draw_toggle` | Vanilla-styled widgets; positional args or `{ x, y, width, height, …, mouse_x, mouse_y }` for hover |
+| `minecraft.gui.draw_centered_text` | Centered label in a horizontal span |
+| `minecraft.gui.begin_3d(opts)` / `end_3d()` | Scissored 3D sub-rect on a Lua screen (`x`, `y`, `width`, `height`, `yaw_deg`, `pitch_deg`, `distance`, `fov_deg`, `clear_color`) |
+| `minecraft.gui.draw_3d({ mode, vertices, color })` | Immediate-mode primitives in an active `begin_3d` block (`line_strip`, `quads`, `points`, …) |
+| `minecraft.gui.unproject(opts)` | Mouse position → model-space ray (`{ origin, direction }`); pass `mouse_x`, `mouse_y` plus the same opts as `begin_3d` |
+| `minecraft.events.camera_setup` | Per-frame world camera (`x`, `y`, `z`, `yaw`, `pitch`, `roll`, `custom_view`) — use for cinematics, not GUI widgets |
+
+Globe/coastline/lat-lon picking in **realtime_sky** is implemented entirely in that mod's Lua (`scripts/globe_ui.lua`), not in the engine.
 
 Constants: `minecraft.screen.ids.*` (`create_world`, `inventory`, `detail_settings`, `world_settings`) and `minecraft.screen.regions.*` (`footer`, `screen`, `side_panel`).
 

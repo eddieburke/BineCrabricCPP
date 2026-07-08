@@ -13,8 +13,9 @@ public:
   void init() override;
   void render(int mouseX, int mouseY, float tickDelta) override;
   void tick() override;
+  [[nodiscard]] std::string_view getScreenUiId() const override { return net::minecraft::mod::screen_ids::kMods; }
 
-private:
+ private:
   class ModListWidget;
   void refreshMods();
   void toggleSelected();

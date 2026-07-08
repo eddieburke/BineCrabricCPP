@@ -1,22 +1,35 @@
 #include "net/minecraft/client/Minecraft.hpp"
 #include "net/minecraft/mod/GameHooks.hpp"
-#include "net/minecraft/mod/runtime/WorldRequiredMods.hpp"
-#include "net/minecraft/client/gui/screen/DisconnectedScreen.hpp"
-#include "net/minecraft/client/MinecraftApplet.hpp"
+#include "net/minecraft/mod/HookBus.hpp"
 #include "net/minecraft/achievement/Achievements.hpp"
 #include "net/minecraft/client/debug/ClientProfilerOverlay.hpp"
 #include "net/minecraft/client/input/InputSystem.hpp"
 #include "net/minecraft/client/input/Keys.hpp"
 #include "net/minecraft/client/multiplayer/ClientNetworkBridge.hpp"
-#include "net/minecraft/client/lifecycle/ClientInitializer.hpp"
-#include "net/minecraft/client/lifecycle/ClientLaunch.hpp"
-#include "net/minecraft/client/lifecycle/ClientShutdown.hpp"
+#include "net/minecraft/client/diagnostics/ClientDiagnostics.hpp"
+#include "net/minecraft/client/MinecraftApplet.hpp"
+#include "net/minecraft/client/color/world/FoliageColors.hpp"
+#include "net/minecraft/client/color/world/GrassColors.hpp"
+#include "net/minecraft/client/color/world/WaterColors.hpp"
+#include "net/minecraft/client/gui/screen/ConnectScreen.hpp"
+#include "net/minecraft/client/gui/screen/TitleScreen.hpp"
+#include "net/minecraft/client/option/OptionRegistry.hpp"
+#include "net/minecraft/client/render/entity/EntityRenderDispatcher.hpp"
+#include "net/minecraft/client/render/item/HeldItemRenderer.hpp"
+#include "net/minecraft/client/resource/ResourcePack.hpp"
+#include "net/minecraft/client/resource/language/I18n.hpp"
+#include "net/minecraft/world/storage/RegionWorldStorageSource.hpp"
+#include "net/minecraft/client/resource/ResourceDownloadThread.hpp"
+#include "net/minecraft/client/util/GlAllocationUtils.hpp"
+#include "net/minecraft/mod/runtime/WorldRequiredMods.hpp"
+#include "net/minecraft/world/chunk/storage/RegionIo.hpp"
 #include "net/minecraft/client/multiplayer/ClientNetworkHandler.hpp"
-#include "net/minecraft/client/render/LoadingScreenRenderer.hpp"
 #include "net/minecraft/client/session/SessionValidator.hpp"
 #include "net/minecraft/client/util/DisplayManager.hpp"
+#include "net/minecraft/client/gui/Draw2D.hpp"
+#include "net/minecraft/client/render/Tessellator.hpp"
+#include "net/minecraft/client/util/UiScale.hpp"
 #include "net/minecraft/client/util/MinecraftDirectories.hpp"
-#include "net/minecraft/client/util/TimerHackThread.hpp"
 #include "net/minecraft/client/auth/microsoft/SessionRestore.hpp"
 #include "net/minecraft/client/auth/microsoft/PlayerTextures.hpp"
 #include "net/minecraft/client/host/LanHostCoordinator.hpp"
@@ -24,10 +37,8 @@
 #include <cctype>
 #include "net/minecraft/block/Block.hpp"
 #include "net/minecraft/client/Screenshot.hpp"
-#include "net/minecraft/client/SingleplayerInteractionManager.hpp"
-#include "net/minecraft/mod/GameHooks.hpp"
-#include "net/minecraft/mod/HookBus.hpp"
-#include "net/minecraft/client/gl/GL11.hpp"
+#include "net/minecraft/client/gui/screen/DisconnectedScreen.hpp"
+#include "net/minecraft/client/gl/GlState.hpp"
 #include "net/minecraft/client/gui/screen/DeathScreen.hpp"
 #include "net/minecraft/client/gui/screen/FatalErrorScreen.hpp"
 #include "net/minecraft/client/gui/screen/GameMenuScreen.hpp"
@@ -35,14 +46,12 @@
 #include "net/minecraft/client/gui/screen/world/WorldSaveConflictScreen.hpp"
 #include "net/minecraft/client/option/ResolvedRenderOptions.hpp"
 #include "net/minecraft/client/render/GameRenderer.hpp"
-#include "net/minecraft/client/render/ProgressRenderError.hpp"
-#include "net/minecraft/client/resource/language/TranslationStorage.hpp"
-#include "net/minecraft/mod/GameHooks.hpp"
-#include "net/minecraft/stat/PlayerStats.hpp"
+#include "net/minecraft/client/render/ProgressRenderer.hpp"
+#include "net/minecraft/client/SingleplayerInteractionManager.hpp"
 #include "net/minecraft/world/storage/WorldStorageSource.hpp"
 #include "net/minecraft/client/render/block/BlockRenderManager.hpp"
 #include "net/minecraft/client/render/chunk/ChunkBuilder.hpp"
-#include "net/minecraft/client/resource/ResourceDownloadThread.hpp"
+#include "net/minecraft/mod/runtime/ModHost.hpp"
 #include "net/minecraft/entity/player/ClientPlayerEntity.hpp"
 #include "net/minecraft/entity/projectile/FishingBobberEntity.hpp"
 #include "net/minecraft/item/ItemStack.hpp"
@@ -55,10 +64,13 @@
 #include "net/minecraft/world/dimension/Dimension.hpp"
 #include "net/minecraft/world/dimension/PortalForcer.hpp"
 #include "net/minecraft/world/storage/WorldStorage.hpp"
-#include "net/minecraft/world/storage/exception/SessionLockException.hpp"
+#include "net/minecraft/client/resource/language/TranslationStorage.hpp"
+#include "net/minecraft/stat/PlayerStats.hpp"
 #include <chrono>
+#include <cstdlib>
 #include <iostream>
 #include <thread>
+#include "net/minecraft/world/storage/exception/SessionLockException.hpp"
 namespace net::minecraft::client {
 namespace {
 std::int64_t currentTimeMillis() {
@@ -71,6 +83,67 @@ std::int64_t nanoTime() {
              std::chrono::steady_clock::now().time_since_epoch())
       .count();
 }
+std::string formatCrashReport(const net::minecraft::util::crash::CrashReport& report) {
+  std::string text = report.description;
+  if(report.exception) {
+    try {
+      std::rethrow_exception(report.exception);
+    } catch(const std::exception& ex) {
+      text += "\n";
+      text += ex.what();
+    } catch(...) {
+      text += "\nUnknown exception";
+    }
+  }
+  return text;
+}
+void renderBootstrapLoadingScreen(Minecraft& client) {
+  const util::UiScale scale = util::uiScale(client.options, client.displayWidth, client.displayHeight);
+  gl::clear(gl::attrib::ColorBufferBit | gl::attrib::DepthBufferBit);
+  gl::matrixMode(gl::matrix_::Projection);
+  gl::loadIdentity();
+  gl::ortho(0.0, scale.rawWidth, scale.rawHeight, 0.0, 1000.0, 3000.0);
+  gl::matrixMode(gl::matrix_::ModelView);
+  gl::loadIdentity();
+  gl::translatef(0.0f, 0.0f, -2000.0f);
+  gl::viewport(0, 0, client.displayWidth, client.displayHeight);
+  gl::clearColor(0.0f, 0.0f, 0.0f, 0.0f);
+  {
+    const gl::preset::GuiTextureOn textureCaps;
+    gl::bindTexture(gl::cap::Texture2D, client.textureManager.getTextureId("/title/mojang.png"));
+    gl::color4f(1.0f, 1.0f, 1.0f, 1.0f);
+    render::Tessellator& tessellator = render::Tessellator::INSTANCE;
+    tessellator.startQuads();
+    tessellator.color(0xFFFFFF);
+    tessellator.vertex(0.0, scale.rawHeight, 0.0, 0.0, 0.0);
+    tessellator.vertex(scale.rawWidth, scale.rawHeight, 0.0, 0.0, 0.0);
+    tessellator.vertex(scale.rawWidth, 0.0, 0.0, 0.0, 0.0);
+    tessellator.vertex(0.0, 0.0, 0.0, 0.0, 0.0);
+    constexpr int logoW = 256;
+    constexpr int logoH = 256;
+    gui::draw::appendAtlasQuad(tessellator, (scale.scaledWidth - logoW) / 2, (scale.scaledHeight - logoH) / 2, 0, 0,
+                               logoW, logoH, 0.0f);
+    tessellator.draw();
+  }
+  gl::alphaFunc(gl::compare::Greater, 0.1f);
+#ifdef _WIN32
+  util::DisplayManager::present();
+#endif
+}
+class RunnableMinecraft final : public Minecraft {
+public:
+  RunnableMinecraft(void* component, void* canvas, net::minecraft::MinecraftApplet* applet, int width, int height,
+                    bool fullscreen)
+      : Minecraft(component, canvas, applet, width, height, fullscreen) {}
+  void handleCrash(const net::minecraft::util::crash::CrashReport& crashReport) override {
+    const std::string reportText = formatCrashReport(crashReport);
+    std::cerr << reportText << std::endl;
+#ifdef _WIN32
+    diagnostics::reportFatalError("Minecraft has crashed!", reportText);
+    diagnostics::pauseBeforeExit();
+#endif
+  }
+};
 } // namespace
 Minecraft::Minecraft(void* component, void* canvasIn, net::minecraft::MinecraftApplet* appletIn, int width, int height, bool fullscreenIn)
     : fullscreen(fullscreenIn),
@@ -82,7 +155,6 @@ Minecraft::Minecraft(void* component, void* canvasIn, net::minecraft::MinecraftA
       initHeight(height) {
   (void)component;
   initializeBlocks();
-  timerHackThread_ = std::make_unique<util::TimerHackThread>(this, "Timer hack thread");
   if(applet == nullptr) {
     isApplet = false;
   }
@@ -105,7 +177,77 @@ void Minecraft::setStartupServer(const std::string& address, int port) {
 void Minecraft::init() {
   initializeBlocks();
   util::DisplayManager::setupAndCreateDisplay(*this);
-  lifecycle::ClientInitializer::bootstrap(*this);
+  bootstrapAfterDisplay();
+}
+void Minecraft::bootstrapAfterDisplay() {
+  diagnostics::setStartupPhase("init: directories");
+  runDirectory_ = getRunDirectory();
+  options.optionsFile = runDirectory_ / "options.txt";
+  options.bindMinecraft(this);
+  option::OptionRegistry::registerAll();
+  options.load();
+  worldStorageSource = std::make_unique<net::minecraft::RegionWorldStorageSource>(runDirectory_ / "saves");
+  const net::minecraft::ResourcePack resources(std::filesystem::path(MINECRAFT_NATIVE_RESOURCE_DIR));
+  translationStorage_ = std::make_unique<resource::language::TranslationStorage>(resources);
+  resource::language::I18n::setTranslations(translationStorage_.get());
+  texturePacksStorage_ =
+      std::make_unique<resource::pack::TexturePacks>(std::filesystem::path(MINECRAFT_NATIVE_RESOURCE_DIR), runDirectory_,
+                                                     &options, &textureManager);
+  texturePacks = texturePacksStorage_.get();
+  textureManager.setTexturePacks(texturePacks);
+  diagnostics::setStartupPhase("init: text renderer");
+  textRenderer = font::TextRenderer::create(options, textureManager, "font/default.png");
+  color::world::WaterColors::setColorMap(textureManager.getColors("/misc/watercolor.png"));
+  color::world::GrassColors::setColorMap(textureManager.getColors("/misc/grasscolor.png"));
+  color::world::FoliageColors::setColorMap(textureManager.getColors("/misc/foliagecolor.png"));
+  diagnostics::setStartupPhase("init: game renderer");
+  gameRenderer = std::make_unique<render::GameRenderer>(this);
+  render::entity::EntityRenderDispatcher::instance().setHeldItemRenderer(std::make_unique<render::item::HeldItemRenderer>(this));
+  diagnostics::setStartupPhase("init: player stats");
+  statsStorage_ = std::make_unique<stat::PlayerStats>(session, runDirectory_);
+  stats = statsStorage_.get();
+  diagnostics::setStartupPhase("init: loading screen");
+  util::DisplayManager::logGlError(*this, "Pre startup");
+  {
+    const gl::preset::ClientInitGl initGl;
+    gl::clearDepth(1.0);
+  }
+  gl::matrixMode(gl::matrix_::Projection);
+  gl::loadIdentity();
+  gl::matrixMode(gl::matrix_::ModelView);
+  util::DisplayManager::logGlError(*this, "Startup");
+  renderBootstrapLoadingScreen(*this);
+#ifdef _WIN32
+  input::InputSystem::init(util::DisplayManager::hwnd());
+#endif
+  util::DisplayManager::logGlError(*this, "Post startup");
+  audio.start(&options);
+  textureManager.addDynamicTexture(&lavaSprite_);
+  textureManager.addDynamicTexture(&waterSprite_);
+  textureManager.addDynamicTexture(new render::texture::NetherPortalSprite());
+  textureManager.addDynamicTexture(new render::texture::CompassSprite(*this));
+  textureManager.addDynamicTexture(new render::texture::ClockSprite(*this));
+  textureManager.addDynamicTexture(new render::texture::WaterSideSprite());
+  textureManager.addDynamicTexture(new render::texture::LavaSideSprite());
+  textureManager.addDynamicTexture(new render::texture::FireSprite(0));
+  textureManager.addDynamicTexture(new render::texture::FireSprite(1));
+  particleManager.setTextureManager(&textureManager);
+  worldRenderer = std::make_unique<render::WorldRenderer>(this, &textureManager);
+  worldSoundListener = std::make_unique<sound::WorldSoundListener>(this);
+  gl::viewport(0, 0, displayWidth, displayHeight);
+  resourceDownloadThread = std::make_unique<resource::ResourceDownloadThread>(runDirectory_, this);
+  resourceDownloadThread->start();
+  interactionManager = std::make_unique<SingleplayerInteractionManager>(this);
+  inGameHud.setClient(this);
+  toast.setClient(this);
+  diagnostics::setStartupPhase("init: title screen");
+  msauth::beginRestoreSavedAccount(*this);
+  if(!startupServerAddress_.empty()) {
+    setScreen(std::make_unique<gui::screen::ConnectScreen>(this, startupServerAddress_, startupServerPort));
+  } else {
+    setScreen(std::make_unique<gui::screen::TitleScreen>());
+  }
+  diagnostics::setStartupPhase("init: complete");
 }
 std::atomic<std::int64_t>& Minecraft::failedSessionCheckTime() noexcept {
   return session::SessionValidator::failedSessionCheckTime;
@@ -123,10 +265,62 @@ void Minecraft::setScreen(std::unique_ptr<gui::screen::Screen> screen) {
   screenStack_.setScreen(std::move(screen));
 }
 void Minecraft::stop() {
-  lifecycle::ClientShutdown::stop(*this);
+#ifdef _WIN32
+  diagnostics::disarmHangWatchdog();
+#endif
+  try {
+    if(applet != nullptr) {
+      applet->clearMemory();
+    }
+    if(resourceDownloadThread != nullptr) {
+      try {
+        resourceDownloadThread->cancel();
+      } catch(...) {
+      }
+    }
+    try {
+      setWorld(nullptr);
+    } catch(const std::exception& e) {
+      std::cerr << "World teardown failed: " << e.what() << '\n';
+    }
+    try {
+      RegionIo::flush();
+    } catch(...) {
+    }
+    try {
+      util::GlAllocationUtils::clear();
+    } catch(...) {
+    }
+    if(lanHostCoordinator_ != nullptr) {
+      lanHostCoordinator_->shutdown();
+    }
+    mod::runtime::host().shutdown();
+    audio.shutdown();
+#ifdef _WIN32
+    input::InputSystem::shutdown();
+#endif
+  } catch(...) {
+  }
+#ifdef _WIN32
+  util::DisplayManager::destroy();
+#endif
+  if(!crashed) {
+    std::cout.flush();
+    std::_Exit(0);
+  }
 }
 void Minecraft::cleanHeap() {
-  lifecycle::ClientShutdown::cleanHeap(*this);
+  try {
+    MEMORY_RESERVED_FOR_CRASH.clear();
+    if(worldRenderer != nullptr) {
+      worldRenderer->releaseSections();
+    }
+  } catch(...) {
+  }
+  try {
+    setWorld(nullptr);
+  } catch(...) {
+  }
 }
 void Minecraft::handleScreenshotKey() {
   if(input::InputSystem::instance().isKeyDown(input::keys::kF2)) {
@@ -325,13 +519,36 @@ void Minecraft::tick() {
   if(gameRenderer != nullptr) {
     gameRenderer->updateTargetedEntity(1.0f);
   }
+  {
+    mod::RaycastEvent raycastEvent{this, player, world};
+    if(crosshairTarget.has_value()) {
+      const HitResult& target = *crosshairTarget;
+      raycastEvent.hasHit = true;
+      raycastEvent.type = target.type;
+      raycastEvent.hitX = target.pos.x;
+      raycastEvent.hitY = target.pos.y;
+      raycastEvent.hitZ = target.pos.z;
+      if(target.type == HitResultType::BLOCK) {
+        raycastEvent.blockX = target.blockX;
+        raycastEvent.blockY = target.blockY;
+        raycastEvent.blockZ = target.blockZ;
+        raycastEvent.side = target.side;
+        if(world != nullptr) {
+          raycastEvent.blockId = world->getBlockId(target.blockX, target.blockY, target.blockZ);
+        }
+      } else if(target.type == HitResultType::ENTITY) {
+        raycastEvent.entity = target.entity;
+      }
+    }
+    mod::hooks().publish(raycastEvent);
+  }
   if(!paused.load() && world != nullptr && interactionManager != nullptr) {
     interactionManager->tick();
     if(worldRenderer != nullptr) {
       worldRenderer->miningProgress = interactionManager->getBlockBreakingProgress(timer.partialTick);
     }
   }
-  gl::GL11::glBindTexture(gl::GL11::GL_TEXTURE_2D, textureManager.getTextureId("/terrain.png"));
+  gl::bindTexture(gl::cap::Texture2D, textureManager.getTextureId("/terrain.png"));
   if(!paused.load()) {
     textureManager.tick();
   }
@@ -340,6 +557,12 @@ void Minecraft::tick() {
   // runWorldSimulation runs after input is settled.
   input::InputSystem::instance().beginFrame(*this);
   screenStack_.tickScreens(*this);
+  // Pump the multiplayer socket while no ClientWorld is ticking it (ConnectScreen /
+  // pre-login). Runs after screen tick so ConnectScreen::poll can adopt a pending bridge
+  // before the first pump. Once a remote world is active, ClientWorld::tick owns it.
+  if(world == nullptr || !world->isRemote()) {
+    multiplayerSession_.tick();
+  }
   if(pendingScreenResize_) {
     pendingScreenResize_ = false;
     resize(displayWidth, displayHeight);
@@ -355,7 +578,6 @@ void Minecraft::tick() {
 void Minecraft::runRenderPhase(std::int64_t tickDuration, int& frames, std::int64_t& fpsWindowStart) {
   render::block::BlockRenderManager::fancyGraphics = options.fancyGraphics;
   audio.updateListener(player, timer.partialTick);
-  gl::GL11::glEnable(gl::GL11::GL_TEXTURE_2D);
   if(world != nullptr) {
     world->doLightingUpdates();
     world->pumpChunkPublish();
@@ -419,7 +641,7 @@ void Minecraft::run() {
     while(running.load()) {
       try {
 #ifdef _WIN32
-        lifecycle::pingMainLoopHeartbeat();
+        diagnostics::pingMainLoopHeartbeat();
 #endif
         screenStack_.flushRetired();
         // Free network bridges retired last iteration, then retire the active one once it
@@ -483,7 +705,6 @@ void Minecraft::run() {
   stop();
 }
 void Minecraft::forceResourceReload() {
-  std::cout << "FORCING RELOAD!" << std::endl;
   audio.reset();
   audio.start(&options);
   if(resourceDownloadThread != nullptr) {
@@ -494,11 +715,11 @@ bool Minecraft::isWorldRemote() const {
   return world != nullptr && world->isRemote();
 }
 void Minecraft::setWorld(World* worldIn) {
-  worldSession_.setWorld(*this, worldIn);
+  worldSession_.setWorld(*this, worldIn, "", nullptr);
   notifyWorldChanged(worldIn);
 }
 void Minecraft::setWorld(World* worldIn, const std::string& message) {
-  worldSession_.setWorld(*this, worldIn, message);
+  worldSession_.setWorld(*this, worldIn, message, nullptr);
   notifyWorldChanged(worldIn);
 }
 void Minecraft::setWorld(World* worldIn, const std::string& message, PlayerEntity* existingPlayer) {
@@ -509,12 +730,6 @@ void Minecraft::notifyWorldChanged(World* worldIn) {
   if(lanHostCoordinator_ != nullptr) {
     lanHostCoordinator_->afterWorldChange(worldIn);
   }
-}
-void Minecraft::prepareWorld(const std::string& worldName) {
-  worldSession_.prepareWorld(*this, worldName);
-}
-void Minecraft::convertAndSaveWorld(const std::string& worldName, const std::string& name) {
-  worldSession_.convertAndSaveWorld(*this, worldName, name);
 }
 void Minecraft::startGame(const std::string& worldName, const std::string& name, std::int64_t seed,
                           const std::unordered_map<std::string, std::string>& creationOptions) {
@@ -537,7 +752,7 @@ void Minecraft::startGame(const std::string& worldName, const std::string& name,
     return;
   }
   if(worldStorageSource->needsConversion(worldName)) {
-    convertAndSaveWorld(worldName, name);
+    worldSession_.convertAndSaveWorld(*this, worldName, name);
     return;
   }
   std::unordered_map<std::string, std::string> worldOptions = creationOptions;
@@ -728,20 +943,68 @@ void Minecraft::respawnPlayer(bool worldSpawn, int dimension) {
   player->id = playerId;
   player->spawn();
   interactionManager->preparePlayerRespawn(player);
-  prepareWorld("Respawning");
+  worldSession_.prepareWorld(*this, "Respawning");
   msauth::refreshPlayerTextures(*this);
   if(dynamic_cast<gui::screen::DeathScreen*>(currentScreen()) != nullptr) {
     setScreen(nullptr);
   }
 }
 void Minecraft::start(const std::string& username, const std::string& sessionId) {
-  lifecycle::ClientLaunch::start(username, sessionId);
+  startAndConnect(username, sessionId, nullptr);
 }
 void Minecraft::startAndConnect(const std::string& username, const std::string& sessionId, const std::string* server) {
-  lifecycle::ClientLaunch::startAndConnect(username, sessionId, server);
+  auto client = std::make_unique<RunnableMinecraft>(nullptr, nullptr, nullptr, 854, 480, false);
+  client->hostAddress = "www.minecraft.net";
+  if(!username.empty() && !sessionId.empty()) {
+    client->session = util::Session(username, sessionId);
+  } else {
+    client->session = util::Session("Player" + std::to_string(currentTimeMillis() % 1000LL), "");
+  }
+  if(server != nullptr) {
+    const std::size_t colon = server->find(':');
+    if(colon != std::string::npos) {
+      client->setStartupServer(server->substr(0, colon), std::stoi(server->substr(colon + 1)));
+    }
+  }
+  client->run();
 }
 int Minecraft::main(int argc, char** argv) {
-  return lifecycle::ClientLaunch::main(argc, argv);
+  net::minecraft::block::initializeBlocks();
+  std::string username = "Player" + std::to_string(currentTimeMillis() % 1000LL);
+  std::string sessionId = "-";
+  std::string serverArg;
+  const std::string* serverPtr = nullptr;
+  if(argc > 1 && argv[1] != nullptr) {
+    username = argv[1];
+  }
+  if(argc > 2 && argv[2] != nullptr) {
+    sessionId = argv[2];
+  }
+  if(argc > 3 && argv[3] != nullptr) {
+    serverArg = argv[3];
+    if(!serverArg.empty()) {
+      serverPtr = &serverArg;
+    }
+  }
+  try {
+    startAndConnect(username, sessionId, serverPtr);
+  } catch(const std::exception& exception) {
+    std::cerr << exception.what() << std::endl;
+#ifdef _WIN32
+    diagnostics::reportFatalError("Minecraft Native - failed to start", std::string(exception.what()));
+    diagnostics::pauseBeforeExit();
+#endif
+    return 1;
+  } catch(...) {
+    const char* message = "Unknown exception during startup.";
+    std::cerr << message << std::endl;
+#ifdef _WIN32
+    diagnostics::reportFatalError("Minecraft Native - failed to start", message);
+    diagnostics::pauseBeforeExit();
+#endif
+    return 1;
+  }
+  return 0;
 }
 bool Minecraft::isDisplayGui() {
   return INSTANCE == nullptr || !INSTANCE->options.hideHud;

@@ -1,3 +1,5 @@
+local repair_screen = minecraft.require("repair_screen")
+
 minecraft.register_block({
   id = 150,
   texture = "mods/repair_table/repair_table.png",
@@ -20,10 +22,11 @@ minecraft.register_block({
   },
   behavior_priority = 100,
   on_use = function(event)
-    if event.item_damageable and event.item_damage > 0 then
-      event.item_damage = 0
-      event.handled = true
+    if not event.right_click then
+      return
     end
+    repair_screen.open()
+    event.handled = true
   end,
 })
 

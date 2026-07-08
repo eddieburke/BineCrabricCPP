@@ -1,7 +1,6 @@
 #include "net/minecraft/server/network/ServerPlayNetworkHandler.hpp"
 #include "net/minecraft/block/entity/SignBlockEntity.hpp"
 #include "net/minecraft/entity/player/PlayerInventory.hpp"
-#include "net/minecraft/network/JavaProtocol.hpp"
 #include "net/minecraft/entity/player/ServerPlayerEntity.hpp"
 #include "net/minecraft/network/Connection.hpp"
 #include "net/minecraft/network/packet/BlockPackets.hpp"
@@ -18,14 +17,12 @@
 #include "net/minecraft/world/ServerWorld.hpp"
 #include <algorithm>
 #include <cmath>
-#include <iostream>
 #include <sstream>
 namespace net::minecraft::server::network {
 namespace {
 constexpr int kClientCommandPressShift = 1;
 constexpr int kClientCommandReleaseShift = 2;
 constexpr int kClientCommandStopSleeping = 3;
-namespace java_mp = ::net::minecraft::network::java;
 } // namespace
 ServerPlayNetworkHandler::ServerPlayNetworkHandler(MinecraftServer* server, Connection* connection,
                                                    ::net::minecraft::entity::player::ServerPlayerEntity* player)
@@ -45,10 +42,23 @@ void ServerPlayNetworkHandler::tick() {
   if(connection_ != nullptr) {
     connection_->tick();
   }
+  if(player_ != nullptr && server_ != nullptr) {
+    server_->playerManager.sendPendingChunks(player_);
+  }
   if(ticks_ - lastKeepAliveTime_ > 20) {
     sendPacket(KeepAlivePacket{});
+    lastKeepAliveTime_ = ticks_;
   }
   ++ticks_;
+}
+void ServerPlayNetworkHandler::setPlayer(::net::minecraft::entity::player::ServerPlayerEntity* player) {
+  player_ = player;
+  if(player_ != nullptr) {
+    player_->networkHandler = this;
+    teleportTargetX_ = player_->x;
+    teleportTargetY_ = player_->y;
+    teleportTargetZ_ = player_->z;
+  }
 }
 std::size_t ServerPlayNetworkHandler::getBlockDataSendQueueSize() const {
   if(connection_ == nullptr) {
@@ -115,9 +125,7 @@ void ServerPlayNetworkHandler::teleport(double x, double y, double z, float yaw,
   teleportTargetZ_ = z;
   player_->setPositionAndAngles(x, y, z, yaw, pitch);
   PlayerMoveFullPacket packet;
-  const auto move = java_mp::makeClientboundPlayerMove(x, y + static_cast<double>(player_->getEyeHeight()), y, z, yaw,
-                                                       pitch, false, true, true);
-  java_mp::encodeClientboundPlayerMove(packet, move);
+  packet.setMove(x, y, y + static_cast<double>(player_->getEyeHeight()), z, yaw, pitch, false);
   sendPacket(packet);
 }
 void ServerPlayNetworkHandler::onPlayerMove(const PlayerMovePacket& packet) {
@@ -131,7 +139,7 @@ void ServerPlayNetworkHandler::onPlayerMove(const PlayerMovePacket& packet) {
   moved_ = true;
   const double startY = player_->y;
   if(!teleported_) {
-    const double deltaToTargetY = packet.y - teleportTargetY_;
+    const double deltaToTargetY = packet.feetY - teleportTargetY_;
     if(packet.x == teleportTargetX_ && deltaToTargetY * deltaToTargetY < 0.01 && packet.z == teleportTargetZ_) {
       teleported_ = true;
     }
@@ -152,7 +160,7 @@ void ServerPlayNetworkHandler::onPlayerMove(const PlayerMovePacket& packet) {
       yaw = packet.yaw;
       pitch = packet.pitch;
     }
-    if(packet.changePosition && packet.y == -999.0 && packet.eyeHeight == -999.0) {
+    if(packet.changePosition && packet.feetY == -999.0 && packet.stance == -999.0) {
       moveX = packet.x;
       moveZ = packet.z;
     }
@@ -191,14 +199,14 @@ void ServerPlayNetworkHandler::onPlayerMove(const PlayerMovePacket& packet) {
   float targetYaw = player_->yaw;
   float targetPitch = player_->pitch;
   PlayerMovePacket workingPacket = packet;
-  if(workingPacket.changePosition && workingPacket.y == -999.0 && workingPacket.eyeHeight == -999.0) {
+  if(workingPacket.changePosition && workingPacket.feetY == -999.0 && workingPacket.stance == -999.0) {
     workingPacket.changePosition = false;
   }
   if(workingPacket.changePosition) {
     targetX = workingPacket.x;
-    targetY = workingPacket.y;
+    targetY = workingPacket.feetY;
     targetZ = workingPacket.z;
-    const double stanceDelta = workingPacket.eyeHeight - workingPacket.y;
+    const double stanceDelta = workingPacket.stance - workingPacket.feetY;
     if(!player_->isSleeping() && (stanceDelta > 1.65 || stanceDelta < 0.1)) {
       disconnect("Illegal stance");
       return;
@@ -237,7 +245,6 @@ void ServerPlayNetworkHandler::onPlayerMove(const PlayerMovePacket& packet) {
   bool movedWrongly = false;
   if(afterMoveDistanceSq > 0.0625 && !player_->isSleeping()) {
     movedWrongly = true;
-    std::cout << player_->name << " moved wrongly!" << std::endl;
   }
   player_->setPositionAndAngles(targetX, targetY, targetZ, targetYaw, targetPitch);
   const bool hasSpaceAfterMove =
@@ -441,7 +448,10 @@ void ServerPlayNetworkHandler::onDisconnected(const std::string& reason, const s
   }
   disconnected = true;
 }
-void ServerPlayNetworkHandler::handle(const Packet& packet) {
+void ServerPlayNetworkHandler::onKeepAlive(const KeepAlivePacket&) {
+  lastKeepAliveTime_ = ticks_;
+}
+void ServerPlayNetworkHandler::handle(const Packet&) {
   ServerLog::LOGGER.log(LogLevel::Warning, "ServerPlayNetworkHandler wasn't prepared to deal with a packet");
   disconnect("Protocol error, unexpected packet");
 }

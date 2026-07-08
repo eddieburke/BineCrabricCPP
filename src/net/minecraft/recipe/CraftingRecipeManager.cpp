@@ -2,6 +2,7 @@
 #include "net/minecraft/block/Block.hpp"
 #include "net/minecraft/inventory/CraftingInventory.hpp"
 #include "net/minecraft/item/Item.hpp"
+#include "net/minecraft/mod/ModLifecycle.hpp"
 #include "net/minecraft/recipe/ShapedRecipe.hpp"
 #include "net/minecraft/recipe/ShapelessRecipe.hpp"
 #include <algorithm>
@@ -39,9 +40,6 @@ CraftingRecipeManager& CraftingRecipeManager::getInstance() {
   return instance;
 }
 CraftingRecipeManager::CraftingRecipeManager() = default;
-void CraftingRecipeManager::registerVanillaRecipes() {
-  // All vanilla crafting recipes are co-located on item/block registerRecipes().
-}
 void CraftingRecipeManager::finishRegistration() {
   sortRecipes(recipes);
 }
@@ -88,6 +86,9 @@ void CraftingRecipeManager::addShapedRecipe(ItemStack output, std::vector<Recipe
     grid[static_cast<std::size_t>(i)] = it != ingredients.end() ? it->second.copy() : ItemStack{};
   }
   recipes.push_back(std::make_unique<ShapedRecipe>(width, height, std::move(grid), output));
+  if(mod::ModLifecycle::frozen()) {
+    sortRecipes(recipes);
+  }
 }
 void CraftingRecipeManager::addShapelessRecipe(ItemStack output, std::vector<RecipeArg> input) {
   std::vector<ItemStack> ingredients;
@@ -104,6 +105,9 @@ void CraftingRecipeManager::addShapelessRecipe(ItemStack output, std::vector<Rec
     }
   }
   recipes.push_back(std::make_unique<ShapelessRecipe>(output, std::move(ingredients)));
+  if(mod::ModLifecycle::frozen()) {
+    sortRecipes(recipes);
+  }
 }
 ItemStack CraftingRecipeManager::craft(const CraftingInventory& craftingInventory) const {
   for(const std::unique_ptr<CraftingRecipe>& recipe : recipes) {

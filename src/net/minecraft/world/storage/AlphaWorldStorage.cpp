@@ -8,7 +8,6 @@
 #include "net/minecraft/world/dimension/Dimension.hpp"
 #include "net/minecraft/world/storage/exception/SessionLockException.hpp"
 #include <fstream>
-#include <iostream>
 #include <ostream>
 #include <stdexcept>
 namespace net::minecraft {
@@ -87,14 +86,21 @@ std::optional<WorldProperties> AlphaWorldStorage::loadPropertiesFrom(const fs::p
   }
 }
 void AlphaWorldStorage::writeLevelDat(const WorldProperties& properties,
-                                      const std::vector<entity::player::PlayerEntity*>& players) {
+                                      const std::vector<entity::player::PlayerEntity*>& players,
+                                      AtomicWriteOptions options) {
   NbtCompound data = properties.asNbt(players);
   if(!players.empty() && players.front() != nullptr) {
     const NbtCompound* previous = properties.getPlayerNbt();
     if(previous == nullptr && fs::exists(dir_ / "level.dat")) {
-      if(const std::optional<WorldProperties> loaded = loadPropertiesFrom(dir_ / "level.dat");
-         loaded.has_value()) {
-        previous = loaded->getPlayerNbt();
+      NbtCompound proposed;
+      players.front()->writeNbt(proposed);
+      const bool needsDiskBaseline =
+          world::storage::countInventoryStacks(proposed) == 0 || !world::storage::hasSavedPosition(proposed);
+      if(needsDiskBaseline) {
+        if(const std::optional<WorldProperties> loaded = loadPropertiesFrom(dir_ / "level.dat");
+           loaded.has_value()) {
+          previous = loaded->getPlayerNbt();
+        }
       }
     }
     NbtCompound playerNbt = world::storage::buildSafeguardedPlayerNbt(*players.front(), previous);
@@ -102,9 +108,6 @@ void AlphaWorldStorage::writeLevelDat(const WorldProperties& properties,
   }
   NbtCompound root;
   root.put("Data", data);
-  // keepBackup: loadProperties() falls back to level.dat_old, so retaining it makes even a
-  // corrupt/missing primary recoverable.
-  AtomicWriteOptions options;
   options.keepBackup = true;
   writeFileAtomic(dir_ / "level.dat", [&root](std::ostream& output) { NbtIo::writeCompressed(root, output); }, options);
 }
@@ -112,8 +115,17 @@ void AlphaWorldStorage::save(const WorldProperties& properties,
                              const std::vector<entity::player::PlayerEntity*>& players) {
   try {
     writeLevelDat(properties, players);
-  } catch(const std::exception& exception) {
-    std::cerr << "Failed to save level data: " << exception.what() << '\n';
+  } catch(const std::exception&) {
+  }
+}
+void AlphaWorldStorage::saveUnload(const WorldProperties& properties,
+                                   const std::vector<entity::player::PlayerEntity*>& players) {
+  try {
+    AtomicWriteOptions options;
+    options.keepBackup = true;
+    options.fsync = false;
+    writeLevelDat(properties, players, options);
+  } catch(const std::exception&) {
   }
 }
 void AlphaWorldStorage::save(const WorldProperties& properties) {
@@ -133,7 +145,6 @@ void AlphaWorldStorage::savePlayerData(entity::player::PlayerEntity& player) {
     options.keepBackup = true;
     writeFileAtomic(file, [&nbt](std::ostream& output) { NbtIo::writeCompressed(nbt, output); }, options);
   } catch(...) {
-    std::cerr << "Failed to save player data for " << player.name << '\n';
   }
 }
 void AlphaWorldStorage::loadPlayerData(entity::player::PlayerEntity& player) {
@@ -153,7 +164,6 @@ Nbt AlphaWorldStorage::loadPlayerData(const std::string& playerName) {
     }
     return NbtIo::readCompressed(input).storage();
   } catch(...) {
-    std::cerr << "Failed to load player data for " << playerName << '\n';
     return {};
   }
 }

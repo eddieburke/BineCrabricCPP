@@ -1,6 +1,5 @@
 #pragma once
 #include "net/minecraft/util/math/Types.hpp"
-#include <optional>
 #include <string>
 #include <vector>
 struct lua_State;
@@ -52,21 +51,9 @@ struct LuaBlockModelSpec {
   float minScale = 0.9f;
   float maxScale = 1.1f;
 };
-struct BlockRegistrationSpec {
-  int blockId = 0;
-  std::string texturePath;
-  int terrainTextureId = -1;
-  float hardness = 1.0f;
-  float resistance = 1.0f;
-  float luminance = 0.0f;
-  std::string translationKey;
-  std::string displayName;
-  std::string material = "stone";
-  std::string ownerModId;
-  int manualDrawRef = -2;
-  int manualInventoryRef = -2;
-  LuaBlockModelSpec model;
-};
+// Registration input lives in LuaBlockRegistry; the model layer only needs to
+// name it for the manual-draw and instantiation entry points below.
+struct BlockRegistrationSpec;
 struct ManualBlockVertex {
   double x = 0.0;
   double y = 0.0;
@@ -74,10 +61,9 @@ struct ManualBlockVertex {
   double u = 0.0;
   double v = 0.0;
 };
-bool registerBlockSpec(const BlockRegistrationSpec& spec, std::string& error);
-[[nodiscard]] int modBlockIdFromName(const char* name);
-[[nodiscard]] std::string modBlockWireName(int blockId);
-[[nodiscard]] const BlockRegistrationSpec* blockRegistrationSpecForId(int blockId) noexcept;
+// Builds the concrete Block from a validated spec. Called by the block registry
+// during the batched BlockRegistration lifecycle phase.
+void instantiateLuaModBlock(const BlockRegistrationSpec& spec);
 bool invokeManualBlockModelDraw(const BlockRegistrationSpec& spec, bool inventory, int x, int y, int z,
                                 float brightness);
 bool emitManualBlockModelQuad(const ManualBlockVertex* vertices, int textureId, float red, float green, float blue,

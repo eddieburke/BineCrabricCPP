@@ -37,17 +37,16 @@ public:
                            ::net::minecraft::entity::player::ServerPlayerEntity* player);
   void tick();
   void disconnect(const std::string& reason);
+  void setPlayer(::net::minecraft::entity::player::ServerPlayerEntity* player);
   template <typename PacketT>
   void sendPacket(const PacketT& packet) {
     if(connection_ != nullptr) {
       connection_->sendPacket(std::make_unique<PacketT>(packet));
-      lastKeepAliveTime_ = ticks_;
     }
   }
   void sendPacket(std::unique_ptr<Packet> packet) {
     if(connection_ != nullptr && packet) {
       connection_->sendPacket(std::move(packet));
-      lastKeepAliveTime_ = ticks_;
     }
   }
   void teleport(double x, double y, double z, float yaw, float pitch);
@@ -63,6 +62,7 @@ public:
   void handlePlayerAction(const PlayerActionC2SPacket& packet) override;
   void onPlayerInteractBlock(const PlayerInteractBlockC2SPacket& packet) override;
   void onDisconnected(const std::string& reason, const std::vector<std::string>& args) override;
+  void onKeepAlive(const KeepAlivePacket& packet) override;
   void handle(const Packet& packet) override;
   void onUpdateSelectedSlot(const UpdateSelectedSlotC2SPacket& packet) override;
   void onChatMessage(const ChatMessagePacket& packet) override;

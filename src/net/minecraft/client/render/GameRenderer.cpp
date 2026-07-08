@@ -1,15 +1,16 @@
 #include "net/minecraft/client/render/GameRenderer.hpp"
+#include "net/minecraft/client/render/FrameRenderCamera.hpp"
 #include "net/minecraft/client/gui/screen/ChatScreen.hpp"
 #include "net/minecraft/block/Block.hpp"
 #include "net/minecraft/block/material/Material.hpp"
 #include "net/minecraft/client/Minecraft.hpp"
 #include "net/minecraft/client/input/InputSystem.hpp"
 #include "net/minecraft/client/option/ResolvedRenderOptions.hpp"
-#include "net/minecraft/client/gl/GL11.hpp"
+#include "net/minecraft/client/gl/GlState.hpp"
 #include "net/minecraft/client/render/atmosphere/AtmosphereContext.hpp"
 #include "net/minecraft/client/render/atmosphere/SkyDome.hpp"
 #include "net/minecraft/client/render/culling/Frustum.hpp"
-#include "net/minecraft/client/render/culling/FrustumCuller.hpp"
+#include "net/minecraft/client/render/entity/EntityRenderDispatcher.hpp"
 #include "net/minecraft/client/render/Tessellator.hpp"
 #include "net/minecraft/entity/player/ClientPlayerEntity.hpp"
 #include "net/minecraft/client/render/world/WorldRenderer.hpp"
@@ -259,7 +260,7 @@ void GameRenderer::applyDamageTiltEffect(float tickDelta) {
   float hurt = static_cast<float>(living->hurtTime) - tickDelta;
   if(living->health <= 0) {
     const float death = static_cast<float>(living->deathTime) + tickDelta;
-    gl::GL11::glRotatef(40.0f - 8000.0f / (death + 200.0f), 0.0f, 0.0f, 1.0f);
+    gl::rotatef(40.0f - 8000.0f / (death + 200.0f), 0.0f, 0.0f, 1.0f);
   }
   if(hurt < 0.0f) {
     return;
@@ -267,9 +268,9 @@ void GameRenderer::applyDamageTiltEffect(float tickDelta) {
   hurt /= static_cast<float>(living->damagedTime);
   hurt = MathHelper::sin(hurt * hurt * hurt * hurt * kPiF);
   const float swing = living->damagedSwingDir;
-  gl::GL11::glRotatef(-swing, 0.0f, 1.0f, 0.0f);
-  gl::GL11::glRotatef(-hurt * 14.0f, 0.0f, 0.0f, 1.0f);
-  gl::GL11::glRotatef(swing, 0.0f, 1.0f, 0.0f);
+  gl::rotatef(-swing, 0.0f, 1.0f, 0.0f);
+  gl::rotatef(-hurt * 14.0f, 0.0f, 0.0f, 1.0f);
+  gl::rotatef(swing, 0.0f, 1.0f, 0.0f);
 }
 void GameRenderer::applyViewBobbing(float tickDelta) {
   if(client == nullptr) {
@@ -284,11 +285,11 @@ void GameRenderer::applyViewBobbing(float tickDelta) {
   const float stepBob =
       player->prevStepBobbingAmount + (player->stepBobbingAmount - player->prevStepBobbingAmount) * tickDelta;
   const float tiltBob = player->prevTilt + (player->tilt - player->prevTilt) * tickDelta;
-  gl::GL11::glTranslatef(MathHelper::sin(phase * kPiF) * stepBob * 0.5f,
-                         -std::abs(MathHelper::cos(phase * kPiF) * stepBob), 0.0f);
-  gl::GL11::glRotatef(MathHelper::sin(phase * kPiF) * stepBob * 3.0f, 0.0f, 0.0f, 1.0f);
-  gl::GL11::glRotatef(std::abs(MathHelper::cos(phase * kPiF - 0.2f) * stepBob) * 5.0f, 1.0f, 0.0f, 0.0f);
-  gl::GL11::glRotatef(tiltBob, 1.0f, 0.0f, 0.0f);
+  gl::translatef(MathHelper::sin(phase * kPiF) * stepBob * 0.5f,
+                 -std::abs(MathHelper::cos(phase * kPiF) * stepBob), 0.0f);
+  gl::rotatef(MathHelper::sin(phase * kPiF) * stepBob * 3.0f, 0.0f, 0.0f, 1.0f);
+  gl::rotatef(std::abs(MathHelper::cos(phase * kPiF - 0.2f) * stepBob) * 5.0f, 1.0f, 0.0f, 0.0f);
+  gl::rotatef(tiltBob, 1.0f, 0.0f, 0.0f);
 }
 void GameRenderer::applyCameraTransform(float tickDelta) {
   if(client == nullptr || client->camera == nullptr) {
@@ -298,15 +299,21 @@ void GameRenderer::applyCameraTransform(float tickDelta) {
   if(living == nullptr) {
     return;
   }
+  if(frameCamera_.customView) {
+    gl::rotatef(frameCamera_.roll, 0.0f, 0.0f, 1.0f);
+    gl::rotatef(frameCamera_.pitch, 1.0f, 0.0f, 0.0f);
+    gl::rotatef(frameCamera_.yaw + 180.0f, 0.0f, 1.0f, 0.0f);
+    return;
+  }
   float eyeOffset = living->standingEyeHeight - 1.62f;
   double interpX = living->prevX + (living->x - living->prevX) * static_cast<double>(tickDelta);
   double interpY =
       living->prevY + (living->y - living->prevY) * static_cast<double>(tickDelta) - static_cast<double>(eyeOffset);
   double interpZ = living->prevZ + (living->z - living->prevZ) * static_cast<double>(tickDelta);
-  gl::GL11::glRotatef(prevCameraRollAmount + (cameraRollAmount - prevCameraRollAmount) * tickDelta, 0.0f, 0.0f, 1.0f);
+  gl::rotatef(prevCameraRollAmount + (cameraRollAmount - prevCameraRollAmount) * tickDelta, 0.0f, 0.0f, 1.0f);
   if(living->isSleeping()) {
     eyeOffset += 1.0f;
-    gl::GL11::glTranslatef(0.0f, 0.3f, 0.0f);
+    gl::translatef(0.0f, 0.3f, 0.0f);
     if(!client->options.debugCamera && client->world != nullptr) {
       const int blockId = client->world->getBlockId(MathHelper::floor(living->x), MathHelper::floor(living->y),
                                                     MathHelper::floor(living->z));
@@ -314,11 +321,11 @@ void GameRenderer::applyCameraTransform(float tickDelta) {
         const int meta = client->world->getBlockMeta(MathHelper::floor(living->x), MathHelper::floor(living->y),
                                                      MathHelper::floor(living->z));
         const int facing = static_cast<int>(meta) & 3;
-        gl::GL11::glRotatef(static_cast<float>(facing) * 90.0f, 0.0f, 1.0f, 0.0f);
+        gl::rotatef(static_cast<float>(facing) * 90.0f, 0.0f, 1.0f, 0.0f);
       }
-      gl::GL11::glRotatef(living->prevYaw + (living->yaw - living->prevYaw) * tickDelta + 180.0f, 0.0f, -1.0f,
-                          0.0f);
-      gl::GL11::glRotatef(living->prevPitch + (living->pitch - living->prevPitch) * tickDelta, -1.0f, 0.0f, 0.0f);
+      gl::rotatef(living->prevYaw + (living->yaw - living->prevYaw) * tickDelta + 180.0f, 0.0f, -1.0f,
+                  0.0f);
+      gl::rotatef(living->prevPitch + (living->pitch - living->prevPitch) * tickDelta, -1.0f, 0.0f, 0.0f);
     }
   } else if(client->options.thirdPerson) {
     double camDist =
@@ -326,9 +333,9 @@ void GameRenderer::applyCameraTransform(float tickDelta) {
     if(client->options.debugCamera) {
       const float dbgYaw = prevThirdPersonYaw + (thirdPersonYaw - prevThirdPersonYaw) * tickDelta;
       const float dbgPitch = prevThirdPersonPitch + (thirdPersonPitch - prevThirdPersonPitch) * tickDelta;
-      gl::GL11::glTranslatef(0.0f, 0.0f, static_cast<float>(-camDist));
-      gl::GL11::glRotatef(dbgPitch, 1.0f, 0.0f, 0.0f);
-      gl::GL11::glRotatef(dbgYaw, 0.0f, 1.0f, 0.0f);
+      gl::translatef(0.0f, 0.0f, static_cast<float>(-camDist));
+      gl::rotatef(dbgPitch, 1.0f, 0.0f, 0.0f);
+      gl::rotatef(dbgYaw, 0.0f, 1.0f, 0.0f);
     } else if(client->world != nullptr) {
       const float baseYaw = living->yaw;
       const float basePitch = living->pitch;
@@ -360,24 +367,20 @@ void GameRenderer::applyCameraTransform(float tickDelta) {
           camDist = dist;
         }
       }
-      gl::GL11::glRotatef(living->pitch - basePitch, 1.0f, 0.0f, 0.0f);
-      gl::GL11::glRotatef(living->yaw - baseYaw, 0.0f, 1.0f, 0.0f);
-      gl::GL11::glTranslatef(0.0f, 0.0f, static_cast<float>(-camDist));
-      gl::GL11::glRotatef(baseYaw - living->yaw, 0.0f, 1.0f, 0.0f);
-      gl::GL11::glRotatef(basePitch - living->pitch, 1.0f, 0.0f, 0.0f);
+      gl::rotatef(living->pitch - basePitch, 1.0f, 0.0f, 0.0f);
+      gl::rotatef(living->yaw - baseYaw, 0.0f, 1.0f, 0.0f);
+      gl::translatef(0.0f, 0.0f, static_cast<float>(-camDist));
+      gl::rotatef(baseYaw - living->yaw, 0.0f, 1.0f, 0.0f);
+      gl::rotatef(basePitch - living->pitch, 1.0f, 0.0f, 0.0f);
     }
   } else {
-    gl::GL11::glTranslatef(0.0f, 0.0f, -0.1f);
+    gl::translatef(0.0f, 0.0f, -0.1f);
   }
   if(!client->options.debugCamera) {
-    gl::GL11::glRotatef(living->prevPitch + (living->pitch - living->prevPitch) * tickDelta, 1.0f, 0.0f, 0.0f);
-    gl::GL11::glRotatef(living->prevYaw + (living->yaw - living->prevYaw) * tickDelta + 180.0f, 0.0f, 1.0f, 0.0f);
+    gl::rotatef(living->prevPitch + (living->pitch - living->prevPitch) * tickDelta, 1.0f, 0.0f, 0.0f);
+    gl::rotatef(living->prevYaw + (living->yaw - living->prevYaw) * tickDelta + 180.0f, 0.0f, 1.0f, 0.0f);
   }
-  gl::GL11::glTranslatef(0.0f, eyeOffset, 0.0f);
-  interpX = living->prevX + (living->x - living->prevX) * static_cast<double>(tickDelta);
-  interpY =
-      living->prevY + (living->y - living->prevY) * static_cast<double>(tickDelta) - static_cast<double>(eyeOffset);
-  interpZ = living->prevZ + (living->z - living->prevZ) * static_cast<double>(tickDelta);
+  gl::translatef(0.0f, eyeOffset, 0.0f);
 }
 void GameRenderer::updateSkyAndFogColors(float tickDelta) {
   if(client == nullptr || client->world == nullptr || client->camera == nullptr) {
@@ -417,7 +420,7 @@ void GameRenderer::updateSkyAndFogColors(float tickDelta) {
     fogGreen = resolved.fogColorGreen;
     fogBlue = resolved.fogColorBlue;
   }
-  gl::GL11::glClearColor(fogRed, fogGreen, fogBlue, 0.0f);
+  gl::clearColor(fogRed, fogGreen, fogBlue, 0.0f);
 }
 void GameRenderer::applyFog(int mode) {
   if(client == nullptr || client->world == nullptr || client->camera == nullptr) {
@@ -426,97 +429,118 @@ void GameRenderer::applyFog(int mode) {
   constexpr int fogModeLinear = 0x2601;
   constexpr int fogModeExp = 0x0800;
   const float color[4] = {fogRed, fogGreen, fogBlue, 1.0f};
-  gl::GL11::glFogfv(gl::GL11::GL_FOG_COLOR, color);
-  gl::GL11::glNormal3f(0.0f, -1.0f, 0.0f);
-  gl::GL11::glColor4f(1.0f, 1.0f, 1.0f, 1.0f);
+  gl::fogfv(gl::fog::Color, color);
+  gl::normal3f(0.0f, -1.0f, 0.0f);
+  gl::color4f(1.0f, 1.0f, 1.0f, 1.0f);
   const option::ResolvedRenderOptions resolved = option::resolve(client->options);
   const auto* living = dynamic_cast<const LivingEntity*>(client->camera);
   if(living != nullptr && living->isInFluid(::net::minecraft::block::material::Material::WATER)) {
-    gl::GL11::glFogi(gl::GL11::GL_FOG_MODE, fogModeExp);
-    gl::GL11::glFogf(gl::GL11::GL_FOG_DENSITY, resolved.clearWater ? 0.02f : 0.1f);
+    gl::fogi(gl::fog::Mode, fogModeExp);
+    gl::fogf(gl::fog::Density, resolved.clearWater ? 0.02f : 0.1f);
   } else if(living != nullptr && living->isInFluid(::net::minecraft::block::material::Material::LAVA)) {
-    gl::GL11::glFogi(gl::GL11::GL_FOG_MODE, fogModeExp);
-    gl::GL11::glFogf(gl::GL11::GL_FOG_DENSITY, 2.0f);
+    gl::fogi(gl::fog::Mode, fogModeExp);
+    gl::fogf(gl::fog::Density, 2.0f);
   } else if(resolved.customFog && !resolved.customFogLinear) {
-    gl::GL11::glFogi(gl::GL11::GL_FOG_MODE, fogModeExp);
-    gl::GL11::glFogf(gl::GL11::GL_FOG_DENSITY, resolved.fogDensity / resolved.renderScale);
+    gl::fogi(gl::fog::Mode, fogModeExp);
+    gl::fogf(gl::fog::Density, resolved.fogDensity / resolved.renderScale);
   } else {
-    gl::GL11::glFogi(gl::GL11::GL_FOG_MODE, fogModeLinear);
+    gl::fogi(gl::fog::Mode, fogModeLinear);
     if(mode < 0) {
-      gl::GL11::glFogf(gl::GL11::GL_FOG_START, 0.0f);
-      gl::GL11::glFogf(gl::GL11::GL_FOG_END, resolved.renderDistanceBlocks * 0.8f);
+      gl::fogf(gl::fog::Start, 0.0f);
+      gl::fogf(gl::fog::End, resolved.renderDistanceBlocks * 0.8f);
     } else {
-      gl::GL11::glFogf(gl::GL11::GL_FOG_START,
-                       resolved.renderDistanceBlocks * (resolved.customFog ? resolved.fogStart : 0.25f));
-      gl::GL11::glFogf(gl::GL11::GL_FOG_END,
-                       resolved.renderDistanceBlocks * (resolved.customFog ? resolved.fogEnd : 1.0f));
+      gl::fogf(gl::fog::Start,
+               resolved.renderDistanceBlocks * (resolved.customFog ? resolved.fogStart : 0.25f));
+      gl::fogf(gl::fog::End,
+               resolved.renderDistanceBlocks * (resolved.customFog ? resolved.fogEnd : 1.0f));
     }
     if(client->world->dimension != nullptr && client->world->dimension->isNether) {
-      gl::GL11::glFogf(gl::GL11::GL_FOG_START, 0.0f);
+      gl::fogf(gl::fog::Start, 0.0f);
     }
   }
-  gl::GL11::glEnable(gl::GL11::GL_COLOR_MATERIAL);
-  gl::GL11::glColorMaterial(gl::GL11::GL_FRONT, gl::GL11::GL_AMBIENT);
+  const gl::preset::ColorMaterialAmbient colorMaterialCaps;
 }
-void GameRenderer::renderWorld(float tickDelta) {
+void GameRenderer::renderWorld(float tickDelta, float fov) {
   if(client == nullptr) {
     return;
   }
+  int viewport[4]{0, 0, client->displayWidth, client->displayHeight};
+  gl::getIntegerv(gl::query::Viewport, viewport);
+  const float aspect = viewport[3] != 0 ? static_cast<float>(viewport[2]) / static_cast<float>(viewport[3]) : 1.0f;
   const option::ResolvedRenderOptions resolved = option::resolve(client->options);
-  const float aspect = static_cast<float>(client->displayWidth) / static_cast<float>(client->displayHeight);
-  gl::GL11::glMatrixMode(gl::GL11::GL_PROJECTION);
-  gl::GL11::glLoadIdentity();
+  gl::matrixMode(gl::matrix_::Projection);
+  gl::loadIdentity();
   if(zoom != 1.0) {
-    gl::GL11::glTranslatef(static_cast<float>(zoomX), static_cast<float>(-zoomY), 0.0f);
-    gl::GL11::glScaled(zoom, zoom, 1.0);
-    gluPerspectiveFov(getFov(tickDelta), aspect, 0.05f, resolved.renderDistanceBlocks * 2.0f);
+    gl::translatef(static_cast<float>(zoomX), static_cast<float>(-zoomY), 0.0f);
+    gl::scaled(zoom, zoom, 1.0);
+    gluPerspectiveFov(fov, aspect, 0.05f, resolved.renderDistanceBlocks * 2.0f);
   } else {
-    gluPerspectiveFov(getFov(tickDelta), aspect, 0.05f, resolved.renderDistanceBlocks * 2.0f);
+    gluPerspectiveFov(fov, aspect, 0.05f, resolved.renderDistanceBlocks * 2.0f);
   }
-  gl::GL11::glMatrixMode(gl::GL11::GL_MODELVIEW);
-  gl::GL11::glLoadIdentity();
-  applyDamageTiltEffect(tickDelta);
-  if(client->options.bobView) {
-    applyViewBobbing(tickDelta);
-  }
-  if(client->player != nullptr) {
-    const float distortion = client->player->lastScreenDistortion +
-                             (client->player->screenDistortion - client->player->lastScreenDistortion) * tickDelta;
-    if(distortion > 0.0f) {
-      float scale = 5.0f / (distortion * distortion + 5.0f) - distortion * 0.04f;
-      scale *= scale;
-      gl::GL11::glRotatef((static_cast<float>(ticks) + tickDelta) * 20.0f, 0.0f, 1.0f, 1.0f);
-      gl::GL11::glScalef(1.0f / scale, 1.0f, 1.0f);
-      gl::GL11::glRotatef(-((static_cast<float>(ticks) + tickDelta) * 20.0f), 0.0f, 1.0f, 1.0f);
+  gl::matrixMode(gl::matrix_::ModelView);
+  gl::loadIdentity();
+  if(!frameCamera_.customView) {
+    applyDamageTiltEffect(tickDelta);
+    if(client->options.bobView) {
+      applyViewBobbing(tickDelta);
+    }
+    if(client->player != nullptr) {
+      const float distortion = client->player->lastScreenDistortion +
+                               (client->player->screenDistortion - client->player->lastScreenDistortion) * tickDelta;
+      if(distortion > 0.0f) {
+        float scale = 5.0f / (distortion * distortion + 5.0f) - distortion * 0.04f;
+        scale *= scale;
+        gl::rotatef((static_cast<float>(ticks) + tickDelta) * 20.0f, 0.0f, 1.0f, 1.0f);
+        gl::scalef(1.0f / scale, 1.0f, 1.0f);
+        gl::rotatef(-((static_cast<float>(ticks) + tickDelta) * 20.0f), 0.0f, 1.0f, 1.0f);
+      }
     }
   }
   applyCameraTransform(tickDelta);
 }
 void GameRenderer::renderFirstPersonHand(float tickDelta) {
-  if(client == nullptr || heldItemRenderer == nullptr) {
+  if(client == nullptr || heldItemRenderer == nullptr || frameCamera_.hideFirstPersonHand) {
     return;
   }
-  gl::GL11::glLoadIdentity();
-  gl::GL11::glPushMatrix();
-  applyDamageTiltEffect(tickDelta);
-  if(client->options.bobView) {
-    applyViewBobbing(tickDelta);
+  int viewport[4]{0, 0, client->displayWidth, client->displayHeight};
+  gl::getIntegerv(gl::query::Viewport, viewport);
+  const option::ResolvedRenderOptions resolved = option::resolve(client->options);
+  const float aspect = viewport[3] != 0 ? static_cast<float>(viewport[2]) / static_cast<float>(viewport[3]) : 1.0f;
+  gl::matrixMode(gl::matrix_::Projection);
+  gl::loadIdentity();
+  if(zoom != 1.0) {
+    gl::translatef(static_cast<float>(zoomX), static_cast<float>(-zoomY), 0.0f);
+    gl::scaled(zoom, zoom, 1.0);
   }
+  gluPerspectiveFov(getFov(tickDelta), aspect, 0.05f, resolved.renderDistanceBlocks * 2.0f);
+  gl::matrixMode(gl::matrix_::ModelView);
+  gl::loadIdentity();
+  const gl::preset::FirstPersonDepth handDepth;
   auto* living = dynamic_cast<LivingEntity*>(client->camera);
-  if(living != nullptr) {
-    mod::FirstPersonHandRenderEvent event{living, tickDelta, 0, false};
-    mod::hooks().publish(event);
-    if(event.canceled) {
-      gl::GL11::glPopMatrix();
-      return;
+  // WorldRenderer::renderEntities may have early-returned this frame (entity render
+  // cooldown after a world reload) without refreshing the dispatcher, leaving its
+  // camera pointing at a deleted entity — e.g. the pre-respawn player. Refresh it
+  // here so PlayerEntityRenderer::renderHand never sees a stale pointer.
+  entity::EntityRenderDispatcher::instance().setCameraEntity(living);
+  {
+    const gl::MatrixGuard matrix;
+    applyDamageTiltEffect(tickDelta);
+    if(client->options.bobView) {
+      applyViewBobbing(tickDelta);
+    }
+    if(living != nullptr) {
+      mod::FirstPersonHandRenderEvent event{living, tickDelta, 0, false};
+      mod::hooks().publish(event);
+      if(event.canceled) {
+        return;
+      }
+    }
+    if(living != nullptr && !client->options.thirdPerson && !living->isSleeping() && !client->options.hideHud) {
+      if(client->world != nullptr) {
+        heldItemRenderer->render(tickDelta);
+      }
     }
   }
-  if(living != nullptr && !client->options.thirdPerson && !living->isSleeping() && !client->options.hideHud) {
-    if(client->world != nullptr) {
-      heldItemRenderer->render(tickDelta);
-    }
-  }
-  gl::GL11::glPopMatrix();
   if(living != nullptr && !client->options.thirdPerson && !living->isSleeping()) {
     heldItemRenderer->renderScreenOverlays(tickDelta);
     applyDamageTiltEffect(tickDelta);
@@ -581,12 +605,12 @@ void GameRenderer::onFrameUpdate(float tickDelta) {
       client->inGameHud.render(tickDelta, chatOpen, 0, 0);
     }
   } else {
-    gl::GL11::glViewport(0, 0, client->displayWidth, client->displayHeight);
-    gl::GL11::glClear(gl::GL11::GL_COLOR_BUFFER_BIT | gl::GL11::GL_DEPTH_BUFFER_BIT);
-    gl::GL11::glMatrixMode(gl::GL11::GL_PROJECTION);
-    gl::GL11::glLoadIdentity();
-    gl::GL11::glMatrixMode(gl::GL11::GL_MODELVIEW);
-    gl::GL11::glLoadIdentity();
+    gl::viewport(0, 0, client->displayWidth, client->displayHeight);
+    gl::clear(gl::attrib::ColorBufferBit | gl::attrib::DepthBufferBit);
+    gl::matrixMode(gl::matrix_::Projection);
+    gl::loadIdentity();
+    gl::matrixMode(gl::matrix_::ModelView);
+    gl::loadIdentity();
     setupHudRender();
     throttleAndTimestamp(fpsCap);
   }
@@ -599,26 +623,9 @@ void GameRenderer::onFrameUpdate(float tickDelta) {
     const auto [mouseX, mouseY] =
         util::mapScreenMouse(client->displayWidth, client->displayHeight, scale.scaledWidth, scale.scaledHeight,
                              input.mouseX(), input.mouseY());
-    gl::GL11::glViewport(0, 0, client->displayWidth, client->displayHeight);
-    gl::GL11::glDisable(gl::GL11::GL_CULL_FACE);
-    gl::GL11::glColor4f(1.0f, 1.0f, 1.0f, 1.0f);
-    gl::GL11::glClear(gl::GL11::GL_DEPTH_BUFFER_BIT);
-    gl::GL11::glMatrixMode(gl::GL11::GL_PROJECTION);
-    gl::GL11::glLoadIdentity();
-    gl::GL11::glOrtho(0.0, scale.rawWidth, scale.rawHeight, 0.0, 1000.0, 3000.0);
-    gl::GL11::glMatrixMode(gl::GL11::GL_MODELVIEW);
-    gl::GL11::glLoadIdentity();
-    gl::GL11::glTranslatef(0.0f, 0.0f, -2000.0f);
-    gl::GL11::glClear(gl::GL11::GL_DEPTH_BUFFER_BIT);
+    gl::pass::beginScreen(scale, client->displayWidth, client->displayHeight);
     mod::ScreenGuiEvent renderGui{client->currentScreen(), false, tickDelta, mouseX, mouseY};
-    gl::GL11::glMatrixMode(gl::GL11::GL_MODELVIEW);
-    {
-      const gl::MatrixGuard matrix;
-      const gl::AttribGuard state(gl::GL11::GL_ENABLE_BIT | gl::GL11::GL_LIGHTING_BIT | gl::GL11::GL_CURRENT_BIT |
-                                  gl::GL11::GL_TEXTURE_BIT | gl::GL11::GL_COLOR_BUFFER_BIT |
-                                  gl::GL11::GL_DEPTH_BUFFER_BIT | gl::GL11::GL_TRANSFORM_BIT);
-      mod::hooks().publish(renderGui);
-    }
+    mod::hooks().publish(renderGui);
     client->currentScreen()->render(mouseX, mouseY, tickDelta);
   }
 }
@@ -662,62 +669,73 @@ void bindTerrainTexture(int terrainTextureId) {
   if(terrainTextureId < 0) {
     return;
   }
-  gl::GL11::glActiveTexture(gl::GL11::GL_TEXTURE0);
-  gl::GL11::glEnable(gl::GL11::GL_TEXTURE_2D);
-  gl::GL11::glBindTexture(gl::GL11::GL_TEXTURE_2D, static_cast<unsigned int>(terrainTextureId));
+  gl::activeTexture(gl::tex::Texture0);
+  gl::setCap(gl::cap::Texture2D, true);
+  gl::bindTexture(gl::cap::Texture2D, static_cast<unsigned int>(terrainTextureId));
 }
 void drawSolidTerrain(WorldRenderer& worldRenderer, LivingEntity& camera, float tickDelta, int terrainTextureId,
                       bool ambientOcclusion) {
   bindTerrainTexture(terrainTextureId);
+  gl::setCap(gl::cap::AlphaTest, true);
+  gl::alphaFunc(gl::compare::Greater, 0.1f);
   platform::Lighting::turnOff();
   if(ambientOcclusion) {
-    gl::GL11::glShadeModel(gl::GL11::GL_SMOOTH);
+    gl::shadeModel(gl::shade::Smooth);
   }
-  gl::GL11::glColor4f(1.0f, 1.0f, 1.0f, 1.0f);
+  gl::color4f(1.0f, 1.0f, 1.0f, 1.0f);
   worldRenderer.render(camera, 0, static_cast<double>(tickDelta));
-  gl::GL11::glShadeModel(gl::GL11::GL_FLAT);
+  gl::shadeModel(gl::shade::Flat);
 }
 void drawTranslucentTerrain(WorldRenderer& worldRenderer, LivingEntity& camera, float tickDelta, int terrainTextureId,
                             bool fancyGraphics, bool ambientOcclusion) {
   bindTerrainTexture(terrainTextureId);
-  gl::GL11::glEnable(gl::GL11::GL_BLEND);
-  gl::GL11::glBlendFunc(gl::GL11::GL_SRC_ALPHA, gl::GL11::GL_ONE_MINUS_SRC_ALPHA);
-  gl::GL11::glDisable(gl::GL11::GL_CULL_FACE);
+  const gl::preset::TranslucentTerrain terrainCaps;
   if(fancyGraphics) {
     if(ambientOcclusion) {
-      gl::GL11::glShadeModel(gl::GL11::GL_SMOOTH);
+      gl::shadeModel(gl::shade::Smooth);
     }
-    gl::GL11::glColorMask(false, false, false, false);
-    const int drawn = worldRenderer.render(camera, 1, static_cast<double>(tickDelta));
-    gl::GL11::glColorMask(true, true, true, true);
-    if(drawn > 0) {
-      worldRenderer.renderLastChunks(1, static_cast<double>(tickDelta));
-    }
-    gl::GL11::glShadeModel(gl::GL11::GL_FLAT);
+    gl::colorMask(false, false, false, false);
+    worldRenderer.render(camera, 1, static_cast<double>(tickDelta), false);
+    gl::colorMask(true, true, true, true);
+    worldRenderer.renderLastChunks(1, static_cast<double>(tickDelta));
+    gl::shadeModel(gl::shade::Flat);
   } else {
     worldRenderer.render(camera, 1, static_cast<double>(tickDelta));
   }
-  gl::GL11::glDepthMask(true);
-  gl::GL11::glEnable(gl::GL11::GL_CULL_FACE);
-  gl::GL11::glDisable(gl::GL11::GL_BLEND);
+  gl::depthMask(true);
+  gl::setCap(gl::cap::CullFace, true);
+  gl::setCap(gl::cap::Blend, false);
+  gl::setCap(gl::cap::AlphaTest, true);
+  gl::alphaFunc(gl::compare::Greater, 0.1f);
 }
 void renderBlockOverlay(WorldRenderer& worldRenderer, net::minecraft::client::Minecraft* client, PlayerEntity& player,
                         float tickDelta) {
-  gl::GL11::glDisable(gl::GL11::GL_ALPHA_TEST);
+  gl::setCap(gl::cap::AlphaTest, false);
   const ItemStack hand = selectedItemOrEmpty(&player);
   worldRenderer.renderMiningProgress(&player, *client->crosshairTarget, 0, hand, tickDelta);
   worldRenderer.renderBlockOutline(&player, *client->crosshairTarget, 0, hand, tickDelta);
-  gl::GL11::glEnable(gl::GL11::GL_ALPHA_TEST);
+  gl::setCap(gl::cap::AlphaTest, true);
 }
 } // namespace
 void GameRenderer::renderFrame(float tickDelta, std::int64_t /*timeNs*/) {
+  mod::RenderTargetsEvent renderTargetsEvent{tickDelta};
+  mod::hooks().publish(renderTargetsEvent);
+  if(client != nullptr) {
+    renderToCurrentTarget(tickDelta, FrameRenderCamera{}, getFov(tickDelta), client->displayWidth,
+                          client->displayHeight, false);
+  }
+}
+void GameRenderer::renderToCurrentTarget(float tickDelta, const FrameRenderCamera& cameraFrame, float fov,
+                                         int viewportWidth, int viewportHeight, bool renderCameraEntity) {
   if(client == nullptr) {
     return;
   }
-  gl::GL11::glViewport(0, 0, client->displayWidth, client->displayHeight);
-  gl::GL11::glEnable(gl::GL11::GL_CULL_FACE);
-  gl::GL11::glEnable(gl::GL11::GL_DEPTH_TEST);
-  gl::GL11::glDepthMask(true);
+  gl::viewport(0, 0, viewportWidth, viewportHeight);
+  gl::setCap(gl::cap::CullFace, true);
+  gl::setCap(gl::cap::DepthTest, true);
+  gl::depthMask(true);
+  gl::setCap(gl::cap::AlphaTest, true);
+  gl::alphaFunc(gl::compare::Greater, 0.1f);
   if(client->camera == nullptr) {
     client->camera = client->player;
   }
@@ -727,25 +745,27 @@ void GameRenderer::renderFrame(float tickDelta, std::int64_t /*timeNs*/) {
   if(camera == nullptr || client->world == nullptr || worldRenderer == nullptr) {
     return;
   }
+  frameCamera_ = cameraFrame;
   worldRenderer->setCamera(camera);
-  double camX = camera->lastTickX + (camera->x - camera->lastTickX) * static_cast<double>(tickDelta);
-  double camY = camera->lastTickY + (camera->y - camera->lastTickY) * static_cast<double>(tickDelta);
-  double camZ = camera->lastTickZ + (camera->z - camera->lastTickZ) * static_cast<double>(tickDelta);
-  mod::CameraSetupEvent cameraEvent{camera, camX, camY, camZ, tickDelta};
-  mod::hooks().publish(cameraEvent);
-  camX = cameraEvent.x;
-  camY = cameraEvent.y;
-  camZ = cameraEvent.z;
-  client->world->setChunkCacheCenterFromBlockPos(MathHelper::floor(camX), MathHelper::floor(camZ));
+  worldRenderer->setRenderCameraEntity(renderCameraEntity);
+  if(!frameCamera_.customView) {
+    const float rollAmount = prevCameraRollAmount + (cameraRollAmount - prevCameraRollAmount) * tickDelta;
+    mod::CameraSetupEvent cameraEvent{};
+    populateCameraSetupDefaults(cameraEvent, *camera, tickDelta, rollAmount);
+    mod::hooks().publish(cameraEvent);
+    frameCamera_ = frameCameraFromSetup(cameraEvent);
+  }
+  RenderCameraState::instance().setFrame(frameCamera_);
+  worldRenderer->setFrameRenderCamera(frameCamera_.x, frameCamera_.y, frameCamera_.z);
+  client->world->setChunkCacheCenterFromBlockPos(MathHelper::floor(frameCamera_.x), MathHelper::floor(frameCamera_.z));
   const option::ResolvedRenderOptions resolvedOptions = option::resolve(client->options);
   const bool ambientOcclusion = client->options.ao;
   const bool fancyGraphics = client->options.fancyGraphics;
   const int terrainTextureId = client->textureManager.getTextureId("/terrain.png");
   const AtmosphereContext atmosphereCtx = makeAtmosphereContext(client, camera, ticks);
   updateSkyAndFogColors(tickDelta);
-  gl::GL11::glClear(gl::GL11::GL_COLOR_BUFFER_BIT | gl::GL11::GL_DEPTH_BUFFER_BIT);
-  gl::GL11::glEnable(gl::GL11::GL_CULL_FACE);
-  renderWorld(tickDelta);
+  gl::clear(gl::attrib::ColorBufferBit | gl::attrib::DepthBufferBit);
+  renderWorld(tickDelta, fov);
   if(client->options.frustumCulling) {
     Frustum::getInstance().compute();
   }
@@ -754,30 +774,34 @@ void GameRenderer::renderFrame(float tickDelta, std::int64_t /*timeNs*/) {
     if(client->world->dimension != nullptr && !client->world->dimension->isNether) {
       atmosphere::renderSkyDome(atmosphereCtx, tickDelta);
     }
+    gl::setCap(gl::cap::AlphaTest, true);
+    gl::alphaFunc(gl::compare::Greater, 0.1f);
   }
-  gl::GL11::glEnable(gl::GL11::GL_FOG);
+  gl::setCap(gl::cap::Fog, true);
   applyFog(1);
   if(ambientOcclusion) {
-    gl::GL11::glShadeModel(gl::GL11::GL_SMOOTH);
+    gl::shadeModel(gl::shade::Smooth);
   }
   FrustumCuller frustumCuller;
-  Culler* activeCuller = nullptr;
+  FrustumCuller* activeCuller = nullptr;
   if(client->options.frustumCulling) {
-    frustumCuller.prepare(camX, camY, camZ);
+    frustumCuller.prepare(frameCamera_.x, frameCamera_.y, frameCamera_.z);
     activeCuller = &frustumCuller;
   }
   worldRenderer->cullChunks(activeCuller, tickDelta);
   worldRenderer->compileChunks(*camera, false);
   applyFog(0);
-  gl::GL11::glEnable(gl::GL11::GL_FOG);
   drawSolidTerrain(*worldRenderer, *camera, tickDelta, terrainTextureId, ambientOcclusion);
   platform::Lighting::turnOn();
-  worldRenderer->renderEntities(camera->getPosition(tickDelta), activeCuller, tickDelta);
+  const Vec3d frameCameraPos{frameCamera_.x, frameCamera_.y, frameCamera_.z};
+  worldRenderer->renderEntities(frameCameraPos, activeCuller, tickDelta);
+  gl::setCap(gl::cap::AlphaTest, true);
+  gl::alphaFunc(gl::compare::Greater, 0.1f);
   client->particleManager.renderLit(camera, tickDelta);
   platform::Lighting::turnOff();
   applyFog(0);
-  gl::GL11::glEnable(gl::GL11::GL_BLEND);
-  gl::GL11::glBlendFunc(gl::GL11::GL_SRC_ALPHA, gl::GL11::GL_ONE_MINUS_SRC_ALPHA);
+  gl::setCap(gl::cap::Blend, true);
+  gl::blendFunc(gl::blend::SrcAlpha, gl::blend::OneMinusSrcAlpha);
   client->particleManager.render(camera, tickDelta);
   if(client->crosshairTarget.has_value()) {
     if(auto* player = dynamic_cast<PlayerEntity*>(camera)) {
@@ -795,9 +819,10 @@ void GameRenderer::renderFrame(float tickDelta, std::int64_t /*timeNs*/) {
     }
   }
   precipitationRenderer.renderPrecipitation(atmosphereCtx, tickDelta);
-  gl::GL11::glDisable(gl::GL11::GL_FOG);
-  applyFog(0);
-  gl::GL11::glEnable(gl::GL11::GL_FOG);
+  {
+    const gl::preset::FogOff preCloudFog;
+    applyFog(0);
+  }
   mod::WorldRenderEvent cloudEvent{
       atmosphereCtx.world,
       atmosphereCtx.camera,
@@ -812,14 +837,15 @@ void GameRenderer::renderFrame(float tickDelta, std::int64_t /*timeNs*/) {
   }
   cloudEvent.moment = mod::RenderHookMoment::After;
   mod::hooks().publish(cloudEvent);
-  gl::GL11::glDisable(gl::GL11::GL_FOG);
+  gl::setCap(gl::cap::Fog, false);
   applyFog(1);
-  gl::GL11::glEnable(gl::GL11::GL_CULL_FACE);
-  gl::GL11::glDisable(gl::GL11::GL_BLEND);
-  gl::GL11::glAlphaFunc(gl::GL11::GL_GREATER, 0.1f);
-  gl::GL11::glColor4f(1.0f, 1.0f, 1.0f, 1.0f);
-  if(zoom == 1.0) {
-    gl::GL11::glClear(gl::GL11::GL_DEPTH_BUFFER_BIT);
+  gl::setCap(gl::cap::CullFace, true);
+  gl::setCap(gl::cap::Blend, false);
+  gl::setCap(gl::cap::AlphaTest, true);
+  gl::alphaFunc(gl::compare::Greater, 0.1f);
+  gl::color4f(1.0f, 1.0f, 1.0f, 1.0f);
+  if(zoom == 1.0 && !renderCameraEntity) {
+    gl::clear(gl::attrib::DepthBufferBit);
     renderFirstPersonHand(tickDelta);
   }
 }
@@ -881,18 +907,6 @@ void GameRenderer::setupHudRender() {
   if(client == nullptr) {
     return;
   }
-  const util::UiScale scale = util::uiScale(client->options, client->displayWidth, client->displayHeight);
-  gl::GL11::glClear(gl::GL11::GL_DEPTH_BUFFER_BIT);
-  gl::GL11::glMatrixMode(gl::GL11::GL_PROJECTION);
-  gl::GL11::glLoadIdentity();
-  gl::GL11::glOrtho(0.0, scale.rawWidth, scale.rawHeight, 0.0, 1000.0, 3000.0);
-  gl::GL11::glMatrixMode(gl::GL11::GL_MODELVIEW);
-  gl::GL11::glLoadIdentity();
-  gl::GL11::glTranslatef(0.0f, 0.0f, -2000.0f);
-  gl::GL11::glDisable(gl::GL11::GL_CULL_FACE);
-  gl::GL11::glEnable(gl::GL11::GL_TEXTURE_2D);
-  gl::GL11::glEnable(gl::GL11::GL_ALPHA_TEST);
-  gl::GL11::glAlphaFunc(gl::GL11::GL_GREATER, 0.1f);
-  gl::GL11::glColor4f(1.0f, 1.0f, 1.0f, 1.0f);
+  gl::pass::beginHud(util::uiScale(client->options, client->displayWidth, client->displayHeight));
 }
 } // namespace net::minecraft::client::render

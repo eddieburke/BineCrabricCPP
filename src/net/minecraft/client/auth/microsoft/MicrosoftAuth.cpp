@@ -221,6 +221,20 @@ std::optional<std::string> activeTextureUrl(const std::string& profileJson, cons
   }
   return std::nullopt;
 }
+void applyActiveSkin(const std::string& profileJson, MicrosoftAccount& account) {
+  for(const std::string& skin : json::objectArrayField(profileJson, "skins")) {
+    if(json::stringField(skin, "state") != "ACTIVE") {
+      continue;
+    }
+    if(const std::optional<std::string> url = json::stringField(skin, "url")) {
+      account.skinUrl = *url;
+    }
+    if(const std::optional<std::string> variant = json::stringField(skin, "variant")) {
+      account.slimArms = *variant == "SLIM";
+    }
+    return;
+  }
+}
 AuthResult authResultFromProfileJson(const std::string& clientId, const std::string& accessToken,
                                      const std::string& profileJson) {
   const std::optional<std::string> profileId = json::stringField(profileJson, "id");
@@ -234,9 +248,7 @@ AuthResult authResultFromProfileJson(const std::string& clientId, const std::str
   result.account.accessToken = accessToken;
   result.account.profileId = *profileId;
   result.account.profileName = *profileName;
-  if(const std::optional<std::string> skinUrl = activeTextureUrl(profileJson, "skins")) {
-    result.account.skinUrl = *skinUrl;
-  }
+  applyActiveSkin(profileJson, result.account);
   if(const std::optional<std::string> capeUrl = activeTextureUrl(profileJson, "capes")) {
     result.account.capeUrl = *capeUrl;
   }

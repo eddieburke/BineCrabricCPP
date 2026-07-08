@@ -3,6 +3,7 @@
 #include <filesystem>
 #include <memory>
 #include <mutex>
+#include <optional>
 #include <string>
 #include <string_view>
 #include <unordered_map>
@@ -24,6 +25,7 @@ struct ModPackage {
   bool active = false;
   bool resourceOverlay = false;
   bool runtimeScript = false;
+  std::string downloadUrl;
   std::string error;
   std::filesystem::path sourcePath;
   std::filesystem::path rootPath;
@@ -43,6 +45,7 @@ public:
     std::vector<Callback> callbacks;
     std::vector<int> buttonCallbackRefs;
     std::vector<int> blockModelCallbackRefs;
+    std::vector<int> itemModelCallbackRefs;
     std::vector<int> ownedTextureIds;
   };
   void initialize(const std::filesystem::path& runDirectory);
@@ -56,6 +59,7 @@ public:
   void loadEnabledPackageMods();
   [[nodiscard]] std::vector<ModPackage> packageMods() const;
   [[nodiscard]] std::vector<std::uint8_t> readResource(std::string_view path) const;
+  [[nodiscard]] std::optional<std::filesystem::path> resolveResourcePath(std::string_view path) const;
   [[nodiscard]] std::filesystem::path modsDirectory() const;
   [[nodiscard]] std::filesystem::path runDirectory() const;
   [[nodiscard]] std::filesystem::path assetPath(std::string_view modId, std::string_view relativePath) const;
@@ -68,6 +72,7 @@ public:
 private:
   void loadStateFile();
   void saveStateFile() const;
+  [[nodiscard]] std::optional<std::filesystem::path> findResourceFile(std::string_view path) const;
   ModPackage* findPackageMod(const std::string& modId);
   std::filesystem::path runDirectory_;
   std::filesystem::path modsDirectory_;

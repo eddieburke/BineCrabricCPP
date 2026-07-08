@@ -1,7 +1,9 @@
 #include "net/minecraft/mod/lua/LuaBlockModel.hpp"
+#include "net/minecraft/mod/lua/LuaBlockRegistry.hpp"
+#include "net/minecraft/client/mod/LuaModelBoxDraw.hpp"
 #include "net/minecraft/mod/ModTexture.hpp"
 #include "net/minecraft/block/Block.hpp"
-#include "net/minecraft/client/gl/GL11.hpp"
+#include "net/minecraft/client/gl/GlState.hpp"
 #include "net/minecraft/client/render/Tessellator.hpp"
 #include "net/minecraft/client/render/block/BlockRenderManager.hpp"
 #include "net/minecraft/world/BlockView.hpp"
@@ -9,7 +11,7 @@ namespace net::minecraft::mod::lua {
 namespace {
 using net::minecraft::BlockView;
 using net::minecraft::block::Block;
-using net::minecraft::client::gl::GL11;
+using net::minecraft::client::gl::MatrixGuard;
 using net::minecraft::client::render::Tessellator;
 using net::minecraft::client::render::block::BlockRenderManager;
 bool matchesConnectionRule(const BlockView* world, const Block& block, int nx, int ny, int nz, ConnectionRule rule) {
@@ -104,21 +106,29 @@ bool emitManualBlockModelQuad(const ManualBlockVertex* vertices, int textureId, 
     textureId = gManualBlockDraw->block->textureId;
   }
   BlockRenderManager& manager = *gManualBlockDraw->manager;
+  if(!gManualBlockDraw->inventory && manager.ctx.textureOverride >= 0) {
+    textureId = manager.ctx.textureOverride;
+  }
   if(!gManualBlockDraw->inventory) {
     manager.ctx.bindTextureFor(textureId);
   }
   Tessellator& t = gManualBlockDraw->inventory ? *manager.ctx.tess : manager.ctx.activeTess(textureId);
+  const bool capturing = !gManualBlockDraw->inventory && manager.ctx.modMeshes != nullptr;
   const double baseX = gManualBlockDraw->inventory ? 0.0 : static_cast<double>(gManualBlockDraw->x);
   const double baseY = gManualBlockDraw->inventory ? 0.0 : static_cast<double>(gManualBlockDraw->y);
   const double baseZ = gManualBlockDraw->inventory ? 0.0 : static_cast<double>(gManualBlockDraw->z);
-  t.startQuads();
+  if(!capturing) {
+    t.startQuads();
+  }
   t.color(red * gManualBlockDraw->brightness, green * gManualBlockDraw->brightness,
           blue * gManualBlockDraw->brightness, alpha);
   for(int i = 0; i < 4; ++i) {
     const auto uv = uvAtPixels(textureId, vertices[i].u, vertices[i].v);
     t.vertex(baseX + vertices[i].x, baseY + vertices[i].y, baseZ + vertices[i].z, uv.uMin, uv.vMin);
   }
-  t.draw();
+  if(!capturing) {
+    t.draw();
+  }
   return true;
 }
 bool drawLuaBlockWorld(BlockRenderManager& manager, Block& block, int x, int y, int z) {
@@ -147,64 +157,21 @@ void drawLuaBlockInventory(BlockRenderManager& manager, Block& block, int /*meta
   if(spec == nullptr) {
     return;
   }
-  const net::minecraft::block::TerrainAtlasUv uv = tileUv(block.textureId);
-  GL11::glPushMatrix();
-  GL11::glTranslatef(-0.5f, -0.5f, -0.5f);
-  GL11::glEnable(GL11::GL_BLEND);
-  GL11::glBlendFunc(GL11::GL_SRC_ALPHA, GL11::GL_ONE_MINUS_SRC_ALPHA);
-  GL11::glDisable(GL11::GL_LIGHTING);
-  GL11::glDisable(GL11::GL_CULL_FACE);
+  const gl::preset::ModBlockInventory inventoryDraw;
+  const MatrixGuard matrix;
+  gl::translatef(-0.5f, -0.5f, -0.5f);
   Tessellator& t = *manager.ctx.tess;
   if(spec->model.type == LuaBlockModelSpec::Type::Manual) {
     ActiveManualBlockDraw context{&manager, &block, 0, 0, 0, true, brightness};
     const ScopedManualBlockDraw scope(context);
     invokeManualBlockModelDraw(*spec, true, 0, 0, 0, brightness);
-    GL11::glEnable(GL11::GL_LIGHTING);
-    GL11::glEnable(GL11::GL_CULL_FACE);
-    GL11::glDisable(GL11::GL_BLEND);
-    GL11::glPopMatrix();
     return;
   }
   for(const ModelBox& box : spec->model.boxes) {
     if(!box.alwaysDraw) {
       continue;
     }
-    t.startQuads();
-    t.normal(1.0f, 0.0f, 0.0f);
-    t.vertex(box.maxX, box.maxY, box.minZ, uv.uMax, uv.vMin);
-    t.vertex(box.maxX, box.minY, box.minZ, uv.uMax, uv.vMax);
-    t.vertex(box.maxX, box.minY, box.maxZ, uv.uMin, uv.vMax);
-    t.vertex(box.maxX, box.maxY, box.maxZ, uv.uMin, uv.vMin);
-    t.normal(-1.0f, 0.0f, 0.0f);
-    t.vertex(box.minX, box.maxY, box.maxZ, uv.uMax, uv.vMin);
-    t.vertex(box.minX, box.minY, box.maxZ, uv.uMax, uv.vMax);
-    t.vertex(box.minX, box.minY, box.minZ, uv.uMin, uv.vMax);
-    t.vertex(box.minX, box.maxY, box.minZ, uv.uMin, uv.vMin);
-    t.normal(0.0f, 0.0f, 1.0f);
-    t.vertex(box.maxX, box.maxY, box.maxZ, uv.uMax, uv.vMin);
-    t.vertex(box.maxX, box.minY, box.maxZ, uv.uMax, uv.vMax);
-    t.vertex(box.minX, box.minY, box.maxZ, uv.uMin, uv.vMax);
-    t.vertex(box.minX, box.maxY, box.maxZ, uv.uMin, uv.vMin);
-    t.normal(0.0f, 0.0f, -1.0f);
-    t.vertex(box.minX, box.maxY, box.minZ, uv.uMax, uv.vMin);
-    t.vertex(box.minX, box.minY, box.minZ, uv.uMax, uv.vMax);
-    t.vertex(box.maxX, box.minY, box.minZ, uv.uMin, uv.vMax);
-    t.vertex(box.maxX, box.maxY, box.minZ, uv.uMin, uv.vMin);
-    t.normal(0.0f, 1.0f, 0.0f);
-    t.vertex(box.minX, box.maxY, box.minZ, uv.uMin, uv.vMin);
-    t.vertex(box.minX, box.maxY, box.maxZ, uv.uMin, uv.vMax);
-    t.vertex(box.maxX, box.maxY, box.maxZ, uv.uMax, uv.vMax);
-    t.vertex(box.maxX, box.maxY, box.minZ, uv.uMax, uv.vMin);
-    t.normal(0.0f, -1.0f, 0.0f);
-    t.vertex(box.minX, box.minY, box.maxZ, uv.uMin, uv.vMin);
-    t.vertex(box.minX, box.minY, box.minZ, uv.uMin, uv.vMax);
-    t.vertex(box.maxX, box.minY, box.minZ, uv.uMax, uv.vMax);
-    t.vertex(box.maxX, box.minY, box.maxZ, uv.uMax, uv.vMin);
-    t.draw();
+    client::mod::emitModelBoxGeometry(t, box, tileUv(block.textureId));
   }
-  GL11::glEnable(GL11::GL_LIGHTING);
-  GL11::glEnable(GL11::GL_CULL_FACE);
-  GL11::glDisable(GL11::GL_BLEND);
-  GL11::glPopMatrix();
 }
 } // namespace net::minecraft::mod::lua

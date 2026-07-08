@@ -4,6 +4,7 @@
 #include "net/minecraft/registry/ContentRegistries.hpp"
 #include "net/minecraft/mod/ModLifecycle.hpp"
 #include "net/minecraft/mod/runtime/ModHost.hpp"
+#include "net/minecraft/recipe/CraftingRecipeManager.hpp"
 #include <stdexcept>
 #include <algorithm>
 #include <array>
@@ -55,6 +56,10 @@ void runPhase(mod::LifecyclePhase phase) {
   for(const QueuedInit& entry : bucket) {
     entry.fn();
   }
+  // Sort once after every callback in this phase, including Lua mod batches at order 50000.
+  if(phase == mod::LifecyclePhase::CraftingRecipeRegistration) {
+    recipe::CraftingRecipeManager::getInstance().finishRegistration();
+  }
 }
 } // namespace
 void Registry::enqueue(mod::LifecyclePhase phase, int order, void (*initFunc)()) {
@@ -62,6 +67,9 @@ void Registry::enqueue(mod::LifecyclePhase phase, int order, void (*initFunc)())
 }
 bool Registry::tryReserveBlockId(int id) {
   return usedBlockIds().insert(id).second;
+}
+bool Registry::tryReserveItemId(int rawId) {
+  return usedItemIds().insert(rawId).second;
 }
 void Registry::reserveBlockId(int id) {
   assert(tryReserveBlockId(id) && "Registry: duplicate block id registration");

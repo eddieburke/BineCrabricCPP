@@ -85,7 +85,7 @@ void BlockRenderManager::renderWithoutCulling(net::minecraft::block::Block& bloc
 }
 bool BlockRenderManager::render(net::minecraft::block::Block& block, int x, int y, int z) {
   ctx.faceState.useAo = false;
-  if(net::minecraft::mod::drawBlockWorld(*this, block, x, y, z)) {
+  if(ctx.textureOverride < 0 && net::minecraft::mod::drawBlockWorld(*this, block, x, y, z)) {
     return true;
   }
   const int renderType = block.getRenderType();

@@ -33,6 +33,7 @@ public:
   void loadPlayerData(::net::minecraft::entity::player::ServerPlayerEntity* player);
   void addPlayer(::net::minecraft::entity::player::ServerPlayerEntity* player);
   void updatePlayerChunks(::net::minecraft::entity::player::ServerPlayerEntity* player);
+  void sendPendingChunks(::net::minecraft::entity::player::ServerPlayerEntity* player);
   void disconnect(::net::minecraft::entity::player::ServerPlayerEntity* player);
   ::net::minecraft::entity::player::ServerPlayerEntity* connectPlayer(network::ServerLoginNetworkHandler* loginNetworkHandler,
                                                                       const std::string& name);

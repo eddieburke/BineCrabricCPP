@@ -1,7 +1,7 @@
 #include "net/minecraft/client/gui/widget/EntryListWidget.hpp"
 #include <algorithm>
 #include "net/minecraft/client/Minecraft.hpp"
-#include "net/minecraft/client/gl/GL11.hpp"
+#include "net/minecraft/client/gl/GlState.hpp"
 #include "net/minecraft/client/gui/Draw2D.hpp"
 #include "net/minecraft/client/render/Tessellator.hpp"
 #include "net/minecraft/client/texture/TextureManager.hpp"
@@ -132,11 +132,10 @@ void EntryListWidget::render(int mouseX, int mouseY, float tickDelta) {
   }
 #endif
   clampScrolling();
-  gl::GL11::glDisable(gl::GL11::GL_FOG);
+  const gl::preset::ListDraw listCaps;
   render::Tessellator& tessellator = render::Tessellator::INSTANCE;
   const int textureId = minecraft_.textureManager.getTextureId("/gui/background.png");
-  gl::GL11::glBindTexture(gl::GL11::GL_TEXTURE_2D, textureId);
-  gl::GL11::glColor4f(1.0f, 1.0f, 1.0f, 1.0f);
+  gl::pass::bindAtlas2D(textureId);
   constexpr float tile = 32.0f;
   const int scroll = static_cast<int>(scrollAmount_);
   draw::coloredTexturedQuad(tessellator, left_, top_, right_, bottom_, static_cast<float>(left_) / tile,
@@ -149,25 +148,26 @@ void EntryListWidget::render(int mouseX, int mouseY, float tickDelta) {
     renderHeader(entryX, entryY, tessellator);
   }
   if(renderSelectionHighlight_) {
-    gl::GL11::glColor4f(1.0f, 1.0f, 1.0f, 1.0f);
-    gl::GL11::glDisable(gl::GL11::GL_TEXTURE_2D);
-    tessellator.startQuads();
-    for(int index = 0; index < entryCount; ++index) {
-      if(!isSelectedEntry(index)) {
-        continue;
+    gl::color4f(1.0f, 1.0f, 1.0f, 1.0f);
+    {
+      const gl::preset::ListRowHighlight highlightCaps;
+      tessellator.startQuads();
+      for(int index = 0; index < entryCount; ++index) {
+        if(!isSelectedEntry(index)) {
+          continue;
+        }
+        const int rowY = entryY + index * itemHeight_ + headerHeight_;
+        const int rowHeight = itemHeight_ - 4;
+        if(rowY > bottom_ || rowY + rowHeight < top_) {
+          continue;
+        }
+        const int selLeft = listLeft_;
+        const int selRight = listRight_;
+        draw::appendColoredQuad(tessellator, selLeft, rowY - 2, selRight, rowY + rowHeight + 2, 0x808080);
+        draw::appendColoredQuad(tessellator, selLeft + 1, rowY - 1, selRight - 1, rowY + rowHeight + 1, 0);
       }
-      const int rowY = entryY + index * itemHeight_ + headerHeight_;
-      const int rowHeight = itemHeight_ - 4;
-      if(rowY > bottom_ || rowY + rowHeight < top_) {
-        continue;
-      }
-      const int selLeft = listLeft_;
-      const int selRight = listRight_;
-      draw::appendColoredQuad(tessellator, selLeft, rowY - 2, selRight, rowY + rowHeight + 2, 0x808080);
-      draw::appendColoredQuad(tessellator, selLeft + 1, rowY - 1, selRight - 1, rowY + rowHeight + 1, 0);
+      tessellator.draw();
     }
-    tessellator.draw();
-    gl::GL11::glEnable(gl::GL11::GL_TEXTURE_2D);
   }
   for(int index = 0; index < entryCount; ++index) {
     const int rowY = entryY + index * itemHeight_ + headerHeight_;
@@ -177,47 +177,44 @@ void EntryListWidget::render(int mouseX, int mouseY, float tickDelta) {
     }
     renderEntry(index, entryX, rowY, rowHeight, tessellator);
   }
-  gl::GL11::glDisable(gl::GL11::GL_DEPTH_TEST);
-  constexpr int fadeHeight = 4;
-  gl::GL11::glColor4f(1.0f, 1.0f, 1.0f, 1.0f);
-  tessellator.startQuads();
-  renderBackgroundStrip(tessellator, 0, top_, 255, 255);
-  renderBackgroundStrip(tessellator, bottom_, height_, 255, 255);
-  tessellator.draw();
-  gl::GL11::glEnable(gl::GL11::GL_BLEND);
-  gl::GL11::glBlendFunc(gl::GL11::GL_SRC_ALPHA, gl::GL11::GL_ONE_MINUS_SRC_ALPHA);
-  gl::GL11::glDisable(gl::GL11::GL_ALPHA_TEST);
-  gl::GL11::glShadeModel(gl::GL11::GL_SMOOTH);
-  gl::GL11::glDisable(gl::GL11::GL_TEXTURE_2D);
-  tessellator.startQuads();
-  draw::appendVerticalGradientQuad(tessellator, left_, top_, right_, top_ + fadeHeight, 0, 255, 0, 0);
-  draw::appendVerticalGradientQuad(tessellator, left_, bottom_ - fadeHeight, right_, bottom_, 0, 0, 0, 255);
-  const int scrollRange = getEntriesHeight() - (bottom_ - top_ - 4);
-  if(scrollRange > 0) {
-    const int scrollbarLeft = listRight_ + 6;
-    const int scrollbarRight = scrollbarLeft + 6;
-    const int entriesHeight = std::max(1, getEntriesHeight());
-    int thumbHeight = (bottom_ - top_) * (bottom_ - top_) / entriesHeight;
-    if(thumbHeight < 32) {
-      thumbHeight = 32;
+  {
+    const gl::preset::ListScrollbar scrollbarCaps;
+    constexpr int fadeHeight = 4;
+    gl::pass::bindAtlas2D(textureId);
+    tessellator.startQuads();
+    renderBackgroundStrip(tessellator, 0, top_, 255, 255);
+    renderBackgroundStrip(tessellator, bottom_, height_, 255, 255);
+    tessellator.draw();
+    {
+      const gl::preset::ListRowHighlight scrollbarFillCaps;
+      tessellator.startQuads();
+      draw::appendVerticalGradientQuad(tessellator, left_, top_, right_, top_ + fadeHeight, 0, 255, 0, 0);
+      draw::appendVerticalGradientQuad(tessellator, left_, bottom_ - fadeHeight, right_, bottom_, 0, 0, 0, 255);
+      const int scrollRange = getEntriesHeight() - (bottom_ - top_ - 4);
+      if(scrollRange > 0) {
+        const int scrollbarLeft = listRight_ + 6;
+        const int scrollbarRight = scrollbarLeft + 6;
+        const int entriesHeight = std::max(1, getEntriesHeight());
+        int thumbHeight = (bottom_ - top_) * (bottom_ - top_) / entriesHeight;
+        if(thumbHeight < 32) {
+          thumbHeight = 32;
+        }
+        if(thumbHeight > bottom_ - top_ - 8) {
+          thumbHeight = bottom_ - top_ - 8;
+        }
+        int thumbY = static_cast<int>(scrollAmount_) * (bottom_ - top_ - thumbHeight) / scrollRange + top_;
+        if(thumbY < top_) {
+          thumbY = top_;
+        }
+        draw::appendColoredQuad(tessellator, scrollbarLeft, top_, scrollbarRight, bottom_, 0, 255);
+        draw::appendColoredQuad(tessellator, scrollbarLeft, thumbY, scrollbarRight, thumbY + thumbHeight, 0x808080,
+                                255);
+        draw::appendColoredQuad(tessellator, scrollbarLeft, thumbY, scrollbarRight - 1, thumbY + thumbHeight - 1,
+                                0xC0C0C0, 255);
+      }
+      tessellator.draw();
     }
-    if(thumbHeight > bottom_ - top_ - 8) {
-      thumbHeight = bottom_ - top_ - 8;
-    }
-    int thumbY = static_cast<int>(scrollAmount_) * (bottom_ - top_ - thumbHeight) / scrollRange + top_;
-    if(thumbY < top_) {
-      thumbY = top_;
-    }
-    draw::appendColoredQuad(tessellator, scrollbarLeft, top_, scrollbarRight, bottom_, 0, 255);
-    draw::appendColoredQuad(tessellator, scrollbarLeft, thumbY, scrollbarRight, thumbY + thumbHeight, 0x808080, 255);
-    draw::appendColoredQuad(tessellator, scrollbarLeft, thumbY, scrollbarRight - 1, thumbY + thumbHeight - 1, 0xC0C0C0,
-                            255);
+    renderDecorations(mouseX, mouseY);
   }
-  tessellator.draw();
-  renderDecorations(mouseX, mouseY);
-  gl::GL11::glEnable(gl::GL11::GL_TEXTURE_2D);
-  gl::GL11::glShadeModel(gl::GL11::GL_FLAT);
-  gl::GL11::glEnable(gl::GL11::GL_ALPHA_TEST);
-  gl::GL11::glDisable(gl::GL11::GL_BLEND);
 }
 } // namespace net::minecraft::client::gui::widget

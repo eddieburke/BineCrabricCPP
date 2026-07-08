@@ -290,6 +290,7 @@ public:
                                           const net::minecraft::Box& box, std::vector<Box>& boxes) const;
   // --- behavior hooks (faithful empty defaults; overridden by subclasses) ---
   virtual void init() {}
+  virtual bool hasItemOverride() const { return false; }
   virtual void registerBlockItem();
   virtual void onTick(net::minecraft::World* /*world*/, int /*x*/, int /*y*/, int /*z*/,
                       net::minecraft::JavaRandom& /*random*/) {
@@ -351,13 +352,17 @@ public:
   [[nodiscard]] virtual float getLuminance(const net::minecraft::BlockView* blockView, int x, int y, int z) const;
   [[nodiscard]] virtual bool isSideVisible(const net::minecraft::BlockView* blockView, int x, int y, int z,
                                            int side) const;
+  // Render-path culling: inset checks use caller-supplied bounds instead of the
+  // Block singleton so chunk mesh workers never read mutated minX..maxZ.
+  [[nodiscard]] bool isSideVisibleForBounds(const net::minecraft::BlockView* blockView, int x, int y, int z, int side,
+                                            const net::minecraft::Box& bounds) const;
   [[nodiscard]] virtual int getTextureId(const net::minecraft::BlockView* blockView, int x, int y, int z,
                                          int side) const;
   virtual void updateBoundingBox(const net::minecraft::BlockView* blockView, int x, int y, int z);
   // Render-path bounds in local block space, computed without mutating any
   // shared Block state so chunk meshing can run on worker threads. Default:
-  // the block's current static bounds. State-dependent blocks override this;
-  // their updateBoundingBox forwards here so collision/selection stay in sync.
+  // the block's static bounds (constructor or setupRenderBoundingBox at registry
+  // init via finalizeBlockRegistryProperties). State-dependent blocks override.
   [[nodiscard]] virtual net::minecraft::Box getRenderBounds(const net::minecraft::BlockView* /*blockView*/, int /*x*/,
                                                             int /*y*/, int /*z*/) const {
     return {minX, minY, minZ, maxX, maxY, maxZ};

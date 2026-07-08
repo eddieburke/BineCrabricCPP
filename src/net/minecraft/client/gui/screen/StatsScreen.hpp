@@ -14,8 +14,9 @@ public:
   void createButtons();
   void renderIcon(int x, int y, int u = 0, int v = 0);
   void renderItemIcon(int x, int y, int itemOrBlockId);
+  [[nodiscard]] std::string_view getScreenUiId() const override { return net::minecraft::mod::screen_ids::kStats; }
 
-private:
+ private:
   ScreenFactory parentFactory_;
   stat::PlayerStats* stats_ = nullptr;
   std::string title_;

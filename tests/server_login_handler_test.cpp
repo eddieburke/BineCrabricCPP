@@ -8,7 +8,6 @@
 #include <winsock2.h>
 #include <ws2tcpip.h>
 #endif
-#include "TestAssert.hpp"
 #include "net/minecraft/network/Connection.hpp"
 #include "net/minecraft/network/Packet.hpp"
 #include "net/minecraft/network/packet/ConnectionPackets.hpp"
@@ -16,10 +15,12 @@
 #include "net/minecraft/server/network/ServerLoginNetworkHandler.hpp"
 #include "net/minecraft/server/network/ServerSocket.hpp"
 #include <chrono>
+#include <gtest/gtest.h>
 #include <istream>
 #include <mutex>
 #include <optional>
 #include <sstream>
+#include <stdexcept>
 #include <thread>
 namespace {
 using net::minecraft::server::MinecraftServer;
@@ -86,20 +87,22 @@ SOCKET connectLoopback(std::uint16_t port) {
   connector.join();
   return serverSide;
 }
-void testOutdatedClientRejected(TestContext& ctx) {
+} // namespace
+namespace net::minecraft::test {
+TEST(ServerLoginNetworkHandler, OutdatedClientRejected) {
   ServerSocket listenSocket;
   listenSocket.bindAndListen("127.0.0.1", 0);
   const SOCKET serverSide = makeLoopbackConnection(listenSocket);
-  EXPECT_TRUE(ctx, serverSide != INVALID_SOCKET, "server should accept loopback client");
+  ASSERT_NE(serverSide, INVALID_SOCKET);
   MinecraftServer server;
   ServerLoginNetworkHandler handler(&server, nullptr, serverSide, "test", false);
   net::minecraft::LoginHelloPacket packet;
   packet.protocolVersion = 13;
   packet.username = "Player";
   handler.onHello(packet);
-  EXPECT_TRUE(ctx, handler.closed, "protocol 13 should close login handler");
+  EXPECT_TRUE(handler.closed);
 }
-void testOfflineHandshakeSendsDash(TestContext& ctx) {
+TEST(ServerLoginNetworkHandler, OfflineHandshakeSendsDash) {
   ServerSocket listenSocket;
   listenSocket.bindAndListen("127.0.0.1", 0);
   const std::uint16_t port = listenSocket.boundPort();
@@ -121,7 +124,7 @@ void testOfflineHandshakeSendsDash(TestContext& ctx) {
     ::closesocket(client);
   });
   const SOCKET serverSide = acceptWithTimeout(listenSocket);
-  EXPECT_TRUE(ctx, serverSide != INVALID_SOCKET, "server should accept loopback client");
+  ASSERT_NE(serverSide, INVALID_SOCKET);
   MinecraftServer server;
   ServerLoginNetworkHandler handler(&server, nullptr, serverSide, "test", false);
   net::minecraft::HandshakePacket handshake;
@@ -132,43 +135,30 @@ void testOfflineHandshakeSendsDash(TestContext& ctx) {
     std::this_thread::sleep_for(std::chrono::milliseconds(5));
   }
   connector.join();
-  EXPECT_TRUE(ctx, receivedName.has_value(), "client should receive handshake response");
-  EXPECT_TRUE(ctx, receivedName.value() == "-", "offline handshake should return '-'");
+  ASSERT_TRUE(receivedName.has_value());
+  EXPECT_EQ(receivedName.value(), "-");
 }
-void testProtocolErrorCloses(TestContext& ctx) {
+TEST(ServerLoginNetworkHandler, ProtocolErrorCloses) {
   ServerSocket listenSocket;
   listenSocket.bindAndListen("127.0.0.1", 0);
   const SOCKET serverSide = makeLoopbackConnection(listenSocket);
-  EXPECT_TRUE(ctx, serverSide != INVALID_SOCKET, "server should accept loopback client");
+  ASSERT_NE(serverSide, INVALID_SOCKET);
   MinecraftServer server;
   ServerLoginNetworkHandler handler(&server, nullptr, serverSide, "test", false);
   net::minecraft::KeepAlivePacket keepAlive;
   handler.handle(keepAlive);
-  EXPECT_TRUE(ctx, handler.closed, "unexpected packet should close login handler");
+  EXPECT_TRUE(handler.closed);
 }
-void testLoginTimeout(TestContext& ctx) {
+TEST(ServerLoginNetworkHandler, LoginTimeout) {
   ServerSocket listenSocket;
   listenSocket.bindAndListen("127.0.0.1", 0);
   const SOCKET serverSide = makeLoopbackConnection(listenSocket);
-  EXPECT_TRUE(ctx, serverSide != INVALID_SOCKET, "server should accept loopback client");
+  ASSERT_NE(serverSide, INVALID_SOCKET);
   MinecraftServer server;
   ServerLoginNetworkHandler handler(&server, nullptr, serverSide, "test", false);
   for(int tick = 0; tick < 601; ++tick) {
     handler.tick();
   }
-  EXPECT_TRUE(ctx, handler.closed, "login handler should time out after 600 ticks");
+  EXPECT_TRUE(handler.closed);
 }
-} // namespace
-int main() {
-  TestContext ctx;
-  RUN_TEST(ctx, testOutdatedClientRejected);
-  RUN_TEST(ctx, testOfflineHandshakeSendsDash);
-  RUN_TEST(ctx, testProtocolErrorCloses);
-  RUN_TEST(ctx, testLoginTimeout);
-  if(ctx.failures == 0) {
-    std::cout << "All server login handler tests passed\n";
-    return EXIT_SUCCESS;
-  }
-  std::cerr << ctx.failures << " test failure(s)\n";
-  return EXIT_FAILURE;
-}
+} // namespace net::minecraft::test

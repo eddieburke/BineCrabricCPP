@@ -10,5 +10,5 @@ class PlayerEntity;
 namespace msauth {
 void applySessionTextures(net::minecraft::entity::player::PlayerEntity& player,
                           const net::minecraft::client::util::Session& session);
-void refreshPlayerTextures(net::minecraft::client::Minecraft& client);
+void refreshPlayerTextures(net::minecraft::client::Minecraft& client, bool slimArms = false);
 } // namespace msauth

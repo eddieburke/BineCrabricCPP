@@ -88,6 +88,7 @@ public:
   bool discreteScroll = false;
   float totalDiscreteScroll = 1.0f;
   std::string lastServer;
+  bool modsEnabled = true;
   KeyBinding forwardKey{"key.forward", 17};
   KeyBinding leftKey{"key.left", 30};
   KeyBinding backKey{"key.back", 31};

@@ -47,5 +47,8 @@ public:
     return !HookList<Event>::empty();
   }
 };
-MINECRAFT_API HookBus& hooks();
+inline HookBus& hooks() {
+  static HookBus bus;
+  return bus;
+}
 } // namespace net::minecraft::mod

@@ -9,5 +9,6 @@ public:
   [[nodiscard]] bool shouldPause() const override {
     return false;
   }
+  [[nodiscard]] std::string_view getScreenUiId() const override { return net::minecraft::mod::screen_ids::kDeath; }
 };
 } // namespace net::minecraft::client::gui::screen

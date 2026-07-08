@@ -5,9 +5,9 @@
 #include "net/minecraft/util/math/MathConstants.hpp"
 #include "net/minecraft/util/math/MathHelper.hpp"
 #include "net/minecraft/util/math/Types.hpp"
+#include <algorithm>
 #include <cctype>
 #include <filesystem>
-#include <iostream>
 #include <memory>
 #include <string>
 #include <unordered_map>
@@ -29,6 +29,10 @@ struct SoundRegistry {
   mutable JavaRandom random;
   std::unordered_map<std::string, std::vector<const RegisteredSound*>> byBaseId;
   std::vector<std::unique_ptr<RegisteredSound>> owned;
+};
+struct SoundLookup {
+  const RegisteredSound* sound = nullptr;
+  const SoundRegistry* registry = nullptr;
 };
 [[nodiscard]] std::string normalizeSoundBaseId(const std::string& soundName, bool stripVariantSuffix) {
   std::string baseId = soundName;
@@ -57,7 +61,8 @@ void registerSound(SoundRegistry& registry, const std::string& soundName, const 
   registry.owned.push_back(std::move(sound));
 }
 [[nodiscard]] const RegisteredSound* findSound(const SoundRegistry& registry, const std::string& baseId) {
-  const auto it = registry.byBaseId.find(baseId);
+  const std::string normalized = normalizeSoundBaseId(baseId, registry.pickRandomVariant);
+  const auto it = registry.byBaseId.find(normalized);
   if(it == registry.byBaseId.end() || it->second.empty()) {
     return nullptr;
   }
@@ -70,6 +75,19 @@ void registerSound(SoundRegistry& registry, const std::string& soundName, const 
   }
   return registry.owned[static_cast<std::size_t>(registry.random.nextInt(static_cast<int>(registry.owned.size())))].get();
 }
+[[nodiscard]] SoundLookup findAnySound(const std::string& id, const SoundRegistry& effects, const SoundRegistry& streaming,
+                                       const SoundRegistry& music) {
+  if(const RegisteredSound* sound = findSound(effects, id)) {
+    return {sound, &effects};
+  }
+  if(const RegisteredSound* sound = findSound(streaming, id)) {
+    return {sound, &streaming};
+  }
+  if(const RegisteredSound* sound = findSound(music, id)) {
+    return {sound, &music};
+  }
+  return {};
+}
 } // namespace
 struct AudioEngine::Impl {
   std::unique_ptr<backend::XAudio2Backend> backend;
@@ -79,6 +97,7 @@ struct AudioEngine::Impl {
   SoundRegistry streaming;
   SoundRegistry music;
   int effectSlotSuffix = 0;
+  int loopSlotSuffix = 0;
   JavaRandom random;
   int ticksUntilMusic = 0;
   Impl() : ticksUntilMusic(random.nextInt(12000)) {}
@@ -88,7 +107,6 @@ struct AudioEngine::Impl {
     }
     backend = std::make_unique<backend::XAudio2Backend>();
     if(!backend->ready()) {
-      std::cerr << "AudioEngine: backend unavailable; audio muted\n";
       backend.reset();
       return;
     }
@@ -100,6 +118,10 @@ struct AudioEngine::Impl {
   std::string nextEffectSlotName() {
     effectSlotSuffix = (effectSlotSuffix + 1) % 256;
     return "sound_" + std::to_string(effectSlotSuffix);
+  }
+  std::string nextLoopSlotName() {
+    loopSlotSuffix = (loopSlotSuffix + 1) % 256;
+    return "loop_sound_" + std::to_string(loopSlotSuffix);
   }
 };
 AudioEngine::AudioEngine() : impl_(std::make_unique<Impl>()) {}
@@ -130,6 +152,7 @@ void AudioEngine::reset() {
   impl_->music.byBaseId.clear();
   impl_->music.owned.clear();
   impl_->effectSlotSuffix = 0;
+  impl_->loopSlotSuffix = 0;
   impl_->ticksUntilMusic = impl_->random.nextInt(12000);
 }
 void AudioEngine::registerEffect(const std::string& id, const std::filesystem::path& file) {
@@ -193,63 +216,93 @@ void AudioEngine::tick() {
   impl_->backend->setVolume(kMusicSlot, impl_->options->musicVolume);
   impl_->backend->play(kMusicSlot);
 }
-void AudioEngine::playAt(const std::string& id, float x, float y, float z, float volume, float pitch) {
+bool AudioEngine::playAt(const std::string& id, float x, float y, float z, float volume, float pitch) {
   if(!impl_->ready() || impl_->options->soundVolume == 0.0f || volume <= 0.0f) {
-    return;
+    return false;
   }
-  const RegisteredSound* sound = findSound(impl_->effects, id);
-  if(sound == nullptr) {
-    return;
+  const SoundLookup lookup = findAnySound(id, impl_->effects, impl_->streaming, impl_->music);
+  if(lookup.sound == nullptr) {
+    return false;
   }
   const std::string slot = impl_->nextEffectSlotName();
   const float maxDistance = volume > 1.0f ? kWorldAttenuationDistance * volume : kWorldAttenuationDistance;
-  if(!impl_->backend->loadSourceFile(slot, sound->path, {false, true, x, y, z, maxDistance})) {
-    return;
+  if(!impl_->backend->loadSourceFile(slot, lookup.sound->path, {false, true, x, y, z, maxDistance})) {
+    return false;
   }
   impl_->backend->setPitch(slot, pitch);
-  impl_->backend->setVolume(slot, (volume > 1.0f ? 1.0f : volume) * impl_->options->soundVolume);
+  impl_->backend->setVolume(slot, std::clamp(volume, 0.0f, 1.0f) * impl_->options->soundVolume);
   impl_->backend->play(slot);
+  return true;
 }
-void AudioEngine::play(const std::string& id, float volume, float pitch) {
+bool AudioEngine::play(const std::string& id, float volume, float pitch) {
   if(!impl_->ready() || impl_->options->soundVolume == 0.0f) {
-    return;
+    return false;
   }
-  const RegisteredSound* sound = findSound(impl_->effects, id);
-  if(sound == nullptr) {
-    return;
+  const SoundLookup lookup = findAnySound(id, impl_->effects, impl_->streaming, impl_->music);
+  if(lookup.sound == nullptr) {
+    return false;
   }
   const std::string slot = impl_->nextEffectSlotName();
-  if(!impl_->backend->loadSourceFile(slot, sound->path, {})) {
-    return;
-  }
-  if(volume > 1.0f) {
-    volume = 1.0f;
+  if(!impl_->backend->loadSourceFile(slot, lookup.sound->path, {})) {
+    return false;
   }
   impl_->backend->setPitch(slot, pitch);
-  impl_->backend->setVolume(slot, volume * kUiSoundScale * impl_->options->soundVolume);
+  impl_->backend->setVolume(slot, std::clamp(volume, 0.0f, 1.0f) * kUiSoundScale * impl_->options->soundVolume);
   impl_->backend->play(slot);
+  return true;
 }
-void AudioEngine::playRecord(const std::string& id, float x, float y, float z, float volume) {
+bool AudioEngine::playRecord(const std::string& id, float x, float y, float z, float volume) {
   if(!impl_->ready() || impl_->options->soundVolume == 0.0f) {
-    return;
+    return false;
   }
   if(impl_->backend->playing(kRecordSlot)) {
     impl_->backend->stop(kRecordSlot);
   }
   if(id.empty()) {
-    return;
+    return false;
   }
   const RegisteredSound* sound = findSound(impl_->streaming, id);
   if(sound == nullptr || volume <= 0.0f) {
-    return;
+    return false;
   }
   if(impl_->backend->playing(kMusicSlot)) {
     impl_->backend->stop(kMusicSlot);
   }
   if(!impl_->backend->loadSourceFile(kRecordSlot, sound->path, {false, true, x, y, z, kRecordAttenuationDistance})) {
-    return;
+    return false;
   }
   impl_->backend->setVolume(kRecordSlot, kRecordVolumeScale * impl_->options->soundVolume);
   impl_->backend->play(kRecordSlot);
+  return true;
+}
+std::string AudioEngine::playLoopAt(const std::string& id, float x, float y, float z, float volume, float pitch) {
+  if(!impl_->ready() || impl_->options->soundVolume == 0.0f || volume <= 0.0f) {
+    return {};
+  }
+  const SoundLookup lookup = findAnySound(id, impl_->effects, impl_->streaming, impl_->music);
+  if(lookup.sound == nullptr) {
+    return {};
+  }
+  const std::string slot = impl_->nextLoopSlotName();
+  const float maxDistance = volume > 1.0f ? kWorldAttenuationDistance * volume : kWorldAttenuationDistance;
+  if(!impl_->backend->loadSourceFile(slot, lookup.sound->path, {true, true, x, y, z, maxDistance})) {
+    return {};
+  }
+  impl_->backend->setPitch(slot, pitch);
+  impl_->backend->setVolume(slot, std::clamp(volume, 0.0f, 1.0f) * impl_->options->soundVolume);
+  impl_->backend->play(slot);
+  return slot;
+}
+void AudioEngine::stop(const std::string& handle) {
+  if(!impl_->ready() || handle.empty()) {
+    return;
+  }
+  impl_->backend->stop(handle);
+}
+bool AudioEngine::isPlaying(const std::string& handle) const {
+  if(!impl_->ready() || handle.empty()) {
+    return false;
+  }
+  return impl_->backend->playing(handle);
 }
 } // namespace net::minecraft::client::platform::audio

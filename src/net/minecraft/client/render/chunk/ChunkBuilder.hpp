@@ -2,7 +2,7 @@
 #include "net/minecraft/block/entity/BlockEntity.hpp"
 #include "net/minecraft/client/render/chunk/ChunkMeshJob.hpp"
 #include "net/minecraft/client/render/chunk/ChunkRegionManager.hpp"
-#include "net/minecraft/client/render/culling/Culler.hpp"
+#include "net/minecraft/client/render/culling/Frustum.hpp"
 #include "net/minecraft/util/math/Types.hpp"
 #include "net/minecraft/world/World.hpp"
 #include <array>
@@ -51,11 +51,15 @@ public:
       }
     }
   }
-  void updateFrustum(const Culler& culler) {
+  void updateFrustum(const FrustumCuller& culler) {
     inFrustum = culler.isVisible(cullingBox);
   }
   [[nodiscard]] bool hasNoGeometry() const noexcept {
-    return built && renderLayerEmpty[0] && renderLayerEmpty[1];
+    if(!built) {
+      return false;
+    }
+    const bool modEmpty = modLayerMeshes_[0].empty() && modLayerMeshes_[1].empty();
+    return renderLayerEmpty[0] && renderLayerEmpty[1] && modEmpty;
   }
   void invalidate() noexcept {
     dirty = true;

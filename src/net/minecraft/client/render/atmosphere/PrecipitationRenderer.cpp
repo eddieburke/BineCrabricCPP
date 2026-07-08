@@ -1,7 +1,7 @@
 #include "net/minecraft/client/render/atmosphere/PrecipitationRenderer.hpp"
 #include "net/minecraft/client/render/atmosphere/AtmosphereContext.hpp"
 #include "net/minecraft/client/Minecraft.hpp"
-#include "net/minecraft/client/gl/GL11.hpp"
+#include "net/minecraft/client/gl/GlState.hpp"
 #include "net/minecraft/client/option/GameOptions.hpp"
 #include "net/minecraft/client/option/ResolvedRenderOptions.hpp"
 #include "net/minecraft/client/render/Tessellator.hpp"
@@ -41,17 +41,15 @@ void PrecipitationRenderer::renderPrecipitation(const AtmosphereContext& ctx, fl
   const double interpZ = ctx.livingCamera->lastTickZ +
                          (ctx.livingCamera->z - ctx.livingCamera->lastTickZ) * static_cast<double>(tickDelta);
   Tessellator& tessellator = INSTANCE;
-  const gl::AttribGuard precipState(gl::GL11::GL_ENABLE_BIT | gl::GL11::GL_CURRENT_BIT | gl::GL11::GL_TEXTURE_BIT);
-  gl::GL11::glDisable(gl::GL11::GL_CULL_FACE);
-  gl::GL11::glNormal3f(0.0f, 1.0f, 0.0f);
-  gl::GL11::glEnable(gl::GL11::GL_BLEND);
-  gl::GL11::glBlendFunc(gl::GL11::GL_SRC_ALPHA, gl::GL11::GL_ONE_MINUS_SRC_ALPHA);
-  gl::GL11::glAlphaFunc(gl::GL11::GL_GREATER, 0.01f);
+  const gl::preset::PrecipitationDraw precipCaps;
+  const gl::AlphaFuncScope alphaCaps;
+  gl::normal3f(0.0f, 1.0f, 0.0f);
+  gl::alphaFunc(gl::compare::Greater, 0.01f);
   const int floorY = MathHelper::floor(interpY);
   int radius = client::option::resolve(ctx.options).fancyPrecipitation ? 10 : 5;
   std::vector<Biome*> biomeScratch;
   biomeSource->getBiomesInArea(biomeScratch, centerX - radius, centerZ - radius, radius * 2 + 1, radius * 2 + 1);
-  gl::GL11::glBindTexture(gl::GL11::GL_TEXTURE_2D, ctx.textureManager->getTextureId("/environment/snow.png"));
+  gl::bindTexture(gl::cap::Texture2D, ctx.textureManager->getTextureId("/environment/snow.png"));
   int biomeIndex = 0;
   tessellator.startQuads();
   tessellator.translate(-interpX, -interpY, -interpZ);
@@ -89,7 +87,7 @@ void PrecipitationRenderer::renderPrecipitation(const AtmosphereContext& ctx, fl
       const double dz = static_cast<double>(static_cast<float>(z) + 0.5f) - ctx.livingCamera->z;
       const float dist = MathHelper::sqrt(static_cast<float>(dx * dx + dz * dz)) / static_cast<float>(radius);
       const float brightness = world->getLightBrightness(x, low, z);
-      gl::GL11::glColor4f(brightness, brightness, brightness, ((1.0f - dist * dist) * 0.3f + 0.5f) * rain);
+      gl::color4f(brightness, brightness, brightness, ((1.0f - dist * dist) * 0.3f + 0.5f) * rain);
       constexpr float texScale = 1.0f;
       tessellator.vertex(x + 0, high, static_cast<double>(z) + 0.5, 0.0f * texScale + uOff,
                          static_cast<float>(high) * texScale / 4.0f + scroll * texScale + vOff);
@@ -110,7 +108,7 @@ void PrecipitationRenderer::renderPrecipitation(const AtmosphereContext& ctx, fl
     }
   }
   tessellator.draw();
-  gl::GL11::glBindTexture(gl::GL11::GL_TEXTURE_2D, ctx.textureManager->getTextureId("/environment/rain.png"));
+  gl::bindTexture(gl::cap::Texture2D, ctx.textureManager->getTextureId("/environment/rain.png"));
   if(client::option::resolve(ctx.options).fancyPrecipitation) {
     radius = 10;
   }
@@ -145,7 +143,7 @@ void PrecipitationRenderer::renderPrecipitation(const AtmosphereContext& ctx, fl
       const double dz = static_cast<double>(static_cast<float>(z) + 0.5f) - ctx.livingCamera->z;
       const float dist = MathHelper::sqrt(static_cast<float>(dx * dx + dz * dz)) / static_cast<float>(radius);
       const float brightness = world->getLightBrightness(x, 128, z) * 0.85f + 0.15f;
-      gl::GL11::glColor4f(brightness, brightness, brightness, ((1.0f - dist * dist) * 0.5f + 0.5f) * rain);
+      gl::color4f(brightness, brightness, brightness, ((1.0f - dist * dist) * 0.5f + 0.5f) * rain);
       constexpr float texScale = 1.0f;
       tessellator.vertex(x + 0, low, static_cast<double>(z) + 0.5, 0.0f * texScale,
                          static_cast<float>(low) * texScale / 4.0f + anim * texScale);
@@ -166,8 +164,5 @@ void PrecipitationRenderer::renderPrecipitation(const AtmosphereContext& ctx, fl
     }
   }
   tessellator.draw();
-  gl::GL11::glEnable(gl::GL11::GL_CULL_FACE);
-  gl::GL11::glDisable(gl::GL11::GL_BLEND);
-  gl::GL11::glAlphaFunc(gl::GL11::GL_GREATER, 0.1f);
 }
 } // namespace net::minecraft::client::render::atmosphere

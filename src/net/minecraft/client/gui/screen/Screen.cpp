@@ -5,6 +5,7 @@
 #include "net/minecraft/client/gui/screen/option/OptionGui.hpp"
 #include "net/minecraft/client/font/TextRenderer.hpp"
 #include "net/minecraft/client/gui/Draw2D.hpp"
+#include "net/minecraft/client/gl/GlState.hpp"
 #include "net/minecraft/client/gui/layout/ScreenLayout.hpp"
 #include "net/minecraft/client/gui/screen/TitleScreen.hpp"
 #include "net/minecraft/client/gui/widget/ActionButtonWidget.hpp"
@@ -266,9 +267,8 @@ void Screen::renderBackgroundTexture(int vOffset) {
   }
   render::Tessellator& tessellator = render::INSTANCE;
   const int textureId = minecraft_->textureManager.getTextureId("/gui/background.png");
-  gl::GL11::glBindTexture(gl::GL11::GL_TEXTURE_2D, textureId);
-  gl::GL11::glDisable(gl::GL11::GL_FOG);
-  gl::GL11::glColor4f(1.0f, 1.0f, 1.0f, 1.0f);
+  gl::pass::bindAtlas2D(textureId);
+  const gl::preset::ScreenFogOff fogCaps;
   draw::tiledPanel(tessellator, 0, 0, width_, height_, static_cast<float>(vOffset), 0x404040);
 }
 void Screen::confirmed(bool confirmed, int id) {

@@ -1,11 +1,10 @@
-#include "support/server_test_macros.hpp"
 #include "net/minecraft/server/world/chunk/ServerChunkCache.hpp"
 #include "net/minecraft/server/MinecraftServer.hpp"
 #include "net/minecraft/util/math/Types.hpp"
 #include "net/minecraft/world/ServerWorld.hpp"
 #include "net/minecraft/world/chunk/Chunk.hpp"
 #include "net/minecraft/world/storage/EmptyWorldStorage.hpp"
-#include <iostream>
+#include <gtest/gtest.h>
 #include <limits>
 #include <string>
 namespace {
@@ -17,10 +16,11 @@ struct ServerChunkCacheFixture {
   ServerChunkCacheFixture() {
     world.setSpawnPos(net::minecraft::Vec3i{0, 64, 0});
     cache = world.chunkCache;
-    EXPECT_TRUE(cache != nullptr);
   }
 };
-void testChunkPosHashMatchesJava() {
+} // namespace
+namespace net::minecraft::test {
+TEST(ServerChunkCache, ChunkPosHashMatchesJava) {
   EXPECT_EQ(net::minecraft::chunkPosHashCode(0, 0), 0);
   EXPECT_EQ(net::minecraft::chunkPosHashCode(1, 1), (1 << 16) | 1);
   EXPECT_EQ(net::minecraft::chunkPosHashCode(-1, -1),
@@ -28,42 +28,47 @@ void testChunkPosHashMatchesJava() {
   EXPECT_EQ(net::minecraft::chunkPosHashCode(32767, 32767), (32767 << 16) | 32767);
   EXPECT_EQ(net::minecraft::chunkPosHashCode(-32768, 0), std::numeric_limits<int>::min());
 }
-void testIsLoadedUsesSpawnRadius() {
+TEST(ServerChunkCache, IsLoadedUsesSpawnRadius) {
   ServerChunkCacheFixture fixture;
+  ASSERT_NE(fixture.cache, nullptr);
   fixture.cache->forceLoad = true;
   fixture.cache->loadChunk(5, 5);
   EXPECT_TRUE(fixture.cache->isChunkLoaded(5, 5));
   fixture.cache->isLoaded(5, 5);
-  EXPECT_TRUE(fixture.cache->getDebugInfo().find("Drop: 0") != std::string::npos);
+  EXPECT_NE(fixture.cache->getDebugInfo().find("Drop: 0"), std::string::npos);
   fixture.cache->loadChunk(12, 12);
   EXPECT_TRUE(fixture.cache->isChunkLoaded(12, 12));
   fixture.cache->isLoaded(12, 12);
-  EXPECT_TRUE(fixture.cache->getDebugInfo().find("Drop: 1") != std::string::npos);
+  EXPECT_NE(fixture.cache->getDebugInfo().find("Drop: 1"), std::string::npos);
 }
-void testGetChunkReturnsEmptyWhenEventsDisabled() {
+TEST(ServerChunkCache, GetChunkReturnsEmptyWhenEventsDisabled) {
   ServerChunkCacheFixture fixture;
+  ASSERT_NE(fixture.cache, nullptr);
   fixture.world.setEventProcessingEnabled(false);
   fixture.cache->forceLoad = false;
   net::minecraft::Chunk& chunk = fixture.cache->getChunk(3, 3);
   EXPECT_TRUE(chunk.empty);
   EXPECT_FALSE(fixture.cache->isChunkLoaded(3, 3));
 }
-void testForceLoadBypassesEventGate() {
+TEST(ServerChunkCache, ForceLoadBypassesEventGate) {
   ServerChunkCacheFixture fixture;
+  ASSERT_NE(fixture.cache, nullptr);
   fixture.world.setEventProcessingEnabled(false);
   fixture.cache->forceLoad = true;
   net::minecraft::Chunk& chunk = fixture.cache->loadChunk(4, 4);
   EXPECT_FALSE(chunk.empty);
   EXPECT_TRUE(fixture.cache->isChunkLoaded(4, 4));
 }
-void testCanSaveRespectsSavingDisabled() {
+TEST(ServerChunkCache, CanSaveRespectsSavingDisabled) {
   ServerChunkCacheFixture fixture;
+  ASSERT_NE(fixture.cache, nullptr);
   EXPECT_TRUE(fixture.cache->canSave());
   fixture.world.savingDisabled = true;
   EXPECT_FALSE(fixture.cache->canSave());
 }
-void testTickUnloadsMarkedChunks() {
+TEST(ServerChunkCache, TickUnloadsMarkedChunks) {
   ServerChunkCacheFixture fixture;
+  ASSERT_NE(fixture.cache, nullptr);
   fixture.cache->forceLoad = true;
   fixture.cache->loadChunk(20, 20);
   EXPECT_TRUE(fixture.cache->isChunkLoaded(20, 20));
@@ -71,18 +76,4 @@ void testTickUnloadsMarkedChunks() {
   fixture.cache->tick();
   EXPECT_FALSE(fixture.cache->isChunkLoaded(20, 20));
 }
-} // namespace
-int main() {
-  RUN_SERVER_TEST(testChunkPosHashMatchesJava);
-  RUN_SERVER_TEST(testIsLoadedUsesSpawnRadius);
-  RUN_SERVER_TEST(testGetChunkReturnsEmptyWhenEventsDisabled);
-  RUN_SERVER_TEST(testForceLoadBypassesEventGate);
-  RUN_SERVER_TEST(testCanSaveRespectsSavingDisabled);
-  RUN_SERVER_TEST(testTickUnloadsMarkedChunks);
-  if(server_test::failureCount() != 0) {
-    std::cout << server_test::failureCount() << " test(s) failed\n";
-    return 1;
-  }
-  std::cout << "All server chunk cache tests passed\n";
-  return 0;
-}
+} // namespace net::minecraft::test

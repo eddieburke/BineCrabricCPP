@@ -62,6 +62,10 @@ struct LuaApi {
 void runtimeLog(const std::string& modId, const char* level, const std::string& message);
 void pop(lua_State* state, int count);
 [[nodiscard]] std::string luaString(lua_State* state, int index, std::string fallback = {});
+// Positional number args without the tonumberx/isNumber boilerplate.
+[[nodiscard]] int luaIntArg(lua_State* state, int index, int fallback = 0);
+[[nodiscard]] float luaFloatArg(lua_State* state, int index, float fallback = 0.0f);
+[[nodiscard]] double luaDoubleArg(lua_State* state, int index, double fallback = 0.0);
 [[nodiscard]] bool luaBoolField(lua_State* state, int tableIndex, const char* key, bool fallback);
 [[nodiscard]] float luaFloatField(lua_State* state, int tableIndex, const char* key, float fallback);
 [[nodiscard]] float luaFloatAt(lua_State* state, int tableIndex, int index, float fallback);
@@ -75,6 +79,24 @@ void setField(lua_State* state, const char* key, float value);
 void setField(lua_State* state, const char* key, double value);
 void setField(lua_State* state, const char* key, const char* value);
 void setField(lua_State* state, const char* key, const std::string& value);
+// In-place readback of a field from the table at -1 (fallback = current value).
+void readField(lua_State* state, const char* key, bool& value);
+void readField(lua_State* state, const char* key, int& value);
+void readField(lua_State* state, const char* key, float& value);
+void readField(lua_State* state, const char* key, double& value);
+// Variadic key/value batches over setField/readField.
+inline void setFields(lua_State*) {}
+template <typename T, typename... Rest>
+void setFields(lua_State* state, const char* key, const T& value, Rest&&... rest) {
+  setField(state, key, value);
+  setFields(state, static_cast<Rest&&>(rest)...);
+}
+inline void readFields(lua_State*) {}
+template <typename T, typename... Rest>
+void readFields(lua_State* state, const char* key, T& value, Rest&&... rest) {
+  readField(state, key, value);
+  readFields(state, static_cast<Rest&&>(rest)...);
+}
 struct LuaBinding {
   const char* name;
   LuaCFunction function;

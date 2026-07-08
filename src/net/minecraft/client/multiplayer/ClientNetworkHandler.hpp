@@ -10,6 +10,7 @@
 #include <mutex>
 #include <string>
 #include <thread>
+#include <unordered_map>
 #include <utility>
 #include <vector>
 namespace net::minecraft {
@@ -64,6 +65,12 @@ public:
     disconnected = true;
   }
   void disconnect(const std::string& reason = "Disconnected");
+  bool downloadPendingMods(std::string& error);
+  void continuePendingLogin();
+  void cancelPendingModPrompt();
+  [[nodiscard]] const std::vector<std::string>& pendingMissingMods() const noexcept {
+    return pendingMissingMods_;
+  }
   [[nodiscard]] bool isServerSide() const override {
     return false;
   }
@@ -153,5 +160,18 @@ private:
   std::mutex joinServerMutex_{};
   std::thread joinServerThread_{};
   std::atomic_bool joinServerCanceled_{false};
+  enum class RemoteServerKind {
+    JavaCompatible,
+    NativeCppMods
+  };
+  void beginPendingLogin(const std::string& serverId);
+  [[nodiscard]] std::vector<std::string> activeClientMods() const;
+  RemoteServerKind remoteServerKind_ = RemoteServerKind::JavaCompatible;
+  bool remoteLuaModsEnabled_ = false;
+  bool waitingForModDownloadAcceptance_ = false;
+  std::string pendingServerId_;
+  std::vector<std::string> pendingMissingMods_;
+  std::vector<std::string> pendingRequiredMods_;
+  std::unordered_map<std::string, std::string> pendingDownloadUrls_;
 };
 } // namespace net::minecraft::client::multiplayer

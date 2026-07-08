@@ -1,6 +1,6 @@
 #include "net/minecraft/client/render/block/BlockRenderers.hpp"
 #include "net/minecraft/block/Block.hpp"
-#include "net/minecraft/client/gl/GL11.hpp"
+#include "net/minecraft/client/gl/GlState.hpp"
 #include "net/minecraft/client/render/Tessellator.hpp"
 #include "net/minecraft/client/render/block/BlockRenderType.hpp"
 #include "net/minecraft/client/render/platform/Lighting.hpp"
@@ -12,8 +12,8 @@ constexpr float kShadeTop = 1.0f;
 constexpr float kShadeHoriz = 0.8f;
 constexpr float kShadeNorthSouth = 0.6f;
 void applyInventoryFaceColor(float shade, float red, float green, float blue, float brightness) {
-  net::minecraft::client::gl::GL11::glColor4f(red * shade * brightness, green * shade * brightness,
-                                              blue * shade * brightness, 1.0f);
+  net::minecraft::client::gl::color4f(red * shade * brightness, green * shade * brightness,
+                                      blue * shade * brightness, 1.0f);
 }
 void drawInventoryCubeFaces(Tessellator& tessellator, BlockFaceRenderer& faces, net::minecraft::block::Block& block,
                             int metadata, float red, float green, float blue, float brightness) {
@@ -65,9 +65,9 @@ void InventoryBlockRenderer::render(net::minecraft::block::Block& block, int met
     }
     block.setupRenderBoundingBox();
     ctx_.renderBounds = block.getCollisionShapeLocal();
-    net::minecraft::client::gl::GL11::glTranslatef(-0.5f, -0.5f, -0.5f);
+    net::minecraft::client::gl::translatef(-0.5f, -0.5f, -0.5f);
     drawInventoryCubeFaces(tessellator, faces_, block, metadata, red, green, blue, brightness);
-    net::minecraft::client::gl::GL11::glTranslatef(0.5f, 0.5f, 0.5f);
+    net::minecraft::client::gl::translatef(0.5f, 0.5f, 0.5f);
   } else if(renderType == BlockRenderType::CROSS) {
     applyInventoryFaceColor(1.0f, red, green, blue, brightness);
     tessellator.startQuads();
@@ -77,7 +77,7 @@ void InventoryBlockRenderer::render(net::minecraft::block::Block& block, int met
   } else if(renderType == BlockRenderType::CACTUS) {
     block.setupRenderBoundingBox();
     ctx_.renderBounds = block.getCollisionShapeLocal();
-    net::minecraft::client::gl::GL11::glTranslatef(-0.5f, -0.5f, -0.5f);
+    net::minecraft::client::gl::translatef(-0.5f, -0.5f, -0.5f);
     const float faceInset = 0.0625f;
     tessellator.startQuads();
     applyInventoryFaceColor(kShadeBottom, red, green, blue, brightness);
@@ -107,7 +107,7 @@ void InventoryBlockRenderer::render(net::minecraft::block::Block& block, int met
     faces_.renderSouthFace(block, 0.0, 0.0, 0.0, block.getTexture(5));
     tessellator.translate(faceInset, 0.0f, 0.0f);
     tessellator.draw();
-    net::minecraft::client::gl::GL11::glTranslatef(0.5f, 0.5f, 0.5f);
+    net::minecraft::client::gl::translatef(0.5f, 0.5f, 0.5f);
   } else if(renderType == BlockRenderType::CROP) {
     applyInventoryFaceColor(1.0f, red, green, blue, brightness);
     tessellator.startQuads();
@@ -128,9 +128,9 @@ void InventoryBlockRenderer::render(net::minecraft::block::Block& block, int met
       if(i == 1) {
         ctx_.setRenderBounds(0.0f, 0.0f, 0.5f, 1.0f, 0.5f, 1.0f);
       }
-      net::minecraft::client::gl::GL11::glTranslatef(-0.5f, -0.5f, -0.5f);
+      net::minecraft::client::gl::translatef(-0.5f, -0.5f, -0.5f);
       drawInventoryCubeFaces(tessellator, faces_, block, metadata, red, green, blue, brightness);
-      net::minecraft::client::gl::GL11::glTranslatef(0.5f, 0.5f, 0.5f);
+      net::minecraft::client::gl::translatef(0.5f, 0.5f, 0.5f);
     }
   } else if(renderType == BlockRenderType::FENCE) {
     for(int i = 0; i < 4; ++i) {
@@ -152,9 +152,9 @@ void InventoryBlockRenderer::render(net::minecraft::block::Block& block, int met
         ctx_.setRenderBounds(0.5f - postHalfWidth, 0.5f - postHalfWidth * 3.0f, -postHalfWidth * 2.0f,
                              0.5f + postHalfWidth, 0.5f - postHalfWidth, 1.0f + postHalfWidth * 2.0f);
       }
-      net::minecraft::client::gl::GL11::glTranslatef(-0.5f, -0.5f, -0.5f);
+      net::minecraft::client::gl::translatef(-0.5f, -0.5f, -0.5f);
       drawInventoryCubeFaces(tessellator, faces_, block, metadata, red, green, blue, brightness);
-      net::minecraft::client::gl::GL11::glTranslatef(0.5f, 0.5f, 0.5f);
+      net::minecraft::client::gl::translatef(0.5f, 0.5f, 0.5f);
     }
     ctx_.setRenderBounds(0.0f, 0.0f, 0.0f, 1.0f, 1.0f, 1.0f);
   }

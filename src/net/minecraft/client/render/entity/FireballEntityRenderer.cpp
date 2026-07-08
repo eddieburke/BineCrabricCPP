@@ -1,5 +1,5 @@
 #include "net/minecraft/client/render/entity/EntityRenderers.hpp"
-#include "net/minecraft/client/gl/GL11.hpp"
+#include "net/minecraft/client/gl/GlState.hpp"
 #include "net/minecraft/client/render/Tessellator.hpp"
 #include "net/minecraft/client/render/entity/EntityRenderDispatcher.hpp"
 namespace net::minecraft::client::render::entity {
@@ -12,9 +12,9 @@ void FireballEntityRenderer::render(const net::minecraft::Entity& entity, double
   (void)yaw;
   (void)tickDelta;
   const gl::MatrixGuard matrix;
-  gl::GL11::glTranslatef(static_cast<float>(x), static_cast<float>(y), static_cast<float>(z));
+  gl::translatef(static_cast<float>(x), static_cast<float>(y), static_cast<float>(z));
   constexpr float sizeScale = 2.0f;
-  gl::GL11::glScalef(sizeScale, sizeScale, sizeScale);
+  gl::scalef(sizeScale, sizeScale, sizeScale);
   bindTexture("/gui/items.png");
   Tessellator& tessellator = Tessellator::INSTANCE;
   const float uMin = static_cast<float>((kSnowballTexture % 16 * 16) + 0) / 256.0f;
@@ -25,8 +25,8 @@ void FireballEntityRenderer::render(const net::minecraft::Entity& entity, double
   constexpr float half = 0.5f;
   constexpr float quarter = 0.25f;
   if(dispatcher != nullptr) {
-    gl::GL11::glRotatef(180.0f - dispatcher->yaw_, 0.0f, 1.0f, 0.0f);
-    gl::GL11::glRotatef(-dispatcher->pitch_, 1.0f, 0.0f, 0.0f);
+    gl::rotatef(180.0f - dispatcher->yaw_, 0.0f, 1.0f, 0.0f);
+    gl::rotatef(-dispatcher->pitch_, 1.0f, 0.0f, 0.0f);
   }
   tessellator.startQuads();
   tessellator.normal(0.0f, 1.0f, 0.0f);

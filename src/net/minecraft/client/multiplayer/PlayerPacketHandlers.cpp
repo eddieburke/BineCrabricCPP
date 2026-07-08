@@ -4,61 +4,61 @@
 // concerns; see ClientNetworkHandlerInternal.hpp.
 #include "net/minecraft/client/multiplayer/ClientNetworkHandler.hpp"
 #include "net/minecraft/client/multiplayer/ClientNetworkHandlerInternal.hpp"
-#include "net/minecraft/network/JavaProtocol.hpp"
 #include "net/minecraft/client/Minecraft.hpp"
 #include "net/minecraft/client/gui/screen/DownloadingTerrainScreen.hpp"
+#include "net/minecraft/client/render/world/WorldRenderer.hpp"
+#include "net/minecraft/util/math/MathHelper.hpp"
 #include "net/minecraft/client/multiplayer/MultiplayerClientPlayerEntity.hpp"
 #include "net/minecraft/entity/player/ClientPlayerEntity.hpp"
 #include "net/minecraft/network/packet/Packets.hpp"
 #include "net/minecraft/util/math/Types.hpp"
 #include "net/minecraft/world/ClientWorld.hpp"
 #include "net/minecraft/world/World.hpp"
+#include "net/minecraft/world/chunk/Chunk.hpp"
 #include <memory>
 namespace net::minecraft::client::multiplayer {
 using namespace detail;
 std::unique_ptr<Packet> makePlayerMoveResponsePacket(const PlayerMovePacket& packet,
                                                      const entity::player::ClientPlayerEntity& player) {
-  const auto move = ::net::minecraft::network::java::makeServerboundPlayerMove(
-      player.x, player.boundingBox.minY, player.y, player.z, packet.yaw, packet.pitch, packet.onGround,
-      packet.changePosition, packet.changeLook);
+  const double feetY = player.boundingBox.minY;
+  const double stance = player.y;
   if(packet.changePosition && packet.changeLook) {
     auto response = std::make_unique<PlayerMoveFullPacket>();
-    ::net::minecraft::network::java::encodeServerboundPlayerMove(*response, move);
+    response->setMove(player.x, feetY, stance, player.z, packet.yaw, packet.pitch, packet.onGround);
     return response;
   }
   if(packet.changePosition) {
     auto response = std::make_unique<PlayerMovePositionAndOnGroundPacket>();
-    ::net::minecraft::network::java::encodeServerboundPlayerMove(*response, move);
+    response->setMove(player.x, feetY, stance, player.z, packet.yaw, packet.pitch, packet.onGround);
     return response;
   }
   if(packet.changeLook) {
     auto response = std::make_unique<PlayerMoveLookAndOnGroundPacket>();
-    ::net::minecraft::network::java::encodeServerboundPlayerMove(*response, move);
+    response->setMove(player.x, feetY, stance, player.z, packet.yaw, packet.pitch, packet.onGround);
     return response;
   }
   auto response = std::make_unique<PlayerMovePacket>();
-  ::net::minecraft::network::java::encodeServerboundPlayerMove(*response, move);
+  response->setMove(player.x, feetY, stance, player.z, packet.yaw, packet.pitch, packet.onGround);
   return response;
 }
 void ClientNetworkHandler::onPlayerMove(const PlayerMovePacket& packet) {
   if(minecraft == nullptr || minecraft->player == nullptr) {
     return;
   }
-  const auto move = ::net::minecraft::network::java::decodeClientboundPlayerMove(packet);
   entity::player::ClientPlayerEntity* player = minecraft->player;
   double x = player->x;
   double y = player->y;
   double z = player->z;
   float yaw = player->yaw;
   float pitch = player->pitch;
-  if(move.changePosition) {
-    x = move.x;
-    y = move.feetY;
-    z = move.z;
+  if(packet.changePosition) {
+    x = packet.x;
+    y = packet.stance;
+    z = packet.z;
   }
-  if(move.changeLook) {
-    yaw = move.yaw;
-    pitch = move.pitch;
+  if(packet.changeLook) {
+    yaw = packet.yaw;
+    pitch = packet.pitch;
   }
   player->cameraOffset = 0.0f;
   player->velocityZ = 0.0;
@@ -72,6 +72,14 @@ void ClientNetworkHandler::onPlayerMove(const PlayerMovePacket& packet) {
     player->prevZ = player->z;
     started = true;
     minecraft->setScreen(nullptr);
+    if(minecraft->worldRenderer != nullptr) {
+      minecraft->worldRenderer->resetSectionFrontier();
+    }
+    if(world != nullptr) {
+      const int px = MathHelper::floor(player->x);
+      const int pz = MathHelper::floor(player->z);
+      world->setBlocksDirty(px - 64, 0, pz - 64, px + 64, Chunk::height - 1, pz + 64);
+    }
   }
 }
 void ClientNetworkHandler::onPlayerSleepUpdate(const PlayerSleepUpdateS2CPacket& packet) {

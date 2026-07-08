@@ -34,6 +34,7 @@ public:
     while(entry != nullptr) {
       if(entry->key == key) {
         entry->value = value;
+        return;
       }
       entry = entry->next;
     }

@@ -1,5 +1,4 @@
 #include "net/minecraft/client/multiplayer/MultiplayerClientPlayerEntity.hpp"
-#include "net/minecraft/network/JavaProtocol.hpp"
 #include "net/minecraft/client/multiplayer/ClientNetworkHandler.hpp"
 #include "net/minecraft/client/option/GameOptions.hpp"
 #include "net/minecraft/client/util/Session.hpp"
@@ -19,7 +18,6 @@ namespace net::minecraft::client::multiplayer {
 namespace {
 constexpr int kClientCommandPressShift = 1;
 constexpr int kClientCommandReleaseShift = 2;
-namespace java_mp = ::net::minecraft::network::java;
 client::option::GameOptions& defaultOptions() {
   static client::option::GameOptions options;
   return options;
@@ -53,7 +51,7 @@ void MultiplayerClientPlayerEntity::tick() {
   if(!posLoaded) {
     return;
   }
-  if(networkHandler != nullptr && networkHandler->started && waitingForTerrainSupport_) {
+  if(networkHandler != nullptr && waitingForTerrainSupport_) {
     if(hasTerrainSupport(*this)) {
       waitingForTerrainSupport_ = false;
     } else {
@@ -97,53 +95,41 @@ void MultiplayerClientPlayerEntity::sendMovementPackets() {
   if(vehicle != nullptr) {
     if(networkHandler != nullptr) {
       if(rotated) {
-        PlayerMovePositionAndOnGroundPacket packet;
-        const auto move =
-            java_mp::makeServerboundPlayerMove(velocityX, -999.0, -999.0, velocityZ, yaw, pitch, onGround, true, false);
-        java_mp::encodeServerboundPlayerMove(packet, move);
-        networkHandler->sendPacket(packet);
+      PlayerMovePositionAndOnGroundPacket packet;
+      packet.setMove(velocityX, -999.0, -999.0, velocityZ, yaw, pitch, onGround);
+      networkHandler->sendPacket(packet);
       } else {
-        PlayerMoveFullPacket packet;
-        const auto move =
-            java_mp::makeServerboundPlayerMove(velocityX, -999.0, -999.0, velocityZ, yaw, pitch, onGround, true, true);
-        java_mp::encodeServerboundPlayerMove(packet, move);
-        networkHandler->sendPacket(packet);
+      PlayerMoveFullPacket packet;
+      packet.setMove(velocityX, -999.0, -999.0, velocityZ, yaw, pitch, onGround);
+      networkHandler->sendPacket(packet);
       }
     }
     moved = false;
   } else if(moved && rotated) {
     if(networkHandler != nullptr) {
       PlayerMoveFullPacket packet;
-      const auto move =
-          java_mp::makeServerboundPlayerMove(x, boundingBox.minY, y, z, yaw, pitch, onGround, true, true);
-      java_mp::encodeServerboundPlayerMove(packet, move);
+      packet.setMove(x, boundingBox.minY, y, z, yaw, pitch, onGround);
       networkHandler->sendPacket(packet);
     }
     onGroundTicks = 0;
   } else if(moved) {
     if(networkHandler != nullptr) {
       PlayerMovePositionAndOnGroundPacket packet;
-      const auto move =
-          java_mp::makeServerboundPlayerMove(x, boundingBox.minY, y, z, yaw, pitch, onGround, true, false);
-      java_mp::encodeServerboundPlayerMove(packet, move);
+      packet.setMove(x, boundingBox.minY, y, z, yaw, pitch, onGround);
       networkHandler->sendPacket(packet);
     }
     onGroundTicks = 0;
   } else if(rotated) {
     if(networkHandler != nullptr) {
       PlayerMoveLookAndOnGroundPacket packet;
-      const auto move =
-          java_mp::makeServerboundPlayerMove(x, boundingBox.minY, y, z, yaw, pitch, onGround, false, true);
-      java_mp::encodeServerboundPlayerMove(packet, move);
+      packet.setMove(x, boundingBox.minY, y, z, yaw, pitch, onGround);
       networkHandler->sendPacket(packet);
     }
     onGroundTicks = 0;
   } else {
     if(networkHandler != nullptr) {
       PlayerMovePacket packet;
-      const auto move =
-          java_mp::makeServerboundPlayerMove(x, boundingBox.minY, y, z, yaw, pitch, onGround, false, false);
-      java_mp::encodeServerboundPlayerMove(packet, move);
+      packet.setMove(x, boundingBox.minY, y, z, yaw, pitch, onGround);
       networkHandler->sendPacket(packet);
     }
     onGroundTicks = (lastOnGround != onGround || onGroundTicks > 200) ? 0 : onGroundTicks + 1;

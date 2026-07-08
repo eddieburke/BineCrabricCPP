@@ -4,7 +4,7 @@
 #include "net/minecraft/block/PistonHeadBlock.hpp"
 #include "net/minecraft/block/entity/PistonBlockEntity.hpp"
 #include "net/minecraft/client/Minecraft.hpp"
-#include "net/minecraft/client/gl/GL11.hpp"
+#include "net/minecraft/client/gl/GlState.hpp"
 #include "net/minecraft/client/render/Tessellator.hpp"
 #include "net/minecraft/client/render/platform/Lighting.hpp"
 namespace net::minecraft::client::render::block::entity {
@@ -25,9 +25,7 @@ void PistonBlockEntityRenderer::render(const net::minecraft::block::entity::Bloc
   Tessellator& tessellator = render::INSTANCE;
   bindTexture("/terrain.png");
   platform::Lighting::turnOff();
-  gl::GL11::glBlendFunc(gl::GL11::GL_SRC_ALPHA, gl::GL11::GL_ONE_MINUS_SRC_ALPHA);
-  gl::GL11::glEnable(gl::GL11::GL_BLEND);
-  gl::GL11::glDisable(gl::GL11::GL_CULL_FACE);
+  const gl::preset::PistonTranslucent pistonCaps;
   tessellator.startQuads();
   tessellator.translate(static_cast<double>(static_cast<float>(x) - static_cast<float>(piston->x) +
                                             piston->getRenderOffsetX(tickDelta)),

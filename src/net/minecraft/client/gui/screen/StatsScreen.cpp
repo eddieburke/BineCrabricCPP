@@ -2,7 +2,7 @@
 #include "net/minecraft/block/Block.hpp"
 #include "net/minecraft/client/Minecraft.hpp"
 #include "net/minecraft/client/gui/layout/ScreenLayout.hpp"
-#include "net/minecraft/client/gl/GL11.hpp"
+#include "net/minecraft/client/gl/GlState.hpp"
 #include "net/minecraft/client/render/Tessellator.hpp"
 #include "net/minecraft/client/render/item/ItemRenderer.hpp"
 #include "net/minecraft/client/render/platform/Lighting.hpp"
@@ -316,8 +316,8 @@ void StatsScreen::renderIcon(int x, int y, int u, int v) {
     return;
   }
   const int textureId = minecraft()->textureManager.getTextureId("/gui/slot.png");
-  gl::GL11::glColor4f(1.0f, 1.0f, 1.0f, 1.0f);
-  gl::GL11::glBindTexture(gl::GL11::GL_TEXTURE_2D, textureId);
+  gl::color4f(1.0f, 1.0f, 1.0f, 1.0f);
+  gl::bindTexture(gl::cap::Texture2D, textureId);
   drawTexture(x, y, u, v, 18, 18);
 }
 void StatsScreen::renderItemIcon(int x, int y, int itemOrBlockId) {
@@ -325,10 +325,10 @@ void StatsScreen::renderItemIcon(int x, int y, int itemOrBlockId) {
     return;
   }
   renderIcon(x + 1, y + 1);
-  gl::GL11::glPushMatrix();
-  gl::GL11::glRotatef(180.0f, 1.0f, 0.0f, 0.0f);
+  gl::pushMatrix();
+  gl::rotatef(180.0f, 1.0f, 0.0f, 0.0f);
   render::platform::Lighting::turnOn();
-  gl::GL11::glPopMatrix();
+  gl::popMatrix();
   static render::item::ItemRenderer itemRenderer;
   itemRenderer.renderGuiItem(*minecraft()->textRenderer, minecraft()->textureManager, ItemStack(itemOrBlockId), x + 2,
                              y + 2);

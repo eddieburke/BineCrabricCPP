@@ -1,5 +1,6 @@
 #include "net/minecraft/entity/Entity.hpp"
 #include "net/minecraft/block/Block.hpp"
+#include "net/minecraft/mod/GameHooks.hpp"
 #include "net/minecraft/block/material/Material.hpp"
 #include "net/minecraft/entity/EntityRegistry.hpp"
 #include "net/minecraft/entity/ItemEntity.hpp"
@@ -41,6 +42,24 @@ void Entity::setPosition(double xIn, double yIn, double zIn) {
                  y - static_cast<double>(standingEyeHeight) + static_cast<double>(cameraOffset) +
                      static_cast<double>(height),
                  z + static_cast<double>(halfWidth)};
+}
+void Entity::teleport(double xIn, double yIn, double zIn, float yawIn, float pitchIn) {
+  mod::EntityTeleportEvent event;
+  event.entity = this;
+  event.world = world;
+  event.fromX = x;
+  event.fromY = y;
+  event.fromZ = z;
+  event.x = xIn;
+  event.y = yIn;
+  event.z = zIn;
+  event.yaw = yawIn;
+  event.pitch = pitchIn;
+  mod::hooks().publish(event);
+  if(event.canceled) {
+    return;
+  }
+  setPositionAndAngles(event.x, event.y, event.z, event.yaw, event.pitch);
 }
 void Entity::changeLookDirection(float cursorDeltaX, float cursorDeltaY) {
   const float oldPitch = pitch;

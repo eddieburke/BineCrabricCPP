@@ -17,6 +17,9 @@ public:
   [[nodiscard]] bool isChunkLoaded(int chunkX, int chunkZ) const override {
     return chunksByPos_.contains(ChunkPos{chunkX, chunkZ});
   }
+  [[nodiscard]] bool hasRealChunk(int chunkX, int chunkZ) const {
+    return chunksByPos_.contains(ChunkPos{chunkX, chunkZ});
+  }
   void unloadChunk(int chunkX, int chunkZ) {
     const ChunkPos pos{chunkX, chunkZ};
     auto it = chunksByPos_.find(pos);

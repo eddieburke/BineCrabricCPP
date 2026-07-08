@@ -1,9 +1,9 @@
 #include "net/minecraft/client/render/entity/EntityRenderers.hpp"
-#include "net/minecraft/client/render/entity/EntityRendererCasts.hpp"
+#include "net/minecraft/entity/passive/ChickenEntity.hpp"
 #include "net/minecraft/util/math/MathHelper.hpp"
 namespace net::minecraft::client::render::entity {
 float ChickenEntityRenderer::getHeadBob(const net::minecraft::LivingEntity& entity, float tickDelta) const {
-  const auto* chicken = dynamic_cast<const casts::ChickenEntity*>(&entity);
+  const auto* chicken = dynamic_cast<const ::net::minecraft::entity::passive::ChickenEntity*>(&entity);
   if(chicken == nullptr) {
     return LivingEntityRenderer::getHeadBob(entity, tickDelta);
   }

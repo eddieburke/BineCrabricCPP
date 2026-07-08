@@ -45,15 +45,13 @@ std::string wideToUtf8(const std::wstring& text) {
   WideCharToMultiByte(CP_UTF8, 0, text.c_str(), static_cast<int>(text.size()), utf8.data(), length, nullptr, nullptr);
   return utf8;
 }
-LRESULT CALLBACK logEditSubclassProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam, UINT_PTR idSubclass,
-                                     DWORD_PTR refData) {
+LRESULT CALLBACK logEditSubclassProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam, UINT_PTR, DWORD_PTR) {
   if(message == LogHandler::WM_APP_APPEND_LOG) {
     return handleLogEditMessage(hwnd, message, wParam, lParam);
   }
   return DefSubclassProc(hwnd, message, wParam, lParam);
 }
-LRESULT CALLBACK playerListSubclassProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam, UINT_PTR idSubclass,
-                                        DWORD_PTR refData) {
+LRESULT CALLBACK playerListSubclassProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam, UINT_PTR, DWORD_PTR) {
   if(message == PlayerListGui::WM_APP_REFRESH_PLAYERS) {
     return handlePlayerListMessage(hwnd, message, wParam, lParam);
   }
@@ -73,7 +71,7 @@ void DedicatedServerGui::create(MinecraftServer& server) {
     }
     readyCv.notify_one();
     if(windowCreated) {
-      platform::win32::MessageLoop::run();
+      static_cast<void>(platform::win32::MessageLoop::run());
     }
   });
   {
@@ -219,7 +217,7 @@ LRESULT CALLBACK DedicatedServerGui::frameWindowProc(HWND hwnd, UINT message, WP
   return DefWindowProcW(hwnd, message, wParam, lParam);
 }
 LRESULT CALLBACK DedicatedServerGui::commandEditProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam,
-                                                     UINT_PTR idSubclass, DWORD_PTR refData) {
+                                                     UINT_PTR, DWORD_PTR refData) {
   auto* gui = reinterpret_cast<DedicatedServerGui*>(refData);
   if(message == WM_KEYDOWN && wParam == VK_RETURN && gui != nullptr) {
     gui->submitCommand();

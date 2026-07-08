@@ -1,5 +1,5 @@
 #include "net/minecraft/client/texture/TextureManager.hpp"
-#include "net/minecraft/client/gl/GL11.hpp"
+#include "net/minecraft/client/gl/GlState.hpp"
 #include "net/minecraft/mod/runtime/ModHost.hpp"
 #include "net/minecraft/client/render/texture/FireSprite.hpp"
 #include "net/minecraft/client/render/texture/LavaSideSprite.hpp"
@@ -131,8 +131,8 @@ void uploadStaticMipmapLevels(int width, int height, std::vector<std::uint8_t>& 
         putPixelInt(rgba.data(), x + y * targetWidth, blended);
       }
     }
-    gl::GL11::glTexImage2D(gl::GL11::GL_TEXTURE_2D, level, gl::GL11::GL_RGBA, targetWidth, targetHeight, 0,
-                           gl::GL11::GL_RGBA, gl::GL11::GL_UNSIGNED_BYTE, rgba.data());
+    gl::texImage2D(gl::cap::Texture2D, level, gl::pixel::Rgba, targetWidth, targetHeight, 0,
+                   gl::pixel::Rgba, gl::pixel::UnsignedByte, rgba.data());
   }
 }
 void uploadDynamicMipmapLevels(int sprite, std::vector<std::uint8_t>& imageBuffer) {
@@ -149,9 +149,9 @@ void uploadDynamicMipmapLevels(int sprite, std::vector<std::uint8_t>& imageBuffe
         putPixelInt(imageBuffer.data(), x + y * targetSize, blended);
       }
     }
-    gl::GL11::glTexSubImage2D(gl::GL11::GL_TEXTURE_2D, level, (sprite % 16) * targetSize,
-                              (sprite / 16) * targetSize, targetSize, targetSize, gl::GL11::GL_RGBA,
-                              gl::GL11::GL_UNSIGNED_BYTE, imageBuffer.data());
+    gl::texSubImage2D(gl::cap::Texture2D, level, (sprite % 16) * targetSize,
+                      (sprite / 16) * targetSize, targetSize, targetSize, gl::pixel::Rgba,
+                      gl::pixel::UnsignedByte, imageBuffer.data());
   }
 }
 RasterImage makeMissingImage() {
@@ -276,7 +276,7 @@ RasterImage TextureManager::loadRasterFromUrl(const std::string& url, bool useBe
 void TextureManager::deleteTexture(int textureId) {
   images_.erase(textureId);
   const unsigned int glId = static_cast<unsigned int>(textureId);
-  gl::GL11::glDeleteTextures(1, &glId);
+  gl::deleteTextures(1, &glId);
 }
 int TextureManager::downloadTexture(const std::string& url, const std::string& backup) {
   ImageDownload* imageDownload = nullptr;
@@ -335,6 +335,13 @@ void TextureManager::releaseImage(const std::string& url) {
     }
     downloadedImages_.erase(it);
   }
+}
+std::optional<bool> TextureManager::skinSlimArms(const std::string& url) const {
+  const auto it = downloadedImages_.find(url);
+  if(it == downloadedImages_.end() || !it->second->image.has_value()) {
+    return std::nullopt;
+  }
+  return it->second->slimArms;
 }
 const std::vector<int>& TextureManager::getColors(const std::string& path) {
   const auto cached = colors_.find(path);
@@ -443,7 +450,7 @@ void TextureManager::bindTexture(int id) {
   if(id < 0) {
     return;
   }
-  gl::GL11::glBindTexture(gl::GL11::GL_TEXTURE_2D, id);
+  gl::bindTexture(gl::cap::Texture2D, id);
 }
 int TextureManager::load(const RasterImage& image) {
 #ifdef _WIN32
@@ -474,31 +481,31 @@ void TextureManager::load(const RasterImage& image, int id) {
       rgba[o + 3] = a;
     }
   }
-  gl::GL11::glBindTexture(gl::GL11::GL_TEXTURE_2D, static_cast<unsigned int>(id));
+  gl::bindTexture(gl::cap::Texture2D, static_cast<unsigned int>(id));
   // Faithful to TextureManager.load: default GL_NEAREST (pixelated), mipmap or
   // blur override it; wrap is REPEAT unless clamp.
   if(MIPMAP) {
     const int minFilter =
-        MIPMAP_LINEAR ? gl::GL11::GL_LINEAR_MIPMAP_LINEAR : gl::GL11::GL_NEAREST_MIPMAP_LINEAR;
-    gl::GL11::glTexParameteri(gl::GL11::GL_TEXTURE_2D, gl::GL11::GL_TEXTURE_MIN_FILTER, minFilter);
-    gl::GL11::glTexParameteri(gl::GL11::GL_TEXTURE_2D, gl::GL11::GL_TEXTURE_MAG_FILTER, gl::GL11::GL_NEAREST);
+        MIPMAP_LINEAR ? gl::filter::LinearMipmapLinear : gl::filter::NearestMipmapLinear;
+    gl::texParameteri(gl::cap::Texture2D, gl::tex::MinFilter, minFilter);
+    gl::texParameteri(gl::cap::Texture2D, gl::tex::MagFilter, gl::filter::Nearest);
   } else {
-    gl::GL11::glTexParameteri(gl::GL11::GL_TEXTURE_2D, gl::GL11::GL_TEXTURE_MIN_FILTER, gl::GL11::GL_NEAREST);
-    gl::GL11::glTexParameteri(gl::GL11::GL_TEXTURE_2D, gl::GL11::GL_TEXTURE_MAG_FILTER, gl::GL11::GL_NEAREST);
+    gl::texParameteri(gl::cap::Texture2D, gl::tex::MinFilter, gl::filter::Nearest);
+    gl::texParameteri(gl::cap::Texture2D, gl::tex::MagFilter, gl::filter::Nearest);
   }
   if(blur) {
-    gl::GL11::glTexParameteri(gl::GL11::GL_TEXTURE_2D, gl::GL11::GL_TEXTURE_MIN_FILTER, gl::GL11::GL_LINEAR);
-    gl::GL11::glTexParameteri(gl::GL11::GL_TEXTURE_2D, gl::GL11::GL_TEXTURE_MAG_FILTER, gl::GL11::GL_LINEAR);
+    gl::texParameteri(gl::cap::Texture2D, gl::tex::MinFilter, gl::filter::Linear);
+    gl::texParameteri(gl::cap::Texture2D, gl::tex::MagFilter, gl::filter::Linear);
   }
   if(clamp) {
-    gl::GL11::glTexParameteri(gl::GL11::GL_TEXTURE_2D, gl::GL11::GL_TEXTURE_WRAP_S, gl::GL11::GL_CLAMP);
-    gl::GL11::glTexParameteri(gl::GL11::GL_TEXTURE_2D, gl::GL11::GL_TEXTURE_WRAP_T, gl::GL11::GL_CLAMP);
+    gl::texParameteri(gl::cap::Texture2D, gl::tex::WrapS, gl::wrap::Clamp);
+    gl::texParameteri(gl::cap::Texture2D, gl::tex::WrapT, gl::wrap::Clamp);
   } else {
-    gl::GL11::glTexParameteri(gl::GL11::GL_TEXTURE_2D, gl::GL11::GL_TEXTURE_WRAP_S, gl::GL11::GL_REPEAT);
-    gl::GL11::glTexParameteri(gl::GL11::GL_TEXTURE_2D, gl::GL11::GL_TEXTURE_WRAP_T, gl::GL11::GL_REPEAT);
+    gl::texParameteri(gl::cap::Texture2D, gl::tex::WrapS, gl::wrap::Repeat);
+    gl::texParameteri(gl::cap::Texture2D, gl::tex::WrapT, gl::wrap::Repeat);
   }
-  gl::GL11::glTexImage2D(gl::GL11::GL_TEXTURE_2D, 0, gl::GL11::GL_RGBA, image.width, image.height, 0,
-                         gl::GL11::GL_RGBA, gl::GL11::GL_UNSIGNED_BYTE, rgba.data());
+  gl::texImage2D(gl::cap::Texture2D, 0, gl::pixel::Rgba, image.width, image.height, 0,
+                 gl::pixel::Rgba, gl::pixel::UnsignedByte, rgba.data());
   if(MIPMAP) {
     uploadStaticMipmapLevels(image.width, image.height, rgba);
   }
@@ -549,9 +556,9 @@ void TextureManager::tick() {
     texture->bind(*this);
     for(int replicateX = 0; replicateX < texture->replicate; ++replicateX) {
       for(int replicateY = 0; replicateY < texture->replicate; ++replicateY) {
-        gl::GL11::glTexSubImage2D(gl::GL11::GL_TEXTURE_2D, 0, (texture->sprite % 16) * 16 + replicateX * 16,
-                                  (texture->sprite / 16) * 16 + replicateY * 16, 16, 16, gl::GL11::GL_RGBA,
-                                  gl::GL11::GL_UNSIGNED_BYTE, imageBuffer.data());
+        gl::texSubImage2D(gl::cap::Texture2D, 0, (texture->sprite % 16) * 16 + replicateX * 16,
+                          (texture->sprite / 16) * 16 + replicateY * 16, 16, 16, gl::pixel::Rgba,
+                          gl::pixel::UnsignedByte, imageBuffer.data());
         if(MIPMAP) {
           uploadDynamicMipmapLevels(texture->sprite, imageBuffer);
         }
@@ -563,9 +570,9 @@ void TextureManager::tick() {
       continue;
     }
     std::copy(texture->pixels.begin(), texture->pixels.end(), imageBuffer.begin());
-    gl::GL11::glBindTexture(gl::GL11::GL_TEXTURE_2D, static_cast<unsigned int>(texture->copyTo));
-    gl::GL11::glTexSubImage2D(gl::GL11::GL_TEXTURE_2D, 0, 0, 0, 16, 16, gl::GL11::GL_RGBA,
-                              gl::GL11::GL_UNSIGNED_BYTE, imageBuffer.data());
+    gl::bindTexture(gl::cap::Texture2D, static_cast<unsigned int>(texture->copyTo));
+    gl::texSubImage2D(gl::cap::Texture2D, 0, 0, 0, 16, 16, gl::pixel::Rgba,
+                      gl::pixel::UnsignedByte, imageBuffer.data());
     if(MIPMAP) {
       uploadDynamicMipmapLevels(0, imageBuffer);
     }

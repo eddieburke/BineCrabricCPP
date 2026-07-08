@@ -13,6 +13,7 @@ public:
   void adoptBridge(std::unique_ptr<ClientNetworkBridge> bridge);
   void retireBridge();
   void flushRetired();
+  void tick();
   [[nodiscard]] ClientNetworkBridge* bridge() const noexcept {
     return bridge_.get();
   }

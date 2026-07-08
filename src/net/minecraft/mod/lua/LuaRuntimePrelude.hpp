@@ -9,6 +9,9 @@ local native_subscribe = assert(minecraft._subscribe, "native Lua event bridge i
 local native_register_block = assert(minecraft._register_block, "native Lua block registry is unavailable")
 local native_register_shaped_recipe =
   assert(minecraft._register_shaped_recipe, "native Lua recipe registry is unavailable")
+-- Item registration is client-only, so unlike blocks/recipes the native may be
+-- absent (dedicated server); the wrapper below reports that lazily when called.
+local native_register_item = minecraft._register_item
 local native_read_storage = assert(minecraft._read_storage, "native Lua storage reader is unavailable")
 local native_write_storage = assert(minecraft._write_storage, "native Lua storage writer is unavailable")
 
@@ -52,10 +55,10 @@ local function named_constants(names)
 end
 
 minecraft.events = named_constants({
-  "attack_damage", "block_interact", "chunk_generation", "client_tick", "create_world",
-  "entity_interact", "fov", "key_press", "mouse_button", "player_travel", "screen_event",
-  "screen_region", "screen_ui", "tick_rate", "world_color", "world_render",
-  "world_open", "world_spawn_search", "world_start", "world_tick",
+   "attack_damage", "block_interact", "chunk_generation", "client_tick", "create_world",
+   "entity_interact", "fov", "camera_setup", "key_press", "mouse_button", "player_travel", "raycast", "screen_event",
+   "screen_region", "screen_ui", "tick_rate", "world_color", "world_render", "render_targets",
+   "world_open", "world_spawn_search", "world_start", "world_tick",
 })
 
 minecraft.lifecycle = named_constants({
@@ -174,6 +177,156 @@ function minecraft.register_shaped_recipe(spec)
   assert(ok, error_message or "shaped recipe registration failed")
 end
 
+-- Returns (true) or (false, error_message); callers assert as they see fit.
+function minecraft.register_item(spec)
+  assert(native_register_item, "native Lua item registry is unavailable")
+  return native_register_item(spec)
+end
+
+minecraft.crafting = minecraft.crafting or {}
+
+function minecraft.crafting.add_shaped_recipe(spec)
+  return native_register_shaped_recipe(spec)
+end
+
+minecraft.stack = {}
+
+function minecraft.stack.empty()
+  return { id = 0, item_id = 0, count = 0, damage = 0 }
+end
+
+function minecraft.stack.is_empty(stack)
+  return stack == nil or (stack.id or stack.item_id or 0) == 0 or (stack.count or 0) <= 0
+end
+
+function minecraft.stack.item_id(stack)
+  return stack and (stack.id or stack.item_id) or 0
+end
+
+-- Merges remaining durability from two damaged stacks of the same item.
+function minecraft.stack.combine_damage(left, right)
+  if minecraft.stack.is_empty(left) or minecraft.stack.is_empty(right) then
+    return left, right
+  end
+  if minecraft.stack.item_id(left) ~= minecraft.stack.item_id(right) then
+    return left, right
+  end
+  local info = minecraft.items.describe(minecraft.stack.item_id(left))
+  if info == nil or not info.damageable then
+    return left, right
+  end
+  local max_damage = info.max_damage or 0
+  if max_damage <= 0 or (left.count or 0) ~= 1 or (right.count or 0) ~= 1 then
+    return left, right
+  end
+  local damage_left = left.damage or 0
+  local damage_right = right.damage or 0
+  if damage_left <= 0 and damage_right <= 0 then
+    return left, right
+  end
+  local remaining = (max_damage - damage_left) + (max_damage - damage_right)
+  remaining = math.min(remaining, max_damage)
+  left = {
+    id = minecraft.stack.item_id(left),
+    item_id = minecraft.stack.item_id(left),
+    count = 1,
+    damage = max_damage - remaining,
+  }
+  return left, minecraft.stack.empty()
+end
+
+function minecraft.stack.copy(stack)
+  if minecraft.stack.is_empty(stack) then
+    return minecraft.stack.empty()
+  end
+  return {
+    id = minecraft.stack.item_id(stack),
+    item_id = minecraft.stack.item_id(stack),
+    count = stack.count,
+    damage = stack.damage or 0,
+  }
+end
+
+function minecraft.stack.describe(stack)
+  local item_id = minecraft.stack.item_id(stack)
+  if item_id == 0 then
+    return nil
+  end
+  return minecraft.items.describe(item_id)
+end
+
+function minecraft.stack.mergeable(left, right)
+  if minecraft.stack.is_empty(left) or minecraft.stack.is_empty(right) then
+    return false
+  end
+  if minecraft.stack.item_id(left) ~= minecraft.stack.item_id(right) then
+    return false
+  end
+  local info = minecraft.stack.describe(left)
+  if info == nil then
+    return false
+  end
+  if info.has_subtypes and (left.damage or 0) ~= (right.damage or 0) then
+    return false
+  end
+  return info.stackable ~= false
+end
+
+function minecraft.stack.max_count(stack)
+  local info = minecraft.stack.describe(stack)
+  if info == nil then
+    return 64
+  end
+  return info.max_count or 64
+end
+
+-- Vanilla-style slot click with left/right mouse buttons.
+function minecraft.stack.click(slot_stack, cursor, button)
+  slot_stack = minecraft.stack.copy(slot_stack)
+  cursor = minecraft.stack.copy(cursor)
+  if minecraft.stack.is_empty(slot_stack) then
+    if not minecraft.stack.is_empty(cursor) then
+      local amount = button == 0 and cursor.count or 1
+      amount = math.min(amount, minecraft.stack.max_count(cursor))
+      slot_stack = minecraft.stack.copy(cursor)
+      slot_stack.count = amount
+      cursor.count = cursor.count - amount
+      if cursor.count <= 0 then
+        cursor = minecraft.stack.empty()
+      end
+    end
+    return slot_stack, cursor
+  end
+  if minecraft.stack.is_empty(cursor) then
+    local amount = button == 0 and slot_stack.count or math.floor((slot_stack.count + 1) / 2)
+    cursor = minecraft.stack.copy(slot_stack)
+    cursor.count = amount
+    slot_stack.count = slot_stack.count - amount
+    if slot_stack.count <= 0 then
+      slot_stack = minecraft.stack.empty()
+    end
+    return slot_stack, cursor
+  end
+  if minecraft.stack.mergeable(slot_stack, cursor) then
+    local room = minecraft.stack.max_count(slot_stack) - slot_stack.count
+    local moved = math.min(room, button == 0 and cursor.count or 1)
+    if moved > 0 then
+      slot_stack.count = slot_stack.count + moved
+      cursor.count = cursor.count - moved
+      if cursor.count <= 0 then
+        cursor = minecraft.stack.empty()
+      end
+    end
+    return slot_stack, cursor
+  end
+  if cursor.count <= minecraft.stack.max_count(slot_stack) then
+    local swapped = minecraft.stack.copy(slot_stack)
+    slot_stack = minecraft.stack.copy(cursor)
+    cursor = swapped
+  end
+  return slot_stack, cursor
+end
+
 minecraft.util = {}
 minecraft.astronomy = {}
 
@@ -274,28 +427,93 @@ function minecraft.util.copy(values)
   return result
 end
 
-minecraft.gui.draw_centered_text = function(x, y, width, label, color)
-  local text_width = minecraft.gui.text_width(label)
-  minecraft.gui.draw_text(x + math.floor((width - text_width) / 2), y, label, color or 0xFFFFFFFF)
+minecraft.pointer = {}
+
+local function pointer_from_hit(hit)
+  if hit == nil then
+    return nil
+  end
+  if hit.type == "block" then
+    return {
+      kind = "block",
+      block_id = hit.block_id,
+      block_name = hit.block_name,
+      item_id = hit.item_id,
+      x = hit.block_x,
+      y = hit.block_y,
+      z = hit.block_z,
+      side = hit.side,
+      hit_x = hit.hit_x,
+      hit_y = hit.hit_y,
+      hit_z = hit.hit_z,
+    }
+  elseif hit.type == "entity" then
+    return {
+      kind = "entity",
+      entity_id = hit.entity_id,
+      entity_raw_id = hit.entity_raw_id,
+      x = hit.entity_x,
+      y = hit.entity_y,
+      z = hit.entity_z,
+      hit_x = hit.hit_x,
+      hit_y = hit.hit_y,
+      hit_z = hit.hit_z,
+    }
+  end
+  return nil
 end
 
-minecraft.gui.draw_slider = function(x, y, width, height, normalized, label, mouse_x, mouse_y)
-  local hover = minecraft.util.in_rect(mouse_x, mouse_y, x, y, width, height)
-  minecraft.gui.fill_rect(x, y, width, height, hover and 0xFF808080 or 0xFF606060)
-  minecraft.gui.fill_rect(x, y, width, 1, 0xFFAAAAAA)
-  minecraft.gui.fill_rect(x, y + height - 1, width, 1, 0xFF303030)
-  local knob_x = x + math.floor(minecraft.util.clamp(normalized, 0, 1) * (width - 8))
-  minecraft.gui.fill_rect(knob_x, y, 4, height, 0xFFC0C0C0)
-  minecraft.gui.fill_rect(knob_x + 4, y, 4, height, 0xFF909090)
-  minecraft.gui.draw_centered_text(x + 2, y + 6, width - 4, label)
+-- Casts a ray from the camera (or explicit origin/direction) and returns the
+-- hit table, or nil on a miss. See minecraft.raycast for option fields.
+function minecraft.pointer.hit(options)
+  return pointer_from_hit(minecraft.raycast(options))
 end
 
-minecraft.gui.draw_toggle = function(x, y, width, height, label, value, mouse_x, mouse_y)
-  local hover = minecraft.util.in_rect(mouse_x, mouse_y, x, y, width, height)
-  minecraft.gui.fill_rect(x, y, width, height, hover and 0xFF808080 or 0xFF606060)
-  minecraft.gui.fill_rect(x + 2, y + 2, 16, height - 4, value and 0xFF40C040 or 0xFFC04040)
-  minecraft.gui.draw_text(x + 22, y + 6, label .. ": " .. (value and "ON" or "OFF"), 0xFFFFFFFF)
+-- Convenience: the block the crosshair is over, or nil.
+function minecraft.pointer.block(options)
+  local hit = minecraft.raycast(options)
+  if hit ~= nil and hit.type == "block" then
+    return pointer_from_hit(hit)
+  end
+  return nil
 end
+
+-- Convenience: the entity the crosshair is over, or nil.
+function minecraft.pointer.entity(options)
+  local hit = minecraft.raycast(options)
+  if hit ~= nil and hit.type == "entity" then
+    return pointer_from_hit(hit)
+  end
+  return nil
+end
+
+-- The numeric block id under the crosshair (0 when not pointing at a block).
+function minecraft.pointer.block_id(options)
+  local hit = minecraft.raycast(options)
+  if hit ~= nil and hit.type == "block" then
+    return hit.block_id
+  end
+  return 0
+end
+
+-- The registry id string of the entity under the crosshair, or nil.
+function minecraft.pointer.entity_id(options)
+  local hit = minecraft.raycast(options)
+  if hit ~= nil and hit.type == "entity" then
+    return hit.entity_id
+  end
+  return nil
+end
+
+-- The item id (block's item form) under the crosshair (0 when none).
+function minecraft.pointer.item_id(options)
+  local hit = minecraft.raycast(options)
+  if hit ~= nil and hit.type == "block" then
+    return hit.item_id
+  end
+  return 0
+end
+
 
 minecraft.config = {}
 minecraft.storage = {
@@ -363,6 +581,7 @@ package = nil
 minecraft._subscribe = nil
 minecraft._register_block = nil
 minecraft._register_shaped_recipe = nil
+minecraft._register_item = nil
 minecraft._read_storage = nil
 minecraft._write_storage = nil
 
@@ -386,6 +605,195 @@ function minecraft.screen.on_lua_screen(screen_id, handlers, priority)
       return handler(event)
     end
   end)
+end
+
+-- Compact declarative slot menu: N container slots, cursor, close returns items.
+-- spec.slots = 3 (or explicit spec.positions = {{x=..,y=..}, ...})
+function minecraft.screen.slots(spec)
+  local gui = minecraft.gui
+  local inv = minecraft.inventory
+  local slot_count = spec.slots or #(spec.positions or {})
+  assert(slot_count > 0, "screen.slots requires slots > 0")
+  local panel_w = spec.panel_width or 176
+  local panel_h = spec.panel_height or 72
+  local slot_y = spec.slot_y or 24
+  local gap = spec.gap or 26
+  local priority = spec.priority or 100
+  local positions = spec.positions
+  if positions == nil then
+    positions = {}
+    local slot_size = 16
+    local span = slot_count * slot_size + math.max(0, slot_count - 1) * gap
+    local start_x = math.floor((panel_w - span) / 2)
+    for index = 1, slot_count do
+      positions[index] = {
+        x = start_x + (index - 1) * (slot_size + gap),
+        y = slot_y,
+      }
+    end
+  end
+  local state = {
+    origin_x = 0,
+    origin_y = 0,
+    stacks = {},
+  }
+  for index = 1, slot_count do
+    state.stacks[index] = minecraft.stack.empty()
+  end
+  local function panel_origin(width, height)
+    state.origin_x = math.floor((width - panel_w) / 2)
+    state.origin_y = math.floor((height - panel_h) / 2)
+  end
+  local function slot_at(mouse_x, mouse_y)
+    local x = mouse_x - state.origin_x
+    local y = mouse_y - state.origin_y
+    for index, pos in ipairs(positions) do
+      if x >= pos.x - 1 and x < pos.x + 17 and y >= pos.y - 1 and y < pos.y + 17 then
+        return index
+      end
+    end
+    return nil
+  end
+  local ctx = {}
+  function ctx.count()
+    return slot_count
+  end
+  function ctx.get(index)
+    return minecraft.stack.copy(state.stacks[index] or minecraft.stack.empty())
+  end
+  function ctx.set(index, stack)
+    state.stacks[index] = minecraft.stack.copy(stack)
+    if spec.on_slot_change then
+      spec.on_slot_change(ctx, index)
+    end
+  end
+  function ctx.slots()
+    local copies = {}
+    for index = 1, slot_count do
+      copies[index] = ctx.get(index)
+    end
+    return copies
+  end
+  local function return_items()
+    for index = 1, slot_count do
+      local stack = state.stacks[index]
+      if not minecraft.stack.is_empty(stack) then
+        inv.give(stack)
+        state.stacks[index] = minecraft.stack.empty()
+      end
+    end
+  end
+  local function reset_slots()
+    for index = 1, slot_count do
+      state.stacks[index] = minecraft.stack.empty()
+    end
+  end
+  local function draw_stack(stack, x, y)
+    if minecraft.stack.is_empty(stack) then
+      return
+    end
+    gui.draw_item(x, y, minecraft.stack.item_id(stack), stack.count, stack.damage or 0)
+  end
+  local function render_panel(mouse_x, mouse_y)
+    if spec.background then
+      local uv = spec.background_uv or { 0, 0, panel_w, panel_h }
+      gui.draw_sprite(spec.background, state.origin_x, state.origin_y, uv[1], uv[2], uv[3], uv[4])
+    else
+      gui.fill_rect(state.origin_x, state.origin_y, panel_w, panel_h, spec.panel_color or 0xC0101010)
+    end
+    if spec.label then
+      gui.draw_text(state.origin_x + 8, state.origin_y + 6, spec.label, spec.label_color or 0xFF404040)
+    end
+    for index, pos in ipairs(positions) do
+      local sx = state.origin_x + pos.x
+      local sy = state.origin_y + pos.y
+      if minecraft.util.in_rect(mouse_x, mouse_y, sx, sy, 16, 16) then
+        gui.fill_rect(sx, sy, 16, 16, 0x80FFFFFF)
+      end
+      draw_stack(state.stacks[index], sx, sy)
+    end
+    local cursor = inv.cursor_get() or minecraft.stack.empty()
+    if not minecraft.stack.is_empty(cursor) then
+      draw_stack(cursor, mouse_x - 8, mouse_y - 8)
+    end
+  end
+  local function handle_click(mouse_x, mouse_y, button)
+    local index = slot_at(mouse_x, mouse_y)
+    local cursor = inv.cursor_get() or minecraft.stack.empty()
+    if index == nil then
+      local outside = mouse_x < state.origin_x or mouse_y < state.origin_y
+        or mouse_x >= state.origin_x + panel_w or mouse_y >= state.origin_y + panel_h
+      if outside and not minecraft.stack.is_empty(cursor) then
+        if button == 0 then
+          inv.give(cursor)
+          inv.cursor_set(minecraft.stack.empty())
+        else
+          local single = minecraft.stack.copy(cursor)
+          single.count = 1
+          inv.give(single)
+          cursor.count = cursor.count - 1
+          if cursor.count <= 0 then
+            inv.cursor_set(minecraft.stack.empty())
+          else
+            inv.cursor_set(cursor)
+          end
+        end
+      end
+      return
+    end
+    local slot_stack, next_cursor = minecraft.stack.click(ctx.get(index), cursor, button)
+    ctx.set(index, slot_stack)
+    inv.cursor_set(next_cursor)
+    if spec.on_slot_change then
+      spec.on_slot_change(ctx, index)
+    end
+  end
+  local function open()
+    reset_slots()
+    inv.cursor_set(minecraft.stack.empty())
+    if spec.on_open then
+      spec.on_open(ctx)
+    end
+    minecraft.screen.open(spec.id, { title = spec.title or spec.label or spec.id })
+  end
+  minecraft.screen.on_lua_screen(spec.id, {
+    init = function(event)
+      panel_origin(event.width, event.height)
+    end,
+    render = function(event)
+      panel_origin(event.width, event.height)
+      render_panel(event.mouse_x, event.mouse_y)
+    end,
+    tick = function()
+      if spec.on_tick then
+        spec.on_tick(ctx)
+      end
+    end,
+    mouse = function(event)
+      if event.released then
+        return
+      end
+      if event.button == 0 or event.button == 1 then
+        handle_click(event.x, event.y, event.button)
+        event.handled = true
+      end
+    end,
+    close = function()
+      if spec.on_close then
+        spec.on_close(ctx)
+      end
+      return_items()
+      local cursor = inv.cursor_get() or minecraft.stack.empty()
+      if not minecraft.stack.is_empty(cursor) then
+        inv.give(cursor)
+        inv.cursor_set(minecraft.stack.empty())
+      end
+    end,
+  }, priority)
+  return {
+    open = open,
+    ctx = ctx,
+  }
 end
 
 -- Declarative two-column settings screen shared by renderer/gameplay mods.
@@ -438,7 +846,7 @@ function minecraft.screen.settings(spec)
     minecraft.screen.close()
   end
   local function open()
-    minecraft.screen.open(spec.id)
+    minecraft.screen.open(spec.id, { title = spec.title })
   end
 
   minecraft.screen.on_ui(spec.parent_screen, spec.parent_region, function(event)
@@ -463,7 +871,6 @@ function minecraft.screen.settings(spec)
       if ui.drag then
         set_slider(ui.drag, event.mouse_x)
       end
-      minecraft.gui.draw_centered_text(0, 20, event.width, spec.title)
       local current = values()
       for _, control in ipairs(ui.controls) do
         local value = current[control.key]

@@ -1,27 +1,44 @@
 #include "net/minecraft/server/MinecraftServer.hpp"
 #include "net/minecraft/server/PlayerManager.hpp"
-#include <cassert>
 #include <filesystem>
-int main() {
+#include <gtest/gtest.h>
+namespace net::minecraft::test {
+namespace {
+class CurrentPathGuard {
+public:
+  explicit CurrentPathGuard(const std::filesystem::path& path) : previous_(std::filesystem::current_path()) {
+    std::filesystem::current_path(path);
+  }
+  ~CurrentPathGuard() {
+    std::filesystem::current_path(previous_);
+  }
+
+private:
+  std::filesystem::path previous_;
+};
+} // namespace
+TEST(PlayerManager, WhitelistAndOperatorState) {
   const std::filesystem::path tempRoot =
       std::filesystem::temp_directory_path() / "minecraft_player_manager_test";
+  std::filesystem::remove_all(tempRoot);
   std::filesystem::create_directories(tempRoot);
+  CurrentPathGuard currentPathGuard(tempRoot);
   net::minecraft::server::MinecraftServer server;
   server.properties = std::make_unique<net::minecraft::server::ServerProperties>(tempRoot / "server.properties");
   server.playerManager.configureFromProperties();
-  assert(server.playerManager.isWhitelisted("anyone"));
+  EXPECT_TRUE(server.playerManager.isWhitelisted("anyone"));
   server.playerManager.addToOperators("Admin");
-  assert(server.playerManager.isOperator("admin"));
-  assert(server.playerManager.isWhitelisted("stranger"));
+  EXPECT_TRUE(server.playerManager.isOperator("admin"));
+  EXPECT_TRUE(server.playerManager.isWhitelisted("stranger"));
   server.properties->setProperty("white-list", true);
   server.playerManager.configureFromProperties();
-  assert(!server.playerManager.isWhitelisted("stranger"));
-  assert(server.playerManager.isWhitelisted("admin"));
+  EXPECT_FALSE(server.playerManager.isWhitelisted("stranger"));
+  EXPECT_TRUE(server.playerManager.isWhitelisted("admin"));
   server.playerManager.addToWhitelist("guest");
-  assert(server.playerManager.isWhitelisted("guest"));
+  EXPECT_TRUE(server.playerManager.isWhitelisted("guest"));
   server.playerManager.banPlayer("banned");
-  assert(!server.playerManager.isWhitelisted("banned"));
+  EXPECT_FALSE(server.playerManager.isWhitelisted("banned"));
   server.playerManager.unbanPlayer("banned");
-  assert(server.playerManager.getPlayerList().empty());
-  return 0;
+  EXPECT_TRUE(server.playerManager.getPlayerList().empty());
 }
+} // namespace net::minecraft::test

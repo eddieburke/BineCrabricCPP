@@ -21,12 +21,6 @@ void relightSkylightForPreparedArea(World& world, int centerX, int centerZ, int 
   }
 }
 } // namespace
-void WorldSession::setWorld(Minecraft& client, World* worldIn) {
-  setWorld(client, worldIn, "");
-}
-void WorldSession::setWorld(Minecraft& client, World* worldIn, const std::string& message) {
-  setWorld(client, worldIn, message, nullptr);
-}
 void WorldSession::clearWorld(Minecraft& client) {
   // Detach render listeners before ownedWorld_ is destroyed. WorldRenderer keeps
   // its own world pointer; without clearing it first, the next setWorld() call
@@ -43,8 +37,32 @@ void WorldSession::clearWorld(Minecraft& client) {
   ownedWorld_.reset();
   ownedWorldStorage_.reset();
 }
+void WorldSession::unloadWorld(Minecraft& client) {
+  if(client.stats != nullptr) {
+    client.stats->syncStats();
+    client.stats->save();
+  }
+  if(client.world != nullptr) {
+    client.world->savingProgress(nullptr);
+    if(client.worldSoundListener != nullptr) {
+      client.worldSoundListener->detach(client.world);
+    }
+  }
+  client.camera = nullptr;
+  client.world = nullptr;
+  client.particleManager.setWorld(nullptr);
+  if(client.interactionManager != nullptr) {
+    client.interactionManager->setWorld(nullptr);
+  }
+  clearWorld(client);
+  client.lastTickTime = 0;
+}
 void WorldSession::setWorld(Minecraft& client, World* worldIn, const std::string& message, PlayerEntity* existingPlayer,
                             bool skipTerrainPrepare) {
+  if(worldIn == nullptr) {
+    unloadWorld(client);
+    return;
+  }
   if(client.stats != nullptr) {
     client.stats->syncStats();
     client.stats->save();
@@ -132,8 +150,6 @@ void WorldSession::setWorld(Minecraft& client, World* worldIn, const std::string
     if(worldIn->isNewWorld()) {
       worldIn->savingProgress(nullptr);
     }
-  } else {
-    clearWorld(client);
   }
   client.lastTickTime = 0;
 }

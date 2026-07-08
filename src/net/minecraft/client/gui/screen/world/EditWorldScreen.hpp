@@ -13,8 +13,9 @@ public:
   void render(int mouseX, int mouseY, float tickDelta) override;
   void keyPressed(char character, int keyCode) override;
   void mouseClicked(int mouseX, int mouseY, int button) override;
+  [[nodiscard]] std::string_view getScreenUiId() const override { return net::minecraft::mod::screen_ids::kEditWorld; }
 
-private:
+ private:
   screen::ScreenFactory parentFactory_;
   std::string worldSaveName_;
   void renameWorld();

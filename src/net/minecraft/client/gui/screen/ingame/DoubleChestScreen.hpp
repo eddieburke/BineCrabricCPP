@@ -15,8 +15,9 @@ public:
 protected:
   void drawForeground() override;
   void drawBackground(float tickDelta) override;
+  [[nodiscard]] std::string_view getScreenUiId() const override { return net::minecraft::mod::screen_ids::kDoubleChest; }
 
-private:
+ private:
   entity::player::PlayerInventory* playerInventory_ = nullptr;
   Inventory* inventory_ = nullptr;
   int rows_ = 0;

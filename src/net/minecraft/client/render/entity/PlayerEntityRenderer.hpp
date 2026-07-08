@@ -5,7 +5,6 @@ namespace net::minecraft::client::render::entity {
 class PlayerEntityRenderer : public LivingEntityRenderer {
 public:
   PlayerEntityRenderer();
-  ~PlayerEntityRenderer() override;
   void render(const net::minecraft::Entity& entity, double x, double y, double z, float yaw,
               float tickDelta) override;
   void renderHand();
@@ -20,8 +19,8 @@ protected:
   void renderMore(const net::minecraft::LivingEntity& entity, float tickDelta) override;
 
 private:
-  model::BipedEntityModel* bipedModel = nullptr;
-  model::BipedEntityModel* armor1 = nullptr;
-  model::BipedEntityModel* armor2 = nullptr;
+  model::BipedEntityModel* bipedModel = nullptr; // non-owning; aliases base `model`
+  std::unique_ptr<model::BipedEntityModel> armor1;
+  std::unique_ptr<model::BipedEntityModel> armor2;
 };
 } // namespace net::minecraft::client::render::entity

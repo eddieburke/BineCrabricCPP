@@ -312,45 +312,41 @@ FetchContent_MakeAvailable(googletest)
 
 enable_testing()
 
-add_executable(minecraft_native_tests
+set(MINECRAFT_TEST_SOURCES
     tests/packet_roundtrip_test.cpp
     tests/registry_bootstrap_test.cpp
     tests/lan_host_coordinator_test.cpp
     tests/world_required_mods_test.cpp
-    $<TARGET_OBJECTS:minecraft_client>
+    tests/multiplayer_client_player_entity_test.cpp
 )
-minecraft_link_registry_roots(minecraft_native_tests)
-target_link_libraries(minecraft_native_tests PRIVATE GTest::gtest_main)
-minecraft_configure_target(minecraft_native_tests)
-target_include_directories(minecraft_native_tests PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/tests")
-minecraft_link_core_client(minecraft_native_tests)
-if (WIN32)
-    target_link_libraries(minecraft_native_tests PRIVATE comdlg32 gdiplus gdi32 user32)
-endif()
-
-include(GoogleTest)
-gtest_discover_tests(minecraft_native_tests)
 
 set(MINECRAFT_SERVER_TEST_SOURCES
     integrated_server_host_test.cpp
+    mp_chunk_data_test.cpp
+    mp_chunk_delivery_test.cpp
     server_properties_test.cpp
     server_command_handler_test.cpp
     server_chunk_cache_test.cpp
     server_world_events_test.cpp
+    server_login_handler_test.cpp
+    minecraft_server_tick_test.cpp
+    player_manager_test.cpp
+    chunk_map_test.cpp
+    connection_listener_test.cpp
 )
-set(MINECRAFT_SERVER_TEST_TARGETS)
-foreach(test_source ${MINECRAFT_SERVER_TEST_SOURCES})
-    get_filename_component(test_stem ${test_source} NAME_WE)
-    set(test_target "minecraft_server_tests_${test_stem}")
-    add_executable(${test_target}
-        "tests/${test_source}"
-        $<TARGET_OBJECTS:minecraft_client>
-    )
-    minecraft_configure_target(${test_target})
-    target_include_directories(${test_target} PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/tests")
-    minecraft_link_registry_roots(${test_target})
-    minecraft_link_server(${test_target})
-    add_test(NAME ${test_target} COMMAND ${test_target})
-    list(APPEND MINECRAFT_SERVER_TEST_TARGETS ${test_target})
-endforeach()
-add_custom_target(minecraft_server_tests DEPENDS ${MINECRAFT_SERVER_TEST_TARGETS})
+
+list(TRANSFORM MINECRAFT_SERVER_TEST_SOURCES PREPEND "tests/")
+list(APPEND MINECRAFT_TEST_SOURCES ${MINECRAFT_SERVER_TEST_SOURCES})
+
+add_executable(minecraft_omega_tests
+    ${MINECRAFT_TEST_SOURCES}
+    $<TARGET_OBJECTS:minecraft_client>
+)
+minecraft_configure_target(minecraft_omega_tests)
+target_include_directories(minecraft_omega_tests PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/tests")
+minecraft_link_registry_roots(minecraft_omega_tests)
+minecraft_link_server(minecraft_omega_tests)
+target_link_libraries(minecraft_omega_tests PRIVATE GTest::gtest_main)
+
+include(GoogleTest)
+gtest_discover_tests(minecraft_omega_tests)

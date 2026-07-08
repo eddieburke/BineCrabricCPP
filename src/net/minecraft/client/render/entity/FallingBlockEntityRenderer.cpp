@@ -1,6 +1,6 @@
 #include "net/minecraft/client/render/entity/EntityRenderers.hpp"
 #include "net/minecraft/block/Block.hpp"
-#include "net/minecraft/client/gl/GL11.hpp"
+#include "net/minecraft/client/gl/GlState.hpp"
 #include "net/minecraft/client/render/platform/Lighting.hpp"
 #include "net/minecraft/entity/FallingBlockEntity.hpp"
 #include "net/minecraft/util/math/MathHelper.hpp"
@@ -18,7 +18,7 @@ void FallingBlockEntityRenderer::render(const net::minecraft::Entity& entity, do
     return;
   }
   const gl::MatrixGuard matrix;
-  gl::GL11::glTranslatef(static_cast<float>(x), static_cast<float>(y), static_cast<float>(z));
+  gl::translatef(static_cast<float>(x), static_cast<float>(y), static_cast<float>(z));
   bindTexture("/terrain.png");
   net::minecraft::block::Block* block =
       net::minecraft::block::Block::BLOCKS[static_cast<std::size_t>(falling->blockId)];

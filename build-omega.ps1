@@ -11,7 +11,7 @@
 #   .\build-omega.ps1 -Lto          # opt-in link-time optimization (often fails on MinGW GCC 15)
 #   .\build-omega.ps1 -NoNativeCpu # portable binary (no -march=native / AVX tuning)
 #   .\build-omega.ps1 -SkipModPackaging  # skip generating runtime mod zips
-#   .\build-omega.ps1 -RunTests          # build minecraft_native_tests and run ctest
+#   .\build-omega.ps1 -RunTests          # build minecraft_omega_tests and run ctest
 #   .\build-omega.ps1 -Target Client     # build minecraft_native.exe only
 #   .\build-omega.ps1 -Target Server     # build minecraft_server.exe only
 #   .\build-client.ps1 / .\build-server.ps1  # thin wrappers (build + optional -Run)
@@ -638,11 +638,8 @@ $sw.Stop()
     }
     if ($RunTests -and $exitCode -eq 0) {
         $testTargets = @()
-        if ($Target -eq "All" -or $Target -eq "Client") {
-            $testTargets += "minecraft_native_tests"
-        }
-        if ($Target -eq "All" -or $Target -eq "Server") {
-            $testTargets += "minecraft_server_tests"
+        if ($Target -eq "All" -or $Target -eq "Client" -or $Target -eq "Server") {
+            $testTargets += "minecraft_omega_tests"
         }
         if ($testTargets.Count -gt 0) {
         Write-Host "Building $($testTargets -join ', ') (-j $Jobs) ..."

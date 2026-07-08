@@ -2,7 +2,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <vector>
-#include "net/minecraft/client/gl/GL11.hpp"
+#include "net/minecraft/client/gl/GlState.hpp"
 namespace net::minecraft::client::render {
 // Fixed-function interleaved vertex (position, texture, color, normal).
 struct TessellatorVertex {

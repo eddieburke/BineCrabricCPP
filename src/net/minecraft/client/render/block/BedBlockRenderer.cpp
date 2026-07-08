@@ -102,7 +102,7 @@ bool BedBlockRenderer::render(net::minecraft::block::Block& block, int x, int y,
   default:
     break;
   }
-  if(skipFaceDir != 2 && (ctx_.skipFaceCulling || block.isSideVisible(ctx_.blockView, x, y, z - 1, 2))) {
+  if(skipFaceDir != 2 && (ctx_.skipFaceCulling || ctx_.isSideVisible(block, x, y, z - 1, 2))) {
     float northBrightness = block.getLuminance(ctx_.blockView, x, y, z - 1);
     if(ctx_.renderBounds.minZ > 0.0) {
       northBrightness = baseBrightness;
@@ -112,7 +112,7 @@ bool BedBlockRenderer::render(net::minecraft::block::Block& block, int x, int y,
     ctx_.flipTextureHorizontally = sideFaceTex == 2;
     faces_.renderEastFace(block, x, y, z, block.getTextureId(ctx_.blockView, x, y, z, 2));
   }
-  if(skipFaceDir != 3 && (ctx_.skipFaceCulling || block.isSideVisible(ctx_.blockView, x, y, z + 1, 3))) {
+  if(skipFaceDir != 3 && (ctx_.skipFaceCulling || ctx_.isSideVisible(block, x, y, z + 1, 3))) {
     float southBrightness = block.getLuminance(ctx_.blockView, x, y, z + 1);
     if(ctx_.renderBounds.maxZ < 1.0) {
       southBrightness = baseBrightness;
@@ -122,7 +122,7 @@ bool BedBlockRenderer::render(net::minecraft::block::Block& block, int x, int y,
     ctx_.flipTextureHorizontally = sideFaceTex == 3;
     faces_.renderWestFace(block, x, y, z, block.getTextureId(ctx_.blockView, x, y, z, 3));
   }
-  if(skipFaceDir != 4 && (ctx_.skipFaceCulling || block.isSideVisible(ctx_.blockView, x - 1, y, z, 4))) {
+  if(skipFaceDir != 4 && (ctx_.skipFaceCulling || ctx_.isSideVisible(block, x - 1, y, z, 4))) {
     float westBrightness = block.getLuminance(ctx_.blockView, x - 1, y, z);
     if(ctx_.renderBounds.minX > 0.0) {
       westBrightness = baseBrightness;
@@ -132,7 +132,7 @@ bool BedBlockRenderer::render(net::minecraft::block::Block& block, int x, int y,
     ctx_.flipTextureHorizontally = sideFaceTex == 4;
     faces_.renderNorthFace(block, x, y, z, block.getTextureId(ctx_.blockView, x, y, z, 4));
   }
-  if(skipFaceDir != 5 && (ctx_.skipFaceCulling || block.isSideVisible(ctx_.blockView, x + 1, y, z, 5))) {
+  if(skipFaceDir != 5 && (ctx_.skipFaceCulling || ctx_.isSideVisible(block, x + 1, y, z, 5))) {
     float eastBrightness = block.getLuminance(ctx_.blockView, x + 1, y, z);
     if(ctx_.renderBounds.maxX < 1.0) {
       eastBrightness = baseBrightness;

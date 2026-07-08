@@ -1,5 +1,5 @@
 #include "net/minecraft/client/render/entity/EntityRenderers.hpp"
-#include "net/minecraft/client/gl/GL11.hpp"
+#include "net/minecraft/client/gl/GlState.hpp"
 #include "net/minecraft/client/render/Tessellator.hpp"
 #include "net/minecraft/client/render/entity/EntityRenderDispatcher.hpp"
 #include "net/minecraft/entity/decoration/painting/PaintingEntity.hpp"
@@ -14,11 +14,11 @@ void PaintingEntityRenderer::render(const net::minecraft::Entity& entity, double
   }
   random_.seed(187ULL);
   const gl::MatrixGuard matrix;
-  gl::GL11::glTranslatef(static_cast<float>(x), static_cast<float>(y), static_cast<float>(z));
-  gl::GL11::glRotatef(yaw, 0.0f, 1.0f, 0.0f);
+  gl::translatef(static_cast<float>(x), static_cast<float>(y), static_cast<float>(z));
+  gl::rotatef(yaw, 0.0f, 1.0f, 0.0f);
   bindTexture("/art/kz.png");
   constexpr float scale = 0.0625f;
-  gl::GL11::glScalef(scale, scale, scale);
+  gl::scalef(scale, scale, scale);
   renderPainting(*painting, painting->variant.width, painting->variant.height, painting->variant.textureOffsetX,
                  painting->variant.textureOffsetY);
 }
@@ -96,7 +96,7 @@ void PaintingEntityRenderer::applyBrightness(
   if(dispatcher != nullptr && dispatcher->world() != nullptr) {
     brightness = dispatcher->world()->getLightBrightness(bx, by, bz);
   }
-  gl::GL11::glColor3f(brightness, brightness, brightness);
+  gl::color3f(brightness, brightness, brightness);
 }
 } // namespace net::minecraft::client::render::entity
 #include "net/minecraft/client/entity/EntityClientRendererRegistration.hpp"

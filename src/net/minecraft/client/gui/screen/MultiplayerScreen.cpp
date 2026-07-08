@@ -36,6 +36,11 @@ void MultiplayerScreen::init() {
     serverField_->focused = true;
     serverField_->setMaxLength(128);
   }
+  modsToggle_ = &addActionButton(
+      layout::centerBtnX(width()), height() / 4 + 84,
+      resource::language::I18n::getTranslation("multiplayer.mods",
+          resource::language::I18n::getTranslation(minecraft() != nullptr && minecraft()->options.modsEnabled ? "options.on" : "options.off")),
+      [this] { toggleMods(); });
   updateConnectButtonState();
 }
 void MultiplayerScreen::tick() {
@@ -55,6 +60,16 @@ int MultiplayerScreen::parseInt(const std::string& value, int defaultValue) {
 void MultiplayerScreen::updateConnectButtonState() {
   if(connectButton_ != nullptr) {
     connectButton_->active = serverField_ != nullptr && !serverField_->getText().empty();
+  }
+}
+void MultiplayerScreen::toggleMods() {
+  if(minecraft() != nullptr) {
+    minecraft()->options.modsEnabled = !minecraft()->options.modsEnabled;
+    minecraft()->options.save();
+    if(modsToggle_ != nullptr) {
+      modsToggle_->text = resource::language::I18n::getTranslation("multiplayer.mods",
+          resource::language::I18n::getTranslation(minecraft()->options.modsEnabled ? "options.on" : "options.off"));
+    }
   }
 }
 void MultiplayerScreen::connectToServer() {

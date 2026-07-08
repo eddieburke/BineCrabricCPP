@@ -26,9 +26,12 @@ public:
   void refreshMusicVolume();
   void updateListener(entity::LivingEntity* player, float partialTick);
   void tick();
-  void playAt(const std::string& id, float x, float y, float z, float volume, float pitch);
-  void play(const std::string& id, float volume, float pitch);
-  void playRecord(const std::string& id, float x, float y, float z, float volume);
+  bool playAt(const std::string& id, float x, float y, float z, float volume, float pitch);
+  bool play(const std::string& id, float volume, float pitch);
+  bool playRecord(const std::string& id, float x, float y, float z, float volume);
+  [[nodiscard]] std::string playLoopAt(const std::string& id, float x, float y, float z, float volume, float pitch);
+  void stop(const std::string& handle);
+  [[nodiscard]] bool isPlaying(const std::string& handle) const;
 
 private:
   struct Impl;

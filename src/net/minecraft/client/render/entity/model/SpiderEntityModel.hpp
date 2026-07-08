@@ -136,6 +136,20 @@ public:
     leftMiddleFrontLeg.roll += -middleFrontLegRollSwing;
     rightFrontLeg.roll += frontLegRollSwing;
     leftFrontLeg.roll += -frontLegRollSwing;
+    applyPartOverrides();
+  }
+  void collectNamedParts(std::unordered_map<std::string, net::minecraft::client::model::ModelPart*>& parts) override {
+    parts["head"] = &head;
+    parts["body0"] = &body0;
+    parts["body1"] = &body1;
+    parts["rightHindLeg"] = &rightHindLeg;
+    parts["leftHindLeg"] = &leftHindLeg;
+    parts["rightMiddleHindLeg"] = &rightMiddleHindLeg;
+    parts["leftMiddleHindLeg"] = &leftMiddleHindLeg;
+    parts["rightMiddleFrontLeg"] = &rightMiddleFrontLeg;
+    parts["leftMiddleFrontLeg"] = &leftMiddleFrontLeg;
+    parts["rightFrontLeg"] = &rightFrontLeg;
+    parts["leftFrontLeg"] = &leftFrontLeg;
   }
 };
 } // namespace net::minecraft::client::render::entity::model

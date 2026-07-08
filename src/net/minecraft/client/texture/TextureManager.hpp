@@ -2,6 +2,7 @@
 #include <cstdint>
 #include <filesystem>
 #include <memory>
+#include <optional>
 #include <string>
 #include <unordered_map>
 #include <vector>
@@ -48,10 +49,12 @@ public:
   void downloadSkinImage(const std::string& url);
   void downloadCapeImage(const std::string& url);
   void releaseImage(const std::string& url);
+  [[nodiscard]] std::optional<bool> skinSlimArms(const std::string& url) const;
   [[nodiscard]] static std::filesystem::path resolveResourcePath(const std::string& path);
   [[nodiscard]] static RasterImage loadRasterFromFile(const std::filesystem::path& filePath);
   [[nodiscard]] static RasterImage loadRasterFromBytes(const std::vector<std::uint8_t>& bytes);
   [[nodiscard]] static RasterImage loadRasterFromUrl(const std::string& url, bool useBetacraftProxy = true);
+  [[nodiscard]] RasterImage loadRasterForResource(const std::string& resourcePath);
   // Mirror of TextureManager fields used to select texture filtering/wrap.
   static bool MIPMAP;
   static bool MIPMAP_LINEAR;
@@ -60,7 +63,6 @@ public:
 
 private:
   void ensureMissingTexture();
-  [[nodiscard]] RasterImage loadRasterForResource(const std::string& resourcePath);
   option::GameOptions* gameOptions_ = nullptr;
   resource::pack::TexturePacks* texturePacks_ = nullptr;
   std::unordered_map<std::string, int> textures_;

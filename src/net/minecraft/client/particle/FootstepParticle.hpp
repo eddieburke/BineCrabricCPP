@@ -1,5 +1,5 @@
 #pragma once
-#include "net/minecraft/client/gl/GL11.hpp"
+#include "net/minecraft/client/gl/GlState.hpp"
 #include "net/minecraft/client/particle/Particle.hpp"
 #include "net/minecraft/client/texture/TextureManager.hpp"
 namespace net::minecraft::client::particle {
@@ -28,9 +28,7 @@ public:
     const float brightness =
         world->getLightBrightness(MathHelper::floor(x), MathHelper::floor(y), MathHelper::floor(z));
     textureManager_->bindTexture(textureManager_->getTextureId("/misc/footprint.png"));
-    gl::GL11::glDisable(gl::GL11::GL_FOG);
-    gl::GL11::glEnable(gl::GL11::GL_BLEND);
-    gl::GL11::glBlendFunc(gl::GL11::GL_SRC_ALPHA, gl::GL11::GL_ONE_MINUS_SRC_ALPHA);
+    const gl::preset::ParticleDecal footCaps;
     tessellator.startQuads();
     tessellator.color(brightness, brightness, brightness, alpha);
     tessellator.vertex(px - size, py, pz + size, 0.0, 1.0);
@@ -38,8 +36,6 @@ public:
     tessellator.vertex(px + size, py, pz - size, 1.0, 0.0);
     tessellator.vertex(px - size, py, pz - size, 0.0, 0.0);
     tessellator.draw();
-    gl::GL11::glDisable(gl::GL11::GL_BLEND);
-    gl::GL11::glEnable(gl::GL11::GL_LIGHTING);
   }
   void tick() override {
     if(++footstepAge == footstepMaxAge) {

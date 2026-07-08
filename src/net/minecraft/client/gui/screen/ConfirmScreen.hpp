@@ -10,8 +10,9 @@ public:
                 std::string confirmText, std::string cancelText);
   void init() override;
   void render(int mouseX, int mouseY, float tickDelta) override;
+  [[nodiscard]] std::string_view getScreenUiId() const override { return net::minecraft::mod::screen_ids::kConfirm; }
 
-private:
+ private:
   ScreenFactory returnFactory_;
   ConfirmHandler handler_;
   std::string message1_;

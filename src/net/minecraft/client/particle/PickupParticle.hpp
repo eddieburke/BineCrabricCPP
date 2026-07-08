@@ -1,5 +1,5 @@
 #pragma once
-#include "net/minecraft/client/gl/GL11.hpp"
+#include "net/minecraft/client/gl/GlState.hpp"
 #include "net/minecraft/client/particle/Particle.hpp"
 #include "net/minecraft/client/render/entity/EntityRenderDispatcher.hpp"
 namespace net::minecraft::client::particle {
@@ -33,7 +33,7 @@ public:
     const int blockY = MathHelper::floor(renderY + static_cast<double>(standingEyeHeight / 2.0f));
     const int blockZ = MathHelper::floor(renderZ);
     const float brightness = world->getLightBrightness(blockX, blockY, blockZ);
-    gl::GL11::glColor4f(brightness, brightness, brightness, 1.0f);
+    gl::color4f(brightness, brightness, brightness, 1.0f);
     render::entity::EntityRenderDispatcher::instance().render(*entity_, renderX - xOffset, renderY - yOffset,
                                                               renderZ - zOffset, entity_->yaw, partialTicks);
   }

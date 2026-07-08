@@ -6,7 +6,6 @@
 #include <algorithm>
 #include <filesystem>
 #include <fstream>
-#include <iostream>
 namespace net::minecraft {
 SavedDataStorage::SavedDataStorage(WorldStorage* storage) : storage_(storage) {
   loadIdCounts();
@@ -38,8 +37,7 @@ PersistentState* SavedDataStorage::getOrCreate(const std::type_index& stateClass
             }
           }
         }
-      } catch(const std::exception& exception) {
-        std::cerr << "Failed to load saved data '" << id << "': " << exception.what() << '\n';
+      } catch(const std::exception&) {
       }
     }
   }
@@ -79,8 +77,7 @@ void SavedDataStorage::save(PersistentState& state) {
     NbtCompound root;
     root.put("data", data);
     writeFileAtomic(file, [&root](std::ostream& output) { NbtIo::writeCompressed(root, output); });
-  } catch(const std::exception& exception) {
-    std::cerr << "Failed to save data '" << state.id << "': " << exception.what() << '\n';
+  } catch(const std::exception&) {
   }
 }
 void SavedDataStorage::loadIdCounts() {
@@ -103,8 +100,7 @@ void SavedDataStorage::loadIdCounts() {
         impl_->idCounts_[entry.first] = static_cast<int>(entry.second.asShort());
       }
     }
-  } catch(const std::exception& exception) {
-    std::cerr << "Failed to load id counts: " << exception.what() << '\n';
+  } catch(const std::exception&) {
   }
 }
 int SavedDataStorage::getIdCount(const std::string& id) {
@@ -127,8 +123,7 @@ int SavedDataStorage::getIdCount(const std::string& id) {
     }
     // Uncompressed, matching loadIdCounts()'s NbtIo::read.
     writeFileAtomic(file, [&root](std::ostream& output) { NbtIo::write(root, output); });
-  } catch(const std::exception& exception) {
-    std::cerr << "Failed to save id counts: " << exception.what() << '\n';
+  } catch(const std::exception&) {
   }
   return value;
 }

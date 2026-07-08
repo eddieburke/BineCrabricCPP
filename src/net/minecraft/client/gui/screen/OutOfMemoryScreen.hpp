@@ -32,8 +32,9 @@ public:
     }
     Screen::render(mouseX, mouseY, tickDelta);
   }
+  [[nodiscard]] std::string_view getScreenUiId() const override { return net::minecraft::mod::screen_ids::kOutOfMemory; }
 
-private:
+ private:
   int ticksRan_ = 0;
 };
 } // namespace net::minecraft::client::gui::screen

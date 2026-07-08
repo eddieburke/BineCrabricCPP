@@ -1,7 +1,7 @@
 #include "net/minecraft/client/render/atmosphere/SkyDome.hpp"
 #include "net/minecraft/client/render/atmosphere/AtmosphereContext.hpp"
 #include "net/minecraft/client/render/Tessellator.hpp"
-#include "net/minecraft/client/gl/GL11.hpp"
+#include "net/minecraft/client/gl/GlState.hpp"
 #include "net/minecraft/client/option/GameOptions.hpp"
 #include "net/minecraft/client/render/platform/Lighting.hpp"
 #include "net/minecraft/client/texture/TextureManager.hpp"
@@ -27,7 +27,7 @@ SkyMeshes& skyMeshes() {
 }
 void buildStarMesh(Tessellator& tessellator) {
   net::minecraft::JavaRandom random(10842ULL);
-  tessellator.start(gl::GL11::GL_QUADS);
+  tessellator.start(gl::prim::Quads);
   for(int i = 0; i < 1500; ++i) {
     double d = static_cast<double>(random.nextFloat() * 2.0f - 1.0f);
     double d2 = static_cast<double>(random.nextFloat() * 2.0f - 1.0f);
@@ -75,7 +75,7 @@ void buildSkyDomes(SkyMeshes& meshes) {
   (void)meshes.stars.uploadToGpu();
   constexpr int step = 64;
   constexpr int span = 256 / step + 2;
-  tessellator.start(gl::GL11::GL_QUADS);
+  tessellator.start(gl::prim::Quads);
   for(int x = -step * span; x <= step * span; x += step) {
     for(int z = -step * span; z <= step * span; z += step) {
       tessellator.vertex(x + 0, 16.0f, z + 0);
@@ -86,7 +86,7 @@ void buildSkyDomes(SkyMeshes& meshes) {
   }
   meshes.lightSky = tessellator.takeMesh();
   (void)meshes.lightSky.uploadToGpu();
-  tessellator.start(gl::GL11::GL_QUADS);
+  tessellator.start(gl::prim::Quads);
   for(int x = -step * span; x <= step * span; x += step) {
     for(int z = -step * span; z <= step * span; z += step) {
       tessellator.vertex(x + step, -16.0f, z + 0);
@@ -107,12 +107,13 @@ void publishRenderStage(mod::WorldRenderEvent& event, mod::WorldRenderStage stag
 }
 void drawBackgroundFan(const AtmosphereContext& ctx, float tickDelta, const std::array<float, 4>& bg) {
   const float timeOfDay = ctx.world->getTime(tickDelta);
-  gl::GL11::glShadeModel(gl::GL11::GL_SMOOTH);
-  gl::GL11::glPushMatrix();
-  gl::GL11::glRotatef(90.0f, 1.0f, 0.0f, 0.0f);
-  gl::GL11::glRotatef(timeOfDay > 0.5f ? 180.0f : 0.0f, 0.0f, 0.0f, 1.0f);
+  const gl::ShadeModelScope shadeCaps;
+  gl::shadeModel(gl::shade::Smooth);
+  gl::MatrixGuard fanMatrix;
+  gl::rotatef(90.0f, 1.0f, 0.0f, 0.0f);
+  gl::rotatef(timeOfDay > 0.5f ? 180.0f : 0.0f, 0.0f, 0.0f, 1.0f);
   Tessellator& tessellator = Tessellator::INSTANCE;
-  tessellator.start(gl::GL11::GL_TRIANGLE_FAN);
+  tessellator.start(gl::prim::TriangleFan);
   tessellator.color(bg[0], bg[1], bg[2], bg[3]);
   tessellator.vertex(0.0, 100.0, 0.0);
   tessellator.color(bg[0], bg[1], bg[2], 0.0f);
@@ -121,16 +122,13 @@ void drawBackgroundFan(const AtmosphereContext& ctx, float tickDelta, const std:
     tessellator.vertex(std::sin(angle) * 120.0, std::cos(angle) * 120.0, -std::cos(angle) * 40.0f * bg[3]);
   }
   tessellator.draw();
-  gl::GL11::glPopMatrix();
-  gl::GL11::glShadeModel(gl::GL11::GL_FLAT);
 }
 void drawSunMoon(const AtmosphereContext& ctx, float starAlpha) {
-  gl::GL11::glEnable(gl::GL11::GL_TEXTURE_2D);
-  gl::GL11::glBlendFunc(gl::GL11::GL_SRC_ALPHA, gl::GL11::GL_ONE);
-  gl::GL11::glColor4f(1.0f, 1.0f, 1.0f, starAlpha);
+  gl::blendFunc(gl::blend::SrcAlpha, gl::blend::One);
+  gl::color4f(1.0f, 1.0f, 1.0f, starAlpha);
   Tessellator& tessellator = Tessellator::INSTANCE;
   if(ctx.textureManager != nullptr) {
-    gl::GL11::glBindTexture(gl::GL11::GL_TEXTURE_2D, ctx.textureManager->getTextureId("/terrain/sun.png"));
+    gl::bindTexture(gl::cap::Texture2D, ctx.textureManager->getTextureId("/terrain/sun.png"));
   }
   tessellator.startQuads();
   tessellator.vertex(-30.0, 100.0, -30.0, 0.0, 0.0);
@@ -139,7 +137,7 @@ void drawSunMoon(const AtmosphereContext& ctx, float starAlpha) {
   tessellator.vertex(-30.0, 100.0, 30.0, 0.0, 1.0);
   tessellator.draw();
   if(ctx.textureManager != nullptr) {
-    gl::GL11::glBindTexture(gl::GL11::GL_TEXTURE_2D, ctx.textureManager->getTextureId("/terrain/moon.png"));
+    gl::bindTexture(gl::cap::Texture2D, ctx.textureManager->getTextureId("/terrain/moon.png"));
   }
   tessellator.startQuads();
   tessellator.vertex(-20.0, -100.0, 20.0, 1.0, 1.0);
@@ -179,55 +177,53 @@ void renderSkyDome(const AtmosphereContext& ctx, float tickDelta) {
   float skyB = static_cast<float>(sky.z);
   const float starAlpha = 1.0f - ctx.world->getRainGradient(tickDelta);
   const float starBrightness = ctx.world->calculateSkyLightIntensity(tickDelta) * starAlpha;
-  gl::GL11::glDisable(gl::GL11::GL_TEXTURE_2D);
-  gl::GL11::glColor3f(skyR, skyG, skyB);
-  gl::GL11::glDepthMask(false);
-  gl::GL11::glEnable(gl::GL11::GL_FOG);
-  gl::GL11::glColor3f(skyR, skyG, skyB);
+  const gl::preset::SkyDomeDraw skyCaps;
+  gl::color3f(skyR, skyG, skyB);
   Tessellator::drawMesh(meshes.lightSky);
-  gl::GL11::glDisable(gl::GL11::GL_FOG);
-  gl::GL11::glDisable(gl::GL11::GL_ALPHA_TEST);
-  gl::GL11::glEnable(gl::GL11::GL_BLEND);
-  gl::GL11::glBlendFunc(gl::GL11::GL_SRC_ALPHA, gl::GL11::GL_ONE_MINUS_SRC_ALPHA);
-  platform::Lighting::turnOff();
-  if(std::array<float, 4>* background = ctx.world->dimension->getBackgroundColor(timeOfDay, tickDelta);
-     background != nullptr) {
-    drawBackgroundFan(ctx, tickDelta, *background);
+  {
+    const gl::preset::SkyDomeBackgroundFan backgroundCaps;
+    platform::Lighting::turnOff();
+    if(std::array<float, 4>* background = ctx.world->dimension->getBackgroundColor(timeOfDay, tickDelta);
+       background != nullptr) {
+      drawBackgroundFan(ctx, tickDelta, *background);
+    }
   }
-  gl::GL11::glEnable(gl::GL11::GL_TEXTURE_2D);
-  gl::GL11::glBlendFunc(gl::GL11::GL_SRC_ALPHA, gl::GL11::GL_ONE);
-  gl::GL11::glPushMatrix();
-  gl::GL11::glRotatef(skyEvent.skyYawDegrees, 0.0f, 1.0f, 0.0f);
-  gl::GL11::glRotatef(skyEvent.celestialAngle * 180.0f / kPi, 1.0f, 0.0f, 0.0f);
-  drawSunMoon(ctx, starAlpha);
-  gl::GL11::glDisable(gl::GL11::GL_TEXTURE_2D);
-  mod::WorldRenderEvent starsEvent = skyEvent;
-  starsEvent.cancelVanilla = false;
-  starsEvent.vanillaStageRan = false;
-  starsEvent.starBrightness = starBrightness;
-  starsEvent.rainStrength = ctx.world->getRainGradient(tickDelta);
-  starsEvent.starsEnabled = ctx.options.stars;
-  publishRenderStage(starsEvent, mod::WorldRenderStage::Stars, mod::RenderHookMoment::Before);
-  if(starBrightness > 0.0f && ctx.options.stars && !starsEvent.cancelVanilla) {
-    gl::GL11::glColor4f(starBrightness, starBrightness, starBrightness, starBrightness);
-    Tessellator::drawMesh(meshes.stars);
-    starsEvent.vanillaStageRan = true;
+  {
+    const gl::preset::SkyDomeCelestial celestialCaps;
+    gl::MatrixGuard celestialMatrix;
+    gl::rotatef(skyEvent.skyYawDegrees, 0.0f, 1.0f, 0.0f);
+    gl::rotatef(skyEvent.celestialAngle * 180.0f / kPi, 1.0f, 0.0f, 0.0f);
+    drawSunMoon(ctx, starAlpha);
   }
-  publishRenderStage(starsEvent, mod::WorldRenderStage::Stars, mod::RenderHookMoment::After);
-  gl::GL11::glColor4f(1.0f, 1.0f, 1.0f, 1.0f);
-  gl::GL11::glDisable(gl::GL11::GL_BLEND);
-  gl::GL11::glEnable(gl::GL11::GL_ALPHA_TEST);
-  gl::GL11::glEnable(gl::GL11::GL_FOG);
-  gl::GL11::glPopMatrix();
+  {
+    const gl::preset::SkyDomeStarsPass starsCaps;
+    mod::WorldRenderEvent starsEvent = skyEvent;
+    starsEvent.cancelVanilla = false;
+    starsEvent.vanillaStageRan = false;
+    starsEvent.starBrightness = starBrightness;
+    starsEvent.rainStrength = ctx.world->getRainGradient(tickDelta);
+    starsEvent.starsEnabled = ctx.options.stars;
+    publishRenderStage(starsEvent, mod::WorldRenderStage::Stars, mod::RenderHookMoment::Before);
+    if(starBrightness > 0.0f && ctx.options.stars && !starsEvent.cancelVanilla) {
+      gl::color4f(starBrightness, starBrightness, starBrightness, starBrightness);
+      Tessellator::drawMesh(meshes.stars);
+      starsEvent.vanillaStageRan = true;
+    }
+    publishRenderStage(starsEvent, mod::WorldRenderStage::Stars, mod::RenderHookMoment::After);
+  }
+  gl::color4f(1.0f, 1.0f, 1.0f, 1.0f);
+  gl::setCap(gl::cap::Blend, false);
+  gl::setCap(gl::cap::AlphaTest, true);
+  gl::setCap(gl::cap::Fog, true);
+  gl::setCap(gl::cap::Texture2D, false);
   if(ctx.world->dimension->hasGround()) {
-    gl::GL11::glColor3f(skyR * 0.2f + 0.04f, skyG * 0.2f + 0.04f, skyB * 0.6f + 0.1f);
+    gl::color3f(skyR * 0.2f + 0.04f, skyG * 0.2f + 0.04f, skyB * 0.6f + 0.1f);
   } else {
-    gl::GL11::glColor3f(skyR, skyG, skyB);
+    gl::color3f(skyR, skyG, skyB);
   }
-  gl::GL11::glDisable(gl::GL11::GL_TEXTURE_2D);
   Tessellator::drawMesh(meshes.darkSky);
-  gl::GL11::glEnable(gl::GL11::GL_TEXTURE_2D);
-  gl::GL11::glDepthMask(true);
+  gl::setCap(gl::cap::Texture2D, true);
+  gl::depthMask(true);
   skyEvent.vanillaStageRan = true;
   publishRenderStage(skyEvent, mod::WorldRenderStage::Sky, mod::RenderHookMoment::After);
 }

@@ -1,6 +1,6 @@
 #include "net/minecraft/client/gui/screen/DeathScreen.hpp"
 #include "net/minecraft/client/Minecraft.hpp"
-#include "net/minecraft/client/gl/GL11.hpp"
+#include "net/minecraft/client/gl/GlState.hpp"
 #include "net/minecraft/client/gui/layout/ScreenLayout.hpp"
 #include "net/minecraft/entity/player/ClientPlayerEntity.hpp"
 namespace net::minecraft::client::gui::screen {
@@ -24,10 +24,10 @@ void DeathScreen::init() {
 void DeathScreen::render(int mouseX, int mouseY, float tickDelta) {
   fillGradient(0, 0, width_, height_, 0x60500000U, 0xA0600000U);
   if(textRenderer() != nullptr) {
-    gl::GL11::glPushMatrix();
-    gl::GL11::glScalef(2.0f, 2.0f, 2.0f);
+    gl::pushMatrix();
+    gl::scalef(2.0f, 2.0f, 2.0f);
     drawCenteredTextWithShadow(*textRenderer(), "Game over!", width_ / 2 / 2, 30, 0xFFFFFF);
-    gl::GL11::glPopMatrix();
+    gl::popMatrix();
     if(minecraft() != nullptr && minecraft()->player != nullptr) {
       drawCenteredTextWithShadow(*textRenderer(), "Score: &e" + std::to_string(minecraft()->player->getScore()),
                                  width_ / 2, 100, 0xFFFFFF);

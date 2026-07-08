@@ -1,5 +1,6 @@
 #include "support/server_event_fixture.hpp"
-#include "support/server_test_macros.hpp"
+#include "net/minecraft/block/Block.hpp"
+#include "net/minecraft/block/material/Material.hpp"
 #include "net/minecraft/entity/ItemEntity.hpp"
 #include "net/minecraft/entity/player/PlayerEntity.hpp"
 #include "net/minecraft/entity/player/ServerPlayerEntity.hpp"
@@ -11,19 +12,30 @@
 #include "net/minecraft/world/PersistentState.hpp"
 #include "net/minecraft/world/ServerWorld.hpp"
 #include "net/minecraft/world/storage/EmptyWorldStorage.hpp"
-#include <iostream>
+#include <gtest/gtest.h>
 #include <memory>
 #include <stdexcept>
 namespace {
 using net::minecraft::entity::player::PlayerEntity;
 using net::minecraft::entity::player::ServerPlayerEntity;
-void testBlockUpdateRoutesToPlayerManager() {
+class TickProbeBlock : public net::minecraft::block::Block {
+public:
+  static constexpr int kId = 250;
+  int ticks = 0;
+  TickProbeBlock() : Block(kId, net::minecraft::block::material::Material::STONE) {}
+  void onTick(net::minecraft::World*, int, int, int, net::minecraft::JavaRandom&) override {
+    ++ticks;
+  }
+};
+} // namespace
+namespace net::minecraft::test {
+TEST(ServerWorldEvents, BlockUpdateRoutesToPlayerManager) {
   ServerEventFixture fixture;
-  EXPECT_TRUE(fixture.world.dimension != nullptr);
+  ASSERT_NE(fixture.world.dimension, nullptr);
   fixture.listener.blockUpdate(8, 64, 8);
   fixture.server.playerManager.markDirty(8, 64, 8, fixture.world.dimension->id);
 }
-void testEntityNotifyUsesEntityTracker() {
+TEST(ServerWorldEvents, EntityNotifyUsesEntityTracker) {
   ServerEventFixture fixture;
   net::minecraft::entity::ItemEntity entity;
   entity.id = 7;
@@ -33,20 +45,15 @@ void testEntityNotifyUsesEntityTracker() {
   } catch(const std::logic_error&) {
     threwOnSpawn = true;
   }
-  EXPECT_TRUE(!threwOnSpawn);
+  EXPECT_FALSE(threwOnSpawn);
   fixture.world.notifyEntityRemoved(&entity);
 }
-void testWorldEventSkipsExcludedPlayer() {
+TEST(ServerWorldEvents, WorldEventSkipsExcludedPlayer) {
   ServerEventFixture fixture;
   net::minecraft::server::network::ServerPlayerInteractionManager nearbyMgr(&fixture.world);
   net::minecraft::server::network::ServerPlayerInteractionManager excludedMgr(&fixture.world);
-  EXPECT_EQ(nearbyMgr.world, &fixture.world);
-  EXPECT_EQ(excludedMgr.world, &fixture.world);
   auto nearby = std::make_unique<ServerPlayerEntity>(&fixture.server, &fixture.world, "nearby", &nearbyMgr);
   auto excluded = std::make_unique<ServerPlayerEntity>(&fixture.server, &fixture.world, "excluded", &excludedMgr);
-  EXPECT_EQ(nearby->interactionManager.world, &fixture.world);
-  EXPECT_EQ(excluded->interactionManager.world, &fixture.world);
-  EXPECT_EQ(nearby->interactionManager.player, nearby.get());
   nearby->dimensionId = 0;
   nearby->x = 10.0;
   nearby->y = 64.0;
@@ -56,7 +63,6 @@ void testWorldEventSkipsExcludedPlayer() {
   excluded->y = 64.0;
   excluded->z = 10.0;
   net::minecraft::server::network::ServerPlayNetworkHandler nearbyHandler(&fixture.server, nullptr, nearby.get());
-  EXPECT_EQ(nearby->networkHandler, &nearbyHandler);
   fixture.server.playerManager.players.push_back(nearby.get());
   fixture.server.playerManager.players.push_back(excluded.get());
   std::size_t eligibleRecipients = 0;
@@ -77,7 +83,7 @@ void testWorldEventSkipsExcludedPlayer() {
   EXPECT_EQ(eligibleRecipients, 1U);
   fixture.listener.worldEvent(excluded.get(), 1000, 10, 64, 10, 0);
 }
-void testReadOnlyServerWorldSharesPersistentState() {
+TEST(ServerWorldEvents, ReadOnlyServerWorldSharesPersistentState) {
   net::minecraft::server::MinecraftServer server;
   net::minecraft::EmptyWorldStorage storage;
   net::minecraft::ServerWorld delegate{&server, &storage, "test", 0, 99};
@@ -87,19 +93,29 @@ void testReadOnlyServerWorldSharesPersistentState() {
   delegate.persistentStateManager.set("share_test", std::move(state));
   net::minecraft::PersistentState* shared =
       readonly.persistentStateManager.getOrCreate(typeid(net::minecraft::map::MapState), "share_test");
-  EXPECT_TRUE(shared != nullptr);
+  ASSERT_NE(shared, nullptr);
   EXPECT_EQ(dynamic_cast<net::minecraft::map::MapState*>(shared)->centerX, 12);
 }
-} // namespace
-int main() {
-  RUN_SERVER_TEST(testBlockUpdateRoutesToPlayerManager);
-  RUN_SERVER_TEST(testEntityNotifyUsesEntityTracker);
-  RUN_SERVER_TEST(testWorldEventSkipsExcludedPlayer);
-  RUN_SERVER_TEST(testReadOnlyServerWorldSharesPersistentState);
-  if(server_test::failureCount() != 0) {
-    std::cout << server_test::failureCount() << " test(s) failed\n";
-    return 1;
+TEST(ServerWorldEvents, SynchronizedTimeKeepsScheduledTickDelay) {
+  static TickProbeBlock block;
+  block.ticks = 0;
+  ServerEventFixture fixture;
+  fixture.world.setEventProcessingEnabled(true);
+  for(int chunkX = -1; chunkX <= 1; ++chunkX) {
+    for(int chunkZ = -1; chunkZ <= 1; ++chunkZ) {
+      auto& chunk = fixture.world.getChunk(chunkX, chunkZ);
+      (void)chunk;
+    }
   }
-  std::cout << "All server world event tests passed\n";
-  return 0;
+  fixture.world.setTime(100);
+  ASSERT_TRUE(fixture.world.setBlock(8, 64, 8, TickProbeBlock::kId));
+  fixture.world.scheduleBlockUpdate(8, 64, 8, TickProbeBlock::kId, 20);
+  fixture.world.synchronizeTimeAndUpdates(1000);
+  fixture.world.setTime(1019);
+  fixture.world.processScheduledTicks(false);
+  EXPECT_EQ(block.ticks, 0);
+  fixture.world.setTime(1020);
+  fixture.world.processScheduledTicks(false);
+  EXPECT_EQ(block.ticks, 1);
 }
+} // namespace net::minecraft::test

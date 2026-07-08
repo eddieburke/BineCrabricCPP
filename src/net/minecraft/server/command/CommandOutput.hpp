@@ -3,7 +3,7 @@
 namespace net::minecraft::server::command {
 class CommandOutput {
 public:
-  virtual ~CommandOutput();
+  virtual ~CommandOutput() = default;
   virtual void sendMessage(const std::string& message) = 0;
   [[nodiscard]] virtual std::string getName() = 0;
 };

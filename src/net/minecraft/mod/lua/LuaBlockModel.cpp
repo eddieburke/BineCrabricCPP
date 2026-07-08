@@ -1,12 +1,17 @@
 #include "net/minecraft/mod/lua/LuaBlockModel.hpp"
+#include "net/minecraft/mod/lua/LuaBlockRegistry.hpp"
+#include "net/minecraft/mod/lua/LuaItemModel.hpp"
 #include "net/minecraft/mod/ModClient.hpp"
 #include "net/minecraft/mod/ModTexture.hpp"
 #include "net/minecraft/mod/lua/LuaHostApi.hpp"
+#include "net/minecraft/mod/lua/LuaModNaming.hpp"
 #include "net/minecraft/mod/runtime/ModHost.hpp"
 #include "net/minecraft/block/Block.hpp"
 #include "net/minecraft/block/material/Material.hpp"
 #include "net/minecraft/client/render/block/BlockRenderType.hpp"
 #include "net/minecraft/client/resource/language/I18n.hpp"
+#include "net/minecraft/item/Item.hpp"
+#include "net/minecraft/item/BlockItem.hpp"
 #include "net/minecraft/mod/ModLifecycle.hpp"
 #include "net/minecraft/registry/Registry.hpp"
 #include "net/minecraft/world/BlockView.hpp"
@@ -37,100 +42,6 @@ Material* materialFromName(const std::string& name) {
   };
   const auto it = kMaterials.find(lowered);
   return it != kMaterials.end() ? it->second : &Material::STONE;
-}
-std::unordered_map<int, BlockRegistrationSpec>& specsByBlockId() {
-  static std::unordered_map<int, BlockRegistrationSpec> value;
-  return value;
-}
-std::unordered_map<std::string, int>& modBlockNameIndex() {
-  static std::unordered_map<std::string, int> value;
-  return value;
-}
-[[nodiscard]] std::string normalizeBlockNameToken(std::string_view token) {
-  std::string out;
-  out.reserve(token.size());
-  for(const char ch : token) {
-    if(ch == ' ' || ch == '\t') {
-      continue;
-    }
-    out.push_back(static_cast<char>(std::tolower(static_cast<unsigned char>(ch))));
-  }
-  return out;
-}
-[[nodiscard]] std::string toSnakeCase(std::string_view raw) {
-  std::string out;
-  out.reserve(raw.size() + 4);
-  for(std::size_t i = 0; i < raw.size(); ++i) {
-    const unsigned char ch = static_cast<unsigned char>(raw[i]);
-    if(ch == '_' || ch == '-' || ch == ' ') {
-      if(!out.empty() && out.back() != '_') {
-        out.push_back('_');
-      }
-      continue;
-    }
-    if(i > 0) {
-      const unsigned char prev = static_cast<unsigned char>(raw[i - 1]);
-      if(std::islower(prev) != 0 && std::isupper(ch) != 0) {
-        if(!out.empty() && out.back() != '_') {
-          out.push_back('_');
-        }
-      }
-    }
-    out.push_back(static_cast<char>(std::tolower(ch)));
-  }
-  while(!out.empty() && out.back() == '_') {
-    out.pop_back();
-  }
-  return out;
-}
-void registerModBlockAliases(const BlockRegistrationSpec& spec) {
-  auto put = [&](const std::string& alias) {
-    const std::string key = normalizeBlockNameToken(alias);
-    if(!key.empty()) {
-      modBlockNameIndex()[key] = spec.blockId;
-    }
-  };
-  std::string keyToken = spec.translationKey;
-  if(keyToken.empty()) {
-    keyToken = "block" + std::to_string(spec.blockId);
-  }
-  put(keyToken);
-  const std::string snake = toSnakeCase(keyToken);
-  if(!snake.empty()) {
-    put(snake);
-    put(snake + "s");
-  }
-  put("block_" + std::to_string(spec.blockId));
-  if(!spec.displayName.empty()) {
-    put(spec.displayName);
-  }
-}
-[[nodiscard]] std::string humanizeTranslationKey(std::string_view raw) {
-  std::string out;
-  out.reserve(raw.size() + 8);
-  for(std::size_t i = 0; i < raw.size(); ++i) {
-    const unsigned char ch = static_cast<unsigned char>(raw[i]);
-    if(ch == '_' || ch == '-' || ch == '.') {
-      if(!out.empty() && out.back() != ' ') {
-        out.push_back(' ');
-      }
-      continue;
-    }
-    if(i > 0) {
-      const unsigned char prev = static_cast<unsigned char>(raw[i - 1]);
-      if(std::islower(prev) != 0 && std::isupper(ch) != 0) {
-        if(!out.empty() && out.back() != ' ') {
-          out.push_back(' ');
-        }
-      }
-    }
-    if(out.empty() || out.back() == ' ') {
-      out.push_back(static_cast<char>(std::toupper(ch)));
-    } else {
-      out.push_back(static_cast<char>(ch));
-    }
-  }
-  return out;
 }
 void registerModBlockDisplayName(const BlockRegistrationSpec& spec) {
   std::string keyToken = spec.translationKey;
@@ -202,7 +113,13 @@ public:
     return Block::getColorMultiplier(blockView, x, y, z);
   }
   [[nodiscard]] int getRenderType() const override {
-    return net::minecraft::client::render::block::BlockRenderType::FULL_CUBE;
+    if(modelSpec_.type == LuaBlockModelSpec::Type::FullCube || modelSpec_.type == LuaBlockModelSpec::Type::BoxList) {
+      return net::minecraft::client::render::block::BlockRenderType::FULL_CUBE;
+    }
+    return 31; // non-side-lit custom type → item renders as sprite
+  }
+  [[nodiscard]] int getRenderLayer() const override {
+    return modelSpec_.opaque ? 0 : 1;
   }
   [[nodiscard]] Box getRenderBounds(const BlockView* /*blockView*/, int x, int y, int z) const override {
     if(modelSpec_.coordinateBounds) {
@@ -233,7 +150,8 @@ public:
   }
   [[nodiscard]] std::optional<Box> getCollisionShape(World* /*world*/, int x, int y, int z) const override {
     if(modelSpec_.coordinateBounds) {
-      return offsetBox(coordinateVariedBounds(modelSpec_, x, y, z), x, y, z);
+      return Box{static_cast<double>(x), static_cast<double>(y), static_cast<double>(z),
+                 static_cast<double>(x + 1), static_cast<double>(y + 1), static_cast<double>(z + 1)};
     }
     if(modelSpec_.collisionHeight <= 1.0f) {
       return Block::getCollisionShape(nullptr, x, y, z);
@@ -241,9 +159,22 @@ public:
     return Box{static_cast<double>(x), static_cast<double>(y), static_cast<double>(z), static_cast<double>(x + 1),
                static_cast<double>(y) + modelSpec_.collisionHeight, static_cast<double>(z + 1)};
   }
+  void setItemOverrideTexture(int textureId) {
+    itemOverrideTextureId_ = textureId;
+  }
+  void registerBlockItem() override {
+    Block::registerBlockItem();
+    if(itemOverrideTextureId_ >= 0) {
+      Item* item = Item::ITEMS[static_cast<std::size_t>(id)];
+      if(item != nullptr) {
+        item->setTextureId(itemOverrideTextureId_);
+      }
+    }
+  }
 
 private:
   LuaBlockModelSpec modelSpec_;
+  int itemOverrideTextureId_ = -1;
 };
 void registerBlockClass(const BlockRegistrationSpec& spec) {
   const int textureId = spec.terrainTextureId >= 0 ? spec.terrainTextureId : texture(spec.texturePath.c_str());
@@ -267,83 +198,15 @@ void registerBlockClass(const BlockRegistrationSpec& spec) {
   if(spec.model.type != LuaBlockModelSpec::Type::FullCube) {
     registerDraw(spec.blockId, drawLuaBlockWorld, drawLuaBlockInventory);
   }
-}
-void initAllLuaModBlocks() {
-  std::vector<int> ids;
-  ids.reserve(specsByBlockId().size());
-  for(const auto& entry : specsByBlockId()) {
-    ids.push_back(entry.first);
+  if(!spec.itemTexturePath.empty()) {
+    const int itemTextureId = spec.itemTextureId >= 0 ? spec.itemTextureId : texture(spec.itemTexturePath.c_str());
+    static_cast<LuaModBlock*>(block)->setItemOverrideTexture(itemTextureId);
   }
-  std::sort(ids.begin(), ids.end());
-  for(const int blockId : ids) {
-    const auto it = specsByBlockId().find(blockId);
-    if(it != specsByBlockId().end()) {
-      registerBlockClass(it->second);
-    }
-  }
-}
-void ensureBatchInitQueued() {
-  static bool queued = false;
-  if(queued) {
-    return;
-  }
-  queued = true;
-  registry::Registry::enqueue(mod::LifecyclePhase::BlockRegistration, 50000, initAllLuaModBlocks);
-}
-bool registerBlockSpec(const BlockRegistrationSpec& spec, std::string& error) {
-  if(spec.blockId <= 0 || spec.blockId >= Block::BLOCK_COUNT) {
-    error = "register_block id must be between 1 and " + std::to_string(Block::BLOCK_COUNT - 1);
-    return false;
-  }
-  if(spec.texturePath.empty() && spec.terrainTextureId < 0) {
-    error = "register_block requires texture or texture_id";
-    return false;
-  }
-  if(spec.terrainTextureId > 255) {
-    error = "register_block texture_id must be a vanilla terrain-atlas index from 0 to 255";
-    return false;
-  }
-  if(registry::Registry::isBootstrapped()) {
-    error = "register_block must run while Lua mod scripts load at startup";
-    return false;
-  }
-  if(specsByBlockId().find(spec.blockId) != specsByBlockId().end()) {
-    error = "register_block duplicate id: " + std::to_string(spec.blockId);
-    return false;
-  }
-  if(!registry::Registry::tryReserveBlockId(spec.blockId)) {
-    error = "register_block id is already reserved: " + std::to_string(spec.blockId);
-    return false;
-  }
-  specsByBlockId()[spec.blockId] = spec;
-  registerModBlockAliases(spec);
-  ensureBatchInitQueued();
-  return true;
-}
-int modBlockIdFromName(const char* name) {
-  if(name == nullptr || *name == '\0') {
-    return 0;
-  }
-  const auto it = modBlockNameIndex().find(normalizeBlockNameToken(name));
-  return it == modBlockNameIndex().end() ? 0 : it->second;
-}
-std::string modBlockWireName(int blockId) {
-  const auto it = specsByBlockId().find(blockId);
-  if(it == specsByBlockId().end()) {
-    return {};
-  }
-  std::string keyToken = it->second.translationKey;
-  if(keyToken.empty()) {
-    keyToken = "block" + std::to_string(blockId);
-  }
-  const std::string snake = toSnakeCase(keyToken);
-  return snake.empty() ? keyToken : snake;
-}
-const BlockRegistrationSpec* blockRegistrationSpecForId(int blockId) noexcept {
-  const auto it = specsByBlockId().find(blockId);
-  return it == specsByBlockId().end() ? nullptr : &it->second;
 }
 } // namespace detail
+void instantiateLuaModBlock(const BlockRegistrationSpec& spec) {
+  detail::registerBlockClass(spec);
+}
 bool invokeManualBlockModelDraw(const BlockRegistrationSpec& spec, bool inventory, int x, int y, int z,
                                 float brightness) {
   const int ref = inventory && spec.manualInventoryRef != kLuaNoRef ? spec.manualInventoryRef : spec.manualDrawRef;
@@ -389,18 +252,6 @@ bool invokeManualBlockModelDraw(const BlockRegistrationSpec& spec, bool inventor
     return status == kLuaOk;
   }
   return false;
-}
-bool registerBlockSpec(const BlockRegistrationSpec& spec, std::string& error) {
-  return detail::registerBlockSpec(spec, error);
-}
-int modBlockIdFromName(const char* name) {
-  return detail::modBlockIdFromName(name);
-}
-std::string modBlockWireName(int blockId) {
-  return detail::modBlockWireName(blockId);
-}
-const BlockRegistrationSpec* blockRegistrationSpecForId(int blockId) noexcept {
-  return detail::blockRegistrationSpecForId(blockId);
 }
 __attribute__((weak)) bool drawLuaBlockWorld(client::render::block::BlockRenderManager& /*manager*/, Block& /*block*/,
                                              int /*x*/, int /*y*/, int /*z*/) {

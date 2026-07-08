@@ -174,6 +174,33 @@ double luaDoubleField(lua_State* state, int tableIndex, const char* key, double 
   api.settop(state, -2);
   return isNumber != 0 ? value : fallback;
 }
+int luaIntArg(lua_State* state, int index, int fallback) {
+  int isNumber = 0;
+  const double value = luaApi().tonumberx(state, index, &isNumber);
+  return isNumber == 0 ? fallback : static_cast<int>(value);
+}
+float luaFloatArg(lua_State* state, int index, float fallback) {
+  int isNumber = 0;
+  const double value = luaApi().tonumberx(state, index, &isNumber);
+  return isNumber == 0 ? fallback : static_cast<float>(value);
+}
+double luaDoubleArg(lua_State* state, int index, double fallback) {
+  int isNumber = 0;
+  const double value = luaApi().tonumberx(state, index, &isNumber);
+  return isNumber == 0 ? fallback : value;
+}
+void readField(lua_State* state, const char* key, bool& value) {
+  value = luaBoolField(state, -1, key, value);
+}
+void readField(lua_State* state, const char* key, int& value) {
+  value = luaIntField(state, -1, key, value);
+}
+void readField(lua_State* state, const char* key, float& value) {
+  value = luaFloatField(state, -1, key, value);
+}
+void readField(lua_State* state, const char* key, double& value) {
+  value = luaDoubleField(state, -1, key, value);
+}
 void setField(lua_State* state, const char* key, bool value) {
   LuaApi& api = luaApi();
   api.pushboolean(state, value ? 1 : 0);

@@ -1,6 +1,6 @@
 #pragma once
 #include "net/minecraft/client/Minecraft.hpp"
-#include "net/minecraft/client/gl/GL11.hpp"
+#include "net/minecraft/client/gl/GlState.hpp"
 #include "net/minecraft/client/gui/widget/ButtonWidget.hpp"
 #include "net/minecraft/client/option/GameOptions.hpp"
 #include "net/minecraft/client/option/OptionRegistry.hpp"
@@ -37,7 +37,7 @@ public:
     if(dragging) {
       updateValue(mouseX);
     }
-    gl::GL11::glColor4f(1.0f, 1.0f, 1.0f, 1.0f);
+    gl::color4f(1.0f, 1.0f, 1.0f, 1.0f);
     const int knobX = x + static_cast<int>(value * static_cast<float>(width - 8));
     drawTexture(knobX, y, 0, 66, 4, 20);
     drawTexture(knobX + 4, y, 196, 66, 4, 20);

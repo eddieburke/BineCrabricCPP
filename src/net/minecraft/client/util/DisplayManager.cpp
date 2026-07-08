@@ -2,22 +2,22 @@
 #include "net/minecraft/client/Minecraft.hpp"
 #include "net/minecraft/client/input/InputSystem.hpp"
 #include "net/minecraft/client/gl/GLCore.hpp"
-#include "net/minecraft/client/gl/GL11.hpp"
+#include "net/minecraft/client/gl/GlState.hpp"
 #include "net/minecraft/client/util/UiScale.hpp"
 #include <iostream>
 #include <thread>
 #ifdef _WIN32
-#include "net/minecraft/client/lifecycle/ClientInitializer.hpp"
+#include "net/minecraft/client/diagnostics/ClientDiagnostics.hpp"
 #include "net/minecraft/client/platform/glfw/Window.hpp"
 #endif
 namespace net::minecraft::client::util {
-namespace lifecycle = net::minecraft::client::lifecycle;
+namespace diagnostics = net::minecraft::client::diagnostics;
 #ifdef _WIN32
 namespace display = net::minecraft::client::platform::glfw;
 #endif
 void DisplayManager::setupAndCreateDisplay(Minecraft& client) {
 #ifdef _WIN32
-  lifecycle::setStartupPhase("init: display");
+  diagnostics::setStartupPhase("init: display");
   display::Window::setResizeCallback([&client](int width, int height) { resize(client, width, height); });
   display::Window::setDeactivateCallback([&client]() { client.unlockMouse(); });
   if(client.canvas != nullptr) {
@@ -65,7 +65,7 @@ void DisplayManager::logGlError(Minecraft& client, const std::string& phase) {
   (void)client;
   int count = 0;
   for(;;) {
-    const int error = gl::GL11::glGetError();
+    const int error = gl::getError();
     if(error == 0) break;
     if(count == 0) {
       std::cout << "########## GL ERROR ##########" << std::endl;
@@ -129,7 +129,7 @@ void DisplayManager::resize(Minecraft& client, int width, int height) {
   }
   client.displayWidth = width;
   client.displayHeight = height;
-  gl::GL11::glViewport(0, 0, client.displayWidth, client.displayHeight);
+  gl::viewport(0, 0, client.displayWidth, client.displayHeight);
   if(client.currentScreen() != nullptr) {
     const UiScale scale = uiScale(client.options, width, height);
     client.currentScreen()->init(&client, scale.scaledWidth, scale.scaledHeight);

@@ -3,7 +3,6 @@
 #include "net/minecraft/server/MinecraftServer.hpp"
 #include "net/minecraft/server/network/ServerLoginNetworkHandler.hpp"
 #include "net/minecraft/server/network/ServerPlayNetworkHandler.hpp"
-#include <iostream>
 #include <stdexcept>
 #include <utility>
 namespace net::minecraft::server::network {
@@ -29,12 +28,17 @@ ConnectionListener::ConnectionListener(MinecraftServer* server, const std::strin
 ConnectionListener::~ConnectionListener() {
   close();
 }
+void ConnectionListener::stopAccepting() {
+  std::call_once(acceptStopFlag_, [this]() {
+    open_.store(false, std::memory_order_release);
+    socket_.close();
+    if(thread_.joinable()) {
+      thread_.join();
+    }
+  });
+}
 void ConnectionListener::close() {
-  open_.store(false, std::memory_order_release);
-  socket_.close();
-  if(thread_.joinable()) {
-    thread_.join();
-  }
+  stopAccepting();
   std::lock_guard lock(mutex_);
   pendingConnections_.clear();
   playConnections_.clear();
@@ -67,8 +71,7 @@ void ConnectionListener::listenLoop() {
       auto loginHandler = std::make_unique<ServerLoginNetworkHandler>(server_, this, clientSocket,
                                                                       std::move(connectionName), onlineMode_);
       addPendingConnection(std::move(loginHandler));
-    } catch(const std::exception& error) {
-      std::cerr << "Failed to create login handler: " << error.what() << std::endl;
+    } catch(const std::exception&) {
       ::closesocket(clientSocket);
     }
   }
@@ -105,9 +108,8 @@ void ConnectionListener::tick() {
     ServerLoginNetworkHandler& handler = *pendingSnapshot[index];
     try {
       handler.tick();
-    } catch(const std::exception& error) {
+    } catch(const std::exception&) {
       handler.disconnect("Internal server error");
-      std::cerr << "Failed to handle login packet: " << error.what() << std::endl;
     }
     if(handler.closed) {
       pendingSnapshot.erase(pendingSnapshot.begin() + static_cast<std::ptrdiff_t>(index));
@@ -124,8 +126,7 @@ void ConnectionListener::tick() {
       if(active.handler != nullptr) {
         active.handler->tick();
       }
-    } catch(const std::exception& error) {
-      std::cerr << "Failed to handle play packet: " << error.what() << std::endl;
+    } catch(const std::exception&) {
       if(active.handler != nullptr) {
         active.handler->disconnect("Internal server error");
       }

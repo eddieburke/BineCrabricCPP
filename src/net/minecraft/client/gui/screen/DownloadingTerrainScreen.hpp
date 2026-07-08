@@ -20,7 +20,7 @@ public:
     if(ticks_ % 20 == 0 && networkHandler_ != nullptr) {
       networkHandler_->sendPacket(KeepAlivePacket{});
     }
-    if(networkHandler_ != nullptr && networkHandler_->world == nullptr) {
+    if(networkHandler_ != nullptr) {
       networkHandler_->tick();
     }
   }
@@ -33,8 +33,9 @@ public:
     }
     Screen::render(mouseX, mouseY, tickDelta);
   }
+  [[nodiscard]] std::string_view getScreenUiId() const override { return net::minecraft::mod::screen_ids::kDownloadingTerrain; }
 
-private:
+ private:
   multiplayer::ClientNetworkHandler* networkHandler_ = nullptr;
   int ticks_ = 0;
 };

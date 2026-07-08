@@ -72,14 +72,8 @@ namespace net::minecraft::client::session {
 class SessionValidator;
 }
 namespace net::minecraft::client::util {
-class TimerHackThread;
 class DisplayManager;
 } // namespace net::minecraft::client::util
-namespace net::minecraft::client::lifecycle {
-class ClientShutdown;
-class ClientInitializer;
-class ClientLaunch;
-} // namespace net::minecraft::client::lifecycle
 namespace net::minecraft::client::input {
 class InputSystem;
 }
@@ -124,8 +118,6 @@ public:
   void setWorld(World* world, const std::string& message);
   void setWorld(World* world, const std::string& message, PlayerEntity* player);
   void loadResource(const std::string& path, const std::filesystem::path& file);
-  void prepareWorld(const std::string& worldName);
-  void convertAndSaveWorld(const std::string& worldName, const std::string& name);
   [[nodiscard]] std::string getRenderChunkDebugInfo() const;
   [[nodiscard]] std::string getRenderEntityDebugInfo() const;
   [[nodiscard]] std::string getChunkSourceDebugInfo() const;
@@ -201,11 +193,10 @@ private:
   void startSessionCheck();
   void runRenderPhase(std::int64_t tickDuration, int& frames, std::int64_t& fpsWindowStart);
   void runWorldSimulation();
+  void bootstrapAfterDisplay();
   friend class core::WorldSession;
   friend class core::ScreenStack;
   friend class input::InputSystem;
-  friend class lifecycle::ClientShutdown;
-  friend class lifecycle::ClientInitializer;
   friend class util::DisplayManager;
   int attackCooldown = 0;
   int initWidth = 0;
@@ -222,6 +213,5 @@ private:
   int startupServerPort = 0;
   render::texture::WaterSprite waterSprite_{};
   render::texture::LavaSprite lavaSprite_{};
-  std::unique_ptr<util::TimerHackThread> timerHackThread_;
 };
 } // namespace net::minecraft::client

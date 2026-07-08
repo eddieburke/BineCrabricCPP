@@ -1,5 +1,5 @@
 #include "net/minecraft/client/model/ModelPart.hpp"
-#include "net/minecraft/client/gl/GL11.hpp"
+#include "net/minecraft/client/gl/GlState.hpp"
 #include "net/minecraft/client/render/Tessellator.hpp"
 #include <array>
 namespace net::minecraft::client::model {
@@ -26,6 +26,9 @@ ModelPart& ModelPart::operator=(const ModelPart& other) {
   faces_ = other.faces_;
   children_ = other.children_;
   return *this;
+}
+void ModelPart::clearCuboids() {
+  faces_.clear();
 }
 void ModelPart::addCuboid(float x, float y, float z, int sizeX, int sizeY, int sizeZ, float dilation) {
   float x1 = x + static_cast<float>(sizeX);
@@ -99,25 +102,25 @@ void ModelPart::render(float scale) {
     }
   };
   if(pitch != 0.0f || yaw != 0.0f || roll != 0.0f) {
-    gl::GL11::glPushMatrix();
-    gl::GL11::glTranslatef(pivotX * scale, pivotY * scale, pivotZ * scale);
+    gl::pushMatrix();
+    gl::translatef(pivotX * scale, pivotY * scale, pivotZ * scale);
     if(roll != 0.0f) {
-      gl::GL11::glRotatef(roll * 57.295776f, 0.0f, 0.0f, 1.0f);
+      gl::rotatef(roll * 57.295776f, 0.0f, 0.0f, 1.0f);
     }
     if(yaw != 0.0f) {
-      gl::GL11::glRotatef(yaw * 57.295776f, 0.0f, 1.0f, 0.0f);
+      gl::rotatef(yaw * 57.295776f, 0.0f, 1.0f, 0.0f);
     }
     if(pitch != 0.0f) {
-      gl::GL11::glRotatef(pitch * 57.295776f, 1.0f, 0.0f, 0.0f);
+      gl::rotatef(pitch * 57.295776f, 1.0f, 0.0f, 0.0f);
     }
     renderFaces(scale);
     renderChildren();
-    gl::GL11::glPopMatrix();
+    gl::popMatrix();
   } else if(pivotX != 0.0f || pivotY != 0.0f || pivotZ != 0.0f) {
-    gl::GL11::glTranslatef(pivotX * scale, pivotY * scale, pivotZ * scale);
+    gl::translatef(pivotX * scale, pivotY * scale, pivotZ * scale);
     renderFaces(scale);
     renderChildren();
-    gl::GL11::glTranslatef(-pivotX * scale, -pivotY * scale, -pivotZ * scale);
+    gl::translatef(-pivotX * scale, -pivotY * scale, -pivotZ * scale);
   } else {
     renderFaces(scale);
     renderChildren();
@@ -127,37 +130,37 @@ void ModelPart::renderForceTransform(float scale) {
   if(hidden || !visible) {
     return;
   }
-  gl::GL11::glPushMatrix();
-  gl::GL11::glTranslatef(pivotX * scale, pivotY * scale, pivotZ * scale);
+  gl::pushMatrix();
+  gl::translatef(pivotX * scale, pivotY * scale, pivotZ * scale);
   if(yaw != 0.0f) {
-    gl::GL11::glRotatef(yaw * 57.295776f, 0.0f, 1.0f, 0.0f);
+    gl::rotatef(yaw * 57.295776f, 0.0f, 1.0f, 0.0f);
   }
   if(pitch != 0.0f) {
-    gl::GL11::glRotatef(pitch * 57.295776f, 1.0f, 0.0f, 0.0f);
+    gl::rotatef(pitch * 57.295776f, 1.0f, 0.0f, 0.0f);
   }
   if(roll != 0.0f) {
-    gl::GL11::glRotatef(roll * 57.295776f, 0.0f, 0.0f, 1.0f);
+    gl::rotatef(roll * 57.295776f, 0.0f, 0.0f, 1.0f);
   }
   renderFaces(scale);
-  gl::GL11::glPopMatrix();
+  gl::popMatrix();
 }
 void ModelPart::transform(float scale) {
   if(hidden || !visible) {
     return;
   }
   if(pitch != 0.0f || yaw != 0.0f || roll != 0.0f) {
-    gl::GL11::glTranslatef(pivotX * scale, pivotY * scale, pivotZ * scale);
+    gl::translatef(pivotX * scale, pivotY * scale, pivotZ * scale);
     if(roll != 0.0f) {
-      gl::GL11::glRotatef(roll * 57.295776f, 0.0f, 0.0f, 1.0f);
+      gl::rotatef(roll * 57.295776f, 0.0f, 0.0f, 1.0f);
     }
     if(yaw != 0.0f) {
-      gl::GL11::glRotatef(yaw * 57.295776f, 0.0f, 1.0f, 0.0f);
+      gl::rotatef(yaw * 57.295776f, 0.0f, 1.0f, 0.0f);
     }
     if(pitch != 0.0f) {
-      gl::GL11::glRotatef(pitch * 57.295776f, 1.0f, 0.0f, 0.0f);
+      gl::rotatef(pitch * 57.295776f, 1.0f, 0.0f, 0.0f);
     }
   } else if(pivotX != 0.0f || pivotY != 0.0f || pivotZ != 0.0f) {
-    gl::GL11::glTranslatef(pivotX * scale, pivotY * scale, pivotZ * scale);
+    gl::translatef(pivotX * scale, pivotY * scale, pivotZ * scale);
   }
 }
 void ModelPart::addChild(ModelPart& child) {

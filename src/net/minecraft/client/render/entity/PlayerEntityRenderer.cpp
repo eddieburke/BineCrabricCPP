@@ -2,7 +2,7 @@
 #include "net/minecraft/block/Block.hpp"
 #include "net/minecraft/client/Minecraft.hpp"
 #include "net/minecraft/client/font/TextRenderer.hpp"
-#include "net/minecraft/client/gl/GL11.hpp"
+#include "net/minecraft/client/gl/GlState.hpp"
 #include "net/minecraft/client/render/Tessellator.hpp"
 #include "net/minecraft/client/render/block/BlockRenderManager.hpp"
 #include "net/minecraft/client/render/entity/EntityRenderDispatcher.hpp"
@@ -13,20 +13,30 @@
 #include "net/minecraft/item/Item.hpp"
 #include "net/minecraft/item/ItemStack.hpp"
 #include "net/minecraft/util/math/MathHelper.hpp"
+#include <optional>
 namespace net::minecraft::client::render::entity {
 namespace {
 constexpr const char* kArmorTextureNames[] = {"cloth", "chain", "iron", "diamond", "gold"};
+void configureArmShape(model::BipedEntityModel* body, model::BipedEntityModel* armorOuter,
+                       model::BipedEntityModel* armorInner, bool slimArms) {
+  body->configureArms(slimArms);
+  armorOuter->configureArms(slimArms);
+  armorInner->configureArms(slimArms);
 }
+bool resolveSlimArms(const net::minecraft::PlayerEntity& player, EntityRenderDispatcher* dispatcher) {
+  if(dispatcher == nullptr || dispatcher->textureManager() == nullptr || player.skinUrl.empty()) {
+    return player.slimArms;
+  }
+  if(const std::optional<bool> downloadedSlim = dispatcher->textureManager()->skinSlimArms(player.skinUrl)) {
+    return *downloadedSlim;
+  }
+  return player.slimArms;
+}
+} // namespace
 PlayerEntityRenderer::PlayerEntityRenderer()
     : LivingEntityRenderer(new model::BipedEntityModel(0.0f), 0.5f),
-      bipedModel(static_cast<model::BipedEntityModel*>(model)), armor1(new model::BipedEntityModel(1.0f)),
+      bipedModel(static_cast<model::BipedEntityModel*>(model.get())), armor1(new model::BipedEntityModel(1.0f)),
       armor2(new model::BipedEntityModel(0.5f)) {
-}
-PlayerEntityRenderer::~PlayerEntityRenderer() {
-  delete armor1;
-  delete armor2;
-  armor1 = nullptr;
-  armor2 = nullptr;
 }
 void PlayerEntityRenderer::render(const net::minecraft::Entity& entity, double x, double y, double z, float yaw,
                                   float tickDelta) {
@@ -36,6 +46,7 @@ void PlayerEntityRenderer::render(const net::minecraft::Entity& entity, double x
     return;
   }
   const ItemStack* handStack = player->inventory.getSelectedItem();
+  configureArmShape(bipedModel, armor1.get(), armor2.get(), resolveSlimArms(*player, dispatcher));
   bipedModel->rightArmPose = handStack != nullptr && !handStack->empty();
   armor2->rightArmPose = bipedModel->rightArmPose;
   armor1->rightArmPose = bipedModel->rightArmPose;
@@ -57,6 +68,9 @@ void PlayerEntityRenderer::render(const net::minecraft::Entity& entity, double x
 void PlayerEntityRenderer::renderHand() {
   if(bipedModel == nullptr) {
     return;
+  }
+  if(const auto* player = dynamic_cast<const net::minecraft::PlayerEntity*>(dispatcher != nullptr ? dispatcher->cameraEntity() : nullptr)) {
+    configureArmShape(bipedModel, armor1.get(), armor2.get(), resolveSlimArms(*player, dispatcher));
   }
   bipedModel->handSwingProgress = 0.0f;
   bipedModel->setAngles(0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0625f);
@@ -80,7 +94,7 @@ bool PlayerEntityRenderer::bindTexture(const net::minecraft::LivingEntity& entit
   const int suffix = layer == 2 ? 2 : 1;
   EntityRenderer::bindTexture(std::string("/armor/") + kArmorTextureNames[armorItem->getTextureIndex()] + "_" +
                               std::to_string(suffix) + ".png");
-  model::BipedEntityModel* armorModel = layer == 2 ? armor2 : armor1;
+  model::BipedEntityModel* armorModel = layer == 2 ? armor2.get() : armor1.get();
   armorModel->head.visible = layer == 0;
   armorModel->hat.visible = layer == 0;
   armorModel->body.visible = layer == 1 || layer == 2;
@@ -94,7 +108,7 @@ bool PlayerEntityRenderer::bindTexture(const net::minecraft::LivingEntity& entit
 void PlayerEntityRenderer::applyScale(const net::minecraft::LivingEntity& entity, float tickDelta) {
   (void)entity;
   (void)tickDelta;
-  gl::GL11::glScalef(0.9375f, 0.9375f, 0.9375f);
+  gl::scalef(0.9375f, 0.9375f, 0.9375f);
 }
 void PlayerEntityRenderer::applyTranslation(const net::minecraft::LivingEntity& entity, double x, double y, double z) {
   const auto* player = dynamic_cast<const net::minecraft::PlayerEntity*>(&entity);
@@ -110,9 +124,9 @@ void PlayerEntityRenderer::applyHandSwingRotation(const net::minecraft::LivingEn
                                                   float bodyYaw, float tickDelta) {
   const auto* player = dynamic_cast<const net::minecraft::PlayerEntity*>(&entity);
   if(player != nullptr && player->isAlive() && player->isSleeping()) {
-    gl::GL11::glRotatef(player->getSleepingRotation(), 0.0f, 1.0f, 0.0f);
-    gl::GL11::glRotatef(getDeathYaw(entity), 0.0f, 0.0f, 1.0f);
-    gl::GL11::glRotatef(270.0f, 0.0f, 1.0f, 0.0f);
+    gl::rotatef(player->getSleepingRotation(), 0.0f, 1.0f, 0.0f);
+    gl::rotatef(getDeathYaw(entity), 0.0f, 0.0f, 1.0f);
+    gl::rotatef(270.0f, 0.0f, 1.0f, 0.0f);
     return;
   }
   LivingEntityRenderer::applyHandSwingRotation(entity, headBob, bodyYaw, tickDelta);
@@ -144,32 +158,31 @@ void PlayerEntityRenderer::renderNameTag(const net::minecraft::LivingEntity& ent
   if(textRenderer == nullptr) {
     return;
   }
-  gl::GL11::glPushMatrix();
-  gl::GL11::glTranslatef(static_cast<float>(x), static_cast<float>(y) + 2.3f, static_cast<float>(z));
-  gl::GL11::glNormal3f(0.0f, 1.0f, 0.0f);
-  gl::GL11::glRotatef(-dispatcher->yaw_, 0.0f, 1.0f, 0.0f);
-  gl::GL11::glRotatef(dispatcher->pitch_, 1.0f, 0.0f, 0.0f);
-  gl::GL11::glScalef(-pixelScale, -pixelScale, pixelScale);
-  gl::GL11::glTranslatef(0.0f, 0.25f / pixelScale, 0.0f);
-  gl::GL11::glDepthMask(false);
-  gl::GL11::glEnable(gl::GL11::GL_BLEND);
-  gl::GL11::glBlendFunc(gl::GL11::GL_SRC_ALPHA, gl::GL11::GL_ONE_MINUS_SRC_ALPHA);
+  gl::pushMatrix();
+  gl::translatef(static_cast<float>(x), static_cast<float>(y) + 2.3f, static_cast<float>(z));
+  gl::normal3f(0.0f, 1.0f, 0.0f);
+  gl::rotatef(-dispatcher->yaw_, 0.0f, 1.0f, 0.0f);
+  gl::rotatef(dispatcher->pitch_, 1.0f, 0.0f, 0.0f);
+  gl::scalef(-pixelScale, -pixelScale, pixelScale);
+  const gl::preset::LabelDraw labelCaps;
   Tessellator& tessellator = Tessellator::INSTANCE;
-  gl::GL11::glDisable(gl::GL11::GL_TEXTURE_2D);
-  tessellator.startQuads();
-  const int halfWidth = textRenderer->getWidth(player->name) / 2;
-  tessellator.color(0.0f, 0.0f, 0.0f, 0.25f);
-  tessellator.vertex(-halfWidth - 1, -1.0, 0.0);
-  tessellator.vertex(-halfWidth - 1, 8.0, 0.0);
-  tessellator.vertex(halfWidth + 1, 8.0, 0.0);
-  tessellator.vertex(halfWidth + 1, -1.0, 0.0);
-  tessellator.draw();
-  gl::GL11::glEnable(gl::GL11::GL_TEXTURE_2D);
-  gl::GL11::glDepthMask(true);
-  textRenderer->draw(player->name, -textRenderer->getWidth(player->name) / 2, 0, 0x20FFFFFF);
-  gl::GL11::glDisable(gl::GL11::GL_BLEND);
-  gl::GL11::glColor4f(1.0f, 1.0f, 1.0f, 1.0f);
-  gl::GL11::glPopMatrix();
+  {
+    const gl::preset::LabelTextureOff labelBackgroundCaps;
+    tessellator.startQuads();
+    const int halfWidth = textRenderer->getWidth(player->name) / 2;
+    tessellator.color(0.0f, 0.0f, 0.0f, 0.25f);
+    tessellator.vertex(-halfWidth - 1, -1.0, 0.0);
+    tessellator.vertex(-halfWidth - 1, 8.0, 0.0);
+    tessellator.vertex(halfWidth + 1, 8.0, 0.0);
+    tessellator.vertex(halfWidth + 1, -1.0, 0.0);
+    tessellator.draw();
+  }
+  {
+    const gl::preset::GuiTextureOn labelTextCaps;
+    textRenderer->draw(player->name, -textRenderer->getWidth(player->name) / 2, 0, 0x20FFFFFF);
+  }
+  gl::color4f(1.0f, 1.0f, 1.0f, 1.0f);
+  gl::popMatrix();
 }
 void PlayerEntityRenderer::renderMore(const net::minecraft::LivingEntity& entity, float tickDelta) {
   const auto* player = dynamic_cast<const net::minecraft::PlayerEntity*>(&entity);
@@ -182,39 +195,39 @@ void PlayerEntityRenderer::renderMore(const net::minecraft::LivingEntity& entity
   }
   const ItemStack helmetStack = player->inventory.armor[3];
   if(!helmetStack.empty() && helmetStack.itemId < 256) {
-    gl::GL11::glPushMatrix();
+    gl::pushMatrix();
     bipedModel->head.transform(0.0625f);
     Block* block = Block::BLOCKS[static_cast<std::size_t>(helmetStack.itemId)];
     if(block != nullptr && block::BlockRenderManager::isSideLit(block->getRenderType())) {
       constexpr float scale = 0.625f;
-      gl::GL11::glTranslatef(0.0f, -0.25f, 0.0f);
-      gl::GL11::glRotatef(180.0f, 0.0f, 1.0f, 0.0f);
-      gl::GL11::glScalef(scale, -scale, scale);
+      gl::translatef(0.0f, -0.25f, 0.0f);
+      gl::rotatef(180.0f, 0.0f, 1.0f, 0.0f);
+      gl::scalef(scale, -scale, scale);
     }
     heldItemRenderer->renderItem(*player, helmetStack);
-    gl::GL11::glPopMatrix();
+    gl::popMatrix();
   }
   if(player->name == "deadmau5" && bindDownloadedTexture(player->skinUrl, "")) {
     for(int ear = 0; ear < 2; ++ear) {
       const float headYaw = player->prevYaw + (player->yaw - player->prevYaw) * tickDelta -
                             (player->lastBodyYaw + (player->bodyYaw - player->lastBodyYaw) * tickDelta);
       const float headPitch = player->prevPitch + (player->pitch - player->prevPitch) * tickDelta;
-      gl::GL11::glPushMatrix();
-      gl::GL11::glRotatef(headYaw, 0.0f, 1.0f, 0.0f);
-      gl::GL11::glRotatef(headPitch, 1.0f, 0.0f, 0.0f);
-      gl::GL11::glTranslatef(0.375f * static_cast<float>(ear * 2 - 1), 0.0f, 0.0f);
-      gl::GL11::glTranslatef(0.0f, -0.375f, 0.0f);
-      gl::GL11::glRotatef(-headPitch, 1.0f, 0.0f, 0.0f);
-      gl::GL11::glRotatef(-headYaw, 0.0f, 1.0f, 0.0f);
+      gl::pushMatrix();
+      gl::rotatef(headYaw, 0.0f, 1.0f, 0.0f);
+      gl::rotatef(headPitch, 1.0f, 0.0f, 0.0f);
+      gl::translatef(0.375f * static_cast<float>(ear * 2 - 1), 0.0f, 0.0f);
+      gl::translatef(0.0f, -0.375f, 0.0f);
+      gl::rotatef(-headPitch, 1.0f, 0.0f, 0.0f);
+      gl::rotatef(-headYaw, 0.0f, 1.0f, 0.0f);
       constexpr float earScale = 1.3333334f;
-      gl::GL11::glScalef(earScale, earScale, earScale);
+      gl::scalef(earScale, earScale, earScale);
       bipedModel->renderEars(0.0625f);
-      gl::GL11::glPopMatrix();
+      gl::popMatrix();
     }
   }
   if(bindDownloadedTexture(player->playerCapeUrl, "")) {
-    gl::GL11::glPushMatrix();
-    gl::GL11::glTranslatef(0.0f, 0.0f, 0.125f);
+    gl::pushMatrix();
+    gl::translatef(0.0f, 0.0f, 0.125f);
     const double capeDx = player->prevCapeX + (player->capeX - player->prevCapeX) * static_cast<double>(tickDelta) -
                           (player->prevX + (player->x - player->prevX) * static_cast<double>(tickDelta));
     const double capeDy = player->prevCapeY + (player->capeY - player->prevCapeY) * static_cast<double>(tickDelta) -
@@ -245,12 +258,12 @@ void PlayerEntityRenderer::renderMore(const net::minecraft::LivingEntity& entity
     if(player->isSneaking()) {
       capeLift += 25.0f;
     }
-    gl::GL11::glRotatef(6.0f + capeAngle / 2.0f + capeLift, 1.0f, 0.0f, 0.0f);
-    gl::GL11::glRotatef(capeTwist / 2.0f, 0.0f, 0.0f, 1.0f);
-    gl::GL11::glRotatef(-capeTwist / 2.0f, 0.0f, 1.0f, 0.0f);
-    gl::GL11::glRotatef(180.0f, 0.0f, 1.0f, 0.0f);
+    gl::rotatef(6.0f + capeAngle / 2.0f + capeLift, 1.0f, 0.0f, 0.0f);
+    gl::rotatef(capeTwist / 2.0f, 0.0f, 0.0f, 1.0f);
+    gl::rotatef(-capeTwist / 2.0f, 0.0f, 1.0f, 0.0f);
+    gl::rotatef(180.0f, 0.0f, 1.0f, 0.0f);
     bipedModel->renderCape(0.0625f);
-    gl::GL11::glPopMatrix();
+    gl::popMatrix();
   }
   ItemStack handStack =
       player->inventory.getSelectedItem() != nullptr ? *player->inventory.getSelectedItem() : ItemStack{};
@@ -258,56 +271,56 @@ void PlayerEntityRenderer::renderMore(const net::minecraft::LivingEntity& entity
     handStack = ItemStack{280, 1, 0};
   }
   if(!handStack.empty()) {
-    gl::GL11::glPushMatrix();
+    gl::pushMatrix();
     bipedModel->rightArm.transform(0.0625f);
-    gl::GL11::glTranslatef(-0.0625f, 0.4375f, 0.0625f);
+    gl::translatef(-0.0625f, 0.4375f, 0.0625f);
     if(handStack.itemId < 256) {
       Block* block = Block::BLOCKS[static_cast<std::size_t>(handStack.itemId)];
       if(block != nullptr && block::BlockRenderManager::isSideLit(block->getRenderType())) {
         float scale = 0.5f;
-        gl::GL11::glTranslatef(0.0f, 0.1875f, -0.3125f);
-        gl::GL11::glRotatef(20.0f, 1.0f, 0.0f, 0.0f);
-        gl::GL11::glRotatef(45.0f, 0.0f, 1.0f, 0.0f);
+        gl::translatef(0.0f, 0.1875f, -0.3125f);
+        gl::rotatef(20.0f, 1.0f, 0.0f, 0.0f);
+        gl::rotatef(45.0f, 0.0f, 1.0f, 0.0f);
         scale *= 0.75f;
-        gl::GL11::glScalef(scale, -scale, scale);
+        gl::scalef(scale, -scale, scale);
       } else if(Item* item = handStack.getItem(); item != nullptr && item->isHandheld()) {
         float scale = 0.625f;
         if(item->isHandheldRod()) {
-          gl::GL11::glRotatef(180.0f, 0.0f, 0.0f, 1.0f);
-          gl::GL11::glTranslatef(0.0f, -0.125f, 0.0f);
+          gl::rotatef(180.0f, 0.0f, 0.0f, 1.0f);
+          gl::translatef(0.0f, -0.125f, 0.0f);
         }
-        gl::GL11::glTranslatef(0.0f, 0.1875f, 0.0f);
-        gl::GL11::glScalef(scale, -scale, scale);
-        gl::GL11::glRotatef(-100.0f, 1.0f, 0.0f, 0.0f);
-        gl::GL11::glRotatef(45.0f, 0.0f, 1.0f, 0.0f);
+        gl::translatef(0.0f, 0.1875f, 0.0f);
+        gl::scalef(scale, -scale, scale);
+        gl::rotatef(-100.0f, 1.0f, 0.0f, 0.0f);
+        gl::rotatef(45.0f, 0.0f, 1.0f, 0.0f);
       } else {
         const float scale = 0.375f;
-        gl::GL11::glTranslatef(0.25f, 0.1875f, -0.1875f);
-        gl::GL11::glScalef(scale, scale, scale);
-        gl::GL11::glRotatef(60.0f, 0.0f, 0.0f, 1.0f);
-        gl::GL11::glRotatef(-90.0f, 1.0f, 0.0f, 0.0f);
-        gl::GL11::glRotatef(20.0f, 0.0f, 0.0f, 1.0f);
+        gl::translatef(0.25f, 0.1875f, -0.1875f);
+        gl::scalef(scale, scale, scale);
+        gl::rotatef(60.0f, 0.0f, 0.0f, 1.0f);
+        gl::rotatef(-90.0f, 1.0f, 0.0f, 0.0f);
+        gl::rotatef(20.0f, 0.0f, 0.0f, 1.0f);
       }
     } else if(Item* item = handStack.getItem(); item != nullptr && item->isHandheld()) {
       float scale = 0.625f;
       if(item->isHandheldRod()) {
-        gl::GL11::glRotatef(180.0f, 0.0f, 0.0f, 1.0f);
-        gl::GL11::glTranslatef(0.0f, -0.125f, 0.0f);
+        gl::rotatef(180.0f, 0.0f, 0.0f, 1.0f);
+        gl::translatef(0.0f, -0.125f, 0.0f);
       }
-      gl::GL11::glTranslatef(0.0f, 0.1875f, 0.0f);
-      gl::GL11::glScalef(scale, -scale, scale);
-      gl::GL11::glRotatef(-100.0f, 1.0f, 0.0f, 0.0f);
-      gl::GL11::glRotatef(45.0f, 0.0f, 1.0f, 0.0f);
+      gl::translatef(0.0f, 0.1875f, 0.0f);
+      gl::scalef(scale, -scale, scale);
+      gl::rotatef(-100.0f, 1.0f, 0.0f, 0.0f);
+      gl::rotatef(45.0f, 0.0f, 1.0f, 0.0f);
     } else {
       const float scale = 0.375f;
-      gl::GL11::glTranslatef(0.25f, 0.1875f, -0.1875f);
-      gl::GL11::glScalef(scale, scale, scale);
-      gl::GL11::glRotatef(60.0f, 0.0f, 0.0f, 1.0f);
-      gl::GL11::glRotatef(-90.0f, 1.0f, 0.0f, 0.0f);
-      gl::GL11::glRotatef(20.0f, 0.0f, 0.0f, 1.0f);
+      gl::translatef(0.25f, 0.1875f, -0.1875f);
+      gl::scalef(scale, scale, scale);
+      gl::rotatef(60.0f, 0.0f, 0.0f, 1.0f);
+      gl::rotatef(-90.0f, 1.0f, 0.0f, 0.0f);
+      gl::rotatef(20.0f, 0.0f, 0.0f, 1.0f);
     }
     heldItemRenderer->renderItem(*player, handStack);
-    gl::GL11::glPopMatrix();
+    gl::popMatrix();
   }
 }
 } // namespace net::minecraft::client::render::entity

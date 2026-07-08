@@ -1,6 +1,6 @@
 #include "net/minecraft/client/multiplayer/MultiplayerConnector.hpp"
 #include "net/minecraft/client/auth/microsoft/SessionRestore.hpp"
-#include "net/minecraft/network/JavaProtocol.hpp"
+#include "net/minecraft/client/session/OfflineIdentity.hpp"
 #include "net/minecraft/client/Minecraft.hpp"
 #include "net/minecraft/client/multiplayer/MultiplayerSession.hpp"
 #include "net/minecraft/client/multiplayer/ClientNetworkHandler.hpp"
@@ -53,7 +53,7 @@ MultiplayerConnector::MultiplayerConnector(Minecraft* minecraft, std::string hos
       return;
     }
     if(net::minecraft::Connection* connection = bridge->connection()) {
-      HandshakePacket handshake = ::net::minecraft::network::java::makeClientHandshake(minecraft->session.username);
+      HandshakePacket handshake{::net::minecraft::client::session::resolveJoinUsername(minecraft->session)};
       connection->sendPacket(std::make_unique<HandshakePacket>(std::move(handshake)));
     }
     if(multiplayer::ClientNetworkHandler* handler = bridge->handler()) {

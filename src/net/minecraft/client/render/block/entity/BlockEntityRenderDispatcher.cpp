@@ -1,5 +1,5 @@
 #include "net/minecraft/client/render/block/entity/BlockEntityRenderDispatcher.hpp"
-#include "net/minecraft/client/gl/GL11.hpp"
+#include "net/minecraft/client/gl/GlState.hpp"
 namespace net::minecraft::client::render::block::entity {
 BlockEntityRenderDispatcher& BlockEntityRenderDispatcher::instance() {
   static BlockEntityRenderDispatcher dispatcher;
@@ -36,7 +36,7 @@ void BlockEntityRenderDispatcher::prepare(net::minecraft::World* worldIn,
 void BlockEntityRenderDispatcher::render(const net::minecraft::block::entity::BlockEntity& blockEntity, float tickDelta) {
   if(blockEntity.distanceFrom(cameraX, cameraY, cameraZ) < 4096.0) {
     const float brightness = world->getLightBrightness(blockEntity.x, blockEntity.y, blockEntity.z);
-    gl::GL11::glColor3f(brightness, brightness, brightness);
+    gl::color3f(brightness, brightness, brightness);
     render(blockEntity, static_cast<double>(blockEntity.x) - offsetX, static_cast<double>(blockEntity.y) - offsetY,
            static_cast<double>(blockEntity.z) - offsetZ, tickDelta);
   }

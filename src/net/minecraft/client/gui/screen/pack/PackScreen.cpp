@@ -3,7 +3,7 @@
 #include "net/minecraft/client/gui/Draw2D.hpp"
 #include "net/minecraft/client/gui/layout/ScreenLayout.hpp"
 #include "net/minecraft/client/gui/screen/TitleScreen.hpp"
-#include "net/minecraft/client/gl/GL11.hpp"
+#include "net/minecraft/client/gl/GlState.hpp"
 #include "net/minecraft/client/render/Tessellator.hpp"
 #include "net/minecraft/client/resource/language/I18n.hpp"
 #include "net/minecraft/client/resource/pack/TexturePack.hpp"
@@ -64,7 +64,7 @@ protected:
       return;
     }
     pack->bindIcon(minecraft_.textureManager);
-    gl::GL11::glColor4f(1.0f, 1.0f, 1.0f, 1.0f);
+    gl::color4f(1.0f, 1.0f, 1.0f, 1.0f);
     draw::coloredTexturedQuad(tessellator, x, y, x + 32, y + height, 0.0f, 0.0f, 1.0f, 1.0f, 0xFFFFFF);
     owner_.drawTextWithShadow(*owner_.textRenderer(), pack->name, x + 34, y + 1, 0xFFFFFF);
     owner_.drawTextWithShadow(*owner_.textRenderer(), pack->descriptionLine1, x + 34, y + 12, 0x808080);

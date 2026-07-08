@@ -15,8 +15,9 @@ public:
   void tick() override;
   void init() override;
   void render(int mouseX, int mouseY, float delta) override;
+  [[nodiscard]] std::string_view getScreenUiId() const override { return net::minecraft::mod::screen_ids::kConnect; }
 
-private:
+ private:
   void cancelConnection();
   multiplayer::MultiplayerConnector connector_;
 };

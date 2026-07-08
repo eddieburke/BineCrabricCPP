@@ -1,5 +1,5 @@
 #include "net/minecraft/client/render/entity/EntityRenderers.hpp"
-#include "net/minecraft/client/gl/GL11.hpp"
+#include "net/minecraft/client/gl/GlState.hpp"
 namespace net::minecraft::client::render::entity {
 GiantEntityRenderer::GiantEntityRenderer(model::EntityModel* model, float shadowSize, float scale)
     : LivingEntityRenderer(model, shadowSize * scale), scale_(scale) {
@@ -7,7 +7,7 @@ GiantEntityRenderer::GiantEntityRenderer(model::EntityModel* model, float shadow
 void GiantEntityRenderer::applyScale(const net::minecraft::LivingEntity& entity, float tickDelta) {
   (void)entity;
   (void)tickDelta;
-  gl::GL11::glScalef(scale_, scale_, scale_);
+  gl::scalef(scale_, scale_, scale_);
 }
 } // namespace net::minecraft::client::render::entity
 #include "net/minecraft/client/entity/EntityClientRendererRegistration.hpp"

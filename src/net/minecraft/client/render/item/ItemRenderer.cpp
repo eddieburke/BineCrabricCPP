@@ -1,12 +1,14 @@
 #include "net/minecraft/client/render/item/ItemRenderer.hpp"
 #include "net/minecraft/block/Block.hpp"
 #include "net/minecraft/client/font/TextRenderer.hpp"
+#include "net/minecraft/client/gl/GlState.hpp"
 #include "net/minecraft/client/render/item/ItemModelRenderer.hpp"
-#include "net/minecraft/client/render/platform/Lighting.hpp"
 #include "net/minecraft/client/render/Tessellator.hpp"
 #include "net/minecraft/client/texture/TextureManager.hpp"
 #include "net/minecraft/item/Item.hpp"
 #include "net/minecraft/item/ItemStack.hpp"
+#include "net/minecraft/mod/ModTexture.hpp"
+#include "net/minecraft/mod/lua/LuaItemModel.hpp"
 namespace net::minecraft::client::render::item {
 void ItemRenderer::renderGuiItem(client::font::TextRenderer& textRenderer,
                                  client::texture::TextureManager& textureManager, const ItemStack& stack, int x, int y) {
@@ -14,18 +16,34 @@ void ItemRenderer::renderGuiItem(client::font::TextRenderer& textRenderer,
   if(stack.count <= 0 || stack.itemId <= 0) {
     return;
   }
-  const gl::AttribGuard state(gl::GL11::GL_ENABLE_BIT | gl::GL11::GL_LIGHTING_BIT | gl::GL11::GL_CURRENT_BIT |
-                              gl::GL11::GL_TEXTURE_BIT | gl::GL11::GL_COLOR_BUFFER_BIT |
-                              gl::GL11::GL_DEPTH_BUFFER_BIT | gl::GL11::GL_TRANSFORM_BIT);
-  gl::GL11::glEnable(gl::GL11::GL_TEXTURE_2D);
-  gl::GL11::glColor4f(1.0f, 1.0f, 1.0f, 1.0f);
-  if(ItemModelRenderer::rendersAsBlockModel(stack)) {
+  if(ItemModelRenderer::hasCustomModel(stack)) {
+    renderCustomModelInGui(textureManager, stack, x, y);
+  } else if(ItemModelRenderer::rendersAsBlockModel(stack)) {
     renderBlockItemInGui(textureManager, stack, x, y);
   } else {
     renderSpriteItemInGui(textureManager, stack, x, y);
   }
-  gl::GL11::glEnable(gl::GL11::GL_CULL_FACE);
-  gl::GL11::glColor4f(1.0f, 1.0f, 1.0f, 1.0f);
+  gl::setCap(gl::cap::CullFace, true);
+}
+void ItemRenderer::renderCustomModelInGui(client::texture::TextureManager& textureManager, const ItemStack& stack,
+                                          int x, int y) {
+  if(ItemModelRenderer::usesModTexture(stack)) {
+    net::minecraft::mod::bind(textureManager, stack.getTextureId());
+  } else {
+    textureManager.bindTexture(textureManager.getTextureId(ItemModelRenderer::spriteAtlasPath(stack)));
+  }
+  const gl::preset::GuiItemRescale rescaleCaps;
+  gl::MatrixGuard itemMatrix;
+  gl::translatef(static_cast<float>(x - 2), static_cast<float>(y + 3), -3.0f);
+  gl::scalef(10.0f, 10.0f, 10.0f);
+  gl::translatef(0.5f, 0.5f, 0.5f);
+  gl::scalef(1.0f, 1.0f, -1.0f);
+  gl::rotatef(210.0f, 1.0f, 0.0f, 0.0f);
+  gl::rotatef(45.0f, 0.0f, 1.0f, 0.0f);
+  applyDisplayColor(stack);
+  gl::rotatef(-90.0f, 0.0f, 1.0f, 0.0f);
+  gl::translatef(-0.5f, -0.5f, -0.5f);
+  net::minecraft::mod::lua::drawLuaItemModel(Tessellator::INSTANCE, stack, 1.0f);
 }
 void ItemRenderer::renderBlockItemInGui(client::texture::TextureManager& textureManager, const ItemStack& stack, int x,
                                         int y) {
@@ -37,26 +55,24 @@ void ItemRenderer::renderBlockItemInGui(client::texture::TextureManager& texture
   const bool previousUseAo = blockRenderManager.ctx.faceState.useAo;
   const bool previousInventoryColorEnabled = blockRenderManager.ctx.inventoryColorEnabled;
   auto* previousTextureManager = blockRenderManager.ctx.textureManager;
-  gl::GL11::glEnable(gl::GL11::GL_RESCALE_NORMAL);
-  gl::GL11::glPushMatrix();
-  gl::GL11::glTranslatef(static_cast<float>(x - 2), static_cast<float>(y + 3), -3.0f);
-  gl::GL11::glScalef(10.0f, 10.0f, 10.0f);
-  gl::GL11::glTranslatef(1.0f, 0.5f, 1.0f);
-  gl::GL11::glScalef(1.0f, 1.0f, -1.0f);
-  gl::GL11::glRotatef(210.0f, 1.0f, 0.0f, 0.0f);
-  gl::GL11::glRotatef(45.0f, 0.0f, 1.0f, 0.0f);
+  const gl::preset::GuiItemRescale rescaleCaps;
+  gl::MatrixGuard itemMatrix;
+  gl::translatef(static_cast<float>(x - 2), static_cast<float>(y + 3), -3.0f);
+  gl::scalef(10.0f, 10.0f, 10.0f);
+  gl::translatef(1.0f, 0.5f, 1.0f);
+  gl::scalef(1.0f, 1.0f, -1.0f);
+  gl::rotatef(210.0f, 1.0f, 0.0f, 0.0f);
+  gl::rotatef(45.0f, 0.0f, 1.0f, 0.0f);
   applyDisplayColor(stack);
-  gl::GL11::glRotatef(-90.0f, 0.0f, 1.0f, 0.0f);
+  gl::rotatef(-90.0f, 0.0f, 1.0f, 0.0f);
   blockRenderManager.ctx.inventoryColorEnabled = useCustomDisplayColor;
   blockRenderManager.ctx.textureManager = &textureManager;
   blockRenderManager.ctx.faceState.useAo = false;
-  blockRenderManager.render(*block, stack.getDamage(), 1.0f);
+  blockRenderManager.render(*block, stack.getDamage(), 1.15f);
   blockRenderManager.ctx.textureManager = previousTextureManager;
   blockRenderManager.ctx.inventoryColorEnabled = previousInventoryColorEnabled;
   blockRenderManager.ctx.faceState.useAo = previousUseAo;
   textureManager.bindTexture(textureManager.getTextureId("/terrain.png"));
-  gl::GL11::glPopMatrix();
-  gl::GL11::glDisable(gl::GL11::GL_RESCALE_NORMAL);
 }
 void ItemRenderer::renderSpriteItemInGui(client::texture::TextureManager& textureManager, const ItemStack& stack, int x,
                                          int y) {
@@ -64,14 +80,28 @@ void ItemRenderer::renderSpriteItemInGui(client::texture::TextureManager& textur
   if(sprite < 0) {
     return;
   }
-  const render::platform::LightingOffGuard lighting;
-  textureManager.bindTexture(textureManager.getTextureId(ItemModelRenderer::spriteAtlasPath(stack)));
+  const gl::preset::ModBlockInventory spriteCaps;
+  if(ItemModelRenderer::usesModTexture(stack)) {
+    net::minecraft::mod::bind(textureManager, sprite);
+  } else {
+    textureManager.bindTexture(textureManager.getTextureId(ItemModelRenderer::spriteAtlasPath(stack)));
+  }
   applyDisplayColor(stack);
-  drawTexture(x, y, (sprite % 16) * 16, (sprite / 16) * 16, 16, 16);
+  if(ItemModelRenderer::usesModTexture(stack)) {
+    Tessellator& tessellator = Tessellator::INSTANCE;
+    tessellator.startQuads();
+    tessellator.vertex(x + 0, y + 16, 0.0, 0.0, 1.0);
+    tessellator.vertex(x + 16, y + 16, 0.0, 1.0, 1.0);
+    tessellator.vertex(x + 16, y + 0, 0.0, 1.0, 0.0);
+    tessellator.vertex(x + 0, y + 0, 0.0, 0.0, 0.0);
+    tessellator.draw();
+  } else {
+    drawTexture(x, y, (sprite % 16) * 16, (sprite / 16) * 16, 16, 16);
+  }
 }
 void ItemRenderer::applyDisplayColor(const ItemStack& stack) {
   const ItemTint tint = useCustomDisplayColor ? ItemModelRenderer::tintColor(stack) : ItemTint{};
-  gl::GL11::glColor4f(tint.red, tint.green, tint.blue, 1.0f);
+  gl::color4f(tint.red, tint.green, tint.blue, 1.0f);
 }
 void ItemRenderer::renderGuiItemDecoration(client::font::TextRenderer& textRenderer,
                                            client::texture::TextureManager& textureManager, const ItemStack& stack,
@@ -87,27 +117,19 @@ void ItemRenderer::drawCountLabel(client::font::TextRenderer& textRenderer, cons
     return;
   }
   const std::string label = std::to_string(stack.count);
-  gl::GL11::glDisable(gl::GL11::GL_FOG);
-  gl::GL11::glEnable(gl::GL11::GL_TEXTURE_2D);
-  gl::GL11::glDisable(gl::GL11::GL_DEPTH_TEST);
+  const gl::preset::GuiItemLabel labelCaps;
   textRenderer.drawWithShadow(label, x + 19 - 2 - textRenderer.getWidth(label), y + 6 + 3, 0xFFFFFF);
-  gl::GL11::glEnable(gl::GL11::GL_DEPTH_TEST);
-  gl::GL11::glColor4f(1.0f, 1.0f, 1.0f, 1.0f);
 }
 void ItemRenderer::drawDurabilityBar(const ItemStack& stack, int x, int y) {
   const int barPixels = static_cast<int>(
       std::lround(13.0 - static_cast<double>(stack.getDamage2()) * 13.0 / static_cast<double>(stack.getMaxDamage())));
   const int barColorAmount = static_cast<int>(std::lround(255.0 - static_cast<double>(stack.getDamage2()) * 255.0 /
                                                                       static_cast<double>(stack.getMaxDamage())));
-  gl::GL11::glDisable(gl::GL11::GL_FOG);
-  gl::GL11::glDisable(gl::GL11::GL_DEPTH_TEST);
-  gl::GL11::glDisable(gl::GL11::GL_TEXTURE_2D);
+  const gl::preset::GuiDurabilityBar barCaps;
   fillRect(x + 2, y + 13, 13, 2, 0);
   fillRect(x + 2, y + 13, 12, 1, ((255 - barColorAmount) / 4 << 16) | 0x3F00);
   fillRect(x + 2, y + 13, barPixels, 1, ((255 - barColorAmount) << 16) | (barColorAmount << 8));
-  gl::GL11::glEnable(gl::GL11::GL_TEXTURE_2D);
-  gl::GL11::glEnable(gl::GL11::GL_DEPTH_TEST);
-  gl::GL11::glColor4f(1.0f, 1.0f, 1.0f, 1.0f);
+  gl::color4f(1.0f, 1.0f, 1.0f, 1.0f);
 }
 void ItemRenderer::fillRect(int x, int y, int width, int height, int color) {
   Tessellator& tessellator = Tessellator::INSTANCE;

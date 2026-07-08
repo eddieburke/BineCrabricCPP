@@ -1,5 +1,5 @@
 #include "net/minecraft/client/resource/pack/ZippedTexturePack.hpp"
-#include "net/minecraft/client/gl/GL11.hpp"
+#include "net/minecraft/client/gl/GlState.hpp"
 #include "net/minecraft/client/texture/TextureManager.hpp"
 #include "net/minecraft/nbt/Compression.hpp"
 #include <algorithm>
@@ -248,7 +248,7 @@ void ZippedTexturePack::bindIcon(texture::TextureManager& textureManager) {
     textureManager.bindTexture(iconId_);
     return;
   }
-  gl::GL11::glBindTexture(gl::GL11::GL_TEXTURE_2D, textureManager.getTextureId("/gui/unknown_pack.png"));
+  gl::bindTexture(gl::cap::Texture2D, textureManager.getTextureId("/gui/unknown_pack.png"));
 }
 std::vector<std::uint8_t> ZippedTexturePack::getResource(std::string_view path) const {
   if(!archive_.empty()) {

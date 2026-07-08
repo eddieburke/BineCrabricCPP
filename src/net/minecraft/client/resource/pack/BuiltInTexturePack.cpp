@@ -1,5 +1,5 @@
 #include "net/minecraft/client/resource/pack/BuiltInTexturePack.hpp"
-#include "net/minecraft/client/gl/GL11.hpp"
+#include "net/minecraft/client/gl/GlState.hpp"
 namespace net::minecraft::client::resource::pack {
 BuiltInTexturePack::BuiltInTexturePack(const ResourcePack& resources) : resources_(resources) {
   name = "Default";
@@ -23,7 +23,7 @@ void BuiltInTexturePack::bindIcon(texture::TextureManager& textureManager) {
     textureManager.bindTexture(iconId_);
     return;
   }
-  gl::GL11::glBindTexture(gl::GL11::GL_TEXTURE_2D, textureManager.getTextureId("/gui/unknown_pack.png"));
+  gl::bindTexture(gl::cap::Texture2D, textureManager.getTextureId("/gui/unknown_pack.png"));
 }
 std::vector<std::uint8_t> BuiltInTexturePack::getResource(std::string_view path) const {
   std::string relative(path);

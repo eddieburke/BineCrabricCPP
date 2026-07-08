@@ -8,8 +8,9 @@ public:
 
 protected:
   void keyPressed(char character, int keyCode) override;
+  [[nodiscard]] std::string_view getScreenUiId() const override { return net::minecraft::mod::screen_ids::kLanInfo; }
 
-private:
+ private:
   void backToGameMenu();
 };
 } // namespace net::minecraft::client::host

@@ -1,5 +1,5 @@
 #include "net/minecraft/client/font/TextRenderer.hpp"
-#include "net/minecraft/client/gl/GL11.hpp"
+#include "net/minecraft/client/gl/GlState.hpp"
 #include "net/minecraft/client/option/GameOptions.hpp"
 #include "net/minecraft/client/render/Tessellator.hpp"
 #include "net/minecraft/client/texture/TextureManager.hpp"
@@ -162,17 +162,15 @@ void TextRenderer::draw(const std::string& text, int x, int y, int color, bool s
   if(af == 0.0f) {
     af = 1.0f;
   }
-  const gl::AttribGuard attrib(gl::GL11::GL_ENABLE_BIT | gl::GL11::GL_CURRENT_BIT | gl::GL11::GL_TEXTURE_BIT);
-  gl::GL11::glEnable(gl::GL11::GL_TEXTURE_2D);
-  gl::GL11::glEnable(gl::GL11::GL_BLEND);
-  gl::GL11::glBlendFunc(gl::GL11::GL_SRC_ALPHA, gl::GL11::GL_ONE_MINUS_SRC_ALPHA);
-  gl::GL11::glBindTexture(gl::GL11::GL_TEXTURE_2D, static_cast<unsigned int>(boundTexture));
-  gl::GL11::glColor4f(rf, gf, bf, af);
+  const gl::preset::TextDraw textCaps;
+  const gl::BoundTextureScope savedTextureBinding;
+  gl::bindTexture(gl::cap::Texture2D, static_cast<unsigned int>(boundTexture));
+  gl::color4f(rf, gf, bf, af);
   float currentR = rf;
   float currentG = gf;
   float currentB = bf;
-  gl::GL11::glPushMatrix();
-  gl::GL11::glTranslatef(static_cast<float>(x), static_cast<float>(y), 0.0f);
+  gl::pushMatrix();
+  gl::translatef(static_cast<float>(x), static_cast<float>(y), 0.0f);
   render::Tessellator& tessellator = render::INSTANCE;
   tessellator.startQuads();
   float penX = 0.0f;
@@ -204,7 +202,7 @@ void TextRenderer::draw(const std::string& text, int x, int y, int color, bool s
     ++i;
   }
   tessellator.draw();
-  gl::GL11::glPopMatrix();
+  gl::popMatrix();
 }
 int TextRenderer::getWidth(const std::string& text) const {
   if(text.empty()) {

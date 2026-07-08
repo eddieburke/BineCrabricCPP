@@ -1,5 +1,6 @@
 #include "net/minecraft/client/multiplayer/MultiplayerSession.hpp"
 #include "net/minecraft/client/multiplayer/ClientNetworkBridge.hpp"
+#include "net/minecraft/client/multiplayer/ClientNetworkHandler.hpp"
 namespace net::minecraft::client::multiplayer {
 // Out-of-line: ClientNetworkBridge is incomplete in the header, so the destructor that
 // tears down bridge_/retiredBridges_ must be emitted here.
@@ -15,5 +16,11 @@ void MultiplayerSession::retireBridge() {
 }
 void MultiplayerSession::flushRetired() {
   retiredBridges_.clear();
+}
+void MultiplayerSession::tick() {
+  if(bridge_ == nullptr) {
+    return;
+  }
+  bridge_->tick();
 }
 } // namespace net::minecraft::client::multiplayer

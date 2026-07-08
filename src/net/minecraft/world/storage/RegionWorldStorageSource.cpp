@@ -8,7 +8,6 @@
 #include <array>
 #include <cstdint>
 #include <fstream>
-#include <iostream>
 #include <string>
 #include <tuple>
 #include <vector>
@@ -99,9 +98,7 @@ void convertDimension(const fs::path& dimDir) {
         continue;
       }
       RegionIo::writeChunkData(dimDir, chunkX, chunkZ, raw);
-    } catch(const std::exception& exception) {
-      std::cerr << "Skipping unreadable alpha chunk " << file.filename().string() << ": " << exception.what()
-                << '\n';
+    } catch(const std::exception&) {
     }
   }
 }
@@ -119,8 +116,7 @@ void convertDimension(const fs::path& dimDir) {
       return false;
     }
     root = NbtIo::readCompressed(input);
-  } catch(const std::exception& exception) {
-    std::cerr << "Failed to read level.dat for conversion: " << exception.what() << '\n';
+  } catch(const std::exception&) {
     return false;
   }
   if(!root.contains("Data")) {
@@ -133,8 +129,7 @@ void convertDimension(const fs::path& dimDir) {
     AtomicWriteOptions options;
     options.keepBackup = true;
     writeFileAtomic(levelDat, [&root](std::ostream& output) { NbtIo::writeCompressed(root, output); }, options);
-  } catch(const std::exception& exception) {
-    std::cerr << "Failed to write converted level.dat: " << exception.what() << '\n';
+  } catch(const std::exception&) {
     return false;
   }
   return true;

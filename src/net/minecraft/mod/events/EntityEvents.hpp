@@ -33,6 +33,20 @@ struct EntityInteractEvent {
   bool canceled = false;
   bool handled = false;
 };
+struct EntityTeleportEvent {
+  entity::Entity* entity = nullptr;
+  World* world = nullptr;
+  double fromX = 0.0;
+  double fromY = 0.0;
+  double fromZ = 0.0;
+  double x = 0.0;
+  double y = 0.0;
+  double z = 0.0;
+  float yaw = 0.0f;
+  float pitch = 0.0f;
+  bool canceled = false;
+  client::Minecraft* client = nullptr;
+};
 struct AttackDamageEvent {
   entity::player::PlayerEntity* player = nullptr;
   entity::Entity* target = nullptr;

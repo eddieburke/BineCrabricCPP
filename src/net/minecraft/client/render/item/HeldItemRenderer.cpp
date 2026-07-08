@@ -3,7 +3,7 @@
 #include "net/minecraft/block/material/Material.hpp"
 #include "net/minecraft/client/Minecraft.hpp"
 #include "net/minecraft/client/gl/GLCore.hpp"
-#include "net/minecraft/client/gl/GL11.hpp"
+#include "net/minecraft/client/gl/GlState.hpp"
 #include "net/minecraft/client/render/Tessellator.hpp"
 #include "net/minecraft/client/render/block/BlockRenderManager.hpp"
 #include "net/minecraft/client/render/item/ItemModelRenderer.hpp"
@@ -17,6 +17,8 @@
 #include "net/minecraft/item/Item.hpp"
 #include "net/minecraft/item/MapItem.hpp"
 #include "net/minecraft/item/map/MapState.hpp"
+#include "net/minecraft/mod/ModTexture.hpp"
+#include "net/minecraft/mod/lua/LuaItemModel.hpp"
 #include "net/minecraft/util/math/MathHelper.hpp"
 #include "net/minecraft/util/math/Matrix4f.hpp"
 #include "net/minecraft/world/World.hpp"
@@ -31,8 +33,8 @@ constexpr float kPi = 3.14159265358979323846f;
 void renderTexturedOverlay(int textureId) {
   Tessellator& tessellator = Tessellator::INSTANCE;
   constexpr float brightness = 0.1f;
-  gl::GL11::glColor4f(brightness, brightness, brightness, 0.5f);
-  gl::GL11::glPushMatrix();
+  gl::color4f(brightness, brightness, brightness, 0.5f);
+  gl::pushMatrix();
   constexpr float left = -1.0f;
   constexpr float right = 1.0f;
   constexpr float bottom = -1.0f;
@@ -49,16 +51,15 @@ void renderTexturedOverlay(int textureId) {
   tessellator.vertex(right, top, depth, uMax, vMax);
   tessellator.vertex(left, top, depth, uMin, vMax);
   tessellator.draw();
-  gl::GL11::glPopMatrix();
-  gl::GL11::glColor4f(1.0f, 1.0f, 1.0f, 1.0f);
+  gl::popMatrix();
+  gl::color4f(1.0f, 1.0f, 1.0f, 1.0f);
 }
 void renderUnderwaterOverlay(net::minecraft::entity::player::PlayerEntity& player, float tickDelta) {
   Tessellator& tessellator = Tessellator::INSTANCE;
   const float brightness = player.getBrightnessAtEyes(tickDelta);
-  gl::GL11::glColor4f(brightness, brightness, brightness, 0.5f);
-  gl::GL11::glEnable(gl::GL11::GL_BLEND);
-  gl::GL11::glBlendFunc(gl::GL11::GL_SRC_ALPHA, gl::GL11::GL_ONE_MINUS_SRC_ALPHA);
-  gl::GL11::glPushMatrix();
+  gl::color4f(brightness, brightness, brightness, 0.5f);
+  const gl::preset::HeldItemUnderwater underwaterCaps;
+  gl::MatrixGuard underwaterMatrix;
   constexpr float scroll = 4.0f;
   constexpr float left = -1.0f;
   constexpr float right = 1.0f;
@@ -73,16 +74,12 @@ void renderUnderwaterOverlay(net::minecraft::entity::player::PlayerEntity& playe
   tessellator.vertex(left, top, depth, uScroll, vScroll);
   tessellator.vertex(right, top, depth, scroll + uScroll, vScroll);
   tessellator.draw();
-  gl::GL11::glPopMatrix();
-  gl::GL11::glColor4f(1.0f, 1.0f, 1.0f, 1.0f);
-  gl::GL11::glDisable(gl::GL11::GL_BLEND);
+  gl::color4f(1.0f, 1.0f, 1.0f, 1.0f);
 }
 void renderFireOverlay() {
-  const gl::AttribGuard attrib(gl::GL11::GL_ENABLE_BIT | gl::GL11::GL_CURRENT_BIT);
+  const gl::preset::FireOverlay fireCaps;
   Tessellator& tessellator = Tessellator::INSTANCE;
-  gl::GL11::glColor4f(1.0f, 1.0f, 1.0f, 0.9f);
-  gl::GL11::glEnable(gl::GL11::GL_BLEND);
-  gl::GL11::glBlendFunc(gl::GL11::GL_SRC_ALPHA, gl::GL11::GL_ONE_MINUS_SRC_ALPHA);
+  gl::color4f(1.0f, 1.0f, 1.0f, 0.9f);
   constexpr float size = 1.0f;
   net::minecraft::block::Block* fireBlock = net::minecraft::block::Block::FIRE;
   const float x0 = (0.0f - size) / 2.0f;
@@ -91,7 +88,7 @@ void renderFireOverlay() {
   const float y1 = y0 + size;
   constexpr float depth = -0.5f;
   float baseModelView[16]{};
-  gl::GL11::glGetFloatv(gl::GL11::GL_MODELVIEW_MATRIX, baseModelView);
+  gl::getFloatv(gl::matrix_::ModelViewMatrix, baseModelView);
   tessellator.startQuads();
   for(int layer = 0; layer < 2; ++layer) {
     const int texture = (fireBlock != nullptr ? fireBlock->textureId : 31) + layer * 16;
@@ -127,8 +124,7 @@ void renderFireOverlay() {
     }
   }
   tessellator.draw();
-  gl::GL11::glColor4f(1.0f, 1.0f, 1.0f, 1.0f);
-  gl::GL11::glDisable(gl::GL11::GL_BLEND);
+  gl::color4f(1.0f, 1.0f, 1.0f, 1.0f);
 }
 } // namespace
 HeldItemRenderer::HeldItemRenderer(net::minecraft::client::Minecraft* minecraftIn)
@@ -140,29 +136,48 @@ void HeldItemRenderer::renderItem(const net::minecraft::entity::LivingEntity& en
     return;
   }
   const gl::MatrixGuard matrix;
+  if(ItemModelRenderer::hasCustomModel(itemStack)) {
+    if(ItemModelRenderer::usesModTexture(itemStack)) {
+      net::minecraft::mod::bind(minecraft->textureManager, itemStack.getTextureId());
+    } else {
+      gl::bindTexture(gl::cap::Texture2D,
+                      minecraft->textureManager.getTextureId(ItemModelRenderer::spriteAtlasPath(itemStack)));
+    }
+    gl::translatef(0.0f, -0.3f, 0.0f);
+    gl::scalef(1.5f, 1.5f, 1.5f);
+    gl::rotatef(50.0f, 0.0f, 1.0f, 0.0f);
+    gl::rotatef(335.0f, 0.0f, 0.0f, 1.0f);
+    gl::translatef(-0.5f, -0.5f, -0.5f);
+    net::minecraft::mod::lua::drawLuaItemModel(Tessellator::INSTANCE, itemStack, entity.getBrightnessAtEyes(1.0f));
+    return;
+  }
   if(ItemModelRenderer::rendersAsBlockModel(itemStack)) {
     net::minecraft::block::Block* block = ItemModelRenderer::blockOf(itemStack);
-    gl::GL11::glBindTexture(gl::GL11::GL_TEXTURE_2D, minecraft->textureManager.getTextureId("/terrain.png"));
+    gl::bindTexture(gl::cap::Texture2D, minecraft->textureManager.getTextureId("/terrain.png"));
     blockRenderManager.ctx.textureManager = &minecraft->textureManager;
     blockRenderManager.render(*block, itemStack.getDamage(), entity.getBrightnessAtEyes(1.0f));
     blockRenderManager.ctx.textureManager = nullptr;
     return;
   }
-  gl::GL11::glBindTexture(gl::GL11::GL_TEXTURE_2D,
-                          minecraft->textureManager.getTextureId(ItemModelRenderer::spriteAtlasPath(itemStack)));
+  if(ItemModelRenderer::usesModTexture(itemStack)) {
+    net::minecraft::mod::bind(minecraft->textureManager, itemStack.getTextureId());
+  } else {
+    gl::bindTexture(gl::cap::Texture2D,
+                    minecraft->textureManager.getTextureId(ItemModelRenderer::spriteAtlasPath(itemStack)));
+  }
   Tessellator& tessellator = Tessellator::INSTANCE;
-  const int textureIndex = entity.getItemStackTextureId(itemStack);
-  const float uMax = (static_cast<float>(textureIndex % 16 * 16) + 0.0f) / 256.0f;
-  const float uMin = (static_cast<float>(textureIndex % 16 * 16) + 15.99f) / 256.0f;
-  const float vMax = (static_cast<float>(textureIndex / 16 * 16) + 0.0f) / 256.0f;
-  const float vMin = (static_cast<float>(textureIndex / 16 * 16) + 15.99f) / 256.0f;
+  const auto uv = ItemModelRenderer::spriteUv(itemStack);
+  const float uMin = static_cast<float>(uv.uMin);
+  const float uMax = static_cast<float>(uv.uMax);
+  const float vMin = static_cast<float>(uv.vMin);
+  const float vMax = static_cast<float>(uv.vMax);
   constexpr float itemWidth = 1.0f;
-  gl::GL11::glTranslatef(0.0f, -0.3f, 0.0f);
+  gl::translatef(0.0f, -0.3f, 0.0f);
   constexpr float itemScale = 1.5f;
-  gl::GL11::glScalef(itemScale, itemScale, itemScale);
-  gl::GL11::glRotatef(50.0f, 0.0f, 1.0f, 0.0f);
-  gl::GL11::glRotatef(335.0f, 0.0f, 0.0f, 1.0f);
-  gl::GL11::glTranslatef(-0.9375f, -0.0625f, 0.0f);
+  gl::scalef(itemScale, itemScale, itemScale);
+  gl::rotatef(50.0f, 0.0f, 1.0f, 0.0f);
+  gl::rotatef(335.0f, 0.0f, 0.0f, 1.0f);
+  gl::translatef(-0.9375f, -0.0625f, 0.0f);
   constexpr float depth = 0.0625f;
   tessellator.startQuads();
   tessellator.normal(0.0f, 0.0f, 1.0f);
@@ -227,12 +242,12 @@ void HeldItemRenderer::render(float tickDelta) {
   }
   const float equipProgress = prevHeight + (height - prevHeight) * tickDelta;
   const float pitch = clientPlayer->prevPitch + (clientPlayer->pitch - clientPlayer->prevPitch) * tickDelta;
-  gl::GL11::glPushMatrix();
-  gl::GL11::glRotatef(pitch, 1.0f, 0.0f, 0.0f);
-  gl::GL11::glRotatef(clientPlayer->prevYaw + (clientPlayer->yaw - clientPlayer->prevYaw) * tickDelta, 0.0f, 1.0f,
-                      0.0f);
+  gl::pushMatrix();
+  gl::rotatef(pitch, 1.0f, 0.0f, 0.0f);
+  gl::rotatef(clientPlayer->prevYaw + (clientPlayer->yaw - clientPlayer->prevYaw) * tickDelta, 0.0f, 1.0f,
+              0.0f);
   platform::Lighting::turnOn();
-  gl::GL11::glPopMatrix();
+  gl::popMatrix();
   const ItemStack* selectedItem = stack.empty() ? nullptr : &stack;
   const float brightness = minecraft->world->getLightBrightness(
       MathHelper::floor(clientPlayer->x), MathHelper::floor(clientPlayer->y), MathHelper::floor(clientPlayer->z));
@@ -241,58 +256,59 @@ void HeldItemRenderer::render(float tickDelta) {
     const float red = static_cast<float>((tint >> 16) & 0xFF) / 255.0f;
     const float green = static_cast<float>((tint >> 8) & 0xFF) / 255.0f;
     const float blue = static_cast<float>(tint & 0xFF) / 255.0f;
-    gl::GL11::glColor4f(brightness * red, brightness * green, brightness * blue, 1.0f);
+    gl::color4f(brightness * red, brightness * green, brightness * blue, 1.0f);
   } else {
-    gl::GL11::glColor4f(brightness, brightness, brightness, 1.0f);
+    gl::color4f(brightness, brightness, brightness, 1.0f);
   }
   entity::EntityRenderer* entityRenderer = entity::EntityRenderDispatcher::instance().get(*clientPlayer);
   auto* playerRenderer = dynamic_cast<entity::PlayerEntityRenderer*>(entityRenderer);
+  const gl::preset::HeldItemFirstPerson firstPersonCaps;
   if(selectedItem != nullptr && Item::byRawId(102) != nullptr && selectedItem->itemId == Item::byRawId(102)->id) {
-    gl::GL11::glPushMatrix();
+    gl::pushMatrix();
     constexpr float scale = 0.8f;
     float swing = handSwingProgress(*clientPlayer, tickDelta);
     float swingSin = MathHelper::sin(swing * static_cast<float>(kPi));
     float swingSqrt = MathHelper::sin(MathHelper::sqrt(swing) * static_cast<float>(kPi));
-    gl::GL11::glTranslatef(-swingSqrt * 0.4f,
-                           MathHelper::sin(MathHelper::sqrt(swing) * static_cast<float>(kPi) * 2.0f) * 0.2f,
-                           -swingSin * 0.2f);
+    gl::translatef(-swingSqrt * 0.4f,
+                   MathHelper::sin(MathHelper::sqrt(swing) * static_cast<float>(kPi) * 2.0f) * 0.2f,
+                   -swingSin * 0.2f);
     float pitchFactor = 1.0f - pitch / 45.0f + 0.1f;
     pitchFactor = std::clamp(pitchFactor, 0.0f, 1.0f);
     pitchFactor = -MathHelper::cos(pitchFactor * static_cast<float>(kPi)) * 0.5f + 0.5f;
-    gl::GL11::glTranslatef(0.0f, 0.0f * scale - (1.0f - equipProgress) * 1.2f - pitchFactor * 0.5f + 0.04f,
-                           -0.9f * scale);
-    gl::GL11::glRotatef(90.0f, 0.0f, 1.0f, 0.0f);
-    gl::GL11::glRotatef(pitchFactor * -85.0f, 0.0f, 0.0f, 1.0f);
+    gl::translatef(0.0f, 0.0f * scale - (1.0f - equipProgress) * 1.2f - pitchFactor * 0.5f + 0.04f,
+                   -0.9f * scale);
+    gl::rotatef(90.0f, 0.0f, 1.0f, 0.0f);
+    gl::rotatef(pitchFactor * -85.0f, 0.0f, 0.0f, 1.0f);
     const int skinTexture =
         minecraft->textureManager.downloadTexture(clientPlayer->skinUrl, clientPlayer->getTexture());
-    gl::GL11::glBindTexture(gl::GL11::GL_TEXTURE_2D, skinTexture);
+    gl::bindTexture(gl::cap::Texture2D, skinTexture);
     if(playerRenderer != nullptr) {
       for(int side = 0; side < 2; ++side) {
         const int mirror = side * 2 - 1;
-        gl::GL11::glPushMatrix();
-        gl::GL11::glTranslatef(0.0f, -0.6f, 1.1f * static_cast<float>(mirror));
-        gl::GL11::glRotatef(static_cast<float>(-45 * mirror), 1.0f, 0.0f, 0.0f);
-        gl::GL11::glRotatef(-90.0f, 0.0f, 0.0f, 1.0f);
-        gl::GL11::glRotatef(59.0f, 0.0f, 0.0f, 1.0f);
-        gl::GL11::glRotatef(static_cast<float>(-65 * mirror), 0.0f, 1.0f, 0.0f);
+        gl::pushMatrix();
+        gl::translatef(0.0f, -0.6f, 1.1f * static_cast<float>(mirror));
+        gl::rotatef(static_cast<float>(-45 * mirror), 1.0f, 0.0f, 0.0f);
+        gl::rotatef(-90.0f, 0.0f, 0.0f, 1.0f);
+        gl::rotatef(59.0f, 0.0f, 0.0f, 1.0f);
+        gl::rotatef(static_cast<float>(-65 * mirror), 0.0f, 1.0f, 0.0f);
         playerRenderer->renderHand();
-        gl::GL11::glPopMatrix();
+        gl::popMatrix();
       }
     }
     swing = handSwingProgress(*clientPlayer, tickDelta);
     const float swingSin2 = MathHelper::sin(swing * swing * static_cast<float>(kPi));
     swingSqrt = MathHelper::sin(MathHelper::sqrt(swing) * static_cast<float>(kPi));
-    gl::GL11::glRotatef(-swingSin2 * 20.0f, 0.0f, 1.0f, 0.0f);
-    gl::GL11::glRotatef(-swingSqrt * 20.0f, 0.0f, 0.0f, 1.0f);
-    gl::GL11::glRotatef(-swingSqrt * 80.0f, 1.0f, 0.0f, 0.0f);
-    gl::GL11::glScalef(0.38f, 0.38f, 0.38f);
-    gl::GL11::glRotatef(90.0f, 0.0f, 1.0f, 0.0f);
-    gl::GL11::glRotatef(180.0f, 0.0f, 0.0f, 1.0f);
-    gl::GL11::glTranslatef(-1.0f, -1.0f, 0.0f);
-    gl::GL11::glScalef(0.015625f, 0.015625f, 0.015625f);
-    gl::GL11::glBindTexture(gl::GL11::GL_TEXTURE_2D, minecraft->textureManager.getTextureId("/misc/mapbg.png"));
+    gl::rotatef(-swingSin2 * 20.0f, 0.0f, 1.0f, 0.0f);
+    gl::rotatef(-swingSqrt * 20.0f, 0.0f, 0.0f, 1.0f);
+    gl::rotatef(-swingSqrt * 80.0f, 1.0f, 0.0f, 0.0f);
+    gl::scalef(0.38f, 0.38f, 0.38f);
+    gl::rotatef(90.0f, 0.0f, 1.0f, 0.0f);
+    gl::rotatef(180.0f, 0.0f, 0.0f, 1.0f);
+    gl::translatef(-1.0f, -1.0f, 0.0f);
+    gl::scalef(0.015625f, 0.015625f, 0.015625f);
+    gl::bindTexture(gl::cap::Texture2D, minecraft->textureManager.getTextureId("/misc/mapbg.png"));
     Tessellator& tessellator = Tessellator::INSTANCE;
-    gl::GL11::glNormal3f(0.0f, 0.0f, -1.0f);
+    gl::normal3f(0.0f, 0.0f, -1.0f);
     tessellator.startQuads();
     constexpr int border = 7;
     tessellator.vertex(0 - border, 128 + border, 0.0, 0.0, 1.0);
@@ -308,56 +324,56 @@ void HeldItemRenderer::render(float tickDelta) {
         }
       }
     }
-    gl::GL11::glPopMatrix();
+    gl::popMatrix();
   } else if(selectedItem != nullptr) {
-    gl::GL11::glPushMatrix();
+    gl::pushMatrix();
     constexpr float scale = 0.8f;
     float swing = handSwingProgress(*clientPlayer, tickDelta);
     float swingSin = MathHelper::sin(swing * static_cast<float>(kPi));
     float swingSqrt = MathHelper::sin(MathHelper::sqrt(swing) * static_cast<float>(kPi));
-    gl::GL11::glTranslatef(-swingSqrt * 0.4f,
-                           MathHelper::sin(MathHelper::sqrt(swing) * static_cast<float>(kPi) * 2.0f) * 0.2f,
-                           -swingSin * 0.2f);
-    gl::GL11::glTranslatef(0.7f * scale, -0.65f * scale - (1.0f - equipProgress) * 0.6f, -0.9f * scale);
-    gl::GL11::glRotatef(45.0f, 0.0f, 1.0f, 0.0f);
+    gl::translatef(-swingSqrt * 0.4f,
+                   MathHelper::sin(MathHelper::sqrt(swing) * static_cast<float>(kPi) * 2.0f) * 0.2f,
+                   -swingSin * 0.2f);
+    gl::translatef(0.7f * scale, -0.65f * scale - (1.0f - equipProgress) * 0.6f, -0.9f * scale);
+    gl::rotatef(45.0f, 0.0f, 1.0f, 0.0f);
     swing = handSwingProgress(*clientPlayer, tickDelta);
     swingSin = MathHelper::sin(swing * swing * static_cast<float>(kPi));
     swingSqrt = MathHelper::sin(MathHelper::sqrt(swing) * static_cast<float>(kPi));
-    gl::GL11::glRotatef(-swingSin * 20.0f, 0.0f, 1.0f, 0.0f);
-    gl::GL11::glRotatef(-swingSqrt * 20.0f, 0.0f, 0.0f, 1.0f);
-    gl::GL11::glRotatef(-swingSqrt * 80.0f, 1.0f, 0.0f, 0.0f);
-    gl::GL11::glScalef(0.4f, 0.4f, 0.4f);
+    gl::rotatef(-swingSin * 20.0f, 0.0f, 1.0f, 0.0f);
+    gl::rotatef(-swingSqrt * 20.0f, 0.0f, 0.0f, 1.0f);
+    gl::rotatef(-swingSqrt * 80.0f, 1.0f, 0.0f, 0.0f);
+    gl::scalef(0.4f, 0.4f, 0.4f);
     if(selectedItem->getItem() != nullptr && selectedItem->getItem()->isHandheldRod()) {
-      gl::GL11::glRotatef(180.0f, 0.0f, 1.0f, 0.0f);
+      gl::rotatef(180.0f, 0.0f, 1.0f, 0.0f);
     }
     renderItem(*clientPlayer, *selectedItem);
-    gl::GL11::glPopMatrix();
+    gl::popMatrix();
   } else if(playerRenderer != nullptr) {
-    gl::GL11::glPushMatrix();
+    gl::pushMatrix();
     constexpr float scale = 0.8f;
     float swing = handSwingProgress(*clientPlayer, tickDelta);
     float swingSin = MathHelper::sin(swing * static_cast<float>(kPi));
     float swingSqrt = MathHelper::sin(MathHelper::sqrt(swing) * static_cast<float>(kPi));
-    gl::GL11::glTranslatef(-swingSqrt * 0.3f,
-                           MathHelper::sin(MathHelper::sqrt(swing) * static_cast<float>(kPi) * 2.0f) * 0.4f,
-                           -swingSin * 0.4f);
-    gl::GL11::glTranslatef(0.8f * scale, -0.75f * scale - (1.0f - equipProgress) * 0.6f, -0.9f * scale);
-    gl::GL11::glRotatef(45.0f, 0.0f, 1.0f, 0.0f);
+    gl::translatef(-swingSqrt * 0.3f,
+                   MathHelper::sin(MathHelper::sqrt(swing) * static_cast<float>(kPi) * 2.0f) * 0.4f,
+                   -swingSin * 0.4f);
+    gl::translatef(0.8f * scale, -0.75f * scale - (1.0f - equipProgress) * 0.6f, -0.9f * scale);
+    gl::rotatef(45.0f, 0.0f, 1.0f, 0.0f);
     swing = handSwingProgress(*clientPlayer, tickDelta);
     swingSin = MathHelper::sin(swing * swing * static_cast<float>(kPi));
     swingSqrt = MathHelper::sin(MathHelper::sqrt(swing) * static_cast<float>(kPi));
-    gl::GL11::glRotatef(swingSqrt * 70.0f, 0.0f, 1.0f, 0.0f);
-    gl::GL11::glRotatef(-swingSin * 20.0f, 0.0f, 0.0f, 1.0f);
+    gl::rotatef(swingSqrt * 70.0f, 0.0f, 1.0f, 0.0f);
+    gl::rotatef(-swingSin * 20.0f, 0.0f, 0.0f, 1.0f);
     const int skinTexture =
         minecraft->textureManager.downloadTexture(clientPlayer->skinUrl, clientPlayer->getTexture());
-    gl::GL11::glBindTexture(gl::GL11::GL_TEXTURE_2D, skinTexture);
-    gl::GL11::glTranslatef(-1.0f, 3.6f, 3.5f);
-    gl::GL11::glRotatef(120.0f, 0.0f, 0.0f, 1.0f);
-    gl::GL11::glRotatef(200.0f, 1.0f, 0.0f, 0.0f);
-    gl::GL11::glRotatef(-135.0f, 0.0f, 1.0f, 0.0f);
-    gl::GL11::glTranslatef(5.6f, 0.0f, 0.0f);
+    gl::bindTexture(gl::cap::Texture2D, skinTexture);
+    gl::translatef(-1.0f, 3.6f, 3.5f);
+    gl::rotatef(120.0f, 0.0f, 0.0f, 1.0f);
+    gl::rotatef(200.0f, 1.0f, 0.0f, 0.0f);
+    gl::rotatef(-135.0f, 0.0f, 1.0f, 0.0f);
+    gl::translatef(5.6f, 0.0f, 0.0f);
     playerRenderer->renderHand();
-    gl::GL11::glPopMatrix();
+    gl::popMatrix();
   }
   platform::Lighting::turnOff();
 }
@@ -365,16 +381,16 @@ void HeldItemRenderer::renderScreenOverlays(float tickDelta) {
   if(minecraft == nullptr || minecraft->player == nullptr || minecraft->world == nullptr) {
     return;
   }
-  gl::GL11::glDisable(gl::GL11::GL_ALPHA_TEST);
+  const gl::preset::BlockOverlay overlayCaps;
   if(minecraft->player->isOnFire()) {
-    gl::GL11::glBindTexture(gl::GL11::GL_TEXTURE_2D, minecraft->textureManager.getTextureId("/terrain.png"));
+    gl::bindTexture(gl::cap::Texture2D, minecraft->textureManager.getTextureId("/terrain.png"));
     renderFireOverlay();
   }
   if(minecraft->player->isInsideWall()) {
     const int blockX = MathHelper::floor(minecraft->player->x);
     const int blockY = MathHelper::floor(minecraft->player->y);
     const int blockZ = MathHelper::floor(minecraft->player->z);
-    gl::GL11::glBindTexture(gl::GL11::GL_TEXTURE_2D, minecraft->textureManager.getTextureId("/terrain.png"));
+    gl::bindTexture(gl::cap::Texture2D, minecraft->textureManager.getTextureId("/terrain.png"));
     int blockId = minecraft->world->getBlockId(blockX, blockY, blockZ);
     if(minecraft->world->shouldSuffocate(blockX, blockY, blockZ)) {
       if(net::minecraft::block::Block* block =
@@ -403,10 +419,9 @@ void HeldItemRenderer::renderScreenOverlays(float tickDelta) {
     }
   }
   if(minecraft->player->isInFluid(net::minecraft::block::material::Material::WATER)) {
-    gl::GL11::glBindTexture(gl::GL11::GL_TEXTURE_2D, minecraft->textureManager.getTextureId("/misc/water.png"));
+    gl::bindTexture(gl::cap::Texture2D, minecraft->textureManager.getTextureId("/misc/water.png"));
     renderUnderwaterOverlay(*minecraft->player, tickDelta);
   }
-  gl::GL11::glEnable(gl::GL11::GL_ALPHA_TEST);
 }
 void HeldItemRenderer::tick() {
   if(minecraft == nullptr || minecraft->player == nullptr) {

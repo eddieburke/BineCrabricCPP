@@ -1,5 +1,5 @@
 #include "net/minecraft/client/render/entity/ProjectileEntityRenderer.hpp"
-#include "net/minecraft/client/gl/GL11.hpp"
+#include "net/minecraft/client/gl/GlState.hpp"
 #include "net/minecraft/client/render/Tessellator.hpp"
 #include "net/minecraft/client/render/entity/EntityRenderDispatcher.hpp"
 #include "net/minecraft/entity/Entity.hpp"
@@ -11,8 +11,8 @@ void ProjectileEntityRenderer::render(const net::minecraft::Entity& entity, doub
   (void)yaw;
   (void)tickDelta;
   const gl::MatrixGuard matrix;
-  gl::GL11::glTranslatef(static_cast<float>(x), static_cast<float>(y), static_cast<float>(z));
-  gl::GL11::glScalef(0.5f, 0.5f, 0.5f);
+  gl::translatef(static_cast<float>(x), static_cast<float>(y), static_cast<float>(z));
+  gl::scalef(0.5f, 0.5f, 0.5f);
   bindTexture("/gui/items.png");
   Tessellator& tessellator = Tessellator::INSTANCE;
   const float uMin = static_cast<float>((itemTextureId % 16 * 16) + 0) / 256.0f;
@@ -23,8 +23,8 @@ void ProjectileEntityRenderer::render(const net::minecraft::Entity& entity, doub
   constexpr float half = 0.5f;
   constexpr float quarter = 0.25f;
   if(dispatcher != nullptr) {
-    gl::GL11::glRotatef(180.0f - dispatcher->yaw_, 0.0f, 1.0f, 0.0f);
-    gl::GL11::glRotatef(-dispatcher->pitch_, 1.0f, 0.0f, 0.0f);
+    gl::rotatef(180.0f - dispatcher->yaw_, 0.0f, 1.0f, 0.0f);
+    gl::rotatef(-dispatcher->pitch_, 1.0f, 0.0f, 0.0f);
   }
   tessellator.startQuads();
   tessellator.normal(0.0f, 1.0f, 0.0f);

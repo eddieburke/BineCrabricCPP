@@ -1,17 +1,27 @@
 #pragma once
 #include "net/minecraft/client/option/ResolvedRenderOptions.hpp"
 #include "net/minecraft/client/render/Tessellator.hpp"
-#include "net/minecraft/client/render/block/BlockFaceRenderState.hpp"
 #include "net/minecraft/client/render/chunk/ModChunkMesh.hpp"
 #include "net/minecraft/mod/ModTexture.hpp"
 #include "net/minecraft/util/math/Types.hpp"
+#include <cmath>
 namespace net::minecraft {
 class BlockView;
 }
+#include "net/minecraft/block/Block.hpp"
 namespace net::minecraft::client::texture {
 class TextureManager;
 }
 namespace net::minecraft::client::render::block {
+struct BlockFaceVertexColors {
+  float red[4] = {1.0f, 1.0f, 1.0f, 1.0f};
+  float green[4] = {1.0f, 1.0f, 1.0f, 1.0f};
+  float blue[4] = {1.0f, 1.0f, 1.0f, 1.0f};
+};
+struct BlockFaceRenderState {
+  bool useAo = false;
+  BlockFaceVertexColors colors;
+};
 // Mutable rendering state shared by the cooperating block renderers (faces,
 // cube, fluid, plants, mechanisms, inventory icon). In the original beta 1.7.3
 // RenderBlocks these were all fields of one god-class; pulling them into a
@@ -89,5 +99,36 @@ struct BlockRenderContext {
     }
     return texture;
   }
+  [[nodiscard]] bool isSideVisible(const net::minecraft::block::Block& block, int x, int y, int z, int side) const {
+    return block.isSideVisibleForBounds(blockView, x, y, z, side, renderBounds);
+  }
 };
+inline void emitBlockVertex(Tessellator& tess, float nx, float ny, float nz, double x, double y, double z, double u,
+                            double v) {
+  tess.normal(nx, ny, nz);
+  tess.vertex(x, y, z, u, v);
+}
+inline void quadNormal(double ax, double ay, double az, double bx, double by, double bz, double cx, double cy, double cz,
+                       float& nx, float& ny, float& nz) noexcept {
+  const double e1x = bx - ax;
+  const double e1y = by - ay;
+  const double e1z = bz - az;
+  const double e2x = cx - ax;
+  const double e2y = cy - ay;
+  const double e2z = cz - az;
+  const double rawX = e1y * e2z - e1z * e2y;
+  const double rawY = e1z * e2x - e1x * e2z;
+  const double rawZ = e1x * e2y - e1y * e2x;
+  const double len = std::sqrt(rawX * rawX + rawY * rawY + rawZ * rawZ);
+  if(len < 1.0e-8) {
+    nx = 0.0f;
+    ny = 1.0f;
+    nz = 0.0f;
+    return;
+  }
+  const float inv = static_cast<float>(1.0 / len);
+  nx = static_cast<float>(rawX) * inv;
+  ny = static_cast<float>(rawY) * inv;
+  nz = static_cast<float>(rawZ) * inv;
+}
 } // namespace net::minecraft::client::render::block

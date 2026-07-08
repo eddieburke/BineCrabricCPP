@@ -1,6 +1,5 @@
 #pragma once
 #include "net/minecraft/block/Block.hpp"
-#include "net/minecraft/client/gl/GL11.hpp"
 #include "net/minecraft/client/particle/BlockParticle.hpp"
 #include "net/minecraft/client/particle/Particle.hpp"
 #include "net/minecraft/client/texture/TextureManager.hpp"
@@ -61,10 +60,22 @@ public:
         continue;
       }
       const char* texture = group == 0 ? "/particles.png" : (group == 1 ? "/terrain.png" : "/gui/items.png");
-      textureManager_->bindTexture(textureManager_->getTextureId(texture));
+      const int defaultTextureId = textureManager_->getTextureId(texture);
+      int boundTextureId = defaultTextureId;
+      textureManager_->bindTexture(boundTextureId);
       render::Tessellator& tessellator = render::Tessellator::INSTANCE;
       tessellator.startQuads();
       for(const auto& particle : particles_[static_cast<std::size_t>(group)]) {
+        if(group == 1) {
+          const int particleTextureId = particle->boundTextureGl(*textureManager_);
+          const int nextTextureId = particleTextureId >= 0 ? particleTextureId : defaultTextureId;
+          if(nextTextureId != boundTextureId) {
+            tessellator.draw();
+            boundTextureId = nextTextureId;
+            textureManager_->bindTexture(boundTextureId);
+            tessellator.startQuads();
+          }
+        }
         particle->render(tessellator, partialTicks, yawCos, verticalSize, yawSin, widthOffset, heightOffset);
       }
       tessellator.draw();

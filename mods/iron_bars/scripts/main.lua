@@ -35,6 +35,9 @@ minecraft.register_block({
     full_cube = false,
     stack_on_same = true,
   },
+  item = {
+    texture = "mods/iron_bars/iron_bars.png",
+  },
 })
 
 minecraft.register_shaped_recipe({

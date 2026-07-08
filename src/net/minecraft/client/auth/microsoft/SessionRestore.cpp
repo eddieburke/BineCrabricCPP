@@ -111,7 +111,7 @@ void applyAccount(const MicrosoftAccount& account, net::minecraft::client::util:
 }
 void applyAccountToClient(net::minecraft::client::Minecraft& client, const MicrosoftAccount& account) {
   applyAccount(account, client.session);
-  refreshPlayerTextures(client);
+  refreshPlayerTextures(client, account.slimArms);
 }
 void clearSession(net::minecraft::client::util::Session& session) {
   session.username.clear();

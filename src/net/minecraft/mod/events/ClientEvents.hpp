@@ -1,4 +1,5 @@
 #pragma once
+#include "net/minecraft/util/hit/HitResultType.hpp"
 namespace net::minecraft {
 class World;
 namespace client {
@@ -16,6 +17,22 @@ namespace net::minecraft::client::gui::screen {
 class Screen;
 }
 namespace net::minecraft::mod {
+struct RaycastEvent {
+  client::Minecraft* client = nullptr;
+  entity::player::PlayerEntity* player = nullptr;
+  World* world = nullptr;
+  bool hasHit = false;
+  HitResultType type = HitResultType::BLOCK;
+  int blockX = 0;
+  int blockY = 0;
+  int blockZ = 0;
+  int side = 0;
+  int blockId = 0;
+  double hitX = 0.0;
+  double hitY = 0.0;
+  double hitZ = 0.0;
+  entity::Entity* entity = nullptr;
+};
 struct ClientTickEvent {
   client::Minecraft* client = nullptr;
   entity::player::PlayerEntity* player = nullptr;

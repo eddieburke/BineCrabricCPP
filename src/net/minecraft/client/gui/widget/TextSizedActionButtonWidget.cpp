@@ -1,7 +1,7 @@
 #include "net/minecraft/client/gui/widget/TextSizedActionButtonWidget.hpp"
 #include "net/minecraft/client/Minecraft.hpp"
 #include "net/minecraft/client/font/TextRenderer.hpp"
-#include "net/minecraft/client/gl/GL11.hpp"
+#include "net/minecraft/client/gl/GlState.hpp"
 #include "net/minecraft/client/texture/TextureManager.hpp"
 namespace net::minecraft::client::gui::widget {
 int TextSizedActionButtonWidget::measureWidth(const font::TextRenderer& textRenderer, const std::string& text) {
@@ -13,8 +13,8 @@ void TextSizedActionButtonWidget::render(client::Minecraft& minecraft, font::Tex
     return;
   }
   const int textureId = minecraft.textureManager.getTextureId("/gui/gui.png");
-  gl::GL11::glBindTexture(gl::GL11::GL_TEXTURE_2D, textureId);
-  gl::GL11::glColor4f(1.0f, 1.0f, 1.0f, 1.0f);
+  gl::bindTexture(gl::cap::Texture2D, textureId);
+  gl::color4f(1.0f, 1.0f, 1.0f, 1.0f);
   const bool hovered = mouseX >= x && mouseY >= y && mouseX < x + width && mouseY < y + height;
   const int imageY = getYImage(hovered);
   drawTexture(x, y, kLeftCrop, 46 + imageY * 20, width / 2, height);

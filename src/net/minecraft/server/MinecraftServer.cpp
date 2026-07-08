@@ -77,7 +77,22 @@ MinecraftServer::~MinecraftServer() {
   worlds[1] = nullptr;
 }
 std::filesystem::path MinecraftServer::getFile(const std::string& path) const {
-  return std::filesystem::path(path);
+  // Dedicated-server data lives in %APPDATA%/.minecraft/serverdata (falling
+  // back to the home directory when APPDATA is unset) instead of the CWD.
+  static const std::filesystem::path dataRoot = [] {
+    const char* base = std::getenv("APPDATA");
+    if(base == nullptr) {
+      base = std::getenv("USERPROFILE");
+    }
+    if(base == nullptr) {
+      base = ".";
+    }
+    std::filesystem::path root = std::filesystem::path(base) / ".minecraft" / "serverdata";
+    std::error_code errorCode;
+    std::filesystem::create_directories(root, errorCode);
+    return root;
+  }();
+  return dataRoot / path;
 }
 void MinecraftServer::sendMessage(const std::string& message) {
   ServerLog::LOGGER.info(message);
@@ -362,7 +377,7 @@ void MinecraftServer::shutdown() {
 void MinecraftServer::stop() {
   running = false;
   if(connections != nullptr) {
-    connections->close();
+    connections->stopAccepting();
   }
 }
 void MinecraftServer::run() {
@@ -412,6 +427,9 @@ void MinecraftServer::run() {
   }
   try {
     if(initialized) {
+      if(connections != nullptr) {
+        connections->close();
+      }
       shutdown();
     }
     stopped = true;

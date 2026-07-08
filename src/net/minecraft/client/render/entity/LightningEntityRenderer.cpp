@@ -1,5 +1,5 @@
 #include "net/minecraft/client/render/entity/EntityRenderers.hpp"
-#include "net/minecraft/client/gl/GL11.hpp"
+#include "net/minecraft/client/gl/GlState.hpp"
 #include "net/minecraft/client/render/Tessellator.hpp"
 #include "net/minecraft/client/render/platform/Lighting.hpp"
 #include "net/minecraft/entity/LightningEntity.hpp"
@@ -15,10 +15,8 @@ void LightningEntityRenderer::render(const net::minecraft::Entity& entity, doubl
     return;
   }
   Tessellator& tessellator = Tessellator::INSTANCE;
-  const gl::DisableGuard texture(gl::GL11::GL_TEXTURE_2D);
-  const platform::LightingOffGuard lighting;
-  gl::GL11::glEnable(gl::GL11::GL_BLEND);
-  gl::GL11::glBlendFunc(gl::GL11::GL_SRC_ALPHA, gl::GL11::GL_ONE);
+  const gl::preset::LightningFlash lightningCaps;
+  render::platform::Lighting::turnOff();
   double offsets[8]{};
   double offsets2[8]{};
   double offsetX = 0.0;
@@ -90,7 +88,7 @@ void LightningEntityRenderer::render(const net::minecraft::Entity& entity, doubl
       }
     }
   }
-  gl::GL11::glDisable(gl::GL11::GL_BLEND);
+  render::platform::Lighting::turnOn();
 }
 } // namespace net::minecraft::client::render::entity
 #include "net/minecraft/client/entity/EntityClientRendererRegistration.hpp"

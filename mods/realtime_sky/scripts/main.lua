@@ -1,5 +1,6 @@
 local earth_time_solar = minecraft.require("scripts.earth_time_solar")
 local places = minecraft.require("scripts.places")
+local globe_ui = minecraft.require("scripts.globe_ui")
 
 local SCREEN_ID = "realtime_sky:globe"
 local CONFIG_FILE = "realtime_sky.txt"
@@ -53,7 +54,7 @@ local ui = {
   selected_index = 1,
   filtered = places.all(),
   globe_x = 10,
-  globe_y = 24,
+  globe_y = 32,
   globe_size = 220,
   globe_yaw = 0.0,
   globe_pitch = 0.0,
@@ -130,7 +131,7 @@ local function ensure_coastlines()
   end
   local coast_text = minecraft.read_asset("assets/globe_coasts.txt")
   if coast_text and coast_text ~= "" then
-    minecraft.globe.load_coastlines(coast_text)
+    globe_ui.load_coastlines(coast_text)
     ui.coast_loaded = true
   end
 end
@@ -160,15 +161,6 @@ local function apply_place(place)
   save_settings()
 end
 
-local function layout(width, height)
-  ui.globe_size = math.min(math.floor(width / 2) - 26, height - 72)
-  if ui.globe_size < 120 then
-    ui.globe_size = 120
-  end
-  ui.globe_x = 10
-  ui.globe_y = 24
-end
-
 local function list_column_left(width)
   return math.floor(width / 2) + 6
 end
@@ -178,7 +170,7 @@ local function list_column_width(width)
 end
 
 local function list_top()
-  return 56
+  return 68
 end
 
 local function list_bottom(height)
@@ -187,6 +179,21 @@ end
 
 local function visible_rows(height)
   return math.max(1, math.floor((list_bottom(height) - list_top()) / 14))
+end
+
+local function layout(width, height)
+  ui.globe_size = math.min(math.floor(width / 2) - 26, height - 72)
+  if ui.globe_size < 120 then
+    ui.globe_size = 120
+  end
+  ui.globe_x = 10
+  ui.globe_y = 32
+  local left = list_column_left(width)
+  local col_w = list_column_width(width)
+  ui.dst_toggle_y = height - 24
+  ui.dst_toggle_x = left
+  ui.dst_toggle_w = math.floor(col_w / 2) - 4
+  ui.dst_toggle_h = 20
 end
 
 local function format_lat_lon(lat, lon)
@@ -223,8 +230,8 @@ local function draw_list(width, height, mouse_x, mouse_y)
     ui.list_scroll = 0
   end
 
-  minecraft.gui.draw_text(left, 8, "Places", 0xFF909090)
-  minecraft.gui.draw_text(left, 38, fit_text("Zone: " .. settings.time_zone_id, col_w), 0xFFFFFFAA)
+  minecraft.gui.draw_text(left, 40, "Places", 0xFF909090)
+  minecraft.gui.draw_text(left, 52, fit_text("Zone: " .. settings.time_zone_id, col_w), 0xFFFFFFAA)
 
   for row = 0, rows - 1 do
     local index = ui.list_scroll + row + 1
@@ -299,7 +306,7 @@ minecraft.on(minecraft.events.world_render, {
 end)
 
 open_globe_screen = function()
-  minecraft.screen.open(SCREEN_ID)
+  minecraft.screen.open(SCREEN_ID, { title = "Real-time sky" })
 end
 
 minecraft.screen.on_ui(minecraft.screen.ids.world_settings, minecraft.screen.regions.footer, function(event)
@@ -314,10 +321,6 @@ minecraft.screen.on_lua_screen(SCREEN_ID, {
     local left = list_column_left(event.width)
     local col_w = list_column_width(event.width)
     local button_y = event.height - 24
-    minecraft.screen.add_button(left, button_y, math.floor(col_w / 2) - 4, 20, "DST: " .. (settings.use_dst and "ON" or "OFF"), function()
-      settings.use_dst = not settings.use_dst
-      save_settings()
-    end)
     minecraft.screen.add_button(left + math.floor(col_w / 2) + 4, button_y, math.floor(col_w / 2) - 4, 20, "Done", function()
       save_settings()
       minecraft.screen.close()
@@ -331,32 +334,19 @@ minecraft.screen.on_lua_screen(SCREEN_ID, {
       local dy = event.mouse_y - ui.drag_last_y
       if dx ~= 0 or dy ~= 0 then
         local sens = 0.58 * (3.15 / ui.globe_cam)
-        if math.abs(dx) >= math.abs(dy) then
-          ui.globe_yaw = ui.globe_yaw - dx * sens
-        else
-          ui.globe_pitch = ui.globe_pitch - dy * sens
-        end
+        ui.globe_yaw = ui.globe_yaw - dx * sens
+        ui.globe_pitch = ui.globe_pitch - dy * sens
         ui.globe_pitch = clamp(ui.globe_pitch, -89.0, 89.0)
         ui.drag_last_x = event.mouse_x
         ui.drag_last_y = event.mouse_y
       end
     end
-    minecraft.gui.draw_centered_text(0, 8, event.width, "Real-time sky", 0xFFFFFFFF)
-    minecraft.gui.draw_globe({
-      x = ui.globe_x,
-      y = ui.globe_y,
-      size = ui.globe_size,
-      gui_width = event.width,
-      gui_height = event.height,
-      pin_lat = settings.latitude,
-      pin_lon = settings.longitude,
-      yaw_deg = ui.globe_yaw,
-      pitch_deg = ui.globe_pitch,
-      cam_dist = ui.globe_cam,
-    })
+    globe_ui.draw(ui, event.width, event.height, settings.latitude, settings.longitude)
     draw_globe_chrome()
     draw_globe_overlay(event.width)
     draw_list(event.width, event.height, event.mouse_x, event.mouse_y)
+    minecraft.gui.draw_toggle(ui.dst_toggle_x, ui.dst_toggle_y, ui.dst_toggle_w, ui.dst_toggle_h, "DST",
+      settings.use_dst, event.mouse_x, event.mouse_y)
   end,
   mouse = function(event)
     if event.released then
@@ -364,16 +354,7 @@ minecraft.screen.on_lua_screen(SCREEN_ID, {
         local dx = event.x - ui.press_x
         local dy = event.y - ui.press_y
         if dx * dx + dy * dy <= 9 then
-          local picked = minecraft.globe.pick_lat_lon({
-            mouse_x = event.x,
-            mouse_y = event.y,
-            x = ui.globe_x,
-            y = ui.globe_y,
-            size = ui.globe_size,
-            yaw_deg = ui.globe_yaw,
-            pitch_deg = ui.globe_pitch,
-            cam_dist = ui.globe_cam,
-          })
+          local picked = globe_ui.pick_lat_lon(ui, event.width, event.height, event.x, event.y)
           if picked then
             settings.latitude = picked.lat
             settings.longitude = picked.lon
@@ -388,7 +369,13 @@ minecraft.screen.on_lua_screen(SCREEN_ID, {
     if event.button ~= 0 then
       return
     end
-    if minecraft.globe.contains_point(event.x, event.y, ui.globe_x, ui.globe_y, ui.globe_size) then
+    if minecraft.util.in_rect(event.x, event.y, ui.dst_toggle_x, ui.dst_toggle_y, ui.dst_toggle_w, ui.dst_toggle_h) then
+      settings.use_dst = not settings.use_dst
+      save_settings()
+      event.handled = true
+      return
+    end
+    if globe_ui.contains_point(event.x, event.y, ui.globe_x, ui.globe_y, ui.globe_size) then
       ui.dragging = true
       ui.press_x = event.x
       ui.press_y = event.y
@@ -429,7 +416,7 @@ minecraft.screen.on_lua_screen(SCREEN_ID, {
       event.handled = true
       return
     end
-    if minecraft.globe.contains_point(event.x, event.y, ui.globe_x, ui.globe_y, ui.globe_size) then
+    if globe_ui.contains_point(event.x, event.y, ui.globe_x, ui.globe_y, ui.globe_size) then
       if event.delta > 0 then
         ui.globe_cam = ui.globe_cam - 0.24
       else

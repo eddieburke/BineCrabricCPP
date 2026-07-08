@@ -14,8 +14,9 @@ public:
   [[nodiscard]] bool shouldPause() const override {
     return true;
   }
+  [[nodiscard]] std::string_view getScreenUiId() const override { return net::minecraft::mod::screen_ids::kAchievements; }
 
-private:
+ private:
   void setTitle();
   void renderIcons(int mouseX, int mouseY, float tickDelta);
   void drawHorizontalLine(int x1, int x2, int y, int color);
