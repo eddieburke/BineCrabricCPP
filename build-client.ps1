@@ -7,7 +7,7 @@
 #   .\build-client.ps1 -Run -- --username Player
 #
 # Forwards -Clean, -Jobs, -BuildType, -BuildDir, -Lto, -NoLto, -NoNativeCpu,
-# -SkipModPackaging, and -RunTests to build-omega.ps1.
+# and -RunTests to build-omega.ps1.
 
 param(
     [string]$BuildDir = "build-omega",
@@ -18,7 +18,6 @@ param(
     [switch]$Lto,
     [switch]$NoLto,
     [switch]$NoNativeCpu,
-    [switch]$SkipModPackaging,
     [switch]$RunTests,
     [switch]$Run,
     [Parameter(ValueFromRemainingArguments = $true)]
@@ -38,7 +37,6 @@ if ($Clean) { $buildArgs.Clean = $true }
 if ($Lto) { $buildArgs.Lto = $true }
 if ($NoLto) { $buildArgs.NoLto = $true }
 if ($NoNativeCpu) { $buildArgs.NoNativeCpu = $true }
-if ($SkipModPackaging) { $buildArgs.SkipModPackaging = $true }
 if ($RunTests) { $buildArgs.RunTests = $true }
 
 & (Join-Path $ScriptDir "build-omega.ps1") @buildArgs
