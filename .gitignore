@@ -68,8 +68,9 @@ ipch/
 # Build lock
 .build-omega.lock
 
-# Local toolchain
-toolchain/
+# Bundled GCC toolchain (downloaded by build-omega.ps1; manifest.json is tracked)
+toolchain/*
+!toolchain/manifest.json
 
 # Local build logs (use cleanup.ps1)
 _build_out*.txt

@@ -60,21 +60,25 @@ void TitleScreen::init() {
   addCenteredActionButton(
       layout::menuRowY(h, 0), resource::language::I18n::getTranslation("menu.singleplayer"),
       [this, returnToTitle] { navigateTo(std::make_unique<world::SelectWorldScreen>(returnToTitle)); });
-  multiplayerButton_ = &addCenteredActionButton(
-      layout::menuRowY(h, 1), resource::language::I18n::getTranslation("menu.multiplayer"),
+  multiplayerButton_ = &addActionButton(
+      layout::centerBtnX(w), layout::menuRowY(h, 1), layout::kSplitButtonWidth,
+      layout::kDefaultButtonHeight, resource::language::I18n::getTranslation("menu.multiplayer"),
       [this, returnToTitle] {
         navigateTo(std::make_unique<MultiplayerScreen>(returnToTitle));
       });
-  addCenteredActionButton(layout::menuRowY(h, 2), resource::language::I18n::getTranslation("menu.mods"),
-                          [this, returnToTitle] { navigateTo(std::make_unique<mod::ModsScreen>(returnToTitle)); });
-  addActionButton(layout::centerBtnX(w), layout::menuSplitRowY(h, 3), layout::kSplitButtonWidth,
+  addActionButton(
+      layout::centerBtnX(w) + layout::kSplitButtonWidth + 4, layout::menuRowY(h, 1),
+      layout::kSplitButtonWidth, layout::kDefaultButtonHeight,
+      resource::language::I18n::getTranslation("menu.mods"),
+      [this, returnToTitle] { navigateTo(std::make_unique<mod::ModsScreen>(returnToTitle)); });
+  addActionButton(layout::centerBtnX(w), layout::menuRowY(h, 2), layout::kSplitButtonWidth,
                   layout::kDefaultButtonHeight, resource::language::I18n::getTranslation("menu.options"),
                   [this, returnToTitle] {
                     if(minecraft() != nullptr) {
                       navigateTo(std::make_unique<option::OptionsScreen>(returnToTitle, &minecraft()->options));
                     }
                   });
-  addActionButton(layout::centerBtnX(w) + layout::kSplitButtonWidth + 4, layout::menuSplitRowY(h, 3),
+  addActionButton(layout::centerBtnX(w) + layout::kSplitButtonWidth + 4, layout::menuRowY(h, 2),
                   layout::kSplitButtonWidth, layout::kDefaultButtonHeight,
                   resource::language::I18n::getTranslation("menu.quit"), [this] { quitGame(); });
   const auth::AccountUiSnapshot accountUi =

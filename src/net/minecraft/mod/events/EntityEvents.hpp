@@ -1,4 +1,5 @@
 #pragma once
+#include <string>
 namespace net::minecraft {
 class ItemStack;
 class World;
@@ -74,5 +75,15 @@ struct FurnaceOutputTakeEvent {
   entity::player::PlayerEntity* player = nullptr;
   ItemStack* stack = nullptr;
   bool canceled = false;
+};
+struct EntitySpawnEvent {
+  entity::Entity* entity = nullptr;
+  int entityId = 0;
+  std::string entityType;
+};
+struct EntityRemoveEvent {
+  entity::Entity* entity = nullptr;
+  int entityId = 0;
+  std::string entityType;
 };
 } // namespace net::minecraft::mod
