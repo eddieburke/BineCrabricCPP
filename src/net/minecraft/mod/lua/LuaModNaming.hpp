@@ -1,6 +1,7 @@
 #pragma once
 #include <string>
 #include <string_view>
+
 namespace net::minecraft::mod::lua {
 // Lowercases and strips whitespace so name lookups (register_block/register_item
 // aliases) are forgiving about case and spacing.
@@ -11,4 +12,4 @@ namespace net::minecraft::mod::lua {
 // Turns a translation key into a human-readable display name fallback
 // ("iron_bars.name" -> "Iron Bars Name").
 [[nodiscard]] std::string humanizeTranslationKey(std::string_view raw);
-} // namespace net::minecraft::mod::lua
+}  // namespace net::minecraft::mod::lua

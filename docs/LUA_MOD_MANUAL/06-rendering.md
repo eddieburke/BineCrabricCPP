@@ -160,6 +160,19 @@ minecraft.render.release_texture(tex.id)  -- bool; only mod-owned ids
 
 ---
 
+## Get texture pixels
+
+```lua
+local image = minecraft.render.get_texture_pixels(path_or_id)
+-- returns { width = int, height = int, pixels = { 0xFFRRGGBB, ... } } or nil
+```
+
+- Accepts a texture resource path (e.g. `"gui/items.png"`, `"terrain.png"`, `"mods/my_mod/texture.png"`) or an OpenGL texture ID.
+- Returns a table containing `width`, `height`, and a flat `pixels` array of 32-bit ARGB values.
+- Returns `nil` if the texture cannot be loaded or found.
+
+---
+
 ## `minecraft.tessellator.quad`
 
 For **manual block/item models** (`model.type = "manual"`):

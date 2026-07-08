@@ -1,6 +1,8 @@
 #pragma once
-#include "net/minecraft/client/util/Session.hpp"
 #include <string>
+
+#include "net/minecraft/client/util/Session.hpp"
+
 namespace net::minecraft::client::session {
 // Runtime identity override for offline-mode (non-authenticated) multiplayer joins.
 //
@@ -17,4 +19,4 @@ void clearOfflineUsername();
 // override when one is set and the session is not authenticated, otherwise the live
 // session username.
 [[nodiscard]] std::string resolveJoinUsername(const util::Session& session);
-} // namespace net::minecraft::client::session
+}  // namespace net::minecraft::client::session

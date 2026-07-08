@@ -1,50 +1,58 @@
 #pragma once
-#include "net/minecraft/mod/HookBus.hpp"
 #include <functional>
 #include <string>
 #include <string_view>
+
+#include "net/minecraft/mod/HookBus.hpp"
+
 namespace net::minecraft::client::gui::screen {
 class Screen;
 }
+
 namespace net::minecraft::client::gui::widget {
 class ActionButtonWidget;
 }
+
 namespace net::minecraft::mod {
 struct ScreenUiContext {
-  client::gui::screen::Screen* screen = nullptr;
-  std::string_view screenId;
-  std::string_view region;
-  int* stackedButtonY = nullptr;
-  [[nodiscard]] client::gui::widget::ActionButtonWidget& addCenteredButton(int y, std::string text,
-                                                                           std::function<void()> onClick) const;
-  [[nodiscard]] client::gui::widget::ActionButtonWidget& addButton(int x, int y, int width, int height, std::string text,
-                                                                   std::function<void()> onClick) const;
-  [[nodiscard]] client::gui::widget::ActionButtonWidget& addStackedCenteredButton(std::string text,
-                                                                                  std::function<void()> onClick) const;
+    client::gui::screen::Screen* screen = nullptr;
+    std::string_view screenId;
+    std::string_view region;
+    int* stackedButtonY = nullptr;
+    [[nodiscard]] client::gui::widget::ActionButtonWidget& addCenteredButton(int y,
+                                                                             std::string text,
+                                                                             std::function<void()> onClick) const;
+    [[nodiscard]] client::gui::widget::ActionButtonWidget& addButton(
+        int x, int y, int width, int height, std::string text, std::function<void()> onClick) const;
+    [[nodiscard]] client::gui::widget::ActionButtonWidget& addStackedCenteredButton(
+        std::string text, std::function<void()> onClick) const;
 };
+
 struct ScreenUiEvent {
-  ScreenUiContext* context = nullptr;
+    ScreenUiContext* context = nullptr;
 };
 enum class ScreenRegionPhase {
-  Render,
-  MouseClick,
-  MouseScroll,
+    Render,
+    MouseClick,
+    MouseScroll,
 };
+
 struct ScreenRegionEvent {
-  client::gui::screen::Screen* screen = nullptr;
-  std::string_view screenId;
-  std::string_view region;
-  ScreenRegionPhase phase = ScreenRegionPhase::Render;
-  int mouseX = 0;
-  int mouseY = 0;
-  int button = 0;
-  int scrollDelta = 0;
-  int x = 0;
-  int y = 0;
-  int width = 0;
-  int height = 0;
-  bool handled = false;
+    client::gui::screen::Screen* screen = nullptr;
+    std::string_view screenId;
+    std::string_view region;
+    ScreenRegionPhase phase = ScreenRegionPhase::Render;
+    int mouseX = 0;
+    int mouseY = 0;
+    int button = 0;
+    int scrollDelta = 0;
+    int x = 0;
+    int y = 0;
+    int width = 0;
+    int height = 0;
+    bool handled = false;
 };
+
 // Stable, first-party screen ids. Every GUI that a mod might want to inject into or
 // target exposes one of these from Screen::getScreenUiId(). Screens that do not
 // override getScreenUiId() still publish under their (mangled) typeid name, but
@@ -84,7 +92,8 @@ inline constexpr std::string_view kLanInfo = "minecraft:lan_info";
 inline constexpr std::string_view kServerModDownload = "minecraft:server_mod_download";
 inline constexpr std::string_view kFatalError = "minecraft:fatal_error";
 inline constexpr std::string_view kOutOfMemory = "minecraft:out_of_memory";
-} // namespace screen_ids
+}  // namespace screen_ids
+
 namespace screen_regions {
 inline constexpr std::string_view kFooter = "footer";
 inline constexpr std::string_view kSidePanel = "side_panel";
@@ -92,5 +101,5 @@ inline constexpr std::string_view kSidePanel = "side_panel";
 // a mod can add buttons/behaviour to any GUI by matching context->screenId.
 // Screens without an explicit getScreenUiId() expose their typeid name as the id.
 inline constexpr std::string_view kScreen = "screen";
-} // namespace screen_regions
-} // namespace net::minecraft::mod
+}  // namespace screen_regions
+}  // namespace net::minecraft::mod

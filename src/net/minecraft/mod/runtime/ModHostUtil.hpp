@@ -4,6 +4,7 @@
 #include <string>
 #include <string_view>
 #include <vector>
+
 namespace net::minecraft::mod::runtime {
 inline constexpr std::uintmax_t kMaxModArchiveBytes = 256U * 1024U * 1024U;
 inline constexpr std::uint64_t kMaxModEntryBytes = 64U * 1024U * 1024U;
@@ -21,4 +22,4 @@ std::vector<std::uint8_t> readFileBytes(const std::filesystem::path& path);
 std::string readFileText(const std::filesystem::path& path);
 bool writeFileBytes(const std::filesystem::path& path, const std::vector<std::uint8_t>& bytes);
 bool writeFileText(const std::filesystem::path& path, const std::string& text);
-} // namespace net::minecraft::mod::runtime
+}  // namespace net::minecraft::mod::runtime

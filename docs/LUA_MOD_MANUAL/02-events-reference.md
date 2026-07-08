@@ -468,6 +468,64 @@ Phase name strings match `minecraft.lifecycle.*` constants.
 
 ---
 
+## `pre_entity_render`
+
+Fired before any entity is rendered. Set `canceled = true` to hide/cancel rendering.
+
+| Field | Type | R/W | Description |
+|-------|------|-----|-------------|
+| `entity_id` | int | R | Entity instance ID |
+| `entity_type` | string | R | Entity type name (e.g. `"Item"`, `"Pig"`) |
+| `tick_delta` | number | R | Partial tick |
+| `canceled` | bool | R/W | Set `true` to cancel vanilla rendering |
+| `item_id` | int | R | Present only if `entity_type == "Item"` |
+| `item_count` | int | R | Present only if `entity_type == "Item"` |
+| `item_damage` | int | R | Present only if `entity_type == "Item"` |
+| `texture_path` | string | R | Present only if `entity_type == "Item"` |
+| `atlas_index` | int | R | Present only if `entity_type == "Item"` |
+| `mod_texture` | bool | R | Present only if `entity_type == "Item"` |
+
+---
+
+## `pre_tile_entity_render`
+
+Fired before any block entity (tile entity) is rendered. Set `canceled = true` to hide/cancel rendering.
+
+| Field | Type | R/W | Description |
+|-------|------|-----|-------------|
+| `x`, `y`, `z` | int | R | Block position |
+| `id` | string | R | Tile entity ID |
+| `tick_delta` | number | R | Partial tick |
+| `canceled` | bool | R/W | Set `true` to cancel vanilla rendering |
+
+---
+
+## `entity_spawn`
+
+Fired when an entity is spawned in the world.
+
+| Field | Type | R/W | Description |
+|-------|------|-----|-------------|
+| `entity_id` | int | R | Entity instance ID |
+| `entity_type` | string | R | Entity type name |
+| `item_id`, `item_count`, `item_damage` | int | R | Present only if `entity_type == "Item"` |
+| `texture_path`, `atlas_index`, `mod_texture` | | R | Present only if `entity_type == "Item"` |
+
+---
+
+## `entity_remove`
+
+Fired when an entity is removed from the world.
+
+| Field | Type | R/W | Description |
+|-------|------|-----|-------------|
+| `entity_id` | int | R | Entity instance ID |
+| `entity_type` | string | R | Entity type name |
+| `item_id`, `item_count`, `item_damage` | int | R | Present only if `entity_type == "Item"` |
+| `texture_path`, `atlas_index`, `mod_texture` | | R | Present only if `entity_type == "Item"` |
+
+---
+
 ## Event constant list
 
 ```lua
@@ -493,4 +551,8 @@ minecraft.events.world_open
 minecraft.events.world_spawn_search
 minecraft.events.world_start
 minecraft.events.world_tick
+minecraft.events.pre_entity_render
+minecraft.events.pre_tile_entity_render
+minecraft.events.entity_spawn
+minecraft.events.entity_remove
 ```

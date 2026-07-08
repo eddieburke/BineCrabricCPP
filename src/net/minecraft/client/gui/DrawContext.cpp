@@ -1,64 +1,82 @@
 #include "net/minecraft/client/gui/DrawContext.hpp"
+
 #include "net/minecraft/client/font/TextRenderer.hpp"
-#include "net/minecraft/client/gui/Draw2D.hpp"
 #include "net/minecraft/client/gl/GlState.hpp"
+#include "net/minecraft/client/gui/Draw2D.hpp"
 #include "net/minecraft/client/render/Tessellator.hpp"
+
 namespace net::minecraft::client::gui {
 namespace {
 [[nodiscard]] int channel(std::uint32_t color, int shift) {
-  return static_cast<int>((color >> static_cast<unsigned>(shift)) & 0xFFU);
+    return static_cast<int>((color >> static_cast<unsigned>(shift)) & 0xFFU);
 }
+
 [[nodiscard]] int rgb(std::uint32_t color) {
-  return static_cast<int>(color & 0x00FFFFFFU);
+    return static_cast<int>(color & 0x00FFFFFFU);
 }
-} // namespace
+}  // namespace
+
 void DrawContext::fill(int x1, int y1, int x2, int y2, std::uint32_t color) {
-  if(x1 < x2) {
-    std::swap(x1, x2);
-  }
-  if(y1 < y2) {
-    std::swap(y1, y2);
-  }
-  render::Tessellator& tessellator = render::INSTANCE;
-  const gl::preset::SolidFill fillCaps;
-  draw::coloredQuad(tessellator, x1, y1, x2, y2, rgb(color), channel(color, 24), zOffset);
+    if (x1 < x2) {
+        std::swap(x1, x2);
+    }
+    if (y1 < y2) {
+        std::swap(y1, y2);
+    }
+    render::Tessellator& tessellator = render::INSTANCE;
+    const gl::preset::SolidFill fillCaps;
+    draw::coloredQuad(tessellator, x1, y1, x2, y2, rgb(color), channel(color, 24), zOffset);
 }
+
 void DrawContext::fillGradient(int x1, int y1, int x2, int y2, std::uint32_t colorStart, std::uint32_t colorEnd) {
-  render::Tessellator& tessellator = render::INSTANCE;
-  const gl::preset::GradientFill gradientCaps;
-  draw::verticalGradientQuad(tessellator, x1, y1, x2, y2, rgb(colorStart), channel(colorStart, 24), rgb(colorEnd),
-                             channel(colorEnd, 24), zOffset);
+    render::Tessellator& tessellator = render::INSTANCE;
+    const gl::preset::GradientFill gradientCaps;
+    draw::verticalGradientQuad(tessellator,
+                               x1,
+                               y1,
+                               x2,
+                               y2,
+                               rgb(colorStart),
+                               channel(colorStart, 24),
+                               rgb(colorEnd),
+                               channel(colorEnd, 24),
+                               zOffset);
 }
+
 void DrawContext::drawTexture(int x, int y, int u, int v, int width, int height) {
-  const gl::preset::GuiTextureOn textureCaps;
-  float currentColor[4]{1.0f, 1.0f, 1.0f, 1.0f};
-  gl::getFloatv(gl::query::CurrentColor, currentColor);
-  render::Tessellator& tessellator = render::INSTANCE;
-  tessellator.startQuads();
-  tessellator.color(currentColor[0], currentColor[1], currentColor[2], currentColor[3]);
-  draw::appendAtlasQuad(tessellator, x, y, u, v, width, height, zOffset);
-  tessellator.draw();
+    const gl::preset::GuiTextureOn textureCaps;
+    float currentColor[4]{1.0f, 1.0f, 1.0f, 1.0f};
+    gl::getFloatv(gl::query::CurrentColor, currentColor);
+    render::Tessellator& tessellator = render::INSTANCE;
+    tessellator.startQuads();
+    tessellator.color(currentColor[0], currentColor[1], currentColor[2], currentColor[3]);
+    draw::appendAtlasQuad(tessellator, x, y, u, v, width, height, zOffset);
+    tessellator.draw();
 }
+
 void DrawContext::drawTextures(std::span<const draw::AtlasRect> rects) {
-  if(rects.empty()) {
-    return;
-  }
-  const gl::preset::GuiTextureOn textureCaps;
-  float currentColor[4]{1.0f, 1.0f, 1.0f, 1.0f};
-  gl::getFloatv(gl::query::CurrentColor, currentColor);
-  render::Tessellator& tessellator = render::INSTANCE;
-  tessellator.startQuads();
-  tessellator.color(currentColor[0], currentColor[1], currentColor[2], currentColor[3]);
-  for(const draw::AtlasRect& rect : rects) {
-    draw::appendAtlasQuad(tessellator, rect.x, rect.y, rect.u, rect.v, rect.w, rect.h, zOffset);
-  }
-  tessellator.draw();
+    if (rects.empty()) {
+        return;
+    }
+    const gl::preset::GuiTextureOn textureCaps;
+    float currentColor[4]{1.0f, 1.0f, 1.0f, 1.0f};
+    gl::getFloatv(gl::query::CurrentColor, currentColor);
+    render::Tessellator& tessellator = render::INSTANCE;
+    tessellator.startQuads();
+    tessellator.color(currentColor[0], currentColor[1], currentColor[2], currentColor[3]);
+    for (const draw::AtlasRect& rect : rects) {
+        draw::appendAtlasQuad(tessellator, rect.x, rect.y, rect.u, rect.v, rect.w, rect.h, zOffset);
+    }
+    tessellator.draw();
 }
-void DrawContext::drawCenteredTextWithShadow(font::TextRenderer& textRenderer, const std::string& text, int x, int y,
-                                             int color) {
-  textRenderer.drawWithShadow(text, x - textRenderer.getWidth(text) / 2, y, color);
+
+void DrawContext::drawCenteredTextWithShadow(
+    font::TextRenderer& textRenderer, const std::string& text, int x, int y, int color) {
+    textRenderer.drawWithShadow(text, x - textRenderer.getWidth(text) / 2, y, color);
 }
-void DrawContext::drawTextWithShadow(font::TextRenderer& textRenderer, const std::string& text, int x, int y, int color) {
-  textRenderer.drawWithShadow(text, x, y, color);
+
+void DrawContext::drawTextWithShadow(
+    font::TextRenderer& textRenderer, const std::string& text, int x, int y, int color) {
+    textRenderer.drawWithShadow(text, x, y, color);
 }
-} // namespace net::minecraft::client::gui
+}  // namespace net::minecraft::client::gui

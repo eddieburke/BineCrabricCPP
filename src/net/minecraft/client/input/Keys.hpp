@@ -1,4 +1,5 @@
 #pragma once
+
 namespace net::minecraft::client::input::keys {
 // DInput/LWJGL scancodes — values must not change.
 inline constexpr int kEscape = 1;
@@ -25,36 +26,41 @@ inline constexpr int kF8 = 66;
 inline constexpr int kF11 = 87;
 inline constexpr int kUp = 200;
 inline constexpr int kDown = 208;
+
 inline bool isShiftKey(int key) noexcept {
-  return key == kLShift || key == kRShift;
+    return key == kLShift || key == kRShift;
 }
+
 inline bool isCtrlKey(int key) noexcept {
-  return key == kLCtrl || key == kRCtrl;
+    return key == kLCtrl || key == kRCtrl;
 }
+
 inline bool isAltKey(int key) noexcept {
-  return key == kLAlt || key == kRAlt;
+    return key == kLAlt || key == kRAlt;
 }
+
 /// True when key and bindingCode refer to the same physical control (including L/R pairs).
 inline bool matchesBindingKey(int key, int bindingCode) noexcept {
-  if(key == bindingCode) {
-    return true;
-  }
-  if(isShiftKey(bindingCode)) {
-    return isShiftKey(key);
-  }
-  if(isCtrlKey(bindingCode)) {
-    return isCtrlKey(key);
-  }
-  if(isAltKey(bindingCode)) {
-    return isAltKey(key);
-  }
-  return false;
+    if (key == bindingCode) {
+        return true;
+    }
+    if (isShiftKey(bindingCode)) {
+        return isShiftKey(key);
+    }
+    if (isCtrlKey(bindingCode)) {
+        return isCtrlKey(key);
+    }
+    if (isAltKey(bindingCode)) {
+        return isAltKey(key);
+    }
+    return false;
 }
+
 /// Hotbar slot 0–8, or -1 if not a hotbar digit key.
 inline int hotbarSlotFromKey(int key) noexcept {
-  if(key >= kHotbar1 && key <= kHotbar9) {
-    return key - kHotbar1;
-  }
-  return -1;
+    if (key >= kHotbar1 && key <= kHotbar9) {
+        return key - kHotbar1;
+    }
+    return -1;
 }
-} // namespace net::minecraft::client::input::keys
+}  // namespace net::minecraft::client::input::keys

@@ -1,5 +1,6 @@
 #pragma once
 #include <string_view>
+
 namespace net::minecraft::mod::lua {
 // Lua owns composition above the narrow native subscription primitive. Keeping
 // this as Lua makes filters and convenience APIs reusable without growing a
@@ -59,6 +60,7 @@ minecraft.events = named_constants({
    "entity_interact", "fov", "camera_setup", "key_press", "mouse_button", "player_travel", "raycast", "screen_event",
    "screen_region", "screen_ui", "tick_rate", "world_color", "world_render", "render_targets",
    "world_open", "world_spawn_search", "world_start", "world_tick",
+   "pre_entity_render", "pre_tile_entity_render", "entity_spawn", "entity_remove",
 })
 
 minecraft.lifecycle = named_constants({
@@ -920,4 +922,4 @@ function minecraft.screen.settings(spec)
 end
 
 )lua";
-} // namespace net::minecraft::mod::lua
+}  // namespace net::minecraft::mod::lua

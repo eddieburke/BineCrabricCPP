@@ -23,6 +23,7 @@ Walkthrough of every mod in `native/mods/`. Read sources alongside this chapter.
 | item_audio_demo | 96 | register_block box_list, sound |
 | camera | 470+ | camera channels, render.quads, manual model, on_lua_screen |
 | seedfinder | 1912 | sample_grid, create_texture, on_lua_screen |
+| item_drop_physics | 148 | pre_entity_render, world_render, get_texture_pixels, render.quads |
 
 ---
 
@@ -293,6 +294,23 @@ Features:
 - `util.json_encode` / `json_decode` for persistence
 
 **Lessons:** no native seedfinder engine; `sample_grid` with `mod_generation` for accurate previews; large UIs without engine widgets beyond gui primitives.
+
+---
+
+## item_drop_physics
+
+**3D Voxel Extrusion Mod** (~150 lines) rendering dropped item entities as extruded 3D voxel models instead of flat billboard quads.
+
+Features:
+
+- Cancels the engine's flat rendering of dropped item entities via `pre_entity_render`.
+- Queries the item entity lists via `minecraft.entities.list("Item")` during `world_render`.
+- Fetches and caches the item texture pixels via `minecraft.render.get_texture_pixels`.
+- Builds a 3D voxel grid representation of the item icon, with full neighbor-face culling optimization to maximize rendering performance.
+- Extrudes, scales, rotates (spins), and translates the 3D voxel vertices dynamically to follow the item entity's bobbing and movement.
+- Submits the transformed 3D quads via `minecraft.render.quads`.
+
+**Lessons:** Cancel default rendering via cancelable events, fetch raw texture colors to generate dynamic 3D geometry in Lua, optimize voxel vertex counts with neighbor face culling.
 
 ---
 

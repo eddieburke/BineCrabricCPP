@@ -1,20 +1,23 @@
 #pragma once
-#include "net/minecraft/mod/lua/LuaBlockModel.hpp"
-#include "net/minecraft/item/ItemStack.hpp"
 #include <string>
+
+#include "net/minecraft/item/ItemStack.hpp"
+#include "net/minecraft/mod/lua/LuaBlockModel.hpp"
 struct lua_State;
+
 namespace net::minecraft::client::render {
 class Tessellator;
 }
+
 namespace net::minecraft::mod::lua {
 struct LuaItemModelSpec {
-  enum class Type {
-    Flat = 0,
-    BoxList,
-    Manual,
-  };
-  Type type = Type::Flat;
-  std::vector<ModelBox> boxes;
+    enum class Type {
+        Flat = 0,
+        BoxList,
+        Manual,
+    };
+    Type type = Type::Flat;
+    std::vector<ModelBox> boxes;
 };
 // Registration input lives in LuaItemRegistry; the model layer only needs to
 // name it for the manual-draw and instantiation entry points below.
@@ -29,6 +32,6 @@ bool drawLuaItemModel(client::render::Tessellator& tessellator, const ItemStack&
 [[nodiscard]] bool itemModelHandOverrideActive();
 void setItemModelHandOverride(bool enabled);
 bool invokeManualItemModelDraw(const ItemRegistrationSpec& spec, float brightness);
-bool emitManualItemModelQuad(const ManualBlockVertex* vertices, int textureId, float red, float green, float blue,
-                             float alpha);
-} // namespace net::minecraft::mod::lua
+bool emitManualItemModelQuad(
+    const ManualBlockVertex* vertices, int textureId, float red, float green, float blue, float alpha);
+}  // namespace net::minecraft::mod::lua
