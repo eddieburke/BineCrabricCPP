@@ -68,21 +68,27 @@ local function status_line()
   return "Offline mode off - joins use the default name."
 end
 
--- Apply any saved preference as soon as the mod loads.
-load_config()
-apply()
+-- Apply any saved preference once the client is ready.
+minecraft.on(minecraft.events.client_tick, {
+  has_player = true,
+  once = true,
+  priority = 0,
+}, function()
+  load_config()
+  apply()
+end)
 
 -- Custom settings screen opened from the authenticator menu.
-minecraft.screen.on_lua_screen("offline_mode:settings", {
-  init = function(event)
-    event.add_field("username", 60, 64, 200, 20, state.username, 16)
-    event.add_button(60, 92, 200, 20, toggle_label(), function()
+minecraft.on(minecraft.events.screen_event, { screen_id = "offline_mode:settings", priority = 100 }, function(event)
+  if event.phase == "init" then
+    minecraft.screen.add_field("username", 60, 64, 200, 20, { text = state.username, max_len = 16 })
+    minecraft.screen.add_button(60, 92, 200, 20, toggle_label(), function()
       state.enabled = not state.enabled
       apply()
     end)
-    event.add_button(60, 118, 200, 20, "Randomize name", function()
+    minecraft.screen.add_button(60, 118, 200, 20, "Randomize name", function()
       local name = random_name()
-      event.set_field_text("username", name)
+      minecraft.screen.set_field_text("username", name)
       state.username = name
       if state.enabled then
         apply()
@@ -90,25 +96,28 @@ minecraft.screen.on_lua_screen("offline_mode:settings", {
         save_config()
       end
     end)
-    event.add_button(60, 144, 200, 20, "Apply", function()
+    minecraft.screen.add_button(60, 144, 200, 20, "Apply", function()
       state.username = minecraft.screen.field_text("username") or ""
       apply()
     end)
-    event.add_button(60, 200, 200, 20, "Done", function()
+    minecraft.screen.add_button(60, 200, 200, 20, "Done", function()
       minecraft.screen.close()
     end)
-  end,
-  render = function(event)
+  elseif event.phase == "render" then
     local w = event.width or 320
     minecraft.gui.draw_centered_text({ x = 0, y = 24, width = w, text = "Offline Mode", color = 0xFFFFFF })
     minecraft.gui.draw_centered_text({ x = 0, y = 176, width = w, text = status_line(), color = 0xA0A0A0 })
-  end,
-}, 100)
+  end
+end)
 
 -- Inject the entry button into the authenticator (login) screen while logged out.
 -- Placed at a fixed y so repeated re-inits overlap the same button instead of stacking.
-minecraft.screen.on_ui(minecraft.screen.ids.login, minecraft.screen.regions.screen, function(event)
-  event.ui.add_centered_button(186, state.enabled and "Offline Mode: ON" or "Offline Mode: OFF", function()
+minecraft.on(minecraft.events.screen_ui, {
+  screen_id = minecraft.screen.ids.login,
+  region = minecraft.screen.regions.screen,
+  priority = 100,
+}, function(event)
+  event.ui:add_centered_button(186, state.enabled and "Offline Mode: ON" or "Offline Mode: OFF", function()
     minecraft.screen.open("offline_mode:settings")
   end)
-end, 100)
+end)

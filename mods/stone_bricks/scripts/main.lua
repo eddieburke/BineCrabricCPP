@@ -5,9 +5,6 @@ minecraft.register_block({
   resistance = 10.0,
   translation_key = "stoneBrick",
   material = "stone",
-  model = {
-    type = "full_cube",
-  },
 })
 
 minecraft.register_shaped_recipe({

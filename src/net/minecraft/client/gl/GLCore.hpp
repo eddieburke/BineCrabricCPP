@@ -1,9 +1,7 @@
 #pragma once
 // GLCore — VBO and multi-texture entry points for fixed-function rendering.
 #include <windows.h>
-
 #include <cstdint>
-
 namespace net::minecraft::client::gl {
 using PFN_GenBuffers = void(APIENTRY*)(int, unsigned*);
 using PFN_BindBuffer = void(APIENTRY*)(unsigned, unsigned);
@@ -21,28 +19,73 @@ using PFN_BindRenderbuffer = void(APIENTRY*)(unsigned, unsigned);
 using PFN_DeleteRenderbuffers = void(APIENTRY*)(int, const unsigned*);
 using PFN_RenderbufferStorage = void(APIENTRY*)(unsigned, unsigned, int, int);
 using PFN_FramebufferRenderbuffer = void(APIENTRY*)(unsigned, unsigned, unsigned, unsigned);
-
+using PFN_DrawBuffers = void(APIENTRY*)(int, const unsigned*);
+using PFN_CreateShader = unsigned int(APIENTRY*)(unsigned int);
+using PFN_ShaderSource = void(APIENTRY*)(unsigned int, int, const char* const*, const int*);
+using PFN_CompileShader = void(APIENTRY*)(unsigned int);
+using PFN_GetShaderiv = void(APIENTRY*)(unsigned int, unsigned int, int*);
+using PFN_GetShaderInfoLog = void(APIENTRY*)(unsigned int, int, int*, char*);
+using PFN_CreateProgram = unsigned int(APIENTRY*)();
+using PFN_AttachShader = void(APIENTRY*)(unsigned int, unsigned int);
+using PFN_LinkProgram = void(APIENTRY*)(unsigned int);
+using PFN_GetProgramiv = void(APIENTRY*)(unsigned int, unsigned int, int*);
+using PFN_GetProgramInfoLog = void(APIENTRY*)(unsigned int, int, int*, char*);
+using PFN_UseProgram = void(APIENTRY*)(unsigned int);
+using PFN_DeleteShader = void(APIENTRY*)(unsigned int);
+using PFN_DeleteProgram = void(APIENTRY*)(unsigned int);
+using PFN_GetUniformLocation = int(APIENTRY*)(unsigned int, const char*);
+using PFN_Uniform1f = void(APIENTRY*)(int, float);
+using PFN_Uniform2f = void(APIENTRY*)(int, float, float);
+using PFN_Uniform3f = void(APIENTRY*)(int, float, float, float);
+using PFN_Uniform4f = void(APIENTRY*)(int, float, float, float, float);
+using PFN_Uniform1i = void(APIENTRY*)(int, int);
+using PFN_Uniform2i = void(APIENTRY*)(int, int, int);
+using PFN_Uniform3i = void(APIENTRY*)(int, int, int, int);
+using PFN_Uniform4i = void(APIENTRY*)(int, int, int, int, int);
 struct GLCore {
-    static PFN_GenBuffers genBuffers;
-    static PFN_BindBuffer bindBuffer;
-    static PFN_BufferData bufferData;
-    static PFN_BufferSubData bufferSubData;
-    static PFN_DeleteBuffers deleteBuffers;
-    static PFN_SwapInterval swapInterval;
-    static PFN_GenFramebuffers genFramebuffers;
-    static PFN_BindFramebuffer bindFramebuffer;
-    static PFN_DeleteFramebuffers deleteFramebuffers;
-    static PFN_CheckFramebufferStatus checkFramebufferStatus;
-    static PFN_FramebufferTexture2D framebufferTexture2D;
-    static PFN_GenRenderbuffers genRenderbuffers;
-    static PFN_BindRenderbuffer bindRenderbuffer;
-    static PFN_DeleteRenderbuffers deleteRenderbuffers;
-    static PFN_RenderbufferStorage renderbufferStorage;
-    static PFN_FramebufferRenderbuffer framebufferRenderbuffer;
-    static void* activeTexture;
-    static bool vboSupported;
-    static bool framebufferSupported;
-    static void init();
-    static void ensureLoaded();
+  static PFN_GenBuffers genBuffers;
+  static PFN_BindBuffer bindBuffer;
+  static PFN_BufferData bufferData;
+  static PFN_BufferSubData bufferSubData;
+  static PFN_DeleteBuffers deleteBuffers;
+  static PFN_SwapInterval swapInterval;
+  static PFN_GenFramebuffers genFramebuffers;
+  static PFN_BindFramebuffer bindFramebuffer;
+  static PFN_DeleteFramebuffers deleteFramebuffers;
+  static PFN_CheckFramebufferStatus checkFramebufferStatus;
+  static PFN_FramebufferTexture2D framebufferTexture2D;
+  static PFN_GenRenderbuffers genRenderbuffers;
+  static PFN_BindRenderbuffer bindRenderbuffer;
+  static PFN_DeleteRenderbuffers deleteRenderbuffers;
+  static PFN_RenderbufferStorage renderbufferStorage;
+  static PFN_FramebufferRenderbuffer framebufferRenderbuffer;
+  static PFN_DrawBuffers drawBuffers;
+  static PFN_CreateShader createShader;
+  static PFN_ShaderSource shaderSource;
+  static PFN_CompileShader compileShader;
+  static PFN_GetShaderiv getShaderiv;
+  static PFN_GetShaderInfoLog getShaderInfoLog;
+  static PFN_CreateProgram createProgram;
+  static PFN_AttachShader attachShader;
+  static PFN_LinkProgram linkProgram;
+  static PFN_GetProgramiv getProgramiv;
+  static PFN_GetProgramInfoLog getProgramInfoLog;
+  static PFN_UseProgram useProgram;
+  static PFN_DeleteShader deleteShader;
+  static PFN_DeleteProgram deleteProgram;
+  static PFN_GetUniformLocation getUniformLocation;
+  static PFN_Uniform1f uniform1f;
+  static PFN_Uniform2f uniform2f;
+  static PFN_Uniform3f uniform3f;
+  static PFN_Uniform4f uniform4f;
+  static PFN_Uniform1i uniform1i;
+  static PFN_Uniform2i uniform2i;
+  static PFN_Uniform3i uniform3i;
+  static PFN_Uniform4i uniform4i;
+  static void* activeTexture;
+  static bool vboSupported;
+  static bool framebufferSupported;
+  static void init();
+  static void ensureLoaded();
 };
-}  // namespace net::minecraft::client::gl
+} // namespace net::minecraft::client::gl

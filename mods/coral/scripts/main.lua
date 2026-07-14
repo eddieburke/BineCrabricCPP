@@ -2,6 +2,7 @@ local CORAL_ID = 180
 local WATER_ID = minecraft.world.block_id("water") or 0
 local SAND_ID = minecraft.world.block_id("sand") or 0
 local DIRT_ID = minecraft.world.block_id("dirt") or 0
+local coral_model = assert(minecraft.model.load("models/coral.json"))
 
 minecraft.register_block({
   id = CORAL_ID,
@@ -10,34 +11,34 @@ minecraft.register_block({
   resistance = 10.0,
   translation_key = "coral",
   material = "stone",
-  model = {
-    type = "full_cube",
-    opaque = false,
-    full_cube = false,
-    requires_solid_below = false,
-    varied_bounds = true,
-    coordinate_color = true,
-    bounds_padding = 0.0625,
-    bounds_offset = 0.1,
-    min_scale = 0.9,
-    max_scale = 1.1,
-  },
+  opaque = false,
+  full_cube = false,
+  requires_solid_below = false,
+  coordinate_bounds = true,
+  coordinate_color = true,
+  bounds_padding = 0.0625,
+  bounds_offset = 0.1,
+  min_scale = 0.9,
+  max_scale = 1.1,
+  model = coral_model,
 })
+
+local current_chunk = nil
 
 local function in_chunk(x, z)
   return x >= 0 and x < 16 and z >= 0 and z < 16
 end
 
 local function get_block(x, y, z)
-  if not in_chunk(x, z) or y < 0 or y >= 128 then
+  if not in_chunk(x, z) or y < 0 or y >= 128 or not current_chunk then
     return 0
   end
-  return minecraft.chunk.get_block(x, y, z)
+  return current_chunk:get_block(x, y, z)
 end
 
 local function set_block(x, y, z, id)
-  if in_chunk(x, z) and y >= 0 and y < 128 then
-    minecraft.chunk.set_block(x, y, z, id)
+  if in_chunk(x, z) and y >= 0 and y < 128 and current_chunk then
+    current_chunk:set_block(x, y, z, id)
   end
 end
 
@@ -80,11 +81,14 @@ minecraft.on(minecraft.events.chunk_generation, {
   vanilla_stage_ran = true,
   when = minecraft.util.real_world,
   priority = 100,
-}, function()
+}, function(event)
+  current_chunk = event.chunk
   if WATER_ID <= 0 or SAND_ID <= 0 or DIRT_ID <= 0 then
+    current_chunk = nil
     return
   end
   if minecraft.world.random(16) ~= 0 then
+    current_chunk = nil
     return
   end
 
@@ -97,4 +101,5 @@ minecraft.on(minecraft.events.chunk_generation, {
   if is_large_water_body(x, y, z) then
     generate_reef(x, y, z)
   end
+  current_chunk = nil
 end)

@@ -1,10 +1,8 @@
 #pragma once
 #include "net/minecraft/item/ItemStack.hpp"
-
 namespace net::minecraft::entity::player {
 class PlayerEntity;
 }
-
 namespace net::minecraft::inventory {
 // Insert `stack` into the player's main inventory, merging into existing stacks
 // first and then filling empty slots. Returns whatever did not fit (empty stack
@@ -14,4 +12,4 @@ ItemStack offerToPlayer(entity::player::PlayerEntity& player, ItemStack stack);
 // "give it to the player no matter what" path used by creative item panels (TMI)
 // and by containers that must not destroy their contents on close (repair table).
 void giveToPlayer(entity::player::PlayerEntity& player, ItemStack stack);
-}  // namespace net::minecraft::inventory
+} // namespace net::minecraft::inventory

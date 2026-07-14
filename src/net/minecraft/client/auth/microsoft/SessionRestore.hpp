@@ -2,14 +2,11 @@
 #include <filesystem>
 #include <optional>
 #include <string>
-
 #include "net/minecraft/client/auth/microsoft/MicrosoftAuth.hpp"
 #include "net/minecraft/client/util/Session.hpp"
-
 namespace net::minecraft::client {
 class Minecraft;
 }
-
 namespace msauth {
 [[nodiscard]] bool isAuthenticated(const net::minecraft::client::util::Session& session);
 void applyAccount(const MicrosoftAccount& account, net::minecraft::client::util::Session& session);
@@ -33,4 +30,4 @@ void tickRestoreSavedAccount(net::minecraft::client::Minecraft& client);
 [[nodiscard]] std::optional<std::string> lastSavedAccountRestoreError();
 [[nodiscard]] std::optional<MicrosoftAccount> pendingProfileCreationAccount();
 [[nodiscard]] bool hasPendingProfileCreationAccount();
-}  // namespace msauth
+} // namespace msauth

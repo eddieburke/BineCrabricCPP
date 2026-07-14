@@ -1,11 +1,9 @@
 #pragma once
 #include <cstddef>
 #include <span>
-
 namespace net::minecraft::client::render {
 class Tessellator;
 }
-
 namespace net::minecraft::client::gui::draw {
 // Standard GUI quad winding used throughout the port:
 //   v0 = (x1,y2)  bottom-left
@@ -15,14 +13,13 @@ namespace net::minecraft::client::gui::draw {
 // High-level helpers perform startQuads()..draw(). Append helpers only add
 // vertices and expect the caller to bracket with startQuads()/draw().
 struct AtlasRect {
-    int x = 0;
-    int y = 0;
-    int u = 0;
-    int v = 0;
-    int w = 0;
-    int h = 0;
+  int x = 0;
+  int y = 0;
+  int u = 0;
+  int v = 0;
+  int w = 0;
+  int h = 0;
 };
-
 void appendQuad(render::Tessellator& tessellator, int x1, int y1, int x2, int y2, float z = 0.0f);
 void appendColoredQuad(
     render::Tessellator& tessellator, int x1, int y1, int x2, int y2, int rgb, int alpha = 255, float z = 0.0f);
@@ -116,4 +113,4 @@ void verticalGradientTexturedQuad(render::Tessellator& tessellator,
                                   int bottomRgb,
                                   int bottomAlpha,
                                   float z = 0.0f);
-}  // namespace net::minecraft::client::gui::draw
+} // namespace net::minecraft::client::gui::draw

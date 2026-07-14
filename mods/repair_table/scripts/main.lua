@@ -1,4 +1,5 @@
-local repair_screen = minecraft.require("repair_screen")
+local repair_screen = minecraft.require("scripts.repair_screen")
+local repair_table_model = assert(minecraft.model.load("models/repair_table.json"))
 
 minecraft.register_block({
   id = 150,
@@ -7,19 +8,9 @@ minecraft.register_block({
   resistance = 10.0,
   translation_key = "repairTable",
   material = "wood",
-  model = {
-    type = "box_list",
-    boxes = {
-      {
-        min = { 0.0, 0.0, 0.0 },
-        max = { 1.0, 0.8125, 1.0 },
-      },
-      {
-        min = { 0.0, 0.8125, 0.0 },
-        max = { 1.0, 1.0, 1.0 },
-      },
-    },
-  },
+  opaque = false,
+  full_cube = false,
+  model = repair_table_model,
   behavior_priority = 100,
   on_use = function(event)
     if not event.right_click then

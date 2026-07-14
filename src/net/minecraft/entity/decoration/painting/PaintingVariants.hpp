@@ -3,16 +3,14 @@
 #include <cstddef>
 #include <string>
 #include <string_view>
-
 namespace net::minecraft::entity::decoration::painting {
 struct PaintingVariant {
-    const char* id = nullptr;
-    int width = 64;
-    int height = 64;
-    int textureOffsetX = 0;
-    int textureOffsetY = 0;
+  const char* id = nullptr;
+  int width = 64;
+  int height = 64;
+  int textureOffsetX = 0;
+  int textureOffsetY = 0;
 };
-
 inline constexpr std::array<PaintingVariant, 25> PAINTING_VARIANTS{{
     {"Kebab", 16, 16, 0, 0},
     {"Aztec", 16, 16, 16, 0},
@@ -41,13 +39,12 @@ inline constexpr std::array<PaintingVariant, 25> PAINTING_VARIANTS{{
     {"DonkeyKong", 64, 48, 192, 112},
 }};
 inline constexpr PaintingVariant KEBAB = PAINTING_VARIANTS[0];
-
 [[nodiscard]] inline const PaintingVariant& paintingVariantById(std::string_view id) {
-    for (const PaintingVariant& variant : PAINTING_VARIANTS) {
-        if (id == variant.id) {
-            return variant;
-        }
+  for(const PaintingVariant& variant : PAINTING_VARIANTS) {
+    if(id == variant.id) {
+      return variant;
     }
-    return KEBAB;
+  }
+  return KEBAB;
 }
-}  // namespace net::minecraft::entity::decoration::painting
+} // namespace net::minecraft::entity::decoration::painting

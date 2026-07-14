@@ -1,9 +1,8 @@
 #pragma once
-
 namespace net::minecraft::block {
 enum class PressurePlateActivationRule {
-    EVERYTHING,
-    MOBS,
-    PLAYERS
+  EVERYTHING,
+  MOBS,
+  PLAYERS
 };
-}  // namespace net::minecraft::block
+} // namespace net::minecraft::block

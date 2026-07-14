@@ -1,307 +1,254 @@
-# Volume VIII — Inventory, Audio, and Utilities
+# 08 — Inventory, audio, utilities
 
-Stacks, player inventory, items, sound, config, JSON, seeds, and files.
+## `minecraft.inventory.*`
 
----
+All inventory functions operate on the **local player's inventory** (single-player client included). Functions that mutate inventory require a valid local player; if the player is unavailable (e.g. not in-world), mutation returns `false` and reads return `nil`.
 
-## Stack tables
+### Slot layout
 
-Stacks are plain Lua tables:
+The inventory has 40 slots total:
+- **Slots 0–35**: Main inventory (36 slots)
+- **Slots 36–39**: Armor slots (4 slots: boots, leggings, chestplate, helmet)
+
+Accessing a slot outside this range returns `nil` / `false`.
+
+### `minecraft.inventory.slot_count()`
+
+Returns the total number of inventory slots: `40` (36 main + 4 armor).
 
 ```lua
-{ id = 256, item_id = 256, count = 1, damage = 0 }
+local count = minecraft.inventory.slot_count() -- 40
 ```
 
-`id` and `item_id` are interchangeable. Empty = `id == 0` or `count <= 0`.
+### `minecraft.inventory.main_size()`
 
-### `minecraft.stack`
-
-| Function | Description |
-|----------|-------------|
-| `empty()` | Zero stack |
-| `is_empty(s)` | Test |
-| `item_id(s)` | Numeric id |
-| `copy(s)` | Clone |
-| `describe(s)` | Delegates to `items.describe` |
-| `mergeable(a,b)` | Same item, compatible damage, stackable |
-| `max_count(s)` | From item metadata; default 64 |
-| `click(slot, cursor, button)` | Vanilla click rules; button 0=left 1=right |
-| `combine_damage(a,b)` | Anvil-style merge; returns two stacks |
-
-### `combine_damage` rules
-
-- Both stacks: same damageable item, count 1 each
-- Sums remaining durability, caps at max damage
-- Returns repaired stack + empty stack
-
----
-
-## `minecraft.inventory`
-
-Requires local player.
-
-| Function | Returns | Description |
-|----------|---------|-------------|
-| `slot_count()` | int | Main + armor slots |
-| `main_size()` | int | Main inventory only |
-| `get(slot)` | stack \| nil | |
-| `set(slot, stack)` | bool | |
-| `cursor_get()` | stack | |
-| `cursor_set(stack)` | bool | |
-| `give(stack)` | bool | Add to player inventory |
-| `offer(stack)` | stack | Add or return remainder |
-
-**Slot layout:** `0 .. main_size-1` = main inventory; armor follows main slots.
-
-**`get`/`cursor_get`** return enriched stacks when non-empty:
-
-| Field | Description |
-|-------|-------------|
-| `max_damage` | |
-| `damageable` | bool |
-| `stackable` | bool |
-| `has_subtypes` | bool |
-| `max_count` | int |
-
----
-
-## `minecraft.items`
-
-| Function | Returns |
-|----------|---------|
-| `ids()` | array of all registered item ids |
-| `describe(item_id)` | metadata table or nil |
-
-### `describe` table
-
-| Field | Type |
-|-------|------|
-| `id` | int |
-| `max_damage` | int |
-| `damageable` | bool |
-| `stackable` | bool |
-| `has_subtypes` | bool |
-| `max_count` | int |
-
----
-
-## `minecraft.sound`
-
-Paths are **package-relative** resources (`resources/mods/<mod_id>/...` or resolve via host).
-
-### Registration
+Returns the size of the main inventory: `36`.
 
 ```lua
-local ok, err = minecraft.sound.register(id, path, kind)
+local main = minecraft.inventory.main_size() -- 36
 ```
 
-| kind | Aliases | Engine slot |
-|------|---------|-------------|
-| `effect` | `effects`, `one_shot`, `oneshot` | one-shot SFX |
-| `streaming` | `stream`, `record` | positional streaming |
-| `music` | `bgm` | background music |
+### `minecraft.inventory.get(slot)`
 
-**Errors:** missing file, unknown kind.
+Returns a table describing the item stack at `slot`, or `nil` if the slot is empty or out of range.
 
-### Playback
+The returned table:
 
-| Function | Returns |
-|----------|---------|
-| `play(id, volume?, pitch?)` | bool |
-| `play_at(id, x,y,z, vol?, pitch?)` | bool |
-| `play_loop_at(id, x,y,z, vol?, pitch?)` | handle string \| nil |
-| `stop(handle)` | bool |
-
-Default volume/pitch = 1.0. Loop handles are opaque strings; `stop` ends that instance.
-
----
-
-## `minecraft.storage` and `minecraft.config`
-
-### Raw storage
+| Field | Type | Description |
+|-------|------|-------------|
+| `id` | number | Numeric item ID |
+| `count` | number | Stack size |
+| `damage` | number | Item damage/durability value |
+| `max_damage` | number | Maximum durability (only present if non-empty) |
+| `damageable` | boolean | Whether the item can take damage (only present if non-empty) |
+| `stackable` | boolean | Whether the item stacks (only present if non-empty) |
+| `has_subtypes` | boolean | Whether the item has subtypes (only present if non-empty) |
+| `max_count` | number | Maximum stack size (only present if non-empty) |
 
 ```lua
-local text = minecraft.storage.read("settings.json")
-minecraft.storage.write("settings.json", content)  -- bool
+local stack = minecraft.inventory.get(0)
+if stack then
+  print(stack.id, stack.count, stack.damage)
+end
 ```
 
-### Config helper
+### `minecraft.inventory.set(slot, {id, count?, damage?})`
+
+Sets the item stack at `slot`. Returns `true` on success, `false` if the slot is invalid or the player is unavailable.
+
+The item spec table accepts `id` (required), optional `count` (default 1), and optional `damage` (default 0).
 
 ```lua
-local defaults = { enabled = true, count = 5, name = "foo" }
-local values, found = minecraft.config.load("mod.cfg", defaults, {
-  keys = { "enabled", "count", "name" },
-  aliases = { fileName = "internalKey" },
-  names = { internalKey = "fileName" },
-  separator = "=",  -- default "="
-})
-minecraft.config.save("mod.cfg", values, { keys = {...}, names = {...} })
+local ok = minecraft.inventory.set(0, {id=264, count=1})     -- place diamond in first slot
+local ok = minecraft.inventory.set(36, {id=310, count=1, damage=0}) -- diamond helmet in armor slot
 ```
 
-- Lines: `key=value` or `key: value`
-- Comments: lines starting with `#` or `;` skipped
-- Types inferred from `defaults` table types
+### `minecraft.inventory.cursor_get()`
 
-**Legacy cfg paths** (`mod_Foo.cfg` in run directory) used by `layered_clouds`, `realtime_sky`.
-
----
-
-## `minecraft.util`
-
-| Function | Description |
-|----------|-------------|
-| `clamp(v, lo, hi)` | |
-| `trim(s)` | Whitespace trim |
-| `in_rect(x,y,l,t,w,h)` | Hit test |
-| `real_world(event)` | `event.mod_generation ~= false` |
-| `resolve_seed(text)` | Numeric or Java `String.hashCode` → int64 |
-| `json_encode(value)` | JSON string; errors via `error()` |
-| `json_decode(text)` | table, err |
-| `copy(table)` | Shallow copy |
-| `parse_boolean(s, fallback)` | Parse bool strings |
-
-### Seed resolution
+Returns the item stack currently held on the cursor (being dragged from a container slot), or `nil` if the cursor is empty. Returns the same table format as `get()`.
 
 ```lua
-local seed = minecraft.util.resolve_seed("hello")  -- Java-style hash
-local seed = minecraft.util.resolve_seed("12345")  -- numeric
+local cursor = minecraft.inventory.cursor_get()
+if cursor then
+  print("Dragging:", cursor.id)
+end
 ```
 
-Backed by `minecraft._resolve_seed` (native).
+### `minecraft.inventory.cursor_set({id, count?, damage?})`
 
----
-
-## `minecraft.time`
+Sets the cursor stack. Returns `true` on success, `false` if the player is unavailable.
 
 ```lua
-local utc_ms = minecraft.time.utc_millis()
+minecraft.inventory.cursor_set({id=264, count=1})
 ```
 
-Wall-clock UTC epoch milliseconds. Used with astronomy APIs.
+### `minecraft.inventory.give({id, count?, damage?})`
 
----
-
-## `minecraft.options` (client)
+Gives an item stack to the player. The item is placed into any available slot (fitting into existing stacks first, then empty slots). Returns `true` on success, `false` if the player is unavailable.
 
 ```lua
-local fancy = minecraft.options.get("fancy_graphics")  -- snake or camelCase
-local keys = minecraft.options.keys()  -- all persist keys
+local ok = minecraft.inventory.give({id=264, count=5}) -- give 5 diamonds
 ```
 
-Reads from `OptionRegistry` + extras:
+### `minecraft.inventory.offer({id, count?, damage?})`
 
-| Key | Type |
-|-----|------|
-| `skin` | string |
-| `lastServer` | string |
-| `fancyGraphics` | bool |
-| `thirdPerson` | bool |
-| `hideHud` | bool |
-| `renderClouds` / `clouds_enabled` | bool |
-| `key_*` / `key.*` | int scancode |
-
-Returns `nil` if unknown or no client.
-
----
-
-## `minecraft.files`
-
-Native file picker (outside mod sandbox):
+Offers an item stack to the player. Returns the **remainder** stack (items that could not be placed) as a table in the same format as `get()`. If the entire stack was accepted, the remainder is empty (count will be 0, but the table is non-nil). If the player is unavailable, the original input stack is returned as the remainder.
 
 ```lua
-local path = minecraft.files.pick({ extension = "json" })
-local path = minecraft.files.pick("json")  -- shorthand
-local text, err = minecraft.files.read(path)
-```
-
-`pick` returns `nil` if cancelled. `read` returns `nil, err` on failure.
-
----
-
-## `minecraft.astronomy`
-
-```lua
-local azimuth_deg, altitude_deg = minecraft.astronomy.horizontal_from_equatorial(
-  ra_hours, dec_degrees, utc_millis, latitude_deg, longitude_deg)
-```
-
-See [Volume VI](06-rendering.md).
-
----
-
-## Keyboard
-
-### `minecraft.is_key_down(scancode)`
-
-Poll current key state.
-
-### `minecraft.key_code(name_or_number)`
-
-Returns LWJGL scancode. If client active, resolves **bound keys** for:
-
-`forward`, `left`, `back`, `right`, `jump`, `sneak`, `drop`, `inventory`, `chat`, `fog`
-
-### Full default name table
-
-| Name | Code | Name | Code |
-|------|------|------|------|
-| escape | 1 | q | 16 |
-| 1..0 | 2..11 | w | 17 |
-| enter | 28 | e | 18 |
-| a | 30 | r | 19 |
-| s | 31 | t | 20 |
-| d | 32 | y | 21 |
-| f | 33 | u | 22 |
-| g | 34 | i | 23 |
-| h | 35 | o | 24 |
-| j | 36 | p | 25 |
-| k | 37 | z | 44 |
-| l | 38 | x | 45 |
-| space | 57 | c | 46 |
-| up | 200 | v | 47 |
-| left_arrow | 203 | b | 48 |
-| right_arrow | 205 | n | 49 |
-| down | 208 | m | 50 |
-
-### Prelude constants
-
-```lua
-minecraft.keys.escape  -- 1
-minecraft.keys.enter   -- 28
-minecraft.keys.space   -- 57
-minecraft.keys.up      -- 200
-minecraft.keys.down    -- 208
+local remainder = minecraft.inventory.offer({id=264, count=100})
+if remainder.count > 0 then
+  print("Could not fit", remainder.count, "diamonds")
+end
 ```
 
 ---
 
-## Assets
+## `minecraft.items.*`
 
-| Function | Returns |
-|----------|---------|
-| `asset_path(relative)` | absolute path in package |
-| `read_asset(relative)` | text \| nil |
-| `read_asset_bytes(path, {gzip?})` | binary \| nil |
-| `read_nbt_asset(path)` | table, err |
+### `minecraft.items.ids()`
 
-NBT assets: auto-detect gzip (.nbt.gz). Max size enforced by engine.
-
----
-
-## Runtime crafting
+Returns an array of all registered item numeric IDs. Items that are `nil` in the engine's ITEMS array are skipped.
 
 ```lua
-local ok, err = minecraft.crafting.add_shaped_recipe({
-  output_item_id = 30777,
-  output_count = 1,
-  pattern = { "###", "# #", "###" },
-  key = "#",
-  item_id = 5,
-})
+local ids = minecraft.items.ids()
+for _, id in ipairs(ids) do
+  print("Item ID:", id)
+end
 ```
 
-Does not use `assert`; safe for player-triggered registration.
+### `minecraft.items.describe(item_id)`
+
+Returns metadata about an item ID, or `nil` if the ID is invalid or the item is empty.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `id` | number | The item ID |
+| `max_damage` | number | Maximum durability |
+| `damageable` | boolean | Whether the item can take damage |
+| `stackable` | boolean | Whether the item can stack |
+| `has_subtypes` | boolean | Whether the item uses damage for subtypes |
+| `max_count` | number | Maximum items per stack |
+
+```lua
+local info = minecraft.items.describe(264)
+if info then
+  print("Diamond - max stack:", info.max_count, "damageable:", info.damageable)
+end
+```
 
 ---
 
-*Registration errors: [Volume IV](04-registration.md)*
+## `minecraft.sound.*`
+
+### `minecraft.sound.register(id, filepath, kind?)`
+
+Registers a new sound effect with the audio engine. `id` is a string identifier, `filepath` is a resource path (resolved relative to the mod's asset directory). The optional `kind` determines how the sound is loaded:
+
+| Kind | Description |
+|------|-------------|
+| `"effect"` | Short sound effect, loaded entirely into memory (default) |
+| `"streaming"` | Longer sound, streamed from disk |
+| `"music"` | Background music track |
+
+Returns `true, error_message` on failure (missing file, unknown kind), or `true` on success.
+
+```lua
+local ok, err = minecraft.sound.register("my_mod:explode", "sounds/explode.ogg", "effect")
+if not ok then print(err) end
+```
+
+### `minecraft.sound.play(id, volume?, pitch?)`
+
+Plays a registered sound as a 2D (non-positional) effect. Default volume is 1.0, default pitch is 1.0. Returns `true` if the sound was started, `false` if the audio engine is unavailable.
+
+```lua
+minecraft.sound.play("my_mod:explode", 1.0, 1.0)
+```
+
+### `minecraft.sound.play_at(id, x, y, z, volume?, pitch?)`
+
+Plays a registered sound at a 3D world position. Positional audio applies (distance attenuation, stereo panning). Default volume 1.0, default pitch 1.0. Returns `true` on success.
+
+```lua
+minecraft.sound.play_at("my_mod:explode", player_x, player_y, player_z, 1.0, 1.0)
+```
+
+### `minecraft.sound.play_loop_at(id, x, y, z, volume?, pitch?)`
+
+Plays a registered sound as a looping 3D positional sound. Returns a **handle string** that can be passed to `stop()` to end the loop, or `nil` if the sound could not be started.
+
+```lua
+local handle = minecraft.sound.play_loop_at("my_mod:machine_hum", 100, 64, 100, 0.5, 1.0)
+if handle then
+  -- save handle for later
+end
+```
+
+### `minecraft.sound.stop(handle)`
+
+Stops a looping sound by its handle (returned from `play_loop_at`). The handle must be a non-empty string. Returns `true`.
+
+```lua
+if handle then
+  minecraft.sound.stop(handle)
+end
+```
+
+---
+
+## JSON utilities (`minecraft.util.*`)
+
+### `minecraft.util.json_encode(value)`
+
+Encodes a Lua value to a JSON string. Accepts:
+- Tables (arrays → JSON arrays, string-keyed tables → JSON objects)
+- Strings, numbers (integers and floats)
+- Booleans
+- `nil` (encoded as JSON `null`)
+- `minecraft.util.json_null` (a special lightuserdata sentinel, also encoded as `null`)
+
+Returns `(json_string)` on success, or `(nil, error_message)` if the value is not JSON-serializable.
+
+```lua
+local json = minecraft.util.json_encode({name="Steve", health=20, items={1, 2, 3}})
+-- {"name":"Steve","health":20,"items":[1,2,3]}
+```
+
+### `minecraft.util.json_decode(string)`
+
+Decodes a JSON string to a Lua value. Supports:
+- Objects → string-keyed tables
+- Arrays → integer-indexed tables
+- Strings, numbers (integers use `pushinteger`, floats use `pushnumber`)
+- Booleans
+- `null` → `minecraft.util.json_null` lightuserdata sentinel
+
+Returns `(value)` on success, or `(nil, error_message)` on failure (empty input, invalid JSON, trailing characters).
+
+```lua
+local data, err = minecraft.util.json_decode('{"name":"Steve","health":20}')
+if data then
+  print(data.name, data.health)
+end
+```
+
+### `minecraft.util.json_null`
+
+A special sentinel value representing JSON `null`. Use this when you need to explicitly represent null in JSON output.
+
+```lua
+local encoded = minecraft.util.json_encode({value = minecraft.util.json_null})
+-- {"value":null}
+
+local decoded = minecraft.util.json_decode('{"value":null}')
+-- decoded.value == minecraft.util.json_null
+```
+
+### `minecraft.util.resolve_seed(text)`
+
+Resolves a seed string (numeric or textual) into a 64-bit integer, matching Minecraft's seed resolution logic. Returns the resolved integer.
+
+```lua
+local seed = minecraft.util.resolve_seed("12345")   -- 12345
+local seed = minecraft.util.resolve_seed("hello")    -- numeric hash
+```

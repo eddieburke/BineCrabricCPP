@@ -1,7 +1,11 @@
--- Single Create World profile selector backed by generic generation hooks.
+-- Create World profiles with tunable options + generation/spawn hooks.
 
 local AIR_ID = 0
 local PROFILE_OPTION = "world_profiles:type"
+local FLAT_HEIGHT_OPTION = "world_profiles:flat_height"
+local HIGHLAND_BOOST_OPTION = "world_profiles:highland_boost"
+local CAVE_MIN_Y_OPTION = "world_profiles:cave_min_y"
+local CAVE_MAX_Y_OPTION = "world_profiles:cave_max_y"
 
 local profiles = {
   { id = "default", label = "Default" },
@@ -12,6 +16,12 @@ local profiles = {
 
 local selected_index = 1
 local active_profile = profiles[1]
+local options = {
+  flat_height = 4,
+  highland_boost = 16,
+  cave_min_y = 40,
+  cave_max_y = 72,
+}
 
 local function profile_by_id(id)
   for i, profile in ipairs(profiles) do
@@ -59,18 +69,29 @@ local function hash_coord(x, z, seed)
   return (n * n * n * 60493) % 2147483647
 end
 
-local function apply_flatlands()
+local function tonumber_opt(map, key, fallback)
+  if map == nil then
+    return fallback
+  end
+  return tonumber(map[key]) or fallback
+end
+
+local function apply_flatlands(event)
   local grass_id = block_id("grass_block")
   local dirt_id = block_id("dirt")
   local bedrock_id = block_id("bedrock")
   if grass_id <= 0 or dirt_id <= 0 then
     return
   end
-  minecraft.chunk.fill(0, 4, 0, 15, 127, 15, AIR_ID)
-  minecraft.chunk.fill(0, 1, 0, 15, 2, 15, dirt_id)
-  minecraft.chunk.fill(0, 3, 0, 15, 3, 15, grass_id)
+  local chunk = event.chunk
+  local height = math.max(1, math.min(64, math.floor(options.flat_height + 0.5)))
+  chunk:fill(0, height, 0, 15, 127, 15, AIR_ID)
+  if height >= 2 then
+    chunk:fill(0, 1, 0, 15, height - 1, 15, dirt_id)
+  end
+  chunk:fill(0, height, 0, 15, height, 15, grass_id)
   if bedrock_id > 0 then
-    minecraft.chunk.fill(0, 0, 0, 15, 0, 15, bedrock_id)
+    chunk:fill(0, 0, 0, 15, 0, 15, bedrock_id)
   end
 end
 
@@ -81,27 +102,23 @@ local function apply_highlands(event)
   if grass_id <= 0 or dirt_id <= 0 or stone_id <= 0 then
     return
   end
+  local chunk = event.chunk
   local seed = math.floor(event.world_seed or 0)
+  local boost_base = math.max(4, math.min(40, math.floor(options.highland_boost + 0.5)))
   for x = 0, 15 do
     for z = 0, 15 do
-      local surface = math.max(0, minecraft.chunk.get_height(x, z) - 1)
+      local surface = math.max(0, chunk:get_height(x, z) - 1)
       local wx = event.chunk_x * 16 + x
       local wz = event.chunk_z * 16 + z
-      local boost = 12 + (hash_coord(wx, wz, seed) % 20)
+      local boost = boost_base + (hash_coord(wx, wz, seed) % 20)
       local top = math.min(118, surface + boost)
       if top > surface then
-        minecraft.chunk.fill(x, surface + 1, z, x, top, z, stone_id)
+        chunk:fill(x, surface + 1, z, x, top, z, stone_id)
       end
-      minecraft.chunk.set_block(x, top, z, grass_id)
-      if top - 1 > 0 then
-        minecraft.chunk.set_block(x, top - 1, z, dirt_id)
-      end
-      if top - 2 > 0 then
-        minecraft.chunk.set_block(x, top - 2, z, dirt_id)
-      end
-      if top - 3 > 0 then
-        minecraft.chunk.set_block(x, top - 3, z, dirt_id)
-      end
+      chunk:set_block(x, top, z, grass_id)
+      if top - 1 > 0 then chunk:set_block(x, top - 1, z, dirt_id) end
+      if top - 2 > 0 then chunk:set_block(x, top - 2, z, dirt_id) end
+      if top - 3 > 0 then chunk:set_block(x, top - 3, z, dirt_id) end
     end
   end
 end
@@ -112,24 +129,19 @@ local function apply_caves(event)
   if grass_id <= 0 or dirt_id <= 0 then
     return
   end
+  local chunk = event.chunk
   local seed = math.floor(event.world_seed or 0)
   for x = 0, 15 do
     for z = 0, 15 do
-      local surface = math.max(0, minecraft.chunk.get_height(x, z) - 1)
+      local surface = math.max(0, chunk:get_height(x, z) - 1)
       local top = math.max(48, surface - 8)
       if surface > top then
-        minecraft.chunk.fill(x, top + 1, z, x, surface, z, AIR_ID)
+        chunk:fill(x, top + 1, z, x, surface, z, AIR_ID)
       end
-      minecraft.chunk.set_block(x, top, z, grass_id)
-      if top - 1 > 0 then
-        minecraft.chunk.set_block(x, top - 1, z, dirt_id)
-      end
-      if top - 2 > 0 then
-        minecraft.chunk.set_block(x, top - 2, z, dirt_id)
-      end
-      if top - 3 > 0 then
-        minecraft.chunk.set_block(x, top - 3, z, dirt_id)
-      end
+      chunk:set_block(x, top, z, grass_id)
+      if top - 1 > 0 then chunk:set_block(x, top - 1, z, dirt_id) end
+      if top - 2 > 0 then chunk:set_block(x, top - 2, z, dirt_id) end
+      if top - 3 > 0 then chunk:set_block(x, top - 3, z, dirt_id) end
       local wx = event.chunk_x * 16 + x
       local wz = event.chunk_z * 16 + z
       local pocket = hash_coord(wx, wz, seed + 17) % 11
@@ -141,7 +153,7 @@ local function apply_caves(event)
               local lx = x + dx
               local lz = z + dz
               if lx >= 0 and lx <= 15 and lz >= 0 and lz <= 15 then
-                minecraft.chunk.set_block(lx, cy + dy, lz, AIR_ID)
+                chunk:set_block(lx, cy + dy, lz, AIR_ID)
               end
             end
           end
@@ -155,13 +167,17 @@ profiles[2].generate = apply_flatlands
 profiles[3].generate = apply_highlands
 profiles[4].generate = apply_caves
 
-minecraft.on(minecraft.events.create_world, function(event)
+minecraft.on(minecraft.events.create_world, {}, function(event)
   event.options = event.options or {}
   event.options[PROFILE_OPTION] = selected_id()
+  event.options[FLAT_HEIGHT_OPTION] = tostring(options.flat_height)
+  event.options[HIGHLAND_BOOST_OPTION] = tostring(options.highland_boost)
+  event.options[CAVE_MIN_Y_OPTION] = tostring(options.cave_min_y)
+  event.options[CAVE_MAX_Y_OPTION] = tostring(options.cave_max_y)
   active_profile = selected_profile()
 end)
 
-minecraft.on(minecraft.events.world_open, function(event)
+minecraft.on(minecraft.events.world_open, {}, function(event)
   local id = event.options and event.options[PROFILE_OPTION] or "default"
   local profile, index = profile_by_id(id)
   if profile == nil then
@@ -169,6 +185,10 @@ minecraft.on(minecraft.events.world_open, function(event)
     profile, index = profiles[1], 1
   end
   active_profile = profile
+  options.flat_height = tonumber_opt(event.options, FLAT_HEIGHT_OPTION, options.flat_height)
+  options.highland_boost = tonumber_opt(event.options, HIGHLAND_BOOST_OPTION, options.highland_boost)
+  options.cave_min_y = tonumber_opt(event.options, CAVE_MIN_Y_OPTION, options.cave_min_y)
+  options.cave_max_y = tonumber_opt(event.options, CAVE_MAX_Y_OPTION, options.cave_max_y)
   if event.new_world then
     selected_index = index
   end
@@ -177,24 +197,55 @@ end)
 
 minecraft.screen.on_ui(minecraft.screen.ids.create_world, minecraft.screen.regions.footer, function(event)
   if event.ui ~= nil then
-    event.ui.add_stacked_centered_button(profile_label(), cycle_profile)
+    event.ui:add_stacked_centered_button(profile_label(), cycle_profile)
   end
   return event
 end, 100)
 
+minecraft.screen.settings({
+  id = "world_profiles:options",
+  title = "World Profile Options",
+  parent_screen = minecraft.screen.ids.create_world,
+  parent_region = minecraft.screen.regions.footer,
+  button_label = "Profile Options...",
+  values = function() return options end,
+  sliders = {
+    { key = "flat_height", label = "Flat Height", min = 1, max = 32, integer = true },
+    { key = "highland_boost", label = "Highland Boost", min = 4, max = 40, integer = true },
+    { key = "cave_min_y", label = "Cave Spawn Min Y", min = 8, max = 80, integer = true },
+    { key = "cave_max_y", label = "Cave Spawn Max Y", min = 16, max = 100, integer = true },
+  },
+  priority = 90,
+})
+
+-- Default: do not resolve spawn — vanilla sand beach search runs.
+-- Highlands: surface Y band. Caves: intentional underground band from options.
 minecraft.on(minecraft.events.world_spawn_search, {
   resolved = false,
   is_overworld = true,
   when = minecraft.util.real_world,
   priority = 100,
 }, function(event)
-  local spawn = profile_for_event(event).spawn
+  local profile = profile_for_event(event)
+  if profile.id == "default" or profile.id == "flatlands" then
+    return
+  end
+  local spawn = profile.spawn
   if spawn == nil then
     return
   end
+  local min_y = spawn.min_y
+  local max_y = spawn.max_y
+  if profile.id == "caves" then
+    min_y = options.cave_min_y
+    max_y = options.cave_max_y
+    if min_y > max_y then
+      min_y, max_y = max_y, min_y
+    end
+  end
   for _ = 0, 48 do
     local y = minecraft.world.get_top_y(event.x, event.z)
-    if y >= spawn.min_y and (spawn.max_y == nil or y <= spawn.max_y) then
+    if y >= min_y and (max_y == nil or y <= max_y) then
       event.y = y
       event.resolved = true
       break

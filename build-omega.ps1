@@ -36,6 +36,7 @@ param(
     [switch]$NoLto,
     [switch]$NoNativeCpu,
     [switch]$RunTests,
+    [switch]$SkipModPackaging,
     [ValidateSet("All", "Client", "Server")]
     [string]$Target = "All"
 )
@@ -654,6 +655,12 @@ $sw.Stop()
                 Pop-Location
             }
         }
+        }
+    }
+    if (-not $SkipModPackaging -and $exitCode -eq 0) {
+        & (Join-Path $ScriptDir "package-mods.ps1") -BuildDir $BuildDir
+        if ($LASTEXITCODE -ne 0) {
+            $exitCode = $LASTEXITCODE
         }
     }
 }

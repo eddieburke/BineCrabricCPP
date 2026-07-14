@@ -1,12 +1,9 @@
 #include "net/minecraft/client/gui/screen/option/AnimationSettingsScreen.hpp"
-
 #include <array>
-
 #include "net/minecraft/client/gui/screen/option/OptionGui.hpp"
 #include "net/minecraft/client/gui/screen/option/SettingsScreen.hpp"
 #include "net/minecraft/client/option/OptionSpec.hpp"
 #include "net/minecraft/client/resource/language/I18n.hpp"
-
 namespace net::minecraft::client::gui::screen::option {
 namespace animation_screen {
 namespace d = net::minecraft::client::option::option_spec_detail;
@@ -69,41 +66,39 @@ std::array<OptionSpec, 8> kSpecs{{
                   d::loadBoolMember<&GameOptions::animatedSmoke>,
                   d::saveBoolMember<&GameOptions::animatedSmoke>),
 }};
-
 class AnimationSettingsScreen : public SettingsScreen {
-   public:
-    AnimationSettingsScreen(ParentFactory parentFactory, client_option::GameOptions* gameOptions)
-        : SettingsScreen(std::move(parentFactory), gameOptions, "Animation Settings") {
-    }
+public:
+  AnimationSettingsScreen(ParentFactory parentFactory, client_option::GameOptions* gameOptions)
+      : SettingsScreen(std::move(parentFactory), gameOptions, "Animation Settings") {
+  }
 
-   protected:
-    void buildOptions(OptionGuiBuilder& gui) override {
-        const int x1 = gui.gridX(0);
-        const int x2 = gui.gridX(1);
-        const int y0 = gui.gridY(0);
-        constexpr int dy = layout::kRowSpacing;
-        const auto animLabel = [](const char* title, int value) {
-            return optionLabel(title,
-                               resource::language::I18n::getTranslation(value == 0 ? "options.on" : "options.off"));
-        };
-        gui.customCycle(x1, y0, "animatedWater", [animLabel](const GameOptions& o) {
-            return animLabel("Water Animated", o.animatedWater);
-        });
-        gui.customCycle(x2, y0, "animatedLava", [animLabel](const GameOptions& o) {
-            return animLabel("Lava Animated", o.animatedLava);
-        });
-        gui.toggle(x1, y0 + dy, "animatedFire", "Fire Animated");
-        gui.toggle(x2, y0 + dy, "animatedPortal", "Portal Animated");
-        gui.toggle(x1, y0 + dy * 2, "animatedRedstone", "Redstone Animated");
-        gui.toggle(x2, y0 + dy * 2, "animatedExplosion", "Explosion Animated");
-        gui.toggle(x1, y0 + dy * 3, "animatedFlame", "Flame Animated");
-        gui.toggle(x2, y0 + dy * 3, "animatedSmoke", "Smoke Animated");
-    }
+protected:
+  void buildOptions(OptionGuiBuilder& gui) override {
+    const int x1 = gui.gridX(0);
+    const int x2 = gui.gridX(1);
+    const int y0 = gui.gridY(0);
+    constexpr int dy = layout::kRowSpacing;
+    const auto animLabel = [](const char* title, int value) {
+      return optionLabel(title,
+                         resource::language::I18n::getTranslation(value == 0 ? "options.on" : "options.off"));
+    };
+    gui.customCycle(x1, y0, "animatedWater", [animLabel](const GameOptions& o) {
+      return animLabel("Water Animated", o.animatedWater);
+    });
+    gui.customCycle(x2, y0, "animatedLava", [animLabel](const GameOptions& o) {
+      return animLabel("Lava Animated", o.animatedLava);
+    });
+    gui.toggle(x1, y0 + dy, "animatedFire", "Fire Animated");
+    gui.toggle(x2, y0 + dy, "animatedPortal", "Portal Animated");
+    gui.toggle(x1, y0 + dy * 2, "animatedRedstone", "Redstone Animated");
+    gui.toggle(x2, y0 + dy * 2, "animatedExplosion", "Explosion Animated");
+    gui.toggle(x1, y0 + dy * 3, "animatedFlame", "Flame Animated");
+    gui.toggle(x2, y0 + dy * 3, "animatedSmoke", "Smoke Animated");
+  }
 };
-}  // namespace animation_screen
-
+} // namespace animation_screen
 std::unique_ptr<screen::Screen> makeAnimationSettingsScreen(
     std::function<std::unique_ptr<screen::Screen>()> parentFactory, client_option::GameOptions* gameOptions) {
-    return std::make_unique<animation_screen::AnimationSettingsScreen>(std::move(parentFactory), gameOptions);
+  return std::make_unique<animation_screen::AnimationSettingsScreen>(std::move(parentFactory), gameOptions);
 }
-}  // namespace net::minecraft::client::gui::screen::option
+} // namespace net::minecraft::client::gui::screen::option

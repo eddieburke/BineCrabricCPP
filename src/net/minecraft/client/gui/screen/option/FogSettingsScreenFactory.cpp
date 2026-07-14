@@ -1,34 +1,26 @@
 #include "net/minecraft/client/gui/screen/option/FogSettingsScreenFactory.hpp"
-
 #include <array>
-
 #include "net/minecraft/client/gui/screen/option/OptionGui.hpp"
 #include "net/minecraft/client/gui/screen/option/SettingsScreen.hpp"
 #include "net/minecraft/client/option/OptionSpec.hpp"
-
 namespace net::minecraft::client::gui::screen::option {
 namespace fog_screen {
 namespace d = net::minecraft::client::option::option_spec_detail;
 using net::minecraft::client::option::ApplyFlags;
 using net::minecraft::client::option::GameOptions;
 using net::minecraft::client::option::OptionSpec;
-
 bool fogCustomEnabled(const GameOptions& o) {
-    return o.fogFancy;
+  return o.fogFancy;
 }
-
 bool fogLinearStartEnd(const GameOptions& o) {
-    return o.fogFancy && o.fogMode == 0;
+  return o.fogFancy && o.fogMode == 0;
 }
-
 bool fogExpDensity(const GameOptions& o) {
-    return o.fogFancy && o.fogMode != 0;
+  return o.fogFancy && o.fogMode != 0;
 }
-
 bool fogCustomColor(const GameOptions& o) {
-    return o.fogFancy && o.fogColorMode == 1;
+  return o.fogFancy && o.fogColorMode == 1;
 }
-
 std::array<OptionSpec, 10> kSpecs{{
     d::makeToggle("fogFancy",
                   54,
@@ -116,87 +108,84 @@ std::array<OptionSpec, 10> kSpecs{{
                   d::saveFloatMember<&GameOptions::fogColorBlue>,
                   fogCustomColor),
 }};
-
 class FogSettingsScreen : public SettingsScreen {
-   public:
-    FogSettingsScreen(ParentFactory parentFactory, client_option::GameOptions* gameOptions)
-        : SettingsScreen(std::move(parentFactory), gameOptions, "Fog Settings") {
-    }
+public:
+  FogSettingsScreen(ParentFactory parentFactory, client_option::GameOptions* gameOptions)
+      : SettingsScreen(std::move(parentFactory), gameOptions, "Fog Settings") {
+  }
 
-   protected:
-    void buildOptions(OptionGuiBuilder& gui) override {
-        const int x1 = gui.gridX(0);
-        const int x2 = gui.gridX(1);
-        const int y0 = gui.gridY(0);
-        constexpr int dy = layout::kRowSpacing;
-        gui.toggle(x1, y0, "fogFancy", "Custom Fog");
-        gui.intCycle(x2,
-                     y0,
-                     "fogProjection",
-                     "Fog Projection",
-                     {"Spherical", "Cylindrical"},
-                     &GameOptions::fogProjection,
-                     fogCustomEnabled);
-        gui.slider(
-            x1,
-            y0 + dy,
-            "fogStart",
-            "Fog Start",
-            [](const GameOptions& o) { return percentLabel("Fog Start", o.fogStart); },
-            fogLinearStartEnd);
-        gui.intCycle(x2, y0 + dy, "fogMode", "Fog Mode", {"Linear", "Exp"}, &GameOptions::fogMode, fogCustomEnabled);
-        gui.slider(
-            x1,
-            y0 + dy * 2,
-            "fogEnd",
-            "Fog End",
-            [](const GameOptions& o) { return percentLabel("Fog End", o.fogEnd); },
-            fogLinearStartEnd);
-        gui.slider(
-            x2,
-            y0 + dy * 2,
-            "fogDensity",
-            "Fog Density",
-            [](const GameOptions& o) { return percentLabel("Fog Density", o.fogDensity); },
-            fogExpDensity);
-        gui.intCycle(x1,
-                     y0 + dy * 3,
-                     "fogColorMode",
-                     "Fog Color Mode",
-                     {"Sky Color", "Custom"},
-                     &GameOptions::fogColorMode,
-                     fogCustomEnabled);
-        gui.slider(
-            x2,
-            y0 + dy * 3,
-            "fogColorRed",
-            "Fog Red",
-            [](const GameOptions& o) { return percentLabel("Fog Red", o.fogColorRed); },
-            fogCustomColor);
-        gui.slider(
-            x1,
-            y0 + dy * 4,
-            "fogColorGreen",
-            "Fog Green",
-            [](const GameOptions& o) { return percentLabel("Fog Green", o.fogColorGreen); },
-            fogCustomColor);
-        gui.slider(
-            x2,
-            y0 + dy * 4,
-            "fogColorBlue",
-            "Fog Blue",
-            [](const GameOptions& o) { return percentLabel("Fog Blue", o.fogColorBlue); },
-            fogCustomColor);
-    }
-
-    int doneButtonY() const override {
-        return height() / 6 + 24 * 10;
-    }
+protected:
+  void buildOptions(OptionGuiBuilder& gui) override {
+    const int x1 = gui.gridX(0);
+    const int x2 = gui.gridX(1);
+    const int y0 = gui.gridY(0);
+    constexpr int dy = layout::kRowSpacing;
+    gui.toggle(x1, y0, "fogFancy", "Custom Fog");
+    gui.intCycle(x2,
+                 y0,
+                 "fogProjection",
+                 "Fog Projection",
+                 {"Spherical", "Cylindrical"},
+                 &GameOptions::fogProjection,
+                 fogCustomEnabled);
+    gui.slider(
+        x1,
+        y0 + dy,
+        "fogStart",
+        "Fog Start",
+        [](const GameOptions& o) { return percentLabel("Fog Start", o.fogStart); },
+        fogLinearStartEnd);
+    gui.intCycle(x2, y0 + dy, "fogMode", "Fog Mode", {"Linear", "Exp"}, &GameOptions::fogMode, fogCustomEnabled);
+    gui.slider(
+        x1,
+        y0 + dy * 2,
+        "fogEnd",
+        "Fog End",
+        [](const GameOptions& o) { return percentLabel("Fog End", o.fogEnd); },
+        fogLinearStartEnd);
+    gui.slider(
+        x2,
+        y0 + dy * 2,
+        "fogDensity",
+        "Fog Density",
+        [](const GameOptions& o) { return percentLabel("Fog Density", o.fogDensity); },
+        fogExpDensity);
+    gui.intCycle(x1,
+                 y0 + dy * 3,
+                 "fogColorMode",
+                 "Fog Color Mode",
+                 {"Sky Color", "Custom"},
+                 &GameOptions::fogColorMode,
+                 fogCustomEnabled);
+    gui.slider(
+        x2,
+        y0 + dy * 3,
+        "fogColorRed",
+        "Fog Red",
+        [](const GameOptions& o) { return percentLabel("Fog Red", o.fogColorRed); },
+        fogCustomColor);
+    gui.slider(
+        x1,
+        y0 + dy * 4,
+        "fogColorGreen",
+        "Fog Green",
+        [](const GameOptions& o) { return percentLabel("Fog Green", o.fogColorGreen); },
+        fogCustomColor);
+    gui.slider(
+        x2,
+        y0 + dy * 4,
+        "fogColorBlue",
+        "Fog Blue",
+        [](const GameOptions& o) { return percentLabel("Fog Blue", o.fogColorBlue); },
+        fogCustomColor);
+  }
+  int doneButtonY() const override {
+    return height() / 6 + 24 * 10;
+  }
 };
-}  // namespace fog_screen
-
+} // namespace fog_screen
 std::unique_ptr<screen::Screen> makeFogSettingsScreen(std::function<std::unique_ptr<screen::Screen>()> parentFactory,
                                                       client_option::GameOptions* gameOptions) {
-    return std::make_unique<fog_screen::FogSettingsScreen>(std::move(parentFactory), gameOptions);
+  return std::make_unique<fog_screen::FogSettingsScreen>(std::move(parentFactory), gameOptions);
 }
-}  // namespace net::minecraft::client::gui::screen::option
+} // namespace net::minecraft::client::gui::screen::option

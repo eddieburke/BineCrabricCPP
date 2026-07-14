@@ -1,0 +1,26 @@
+{
+	"format_version": "1.21.11",
+	"credit": "Made with Blockbench",
+	"parent": "camera",
+	"textures": {
+		"0": "camera_front",
+		"1": "camera_side",
+		"2": "camera_back",
+		"particle": "camera_front"
+	},
+	"elements": [
+		{
+			"from": [2, 0, 2],
+			"to": [14, 12, 14],
+			"rotation": {"angle": 0, "axis": "y", "origin": [2, 0, 2]},
+			"faces": {
+				"north": {"uv": [2, 2, 14, 14], "texture": "#0"},
+				"east": {"uv": [14, 2, 2, 14], "texture": "#1"},
+				"south": {"uv": [2, 2, 14, 14], "texture": "#2"},
+				"west": {"uv": [14, 2, 2, 14], "texture": "#1"},
+				"up": {"uv": [2, 2, 14, 14], "rotation": 90, "texture": "#1"},
+				"down": {"uv": [2, 2, 14, 14], "rotation": 90, "texture": "#1"}
+			}
+		}
+	]
+}

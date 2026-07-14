@@ -5,6 +5,11 @@ build-test/
 build-fast/
 build-omega/
 build-omega-fix/
+build-codex-audit/
+build-render-check/
+build-server-check/
+build-minsize*/
+build-minsize*.7z
 out/
 dist/
 bin/

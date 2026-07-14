@@ -5,5 +5,6 @@
 #include "net/minecraft/network/packet/ConnectionPackets.hpp"
 #include "net/minecraft/network/packet/EntityPackets.hpp"
 #include "net/minecraft/network/packet/InventoryPackets.hpp"
+#include "net/minecraft/network/packet/LuaModSyncPacket.hpp"
 #include "net/minecraft/network/packet/PlayerPackets.hpp"
 #include "net/minecraft/network/packet/WorldPackets.hpp"

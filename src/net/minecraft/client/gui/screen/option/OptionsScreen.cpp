@@ -1,7 +1,5 @@
 #include "net/minecraft/client/gui/screen/option/OptionsScreen.hpp"
-
 #include <array>
-
 #include "net/minecraft/client/Minecraft.hpp"
 #include "net/minecraft/client/gui/layout/OptionsLayout.hpp"
 #include "net/minecraft/client/gui/screen/GameMenuScreen.hpp"
@@ -11,10 +9,8 @@
 #include "net/minecraft/client/gui/screen/option/VideoOptionsScreen.hpp"
 #include "net/minecraft/client/option/OptionSpec.hpp"
 #include "net/minecraft/client/resource/language/I18n.hpp"
-
 namespace net::minecraft::client::gui::screen::option {
 using client_option::GameOptions;
-
 namespace options_screen {
 namespace d = net::minecraft::client::option::option_spec_detail;
 using net::minecraft::client::option::ApplyFlags;
@@ -82,121 +78,118 @@ std::array<OptionSpec, 8> kSpecs{{
                  nullptr,
                  d::alwaysResize),
 }};
-}  // namespace options_screen
-
+} // namespace options_screen
 OptionsScreen::OptionsScreen(screen::ScreenFactory parentFactory, net::minecraft::client::option::GameOptions* options)
     : parentFactory_(std::move(parentFactory)), options_(options) {
 }
-
 void OptionsScreen::init() {
-    title_ = resource::language::I18n::getTranslation("options.title");
-    buttons_.clear();
-    if (options_ == nullptr || minecraft() == nullptr) {
-        return;
+  title_ = resource::language::I18n::getTranslation("options.title");
+  buttons_.clear();
+  if(options_ == nullptr || minecraft() == nullptr) {
+    return;
+  }
+  if(!parentFactory_) {
+    if(minecraft()->world != nullptr) {
+      parentFactory_ = []() { return std::make_unique<GameMenuScreen>(); };
+    } else {
+      parentFactory_ = []() { return std::make_unique<TitleScreen>(); };
     }
-    if (!parentFactory_) {
-        if (minecraft()->world != nullptr) {
-            parentFactory_ = []() { return std::make_unique<GameMenuScreen>(); };
-        } else {
-            parentFactory_ = []() { return std::make_unique<TitleScreen>(); };
-        }
+  }
+  OptionGuiBuilder gui(*this, *minecraft(), *options_);
+  const int x1 = gui.gridX(0);
+  const int x2 = gui.gridX(1);
+  const int y0 = gui.gridY(0);
+  constexpr int dy = layout::kRowSpacing;
+  const std::string music = resource::language::I18n::getTranslation("options.music");
+  const std::string sound = resource::language::I18n::getTranslation("options.sound");
+  const std::string sensitivity = resource::language::I18n::getTranslation("options.sensitivity");
+  const std::string difficulty = resource::language::I18n::getTranslation("options.difficulty");
+  const std::string guiScale = resource::language::I18n::getTranslation("options.guiScale");
+  const std::string bobView = resource::language::I18n::getTranslation("options.viewBobbing");
+  const std::string invertMouse = resource::language::I18n::getTranslation("options.invertMouse");
+  gui.slider(x1, y0, "music", music.c_str(), [music](const GameOptions& o) {
+    return percentLabel(music.c_str(), o.musicVolume);
+  });
+  gui.slider(x2, y0, "sound", sound.c_str(), [sound](const GameOptions& o) {
+    return percentLabel(sound.c_str(), o.soundVolume);
+  });
+  gui.toggle(x1, y0 + dy, "invertYMouse", invertMouse.c_str());
+  gui.slider(x2, y0 + dy, "mouseSensitivity", sensitivity.c_str(), [sensitivity](const GameOptions& o) {
+    if(o.mouseSensitivity == 0.0f) {
+      return optionLabel(sensitivity.c_str(),
+                         resource::language::I18n::getTranslation("options.sensitivity.min"));
     }
-    OptionGuiBuilder gui(*this, *minecraft(), *options_);
-    const int x1 = gui.gridX(0);
-    const int x2 = gui.gridX(1);
-    const int y0 = gui.gridY(0);
-    constexpr int dy = layout::kRowSpacing;
-    const std::string music = resource::language::I18n::getTranslation("options.music");
-    const std::string sound = resource::language::I18n::getTranslation("options.sound");
-    const std::string sensitivity = resource::language::I18n::getTranslation("options.sensitivity");
-    const std::string difficulty = resource::language::I18n::getTranslation("options.difficulty");
-    const std::string guiScale = resource::language::I18n::getTranslation("options.guiScale");
-    const std::string bobView = resource::language::I18n::getTranslation("options.viewBobbing");
-    const std::string invertMouse = resource::language::I18n::getTranslation("options.invertMouse");
-    gui.slider(x1, y0, "music", music.c_str(), [music](const GameOptions& o) {
-        return percentLabel(music.c_str(), o.musicVolume);
-    });
-    gui.slider(x2, y0, "sound", sound.c_str(), [sound](const GameOptions& o) {
-        return percentLabel(sound.c_str(), o.soundVolume);
-    });
-    gui.toggle(x1, y0 + dy, "invertYMouse", invertMouse.c_str());
-    gui.slider(x2, y0 + dy, "mouseSensitivity", sensitivity.c_str(), [sensitivity](const GameOptions& o) {
-        if (o.mouseSensitivity == 0.0f) {
-            return optionLabel(sensitivity.c_str(),
-                               resource::language::I18n::getTranslation("options.sensitivity.min"));
-        }
-        if (o.mouseSensitivity == 1.0f) {
-            return optionLabel(sensitivity.c_str(),
-                               resource::language::I18n::getTranslation("options.sensitivity.max"));
-        }
-        return optionLabel(sensitivity.c_str(), std::to_string(static_cast<int>(o.mouseSensitivity * 200.0f)) + "%");
-    });
-    gui.i18nCycle(x1,
-                  y0 + dy * 2,
-                  "difficulty",
-                  difficulty.c_str(),
-                  {"options.difficulty.peaceful",
-                   "options.difficulty.easy",
-                   "options.difficulty.normal",
-                   "options.difficulty.hard"},
-                  &GameOptions::difficulty);
-    gui.slider(x2, y0 + dy * 2, "fov", "FOV", [](const GameOptions& o) {
-        if (o.fieldOfView == 0.0f) {
-            return optionLabel("FOV", "Normal");
-        }
-        if (o.fieldOfView == 1.0f) {
-            return optionLabel("FOV", "Quake Pro");
-        }
-        return optionLabel("FOV", std::to_string(static_cast<int>(70.0f + o.fieldOfView * 40.0f)));
-    });
-    gui.toggle(x1, y0 + dy * 3, "bobView", bobView.c_str());
-    gui.i18nCycle(
-        x2,
-        y0 + dy * 3,
-        "guiScale",
-        guiScale.c_str(),
-        {"options.guiScale.auto", "options.guiScale.small", "options.guiScale.normal", "options.guiScale.large"},
-        &GameOptions::guiScale);
-    layout::refreshOptionStates(buttons_, *options_);
-    const int navY = layout::optionsGridY(height(), 4);
-    const auto returnHere = [factory = parentFactory_, options = options_]() {
-        return std::make_unique<OptionsScreen>(factory, options);
-    };
-    addCenteredActionButton(navY,
-                            layout::kDefaultButtonWidth,
-                            layout::kDefaultButtonHeight,
-                            resource::language::I18n::getTranslation("options.video"),
-                            [this, returnHere] {
-                                options_->save();
-                                navigateTo([returnHere, opts = options_]() {
-                                    return std::make_unique<VideoOptionsScreen>(returnHere, opts);
-                                });
+    if(o.mouseSensitivity == 1.0f) {
+      return optionLabel(sensitivity.c_str(),
+                         resource::language::I18n::getTranslation("options.sensitivity.max"));
+    }
+    return optionLabel(sensitivity.c_str(), std::to_string(static_cast<int>(o.mouseSensitivity * 200.0f)) + "%");
+  });
+  gui.i18nCycle(x1,
+                y0 + dy * 2,
+                "difficulty",
+                difficulty.c_str(),
+                {"options.difficulty.peaceful",
+                 "options.difficulty.easy",
+                 "options.difficulty.normal",
+                 "options.difficulty.hard"},
+                &GameOptions::difficulty);
+  gui.slider(x2, y0 + dy * 2, "fov", "FOV", [](const GameOptions& o) {
+    if(o.fieldOfView == 0.0f) {
+      return optionLabel("FOV", "Normal");
+    }
+    if(o.fieldOfView == 1.0f) {
+      return optionLabel("FOV", "Quake Pro");
+    }
+    return optionLabel("FOV", std::to_string(static_cast<int>(70.0f + o.fieldOfView * 40.0f)));
+  });
+  gui.toggle(x1, y0 + dy * 3, "bobView", bobView.c_str());
+  gui.i18nCycle(
+      x2,
+      y0 + dy * 3,
+      "guiScale",
+      guiScale.c_str(),
+      {"options.guiScale.auto", "options.guiScale.small", "options.guiScale.normal", "options.guiScale.large"},
+      &GameOptions::guiScale);
+  layout::refreshOptionStates(buttons_, *options_);
+  const int navY = layout::optionsGridY(height(), 4);
+  const auto returnHere = [factory = parentFactory_, options = options_]() {
+    return std::make_unique<OptionsScreen>(factory, options);
+  };
+  addCenteredActionButton(navY,
+                          layout::kDefaultButtonWidth,
+                          layout::kDefaultButtonHeight,
+                          resource::language::I18n::getTranslation("options.video"),
+                          [this, returnHere] {
+                            options_->save();
+                            navigateTo([returnHere, opts = options_]() {
+                              return std::make_unique<VideoOptionsScreen>(returnHere, opts);
                             });
-    addCenteredActionButton(
-        navY + layout::kRowSpacing,
-        layout::kDefaultButtonWidth,
-        layout::kDefaultButtonHeight,
-        resource::language::I18n::getTranslation("options.controls"),
-        [this, returnHere] {
-            options_->save();
-            navigateTo([returnHere, opts = options_]() { return std::make_unique<KeybindsScreen>(returnHere, opts); });
-        });
-    layout::OptionsBuildContext ctx{*this, *minecraft(), *options_};
-    layout::addDoneButton(
-        ctx, navY + layout::kRowSpacing * 3, resource::language::I18n::getTranslation("gui.done"), [this] {
-            if (options_ == nullptr || minecraft() == nullptr) {
-                return;
-            }
-            options_->save();
-            navigateTo(parentFactory_);
-        });
+                          });
+  addCenteredActionButton(
+      navY + layout::kRowSpacing,
+      layout::kDefaultButtonWidth,
+      layout::kDefaultButtonHeight,
+      resource::language::I18n::getTranslation("options.controls"),
+      [this, returnHere] {
+        options_->save();
+        navigateTo([returnHere, opts = options_]() { return std::make_unique<KeybindsScreen>(returnHere, opts); });
+      });
+  layout::OptionsBuildContext ctx{*this, *minecraft(), *options_};
+  layout::addDoneButton(
+      ctx, navY + layout::kRowSpacing * 3, resource::language::I18n::getTranslation("gui.done"), [this] {
+        if(options_ == nullptr || minecraft() == nullptr) {
+          return;
+        }
+        options_->save();
+        navigateTo(parentFactory_);
+      });
 }
-
 void OptionsScreen::render(int mouseX, int mouseY, float tickDelta) {
-    renderBackground();
-    if (textRenderer() != nullptr) {
-        drawCenteredTextWithShadow(*textRenderer(), title_, width() / 2, 20, 0xFFFFFF);
-    }
-    Screen::render(mouseX, mouseY, tickDelta);
+  renderBackground();
+  if(textRenderer() != nullptr) {
+    drawCenteredTextWithShadow(*textRenderer(), title_, width() / 2, 20, 0xFFFFFF);
+  }
+  Screen::render(mouseX, mouseY, tickDelta);
 }
-}  // namespace net::minecraft::client::gui::screen::option
+} // namespace net::minecraft::client::gui::screen::option

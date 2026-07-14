@@ -1,14 +1,11 @@
 #pragma once
 #include <cstdint>
 #include <vector>
-
 #include "net/minecraft/util/math/noise/OctavePerlinNoiseSampler.hpp"
-
 namespace net::minecraft {
 class BiomeSource;
 class JavaRandom;
 class World;
-
 namespace world::gen::feature {
 void decorateOverworldChunk(World* world,
                             JavaRandom& random,
@@ -18,4 +15,4 @@ void decorateOverworldChunk(World* world,
                             int chunkZ,
                             std::vector<double>& decorateTemperatures);
 }
-}  // namespace net::minecraft
+} // namespace net::minecraft

@@ -1,39 +1,17 @@
-# Minecraft Beta 1.7.3 — Lua Mod Programming Manual
+# Lua Mod Manual
 
-**Document set MC-LUA-API-173 Rev 2.0**
+Authoritative contract for runtime Lua mods. Source of truth for behavior is also `LuaRuntimePrelude.hpp` and `native/mods/README.md`.
 
-This manual is derived from the **authoritative engine sources**, not from summaries:
+| Chapter | Topic |
+|---------|--------|
+| [01](01-introduction-and-packages.md) | Packages, sandbox, loading |
+| [02](02-events-reference.md) | Events and `minecraft.on` |
+| [03](03-api-functions.md) | Core tables |
+| [04](04-registration.md) | Blocks, items, recipes |
+| [05](05-world-and-generation.md) | World, chunk, spawn |
+| [06](06-rendering.md) | World render, camera, FBO |
+| [07](07-gui-and-screens.md) | Screens and 3D GUI |
+| [08](08-inventory-audio-utilities.md) | Inventory, sound, util |
+| [09](09-mod-gallery.md) | Shipped mods |
 
-| Source | Contents |
-|--------|----------|
-| `native/src/net/minecraft/mod/lua/LuaRuntimePrelude.hpp` | Prelude, `minecraft.on`, helpers |
-| `native/src/net/minecraft/mod/runtime/LuaCoreBindings.cpp` | Core API, keys, options, assets |
-| `native/src/net/minecraft/mod/runtime/LuaWorldBindings.cpp` | Blocks, world, chunk, particles |
-| `native/src/net/minecraft/mod/runtime/LuaEventSubscribers.cpp` | All 21 hook events |
-| `native/src/net/minecraft/mod/runtime/LuaScreenBindings.cpp` | GUI + screens |
-| `native/src/net/minecraft/mod/runtime/LuaGuiViewport.cpp` | 3D viewport on Lua screens |
-| `native/src/net/minecraft/mod/runtime/LuaRenderBindings.cpp` | World render batches |
-| `native/src/net/minecraft/mod/runtime/LuaInventoryBindings.cpp` | Inventory |
-| `native/src/net/minecraft/mod/runtime/LuaSoundBindings.cpp` | Audio |
-| `native/src/net/minecraft/mod/runtime/LuaItemBindings.cpp` | Items |
-| `native/src/net/minecraft/mod/lua/LuaModApi.cpp` | Registry, sample_grid, files, textures |
-
-## Volumes
-
-| Vol | File | Subject |
-|-----|------|---------|
-| I | [01-introduction-and-packages.md](01-introduction-and-packages.md) | Philosophy, zip layout, bootstrap order, sandbox |
-| II | [02-events-reference.md](02-events-reference.md) | **All 21 events**, every field, mutability, filters |
-| III | [03-api-functions.md](03-api-functions.md) | **Every** `minecraft.*` function with signatures |
-| IV | [04-registration.md](04-registration.md) | Blocks, items, recipes (startup + runtime) |
-| V | [05-world-and-generation.md](05-world-and-generation.md) | World, chunk, sample_grid, world lifecycle |
-| VI | [06-rendering.md](06-rendering.md) | world_render, world_color, quads, billboards, tessellator |
-| VII | [07-gui-and-screens.md](07-gui-and-screens.md) | GUI draw, Lua screens, screen_ui, regions |
-| VIII | [08-inventory-audio-utilities.md](08-inventory-audio-utilities.md) | stack, inventory, sound, config, astronomy |
-| IX | [09-mod-gallery.md](09-mod-gallery.md) | All shipped mods with line-by-line walkthroughs |
-
-Read **Volume II** and **Volume III** first if you are implementing a mod. Read **Volume IX** to learn by example.
-
----
-
-*“The hook is mightier than the patch.”*
+**Breaking change:** `minecraft.on(event, callback)` is removed. Always pass an options table: `minecraft.on(event, {}, callback)` or with filters.

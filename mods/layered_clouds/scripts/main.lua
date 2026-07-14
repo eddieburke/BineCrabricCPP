@@ -3,7 +3,6 @@ local CONFIG_FILE = "mod_LayeredClouds.cfg"
 local KEY_CLOUD_SETTINGS = minecraft.key_code("k")
 
 local CONFIG_DEFAULTS = {
-  enabled = true,
   layer_count = 6,
   base_opacity = 0.7,
   cloud_scale = 1.0,
@@ -12,13 +11,26 @@ local CONFIG_DEFAULTS = {
 }
 
 local CONFIG_KEYS = {
-  "enabled",
   "layer_count",
   "base_opacity",
   "cloud_scale",
   "layer_height_spacing",
   "wind_speed",
 }
+
+local NATIVE_CLOUDS_FANCIER = 3
+
+local function fancy_clouds_enabled()
+  return minecraft.options.get("clouds") == NATIVE_CLOUDS_FANCIER
+end
+
+local function set_fancy_clouds(want)
+  local current = minecraft.options.get("clouds") or 0
+  local desired = want and NATIVE_CLOUDS_FANCIER or 0
+  if current ~= desired then
+    minecraft.options.cycle("clouds", (desired - current + 4) % 4)
+  end
+end
 
 local CONFIG_NAMES = {
   layer_count = "layerCount",
@@ -49,6 +61,11 @@ local function clamp_config()
   config.wind_speed = clamp(config.wind_speed, 0.0, 10.0)
 end
 
+local function on_change()
+  clamp_config()
+  set_fancy_clouds(config.fancy_clouds)
+end
+
 local function reset_config()
   config = minecraft.util.copy(CONFIG_DEFAULTS)
   clamp_config()
@@ -74,7 +91,7 @@ local function load_config()
 end
 
 local function mod_active()
-  return config.enabled
+  return fancy_clouds_enabled()
 end
 
 load_config()
@@ -85,7 +102,10 @@ local open_settings = minecraft.screen.settings({
   parent_screen = minecraft.screen.ids.world_settings,
   parent_region = minecraft.screen.regions.footer,
   button_label = "Cloud Settings...",
-  values = function() return config end,
+  values = function()
+    config.fancy_clouds = fancy_clouds_enabled()
+    return config
+  end,
   sliders = {
     { key = "layer_count", label = "Layers", min = 1, max = 12, integer = true },
     { key = "base_opacity", min = 0, max = 1,
@@ -97,7 +117,10 @@ local open_settings = minecraft.screen.settings({
     { key = "wind_speed", min = 0, max = 5,
       format = function(v) return string.format("Wind Speed: %.1fx", v) end },
   },
-  on_change = clamp_config,
+  toggles = {
+    { key = "fancy_clouds", label = "Fancy Clouds" },
+  },
+  on_change = on_change,
   on_reset = reset_config,
   on_save = save_config,
 })

@@ -57,6 +57,32 @@ local function magnitude_to_alpha(magnitude)
   return math.max(0.0, math.min(1.0, 1.0 - (normalized * (1.0 - MIN_STAR_ALPHA))))
 end
 
+local function horizontal_from_equatorial(
+    ra_hours, dec_degrees, utc_millis, latitude_degrees, longitude_degrees)
+  local days = utc_millis / 86400000.0 - 10957.5
+  local epoch_year = 2000.0 + days / 365.2422
+  local correction = math.rad(3.82394e-5 * (365.2422 * (epoch_year - 2000.0) - days))
+  local dec = math.rad(dec_degrees)
+  local cos_dec = math.cos(dec)
+  local ra = math.rad(ra_hours * 15.0) + (math.abs(cos_dec) < 1.0e-8 and correction
+    or correction / cos_dec)
+  local mean_anomaly = (356.0470 + 0.9856002585 * days) % 360.0
+  local solar_perihelion = 282.9404 + 4.70935e-5 * days
+  local utc_hours = (utc_millis % 86400000.0) / 3600000.0
+  local lst = math.rad((mean_anomaly + solar_perihelion + 180.0 +
+    utc_hours * 15.0 + longitude_degrees) % 360.0)
+  local latitude = math.rad(minecraft.util.clamp(latitude_degrees, -90.0, 90.0))
+  local hour_angle = lst - ra
+  local sin_altitude = minecraft.util.clamp(
+    math.sin(latitude) * math.sin(dec) +
+    math.cos(latitude) * math.cos(dec) * math.cos(hour_angle), -1.0, 1.0)
+  local altitude = math.asin(sin_altitude)
+  local azimuth_south = math.atan(
+    math.sin(hour_angle),
+    math.cos(hour_angle) * math.sin(latitude) - math.tan(dec) * math.cos(latitude))
+  return (math.deg(azimuth_south) + 180.0) % 360.0, math.deg(altitude)
+end
+
 local function compile_starfield(event)
   if catalog == nil then
     catalog = load_catalog()
@@ -71,21 +97,27 @@ local function compile_starfield(event)
   local utc_millis = astronomy and event.astronomy_utc_millis or 0.0
   local latitude = astronomy and event.observer_latitude_deg or 0.0
   local longitude = astronomy and event.observer_longitude_deg or 0.0
+  local function spherical_to_cartesian(az_deg, alt_deg)
+    local az_rad = math.rad(az_deg)
+    local alt_rad = math.rad(alt_deg)
+    local cos_alt = math.cos(alt_rad)
+    return cos_alt * math.sin(az_rad), math.sin(alt_rad), -cos_alt * math.cos(az_rad)
+  end
   for index = 1, catalog.count do
     local ra_hours = catalog.right_ascension[index]
     local dec_deg = catalog.declination[index]
     local magnitude = catalog.magnitude[index]
     if magnitude <= DIMMEST_MAGNITUDE_TO_DRAW then
       seed = seed + 1
-      local yaw_deg, pitch_deg = ra_hours * 15.0, dec_deg
+      local az, alt = ra_hours * 15.0, dec_deg
       if astronomy then
-        yaw_deg, pitch_deg = minecraft.astronomy.horizontal_from_equatorial(
+        az, alt = horizontal_from_equatorial(
           ra_hours, dec_deg, utc_millis, latitude, longitude)
       end
-      if not astronomy or pitch_deg >= -0.5 then
+      if not astronomy or alt >= -0.5 then
+        local sx, sy, sz = spherical_to_cartesian(az, alt)
         billboards[#billboards + 1] = {
-          yaw_deg = yaw_deg,
-          pitch_deg = pitch_deg,
+          x = sx, y = sy, z = sz,
           size = magnitude_to_size(magnitude, seed),
           alpha = magnitude_to_alpha(magnitude),
         }

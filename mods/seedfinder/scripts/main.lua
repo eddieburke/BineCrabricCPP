@@ -1803,23 +1803,27 @@ end
 -- events
 ----------------------------------------------------------------------
 
-minecraft.screen.on_ui(minecraft.screen.ids.create_world, minecraft.screen.regions.footer, function(event)
+minecraft.on(minecraft.events.screen_ui, {
+  screen_id = minecraft.screen.ids.create_world,
+  region = minecraft.screen.regions.footer,
+  priority = 90,
+}, function(event)
   if event.ui == nil then
     return event
   end
   local host = event.host_fields or {}
   S.world_name = host.world_name or minecraft.screen.host_field("world_name")
   S.seed_text = host.seed or S.seed_text or ""
-  event.ui.add_stacked_centered_button("Seed tools...", function()
+  event.ui:add_stacked_centered_button("Seed tools...", function()
     S.world_name = minecraft.screen.host_field("world_name")
     S.seed_text = minecraft.screen.host_field("seed")
     open_finder()
   end)
   return event
-end, 90)
+end)
 
-minecraft.screen.on_lua_screen(SCREEN_ID, {
-  init = function(event)
+minecraft.on(minecraft.events.screen_event, { screen_id = SCREEN_ID }, function(event)
+  if event.phase == "init" then
     local L = layout(event.width, event.height)
     S.layout = L
     for _, f in ipairs(L.fields) do
@@ -1835,20 +1839,17 @@ minecraft.screen.on_lua_screen(SCREEN_ID, {
       minecraft.screen.set_fields_visible(false)
     end
     return event
-  end,
-  render = function(event)
+  elseif event.phase == "render" then
     if S.mode == "spec" then
       spec_render(event)
     else
       render_screen(event)
     end
     return event
-  end,
-  tick = function(event)
+  elseif event.phase == "tick" then
     search_tick()
     return event
-  end,
-  mouse = function(event)
+  elseif event.phase == "mouse" then
     if S.mode == "spec" then
       spec_mouse(event)
       return event
@@ -1865,8 +1866,7 @@ minecraft.screen.on_lua_screen(SCREEN_ID, {
       end
     end
     return event
-  end,
-  scroll = function(event)
+  elseif event.phase == "scroll" then
     if S.mode == "spec" then
       S.spec_scroll = S.spec_scroll - ((event.delta or 0) > 0 and 24 or -24)
       event.handled = true
@@ -1879,8 +1879,7 @@ minecraft.screen.on_lua_screen(SCREEN_ID, {
       event.handled = true
     end
     return event
-  end,
-  key = function(event)
+  elseif event.phase == "key" then
     if S.mode == "spec" then
       if event.key == KEY_ESCAPE then
         exit_spec(false)
@@ -1902,11 +1901,10 @@ minecraft.screen.on_lua_screen(SCREEN_ID, {
       event.handled = true
     end
     return event
-  end,
-  close = function(event)
+  elseif event.phase == "close" then
     S.searching = false
     S.search_cfg = nil
     free_map()
     return event
-  end,
-})
+  end
+end)

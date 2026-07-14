@@ -13,33 +13,29 @@
 #endif
 #include <cstdint>
 #include <string>
-
 namespace net::minecraft::server::network {
 class ServerSocket {
-   public:
-    ServerSocket() = default;
-    ServerSocket(const ServerSocket&) = delete;
-    ServerSocket& operator=(const ServerSocket&) = delete;
-    ServerSocket(ServerSocket&& other) noexcept;
-    ServerSocket& operator=(ServerSocket&& other) noexcept;
-    ~ServerSocket();
-    static void ensureWinsock();
-    void bindAndListen(const std::string& bindAddress, std::uint16_t port, int backlog = SOMAXCONN);
-    [[nodiscard]] SOCKET accept(std::string& remoteAddressOut);
+public:
+  ServerSocket() = default;
+  ServerSocket(const ServerSocket&) = delete;
+  ServerSocket& operator=(const ServerSocket&) = delete;
+  ServerSocket(ServerSocket&& other) noexcept;
+  ServerSocket& operator=(ServerSocket&& other) noexcept;
+  ~ServerSocket();
+  static void ensureWinsock();
+  void bindAndListen(const std::string& bindAddress, std::uint16_t port, int backlog = SOMAXCONN);
+  [[nodiscard]] SOCKET accept(std::string& remoteAddressOut);
+  [[nodiscard]] bool isOpen() const noexcept {
+    return socket_ != INVALID_SOCKET;
+  }
+  [[nodiscard]] SOCKET handle() const noexcept {
+    return socket_;
+  }
+  [[nodiscard]] std::uint16_t boundPort() const;
+  void close();
+  static void configureAcceptedSocket(SOCKET socket);
 
-    [[nodiscard]] bool isOpen() const noexcept {
-        return socket_ != INVALID_SOCKET;
-    }
-
-    [[nodiscard]] SOCKET handle() const noexcept {
-        return socket_;
-    }
-
-    [[nodiscard]] std::uint16_t boundPort() const;
-    void close();
-    static void configureAcceptedSocket(SOCKET socket);
-
-   private:
-    SOCKET socket_ = INVALID_SOCKET;
+private:
+  SOCKET socket_ = INVALID_SOCKET;
 };
-}  // namespace net::minecraft::server::network
+} // namespace net::minecraft::server::network

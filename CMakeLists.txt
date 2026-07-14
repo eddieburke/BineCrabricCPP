@@ -79,11 +79,42 @@ endforeach()
 list(REMOVE_DUPLICATES MINECRAFT_REGISTRY_ROOT_SOURCES)
 
 set(MINECRAFT_CORE_SOURCES ${MINECRAFT_PORT_SOURCES})
-list(FILTER MINECRAFT_CORE_SOURCES EXCLUDE REGEX "/client/|/net/minecraft/mod/")
+list(FILTER MINECRAFT_CORE_SOURCES EXCLUDE REGEX "/client/|/server/|/net/minecraft/mod/")
 list(REMOVE_ITEM MINECRAFT_CORE_SOURCES ${MINECRAFT_REGISTRY_ROOT_SOURCES})
+
+set(MINECRAFT_DEDICATED_SERVER_SOURCES ${MINECRAFT_PORT_SOURCES})
+list(FILTER MINECRAFT_DEDICATED_SERVER_SOURCES INCLUDE REGEX "/server/")
+list(APPEND MINECRAFT_DEDICATED_SERVER_SOURCES
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/net/minecraft/world/ServerWorld.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/net/minecraft/entity/player/ServerPlayerEntity.cpp"
+)
+list(REMOVE_ITEM MINECRAFT_CORE_SOURCES ${MINECRAFT_DEDICATED_SERVER_SOURCES})
+
+set(MINECRAFT_CLIENT_ONLY_SOURCES ${MINECRAFT_PORT_SOURCES})
+list(FILTER MINECRAFT_CLIENT_ONLY_SOURCES INCLUDE REGEX
+    "/net/minecraft/(achievement/Achievements|entity/EntityTypes|entity/player/ClientPlayerEntity|world/ClientWorld)\\.cpp$"
+)
+list(REMOVE_ITEM MINECRAFT_CORE_SOURCES ${MINECRAFT_CLIENT_ONLY_SOURCES})
 
 set(MINECRAFT_CLIENT_SOURCES ${MINECRAFT_PORT_SOURCES})
 list(FILTER MINECRAFT_CLIENT_SOURCES INCLUDE REGEX "/client/|/net/minecraft/mod/")
+list(APPEND MINECRAFT_CLIENT_SOURCES ${MINECRAFT_CLIENT_ONLY_SOURCES})
+list(REMOVE_DUPLICATES MINECRAFT_CLIENT_SOURCES)
+
+set(MINECRAFT_SERVER_MOD_SOURCES ${MINECRAFT_PORT_SOURCES})
+list(FILTER MINECRAFT_SERVER_MOD_SOURCES INCLUDE REGEX "/net/minecraft/mod/")
+list(FILTER MINECRAFT_SERVER_MOD_SOURCES EXCLUDE REGEX
+    "/net/minecraft/mod/(HostScreenRegistry|ModClient|ScreenUi)\\.cpp$"
+)
+list(FILTER MINECRAFT_SERVER_MOD_SOURCES EXCLUDE REGEX
+    "/net/minecraft/mod/lua/LuaModApi\\.cpp$"
+)
+list(FILTER MINECRAFT_SERVER_MOD_SOURCES EXCLUDE REGEX
+    "/net/minecraft/mod/model/.*\\.cpp$"
+)
+list(FILTER MINECRAFT_SERVER_MOD_SOURCES EXCLUDE REGEX
+    "/net/minecraft/mod/runtime/(LuaCameraBindings|LuaFboBindings|LuaGuiArgs|LuaGuiViewport|LuaInventoryBindings|LuaModelBindings|LuaRaycastBindings|LuaRenderBindings|LuaScreenBindings|LuaSoundBindings|LuaTextureBindings|LuaShaderBindings|ModRenderScope)\\.cpp$"
+)
 
 add_subdirectory(mods)
 
@@ -250,13 +281,16 @@ endfunction()
 
 function(minecraft_link_server target)
     minecraft_link_core_whole(${target})
+    if (CMAKE_CXX_COMPILER_ID STREQUAL "GNU" OR CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+        target_link_libraries(${target} PRIVATE -Wl,--whole-archive minecraft_dedicated_server_core -Wl,--no-whole-archive)
+    else()
+        target_link_libraries(${target} PRIVATE minecraft_dedicated_server_core)
+    endif()
     minecraft_link_zlib(${target})
     minecraft_link_platform(${target})
     minecraft_copy_lua_runtime(${target})
     if (WIN32)
-        target_link_libraries(${target} PRIVATE comctl32 gdi32 user32 gdiplus opengl32 glu32)
-        minecraft_link_audio(${target})
-        minecraft_link_display(${target})
+        target_link_libraries(${target} PRIVATE comctl32 gdi32 user32 gdiplus)
     endif()
 endfunction()
 
@@ -264,6 +298,11 @@ add_library(minecraft_core STATIC ${MINECRAFT_CORE_SOURCES})
 minecraft_configure_target(minecraft_core)
 minecraft_link_zlib(minecraft_core)
 minecraft_link_platform(minecraft_core)
+
+add_library(minecraft_dedicated_server_core STATIC ${MINECRAFT_DEDICATED_SERVER_SOURCES})
+minecraft_configure_target(minecraft_dedicated_server_core)
+minecraft_link_zlib(minecraft_dedicated_server_core)
+minecraft_link_platform(minecraft_dedicated_server_core)
 
 add_library(minecraft_registry_roots OBJECT ${MINECRAFT_REGISTRY_ROOT_SOURCES})
 minecraft_configure_target(minecraft_registry_roots)
@@ -274,6 +313,9 @@ if (WIN32)
     target_compile_definitions(minecraft_client PRIVATE MINECRAFT_NATIVE_EXPORTS=1)
     minecraft_enable_glfw_compile(minecraft_client)
 endif()
+
+add_library(minecraft_server_mod OBJECT ${MINECRAFT_SERVER_MOD_SOURCES})
+minecraft_configure_target(minecraft_server_mod)
 
 add_executable(minecraft_native
     src/main.cpp
@@ -294,7 +336,9 @@ minecraft_copy_lua_runtime(minecraft_native)
 
 add_executable(minecraft_server
     src/server-main.cpp
-    $<TARGET_OBJECTS:minecraft_client>
+    src/net/minecraft/client/auth/microsoft/PlayerTextureUrls.cpp
+    src/net/minecraft/client/resource/language/TranslationStorage.cpp
+    $<TARGET_OBJECTS:minecraft_server_mod>
 )
 minecraft_configure_target(minecraft_server)
 minecraft_link_registry_roots(minecraft_server)
@@ -318,6 +362,7 @@ set(MINECRAFT_TEST_SOURCES
     tests/lan_host_coordinator_test.cpp
     tests/world_required_mods_test.cpp
     tests/multiplayer_client_player_entity_test.cpp
+    tests/hook_bus_test.cpp
 )
 
 set(MINECRAFT_SERVER_TEST_SOURCES
@@ -346,6 +391,11 @@ minecraft_configure_target(minecraft_omega_tests)
 target_include_directories(minecraft_omega_tests PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/tests")
 minecraft_link_registry_roots(minecraft_omega_tests)
 minecraft_link_server(minecraft_omega_tests)
+minecraft_link_audio(minecraft_omega_tests)
+minecraft_link_display(minecraft_omega_tests)
+if (WIN32)
+    target_link_libraries(minecraft_omega_tests PRIVATE opengl32 glu32)
+endif()
 target_link_libraries(minecraft_omega_tests PRIVATE GTest::gtest_main)
 
 include(GoogleTest)

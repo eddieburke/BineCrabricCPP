@@ -64,30 +64,23 @@ end
 
 local function build_graticule()
   local primitives = {}
-  for lat = -60, 60, 30 do
-    if lat ~= 0 then
-      local vertices = {}
-      for lon = 0, 360, 6 do
-        local x, y, z = lat_lon_xyz(lat, lon, GRID_RADIUS)
-        vertices[#vertices + 1] = { x = x, y = y, z = z }
-      end
-      primitives[#primitives + 1] = { mode = "line_loop", color = 0xFF616872, vertices = vertices }
-    end
-  end
-  for lon = 0, 315, 45 do
+  for lat = -80, 80, 20 do
     local vertices = {}
-    for lat = -86, 86, 6 do
+    for lon = 0, 360, 5 do
       local x, y, z = lat_lon_xyz(lat, lon, GRID_RADIUS)
       vertices[#vertices + 1] = { x = x, y = y, z = z }
     end
-    primitives[#primitives + 1] = { mode = "line_strip", color = 0xFF616872, vertices = vertices }
+    local color = (lat == 0) and 0xFF79B5DB or 0xFF3E7196
+    primitives[#primitives + 1] = { mode = "line_loop", color = color, vertices = vertices }
   end
-  local equator = {}
-  for lon = 0, 360, 6 do
-    local x, y, z = lat_lon_xyz(0, lon, GRID_RADIUS)
-    equator[#equator + 1] = { x = x, y = y, z = z }
+  for lon = 0, 330, 30 do
+    local vertices = {}
+    for lat = -90, 90, 5 do
+      local x, y, z = lat_lon_xyz(lat, lon, GRID_RADIUS)
+      vertices[#vertices + 1] = { x = x, y = y, z = z }
+    end
+    primitives[#primitives + 1] = { mode = "line_strip", color = 0xFF3E7196, vertices = vertices }
   end
-  primitives[#primitives + 1] = { mode = "line_loop", color = 0xFF858FA3, line_width = 1.2, vertices = equator }
   return primitives
 end
 
@@ -153,6 +146,9 @@ function globe_ui.load_coastlines(text)
   end
 end
 
+function globe_ui.cleanup()
+end
+
 function globe_ui.viewport_opts(ui, width, height)
   return {
     x = ui.globe_x,
@@ -173,11 +169,11 @@ function globe_ui.draw(ui, width, height, pin_lat, pin_lon)
   ensure_geometry()
   local opts = globe_ui.viewport_opts(ui, width, height)
   minecraft.gui.begin_3d(opts)
-  for _, strip in ipairs(sphere_strips) do
+  for _, vertices in ipairs(sphere_strips) do
     minecraft.gui.draw_3d({
       mode = "quad_strip",
-      color = 0xFF1C222B,
-      vertices = strip,
+      color = 0xFF173A57,
+      vertices = vertices,
     })
   end
   for _, primitive in ipairs(graticule_primitives) do
@@ -186,7 +182,7 @@ function globe_ui.draw(ui, width, height, pin_lat, pin_lon)
   for _, vertices in ipairs(coast_vertices) do
     minecraft.gui.draw_3d({
       mode = "line_strip",
-      color = 0xFFB8C2D6,
+      color = 0xFFE1EDF7,
       vertices = vertices,
     })
   end

@@ -1,6 +1,5 @@
 #pragma once
 #include <string>
-
 namespace net::minecraft::client::diagnostics {
 void setStartupPhase(const char* phase);
 #ifdef _WIN32
@@ -11,4 +10,4 @@ void installHangWatchdog();
 void pingMainLoopHeartbeat();
 void disarmHangWatchdog();
 #endif
-}  // namespace net::minecraft::client::diagnostics
+} // namespace net::minecraft::client::diagnostics
