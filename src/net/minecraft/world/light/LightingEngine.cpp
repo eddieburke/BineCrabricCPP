@@ -71,7 +71,14 @@ void LightingEngine::push(LightType type, int minX, int minY, int minZ, int maxX
         }
       }
     }
-    queue_.push_back(Box{type, minX, minY, minZ, maxX, maxY, maxZ});
+    const std::int64_t volume = static_cast<std::int64_t>(maxX - minX + 1) *
+                                static_cast<std::int64_t>(maxY - minY + 1) *
+                                static_cast<std::int64_t>(maxZ - minZ + 1);
+    if(volume <= 64) {
+      queue_.push_front(Box{type, minX, minY, minZ, maxX, maxY, maxZ});
+    } else {
+      queue_.push_back(Box{type, minX, minY, minZ, maxX, maxY, maxZ});
+    }
     pendingCount_.store(queue_.size() + (working_ ? 1U : 0U), std::memory_order_relaxed);
   }
   workCv_.notify_one();
@@ -385,14 +392,14 @@ void LightingEngine::runUpdate(const Box& update) {
           if(z <= update.minZ) {
             includeCell(hasBack, backMinX, backMinY, backMinZ, backMaxX, backMaxY, backMaxZ, x, y, z - 1);
           }
-          if(x + 1 >= update.maxX) {
+          if(x >= update.maxX) {
             includeCell(
                 hasRight, rightMinX, rightMinY, rightMinZ, rightMaxX, rightMaxY, rightMaxZ, x + 1, y, z);
           }
-          if(y + 1 >= maxY) {
+          if(y >= maxY) {
             includeCell(hasUp, upMinX, upMinY, upMinZ, upMaxX, upMaxY, upMaxZ, x, y + 1, z);
           }
-          if(z + 1 >= update.maxZ) {
+          if(z >= update.maxZ) {
             includeCell(
                 hasFront, frontMinX, frontMinY, frontMinZ, frontMaxX, frontMaxY, frontMaxZ, x, y, z + 1);
           }

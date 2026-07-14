@@ -1,48 +1,58 @@
--- box3d: Lua port of box3d-main (https://github.com/erincatto/box3d)
--- A 3D rigid body physics engine.
--- Mirrors the C library structure: math, dynamic tree, bodies, shapes,
--- collision, contact solver, world simulation.
-
 local box3d = {}
 
--- ============================================================== Math --
--- Port of box3d/math_functions.h and src/math_internal.h
+-- Minimal 3D rigid-body core for oriented boxes. Positions and linear velocities
+-- are center-of-mass quantities. A non-zero com_offset locates the visual/shape
+-- origin relative to the center of mass.
 
-local function v3(x, y, z) return { x = x or 0, y = y or 0, z = z or 0 } end
-local function v3_add(a, b) return v3(a.x + b.x, a.y + b.y, a.z + b.z) end
-local function v3_sub(a, b) return v3(a.x - b.x, a.y - b.y, a.z - b.z) end
-local function v3_scale(a, s) return v3(a.x * s, a.y * s, a.z * s) end
-local function v3_dot(a, b) return a.x * b.x + a.y * b.y + a.z * b.z end
-local function v3_cross(a, b)
-  return v3(a.y * b.z - a.z * b.y, a.z * b.x - a.x * b.z, a.x * b.y - a.y * b.x)
+local abs, min, max, sqrt = math.abs, math.min, math.max, math.sqrt
+local floor, pi = math.floor, math.pi
+local atan2 = math.atan2
+if not atan2 then
+  atan2 = function(y, x)
+    if x > 0 then return math.atan(y / x) end
+    if x < 0 then return math.atan(y / x) + (y >= 0 and pi or -pi) end
+    if y > 0 then return 0.5 * pi end
+    if y < 0 then return -0.5 * pi end
+    return 0.0
+  end
 end
-local function v3_len(a) return math.sqrt(v3_dot(a, a)) end
-local function v3_len_sqr(a) return v3_dot(a, a) end
-local function v3_normalize(a)
-  local ls = v3_len_sqr(a)
-  if ls <= 0 then return v3(0, 0, 0) end
-  local inv = 1.0 / math.sqrt(ls)
-  return v3(a.x * inv, a.y * inv, a.z * inv)
+local EPS = 1.0e-9
+
+local function v3(x, y, z)
+  return { x = x or 0.0, y = y or 0.0, z = z or 0.0 }
 end
-local function v3_min(a, b) return v3(math.min(a.x, b.x), math.min(a.y, b.y), math.min(a.z, b.z)) end
-local function v3_max(a, b) return v3(math.max(a.x, b.x), math.max(a.y, b.y), math.max(a.z, b.z)) end
-local function v3_clamp(a, lo, hi)
+local ZERO = { x = 0.0, y = 0.0, z = 0.0 }
+
+local function add(a, b) return v3(a.x + b.x, a.y + b.y, a.z + b.z) end
+local function sub(a, b) return v3(a.x - b.x, a.y - b.y, a.z - b.z) end
+local function scale(a, s) return v3(a.x * s, a.y * s, a.z * s) end
+local function neg(a) return v3(-a.x, -a.y, -a.z) end
+local function dot(a, b) return a.x * b.x + a.y * b.y + a.z * b.z end
+local function cross(a, b)
   return v3(
-    math.max(lo.x, math.min(a.x, hi.x)),
-    math.max(lo.y, math.min(a.y, hi.y)),
-    math.max(lo.z, math.min(a.z, hi.z))
+    a.y * b.z - a.z * b.y,
+    a.z * b.x - a.x * b.z,
+    a.x * b.y - a.y * b.x
   )
 end
-local function v3_abs(a) return v3(math.abs(a.x), math.abs(a.y), math.abs(a.z)) end
-local function v3_mul(a, b) return v3(a.x * b.x, a.y * b.y, a.z * b.z) end
-local function v3_neg(a) return v3(-a.x, -a.y, -a.z) end
-local function v3_mul_add(a, s, b) return v3(a.x + s * b.x, a.y + s * b.y, a.z + s * b.z) end
-local function v3_mul_sub(a, s, b) return v3(a.x - s * b.x, a.y - s * b.y, a.z - s * b.z) end
-local function v3_lerp(a, b, t) return v3(a.x + (b.x - a.x) * t, a.y + (b.y - a.y) * t, a.z + (b.z - a.z) * t) end
+local function length2(a) return dot(a, a) end
+local function length(a) return sqrt(length2(a)) end
+local function normalize(a)
+  local ls = length2(a)
+  if ls <= EPS * EPS then return v3(0, 0, 0) end
+  return scale(a, 1.0 / sqrt(ls))
+end
+local function lerp(a, b, t)
+  return v3(a.x + (b.x - a.x) * t, a.y + (b.y - a.y) * t, a.z + (b.z - a.z) * t)
+end
 
 local function quat_identity() return { x = 0, y = 0, z = 0, w = 1 } end
-
--- Hamilton quaternion multiplication (b3MulQuat)
+local function quat_normalize(q)
+  local ls = q.x * q.x + q.y * q.y + q.z * q.z + q.w * q.w
+  if ls <= EPS * EPS then return quat_identity() end
+  local inv = 1.0 / sqrt(ls)
+  return { x = q.x * inv, y = q.y * inv, z = q.z * inv, w = q.w * inv }
+end
 local function quat_mul(a, b)
   return {
     x = a.w * b.x + a.x * b.w + a.y * b.z - a.z * b.y,
@@ -51,237 +61,87 @@ local function quat_mul(a, b)
     w = a.w * b.w - a.x * b.x - a.y * b.y - a.z * b.z,
   }
 end
-
--- Conjugate (b3Conjugate, cheap inverse of unit quat)
-local function quat_conjugate(q) return { x = -q.x, y = -q.y, z = -q.z, w = q.w } end
-
--- Normalize (b3NormalizeQuat, 128-bit precision variant adapted to float)
-local function quat_normalize(q)
-  local len = math.sqrt(q.x * q.x + q.y * q.y + q.z * q.z + q.w * q.w)
-  if len < 1e-9 then return quat_identity() end
-  local inv = 1.0 / len
-  return { x = q.x * inv, y = q.y * inv, z = q.z * inv, w = q.w * inv }
-end
-
--- Rotate vector by quaternion (b3RotateVector)
-local function quat_rotate(q, v)
-  local qv = v3(q.x, q.y, q.z)
-  local t = v3_scale(v3_cross(qv, v), 2.0)
-  return v3_add(v3_add(v, v3_scale(t, q.w)), v3_cross(qv, t))
-end
-
--- Inverse rotate (b3InvRotateVector)
-local function quat_inv_rotate(q, v)
-  return quat_rotate(quat_conjugate(q), v)
-end
-
--- Quaternion dot product (b3DotQuat)
-local function quat_dot(a, b)
-  return a.x * b.x + a.y * b.y + a.z * b.z + a.w * b.w
-end
-
--- Relative quaternion: inv(q1) * q2 (b3InvMulQuat)
-local function quat_inv_mul(q1, q2)
-  local t1 = v3_cross(q2, q1)
-  local t2 = v3_mul_add(t1, q1.w, q2)
-  local t3 = v3_mul_sub(t2, q2.w, q1)
-  return { x = t3.x, y = t3.y, z = t3.z, w = q1.w * q2.w + v3_dot(q1, q2) }
-end
-
--- Integrate rotation: q2 = normalize(q1 + 0.5 * omega * q1)
--- Ported from b3IntegrateRotation (math_internal.h)
-local function quat_integrate(q1, delta_rotation)
-  local half = v3_scale(delta_rotation, 0.5)
-  local qd = quat_mul({ x = half.x, y = half.y, z = half.z, w = 0 }, q1)
-  local q2 = { x = q1.x + qd.x, y = q1.y + qd.y, z = q1.z + qd.z, w = q1.w + qd.w }
-  return quat_normalize(q2)
-end
-
--- 3x3 rotation matrix from quaternion (b3MakeMatrixFromQuat via quat_to_mat3)
-local function quat_to_mat3(q)
-  local x, y, z, w = q.x, q.y, q.z, q.w
-  local x2, y2, z2 = x + x, y + y, z + z
-  local xx, yy, zz = x * x2, y * y2, z * z2
-  local xy, xz, yz = x * y2, x * z2, y * z2
-  local wx, wy, wz = w * x2, w * y2, w * z2
-  return {
-    { 1 - (yy + zz), xy - wz, xz + wy },
-    { xy + wz, 1 - (xx + zz), yz - wx },
-    { xz - wy, yz + wx, 1 - (xx + yy) },
-  }
-end
-
--- Matrix-vector multiply (b3MulMV)
-local function mat3_mul_vec(m, v)
+local function quat_rotate(q, p)
+  local tx = 2.0 * (q.y * p.z - q.z * p.y)
+  local ty = 2.0 * (q.z * p.x - q.x * p.z)
+  local tz = 2.0 * (q.x * p.y - q.y * p.x)
   return v3(
-    m[1][1] * v.x + m[1][2] * v.y + m[1][3] * v.z,
-    m[2][1] * v.x + m[2][2] * v.y + m[2][3] * v.z,
-    m[3][1] * v.x + m[3][2] * v.y + m[3][3] * v.z
+    p.x + q.w * tx + q.y * tz - q.z * ty,
+    p.y + q.w * ty + q.z * tx - q.x * tz,
+    p.z + q.w * tz + q.x * ty - q.y * tx
   )
 end
-
--- build rotation matrix from quat as column-vector struct (b3MakeMatrixFromQuat)
-local function make_matrix_from_quat(q)
-  local xx = q.x * q.x; local yy = q.y * q.y; local zz = q.z * q.z
-  local xy = q.x * q.y; local xz = q.x * q.z; local xw = q.x * q.w
-  local yz = q.y * q.z; local yw = q.y * q.w; local zw = q.z * q.w
-  return {
-    cx = v3(1 - 2 * (yy + zz), 2 * (xy + zw), 2 * (xz - yw)),
-    cy = v3(2 * (xy - zw), 1 - 2 * (xx + zz), 2 * (yz + xw)),
-    cz = v3(2 * (xz + yw), 2 * (yz - xw), 1 - 2 * (xx + yy)),
-  }
+local function quat_inv_rotate(q, p)
+  return quat_rotate({ x = -q.x, y = -q.y, z = -q.z, w = q.w }, p)
 end
-
--- Component-wise abs of matrix (b3AbsMatrix3)
-local function mat3_abs_matrix(m)
-  return { cx = v3_abs(m.cx), cy = v3_abs(m.cy), cz = v3_abs(m.cz) }
+local function quat_integrate(q, w, h)
+  local s = 0.5 * h
+  return quat_normalize({
+    x = q.x + s * ( w.x * q.w + w.y * q.z - w.z * q.y),
+    y = q.y + s * (-w.x * q.z + w.y * q.w + w.z * q.x),
+    z = q.z + s * ( w.x * q.y - w.y * q.x + w.z * q.w),
+    w = q.w - s * ( w.x * q.x + w.y * q.y + w.z * q.z),
+  })
 end
-
--- AABB helpers (port of box3d AABB functions)
-local function make_aabb_from_points(points, count, radius)
-  local a = { lower = v3(points[1].x, points[1].y, points[1].z),
-             upper = v3(points[1].x, points[1].y, points[1].z) }
-  for i = 2, count do
-    a.lower = v3_min(a.lower, points[i])
-    a.upper = v3_max(a.upper, points[i])
-  end
-  local r = v3(radius, radius, radius)
-  a.lower = v3_sub(a.lower, r)
-  a.upper = v3_add(a.upper, r)
-  return a
-end
-
-local function aabb_contains(a, b)
-  if a.lower.x > b.lower.x or b.upper.x > a.upper.x then return false end
-  if a.lower.y > b.lower.y or b.upper.y > a.upper.y then return false end
-  if a.lower.z > b.lower.z or b.upper.z > a.upper.z then return false end
-  return true
-end
-
-local function aabb_overlaps(a, b)
-  if a.upper.x < b.lower.x or a.lower.x > b.upper.x then return false end
-  if a.upper.y < b.lower.y or a.lower.y > b.upper.y then return false end
-  if a.upper.z < b.lower.z or a.lower.z > b.upper.z then return false end
-  return true
-end
-
-local function aabb_center(a) return v3_scale(v3_add(a.upper, a.lower), 0.5) end
-local function aabb_extents(a) return v3_scale(v3_sub(a.upper, a.lower), 0.5) end
-
-local function aabb_union(a, b)
-  return { lower = v3_min(a.lower, b.lower), upper = v3_max(a.upper, b.upper) }
-end
-
-local function aabb_inflate(a, e)
-  local r = v3(e, e, e)
-  return { lower = v3_sub(a.lower, r), upper = v3_add(a.upper, r) }
-end
-
--- Transform AABB (b3AABB_Transform)
-local function aabb_transform(tf, a)
-  local center = v3_add(tf.p, quat_rotate(tf.q, aabb_center(a)))
-  local m = make_matrix_from_quat(tf.q)
-  local ext = mat3_mul_vec(mat3_abs_matrix(m), aabb_extents(a))
-  return { lower = v3_sub(center, ext), upper = v3_add(center, ext) }
-end
-
--- Perimeter (surface area proxy, b3Perimeter)
-local function aabb_perimeter(a)
-  local d = v3_sub(a.upper, a.lower)
-  return 2 * (d.x * d.y + d.y * d.z + d.z * d.x)
-end
-
--- Transform point (b3TransformPoint)
-local function transform_point(t, v)
-  return v3_add(quat_rotate(t.q, v), t.p)
-end
-
--- Inverse transform point (b3InvTransformPoint)
-local function inv_transform_point(t, v)
-  return quat_inv_rotate(t.q, v3_sub(v, t.p))
-end
-
--- Multiply transforms (b3MulTransforms)
-local function mul_transforms(a, b)
-  return { p = v3_add(quat_rotate(a.q, b.p), a.p), q = quat_mul(a.q, b.q) }
-end
-
--- Inverse multiply transforms (b3InvMulTransforms)
-local function inv_mul_transforms(a, b)
-  return { p = quat_inv_rotate(a.q, v3_sub(b.p, a.p)), q = quat_inv_mul(a.q, b.q) }
-end
-
--- Invert transform (b3InvertTransform)
-local function invert_transform(t)
-  return { p = quat_inv_rotate(t.q, v3_neg(t.p)), q = quat_conjugate(t.q) }
-end
-
--- Slerp (standard, not in box3d core but needed for rendering)
 local function quat_slerp(a, b, t)
-  local dot = quat_dot(a, b)
-  if dot < 0 then
+  local d = a.x * b.x + a.y * b.y + a.z * b.z + a.w * b.w
+  if d < 0 then
     b = { x = -b.x, y = -b.y, z = -b.z, w = -b.w }
-    dot = -dot
+    d = -d
   end
-  if dot > 0.9995 then
-    local q = {
-      x = a.x + (b.x - a.x) * t, y = a.y + (b.y - a.y) * t,
-      z = a.z + (b.z - a.z) * t, w = a.w + (b.w - a.w) * t,
-    }
-    return quat_normalize(q)
+  if d > 0.9995 then
+    return quat_normalize({
+      x = a.x + (b.x - a.x) * t,
+      y = a.y + (b.y - a.y) * t,
+      z = a.z + (b.z - a.z) * t,
+      w = a.w + (b.w - a.w) * t,
+    })
   end
-  local theta0 = math.acos(dot)
-  local theta = theta0 * t
-  local sin_theta0 = math.sin(theta0)
-  local s0 = math.sin(theta0 - theta) / sin_theta0
-  local s1 = math.sin(theta) / sin_theta0
+  d = max(-1.0, min(1.0, d))
+  local a0 = math.acos(d)
+  local sa0 = math.sin(a0)
+  if abs(sa0) <= EPS then return a end
+  local a1 = a0 * t
+  local s0 = math.sin(a0 - a1) / sa0
+  local s1 = math.sin(a1) / sa0
   return {
-    x = a.x * s0 + b.x * s1, y = a.y * s0 + b.y * s1,
-    z = a.z * s0 + b.z * s1, w = a.w * s0 + b.w * s1,
+    x = a.x * s0 + b.x * s1,
+    y = a.y * s0 + b.y * s1,
+    z = a.z * s0 + b.z * s1,
+    w = a.w * s0 + b.w * s1,
   }
 end
-
--- Quaternion to Euler degrees for rendering (not in box3d core)
 local function quat_to_euler_degrees(q)
-  local m = quat_to_mat3(q)
-  local pitch = math.asin(math.max(-1, math.min(1, -m[2][3])))
-  local roll = math.atan(m[2][1], m[2][2])
-  local yaw = math.atan(m[1][3], m[3][3])
+  local xx, yy, zz = q.x * q.x, q.y * q.y, q.z * q.z
+  local pitch = math.asin(max(-1.0, min(1.0, 2.0 * (q.w * q.x - q.y * q.z))))
+  local roll = atan2(2.0 * (q.x * q.y + q.w * q.z), 1.0 - 2.0 * (xx + zz))
+  local yaw = atan2(2.0 * (q.x * q.z + q.w * q.y), 1.0 - 2.0 * (xx + yy))
   local k = 180.0 / math.pi
   return yaw * k, pitch * k, roll * k
 end
-
 local function make_quat_from_axis_angle(axis, radians)
-  local half = radians * 0.5
-  local s = math.sin(half)
-  return quat_normalize({ x = axis.x * s, y = axis.y * s, z = axis.z * s, w = math.cos(half) })
+  axis = normalize(axis)
+  local h = 0.5 * radians
+  local s = math.sin(h)
+  return quat_normalize({ x = axis.x * s, y = axis.y * s, z = axis.z * s, w = math.cos(h) })
 end
 
--- Public math API
 box3d.v3 = v3
-box3d.v3_add = v3_add; box3d.v3_sub = v3_sub; box3d.v3_scale = v3_scale
-box3d.v3_dot = v3_dot; box3d.v3_cross = v3_cross; box3d.v3_len = v3_len
-box3d.v3_len_sqr = v3_len_sqr; box3d.v3_normalize = v3_normalize
-box3d.v3_min = v3_min; box3d.v3_max = v3_max; box3d.v3_abs = v3_abs
-box3d.v3_lerp = v3_lerp; box3d.v3_mul = v3_mul; box3d.v3_neg = v3_neg
-box3d.quat_identity = quat_identity; box3d.quat_mul = quat_mul
-box3d.quat_normalize = quat_normalize; box3d.quat_rotate = quat_rotate
-box3d.quat_inv_rotate = quat_inv_rotate; box3d.quat_to_mat3 = quat_to_mat3
-box3d.quat_slerp = quat_slerp; box3d.quat_to_euler_degrees = quat_to_euler_degrees
+box3d.v3_add, box3d.v3_sub, box3d.v3_scale = add, sub, scale
+box3d.v3_dot, box3d.v3_cross = dot, cross
+box3d.v3_len, box3d.v3_len_sqr = length, length2
+box3d.v3_normalize, box3d.v3_lerp = normalize, lerp
+box3d.quat_identity, box3d.quat_normalize = quat_identity, quat_normalize
+box3d.quat_mul, box3d.quat_rotate, box3d.quat_inv_rotate = quat_mul, quat_rotate, quat_inv_rotate
+box3d.quat_slerp, box3d.quat_to_euler_degrees = quat_slerp, quat_to_euler_degrees
 box3d.make_quat_from_axis_angle = make_quat_from_axis_angle
-box3d.transform_point = transform_point; box3d.inv_transform_point = inv_transform_point
 
--- ======================================================= Soft Constraint --
--- Port of b3MakeSoft (solver.h): TGS soft constraint coefficients.
--- biasRate, massScale, impulseScale for contact and joint springs.
--- Called at each world step with (hertz, dampingRatio, h).
-
-function box3d.make_soft(hertz, zeta, h)
-  if hertz == 0 then
-    return { bias_rate = 0, mass_scale = 0, impulse_scale = 0 }
+function box3d.make_soft(hertz, damping_ratio, h)
+  if hertz <= 0 or h <= 0 then
+    return { bias_rate = 0, mass_scale = 1, impulse_scale = 0 }
   end
   local omega = 2.0 * math.pi * hertz
-  local a1 = 2.0 * zeta + h * omega
+  local a1 = 2.0 * damping_ratio + h * omega
   local a2 = h * omega * a1
   local a3 = 1.0 / (1.0 + a2)
   return {
@@ -291,132 +151,11 @@ function box3d.make_soft(hertz, zeta, h)
   }
 end
 
--- =========================================================== Dynamics --
--- Port of solver.c: integrate_velocities, integrate_positions
-
--- Apply inverse inertia in world space: R * invI_local * R^T * v
--- Port of the b3Body_GetInverseInertiaWorld path
-local function apply_inv_inertia(body, v)
-  local local_v = quat_inv_rotate(body.orientation, v)
-  local il = body.inv_inertia_local
-  local scaled = v3(
-    local_v.x * il.xx + local_v.y * il.xy + local_v.z * il.xz,
-    local_v.x * il.xy + local_v.y * il.yy + local_v.z * il.yz,
-    local_v.x * il.xz + local_v.y * il.yz + local_v.z * il.zz
-  )
-  return quat_rotate(body.orientation, scaled)
-end
-
--- Integrate angular velocity with torque and damping.
--- Ported from b3IntegrateVelocitiesTask (solver.c):
---   v2 = v1 + h * invInertia * torque
---   v2 *= 1 / (1 + h * damping)   (Pade approximation of exponential damping)
--- Torque is optional (nil for none). Damping defaults to 0.
-function box3d.integrate_angular_velocity(body, torque, h, angular_damping)
-  local w = body.angular_velocity
-  if torque then
-    local dw = v3_scale(apply_inv_inertia(body, torque), h)
-    w = v3_add(w, dw)
-  end
-  local damping = 1.0 / (1.0 + h * (angular_damping or 0))
-  body.angular_velocity = v3_scale(w, damping)
-end
-
--- Integrate rotation: q2 = integrate(q1, h * w)
--- Ported from b3IntegratePositionsTask (solver.c):
---   deltaRotation = h * angularVelocity
---   q2 = b3IntegrateRotation(q1, deltaRotation)
-function box3d.integrate_rotation(body, h)
-  body.orientation = quat_integrate(body.orientation, v3_scale(body.angular_velocity, h))
-end
-
--- ============================================================ Contact --
--- Single-contact-point solve with soft constraint, restitution, friction.
--- Ported from the scalar core of contact_solver.c normal-impulse loop.
--- Uses the original box3d signature: operates on one body against
--- a static surface (normal points into the body). The caller (main.lua)
--- manages body position externally.
--- Returns updated linear velocity; body.angular_velocity is mutated.
-
-function box3d.solve_contact(body, body_position, point, normal, separation, velocity, softness, restitution, friction, max_bias_velocity, restitution_threshold)
-  local r = v3_sub(point, body_position)
-  local rn = v3_cross(r, normal)
-  local inv_mass_normal = body.inv_mass + v3_dot(rn, apply_inv_inertia(body, rn))
-  if inv_mass_normal <= 1e-9 then return velocity end
-  local normal_mass = 1.0 / inv_mass_normal
-
-  local point_velocity = v3_add(velocity, v3_cross(body.angular_velocity, r))
-  local vn = v3_dot(point_velocity, normal)
-
-  -- Soft constraint bias: b3MakeSoft -> biasRate * separation, capped
-  local bias = math.max(softness.bias_rate * separation, -max_bias_velocity)
-  local mass_scale = softness.mass_scale
-
-  -- Restitution: if approaching fast enough, add bounce bias
-  local threshold = restitution_threshold or (1.0 * (1.0 / 20.0)) -- default: 1.0 m/s in tick-time (0.05)
-  if restitution > 0 and vn < -threshold then
-    bias = math.min(bias, restitution * vn)
-  end
-
-  local delta_impulse = -normal_mass * (mass_scale * vn + bias)
-  delta_impulse = math.max(delta_impulse, 0)
-
-  local impulse_vec = v3_scale(normal, delta_impulse)
-  velocity = v3_add(velocity, v3_scale(impulse_vec, body.inv_mass))
-  body.angular_velocity = v3_add(body.angular_velocity, apply_inv_inertia(body, v3_cross(r, impulse_vec)))
-
-  -- Coulomb friction
-  if friction > 0 and delta_impulse > 0 then
-    local tangent_v = v3_sub(point_velocity, v3_scale(normal, vn))
-    local tangent_speed = v3_len(tangent_v)
-    if tangent_speed > 1e-6 then
-      local tangent = v3_scale(tangent_v, 1.0 / tangent_speed)
-      local rt = v3_cross(r, tangent)
-      local inv_mass_tangent = body.inv_mass + v3_dot(rt, apply_inv_inertia(body, rt))
-      if inv_mass_tangent > 1e-9 then
-        local tangent_mass = 1.0 / inv_mass_tangent
-        local vt = v3_dot(point_velocity, tangent)
-        local friction_impulse = -tangent_mass * vt
-        local max_friction = friction * delta_impulse
-        friction_impulse = math.max(-max_friction, math.min(friction_impulse, max_friction))
-        local friction_vec = v3_scale(tangent, friction_impulse)
-        velocity = v3_add(velocity, v3_scale(friction_vec, body.inv_mass))
-        body.angular_velocity = v3_add(body.angular_velocity, apply_inv_inertia(body, v3_cross(r, friction_vec)))
-      end
-    end
-  end
-
-  return velocity
-end
-
--- ============================================================= Shape --
--- Convenience: create a rigid body data structure for a uniform box.
-
-function box3d.new_box(half_x, half_y, half_z, mass)
-  mass = mass or 1.0
-  local ix = (mass / 3.0) * (half_y * half_y + half_z * half_z)
-  local iy = (mass / 3.0) * (half_x * half_x + half_z * half_z)
-  local iz = (mass / 3.0) * (half_x * half_x + half_y * half_y)
-  return {
-    half = v3(half_x, half_y, half_z),
-    inv_mass = mass > 0 and (1.0 / mass) or 0.0,
-    inv_inertia_local = {
-      xx = ix > 1e-9 and 1.0 / ix or 0.0,
-      yy = iy > 1e-9 and 1.0 / iy or 0.0,
-      zz = iz > 1e-9 and 1.0 / iz or 0.0,
-      xy = 0, xz = 0, yz = 0,
-    },
-    orientation = quat_identity(),
-    angular_velocity = v3(0, 0, 0),
-  }
-end
-
--- Invert a symmetric 3x3 matrix (used by new_voxel_body)
-local function mat3_invert_sym(m)
+local function invert_symmetric(m)
   local det = m.xx * (m.yy * m.zz - m.yz * m.yz)
             - m.xy * (m.xy * m.zz - m.yz * m.xz)
             + m.xz * (m.xy * m.yz - m.yy * m.xz)
-  if math.abs(det) < 1e-9 then
+  if abs(det) <= EPS then
     return { xx = 0, yy = 0, zz = 0, xy = 0, xz = 0, yz = 0 }
   end
   local inv = 1.0 / det
@@ -429,219 +168,683 @@ local function mat3_invert_sym(m)
     yz = (m.xy * m.xz - m.xx * m.yz) * inv,
   }
 end
-box3d.mat3_invert_sym = mat3_invert_sym
 
--- Voxel body from texture pixel data.
--- Computes per-pixel inertia based on alpha > 0 (transparency-based mass).
--- Returns (body_data, com_offset) where com_offset is the center of mass
--- relative to the texture center. The body position tracks the COM;
--- the render offset shifts the visual back to the texture center.
-function box3d.new_voxel_body(pixels, width, height, scale, mass, thickness)
-  mass = mass or 1.0
-  thickness = thickness or (scale / width)
-  local solid_count = 0
-  local cx, cy = 0, 0
+local function sync_body_cache(body)
+  local q = body.orientation
+  if body._qx == q.x and body._qy == q.y and body._qz == q.z and body._qw == q.w then
+    return body._axes, body._inv_world
+  end
 
+  local x, y, z, w = q.x, q.y, q.z, q.w
+  local xx, yy, zz = x * x, y * y, z * z
+  local xy, xz, yz = x * y, x * z, y * z
+  local wx, wy, wz = w * x, w * y, w * z
+  local m00, m01, m02 = 1.0 - 2.0 * (yy + zz), 2.0 * (xy - wz), 2.0 * (xz + wy)
+  local m10, m11, m12 = 2.0 * (xy + wz), 1.0 - 2.0 * (xx + zz), 2.0 * (yz - wx)
+  local m20, m21, m22 = 2.0 * (xz - wy), 2.0 * (yz + wx), 1.0 - 2.0 * (xx + yy)
+
+  local axes = body._axes
+  if not axes then
+    axes = { v3(), v3(), v3() }
+    body._axes = axes
+  end
+  axes[1].x, axes[1].y, axes[1].z = m00, m10, m20
+  axes[2].x, axes[2].y, axes[2].z = m01, m11, m21
+  axes[3].x, axes[3].y, axes[3].z = m02, m12, m22
+
+  local il = body.inv_inertia_local
+  local ax, ay, az = axes[1], axes[2], axes[3]
+  local iw = body._inv_world
+  if not iw then
+    iw = { xx = 0, yy = 0, zz = 0, xy = 0, xz = 0, yz = 0 }
+    body._inv_world = iw
+  end
+
+  local ixx, iyy, izz = il.xx, il.yy, il.zz
+  local ixy, ixz, iyz = il.xy, il.xz, il.yz
+  local axx, axy, axz = ax.x, ax.y, ax.z
+  local ayx, ayy, ayz = ay.x, ay.y, ay.z
+  local azx, azy, azz = az.x, az.y, az.z
+  iw.xx = ixx * axx * axx + iyy * ayx * ayx + izz * azx * azx
+        + 2.0 * (ixy * axx * ayx + ixz * axx * azx + iyz * ayx * azx)
+  iw.yy = ixx * axy * axy + iyy * ayy * ayy + izz * azy * azy
+        + 2.0 * (ixy * axy * ayy + ixz * axy * azy + iyz * ayy * azy)
+  iw.zz = ixx * axz * axz + iyy * ayz * ayz + izz * azz * azz
+        + 2.0 * (ixy * axz * ayz + ixz * axz * azz + iyz * ayz * azz)
+  iw.xy = ixx * axx * axy + iyy * ayx * ayy + izz * azx * azy
+        + ixy * (axx * ayy + ayx * axy)
+        + ixz * (axx * azy + azx * axy)
+        + iyz * (ayx * azy + azx * ayy)
+  iw.xz = ixx * axx * axz + iyy * ayx * ayz + izz * azx * azz
+        + ixy * (axx * ayz + ayx * axz)
+        + ixz * (axx * azz + azx * axz)
+        + iyz * (ayx * azz + azx * ayz)
+  iw.yz = ixx * axy * axz + iyy * ayy * ayz + izz * azy * azz
+        + ixy * (axy * ayz + ayy * axz)
+        + ixz * (axy * azz + azy * axz)
+        + iyz * (ayy * azz + azy * ayz)
+
+  body._qx, body._qy, body._qz, body._qw = q.x, q.y, q.z, q.w
+  return axes, iw
+end
+box3d.sync_body_cache = sync_body_cache
+
+local function apply_inv_inertia(body, world_vector)
+  if not body or body.inv_mass <= 0 then return v3(0, 0, 0) end
+  local _, m = sync_body_cache(body)
+  return v3(
+    m.xx * world_vector.x + m.xy * world_vector.y + m.xz * world_vector.z,
+    m.xy * world_vector.x + m.yy * world_vector.y + m.yz * world_vector.z,
+    m.xz * world_vector.x + m.yz * world_vector.y + m.zz * world_vector.z
+  )
+end
+box3d.apply_inv_inertia = apply_inv_inertia
+
+function box3d.new_box(half_x, half_y, half_z, mass)
+  mass = max(0.0, mass or 1.0)
+  local ix = (mass / 3.0) * (half_y * half_y + half_z * half_z)
+  local iy = (mass / 3.0) * (half_x * half_x + half_z * half_z)
+  local iz = (mass / 3.0) * (half_x * half_x + half_y * half_y)
+  local body = {
+    half = v3(half_x, half_y, half_z),
+    mass = mass,
+    inv_mass = mass > EPS and 1.0 / mass or 0.0,
+    inertia_local = { xx = ix, yy = iy, zz = iz, xy = 0, xz = 0, yz = 0 },
+    inv_inertia_local = {
+      xx = ix > EPS and 1.0 / ix or 0,
+      yy = iy > EPS and 1.0 / iy or 0,
+      zz = iz > EPS and 1.0 / iz or 0,
+      xy = 0, xz = 0, yz = 0,
+    },
+    orientation = quat_identity(),
+    angular_velocity = v3(0, 0, 0),
+  }
+  sync_body_cache(body)
+  return body
+end
+
+function box3d.new_voxel_body(pixels, width, height, scale_value, mass, thickness)
+  mass = max(EPS, mass or 1.0)
+  thickness = thickness or scale_value / max(width, 1)
+  local count, sx, sy = 0, 0, 0
   for y = 0, height - 1 do
     for x = 0, width - 1 do
       local c = pixels[1 + y * width + x]
-      local alpha = (c >> 24) & 0xFF
-      if alpha > 0 then
-        solid_count = solid_count + 1
-        cx = cx + x
-        cy = cy + y
+      if c and ((floor(c / 16777216) % 256) > 0) then
+        count, sx, sy = count + 1, sx + x, sy + y
       end
     end
   end
-
-  if solid_count == 0 then
-    return box3d.new_box(scale / 2, scale / 2, thickness / 2, mass), v3(0, 0, 0)
+  if count == 0 then
+    return box3d.new_box(scale_value * 0.5, scale_value * 0.5, thickness * 0.5, mass), v3(0, 0, 0)
   end
 
-  cx = cx / solid_count
-  cy = cy / solid_count
-
-  local dx = scale / width
-  local dy = scale / height
-  -- Texture spans [-scale/2, scale/2] in x and y.
-  -- Pixel x=0 is at -scale/2, pixel x=width-1 is at scale/2 - dx.
-  -- COM relative to texture center (0, 0, 0):
-  local com_x = -scale / 2 + (cx + 0.5) * dx
-  local com_y = scale / 2 - (cy + 0.5) * dy
-  local com_offset = v3(com_x, com_y, 0)
-
-  local voxel_mass = mass / solid_count
+  local dx, dy = scale_value / width, scale_value / height
+  local cx, cy = sx / count, sy / count
+  local com_x = -0.5 * scale_value + (cx + 0.5) * dx
+  local com_y =  0.5 * scale_value - (cy + 0.5) * dy
+  local voxel_mass = mass / count
+  local ix0 = voxel_mass * (dy * dy + thickness * thickness) / 12.0
+  local iy0 = voxel_mass * (dx * dx + thickness * thickness) / 12.0
+  local iz0 = voxel_mass * (dx * dx + dy * dy) / 12.0
   local ix, iy, iz, ixy = 0, 0, 0, 0
-
-  local i0_x = voxel_mass / 12 * (dy * dy + thickness * thickness)
-  local i0_y = voxel_mass / 12 * (dx * dx + thickness * thickness)
-  local i0_z = voxel_mass / 12 * (dx * dx + dy * dy)
 
   for y = 0, height - 1 do
     for x = 0, width - 1 do
       local c = pixels[1 + y * width + x]
-      local alpha = (c >> 24) & 0xFF
-      if alpha > 0 then
-        -- Voxel position relative to COM
-        local px = -scale / 2 + (x + 0.5) * dx - com_x
-        local py = scale / 2 - (y + 0.5) * dy - com_y
-
-        -- Parallel axis theorem: I = I_cm + m * d^2
-        ix = ix + i0_x + voxel_mass * py * py
-        iy = iy + i0_y + voxel_mass * px * px
-        iz = iz + i0_z + voxel_mass * (px * px + py * py)
+      if c and ((floor(c / 16777216) % 256) > 0) then
+        local px = -0.5 * scale_value + (x + 0.5) * dx - com_x
+        local py =  0.5 * scale_value - (y + 0.5) * dy - com_y
+        ix = ix + ix0 + voxel_mass * py * py
+        iy = iy + iy0 + voxel_mass * px * px
+        iz = iz + iz0 + voxel_mass * (px * px + py * py)
         ixy = ixy - voxel_mass * px * py
       end
     end
   end
 
   local inertia = { xx = ix, yy = iy, zz = iz, xy = ixy, xz = 0, yz = 0 }
-
-  return {
-    half = v3(scale / 2, scale / 2, thickness / 2),
-    inv_mass = mass > 0 and (1.0 / mass) or 0.0,
-    inv_inertia_local = mat3_invert_sym(inertia),
+  local body = {
+    half = v3(scale_value * 0.5, scale_value * 0.5, thickness * 0.5),
+    mass = mass,
+    inv_mass = 1.0 / mass,
+    inertia_local = inertia,
+    inv_inertia_local = invert_symmetric(inertia),
     orientation = quat_identity(),
     angular_velocity = v3(0, 0, 0),
-  }, com_offset
-end
-
--- ===================================================== AABB Slide --
--- Axis-separated swept-AABB collision resolution. This mirrors the clipping
--- used by Minecraft's own entity boxes: each axis is clamped against blocks
--- that overlap on the other two axes. Unlike testing only the final AABB, this
--- cannot tunnel through a block when the requested displacement crosses it.
-
-local function ranges_overlap(a0, a1, b0, b1)
-  return a1 > b0 and a0 < b1
-end
-
-local function translate_aabb(a, dx, dy, dz)
-  a.min_x = a.min_x + dx; a.max_x = a.max_x + dx
-  a.min_y = a.min_y + dy; a.max_y = a.max_y + dy
-  a.min_z = a.min_z + dz; a.max_z = a.max_z + dz
-end
-
-function box3d.aabb_slide(aabb, dx, dy, dz, collisions)
-  local next = {
-    min_x = aabb.min_x, min_y = aabb.min_y, min_z = aabb.min_z,
-    max_x = aabb.max_x, max_y = aabb.max_y, max_z = aabb.max_z,
   }
-
-  if dy ~= 0 then
-    for _, b in ipairs(collisions) do
-      if ranges_overlap(next.min_x, next.max_x, b.min_x, b.max_x) and
-         ranges_overlap(next.min_z, next.max_z, b.min_z, b.max_z) then
-        if dy > 0 and next.max_y <= b.min_y then
-          local gap = b.min_y - next.max_y
-          if gap < dy then dy = gap end
-        elseif dy < 0 and next.min_y >= b.max_y then
-          local gap = b.max_y - next.min_y
-          if gap > dy then dy = gap end
-        end
-      end
-    end
-    translate_aabb(next, 0, dy, 0)
-  end
-
-  if dx ~= 0 then
-    for _, b in ipairs(collisions) do
-      if ranges_overlap(next.min_y, next.max_y, b.min_y, b.max_y) and
-         ranges_overlap(next.min_z, next.max_z, b.min_z, b.max_z) then
-        if dx > 0 and next.max_x <= b.min_x then
-          local gap = b.min_x - next.max_x
-          if gap < dx then dx = gap end
-        elseif dx < 0 and next.min_x >= b.max_x then
-          local gap = b.max_x - next.min_x
-          if gap > dx then dx = gap end
-        end
-      end
-    end
-    translate_aabb(next, dx, 0, 0)
-  end
-
-  if dz ~= 0 then
-    for _, b in ipairs(collisions) do
-      if ranges_overlap(next.min_x, next.max_x, b.min_x, b.max_x) and
-         ranges_overlap(next.min_y, next.max_y, b.min_y, b.max_y) then
-        if dz > 0 and next.max_z <= b.min_z then
-          local gap = b.min_z - next.max_z
-          if gap < dz then dz = gap end
-        elseif dz < 0 and next.min_z >= b.max_z then
-          local gap = b.max_z - next.min_z
-          if gap > dz then dz = gap end
-        end
-      end
-    end
-  end
-
-  return dx, dy, dz
+  sync_body_cache(body)
+  return body, v3(com_x, com_y, 0)
 end
 
--- Rotation can enlarge an item's projected AABB while it is already touching
--- a floor or wall. aabb_slide deliberately does not resolve pre-existing
--- overlap, so perform a small minimum-translation depenetration first. The
--- correction is capped because a dropped item should never be deeply embedded;
--- a huge correction would look like the very teleport this is intended to fix.
-function box3d.aabb_depenetrate(aabb, collisions, max_iterations, max_total)
-  max_iterations = max_iterations or 4
-  max_total = max_total or 0.5
+function box3d.integrate_rotation(body, h)
+  body.orientation = quat_integrate(body.orientation, body.angular_velocity, h)
+  sync_body_cache(body)
+end
 
-  local next = {
-    min_x = aabb.min_x, min_y = aabb.min_y, min_z = aabb.min_z,
-    max_x = aabb.max_x, max_y = aabb.max_y, max_z = aabb.max_z,
+local function body_axes(body)
+  return sync_body_cache(body)
+end
+
+local function make_body_obb(position, body, com_offset)
+  com_offset = com_offset or v3(0, 0, 0)
+  local axes = sync_body_cache(body)
+  local ax, ay, az = axes[1], axes[2], axes[3]
+  local ox, oy, oz = com_offset.x, com_offset.y, com_offset.z
+  local wx = ax.x * ox + ay.x * oy + az.x * oz
+  local wy = ax.y * ox + ay.y * oy + az.y * oz
+  local wz = ax.z * ox + ay.z * oy + az.z * oz
+  return {
+    center = v3(position.x - wx, position.y - wy, position.z - wz),
+    half = body.half,
+    axes = axes,
   }
-  local total_x, total_y, total_z = 0, 0, 0
+end
 
-  for _ = 1, max_iterations do
-    local best_axis, best_move, best_abs = nil, 0, math.huge
+local function make_aabb_obb(aabb)
+  return {
+    center = v3(
+      0.5 * (aabb.min_x + aabb.max_x),
+      0.5 * (aabb.min_y + aabb.max_y),
+      0.5 * (aabb.min_z + aabb.max_z)
+    ),
+    half = v3(
+      0.5 * (aabb.max_x - aabb.min_x),
+      0.5 * (aabb.max_y - aabb.min_y),
+      0.5 * (aabb.max_z - aabb.min_z)
+    ),
+    axes = { v3(1, 0, 0), v3(0, 1, 0), v3(0, 0, 1) },
+  }
+end
 
-    for _, b in ipairs(collisions) do
-      if ranges_overlap(next.min_x, next.max_x, b.min_x, b.max_x) and
-         ranges_overlap(next.min_y, next.max_y, b.min_y, b.max_y) and
-         ranges_overlap(next.min_z, next.max_z, b.min_z, b.max_z) then
-        local candidates = {
-          { "x", b.min_x - next.max_x },
-          { "x", b.max_x - next.min_x },
-          { "y", b.min_y - next.max_y },
-          { "y", b.max_y - next.min_y },
-          { "z", b.min_z - next.max_z },
-          { "z", b.max_z - next.min_z },
-        }
-        for _, c in ipairs(candidates) do
-          local a = math.abs(c[2])
-          -- Prefer an upward correction on near-ties so floor contacts do not
-          -- randomly shove an item sideways at block seams.
-          local preferred = c[1] == "y" and c[2] > 0
-          local best_preferred = best_axis == "y" and best_move > 0
-          if a < best_abs - 1e-7 or (math.abs(a - best_abs) <= 1e-7 and preferred and not best_preferred) then
-            best_axis, best_move, best_abs = c[1], c[2], a
-          end
-        end
+local function radius_on_axis(obb, axis)
+  return obb.half.x * abs(dot(obb.axes[1], axis))
+       + obb.half.y * abs(dot(obb.axes[2], axis))
+       + obb.half.z * abs(dot(obb.axes[3], axis))
+end
+
+local function obb_vertices(obb)
+  local out = {}
+  for i = 0, 7 do
+    local sx = (i % 2) == 0 and -1 or 1
+    local sy = (floor(i / 2) % 2) == 0 and -1 or 1
+    local sz = (floor(i / 4) % 2) == 0 and -1 or 1
+    local p = obb.center
+    p = add(p, scale(obb.axes[1], sx * obb.half.x))
+    p = add(p, scale(obb.axes[2], sy * obb.half.y))
+    p = add(p, scale(obb.axes[3], sz * obb.half.z))
+    out[#out + 1] = { point = p, id = i }
+  end
+  return out
+end
+
+local function point_inside_obb(p, obb, tolerance)
+  local d = sub(p, obb.center)
+  tolerance = tolerance or 0.0
+  return abs(dot(d, obb.axes[1])) <= obb.half.x + tolerance
+     and abs(dot(d, obb.axes[2])) <= obb.half.y + tolerance
+     and abs(dot(d, obb.axes[3])) <= obb.half.z + tolerance
+end
+
+local function support(obb, direction)
+  local p = obb.center
+  local h = obb.half
+  p = add(p, scale(obb.axes[1], dot(obb.axes[1], direction) >= 0 and h.x or -h.x))
+  p = add(p, scale(obb.axes[2], dot(obb.axes[2], direction) >= 0 and h.y or -h.y))
+  p = add(p, scale(obb.axes[3], dot(obb.axes[3], direction) >= 0 and h.z or -h.z))
+  return p
+end
+
+local function test_sat_axis(a, b, delta, raw_axis, kind, index, margin, best)
+  local ls = length2(raw_axis)
+  if ls <= 1.0e-12 then return best, true end
+  local axis = scale(raw_axis, 1.0 / sqrt(ls))
+  local distance = dot(delta, axis)
+  local separation = abs(distance) - radius_on_axis(a, axis) - radius_on_axis(b, axis)
+  if separation > margin then return best, false end
+  if distance < 0 then axis = neg(axis) end -- A -> B
+
+  if not best
+     or separation > best.separation + 1.0e-5
+     or (abs(separation - best.separation) <= 1.0e-5 and best.kind == "edge" and kind ~= "edge") then
+    best = { normal = axis, separation = separation, kind = kind, index = index }
+  end
+  return best, true
+end
+
+local function sat_obb(a, b, margin)
+  margin = margin or 0.0
+  local delta = sub(b.center, a.center)
+  local best
+  for i = 1, 3 do
+    local ok
+    best, ok = test_sat_axis(a, b, delta, a.axes[i], "face_a", i, margin, best)
+    if not ok then return nil end
+  end
+  for i = 1, 3 do
+    local ok
+    best, ok = test_sat_axis(a, b, delta, b.axes[i], "face_b", i, margin, best)
+    if not ok then return nil end
+  end
+  local edge_index = 0
+  for i = 1, 3 do
+    for j = 1, 3 do
+      edge_index = edge_index + 1
+      local ok
+      best, ok = test_sat_axis(a, b, delta, cross(a.axes[i], b.axes[j]), "edge", edge_index, margin, best)
+      if not ok then return nil end
+    end
+  end
+  return best
+end
+
+local function tangent_basis(n)
+  local reference = abs(n.x) < 0.57735 and v3(1, 0, 0)
+                 or (abs(n.y) < 0.57735 and v3(0, 1, 0) or v3(0, 0, 1))
+  local t1 = normalize(cross(n, reference))
+  local t2 = cross(n, t1)
+  return t1, t2
+end
+
+local function deduplicate_contacts(candidates)
+  local unique = {}
+  for i = 1, #candidates do
+    local c = candidates[i]
+    local duplicate = false
+    for j = 1, #unique do
+      if length2(sub(c.point, unique[j].point)) < 1.0e-8 then
+        duplicate = true
+        break
       end
     end
+    if not duplicate then unique[#unique + 1] = c end
+  end
+  return unique
+end
 
-    if not best_axis then break end
-
-    local remaining = max_total - math.sqrt(total_x * total_x + total_y * total_y + total_z * total_z)
-    if remaining <= 0 then break end
-    if math.abs(best_move) > remaining then
-      best_move = best_move < 0 and -remaining or remaining
+local function reduce_contacts(candidates, normal)
+  candidates = deduplicate_contacts(candidates)
+  if #candidates <= 4 then return candidates end
+  local t1, t2 = tangent_basis(normal)
+  local selected, used = {}, {}
+  local function choose(sign1, sign2)
+    local best_i, best_value
+    for i = 1, #candidates do
+      if not used[i] then
+        local p = candidates[i].point
+        local value = sign1 * dot(p, t1) + sign2 * dot(p, t2)
+        if not best_value or value > best_value then best_i, best_value = i, value end
+      end
     end
+    if best_i then
+      used[best_i] = true
+      selected[#selected + 1] = candidates[best_i]
+    end
+  end
+  choose( 1,  1)
+  choose(-1,  1)
+  choose(-1, -1)
+  choose( 1, -1)
+  return selected
+end
 
-    if best_axis == "x" then
-      total_x = total_x + best_move
-      translate_aabb(next, best_move, 0, 0)
-    elseif best_axis == "y" then
-      total_y = total_y + best_move
-      translate_aabb(next, 0, best_move, 0)
-    else
-      total_z = total_z + best_move
-      translate_aabb(next, 0, 0, best_move)
+local function build_manifold(a, b, sat, margin, single_contact)
+  local n, separation = sat.normal, sat.separation
+  local feature_base = sat.kind == "face_a" and 0 or (sat.kind == "face_b" and 8 or 16)
+  if single_contact then
+    local pa = support(a, n)
+    local pb = support(b, neg(n))
+    return {
+      normal = n,
+      separation = separation,
+      feature = feature_base + sat.index,
+      contacts = { {
+        point = scale(add(pa, pb), 0.5),
+        id = 24 + sat.index,
+        separation = separation,
+      } },
+    }
+  end
+  local candidates = {}
+  local va, vb = obb_vertices(a), obb_vertices(b)
+  local support_a = dot(support(a, n), n)
+  local support_b = dot(support(b, neg(n)), n)
+  local band = max(0.0025, margin or 0.0) + max(0.0, -separation) * 0.25
+
+  for i = 1, #va do
+    local vertex = va[i]
+    if dot(vertex.point, n) >= support_a - band and point_inside_obb(vertex.point, b, max(0.001, margin or 0)) then
+      candidates[#candidates + 1] = {
+        point = add(vertex.point, scale(n, 0.5 * separation)),
+        id = vertex.id,
+        separation = separation,
+      }
+    end
+  end
+  for i = 1, #vb do
+    local vertex = vb[i]
+    if dot(vertex.point, n) <= support_b + band and point_inside_obb(vertex.point, a, max(0.001, margin or 0)) then
+      candidates[#candidates + 1] = {
+        point = sub(vertex.point, scale(n, 0.5 * separation)),
+        id = 8 + vertex.id,
+        separation = separation,
+      }
     end
   end
 
-  return total_x, total_y, total_z
+  if #candidates == 0 then
+    local pa = support(a, n)
+    local pb = support(b, neg(n))
+    candidates[1] = {
+      point = scale(add(pa, pb), 0.5),
+      id = 24 + sat.index,
+      separation = separation,
+    }
+  end
+
+  return {
+    normal = n,
+    separation = separation,
+    feature = feature_base + sat.index,
+    contacts = reduce_contacts(candidates, n),
+  }
+end
+
+function box3d.body_aabb(position, body, com_offset, inflate, out)
+  local obb = make_body_obb(position, body, com_offset)
+  local axes, half = obb.axes, obb.half
+  local ex = half.x * abs(axes[1].x) + half.y * abs(axes[2].x) + half.z * abs(axes[3].x)
+  local ey = half.x * abs(axes[1].y) + half.y * abs(axes[2].y) + half.z * abs(axes[3].y)
+  local ez = half.x * abs(axes[1].z) + half.y * abs(axes[2].z) + half.z * abs(axes[3].z)
+  inflate = inflate or 0.0
+  out = out or {}
+  out.min_x, out.max_x = obb.center.x - ex - inflate, obb.center.x + ex + inflate
+  out.min_y, out.max_y = obb.center.y - ey - inflate, obb.center.y + ey + inflate
+  out.min_z, out.max_z = obb.center.z - ez - inflate, obb.center.z + ez + inflate
+  return out
+end
+
+function box3d.box_aabb_manifold(position, body, com_offset, aabb, margin)
+  local a, b = make_body_obb(position, body, com_offset), make_aabb_obb(aabb)
+  local sat = sat_obb(a, b, margin or 0.0)
+  return sat and build_manifold(a, b, sat, margin or 0.0) or nil
+end
+
+function box3d.box_box_manifold(position_a, body_a, offset_a, position_b, body_b, offset_b, margin, single_contact)
+  local a = make_body_obb(position_a, body_a, offset_a)
+  local b = make_body_obb(position_b, body_b, offset_b)
+  local sat = sat_obb(a, b, margin or 0.0)
+  return sat and build_manifold(a, b, sat, margin or 0.0, single_contact) or nil
+end
+
+-- Exact translational swept-SAT for a box with fixed orientation over the sweep.
+-- Rotation is handled by world sub-stepping.
+function box3d.sweep_box_aabb(position, delta_position, body, com_offset, aabb, margin)
+  local a, b = make_body_obb(position, body, com_offset), make_aabb_obb(aabb)
+  margin = margin or 0.0
+  local center_delta = sub(b.center, a.center)
+  local relative_motion = neg(delta_position)
+  local enter, exit = 0.0, 1.0
+  local hit_normal
+
+  local axes = { a.axes[1], a.axes[2], a.axes[3], b.axes[1], b.axes[2], b.axes[3] }
+  for i = 1, 3 do
+    for j = 1, 3 do axes[#axes + 1] = cross(a.axes[i], b.axes[j]) end
+  end
+
+  for i = 1, #axes do
+    local raw = axes[i]
+    local ls = length2(raw)
+    if ls > 1.0e-12 then
+      local axis = scale(raw, 1.0 / sqrt(ls))
+      local radius = radius_on_axis(a, axis) + radius_on_axis(b, axis) + margin
+      local d0 = dot(center_delta, axis)
+      local dv = dot(relative_motion, axis)
+      if abs(dv) <= EPS then
+        if abs(d0) > radius then return nil end
+      else
+        local t0 = (-radius - d0) / dv
+        local t1 = ( radius - d0) / dv
+        local normal_at_entry = axis
+        if t0 > t1 then
+          t0, t1 = t1, t0
+          normal_at_entry = neg(axis)
+        else
+          normal_at_entry = axis
+        end
+        if t0 > enter then
+          enter = t0
+          -- normal points from moving A toward static B
+          local d_at = d0 + dv * t0
+          hit_normal = d_at >= 0 and axis or neg(axis)
+        end
+        exit = min(exit, t1)
+        if enter > exit then return nil end
+      end
+    end
+  end
+
+  if enter < 0 or enter > 1 then return nil end
+  return enter, hit_normal
+end
+
+local function point_velocity(body, linear_velocity, r)
+  return add(linear_velocity, cross(body.angular_velocity, r))
+end
+
+local function apply_impulse(body, linear_velocity, r, impulse, sign)
+  if not body or body.inv_mass <= 0 then return linear_velocity end
+  linear_velocity = add(linear_velocity, scale(impulse, sign * body.inv_mass))
+  body.angular_velocity = add(body.angular_velocity, apply_inv_inertia(body, scale(cross(r, impulse), sign)))
+  return linear_velocity
+end
+
+local function effective_mass(body_a, r_a, body_b, r_b, axis)
+  local k = (body_a and body_a.inv_mass or 0) + (body_b and body_b.inv_mass or 0)
+  if body_a and body_a.inv_mass > 0 then
+    local ra = cross(r_a, axis)
+    k = k + dot(ra, apply_inv_inertia(body_a, ra))
+  end
+  if body_b and body_b.inv_mass > 0 then
+    local rb = cross(r_b, axis)
+    k = k + dot(rb, apply_inv_inertia(body_b, rb))
+  end
+  return k > EPS and 1.0 / k or 0.0
+end
+
+local function prepare_points(body_a, position_a, velocity_a, body_b, position_b, velocity_b, manifolds, options, single_manifold)
+  local points = {}
+  local h = max(options.h or 1.0, EPS)
+  local softness = options.softness or { bias_rate = 0.2 / h, mass_scale = 1, impulse_scale = 0 }
+  local slop = options.slop or 0.0015
+  local threshold = options.restitution_threshold or 0.05
+  local max_push = options.max_push_speed or 0.15
+
+  local manifold_count = single_manifold and 1 or #manifolds
+  for mi = 1, manifold_count do
+    local manifold = single_manifold and manifolds or manifolds[mi]
+    local n = manifold.normal
+    local t1, t2 = tangent_basis(n)
+    local friction = max(0.0, manifold.friction or options.friction or 0.6)
+    local restitution = max(0.0, manifold.restitution or options.restitution or 0.0)
+    for ci = 1, #manifold.contacts do
+      local contact = manifold.contacts[ci]
+      local r_a = sub(contact.point, position_a)
+      local r_b = body_b and sub(contact.point, position_b) or ZERO
+      local va = point_velocity(body_a, velocity_a, r_a)
+      local vb = body_b and point_velocity(body_b, velocity_b, r_b) or ZERO
+      local initial_vn = dot(sub(vb, va), n)
+      local separation = contact.separation or manifold.separation or 0.0
+      local bias
+      if separation > 0 then
+        bias = separation / h -- speculative constraint
+      else
+        bias = max(-max_push, softness.bias_rate * min(separation + slop, 0.0))
+      end
+      points[#points + 1] = {
+        manifold = manifold,
+        contact = contact,
+        n = n, t1 = t1, t2 = t2,
+        r_a = r_a, r_b = r_b,
+        normal_mass = effective_mass(body_a, r_a, body_b, r_b, n),
+        tangent_mass1 = effective_mass(body_a, r_a, body_b, r_b, t1),
+        tangent_mass2 = effective_mass(body_a, r_a, body_b, r_b, t2),
+        normal_impulse = contact.normal_impulse or 0.0,
+        tangent_impulse1 = contact.tangent_impulse1 or 0.0,
+        tangent_impulse2 = contact.tangent_impulse2 or 0.0,
+        bias = bias,
+        restitution_target = initial_vn < -threshold and (-restitution * initial_vn) or 0.0,
+        friction = friction,
+        softness = softness,
+      }
+    end
+  end
+  return points
+end
+
+local function warm_start(body_a, velocity_a, body_b, velocity_b, points)
+  for i = 1, #points do
+    local p = points[i]
+    local impulse = add(
+      scale(p.n, p.normal_impulse),
+      add(scale(p.t1, p.tangent_impulse1), scale(p.t2, p.tangent_impulse2))
+    )
+    velocity_a = apply_impulse(body_a, velocity_a, p.r_a, impulse, -1)
+    if body_b then velocity_b = apply_impulse(body_b, velocity_b, p.r_b, impulse, 1) end
+  end
+  return velocity_a, velocity_b
+end
+
+local function solve_velocity(body_a, velocity_a, body_b, velocity_b, points, iterations)
+  -- Box3D performs one biased solve followed by one unbiased relaxation solve
+  -- per sub-step. iterations is retained as a compatibility multiplier, but
+  -- callers should normally pass 1.
+  iterations = max(1, iterations or 1)
+
+  for _ = 1, iterations do
+    -- Biased normal constraints only. Friction is intentionally deferred.
+    for i = 1, #points do
+      local p = points[i]
+      local va = point_velocity(body_a, velocity_a, p.r_a)
+      local vb = body_b and point_velocity(body_b, velocity_b, p.r_b) or ZERO
+      local vn = dot(sub(vb, va), p.n)
+      local soft = p.softness
+      local delta = -p.normal_mass * (soft.mass_scale * vn + p.bias) - soft.impulse_scale * p.normal_impulse
+      local next_impulse = max(0.0, p.normal_impulse + delta)
+      delta = next_impulse - p.normal_impulse
+      p.normal_impulse = next_impulse
+      local impulse = scale(p.n, delta)
+      velocity_a = apply_impulse(body_a, velocity_a, p.r_a, impulse, -1)
+      if body_b then velocity_b = apply_impulse(body_b, velocity_b, p.r_b, impulse, 1) end
+    end
+  end
+
+  -- Unbiased relaxation and Coulomb friction.
+  for i = 1, #points do
+    local p = points[i]
+    local va = point_velocity(body_a, velocity_a, p.r_a)
+    local vb = body_b and point_velocity(body_b, velocity_b, p.r_b) or ZERO
+    local vn = dot(sub(vb, va), p.n)
+    local delta = -p.normal_mass * vn
+    local next_impulse = max(0.0, p.normal_impulse + delta)
+    delta = next_impulse - p.normal_impulse
+    p.normal_impulse = next_impulse
+    local impulse = scale(p.n, delta)
+    velocity_a = apply_impulse(body_a, velocity_a, p.r_a, impulse, -1)
+    if body_b then velocity_b = apply_impulse(body_b, velocity_b, p.r_b, impulse, 1) end
+
+    va = point_velocity(body_a, velocity_a, p.r_a)
+    vb = body_b and point_velocity(body_b, velocity_b, p.r_b) or v3(0, 0, 0)
+    local rv = sub(vb, va)
+    local old1, old2 = p.tangent_impulse1, p.tangent_impulse2
+    local next1 = old1 - p.tangent_mass1 * dot(rv, p.t1)
+    local next2 = old2 - p.tangent_mass2 * dot(rv, p.t2)
+    local limit = p.friction * p.normal_impulse
+    local mag2 = next1 * next1 + next2 * next2
+    if mag2 > limit * limit and mag2 > EPS then
+      local f = limit / sqrt(mag2)
+      next1, next2 = next1 * f, next2 * f
+    end
+    p.tangent_impulse1, p.tangent_impulse2 = next1, next2
+    local friction_impulse = add(scale(p.t1, next1 - old1), scale(p.t2, next2 - old2))
+    velocity_a = apply_impulse(body_a, velocity_a, p.r_a, friction_impulse, -1)
+    if body_b then velocity_b = apply_impulse(body_b, velocity_b, p.r_b, friction_impulse, 1) end
+  end
+
+  -- Restitution is a distinct pass after the inelastic solve.
+  for i = 1, #points do
+    local p = points[i]
+    if p.restitution_target > 0 and p.normal_impulse > 0 then
+      local va = point_velocity(body_a, velocity_a, p.r_a)
+      local vb = body_b and point_velocity(body_b, velocity_b, p.r_b) or ZERO
+      local vn = dot(sub(vb, va), p.n)
+      local delta = p.normal_mass * (p.restitution_target - vn)
+      local next_impulse = max(0.0, p.normal_impulse + delta)
+      delta = next_impulse - p.normal_impulse
+      p.normal_impulse = next_impulse
+      local impulse = scale(p.n, delta)
+      velocity_a = apply_impulse(body_a, velocity_a, p.r_a, impulse, -1)
+      if body_b then velocity_b = apply_impulse(body_b, velocity_b, p.r_b, impulse, 1) end
+    end
+  end
+
+  for i = 1, #points do
+    local p = points[i]
+    p.contact.normal_impulse = p.normal_impulse
+    p.contact.tangent_impulse1 = p.tangent_impulse1
+    p.contact.tangent_impulse2 = p.tangent_impulse2
+  end
+  return velocity_a, velocity_b
+end
+
+function box3d.solve_static_manifolds(body, position, velocity, manifolds, options)
+  options = options or {}
+  if #manifolds == 0 then return velocity, 0.0 end
+  local points = prepare_points(body, position, velocity, nil, ZERO, ZERO, manifolds, options)
+  if options.warm_start ~= false then velocity = warm_start(body, velocity, nil, ZERO, points) end
+  velocity = solve_velocity(body, velocity, nil, ZERO, points, options.iterations or 1)
+  local total_normal = 0.0
+  for i = 1, #points do total_normal = total_normal + points[i].normal_impulse end
+  return velocity, total_normal
+end
+
+function box3d.solve_pair_manifold(body_a, position_a, velocity_a, body_b, position_b, velocity_b, manifold, options)
+  options = options or {}
+  local points = prepare_points(body_a, position_a, velocity_a, body_b, position_b, velocity_b, manifold, options, true)
+  if options.warm_start ~= false then
+    velocity_a, velocity_b = warm_start(body_a, velocity_a, body_b, velocity_b, points)
+  end
+  velocity_a, velocity_b = solve_velocity(
+    body_a, velocity_a, body_b, velocity_b, points, options.iterations or 1
+  )
+  local total_normal = 0.0
+  for i = 1, #points do total_normal = total_normal + points[i].normal_impulse end
+  return velocity_a, velocity_b, total_normal
+end
+
+function box3d.correct_static_position(position, manifold, slop, percent, max_correction)
+  slop = slop or 0.0015
+  percent = percent or 0.75
+  max_correction = max_correction or 0.15
+  local penetration = max(0.0, -(manifold.separation or 0.0) - slop)
+  if penetration <= 0 then return position, 0.0 end
+  local correction = min(max_correction, penetration * percent)
+  return sub(position, scale(manifold.normal, correction)), correction
+end
+
+function box3d.correct_pair_positions(position_a, body_a, position_b, body_b, manifold, slop, percent, max_correction)
+  slop = slop or 0.0015
+  percent = percent or 0.75
+  max_correction = max_correction or 0.15
+  local penetration = max(0.0, -(manifold.separation or 0.0) - slop)
+  if penetration <= 0 then return position_a, position_b, 0.0 end
+  local inv_a, inv_b = body_a.inv_mass, body_b.inv_mass
+  local sum = inv_a + inv_b
+  if sum <= EPS then return position_a, position_b, 0.0 end
+  local correction = min(max_correction, penetration * percent)
+  position_a = sub(position_a, scale(manifold.normal, correction * inv_a / sum))
+  position_b = add(position_b, scale(manifold.normal, correction * inv_b / sum))
+  return position_a, position_b, correction
 end
 
 return box3d

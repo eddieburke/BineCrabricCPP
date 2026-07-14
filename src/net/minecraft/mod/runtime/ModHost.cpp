@@ -2,6 +2,7 @@
 #include "net/minecraft/mod/lua/LuaHostApi.hpp"
 #include "net/minecraft/mod/lua/LuaRuntimePrelude.hpp"
 #include "net/minecraft/mod/HookBus.hpp"
+#include "net/minecraft/mod/ModSettingsRegistry.hpp"
 #include "net/minecraft/mod/runtime/LuaBlockBindings.hpp"
 #include "net/minecraft/mod/runtime/LuaItemBindings.hpp"
 #ifdef MINECRAFT_NATIVE_EXPORTS
@@ -191,6 +192,7 @@ void ModHost::initialize(const std::filesystem::path& runDirectory) {
   std::filesystem::create_directories(cacheDirectory_);
   initialized_ = true;
   loadStateFile();
+  net::minecraft::mod::ModSettingsRegistry::instance().load(runDirectory_ / "mod_settings.txt");
   rescan();
 }
 void ModHost::shutdown() {

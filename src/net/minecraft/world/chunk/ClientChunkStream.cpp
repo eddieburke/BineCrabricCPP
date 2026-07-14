@@ -126,7 +126,11 @@ bool ClientChunkStream::requestAsync(int chunkX, int chunkZ, int priority) {
         if(job->result == nullptr) {
           job->failed = true;
         }
-        job->done.store(true, std::memory_order_release);
+        {
+          const std::lock_guard lock(job->doneMutex);
+          job->done.store(true, std::memory_order_release);
+        }
+        job->doneCv.notify_all();
         const std::lock_guard lock(asyncMutex_);
         completedJobs_.push_back(job);
       },
@@ -144,7 +148,7 @@ std::vector<std::shared_ptr<ClientChunkStream::AsyncJob>> ClientChunkStream::pum
   }
   return done;
 }
-std::unique_ptr<Chunk> ClientChunkStream::tryClaimAsync(int chunkX, int chunkZ) {
+std::unique_ptr<Chunk> ClientChunkStream::claimAsync(int chunkX, int chunkZ) {
   std::shared_ptr<AsyncJob> job;
   {
     const std::lock_guard lock(asyncMutex_);
@@ -154,8 +158,9 @@ std::unique_ptr<Chunk> ClientChunkStream::tryClaimAsync(int chunkX, int chunkZ) 
     }
     job = it->second;
   }
-  if(!job->done.load(std::memory_order_acquire)) {
-    return nullptr;
+  {
+    std::unique_lock lock(job->doneMutex);
+    job->doneCv.wait(lock, [&job] { return job->done.load(std::memory_order_acquire); });
   }
   std::unique_ptr<Chunk> result = std::move(job->result);
   {
@@ -386,6 +391,9 @@ Chunk* ClientChunkStream::installChunk(const ChunkPos& pos, std::unique_ptr<Chun
   }
   ownedChunks_[pos] = std::move(chunk);
   residentChunks_[pos] = raw;
+  if(world_ != nullptr) {
+    world_->setBlocksDirty(pos.x * 16, 0, pos.z * 16, pos.x * 16 + 15, Chunk::height - 1, pos.z * 16 + 15);
+  }
   return raw;
 }
 Chunk* ClientChunkStream::installEmptyChunk(const ChunkPos& pos) {
@@ -484,7 +492,7 @@ Chunk& ClientChunkStream::getChunk(int chunkX, int chunkZ) {
   }
   std::unique_ptr<Chunk> chunk = takeReadyChunk(chunkX, chunkZ);
   if(chunk == nullptr) {
-    chunk = tryClaimAsync(chunkX, chunkZ);
+    chunk = claimAsync(chunkX, chunkZ);
   }
   if(chunk == nullptr) {
     chunk = loadFromStorage(pos);
@@ -547,7 +555,9 @@ bool ClientChunkStream::save(bool saveEntities, client::gui::screen::LoadingDisp
   }
 #endif
   int saved = 0;
+#ifdef MINECRAFT_NATIVE_EXPORTS
   int index = 0;
+#endif
   for(const auto& [pos, chunk] : residentChunks_) {
     (void)pos;
     if(!isManagedChunk(chunk)) {
@@ -562,6 +572,9 @@ bool ClientChunkStream::save(bool saveEntities, client::gui::screen::LoadingDisp
     saveChunk(*chunk);
     chunk->dirty = false;
     if(!saveEntities && ++saved == 2) {
+      if(storage_ != nullptr) {
+        storage_->flush();
+      }
       return false;
     }
 #ifdef MINECRAFT_NATIVE_EXPORTS
@@ -572,7 +585,7 @@ bool ClientChunkStream::save(bool saveEntities, client::gui::screen::LoadingDisp
     (void)display;
 #endif
   }
-  if(saveEntities && storage_ != nullptr) {
+  if(storage_ != nullptr && (saveEntities || saved > 0)) {
     storage_->flush();
   }
   return true;

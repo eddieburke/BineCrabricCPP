@@ -164,7 +164,10 @@ public:
     entity->chunkX = x;
     entity->chunkSlice = slice;
     entity->chunkZ = z;
-    entities[static_cast<std::size_t>(slice)].push_back(entity);
+    auto& entitySlice = entities[static_cast<std::size_t>(slice)];
+    if(std::find(entitySlice.begin(), entitySlice.end(), entity) == entitySlice.end()) {
+      entitySlice.push_back(entity);
+    }
   }
   void removeEntity(Entity* entity) {
     if(entity != nullptr) {
@@ -378,9 +381,7 @@ public:
     return empty;
   }
   void fill() {
-    std::vector<std::uint8_t> copy(blocks.begin(), blocks.end());
-    BlockSource::fill(copy);
-    std::copy(copy.begin(), copy.end(), blocks.begin());
+    BlockSource::fill(blocks);
   }
   World* world = nullptr;
   std::vector<std::uint8_t> blocks;

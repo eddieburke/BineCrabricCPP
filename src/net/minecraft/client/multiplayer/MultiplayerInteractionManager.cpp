@@ -158,6 +158,12 @@ void MultiplayerInteractionManager::tick() {
     minecraft->audio.tick();
   }
 }
+float MultiplayerInteractionManager::getBlockBreakingProgress(float partialTick) const {
+  return lastBlockBreakingProgress + (blockBreakingProgress - lastBlockBreakingProgress) * partialTick;
+}
+float MultiplayerInteractionManager::getLastBlockBreakingProgress() const {
+  return lastBlockBreakingProgress;
+}
 bool MultiplayerInteractionManager::interactBlock(
     PlayerEntity* player, World* world, ItemStack* item, int x, int y, int z, int side) {
   updateSelectedSlot();

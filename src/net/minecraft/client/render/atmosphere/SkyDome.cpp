@@ -74,7 +74,7 @@ void buildSkyDomes(SkyMeshes& meshes) {
   meshes.stars = tessellator.takeMesh();
   (void)meshes.stars.uploadToGpu();
   constexpr int step = 64;
-  constexpr int span = 256 / step + 2;
+  constexpr int span = 4096 / step;
   tessellator.start(gl::prim::Quads);
   for(int x = -step * span; x <= step * span; x += step) {
     for(int z = -step * span; z <= step * span; z += step) {

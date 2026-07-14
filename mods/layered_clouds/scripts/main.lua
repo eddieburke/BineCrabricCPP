@@ -1,6 +1,4 @@
-local SCREEN_ID = "layered_clouds:settings"
 local CONFIG_FILE = "mod_LayeredClouds.cfg"
-local KEY_CLOUD_SETTINGS = minecraft.key_code("k")
 
 local CONFIG_DEFAULTS = {
   layer_count = 6,
@@ -61,11 +59,6 @@ local function clamp_config()
   config.wind_speed = clamp(config.wind_speed, 0.0, 10.0)
 end
 
-local function on_change()
-  clamp_config()
-  set_fancy_clouds(config.fancy_clouds)
-end
-
 local function reset_config()
   config = minecraft.util.copy(CONFIG_DEFAULTS)
   clamp_config()
@@ -91,38 +84,30 @@ local function load_config()
 end
 
 local function mod_active()
-  return fancy_clouds_enabled()
+  local function setting(key, fallback)
+    local value = minecraft.settings.get(key)
+    return value == nil and fallback or value
+  end
+  config.layer_count = setting("layer_count", CONFIG_DEFAULTS.layer_count)
+  config.base_opacity = setting("base_opacity", CONFIG_DEFAULTS.base_opacity)
+  config.cloud_scale = setting("cloud_scale", CONFIG_DEFAULTS.cloud_scale)
+  config.layer_height_spacing = setting("layer_height_spacing", CONFIG_DEFAULTS.layer_height_spacing)
+  config.wind_speed = setting("wind_speed", CONFIG_DEFAULTS.wind_speed)
+  config.fancy_clouds = setting("fancy_clouds", true)
+  clamp_config()
+  set_fancy_clouds(config.fancy_clouds)
+  return config.fancy_clouds
 end
 
 load_config()
 
-local open_settings = minecraft.screen.settings({
-  id = SCREEN_ID,
-  title = "Cloud Settings",
-  parent_screen = minecraft.screen.ids.world_settings,
-  parent_region = minecraft.screen.regions.footer,
-  button_label = "Cloud Settings...",
-  values = function()
-    config.fancy_clouds = fancy_clouds_enabled()
-    return config
-  end,
-  sliders = {
-    { key = "layer_count", label = "Layers", min = 1, max = 12, integer = true },
-    { key = "base_opacity", min = 0, max = 1,
-      format = function(v) return "Opacity: " .. math.floor(v * 100) .. "%" end },
-    { key = "cloud_scale", min = 0.5, max = 2,
-      format = function(v) return string.format("Scale: %.2fx", v) end },
-    { key = "layer_height_spacing", min = 4, max = 32,
-      format = function(v) return "Spacing: " .. math.floor(v + 0.5) .. " blocks" end },
-    { key = "wind_speed", min = 0, max = 5,
-      format = function(v) return string.format("Wind Speed: %.1fx", v) end },
-  },
-  toggles = {
-    { key = "fancy_clouds", label = "Fancy Clouds" },
-  },
-  on_change = on_change,
-  on_reset = reset_config,
-  on_save = save_config,
+minecraft.settings.register("Layered Clouds", {
+  { key = "layer_count", label = "Layers", kind = "slider", min = 1, max = 12, integer = true, default = config.layer_count },
+  { key = "base_opacity", label = "Opacity", kind = "slider", min = 0, max = 1, step = 0.05, decimals = 2, default = config.base_opacity },
+  { key = "cloud_scale", label = "Scale", kind = "slider", min = 0.5, max = 2, step = 0.05, decimals = 2, default = config.cloud_scale },
+  { key = "layer_height_spacing", label = "Layer Spacing", kind = "slider", min = 4, max = 32, integer = true, default = config.layer_height_spacing },
+  { key = "wind_speed", label = "Wind Speed", kind = "slider", min = 0, max = 5, step = 0.1, decimals = 1, default = config.wind_speed },
+  { key = "fancy_clouds", label = "Fancy Clouds", kind = "toggle", default = fancy_clouds_enabled() },
 })
 
 minecraft.on(minecraft.events.client_tick, {
@@ -271,14 +256,4 @@ minecraft.on(minecraft.events.world_render, {
     draw_cloud_layer(event, layer, height, color_r, color_g, color_b)
   end
   return event
-end)
-
-minecraft.on(minecraft.events.key_press, {
-  key = KEY_CLOUD_SETTINGS,
-  pressed = true,
-  handled = false,
-  priority = 100,
-}, function(event)
-  open_settings()
-  event.handled = true
 end)

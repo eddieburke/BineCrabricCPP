@@ -98,6 +98,7 @@ public:
   bool dirty = false;
   net::minecraft::Box cullingBox{0, 0, 0, 0, 0, 0};
   int id = 0;
+  int drawRing = 0;
   bool hasSkyLight = false;
   bool built = false;
   int version = 0;

@@ -132,6 +132,7 @@ void PrecipitationRenderer::renderPrecipitation(const AtmosphereContext& ctx, fl
     }
   }
   tessellator.draw();
+  tessellator.translate(0.0, 0.0, 0.0);
   gl::bindTexture(gl::cap::Texture2D, ctx.textureManager->getTextureId("/environment/rain.png"));
   if(client::option::resolve(ctx.options).fancyPrecipitation) {
     radius = 10;
@@ -212,5 +213,6 @@ void PrecipitationRenderer::renderPrecipitation(const AtmosphereContext& ctx, fl
     }
   }
   tessellator.draw();
+  tessellator.translate(0.0, 0.0, 0.0);
 }
 } // namespace net::minecraft::client::render::atmosphere

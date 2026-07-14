@@ -24,7 +24,7 @@ end
 minecraft.events = names({
   "attack_damage", "block_interact", "chunk_generation", "client_tick", "create_world",
   "entity_interact", "entity_remove", "entity_render", "entity_spawn", "entity_teleport", "entity_tick",
-  "first_person_hand", "fov", "camera_setup",
+  "first_person_hand", "fog_settings", "fov", "camera_setup",
   "key_press", "mouse_button", "player_travel", "pre_entity_render", "pre_tile_entity_render",
   "raycast", "render_frame", "render_targets", "screen_event", "screen_region", "screen_ui",
   "tick_rate", "tile_entity_tick", "world_color", "world_open", "world_render",
@@ -186,33 +186,43 @@ do
     end)
   end
   function screen.settings(spec)
-    local ui = { controls = {}, drag = nil }
+    local ui = { controls = {}, drag = nil, page = 1, pages = 1, width = 0, height = 0 }
     local priority = spec.priority or 100
+    local parent_region = spec.parent_region or screen.regions.footer
     local function values()
       return type(spec.values) == "function" and spec.values() or spec.values
     end
     local function layout(width, height)
-      local controls = {}
+      local all = {}
       for _, slider in ipairs(spec.sliders or {}) do
         slider.kind = "slider"
-        controls[#controls + 1] = slider
+        all[#all + 1] = slider
       end
       for _, toggle in ipairs(spec.toggles or {}) do
         toggle.kind = "toggle"
-        controls[#controls + 1] = toggle
+        all[#all + 1] = toggle
       end
-      local y0 = math.floor(height / 4)
-      for index, control in ipairs(controls) do
-        control.x = math.floor(width / 2 - 155) + ((index - 1) % 2) * 160
-        control.y = y0 + math.floor((index - 1) / 2) * 24
+      ui.width, ui.height = width, height
+      local y0 = 44
+      local rows = math.max(1, math.floor((height - y0 - 64) / 24))
+      local page_size = rows * 2
+      ui.pages = math.max(1, math.ceil(#all / page_size))
+      ui.page = util.clamp(ui.page, 1, ui.pages)
+      local first = (ui.page - 1) * page_size + 1
+      local last = math.min(#all, first + page_size - 1)
+      local controls = {}
+      for index = first, last do
+        local control = all[index]
+        local visible_index = index - first
+        control.x = math.floor(width / 2 - 155) + (visible_index % 2) * 160
+        control.y = y0 + math.floor(visible_index / 2) * 24
         control.w, control.h = 150, 20
+        controls[#controls + 1] = control
       end
       ui.controls = controls
-      return y0 + math.ceil(#controls / 2) * 24 + 24
     end
     local function apply_change()
       if spec.on_change then spec.on_change() end
-      if spec.on_save then spec.on_save() end
     end
     local function set_slider(control, mouse_x)
       local normalized = util.clamp((mouse_x - control.x - 4) / (control.w - 8), 0, 1)
@@ -228,22 +238,41 @@ do
     local function open()
       screen.open(spec.id, { title = spec.title })
     end
-    screen.on_ui(spec.parent_screen, spec.parent_region, function(event)
+    local function change_page(delta)
+      ui.page = util.clamp(ui.page + delta, 1, ui.pages)
+      ui.drag = nil
+      layout(ui.width, ui.height)
+    end
+    screen.on_ui(spec.parent_screen, parent_region, function(event)
       if event.ui == nil then return event end
-      event.ui.add_stacked_centered_button(spec.button_label, open)
+      event.ui:add_stacked_centered_button(spec.button_label, open)
       return event
     end, priority)
     screen.on_lua_screen(spec.id, {
       init = function(event)
-        local button_y = layout(event.width, event.height)
-        if spec.on_reset then
-          screen.add_button(math.floor(event.width / 2 - 100), button_y, 200, 20, "Reset to Defaults", spec.on_reset)
-          button_y = button_y + 24
+        ui.page = 1
+        layout(event.width, event.height)
+        if ui.pages > 1 then
+          screen.add_button(math.floor(event.width / 2 - 155), event.height - 52, 150, 20, "< Previous", function()
+            change_page(-1)
+          end)
+          screen.add_button(math.floor(event.width / 2 + 5), event.height - 52, 150, 20, "Next >", function()
+            change_page(1)
+          end)
         end
-        screen.add_button(math.floor(event.width / 2 - 100), button_y, 200, 20, "Done", close)
+        if spec.on_reset then
+          screen.add_button(math.floor(event.width / 2 - 155), event.height - 28, 150, 20, "Reset", spec.on_reset)
+          screen.add_button(math.floor(event.width / 2 + 5), event.height - 28, 150, 20, "Done", close)
+        else
+          screen.add_button(math.floor(event.width / 2 - 100), event.height - 28, 200, 20, "Done", close)
+        end
       end,
       render = function(event)
         if ui.drag then set_slider(ui.drag, event.mouse_x) end
+        if ui.pages > 1 then
+          minecraft.gui.draw_centered_text(event.width / 2, 32,
+            "Page " .. tostring(ui.page) .. " / " .. tostring(ui.pages), 0xFFA0A0A0)
+        end
         local current = values()
         for _, control in ipairs(ui.controls) do
           local value = current[control.key]

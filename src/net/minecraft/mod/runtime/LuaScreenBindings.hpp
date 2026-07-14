@@ -72,7 +72,14 @@ struct LuaScreenField {
 };
 class LuaScreen : public client::gui::screen::Screen {
 public:
-  explicit LuaScreen(std::string id, std::string title = {}, bool shouldPause = true) : id_(std::move(id)), title_(std::move(title)), shouldPause_(shouldPause) {
+  explicit LuaScreen(std::string id,
+                     std::string title = {},
+                     bool shouldPause = true,
+                     client::gui::screen::ScreenFactory returnFactory = nullptr)
+      : id_(std::move(id)),
+        title_(std::move(title)),
+        returnFactory_(std::move(returnFactory)),
+        shouldPause_(shouldPause) {
   }
   [[nodiscard]] std::string_view getScreenUiId() const override {
     return id_;
@@ -91,6 +98,7 @@ public:
   void keyPressed(char character, int keyCode) override;
   void mouseScrolled(int mouseX, int mouseY, int delta) override;
   void removed() override;
+  void closeToParent();
   client::gui::widget::TextFieldWidget* addField(const std::string& name,
                                                  int x,
                                                  int y,
@@ -117,6 +125,7 @@ private:
   static bool charAllowed(const LuaScreenField& field, char character);
   std::string id_;
   std::string title_;
+  client::gui::screen::ScreenFactory returnFactory_;
   std::vector<LuaScreenField> fields_;
   bool fieldsVisible_ = true;
   bool shouldPause_ = true;

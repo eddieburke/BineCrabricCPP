@@ -1,5 +1,6 @@
 #include "net/minecraft/client/option/ResolvedRenderOptions.hpp"
 #include <algorithm>
+#include <array>
 #include <cmath>
 namespace net::minecraft::client::option {
 ResolvedRenderOptions resolve(const GameOptions& options) {
@@ -14,16 +15,6 @@ ResolvedRenderOptions resolve(const GameOptions& options) {
   r.renderWater = options.water < 2;
   r.fancyWater = options.water == 0 && options.fancyGraphics;
   r.clearWater = options.clearWater;
-  r.customFog = options.fogFancy;
-  r.customFogColor = options.fogFancy && options.fogColorMode == 1;
-  r.customFogLinear = options.fogFancy && options.fogMode == 0;
-  r.sphericalFog = options.fogProjection == 0;
-  r.fogColorRed = options.fogColorRed;
-  r.fogColorGreen = options.fogColorGreen;
-  r.fogColorBlue = options.fogColorBlue;
-  r.fogStart = options.fogStart;
-  r.fogEnd = options.fogEnd;
-  r.fogDensity = options.fogDensity;
   r.viewDistanceSetting = options.viewDistance & 3;
   r.renderScale = std::isfinite(options.renderScale) ? std::clamp(options.renderScale, 1.0f, 5.0f) : 1.0f;
   const int baseDistance = 256 >> r.viewDistanceSetting;
@@ -38,7 +29,7 @@ ResolvedRenderOptions resolve(const GameOptions& options) {
   r.chunkVbo = options.vbo;
   r.smoothInput = options.smoothInput;
   r.smoothFps = options.smoothFps;
-  r.chunkUpdatesSlider = options.chunkUpdates;
+  r.chunkUpdatesSlider = std::isfinite(options.chunkUpdates) ? std::clamp(options.chunkUpdates, 0.0f, 1.0f) : 0.5f;
   r.chunkUpdatesDynamic = options.chunkUpdatesDynamic;
   r.renderSky = options.sky;
   r.renderStars = options.stars;
@@ -58,6 +49,13 @@ ResolvedRenderOptions resolve(const GameOptions& options) {
   r.animatedFlame = options.animatedFlame;
   r.animatedSmoke = options.animatedSmoke;
   r.fastDebugInfo = options.fastDebugInfo;
+  r.lodEnabled = options.lodEnabled;
+  constexpr std::array<float, 4> kLodDistances{1024.0f, 2048.0f, 4096.0f, 8192.0f};
+  const int lodDistanceIndex = std::clamp(options.lodDistance, 0, 3);
+  r.lodDistanceBlocks = kLodDistances[static_cast<std::size_t>(lodDistanceIndex)];
+  r.lodDetail = std::clamp(options.lodDetail, 0, 2) - 1;
+  r.lodFogExtend = options.lodFogExtend;
+  r.lodImportWorld = options.lodImportWorld;
   return r;
 }
 float adjustFieldOfView(float baseFov, const ResolvedRenderOptions& resolved) noexcept {
@@ -72,12 +70,18 @@ float applyBrightnessBoost(float luminance, const ResolvedRenderOptions& resolve
 float cloudHeightOffset(float baseHeight, const ResolvedRenderOptions& resolved) noexcept {
   return baseHeight + resolved.cloudHeightScale * 128.0f;
 }
-int chunkUpdatesPerPass(const ResolvedRenderOptions& resolved, int dirtyChunkCount, float gridAreaScale) noexcept {
-  const float scale = std::clamp(gridAreaScale, 1.0f, 50.0f);
-  int budget = 1 + static_cast<int>(std::lround(resolved.chunkUpdatesSlider * 4.0f * scale));
-  budget = std::clamp(budget, 1, static_cast<int>(std::ceil(5.0f * scale)));
-  if(resolved.chunkUpdatesDynamic && dirtyChunkCount > budget * 4) {
-    budget = std::max(budget, static_cast<int>(std::ceil(5.0f * scale)));
+int chunkUpdatesPerPass(const ResolvedRenderOptions& resolved, int dirtyChunkCount) noexcept {
+  constexpr int kMinBudget = 1;
+  constexpr int kMaxBudget = 16;
+  const float slider = std::isfinite(resolved.chunkUpdatesSlider)
+                           ? std::clamp(resolved.chunkUpdatesSlider, 0.0f, 1.0f)
+                           : 0.5f;
+  int budget = kMinBudget + static_cast<int>(std::lround(slider * static_cast<float>(kMaxBudget - kMinBudget)));
+  budget = std::clamp(budget, kMinBudget, kMaxBudget);
+  if(resolved.chunkUpdatesDynamic) {
+    const int backlog = std::max(0, dirtyChunkCount);
+    const int excess = std::max(0, backlog - budget * 2);
+    budget = std::min(kMaxBudget, budget + (excess + 7) / 8);
   }
   return budget;
 }

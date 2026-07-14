@@ -2,6 +2,6 @@
   "id": "sprint",
   "name": "Sprint",
   "version": "1.0.0",
-  "enabled": true,
+  "enabled": false,
   "entry": "scripts/main.lua"
 }

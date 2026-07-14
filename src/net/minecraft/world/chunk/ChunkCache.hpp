@@ -99,13 +99,13 @@ public:
       saveChunk(*chunk);
       chunk->dirty = false;
       if(++saved == 24 && !saveEntities) {
+        if(storage_ != nullptr) {
+          storage_->flush();
+        }
         return false;
       }
     }
-    if(saveEntities) {
-      if(storage_ == nullptr) {
-        return true;
-      }
+    if(storage_ != nullptr && (saveEntities || saved > 0)) {
       storage_->flush();
     }
     return true;

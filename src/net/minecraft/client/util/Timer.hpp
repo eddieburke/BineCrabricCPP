@@ -6,7 +6,8 @@ namespace net::minecraft::client::util {
 class Timer {
 public:
   explicit Timer(float ticksPerSecond)
-      : tps(ticksPerSecond), prevTickTime_(currentTimeMillis()), prevCorrectionTime_(nanoTimeMillis()) {
+      : tps(ticksPerSecond), timeSec_(static_cast<double>(nanoTimeMillis()) / 1000.0),
+        prevTickTime_(currentTimeMillis()), prevCorrectionTime_(nanoTimeMillis()) {
   }
   void advance() {
     const std::int64_t nowMillis = currentTimeMillis();

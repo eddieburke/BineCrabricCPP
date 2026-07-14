@@ -9,6 +9,7 @@
 #include "net/minecraft/client/render/item/HeldItemRenderer.hpp"
 #include "net/minecraft/client/util/SmoothUtil.hpp"
 #include "net/minecraft/entity/EntityTypes.hpp"
+#include "net/minecraft/mod/events/RenderEvents.hpp"
 #include "net/minecraft/util/math/Types.hpp"
 namespace net::minecraft::client {
 class Minecraft;
@@ -85,6 +86,7 @@ private:
   float fogRed = 0.0f;
   float fogGreen = 0.0f;
   float fogBlue = 0.0f;
+  mod::FogSettingsEvent fogSettings_{};
   FrameRenderCamera frameCamera_{};
   FramebufferManager renderTargets_{};
   FramebufferManager fbos_{};

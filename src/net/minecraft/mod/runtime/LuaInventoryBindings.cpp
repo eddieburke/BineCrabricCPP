@@ -178,6 +178,16 @@ int luaInventoryOffer(lua_State* state) {
   pushStack(state, remainder);
   return 1;
 }
+int luaInventorySelectedSlot(lua_State* state) {
+  LuaApi& api = luaApi();
+  entity::player::PlayerEntity* player = luaPlayer();
+  if(player == nullptr) {
+    api.pushinteger(state, 0);
+    return 1;
+  }
+  api.pushinteger(state, static_cast<long long>(player->inventory.selectedSlot));
+  return 1;
+}
 int luaItemsDescribe(lua_State* state) {
   LuaApi& api = luaApi();
   int isNumber = 0;
@@ -216,6 +226,7 @@ void installInventoryApi(lua_State* state) {
                         {"cursor_set", luaInventoryCursorSet},
                         {"give", luaInventoryGive},
                         {"offer", luaInventoryOffer},
+                        {"selected_slot", luaInventorySelectedSlot},
                     });
   api.setfield(state, root, "inventory");
   api.getfield(state, root, "items");

@@ -42,7 +42,7 @@ Generate a world-scoped random integer. Uses the active world's random number ge
 
 | Param | Type | Default | Description |
 |-------|------|---------|-------------|
-| `bound` | int (optional) | `1000` | Upper bound (exclusive). Must be > 0. |
+| `bound` | int (optional) | `1000` | Upper bound (exclusive). Values `<= 0` return `0`. |
 
 **Returns:** integer — random value in `[0, bound)`.
 
@@ -67,14 +67,14 @@ end
 ---
 
 ### `minecraft.world.get_top_y(x, z)`
-Get the Y-coordinate of the topmost solid block at the given column.
+Get the Y coordinate immediately above the highest solid or fluid block at the given column.
 
 | Param | Type | Description |
 |-------|------|-------------|
 | `x` | int | World X coordinate |
 | `z` | int | World Z coordinate |
 
-**Returns:** integer — Y of the top solid block, or `-1` if no active world.
+**Returns:** integer — top block Y + 1, or `-1` if no active world.
 
 ```lua
 local top = minecraft.world.get_top_y(100, 200)
@@ -285,20 +285,21 @@ local zombies = minecraft.entities.list("Zombie")
 
 ---
 
-### `minecraft.entities.apply_state(states)`
-Apply position, velocity, rotation, and/or custom data to LuaModEntities. Only affects entities spawned via `minecraft.entities.spawn_mod`.
+### `minecraft.entities.apply_state(entity, state)`
+Apply position, velocity, rotation, and/or custom data to one LuaModEntity. Only affects entities spawned via `minecraft.entities.spawn_mod`.
 
 | Param | Type | Description |
 |-------|------|-------------|
-| `states` | array of tables | Each entry must have `id` (entity ID), with optional fields: `x`, `y`, `z`, `vx`, `vy`, `vz`, `yaw`, `pitch`, `data` |
+| `entity` | table | Entity handle table containing `id` |
+| `state` | table | Optional fields: `x`, `y`, `z`, `vx`, `vy`, `vz`, `yaw`, `pitch`, `data` |
 
 **Returns:** boolean — `true` on success.
 
 ```lua
-minecraft.entities.apply_state({
-  { id = 42, x = 100, y = 64, z = 200, yaw = 90 },
-  { id = 43, vx = 0, vy = 0.5, vz = 0 },
-})
+local entity = minecraft.entities.get(42)
+if entity then
+  minecraft.entities.apply_state(entity, { x = 100, y = 64, z = 200, yaw = 90 })
+end
 ```
 
 ---
@@ -308,35 +309,35 @@ Teleport **any** entity (not just mod-spawned) to a new position/rotation.
 
 | Param | Type | Description |
 |-------|------|-------------|
-| `id` | int | Entity network ID |
+| `entity` | table | Entity handle table containing `id` |
 | position | table or vararg | Either `{x, y, z, yaw?, pitch?}` table or individual `x, y, z, yaw?, pitch?` arguments |
 
 **Returns:** boolean — `true` if the entity was found and teleported.
 
 ```lua
 -- Using a table
-minecraft.entities.teleport(42, {x=100, y=64, z=200, yaw=90, pitch=0})
+minecraft.entities.teleport({id=42}, {x=100, y=64, z=200, yaw=90, pitch=0})
 
 -- Using individual arguments
-minecraft.entities.teleport(42, 100, 64, 200, 90, 0)
+minecraft.entities.teleport({id=42}, 100, 64, 200, 90, 0)
 
 -- Position only (no rotation change)
-minecraft.entities.teleport(42, 100, 64, 200)
+minecraft.entities.teleport({id=42}, 100, 64, 200)
 ```
 
 ---
 
-### `minecraft.entities.remove(id)`
+### `minecraft.entities.remove(entity)`
 Remove a LuaModEntity from the world.
 
 | Param | Type | Description |
 |-------|------|-------------|
-| `id` | int | Entity ID of the mod entity to remove |
+| `entity` | table | Entity handle table containing the entity ID |
 
 **Returns:** boolean — `true` if the entity was found and marked for removal. Only works on entities spawned via `spawn_mod`.
 
 ```lua
-minecraft.entities.remove(42)
+minecraft.entities.remove({id=42})
 ```
 
 ---
@@ -568,9 +569,9 @@ Spawn a custom client-side particle. Client-only (does nothing on server).
 | `vy` | float | `0.0` | Initial velocity Y |
 | `vz` | float | `0.0` | Initial velocity Z |
 | `scale` | float | `4.0` | Particle scale (clamped 0.05–4.0) |
-| `r` | float | `1.0` | Red color component (0.0–1.0) |
-| `g` | float | `1.0` | Green color component (0.0–1.0) |
-| `b` | float | `1.0` | Blue color component (0.0–1.0) |
+| `r` | float | `1.0` | Red color component; passed through without clamping |
+| `g` | float | `1.0` | Green color component; passed through without clamping |
+| `b` | float | `1.0` | Blue color component; passed through without clamping |
 | `max_age` | int | `40` | Particle lifetime in ticks |
 | `gravity` | float | `0.04` | Gravity strength (positive = downward) |
 
@@ -703,7 +704,7 @@ local hit = minecraft.raycast({
 
 ### `chunk_generation`
 
-Fired during chunk generation. Coordinates are chunk-local (0–15 for X/Z).
+Fired during server-side chunk generation. `chunk_x` and `chunk_z` are absolute chunk coordinates; block edits through `event.chunk` use local X/Z coordinates (0–15).
 
 **Event fields:**
 
@@ -721,8 +722,6 @@ Fired during chunk generation. Coordinates are chunk-local (0–15 for X/Z).
 | `chunk_x`, `chunk_z` | int | Chunk coordinates |
 | `has_chunk` | boolean | Whether a chunk context is active |
 | `chunk` | ChunkHandle | The local chunk object handle for generation writes/reads |
-| `remote` | boolean | Whether this is the client world |
-| `side` | string | `"client"` or `"server"` |
 
 **Stages:**
 
@@ -737,7 +736,7 @@ The `terrain`, `surface`, and `carver` stages use raw generation writes (bypass 
 
 ```lua
 -- Replace vanilla terrain with custom blocks
-minecraft.events.subscribe("chunk_generation", function(event)
+minecraft.on(minecraft.events.chunk_generation, {}, function(event)
   if event.stage == "terrain" and event.moment == "before" then
     event.cancel_vanilla = true
 
@@ -753,7 +752,7 @@ minecraft.events.subscribe("chunk_generation", function(event)
 end)
 
 -- Decorate after vanilla features
-minecraft.events.subscribe("chunk_generation", function(event)
+minecraft.on(minecraft.events.chunk_generation, {}, function(event)
   if event.stage == "features" and event.moment == "after" then
     local chunk = event.chunk
     local h = chunk:get_height(7, 7)
@@ -781,7 +780,7 @@ Fired when the game searches for a valid world spawn point. Can be used to overr
 | `is_overworld` | boolean | Whether this is the Overworld |
 
 ```lua
-minecraft.events.subscribe("world_spawn_search", function(event)
+minecraft.on(minecraft.events.world_spawn_search, {}, function(event)
   if not event.resolved then
     event.x = 0
     event.y = 70
@@ -809,7 +808,7 @@ Fired when a new world is being created. Cancellable.
 | `options` | table | Map of string key-value pairs persisted in `level.dat` (read-write) |
 
 ```lua
-minecraft.events.subscribe("create_world", function(event)
+minecraft.on(minecraft.events.create_world, {}, function(event)
   event.options = event.options or {}
   event.options["mymod:difficulty"] = "hard"
   event.options["mymod:starting_items"] = "yes"
@@ -857,7 +856,7 @@ Fired every world tick.
 | `before` | boolean | `true` for pre-tick, `false` for post-tick |
 
 ```lua
-minecraft.events.subscribe("world_tick", function(event)
+minecraft.on(minecraft.events.world_tick, {}, function(event)
   if event.before then
     -- Pre-tick logic
   else

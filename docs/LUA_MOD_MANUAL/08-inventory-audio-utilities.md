@@ -30,7 +30,8 @@ local main = minecraft.inventory.main_size() -- 36
 
 ### `minecraft.inventory.get(slot)`
 
-Returns a table describing the item stack at `slot`, or `nil` if the slot is empty or out of range.
+Returns a table describing the item stack at `slot`. An empty slot is returned
+as `{id=0, count=0, damage=0}`; an invalid/out-of-range slot returns `nil`.
 
 The returned table:
 
@@ -47,7 +48,7 @@ The returned table:
 
 ```lua
 local stack = minecraft.inventory.get(0)
-if stack then
+if stack and stack.id ~= 0 then
   print(stack.id, stack.count, stack.damage)
 end
 ```
@@ -65,7 +66,7 @@ local ok = minecraft.inventory.set(36, {id=310, count=1, damage=0}) -- diamond h
 
 ### `minecraft.inventory.cursor_get()`
 
-Returns the item stack currently held on the cursor (being dragged from a container slot), or `nil` if the cursor is empty. Returns the same table format as `get()`.
+Returns the item stack currently held on the cursor (being dragged from a container slot). An empty cursor is returned as an empty stack table with `id=0`, `count=0`, and `damage=0`; unavailable inventory returns `nil`.
 
 ```lua
 local cursor = minecraft.inventory.cursor_get()
@@ -84,7 +85,10 @@ minecraft.inventory.cursor_set({id=264, count=1})
 
 ### `minecraft.inventory.give({id, count?, damage?})`
 
-Gives an item stack to the player. The item is placed into any available slot (fitting into existing stacks first, then empty slots). Returns `true` on success, `false` if the player is unavailable.
+Gives an item stack to the player. The item is placed into any available slot
+(fitting into existing stacks first, then empty slots); any overflow is dropped
+into the world. For an available player this usually returns `true`, not a
+signal that every item fit. It returns `false` if the player is unavailable.
 
 ```lua
 local ok = minecraft.inventory.give({id=264, count=5}) -- give 5 diamonds
@@ -142,7 +146,7 @@ end
 
 ### `minecraft.sound.register(id, filepath, kind?)`
 
-Registers a new sound effect with the audio engine. `id` is a string identifier, `filepath` is a resource path (resolved relative to the mod's asset directory). The optional `kind` determines how the sound is loaded:
+Registers a new sound effect with the audio engine. `id` is a string identifier, `filepath` is a resource path (resolved relative to the mod's asset directory). The optional `kind` determines how the sound is loaded. On failure it returns `false, error`.
 
 | Kind | Description |
 |------|-------------|
@@ -150,7 +154,7 @@ Registers a new sound effect with the audio engine. `id` is a string identifier,
 | `"streaming"` | Longer sound, streamed from disk |
 | `"music"` | Background music track |
 
-Returns `true, error_message` on failure (missing file, unknown kind), or `true` on success.
+Returns `false, error_message` on failure (missing file, unknown kind), or `true` on success.
 
 ```lua
 local ok, err = minecraft.sound.register("my_mod:explode", "sounds/explode.ogg", "effect")
@@ -200,12 +204,9 @@ end
 
 ### `minecraft.util.json_encode(value)`
 
-Encodes a Lua value to a JSON string. Accepts:
-- Tables (arrays → JSON arrays, string-keyed tables → JSON objects)
-- Strings, numbers (integers and floats)
-- Booleans
-- `nil` (encoded as JSON `null`)
-- `minecraft.util.json_null` (a special lightuserdata sentinel, also encoded as `null`)
+Encodes a Lua table to a JSON string. It accepts array-like tables, string-keyed
+tables, and the `minecraft.util.json_null` sentinel inside tables. The top-level
+argument must be a table; scalar values and top-level `nil` are rejected.
 
 Returns `(json_string)` on success, or `(nil, error_message)` if the value is not JSON-serializable.
 

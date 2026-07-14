@@ -136,5 +136,6 @@ inline constexpr int BlendDst = 0x0BE0;
 inline constexpr int DepthFunc = 0x0B74;
 inline constexpr int AlphaFunc = 0x0BC1;
 inline constexpr int AlphaRef = 0x0BC2;
+inline constexpr int ScissorBox = 0x0C10;
 } // namespace query
 } // namespace net::minecraft::client::gl

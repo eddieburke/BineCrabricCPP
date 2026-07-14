@@ -10,6 +10,15 @@ using namespace net::minecraft::mod::lua;
 namespace gl = net::minecraft::client::gl;
 namespace {
 std::vector<unsigned int> g_activePrograms;
+bool shaderApiAvailable() {
+  return gl::GLCore::createShader && gl::GLCore::shaderSource && gl::GLCore::compileShader &&
+         gl::GLCore::getShaderiv && gl::GLCore::getShaderInfoLog && gl::GLCore::createProgram &&
+         gl::GLCore::attachShader && gl::GLCore::linkProgram && gl::GLCore::getProgramiv &&
+         gl::GLCore::getProgramInfoLog && gl::GLCore::useProgram && gl::GLCore::deleteShader &&
+         gl::GLCore::deleteProgram && gl::GLCore::getUniformLocation && gl::GLCore::uniform1f &&
+         gl::GLCore::uniform2f && gl::GLCore::uniform3f && gl::GLCore::uniform4f &&
+         gl::GLCore::uniform1i && gl::GLCore::uniform2i && gl::GLCore::uniform3i && gl::GLCore::uniform4i;
+}
 int luaShaderCreate(lua_State* state) {
   LuaApi& api = luaApi();
   if(api.gettop(state) < 2) {
@@ -19,7 +28,7 @@ int luaShaderCreate(lua_State* state) {
   const std::string vertSrc = luaString(state, 1, "");
   const std::string fragSrc = luaString(state, 2, "");
   gl::GLCore::ensureLoaded();
-  if(!gl::GLCore::createShader || !gl::GLCore::createProgram) {
+  if(!shaderApiAvailable()) {
     std::cerr << "Shader compilation failed: OpenGL Shader extensions not supported/loaded." << std::endl;
     api.pushinteger(state, -1);
     return 1;
@@ -85,12 +94,11 @@ int luaShaderDestroy(lua_State* state) {
     return 1;
   }
   unsigned int program = static_cast<unsigned int>(api.tointegerx(state, 1, nullptr));
-  if(gl::GLCore::deleteProgram) {
+  if(gl::GLCore::deleteProgram &&
+     std::find(g_activePrograms.begin(), g_activePrograms.end(), program) != g_activePrograms.end()) {
     gl::GLCore::deleteProgram(program);
     auto it = std::find(g_activePrograms.begin(), g_activePrograms.end(), program);
-    if(it != g_activePrograms.end()) {
-      g_activePrograms.erase(it);
-    }
+    g_activePrograms.erase(it);
     api.pushboolean(state, true);
   } else {
     api.pushboolean(state, false);
@@ -103,7 +111,9 @@ int luaShaderBind(lua_State* state) {
   if(api.gettop(state) >= 1 && api.type(state, 1) != kLuaTNil) {
     program = static_cast<unsigned int>(api.tointegerx(state, 1, nullptr));
   }
-  if(gl::GLCore::useProgram) {
+  const bool isKnown = program == 0 ||
+                       std::find(g_activePrograms.begin(), g_activePrograms.end(), program) != g_activePrograms.end();
+  if(gl::GLCore::useProgram && isKnown) {
     gl::GLCore::useProgram(program);
     api.pushboolean(state, true);
   } else {
@@ -129,7 +139,8 @@ int luaShaderUniformFloat(lua_State* state) {
   }
   unsigned int program = static_cast<unsigned int>(api.tointegerx(state, 1, nullptr));
   const std::string name = luaString(state, 2, "");
-  if(!gl::GLCore::getUniformLocation) {
+  if(!shaderApiAvailable() ||
+     std::find(g_activePrograms.begin(), g_activePrograms.end(), program) == g_activePrograms.end()) {
     api.pushboolean(state, false);
     return 1;
   }
@@ -159,7 +170,8 @@ int luaShaderUniformInt(lua_State* state) {
   }
   unsigned int program = static_cast<unsigned int>(api.tointegerx(state, 1, nullptr));
   const std::string name = luaString(state, 2, "");
-  if(!gl::GLCore::getUniformLocation) {
+  if(!shaderApiAvailable() ||
+     std::find(g_activePrograms.begin(), g_activePrograms.end(), program) == g_activePrograms.end()) {
     api.pushboolean(state, false);
     return 1;
   }

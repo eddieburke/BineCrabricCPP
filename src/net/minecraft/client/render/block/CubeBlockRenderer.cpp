@@ -347,15 +347,15 @@ bool CubeBlockRenderer::renderFlat(
     horizBlue *= blue;
     nsBlue *= blue;
   }
-  const float selfBrightness = boostFlatBrightness(ctx_.opts, block.getLuminance(ctx_.blockView, x, y, z));
+  const float selfBrightness = block.getLuminance(ctx_.blockView, x, y, z);
   if(ctx_.skipFaceCulling || ctx_.isSideVisible(block, x, y - 1, z, 0)) {
-    brightness = boostFlatBrightness(ctx_.opts, block.getLuminance(ctx_.blockView, x, y - 1, z));
+    brightness = block.getLuminance(ctx_.blockView, x, y - 1, z);
     tessellator.color(downRed * brightness, downGreen * brightness, downBlue * brightness);
     faces_.renderBottomFace(block, x, y, z, block.getTextureId(ctx_.blockView, x, y, z, 0));
     drewAnyFace = true;
   }
   if(ctx_.skipFaceCulling || ctx_.isSideVisible(block, x, y + 1, z, 1)) {
-    brightness = boostFlatBrightness(ctx_.opts, block.getLuminance(ctx_.blockView, x, y + 1, z));
+    brightness = block.getLuminance(ctx_.blockView, x, y + 1, z);
     if(ctx_.renderBounds.maxY != 1.0 && !block.material.isFluid()) {
       brightness = selfBrightness;
     }
@@ -364,7 +364,7 @@ bool CubeBlockRenderer::renderFlat(
     drewAnyFace = true;
   }
   if(ctx_.skipFaceCulling || ctx_.isSideVisible(block, x, y, z - 1, 2)) {
-    brightness = boostFlatBrightness(ctx_.opts, block.getLuminance(ctx_.blockView, x, y, z - 1));
+    brightness = block.getLuminance(ctx_.blockView, x, y, z - 1);
     if(ctx_.renderBounds.minZ > 0.0) {
       brightness = selfBrightness;
     }
@@ -379,7 +379,7 @@ bool CubeBlockRenderer::renderFlat(
     drewAnyFace = true;
   }
   if(ctx_.skipFaceCulling || ctx_.isSideVisible(block, x, y, z + 1, 3)) {
-    brightness = boostFlatBrightness(ctx_.opts, block.getLuminance(ctx_.blockView, x, y, z + 1));
+    brightness = block.getLuminance(ctx_.blockView, x, y, z + 1);
     if(ctx_.renderBounds.maxZ < 1.0) {
       brightness = selfBrightness;
     }
@@ -394,7 +394,7 @@ bool CubeBlockRenderer::renderFlat(
     drewAnyFace = true;
   }
   if(ctx_.skipFaceCulling || ctx_.isSideVisible(block, x - 1, y, z, 4)) {
-    brightness = boostFlatBrightness(ctx_.opts, block.getLuminance(ctx_.blockView, x - 1, y, z));
+    brightness = block.getLuminance(ctx_.blockView, x - 1, y, z);
     if(ctx_.renderBounds.minX > 0.0) {
       brightness = selfBrightness;
     }
@@ -408,7 +408,7 @@ bool CubeBlockRenderer::renderFlat(
     drewAnyFace = true;
   }
   if(ctx_.skipFaceCulling || ctx_.isSideVisible(block, x + 1, y, z, 5)) {
-    brightness = boostFlatBrightness(ctx_.opts, block.getLuminance(ctx_.blockView, x + 1, y, z));
+    brightness = block.getLuminance(ctx_.blockView, x + 1, y, z);
     if(ctx_.renderBounds.maxX < 1.0) {
       brightness = selfBrightness;
     }
@@ -443,7 +443,7 @@ bool CubeBlockRenderer::renderCactus(
   const float horizShade = 0.8f;
   const float nsShade = 0.6f;
   const auto savedBounds = ctx_.renderBounds;
-  ctx_.renderBounds = {0.0, 0.0, 0.0, 1.0, 1.0, 1.0};
+  ctx_.renderBounds = {inset, 0.0, inset, 1.0f - inset, 1.0, 1.0f - inset};
   if(ctx_.skipFaceCulling || ctx_.isSideVisible(block, x, y - 1, z, 0)) {
     brightness = boostFlatBrightness(ctx_.opts, block.getLuminance(ctx_.blockView, x, y - 1, z));
     tessellator.color(downShade * red * brightness, downShade * green * brightness, downShade * blue * brightness);
@@ -466,9 +466,7 @@ bool CubeBlockRenderer::renderCactus(
     }
     tessellator.color(
         horizShade * red * brightness, horizShade * green * brightness, horizShade * blue * brightness);
-    tessellator.translate(0.0f, 0.0f, inset);
     faces_.renderEastFace(block, x, y, z, block.getTextureId(ctx_.blockView, x, y, z, 2));
-    tessellator.translate(0.0f, 0.0f, -inset);
     drewAnyFace = true;
   }
   if(ctx_.skipFaceCulling || ctx_.isSideVisible(block, x, y, z + 1, 3)) {
@@ -478,9 +476,7 @@ bool CubeBlockRenderer::renderCactus(
     }
     tessellator.color(
         horizShade * red * brightness, horizShade * green * brightness, horizShade * blue * brightness);
-    tessellator.translate(0.0f, 0.0f, -inset);
     faces_.renderWestFace(block, x, y, z, block.getTextureId(ctx_.blockView, x, y, z, 3));
-    tessellator.translate(0.0f, 0.0f, inset);
     drewAnyFace = true;
   }
   if(ctx_.skipFaceCulling || ctx_.isSideVisible(block, x - 1, y, z, 4)) {
@@ -489,9 +485,7 @@ bool CubeBlockRenderer::renderCactus(
       brightness = selfBrightness;
     }
     tessellator.color(nsShade * red * brightness, nsShade * green * brightness, nsShade * blue * brightness);
-    tessellator.translate(inset, 0.0f, 0.0f);
     faces_.renderNorthFace(block, x, y, z, block.getTextureId(ctx_.blockView, x, y, z, 4));
-    tessellator.translate(-inset, 0.0f, 0.0f);
     drewAnyFace = true;
   }
   if(ctx_.skipFaceCulling || ctx_.isSideVisible(block, x + 1, y, z, 5)) {
@@ -500,9 +494,7 @@ bool CubeBlockRenderer::renderCactus(
       brightness = selfBrightness;
     }
     tessellator.color(nsShade * red * brightness, nsShade * green * brightness, nsShade * blue * brightness);
-    tessellator.translate(-inset, 0.0f, 0.0f);
     faces_.renderSouthFace(block, x, y, z, block.getTextureId(ctx_.blockView, x, y, z, 5));
-    tessellator.translate(inset, 0.0f, 0.0f);
     drewAnyFace = true;
   }
   ctx_.renderBounds = savedBounds;

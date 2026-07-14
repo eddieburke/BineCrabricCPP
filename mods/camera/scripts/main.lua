@@ -185,7 +185,7 @@ minecraft.on(minecraft.events.entity_interact, { attack = false }, function(even
   if event.sneaking then
     if target.registry_id == "camera:tripod" or target.registry_id == "camera:camera" then
       local yaw = (event.player_yaw or 0) % 360
-      local pitch = -(event.player_pitch or 0)
+      local pitch = event.player_pitch or 0
       target:apply_state({ yaw = yaw, pitch = pitch })
       if target.registry_id == "camera:tripod" then
         local mounted = target.data and target.data.mounted or 0

@@ -1,4 +1,5 @@
 #include "net/minecraft/mod/model/ModelDraw.hpp"
+#include <cmath>
 #include <string>
 #include "net/minecraft/block/Block.hpp"
 #include "net/minecraft/client/gl/GlState.hpp"
@@ -31,6 +32,19 @@ using net::minecraft::block::Block;
 using net::minecraft::client::gl::MatrixGuard;
 using net::minecraft::client::render::Tessellator;
 using net::minecraft::client::render::block::BlockRenderManager;
+#ifdef MINECRAFT_NATIVE_EXPORTS
+float worldBrightness(const WorldModelDraw& options) {
+  if(options.brightness >= 0.0f) {
+    return options.brightness;
+  }
+  if(client::Minecraft::INSTANCE != nullptr && client::Minecraft::INSTANCE->world != nullptr) {
+    return client::Minecraft::INSTANCE->world->getLightBrightness(
+        static_cast<int>(std::floor(options.x)), static_cast<int>(std::floor(options.y)),
+        static_cast<int>(std::floor(options.z)));
+  }
+  return 1.0f;
+}
+#endif
 net::minecraft::block::TerrainAtlasUv uvAtPixels(int textureId, double u, double v) {
   const net::minecraft::mod::TileScale tile = net::minecraft::mod::tileScale(textureId);
   return {(static_cast<double>(tile.u) + u) * tile.inv, 0.0, (static_cast<double>(tile.v) + v) * tile.inv, 0.0};
@@ -359,6 +373,7 @@ bool drawBakedModelWorld(int handle, const WorldModelDraw& options) {
     return false;
   }
   const client::render::FrameRenderCamera& camera = client::render::RenderCameraState::instance().frame();
+  const float brightness = worldBrightness(options);
   const bool textured = !baked->batches.empty() && !baked->batches.front().texturePath.empty();
   const client::gl::preset::ModLuaDraw modCaps(textured, options.blend, options.cull, options.depthTest,
                                                options.depthWrite);
@@ -387,7 +402,7 @@ bool drawBakedModelWorld(int handle, const WorldModelDraw& options) {
     }
     tessellator.startQuads();
     for(const BakedQuad& quad : batch.quads) {
-      const float light = quad.shade * options.brightness;
+      const float light = quad.shade * brightness;
       tessellator.color(quad.red * light, quad.green * light, quad.blue * light, quad.alpha * options.alpha);
       for(const BakedVertex& vertex : quad.vertices) {
         tessellator.vertex(vertex.x, vertex.y, vertex.z, vertex.u, vertex.v);
@@ -411,6 +426,7 @@ bool drawItemStackWorld(const ItemStack& stack, const WorldModelDraw& options) {
     return false;
   }
   const client::render::FrameRenderCamera& camera = client::render::RenderCameraState::instance().frame();
+  const float brightness = worldBrightness(options);
   const client::gl::preset::ModLuaDraw modCaps(true, options.blend, options.cull, options.depthTest,
                                                options.depthWrite);
   client::render::platform::Lighting::turnOff();
@@ -438,7 +454,7 @@ bool drawItemStackWorld(const ItemStack& stack, const WorldModelDraw& options) {
     } else {
       client::gl::bindTexture(client::gl::cap::Texture2D, textures.getTextureId(ItemModelRenderer::spriteAtlasPath(stack)));
     }
-    return drawLuaItemModel(Tessellator::INSTANCE, stack, options.brightness);
+    return drawLuaItemModel(Tessellator::INSTANCE, stack, brightness);
   }
   // The inventory block renderers (vanilla and drawLuaBlockInventory) emit
   // geometry already centred on the origin, so only the pivot's deviation
@@ -457,7 +473,7 @@ bool drawItemStackWorld(const ItemStack& stack, const WorldModelDraw& options) {
   const bool previousUseAo = itemDropBlockManager.ctx.faceState.useAo;
   itemDropBlockManager.ctx.textureManager = &textures;
   itemDropBlockManager.ctx.faceState.useAo = false;
-  itemDropBlockManager.render(*block, stack.getDamage(), options.brightness);
+  itemDropBlockManager.render(*block, stack.getDamage(), brightness);
   itemDropBlockManager.ctx.textureManager = previousTextureManager;
   itemDropBlockManager.ctx.faceState.useAo = previousUseAo;
   return true;

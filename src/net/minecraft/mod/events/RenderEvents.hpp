@@ -73,6 +73,7 @@ struct WorldRenderEvent {
   double astronomyUtcMillis = 0.0;
   float observerLatitudeDegrees = 0.0f;
   float observerLongitudeDegrees = 0.0f;
+  bool shadowPass = false;
 };
 struct FirstPersonHandRenderEvent {
   entity::LivingEntity* camera = nullptr;
@@ -90,6 +91,20 @@ struct WorldColorEvent {
   float partialTicks = 0.0f;
   Vec3d color;
   WorldColorKind kind = WorldColorKind::Sky;
+};
+struct FogSettingsEvent {
+  World* world = nullptr;
+  entity::Entity* camera = nullptr;
+  bool enabled = false;
+  bool spherical = true;
+  bool exponential = false;
+  float start = 0.2f;
+  float end = 0.8f;
+  float density = 0.1f;
+  bool customColor = false;
+  float red = 0.0f;
+  float green = 0.0f;
+  float blue = 0.0f;
 };
 // Per-entity render-time pose override. Render-only: never touches simulation.
 // Rotations are degrees; limb_swing is the walk phase (radians), limb_distance

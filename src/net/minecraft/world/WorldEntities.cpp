@@ -76,6 +76,9 @@ bool World::spawnGlobalEntity(Entity* entity) {
   if(entity == nullptr) {
     return false;
   }
+  if(std::find(globalEntities.begin(), globalEntities.end(), entity) != globalEntities.end()) {
+    return true;
+  }
   entity->world = this;
   globalEntities.push_back(entity);
   notifyEntityAdded(entity);
@@ -84,6 +87,9 @@ bool World::spawnGlobalEntity(Entity* entity) {
 bool World::spawnEntity(Entity* entity) {
   if(entity == nullptr) {
     return false;
+  }
+  if(std::find(entities_.begin(), entities_.end(), entity) != entities_.end()) {
+    return true;
   }
   const int chunkX = MathHelper::floor(entity->x / 16.0);
   const int chunkZ = MathHelper::floor(entity->z / 16.0);
@@ -502,7 +508,7 @@ void World::loadChunksNearEntity(Entity* entity) {
     }
   }
   if(std::find(entities_.begin(), entities_.end(), entity) == entities_.end()) {
-    entities_.push_back(entity);
+    spawnEntity(entity);
   }
 }
 PlayerEntity* World::getClosestPlayer(double targetX, double targetY, double targetZ, double range) {

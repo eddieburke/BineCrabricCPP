@@ -343,8 +343,7 @@ void MinecraftServer::loadWorld(const std::filesystem::path& storageRoot,
         if(ChunkCache* cache = dynamic_cast<ChunkCache*>(world->getChunkSource()); cache != nullptr) {
           cache->loadChunk((spawnPos.x + j) >> 4, (spawnPos.z + k) >> 4);
         }
-        while(world->doLightingUpdates() && running) {
-        }
+        world->doLightingUpdates();
       }
     }
   }
@@ -484,8 +483,7 @@ void MinecraftServer::tick() {
       playerManager.sendToDimension(packet, world->dimension->id);
     }
     world->tick();
-    while(world->doLightingUpdates()) {
-    }
+    world->doLightingUpdates();
     world->tickEntities();
   }
   if(connections != nullptr) {

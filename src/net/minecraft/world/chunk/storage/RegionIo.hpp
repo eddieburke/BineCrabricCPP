@@ -14,8 +14,21 @@ namespace fs = std::filesystem;
 class RegionIo {
 public:
   static std::optional<std::vector<std::uint8_t>> readChunkData(const fs::path& worldDir, int chunkX, int chunkZ) {
-    std::lock_guard<std::mutex> lock(mutex());
-    return regionFile(worldDir, chunkX, chunkZ).readChunk(chunkX & 0x1F, chunkZ & 0x1F);
+    std::optional<RegionFile::CompressedChunk> chunk;
+    {
+      std::lock_guard<std::mutex> lock(mutex());
+      chunk = regionFile(worldDir, chunkX, chunkZ).readCompressedChunk(chunkX & 0x1F, chunkZ & 0x1F);
+    }
+    if(!chunk.has_value()) {
+      return std::nullopt;
+    }
+    if(chunk->compression == 1U) {
+      return gzipDecompress(chunk->bytes);
+    }
+    if(chunk->compression == 2U) {
+      return zlibDecompress(chunk->bytes);
+    }
+    return std::nullopt;
   }
   static void writeChunkData(const fs::path& worldDir,
                              int chunkX,
@@ -37,6 +50,15 @@ public:
       }
     }
     openFiles().clear();
+  }
+  static void sync() {
+    std::lock_guard<std::mutex> lock(mutex());
+    for(auto& [key, file] : openFiles()) {
+      (void)key;
+      if(file) {
+        file->flush();
+      }
+    }
   }
 
 private:

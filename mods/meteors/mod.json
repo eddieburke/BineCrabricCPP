@@ -1,7 +1,7 @@
 {
   "id": "meteors",
   "name": "Meteors",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "enabled": true,
   "entry": "scripts/main.lua"
 }

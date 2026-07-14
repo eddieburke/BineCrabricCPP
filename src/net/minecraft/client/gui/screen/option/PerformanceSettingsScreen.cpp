@@ -1,5 +1,7 @@
 #include "net/minecraft/client/gui/screen/option/PerformanceSettingsScreen.hpp"
+#include <algorithm>
 #include <array>
+#include <cmath>
 #include "net/minecraft/client/gui/screen/option/OptionGui.hpp"
 #include "net/minecraft/client/gui/screen/option/SettingsScreen.hpp"
 #include "net/minecraft/client/option/OptionSpec.hpp"
@@ -111,7 +113,9 @@ protected:
     gui.toggle(x2, y0 + dy, "entityShadows", "Entity Shadows");
     gui.toggle(x1, y0 + dy * 2, "vbo", "VBO");
     gui.slider(x2, y0 + dy * 2, "chunkUpdates", "Chunk Updates", [](const GameOptions& o) {
-      return percentLabel("Chunk Updates", o.chunkUpdates);
+      const float value = std::isfinite(o.chunkUpdates) ? std::clamp(o.chunkUpdates, 0.0f, 1.0f) : 0.5f;
+      const int updates = 1 + static_cast<int>(std::lround(value * 15.0f));
+      return optionLabel("Chunk Updates", std::to_string(updates) + "/frame");
     });
     gui.toggle(x1, y0 + dy * 3, "chunkUpdatesDynamic", "Dynamic Updates");
     gui.customCycle(x2, y0 + dy * 3, "preloadedChunks", [](const GameOptions& o) {

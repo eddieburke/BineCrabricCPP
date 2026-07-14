@@ -2,13 +2,20 @@ local catalog = nil
 local compiled_billboards = nil
 
 local BRIGHTEST_MAGNITUDE_IN_CATALOG = -1.5
-local DIMMEST_MAGNITUDE_TO_DRAW = 6.5
 local ALPHA_OPAQUE_THRESHOLD = 0.0
 local ALPHA_TRANSPARENT_THRESHOLD = 6.0
-local MIN_STAR_ALPHA = 0.05
-local BRIGHTEST_STAR_RENDER_SIZE = 1.2
-local DIMMEST_STAR_RENDER_SIZE = 0.1
-local MAGNITUDE_SIZE_EXPONENT = 0.4
+
+minecraft.settings.register("Northern Stars", {
+  { key = "dimmest_magnitude", label = "Dimmest Star Magnitude", kind = "slider", min = 3.0, max = 8.0, step = 0.1, default = 6.5 },
+  { key = "min_star_alpha", label = "Minimum Star Brightness", kind = "slider", min = 0.0, max = 0.3, step = 0.01, decimals = 2, default = 0.05 },
+  { key = "brightest_star_size", label = "Brightest Star Size", kind = "slider", min = 0.5, max = 3.0, step = 0.1, default = 1.2 },
+  { key = "dimmest_star_size", label = "Dimmest Star Size", kind = "slider", min = 0.02, max = 0.5, step = 0.01, decimals = 2, default = 0.1 },
+  { key = "magnitude_size_exponent", label = "Size Falloff Curve", kind = "slider", min = 0.1, max = 1.0, step = 0.05, decimals = 2, default = 0.4 },
+  { key = "starfield_radius", label = "Starfield Radius", kind = "slider", min = 50, max = 300, step = 5, default = 100.0 },
+  { key = "horizon_cull_deg", label = "Horizon Cull Angle", kind = "slider", min = 0.0, max = 5.0, step = 0.05, decimals = 2, default = 0.35 },
+  { key = "horizon_fade_end_deg", label = "Horizon Fade End Angle", kind = "slider", min = 0.5, max = 10.0, step = 0.1, decimals = 1, default = 2.0 },
+})
+
 local compiled_frame_key = nil
 
 local function load_catalog()
@@ -36,25 +43,39 @@ local function load_catalog()
 end
 
 local function magnitude_to_size(magnitude, seed)
+  local dimmest_magnitude = minecraft.settings.get("dimmest_magnitude") or 6.5
+  local magnitude_size_exponent = minecraft.settings.get("magnitude_size_exponent") or 0.4
+  local brightest_star_size = minecraft.settings.get("brightest_star_size") or 1.2
+  local dimmest_star_size = minecraft.settings.get("dimmest_star_size") or 0.1
   local normalized = (magnitude - BRIGHTEST_MAGNITUDE_IN_CATALOG) /
-    (DIMMEST_MAGNITUDE_TO_DRAW - BRIGHTEST_MAGNITUDE_IN_CATALOG)
+    (dimmest_magnitude - BRIGHTEST_MAGNITUDE_IN_CATALOG)
   normalized = math.max(0.0, math.min(1.0, normalized))
-  local interpolated = normalized ^ MAGNITUDE_SIZE_EXPONENT
-  local base_size = BRIGHTEST_STAR_RENDER_SIZE -
-    (interpolated * (BRIGHTEST_STAR_RENDER_SIZE - DIMMEST_STAR_RENDER_SIZE))
+  local interpolated = normalized ^ magnitude_size_exponent
+  local base_size = brightest_star_size -
+    (interpolated * (brightest_star_size - dimmest_star_size))
   local variation = (((seed * 1103515245 + 12345) % 65536) / 65535.0 - 0.5) * 0.15
   return base_size * (1.0 + variation)
 end
 
+local function smoothstep(edge0, edge1, value)
+  if edge0 == edge1 then
+    return value < edge0 and 0.0 or 1.0
+  end
+  local t = (value - edge0) / (edge1 - edge0)
+  t = math.max(0.0, math.min(1.0, t))
+  return t * t * (3.0 - 2.0 * t)
+end
+
 local function magnitude_to_alpha(magnitude)
+  local min_star_alpha = minecraft.settings.get("min_star_alpha") or 0.05
   if magnitude <= ALPHA_OPAQUE_THRESHOLD then
     return 1.0
   elseif magnitude >= ALPHA_TRANSPARENT_THRESHOLD then
-    return MIN_STAR_ALPHA
+    return min_star_alpha
   end
   local normalized = (magnitude - ALPHA_OPAQUE_THRESHOLD) /
     (ALPHA_TRANSPARENT_THRESHOLD - ALPHA_OPAQUE_THRESHOLD)
-  return math.max(0.0, math.min(1.0, 1.0 - (normalized * (1.0 - MIN_STAR_ALPHA))))
+  return math.max(0.0, math.min(1.0, 1.0 - (normalized * (1.0 - min_star_alpha))))
 end
 
 local function horizontal_from_equatorial(
@@ -91,6 +112,10 @@ local function compile_starfield(event)
     compiled_billboards = {}
     return
   end
+  local dimmest_magnitude = minecraft.settings.get("dimmest_magnitude") or 6.5
+  local starfield_radius = minecraft.settings.get("starfield_radius") or 100.0
+  local horizon_cull_deg = minecraft.settings.get("horizon_cull_deg") or 0.35
+  local horizon_fade_end_deg = minecraft.settings.get("horizon_fade_end_deg") or 2.0
   local billboards = {}
   local seed = 12345
   local astronomy = event and event.astronomy_enabled
@@ -101,25 +126,29 @@ local function compile_starfield(event)
     local az_rad = math.rad(az_deg)
     local alt_rad = math.rad(alt_deg)
     local cos_alt = math.cos(alt_rad)
-    return cos_alt * math.sin(az_rad), math.sin(alt_rad), -cos_alt * math.cos(az_rad)
+    return cos_alt * math.sin(az_rad) * starfield_radius,
+      math.sin(alt_rad) * starfield_radius,
+      -cos_alt * math.cos(az_rad) * starfield_radius
   end
   for index = 1, catalog.count do
     local ra_hours = catalog.right_ascension[index]
     local dec_deg = catalog.declination[index]
     local magnitude = catalog.magnitude[index]
-    if magnitude <= DIMMEST_MAGNITUDE_TO_DRAW then
+    if magnitude <= dimmest_magnitude then
       seed = seed + 1
       local az, alt = ra_hours * 15.0, dec_deg
       if astronomy then
         az, alt = horizontal_from_equatorial(
           ra_hours, dec_deg, utc_millis, latitude, longitude)
       end
-      if not astronomy or alt >= -0.5 then
+      if not astronomy or alt >= horizon_cull_deg then
         local sx, sy, sz = spherical_to_cartesian(az, alt)
+        local horizon_alpha = astronomy and
+          smoothstep(horizon_cull_deg, horizon_fade_end_deg, alt) or 1.0
         billboards[#billboards + 1] = {
           x = sx, y = sy, z = sz,
           size = magnitude_to_size(magnitude, seed),
-          alpha = magnitude_to_alpha(magnitude),
+          alpha = magnitude_to_alpha(magnitude) * horizon_alpha,
         }
       end
     end
@@ -149,12 +178,12 @@ minecraft.on(minecraft.events.world_render, {
     return
   end
   event.cancel_vanilla = true
+  -- Astronomy-enabled stars were already converted from RA/declination to
+  -- local azimuth/altitude in compile_starfield(). Rotating them again by the
+  -- sun/skydome angles moves them away from those coordinates and can push
+  -- otherwise-visible billboards through the horizon clip.
   local rotation_x = 0.0
   local rotation_y = 0.0
-  if event.astronomy_enabled then
-    rotation_x = -(event.celestial_angle or 0.0)
-    rotation_y = -math.rad(event.sky_yaw_deg or 0.0)
-  end
   minecraft.render.billboards({
     brightness = event.star_brightness or 0.0,
     rotation_x_rad = rotation_x,

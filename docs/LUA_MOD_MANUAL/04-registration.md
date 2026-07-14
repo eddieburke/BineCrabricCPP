@@ -104,7 +104,7 @@ minecraft.register_block({
 
 ### `minecraft.register_item(spec)`
 
-Registers a new item. Returns `true` on success, or throws an assertion error on failure. The `spec` table accepts:
+Registers a new item. Returns `true` on success, or `false, error` on failure. The `spec` table accepts:
 
 | Field | Type | Default | Description |
 |---|---|---|---|
@@ -129,7 +129,7 @@ minecraft.register_item({
 })
 
 -- With custom 3D model
-local handle = minecraft.model.load("models/my_item.baked")
+local handle = minecraft.model.load("models/my_item.json")
 minecraft.register_item({
   id = 257,
   texture = "textures/items/my_item.png",
@@ -218,16 +218,68 @@ Removes all recipes. *Implementation pending.*
 
 ---
 
+## Mod Settings & Keybinds Registry
+
+Register simple sliders, toggles, and keybinds here. The engine persists them and keeps them on the main **Mod Settings** page, opened from the permanent "Mod Settings..." button in Video Settings (`minecraft.screen.ids.video_options`).
+
+For a richer page, use the [Settings DSL](07-gui-and-screens.md) (`minecraft.screen.settings`) with `parent_screen = minecraft.screen.ids.mod_settings`. Buttons injected into the `minecraft:mod_settings` footer are collected automatically on its scrollable **Mod Pages** page; no custom navigation glue is needed.
+
+### `minecraft.settings.register(display_name, entries)`
+
+`display_name` is the label shown for your mod's section in the shared screen (defaults to your mod id if omitted). `entries` is an array of tables:
+
+| Field | Type | Applies to | Description |
+|-------|------|------------|--------------|
+| `key` | string | all | Setting key, unique within your mod (required) |
+| `label` | string | all | Display label (defaults to `key`) |
+| `kind` | string | all | `"slider"` (default) or `"toggle"` |
+| `default` | number/boolean | all | Initial value (number for slider, boolean for toggle) |
+| `min`, `max` | number | slider | Range (defaults `0`..`1`) |
+| `step` | number | slider | Increment per click (default: range / 20) |
+| `integer` | boolean | slider | Snap to whole numbers |
+| `decimals` | number | slider | Display precision (default `2`) |
+
+```lua
+minecraft.settings.register("My Mod", {
+  { key = "particle_density", label = "Particle Density", kind = "slider", min = 0, max = 2, default = 1 },
+  { key = "screen_shake", label = "Screen Shake", kind = "toggle", default = true },
+})
+```
+
+### `minecraft.settings.get(key)`
+
+Returns the current value for one of your own registered settings (number for `slider`, boolean for `toggle`), or `nil` if `key` isn't registered.
+
+### `minecraft.keybinds.register(name, spec)`
+
+Registers a rebindable keybind, stored and persisted under the id `"<your_mod_id>.<name>"`. `spec` is a table: `{ default = keycode, label = "Display Name" }`. The bind shows up in the shared Mod Settings screen for the player to rebind; changes are saved automatically.
+
+### `minecraft.keybinds.get_code(id)`
+
+Returns the current key code for a keybind, or `0` if unbound/not found. `id` must be the fully-qualified id, i.e. `"<your_mod_id>.<name>"` — the same id your mod registered with. Compare this against `event.key` inside a `key_press` subscription to react to the bind:
+
+```lua
+minecraft.keybinds.register("boost", { default = minecraft.key_code("b"), label = "Activate Boost" })
+
+minecraft.on(minecraft.events.key_press, {}, function(event)
+  if event.pressed and event.key == minecraft.keybinds.get_code("my_mod.boost") then
+    -- activate boost
+  end
+end)
+```
+
+---
+
 ## Custom Block/Item Models
 
 Models control the visual appearance of blocks and items in the world and inventory. The engine supports loading pre-baked models, building them from Lua quad data, or generating voxel-based geometry.
 
 ### `minecraft.model.load(path)`
 
-Loads a baked model from a file in the mod's assets. The `path` is relative to the mod's asset root. Returns a numeric handle on success, or `nil, error` on failure.
+Loads and bakes a JSON model file from the mod's assets (including its parent chain). The `path` is relative to the mod's asset root; `.json` is the supported model format and is appended when omitted. Returns a numeric handle on success, or `nil, error` on failure.
 
 ```lua
-local handle = minecraft.model.load("models/my_model.baked")
+local handle = minecraft.model.load("models/my_model.json")
 if handle then
   minecraft.register_block({
     id = 1000,
@@ -347,15 +399,22 @@ minecraft.register_block({
 
 ### Model Callbacks (for `model` field)
 
-Instead of a static model handle, the `model` field in `register_block` and `register_item` can be a function. The function is called to determine the model handle dynamically. This is useful for animated or context-dependent models.
+Instead of a static model handle, the `model` field in `register_block` and `register_item` can be a function. The function is called during rendering with an event table and a `tessellator` object already attached. It should issue draw calls; it does not return a model handle.
 
 ```lua
 minecraft.register_block({
   id = 1002,
   texture = "textures/blocks/anim.png",
-  model = function()
-    -- Return a handle based on some state
-    return minecraft.model.load("models/variant.baked")
+  model = function(event)
+    -- event.type is "world" or "inventory"; event includes
+    -- x/y/z, brightness, block_id, texture, and texture_id.
+    minecraft.tessellator.quad({
+      texture = event.texture,
+      vertices = {
+        {x=0, y=0, z=0, u=0, v=0}, {x=1, y=0, z=0, u=1, v=0},
+        {x=1, y=1, z=0, u=1, v=1}, {x=0, y=1, z=0, u=0, v=1},
+      },
+    })
   end,
   name = "Dynamic Model Block"
 })

@@ -85,7 +85,7 @@ void EntityRenderer::renderOnFire(
   gl::scalef(scale, scale, scale);
   bindTexture("/terrain.png");
   Tessellator& tessellator = Tessellator::INSTANCE;
-  float radius = 0.5f;
+  float radius = 0.35f;
   float offset = 0.0f;
   float remaining = entity.height / scale;
   const float yBase = static_cast<float>(entity.y - entity.boundingBox.minY);

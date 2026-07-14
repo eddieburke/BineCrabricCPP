@@ -113,7 +113,7 @@ list(FILTER MINECRAFT_SERVER_MOD_SOURCES EXCLUDE REGEX
     "/net/minecraft/mod/model/.*\\.cpp$"
 )
 list(FILTER MINECRAFT_SERVER_MOD_SOURCES EXCLUDE REGEX
-    "/net/minecraft/mod/runtime/(LuaCameraBindings|LuaFboBindings|LuaGuiArgs|LuaGuiViewport|LuaInventoryBindings|LuaModelBindings|LuaRaycastBindings|LuaRenderBindings|LuaScreenBindings|LuaSoundBindings|LuaTextureBindings|LuaShaderBindings|ModRenderScope)\\.cpp$"
+    "/net/minecraft/mod/runtime/(LuaCameraBindings|LuaFboBindings|LuaGuiArgs|LuaInventoryBindings|LuaModelBindings|LuaRaycastBindings|LuaRenderBindings|LuaScreenBindings|LuaSoundBindings|LuaTextureBindings|LuaShaderBindings|ModRenderScope)\\.cpp$"
 )
 
 add_subdirectory(mods)
@@ -363,6 +363,9 @@ set(MINECRAFT_TEST_SOURCES
     tests/world_required_mods_test.cpp
     tests/multiplayer_client_player_entity_test.cpp
     tests/hook_bus_test.cpp
+    tests/client_timer_test.cpp
+    tests/resolved_render_options_test.cpp
+    tests/mod_settings_registry_test.cpp
 )
 
 set(MINECRAFT_SERVER_TEST_SOURCES

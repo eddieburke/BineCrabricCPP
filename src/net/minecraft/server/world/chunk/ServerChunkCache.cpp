@@ -139,13 +139,13 @@ bool ServerChunkCache::save(bool saveEntityData, client::gui::screen::LoadingDis
     saveChunk(*chunk);
     chunk->dirty = false;
     if(++saved == 24 && !saveEntityData) {
+      if(storage_ != nullptr) {
+        storage_->flush();
+      }
       return false;
     }
   }
-  if(saveEntityData) {
-    if(storage_ == nullptr) {
-      return true;
-    }
+  if(storage_ != nullptr && (saveEntityData || saved > 0)) {
     storage_->flush();
   }
   return true;

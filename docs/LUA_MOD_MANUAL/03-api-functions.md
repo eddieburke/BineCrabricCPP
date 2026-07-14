@@ -170,7 +170,7 @@ end
 
 ### `minecraft.storage.read(path)`
 
-Reads a file from the mod's persistent storage directory (`runDir/config/mods/<modId>/`). Returns the file content as a string, or `nil` if the file does not exist. Path traversal (`..`) is rejected.
+Reads a file from the mod's persistent storage directory (`runDir/config/mods/<sanitizeName(modId)>/`). The mod ID is sanitized before it becomes a directory name. Returns the file content as a string, or `nil` if the file does not exist. Path traversal (`..`) is rejected.
 
 ```lua
 local data = minecraft.storage.read("settings.txt")
@@ -178,7 +178,7 @@ local data = minecraft.storage.read("settings.txt")
 
 ### `minecraft.storage.write(path, content)`
 
-Writes content to the mod's persistent storage directory. Creates intermediate directories as needed. Returns `true` on success, `false` on failure. Path traversal (`..`) is rejected.
+Writes content to the mod's sanitized persistent-storage directory. Creates intermediate directories as needed. Returns `true` on success, `false` on failure. Path traversal (`..`) is rejected.
 
 ```lua
 minecraft.storage.write("scores.dat", "player1: 100")
@@ -246,7 +246,7 @@ minecraft.config.save("graphics.cfg", {
 
 ### `minecraft.at_phase(phase_name, order, callback)`
 
-Registers a callback to run during a specific lifecycle phase. The callback receives an event table with `previous` (previous phase string) and `current` (current phase string).
+Registers a callback to run during a specific lifecycle phase. The phase name is a string, but the callback receives numeric enum fields: `previous` and `current` (`NotStarted = 0`, `Init = 1`, `PostInit = 2`, `Ready = 3`). This callback is subscribed immediately while the mod script is loading.
 
 **Available phase names** (in order):
 
@@ -278,13 +278,13 @@ Subscribes to a game event. The `options` table supports:
 The callback receives the event table and should return the (possibly mutated) event table.
 
 ```lua
-minecraft.on("client_tick", {priority = 50}, function(event)
+minecraft.on(minecraft.events.client_tick, {priority = 50}, function(event)
   -- called every client tick
   return event
 end)
 
 -- Filter by block_id and right_click
-minecraft.on("block_interact", {
+minecraft.on(minecraft.events.block_interact, {
   block_id = 42,
   right_click = true,
   priority = 10
@@ -296,7 +296,7 @@ minecraft.on("block_interact", {
 end)
 
 -- Using a predicate
-minecraft.on("entity_tick", {
+minecraft.on(minecraft.events.entity_tick, {
   when = function(e) return e.entity_type == "Zombie" end
 }, function(event)
   return event
@@ -379,7 +379,7 @@ local t2 = minecraft.util.copy(t1)
 
 ### `minecraft.util.json_encode(value)`
 
-Encodes a Lua value to a JSON string. Supports `nil` → `null`, booleans, finite numbers, strings, and tables. Tables with consecutive integer keys from 1 are encoded as arrays; other tables with string keys are encoded as objects. Returns the JSON string on success, or `nil` + error on failure.
+Encodes a Lua table to a JSON string. Array-like tables with consecutive integer keys from 1 are encoded as arrays; other tables with string keys are encoded as objects. The top-level argument must be a table; scalar and `nil` values are rejected. Returns the JSON string on success, or `nil` + error on failure.
 
 ```lua
 local json = minecraft.util.json_encode({name = "test", values = {1, 2, 3}})
@@ -504,9 +504,17 @@ if minecraft.world.is_night() then
 end
 ```
 
+### `minecraft.world.get_time()`
+
+Returns the current world time in ticks, or `0` when no world is available.
+
+```lua
+local time = minecraft.world.get_time()
+```
+
 ### `minecraft.world.get_top_y(x, z)`
 
-Returns the Y coordinate of the top solid block at the given column, or `-1` if no world is available.
+Returns one above the highest solid or fluid block at the given column, or `-1` if no world is available.
 
 ```lua
 local y = minecraft.world.get_top_y(100, 200)
@@ -561,29 +569,31 @@ local col, row = minecraft.world.marker_px(grid, playerX, playerZ)
 
 ---
 
-## Chunk (Generation)
+## Chunk Context (Generation)
 
-### `minecraft.chunk.set_block(localX, y, localZ, blockId)`
+The chunk helpers are exposed as `event.chunk` only while a `chunk_generation` callback is running. There is no global `minecraft.chunk` table.
+
+### `event.chunk:set_block(localX, y, localZ, blockId)`
 
 Sets a block within the currently generating chunk. Coordinates are local to the chunk (0–15 for X and Z, 0–127 for Y). Only usable during `chunk_generation` event callbacks. Returns `true` on success.
 
 ```lua
-minecraft.chunk.set_block(7, 40, 7, 1)  -- place stone
+event.chunk:set_block(7, 40, 7, 1)  -- place stone
 ```
 
-### `minecraft.chunk.fill(x1, y1, z1, x2, y2, z2, blockId)`
+### `event.chunk:fill(x1, y1, z1, x2, y2, z2, blockId)`
 
 Fills a cuboid within the chunk with the given block ID. Coordinates are clamped to chunk bounds. Returns the number of blocks changed. Only usable during `chunk_generation`.
 
 ```lua
-local changed = minecraft.chunk.fill(0, 0, 0, 15, 0, 15, 1)
+local changed = event.chunk:fill(0, 0, 0, 15, 0, 15, 1)
 ```
 
-### `minecraft.chunk.get_block(localX, y, localZ)`
+### `event.chunk:get_block(localX, y, localZ)`
 
 Gets the block ID at a local chunk position. Returns 0 if no chunk context is active.
 
-### `minecraft.chunk.get_height(localX, localZ)`
+### `event.chunk:get_height(localX, localZ)`
 
 Gets the height value at a local chunk column. Returns 0 if no chunk context is active.
 
@@ -926,10 +936,6 @@ GUI drawing functions — only usable inside `screen_event` render phase or `scr
 | `draw_button({x, y, width, height, text, active?, mouse_x?, mouse_y?})` | Draws a vanilla-style button |
 | `draw_slider({x, y, width, height, value, text, mouse_x?, mouse_y?})` | Draws a vanilla-style slider |
 | `draw_toggle({x, y, width, height, label, value, mouse_x?, mouse_y?})` | Draws a vanilla-style toggle |
-| `begin_3d({x, y, width, height, size?, gui_width?, gui_height?, yaw_deg?, pitch_deg?, distance?, fov_deg?, clear_color?, clear_r/g/b/a?})` | Begins a 3D viewport for GUI rendering |
-| `end_3d()` | Ends a 3D viewport |
-| `draw_3d({mode = "lines"|"quads"|..., color?, line_width?, point_size?, vertices = {{x,y,z}, ...}})` | Draws 3D geometry inside a viewport |
-| `unproject({x, y, width, height, ..., mouse_x, mouse_y, ...})` | Computes a 3D ray from mouse position in a viewport. Returns `{origin = {x, y, z}, direction = {x, y, z}}` |
 
 ```lua
 -- Draw a button
@@ -937,23 +943,6 @@ minecraft.gui.draw_button({
   x = 10, y = 10, width = 100, height = 20,
   text = "Click", mouse_x = event.mouse_x, mouse_y = event.mouse_y
 })
-
--- 3D viewport
-minecraft.gui.begin_3d({
-  x = 0, y = 0, width = 200, height = 200,
-  yaw_deg = 45, pitch_deg = 30, distance = 3
-})
-minecraft.gui.draw_3d({
-  mode = "quads",
-  r = 1, g = 0, b = 0,
-  vertices = {
-    {x = -0.5, y = -0.5, z = 0},
-    {x =  0.5, y = -0.5, z = 0},
-    {x =  0.5, y =  0.5, z = 0},
-    {x = -0.5, y =  0.5, z = 0}
-  }
-})
-minecraft.gui.end_3d()
 ```
 
 ---
@@ -969,7 +958,7 @@ Controls offscreen framebuffer objects for rendering the world to textures (view
 | `create(width, height, colorCount?, useDepthTex?)` | Creates a camera target, returns handle or `-1` |
 | `create_display_size(colorCount?, useDepthTex?)` | Creates a camera target matching the display size |
 | `destroy(handle)` | Destroys a target, returns `true`/`false` |
-| `resize(handle, width, height, colorCount?)` | Resizes a target |
+| `resize(handle, width, height)` | Resizes a target |
 | `width(handle)` | Returns pixel width |
 | `height(handle)` | Returns pixel height |
 | `render(handle, x, y, z, yaw, pitch, roll, fov, tickDelta?)` | Renders the world into the target from the given camera position. Returns `true`/`false` |
@@ -1000,7 +989,7 @@ General-purpose offscreen framebuffer objects for custom render passes and shade
 | `create(width, height, colorCount?, useDepthTex?)` | Creates an FBO, returns handle or `-1` |
 | `create_display_size(colorCount?, useDepthTex?)` | Creates an FBO matching display size |
 | `destroy(handle)` | Destroys an FBO |
-| `resize(handle, width, height, colorCount?)` | Resizes an FBO |
+| `resize(handle, width, height)` | Resizes an FBO |
 | `bind(handle)` | Binds an FBO for rendering, returns `true`/`false` |
 | `unbind()` | Unbinds the active FBO |
 | `texture(handle, attachmentIndex?)` | Returns the OpenGL texture ID |
@@ -1206,6 +1195,7 @@ All supported event names for `minecraft.on()`:
 |---|---|---|
 | `client_tick` | `before`, `after_world`, `paused`, `has_player`, `has_world`, `world_name`, `is_overworld`, `camera_y`, `player_y`, `player_fall_distance`, `player_on_ground`, `world_time`, `is_night`, `mod_generation` | — |
 | `render_frame` | `tick_delta` | — |
+| `fog_settings` | `enabled`, `spherical`, `exponential`, `start`, `end`, `density`, `custom_color`, `red/green/blue` | fog fields |
 | `render_targets` | `tick_delta` | — |
 | `first_person_hand` | `tick_delta`, `eye`, `canceled`, `entity_id`, `entity_type` | `canceled` |
 | `key_press` | `key`, `pressed`, `repeat`, `handled` | `handled` |
@@ -1227,7 +1217,7 @@ All supported event names for `minecraft.on()`:
 | `entity_teleport` | `entity_id`, `entity_type`, `from_x/y/z`, `x`, `y`, `z`, `yaw`, `pitch`, `canceled`, `has_entity`, `has_player` | `x`, `y`, `z`, `yaw`, `pitch`, `canceled` |
 | `world_color` | `partial_ticks`, `r`, `g`, `b`, `kind`, `celestial`, `world_time`, `is_night` | `r`, `g`, `b` |
 | `entity_render` | `entity_id`, `entity_type`, `is_player`, `tick_delta`, `pose` (sub-table with `body_yaw`, `head_yaw/pitch`, `yaw`, `pitch`, `roll`, `scale`, `offset_x/y/z`, `parts`) | `pose` (full mutation) |
-| `world_render` | `tick_delta`, `stage`, `moment`, `cancel_vanilla`, `vanilla_stage_ran`, `celestial_angle`, `sky_yaw_deg`, `star_brightness`, `rain_strength`, `stars_enabled`, `astronomy_enabled`, `astronomy_utc_millis`, `observer_lat/lon_deg`, `camera_x/y/z`, `camera_yaw/pitch/roll`, `custom_camera`, `world_time`, `celestial`, `is_night`, `cloud_base_height` | `cancel_vanilla`, celestial/sky/astronomy fields (sky stage only) |
+| `world_render` | `tick_delta`, `stage`, `moment`, `cancel_vanilla`, `vanilla_stage_ran`, `shadow_pass`, `celestial_angle`, `sky_yaw_deg`, `star_brightness`, `rain_strength`, `stars_enabled`, `astronomy_enabled`, `astronomy_utc_millis`, `observer_lat/lon_deg`, `camera_x/y/z`, `camera_yaw/pitch/roll`, `custom_camera`, `world_time`, `celestial`, `is_night`, `cloud_base_height` | `cancel_vanilla`, celestial/sky/astronomy fields (sky stage only) |
 | `chunk_generation` | `stage`, `moment`, `cancel_vanilla`, `vanilla_stage_ran`, `world_seed`, `mod_generation`, `is_overworld`, `chunk_x`, `chunk_z`, `has_chunk` | `cancel_vanilla` |
 | `screen_region` | `phase_name`, `screen_id`, `region`, `mouse_x`, `mouse_y`, `button`, `scroll_delta`, `x`, `y`, `width`, `height`, `handled` | `handled`, `width`, `height` |
 | `screen_ui` | `screen_id`, `region`, `host_fields` (table), `ui` (table with `add_centered_button`, `add_button`, `add_stacked_centered_button`) | — |
@@ -1238,7 +1228,10 @@ All supported event names for `minecraft.on()`:
 | `entity_spawn` | `entity_id`, `entity_type`, item fields | — |
 | `entity_remove` | `entity_id`, `entity_type`, item fields | — |
 
-All events have `remote` (boolean) and `side` (`"client"` or `"server"`) set automatically. World events also have `has_world`, `world_name`, `is_overworld`, and `mod_generation` fields.
+Events that carry execution context have `remote` (boolean) and `side`
+(`"client"` or `"server"`) set automatically. World-backed events commonly
+also expose `has_world`, `world_name`, `is_overworld`, and `mod_generation`;
+fields remain event-specific, so consult the table above.
 
 ### Lifecycle Phase Constants
 

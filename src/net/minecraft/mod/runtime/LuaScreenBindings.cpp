@@ -1,7 +1,6 @@
 #include "net/minecraft/mod/runtime/LuaScreenBindings.hpp"
 #include "net/minecraft/mod/lua/LuaHostApi.hpp"
 #include "net/minecraft/mod/runtime/LuaGuiArgs.hpp"
-#include "net/minecraft/mod/runtime/LuaGuiViewport.hpp"
 #include "net/minecraft/mod/runtime/LuaEventGlue.hpp"
 #ifdef MINECRAFT_NATIVE_EXPORTS
 #include <algorithm>
@@ -10,6 +9,7 @@
 #include <mutex>
 #include <unordered_map>
 #include "net/minecraft/client/Minecraft.hpp"
+#include "net/minecraft/client/gui/screen/option/ModSettingsScreen.hpp"
 #include "net/minecraft/client/auth/microsoft/SessionRestore.hpp"
 #include "net/minecraft/client/font/TextRenderer.hpp"
 #include "net/minecraft/client/gl/GlState.hpp"
@@ -221,6 +221,13 @@ void LuaScreen::removed() {
   hooks().publish(event);
   session->screen = nullptr;
 }
+void LuaScreen::closeToParent() {
+  if(returnFactory_) {
+    navigateTo(returnFactory_);
+  } else {
+    closeScreen();
+  }
+}
 client::gui::widget::TextFieldWidget* LuaScreen::addField(const std::string& name,
                                                           int x,
                                                           int y,
@@ -305,6 +312,40 @@ void invokeButtonCallback(ModHost::LoadedLuaMod* mod, int ref) {
     runtimeLog(mod->modId, "error", error != nullptr ? error : "button callback failed");
     api.settop(state, -2);
   }
+}
+// Calls an optional label-refresh function and returns its string result. Used so
+// injected buttons whose click handler mutates mod state (e.g. a toggle) can update
+// their own displayed text instead of staying stuck on the label set at button
+// creation time.
+bool invokeLabelCallback(ModHost::LoadedLuaMod* mod, int ref, std::string& outText) {
+  LuaApi& api = luaApi();
+  if(mod == nullptr || ref == kLuaNoRef || !api.ready()) {
+    return false;
+  }
+  const std::lock_guard<std::recursive_mutex> lock(mod->stateMutex);
+  if(!mod->active || mod->state == nullptr) {
+    return false;
+  }
+  auto* state = static_cast<lua_State*>(mod->state);
+  api.rawgeti(state, kLuaRegistryIndex, ref);
+  if(api.type(state, -1) != kLuaTFunction) {
+    api.settop(state, -2);
+    return false;
+  }
+  const int status = api.pcallk(state, 0, 1, 0, 0, nullptr);
+  if(status != kLuaOk) {
+    const char* error = api.tolstring(state, -1, nullptr);
+    runtimeLog(mod->modId, "error", error != nullptr ? error : "button label callback failed");
+    api.settop(state, -2);
+    return false;
+  }
+  const char* text = api.tolstring(state, -1, nullptr);
+  const bool ok = text != nullptr;
+  if(ok) {
+    outText = text;
+  }
+  api.settop(state, -2);
+  return ok;
 }
 namespace {
 // Shared guard for gui.draw_* calls: only valid inside a Lua GUI draw scope
@@ -626,8 +667,23 @@ int luaScreenUiAddCenteredButton(lua_State* state) {
   const int y = luaIntArg(state, 1 + argOffset);
   const std::string text = luaString(state, 2 + argOffset, "");
   const int ref = api.gettop(state) >= 3 + argOffset ? retainButtonCallback(state, session->mod, 3 + argOffset) : kLuaNoRef;
-  (void)session->context->addCenteredButton(
+  const int labelRef =
+      api.gettop(state) >= 4 + argOffset ? retainButtonCallback(state, session->mod, 4 + argOffset) : kLuaNoRef;
+  client::gui::widget::ActionButtonWidget& button = session->context->addCenteredButton(
       y, text, [mod = session->mod, ref]() { invokeButtonCallback(mod, ref); });
+  if(labelRef != kLuaNoRef) {
+    auto* mod = session->mod;
+    auto* widget = &button;
+    button.onClick = [previous = std::move(button.onClick), mod, labelRef, widget]() {
+      if(previous) {
+        previous();
+      }
+      std::string label;
+      if(invokeLabelCallback(mod, labelRef, label)) {
+        widget->text = std::move(label);
+      }
+    };
+  }
   return 0;
 }
 int luaScreenUiAddButton(lua_State* state) {
@@ -680,7 +736,14 @@ int luaScreenOpen(lua_State* state) {
     shouldPause = luaBoolField(state, 2, "pause", true);
   }
   auto* mod = currentLuaMod(state);
-  auto screen = std::make_unique<LuaScreen>(luaString(state, 1, ""), std::move(title), shouldPause);
+  client::gui::screen::ScreenFactory returnFactory = nullptr;
+  if(auto* current = client::Minecraft::INSTANCE->currentScreen()) {
+    if(auto* settings = dynamic_cast<client::gui::screen::option::ModSettingsScreen*>(current)) {
+      returnFactory = settings->modPagesFactory();
+    }
+  }
+  auto screen = std::make_unique<LuaScreen>(
+      luaString(state, 1, ""), std::move(title), shouldPause, std::move(returnFactory));
   if(mod != nullptr) {
     activeLuaScreen()->mod = mod;
   }
@@ -690,7 +753,11 @@ int luaScreenOpen(lua_State* state) {
 int luaScreenClose(lua_State* state) {
   (void)state;
   if(client::Minecraft::INSTANCE != nullptr) {
-    client::Minecraft::INSTANCE->setScreen(nullptr);
+    if(auto* screen = dynamic_cast<LuaScreen*>(client::Minecraft::INSTANCE->currentScreen())) {
+      screen->closeToParent();
+    } else {
+      client::Minecraft::INSTANCE->setScreen(nullptr);
+    }
   }
   return 0;
 }
@@ -840,7 +907,6 @@ void installScreenApi(lua_State* state, ModHost::LoadedLuaMod& mod) {
   bindModFunction(state, &mod, "draw_slider", luaGuiDrawSlider);
   bindModFunction(state, &mod, "draw_toggle", luaGuiDrawToggle);
   bindModFunction(state, &mod, "draw_centered_text", luaGuiDrawCenteredText);
-  installLuaGuiViewportBindings(state);
   api.setfield(state, -2, "gui");
   api.createtable(state, 0, 10);
   bindModFunction(state, &mod, "open", luaScreenOpen);
@@ -881,6 +947,7 @@ void installScreenApi(lua_State* state, ModHost::LoadedLuaMod& mod) {
   setField(state, "detail_settings", std::string(screen_ids::kDetailSettings));
   setField(state, "keybinds", std::string(screen_ids::kKeybinds));
   setField(state, "mods", std::string(screen_ids::kMods));
+  setField(state, "mod_settings", std::string(screen_ids::kModSettings));
   setField(state, "achievements", std::string(screen_ids::kAchievements));
   setField(state, "stats", std::string(screen_ids::kStats));
   setField(state, "lan", std::string(screen_ids::kLan));

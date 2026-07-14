@@ -6,7 +6,7 @@ A Lua mod is a self-contained package placed under `%APPDATA%/.minecraft/mods/` 
 
 | File | Purpose |
 |------|---------|
-| `mod.json` | Manifest — declares `id`, `name`, `version`, `entry`, `description`, `enabledByDefault` |
+| `mod.json` | Manifest — declares `id`, `name`, `version`, `entry`, `description`, and `enabled` |
 | `scripts/` (or any path) | Entry script and support modules |
 
 ### mod.json Example
@@ -18,7 +18,7 @@ A Lua mod is a self-contained package placed under `%APPDATA%/.minecraft/mods/` 
   "version": "1.0.0",
   "entry": "scripts/main.lua",
   "description": "A simple example mod",
-  "enabledByDefault": true
+  "enabled": true
 }
 ```
 
@@ -109,15 +109,15 @@ The loading sequence for each mod is:
                        callbacks. The mod is marked active BEFORE the script
                        runs so resource lookups work during init.
 
-4. HookBus Subscribe→ After the entry script completes, all callback entries
-                       collected in mod->callbacks are passed to
-                       subscribeLuaCallback(), which registers each one with
-                       the global HookBus at the specified priority.
+4. HookBus Subscribe→ `minecraft.on()` subscriptions are retained during
+                       entry-script execution and attached after the script
+                       completes. `minecraft.at_phase()` is different: it
+                       subscribes its lifecycle callback immediately.
 ```
 
 ## Lifecycle Phases
 
-Lifecycle phases run once at startup during `Registry::bootstrap()`. Lua mods register phase handlers with `minecraft.at_phase()`, which is a wrapper around subscribing to the internal `LifecycleEvent` with `LifecyclePhase` strings.
+Lifecycle phases run once at startup during `Registry::bootstrap()`. Lua mods register phase handlers with `minecraft.at_phase()`, which subscribes to the internal `LifecycleEvent`. The phase name argument is a string, but the callback receives numeric enum values: `NotStarted = 0`, `Init = 1`, `PostInit = 2`, and `Ready = 3`.
 
 ### All 3 Phases
 
@@ -131,18 +131,18 @@ Lifecycle phases run once at startup during `Registry::bootstrap()`. Lua mods re
 
 ```lua
 minecraft.at_phase("init", 0, function(event)
-  -- event.previous  → previous phase name string
-  -- event.current   → current phase name string
+  -- event.previous  → numeric phase enum
+  -- event.current   → numeric phase enum
   minecraft.register_block({
-    id = "my_mod:custom_block",
+    id = 1000,
     -- ...
   })
 end)
 ```
 
 The callback receives fields:
-- `event.previous` — name of the previous phase
-- `event.current` — name of the current phase
+- `event.previous` — numeric previous phase enum (`0`–`3`)
+- `event.current` — numeric current phase enum (`0`–`3`)
 
 The C++ `LifecycleEvent` struct:
 ```cpp
@@ -171,6 +171,7 @@ minecraft.events = {
   entity_spawn           = "entity_spawn",
   entity_teleport        = "entity_teleport",
   entity_tick            = "entity_tick",
+  fog_settings           = "fog_settings",
   first_person_hand      = "first_person_hand",
   fov                    = "fov",
   camera_setup           = "camera_setup",
@@ -297,17 +298,17 @@ end
 
 ```lua
 -- Run once when any block is right-clicked
-minecraft.on("block_interact", { right_click = true, once = true }, function(event)
+minecraft.on(minecraft.events.block_interact, { right_click = true, once = true }, function(event)
   print("Block right-clicked at " .. event.x .. "," .. event.y .. "," .. event.z)
 end)
 
 -- Filter by block_id with a set
-minecraft.on("block_interact", { block_id = { [1] = true, [2] = true } }, function(event)
+minecraft.on(minecraft.events.block_interact, { block_id = { [1] = true, [2] = true } }, function(event)
   -- matches block_id 1 or 2
 end)
 
 -- Filter by predicate
-minecraft.on("world_tick", { when = minecraft.util.real_world }, function(event)
+minecraft.on(minecraft.events.world_tick, { when = minecraft.util.real_world }, function(event)
   -- only in real worlds (not mod generation)
 end)
 ```
@@ -318,7 +319,7 @@ end)
 
 ```lua
 minecraft.register_block({
-  id = "my_mod:custom_block",
+  id = 1000,
   on_use = function(event)
     -- event fields: player, world, x, y, z, side, right_click, etc.
     if event.handled then event.canceled = true end
@@ -340,10 +341,11 @@ minecraft.register_item({
 
 ```lua
 minecraft.register_shaped_recipe({
-  result = "minecraft:diamond",
-  count = 1,
+  output_item_id = 264,
+  output_count = 1,
+  item_id = 265,
+  key = "X",
   pattern = { "XXX", "X X", "XXX" },
-  key = { X = "minecraft:iron_ingot" },
 })
 ```
 
@@ -548,15 +550,14 @@ minecraft.read_asset_bytes("image.png") → { 137, 80, 78, 71, ... }
 
 ### Safe Path Handling
 
-All path operations go through `normalizeRelativePath()` which:
-- Converts backslashes to forward slashes
-- Collapses `./` and empty segments
-- Removes leading `/`
+All path operations go through `normalizeRelativePath()` which converts
+backslashes to forward slashes and removes leading `/` characters. It does
+not canonicalize `.`/empty segments and does not itself reject NUL bytes.
 
 Then `isSafeRelativePath()` validates:
 - No path traversal (`..` segments are rejected)
 - No absolute paths
-- No null characters
+- No null characters are accepted by the public path validation layer
 
 `sanitizeName()` strips unsafe characters for cache directory names.
 

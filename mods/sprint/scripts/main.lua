@@ -1,14 +1,22 @@
-local DOUBLE_TAP_WINDOW_TICKS = 7
 local SPRINT_KEY_FALLBACK = 29
-local SPRINT_MULTIPLIER = 1.45
-local START_BOOST_MULTIPLIER = 1.08
-local START_BOOST_TICKS = 4
+
+minecraft.settings.register("Sprint", {
+  { key = "double_tap_window_ticks", label = "Double-Tap Window (ticks)", kind = "slider", min = 3, max = 15, integer = true, default = 7 },
+  { key = "sprint_multiplier", label = "Sprint Speed Multiplier", kind = "slider", min = 1.0, max = 2.0, step = 0.01, default = 1.45 },
+  { key = "start_boost_multiplier", label = "Start Boost Multiplier", kind = "slider", min = 1.0, max = 1.5, step = 0.01, default = 1.08 },
+  { key = "start_boost_ticks", label = "Start Boost Duration (ticks)", kind = "slider", min = 0, max = 10, integer = true, default = 4 },
+  { key = "sprint_fov_multiplier", label = "Sprint FOV Multiplier", kind = "slider", min = 1.0, max = 1.3, step = 0.01, default = 1.08 },
+  { key = "fov_lerp_rate", label = "FOV Transition Speed", kind = "slider", min = 1.0, max = 20.0, step = 0.5, default = 8.0 },
+})
 
 local sprinting = false
 local sprinting_by_key = false
 local was_forward_down = false
 local sprint_toggle_timer = 0
 local sprint_boost_timer = 0
+
+local prev_fov_multiplier = 1.0
+local current_fov_multiplier = 1.0
 
 local function key_code(name, fallback)
   local code = minecraft.key_code(name)
@@ -44,7 +52,7 @@ local function start_sprinting(by_key)
   end
   sprinting = true
   sprinting_by_key = by_key
-  sprint_boost_timer = START_BOOST_TICKS
+  sprint_boost_timer = minecraft.settings.get("start_boost_ticks") or 4
 end
 
 local function stop_sprinting()
@@ -61,7 +69,7 @@ local function update_sprint_state()
     if sprint_toggle_timer > 0 then
       start_sprinting(false)
     else
-      sprint_toggle_timer = DOUBLE_TAP_WINDOW_TICKS
+      sprint_toggle_timer = minecraft.settings.get("double_tap_window_ticks") or 7
     end
   end
 
@@ -85,6 +93,11 @@ minecraft.on(minecraft.events.client_tick, {
   priority = 100,
 }, function()
   update_sprint_state()
+  prev_fov_multiplier = current_fov_multiplier
+  local target = sprinting and (minecraft.settings.get("sprint_fov_multiplier") or 1.08) or 1.0
+  local lerp_rate = minecraft.settings.get("fov_lerp_rate") or 8.0
+  local t = 1.0 - math.exp(-lerp_rate * (1.0 / 20.0))
+  current_fov_multiplier = current_fov_multiplier + (target - current_fov_multiplier) * t
 end)
 
 -- Forward input is normalized by moveNonSolid; scale speed_multiplier instead.
@@ -93,9 +106,9 @@ minecraft.on(minecraft.events.player_travel, {
   priority = 100,
 }, function(event)
   if sprinting and event.forward > 0.0 then
-    local multiplier = SPRINT_MULTIPLIER
+    local multiplier = minecraft.settings.get("sprint_multiplier") or 1.45
     if sprint_boost_timer > 0 then
-      multiplier = multiplier * START_BOOST_MULTIPLIER
+      multiplier = multiplier * (minecraft.settings.get("start_boost_multiplier") or 1.08)
       sprint_boost_timer = sprint_boost_timer - 1
     end
     event.speed_multiplier = (event.speed_multiplier or 1.0) * multiplier
@@ -103,7 +116,14 @@ minecraft.on(minecraft.events.player_travel, {
 end)
 
 minecraft.on(minecraft.events.fov, { priority = 100 }, function(event)
-  if sprinting then
-    event.fov = event.fov * 1.08
-  end
+  -- Lua event fields use snake_case. Keep a fallback so a malformed render
+  -- event cannot break every frame and flood the log.
+  local t = tonumber(event.tick_delta) or 1.0
+  t = math.max(0.0, math.min(1.0, t))
+
+  local fov_mult =
+    prev_fov_multiplier +
+    (current_fov_multiplier - prev_fov_multiplier) * t
+
+  event.fov = (tonumber(event.fov) or 70.0) * fov_mult
 end)

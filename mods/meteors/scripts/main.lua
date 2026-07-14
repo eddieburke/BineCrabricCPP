@@ -3,13 +3,19 @@ local meteorModels = {}
 local spawnCooldown = 0
 local cometTimer = 0
 local nextId = 1
+local SCREEN_ID = "meteors:controls"
 
-local GRAVITY = -0.04
-local AIR_DENSITY_BASE = 0.0012
-local AIR_SCALE_HEIGHT = 25.0
-local STONE_STRENGTH = 8.0
-local FRAGMENT_MIN_SIZE = 0.15
-local MAX_METEORS = 50
+minecraft.settings.register("Meteors", {
+  { key = "gravity", label = "Gravity", kind = "slider", min = -0.12, max = -0.01, step = 0.005, decimals = 3, default = -0.04 },
+  { key = "air_density", label = "Air Density", kind = "slider", min = 0.0002, max = 0.004, step = 0.0001, decimals = 4, default = 0.0012 },
+  { key = "air_scale_height", label = "Air Scale Height", kind = "slider", min = 10, max = 50, step = 1, default = 25.0 },
+  { key = "stone_strength", label = "Fragmentation Strength", kind = "slider", min = 2, max = 20, step = 0.5, default = 8.0 },
+  { key = "fragment_min_size", label = "Minimum Fragment Size", kind = "slider", min = 0.05, max = 0.5, step = 0.01, decimals = 2, default = 0.15 },
+  { key = "max_meteors", label = "Max Meteors", kind = "slider", min = 10, max = 150, integer = true, default = 50 },
+})
+
+minecraft.keybinds.register("spawn_meteor", { default = minecraft.key_code("m"), label = "Spawn Meteor" })
+minecraft.keybinds.register("spawn_comet", { default = minecraft.key_code("n"), label = "Spawn Comet" })
 
 local function clamp(v, min, max)
   if v < min then return min end
@@ -26,7 +32,7 @@ local function generateMeteorModel(size, seed, isComet)
   local cells = {}
   local resolution = 12
   local halfRes = resolution * 0.5
-  local radius = size * 3
+  local radius = halfRes - 1
   local cx, cy, cz = halfRes, halfRes, halfRes
 
   for x = 0, resolution do
@@ -74,6 +80,9 @@ local function generateMeteorModel(size, seed, isComet)
   local handle, err = minecraft.model.voxels({
     cells = cells,
     resolution = resolution,
+    origin_x = -0.5,
+    origin_y = -0.5,
+    origin_z = -0.5,
     key = cacheKey
   })
 
@@ -85,7 +94,7 @@ local function generateMeteorModel(size, seed, isComet)
 end
 
 local function spawnMeteorAt(x, y, z, vx, vy, vz, size, isComet)
-  if #meteors >= MAX_METEORS then return end
+  if #meteors >= (minecraft.settings.get("max_meteors") or 50) then return end
 
   local speed = math.sqrt(vx * vx + vy * vy + vz * vz)
   local tumblingSpeed = 2 + speed * 0.5
@@ -137,7 +146,14 @@ local function spawnMeteor()
   local sx = player.x - vx * t + (math.random() - 0.5) * 40
   local sz = player.z - vz * t + (math.random() - 0.5) * 40
 
-  spawnMeteorAt(sx, spawnY, sz, vx, vy, vz, size, false)
+  return spawnMeteorAt(sx, spawnY, sz, vx, vy, vz, size, false)
+end
+
+local function spawnMeteorFromKeybind()
+  if spawnCooldown > 0 then return end
+  if spawnMeteor() then
+    spawnCooldown = 5
+  end
 end
 
 local function spawnComet()
@@ -173,7 +189,7 @@ local function updatePhysics()
       m.alive = false
       table.remove(meteors, i)
     else
-      local airDensity = AIR_DENSITY_BASE * math.exp(clamp(-(m.y - 64) / AIR_SCALE_HEIGHT, -10, 10))
+      local airDensity = (minecraft.settings.get("air_density") or 0.0012) * math.exp(clamp(-(m.y - 64) / (minecraft.settings.get("air_scale_height") or 25.0), -10, 10))
       if m.y > 100 then
         airDensity = airDensity * math.exp(clamp(-(m.y - 100) / 30, -10, 0))
       end
@@ -194,11 +210,11 @@ local function updatePhysics()
         m.vz = m.vz - (m.vz * invSpeed) * drag
       end
 
-      m.vy = m.vy + GRAVITY
+      m.vy = m.vy + (minecraft.settings.get("gravity") or -0.04)
       local dynPressure = 0.5 * airDensity * speedSq
       m.temperature = math.min(1, m.temperature + dynPressure * 0.000002)
 
-      if not m.isComet and dynPressure > STONE_STRENGTH / m.size and m.size > FRAGMENT_MIN_SIZE * 2 then
+      if not m.isComet and dynPressure > (minecraft.settings.get("stone_strength") or 8.0) / m.size and m.size > (minecraft.settings.get("fragment_min_size") or 0.15) * 2 then
         local numFrags = 2 + math.floor(math.random() * 2)
         local fragSize = m.size * math.pow(1 / numFrags, 1 / 2.5)
         local spreadSpeed = 0.1 + math.random() * 0.3
@@ -207,7 +223,7 @@ local function updatePhysics()
           local a1 = math.random() * math.pi * 2
           local a2 = math.random() * math.pi
           local fs = fragSize * (0.7 + math.random() * 0.6)
-          if fs >= FRAGMENT_MIN_SIZE then
+          if fs >= (minecraft.settings.get("fragment_min_size") or 0.15) then
             spawnMeteorAt(
               m.x, m.y, m.z,
               m.vx + math.cos(a1) * math.sin(a2) * spreadSpeed,
@@ -276,20 +292,14 @@ local function spawnTrailParticles()
   end
 end
 
--- minecraft.render.billboards is the sky-dome renderer: it places each
--- billboard at a fixed distance along a camera-relative direction and has no
--- concept of world position, so it cannot be used to draw effects attached to
--- a meteor's actual location (that used to render as a fixed glow glued to
--- the middle of the screen). World-positioned trail/glow comes from
--- spawnTrailParticles instead, which uses minecraft.particles.spawn.
-
 local function renderMeteorBody(m)
   local handle, err = generateMeteorModel(m.size, m.seed, m.isComet)
   if handle then
     minecraft.model.draw(handle, {
       x = m.x, y = m.y, z = m.z,
       yaw = m.yaw, pitch = m.pitch, roll = m.roll,
-      scale = 1,
+      scale = m.size * 2,
+      brightness = 1,
       cull = false,
       blend = true,
       depth_test = true,
@@ -306,34 +316,64 @@ local function renderAll()
   end
 end
 
-minecraft.at_phase("ready", 0, function()
-  minecraft.on("key_press", { key = minecraft.key_code("m"), pressed = true }, function(event)
-    if spawnCooldown <= 0 then
-      spawnMeteor()
-      spawnCooldown = 5
-    end
-    return event
-  end)
-
-  minecraft.on("key_press", { key = minecraft.key_code("n"), pressed = true }, function(event)
+minecraft.on(minecraft.events.key_press, { pressed = true, handled = false, priority = 100 }, function(event)
+  if event["repeat"] then return event end
+  if event.key == minecraft.keybinds.get_code("meteors.spawn_meteor") then
+    spawnMeteorFromKeybind()
+    event.handled = true
+  elseif event.key == minecraft.keybinds.get_code("meteors.spawn_comet") then
     spawnComet()
-    return event
-  end)
+    event.handled = true
+  end
+  return event
+end)
 
-  minecraft.on("client_tick", { after_world = true }, function(event)
-    if spawnCooldown > 0 then spawnCooldown = spawnCooldown - 1 end
-    cometTimer = cometTimer + 1
-    if cometTimer > 1800 + math.random(600) then
+minecraft.screen.on_ui(minecraft.screen.ids.mod_settings, minecraft.screen.regions.footer, function(event)
+  if event.ui ~= nil then
+    event.ui:add_stacked_centered_button("Meteor Controls...", function()
+      minecraft.screen.open(SCREEN_ID, { title = "" })
+    end)
+  end
+  return event
+end, 80)
+
+minecraft.on(minecraft.events.screen_event, { screen_id = SCREEN_ID, priority = 100 }, function(event)
+  if event.phase == "init" then
+    local x = math.floor(event.width / 2 - 100)
+    minecraft.screen.add_button(x, 52, 200, 20, "Spawn Meteor", function()
+      minecraft.screen.close()
+      spawnMeteorFromKeybind()
+    end)
+    minecraft.screen.add_button(x, 80, 200, 20, "Spawn Comet", function()
+      minecraft.screen.close()
       spawnComet()
-      cometTimer = 0
-    end
-    updatePhysics()
-    spawnTrailParticles()
-    return event
-  end)
+    end)
+    minecraft.screen.add_button(x, 116, 200, 20, "Done", function()
+      minecraft.screen.close()
+    end)
+  elseif event.phase == "render" then
+    minecraft.gui.fill_rect(4, 4, event.width - 8, event.height - 8, 0xD9121A25)
+    minecraft.gui.draw_text(math.floor(event.width / 2 - 48), 22, "METEOR CONTROLS", 0xFFFFFFFF)
+  elseif event.phase == "key" and event.key == minecraft.keys.escape then
+    minecraft.screen.close()
+    event.handled = true
+  end
+  return event
+end)
 
-  minecraft.on("world_render", { stage = "entities", moment = "after" }, function(event)
-    renderAll()
-    return event
-  end)
+minecraft.on(minecraft.events.client_tick, { after_world = true }, function(event)
+  if spawnCooldown > 0 then spawnCooldown = spawnCooldown - 1 end
+  cometTimer = cometTimer + 1
+  if cometTimer > 1800 + math.random(600) then
+    spawnComet()
+    cometTimer = 0
+  end
+  updatePhysics()
+  spawnTrailParticles()
+  return event
+end)
+
+minecraft.on(minecraft.events.world_render, { stage = "entities", moment = "after" }, function(event)
+  renderAll()
+  return event
 end)

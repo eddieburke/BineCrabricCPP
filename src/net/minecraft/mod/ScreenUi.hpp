@@ -85,6 +85,7 @@ inline constexpr std::string_view kLanInfo = "minecraft:lan_info";
 inline constexpr std::string_view kServerModDownload = "minecraft:server_mod_download";
 inline constexpr std::string_view kFatalError = "minecraft:fatal_error";
 inline constexpr std::string_view kOutOfMemory = "minecraft:out_of_memory";
+inline constexpr std::string_view kModSettings = "minecraft:mod_settings";
 } // namespace screen_ids
 namespace screen_regions {
 inline constexpr std::string_view kFooter = "footer";

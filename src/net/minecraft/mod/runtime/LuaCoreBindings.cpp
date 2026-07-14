@@ -5,6 +5,7 @@
 #include "net/minecraft/mod/lua/LuaNbtCodec.hpp"
 #include "net/minecraft/mod/runtime/LuaEventGlue.hpp"
 #include "net/minecraft/mod/runtime/LuaEventSubscribers.hpp"
+#include "net/minecraft/mod/runtime/LuaModSettingsBindings.hpp"
 #include "net/minecraft/mod/runtime/ModHostUtil.hpp"
 #ifdef MINECRAFT_NATIVE_EXPORTS
 #include "net/minecraft/client/Minecraft.hpp"
@@ -597,6 +598,7 @@ void installCoreApi(lua_State* state, ModHost::LoadedLuaMod& mod) {
 #ifdef MINECRAFT_NATIVE_EXPORTS
   pushFunctionTable(state, {{"get", luaOptionsGet}, {"keys", luaOptionsKeys}, {"cycle", luaOptionsCycle}});
   api.setfield(state, -2, "options");
+  installModSettingsApi(state, mod);
 #endif
 }
 } // namespace net::minecraft::mod::runtime

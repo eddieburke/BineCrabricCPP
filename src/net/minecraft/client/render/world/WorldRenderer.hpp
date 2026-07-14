@@ -138,6 +138,7 @@ private:
   void updateSectionFrontier();
   void drainPendingColumns();
   void createColumn(int sectionX, int sectionZ);
+  void removeColumn(int sectionX, int sectionZ);
   void enqueueColumn(int sectionX, int sectionZ);
   void retireOrFreeSection(std::unique_ptr<chunk::ChunkBuilder> section);
   void sweepRetiring();
@@ -149,7 +150,7 @@ private:
   std::unordered_map<world::SectionPos, std::unique_ptr<chunk::ChunkBuilder>, world::SectionPosHash> sections_{};
   std::unordered_set<chunk::ChunkBuilder*> dirtyChunks_{};
   std::unordered_set<chunk::ChunkBuilder*> nearDirtyChunks_{};
-  std::vector<std::vector<chunk::ChunkBuilder*>> drawRings_{};
+  std::vector<std::unordered_set<chunk::ChunkBuilder*>> drawRings_{};
   std::vector<std::vector<chunk::ChunkBuilder*>> visibleDrawRings_{};
   std::deque<world::SectionPos> pendingColumns_{};
   std::unordered_set<world::SectionPos, world::SectionPosHash> pendingSet_{};

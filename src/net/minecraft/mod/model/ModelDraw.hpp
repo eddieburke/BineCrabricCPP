@@ -62,7 +62,7 @@ struct WorldModelDraw {
   float roll = 0.0f;
   float pivotY = 0.0f;
   float scale = 1.0f;
-  float brightness = 1.0f;
+  float brightness = -1.0f;
   float alpha = 1.0f;
   bool blend = true;
   bool cull = false;

@@ -26,6 +26,11 @@ public:
   bool fancyGraphics = true;
   bool ao = true;
   bool frustumCulling = true;
+  bool lodEnabled = true;
+  int lodDistance = 1;
+  int lodDetail = 1;
+  bool lodFogExtend = true;
+  bool lodImportWorld = true;
   std::string skin = "Default";
   int difficulty = 2;
   int guiScale = 0;
@@ -69,17 +74,6 @@ public:
   int time = 0;
   int autoSaveTicks = 4000;
   bool fastDebugInfo = false;
-  // Fog
-  bool fogFancy = false;
-  int fogProjection = 0;
-  float fogStart = 0.2f;
-  int fogMode = 0;
-  float fogEnd = 0.8f;
-  float fogDensity = 0.1f;
-  float fogColorRed = 0.0f;
-  float fogColorGreen = 0.0f;
-  float fogColorBlue = 0.0f;
-  int fogColorMode = 0;
   bool hideHud = false;
   bool thirdPerson = false;
   bool debugHud = false;

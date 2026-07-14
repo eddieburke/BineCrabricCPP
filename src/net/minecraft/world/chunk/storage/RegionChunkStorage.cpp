@@ -37,11 +37,12 @@ void RegionChunkStorage::saveChunk(World* world, Chunk& chunk) {
   }
 }
 void RegionChunkStorage::saveEntities(World* world, Chunk& chunk) {
-  saveChunk(world, chunk);
+  (void)world;
+  (void)chunk;
 }
 void RegionChunkStorage::tick() {
 }
 void RegionChunkStorage::flush() {
-  RegionIo::flush();
+  RegionIo::sync();
 }
 } // namespace net::minecraft

@@ -398,6 +398,17 @@ local function local_sidereal_time_rad(utc_millis, longitude_deg)
   return normalize_deg(gmst + (longitude_deg or 0.0)) * DEG
 end
 
+local function solve_eccentric_anomaly(mean_anomaly_rad, eccentricity)
+  local eccentric_anomaly = mean_anomaly_rad + eccentricity * math.sin(mean_anomaly_rad) *
+    (1.0 + eccentricity * math.cos(mean_anomaly_rad))
+  for _ = 1, 5 do
+    eccentric_anomaly = eccentric_anomaly -
+      (eccentric_anomaly - eccentricity * math.sin(eccentric_anomaly) - mean_anomaly_rad) /
+      (1.0 - eccentricity * math.cos(eccentric_anomaly))
+  end
+  return eccentric_anomaly
+end
+
 local function apply_refraction(geometric_altitude_deg)
   local elevation = geometric_altitude_deg
   if elevation > 85.0 then return elevation end
@@ -413,6 +424,120 @@ local function apply_refraction(geometric_altitude_deg)
     correction_arcsec = -20.772 / tangent
   end
   return elevation + correction_arcsec / 3600.0
+end
+
+-- Low-precision lunar ephemeris with the dominant perturbation terms and a
+-- topocentric parallax correction. This is substantially more important for
+-- the Moon than for stars: its roughly one-degree horizontal parallax changes
+-- rise/set by several minutes. The approximation tracks ordinary moonrise,
+-- transit and moonset to within a small fraction of a degree for this UI.
+local function lunar_horizontal(utc_millis, latitude_deg, longitude_deg)
+  local jd = julian_day(utc_millis)
+  local days = jd - 2451543.5 -- 2000 Jan 0.0 UT, used by the element model.
+
+  -- Sun's apparent ecliptic longitude, needed for the largest lunar
+  -- perturbations and the illuminated fraction.
+  local sun_perihelion = normalize_deg(282.9404 + 4.70935e-5 * days)
+  local sun_eccentricity = 0.016709 - 1.151e-9 * days
+  local sun_mean_anomaly = normalize_deg(356.0470 + 0.9856002585 * days)
+  local sun_e = solve_eccentric_anomaly(sun_mean_anomaly * DEG, sun_eccentricity)
+  local sun_x = math.cos(sun_e) - sun_eccentricity
+  local sun_y = math.sqrt(1.0 - sun_eccentricity * sun_eccentricity) * math.sin(sun_e)
+  local sun_true_anomaly = math.deg(math.atan(sun_y, sun_x))
+  local sun_longitude = normalize_deg(sun_true_anomaly + sun_perihelion)
+
+  -- Mean lunar orbital elements.
+  local node = normalize_deg(125.1228 - 0.0529538083 * days)
+  local inclination = 5.1454
+  local periapsis = normalize_deg(318.0634 + 0.1643573223 * days)
+  local semi_major_axis = 60.2666 -- Earth equatorial radii.
+  local eccentricity = 0.054900
+  local mean_anomaly = normalize_deg(115.3654 + 13.0649929509 * days)
+  local eccentric_anomaly = solve_eccentric_anomaly(mean_anomaly * DEG, eccentricity)
+
+  local orbital_x = semi_major_axis * (math.cos(eccentric_anomaly) - eccentricity)
+  local orbital_y = semi_major_axis * math.sqrt(1.0 - eccentricity * eccentricity) *
+    math.sin(eccentric_anomaly)
+  local true_anomaly = math.deg(math.atan(orbital_y, orbital_x))
+  local distance = math.sqrt(orbital_x * orbital_x + orbital_y * orbital_y)
+
+  local node_rad = node * DEG
+  local inclination_rad = inclination * DEG
+  local argument_rad = (true_anomaly + periapsis) * DEG
+  local ecliptic_x = distance * (math.cos(node_rad) * math.cos(argument_rad) -
+    math.sin(node_rad) * math.sin(argument_rad) * math.cos(inclination_rad))
+  local ecliptic_y = distance * (math.sin(node_rad) * math.cos(argument_rad) +
+    math.cos(node_rad) * math.sin(argument_rad) * math.cos(inclination_rad))
+  local ecliptic_z = distance * math.sin(argument_rad) * math.sin(inclination_rad)
+  local lunar_longitude = math.deg(math.atan(ecliptic_y, ecliptic_x))
+  local lunar_latitude = math.deg(math.atan(
+    ecliptic_z, math.sqrt(ecliptic_x * ecliptic_x + ecliptic_y * ecliptic_y)))
+
+  local mean_longitude = normalize_deg(node + periapsis + mean_anomaly)
+  local elongation = normalize_deg(mean_longitude - sun_longitude)
+  local argument_latitude = normalize_deg(mean_longitude - node)
+  local function sind(value) return math.sin(value * DEG) end
+  local function cosd(value) return math.cos(value * DEG) end
+
+  -- Dominant longitude, latitude and distance perturbations.
+  lunar_longitude = lunar_longitude - 1.274 * sind(mean_anomaly - 2.0 * elongation) +
+    0.658 * sind(2.0 * elongation) - 0.186 * sind(sun_mean_anomaly) -
+    0.059 * sind(2.0 * mean_anomaly - 2.0 * elongation) -
+    0.057 * sind(mean_anomaly - 2.0 * elongation + sun_mean_anomaly) +
+    0.053 * sind(mean_anomaly + 2.0 * elongation) +
+    0.046 * sind(2.0 * elongation - sun_mean_anomaly) +
+    0.041 * sind(mean_anomaly - sun_mean_anomaly) - 0.035 * sind(elongation) -
+    0.031 * sind(mean_anomaly + sun_mean_anomaly) -
+    0.015 * sind(2.0 * argument_latitude - 2.0 * elongation) +
+    0.011 * sind(mean_anomaly - 4.0 * elongation)
+  lunar_latitude = lunar_latitude - 0.173 * sind(argument_latitude - 2.0 * elongation) -
+    0.055 * sind(mean_anomaly - argument_latitude - 2.0 * elongation) -
+    0.046 * sind(mean_anomaly + argument_latitude - 2.0 * elongation) +
+    0.033 * sind(argument_latitude + 2.0 * elongation) +
+    0.017 * sind(2.0 * mean_anomaly + argument_latitude)
+  distance = distance - 0.58 * cosd(mean_anomaly - 2.0 * elongation) -
+    0.46 * cosd(2.0 * elongation)
+
+  local longitude_rad = lunar_longitude * DEG
+  local latitude_rad = lunar_latitude * DEG
+  ecliptic_x = distance * math.cos(longitude_rad) * math.cos(latitude_rad)
+  ecliptic_y = distance * math.sin(longitude_rad) * math.cos(latitude_rad)
+  ecliptic_z = distance * math.sin(latitude_rad)
+
+  local obliquity = (23.4393 - 3.563e-7 * days) * DEG
+  local equatorial_x = ecliptic_x
+  local equatorial_y = ecliptic_y * math.cos(obliquity) - ecliptic_z * math.sin(obliquity)
+  local equatorial_z = ecliptic_y * math.sin(obliquity) + ecliptic_z * math.cos(obliquity)
+
+  -- Subtract the observer's geocentric vector in Earth radii. The reduced
+  -- latitude accounts for the Earth's flattening without needing elevation.
+  local sidereal = local_sidereal_time_rad(utc_millis, longitude_deg or 0.0)
+  local geodetic_latitude = clamp(latitude_deg or 45.0, -90.0, 90.0) * DEG
+  local reduced_latitude = math.atan(0.99664719 * math.tan(geodetic_latitude))
+  local observer_x = math.cos(reduced_latitude) * math.cos(sidereal)
+  local observer_y = math.cos(reduced_latitude) * math.sin(sidereal)
+  local observer_z = 0.99664719 * math.sin(reduced_latitude)
+  local topocentric_x = equatorial_x - observer_x
+  local topocentric_y = equatorial_y - observer_y
+  local topocentric_z = equatorial_z - observer_z
+
+  local sin_latitude = math.sin(geodetic_latitude)
+  local cos_latitude = math.cos(geodetic_latitude)
+  local sin_sidereal = math.sin(sidereal)
+  local cos_sidereal = math.cos(sidereal)
+  local east = -sin_sidereal * topocentric_x + cos_sidereal * topocentric_y
+  local north = -sin_latitude * cos_sidereal * topocentric_x -
+    sin_latitude * sin_sidereal * topocentric_y + cos_latitude * topocentric_z
+  local up = cos_latitude * cos_sidereal * topocentric_x +
+    cos_latitude * sin_sidereal * topocentric_y + sin_latitude * topocentric_z
+
+  local geometric_altitude = math.deg(math.atan(up, math.sqrt(east * east + north * north)))
+  local apparent_altitude = apply_refraction(geometric_altitude)
+  local azimuth = normalize_deg(math.deg(math.atan(east, north)))
+  local phase_fraction = normalize_deg(lunar_longitude - sun_longitude) / 360.0
+  local illuminated_fraction = (1.0 - math.cos(phase_fraction * TWO_PI)) * 0.5
+  return azimuth, apparent_altitude, geometric_altitude, distance,
+    illuminated_fraction, phase_fraction
 end
 
 local function horizontal_from_ra_dec(ra, dec, utc_millis, latitude_deg, longitude_deg)
@@ -496,6 +621,12 @@ function earth_time_solar.sun_azimuth_altitude(utc_millis, settings)
   return azimuth, altitude
 end
 
+function earth_time_solar.moon_azimuth_altitude(utc_millis, settings)
+  local azimuth, altitude = lunar_horizontal(
+    utc_millis, settings.latitude, settings.longitude)
+  return azimuth, altitude
+end
+
 function earth_time_solar.build_frame(settings, partial_ticks, utc_millis)
   local observer_millis = earth_time_solar.resolve_observer_millis(settings, utc_millis)
   local right_ascension, declination = solar_ra_dec(observer_millis)
@@ -519,7 +650,12 @@ function earth_time_solar.build_frame(settings, partial_ticks, utc_millis)
   -- horizontal solar coordinates instead of forcing the sun overhead at noon.
   local zenith_deg = clamp(90.0 - sun_altitude, 0.0, 180.0)
   local sun_angle = zenith_deg * DEG
-  local moon_angle = (sun_angle + PI) % TWO_PI
+
+  local moon_azimuth, moon_altitude, moon_geometric_altitude,
+    moon_distance, moon_illumination, moon_phase = lunar_horizontal(
+      observer_millis, settings.latitude, settings.longitude)
+  local moon_zenith_deg = clamp(90.0 - moon_altitude, 0.0, 180.0)
+  local moon_angle = moon_zenith_deg * DEG
 
   -- Canonical world-space direction from the observer toward the real sun.
   -- Azimuth is clockwise from north; +Y is up. Every renderer and shadow
@@ -532,6 +668,13 @@ function earth_time_solar.build_frame(settings, partial_ticks, utc_millis)
   -- Minecraft's sky/world convention uses -Z for geographic north.
   -- Using +cos(azimuth) mirrors the sun north-to-south.
   local sun_direction_z = -horizontal * math.cos(azimuth_rad)
+
+  local moon_altitude_rad = moon_altitude * DEG
+  local moon_azimuth_rad = moon_azimuth * DEG
+  local moon_horizontal = math.cos(moon_altitude_rad)
+  local moon_direction_x = moon_horizontal * math.sin(moon_azimuth_rad)
+  local moon_direction_y = math.sin(moon_altitude_rad)
+  local moon_direction_z = -moon_horizontal * math.cos(moon_azimuth_rad)
 
   -- Apparent solar time: 06:00 at tick 0, 12:00 at 6000, 18:00 at
   -- 12000 and 00:00 at 18000. This is based on hour angle, so the clock and
@@ -556,6 +699,15 @@ function earth_time_solar.build_frame(settings, partial_ticks, utc_millis)
     sun_direction_x = sun_direction_x,
     sun_direction_y = sun_direction_y,
     sun_direction_z = sun_direction_z,
+    moon_azimuth_deg = moon_azimuth,
+    moon_altitude_deg = moon_altitude,
+    moon_geometric_altitude_deg = moon_geometric_altitude,
+    moon_distance_earth_radii = moon_distance,
+    moon_illumination = moon_illumination,
+    moon_phase = moon_phase,
+    moon_direction_x = moon_direction_x,
+    moon_direction_y = moon_direction_y,
+    moon_direction_z = moon_direction_z,
     solar_hour_angle_rad = hour_angle,
     solar_time_hours = solar_time_hours,
     is_daylight = sun_altitude > -0.833,

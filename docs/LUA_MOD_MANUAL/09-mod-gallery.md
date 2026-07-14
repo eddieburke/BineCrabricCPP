@@ -111,14 +111,14 @@ minecraft.register_block({
 })
 
 -- Chunk-level helpers
-local function get_block(x, y, z)
+local function get_block(chunk, x, y, z)
   if not in_chunk(x, z) or y < 0 or y >= 128 then return 0 end
-  return minecraft.chunk.get_block(x, y, z)
+  return chunk:get_block(x, y, z)
 end
 
-local function set_block(x, y, z, id)
+local function set_block(chunk, x, y, z, id)
   if in_chunk(x, z) and y >= 0 and y < 128 then
-    minecraft.chunk.set_block(x, y, z, id)
+    chunk:set_block(x, y, z, id)
   end
 end
 
@@ -128,7 +128,7 @@ minecraft.on(minecraft.events.chunk_generation, {
   vanilla_stage_ran = true,
   when = minecraft.util.real_world,
   priority = 100,
-}, function()
+}, function(event)
   if WATER_ID <= 0 or SAND_ID <= 0 or DIRT_ID <= 0 then return end
   if minecraft.world.random(16) ~= 0 then return end
   -- find water body and generate reef...
@@ -137,7 +137,7 @@ end)
 
 **Key patterns:**
 - `minecraft.world.block_id(name)` resolves vanilla block names to numeric IDs.
-- `minecraft.chunk.get_block` / `set_block` operate on the current chunk being generated (coordinates 0–15).
+- `event.chunk:get_block` / `set_block` operate on the current chunk being generated (coordinates 0–15).
 - `vanilla_stage_ran = true` ensures vanilla features ran first.
 - `minecraft.util.real_world` guards against superflat/void worlds.
 - `priority` controls execution order among multiple listeners.
@@ -340,48 +340,35 @@ end)
 
 ## 8. `item_drop_physics` — Custom Physics Simulation
 
-**Files:** `scripts/main.lua`, `scripts/physics.lua`, `scripts/box3d_lite.lua`, `mod.json`
+**Files:** `scripts/main.lua`, `scripts/box3d.lua`, `assets/item_physics.json`, `mod.json`
 
 Full physics engine for dropped items. Hides vanilla entity rendering, runs a rigid-body sim, and draws tumbling 3D models.
 
 ### Main loop
 
 ```lua
--- Suppress vanilla item rendering
 minecraft.on(minecraft.events.pre_entity_render, { entity_type = "Item" }, function(event)
   event.canceled = true
   return event
 end)
 
--- Run simulation each tick
 minecraft.on(minecraft.events.client_tick, {
   before = false, after_world = true, paused = false,
 }, function(event)
   if not event.has_world then return end
   local list = minecraft.entities.list("Item")
-  for i = 1, #list do
-    local item = list[i]
-    local s = sims[item.id]
-    if s then
-      step(s)
-      minecraft.entities.teleport(item.id, s.x, s.y, s.z)
-    else
-      sims[item.id] = seed(item)
-    end
-  end
+  simulate_items(list)
+  resolve_item_collisions(list)
+  queue_server_sync(list)
 end)
 
--- Draw tumbling models
-minecraft.on(minecraft.events.world_render, {
-  stage = minecraft.render.stages.entities,
-  moment = minecraft.render.moments.after,
-}, function(event)
-  local list = minecraft.entities.list("Item")
-  for i = 1, #list do
+local function render_items(event)
+  local d = event.tick_delta or 1.0
+  for _, item in ipairs(minecraft.entities.list("Item") or {}) do
     local s = sims[item.id]
     if s then
-      local orientation = box3d.quat_slerp(s.prev_orientation, s.body.orientation, d)
-      local yaw, pitch, roll = box3d.quat_to_euler_degrees(orientation)
+      local q = box3d.quat_slerp(s.prev_orientation, s.body.orientation, d)
+      local yaw, pitch, roll = box3d.quat_to_euler_degrees(q)
       local transform = {
         x = s.px + (s.x - s.px) * d,
         y = s.py + (s.y - s.py) * d,
@@ -389,57 +376,31 @@ minecraft.on(minecraft.events.world_render, {
         yaw = yaw, pitch = pitch, roll = roll,
         pivot_y = 0.5, scale = DRAW_SCALE,
       }
-      local drew_model = minecraft.model.draw_item(item.item_id, item.item_damage or 0, transform)
-      if not drew_model then
+      if not minecraft.model.draw_item(item.item_id, item.item_damage or 0, transform) then
         local handle = voxel_handle(item)
         if handle then minecraft.model.draw(handle, transform) end
       end
     end
   end
+end
+
+minecraft.on(minecraft.events.world_render, {
+  stage = minecraft.render.stages.terrain_opaque,
+  moment = minecraft.render.moments.after,
+}, function(event)
+  if not event.shadow_pass then render_items(event) end
+end)
+
+minecraft.on(minecraft.events.world_render, {
+  stage = minecraft.render.stages.entities,
+  moment = minecraft.render.moments.after,
+}, function(event)
+  if not event.shadow_pass then return end
+  render_items(event)
 end)
 ```
 
-### Collision resolution (`physics.lua`)
-
-```lua
--- Swept-AABB sliding collision
-function physics.slide(aabb, dx, dy, dz, collisions)
-  -- Resolve Y axis first, then X, then Z
-  if dy ~= 0 then
-    local test_aabb = { ... }  -- expanded by dy
-    for _, box in ipairs(collisions) do
-      if aabb_intersects(test_aabb, box) then
-        -- clamp dy to nearest surface
-      end
-    end
-  end
-  -- ... repeat for dx and dz
-  return dx, dy, dz
-end
-```
-
-### Rigid-body rotation (`box3d_lite.lua`)
-
-```lua
--- Quaternion-based rigid body with inertia tensor
-function box3d.new_box(half_x, half_y, half_z, mass)
-  local ix = (mass / 3.0) * (half_y * half_y + half_z * half_z)
-  local iy = (mass / 3.0) * (half_x * half_x + half_z * half_z)
-  local iz = (mass / 3.0) * (half_x * half_x + half_y * half_y)
-  return {
-    half = v3(half_x, half_y, half_z),
-    inv_mass = mass > 0 and (1.0 / mass) or 0.0,
-    inv_inertia_local = { xx = 1.0/ix, yy = 1.0/iy, zz = 1.0/iz, ... },
-    orientation = quat_identity(),
-    angular_velocity = v3(0, 0, 0),
-  }
-end
-
--- Integrate rotation: q2 = q1 + 0.5 * omega * q1
-function box3d.integrate_rotation(body, h)
-  body.orientation = quat_integrate(body.orientation, v3_scale(body.angular_velocity, h))
-end
-```
+`box3d.lua` supplies swept block collision, contact impulses, quaternion rotation, and AABB depenetration. `main.lua` adds iterative item-item contact resolution, including restitution, friction, resting support, and swept collision for fast throws.
 
 **Entity fields used on Item entities:**
 - `item_id`, `item_count`, `item_damage`, `texture_path`, `atlas_index`, `mod_texture`
@@ -447,12 +408,13 @@ end
 
 **Key patterns:**
 - `pre_entity_render` with `entity_type = "Item"` and `canceled = true` hides vanilla rendering.
-- `minecraft.entities.teleport(id, x, y, z)` drives the engine-owned entity position.
+- Server-side synchronization applies simulated item positions; client callbacks only queue updates.
+- Render in `terrain_opaque/after` for normal shader lighting, then in `entities/after` only when `event.shadow_pass` is true to write the shadow map.
 - `minecraft.render.set_item_entity_override(true)` can be used to take full control.
 - `minecraft.model.draw_item(id, damage, transform)` draws the item's real 3D model.
 - `minecraft.model.voxel({...})` creates a voxel model from a texture for fallback rendering.
 - `minecraft.model.item_bounds(id, damage)` returns the model's AABB for physics.
-- Separate `.lua` modules loaded via `minecraft.require("scripts.physics")`.
+- `minecraft.require("scripts.box3d")` provides collision and rigid-body math.
 - `minecraft.world.get_block_collisions(query)` retrieves block collision AABBs.
 
 ---
@@ -557,7 +519,7 @@ end)
 - `minecraft.camera.texture(channel)` returns the OpenGL texture ID for GUI drawing.
 - `minecraft.camera.destroy(channel)` cleans up.
 - `render_targets` event is the correct place to call `camera.render`.
-- `screen_event` lifecycle: `init` → `render` → `close`.
+- `screen_event` phases include `init`, `render`, `tick`, `key`, `mouse`, `scroll`, and `close`; callbacks are event-driven.
 - Tile entities accessed via `minecraft.tile_entities.get(x, y, z)`.
 
 ---
@@ -667,7 +629,7 @@ end)
 minecraft.screen.on_ui(minecraft.screen.ids.create_world,
   minecraft.screen.regions.footer, function(event)
   if event.ui ~= nil then
-    event.ui.add_stacked_centered_button(profile_label(), cycle_profile)
+    event.ui:add_stacked_centered_button(profile_label(), cycle_profile)
   end
   return event
 end, 100)
@@ -737,7 +699,7 @@ end)
 - `chunk_generation` with `cancel_vanilla = true` disables vanilla generation for that stage.
 - `world_spawn_search` customizes where players first spawn.
 - `minecraft.screen.settings({...})` creates a slider-based settings screen.
-- `minecraft.chunk.fill(x1, y1, z1, x2, y2, z2, block_id)` fills a volume in the generating chunk.
+- `event.chunk:fill(x1, y1, z1, x2, y2, z2, block_id)` fills a volume in the generating chunk.
 
 ---
 
@@ -862,12 +824,12 @@ A complete seed-finding tool with custom GUI, text fields, search/filter, biome 
 ### Opening a custom screen
 
 ```lua
-minecraft.screen.on(minecraft.events.screen_ui, {
+minecraft.on(minecraft.events.screen_ui, {
   screen_id = minecraft.screen.ids.create_world,
   region = minecraft.screen.regions.footer,
   priority = 90,
 }, function(event)
-  event.ui.add_stacked_centered_button("Seed tools...", function()
+  event.ui:add_stacked_centered_button("Seed tools...", function()
     open_finder()
   end)
 end)
@@ -971,8 +933,8 @@ minecraft.on(minecraft.events.screen_event, {
   screen_id = "offline_mode:settings", priority = 100,
 }, function(event)
   if event.phase == "init" then
-    event.add_field("username", 60, 64, 200, 20, state.username, 16)
-    event.add_button(60, 92, 200, 20, toggle_label(), function()
+    minecraft.screen.add_field("username", 60, 64, 200, 20, {text=state.username, max_len=16})
+    minecraft.screen.add_button(60, 92, 200, 20, toggle_label(), function()
       state.enabled = not state.enabled
       apply()
     end)
@@ -990,7 +952,7 @@ minecraft.on(minecraft.events.screen_ui, {
   region = minecraft.screen.regions.screen,
   priority = 100,
 }, function(event)
-  event.ui.add_centered_button(186, "Offline Mode: OFF", function()
+  event.ui:add_centered_button(186, "Offline Mode: OFF", function()
     minecraft.screen.open("offline_mode:settings")
   end)
 end)
@@ -1017,13 +979,13 @@ minecraft.on(minecraft.events.chunk_generation, {
   when = minecraft.util.real_world,
 }, function(event)
   local seed = math.floor(event.world_seed or 0)
-  if (seed + chunk_x * 7342871 + chunk_z * 912931) % 35 ~= 0 then return end
+  if (seed + event.chunk_x * 7342871 + event.chunk_z * 912931) % 35 ~= 0 then return end
   for step = 0, 12 do
     local world_x = base_x + step * 2
     local world_z = base_z + math.floor(math.sin(step * 0.7) * 3.0)
     local x = chunk_coord(world_x)
     local z = chunk_coord(world_z)
-    local top = minecraft.chunk.get_height(x, z)
+    local top = event.chunk:get_height(x, z)
     if top > 8 then
       carve_column(x, z, top - 2, 10 + step)
     end
@@ -1034,14 +996,14 @@ end)
 **Key patterns:**
 - `moment = minecraft.generation.moments.after` runs after vanilla carving.
 - `event.world_seed`, `event.chunk_x`, `event.chunk_z` from chunk generation event.
-- `minecraft.chunk.get_height(x, z)` returns the surface height at the given column.
+- `event.chunk:get_height(x, z)` returns the surface height at the given column.
 - Deterministic seeded randomness using arithmetic on chunk coordinates.
 
 ---
 
 ## 18. `layered_clouds` — Custom Cloud Rendering
 
-**Files:** `scripts/main.lua`, `scripts/settings_helper.lua`, `scripts/config_helper.lua`, `mod.json`
+**Files:** `scripts/main.lua`, `mod.json`
 
 Replaces vanilla clouds with multiple layers of procedurally-animated cloud quads.
 
@@ -1348,7 +1310,7 @@ end
 
 **Key patterns:**
 - `on_use` in `register_block` fires when the block is right-clicked.
-- The screen lifecycle: `init` → `tick` → `render` → `mouse` → `key` → `close`.
+- The screen lifecycle phases are `init`, `render`, `tick`, `key`, `mouse`, `scroll`, and `close`; callbacks are event-driven, not a guaranteed fixed linear sequence.
 - `minecraft.gui.draw_item(x, y, id, count, damage)` renders an item with damage.
 - `minecraft.inventory.get(slot)` / `minecraft.inventory.set(slot, stack)` for player inventory.
 - `minecraft.inventory.cursor_get()` / `minecraft.inventory.cursor_set(stack)` for cursor stack.
@@ -1434,9 +1396,22 @@ minecraft.on(minecraft.events.world_start, {}, function(event)
 end)
 ```
 
-### Use `minecraft.entities.teleport` for engine-owned entities
+### `apply_state` vs `teleport` for mod entities
 
-When driving an entity's position from Lua, prefer `teleport` over `apply_state` because `apply_state` bypasses the engine's interpolation and can cause visual snapping.
+`apply_state` only works on entities spawned via `spawn_mod` — it silently
+no-ops on any other entity ID. `teleport` works on any entity, mod-spawned or
+vanilla.
+
+Both move the entity server-side and let the ordinary entity tracker sync the
+new position to clients, so remote observers see the same smooth interpolated
+motion either way — neither one is a hard client-side snap over the network.
+The real differences are local to the server object: `teleport` immediately
+resets the entity's `prev*` fields (so it doesn't lag one tick server-side)
+and fires a cancelable teleport event; `apply_state` does neither, and can
+also set custom `data` in the same call. Prefer `apply_state` when you're
+already updating a mod entity's data alongside its position; use `teleport`
+for one-off repositioning (portals, `/tp`-style commands) or when you want the
+teleport event to be cancelable.
 
 ### Check `ModWorldDrawContext` for rendering
 

@@ -28,7 +28,7 @@ Constant table with one entry per stage (value equals its own key):
 Usage:
 
 ```lua
-minecraft.on("world_render", { stage = minecraft.render.stages.entities, moment = minecraft.render.moments.before },
+minecraft.on(minecraft.events.world_render, { stage = minecraft.render.stages.entities, moment = minecraft.render.moments.before },
   function(event)
     -- Draw custom geometry before entities render
   end)
@@ -47,20 +47,21 @@ The `world_render` event also exposes the following fields on the event table:
 |---|---|---|
 | `world` | World | The current world |
 | `camera` | Entity | The active camera entity |
-| `tickDelta` | number | Partial tick for interpolation |
+| `tick_delta` | number | Partial tick for interpolation |
 | `stage` | string | The current render stage |
 | `moment` | string | `"before"` or `"after"` |
-| `cancelVanilla` | boolean | Set to `true` to skip vanilla rendering for this stage |
-| `vanillaStageRan` | boolean | Whether vanilla already rendered this stage |
-| `celestialAngle` | number | Current sun angle (0.0–1.0) |
-| `skyYawDegrees` | number | Skybox rotation in degrees |
-| `starBrightness` | number | Current star brightness (0.0–1.0) |
-| `rainStrength` | number | Rain intensity (0.0–1.0) |
-| `starsEnabled` | boolean | Whether stars are enabled in the sky |
-| `astronomyEnabled` | boolean | Whether astronomy mode is active |
-| `astronomyUtcMillis` | number | UTC epoch milliseconds for astronomy |
-| `observerLatitudeDegrees` | number | Observer latitude in degrees |
-| `observerLongitudeDegrees` | number | Observer longitude in degrees |
+| `cancel_vanilla` | boolean | Set to `true` to skip vanilla rendering for this stage |
+| `vanilla_stage_ran` | boolean | Whether vanilla already rendered this stage |
+| `shadow_pass` | boolean | `true` while an offscreen shadow-depth pass renders the `entities` stage |
+| `celestial_angle` | number | Current sun angle (0.0–1.0) |
+| `sky_yaw_deg` | number | Skybox rotation in degrees |
+| `star_brightness` | number | Current star brightness (stars/before; writable) |
+| `rain_strength` | number | Rain intensity (0.0–1.0) |
+| `stars_enabled` | boolean | Whether stars are enabled in the sky |
+| `astronomy_enabled` | boolean | Whether astronomy mode is active |
+| `astronomy_utc_millis` | number | UTC epoch milliseconds for astronomy |
+| `observer_latitude_deg` | number | Observer latitude in degrees |
+| `observer_longitude_deg` | number | Observer longitude in degrees |
 
 ---
 
@@ -118,7 +119,7 @@ The vertex count is rounded down to the nearest multiple of 4. Returns the
 number of quads drawn (integer), or `0` if no world draw context is active.
 
 ```lua
-minecraft.on("world_render", { stage = "entities", moment = "after" }, function(event)
+minecraft.on(minecraft.events.world_render, { stage = "entities", moment = "after" }, function(event)
   minecraft.render.quads({
     texture = "mymod:textures/blocks/test.png",
     x = event.camera.x, y = event.camera.y - 1, z = event.camera.z,
@@ -135,8 +136,9 @@ end)
 
 ### `minecraft.render.billboards(spec)`
 
-Draw always-facing quads (billboards) at 3D world-space positions.
-Only works during a world draw context.
+Draw always-facing quads (billboards) using 3D direction vectors. The engine
+places them on a sphere about 100 world units from the camera; `x/y/z` are not
+absolute world positions. Only works during a world draw context.
 
 **spec table fields:**
 
@@ -233,7 +235,7 @@ viewfinder displays, CCTV feeds, etc.
 | `create` | `(width: int, height: int, colorCount?: int, useDepthTex?: bool)` | handle (int) or `-1` |
 | `create_display_size` | `(colorCount?: int, useDepthTex?: bool)` | handle (int) or `-1` |
 | `destroy` | `(handle: int)` | `bool` |
-| `resize` | `(handle: int, width: int, height: int, colorCount?: int)` | `bool` |
+| `resize` | `(handle: int, width: int, height: int)` | `bool` |
 | `render` | `(handle: int, x, y, z, yaw, pitch, roll, fov, tickDelta?: number)` | `bool` |
 | `texture` | `(handle: int, attachmentIndex?: int)` | GL texture ID (int) |
 | `width` | `(handle: int)` | width (int) |
@@ -257,9 +259,9 @@ Create a render target sized to the current display (window) dimensions.
 
 Destroy a previously created render target. Returns `true` on success.
 
-### `camera.resize(handle, width, height, colorCount?)`
+### `camera.resize(handle, width, height)`
 
-Resize the target. `colorCount` is required (no default — must be provided).
+Resize the target. The existing color attachment count is retained.
 Returns `true` on success.
 
 ### `camera.render(handle, x, y, z, yaw, pitch, roll, fov, tickDelta?)`
@@ -304,7 +306,7 @@ custom shader operations.
 | `create` | `(width: int, height: int, colorCount?: int, useDepthTex?: bool)` | handle (int) or `-1` |
 | `create_display_size` | `(colorCount?: int, useDepthTex?: bool)` | handle (int) or `-1` |
 | `destroy` | `(handle: int)` | `bool` |
-| `resize` | `(handle: int, width: int, height: int, colorCount?: int)` | `bool` |
+| `resize` | `(handle: int, width: int, height: int)` | `bool` |
 | `bind` | `(handle: int)` | `bool` |
 | `unbind` | `()` | `bool` |
 | `texture` | `(handle: int, attachmentIndex?: int)` | GL texture ID (int) |
@@ -415,10 +417,13 @@ local instanceId = minecraft.model.place(handle, { x = 100, y = 64, z = 100, sca
 ### `minecraft.model.update(instanceId, opts)`
 
 Update an existing placed instance's transform. Same `opts` fields as `place`
-(except `tag`). Only provided fields are updated. Returns `true` on success.
+(except `tag`). Omitted transform fields reset to defaults (`x/y/z = 0`, angles
+= `0`, `scale = 1`, `pivot_y = 0`); pass every field that must be kept.
+Returns `true` on success.
 
 ```lua
-minecraft.model.update(instanceId, { y = 70, yaw = 45 })
+minecraft.model.update(instanceId, { x = 100, y = 70, z = 100, yaw = 45,
+  pitch = 0, roll = 0, scale = 1, pivot_y = 0 })
 ```
 
 ### `minecraft.model.remove(instanceId)`
@@ -454,7 +459,7 @@ renderer is active or the handle is invalid.
 | `roll` | number | `0.0` | Roll rotation in degrees |
 | `scale` | number | `1.0` | Uniform scale factor |
 | `pivot_y` | number | `0.0` | Y offset of the rotation pivot in model space |
-| `brightness` | number | `1.0` | Brightness multiplier (0–1, multiplied into each quad's shade) |
+| `brightness` | number | world light | Brightness multiplier (0–1); omitted samples light at `x`, `y`, `z` |
 | `a` | number | `1.0` | Alpha override (0–1, multiplied into each quad's alpha) |
 | `blend` | boolean | `true` | Enable alpha blending |
 | `cull` | boolean | `false` | Enable back-face culling |
@@ -462,7 +467,7 @@ renderer is active or the handle is invalid.
 | `depth_write` | boolean | `true` | Enable depth buffer writes |
 
 ```lua
-minecraft.on("world_render", { stage = "entities", moment = "after" }, function()
+minecraft.on(minecraft.events.world_render, { stage = "entities", moment = "after" }, function()
   minecraft.model.draw(handle, { x = 100, y = 64, z = 100, yaw = 45, scale = 1.5 })
 end)
 ```
@@ -472,7 +477,8 @@ end)
 Draw an item or block's 3D model in world space. Uses the same 3D model the
 game would use for dropped item entities or inventory icons. For plain sprite
 items (tools, food, etc.) that have no 3D shape, returns `false` — callers
-should fall back to their own flat-icon representation. Same `opts` fields as
+should fall back to their own flat-icon representation. Omitted `brightness`
+samples world light at the draw position. Same remaining `opts` fields as
 `model.draw`.
 
 ```lua
@@ -549,7 +555,8 @@ local handle = minecraft.model.voxels({
 
 Sprite extrude to voxel — samples a texture and extrudes opaque pixels into
 a one-voxel-thick model centered on `z = 0.5`. Automatically cached by
-`texture + grid`. Built in Lua on top of `model.voxels`.
+`texture + atlas_index + mod_texture + grid`; `alpha_cutoff` is not part of the
+cache key. Built in Lua on top of `model.voxels`.
 
 **spec fields:**
 
@@ -716,6 +723,6 @@ detailed documentation.
 | `first_person_hand` | Cancel or control first-person hand rendering. Set `canceled = true` to hide the hand. |
 | `render_frame` | Start-of-frame hook. Fires once per frame before any world rendering. |
 | `render_targets` | Post-render-targets hook. Fires after all render targets have been populated. |
-| `world_render` | Per-stage render hooks. Fields: `stage`, `moment`, `cancelVanilla`, etc. |
+| `world_render` | Per-stage render hooks. Fields: `stage`, `moment`, `cancel_vanilla`, etc. |
 | `pre_entity_render` | Pre-entity-render hook. Set `canceled = true` to skip an entity. |
 | `entity_render` | Entity render hook with pose control. Modify `event.pose` (bodyYaw, headYaw, headPitch, yaw, pitch, roll, scale, offsetX/Y/Z, parts) to override entity rendering. |

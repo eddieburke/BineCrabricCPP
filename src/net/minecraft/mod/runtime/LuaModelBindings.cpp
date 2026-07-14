@@ -119,7 +119,10 @@ model::WorldModelDraw readWorldModelDraw(lua_State* state, int optsIndex) {
     options.roll = luaFloatField(state, optsIndex, "roll", 0.0f);
     options.pivotY = luaFloatField(state, optsIndex, "pivot_y", 0.0f);
     options.scale = luaFloatField(state, optsIndex, "scale", 1.0f);
-    options.brightness = std::clamp(luaFloatField(state, optsIndex, "brightness", 1.0f), 0.0f, 1.0f);
+    options.brightness = luaFloatField(state, optsIndex, "brightness", -1.0f);
+    if(options.brightness >= 0.0f) {
+      options.brightness = std::clamp(options.brightness, 0.0f, 1.0f);
+    }
     options.alpha = std::clamp(luaFloatField(state, optsIndex, "a", 1.0f), 0.0f, 1.0f);
     options.blend = luaBoolField(state, optsIndex, "blend", true);
     options.cull = luaBoolField(state, optsIndex, "cull", false);

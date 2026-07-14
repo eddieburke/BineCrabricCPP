@@ -2,6 +2,6 @@
   "id": "colorful_skies",
   "name": "Colorful Skies",
   "version": "1.0.0",
-  "enabled": false,
+  "enabled": true,
   "entry": "scripts/main.lua"
 }

@@ -4,6 +4,8 @@
 #include "net/minecraft/client/gui/layout/ScreenLayout.hpp"
 #include "net/minecraft/client/gui/screen/option/AnimationSettingsScreen.hpp"
 #include "net/minecraft/client/gui/screen/option/DetailSettingsScreen.hpp"
+#include "net/minecraft/client/gui/screen/option/FarViewSettingsScreen.hpp"
+#include "net/minecraft/client/gui/screen/option/ModSettingsScreen.hpp"
 #include "net/minecraft/client/gui/screen/option/PerformanceSettingsScreen.hpp"
 #include "net/minecraft/client/gui/screen/option/QualitySettingsScreen.hpp"
 #include "net/minecraft/client/gui/screen/option/WorldSettingsScreen.hpp"
@@ -24,9 +26,13 @@ void VideoOptionsScreen::init() {
   const auto returnHere = [factory = parentFactory_, options = options_]() {
     return std::make_unique<VideoOptionsScreen>(factory, options);
   };
-  addActionButton(x1, startY, 310, layout::kDefaultButtonHeight, "Quality...", [this, returnHere] {
+  addActionButton(x1, startY, 150, layout::kDefaultButtonHeight, "Quality...", [this, returnHere] {
     options_->save();
     navigateTo([returnHere, opts = options_]() { return makeQualitySettingsScreen(returnHere, opts); });
+  });
+  addActionButton(x2, startY, 150, layout::kDefaultButtonHeight, "Mod Settings...", [this, returnHere] {
+    options_->save();
+    navigateTo(std::make_unique<ModSettingsScreen>(returnHere));
   });
   addActionButton(
       x1, startY + layout::kRowSpacing, 150, layout::kDefaultButtonHeight, "Performance...", [this, returnHere] {
@@ -49,8 +55,13 @@ void VideoOptionsScreen::init() {
         navigateTo(
             [returnHere, opts = options_]() { return std::make_unique<WorldSettingsScreen>(returnHere, opts); });
       });
+  addActionButton(
+      x1, startY + layout::kRowSpacing * 3, 150, layout::kDefaultButtonHeight, "Far View...", [this, returnHere] {
+        options_->save();
+        navigateTo([returnHere, opts = options_]() { return makeFarViewSettingsScreen(returnHere, opts); });
+      });
   addCenteredActionButton(
-      startY + layout::kRowSpacing * 3, resource::language::I18n::getTranslation("gui.done"), [this] {
+      startY + layout::kRowSpacing * 4, resource::language::I18n::getTranslation("gui.done"), [this] {
         if(options_ == nullptr || minecraft() == nullptr) {
           return;
         }

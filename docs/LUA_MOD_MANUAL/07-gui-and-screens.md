@@ -2,7 +2,7 @@
 
 ## GUI draw scope
 
-All `minecraft.gui.*` draw calls (fill_rect, draw_text, draw_item, draw_slider, draw_toggle, draw_button, draw_centered_text, draw_sprite, draw_texture, begin_3d, draw_3d, end_3d) **ONLY** function during a Lua GUI draw scope. These scopes are entered automatically during:
+All `minecraft.gui.*` draw calls (fill_rect, draw_text, draw_item, draw_slider, draw_toggle, draw_button, draw_centered_text, draw_sprite, draw_texture) **ONLY** function during a Lua GUI draw scope. These scopes are entered automatically during:
 
 - The `render` phase of an `on_lua_screen` lifecycle handler
 - The render callback of a `screen_ui` / `screen_region` subscription
@@ -94,9 +94,9 @@ Draws a vanilla-style button widget. Accepts a single table argument:
 | `height` | number | required | Height (> 0) |
 | `text` | string | required | Button label |
 | `active` | boolean | `true` | If false, drawn greyed out |
-| `mouse_x` | number | auto | For hover detection (inferred from `hovered` or rect test) |
-| `mouse_y` | number | auto | For hover detection (inferred from `hovered` or rect test) |
-| `hovered` | boolean | auto | Override hover state; if absent, computed from mouse position |
+| `mouse_x` | number | absent | Mouse X used for hover detection when supplied |
+| `mouse_y` | number | absent | Mouse Y used for hover detection when supplied |
+| `hovered` | boolean | `false` | Explicit hover override; without `hovered` and both mouse coordinates, the widget is not hovered |
 
 The button is drawn with the vanilla gui.png texture (9-slice), with text centered. Active + hovered = gold text (0xFFFFA0), active = light grey (0xFFE0E0E0), inactive = dark grey (0xFFA0A0A0).
 
@@ -174,92 +174,6 @@ minecraft.gui.draw_centered_text(200, 300, 400, "Centered!", 0xFFFFFFFF)
 
 ---
 
-## 3D viewport (`gui.draw_3d`)
-
-The 3D viewport system lets mods embed a perspective-rendered 3D scene (model viewer, minimap, etc.) inside a GUI.
-
-### `minecraft.gui.begin_3d({params...})`
-
-Begins a 3D viewport. Must be called within the GUI draw scope. Sets up a perspective camera, clears the sub-region, and pushes OpenGL matrices. Every `begin_3d` must be paired with `end_3d`. Viewports cannot be nested (global depth tracking).
-
-| Field | Type | Default | Description |
-|-------|------|---------|-------------|
-| `x` | number | 0 | Left edge (GUI coordinates) |
-| `y` | number | 0 | Top edge (GUI coordinates) |
-| `width` | number | 0 | Viewport width |
-| `height` | number | 0 | Viewport height |
-| `size` | number | 0 | Shortcut — sets both width and height to this value |
-| `gui_width` | number | display width | GUI coordinate system width (for scaling) |
-| `gui_height` | number | display height | GUI coordinate system height (for scaling) |
-| `yaw_deg` | number | 0 | Camera yaw rotation (degrees) |
-| `pitch_deg` | number | 0 | Camera pitch rotation (degrees) |
-| `distance` / `cam_dist` | number | 2.05 | Camera distance from origin (clamped 1.5–6.0) |
-| `fov_deg` | number | 40 | Field of view in degrees (clamped 10–120) |
-| `clear_color` | number | — | ARGB background clear color (overrides individual clear channels) |
-| `clear_r` | number | 0.11 | Clear color red (0–1) |
-| `clear_g` | number | 0.13 | Clear color green (0–1) |
-| `clear_b` | number | 0.17 | Clear color blue (0–1) |
-| `clear_a` | number | 1.0 | Clear color alpha (0–1) |
-
-```lua
-minecraft.gui.begin_3d({x=10, y=10, width=200, height=200, yaw_deg=45, pitch_deg=30, distance=3})
-```
-
-### `minecraft.gui.draw_3d({mode, color?, r?, g?, b?, a?, vertices, line_width?, point_size?}))
-
-Draws a 3D primitive inside the current viewport. Can only be called between `begin_3d` / `end_3d`.
-
-| Field | Type | Default | Description |
-|-------|------|---------|-------------|
-| `mode` | string | required | Draw mode: `"lines"`, `"line_strip"`, `"line_loop"`, `"quads"`, `"quad_strip"`, `"points"`, `"triangles"` |
-| `color` | number | — | ARGB color for all vertices (overrides r/g/b/a) |
-| `r` | number | 1.0 | Red (0–1) |
-| `g` | number | 1.0 | Green (0–1) |
-| `b` | number | 1.0 | Blue (0–1) |
-| `a` | number | 1.0 | Alpha (0–1) |
-| `line_width` | number | 1.0 | Line width for line modes (clamped 0.5–8.0) |
-| `point_size` | number | 1.0 | Point size for point mode (clamped 1.0–16.0) |
-| `vertices` | table | required | Array of vertex tables, each with `{x, y, z}` (named or positional indices 1,2,3) |
-
-```lua
-minecraft.gui.draw_3d({
-  mode = "line_loop",
-  color = 0xFFFF0000,
-  line_width = 2,
-  vertices = {
-    {x=0, y=0, z=0},
-    {x=1, y=0, z=0},
-    {x=1, y=1, z=0},
-    {x=0, y=1, z=0},
-  }
-})
-```
-
-### `minecraft.gui.end_3d()`
-
-Ends the current 3D viewport, restoring the previous OpenGL matrices and viewport.
-
-```lua
-minecraft.gui.end_3d()
-```
-
-### `minecraft.gui.unproject({viewport_params, mouse_x, mouse_y}))
-
-Computes a 3D ray from the camera through a mouse position, without requiring an active viewport. Returns a table with `{origin={x,y,z}, direction={x,y,z}}`, or `nil` on failure.
-
-Takes the same viewport parameter table as `begin_3d`, plus `mouse_x` and `mouse_y` in GUI coordinates.
-
-```lua
-local ray = minecraft.gui.unproject({
-  x=10, y=10, width=200, height=200, yaw_deg=45, pitch_deg=30,
-  mouse_x = event.mouse_x, mouse_y = event.mouse_y
-})
-if ray then
-  -- ray.origin.x, ray.origin.y, ray.origin.z
-  -- ray.direction.x, ray.direction.y, ray.direction.z
-end
-```
-
 ---
 
 ## `minecraft.screen.*`
@@ -312,7 +226,7 @@ minecraft.screen.open_host(minecraft.screen.ids.options)
 minecraft.screen.open_host(minecraft.screen.ids.create_world, {seed="my_seed"})
 ```
 
-The screen must have been registered with the host's `HostScreenRegistry` by the engine; returns false if the ID is unknown.
+The screen must have been registered with the host's `HostScreenRegistry` by the engine. This function has no return value; an unknown ID is ignored by the host opener.
 
 ### `minecraft.screen.add_field(name, x, y, width, height, {text?, max_len?, numeric?, signed?, decimal?}))
 
@@ -386,12 +300,15 @@ Attaches a callback to a **host screen's region** (e.g. the footer of the option
 | `callback` | function | Receives an event with an `event.ui` context object |
 | `priority` | number | Optional (default 0) |
 
-The callback receives an event table with an `event.ui` object exposing the following methods (which require colon notation):
+The callback receives an event table with an `event.ui` object. These are methods: call them with colon syntax (`event.ui:method(...)`) so Lua passes the receiver.
 
-- `event.ui:add_centered_button(y, text, callback?)` — Add a centered button at pixel y
+- `event.ui:add_centered_button(y, text, callback?, label?)` — Add a centered button at pixel y. The button's `text` is set once at injection time and is **not** re-evaluated on its own; if `callback` mutates state that the label depends on (e.g. toggling a setting), pass `label` — a zero-argument function returning the new text — and it is called right after `callback` to refresh the button
 - `event.ui:add_stacked_centered_button(text, callback?)` — Add a button centered and stacked below the last one (auto-y)
 - `event.ui:add_button(x, y, w, h, text, callback?)` — Add a button at exact position
-- `event.ui.screen` — The underlying host screen object (read-only property)
+- `event.host_fields` — Table of host-screen field values available to the callback
+
+`event.ui` does not expose a `screen` property. Use the host-field helpers when
+you need to read or update fields on the underlying screen.
 
 ```lua
 minecraft.screen.on_ui(minecraft.screen.ids.title, minecraft.screen.regions.screen, function(event)
@@ -415,26 +332,29 @@ Available through `minecraft.screen.regions.*`:
 
 The `"screen"` region is the most commonly used — every engine screen publishes to this region during its `init()` phase, allowing mods to add buttons/behavior to any GUI.
 
+`minecraft:mod_settings` treats its footer specially. It collects every injected button and shows the buttons on a separate, scrollable **Mod Pages** page. Registered settings and keybinds remain on the main **Mod Settings** page.
+
 ---
 
 ## `minecraft.screen.on_lua_screen(screen_id, handlers, priority?)`
 
 Handles the lifecycle of a Lua-defined screen (opened via `minecraft.screen.open`). The `handlers` table can have these phases:
 
+Handlers run synchronously on the event-publishing thread under the mod's Lua-state mutex; do not assume they are asynchronous or yieldable.
+
 | Phase | Event fields | Description |
 |-------|-------------|-------------|
-| `init` | `{screen, width, height}` | Screen is initializing — add_field, add_button, and set title here |
-| `render` | `{screen, mouse_x, mouse_y, tick_delta}` | Every frame — GUI draw calls work here |
-| `mouse` | `{screen, x, y, button, released?}` | Mouse click/release events. `released` is true for release, false/absent for press |
-| `key` | `{screen, character, key, handled?}` | Keyboard events. Set `handled = true` to prevent default close-on-escape |
+| `init` | `{screen_id, phase, width, height}` | Screen is initializing — add_field, add_button, and set title here |
+| `render` | `{screen_id, phase, width, height, mouse_x, mouse_y, tick_delta}` | Every frame — GUI draw calls work here |
+| `mouse` | `{screen_id, phase, x, y, button, released?}` | Mouse click/release events. `released` is true for release, false/absent for press |
+| `key` | `{screen_id, phase, key, char, handled?}` | Keyboard events. Set `handled = true` to prevent default close-on-escape |
 | `tick` | `{screen}` | Called every game tick (20 Hz) |
-| `scroll` | `{screen, x, y, scroll_delta}` | Mouse scroll events |
-| `close` | `{screen}` | Screen is being removed |
+| `scroll` | `{screen_id, phase, x, y, delta}` | Mouse scroll events |
+| `close` | `{screen_id, phase}` | Screen is being removed |
 
 ```lua
 minecraft.screen.on_lua_screen("my_mod:config", {
   init = function(event)
-    event.screen.setTitle("Configure My Mod")
     minecraft.screen.add_field("name", 10, 50, 200, 20, {text="default"})
     minecraft.screen.add_button(10, 80, 200, 20, "Save", function()
       print("Saved:", minecraft.screen.field_text("name"))
@@ -495,6 +415,7 @@ All screen ID string constants for the engine's built-in screens:
 | `ids.detail_settings` | `"minecraft:detail_settings"` |
 | `ids.keybinds` | `"minecraft:keybinds"` |
 | `ids.mods` | `"minecraft:mods"` |
+| `ids.mod_settings` | `"minecraft:mod_settings"` |
 | `ids.achievements` | `"minecraft:achievements"` |
 | `ids.stats` | `"minecraft:stats"` |
 | `ids.lan` | `"minecraft:lan"` |
@@ -522,9 +443,10 @@ Creates a complete settings screen with auto-generated UI. Returns the `open` fu
 The function:
 1. Attaches a button to `parent_screen`'s `parent_region` (default `regions.footer`) using `add_stacked_centered_button`
 2. Creates a Lua screen with id `id` and auto-laid-out sliders/toggles
-3. Renders sliders using `draw_slider` and toggles using `draw_toggle`
-4. Handles mouse drag for sliders, clicks for toggles
-5. Calls `on_save()` on "Done" click or ESC
+3. Fits controls to the current screen height and splits overflow across pages, with **Previous** and **Next** buttons when needed
+4. Handles slider dragging, toggle clicks, saving, and closing
+
+Set `parent_screen = minecraft.screen.ids.mod_settings` to place the generated page under **Mod Pages** automatically. This is the normal path for categorized or multi-page mod settings; no hand-built screen-navigation glue is required.
 
 | Option | Type | Description |
 |--------|------|-------------|
@@ -537,7 +459,7 @@ The function:
 | `sliders` | array of tables | Each: `{key, label?, min, max, integer?, format?}` |
 | `toggles` | array of tables | Each: `{key, label?}` |
 | `on_change` | function | Called when any value changes |
-| `on_save` | function | Called on save/close |
+| `on_save` | function | Called when the generated screen closes (Done or Escape) |
 | `on_reset` | function | If set, shows a "Reset to Defaults" button |
 | `priority` | number | Event priority (default 100) |
 
@@ -569,7 +491,7 @@ local config = {
 minecraft.screen.settings({
   id = "my_mod:settings",
   title = "My Mod Settings",
-  parent_screen = minecraft.screen.ids.mods,
+  parent_screen = minecraft.screen.ids.mod_settings,
   button_label = "My Mod",
   values = config,
   sliders = {

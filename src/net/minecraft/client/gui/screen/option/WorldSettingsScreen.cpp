@@ -2,7 +2,6 @@
 #include <array>
 #include "net/minecraft/client/Minecraft.hpp"
 #include "net/minecraft/client/gui/layout/OptionsLayout.hpp"
-#include "net/minecraft/client/gui/screen/option/FogSettingsScreenFactory.hpp"
 #include "net/minecraft/client/gui/screen/option/OptionGui.hpp"
 #include "net/minecraft/client/option/OptionSpec.hpp"
 #include "net/minecraft/client/resource/language/I18n.hpp"
@@ -77,18 +76,7 @@ void WorldSettingsScreen::init() {
   });
   gui.toggle(x2, y0 + dy, "fastDebugInfo", "Fast Debug Info");
   layout::refreshOptionStates(buttons_, *gameOptions_);
-  const int navY = layout::optionsGridY(height(), 3);
-  const auto returnHere = [factory = parentFactory_, options = gameOptions_]() {
-    return std::make_unique<WorldSettingsScreen>(factory, options);
-  };
-  addCenteredActionButton(navY, 120, layout::kDefaultButtonHeight, "Fog Settings...", [this, returnHere] {
-    if(gameOptions_ == nullptr || minecraft() == nullptr) {
-      return;
-    }
-    gameOptions_->save();
-    navigateTo([returnHere, opts = gameOptions_]() { return makeFogSettingsScreen(returnHere, opts); });
-  });
-  int footerY = navY + layout::kRowSpacing;
+  int footerY = layout::optionsGridY(height(), 3);
   publishScreenUi(mod::screen_regions::kFooter, &footerY);
   layout::OptionsBuildContext ctx{*this, *minecraft(), *gameOptions_};
   layout::addDoneButton(ctx, footerY, resource::language::I18n::getTranslation("gui.done"), [this] {

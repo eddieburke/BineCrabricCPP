@@ -12,6 +12,7 @@
 #include "net/minecraft/entity/EntityRegistry.hpp"
 #include "net/minecraft/entity/ItemEntity.hpp"
 #include "net/minecraft/entity/LivingEntity.hpp"
+#include "net/minecraft/entity/player/PlayerEntity.hpp"
 #include "net/minecraft/item/ItemStack.hpp"
 #include "net/minecraft/mod/lua/LuaHostApi.hpp"
 #include "net/minecraft/mod/lua/LuaItemRegistry.hpp"
@@ -327,9 +328,20 @@ void pushEntityHandle(lua_State* state, net::minecraft::entity::Entity* e) {
   const std::string type = net::minecraft::entity::EntityRegistry::getId(*e);
   const auto* modEntity = dynamic_cast<net::minecraft::mod::lua::LuaModEntity*>(e);
   const std::string registryId = modEntity != nullptr ? modEntity->registryId() : std::string();
-  api.createtable(state, 0, 18);
+  api.createtable(state, 0, 22);
   setField(state, "id", e->id);
   setField(state, "type", type);
+  setField(state, "fire_ticks", e->fireTicks);
+  setField(state, "is_on_fire", e->isOnFire());
+  if(type == "Player") {
+    auto* player = static_cast<net::minecraft::entity::player::PlayerEntity*>(e);
+    const ItemStack* held = player->inventory.getSelectedItem();
+    if(held != nullptr && !held->empty()) {
+      setField(state, "held_item_id", held->itemId);
+    } else {
+      setField(state, "held_item_id", 0);
+    }
+  }
   if(modEntity != nullptr) {
     setField(state, "registry_id", registryId);
     pushNbtValue(state, modEntity->data().storage());

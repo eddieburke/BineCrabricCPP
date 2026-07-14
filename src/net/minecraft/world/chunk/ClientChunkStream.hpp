@@ -1,6 +1,7 @@
 #pragma once
 #include <atomic>
 #include <chrono>
+#include <condition_variable>
 #include <cstdint>
 #include <deque>
 #include <functional>
@@ -52,6 +53,8 @@ private:
     std::unique_ptr<Chunk> result;
     bool failed = false;
     std::atomic<bool> done{false};
+    std::mutex doneMutex;
+    std::condition_variable doneCv;
   };
   [[nodiscard]] int prefetchPriority(int chunkX, int chunkZ) const noexcept;
   [[nodiscard]] std::unique_ptr<Chunk> loadFromStorage(const ChunkPos& pos);
@@ -66,7 +69,7 @@ private:
   void queueNeighborDecoration(int chunkX, int chunkZ);
   [[nodiscard]] bool isManagedChunk(const Chunk* chunk) const;
   [[nodiscard]] std::unique_ptr<Chunk> takeReadyChunk(int chunkX, int chunkZ);
-  [[nodiscard]] std::unique_ptr<Chunk> tryClaimAsync(int chunkX, int chunkZ);
+  [[nodiscard]] std::unique_ptr<Chunk> claimAsync(int chunkX, int chunkZ);
   void resetPrefetchCursor();
   [[nodiscard]] bool advancePrefetchCursor(int& outDx, int& outDz);
   void pumpPublish(std::chrono::steady_clock::duration budget, int minPublish);

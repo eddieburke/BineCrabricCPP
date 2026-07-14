@@ -14,6 +14,11 @@ namespace net::minecraft {
 namespace fs = std::filesystem;
 class RegionFile {
 public:
+  struct CompressedChunk {
+    std::uint8_t compression = 0;
+    std::vector<std::uint8_t> bytes;
+  };
+
   explicit RegionFile(fs::path file) : file_(std::move(file)) {
     fs::create_directories(file_.parent_path());
     openOrCreate();
@@ -30,7 +35,7 @@ public:
     }
     return chunkBlockInfo_[static_cast<std::size_t>(index(chunkX, chunkZ))] != 0;
   }
-  [[nodiscard]] std::optional<std::vector<std::uint8_t>> readChunk(int chunkX, int chunkZ) {
+  [[nodiscard]] std::optional<CompressedChunk> readCompressedChunk(int chunkX, int chunkZ) {
     if(isOutsideRegion(chunkX, chunkZ)) {
       return std::nullopt;
     }
@@ -57,13 +62,7 @@ public:
     if(!stream_) {
       return std::nullopt;
     }
-    if(compression == 1U) {
-      return gzipDecompress(compressed);
-    }
-    if(compression == 2U) {
-      return zlibDecompress(compressed);
-    }
-    return std::nullopt;
+    return CompressedChunk{compression, std::move(compressed)};
   }
   void writeChunk(int chunkX, int chunkZ, const std::vector<std::uint8_t>& rawChunk) {
     if(isOutsideRegion(chunkX, chunkZ)) {
@@ -100,10 +99,6 @@ public:
     writeChunkData(sectorOffset, compressed, 2U);
     writeChunkBlockInfo(chunkIndex, (sectorOffset << 8U) | static_cast<std::uint32_t>(sectorsNeeded));
     writeChunkSaveTime(chunkIndex, static_cast<std::uint32_t>(std::time(nullptr)));
-    // Single flush per chunk save instead of one per sub-write (data + 2 header
-    // updates). The OS coalesces the buffered writes; durability per chunk is
-    // unchanged, matching vanilla RandomAccessFile semantics.
-    stream_.flush();
   }
   [[nodiscard]] int resetBytesWritten() {
     const int bytes = bytesWritten_;
@@ -190,7 +185,6 @@ private:
       stream_.write(reinterpret_cast<const char*>(zeros.data()), static_cast<std::streamsize>(zeros.size()));
       sectorFree_.push_back(0U);
     }
-    stream_.flush();
     bytesWritten_ += static_cast<int>(sectorSize * count);
   }
   [[nodiscard]] std::uint32_t findFreeRun(std::uint32_t sectorsNeeded) const {

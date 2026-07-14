@@ -1,4 +1,6 @@
 #include "net/minecraft/client/core/WorldSession.hpp"
+#include <chrono>
+#include <thread>
 #include "net/minecraft/client/Minecraft.hpp"
 #include "net/minecraft/client/auth/microsoft/PlayerTextures.hpp"
 #include "net/minecraft/client/sound/WorldSoundListener.hpp"
@@ -170,10 +172,24 @@ void WorldSession::prepareWorld(Minecraft& client, const std::string& worldName)
     center.z = MathHelper::floor(client.player->z);
   }
   client.world->setChunkCacheCenterFromBlockPos(center.x, center.z);
-  for(int dx = -radius; dx <= radius; dx += 16) {
-    for(int dz = -radius; dz <= radius; dz += 16) {
-      client.progressRenderer.progressStagePercentage(progress++ * 100 / progressTotal);
-      (void)client.world->getBlockId(center.x + dx, 64, center.z + dz);
+  constexpr int chunkRadius = radius / 16;
+  while(client.running && progress < progressTotal) {
+    if(client.player != nullptr) {
+      client.world->loadChunksNearEntity(client.player);
+    }
+    client.world->pumpChunkPublish();
+    int loaded = 0;
+    for(int dx = -chunkRadius; dx <= chunkRadius; ++dx) {
+      for(int dz = -chunkRadius; dz <= chunkRadius; ++dz) {
+        if(client.world->getChunkIfLoaded(center.x + dx * 16, center.z + dz * 16) != nullptr) {
+          ++loaded;
+        }
+      }
+    }
+    progress = loaded;
+    client.progressRenderer.progressStagePercentage(progress * 100 / progressTotal);
+    if(progress < progressTotal) {
+      std::this_thread::sleep_for(std::chrono::milliseconds(1));
     }
   }
   client.world->populateChunkCacheReadyChunks();

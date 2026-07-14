@@ -17,16 +17,6 @@ struct ResolvedRenderOptions {
   bool renderWater = true;
   bool fancyWater = true;
   bool clearWater = false;
-  bool customFog = false;
-  bool customFogLinear = false;
-  bool customFogColor = false;
-  bool sphericalFog = true;
-  float fogColorRed = 0.0f;
-  float fogColorGreen = 0.0f;
-  float fogColorBlue = 0.0f;
-  float fogStart = 0.2f;
-  float fogEnd = 0.8f;
-  float fogDensity = 0.1f;
   int viewDistanceSetting = 0;
   float renderScale = 1.0f;
   float renderDistanceBlocks = 256.0f;
@@ -56,6 +46,11 @@ struct ResolvedRenderOptions {
   bool animatedFlame = true;
   bool animatedSmoke = true;
   bool fastDebugInfo = false;
+  bool lodEnabled = true;
+  float lodDistanceBlocks = 2048.0f;
+  int lodDetail = 0;
+  bool lodFogExtend = true;
+  bool lodImportWorld = true;
 };
 [[nodiscard]] ResolvedRenderOptions resolve(const GameOptions& options);
 [[nodiscard]] float adjustFieldOfView(float baseFov, const ResolvedRenderOptions& resolved) noexcept;
@@ -63,8 +58,7 @@ struct ResolvedRenderOptions {
 [[nodiscard]] float applyBrightnessBoost(float luminance, const ResolvedRenderOptions& resolved) noexcept;
 [[nodiscard]] float cloudHeightOffset(float baseHeight, const ResolvedRenderOptions& resolved) noexcept;
 [[nodiscard]] int chunkUpdatesPerPass(const ResolvedRenderOptions& resolved,
-                                      int dirtyChunkCount = 0,
-                                      float gridAreaScale = 1.0f) noexcept;
+                                      int dirtyChunkCount = 0) noexcept;
 [[nodiscard]] float rainGradient(const ResolvedRenderOptions& resolved, const World* world, float tickDelta);
 [[nodiscard]] float thunderGradient(const ResolvedRenderOptions& resolved, const World* world, float tickDelta);
 [[nodiscard]] bool shouldRenderEntity(const ResolvedRenderOptions& resolved,

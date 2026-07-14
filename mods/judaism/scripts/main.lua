@@ -1,31 +1,42 @@
 local CONFIG_FILE = "judaism.txt"
 local SCREEN_ID = "judaism:settings"
 
+local FEATURE_MODULES = {
+  "scripts.compat",
+  "scripts.util",
+  "scripts.content_registry",
+  "scripts.rituals",
+  "scripts.holidays",
+  "scripts.synagogue",
+  "scripts.world_features",
+  "scripts.progression",
+  "scripts.community",
+  "scripts.commands",
+}
+
+for _, module_name in ipairs(FEATURE_MODULES) do
+  local ok, result = pcall(minecraft.require, module_name)
+  if not ok then
+    minecraft.log("warn", "judaism optional module unavailable: " .. module_name .. " (" .. tostring(result) .. ")")
+  end
+end
+
 local SETTINGS_DEFAULTS = {
   enabled = true,
   shabbat_enabled = true,
   show_messages = true,
-  block_restricted = true,
-  block_crafting = true,
   block_combat = true,
-  block_redstone = true,
-  block_pistons = true,
 }
 
 local SETTINGS_KEYS = {
-  "enabled", "shabbat_enabled", "show_messages", "block_restricted",
-  "block_crafting", "block_combat", "block_redstone", "block_pistons",
+  "enabled", "shabbat_enabled", "show_messages", "block_combat",
 }
 
 local SETTINGS_NAMES = {
   enabled = "enabled",
   shabbat_enabled = "shabbatEnabled",
   show_messages = "showMessages",
-  block_restricted = "blockRestricted",
-  block_crafting = "blockCrafting",
   block_combat = "blockCombat",
-  block_redstone = "blockRedstone",
-  block_pistons = "blockPistons",
 }
 
 local SETTINGS_ALIASES = {}
@@ -54,11 +65,6 @@ local function load_settings()
   if not found then
     save_settings()
   end
-end
-
-local function is_friday_or_saturday()
-  local day = os.date("*t").wday
-  return day == 6 or day == 7
 end
 
 local function is_shabbat_time()
@@ -104,28 +110,6 @@ local function update_shabbat_state()
   last_shabbat_state = shabbat_active
 end
 
-local function is_restricted_item(item_name)
-  if not shabbat_active then
-    return false
-  end
-  local restricted = {
-    "sword", "axe", "pickaxe", "shovel", "hoe",
-    "bow", "crossbow", "trident", "mace",
-    "shears", "flint_and_steel",
-    "end_rod", "campfire", "soul_campfire",
-    "fire_charge", "firework_rocket",
-    "elytra", "trident",
-    "ender_pearl", "ender_eye", "chorus_fruit",
-    "shulker_box", "bundle",
-  }
-  for _, r in ipairs(restricted) do
-    if item_name and string.find(string.lower(item_name), r) then
-      return true
-    end
-  end
-  return false
-end
-
 minecraft.on(minecraft.events.client_tick, {
   before = false,
   after_world = false,
@@ -146,90 +130,24 @@ minecraft.on(minecraft.events.player_travel, {
   end
 end)
 
-minecraft.on(minecraft.events.attack, {
-  is_local_player = true,
+minecraft.on(minecraft.events.entity_interact, {
+  attack = true,
+  local_player = true,
   priority = 50,
 }, function(event)
   if not settings.enabled or not shabbat_active then
     return
   end
   if settings.block_combat then
-    event.cancelled = true
+    event.canceled = true
+    event.handled = true
     if settings.show_messages then
       minecraft.chat.send("Combat is prohibited during Shabbat.")
     end
   end
 end)
 
-minecraft.on(minecraft.events.block_break, {
-  is_local_player = true,
-  priority = 50,
-}, function(event)
-  if not settings.enabled or not shabbat_active then
-    return
-  end
-  if settings.block_restricted then
-    event.cancelled = true
-    if settings.show_messages then
-      minecraft.chat.send("Block breaking is prohibited during Shabbat.")
-    end
-  end
-end)
-
-minecraft.on(minecraft.events.craft, {
-  is_local_player = true,
-  priority = 50,
-}, function(event)
-  if not settings.enabled or not shabbat_active then
-    return
-  end
-  if settings.block_crafting then
-    event.cancelled = true
-    if settings.show_messages then
-      minecraft.chat.send("Crafting is prohibited during Shabbat.")
-    end
-  end
-end)
-
-minecraft.on(minecraft.events.block_place, {
-  is_local_player = true,
-  priority = 50,
-}, function(event)
-  if not settings.enabled or not shabbat_active then
-    return
-  end
-  if settings.block_restricted then
-    local block_name = event.block_name or ""
-    if string.find(string.lower(block_name), "redstone") or
-       string.find(string.lower(block_name), "piston") or
-       string.find(string.lower(block_name), "observer") or
-       string.find(string.lower(block_name), "dispenser") or
-       string.find(string.lower(block_name), "dropper") then
-      event.cancelled = true
-      if settings.show_messages then
-        minecraft.chat.send("Redstone devices are prohibited during Shabbat.")
-      end
-    end
-  end
-end)
-
-minecraft.on(minecraft.events.item_use, {
-  is_local_player = true,
-  priority = 50,
-}, function(event)
-  if not settings.enabled or not shabbat_active then
-    return
-  end
-  local item_name = event.item_name or ""
-  if is_restricted_item(item_name) then
-    event.cancelled = true
-    if settings.show_messages then
-      minecraft.chat.send("Using that item is prohibited during Shabbat.")
-    end
-  end
-end)
-
-minecraft.screen.on_ui(minecraft.screen.ids.world_settings, minecraft.screen.regions.footer, function(event)
+minecraft.screen.on_ui(minecraft.screen.ids.mod_settings, minecraft.screen.regions.footer, function(event)
   if event.ui ~= nil and settings.enabled then
     event.ui:add_stacked_centered_button("Judaism...", function()
       minecraft.screen.open(SCREEN_ID, { title = "" })
@@ -261,32 +179,8 @@ minecraft.on(minecraft.events.screen_event, { screen_id = SCREEN_ID, priority = 
     end)
 
     y = y + 24
-    minecraft.screen.add_button(x, y, w, h, settings.block_restricted and "Block Breaking: ON" or "Block Breaking: OFF", function()
-      settings.block_restricted = not settings.block_restricted
-      save_settings()
-      minecraft.screen.close()
-      minecraft.screen.open(SCREEN_ID, { title = "" })
-    end)
-
-    y = y + 24
-    minecraft.screen.add_button(x, y, w, h, settings.block_crafting and "Crafting: ON" or "Crafting: OFF", function()
-      settings.block_crafting = not settings.block_crafting
-      save_settings()
-      minecraft.screen.close()
-      minecraft.screen.open(SCREEN_ID, { title = "" })
-    end)
-
-    y = y + 24
     minecraft.screen.add_button(x, y, w, h, settings.block_combat and "Combat: ON" or "Combat: OFF", function()
       settings.block_combat = not settings.block_combat
-      save_settings()
-      minecraft.screen.close()
-      minecraft.screen.open(SCREEN_ID, { title = "" })
-    end)
-
-    y = y + 24
-    minecraft.screen.add_button(x, y, w, h, settings.block_redstone and "Redstone: ON" or "Redstone: OFF", function()
-      settings.block_redstone = not settings.block_redstone
       save_settings()
       minecraft.screen.close()
       minecraft.screen.open(SCREEN_ID, { title = "" })

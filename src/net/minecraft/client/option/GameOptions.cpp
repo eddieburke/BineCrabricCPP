@@ -12,7 +12,6 @@
 #include "net/minecraft/client/texture/TextureManager.hpp"
 #include "net/minecraft/world/World.hpp"
 namespace net::minecraft::client::option {
-namespace {
 void reloadWorldRenderer(Minecraft* minecraft) {
   if(minecraft != nullptr && minecraft->worldRenderer != nullptr) {
     minecraft->worldRenderer->reload();
@@ -23,7 +22,6 @@ void reloadTextures(Minecraft* minecraft) {
     minecraft->textureManager.reload();
   }
 }
-} // namespace
 void GameOptions::load() {
   if(optionsFile.empty() || !std::filesystem::exists(optionsFile)) {
     applyDerivedSettings();

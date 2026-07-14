@@ -20,11 +20,11 @@ extern std::array<net::minecraft::client::option::OptionSpec, 8> kSpecs;
 namespace animation_screen {
 extern std::array<net::minecraft::client::option::OptionSpec, 8> kSpecs;
 }
-namespace fog_screen {
-extern std::array<net::minecraft::client::option::OptionSpec, 10> kSpecs;
-}
 namespace world_screen {
 extern std::array<net::minecraft::client::option::OptionSpec, 4> kSpecs;
+}
+namespace far_view_screen {
+extern std::array<net::minecraft::client::option::OptionSpec, 5> kSpecs;
 }
 } // namespace net::minecraft::client::gui::screen::option
 namespace net::minecraft::client::option {
@@ -76,8 +76,8 @@ void OptionRegistry::registerAll() {
   registerGroup(gui::screen::option::performance_screen::kSpecs);
   registerGroup(gui::screen::option::detail_screen::kSpecs);
   registerGroup(gui::screen::option::animation_screen::kSpecs);
-  registerGroup(gui::screen::option::fog_screen::kSpecs);
   registerGroup(gui::screen::option::world_screen::kSpecs);
+  registerGroup(gui::screen::option::far_view_screen::kSpecs);
   gRegistered = true;
 }
 std::span<const OptionSpec> OptionRegistry::all() {

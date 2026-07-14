@@ -107,23 +107,6 @@ struct ModLuaGuiSpriteDraw {
     setCap(cap::Texture2D, true);
   }
 };
-struct LuaGuiViewportDraw {
-  CapScope caps{cap::Lighting, cap::Fog, cap::AlphaTest, cap::DepthTest, cap::ScissorTest, cap::Texture2D};
-  DepthFuncScope depthFuncScope;
-  DepthMaskScope depth;
-  ShadeModelScope shade;
-  LuaGuiViewportDraw() {
-    setCap(cap::Lighting, false);
-    setCap(cap::Fog, false);
-    setCap(cap::AlphaTest, false);
-    setCap(cap::DepthTest, true);
-    depthMask(true);
-    depthFunc(compare::Lequal);
-    setCap(cap::ScissorTest, true);
-    shadeModel(shade::Flat);
-    setCap(cap::Texture2D, false);
-  }
-};
 struct TexturedGuiNoAlphaTest {
   CapScope caps{cap::Blend, cap::Texture2D, cap::AlphaTest};
   TexturedGuiNoAlphaTest() {
@@ -427,15 +410,18 @@ struct AchievementMapLines {
   }
 };
 struct AchievementMapIcons {
-  CapScope caps{cap::Lighting, cap::RescaleNormal, cap::ColorMaterial, cap::Texture2D, cap::DepthTest};
+  CapScope caps{cap::Lighting, cap::RescaleNormal, cap::ColorMaterial, cap::Texture2D, cap::DepthTest, cap::Blend};
   DepthFuncScope depthFuncScope;
+  BlendFuncScope blendScope;
   AchievementMapIcons() {
     setCap(cap::Lighting, false);
     setCap(cap::RescaleNormal, true);
     setCap(cap::ColorMaterial, true);
     setCap(cap::Texture2D, true);
     setCap(cap::DepthTest, true);
+    setCap(cap::Blend, true);
     depthFunc(compare::Lequal);
+    blendFunc(blend::SrcAlpha, blend::OneMinusSrcAlpha);
   }
 };
 struct AchievementIconItem {

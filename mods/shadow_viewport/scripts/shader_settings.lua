@@ -223,7 +223,7 @@ minecraft.screen.on_lua_screen(SCREEN_ID, {
   end,
 })
 
-minecraft.screen.on_ui(minecraft.screen.ids.detail_settings, minecraft.screen.regions.footer, function(event)
+minecraft.screen.on_ui(minecraft.screen.ids.mod_settings, minecraft.screen.regions.footer, function(event)
   if event.ui == nil then return event end
   event.ui:add_stacked_centered_button("Shader Settings...", function()
     minecraft.screen.open(SCREEN_ID, { title = "Shader Settings" })

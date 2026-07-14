@@ -14,6 +14,8 @@ public:
   float getReachDistance();
   void setWorld(World* world);
   void tick();
+  [[nodiscard]] float getBlockBreakingProgress(float partialTick) const override;
+  [[nodiscard]] float getLastBlockBreakingProgress() const override;
   bool interactBlock(PlayerEntity* player, World* world, ItemStack* item, int x, int y, int z, int side);
   bool interactItem(PlayerEntity* player, World* world, ItemStack* item);
   PlayerEntity* createPlayer(World* world);

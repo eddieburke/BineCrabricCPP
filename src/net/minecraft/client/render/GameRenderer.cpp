@@ -13,6 +13,7 @@
 #include "net/minecraft/client/render/atmosphere/SkyDome.hpp"
 #include "net/minecraft/client/render/culling/Frustum.hpp"
 #include "net/minecraft/client/render/entity/EntityRenderDispatcher.hpp"
+#include "net/minecraft/client/render/lod/LodSystem.hpp"
 #include "net/minecraft/client/render/platform/Lighting.hpp"
 #include "net/minecraft/client/render/world/WorldRenderer.hpp"
 #include "net/minecraft/client/util/UiScale.hpp"
@@ -60,6 +61,17 @@ void gluPerspectiveFov(float fovyDeg, float aspect, float zNear, float zFar) {
   (void)zNear;
   (void)zFar;
 #endif
+}
+[[nodiscard]] float effectiveFarPlane(const option::ResolvedRenderOptions& resolved) {
+  float farPlane = resolved.renderDistanceBlocks * 2.0f;
+  const lod::LodSystem& lodSystem = lod::LodSystem::instance();
+  if(lodSystem.activeForRender()) {
+    const float lodFar = lodSystem.lodDistanceBlocks() * 1.4f;
+    if(lodFar > farPlane) {
+      farPlane = lodFar;
+    }
+  }
+  return farPlane;
 }
 [[nodiscard]] double vec3Distance(const Vec3d& a, const Vec3d& b) {
   const double dx = a.x - b.x;
@@ -425,6 +437,8 @@ void GameRenderer::updateSkyAndFogColors(float tickDelta) {
   }
   World& world = *client->world;
   const option::ResolvedRenderOptions resolved = option::resolve(client->options);
+  fogSettings_ = mod::FogSettingsEvent{&world, client->camera};
+  mod::hooks().publish(fogSettings_);
   const Vec3d sky = world.getSkyColor(client->camera, tickDelta);
   const Vec3d fog = world.getFogColor(tickDelta);
   fogRed = static_cast<float>(fog.x + (sky.x - fog.x) * resolved.fogColorBlend);
@@ -452,10 +466,10 @@ void GameRenderer::updateSkyAndFogColors(float tickDelta) {
     fogRed = 0.6f;
     fogGreen = 0.1f;
     fogBlue = 0.0f;
-  } else if(resolved.customFogColor) {
-    fogRed = resolved.fogColorRed;
-    fogGreen = resolved.fogColorGreen;
-    fogBlue = resolved.fogColorBlue;
+  } else if(fogSettings_.enabled && fogSettings_.customColor) {
+    fogRed = fogSettings_.red;
+    fogGreen = fogSettings_.green;
+    fogBlue = fogSettings_.blue;
   }
   gl::clearColor(fogRed, fogGreen, fogBlue, 0.0f);
 }
@@ -477,14 +491,22 @@ void GameRenderer::applyFog(int mode) {
   } else if(living != nullptr && living->isInFluid(::net::minecraft::block::material::Material::LAVA)) {
     gl::fogi(gl::fog::Mode, fogModeExp);
     gl::fogf(gl::fog::Density, 2.0f);
-  } else if(resolved.customFog && !resolved.customFogLinear) {
+  } else if(fogSettings_.enabled && fogSettings_.exponential) {
     gl::fogi(gl::fog::Mode, fogModeExp);
-    gl::fogf(gl::fog::Density, resolved.fogDensity / resolved.renderScale);
+    gl::fogf(gl::fog::Density, fogSettings_.density / resolved.renderScale);
   } else {
     gl::fogi(gl::fog::Mode, fogModeLinear);
+    const lod::LodSystem& lodSystem = lod::LodSystem::instance();
+    const bool lodFog = lodSystem.fogExtendActive();
+    const float fogRange = lodFog ? lodSystem.lodDistanceBlocks() : resolved.renderDistanceBlocks;
     if(mode < 0) {
       gl::fogf(gl::fog::Start, 0.0f);
-      gl::fogf(gl::fog::End, resolved.renderDistanceBlocks * 0.8f);
+      gl::fogf(gl::fog::End, fogRange * 0.8f);
+    } else if(lodFog) {
+      const float fogEnd = fogRange * (fogSettings_.enabled ? fogSettings_.end : 1.0f);
+      const float fogStart = std::min(fogRange * (fogSettings_.enabled ? fogSettings_.start : 0.45f), fogEnd * 0.85f);
+      gl::fogf(gl::fog::Start, fogStart);
+      gl::fogf(gl::fog::End, fogEnd);
     } else {
       // The chunk grid diameter is capped (see ResolvedRenderOptions), so at
       // Far view distance terrain stops well short of renderDistanceBlocks.
@@ -492,9 +514,9 @@ void GameRenderer::applyFog(int mode) {
       // pops into view.
       const float terrainEdge = static_cast<float>(resolved.chunkRadius) * 16.0f - 8.0f;
       const float fogEnd =
-          std::min(resolved.renderDistanceBlocks * (resolved.customFog ? resolved.fogEnd : 1.0f), terrainEdge);
+          std::min(resolved.renderDistanceBlocks * (fogSettings_.enabled ? fogSettings_.end : 1.0f), terrainEdge);
       const float fogStart =
-          std::min(resolved.renderDistanceBlocks * (resolved.customFog ? resolved.fogStart : 0.25f), fogEnd * 0.75f);
+          std::min(resolved.renderDistanceBlocks * (fogSettings_.enabled ? fogSettings_.start : 0.25f), fogEnd * 0.75f);
       gl::fogf(gl::fog::Start, fogStart);
       gl::fogf(gl::fog::End, fogEnd);
     }
@@ -524,9 +546,9 @@ void GameRenderer::renderWorld(float tickDelta, float fov) {
   } else if(zoom != 1.0) {
     gl::translatef(static_cast<float>(zoomX), static_cast<float>(-zoomY), 0.0f);
     gl::scaled(zoom, zoom, 1.0);
-    gluPerspectiveFov(fov, aspect, 0.05f, resolved.renderDistanceBlocks * 2.0f);
+    gluPerspectiveFov(fov, aspect, 0.05f, effectiveFarPlane(resolved));
   } else {
-    gluPerspectiveFov(fov, aspect, 0.05f, resolved.renderDistanceBlocks * 2.0f);
+    gluPerspectiveFov(fov, aspect, 0.05f, effectiveFarPlane(resolved));
   }
   gl::matrixMode(gl::matrix_::ModelView);
   gl::loadIdentity();
@@ -835,6 +857,10 @@ void GameRenderer::renderToCurrentTarget(float tickDelta,
   }
   const option::ResolvedRenderOptions resolvedOptions = option::resolve(client->options);
   const bool ambientOcclusion = client->options.ao;
+  lod::LodSystem& lodSystem = lod::LodSystem::instance();
+  if(!frameCamera_.shadowPass && !renderCameraEntity) {
+    lodSystem.frameUpdate(frameCamera_.x, frameCamera_.y, frameCamera_.z, resolvedOptions);
+  }
   const bool fancyGraphics = client->options.fancyGraphics;
   const int terrainTextureId = client->textureManager.getTextureId("/terrain.png");
   const AtmosphereContext atmosphereCtx = makeAtmosphereContext(client, camera, ticks);
@@ -857,6 +883,12 @@ void GameRenderer::renderToCurrentTarget(float tickDelta,
   if(client->options.frustumCulling) {
     Frustum::getInstance().compute();
   }
+  // GL_FOG must be enabled before the sky/fog setup below, not after: fog
+  // params (color/mode/density) are inert while the capability is off, so
+  // enabling it late here meant the sky dome always rendered unfogged and
+  // painted over the murky underwater clear color, making underwater fog
+  // invisible outside of solid, already-fogged terrain.
+  gl::setCap(gl::cap::Fog, !frameCamera_.shadowPass);
   if(!frameCamera_.shadowPass && resolvedOptions.viewDistanceSetting < 2 && resolvedOptions.renderSky) {
     applyFog(-1);
     if(client->world->dimension != nullptr && !client->world->dimension->isNether) {
@@ -865,7 +897,6 @@ void GameRenderer::renderToCurrentTarget(float tickDelta,
     gl::setCap(gl::cap::AlphaTest, true);
     gl::alphaFunc(gl::compare::Greater, 0.1f);
   }
-  gl::setCap(gl::cap::Fog, !frameCamera_.shadowPass);
   if(!frameCamera_.shadowPass) {
     applyFog(1);
   }
@@ -901,6 +932,7 @@ void GameRenderer::renderToCurrentTarget(float tickDelta,
           mod::RenderHookMoment::Before,
       };
       shadowEntitiesEvent.vanillaStageRan = true;
+      shadowEntitiesEvent.shadowPass = true;
       mod::hooks().publish(shadowEntitiesEvent);
       shadowEntitiesEvent.moment = mod::RenderHookMoment::After;
       mod::hooks().publish(shadowEntitiesEvent);
@@ -926,6 +958,13 @@ void GameRenderer::renderToCurrentTarget(float tickDelta,
   }
   terrainEvent.moment = mod::RenderHookMoment::After;
   mod::hooks().publish(terrainEvent);
+  if(lodSystem.activeForRender() && !renderCameraEntity) {
+    float skyBrightness = MathHelper::cos(client->world->getTime(tickDelta) * kPiF * 2.0f) * 2.0f + 0.5f;
+    skyBrightness = skyBrightness < 0.0f ? 0.0f : (skyBrightness > 1.0f ? 1.0f : skyBrightness);
+    const float rainDim = 1.0f - option::rainGradient(resolvedOptions, client->world, tickDelta) * 0.3f;
+    const float brightness = (0.22f + 0.78f * skyBrightness) * rainDim;
+    lodSystem.render(frameCamera_.x, frameCamera_.y, frameCamera_.z, brightness, client->options.frustumCulling);
+  }
   platform::Lighting::turnOn();
   const Vec3d frameCameraPos{frameCamera_.x, frameCamera_.y, frameCamera_.z};
   mod::WorldRenderEvent entitiesEvent{

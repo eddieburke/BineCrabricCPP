@@ -23,4 +23,15 @@ TEST(MultiplayerClientPlayerEntity, WaitsForTerrainSupportBeforeStart) {
   EXPECT_DOUBLE_EQ(player.velocityZ, 0.0);
   EXPECT_FLOAT_EQ(player.fallDistance, 0.0f);
 }
+TEST(MultiplayerClientPlayerEntity, RegistersOnlyOnce) {
+  client::multiplayer::ClientNetworkHandler handler(nullptr);
+  ClientWorld world(&handler, 12345ULL, 0);
+  client::multiplayer::MultiplayerClientPlayerEntity player(nullptr, &world, client::util::Session{}, &handler);
+  player.setPosition(8.0, 80.0, 8.0);
+  ASSERT_TRUE(world.spawnEntity(&player));
+  ASSERT_TRUE(world.spawnEntity(&player));
+  world.loadChunksNearEntity(&player);
+  EXPECT_EQ(world.entities().size(), 1U);
+  EXPECT_EQ(world.players.size(), 1U);
+}
 } // namespace net::minecraft::test

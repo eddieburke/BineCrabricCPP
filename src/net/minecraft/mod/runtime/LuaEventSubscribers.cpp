@@ -801,6 +801,54 @@ const std::unordered_map<std::string_view, LuaEventSubscriber>& luaEventSubscrib
                e.color.z = component("b", e.color.z);
              });
        }},
+      {"fog_settings",
+       [](const LuaMod& mod, int ref, int priority) {
+         subscribeLua<FogSettingsEvent>(
+             mod,
+             ref,
+             priority,
+             [](lua_State* state, FogSettingsEvent& e) {
+               setFields(state,
+                         "enabled",
+                         e.enabled,
+                         "spherical",
+                         e.spherical,
+                         "exponential",
+                         e.exponential,
+                         "start",
+                         e.start,
+                         "end",
+                         e.end,
+                         "density",
+                         e.density,
+                         "custom_color",
+                         e.customColor,
+                         "red",
+                         e.red,
+                         "green",
+                         e.green,
+                         "blue",
+                         e.blue);
+               setWorldContextFields(state, e.world);
+             },
+             [](lua_State* state, FogSettingsEvent& e) {
+               readFields(state,
+                          "enabled",
+                          e.enabled,
+                          "spherical",
+                          e.spherical,
+                          "exponential",
+                          e.exponential,
+                          "custom_color",
+                          e.customColor);
+               e.start = std::clamp(luaFloatField(state, -1, "start", e.start), 0.0f, 1.0f);
+               e.end = std::clamp(luaFloatField(state, -1, "end", e.end), 0.0f, 1.0f);
+               e.density = std::clamp(luaFloatField(state, -1, "density", e.density), 0.0f, 1.0f);
+               e.red = std::clamp(luaFloatField(state, -1, "red", e.red), 0.0f, 1.0f);
+               e.green = std::clamp(luaFloatField(state, -1, "green", e.green), 0.0f, 1.0f);
+               e.blue = std::clamp(luaFloatField(state, -1, "blue", e.blue), 0.0f, 1.0f);
+             });
+       }},
       {"entity_render",
        [](const LuaMod& mod, int ref, int priority) {
          subscribeLua<EntityRenderEvent>(
@@ -923,6 +971,8 @@ const std::unordered_map<std::string_view, LuaEventSubscriber>& luaEventSubscrib
                            e.cancelVanilla,
                            "vanilla_stage_ran",
                            e.vanillaStageRan,
+                           "shadow_pass",
+                           e.shadowPass,
                            "celestial_angle",
                            static_cast<double>(e.celestialAngle),
                            "sky_yaw_deg",

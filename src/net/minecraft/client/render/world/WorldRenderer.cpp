@@ -22,6 +22,7 @@
 #include "net/minecraft/client/render/chunk/ChunkMeshJob.hpp"
 #include "net/minecraft/client/render/culling/Frustum.hpp"
 #include "net/minecraft/client/render/entity/EntityRenderDispatcher.hpp"
+#include "net/minecraft/client/render/lod/LodSystem.hpp"
 #include "net/minecraft/client/render/platform/Lighting.hpp"
 #include "net/minecraft/entity/Entity.hpp"
 #include "net/minecraft/entity/LivingEntity.hpp"
@@ -116,6 +117,9 @@ void WorldRenderer::enqueueColumn(int sectionX, int sectionZ) {
   }
 }
 void WorldRenderer::createColumn(int sectionX, int sectionZ) {
+  if(world == nullptr || world->getChunkSource() == nullptr || !world->getChunkSource()->isChunkLoaded(sectionX, sectionZ)) {
+    return;
+  }
   const int ring = ringOf(sectionX, sectionZ);
   if(ring >= static_cast<int>(drawRings_.size())) {
     drawRings_.resize(static_cast<std::size_t>(ring) + 1);
@@ -137,8 +141,24 @@ void WorldRenderer::createColumn(int sectionX, int sectionZ) {
     builder->invalidate();
     chunk::ChunkBuilder* raw = builder.get();
     sections_.emplace(pos, std::move(builder));
-    drawRings_[static_cast<std::size_t>(ring)].push_back(raw);
+    raw->drawRing = ring;
+    drawRings_[static_cast<std::size_t>(ring)].insert(raw);
     enqueueDirtyChunk(raw);
+  }
+}
+void WorldRenderer::removeColumn(int sectionX, int sectionZ) {
+  for(int sectionY = 0; sectionY < kChunkSectionCountY; ++sectionY) {
+    const world::SectionPos pos{sectionX, sectionY, sectionZ};
+    auto it = sections_.find(pos);
+    if(it == sections_.end()) {
+      continue;
+    }
+    std::unique_ptr<chunk::ChunkBuilder> section = std::move(it->second);
+    sections_.erase(it);
+    if(section->drawRing >= 0 && section->drawRing < static_cast<int>(drawRings_.size())) {
+      drawRings_[static_cast<std::size_t>(section->drawRing)].erase(section.get());
+    }
+    retireOrFreeSection(std::move(section));
   }
 }
 void WorldRenderer::retireOrFreeSection(std::unique_ptr<chunk::ChunkBuilder> section) {
@@ -167,14 +187,14 @@ void WorldRenderer::sweepRetiring() {
 void WorldRenderer::rebuildDrawRings() {
   drawRings_.assign(static_cast<std::size_t>(renderRadiusChunks_) + 1, {});
   for(auto& entry : sections_) {
-    drawRings_[static_cast<std::size_t>(ringOf(entry.first.x, entry.first.z))].push_back(entry.second.get());
+    drawRings_[static_cast<std::size_t>(ringOf(entry.first.x, entry.first.z))].insert(entry.second.get());
   }
   rebuildVisibleDrawRings();
 }
 void WorldRenderer::rebuildVisibleDrawRings() {
   visibleDrawRings_.assign(drawRings_.size(), {});
   for(std::size_t ring = 0; ring < drawRings_.size(); ++ring) {
-    const std::vector<chunk::ChunkBuilder*>& src = drawRings_[ring];
+    const auto& src = drawRings_[ring];
     std::vector<chunk::ChunkBuilder*>& dst = visibleDrawRings_[ring];
     dst.reserve(src.size());
     for(chunk::ChunkBuilder* chunk : src) {
@@ -223,42 +243,67 @@ void WorldRenderer::updateSectionFrontier() {
   centerSectionX_ = camSectionX;
   centerSectionZ_ = camSectionZ;
   const int radius = renderRadiusChunks_;
-  for(auto it = sections_.begin(); it != sections_.end();) {
-    if(std::abs(it->first.x - camSectionX) > radius || std::abs(it->first.z - camSectionZ) > radius) {
-      std::unique_ptr<chunk::ChunkBuilder> section = std::move(it->second);
-      it = sections_.erase(it);
-      retireOrFreeSection(std::move(section));
-    } else {
-      ++it;
-    }
-  }
-  rebuildDrawRings();
   const bool teleported = oldCenterX == std::numeric_limits<int>::min() ||
                           std::abs(camSectionX - oldCenterX) > radius || std::abs(camSectionZ - oldCenterZ) > radius;
-  for(int r = 0; r <= radius; ++r) {
-    for(int dx = -r; dx <= r; ++dx) {
-      for(int dz = -r; dz <= r; ++dz) {
-        if(std::max(std::abs(dx), std::abs(dz)) != r) {
-          continue;
-        }
-        const int sx = camSectionX + dx;
-        const int sz = camSectionZ + dz;
-        if(!teleported && std::abs(sx - oldCenterX) <= radius && std::abs(sz - oldCenterZ) <= radius) {
-          continue;
-        }
+  if(teleported) {
+    clearSections();
+    centerSectionX_ = camSectionX;
+    centerSectionZ_ = camSectionZ;
+    for(int sx = camSectionX - radius; sx <= camSectionX + radius; ++sx) {
+      for(int sz = camSectionZ - radius; sz <= camSectionZ + radius; ++sz) {
         enqueueColumn(sx, sz);
       }
     }
+    return;
   }
+  const int oldMinX = oldCenterX - radius;
+  const int oldMaxX = oldCenterX + radius;
+  const int oldMinZ = oldCenterZ - radius;
+  const int oldMaxZ = oldCenterZ + radius;
+  const int newMinX = camSectionX - radius;
+  const int newMaxX = camSectionX + radius;
+  const int newMinZ = camSectionZ - radius;
+  const int newMaxZ = camSectionZ + radius;
+  const auto visitRect = [](int minX, int maxX, int minZ, int maxZ, const auto& visit) {
+    if(minX > maxX || minZ > maxZ) {
+      return;
+    }
+    for(int sx = minX; sx <= maxX; ++sx) {
+      for(int sz = minZ; sz <= maxZ; ++sz) {
+        visit(sx, sz);
+      }
+    }
+  };
+  const auto remove = [this](int sx, int sz) { removeColumn(sx, sz); };
+  const auto enqueue = [this](int sx, int sz) { enqueueColumn(sx, sz); };
+  const auto visitOutside = [&visitRect](int baseMinX,
+                                         int baseMaxX,
+                                         int baseMinZ,
+                                         int baseMaxZ,
+                                         int innerMinX,
+                                         int innerMaxX,
+                                         int innerMinZ,
+                                         int innerMaxZ,
+                                         const auto& visit) {
+    visitRect(baseMinX, std::min(baseMaxX, innerMinX - 1), baseMinZ, baseMaxZ, visit);
+    visitRect(std::max(baseMinX, innerMaxX + 1), baseMaxX, baseMinZ, baseMaxZ, visit);
+    const int overlapMinX = std::max(baseMinX, innerMinX);
+    const int overlapMaxX = std::min(baseMaxX, innerMaxX);
+    visitRect(overlapMinX, overlapMaxX, baseMinZ, std::min(baseMaxZ, innerMinZ - 1), visit);
+    visitRect(overlapMinX, overlapMaxX, std::max(baseMinZ, innerMaxZ + 1), baseMaxZ, visit);
+  };
+  visitOutside(oldMinX, oldMaxX, oldMinZ, oldMaxZ, newMinX, newMaxX, newMinZ, newMaxZ, remove);
+  visitOutside(newMinX, newMaxX, newMinZ, newMaxZ, oldMinX, oldMaxX, oldMinZ, oldMaxZ, enqueue);
 }
 void WorldRenderer::drainPendingColumns() {
   if(world == nullptr || centerSectionX_ == std::numeric_limits<int>::min()) {
     return;
   }
   const int radius = renderRadiusChunks_;
+  const net::minecraft::util::concurrent::FrameBudget budget =
+      net::minecraft::util::concurrent::FrameBudget::fromMs(2, 1);
   std::size_t inspected = 0;
-  const std::size_t budget = pendingColumns_.size();
-  while(inspected < budget && !pendingColumns_.empty()) {
+  while(!pendingColumns_.empty() && budget.hasRemaining(static_cast<int>(inspected))) {
     const world::SectionPos col = pendingColumns_.front();
     pendingColumns_.pop_front();
     pendingSet_.erase(col);
@@ -277,6 +322,7 @@ void WorldRenderer::setWorld(net::minecraft::World* worldIn) {
     world->removeEventListener(this);
   }
   world = worldIn;
+  lod::LodSystem::instance().setWorld(worldIn);
   blockRenderManager.setBlockView(worldIn);
   if(client != nullptr) {
     entity::EntityRenderDispatcher::instance().setWorld(worldIn);
@@ -513,8 +559,7 @@ bool WorldRenderer::compileChunks(net::minecraft::LivingEntity& /*camera*/, bool
   const std::size_t targetInFlight = workerCount * (force ? 6u : 3u);
   std::size_t inFlight = meshScheduler_.pendingJobs();
   if(inFlight < targetInFlight && pendingMeshUploads_.size() < targetInFlight * 2u) {
-    const int requestedCaptures =
-        client::option::chunkUpdatesPerPass(resolvedOpts, static_cast<int>(dirtyChunks_.size()), gridAreaScale);
+    const int requestedCaptures = client::option::chunkUpdatesPerPass(resolvedOpts, static_cast<int>(dirtyChunks_.size()));
     const int minCapturesPerFrame = force ? static_cast<int>(workerCount * 2u)
                                           : std::clamp(requestedCaptures, 1, static_cast<int>(workerCount * 2u));
     const net::minecraft::util::concurrent::FrameBudget captureBudget =
@@ -550,7 +595,7 @@ bool WorldRenderer::compileChunks(net::minecraft::LivingEntity& /*camera*/, bool
         if(section->meshJobInFlight || (force && !section->inFrustum)) {
           continue;
         }
-        if(startMeshJob(section, false, static_cast<int>(ring), resolvedOpts, fancyGraphics)) {
+        if(startMeshJob(section, false, ringOf(*section), resolvedOpts, fancyGraphics)) {
           ++inFlight;
           ++captures;
         }
@@ -699,8 +744,12 @@ void WorldRenderer::markDirty(int minX, int minY, int minZ, int maxX, int maxY, 
   const int endY = MathHelper::floorDiv(maxY, kChunkSectionSize);
   const int endZ = MathHelper::floorDiv(maxZ, kChunkSectionSize);
   for(int chunkX = startX; chunkX <= endX; ++chunkX) {
-    for(int chunkY = startY; chunkY <= endY; ++chunkY) {
-      for(int chunkZ = startZ; chunkZ <= endZ; ++chunkZ) {
+    for(int chunkZ = startZ; chunkZ <= endZ; ++chunkZ) {
+      if(std::abs(chunkX - centerSectionX_) <= renderRadiusChunks_ &&
+         std::abs(chunkZ - centerSectionZ_) <= renderRadiusChunks_ && sectionAt(chunkX, 0, chunkZ) == nullptr) {
+        createColumn(chunkX, chunkZ);
+      }
+      for(int chunkY = startY; chunkY <= endY; ++chunkY) {
         chunk::ChunkBuilder* builder = sectionAt(chunkX, chunkY, chunkZ);
         if(builder == nullptr) {
           continue;
@@ -713,6 +762,7 @@ void WorldRenderer::markDirty(int minX, int minY, int minZ, int maxX, int maxY, 
 }
 void WorldRenderer::blockUpdate(int x, int y, int z) {
   markDirty(x - 1, y - 1, z - 1, x + 1, y + 1, z + 1);
+  lod::LodSystem::instance().onBlockChanged(x, y, z);
 }
 void WorldRenderer::setBlocksDirty(int minX, int minY, int minZ, int maxX, int maxY, int maxZ) {
   markDirty(minX - 1, minY - 1, minZ - 1, maxX + 1, maxY + 1, maxZ + 1);

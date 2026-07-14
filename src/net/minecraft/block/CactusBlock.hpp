@@ -53,12 +53,12 @@ public:
         static_cast<double>(y),
         static_cast<double>(z) + inset,
         static_cast<double>(x + 1) - inset,
-        static_cast<double>(y) + 0.875,
+        static_cast<double>(y + 1) - inset,
         static_cast<double>(z + 1) - inset,
     };
   }
   void setupRenderBoundingBox() override {
-    setBoundingBox(0.0625f, 0.0f, 0.0625f, 0.9375f, 0.875f, 0.9375f);
+    setBoundingBox(0.0625f, 0.0f, 0.0625f, 0.9375f, 1.0f, 0.9375f);
   }
   [[nodiscard]] bool canPlaceAt(World* world, int x, int y, int z) const {
     return Block::canPlaceAt(world, x, y, z) && canGrow(world, x, y, z);
