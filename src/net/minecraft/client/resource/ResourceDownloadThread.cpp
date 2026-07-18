@@ -5,6 +5,7 @@
 #include <stdexcept>
 #include <string>
 #include <vector>
+#include "net/minecraft/client/ClientLog.hpp"
 #include "net/minecraft/client/Minecraft.hpp"
 namespace net::minecraft::client::resource {
 namespace {
@@ -48,10 +49,14 @@ void parseResourceListing(const std::string& xml, const std::function<void(const
 bool downloadFile(const std::string& url, const std::filesystem::path& destination) {
   const HttpResponse response = fetchUrl(url, true);
   if(!response.ok() || response.body.empty()) {
+    ClientLog::LOGGER.log(LogLevel::Warning, "[resource-download] failed (HTTP " +
+                                                  std::to_string(response.statusCode) +
+                                                  ", betacraft.ee:11705 proxy): " + url);
     return false;
   }
   std::ofstream out(destination, std::ios::binary);
   if(!out) {
+    ClientLog::LOGGER.log(LogLevel::Warning, "[resource-download] could not write " + destination.string());
     return false;
   }
   out.write(reinterpret_cast<const char*>(response.body.data()), static_cast<std::streamsize>(response.body.size()));
@@ -70,8 +75,8 @@ std::string encodeUrlPath(std::string path) {
   return encoded;
 }
 } // namespace
-ResourceDownloadThread::ResourceDownloadThread(std::filesystem::path runDirectory, Minecraft* minecraft)
-    : resourcesDirectory(std::move(runDirectory) / "resources"), minecraft_(minecraft) {
+ResourceDownloadThread::ResourceDownloadThread(std::filesystem::path resourcesRoot, Minecraft* minecraft)
+    : resourcesDirectory(std::move(resourcesRoot)), minecraft_(minecraft) {
   if(!std::filesystem::exists(resourcesDirectory) && !std::filesystem::create_directories(resourcesDirectory)) {
     throw std::runtime_error("The working directory could not be created: " + resourcesDirectory.string());
   }
@@ -113,7 +118,9 @@ void ResourceDownloadThread::run() {
         return;
       }
     }
-  } catch(const std::exception&) {
+  } catch(const std::exception& ex) {
+    ClientLog::LOGGER.log(
+        LogLevel::Warning, "[resource-download] falling back to local resources directory", &ex);
     loadFromDirectory(resourcesDirectory, "");
   }
 }

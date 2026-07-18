@@ -36,6 +36,7 @@ std::string executableDirectory() {
   }
   return directory;
 }
+#ifndef NDEBUG
 void ensureConsole() {
   if(GetConsoleWindow() != nullptr) {
     return;
@@ -49,6 +50,7 @@ void ensureConsole() {
   freopen_s(&stream, "CONIN$", "r", stdin);
   std::ios::sync_with_stdio();
 }
+#endif
 void writeCrashReportFile(const std::string& details, const char* fileName = "crash-report.txt") {
   const std::string path = executableDirectory() + "\\" + fileName;
   std::ofstream file(path, std::ios::binary | std::ios::trunc);
@@ -207,7 +209,9 @@ void setStartupPhase(const char* phase) {
 }
 #ifdef _WIN32
 void installCrashDiagnostics() {
+#ifndef NDEBUG
   ensureConsole();
+#endif
   SetUnhandledExceptionFilter(unhandledExceptionFilter);
   std::set_terminate(terminateHandler);
 }

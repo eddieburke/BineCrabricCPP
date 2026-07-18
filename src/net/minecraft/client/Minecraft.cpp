@@ -9,6 +9,7 @@
 #include "net/minecraft/client/MinecraftApplet.hpp"
 #include "net/minecraft/client/Screenshot.hpp"
 #include "net/minecraft/client/SingleplayerInteractionManager.hpp"
+#include "net/minecraft/client/ClientLog.hpp"
 #include "net/minecraft/client/auth/microsoft/PlayerTextures.hpp"
 #include "net/minecraft/client/auth/microsoft/SessionRestore.hpp"
 #include "net/minecraft/client/color/world/FoliageColors.hpp"
@@ -36,7 +37,7 @@
 #include "net/minecraft/client/option/ResolvedRenderOptions.hpp"
 #include "net/minecraft/client/render/GameRenderer.hpp"
 #include "net/minecraft/client/render/ProgressRenderer.hpp"
-#include "net/minecraft/client/render/Framebuffer.hpp"
+#include "net/minecraft/client/gl/Framebuffer.hpp"
 #include "net/minecraft/client/render/Tessellator.hpp"
 #include "net/minecraft/client/render/block/BlockRenderManager.hpp"
 #include "net/minecraft/client/render/chunk/ChunkBuilder.hpp"
@@ -44,12 +45,13 @@
 #include "net/minecraft/client/render/item/HeldItemRenderer.hpp"
 #include "net/minecraft/client/resource/ResourceDownloadThread.hpp"
 #include "net/minecraft/client/resource/ResourcePack.hpp"
+#include "net/minecraft/client/resource/ResourceRoot.hpp"
 #include "net/minecraft/client/resource/language/I18n.hpp"
 #include "net/minecraft/client/resource/language/TranslationStorage.hpp"
 #include "net/minecraft/client/session/SessionValidator.hpp"
 #include "net/minecraft/client/sound/WorldSoundListener.hpp"
 #include "net/minecraft/client/util/DisplayManager.hpp"
-#include "net/minecraft/client/util/GlAllocationUtils.hpp"
+#include "net/minecraft/client/gl/GlAllocationUtils.hpp"
 #include "net/minecraft/client/util/MinecraftDirectories.hpp"
 #include "net/minecraft/client/util/UiScale.hpp"
 #include "net/minecraft/entity/player/ClientPlayerEntity.hpp"
@@ -193,11 +195,11 @@ void Minecraft::bootstrapAfterDisplay() {
   option::OptionRegistry::registerAll();
   options.load();
   worldStorageSource = std::make_unique<net::minecraft::RegionWorldStorageSource>(runDirectory_ / "saves");
-  const net::minecraft::ResourcePack resources(std::filesystem::path(MINECRAFT_NATIVE_RESOURCE_DIR));
+  const net::minecraft::ResourcePack resources(resource::resourceRoot());
   translationStorage_ = std::make_unique<resource::language::TranslationStorage>(resources);
   resource::language::I18n::setTranslations(translationStorage_.get());
   texturePacksStorage_ = std::make_unique<resource::pack::TexturePacks>(
-      std::filesystem::path(MINECRAFT_NATIVE_RESOURCE_DIR), runDirectory_, &options, &textureManager);
+      resource::resourceRoot(), runDirectory_, &options, &textureManager);
   texturePacks = texturePacksStorage_.get();
   textureManager.setTexturePacks(texturePacks);
   diagnostics::setStartupPhase("init: text renderer");
@@ -207,7 +209,7 @@ void Minecraft::bootstrapAfterDisplay() {
   color::world::FoliageColors::setColorMap(textureManager.getColors("/misc/foliagecolor.png"));
   diagnostics::setStartupPhase("init: game renderer");
   gameRenderer = std::make_unique<render::GameRenderer>(this);
-  framebuffer = std::make_unique<render::Framebuffer>();
+  framebuffer = std::make_unique<gl::Framebuffer>();
   (void)framebuffer->initialize(displayWidth > 0 ? displayWidth : 1, displayHeight > 0 ? displayHeight : 1, 1, true);
   render::entity::EntityRenderDispatcher::instance().setHeldItemRenderer(
       std::make_unique<render::item::HeldItemRenderer>(this));
@@ -243,7 +245,7 @@ void Minecraft::bootstrapAfterDisplay() {
   worldRenderer = std::make_unique<render::WorldRenderer>(this, &textureManager);
   worldSoundListener = std::make_unique<sound::WorldSoundListener>(this);
   gl::viewport(0, 0, displayWidth, displayHeight);
-  resourceDownloadThread = std::make_unique<resource::ResourceDownloadThread>(runDirectory_, this);
+  resourceDownloadThread = std::make_unique<resource::ResourceDownloadThread>(resource::resourceRoot(), this);
   resourceDownloadThread->start();
   interactionManager = std::make_unique<SingleplayerInteractionManager>(this);
   inGameHud.setClient(this);
@@ -289,14 +291,14 @@ void Minecraft::stop() {
     try {
       setWorld(nullptr);
     } catch(const std::exception& e) {
-      std::cerr << "World teardown failed: " << e.what() << '\n';
+      ClientLog::LOGGER.log(LogLevel::Warning, "World teardown failed", &e);
     }
     try {
       RegionIo::flush();
     } catch(...) {
     }
     try {
-      util::GlAllocationUtils::clear();
+      gl::GlAllocationUtils::clear();
     } catch(...) {
     }
     if(serverProcessCoordinator_ != nullptr) {
@@ -648,7 +650,7 @@ void Minecraft::run() {
   try {
     init();
   } catch(const std::exception& exception) {
-    std::cerr << exception.what() << std::endl;
+    ClientLog::LOGGER.log(LogLevel::Severe, "Failed to start game", &exception);
     gameCrashed(net::minecraft::util::crash::CrashReport("Failed to start game", exception.what()));
     return;
   }
@@ -707,7 +709,7 @@ void Minecraft::run() {
         setWorld(nullptr);
         setScreen(std::make_unique<gui::screen::world::WorldSaveConflictScreen>());
       } catch(const std::bad_alloc& exception) {
-        std::cerr << exception.what() << '\n';
+        ClientLog::LOGGER.log(LogLevel::Severe, "Out of memory", &exception);
         cleanHeap();
         setScreen(std::make_unique<gui::screen::OutOfMemoryScreen>());
         break;
@@ -716,7 +718,7 @@ void Minecraft::run() {
   } catch(const render::ProgressRenderError&) {
   } catch(const std::exception& exception) {
     cleanHeap();
-    std::cerr << exception.what() << std::endl;
+    ClientLog::LOGGER.log(LogLevel::Severe, "Unexpected error", &exception);
     gameCrashed(net::minecraft::util::crash::CrashReport("Unexpected error", exception.what()));
   }
   stop();
@@ -1010,14 +1012,21 @@ int Minecraft::main(int argc, char** argv) {
   std::string sessionId = "-";
   std::string serverArg;
   const std::string* serverPtr = nullptr;
-  if(argc > 1 && argv[1] != nullptr) {
-    username = argv[1];
+  std::vector<std::string> positional;
+  for(int i = 1; i < argc; ++i) {
+    if(argv[i] == nullptr) {
+      continue;
+    }
+    positional.push_back(argv[i]);
   }
-  if(argc > 2 && argv[2] != nullptr) {
-    sessionId = argv[2];
+  if(!positional.empty()) {
+    username = positional[0];
   }
-  if(argc > 3 && argv[3] != nullptr) {
-    serverArg = argv[3];
+  if(positional.size() > 1) {
+    sessionId = positional[1];
+  }
+  if(positional.size() > 2) {
+    serverArg = positional[2];
     if(!serverArg.empty()) {
       serverPtr = &serverArg;
     }
@@ -1025,7 +1034,7 @@ int Minecraft::main(int argc, char** argv) {
   try {
     startAndConnect(username, sessionId, serverPtr);
   } catch(const std::exception& exception) {
-    std::cerr << exception.what() << std::endl;
+    ClientLog::LOGGER.log(LogLevel::Severe, "Failed to start", &exception);
 #ifdef _WIN32
     diagnostics::reportFatalError("Minecraft Native - failed to start", std::string(exception.what()));
     diagnostics::pauseBeforeExit();
@@ -1033,7 +1042,7 @@ int Minecraft::main(int argc, char** argv) {
     return 1;
   } catch(...) {
     const char* message = "Unknown exception during startup.";
-    std::cerr << message << std::endl;
+    ClientLog::LOGGER.log(LogLevel::Severe, message);
 #ifdef _WIN32
     diagnostics::reportFatalError("Minecraft Native - failed to start", message);
     diagnostics::pauseBeforeExit();

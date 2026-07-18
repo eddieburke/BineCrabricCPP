@@ -11,6 +11,7 @@
 #   .\build-omega.ps1 -Lto          # opt-in link-time optimization (often fails on MinGW GCC 15)
 #   .\build-omega.ps1 -NoNativeCpu # portable binary (no -march=native / AVX tuning)
 #   .\build-omega.ps1 -SkipModPackaging  # skip generating runtime mod zips
+#   .\build-omega.ps1 -SkipResourceSync  # skip mirroring resources/ next to the built binary
 #   .\build-omega.ps1 -RunTests          # build minecraft_omega_tests and run ctest
 #   .\build-omega.ps1 -Target Client     # build minecraft_native.exe only
 #   .\build-omega.ps1 -Target Server     # build minecraft_server.exe only
@@ -37,6 +38,7 @@ param(
     [switch]$NoNativeCpu,
     [switch]$RunTests,
     [switch]$SkipModPackaging,
+    [switch]$SkipResourceSync,
     [ValidateSet("All", "Client", "Server")]
     [string]$Target = "All"
 )
@@ -56,6 +58,8 @@ $CmakeExe = Join-Path $MingwBin "cmake.exe"
 $NinjaExe = Join-Path $MingwBin "ninja.exe"
 $CtestExe = Join-Path $MingwBin "ctest.exe"
 $DepsMarker = Join-Path $ToolchainDir ".deps-installed"
+$ShaderpacksSource = Join-Path $ScriptDir "shaderpacks"
+$ResourcesSource = Join-Path $ScriptDir "resources"
 
 $RelToolchainRoot = "toolchain/mingw64"
 $RelGpp = "$RelToolchainRoot/bin/g++.exe"
@@ -74,6 +78,62 @@ function Ensure-Directory {
     if (-not (Test-Path -LiteralPath $Path)) {
         New-Item -ItemType Directory -Force -Path $Path | Out-Null
     }
+}
+
+function Sync-Shaderpacks {
+    param([string]$BuildDirName)
+
+    if (-not (Test-Path -LiteralPath $ShaderpacksSource)) {
+        Write-Error "Shaderpacks source directory not found: $ShaderpacksSource"
+        return
+    }
+
+    $buildShaderpacks = Join-Path (Join-Path $ScriptDir $BuildDirName) "shaderpacks"
+    Ensure-Directory -Path $buildShaderpacks
+    $packs = Get-ChildItem -LiteralPath $ShaderpacksSource -Force
+    foreach ($pack in $packs) {
+        Copy-Item -LiteralPath $pack.FullName -Destination $buildShaderpacks -Recurse -Force
+    }
+    Write-Host "Shaderpacks: $buildShaderpacks"
+
+    if ($env:APPDATA) {
+        $runtimeRoot = Join-Path (Join-Path $env:APPDATA ".minecraft") "shaderpacks"
+        Ensure-Directory -Path $runtimeRoot
+        foreach ($pack in $packs) {
+            Copy-Item -LiteralPath $pack.FullName -Destination $runtimeRoot -Recurse -Force
+        }
+        Write-Host "Shaderpacks deployed: $runtimeRoot"
+    }
+}
+
+# resource::resourceRoot() (ResourceRoot.hpp) is always %APPDATA%/.minecraft/resources —
+# that is where the running exe reads resource files from and where
+# ResourceDownloadThread saves betacraft-downloaded sound/music. Mirror native/resources/
+# there after every build via robocopy /MIR so only changed files are touched on
+# rebuilds instead of a full recursive copy every time. Skip with -SkipResourceSync.
+function Sync-Resources {
+    if (-not (Test-Path -LiteralPath $ResourcesSource)) {
+        Write-Error "Resources source directory not found: $ResourcesSource"
+        return
+    }
+    if (-not $env:APPDATA) {
+        Write-Error "APPDATA is not set; cannot locate %APPDATA%\.minecraft\resources"
+        return
+    }
+
+    $runtimeResources = Join-Path (Join-Path $env:APPDATA ".minecraft") "resources"
+    $robocopy = Get-Command robocopy.exe -ErrorAction SilentlyContinue
+    if ($robocopy) {
+        & robocopy.exe $ResourcesSource $runtimeResources /MIR /MT:8 /NFL /NDL /NJH /NJS /NP | Out-Null
+        if ($LASTEXITCODE -ge 8) {
+            Write-Error "robocopy failed ($LASTEXITCODE) mirroring resources to $runtimeResources"
+            return
+        }
+    } else {
+        Ensure-Directory -Path $runtimeResources
+        Copy-Item -Path (Join-Path $ResourcesSource "*") -Destination $runtimeResources -Recurse -Force
+    }
+    Write-Host "Resources: $runtimeResources"
 }
 
 function Download-File {
@@ -614,6 +674,10 @@ $exitCode = $LASTEXITCODE
 $sw.Stop()
 
     if ($exitCode -eq 0) {
+    Sync-Shaderpacks -BuildDirName $BuildDir
+    if (-not $SkipResourceSync) {
+        Sync-Resources
+    }
     if ($Target -eq "All" -or $Target -eq "Client") {
         $clientExe = Join-Path $BuildDir "minecraft_native.exe"
         if (Test-Path $clientExe) {

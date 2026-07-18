@@ -2,6 +2,8 @@ cmake_minimum_required(VERSION 3.20)
 
 project(minecraft_native VERSION 0.1.0 LANGUAGES CXX)
 
+option(MINECRAFT_ENABLE_NATIVE_LOD "Build the native terrain LOD renderer" ON)
+
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
@@ -9,6 +11,7 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 include(FetchContent)
 
 if (WIN32)
+    enable_language(RC)
     set(GLFW_BUILD_DOCS OFF CACHE BOOL "" FORCE)
     set(GLFW_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
     set(GLFW_BUILD_TESTS OFF CACHE BOOL "" FORCE)
@@ -46,7 +49,6 @@ elseif (CCACHE_PROGRAM)
 endif()
 
 file(TO_CMAKE_PATH "${CMAKE_CURRENT_SOURCE_DIR}" MINECRAFT_NATIVE_SOURCE_DIR)
-file(TO_CMAKE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/resources" MINECRAFT_NATIVE_RESOURCE_DIR)
 
 file(GLOB_RECURSE MINECRAFT_PORT_SOURCES CONFIGURE_DEPENDS
     "${CMAKE_CURRENT_SOURCE_DIR}/src/net/minecraft/*.cpp"
@@ -98,6 +100,10 @@ list(REMOVE_ITEM MINECRAFT_CORE_SOURCES ${MINECRAFT_CLIENT_ONLY_SOURCES})
 
 set(MINECRAFT_CLIENT_SOURCES ${MINECRAFT_PORT_SOURCES})
 list(FILTER MINECRAFT_CLIENT_SOURCES INCLUDE REGEX "/client/|/net/minecraft/mod/")
+list(FILTER MINECRAFT_CLIENT_SOURCES EXCLUDE REGEX "/net/minecraft/mod/runtime/LuaTerrainBindings\.cpp$")
+if (NOT MINECRAFT_ENABLE_NATIVE_LOD)
+    list(FILTER MINECRAFT_CLIENT_SOURCES EXCLUDE REGEX "/client/render/terrain/")
+endif()
 list(APPEND MINECRAFT_CLIENT_SOURCES ${MINECRAFT_CLIENT_ONLY_SOURCES})
 list(REMOVE_DUPLICATES MINECRAFT_CLIENT_SOURCES)
 
@@ -107,13 +113,10 @@ list(FILTER MINECRAFT_SERVER_MOD_SOURCES EXCLUDE REGEX
     "/net/minecraft/mod/(HostScreenRegistry|ModClient|ScreenUi)\\.cpp$"
 )
 list(FILTER MINECRAFT_SERVER_MOD_SOURCES EXCLUDE REGEX
-    "/net/minecraft/mod/lua/LuaModApi\\.cpp$"
-)
-list(FILTER MINECRAFT_SERVER_MOD_SOURCES EXCLUDE REGEX
     "/net/minecraft/mod/model/.*\\.cpp$"
 )
 list(FILTER MINECRAFT_SERVER_MOD_SOURCES EXCLUDE REGEX
-    "/net/minecraft/mod/runtime/(LuaCameraBindings|LuaFboBindings|LuaGuiArgs|LuaInventoryBindings|LuaModelBindings|LuaRaycastBindings|LuaRenderBindings|LuaScreenBindings|LuaSoundBindings|LuaTextureBindings|LuaShaderBindings|ModRenderScope)\\.cpp$"
+    "/net/minecraft/mod/runtime/(LuaCameraBindings|LuaGuiArgs|LuaInventoryBindings|LuaModelBindings|LuaRaycastBindings|LuaRenderBindings|LuaScreenBindings|LuaSoundBindings|LuaTextureBindings|ModRenderScope)\\.cpp$"
 )
 
 add_subdirectory(mods)
@@ -127,7 +130,6 @@ function(minecraft_configure_target target)
     )
     target_compile_definitions(${target} PRIVATE
         MINECRAFT_NATIVE_SOURCE_DIR="${MINECRAFT_NATIVE_SOURCE_DIR}"
-        MINECRAFT_NATIVE_RESOURCE_DIR="${MINECRAFT_NATIVE_RESOURCE_DIR}"
     )
     target_compile_options(${target} PRIVATE -Wall -Wextra -Wpedantic -Wno-deprecated-declarations)
 endfunction()
@@ -309,6 +311,9 @@ minecraft_configure_target(minecraft_registry_roots)
 
 add_library(minecraft_client OBJECT ${MINECRAFT_CLIENT_SOURCES})
 minecraft_configure_target(minecraft_client)
+if (MINECRAFT_ENABLE_NATIVE_LOD)
+    target_compile_definitions(minecraft_client PRIVATE MINECRAFT_ENABLE_NATIVE_LOD=1)
+endif()
 if (WIN32)
     target_compile_definitions(minecraft_client PRIVATE MINECRAFT_NATIVE_EXPORTS=1)
     minecraft_enable_glfw_compile(minecraft_client)
@@ -320,6 +325,7 @@ minecraft_configure_target(minecraft_server_mod)
 add_executable(minecraft_native
     src/main.cpp
     $<TARGET_OBJECTS:minecraft_client>
+    $<$<BOOL:${WIN32}>:${CMAKE_CURRENT_SOURCE_DIR}/resources/icon/app.rc>
 )
 minecraft_link_core(minecraft_native)
 minecraft_link_registry_roots(minecraft_native)
@@ -331,6 +337,11 @@ if (WIN32)
     target_compile_definitions(minecraft_native PRIVATE MINECRAFT_NATIVE_EXPORTS=1)
     target_link_libraries(minecraft_native PRIVATE comdlg32 gdiplus gdi32 user32 opengl32 glu32)
     minecraft_link_platform(minecraft_native)
+    # Debug builds keep the console subsystem so stdout/stderr logging and
+    # ClientDiagnostics::ensureConsole() are visible. Release/RelWithDebInfo link as a
+    # Windows-subsystem app (no console window on launch) to match ensureConsole()'s
+    # #ifndef NDEBUG guard in ClientDiagnostics.cpp.
+    target_link_options(minecraft_native PRIVATE $<$<NOT:$<CONFIG:Debug>>:-mwindows>)
 endif()
 minecraft_copy_lua_runtime(minecraft_native)
 
@@ -339,6 +350,7 @@ add_executable(minecraft_server
     src/net/minecraft/client/auth/microsoft/PlayerTextureUrls.cpp
     src/net/minecraft/client/resource/language/TranslationStorage.cpp
     $<TARGET_OBJECTS:minecraft_server_mod>
+    $<$<BOOL:${WIN32}>:${CMAKE_CURRENT_SOURCE_DIR}/resources/icon/app.rc>
 )
 minecraft_configure_target(minecraft_server)
 minecraft_link_registry_roots(minecraft_server)
@@ -365,8 +377,17 @@ set(MINECRAFT_TEST_SOURCES
     tests/hook_bus_test.cpp
     tests/client_timer_test.cpp
     tests/resolved_render_options_test.cpp
+    tests/pack_manifest_test.cpp
+    tests/lua_runtime_prelude_test.cpp
     tests/mod_settings_registry_test.cpp
+    tests/unified_light_registry_test.cpp
+    tests/lod_policy_test.cpp
+    tests/uniform_sync_test.cpp
 )
+
+if (MINECRAFT_ENABLE_NATIVE_LOD)
+    list(APPEND MINECRAFT_TEST_SOURCES tests/terrain_mesher_test.cpp)
+endif()
 
 set(MINECRAFT_SERVER_TEST_SOURCES
     integrated_server_host_test.cpp
@@ -392,6 +413,7 @@ add_executable(minecraft_omega_tests
 )
 minecraft_configure_target(minecraft_omega_tests)
 target_include_directories(minecraft_omega_tests PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/tests")
+target_compile_definitions(minecraft_omega_tests PRIVATE MINECRAFT_TEST_SOURCE_DIR="${CMAKE_CURRENT_SOURCE_DIR}")
 minecraft_link_registry_roots(minecraft_omega_tests)
 minecraft_link_server(minecraft_omega_tests)
 minecraft_link_audio(minecraft_omega_tests)

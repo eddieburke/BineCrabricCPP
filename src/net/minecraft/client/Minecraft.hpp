@@ -62,9 +62,11 @@ class PlayerStats;
 namespace net::minecraft::util::crash {
 class CrashReport;
 }
+namespace net::minecraft::client::gl {
+struct Framebuffer;
+}
 namespace net::minecraft::client::render {
 class GameRenderer;
-struct Framebuffer;
 } // namespace net::minecraft::client::render
 namespace net::minecraft::client::sound {
 class WorldSoundListener;
@@ -182,7 +184,7 @@ public:
   std::unique_ptr<font::TextRenderer> textRenderer;
   render::ProgressRenderer progressRenderer{this};
   std::unique_ptr<render::GameRenderer> gameRenderer;
-  std::unique_ptr<render::Framebuffer> framebuffer;
+  std::unique_ptr<gl::Framebuffer> framebuffer;
   int ticksPlayed = 0;
   gui::hud::toast::AchievementToast toast{};
   gui::hud::InGameHud inGameHud{};
