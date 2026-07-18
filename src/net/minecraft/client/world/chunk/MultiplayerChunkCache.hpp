@@ -36,18 +36,14 @@ public:
     chunksByPos_.erase(it);
   }
   Chunk& loadChunk(int chunkX, int chunkZ) override {
+    if(auto it = chunksByPos_.find(ChunkPos{chunkX, chunkZ}); it != chunksByPos_.end() && it->second != nullptr) {
+      return *it->second;
+    }
     auto chunk = std::make_unique<Chunk>(world_, chunkX, chunkZ);
     std::fill(chunk->skyLight.bytes.begin(), chunk->skyLight.bytes.end(), static_cast<std::uint8_t>(0xFF));
     chunk->loaded = true;
     Chunk* raw = chunk.get();
     auto& slot = chunksByPos_[ChunkPos{chunkX, chunkZ}];
-    if(slot != nullptr) {
-      // Replacing frees the old chunk; fence it off from the async lighting worker (non-blocking try-pin) before
-      // it is destroyed.
-      retireFromLighting(slot.get());
-      world_->unregisterChunkForLighting(slot.get());
-      chunks_.erase(std::remove(chunks_.begin(), chunks_.end(), slot.get()), chunks_.end());
-    }
     slot = std::move(chunk);
     chunks_.push_back(raw);
     world_->registerChunkForLighting(raw);

@@ -22,13 +22,16 @@
 #include "net/minecraft/client/render/chunk/ChunkMeshJob.hpp"
 #include "net/minecraft/client/render/culling/Frustum.hpp"
 #include "net/minecraft/client/render/entity/EntityRenderDispatcher.hpp"
-#include "net/minecraft/client/render/lod/LodSystem.hpp"
-#include "net/minecraft/client/render/platform/Lighting.hpp"
+#ifdef MINECRAFT_ENABLE_NATIVE_LOD
+#include "net/minecraft/client/render/terrain/TerrainRenderer.hpp"
+#include "net/minecraft/client/render/terrain/TerrainSurface.hpp"
+#endif
+#include "net/minecraft/client/gl/Lighting.hpp"
 #include "net/minecraft/entity/Entity.hpp"
 #include "net/minecraft/entity/LivingEntity.hpp"
 #include "net/minecraft/entity/player/PlayerEntity.hpp"
 #include "net/minecraft/client/render/GameRenderer.hpp"
-#include "net/minecraft/client/render/Framebuffer.hpp"
+#include "net/minecraft/client/gl/Framebuffer.hpp"
 #include "net/minecraft/mod/lua/LuaModEntity.hpp"
 #include "net/minecraft/mod/ModTexture.hpp"
 #include "net/minecraft/util/concurrent/FrameBudget.hpp"
@@ -192,10 +195,11 @@ void WorldRenderer::rebuildDrawRings() {
   rebuildVisibleDrawRings();
 }
 void WorldRenderer::rebuildVisibleDrawRings() {
-  visibleDrawRings_.assign(drawRings_.size(), {});
+  visibleDrawRings_.resize(drawRings_.size());
   for(std::size_t ring = 0; ring < drawRings_.size(); ++ring) {
     const auto& src = drawRings_[ring];
     std::vector<chunk::ChunkBuilder*>& dst = visibleDrawRings_[ring];
+    dst.clear();
     dst.reserve(src.size());
     for(chunk::ChunkBuilder* chunk : src) {
       if(chunk != nullptr && chunk->inFrustum) {
@@ -322,7 +326,10 @@ void WorldRenderer::setWorld(net::minecraft::World* worldIn) {
     world->removeEventListener(this);
   }
   world = worldIn;
-  lod::LodSystem::instance().setWorld(worldIn);
+#ifdef MINECRAFT_ENABLE_NATIVE_LOD
+  terrain::TerrainRenderer::instance().reset();
+  terrain::TerrainSurface::instance().setWorld(worldIn);
+#endif
   blockRenderManager.setBlockView(worldIn);
   if(client != nullptr) {
     entity::EntityRenderDispatcher::instance().setWorld(worldIn);
@@ -386,7 +393,7 @@ bool WorldRenderer::startMeshJob(chunk::ChunkBuilder* chunk,
 void WorldRenderer::render(const net::minecraft::Entity& camera, int layer, float tickDelta) {
   (void)tickDelta;
   cameraEntity_ = const_cast<net::minecraft::Entity*>(&camera);
-  platform::Lighting::turnOff();
+  gl::Lighting::turnOff();
   renderChunks(layer, 0.0);
 }
 int WorldRenderer::render(net::minecraft::LivingEntity& camera, int layer, double tickDelta, bool drawModMeshes) {
@@ -400,7 +407,7 @@ int WorldRenderer::render(net::minecraft::LivingEntity& camera, int layer, doubl
     emptyChunkCount = 0;
   }
   cameraEntity_ = &camera;
-  platform::Lighting::turnOff();
+  gl::Lighting::turnOff();
   renderChunks(layer, tickDelta, drawModMeshes);
   return lastDrawnRegionCount_;
 }
@@ -516,10 +523,10 @@ bool WorldRenderer::compileChunks(net::minecraft::LivingEntity& /*camera*/, bool
   const std::size_t workerCount = meshScheduler_.workerCount();
   const std::size_t backlog = dirtyChunks_.size() + pendingMeshUploads_.size() + meshScheduler_.pendingJobs();
   const bool loadingBacklog = backlog > 512u;
-  const int minUploadsPerFrame = loadingBacklog ? std::clamp(static_cast<int>(workerCount * 2), 4, 16)
-                                                : std::clamp(static_cast<int>(std::ceil(2.0f * gridAreaScale)), 2, 8);
+  const int minUploadsPerFrame = loadingBacklog ? std::clamp(static_cast<int>(workerCount), 2, 8)
+                                                : std::clamp(static_cast<int>(std::ceil(2.0f * gridAreaScale)), 1, 6);
   const net::minecraft::util::concurrent::FrameBudget uploadBudget =
-      net::minecraft::util::concurrent::FrameBudget::fromMs(loadingBacklog ? 4 : 2, minUploadsPerFrame);
+      net::minecraft::util::concurrent::FrameBudget::fromMs(loadingBacklog ? 3 : 2, minUploadsPerFrame);
   int uploadCount = 0;
   std::vector<std::shared_ptr<chunk::ChunkMeshJob>> deferredUploads;
   deferredUploads.reserve(pendingMeshUploads_.size() + meshScheduler_.pendingJobs());
@@ -532,7 +539,7 @@ bool WorldRenderer::compileChunks(net::minecraft::LivingEntity& /*camera*/, bool
       builder->meshJobInFlight = false;
       return;
     }
-    if(!job->nearLane && !uploadBudget.hasRemaining(uploadCount)) {
+    if(!uploadBudget.hasRemaining(uploadCount)) {
       deferredUploads.push_back(std::move(job));
       return;
     }
@@ -561,9 +568,9 @@ bool WorldRenderer::compileChunks(net::minecraft::LivingEntity& /*camera*/, bool
   if(inFlight < targetInFlight && pendingMeshUploads_.size() < targetInFlight * 2u) {
     const int requestedCaptures = client::option::chunkUpdatesPerPass(resolvedOpts, static_cast<int>(dirtyChunks_.size()));
     const int minCapturesPerFrame = force ? static_cast<int>(workerCount * 2u)
-                                          : std::clamp(requestedCaptures, 1, static_cast<int>(workerCount * 2u));
+        : std::clamp(requestedCaptures, 1, static_cast<int>(workerCount));
     const net::minecraft::util::concurrent::FrameBudget captureBudget =
-        net::minecraft::util::concurrent::FrameBudget::fromMs(force ? 8 : 2, minCapturesPerFrame);
+        net::minecraft::util::concurrent::FrameBudget::fromMs(force ? 4 : 2, minCapturesPerFrame);
     int captures = 0;
     const auto canCapture = [&] { return inFlight < targetInFlight && captureBudget.hasRemaining(captures); };
     for(auto it = nearDirtyChunks_.begin(); it != nearDirtyChunks_.end() && canCapture();) {
@@ -762,10 +769,15 @@ void WorldRenderer::markDirty(int minX, int minY, int minZ, int maxX, int maxY, 
 }
 void WorldRenderer::blockUpdate(int x, int y, int z) {
   markDirty(x - 1, y - 1, z - 1, x + 1, y + 1, z + 1);
-  lod::LodSystem::instance().onBlockChanged(x, y, z);
+#ifdef MINECRAFT_ENABLE_NATIVE_LOD
+  terrain::TerrainSurface::instance().onBlockChanged(x, y, z);
+#endif
 }
 void WorldRenderer::setBlocksDirty(int minX, int minY, int minZ, int maxX, int maxY, int maxZ) {
   markDirty(minX - 1, minY - 1, minZ - 1, maxX + 1, maxY + 1, maxZ + 1);
+#ifdef MINECRAFT_ENABLE_NATIVE_LOD
+  terrain::TerrainSurface::instance().onBlocksChanged(minX, minZ, maxX, maxZ);
+#endif
 }
 void WorldRenderer::addParticle(
     const std::string& particle, double x, double y, double z, double velocityX, double velocityY, double velocityZ) {

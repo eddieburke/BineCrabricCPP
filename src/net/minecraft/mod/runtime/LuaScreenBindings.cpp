@@ -16,7 +16,7 @@
 #include "net/minecraft/client/gui/Draw2D.hpp"
 #include "net/minecraft/client/render/Tessellator.hpp"
 #include "net/minecraft/client/render/item/ItemRenderer.hpp"
-#include "net/minecraft/client/render/platform/Lighting.hpp"
+#include "net/minecraft/client/gl/Lighting.hpp"
 #include "net/minecraft/client/resource/language/I18n.hpp"
 #include "net/minecraft/client/session/OfflineIdentity.hpp"
 #include "net/minecraft/client/texture/TextureManager.hpp"
@@ -453,7 +453,7 @@ void drawVanillaToggle(client::Minecraft& minecraft,
 }
 void prepareGuiDrawState() {
   const gl::preset::ModLuaGuiDraw guiDraw;
-  client::render::platform::Lighting::turnOff();
+  client::gl::Lighting::turnOff();
 }
 void drawGuiFillRect(int x, int y, int width, int height, std::uint32_t color) {
   const gl::preset::SolidFill fillCaps;

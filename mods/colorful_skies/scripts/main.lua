@@ -9,6 +9,9 @@ minecraft.settings.register("Colorful Skies", {
   { key = "day_sky_b", label = "Day Sky Blue", kind = "slider", min = 0, max = 1, step = 0.01, decimals = 2, default = 1.0 },
   { key = "twilight_strength", label = "Twilight Strength", kind = "slider", min = 0, max = 1, step = 0.01, decimals = 2, default = 0.35 },
   { key = "night_brightness", label = "Night Brightness", kind = "slider", min = 0.05, max = 0.6, step = 0.01, decimals = 2, default = 0.18 },
+  { key = "night_sky_r", label = "Night Sky Red", kind = "slider", min = 0, max = 1, step = 0.01, decimals = 2, default = 0.02 },
+  { key = "night_sky_g", label = "Night Sky Green", kind = "slider", min = 0, max = 1, step = 0.01, decimals = 2, default = 0.02 },
+  { key = "night_sky_b", label = "Night Sky Blue", kind = "slider", min = 0, max = 1, step = 0.01, decimals = 2, default = 0.08 },
   { key = "fog_blend", label = "Fog Color Blend", kind = "slider", min = 0, max = 1, step = 0.01, decimals = 2, default = 0.35 },
 })
 
@@ -87,7 +90,10 @@ local function sky_color(world_time, celestial)
   local angle = celestial
   if type(angle) ~= "number" then angle = celestial_angle(world_time) end
   local transition = value("twilight_strength", 0.35)
-  local target_r, target_g, target_b = day_r, day_g, day_b
+  local night_r = value("night_sky_r", 0.02)
+  local night_g = value("night_sky_g", 0.02)
+  local night_b = value("night_sky_b", 0.08)
+  local target_r, target_g, target_b
 
   if value("dynamic_colors", false) then
     update_daily_colors()
@@ -112,17 +118,23 @@ local function sky_color(world_time, celestial)
       target_g = lerp(sunrise_g, day_g, t)
       target_b = lerp(sunrise_b, day_b, t)
     end
+    local twilight = 1.0 - math.abs(math.cos(angle * PI * 2.0))
+    twilight = twilight * twilight * transition
+    target_r = lerp(day_r, target_r, twilight)
+    target_g = lerp(day_g, target_g, twilight)
+    target_b = lerp(day_b, target_b, twilight)
+  else
+    local sun = math.cos(angle * PI * 2.0)
+    local blend = 1.0 - clamp(sun * 2.0 + 0.5, 0.0, 1.0)
+    target_r = lerp(day_r, night_r, blend)
+    target_g = lerp(day_g, night_g, blend)
+    target_b = lerp(day_b, night_b, blend)
   end
 
-  local twilight = 1.0 - math.abs(math.cos(angle * PI * 2.0))
-  twilight = twilight * twilight * transition
-  local r = lerp(day_r, target_r, twilight)
-  local g = lerp(day_g, target_g, twilight)
-  local b = lerp(day_b, target_b, twilight)
   local brightness = clamp(math.cos(angle * PI * 2.0) * 2.0 + 0.5, 0.0, 1.0)
   local night = value("night_brightness", 0.18)
   local light = night + brightness * (1.0 - night)
-  return clamp(r * light, 0.0, 1.0), clamp(g * light, 0.0, 1.0), clamp(b * light, 0.0, 1.0)
+  return clamp(target_r * light, 0.0, 1.0), clamp(target_g * light, 0.0, 1.0), clamp(target_b * light, 0.0, 1.0)
 end
 
 local function active()

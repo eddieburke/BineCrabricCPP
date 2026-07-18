@@ -9,6 +9,7 @@ struct ServerLaunchConfig {
   std::uint64_t worldSeed = 0;
   std::string bindAddress;
   int port = 25565;
+  std::filesystem::path readyFile;
   bool onlineMode = false;
   bool spawnAnimals = true;
   bool pvpEnabled = true;

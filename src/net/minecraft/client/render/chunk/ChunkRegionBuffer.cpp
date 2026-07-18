@@ -3,6 +3,7 @@
 #include <cstddef>
 #include <cstdio>
 #include "net/minecraft/client/Minecraft.hpp"
+#include "net/minecraft/client/gl/EnginePipeline.hpp"
 #include "net/minecraft/client/gl/GLCore.hpp"
 #include "net/minecraft/client/gl/GlState.hpp"
 #include "net/minecraft/client/render/Tessellator.hpp"
@@ -11,11 +12,8 @@ namespace {
 constexpr int kStride = static_cast<int>(sizeof(TessellatorVertex));
 constexpr int kSplitSlack = 64;
 constexpr std::size_t kInitialVertices = 4096;
-const void* attribOffset(std::size_t byteOffset) noexcept {
-  return reinterpret_cast<const void*>(byteOffset);
-}
 constexpr unsigned kArrayBuffer = 0x8892;
-constexpr unsigned kStaticDraw = 0x88E4;
+constexpr unsigned kDynamicDraw = 0x88E8;
 } // namespace
 ChunkRegionBuffer::~ChunkRegionBuffer() {
   if(handle_ != 0) {
@@ -45,7 +43,7 @@ void ChunkRegionBuffer::reallocBuffer(std::size_t newCapacityVertices) {
   gl::GLCore::bufferData(kArrayBuffer,
                          static_cast<std::ptrdiff_t>(gpuCapacity_ * static_cast<std::size_t>(kStride)),
                          nullptr,
-                         kStaticDraw);
+                         kDynamicDraw);
   if(!shadow_.empty()) {
     gl::GLCore::bufferSubData(kArrayBuffer,
                               0,
@@ -129,22 +127,29 @@ void ChunkRegionBuffer::addVisible(const Slot& slot) {
   firsts_.push_back(slot.offset);
   counts_.push_back(slot.count);
 }
-int ChunkRegionBuffer::flush(int mode) {
+int ChunkRegionBuffer::flush(int mode, bool useEnginePipeline) {
   if(firsts_.empty() || handle_ == 0) {
     return 0;
   }
   gl::GLCore::bindBuffer(kArrayBuffer, handle_);
-  const gl::ClientArrayBind arrays(attribOffset(offsetof(TessellatorVertex, x)),
-                                   attribOffset(offsetof(TessellatorVertex, u)),
-                                   attribOffset(offsetof(TessellatorVertex, color)),
-                                   attribOffset(offsetof(TessellatorVertex, normal)),
-                                   kStride,
-                                   hasTexture_,
-                                   hasColor_,
-                                   hasNormals_);
-  for(std::size_t i = 0; i < firsts_.size(); ++i) {
-    gl::drawArrays(mode, firsts_[i], counts_[i]);
+  // Core profile: bind the shared VAO with generic attributes over the region VBO, then
+  // batch every visible slot with a single multiDrawArrays. When useEnginePipeline is
+  // set, also bind + upload the engine ubershader; the LOD path binds its own program.
+  if(useEnginePipeline) {
+    gl::engine_pipeline::bindAndUploadUniforms();
   }
+  gl::engine_pipeline::configureAttribs(0, kStride, hasTexture_, hasColor_, hasNormals_);
+  if(gl::GLCore::multiDrawArrays != nullptr) {
+    gl::GLCore::multiDrawArrays(static_cast<unsigned>(mode),
+                                firsts_.data(),
+                                counts_.data(),
+                                static_cast<int>(firsts_.size()));
+  } else {
+    for(std::size_t i = 0; i < firsts_.size(); ++i) {
+      gl::drawArrays(mode, firsts_[i], counts_[i]);
+    }
+  }
+  gl::engine_pipeline::finishAttribs();
   gl::GLCore::bindBuffer(kArrayBuffer, 0);
   return static_cast<int>(firsts_.size());
 }

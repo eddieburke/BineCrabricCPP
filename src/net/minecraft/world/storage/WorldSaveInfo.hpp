@@ -18,7 +18,7 @@ public:
     if(lastPlayed_ > other.lastPlayed_) {
       return -1;
     }
-    return 0;
+    return saveName_.compare(other.saveName_);
   }
   [[nodiscard]] const std::string& getSaveName() const noexcept {
     return saveName_;

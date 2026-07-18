@@ -1,4 +1,5 @@
 #include "net/minecraft/client/gui/screen/Screen.hpp"
+#include <algorithm>
 #include <typeinfo>
 #include <utility>
 #include "net/minecraft/client/Minecraft.hpp"
@@ -184,9 +185,13 @@ void Screen::mouseClicked(int mouseX, int mouseY, int button) {
     if(widget == nullptr || !widget->isMouseOver(mouseX, mouseY)) {
       continue;
     }
-    selectedButton_ = widget.get();
+    widget::ButtonWidget* pressed = widget.get();
     minecraft_->audio.play("random.click", 1.0f, 1.0f);
     dispatchButtonPress(*widget);
+    const auto retained = std::find_if(buttons_.begin(), buttons_.end(), [pressed](const auto& candidate) {
+      return candidate.get() == pressed;
+    });
+    selectedButton_ = retained == buttons_.end() ? nullptr : pressed;
     break;
   }
 }
@@ -217,7 +222,8 @@ widget::ActionButtonWidget& Screen::addCenteredActionButton(
 void Screen::dispatchButtonPress(widget::ButtonWidget& button) {
   if(auto* actionButton = dynamic_cast<widget::ActionButtonWidget*>(&button)) {
     if(actionButton->onClick) {
-      actionButton->onClick();
+      const std::function<void()> onClick = actionButton->onClick;
+      onClick();
       return;
     }
   }

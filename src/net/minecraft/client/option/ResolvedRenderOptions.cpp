@@ -15,14 +15,16 @@ ResolvedRenderOptions resolve(const GameOptions& options) {
   r.renderWater = options.water < 2;
   r.fancyWater = options.water == 0 && options.fancyGraphics;
   r.clearWater = options.clearWater;
+  r.lodEnabled = options.lodEnabled;
   r.viewDistanceSetting = options.viewDistance & 3;
   r.renderScale = std::isfinite(options.renderScale) ? std::clamp(options.renderScale, 1.0f, 5.0f) : 1.0f;
   const int baseDistance = 256 >> r.viewDistanceSetting;
   r.renderDistanceBlocks = static_cast<float>(baseDistance) * r.renderScale;
   const float distanceBlend = 1.0f / static_cast<float>(4 - r.viewDistanceSetting);
   r.fogColorBlend = 1.0f - static_cast<float>(std::pow(static_cast<double>(distanceBlend), 0.25));
-  const int visualGridDiameter =
-      std::clamp(static_cast<int>(static_cast<float>(std::min(baseDistance * 2, 400)) * r.renderScale), 64, 2000);
+  const float fullDetailScale = r.lodEnabled ? 1.0f : r.renderScale;
+  const int visualGridDiameter = std::clamp(
+      static_cast<int>(static_cast<float>(std::min(baseDistance * 2, 400)) * fullDetailScale), 64, 2000);
   r.chunkRadius = (visualGridDiameter / 16 + 1) / 2;
   const int preloadMargin = options.preloadedChunks <= 0 ? 3 : 3 + options.preloadedChunks / 2;
   r.residentChunkRadius = r.chunkRadius + preloadMargin;
@@ -49,7 +51,6 @@ ResolvedRenderOptions resolve(const GameOptions& options) {
   r.animatedFlame = options.animatedFlame;
   r.animatedSmoke = options.animatedSmoke;
   r.fastDebugInfo = options.fastDebugInfo;
-  r.lodEnabled = options.lodEnabled;
   constexpr std::array<float, 4> kLodDistances{1024.0f, 2048.0f, 4096.0f, 8192.0f};
   const int lodDistanceIndex = std::clamp(options.lodDistance, 0, 3);
   r.lodDistanceBlocks = kLodDistances[static_cast<std::size_t>(lodDistanceIndex)];

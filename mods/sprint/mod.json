@@ -3,5 +3,6 @@
   "name": "Sprint",
   "version": "1.0.0",
   "enabled": false,
+  "side": "client",
   "entry": "scripts/main.lua"
 }

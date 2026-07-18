@@ -1,4 +1,8 @@
 #include "net/minecraft/client/texture/TextureManager.hpp"
+#include "net/minecraft/client/resource/ResourceRoot.hpp"
+#ifdef MINECRAFT_ENABLE_NATIVE_LOD
+#include "net/minecraft/client/render/terrain/TerrainPalette.hpp"
+#endif
 #include <algorithm>
 #include <stdexcept>
 #include <vector>
@@ -14,7 +18,7 @@
 #include "net/minecraft/client/resource/pack/TexturePacks.hpp"
 #include "net/minecraft/client/texture/ImageDownload.hpp"
 #include "net/minecraft/client/texture/SkinImageProcessor.hpp"
-#include "net/minecraft/client/util/GlAllocationUtils.hpp"
+#include "net/minecraft/client/gl/GlAllocationUtils.hpp"
 #include "net/minecraft/mod/runtime/ModHost.hpp"
 #include "net/minecraft/world/World.hpp"
 #ifdef _WIN32
@@ -205,7 +209,7 @@ void TextureManager::ensureMissingTexture() {
   util::DisplayManager::ensureGlContext();
 #endif
   unsigned int id = 0;
-  util::GlAllocationUtils::generateTextureName(id);
+  gl::GlAllocationUtils::generateTextureName(id);
   const RasterImage missing = makeMissingImage();
   load(missing, static_cast<int>(id));
   images_[static_cast<int>(id)] = missing;
@@ -213,7 +217,7 @@ void TextureManager::ensureMissingTexture() {
   missingTextureReady_ = true;
 }
 std::filesystem::path TextureManager::resolveResourcePath(const std::string& path) {
-  return std::filesystem::path(MINECRAFT_NATIVE_RESOURCE_DIR) / normalizeResourcePath(path);
+  return resource::resolveResource(normalizeResourcePath(path));
 }
 #ifdef _WIN32
 RasterImage TextureManager::loadRasterFromFile(const std::filesystem::path& filePath) {
@@ -414,7 +418,7 @@ int TextureManager::getTextureId(const std::string& path) {
   util::DisplayManager::ensureGlContext();
 #endif
   unsigned int id = 0;
-  util::GlAllocationUtils::generateTextureName(id);
+  gl::GlAllocationUtils::generateTextureName(id);
   const bool previousBlur = blur;
   const bool previousClamp = clamp;
   blur = spec.blur;
@@ -426,6 +430,9 @@ int TextureManager::getTextureId(const std::string& path) {
   return static_cast<int>(id);
 }
 void TextureManager::reload() {
+#ifdef MINECRAFT_ENABLE_NATIVE_LOD
+  net::minecraft::client::render::terrain::TerrainPalette::invalidate();
+#endif
   if(texturePacks_ == nullptr) {
     return;
   }
@@ -472,15 +479,20 @@ int TextureManager::load(const RasterImage& image) {
   util::DisplayManager::ensureGlContext();
 #endif
   unsigned int id = 0;
-  util::GlAllocationUtils::generateTextureName(id);
+  gl::GlAllocationUtils::generateTextureName(id);
   load(image, static_cast<int>(id));
   images_[static_cast<int>(id)] = image;
   return static_cast<int>(id);
+}
+void TextureManager::update(int id, const RasterImage& image) {
+  load(image, id);
+  images_[id] = image;
 }
 void TextureManager::load(const RasterImage& image, int id) {
   if(image.width <= 0 || image.height <= 0) {
     return;
   }
+  const gl::TextureStateScope textureState;
   std::vector<std::uint8_t> rgba(static_cast<std::size_t>(image.width) * image.height * 4);
   for(int y = 0; y < image.height; ++y) {
     for(int x = 0; x < image.width; ++x) {
@@ -518,6 +530,17 @@ void TextureManager::load(const RasterImage& image, int id) {
     gl::texParameteri(gl::cap::Texture2D, gl::tex::WrapS, gl::wrap::Repeat);
     gl::texParameteri(gl::cap::Texture2D, gl::tex::WrapT, gl::wrap::Repeat);
   }
+  int maxMipmapLevel = 0;
+  if(MIPMAP) {
+    int mipWidth = image.width;
+    int mipHeight = image.height;
+    while(mipWidth > 1 && mipHeight > 1 && maxMipmapLevel < 4) {
+      mipWidth >>= 1;
+      mipHeight >>= 1;
+      ++maxMipmapLevel;
+    }
+  }
+  gl::texParameteri(gl::cap::Texture2D, gl::tex::MaxLevel, maxMipmapLevel);
   gl::texImage2D(gl::cap::Texture2D,
                  0,
                  gl::pixel::Rgba,

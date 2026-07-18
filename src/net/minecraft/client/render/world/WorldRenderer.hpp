@@ -16,6 +16,9 @@
 #include "net/minecraft/util/hit/HitResult.hpp"
 #include "net/minecraft/util/math/Types.hpp"
 #include "net/minecraft/world/events/GameEventListener.hpp"
+namespace net::minecraft::client::gl {
+class FramebufferManager;
+}
 namespace net::minecraft::block::entity {
 class BlockEntity;
 }
@@ -49,7 +52,7 @@ struct SectionPosHash {
 } // namespace world
 class FrustumCuller;
 class WorldRenderer : public net::minecraft::GameEventListener {
-  friend class FramebufferManager;
+  friend class gl::FramebufferManager;
 
 public:
   WorldRenderer(net::minecraft::client::Minecraft* minecraft = nullptr,

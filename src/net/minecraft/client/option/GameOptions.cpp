@@ -45,6 +45,10 @@ void GameOptions::load() {
         skin = val;
         continue;
       }
+      if(key == "shaderPack") {
+        shaderPack = val;
+        continue;
+      }
       if(key == "lastServer") {
         lastServer = val;
         continue;
@@ -95,6 +99,7 @@ void GameOptions::save() {
     out << '\n';
   }
   out << "skin:" << skin << "\n"
+      << "shaderPack:" << shaderPack << "\n"
       << "lastServer:" << lastServer << "\n"
       << "modsEnabled:" << (modsEnabled ? "1" : "0") << "\n";
   for(KeyBinding* kb : allKeys) {

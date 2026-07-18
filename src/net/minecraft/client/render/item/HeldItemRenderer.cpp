@@ -12,7 +12,7 @@
 #include "net/minecraft/client/render/entity/EntityRenderer.hpp"
 #include "net/minecraft/client/render/entity/PlayerEntityRenderer.hpp"
 #include "net/minecraft/client/render/item/ItemModelRenderer.hpp"
-#include "net/minecraft/client/render/platform/Lighting.hpp"
+#include "net/minecraft/client/gl/Lighting.hpp"
 #include "net/minecraft/client/texture/TextureManager.hpp"
 #include "net/minecraft/entity/player/ClientPlayerEntity.hpp"
 #include "net/minecraft/entity/player/PlayerEntity.hpp"
@@ -246,7 +246,7 @@ void HeldItemRenderer::render(float tickDelta) {
   gl::pushMatrix();
   gl::rotatef(pitch, 1.0f, 0.0f, 0.0f);
   gl::rotatef(clientPlayer->prevYaw + (clientPlayer->yaw - clientPlayer->prevYaw) * tickDelta, 0.0f, 1.0f, 0.0f);
-  platform::Lighting::turnOn();
+  gl::Lighting::turnOn();
   gl::popMatrix();
   const ItemStack* selectedItem = stack.empty() ? nullptr : &stack;
   const float brightness = minecraft->world->getLightBrightness(
@@ -374,7 +374,7 @@ void HeldItemRenderer::render(float tickDelta) {
     playerRenderer->renderHand();
     gl::popMatrix();
   }
-  platform::Lighting::turnOff();
+  gl::Lighting::turnOff();
 }
 void HeldItemRenderer::renderScreenOverlays(float tickDelta) {
   if(minecraft == nullptr || minecraft->player == nullptr || minecraft->world == nullptr) {

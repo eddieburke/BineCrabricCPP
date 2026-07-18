@@ -1,5 +1,23 @@
 #include "net/minecraft/client/gl/GLCore.hpp"
+#include "net/minecraft/client/ClientLog.hpp"
+#include "net/minecraft/client/gl/GlConstants.hpp"
 namespace net::minecraft::client::gl {
+#ifndef NDEBUG
+namespace {
+void APIENTRY glDebugCallback(unsigned /*source*/,
+                              unsigned type,
+                              unsigned /*id*/,
+                              unsigned severity,
+                              int /*length*/,
+                              const char* message,
+                              const void* /*userParam*/) {
+  // 0x9146 = GL_DEBUG_SEVERITY_HIGH, 0x824C = GL_DEBUG_TYPE_ERROR.
+  if(severity == 0x9146 || type == 0x824C) {
+    ClientLog::LOGGER.log(LogLevel::Warning, std::string("[GL] ") + (message ? message : "(null)"));
+  }
+}
+} // namespace
+#endif
 #define GLFN(type, name) type GLCore::name = nullptr
 GLFN(PFN_GenBuffers, genBuffers);
 GLFN(PFN_BindBuffer, bindBuffer);
@@ -18,6 +36,7 @@ GLFN(PFN_DeleteRenderbuffers, deleteRenderbuffers);
 GLFN(PFN_RenderbufferStorage, renderbufferStorage);
 GLFN(PFN_FramebufferRenderbuffer, framebufferRenderbuffer);
 GLFN(PFN_DrawBuffers, drawBuffers);
+GLFN(PFN_MultiDrawArrays, multiDrawArrays);
 GLFN(PFN_CreateShader, createShader);
 GLFN(PFN_ShaderSource, shaderSource);
 GLFN(PFN_CompileShader, compileShader);
@@ -40,25 +59,51 @@ GLFN(PFN_Uniform1i, uniform1i);
 GLFN(PFN_Uniform2i, uniform2i);
 GLFN(PFN_Uniform3i, uniform3i);
 GLFN(PFN_Uniform4i, uniform4i);
+GLFN(PFN_UniformMatrix4fv, uniformMatrix4fv);
+GLFN(PFN_GetAttribLocation, getAttribLocation);
+GLFN(PFN_BindAttribLocation, bindAttribLocation);
+GLFN(PFN_GenVertexArrays, genVertexArrays);
+GLFN(PFN_BindVertexArray, bindVertexArray);
+GLFN(PFN_DeleteVertexArrays, deleteVertexArrays);
+GLFN(PFN_VertexAttribPointer, vertexAttribPointer);
+GLFN(PFN_EnableVertexAttribArray, enableVertexAttribArray);
+GLFN(PFN_DisableVertexAttribArray, disableVertexAttribArray);
+GLFN(PFN_VertexAttrib4f, vertexAttrib4f);
+GLFN(PFN_BindBufferRange, bindBufferRange);
+GLFN(PFN_GenerateMipmap, generateMipmap);
+GLFN(PFN_GetStringi, getStringi);
+GLFN(PFN_DebugMessageCallback, debugMessageCallback);
+GLFN(PFN_BlitFramebuffer, blitFramebuffer);
+GLFN(PFN_MapBufferRange, mapBufferRange);
+GLFN(PFN_UnmapBuffer, unmapBuffer);
+GLFN(PFN_FlushMappedBufferRange, flushMappedBufferRange);
 void* GLCore::activeTexture = nullptr;
 #undef GLFN
 bool GLCore::vboSupported = false;
 bool GLCore::framebufferSupported = false;
+bool GLCore::vaoSupported = false;
+bool GLCore::shaderSupported = false;
 static bool g_loaded = false;
-#define LOAD(dst, name) \
-  GLCore::dst = reinterpret_cast<decltype(GLCore::dst)>(reinterpret_cast<std::size_t>(wglGetProcAddress(name)))
-#define LOAD_TRY(dst, ...)                                                                                \
-  do {                                                                                                    \
-    constexpr const char* _try_names_[] = {__VA_ARGS__};                                                  \
-    for(const char* _n_ : _try_names_) {                                                                  \
-      GLCore::dst =                                                                                       \
-          reinterpret_cast<decltype(GLCore::dst)>(reinterpret_cast<std::size_t>(wglGetProcAddress(_n_))); \
-      if(GLCore::dst)                                                                                     \
-        break;                                                                                            \
-    }                                                                                                     \
+static void* loadProc(const char* name) {
+  PROC proc = wglGetProcAddress(name);
+  const auto value = reinterpret_cast<std::uintptr_t>(proc);
+  if(proc == nullptr || value <= 3 || value == static_cast<std::uintptr_t>(-1)) {
+    static HMODULE opengl = GetModuleHandleW(L"opengl32.dll");
+    proc = opengl != nullptr ? GetProcAddress(opengl, name) : nullptr;
+  }
+  return reinterpret_cast<void*>(proc);
+}
+#define LOAD_TRY(dst, ...)                                                  \
+  do {                                                                      \
+    constexpr const char* _try_names_[] = {__VA_ARGS__};                    \
+    for(const char* _n_ : _try_names_) {                                    \
+      GLCore::dst = reinterpret_cast<decltype(GLCore::dst)>(loadProc(_n_)); \
+      if(GLCore::dst)                                                       \
+        break;                                                              \
+    }                                                                       \
   } while(0)
 void GLCore::init() {
-  if(g_loaded) {
+  if(g_loaded || wglGetCurrentContext() == nullptr) {
     return;
   }
   g_loaded = true;
@@ -79,6 +124,7 @@ void GLCore::init() {
   LOAD_TRY(renderbufferStorage, "glRenderbufferStorage", "glRenderbufferStorageEXT");
   LOAD_TRY(framebufferRenderbuffer, "glFramebufferRenderbuffer", "glFramebufferRenderbufferEXT");
   LOAD_TRY(drawBuffers, "glDrawBuffers", "glDrawBuffersARB", "glDrawBuffersEXT");
+  LOAD_TRY(multiDrawArrays, "glMultiDrawArrays", "glMultiDrawArraysEXT");
   LOAD_TRY(createShader, "glCreateShader", "glCreateShaderObjectARB");
   LOAD_TRY(shaderSource, "glShaderSource", "glShaderSourceARB");
   LOAD_TRY(compileShader, "glCompileShader", "glCompileShaderARB");
@@ -101,15 +147,41 @@ void GLCore::init() {
   LOAD_TRY(uniform2i, "glUniform2i", "glUniform2iARB");
   LOAD_TRY(uniform3i, "glUniform3i", "glUniform3iARB");
   LOAD_TRY(uniform4i, "glUniform4i", "glUniform4iARB");
+  LOAD_TRY(uniformMatrix4fv, "glUniformMatrix4fv", "glUniformMatrix4fvARB");
+  LOAD_TRY(getAttribLocation, "glGetAttribLocation", "glGetAttribLocationARB");
+  LOAD_TRY(bindAttribLocation, "glBindAttribLocation", "glBindAttribLocationARB");
+  LOAD_TRY(genVertexArrays, "glGenVertexArrays", "glGenVertexArraysAPPLE");
+  LOAD_TRY(bindVertexArray, "glBindVertexArray", "glBindVertexArrayAPPLE");
+  LOAD_TRY(deleteVertexArrays, "glDeleteVertexArrays", "glDeleteVertexArraysAPPLE");
+  LOAD_TRY(vertexAttribPointer, "glVertexAttribPointer", "glVertexAttribPointerARB");
+  LOAD_TRY(enableVertexAttribArray, "glEnableVertexAttribArray", "glEnableVertexAttribArrayARB");
+  LOAD_TRY(disableVertexAttribArray, "glDisableVertexAttribArray", "glDisableVertexAttribArrayARB");
+  LOAD_TRY(vertexAttrib4f, "glVertexAttrib4f", "glVertexAttrib4fARB");
+  LOAD_TRY(bindBufferRange, "glBindBufferRange", "glBindBufferRangeEXT");
+  LOAD_TRY(generateMipmap, "glGenerateMipmap", "glGenerateMipmapEXT");
+  LOAD_TRY(getStringi, "glGetStringi");
+  LOAD_TRY(debugMessageCallback, "glDebugMessageCallback", "glDebugMessageCallbackARB", "glDebugMessageCallbackKHR");
+  LOAD_TRY(blitFramebuffer, "glBlitFramebuffer", "glBlitFramebufferEXT");
+  LOAD_TRY(mapBufferRange, "glMapBufferRange");
+  LOAD_TRY(unmapBuffer, "glUnmapBuffer", "glUnmapBufferARB");
+  LOAD_TRY(flushMappedBufferRange, "glFlushMappedBufferRange");
   GLCore::activeTexture =
       reinterpret_cast<void*>(reinterpret_cast<std::size_t>(wglGetProcAddress("glActiveTexture")));
   vboSupported = genBuffers && bindBuffer && bufferData;
   framebufferSupported = genFramebuffers && bindFramebuffer && deleteFramebuffers && checkFramebufferStatus &&
                          framebufferTexture2D && genRenderbuffers && bindRenderbuffer && deleteRenderbuffers &&
                          renderbufferStorage && framebufferRenderbuffer;
+  vaoSupported = genVertexArrays && bindVertexArray && deleteVertexArrays;
+  shaderSupported = createShader && shaderSource && compileShader && createProgram && linkProgram &&
+                    useProgram && getUniformLocation && vertexAttribPointer && enableVertexAttribArray;
+#ifndef NDEBUG
+  if(debugMessageCallback != nullptr) {
+    ::glEnable(0x92E0); // GL_DEBUG_OUTPUT
+    debugMessageCallback(glDebugCallback, nullptr);
+  }
+#endif
 }
 #undef LOAD_TRY
-#undef LOAD
 void GLCore::ensureLoaded() {
   init();
 }

@@ -1,5 +1,6 @@
 #include "net/minecraft/server/MinecraftServer.hpp"
 #include <chrono>
+#include <fstream>
 #include <condition_variable>
 #include <cstdlib>
 #include <iostream>
@@ -255,6 +256,13 @@ bool MinecraftServer::init() {
     ServerLog::LOGGER.log(LogLevel::Warning, "Perhaps a server is already running on that port?");
     lastError_ = exception.what();
     return false;
+  }
+  if(launchConfig_.has_value() && !launchConfig_->readyFile.empty()) {
+    std::ofstream ready(launchConfig_->readyFile, std::ios::binary | std::ios::trunc);
+    if(!ready) {
+      lastError_ = "Could not write server ready file.";
+      return false;
+    }
   }
   if(!onlineMode) {
     ServerLog::LOGGER.log(LogLevel::Warning, "**** SERVER IS RUNNING IN OFFLINE/INSECURE MODE!");

@@ -3,6 +3,9 @@
 #include <vector>
 namespace net::minecraft::client::render {
 class GameRenderer;
+struct FrameRenderCamera;
+} // namespace net::minecraft::client::render
+namespace net::minecraft::client::gl {
 struct Framebuffer {
   unsigned int fbo = 0;
   std::vector<unsigned int> colorTextures{};
@@ -10,7 +13,12 @@ struct Framebuffer {
   unsigned int depthTexture = 0;
   int width = 0;
   int height = 0;
-  [[nodiscard]] bool initialize(int widthIn, int heightIn, int colorCount = 1, bool useDepthTexture = false);
+  bool hdr = false;
+  [[nodiscard]] bool initialize(int widthIn,
+                                int heightIn,
+                                int colorCount = 1,
+                                bool useDepthTexture = false,
+                                bool useHdrColor = false);
   bool resize(int newWidth, int newHeight);
   void destroy();
   void bind() const;
@@ -18,7 +26,11 @@ struct Framebuffer {
 };
 class FramebufferManager {
 public:
-  [[nodiscard]] int create(int width, int height, int colorCount = 1, bool useDepthTexture = false);
+  [[nodiscard]] int create(int width,
+                           int height,
+                           int colorCount = 1,
+                           bool useDepthTexture = false,
+                           bool useHdrColor = false);
   bool destroy(int handle);
   [[nodiscard]] int textureId(int handle, int attachmentIndex = 0) const;
   [[nodiscard]] int depthTextureId(int handle) const;
@@ -28,7 +40,7 @@ public:
   [[nodiscard]] int width(int handle) const;
   [[nodiscard]] int height(int handle) const;
   bool renderWorldTo(int handle,
-                     GameRenderer& renderer,
+                     render::GameRenderer& renderer,
                      float tickDelta,
                      double x,
                      double y,
@@ -43,7 +55,10 @@ public:
                      float orthoNear = -1.0f,
                      float orthoFar = 1.0f,
                      bool shadowPass = false,
-                     bool shadowEntities = true);
+                     bool shadowEntities = true,
+                     float perspectiveNear = 0.05f,
+                     float perspectiveFar = 0.0f,
+                     render::FrameRenderCamera* renderedCamera = nullptr);
   [[nodiscard]] int renderingHandle() const noexcept {
     return renderingHandle_;
   }
@@ -53,4 +68,4 @@ private:
   int nextHandle_ = 1;
   int renderingHandle_ = -1;
 };
-} // namespace net::minecraft::client::render
+} // namespace net::minecraft::client::gl

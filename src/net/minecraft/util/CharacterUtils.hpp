@@ -3,6 +3,7 @@
 #include <fstream>
 #include <sstream>
 #include <string>
+#include "net/minecraft/client/resource/ResourceRoot.hpp"
 namespace net::minecraft {
 // Faithful port of net.minecraft.util.CharacterUtils (beta 1.7.3).
 class CharacterUtils {
@@ -17,7 +18,7 @@ public:
 private:
   static std::string loadValidCharacters() {
     std::string result;
-    const std::filesystem::path path = std::filesystem::path(MINECRAFT_NATIVE_RESOURCE_DIR) / "font.txt";
+    const std::filesystem::path path = client::resource::resolveResource("font.txt");
     std::ifstream in(path);
     if(!in) {
       return result;

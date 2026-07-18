@@ -12,6 +12,9 @@
 #include "net/minecraft/world/LightType.hpp"
 namespace net::minecraft {
 class Chunk;
+namespace world::light {
+class UnifiedLightRegistry;
+}
 // Fully asynchronous lighting engine: propagation runs on one background thread; the main thread only enqueues via
 // push() (never waits), drains finished regions via drainDirtyRegions() (the renderer re-meshes them), and
 // registers/unregisters chunks (non-blocking). No public method blocks on the worker, so lighting never stalls a frame
@@ -22,7 +25,7 @@ public:
   struct DirtyRegion {
     int minX, minY, minZ, maxX, maxY, maxZ;
   };
-  LightingEngine();
+  explicit LightingEngine(world::light::UnifiedLightRegistry& registry);
   ~LightingEngine() {
     stop();
   }
@@ -72,6 +75,7 @@ private:
   std::unordered_map<std::uint64_t, Chunk*> pinCache_;
   mutable std::mutex outboxMutex_;
   std::vector<DirtyRegion> outbox_;
+  world::light::UnifiedLightRegistry& lightRegistry_;
   std::jthread thread_;
 };
 } // namespace net::minecraft

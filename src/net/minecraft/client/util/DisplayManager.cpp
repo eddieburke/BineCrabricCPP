@@ -1,8 +1,8 @@
 #include "net/minecraft/client/util/DisplayManager.hpp"
-#include <iostream>
 #include <thread>
+#include "net/minecraft/client/ClientLog.hpp"
 #include "net/minecraft/client/Minecraft.hpp"
-#include "net/minecraft/client/render/Framebuffer.hpp"
+#include "net/minecraft/client/gl/Framebuffer.hpp"
 #include "net/minecraft/client/gl/GLCore.hpp"
 #include "net/minecraft/client/gl/GlState.hpp"
 #include "net/minecraft/client/input/InputSystem.hpp"
@@ -70,10 +70,9 @@ void DisplayManager::logGlError(Minecraft& client, const std::string& phase) {
     if(error == 0)
       break;
     if(count == 0) {
-      std::cout << "########## GL ERROR ##########" << std::endl;
-      std::cout << "@ " << phase << std::endl;
+      ClientLog::LOGGER.log(LogLevel::Warning, "########## GL ERROR ##########\n@ " + phase);
     }
-    std::cout << "  error " << error << std::endl;
+    ClientLog::LOGGER.log(LogLevel::Warning, "  error " + std::to_string(error));
     ++count;
   }
 }
@@ -119,7 +118,7 @@ void DisplayManager::toggleFullscreen(Minecraft& client) {
     }
 #endif
   } catch(const std::exception& exception) {
-    std::cerr << exception.what() << std::endl;
+    ClientLog::LOGGER.log(LogLevel::Warning, "Failed to toggle fullscreen", &exception);
   }
 }
 void DisplayManager::resize(Minecraft& client, int width, int height) {

@@ -78,18 +78,16 @@ float Dimension::getTimeOfDay(long long time, float tickDelta) const {
   if(value > 1.0f) {
     value -= 1.0f;
   }
-  const float original = value;
-  value = 1.0f - static_cast<float>((std::cos(static_cast<double>(value) * 3.14159265) + 1.0) / 2.0);
-  return original + (value - original) / 3.0f;
+  return value;
 }
 std::array<float, 4>* Dimension::getBackgroundColor(float timeOfDay, float) {
   if(!type_->hasBackgroundColor) {
     return nullptr;
   }
   constexpr float range = 0.4f;
-  const float cosine = MathHelper::cos(timeOfDay * 3.14159265f * 2.0f) - 0.0f;
+  const float cosine = MathHelper::cos(timeOfDay * 3.14159265f * 2.0f);
   if(cosine >= -range && cosine <= range) {
-    const float blend = (cosine - -0.0f) / range * 0.5f + 0.5f;
+    const float blend = (cosine / range) * 0.5f + 0.5f;
     float alpha = 1.0f - (1.0f - MathHelper::sin(blend * 3.14159265f)) * 0.99f;
     alpha *= alpha;
     backgroundColor_[0] = blend * 0.3f + 0.7f;

@@ -76,8 +76,6 @@ fields: `phase_name`:string, `screen_id`:string, `region`:string, `mouse_x`:int,
 fields: `tick_delta`:float, `x`:double*, `y`:double*, `z`:double*, `yaw`:float*, `pitch`:float*, `roll`:float*, `custom_view`:boolean*, `hide_first_person_hand`:boolean*
 ### `render_frame`
 fields: `tick_delta`:float
-### `render_targets`
-fields: `tick_delta`:float
 ### `fov`
 fields: `tick_delta`:float, `fov`:float*
 ### `world_render`
@@ -104,6 +102,10 @@ fields: `previous`:string, `current`:string
 ### `minecraft.log(level?, message)`
 Writes a line to stdout with the prefix `[lua-mod:<modId>:<level>]`
 - **`level`** — `"info"` (default), `"warn"`, or `"error"`
+---
+## Notifications (Client Only)
+### `minecraft.notify(message)`
+Adds a local message to the in-game HUD
 ---
 ## Context
 ### `minecraft.is_client()`
@@ -302,11 +304,6 @@ fn: `fill_rect(x, y, w, h, argb)`, `draw_text(x, y, text, argb)`, `draw_centered
 Controls offscreen framebuffer objects for rendering the world to textures (viewfinder / render-to-texture)
 fn: `create(width, height, colorCount?, useDepthTex?)`, `create_display_size(colorCount?, useDepthTex?)`, `destroy(handle)`, `resize(handle, width, height)`, `width(handle)`, `height(handle)`, `render(handle, x, y, z, yaw, pitch, roll, fov, tickDelta?)`, `unbind()`, `texture(handle, attachmentIndex?)`, `rendering()`
 ---
-## FBO (Offscreen Framebuffers)
-### `minecraft.fbo.*`
-General-purpose offscreen framebuffer objects for custom render passes and shader work
-fn: `create(width, height, colorCount?, useDepthTex?)`, `create_display_size(colorCount?, useDepthTex?)`, `destroy(handle)`, `resize(handle, width, height)`, `bind(handle)`, `unbind()`, `texture(handle, attachmentIndex?)`, `width(handle)`, `height(handle)`, `bound()`
----
 ## Render (World-Space Drawing)
 ### `minecraft.render.*`
 Low-level world-space drawing functions, only usable during world render events (`world_render`) or chunk context callbacks
@@ -334,6 +331,10 @@ fn: `pick(options?)`, `read(path)`
 Releases a previously created texture
 ### `minecraft.render.get_texture_pixels(pathOrId)`
 → `{width, height, pixels = {argb...}}` for a texture path or mod texture ID
+### `minecraft.render.update_texture(id, spec)`
+Updates a texture's pixel data
+### `minecraft.render.bind_texture(id, unit)`
+Binds a texture ID to a specific sampler unit index (e.g
 ---
 ## Seed Resolution
 ### `minecraft.util.resolve_seed(text)`
@@ -346,14 +347,15 @@ Resolves a textual seed to its numeric value (supports numeric strings and named
 → an array of all wire names in a registry
 ---
 ## World Grid Sampling
-### `minecraft.world.sample_grid(seed, centerX, centerZ, options?)`
+### `minecraft.world.sample(seed, centerX, centerZ, options?)`
 Samples terrain/biome data into a grid array for minimap or visualization use
 fields: `radius_chunks` / `radius`, `max_side`, `channel`, `channels`, `mod_generation`
 Supported channels: `"height"`, `"surface_block"`, `"surface_block_below"`, `"biome_id"`, `"grass"` (grass color as ARGB)
+`minecraft.world.sample_grid` remains an alias
 → a table with `side`, `step`, `origin_x`, `origin_z`, `center_x`, `center_z`, `channel`, `values` (primary channel array), and per-channel fields
 ---
 ## Event Reference
-`client_tick`/`before`, `after_world`, `paused`, `has_player`, `has_world`, `world_name`, `is_overworld`, `camera_y`, `player_y`, `player_fall_distance`, `player_on_ground`, `world_time`, `is_night`, `mod_generation`; `render_frame`/`tick_delta`; `fog_settings`/`enabled`, `spherical`, `exponential`, `start`, `end`, `density`, `custom_color`, `red/green/blue`; `render_targets`/`tick_delta`; `first_person_hand`/`tick_delta`, `eye`, `canceled`, `entity_id`, `entity_type`; `key_press`/`key`, `pressed`, `repeat`, `handled`; `mouse_button`/`button`, `pressed`, `handled`; `raycast`/`has_hit`, `type`, `hit_x/y/z`, `block_x/y/z`, `side`, `block_id`, `block_name`, `item_id`, `entity_id`, `entity_type`; `fov`/`tick_delta`, `fov`; `camera_setup`/`tick_delta`, `x`, `y`, `z`, `yaw`, `pitch`, `roll`, `custom_view`, `hide_first_person_hand`; `player_travel`/`sideways`, `forward`, `speed_multiplier`, `has_player`, `is_local_player`; `tick_rate`/`target_tps`, `tps_scale`; `world_start`/`save_name`, `new_world`; `world_open`/`save_name`, `new_world`, `options` (table); `world_tick`/`remote`, `before`; `entity_tick`/`remote`, `canceled`, `entity_id`, `entity_type`, `x`, `y`, `z`, `yaw`, `pitch`; `tile_entity_tick`/`x`, `y`, `z`, `id`, `remote`, `removed`, `canceled`, `world_time`, `animation_frame`, `animation_tick`, `animation_speed`, `entity`; `create_world`/`save_name`, `seed`, `canceled`, `options` (table); `block_interact`/`x`, `y`, `z`, `block_id`, `side`, `right_click`, `remote`, `canceled`, `handled`, `has_player`, `local_player`, `has_item`, `player_x/y/z`, `player_yaw/pitch`, `item_id/count/damage/max_damage/damageable`; `entity_interact`/`attack`, `remote`, `canceled`, `handled`, `sneaking`, `has_player`, `local_player`, `has_target`, `player_yaw/pitch`, `has_item`, `item_id/count/damage`, `entity_id`, `entity_type`, `target_id`; `attack_damage`/`damage`, `critical`, `canceled`, `fall_distance`, `on_ground`, `target_x/y/z`, `has_player`, `has_target`; `entity_teleport`/`entity_id`, `entity_type`, `from_x/y/z`, `x`, `y`, `z`, `yaw`, `pitch`, `canceled`, `has_entity`, `has_player`; `world_color`/`partial_ticks`, `r`, `g`, `b`, `kind`, `celestial`, `world_time`, `is_night`; `entity_render`/`entity_id`, `entity_type`, `is_player`, `tick_delta`, `pose` (sub-table with `body_yaw`, `head_yaw/pitch`, `yaw`, `pitch`, `roll`, `scale`, `offset_x/y/z`, `parts`); `world_render`/`tick_delta`, `stage`, `moment`, `cancel_vanilla`, `vanilla_stage_ran`, `shadow_pass`, `celestial_angle`, `sky_yaw_deg`, `star_brightness`, `rain_strength`, `stars_enabled`, `astronomy_enabled`, `astronomy_utc_millis`, `observer_lat/lon_deg`, `camera_x/y/z`, `camera_yaw/pitch/roll`, `custom_camera`, `world_time`, `celestial`, `is_night`, `cloud_base_height`; `chunk_generation`/`stage`, `moment`, `cancel_vanilla`, `vanilla_stage_ran`, `world_seed`, `mod_generation`, `is_overworld`, `chunk_x`, `chunk_z`, `has_chunk`; `screen_region`/`phase_name`, `screen_id`, `region`, `mouse_x`, `mouse_y`, `button`, `scroll_delta`, `x`, `y`, `width`, `height`, `handled`; `screen_ui`/`screen_id`, `region`, `host_fields` (table), `ui` (table with `add_centered_button`, `add_button`, `add_stacked_centered_button`); `screen_event`/`screen_id`, `phase`, `width`, `height`, `mouse_x`, `mouse_y`, `tick_delta`, `key`, `char`, `button`, `released`, `delta`, `handled`; `world_spawn_search`/`x`, `y`, `z`, `resolved`; `pre_entity_render`/`entity_id`, `entity_type`, `tick_delta`, `canceled`, item fields; `pre_tile_entity_render`/`x`, `y`, `z`, `id`, `tick_delta`, `canceled`; `entity_spawn`/`entity_id`, `entity_type`, item fields; `entity_remove`/`entity_id`, `entity_type`, item fields
+`client_tick`/`before`, `after_world`, `paused`, `has_player`, `has_world`, `world_name`, `is_overworld`, `camera_y`, `player_y`, `player_fall_distance`, `player_on_ground`, `world_time`, `is_night`, `mod_generation`; `render_frame`/`tick_delta`; `fog_settings`/`enabled`, `spherical`, `exponential`, `start`, `end`, `density`, `custom_color`, `red/green/blue`; `first_person_hand`/`tick_delta`, `eye`, `canceled`, `entity_id`, `entity_type`; `key_press`/`key`, `pressed`, `repeat`, `handled`; `mouse_button`/`button`, `pressed`, `handled`; `raycast`/`has_hit`, `type`, `hit_x/y/z`, `block_x/y/z`, `side`, `block_id`, `block_name`, `item_id`, `entity_id`, `entity_type`; `fov`/`tick_delta`, `fov`; `camera_setup`/`tick_delta`, `x`, `y`, `z`, `yaw`, `pitch`, `roll`, `custom_view`, `hide_first_person_hand`; `player_travel`/`sideways`, `forward`, `speed_multiplier`, `has_player`, `is_local_player`; `tick_rate`/`target_tps`, `tps_scale`; `world_start`/`save_name`, `new_world`; `world_open`/`save_name`, `new_world`, `options` (table); `world_tick`/`remote`, `before`; `entity_tick`/`remote`, `canceled`, `entity_id`, `entity_type`, `x`, `y`, `z`, `yaw`, `pitch`; `tile_entity_tick`/`x`, `y`, `z`, `id`, `remote`, `removed`, `canceled`, `world_time`, `animation_frame`, `animation_tick`, `animation_speed`, `entity`; `create_world`/`save_name`, `seed`, `canceled`, `options` (table); `block_interact`/`x`, `y`, `z`, `block_id`, `side`, `right_click`, `remote`, `canceled`, `handled`, `has_player`, `local_player`, `has_item`, `player_x/y/z`, `player_yaw/pitch`, `item_id/count/damage/max_damage/damageable`; `entity_interact`/`attack`, `remote`, `canceled`, `handled`, `sneaking`, `has_player`, `local_player`, `has_target`, `player_yaw/pitch`, `has_item`, `item_id/count/damage`, `entity_id`, `entity_type`, `target_id`; `attack_damage`/`damage`, `critical`, `canceled`, `fall_distance`, `on_ground`, `target_x/y/z`, `has_player`, `has_target`; `entity_teleport`/`entity_id`, `entity_type`, `from_x/y/z`, `x`, `y`, `z`, `yaw`, `pitch`, `canceled`, `has_entity`, `has_player`; `world_color`/`partial_ticks`, `r`, `g`, `b`, `kind`, `celestial`, `world_time`, `is_night`; `entity_render`/`entity_id`, `entity_type`, `is_player`, `tick_delta`, `pose` (sub-table with `body_yaw`, `head_yaw/pitch`, `yaw`, `pitch`, `roll`, `scale`, `offset_x/y/z`, `parts`); `world_render`/`tick_delta`, `stage`, `moment`, `cancel_vanilla`, `vanilla_stage_ran`, `shadow_pass`, `celestial_angle`, `sky_yaw_deg`, `star_brightness`, `rain_strength`, `stars_enabled`, `astronomy_enabled`, `astronomy_utc_millis`, `observer_lat/lon_deg`, `camera_x/y/z`, `camera_yaw/pitch/roll`, `custom_camera`, `world_time`, `celestial`, `is_night`, `cloud_base_height`; `chunk_generation`/`stage`, `moment`, `cancel_vanilla`, `vanilla_stage_ran`, `world_seed`, `mod_generation`, `is_overworld`, `chunk_x`, `chunk_z`, `has_chunk`; `screen_region`/`phase_name`, `screen_id`, `region`, `mouse_x`, `mouse_y`, `button`, `scroll_delta`, `x`, `y`, `width`, `height`, `handled`; `screen_ui`/`screen_id`, `region`, `host_fields` (table), `ui` (table with `add_centered_button`, `add_button`, `add_stacked_centered_button`); `screen_event`/`screen_id`, `phase`, `width`, `height`, `mouse_x`, `mouse_y`, `tick_delta`, `key`, `char`, `button`, `released`, `delta`, `handled`; `world_spawn_search`/`x`, `y`, `z`, `resolved`; `pre_entity_render`/`entity_id`, `entity_type`, `tick_delta`, `canceled`, item fields; `pre_tile_entity_render`/`x`, `y`, `z`, `id`, `tick_delta`, `canceled`; `entity_spawn`/`entity_id`, `entity_type`, item fields; `entity_remove`/`entity_id`, `entity_type`, item fields
 ### Lifecycle Phase Constants
 ### Generation Stage Constants
 ### Render Stage Constants
@@ -444,6 +446,11 @@ Check whether the active world is currently in night time
 Get the Y coordinate immediately above the highest solid or fluid block at the given column
 int→int; int→int
 **Returns:** integer — top block Y + 1, or `-1` if no active world
+---
+### `minecraft.world.get_heightmap(x, z, width, height)`
+Get a packed ARGB heightmap for loaded columns
+int→int; int→int; int→int; int→int
+**Returns:** integer array in row-major order, or `nil` if no world is active
 ---
 ### `minecraft.world.player()`
 Get the position of the active player
@@ -622,7 +629,7 @@ fields: `texture`:string, `texture_id`:int, `r`:number, `g`:number, `b`:number, 
 Positions are in the block/item's local model space
 ---
 ## `minecraft.camera.*` (Render Targets / Viewfinder Cameras)
-fn: `create`, `create_display_size`, `destroy`, `resize`, `render`, `texture`, `width`, `height`, `rendering`, `unbind`
+fn: `create`, `create_display_size`, `destroy`, `resize`, `render`, `render_shadow_orthographic`, `render_shadow_perspective`, `texture`, `depth_texture`, `width`, `height`, `rendering`, `unbind`, `far_plane`
 ### `camera.create(width, height, colorCount?, useDepthTex?)`
 ### `camera.create_display_size(colorCount?, useDepthTex?)`
 ### `camera.destroy(handle)`
@@ -632,8 +639,6 @@ fn: `create`, `create_display_size`, `destroy`, `resize`, `render`, `texture`, `
 ### `camera.width(handle)` / `camera.height(handle)`
 ### `camera.rendering()`
 ### `camera.unbind()`
-## `minecraft.fbo.*` (Offscreen Framebuffers)
-fn: `create`, `create_display_size`, `destroy`, `resize`, `bind`, `unbind`, `texture`, `width`, `height`, `bound`
 ## `minecraft.model.*`
 ### `minecraft.model.load(path)`
 Load and bake a JSON model from a mod's assets
@@ -686,7 +691,7 @@ fields: `x`:int, `y`:int, `size`:int, `width`:int, `height`:int, `gui_width`:int
 fields: `mode`:string, `color`:int, `r`:number, `g`:number, `b`:number, `a`:number, `line_width`:number, `point_size`:number, `vertices`:array
 ### `gui.unproject(params)`
 ## Render Events (Reference)
-`world_color`/Modify sky/fog color. `event.kind` is `"sky"` or `"fog"` (from `minecraft.colors`). Set `event.color` (Vec3d); `camera_setup`/Override camera position, rotation, and roll. Fields: `x, y, z, yaw, pitch, roll`. Set `customView = true`; `fov`/Override field of view. Set `event.fov` (float, default 70); `first_person_hand`/Cancel or control first-person hand rendering. Set `canceled = true` to hide the hand; `render_frame`/Start-of-frame hook. Fires once per frame before any world rendering; `render_targets`/Post-render-targets hook. Fires after all render targets have been populated; `world_render`/Per-stage render hooks. Fields: `stage`, `moment`, `cancel_vanilla`, etc; `pre_entity_render`/Pre-entity-render hook. Set `canceled = true` to skip an entity; `entity_render`/Entity render hook with pose control. Modify `event.pose` (bodyYaw, headYaw, headPitch, yaw, pitch, roll, scale, offsetX/Y/Z, parts) to override entity rendering
+`world_color`/Modify sky/fog color. `event.kind` is `"sky"` or `"fog"` (from `minecraft.colors`). Set `event.color` (Vec3d); `camera_setup`/Override camera position, rotation, and roll. Fields: `x, y, z, yaw, pitch, roll`. Set `customView = true`; `fov`/Override field of view. Set `event.fov` (float, default 70); `first_person_hand`/Cancel or control first-person hand rendering. Set `canceled = true` to hide the hand; `render_frame`/Start-of-frame hook. Fires once per frame before any world rendering; `world_render`/Per-stage render hooks. Fields: `stage`, `moment`, `cancel_vanilla`, etc; `pre_entity_render`/Pre-entity-render hook. Set `canceled = true` to skip an entity; `entity_render`/Entity render hook with pose control. Modify `event.pose` (bodyYaw, headYaw, headPitch, yaw, pitch, roll, scale, offsetX/Y/Z, parts) to override entity rendering
 
 # GUI and screens
 ## GUI draw scope

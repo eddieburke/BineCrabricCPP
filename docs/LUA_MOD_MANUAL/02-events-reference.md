@@ -755,14 +755,6 @@ minecraft.on(minecraft.events.render_frame, {}, function(event)
 end)
 ```
 
-### `render_targets`
-
-Fires after framebuffer targets are set up.
-
-| Field | Type | Description | Mutable |
-|-------|------|-------------|---------|
-| `tick_delta` | float | Render tick delta | No |
-
 ### `fov`
 
 Fires to query/adjust the field of view.

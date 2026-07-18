@@ -17,7 +17,7 @@ using net::minecraft::util::http::kBetacraftProxyHost;
 using net::minecraft::util::http::kBetacraftProxyPortBeta173;
 class ResourceDownloadThread {
 public:
-  ResourceDownloadThread(std::filesystem::path runDirectory, Minecraft* minecraft);
+  ResourceDownloadThread(std::filesystem::path resourcesDirectory, Minecraft* minecraft);
   ~ResourceDownloadThread();
   void start();
   void cancel();

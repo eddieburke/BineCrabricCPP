@@ -7,7 +7,6 @@
 #include <windows.h>
 #endif
 #include "net/minecraft/client/host/ServerProcessCoordinator.hpp"
-#include <chrono>
 #include <sstream>
 #include "net/minecraft/client/Minecraft.hpp"
 #include "net/minecraft/client/core/WorldSession.hpp"
@@ -117,7 +116,8 @@ bool ServerProcessCoordinator::launch(std::string& errorOut) {
           << L" --level-seed " << worldSeed_
           << L" --server-ip " << quoteArg(L"")
           << L" --server-port " << settings_.port
-          << L" --online-mode " << (settings_.onlineMode ? L"true" : L"false")
+          << L" --ready-file " << quoteArg(readyFile_.wstring())
+          << L" --online-mode false"
           << L" --spawn-animals " << (settings_.spawnAnimals ? L"true" : L"false")
           << L" --pvp " << (settings_.pvpEnabled ? L"true" : L"false")
           << L" --allow-flight " << (settings_.flightEnabled ? L"true" : L"false")
@@ -168,6 +168,9 @@ bool ServerProcessCoordinator::start(const ServerProcessSettings& settings, std:
     return false;
   }
   settings_ = settings;
+  readyFile_ = storageRoot_ / (".minecraft-server-ready-" + std::to_string(settings_.port));
+  std::error_code readyFileError;
+  std::filesystem::remove(readyFile_, readyFileError);
   if(!minecraft_->worldSession().parkLocalWorldForRemoteHandoff(*minecraft_)) {
     return fail("Could not save and release the world for dedicated-server transfer.", errorOut);
   }
@@ -186,43 +189,6 @@ bool ServerProcessCoordinator::processRunning() const {
   return false;
 #endif
 }
-bool ServerProcessCoordinator::serverAcceptingConnections() const {
-#ifdef _WIN32
-  SOCKET socketHandle = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
-  if(socketHandle == INVALID_SOCKET) {
-    return false;
-  }
-  u_long nonBlocking = 1;
-  ioctlsocket(socketHandle, FIONBIO, &nonBlocking);
-  sockaddr_in address{};
-  address.sin_family = AF_INET;
-  address.sin_port = htons(settings_.port);
-  inet_pton(AF_INET, "127.0.0.1", &address.sin_addr);
-  const int result = connect(socketHandle, reinterpret_cast<const sockaddr*>(&address), sizeof(address));
-  if(result == SOCKET_ERROR && WSAGetLastError() == WSAEWOULDBLOCK) {
-    fd_set writeSet;
-    FD_ZERO(&writeSet);
-    FD_SET(socketHandle, &writeSet);
-    timeval timeout{0, 1000};
-    const int selected = select(0, nullptr, &writeSet, nullptr, &timeout);
-    int socketError = WSAECONNREFUSED;
-    int socketErrorLength = sizeof(socketError);
-    if(selected > 0) {
-      getsockopt(socketHandle,
-                 SOL_SOCKET,
-                 SO_ERROR,
-                 reinterpret_cast<char*>(&socketError),
-                 &socketErrorLength);
-    }
-    closesocket(socketHandle);
-    return selected > 0 && socketError == 0;
-  }
-  closesocket(socketHandle);
-  return result == 0;
-#else
-  return false;
-#endif
-}
 bool ServerProcessCoordinator::pollStart(std::string& errorOut) {
   errorOut.clear();
   if(state_ != State::Starting) {
@@ -233,7 +199,7 @@ bool ServerProcessCoordinator::pollStart(std::string& errorOut) {
     requestStop(true);
     return true;
   }
-  if(!serverAcceptingConnections()) {
+  if(!std::filesystem::is_regular_file(readyFile_)) {
     return false;
   }
   state_ = State::AwaitingLoopback;
@@ -259,6 +225,9 @@ void ServerProcessCoordinator::finishStop() {
   }
   restoreLocalWorld_ = false;
   remoteWorld_ = nullptr;
+  std::error_code readyFileError;
+  std::filesystem::remove(readyFile_, readyFileError);
+  readyFile_.clear();
   connectionInfo_ = {};
   state_ = State::Inactive;
 }

@@ -2,7 +2,10 @@
 #include <cctype>
 #include <chrono>
 #include <cstdlib>
+#include <ctime>
+#include <functional>
 #include <iostream>
+#include <sstream>
 #include <thread>
 #include "net/minecraft/achievement/Achievements.hpp"
 #include "net/minecraft/block/Block.hpp"
@@ -85,19 +88,84 @@ std::int64_t nanoTime() {
   return std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::steady_clock::now().time_since_epoch())
       .count();
 }
-std::string formatCrashReport(const net::minecraft::util::crash::CrashReport& report) {
-  std::string text = report.description;
-  if(report.exception) {
-    try {
-      std::rethrow_exception(report.exception);
-    } catch(const std::exception& ex) {
-      text += "\n";
-      text += ex.what();
-    } catch(...) {
-      text += "\nUnknown exception";
-    }
+std::string crashReportTimestamp() {
+  const std::time_t seconds = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
+  std::tm localTime{};
+#if defined(_WIN32)
+  localtime_s(&localTime, &seconds);
+#else
+  localtime_r(&seconds, &localTime);
+#endif
+  char buffer[32] = {};
+  std::strftime(buffer, sizeof(buffer), "%m/%d/%y %I:%M %p", &localTime);
+  return buffer;
+}
+std::string crashReportGlString(unsigned int name) {
+  const unsigned char* value = ::glGetString(name);
+  return value != nullptr ? reinterpret_cast<const char*>(value) : "";
+}
+std::string crashReportToLower(std::string value) {
+  for(char& ch : value) {
+    ch = static_cast<char>(std::tolower(static_cast<unsigned char>(ch)));
   }
-  return text;
+  return value;
+}
+std::string crashReportStackTrace(const std::exception_ptr& exception) {
+  if(!exception) {
+    return "(no exception)\n";
+  }
+  try {
+    std::rethrow_exception(exception);
+  } catch(const std::exception& ex) {
+    return std::string(ex.what()) + "\n";
+  } catch(...) {
+    return "Unknown exception\n";
+  }
+}
+std::string formatCrashReport(const net::minecraft::util::crash::CrashReport& report) {
+  const std::string stackTrace = crashReportStackTrace(report.exception);
+  const std::string glVendor = crashReportGlString(0x1F00);
+  const std::string glRenderer = crashReportGlString(0x1F01);
+  const std::string glVersion = crashReportGlString(0x1F02);
+  std::string systemSection;
+  systemSection += "Generated " + crashReportTimestamp() + "\n\n";
+  systemSection += "Minecraft: Minecraft Beta 1.7.3\n";
+#if defined(_WIN32)
+  systemSection += "OS: Windows\n";
+#else
+  systemSection += "OS: Unknown\n";
+#endif
+  systemSection += "OpenGL: " + (glRenderer.empty() ? std::string("(unavailable)") : glRenderer) + " version " +
+                    glVersion + ", " + glVendor + "\n";
+  systemSection += "\n" + stackTrace;
+  std::string body;
+  if(stackTrace.find("Pixel format not accelerated") != std::string::npos) {
+    body += "      Bad video card drivers!      \n";
+    body += "      -----------------------      \n\n";
+    body += "Minecraft was unable to start because it failed to find an accelerated OpenGL mode.\n";
+    body += "This can usually be fixed by updating the video card drivers.\n";
+    const std::string lowerVendor = crashReportToLower(glVendor);
+    if(lowerVendor.find("nvidia") != std::string::npos) {
+      body += "\nYou might be able to find drivers for your video card here:\n  http://www.nvidia.com/\n";
+    } else if(lowerVendor.find("ati") != std::string::npos) {
+      body += "\nYou might be able to find drivers for your video card here:\n  http://www.amd.com/\n";
+    }
+  } else {
+    body += "      Minecraft has crashed!      \n";
+    body += "      ----------------------      \n\n";
+    body += "Minecraft has stopped running because it encountered a problem.\n\n";
+    body += "If you wish to report this, please include this entire text and a description of what you did "
+            "when the error occured.\n";
+  }
+  body += "\n\n\n";
+  std::ostringstream beginHex;
+  beginHex << std::hex << std::hash<std::string>{}(body);
+  body += "--- BEGIN ERROR REPORT " + beginHex.str() + " --------\n";
+  body += report.description + "\n\n" + systemSection;
+  std::ostringstream endHex;
+  endHex << std::hex << std::hash<std::string>{}(body);
+  body += "--- END ERROR REPORT " + endHex.str() + " ----------\n";
+  return body;
 }
 void renderBootstrapLoadingScreen(Minecraft& client) {
   const util::UiScale scale = util::uiScale(client.options, client.displayWidth, client.displayHeight);
@@ -140,7 +208,7 @@ public:
   }
   void handleCrash(const net::minecraft::util::crash::CrashReport& crashReport) override {
     const std::string reportText = formatCrashReport(crashReport);
-    std::cerr << reportText << std::endl;
+    ClientLog::LOGGER.log(LogLevel::Severe, reportText);
 #ifdef _WIN32
     diagnostics::reportFatalError("Minecraft has crashed!", reportText);
     diagnostics::pauseBeforeExit();

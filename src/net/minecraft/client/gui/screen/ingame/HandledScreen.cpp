@@ -4,7 +4,7 @@
 #include "net/minecraft/client/input/InputSystem.hpp"
 #include "net/minecraft/client/option/GameOptions.hpp"
 #include "net/minecraft/client/render/item/ItemRenderer.hpp"
-#include "net/minecraft/client/render/platform/Lighting.hpp"
+#include "net/minecraft/client/gl/Lighting.hpp"
 #include "net/minecraft/client/resource/language/I18n.hpp"
 #include "net/minecraft/client/texture/TextureManager.hpp"
 #include "net/minecraft/entity/player/ClientPlayerEntity.hpp"
@@ -33,7 +33,7 @@ void HandledScreen::render(int mouseX, int mouseY, float tickDelta) {
   {
     gl::MatrixGuard lightingMatrix;
     gl::rotatef(120.0f, 1.0f, 0.0f, 0.0f);
-    render::platform::Lighting::turnOn();
+    gl::Lighting::turnOn();
   }
   {
     const gl::preset::HandledSlotItem slotCaps;
@@ -64,7 +64,7 @@ void HandledScreen::render(int mouseX, int mouseY, float tickDelta) {
     }
     {
       const gl::preset::HandledSlotDecoration decorationCaps;
-      render::platform::Lighting::turnOff();
+      gl::Lighting::turnOff();
       drawForeground();
       if(cursorStack.empty() && hoveredSlot != nullptr && hoveredSlot->hasStack()) {
         std::string label =

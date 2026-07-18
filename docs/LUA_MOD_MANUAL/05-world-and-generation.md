@@ -82,6 +82,24 @@ local top = minecraft.world.get_top_y(100, 200)
 
 ---
 
+### `minecraft.world.get_heightmap(x, z, width, height)`
+Get a packed ARGB heightmap for loaded columns. The red channel contains the highest translucent block height, the green channel contains its light opacity, and the blue channel contains the highest opaque block height. Unloaded columns are returned as zero heights.
+
+| Param | Type | Description |
+|-------|------|-------------|
+| `x` | int | World X coordinate of the first column |
+| `z` | int | World Z coordinate of the first column |
+| `width` | int | Number of columns along X, clamped to 1–512 |
+| `height` | int | Number of columns along Z, clamped to 1–512 |
+
+**Returns:** integer array in row-major order, or `nil` if no world is active.
+
+```lua
+local pixels = minecraft.world.get_heightmap(0, 0, 128, 128)
+```
+
+---
+
 ### `minecraft.world.player()`
 Get the position of the active player.
 
@@ -160,7 +178,7 @@ Convert world coordinates to grid pixel coordinates (for minimaps, chunk markers
 **Returns:** `col, row` — clamped pixel coordinates in `[0, side-1]`, or `0, 0` if grid is invalid.
 
 ```lua
--- Given a grid from world generation (sample_grid or similar)
+-- Given a grid from world generation (sample or similar)
 local col, row = minecraft.world.marker_px(grid, entity_x, entity_z)
 ```
 

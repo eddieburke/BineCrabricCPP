@@ -12,7 +12,6 @@ class Minecraft;
 namespace net::minecraft::client::host {
 struct ServerProcessSettings {
   std::uint16_t port = 25565;
-  bool onlineMode = false;
   bool spawnAnimals = true;
   bool pvpEnabled = true;
   bool flightEnabled = false;
@@ -49,7 +48,6 @@ private:
   bool captureWorld(World& world, std::string& errorOut);
   bool launch(std::string& errorOut);
   bool processRunning() const;
-  bool serverAcceptingConnections() const;
   void requestStop(bool restoreLocalWorld);
   void finishStop();
   void closeProcessHandles();
@@ -58,6 +56,7 @@ private:
   ServerProcessSettings settings_;
   std::filesystem::path storageRoot_;
   std::string worldName_;
+  std::filesystem::path readyFile_;
   std::uint64_t worldSeed_ = 0;
   World* remoteWorld_ = nullptr;
   ServerConnectionInfo connectionInfo_;

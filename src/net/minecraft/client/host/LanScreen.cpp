@@ -32,23 +32,19 @@ void LanScreen::init() {
   }
   const int left = width() / 2 - 100;
   const int right = width() / 2 + 2;
-  onlineModeButton_ = &addActionButton(left, baseY + 54, 98, 20, "", [this] {
-    settings_.onlineMode = !settings_.onlineMode;
-    refreshSettingLabels();
-  });
-  pvpButton_ = &addActionButton(right, baseY + 54, 98, 20, "", [this] {
+  pvpButton_ = &addActionButton(left, baseY + 54, 98, 20, "", [this] {
     settings_.pvpEnabled = !settings_.pvpEnabled;
     refreshSettingLabels();
   });
-  animalsButton_ = &addActionButton(left, baseY + 78, 98, 20, "", [this] {
+  animalsButton_ = &addActionButton(right, baseY + 54, 98, 20, "", [this] {
     settings_.spawnAnimals = !settings_.spawnAnimals;
     refreshSettingLabels();
   });
-  netherButton_ = &addActionButton(right, baseY + 78, 98, 20, "", [this] {
+  netherButton_ = &addActionButton(left, baseY + 78, 98, 20, "", [this] {
     settings_.allowNether = !settings_.allowNether;
     refreshSettingLabels();
   });
-  modsButton_ = &addActionButton(left, baseY + 102, 200, 20, "", [this] {
+  modsButton_ = &addActionButton(right, baseY + 78, 98, 20, "", [this] {
     settings_.modsEnabled = !settings_.modsEnabled;
     refreshSettingLabels();
   });
@@ -57,7 +53,6 @@ void LanScreen::init() {
 }
 void LanScreen::refreshSettingLabels() {
   const auto label = [](const std::string& name, bool enabled) { return name + ": " + (enabled ? "ON" : "OFF"); };
-  if(onlineModeButton_ != nullptr) onlineModeButton_->text = label("Online", settings_.onlineMode);
   if(pvpButton_ != nullptr) pvpButton_->text = label("PvP", settings_.pvpEnabled);
   if(animalsButton_ != nullptr) animalsButton_->text = label("Animals", settings_.spawnAnimals);
   if(netherButton_ != nullptr) netherButton_->text = label("Nether", settings_.allowNether);
@@ -91,7 +86,7 @@ void LanScreen::pollServerStart() {
         minecraft(),
         "127.0.0.1",
         minecraft()->serverProcessCoordinator().port(),
-        multiplayer::ConnectOptions{.bypassAuthentication = !settings_.onlineMode}));
+        multiplayer::ConnectOptions{.bypassAuthentication = true}));
     return;
   }
   errorMessage_ = error.empty() ? minecraft()->serverProcessCoordinator().lastError() : std::move(error);

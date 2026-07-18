@@ -1,5 +1,6 @@
 #include <exception>
 #include <iostream>
+#include "net/minecraft/client/ClientLog.hpp"
 #include "net/minecraft/client/Minecraft.hpp"
 #ifdef _WIN32
 #include "net/minecraft/client/diagnostics/ClientDiagnostics.hpp"
@@ -9,6 +10,7 @@ int main(int argc, char** argv) {
   net::minecraft::client::diagnostics::installCrashDiagnostics();
   net::minecraft::client::diagnostics::installHangWatchdog();
 #endif
+  net::minecraft::client::ClientLog::init();
   try {
 #ifdef _WIN32
     net::minecraft::client::diagnostics::setStartupPhase("main: starting client");

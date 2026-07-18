@@ -3,5 +3,6 @@
   "name": "Stone Bricks",
   "version": "1.0.0",
   "enabled": true,
+  "side": "both",
   "entry": "scripts/main.lua"
 }

@@ -7,7 +7,7 @@ bool TorchBlockRenderer::render(net::minecraft::block::Block& block, int x, int 
   const int blockMeta = ctx_.blockView->getBlockMeta(x, y, z);
   Tessellator& tessellator = *ctx_.tess;
   float brightness = block.getLuminance(ctx_.blockView, x, y, z);
-  if(net::minecraft::block::Block::BLOCKS_LIGHT_LUMINANCE[block.id] > 0) {
+  if(block.emission() > 0) {
     brightness = 1.0f;
   }
   tessellator.color(brightness, brightness, brightness);

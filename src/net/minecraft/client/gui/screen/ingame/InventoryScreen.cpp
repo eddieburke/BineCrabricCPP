@@ -6,7 +6,7 @@
 #include "net/minecraft/client/gui/layout/ContainerLayout.hpp"
 #include "net/minecraft/client/input/InputSystem.hpp"
 #include "net/minecraft/client/render/entity/EntityRenderDispatcher.hpp"
-#include "net/minecraft/client/render/platform/Lighting.hpp"
+#include "net/minecraft/client/gl/Lighting.hpp"
 #include "net/minecraft/client/texture/TextureManager.hpp"
 #include "net/minecraft/client/util/UiScale.hpp"
 #include "net/minecraft/entity/player/ClientPlayerEntity.hpp"
@@ -37,7 +37,7 @@ void InventoryScreen::publishSidePanelEvent(mod::ScreenRegionEvent& event) const
   if(event.phase == mod::ScreenRegionPhase::Render) {
     const gl::preset::ScreenFogOff fogCaps;
     gl::color4f(1.0f, 1.0f, 1.0f, 1.0f);
-    render::platform::Lighting::turnOff();
+    gl::Lighting::turnOff();
     mod::hooks().publish(event);
     return;
   }
@@ -133,7 +133,7 @@ void InventoryScreen::drawBackground(float tickDelta) {
   const float deltaX = static_cast<float>(originX + 51) - mouseX_;
   const float deltaY = static_cast<float>(originY + 75 - 50) - mouseY_;
   gl::rotatef(135.0f, 0.0f, 1.0f, 0.0f);
-  render::platform::Lighting::turnOn();
+  gl::Lighting::turnOn();
   gl::rotatef(-135.0f, 0.0f, 1.0f, 0.0f);
   gl::rotatef(-static_cast<float>(std::atan(static_cast<double>(deltaY) / 40.0)) * 20.0f, 1.0f, 0.0f, 0.0f);
   player.bodyYaw = static_cast<float>(std::atan(static_cast<double>(deltaX) / 40.0)) * 20.0f;
@@ -154,6 +154,6 @@ void InventoryScreen::drawBackground(float tickDelta) {
   player.bodyYaw = savedBodyYaw;
   player.yaw = savedYaw;
   player.pitch = savedPitch;
-  render::platform::Lighting::turnOff();
+  gl::Lighting::turnOff();
 }
 } // namespace net::minecraft::client::gui::screen::ingame

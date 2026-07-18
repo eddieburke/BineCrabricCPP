@@ -16,6 +16,7 @@ local SETTINGS_DEFAULTS = {
   latitude = 45.0,
   longitude = 0.0,
   use_dst = true,
+  drive_sun = true,
   show_simulate_panel = false,
   override_enabled = false,
   simulate_date = false,
@@ -28,7 +29,7 @@ local SETTINGS_DEFAULTS = {
 }
 
 local SETTINGS_KEYS = {
-  "enabled", "time_zone_id", "latitude", "longitude", "use_dst", "show_simulate_panel",
+  "enabled", "time_zone_id", "latitude", "longitude", "use_dst", "drive_sun", "show_simulate_panel",
   "override_enabled", "simulate_date", "simulate_time",
   "sim_year", "sim_month", "sim_day", "sim_hour", "sim_minute",
 }
@@ -37,6 +38,7 @@ local SETTINGS_NAMES = {
   enabled = "enabled",
   time_zone_id = "timeZoneId",
   use_dst = "useDst",
+  drive_sun = "driveSun",
   show_simulate_panel = "showSimulatePanel",
   override_enabled = "overrideEnabled",
   simulate_date = "simulateDate",
@@ -769,40 +771,32 @@ minecraft.on(minecraft.events.world_render, {
   end,
 }, function(event)
   local frame = current_solar_frame(event.tick_delta)
-  -- This runtime's sky renderer consumes celestial_angle as the physical
-  -- rotation angle in radians. `celestial` remains the normalized 0..1
-  -- Minecraft clock phase used by brightness/time-of-day code.
-  event.celestial_angle = frame.sun_angle
-  event.celestial = frame.celestial
-  event.sky_yaw_deg = frame.skydome_yaw_deg
   event.astronomy_enabled = true
   event.astronomy_utc_millis = frame.utc_millis
   event.observer_latitude_deg = settings.latitude
   event.observer_longitude_deg = settings.longitude
 
-  -- Shared authoritative values for shader/light providers. These are from
-  -- the same frame that places the visible sun and computes the solar clock.
-  event.sun_direction_x = frame.sun_direction_x
-  event.sun_direction_y = frame.sun_direction_y
-  event.sun_direction_z = frame.sun_direction_z
-  event.sun_azimuth_deg = frame.sun_azimuth_deg
-  event.sun_altitude_deg = frame.sun_altitude_deg
-  event.moon_direction_x = frame.moon_direction_x
-  event.moon_direction_y = frame.moon_direction_y
-  event.moon_direction_z = frame.moon_direction_z
-  event.moon_azimuth_deg = frame.moon_azimuth_deg
-  event.moon_altitude_deg = frame.moon_altitude_deg
-  event.moon_illumination = frame.moon_illumination
-  event.moon_phase = frame.moon_phase
   event.solar_day_tick = frame.day_tick
   event.solar_time_hours = frame.solar_time_hours
-
-  -- Vanilla's celestial quads are 60x60 and 40x40 at radius 100. They are the
-  -- source of the giant white squares, and the vanilla Moon is also forced to
-  -- be exactly opposite the Sun. Replace the whole sky stage once, then render
-  -- both bodies below at the independently calculated real directions.
-  event.cancel_vanilla = true
-  draw_sky_dome(event, frame)
+  if settings.drive_sun then
+    event.celestial_angle = frame.sun_angle
+    event.celestial = frame.celestial
+    event.sky_yaw_deg = frame.skydome_yaw_deg
+    event.sun_direction_x = frame.sun_direction_x
+    event.sun_direction_y = frame.sun_direction_y
+    event.sun_direction_z = frame.sun_direction_z
+    event.sun_azimuth_deg = frame.sun_azimuth_deg
+    event.sun_altitude_deg = frame.sun_altitude_deg
+    event.moon_direction_x = frame.moon_direction_x
+    event.moon_direction_y = frame.moon_direction_y
+    event.moon_direction_z = frame.moon_direction_z
+    event.moon_azimuth_deg = frame.moon_azimuth_deg
+    event.moon_altitude_deg = frame.moon_altitude_deg
+    event.moon_illumination = frame.moon_illumination
+    event.moon_phase = frame.moon_phase
+    event.cancel_vanilla = true
+    draw_sky_dome(event, frame)
+  end
 end)
 
 minecraft.on(minecraft.events.world_color, {

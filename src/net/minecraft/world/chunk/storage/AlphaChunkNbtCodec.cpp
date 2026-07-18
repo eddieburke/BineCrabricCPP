@@ -84,6 +84,9 @@ void writeLevelFields(std::vector<std::uint8_t>& out, Chunk& chunk, World* world
       if(entity == nullptr) {
         continue;
       }
+      if(*reinterpret_cast<const void* const*>(entity) == nullptr) {
+        continue;
+      }
       NbtCompound entityNbt;
       if(!entity->saveSelfNbt(entityNbt)) {
         continue;

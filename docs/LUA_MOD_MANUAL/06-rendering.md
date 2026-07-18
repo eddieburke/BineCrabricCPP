@@ -237,11 +237,15 @@ viewfinder displays, CCTV feeds, etc.
 | `destroy` | `(handle: int)` | `bool` |
 | `resize` | `(handle: int, width: int, height: int)` | `bool` |
 | `render` | `(handle: int, x, y, z, yaw, pitch, roll, fov, tickDelta?: number)` | `bool` |
+| `render_shadow_orthographic` | `(handle, x, y, z, yaw, pitch, roll, halfWidth, halfHeight, nearPlane, farPlane, includeEntities?, tickDelta?)` | `bool` |
+| `render_shadow_perspective` | `(handle, x, y, z, yaw, pitch, roll, fov, nearPlane?, farPlane?, includeEntities?, tickDelta?)` | `bool` |
 | `texture` | `(handle: int, attachmentIndex?: int)` | GL texture ID (int) |
+| `depth_texture` | `(handle: int)` | GL depth texture ID (int) |
 | `width` | `(handle: int)` | width (int) |
 | `height` | `(handle: int)` | height (int) |
 | `rendering` | `()` | currently bound handle (int), `-1` if none |
 | `unbind` | `()` | `bool` |
+| `far_plane` | `()` | active world far plane (number) |
 
 ### `camera.create(width, height, colorCount?, useDepthTex?)`
 
@@ -291,39 +295,6 @@ Returns the handle of the currently bound render target, or `-1` if none.
 ### `camera.unbind()`
 
 Unbind the currently bound render target. Returns `true`.
-
----
-
-## `minecraft.fbo.*` (Offscreen Framebuffers)
-
-Raw OpenGL framebuffer objects for custom render passes. Separate from
-`minecraft.camera` — these are not tied to `GameRenderer` and do not run
-the world render pipeline. Use them for post-processing, shadow maps, or
-custom shader operations.
-
-| Function | Signature | Returns |
-|---|---|---|
-| `create` | `(width: int, height: int, colorCount?: int, useDepthTex?: bool)` | handle (int) or `-1` |
-| `create_display_size` | `(colorCount?: int, useDepthTex?: bool)` | handle (int) or `-1` |
-| `destroy` | `(handle: int)` | `bool` |
-| `resize` | `(handle: int, width: int, height: int)` | `bool` |
-| `bind` | `(handle: int)` | `bool` |
-| `unbind` | `()` | `bool` |
-| `texture` | `(handle: int, attachmentIndex?: int)` | GL texture ID (int) |
-| `width` | `(handle: int)` | width (int) |
-| `height` | `(handle: int)` | height (int) |
-| `bound` | `()` | currently bound handle (int), `-1` if none |
-
-Parameters follow the same conventions as `minecraft.camera.*` (colorCount
-defaults to 1, useDepthTex defaults to `false`).
-
-```lua
-local fbo = minecraft.fbo.create(512, 512)
-minecraft.fbo.bind(fbo)
--- render custom geometry here
-minecraft.fbo.unbind()
-local fboTex = minecraft.fbo.texture(fbo)
-```
 
 ---
 
@@ -722,7 +693,6 @@ detailed documentation.
 | `fov` | Override field of view. Set `event.fov` (float, default 70). |
 | `first_person_hand` | Cancel or control first-person hand rendering. Set `canceled = true` to hide the hand. |
 | `render_frame` | Start-of-frame hook. Fires once per frame before any world rendering. |
-| `render_targets` | Post-render-targets hook. Fires after all render targets have been populated. |
 | `world_render` | Per-stage render hooks. Fields: `stage`, `moment`, `cancel_vanilla`, etc. |
 | `pre_entity_render` | Pre-entity-render hook. Set `canceled = true` to skip an entity. |
 | `entity_render` | Entity render hook with pose control. Modify `event.pose` (bodyYaw, headYaw, headPitch, yaw, pitch, roll, scale, offsetX/Y/Z, parts) to override entity rendering. |

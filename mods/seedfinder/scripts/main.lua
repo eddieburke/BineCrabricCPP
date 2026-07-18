@@ -535,7 +535,7 @@ local function apply_import_json(json)
 end
 
 ----------------------------------------------------------------------
--- Lua search (minecraft.world.sample_grid + rules)
+-- Lua search (minecraft.world.sample + rules)
 ----------------------------------------------------------------------
 
 local function biome_name(id)
@@ -804,7 +804,7 @@ local function score_seed(seed, cfg)
     channels[#channels + 1] = "surface_block"
     channels[#channels + 1] = "surface_block_below"
   end
-  local ok, grid = pcall(minecraft.world.sample_grid, seed, 0, 0, {
+  local ok, grid = pcall(minecraft.world.sample, seed, 0, 0, {
     radius_chunks = radius,
     max_side = side,
     channels = channels,
@@ -901,7 +901,7 @@ local function build_map(hit)
   local cx = hit.spawn_x or 0
   local cz = hit.spawn_z or 0
   S.preview_seed = hit.seed
-  local grid = minecraft.world.sample_grid(hit.seed, cx, cz, {
+  local grid = minecraft.world.sample(hit.seed, cx, cz, {
     radius_chunks = radius,
     max_side = 256,
     mod_generation = true,
@@ -909,7 +909,7 @@ local function build_map(hit)
   S.map_tex = map_texture_from_grid(grid)
   local have_tex = S.map_tex ~= nil and S.map_tex.id ~= nil and S.map_tex.id > 0
   if not have_tex then
-    S.map = minecraft.world.sample_grid(hit.seed, cx, cz, {
+    S.map = minecraft.world.sample(hit.seed, cx, cz, {
       radius_chunks = radius,
       max_side = 48,
       mod_generation = true,

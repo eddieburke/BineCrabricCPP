@@ -1,12 +1,12 @@
 #include "net/minecraft/mod/runtime/LuaCameraBindings.hpp"
 #include "net/minecraft/client/Minecraft.hpp"
 #include "net/minecraft/client/render/GameRenderer.hpp"
-#include "net/minecraft/client/render/Framebuffer.hpp"
-#include "net/minecraft/client/option/ResolvedRenderOptions.hpp"
+#include "net/minecraft/client/gl/Framebuffer.hpp"
+#include <cmath>
 namespace net::minecraft::mod::runtime {
 using namespace net::minecraft::mod::lua;
 namespace {
-net::minecraft::client::render::FramebufferManager* renderTargets() {
+net::minecraft::client::gl::FramebufferManager* renderTargets() {
   if(client::Minecraft::INSTANCE == nullptr || client::Minecraft::INSTANCE->gameRenderer == nullptr) {
     return nullptr;
   }
@@ -53,7 +53,7 @@ LUA_CAM_IMPL(luaCameraRender, 8, api.pushboolean(state, 0), {
 // and its optional include-entities argument.
 int renderOrthographicImpl(lua_State* state,
                            LuaApi& api,
-                           net::minecraft::client::render::FramebufferManager* m,
+                           net::minecraft::client::gl::FramebufferManager* m,
                            bool shadowPass) {
   const int handle = static_cast<int>(api.tointegerx(state, 1, nullptr));
   const double x = api.tonumberx(state, 2, nullptr);
@@ -103,6 +103,47 @@ LUA_CAM_IMPL(luaCameraRenderOrthographic, 11, api.pushboolean(state, 0), {
 LUA_CAM_IMPL(luaCameraRenderShadowOrthographic, 11, api.pushboolean(state, 0), {
   renderOrthographicImpl(state, api, m, true);
 })
+LUA_CAM_IMPL(luaCameraRenderShadowPerspective, 8, api.pushboolean(state, 0), {
+  const int handle = static_cast<int>(api.tointegerx(state, 1, nullptr));
+  const double x = api.tonumberx(state, 2, nullptr);
+  const double y = api.tonumberx(state, 3, nullptr);
+  const double z = api.tonumberx(state, 4, nullptr);
+  const float yaw = static_cast<float>(api.tonumberx(state, 5, nullptr));
+  const float pitch = static_cast<float>(api.tonumberx(state, 6, nullptr));
+  const float roll = static_cast<float>(api.tonumberx(state, 7, nullptr));
+  const float fov = static_cast<float>(api.tonumberx(state, 8, nullptr));
+  const float nearPlane =
+      api.gettop(state) >= 9 ? static_cast<float>(api.tonumberx(state, 9, nullptr)) : 0.05f;
+  const float defaultFar = client::Minecraft::INSTANCE->gameRenderer->farPlaneBlocks();
+  const float farPlane =
+      api.gettop(state) >= 10 ? static_cast<float>(api.tonumberx(state, 10, nullptr)) : defaultFar;
+  const bool includeEntities = api.gettop(state) >= 11 ? api.toboolean(state, 11) != 0 : true;
+  const float tickDelta = api.gettop(state) >= 12 ? static_cast<float>(api.tonumberx(state, 12, nullptr)) : 1.0f;
+  const bool valid = std::isfinite(fov) && std::isfinite(nearPlane) && std::isfinite(farPlane) &&
+                     fov > 0.0f && fov < 180.0f && nearPlane > 0.0f && farPlane > nearPlane;
+  api.pushboolean(state,
+                  valid && m->renderWorldTo(handle,
+                                            *client::Minecraft::INSTANCE->gameRenderer,
+                                            tickDelta,
+                                            x,
+                                            y,
+                                            z,
+                                            yaw,
+                                            pitch,
+                                            roll,
+                                            fov,
+                                            false,
+                                            1.0f,
+                                            1.0f,
+                                            -1.0f,
+                                            1.0f,
+                                            true,
+                                            includeEntities,
+                                            nearPlane,
+                                            farPlane)
+                      ? 1
+                      : 0);
+})
 LUA_CAM_IMPL(luaCameraTexture, 1, api.pushinteger(state, -1), {
   int handle = static_cast<int>(api.tointegerx(state, 1, nullptr));
   int attachmentIndex = api.gettop(state) >= 2 ? static_cast<int>(api.tointegerx(state, 2, nullptr)) : 0;
@@ -144,11 +185,11 @@ LUA_CAM_IMPL(luaCameraHeight, 1, api.pushinteger(state, 0), {
 })
 int luaCameraFarPlane(lua_State* state) {
   LuaApi& api = luaApi();
-  if(client::Minecraft::INSTANCE == nullptr) {
+  if(client::Minecraft::INSTANCE == nullptr || client::Minecraft::INSTANCE->gameRenderer == nullptr) {
     api.pushnumber(state, 192.0);
     return 1;
   }
-  api.pushnumber(state, client::option::resolve(client::Minecraft::INSTANCE->options).renderDistanceBlocks * 2.0);
+  api.pushnumber(state, client::Minecraft::INSTANCE->gameRenderer->farPlaneBlocks());
   return 1;
 }
 } // namespace
@@ -165,6 +206,7 @@ void installCameraApi(lua_State* state) {
                         {"render", luaCameraRender},
                         {"render_orthographic", luaCameraRenderOrthographic},
                         {"render_shadow_orthographic", luaCameraRenderShadowOrthographic},
+                        {"render_shadow_perspective", luaCameraRenderShadowPerspective},
                         {"unbind", luaCameraUnbind},
                         {"texture", luaCameraTexture},
                         {"depth_texture", luaCameraDepthTexture},

@@ -2,7 +2,7 @@
 #include "net/minecraft/client/gl/GlState.hpp"
 #include "net/minecraft/client/render/Tessellator.hpp"
 #include "net/minecraft/client/render/entity/EntityRenderers.hpp"
-#include "net/minecraft/client/render/platform/Lighting.hpp"
+#include "net/minecraft/client/gl/Lighting.hpp"
 #include "net/minecraft/entity/LightningEntity.hpp"
 #include "net/minecraft/util/math/MathHelper.hpp"
 namespace net::minecraft::client::render::entity {
@@ -16,7 +16,7 @@ void LightningEntityRenderer::render(
   }
   Tessellator& tessellator = Tessellator::INSTANCE;
   const gl::preset::LightningFlash lightningCaps;
-  render::platform::Lighting::turnOff();
+  gl::Lighting::turnOff();
   double offsets[8]{};
   double offsets2[8]{};
   double offsetX = 0.0;
@@ -88,7 +88,7 @@ void LightningEntityRenderer::render(
       }
     }
   }
-  render::platform::Lighting::turnOn();
+  gl::Lighting::turnOn();
 }
 } // namespace net::minecraft::client::render::entity
 #include "net/minecraft/client/entity/EntityClientRendererRegistration.hpp"

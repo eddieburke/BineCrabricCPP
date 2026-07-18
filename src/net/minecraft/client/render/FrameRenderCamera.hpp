@@ -17,6 +17,17 @@ struct FrameRenderCamera {
   double eyeX = 0.0;
   double eyeY = 0.0;
   double eyeZ = 0.0;
+  float viewRightX = 1.0f;
+  float viewRightY = 0.0f;
+  float viewRightZ = 0.0f;
+  float viewUpX = 0.0f;
+  float viewUpY = 1.0f;
+  float viewUpZ = 0.0f;
+  float viewForwardX = 0.0f;
+  float viewForwardY = 0.0f;
+  float viewForwardZ = 1.0f;
+  float projectionX = 1.0f;
+  float projectionY = 1.0f;
   float yaw = 0.0f;
   float pitch = 0.0f;
   float roll = 0.0f;
@@ -27,6 +38,8 @@ struct FrameRenderCamera {
   float orthoHalfHeight = 1.0f;
   float orthoNear = -1.0f;
   float orthoFar = 1.0f;
+  float perspectiveNear = 0.05f;
+  float perspectiveFar = 0.0f;
   bool shadowPass = false;
   bool shadowEntities = true;
 };

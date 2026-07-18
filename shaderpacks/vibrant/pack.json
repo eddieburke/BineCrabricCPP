@@ -1,0 +1,20 @@
+{
+  "name": "Vibrant",
+  "version": "1.0",
+  "settings": [
+    {"key":"SHADOW_QUALITY","type":"int","min":0,"max":4,"default":2,"label":"Sun Shadow Quality"},
+    {"key":"BLOOM","type":"bool","default":true,"label":"Bloom"},
+    {"key":"LOCAL_LIGHTING","type":"bool","default":true,"label":"Local Lighting"},
+    {"key":"VOLUMETRIC_QUALITY","type":"int","min":0,"max":3,"default":2,"label":"Volumetric Quality"},
+    {"key":"EXPOSURE","type":"float","min":0.5,"max":2.0,"step":0.05,"default":1.0,"label":"Exposure"}
+  ],
+  "programs": {
+    "composite": {"stage":"post","vsh":"shaders/composite.vsh","fsh":"shaders/composite.fsh"}
+  },
+  "targets": {
+    "colortex0": {"format":"RGBA16F","scale":1.0}
+  },
+  "passes": [
+    {"name":"final","type":"post","program":"composite","inputs":["colortex0","depthtex0"],"output":"screen"}
+  ]
+}

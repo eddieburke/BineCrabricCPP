@@ -303,10 +303,17 @@ void Window::create() {
   glfwWindowHint(GLFW_DEPTH_BITS, 24);
   glfwWindowHint(GLFW_STENCIL_BITS, 8);
   glfwWindowHint(GLFW_DOUBLEBUFFER, GLFW_TRUE);
-  // The Beta renderer is fixed-function OpenGL, so it needs a compatibility
-  // context rather than a newer core profile.
-  glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 2);
-  glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 1);
+  // Core profile OpenGL 3.3 (forward-compatible): the renderer is fully shader-based
+  // with VAO/UBO and no fixed-function state. 3.3 over 4.x for wider GPU reach; nothing
+  // needs 4.x features.
+  glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 3);
+  glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 3);
+  glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
+  glfwWindowHint(GLFW_OPENGL_FORWARD_COMPAT, GLFW_TRUE);
+#ifndef NDEBUG
+  // Debug context so glDebugMessageCallback surfaces strict-core violations early.
+  glfwWindowHint(GLFW_OPENGL_DEBUG_CONTEXT, GLFW_TRUE);
+#endif
   GLFWmonitor* monitor = fullscreen_ ? primaryMonitor() : nullptr;
   if(fullscreen_) {
     const GLFWvidmode* mode = glfwGetVideoMode(primaryMonitor());

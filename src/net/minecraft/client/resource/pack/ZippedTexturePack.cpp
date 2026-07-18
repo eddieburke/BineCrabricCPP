@@ -4,9 +4,9 @@
 #include <cstdint>
 #include <cstdlib>
 #include <fstream>
-#include <iostream>
 #include <sstream>
 #include <string>
+#include "net/minecraft/client/ClientLog.hpp"
 #include "net/minecraft/client/gl/GlState.hpp"
 #include "net/minecraft/client/texture/TextureManager.hpp"
 #include "net/minecraft/nbt/Compression.hpp"
@@ -30,7 +30,7 @@ void texturePackTrace(std::string message) {
   if(!texturePackTraceEnabled()) {
     return;
   }
-  std::cout << "[texture-pack-trace] " << std::move(message) << '\n';
+  ClientLog::LOGGER.log(LogLevel::Fine, "[texture-pack-trace] " + message);
 }
 std::uint32_t readU32(const std::vector<std::uint8_t>& data, std::size_t offset) {
   if(offset + 4 > data.size()) {

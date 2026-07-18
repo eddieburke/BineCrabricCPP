@@ -171,6 +171,12 @@ bool parseManifestJson(const std::string& manifestTextRaw,
   out.enabledByDefault = util::json::boolField(manifestText, "enabled").value_or(true);
   out.configuredEnabled = out.enabledByDefault;
   out.runtimeScript = !out.entry.empty() && toLowerCopy(out.entry).ends_with(".lua");
+  out.side = toLowerCopy(util::json::stringField(manifestText, "side").value_or("both"));
+  if(out.side != "client" && out.side != "server" && out.side != "both") {
+    out.error = errorPrefix + "side must be client, server, or both";
+    out.enabledByDefault = false;
+    out.configuredEnabled = false;
+  }
   if(!out.entry.empty() && !isSafeRelativePath(out.entry)) {
     out.error = "Unsafe Lua script path";
     out.enabledByDefault = false;

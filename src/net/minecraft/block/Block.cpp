@@ -1,4 +1,5 @@
 #include "net/minecraft/block/Block.hpp"
+#include "net/minecraft/world/light/UnifiedLightRegistry.hpp"
 #include <algorithm>
 #include <cmath>
 #include "net/minecraft/block/CactusBlock.hpp"
@@ -50,7 +51,6 @@ std::array<bool, Block::BLOCK_COUNT> Block::BLOCKS_OPAQUE{};
 std::array<bool, Block::BLOCK_COUNT> Block::BLOCKS_WITH_ENTITY{};
 std::array<int, Block::BLOCK_COUNT> Block::BLOCKS_LIGHT_OPACITY{};
 std::array<bool, Block::BLOCK_COUNT> Block::BLOCKS_ALLOW_VISION{};
-std::array<int, Block::BLOCK_COUNT> Block::BLOCKS_LIGHT_LUMINANCE{};
 std::array<bool, Block::BLOCK_COUNT> Block::BLOCKS_IGNORE_META_UPDATE{};
 namespace {
 std::array<bool, Block::BLOCK_COUNT> g_explicitLightOpacity{};
@@ -175,8 +175,11 @@ Block* Block::setOpacity(int i) {
   return this;
 }
 Block* Block::setLuminance(float fractionalValue) {
-  BLOCKS_LIGHT_LUMINANCE[static_cast<std::size_t>(id)] = static_cast<int>(15.0f * fractionalValue);
+  world::light::UnifiedLightRegistry::setBlockEmission(id, static_cast<int>(15.0f * fractionalValue));
   return this;
+}
+int Block::emission() const noexcept {
+  return world::light::UnifiedLightRegistry::blockEmission(id);
 }
 Block* Block::setResistance(float resistance) {
   resistance_ = resistance * 3.0f;
@@ -497,7 +500,7 @@ float Block::getLuminance(const BlockView* blockView, int x, int y, int z) const
   if(blockView == nullptr) {
     return 1.0f;
   }
-  return blockView->getNaturalBrightness(x, y, z, BLOCKS_LIGHT_LUMINANCE[static_cast<std::size_t>(id)]);
+  return blockView->getNaturalBrightness(x, y, z, emission());
 }
 bool Block::isSideVisibleForBounds(const BlockView* blockView, int x, int y, int z, int side, const Box& bounds) const {
   if(side == 0 && bounds.minY > 0.0) {

@@ -22,6 +22,18 @@ minecraft.log("just a string")        -- level defaults to "info"
 
 ---
 
+## Notifications (Client Only)
+
+### `minecraft.notify(message)`
+
+Adds a local message to the in-game HUD. Returns `true` when a client HUD accepted it and `false` when no client is active.
+
+```lua
+minecraft.notify("Objective complete")
+```
+
+---
+
 ## Context
 
 ### `minecraft.is_client()`
@@ -978,27 +990,6 @@ end
 
 ---
 
-## FBO (Offscreen Framebuffers)
-
-### `minecraft.fbo.*`
-
-General-purpose offscreen framebuffer objects for custom render passes and shader work.
-
-| Function | Description |
-|---|---|
-| `create(width, height, colorCount?, useDepthTex?)` | Creates an FBO, returns handle or `-1` |
-| `create_display_size(colorCount?, useDepthTex?)` | Creates an FBO matching display size |
-| `destroy(handle)` | Destroys an FBO |
-| `resize(handle, width, height)` | Resizes an FBO |
-| `bind(handle)` | Binds an FBO for rendering, returns `true`/`false` |
-| `unbind()` | Unbinds the active FBO |
-| `texture(handle, attachmentIndex?)` | Returns the OpenGL texture ID |
-| `width(handle)` | Returns pixel width |
-| `height(handle)` | Returns pixel height |
-| `bound()` | Returns the currently bound FBO handle, or `-1` |
-
----
-
 ## Render (World-Space Drawing)
 
 ### `minecraft.render.*`
@@ -1130,6 +1121,25 @@ Releases a previously created texture.
 
 Returns `{width, height, pixels = {argb...}}` for a texture path or mod texture ID.
 
+### `minecraft.render.update_texture(id, spec)`
+
+Updates a texture's pixel data. Accepts a table `{width?, height?, colors/values = {argb...}}` or raw color list.
+
+```lua
+minecraft.render.update_texture(tex.id, {
+  width = 16, height = 16,
+  colors = {0xFF0000FF, ...}
+})
+```
+
+### `minecraft.render.bind_texture(id, unit)`
+
+Binds a texture ID to a specific sampler unit index (e.g. 0-7) inside custom shaders.
+
+```lua
+minecraft.render.bind_texture(tex.id, 2) -- binds to GL_TEXTURE2
+```
+
 ---
 
 ## Seed Resolution
@@ -1169,7 +1179,7 @@ end
 
 ## World Grid Sampling
 
-### `minecraft.world.sample_grid(seed, centerX, centerZ, options?)`
+### `minecraft.world.sample(seed, centerX, centerZ, options?)`
 
 Samples terrain/biome data into a grid array for minimap or visualization use. The `options` table accepts:
 
@@ -1182,6 +1192,8 @@ Samples terrain/biome data into a grid array for minimap or visualization use. T
 | `mod_generation` | `false` | Enable mod generation hooks during sampling |
 
 Supported channels: `"height"`, `"surface_block"`, `"surface_block_below"`, `"biome_id"`, `"grass"` (grass color as ARGB).
+
+`minecraft.world.sample_grid` remains an alias. `minecraft.world.sample_channels()` returns the supported channel names.
 
 Returns a table with `side`, `step`, `origin_x`, `origin_z`, `center_x`, `center_z`, `channel`, `values` (primary channel array), and per-channel fields.
 
@@ -1196,7 +1208,6 @@ All supported event names for `minecraft.on()`:
 | `client_tick` | `before`, `after_world`, `paused`, `has_player`, `has_world`, `world_name`, `is_overworld`, `camera_y`, `player_y`, `player_fall_distance`, `player_on_ground`, `world_time`, `is_night`, `mod_generation` | — |
 | `render_frame` | `tick_delta` | — |
 | `fog_settings` | `enabled`, `spherical`, `exponential`, `start`, `end`, `density`, `custom_color`, `red/green/blue` | fog fields |
-| `render_targets` | `tick_delta` | — |
 | `first_person_hand` | `tick_delta`, `eye`, `canceled`, `entity_id`, `entity_type` | `canceled` |
 | `key_press` | `key`, `pressed`, `repeat`, `handled` | `handled` |
 | `mouse_button` | `button`, `pressed`, `handled` | `handled` |

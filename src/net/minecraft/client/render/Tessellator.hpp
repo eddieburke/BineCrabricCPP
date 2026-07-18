@@ -1,6 +1,7 @@
 #pragma once
 #include <cstddef>
 #include <cstdint>
+#include <utility>
 #include <vector>
 #include "net/minecraft/client/gl/GlState.hpp"
 namespace net::minecraft::client::render {
@@ -25,6 +26,10 @@ struct TessellatorMesh {
   TessellatorMesh(std::vector<TessellatorVertex> v, int m, bool ht, bool hc, bool hn)
       : vertices(std::move(v)), mode(m), hasTexture(ht), hasColor(hc), hasNormals(hn) {
   }
+  TessellatorMesh(const TessellatorMesh& other);
+  TessellatorMesh& operator=(const TessellatorMesh& other);
+  TessellatorMesh(TessellatorMesh&& other) noexcept;
+  TessellatorMesh& operator=(TessellatorMesh&& other) noexcept;
   [[nodiscard]] bool empty() const noexcept {
     return vertices.empty();
   }

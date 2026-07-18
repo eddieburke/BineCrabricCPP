@@ -8,7 +8,7 @@
 #include "net/minecraft/client/input/InputSystem.hpp"
 #include "net/minecraft/client/option/GameOptions.hpp"
 #include "net/minecraft/client/render/item/ItemRenderer.hpp"
-#include "net/minecraft/client/render/platform/Lighting.hpp"
+#include "net/minecraft/client/gl/Lighting.hpp"
 #include "net/minecraft/client/render/texture/DynamicTextureDetail.hpp"
 #include "net/minecraft/client/resource/language/I18n.hpp"
 #include "net/minecraft/entity/player/ClientPlayerEntity.hpp"
@@ -201,7 +201,7 @@ void AchievementsScreen::renderIcons(int mouseX, int mouseY, float tickDelta) {
   {
     gl::MatrixGuard lightingMatrix;
     gl::rotatef(180.0f, 1.0f, 0.0f, 0.0f);
-    render::platform::Lighting::turnOn();
+    gl::Lighting::turnOn();
   }
   {
     const gl::preset::AchievementMapIcons iconCaps;
@@ -308,7 +308,7 @@ void AchievementsScreen::renderIcons(int mouseX, int mouseY, float tickDelta) {
                                  : (hovered->challenge ? 0xFF808080 : 0xFF808080);
       textRenderer()->drawWithShadow(title, tooltipX, tooltipY, titleColor);
     }
-    render::platform::Lighting::turnOff();
+    gl::Lighting::turnOff();
   }
 }
 void AchievementsScreen::render(int mouseX, int mouseY, float tickDelta) {

@@ -28,6 +28,7 @@
 #include "net/minecraft/world/explosion/Explosion.hpp"
 #include "net/minecraft/world/gen/chunk/OverworldChunkGenerator.hpp"
 #include "net/minecraft/world/light/LightingEngine.hpp"
+#include "net/minecraft/world/light/UnifiedLightRegistry.hpp"
 #include "net/minecraft/world/mutation/BlockMutationModule.hpp"
 #include "net/minecraft/world/ports/IEntityWorld.hpp"
 #include "net/minecraft/world/storage/SavedDataStorage.hpp"
@@ -356,6 +357,8 @@ public:
   [[nodiscard]] std::unordered_map<ChunkPos, Chunk, ChunkPosHash>& chunks() noexcept;
   [[nodiscard]] std::string describe() const;
   [[nodiscard]] std::vector<std::uint8_t> getChunkData(int x, int y, int z, int sizeX, int sizeY, int sizeZ);
+  [[nodiscard]] world::light::UnifiedLightRegistry& lightRegistry() noexcept { return lightRegistry_; }
+  [[nodiscard]] const world::light::UnifiedLightRegistry& lightRegistry() const noexcept { return lightRegistry_; }
   [[nodiscard]] double getTemperature(int x, int z) const;
   [[nodiscard]] double getDownfall(int x, int z) const;
   void initializeSpawnPoint();
@@ -373,7 +376,8 @@ protected:
   bool processingDeferred_ = false;
   std::vector<Entity*> entitiesToUnload_;
   std::vector<block::entity::BlockEntity*> blockEntityUpdateQueue_;
-  LightingEngine lighting_;
+  world::light::UnifiedLightRegistry lightRegistry_{};
+  LightingEngine lighting_{lightRegistry_};
   int saveInterval_ = 40;
   int chunkResidentRadiusChunks_ = 15;
   WorldWeather weather_;

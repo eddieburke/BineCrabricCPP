@@ -155,9 +155,15 @@ void World::remove(Entity* entity) {
     entity->setVehicle(nullptr);
   }
   entity->markDead();
+  entities_.erase(std::remove(entities_.begin(), entities_.end(), entity), entities_.end());
   if(auto* player = dynamic_cast<PlayerEntity*>(entity)) {
     players.erase(std::remove(players.begin(), players.end(), player), players.end());
     updateSleepingPlayers();
+  }
+  if(entity->isPersistent) {
+    if(Chunk* chunk = getChunkIfLoaded(entity->chunkX << 4, entity->chunkZ << 4)) {
+      chunk->removeEntity(entity);
+    }
   }
 }
 void World::notifyEntityPickup(Entity* entity, PlayerEntity* collector) {
@@ -167,6 +173,9 @@ int World::countEntities(const std::string& entityType) const {
   int count = 0;
   for(Entity* entity : entities_) {
     if(entity == nullptr || entity->dead) {
+      continue;
+    }
+    if(*reinterpret_cast<const void* const*>(entity) == nullptr) {
       continue;
     }
     if(EntityRegistry::getId(*entity) == entityType) {

@@ -15,7 +15,7 @@ bool DoorBlockRenderer::render(net::minecraft::block::Block& block, int x, int y
   if(ctx_.renderBounds.minY > 0.0) {
     brightness = selfBrightness;
   }
-  if(net::minecraft::block::Block::BLOCKS_LIGHT_LUMINANCE[static_cast<std::size_t>(block.id)] > 0) {
+  if(block.emission() > 0) {
     brightness = 1.0f;
   }
   tessellator.color(downShade * brightness, downShade * brightness, downShade * brightness);
@@ -25,7 +25,7 @@ bool DoorBlockRenderer::render(net::minecraft::block::Block& block, int x, int y
   if(ctx_.renderBounds.maxY < 1.0) {
     brightness = selfBrightness;
   }
-  if(net::minecraft::block::Block::BLOCKS_LIGHT_LUMINANCE[static_cast<std::size_t>(block.id)] > 0) {
+  if(block.emission() > 0) {
     brightness = 1.0f;
   }
   tessellator.color(upShade * brightness, upShade * brightness, upShade * brightness);
@@ -35,7 +35,7 @@ bool DoorBlockRenderer::render(net::minecraft::block::Block& block, int x, int y
   if(ctx_.renderBounds.minZ > 0.0) {
     brightness = selfBrightness;
   }
-  if(net::minecraft::block::Block::BLOCKS_LIGHT_LUMINANCE[static_cast<std::size_t>(block.id)] > 0) {
+  if(block.emission() > 0) {
     brightness = 1.0f;
   }
   tessellator.color(horizShade * brightness, horizShade * brightness, horizShade * brightness);
@@ -51,7 +51,7 @@ bool DoorBlockRenderer::render(net::minecraft::block::Block& block, int x, int y
   if(ctx_.renderBounds.maxZ < 1.0) {
     brightness = selfBrightness;
   }
-  if(net::minecraft::block::Block::BLOCKS_LIGHT_LUMINANCE[static_cast<std::size_t>(block.id)] > 0) {
+  if(block.emission() > 0) {
     brightness = 1.0f;
   }
   tessellator.color(horizShade * brightness, horizShade * brightness, horizShade * brightness);
@@ -67,7 +67,7 @@ bool DoorBlockRenderer::render(net::minecraft::block::Block& block, int x, int y
   if(ctx_.renderBounds.minX > 0.0) {
     brightness = selfBrightness;
   }
-  if(net::minecraft::block::Block::BLOCKS_LIGHT_LUMINANCE[static_cast<std::size_t>(block.id)] > 0) {
+  if(block.emission() > 0) {
     brightness = 1.0f;
   }
   tessellator.color(nsShade * brightness, nsShade * brightness, nsShade * brightness);
@@ -83,7 +83,7 @@ bool DoorBlockRenderer::render(net::minecraft::block::Block& block, int x, int y
   if(ctx_.renderBounds.maxX < 1.0) {
     brightness = selfBrightness;
   }
-  if(net::minecraft::block::Block::BLOCKS_LIGHT_LUMINANCE[static_cast<std::size_t>(block.id)] > 0) {
+  if(block.emission() > 0) {
     brightness = 1.0f;
   }
   tessellator.color(nsShade * brightness, nsShade * brightness, nsShade * brightness);

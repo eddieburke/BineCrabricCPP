@@ -60,7 +60,6 @@ public:
   static std::array<bool, BLOCK_COUNT> BLOCKS_WITH_ENTITY;
   static std::array<int, BLOCK_COUNT> BLOCKS_LIGHT_OPACITY;
   static std::array<bool, BLOCK_COUNT> BLOCKS_ALLOW_VISION;
-  static std::array<int, BLOCK_COUNT> BLOCKS_LIGHT_LUMINANCE;
   static std::array<bool, BLOCK_COUNT> BLOCKS_IGNORE_META_UPDATE;
   // Java's named static block instances. Populated from BLOCKS[id] once
   // Registry::bootstrap() has run.
@@ -198,6 +197,7 @@ public:
   }
   Block* setOpacity(int i);
   Block* setLuminance(float fractionalValue);
+  [[nodiscard]] int emission() const noexcept;
   Block* setResistance(float resistance);
   Block* setHardness(float hardness);
   Block* setUnbreakable();

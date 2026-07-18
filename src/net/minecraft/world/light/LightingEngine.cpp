@@ -1,4 +1,5 @@
 #include "net/minecraft/world/light/LightingEngine.hpp"
+#include "net/minecraft/world/light/UnifiedLightRegistry.hpp"
 #include <algorithm>
 #include <utility>
 #include "net/minecraft/block/Block.hpp"
@@ -45,7 +46,8 @@ void LightingEngine::Box::cover(int x0, int y0, int z0, int x1, int y1, int z1) 
   maxY = std::max(maxY, y1);
   maxZ = std::max(maxZ, z1);
 }
-LightingEngine::LightingEngine() : thread_([this](const std::stop_token& stop) { threadLoop(stop); }) {
+LightingEngine::LightingEngine(world::light::UnifiedLightRegistry& registry)
+    : lightRegistry_(registry), thread_([this](const std::stop_token& stop) { threadLoop(stop); }) {
 }
 void LightingEngine::push(LightType type, int minX, int minY, int minZ, int maxX, int maxY, int maxZ, bool merge) {
   {
@@ -87,18 +89,24 @@ void LightingEngine::registerChunk(Chunk* chunk) {
   if(chunk == nullptr || chunk->isEmpty()) {
     return;
   }
-  const std::lock_guard lock(registryMutex_);
-  registry_[chunkKey(chunk->x, chunk->z)] = chunk;
+  {
+    const std::lock_guard lock(registryMutex_);
+    registry_[chunkKey(chunk->x, chunk->z)] = chunk;
+  }
+  lightRegistry_.syncChunkSources(*chunk);
 }
 void LightingEngine::unregisterChunk(Chunk* chunk) {
   if(chunk == nullptr) {
     return;
   }
-  const std::lock_guard lock(registryMutex_);
-  const auto it = registry_.find(chunkKey(chunk->x, chunk->z));
-  if(it != registry_.end() && it->second == chunk) {
-    registry_.erase(it);
+  {
+    const std::lock_guard lock(registryMutex_);
+    const auto it = registry_.find(chunkKey(chunk->x, chunk->z));
+    if(it != registry_.end() && it->second == chunk) {
+      registry_.erase(it);
+    }
   }
+  lightRegistry_.eraseChunkSources(chunk->x, chunk->z);
 }
 std::vector<LightingEngine::DirtyRegion> LightingEngine::drainDirtyRegions(std::size_t maxRegions) {
   const std::lock_guard lock(outboxMutex_);
@@ -364,7 +372,7 @@ void LightingEngine::runUpdate(const Box& update) {
               emission = 15;
             }
           } else {
-            emission = Block::BLOCKS_LIGHT_LUMINANCE[static_cast<std::size_t>(block)];
+            emission = lightRegistry_.blockEmission(block);
           }
           int newLight = 0;
           if(opacity < 15 || emission != 0) {

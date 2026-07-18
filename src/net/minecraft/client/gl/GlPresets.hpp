@@ -1,6 +1,212 @@
 #pragma once
-#include "net/minecraft/client/gl/GlScopes.hpp"
+#include <initializer_list>
+#include "net/minecraft/client/gl/EnginePipeline.hpp"
+#include "net/minecraft/client/gl/GlDraw.hpp"
 namespace net::minecraft::client::gl {
+// RAII state scopes: save/restore slices of fixed-function state around a preset.
+class CapScope {
+public:
+  CapScope(std::initializer_list<int> caps) {
+    previousPipeline_ = g_pipeline;
+    for(int cap : caps) {
+      if(count_ < kMax) {
+        // All FF-mirrored fields are restored from one CPU shadow copy.
+        if(!isPipelineStateCap(cap)) {
+          entries_[count_++] = Entry{cap, capEnabled(cap)};
+        }
+      }
+    }
+  }
+  CapScope(const CapScope&) = delete;
+  CapScope& operator=(const CapScope&) = delete;
+  ~CapScope() {
+    g_pipeline = previousPipeline_;
+    g_pipeline.dirty = true;
+    for(int i = count_ - 1; i >= 0; --i) {
+      setCap(entries_[i].cap, entries_[i].enabled);
+    }
+  }
+
+private:
+  static constexpr int kMax = 32;
+  struct Entry {
+    int cap;
+    bool enabled;
+  };
+  Entry entries_[kMax]{};
+  int count_ = 0;
+  PipelineState previousPipeline_{};
+};
+class DepthMaskScope {
+public:
+  DepthMaskScope() {
+    GLboolean value = GL_TRUE;
+    ::glGetBooleanv(GL_DEPTH_WRITEMASK, &value);
+    previous_ = value == GL_TRUE;
+  }
+  DepthMaskScope(const DepthMaskScope&) = delete;
+  DepthMaskScope& operator=(const DepthMaskScope&) = delete;
+  ~DepthMaskScope() {
+    depthMask(previous_);
+  }
+
+private:
+  bool previous_ = true;
+};
+class ShadeModelScope {
+public:
+  ShadeModelScope() : previous_(g_pipeline.smoothShading) {}
+  ShadeModelScope(const ShadeModelScope&) = delete;
+  ShadeModelScope& operator=(const ShadeModelScope&) = delete;
+  ~ShadeModelScope() {
+    g_pipeline.smoothShading = previous_;
+    g_pipeline.dirty = true;
+  }
+
+private:
+  bool previous_ = true;
+};
+class BlendFuncScope {
+public:
+  BlendFuncScope() {
+    GLint src = blend::One;
+    GLint dst = blend::Zero;
+    ::glGetIntegerv(query::BlendSrc, &src);
+    ::glGetIntegerv(query::BlendDst, &dst);
+    src_ = static_cast<int>(src);
+    dst_ = static_cast<int>(dst);
+  }
+  BlendFuncScope(const BlendFuncScope&) = delete;
+  BlendFuncScope& operator=(const BlendFuncScope&) = delete;
+  ~BlendFuncScope() {
+    blendFunc(src_, dst_);
+  }
+
+private:
+  int src_ = blend::One;
+  int dst_ = blend::Zero;
+};
+class DepthFuncScope {
+public:
+  DepthFuncScope() {
+    GLint mode = compare::Lequal;
+    ::glGetIntegerv(query::DepthFunc, &mode);
+    previous_ = static_cast<int>(mode);
+  }
+  DepthFuncScope(const DepthFuncScope&) = delete;
+  DepthFuncScope& operator=(const DepthFuncScope&) = delete;
+  ~DepthFuncScope() {
+    depthFunc(previous_);
+  }
+
+private:
+  int previous_ = compare::Lequal;
+};
+class AlphaFuncScope {
+public:
+  AlphaFuncScope() : ref_(g_pipeline.alphaRef) {}
+  AlphaFuncScope(const AlphaFuncScope&) = delete;
+  AlphaFuncScope& operator=(const AlphaFuncScope&) = delete;
+  ~AlphaFuncScope() {
+    alphaFunc(compare::Greater, ref_);
+  }
+
+private:
+  float ref_ = 0.1f;
+};
+class BoundTextureScope {
+public:
+  BoundTextureScope() {
+    int bound = 0;
+    getIntegerv(tex::Binding2D, &bound);
+    previous_ = static_cast<unsigned>(bound);
+  }
+  BoundTextureScope(const BoundTextureScope&) = delete;
+  BoundTextureScope& operator=(const BoundTextureScope&) = delete;
+  ~BoundTextureScope() {
+    bindTexture(cap::Texture2D, static_cast<int>(previous_));
+  }
+
+private:
+  unsigned previous_ = 0;
+};
+class TextureStateScope {
+public:
+  TextureStateScope() {
+    getIntegerv(tex::ActiveTexture, &previousActive_);
+    getIntegerv(tex::Binding2D, &previousBinding_);
+  }
+  TextureStateScope(const TextureStateScope&) = delete;
+  TextureStateScope& operator=(const TextureStateScope&) = delete;
+  ~TextureStateScope() {
+    bindTexture(cap::Texture2D, previousBinding_);
+    activeTexture(previousActive_);
+  }
+
+private:
+  int previousActive_ = tex::Texture0;
+  int previousBinding_ = 0;
+};
+namespace pass {
+inline void applyOrthoProjection(const util::UiScale& scale) {
+  matrixMode(matrix_::Projection);
+  loadIdentity();
+  ortho(0.0, scale.rawWidth, scale.rawHeight, 0.0, 1000.0, 3000.0);
+  matrixMode(matrix_::ModelView);
+  loadIdentity();
+  translatef(0.0f, 0.0f, -2000.0f);
+}
+inline void applyHudEnables() {
+  disable(cap::CullFace);
+  enable(cap::Texture2D);
+  enable(cap::AlphaTest);
+  alphaFunc(compare::Greater, 0.1f);
+  color4f(1.0f, 1.0f, 1.0f, 1.0f);
+}
+inline void applyScreenEnables() {
+  disable(cap::CullFace);
+  disable(cap::Lighting);
+  disable(cap::Fog);
+  enable(cap::Texture2D);
+  enable(cap::AlphaTest);
+  alphaFunc(compare::Greater, 0.1f);
+  color4f(1.0f, 1.0f, 1.0f, 1.0f);
+}
+inline void bindAtlas2D(int textureId) {
+  enable(cap::Texture2D);
+  bindTexture(cap::Texture2D, static_cast<unsigned>(textureId));
+  color4f(1.0f, 1.0f, 1.0f, 1.0f);
+}
+inline void beginHud(const util::UiScale& scale) {
+  clear(attrib::DepthBufferBit);
+  applyOrthoProjection(scale);
+  applyHudEnables();
+}
+inline void beginScreen(const util::UiScale& scale, int viewportW, int viewportH) {
+  viewport(0, 0, viewportW, viewportH);
+  applyScreenEnables();
+  clear(attrib::DepthBufferBit);
+  applyOrthoProjection(scale);
+  clear(attrib::DepthBufferBit);
+}
+} // namespace pass
+// Blits the currently bound 2D texture over the given viewport using the core-profile
+// fullscreen-triangle shader (see EnginePipeline::blitFullscreen).
+inline void drawFullscreenTexturedQuad(int width, int height) {
+  int savedViewport[4]{0, 0, width, height};
+  getIntegerv(query::Viewport, savedViewport);
+  const CapScope caps{cap::DepthTest, cap::CullFace, cap::Blend, cap::ScissorTest};
+  const DepthMaskScope depthMaskScope;
+  viewport(0, 0, width, height);
+  setCap(cap::DepthTest, false);
+  setCap(cap::CullFace, false);
+  setCap(cap::Blend, false);
+  setCap(cap::ScissorTest, false);
+  depthMask(false);
+  activeTexture(tex::Texture0);
+  engine_pipeline::blitFullscreen();
+  viewport(savedViewport[0], savedViewport[1], savedViewport[2], savedViewport[3]);
+}
 namespace detail {
 inline void alphaBlend(bool alphaTest = false) {
   setCap(cap::Blend, true);
@@ -84,9 +290,7 @@ struct ModLuaGuiItemDraw {
                 cap::RescaleNormal,
                 cap::DepthTest,
                 cap::Lighting,
-                cap::ColorMaterial,
-                light::Light0,
-                light::Light1};
+                cap::ColorMaterial};
   ModLuaGuiItemDraw() {
     setCap(cap::Fog, false);
     setCap(cap::Blend, false);
@@ -95,8 +299,6 @@ struct ModLuaGuiItemDraw {
     setCap(cap::DepthTest, true);
     setCap(cap::Lighting, true);
     setCap(cap::ColorMaterial, true);
-    setCap(light::Light0, true);
-    setCap(light::Light1, true);
   }
 };
 struct ModLuaGuiSpriteDraw {
@@ -305,13 +507,6 @@ struct GuiItemLabel {
     setCap(cap::DepthTest, false);
   }
 };
-struct GuiItemDurability {
-  CapScope caps{cap::Lighting, cap::Texture2D};
-  GuiItemDurability() {
-    setCap(cap::Lighting, false);
-    setCap(cap::Texture2D, false);
-  }
-};
 struct GuiDurabilityBar {
   CapScope caps{cap::Lighting, cap::Fog, cap::DepthTest, cap::Texture2D};
   GuiDurabilityBar() {
@@ -371,16 +566,6 @@ struct SkyDomeStarsPass {
   SkyDomeStarsPass() {
     setCap(cap::Texture2D, false);
     setCap(cap::Fog, false);
-  }
-};
-struct SkyDomeHorizon {
-  CapScope caps{cap::Blend, cap::AlphaTest, cap::Fog, cap::Texture2D};
-  DepthMaskScope depth;
-  SkyDomeHorizon() {
-    setCap(cap::Blend, false);
-    setCap(cap::AlphaTest, true);
-    setCap(cap::Fog, true);
-    setCap(cap::Texture2D, false);
   }
 };
 struct AchievementMap {
@@ -454,19 +639,6 @@ struct ScreenFogOff {
   }
 };
 using FogOff = ScreenFogOff;
-struct FogOn {
-  CapScope caps{cap::Fog};
-  FogOn() {
-    setCap(cap::Fog, true);
-  }
-};
-struct ColorMaterialOn {
-  CapScope caps{cap::ColorMaterial};
-  ColorMaterialOn() {
-    setCap(cap::ColorMaterial, true);
-    colorMaterial(face::Front, light::AmbientAndDiffuse);
-  }
-};
 struct ColorMaterialAmbient {
   CapScope caps{cap::ColorMaterial};
   ColorMaterialAmbient() {
@@ -506,13 +678,6 @@ struct EntityPassThrough {
   CapScope caps{cap::CullFace, cap::Blend, cap::Texture2D};
   EntityPassThrough() {
     setCap(cap::CullFace, false);
-  }
-};
-struct EntityPassRestore {
-  CapScope caps{cap::Blend, cap::CullFace};
-  EntityPassRestore() {
-    setCap(cap::Blend, false);
-    setCap(cap::CullFace, true);
   }
 };
 struct EntityHurtOverlay {
@@ -581,26 +746,6 @@ struct ModItemDraw {
   }
 };
 using ModBlockInventory = ModItemDraw;
-struct FrameSetup {
-  CapScope caps{cap::CullFace, cap::DepthTest, cap::Fog, cap::Blend};
-  DepthMaskScope depth;
-  ShadeModelScope shade;
-  FrameSetup() {
-    setCap(cap::CullFace, true);
-    setCap(cap::DepthTest, true);
-    depthMask(true);
-  }
-};
-struct FrameEndCleanup {
-  CapScope caps{cap::Fog, cap::CullFace, cap::Blend, cap::AlphaTest};
-  FrameEndCleanup() {
-    setCap(cap::Fog, false);
-    setCap(cap::CullFace, true);
-    setCap(cap::Blend, false);
-    alphaFunc(compare::Greater, 0.1f);
-    color4f(1.0f, 1.0f, 1.0f, 1.0f);
-  }
-};
 struct FirstPersonDepth {
   CapScope caps{cap::DepthTest};
   DepthMaskScope depth;
@@ -651,14 +796,6 @@ struct PistonTranslucent {
     setCap(cap::CullFace, false);
   }
 };
-struct CreeperChargeBlend {
-  CapScope caps{cap::Blend};
-  BlendFuncScope blend;
-  CreeperChargeBlend() {
-    setCap(cap::Blend, true);
-    blendFunc(blend::OneMinusDstColor, blend::OneMinusSrcColor);
-  }
-};
 struct LightningFlash {
   CapScope caps{cap::Texture2D, cap::Blend};
   BlendFuncScope blend;
@@ -675,27 +812,7 @@ struct TntFlash {
     setCap(cap::Blend, true);
   }
 };
-struct SlimeOuterShell {
-  CapScope caps{cap::Normalize, cap::Blend};
-  SlimeOuterShell() {
-    setCap(cap::Normalize, true);
-    detail::alphaBlend(false);
-  }
-};
-struct SlimeInnerRestore {
-  CapScope caps{cap::Normalize, cap::Blend};
-  SlimeInnerRestore() {
-    setCap(cap::Normalize, false);
-    setCap(cap::Blend, false);
-  }
-};
 using FishingLine = TextureOff;
-struct ChunkTranslucentDraw {
-  CapScope caps{cap::Blend, cap::Texture2D};
-  ChunkTranslucentDraw() {
-    detail::alphaBlend(false);
-  }
-};
 using OutlineTextureOff = TextureOff;
 struct DebugChart {
   CapScope caps{cap::CullFace, cap::Texture2D};

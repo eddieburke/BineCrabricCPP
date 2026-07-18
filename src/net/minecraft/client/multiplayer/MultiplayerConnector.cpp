@@ -5,7 +5,6 @@
 #include "net/minecraft/client/multiplayer/ClientNetworkHandler.hpp"
 #include "net/minecraft/client/multiplayer/MultiplayerSession.hpp"
 #include "net/minecraft/client/resource/language/I18n.hpp"
-#include "net/minecraft/client/session/OfflineIdentity.hpp"
 #include "net/minecraft/network/Connection.hpp"
 #include "net/minecraft/network/packet/ConnectionPackets.hpp"
 namespace net::minecraft::client::multiplayer {
@@ -50,7 +49,7 @@ MultiplayerConnector::MultiplayerConnector(Minecraft* minecraft, std::string hos
       return;
     }
     if(net::minecraft::Connection* connection = bridge->connection()) {
-      HandshakePacket handshake{::net::minecraft::client::session::resolveJoinUsername(minecraft->session)};
+      HandshakePacket handshake{};
       connection->sendPacket(std::make_unique<HandshakePacket>(std::move(handshake)));
     }
     if(multiplayer::ClientNetworkHandler* handler = bridge->handler()) {

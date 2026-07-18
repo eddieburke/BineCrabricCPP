@@ -2,6 +2,8 @@
 #include <algorithm>
 #include <cmath>
 #include <cstddef>
+#include <utility>
+#include "net/minecraft/client/gl/EnginePipeline.hpp"
 #include "net/minecraft/client/gl/GLCore.hpp"
 #include "net/minecraft/client/gl/GlState.hpp"
 namespace net::minecraft::client::render {
@@ -76,7 +78,7 @@ void Tessellator::disableColor() {
 void Tessellator::normal(const float x, const float y, const float z) {
   hasNormals_ = true;
   currentNormal_ =
-      static_cast<std::int32_t>(static_cast<std::uint8_t>(static_cast<std::int8_t>(x * 128.0f))) |
+      static_cast<std::int32_t>(static_cast<std::uint8_t>(static_cast<std::int8_t>(x * 127.0f))) |
       (static_cast<std::int32_t>(static_cast<std::uint8_t>(static_cast<std::int8_t>(y * 127.0f))) << 8U) |
       (static_cast<std::int32_t>(static_cast<std::uint8_t>(static_cast<std::int8_t>(z * 127.0f))) << 16U);
 }
@@ -120,6 +122,7 @@ void Tessellator::draw() {
   if(!vertices_.empty() && !captureOnly_) {
     TessellatorMesh mesh(std::move(vertices_), mode_, hasTexture_, hasColor_, hasNormals_);
     drawMesh(mesh);
+    vertices_ = std::move(mesh.vertices);
   }
   reset();
 }
@@ -129,28 +132,21 @@ void Tessellator::drawMesh(const TessellatorMesh& mesh) {
   }
   gl::GLCore::init();
   const int stride = static_cast<int>(sizeof(TessellatorVertex));
+  const int mode = effectiveDrawMode(mesh.mode);
   const bool useVbo = mesh.vbo_ != 0 && gl::GLCore::vboSupported;
   if(useVbo) {
     gl::GLCore::bindBuffer(0x8892, mesh.vbo_);
-  }
-  auto ptr = [useVbo, &mesh](std::size_t o) -> const void* {
-    return useVbo ? reinterpret_cast<const void*>(static_cast<std::intptr_t>(o))
-                  : reinterpret_cast<const void*>(reinterpret_cast<const char*>(mesh.vertices.data()) + o);
-  };
-  if(!useVbo && gl::GLCore::bindBuffer != nullptr) {
+    gl::engine_pipeline::drawFromBoundBuffer(
+        0, mesh.vertices.size(), stride, mode, mesh.hasTexture, mesh.hasColor, mesh.hasNormals);
     gl::GLCore::bindBuffer(0x8892, 0);
-  }
-  const gl::ClientArrayBind arrays(ptr(offsetof(TessellatorVertex, x)),
-                                   ptr(offsetof(TessellatorVertex, u)),
-                                   ptr(offsetof(TessellatorVertex, color)),
-                                   ptr(offsetof(TessellatorVertex, normal)),
-                                   stride,
-                                   mesh.hasTexture,
-                                   mesh.hasColor,
-                                   mesh.hasNormals);
-  gl::drawArrays(effectiveDrawMode(mesh.mode), 0, static_cast<int>(mesh.vertices.size()));
-  if(useVbo) {
-    gl::GLCore::bindBuffer(0x8892, 0);
+  } else {
+    gl::engine_pipeline::drawInterleaved(mesh.vertices.data(),
+                                         mesh.vertices.size(),
+                                         stride,
+                                         mode,
+                                         mesh.hasTexture,
+                                         mesh.hasColor,
+                                         mesh.hasNormals);
   }
 }
 TessellatorMesh Tessellator::takeMesh() {
@@ -162,7 +158,6 @@ TessellatorMesh Tessellator::takeMesh() {
     mesh.hasTexture = hasTexture_;
     mesh.hasColor = hasColor_;
     mesh.hasNormals = hasNormals_;
-    vertices_ = {};
   }
   reset();
   return mesh;
@@ -180,6 +175,45 @@ void Tessellator::flush() {
 void Tessellator::reset() {
   vertices_.clear();
   addedVertexCount_ = 0;
+}
+TessellatorMesh::TessellatorMesh(const TessellatorMesh& other)
+    : vertices(other.vertices),
+      mode(other.mode),
+      hasTexture(other.hasTexture),
+      hasColor(other.hasColor),
+      hasNormals(other.hasNormals) {
+}
+TessellatorMesh& TessellatorMesh::operator=(const TessellatorMesh& other) {
+  if(this != &other) {
+    freeGpuBuffer();
+    vertices = other.vertices;
+    mode = other.mode;
+    hasTexture = other.hasTexture;
+    hasColor = other.hasColor;
+    hasNormals = other.hasNormals;
+    vbo_ = 0;
+  }
+  return *this;
+}
+TessellatorMesh::TessellatorMesh(TessellatorMesh&& other) noexcept
+    : vertices(std::move(other.vertices)),
+      mode(other.mode),
+      hasTexture(other.hasTexture),
+      hasColor(other.hasColor),
+      hasNormals(other.hasNormals),
+      vbo_(std::exchange(other.vbo_, 0)) {
+}
+TessellatorMesh& TessellatorMesh::operator=(TessellatorMesh&& other) noexcept {
+  if(this != &other) {
+    freeGpuBuffer();
+    vertices = std::move(other.vertices);
+    mode = other.mode;
+    hasTexture = other.hasTexture;
+    hasColor = other.hasColor;
+    hasNormals = other.hasNormals;
+    vbo_ = std::exchange(other.vbo_, 0);
+  }
+  return *this;
 }
 bool TessellatorMesh::uploadToGpu() {
   gl::GLCore::init();

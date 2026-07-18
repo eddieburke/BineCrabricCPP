@@ -1,26 +1,6 @@
 local CONFIG_FILE = "judaism.txt"
 local SCREEN_ID = "judaism:settings"
 
-local FEATURE_MODULES = {
-  "scripts.compat",
-  "scripts.util",
-  "scripts.content_registry",
-  "scripts.rituals",
-  "scripts.holidays",
-  "scripts.synagogue",
-  "scripts.world_features",
-  "scripts.progression",
-  "scripts.community",
-  "scripts.commands",
-}
-
-for _, module_name in ipairs(FEATURE_MODULES) do
-  local ok, result = pcall(minecraft.require, module_name)
-  if not ok then
-    minecraft.log("warn", "judaism optional module unavailable: " .. module_name .. " (" .. tostring(result) .. ")")
-  end
-end
-
 local SETTINGS_DEFAULTS = {
   enabled = true,
   shabbat_enabled = true,
@@ -99,11 +79,11 @@ local function update_shabbat_state()
 
   if shabbat_active and not last_shabbat_state then
     if settings.show_messages then
-      minecraft.chat.send("Shabbat Shalom! Shabbat has begun.")
+      minecraft.notify("Shabbat Shalom! Shabbat has begun.")
     end
   elseif not shabbat_active and last_shabbat_state then
     if settings.show_messages then
-      minecraft.chat.send("Shabbat is over. Good week!")
+      minecraft.notify("Shabbat is over. Good week!")
     end
   end
 
@@ -142,11 +122,12 @@ minecraft.on(minecraft.events.entity_interact, {
     event.canceled = true
     event.handled = true
     if settings.show_messages then
-      minecraft.chat.send("Combat is prohibited during Shabbat.")
+      minecraft.notify("Combat is prohibited during Shabbat.")
     end
   end
 end)
 
+if minecraft.is_client() then
 minecraft.screen.on_ui(minecraft.screen.ids.mod_settings, minecraft.screen.regions.footer, function(event)
   if event.ui ~= nil and settings.enabled then
     event.ui:add_stacked_centered_button("Judaism...", function()
@@ -217,6 +198,7 @@ minecraft.on(minecraft.events.screen_event, { screen_id = SCREEN_ID, priority = 
     save_settings()
   end
 end)
+end
 
 load_settings()
 minecraft.log("info", "judaism mod loaded")

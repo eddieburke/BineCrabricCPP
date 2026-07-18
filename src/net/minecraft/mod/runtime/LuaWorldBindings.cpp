@@ -6,6 +6,7 @@
 #include "net/minecraft/mod/runtime/ModHostUtil.hpp"
 #include "net/minecraft/item/Item.hpp"
 #include "net/minecraft/entity/player/PlayerEntity.hpp"
+#include "net/minecraft/util/math/MathHelper.hpp"
 #ifdef MINECRAFT_NATIVE_EXPORTS
 #include "net/minecraft/client/Minecraft.hpp"
 #endif
@@ -145,6 +146,59 @@ int luaWorldTopSolidY(lua_State* state) {
     return 1;
   }
   api.pushinteger(state, world->getTopSolidBlockY(x, z));
+  return 1;
+}
+int luaWorldGetHeightmap(lua_State* state) {
+  LuaApi& api = luaApi();
+  const int originX = luaIntArg(state, 1);
+  const int originZ = luaIntArg(state, 2);
+  const int width = std::clamp(luaIntArg(state, 3, 128), 1, 512);
+  const int height = std::clamp(luaIntArg(state, 4, 128), 1, 512);
+  World* world = luaActiveWorld();
+  if(world == nullptr) {
+    api.pushnil(state);
+    return 1;
+  }
+  api.createtable(state, width * height, 0);
+  long long index = 1;
+  for(int row = 0; row < height; ++row) {
+    for(int column = 0; column < width; ++column) {
+      const int worldX = originX + column;
+      const int worldZ = originZ + row;
+      int opaqueHeight = 0;
+      int transparentHeight = 0;
+      int transparentOpacity = 0;
+      if(const Chunk* chunk = world->getChunkIfLoaded(worldX, worldZ); chunk != nullptr) {
+        const int localX = MathHelper::floorMod(worldX, Chunk::width);
+        const int localZ = MathHelper::floorMod(worldZ, Chunk::depth);
+        for(int worldY = Chunk::height - 1; worldY >= 0; --worldY) {
+          const int blockId = chunk->getBlockId(localX, worldY, localZ);
+          if(blockId <= 0 || blockId >= Block::BLOCK_COUNT) {
+            continue;
+          }
+          const Block* block = Block::BLOCKS[static_cast<std::size_t>(blockId)];
+          if(block == nullptr) {
+            continue;
+          }
+          const int top = worldY + 1;
+          if(block->isOpaque()) {
+            opaqueHeight = std::max(opaqueHeight, top);
+            continue;
+          }
+          const int opacity = std::clamp(Block::BLOCKS_LIGHT_OPACITY[static_cast<std::size_t>(blockId)], 0, 255);
+          if(opacity > 0) {
+            transparentHeight = std::max(transparentHeight, top);
+            transparentOpacity = std::max(transparentOpacity, opacity);
+          }
+        }
+      }
+      const std::uint32_t pixel = 0xFF000000U | (static_cast<std::uint32_t>(transparentHeight) << 16U) |
+                                   (static_cast<std::uint32_t>(transparentOpacity) << 8U) |
+                                   static_cast<std::uint32_t>(opaqueHeight);
+      api.pushinteger(state, static_cast<long long>(pixel));
+      api.rawseti(state, -2, index++);
+    }
+  }
   return 1;
 }
 int luaWorldPlayer(lua_State* state) {
@@ -287,6 +341,7 @@ void installWorldApi(lua_State* state, ModHost::LoadedLuaMod& mod) {
                         {"is_night", luaWorldIsNight},
                         {"get_time", luaWorldGetTime},
                         {"get_top_y", luaWorldTopSolidY},
+                        {"get_heightmap", luaWorldGetHeightmap},
                         {"player", luaWorldPlayer},
                         {"spawn_entity", luaWorldSpawnEntity},
                         {"count_entities", luaWorldCountEntities},

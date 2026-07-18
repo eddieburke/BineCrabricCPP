@@ -26,7 +26,7 @@ minecraft.events = names({
   "entity_interact", "entity_remove", "entity_render", "entity_spawn", "entity_teleport", "entity_tick",
   "first_person_hand", "fog_settings", "fov", "camera_setup",
   "key_press", "mouse_button", "player_travel", "pre_entity_render", "pre_tile_entity_render",
-  "raycast", "render_frame", "render_targets", "screen_event", "screen_region", "screen_ui",
+  "raycast", "render_frame", "screen_event", "screen_region", "screen_ui",
   "tick_rate", "tile_entity_tick", "world_color", "world_open", "world_render",
   "world_spawn_search", "world_start", "world_tick"
 })
@@ -37,11 +37,13 @@ minecraft.generation = {
   stages = names({ "terrain", "surface", "carver", "features" }),
   moments = names({ "before", "after" })
 }
-minecraft.render.stages = names({
-  "sky", "stars", "terrain_opaque", "entities", "particles_lit", "particles",
-  "terrain_translucent", "weather", "clouds", "hand", "framebuffer"
-})
-minecraft.render.moments = names({ "before", "after" })
+if minecraft.render ~= nil then
+  minecraft.render.stages = names({
+    "sky", "stars", "terrain_opaque", "entities", "particles_lit", "particles",
+    "terrain_translucent", "weather", "clouds", "hand", "framebuffer"
+  })
+  minecraft.render.moments = names({ "before", "after" })
+end
 minecraft.colors = names({ "sky", "fog" })
 minecraft.keys = { escape = 1, enter = 28, space = 57, up = 200, down = 208 }
 
@@ -169,7 +171,7 @@ minecraft.config = {
   end,
 }
 
-do
+if minecraft.screen ~= nil then
   local screen = minecraft.screen
   function screen.on_ui(screen_id, region, callback, priority)
     return minecraft.on(minecraft.events.screen_ui, {
@@ -321,7 +323,7 @@ end
 -- engine only bakes arbitrary quads into a handle; all voxel geometry lives
 -- here). Each face lists its neighbour offset (for interior-face culling) and
 -- its 4 corners as unit-cube selectors (0 = min corner, 1 = max corner).
-do
+if minecraft.model ~= nil and minecraft.texture ~= nil then
   local model = minecraft.model
   local texture = minecraft.texture
   local floor = math.floor

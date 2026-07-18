@@ -2,7 +2,7 @@
 #include "net/minecraft/client/render/Tessellator.hpp"
 #include "net/minecraft/client/render/entity/EntityRenderDispatcher.hpp"
 #include "net/minecraft/client/render/entity/EntityRenderers.hpp"
-#include "net/minecraft/client/render/platform/Lighting.hpp"
+#include "net/minecraft/client/gl/Lighting.hpp"
 #include "net/minecraft/entity/Entity.hpp"
 #include "net/minecraft/entity/LivingEntity.hpp"
 #include "net/minecraft/entity/projectile/FishingBobberEntity.hpp"
@@ -76,7 +76,7 @@ void FishingBobberEntityRenderer::render(
   const double deltaY = static_cast<float>(rodTipY - bobberY);
   const double deltaZ = static_cast<float>(rodTipZ - bobberZ);
   const gl::preset::FishingLine lineCaps;
-  render::platform::Lighting::turnOff();
+  gl::Lighting::turnOff();
   tessellator.start(3); // GL_LINE_STRIP
   tessellator.color(0);
   constexpr int segments = 16;
@@ -87,7 +87,7 @@ void FishingBobberEntityRenderer::render(
                        z + deltaZ * static_cast<double>(t));
   }
   tessellator.draw();
-  render::platform::Lighting::turnOn();
+  gl::Lighting::turnOn();
 }
 } // namespace net::minecraft::client::render::entity
 #include "net/minecraft/client/entity/EntityClientRendererRegistration.hpp"

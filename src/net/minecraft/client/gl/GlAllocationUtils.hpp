@@ -2,7 +2,7 @@
 #include <mutex>
 #include <vector>
 #include "net/minecraft/client/gl/GlState.hpp"
-namespace net::minecraft::client::util {
+namespace net::minecraft::client::gl {
 class GlAllocationUtils {
 public:
   static void generateTextureName(unsigned int& outName) {
@@ -29,4 +29,4 @@ private:
     return v;
   }
 };
-} // namespace net::minecraft::client::util
+} // namespace net::minecraft::client::gl

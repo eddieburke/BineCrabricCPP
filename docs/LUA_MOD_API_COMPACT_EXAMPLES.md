@@ -123,7 +123,6 @@ minecraft.events = {
   pre_tile_entity_render = "pre_tile_entity_render",
   raycast                = "raycast",
   render_frame           = "render_frame",
-  render_targets         = "render_targets",
   screen_event           = "screen_event",
   screen_region          = "screen_region",
   screen_ui              = "screen_ui",
@@ -733,9 +732,6 @@ minecraft.on(minecraft.events.render_frame, {}, function(event)
   -- frame-level render logic
 end)
 ```
-### `render_targets`
-Fires after framebuffer targets are set up.
-`tick_delta`/float/Render tick delta/No
 ### `fov`
 Fires to query/adjust the field of view.
 `tick_delta`/float/Render tick delta/No; `fov`/float/Field of view in degrees (default 70.0)/Yes
@@ -850,6 +846,12 @@ minecraft.log("info", "block placed")
 minecraft.log("warn", "deprecated api used")
 minecraft.log("error", "something broke")
 minecraft.log("just a string")        -- level defaults to "info"
+```
+## Notifications (Client Only)
+### `minecraft.notify(message)`
+Adds a local message to the in-game HUD. Returns `true` when a client HUD accepted it and `false` when no client is active.
+```lua
+minecraft.notify("Objective complete")
 ```
 ## Context
 ### `minecraft.is_client()`
@@ -1357,10 +1359,6 @@ if cam > 0 then
   minecraft.camera.destroy(cam)
 end
 ```
-## FBO (Offscreen Framebuffers)
-### `minecraft.fbo.*`
-General-purpose offscreen framebuffer objects for custom render passes and shader work.
-``create(width, height, colorCount?, useDepthTex?)``: an FBO, returns handle or `-1`; ``create_display_size(colorCount?, useDepthTex?)``: an FBO matching display size; ``destroy(handle)``: Destroys an FBO; ``resize(handle, width, height)``: Resizes an FBO; ``bind(handle)``: Binds an FBO for rendering, returns `true`/`false`; ``unbind()``: Unbinds the active FBO; ``texture(handle, attachmentIndex?)``: the OpenGL texture ID; ``width(handle)``: pixel width; ``height(handle)``: pixel height; ``bound()``: the currently bound FBO handle, or `-1`
 ## Render (World-Space Drawing)
 ### `minecraft.render.*`
 Low-level world-space drawing functions, only usable during world render events (`world_render`) or chunk context callbacks.
@@ -1431,6 +1429,19 @@ local tex = minecraft.render.create_texture({
 Releases a previously created texture.
 ### `minecraft.render.get_texture_pixels(pathOrId)`
 Returns `{width, height, pixels = {argb...}}` for a texture path or mod texture ID.
+### `minecraft.render.update_texture(id, spec)`
+Updates a texture's pixel data. Accepts a table `{width?, height?, colors/values = {argb...}}` or raw color list.
+```lua
+minecraft.render.update_texture(tex.id, {
+  width = 16, height = 16,
+  colors = {0xFF0000FF, ...}
+})
+```
+### `minecraft.render.bind_texture(id, unit)`
+Binds a texture ID to a specific sampler unit index (e.g. 0-7) inside custom shaders.
+```lua
+minecraft.render.bind_texture(tex.id, 2) -- binds to GL_TEXTURE2
+```
 ## Seed Resolution
 ### `minecraft.util.resolve_seed(text)`
 Resolves a textual seed to its numeric value (supports numeric strings and named seeds).
@@ -1452,14 +1463,15 @@ for _, name in ipairs(minecraft.registry.list("block")) do
 end
 ```
 ## World Grid Sampling
-### `minecraft.world.sample_grid(seed, centerX, centerZ, options?)`
+### `minecraft.world.sample(seed, centerX, centerZ, options?)`
 Samples terrain/biome data into a grid array for minimap or visualization use. The `options` table accepts:
 `radius_chunks` / `radius`/`6`/Radius in chunks (clamped 1–4096); `max_side`/`48`/Maximum samples per side (clamped 8–256); `channel`/`"grass"`/Primary data channel; `channels`/`{channel}`/Array of channel names to sample (max 8); `mod_generation`/`false`/Enable mod generation hooks during sampling
 Supported channels: `"height"`, `"surface_block"`, `"surface_block_below"`, `"biome_id"`, `"grass"` (grass color as ARGB).
+`minecraft.world.sample_grid` remains an alias. `minecraft.world.sample_channels()` returns the supported channel names.
 Returns a table with `side`, `step`, `origin_x`, `origin_z`, `center_x`, `center_z`, `channel`, `values` (primary channel array), and per-channel fields.
 ## Event Reference
 All supported event names for `minecraft.on()`:
-`client_tick`/`before`, `after_world`, `paused`, `has_player`, `has_world`, `world_name`, `is_overworld`, `camera_y`, `player_y`, `player_fall_distance`, `player_on_ground`, `world_time`, `is_night`, `mod_generation`/—; `render_frame`/`tick_delta`/—; `fog_settings`/`enabled`, `spherical`, `exponential`, `start`, `end`, `density`, `custom_color`, `red/green/blue`/fog fields; `render_targets`/`tick_delta`/—; `first_person_hand`/`tick_delta`, `eye`, `canceled`, `entity_id`, `entity_type`/`canceled`; `key_press`/`key`, `pressed`, `repeat`, `handled`/`handled`; `mouse_button`/`button`, `pressed`, `handled`/`handled`; `raycast`/`has_hit`, `type`, `hit_x/y/z`, `block_x/y/z`, `side`, `block_id`, `block_name`, `item_id`, `entity_id`, `entity_type`/—; `fov`/`tick_delta`, `fov`/`fov`; `camera_setup`/`tick_delta`, `x`, `y`, `z`, `yaw`, `pitch`, `roll`, `custom_view`, `hide_first_person_hand`/`x`, `y`, `z`, `yaw`, `pitch`, `roll`, `custom_view`, `hide_first_person_hand`; `player_travel`/`sideways`, `forward`, `speed_multiplier`, `has_player`, `is_local_player`/`sideways`, `forward`, `speed_multiplier`; `tick_rate`/`target_tps`, `tps_scale`/`target_tps`, `tps_scale`; `world_start`/`save_name`, `new_world`/—; `world_open`/`save_name`, `new_world`, `options` (table)/—; `world_tick`/`remote`, `before`/—; `entity_tick`/`remote`, `canceled`, `entity_id`, `entity_type`, `x`, `y`, `z`, `yaw`, `pitch`/`canceled`; `tile_entity_tick`/`x`, `y`, `z`, `id`, `remote`, `removed`, `canceled`, `world_time`, `animation_frame`, `animation_tick`, `animation_speed`, `entity`/`canceled`, `animation_speed`; `create_world`/`save_name`, `seed`, `canceled`, `options` (table)/`canceled`, `options`; `block_interact`/`x`, `y`, `z`, `block_id`, `side`, `right_click`, `remote`, `canceled`, `handled`, `has_player`, `local_player`, `has_item`, `player_x/y/z`, `player_yaw/pitch`, `item_id/count/damage/max_damage/damageable`/`canceled`, `handled`, `item_count`, `item_damage`; `entity_interact`/`attack`, `remote`, `canceled`, `handled`, `sneaking`, `has_player`, `local_player`, `has_target`, `player_yaw/pitch`, `has_item`, `item_id/count/damage`, `entity_id`, `entity_type`, `target_id`/`canceled`, `handled`, `item_count`; `attack_damage`/`damage`, `critical`, `canceled`, `fall_distance`, `on_ground`, `target_x/y/z`, `has_player`, `has_target`/`damage`, `critical`, `canceled`; `entity_teleport`/`entity_id`, `entity_type`, `from_x/y/z`, `x`, `y`, `z`, `yaw`, `pitch`, `canceled`, `has_entity`, `has_player`/`x`, `y`, `z`, `yaw`, `pitch`, `canceled`; `world_color`/`partial_ticks`, `r`, `g`, `b`, `kind`, `celestial`, `world_time`, `is_night`/`r`, `g`, `b`; `entity_render`/`entity_id`, `entity_type`, `is_player`, `tick_delta`, `pose` (sub-table with `body_yaw`, `head_yaw/pitch`, `yaw`, `pitch`, `roll`, `scale`, `offset_x/y/z`, `parts`)/`pose` (full mutation); `world_render`/`tick_delta`, `stage`, `moment`, `cancel_vanilla`, `vanilla_stage_ran`, `shadow_pass`, `celestial_angle`, `sky_yaw_deg`, `star_brightness`, `rain_strength`, `stars_enabled`, `astronomy_enabled`, `astronomy_utc_millis`, `observer_lat/lon_deg`, `camera_x/y/z`, `camera_yaw/pitch/roll`, `custom_camera`, `world_time`, `celestial`, `is_night`, `cloud_base_height`/`cancel_vanilla`, celestial/sky/astronomy fields (sky stage only); `chunk_generation`/`stage`, `moment`, `cancel_vanilla`, `vanilla_stage_ran`, `world_seed`, `mod_generation`, `is_overworld`, `chunk_x`, `chunk_z`, `has_chunk`/`cancel_vanilla`; `screen_region`/`phase_name`, `screen_id`, `region`, `mouse_x`, `mouse_y`, `button`, `scroll_delta`, `x`, `y`, `width`, `height`, `handled`/`handled`, `width`, `height`; `screen_ui`/`screen_id`, `region`, `host_fields` (table), `ui` (table with `add_centered_button`, `add_button`, `add_stacked_centered_button`)/—; `screen_event`/`screen_id`, `phase`, `width`, `height`, `mouse_x`, `mouse_y`, `tick_delta`, `key`, `char`, `button`, `released`, `delta`, `handled`/`handled`; `world_spawn_search`/`x`, `y`, `z`, `resolved`/`x`, `y`, `z`, `resolved`; `pre_entity_render`/`entity_id`, `entity_type`, `tick_delta`, `canceled`, item fields/`canceled`; `pre_tile_entity_render`/`x`, `y`, `z`, `id`, `tick_delta`, `canceled`/`canceled`; `entity_spawn`/`entity_id`, `entity_type`, item fields/—; `entity_remove`/`entity_id`, `entity_type`, item fields/—
+`client_tick`/`before`, `after_world`, `paused`, `has_player`, `has_world`, `world_name`, `is_overworld`, `camera_y`, `player_y`, `player_fall_distance`, `player_on_ground`, `world_time`, `is_night`, `mod_generation`/—; `render_frame`/`tick_delta`/—; `fog_settings`/`enabled`, `spherical`, `exponential`, `start`, `end`, `density`, `custom_color`, `red/green/blue`/fog fields; `first_person_hand`/`tick_delta`, `eye`, `canceled`, `entity_id`, `entity_type`/`canceled`; `key_press`/`key`, `pressed`, `repeat`, `handled`/`handled`; `mouse_button`/`button`, `pressed`, `handled`/`handled`; `raycast`/`has_hit`, `type`, `hit_x/y/z`, `block_x/y/z`, `side`, `block_id`, `block_name`, `item_id`, `entity_id`, `entity_type`/—; `fov`/`tick_delta`, `fov`/`fov`; `camera_setup`/`tick_delta`, `x`, `y`, `z`, `yaw`, `pitch`, `roll`, `custom_view`, `hide_first_person_hand`/`x`, `y`, `z`, `yaw`, `pitch`, `roll`, `custom_view`, `hide_first_person_hand`; `player_travel`/`sideways`, `forward`, `speed_multiplier`, `has_player`, `is_local_player`/`sideways`, `forward`, `speed_multiplier`; `tick_rate`/`target_tps`, `tps_scale`/`target_tps`, `tps_scale`; `world_start`/`save_name`, `new_world`/—; `world_open`/`save_name`, `new_world`, `options` (table)/—; `world_tick`/`remote`, `before`/—; `entity_tick`/`remote`, `canceled`, `entity_id`, `entity_type`, `x`, `y`, `z`, `yaw`, `pitch`/`canceled`; `tile_entity_tick`/`x`, `y`, `z`, `id`, `remote`, `removed`, `canceled`, `world_time`, `animation_frame`, `animation_tick`, `animation_speed`, `entity`/`canceled`, `animation_speed`; `create_world`/`save_name`, `seed`, `canceled`, `options` (table)/`canceled`, `options`; `block_interact`/`x`, `y`, `z`, `block_id`, `side`, `right_click`, `remote`, `canceled`, `handled`, `has_player`, `local_player`, `has_item`, `player_x/y/z`, `player_yaw/pitch`, `item_id/count/damage/max_damage/damageable`/`canceled`, `handled`, `item_count`, `item_damage`; `entity_interact`/`attack`, `remote`, `canceled`, `handled`, `sneaking`, `has_player`, `local_player`, `has_target`, `player_yaw/pitch`, `has_item`, `item_id/count/damage`, `entity_id`, `entity_type`, `target_id`/`canceled`, `handled`, `item_count`; `attack_damage`/`damage`, `critical`, `canceled`, `fall_distance`, `on_ground`, `target_x/y/z`, `has_player`, `has_target`/`damage`, `critical`, `canceled`; `entity_teleport`/`entity_id`, `entity_type`, `from_x/y/z`, `x`, `y`, `z`, `yaw`, `pitch`, `canceled`, `has_entity`, `has_player`/`x`, `y`, `z`, `yaw`, `pitch`, `canceled`; `world_color`/`partial_ticks`, `r`, `g`, `b`, `kind`, `celestial`, `world_time`, `is_night`/`r`, `g`, `b`; `entity_render`/`entity_id`, `entity_type`, `is_player`, `tick_delta`, `pose` (sub-table with `body_yaw`, `head_yaw/pitch`, `yaw`, `pitch`, `roll`, `scale`, `offset_x/y/z`, `parts`)/`pose` (full mutation); `world_render`/`tick_delta`, `stage`, `moment`, `cancel_vanilla`, `vanilla_stage_ran`, `shadow_pass`, `celestial_angle`, `sky_yaw_deg`, `star_brightness`, `rain_strength`, `stars_enabled`, `astronomy_enabled`, `astronomy_utc_millis`, `observer_lat/lon_deg`, `camera_x/y/z`, `camera_yaw/pitch/roll`, `custom_camera`, `world_time`, `celestial`, `is_night`, `cloud_base_height`/`cancel_vanilla`, celestial/sky/astronomy fields (sky stage only); `chunk_generation`/`stage`, `moment`, `cancel_vanilla`, `vanilla_stage_ran`, `world_seed`, `mod_generation`, `is_overworld`, `chunk_x`, `chunk_z`, `has_chunk`/`cancel_vanilla`; `screen_region`/`phase_name`, `screen_id`, `region`, `mouse_x`, `mouse_y`, `button`, `scroll_delta`, `x`, `y`, `width`, `height`, `handled`/`handled`, `width`, `height`; `screen_ui`/`screen_id`, `region`, `host_fields` (table), `ui` (table with `add_centered_button`, `add_button`, `add_stacked_centered_button`)/—; `screen_event`/`screen_id`, `phase`, `width`, `height`, `mouse_x`, `mouse_y`, `tick_delta`, `key`, `char`, `button`, `released`, `delta`, `handled`/`handled`; `world_spawn_search`/`x`, `y`, `z`, `resolved`/`x`, `y`, `z`, `resolved`; `pre_entity_render`/`entity_id`, `entity_type`, `tick_delta`, `canceled`, item fields/`canceled`; `pre_tile_entity_render`/`x`, `y`, `z`, `id`, `tick_delta`, `canceled`/`canceled`; `entity_spawn`/`entity_id`, `entity_type`, item fields/—; `entity_remove`/`entity_id`, `entity_type`, item fields/—
 Events that carry execution context have `remote` (boolean) and `side` (`"client"` or `"server"`) set automatically. World-backed events commonly also expose `has_world`, `world_name`, `is_overworld`, and `mod_generation`; fields remain event-specific, so consult the table above.
 ### Lifecycle Phase Constants
 `minecraft.lifecycle` is a convenience table with all phase names as keys:
@@ -1813,6 +1825,13 @@ Get the Y coordinate immediately above the highest solid or fluid block at the g
 ```lua
 local top = minecraft.world.get_top_y(100, 200)
 ```
+### `minecraft.world.get_heightmap(x, z, width, height)`
+Get a packed ARGB heightmap for loaded columns. The red channel contains the highest translucent block height, the green channel contains its light opacity, and the blue channel contains the highest opaque block height. Unloaded columns are returned as zero heights.
+`x`/int/World X coordinate of the first column; `z`/int/World Z coordinate of the first column; `width`/int/Number of columns along X, clamped to 1–512; `height`/int/Number of columns along Z, clamped to 1–512
+**Returns:** integer array in row-major order, or `nil` if no world is active.
+```lua
+local pixels = minecraft.world.get_heightmap(0, 0, 128, 128)
+```
 ### `minecraft.world.player()`
 Get the position of the active player.
 **Returns:** table `{x, y, z}` containing the player's world coordinates, or `nil` if no player is available.
@@ -1854,7 +1873,7 @@ Convert world coordinates to grid pixel coordinates (for minimaps, chunk markers
 `grid`/table/Grid descriptor with fields: `side` (pixel dimension), `step` (blocks per pixel), `origin_x`, `origin_z` (world origin offset); `world_x`/number/World X coordinate; `world_z`/number/World Z coordinate
 **Returns:** `col, row` — clamped pixel coordinates in `[0, side-1]`, or `0, 0` if grid is invalid.
 ```lua
--- Given a grid from world generation (sample_grid or similar)
+-- Given a grid from world generation (sample or similar)
 local col, row = minecraft.world.marker_px(grid, entity_x, entity_z)
 ```
 ## `ChunkHandle`
@@ -2276,7 +2295,7 @@ minecraft.tessellator.quad({
 Positions are in the block/item's local model space. The tessellator handles atlas UV mapping automatically.
 ## `minecraft.camera.*` (Render Targets / Viewfinder Cameras)
 Create and manage render targets (offscreen framebuffers) backed by the `GameRenderer` pipeline. Use these to render the world to a texture for viewfinder displays, CCTV feeds, etc.
-`create`/`(width: int, height: int, colorCount?: int, useDepthTex?: bool)`/handle (int) or `-1`; `create_display_size`/`(colorCount?: int, useDepthTex?: bool)`/handle (int) or `-1`; `destroy`/`(handle: int)`/`bool`; `resize`/`(handle: int, width: int, height: int)`/`bool`; `render`/`(handle: int, x, y, z, yaw, pitch, roll, fov, tickDelta?: number)`/`bool`; `texture`/`(handle: int, attachmentIndex?: int)`/GL texture ID (int); `width`/`(handle: int)`/width (int); `height`/`(handle: int)`/height (int); `rendering`/`()`/currently bound handle (int), `-1` if none; `unbind`/`()`/`bool`
+`create`/`(width: int, height: int, colorCount?: int, useDepthTex?: bool)`/handle (int) or `-1`; `create_display_size`/`(colorCount?: int, useDepthTex?: bool)`/handle (int) or `-1`; `destroy`/`(handle: int)`/`bool`; `resize`/`(handle: int, width: int, height: int)`/`bool`; `render`/`(handle: int, x, y, z, yaw, pitch, roll, fov, tickDelta?: number)`/`bool`; `render_shadow_orthographic`/`(handle, x, y, z, yaw, pitch, roll, halfWidth, halfHeight, nearPlane, farPlane, includeEntities?, tickDelta?)`/`bool`; `render_shadow_perspective`/`(handle, x, y, z, yaw, pitch, roll, fov, nearPlane?, farPlane?, includeEntities?, tickDelta?)`/`bool`; `texture`/`(handle: int, attachmentIndex?: int)`/GL texture ID (int); `depth_texture`/`(handle: int)`/GL depth texture ID (int); `width`/`(handle: int)`/width (int); `height`/`(handle: int)`/height (int); `rendering`/`()`/currently bound handle (int), `-1` if none; `unbind`/`()`/`bool`; `far_plane`/`()`/active world far plane (number)
 ### `camera.create(width, height, colorCount?, useDepthTex?)`
 Create a new render target. `colorCount` defaults to 1. `useDepthTex` (default `false`) attaches a depth texture instead of a renderbuffer, allowing the depth buffer to be sampled in shaders.
 Returns a numeric handle, or `-1` if creation fails.
@@ -2301,17 +2320,6 @@ Get the render target dimensions. Returns `0` for invalid handles.
 Returns the handle of the currently bound render target, or `-1` if none.
 ### `camera.unbind()`
 Unbind the currently bound render target. Returns `true`.
-## `minecraft.fbo.*` (Offscreen Framebuffers)
-Raw OpenGL framebuffer objects for custom render passes. Separate from `minecraft.camera` — these are not tied to `GameRenderer` and do not run the world render pipeline. Use them for post-processing, shadow maps, or custom shader operations.
-`create`/`(width: int, height: int, colorCount?: int, useDepthTex?: bool)`/handle (int) or `-1`; `create_display_size`/`(colorCount?: int, useDepthTex?: bool)`/handle (int) or `-1`; `destroy`/`(handle: int)`/`bool`; `resize`/`(handle: int, width: int, height: int)`/`bool`; `bind`/`(handle: int)`/`bool`; `unbind`/`()`/`bool`; `texture`/`(handle: int, attachmentIndex?: int)`/GL texture ID (int); `width`/`(handle: int)`/width (int); `height`/`(handle: int)`/height (int); `bound`/`()`/currently bound handle (int), `-1` if none
-Parameters follow the same conventions as `minecraft.camera.*` (colorCount defaults to 1, useDepthTex defaults to `false`).
-```lua
-local fbo = minecraft.fbo.create(512, 512)
-minecraft.fbo.bind(fbo)
--- render custom geometry here
-minecraft.fbo.unbind()
-local fboTex = minecraft.fbo.texture(fbo)
-```
 ## `minecraft.model.*`
 Baked model management: load JSON models, build procedural models from quads, place instances with physics hitboxes, and draw them in world space.
 ### `minecraft.model.load(path)`
@@ -2482,7 +2490,7 @@ end
 ```
 ## Render Events (Reference)
 The following events modify rendering behavior. See `05-events.md` for detailed documentation.
-``world_color``: Modify sky/fog color. `event.kind` is `"sky"` or `"fog"` (from `minecraft.colors`). Set `event.color` (Vec3d); ``camera_setup``: Override camera position, rotation, and roll. Fields: `x, y, z, yaw, pitch, roll`. Set `customView = true`; ``fov``: Override field of view. Set `event.fov` (float, default 70); ``first_person_hand``: Cancel or control first-person hand rendering. Set `canceled = true` to hide the hand; ``render_frame``: Start-of-frame hook. Fires once per frame before any world rendering; ``render_targets``: Post-render-targets hook. Fires after all render targets have been populated; ``world_render``: Per-stage render hooks. Fields: `stage`, `moment`, `cancel_vanilla`, etc; ``pre_entity_render``: Pre-entity-render hook. Set `canceled = true` to skip an entity; ``entity_render``: Entity render hook with pose control. Modify `event.pose` (bodyYaw, headYaw, headPitch, yaw, pitch, roll, scale, offsetX/Y/Z, parts) to override entity rendering
+``world_color``: Modify sky/fog color. `event.kind` is `"sky"` or `"fog"` (from `minecraft.colors`). Set `event.color` (Vec3d); ``camera_setup``: Override camera position, rotation, and roll. Fields: `x, y, z, yaw, pitch, roll`. Set `customView = true`; ``fov``: Override field of view. Set `event.fov` (float, default 70); ``first_person_hand``: Cancel or control first-person hand rendering. Set `canceled = true` to hide the hand; ``render_frame``: Start-of-frame hook. Fires once per frame before any world rendering; ``world_render``: Per-stage render hooks. Fields: `stage`, `moment`, `cancel_vanilla`, etc; ``pre_entity_render``: Pre-entity-render hook. Set `canceled = true` to skip an entity; ``entity_render``: Entity render hook with pose control. Modify `event.pose` (bodyYaw, headYaw, headPitch, yaw, pitch, roll, scale, offsetX/Y/Z, parts) to override entity rendering
 
 # GUI and screens
 ## GUI draw scope
@@ -2637,7 +2645,7 @@ minecraft.screen.set_fields_visible(true)  -- show all fields
 Attaches a callback to a **host screen's region** (e.g. the footer of the options screen). This is a convenience wrapper around subscribing to the `screen_ui` event.
 `screen_id`/string/One of `minecraft.screen.ids.*`, or any string; `region`/string/One of `minecraft.screen.regions.*`; `callback`/function/Receives an event with an `event.ui` context object; `priority`/number/Optional (default 0)
 The callback receives an event table with an `event.ui` object. These are methods: call them with colon syntax (`event.ui:method(...)`) so Lua passes the receiver.
-`event.ui:add_centered_button(y, text, callback?)` — Add a centered button at pixel y `event.ui:add_stacked_centered_button(text, callback?)` — Add a button centered and stacked below the last one (auto-y) `event.ui:add_button(x, y, w, h, text, callback?)` — Add a button at exact position `event.host_fields` — Table of host-screen field values available to the callback
+`event.ui:add_centered_button(y, text, callback?, label?)` — Add a centered button at pixel y. The button's `text` is set once at injection time and is **not** re-evaluated on its own; if `callback` mutates state that the label depends on (e.g. toggling a setting), pass `label` — a zero-argument function returning the new text — and it is called right after `callback` to refresh the button `event.ui:add_stacked_centered_button(text, callback?)` — Add a button centered and stacked below the last one (auto-y) `event.ui:add_button(x, y, w, h, text, callback?)` — Add a button at exact position `event.host_fields` — Table of host-screen field values available to the callback
 `event.ui` does not expose a `screen` property. Use the host-field helpers when you need to read or update fields on the underlying screen.
 ```lua
 minecraft.screen.on_ui(minecraft.screen.ids.title, minecraft.screen.regions.screen, function(event)

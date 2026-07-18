@@ -9,6 +9,10 @@
 #include <unordered_map>
 #include <vector>
 namespace net::minecraft::mod::runtime {
+enum class ModRuntimeSide {
+  Client,
+  Server
+};
 enum class ModPackageSource {
   Directory,
   Zip
@@ -25,6 +29,7 @@ struct ModPackage {
   bool active = false;
   bool resourceOverlay = false;
   bool runtimeScript = false;
+  std::string side = "both";
   std::string downloadUrl;
   std::string error;
   std::filesystem::path sourcePath;
@@ -56,6 +61,8 @@ public:
   }
   [[nodiscard]] bool isEnabled(const std::string& modId, bool enabledByDefault = true) const;
   bool setEnabled(const std::string& modId, bool enabled);
+  void setPackageLoadingEnabled(bool enabled) noexcept { packageLoadingEnabled_ = enabled; }
+  void setRuntimeSide(ModRuntimeSide side) noexcept { runtimeSide_ = side; }
   void loadEnabledPackageMods();
   [[nodiscard]] std::vector<ModPackage> packageMods() const;
   [[nodiscard]] std::vector<std::uint8_t> readResource(std::string_view path) const;
@@ -79,6 +86,8 @@ private:
   std::filesystem::path cacheDirectory_;
   bool initialized_ = false;
   bool packageModsLoaded_ = false;
+  bool packageLoadingEnabled_ = true;
+  ModRuntimeSide runtimeSide_ = ModRuntimeSide::Client;
   std::unordered_map<std::string, bool> savedEnabledStates_;
   std::vector<ModPackage> packageMods_;
   std::vector<std::shared_ptr<LoadedLuaMod>> loadedLuaMods_;

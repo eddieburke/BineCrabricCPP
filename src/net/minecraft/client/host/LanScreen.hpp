@@ -29,7 +29,6 @@ private:
   void refreshSettingLabels();
   std::unique_ptr<gui::widget::TextFieldWidget> portField_;
   gui::widget::ActionButtonWidget* openButton_ = nullptr;
-  gui::widget::ActionButtonWidget* onlineModeButton_ = nullptr;
   gui::widget::ActionButtonWidget* pvpButton_ = nullptr;
   gui::widget::ActionButtonWidget* animalsButton_ = nullptr;
   gui::widget::ActionButtonWidget* netherButton_ = nullptr;

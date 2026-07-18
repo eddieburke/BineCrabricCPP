@@ -1,7 +1,7 @@
 #include "net/minecraft/block/Block.hpp"
 #include "net/minecraft/client/gl/GlState.hpp"
 #include "net/minecraft/client/render/entity/EntityRenderers.hpp"
-#include "net/minecraft/client/render/platform/Lighting.hpp"
+#include "net/minecraft/client/gl/Lighting.hpp"
 #include "net/minecraft/entity/TntEntity.hpp"
 namespace net::minecraft::client::render::entity {
 namespace {
@@ -38,12 +38,12 @@ void TntEntityRenderer::render(
     blockRenderManager_.render(*block, 0, entity.getBrightnessAtEyes(tickDelta));
     if(tnt->fuse / 5 % 2 == 0) {
       const gl::preset::TntFlash flashCaps;
-      render::platform::Lighting::turnOff();
+      gl::Lighting::turnOff();
       gl::blendFunc(gl::blend::SrcAlpha, gl::blend::DstAlpha);
       gl::color4f(1.0f, 1.0f, 1.0f, flash);
       blockRenderManager_.render(*block, 0, 1.0f);
       gl::color4f(1.0f, 1.0f, 1.0f, 1.0f);
-      render::platform::Lighting::turnOn();
+      gl::Lighting::turnOn();
     }
   }
   gl::popMatrix();

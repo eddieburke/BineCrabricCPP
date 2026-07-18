@@ -184,6 +184,22 @@ int luaLog(lua_State* state) {
   runtimeLog(mod != nullptr ? mod->modId : "", level.c_str(), message);
   return 0;
 }
+int luaNotify(lua_State* state) {
+  LuaApi& api = luaApi();
+  if(api.gettop(state) < 1 || api.type(state, 1) != kLuaTString) {
+    api.pushboolean(state, 0);
+    return 1;
+  }
+#ifdef MINECRAFT_NATIVE_EXPORTS
+  if(client::Minecraft* minecraft = client::Minecraft::INSTANCE; minecraft != nullptr) {
+    minecraft->inGameHud.addChatMessage(luaString(state, 1, ""));
+    api.pushboolean(state, 1);
+    return 1;
+  }
+#endif
+  api.pushboolean(state, 0);
+  return 1;
+}
 int luaTimeUtcMillis(lua_State* state) {
   const auto now = std::chrono::system_clock::now().time_since_epoch();
   luaApi().pushnumber(state, static_cast<double>(std::chrono::duration_cast<std::chrono::milliseconds>(now).count()));
@@ -578,6 +594,7 @@ int luaIsClient(lua_State* state) {
 void installCoreApi(lua_State* state, ModHost::LoadedLuaMod& mod) {
   LuaApi& api = luaApi();
   bindModFunction(state, &mod, "log", luaLog);
+  bindModFunction(state, &mod, "notify", luaNotify);
   bindModFunction(state, &mod, "is_client", luaIsClient);
   bindModFunction(state, &mod, "asset_path", luaAssetPath);
   bindModFunction(state, &mod, "read_asset", luaReadAsset);

@@ -49,7 +49,7 @@ public:
   // Bind the buffer, set fixed-function vertex arrays, and draw visible slots.
   // The caller owns the modelview transform (region origin translate). Returns
   // the number of draw ranges submitted.
-  int flush(int mode);
+  int flush(int mode, bool useEnginePipeline = true);
   [[nodiscard]] bool empty() const noexcept {
     return shadow_.empty();
   }

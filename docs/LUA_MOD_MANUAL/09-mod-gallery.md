@@ -467,7 +467,7 @@ minecraft.entities.spawn_mod("camera:tripod", {
 local channel = minecraft.camera.create_display_size()
 
 -- Render camera view to channel
-minecraft.on(minecraft.events.render_targets, {}, function(event)
+minecraft.on(minecraft.events.render_frame, {}, function(event)
   minecraft.camera.render(channel, x, y + 0.4, z, camera.yaw, camera.pitch or 0, 0, 70, event.tick_delta)
 end)
 ```
@@ -518,7 +518,7 @@ end)
 - `minecraft.camera.render(channel, x, y, z, yaw, pitch, roll, fov, tickDelta)` renders the world to a texture.
 - `minecraft.camera.texture(channel)` returns the OpenGL texture ID for GUI drawing.
 - `minecraft.camera.destroy(channel)` cleans up.
-- `render_targets` event is the correct place to call `camera.render`.
+- `render_frame` event is the correct place to call `camera.render`.
 - `screen_event` phases include `init`, `render`, `tick`, `key`, `mouse`, `scroll`, and `close`; callbacks are event-driven.
 - Tile entities accessed via `minecraft.tile_entities.get(x, y, z)`.
 
@@ -862,10 +862,10 @@ minecraft.on(minecraft.events.screen_event, { screen_id = SCREEN_ID }, function(
 end)
 ```
 
-### Slime chunk detection via `minecraft.world.sample_grid`
+### Slime chunk detection via `minecraft.world.sample`
 
 ```lua
-local ok, grid = pcall(minecraft.world.sample_grid, seed, 0, 0, {
+local ok, grid = pcall(minecraft.world.sample, seed, 0, 0, {
   radius_chunks = radius,
   max_side = side,
   channels = { "biome_id", "height", "surface_block", "surface_block_below" },
@@ -882,7 +882,7 @@ minecraft.gui.draw_texture(tex.id, img_x, img_y, img, img)
 ```
 
 **Key patterns:**
-- `minecraft.world.sample_grid` generates a grid of biome/height/block data for any seed without loading the world.
+- `minecraft.world.sample` generates a grid of biome/height/block data for any seed without loading the world.
 - `minecraft.render.create_texture(width, height, pixelData)` creates a texture from raw pixel data.
 - `minecraft.render.release_texture(id)` frees a created texture.
 - `minecraft.screen.add_field(name, x, y, w, h, opts)` creates native text input fields.

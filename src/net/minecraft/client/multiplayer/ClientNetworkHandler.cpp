@@ -192,9 +192,9 @@ void ClientNetworkHandler::onHandshake(const HandshakePacket& packet) {
           std::vector<std::string>{mod::runtime::WorldRequiredMods::requirementMessage(missing)}));
       return;
     }
-    if(remoteServerKind_ == RemoteServerKind::NativeCppMods) {
-      sendPacket(makeLuaModListPacket(mod::runtime::WorldRequiredMods::joinCsv(activeClientMods())));
-    }
+  }
+  if(remoteServerKind_ == RemoteServerKind::NativeCppMods) {
+    sendPacket(makeLuaModListPacket(mod::runtime::WorldRequiredMods::joinCsv(activeClientMods())));
   }
   beginPendingLogin(metadata.serverId);
 }

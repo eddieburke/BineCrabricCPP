@@ -6,6 +6,7 @@
 #include "net/minecraft/mod/runtime/ModHostUtil.hpp"
 #include "net/minecraft/util/SeedText.hpp"
 #include "net/minecraft/util/math/MathHelper.hpp"
+#include "net/minecraft/world/World.hpp"
 #include "net/minecraft/world/biome/Biome.hpp"
 #include "net/minecraft/world/biome/BiomeNames.hpp"
 #include "net/minecraft/world/biome/source/BiomeSource.hpp"
@@ -17,6 +18,8 @@
 #include "net/minecraft/client/platform/FileDialog.hpp"
 #include "net/minecraft/client/texture/TextureManager.hpp"
 #include "net/minecraft/mod/ModTexture.hpp"
+#include "net/minecraft/client/gl/GlState.hpp"
+#include "net/minecraft/client/gl/GLCore.hpp"
 #endif
 #include <algorithm>
 #include <fstream>
@@ -53,6 +56,14 @@ LoadedLuaMod* modFromUpvalue(lua_State* state) {
 }
 [[nodiscard]] bool isTerrainGridChannel(const std::string& channel) {
   return channel == "height" || channel == "surface_block" || channel == "surface_block_below";
+}
+[[nodiscard]] bool isSupportedSampleChannel(const std::string& channel) {
+  return isTerrainGridChannel(channel) || channel == "biome_id" || channel == "grass";
+}
+[[nodiscard]] const std::array<const char*, 5>& sampleChannels() {
+  static const std::array<const char*, 5> channels = {
+      "height", "surface_block", "surface_block_below", "biome_id", "grass"};
+  return channels;
 }
 [[nodiscard]] long long sampleTerrainChannel(OverworldChunkGenerator& generator,
                                              std::unordered_map<std::uint64_t, Chunk>& chunks,
@@ -198,6 +209,13 @@ int luaWorldSampleGrid(lua_State* state) {
   if(channels.empty()) {
     channels.push_back(channel);
   }
+  for(const std::string& requested : channels) {
+    if(!isSupportedSampleChannel(requested)) {
+      api.pushnil(state);
+      api.pushstring(state, ("unsupported sample channel: " + requested).c_str());
+      return 2;
+    }
+  }
   channel = channels.front();
   radiusChunks = std::clamp(radiusChunks, 1, 4096);
   maxSide = std::clamp(maxSide, 8, 256);
@@ -270,6 +288,16 @@ int luaWorldSampleGrid(lua_State* state) {
     api.setfield(state, -2, channels[i].c_str());
   }
   api.setfield(state, -2, "channels");
+  return 1;
+}
+int luaWorldSampleChannels(lua_State* state) {
+  LuaApi& api = luaApi();
+  const auto& channels = sampleChannels();
+  api.createtable(state, static_cast<int>(channels.size()), 0);
+  for(std::size_t i = 0; i < channels.size(); ++i) {
+    api.pushstring(state, channels[i]);
+    api.rawseti(state, -2, static_cast<long long>(i + 1));
+  }
   return 1;
 }
 #ifdef MINECRAFT_NATIVE_EXPORTS
@@ -424,6 +452,97 @@ int luaRenderReleaseTexture(lua_State* state) {
   api.pushboolean(state, 1);
   return 1;
 }
+int luaRenderUpdateTexture(lua_State* state) {
+  LuaApi& api = luaApi();
+  LoadedLuaMod* mod = modFromUpvalue(state);
+  if(mod == nullptr || client::Minecraft::INSTANCE == nullptr) {
+    api.pushboolean(state, 0);
+    return 1;
+  }
+  int isNum = 0;
+  const int textureId = static_cast<int>(api.tointegerx(state, 1, &isNum));
+  if(isNum == 0 || textureId <= 0) {
+    api.pushboolean(state, 0);
+    return 1;
+  }
+  const auto it = std::find(mod->ownedTextureIds.begin(), mod->ownedTextureIds.end(), textureId);
+  if(it == mod->ownedTextureIds.end()) {
+    api.pushboolean(state, 0);
+    return 1;
+  }
+  const auto* cached = client::Minecraft::INSTANCE->textureManager.getRasterImage(textureId);
+  if(cached == nullptr) {
+    api.pushboolean(state, 0);
+    return 1;
+  }
+  int width = cached->width;
+  int height = cached->height;
+  int colorsIndex = 2;
+  if(api.type(state, 2) == kLuaTTable) {
+    api.getfield(state, 2, "values");
+    if(api.type(state, -1) != kLuaTTable) {
+      api.settop(state, -2);
+      api.getfield(state, 2, "colors");
+    }
+    if(api.type(state, -1) == kLuaTTable) {
+      width = std::max(1, luaIntField(state, 2, "width", luaIntField(state, 2, "side", width)));
+      height = std::max(1, luaIntField(state, 2, "height", width));
+      colorsIndex = api.gettop(state);
+    } else {
+      api.settop(state, -2);
+      colorsIndex = 2;
+    }
+  }
+  if(api.type(state, colorsIndex) != kLuaTTable) {
+    api.pushboolean(state, 0);
+    return 1;
+  }
+  const int cellCount = width * height;
+  client::texture::RasterImage image{};
+  image.width = width;
+  image.height = height;
+  image.argb.assign(static_cast<std::size_t>(cellCount), 0xFF000000U);
+  for(int i = 1; i <= cellCount; ++i) {
+    api.rawgeti(state, colorsIndex, static_cast<long long>(i));
+    int isNumber = 0;
+    const long long argb = api.tointegerx(state, -1, &isNumber);
+    api.settop(state, -2);
+    if(isNumber != 0) {
+      image.argb[static_cast<std::size_t>(i - 1)] = static_cast<std::uint32_t>(argb);
+    }
+  }
+  api.settop(state, colorsIndex - 1);
+  client::Minecraft::INSTANCE->textureManager.update(textureId, image);
+  api.pushboolean(state, 1);
+  return 1;
+}
+int luaRenderBindTexture(lua_State* state) {
+  LuaApi& api = luaApi();
+  int isNum = 0;
+  const int textureId = static_cast<int>(api.tointegerx(state, 1, &isNum));
+  if(isNum == 0 || textureId <= 0) {
+    api.pushboolean(state, 0);
+    return 1;
+  }
+  const int unit = static_cast<int>(api.tointegerx(state, 2, &isNum));
+  if(isNum != 0) {
+    int maxUnits = 0;
+    client::gl::getIntegerv(client::gl::tex::MaxTextureImageUnits, &maxUnits);
+    if(unit < 0 || unit >= maxUnits) {
+      api.pushboolean(state, 0);
+      return 1;
+    }
+    int previousActive = client::gl::tex::Texture0;
+    client::gl::getIntegerv(client::gl::tex::ActiveTexture, &previousActive);
+    client::gl::activeTexture(client::gl::tex::Texture0 + unit);
+    client::gl::bindTexture(client::gl::cap::Texture2D, textureId);
+    client::gl::activeTexture(previousActive);
+  } else {
+    client::gl::bindTexture(client::gl::cap::Texture2D, textureId);
+  }
+  api.pushboolean(state, 1);
+  return 1;
+}
 int luaRenderGetTexturePixels(lua_State* state) {
   LuaApi& api = luaApi();
   if(api.gettop(state) < 1) {
@@ -498,16 +617,22 @@ void installGenericModApi(lua_State* state, LoadedLuaMod& mod) {
                     });
   api.setfield(state, root, "registry");
   api.getfield(state, root, "world");
-  bindFunctions(state, {{"sample_grid", luaWorldSampleGrid}, {"get_block_collisions", luaWorldGetBlockCollisions}});
+  bindFunctions(state,
+                {{"sample", luaWorldSampleGrid},
+                 {"sample_grid", luaWorldSampleGrid},
+                 {"sample_channels", luaWorldSampleChannels},
+                 {"get_block_collisions", luaWorldGetBlockCollisions}});
   api.settop(state, root);
 #ifdef MINECRAFT_NATIVE_EXPORTS
   pushFunctionTable(state, {{"pick", luaFilesPick}, {"read", luaFilesRead}});
   api.setfield(state, root, "files");
   api.getfield(state, root, "render");
   bindModFunction(state, &mod, "create_texture", luaRenderCreateTexture);
+  bindModFunction(state, &mod, "update_texture", luaRenderUpdateTexture);
   bindModFunction(state, &mod, "release_texture", luaRenderReleaseTexture);
   bindModFunction(state, &mod, "get_texture_pixels", luaRenderGetTexturePixels);
-  api.settop(state, root);
+  bindModFunction(state, &mod, "bind_texture", luaRenderBindTexture);
+  api.setfield(state, -2, "render");
 #endif
 }
 } // namespace net::minecraft::mod::lua

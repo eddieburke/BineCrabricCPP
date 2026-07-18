@@ -1,5 +1,6 @@
 #include "net/minecraft/mod/runtime/ModHost.hpp"
 #include "net/minecraft/mod/lua/LuaHostApi.hpp"
+#include "net/minecraft/mod/lua/LuaModApi.hpp"
 #include "net/minecraft/mod/lua/LuaRuntimePrelude.hpp"
 #include "net/minecraft/mod/HookBus.hpp"
 #include "net/minecraft/mod/ModSettingsRegistry.hpp"
@@ -7,7 +8,6 @@
 #include "net/minecraft/mod/runtime/LuaItemBindings.hpp"
 #ifdef MINECRAFT_NATIVE_EXPORTS
 #include "net/minecraft/mod/runtime/LuaCameraBindings.hpp"
-#include "net/minecraft/mod/runtime/LuaFboBindings.hpp"
 #include "net/minecraft/mod/runtime/LuaInventoryBindings.hpp"
 #include "net/minecraft/mod/runtime/LuaModelBindings.hpp"
 #include "net/minecraft/mod/runtime/LuaRaycastBindings.hpp"
@@ -15,7 +15,6 @@
 #include "net/minecraft/mod/runtime/LuaScreenBindings.hpp"
 #include "net/minecraft/mod/runtime/LuaSoundBindings.hpp"
 #include "net/minecraft/mod/runtime/LuaTextureBindings.hpp"
-#include "net/minecraft/mod/runtime/LuaShaderBindings.hpp"
 #endif
 #include "net/minecraft/mod/runtime/LuaBlockEntityBindings.hpp"
 #include "net/minecraft/mod/runtime/LuaCoreBindings.hpp"
@@ -28,7 +27,6 @@
 #ifdef MINECRAFT_NATIVE_EXPORTS
 #include "net/minecraft/client/Minecraft.hpp"
 #include "net/minecraft/client/texture/TextureManager.hpp"
-#include "net/minecraft/mod/lua/LuaModApi.hpp"
 #endif
 #include <algorithm>
 #include <cstdlib>
@@ -55,8 +53,6 @@ void installMinecraftTable(lua_State* state, ModHost::LoadedLuaMod& mod) {
   installItemApi(state, mod);
 #ifdef MINECRAFT_NATIVE_EXPORTS
   installCameraApi(state);
-  installFboApi(state);
-  installShaderApi(state);
   installTextureApi(state);
   installModelApi(state, mod);
   installSoundApi(state, mod);
@@ -67,9 +63,7 @@ void installMinecraftTable(lua_State* state, ModHost::LoadedLuaMod& mod) {
 #endif
   installTileEntityApi(state);
   installRecipeApi(state, mod);
-#ifdef MINECRAFT_NATIVE_EXPORTS
   net::minecraft::mod::lua::installGenericModApi(state, mod);
-#endif
   api.setglobal(state, "minecraft");
 }
 bool installLuaPrelude(lua_State* state, std::string& error) {
@@ -444,7 +438,9 @@ void ModHost::rescan() {
   sortMods(packageMods_);
   if(packageModsLoaded_) {
     for(ModPackage& mod : packageMods_) {
-      if(!mod.configuredEnabled || mod.active) {
+      const bool wrongSide = (runtimeSide_ == ModRuntimeSide::Client && mod.side == "server") ||
+                             (runtimeSide_ == ModRuntimeSide::Server && mod.side == "client");
+      if(!mod.configuredEnabled || mod.active || wrongSide) {
         continue;
       }
       (void)loadLuaMod(mod, loadedLuaMods_);
@@ -456,9 +452,17 @@ void ModHost::loadEnabledPackageMods() {
     return;
   }
   packageModsLoaded_ = true;
+  if(!packageLoadingEnabled_) {
+    for(ModPackage& mod : packageMods_) {
+      mod.active = false;
+    }
+    return;
+  }
   for(ModPackage& mod : packageMods_) {
     mod.active = false;
-    if(!mod.configuredEnabled) {
+    const bool wrongSide = (runtimeSide_ == ModRuntimeSide::Client && mod.side == "server") ||
+                           (runtimeSide_ == ModRuntimeSide::Server && mod.side == "client");
+    if(!mod.configuredEnabled || wrongSide) {
       continue;
     }
     (void)loadLuaMod(mod, loadedLuaMods_);

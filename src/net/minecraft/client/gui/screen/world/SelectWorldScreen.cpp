@@ -78,7 +78,9 @@ protected:
     std::string subtitle = info.getSaveName();
     subtitle += " (" + formatLastPlayed(info.getLastPlayed());
     const float sizeMb = static_cast<float>(info.getSize() / 1024LL * 100LL / 1024LL) / 100.0f;
-    subtitle += ", " + std::to_string(sizeMb) + " MB)";
+    std::ostringstream sizeText;
+    sizeText << std::setprecision(7) << std::defaultfloat << sizeMb;
+    subtitle += ", " + sizeText.str() + " MB)";
     std::string conversion;
     if(info.isSameVersion()) {
       conversion = owner_.conversionText_ + " " + conversion;

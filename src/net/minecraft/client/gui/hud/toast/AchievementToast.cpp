@@ -5,7 +5,7 @@
 #include "net/minecraft/client/Minecraft.hpp"
 #include "net/minecraft/client/gl/GlState.hpp"
 #include "net/minecraft/client/render/item/ItemRenderer.hpp"
-#include "net/minecraft/client/render/platform/Lighting.hpp"
+#include "net/minecraft/client/gl/Lighting.hpp"
 #include "net/minecraft/client/resource/language/I18n.hpp"
 #include "net/minecraft/client/util/UiScale.hpp"
 namespace net::minecraft::client::gui::hud::toast {
@@ -101,7 +101,7 @@ void AchievementToast::renderOverlay() {
     {
       gl::MatrixGuard itemMatrix;
       gl::rotatef(180.0f, 1.0f, 0.0f, 0.0f);
-      render::platform::Lighting::turnOn();
+      gl::Lighting::turnOn();
     }
     {
       const gl::preset::ToastItemIcon itemCaps;

@@ -10,7 +10,7 @@
 #include "net/minecraft/client/gl/GlState.hpp"
 #include "net/minecraft/client/render/FrameRenderCamera.hpp"
 #include "net/minecraft/client/render/Tessellator.hpp"
-#include "net/minecraft/client/render/platform/Lighting.hpp"
+#include "net/minecraft/client/gl/Lighting.hpp"
 #include "net/minecraft/client/texture/TextureManager.hpp"
 #include "net/minecraft/mod/ModTexture.hpp"
 #include "net/minecraft/mod/model/ModelDraw.hpp"
@@ -142,7 +142,7 @@ int luaRenderDrawQuads(lua_State* state) {
     return 1;
   }
   const client::gl::preset::ModLuaDraw modCaps(textured, blend, cull, depthTest, depthWrite);
-  client::render::platform::Lighting::turnOff();
+  client::gl::Lighting::turnOff();
   if(textured) {
     const int glTexture = rawTextureId > 0 && texturePath.empty()
                               ? rawTextureId
@@ -289,7 +289,7 @@ int luaRenderDrawBillboards(lua_State* state) {
   }
   const int pointsIndex = api.gettop(state);
   const client::gl::preset::ModLuaBillboardDraw modCaps(blendMode == "additive", depthTest, depthWrite);
-  client::render::platform::Lighting::turnOff();
+  client::gl::Lighting::turnOff();
   client::render::Tessellator& tessellator = client::render::Tessellator::INSTANCE;
   tessellator.startQuads();
   int emitted = 0;

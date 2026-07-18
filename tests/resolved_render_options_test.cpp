@@ -24,3 +24,24 @@ TEST(ResolvedRenderOptions, DynamicChunkUpdatesScaleGraduallyWithBacklog) {
   EXPECT_EQ(option::chunkUpdatesPerPass(resolved, 11), 3);
   EXPECT_EQ(option::chunkUpdatesPerPass(resolved, 1000), 16);
 }
+
+TEST(ResolvedRenderOptions, LodKeepsFullDetailResidencyBounded) {
+  option::GameOptions options;
+  options.viewDistance = 0;
+  options.renderScale = 5.0f;
+  options.lodEnabled = true;
+  const option::ResolvedRenderOptions resolved = option::resolve(options);
+  EXPECT_FLOAT_EQ(resolved.renderDistanceBlocks, 1280.0f);
+  EXPECT_EQ(resolved.chunkRadius, 13);
+  EXPECT_EQ(resolved.residentChunkRadius, 16);
+}
+
+TEST(ResolvedRenderOptions, RenderScaleExpandsFullDetailWithoutLod) {
+  option::GameOptions options;
+  options.viewDistance = 0;
+  options.renderScale = 5.0f;
+  options.lodEnabled = false;
+  const option::ResolvedRenderOptions resolved = option::resolve(options);
+  EXPECT_EQ(resolved.chunkRadius, 63);
+  EXPECT_EQ(resolved.residentChunkRadius, 66);
+}

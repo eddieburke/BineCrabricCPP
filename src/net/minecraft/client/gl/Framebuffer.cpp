@@ -1,4 +1,4 @@
-#include "net/minecraft/client/render/Framebuffer.hpp"
+#include "net/minecraft/client/gl/Framebuffer.hpp"
 #include <algorithm>
 #include "net/minecraft/client/gl/GLCore.hpp"
 #include "net/minecraft/client/gl/GlState.hpp"
@@ -8,15 +8,50 @@
 #include "net/minecraft/client/render/world/WorldRenderer.hpp"
 #include "net/minecraft/world/World.hpp"
 #include "net/minecraft/world/chunk/LegacyChunkCache.hpp"
-namespace net::minecraft::client::render {
-bool Framebuffer::initialize(int widthIn, int heightIn, int colorCount, bool useDepthTexture) {
+namespace net::minecraft::client::gl {
+using namespace net::minecraft::client::render;
+namespace {
+class TargetRenderState {
+public:
+  TargetRenderState() {
+    gl::getIntegerv(gl::query::FramebufferBinding, &framebuffer_);
+    gl::getIntegerv(gl::query::Viewport, viewport_);
+    gl::getIntegerv(gl::query::MatrixMode, &matrixMode_);
+    gl::matrixMode(gl::matrix_::Projection);
+    gl::pushMatrix();
+    gl::matrixMode(gl::matrix_::ModelView);
+    gl::pushMatrix();
+  }
+  ~TargetRenderState() {
+    gl::matrixMode(gl::matrix_::ModelView);
+    gl::popMatrix();
+    gl::matrixMode(gl::matrix_::Projection);
+    gl::popMatrix();
+    gl::matrixMode(matrixMode_);
+    gl::bindFramebuffer(gl::framebuffer::Framebuffer, static_cast<unsigned>(framebuffer_));
+    gl::viewport(viewport_[0], viewport_[1], viewport_[2], viewport_[3]);
+  }
+  TargetRenderState(const TargetRenderState&) = delete;
+  TargetRenderState& operator=(const TargetRenderState&) = delete;
+
+private:
+  int framebuffer_ = 0;
+  int viewport_[4]{0, 0, 0, 0};
+  int matrixMode_ = gl::matrix_::ModelView;
+};
+} // namespace
+bool Framebuffer::initialize(int widthIn, int heightIn, int colorCount, bool useDepthTexture, bool useHdrColor) {
   destroy();
   gl::GLCore::ensureLoaded();
   if(!gl::GLCore::framebufferSupported || widthIn <= 0 || heightIn <= 0 || colorCount <= 0) {
     return false;
   }
+  const gl::BoundTextureScope textureBinding;
+  int previousFramebuffer = 0;
+  gl::getIntegerv(gl::query::FramebufferBinding, &previousFramebuffer);
   width = widthIn;
   height = heightIn;
+  hdr = useHdrColor;
   gl::genFramebuffers(1, &fbo);
   gl::bindFramebuffer(gl::framebuffer::Framebuffer, fbo);
   colorTextures.resize(colorCount, 0);
@@ -25,7 +60,15 @@ bool Framebuffer::initialize(int widthIn, int heightIn, int colorCount, bool use
   for(int i = 0; i < colorCount; ++i) {
     gl::genTextures(1, &colorTextures[i]);
     gl::bindTexture(gl::cap::Texture2D, static_cast<int>(colorTextures[i]));
-    gl::texImage2D(gl::cap::Texture2D, 0, gl::pixel::Rgba, width, height, 0, gl::pixel::Rgba, gl::pixel::UnsignedByte, nullptr);
+    gl::texImage2D(gl::cap::Texture2D,
+                   0,
+                   hdr ? gl::pixel::Rgba16f : gl::pixel::Rgba,
+                   width,
+                   height,
+                   0,
+                   gl::pixel::Rgba,
+                   hdr ? gl::pixel::Float : gl::pixel::UnsignedByte,
+                   nullptr);
     gl::texParameteri(gl::cap::Texture2D, gl::tex::MinFilter, gl::filter::Linear);
     gl::texParameteri(gl::cap::Texture2D, gl::tex::MagFilter, gl::filter::Linear);
     gl::texParameteri(gl::cap::Texture2D, gl::tex::WrapS, gl::wrap::ClampToEdge);
@@ -39,22 +82,21 @@ bool Framebuffer::initialize(int widthIn, int heightIn, int colorCount, bool use
   if(useDepthTexture) {
     gl::genTextures(1, &depthTexture);
     gl::bindTexture(gl::cap::Texture2D, static_cast<int>(depthTexture));
-    // 0x1902 is GL_DEPTH_COMPONENT, 0x1406 is GL_FLOAT, 0x81A6 is GL_DEPTH_COMPONENT24
-    gl::texImage2D(gl::cap::Texture2D, 0, 0x81A6, width, height, 0, 0x1902, 0x1406, nullptr);
+    gl::texImage2D(gl::cap::Texture2D, 0, gl::pixel::DepthComponent24, width, height, 0, gl::pixel::DepthComponent, gl::pixel::Float, nullptr);
     gl::texParameteri(gl::cap::Texture2D, gl::tex::MinFilter, gl::filter::Nearest);
     gl::texParameteri(gl::cap::Texture2D, gl::tex::MagFilter, gl::filter::Nearest);
     gl::texParameteri(gl::cap::Texture2D, gl::tex::WrapS, gl::wrap::ClampToEdge);
     gl::texParameteri(gl::cap::Texture2D, gl::tex::WrapT, gl::wrap::ClampToEdge);
-    gl::framebufferTexture2D(gl::framebuffer::Framebuffer, 0x8D00 /* GL_DEPTH_ATTACHMENT */, gl::cap::Texture2D, depthTexture, 0);
+    gl::framebufferTexture2D(gl::framebuffer::Framebuffer, gl::framebuffer::DepthAttachment, gl::cap::Texture2D, depthTexture, 0);
   } else {
     gl::genRenderbuffers(1, &depthStencilRb);
     gl::bindRenderbuffer(gl::framebuffer::Renderbuffer, depthStencilRb);
-    gl::renderbufferStorage(gl::framebuffer::Renderbuffer, 0x88F0 /* GL_DEPTH24_STENCIL8 */, width, height);
-    gl::framebufferRenderbuffer(gl::framebuffer::Framebuffer, 0x821A /* GL_DEPTH_STENCIL_ATTACHMENT */, gl::framebuffer::Renderbuffer, depthStencilRb);
+    gl::renderbufferStorage(gl::framebuffer::Renderbuffer, gl::framebuffer::Depth24Stencil8, width, height);
+    gl::framebufferRenderbuffer(gl::framebuffer::Framebuffer, gl::framebuffer::DepthStencilAttachment, gl::framebuffer::Renderbuffer, depthStencilRb);
   }
   const bool ok = gl::checkFramebufferStatus(gl::framebuffer::Framebuffer) == gl::framebuffer::Complete;
   gl::bindRenderbuffer(gl::framebuffer::Renderbuffer, 0);
-  gl::bindFramebuffer(gl::framebuffer::Framebuffer, 0);
+  gl::bindFramebuffer(gl::framebuffer::Framebuffer, static_cast<unsigned>(previousFramebuffer));
   if(!ok) {
     destroy();
   }
@@ -66,8 +108,9 @@ bool Framebuffer::resize(int newWidth, int newHeight) {
   }
   int colorCount = static_cast<int>(colorTextures.size());
   bool useDepth = (depthTexture != 0);
+  const bool useHdr = hdr;
   destroy();
-  return initialize(newWidth, newHeight, colorCount, useDepth);
+  return initialize(newWidth, newHeight, colorCount, useDepth, useHdr);
 }
 void Framebuffer::destroy() {
   if(depthStencilRb != 0) {
@@ -88,6 +131,7 @@ void Framebuffer::destroy() {
   }
   width = 0;
   height = 0;
+  hdr = false;
 }
 void Framebuffer::bind() const {
   gl::bindFramebuffer(gl::framebuffer::Framebuffer, fbo);
@@ -95,9 +139,9 @@ void Framebuffer::bind() const {
 void Framebuffer::unbind() {
   gl::bindFramebuffer(gl::framebuffer::Framebuffer, 0);
 }
-int FramebufferManager::create(int width, int height, int colorCount, bool useDepthTexture) {
+int FramebufferManager::create(int width, int height, int colorCount, bool useDepthTexture, bool useHdrColor) {
   Framebuffer target;
-  if(!target.initialize(width, height, colorCount, useDepthTexture)) {
+  if(!target.initialize(width, height, colorCount, useDepthTexture, useHdrColor)) {
     return -1;
   }
   const int handle = nextHandle_++;
@@ -169,15 +213,15 @@ bool FramebufferManager::renderWorldTo(int handle,
                                        float orthoNear,
                                        float orthoFar,
                                        bool shadowPass,
-                                       bool shadowEntities) {
+                                       bool shadowEntities,
+                                       float perspectiveNear,
+                                       float perspectiveFar,
+                                       FrameRenderCamera* renderedCamera) {
   auto it = targets_.find(handle);
   if(it == targets_.end() || it->second.fbo == 0) {
     return false;
   }
-  int prevFbo = 0;
-  gl::getIntegerv(0x8CA6 /* GL_FRAMEBUFFER_BINDING */, &prevFbo);
-  int prevViewport[4] = {0, 0, 0, 0};
-  gl::getIntegerv(0x0BA2 /* GL_VIEWPORT */, prevViewport);
+  const TargetRenderState targetState;
   const int prevRenderingHandle = renderingHandle_;
   FrameRenderCamera prevFrameCamera = renderer.frameCamera_;
   const FrameRenderCamera prevPublishedCamera = RenderCameraState::instance().frame();
@@ -229,12 +273,17 @@ bool FramebufferManager::renderWorldTo(int handle,
   camera.orthoHalfHeight = std::max(0.01f, orthoHalfHeight);
   camera.orthoNear = orthoNear;
   camera.orthoFar = orthoFar;
+  camera.perspectiveNear = perspectiveNear;
+  camera.perspectiveFar = perspectiveFar;
   camera.shadowPass = shadowPass;
   camera.shadowEntities = shadowEntities;
   const float clampedFov = std::clamp(fov, 1.0f, 179.0f);
   it->second.bind();
   renderingHandle_ = handle;
   renderer.renderToCurrentTarget(tickDelta, camera, clampedFov, it->second.width, it->second.height, true);
+  if(renderedCamera != nullptr) {
+    *renderedCamera = renderer.frameCamera_;
+  }
   renderingHandle_ = prevRenderingHandle;
   if(legacyCache != nullptr) {
     legacyCache->setChunkCacheCenter(prevChunkX, prevChunkZ);
@@ -253,8 +302,6 @@ bool FramebufferManager::renderWorldTo(int handle,
   }
   renderer.frameCamera_ = prevFrameCamera;
   RenderCameraState::instance().setFrame(prevPublishedCamera);
-  gl::bindFramebuffer(gl::framebuffer::Framebuffer, prevFbo);
-  gl::viewport(prevViewport[0], prevViewport[1], prevViewport[2], prevViewport[3]);
   return true;
 }
-} // namespace net::minecraft::client::render
+} // namespace net::minecraft::client::gl

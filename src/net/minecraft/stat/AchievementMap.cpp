@@ -1,16 +1,14 @@
 #include "net/minecraft/stat/AchievementMap.hpp"
+#include "net/minecraft/client/resource/ResourceRoot.hpp"
 #include <fstream>
 #include <sstream>
-#ifndef MINECRAFT_NATIVE_RESOURCE_DIR
-#define MINECRAFT_NATIVE_RESOURCE_DIR "."
-#endif
 namespace net::minecraft::stat {
 AchievementMap& AchievementMap::instance() {
   static AchievementMap map;
   return map;
 }
 AchievementMap::AchievementMap() {
-  std::ifstream input(std::string(MINECRAFT_NATIVE_RESOURCE_DIR) + "/achievement/map.txt");
+  std::ifstream input(client::resource::resolveResource("achievement/map.txt"));
   if(!input.is_open()) {
     return;
   }

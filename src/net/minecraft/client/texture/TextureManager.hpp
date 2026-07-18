@@ -42,6 +42,7 @@ public:
   void deleteTexture(int textureId);
   int load(const RasterImage& image);
   void load(const RasterImage& image, int id);
+  void update(int id, const RasterImage& image);
   void addDynamicTexture(net::minecraft::client::render::texture::DynamicTexture* texture);
   void tick();
   int downloadTexture(const std::string& url, const std::string& backup);

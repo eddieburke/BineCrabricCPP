@@ -3,5 +3,6 @@
   "name": "Judaism",
   "version": "2.0.1",
   "enabled": true,
+  "side": "client",
   "entry": "scripts/main.lua"
 }

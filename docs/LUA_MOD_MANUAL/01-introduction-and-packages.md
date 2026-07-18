@@ -182,7 +182,6 @@ minecraft.events = {
   pre_tile_entity_render = "pre_tile_entity_render",
   raycast                = "raycast",
   render_frame           = "render_frame",
-  render_targets         = "render_targets",
   screen_event           = "screen_event",
   screen_region          = "screen_region",
   screen_ui              = "screen_ui",

@@ -8,7 +8,7 @@
 #include "net/minecraft/client/gui/layout/ScreenLayout.hpp"
 #include "net/minecraft/client/render/Tessellator.hpp"
 #include "net/minecraft/client/render/item/ItemRenderer.hpp"
-#include "net/minecraft/client/render/platform/Lighting.hpp"
+#include "net/minecraft/client/gl/Lighting.hpp"
 #include "net/minecraft/client/resource/language/I18n.hpp"
 #include "net/minecraft/item/Item.hpp"
 #include "net/minecraft/item/ItemStack.hpp"
@@ -346,12 +346,12 @@ void StatsScreen::renderItemIcon(int x, int y, int itemOrBlockId) {
   renderIcon(x + 1, y + 1);
   gl::pushMatrix();
   gl::rotatef(180.0f, 1.0f, 0.0f, 0.0f);
-  render::platform::Lighting::turnOn();
+  gl::Lighting::turnOn();
   gl::popMatrix();
   static render::item::ItemRenderer itemRenderer;
   itemRenderer.renderGuiItem(
       *minecraft()->textRenderer, minecraft()->textureManager, ItemStack(itemOrBlockId), x + 2, y + 2);
-  render::platform::Lighting::turnOff();
+  gl::Lighting::turnOff();
 }
 void StatsScreen::render(int mouseX, int mouseY, float tickDelta) {
   if(selectedStatsList_ != nullptr) {

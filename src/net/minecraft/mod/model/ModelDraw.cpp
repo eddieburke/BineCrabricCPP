@@ -19,7 +19,7 @@
 #ifdef MINECRAFT_NATIVE_EXPORTS
 #include "net/minecraft/client/Minecraft.hpp"
 #include "net/minecraft/client/render/FrameRenderCamera.hpp"
-#include "net/minecraft/client/render/platform/Lighting.hpp"
+#include "net/minecraft/client/gl/Lighting.hpp"
 #include "net/minecraft/client/texture/TextureManager.hpp"
 #include "net/minecraft/mod/runtime/ModRenderScope.hpp"
 #endif
@@ -377,7 +377,7 @@ bool drawBakedModelWorld(int handle, const WorldModelDraw& options) {
   const bool textured = !baked->batches.empty() && !baked->batches.front().texturePath.empty();
   const client::gl::preset::ModLuaDraw modCaps(textured, options.blend, options.cull, options.depthTest,
                                                options.depthWrite);
-  client::render::platform::Lighting::turnOff();
+  client::gl::Lighting::turnOff();
   const client::gl::MatrixGuard matrix;
   client::gl::translatef(static_cast<float>(options.x - camera.x), static_cast<float>(options.y - camera.y),
                          static_cast<float>(options.z - camera.z));
@@ -429,7 +429,7 @@ bool drawItemStackWorld(const ItemStack& stack, const WorldModelDraw& options) {
   const float brightness = worldBrightness(options);
   const client::gl::preset::ModLuaDraw modCaps(true, options.blend, options.cull, options.depthTest,
                                                options.depthWrite);
-  client::render::platform::Lighting::turnOff();
+  client::gl::Lighting::turnOff();
   const client::gl::MatrixGuard matrix;
   client::gl::translatef(static_cast<float>(options.x - camera.x), static_cast<float>(options.y - camera.y),
                          static_cast<float>(options.z - camera.z));

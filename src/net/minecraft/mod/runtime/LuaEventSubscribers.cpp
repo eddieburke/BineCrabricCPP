@@ -25,6 +25,7 @@
 #include "net/minecraft/util/hit/HitResultType.hpp"
 #endif
 #include <algorithm>
+#include <cmath>
 #include <string>
 #include <unordered_map>
 #include "net/minecraft/entity/EntityRegistry.hpp"
@@ -194,17 +195,6 @@ const std::unordered_map<std::string_view, LuaEventSubscriber>& luaEventSubscrib
              ref,
              priority,
              [](lua_State* state, RenderFrameEvent& e) { setFields(state, "tick_delta", e.tickDelta); },
-             kNoRead);
-       }},
-      {"render_targets",
-       [](const LuaMod& mod, int ref, int priority) {
-         subscribeLua<RenderTargetsEvent>(
-             mod,
-             ref,
-             priority,
-             [](lua_State* state, RenderTargetsEvent& e) {
-               setFields(state, "tick_delta", e.tickDelta, "width", e.width, "height", e.height);
-             },
              kNoRead);
        }},
       {"first_person_hand",
@@ -991,6 +981,19 @@ const std::unordered_map<std::string_view, LuaEventSubscriber>& luaEventSubscrib
                            static_cast<double>(e.observerLatitudeDegrees),
                            "observer_longitude_deg",
                            static_cast<double>(e.observerLongitudeDegrees));
+                 if(e.solarDirectionValid) {
+                   setFields(state,
+                             "sun_direction_x",
+                             e.sunDirectionX,
+                             "sun_direction_y",
+                             e.sunDirectionY,
+                             "sun_direction_z",
+                             e.sunDirectionZ,
+                             "sun_azimuth_deg",
+                             e.sunAzimuthDegrees,
+                             "sun_altitude_deg",
+                             e.sunAltitudeDegrees);
+                 }
                  setWorldContextFields(state, e.world);
                  const client::render::FrameRenderCamera& frameCamera =
                      client::render::RenderCameraState::instance().frame();
@@ -1040,27 +1043,47 @@ const std::unordered_map<std::string_view, LuaEventSubscriber>& luaEventSubscrib
                            "custom_camera",
                            frameCamera.customView);
                },
-                [&e](lua_State* state) {
-                  readField(state, "cancel_vanilla", e.cancelVanilla);
-                  if(e.stage == WorldRenderStage::Sky && e.moment == RenderHookMoment::Before) {
-                    readFields(state,
-                               "celestial_angle",
-                               e.celestialAngle,
-                               "sky_yaw_deg",
-                               e.skyYawDegrees,
-                               "astronomy_enabled",
-                               e.astronomyEnabled,
-                               "astronomy_utc_millis",
-                               e.astronomyUtcMillis,
-                               "observer_latitude_deg",
-                               e.observerLatitudeDegrees,
-                               "observer_longitude_deg",
-                               e.observerLongitudeDegrees);
-                  }
-                  if(e.stage == WorldRenderStage::Stars && e.moment == RenderHookMoment::Before) {
-                    readField(state, "star_brightness", e.starBrightness);
-                  }
-                });
+               [&e](lua_State* state) {
+                 readField(state, "cancel_vanilla", e.cancelVanilla);
+                 if(e.stage == WorldRenderStage::Sky && e.moment == RenderHookMoment::Before) {
+                   readFields(state,
+                              "celestial_angle",
+                              e.celestialAngle,
+                              "sky_yaw_deg",
+                              e.skyYawDegrees,
+                              "astronomy_enabled",
+                              e.astronomyEnabled,
+                              "astronomy_utc_millis",
+                              e.astronomyUtcMillis,
+                              "observer_latitude_deg",
+                              e.observerLatitudeDegrees,
+                              "observer_longitude_deg",
+                              e.observerLongitudeDegrees);
+                   float sunX = std::numeric_limits<float>::quiet_NaN();
+                   float sunY = std::numeric_limits<float>::quiet_NaN();
+                   float sunZ = std::numeric_limits<float>::quiet_NaN();
+                   readFields(state,
+                              "sun_direction_x",
+                              sunX,
+                              "sun_direction_y",
+                              sunY,
+                              "sun_direction_z",
+                              sunZ,
+                              "sun_azimuth_deg",
+                              e.sunAzimuthDegrees,
+                              "sun_altitude_deg",
+                              e.sunAltitudeDegrees);
+                   if(std::isfinite(sunX) && std::isfinite(sunY) && std::isfinite(sunZ)) {
+                     e.sunDirectionX = sunX;
+                     e.sunDirectionY = sunY;
+                     e.sunDirectionZ = sunZ;
+                     e.solarDirectionValid = true;
+                   }
+                 }
+                 if(e.stage == WorldRenderStage::Stars && e.moment == RenderHookMoment::Before) {
+                   readField(state, "star_brightness", e.starBrightness);
+                 }
+               });
          });
        }},
 #endif

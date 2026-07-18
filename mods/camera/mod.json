@@ -3,5 +3,6 @@
   "name": "Camera & TV",
   "version": "1.0.0",
   "enabled": true,
+  "side": "client",
   "entry": "scripts/main.lua"
 }

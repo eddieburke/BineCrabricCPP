@@ -1,7 +1,0 @@
-{
-  "id": "shadow_viewport",
-  "name": "Vibrant Shadows",
-  "version": "1.0.0",
-  "enabled": true,
-  "entry": "scripts/main.lua"
-}

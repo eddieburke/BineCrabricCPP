@@ -26,12 +26,13 @@ public:
   bool fancyGraphics = true;
   bool ao = true;
   bool frustumCulling = true;
-  bool lodEnabled = true;
+  bool lodEnabled = false;
   int lodDistance = 1;
   int lodDetail = 1;
   bool lodFogExtend = true;
-  bool lodImportWorld = true;
+  bool lodImportWorld = false;
   std::string skin = "Default";
+  std::string shaderPack;
   int difficulty = 2;
   int guiScale = 0;
   float fieldOfView = 0.0f;

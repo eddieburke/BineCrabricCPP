@@ -153,9 +153,6 @@ void ClientNetworkBridge::disconnect(const std::string& reason) {
   if(handler_ != nullptr) {
     handler_->disconnect(reason);
   }
-  if(worldSession_ != nullptr && handler_ != nullptr && handler_->minecraft != nullptr) {
-    worldSession_->clearWorld(*handler_->minecraft);
-  }
   handler_.reset();
   connection_.reset();
 }

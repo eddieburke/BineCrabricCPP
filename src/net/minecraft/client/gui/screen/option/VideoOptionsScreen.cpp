@@ -9,6 +9,7 @@
 #include "net/minecraft/client/gui/screen/option/PerformanceSettingsScreen.hpp"
 #include "net/minecraft/client/gui/screen/option/QualitySettingsScreen.hpp"
 #include "net/minecraft/client/gui/screen/option/WorldSettingsScreen.hpp"
+#include "net/minecraft/client/gui/screen/pack/ShaderpackScreen.hpp"
 #include "net/minecraft/client/resource/language/I18n.hpp"
 namespace net::minecraft::client::gui::screen::option {
 VideoOptionsScreen::VideoOptionsScreen(ParentFactory parentFactory, client_option::GameOptions* options)
@@ -60,6 +61,15 @@ void VideoOptionsScreen::init() {
         options_->save();
         navigateTo([returnHere, opts = options_]() { return makeFarViewSettingsScreen(returnHere, opts); });
       });
+  addActionButton(x2,
+                  startY + layout::kRowSpacing * 3,
+                  150,
+                  layout::kDefaultButtonHeight,
+                  "Shaderpacks...",
+                  [this, returnHere] {
+                    options_->save();
+                    navigateTo(std::make_unique<pack::ShaderpackScreen>(returnHere));
+                  });
   addCenteredActionButton(
       startY + layout::kRowSpacing * 4, resource::language::I18n::getTranslation("gui.done"), [this] {
         if(options_ == nullptr || minecraft() == nullptr) {

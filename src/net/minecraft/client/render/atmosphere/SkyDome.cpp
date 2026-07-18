@@ -5,7 +5,8 @@
 #include "net/minecraft/client/option/GameOptions.hpp"
 #include "net/minecraft/client/render/Tessellator.hpp"
 #include "net/minecraft/client/render/atmosphere/AtmosphereContext.hpp"
-#include "net/minecraft/client/render/platform/Lighting.hpp"
+#include "net/minecraft/client/gl/Lighting.hpp"
+#include "net/minecraft/world/light/UnifiedLightRegistry.hpp"
 #include "net/minecraft/client/texture/TextureManager.hpp"
 #include "net/minecraft/mod/GameHooks.hpp"
 #include "net/minecraft/mod/HookBus.hpp"
@@ -110,8 +111,9 @@ void drawBackgroundFan(const AtmosphereContext& ctx, float tickDelta, const std:
   const gl::ShadeModelScope shadeCaps;
   gl::shadeModel(gl::shade::Smooth);
   gl::MatrixGuard fanMatrix;
-  gl::rotatef(90.0f, 1.0f, 0.0f, 0.0f);
-  gl::rotatef(timeOfDay > 0.5f ? 180.0f : 0.0f, 0.0f, 0.0f, 1.0f);
+  // Fan lies in the XZ plane (horizontal) at Y=0. Center at Z=+100 for
+  // dusk (sun in front) or Z=-100 for dawn (sun behind) via the X-axis flip.
+  gl::rotatef(timeOfDay > 0.5f ? 270.0f : 90.0f, 1.0f, 0.0f, 0.0f);
   Tessellator& tessellator = Tessellator::INSTANCE;
   tessellator.start(gl::prim::TriangleFan);
   tessellator.color(bg[0], bg[1], bg[2], bg[3]);
@@ -119,7 +121,7 @@ void drawBackgroundFan(const AtmosphereContext& ctx, float tickDelta, const std:
   tessellator.color(bg[0], bg[1], bg[2], 0.0f);
   for(int i = 0; i <= 16; ++i) {
     const float angle = static_cast<float>(i) * kPi * 2.0f / 16.0f;
-    tessellator.vertex(std::sin(angle) * 120.0, std::cos(angle) * 120.0, -std::cos(angle) * 40.0f * bg[3]);
+    tessellator.vertex(std::sin(angle) * 120.0, std::cos(angle) * 120.0, 0.0);
   }
   tessellator.draw();
 }
@@ -165,6 +167,35 @@ void renderSkyDome(const AtmosphereContext& ctx, float tickDelta) {
       0.0f,
   };
   publishRenderStage(skyEvent, mod::WorldRenderStage::Sky, mod::RenderHookMoment::Before);
+  {
+    float sunX = skyEvent.sunDirectionX;
+    float sunY = skyEvent.sunDirectionY;
+    float sunZ = skyEvent.sunDirectionZ;
+    if(!skyEvent.solarDirectionValid) {
+      const float yaw = skyEvent.skyYawDegrees * kPi / 180.0f;
+      sunX = std::sin(yaw) * std::sin(skyEvent.celestialAngle);
+      sunY = std::cos(skyEvent.celestialAngle);
+      sunZ = std::cos(yaw) * std::sin(skyEvent.celestialAngle);
+    }
+    const float length = std::sqrt(sunX * sunX + sunY * sunY + sunZ * sunZ);
+    if(length > 0.0001f) {
+      sunX /= length;
+      sunY /= length;
+      sunZ /= length;
+    }
+    const float daylight = std::clamp((sunY + 0.08f) / 0.28f, 0.0f, 1.0f);
+    const float horizon = 1.0f - std::clamp(std::abs(sunY) * 5.0f, 0.0f, 1.0f);
+    ::net::minecraft::world::light::PhysicalLight sun;
+    sun.shape = ::net::minecraft::world::light::LightShape::Directional;
+    sun.directionX = sunX;
+    sun.directionY = sunY;
+    sun.directionZ = sunZ;
+    sun.red = 1.0f;
+    sun.green = 0.96f - horizon * 0.25f;
+    sun.blue = 0.88f - horizon * 0.48f;
+    sun.intensity = daylight;
+    ctx.world->lightRegistry().upsert(::net::minecraft::world::light::UnifiedLightRegistry::sunKey(), sun);
+  }
   if(skyEvent.cancelVanilla) {
     return;
   }
@@ -183,7 +214,7 @@ void renderSkyDome(const AtmosphereContext& ctx, float tickDelta) {
   Tessellator::drawMesh(meshes.lightSky);
   {
     const gl::preset::SkyDomeBackgroundFan backgroundCaps;
-    platform::Lighting::turnOff();
+    gl::Lighting::turnOff();
     if(std::array<float, 4>* background = ctx.world->dimension->getBackgroundColor(timeOfDay, tickDelta);
        background != nullptr) {
       drawBackgroundFan(ctx, tickDelta, *background);

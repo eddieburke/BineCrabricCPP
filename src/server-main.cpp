@@ -2,6 +2,7 @@
 #include "net/minecraft/server/ServerLog.hpp"
 #include "net/minecraft/server/host/ServerLaunchConfig.hpp"
 #include "net/minecraft/stat/Stats.hpp"
+#include "net/minecraft/mod/runtime/ModHost.hpp"
 #ifdef _WIN32
 #include "net/minecraft/server/dedicated/gui/DedicatedServerGui.hpp"
 #endif
@@ -55,6 +56,8 @@ namespace {
       config.bindAddress = value;
     } else if(option == "--server-port") {
       config.port = std::stoi(value);
+    } else if(option == "--ready-file") {
+      config.readyFile = std::filesystem::path(value);
     } else if(option == "--online-mode") {
       config.onlineMode = parseBool(value, option);
     } else if(option == "--spawn-animals") {
@@ -91,8 +94,10 @@ int main(int argc, char** argv) {
   using net::minecraft::server::ServerLog;
   using net::minecraft::stat::Stats;
   try {
-    Stats::initialize();
     const auto launchConfig = parseLaunchConfig(argc, argv);
+    net::minecraft::mod::runtime::host().setRuntimeSide(net::minecraft::mod::runtime::ModRuntimeSide::Server);
+    net::minecraft::mod::runtime::host().setPackageLoadingEnabled(!launchConfig.has_value() || launchConfig->modsEnabled);
+    Stats::initialize();
     std::unique_ptr<MinecraftServer> server = launchConfig.has_value()
                                                   ? std::make_unique<MinecraftServer>(*launchConfig)
                                                   : std::make_unique<MinecraftServer>();

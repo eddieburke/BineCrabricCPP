@@ -29,11 +29,6 @@ struct CameraSetupEvent {
 struct RenderFrameEvent {
   float tickDelta = 0.0f;
 };
-struct RenderTargetsEvent {
-  float tickDelta = 0.0f;
-  int width = 0;
-  int height = 0;
-};
 struct FovEvent {
   entity::LivingEntity* camera = nullptr;
   float tickDelta = 0.0f;
@@ -73,6 +68,12 @@ struct WorldRenderEvent {
   double astronomyUtcMillis = 0.0;
   float observerLatitudeDegrees = 0.0f;
   float observerLongitudeDegrees = 0.0f;
+  bool solarDirectionValid = false;
+  float sunDirectionX = 0.0f;
+  float sunDirectionY = 1.0f;
+  float sunDirectionZ = 0.0f;
+  float sunAzimuthDegrees = 0.0f;
+  float sunAltitudeDegrees = 90.0f;
   bool shadowPass = false;
 };
 struct FirstPersonHandRenderEvent {

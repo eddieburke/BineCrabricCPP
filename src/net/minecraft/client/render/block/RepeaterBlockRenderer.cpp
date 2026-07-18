@@ -11,7 +11,7 @@ bool RepeaterBlockRenderer::render(net::minecraft::block::Block& block, int x, i
   cube_.renderBlock(block, x, y, z);
   Tessellator& tessellator = *ctx_.tess;
   float brightness = block.getLuminance(ctx_.blockView, x, y, z);
-  if(net::minecraft::block::Block::BLOCKS_LIGHT_LUMINANCE[block.id] > 0) {
+  if(block.emission() > 0) {
     brightness = (brightness + 1.0f) * 0.5f;
   }
   tessellator.color(brightness, brightness, brightness);

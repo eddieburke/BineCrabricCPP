@@ -177,7 +177,7 @@ void TextRenderer::draw(const std::string& text, int x, int y, int color, bool s
   const gl::preset::TextDraw textCaps;
   const gl::BoundTextureScope savedTextureBinding;
   gl::bindTexture(gl::cap::Texture2D, static_cast<unsigned int>(boundTexture));
-  gl::color4f(rf, gf, bf, af);
+  gl::color4f(1.0f, 1.0f, 1.0f, 1.0f);
   float currentR = rf;
   float currentG = gf;
   float currentB = bf;

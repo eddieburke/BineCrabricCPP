@@ -292,7 +292,7 @@ minecraft.on(minecraft.events.block_interact, { right_click = true, block_id = T
   return event
 end)
 
-minecraft.on(minecraft.events.render_targets, {}, function(event)
+minecraft.on(minecraft.events.render_frame, {}, function(event)
   if not client.open then return event end
   local camera = get_current_camera()
   if not camera then return event end

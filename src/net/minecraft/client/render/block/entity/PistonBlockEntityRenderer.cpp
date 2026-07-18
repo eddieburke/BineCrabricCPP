@@ -6,7 +6,7 @@
 #include "net/minecraft/client/Minecraft.hpp"
 #include "net/minecraft/client/gl/GlState.hpp"
 #include "net/minecraft/client/render/Tessellator.hpp"
-#include "net/minecraft/client/render/platform/Lighting.hpp"
+#include "net/minecraft/client/gl/Lighting.hpp"
 namespace net::minecraft::client::render::block::entity {
 void PistonBlockEntityRenderer::setWorld(net::minecraft::World* world) {
   blockRenderManager.setBlockView(world);
@@ -24,7 +24,7 @@ void PistonBlockEntityRenderer::render(
   }
   Tessellator& tessellator = render::INSTANCE;
   bindTexture("/terrain.png");
-  platform::Lighting::turnOff();
+  gl::Lighting::turnOff();
   const gl::preset::PistonTranslucent pistonCaps;
   tessellator.startQuads();
   tessellator.translate(static_cast<double>(static_cast<float>(x) - static_cast<float>(piston->x) +
@@ -60,6 +60,6 @@ void PistonBlockEntityRenderer::render(
   }
   tessellator.translate(0.0, 0.0, 0.0);
   tessellator.draw();
-  platform::Lighting::turnOn();
+  gl::Lighting::turnOn();
 }
 } // namespace net::minecraft::client::render::block::entity

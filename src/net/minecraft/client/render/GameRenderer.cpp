@@ -1,8 +1,8 @@
 #include "net/minecraft/client/render/GameRenderer.hpp"
-#include <charconv>
 #include "net/minecraft/block/Block.hpp"
 #include "net/minecraft/block/material/Material.hpp"
 #include "net/minecraft/client/Minecraft.hpp"
+#include "net/minecraft/client/gl/GLCore.hpp"
 #include "net/minecraft/client/gl/GlState.hpp"
 #include "net/minecraft/client/gui/screen/ChatScreen.hpp"
 #include "net/minecraft/client/input/InputSystem.hpp"
@@ -13,8 +13,13 @@
 #include "net/minecraft/client/render/atmosphere/SkyDome.hpp"
 #include "net/minecraft/client/render/culling/Frustum.hpp"
 #include "net/minecraft/client/render/entity/EntityRenderDispatcher.hpp"
-#include "net/minecraft/client/render/lod/LodSystem.hpp"
-#include "net/minecraft/client/render/platform/Lighting.hpp"
+#include <charconv>
+#include <filesystem>
+#ifdef MINECRAFT_ENABLE_NATIVE_LOD
+#include "net/minecraft/client/render/terrain/TerrainRenderer.hpp"
+#include "net/minecraft/client/render/terrain/TerrainSurface.hpp"
+#endif
+#include "net/minecraft/client/gl/Lighting.hpp"
 #include "net/minecraft/client/render/world/WorldRenderer.hpp"
 #include "net/minecraft/client/util/UiScale.hpp"
 #include "net/minecraft/entity/Entity.hpp"
@@ -32,6 +37,7 @@
 #include "net/minecraft/world/biome/Biome.hpp"
 #include "net/minecraft/world/biome/source/BiomeSource.hpp"
 #include "net/minecraft/world/dimension/Dimension.hpp"
+#include "net/minecraft/world/light/UnifiedLightRegistry.hpp"
 #ifdef _WIN32
 #include "net/minecraft/client/util/DisplayManager.hpp"
 #endif
@@ -49,28 +55,30 @@ namespace option = net::minecraft::client::option;
 namespace {
 constexpr int kBedBlockId = 26;
 constexpr float kPiF = 3.14159265f;
-void gluPerspectiveFov(float fovyDeg, float aspect, float zNear, float zFar) {
-#ifdef MINECRAFT_GL_REAL
-  ::gluPerspective(static_cast<GLdouble>(fovyDeg),
-                   static_cast<GLdouble>(aspect),
-                   static_cast<GLdouble>(zNear),
-                   static_cast<GLdouble>(zFar));
+[[nodiscard]] bool hasActiveGlContext() {
+#ifdef _WIN32
+  return wglGetCurrentContext() != nullptr;
 #else
-  (void)fovyDeg;
-  (void)aspect;
-  (void)zNear;
-  (void)zFar;
+  return gl::GLCore::activeTexture != nullptr;
 #endif
+}
+void gluPerspectiveFov(float fovyDeg, float aspect, float zNear, float zFar) {
+  // Core profile: build the projection into the CPU MatrixStack (the ubershader reads
+  // it as a uniform). Callers load identity on the projection stack first, so a
+  // multiply is equivalent to a load.
+  gl::matrix::perspective(fovyDeg, aspect, zNear, zFar);
 }
 [[nodiscard]] float effectiveFarPlane(const option::ResolvedRenderOptions& resolved) {
   float farPlane = resolved.renderDistanceBlocks * 2.0f;
-  const lod::LodSystem& lodSystem = lod::LodSystem::instance();
-  if(lodSystem.activeForRender()) {
-    const float lodFar = lodSystem.lodDistanceBlocks() * 1.4f;
-    if(lodFar > farPlane) {
-      farPlane = lodFar;
+#ifdef MINECRAFT_ENABLE_NATIVE_LOD
+  const terrain::TerrainSurface& terrainSurface = terrain::TerrainSurface::instance();
+  if(terrainSurface.active()) {
+    const float terrainFar = terrainSurface.viewDistanceBlocks() * 1.4f;
+    if(terrainFar > farPlane) {
+      farPlane = terrainFar;
     }
   }
+#endif
   return farPlane;
 }
 [[nodiscard]] double vec3Distance(const Vec3d& a, const Vec3d& b) {
@@ -166,7 +174,75 @@ void sleepMillis(std::int64_t ms) {
 GameRenderer::GameRenderer(net::minecraft::client::Minecraft* clientIn)
     : client(clientIn),
       heldItemRenderer(std::make_unique<item::HeldItemRenderer>(clientIn)),
-      lastInactiveTime(nowMillis()) {
+      lastInactiveTime(nowMillis()),
+      shaderPacks_(clientIn != nullptr
+                       ? std::make_unique<shaderpack::ShaderPackManager>(
+                             net::minecraft::client::Minecraft::getRunDirectory(),
+                             &clientIn->options)
+                       : nullptr) {
+}
+float GameRenderer::farPlaneBlocks() const {
+  if(client == nullptr) {
+    return 192.0f;
+  }
+  return effectiveFarPlane(option::resolve(client->options));
+}
+bool GameRenderer::renderSunShadow(float tickDelta) {
+  sunShadowValid_ = false;
+  if(client == nullptr || client->world == nullptr || client->camera == nullptr || shaderPacks_ == nullptr) {
+    return false;
+  }
+  int quality = 0;
+  const std::string value = shaderPacks_->settingValue("SHADOW_QUALITY");
+  const auto parsed = std::from_chars(value.data(), value.data() + value.size(), quality);
+  if(parsed.ec != std::errc{} || quality <= 0) {
+    return false;
+  }
+  quality = std::clamp(quality, 1, 4);
+  if(quality < 3) {
+    return false;
+  }
+  ::net::minecraft::world::light::PhysicalLight sun;
+  {
+    const auto registry = client->world->lightRegistry().read();
+    const auto* source = registry.find(::net::minecraft::world::light::UnifiedLightRegistry::sunKey());
+    if(source == nullptr || source->intensity <= 0.002f) {
+      return false;
+    }
+    sun = *source;
+  }
+  const float directionLength =
+      std::sqrt(sun.directionX * sun.directionX + sun.directionY * sun.directionY + sun.directionZ * sun.directionZ);
+  if(directionLength <= 0.0001f) {
+    return false;
+  }
+  const int sizes[4]{768, 1024, 1536, 2048};
+  const int targetSize = sizes[quality - 1];
+  if(sunShadowHandle_ < 0 || sunShadowSize_ != targetSize) {
+    if(sunShadowHandle_ >= 0) {
+      renderTargets_.destroy(sunShadowHandle_);
+    }
+    sunShadowHandle_ = renderTargets_.create(targetSize, targetSize, 1, true, false);
+    sunShadowSize_ = sunShadowHandle_ >= 0 ? targetSize : 0;
+  }
+  if(sunShadowHandle_ < 0) {
+    return false;
+  }
+  const float forwardX = -sun.directionX / directionLength;
+  const float forwardY = -sun.directionY / directionLength;
+  const float forwardZ = -sun.directionZ / directionLength;
+  const float yaw = std::atan2(-forwardX, forwardZ) * 180.0f / kPiF;
+  const float pitch = -std::asin(std::clamp(forwardY, -1.0f, 1.0f)) * 180.0f / kPiF;
+  const float halfSpan = 48.0f + static_cast<float>(quality) * 24.0f;
+  const float depthSpan = std::max(128.0f, halfSpan * 2.0f);
+  const auto* camera = client->camera;
+  const double x = camera->prevX + (camera->x - camera->prevX) * static_cast<double>(tickDelta);
+  const double y = camera->prevY + (camera->y - camera->prevY) * static_cast<double>(tickDelta);
+  const double z = camera->prevZ + (camera->z - camera->prevZ) * static_cast<double>(tickDelta);
+  sunShadowValid_ = renderTargets_.renderWorldTo(sunShadowHandle_, *this, tickDelta, x, y, z, yaw, pitch, 0.0f,
+                                                 70.0f, true, halfSpan, halfSpan, -depthSpan, depthSpan, true,
+                                                 quality >= 3, 0.05f, 0.0f, &sunShadowCamera_);
+  return sunShadowValid_;
 }
 void GameRenderer::updateCamera() {
   if(client == nullptr) {
@@ -496,13 +572,18 @@ void GameRenderer::applyFog(int mode) {
     gl::fogf(gl::fog::Density, fogSettings_.density / resolved.renderScale);
   } else {
     gl::fogi(gl::fog::Mode, fogModeLinear);
-    const lod::LodSystem& lodSystem = lod::LodSystem::instance();
-    const bool lodFog = lodSystem.fogExtendActive();
-    const float fogRange = lodFog ? lodSystem.lodDistanceBlocks() : resolved.renderDistanceBlocks;
+#ifdef MINECRAFT_ENABLE_NATIVE_LOD
+    const terrain::TerrainSurface& terrainSurface = terrain::TerrainSurface::instance();
+    const bool terrainFog = terrainSurface.fogExtendActive();
+    const float fogRange = terrainFog ? terrainSurface.viewDistanceBlocks() : resolved.renderDistanceBlocks;
+#else
+    constexpr bool terrainFog = false;
+    const float fogRange = resolved.renderDistanceBlocks;
+#endif
     if(mode < 0) {
       gl::fogf(gl::fog::Start, 0.0f);
       gl::fogf(gl::fog::End, fogRange * 0.8f);
-    } else if(lodFog) {
+    } else if(terrainFog) {
       const float fogEnd = fogRange * (fogSettings_.enabled ? fogSettings_.end : 1.0f);
       const float fogStart = std::min(fogRange * (fogSettings_.enabled ? fogSettings_.start : 0.45f), fogEnd * 0.85f);
       gl::fogf(gl::fog::Start, fogStart);
@@ -536,6 +617,9 @@ void GameRenderer::renderWorld(float tickDelta, float fov) {
   const option::ResolvedRenderOptions resolved = option::resolve(client->options);
   gl::matrixMode(gl::matrix_::Projection);
   gl::loadIdentity();
+  const float nearPlane = std::max(0.001f, frameCamera_.perspectiveNear);
+  const float farPlane =
+      frameCamera_.perspectiveFar > nearPlane ? frameCamera_.perspectiveFar : effectiveFarPlane(resolved);
   if(frameCamera_.orthographic) {
     gl::ortho(-static_cast<double>(frameCamera_.orthoHalfWidth),
               static_cast<double>(frameCamera_.orthoHalfWidth),
@@ -543,12 +627,12 @@ void GameRenderer::renderWorld(float tickDelta, float fov) {
               static_cast<double>(frameCamera_.orthoHalfHeight),
               static_cast<double>(frameCamera_.orthoNear),
               static_cast<double>(frameCamera_.orthoFar));
-  } else if(zoom != 1.0) {
-    gl::translatef(static_cast<float>(zoomX), static_cast<float>(-zoomY), 0.0f);
-    gl::scaled(zoom, zoom, 1.0);
-    gluPerspectiveFov(fov, aspect, 0.05f, effectiveFarPlane(resolved));
   } else {
-    gluPerspectiveFov(fov, aspect, 0.05f, effectiveFarPlane(resolved));
+    if(zoom != 1.0) {
+      gl::translatef(static_cast<float>(zoomX), static_cast<float>(-zoomY), 0.0f);
+      gl::scaled(zoom, zoom, 1.0);
+    }
+    gluPerspectiveFov(fov, aspect, nearPlane, farPlane);
   }
   gl::matrixMode(gl::matrix_::ModelView);
   gl::loadIdentity();
@@ -756,7 +840,7 @@ void drawSolidTerrain(
   bindTerrainTexture(terrainTextureId);
   gl::setCap(gl::cap::AlphaTest, true);
   gl::alphaFunc(gl::compare::Greater, 0.1f);
-  platform::Lighting::turnOff();
+  gl::Lighting::turnOff();
   if(ambientOcclusion) {
     gl::shadeModel(gl::shade::Smooth);
   }
@@ -802,23 +886,110 @@ void renderBlockOverlay(WorldRenderer& worldRenderer,
 }
 } // namespace
 void GameRenderer::renderFrame(float tickDelta, std::int64_t /*timeNs*/) {
-  mod::RenderTargetsEvent renderTargetsEvent{
-      tickDelta,
-      client != nullptr ? client->displayWidth : 0,
-      client != nullptr ? client->displayHeight : 0,
-  };
-  mod::hooks().publish(renderTargetsEvent);
-  if(client != nullptr) {
-    renderToCurrentTarget(
-        tickDelta, FrameRenderCamera{}, getFov(tickDelta), client->displayWidth, client->displayHeight, false);
+  if(client == nullptr) {
+    return;
   }
+  const int width = std::max(1, client->displayWidth);
+  const int height = std::max(1, client->displayHeight);
+  if(hasActiveGlContext()) {
+    if(client->camera != nullptr) {
+      lightView_.update(client->world, client->camera->x, client->camera->y, client->camera->z);
+    } else {
+      lightView_.reset();
+    }
+  }
+  const bool captureWorld = shaderPacks_ != nullptr && shaderPacks_->activeHasPostProcess();
+  if(!captureWorld || !ensurePostProcessTarget(width, height)) {
+    renderToCurrentTarget(tickDelta, FrameRenderCamera{}, getFov(tickDelta), width, height, false);
+    return;
+  }
+  (void)renderSunShadow(tickDelta);
+  const float frameFov = getFov(tickDelta);
+  postProcessTarget_.bind();
+  renderToCurrentTarget(tickDelta, FrameRenderCamera{}, frameFov, width, height, false, true);
+  gl::Framebuffer::unbind();
+  gl::viewport(0, 0, width, height);
+  if(gl::GLCore::useProgram != nullptr) {
+    gl::GLCore::useProgram(0);
+  }
+  gl::Framebuffer::unbind();
+  gl::viewport(0, 0, width, height);
+  gl::activeTexture(gl::tex::Texture0);
+  const int colorTexture = static_cast<int>(postProcessTarget_.colorTextures.front());
+  if(shaderPacks_ == nullptr ||
+     !shaderPacks_->renderPostProcess(colorTexture, static_cast<int>(postProcessSceneDepthTexture_), width, height,
+                                      tickDelta, frameCamera_, farPlaneBlocks(), static_cast<float>(ticks) + tickDelta,
+                                      client->world != nullptr ? &client->world->lightRegistry() : nullptr, &lightView_,
+                                      sunShadowValid_ ? renderTargets_.depthTextureId(sunShadowHandle_) : -1,
+                                      sunShadowValid_ ? &sunShadowCamera_ : nullptr, &fbos_)) {
+    compositePostProcessFallback(colorTexture, width, height);
+  }
+  if(zoom == 1.0) {
+    gl::clear(gl::attrib::DepthBufferBit);
+    renderFirstPersonHand(tickDelta);
+  }
+}
+bool GameRenderer::ensurePostProcessTarget(int width, int height) {
+  if(postProcessTarget_.fbo != 0 && postProcessTarget_.width == width && postProcessTarget_.height == height &&
+     postProcessSceneDepthTexture_ != 0 && postProcessSceneDepthWidth_ == width &&
+     postProcessSceneDepthHeight_ == height) {
+    return true;
+  }
+  if(postProcessSceneDepthTexture_ != 0) {
+    gl::deleteTextures(1, &postProcessSceneDepthTexture_);
+    postProcessSceneDepthTexture_ = 0;
+  }
+  postProcessSceneDepthWidth_ = 0;
+  postProcessSceneDepthHeight_ = 0;
+  if(!postProcessTarget_.initialize(width, height, 1, true, true)) {
+    return false;
+  }
+  int previousActive = gl::tex::Texture0;
+  gl::getIntegerv(gl::tex::ActiveTexture, &previousActive);
+  gl::activeTexture(gl::tex::Texture0);
+  {
+    const gl::BoundTextureScope texture;
+    gl::genTextures(1, &postProcessSceneDepthTexture_);
+    gl::bindTexture(gl::cap::Texture2D, static_cast<int>(postProcessSceneDepthTexture_));
+    gl::texImage2D(gl::cap::Texture2D,
+                   0,
+                   gl::pixel::DepthComponent24,
+                   width,
+                   height,
+                   0,
+                   gl::pixel::DepthComponent,
+                   gl::pixel::Float,
+                   nullptr);
+    gl::texParameteri(gl::cap::Texture2D, gl::tex::MinFilter, gl::filter::Nearest);
+    gl::texParameteri(gl::cap::Texture2D, gl::tex::MagFilter, gl::filter::Nearest);
+    gl::texParameteri(gl::cap::Texture2D, gl::tex::WrapS, gl::wrap::ClampToEdge);
+    gl::texParameteri(gl::cap::Texture2D, gl::tex::WrapT, gl::wrap::ClampToEdge);
+  }
+  gl::activeTexture(previousActive);
+  if(postProcessSceneDepthTexture_ == 0) {
+    postProcessTarget_.destroy();
+    return false;
+  }
+  postProcessSceneDepthWidth_ = width;
+  postProcessSceneDepthHeight_ = height;
+  return true;
+}
+void GameRenderer::compositePostProcessFallback(int textureId, int width, int height) {
+  if(textureId <= 0) {
+    return;
+  }
+  const gl::BoundTextureScope texture;
+  gl::activeTexture(gl::tex::Texture0);
+  gl::bindTexture(gl::cap::Texture2D, textureId);
+  gl::drawFullscreenTexturedQuad(width, height);
 }
 void GameRenderer::renderToCurrentTarget(float tickDelta,
                                          const FrameRenderCamera& cameraFrame,
                                          float fov,
                                          int viewportWidth,
                                          int viewportHeight,
-                                         bool renderCameraEntity) {
+                                         bool renderCameraEntity,
+                                         bool captureWorldDepth) {
   if(client == nullptr) {
     return;
   }
@@ -857,10 +1028,12 @@ void GameRenderer::renderToCurrentTarget(float tickDelta,
   }
   const option::ResolvedRenderOptions resolvedOptions = option::resolve(client->options);
   const bool ambientOcclusion = client->options.ao;
-  lod::LodSystem& lodSystem = lod::LodSystem::instance();
-  if(!frameCamera_.shadowPass && !renderCameraEntity) {
-    lodSystem.frameUpdate(frameCamera_.x, frameCamera_.y, frameCamera_.z, resolvedOptions);
+#ifdef MINECRAFT_ENABLE_NATIVE_LOD
+  terrain::TerrainSurface& terrainSurface = terrain::TerrainSurface::instance();
+  if(!frameCamera_.shadowPass && !renderCameraEntity && !client->world->isRemote()) {
+    terrainSurface.update(frameCamera_.x, frameCamera_.y, frameCamera_.z, tickDelta, resolvedOptions);
   }
+#endif
   const bool fancyGraphics = client->options.fancyGraphics;
   const int terrainTextureId = client->textureManager.getTextureId("/terrain.png");
   const AtmosphereContext atmosphereCtx = makeAtmosphereContext(client, camera, ticks);
@@ -872,12 +1045,27 @@ void GameRenderer::renderToCurrentTarget(float tickDelta,
     // eye in camera-relative space is -R^T * t. The parametric camera x/y/z
     // differs from this by the first-person view offset and view bobbing.
     const float* v = net::minecraft::util::math::g_modelView.top().data();
+    const float* p = net::minecraft::util::math::g_projection.top().data();
     for(int i = 0; i < 3; ++i) {
       const double e = -(static_cast<double>(v[i * 4 + 0]) * v[12] + static_cast<double>(v[i * 4 + 1]) * v[13] +
                          static_cast<double>(v[i * 4 + 2]) * v[14]);
-      (i == 0 ? frameCamera_.eyeX : i == 1 ? frameCamera_.eyeY : frameCamera_.eyeZ) =
-          (i == 0 ? frameCamera_.x : i == 1 ? frameCamera_.y : frameCamera_.z) + e;
+      (i == 0 ? frameCamera_.eyeX : i == 1 ? frameCamera_.eyeY
+                                           : frameCamera_.eyeZ) =
+          (i == 0 ? frameCamera_.x : i == 1 ? frameCamera_.y
+                                            : frameCamera_.z) +
+          e;
     }
+    frameCamera_.viewRightX = v[0];
+    frameCamera_.viewRightY = v[4];
+    frameCamera_.viewRightZ = v[8];
+    frameCamera_.viewUpX = v[1];
+    frameCamera_.viewUpY = v[5];
+    frameCamera_.viewUpZ = v[9];
+    frameCamera_.viewForwardX = -v[2];
+    frameCamera_.viewForwardY = -v[6];
+    frameCamera_.viewForwardZ = -v[10];
+    frameCamera_.projectionX = p[0];
+    frameCamera_.projectionY = p[5];
     RenderCameraState::instance().setFrame(frameCamera_);
   }
   if(client->options.frustumCulling) {
@@ -917,10 +1105,10 @@ void GameRenderer::renderToCurrentTarget(float tickDelta,
     gl::setCap(gl::cap::Fog, false);
     drawSolidTerrain(*worldRenderer, *camera, tickDelta, terrainTextureId, ambientOcclusion);
     if(frameCamera_.shadowEntities) {
-      platform::Lighting::turnOn();
+      gl::Lighting::turnOn();
       const Vec3d shadowCameraPos{frameCamera_.x, frameCamera_.y, frameCamera_.z};
       worldRenderer->renderEntities(shadowCameraPos, activeCuller, tickDelta);
-      platform::Lighting::turnOff();
+      gl::Lighting::turnOff();
       // Mod entities draw their visuals from Lua world_render hooks rather
       // than native renderers, so the depth map needs the Entities-stage
       // events too or Lua-drawn models never cast shader shadows.
@@ -954,18 +1142,14 @@ void GameRenderer::renderToCurrentTarget(float tickDelta,
   mod::hooks().publish(terrainEvent);
   if(!terrainEvent.cancelVanilla) {
     drawSolidTerrain(*worldRenderer, *camera, tickDelta, terrainTextureId, ambientOcclusion);
+#ifdef MINECRAFT_ENABLE_NATIVE_LOD
+    terrain::TerrainRenderer::instance().render(frameCamera_.x, frameCamera_.y, frameCamera_.z);
+#endif
     terrainEvent.vanillaStageRan = true;
   }
   terrainEvent.moment = mod::RenderHookMoment::After;
   mod::hooks().publish(terrainEvent);
-  if(lodSystem.activeForRender() && !renderCameraEntity) {
-    float skyBrightness = MathHelper::cos(client->world->getTime(tickDelta) * kPiF * 2.0f) * 2.0f + 0.5f;
-    skyBrightness = skyBrightness < 0.0f ? 0.0f : (skyBrightness > 1.0f ? 1.0f : skyBrightness);
-    const float rainDim = 1.0f - option::rainGradient(resolvedOptions, client->world, tickDelta) * 0.3f;
-    const float brightness = (0.22f + 0.78f * skyBrightness) * rainDim;
-    lodSystem.render(frameCamera_.x, frameCamera_.y, frameCamera_.z, brightness, client->options.frustumCulling);
-  }
-  platform::Lighting::turnOn();
+  gl::Lighting::turnOn();
   const Vec3d frameCameraPos{frameCamera_.x, frameCamera_.y, frameCamera_.z};
   mod::WorldRenderEvent entitiesEvent{
       atmosphereCtx.world,
@@ -984,7 +1168,7 @@ void GameRenderer::renderToCurrentTarget(float tickDelta,
   gl::setCap(gl::cap::AlphaTest, true);
   gl::alphaFunc(gl::compare::Greater, 0.1f);
   client->particleManager.renderLit(camera, tickDelta);
-  platform::Lighting::turnOff();
+  gl::Lighting::turnOff();
   applyFog(0);
   gl::setCap(gl::cap::Blend, true);
   gl::blendFunc(gl::blend::SrcAlpha, gl::blend::OneMinusSrcAlpha);
@@ -1043,7 +1227,18 @@ void GameRenderer::renderToCurrentTarget(float tickDelta,
   gl::setCap(gl::cap::AlphaTest, true);
   gl::alphaFunc(gl::compare::Greater, 0.1f);
   gl::color4f(1.0f, 1.0f, 1.0f, 1.0f);
-  if(zoom == 1.0 && !renderCameraEntity) {
+  if(captureWorldDepth && postProcessSceneDepthTexture_ != 0) {
+    int previousActive = gl::tex::Texture0;
+    gl::getIntegerv(gl::tex::ActiveTexture, &previousActive);
+    gl::activeTexture(gl::tex::Texture0);
+    {
+      const gl::BoundTextureScope texture;
+      gl::bindTexture(gl::cap::Texture2D, static_cast<int>(postProcessSceneDepthTexture_));
+      gl::copyTexSubImage2D(gl::cap::Texture2D, 0, 0, 0, 0, 0, viewportWidth, viewportHeight);
+    }
+    gl::activeTexture(previousActive);
+  }
+  if(zoom == 1.0 && !renderCameraEntity && !captureWorldDepth) {
     gl::clear(gl::attrib::DepthBufferBit);
     renderFirstPersonHand(tickDelta);
   }

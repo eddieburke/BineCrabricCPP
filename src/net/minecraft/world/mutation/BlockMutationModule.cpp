@@ -19,6 +19,7 @@ bool BlockMutationModule::setBlock(int x, int y, int z, int blockId, std::uint8_
   if(!chunk.setBlock(mod_16(x), y, mod_16(z), blockId, meta)) {
     return false;
   }
+  world().lightRegistry().syncBlockSource(blockId, x, y, z);
   blockUpdate(x, y, z, blockId);
   return true;
 }
@@ -47,7 +48,11 @@ bool BlockMutationModule::setBlockWithoutNotifyingNeighbors(int x, int y, int z,
   if(y < 0 || y >= Chunk::height) {
     return false;
   }
-  return world().ensureChunk(x, z).setBlock(mod_16(x), y, mod_16(z), blockId, static_cast<std::uint8_t>(meta));
+  if(!world().ensureChunk(x, z).setBlock(mod_16(x), y, mod_16(z), blockId, static_cast<std::uint8_t>(meta))) {
+    return false;
+  }
+  world().lightRegistry().syncBlockSource(blockId, x, y, z);
+  return true;
 }
 bool BlockMutationModule::setBlockWithoutNotifyingNeighbors(int x, int y, int z, int blockId) {
   return setBlockWithoutNotifyingNeighbors(x, y, z, blockId, 0);

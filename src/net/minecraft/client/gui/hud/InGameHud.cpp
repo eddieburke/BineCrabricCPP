@@ -11,7 +11,7 @@
 #include "net/minecraft/client/render/GameRenderer.hpp"
 #include "net/minecraft/client/render/Tessellator.hpp"
 #include "net/minecraft/client/render/item/ItemRenderer.hpp"
-#include "net/minecraft/client/render/platform/Lighting.hpp"
+#include "net/minecraft/client/gl/Lighting.hpp"
 #include "net/minecraft/client/resource/language/I18n.hpp"
 #include "net/minecraft/client/util/UiScale.hpp"
 #include "net/minecraft/entity/player/ClientPlayerEntity.hpp"
@@ -377,14 +377,14 @@ void InGameHud::render(float tickDelta, bool screenOpen, int mouseX, int mouseY)
   gl::setCap(gl::cap::RescaleNormal, true);
   gl::pushMatrix();
   gl::rotatef(120.0f, 1.0f, 0.0f, 0.0f);
-  render::platform::Lighting::turnOn();
+  gl::Lighting::turnOn();
   gl::popMatrix();
   for(int slot = 0; slot < 9; ++slot) {
     const int x = scaledWidth / 2 - 90 + slot * 20 + 2;
     const int y = scaledHeight - 16 - 3;
     renderHotbarItem(slot, x, y, tickDelta);
   }
-  render::platform::Lighting::turnOff();
+  gl::Lighting::turnOff();
   gl::setCap(gl::cap::RescaleNormal, false);
   if(player.getSleepTimer() > 0) {
     const gl::preset::HudSleepOverlay sleepCaps;
