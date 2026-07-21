@@ -214,7 +214,7 @@ void PlayerEntityRenderer::renderMore(const net::minecraft::LivingEntity& entity
   heldItemRenderer->renderItem(*player, helmetStack);
   RenderSystem::popMatrix();
  }
- if(player->name == "deadmau5" && bindDownloadedTexture(player->skinUrl, "")) {
+ if(player->name == "deadmau5" && !player->skinUrl.empty() && bindDownloadedTexture(player->skinUrl)) {
   for(int ear = 0; ear < 2; ++ear) {
    const float headYaw = player->prevYaw + (player->yaw - player->prevYaw) * tickDelta -
                          (player->lastBodyYaw + (player->bodyYaw - player->lastBodyYaw) * tickDelta);
@@ -232,7 +232,7 @@ void PlayerEntityRenderer::renderMore(const net::minecraft::LivingEntity& entity
    RenderSystem::popMatrix();
   }
  }
- if(bindDownloadedTexture(player->playerCapeUrl, "")) {
+ if(!player->playerCapeUrl.empty() && bindDownloadedTexture(player->playerCapeUrl)) {
   RenderSystem::pushMatrix();
   RenderSystem::translate(0.0f, 0.0f, 0.125f);
   const double capeDx = player->prevCapeX + (player->capeX - player->prevCapeX) * static_cast<double>(tickDelta) -

@@ -308,7 +308,10 @@ void TextureManager::deleteTexture(int textureId) {
  }
  render::RenderSystem::deleteTexture(static_cast<unsigned int>(textureId));
 }
-int TextureManager::downloadTexture(const std::string& url, const std::string& backup) {
+int TextureManager::downloadTexture(const std::string& url) {
+ if(url.empty()) {
+  return missingTextureId_;
+ }
  ImageDownload* imageDownload = nullptr;
  const auto it = downloadedImages_.find(url);
  if(it != downloadedImages_.end()) {
@@ -322,13 +325,9 @@ int TextureManager::downloadTexture(const std::string& url, const std::string& b
   }
   imageDownload->uploaded = true;
  }
-  if(imageDownload == nullptr || imageDownload->textureId < 0) {
-   if(backup.empty()) {
-    return -1;
-   }
-   ClientLog::LOGGER.log(LogLevel::Warning, "TextureManager: using backup texture '" + backup + "' for '" + url + "'");
-   return getTextureId(backup);
-  }
+ if(imageDownload == nullptr || imageDownload->textureId < 0) {
+  return missingTextureId_;
+ }
  return imageDownload->textureId;
 }
 ImageDownload* TextureManager::downloadImage(const std::string& url,

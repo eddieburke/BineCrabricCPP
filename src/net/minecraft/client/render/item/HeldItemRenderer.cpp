@@ -279,8 +279,8 @@ void HeldItemRenderer::render(float tickDelta) {
   RenderSystem::translate(0.0f, 0.0f * scale - (1.0f - equipProgress) * 1.2f - pitchFactor * 0.5f + 0.04f, -0.9f * scale);
   RenderSystem::rotate(90.0f, 0.0f, 1.0f, 0.0f);
   RenderSystem::rotate(pitchFactor * -85.0f, 0.0f, 0.0f, 1.0f);
-  const int skinTexture =
-      minecraft->textureManager.downloadTexture(clientPlayer->skinUrl, clientPlayer->getTexture());
+  const std::string& skinUrl = clientPlayer->skinUrl;
+  const int skinTexture = minecraft->textureManager.downloadTexture(skinUrl);
   RenderSystem::bindTexture(skinTexture);
   if(playerRenderer != nullptr) {
    for(int side = 0; side < 2; ++side) {
@@ -364,7 +364,7 @@ void HeldItemRenderer::render(float tickDelta) {
   RenderSystem::rotate(swingSqrt * 70.0f, 0.0f, 1.0f, 0.0f);
   RenderSystem::rotate(-swingSin * 20.0f, 0.0f, 0.0f, 1.0f);
   const int skinTexture =
-      minecraft->textureManager.downloadTexture(clientPlayer->skinUrl, clientPlayer->getTexture());
+      minecraft->textureManager.downloadTexture(clientPlayer->skinUrl);
   RenderSystem::bindTexture(skinTexture);
   RenderSystem::translate(-1.0f, 3.6f, 3.5f);
   RenderSystem::rotate(120.0f, 0.0f, 0.0f, 1.0f);

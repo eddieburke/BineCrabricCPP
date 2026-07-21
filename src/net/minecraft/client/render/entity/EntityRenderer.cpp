@@ -46,15 +46,9 @@ void EntityRenderer::bindTexture(std::string_view texturePath) {
  RenderSystem::enableTexture();
  RenderSystem::bindTexture(0x0DE1, textureId);
 }
-bool EntityRenderer::bindDownloadedTexture(std::string_view url, std::string_view backup) {
+bool EntityRenderer::bindDownloadedTexture(std::string_view url) {
   if(dispatcher == nullptr || dispatcher->textureManager() == nullptr) {
-   if(backup.empty()) {
-    return false;
-   }
-   ClientLog::LOGGER.log(LogLevel::Warning,
-     "EntityRenderer: texture manager unavailable, binding backup texture directly: " + std::string(backup));
-   bindTexture(backup);
-   return true;
+   return false;
   }
  if(!url.empty()) {
   if(url.find("Cloak") != std::string::npos || url.find("cape") != std::string::npos) {
@@ -62,12 +56,12 @@ bool EntityRenderer::bindDownloadedTexture(std::string_view url, std::string_vie
   } else {
    dispatcher->textureManager()->downloadSkinImage(std::string(url));
   }
+  const int textureId = dispatcher->textureManager()->downloadTexture(std::string(url));
+  if(textureId < 0) {
+   return false;
+  }
+  RenderSystem::bindTexture(0x0DE1, textureId);
  }
- const int textureId = dispatcher->textureManager()->downloadTexture(std::string(url), std::string(backup));
- if(textureId < 0) {
-  return false;
- }
- RenderSystem::bindTexture(0x0DE1, textureId);
  return true;
 }
 font::TextRenderer* EntityRenderer::getTextRenderer() const noexcept {
