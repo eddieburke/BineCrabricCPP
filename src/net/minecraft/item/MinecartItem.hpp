@@ -9,14 +9,14 @@ class CraftingRecipeManager;
 } // namespace net::minecraft::recipe
 namespace net::minecraft::item {
 class MinecartItem : public Item {
-public:
-  static constexpr int kRawId = 72;
-  static void registerClass();
-  static void registerRecipes(recipe::CraftingRecipeManager& recipeManager);
-  MinecartItem(int rawId, int type);
-  bool useOnBlock(ItemStack* stack, PlayerEntity* user, World* world, int x, int y, int z, int side) override;
+ public:
+ static constexpr int kRawId = 72;
+ static void registerClass();
+ static void registerRecipes(recipe::CraftingRecipeManager& recipeManager);
+ MinecartItem(int rawId, int type);
+ bool useOnBlock(ItemStack* stack, PlayerEntity* user, World* world, int x, int y, int z, int side) override;
 
-private:
-  int type_;
+ private:
+ int type_;
 };
 } // namespace net::minecraft::item

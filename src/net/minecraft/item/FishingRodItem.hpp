@@ -9,12 +9,12 @@ class CraftingRecipeManager;
 } // namespace net::minecraft::recipe
 namespace net::minecraft::item {
 class FishingRodItem : public Item {
-public:
-  static constexpr int kRawId = 90;
-  static void registerClass();
-  static void registerRecipes(recipe::CraftingRecipeManager& recipeManager);
-  explicit FishingRodItem(int rawId);
-  [[nodiscard]] bool isHandheldRod() const override;
-  ItemStack* use(ItemStack* stack, World* world, PlayerEntity* user) override;
+ public:
+ static constexpr int kRawId = 90;
+ static void registerClass();
+ static void registerRecipes(recipe::CraftingRecipeManager& recipeManager);
+ explicit FishingRodItem(int rawId);
+ [[nodiscard]] bool isHandheldRod() const override;
+ ItemStack* use(ItemStack* stack, World* world, PlayerEntity* user) override;
 };
 } // namespace net::minecraft::item

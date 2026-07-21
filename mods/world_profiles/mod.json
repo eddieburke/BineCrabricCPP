@@ -1,7 +1,7 @@
 {
   "id": "world_profiles",
   "name": "World Profiles",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "enabled": true,
   "side": "client",
   "entry": "scripts/main.lua"

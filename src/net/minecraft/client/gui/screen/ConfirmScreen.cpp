@@ -16,43 +16,43 @@ ConfirmScreen::ConfirmScreen(ScreenFactory returnFactory,
       cancelText_(std::move(cancelText)) {
 }
 void ConfirmScreen::init() {
-  buttons_.clear();
-  const int y = layout::confirmRowY(height());
-  addActionButton(layout::confirmBtnX(width(), true),
-                  y,
-                  layout::kConfirmButtonWidth,
-                  layout::kDefaultButtonHeight,
-                  confirmText_,
-                  [this] {
-                    if(minecraft() == nullptr) {
-                      return;
-                    }
-                    if(handler_) {
-                      handler_(true);
-                    }
-                    navigateTo(returnFactory_);
-                  });
-  addActionButton(layout::confirmBtnX(width(), false),
-                  y,
-                  layout::kConfirmButtonWidth,
-                  layout::kDefaultButtonHeight,
-                  cancelText_,
-                  [this] {
-                    if(minecraft() == nullptr) {
-                      return;
-                    }
-                    if(handler_) {
-                      handler_(false);
-                    }
-                    navigateTo(returnFactory_);
-                  });
+ buttons_.clear();
+ const int y = layout::confirmRowY(height());
+ addActionButton(layout::confirmBtnX(width(), true),
+                 y,
+                 layout::kConfirmButtonWidth,
+                 layout::kDefaultButtonHeight,
+                 confirmText_,
+                 [this] {
+                  if(minecraft() == nullptr) {
+                   return;
+                  }
+                  if(handler_) {
+                   handler_(true);
+                  }
+                  navigateTo(returnFactory_);
+                 });
+ addActionButton(layout::confirmBtnX(width(), false),
+                 y,
+                 layout::kConfirmButtonWidth,
+                 layout::kDefaultButtonHeight,
+                 cancelText_,
+                 [this] {
+                  if(minecraft() == nullptr) {
+                   return;
+                  }
+                  if(handler_) {
+                   handler_(false);
+                  }
+                  navigateTo(returnFactory_);
+                 });
 }
 void ConfirmScreen::render(int mouseX, int mouseY, float tickDelta) {
-  renderBackground();
-  if(textRenderer() != nullptr) {
-    drawCenteredTextWithShadow(*textRenderer(), message1_, width() / 2, 70, 0xFFFFFF);
-    drawCenteredTextWithShadow(*textRenderer(), message2_, width() / 2, 90, 0xFFFFFF);
-  }
-  Screen::render(mouseX, mouseY, tickDelta);
+ renderBackground();
+ if(textRenderer() != nullptr) {
+  drawCenteredTextWithShadow(*textRenderer(), message1_, width() / 2, 70, 0xFFFFFF);
+  drawCenteredTextWithShadow(*textRenderer(), message2_, width() / 2, 90, 0xFFFFFF);
+ }
+ Screen::render(mouseX, mouseY, tickDelta);
 }
 } // namespace net::minecraft::client::gui::screen

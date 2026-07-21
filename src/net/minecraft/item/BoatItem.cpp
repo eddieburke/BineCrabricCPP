@@ -13,42 +13,42 @@
 #include "net/minecraft/world/World.hpp"
 namespace net::minecraft::item {
 BoatItem::BoatItem(int rawId) : Item(rawId) {
-  setMaxCount(1);
+ setMaxCount(1);
 }
 ItemStack* BoatItem::use(ItemStack* stack, World* world, PlayerEntity* user) {
-  if(world == nullptr || user == nullptr) {
-    return stack;
-  }
-  Vec3d start;
-  Vec3d end;
-  detail::playerLookRay(user, 1.0f, start, end);
-  std::optional<HitResult> hit = world->raycast(start, end, true);
-  if(!hit.has_value() || hit->type != HitResultType::BLOCK) {
-    return stack;
-  }
-  int y = hit->blockY;
-  if(Block::SNOW != nullptr && world->getBlockId(hit->blockX, y, hit->blockZ) == Block::SNOW->id) {
-    --y;
-  }
-  if(!world->isRemote()) {
-    auto* boat = new entity::vehicle::BoatEntity(world);
-    boat->setPosition(static_cast<double>(hit->blockX) + 0.5,
-                      static_cast<double>(y) + 1.0,
-                      static_cast<double>(hit->blockZ) + 0.5);
-    world->spawnEntity(boat);
-  }
-  if(stack != nullptr) {
-    --stack->count;
-  }
+ if(world == nullptr || user == nullptr) {
   return stack;
+ }
+ Vec3d start;
+ Vec3d end;
+ detail::playerLookRay(user, 1.0f, start, end);
+ std::optional<HitResult> hit = world->raycast(start, end, true);
+ if(!hit.has_value() || hit->type != HitResultType::BLOCK) {
+  return stack;
+ }
+ int y = hit->blockY;
+ if(Block::SNOW != nullptr && world->getBlockId(hit->blockX, y, hit->blockZ) == Block::SNOW->id) {
+  --y;
+ }
+ if(!world->isRemote()) {
+  auto* boat = new entity::vehicle::BoatEntity(world);
+  boat->setPosition(static_cast<double>(hit->blockX) + 0.5,
+                    static_cast<double>(y) + 1.0,
+                    static_cast<double>(hit->blockZ) + 0.5);
+  world->spawnEntity(boat);
+ }
+ if(stack != nullptr) {
+  --stack->count;
+ }
+ return stack;
 }
 void BoatItem::registerClass() {
-  static BoatItem BOAT(77);
-  BOAT.setTexturePosition(8, 8)->setTranslationKey("boat");
+ static BoatItem BOAT(77);
+ BOAT.setTexturePosition(8, 8)->setTranslationKey("boat");
 }
 void BoatItem::registerRecipes(recipe::CraftingRecipeManager& recipeManager) {
-  recipeManager.addShapedRecipe(ItemStack(Item::byRawId(77)),
-                                {std::string("# #"), std::string("###"), '#', Block::PLANKS});
+ recipeManager.addShapedRecipe(ItemStack(Item::byRawId(77)),
+                               {std::string("# #"), std::string("###"), '#', Block::PLANKS});
 }
 MC_REGISTER_ITEM(BoatItem)
 } // namespace net::minecraft::item

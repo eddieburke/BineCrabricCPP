@@ -35,7 +35,10 @@ minecraft.keybinds.register("spawn_comet", { default = minecraft.key_code("n"), 
 
 local function setting(name, fallback)
   local value = minecraft.settings.get(name)
-  if value == nil then return fallback end
+  if value == nil then
+    minecraft.log("warn", "meteors: using fallback for setting '" .. name .. "'")
+    return fallback
+  end
   return value
 end
 

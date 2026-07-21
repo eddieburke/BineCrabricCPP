@@ -23,6 +23,7 @@ local function key_code(name, fallback)
   if code ~= nil and code ~= 0 then
     return code
   end
+  minecraft.log("warn", "sprint: using fallback key code for '" .. name .. "'")
   return fallback
 end
 

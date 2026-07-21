@@ -1,193 +1,73 @@
 #pragma once
-#include <algorithm>
+#include <atomic>
 #include <memory>
+#include <mutex>
 #include <string>
 #include <unordered_map>
 #include <unordered_set>
 #include <vector>
+#include "net/minecraft/util/concurrent/WorkerPool.hpp"
+#include "net/minecraft/client/gui/screen/LoadingDisplay.hpp"
 #include "net/minecraft/util/math/Types.hpp"
-#include "net/minecraft/world/World.hpp"
-#include "net/minecraft/world/chunk/ChunkDecoration.hpp"
 #include "net/minecraft/world/chunk/ChunkSource.hpp"
 #include "net/minecraft/world/chunk/EmptyChunk.hpp"
 #include "net/minecraft/world/chunk/storage/ChunkStorage.hpp"
 namespace net::minecraft {
-// Faithful port of net.minecraft.world.chunk.ChunkCache (beta 1.7.3).
+class Chunk;
+class World;
+namespace world::chunk {
 class ChunkCache : public ChunkSource {
-public:
-  ChunkCache(World* world,
-             std::unique_ptr<ChunkStorage> storage,
-             ChunkSource* generator)
-      : empty_(world, 0, 0),
-        world_(world),
-        storage_(std::move(storage)),
-        generator_(generator) {
-  }
-  bool forceLoad = false;
-  [[nodiscard]] bool isChunkLoaded(int chunkX, int chunkZ) const override {
-    return chunkByPos_.find(ChunkPos{chunkX, chunkZ}) != chunkByPos_.end();
-  }
-  Chunk& getChunk(int chunkX, int chunkZ) override {
-    const ChunkPos pos{chunkX, chunkZ};
-    const auto it = chunkByPos_.find(pos);
-    if(it == chunkByPos_.end()) {
-      if(world_->isEventProcessingEnabled() || forceLoad) {
-        return loadChunk(chunkX, chunkZ);
-      }
-      return empty_;
-    }
-    return *it->second;
-  }
-  Chunk& loadChunk(int chunkX, int chunkZ) override {
-    const ChunkPos pos{chunkX, chunkZ};
-    chunksToUnload_.erase(pos);
-    const auto existing = chunkByPos_.find(pos);
-    if(existing != chunkByPos_.end()) {
-      return *existing->second;
-    }
-    Chunk* chunk = loadChunkFromStorage(chunkX, chunkZ);
-    if(chunk == nullptr) {
-      if(generator_ == nullptr) {
-        chunk = &empty_;
-      } else {
-        chunk = loadChunkFromGenerator(chunkX, chunkZ);
-      }
-    }
-    chunkByPos_[pos] = chunk;
-    chunks_.push_back(chunk);
-    if(chunk != &empty_ && chunk != nullptr) {
-      chunk->populateBlockLight();
-      chunk->load();
-    }
-    if(chunk != nullptr && !chunk->terrainPopulated && isChunkLoaded(chunkX + 1, chunkZ + 1) &&
-       isChunkLoaded(chunkX, chunkZ + 1) && isChunkLoaded(chunkX + 1, chunkZ)) {
-      decorate(this, chunkX, chunkZ);
-    }
-    if(isChunkLoaded(chunkX - 1, chunkZ) && !getChunk(chunkX - 1, chunkZ).terrainPopulated &&
-       isChunkLoaded(chunkX - 1, chunkZ + 1) && isChunkLoaded(chunkX, chunkZ + 1) &&
-       isChunkLoaded(chunkX - 1, chunkZ)) {
-      decorate(this, chunkX - 1, chunkZ);
-    }
-    if(isChunkLoaded(chunkX, chunkZ - 1) && !getChunk(chunkX, chunkZ - 1).terrainPopulated &&
-       isChunkLoaded(chunkX + 1, chunkZ - 1) && isChunkLoaded(chunkX, chunkZ - 1) &&
-       isChunkLoaded(chunkX + 1, chunkZ)) {
-      decorate(this, chunkX, chunkZ - 1);
-    }
-    if(isChunkLoaded(chunkX - 1, chunkZ - 1) && !getChunk(chunkX - 1, chunkZ - 1).terrainPopulated &&
-       isChunkLoaded(chunkX - 1, chunkZ - 1) && isChunkLoaded(chunkX, chunkZ - 1) &&
-       isChunkLoaded(chunkX - 1, chunkZ)) {
-      decorate(this, chunkX - 1, chunkZ - 1);
-    }
-    return *chunk;
-  }
-  void decorate(ChunkSource* source, int chunkX, int chunkZ) override {
-    world::chunk::decoratePopulatedChunk(world_, getChunk(chunkX, chunkZ), source, generator_, chunkX, chunkZ);
-  }
-  bool save(bool saveEntities, client::gui::screen::LoadingDisplay* display) override {
-    (void)display;
-    int saved = 0;
-    for(Chunk* chunk : chunks_) {
-      if(chunk == nullptr) {
-        continue;
-      }
-      if(saveEntities && !chunk->empty) {
-        saveEntitiesForChunk(*chunk);
-      }
-      if(!chunk->shouldSave(saveEntities)) {
-        continue;
-      }
-      saveChunk(*chunk);
-      chunk->dirty = false;
-      if(++saved == 24 && !saveEntities) {
-        if(storage_ != nullptr) {
-          storage_->flush();
-        }
-        return false;
-      }
-    }
-    if(storage_ != nullptr && (saveEntities || saved > 0)) {
-      storage_->flush();
-    }
-    return true;
-  }
-  bool tick() override;
-  [[nodiscard]] bool canSave() const override;
-  [[nodiscard]] std::string getDebugInfo() const override {
-    return "ServerChunkCache: " + std::to_string(chunkByPos_.size()) +
-           " Drop: " + std::to_string(chunksToUnload_.size());
-  }
+ public:
+ ChunkCache(World* world, std::unique_ptr<ChunkStorage> storage, ChunkSource* generator);
+ bool forceLoad = false;
+ [[nodiscard]] bool isChunkLoaded(int chunkX, int chunkZ) const override;
+ void dropChunk(int chunkX, int chunkZ);
+ Chunk& getChunk(int chunkX, int chunkZ) override;
+ Chunk& loadChunk(int chunkX, int chunkZ) override;
+ void decorate(ChunkSource* source, int chunkX, int chunkZ) override;
+ bool save(bool saveEntityData, client::gui::screen::LoadingDisplay* display) override;
+ bool tick() override;
+ [[nodiscard]] bool canSave() const override;
+ [[nodiscard]] std::string getDebugInfo() const override;
+ void unloadChunk(int chunkX, int chunkZ);
+ void setActiveRadius(int radius) override;
+ void prefetchChunksNear(int centerChunkX, int centerChunkZ) override;
+ // Queue a background load/generate for the chunk; the result is folded into
+ // the world by tick(). No-op if loaded, pending, or async-incapable.
+ void requestChunkAsync(int chunkX, int chunkZ);
 
-protected:
-  void markChunkUnloadCandidate(int chunkX, int chunkZ) {
-    if(world_ == nullptr) {
-      return;
-    }
-    const Vec3i spawnPos = world_->getSpawnPos();
-    const int dx = chunkX * 16 + 8 - spawnPos.x;
-    const int dz = chunkZ * 16 + 8 - spawnPos.z;
-    constexpr int radius = 128;
-    if(dx < -radius || dx > radius || dz < -radius || dz > radius) {
-      chunksToUnload_.insert(ChunkPos{chunkX, chunkZ});
-    }
-  }
-
-private:
-  Chunk* loadChunkFromStorage(int chunkX, int chunkZ) {
-    if(storage_ == nullptr) {
-      return nullptr;
-    }
-    try {
-      std::unique_ptr<Chunk> loaded =
-          std::make_unique<Chunk>(std::move(storage_->loadChunk(world_, chunkX, chunkZ)));
-      if(loaded->empty || !loaded->chunkPosEquals(chunkX, chunkZ)) {
-        return nullptr;
-      }
-      loaded->world = world_;
-      if(world_ != nullptr) {
-        loaded->lastSaveTime = static_cast<long long>(world_->getTime());
-      }
-      Chunk* stored = loaded.get();
-      ownedChunks_.push_back(std::move(loaded));
-      return stored;
-    } catch(...) {
-      return nullptr;
-    }
-  }
-  Chunk* loadChunkFromGenerator(int chunkX, int chunkZ) {
-    std::unique_ptr<Chunk> generated = std::make_unique<Chunk>(std::move(generator_->getChunk(chunkX, chunkZ)));
-    generated->world = world_;
-    Chunk* stored = generated.get();
-    ownedChunks_.push_back(std::move(generated));
-    return stored;
-  }
-  void saveEntitiesForChunk(Chunk& chunk) {
-    if(storage_ == nullptr) {
-      return;
-    }
-    try {
-      storage_->saveEntities(world_, chunk);
-    } catch(...) {
-    }
-  }
-  void saveChunk(Chunk& chunk) {
-    if(storage_ == nullptr) {
-      return;
-    }
-    try {
-      if(world_ != nullptr) {
-        chunk.lastSaveTime = static_cast<long long>(world_->getTime());
-      }
-      storage_->saveChunk(world_, chunk);
-    } catch(...) {
-    }
-  }
-  EmptyChunk empty_;
-  World* world_ = nullptr;
-  std::unique_ptr<ChunkStorage> storage_{};
-  ChunkSource* generator_ = nullptr;
-  std::unordered_map<ChunkPos, Chunk*, ChunkPosHash> chunkByPos_{};
-  std::vector<Chunk*> chunks_{};
-  std::vector<std::unique_ptr<Chunk>> ownedChunks_{};
-  std::unordered_set<ChunkPos, ChunkPosHash> chunksToUnload_{};
+ private:
+ struct PendingLoad {
+  int chunkX = 0;
+  int chunkZ = 0;
+  std::unique_ptr<Chunk> chunk;
+  std::atomic<bool> done{false};
+ };
+ // Storage/generator work only; safe off-thread under ioMutex_.
+ std::unique_ptr<Chunk> produceChunk(int chunkX, int chunkZ);
+ // Main-thread integration: ownership, maps, light population, load, decorate.
+ Chunk& adoptChunk(int chunkX, int chunkZ, std::unique_ptr<Chunk> owned);
+ void integrateFinishedLoads(int budget);
+ void saveEntities(Chunk& chunk);
+ void saveChunk(Chunk& chunk);
+ static void retireFromLighting(Chunk* chunk);
+ EmptyChunk empty_;
+ World* world_ = nullptr;
+ std::unique_ptr<ChunkStorage> storage_{};
+ ChunkSource* generator_ = nullptr;
+ std::unordered_map<ChunkPos, Chunk*, ChunkPosHash> chunksByPos_{};
+ std::vector<Chunk*> chunks_{};
+ std::unordered_map<Chunk*, std::unique_ptr<Chunk>> ownedChunks_{};
+ std::unordered_set<ChunkPos, ChunkPosHash> chunksToUnload_{};
+ int activeRadius_ = 15;
+ std::unordered_map<ChunkPos, std::shared_ptr<PendingLoad>, ChunkPosHash> pendingLoads_{};
+ // Serializes storage_/generator_ access between the loader thread and the
+ // main thread (saves, decoration, synchronous demand loads). Recursive so
+ // decoration that demand-loads a neighbor can re-enter produceChunk.
+ std::recursive_mutex ioMutex_;
+ // Declared last: destroyed first, so in-flight loads finish before
+ // storage_/generator_ go away.
+ std::unique_ptr<net::minecraft::util::concurrent::WorkerPool> loaderPool_{};
 };
+} // namespace world::chunk
 } // namespace net::minecraft

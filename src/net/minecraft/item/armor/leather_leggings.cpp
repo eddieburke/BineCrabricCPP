@@ -13,14 +13,14 @@ namespace net::minecraft::item {
 LeatherLeggingsItem::LeatherLeggingsItem() : ArmorItem(kRawId, 0, 0, 2) {
 }
 void LeatherLeggingsItem::registerClass() {
-  static LeatherLeggingsItem instance;
-  instance.setTexturePosition(0, 2);
-  instance.setTranslationKey("leggingsCloth");
-  Item::registerInItemsArray(&instance);
+ static LeatherLeggingsItem instance;
+ instance.setTexturePosition(0, 2);
+ instance.setTranslationKey("leggingsCloth");
+ Item::registerInItemsArray(&instance);
 }
 void LeatherLeggingsItem::registerRecipes(recipe::CraftingRecipeManager& recipeManager) {
-  recipeManager.addShapedRecipe(ItemStack(Item::byRawId(44)),
-                                {std::string("XXX"), std::string("X X"), std::string("X X"), 'X', Item::byRawId(78)});
+ recipeManager.addShapedRecipe(ItemStack(Item::byRawId(44)),
+                               {std::string("XXX"), std::string("X X"), std::string("X X"), 'X', Item::byRawId(78)});
 }
 MC_REGISTER_ITEM(LeatherLeggingsItem)
 } // namespace net::minecraft::item

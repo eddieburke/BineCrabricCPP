@@ -11,15 +11,15 @@ namespace net::minecraft::item {
 GoldenPickaxeItem::GoldenPickaxeItem() : PickaxeItem(kRawId, ToolMaterial::Gold) {
 }
 void GoldenPickaxeItem::registerClass() {
-  static GoldenPickaxeItem instance;
-  instance.setTexturePosition(4, 6);
-  instance.setTranslationKey("pickaxeGold");
-  Item::registerInItemsArray(&instance);
+ static GoldenPickaxeItem instance;
+ instance.setTexturePosition(4, 6);
+ instance.setTranslationKey("pickaxeGold");
+ Item::registerInItemsArray(&instance);
 }
 void GoldenPickaxeItem::registerRecipes(recipe::CraftingRecipeManager& recipeManager) {
-  recipeManager.addShapedRecipe(
-      ItemStack(Item::byRawId(29)),
-      {std::string("XXX"), std::string(" # "), std::string(" # "), '#', Item::byRawId(24), 'X', Item::byRawId(10)});
+ recipeManager.addShapedRecipe(
+     ItemStack(Item::byRawId(29)),
+     {std::string("XXX"), std::string(" # "), std::string(" # "), '#', Item::byRawId(24), 'X', Item::byRawId(10)});
 }
 MC_REGISTER_ITEM(GoldenPickaxeItem)
 } // namespace net::minecraft::item

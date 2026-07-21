@@ -200,16 +200,29 @@ local function build_sky_dome_directions()
   return vertices
 end
 
+local sky_dome_packed = {}
+
 local function draw_sky_dome(event, frame)
-  local vertices = {}
-  for index, direction in ipairs(build_sky_dome_directions()) do
-    local r, g, b = sky_vertex_color(frame, direction.x, direction.y, direction.z)
-    vertices[index] = {
-      x = direction.x * SKY_DOME_RADIUS,
-      y = direction.y * SKY_DOME_RADIUS,
-      z = direction.z * SKY_DOME_RADIUS,
-      r = r, g = g, b = b, a = 1.0,
-    }
+  local directions = build_sky_dome_directions()
+  local packed = sky_dome_packed
+  local cursor = 0
+  for index = 1, #directions do
+    local direction = directions[index]
+    local dx, dy, dz = direction.x, direction.y, direction.z
+    local r, g, b = sky_vertex_color(frame, dx, dy, dz)
+    packed[cursor + 1] = dx * SKY_DOME_RADIUS
+    packed[cursor + 2] = dy * SKY_DOME_RADIUS
+    packed[cursor + 3] = dz * SKY_DOME_RADIUS
+    packed[cursor + 4] = 0.0
+    packed[cursor + 5] = 0.0
+    packed[cursor + 6] = r
+    packed[cursor + 7] = g
+    packed[cursor + 8] = b
+    packed[cursor + 9] = 1.0
+    cursor = cursor + 9
+  end
+  for index = #packed, cursor + 1, -1 do
+    packed[index] = nil
   end
   minecraft.render.quads({
     x = event.camera_x or 0.0,
@@ -220,7 +233,7 @@ local function draw_sky_dome(event, frame)
     cull = false,
     depth_test = false,
     depth_write = false,
-    vertices = vertices,
+    packed = packed,
   })
 end
 
@@ -242,10 +255,9 @@ local function body_basis(direction_x, direction_y, direction_z)
   return dx, dy, dz, rx, ry, rz, ux, uy, uz
 end
 
-local function add_pixel_quad(vertices, rx, ry, rz, ux, uy, uz,
+local function add_pixel_quad(packed, cursor, rx, ry, rz, ux, uy, uz,
     half_size, grid_x, grid_y, red, green, blue, alpha)
   local pixel = (half_size * 2.0) / CELESTIAL_GRID
-  -- Slight overlap avoids one-pixel seams caused by floating rasterization.
   local overlap = pixel * 0.015
   local left = -half_size + grid_x * pixel - overlap
   local right = -half_size + (grid_x + 1) * pixel + overlap
@@ -253,22 +265,30 @@ local function add_pixel_quad(vertices, rx, ry, rz, ux, uy, uz,
   local bottom = half_size - (grid_y + 1) * pixel - overlap
 
   local function emit(x_scale, y_scale)
-    vertices[#vertices + 1] = {
-      x = rx * x_scale + ux * y_scale,
-      y = ry * x_scale + uy * y_scale,
-      z = rz * x_scale + uz * y_scale,
-      r = red, g = green, b = blue, a = alpha,
-    }
+    packed[cursor + 1] = rx * x_scale + ux * y_scale
+    packed[cursor + 2] = ry * x_scale + uy * y_scale
+    packed[cursor + 3] = rz * x_scale + uz * y_scale
+    packed[cursor + 4] = 0.0
+    packed[cursor + 5] = 0.0
+    packed[cursor + 6] = red
+    packed[cursor + 7] = green
+    packed[cursor + 8] = blue
+    packed[cursor + 9] = alpha
+    cursor = cursor + 9
   end
 
-  emit(left, bottom)
-  emit(right, bottom)
-  emit(right, top)
-  emit(left, top)
+  cursor = emit(left, bottom)
+  cursor = emit(right, bottom)
+  cursor = emit(right, top)
+  cursor = emit(left, top)
+  return cursor
 end
 
-local function draw_pixel_vertices(event, dx, dy, dz, vertices)
-  if #vertices < 4 then return 0 end
+local function draw_pixel_vertices(event, dx, dy, dz, packed, count)
+  if count < 4 then return 0 end
+  for index = #packed, count * 9 + 1, -1 do
+    packed[index] = nil
+  end
   return minecraft.render.quads({
     x = (event.camera_x or 0.0) + dx * SKY_BODY_RADIUS,
     y = (event.camera_y or 0.0) + dy * SKY_BODY_RADIUS,
@@ -278,7 +298,7 @@ local function draw_pixel_vertices(event, dx, dy, dz, vertices)
     cull = false,
     depth_test = false,
     depth_write = false,
-    vertices = vertices,
+    packed = packed,
   })
 end
 
@@ -325,6 +345,8 @@ local function sun_pixel_color(x, y, animation_phase)
          clamp(blue, 0.0, 1.0)
 end
 
+local celestial_packed = {}
+
 local function draw_procedural_sun(event, frame, alpha)
   if alpha <= 0.001 then return end
 
@@ -334,20 +356,19 @@ local function draw_procedural_sun(event, frame, alpha)
   local pulse_phase = (millis % SUN_PULSE_CYCLE_MS) /
     SUN_PULSE_CYCLE_MS * TWO_PI
 
-  -- The pulse is subtle enough to read as atmospheric energy rather than the
-  -- Sun visibly changing size.
   local animated_half_size = SUN_HALF_SIZE *
     (1.0 + math.sin(pulse_phase) * SUN_PULSE_AMOUNT)
   local brightness = 0.992 + 0.008 * math.sin(pulse_phase + 0.7)
 
   local dx, dy, dz, rx, ry, rz, ux, uy, uz = body_basis(
     frame.sun_direction_x, frame.sun_direction_y, frame.sun_direction_z)
-  local vertices = {}
+  local packed = celestial_packed
+  local cursor = 0
 
   for y = 0, CELESTIAL_GRID - 1 do
     for x = 0, CELESTIAL_GRID - 1 do
       local red, green, blue = sun_pixel_color(x, y, texture_phase)
-      add_pixel_quad(vertices, rx, ry, rz, ux, uy, uz, animated_half_size,
+      cursor = add_pixel_quad(packed, cursor, rx, ry, rz, ux, uy, uz, animated_half_size,
         x, y,
         clamp(red * brightness, 0.0, 1.0),
         clamp(green * brightness, 0.0, 1.0),
@@ -356,7 +377,7 @@ local function draw_procedural_sun(event, frame, alpha)
     end
   end
 
-  draw_pixel_vertices(event, dx, dy, dz, vertices)
+  draw_pixel_vertices(event, dx, dy, dz, packed, cursor)
 end
 
 local MOON_CRATERS = {
@@ -393,7 +414,7 @@ local function moon_pixel_color(x, y, nx, ny, light_dot, near_limb)
   return 0.94, 0.95, 0.96
 end
 
-local function moon_geometry(frame, half_size, alpha)
+local function moon_geometry(frame, half_size, alpha, packed)
   local mdx, mdy, mdz = normalize3(
     frame.moon_direction_x, frame.moon_direction_y, frame.moon_direction_z)
   local sdx, sdy, sdz = normalize3(
@@ -402,8 +423,6 @@ local function moon_geometry(frame, half_size, alpha)
   local separation_cos = clamp(dot3(mdx, mdy, mdz, sdx, sdy, sdz), -1.0, 1.0)
   local separation = math.acos(separation_cos)
 
-  -- Project the real Sun direction onto the Moon's image plane. The Moon's
-  -- illuminated limb now always points toward the actual Sun.
   local tx = sdx - mdx * separation_cos
   local ty = sdy - mdy * separation_cos
   local tz = sdz - mdz * separation_cos
@@ -421,7 +440,7 @@ local function moon_geometry(frame, half_size, alpha)
 
   local sun_side = math.sin(separation)
   local sun_depth = -math.cos(separation)
-  local vertices = {}
+  local cursor = 0
   local center = (CELESTIAL_GRID - 1) * 0.5
   local radius = 6.55
 
@@ -434,26 +453,21 @@ local function moon_geometry(frame, half_size, alpha)
         local nz = math.sqrt(math.max(0.0, 1.0 - rr))
         local light_dot = nx * sun_side + nz * sun_depth
 
-        -- A hard terminator is intentional: it keeps the result crisp and
-        -- prevents a nearly-new Moon from becoming a translucent gray square.
         if light_dot > 0.035 then
           local red, green, blue = moon_pixel_color(
             x, y, nx, ny, light_dot, rr > 0.80)
-          add_pixel_quad(vertices, rx, ry, rz, ux, uy, uz, half_size,
+          cursor = add_pixel_quad(packed, cursor, rx, ry, rz, ux, uy, uz, half_size,
             x, y, red, green, blue, alpha)
         end
       end
     end
   end
-  return mdx, mdy, mdz, vertices, math.deg(separation)
+  return mdx, mdy, mdz, cursor, math.deg(separation)
 end
 
 local function moon_contrast_visibility(frame, separation_deg)
   local illumination = clamp(frame.moon_illumination or 0.0, 0.0, 1.0)
 
-  -- A sub-percent crescent close to the daytime Sun is physically present but
-  -- visually lost in sky glare. The old constant 72% brightness made it look
-  -- like a second Sun.
   if illumination < 0.0015 then return 0.0 end
 
   local daylight = smoothstep(-6.0, 10.0, frame.sun_altitude_deg or -90.0)
@@ -467,17 +481,18 @@ end
 
 local function draw_procedural_moon(event, frame, alpha, half_size)
   if alpha <= 0.001 then return end
-  local mdx, mdy, mdz, vertices, separation_deg =
-    moon_geometry(frame, half_size, alpha)
+  local packed = celestial_packed
+  local mdx, mdy, mdz, cursor, separation_deg =
+    moon_geometry(frame, half_size, alpha, packed)
   local visibility = moon_contrast_visibility(frame, separation_deg)
   if visibility <= 0.001 then return end
 
   if visibility < 0.999 then
-    for _, vertex in ipairs(vertices) do
-      vertex.a = (vertex.a or 1.0) * visibility
+    for offset = 9, cursor, 9 do
+      packed[offset] = packed[offset] * visibility
     end
   end
-  draw_pixel_vertices(event, mdx, mdy, mdz, vertices)
+  draw_pixel_vertices(event, mdx, mdy, mdz, packed, cursor)
 end
 
 local solar_frame_cache

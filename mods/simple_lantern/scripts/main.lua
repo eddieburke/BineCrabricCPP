@@ -10,5 +10,6 @@ minecraft.register_block({
   material = "metal",
   opaque = false,
   full_cube = false,
+  translucent = false,
   model = model,
 })

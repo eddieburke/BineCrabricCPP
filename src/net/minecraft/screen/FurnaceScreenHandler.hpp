@@ -7,18 +7,18 @@ class FurnaceBlockEntity;
 }
 namespace net::minecraft::screen {
 class FurnaceScreenHandler : public ScreenHandler {
-public:
-  FurnaceScreenHandler(PlayerInventory* playerInventory, Inventory* inventory);
-  void addListener(ScreenHandlerListener* listener) override;
-  void sendContentUpdates() override;
-  [[nodiscard]] bool canUse(PlayerEntity* player) override;
-  void setProperty(int id, int value) override;
+ public:
+ FurnaceScreenHandler(PlayerInventory* playerInventory, Inventory* inventory);
+ void addListener(ScreenHandlerListener* listener) override;
+ void sendContentUpdates() override;
+ [[nodiscard]] bool canUse(PlayerEntity* player) override;
+ void setProperty(int id, int value) override;
 
-private:
-  Inventory* inventory_ = nullptr;
-  block::entity::FurnaceBlockEntity* furnace_ = nullptr;
-  int cookTime_ = 0;
-  int burnTime_ = 0;
-  int fuelTime_ = 0;
+ private:
+ Inventory* inventory_ = nullptr;
+ block::entity::FurnaceBlockEntity* furnace_ = nullptr;
+ int cookTime_ = 0;
+ int burnTime_ = 0;
+ int fuelTime_ = 0;
 };
 } // namespace net::minecraft::screen

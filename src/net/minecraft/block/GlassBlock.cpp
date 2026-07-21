@@ -6,16 +6,16 @@
 #include "net/minecraft/registry/Registry.hpp"
 namespace net::minecraft::block {
 void GlassBlock::registerClass() {
-  namespace mat = material;
-  Block::GLASS = (new GlassBlock(kBlockId, 49, mat::Material::GLASS, false))
-                     ->setHardness(0.3f)
-                     ->setSoundGroup(&Block::GLASS_BLOCK_SOUNDS)
-                     ->setTranslationKey("glass");
+ namespace mat = material;
+ Block::GLASS = (new GlassBlock(kBlockId, 49, mat::Material::GLASS, false))
+                    ->setHardness(0.3f)
+                    ->setSoundGroup(&Block::GLASS_BLOCK_SOUNDS)
+                    ->setTranslationKey("glass");
 }
 void GlassBlock::registerSmeltingRecipes() {
-  if(Block::SAND != nullptr && Block::GLASS != nullptr) {
-    recipe::SmeltingRecipeManager::instance().addRecipe(Block::SAND->id, ItemStack(Block::GLASS));
-  }
+ if(Block::SAND != nullptr && Block::GLASS != nullptr) {
+  recipe::SmeltingRecipeManager::instance().addRecipe(Block::SAND->id, ItemStack(Block::GLASS));
+ }
 }
 MC_REGISTER_BLOCK(GlassBlock)
 } // namespace net::minecraft::block

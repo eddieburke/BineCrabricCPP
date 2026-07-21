@@ -4,12 +4,12 @@
 #include <vector>
 namespace net::minecraft::network {
 struct HandshakeMetadata {
-  std::string serverId;
-  bool hasOmegaMetadata = false;
-  bool nativeCppMods = false;
-  bool luaModsEnabled = false;
-  std::vector<std::string> requiredMods;
-  std::unordered_map<std::string, std::string> downloadUrls;
+ std::string serverId;
+ bool hasOmegaMetadata = false;
+ bool nativeCppMods = false;
+ bool luaModsEnabled = false;
+ std::vector<std::string> requiredMods;
+ std::unordered_map<std::string, std::string> downloadUrls;
 };
 [[nodiscard]] std::string appendHandshakeMetadata(const std::string& serverId,
                                                   bool nativeCppMods,

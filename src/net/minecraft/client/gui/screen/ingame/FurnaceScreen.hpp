@@ -8,18 +8,18 @@ class PlayerInventory;
 }
 namespace net::minecraft::client::gui::screen::ingame {
 class FurnaceScreen : public HandledScreen {
-public:
-  FurnaceScreen(entity::player::PlayerInventory* playerInventory, block::entity::FurnaceBlockEntity* furnace);
+ public:
+ FurnaceScreen(entity::player::PlayerInventory* playerInventory, block::entity::FurnaceBlockEntity* furnace);
 
-protected:
-  void drawForeground() override;
-  void drawBackground(float tickDelta) override;
-  [[nodiscard]] std::string_view getScreenUiId() const override {
-    return net::minecraft::mod::screen_ids::kFurnace;
-  }
+ protected:
+ void drawForeground() override;
+ void drawBackground(float tickDelta) override;
+ [[nodiscard]] std::string_view getScreenUiId() const override {
+  return net::minecraft::mod::screen_ids::kFurnace;
+ }
 
-private:
-  block::entity::FurnaceBlockEntity* furnace_ = nullptr;
-  std::unique_ptr<::net::minecraft::screen::ScreenHandler> ownedHandler_;
+ private:
+ block::entity::FurnaceBlockEntity* furnace_ = nullptr;
+ std::unique_ptr<::net::minecraft::screen::ScreenHandler> ownedHandler_;
 };
 } // namespace net::minecraft::client::gui::screen::ingame

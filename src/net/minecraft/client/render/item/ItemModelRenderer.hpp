@@ -6,9 +6,9 @@ class Block;
 }
 namespace net::minecraft::client::render::item {
 struct ItemTint {
-  float red = 1.0f;
-  float green = 1.0f;
-  float blue = 1.0f;
+ float red = 1.0f;
+ float green = 1.0f;
+ float blue = 1.0f;
 };
 namespace ItemModelRenderer {
 [[nodiscard]] net::minecraft::block::Block* blockOf(const ItemStack& stack);

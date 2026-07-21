@@ -8,19 +8,19 @@
 #include "net/minecraft/network/PacketIO.hpp"
 namespace net::minecraft {
 class ChatMessagePacket : public Packet {
-public:
-  std::string chatMessage;
-  void read(std::istream& input) override {
-    chatMessage = Packet::readString(input, 119);
-  }
-  void write(std::ostream& output) const override {
-    Packet::writeString(chatMessage, output);
-  }
-  void apply(NetworkHandler& networkHandler) const override {
-    networkHandler.onChatMessage(*this);
-  }
-  [[nodiscard]] std::size_t size() const override {
-    return chatMessage.size();
-  }
+ public:
+ std::string chatMessage;
+ void read(std::istream& input) override {
+  chatMessage = Packet::readString(input, 119);
+ }
+ void write(std::ostream& output) const override {
+  Packet::writeString(chatMessage, output);
+ }
+ void apply(NetworkHandler& networkHandler) const override {
+  networkHandler.onChatMessage(*this);
+ }
+ [[nodiscard]] std::size_t size() const override {
+  return chatMessage.size();
+ }
 };
 } // namespace net::minecraft

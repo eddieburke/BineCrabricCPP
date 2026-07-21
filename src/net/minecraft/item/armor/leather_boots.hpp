@@ -5,10 +5,10 @@ class CraftingRecipeManager;
 } // namespace net::minecraft::recipe
 namespace net::minecraft::item {
 class LeatherBootsItem : public ArmorItem {
-public:
-  static constexpr int kRawId = 45;
-  static void registerClass();
-  static void registerRecipes(recipe::CraftingRecipeManager& recipeManager);
-  LeatherBootsItem();
+ public:
+ static constexpr int kRawId = 45;
+ static void registerClass();
+ static void registerRecipes(recipe::CraftingRecipeManager& recipeManager);
+ LeatherBootsItem();
 };
 } // namespace net::minecraft::item

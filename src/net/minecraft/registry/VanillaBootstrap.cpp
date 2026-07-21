@@ -15,21 +15,21 @@
 namespace net::minecraft::registry {
 namespace {
 void registerVanillaBlockEntities() {
-  BlockEntityRegistry& registry = BlockEntityRegistry::instance();
-  registry.registerFactory("Furnace", [] { return std::make_unique<block::entity::FurnaceBlockEntity>(); });
-  registry.registerFactory("Chest", [] { return std::make_unique<block::entity::ChestBlockEntity>(); });
-  registry.registerFactory("RecordPlayer", [] { return std::make_unique<block::entity::JukeboxBlockEntity>(); });
-  registry.registerFactory("Trap", [] { return std::make_unique<block::entity::DispenserBlockEntity>(); });
-  registry.registerFactory("Sign", [] { return std::make_unique<block::entity::SignBlockEntity>(); });
-  registry.registerFactory("MobSpawner", [] { return std::make_unique<block::entity::MobSpawnerBlockEntity>(); });
-  registry.registerFactory("Music", [] { return std::make_unique<block::entity::NoteBlockBlockEntity>(); });
-  registry.registerFactory("Piston", [] { return std::make_unique<block::entity::PistonBlockEntity>(); });
-  net::minecraft::mod::lua::registerLuaModEntityType();
+ BlockEntityRegistry& registry = BlockEntityRegistry::instance();
+ registry.registerFactory("Furnace", [] { return std::make_unique<block::entity::FurnaceBlockEntity>(); });
+ registry.registerFactory("Chest", [] { return std::make_unique<block::entity::ChestBlockEntity>(); });
+ registry.registerFactory("RecordPlayer", [] { return std::make_unique<block::entity::JukeboxBlockEntity>(); });
+ registry.registerFactory("Trap", [] { return std::make_unique<block::entity::DispenserBlockEntity>(); });
+ registry.registerFactory("Sign", [] { return std::make_unique<block::entity::SignBlockEntity>(); });
+ registry.registerFactory("MobSpawner", [] { return std::make_unique<block::entity::MobSpawnerBlockEntity>(); });
+ registry.registerFactory("Music", [] { return std::make_unique<block::entity::NoteBlockBlockEntity>(); });
+ registry.registerFactory("Piston", [] { return std::make_unique<block::entity::PistonBlockEntity>(); });
+ net::minecraft::mod::lua::registerLuaModEntityType();
 }
 struct VanillaBlockEntityBootstrap {
-  static void registerClass() {
-    registerVanillaBlockEntities();
-  }
+ static void registerClass() {
+  registerVanillaBlockEntities();
+ }
 };
 static RegisterPhase<VanillaBlockEntityBootstrap> s_blockEntities(mod::LifecyclePhase::Init, 0);
 }

@@ -9,8 +9,8 @@ ReadOnlyServerWorld::ReadOnlyServerWorld(MinecraftServer* server,
                                          std::uint64_t seed,
                                          ServerWorld* delegate)
     : ServerWorld(server, storage, saveName, dimension, seed) {
-  if(delegate != nullptr) {
-    persistentStateManager.shareWith(delegate->persistentStateManager);
-  }
+ if(delegate != nullptr) {
+  persistentStateManager.shareWith(delegate->persistentStateManager);
+ }
 }
 } // namespace net::minecraft::server::world

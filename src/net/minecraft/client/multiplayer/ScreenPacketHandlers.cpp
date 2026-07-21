@@ -21,104 +21,104 @@
 #include "net/minecraft/util/math/MathHelper.hpp"
 namespace net::minecraft::client::multiplayer {
 void ClientNetworkHandler::onOpenScreen(const OpenScreenS2CPacket& packet) {
-  if(minecraft == nullptr || minecraft->player == nullptr) {
-    return;
-  }
-  auto* player = minecraft->player;
-  if(packet.screenHandlerId == 0) {
-    openScreenInventory_ =
-        std::make_unique<SimpleInventory>(packet.name, static_cast<std::size_t>(packet.inventorySize));
-    player->openChestScreen(openScreenInventory_.get());
-    player->currentScreenHandler->syncId = packet.syncId;
-  } else if(packet.screenHandlerId == 2) {
-    openScreenFurnace_ = std::make_unique<block::entity::FurnaceBlockEntity>();
-    player->openFurnaceScreen(openScreenFurnace_.get());
-    player->currentScreenHandler->syncId = packet.syncId;
-  } else if(packet.screenHandlerId == 3) {
-    openScreenDispenser_ = std::make_unique<block::entity::DispenserBlockEntity>();
-    player->openDispenserScreen(openScreenDispenser_.get());
-    player->currentScreenHandler->syncId = packet.syncId;
-  } else if(packet.screenHandlerId == 1) {
-    player->openCraftingScreen(
-        MathHelper::floor(player->x), MathHelper::floor(player->y), MathHelper::floor(player->z));
-    player->currentScreenHandler->syncId = packet.syncId;
-  }
+ if(minecraft == nullptr || minecraft->player == nullptr) {
+  return;
+ }
+ auto* player = minecraft->player;
+ if(packet.screenHandlerId == 0) {
+  openScreenInventory_ =
+      std::make_unique<SimpleInventory>(packet.name, static_cast<std::size_t>(packet.inventorySize));
+  player->openChestScreen(openScreenInventory_.get());
+  player->currentScreenHandler->syncId = packet.syncId;
+ } else if(packet.screenHandlerId == 2) {
+  openScreenFurnace_ = std::make_unique<block::entity::FurnaceBlockEntity>();
+  player->openFurnaceScreen(openScreenFurnace_.get());
+  player->currentScreenHandler->syncId = packet.syncId;
+ } else if(packet.screenHandlerId == 3) {
+  openScreenDispenser_ = std::make_unique<block::entity::DispenserBlockEntity>();
+  player->openDispenserScreen(openScreenDispenser_.get());
+  player->currentScreenHandler->syncId = packet.syncId;
+ } else if(packet.screenHandlerId == 1) {
+  player->openCraftingScreen(
+      MathHelper::floor(player->x), MathHelper::floor(player->y), MathHelper::floor(player->z));
+  player->currentScreenHandler->syncId = packet.syncId;
+ }
 }
 void ClientNetworkHandler::onScreenHandlerSlotUpdate(const ScreenHandlerSlotUpdateS2CPacket& packet) {
-  if(minecraft == nullptr || minecraft->player == nullptr) {
-    return;
+ if(minecraft == nullptr || minecraft->player == nullptr) {
+  return;
+ }
+ auto* player = minecraft->player;
+ if(packet.syncId == -1) {
+  player->inventory.setCursorStack(packet.stack);
+  return;
+ }
+ if(packet.syncId == 0 && packet.slot >= 36 && packet.slot < 45) {
+  if(screen::slot::Slot* slot = player->playerScreenHandler.getSlot(packet.slot)) {
+   ItemStack existing = slot->getStack();
+   ItemStack incoming = packet.stack;
+   if(!incoming.empty() && (existing.empty() || existing.count < incoming.count)) {
+    incoming.bobbingAnimationTime = 5;
+   }
+   player->playerScreenHandler.setStackInSlot(packet.slot, incoming);
   }
-  auto* player = minecraft->player;
-  if(packet.syncId == -1) {
-    player->inventory.setCursorStack(packet.stack);
-    return;
-  }
-  if(packet.syncId == 0 && packet.slot >= 36 && packet.slot < 45) {
-    if(screen::slot::Slot* slot = player->playerScreenHandler.getSlot(packet.slot)) {
-      ItemStack existing = slot->getStack();
-      ItemStack incoming = packet.stack;
-      if(!incoming.empty() && (existing.empty() || existing.count < incoming.count)) {
-        incoming.bobbingAnimationTime = 5;
-      }
-      player->playerScreenHandler.setStackInSlot(packet.slot, incoming);
-    }
-    return;
-  }
-  if(player->currentScreenHandler != nullptr && packet.syncId == player->currentScreenHandler->syncId) {
-    player->currentScreenHandler->setStackInSlot(packet.slot, packet.stack);
-  }
+  return;
+ }
+ if(player->currentScreenHandler != nullptr && packet.syncId == player->currentScreenHandler->syncId) {
+  player->currentScreenHandler->setStackInSlot(packet.slot, packet.stack);
+ }
 }
 void ClientNetworkHandler::onScreenHandlerAcknowledgement(const ScreenHandlerAcknowledgementPacket& packet) {
-  if(minecraft == nullptr || minecraft->player == nullptr) {
-    return;
-  }
-  screen::ScreenHandler* screenHandler = nullptr;
-  if(packet.syncId == 0) {
-    screenHandler = &minecraft->player->playerScreenHandler;
-  } else if(minecraft->player->currentScreenHandler != nullptr &&
-            packet.syncId == minecraft->player->currentScreenHandler->syncId) {
-    screenHandler = minecraft->player->currentScreenHandler;
-  }
-  if(screenHandler == nullptr) {
-    return;
-  }
-  if(packet.accepted) {
-    screenHandler->onAcknowledgementAccepted(static_cast<std::uint16_t>(packet.actionType));
-  } else {
-    screenHandler->onAcknowledgementDenied(static_cast<std::uint16_t>(packet.actionType));
-    sendPacket(ScreenHandlerAcknowledgementPacket{packet.syncId, packet.actionType, true});
-  }
+ if(minecraft == nullptr || minecraft->player == nullptr) {
+  return;
+ }
+ screen::ScreenHandler* screenHandler = nullptr;
+ if(packet.syncId == 0) {
+  screenHandler = &minecraft->player->playerScreenHandler;
+ } else if(minecraft->player->currentScreenHandler != nullptr &&
+           packet.syncId == minecraft->player->currentScreenHandler->syncId) {
+  screenHandler = minecraft->player->currentScreenHandler;
+ }
+ if(screenHandler == nullptr) {
+  return;
+ }
+ if(packet.accepted) {
+  screenHandler->onAcknowledgementAccepted(static_cast<std::uint16_t>(packet.actionType));
+ } else {
+  screenHandler->onAcknowledgementDenied(static_cast<std::uint16_t>(packet.actionType));
+  sendPacket(ScreenHandlerAcknowledgementPacket{packet.syncId, packet.actionType, true});
+ }
 }
 void ClientNetworkHandler::onInventory(const InventoryS2CPacket& packet) {
-  if(minecraft == nullptr || minecraft->player == nullptr) {
-    return;
-  }
-  auto* player = minecraft->player;
-  if(packet.syncId == 0) {
-    player->playerScreenHandler.updateSlotStacks(packet.contents);
-  } else if(player->currentScreenHandler != nullptr && packet.syncId == player->currentScreenHandler->syncId) {
-    player->currentScreenHandler->updateSlotStacks(packet.contents);
-  }
+ if(minecraft == nullptr || minecraft->player == nullptr) {
+  return;
+ }
+ auto* player = minecraft->player;
+ if(packet.syncId == 0) {
+  player->playerScreenHandler.updateSlotStacks(packet.contents);
+ } else if(player->currentScreenHandler != nullptr && packet.syncId == player->currentScreenHandler->syncId) {
+  player->currentScreenHandler->updateSlotStacks(packet.contents);
+ }
 }
 void ClientNetworkHandler::onScreenHandlerPropertyUpdate(const ScreenHandlerPropertyUpdateS2CPacket& packet) {
-  if(minecraft == nullptr || minecraft->player == nullptr || minecraft->player->currentScreenHandler == nullptr) {
-    return;
-  }
-  if(minecraft->player->currentScreenHandler->syncId == packet.syncId) {
-    minecraft->player->currentScreenHandler->setProperty(packet.propertyId, packet.value);
-  }
+ if(minecraft == nullptr || minecraft->player == nullptr || minecraft->player->currentScreenHandler == nullptr) {
+  return;
+ }
+ if(minecraft->player->currentScreenHandler->syncId == packet.syncId) {
+  minecraft->player->currentScreenHandler->setProperty(packet.propertyId, packet.value);
+ }
 }
 void ClientNetworkHandler::onCloseScreen(const CloseScreenS2CPacket& /*packet*/) {
-  if(minecraft == nullptr || minecraft->player == nullptr) {
-    return;
-  }
-  if(auto* multiplayerPlayer = dynamic_cast<MultiplayerClientPlayerEntity*>(minecraft->player)) {
-    multiplayerPlayer->closeHandledScreen();
-  } else {
-    minecraft->player->closeHandledScreen();
-  }
-  openScreenInventory_.reset();
-  openScreenFurnace_.reset();
-  openScreenDispenser_.reset();
+ if(minecraft == nullptr || minecraft->player == nullptr) {
+  return;
+ }
+ if(auto* multiplayerPlayer = dynamic_cast<MultiplayerClientPlayerEntity*>(minecraft->player)) {
+  multiplayerPlayer->closeHandledScreen();
+ } else {
+  minecraft->player->closeHandledScreen();
+ }
+ openScreenInventory_.reset();
+ openScreenFurnace_.reset();
+ openScreenDispenser_.reset();
 }
 } // namespace net::minecraft::client::multiplayer

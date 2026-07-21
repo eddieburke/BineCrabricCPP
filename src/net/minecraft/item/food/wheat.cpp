@@ -7,13 +7,13 @@ namespace net::minecraft::item {
 WheatItem::WheatItem() : Item(kRawId, RegistrationMode::Deferred) {
 }
 void WheatItem::registerClass() {
-  static WheatItem instance;
-  instance.setTexturePosition(9, 1);
-  instance.setTranslationKey("wheat");
-  Item::registerInItemsArray(&instance);
+ static WheatItem instance;
+ instance.setTexturePosition(9, 1);
+ instance.setTranslationKey("wheat");
+ Item::registerInItemsArray(&instance);
 }
 void WheatItem::registerRecipes(recipe::CraftingRecipeManager& recipeManager) {
-  (void)recipeManager;
+ (void)recipeManager;
 }
 MC_REGISTER_ITEM(WheatItem)
 } // namespace net::minecraft::item

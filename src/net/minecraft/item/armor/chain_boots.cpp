@@ -13,14 +13,14 @@ namespace net::minecraft::item {
 ChainBootsItem::ChainBootsItem() : ArmorItem(kRawId, 1, 1, 3) {
 }
 void ChainBootsItem::registerClass() {
-  static ChainBootsItem instance;
-  instance.setTexturePosition(1, 3);
-  instance.setTranslationKey("bootsChain");
-  Item::registerInItemsArray(&instance);
+ static ChainBootsItem instance;
+ instance.setTexturePosition(1, 3);
+ instance.setTranslationKey("bootsChain");
+ Item::registerInItemsArray(&instance);
 }
 void ChainBootsItem::registerRecipes(recipe::CraftingRecipeManager& recipeManager) {
-  recipeManager.addShapedRecipe(ItemStack(Item::byRawId(49)),
-                                {std::string("X X"), std::string("X X"), 'X', Block::FIRE});
+ recipeManager.addShapedRecipe(ItemStack(Item::byRawId(49)),
+                               {std::string("X X"), std::string("X X"), 'X', Block::FIRE});
 }
 MC_REGISTER_ITEM(ChainBootsItem)
 } // namespace net::minecraft::item

@@ -5,10 +5,10 @@ class CraftingRecipeManager;
 } // namespace net::minecraft::recipe
 namespace net::minecraft::item {
 class DiamondAxeItem : public AxeItem {
-public:
-  static constexpr int kRawId = 23;
-  static void registerClass();
-  static void registerRecipes(recipe::CraftingRecipeManager& recipeManager);
-  DiamondAxeItem();
+ public:
+ static constexpr int kRawId = 23;
+ static void registerClass();
+ static void registerRecipes(recipe::CraftingRecipeManager& recipeManager);
+ DiamondAxeItem();
 };
 } // namespace net::minecraft::item

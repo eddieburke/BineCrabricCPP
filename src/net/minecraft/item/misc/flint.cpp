@@ -7,13 +7,13 @@ namespace net::minecraft::item {
 FlintItem::FlintItem() : Item(kRawId, RegistrationMode::Deferred) {
 }
 void FlintItem::registerClass() {
-  static FlintItem instance;
-  instance.setTexturePosition(6, 0);
-  instance.setTranslationKey("flint");
-  Item::registerInItemsArray(&instance);
+ static FlintItem instance;
+ instance.setTexturePosition(6, 0);
+ instance.setTranslationKey("flint");
+ Item::registerInItemsArray(&instance);
 }
 void FlintItem::registerRecipes(recipe::CraftingRecipeManager& recipeManager) {
-  (void)recipeManager;
+ (void)recipeManager;
 }
 MC_REGISTER_ITEM(FlintItem)
 } // namespace net::minecraft::item

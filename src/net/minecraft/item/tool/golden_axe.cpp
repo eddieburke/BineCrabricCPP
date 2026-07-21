@@ -11,15 +11,15 @@ namespace net::minecraft::item {
 GoldenAxeItem::GoldenAxeItem() : AxeItem(kRawId, ToolMaterial::Gold) {
 }
 void GoldenAxeItem::registerClass() {
-  static GoldenAxeItem instance;
-  instance.setTexturePosition(4, 7);
-  instance.setTranslationKey("hatchetGold");
-  Item::registerInItemsArray(&instance);
+ static GoldenAxeItem instance;
+ instance.setTexturePosition(4, 7);
+ instance.setTranslationKey("hatchetGold");
+ Item::registerInItemsArray(&instance);
 }
 void GoldenAxeItem::registerRecipes(recipe::CraftingRecipeManager& recipeManager) {
-  recipeManager.addShapedRecipe(
-      ItemStack(Item::byRawId(30)),
-      {std::string("XX"), std::string("X#"), std::string(" #"), '#', Item::byRawId(24), 'X', Item::byRawId(10)});
+ recipeManager.addShapedRecipe(
+     ItemStack(Item::byRawId(30)),
+     {std::string("XX"), std::string("X#"), std::string(" #"), '#', Item::byRawId(24), 'X', Item::byRawId(10)});
 }
 MC_REGISTER_ITEM(GoldenAxeItem)
 } // namespace net::minecraft::item

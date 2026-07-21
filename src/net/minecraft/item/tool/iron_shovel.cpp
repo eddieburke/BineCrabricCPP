@@ -11,15 +11,15 @@ namespace net::minecraft::item {
 IronShovelItem::IronShovelItem() : ShovelItem(kRawId, ToolMaterial::Iron) {
 }
 void IronShovelItem::registerClass() {
-  static IronShovelItem instance;
-  instance.setTexturePosition(2, 5);
-  instance.setTranslationKey("shovelIron");
-  Item::registerInItemsArray(&instance);
+ static IronShovelItem instance;
+ instance.setTexturePosition(2, 5);
+ instance.setTranslationKey("shovelIron");
+ Item::registerInItemsArray(&instance);
 }
 void IronShovelItem::registerRecipes(recipe::CraftingRecipeManager& recipeManager) {
-  recipeManager.addShapedRecipe(
-      ItemStack(Item::byRawId(0)),
-      {std::string("X"), std::string("#"), std::string("#"), '#', Item::byRawId(24), 'X', Item::byRawId(9)});
+ recipeManager.addShapedRecipe(
+     ItemStack(Item::byRawId(0)),
+     {std::string("X"), std::string("#"), std::string("#"), '#', Item::byRawId(24), 'X', Item::byRawId(9)});
 }
 MC_REGISTER_ITEM(IronShovelItem)
 } // namespace net::minecraft::item

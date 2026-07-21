@@ -9,6 +9,6 @@ void initializeBlocks();
 namespace net::minecraft {
 using Block = block::Block;
 inline void initializeBlocks() {
-  block::initializeBlocks();
+ block::initializeBlocks();
 }
 } // namespace net::minecraft

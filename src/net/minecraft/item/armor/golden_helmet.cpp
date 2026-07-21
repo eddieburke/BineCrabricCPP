@@ -13,14 +13,14 @@ namespace net::minecraft::item {
 GoldenHelmetItem::GoldenHelmetItem() : ArmorItem(kRawId, 1, 4, 0) {
 }
 void GoldenHelmetItem::registerClass() {
-  static GoldenHelmetItem instance;
-  instance.setTexturePosition(4, 0);
-  instance.setTranslationKey("helmetGold");
-  Item::registerInItemsArray(&instance);
+ static GoldenHelmetItem instance;
+ instance.setTexturePosition(4, 0);
+ instance.setTranslationKey("helmetGold");
+ Item::registerInItemsArray(&instance);
 }
 void GoldenHelmetItem::registerRecipes(recipe::CraftingRecipeManager& recipeManager) {
-  recipeManager.addShapedRecipe(ItemStack(Item::byRawId(58)),
-                                {std::string("XXX"), std::string("X X"), 'X', Item::byRawId(10)});
+ recipeManager.addShapedRecipe(ItemStack(Item::byRawId(58)),
+                               {std::string("XXX"), std::string("X X"), 'X', Item::byRawId(10)});
 }
 MC_REGISTER_ITEM(GoldenHelmetItem)
 } // namespace net::minecraft::item

@@ -19,25 +19,25 @@ class BiomeSource;
 // The remaining fields (brightness, time, cloud, movement, flags) are consumed
 // by the shared formulas in Dimension.
 struct DimensionType {
-  int id = 0;
-  std::string name = "Overworld"; // display name
-  bool isNether = false;
-  bool evaporatesWater = false;
-  bool hasCeiling = false;
-  bool hasGround = true;
-  bool hasWorldSpawn = true;
-  bool hasBackgroundColor = true;
-  bool fixedTime = false;
-  float fixedTimeOfDay = 0.0f;
-  float brightnessFactor = 0.05f;
-  double movementFactor = 1.0;
-  float cloudHeight = 108.0f;
-  // Required seams. localBiomeSource mirrors the worker-thread flag the
-  // built-in generators honour; pass it straight through to your generator.
-  std::function<std::unique_ptr<ChunkSource>(World*, std::uint64_t seed, bool localBiomeSource)> makeGenerator;
-  std::function<std::unique_ptr<BiomeSource>(World*)> makeBiomeSource;
-  std::function<Vec3d(float timeOfDay)> fogColor;
-  std::function<bool(World&, int x, int z)> isValidSpawn;
+ int id = 0;
+ std::string name = "Overworld"; // display name
+ bool isNether = false;
+ bool evaporatesWater = false;
+ bool hasCeiling = false;
+ bool hasGround = true;
+ bool hasWorldSpawn = true;
+ bool hasBackgroundColor = true;
+ bool fixedTime = false;
+ float fixedTimeOfDay = 0.0f;
+ float brightnessFactor = 0.05f;
+ double movementFactor = 1.0;
+ float cloudHeight = 108.0f;
+ // Required seams. localBiomeSource mirrors the worker-thread flag the
+ // built-in generators honour; pass it straight through to your generator.
+ std::function<std::unique_ptr<ChunkSource>(World*, std::uint64_t seed, bool localBiomeSource)> makeGenerator;
+ std::function<std::unique_ptr<BiomeSource>(World*)> makeBiomeSource;
+ std::function<Vec3d(float timeOfDay)> fogColor;
+ std::function<bool(World&, int x, int z)> isValidSpawn;
 };
 namespace dimension {
 // Append (or, for an existing id, replace) a definition. Call from a mod's

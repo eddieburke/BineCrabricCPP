@@ -10,20 +10,20 @@ using voidpf = void*;
 using alloc_func = voidpf (*)(voidpf opaque, uInt items, uInt size);
 using free_func = void (*)(voidpf opaque, voidpf address);
 struct z_stream {
-  Bytef* next_in = nullptr;
-  uInt avail_in = 0;
-  uLong total_in = 0;
-  Bytef* next_out = nullptr;
-  uInt avail_out = 0;
-  uLong total_out = 0;
-  char* msg = nullptr;
-  void* state = nullptr;
-  alloc_func zalloc = nullptr;
-  free_func zfree = nullptr;
-  voidpf opaque = nullptr;
-  int data_type = 0;
-  uLong adler = 0;
-  uLong reserved = 0;
+ Bytef* next_in = nullptr;
+ uInt avail_in = 0;
+ uLong total_in = 0;
+ Bytef* next_out = nullptr;
+ uInt avail_out = 0;
+ uLong total_out = 0;
+ char* msg = nullptr;
+ void* state = nullptr;
+ alloc_func zalloc = nullptr;
+ free_func zfree = nullptr;
+ voidpf opaque = nullptr;
+ int data_type = 0;
+ uLong adler = 0;
+ uLong reserved = 0;
 };
 using z_streamp = z_stream*;
 constexpr int Z_NO_FLUSH = 0;
@@ -58,10 +58,10 @@ int inflate(z_streamp strm, int flush);
 int inflateEnd(z_streamp strm);
 }
 inline int deflateInit2(z_streamp strm, int level, int method, int windowBits, int memLevel, int strategy) {
-  return deflateInit2_(
-      strm, level, method, windowBits, memLevel, strategy, "1.3.1", static_cast<int>(sizeof(z_stream)));
+ return deflateInit2_(
+     strm, level, method, windowBits, memLevel, strategy, "1.3.1", static_cast<int>(sizeof(z_stream)));
 }
 inline int inflateInit2(z_streamp strm, int windowBits) {
-  return inflateInit2_(strm, windowBits, "1.3.1", static_cast<int>(sizeof(z_stream)));
+ return inflateInit2_(strm, windowBits, "1.3.1", static_cast<int>(sizeof(z_stream)));
 }
 } // namespace net::minecraft::zlibshim

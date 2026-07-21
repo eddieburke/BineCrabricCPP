@@ -10,13 +10,13 @@
 #include "net/minecraft/block/LiquidBlock.hpp"
 #include "net/minecraft/block/entity/BlockEntity.hpp"
 #include "net/minecraft/block/material/Material.hpp"
+#include "net/minecraft/util/logging/Log.hpp"
 #include "net/minecraft/entity/Entity.hpp"
 #include "net/minecraft/entity/LightningEntity.hpp"
 #include "net/minecraft/entity/ai/pathing/PathNodeNavigator.hpp"
 #include "net/minecraft/entity/player/PlayerEntity.hpp"
-#include "net/minecraft/mod/GameHooks.hpp"
-#include "net/minecraft/mod/HookBus.hpp"
-#include "net/minecraft/mod/runtime/ModHostUtil.hpp"
+#include "net/minecraft/mod/runtime/LuaDirectHooks.hpp"
+#include "net/minecraft/mod/lua/LuaHostApi.hpp"
 #include "net/minecraft/mod/runtime/WorldRequiredMods.hpp"
 #include "net/minecraft/util/math/MathHelper.hpp"
 #include "net/minecraft/world/NaturalSpawner.hpp"
@@ -24,7 +24,6 @@
 #include "net/minecraft/world/biome/Biome.hpp"
 #include "net/minecraft/world/chunk/Chunk.hpp"
 #include "net/minecraft/world/chunk/ChunkSource.hpp"
-#include "net/minecraft/world/chunk/LegacyChunkCache.hpp"
 #include "net/minecraft/world/chunk/storage/ChunkStorage.hpp"
 #include "net/minecraft/world/dimension/Dimension.hpp"
 #include "net/minecraft/world/events/GameEventListener.hpp"
@@ -32,6 +31,8 @@
 #include "net/minecraft/world/storage/AlphaWorldStorage.hpp"
 #include "net/minecraft/world/storage/RegionWorldStorage.hpp"
 #include "net/minecraft/world/storage/WorldStorage.hpp"
+using net::minecraft::util::logging::Log;
+using net::minecraft::util::logging::LogLevel;
 namespace net::minecraft {
 World::World(std::string name, std::uint64_t seed, std::unordered_map<std::string, std::string> creationOptions)
     : events_(*this),
@@ -227,7 +228,7 @@ Vec3d World::getSkyColor(Entity* entity, float partialTicks) const {
   }
   mod::WorldColorEvent skyEvent{this, entity, partialTicks, {red, green, blue}};
   skyEvent.kind = mod::WorldColorKind::Sky;
-  mod::hooks().publish(skyEvent);
+  mod::runtime::luaHookWorldColor(skyEvent);
   return skyEvent.color;
 }
 float World::getRainGradient(float partialTicks) const {
@@ -314,6 +315,7 @@ void World::save(bool blocking) {
           dimensionData_->save(properties_, players);
         }
       } catch(const std::exception&) {
+       Log::LOGGER.log(LogLevel::Warning, "World: saveUnload/save failed during dimension teardown");
       }
     } else if(!asyncSaveFuture_.valid() ||
               asyncSaveFuture_.wait_for(std::chrono::seconds(0)) == std::future_status::ready) {
@@ -327,6 +329,7 @@ void World::save(bool blocking) {
             try {
               dimensionData_->save(snapshot, playersSnapshot);
             } catch(const std::exception&) {
+             Log::LOGGER.log(LogLevel::Warning, "World: async save failed");
             }
           });
     }
@@ -350,7 +353,7 @@ void World::initializeSpawnPoint() {
   // not satisfy the dimension's default near-sea-level spawn rule, so the mod
   // owns its own search; the engine only falls back to vanilla when unhandled.
   mod::WorldSpawnSearchEvent spawnEvent{this, 0, 64, 0, false};
-  mod::hooks().publish(spawnEvent);
+  mod::runtime::luaHookWorldSpawnSearch(spawnEvent);
   if(spawnEvent.resolved) {
     properties_.setSpawn(spawnEvent.x, spawnEvent.y, spawnEvent.z);
     setSpawnPos(Vec3i{spawnEvent.x, spawnEvent.y, spawnEvent.z});
@@ -397,7 +400,7 @@ void World::updateSpawnPosition() {
   // vanilla near-sea-level nudge below can't loop forever on raised/floating land.
   mod::WorldSpawnSearchEvent spawnEvent{
       this, properties_.getSpawnX(), properties_.getSpawnY(), properties_.getSpawnZ(), false};
-  mod::hooks().publish(spawnEvent);
+  mod::runtime::luaHookWorldSpawnSearch(spawnEvent);
   if(spawnEvent.resolved) {
     properties_.setSpawn(spawnEvent.x, spawnEvent.y, spawnEvent.z);
     setSpawnPos(Vec3i{spawnEvent.x, spawnEvent.y, spawnEvent.z});
@@ -578,17 +581,9 @@ void World::applyWorldSettings(bool weatherEnabled, int autoSaveTicks, int timeM
 }
 void World::setChunkResidentRadius(int radiusChunks) {
   chunkResidentRadiusChunks_ = std::max(1, radiusChunks);
-  if(auto* legacyCache = dynamic_cast<LegacyChunkCache*>(getChunkSource())) {
-    legacyCache->setActiveRadius(chunkResidentRadiusChunks_);
-  }
 }
 void World::setTime(std::uint64_t value) noexcept {
-  mod::WorldTimeEvent event{this, static_cast<long long>(time_), static_cast<long long>(value), false};
-  mod::hooks().publish(event);
-  if(event.canceled) {
-    return;
-  }
-  time_ = static_cast<std::uint64_t>(event.newTime);
+  time_ = value;
   if(hasStorageBackedProperties_) {
     properties_.setTime(time_);
   }
@@ -600,11 +595,6 @@ void World::synchronizeTimeAndUpdates(std::uint64_t time) noexcept {
   scheduledTicks_.shiftScheduledTimes(delta);
 }
 void World::updateWeatherCycles() {
-  mod::WeatherCycleEvent event{this, false, false};
-  mod::hooks().publish(event);
-  if(event.canceled) {
-    return;
-  }
   if(dimension != nullptr && dimension->hasCeiling) {
     return;
   }
@@ -718,16 +708,6 @@ World::~World() {
   lighting_.stop();
 }
 void World::scheduleBlockUpdate(int x, int y, int z, int id, int tickRate) {
-  mod::ScheduleBlockUpdateEvent scheduleEvent{this, x, y, z, id, tickRate, false};
-  mod::hooks().publish(scheduleEvent);
-  if(scheduleEvent.canceled) {
-    return;
-  }
-  x = scheduleEvent.x;
-  y = scheduleEvent.y;
-  z = scheduleEvent.z;
-  id = scheduleEvent.blockId;
-  tickRate = scheduleEvent.tickRate;
   BlockEvent blockEvent(x, y, z, id);
   constexpr int regionPadding = 8;
   if(instantBlockUpdateEnabled) {
@@ -743,7 +723,6 @@ void World::scheduleBlockUpdate(int x, int y, int z, int id, int tickRate) {
         if(block != nullptr) {
           mod::ScheduledBlockTickEvent tickEvent{
               this, block, blockEvent.x, blockEvent.y, blockEvent.z, currentId, true, false};
-          mod::hooks().publish(tickEvent);
           if(!tickEvent.canceled) {
             block->onTick(this, blockEvent.x, blockEvent.y, blockEvent.z, random_);
           }
@@ -798,7 +777,6 @@ bool World::processScheduledTicks(bool flush) {
     if(block != nullptr) {
       mod::ScheduledBlockTickEvent tickEvent{
           this, block, blockEvent.x, blockEvent.y, blockEvent.z, currentId, false, false};
-      mod::hooks().publish(tickEvent);
       if(!tickEvent.canceled) {
         block->onTick(this, blockEvent.x, blockEvent.y, blockEvent.z, random_);
       }
@@ -886,7 +864,7 @@ Vec3d World::getFogColor(float partialTicks) const {
     Vec3d fog = dimension->getFogColor(getTime(partialTicks), partialTicks);
     mod::WorldColorEvent fogEvent{this, nullptr, partialTicks, fog};
     fogEvent.kind = mod::WorldColorKind::Fog;
-    mod::hooks().publish(fogEvent);
+    mod::runtime::luaHookWorldColor(fogEvent);
     return fogEvent.color;
   }
   return {0.75, 0.85, 1.0};
@@ -903,13 +881,13 @@ float World::calculateSkyLightIntensity(float partialTicks) const {
 }
 void World::tick() {
   mod::WorldTickEvent beforeTick{this, false, true};
-  mod::runtime::setModContext(this, false);
-  mod::hooks().publish(beforeTick);
-  mod::runtime::clearModContext();
+  mod::lua::setModContext(this, false);
+  mod::runtime::luaHookWorldTick(beforeTick);
+  mod::lua::clearModContext();
   updateWeatherCycles();
   if(canSkipNight()) {
     int spawned = 0;
-    if(allowMonsterSpawning && difficulty >= 1) {
+    if(spawnHostileMobs && difficulty >= 1) {
       spawned = NaturalSpawner::spawnMonstersAndWakePlayers(this, players);
     }
     if(spawned == 0) {
@@ -920,7 +898,7 @@ void World::tick() {
     }
   }
   // Match Java World.tick NaturalSpawner argument order (monster field -> spawnAnimals param).
-  NaturalSpawner::tick(this, allowMonsterSpawning, allowMobSpawning);
+  NaturalSpawner::tick(this, spawnHostileMobs, spawnPeacefulMobs);
   if(chunkCache_ != nullptr) {
     chunkCache_->tick();
   }
@@ -936,8 +914,8 @@ void World::tick() {
   processScheduledTicks(false);
   manageChunkUpdatesAndEvents();
   mod::WorldTickEvent afterTick{this, false, false};
-  mod::runtime::setModContext(this, false);
-  mod::hooks().publish(afterTick);
-  mod::runtime::clearModContext();
+  mod::lua::setModContext(this, false);
+  mod::runtime::luaHookWorldTick(afterTick);
+  mod::lua::clearModContext();
 }
 } // namespace net::minecraft

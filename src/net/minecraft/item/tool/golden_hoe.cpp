@@ -11,15 +11,15 @@ namespace net::minecraft::item {
 GoldenHoeItem::GoldenHoeItem() : HoeItem(kRawId, ToolMaterial::Gold) {
 }
 void GoldenHoeItem::registerClass() {
-  static GoldenHoeItem instance;
-  instance.setTexturePosition(4, 8);
-  instance.setTranslationKey("hoeGold");
-  Item::registerInItemsArray(&instance);
+ static GoldenHoeItem instance;
+ instance.setTexturePosition(4, 8);
+ instance.setTranslationKey("hoeGold");
+ Item::registerInItemsArray(&instance);
 }
 void GoldenHoeItem::registerRecipes(recipe::CraftingRecipeManager& recipeManager) {
-  recipeManager.addShapedRecipe(
-      ItemStack(Item::byRawId(38)),
-      {std::string("XX"), std::string(" #"), std::string(" #"), '#', Item::byRawId(24), 'X', Item::byRawId(10)});
+ recipeManager.addShapedRecipe(
+     ItemStack(Item::byRawId(38)),
+     {std::string("XX"), std::string(" #"), std::string(" #"), '#', Item::byRawId(24), 'X', Item::byRawId(10)});
 }
 MC_REGISTER_ITEM(GoldenHoeItem)
 } // namespace net::minecraft::item

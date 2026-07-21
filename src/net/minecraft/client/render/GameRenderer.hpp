@@ -1,27 +1,35 @@
 #pragma once
+#include "net/minecraft/client/gl/GlConstants.hpp"
 #include "net/minecraft/client/render/FrameRenderCamera.hpp"
-#include "net/minecraft/client/gl/Framebuffer.hpp"
+#include "net/minecraft/client/render/Framebuffer.hpp"
+#include "net/minecraft/client/render/RenderTargets.hpp"
 #include "net/minecraft/client/render/atmosphere/CloudRenderer.hpp"
 #include "net/minecraft/client/render/atmosphere/PrecipitationRenderer.hpp"
 #include "net/minecraft/client/render/item/HeldItemRenderer.hpp"
-#include "net/minecraft/client/render/light/UnifiedLightView.hpp"
-#include "net/minecraft/client/render/shaderpack/ShaderPackManager.hpp"
 #include "net/minecraft/client/util/SmoothUtil.hpp"
 #include "net/minecraft/entity/EntityTypes.hpp"
-#include "net/minecraft/mod/events/RenderEvents.hpp"
+#include "net/minecraft/mod/runtime/LuaDirectHooks.hpp"
 #include "net/minecraft/util/math/Types.hpp"
 #include <cstdint>
 #include <memory>
 #include <optional>
+
 namespace net::minecraft::client {
 class Minecraft;
 }
-namespace net::minecraft::client::render {
-class GameRenderer {
-  friend class gl::FramebufferManager;
 
-public:
+namespace net::minecraft::client::render::shaderpack {
+class ShaderPackManager;
+}
+
+namespace net::minecraft::client::render {
+
+class GameRenderer {
+  friend class FramebufferManager;
+
+ public:
   explicit GameRenderer(net::minecraft::client::Minecraft* client);
+  ~GameRenderer();
   void updateCamera();
   void updateTargetedEntity(float tickDelta);
   void onFrameUpdate(float tickDelta);
@@ -34,19 +42,19 @@ public:
                              int viewportHeight,
                              bool renderCameraEntity,
                              bool captureWorldDepth = false);
-  [[nodiscard]] gl::FramebufferManager& renderTargets() noexcept {
-    return renderTargets_;
-  }
-  [[nodiscard]] gl::FramebufferManager& fbos() noexcept { return fbos_; }
-  [[nodiscard]] shaderpack::ShaderPackManager* shaderPacks() noexcept { return shaderPacks_.get(); }
-  [[nodiscard]] const shaderpack::ShaderPackManager* shaderPacks() const noexcept { return shaderPacks_.get(); }
+
+  bool beginSceneCapture();
+  void resolveSceneCapture(float tickDelta);
+
   [[nodiscard]] float farPlaneBlocks() const;
   [[nodiscard]] item::HeldItemRenderer* heldItemRendererPtr() { return heldItemRenderer.get(); }
   [[nodiscard]] const item::HeldItemRenderer* heldItemRendererPtr() const {
-    return heldItemRenderer.get();
+   return heldItemRenderer.get();
   }
+  [[nodiscard]] shaderpack::ShaderPackManager* shaderPacks() { return shaderPacks_.get(); }
+  [[nodiscard]] FramebufferManager& renderTargets() noexcept { return renderTargets_; }
 
-private:
+ private:
   float getFov(float tickDelta) const;
   void applyDamageTiltEffect(float tickDelta);
   void applyViewBobbing(float tickDelta);
@@ -56,9 +64,7 @@ private:
   void renderWorld(float tickDelta, float fov);
   void renderFirstPersonHand(float tickDelta);
   void renderRain();
-  [[nodiscard]] bool ensurePostProcessTarget(int width, int height);
-  [[nodiscard]] bool renderSunShadow(float tickDelta);
-  void compositePostProcessFallback(int textureId, int width, int height);
+
   void throttleAndTimestamp(int fpsCap);
   net::minecraft::client::Minecraft* client = nullptr;
   atmosphere::CloudRenderer cloudRenderer{};
@@ -91,19 +97,19 @@ private:
   float fogRed = 0.0f;
   float fogGreen = 0.0f;
   float fogBlue = 0.0f;
+  float lastFogEnd_ = 0.0f;
   mod::FogSettingsEvent fogSettings_{};
   FrameRenderCamera frameCamera_{};
-  gl::FramebufferManager renderTargets_{};
-  gl::FramebufferManager fbos_{};
-  light::UnifiedLightView lightView_{};
+  FramebufferManager renderTargets_{};
+
+  unsigned int lightmapTexture_ = 0;
+  std::uint32_t lastLightmapColors_[256]{};
+  bool lightmapColorsValid_ = false;
+  Framebuffer sceneFramebuffer_;
+  bool sceneFramebufferAttempted_ = false;
+  void updateLightmap(float tickDelta);
+
   std::unique_ptr<shaderpack::ShaderPackManager> shaderPacks_;
-  gl::Framebuffer postProcessTarget_{};
-  unsigned int postProcessSceneDepthTexture_ = 0;
-  int postProcessSceneDepthWidth_ = 0;
-  int postProcessSceneDepthHeight_ = 0;
-  int sunShadowHandle_ = -1;
-  int sunShadowSize_ = 0;
-  bool sunShadowValid_ = false;
-  FrameRenderCamera sunShadowCamera_{};
 };
+
 } // namespace net::minecraft::client::render

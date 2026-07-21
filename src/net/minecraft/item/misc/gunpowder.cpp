@@ -7,13 +7,13 @@ namespace net::minecraft::item {
 GunpowderItem::GunpowderItem() : Item(kRawId, RegistrationMode::Deferred) {
 }
 void GunpowderItem::registerClass() {
-  static GunpowderItem instance;
-  instance.setTexturePosition(8, 2);
-  instance.setTranslationKey("sulphur");
-  Item::registerInItemsArray(&instance);
+ static GunpowderItem instance;
+ instance.setTexturePosition(8, 2);
+ instance.setTranslationKey("sulphur");
+ Item::registerInItemsArray(&instance);
 }
 void GunpowderItem::registerRecipes(recipe::CraftingRecipeManager& recipeManager) {
-  (void)recipeManager;
+ (void)recipeManager;
 }
 MC_REGISTER_ITEM(GunpowderItem)
 } // namespace net::minecraft::item

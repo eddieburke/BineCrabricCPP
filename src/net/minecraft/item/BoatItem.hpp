@@ -9,11 +9,11 @@ class CraftingRecipeManager;
 } // namespace net::minecraft::recipe
 namespace net::minecraft::item {
 class BoatItem : public Item {
-public:
-  static constexpr int kRawId = 77;
-  static void registerClass();
-  static void registerRecipes(recipe::CraftingRecipeManager& recipeManager);
-  explicit BoatItem(int rawId);
-  ItemStack* use(ItemStack* stack, World* world, PlayerEntity* user) override;
+ public:
+ static constexpr int kRawId = 77;
+ static void registerClass();
+ static void registerRecipes(recipe::CraftingRecipeManager& recipeManager);
+ explicit BoatItem(int rawId);
+ ItemStack* use(ItemStack* stack, World* world, PlayerEntity* user) override;
 };
 } // namespace net::minecraft::item

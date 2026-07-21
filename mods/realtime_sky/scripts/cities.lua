@@ -5,6 +5,7 @@ local load_error = nil
 
 local function copy_fallback(reason)
   load_error = reason
+  minecraft.log("warn", "realtime_sky: cities fallback - " .. reason)
   local out = {}
   for _, place in ipairs(fallback_places.all()) do
     out[#out + 1] = {

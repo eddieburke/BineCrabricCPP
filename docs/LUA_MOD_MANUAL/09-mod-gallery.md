@@ -438,7 +438,7 @@ minecraft.register_item({
 
 minecraft.register_block({
   id = TV_BLOCK,
-  texture = "mods/camera/tv_body.png",
+  texture = "models/camera/tv/tv_body.png",
   hardness = 1.5,
   resistance = 4.0,
   translation_key = "camera.tv",

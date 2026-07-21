@@ -6,10 +6,10 @@ class ItemStack;
 } // namespace net::minecraft
 namespace net::minecraft::item {
 class EggItem : public Item {
-public:
-  static constexpr int kRawId = 88;
-  static void registerClass();
-  explicit EggItem(int rawId);
-  ItemStack* use(ItemStack* stack, World* world, PlayerEntity* user) override;
+ public:
+ static constexpr int kRawId = 88;
+ static void registerClass();
+ explicit EggItem(int rawId);
+ ItemStack* use(ItemStack* stack, World* world, PlayerEntity* user) override;
 };
 } // namespace net::minecraft::item

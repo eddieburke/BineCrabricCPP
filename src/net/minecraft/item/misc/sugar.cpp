@@ -8,14 +8,14 @@ namespace net::minecraft::item {
 SugarItem::SugarItem() : Item(kRawId, RegistrationMode::Deferred) {
 }
 void SugarItem::registerClass() {
-  static SugarItem instance;
-  instance.setTexturePosition(13, 0);
-  instance.setHandheld();
-  instance.setTranslationKey("sugar");
-  Item::registerInItemsArray(&instance);
+ static SugarItem instance;
+ instance.setTexturePosition(13, 0);
+ instance.setHandheld();
+ instance.setTranslationKey("sugar");
+ Item::registerInItemsArray(&instance);
 }
 void SugarItem::registerRecipes(recipe::CraftingRecipeManager& recipeManager) {
-  recipeManager.addShapedRecipe(ItemStack(Item::byRawId(97)), {std::string("#"), '#', Item::byRawId(82)});
+ recipeManager.addShapedRecipe(ItemStack(Item::byRawId(97)), {std::string("#"), '#', Item::byRawId(82)});
 }
 MC_REGISTER_ITEM(SugarItem)
 } // namespace net::minecraft::item

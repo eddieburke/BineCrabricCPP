@@ -1,5 +1,5 @@
 
-local box3d = minecraft.require("scripts.box3d")
+local box3d = minecraft.require("lib.box3d")
 
 local DEFAULT_PHYSICS = {
   material = "generic", density = 1.10, saturated_density = 1.10,
@@ -14,9 +14,15 @@ local DEFAULT_PHYSICS = {
   rolling_resistance = 0.015,
 }
 
+local clamp_number_logged = {}
 local function clamp_number(value, fallback, lo, hi)
   value = tonumber(value)
   if value == nil or value ~= value or value == math.huge or value == -math.huge then
+    local dedup = tostring(value) .. ":"
+    if not clamp_number_logged[dedup] then
+      clamp_number_logged[dedup] = true
+      minecraft.log("warn", "item_drop_physics: using fallback for invalid physics value")
+    end
     value = fallback
   end
   if value < lo then return lo end
@@ -204,6 +210,7 @@ local function safe_block_meta(x, y, z)
   if meta_mode == 0 then
     local ok, value = pcall(raw_get_block_meta, x, y, z)
     if not ok or type(value) ~= "number" then
+      minecraft.log("warn", "item_drop_physics: get_block_meta pcall failed, disabling meta reads")
       meta_mode = -1
       raw_get_block_meta = nil
       return nil

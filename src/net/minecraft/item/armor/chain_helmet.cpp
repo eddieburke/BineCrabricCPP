@@ -13,14 +13,14 @@ namespace net::minecraft::item {
 ChainHelmetItem::ChainHelmetItem() : ArmorItem(kRawId, 1, 1, 0) {
 }
 void ChainHelmetItem::registerClass() {
-  static ChainHelmetItem instance;
-  instance.setTexturePosition(1, 0);
-  instance.setTranslationKey("helmetChain");
-  Item::registerInItemsArray(&instance);
+ static ChainHelmetItem instance;
+ instance.setTexturePosition(1, 0);
+ instance.setTranslationKey("helmetChain");
+ Item::registerInItemsArray(&instance);
 }
 void ChainHelmetItem::registerRecipes(recipe::CraftingRecipeManager& recipeManager) {
-  recipeManager.addShapedRecipe(ItemStack(Item::byRawId(46)),
-                                {std::string("XXX"), std::string("X X"), 'X', Block::FIRE});
+ recipeManager.addShapedRecipe(ItemStack(Item::byRawId(46)),
+                               {std::string("XXX"), std::string("X X"), 'X', Block::FIRE});
 }
 MC_REGISTER_ITEM(ChainHelmetItem)
 } // namespace net::minecraft::item

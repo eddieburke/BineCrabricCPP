@@ -13,5 +13,6 @@ Authoritative contract for runtime Lua mods. Source of truth for behavior is als
 | [07](07-gui-and-screens.md) | Screens and 3D GUI |
 | [08](08-inventory-audio-utilities.md) | Inventory, sound, util |
 | [09](09-mod-gallery.md) | Shipped mods |
+| [10](10-json-model-format.md) | JSON model format (elements, faces, cullface, rotation, parent chains) |
 
 **Breaking change:** `minecraft.on(event, callback)` is removed. Always pass an options table: `minecraft.on(event, {}, callback)` or with filters.

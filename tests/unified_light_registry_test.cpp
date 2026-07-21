@@ -1,38 +1,42 @@
 #include <gtest/gtest.h>
 #include "net/minecraft/world/light/UnifiedLightRegistry.hpp"
 namespace net::minecraft::test {
-TEST(UnifiedLightRegistry, OwnsPointAndDirectionalSources) {
-  world::light::UnifiedLightRegistry registry;
-  world::light::UnifiedLightRegistry::setBlockEmission(250, 15);
-  registry.syncBlockSource(250, 4, 5, 6);
-  world::light::PhysicalLight sun;
-  sun.shape = world::light::LightShape::Directional;
-  sun.directionX = 0.25f;
-  sun.directionY = 0.75f;
-  sun.intensity = 2.0f;
-  registry.upsert(world::light::UnifiedLightRegistry::sunKey(), sun);
-  auto view = registry.read();
-  ASSERT_EQ(view.sources().size(), 2U);
-  const auto* point = view.find(world::light::UnifiedLightRegistry::blockKey(4, 5, 6));
-  ASSERT_NE(point, nullptr);
-  EXPECT_EQ(point->shape, world::light::LightShape::Point);
-  EXPECT_DOUBLE_EQ(point->x, 4.5);
-  const auto* directional = view.find(world::light::UnifiedLightRegistry::sunKey());
-  ASSERT_NE(directional, nullptr);
-  EXPECT_EQ(directional->shape, world::light::LightShape::Directional);
-  EXPECT_FLOAT_EQ(directional->intensity, 2.0f);
-  world::light::UnifiedLightRegistry::setBlockEmission(250, 0);
+TEST(UnifiedLightRegistry, BlockEmissionClampsAndRoundTrips) {
+ world::light::UnifiedLightRegistry::setBlockEmission(250, 15);
+ EXPECT_EQ(world::light::UnifiedLightRegistry::blockEmission(250), 15);
+ world::light::UnifiedLightRegistry::setBlockEmission(250, 99);
+ EXPECT_EQ(world::light::UnifiedLightRegistry::blockEmission(250), 15);
+ world::light::UnifiedLightRegistry::setBlockEmission(250, -4);
+ EXPECT_EQ(world::light::UnifiedLightRegistry::blockEmission(250), 0);
+ EXPECT_EQ(world::light::UnifiedLightRegistry::blockEmission(-1), 0);
+ EXPECT_EQ(world::light::UnifiedLightRegistry::blockEmission(100000), 0);
 }
-TEST(UnifiedLightRegistry, HasNoEngineSourceCap) {
-  world::light::UnifiedLightRegistry registry;
-  constexpr std::uint64_t count = 10000;
-  for(std::uint64_t id = 0; id < count; ++id) {
-    world::light::PhysicalLight source;
-    source.x = static_cast<double>(id);
-    registry.upsert({world::light::LightDomain::Native, 0, 0, 0, id}, source);
-  }
-  EXPECT_EQ(registry.read().sources().size(), count);
-  EXPECT_TRUE(registry.erase({world::light::LightDomain::Native, 0, 0, 0, count / 2}));
-  EXPECT_EQ(registry.read().sources().size(), count - 1);
+TEST(UnifiedLightRegistry, BlockLightColorPacksAndUnpacks) {
+ world::light::UnifiedLightRegistry::setBlockLightColor(120, 1.0f, 0.5f, 0.0f);
+ float r = 0.0f;
+ float g = 0.0f;
+ float b = 0.0f;
+ world::light::UnifiedLightRegistry::blockLightColor(120, r, g, b);
+ EXPECT_FLOAT_EQ(r, 1.0f);
+ EXPECT_NEAR(g, 0.5f, 1.0f / 255.0f);
+ EXPECT_FLOAT_EQ(b, 0.0f);
+ float dr = 0.0f;
+ float dg = 0.0f;
+ float db = 0.0f;
+ world::light::UnifiedLightRegistry::blockLightColor(-1, dr, dg, db);
+ EXPECT_FLOAT_EQ(dr, 1.0f);
+ EXPECT_FLOAT_EQ(dg, 1.0f);
+ EXPECT_FLOAT_EQ(db, 1.0f);
 }
+TEST(UnifiedLightRegistry, SunIsPerInstance) {
+ world::light::UnifiedLightRegistry registry;
+ world::light::SunLight sun;
+ sun.directionX = 0.25f;
+ sun.directionY = 0.75f;
+ sun.intensity = 2.0f;
+ registry.setSun(sun);
+ EXPECT_FLOAT_EQ(registry.sun().directionX, 0.25f);
+ EXPECT_FLOAT_EQ(registry.sun().directionY, 0.75f);
+ EXPECT_FLOAT_EQ(registry.sun().intensity, 2.0f);
 }
+} // namespace net::minecraft::test

@@ -12,19 +12,28 @@ end
 
 local function read_int(field, default, lo, hi)
   local raw = minecraft.screen.field_text(field)
-  if not raw or #raw == 0 then return default end
+  if not raw or #raw == 0 then
+    minecraft.log("debug", "realtime_sky: using default for empty int field '" .. field .. "'")
+    return default
+  end
   return clamp_int(tonumber(raw) or default, lo, hi)
 end
 
 local function read_num(field, default, lo, hi)
   local raw = minecraft.screen.field_text(field)
-  if not raw or #raw == 0 then return default end
+  if not raw or #raw == 0 then
+    minecraft.log("debug", "realtime_sky: using default for empty num field '" .. field .. "'")
+    return default
+  end
   return clamp(tonumber(raw) or default, lo, hi)
 end
 
 local function read_str(field, default)
   local raw = minecraft.screen.field_text(field)
-  if not raw or #raw == 0 then return default end
+  if not raw or #raw == 0 then
+    minecraft.log("debug", "realtime_sky: using default for empty str field '" .. field .. "'")
+    return default
+  end
   return raw
 end
 

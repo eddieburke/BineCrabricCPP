@@ -11,34 +11,34 @@ namespace net::minecraft::item {
 PaintingItem::PaintingItem(int rawId) : Item(rawId) {
 }
 bool PaintingItem::useOnBlock(ItemStack* stack, PlayerEntity* /*user*/, World* world, int x, int y, int z, int side) {
-  if(world == nullptr || stack == nullptr || side == 0 || side == 1) {
-    return false;
-  }
-  int facing = 0;
-  if(side == 4) {
-    facing = 1;
-  } else if(side == 3) {
-    facing = 2;
-  } else if(side == 5) {
-    facing = 3;
-  }
-  if(!world->isRemote()) {
-    auto* painting = new entity::decoration::painting::PaintingEntity(world);
-    painting->facing = facing;
-    painting->setPosition(static_cast<double>(x), static_cast<double>(y), static_cast<double>(z));
-    world->spawnEntity(painting);
-  }
-  --stack->count;
-  return true;
+ if(world == nullptr || stack == nullptr || side == 0 || side == 1) {
+  return false;
+ }
+ int facing = 0;
+ if(side == 4) {
+  facing = 1;
+ } else if(side == 3) {
+  facing = 2;
+ } else if(side == 5) {
+  facing = 3;
+ }
+ if(!world->isRemote()) {
+  auto* painting = new entity::decoration::painting::PaintingEntity(world);
+  painting->facing = facing;
+  painting->setPosition(static_cast<double>(x), static_cast<double>(y), static_cast<double>(z));
+  world->spawnEntity(painting);
+ }
+ --stack->count;
+ return true;
 }
 void PaintingItem::registerClass() {
-  static PaintingItem PAINTING(65);
-  PAINTING.setTexturePosition(10, 1)->setTranslationKey("painting");
+ static PaintingItem PAINTING(65);
+ PAINTING.setTexturePosition(10, 1)->setTranslationKey("painting");
 }
 void PaintingItem::registerRecipes(recipe::CraftingRecipeManager& recipeManager) {
-  recipeManager.addShapedRecipe(
-      ItemStack(Item::byRawId(65)),
-      {std::string("###"), std::string("#X#"), std::string("###"), '#', Item::byRawId(24), 'X', Block::WOOL});
+ recipeManager.addShapedRecipe(
+     ItemStack(Item::byRawId(65)),
+     {std::string("###"), std::string("#X#"), std::string("###"), '#', Item::byRawId(24), 'X', Block::WOOL});
 }
 MC_REGISTER_ITEM(PaintingItem)
 } // namespace net::minecraft::item

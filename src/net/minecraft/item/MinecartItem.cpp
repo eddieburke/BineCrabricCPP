@@ -9,31 +9,31 @@
 #include "net/minecraft/world/World.hpp"
 namespace net::minecraft::item {
 MinecartItem::MinecartItem(int rawId, int type) : Item(rawId, RegistrationMode::Deferred), type_(type) {
-  setMaxCount(1);
+ setMaxCount(1);
 }
 bool MinecartItem::useOnBlock(
     ItemStack* stack, PlayerEntity* /*user*/, World* world, int x, int y, int z, int /*side*/) {
-  if(world == nullptr || stack == nullptr || Block::RAIL == nullptr ||
-     world->getBlockId(x, y, z) != Block::RAIL->id) {
-    return false;
-  }
-  if(!world->isRemote()) {
-    auto* minecart = new entity::vehicle::MinecartEntity(world);
-    minecart->type = type_;
-    minecart->setPosition(static_cast<double>(x) + 0.5, static_cast<double>(y) + 0.5, static_cast<double>(z) + 0.5);
-    world->spawnEntity(minecart);
-  }
-  --stack->count;
-  return true;
+ if(world == nullptr || stack == nullptr || Block::RAIL == nullptr ||
+    world->getBlockId(x, y, z) != Block::RAIL->id) {
+  return false;
+ }
+ if(!world->isRemote()) {
+  auto* minecart = new entity::vehicle::MinecartEntity(world);
+  minecart->type = type_;
+  minecart->setPosition(static_cast<double>(x) + 0.5, static_cast<double>(y) + 0.5, static_cast<double>(z) + 0.5);
+  world->spawnEntity(minecart);
+ }
+ --stack->count;
+ return true;
 }
 void MinecartItem::registerClass() {
-  static MinecartItem MINECART(72, 0);
-  MINECART.setTexturePosition(7, 8)->setTranslationKey("minecart");
-  Item::registerInItemsArray(&MINECART);
+ static MinecartItem MINECART(72, 0);
+ MINECART.setTexturePosition(7, 8)->setTranslationKey("minecart");
+ Item::registerInItemsArray(&MINECART);
 }
 void MinecartItem::registerRecipes(recipe::CraftingRecipeManager& recipeManager) {
-  recipeManager.addShapedRecipe(ItemStack(Item::byRawId(72)),
-                                {std::string("# #"), std::string("###"), '#', Item::byRawId(9)});
+ recipeManager.addShapedRecipe(ItemStack(Item::byRawId(72)),
+                               {std::string("# #"), std::string("###"), '#', Item::byRawId(9)});
 }
 MC_REGISTER_ITEM(MinecartItem)
 } // namespace net::minecraft::item

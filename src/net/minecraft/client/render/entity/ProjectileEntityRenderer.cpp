@@ -1,19 +1,23 @@
 #include "net/minecraft/client/render/entity/ProjectileEntityRenderer.hpp"
-#include "net/minecraft/client/gl/GlState.hpp"
+#include "net/minecraft/client/entity/EntityClientRendererRegistration.hpp"
+#include "net/minecraft/client/render/RenderSystem.hpp"
 #include "net/minecraft/client/render/Tessellator.hpp"
 #include "net/minecraft/client/render/entity/EntityRenderDispatcher.hpp"
 #include "net/minecraft/entity/Entity.hpp"
+#include "net/minecraft/entity/projectile/thrown/EggEntity.hpp"
+#include "net/minecraft/entity/projectile/thrown/SnowballEntity.hpp"
 namespace net::minecraft::client::render::entity {
 ProjectileEntityRenderer::ProjectileEntityRenderer(int itemTextureIdIn) : itemTextureId(itemTextureIdIn) {
 }
 void ProjectileEntityRenderer::render(
     const net::minecraft::Entity& entity, double x, double y, double z, float yaw, float tickDelta) {
-  (void)entity;
-  (void)yaw;
-  (void)tickDelta;
-  const gl::MatrixGuard matrix;
-  gl::translatef(static_cast<float>(x), static_cast<float>(y), static_cast<float>(z));
-  gl::scalef(0.5f, 0.5f, 0.5f);
+ (void)entity;
+ (void)yaw;
+ (void)tickDelta;
+ {
+  RenderSystem::pushMatrix();
+  RenderSystem::translate(static_cast<float>(x), static_cast<float>(y), static_cast<float>(z));
+  RenderSystem::scale(0.5f, 0.5f, 0.5f);
   bindTexture("/gui/items.png");
   Tessellator& tessellator = Tessellator::INSTANCE;
   const float uMin = static_cast<float>((itemTextureId % 16 * 16) + 0) / 256.0f;
@@ -24,8 +28,8 @@ void ProjectileEntityRenderer::render(
   constexpr float half = 0.5f;
   constexpr float quarter = 0.25f;
   if(dispatcher != nullptr) {
-    gl::rotatef(180.0f - dispatcher->yaw_, 0.0f, 1.0f, 0.0f);
-    gl::rotatef(-dispatcher->pitch_, 1.0f, 0.0f, 0.0f);
+   RenderSystem::rotate(180.0f - dispatcher->yaw_, 0.0f, 1.0f, 0.0f);
+   RenderSystem::rotate(-dispatcher->pitch_, 1.0f, 0.0f, 0.0f);
   }
   tessellator.startQuads();
   tessellator.normal(0.0f, 1.0f, 0.0f);
@@ -34,17 +38,16 @@ void ProjectileEntityRenderer::render(
   tessellator.vertex(size - half, size - quarter, 0.0, uMax, vMin);
   tessellator.vertex(0.0f - half, size - quarter, 0.0, uMin, vMin);
   tessellator.draw();
+  RenderSystem::popMatrix();
+ }
 }
 } // namespace net::minecraft::client::render::entity
-#include "net/minecraft/client/entity/EntityClientRendererRegistration.hpp"
-#include "net/minecraft/entity/projectile/thrown/EggEntity.hpp"
-#include "net/minecraft/entity/projectile/thrown/SnowballEntity.hpp"
 namespace net::minecraft::entity::projectile::thrown {
 std::unique_ptr<::net::minecraft::client::render::entity::EntityRenderer> SnowballEntity::ClientRenderer::create() {
-  return std::make_unique<::net::minecraft::client::render::entity::ProjectileEntityRenderer>(14);
+ return std::make_unique<::net::minecraft::client::render::entity::ProjectileEntityRenderer>(14);
 }
 std::unique_ptr<::net::minecraft::client::render::entity::EntityRenderer> EggEntity::ClientRenderer::create() {
-  return std::make_unique<::net::minecraft::client::render::entity::ProjectileEntityRenderer>(12);
+ return std::make_unique<::net::minecraft::client::render::entity::ProjectileEntityRenderer>(12);
 }
 } // namespace net::minecraft::entity::projectile::thrown
 namespace {

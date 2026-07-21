@@ -45,35 +45,35 @@ std::array<OptionSpec, 5> kSpecs{{
                   d::saveBoolMember<&GameOptions::lodImportWorld>),
 }};
 class FarViewSettingsScreen : public SettingsScreen {
-public:
-  FarViewSettingsScreen(ParentFactory parentFactory, client_option::GameOptions* gameOptions)
-      : SettingsScreen(std::move(parentFactory), gameOptions, "Far View Settings") {
-  }
+ public:
+ FarViewSettingsScreen(ParentFactory parentFactory, client_option::GameOptions* gameOptions)
+     : SettingsScreen(std::move(parentFactory), gameOptions, "Far View Settings") {
+ }
 
-protected:
-  void buildOptions(OptionGuiBuilder& gui) override {
-    const int x1 = gui.gridX(0);
-    const int x2 = gui.gridX(1);
-    const int y0 = gui.gridY(0);
-    constexpr int dy = layout::kRowSpacing;
-    gui.toggle(x1, y0, "lodEnabled", "Far View LOD");
-    gui.customCycle(x2, y0, "lodDistance", [](const GameOptions& o) {
-      static constexpr std::array<const char*, 4> labels{"1024", "2048", "4096", "8192"};
-      const int idx = ((o.lodDistance % 4) + 4) % 4;
-      return optionLabel("LOD Distance", labels[static_cast<std::size_t>(idx)]);
-    });
-    gui.customCycle(x1, y0 + dy, "lodDetail", [](const GameOptions& o) {
-      static constexpr std::array<const char*, 3> labels{"Low", "Normal", "High"};
-      const int idx = ((o.lodDetail % 3) + 3) % 3;
-      return optionLabel("LOD Detail", labels[static_cast<std::size_t>(idx)]);
-    });
-    gui.toggle(x2, y0 + dy, "lodFogExtend", "Extend Fog");
-    gui.toggle(x1, y0 + dy * 2, "lodImportWorld", "Import Whole World");
-  }
+ protected:
+ void buildOptions(OptionGuiBuilder& gui) override {
+  const int x1 = gui.gridX(0);
+  const int x2 = gui.gridX(1);
+  const int y0 = gui.gridY(0);
+  constexpr int dy = layout::kRowSpacing;
+  gui.toggle(x1, y0, "lodEnabled", "Far View LOD");
+  gui.customCycle(x2, y0, "lodDistance", [](const GameOptions& o) {
+   static constexpr std::array<const char*, 4> labels{"1024", "2048", "4096", "8192"};
+   const int idx = ((o.lodDistance % 4) + 4) % 4;
+   return optionLabel("LOD Distance", labels[static_cast<std::size_t>(idx)]);
+  });
+  gui.customCycle(x1, y0 + dy, "lodDetail", [](const GameOptions& o) {
+   static constexpr std::array<const char*, 3> labels{"Low", "Normal", "High"};
+   const int idx = ((o.lodDetail % 3) + 3) % 3;
+   return optionLabel("LOD Detail", labels[static_cast<std::size_t>(idx)]);
+  });
+  gui.toggle(x2, y0 + dy, "lodFogExtend", "Extend Fog");
+  gui.toggle(x1, y0 + dy * 2, "lodImportWorld", "Import Whole World");
+ }
 };
 } // namespace far_view_screen
 std::unique_ptr<screen::Screen> makeFarViewSettingsScreen(
     std::function<std::unique_ptr<screen::Screen>()> parentFactory, client_option::GameOptions* gameOptions) {
-  return std::make_unique<far_view_screen::FarViewSettingsScreen>(std::move(parentFactory), gameOptions);
+ return std::make_unique<far_view_screen::FarViewSettingsScreen>(std::move(parentFactory), gameOptions);
 }
 } // namespace net::minecraft::client::gui::screen::option

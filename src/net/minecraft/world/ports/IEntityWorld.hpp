@@ -8,8 +8,8 @@ class Entity;
 namespace net::minecraft {
 using Entity = entity::Entity;
 class IEntityWorld : public IBlockWorld {
-public:
-  ~IEntityWorld() override = default;
-  virtual bool spawnEntity(Entity* entity) = 0;
+ public:
+ ~IEntityWorld() override = default;
+ virtual bool spawnEntity(Entity* entity) = 0;
 };
 } // namespace net::minecraft

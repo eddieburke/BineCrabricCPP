@@ -11,15 +11,15 @@ namespace net::minecraft::item {
 WoodenHoeItem::WoodenHoeItem() : HoeItem(kRawId, ToolMaterial::Wood) {
 }
 void WoodenHoeItem::registerClass() {
-  static WoodenHoeItem instance;
-  instance.setTexturePosition(0, 8);
-  instance.setTranslationKey("hoeWood");
-  Item::registerInItemsArray(&instance);
+ static WoodenHoeItem instance;
+ instance.setTexturePosition(0, 8);
+ instance.setTranslationKey("hoeWood");
+ Item::registerInItemsArray(&instance);
 }
 void WoodenHoeItem::registerRecipes(recipe::CraftingRecipeManager& recipeManager) {
-  recipeManager.addShapedRecipe(
-      ItemStack(Item::byRawId(34)),
-      {std::string("XX"), std::string(" #"), std::string(" #"), '#', Item::byRawId(24), 'X', Block::PLANKS});
+ recipeManager.addShapedRecipe(
+     ItemStack(Item::byRawId(34)),
+     {std::string("XX"), std::string(" #"), std::string(" #"), '#', Item::byRawId(24), 'X', Block::PLANKS});
 }
 MC_REGISTER_ITEM(WoodenHoeItem)
 } // namespace net::minecraft::item

@@ -215,6 +215,7 @@ local function read_level(index)
       return level
     end
   end
+  minecraft.log("warn", "realtime_sky: failed to load coastline LOD " .. tostring(index) .. " from " .. tostring(definition.asset))
   return nil
 end
 
@@ -236,6 +237,7 @@ local function nearest_level(index)
   end
 
   if fallback_text and fallback_text ~= "" then
+    minecraft.log("warn", "realtime_sky: using fallback coastline geometry (no LOD levels loaded)")
     level = parse_geometry_text(fallback_text, "fallback")
     fallback_text = nil
     if level.points > 0 then

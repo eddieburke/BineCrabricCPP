@@ -37,5 +37,5 @@ void main() {
 #if ACID_SCANLINES
   rotated *= 0.94 + 0.06 * sin(vUV.y * uViewport.y * 3.14159265);
 #endif
-  fragColor = vec4(mix(color, rotated, ACID_INTENSITY), 1.0);
+  fragColor = vec4(mix(color, rotated, ACID_INTENSITY * (1.0 - depth)), 1.0);
 }

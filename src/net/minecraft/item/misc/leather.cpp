@@ -7,13 +7,13 @@ namespace net::minecraft::item {
 LeatherItem::LeatherItem() : Item(kRawId, RegistrationMode::Deferred) {
 }
 void LeatherItem::registerClass() {
-  static LeatherItem instance;
-  instance.setTexturePosition(7, 6);
-  instance.setTranslationKey("leather");
-  Item::registerInItemsArray(&instance);
+ static LeatherItem instance;
+ instance.setTexturePosition(7, 6);
+ instance.setTranslationKey("leather");
+ Item::registerInItemsArray(&instance);
 }
 void LeatherItem::registerRecipes(recipe::CraftingRecipeManager& recipeManager) {
-  (void)recipeManager;
+ (void)recipeManager;
 }
 MC_REGISTER_ITEM(LeatherItem)
 } // namespace net::minecraft::item

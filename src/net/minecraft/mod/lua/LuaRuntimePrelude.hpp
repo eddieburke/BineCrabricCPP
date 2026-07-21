@@ -80,7 +80,7 @@ function minecraft.on(event_name, options, callback)
       return result or event
     end
     return event
-  end, tonumber(options.priority) or 0)
+  end, tonumber(options.priority) or 0, options)
 end
 
 function minecraft.register_block(spec)
@@ -116,10 +116,14 @@ function util.in_rect(x, y, left, top, width, height)
 end
 function util.real_world(event) return event ~= nil and event.mod_generation ~= false end
 function util.parse_boolean(value, fallback)
-  if value == nil or value == "" then return fallback end
+  if value == nil or value == "" then
+    minecraft.log("warn", "parse_boolean: using fallback for nil/empty value")
+    return fallback
+  end
   value = util.trim(value):lower()
   if value == "true" or value == "1" or value == "yes" or value == "on" then return true end
   if value == "false" or value == "0" or value == "no" or value == "off" then return false end
+  minecraft.log("warn", "parse_boolean: using fallback for unrecognized value '" .. tostring(value) .. "'")
   return fallback
 end
 function util.copy(values)
@@ -449,6 +453,25 @@ function minecraft.require(name)
   return load_module(name)
 end
 require = minecraft.require
+function minecraft.require_dir(dir)
+  assert(type(dir) == "string" and dir:match("^[%w_./-]+$") and not dir:find("..", 1, true))
+  local prefix = dir:gsub("/", "."):gsub("^%.+", ""):gsub("%.+$", "")
+  local modules = {}
+  for _, file in ipairs(minecraft.list_assets(dir) or {}) do
+    local stem = file:match("^([%w_-]+)%.lua$")
+    if stem ~= nil and stem ~= "init" then
+      local ok, result = pcall(minecraft.require, prefix .. "." .. stem)
+      if ok and result ~= nil then
+        modules[#modules + 1] = { name = stem, module = result }
+      elseif not ok then
+        minecraft.log("error", "require_dir failed for " .. dir .. "/" .. file .. ": " .. tostring(result))
+      else
+        minecraft.log("warn", "require_dir: module returned nil (fallback) for " .. dir .. "/" .. file)
+      end
+    end
+  end
+  return modules
+end
 package = nil
 minecraft._subscribe = nil
 minecraft._register_block = nil

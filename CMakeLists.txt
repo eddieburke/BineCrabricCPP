@@ -2,7 +2,7 @@ cmake_minimum_required(VERSION 3.20)
 
 project(minecraft_native VERSION 0.1.0 LANGUAGES CXX)
 
-option(MINECRAFT_ENABLE_NATIVE_LOD "Build the native terrain LOD renderer" ON)
+
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -101,9 +101,7 @@ list(REMOVE_ITEM MINECRAFT_CORE_SOURCES ${MINECRAFT_CLIENT_ONLY_SOURCES})
 set(MINECRAFT_CLIENT_SOURCES ${MINECRAFT_PORT_SOURCES})
 list(FILTER MINECRAFT_CLIENT_SOURCES INCLUDE REGEX "/client/|/net/minecraft/mod/")
 list(FILTER MINECRAFT_CLIENT_SOURCES EXCLUDE REGEX "/net/minecraft/mod/runtime/LuaTerrainBindings\.cpp$")
-if (NOT MINECRAFT_ENABLE_NATIVE_LOD)
-    list(FILTER MINECRAFT_CLIENT_SOURCES EXCLUDE REGEX "/client/render/terrain/")
-endif()
+
 list(APPEND MINECRAFT_CLIENT_SOURCES ${MINECRAFT_CLIENT_ONLY_SOURCES})
 list(REMOVE_DUPLICATES MINECRAFT_CLIENT_SOURCES)
 
@@ -129,7 +127,7 @@ function(minecraft_configure_target target)
         "${MINECRAFT_TOOLCHAIN_ROOT}/include"
     )
     target_compile_definitions(${target} PRIVATE
-        MINECRAFT_NATIVE_SOURCE_DIR="${MINECRAFT_NATIVE_SOURCE_DIR}"
+        "$<$<COMPILE_LANGUAGE:CXX>:MINECRAFT_NATIVE_SOURCE_DIR=\"${MINECRAFT_NATIVE_SOURCE_DIR}\">"
     )
     target_compile_options(${target} PRIVATE -Wall -Wextra -Wpedantic -Wno-deprecated-declarations)
 endfunction()
@@ -311,9 +309,7 @@ minecraft_configure_target(minecraft_registry_roots)
 
 add_library(minecraft_client OBJECT ${MINECRAFT_CLIENT_SOURCES})
 minecraft_configure_target(minecraft_client)
-if (MINECRAFT_ENABLE_NATIVE_LOD)
-    target_compile_definitions(minecraft_client PRIVATE MINECRAFT_ENABLE_NATIVE_LOD=1)
-endif()
+
 if (WIN32)
     target_compile_definitions(minecraft_client PRIVATE MINECRAFT_NATIVE_EXPORTS=1)
     minecraft_enable_glfw_compile(minecraft_client)
@@ -322,10 +318,17 @@ endif()
 add_library(minecraft_server_mod OBJECT ${MINECRAFT_SERVER_MOD_SOURCES})
 minecraft_configure_target(minecraft_server_mod)
 
+if (WIN32 AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/resources/icon/app.rc")
+    add_library(minecraft_app_icon OBJECT resources/icon/app.rc)
+    set(MINECRAFT_APP_ICON_OBJECTS $<TARGET_OBJECTS:minecraft_app_icon>)
+else()
+    set(MINECRAFT_APP_ICON_OBJECTS)
+endif()
+
 add_executable(minecraft_native
     src/main.cpp
     $<TARGET_OBJECTS:minecraft_client>
-    $<$<BOOL:${WIN32}>:${CMAKE_CURRENT_SOURCE_DIR}/resources/icon/app.rc>
+    ${MINECRAFT_APP_ICON_OBJECTS}
 )
 minecraft_link_core(minecraft_native)
 minecraft_link_registry_roots(minecraft_native)
@@ -335,7 +338,7 @@ minecraft_link_audio(minecraft_native)
 minecraft_link_display(minecraft_native)
 if (WIN32)
     target_compile_definitions(minecraft_native PRIVATE MINECRAFT_NATIVE_EXPORTS=1)
-    target_link_libraries(minecraft_native PRIVATE comdlg32 gdiplus gdi32 user32 opengl32 glu32)
+    target_link_libraries(minecraft_native PRIVATE comdlg32 gdiplus gdi32 user32 opengl32 glu32 winmm)
     minecraft_link_platform(minecraft_native)
     # Debug builds keep the console subsystem so stdout/stderr logging and
     # ClientDiagnostics::ensureConsole() are visible. Release/RelWithDebInfo link as a
@@ -349,12 +352,16 @@ add_executable(minecraft_server
     src/server-main.cpp
     src/net/minecraft/client/auth/microsoft/PlayerTextureUrls.cpp
     src/net/minecraft/client/resource/language/TranslationStorage.cpp
+    src/net/minecraft/client/util/MinecraftDirectories.cpp
     $<TARGET_OBJECTS:minecraft_server_mod>
-    $<$<BOOL:${WIN32}>:${CMAKE_CURRENT_SOURCE_DIR}/resources/icon/app.rc>
+    ${MINECRAFT_APP_ICON_OBJECTS}
 )
 minecraft_configure_target(minecraft_server)
 minecraft_link_registry_roots(minecraft_server)
 minecraft_link_server(minecraft_server)
+if (WIN32)
+    target_link_libraries(minecraft_server PRIVATE winmm)
+endif()
 
 FetchContent_Declare(
     googletest
@@ -374,20 +381,17 @@ set(MINECRAFT_TEST_SOURCES
     tests/lan_host_coordinator_test.cpp
     tests/world_required_mods_test.cpp
     tests/multiplayer_client_player_entity_test.cpp
-    tests/hook_bus_test.cpp
     tests/client_timer_test.cpp
     tests/resolved_render_options_test.cpp
     tests/pack_manifest_test.cpp
     tests/lua_runtime_prelude_test.cpp
     tests/mod_settings_registry_test.cpp
+    tests/model_registry_parent_test.cpp
     tests/unified_light_registry_test.cpp
-    tests/lod_policy_test.cpp
-    tests/uniform_sync_test.cpp
+    tests/render_profiler_test.cpp
 )
 
-if (MINECRAFT_ENABLE_NATIVE_LOD)
-    list(APPEND MINECRAFT_TEST_SOURCES tests/terrain_mesher_test.cpp)
-endif()
+
 
 set(MINECRAFT_SERVER_TEST_SOURCES
     integrated_server_host_test.cpp

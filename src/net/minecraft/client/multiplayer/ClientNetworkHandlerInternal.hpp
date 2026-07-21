@@ -10,12 +10,12 @@
 // vtable), so the split is purely organisational -- no new indirection.
 namespace net::minecraft::client::multiplayer::detail {
 [[nodiscard]] inline ClientWorld* asClientWorld(World* worldPtr) {
-  return dynamic_cast<ClientWorld*>(worldPtr);
+ return dynamic_cast<ClientWorld*>(worldPtr);
 }
 [[nodiscard]] inline float decodePacketYaw(std::int8_t yaw) {
-  return static_cast<float>(yaw * 360) / 256.0f;
+ return static_cast<float>(yaw * 360) / 256.0f;
 }
 [[nodiscard]] inline float decodePacketPitch(std::int8_t pitch) {
-  return static_cast<float>(pitch * 360) / 256.0f;
+ return static_cast<float>(pitch * 360) / 256.0f;
 }
 } // namespace net::minecraft::client::multiplayer::detail

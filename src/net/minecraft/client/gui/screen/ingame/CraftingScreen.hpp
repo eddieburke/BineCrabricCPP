@@ -9,18 +9,18 @@ class CraftingScreenHandler;
 }
 namespace net::minecraft::client::gui::screen::ingame {
 class CraftingScreen : public HandledScreen {
-public:
-  CraftingScreen(entity::player::PlayerInventory* playerInventory, int x, int y, int z);
-  void removed() override;
+ public:
+ CraftingScreen(entity::player::PlayerInventory* playerInventory, int x, int y, int z);
+ void removed() override;
 
-protected:
-  void drawForeground() override;
-  void drawBackground(float tickDelta) override;
-  [[nodiscard]] std::string_view getScreenUiId() const override {
-    return net::minecraft::mod::screen_ids::kCrafting;
-  }
+ protected:
+ void drawForeground() override;
+ void drawBackground(float tickDelta) override;
+ [[nodiscard]] std::string_view getScreenUiId() const override {
+  return net::minecraft::mod::screen_ids::kCrafting;
+ }
 
-private:
-  std::unique_ptr<::net::minecraft::screen::CraftingScreenHandler> ownedHandler_;
+ private:
+ std::unique_ptr<::net::minecraft::screen::CraftingScreenHandler> ownedHandler_;
 };
 } // namespace net::minecraft::client::gui::screen::ingame

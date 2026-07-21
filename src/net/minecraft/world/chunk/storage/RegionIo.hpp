@@ -12,74 +12,74 @@ namespace fs = std::filesystem;
 // Serialized access to .mcr region files. One mutex covers map lookup and all
 // per-file I/O (matches Java's synchronized RegionIo + RegionFile methods).
 class RegionIo {
-public:
-  static std::optional<std::vector<std::uint8_t>> readChunkData(const fs::path& worldDir, int chunkX, int chunkZ) {
-    std::optional<RegionFile::CompressedChunk> chunk;
-    {
-      std::lock_guard<std::mutex> lock(mutex());
-      chunk = regionFile(worldDir, chunkX, chunkZ).readCompressedChunk(chunkX & 0x1F, chunkZ & 0x1F);
-    }
-    if(!chunk.has_value()) {
-      return std::nullopt;
-    }
-    if(chunk->compression == 1U) {
-      return gzipDecompress(chunk->bytes);
-    }
-    if(chunk->compression == 2U) {
-      return zlibDecompress(chunk->bytes);
-    }
-    return std::nullopt;
+ public:
+ static std::optional<std::vector<std::uint8_t>> readChunkData(const fs::path& worldDir, int chunkX, int chunkZ) {
+  std::optional<RegionFile::CompressedChunk> chunk;
+  {
+   std::lock_guard<std::mutex> lock(mutex());
+   chunk = regionFile(worldDir, chunkX, chunkZ).readCompressedChunk(chunkX & 0x1F, chunkZ & 0x1F);
   }
-  static void writeChunkData(const fs::path& worldDir,
-                             int chunkX,
-                             int chunkZ,
-                             const std::vector<std::uint8_t>& data) {
-    std::lock_guard<std::mutex> lock(mutex());
-    regionFile(worldDir, chunkX, chunkZ).writeChunk(chunkX & 0x1F, chunkZ & 0x1F, data);
+  if(!chunk.has_value()) {
+   return std::nullopt;
   }
-  static int getChunkSize(const fs::path& worldDir, int chunkX, int chunkZ) {
-    std::lock_guard<std::mutex> lock(mutex());
-    return regionFile(worldDir, chunkX, chunkZ).resetBytesWritten();
+  if(chunk->compression == 1U) {
+   return gzipDecompress(chunk->bytes);
   }
-  static void flush() {
-    std::lock_guard<std::mutex> lock(mutex());
-    for(auto& [key, file] : openFiles()) {
-      (void)key;
-      if(file) {
-        file->flush();
-      }
-    }
-    openFiles().clear();
+  if(chunk->compression == 2U) {
+   return zlibDecompress(chunk->bytes);
   }
-  static void sync() {
-    std::lock_guard<std::mutex> lock(mutex());
-    for(auto& [key, file] : openFiles()) {
-      (void)key;
-      if(file) {
-        file->flush();
-      }
-    }
+  return std::nullopt;
+ }
+ static void writeChunkData(const fs::path& worldDir,
+                            int chunkX,
+                            int chunkZ,
+                            const std::vector<std::uint8_t>& data) {
+  std::lock_guard<std::mutex> lock(mutex());
+  regionFile(worldDir, chunkX, chunkZ).writeChunk(chunkX & 0x1F, chunkZ & 0x1F, data);
+ }
+ static int getChunkSize(const fs::path& worldDir, int chunkX, int chunkZ) {
+  std::lock_guard<std::mutex> lock(mutex());
+  return regionFile(worldDir, chunkX, chunkZ).resetBytesWritten();
+ }
+ static void flush() {
+  std::lock_guard<std::mutex> lock(mutex());
+  for(auto& [key, file] : openFiles()) {
+   (void)key;
+   if(file) {
+    file->flush();
+   }
   }
+  openFiles().clear();
+ }
+ static void sync() {
+  std::lock_guard<std::mutex> lock(mutex());
+  for(auto& [key, file] : openFiles()) {
+   (void)key;
+   if(file) {
+    file->flush();
+   }
+  }
+ }
 
-private:
-  static RegionFile& regionFile(const fs::path& worldDir, int chunkX, int chunkZ) {
-    const fs::path regionDir = worldDir / "region";
-    const fs::path regionPath =
-        regionDir / ("r." + std::to_string(chunkX >> 5) + "." + std::to_string(chunkZ >> 5) + ".mcr");
-    const std::string key = regionPath.lexically_normal().generic_string();
-    auto& slot = openFiles()[key];
-    if(!slot) {
-      slot = std::make_shared<RegionFile>(regionPath);
-    }
-    return *slot;
+ private:
+ static RegionFile& regionFile(const fs::path& worldDir, int chunkX, int chunkZ) {
+  const fs::path regionDir = worldDir / "region";
+  const fs::path regionPath =
+      regionDir / ("r." + std::to_string(chunkX >> 5) + "." + std::to_string(chunkZ >> 5) + ".mcr");
+  const std::string key = regionPath.lexically_normal().generic_string();
+  auto& slot = openFiles()[key];
+  if(!slot) {
+   slot = std::make_shared<RegionFile>(regionPath);
   }
-  static std::unordered_map<std::string, std::shared_ptr<RegionFile>>& openFiles() {
-    static std::unordered_map<std::string, std::shared_ptr<RegionFile>> files;
-    return files;
-  }
-  static std::mutex& mutex() {
-    static std::mutex mutex;
-    return mutex;
-  }
+  return *slot;
+ }
+ static std::unordered_map<std::string, std::shared_ptr<RegionFile>>& openFiles() {
+  static std::unordered_map<std::string, std::shared_ptr<RegionFile>> files;
+  return files;
+ }
+ static std::mutex& mutex() {
+  static std::mutex mutex;
+  return mutex;
+ }
 };
 } // namespace net::minecraft

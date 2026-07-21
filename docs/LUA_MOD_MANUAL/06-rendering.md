@@ -306,13 +306,22 @@ place instances with physics hitboxes, and draw them in world space.
 ### `minecraft.model.load(path)`
 
 Load and bake a JSON model from a mod's assets. The path is relative to the
-mod's asset root (e.g. `"mymod:models/block/myblock.json"`). Parent chains
-are resolved automatically. Results are cached by `(modId, path)`.
+mod's asset root (e.g. `"models/camera/camera/camera.json"`). Relative texture
+paths are anchored to the JSON file that declares them, including inherited
+parent textures. Namespaced Blockbench paths resolve through
+`assets/<namespace>/textures`. Parent chains are resolved automatically.
+Results are cached by `(modId, path)`.
+
+Parent paths support sibling names (`"base"`), explicit relative paths
+(`"./shared/base"`), mod-root model paths (`"models/shared/base"`), namespaced
+paths (`"camera:base"`), and Blockbench/Minecraft paths (`"block/cube_all"`).
+Self-parent and cyclic chains stop safely after retaining available child and
+parent data.
 
 Returns the model handle (integer ≥ 1) on success, or `nil, error` on failure.
 
 ```lua
-local handle, err = minecraft.model.load("mymod:models/block/myblock.json")
+local handle, err = minecraft.model.load("models/camera/camera/camera.json")
 if not handle then print("load failed:", err) end
 ```
 

@@ -9,21 +9,21 @@ namespace net::minecraft::item {
 GoldIngotItem::GoldIngotItem() : Item(kRawId, RegistrationMode::Deferred) {
 }
 void GoldIngotItem::registerClass() {
-  static GoldIngotItem instance;
-  instance.setTexturePosition(7, 2);
-  instance.setTranslationKey("ingotGold");
-  Item::registerInItemsArray(&instance);
+ static GoldIngotItem instance;
+ instance.setTexturePosition(7, 2);
+ instance.setTranslationKey("ingotGold");
+ Item::registerInItemsArray(&instance);
 }
 void GoldIngotItem::registerSmeltingRecipes() {
-  if(Block::GOLD_ORE != nullptr) {
-    recipe::SmeltingRecipeManager::instance().addRecipe(Block::GOLD_ORE->id, ItemStack(Item::byRawId(10)));
-  }
+ if(Block::GOLD_ORE != nullptr) {
+  recipe::SmeltingRecipeManager::instance().addRecipe(Block::GOLD_ORE->id, ItemStack(Item::byRawId(10)));
+ }
 }
 void GoldIngotItem::registerRecipes(recipe::CraftingRecipeManager& recipeManager) {
-  recipeManager.addShapedRecipe(
-      ItemStack(Block::GOLD_BLOCK),
-      {std::string("###"), std::string("###"), std::string("###"), '#', ItemStack(Item::byRawId(10), 9)});
-  recipeManager.addShapedRecipe(ItemStack(Item::byRawId(10), 9), {std::string("#"), '#', Block::GOLD_BLOCK});
+ recipeManager.addShapedRecipe(
+     ItemStack(Block::GOLD_BLOCK),
+     {std::string("###"), std::string("###"), std::string("###"), '#', ItemStack(Item::byRawId(10), 9)});
+ recipeManager.addShapedRecipe(ItemStack(Item::byRawId(10), 9), {std::string("#"), '#', Block::GOLD_BLOCK});
 }
 MC_REGISTER_ITEM(GoldIngotItem)
 } // namespace net::minecraft::item

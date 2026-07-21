@@ -5,11 +5,11 @@
 #include "net/minecraft/registry/Registry.hpp"
 namespace net::minecraft::block {
 void SandstoneBlock::registerClass() {
-  Block::SANDSTONE = (new SandstoneBlock(kBlockId))->setHardness(0.8f)->setTranslationKey("sandStone");
+ Block::SANDSTONE = (new SandstoneBlock(kBlockId))->setHardness(0.8f)->setTranslationKey("sandStone");
 }
 void SandstoneBlock::registerRecipes(recipe::CraftingRecipeManager& recipeManager) {
-  recipeManager.addShapedRecipe(ItemStack(Block::SANDSTONE),
-                                {std::string("##"), std::string("##"), '#', Block::SAND});
+ recipeManager.addShapedRecipe(ItemStack(Block::SANDSTONE),
+                               {std::string("##"), std::string("##"), '#', Block::SAND});
 }
 MC_REGISTER_BLOCK(SandstoneBlock)
 } // namespace net::minecraft::block

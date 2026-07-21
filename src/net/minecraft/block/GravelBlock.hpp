@@ -5,14 +5,14 @@
 namespace net::minecraft::block {
 // Registered in Block.cpp.
 class GravelBlock : public FallingBlock {
-public:
-  GravelBlock(int id, int textureId) : FallingBlock(id, textureId, material::Material::SAND) {
+ public:
+ GravelBlock(int id, int textureId) : FallingBlock(id, textureId, material::Material::SAND) {
+ }
+ [[nodiscard]] int getDroppedItemId(int /*blockMeta*/, JavaRandom& random) const override {
+  if(random.nextInt(10) == 0) {
+   return Item::byRawId(62) != nullptr ? Item::byRawId(62)->id : 318;
   }
-  [[nodiscard]] int getDroppedItemId(int /*blockMeta*/, JavaRandom& random) const override {
-    if(random.nextInt(10) == 0) {
-      return Item::byRawId(62) != nullptr ? Item::byRawId(62)->id : 318;
-    }
-    return id;
-  }
+  return id;
+ }
 };
 } // namespace net::minecraft::block

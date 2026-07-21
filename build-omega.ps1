@@ -1,28 +1,63 @@
 # Omega (maximum optimization) full build of minecraft_native using a bundled MinGW GCC toolchain.
+# This is the ONLY build script in native/ - build-client.ps1, build-server.ps1,
+# clean-omega.ps1, format-omega.ps1, package-mods.ps1, and build-gui.ps1 have all been
+# folded into this file as flags/modes (see history note near the bottom of this block).
+#
+# ===== AGENT QUICK-READ (read this block, skip the rest unless you need detail) =====
+#   -BuildType Release (default)  -> optimized, SMALL, no debug symbols (true release/ship build)
+#   -BuildType Debug               -> -O0, full DWARF symbols, no optimization (true debug build)
+#   -BuildType RelWithDebInfo      -> optimized + full DWARF symbols (profiling/crash-backtrace build)
+#   -KeepDebugSymbols               -> keep -g on a Release build (old default behavior; big exe)
+#   -StripSymbols                   -> run strip.exe on the output exe(s) after linking, any BuildType
+#   -Gui                            -> interactive menu (was the standalone build-gui.ps1; now merged here)
+#   -Run                            -> launch the built exe when the build succeeds (was build-client/-server.ps1)
+#   -NoGui                          -> with -Run -Target Server, pass "nogui" to the server (headless)
+#   -CleanOnly                      -> wipe build dir + lock file and exit, no build (was clean-omega.ps1)
+#   -Format                         -> run clang-format over src/ and tests/ and exit (was format-omega.ps1)
+#   -ModId <id> / -NoModDeploy      -> mod packaging controls (was package-mods.ps1; runs by default, see -SkipModPackaging)
+#   Mod packaging and shaderpack sync run BY DEFAULT on every successful build (see -SkipModPackaging / -SkipResourceSync to opt out).
+#   Everything else below is unchanged from before.
+# =======================================================================================
 #
 # On first run this script downloads GCC, CMake, Ninja, and audio/zlib deps into ./toolchain/
 # (relative to this script). No system MSYS2 or Visual Studio compiler is required.
 #
 # Usage:
-#   .\build-omega.ps1              # configure if needed, then optimized release build
-#   .\build-omega.ps1 -Clean       # wipe build dir and rebuild from scratch
-#   .\build-omega.ps1 -BuildType Debug -BuildDir build-debug  # true debug build with symbols
-#   .\build-omega.ps1 -Jobs 12     # limit parallel compile jobs
-#   .\build-omega.ps1 -Lto          # opt-in link-time optimization (often fails on MinGW GCC 15)
-#   .\build-omega.ps1 -NoNativeCpu # portable binary (no -march=native / AVX tuning)
+#   .\build-omega.ps1                    # configure if needed, then optimized + stripped release build
+#   .\build-omega.ps1 -BuildType Debug   # full debug build with symbols, no optimization
+#   .\build-omega.ps1 -BuildType RelWithDebInfo  # optimized build that keeps symbols (profiling)
+#   .\build-omega.ps1 -KeepDebugSymbols  # Release build, but keep -g (old default; large exe)
+#   .\build-omega.ps1 -StripSymbols      # strip symbol table from the output exe(s) post-link
+#   .\build-omega.ps1 -Clean             # wipe build dir and rebuild from scratch
+#   .\build-omega.ps1 -CleanOnly         # wipe build dir + lock file, then exit (no build)
+#   .\build-omega.ps1 -Format            # clang-format src/ and tests/, then exit (no build)
+#   .\build-omega.ps1 -Target Client -Run              # build the client and launch it
+#   .\build-omega.ps1 -Target Server -Run -NoGui       # build the server and launch it headless
+#   .\build-omega.ps1 -Target Client -Run -- --username Player  # extra args after -- go to the launched exe
+#   .\build-omega.ps1 -ModId camera -NoModDeploy  # package only one mod, skip deploying it to %APPDATA%
+#   .\build-omega.ps1 -Jobs 12           # limit parallel compile jobs
+#   .\build-omega.ps1 -Lto               # opt-in link-time optimization (often fails on MinGW GCC 15)
+#   .\build-omega.ps1 -NoNativeCpu       # portable binary (no -march=native / AVX tuning)
 #   .\build-omega.ps1 -SkipModPackaging  # skip generating runtime mod zips
 #   .\build-omega.ps1 -SkipResourceSync  # skip mirroring resources/ next to the built binary
 #   .\build-omega.ps1 -RunTests          # build minecraft_omega_tests and run ctest
 #   .\build-omega.ps1 -Target Client     # build minecraft_native.exe only
 #   .\build-omega.ps1 -Target Server     # build minecraft_server.exe only
-#   .\build-client.ps1 / .\build-server.ps1  # thin wrappers (build + optional -Run)
+#   .\build-omega.ps1 -Gui               # interactive menu-driven build assistant (no flags needed)
+#   .\build.bat                          # double-clickable launcher; forces pwsh 7 if installed, opens -Gui
 #
 # Optimizations enabled by default for Release builds (bundled GCC / Ninja):
 #   CMAKE_BUILD_TYPE=Release        -> -O3 -DNDEBUG
 #   -march=native -mtune=native -mprefer-vector-width=128 (see -NoNativeCpu)
 #   -funroll-loops -fomit-frame-pointer -ffunction-sections -fdata-sections
-#   -g                              -> DWARF debug symbols (profiling / crash backtraces)
+#   (no -g by default any more - pass -KeepDebugSymbols or use -BuildType RelWithDebInfo
+#    if you need DWARF symbols on an optimized build)
 #   -Wl,--gc-sections               -> dead code / data elimination at link
+#
+# History: Release used to always bake in -g DWARF symbols "for profiling / crash
+# backtraces", which made minecraft_native.exe balloon to ~600 MB. Release is now a true
+# small ship build; use -BuildType RelWithDebInfo or -KeepDebugSymbols when symbols on an
+# optimized binary are actually needed.
 #
 # LTO (-Lto) is opt-in only: MinGW GCC 15 cannot link this codebase with -flto reliably.
 # Intentionally omitted: -ffast-math � golden tests depend on stable FP.
@@ -39,8 +74,19 @@ param(
     [switch]$RunTests,
     [switch]$SkipModPackaging,
     [switch]$SkipResourceSync,
+    [switch]$KeepDebugSymbols,
+    [switch]$StripSymbols,
+    [switch]$Gui,
+    [switch]$Run,
+    [switch]$NoGui,
+    [switch]$CleanOnly,
+    [switch]$Format,
+    [string]$ModId = "",
+    [switch]$NoModDeploy,
     [ValidateSet("All", "Client", "Server")]
-    [string]$Target = "All"
+    [string]$Target = "All",
+    [Parameter(ValueFromRemainingArguments = $true)]
+    [string[]]$RunArgs
 )
 
 $ErrorActionPreference = "Stop"
@@ -64,6 +110,329 @@ $ResourcesSource = Join-Path $ScriptDir "resources"
 $RelToolchainRoot = "toolchain/mingw64"
 $RelGpp = "$RelToolchainRoot/bin/g++.exe"
 $RelNinja = "$RelToolchainRoot/bin/ninja.exe"
+$BuildOmegaLockPath = Join-Path $ScriptDir ".build-omega.lock"
+
+# ===== -CleanOnly (was clean-omega.ps1) =====
+if ($CleanOnly) {
+    $cleanTarget = Join-Path $ScriptDir $BuildDir
+    Write-Host "Cleaning $BuildDir ..."
+    try {
+        if (Test-Path -LiteralPath $cleanTarget) {
+            Write-Host "Removing $cleanTarget"
+            Remove-Item -LiteralPath $cleanTarget -Recurse -Force -ErrorAction Stop
+        }
+        if (Test-Path -LiteralPath $BuildOmegaLockPath) {
+            Write-Host "Removing $BuildOmegaLockPath"
+            Remove-Item -LiteralPath $BuildOmegaLockPath -Force -ErrorAction Stop
+        }
+    } catch {
+        # Another agent/session may hold this build dir or lock file open right now
+        # (concurrent builds are expected in this repo) - fail quietly, not with a crash.
+        Write-Warning "Could not fully clean $BuildDir - it may be in use by another build. $_"
+        exit 1
+    }
+    Write-Host "Clean complete."
+    exit 0
+}
+
+# ===== -Format (was format-omega.ps1) =====
+# Token-dense clang-format pass. Uses native/.clang-format: ColumnLimit 0, Attach braces, 2-space indent.
+if ($Format) {
+    $clangFormatCandidates = @(
+        "C:\Program Files\LLVM\bin\clang-format.exe",
+        "C:\Program Files\Microsoft Visual Studio\2022\Community\VC\Tools\Llvm\bin\clang-format.exe"
+    )
+    $clangFormat = $null
+    foreach ($candidate in $clangFormatCandidates) {
+        if (Test-Path -LiteralPath $candidate) {
+            $clangFormat = $candidate
+            break
+        }
+    }
+    if (-not $clangFormat) {
+        Write-Error "clang-format not found. Install LLVM or Visual Studio LLVM tools."
+        exit 1
+    }
+
+    $extensions = @("*.cpp", "*.hpp", "*.h")
+    $roots = @("src", "tests")
+    $files = @()
+    foreach ($root in $roots) {
+        $rootPath = Join-Path $ScriptDir $root
+        if (-not (Test-Path -LiteralPath $rootPath)) {
+            continue
+        }
+        foreach ($extension in $extensions) {
+            $files += Get-ChildItem -Path $rootPath -Recurse -Filter $extension -File
+        }
+    }
+
+    if ($files.Count -eq 0) {
+        Write-Host "No C++ files found to format."
+        exit 0
+    }
+
+    Write-Host ("Formatting {0} files with {1}" -f $files.Count, $clangFormat)
+    $failures = 0
+    foreach ($file in $files) {
+        & $clangFormat -i $file.FullName 2>&1 | Out-Null
+        if ($LASTEXITCODE -ne 0) {
+            $failures++
+            Write-Host ("clang-format failed: {0}" -f $file.FullName)
+        }
+    }
+
+    if ($failures -gt 0) {
+        Write-Error ("clang-format failed on {0} file(s)." -f $failures)
+        exit 1
+    }
+    Write-Host "clang-format complete."
+    exit 0
+}
+
+# ===== CLGUI (interactive menu) =====
+# Was the standalone build-gui.ps1; merged in here so there's one script to maintain.
+# Everything below runs and exits before any of the flag-driven build logic further down.
+if ($Gui) {
+    function Write-GuiRule { Write-Host ("-" * 70) -ForegroundColor DarkGray }
+    function Write-GuiHeading {
+        param([string]$Text)
+        Write-Host ""
+        Write-GuiRule
+        Write-Host "  $Text" -ForegroundColor Cyan
+        Write-GuiRule
+    }
+    function Write-GuiExplain {
+        param([string[]]$Lines)
+        foreach ($line in $Lines) { Write-Host "  $line" -ForegroundColor Gray }
+    }
+    function Confirm-GuiAction {
+        param([string]$Prompt)
+        Write-Host ""
+        $answer = Read-Host "$Prompt [Enter = Yes, type N = No]"
+        return -not ($answer -match '^(n|no)$')
+    }
+    function Test-GuiToolchainInstalled { return Test-Path -LiteralPath $GppExe }
+    function Get-GuiFreeSpaceGB {
+        try {
+            $drive = (Get-Item -LiteralPath $ScriptDir).PSDrive
+            return [Math]::Round($drive.Free / 1GB, 1)
+        } catch { return $null }
+    }
+    function Get-GuiExeSizes {
+        $paths = @(
+            @{ Label = "Client"; Path = (Join-Path $ScriptDir (Join-Path $BuildDir "minecraft_native.exe")) },
+            @{ Label = "Server"; Path = (Join-Path $ScriptDir (Join-Path $BuildDir "minecraft_server.exe")) }
+        )
+        foreach ($p in $paths) {
+            if (Test-Path -LiteralPath $p.Path) {
+                $sizeMB = [Math]::Round((Get-Item -LiteralPath $p.Path).Length / 1MB, 1)
+                Write-Host "  $($p.Label): $($p.Path) ($sizeMB MB)"
+            } else {
+                Write-Host "  $($p.Label): not built yet"
+            }
+        }
+    }
+    function Show-GuiWelcome {
+        Write-GuiHeading "Minecraft (Beta 1.7.3 native port) - Build Assistant"
+        Write-GuiExplain @(
+            "This tool turns the game's source code into a program you can run."
+            "That process is called 'building' or 'compiling'."
+            ""
+            "You do not need to know how to program to use this. Just pick a"
+            "number from the menu and this tool will do the rest."
+            ""
+            "The very first time you build, this tool needs a 'compiler toolkit'"
+            "(the software that turns source code into a .exe file). If it is not"
+            "already on this computer, it will be downloaded automatically into"
+            "the 'toolchain' folder next to this script."
+        )
+        if (Test-GuiToolchainInstalled) {
+            Write-Host ""
+            Write-Host "  Status: build toolkit is already installed on this computer." -ForegroundColor Green
+        } else {
+            Write-Host ""
+            Write-Host "  Status: build toolkit NOT installed yet." -ForegroundColor Yellow
+            $freeGB = Get-GuiFreeSpaceGB
+            if ($null -ne $freeGB) {
+                Write-GuiExplain @("Free disk space available: $freeGB GB (about 3 GB recommended).")
+            }
+        }
+    }
+    function Show-GuiMenu {
+        Write-Host ""
+        Write-GuiRule
+        Write-Host "  What would you like to do?" -ForegroundColor Cyan
+        Write-GuiRule
+        Write-Host "  [1] Build the game (Release - small, optimized, no debug symbols)"
+        Write-Host "  [2] Build the game AND start playing right away"
+        Write-Host "  [3] Build a DEBUG build (full symbols, no optimization - for troubleshooting crashes)"
+        Write-Host "  [4] Build a PROFILING build (optimized, but keeps debug symbols - large exe)"
+        Write-Host "  [5] Start completely fresh (fixes weird build problems, slower)"
+        Write-Host "  [6] Build only the multiplayer server (for hosting)"
+        Write-Host "  [7] Build and double-check everything works (runs the test suite)"
+        Write-Host "  [8] Strip debug symbols from an already-built exe (shrink it)"
+        Write-Host "  [9] Show sizes of built exe(s)"
+        Write-Host "  [10] Open the folder with the finished game"
+        Write-Host "  [11] Clean build folder only (no rebuild)"
+        Write-Host "  [12] Format C++ source (clang-format)"
+        Write-Host "  [13] Explain all this again"
+        Write-Host "  [14] Exit"
+        Write-Host ""
+        return Read-Host "Type a number and press Enter"
+    }
+    function Show-GuiTroubleshooting {
+        param([int]$ExitCode)
+        Write-Host ""
+        Write-Host "  Something went wrong (exit code $ExitCode)." -ForegroundColor Red
+        Write-GuiExplain @(
+            "A few common causes, in order of likelihood:"
+            ""
+            "  - No internet connection during the first build (the toolkit"
+            "    download failed). Check your connection and try again."
+            "  - Antivirus or a firewall blocked the download or the compiler."
+            "  - The game or a previous build is still running. Close"
+            "    minecraft_native.exe / minecraft_server.exe and try again."
+            "  - Not enough free disk space (a build needs a few GB free)."
+            ""
+            "You can simply try the same menu option again - builds pick up"
+            "where they left off instead of starting over from nothing."
+        )
+    }
+    function Invoke-GuiBuild {
+        param([string[]]$Arguments, [string]$FriendlyName)
+        Write-Host ""
+        Write-Host "  Starting: $FriendlyName ..." -ForegroundColor Cyan
+        Write-GuiExplain @("This window will fill with technical build output - that is normal.", "Just wait for it to finish.")
+        Write-Host ""
+        & $PSCommandPath @Arguments
+        $code = $LASTEXITCODE
+        Write-Host ""
+        if ($code -eq 0) {
+            Write-Host "  Done! $FriendlyName finished successfully." -ForegroundColor Green
+        } else {
+            Show-GuiTroubleshooting -ExitCode $code
+        }
+        return $code
+    }
+    function Open-GuiOutputFolder {
+        $path = Join-Path $ScriptDir $BuildDir
+        if (-not (Test-Path -LiteralPath $path)) {
+            Write-Host ""
+            Write-Host "  Nothing has been built yet - that folder does not exist." -ForegroundColor Yellow
+            return
+        }
+        Write-Host ""
+        Write-Host "  Opening $path ..." -ForegroundColor Cyan
+        Invoke-Item $path
+    }
+    function Invoke-GuiStripExisting {
+        $strip = Join-Path $MingwBin "strip.exe"
+        if (-not (Test-Path -LiteralPath $strip)) {
+            Write-Host "  strip.exe not found - build once first so the toolchain is installed." -ForegroundColor Yellow
+            return
+        }
+        $targets = @(
+            (Join-Path $ScriptDir (Join-Path $BuildDir "minecraft_native.exe")),
+            (Join-Path $ScriptDir (Join-Path $BuildDir "minecraft_server.exe"))
+        )
+        foreach ($t in $targets) {
+            if (Test-Path -LiteralPath $t) {
+                $before = [Math]::Round((Get-Item -LiteralPath $t).Length / 1MB, 1)
+                & $strip --strip-debug --strip-unneeded $t
+                $after = [Math]::Round((Get-Item -LiteralPath $t).Length / 1MB, 1)
+                Write-Host "  $t : $before MB -> $after MB"
+            }
+        }
+    }
+
+    Show-GuiWelcome
+    $running = $true
+    while ($running) {
+        $choice = (Show-GuiMenu).Trim()
+        switch ($choice) {
+            "1" {
+                Write-GuiHeading "Build the game (Release)"
+                if (Confirm-GuiAction "Start the build now?") {
+                    Invoke-GuiBuild -Arguments @() -FriendlyName "Release build" | Out-Null
+                }
+            }
+            "2" {
+                Write-GuiHeading "Build and play"
+                if (Confirm-GuiAction "Start the build now?") {
+                    Invoke-GuiBuild -Arguments @("-Target", "Client", "-Run") -FriendlyName "Client build" | Out-Null
+                }
+            }
+            "3" {
+                Write-GuiHeading "Debug build"
+                Write-GuiExplain @("Full DWARF symbols, no optimization. Slow to run, best for chasing crashes.")
+                if (Confirm-GuiAction "Start the debug build now?") {
+                    Invoke-GuiBuild -Arguments @("-BuildType", "Debug") -FriendlyName "Debug build" | Out-Null
+                }
+            }
+            "4" {
+                Write-GuiHeading "Profiling build"
+                Write-GuiExplain @("Optimized (-O3) but keeps debug symbols, so it stays large. Good for profilers.")
+                if (Confirm-GuiAction "Start the profiling build now?") {
+                    Invoke-GuiBuild -Arguments @("-BuildType", "RelWithDebInfo") -FriendlyName "Profiling build" | Out-Null
+                }
+            }
+            "5" {
+                Write-GuiHeading "Start completely fresh"
+                if (Confirm-GuiAction "Wipe the old build and start fresh?") {
+                    Invoke-GuiBuild -Arguments @("-Clean") -FriendlyName "Clean rebuild" | Out-Null
+                }
+            }
+            "6" {
+                Write-GuiHeading "Build the multiplayer server"
+                if (Confirm-GuiAction "Start the build now?") {
+                    Invoke-GuiBuild -Arguments @("-Target", "Server") -FriendlyName "Server build" | Out-Null
+                }
+            }
+            "7" {
+                Write-GuiHeading "Build and run the test suite"
+                if (Confirm-GuiAction "Start the build and tests now?") {
+                    Invoke-GuiBuild -Arguments @("-RunTests") -FriendlyName "Build with tests" | Out-Null
+                }
+            }
+            "8" {
+                Write-GuiHeading "Strip debug symbols from built exe(s)"
+                Invoke-GuiStripExisting
+            }
+            "9" {
+                Write-GuiHeading "Exe sizes"
+                Get-GuiExeSizes
+            }
+            "10" {
+                Open-GuiOutputFolder
+            }
+            "11" {
+                Write-GuiHeading "Clean build folder"
+                if (Confirm-GuiAction "Wipe $BuildDir and the build lock file?") {
+                    & $PSCommandPath -CleanOnly -BuildDir $BuildDir
+                }
+            }
+            "12" {
+                Write-GuiHeading "Format C++ source"
+                & $PSCommandPath -Format
+            }
+            "13" {
+                Show-GuiWelcome
+            }
+            "14" {
+                $running = $false
+            }
+            default {
+                Write-Host ""
+                Write-Host "  Please type a number from 1 to 14." -ForegroundColor Yellow
+            }
+        }
+    }
+    Write-Host ""
+    Write-Host "  Goodbye!" -ForegroundColor Cyan
+    exit 0
+}
+# ===== end CLGUI =====
 
 function Get-Manifest {
     if (-not (Test-Path -LiteralPath $ManifestPath)) {
@@ -113,7 +482,7 @@ function Sync-Shaderpacks {
 # rebuilds instead of a full recursive copy every time. Skip with -SkipResourceSync.
 function Sync-Resources {
     if (-not (Test-Path -LiteralPath $ResourcesSource)) {
-        Write-Error "Resources source directory not found: $ResourcesSource"
+        Write-Host "Resources source directory not found: $ResourcesSource (skipping)"
         return
     }
     if (-not $env:APPDATA) {
@@ -134,6 +503,91 @@ function Sync-Resources {
         Copy-Item -Path (Join-Path $ResourcesSource "*") -Destination $runtimeResources -Recurse -Force
     }
     Write-Host "Resources: $runtimeResources"
+}
+
+# Was package-mods.ps1: builds runtime mod zips from native/mods/<mod_id>/ sources and
+# deploys them to %APPDATA%\.minecraft\mods\. Runs by default after every build (see
+# -SkipModPackaging); -ModId packages a single mod, -NoModDeploy skips the deploy copy.
+function Invoke-PackageMods {
+    param(
+        [string]$BuildDirName,
+        [string]$ModId = "",
+        [bool]$Deploy = $true
+    )
+
+    $modsSource = Join-Path $ScriptDir "mods"
+    if (-not (Test-Path -LiteralPath $modsSource)) {
+        return
+    }
+    $modsOut = Join-Path $ScriptDir (Join-Path $BuildDirName "mods")
+    $deployDir = Join-Path $env:APPDATA ".minecraft\mods"
+
+    Ensure-Directory -Path $modsOut
+    if ($Deploy) {
+        Ensure-Directory -Path $deployDir
+    }
+
+    $modDirs = Get-ChildItem -LiteralPath $modsSource -Directory
+    if ($ModId -ne "") {
+        $modDirs = $modDirs | Where-Object { $_.Name -eq $ModId }
+        if ($modDirs.Count -eq 0) {
+            throw "Mod '$ModId' not found in $modsSource"
+        }
+    }
+
+    Add-Type -AssemblyName System.IO.Compression
+    Add-Type -AssemblyName System.IO.Compression.FileSystem
+
+    $packed = 0
+    $deployed = 0
+
+    foreach ($dir in $modDirs) {
+        $manifest = Join-Path $dir.FullName "mod.json"
+        if (-not (Test-Path -LiteralPath $manifest)) {
+            continue
+        }
+
+        $id = $dir.Name
+        $zip = Join-Path $modsOut "$id.zip"
+        if (Test-Path -LiteralPath $zip) {
+            Remove-Item -LiteralPath $zip -Force
+        }
+
+        $files = Get-ChildItem -Recurse -File -LiteralPath $dir.FullName
+        $stream = [System.IO.File]::Open($zip, [System.IO.FileMode]::Create)
+        $archive = New-Object System.IO.Compression.ZipArchive($stream, [System.IO.Compression.ZipArchiveMode]::Create, $false, [System.Text.Encoding]::UTF8)
+        try {
+            foreach ($file in $files) {
+                $entryName = $file.FullName.Substring($dir.FullName.Length + 1).Replace("\", "/")
+                $entry = $archive.CreateEntry($entryName, [System.IO.Compression.CompressionLevel]::Optimal)
+                $entryStream = $entry.Open()
+                try {
+                    $bytes = [System.IO.File]::ReadAllBytes($file.FullName)
+                    $entryStream.Write($bytes, 0, $bytes.Length)
+                } finally {
+                    $entryStream.Close()
+                }
+            }
+        } finally {
+            $archive.Dispose()
+            $stream.Dispose()
+        }
+
+        $size = [Math]::Round((Get-Item -LiteralPath $zip).Length / 1KB, 1)
+        Write-Host "  Packed $id  ->  $zip  ($size KB)"
+        $packed++
+
+        if ($Deploy) {
+            $dest = Join-Path $deployDir "$id.zip"
+            Copy-Item -LiteralPath $zip -Destination $dest -Force
+            Write-Host "  Deployed $id  ->  $dest"
+            $deployed++
+        }
+    }
+
+    if ($packed -gt 0) {
+        Write-Host "Packaged $packed mod(s)$(if ($Deploy) { ", deployed $deployed" })."
+    }
 }
 
 function Download-File {
@@ -356,7 +810,6 @@ function Set-BundledToolchainEnvironment {
     Remove-Item Env:\CC -ErrorAction SilentlyContinue
 }
 
-$BuildOmegaLockPath = Join-Path $ScriptDir ".build-omega.lock"
 $BuildOmegaLockStream = $null
 
 function Remove-StaleBuildOmegaLockFile {
@@ -617,7 +1070,13 @@ if ($UseLto) {
 
 $OmegaCxxRelease = ""
 if ($BuildType -eq "Release") {
-    $OmegaCxx = "-g -funroll-loops -fomit-frame-pointer -ffunction-sections -fdata-sections -fno-semantic-interposition -fmerge-all-constants"
+    # No -g here by default: Release is a small ship build. Pass -KeepDebugSymbols
+    # (or use -BuildType RelWithDebInfo, which keeps -g via CMake's own defaults)
+    # when an optimized binary with DWARF symbols is actually needed.
+    $OmegaCxx = "-funroll-loops -fomit-frame-pointer -ffunction-sections -fdata-sections -fno-semantic-interposition -fmerge-all-constants"
+    if ($KeepDebugSymbols) {
+        $OmegaCxx = "-g " + $OmegaCxx
+    }
     $OmegaLink = "-Wl,--gc-sections"
     if ($UseLto) {
         # LTO + --gc-sections triggers duplicate .gnu.lto section errors on MinGW GCC 15.
@@ -678,17 +1137,25 @@ $sw.Stop()
     if (-not $SkipResourceSync) {
         Sync-Resources
     }
-    if ($Target -eq "All" -or $Target -eq "Client") {
-        $clientExe = Join-Path $BuildDir "minecraft_native.exe"
-        if (Test-Path $clientExe) {
-            Write-Host "Client: $clientExe"
+    $StripExe = Join-Path $MingwBin "strip.exe"
+    function Show-ExeInfo {
+        param([string]$Label, [string]$Path)
+        if (-not (Test-Path -LiteralPath $Path)) {
+            return
         }
+        if ($StripSymbols -and (Test-Path -LiteralPath $StripExe)) {
+            Write-Host "Stripping symbols: $Path"
+            & $StripExe --strip-debug --strip-unneeded $Path
+        }
+        $sizeMB = [Math]::Round((Get-Item -LiteralPath $Path).Length / 1MB, 1)
+        Write-Host "${Label}: $Path ($sizeMB MB)"
+    }
+
+    if ($Target -eq "All" -or $Target -eq "Client") {
+        Show-ExeInfo -Label "Client" -Path (Join-Path $BuildDir "minecraft_native.exe")
     }
     if ($Target -eq "All" -or $Target -eq "Server") {
-        $serverExe = Join-Path $BuildDir "minecraft_server.exe"
-        if (Test-Path $serverExe) {
-            Write-Host "Server: $serverExe"
-        }
+        Show-ExeInfo -Label "Server" -Path (Join-Path $BuildDir "minecraft_server.exe")
     }
 
     if ($RunTests -and $exitCode -eq 0) {
@@ -722,14 +1189,41 @@ $sw.Stop()
         }
     }
     if (-not $SkipModPackaging -and $exitCode -eq 0) {
-        & (Join-Path $ScriptDir "package-mods.ps1") -BuildDir $BuildDir
-        if ($LASTEXITCODE -ne 0) {
-            $exitCode = $LASTEXITCODE
+        try {
+            Invoke-PackageMods -BuildDirName $BuildDir -ModId $ModId -Deploy (-not $NoModDeploy)
+        } catch {
+            Write-Error $_
+            $exitCode = 1
         }
     }
 }
 
 Write-Host ("Finished in {0:N1}s (exit $exitCode)" -f $sw.Elapsed.TotalSeconds)
+
+if ($Run -and $exitCode -eq 0) {
+    $launchArgs = @()
+    if ($Target -eq "Server") {
+        $exe = Join-Path $ScriptDir (Join-Path $BuildDir "minecraft_server.exe")
+        if ($NoGui) { $launchArgs += "nogui" }
+    } else {
+        $exe = Join-Path $ScriptDir (Join-Path $BuildDir "minecraft_native.exe")
+    }
+    if (-not (Test-Path -LiteralPath $exe)) {
+        Write-Error "Executable not found: $exe"
+        exit 1
+    }
+    if ($RunArgs -and $RunArgs.Count -gt 0) {
+        $launchArgs += $RunArgs
+    }
+    Write-Host "Launching $exe ..."
+    if ($launchArgs.Count -gt 0) {
+        & $exe @launchArgs
+    } else {
+        & $exe
+    }
+    $exitCode = $LASTEXITCODE
+}
+
 exit $exitCode
 
 } finally {

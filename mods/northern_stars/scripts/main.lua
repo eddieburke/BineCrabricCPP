@@ -42,11 +42,7 @@ local function load_catalog()
   }
 end
 
-local function magnitude_to_size(magnitude, seed)
-  local dimmest_magnitude = minecraft.settings.get("dimmest_magnitude") or 6.5
-  local magnitude_size_exponent = minecraft.settings.get("magnitude_size_exponent") or 0.4
-  local brightest_star_size = minecraft.settings.get("brightest_star_size") or 1.2
-  local dimmest_star_size = minecraft.settings.get("dimmest_star_size") or 0.1
+local function magnitude_to_size(magnitude, seed, dimmest_magnitude, magnitude_size_exponent, brightest_star_size, dimmest_star_size)
   local normalized = (magnitude - BRIGHTEST_MAGNITUDE_IN_CATALOG) /
     (dimmest_magnitude - BRIGHTEST_MAGNITUDE_IN_CATALOG)
   normalized = math.max(0.0, math.min(1.0, normalized))
@@ -113,10 +109,14 @@ local function compile_starfield(event)
     return
   end
   local dimmest_magnitude = minecraft.settings.get("dimmest_magnitude") or 6.5
+  local magnitude_size_exponent = minecraft.settings.get("magnitude_size_exponent") or 0.4
+  local brightest_star_size = minecraft.settings.get("brightest_star_size") or 1.2
+  local dimmest_star_size = minecraft.settings.get("dimmest_star_size") or 0.1
   local starfield_radius = minecraft.settings.get("starfield_radius") or 100.0
   local horizon_cull_deg = minecraft.settings.get("horizon_cull_deg") or 0.35
   local horizon_fade_end_deg = minecraft.settings.get("horizon_fade_end_deg") or 2.0
   local billboards = {}
+  local cursor = 0
   local seed = 12345
   local astronomy = event and event.astronomy_enabled
   local utc_millis = astronomy and event.astronomy_utc_millis or 0.0
@@ -145,11 +145,12 @@ local function compile_starfield(event)
         local sx, sy, sz = spherical_to_cartesian(az, alt)
         local horizon_alpha = astronomy and
           smoothstep(horizon_cull_deg, horizon_fade_end_deg, alt) or 1.0
-        billboards[#billboards + 1] = {
-          x = sx, y = sy, z = sz,
-          size = magnitude_to_size(magnitude, seed),
-          alpha = magnitude_to_alpha(magnitude) * horizon_alpha,
-        }
+        billboards[cursor + 1] = sx
+        billboards[cursor + 2] = sy
+        billboards[cursor + 3] = sz
+        billboards[cursor + 4] = magnitude_to_size(magnitude, seed, dimmest_magnitude, magnitude_size_exponent, brightest_star_size, dimmest_star_size)
+        billboards[cursor + 5] = magnitude_to_alpha(magnitude) * horizon_alpha
+        cursor = cursor + 5
       end
     end
   end
@@ -165,7 +166,7 @@ minecraft.on(minecraft.events.world_render, {
   local frame_key = "static"
   if event.astronomy_enabled then
     frame_key = table.concat({
-      math.floor((event.astronomy_utc_millis or 0.0) / 1000.0),
+      math.floor((event.astronomy_utc_millis or 0.0) / 60000.0),
       string.format("%.4f", event.observer_latitude_deg or 0.0),
       string.format("%.4f", event.observer_longitude_deg or 0.0),
     }, ":")
@@ -191,7 +192,7 @@ minecraft.on(minecraft.events.world_render, {
     blend = "additive",
     depth_test = false,
     depth_write = false,
-    billboards = compiled_billboards,
+    packed = compiled_billboards,
   })
 end)
 

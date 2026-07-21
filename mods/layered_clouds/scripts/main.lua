@@ -86,7 +86,11 @@ end
 local function mod_active()
   local function setting(key, fallback)
     local value = minecraft.settings.get(key)
-    return value == nil and fallback or value
+    if value == nil then
+      minecraft.log("warn", "layered_clouds: using fallback for setting '" .. key .. "'")
+      return fallback
+    end
+    return value
   end
   config.layer_count = setting("layer_count", CONFIG_DEFAULTS.layer_count)
   config.base_opacity = setting("base_opacity", CONFIG_DEFAULTS.base_opacity)

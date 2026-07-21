@@ -206,7 +206,7 @@ inline constexpr int ActiveTexture = 0x84E0;
 inline constexpr int MaxTextureImageUnits = 0x8872;
 } // namespace tex
 namespace query {
-inline constexpr int CurrentColor = 0x0B01;
+inline constexpr int CurrentColor = 0x0B00;
 inline constexpr int MatrixMode = 0x0BA0;
 inline constexpr int Viewport = 0x0BA2;
 inline constexpr int FramebufferBinding = 0x8CA6;

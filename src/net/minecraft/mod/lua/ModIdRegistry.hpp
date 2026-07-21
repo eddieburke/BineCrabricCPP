@@ -8,63 +8,63 @@
 namespace net::minecraft::mod::lua {
 template <typename Traits>
 class ModIdRegistry {
-public:
-  using Spec = typename Traits::Spec;
-  static ModIdRegistry& instance() {
-    static ModIdRegistry value;
-    return value;
+ public:
+ using Spec = typename Traits::Spec;
+ static ModIdRegistry& instance() {
+  static ModIdRegistry value;
+  return value;
+ }
+ [[nodiscard]] bool contains(int id) const {
+  return specs_.find(id) != specs_.end();
+ }
+ void add(int id, const Spec& spec) {
+  specs_[id] = spec;
+  names_[wireToken(id, spec)] = id;
+  if(!queued_) {
+   queued_ = true;
+   registry::Registry::enqueue(Traits::kPhase, 50000, &ModIdRegistry::initAll);
   }
-  [[nodiscard]] bool contains(int id) const {
-    return specs_.find(id) != specs_.end();
+ }
+ [[nodiscard]] int idFromName(const char* name) const {
+  if(name == nullptr || *name == '\0') {
+   return 0;
   }
-  void add(int id, const Spec& spec) {
-    specs_[id] = spec;
-    names_[wireToken(id, spec)] = id;
-    if(!queued_) {
-      queued_ = true;
-      registry::Registry::enqueue(Traits::kPhase, 50000, &ModIdRegistry::initAll);
-    }
+  const auto it = names_.find(name);
+  return it == names_.end() ? 0 : it->second;
+ }
+ [[nodiscard]] std::string wireName(int id) const {
+  const auto it = specs_.find(id);
+  if(it == specs_.end()) {
+   return {};
   }
-  [[nodiscard]] int idFromName(const char* name) const {
-    if(name == nullptr || *name == '\0') {
-      return 0;
-    }
-    const auto it = names_.find(name);
-    return it == names_.end() ? 0 : it->second;
-  }
-  [[nodiscard]] std::string wireName(int id) const {
-    const auto it = specs_.find(id);
-    if(it == specs_.end()) {
-      return {};
-    }
-    return wireToken(id, it->second);
-  }
-  [[nodiscard]] const Spec* specForId(int id) const noexcept {
-    const auto it = specs_.find(id);
-    return it == specs_.end() ? nullptr : &it->second;
-  }
+  return wireToken(id, it->second);
+ }
+ [[nodiscard]] const Spec* specForId(int id) const noexcept {
+  const auto it = specs_.find(id);
+  return it == specs_.end() ? nullptr : &it->second;
+ }
 
-private:
-  static std::string wireToken(int id, const Spec& spec) {
-    return spec.translationKey.empty() ? Traits::kKind + std::to_string(id) : spec.translationKey;
+ private:
+ static std::string wireToken(int id, const Spec& spec) {
+  return spec.translationKey.empty() ? Traits::kKind + std::to_string(id) : spec.translationKey;
+ }
+ static void initAll() {
+  auto& specs = instance().specs_;
+  std::vector<int> ids;
+  ids.reserve(specs.size());
+  for(const auto& entry : specs) {
+   ids.push_back(entry.first);
   }
-  static void initAll() {
-    auto& specs = instance().specs_;
-    std::vector<int> ids;
-    ids.reserve(specs.size());
-    for(const auto& entry : specs) {
-      ids.push_back(entry.first);
-    }
-    std::sort(ids.begin(), ids.end());
-    for(const int id : ids) {
-      const auto it = specs.find(id);
-      if(it != specs.end()) {
-        Traits::instantiate(it->second);
-      }
-    }
+  std::sort(ids.begin(), ids.end());
+  for(const int id : ids) {
+   const auto it = specs.find(id);
+   if(it != specs.end()) {
+    Traits::instantiate(it->second);
+   }
   }
-  std::unordered_map<int, Spec> specs_;
-  std::unordered_map<std::string, int> names_;
-  bool queued_ = false;
+ }
+ std::unordered_map<int, Spec> specs_;
+ std::unordered_map<std::string, int> names_;
+ bool queued_ = false;
 };
 } // namespace net::minecraft::mod::lua

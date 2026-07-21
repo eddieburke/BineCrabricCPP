@@ -8,15 +8,15 @@ namespace net::minecraft::item {
 CompassItem::CompassItem() : Item(kRawId, RegistrationMode::Deferred) {
 }
 void CompassItem::registerClass() {
-  static CompassItem instance;
-  instance.setTexturePosition(6, 3);
-  instance.setTranslationKey("compass");
-  Item::registerInItemsArray(&instance);
+ static CompassItem instance;
+ instance.setTexturePosition(6, 3);
+ instance.setTranslationKey("compass");
+ Item::registerInItemsArray(&instance);
 }
 void CompassItem::registerRecipes(recipe::CraftingRecipeManager& recipeManager) {
-  recipeManager.addShapedRecipe(
-      ItemStack(Item::byRawId(89)),
-      {std::string(" # "), std::string("#X#"), std::string(" # "), '#', Item::byRawId(9), 'X', Item::byRawId(75)});
+ recipeManager.addShapedRecipe(
+     ItemStack(Item::byRawId(89)),
+     {std::string(" # "), std::string("#X#"), std::string(" # "), '#', Item::byRawId(9), 'X', Item::byRawId(75)});
 }
 MC_REGISTER_ITEM(CompassItem)
 } // namespace net::minecraft::item

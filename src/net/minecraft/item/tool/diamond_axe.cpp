@@ -11,15 +11,15 @@ namespace net::minecraft::item {
 DiamondAxeItem::DiamondAxeItem() : AxeItem(kRawId, ToolMaterial::Diamond) {
 }
 void DiamondAxeItem::registerClass() {
-  static DiamondAxeItem instance;
-  instance.setTexturePosition(3, 7);
-  instance.setTranslationKey("hatchetDiamond");
-  Item::registerInItemsArray(&instance);
+ static DiamondAxeItem instance;
+ instance.setTexturePosition(3, 7);
+ instance.setTranslationKey("hatchetDiamond");
+ Item::registerInItemsArray(&instance);
 }
 void DiamondAxeItem::registerRecipes(recipe::CraftingRecipeManager& recipeManager) {
-  recipeManager.addShapedRecipe(
-      ItemStack(Item::byRawId(23)),
-      {std::string("XX"), std::string("X#"), std::string(" #"), '#', Item::byRawId(24), 'X', Item::byRawId(8)});
+ recipeManager.addShapedRecipe(
+     ItemStack(Item::byRawId(23)),
+     {std::string("XX"), std::string("X#"), std::string(" #"), '#', Item::byRawId(24), 'X', Item::byRawId(8)});
 }
 MC_REGISTER_ITEM(DiamondAxeItem)
 } // namespace net::minecraft::item

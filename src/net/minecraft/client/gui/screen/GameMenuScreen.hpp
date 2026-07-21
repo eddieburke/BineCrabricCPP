@@ -2,24 +2,24 @@
 #include "net/minecraft/client/gui/screen/Screen.hpp"
 namespace net::minecraft::client::gui::screen {
 class GameMenuScreen : public Screen {
-public:
-  void init() override;
-  void tick() override;
-  void render(int mouseX, int mouseY, float tickDelta) override;
-  [[nodiscard]] std::string_view getScreenUiId() const override {
-    return net::minecraft::mod::screen_ids::kGameMenu;
-  }
+ public:
+ void init() override;
+ void tick() override;
+ void render(int mouseX, int mouseY, float tickDelta) override;
+ [[nodiscard]] std::string_view getScreenUiId() const override {
+  return net::minecraft::mod::screen_ids::kGameMenu;
+ }
 
-private:
-  void saveAndQuit();
-  void resumeGame();
-  void openLanMenu();
-  void openLanInfo();
-  void openOptions();
-  void openAchievements();
-  void openStats();
-  int saveStep_ = 0;
-  int ticks_ = 0;
-  bool savingLevel_ = true;
+ private:
+ void saveAndQuit();
+ void resumeGame();
+ void openLanMenu();
+ void openLanInfo();
+ void openOptions();
+ void openAchievements();
+ void openStats();
+ int saveStep_ = 0;
+ int ticks_ = 0;
+ bool savingLevel_ = true;
 };
 } // namespace net::minecraft::client::gui::screen

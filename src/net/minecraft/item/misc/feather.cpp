@@ -7,13 +7,13 @@ namespace net::minecraft::item {
 FeatherItem::FeatherItem() : Item(kRawId, RegistrationMode::Deferred) {
 }
 void FeatherItem::registerClass() {
-  static FeatherItem instance;
-  instance.setTexturePosition(8, 1);
-  instance.setTranslationKey("feather");
-  Item::registerInItemsArray(&instance);
+ static FeatherItem instance;
+ instance.setTexturePosition(8, 1);
+ instance.setTranslationKey("feather");
+ Item::registerInItemsArray(&instance);
 }
 void FeatherItem::registerRecipes(recipe::CraftingRecipeManager& recipeManager) {
-  (void)recipeManager;
+ (void)recipeManager;
 }
 MC_REGISTER_ITEM(FeatherItem)
 } // namespace net::minecraft::item

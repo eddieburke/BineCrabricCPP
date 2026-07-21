@@ -1,11 +1,9 @@
 ---
-# Token-dense: minimize lines/whitespace for AI context windows.
-# Re-run: native/format-omega.ps1
 Language: Cpp
 BasedOnStyle: LLVM
 ColumnLimit: 0
-IndentWidth: 2
-TabWidth: 2
+IndentWidth: 1
+TabWidth: 1
 UseTab: Never
 BreakBeforeBraces: Attach
 AllowShortFunctionsOnASingleLine: All
@@ -15,7 +13,6 @@ AllowShortBlocksOnASingleLine: Always
 AllowShortCaseLabelsOnASingleLine: true
 AllowShortEnumsOnASingleLine: true
 AllowShortLambdasOnASingleLine: All
-AllowShortNamespacesOnASingleLine: true
 BinPackArguments: true
 BinPackParameters: true
 CompactNamespaces: true
@@ -25,7 +22,6 @@ IndentCaseBlocks: false
 KeepEmptyLinesAtTheStartOfBlocks: false
 MaxEmptyLinesToKeep: 0
 ReflowComments: false
-SeparateDefinitionBlocks: Never
 SpaceBeforeParens: Never
 SpaceInEmptyParentheses: false
 SpaceAfterCStyleCast: false
@@ -36,3 +32,4 @@ PointerAlignment: Left
 NamespaceIndentation: None
 SortIncludes: false
 IncludeBlocks: Preserve
+AlignTrailingComments: false

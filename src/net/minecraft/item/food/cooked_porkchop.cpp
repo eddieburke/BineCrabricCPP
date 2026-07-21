@@ -9,20 +9,20 @@ namespace net::minecraft::item {
 CookedPorkchopItem::CookedPorkchopItem() : FoodItem(kRawId, 8, true) {
 }
 void CookedPorkchopItem::registerClass() {
-  static CookedPorkchopItem instance;
-  instance.setTexturePosition(8, 5);
-  instance.setTranslationKey("porkchopCooked");
-  Item::registerInItemsArray(&instance);
+ static CookedPorkchopItem instance;
+ instance.setTexturePosition(8, 5);
+ instance.setTranslationKey("porkchopCooked");
+ Item::registerInItemsArray(&instance);
 }
 void CookedPorkchopItem::registerSmeltingRecipes() {
-  Item* raw = Item::byRawId(63);
-  Item* cooked = Item::byRawId(64);
-  if(raw != nullptr && cooked != nullptr) {
-    recipe::SmeltingRecipeManager::instance().addRecipe(raw->id, ItemStack(cooked));
-  }
+ Item* raw = Item::byRawId(63);
+ Item* cooked = Item::byRawId(64);
+ if(raw != nullptr && cooked != nullptr) {
+  recipe::SmeltingRecipeManager::instance().addRecipe(raw->id, ItemStack(cooked));
+ }
 }
 void CookedPorkchopItem::registerRecipes(recipe::CraftingRecipeManager& recipeManager) {
-  (void)recipeManager;
+ (void)recipeManager;
 }
 MC_REGISTER_ITEM(CookedPorkchopItem)
 } // namespace net::minecraft::item

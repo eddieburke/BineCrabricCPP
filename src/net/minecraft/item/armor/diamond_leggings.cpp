@@ -13,14 +13,14 @@ namespace net::minecraft::item {
 DiamondLeggingsItem::DiamondLeggingsItem() : ArmorItem(kRawId, 3, 3, 2) {
 }
 void DiamondLeggingsItem::registerClass() {
-  static DiamondLeggingsItem instance;
-  instance.setTexturePosition(3, 2);
-  instance.setTranslationKey("leggingsDiamond");
-  Item::registerInItemsArray(&instance);
+ static DiamondLeggingsItem instance;
+ instance.setTexturePosition(3, 2);
+ instance.setTranslationKey("leggingsDiamond");
+ Item::registerInItemsArray(&instance);
 }
 void DiamondLeggingsItem::registerRecipes(recipe::CraftingRecipeManager& recipeManager) {
-  recipeManager.addShapedRecipe(ItemStack(Item::byRawId(56)),
-                                {std::string("XXX"), std::string("X X"), std::string("X X"), 'X', Item::byRawId(8)});
+ recipeManager.addShapedRecipe(ItemStack(Item::byRawId(56)),
+                               {std::string("XXX"), std::string("X X"), std::string("X X"), 'X', Item::byRawId(8)});
 }
 MC_REGISTER_ITEM(DiamondLeggingsItem)
 } // namespace net::minecraft::item

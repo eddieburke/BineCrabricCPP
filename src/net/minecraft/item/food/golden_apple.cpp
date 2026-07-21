@@ -8,15 +8,15 @@ namespace net::minecraft::item {
 GoldenAppleItem::GoldenAppleItem() : FoodItem(kRawId, 42, false) {
 }
 void GoldenAppleItem::registerClass() {
-  static GoldenAppleItem instance;
-  instance.setTexturePosition(11, 0);
-  instance.setTranslationKey("appleGold");
-  Item::registerInItemsArray(&instance);
+ static GoldenAppleItem instance;
+ instance.setTexturePosition(11, 0);
+ instance.setTranslationKey("appleGold");
+ Item::registerInItemsArray(&instance);
 }
 void GoldenAppleItem::registerRecipes(recipe::CraftingRecipeManager& recipeManager) {
-  recipeManager.addShapedRecipe(
-      ItemStack(Item::byRawId(66)),
-      {std::string("###"), std::string("#X#"), std::string("###"), '#', Block::GOLD_BLOCK, 'X', Item::byRawId(4)});
+ recipeManager.addShapedRecipe(
+     ItemStack(Item::byRawId(66)),
+     {std::string("###"), std::string("#X#"), std::string("###"), '#', Block::GOLD_BLOCK, 'X', Item::byRawId(4)});
 }
 MC_REGISTER_ITEM(GoldenAppleItem)
 } // namespace net::minecraft::item

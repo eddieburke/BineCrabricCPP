@@ -13,14 +13,14 @@ namespace net::minecraft::item {
 IronChestplateItem::IronChestplateItem() : ArmorItem(kRawId, 2, 2, 1) {
 }
 void IronChestplateItem::registerClass() {
-  static IronChestplateItem instance;
-  instance.setTexturePosition(2, 1);
-  instance.setTranslationKey("chestplateIron");
-  Item::registerInItemsArray(&instance);
+ static IronChestplateItem instance;
+ instance.setTexturePosition(2, 1);
+ instance.setTranslationKey("chestplateIron");
+ Item::registerInItemsArray(&instance);
 }
 void IronChestplateItem::registerRecipes(recipe::CraftingRecipeManager& recipeManager) {
-  recipeManager.addShapedRecipe(ItemStack(Item::byRawId(51)),
-                                {std::string("X X"), std::string("XXX"), std::string("XXX"), 'X', Item::byRawId(9)});
+ recipeManager.addShapedRecipe(ItemStack(Item::byRawId(51)),
+                               {std::string("X X"), std::string("XXX"), std::string("XXX"), 'X', Item::byRawId(9)});
 }
 MC_REGISTER_ITEM(IronChestplateItem)
 } // namespace net::minecraft::item

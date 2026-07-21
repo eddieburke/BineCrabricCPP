@@ -13,12 +13,12 @@ namespace net::minecraft::client::gui::draw {
 // High-level helpers perform startQuads()..draw(). Append helpers only add
 // vertices and expect the caller to bracket with startQuads()/draw().
 struct AtlasRect {
-  int x = 0;
-  int y = 0;
-  int u = 0;
-  int v = 0;
-  int w = 0;
-  int h = 0;
+ int x = 0;
+ int y = 0;
+ int u = 0;
+ int v = 0;
+ int w = 0;
+ int h = 0;
 };
 void appendQuad(render::Tessellator& tessellator, int x1, int y1, int x2, int y2, float z = 0.0f);
 void appendColoredQuad(

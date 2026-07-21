@@ -7,14 +7,14 @@ namespace net::minecraft::item {
 BoneItem::BoneItem() : Item(kRawId, RegistrationMode::Deferred) {
 }
 void BoneItem::registerClass() {
-  static BoneItem instance;
-  instance.setTexturePosition(12, 1);
-  instance.setHandheld();
-  instance.setTranslationKey("bone");
-  Item::registerInItemsArray(&instance);
+ static BoneItem instance;
+ instance.setTexturePosition(12, 1);
+ instance.setHandheld();
+ instance.setTranslationKey("bone");
+ Item::registerInItemsArray(&instance);
 }
 void BoneItem::registerRecipes(recipe::CraftingRecipeManager& recipeManager) {
-  (void)recipeManager;
+ (void)recipeManager;
 }
 MC_REGISTER_ITEM(BoneItem)
 } // namespace net::minecraft::item

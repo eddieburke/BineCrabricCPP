@@ -8,16 +8,16 @@
 namespace net::minecraft::client::gui::screen::option {
 namespace client_option = net::minecraft::client::option;
 class WorldSettingsScreen : public screen::Screen {
-public:
-  using ParentFactory = std::function<std::unique_ptr<screen::Screen>()>;
-  WorldSettingsScreen(ParentFactory parentFactory, client_option::GameOptions* gameOptions);
-  void init() override;
-  void render(int mouseX, int mouseY, float tickDelta) override;
-  [[nodiscard]] std::string_view getScreenUiId() const override;
+ public:
+ using ParentFactory = std::function<std::unique_ptr<screen::Screen>()>;
+ WorldSettingsScreen(ParentFactory parentFactory, client_option::GameOptions* gameOptions);
+ void init() override;
+ void render(int mouseX, int mouseY, float tickDelta) override;
+ [[nodiscard]] std::string_view getScreenUiId() const override;
 
-private:
-  ParentFactory parentFactory_;
-  client_option::GameOptions* gameOptions_ = nullptr;
-  std::string title_;
+ private:
+ ParentFactory parentFactory_;
+ client_option::GameOptions* gameOptions_ = nullptr;
+ std::string title_;
 };
 } // namespace net::minecraft::client::gui::screen::option

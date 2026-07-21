@@ -17,7 +17,10 @@ minecraft.settings.register("Colorful Skies", {
 
 local function value(key, fallback)
   local current = minecraft.settings.get(key)
-  if current == nil then return fallback end
+  if current == nil then
+    minecraft.log("warn", "colorful_skies: using fallback for setting '" .. key .. "'")
+    return fallback
+  end
   return current
 end
 

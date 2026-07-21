@@ -10,24 +10,24 @@ namespace net::minecraft::item {
 RedstoneItem::RedstoneItem(int rawId) : Item(rawId) {
 }
 bool RedstoneItem::useOnBlock(ItemStack* stack, PlayerEntity* /*user*/, World* world, int x, int y, int z, int side) {
-  if(world == nullptr || stack == nullptr || Block::REDSTONE_WIRE == nullptr) {
-    return false;
+ if(world == nullptr || stack == nullptr || Block::REDSTONE_WIRE == nullptr) {
+  return false;
+ }
+ if(Block::SNOW == nullptr || world->getBlockId(x, y, z) != Block::SNOW->id) {
+  detail::offsetPlacementPos(world, x, y, z, side);
+  if(!world->isAir(x, y, z)) {
+   return false;
   }
-  if(Block::SNOW == nullptr || world->getBlockId(x, y, z) != Block::SNOW->id) {
-    detail::offsetPlacementPos(world, x, y, z, side);
-    if(!world->isAir(x, y, z)) {
-      return false;
-    }
-  }
-  if(Block::REDSTONE_WIRE->canPlaceAt(world, x, y, z)) {
-    --stack->count;
-    world->setBlock(x, y, z, Block::REDSTONE_WIRE->id);
-  }
-  return true;
+ }
+ if(Block::REDSTONE_WIRE->canPlaceAt(world, x, y, z)) {
+  --stack->count;
+  world->setBlock(x, y, z, Block::REDSTONE_WIRE->id);
+ }
+ return true;
 }
 void RedstoneItem::registerClass() {
-  static RedstoneItem REDSTONE(75);
-  REDSTONE.setTexturePosition(8, 3)->setTranslationKey("redstone");
+ static RedstoneItem REDSTONE(75);
+ REDSTONE.setTexturePosition(8, 3)->setTranslationKey("redstone");
 }
 MC_REGISTER_ITEM(RedstoneItem)
 } // namespace net::minecraft::item

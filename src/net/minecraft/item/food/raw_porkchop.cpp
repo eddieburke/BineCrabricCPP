@@ -7,13 +7,13 @@ namespace net::minecraft::item {
 RawPorkchopItem::RawPorkchopItem() : FoodItem(kRawId, 3, true) {
 }
 void RawPorkchopItem::registerClass() {
-  static RawPorkchopItem instance;
-  instance.setTexturePosition(7, 5);
-  instance.setTranslationKey("porkchopRaw");
-  Item::registerInItemsArray(&instance);
+ static RawPorkchopItem instance;
+ instance.setTexturePosition(7, 5);
+ instance.setTranslationKey("porkchopRaw");
+ Item::registerInItemsArray(&instance);
 }
 void RawPorkchopItem::registerRecipes(recipe::CraftingRecipeManager& recipeManager) {
-  (void)recipeManager;
+ (void)recipeManager;
 }
 MC_REGISTER_ITEM(RawPorkchopItem)
 } // namespace net::minecraft::item

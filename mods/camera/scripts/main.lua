@@ -1,7 +1,7 @@
-local tripod_bottom_model = assert(minecraft.model.load("models/camera/tripod_bottom.json"))
-local tripod_top_model = assert(minecraft.model.load("models/camera/tripod_top.json"))
+local tripod_bottom_model = assert(minecraft.model.load("models/camera/tripod_bottom/tripod_bottom.json"))
+local tripod_top_model = assert(minecraft.model.load("models/camera/tripod_top/tripod_top.json"))
 local camera_model = assert(minecraft.model.load("models/camera/camera.json"))
-local tv_model = assert(minecraft.model.load("models/tv.json"))
+local tv_model = assert(minecraft.model.load("models/camera/tv/tv.json"))
 
 local TRIPOD_ITEM = 30801
 local CAMERA_ITEM = 30800
@@ -85,7 +85,7 @@ minecraft.register_item({
 
 minecraft.register_block({
   id = TV_BLOCK,
-  texture = "mods/camera/tv_body.png",
+  texture = "models/camera/tv/tv_body.png",
   hardness = 1.5,
   resistance = 4.0,
   translation_key = "camera.tv",
@@ -254,7 +254,7 @@ local function ensure_channels()
   for _, entity in ipairs(client_entities("camera:camera")) do
     cameras[entity.id] = true
     if not client.channels[entity.id] then
-      client.channels[entity.id] = minecraft.camera.create_display_size()
+      client.channels[entity.id] = minecraft.camera.create(256, 192)
     end
   end
   for id, channel in pairs(client.channels) do
@@ -312,7 +312,8 @@ minecraft.on(minecraft.events.world_render, {
     minecraft.model.draw(tripod_top_model, { x = entity.x, y = entity.y + 1, z = entity.z, yaw = entity.yaw, scale = MODEL_SCALE, pivot_y = 0 })
   end
   for _, entity in ipairs(client_entities("camera:camera")) do
-    if minecraft.camera.rendering() ~= client.channels[entity.id] then
+    local channel = client.channels[entity.id]
+    if not channel or channel < 0 or minecraft.camera.rendering() ~= channel then
       local x, y, z = camera_position(entity)
       minecraft.model.draw(camera_model, { x = x, y = y, z = z, yaw = (180 - entity.yaw) % 360, pitch = -(entity.pitch or 0), scale = MODEL_SCALE, pivot_y = 0 })
     end

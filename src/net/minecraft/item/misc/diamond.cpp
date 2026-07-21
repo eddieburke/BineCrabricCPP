@@ -9,21 +9,21 @@ namespace net::minecraft::item {
 DiamondItem::DiamondItem() : Item(kRawId, RegistrationMode::Deferred) {
 }
 void DiamondItem::registerClass() {
-  static DiamondItem instance;
-  instance.setTexturePosition(7, 3);
-  instance.setTranslationKey("emerald");
-  Item::registerInItemsArray(&instance);
+ static DiamondItem instance;
+ instance.setTexturePosition(7, 3);
+ instance.setTranslationKey("emerald");
+ Item::registerInItemsArray(&instance);
 }
 void DiamondItem::registerSmeltingRecipes() {
-  if(Block::DIAMOND_ORE != nullptr) {
-    recipe::SmeltingRecipeManager::instance().addRecipe(Block::DIAMOND_ORE->id, ItemStack(Item::byRawId(8)));
-  }
+ if(Block::DIAMOND_ORE != nullptr) {
+  recipe::SmeltingRecipeManager::instance().addRecipe(Block::DIAMOND_ORE->id, ItemStack(Item::byRawId(8)));
+ }
 }
 void DiamondItem::registerRecipes(recipe::CraftingRecipeManager& recipeManager) {
-  recipeManager.addShapedRecipe(
-      ItemStack(Block::DIAMOND_BLOCK),
-      {std::string("###"), std::string("###"), std::string("###"), '#', ItemStack(Item::byRawId(8), 9)});
-  recipeManager.addShapedRecipe(ItemStack(Item::byRawId(8), 9), {std::string("#"), '#', Block::DIAMOND_BLOCK});
+ recipeManager.addShapedRecipe(
+     ItemStack(Block::DIAMOND_BLOCK),
+     {std::string("###"), std::string("###"), std::string("###"), '#', ItemStack(Item::byRawId(8), 9)});
+ recipeManager.addShapedRecipe(ItemStack(Item::byRawId(8), 9), {std::string("#"), '#', Block::DIAMOND_BLOCK});
 }
 MC_REGISTER_ITEM(DiamondItem)
 } // namespace net::minecraft::item

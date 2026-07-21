@@ -74,60 +74,60 @@ using entity::vehicle::BoatEntity;
 using entity::vehicle::MinecartEntity;
 template <typename Child, typename Parent>
 void linkParent(std::unordered_map<std::type_index, std::type_index>& map) {
-  map.emplace(std::type_index(typeid(Child)), std::type_index(typeid(Parent)));
+ map.emplace(std::type_index(typeid(Child)), std::type_index(typeid(Parent)));
 }
 const std::unordered_map<std::type_index, std::type_index>& parentMap() {
-  static const std::unordered_map<std::type_index, std::type_index> map = [] {
-    std::unordered_map<std::type_index, std::type_index> parents;
-    linkParent<PlayerEntity, LivingEntity>(parents);
-    linkParent<OtherPlayerEntity, PlayerEntity>(parents);
-    // The MP local player is a MultiplayerClientPlayerEntity (subclass of
-    // ClientPlayerEntity). Without this link the renderer dispatcher finds no renderer
-    // for its exact type, so the player model never draws in MP (the inventory preview
-    // and any third-person view). SP works only because its player is a plain
-    // ClientPlayerEntity, which the dispatcher aliases explicitly.
-    linkParent<MultiplayerClientPlayerEntity, PlayerEntity>(parents);
-    linkParent<PigZombieEntity, ZombieEntity>(parents);
-    linkParent<ZombieEntity, MonsterEntity>(parents);
-    linkParent<CreeperEntity, MonsterEntity>(parents);
-    linkParent<SkeletonEntity, MonsterEntity>(parents);
-    linkParent<SpiderEntity, MonsterEntity>(parents);
-    linkParent<GhastEntity, FlyingEntity>(parents);
-    linkParent<FlyingEntity, LivingEntity>(parents);
-    linkParent<GiantEntity, MonsterEntity>(parents);
-    linkParent<SlimeEntity, LivingEntity>(parents);
-    linkParent<MonsterEntity, MobEntity>(parents);
-    linkParent<PigEntity, MobEntity>(parents);
-    linkParent<SheepEntity, MobEntity>(parents);
-    linkParent<CowEntity, MobEntity>(parents);
-    linkParent<ChickenEntity, MobEntity>(parents);
-    linkParent<SquidEntity, WaterCreatureEntity>(parents);
-    linkParent<WaterCreatureEntity, MobEntity>(parents);
-    linkParent<WolfEntity, MobEntity>(parents);
-    linkParent<MobEntity, LivingEntity>(parents);
-    linkParent<LivingEntity, Entity>(parents);
-    linkParent<ArrowEntity, Entity>(parents);
-    linkParent<SnowballEntity, Entity>(parents);
-    linkParent<EggEntity, Entity>(parents);
-    linkParent<FireballEntity, Entity>(parents);
-    linkParent<FishingBobberEntity, Entity>(parents);
-    linkParent<ItemEntity, Entity>(parents);
-    linkParent<TntEntity, Entity>(parents);
-    linkParent<FallingBlockEntity, Entity>(parents);
-    linkParent<MinecartEntity, Entity>(parents);
-    linkParent<BoatEntity, Entity>(parents);
-    linkParent<PaintingEntity, Entity>(parents);
-    linkParent<LightningEntity, Entity>(parents);
-    return parents;
-  }();
-  return map;
+ static const std::unordered_map<std::type_index, std::type_index> map = [] {
+  std::unordered_map<std::type_index, std::type_index> parents;
+  linkParent<PlayerEntity, LivingEntity>(parents);
+  linkParent<OtherPlayerEntity, PlayerEntity>(parents);
+  // The MP local player is a MultiplayerClientPlayerEntity (subclass of
+  // ClientPlayerEntity). Without this link the renderer dispatcher finds no renderer
+  // for its exact type, so the player model never draws in MP (the inventory preview
+  // and any third-person view). SP works only because its player is a plain
+  // ClientPlayerEntity, which the dispatcher aliases explicitly.
+  linkParent<MultiplayerClientPlayerEntity, PlayerEntity>(parents);
+  linkParent<PigZombieEntity, ZombieEntity>(parents);
+  linkParent<ZombieEntity, MonsterEntity>(parents);
+  linkParent<CreeperEntity, MonsterEntity>(parents);
+  linkParent<SkeletonEntity, MonsterEntity>(parents);
+  linkParent<SpiderEntity, MonsterEntity>(parents);
+  linkParent<GhastEntity, FlyingEntity>(parents);
+  linkParent<FlyingEntity, LivingEntity>(parents);
+  linkParent<GiantEntity, MonsterEntity>(parents);
+  linkParent<SlimeEntity, LivingEntity>(parents);
+  linkParent<MonsterEntity, MobEntity>(parents);
+  linkParent<PigEntity, MobEntity>(parents);
+  linkParent<SheepEntity, MobEntity>(parents);
+  linkParent<CowEntity, MobEntity>(parents);
+  linkParent<ChickenEntity, MobEntity>(parents);
+  linkParent<SquidEntity, WaterCreatureEntity>(parents);
+  linkParent<WaterCreatureEntity, MobEntity>(parents);
+  linkParent<WolfEntity, MobEntity>(parents);
+  linkParent<MobEntity, LivingEntity>(parents);
+  linkParent<LivingEntity, Entity>(parents);
+  linkParent<ArrowEntity, Entity>(parents);
+  linkParent<SnowballEntity, Entity>(parents);
+  linkParent<EggEntity, Entity>(parents);
+  linkParent<FireballEntity, Entity>(parents);
+  linkParent<FishingBobberEntity, Entity>(parents);
+  linkParent<ItemEntity, Entity>(parents);
+  linkParent<TntEntity, Entity>(parents);
+  linkParent<FallingBlockEntity, Entity>(parents);
+  linkParent<MinecartEntity, Entity>(parents);
+  linkParent<BoatEntity, Entity>(parents);
+  linkParent<PaintingEntity, Entity>(parents);
+  linkParent<LightningEntity, Entity>(parents);
+  return parents;
+ }();
+ return map;
 }
 } // namespace
 std::optional<std::type_index> entitySupertype(std::type_index type) {
-  const auto it = parentMap().find(type);
-  if(it == parentMap().end()) {
-    return std::nullopt;
-  }
-  return it->second;
+ const auto it = parentMap().find(type);
+ if(it == parentMap().end()) {
+  return std::nullopt;
+ }
+ return it->second;
 }
 } // namespace net::minecraft

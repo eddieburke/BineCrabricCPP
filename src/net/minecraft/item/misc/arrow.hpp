@@ -5,10 +5,10 @@ class CraftingRecipeManager;
 } // namespace net::minecraft::recipe
 namespace net::minecraft::item {
 class ArrowItem : public Item {
-public:
-  static constexpr int kRawId = 6;
-  static void registerClass();
-  static void registerRecipes(recipe::CraftingRecipeManager& recipeManager);
-  ArrowItem();
+ public:
+ static constexpr int kRawId = 6;
+ static void registerClass();
+ static void registerRecipes(recipe::CraftingRecipeManager& recipeManager);
+ ArrowItem();
 };
 } // namespace net::minecraft::item

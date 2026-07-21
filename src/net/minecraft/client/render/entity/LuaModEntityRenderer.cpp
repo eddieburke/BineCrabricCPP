@@ -9,20 +9,20 @@ namespace {
 // width-derived radius by putting a "shadow_radius" float in the entity data
 // (0 disables the shadow).
 class LuaModEntityRenderer : public EntityRenderer {
-public:
-  void render(const net::minecraft::Entity& entity, double, double, double, float, float) override {
-    shadowRadius = entity.width * 0.5f;
-    const auto* modEntity = dynamic_cast<const net::minecraft::mod::lua::LuaModEntity*>(&entity);
-    if(modEntity != nullptr && modEntity->data().contains("shadow_radius")) {
-      shadowRadius = modEntity->data().getFloat("shadow_radius");
-    }
+ public:
+ void render(const net::minecraft::Entity& entity, double, double, double, float, float) override {
+  shadowRadius = entity.width * 0.5f;
+  const auto* modEntity = dynamic_cast<const net::minecraft::mod::lua::LuaModEntity*>(&entity);
+  if(modEntity != nullptr && modEntity->data().contains("shadow_radius")) {
+   shadowRadius = modEntity->data().getFloat("shadow_radius");
   }
+ }
 };
-} // namespace
+}
 } // namespace net::minecraft::client::render::entity
 namespace net::minecraft::mod::lua {
 std::unique_ptr<::net::minecraft::client::render::entity::EntityRenderer> LuaModEntity::ClientRenderer::create() {
-  return std::make_unique<::net::minecraft::client::render::entity::LuaModEntityRenderer>();
+ return std::make_unique<::net::minecraft::client::render::entity::LuaModEntityRenderer>();
 }
 } // namespace net::minecraft::mod::lua
 namespace {

@@ -12,21 +12,21 @@
 #include "net/minecraft/block/entity/SignBlockEntity.hpp"
 namespace net::minecraft::block {
 std::unique_ptr<entity::BlockEntity> ChestBlock::createBlockEntity() {
-  return std::make_unique<entity::ChestBlockEntity>();
+ return std::make_unique<entity::ChestBlockEntity>();
 }
 std::unique_ptr<entity::BlockEntity> DispenserBlock::createBlockEntity() {
-  return std::make_unique<entity::DispenserBlockEntity>();
+ return std::make_unique<entity::DispenserBlockEntity>();
 }
 std::unique_ptr<entity::BlockEntity> SignBlock::createBlockEntity() {
-  return std::make_unique<entity::SignBlockEntity>();
+ return std::make_unique<entity::SignBlockEntity>();
 }
 std::unique_ptr<entity::BlockEntity> JukeboxBlock::createBlockEntity() {
-  return std::make_unique<entity::JukeboxBlockEntity>();
+ return std::make_unique<entity::JukeboxBlockEntity>();
 }
 std::unique_ptr<entity::BlockEntity> NoteBlock::createBlockEntity() {
-  return std::make_unique<entity::NoteBlockBlockEntity>();
+ return std::make_unique<entity::NoteBlockBlockEntity>();
 }
 std::unique_ptr<entity::BlockEntity> SpawnerBlock::createBlockEntity() {
-  return std::make_unique<entity::MobSpawnerBlockEntity>();
+ return std::make_unique<entity::MobSpawnerBlockEntity>();
 }
 } // namespace net::minecraft::block

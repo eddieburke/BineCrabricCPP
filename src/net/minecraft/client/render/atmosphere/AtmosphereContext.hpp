@@ -17,12 +17,12 @@ class GameOptions;
 }
 namespace net::minecraft::client::render::atmosphere {
 struct AtmosphereContext {
-  net::minecraft::client::Minecraft* client;
-  net::minecraft::World* world;
-  net::minecraft::client::texture::TextureManager* textureManager;
-  net::minecraft::entity::Entity* camera;
-  const net::minecraft::entity::LivingEntity* livingCamera;
-  const net::minecraft::client::option::GameOptions& options;
-  int atmosphereTicks;
+ net::minecraft::client::Minecraft* client;
+ net::minecraft::World* world;
+ net::minecraft::client::texture::TextureManager* textureManager;
+ net::minecraft::entity::Entity* camera;
+ const net::minecraft::entity::LivingEntity* livingCamera;
+ const net::minecraft::client::option::GameOptions& options;
+ int atmosphereTicks;
 };
 } // namespace net::minecraft::client::render::atmosphere

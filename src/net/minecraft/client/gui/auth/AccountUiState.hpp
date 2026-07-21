@@ -7,10 +7,10 @@ class Minecraft;
 }
 namespace net::minecraft::client::gui::auth {
 struct AccountUiSnapshot {
-  bool showSignOutButton = false;
-  bool multiplayerReady = false;
-  std::string buttonLabel;
-  std::string statusLine;
+ bool showSignOutButton = false;
+ bool multiplayerReady = false;
+ std::string buttonLabel;
+ std::string statusLine;
 };
 [[nodiscard]] AccountUiSnapshot pollAccountUi(const Minecraft& client);
 void signOutAccount(Minecraft& client);

@@ -7,13 +7,13 @@ namespace net::minecraft::item {
 RawFishItem::RawFishItem() : FoodItem(kRawId, 2, false) {
 }
 void RawFishItem::registerClass() {
-  static RawFishItem instance;
-  instance.setTexturePosition(9, 5);
-  instance.setTranslationKey("fishRaw");
-  Item::registerInItemsArray(&instance);
+ static RawFishItem instance;
+ instance.setTexturePosition(9, 5);
+ instance.setTranslationKey("fishRaw");
+ Item::registerInItemsArray(&instance);
 }
 void RawFishItem::registerRecipes(recipe::CraftingRecipeManager& recipeManager) {
-  (void)recipeManager;
+ (void)recipeManager;
 }
 MC_REGISTER_ITEM(RawFishItem)
 } // namespace net::minecraft::item

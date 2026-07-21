@@ -11,15 +11,15 @@ class PlayerInventory;
 } // namespace net::minecraft::entity::player
 namespace net::minecraft::screen {
 class CraftingScreenHandler : public ScreenHandler {
-public:
-  CraftingScreenHandler(entity::player::PlayerInventory* inventory, int xIn = 0, int yIn = 0, int zIn = 0);
-  void onSlotUpdate(Inventory* inventory) override;
-  void onClosed(PlayerEntity* player) override;
-  [[nodiscard]] bool canUse(PlayerEntity* player) override;
-  CraftingInventory craftingInput;
-  CraftingResultInventory craftingResult{};
-  int x = 0;
-  int y = 0;
-  int z = 0;
+ public:
+ CraftingScreenHandler(entity::player::PlayerInventory* inventory, int xIn = 0, int yIn = 0, int zIn = 0);
+ void onSlotUpdate(Inventory* inventory) override;
+ void onClosed(PlayerEntity* player) override;
+ [[nodiscard]] bool canUse(PlayerEntity* player) override;
+ CraftingInventory craftingInput;
+ CraftingResultInventory craftingResult{};
+ int x = 0;
+ int y = 0;
+ int z = 0;
 };
 } // namespace net::minecraft::screen

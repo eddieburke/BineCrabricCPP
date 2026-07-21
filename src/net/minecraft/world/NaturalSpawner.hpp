@@ -9,15 +9,15 @@ class PlayerEntity;
 namespace net::minecraft {
 class World;
 class NaturalSpawner {
-public:
-  static Vec3i getRandomPosInChunk(World* world, int chunkX, int chunkZ);
-  static int tick(World* world, bool spawnAnimals, bool spawnMonsters);
-  static bool spawnMonstersAndWakePlayers(World* world, std::vector<entity::player::PlayerEntity*>& players);
+ public:
+ static Vec3i getRandomPosInChunk(World* world, int chunkX, int chunkZ);
+ static int tick(World* world, bool spawnHostile, bool spawnPeaceful);
+ static bool spawnMonstersAndWakePlayers(World* world, std::vector<entity::player::PlayerEntity*>& players);
 
-protected:
-  static inline std::vector<std::string> MONSTER_TYPE = {"Spider", "Zombie", "Skeleton"};
+ protected:
+ static inline std::vector<std::string> MONSTER_TYPE = {"Spider", "Zombie", "Skeleton"};
 
-private:
-  static inline std::unordered_set<ChunkPos, ChunkPosHash> mobSpawningChunks_;
+ private:
+ static inline std::unordered_set<ChunkPos, ChunkPosHash> mobSpawningChunks_;
 };
 } // namespace net::minecraft
