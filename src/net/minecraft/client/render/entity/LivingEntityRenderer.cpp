@@ -174,7 +174,7 @@ void LivingEntityRenderer::render(
    RenderSystem::scale(poseScale, poseScale, poseScale);
   }
   RenderSystem::translate(0.0f, -24.0f * scaleUnit - 0.0078125f, 0.0f);
-  (void)bindDownloadedTexture(living->skinUrl, living->getTexture());
+  bindDownloadedTexture(living->skinUrl);
   model->animateModel(const_cast<net::minecraft::LivingEntity&>(*living), limbDistance, limbAngle, tickDelta);
   model->render(limbDistance, limbAngle, headBob, headYawRel, headPitch, scaleUnit);
   auto syncDecorationPose = [&]() {

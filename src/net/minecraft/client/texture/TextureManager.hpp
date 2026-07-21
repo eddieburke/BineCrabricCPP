@@ -49,7 +49,7 @@ class TextureManager {
  void update(int id, const RasterImage& image);
  void addDynamicTexture(net::minecraft::client::render::texture::DynamicTexture* texture);
  void tick();
- int downloadTexture(const std::string& url, const std::string& backup);
+ int downloadTexture(const std::string& url);
  ImageDownload* downloadImage(const std::string& url, ImageProcessor* processor, bool useBetacraftProxy = true);
  void downloadSkinImage(const std::string& url);
  void downloadCapeImage(const std::string& url);

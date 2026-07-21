@@ -23,7 +23,7 @@ class EntityRenderer {
  virtual void postRender(
      const net::minecraft::Entity& entity, double x, double y, double z, float yaw, float tickDelta);
  void bindTexture(std::string_view texturePath);
- [[nodiscard]] bool bindDownloadedTexture(std::string_view url, std::string_view backup);
+ [[nodiscard]] bool bindDownloadedTexture(std::string_view url);
  static void renderShape(const Box& box, double x, double y, double z);
  static void renderShapeFlat(const Box& box);
  [[nodiscard]] font::TextRenderer* getTextRenderer() const noexcept;
