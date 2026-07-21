@@ -1,143 +1,74 @@
-# Build directories
-build/
-build-ninja/
-build-test/
-build-fast/
-build-omega/
-build-omega-fix/
-build-codex-audit/
-build-render-check/
-build-server-check/
-build-minsize*/
-build-minsize*.7z
-out/
-dist/
-bin/
-obj/
-
-# CMake / Ninja / CTest
-CMakeCache.txt
-CMakeFiles/
-cmake_install.cmake
-CTestTestfile.cmake
-Testing/
-*.ninja
-.ninja_deps
-.ninja_log
-compile_commands.json
-install_manifest.txt
-install_local_manifest.txt
-
-# Compiled artifacts
-*.obj
+```gitignore
+# Compiled files
 *.o
-*.exe
-*.dll
-*.so
-*.dylib
-*.a
-*.lib
-*.pdb
-*.ilk
-*.exp
-*.iobj
-*.ipdb
-*.gcno
-*.gcda
-*.manifest
+*.obj
+*.out
 
-# Compiler dependency files
-*.d
-*.rsp
+# Dependencies
+mods/*/lib/
+mods/*/dependencies/
+mods/*/build/
 
-# MSVC / Visual Studio
-.vs/
-*.vcxproj
-*.vcxproj.filters
-*.vcxproj.user
-*.sln
-*.suo
-x64/
-x86/
-x86_64/
-Debug/
-Release/
-RelWithDebInfo/
-MinSizeRel/
-ipch/
-*.opensdf
-*.sdf
-*.ncb
-*.aps
+# Logs and temp files
+*.log
+*.tmp
+*.swp
 
-# Build lock
-.build-omega.lock
+# Environment
+.env
+.env.local
+*.env.*
 
-# Bundled GCC toolchain (downloaded by build-omega.ps1; manifest.json is tracked)
-toolchain/*
-!toolchain/manifest.json
-
-# Local build logs (use cleanup.ps1)
-_build_out*.txt
-build-out.txt
-build-restore.log
-build-trace.txt
-
-# Local agent/runtime backups
-codex-backups/
-*.bak
-*.orig
-
-# Game assets (extracted from jar)
-resources/
-
-# Generated refactor baseline output
-docs/refactor-baseline/baseline-*.txt
-docs/refactor-baseline/refactor-report-*.txt
-docs/refactor-baseline/gl-shim-baseline.txt
-
-# OS
-.DS_Store
-Thumbs.db
-ehthumbs.db
-Desktop.ini
-$RECYCLE.BIN/
-
-# Editor
+# Editors
 .vscode/
-!.vscode/extensions.json
-!.vscode/settings.json
 .idea/
 *.swp
 *.swo
-*~
 
-# Python
+# Build artifacts
+build/
+dist/
+target/
+*.class
+*.pyc
 __pycache__/
-*.py[cod]
-.pytest_cache/
+*.so
+*.dll
+*.exe
+
+# Compression files
+*.zip
+*.gz
+*.tar
+*.tgz
+*.bz2
+*.xz
+*.7z
+*.rar
+*.zst
+*.lz4
+*.lzh
+*.cab
+*.arj
+*.rpm
+*.deb
+*.Z
+*.lz
+*.lzo
+*.tar.gz
+*.tar.bz2
+*.tar.xz
+*.tar.zst
+
+# Cache directories
 .mypy_cache/
-.ruff_cache/
+.pytest_cache/
+.gradle/
+.julia/
+.zig/
 
-# Secrets
-.env
-.env.*
-!.env.example
-
-# Logs and temp
-*.log
-*.tmp
-*.temp
-.cache/
-
-# Local agent / editor rules (not for the repo)
-RULES FOR AGENTS.md
-
-# Shortcuts / misc
-*.lnk
-banned-ips.txt
-banned-players.txt
-ops.txt
-white-list.txt
-server.properties
-server.log
+# Virtual environments
+.venv/
+venv/
+env/
+```

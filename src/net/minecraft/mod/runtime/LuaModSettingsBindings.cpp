@@ -67,8 +67,19 @@ int luaSettingsGet(lua_State* state) {
   return 0;
  }
  LuaApi& api = luaApi();
- const std::string key = luaString(state, 1, "");
- const auto* def = net::minecraft::mod::ModSettingsRegistry::instance().findSetting(mod->modId, key);
+ const std::string fullKey = luaString(state, 1, "");
+ if(fullKey.empty()) {
+  api.pushnil(state);
+  return 1;
+ }
+ auto dot = fullKey.find('.');
+ if(dot == std::string::npos) {
+  api.pushnil(state);
+  return 1;
+ }
+ std::string modId = fullKey.substr(0, dot);
+ std::string key = fullKey.substr(dot + 1);
+ const auto* def = net::minecraft::mod::ModSettingsRegistry::instance().findSetting(modId, key);
  if(def == nullptr) {
   api.pushnil(state);
   return 1;
@@ -79,6 +90,34 @@ int luaSettingsGet(lua_State* state) {
   api.pushnumber(state, static_cast<double>(def->floatCurrent));
  }
  return 1;
+}
+int luaSettingsSet(lua_State* state) {
+ ModHost::LoadedLuaMod* mod = currentLuaMod(state);
+ if(mod == nullptr) {
+  return 0;
+ }
+ LuaApi& api = luaApi();
+ const std::string fullKey = luaString(state, 1, "");
+ if(fullKey.empty() || api.gettop(state) < 2) {
+  return 0;
+ }
+ auto dot = fullKey.find('.');
+ if(dot == std::string::npos) {
+  return 0;
+ }
+ std::string modId = fullKey.substr(0, dot);
+ std::string key = fullKey.substr(dot + 1);
+ auto* def = net::minecraft::mod::ModSettingsRegistry::instance().findSetting(modId, key);
+ if(def == nullptr) {
+  return 0;
+ }
+ if(def->kind == net::minecraft::mod::ModSettingDef::Toggle) {
+  def->boolCurrent = api.toboolean(state, 2) ? true : false;
+ } else {
+  def->floatCurrent = static_cast<float>(api.tonumber(state, 2));
+ }
+ net::minecraft::mod::ModSettingsRegistry::instance().save();
+ return 0;
 }
 int luaKeybindsRegister(lua_State* state) {
  ModHost::LoadedLuaMod* mod = currentLuaMod(state);
@@ -125,9 +164,10 @@ int luaKeybindsGetCode(lua_State* state) {
 void installModSettingsApi(lua_State* state, ModHost::LoadedLuaMod& mod) {
 #ifdef MINECRAFT_NATIVE_EXPORTS
  LuaApi& api = luaApi();
- api.createtable(state, 0, 2);
+ api.createtable(state, 0, 3);
  bindModFunction(state, &mod, "register", luaSettingsRegister);
  bindModFunction(state, &mod, "get", luaSettingsGet);
+ bindModFunction(state, &mod, "set", luaSettingsSet);
  api.setfield(state, -2, "settings");
  api.createtable(state, 0, 2);
  bindModFunction(state, &mod, "register", luaKeybindsRegister);

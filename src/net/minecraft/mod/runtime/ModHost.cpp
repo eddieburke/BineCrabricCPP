@@ -19,7 +19,6 @@
 #include "net/minecraft/mod/runtime/LuaCoreBindings.hpp"
 #include "net/minecraft/mod/runtime/LuaEntityBindings.hpp"
 // LuaEventSubscribers.hpp deleted — dispatch is now in LuaDirectHooks.hpp
-#include "net/minecraft/mod/runtime/LuaBox3DBindings.hpp"
 #include "net/minecraft/mod/runtime/LuaRecipeBindings.hpp"
 #include "net/minecraft/mod/runtime/LuaWorldBindings.hpp"
 #include "net/minecraft/mod/lua/LuaHostApi.hpp"
@@ -124,9 +123,8 @@ bool loadLuaMod(ModPackage& info, std::vector<std::shared_ptr<ModHost::LoadedLua
  auto mod = std::make_shared<ModHost::LoadedLuaMod>();
  mod->modId = info.id;
  mod->state = state;
-  installMinecraftTable(state, *mod);
-  setBox3dPreloaded(state);
-  if(!installLuaPrelude(state, info.error)) {
+ installMinecraftTable(state, *mod);
+ if(!installLuaPrelude(state, info.error)) {
    api.close(state);
    info.active = info.resourceOverlay;
    runtimeLog(info.id, "error", info.error);

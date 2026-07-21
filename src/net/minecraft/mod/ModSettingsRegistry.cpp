@@ -117,6 +117,34 @@ int ModSettingsRegistry::findKeybindByKey(int keyCode) const {
  }
  return 0;
 }
+float ModSettingsRegistry::getFloatValue(const std::string& modId, const std::string& key, float defaultValue) const {
+ auto* setting = const_cast<ModSettingsRegistry*>(this)->findSetting(modId, key);
+ if(setting && setting->kind == ModSettingDef::Slider) {
+  return setting->floatCurrent;
+ }
+ return defaultValue;
+}
+bool ModSettingsRegistry::getBoolValue(const std::string& modId, const std::string& key, bool defaultValue) const {
+ auto* setting = const_cast<ModSettingsRegistry*>(this)->findSetting(modId, key);
+ if(setting && setting->kind == ModSettingDef::Toggle) {
+  return setting->boolCurrent;
+ }
+ return defaultValue;
+}
+void ModSettingsRegistry::setFloatValue(const std::string& modId, const std::string& key, float value) {
+ auto* setting = findSetting(modId, key);
+ if(setting && setting->kind == ModSettingDef::Slider) {
+  setting->floatCurrent = std::clamp(value, setting->sliderMin, setting->sliderMax);
+  save();
+ }
+}
+void ModSettingsRegistry::setBoolValue(const std::string& modId, const std::string& key, bool value) {
+ auto* setting = findSetting(modId, key);
+ if(setting && setting->kind == ModSettingDef::Toggle) {
+  setting->boolCurrent = value;
+  save();
+ }
+}
 void ModSettingsRegistry::load(const std::filesystem::path& path) {
  storagePath_ = path;
  persistedValues_.clear();
