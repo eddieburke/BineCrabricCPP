@@ -1,6 +1,4 @@
 #pragma once
-#include <filesystem>
-#include <functional>
 #include <string>
 #include <unordered_map>
 #include <vector>
@@ -8,8 +6,7 @@ namespace net::minecraft::mod {
 struct ModSettingDef {
  std::string key;
  std::string label;
- enum Kind { Slider,
-             Toggle } kind = Slider;
+ enum Kind { Slider, Toggle } kind = Slider;
  float sliderMin = 0.0f;
  float sliderMax = 1.0f;
  float sliderStep = 0.0f;
@@ -40,6 +37,10 @@ class ModSettingsRegistry {
  [[nodiscard]] int findKeybindByKey(int keyCode) const;
  void load(const std::filesystem::path& path = "mod_settings.txt");
  void save();
+ [[nodiscard]] float getFloatValue(const std::string& modId, const std::string& key, float defaultValue) const;
+ [[nodiscard]] bool getBoolValue(const std::string& modId, const std::string& key, bool defaultValue) const;
+ void setFloatValue(const std::string& modId, const std::string& key, float value);
+ void setBoolValue(const std::string& modId, const std::string& key, bool value);
 
  private:
  ModSettingsRegistry() = default;
