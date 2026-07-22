@@ -1,3 +1,10 @@
+-- ================================================================
+-- MOD: world_profiles
+-- Standardized structure with separated config
+-- ================================================================
+
+local config = require("world_profiles.config")
+
 local PROFILE_OPTION = "world_profiles:type"
 
 local profiles = {}

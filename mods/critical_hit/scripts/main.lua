@@ -1,3 +1,10 @@
+-- ================================================================
+-- MOD: critical_hit
+-- Standardized structure with separated config
+-- ================================================================
+
+local config = require("critical_hit.config")
+
 minecraft.settings.register("Critical Hit", {
   { key = "damage_multiplier", label = "Damage Multiplier", kind = "slider", min = 1.0, max = 2.5, step = 0.05, default = 1.5 },
   { key = "particle_count", label = "Particle Count", kind = "slider", min = 5, max = 40, integer = true, default = 20 },

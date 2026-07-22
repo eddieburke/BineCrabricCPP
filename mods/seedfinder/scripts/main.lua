@@ -1,3 +1,10 @@
+-- ================================================================
+-- MOD: seedfinder
+-- Standardized structure with separated config
+-- ================================================================
+
+local config = require("seedfinder.config")
+
 local rules = minecraft.require("scripts.rules")
 local search_mod = minecraft.require("scripts.search")
 local ui_spec = minecraft.require("scripts.ui_spec")

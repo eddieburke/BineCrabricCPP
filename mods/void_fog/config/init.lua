@@ -1,25 +1,25 @@
 -- ================================================================
--- CONFIG: camera
+-- CONFIG: void_fog
 -- Centralized configuration with validation and persistence
 -- ================================================================
 
 local settings = require("lib.settings")
 
-local config = settings.define("camera", {
-  name = "Camera",
+local config = settings.define("void_fog", {
+  name = "Void Fog",
   fields = {
-    auto_rotate = {
+    enabled = {
       type = "bool",
-      label = "Auto Rotate Camera",
-      default = false,
+      label = "Enable Void Fog",
+      default = true,
     },
-    zoom_sensitivity = {
+    density = {
       type = "slider",
-      label = "Zoom Sensitivity",
-      min = 0.1,
-      max = 5,
-      step = 0.1,
-      default = 1.0,
+      label = "Void Fog Density",
+      min = 0,
+      max = 1,
+      step = 0.01,
+      default = 0.5,
     },
   },
 })

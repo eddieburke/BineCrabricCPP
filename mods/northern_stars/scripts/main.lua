@@ -1,3 +1,10 @@
+-- ================================================================
+-- MOD: northern_stars
+-- Standardized structure with separated config
+-- ================================================================
+
+local config = require("northern_stars.config")
+
 local catalog = nil
 local compiled_billboards = nil
 

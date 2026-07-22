@@ -1,3 +1,10 @@
+-- ================================================================
+-- MOD: stone_bricks
+-- Standardized structure with separated config
+-- ================================================================
+
+local config = require("stone_bricks.config")
+
 minecraft.register_block({
   id = 98,
   texture_id = 7,

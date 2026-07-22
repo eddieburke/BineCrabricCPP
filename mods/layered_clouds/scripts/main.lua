@@ -1,3 +1,10 @@
+-- ================================================================
+-- MOD: layered_clouds
+-- Standardized structure with separated config
+-- ================================================================
+
+local config = require("layered_clouds.config")
+
 -- Layered Clouds: Multi-layer volumetric cloud rendering
 -- Refactored with separation of concerns
 

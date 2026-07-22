@@ -1,25 +1,25 @@
 -- ================================================================
--- CONFIG: camera
+-- CONFIG: repair_table
 -- Centralized configuration with validation and persistence
 -- ================================================================
 
 local settings = require("lib.settings")
 
-local config = settings.define("camera", {
-  name = "Camera",
+local config = settings.define("repair_table", {
+  name = "Repair Table",
   fields = {
-    auto_rotate = {
+    enabled = {
       type = "bool",
-      label = "Auto Rotate Camera",
-      default = false,
+      label = "Enable Repair Table",
+      default = true,
     },
-    zoom_sensitivity = {
+    max_repair_cost = {
       type = "slider",
-      label = "Zoom Sensitivity",
-      min = 0.1,
-      max = 5,
-      step = 0.1,
-      default = 1.0,
+      label = "Max Repair Cost",
+      min = 1,
+      max = 100,
+      step = 1,
+      default = 40,
     },
   },
 })

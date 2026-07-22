@@ -1,3 +1,10 @@
+-- ================================================================
+-- MOD: ravine_backport
+-- Standardized structure with separated config
+-- ================================================================
+
+local config = require("ravine_backport.config")
+
 local AIR = 0
 local current_chunk = nil
 

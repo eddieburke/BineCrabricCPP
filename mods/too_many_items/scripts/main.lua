@@ -1,3 +1,10 @@
+-- ================================================================
+-- MOD: too_many_items
+-- Standardized structure with separated config
+-- ================================================================
+
+local config = require("too_many_items.config")
+
 local visible = false
 local scroll = 0
 local SLOT = 18

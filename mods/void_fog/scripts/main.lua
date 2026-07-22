@@ -1,3 +1,10 @@
+-- ================================================================
+-- MOD: void_fog
+-- Standardized structure with separated config
+-- ================================================================
+
+local config = require("void_fog.config")
+
 local last_camera_y = 64.0
 local FOG_START_Y = 16.0
 local clamp = minecraft.util.clamp

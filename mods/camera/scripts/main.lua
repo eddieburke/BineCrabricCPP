@@ -1,3 +1,10 @@
+-- ================================================================
+-- MOD: camera
+-- Standardized structure with separated config
+-- ================================================================
+
+local config = require("camera.config")
+
 -- Camera: Enhanced camera controls and effects
 -- Refactored with separation of concerns
 

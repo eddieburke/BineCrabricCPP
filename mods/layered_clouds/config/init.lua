@@ -1,65 +1,43 @@
--- Layered Clouds Configuration
-local config = {}
+-- ================================================================
+-- CONFIG: layered_clouds
+-- Centralized configuration with validation and persistence
+-- ================================================================
 
-config.CONFIG_FILE = "mod_LayeredClouds.cfg"
-config.NATIVE_CLOUDS_FANCIER = 3
+local settings = require("lib.settings")
 
-config.defaults = {
-  layer_count = 6,
-  base_opacity = 0.7,
-  cloud_scale = 1.0,
-  layer_height_spacing = 12.0,
-  wind_speed = 1.0,
-}
-
-config.keys = {
-  "layer_count",
-  "base_opacity",
-  "cloud_scale",
-  "layer_height_spacing",
-  "wind_speed",
-}
-
-config.names = {
-  layer_count = "layerCount",
-  base_opacity = "baseOpacity",
-  cloud_scale = "cloudScale",
-  layer_height_spacing = "layerHeightSpacing",
-  wind_speed = "windSpeedMultiplier",
-}
-
-config.aliases = {}
-for internal_name, file_name in pairs(config.names) do
-  config.aliases[file_name] = internal_name
-end
-
-function config.load_config()
-  local found
-  local loaded_config, found = minecraft.config.load(config.CONFIG_FILE, config.defaults, {
-    aliases = config.aliases,
-  })
-  
-  -- Clamp values
-  loaded_config.layer_count = math.floor(math.max(1, math.min(12, loaded_config.layer_count)))
-  loaded_config.base_opacity = math.max(0.0, math.min(1.0, loaded_config.base_opacity))
-  loaded_config.cloud_scale = math.max(0.1, math.min(4.0, loaded_config.cloud_scale))
-  loaded_config.layer_height_spacing = math.max(1.0, math.min(64.0, loaded_config.layer_height_spacing))
-  loaded_config.wind_speed = math.max(0.0, math.min(10.0, loaded_config.wind_speed))
-  
-  return loaded_config, found
-end
-
-function config.save_config(cfg)
-  cfg.layer_count = math.floor(math.max(1, math.min(12, cfg.layer_count)))
-  cfg.base_opacity = math.max(0.0, math.min(1.0, cfg.base_opacity))
-  cfg.cloud_scale = math.max(0.1, math.min(4.0, cfg.cloud_scale))
-  cfg.layer_height_spacing = math.max(1.0, math.min(64.0, cfg.layer_height_spacing))
-  cfg.wind_speed = math.max(0.0, math.min(10.0, cfg.wind_speed))
-  
-  minecraft.config.save(config.CONFIG_FILE, cfg, {
-    keys = config.keys,
-    names = config.names,
-  })
-end
+local config = settings.define("layered_clouds", {
+  name = "Layered Clouds",
+  fields = {
+    enabled = {
+      type = "bool",
+      label = "Enable Layered Clouds",
+      default = true,
+    },
+    cloud_height = {
+      type = "slider",
+      label = "Cloud Height",
+      min = 64,
+      max = 256,
+      step = 1,
+      default = 128,
+    },
+    cloud_speed = {
+      type = "slider",
+      label = "Cloud Speed",
+      min = 0,
+      max = 5,
+      step = 0.1,
+      default = 1.0,
+    },
+    density = {
+      type = "slider",
+      label = "Cloud Density",
+      min = 0,
+      max = 1,
+      step = 0.01,
+      default = 0.5,
+    },
+  },
+})
 
 return config

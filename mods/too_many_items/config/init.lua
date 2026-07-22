@@ -1,25 +1,25 @@
 -- ================================================================
--- CONFIG: camera
+-- CONFIG: too_many_items
 -- Centralized configuration with validation and persistence
 -- ================================================================
 
 local settings = require("lib.settings")
 
-local config = settings.define("camera", {
-  name = "Camera",
+local config = settings.define("too_many_items", {
+  name = "Too Many Items",
   fields = {
-    auto_rotate = {
+    enabled = {
       type = "bool",
-      label = "Auto Rotate Camera",
-      default = false,
+      label = "Enable TMI",
+      default = true,
     },
-    zoom_sensitivity = {
+    items_per_page = {
       type = "slider",
-      label = "Zoom Sensitivity",
-      min = 0.1,
-      max = 5,
-      step = 0.1,
-      default = 1.0,
+      label = "Items Per Page",
+      min = 9,
+      max = 108,
+      step = 9,
+      default = 54,
     },
   },
 })

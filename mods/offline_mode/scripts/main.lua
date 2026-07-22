@@ -1,3 +1,10 @@
+-- ================================================================
+-- MOD: offline_mode
+-- Standardized structure with separated config
+-- ================================================================
+
+local config = require("offline_mode.config")
+
 local MOD_ID = "offline_mode"
 local CONFIG_PATH = "offline_mode.cfg"
 

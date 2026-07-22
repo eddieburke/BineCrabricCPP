@@ -1,28 +1,11 @@
+-- ================================================================
+-- MOD: colorful_skies
+-- Clean, separated logic with standardized config access
+-- ================================================================
+
+local config = require("colorful_skies.config")
 local clamp = minecraft.util.clamp
 local PI = 3.14159265
-
-minecraft.settings.register("Colorful Skies", {
-  { key = "enabled", label = "Colorful Sky", kind = "toggle", default = true },
-  { key = "dynamic_colors", label = "Daily Twilight Colors", kind = "toggle", default = false },
-  { key = "day_sky_r", label = "Day Sky Red", kind = "slider", min = 0, max = 1, step = 0.01, decimals = 2, default = 0.36 },
-  { key = "day_sky_g", label = "Day Sky Green", kind = "slider", min = 0, max = 1, step = 0.01, decimals = 2, default = 0.62 },
-  { key = "day_sky_b", label = "Day Sky Blue", kind = "slider", min = 0, max = 1, step = 0.01, decimals = 2, default = 1.0 },
-  { key = "twilight_strength", label = "Twilight Strength", kind = "slider", min = 0, max = 1, step = 0.01, decimals = 2, default = 0.35 },
-  { key = "night_brightness", label = "Night Brightness", kind = "slider", min = 0.05, max = 0.6, step = 0.01, decimals = 2, default = 0.18 },
-  { key = "night_sky_r", label = "Night Sky Red", kind = "slider", min = 0, max = 1, step = 0.01, decimals = 2, default = 0.02 },
-  { key = "night_sky_g", label = "Night Sky Green", kind = "slider", min = 0, max = 1, step = 0.01, decimals = 2, default = 0.02 },
-  { key = "night_sky_b", label = "Night Sky Blue", kind = "slider", min = 0, max = 1, step = 0.01, decimals = 2, default = 0.08 },
-  { key = "fog_blend", label = "Fog Color Blend", kind = "slider", min = 0, max = 1, step = 0.01, decimals = 2, default = 0.35 },
-})
-
-local function value(key, fallback)
-  local current = minecraft.settings.get(key)
-  if current == nil then
-    minecraft.log("warn", "colorful_skies: using fallback for setting '" .. key .. "'")
-    return fallback
-  end
-  return current
-end
 
 local function lerp(a, b, t)
   return a + (b - a) * clamp(t, 0.0, 1.0)
@@ -87,18 +70,18 @@ local function celestial_angle(world_time)
 end
 
 local function sky_color(world_time, celestial)
-  local day_r = value("day_sky_r", 0.36)
-  local day_g = value("day_sky_g", 0.62)
-  local day_b = value("day_sky_b", 1.0)
+  local day_r = config.day_sky_r
+  local day_g = config.day_sky_g
+  local day_b = config.day_sky_b
   local angle = celestial
   if type(angle) ~= "number" then angle = celestial_angle(world_time) end
-  local transition = value("twilight_strength", 0.35)
-  local night_r = value("night_sky_r", 0.02)
-  local night_g = value("night_sky_g", 0.02)
-  local night_b = value("night_sky_b", 0.08)
+  local transition = config.twilight_strength
+  local night_r = config.night_sky_r
+  local night_g = config.night_sky_g
+  local night_b = config.night_sky_b
   local target_r, target_g, target_b
 
-  if value("dynamic_colors", false) then
+  if config.dynamic_colors then
     update_daily_colors()
     if angle < 0.25 then
       local t = angle / 0.25
@@ -135,13 +118,13 @@ local function sky_color(world_time, celestial)
   end
 
   local brightness = clamp(math.cos(angle * PI * 2.0) * 2.0 + 0.5, 0.0, 1.0)
-  local night = value("night_brightness", 0.18)
+  local night = config.night_brightness
   local light = night + brightness * (1.0 - night)
   return clamp(target_r * light, 0.0, 1.0), clamp(target_g * light, 0.0, 1.0), clamp(target_b * light, 0.0, 1.0)
 end
 
 local function active()
-  return value("enabled", true) == true
+  return config.enabled == true
 end
 
 local function handle_sky_color(event)
@@ -153,7 +136,7 @@ end
 local function handle_fog_color(event)
   if not active() then return event end
   local r, g, b = sky_color(event.world_time or 0, event.celestial)
-  local blend = value("fog_blend", 0.35)
+  local blend = config.fog_blend
   event.r = lerp(event.r, r, blend)
   event.g = lerp(event.g, g, blend)
   event.b = lerp(event.b, b, blend)

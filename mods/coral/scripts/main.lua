@@ -1,3 +1,10 @@
+-- ================================================================
+-- MOD: coral
+-- Standardized structure with separated config
+-- ================================================================
+
+local config = require("coral.config")
+
 local CORAL_ID = 180
 local WATER_ID = minecraft.world.block_id("water") or 0
 local SAND_ID = minecraft.world.block_id("sand") or 0

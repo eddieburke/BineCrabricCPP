@@ -1,25 +1,17 @@
 -- ================================================================
--- CONFIG: camera
+-- CONFIG: offline_mode
 -- Centralized configuration with validation and persistence
 -- ================================================================
 
 local settings = require("lib.settings")
 
-local config = settings.define("camera", {
-  name = "Camera",
+local config = settings.define("offline_mode", {
+  name = "Offline Mode",
   fields = {
-    auto_rotate = {
+    enabled = {
       type = "bool",
-      label = "Auto Rotate Camera",
+      label = "Enable Offline Mode",
       default = false,
-    },
-    zoom_sensitivity = {
-      type = "slider",
-      label = "Zoom Sensitivity",
-      min = 0.1,
-      max = 5,
-      step = 0.1,
-      default = 1.0,
     },
   },
 })
