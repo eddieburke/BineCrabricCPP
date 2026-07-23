@@ -4,7 +4,6 @@ build-omega/
 build.log
 client.log
 server.log
-mcp/
 resources/
 toolchain/
 .claude/
