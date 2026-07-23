@@ -7,8 +7,6 @@ For textures to load:
 *or*
 **Use the custom installer provided** (`src/installer/installer.cpp`, build target `minecraft_installer`)
 
-The `mcp/` directory contains the original decompiled Java reference sources, used for protocol parity testing.
-
 ---
 
 ## What's Added vs Vanilla Minecraft Beta 1.7.3

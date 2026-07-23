@@ -1129,8 +1129,8 @@ if ($NeedsConfigure) {
 }
 
 Assert-BuildDirAvailable -BuildDirName $BuildDir -ScriptDirPath $ScriptDir
-$buildTargets = @("minecraft_native", "minecraft_server")
-$buildLabel = "minecraft_native + minecraft_server"
+$buildTargets = @("minecraft_native", "minecraft_server", "minecraft_installer")
+$buildLabel = "minecraft_native + minecraft_server + minecraft_installer"
 if ($Target -eq "Client") {
     $buildTargets = @("minecraft_native")
     $buildLabel = "minecraft_native (client)"
@@ -1173,6 +1173,7 @@ $sw.Stop()
     if ($Target -eq "All" -or $Target -eq "Server") {
         Show-ExeInfo -Label "Server" -Path (Join-Path $BuildDir "minecraft_server.exe")
     }
+    Show-ExeInfo -Label "Installer" -Path (Join-Path $BuildDir "minecraft_installer.exe")
 
     if ($RunTests -and $exitCode -eq 0) {
         $testTargets = @()
@@ -1210,6 +1211,32 @@ $sw.Stop()
         } catch {
             Write-Error $_
             $exitCode = 1
+        }
+    }
+    if ($exitCode -eq 0 -and $BuildType -eq "Release" -and -not $Run) {
+        $srcExes = @()
+        if ($Target -eq "All" -or $Target -eq "Client") { $srcExes += "minecraft_native.exe" }
+        if ($Target -eq "All" -or $Target -eq "Server") { $srcExes += "minecraft_server.exe" }
+        if ($Target -eq "All") { $srcExes += "minecraft_installer.exe" }
+        if ($srcExes.Count -gt 0) {
+            try {
+                $null = [System.Windows.Forms.Application]::EnableVisualStyles()
+                $f = New-Object System.Windows.Forms.FolderBrowserDialog
+                $f.Description = "Select output folder for built binaries"
+                $f.ShowNewFolderButton = $true
+                if ($f.ShowDialog() -eq "OK") {
+                    foreach ($exe in $srcExes) {
+                        $src = Join-Path $BuildDir $exe
+                        if (Test-Path -LiteralPath $src) {
+                            Copy-Item -LiteralPath $src -Destination (Join-Path $f.SelectedPath $exe) -Force
+                            Write-Host "Copied $exe -> $($f.SelectedPath)"
+                        }
+                    }
+                    Start-Process explorer.exe -ArgumentList $f.SelectedPath
+                }
+            } catch {
+                Write-Warning "Copy dialog failed: $_"
+            }
         }
     }
 }
