@@ -11,3 +11,13 @@ toolchain/
 build-installer/
 minecraft_installer.exe
 **/handoff*.md
+
+# Agent/IDE directories
+.cursor/
+.windsurf/
+.opencode/
+
+# Agent-generated instructions
+.github/copilot-instructions.md
+AGENTS.md
+agents.md
