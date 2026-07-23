@@ -1,0 +1,8 @@
+{
+  "id": "item_drop_physics",
+  "name": "Item Drop Physics Voxel Item",
+  "version": "1.0.0",
+  "enabled": true,
+  "side": "client",
+  "entry": "scripts/main.lua"
+}

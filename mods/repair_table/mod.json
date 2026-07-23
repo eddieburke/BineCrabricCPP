@@ -1,0 +1,8 @@
+{
+  "id": "repair_table",
+  "name": "Repair Table",
+  "version": "1.0.0",
+  "enabled": true,
+  "side": "client",
+  "entry": "scripts/main.lua"
+}

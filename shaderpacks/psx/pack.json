@@ -1,0 +1,28 @@
+{
+  "name": "PSX Retro",
+  "version": "1.0",
+  "settings": [
+    {"key":"PSX_VERTEX_SNAP","type":"bool","default":true,"label":"Vertex Snapping"},
+    {"key":"PSX_SNAP_GRID","type":"float","min":32.0,"max":1024.0,"step":16.0,"default":240.0,"label":"Snap Grid Resolution"},
+    {"key":"PSX_JITTER_STRENGTH","type":"float","min":0.0,"max":1.0,"step":0.05,"default":1.0,"label":"Snap Intensity"},
+    {"key":"PSX_AFFINE_WARP","type":"float","min":0.0,"max":1.0,"step":0.05,"default":0.5,"label":"Affine Distortion"},
+    {"key":"PSX_DITHER_ENABLE","type":"bool","default":true,"label":"Enable Dithering"},
+    {"key":"PSX_DITHER_SCALE","type":"float","min":1.0,"max":16.0,"step":1.0,"default":2.0,"label":"Dither Scale"},
+    {"key":"PSX_DITHER_STRENGTH","type":"float","min":0.0,"max":1.0,"step":0.05,"default":0.35,"label":"Dither Strength"},
+    {"key":"PSX_PALETTE_ENABLE","type":"bool","default":true,"label":"Enable Palette Quantization"},
+    {"key":"PSX_COLOR_DEPTH","type":"int","min":2,"max":64,"step":1,"default":16,"label":"Palette Colour Amount"},
+    {"key":"PSX_PALETTE_THEME","type":"int","min":0,"max":5,"step":1,"default":0,"label":"Palette Theme (0:PSX 1:Retro 2:GB 3:Sepia 4:Vapor 5:Horror)"},
+    {"key":"PSX_CRT_SCANLINES","type":"bool","default":false,"label":"CRT Scanlines"}
+  ],
+  "programs": {
+    "psx_terrain": {"stage":"terrain","vsh":"shaders/psx_terrain.vsh","fsh":"shaders/psx_terrain.fsh"},
+    "psx_entities": {"stage":"entities","vsh":"shaders/psx_entities.vsh","fsh":"shaders/psx_entities.fsh"},
+    "gbuffers_entities": {"stage":"entities","vsh":"shaders/psx_entities.vsh","fsh":"shaders/psx_entities.fsh"},
+    "psx_post": {"stage":"post","vsh":"shaders/psx_post.vsh","fsh":"shaders/psx_post.fsh"}
+  },
+  "passes": [
+    {"name":"psx_terrain","type":"terrain","program":"psx_terrain"},
+    {"name":"psx_entities","type":"entities","program":"psx_entities"},
+    {"name":"psx_post","type":"post","program":"psx_post","inputs":["colortex0","depthtex0"],"output":"screen"}
+  ]
+}

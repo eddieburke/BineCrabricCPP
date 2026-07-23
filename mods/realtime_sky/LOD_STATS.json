@@ -1,0 +1,43 @@
+{
+  "source_paths": 176930,
+  "source_points": 2565647,
+  "levels": {
+    "far": {
+      "points": 14496,
+      "paths": 3599,
+      "coast_paths": 3488,
+      "river_paths": 111,
+      "epsilon_deg": 0.9,
+      "bytes": 288040,
+      "sha256": "aa1ced5742fe1708e426a77bf083dc8b7e7588d92b40c22658d191972f7deaf5"
+    },
+    "medium": {
+      "points": 55086,
+      "paths": 16575,
+      "coast_paths": 9701,
+      "river_paths": 6874,
+      "epsilon_deg": 0.38,
+      "bytes": 1101538,
+      "sha256": "2fc4e27146b763252119894508af3a05f0292afa925f2d4719ff25426bf1e010"
+    },
+    "near": {
+      "points": 156013,
+      "paths": 43675,
+      "coast_paths": 27818,
+      "river_paths": 15857,
+      "epsilon_deg": 0.15,
+      "bytes": 3108545,
+      "sha256": "ac254016e062324172d85b4aa2315d415ec11e671bd53d4e304b79d8e15311dd"
+    },
+    "ultra": {
+      "points": 712996,
+      "paths": 174821,
+      "coast_paths": 153592,
+      "river_paths": 21229,
+      "epsilon_deg": 0.055,
+      "bytes": 14101364,
+      "sha256": "4764b04d375c830d111941fb751c5ad7cfcdd95eec0e6962dfb40b2203c52c64"
+    }
+  },
+  "format": "C or R prefix, then latitude,longitude pairs, polyline terminated by |"
+}

@@ -1,0 +1,8 @@
+{
+  "id": "ravine_backport",
+  "name": "Ravine Backport",
+  "version": "1.0.0",
+  "enabled": true,
+  "side": "server",
+  "entry": "scripts/main.lua"
+}
