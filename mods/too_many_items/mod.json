@@ -1,8 +1,0 @@
-{
-  "id": "too_many_items",
-  "name": "Too Many Items",
-  "version": "1.0.0",
-  "enabled": true,
-  "side": "client",
-  "entry": "scripts/main.lua"
-}
