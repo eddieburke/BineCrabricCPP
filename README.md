@@ -1,4 +1,5 @@
 # BineCrabicCPP
+Extract minecraft.jar's contents into %appdata%/.minecraft/resources for the game to display the textures.
 
 A native **C++20 port of Minecraft Beta 1.7.3** with extensive enhancements beyond the original game.
 
@@ -56,3 +57,4 @@ Typed registries with lifecycle phases for blocks, items, entities, and block en
 | Auth                 | Offline                     | MultiMC Microsoft login/auth           |
 | Build                | Java/MCP                    | CMake + Ninja + bundled MinGW          |
 | Tests                | None                        | GoogleTest + Java parity tests         |
+
