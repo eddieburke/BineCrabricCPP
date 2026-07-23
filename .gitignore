@@ -4,7 +4,7 @@ build-omega/
 build.log
 client.log
 server.log
-third_party/mcp/jars/
+third_party/mcp/
 resources/
 toolchain/
 .claude/
