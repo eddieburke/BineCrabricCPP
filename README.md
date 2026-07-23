@@ -1,10 +1,13 @@
 # BineCrabicCPP
-Extract minecraft.jar's contents into %appdata%/.minecraft/resources for the game to display the textures.
 
 A native **C++20 port of Minecraft Beta 1.7.3** with extensive enhancements beyond the original game.
 
-The `mcp/` directory contains the original decompiled Java reference sources, used for protocol parity testing.  
-The main codebase lives in `native/`.
+For textures to load:
+**Extract minecraft.jar's contents into %appdata%/.minecraft/resources for the game to display the textures**
+*or*
+**Use the custom installer provided** (`src/installer/installer.cpp`, build target `minecraft_installer`)
+
+The `mcp/` directory contains the original decompiled Java reference sources, used for protocol parity testing.
 
 ---
 
@@ -57,4 +60,3 @@ Typed registries with lifecycle phases for blocks, items, entities, and block en
 | Auth                 | Offline                     | MultiMC Microsoft login/auth           |
 | Build                | Java/MCP                    | CMake + Ninja + bundled MinGW          |
 | Tests                | None                        | GoogleTest + Java parity tests         |
-

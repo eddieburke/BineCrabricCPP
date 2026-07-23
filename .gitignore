@@ -8,3 +8,6 @@ mcp/
 resources/
 toolchain/
 .claude/
+build-installer/
+minecraft_installer.exe
+**/handoff*.md

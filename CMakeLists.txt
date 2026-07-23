@@ -434,3 +434,11 @@ target_link_libraries(minecraft_omega_tests PRIVATE GTest::gtest_main)
 
 include(GoogleTest)
 gtest_discover_tests(minecraft_omega_tests)
+
+add_executable(minecraft_installer src/installer/installer.cpp)
+minecraft_configure_target(minecraft_installer)
+minecraft_link_platform(minecraft_installer)
+target_link_libraries(minecraft_installer PRIVATE comctl32 comdlg32 urlmon ws2_32)
+if (WIN32)
+    target_link_options(minecraft_installer PRIVATE -mwindows)
+endif()
