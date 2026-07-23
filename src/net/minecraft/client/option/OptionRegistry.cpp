@@ -73,8 +73,8 @@ void OptionRegistry::registerAll() {
  registerGroup(gui::screen::option::performance_screen::kSpecs);
  registerGroup(gui::screen::option::detail_screen::kSpecs);
  registerGroup(gui::screen::option::animation_screen::kSpecs);
- registerGroup(gui::screen::option::world_screen::kSpecs);
- gRegistered = true;
+  registerGroup(gui::screen::option::world_screen::kSpecs);
+  gRegistered = true;
 }
 std::span<const OptionSpec> OptionRegistry::all() {
  registerAll();
