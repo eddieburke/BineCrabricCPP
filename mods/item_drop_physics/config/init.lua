@@ -94,13 +94,21 @@ local physics_database = nil
 local physics_cache = {}
 
 function config.load_database()
-  local raw = minetest.get_mod_storage():get_string("item_physics_json")
+  local raw
+  if minetest and minetest.get_mod_storage then
+    local storage = minetest.get_mod_storage()
+    if storage then
+      raw = storage:get_string("item_physics_json")
+    end
+  end
   if type(raw) ~= "string" or raw == "" then
-    -- Try to load from asset file
-    local file = io.open(minetest.get_modpath("item_drop_physics") .. "/assets/item_physics.json", "r")
-    if file then
-      raw = file:read("*all")
-      file:close()
+    local modpath = minetest and minetest.get_modpath and minetest.get_modpath("item_drop_physics")
+    if modpath then
+      local file = io.open(modpath .. "/assets/item_physics.json", "r")
+      if file then
+        raw = file:read("*all")
+        file:close()
+      end
     end
   end
   

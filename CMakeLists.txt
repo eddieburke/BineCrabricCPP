@@ -136,65 +136,44 @@ function(minecraft_configure_target target)
     endif()
 endfunction()
 
-find_library(MINECRAFT_ZLIB_LIBRARY
-    NAMES z libz
-    PATHS "${MINECRAFT_TOOLCHAIN_ROOT}/lib"
-    NO_DEFAULT_PATH
-)
+if (EXISTS "${MINECRAFT_TOOLCHAIN_ROOT}/lib/libz.a")
+    set(MINECRAFT_ZLIB_LIBRARY "${MINECRAFT_TOOLCHAIN_ROOT}/lib/libz.a")
+else()
+    find_library(MINECRAFT_ZLIB_LIBRARY
+        NAMES libz.a z libz
+        PATHS "${MINECRAFT_TOOLCHAIN_ROOT}/lib"
+        NO_DEFAULT_PATH
+    )
+endif()
 
 function(minecraft_link_zlib target)
     if (MINECRAFT_ZLIB_LIBRARY)
         target_link_libraries(${target} PRIVATE "${MINECRAFT_ZLIB_LIBRARY}")
-        set(MINECRAFT_ZLIB_DLL "${MINECRAFT_TOOLCHAIN_ROOT}/bin/zlib1.dll")
-        if (EXISTS "${MINECRAFT_ZLIB_DLL}")
-            add_custom_command(TARGET ${target} POST_BUILD
-                COMMAND ${CMAKE_COMMAND} -E copy_if_different
-                    "${MINECRAFT_ZLIB_DLL}"
-                    "$<TARGET_FILE_DIR:${target}>"
-            )
-        endif()
     else()
         target_compile_definitions(${target} PRIVATE MINECRAFT_DISABLE_ZLIB)
     endif()
 endfunction()
 
 function(minecraft_copy_lua_runtime target)
-    if (WIN32)
-        set(MINECRAFT_LUA_DLL "${MINECRAFT_TOOLCHAIN_ROOT}/bin/lua54.dll")
-        if (EXISTS "${MINECRAFT_LUA_DLL}")
-            add_custom_command(TARGET ${target} POST_BUILD
-                COMMAND ${CMAKE_COMMAND} -E copy_if_different
-                    "${MINECRAFT_LUA_DLL}"
-                    "$<TARGET_FILE_DIR:${target}>"
-            )
-        else()
-            message(WARNING "lua54.dll not found under ${MINECRAFT_TOOLCHAIN_ROOT}/bin; Lua mods will require it on PATH")
-        endif()
-    endif()
+    # Static runtime linking enabled
 endfunction()
 
-find_library(MINECRAFT_VORBISFILE
-    NAMES vorbisfile libvorbisfile
-    PATHS "${MINECRAFT_TOOLCHAIN_ROOT}/lib"
-    NO_DEFAULT_PATH
-)
-find_library(MINECRAFT_VORBIS
-    NAMES vorbis libvorbis
-    PATHS "${MINECRAFT_TOOLCHAIN_ROOT}/lib"
-    NO_DEFAULT_PATH
-)
-find_library(MINECRAFT_OGG
-    NAMES ogg libogg
-    PATHS "${MINECRAFT_TOOLCHAIN_ROOT}/lib"
-    NO_DEFAULT_PATH
-)
+if (EXISTS "${MINECRAFT_TOOLCHAIN_ROOT}/lib/libogg.a")
+    set(MINECRAFT_OGG "${MINECRAFT_TOOLCHAIN_ROOT}/lib/libogg.a")
+else()
+    find_library(MINECRAFT_OGG
+        NAMES libogg.a ogg libogg
+        PATHS "${MINECRAFT_TOOLCHAIN_ROOT}/lib"
+        NO_DEFAULT_PATH
+    )
+endif()
 
 set(MINECRAFT_HAS_VORBIS_LIBS FALSE)
-if (MINECRAFT_VORBISFILE AND MINECRAFT_VORBIS AND MINECRAFT_OGG)
+if (MINECRAFT_OGG)
     set(MINECRAFT_HAS_VORBIS_LIBS TRUE)
-    message(STATUS "Vorbis audio enabled from ${MINECRAFT_TOOLCHAIN_ROOT}")
+    message(STATUS "Ogg audio enabled from ${MINECRAFT_TOOLCHAIN_ROOT}")
 else()
-    message(WARNING "libvorbis not found under ${MINECRAFT_TOOLCHAIN_ROOT}; OGG/.mus playback disabled")
+    message(WARNING "libogg not found under ${MINECRAFT_TOOLCHAIN_ROOT}; OGG/.mus playback disabled")
 endif()
 
 set(MINECRAFT_MINGW_SYSROOT_LIB "${MINECRAFT_TOOLCHAIN_ROOT}/x86_64-w64-mingw32/lib")
@@ -215,23 +194,9 @@ function(minecraft_link_audio target)
     endif()
     if (MINECRAFT_HAS_VORBIS_LIBS)
         target_link_libraries(${target} PRIVATE
-            "${MINECRAFT_VORBISFILE}"
-            "${MINECRAFT_VORBIS}"
             "${MINECRAFT_OGG}"
         )
         target_compile_definitions(${target} PRIVATE MINECRAFT_HAS_VORBIS=1)
-        if (WIN32)
-            foreach(_dll IN ITEMS libogg-0.dll libvorbis-0.dll libvorbisfile-3.dll)
-                set(_dll_path "${MINECRAFT_TOOLCHAIN_ROOT}/bin/${_dll}")
-                if (EXISTS "${_dll_path}")
-                    add_custom_command(TARGET ${target} POST_BUILD
-                        COMMAND ${CMAKE_COMMAND} -E copy_if_different
-                            "${_dll_path}"
-                            "$<TARGET_FILE_DIR:${target}>"
-                    )
-                endif()
-            endforeach()
-        endif()
     endif()
 endfunction()
 

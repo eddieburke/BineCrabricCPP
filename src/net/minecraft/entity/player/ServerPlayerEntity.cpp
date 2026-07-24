@@ -93,6 +93,7 @@ void ServerPlayerEntity::tick() {
 }
 void ServerPlayerEntity::playerTick(bool shouldSendChunkUpdates) {
  PlayerEntity::tick();
+ tick();
  for(std::size_t slot = 0; slot < inventory.size(); ++slot) {
   ItemStack itemStack = inventory.getStack(slot);
   if(itemStack.empty() || itemStack.getItem() == nullptr) {
@@ -343,6 +344,7 @@ void ServerPlayerEntity::setVehicle(Entity* entity) {
 }
 void ServerPlayerEntity::onHandledScreenClosed() {
  if(currentScreenHandler != nullptr) {
+  currentScreenHandler->updatePlayerList(this, true);
   currentScreenHandler->onClosed(this);
  }
  currentScreenHandler = &playerScreenHandler;

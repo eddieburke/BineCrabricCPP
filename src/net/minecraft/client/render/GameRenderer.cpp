@@ -655,8 +655,8 @@ void GameRenderer::applyCameraTransform(float tickDelta) {
   RenderSystem::rotate(living->prevPitch + (living->pitch - living->prevPitch) * tickDelta, 1.0f, 0.0f, 0.0f);
   RenderSystem::rotate(living->prevYaw + (living->yaw - living->prevYaw) * tickDelta + 180.0f, 0.0f, 1.0f, 0.0f);
  }
-  RenderSystem::translate(0.0f, -1.62f, 0.0f);
- }
+   RenderSystem::translate(0.0f, eyeOffset, 0.0f);
+  }
 void GameRenderer::updateSkyAndFogColors(float tickDelta) {
  if(client == nullptr || client->world == nullptr || client->camera == nullptr) {
   return;

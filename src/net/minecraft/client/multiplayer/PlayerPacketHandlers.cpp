@@ -96,6 +96,7 @@ void ClientNetworkHandler::onPlayerSpawnPosition(const PlayerSpawnPositionS2CPac
   return;
  }
  minecraft->player->setSpawnPos(Vec3i{packet.x, packet.y, packet.z});
+ world->setSpawnPos(Vec3i{packet.x, packet.y, packet.z});
  world->getProperties().setSpawn(packet.x, packet.y, packet.z);
 }
 void ClientNetworkHandler::onHealthUpdate(const HealthUpdateS2CPacket& packet) {

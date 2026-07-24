@@ -116,13 +116,7 @@ class InventoryS2CPacket : public Packet {
   contents.clear();
   contents.resize(static_cast<std::size_t>(count));
   for(int i = 0; i < count; ++i) {
-   const std::int16_t itemId = packetio::readI16BE(input);
-   if(itemId < 0) {
-    contents[static_cast<std::size_t>(i)] = {};
-    continue;
-   }
-   contents[static_cast<std::size_t>(i)] =
-       ItemStack(itemId, packetio::readI8(input), packetio::readI16BE(input));
+   contents[static_cast<std::size_t>(i)] = packetitems::readOptionalItemStack(input);
   }
  }
  void write(std::ostream& output) const override {

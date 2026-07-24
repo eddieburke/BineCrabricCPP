@@ -1,102 +1,85 @@
 #include "net/minecraft/client/platform/audio/decode/AudioDecoder.hpp"
 #if defined(MINECRAFT_HAS_VORBIS)
-#define OV_EXCLUDE_STATIC_CALLBACKS 1
-#include <vorbis/vorbisfile.h>
+#include <ogg/ogg.h>
+#include "stb_vorbis.h"
 #include <cstring>
+#include <fstream>
 #include <vector>
+
 namespace net::minecraft::client::platform::audio::decode {
-namespace {
-struct MemorySource {
- const std::uint8_t* data = nullptr;
- std::size_t size = 0;
- std::size_t offset = 0;
-};
-std::size_t memoryRead(void* dst, std::size_t size1, std::size_t size2, void* source) {
- auto* mem = static_cast<MemorySource*>(source);
- const std::size_t requested = size1 * size2;
- const std::size_t available = mem->size - mem->offset;
- const std::size_t toCopy = requested < available ? requested : available;
- if(toCopy > 0) {
-  std::memcpy(dst, mem->data + mem->offset, toCopy);
-  mem->offset += toCopy;
- }
- return size1 == 0 ? 0 : toCopy / size1;
-}
-int memorySeek(void* source, ogg_int64_t offset, int whence) {
- auto* mem = static_cast<MemorySource*>(source);
- switch(whence) {
- case SEEK_SET:
-  mem->offset = static_cast<std::size_t>(offset);
-  break;
- case SEEK_CUR:
-  mem->offset = static_cast<std::size_t>(static_cast<ogg_int64_t>(mem->offset) + offset);
-  break;
- case SEEK_END:
-  mem->offset = static_cast<std::size_t>(static_cast<ogg_int64_t>(mem->size) + offset);
-  break;
- default:
-  return -1;
- }
- if(mem->offset > mem->size) {
-  mem->offset = mem->size;
- }
- return 0;
-}
-long memoryTell(void* source) {
- return static_cast<long>(static_cast<MemorySource*>(source)->offset);
-}
-[[nodiscard]] bool decodeVorbisHandle(OggVorbis_File& vf, PcmBuffer& out) {
- const vorbis_info* info = ov_info(&vf, -1);
- if(info == nullptr || info->channels <= 0 || info->rate <= 0) {
-  ov_clear(&vf);
+
+bool decodeVorbisMemory(const std::uint8_t* data, std::size_t size, PcmBuffer& out) {
+ if(!data || size == 0) {
   return false;
  }
- out.sampleRate = static_cast<std::uint32_t>(info->rate);
- out.channels = static_cast<std::uint16_t>(info->channels);
+ ogg_sync_state oy;
+ ogg_sync_init(&oy);
+ char* buffer = ogg_sync_buffer(&oy, static_cast<long>(size));
+ if(buffer != nullptr) {
+  std::memcpy(buffer, data, size);
+  ogg_sync_wrote(&oy, static_cast<long>(size));
+ }
+ ogg_page og;
+ const bool validOgg = (ogg_sync_pageout(&oy, &og) == 1);
+ ogg_sync_clear(&oy);
+ if(!validOgg) {
+  return false;
+ }
+
+ int error = 0;
+ stb_vorbis* v = stb_vorbis_open_memory(data, static_cast<int>(size), &error, nullptr);
+ if(v == nullptr) {
+  return false;
+ }
+
+ stb_vorbis_info info = stb_vorbis_get_info(v);
+ out.sampleRate = info.sample_rate;
+ out.channels = static_cast<std::uint16_t>(info.channels);
  out.samples.clear();
- float** pcmChannels = nullptr;
- int currentSection = 0;
+
+ if(out.channels == 0 || out.sampleRate == 0) {
+  stb_vorbis_close(v);
+  return false;
+ }
+
+ int channels = 0;
+ float** outputs = nullptr;
  while(true) {
-  const long samplesPerChannel = ov_read_float(&vf, &pcmChannels, 4096, &currentSection);
-  if(samplesPerChannel == 0) {
+  int samplesPerChannel = stb_vorbis_get_frame_float(v, &channels, &outputs);
+  if(samplesPerChannel <= 0) {
    break;
-  }
-  if(samplesPerChannel < 0) {
-   ov_clear(&vf);
-   return false;
   }
   const std::size_t oldSize = out.samples.size();
   out.samples.resize(oldSize + static_cast<std::size_t>(samplesPerChannel) * out.channels);
-  for(long sample = 0; sample < samplesPerChannel; ++sample) {
-   for(int channel = 0; channel < info->channels; ++channel) {
-    out.samples[oldSize + static_cast<std::size_t>(sample) * out.channels +
-                static_cast<std::size_t>(channel)] = pcmChannels[channel][sample];
+  for(int s = 0; s < samplesPerChannel; ++s) {
+   for(int c = 0; c < out.channels; ++c) {
+    out.samples[oldSize + static_cast<std::size_t>(s) * out.channels + c] = outputs[c][s];
    }
   }
  }
- ov_clear(&vf);
+
+ stb_vorbis_close(v);
  return !out.samples.empty();
 }
-} // namespace
+
 bool decodeVorbisFile(const std::string& path, PcmBuffer& out) {
- OggVorbis_File vf{};
- if(ov_fopen(path.c_str(), &vf) != 0) {
+ std::ifstream input(path, std::ios::binary | std::ios::ate);
+ if(!input) {
   return false;
  }
- return decodeVorbisHandle(vf, out);
-}
-bool decodeVorbisMemory(const std::uint8_t* data, std::size_t size, PcmBuffer& out) {
- MemorySource source{data, size, 0};
- ov_callbacks callbacks{};
- callbacks.read_func = memoryRead;
- callbacks.seek_func = memorySeek;
- callbacks.close_func = nullptr;
- callbacks.tell_func = memoryTell;
- OggVorbis_File vf{};
- if(ov_open_callbacks(&source, &vf, nullptr, 0, callbacks) != 0) {
+ const auto fileSize = input.tellg();
+ if(fileSize <= 0) {
   return false;
  }
- return decodeVorbisHandle(vf, out);
+ input.seekg(0, std::ios::beg);
+
+ std::vector<std::uint8_t> buffer(static_cast<std::size_t>(fileSize));
+ if(!input.read(reinterpret_cast<char*>(buffer.data()), fileSize)) {
+  return false;
+ }
+
+ return decodeVorbisMemory(buffer.data(), buffer.size(), out);
 }
+
 } // namespace net::minecraft::client::platform::audio::decode
 #endif

@@ -74,7 +74,7 @@ void MultiplayerClientPlayerEntity::sendMovementPackets() {
   }
   lastSneaking = sneaking;
  }
- const double feetY = y;
+ const double feetY = boundingBox.minY;
  const double stance = getEyeY();
  const double deltaX = x - lastSentX;
  const double deltaBbMinY = feetY - lastSentBbMinY;

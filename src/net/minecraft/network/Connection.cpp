@@ -284,35 +284,45 @@ void Connection::writeLoop() {
  try {
   bool preferImmediate = true;
   while(isOpen() || hasPendingWrites()) {
-   std::unique_ptr<Packet> packet;
+   std::vector<std::unique_ptr<Packet>> batch;
    {
     std::unique_lock lock(writeMutex_);
     writeCv_.wait_for(lock, std::chrono::milliseconds(20), [this]() {
      return !isOpen() || !sendQueue_.empty() || !delayedSendQueue_.empty();
     });
-    if(!sendQueue_.empty() && !delayedSendQueue_.empty()) {
-     if(preferImmediate) {
+    while(!sendQueue_.empty() || !delayedSendQueue_.empty()) {
+     std::unique_ptr<Packet> packet;
+     if(!sendQueue_.empty() && !delayedSendQueue_.empty()) {
+      if(preferImmediate) {
+       packet = std::move(sendQueue_.front());
+       sendQueue_.pop_front();
+      } else {
+       packet = std::move(delayedSendQueue_.front());
+       delayedSendQueue_.pop_front();
+      }
+      preferImmediate = !preferImmediate;
+     } else if(!sendQueue_.empty()) {
       packet = std::move(sendQueue_.front());
       sendQueue_.pop_front();
-     } else {
+      preferImmediate = false;
+     } else if(!delayedSendQueue_.empty()) {
       packet = std::move(delayedSendQueue_.front());
       delayedSendQueue_.pop_front();
+      preferImmediate = true;
      }
-     preferImmediate = !preferImmediate;
-    } else if(!sendQueue_.empty()) {
-     packet = std::move(sendQueue_.front());
-     sendQueue_.pop_front();
-     preferImmediate = false;
-    } else if(!delayedSendQueue_.empty()) {
-     packet = std::move(delayedSendQueue_.front());
-     delayedSendQueue_.pop_front();
-     preferImmediate = true;
+     if(packet != nullptr) {
+      batch.push_back(std::move(packet));
+     }
     }
    }
-   if(packet != nullptr) {
-    Packet::write(*packet, output_);
-    output_.flush();
-    sendQueueSize_.fetch_sub(packet->size() + 1, std::memory_order_acq_rel);
+   if(!batch.empty()) {
+    for(auto& packet : batch) {
+     if(packet != nullptr) {
+      Packet::write(*packet, output_);
+      output_.flush();
+      sendQueueSize_.fetch_sub(packet->size() + 1, std::memory_order_acq_rel);
+     }
+    }
    }
   }
  } catch(const std::exception& error) {

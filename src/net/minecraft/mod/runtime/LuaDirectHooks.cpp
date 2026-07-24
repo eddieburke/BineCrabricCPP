@@ -1224,8 +1224,6 @@ void luaHookScreenUi(ScreenUiEvent& e) {
   return;
  }
  g_activeScreenUi = e.context;
- int stackedY = e.context->stackedButtonY != nullptr ? *e.context->stackedButtonY : 0;
- const bool trackStacked = e.context->stackedButtonY != nullptr;
  dispatchLuaHook(
      static_cast<int>(LuaEventId::ScreenUi),
      [&e](lua_State* state) {
@@ -1236,9 +1234,6 @@ void luaHookScreenUi(ScreenUiEvent& e) {
       luaApi().setfield(state, -2, "ui");
      },
      [](lua_State*) {});
- if(trackStacked && e.context->stackedButtonY != nullptr) {
-  *e.context->stackedButtonY = stackedY;
- }
  g_activeScreenUi = nullptr;
 #else
  (void)e;

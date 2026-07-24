@@ -238,8 +238,8 @@ constexpr double kPi = 3.14159265358979323846;
 constexpr int kFaceCorners[kModelFaceCount][4][3] = {
     {{0, 0, 1}, {0, 0, 0}, {1, 0, 0}, {1, 0, 1}}, // down
     {{0, 1, 0}, {0, 1, 1}, {1, 1, 1}, {1, 1, 0}}, // up
-    {{1, 1, 0}, {1, 0, 0}, {0, 0, 0}, {0, 1, 0}}, // north
-    {{0, 1, 1}, {0, 0, 1}, {1, 0, 1}, {1, 1, 1}}, // south
+    {{0, 1, 0}, {0, 0, 0}, {1, 0, 0}, {1, 1, 0}}, // north
+    {{1, 1, 1}, {1, 0, 1}, {0, 0, 1}, {0, 1, 1}}, // south
     {{0, 1, 0}, {0, 0, 0}, {0, 0, 1}, {0, 1, 1}}, // west
     {{1, 1, 1}, {1, 0, 1}, {1, 0, 0}, {1, 1, 0}}, // east
 };
@@ -944,7 +944,7 @@ bool invokeModelRender(const std::string& ownerModId, int luaModelRef, BuildFiel
   }
   api.createtable(state, 0, 9);
   buildFields(state);
-  api.getfield(state, -10002, "minecraft");
+  api.getglobal(state, "minecraft");
   if(api.type(state, -1) == kLuaTTable) {
    api.getfield(state, -1, "tessellator");
    if(api.type(state, -1) == kLuaTTable) {
@@ -1027,42 +1027,54 @@ bool emitManualItemModelQuad(
  return true;
 }
 bool drawBakedModelQuads(int handle, const BakedQuadTransform& transform) {
- const BakedModel* baked = bakedModelForHandle(handle);
- if(baked == nullptr) {
-  return false;
- }
- const ActiveManualBlockDraw* draw = gManualBlockDraw;
- const BlockView* blockView = (draw != nullptr && draw->manager != nullptr) ? draw->manager->ctx.blockView : nullptr;
- const bool cullFaces = draw != nullptr && !draw->inventory && draw->block != nullptr && blockView != nullptr &&
-                        transform.scale == 1.0f && transform.offsetX == 0.0f && transform.offsetY == 0.0f &&
-                        transform.offsetZ == 0.0f;
- bool emitted = false;
- for(const BakedTextureBatch& batch : baked->batches) {
-  const int textureId = batch.textureId;
-  for(const BakedQuad& quad : batch.quads) {
-   if(cullFaces && quad.cullFace >= 0) {
-    const int* offset = kFaceOffsets[quad.cullFace];
-    if(!draw->block->isSideVisible(
-           blockView, draw->x + offset[0], draw->y + offset[1], draw->z + offset[2], quad.cullFace)) {
-     continue;
-    }
-   }
-   ManualBlockVertex vertices[4];
-   for(int i = 0; i < 4; ++i) {
-    vertices[i].x = (quad.vertices[i].x - 0.5) * transform.scale + 0.5 + transform.offsetX;
-    vertices[i].y = (quad.vertices[i].y - 0.5) * transform.scale + 0.5 + transform.offsetY;
-    vertices[i].z = (quad.vertices[i].z - 0.5) * transform.scale + 0.5 + transform.offsetZ;
-    vertices[i].u = quad.vertices[i].u * 16.0;
-    vertices[i].v = quad.vertices[i].v * 16.0;
-   }
-   const float red = quad.red * quad.shade * transform.colorR;
-   const float green = quad.green * quad.shade * transform.colorG;
-   const float blue = quad.blue * quad.shade * transform.colorB;
-   emitted = emitManualBlockModelQuad(vertices, textureId, red, green, blue, quad.alpha) ||
-             emitManualItemModelQuad(vertices, textureId, red, green, blue, quad.alpha) || emitted;
+  const BakedModel* baked = bakedModelForHandle(handle);
+  if(baked == nullptr) {
+   return false;
   }
- }
- return emitted;
+  const ActiveManualBlockDraw* draw = gManualBlockDraw;
+  const BlockView* blockView = (draw != nullptr && draw->manager != nullptr) ? draw->manager->ctx.blockView : nullptr;
+  const bool cullFaces = draw != nullptr && !draw->inventory && draw->block != nullptr && blockView != nullptr &&
+                         transform.scale == 1.0f && transform.offsetX == 0.0f && transform.offsetY == 0.0f &&
+                         transform.offsetZ == 0.0f && transform.yaw == 0.0f && transform.pitch == 0.0f &&
+                         transform.roll == 0.0f;
+  static constexpr double zeroOrigin[3] = {0.0, 0.0, 0.0};
+  bool emitted = false;
+  for(const BakedTextureBatch& batch : baked->batches) {
+   const int textureId = batch.textureId;
+   for(const BakedQuad& quad : batch.quads) {
+    if(cullFaces && quad.cullFace >= 0) {
+     const int* offset = kFaceOffsets[quad.cullFace];
+     if(!draw->block->isSideVisible(
+            blockView, draw->x + offset[0], draw->y + offset[1], draw->z + offset[2], quad.cullFace)) {
+      continue;
+     }
+    }
+    ManualBlockVertex vertices[4];
+    for(int i = 0; i < 4; ++i) {
+     double point[3] = {quad.vertices[i].x - 0.5, quad.vertices[i].y - 0.5, quad.vertices[i].z - 0.5};
+     if(transform.pitch != 0.0f) {
+      rotatePoint(point, zeroOrigin, 'x', transform.pitch);
+     }
+     if(transform.yaw != 0.0f) {
+      rotatePoint(point, zeroOrigin, 'y', transform.yaw);
+     }
+     if(transform.roll != 0.0f) {
+      rotatePoint(point, zeroOrigin, 'z', transform.roll);
+     }
+     vertices[i].x = point[0] * transform.scale + 0.5 + transform.offsetX;
+     vertices[i].y = point[1] * transform.scale + 0.5 + transform.offsetY;
+     vertices[i].z = point[2] * transform.scale + 0.5 + transform.offsetZ;
+     vertices[i].u = quad.vertices[i].u * 16.0;
+     vertices[i].v = quad.vertices[i].v * 16.0;
+    }
+    const float red = quad.red * quad.shade * transform.colorR;
+    const float green = quad.green * quad.shade * transform.colorG;
+    const float blue = quad.blue * quad.shade * transform.colorB;
+    emitted = emitManualBlockModelQuad(vertices, textureId, red, green, blue, quad.alpha) ||
+              emitManualItemModelQuad(vertices, textureId, red, green, blue, quad.alpha) || emitted;
+   }
+  }
+  return emitted;
 }
 bool invokeManualBlockModelDraw(
     const BlockRegistrationSpec& spec, bool inventory, int x, int y, int z, float brightness) {
@@ -1433,6 +1445,23 @@ int luaModelDraw(lua_State* state) {
  const int handle = luaIntArg(state, 1, 0);
  const int optsIndex = api.gettop(state) >= 2 && api.type(state, 2) == kLuaTTable ? 2 : 0;
  const model::WorldModelDraw options = readWorldModelDraw(state, optsIndex);
+ if(model::gManualBlockDraw != nullptr) {
+  model::BakedQuadTransform transform;
+  transform.scale = options.scale;
+  transform.offsetX = static_cast<float>(options.x - model::gManualBlockDraw->x);
+  transform.offsetY = static_cast<float>(options.y - model::gManualBlockDraw->y);
+  transform.offsetZ = static_cast<float>(options.z - model::gManualBlockDraw->z);
+  transform.yaw = options.yaw;
+  transform.pitch = options.pitch;
+  transform.roll = options.roll;
+  if(options.brightness >= 0.0f) {
+   transform.colorR = options.brightness;
+   transform.colorG = options.brightness;
+   transform.colorB = options.brightness;
+  }
+  api.pushboolean(state, model::drawBakedModelQuads(handle, transform) ? 1 : 0);
+  return 1;
+ }
  api.pushboolean(state, model::drawBakedModelWorld(handle, options) ? 1 : 0);
  return 1;
 }

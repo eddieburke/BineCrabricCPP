@@ -45,8 +45,8 @@ local function on_item_spawn(event)
 end
 
 -- Section 6: Registration
-minecraft.on(minecraft.events.tick, {}, on_tick)
-minecraft.on(minecraft.events.item_spawn, {}, on_item_spawn)
+minecraft.on(minecraft.events.world_tick, {}, on_tick)
+minecraft.on(minecraft.events.entity_spawn, {}, on_item_spawn)
 
 -- Section 7: Logging
 minecraft.log("info", "item_drop_physics loaded with pure Lua physics")

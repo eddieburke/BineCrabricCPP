@@ -3,10 +3,11 @@
 namespace net::minecraft::client::render::block {
 namespace {
 constexpr double kAtlasEdgeInset = 0.01;
-void beginFace(BlockRenderContext& ctx, int side, int texture, Tessellator*& tessellator) {
+int beginFace(BlockRenderContext& ctx, int side, int texture, Tessellator*& tessellator) {
  texture = ctx.resolveTexture(side, texture);
  ctx.bindTextureFor(texture);
  tessellator = &ctx.activeTess(texture);
+ return texture;
 }
 void emitVertex(
     Tessellator& tessellator, float nx, float ny, float nz, double x, double y, double z, double u, double v) {
@@ -15,8 +16,8 @@ void emitVertex(
 } // namespace
 void BlockFaceRenderer::renderBottomFace(
     net::minecraft::block::Block& /*block*/, double x, double y, double z, int texture) {
- Tessellator* tessellator = nullptr;
- beginFace(ctx_, 0, texture, tessellator);
+	Tessellator* tessellator = nullptr;
+	texture = beginFace(ctx_, 0, texture, tessellator);
  const TileScale tile = tileScaleFor(texture);
  const int texU = tile.u;
  const int texV = tile.v;
@@ -100,8 +101,8 @@ void BlockFaceRenderer::renderBottomFace(
 }
 void BlockFaceRenderer::renderTopFace(
     net::minecraft::block::Block& /*block*/, double x, double y, double z, int texture) {
- Tessellator* tessellator = nullptr;
- beginFace(ctx_, 1, texture, tessellator);
+	Tessellator* tessellator = nullptr;
+	texture = beginFace(ctx_, 1, texture, tessellator);
  const TileScale tile = tileScaleFor(texture);
  const int texU = tile.u;
  const int texV = tile.v;
@@ -185,8 +186,8 @@ void BlockFaceRenderer::renderTopFace(
 }
 void BlockFaceRenderer::renderEastFace(
     net::minecraft::block::Block& /*block*/, double x, double y, double z, int texture) {
- Tessellator* tessellator = nullptr;
- beginFace(ctx_, 2, texture, tessellator);
+	Tessellator* tessellator = nullptr;
+	texture = beginFace(ctx_, 2, texture, tessellator);
  const TileScale tile = tileScaleFor(texture);
  const int texU = tile.u;
  const int texV = tile.v;
@@ -251,30 +252,30 @@ void BlockFaceRenderer::renderEastFace(
  const double yMin = y + ctx_.renderBounds.minY;
  const double yMax = y + ctx_.renderBounds.maxY;
  const double zCoord = z + ctx_.renderBounds.minZ;
- if(ctx_.faceState.useAo) {
-  (*tessellator)
-      .color(ctx_.faceState.colors.red[0], ctx_.faceState.colors.green[0], ctx_.faceState.colors.blue[0]);
-  emitVertex(*tessellator, 0.0f, 0.0f, -1.0f, xMin, yMax, zCoord, uMin, vMin);
-  (*tessellator)
-      .color(ctx_.faceState.colors.red[1], ctx_.faceState.colors.green[1], ctx_.faceState.colors.blue[1]);
-  emitVertex(*tessellator, 0.0f, 0.0f, -1.0f, xMax, yMax, zCoord, uMax, vMin);
-  (*tessellator)
-      .color(ctx_.faceState.colors.red[2], ctx_.faceState.colors.green[2], ctx_.faceState.colors.blue[2]);
-  emitVertex(*tessellator, 0.0f, 0.0f, -1.0f, xMax, yMin, zCoord, uMax, vMax);
-  (*tessellator)
-      .color(ctx_.faceState.colors.red[3], ctx_.faceState.colors.green[3], ctx_.faceState.colors.blue[3]);
-  emitVertex(*tessellator, 0.0f, 0.0f, -1.0f, xMin, yMin, zCoord, uMin, vMax);
- } else {
-  emitVertex(*tessellator, 0.0f, 0.0f, -1.0f, xMin, yMax, zCoord, uMin, vMin);
-  emitVertex(*tessellator, 0.0f, 0.0f, -1.0f, xMax, yMax, zCoord, uMax, vMin);
-  emitVertex(*tessellator, 0.0f, 0.0f, -1.0f, xMax, yMin, zCoord, uMax, vMax);
-  emitVertex(*tessellator, 0.0f, 0.0f, -1.0f, xMin, yMin, zCoord, uMin, vMax);
- }
+  if(ctx_.faceState.useAo) {
+   (*tessellator)
+       .color(ctx_.faceState.colors.red[0], ctx_.faceState.colors.green[0], ctx_.faceState.colors.blue[0]);
+   emitVertex(*tessellator, 0.0f, 0.0f, -1.0f, xMin, yMax, zCoord, uMax, vMin);
+   (*tessellator)
+       .color(ctx_.faceState.colors.red[1], ctx_.faceState.colors.green[1], ctx_.faceState.colors.blue[1]);
+   emitVertex(*tessellator, 0.0f, 0.0f, -1.0f, xMax, yMax, zCoord, uMin, vMin);
+   (*tessellator)
+       .color(ctx_.faceState.colors.red[2], ctx_.faceState.colors.green[2], ctx_.faceState.colors.blue[2]);
+   emitVertex(*tessellator, 0.0f, 0.0f, -1.0f, xMax, yMin, zCoord, uMin, vMax);
+   (*tessellator)
+       .color(ctx_.faceState.colors.red[3], ctx_.faceState.colors.green[3], ctx_.faceState.colors.blue[3]);
+   emitVertex(*tessellator, 0.0f, 0.0f, -1.0f, xMin, yMin, zCoord, uMax, vMax);
+  } else {
+   emitVertex(*tessellator, 0.0f, 0.0f, -1.0f, xMin, yMax, zCoord, uMax, vMin);
+   emitVertex(*tessellator, 0.0f, 0.0f, -1.0f, xMax, yMax, zCoord, uMin, vMin);
+   emitVertex(*tessellator, 0.0f, 0.0f, -1.0f, xMax, yMin, zCoord, uMin, vMax);
+   emitVertex(*tessellator, 0.0f, 0.0f, -1.0f, xMin, yMin, zCoord, uMax, vMax);
+  }
 }
 void BlockFaceRenderer::renderWestFace(
     net::minecraft::block::Block& /*block*/, double x, double y, double z, int texture) {
- Tessellator* tessellator = nullptr;
- beginFace(ctx_, 3, texture, tessellator);
+	Tessellator* tessellator = nullptr;
+	texture = beginFace(ctx_, 3, texture, tessellator);
  const TileScale tile = tileScaleFor(texture);
  const int texU = tile.u;
  const int texV = tile.v;
@@ -339,30 +340,30 @@ void BlockFaceRenderer::renderWestFace(
  const double yMin = y + ctx_.renderBounds.minY;
  const double yMax = y + ctx_.renderBounds.maxY;
  const double zCoord = z + ctx_.renderBounds.maxZ;
- if(ctx_.faceState.useAo) {
-  (*tessellator)
-      .color(ctx_.faceState.colors.red[0], ctx_.faceState.colors.green[0], ctx_.faceState.colors.blue[0]);
-  emitVertex(*tessellator, 0.0f, 0.0f, 1.0f, xMin, yMax, zCoord, uMax, vMin);
-  (*tessellator)
-      .color(ctx_.faceState.colors.red[1], ctx_.faceState.colors.green[1], ctx_.faceState.colors.blue[1]);
-  emitVertex(*tessellator, 0.0f, 0.0f, 1.0f, xMin, yMin, zCoord, uMax, vMax);
-  (*tessellator)
-      .color(ctx_.faceState.colors.red[2], ctx_.faceState.colors.green[2], ctx_.faceState.colors.blue[2]);
-  emitVertex(*tessellator, 0.0f, 0.0f, 1.0f, xMax, yMin, zCoord, uMin, vMax);
-  (*tessellator)
-      .color(ctx_.faceState.colors.red[3], ctx_.faceState.colors.green[3], ctx_.faceState.colors.blue[3]);
-  emitVertex(*tessellator, 0.0f, 0.0f, 1.0f, xMax, yMax, zCoord, uMin, vMin);
- } else {
-  emitVertex(*tessellator, 0.0f, 0.0f, 1.0f, xMin, yMax, zCoord, uMax, vMin);
-  emitVertex(*tessellator, 0.0f, 0.0f, 1.0f, xMin, yMin, zCoord, uMax, vMax);
-  emitVertex(*tessellator, 0.0f, 0.0f, 1.0f, xMax, yMin, zCoord, uMin, vMax);
-  emitVertex(*tessellator, 0.0f, 0.0f, 1.0f, xMax, yMax, zCoord, uMin, vMin);
- }
+  if(ctx_.faceState.useAo) {
+   (*tessellator)
+       .color(ctx_.faceState.colors.red[0], ctx_.faceState.colors.green[0], ctx_.faceState.colors.blue[0]);
+   emitVertex(*tessellator, 0.0f, 0.0f, 1.0f, xMin, yMax, zCoord, uMin, vMin);
+   (*tessellator)
+       .color(ctx_.faceState.colors.red[1], ctx_.faceState.colors.green[1], ctx_.faceState.colors.blue[1]);
+   emitVertex(*tessellator, 0.0f, 0.0f, 1.0f, xMin, yMin, zCoord, uMin, vMax);
+   (*tessellator)
+       .color(ctx_.faceState.colors.red[2], ctx_.faceState.colors.green[2], ctx_.faceState.colors.blue[2]);
+   emitVertex(*tessellator, 0.0f, 0.0f, 1.0f, xMax, yMin, zCoord, uMax, vMax);
+   (*tessellator)
+       .color(ctx_.faceState.colors.red[3], ctx_.faceState.colors.green[3], ctx_.faceState.colors.blue[3]);
+   emitVertex(*tessellator, 0.0f, 0.0f, 1.0f, xMax, yMax, zCoord, uMax, vMin);
+  } else {
+   emitVertex(*tessellator, 0.0f, 0.0f, 1.0f, xMin, yMax, zCoord, uMin, vMin);
+   emitVertex(*tessellator, 0.0f, 0.0f, 1.0f, xMin, yMin, zCoord, uMin, vMax);
+   emitVertex(*tessellator, 0.0f, 0.0f, 1.0f, xMax, yMin, zCoord, uMax, vMax);
+   emitVertex(*tessellator, 0.0f, 0.0f, 1.0f, xMax, yMax, zCoord, uMax, vMin);
+  }
 }
 void BlockFaceRenderer::renderNorthFace(
     net::minecraft::block::Block& /*block*/, double x, double y, double z, int texture) {
- Tessellator* tessellator = nullptr;
- beginFace(ctx_, 4, texture, tessellator);
+	Tessellator* tessellator = nullptr;
+	texture = beginFace(ctx_, 4, texture, tessellator);
  const TileScale tile = tileScaleFor(texture);
  const int texU = tile.u;
  const int texV = tile.v;
@@ -427,30 +428,30 @@ void BlockFaceRenderer::renderNorthFace(
  const double yMax = y + ctx_.renderBounds.maxY;
  const double zMin = z + ctx_.renderBounds.minZ;
  const double zMax = z + ctx_.renderBounds.maxZ;
- if(ctx_.faceState.useAo) {
-  (*tessellator)
-      .color(ctx_.faceState.colors.red[0], ctx_.faceState.colors.green[0], ctx_.faceState.colors.blue[0]);
-  emitVertex(*tessellator, -1.0f, 0.0f, 0.0f, xCoord, yMax, zMax, uMin, vMin);
-  (*tessellator)
-      .color(ctx_.faceState.colors.red[1], ctx_.faceState.colors.green[1], ctx_.faceState.colors.blue[1]);
-  emitVertex(*tessellator, -1.0f, 0.0f, 0.0f, xCoord, yMax, zMin, uMax, vMin);
-  (*tessellator)
-      .color(ctx_.faceState.colors.red[2], ctx_.faceState.colors.green[2], ctx_.faceState.colors.blue[2]);
-  emitVertex(*tessellator, -1.0f, 0.0f, 0.0f, xCoord, yMin, zMin, uMax, vMax);
-  (*tessellator)
-      .color(ctx_.faceState.colors.red[3], ctx_.faceState.colors.green[3], ctx_.faceState.colors.blue[3]);
-  emitVertex(*tessellator, -1.0f, 0.0f, 0.0f, xCoord, yMin, zMax, uMin, vMax);
- } else {
-  emitVertex(*tessellator, -1.0f, 0.0f, 0.0f, xCoord, yMax, zMax, uMin, vMin);
-  emitVertex(*tessellator, -1.0f, 0.0f, 0.0f, xCoord, yMax, zMin, uMax, vMin);
-  emitVertex(*tessellator, -1.0f, 0.0f, 0.0f, xCoord, yMin, zMin, uMax, vMax);
-  emitVertex(*tessellator, -1.0f, 0.0f, 0.0f, xCoord, yMin, zMax, uMin, vMax);
- }
+  if(ctx_.faceState.useAo) {
+   (*tessellator)
+       .color(ctx_.faceState.colors.red[0], ctx_.faceState.colors.green[0], ctx_.faceState.colors.blue[0]);
+   emitVertex(*tessellator, -1.0f, 0.0f, 0.0f, xCoord, yMax, zMax, uMax, vMin);
+   (*tessellator)
+       .color(ctx_.faceState.colors.red[1], ctx_.faceState.colors.green[1], ctx_.faceState.colors.blue[1]);
+   emitVertex(*tessellator, -1.0f, 0.0f, 0.0f, xCoord, yMax, zMin, uMin, vMin);
+   (*tessellator)
+       .color(ctx_.faceState.colors.red[2], ctx_.faceState.colors.green[2], ctx_.faceState.colors.blue[2]);
+   emitVertex(*tessellator, -1.0f, 0.0f, 0.0f, xCoord, yMin, zMin, uMin, vMax);
+   (*tessellator)
+       .color(ctx_.faceState.colors.red[3], ctx_.faceState.colors.green[3], ctx_.faceState.colors.blue[3]);
+   emitVertex(*tessellator, -1.0f, 0.0f, 0.0f, xCoord, yMin, zMax, uMax, vMax);
+  } else {
+   emitVertex(*tessellator, -1.0f, 0.0f, 0.0f, xCoord, yMax, zMax, uMax, vMin);
+   emitVertex(*tessellator, -1.0f, 0.0f, 0.0f, xCoord, yMax, zMin, uMin, vMin);
+   emitVertex(*tessellator, -1.0f, 0.0f, 0.0f, xCoord, yMin, zMin, uMin, vMax);
+   emitVertex(*tessellator, -1.0f, 0.0f, 0.0f, xCoord, yMin, zMax, uMax, vMax);
+  }
 }
 void BlockFaceRenderer::renderSouthFace(
     net::minecraft::block::Block& /*block*/, double x, double y, double z, int texture) {
- Tessellator* tessellator = nullptr;
- beginFace(ctx_, 5, texture, tessellator);
+	Tessellator* tessellator = nullptr;
+	texture = beginFace(ctx_, 5, texture, tessellator);
  const TileScale tile = tileScaleFor(texture);
  const int texU = tile.u;
  const int texV = tile.v;

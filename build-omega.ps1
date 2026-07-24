@@ -467,6 +467,9 @@ function Sync-Shaderpacks {
 
     if ($env:APPDATA) {
         $runtimeRoot = Join-Path (Join-Path $env:APPDATA ".minecraft") "shaderpacks"
+        if (Test-Path -LiteralPath $runtimeRoot) {
+            Remove-Item -LiteralPath $runtimeRoot -Recurse -Force -ErrorAction SilentlyContinue
+        }
         Ensure-Directory -Path $runtimeRoot
         foreach ($pack in $packs) {
             Copy-Item -LiteralPath $pack.FullName -Destination $runtimeRoot -Recurse -Force
@@ -524,6 +527,9 @@ function Invoke-PackageMods {
 
     Ensure-Directory -Path $modsOut
     if ($Deploy) {
+        if ($ModId -eq "" -and (Test-Path -LiteralPath $deployDir)) {
+            Remove-Item -LiteralPath $deployDir -Recurse -Force -ErrorAction SilentlyContinue
+        }
         Ensure-Directory -Path $deployDir
     }
 
@@ -726,7 +732,7 @@ function Install-MsysUcrtPackage {
 function Test-ToolchainDepsPresent {
     param([string]$MingwDest)
 
-    $requiredLibs = @("libz.a", "libogg.a", "libvorbis.a", "libvorbisfile.a")
+    $requiredLibs = @("libz.a", "libogg.a")
     foreach ($lib in $requiredLibs) {
         if (-not (Test-Path -LiteralPath (Join-Path $MingwDest "lib\$lib"))) {
             return $false
@@ -830,29 +836,7 @@ $BuildOmegaLockStream = $null
 
 function Remove-StaleBuildOmegaLockFile {
     param([string]$LockPath)
-    if (-not (Test-Path -LiteralPath $LockPath)) {
-        return
-    }
-    $remove = $false
-    try {
-        $content = Get-Content -LiteralPath $LockPath -ErrorAction Stop | Select-Object -First 1
-        if ($null -eq $content -or $content -eq "") {
-            $remove = $true
-        } else {
-            $lockPid = 0
-            if ([int]::TryParse($content, [ref]$lockPid)) {
-                $proc = Get-Process -Id $lockPid -ErrorAction SilentlyContinue
-                if ($null -eq $proc) {
-                    $remove = $true
-                }
-            } else {
-                $remove = $true
-            }
-        }
-    } catch {
-        $remove = $true
-    }
-    if ($remove) {
+    if (Test-Path -LiteralPath $LockPath) {
         Remove-Item -LiteralPath $LockPath -Force -ErrorAction SilentlyContinue
     }
 }
@@ -1025,7 +1009,7 @@ try {
     try {
         $BuildOmegaLockStream = [System.IO.File]::Open(
             $BuildOmegaLockPath,
-            [System.IO.FileMode]::CreateNew,
+            [System.IO.FileMode]::Create,
             [System.IO.FileAccess]::ReadWrite,
             [System.IO.FileShare]::None)
         $pidBytes = [System.Text.Encoding]::ASCII.GetBytes("$PID`n")
@@ -1220,6 +1204,7 @@ $sw.Stop()
         if ($Target -eq "All") { $srcExes += "minecraft_installer.exe" }
         if ($srcExes.Count -gt 0) {
             try {
+                Add-Type -AssemblyName System.Windows.Forms
                 $null = [System.Windows.Forms.Application]::EnableVisualStyles()
                 $f = New-Object System.Windows.Forms.FolderBrowserDialog
                 $f.Description = "Select output folder for built binaries"

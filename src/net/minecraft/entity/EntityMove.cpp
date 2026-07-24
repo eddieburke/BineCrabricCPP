@@ -38,7 +38,7 @@ void Entity::move(double dx, double dy, double dz) {
  if(noClip) {
   boundingBox = boundingBox.translate(dx, dy, dz);
   x = (boundingBox.minX + boundingBox.maxX) * 0.5;
-  y = boundingBox.minY;
+  y = boundingBox.minY + static_cast<double>(standingEyeHeight) - static_cast<double>(cameraOffset);
   z = (boundingBox.minZ + boundingBox.maxZ) * 0.5;
   return;
  }
@@ -148,7 +148,7 @@ void Entity::move(double dx, double dy, double dz) {
   }
  }
  x = (boundingBox.minX + boundingBox.maxX) * 0.5;
- y = boundingBox.minY;
+ y = boundingBox.minY + static_cast<double>(standingEyeHeight) - static_cast<double>(cameraOffset);
  z = (boundingBox.minZ + boundingBox.maxZ) * 0.5;
  horizontalCollision = intendedDx != dx || intendedDz != dz;
  verticalCollision = intendedDy != dy;

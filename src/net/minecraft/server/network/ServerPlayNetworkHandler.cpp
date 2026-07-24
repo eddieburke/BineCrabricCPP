@@ -294,6 +294,7 @@ void ServerPlayNetworkHandler::handlePlayerAction(const PlayerActionC2SPacket& p
   return;
  }
  serverWorld->bypassSpawnProtection = serverWorld->dimension == nullptr || serverWorld->dimension->id != 0 ||
+                                      !server_->playerManager.hasOperators() ||
                                       server_->playerManager.isOperator(player_->name);
  const bool bypassSpawnProtection = serverWorld->bypassSpawnProtection;
  bool checkDistance = packet.action == 0 || packet.action == 2;
@@ -360,6 +361,7 @@ void ServerPlayNetworkHandler::onPlayerInteractBlock(const PlayerInteractBlockC2
  }
  ItemStack* itemStack = player_->inventory.getSelectedItem();
  serverWorld->bypassSpawnProtection = serverWorld->dimension == nullptr || serverWorld->dimension->id != 0 ||
+                                      !server_->playerManager.hasOperators() ||
                                       server_->playerManager.isOperator(player_->name);
  const bool bypassSpawnProtection = serverWorld->bypassSpawnProtection;
  if(packet.side == 255) {
@@ -616,7 +618,9 @@ void ServerPlayNetworkHandler::onClickSlot(const ClickSlotC2SPacket& packet) {
  if(player_ == nullptr || player_->currentScreenHandler == nullptr) {
   return;
  }
- if(player_->currentScreenHandler->syncId != packet.syncId || !player_->currentScreenHandler->canOpen(player_)) {
+ if(player_->currentScreenHandler->syncId != packet.syncId ||
+    !player_->currentScreenHandler->canUse(player_) ||
+    !player_->currentScreenHandler->canOpen(player_)) {
   return;
  }
  ItemStack result =
@@ -649,8 +653,9 @@ void ServerPlayNetworkHandler::onScreenHandlerAcknowledgement(const ScreenHandle
  }
  const auto found = transactions_.find(player_->currentScreenHandler->syncId);
  if(found != transactions_.end() && packet.actionType == found->second &&
-    player_->currentScreenHandler->syncId == packet.syncId && !player_->currentScreenHandler->canOpen(player_)) {
+    player_->currentScreenHandler->syncId == packet.syncId) {
   player_->currentScreenHandler->updatePlayerList(player_, true);
+  transactions_.erase(found);
  }
 }
 void ServerPlayNetworkHandler::handleUpdateSign(const UpdateSignPacket& packet) {

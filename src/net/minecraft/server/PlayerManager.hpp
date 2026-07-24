@@ -96,6 +96,9 @@ class PlayerManager {
  void removeFromOperators(const std::string& name);
  [[nodiscard]] bool isWhitelisted(const std::string& name) const;
  [[nodiscard]] bool isOperator(const std::string& name) const;
+ [[nodiscard]] bool hasOperators() const {
+  return !ops_.empty();
+ }
  ::net::minecraft::entity::player::ServerPlayerEntity* getPlayer(const std::string& name);
  void messagePlayer(const std::string& name, const std::string& message);
  void broadcast(const std::string& message);

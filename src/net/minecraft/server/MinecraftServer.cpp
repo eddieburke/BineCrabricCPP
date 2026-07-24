@@ -1,4 +1,4 @@
-﻿#include "net/minecraft/server/MinecraftServer.hpp"
+#include "net/minecraft/server/MinecraftServer.hpp"
 #include <chrono>
 #include <condition_variable>
 #include <cstdlib>

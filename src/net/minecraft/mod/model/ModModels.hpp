@@ -137,6 +137,9 @@ struct BakedQuadTransform {
  float offsetX = 0.0f;
  float offsetY = 0.0f;
  float offsetZ = 0.0f;
+ float yaw = 0.0f;
+ float pitch = 0.0f;
+ float roll = 0.0f;
  float colorR = 1.0f;
  float colorG = 1.0f;
  float colorB = 1.0f;

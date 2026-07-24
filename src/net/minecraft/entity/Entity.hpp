@@ -150,7 +150,7 @@ class Entity {
  [[nodiscard]] double getDistance(double xIn, double yIn, double zIn) const;
  [[nodiscard]] double getSquaredDistance(const Entity& entity) const;
  [[nodiscard]] double getEyeY() const {
-  return y + static_cast<double>(standingEyeHeight) - static_cast<double>(cameraOffset);
+  return y;
  }
  [[nodiscard]] virtual float getEyeHeight() const {
   return standingEyeHeight;

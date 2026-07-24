@@ -1065,41 +1065,75 @@ void WorldRenderer::renderOutline(const Box& box) {
  tessellator.vertex(box.minX, box.maxY, box.maxZ);
  tessellator.draw();
 }
-void WorldRenderer::renderMiningProgress(net::minecraft::PlayerEntity* entity,
-                                         const net::minecraft::HitResult& hit,
+void WorldRenderer::renderMiningProgress(net::minecraft::PlayerEntity* player,
+                                         const net::minecraft::HitResult& hitResult,
                                          int i,
                                          const net::minecraft::ItemStack& handStack,
                                          float tickDelta) {
  (void)handStack;
- if(entity == nullptr || world == nullptr || textureManager == nullptr) {
+ if(i != 0 || hitResult.type != HitResultType::BLOCK || player == nullptr || world == nullptr) {
   return;
  }
- if(i != 0 || miningProgress <= 0.0f) {
+ if(miningProgress <= 0.0f || miningProgress > 1.0f) {
   return;
  }
- const WorldOverlayScope overlayCaps(RenderType::guiTextured());
- const WorldCrackOverlayScope crackCaps(RenderType::guiTextured());
- // The terrain atlas contains six crack tiles (240 through 245).
- const int stage = std::clamp(static_cast<int>(miningProgress * 6.0f), 0, 5);
- textureManager->bindTexture(textureManager->getTextureId("/terrain.png"));
- RenderSystem::enableTexture();
- RenderSystem::color4f(0.0f, 0.0f, 0.0f, 1.0f);
- const MatrixScope matrix;
- int blockId = world->getBlockId(hit.blockX, hit.blockY, hit.blockZ);
- Block* block = (blockId > 0 && blockId < Block::BLOCK_COUNT) ? Block::BLOCKS[blockId] : nullptr;
- if(block == nullptr) {
-  block = Block::STONE;
-  blockId = Block::STONE->id;
+ const int blockId = world->getBlockId(hitResult.blockX, hitResult.blockY, hitResult.blockZ);
+ if(blockId <= 0 || blockId >= Block::BLOCK_COUNT || Block::BLOCKS[blockId] == nullptr) {
+  return;
  }
+ Block* block = Block::BLOCKS[blockId];
+
+ int stage = static_cast<int>(miningProgress * 10.0f);
+ if(stage < 0) {
+  stage = 0;
+ }
+ if(stage > 9) {
+  stage = 9;
+ }
+ const int destroyTexture = 240 + stage;
+
  double interpX = 0.0, interpY = 0.0, interpZ = 0.0;
  cameraInterpPosition(static_cast<double>(tickDelta), interpX, interpY, interpZ);
- Tessellator& tessellator = INSTANCE;
- tessellator.startQuads();
- tessellator.translate(-interpX, -interpY, -interpZ);
- tessellator.disableColor();
- blockRenderManager.renderWithTexture(*block, hit.blockX, hit.blockY, hit.blockZ, 240 + stage);
- tessellator.draw();
- tessellator.translate(0.0, 0.0, 0.0);
+
+ const RenderPassScope passScope(RenderType::solid());
+
+ net::minecraft::client::texture::TextureManager* texMgr =
+     textureManager != nullptr ? textureManager : (client != nullptr ? &client->textureManager : nullptr);
+ if(texMgr != nullptr) {
+  RenderSystem::activeTexture(gl::tex::Texture0);
+  RenderSystem::enableTexture();
+  RenderSystem::bindTexture(static_cast<unsigned int>(texMgr->getTextureId("/terrain.png")));
+ }
+
+ RenderSystem::enableBlend();
+ RenderSystem::blendAlpha();
+ RenderSystem::color4f(1.0f, 1.0f, 1.0f, 1.0f);
+ RenderSystem::depthMask(false);
+ RenderSystem::depthTest();
+
+ RenderSystem::polygonOffset(-3.0f, -3.0f);
+ RenderSystem::enablePolygonOffset();
+
+ blockRenderManager.snapshotGlobals();
+ blockRenderManager.ctx.blockView = world;
+ blockRenderManager.ctx.textureManager = texMgr;
+ blockRenderManager.ctx.skipFaceCulling = true;
+
+ Tessellator& tess = Tessellator::INSTANCE;
+ tess.startQuads();
+ tess.translate(-interpX, -interpY, -interpZ);
+ tess.color(1.0f, 1.0f, 1.0f, 1.0f);
+
+ blockRenderManager.renderWithTexture(
+     *block, hitResult.blockX, hitResult.blockY, hitResult.blockZ, destroyTexture);
+
+ tess.draw();
+ tess.translate(0.0, 0.0, 0.0);
+
+ blockRenderManager.ctx.skipFaceCulling = false;
+ RenderSystem::disablePolygonOffset();
+ RenderSystem::depthMask(true);
+ RenderSystem::disableBlend();
 }
 void WorldRenderer::renderBlockOutline(net::minecraft::PlayerEntity* player,
                                        const net::minecraft::HitResult& hitResult,

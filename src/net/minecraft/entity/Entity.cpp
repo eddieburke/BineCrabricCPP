@@ -37,10 +37,10 @@ void Entity::setPosition(double xIn, double yIn, double zIn) {
  const float halfWidth = width * 0.5f;
  boundingBox = {
      x - static_cast<double>(halfWidth),
-     y + static_cast<double>(cameraOffset),
+     y - static_cast<double>(standingEyeHeight) + static_cast<double>(cameraOffset),
      z - static_cast<double>(halfWidth),
      x + static_cast<double>(halfWidth),
-     y + static_cast<double>(cameraOffset) + static_cast<double>(height),
+     y - static_cast<double>(standingEyeHeight) + static_cast<double>(cameraOffset) + static_cast<double>(height),
      z + static_cast<double>(halfWidth)};
 }
 void Entity::teleport(double xIn, double yIn, double zIn, float yawIn, float pitchIn) {
