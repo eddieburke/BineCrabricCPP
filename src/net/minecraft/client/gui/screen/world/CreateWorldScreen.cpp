@@ -110,6 +110,11 @@ void CreateWorldScreen::init() {
  const std::size_t footerFirstButton = buttons_.size();
  int nextButtonY = footerStartY(height());
  publishScreenUi(mod::screen_regions::kFooter, &nextButtonY);
+ for(std::size_t i = footerFirstButton; i < buttons_.size(); ++i) {
+  if(buttons_[i] != nullptr) {
+   nextButtonY = std::max(nextButtonY, buttons_[i]->y + buttons_[i]->height);
+  }
+ }
  nextButtonY = std::max(nextButtonY, layout::formPrimaryBtnY(height()));
  createButton_ = &addActionButton(layout::centerBtnX(width()),
                                   nextButtonY,

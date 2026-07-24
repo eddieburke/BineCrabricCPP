@@ -730,10 +730,24 @@ int luaScreenUiAddStackedCenteredButton(lua_State* state) {
  if(api.gettop(state) < 1 + argOffset || api.type(state, 1 + argOffset) != kLuaTString) {
   return 0;
  }
- const std::string text = luaString(state, 1 + argOffset, "");
- const int ref = api.gettop(state) >= 2 + argOffset ? retainButtonCallback(state, mod, 2 + argOffset) : kLuaNoRef;
- (void)g_activeScreenUi->addStackedCenteredButton(text, [mod, ref]() { invokeButtonCallback(mod, ref); });
- return 0;
+  const std::string text = luaString(state, 1 + argOffset, "");
+  const int ref = api.gettop(state) >= 2 + argOffset ? retainButtonCallback(state, mod, 2 + argOffset) : kLuaNoRef;
+  const int labelRef = api.gettop(state) >= 3 + argOffset ? retainButtonCallback(state, mod, 3 + argOffset) : kLuaNoRef;
+  client::gui::widget::ActionButtonWidget& button =
+      g_activeScreenUi->addStackedCenteredButton(text, [mod, ref]() { invokeButtonCallback(mod, ref); });
+  if(labelRef != kLuaNoRef) {
+   auto* widget = &button;
+   button.onClick = [previous = std::move(button.onClick), mod, labelRef, widget]() {
+    if(previous) {
+     previous();
+    }
+    std::string label;
+    if(invokeLabelCallback(mod, labelRef, label)) {
+     widget->text = std::move(label);
+    }
+   };
+  }
+  return 0;
 }
 int luaScreenOpen(lua_State* state) {
  LuaApi& api = luaApi();

@@ -126,7 +126,7 @@ end)
 
 minecraft.screen.on_ui(minecraft.screen.ids.create_world, minecraft.screen.regions.footer, function(event)
   if event.ui ~= nil then
-    event.ui:add_stacked_centered_button(profile_label(), cycle_profile)
+    event.ui:add_stacked_centered_button(profile_label(), cycle_profile, profile_label)
   end
   return event
 end, 100)
