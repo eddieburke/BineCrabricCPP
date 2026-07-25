@@ -19,7 +19,7 @@ class OpenScreenS2CPacket : public Packet {
  std::string name;
  int inventorySize = 0;
  void read(std::istream& input) override {
-  syncId = packetio::readU8(input);
+  syncId = packetio::readI8(input);
   screenHandlerId = packetio::readU8(input);
   name = packetio::readUtfString(input);
   inventorySize = packetio::readU8(input);
@@ -41,7 +41,7 @@ class CloseScreenS2CPacket : public Packet {
  public:
  int syncId = 0;
  void read(std::istream& input) override {
-  syncId = packetio::readU8(input);
+  syncId = packetio::readI8(input);
  }
  void write(std::ostream& output) const override {
   packetio::writeU8(output, static_cast<std::uint8_t>(syncId));
@@ -62,7 +62,7 @@ class ClickSlotC2SPacket : public Packet {
  ItemStack stack;
  bool holdingShift = false;
  void read(std::istream& input) override {
-  syncId = packetio::readU8(input);
+  syncId = packetio::readI8(input);
   slot = packetio::readI16BE(input);
   button = packetio::readU8(input);
   actionType = packetio::readI16BE(input);
@@ -90,7 +90,7 @@ class ScreenHandlerSlotUpdateS2CPacket : public Packet {
  int slot = 0;
  ItemStack stack;
  void read(std::istream& input) override {
-  syncId = packetio::readU8(input);
+  syncId = packetio::readI8(input);
   slot = packetio::readI16BE(input);
   stack = packetitems::readOptionalItemStack(input);
  }
@@ -111,7 +111,7 @@ class InventoryS2CPacket : public Packet {
  int syncId = 0;
  std::vector<ItemStack> contents;
  void read(std::istream& input) override {
-  syncId = packetio::readU8(input);
+  syncId = packetio::readI8(input);
   const int count = packetio::readI16BE(input);
   contents.clear();
   contents.resize(static_cast<std::size_t>(count));
@@ -139,7 +139,7 @@ class ScreenHandlerPropertyUpdateS2CPacket : public Packet {
  int propertyId = 0;
  int value = 0;
  void read(std::istream& input) override {
-  syncId = packetio::readU8(input);
+  syncId = packetio::readI8(input);
   propertyId = packetio::readI16BE(input);
   value = packetio::readI16BE(input);
  }
@@ -165,7 +165,7 @@ class ScreenHandlerAcknowledgementPacket : public Packet {
      : syncId(syncIdIn), actionType(actionTypeIn), accepted(acceptedIn) {
  }
  void read(std::istream& input) override {
-  syncId = packetio::readU8(input);
+  syncId = packetio::readI8(input);
   actionType = packetio::readI16BE(input);
   accepted = packetio::readU8(input) != 0;
  }

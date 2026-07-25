@@ -133,7 +133,11 @@ void ServerPlayNetworkHandler::teleport(double x, double y, double z, float yaw,
  teleportTargetZ_ = z;
  player_->setPositionAndAngles(x, y, z, yaw, pitch);
  PlayerMoveFullPacket packet;
- packet.setMove(x, y, y + 1.62, z, yaw, pitch, false);
+ // Java ServerPlayNetworkHandler.teleport sends PlayerMoveFullPacket(x, y + 1.62, y, z, ...):
+ // server->client the y and stance fields are swapped relative to client->server, so the
+ // "y" slot carries the eye and "stance" carries the feet. The receiving client assigns the
+ // y slot straight to player.y, which is eye level.
+ packet.setMove(x, y + 1.62, y, z, yaw, pitch, false);
  sendPacket(packet);
 }
 void ServerPlayNetworkHandler::onPlayerMove(const PlayerMovePacket& packet) {

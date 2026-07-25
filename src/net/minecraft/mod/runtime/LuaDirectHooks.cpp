@@ -1245,18 +1245,26 @@ void luaHookScreenEvent(LuaScreenEvent& e) {
   return;
  }
  static constexpr const char* kPhaseNames[] = {"init", "render", "tick", "key", "mouse", "scroll", "close"};
+ // dispatchLuaHook runs this fill lambda once per subscribed mod callback, and a callback is
+ // free to close or replace the screen (LuaScreen::removed dispatches its own Close event and
+ // resets g_activeLuaScreen). Re-reading the global per callback therefore dereferenced null
+ // on the next iteration. Snapshot the screen identity up front: it also guarantees every mod
+ // observes the same screen_id/width/height for a single event.
+ const std::string screenId = g_activeLuaScreen->id();
+ const int screenWidth = g_activeLuaScreen->width();
+ const int screenHeight = g_activeLuaScreen->height();
  dispatchLuaHook(
      static_cast<int>(LuaEventId::ScreenEvent),
-     [&e](lua_State* state) {
+     [&e, &screenId, screenWidth, screenHeight](lua_State* state) {
       setFields(state,
                 "screen_id",
-                g_activeLuaScreen->id(),
+                screenId,
                 "phase",
                 kPhaseNames[static_cast<int>(e.phase)],
                 "width",
-                g_activeLuaScreen->width(),
+                screenWidth,
                 "height",
-                g_activeLuaScreen->height(),
+                screenHeight,
                 "mouse_x",
                 e.mouseX,
                 "mouse_y",

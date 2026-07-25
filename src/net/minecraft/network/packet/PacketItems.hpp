@@ -9,7 +9,12 @@ inline ItemStack readOptionalItemStack(std::istream& input) {
  if(itemId < 0) {
   return {};
  }
- return ItemStack(itemId, packetio::readI8(input), packetio::readI16BE(input));
+ // Read into locals first: argument evaluation order is unspecified, so passing the
+ // reads directly as arguments lets the compiler consume the count and damage fields
+ // out of wire order.
+ const std::int8_t count = packetio::readI8(input);
+ const std::int16_t damage = packetio::readI16BE(input);
+ return ItemStack(itemId, count, damage);
 }
 inline void writeOptionalItemStack(std::ostream& output, const ItemStack& stack) {
  if(stack.itemId <= 0) {

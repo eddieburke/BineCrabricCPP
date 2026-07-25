@@ -1,198 +1,47 @@
-# Omega (maximum optimization) full build of minecraft_native using a bundled MinGW GCC toolchain.
-# This is the ONLY build script in native/ - build-client.ps1, build-server.ps1,
-# clean-omega.ps1, format-omega.ps1, package-mods.ps1, and build-gui.ps1 have all been
-# folded into this file as flags/modes (see history note near the bottom of this block).
-#
-# ===== AGENT QUICK-READ (read this block, skip the rest unless you need detail) =====
-#   -BuildType Release (default)  -> optimized, SMALL, no debug symbols (true release/ship build)
-#   -BuildType Debug               -> -O0, full DWARF symbols, no optimization (true debug build)
-#   -BuildType RelWithDebInfo      -> optimized + full DWARF symbols (profiling/crash-backtrace build)
-#   -KeepDebugSymbols               -> keep -g on a Release build (old default behavior; big exe)
-#   -StripSymbols                   -> run strip.exe on the output exe(s) after linking, any BuildType
-#   -Gui                            -> interactive menu (was the standalone build-gui.ps1; now merged here)
-#   -Run                            -> launch the built exe when the build succeeds (was build-client/-server.ps1)
-#   -NoGui                          -> with -Run -Target Server, pass "nogui" to the server (headless)
-#   -CleanOnly                      -> wipe build dir + lock file and exit, no build (was clean-omega.ps1)
-#   -Format                         -> run clang-format over src/ and tests/ and exit (was format-omega.ps1)
-#   -ModId <id> / -NoModDeploy      -> mod packaging controls (was package-mods.ps1; runs by default, see -SkipModPackaging)
-#   Mod packaging and shaderpack sync run BY DEFAULT on every successful build (see -SkipModPackaging / -SkipResourceSync to opt out).
-#   Everything else below is unchanged from before.
-# =======================================================================================
-#
-# On first run this script downloads GCC, CMake, Ninja, and audio/zlib deps into ./toolchain/
-# (relative to this script). No system MSYS2 or Visual Studio compiler is required.
-#
-# Usage:
-#   .\build-omega.ps1                    # configure if needed, then optimized + stripped release build
-#   .\build-omega.ps1 -BuildType Debug   # full debug build with symbols, no optimization
-#   .\build-omega.ps1 -BuildType RelWithDebInfo  # optimized build that keeps symbols (profiling)
-#   .\build-omega.ps1 -KeepDebugSymbols  # Release build, but keep -g (old default; large exe)
-#   .\build-omega.ps1 -StripSymbols      # strip symbol table from the output exe(s) post-link
-#   .\build-omega.ps1 -Clean             # wipe build dir and rebuild from scratch
-#   .\build-omega.ps1 -CleanOnly         # wipe build dir + lock file, then exit (no build)
-#   .\build-omega.ps1 -Format            # clang-format src/ and tests/, then exit (no build)
-#   .\build-omega.ps1 -Target Client -Run              # build the client and launch it
-#   .\build-omega.ps1 -Target Server -Run -NoGui       # build the server and launch it headless
-#   .\build-omega.ps1 -Target Client -Run -- --username Player  # extra args after -- go to the launched exe
-#   .\build-omega.ps1 -ModId camera -NoModDeploy  # package only one mod, skip deploying it to %APPDATA%
-#   .\build-omega.ps1 -Jobs 12           # limit parallel compile jobs
-#   .\build-omega.ps1 -Lto               # opt-in link-time optimization (often fails on MinGW GCC 15)
-#   .\build-omega.ps1 -NoNativeCpu       # portable binary (no -march=native / AVX tuning)
-#   .\build-omega.ps1 -SkipModPackaging  # skip generating runtime mod zips
-#   .\build-omega.ps1 -SkipResourceSync  # skip mirroring resources/ next to the built binary
-#   .\build-omega.ps1 -RunTests          # build minecraft_omega_tests and run ctest
-#   .\build-omega.ps1 -Target Client     # build minecraft_native.exe only
-#   .\build-omega.ps1 -Target Server     # build minecraft_server.exe only
-#   .\build-omega.ps1 -Gui               # interactive menu-driven build assistant (no flags needed)
-#   .\build.bat                          # double-clickable launcher; forces pwsh 7 if installed, opens -Gui
-#
-# Optimizations enabled by default for Release builds (bundled GCC / Ninja):
-#   CMAKE_BUILD_TYPE=Release        -> -O3 -DNDEBUG
-#   -march=native -mtune=native -mprefer-vector-width=128 (see -NoNativeCpu)
-#   -funroll-loops -fomit-frame-pointer -ffunction-sections -fdata-sections
-#   (no -g by default any more - pass -KeepDebugSymbols or use -BuildType RelWithDebInfo
-#    if you need DWARF symbols on an optimized build)
-#   -Wl,--gc-sections               -> dead code / data elimination at link
-#
-# History: Release used to always bake in -g DWARF symbols "for profiling / crash
-# backtraces", which made minecraft_native.exe balloon to ~600 MB. Release is now a true
-# small ship build; use -BuildType RelWithDebInfo or -KeepDebugSymbols when symbols on an
-# optimized binary are actually needed.
-#
-# LTO (-Lto) is opt-in only: MinGW GCC 15 cannot link this codebase with -flto reliably.
-# Intentionally omitted: -ffast-math � golden tests depend on stable FP.
-
-param(
-    [string]$BuildDir = "build-omega",
-    [ValidateSet("Release", "RelWithDebInfo", "Debug")]
-    [string]$BuildType = "Release",
-    [int]$Jobs = 0,
-    [switch]$Clean,
-    [switch]$Lto,
-    [switch]$NoLto,
-    [switch]$NoNativeCpu,
-    [switch]$RunTests,
-    [switch]$SkipModPackaging,
-    [switch]$SkipResourceSync,
-    [switch]$KeepDebugSymbols,
-    [switch]$StripSymbols,
-    [switch]$Gui,
-    [switch]$Run,
-    [switch]$NoGui,
-    [switch]$CleanOnly,
-    [switch]$Format,
-    [string]$ModId = "",
-    [switch]$NoModDeploy,
-    [ValidateSet("All", "Client", "Server")]
-    [string]$Target = "All",
-    [Parameter(ValueFromRemainingArguments = $true)]
-    [string[]]$RunArgs
-)
-
-$ErrorActionPreference = "Stop"
-$ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
-Set-Location $ScriptDir
-
-$ToolchainDir = Join-Path $ScriptDir "toolchain"
-$MingwRoot = Join-Path $ToolchainDir "mingw64"
-$DownloadsDir = Join-Path $ToolchainDir "_downloads"
-$ToolsDir = Join-Path $ToolchainDir "tools"
-$ManifestPath = Join-Path $ToolchainDir "manifest.json"
-$MingwBin = Join-Path $MingwRoot "bin"
-$GppExe = Join-Path $MingwBin "g++.exe"
-$CmakeExe = Join-Path $MingwBin "cmake.exe"
-$NinjaExe = Join-Path $MingwBin "ninja.exe"
-$CtestExe = Join-Path $MingwBin "ctest.exe"
-$DepsMarker = Join-Path $ToolchainDir ".deps-installed"
-$ShaderpacksSource = Join-Path $ScriptDir "shaderpacks"
-$ResourcesSource = Join-Path $ScriptDir "resources"
-
-$RelToolchainRoot = "toolchain/mingw64"
-$RelGpp = "$RelToolchainRoot/bin/g++.exe"
-$RelNinja = "$RelToolchainRoot/bin/ninja.exe"
-$BuildOmegaLockPath = Join-Path $ScriptDir ".build-omega.lock"
-
-# ===== -CleanOnly (was clean-omega.ps1) =====
-if ($CleanOnly) {
-    $cleanTarget = Join-Path $ScriptDir $BuildDir
-    Write-Host "Cleaning $BuildDir ..."
-    try {
-        if (Test-Path -LiteralPath $cleanTarget) {
-            Write-Host "Removing $cleanTarget"
-            Remove-Item -LiteralPath $cleanTarget -Recurse -Force -ErrorAction Stop
-        }
-        if (Test-Path -LiteralPath $BuildOmegaLockPath) {
-            Write-Host "Removing $BuildOmegaLockPath"
-            Remove-Item -LiteralPath $BuildOmegaLockPath -Force -ErrorAction Stop
-        }
-    } catch {
-        # Another agent/session may hold this build dir or lock file open right now
-        # (concurrent builds are expected in this repo) - fail quietly, not with a crash.
-        Write-Warning "Could not fully clean $BuildDir - it may be in use by another build. $_"
-        exit 1
-    }
-    Write-Host "Clean complete."
-    exit 0
+param([string]$BuildDir="build-omega",[ValidateSet("Release","RelWithDebInfo","Debug")][string]$BuildType="Release",[int]$Jobs=0,[switch]$Clean,[switch]$Lto,[switch]$NoLto,[switch]$NoNativeCpu,[switch]$RunTests,[switch]$SkipModPackaging,[switch]$SkipResourceSync,[switch]$KeepDebugSymbols,[switch]$StripSymbols,[switch]$Gui,[switch]$Run,[switch]$NoGui,[switch]$CleanOnly,[switch]$Format,[string]$ModId="",[switch]$NoModDeploy,[ValidateSet("All","Client","Server")][string]$Target="All",[Parameter(ValueFromRemainingArguments=$true)][string[]]$RunArgs)
+$ErrorActionPreference="Stop"
+$ScriptDir=Split-Path -Parent $MyInvocation.MyCommand.Path
+sl $ScriptDir
+$ToolchainDir="$ScriptDir\toolchain"
+$MingwRoot="$ToolchainDir\mingw64"
+$DownloadsDir="$ToolchainDir\_downloads"
+$ToolsDir="$ToolchainDir\tools"
+$ManifestPath="$ToolchainDir\manifest.json"
+$MingwBin="$MingwRoot\bin"
+$GppExe="$MingwBin\g++.exe"
+$CmakeExe="$MingwBin\cmake.exe"
+$NinjaExe="$MingwBin\ninja.exe"
+$CtestExe="$MingwBin\ctest.exe"
+$DepsMarker="$ToolchainDir\.deps-installed"
+$ShaderpacksSource="$ScriptDir\shaderpacks"
+$ResourcesSource="$ScriptDir\resources"
+$RelToolchainRoot="toolchain/mingw64"
+$RelGpp="$RelToolchainRoot/bin/g++.exe"
+$RelNinja="$RelToolchainRoot/bin/ninja.exe"
+$BuildOmegaLockPath="$ScriptDir\.build-omega.lock"
+if($CleanOnly){
+$ct="$ScriptDir\$BuildDir"
+Write-Host "Cleaning $BuildDir ..."
+try{
+if(Test-Path -Li $ct){Write-Host "Removing $ct";ri -Li $ct -R -Fo -EA Stop}
+if(Test-Path -Li $BuildOmegaLockPath){Write-Host "Removing $BuildOmegaLockPath";ri -Li $BuildOmegaLockPath -Fo -EA Stop}
+}catch{Write-Warning "Could not fully clean $BuildDir - it may be in use by another build. $_";exit 1}
+Write-Host "Clean complete.";exit 0
 }
-
-# ===== -Format (was format-omega.ps1) =====
-# Token-dense clang-format pass. Uses native/.clang-format: ColumnLimit 0, Attach braces, 2-space indent.
-if ($Format) {
-    $clangFormatCandidates = @(
-        "C:\Program Files\LLVM\bin\clang-format.exe",
-        "C:\Program Files\Microsoft Visual Studio\2022\Community\VC\Tools\Llvm\bin\clang-format.exe"
-    )
-    $clangFormat = $null
-    foreach ($candidate in $clangFormatCandidates) {
-        if (Test-Path -LiteralPath $candidate) {
-            $clangFormat = $candidate
-            break
-        }
-    }
-    if (-not $clangFormat) {
-        Write-Error "clang-format not found. Install LLVM or Visual Studio LLVM tools."
-        exit 1
-    }
-
-    $extensions = @("*.cpp", "*.hpp", "*.h")
-    $roots = @("src", "tests")
-    $files = @()
-    foreach ($root in $roots) {
-        $rootPath = Join-Path $ScriptDir $root
-        if (-not (Test-Path -LiteralPath $rootPath)) {
-            continue
-        }
-        foreach ($extension in $extensions) {
-            $files += Get-ChildItem -Path $rootPath -Recurse -Filter $extension -File
-        }
-    }
-
-    if ($files.Count -eq 0) {
-        Write-Host "No C++ files found to format."
-        exit 0
-    }
-
-    Write-Host ("Formatting {0} files with {1}" -f $files.Count, $clangFormat)
-    $failures = 0
-    foreach ($file in $files) {
-        & $clangFormat -i $file.FullName 2>&1 | Out-Null
-        if ($LASTEXITCODE -ne 0) {
-            $failures++
-            Write-Host ("clang-format failed: {0}" -f $file.FullName)
-        }
-    }
-
-    if ($failures -gt 0) {
-        Write-Error ("clang-format failed on {0} file(s)." -f $failures)
-        exit 1
-    }
-    Write-Host "clang-format complete."
-    exit 0
+if($Format){
+$cf=$null
+foreach($c in @("C:\Program Files\LLVM\bin\clang-format.exe","C:\Program Files\Microsoft Visual Studio\2022\Community\VC\Tools\Llvm\bin\clang-format.exe")){if(Test-Path -Li $c){$cf=$c;break}}
+if(!$cf){Write-Error "clang-format not found. Install LLVM or Visual Studio LLVM tools.";exit 1}
+$fl=@()
+foreach($r in @("src","tests")){$rp="$ScriptDir\$r";if(!(Test-Path -Li $rp)){continue};foreach($e in @("*.cpp","*.hpp","*.h")){$fl+=gci -Path $rp -R -Fi $e -File}}
+if($fl.Count -eq 0){Write-Host "No C++ files found to format.";exit 0}
+Write-Host ("Formatting {0} files with {1}" -f $fl.Count,$cf)
+$fa=0
+foreach($f2 in $fl){&$cf -i $f2.FullName 2>&1|Out-Null;if($LASTEXITCODE -ne 0){$fa++;Write-Host ("clang-format failed: {0}" -f $f2.FullName)}}
+if($fa -gt 0){Write-Error ("clang-format failed on {0} file(s)." -f $fa);exit 1}
+Write-Host "clang-format complete.";exit 0
 }
-
-# ===== CLGUI (interactive menu) =====
-# Was the standalone build-gui.ps1; merged in here so there's one script to maintain.
-# Everything below runs and exits before any of the flag-driven build logic further down.
+# ===== CLGUI =====
 if ($Gui) {
     function Write-GuiRule { Write-Host ("-" * 70) -ForegroundColor DarkGray }
     function Write-GuiHeading {
@@ -345,7 +194,6 @@ if ($Gui) {
             }
         }
     }
-
     Show-GuiWelcome
     $running = $true
     while ($running) {
@@ -433,827 +281,202 @@ if ($Gui) {
     exit 0
 }
 # ===== end CLGUI =====
-
-function Get-Manifest {
-    if (-not (Test-Path -LiteralPath $ManifestPath)) {
-        Write-Error "Missing toolchain manifest: $ManifestPath"
-        exit 1
-    }
-    return Get-Content -LiteralPath $ManifestPath -Raw | ConvertFrom-Json
+function GM{if(!(Test-Path -Li $ManifestPath)){Write-Error "Missing toolchain manifest: $ManifestPath";exit 1};return gc -Li $ManifestPath -Raw|ConvertFrom-Json}
+function ED{param([string]$Pa)if(!(Test-Path -Li $Pa)){ni -ItemType Directory -Fo -Path $Pa|Out-Null}}
+function Sync-Shaderpacks{param([string]$BN)
+if(!(Test-Path -Li $ShaderpacksSource)){Write-Error "Shaderpacks source directory not found: $ShaderpacksSource";return}
+$bs="$ScriptDir\$BN\shaderpacks";ED $bs;$pk=gci -Li $ShaderpacksSource -Fo
+foreach($p in $pk){cp -Li $p.FullName -De $bs -R -Fo}
+Write-Host "Shaderpacks: $bs"
+if($env:APPDATA){$rr="$env:APPDATA\.minecraft\shaderpacks";if(Test-Path -Li $rr){ri -Li $rr -R -Fo -EA SilentlyContinue};ED $rr;foreach($p in $pk){cp -Li $p.FullName -De $rr -R -Fo};Write-Host "Shaderpacks deployed: $rr"}
 }
-
-function Ensure-Directory {
-    param([string]$Path)
-    if (-not (Test-Path -LiteralPath $Path)) {
-        New-Item -ItemType Directory -Force -Path $Path | Out-Null
-    }
+function Sync-Resources{
+if(!(Test-Path -Li $ResourcesSource)){Write-Host "Resources source directory not found: $ResourcesSource (skipping)";return}
+if(!$env:APPDATA){Write-Error "APPDATA is not set; cannot locate %APPDATA%\.minecraft\resources";return}
+$rr="$env:APPDATA\.minecraft\resources"
+$rb=gcm robocopy.exe -EA SilentlyContinue
+if($rb){&robocopy.exe $ResourcesSource $rr /MIR /MT:8 /NFL /NDL /NJH /NJS /NP|Out-Null;if($LASTEXITCODE -ge 8){Write-Error "robocopy failed ($LASTEXITCODE) mirroring resources to $rr";return}}
+else{ED $rr;cp -Path "$ResourcesSource\*" -De $rr -R -Fo}
+Write-Host "Resources: $rr"
 }
-
-function Sync-Shaderpacks {
-    param([string]$BuildDirName)
-
-    if (-not (Test-Path -LiteralPath $ShaderpacksSource)) {
-        Write-Error "Shaderpacks source directory not found: $ShaderpacksSource"
-        return
-    }
-
-    $buildShaderpacks = Join-Path (Join-Path $ScriptDir $BuildDirName) "shaderpacks"
-    Ensure-Directory -Path $buildShaderpacks
-    $packs = Get-ChildItem -LiteralPath $ShaderpacksSource -Force
-    foreach ($pack in $packs) {
-        Copy-Item -LiteralPath $pack.FullName -Destination $buildShaderpacks -Recurse -Force
-    }
-    Write-Host "Shaderpacks: $buildShaderpacks"
-
-    if ($env:APPDATA) {
-        $runtimeRoot = Join-Path (Join-Path $env:APPDATA ".minecraft") "shaderpacks"
-        if (Test-Path -LiteralPath $runtimeRoot) {
-            Remove-Item -LiteralPath $runtimeRoot -Recurse -Force -ErrorAction SilentlyContinue
-        }
-        Ensure-Directory -Path $runtimeRoot
-        foreach ($pack in $packs) {
-            Copy-Item -LiteralPath $pack.FullName -Destination $runtimeRoot -Recurse -Force
-        }
-        Write-Host "Shaderpacks deployed: $runtimeRoot"
-    }
+function Invoke-PackageMods{param([string]$BN,[string]$MID="",[bool]$DP=$true)
+$ms="$ScriptDir\mods";if(!(Test-Path -Li $ms)){return}
+$mo="$ScriptDir\$BN\mods";$dd="$env:APPDATA\.minecraft\mods"
+ED $mo
+if($DP){if($MID -eq "" -and(Test-Path -Li $dd)){ri -Li $dd -R -Fo -EA SilentlyContinue};ED $dd}
+$md=gci -Li $ms -Directory
+if($MID -ne ""){$md=$md|?{$_.Name -eq $MID};if($md.Count -eq 0){throw "Mod '$MID' not found in $ms"}}
+Add-Type -AN System.IO.Compression;Add-Type -AN System.IO.Compression.FileSystem
+$pk=0;$deployedCount=0
+foreach($d in $md){
+if($d.Name -eq "lib"){$lo="$mo\lib";ED $lo;cp -Path "$($d.FullName)\*" -De $lo -R -Fo;Write-Host "  Packed shared library lib  ->  $lo";$pk++;if($DP){$ld="$dd\lib";ED $ld;cp -Path "$($d.FullName)\*" -De $ld -R -Fo;Write-Host "  Deployed shared library lib  ->  $ld";$deployedCount++};continue}
+$mf="$($d.FullName)\mod.json";if(!(Test-Path -Li $mf)){continue}
+$id=$d.Name;$zp="$mo\$id.zip";if(Test-Path -Li $zp){ri -Li $zp -Fo}
+$fl=gci -R -File -Li $d.FullName
+$st=[System.IO.File]::Open($zp,[System.IO.FileMode]::Create)
+$ar=New-Object System.IO.Compression.ZipArchive($st,[System.IO.Compression.ZipArchiveMode]::Create,$false,[System.Text.Encoding]::UTF8)
+try{foreach($f2 in $fl){$en=$f2.FullName.Substring($d.FullName.Length+1).Replace("\","/");$e=$ar.CreateEntry($en,[System.IO.Compression.CompressionLevel]::Optimal);$es=$e.Open();try{$by=[System.IO.File]::ReadAllBytes($f2.FullName);$es.Write($by,0,$by.Length)}finally{$es.Close()}}}finally{$ar.Dispose();$st.Dispose()}
+$sz=[Math]::Round((gi -Li $zp).Length/1KB,1);Write-Host "  Packed $id  ->  $zp  ($sz KB)";$pk++
+if($DP){$ds="$dd\$id.zip";cp -Li $zp -De $ds -Fo;Write-Host "  Deployed $id  ->  $ds";$deployedCount++}
 }
-
-# resource::resourceRoot() (ResourceRoot.hpp) is always %APPDATA%/.minecraft/resources —
-# that is where the running exe reads resource files from and where
-# ResourceDownloadThread saves betacraft-downloaded sound/music. Mirror native/resources/
-# there after every build via robocopy /MIR so only changed files are touched on
-# rebuilds instead of a full recursive copy every time. Skip with -SkipResourceSync.
-function Sync-Resources {
-    if (-not (Test-Path -LiteralPath $ResourcesSource)) {
-        Write-Host "Resources source directory not found: $ResourcesSource (skipping)"
-        return
-    }
-    if (-not $env:APPDATA) {
-        Write-Error "APPDATA is not set; cannot locate %APPDATA%\.minecraft\resources"
-        return
-    }
-
-    $runtimeResources = Join-Path (Join-Path $env:APPDATA ".minecraft") "resources"
-    $robocopy = Get-Command robocopy.exe -ErrorAction SilentlyContinue
-    if ($robocopy) {
-        & robocopy.exe $ResourcesSource $runtimeResources /MIR /MT:8 /NFL /NDL /NJH /NJS /NP | Out-Null
-        if ($LASTEXITCODE -ge 8) {
-            Write-Error "robocopy failed ($LASTEXITCODE) mirroring resources to $runtimeResources"
-            return
-        }
-    } else {
-        Ensure-Directory -Path $runtimeResources
-        Copy-Item -Path (Join-Path $ResourcesSource "*") -Destination $runtimeResources -Recurse -Force
-    }
-    Write-Host "Resources: $runtimeResources"
+if($pk -gt 0){Write-Host "Packaged $pk mod(s)$(if($DP){", deployed $deployedCount"})."}
 }
-
-# Was package-mods.ps1: builds runtime mod zips from native/mods/<mod_id>/ sources and
-# deploys them to %APPDATA%\.minecraft\mods\. Runs by default after every build (see
-# -SkipModPackaging); -ModId packages a single mod, -NoModDeploy skips the deploy copy.
-function Invoke-PackageMods {
-    param(
-        [string]$BuildDirName,
-        [string]$ModId = "",
-        [bool]$Deploy = $true
-    )
-
-    $modsSource = Join-Path $ScriptDir "mods"
-    if (-not (Test-Path -LiteralPath $modsSource)) {
-        return
-    }
-    $modsOut = Join-Path $ScriptDir (Join-Path $BuildDirName "mods")
-    $deployDir = Join-Path $env:APPDATA ".minecraft\mods"
-
-    Ensure-Directory -Path $modsOut
-    if ($Deploy) {
-        if ($ModId -eq "" -and (Test-Path -LiteralPath $deployDir)) {
-            Remove-Item -LiteralPath $deployDir -Recurse -Force -ErrorAction SilentlyContinue
-        }
-        Ensure-Directory -Path $deployDir
-    }
-
-    $modDirs = Get-ChildItem -LiteralPath $modsSource -Directory
-    if ($ModId -ne "") {
-        $modDirs = $modDirs | Where-Object { $_.Name -eq $ModId }
-        if ($modDirs.Count -eq 0) {
-            throw "Mod '$ModId' not found in $modsSource"
-        }
-    }
-
-    Add-Type -AssemblyName System.IO.Compression
-    Add-Type -AssemblyName System.IO.Compression.FileSystem
-
-    $packed = 0
-    $deployed = 0
-
-    foreach ($dir in $modDirs) {
-        if ($dir.Name -eq "lib") {
-            $libOut = Join-Path $modsOut "lib"
-            Ensure-Directory -Path $libOut
-            Copy-Item -Path (Join-Path $dir.FullName "*") -Destination $libOut -Recurse -Force
-            Write-Host "  Packed shared library lib  ->  $libOut"
-            $packed++
-
-            if ($Deploy) {
-                $libDest = Join-Path $deployDir "lib"
-                Ensure-Directory -Path $libDest
-                Copy-Item -Path (Join-Path $dir.FullName "*") -Destination $libDest -Recurse -Force
-                Write-Host "  Deployed shared library lib  ->  $libDest"
-                $deployed++
-            }
-            continue
-        }
-        $manifest = Join-Path $dir.FullName "mod.json"
-        if (-not (Test-Path -LiteralPath $manifest)) {
-            continue
-        }
-
-        $id = $dir.Name
-        $zip = Join-Path $modsOut "$id.zip"
-        if (Test-Path -LiteralPath $zip) {
-            Remove-Item -LiteralPath $zip -Force
-        }
-
-        $files = Get-ChildItem -Recurse -File -LiteralPath $dir.FullName
-        $stream = [System.IO.File]::Open($zip, [System.IO.FileMode]::Create)
-        $archive = New-Object System.IO.Compression.ZipArchive($stream, [System.IO.Compression.ZipArchiveMode]::Create, $false, [System.Text.Encoding]::UTF8)
-        try {
-            foreach ($file in $files) {
-                $entryName = $file.FullName.Substring($dir.FullName.Length + 1).Replace("\", "/")
-                $entry = $archive.CreateEntry($entryName, [System.IO.Compression.CompressionLevel]::Optimal)
-                $entryStream = $entry.Open()
-                try {
-                    $bytes = [System.IO.File]::ReadAllBytes($file.FullName)
-                    $entryStream.Write($bytes, 0, $bytes.Length)
-                } finally {
-                    $entryStream.Close()
-                }
-            }
-        } finally {
-            $archive.Dispose()
-            $stream.Dispose()
-        }
-
-        $size = [Math]::Round((Get-Item -LiteralPath $zip).Length / 1KB, 1)
-        Write-Host "  Packed $id  ->  $zip  ($size KB)"
-        $packed++
-
-        if ($Deploy) {
-            $dest = Join-Path $deployDir "$id.zip"
-            Copy-Item -LiteralPath $zip -Destination $dest -Force
-            Write-Host "  Deployed $id  ->  $dest"
-            $deployed++
-        }
-    }
-
-    if ($packed -gt 0) {
-        Write-Host "Packaged $packed mod(s)$(if ($Deploy) { ", deployed $deployed" })."
-    }
+function Download-File{param([string]$U,[string]$D)
+ED(Split-Path -Parent $D)
+if(Test-Path -Li $D){$ex=gi -Li $D;if($ex.Length -gt 0){return};ri -Li $D -Fo}
+Write-Host "Downloading $(Split-Path -Leaf $D) ..."
+$cu=gcm curl.exe -EA SilentlyContinue
+if($cu){&curl.exe -L --fail --retry 3 --retry-delay 2 -o $D $U;if($LASTEXITCODE -ne 0){Write-Error "curl failed ($LASTEXITCODE) for $U";exit 1};return}
+iwr -Uri $U -OutFile $D -UseBasicParsing
 }
-
-function Download-File {
-    param(
-        [string]$Url,
-        [string]$Destination
-    )
-
-    Ensure-Directory -Path (Split-Path -Parent $Destination)
-    if (Test-Path -LiteralPath $Destination) {
-        $existing = Get-Item -LiteralPath $Destination
-        if ($existing.Length -gt 0) {
-            return
-        }
-        Remove-Item -LiteralPath $Destination -Force
-    }
-
-    Write-Host "Downloading $(Split-Path -Leaf $Destination) ..."
-    $curl = Get-Command curl.exe -ErrorAction SilentlyContinue
-    if ($curl) {
-        & curl.exe -L --fail --retry 3 --retry-delay 2 -o $Destination $Url
-        if ($LASTEXITCODE -ne 0) {
-            Write-Error "curl failed ($LASTEXITCODE) for $Url"
-            exit 1
-        }
-        return
-    }
-
-    Invoke-WebRequest -Uri $Url -OutFile $Destination -UseBasicParsing
+function Ensure-ZstdTool{$m=GM;$ze="$ToolsDir\zstd.exe";if(Test-Path -Li $ze){return $ze};ED $ToolsDir;$ar="$DownloadsDir\$($m.zstd.archive)";Download-File -U $m.zstd.url -D $ar;$er="$ToolsDir\zstd-extract";if(Test-Path -Li $er){ri -Li $er -R -Fo};Expand-Archive -Li $ar -DP $er -Fo;$se="$er\$($m.zstd.exe_subpath)";if(!(Test-Path -Li $se)){Write-Error "zstd.exe not found in $($m.zstd.archive)";exit 1};cp -Li $se -De $ze -Fo;return $ze}
+function Merge-Ucrt64IntoMingw64{param([string]$SD2,[string]$DR);$ur="$SD2\ucrt64";if(!(Test-Path -Li $ur)){Write-Error "MSYS2 package did not contain ucrt64/: $SD2";exit 1};foreach($s in @("bin","include","lib","share")){$fr="$ur\$s";if(!(Test-Path -Li $fr)){continue};$to="$DR\$s";ED $to;cp -Path "$fr\*" -De $to -R -Fo}}
+function Install-MsysUcrtPackage{param([string]$U,[string]$PN,[string]$MD2,[string]$ZT);$fn=Split-Path -Leaf $U;$ap="$DownloadsDir\$fn";Download-File -U $U -D $ap;$tp="$DownloadsDir\$fn.tar";if(Test-Path -Li $tp){ri -Li $tp -Fo};&$ZT -d $ap -o $tp -f;if($LASTEXITCODE -ne 0){Write-Error "zstd failed extracting $PN";exit 1};$sg="$DownloadsDir\stage-$PN";if(Test-Path -Li $sg){ri -Li $sg -R -Fo};ED $sg;tar -xf $tp -C $sg;if($LASTEXITCODE -ne 0){Write-Error "tar failed extracting $PN";exit 1};Merge-Ucrt64IntoMingw64 -SD2 $sg -DR $MD2;ri -Li $sg -R -Fo}
+function Test-ToolchainDepsPresent{param([string]$MD2);foreach($l in @("libz.a","libogg.a")){if(!(Test-Path -Li "$MD2\lib\$l")){return $false}};return $true}
+function Ensure-ToolchainDeps{param([string]$MD2);if((Test-Path -Li $DepsMarker)-or(Test-ToolchainDepsPresent -MD2 $MD2)){return};Write-Host "Installing bundled zlib/vorbis deps into toolchain/mingw64 ...";$m=GM;$zt=Ensure-ZstdTool;ED $MD2;foreach($p in $m.msys2_ucrt_packages){Write-Host "  -> $($p.name)";Install-MsysUcrtPackage -U $p.url -PN $p.name -MD2 $MD2 -ZT $zt};sc -Li $DepsMarker -Value ("installed "+(Get-Date -Format "o")) -En ASCII}
+function Test-LocalToolchainPresent{return(Test-Path -Li $GppExe)-and(Test-Path -Li $CmakeExe)-and(Test-Path -Li $NinjaExe)}
+function Ensure-BundledToolchain{if(Test-LocalToolchainPresent){Ensure-ToolchainDeps -MD2 $MingwRoot;Write-Host "Using downloaded toolchain: $RelToolchainRoot";return};$m=GM;ED $DownloadsDir;$ap="$DownloadsDir\$($m.winlibs.archive)";Download-File -U $m.winlibs.url -D $ap;$sg="$ToolchainDir\_staging";if(Test-Path -Li $sg){ri -Li $sg -R -Fo};ED $sg;Write-Host "Extracting bundled GCC toolchain ...";Expand-Archive -Li $ap -DP $sg -Fo;$em="$sg\mingw64";if(!(Test-Path -Li $em)){$cd=gci -Li $sg -Directory|?{Test-Path "$($_.FullName)\bin\g++.exe"}|select -First 1;if($null -eq $cd){Write-Error "WinLibs archive did not contain mingw64/bin/g++.exe";exit 1};$em=$cd.FullName};if(Test-Path -Li $MingwRoot){ri -Li $MingwRoot -R -Fo};mi -Li $em -De $MingwRoot;ri -Li $sg -R -Fo -EA SilentlyContinue;if(!(Test-Path -Li $GppExe)){Write-Error "Bundled toolchain install failed: $GppExe";exit 1};Ensure-ToolchainDeps -MD2 $MingwRoot;Write-Host "Bundled toolchain ready: $MingwRoot"}
+function Set-BundledToolchainEnvironment{param([string]$MBD);$fl=@();if($env:PATH){$fl=$env:PATH -split ';'|?{$_ -ne "" -and $_ -notmatch '(?i)msys64' -and $_ -notmatch '(?i)\\mingw64\\bin' -and $_ -notmatch '(?i)Microsoft Visual Studio'}};$env:PATH=($MBD+';'+($fl -join ';'));$env:CXX="$MBD\g++.exe";ri Env:\CC -EA SilentlyContinue}
+$BuildOmegaLockStream=$null
+function Remove-StaleBuildOmegaLockFile{param([string]$LPa)if(Test-Path -Li $LPa){ri -Li $LPa -Fo -EA SilentlyContinue}}
+function Release-BuildOmegaLock{if($null -ne $script:BuildOmegaLockStream){try{$script:BuildOmegaLockStream.Close()}catch{};try{$script:BuildOmegaLockStream.Dispose()}catch{};$script:BuildOmegaLockStream=$null};if(Test-Path -Li $script:BuildOmegaLockPath){ri -Li $script:BuildOmegaLockPath -Fo -EA SilentlyContinue}}
+function Get-ExternalBuildProcesses{param([string]$BN,[string]$SDP);$ba=("$SDP\$BN").Replace("\","/");$bl=$BN.Replace("\","/");$mt=@();gcim Win32_Process -EA SilentlyContinue|?{$_.Name -eq "cmake.exe" -or $_.Name -eq "ninja.exe"}|%{$cm=$_.CommandLine;if(!$cm){return};$cn=$cm.Replace("\","/");if($cn -like "*$ba*" -or $cn -like "*--build*$bl*"){$mt+=$_}};return $mt}
+function Assert-BuildDirAvailable{param([string]$BN,[string]$SDP);$pr=Get-ExternalBuildProcesses -BN $BN -SDP $SDP;if($pr.Count -eq 0){return};$dt=($pr|%{"  PID $($_.ProcessId): $($_.Name)"}) -join [Environment]::NewLine;Write-Error "Another cmake/ninja build is already using '$BN'.`nWait for it to finish, or stop those processes, then retry.`n$dt";exit 1}
+function Remove-StaleNinjaRestatFile{param([string]$BP);$rs="$BP\.ninja_log.restat";if(Test-Path -Li $rs){ri -Li $rs -Fo -EA SilentlyContinue}}
+function Normalize-ToolPath{param([string]$Pa)if(!$Pa){return ""};return $Pa.Replace("\","/").ToLowerInvariant()}
+function Test-NeedsConfigure{param([string]$BP,[string]$EC,[string]$ETR,[string]$EBT,[bool]$UL,[string]$ECFR="")
+$cp="$BP\CMakeCache.txt"
+if(!(Test-Path -Li $cp)){return $true}
+if(!(Test-Path -Li "$BP\build.ninja")){return $true}
+$gn=$null;$co=$null;$tr=$null;$bt=$null;$ip=$null;$cf=$null
+foreach($ln in gc -Li $cp){
+if($ln -like "CMAKE_GENERATOR:INTERNAL=*"){$gn=$ln.Substring(27)}
+elseif($ln -like "CMAKE_CXX_COMPILER:FILEPATH=*"){$co=$ln.Substring(28)}
+elseif($ln -like "MINECRAFT_TOOLCHAIN_ROOT:PATH=*"){$tr=$ln.Substring(31)}
+elseif($ln -like "CMAKE_BUILD_TYPE:STRING=*"){$bt=$ln.Substring(25)}
+elseif($ln -like "CMAKE_INTERPROCEDURAL_OPTIMIZATION:BOOL=*"){$ip=$ln.Substring(41)}
+elseif($ln -like "CMAKE_CXX_FLAGS_RELEASE:STRING=*"){$cf=$ln.Substring(32).Trim()}
 }
-
-function Ensure-ZstdTool {
-    $manifest = Get-Manifest
-    $zstdExe = Join-Path $ToolsDir "zstd.exe"
-    if (Test-Path -LiteralPath $zstdExe) {
-        return $zstdExe
-    }
-
-    Ensure-Directory -Path $ToolsDir
-    $archive = Join-Path $DownloadsDir $manifest.zstd.archive
-    Download-File -Url $manifest.zstd.url -Destination $archive
-
-    $extractRoot = Join-Path $ToolsDir "zstd-extract"
-    if (Test-Path -LiteralPath $extractRoot) {
-        Remove-Item -LiteralPath $extractRoot -Recurse -Force
-    }
-    Expand-Archive -LiteralPath $archive -DestinationPath $extractRoot -Force
-
-    $sourceExe = Join-Path $extractRoot $manifest.zstd.exe_subpath
-    if (-not (Test-Path -LiteralPath $sourceExe)) {
-        Write-Error "zstd.exe not found in $($manifest.zstd.archive)"
-        exit 1
-    }
-    Copy-Item -LiteralPath $sourceExe -Destination $zstdExe -Force
-    return $zstdExe
+if($gn -ne "Ninja"){return $true}
+if((Normalize-ToolPath $co) -ne (Normalize-ToolPath $EC)){return $true}
+if($tr -and((Normalize-ToolPath $tr) -ne (Normalize-ToolPath $ETR))){return $true}
+if($bt -ne $EBT){return $true}
+if(($ip -eq "ON") -ne $UL){return $true}
+if($EBT -eq "Release" -and $ECFR -ne ""){$en=($ECFR -replace '\s+',' ').Trim();$cn=if($cf){($cf -replace '\s+',' ').Trim()}else{""};if($cn -ne $en){return $true}}
+return $false
 }
-
-function Merge-Ucrt64IntoMingw64 {
-    param(
-        [string]$StageDir,
-        [string]$DestRoot
-    )
-
-    $ucrtRoot = Join-Path $StageDir "ucrt64"
-    if (-not (Test-Path -LiteralPath $ucrtRoot)) {
-        Write-Error "MSYS2 package did not contain ucrt64/: $StageDir"
-        exit 1
-    }
-
-    foreach ($subdir in @("bin", "include", "lib", "share")) {
-        $from = Join-Path $ucrtRoot $subdir
-        if (-not (Test-Path -LiteralPath $from)) {
-            continue
-        }
-        $to = Join-Path $DestRoot $subdir
-        Ensure-Directory -Path $to
-        Copy-Item -Path (Join-Path $from "*") -Destination $to -Recurse -Force
-    }
-}
-
-function Install-MsysUcrtPackage {
-    param(
-        [string]$Url,
-        [string]$PackageName,
-        [string]$MingwDest,
-        [string]$ZstdTool
-    )
-
-    $fileName = Split-Path -Leaf $Url
-    $archivePath = Join-Path $DownloadsDir $fileName
-    Download-File -Url $Url -Destination $archivePath
-
-    $tarPath = Join-Path $DownloadsDir ($fileName + ".tar")
-    if (Test-Path -LiteralPath $tarPath) {
-        Remove-Item -LiteralPath $tarPath -Force
-    }
-
-    & $ZstdTool -d $archivePath -o $tarPath -f
-    if ($LASTEXITCODE -ne 0) {
-        Write-Error "zstd failed extracting $PackageName"
-        exit 1
-    }
-
-    $stageDir = Join-Path $DownloadsDir ("stage-" + $PackageName)
-    if (Test-Path -LiteralPath $stageDir) {
-        Remove-Item -LiteralPath $stageDir -Recurse -Force
-    }
-    Ensure-Directory -Path $stageDir
-
-    tar -xf $tarPath -C $stageDir
-    if ($LASTEXITCODE -ne 0) {
-        Write-Error "tar failed extracting $PackageName"
-        exit 1
-    }
-
-    Merge-Ucrt64IntoMingw64 -StageDir $stageDir -DestRoot $MingwDest
-    Remove-Item -LiteralPath $stageDir -Recurse -Force
-}
-
-function Test-ToolchainDepsPresent {
-    param([string]$MingwDest)
-
-    $requiredLibs = @("libz.a", "libogg.a")
-    foreach ($lib in $requiredLibs) {
-        if (-not (Test-Path -LiteralPath (Join-Path $MingwDest "lib\$lib"))) {
-            return $false
-        }
-    }
-    return $true
-}
-
-function Ensure-ToolchainDeps {
-    param([string]$MingwDest)
-
-    if ((Test-Path -LiteralPath $DepsMarker) -or (Test-ToolchainDepsPresent -MingwDest $MingwDest)) {
-        return
-    }
-
-    Write-Host "Installing bundled zlib/vorbis deps into toolchain/mingw64 ..."
-    $manifest = Get-Manifest
-    $zstdTool = Ensure-ZstdTool
-    Ensure-Directory -Path $MingwDest
-
-    foreach ($pkg in $manifest.msys2_ucrt_packages) {
-        Write-Host "  -> $($pkg.name)"
-        Install-MsysUcrtPackage -Url $pkg.url -PackageName $pkg.name -MingwDest $MingwDest -ZstdTool $zstdTool
-    }
-
-    Set-Content -LiteralPath $DepsMarker -Value ("installed " + (Get-Date -Format "o")) -Encoding ASCII
-}
-
-function Test-LocalToolchainPresent {
-    return (Test-Path -LiteralPath $GppExe) -and
-        (Test-Path -LiteralPath $CmakeExe) -and
-        (Test-Path -LiteralPath $NinjaExe)
-}
-
-function Ensure-BundledToolchain {
-    if (Test-LocalToolchainPresent) {
-        Ensure-ToolchainDeps -MingwDest $MingwRoot
-        Write-Host "Using downloaded toolchain: $RelToolchainRoot"
-        return
-    }
-
-    $manifest = Get-Manifest
-    Ensure-Directory -Path $DownloadsDir
-
-    $archivePath = Join-Path $DownloadsDir $manifest.winlibs.archive
-    Download-File -Url $manifest.winlibs.url -Destination $archivePath
-
-    $staging = Join-Path $ToolchainDir "_staging"
-    if (Test-Path -LiteralPath $staging) {
-        Remove-Item -LiteralPath $staging -Recurse -Force
-    }
-    Ensure-Directory -Path $staging
-
-    Write-Host "Extracting bundled GCC toolchain ..."
-    Expand-Archive -LiteralPath $archivePath -DestinationPath $staging -Force
-
-    $extractedMingw = Join-Path $staging "mingw64"
-    if (-not (Test-Path -LiteralPath $extractedMingw)) {
-        $candidate = Get-ChildItem -LiteralPath $staging -Directory | Where-Object { Test-Path (Join-Path $_.FullName "bin\g++.exe") } | Select-Object -First 1
-        if ($null -eq $candidate) {
-            Write-Error "WinLibs archive did not contain mingw64/bin/g++.exe"
-            exit 1
-        }
-        $extractedMingw = $candidate.FullName
-    }
-
-    if (Test-Path -LiteralPath $MingwRoot) {
-        Remove-Item -LiteralPath $MingwRoot -Recurse -Force
-    }
-    Move-Item -LiteralPath $extractedMingw -Destination $MingwRoot
-    Remove-Item -LiteralPath $staging -Recurse -Force -ErrorAction SilentlyContinue
-
-    if (-not (Test-Path -LiteralPath $GppExe)) {
-        Write-Error "Bundled toolchain install failed: $GppExe"
-        exit 1
-    }
-
-    Ensure-ToolchainDeps -MingwDest $MingwRoot
-    Write-Host "Bundled toolchain ready: $MingwRoot"
-}
-
-function Set-BundledToolchainEnvironment {
-    param([string]$MingwBinDir)
-
-    $filtered = @()
-    if ($env:PATH) {
-        $filtered = $env:PATH -split ';' | Where-Object {
-            $_ -ne "" -and
-            $_ -notmatch '(?i)msys64' -and
-            $_ -notmatch '(?i)\\mingw64\\bin' -and
-            $_ -notmatch '(?i)Microsoft Visual Studio'
-        }
-    }
-
-    $env:PATH = ($MingwBinDir + ';' + ($filtered -join ';'))
-    $env:CXX = Join-Path $MingwBinDir "g++.exe"
-    Remove-Item Env:\CC -ErrorAction SilentlyContinue
-}
-
-$BuildOmegaLockStream = $null
-
-function Remove-StaleBuildOmegaLockFile {
-    param([string]$LockPath)
-    if (Test-Path -LiteralPath $LockPath) {
-        Remove-Item -LiteralPath $LockPath -Force -ErrorAction SilentlyContinue
-    }
-}
-
-function Release-BuildOmegaLock {
-    if ($null -ne $script:BuildOmegaLockStream) {
-        try {
-            $script:BuildOmegaLockStream.Close()
-        } catch {}
-        try {
-            $script:BuildOmegaLockStream.Dispose()
-        } catch {}
-        $script:BuildOmegaLockStream = $null
-    }
-    if (Test-Path -LiteralPath $script:BuildOmegaLockPath) {
-        Remove-Item -LiteralPath $script:BuildOmegaLockPath -Force -ErrorAction SilentlyContinue
-    }
-}
-
-function Get-ExternalBuildProcesses {
-    param(
-        [string]$BuildDirName,
-        [string]$ScriptDirPath
-    )
-
-    $buildDirAbs = (Join-Path $ScriptDirPath $BuildDirName).Replace("\", "/")
-    $buildDirLeaf = $BuildDirName.Replace("\", "/")
-    $matches = @()
-
-    Get-CimInstance Win32_Process -ErrorAction SilentlyContinue |
-        Where-Object { $_.Name -eq "cmake.exe" -or $_.Name -eq "ninja.exe" } |
-        ForEach-Object {
-            $cmd = $_.CommandLine
-            if (-not $cmd) {
-                return
-            }
-            $cmdNorm = $cmd.Replace("\", "/")
-            if ($cmdNorm -like "*$buildDirAbs*" -or $cmdNorm -like "*--build*$buildDirLeaf*") {
-                $matches += $_
-            }
-        }
-
-    return $matches
-}
-
-function Assert-BuildDirAvailable {
-    param(
-        [string]$BuildDirName,
-        [string]$ScriptDirPath
-    )
-
-    $procs = Get-ExternalBuildProcesses -BuildDirName $BuildDirName -ScriptDirPath $ScriptDirPath
-    if ($procs.Count -eq 0) {
-        return
-    }
-
-    $details = ($procs | ForEach-Object {
-        "  PID $($_.ProcessId): $($_.Name)"
-    }) -join [Environment]::NewLine
-
-    Write-Error @"
-Another cmake/ninja build is already using '$BuildDirName'.
-Wait for it to finish, or stop those processes, then retry.
-$details
-"@
-    exit 1
-}
-
-function Remove-StaleNinjaRestatFile {
-    param([string]$BuildDirPath)
-
-    $restat = Join-Path $BuildDirPath ".ninja_log.restat"
-    if (Test-Path -LiteralPath $restat) {
-        Remove-Item -LiteralPath $restat -Force -ErrorAction SilentlyContinue
-    }
-}
-
-function Normalize-ToolPath {
-    param([string]$Path)
-    if (-not $Path) {
-        return ""
-    }
-    return $Path.Replace("\", "/").ToLowerInvariant()
-}
-
-function Test-NeedsConfigure {
-    param(
-        [string]$BuildDirPath,
-        [string]$ExpectedCompiler,
-        [string]$ExpectedToolchainRoot,
-        [string]$ExpectedBuildType,
-        [bool]$UseLto,
-        [string]$ExpectedCxxFlagsRelease = ""
-    )
-
-    $cachePath = Join-Path $BuildDirPath "CMakeCache.txt"
-    if (-not (Test-Path -LiteralPath $cachePath)) {
-        return $true
-    }
-    if (-not (Test-Path -LiteralPath (Join-Path $BuildDirPath "build.ninja"))) {
-        return $true
-    }
-
-    $generator = $null
-    $compiler = $null
-    $toolchainRoot = $null
-    $buildType = $null
-    $ipo = $null
-    $cxxFlagsRelease = $null
-    foreach ($line in Get-Content -LiteralPath $cachePath) {
-        if ($line -like "CMAKE_GENERATOR:INTERNAL=*") {
-            $generator = $line.Substring("CMAKE_GENERATOR:INTERNAL=".Length)
-        } elseif ($line -like "CMAKE_CXX_COMPILER:FILEPATH=*") {
-            $compiler = $line.Substring("CMAKE_CXX_COMPILER:FILEPATH=".Length)
-        } elseif ($line -like "MINECRAFT_TOOLCHAIN_ROOT:PATH=*") {
-            $toolchainRoot = $line.Substring("MINECRAFT_TOOLCHAIN_ROOT:PATH=".Length)
-        } elseif ($line -like "CMAKE_BUILD_TYPE:STRING=*") {
-            $buildType = $line.Substring("CMAKE_BUILD_TYPE:STRING=".Length)
-        } elseif ($line -like "CMAKE_INTERPROCEDURAL_OPTIMIZATION:BOOL=*") {
-            $ipo = $line.Substring("CMAKE_INTERPROCEDURAL_OPTIMIZATION:BOOL=".Length)
-        } elseif ($line -like "CMAKE_CXX_FLAGS_RELEASE:STRING=*") {
-            $cxxFlagsRelease = $line.Substring("CMAKE_CXX_FLAGS_RELEASE:STRING=".Length).Trim()
-        }
-    }
-
-    if ($generator -ne "Ninja") {
-        return $true
-    }
-    if ((Normalize-ToolPath $compiler) -ne (Normalize-ToolPath $ExpectedCompiler)) {
-        return $true
-    }
-    if ($toolchainRoot -and ((Normalize-ToolPath $toolchainRoot) -ne (Normalize-ToolPath $ExpectedToolchainRoot))) {
-        return $true
-    }
-    if ($buildType -ne $ExpectedBuildType) {
-        return $true
-    }
-
-    $cachedLto = ($ipo -eq "ON")
-    if ($cachedLto -ne $UseLto) {
-        return $true
-    }
-
-    if ($ExpectedBuildType -eq "Release" -and $ExpectedCxxFlagsRelease -ne "") {
-        $expectedNorm = ($ExpectedCxxFlagsRelease -replace '\s+', ' ').Trim()
-        $cachedNorm = if ($cxxFlagsRelease) { ($cxxFlagsRelease -replace '\s+', ' ').Trim() } else { "" }
-        if ($cachedNorm -ne $expectedNorm) {
-            return $true
-        }
-    }
-
-    return $false
-}
-
 Ensure-BundledToolchain
-Set-BundledToolchainEnvironment -MingwBinDir $MingwBin
-
-if (-not (Test-Path -LiteralPath $CmakeExe)) {
-    Write-Error "Bundled cmake not found at $CmakeExe"
-    exit 1
-}
-if (-not (Test-Path -LiteralPath $NinjaExe)) {
-    Write-Error "Bundled ninja not found at $NinjaExe"
-    exit 1
-}
-
-Remove-StaleBuildOmegaLockFile -LockPath $BuildOmegaLockPath
-
+Set-BundledToolchainEnvironment -MBD $MingwBin
+if(!(Test-Path -Li $CmakeExe)){Write-Error "Bundled cmake not found at $CmakeExe";exit 1}
+if(!(Test-Path -Li $NinjaExe)){Write-Error "Bundled ninja not found at $NinjaExe";exit 1}
+Remove-StaleBuildOmegaLockFile -LPa $BuildOmegaLockPath
 try {
-    try {
-        $BuildOmegaLockStream = [System.IO.File]::Open(
-            $BuildOmegaLockPath,
-            [System.IO.FileMode]::Create,
-            [System.IO.FileAccess]::ReadWrite,
-            [System.IO.FileShare]::None)
-        $pidBytes = [System.Text.Encoding]::ASCII.GetBytes("$PID`n")
-        $BuildOmegaLockStream.Write($pidBytes, 0, $pidBytes.Length)
-        $BuildOmegaLockStream.Flush()
-    } catch {
-        Write-Error "Already in use"
-        exit 1
-    }
-
-if ($Jobs -le 0) {
-    # Cap default parallelism: large link steps and many TUs can OOM if -j is too high.
-    $Jobs = [Math]::Min(12, [Math]::Max(1, [Environment]::ProcessorCount - 2))
-}
-
-if ($Clean -and (Test-Path $BuildDir)) {
-    Assert-BuildDirAvailable -BuildDirName $BuildDir -ScriptDirPath $ScriptDir
-    Write-Host "Removing $BuildDir ..."
-    Remove-Item -Recurse -Force $BuildDir
-    $CcacheExe = Join-Path $MingwBin "ccache.exe"
-    if (Test-Path -LiteralPath $CcacheExe) {
-        Write-Host "Clearing ccache (stale LTO objects) ..."
-        & $CcacheExe -C
-    }
-}
-
-Assert-BuildDirAvailable -BuildDirName $BuildDir -ScriptDirPath $ScriptDir
-
+try{$BuildOmegaLockStream=[System.IO.File]::Open($BuildOmegaLockPath,[System.IO.FileMode]::Create,[System.IO.FileAccess]::ReadWrite,[System.IO.FileShare]::None);$pb=[System.Text.Encoding]::ASCII.GetBytes("$PID`n");$BuildOmegaLockStream.Write($pb,0,$pb.Length);$BuildOmegaLockStream.Flush()}catch{Write-Error "Already in use";exit 1}
+if($Jobs -le 0){$Jobs=[Math]::Min(12,[Math]::Max(1,[Environment]::ProcessorCount-2))}
+if($Clean -and(Test-Path $BuildDir)){Assert-BuildDirAvailable -BN $BuildDir -SDP $ScriptDir;Write-Host "Removing $BuildDir ...";ri -R -Fo $BuildDir;$cc="$MingwBin\ccache.exe";if(Test-Path -Li $cc){Write-Host "Clearing ccache (stale LTO objects) ...";&$cc -C}}
+Assert-BuildDirAvailable -BN $BuildDir -SDP $ScriptDir
 Write-Host "Toolchain: $RelToolchainRoot"
 Write-Host "Compiler:  $RelGpp"
-
-$CmakeArgs = @(
-    "-S", ".",
-    "-B", $BuildDir,
-    "-G", "Ninja",
-    "-DCMAKE_MAKE_PROGRAM=$NinjaExe",
-    "-DCMAKE_CXX_COMPILER=$GppExe",
-    "-DCMAKE_BUILD_TYPE=$BuildType",
-    "-DMINECRAFT_TOOLCHAIN_ROOT=$RelToolchainRoot"
-)
-
-$UseLto = $Lto -and (-not $NoLto)
-if ($Lto -and $NoLto) {
-    Write-Error "-Lto and -NoLto cannot be used together."
-    exit 1
+$CmakeArgs=@("-S",".","-B",$BuildDir,"-G","Ninja","-DCMAKE_MAKE_PROGRAM=$NinjaExe","-DCMAKE_CXX_COMPILER=$GppExe","-DCMAKE_BUILD_TYPE=$BuildType","-DMINECRAFT_TOOLCHAIN_ROOT=$RelToolchainRoot")
+$UseLto=$Lto -and(-not $NoLto)
+if($Lto -and $NoLto){Write-Error "-Lto and -NoLto cannot be used together.";exit 1}
+if($UseLto -and $BuildType -ne "Release"){Write-Error "-Lto is only supported with -BuildType Release.";exit 1}
+if($UseLto){Write-Host "LTO enabled (opt-in; may fail to link on MinGW GCC 15)";$CmakeArgs+="-DCMAKE_INTERPROCEDURAL_OPTIMIZATION=ON";$CmakeArgs+="-DCMAKE_CXX_COMPILER_LAUNCHER=";$env:CCACHE_DISABLE="1"}
+$OmegaCxxRelease=""
+if($BuildType -eq "Release"){
+$OC="-funroll-loops -fomit-frame-pointer -ffunction-sections -fdata-sections -fno-semantic-interposition -fmerge-all-constants"
+if($KeepDebugSymbols){$OC="-g "+$OC}
+$OL="-Wl,--gc-sections"
+if($UseLto){$OL="";$OC=$OC+" -flto-partition=one"}
+if(!$NoNativeCpu){$OC="-march=native -mtune=native -mprefer-vector-width=128 "+$OC}
+$OmegaCxxRelease=$OC
+$CmakeArgs+="-DCMAKE_CXX_FLAGS_RELEASE=$OC"
+if($OL -ne ""){$CmakeArgs+="-DCMAKE_EXE_LINKER_FLAGS_RELEASE=$OL"}
 }
-if ($UseLto -and $BuildType -ne "Release") {
-    Write-Error "-Lto is only supported with -BuildType Release."
-    exit 1
+$NeedsConfigure=Test-NeedsConfigure -BP "$ScriptDir\$BuildDir" -EC $GppExe -ETR "$ScriptDir\$($RelToolchainRoot.Replace('/','\'))" -EBT $BuildType -UL $UseLto -ECFR $OmegaCxxRelease
+if($NeedsConfigure){
+Assert-BuildDirAvailable -BN $BuildDir -SDP $ScriptDir
+Remove-StaleNinjaRestatFile -BP "$ScriptDir\$BuildDir"
+if($BuildType -eq "Release"){Write-Host "Configuring $BuildDir (Ninja + bundled GCC, Release, omega flags) ..."}else{Write-Host "Configuring $BuildDir (Ninja + bundled GCC, $BuildType) ..."}
+&$CmakeExe @CmakeArgs
+if($LASTEXITCODE -ne 0){exit $LASTEXITCODE}
 }
-
-if ($UseLto) {
-    Write-Host "LTO enabled (opt-in; may fail to link on MinGW GCC 15)"
-    $CmakeArgs += "-DCMAKE_INTERPROCEDURAL_OPTIMIZATION=ON"
-    $CmakeArgs += "-DCMAKE_CXX_COMPILER_LAUNCHER="
-    $env:CCACHE_DISABLE = "1"
-}
-
-$OmegaCxxRelease = ""
-if ($BuildType -eq "Release") {
-    # No -g here by default: Release is a small ship build. Pass -KeepDebugSymbols
-    # (or use -BuildType RelWithDebInfo, which keeps -g via CMake's own defaults)
-    # when an optimized binary with DWARF symbols is actually needed.
-    $OmegaCxx = "-funroll-loops -fomit-frame-pointer -ffunction-sections -fdata-sections -fno-semantic-interposition -fmerge-all-constants"
-    if ($KeepDebugSymbols) {
-        $OmegaCxx = "-g " + $OmegaCxx
-    }
-    $OmegaLink = "-Wl,--gc-sections"
-    if ($UseLto) {
-        # LTO + --gc-sections triggers duplicate .gnu.lto section errors on MinGW GCC 15.
-        $OmegaLink = ""
-        $OmegaCxx = $OmegaCxx + " -flto-partition=one"
-    }
-    if (-not $NoNativeCpu) {
-        $OmegaCxx = "-march=native -mtune=native -mprefer-vector-width=128 " + $OmegaCxx
-    }
-    $OmegaCxxRelease = $OmegaCxx
-    $CmakeArgs += "-DCMAKE_CXX_FLAGS_RELEASE=$OmegaCxx"
-    if ($OmegaLink -ne "") {
-        $CmakeArgs += "-DCMAKE_EXE_LINKER_FLAGS_RELEASE=$OmegaLink"
-    }
-}
-
-$NeedsConfigure = Test-NeedsConfigure `
-    -BuildDirPath (Join-Path $ScriptDir $BuildDir) `
-    -ExpectedCompiler $GppExe `
-    -ExpectedToolchainRoot (Join-Path $ScriptDir $RelToolchainRoot.Replace("/", "\")) `
-    -ExpectedBuildType $BuildType `
-    -UseLto $UseLto `
-    -ExpectedCxxFlagsRelease $OmegaCxxRelease
-if ($NeedsConfigure) {
-    Assert-BuildDirAvailable -BuildDirName $BuildDir -ScriptDirPath $ScriptDir
-    Remove-StaleNinjaRestatFile -BuildDirPath (Join-Path $ScriptDir $BuildDir)
-    if ($BuildType -eq "Release") {
-        Write-Host "Configuring $BuildDir (Ninja + bundled GCC, Release, omega flags) ..."
-    } else {
-        Write-Host "Configuring $BuildDir (Ninja + bundled GCC, $BuildType) ..."
-    }
-    & $CmakeExe @CmakeArgs
-    if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-}
-
-Assert-BuildDirAvailable -BuildDirName $BuildDir -ScriptDirPath $ScriptDir
-$buildTargets = @("minecraft_native", "minecraft_server", "minecraft_installer")
-$buildLabel = "minecraft_native + minecraft_server + minecraft_installer"
-if ($Target -eq "Client") {
-    $buildTargets = @("minecraft_native")
-    $buildLabel = "minecraft_native (client)"
-} elseif ($Target -eq "Server") {
-    $buildTargets = @("minecraft_server")
-    $buildLabel = "minecraft_server"
-}
-if ($BuildType -eq "Release") {
-    Write-Host "Omega build: $buildLabel (-j $Jobs) ..."
-} else {
-    Write-Host "$BuildType build: $buildLabel (-j $Jobs) ..."
-}
-$sw = [System.Diagnostics.Stopwatch]::StartNew()
-& $CmakeExe --build $BuildDir --target @buildTargets -j $Jobs
-$exitCode = $LASTEXITCODE
+Assert-BuildDirAvailable -BN $BuildDir -SDP $ScriptDir
+$buildTargets=@("minecraft_native","minecraft_server","minecraft_installer")
+$buildLabel="minecraft_native + minecraft_server + minecraft_installer"
+if($Target -eq "Client"){$buildTargets=@("minecraft_native");$buildLabel="minecraft_native (client)"}
+elseif($Target -eq "Server"){$buildTargets=@("minecraft_server");$buildLabel="minecraft_server"}
+if($BuildType -eq "Release"){Write-Host "Omega build: $buildLabel (-j $Jobs) ..."}else{Write-Host "$BuildType build: $buildLabel (-j $Jobs) ..."}
+$sw=[System.Diagnostics.Stopwatch]::StartNew()
+&$CmakeExe --build $BuildDir --target @buildTargets -j $Jobs
+$exitCode=$LASTEXITCODE
 $sw.Stop()
-
-    if ($exitCode -eq 0) {
-    Sync-Shaderpacks -BuildDirName $BuildDir
-    if (-not $SkipResourceSync) {
-        Sync-Resources
-    }
-    $StripExe = Join-Path $MingwBin "strip.exe"
-    function Show-ExeInfo {
-        param([string]$Label, [string]$Path)
-        if (-not (Test-Path -LiteralPath $Path)) {
-            return
-        }
-        if ($StripSymbols -and (Test-Path -LiteralPath $StripExe)) {
-            Write-Host "Stripping symbols: $Path"
-            & $StripExe --strip-debug --strip-unneeded $Path
-        }
-        $sizeMB = [Math]::Round((Get-Item -LiteralPath $Path).Length / 1MB, 1)
-        Write-Host "${Label}: $Path ($sizeMB MB)"
-    }
-
-    if ($Target -eq "All" -or $Target -eq "Client") {
-        Show-ExeInfo -Label "Client" -Path (Join-Path $BuildDir "minecraft_native.exe")
-    }
-    if ($Target -eq "All" -or $Target -eq "Server") {
-        Show-ExeInfo -Label "Server" -Path (Join-Path $BuildDir "minecraft_server.exe")
-    }
-    Show-ExeInfo -Label "Installer" -Path (Join-Path $BuildDir "minecraft_installer.exe")
-
-    if ($RunTests -and $exitCode -eq 0) {
-        $testTargets = @()
-        if ($Target -eq "All" -or $Target -eq "Client" -or $Target -eq "Server") {
-            $testTargets += "minecraft_omega_tests"
-        }
-        if ($testTargets.Count -gt 0) {
-        Write-Host "Building $($testTargets -join ', ') (-j $Jobs) ..."
-        & $CmakeExe --build $BuildDir --target @testTargets -j $Jobs
-        if ($LASTEXITCODE -ne 0) {
-            $exitCode = $LASTEXITCODE
-        } else {
-            $buildDirAbs = Join-Path $ScriptDir $BuildDir
-            Write-Host "Running ctest in $BuildDir ..."
-            Push-Location $buildDirAbs
-            try {
-                if (-not (Test-Path -LiteralPath $CtestExe)) {
-                    Write-Error "Bundled ctest not found at $CtestExe"
-                    $exitCode = 1
-                } else {
-                    & $CtestExe --output-on-failure
-                    if ($LASTEXITCODE -ne 0) {
-                        $exitCode = $LASTEXITCODE
-                    }
-                }
-            } finally {
-                Pop-Location
-            }
-        }
-        }
-    }
-    if (-not $SkipModPackaging -and $exitCode -eq 0) {
-        try {
-            Invoke-PackageMods -BuildDirName $BuildDir -ModId $ModId -Deploy (-not $NoModDeploy)
-        } catch {
-            Write-Error $_
-            $exitCode = 1
-        }
-    }
-    if ($exitCode -eq 0 -and $BuildType -eq "Release" -and -not $Run) {
-        $srcExes = @()
-        if ($Target -eq "All" -or $Target -eq "Client") { $srcExes += "minecraft_native.exe" }
-        if ($Target -eq "All" -or $Target -eq "Server") { $srcExes += "minecraft_server.exe" }
-        if ($Target -eq "All") { $srcExes += "minecraft_installer.exe" }
-        if ($srcExes.Count -gt 0) {
-            try {
-                Add-Type -AssemblyName System.Windows.Forms
-                $null = [System.Windows.Forms.Application]::EnableVisualStyles()
-                $f = New-Object System.Windows.Forms.FolderBrowserDialog
-                $f.Description = "Select output folder for built binaries"
-                $f.ShowNewFolderButton = $true
-                if ($f.ShowDialog() -eq "OK") {
-                    foreach ($exe in $srcExes) {
-                        $src = Join-Path $BuildDir $exe
-                        if (Test-Path -LiteralPath $src) {
-                            Copy-Item -LiteralPath $src -Destination (Join-Path $f.SelectedPath $exe) -Force
-                            Write-Host "Copied $exe -> $($f.SelectedPath)"
-                        }
-                    }
-                    Start-Process explorer.exe -ArgumentList $f.SelectedPath
-                }
-            } catch {
-                Write-Warning "Copy dialog failed: $_"
-            }
-        }
-    }
+if($exitCode -eq 0){
+Sync-Shaderpacks -BN $BuildDir
+if(!$SkipResourceSync){Sync-Resources}
+$StripExe="$MingwBin\strip.exe"
+function Show-ExeInfo{param([string]$Label,[string]$Pth)
+if(!(Test-Path -Li $Pth)){return}
+if($StripSymbols -and(Test-Path -Li $StripExe)){Write-Host "Stripping symbols: $Pth";&$StripExe --strip-debug --strip-unneeded $Pth}
+$s=[Math]::Round((gi -Li $Pth).Length/1MB,1)
+Write-Host "${Label}: $Pth ($s MB)"
 }
-
+if($Target -eq "All" -or $Target -eq "Client"){Show-ExeInfo -Label "Client" -Pth "$BuildDir\minecraft_native.exe"}
+if($Target -eq "All" -or $Target -eq "Server"){Show-ExeInfo -Label "Server" -Pth "$BuildDir\minecraft_server.exe"}
+Show-ExeInfo -Label "Installer" -Pth "$BuildDir\minecraft_installer.exe"
+if($RunTests){
+$tt=@()
+if($Target -eq "All" -or $Target -eq "Client" -or $Target -eq "Server"){$tt+="minecraft_omega_tests"}
+if($tt.Count -gt 0){
+Write-Host "Building $($tt -join ', ') (-j $Jobs) ..."
+&$CmakeExe --build $BuildDir --target @tt -j $Jobs
+if($LASTEXITCODE -ne 0){$exitCode=$LASTEXITCODE}
+else{
+$ba="$ScriptDir\$BuildDir"
+Write-Host "Running ctest in $BuildDir ..."
+Push-Location $ba
+try{
+if(!(Test-Path -Li $CtestExe)){Write-Error "Bundled ctest not found at $CtestExe";$exitCode=1}
+else{&$CtestExe --output-on-failure;if($LASTEXITCODE -ne 0){$exitCode=$LASTEXITCODE}}
+}finally{Pop-Location}
+}
+}
+}
+if(!$SkipModPackaging){
+    try{Invoke-PackageMods -BN $BuildDir -MID $ModId -DP:$(-not $NoModDeploy)}catch{Write-Error $_;$exitCode=1}
+}
+if($BuildType -eq "Release" -and !$Run){
+$se=@()
+if($Target -eq "All" -or $Target -eq "Client"){$se+="minecraft_native.exe"}
+if($Target -eq "All" -or $Target -eq "Server"){$se+="minecraft_server.exe"}
+if($Target -eq "All"){$se+="minecraft_installer.exe"}
+if($se.Count -gt 0){
+try{
+Add-Type -AN System.Windows.Forms
+$null=[System.Windows.Forms.Application]::EnableVisualStyles()
+$f2=New-Object System.Windows.Forms.FolderBrowserDialog
+$f2.Description="Select output folder for built binaries"
+$f2.ShowNewFolderButton=$true
+if($f2.ShowDialog() -eq "OK"){
+foreach($x in $se){$s="$BuildDir\$x";if(Test-Path -Li $s){cp -Li $s -De "$($f2.SelectedPath)\$x" -Fo;Write-Host "Copied $x -> $($f2.SelectedPath)"}}
+Start-Process explorer.exe -ArgumentList $f2.SelectedPath
+}
+}catch{Write-Warning "Copy dialog failed: $_"}
+}
+}
+}
 Write-Host ("Finished in {0:N1}s (exit $exitCode)" -f $sw.Elapsed.TotalSeconds)
-
-if ($Run -and $exitCode -eq 0) {
-    $launchArgs = @()
-    if ($Target -eq "Server") {
-        $exe = Join-Path $ScriptDir (Join-Path $BuildDir "minecraft_server.exe")
-        if ($NoGui) { $launchArgs += "nogui" }
-    } else {
-        $exe = Join-Path $ScriptDir (Join-Path $BuildDir "minecraft_native.exe")
-    }
-    if (-not (Test-Path -LiteralPath $exe)) {
-        Write-Error "Executable not found: $exe"
-        exit 1
-    }
-    if ($RunArgs -and $RunArgs.Count -gt 0) {
-        $launchArgs += $RunArgs
-    }
-    Write-Host "Launching $exe ..."
-    if ($launchArgs.Count -gt 0) {
-        & $exe @launchArgs
-    } else {
-        & $exe
-    }
-    $exitCode = $LASTEXITCODE
+if($Run -and $exitCode -eq 0){
+$la=@()
+if($Target -eq "Server"){$ex="$ScriptDir\$BuildDir\minecraft_server.exe";if($NoGui){$la+="nogui"}}
+else{$ex="$ScriptDir\$BuildDir\minecraft_native.exe"}
+if(!(Test-Path -Li $ex)){Write-Error "Executable not found: $ex";exit 1}
+if($RunArgs -and $RunArgs.Count -gt 0){$la+=$RunArgs}
+Write-Host "Launching $ex ..."
+if($la.Count -gt 0){&$ex @la}else{&$ex}
+$exitCode=$LASTEXITCODE
 }
-
 exit $exitCode
-
 } finally {
-    Release-BuildOmegaLock
+Release-BuildOmegaLock
 }

@@ -46,6 +46,26 @@ bool luaGuiDrawActive() noexcept {
 thread_local LuaScreen* g_activeLuaScreen = nullptr;
 thread_local ScreenUiContext* g_activeScreenUi = nullptr;
 thread_local bool g_luaScreenInitPhase = false;
+namespace {
+// A Lua callback dispatched from a screen event can open or close screens, which re-enters
+// these handlers (LuaScreen::removed fires its own Close event). Restoring the previous
+// value on scope exit -- rather than clearing to nullptr -- leaves the outer frame's context
+// intact once the nested event returns, and survives a Lua error unwinding through it.
+class ActiveLuaScreenScope {
+ public:
+ explicit ActiveLuaScreenScope(LuaScreen* screen) : previousScreen_(g_activeLuaScreen) {
+  g_activeLuaScreen = screen;
+ }
+ ~ActiveLuaScreenScope() {
+  g_activeLuaScreen = previousScreen_;
+ }
+ ActiveLuaScreenScope(const ActiveLuaScreenScope&) = delete;
+ ActiveLuaScreenScope& operator=(const ActiveLuaScreenScope&) = delete;
+
+ private:
+ LuaScreen* previousScreen_ = nullptr;
+};
+} // namespace
 // --- minecraft.session ---------------------------------------------------
 // Read/write the runtime identity override used for offline-mode joins, plus reads of
 // the live session. Exposed so any mod (e.g. an offline-mode helper) can change the name
@@ -87,13 +107,13 @@ int luaSessionIsAuthenticated(lua_State* state) {
 void LuaScreen::init() {
  enableTextInput();
  fields_.clear();
- g_activeLuaScreen = this;
+ const ActiveLuaScreenScope screenScope(this);
+ const bool previousInitPhase = g_luaScreenInitPhase;
  g_luaScreenInitPhase = true;
  LuaScreenEvent event;
  event.phase = LuaScreenPhase::Init;
  net::minecraft::mod::runtime::luaHookScreenEvent(event);
- g_luaScreenInitPhase = false;
- g_activeLuaScreen = nullptr;
+ g_luaScreenInitPhase = previousInitPhase;
 }
 void LuaScreen::tick() {
  for(LuaScreenField& field : fields_) {
@@ -101,26 +121,26 @@ void LuaScreen::tick() {
    field.widget->tick();
   }
  }
- g_activeLuaScreen = this;
+ const ActiveLuaScreenScope screenScope(this);
  LuaScreenEvent event;
  event.phase = LuaScreenPhase::Tick;
  net::minecraft::mod::runtime::luaHookScreenEvent(event);
- g_activeLuaScreen = nullptr;
 }
 void LuaScreen::render(int mouseX, int mouseY, float tickDelta) {
  if(!title_.empty() && textRenderer() != nullptr) {
   drawCenteredTextWithShadow(*textRenderer(), title_, width() / 2, 20, 0xFFFFFF);
  }
- g_activeLuaScreen = this;
- LuaScreenEvent event;
- event.phase = LuaScreenPhase::Render;
- event.mouseX = mouseX;
- event.mouseY = mouseY;
- event.tickDelta = tickDelta;
- ++g_luaGuiDepth;
- net::minecraft::mod::runtime::luaHookScreenEvent(event);
- --g_luaGuiDepth;
- g_activeLuaScreen = nullptr;
+ {
+  const ActiveLuaScreenScope screenScope(this);
+  LuaScreenEvent event;
+  event.phase = LuaScreenPhase::Render;
+  event.mouseX = mouseX;
+  event.mouseY = mouseY;
+  event.tickDelta = tickDelta;
+  ++g_luaGuiDepth;
+  net::minecraft::mod::runtime::luaHookScreenEvent(event);
+  --g_luaGuiDepth;
+ }
  if(fieldsVisible_) {
   for(LuaScreenField& field : fields_) {
    if(field.widget != nullptr) {
@@ -139,18 +159,17 @@ void LuaScreen::mouseClicked(int mouseX, int mouseY, int button) {
   }
  }
  client::gui::screen::Screen::mouseClicked(mouseX, mouseY, button);
- g_activeLuaScreen = this;
+ const ActiveLuaScreenScope screenScope(this);
  LuaScreenEvent event;
  event.phase = LuaScreenPhase::Mouse;
  event.mouseX = mouseX;
  event.mouseY = mouseY;
  event.button = button;
  net::minecraft::mod::runtime::luaHookScreenEvent(event);
- g_activeLuaScreen = nullptr;
 }
 void LuaScreen::mouseReleased(int mouseX, int mouseY, int button) {
  client::gui::screen::Screen::mouseReleased(mouseX, mouseY, button);
- g_activeLuaScreen = this;
+ const ActiveLuaScreenScope screenScope(this);
  LuaScreenEvent event;
  event.phase = LuaScreenPhase::Mouse;
  event.mouseX = mouseX;
@@ -158,7 +177,6 @@ void LuaScreen::mouseReleased(int mouseX, int mouseY, int button) {
  event.button = button;
  event.released = true;
  net::minecraft::mod::runtime::luaHookScreenEvent(event);
- g_activeLuaScreen = nullptr;
 }
 void LuaScreen::keyPressed(char character, int keyCode) {
  if(fieldsVisible_) {
@@ -171,33 +189,32 @@ void LuaScreen::keyPressed(char character, int keyCode) {
    }
   }
  }
- g_activeLuaScreen = this;
  LuaScreenEvent event;
- event.phase = LuaScreenPhase::Key;
- event.character = character;
- event.keyCode = keyCode;
- net::minecraft::mod::runtime::luaHookScreenEvent(event);
- g_activeLuaScreen = nullptr;
+ {
+  const ActiveLuaScreenScope screenScope(this);
+  event.phase = LuaScreenPhase::Key;
+  event.character = character;
+  event.keyCode = keyCode;
+  net::minecraft::mod::runtime::luaHookScreenEvent(event);
+ }
  if(!event.handled) {
   closeOnEscape(keyCode);
  }
 }
 void LuaScreen::mouseScrolled(int mouseX, int mouseY, int delta) {
- g_activeLuaScreen = this;
+ const ActiveLuaScreenScope screenScope(this);
  LuaScreenEvent event;
  event.phase = LuaScreenPhase::Scroll;
  event.mouseX = mouseX;
  event.mouseY = mouseY;
  event.scrollDelta = delta;
  net::minecraft::mod::runtime::luaHookScreenEvent(event);
- g_activeLuaScreen = nullptr;
 }
 void LuaScreen::removed() {
- g_activeLuaScreen = this;
+ const ActiveLuaScreenScope screenScope(this);
  LuaScreenEvent event;
  event.phase = LuaScreenPhase::Close;
  net::minecraft::mod::runtime::luaHookScreenEvent(event);
- g_activeLuaScreen = nullptr;
 }
 void LuaScreen::closeToParent() {
  if(returnFactory_) {

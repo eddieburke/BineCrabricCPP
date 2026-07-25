@@ -16,6 +16,7 @@ local MAX_SUB_STEPS = 4
 local SLEEP_AFTER_TICKS = 12
 local MAX_LINEAR_SPEED = 2.0
 local MAX_ANGULAR_SPEED = 2.5
+local SERVER_SYNC_INTERVAL = 20
 
 -- Section 3: State
 local sims = {}

@@ -20,7 +20,12 @@ namespace net::minecraft::client::multiplayer {
 using namespace detail;
 std::unique_ptr<Packet> makePlayerMoveResponsePacket(const PlayerMovePacket& packet,
                                                      const entity::player::ClientPlayerEntity& player) {
- const double feetY = player.y;
+ // Java ClientNetworkHandler.onPlayerMove echoes packet.y = boundingBox.minY (feet) and
+ // packet.eyeHeight = player.y (eye). Since the entity refactor player.y IS the eye, so the
+ // feet value must come off the bounding box. The server's teleport confirmation compares
+ // this field against teleportTargetY; a 1.62 mismatch leaves it stuck un-teleported and it
+ // never runs playerTick(true), which is the only thing that streams chunk data.
+ const double feetY = player.boundingBox.minY;
  const double stance = player.getEyeY();
  if(packet.changePosition && packet.changeLook) {
   auto response = std::make_unique<PlayerMoveFullPacket>();
