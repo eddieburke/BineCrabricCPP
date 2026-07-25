@@ -43,11 +43,13 @@ class ServerPlayNetworkHandler : public NetworkHandler, public command::CommandO
  void sendPacket(const PacketT& packet) {
   if(connection_ != nullptr) {
    connection_->sendPacket(std::make_unique<PacketT>(packet));
+   lastKeepAliveTime_ = ticks_;
   }
  }
  void sendPacket(std::unique_ptr<Packet> packet) {
   if(connection_ != nullptr && packet) {
    connection_->sendPacket(std::move(packet));
+   lastKeepAliveTime_ = ticks_;
   }
  }
  void teleport(double x, double y, double z, float yaw, float pitch);

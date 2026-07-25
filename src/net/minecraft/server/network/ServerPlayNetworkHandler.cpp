@@ -47,13 +47,8 @@ void ServerPlayNetworkHandler::tick() {
  if(connection_ != nullptr) {
   connection_->tick();
  }
- if(player_ != nullptr && server_ != nullptr) {
-  player_->playerTick(true);
-  server_->playerManager.sendPendingChunks(player_);
- }
  if(ticks_ - lastKeepAliveTime_ > 20) {
   sendPacket(KeepAlivePacket{});
-  lastKeepAliveTime_ = ticks_;
  }
  ++ticks_;
 }
