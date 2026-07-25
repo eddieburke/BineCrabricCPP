@@ -377,6 +377,7 @@ set(MINECRAFT_SERVER_TEST_SOURCES
     chunk_map_test.cpp
     connection_listener_test.cpp
     connection_packet_drain_throughput_test.cpp
+    chunk_packet_drain_test.cpp
 )
 
 list(TRANSFORM MINECRAFT_SERVER_TEST_SOURCES PREPEND "tests/")

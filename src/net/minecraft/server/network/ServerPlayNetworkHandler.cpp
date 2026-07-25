@@ -1,26 +1,9 @@
-#include "net/minecraft/server/network/ServerPlayNetworkHandler.hpp"
-#include <algorithm>
-#include <cmath>
-#include <sstream>
-#include "net/minecraft/block/entity/SignBlockEntity.hpp"
-#include "net/minecraft/entity/player/PlayerInventory.hpp"
-#include "net/minecraft/entity/player/ServerPlayerEntity.hpp"
-#include "net/minecraft/mod/lua/LuaHostApi.hpp"
-#include "net/minecraft/mod/runtime/LuaDirectHooks.hpp"
-#include "net/minecraft/mod/runtime/ModHost.hpp"
-#include "net/minecraft/network/Connection.hpp"
-#include "net/minecraft/network/packet/BlockPackets.hpp"
-#include "net/minecraft/network/packet/ChatPackets.hpp"
-#include "net/minecraft/network/packet/ConnectionPackets.hpp"
-#include "net/minecraft/network/packet/InventoryPackets.hpp"
-#include "net/minecraft/network/packet/PlayerPackets.hpp"
-#include "net/minecraft/screen/slot/Slot.hpp"
-#include "net/minecraft/server/MinecraftServer.hpp"
 #include "net/minecraft/server/PlayerManager.hpp"
-#include "net/minecraft/server/ServerLog.hpp"
-#include "net/minecraft/util/CharacterUtils.hpp"
-#include "net/minecraft/util/math/MathHelper.hpp"
+#include "net/minecraft/server/network/ServerPlayNetworkHandler.hpp"
+#include "net/minecraft/stat/Stats.hpp"
 #include "net/minecraft/world/ServerWorld.hpp"
+#include "net/minecraft/world/World.hpp"
+#include "net/minecraft/world/chunk/Chunk.hpp"
 namespace net::minecraft::server::network {
 namespace {
 constexpr int kClientCommandPressShift = 1;
@@ -171,8 +154,9 @@ void ServerPlayNetworkHandler::onPlayerMove(const PlayerMovePacket& packet) {
    moveX = packet.x;
    moveZ = packet.z;
   }
-  player_->onGround = packet.onGround;
-  player_->move(moveX, 0.0, moveZ);
+   player_->onGround = packet.onGround;
+   player_->playerTick(true);
+   player_->move(moveX, 0.0, moveZ);
   player_->setPositionAndAngles(savedX, savedY, savedZ, yaw, pitch);
   player_->velocityX = moveX;
   player_->velocityZ = moveZ;
@@ -189,8 +173,9 @@ void ServerPlayNetworkHandler::onPlayerMove(const PlayerMovePacket& packet) {
   serverWorld->updateEntity(player_, true);
   return;
  }
- if(player_->isSleeping()) {
-  player_->setPositionAndAngles(
+  if(player_->isSleeping()) {
+   player_->playerTick(true);
+   player_->setPositionAndAngles(
       teleportTargetX_, teleportTargetY_, teleportTargetZ_, player_->yaw, player_->pitch);
   serverWorld->updateEntity(player_, true);
   return;
@@ -221,11 +206,12 @@ void ServerPlayNetworkHandler::onPlayerMove(const PlayerMovePacket& packet) {
    return;
   }
  }
- if(workingPacket.changeLook) {
-  targetYaw = workingPacket.yaw;
-  targetPitch = workingPacket.pitch;
+  if(workingPacket.changeLook) {
+   targetYaw = workingPacket.yaw;
+   targetPitch = workingPacket.pitch;
  }
- player_->cameraOffset = 0.0f;
+  player_->playerTick(true);
+  player_->cameraOffset = 0.0f;
  player_->setPositionAndAngles(teleportTargetX_, teleportTargetY_, teleportTargetZ_, targetYaw, targetPitch);
  double deltaX = targetX - player_->x;
  double deltaY = targetY - player_->y;

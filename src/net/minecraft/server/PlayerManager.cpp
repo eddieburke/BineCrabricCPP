@@ -103,47 +103,6 @@ void PlayerManager::updatePlayerChunks(::net::minecraft::entity::player::ServerP
   getChunkMap(player->dimensionId).updatePlayerChunks(player);
  }
 }
-void PlayerManager::sendPendingChunks(::net::minecraft::entity::player::ServerPlayerEntity* player) {
- if(player == nullptr || player->networkHandler == nullptr || server_ == nullptr) {
-  return;
- }
- ServerWorld* world = server_->getWorld(player->dimensionId);
- if(world == nullptr) {
-  return;
- }
- int sentCount = 0;
- while(!player->pendingChunkUpdates.empty() && sentCount < 1) {
-  if(player->networkHandler->getBlockDataSendQueueSize() >= 4) {
-   break;
-  }
-  const ChunkPos chunkPos = player->pendingChunkUpdates.front();
-  player->pendingChunkUpdates.pop_front();
-  if(!player->activeChunks.contains(chunkPos)) {
-   continue;
-  }
-  ChunkDataS2CPacket packet;
-  packet.x = chunkPos.x * Chunk::width;
-  packet.y = 0;
-  packet.z = chunkPos.z * Chunk::depth;
-  packet.sizeX = Chunk::width;
-  packet.sizeY = Chunk::height;
-  packet.sizeZ = Chunk::depth;
-  packet.chunkData = world->getChunkData(packet.x, packet.y, packet.z, packet.sizeX, packet.sizeY, packet.sizeZ);
-  packet.compressForSend();
-  player->networkHandler->sendPacket(packet);
-  const std::vector<block::entity::BlockEntity*> blockEntities = world->getBlockEntities(
-      packet.x, packet.y, packet.z, packet.x + packet.sizeX, packet.y + packet.sizeY, packet.z + packet.sizeZ);
-  for(block::entity::BlockEntity* blockEntity : blockEntities) {
-   if(blockEntity == nullptr) {
-    continue;
-   }
-   if(std::unique_ptr<Packet> updatePacket = blockEntity->createUpdatePacket()) {
-    player->networkHandler->sendPacket(std::move(updatePacket));
-   }
-  }
-  ++sentCount;
- }
-}
 void PlayerManager::disconnect(::net::minecraft::entity::player::ServerPlayerEntity* player) {
  if(player == nullptr || server_ == nullptr) {
   return;

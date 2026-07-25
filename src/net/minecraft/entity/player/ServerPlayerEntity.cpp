@@ -11,6 +11,7 @@
 #include "net/minecraft/network/Packet.hpp"
 #include "net/minecraft/network/packet/ChatPackets.hpp"
 #include "net/minecraft/network/packet/EntityPackets.hpp"
+#include "net/minecraft/network/packet/ChunkPackets.hpp"
 #include "net/minecraft/network/packet/InventoryPackets.hpp"
 #include "net/minecraft/network/packet/PlayerPackets.hpp"
 #include "net/minecraft/screen/CraftingScreenHandler.hpp"
@@ -23,6 +24,7 @@
 #include "net/minecraft/stat/Stats.hpp"
 #include "net/minecraft/world/ServerWorld.hpp"
 #include "net/minecraft/world/World.hpp"
+#include "net/minecraft/world/chunk/Chunk.hpp"
 namespace net::minecraft::entity::player {
 ServerPlayerEntity::ServerPlayerEntity(server::MinecraftServer* serverIn,
                                        World* world,
@@ -110,7 +112,38 @@ void ServerPlayerEntity::playerTick(bool shouldSendChunkUpdates) {
   }
   networkHandler->sendPacket(std::move(updatePacket));
  }
- (void)shouldSendChunkUpdates;
+ if(shouldSendChunkUpdates && !pendingChunkUpdates.empty()) {
+  if(networkHandler != nullptr && networkHandler->getBlockDataSendQueueSize() < 4) {
+   const ChunkPos chunkPos = pendingChunkUpdates.front();
+   pendingChunkUpdates.pop_front();
+   if(activeChunks.contains(chunkPos)) {
+    ServerWorld* serverWorld = server != nullptr ? server->getWorld(dimensionId) : nullptr;
+    if(serverWorld != nullptr) {
+     ChunkDataS2CPacket packet;
+     packet.x = chunkPos.x * Chunk::width;
+     packet.y = 0;
+     packet.z = chunkPos.z * Chunk::depth;
+     packet.sizeX = Chunk::width;
+     packet.sizeY = Chunk::height;
+     packet.sizeZ = Chunk::depth;
+     packet.chunkData =
+         serverWorld->getChunkData(packet.x, packet.y, packet.z, packet.sizeX, packet.sizeY, packet.sizeZ);
+     packet.compressForSend();
+     networkHandler->sendPacket(packet);
+     const std::vector<block::entity::BlockEntity*> blockEntities = serverWorld->getBlockEntities(
+         packet.x, packet.y, packet.z, packet.x + packet.sizeX, packet.y + packet.sizeY, packet.z + packet.sizeZ);
+     for(block::entity::BlockEntity* blockEntity : blockEntities) {
+      if(blockEntity == nullptr) {
+       continue;
+      }
+      if(std::unique_ptr<Packet> updatePacket = blockEntity->createUpdatePacket()) {
+       networkHandler->sendPacket(std::move(updatePacket));
+      }
+     }
+    }
+   }
+  }
+ }
  if(inTeleportationState) {
   if(server != nullptr && server->allowNether) {
    if(currentScreenHandler != &playerScreenHandler) {
