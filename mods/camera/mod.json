@@ -1,8 +1,8 @@
 {
   "id": "camera",
-  "name": "Camera & TV",
+  "name": "Tripod Camera",
   "version": "1.0.0",
   "enabled": true,
-  "side": "client",
+  "side": "both",
   "entry": "scripts/main.lua"
 }

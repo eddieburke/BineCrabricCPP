@@ -1,25 +1,28 @@
--- ================================================================
--- CONFIG: camera
--- Centralized configuration with validation and persistence
--- ================================================================
-
 local settings = require("lib.settings")
 
 local config = settings.define("camera", {
   name = "Camera",
   fields = {
-    auto_rotate = {
-      type = "bool",
-      label = "Auto Rotate Camera",
-      default = false,
-    },
-    zoom_sensitivity = {
+    screenshot_width = {
       type = "slider",
-      label = "Zoom Sensitivity",
-      min = 0.1,
-      max = 5,
-      step = 0.1,
-      default = 1.0,
+      label = "Screenshot Width",
+      min = 160,
+      max = 1920,
+      step = 16,
+      default = 640,
+    },
+    screenshot_height = {
+      type = "slider",
+      label = "Screenshot Height",
+      min = 120,
+      max = 1080,
+      step = 16,
+      default = 480,
+    },
+    renewable = {
+      type = "bool",
+      label = "Renewable (drop item on use)",
+      default = true,
     },
   },
 })

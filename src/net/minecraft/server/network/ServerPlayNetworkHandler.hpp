@@ -39,19 +39,17 @@ class ServerPlayNetworkHandler : public NetworkHandler, public command::CommandO
  void tick();
  void disconnect(const std::string& reason);
  void setPlayer(::net::minecraft::entity::player::ServerPlayerEntity* player);
- template <typename PacketT>
- void sendPacket(const PacketT& packet) {
-  if(connection_ != nullptr) {
-   connection_->sendPacket(std::make_unique<PacketT>(packet));
-   lastKeepAliveTime_ = ticks_;
+  template <typename PacketT>
+  void sendPacket(const PacketT& packet) {
+   if(connection_ != nullptr) {
+    connection_->sendPacket(std::make_unique<PacketT>(packet));
+   }
   }
- }
- void sendPacket(std::unique_ptr<Packet> packet) {
-  if(connection_ != nullptr && packet) {
-   connection_->sendPacket(std::move(packet));
-   lastKeepAliveTime_ = ticks_;
+  void sendPacket(std::unique_ptr<Packet> packet) {
+   if(connection_ != nullptr && packet) {
+    connection_->sendPacket(std::move(packet));
+   }
   }
- }
  void teleport(double x, double y, double z, float yaw, float pitch);
  [[nodiscard]] std::size_t getBlockDataSendQueueSize() const;
  [[nodiscard]] bool isServerSide() const override {

@@ -232,6 +232,12 @@ void WorldRenderer::removeColumn(int sectionX, int sectionZ) {
   }
   std::unique_ptr<chunk::ChunkBuilder> section = std::move(it->second);
   sections_.erase(it);
+  for(net::minecraft::block::entity::BlockEntity* be : section->blockEntities_) {
+   auto jt = std::find(globalBlockEntities.begin(), globalBlockEntities.end(), be);
+   if(jt != globalBlockEntities.end()) {
+    globalBlockEntities.erase(jt);
+   }
+  }
   sectionList_.erase(std::remove(sectionList_.begin(), sectionList_.end(), section.get()), sectionList_.end());
   if(section->drawRing >= 0 && section->drawRing < static_cast<int>(drawRings_.size())) {
    drawRings_[static_cast<std::size_t>(section->drawRing)].erase(section.get());
@@ -303,6 +309,7 @@ void WorldRenderer::clearSections() {
  nearDirtyChunks_.clear();
  drawRings_.clear();
  visibleDrawRings_.clear();
+ globalBlockEntities.clear();
  pendingColumns_.clear();
  pendingSet_.clear();
  regionManager_.clear();
@@ -763,6 +770,9 @@ void WorldRenderer::renderEntities(const Vec3d& cameraPos, FrustumCuller* culler
   if(entity == nullptr) {
    continue;
   }
+  if(entity->id == excludedEntityId_) {
+   continue;
+  }
   if(!client::option::shouldRenderEntity(resolved, *entity, cameraPos)) {
    ++culledEntityCount;
    continue;
@@ -772,6 +782,9 @@ void WorldRenderer::renderEntities(const Vec3d& cameraPos, FrustumCuller* culler
  }
  for(Entity* entity : entities) {
   if(entity == nullptr) {
+   continue;
+  }
+  if(entity->id == excludedEntityId_) {
    continue;
   }
   if(!client::option::shouldRenderEntity(resolved, *entity, cameraPos)) {
@@ -786,17 +799,6 @@ void WorldRenderer::renderEntities(const Vec3d& cameraPos, FrustumCuller* culler
    auto* playerCamera = dynamic_cast<PlayerEntity*>(cameraEntity_);
    if(playerCamera != nullptr && !activeOptions().thirdPerson && !playerCamera->isSleeping()) {
     continue;
-   }
-  }
-  {
-   const auto* modEntity = dynamic_cast<const net::minecraft::mod::lua::LuaModEntity*>(entity);
-   if(modEntity != nullptr && modEntity->registryId() == "camera:camera") {
-    double dx = entity->x - cameraPos.x;
-    double dy = entity->y - (cameraPos.y - 0.4);
-    double dz = entity->z - cameraPos.z;
-    if(dx * dx + dz * dz < 0.01 && std::abs(dy) < 0.1) {
-     continue;
-    }
    }
   }
   int blockY = MathHelper::floor(entity->y);

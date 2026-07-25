@@ -100,8 +100,7 @@ class Chunk {
  void recalculateHeightMap() {
   populateHeightMap();
  }
- void populateBlockLight() {
- }
+  void populateBlockLight();
  // Re-queue cross-chunk skylight gap fixes once this chunk and neighbors are loaded.
  void relightSkylightGaps();
  void attachToWorld(World* worldIn) noexcept {

@@ -203,7 +203,8 @@ bool FramebufferManager::renderWorldTo(int handle,
                                        bool shadowPass,
                                        bool shadowEntities,
                                        float perspectiveNear,
-                                       float perspectiveFar) {
+                                       float perspectiveFar,
+                                       int excludedEntityId) {
  auto it = targets_.find(handle);
  if(it == targets_.end() || it->second.fbo == 0 || renderer.client == nullptr) {
   return false;
@@ -218,6 +219,7 @@ bool FramebufferManager::renderWorldTo(int handle,
  WorldRenderer* worldRenderer = renderer.client->worldRenderer.get();
  net::minecraft::Entity* prevWorldCam = nullptr;
  bool prevRenderCamEntity = false;
+ int prevExcludedEntityId = -1;
  double prevFrameCamX = 0.0;
  double prevFrameCamY = 0.0;
  double prevFrameCamZ = 0.0;
@@ -227,6 +229,7 @@ bool FramebufferManager::renderWorldTo(int handle,
  if(worldRenderer != nullptr) {
   prevWorldCam = worldRenderer->cameraEntity_;
   prevRenderCamEntity = worldRenderer->renderCameraEntity_;
+  prevExcludedEntityId = worldRenderer->excludedEntityId_;
   prevFrameCamX = worldRenderer->frameCamX_;
   prevFrameCamY = worldRenderer->frameCamY_;
   prevFrameCamZ = worldRenderer->frameCamZ_;
@@ -259,6 +262,9 @@ bool FramebufferManager::renderWorldTo(int handle,
  if(perspectiveFar > 0.0f) {
   camera.perspectiveFar = perspectiveFar;
  }
+ if(worldRenderer != nullptr) {
+  worldRenderer->excludedEntityId_ = excludedEntityId;
+ }
  const float clampedFov = std::clamp(fov, 1.0f, 179.0f);
  it->second.bind();
  RenderSystem::viewport(0, 0, it->second.width, it->second.height);
@@ -268,6 +274,7 @@ bool FramebufferManager::renderWorldTo(int handle,
  if(worldRenderer != nullptr) {
   worldRenderer->cameraEntity_ = prevWorldCam;
   worldRenderer->renderCameraEntity_ = prevRenderCamEntity;
+  worldRenderer->excludedEntityId_ = prevExcludedEntityId;
   worldRenderer->frameCamX_ = prevFrameCamX;
   worldRenderer->frameCamY_ = prevFrameCamY;
   worldRenderer->frameCamZ_ = prevFrameCamZ;

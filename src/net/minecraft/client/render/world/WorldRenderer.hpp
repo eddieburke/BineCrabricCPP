@@ -185,6 +185,7 @@ class WorldRenderer : public net::minecraft::GameEventListener {
  bool hasFrameCamera_ = false;
  net::minecraft::Entity* cameraEntity_ = nullptr;
  bool renderCameraEntity_ = false;
+ int excludedEntityId_ = -1;
  net::minecraft::client::option::GameOptions* options_ = nullptr;
  net::minecraft::client::option::GameOptions defaultOptions_{};
 };

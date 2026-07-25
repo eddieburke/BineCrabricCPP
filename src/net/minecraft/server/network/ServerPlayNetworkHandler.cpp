@@ -1,9 +1,26 @@
-#include "net/minecraft/server/PlayerManager.hpp"
 #include "net/minecraft/server/network/ServerPlayNetworkHandler.hpp"
-#include "net/minecraft/stat/Stats.hpp"
+#include <algorithm>
+#include <cmath>
+#include <sstream>
+#include "net/minecraft/block/entity/SignBlockEntity.hpp"
+#include "net/minecraft/entity/player/PlayerInventory.hpp"
+#include "net/minecraft/entity/player/ServerPlayerEntity.hpp"
+#include "net/minecraft/mod/lua/LuaHostApi.hpp"
+#include "net/minecraft/mod/runtime/LuaDirectHooks.hpp"
+#include "net/minecraft/mod/runtime/ModHost.hpp"
+#include "net/minecraft/network/Connection.hpp"
+#include "net/minecraft/network/packet/BlockPackets.hpp"
+#include "net/minecraft/network/packet/ChatPackets.hpp"
+#include "net/minecraft/network/packet/ConnectionPackets.hpp"
+#include "net/minecraft/network/packet/InventoryPackets.hpp"
+#include "net/minecraft/network/packet/PlayerPackets.hpp"
+#include "net/minecraft/screen/slot/Slot.hpp"
+#include "net/minecraft/server/MinecraftServer.hpp"
+#include "net/minecraft/server/PlayerManager.hpp"
+#include "net/minecraft/server/ServerLog.hpp"
+#include "net/minecraft/util/CharacterUtils.hpp"
+#include "net/minecraft/util/math/MathHelper.hpp"
 #include "net/minecraft/world/ServerWorld.hpp"
-#include "net/minecraft/world/World.hpp"
-#include "net/minecraft/world/chunk/Chunk.hpp"
 namespace net::minecraft::server::network {
 namespace {
 constexpr int kClientCommandPressShift = 1;
@@ -26,6 +43,7 @@ ServerPlayNetworkHandler::ServerPlayNetworkHandler(MinecraftServer* server,
  setModProtocolEnabled(!::net::minecraft::mod::runtime::host().loadedMods().empty());
 }
 void ServerPlayNetworkHandler::tick() {
+ ++ticks_;
  moved_ = false;
  if(connection_ != nullptr) {
   connection_->tick();
@@ -33,7 +51,6 @@ void ServerPlayNetworkHandler::tick() {
  if(ticks_ - lastKeepAliveTime_ > 20) {
   sendPacket(KeepAlivePacket{});
  }
- ++ticks_;
 }
 void ServerPlayNetworkHandler::setPlayer(::net::minecraft::entity::player::ServerPlayerEntity* player) {
  player_ = player;
@@ -278,17 +295,15 @@ void ServerPlayNetworkHandler::handlePlayerAction(const PlayerActionC2SPacket& p
   player_->dropSelectedItem();
   return;
  }
- serverWorld->bypassSpawnProtection = serverWorld->dimension == nullptr || serverWorld->dimension->id != 0 ||
-                                      !server_->playerManager.hasOperators() ||
-                                      server_->playerManager.isOperator(player_->name);
- const bool bypassSpawnProtection = serverWorld->bypassSpawnProtection;
+ const bool bypassSpawnProtection = serverWorld->dimension == nullptr || serverWorld->dimension->id != 0 ||
+                                    !server_->playerManager.hasOperators() ||
+                                    server_->playerManager.isOperator(player_->name);
  bool checkDistance = packet.action == 0 || packet.action == 2;
  if(checkDistance) {
   const double dx = player_->x - (static_cast<double>(packet.x) + 0.5);
   const double dy = player_->y - (static_cast<double>(packet.y) + 0.5);
   const double dz = player_->z - (static_cast<double>(packet.z) + 0.5);
   if(dx * dx + dy * dy + dz * dz > 36.0) {
-   serverWorld->bypassSpawnProtection = false;
    return;
   }
  }
@@ -324,19 +339,18 @@ void ServerPlayNetworkHandler::handlePlayerAction(const PlayerActionC2SPacket& p
   const double dx = player_->x - (static_cast<double>(packet.x) + 0.5);
   const double dy = player_->y - (static_cast<double>(packet.y) + 0.5);
   const double dz = player_->z - (static_cast<double>(packet.z) + 0.5);
-  if(dx * dx + dy * dy + dz * dz < 256.0 && player_->networkHandler != nullptr) {
-   BlockUpdateS2CPacket blockPacket;
-   blockPacket.x = packet.x;
-   blockPacket.y = packet.y;
-   blockPacket.z = packet.z;
-   blockPacket.blockRawId = serverWorld->getBlockId(packet.x, packet.y, packet.z);
-   blockPacket.blockMetadata = serverWorld->getBlockMeta(packet.x, packet.y, packet.z);
-   player_->networkHandler->sendPacket(blockPacket);
+   if(dx * dx + dy * dy + dz * dz < 256.0 && player_->networkHandler != nullptr) {
+    BlockUpdateS2CPacket blockPacket;
+    blockPacket.x = packet.x;
+    blockPacket.y = packet.y;
+    blockPacket.z = packet.z;
+    blockPacket.blockRawId = serverWorld->getBlockId(packet.x, packet.y, packet.z);
+    blockPacket.blockMetadata = serverWorld->getBlockMeta(packet.x, packet.y, packet.z);
+    player_->networkHandler->sendPacket(blockPacket);
+   }
   }
  }
- serverWorld->bypassSpawnProtection = false;
-}
-void ServerPlayNetworkHandler::onPlayerInteractBlock(const PlayerInteractBlockC2SPacket& packet) {
+ void ServerPlayNetworkHandler::onPlayerInteractBlock(const PlayerInteractBlockC2SPacket& packet) {
  if(player_ == nullptr || server_ == nullptr) {
   return;
  }
@@ -345,15 +359,13 @@ void ServerPlayNetworkHandler::onPlayerInteractBlock(const PlayerInteractBlockC2
   return;
  }
  ItemStack* itemStack = player_->inventory.getSelectedItem();
- serverWorld->bypassSpawnProtection = serverWorld->dimension == nullptr || serverWorld->dimension->id != 0 ||
-                                      !server_->playerManager.hasOperators() ||
-                                      server_->playerManager.isOperator(player_->name);
- const bool bypassSpawnProtection = serverWorld->bypassSpawnProtection;
- if(packet.side == 255) {
-  if(itemStack == nullptr || itemStack->empty()) {
-   serverWorld->bypassSpawnProtection = false;
-   return;
-  }
+  const bool bypassSpawnProtection = serverWorld->dimension == nullptr || serverWorld->dimension->id != 0 ||
+                                     !server_->playerManager.hasOperators() ||
+                                     server_->playerManager.isOperator(player_->name);
+  if(packet.side == 255) {
+   if(itemStack == nullptr || itemStack->empty()) {
+    return;
+   }
   player_->interactionManager.interactItem(player_, serverWorld, itemStack);
  } else {
   int spawnDistance = std::abs(packet.x - serverWorld->getSpawnPos().x);
@@ -425,10 +437,9 @@ void ServerPlayNetworkHandler::onPlayerInteractBlock(const PlayerInteractBlockC2
    player_->networkHandler->sendPacket(slotPacket);
   }
  } else {
-  player_->skipPacketSlotUpdates = false;
+   player_->skipPacketSlotUpdates = false;
+  }
  }
- serverWorld->bypassSpawnProtection = false;
-}
 void ServerPlayNetworkHandler::onDisconnected(const std::string& reason, const std::vector<std::string>& args) {
  (void)args;
  if(player_ != nullptr) {

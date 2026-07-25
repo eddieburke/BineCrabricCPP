@@ -22,6 +22,21 @@ int luaRegisterShapedRecipe(lua_State* state) {
  spec.ingredientItemId = luaIntField(state, tableIndex, "item_id", 0);
  const std::string keyText = luaStringField(state, tableIndex, "key", "#");
  spec.key = keyText.empty() ? '#' : keyText.front();
+ api.getfield(state, tableIndex, "ingredients");
+ if(api.type(state, -1) == kLuaTTable) {
+  api.pushnil(state);
+  while(api.next(state, -2) != 0) {
+   if(api.type(state, -2) == kLuaTString && api.type(state, -1) == kLuaTNumber) {
+    const std::string k = luaString(state, -2, "");
+    const int v = static_cast<int>(api.tointegerx(state, -1, nullptr));
+    if(!k.empty() && v > 0) {
+     spec.extraIngredients.emplace_back(k.front(), v);
+    }
+   }
+   api.settop(state, -2);
+  }
+ }
+ api.settop(state, tableIndex);
  api.getfield(state, tableIndex, "pattern");
  if(api.type(state, -1) == kLuaTTable) {
   const int patternTable = api.gettop(state);

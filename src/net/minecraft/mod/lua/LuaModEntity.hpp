@@ -22,6 +22,12 @@ class LuaModEntity : public entity::Entity {
   return registryId_;
  }
  void setRegistryId(std::string id);
+ void setClientLocal(bool value) noexcept {
+  clientLocal_ = value;
+ }
+ [[nodiscard]] bool isClientLocal() const noexcept {
+  return clientLocal_;
+ }
  [[nodiscard]] NbtCompound& data() {
   return data_;
  }
@@ -66,6 +72,7 @@ class LuaModEntity : public entity::Entity {
  std::string registryId_;
  NbtCompound data_;
  bool dirty_ = false;
+ bool clientLocal_ = false;
 };
 class LuaModBlockEntity : public block::entity::BlockEntity {
  public:

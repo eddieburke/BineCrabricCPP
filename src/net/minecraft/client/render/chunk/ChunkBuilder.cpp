@@ -46,9 +46,9 @@ std::uint64_t computeVisibilityBits(const RegionSnapshot& snapshot, int minX, in
  std::array<bool, 4096> opaque{};
  std::array<std::int8_t, 256> opaqueForId{};
  opaqueForId.fill(-1);
- for(int y = 0; y < 16; ++y) {
-  for(int z = 0; z < 16; ++z) {
-   for(int x = 0; x < 16; ++x) {
+  for(int x = 0; x < 16; ++x) {
+   for(int z = 0; z < 16; ++z) {
+    for(int y = 0; y < 16; ++y) {
     const int blockId = snapshot.getBlockId(minX + x, minY + y, minZ + z);
     bool cellOpaque = false;
     if(blockId > 0) {
@@ -284,9 +284,9 @@ void ChunkBuilder::buildMesh(ChunkMeshJob& job) {
   modMeshes.chunkOffY = -static_cast<double>(job.y);
   modMeshes.chunkOffZ = -static_cast<double>(job.z);
   blockRenderManager.ctx.modMeshes = &modMeshes;
-  for(int blockY = minY; blockY < maxY; ++blockY) {
-   for(int blockZ = minZ; blockZ < maxZ; ++blockZ) {
-    for(int blockX = minX; blockX < maxX; ++blockX) {
+   for(int blockX = minX; blockX < maxX; ++blockX) {
+    for(int blockZ = minZ; blockZ < maxZ; ++blockZ) {
+     for(int blockY = minY; blockY < maxY; ++blockY) {
      const int blockId = snapshot.getBlockId(blockX, blockY, blockZ);
      if(blockId <= 0) {
       continue;

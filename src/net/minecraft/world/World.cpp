@@ -406,14 +406,27 @@ void World::updateSpawnPosition() {
   setSpawnPos(Vec3i{spawnEvent.x, spawnEvent.y, spawnEvent.z});
   return;
  }
- int x = properties_.getSpawnX();
- int z = properties_.getSpawnZ();
- while(getSpawnBlockId(x, z) == 0) {
-  x += random_.nextInt(8) - random_.nextInt(8);
-  z += random_.nextInt(8) - random_.nextInt(8);
- }
- properties_.setSpawn(x, properties_.getSpawnY(), z);
- setSpawnPos(Vec3i{x, properties_.getSpawnY(), z});
+  int x = properties_.getSpawnX();
+  int z = properties_.getSpawnZ();
+  const int spawnChunkX = chunk_coord(x);
+  const int spawnChunkZ = chunk_coord(z);
+  Chunk* spawnChunk = getChunkIfLoaded(spawnChunkX * 16, spawnChunkZ * 16);
+  if(spawnChunk != nullptr && spawnChunk->dataReady) {
+   while(getSpawnBlockId(x, z) == 0) {
+    x += random_.nextInt(8) - random_.nextInt(8);
+    z += random_.nextInt(8) - random_.nextInt(8);
+    const int curChunkX = chunk_coord(x);
+    const int curChunkZ = chunk_coord(z);
+    if(curChunkX != spawnChunkX || curChunkZ != spawnChunkZ) {
+     Chunk* curChunk = getChunkIfLoaded(curChunkX * 16, curChunkZ * 16);
+     if(curChunk == nullptr || !curChunk->dataReady) {
+      break;
+     }
+    }
+   }
+  }
+  properties_.setSpawn(x, properties_.getSpawnY(), z);
+  setSpawnPos(Vec3i{x, properties_.getSpawnY(), z});
 }
 void World::addEventListener(GameEventListener* listener) {
  events_.addEventListener(listener);
@@ -667,11 +680,6 @@ void World::queueLightUpdate(LightType type, int minX, int minY, int minZ, int m
  queueLightUpdate(type, minX, minY, minZ, maxX, maxY, maxZ, true);
 }
 void World::queueLightUpdate(LightType type, int minX, int minY, int minZ, int maxX, int maxY, int maxZ, bool merge) {
- // Multiplayer chunks ship block/sky light from the server; client relighting
- // would overwrite authoritative server values with client-computed ones.
- if(isRemote_) {
-  return;
- }
  if(dimension != nullptr && dimension->hasCeiling && type == LightType::Sky) {
   return;
  }
@@ -687,11 +695,6 @@ void World::queueLightUpdate(LightType type, int minX, int minY, int minZ, int m
  lighting_.push(type, minX, minY, minZ, maxX, maxY, maxZ, merge);
 }
 bool World::doLightingUpdates(std::size_t maxDirtyRegions) {
- if(isRemote_) {
-  // Server sends all lighting data; drain but don't forward (no client-side relighting).
-  (void)lighting_.drainDirtyRegions(maxDirtyRegions);
-  return false;
- }
  for(const LightingEngine::DirtyRegion& region : lighting_.drainDirtyRegions(maxDirtyRegions)) {
   events_.setBlocksDirty(region.minX, region.minY, region.minZ, region.maxX, region.maxY, region.maxZ);
  }

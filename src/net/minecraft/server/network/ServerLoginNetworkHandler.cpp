@@ -216,6 +216,7 @@ void ServerLoginNetworkHandler::accept(const LoginHelloPacket& packet) {
   joinMessage.chatMessage = "\u00a7e" + player->name + " joined the game.";
   server_->playerManager.sendToAll(joinMessage);
   server_->playerManager.addPlayer(player);
+  server_->registerManagedHostLogin(player->name, connection_->getAddress());
   playHandler->teleport(player->x, player->y, player->z, player->yaw, player->pitch);
   listener_->addConnection(std::move(playHandler), std::move(connection_));
   WorldTimeUpdateS2CPacket timePacket;

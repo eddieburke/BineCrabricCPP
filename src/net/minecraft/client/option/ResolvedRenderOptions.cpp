@@ -58,7 +58,10 @@ float scaleAoCorner(float cornerBrightness, const ResolvedRenderOptions& resolve
  return applyBrightnessBoost(darkened, resolved);
 }
 float applyBrightnessBoost(float luminance, const ResolvedRenderOptions& resolved) noexcept {
- return luminance + resolved.brightnessBoost * (1.0f - luminance);
+	const float boost = resolved.brightnessBoost;
+	if(boost <= 0.0f) return luminance;
+	const float exponent = 1.0f / (1.0f + boost * 4.0f);
+	return std::pow(luminance, exponent);
 }
 float cloudHeightOffset(float baseHeight, const ResolvedRenderOptions& resolved) noexcept {
  return baseHeight + resolved.cloudHeightScale * 128.0f;

@@ -162,7 +162,6 @@ if ($Gui) {
         } else {
             Show-GuiTroubleshooting -ExitCode $code
         }
-        return $code
     }
     function Open-GuiOutputFolder {
         $path = Join-Path $ScriptDir $BuildDir
@@ -202,45 +201,45 @@ if ($Gui) {
             "1" {
                 Write-GuiHeading "Build the game (Release)"
                 if (Confirm-GuiAction "Start the build now?") {
-                    Invoke-GuiBuild -Arguments @() -FriendlyName "Release build" | Out-Null
+                    Invoke-GuiBuild -Arguments @() -FriendlyName "Release build"
                 }
             }
             "2" {
                 Write-GuiHeading "Build and play"
                 if (Confirm-GuiAction "Start the build now?") {
-                    Invoke-GuiBuild -Arguments @("-Target", "Client", "-Run") -FriendlyName "Client build" | Out-Null
+                    Invoke-GuiBuild -Arguments @("-Target", "Client", "-Run") -FriendlyName "Client build"
                 }
             }
             "3" {
                 Write-GuiHeading "Debug build"
                 Write-GuiExplain @("Full DWARF symbols, no optimization. Slow to run, best for chasing crashes.")
                 if (Confirm-GuiAction "Start the debug build now?") {
-                    Invoke-GuiBuild -Arguments @("-BuildType", "Debug") -FriendlyName "Debug build" | Out-Null
+                    Invoke-GuiBuild -Arguments @("-BuildType", "Debug", "-Target", "Client") -FriendlyName "Debug build"
                 }
             }
             "4" {
                 Write-GuiHeading "Profiling build"
                 Write-GuiExplain @("Optimized (-O3) but keeps debug symbols, so it stays large. Good for profilers.")
                 if (Confirm-GuiAction "Start the profiling build now?") {
-                    Invoke-GuiBuild -Arguments @("-BuildType", "RelWithDebInfo") -FriendlyName "Profiling build" | Out-Null
+                    Invoke-GuiBuild -Arguments @("-BuildType", "RelWithDebInfo") -FriendlyName "Profiling build"
                 }
             }
             "5" {
                 Write-GuiHeading "Start completely fresh"
                 if (Confirm-GuiAction "Wipe the old build and start fresh?") {
-                    Invoke-GuiBuild -Arguments @("-Clean") -FriendlyName "Clean rebuild" | Out-Null
+                    Invoke-GuiBuild -Arguments @("-Clean") -FriendlyName "Clean rebuild"
                 }
             }
             "6" {
                 Write-GuiHeading "Build the multiplayer server"
                 if (Confirm-GuiAction "Start the build now?") {
-                    Invoke-GuiBuild -Arguments @("-Target", "Server") -FriendlyName "Server build" | Out-Null
+                    Invoke-GuiBuild -Arguments @("-Target", "Server") -FriendlyName "Server build"
                 }
             }
             "7" {
                 Write-GuiHeading "Build and run the test suite"
                 if (Confirm-GuiAction "Start the build and tests now?") {
-                    Invoke-GuiBuild -Arguments @("-RunTests") -FriendlyName "Build with tests" | Out-Null
+                    Invoke-GuiBuild -Arguments @("-RunTests") -FriendlyName "Build with tests"
                 }
             }
             "8" {
@@ -343,6 +342,37 @@ function Release-BuildOmegaLock{if($null -ne $script:BuildOmegaLockStream){try{$
 function Get-ExternalBuildProcesses{param([string]$BN,[string]$SDP);$ba=("$SDP\$BN").Replace("\","/");$bl=$BN.Replace("\","/");$mt=@();gcim Win32_Process -EA SilentlyContinue|?{$_.Name -eq "cmake.exe" -or $_.Name -eq "ninja.exe"}|%{$cm=$_.CommandLine;if(!$cm){return};$cn=$cm.Replace("\","/");if($cn -like "*$ba*" -or $cn -like "*--build*$bl*"){$mt+=$_}};return $mt}
 function Assert-BuildDirAvailable{param([string]$BN,[string]$SDP);$pr=Get-ExternalBuildProcesses -BN $BN -SDP $SDP;if($pr.Count -eq 0){return};$dt=($pr|%{"  PID $($_.ProcessId): $($_.Name)"}) -join [Environment]::NewLine;Write-Error "Another cmake/ninja build is already using '$BN'.`nWait for it to finish, or stop those processes, then retry.`n$dt";exit 1}
 function Remove-StaleNinjaRestatFile{param([string]$BP);$rs="$BP\.ninja_log.restat";if(Test-Path -Li $rs){ri -Li $rs -Fo -EA SilentlyContinue}}
+function Stop-BuiltExecutable{param([string]$Pth)
+$fp=[System.IO.Path]::GetFullPath($Pth)
+$ps=gcim Win32_Process -EA SilentlyContinue|?{$_.ExecutablePath -and [string]::Equals($_.ExecutablePath,$fp,[System.StringComparison]::OrdinalIgnoreCase)}
+foreach($p in $ps){Write-Host "Stopping running build output: $($p.Name) (PID $($p.ProcessId))";Stop-Process -Id $p.ProcessId -Force -EA Stop}
+}
+function Prepare-Relink{param([string[]]$Paths)
+$result=@()
+foreach($p in $Paths){
+$full=[System.IO.Path]::GetFullPath($p);$backup="$full.build-omega-backup"
+if((Test-Path -Li $backup)-and!(Test-Path -Li $full)){mi -Li $backup -De $full -Fo}
+elseif(Test-Path -Li $backup){ri -Li $backup -Fo}
+if(Test-Path -Li $full){Stop-BuiltExecutable -Pth $full;mi -Li $full -De $backup -Fo;$result+=$backup}
+}
+return $result
+}
+function Complete-Relink{param([string[]]$Backups,[bool]$Succeeded)
+foreach($backup in $Backups){
+$output=$backup.Substring(0,$backup.Length-19)
+if($Succeeded){if(Test-Path -Li $backup){ri -Li $backup -Fo}}
+elseif(!(Test-Path -Li $output)-and(Test-Path -Li $backup)){mi -Li $backup -De $output -Fo;Write-Host "Restored previous executable: $output" -ForegroundColor Yellow}
+}
+}
+function Show-BuildFailureSummary{param([string]$LogPath,[int]$Code)
+Write-Host ""
+Write-Host "Build failed (exit $Code)." -ForegroundColor Red
+if(Test-Path -Li $LogPath){
+$hits=Select-String -Path $LogPath -Pattern '(^|[\s:])(fatal error|error:|undefined reference|cannot (open|find)|collect2\.exe:|ninja: build stopped|FAILED:)' -CaseSensitive:$false|%{$_.Line.Trim()}|?{$_}|select -Unique -First 8
+if($hits){Write-Host "Relevant diagnostics:" -ForegroundColor Yellow;foreach($hit in $hits){Write-Host "  $hit" -ForegroundColor Red}}
+Write-Host "Full build log: $LogPath" -ForegroundColor Yellow
+}
+}
 function Normalize-ToolPath{param([string]$Pa)if(!$Pa){return ""};return $Pa.Replace("\","/").ToLowerInvariant()}
 function Test-NeedsConfigure{param([string]$BP,[string]$EC,[string]$ETR,[string]$EBT,[bool]$UL,[string]$ECFR="")
 $cp="$BP\CMakeCache.txt"
@@ -399,7 +429,7 @@ Assert-BuildDirAvailable -BN $BuildDir -SDP $ScriptDir
 Remove-StaleNinjaRestatFile -BP "$ScriptDir\$BuildDir"
 if($BuildType -eq "Release"){Write-Host "Configuring $BuildDir (Ninja + bundled GCC, Release, omega flags) ..."}else{Write-Host "Configuring $BuildDir (Ninja + bundled GCC, $BuildType) ..."}
 &$CmakeExe @CmakeArgs
-if($LASTEXITCODE -ne 0){exit $LASTEXITCODE}
+if($LASTEXITCODE -ne 0){Write-Host "Configuration failed (exit $LASTEXITCODE). See the CMake error above." -ForegroundColor Red;exit $LASTEXITCODE}
 }
 Assert-BuildDirAvailable -BN $BuildDir -SDP $ScriptDir
 $buildTargets=@("minecraft_native","minecraft_server","minecraft_installer")
@@ -407,10 +437,15 @@ $buildLabel="minecraft_native + minecraft_server + minecraft_installer"
 if($Target -eq "Client"){$buildTargets=@("minecraft_native");$buildLabel="minecraft_native (client)"}
 elseif($Target -eq "Server"){$buildTargets=@("minecraft_server");$buildLabel="minecraft_server"}
 if($BuildType -eq "Release"){Write-Host "Omega build: $buildLabel (-j $Jobs) ..."}else{Write-Host "$BuildType build: $buildLabel (-j $Jobs) ..."}
+$relinkPaths=$buildTargets|%{"$ScriptDir\$BuildDir\$_.exe"}
+$relinkBackups=Prepare-Relink -Paths $relinkPaths
+$buildLog="$ScriptDir\$BuildDir\build-omega-last.log"
 $sw=[System.Diagnostics.Stopwatch]::StartNew()
-&$CmakeExe --build $BuildDir --target @buildTargets -j $Jobs
+&$CmakeExe --build $BuildDir --target @buildTargets -j $Jobs 2>&1|Tee-Object -FilePath $buildLog
 $exitCode=$LASTEXITCODE
 $sw.Stop()
+Complete-Relink -Backups $relinkBackups -Succeeded:($exitCode -eq 0)
+if($exitCode -ne 0){Show-BuildFailureSummary -LogPath $buildLog -Code $exitCode}
 if($exitCode -eq 0){
 Sync-Shaderpacks -BN $BuildDir
 if(!$SkipResourceSync){Sync-Resources}

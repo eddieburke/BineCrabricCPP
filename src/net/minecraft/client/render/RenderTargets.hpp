@@ -45,7 +45,8 @@ class FramebufferManager {
                     bool shadowPass = false,
                     bool shadowEntities = true,
                     float perspectiveNear = 0.0f,
-                    float perspectiveFar = 0.0f);
+                    float perspectiveFar = 0.0f,
+                    int excludedEntityId = -1);
  [[nodiscard]] int renderingHandle() const noexcept {
   return renderingHandle_;
  }

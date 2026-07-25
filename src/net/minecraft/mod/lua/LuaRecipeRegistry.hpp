@@ -1,5 +1,6 @@
 #pragma once
 #include <string>
+#include <utility>
 #include <vector>
 namespace net::minecraft::mod::lua {
 struct ShapedRecipeSpec {
@@ -9,6 +10,7 @@ struct ShapedRecipeSpec {
  std::vector<std::string> pattern;
  char key = '#';
  int ingredientItemId = 0;
+ std::vector<std::pair<char, int>> extraIngredients;
 };
 bool registerShapedRecipe(const ShapedRecipeSpec& spec, std::string& error);
 } // namespace net::minecraft::mod::lua

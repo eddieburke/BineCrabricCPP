@@ -103,6 +103,7 @@ void ClientWorld::remove(Entity* entity) {
  World::remove(entity);
  if(entity != nullptr) {
   forcedEntities_.erase(entity);
+  pendingEntities_.erase(entity);
  }
 }
 void ClientWorld::notifyEntityAdded(Entity* entity) {
@@ -113,7 +114,7 @@ void ClientWorld::notifyEntityAdded(Entity* entity) {
 }
 void ClientWorld::notifyEntityRemoved(Entity* entity) {
  World::notifyEntityRemoved(entity);
- if(entity != nullptr && forcedEntities_.contains(entity)) {
+ if(entity != nullptr && !entity->dead && forcedEntities_.contains(entity)) {
   pendingEntities_.insert(entity);
  }
 }

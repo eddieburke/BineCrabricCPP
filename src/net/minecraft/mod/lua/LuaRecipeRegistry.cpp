@@ -30,17 +30,30 @@ std::vector<ShapedRecipeSpec>& pendingShapedRecipes() {
 }
 void registerShapedRecipeImpl(const ShapedRecipeSpec& spec) {
  const net::minecraft::ItemStack output = shapedRecipeOutput(spec);
- net::minecraft::Item* ingredient = net::minecraft::Item::byId(spec.ingredientItemId);
- if(output.empty() || ingredient == nullptr) {
+ if(output.empty()) {
   return;
  }
+ const bool hasMultiIngredients = !spec.extraIngredients.empty();
+ const int pairCount = hasMultiIngredients ? static_cast<int>(spec.extraIngredients.size()) : 1;
  std::vector<RecipeArg> args;
- args.reserve(spec.pattern.size() + 2);
+ args.reserve(spec.pattern.size() + static_cast<std::size_t>(pairCount) * 2);
  for(const std::string& row : spec.pattern) {
   args.emplace_back(row);
  }
- args.emplace_back(spec.key);
- args.emplace_back(ingredient);
+ auto addIngredient = [&](char key, int itemId) {
+  net::minecraft::Item* item = net::minecraft::Item::byId(itemId);
+  if(item != nullptr) {
+   args.emplace_back(key);
+   args.emplace_back(item);
+  }
+ };
+ if(hasMultiIngredients) {
+  for(const auto& [key, itemId] : spec.extraIngredients) {
+   addIngredient(key, itemId);
+  }
+ } else {
+  addIngredient(spec.key, spec.ingredientItemId);
+ }
  CraftingRecipeManager::getInstance().addShapedRecipe(output, std::move(args));
 }
 void initAllShapedRecipes() {
@@ -80,22 +93,42 @@ void ensureRecipeBatchQueued() {
   error = "shaped recipe rows must contain 1 to 3 columns";
   return false;
  }
- bool usesIngredient = false;
- for(const std::string& row : spec.pattern) {
-  if(row.size() != width) {
-   error = "shaped recipe rows must have equal widths";
-   return false;
+  const bool hasMultiIngredients = !spec.extraIngredients.empty();
+  bool usesIngredient = !hasMultiIngredients;
+  for(const std::string& row : spec.pattern) {
+   if(row.size() != width) {
+    error = "shaped recipe rows must have equal widths";
+    return false;
+   }
+   if(!hasMultiIngredients) {
+    usesIngredient = usesIngredient || row.find(spec.key) != std::string::npos;
+   }
   }
-  usesIngredient = usesIngredient || row.find(spec.key) != std::string::npos;
- }
- if(!usesIngredient) {
-  error = "shaped recipe pattern does not use the ingredient key";
-  return false;
- }
- if(spec.ingredientItemId <= 0) {
-  error = "shaped recipe requires item_id";
-  return false;
- }
+  if(!hasMultiIngredients) {
+   if(!usesIngredient) {
+    error = "shaped recipe pattern does not use the ingredient key";
+    return false;
+   }
+   if(spec.ingredientItemId <= 0) {
+    error = "shaped recipe requires item_id";
+    return false;
+   }
+  } else {
+   for(const auto& [key, id] : spec.extraIngredients) {
+    if(id <= 0) {
+     error = "shaped recipe ingredient item_id must be positive";
+     return false;
+    }
+    bool found = false;
+    for(const std::string& row : spec.pattern) {
+     found = found || row.find(key) != std::string::npos;
+    }
+    if(!found) {
+     error = std::string("shaped recipe key '") + key + "' not found in pattern";
+     return false;
+    }
+   }
+  }
  return true;
 }
 } // namespace
@@ -104,9 +137,22 @@ bool registerShapedRecipe(const ShapedRecipeSpec& spec, std::string& error) {
   return false;
  }
  if(registry::Registry::isBootstrapped()) {
-  if(shapedRecipeOutput(spec).empty() || net::minecraft::Item::byId(spec.ingredientItemId) == nullptr) {
-   error = "shaped recipe output or ingredient is unknown";
+  if(shapedRecipeOutput(spec).empty()) {
+   error = "shaped recipe output is unknown";
    return false;
+  }
+  const bool hasMulti = !spec.extraIngredients.empty();
+  if(!hasMulti && net::minecraft::Item::byId(spec.ingredientItemId) == nullptr) {
+   error = "shaped recipe ingredient is unknown";
+   return false;
+  }
+  if(hasMulti) {
+   for(const auto& [k, id] : spec.extraIngredients) {
+    if(net::minecraft::Item::byId(id) == nullptr) {
+     error = std::string("shaped recipe ingredient '") + k + "' (id " + std::to_string(id) + ") is unknown";
+     return false;
+    }
+   }
   }
   registerShapedRecipeImpl(spec);
   return true;

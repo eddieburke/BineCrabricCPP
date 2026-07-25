@@ -1039,11 +1039,11 @@ void Minecraft::respawnPlayer(bool worldSpawn, int dimension) {
  if(useBedSpawn && bedSpawnPos.has_value()) {
   player->setSpawnPos(bedSpawnPos);
   player->setPositionAndAnglesKeepPrevAngles(
-      static_cast<double>(respawnPos->x) + 0.5,
-      static_cast<double>(respawnPos->y) + static_cast<double>(player->standingEyeHeight),
-      static_cast<double>(respawnPos->z) + 0.5,
-      0.0f,
-      0.0f);
+       static_cast<double>(respawnPos->x) + 0.5,
+       static_cast<double>(respawnPos->y),
+       static_cast<double>(respawnPos->z) + 0.5,
+       0.0f,
+       0.0f);
  }
  player->teleportTop();
  interactionManager->preparePlayer(player);

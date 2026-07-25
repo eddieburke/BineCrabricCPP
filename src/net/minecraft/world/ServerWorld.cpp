@@ -80,9 +80,6 @@ std::vector<block::entity::BlockEntity*> ServerWorld::getBlockEntities(
 }
 bool ServerWorld::canInteract(PlayerEntity* player, int x, int y, int z) {
  (void)y;
- if(bypassSpawnProtection) {
-  return true;
- }
  if(player == nullptr) {
   return false;
  }

@@ -20,17 +20,20 @@ bool isInvalidDouble(double value) {
 }
 } // namespace
 std::vector<Entity*> World::getEntities(Entity* except, const Box& box) {
- std::vector<Entity*> result;
- for(Entity* entity : entities_) {
-  if(entity == nullptr || entity == except || entity->dead) {
-   continue;
+  std::vector<Entity*> result;
+  for(Entity* entity : entities_) {
+   if(entity == nullptr || entity == except || entity->dead) {
+    continue;
+   }
+   if(*reinterpret_cast<const void* const*>(entity) == nullptr) {
+    continue;
+   }
+   if(entity->boundingBox.intersects(box)) {
+    result.push_back(entity);
+   }
   }
-  if(entity->boundingBox.intersects(box)) {
-   result.push_back(entity);
-  }
+  return result;
  }
- return result;
-}
 void World::updateEntityLists() {
  entities_.erase(std::remove_if(entities_.begin(),
                                 entities_.end(),

@@ -185,8 +185,15 @@ int luaUnregisterLocalPoseHook(lua_State* state) {
 World* entityWorld() {
  return contextOrClientWorld();
 }
-bool canMutateEntities(const World* world) {
- return world != nullptr && !world->isRemote();
+bool canMutateEntity(const World* world, const net::minecraft::mod::lua::LuaModEntity* entity = nullptr) {
+ return world != nullptr && (!world->isRemote() || (entity != nullptr && entity->isClientLocal()));
+}
+bool canSpawnModEntity(const World* world, bool clientLocal) {
+ return world != nullptr && (!world->isRemote() || clientLocal);
+}
+bool ownsModEntity(lua_State* state, const net::minecraft::mod::lua::LuaModEntity* entity) {
+ ModHost::LoadedLuaMod* mod = currentLuaMod(state);
+ return mod != nullptr && entity != nullptr && entity->registryId().starts_with(mod->modId + ":");
 }
 std::unordered_map<int, net::minecraft::entity::Entity*> buildIndex(World* world) {
  std::unordered_map<int, net::minecraft::entity::Entity*> index;
@@ -246,13 +253,19 @@ void applySingleEntityState(lua_State* state,
 int luaEntitiesApplyState(lua_State* state) {
  LuaApi& api = luaApi();
  World* world = entityWorld();
- if(!canMutateEntities(world) || api.gettop(state) < 2 || api.type(state, 1) != kLuaTTable ||
+ if(world == nullptr || api.gettop(state) < 2 || api.type(state, 1) != kLuaTTable ||
     api.type(state, 2) != kLuaTTable) {
   api.pushboolean(state, 0);
   return 1;
  }
  const int id = luaIntField(state, 1, "id", -1);
  auto index = buildIndex(world);
+ const auto it = index.find(id);
+ const auto* modEntity = it != index.end() ? dynamic_cast<net::minecraft::mod::lua::LuaModEntity*>(it->second) : nullptr;
+ if(!canMutateEntity(world, modEntity) || !ownsModEntity(state, modEntity)) {
+  api.pushboolean(state, 0);
+  return 1;
+ }
  applySingleEntityState(state, id, 2, index);
  api.pushboolean(state, 1);
  return 1;
@@ -260,7 +273,7 @@ int luaEntitiesApplyState(lua_State* state) {
 int luaEntitiesTeleport(lua_State* state) {
  LuaApi& api = luaApi();
  World* world = entityWorld();
- if(!canMutateEntities(world) || api.gettop(state) < 2 || api.type(state, 1) != kLuaTTable) {
+ if(world == nullptr || api.gettop(state) < 2 || api.type(state, 1) != kLuaTTable) {
   api.pushboolean(state, 0);
   return 1;
  }
@@ -272,6 +285,13 @@ int luaEntitiesTeleport(lua_State* state) {
   return 1;
  }
  net::minecraft::entity::Entity* e = it->second;
+ if(world->isRemote()) {
+  const auto* modEntity = dynamic_cast<net::minecraft::mod::lua::LuaModEntity*>(e);
+  if(!canMutateEntity(world, modEntity) || !ownsModEntity(state, modEntity)) {
+   api.pushboolean(state, 0);
+   return 1;
+  }
+ }
  double x = e->x;
  double y = e->y;
  double z = e->z;
@@ -302,7 +322,7 @@ int luaEntitiesTeleport(lua_State* state) {
 int luaEntitiesRemove(lua_State* state) {
  LuaApi& api = luaApi();
  World* world = entityWorld();
- if(!canMutateEntities(world) || api.gettop(state) < 1 || api.type(state, 1) != kLuaTTable) {
+ if(world == nullptr || api.gettop(state) < 1 || api.type(state, 1) != kLuaTTable) {
   api.pushboolean(state, 0);
   return 1;
  }
@@ -315,6 +335,10 @@ int luaEntitiesRemove(lua_State* state) {
  }
  auto* e = dynamic_cast<net::minecraft::mod::lua::LuaModEntity*>(it->second);
  if(e == nullptr) {
+  api.pushboolean(state, 0);
+  return 1;
+ }
+ if(!canMutateEntity(world, e) || !ownsModEntity(state, e)) {
   api.pushboolean(state, 0);
   return 1;
  }
@@ -347,6 +371,7 @@ void pushEntityHandle(lua_State* state, net::minecraft::entity::Entity* e) {
  }
  if(modEntity != nullptr) {
   setField(state, "registry_id", registryId);
+  setField(state, "client_local", modEntity->isClientLocal());
   pushNbtValue(state, modEntity->data().storage());
   api.setfield(state, -2, "data");
  }
@@ -443,7 +468,7 @@ int luaEntitiesGet(lua_State* state) {
 int luaEntitiesSpawnMod(lua_State* state) {
  LuaApi& api = luaApi();
  World* world = entityWorld();
- if(!canMutateEntities(world) || api.gettop(state) < 2 || api.type(state, 1) != kLuaTString ||
+ if(world == nullptr || api.gettop(state) < 2 || api.type(state, 1) != kLuaTString ||
     api.type(state, 2) != kLuaTTable) {
   api.pushnil(state);
   return 1;
@@ -462,8 +487,14 @@ int luaEntitiesSpawnMod(lua_State* state) {
  const double z = luaDoubleField(state, specIndex, "z", 0.0);
  const float yaw = luaFloatField(state, specIndex, "yaw", 0.0f);
  const float pitch = luaFloatField(state, specIndex, "pitch", 0.0f);
+ const bool clientLocal = luaBoolField(state, specIndex, "client_local", false);
+ if(!canSpawnModEntity(world, clientLocal)) {
+  api.pushnil(state);
+  return 1;
+ }
  auto* modEntity = new net::minecraft::mod::lua::LuaModEntity(world);
  modEntity->setRegistryId(registryId);
+ modEntity->setClientLocal(clientLocal);
  if(api.getfield(state, specIndex, "data") == kLuaTTable) {
   modEntity->setData(NbtCompound(luaValueToNbt(state, api.gettop(state))));
  }

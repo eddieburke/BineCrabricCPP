@@ -1,5 +1,6 @@
 #include "net/minecraft/mod/runtime/LuaCameraBindings.hpp"
 #include "net/minecraft/client/Minecraft.hpp"
+#include "net/minecraft/client/Screenshot.hpp"
 #include "net/minecraft/client/render/GameRenderer.hpp"
 #include "net/minecraft/client/render/RenderTargets.hpp"
 namespace net::minecraft::mod::runtime {
@@ -79,6 +80,9 @@ int renderPerspectiveImpl(lua_State* state,
  }
  const float tickDelta =
      api.gettop(state) >= tickDeltaArg ? static_cast<float>(api.tonumberx(state, tickDeltaArg, nullptr)) : 1.0f;
+ const int excludedEntityId = api.gettop(state) > tickDeltaArg
+                                  ? static_cast<int>(api.tointegerx(state, tickDeltaArg + 1, nullptr))
+                                  : -1;
  api.pushboolean(state,
                  m->renderWorldTo(handle,
                                   *client::Minecraft::INSTANCE->gameRenderer,
@@ -98,7 +102,8 @@ int renderPerspectiveImpl(lua_State* state,
                                   shadowPass,
                                   includeEntities,
                                   nearPlane,
-                                  farPlane)
+                                  farPlane,
+                                  excludedEntityId)
                      ? 1
                      : 0);
  return 1;
@@ -129,6 +134,9 @@ int renderOrthographicImpl(lua_State* state,
  }
  const float tickDelta =
      api.gettop(state) >= tickDeltaArg ? static_cast<float>(api.tonumberx(state, tickDeltaArg, nullptr)) : 1.0f;
+ const int excludedEntityId = api.gettop(state) > tickDeltaArg
+                                  ? static_cast<int>(api.tointegerx(state, tickDeltaArg + 1, nullptr))
+                                  : -1;
  const bool valid = halfWidth > 0.0f && halfHeight > 0.0f && nearPlane != farPlane;
  api.pushboolean(state,
                  valid && m->renderWorldTo(handle,
@@ -147,7 +155,10 @@ int renderOrthographicImpl(lua_State* state,
                                            nearPlane,
                                            farPlane,
                                            shadowPass,
-                                           includeEntities)
+                                           includeEntities,
+                                           0.0f,
+                                           0.0f,
+                                           excludedEntityId)
                      ? 1
                      : 0);
  return 1;
@@ -184,6 +195,29 @@ int luaCameraFarPlane(lua_State* state) {
  api.pushnumber(state, client::Minecraft::INSTANCE->gameRenderer->farPlaneBlocks());
  return 1;
 }
+int luaCameraSaveScreenshot(lua_State* state) {
+ LuaApi& api = luaApi();
+ auto* m = renderTargets();
+ if(m == nullptr || api.gettop(state) < 1) {
+  api.pushstring(state, "Failed: no render targets");
+  return 1;
+ }
+ const int handle = static_cast<int>(api.tointegerx(state, 1, nullptr));
+ if(!m->bind(handle)) {
+  api.pushstring(state, "Failed: invalid camera handle");
+  return 1;
+ }
+ const int w = m->width(handle);
+ const int h = m->height(handle);
+ if(w <= 0 || h <= 0) {
+  api.pushstring(state, "Failed: invalid dimensions");
+  return 1;
+ }
+ const std::string result = client::Screenshot::take(client::Minecraft::getRunDirectory(), w, h);
+ m->unbind();
+ api.pushstring(state, result.c_str());
+ return 1;
+}
 } // namespace
 void installCameraApi(lua_State* state) {
  LuaApi& api = luaApi();
@@ -203,8 +237,9 @@ void installCameraApi(lua_State* state) {
                        {"texture", luaCameraTexture},
                        {"depth_texture", luaCameraDepthTexture},
                        {"rendering", luaCameraRendering},
-                       {"far_plane", luaCameraFarPlane},
-                   });
+                        {"far_plane", luaCameraFarPlane},
+                        {"save_screenshot", luaCameraSaveScreenshot},
+                    });
  api.setfield(state, -2, "camera");
 }
 } // namespace net::minecraft::mod::runtime

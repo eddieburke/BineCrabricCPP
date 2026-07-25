@@ -28,6 +28,14 @@
 #endif
 namespace net::minecraft::server {
 namespace {
+[[nodiscard]] bool isLoopbackAddress(const std::string& address) {
+ const std::size_t separator = address.rfind(':');
+ const std::string host = separator == std::string::npos ? address : address.substr(0, separator);
+ return host == "127.0.0.1" || host == "::1" || host == "0:0:0:0:0:0:0:1" ||
+        host == "::ffff:127.0.0.1";
+}
+}
+namespace {
 using Clock = std::chrono::steady_clock;
 class WorldConversionProgress final : public client::gui::screen::LoadingDisplay {
  public:
@@ -75,6 +83,15 @@ MinecraftServer::~MinecraftServer() {
  }
  worlds[0] = nullptr;
  worlds[1] = nullptr;
+}
+bool MinecraftServer::registerManagedHostLogin(const std::string& username, const std::string& remoteAddress) {
+ if(!launchConfig_.has_value() || launchConfig_->ownerName.empty() || managedOwnerClaimed_ || username.empty() ||
+    !isLoopbackAddress(remoteAddress)) {
+  return false;
+ }
+ playerManager.addTransientOperator(username);
+ managedOwnerClaimed_ = true;
+ return true;
 }
 std::filesystem::path MinecraftServer::getFile(const std::string& path) const {
  // Dedicated-server data lives in %APPDATA%/.minecraft/serverdata (falling
@@ -246,9 +263,6 @@ bool MinecraftServer::init() {
   port = properties->getProperty("server-port", 25565);
  }
  playerManager.configureFromProperties();
- if(launchConfig_.has_value() && !launchConfig_->ownerName.empty()) {
-  playerManager.addTransientOperator(launchConfig_->ownerName);
- }
  ServerLog::LOGGER.info("Starting Minecraft server on " + (bindAddress.empty() ? "*" : bindAddress) + ":" +
                         std::to_string(port));
  try {

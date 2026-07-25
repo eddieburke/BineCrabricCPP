@@ -149,9 +149,9 @@ class Entity {
  [[nodiscard]] double getSquaredDistance(double xIn, double yIn, double zIn) const;
  [[nodiscard]] double getDistance(double xIn, double yIn, double zIn) const;
  [[nodiscard]] double getSquaredDistance(const Entity& entity) const;
- [[nodiscard]] double getEyeY() const {
-  return y;
- }
+  [[nodiscard]] double getEyeY() const {
+   return y;
+  }
  [[nodiscard]] virtual float getEyeHeight() const {
   return standingEyeHeight;
  }

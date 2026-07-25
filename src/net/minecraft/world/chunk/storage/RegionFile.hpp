@@ -132,50 +132,61 @@ class RegionFile {
   }
  }
  void initializeHeader() {
-  const auto fileSize = fs::exists(file_) ? fs::file_size(file_) : 0ULL;
-  if(fileSize < sectorSize * 2U) {
-   stream_.seekp(0, std::ios::end);
-   const std::vector<std::uint8_t> zeros(sectorSize * 2U, 0U);
-   stream_.write(reinterpret_cast<const char*>(zeros.data()), static_cast<std::streamsize>(zeros.size()));
-   stream_.flush();
-   bytesWritten_ += static_cast<int>(zeros.size());
-  } else if(fileSize % sectorSize != 0U) {
-   const std::uint64_t remainder = fileSize % sectorSize;
-   const std::uint64_t padding = sectorSize - remainder;
-   stream_.seekp(0, std::ios::end);
-   const std::vector<std::uint8_t> zeros(static_cast<std::size_t>(padding), 0U);
-   stream_.write(reinterpret_cast<const char*>(zeros.data()), static_cast<std::streamsize>(zeros.size()));
-   stream_.flush();
-  }
-  const std::uint64_t alignedSize = fs::file_size(file_);
-  const std::size_t sectorCount = static_cast<std::size_t>(alignedSize / sectorSize);
-  sectorFree_.assign(sectorCount, 1U);
-  if(sectorFree_.size() >= 1U) {
-   sectorFree_[0] = 0U;
-  }
-  if(sectorFree_.size() >= 2U) {
-   sectorFree_[1] = 0U;
-  }
-  stream_.clear();
-  stream_.seekg(0, std::ios::beg);
-  for(std::size_t i = 0; i < chunkBlockInfo_.size(); ++i) {
-   chunkBlockInfo_[i] = readU32();
-   const std::uint32_t offset = chunkBlockInfo_[i] >> 8U;
-   const std::uint32_t count = chunkBlockInfo_[i] & 0xFFU;
-   if(offset == 0U || count == 0U) {
-    continue;
+   const auto fileSize = fs::exists(file_) ? fs::file_size(file_) : 0ULL;
+   if(fileSize < sectorSize * 2U) {
+    stream_.seekp(0, std::ios::end);
+    const std::vector<std::uint8_t> zeros(sectorSize * 2U, 0U);
+    stream_.write(reinterpret_cast<const char*>(zeros.data()), static_cast<std::streamsize>(zeros.size()));
+    stream_.flush();
+    bytesWritten_ += static_cast<int>(zeros.size());
+   } else if(fileSize % sectorSize != 0U) {
+    const std::uint64_t remainder = fileSize % sectorSize;
+    const std::uint64_t padding = sectorSize - remainder;
+    stream_.seekp(0, std::ios::end);
+    const std::vector<std::uint8_t> zeros(static_cast<std::size_t>(padding), 0U);
+    stream_.write(reinterpret_cast<const char*>(zeros.data()), static_cast<std::streamsize>(zeros.size()));
+    stream_.flush();
    }
-   if(offset + count > sectorFree_.size()) {
-    continue;
+   const std::uint64_t alignedSize = fs::file_size(file_);
+   const std::size_t sectorCount = static_cast<std::size_t>(alignedSize / sectorSize);
+   sectorFree_.assign(sectorCount, 1U);
+   if(sectorFree_.size() >= 1U) {
+    sectorFree_[0] = 0U;
    }
-   for(std::uint32_t j = 0; j < count; ++j) {
-    sectorFree_[static_cast<std::size_t>(offset + j)] = 0U;
+   if(sectorFree_.size() >= 2U) {
+    sectorFree_[1] = 0U;
+   }
+   stream_.clear();
+   stream_.seekg(0, std::ios::beg);
+   std::array<std::uint8_t, sectorSize * 2U> header{};
+   stream_.read(reinterpret_cast<char*>(header.data()), static_cast<std::streamsize>(header.size()));
+   if(!stream_) {
+    return;
+   }
+   for(std::size_t i = 0; i < chunkBlockInfo_.size(); ++i) {
+    chunkBlockInfo_[i] = (static_cast<std::uint32_t>(header[i * 4U]) << 24U) |
+                         (static_cast<std::uint32_t>(header[i * 4U + 1U]) << 16U) |
+                         (static_cast<std::uint32_t>(header[i * 4U + 2U]) << 8U) |
+                         static_cast<std::uint32_t>(header[i * 4U + 3U]);
+    const std::uint32_t offset = chunkBlockInfo_[i] >> 8U;
+    const std::uint32_t count = chunkBlockInfo_[i] & 0xFFU;
+    if(offset == 0U || count == 0U) {
+     continue;
+    }
+    if(offset + count > sectorFree_.size()) {
+     continue;
+    }
+    for(std::uint32_t j = 0; j < count; ++j) {
+     sectorFree_[static_cast<std::size_t>(offset + j)] = 0U;
+    }
+   }
+   for(std::size_t i = 0; i < chunkSaveTimes_.size(); ++i) {
+    chunkSaveTimes_[i] = (static_cast<std::uint32_t>(header[sectorSize + i * 4U]) << 24U) |
+                         (static_cast<std::uint32_t>(header[sectorSize + i * 4U + 1U]) << 16U) |
+                         (static_cast<std::uint32_t>(header[sectorSize + i * 4U + 2U]) << 8U) |
+                         static_cast<std::uint32_t>(header[sectorSize + i * 4U + 3U]);
    }
   }
-  for(std::size_t i = 0; i < chunkSaveTimes_.size(); ++i) {
-   chunkSaveTimes_[i] = readU32();
-  }
- }
  void appendSectors(std::uint32_t count) {
   stream_.clear();
   stream_.seekp(0, std::ios::end);

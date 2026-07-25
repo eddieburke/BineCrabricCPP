@@ -38,6 +38,6 @@ void main() {
     f = clamp(f, 0.0, 1.0);
     base.rgb = mix(uFogColor.rgb, base.rgb, f);
   }
-  base.rgb = mix(base.rgb, vec3(1.0), uBrightness);
+  base.rgb = pow(max(base.rgb, 0.0), vec3(1.0 / (1.0 + uBrightness * 4.0)));
   fragColor = base;
 }

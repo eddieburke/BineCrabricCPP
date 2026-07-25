@@ -16,6 +16,8 @@
 #include <stdexcept>
 #include <thread>
 #include "net/minecraft/block/Block.hpp"
+#include "net/minecraft/client/Minecraft.hpp"
+#include "net/minecraft/client/multiplayer/MultiplayerInteractionManager.hpp"
 #include "net/minecraft/client/multiplayer/MultiplayerClientPlayerEntity.hpp"
 #include "net/minecraft/client/util/Session.hpp"
 #include "net/minecraft/entity/ItemEntity.hpp"
@@ -113,6 +115,47 @@ class BootstrapServerHandler : public net::minecraft::NetworkHandler {
   return true;
  }
 };
+class CapturingServerMoveHandler : public net::minecraft::NetworkHandler {
+ public:
+ [[nodiscard]] bool isServerSide() const override {
+  return true;
+ }
+ void onPlayerMove(const net::minecraft::PlayerMovePacket& packet) override {
+  const std::lock_guard<std::mutex> lock(mutex_);
+  x_ = packet.x;
+  feetY_ = packet.feetY;
+  z_ = packet.z;
+  received_.store(true, std::memory_order_release);
+ }
+ [[nodiscard]] bool received() const {
+  return received_.load(std::memory_order_acquire);
+ }
+ [[nodiscard]] double x() const {
+  const std::lock_guard<std::mutex> lock(mutex_);
+  return x_;
+ }
+ [[nodiscard]] double feetY() const {
+  const std::lock_guard<std::mutex> lock(mutex_);
+  return feetY_;
+ }
+ [[nodiscard]] double z() const {
+  const std::lock_guard<std::mutex> lock(mutex_);
+  return z_;
+ }
+
+ private:
+ mutable std::mutex mutex_;
+ double x_ = 0.0;
+ double feetY_ = 0.0;
+ double z_ = 0.0;
+ std::atomic<bool> received_{false};
+};
+class TestMinecraft final : public net::minecraft::client::Minecraft {
+ public:
+ using net::minecraft::client::Minecraft::Minecraft;
+ void handleCrash(const net::minecraft::util::crash::CrashReport&) override {
+ }
+};
 } // namespace
 namespace net::minecraft::test {
 TEST(MultiplayerParityUpdates, StanceCalculationIsFeetPlusEyeHeight) {
@@ -157,6 +200,71 @@ TEST(MultiplayerParityUpdates, MovementAckUsesActualPlayerY) {
  // 65.0); a regression back to echoing player.y as feetY would pass every other assertion
  // in this test but silently reintroduce the join-failure bug, so pin the inequality too.
  EXPECT_NE(move->feetY, player.y);
+}
+TEST(MultiplayerParityUpdates, RespawnTeleportAppliesToReplacementPlayer) {
+ TestMinecraft client(nullptr, nullptr, nullptr, 854, 480, false);
+ client::multiplayer::ClientNetworkHandler handler(&client);
+ server::network::ServerSocket listenSocket;
+ listenSocket.bindAndListen("127.0.0.1", 0);
+ SOCKET clientSocket = INVALID_SOCKET;
+ std::thread connector([&]() { clientSocket = connectLoopback(listenSocket.boundPort()); });
+ std::string remoteAddress;
+ SOCKET serverSocket = INVALID_SOCKET;
+ const auto acceptDeadline = std::chrono::steady_clock::now() + std::chrono::seconds(5);
+ while(std::chrono::steady_clock::now() < acceptDeadline && serverSocket == INVALID_SOCKET) {
+  serverSocket = listenSocket.accept(remoteAddress);
+  if(serverSocket == INVALID_SOCKET) {
+   std::this_thread::sleep_for(std::chrono::milliseconds(10));
+  }
+ }
+ connector.join();
+ ASSERT_NE(serverSocket, INVALID_SOCKET);
+ ASSERT_NE(clientSocket, INVALID_SOCKET);
+ Connection clientConnection(clientSocket, "RespawnClient", handler);
+ handler.bindConnection(&clientConnection);
+ CapturingServerMoveHandler serverHandler;
+ Connection serverConnection(serverSocket, "RespawnServer", serverHandler);
+ ClientWorld world(&handler, 12345ULL, 0);
+ handler.world = &world;
+ client.world = &world;
+ client.interactionManager = std::make_unique<client::MultiplayerInteractionManager>(&client, &handler);
+ client.worldSession().ownedPlayerMut() =
+     std::make_unique<client::multiplayer::MultiplayerClientPlayerEntity>(
+         &client, &world, client::util::Session{}, &handler);
+ client.player = client.worldSession().ownedPlayer();
+ world.addPlayer(client.player);
+ client.player->setPosition(0.5, 65.62, 0.5);
+ entity::player::ClientPlayerEntity* oldPlayer = client.player;
+ PlayerRespawnPacket respawn;
+ respawn.dimensionRawId = 0;
+ handler.onPlayerRespawn(respawn);
+ PlayerMoveFullPacket teleport;
+ teleport.setMove(25.5, 70.62, 69.0, -18.5, 45.0f, 10.0f, false);
+ handler.onPlayerMove(teleport);
+ EXPECT_DOUBLE_EQ(oldPlayer->x, 0.5);
+ handler.applyDeferredRespawn();
+ ASSERT_NE(client.player, oldPlayer);
+ EXPECT_DOUBLE_EQ(client.player->x, 25.5);
+ EXPECT_DOUBLE_EQ(client.player->y, 70.62);
+ EXPECT_DOUBLE_EQ(client.player->z, -18.5);
+ EXPECT_FLOAT_EQ(client.player->yaw, 45.0f);
+ EXPECT_FLOAT_EQ(client.player->pitch, 10.0f);
+ const auto receiveDeadline = std::chrono::steady_clock::now() + std::chrono::seconds(5);
+ while(std::chrono::steady_clock::now() < receiveDeadline && !serverHandler.received()) {
+  serverConnection.tick();
+  std::this_thread::sleep_for(std::chrono::milliseconds(10));
+ }
+ ASSERT_TRUE(serverHandler.received());
+ EXPECT_DOUBLE_EQ(serverHandler.x(), 25.5);
+ EXPECT_DOUBLE_EQ(serverHandler.feetY(), client.player->boundingBox.minY);
+ EXPECT_DOUBLE_EQ(serverHandler.z(), -18.5);
+ clientConnection.disconnect();
+ serverConnection.disconnect();
+ world.serverRemove(client.player);
+ world.updateEntityLists();
+ client.worldSession().ownedPlayerMut().reset();
+ client.player = nullptr;
+ client.world = nullptr;
 }
 TEST(MultiplayerParityUpdates, HealthDecreaseTriggersHurtAnimation) {
  client::multiplayer::ClientNetworkHandler handler(nullptr);
@@ -321,12 +429,12 @@ TEST(MultiplayerParityUpdates, ServerTicksPlayerOncePerNetworkTick) {
  server::network::ServerPlayNetworkHandler handler(&fixture.server, nullptr, &player);
  PlayerMovePositionAndOnGroundPacket packet;
  packet.setMove(player.x, player.y, player.y + player.getEyeHeight(), player.z, 0.0f, 0.0f, false);
- player.air = 300;
- handler.onPlayerMove(packet);
- handler.onPlayerMove(packet);
- EXPECT_EQ(player.air, 300);
- handler.tick();
- EXPECT_EQ(player.air, 299);
+  player.air = 300;
+  handler.onPlayerMove(packet);
+  handler.onPlayerMove(packet);
+  EXPECT_EQ(player.air, 298);
+  handler.tick();
+  EXPECT_EQ(player.air, 298);
 }
 TEST(MultiplayerParityUpdates, WorldTimeUpdateAppliesUnconditionally) {
  client::multiplayer::ClientNetworkHandler handler(nullptr);

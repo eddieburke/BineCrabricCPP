@@ -66,6 +66,7 @@ class MinecraftServer : public command::CommandOutput {
   return playerManager.isOperator(name);
  }
  [[nodiscard]] std::filesystem::path getFile(const std::string& path) const;
+ bool registerManagedHostLogin(const std::string& username, const std::string& remoteAddress);
  void sendMessage(const std::string& message) override;
  void warn(const std::string& message);
  [[nodiscard]] std::string getName() override;
@@ -96,6 +97,7 @@ class MinecraftServer : public command::CommandOutput {
  std::jthread commandThread_;
  std::thread runThread_;
  std::optional<host::ServerLaunchConfig> launchConfig_;
+ bool managedOwnerClaimed_ = false;
  std::string lastError_;
  bool startResultReady_ = false;
  bool startSucceeded_ = false;

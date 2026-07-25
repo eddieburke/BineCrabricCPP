@@ -45,6 +45,8 @@ TEST(IntegratedServerHost, UsesAutomaticPortAndInMemoryProperties) {
  ASSERT_NE(server.properties, nullptr);
  EXPECT_FALSE(server.properties->persistsToFile());
  EXPECT_EQ(server.properties->getProperty("server-port", -1), 0);
+ EXPECT_FALSE(server.playerManager.isOperator("worldhost"));
+ EXPECT_TRUE(server.registerManagedHostLogin("WorldHost", "127.0.0.1:45000"));
  EXPECT_TRUE(server.playerManager.isOperator("worldhost"));
  server.stopAndJoin();
 }
@@ -64,6 +66,42 @@ TEST(IntegratedServerHost, PreservesCustomPort) {
  EXPECT_EQ(server.boundPort(), config.port);
  ASSERT_NE(server.properties, nullptr);
  EXPECT_EQ(server.properties->getProperty("server-port", -1), config.port);
+ server.stopAndJoin();
+}
+
+TEST(IntegratedServerHost, FirstManagedLoopbackLoginClaimsActualOwnerIdentity) {
+ net::minecraft::server::host::ServerLaunchConfig config;
+ config.storageRoot = makeTempWorldRoot("integrated_host_owner_claim");
+ config.worldName = "IntegratedWorld";
+ config.bindAddress = "127.0.0.1";
+ config.port = 0;
+ config.ownerName = "LaunchIdentity";
+ config.useConsoleThread = false;
+ config.useGui = false;
+ net::minecraft::server::MinecraftServer server(config);
+ ASSERT_TRUE(server.startAsync()) << server.lastError();
+ EXPECT_FALSE(server.registerManagedHostLogin("RemotePlayer", "192.168.1.5:45000"));
+ EXPECT_FALSE(server.playerManager.isOperator("RemotePlayer"));
+ EXPECT_TRUE(server.registerManagedHostLogin("JoinedIdentity", "127.0.0.1:45001"));
+ EXPECT_TRUE(server.playerManager.isOperator("JoinedIdentity"));
+ EXPECT_FALSE(server.registerManagedHostLogin("SecondLocalPlayer", "::1:45002"));
+ EXPECT_FALSE(server.playerManager.isOperator("SecondLocalPlayer"));
+ server.stopAndJoin();
+}
+
+TEST(IntegratedServerHost, AcceptsIpv4MappedLoopbackOwner) {
+ net::minecraft::server::host::ServerLaunchConfig config;
+ config.storageRoot = makeTempWorldRoot("integrated_host_mapped_owner");
+ config.worldName = "IntegratedWorld";
+ config.bindAddress.clear();
+ config.port = 0;
+ config.ownerName = "LaunchIdentity";
+ config.useConsoleThread = false;
+ config.useGui = false;
+ net::minecraft::server::MinecraftServer server(config);
+ ASSERT_TRUE(server.startAsync()) << server.lastError();
+ EXPECT_TRUE(server.registerManagedHostLogin("JoinedIdentity", "::ffff:127.0.0.1:45001"));
+ EXPECT_TRUE(server.playerManager.isOperator("JoinedIdentity"));
  server.stopAndJoin();
 }
 

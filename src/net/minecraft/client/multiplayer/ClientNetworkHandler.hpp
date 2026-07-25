@@ -134,6 +134,7 @@ class ClientNetworkHandler : public NetworkHandler {
  void processPendingJoinServer();
  bool pendingRespawn_ = false;
  int pendingRespawnDimension_ = 0;
+ std::unique_ptr<PlayerMovePacket> pendingRespawnMove_;
  void setEntityPositionAndAnglesAvoidEntities(
      entity::Entity* entity, double x, double y, double z, float yaw, float pitch, int steps);
  // Move the live ClientWorld out of ownedWorld_ without freeing it yet. Packet

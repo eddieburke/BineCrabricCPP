@@ -50,6 +50,10 @@ void ClientNetworkHandler::onPlayerMove(const PlayerMovePacket& packet) {
  if(minecraft == nullptr || minecraft->player == nullptr) {
   return;
  }
+ if(pendingRespawn_) {
+  pendingRespawnMove_ = std::make_unique<PlayerMovePacket>(packet);
+  return;
+ }
  entity::player::ClientPlayerEntity* player = minecraft->player;
  double x = player->x;
  double y = player->y;
@@ -130,6 +134,7 @@ void ClientNetworkHandler::onPlayerRespawn(const PlayerRespawnPacket& packet) {
  }
  pendingRespawn_ = true;
  pendingRespawnDimension_ = packet.dimensionRawId;
+ pendingRespawnMove_.reset();
 }
 void ClientNetworkHandler::applyDeferredRespawn() {
  if(!pendingRespawn_) {
@@ -138,6 +143,10 @@ void ClientNetworkHandler::applyDeferredRespawn() {
  pendingRespawn_ = false;
  if(minecraft != nullptr) {
   minecraft->respawnPlayer(true, pendingRespawnDimension_);
+ }
+ if(pendingRespawnMove_ != nullptr) {
+  std::unique_ptr<PlayerMovePacket> move = std::move(pendingRespawnMove_);
+  onPlayerMove(*move);
  }
 }
 void ClientNetworkHandler::onIncreaseStat(const IncreaseStatS2CPacket& packet) {
