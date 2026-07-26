@@ -52,6 +52,9 @@ void ButtonWidget::mouseReleased(int mouseX, int mouseY) {
  (void)mouseY;
 }
 bool ButtonWidget::isMouseOver(int mouseX, int mouseY) const {
- return active && mouseX >= x && mouseY >= y && mouseX < x + width && mouseY < y + height;
+ // Java GuiButton.mousePressed() gates on enabled *and* visible. Hidden widgets keep
+ // their bounds (scrolling lists park off-screen rows over the footer), so dropping the
+ // visible check lets them swallow clicks aimed at the buttons drawn on top of them.
+ return visible && active && mouseX >= x && mouseY >= y && mouseX < x + width && mouseY < y + height;
 }
 } // namespace net::minecraft::client::gui::widget

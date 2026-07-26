@@ -4,26 +4,14 @@
 #include <string>
 #include <unordered_map>
 #include <vector>
-namespace net::minecraft::client::gui::screen::option {
-namespace options_screen {
-extern std::array<net::minecraft::client::option::OptionSpec, 8> kSpecs;
-}
-namespace quality_screen {
-extern std::array<net::minecraft::client::option::OptionSpec, 9> kSpecs;
-}
-namespace performance_screen {
-extern std::array<net::minecraft::client::option::OptionSpec, 10> kSpecs;
-}
-namespace detail_screen {
-extern std::array<net::minecraft::client::option::OptionSpec, 8> kSpecs;
-}
-namespace animation_screen {
-extern std::array<net::minecraft::client::option::OptionSpec, 8> kSpecs;
-}
-namespace world_screen {
-extern std::array<net::minecraft::client::option::OptionSpec, 4> kSpecs;
-}
-} // namespace net::minecraft::client::gui::screen::option
+// Include the owning headers rather than re-declaring `kSpecs` locally: a local
+// extern with a mismatched extent silently produces an out-of-bounds span.
+#include "net/minecraft/client/gui/screen/option/AnimationSettingsScreen.hpp"
+#include "net/minecraft/client/gui/screen/option/DetailSettingsScreen.hpp"
+#include "net/minecraft/client/gui/screen/option/OptionsScreen.hpp"
+#include "net/minecraft/client/gui/screen/option/PerformanceSettingsScreen.hpp"
+#include "net/minecraft/client/gui/screen/option/QualitySettingsScreen.hpp"
+#include "net/minecraft/client/gui/screen/option/WorldSettingsScreen.hpp"
 namespace net::minecraft::client::option {
 namespace {
 std::vector<OptionSpec> gRegistry;

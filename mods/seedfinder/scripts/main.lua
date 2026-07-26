@@ -3,11 +3,11 @@
 -- Standardized structure with separated config
 -- ================================================================
 
-local config = require("seedfinder.config")
+local config = require("config")
 
-local rules = minecraft.require("scripts.rules")
-local search_mod = minecraft.require("scripts.search")
-local ui_spec = minecraft.require("scripts.ui_spec")
+local rules = require("scripts.rules")
+local search_mod = require("scripts.search")
+local ui_spec = require("scripts.ui_spec")
 
 -- Seedfinder: rules, cooperative seed search, and biome preview — all Lua on generic APIs.
 
@@ -188,11 +188,18 @@ function map_texture_from_grid(grid)
   if grid == nil then
     return nil
   end
-  local tex = minecraft.render.create_texture(grid.side, grid.side, grid.values)
+  local tex = minecraft.render.create_texture({
+    width = grid.side,
+    height = grid.side,
+    pixels = grid.channels.grass,
+  })
   if tex == nil or tex.id == nil then
     return nil
   end
-  local spawn_px, spawn_pz = minecraft.world.marker_px(grid, grid.center_x or 0, grid.center_z or 0)
+  local spawn_px = math.floor((grid.center_x - grid.origin_x) / grid.step + 0.5)
+  local spawn_pz = math.floor((grid.center_z - grid.origin_z) / grid.step + 0.5)
+  spawn_px = minecraft.util.clamp(spawn_px, 0, grid.side - 1)
+  spawn_pz = minecraft.util.clamp(spawn_pz, 0, grid.side - 1)
   return {id = tex.id, side = grid.side, spawn_px = spawn_px, spawn_pz = spawn_pz}
 end
 
@@ -456,7 +463,7 @@ local function render_screen(event)
     rect(mxp - 1, myp - 3, 3, 7, 0xFFFF5050)
     rect(mxp, myp, 1, 1, 0xFFFFFFFF)
     drew = true
-  elseif S.map ~= nil and S.map.values ~= nil and S.map.side ~= nil and S.map.side > 0 then
+  elseif S.map ~= nil and S.map.channels.grass ~= nil and S.map.side > 0 then
     local side = S.map.side
     local cell = math.max(1, math.floor(img / side))
     local mw = cell * side
@@ -465,7 +472,7 @@ local function render_screen(event)
     rect(img_x, img_y, img, img, 0xFF0E1219)
     for r = 0, side - 1 do
       for c = 0, side - 1 do
-        local color = S.map.values[r * side + c + 1]
+        local color = S.map.channels.grass[r * side + c + 1]
         if color ~= nil then
           rect(ox + c * cell, oy + r * cell, cell, cell, color)
         end
@@ -486,7 +493,7 @@ end
 -- events
 ----------------------------------------------------------------------
 
-minecraft.on(minecraft.events.screen_ui, {
+minecraft.on("screen_ui", {
   screen_id = minecraft.screen.ids.create_world,
   region = minecraft.screen.regions.footer,
   priority = 90,
@@ -505,7 +512,7 @@ minecraft.on(minecraft.events.screen_ui, {
   return event
 end)
 
-minecraft.on(minecraft.events.screen_event, { screen_id = SCREEN_ID }, function(event)
+minecraft.on("screen_event", { screen_id = SCREEN_ID }, function(event)
   if event.phase == "init" then
     local L = layout(event.width, event.height)
     S.layout = L

@@ -100,7 +100,7 @@ void ItemRenderer::renderSpriteItemInGui(client::texture::TextureManager& textur
  render::RenderPassScope scope(render::RenderType::guiTextured());
  textureManager.bindTextureOrAtlas(sprite, ItemModelRenderer::spriteAtlasPath(stack));
  applyDisplayColor(stack);
- auto [uMin, uMax, vMin, vMax, uScale, vScale, glId] = client::render::resolveBlockTextureUv(sprite);
+ const auto [uMin, uMax, vMin, vMax] = ItemModelRenderer::spriteUv(stack);
  Tessellator& tessellator = Tessellator::INSTANCE;
  tessellator.startQuads();
  tessellator.vertex(x + 0, y + 16, 0.0, uMin, vMax);

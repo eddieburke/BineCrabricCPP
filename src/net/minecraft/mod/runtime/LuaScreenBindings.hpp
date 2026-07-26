@@ -61,6 +61,14 @@ class LuaScreen : public client::gui::screen::Screen {
  [[nodiscard]] std::string_view getScreenUiId() const override {
   return id_;
  }
+ // A Lua screen is fully described by its id/title/pause flag, so it can always rebuild
+ // itself. This is what makes chains work: opening a second Lua screen from this one
+ // gives that screen a "back" target of this screen, which in turn still knows its own.
+ [[nodiscard]] client::gui::screen::ScreenFactory getReopenFactory() const override {
+  return [id = id_, title = title_, pause = shouldPause_, parent = returnFactory_] {
+   return std::make_unique<LuaScreen>(id, title, pause, parent);
+  };
+ }
  [[nodiscard]] const std::string& id() const {
   return id_;
  }

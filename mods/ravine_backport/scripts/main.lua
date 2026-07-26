@@ -3,7 +3,7 @@
 -- Standardized structure with separated config
 -- ================================================================
 
-local config = require("ravine_backport.config")
+local config = require("config")
 
 local AIR = 0
 local current_chunk = nil
@@ -22,9 +22,9 @@ local function carve_column(x, z, top_y, depth)
   end
 end
 
-minecraft.on(minecraft.events.chunk_generation, {
-  stage = minecraft.generation.stages.carver,
-  moment = minecraft.generation.moments.after,
+minecraft.on("chunk_generation", {
+  stage = "carver",
+  moment = "after",
   when = minecraft.util.real_world,
 }, function(event)
   current_chunk = event.chunk

@@ -51,6 +51,7 @@ class ShaderPackManager {
  }
  [[nodiscard]] const PackManifest* activeManifest() const noexcept;
  [[nodiscard]] bool activeHasPostProcess() const;
+ [[nodiscard]] int sunShadowQuality() const;
  [[nodiscard]] render::ColorFormat sceneColorFormat() const;
  // Resolves a canonical world program key ("gbuffers_terrain", "gbuffers_entities")
  // through the active user pack, then the always-loaded vanilla base pack. Returns the
@@ -59,10 +60,13 @@ class ShaderPackManager {
  gl::ShaderProgram* worldProgram(const std::string& key);
  bool renderPostProcess(int textureId,
                         int depthTextureId,
+                        int shadowDepthTextureId,
                         int width,
                         int height,
                         float tickDelta,
                         const FrameRenderCamera& camera,
+                        const FrameRenderCamera& shadowCamera,
+                        int shadowMapResolution,
                         float farPlane,
                         float worldTime,
                         const net::minecraft::World* world,

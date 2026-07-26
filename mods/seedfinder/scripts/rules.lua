@@ -217,29 +217,29 @@ function rules.decode_rules_table(parsed)
   local result = {}
   local function push_node(raw, kind)
     local values = {}
-    for i, name in ipairs(raw.biomes or raw.values or {}) do
+    for i, name in ipairs(raw.biomes or {}) do
       values[i] = name
     end
     result[#result + 1] = {
       kind = kind,
-      metric = raw.metric or (kind == "biome" and "biome" or ""),
+      metric = raw.metric or "",
       op = raw.op or "",
       direction = raw.direction or "",
       values = values,
-      block_id = raw.block_id or raw.top_block_id or -1,
-      block_below_id = raw.block_below_id or raw.bottom_block_id or -1,
-      min_value = raw.min_coverage_percent or raw.min or raw.min_value or -1,
-      max_value = raw.max_coverage_percent or raw.max or raw.max_value or -1,
-      value = raw.min_contiguous_radius_chunks or raw.value or -1,
+      block_id = raw.block_id or -1,
+      block_below_id = raw.block_below_id or -1,
+      min_value = raw.min_value or -1,
+      max_value = raw.max_value or -1,
+      value = raw.value or -1,
       weight = raw.weight or 1,
     }
   end
   for _, raw in ipairs(parsed.rules or {}) do
     if raw.kind == "objective" then
       push_node(raw, "objective")
-    elseif raw.kind == "block" or raw.type == "block_constraint" then
+    elseif raw.kind == "block" then
       push_node(raw, "block")
-    elseif raw.kind == "block_on_block" or raw.type == "block_on_block" then
+    elseif raw.kind == "block_on_block" then
       push_node(raw, "block_on_block")
     else
       push_node(raw, "biome")
@@ -288,10 +288,11 @@ function rules.biome_listed(name, list)
 end
 
 function rules.grid_biome_stats(grid)
+  local biome_ids = grid.channels.biome_id
   local counts = {}
   local total = grid.side * grid.side
   for i = 1, total do
-    local id = grid.values[i] or 0
+    local id = biome_ids[i]
     counts[id] = (counts[id] or 0) + 1
   end
   local unique = 0
@@ -305,7 +306,7 @@ function rules.grid_biome_stats(grid)
     end
   end
   local center_cell = math.floor(grid.side / 2)
-  local center = grid.values[center_cell * grid.side + center_cell + 1] or 0
+  local center = biome_ids[center_cell * grid.side + center_cell + 1]
   return {
     counts = counts,
     total = total,
@@ -327,12 +328,13 @@ function rules.coverage_for_biomes(stats, names)
 end
 
 function rules.biome_area_stats(grid, names)
+  local biome_ids = grid.channels.biome_id
   local side = grid.side or 0
   local total = side * side
   local match = {}
   local matching = 0
   for i = 1, total do
-    local yes = rules.biome_listed(rules.biome_name(grid.values[i] or 0), names)
+    local yes = rules.biome_listed(rules.biome_name(biome_ids[i]), names)
     match[i] = yes
     if yes then
       matching = matching + 1

@@ -1,6 +1,7 @@
-local config = require("camera.config")
+local config = require("config")
 
 local TRIPOD_ITEM = 402
+local TV_BLOCK = 152
 local FUSE_TIME = 80
 local CAPTURE_GRACE_TICKS = 10
 local SIDES = {
@@ -13,9 +14,21 @@ local SIDES = {
 }
 
 local is_client = minecraft.is_client()
-local camera_model = is_client and minecraft.model.load("models/camera/camera.json") or nil
-local tripod_bottom_model = is_client and minecraft.model.load("models/camera/tripod_bottom/tripod_bottom.json") or nil
-local tripod_top_model = is_client and minecraft.model.load("models/camera/tripod_top/tripod_top.json") or nil
+-- Models only exist client-side, but a client-side load failure must be loud:
+-- model.load returns nil plus an error message, and the old
+-- "is_client and load(...) or nil" idiom threw that message away, leaving the
+-- block registered with no model at all.
+local function load_model(path)
+  if not is_client then
+    return nil
+  end
+  return assert(minecraft.model.load(path))
+end
+
+local camera_model = load_model("models/camera/camera.json")
+local tripod_bottom_model = load_model("models/camera/tripod_bottom/tripod_bottom.json")
+local tripod_top_model = load_model("models/camera/tripod_top/tripod_top.json")
+local tv_model = load_model("models/camera/tv/tv.json")
 local captured = {}
 
 local function on_block_interact(event)
@@ -29,13 +42,15 @@ local function on_block_interact(event)
     yaw = event.player_yaw or 0,
     data = { fuse = 0, primed = false, capture_ticks = 0 },
   })
-  event.item_count = event.item_count - 1
+  if not config.renewable then
+    event.item_count = event.item_count - 1
+  end
   event.handled = true
 end
 
 local function on_entity_interact(event)
   if event.remote or not event.attack then return end
-  local ent = minecraft.entities.get(event.entity_id)
+  local ent = minecraft.entities.get(event.target_id)
   if not ent or ent.registry_id ~= "camera:tripod" then return end
 
   local data = ent.data or {}
@@ -43,6 +58,9 @@ local function on_entity_interact(event)
     data.fuse = FUSE_TIME
     data.primed = true
     minecraft.entities.apply_state(ent, { data = data })
+  elseif data.primed then
+    minecraft.entities.remove({ id = ent.id })
+    minecraft.drop_item(TRIPOD_ITEM, 1, ent.x, ent.y + 0.5, ent.z)
   end
   event.handled = true
 end
@@ -61,6 +79,7 @@ local function tick_tripods()
     elseif (data.capture_ticks or 0) > 0 then
       data.capture_ticks = data.capture_ticks - 1
       if data.capture_ticks <= 0 then
+        captured[ent.id] = nil
         minecraft.entities.remove({ id = ent.id })
       else
         minecraft.entities.apply_state(ent, { data = data })
@@ -100,7 +119,7 @@ local function draw_model(model, ent, y, scale, flash)
   end
 end
 
-local function draw_tripod(ent)
+local function draw_tripod(ent, shadow_pass)
   local data = ent.data or {}
   local scale = 1.0
   local flash = false
@@ -109,7 +128,7 @@ local function draw_tripod(ent)
       local t = 1.0 - data.fuse / 10.0
       scale = 1.0 + t * t * t * t * 0.3
     end
-    flash = math.floor(data.fuse / 5) % 2 == 0
+    flash = not shadow_pass and math.floor(data.fuse / 5) % 2 == 0
   end
 
   draw_model(tripod_bottom_model, ent, ent.y, scale, flash)
@@ -118,28 +137,34 @@ local function draw_tripod(ent)
 end
 
 local function on_world_render(event)
-  if event.shadow_pass then return end
   for _, ent in ipairs(minecraft.entities.list("camera:tripod")) do
-    draw_tripod(ent)
+    if ent.id ~= event.excluded_entity_id then
+      draw_tripod(ent, event.shadow_pass)
+    end
   end
 end
 
 local function take_tripod_screenshot(ent, tick_delta)
   local handle = minecraft.camera.create(config.screenshot_width or 640, config.screenshot_height or 480)
-  if handle < 0 then return end
+  if handle < 0 then return false end
 
   local ok = minecraft.camera.render(handle, ent.x, ent.y + 2.15, ent.z, ent.yaw, 0, 0, 70, tick_delta, ent.id)
   if ok then minecraft.camera.save_screenshot(handle) end
   minecraft.camera.destroy(handle)
+  return ok
 end
 
 local function on_render_frame(event)
+  local active = {}
   for _, ent in ipairs(minecraft.entities.list("camera:tripod")) do
+    active[ent.id] = true
     local data = ent.data or {}
     if (data.capture_ticks or 0) > 0 and not captured[ent.id] then
-      captured[ent.id] = true
-      take_tripod_screenshot(ent, event.tick_delta)
+      captured[ent.id] = take_tripod_screenshot(ent, event.tick_delta)
     end
+  end
+  for id in pairs(captured) do
+    if not active[id] then captured[id] = nil end
   end
 end
 
@@ -151,6 +176,20 @@ minecraft.register_item({
   max_count = 16,
 })
 
+minecraft.register_block({
+  id = TV_BLOCK,
+  texture = "models/camera/tv/tv_body.png",
+  hardness = 1.5,
+  resistance = 4.0,
+  translation_key = "camera.tv",
+  material = "metal",
+  opaque = false,
+  translucent = false,
+  full_cube = false,
+  model = tv_model,
+  item = { texture = "mods/camera/tv_icon.png" },
+})
+
 minecraft.register_shaped_recipe({
   output_item_id = TRIPOD_ITEM,
   output_count = 1,
@@ -158,22 +197,22 @@ minecraft.register_shaped_recipe({
   ingredients = { p = 5, g = 20, s = 280, r = 331 },
 })
 
-minecraft.on(minecraft.events.block_interact, {
+minecraft.on("block_interact", {
   right_click = true, has_item = true,
   when = function(event) return event.item_id == TRIPOD_ITEM end,
 }, on_block_interact)
 
-minecraft.on(minecraft.events.entity_interact, { attack = true, has_player = true }, on_entity_interact)
+minecraft.on("entity_interact", { attack = true, has_player = true }, on_entity_interact)
 
 if is_client then
-  minecraft.on(minecraft.events.client_tick, { after_world = true }, on_client_tick)
-  minecraft.on(minecraft.events.world_render, {
-    stage = minecraft.render.stages.entities,
-    moment = minecraft.render.moments.after,
+  minecraft.on("client_tick", { after_world = true }, on_client_tick)
+  minecraft.on("world_render", {
+    stage = "entities",
+    moment = "after",
   }, on_world_render)
-  minecraft.on(minecraft.events.render_frame, {}, on_render_frame)
+  minecraft.on("render_frame", {}, on_render_frame)
 else
-  minecraft.on(minecraft.events.world_tick, {}, on_server_tick)
+  minecraft.on("world_tick", {}, on_server_tick)
 end
 
 minecraft.log("info", "Tripod Camera loaded")

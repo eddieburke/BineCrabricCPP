@@ -289,6 +289,36 @@ void WorldRenderer::rebuildVisibleDrawRings() {
   }
  }
 }
+void WorldRenderer::pushCullState() {
+ // Swap, never copy: visibleDrawRings_ picks up the previous scratch buffers
+ // (whose inner capacity the nested pass immediately reuses via
+ // rebuildVisibleDrawRings), and the player's rings park in the scratch slot.
+ savedVisibleDrawRings_.swap(visibleDrawRings_);
+ savedFrustumFlags_.resize(sectionList_.size());
+ for(std::size_t i = 0; i < sectionList_.size(); ++i) {
+  savedFrustumFlags_[i] = sectionList_[i]->inFrustum ? 1U : 0U;
+ }
+ savedFrustumSectionCount_ = sectionList_.size();
+ cullStateSaved_ = true;
+}
+void WorldRenderer::popCullState() {
+ if(!cullStateSaved_) {
+  return;
+ }
+ cullStateSaved_ = false;
+ savedVisibleDrawRings_.swap(visibleDrawRings_);
+ // Flags are restored by position, which is only valid while sectionList_ is
+ // untouched. Nested passes render with renderCameraEntity=true, which skips
+ // both the frontier update and compileChunks, so nothing adds or removes a
+ // section. If that ever stops holding, drop the restore: the next cullChunks
+ // rebuilds inFrustum from scratch anyway.
+ if(savedFrustumSectionCount_ != sectionList_.size()) {
+  return;
+ }
+ for(std::size_t i = 0; i < sectionList_.size(); ++i) {
+  sectionList_[i]->inFrustum = savedFrustumFlags_[i] != 0U;
+ }
+}
 void WorldRenderer::clearSections() {
  meshScheduler_.cancelAll();
  pendingMeshUploads_.clear();
@@ -309,9 +339,15 @@ void WorldRenderer::clearSections() {
  nearDirtyChunks_.clear();
  drawRings_.clear();
  visibleDrawRings_.clear();
+ // Dangling ChunkBuilder* would otherwise survive in the nested-pass scratch.
+ savedVisibleDrawRings_.clear();
+ savedFrustumFlags_.clear();
+ savedFrustumSectionCount_ = 0;
+ cullStateSaved_ = false;
  globalBlockEntities.clear();
  pendingColumns_.clear();
  pendingSet_.clear();
+ pendingBorderRefresh_.clear();
  regionManager_.clear();
  centerSectionX_ = std::numeric_limits<int>::min();
  centerSectionZ_ = std::numeric_limits<int>::min();
@@ -483,12 +519,6 @@ bool WorldRenderer::startMeshJob(chunk::ChunkBuilder* chunk,
  }
  return true;
 }
-void WorldRenderer::render(const net::minecraft::Entity& camera, int layer, float tickDelta) {
- (void)tickDelta;
- cameraEntity_ = const_cast<net::minecraft::Entity*>(&camera);
- render::RenderSystem::disableLighting();
- renderChunks(layer, 0.0);
-}
 int WorldRenderer::render(net::minecraft::LivingEntity& camera, int layer, double tickDelta, bool drawModMeshes) {
  if(sections_.empty()) {
   return 0;
@@ -517,6 +547,14 @@ int WorldRenderer::renderChunksVbo(
     int layer, double /*tickDelta*/, double interpX, double interpY, double interpZ, bool skipBuildDrawLists) {
  lastDrawnRegionCount_ = 0;
  if(!skipBuildDrawLists) {
+  // Reset on the first layer of the player's own pass only. Nested passes
+  // (sun shadow, Lua render-to-texture) set renderCameraEntity_, and letting
+  // them reset would leave the F3 counter showing the shadow map's draw calls
+  // instead of the frame's.
+  if(layer == 0 && !renderCameraEntity_) {
+   chunk::ChunkRegionBuffer::frameVisibleRanges = 0;
+   chunk::ChunkRegionBuffer::frameDrawCalls = 0;
+  }
   for(auto& entry : regionManager_) {
    entry.second->layers[static_cast<std::size_t>(layer)].beginFrame();
   }
@@ -546,7 +584,7 @@ int WorldRenderer::renderChunksVbo(
   const float offsetZ = static_cast<float>(static_cast<double>(region.offsetZ) - interpZ);
   const MatrixScope matrix;
   RenderSystem::translate(offsetX, offsetY, offsetZ);
-  buffer.flush(render::Tessellator::effectiveDrawMode(gl::prim::Quads));
+  buffer.flush();
   ++lastDrawnRegionCount_;
  }
  return lastDrawnRegionCount_;
@@ -635,6 +673,7 @@ int WorldRenderer::renderModChunkMeshes(int layer, double interpX, double interp
  return drawn;
 }
 bool WorldRenderer::compileChunks(net::minecraft::LivingEntity& /*camera*/, bool force) {
+ drainBorderRefresh();
  const client::option::ResolvedRenderOptions resolvedOpts = client::option::resolve(activeOptions());
  const bool fancyGraphics = activeOptions().fancyGraphics;
  const float gridAreaScale = static_cast<float>(renderRadiusChunks_ * renderRadiusChunks_) /
@@ -926,7 +965,9 @@ void WorldRenderer::applyOcclusionCulling() {
 }
 std::string WorldRenderer::getChunkDebugInfo() const {
  return "C: " + std::to_string(compiledChunkCount) + "/" + std::to_string(chunkCount) +
-        ". F: " + std::to_string(invisibleChunkCount) + ", E: " + std::to_string(emptyChunkCount);
+        ". F: " + std::to_string(invisibleChunkCount) + ", E: " + std::to_string(emptyChunkCount) +
+        ", D: " + std::to_string(chunk::ChunkRegionBuffer::frameDrawCalls) + "/" +
+        std::to_string(chunk::ChunkRegionBuffer::frameVisibleRanges);
 }
 std::string WorldRenderer::getEntityDebugInfo() const {
  return "E: " + std::to_string(renderedEntityCount) + "/" + std::to_string(entityCount) +
@@ -943,8 +984,8 @@ void WorldRenderer::markDirty(int minX, int minY, int minZ, int maxX, int maxY, 
  for(int chunkX = startX; chunkX <= endX; ++chunkX) {
   for(int chunkZ = startZ; chunkZ <= endZ; ++chunkZ) {
    if(std::abs(chunkX - centerSectionX_) <= renderRadiusChunks_ &&
-      std::abs(chunkZ - centerSectionZ_) <= renderRadiusChunks_ && sectionAt(chunkX, 0, chunkZ) == nullptr) {
-    createColumn(chunkX, chunkZ);
+      std::abs(chunkZ - centerSectionZ_) <= renderRadiusChunks_) {
+    enqueueColumn(chunkX, chunkZ);
    }
    for(int chunkY = startY; chunkY <= endY; ++chunkY) {
     chunk::ChunkBuilder* builder = sectionAt(chunkX, chunkY, chunkZ);
@@ -959,6 +1000,51 @@ void WorldRenderer::markDirty(int minX, int minY, int minZ, int maxX, int maxY, 
 }
 void WorldRenderer::blockUpdate(int x, int y, int z) {
  markDirty(x - 1, y - 1, z - 1, x + 1, y + 1, z + 1);
+}
+void WorldRenderer::chunkAvailable(int chunkX, int chunkZ) {
+ if(centerSectionX_ == std::numeric_limits<int>::min()) {
+  return;
+ }
+ // Allow one extra ring: a column just outside the render radius still shares a
+ // border with one just inside it, and that inside column's faces were meshed
+ // against the missing data.
+ if(std::abs(chunkX - centerSectionX_) > renderRadiusChunks_ + 1 ||
+    std::abs(chunkZ - centerSectionZ_) > renderRadiusChunks_ + 1) {
+  return;
+ }
+ enqueueColumn(chunkX, chunkZ);
+ pendingBorderRefresh_.insert(world::SectionPos{chunkX, 0, chunkZ});
+}
+void WorldRenderer::drainBorderRefresh() {
+ if(pendingBorderRefresh_.empty()) {
+  return;
+ }
+ // Only the four orthogonal neighbours share a face with the arriving column;
+ // diagonals are reached through those neighbours' own one-block shell.
+ //
+ // A section is skipped only when it has never been built AND has no job in
+ // flight: createColumn already marked it dirty and queued it, so it will mesh
+ // against the new data anyway. A section with a job IN FLIGHT must still be
+ // invalidated even though it reads as dirty — its snapshot was captured before
+ // this chunk arrived, and without bumping version compileChunks would accept
+ // that stale mesh and clear the dirty flag, leaving a stale border.
+ static constexpr int kNeighborX[4] = {-1, 1, 0, 0};
+ static constexpr int kNeighborZ[4] = {0, 0, -1, 1};
+ for(const world::SectionPos& column : pendingBorderRefresh_) {
+  for(int dir = 0; dir < 4; ++dir) {
+   const int neighborX = column.x + kNeighborX[dir];
+   const int neighborZ = column.z + kNeighborZ[dir];
+   for(int sectionY = 0; sectionY < kChunkSectionCountY; ++sectionY) {
+    chunk::ChunkBuilder* section = sectionAt(neighborX, sectionY, neighborZ);
+    if(section == nullptr || (!section->built && !section->meshJobInFlight)) {
+     continue;
+    }
+    section->invalidate();
+    enqueueDirtyChunk(section);
+   }
+  }
+ }
+ pendingBorderRefresh_.clear();
 }
 void WorldRenderer::setBlocksDirty(int minX, int minY, int minZ, int maxX, int maxY, int maxZ) {
  markDirty(minX - 1, minY - 1, minZ - 1, maxX + 1, maxY + 1, maxZ + 1);

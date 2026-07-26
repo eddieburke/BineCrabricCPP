@@ -41,7 +41,9 @@ void Screen::init(client::Minecraft* minecraft, int width, int height) {
  int genericButtonY = 6;
  publishScreenUi(mod::screen_regions::kScreen, &genericButtonY);
 }
-void Screen::publishScreenUi(std::string_view region, int* stackedButtonY) {
+void Screen::publishScreenUi(std::string_view region,
+                             int* stackedButtonY,
+                             std::vector<widget::ActionButtonWidget*>* stackedButtons) {
  std::string_view screenId = getScreenUiId();
  // Screens that don't declare a friendly id still get one (their typeid name),
  // so mods can address any GUI; friendly ids stay stable for first-party hooks.
@@ -51,7 +53,7 @@ void Screen::publishScreenUi(std::string_view region, int* stackedButtonY) {
  if(screenId.empty() || region.empty()) {
   return;
  }
- mod::ScreenUiContext context{this, screenId, region, stackedButtonY};
+ mod::ScreenUiContext context{this, screenId, region, stackedButtonY, stackedButtons};
  mod::ScreenUiEvent event{&context};
  net::minecraft::mod::runtime::luaHookScreenUi(event);
 }

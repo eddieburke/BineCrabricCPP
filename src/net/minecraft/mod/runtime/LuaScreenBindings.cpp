@@ -14,8 +14,8 @@
 #include "net/minecraft/client/font/TextRenderer.hpp"
 #include "net/minecraft/client/gl/GlConstants.hpp"
 #include "net/minecraft/client/gui/Draw2D.hpp"
-#include "net/minecraft/client/gui/screen/option/ModSettingsScreen.hpp"
 #include "net/minecraft/client/render/RenderSystem.hpp"
+#include "net/minecraft/client/render/RenderType.hpp"
 #include "net/minecraft/client/render/Tessellator.hpp"
 #include "net/minecraft/client/render/item/ItemRenderer.hpp"
 #include "net/minecraft/client/resource/language/I18n.hpp"
@@ -478,6 +478,9 @@ void prepareGuiDrawState() {
  RenderSystem::disableLighting();
 }
 void drawGuiFillRect(int x, int y, int width, int height, std::uint32_t color) {
+ // A pass must be open for the quad to get a shader program bound; without it the
+ // tessellator draw is a no-op (this is what DrawContext::fill does internally).
+ const client::render::RenderPassScope passScope(client::render::RenderType::gui());
  const ModLuaGuiDrawScope fillCaps(false);
  const int rgb = static_cast<int>(color & 0x00FFFFFFU);
  int alpha = static_cast<int>((color >> 24U) & 0xFFU);
@@ -649,6 +652,7 @@ int luaGuiDrawSprite(lua_State* state) {
  const int v = luaIntArg(state, arg + 3);
  const int w = luaIntArg(state, arg + 4);
  const int h = luaIntArg(state, arg + 5);
+ const client::render::RenderPassScope passScope(client::render::RenderType::guiTextured());
  const ModLuaGuiDrawScope spriteCaps(true);
  RenderSystem::bindTexture(textureId);
  client::render::Tessellator& tess = client::render::Tessellator::INSTANCE;
@@ -669,6 +673,7 @@ int luaGuiDrawTexture(lua_State* state) {
  if(textureId <= 0) {
   return 0;
  }
+ const client::render::RenderPassScope passScope(client::render::RenderType::guiTextured());
  const ModLuaGuiDrawScope spriteCaps(true);
  RenderSystem::bindTexture(textureId);
  RenderSystem::color4f(1.0f, 1.0f, 1.0f, 1.0f);
@@ -777,11 +782,12 @@ int luaScreenOpen(lua_State* state) {
   title = luaStringField(state, 2, "title", "");
   shouldPause = luaBoolField(state, 2, "pause", true);
  }
+ // Whichever screen we were on decides where this one's "back" goes; screens that can
+ // rebuild themselves say so via getReopenFactory(). No concrete screen type is named
+ // here, so any host screen -- or another Lua screen -- chains correctly.
  client::gui::screen::ScreenFactory returnFactory = nullptr;
  if(auto* current = client::Minecraft::INSTANCE->currentScreen()) {
-  if(auto* settings = dynamic_cast<client::gui::screen::option::ModSettingsScreen*>(current)) {
-   returnFactory = settings->modPagesFactory();
-  }
+  returnFactory = current->getReopenFactory();
  }
  auto screen =
      std::make_unique<LuaScreen>(luaString(state, 1, ""), std::move(title), shouldPause, std::move(returnFactory));

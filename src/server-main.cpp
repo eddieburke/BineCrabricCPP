@@ -1,6 +1,5 @@
 #include "net/minecraft/mod/runtime/ModHost.hpp"
 #include "net/minecraft/server/MinecraftServer.hpp"
-#include "net/minecraft/server/ServerLog.hpp"
 #include "net/minecraft/server/host/ServerLaunchConfig.hpp"
 #include "net/minecraft/stat/Stats.hpp"
 #ifdef _WIN32
@@ -18,6 +17,7 @@ struct WindowsTimerResolutionReserver {
 #endif
 #include <exception>
 #include <filesystem>
+#include <iostream>
 #include <memory>
 #include <optional>
 #include <stdexcept>
@@ -103,9 +103,7 @@ int main(int argc, char** argv) {
 #ifdef _WIN32
  WindowsTimerResolutionReserver timerReserver;
 #endif
- using net::minecraft::server::LogLevel;
  using net::minecraft::server::MinecraftServer;
- using net::minecraft::server::ServerLog;
  using net::minecraft::stat::Stats;
  try {
   const auto launchConfig = parseLaunchConfig(argc, argv);
@@ -121,10 +119,10 @@ int main(int argc, char** argv) {
    net::minecraft::server::dedicated::gui::DedicatedServerGui::create(*server);
   }
 #endif
-  std::thread serverThread([&server]() { server->run(); });
-  serverThread.join();
- } catch(const std::exception& exception) {
-  ServerLog::LOGGER.log(LogLevel::Severe, "Failed to start the minecraft server", &exception);
+ std::thread serverThread([&server]() { server->run(); });
+ serverThread.join();
+} catch(const std::exception& exception) {
+  std::cerr << "Failed to start the minecraft server: " << exception.what() << '\n';
   return 1;
  }
  return 0;

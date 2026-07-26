@@ -1,4 +1,5 @@
 #include "net/minecraft/client/gui/screen/TitleScreen.hpp"
+#include <array>
 #include <chrono>
 #include <ctime>
 #include <fstream>
@@ -44,11 +45,19 @@ TitleScreen::TitleScreen() {
  splashText_ = chooseSplashText();
 }
 std::string TitleScreen::chooseSplashText() const {
+ static std::mt19937 rng(static_cast<unsigned>(std::chrono::steady_clock::now().time_since_epoch().count()));
+ std::uniform_int_distribution<int> creditChance(0, 99);
+ if(creditChance(rng) == 0) {
+  static constexpr std::array<std::string_view, 2> credits = {
+      "Shoutout to TotallyNotMichael for creating the benchmark model used to implement modern Minecraft JSON handling!",
+      "Project name suggested by .zonix!"};
+  std::uniform_int_distribution<std::size_t> creditDist(0, credits.size() - 1);
+  return std::string(credits[creditDist(rng)]);
+ }
  const std::vector<std::string> splashes = loadSplashes();
  if(splashes.empty()) {
   return "missingno";
  }
- static std::mt19937 rng(static_cast<unsigned>(std::chrono::steady_clock::now().time_since_epoch().count()));
  std::uniform_int_distribution<std::size_t> dist(0, splashes.size() - 1);
  return splashes[dist(rng)];
 }
@@ -58,17 +67,23 @@ void TitleScreen::init() {
  const int w = width();
  const int h = height();
  const auto returnToTitle = []() { return std::make_unique<TitleScreen>(); };
- addCenteredActionButton(
-     layout::menuRowY(h, 0), resource::language::I18n::getTranslation("menu.singleplayer"), [this, returnToTitle] {
+ const auth::AccountUiSnapshot initialAccountUi =
+     minecraft() != nullptr ? auth::pollAccountUi(*minecraft()) : auth::AccountUiSnapshot{};
+ singleplayerButton_ = &addCenteredActionButton(
+     layout::menuRowY(h, 0),
+     initialAccountUi.fullGameReady ? resource::language::I18n::getTranslation("menu.singleplayer") : "Play Demo",
+     [this, returnToTitle] {
       navigateTo(std::make_unique<world::SelectWorldScreen>(returnToTitle));
      });
  multiplayerButton_ = &addCenteredActionButton(
      layout::menuRowY(h, 1), resource::language::I18n::getTranslation("menu.multiplayer"), [this, returnToTitle] {
       navigateTo(std::make_unique<MultiplayerScreen>(returnToTitle));
      });
- addCenteredActionButton(layout::menuRowY(h, 2),
-                         resource::language::I18n::getTranslation("menu.mods"),
-                         [this, returnToTitle] { navigateTo(std::make_unique<mod::ModsScreen>(returnToTitle)); });
+ modsButton_ = &addCenteredActionButton(layout::menuRowY(h, 2),
+                                        resource::language::I18n::getTranslation("menu.mods"),
+                                        [this, returnToTitle] {
+                                         navigateTo(std::make_unique<mod::ModsScreen>(returnToTitle));
+                                        });
  addActionButton(layout::centerBtnX(w),
                  layout::menuRowY(h, 3),
                  layout::kSplitButtonWidth,
@@ -108,6 +123,9 @@ void TitleScreen::init() {
  if(multiplayerButton_ != nullptr) {
   multiplayerButton_->active = accountUi.multiplayerReady;
  }
+ if(modsButton_ != nullptr) {
+  modsButton_->active = accountUi.fullGameReady;
+ }
 }
 void TitleScreen::tick() {
  ticks_ += 1.0f;
@@ -121,6 +139,13 @@ void TitleScreen::tick() {
  const auth::AccountUiSnapshot accountUi = auth::pollAccountUi(*minecraft());
  if(multiplayerButton_ != nullptr) {
   multiplayerButton_->active = accountUi.multiplayerReady;
+ }
+ if(modsButton_ != nullptr) {
+  modsButton_->active = accountUi.fullGameReady;
+ }
+ if(singleplayerButton_ != nullptr) {
+  singleplayerButton_->text =
+      accountUi.fullGameReady ? resource::language::I18n::getTranslation("menu.singleplayer") : "Play Demo";
  }
  if(accountButton_ != nullptr && accountButton_->text != accountUi.buttonLabel) {
   accountButton_->text = accountUi.buttonLabel;

@@ -29,7 +29,8 @@ constexpr int kClientCommandStopSleeping = 3;
 } // namespace
 ServerPlayNetworkHandler::ServerPlayNetworkHandler(MinecraftServer* server,
                                                    Connection* connection,
-                                                   ::net::minecraft::entity::player::ServerPlayerEntity* player)
+                                                   ::net::minecraft::entity::player::ServerPlayerEntity* player,
+                                                   bool modProtocolEnabled)
     : server_(server), connection_(connection), player_(player) {
  if(player_ != nullptr) {
   player_->networkHandler = this;
@@ -40,7 +41,7 @@ ServerPlayNetworkHandler::ServerPlayNetworkHandler(MinecraftServer* server,
  if(connection_ != nullptr) {
   connection_->setNetworkHandler(*this);
  }
- setModProtocolEnabled(!::net::minecraft::mod::runtime::host().loadedMods().empty());
+ setModProtocolEnabled(modProtocolEnabled);
 }
 void ServerPlayNetworkHandler::tick() {
  ++ticks_;

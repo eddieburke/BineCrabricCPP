@@ -3,15 +3,21 @@
 -- Standardized structure with separated config
 -- ================================================================
 
-local config = require("stone_bricks.config")
+local config = require("config")
+
+-- Every block's shape comes from a JSON model. assert() the load: model.load
+-- returns nil plus an error message on failure, and swallowing that leaves the
+-- block with no model at all.
+local model = assert(minecraft.model.load("models/stone_bricks.json"))
 
 minecraft.register_block({
   id = 98,
-  texture_id = 7,
+  texture = "mods/stone_bricks/stone_bricks.png",
   hardness = 2.0,
   resistance = 10.0,
   translation_key = "stoneBrick",
   material = "stone",
+  model = model,
 })
 
 minecraft.register_shaped_recipe({

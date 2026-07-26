@@ -2,11 +2,13 @@
 #include <atomic>
 #include <chrono>
 #include <filesystem>
+#include <fstream>
 #include <string>
 #include <thread>
 #include "net/minecraft/server/MinecraftServer.hpp"
 #include "net/minecraft/server/host/ServerLaunchConfig.hpp"
 #include "net/minecraft/server/network/ServerSocket.hpp"
+#include "tests/support/empty_server_mod_host.hpp"
 
 namespace {
 std::filesystem::path makeTempWorldRoot(const std::string& name) {
@@ -29,8 +31,10 @@ std::uint16_t reservePort() {
 
 namespace net::minecraft::test {
 TEST(IntegratedServerHost, UsesAutomaticPortAndInMemoryProperties) {
+ const std::filesystem::path root = makeTempWorldRoot("integrated_host");
+ initializeEmptyServerModHost(root / "runtime");
  net::minecraft::server::host::ServerLaunchConfig config;
- config.storageRoot = makeTempWorldRoot("integrated_host");
+ config.storageRoot = root;
  config.worldName = "IntegratedWorld";
  config.bindAddress = "127.0.0.1";
  config.port = 0;
@@ -52,8 +56,10 @@ TEST(IntegratedServerHost, UsesAutomaticPortAndInMemoryProperties) {
 }
 
 TEST(IntegratedServerHost, PreservesCustomPort) {
+ const std::filesystem::path root = makeTempWorldRoot("integrated_host_custom_port");
+ initializeEmptyServerModHost(root / "runtime");
  net::minecraft::server::host::ServerLaunchConfig config;
- config.storageRoot = makeTempWorldRoot("integrated_host_custom_port");
+ config.storageRoot = root;
  config.worldName = "IntegratedWorld";
  config.bindAddress = "127.0.0.1";
  config.port = reservePort();
@@ -69,9 +75,54 @@ TEST(IntegratedServerHost, PreservesCustomPort) {
  server.stopAndJoin();
 }
 
-TEST(IntegratedServerHost, FirstManagedLoopbackLoginClaimsActualOwnerIdentity) {
+TEST(IntegratedServerHost, WritesReadyFileOnlyAfterWorldInitialization) {
+ const std::filesystem::path root = makeTempWorldRoot("integrated_host_ready");
+ initializeEmptyServerModHost(root / "runtime");
  net::minecraft::server::host::ServerLaunchConfig config;
- config.storageRoot = makeTempWorldRoot("integrated_host_owner_claim");
+ config.storageRoot = root;
+ config.worldName = "IntegratedWorld";
+ config.bindAddress = "127.0.0.1";
+ config.port = 0;
+ config.onlineMode = false;
+ config.readyFile = root / "server.ready";
+ config.useConsoleThread = false;
+ config.useGui = false;
+ net::minecraft::server::MinecraftServer server(config);
+ ASSERT_TRUE(server.startAsync()) << server.lastError();
+ EXPECT_NE(server.getWorld(0), nullptr);
+ EXPECT_TRUE(std::filesystem::is_regular_file(config.readyFile));
+ server.stopAndJoin();
+}
+
+TEST(IntegratedServerHost, MissingRequiredModDoesNotWriteReadyFile) {
+ const std::filesystem::path root = makeTempWorldRoot("integrated_host_missing_mod");
+ initializeEmptyServerModHost(root / "runtime");
+ const std::filesystem::path worldDirectory = root / "IntegratedWorld";
+ std::filesystem::create_directories(worldDirectory);
+ {
+  std::ofstream requiredMods(worldDirectory / "required-mods.txt", std::ios::binary | std::ios::trunc);
+  requiredMods << "missing_ready_mod\n";
+ }
+ net::minecraft::server::host::ServerLaunchConfig config;
+ config.storageRoot = root;
+ config.worldName = "IntegratedWorld";
+ config.bindAddress = "127.0.0.1";
+ config.port = 0;
+ config.onlineMode = false;
+ config.readyFile = root / "server.ready";
+ config.useConsoleThread = false;
+ config.useGui = false;
+ net::minecraft::server::MinecraftServer server(config);
+ EXPECT_FALSE(server.startAsync());
+ EXPECT_EQ(server.lastError(), "Cannot load world \"IntegratedWorld\": missing required Lua mods: missing_ready_mod");
+ EXPECT_FALSE(std::filesystem::exists(config.readyFile));
+}
+
+TEST(IntegratedServerHost, FirstManagedLoopbackLoginClaimsActualOwnerIdentity) {
+ const std::filesystem::path root = makeTempWorldRoot("integrated_host_owner_claim");
+ initializeEmptyServerModHost(root / "runtime");
+ net::minecraft::server::host::ServerLaunchConfig config;
+ config.storageRoot = root;
  config.worldName = "IntegratedWorld";
  config.bindAddress = "127.0.0.1";
  config.port = 0;
@@ -90,8 +141,10 @@ TEST(IntegratedServerHost, FirstManagedLoopbackLoginClaimsActualOwnerIdentity) {
 }
 
 TEST(IntegratedServerHost, AcceptsIpv4MappedLoopbackOwner) {
+ const std::filesystem::path root = makeTempWorldRoot("integrated_host_mapped_owner");
+ initializeEmptyServerModHost(root / "runtime");
  net::minecraft::server::host::ServerLaunchConfig config;
- config.storageRoot = makeTempWorldRoot("integrated_host_mapped_owner");
+ config.storageRoot = root;
  config.worldName = "IntegratedWorld";
  config.bindAddress.clear();
  config.port = 0;

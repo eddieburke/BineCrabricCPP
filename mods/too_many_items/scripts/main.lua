@@ -3,7 +3,7 @@
 -- Standardized structure with separated config
 -- ================================================================
 
-local config = require("too_many_items.config")
+local config = require("config")
 
 local visible = false
 local scroll = 0
@@ -44,7 +44,7 @@ end
 
 local TOGGLE_KEY = minecraft.key_code("o")
 
-minecraft.on(minecraft.events.key_press, {
+minecraft.on("key_press", {
   key = TOGGLE_KEY,
   pressed = true,
   priority = 100,
@@ -62,7 +62,7 @@ local REGION_FILTER = {
   end,
 }
 
-minecraft.on(minecraft.events.screen_region, {
+minecraft.on("screen_region", {
   screen_id = REGION_FILTER.screen_id,
   region = REGION_FILTER.region,
   phase_name = "mouse_scroll",
@@ -86,7 +86,7 @@ minecraft.on(minecraft.events.screen_region, {
   event.handled = true
 end)
 
-minecraft.on(minecraft.events.screen_region, {
+minecraft.on("screen_region", {
   screen_id = REGION_FILTER.screen_id,
   region = REGION_FILTER.region,
   phase_name = "mouse_click",
@@ -109,7 +109,7 @@ minecraft.on(minecraft.events.screen_region, {
   end
 end)
 
-minecraft.on(minecraft.events.screen_region, {
+minecraft.on("screen_region", {
   screen_id = REGION_FILTER.screen_id,
   region = REGION_FILTER.region,
   phase_name = "render",

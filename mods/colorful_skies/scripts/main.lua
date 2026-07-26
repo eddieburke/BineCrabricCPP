@@ -3,7 +3,7 @@
 -- Clean, separated logic with standardized config access
 -- ================================================================
 
-local config = require("colorful_skies.config")
+local config = require("config")
 local clamp = minecraft.util.clamp
 local PI = 3.14159265
 
@@ -143,14 +143,14 @@ local function handle_fog_color(event)
   return event
 end
 
-minecraft.on(minecraft.events.world_color, {
-  kind = minecraft.colors.sky,
+minecraft.on("world_color", {
+  kind = "sky",
   is_overworld = true,
   priority = 20,
 }, handle_sky_color)
 
-minecraft.on(minecraft.events.world_color, {
-  kind = minecraft.colors.fog,
+minecraft.on("world_color", {
+  kind = "fog",
   is_overworld = true,
   priority = 20,
 }, handle_fog_color)

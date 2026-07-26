@@ -158,11 +158,12 @@ Chunk& ChunkCache::adoptChunk(int chunkX, int chunkZ, std::unique_ptr<Chunk> own
  if(world_ != nullptr && chunk != &empty_) {
   // Neighboring sections may have meshed against this then-missing chunk
   // (treated as sky-lit air), leaving stale water faces and light seams at
-  // the border. Dirty a one-block shell around this chunk so those border
-  // sections re-mesh now that real blocks and light exist.
-  const int blockX = chunkX * 16;
-  const int blockZ = chunkZ * 16;
-  world_->setBlocksDirty(blockX - 1, 0, blockZ - 1, blockX + 16, Chunk::height - 1, blockZ + 16);
+  // the border. Announce the arrival instead of dirtying a one-block shell:
+  // the shell expanded to a 3x3 column neighbourhood over full height (72
+  // sections) per chunk, so a world load re-meshed ~9x more than it needed to.
+  // WorldRenderer coalesces arrivals and refreshes only the four orthogonal
+  // neighbours' borders once per frame.
+  world_->chunkAvailable(chunkX, chunkZ);
  }
  return *chunk;
 }

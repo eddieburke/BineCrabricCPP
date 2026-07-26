@@ -24,14 +24,7 @@ using PlayerInventory = entity::player::PlayerInventory;
  }
  return static_cast<entity::player::PlayerEntity*>(client->player);
 }
-[[nodiscard]] bool canMutateInventory() {
- return luaPlayer() != nullptr;
-}
 [[nodiscard]] ItemStack readStack(lua_State* state, int index) {
- LuaApi& api = luaApi();
- if(api.type(state, index) != kLuaTTable) {
-  return {};
- }
  const int itemId = luaIntField(state, index, "id", 0);
  const int count = luaIntField(state, index, "count", 1);
  const int damage = luaIntField(state, index, "damage", 0);
@@ -77,14 +70,14 @@ int luaInventoryMainSize(lua_State* state) {
 }
 int luaInventoryGet(lua_State* state) {
  LuaApi& api = luaApi();
+ LuaArgs args(state);
  entity::player::PlayerEntity* player = luaPlayer();
  if(player == nullptr) {
   api.pushnil(state);
   return 1;
  }
- int isNumber = 0;
- const int slot = static_cast<int>(api.tointegerx(state, 1, &isNumber));
- if(isNumber == 0) {
+ int slot = 0;
+ if(!args.integer(1, slot)) {
   api.pushnil(state);
   return 1;
  }
@@ -98,18 +91,14 @@ int luaInventoryGet(lua_State* state) {
 }
 int luaInventorySet(lua_State* state) {
  LuaApi& api = luaApi();
- if(!canMutateInventory()) {
+ LuaArgs args(state);
+ int slot = 0;
+ if(!args.integer(1, slot) || !args.table(2)) {
   api.pushboolean(state, 0);
   return 1;
  }
  entity::player::PlayerEntity* player = luaPlayer();
  if(player == nullptr) {
-  api.pushboolean(state, 0);
-  return 1;
- }
- int isNumber = 0;
- const int slot = static_cast<int>(api.tointegerx(state, 1, &isNumber));
- if(isNumber == 0) {
   api.pushboolean(state, 0);
   return 1;
  }
@@ -135,7 +124,8 @@ int luaInventoryCursorGet(lua_State* state) {
 }
 int luaInventoryCursorSet(lua_State* state) {
  LuaApi& api = luaApi();
- if(!canMutateInventory()) {
+ LuaArgs args(state);
+ if(!args.table(1)) {
   api.pushboolean(state, 0);
   return 1;
  }
@@ -150,7 +140,8 @@ int luaInventoryCursorSet(lua_State* state) {
 }
 int luaInventoryGive(lua_State* state) {
  LuaApi& api = luaApi();
- if(!canMutateInventory()) {
+ LuaArgs args(state);
+ if(!args.table(1)) {
   api.pushboolean(state, 0);
   return 1;
  }
@@ -164,8 +155,9 @@ int luaInventoryGive(lua_State* state) {
  return 1;
 }
 int luaInventoryOffer(lua_State* state) {
- if(!canMutateInventory()) {
-  pushStack(state, readStack(state, 1));
+ LuaArgs args(state);
+ if(!args.table(1)) {
+  pushStack(state, {});
   return 1;
  }
  entity::player::PlayerEntity* player = luaPlayer();
@@ -189,9 +181,9 @@ int luaInventorySelectedSlot(lua_State* state) {
 }
 int luaItemsDescribe(lua_State* state) {
  LuaApi& api = luaApi();
- int isNumber = 0;
- const int itemId = static_cast<int>(api.tointegerx(state, 1, &isNumber));
- if(isNumber == 0 || itemId <= 0) {
+ LuaArgs args(state);
+ int itemId = 0;
+ if(!args.integer(1, itemId) || itemId <= 0) {
   api.pushnil(state);
   return 1;
  }

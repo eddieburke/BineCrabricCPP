@@ -15,19 +15,10 @@ function core.load_module(name, path)
     if loaded_modules[name] then
         return loaded_modules[name]
     end
-    
-    local ok, mod = pcall(minecraft.require, path or name)
-    if not ok then
-        -- Fallback to standard require
-        ok, mod = pcall(require, path or name)
-    end
-    
-    if ok then
-        loaded_modules[name] = mod
-        return mod
-    end
-    
-    error("Failed to load module: " .. (path or name))
+
+    local mod = require(path or name)
+    loaded_modules[name] = mod
+    return mod
 end
 
 --------------------------------------------------------------------------------
@@ -62,7 +53,7 @@ function core.trigger_event(event_name, ...)
     for _, h in ipairs(handlers) do
         local ok, err = pcall(h.handler, ...)
         if not ok then
-            minetest.log("error", "Event handler error for " .. event_name .. ": " .. tostring(err))
+            minecraft.log("error", "Event handler error for " .. event_name .. ": " .. tostring(err))
         end
     end
 end
@@ -410,7 +401,7 @@ local perf_stats = {}
 
 function core.start_perf_timer(name)
     perf_stats[name] = {
-        start = minetest.get_us_time(),
+        start = minecraft.time.utc_millis(),
         count = 0,
         total = 0
     }
@@ -418,7 +409,7 @@ end
 
 function core.stop_perf_timer(name)
     if not perf_stats[name] then return end
-    local elapsed = minetest.get_us_time() - perf_stats[name].start
+    local elapsed = minecraft.time.utc_millis() - perf_stats[name].start
     perf_stats[name].count = perf_stats[name].count + 1
     perf_stats[name].total = perf_stats[name].total + elapsed
 end
@@ -429,8 +420,8 @@ function core.get_perf_stats(name)
     end
     return {
         count = perf_stats[name].count,
-        avg_us = perf_stats[name].total / perf_stats[name].count,
-        total_us = perf_stats[name].total
+        avg_ms = perf_stats[name].total / perf_stats[name].count,
+        total_ms = perf_stats[name].total
     }
 end
 

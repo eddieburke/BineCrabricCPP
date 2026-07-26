@@ -1,7 +1,6 @@
 #include "net/minecraft/client/render/block/entity/BlockEntityRenderDispatcher.hpp"
 #include "net/minecraft/client/render/RenderSystem.hpp"
 #include "net/minecraft/client/render/RenderType.hpp"
-#include "net/minecraft/mod/runtime/LuaDirectHooks.hpp"
 namespace net::minecraft::client::render::block::entity {
 BlockEntityRenderDispatcher& BlockEntityRenderDispatcher::instance() {
  static BlockEntityRenderDispatcher dispatcher;
@@ -38,19 +37,6 @@ void BlockEntityRenderDispatcher::prepare(net::minecraft::World* worldIn,
 }
 void BlockEntityRenderDispatcher::render(const net::minecraft::block::entity::BlockEntity& blockEntity,
                                          float tickDelta) {
- if(net::minecraft::mod::runtime::hasLuaHook(net::minecraft::mod::runtime::LuaEventId::PreTileEntityRender)) {
-  net::minecraft::mod::PreTileEntityRenderEvent event;
-  event.entity = &blockEntity;
-  event.x = blockEntity.x;
-  event.y = blockEntity.y;
-  event.z = blockEntity.z;
-  event.id = blockEntity.id();
-  event.tickDelta = tickDelta;
-  net::minecraft::mod::runtime::luaHookPreTileEntityRender(event);
-  if(event.canceled) {
-   return;
-  }
- }
  if(blockEntity.distanceFrom(cameraX, cameraY, cameraZ) < 4096.0) {
   const float brightness = world->getLightBrightness(blockEntity.x, blockEntity.y, blockEntity.z);
   render::RenderSystem::color3f(brightness, brightness, brightness);

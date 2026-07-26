@@ -60,7 +60,7 @@ data, derives a body, and caches quaternion render state. `physics/world.lua`
 intends gravity, fluid effects, drag, substeps, sleep, and per-simulation update.
 
 This path is presently not operational without fixes: it subscribes to nonexistent
-`minecraft.events.tick` and `item_spawn`; world physics references undefined
+`"tick"` and `item_spawn`; world physics references undefined
 constants and a missing water function; water/config use Minetest APIs; and
 `water.fluid_cell` needs an argument callers omit. Treat it as an implementation
 sketch, not a usable item-physics service.

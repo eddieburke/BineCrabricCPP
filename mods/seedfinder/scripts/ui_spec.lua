@@ -1,5 +1,5 @@
 local ui_spec = {}
-local rules = minecraft.require("scripts.rules")
+local rules = require("scripts.rules")
 
 local MARGIN = 20
 local TITLE_Y = 13

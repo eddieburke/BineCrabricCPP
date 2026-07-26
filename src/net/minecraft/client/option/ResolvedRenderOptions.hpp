@@ -23,7 +23,6 @@ struct ResolvedRenderOptions {
  float fogColorBlend = 0.0f;
  int chunkRadius = 12;
  int residentChunkRadius = 15;
- bool chunkVbo = false;
  bool smoothInput = false;
  bool smoothFps = false;
  float chunkUpdatesSlider = 0.5f;

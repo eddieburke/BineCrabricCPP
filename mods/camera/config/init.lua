@@ -21,8 +21,8 @@ local config = settings.define("camera", {
     },
     renewable = {
       type = "bool",
-      label = "Renewable (drop item on use)",
-      default = true,
+      label = "Reusable",
+      default = false,
     },
   },
 })

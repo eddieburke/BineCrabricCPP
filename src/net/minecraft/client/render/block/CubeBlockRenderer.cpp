@@ -1,5 +1,4 @@
 #include "net/minecraft/block/Block.hpp"
-#include "net/minecraft/client/Minecraft.hpp"
 #include "net/minecraft/client/option/ResolvedRenderOptions.hpp"
 #include "net/minecraft/client/render/Tessellator.hpp"
 #include "net/minecraft/client/render/block/BlockRenderers.hpp"
@@ -63,7 +62,9 @@ bool CubeBlockRenderer::renderBlock(net::minecraft::block::Block& block, int x, 
  float red = (float)(n >> 16 & 0xFF) / 255.0f;
  float green = (float)(n >> 8 & 0xFF) / 255.0f;
  float blue = (float)(n & 0xFF) / 255.0f;
- if(net::minecraft::client::Minecraft::isAmbientOcclusionEnabled()) {
+ // Snapshotted at job-enqueue time (or by snapshotGlobals() on the main thread).
+ // Never read Minecraft::INSTANCE here: this runs on chunk-mesh worker threads.
+ if(ctx_.opts.ambientOcclusionActive) {
   return renderSmooth(block, x, y, z, red, green, blue);
  }
  return renderFlat(block, x, y, z, red, green, blue);

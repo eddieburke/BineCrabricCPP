@@ -7,19 +7,19 @@
 namespace net::minecraft::mod::runtime {
 using namespace net::minecraft::mod::lua;
 namespace {
-#ifdef MINECRAFT_NATIVE_EXPORTS
 int luaSettingsRegister(lua_State* state) {
  ModHost::LoadedLuaMod* mod = currentLuaMod(state);
  if(mod == nullptr) {
   return 0;
  }
  LuaApi& api = luaApi();
- if(api.gettop(state) < 2 || api.type(state, 2) != kLuaTTable) {
-  runtimeLog(mod->modId, "warn", "settings.register(modId, settingsTable) requires a table as 2nd argument");
+ LuaArgs args(state);
+ std::string modName;
+ if(!args.string(1, modName) || !args.table(2)) {
+  runtimeLog(mod->modId, "warn", "settings.register(name, settingsTable) requires a string and a table");
   return 0;
  }
  const std::string modId = mod->modId;
- const std::string modName = luaString(state, 1, modId.c_str());
  const int settingsTable = 2;
  int idx = 1;
  while(true) {
@@ -101,8 +101,9 @@ int luaSettingsGet(lua_State* state) {
   return 0;
  }
  LuaApi& api = luaApi();
- const std::string fullKey = luaString(state, 1, "");
- if(fullKey.empty()) {
+ LuaArgs args(state);
+ std::string fullKey;
+ if(!args.string(1, fullKey) || fullKey.empty()) {
   api.pushnil(state);
   return 1;
  }
@@ -137,8 +138,9 @@ int luaSettingsSet(lua_State* state) {
   return 0;
  }
  LuaApi& api = luaApi();
- const std::string fullKey = luaString(state, 1, "");
- if(fullKey.empty() || api.gettop(state) < 2) {
+ LuaArgs args(state);
+ std::string fullKey;
+ if(!args.string(1, fullKey) || fullKey.empty() || args.count() < 2) {
   return 0;
  }
  auto dot = fullKey.find('.');
@@ -152,22 +154,31 @@ int luaSettingsSet(lua_State* state) {
   return 0;
  }
  if(def->kind == net::minecraft::mod::ModSettingDef::Toggle) {
+  if(api.type(state, 2) != kLuaTBoolean) {
+   return 0;
+  }
   def->boolCurrent = api.toboolean(state, 2) ? true : false;
  } else if(def->kind == net::minecraft::mod::ModSettingDef::Options) {
-  if(api.type(state, 2) == kLuaTString) {
-   const std::string val = luaString(state, 2, "");
-   auto it = std::find(def->options.begin(), def->options.end(), val);
+  std::string value;
+  int index = 0;
+  if(args.string(2, value)) {
+   auto it = std::find(def->options.begin(), def->options.end(), value);
    if(it != def->options.end()) {
     def->optionCurrent = static_cast<int>(std::distance(def->options.begin(), it));
    }
-  } else if(api.type(state, 2) == kLuaTNumber) {
-   const int idx = static_cast<int>(api.tointegerx(state, 2, nullptr));
-   if(idx >= 0 && idx < static_cast<int>(def->options.size())) {
-    def->optionCurrent = idx;
+  } else if(args.integer(2, index)) {
+   if(index >= 0 && index < static_cast<int>(def->options.size())) {
+    def->optionCurrent = index;
    }
+  } else {
+   return 0;
   }
  } else {
-  def->floatCurrent = static_cast<float>(api.tonumberx(state, 2, nullptr));
+  double value = 0.0;
+  if(!args.number(2, value)) {
+   return 0;
+  }
+  def->floatCurrent = static_cast<float>(value);
  }
  net::minecraft::mod::ModSettingsRegistry::instance().save();
  return 0;
@@ -178,11 +189,12 @@ int luaKeybindsRegister(lua_State* state) {
   return 0;
  }
  LuaApi& api = luaApi();
- if(api.gettop(state) < 2 || api.type(state, 2) != kLuaTTable) {
-  runtimeLog(mod->modId, "warn", "keybinds.register(name, {default, label}) requires a table as 2nd argument");
+ LuaArgs args(state);
+ std::string id;
+ if(!args.string(1, id) || !args.table(2)) {
+  runtimeLog(mod->modId, "warn", "keybinds.register(name, {default, label}) requires a string and a table");
   return 0;
  }
- const std::string id = luaString(state, 1, "");
  if(id.empty()) {
   api.settop(state, 1);
   return 0;
@@ -199,8 +211,9 @@ int luaKeybindsRegister(lua_State* state) {
 }
 int luaKeybindsGetCode(lua_State* state) {
  LuaApi& api = luaApi();
- const std::string id = luaString(state, 1, "");
- if(id.empty()) {
+ LuaArgs args(state);
+ std::string id;
+ if(!args.string(1, id) || id.empty()) {
   api.pushinteger(state, 0);
   return 1;
  }
@@ -215,8 +228,9 @@ int luaKeybindsGetCode(lua_State* state) {
 int luaKeybindsConsume(lua_State* state) {
  ModHost::LoadedLuaMod* mod = currentLuaMod(state);
  LuaApi& api = luaApi();
- const std::string id = luaString(state, 1, "");
- if(id.empty()) {
+ LuaArgs args(state);
+ std::string id;
+ if(!args.string(1, id) || id.empty()) {
   api.pushboolean(state, 0);
   return 1;
  }
@@ -224,17 +238,12 @@ int luaKeybindsConsume(lua_State* state) {
  if(mod != nullptr && id.find('.') == std::string::npos) {
   fullId = mod->modId + "." + id;
  }
- bool consumed = net::minecraft::mod::ModSettingsRegistry::instance().consumeKeybind(fullId);
- if(!consumed) {
-  consumed = net::minecraft::mod::ModSettingsRegistry::instance().consumeKeybind(id);
- }
+ const bool consumed = net::minecraft::mod::ModSettingsRegistry::instance().consumeKeybind(fullId);
  api.pushboolean(state, consumed ? 1 : 0);
  return 1;
 }
-#endif
 } // namespace
 void installModSettingsApi(lua_State* state, ModHost::LoadedLuaMod& mod) {
-#ifdef MINECRAFT_NATIVE_EXPORTS
  LuaApi& api = luaApi();
  api.createtable(state, 0, 3);
  bindModFunction(state, &mod, "register", luaSettingsRegister);
@@ -246,9 +255,5 @@ void installModSettingsApi(lua_State* state, ModHost::LoadedLuaMod& mod) {
  bindModFunction(state, &mod, "get_code", luaKeybindsGetCode);
  bindModFunction(state, &mod, "consume", luaKeybindsConsume);
  api.setfield(state, -2, "keybinds");
-#else
- (void)state;
- (void)mod;
-#endif
 }
 } // namespace net::minecraft::mod::runtime

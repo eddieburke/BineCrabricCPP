@@ -8,11 +8,10 @@ using namespace net::minecraft::mod::lua;
 namespace {
 int luaRegisterShapedRecipe(lua_State* state) {
  LuaApi& api = luaApi();
+ LuaArgs args(state);
  ModHost::LoadedLuaMod* mod = currentLuaMod(state);
- if(mod == nullptr || api.gettop(state) < 1 || api.type(state, 1) != kLuaTTable) {
-  api.pushboolean(state, 0);
-  api.pushstring(state, "minecraft.register_shaped_recipe expects a spec table");
-  return 2;
+ if(mod == nullptr || !args.table(1)) {
+  return args.fail("minecraft.register_shaped_recipe expects a spec table");
  }
  const int tableIndex = 1;
  lua::ShapedRecipeSpec spec;
@@ -55,9 +54,7 @@ int luaRegisterShapedRecipe(lua_State* state) {
  api.settop(state, tableIndex);
  std::string error;
  if(!lua::registerShapedRecipe(spec, error)) {
-  api.pushboolean(state, 0);
-  api.pushstring(state, error.c_str());
-  return 2;
+  return args.fail(error);
  }
  api.pushboolean(state, 1);
  return 1;

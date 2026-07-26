@@ -28,7 +28,7 @@ Constant table with one entry per stage (value equals its own key):
 Usage:
 
 ```lua
-minecraft.on(minecraft.events.world_render, { stage = minecraft.render.stages.entities, moment = minecraft.render.moments.before },
+minecraft.on("world_render", { stage = "entities", moment = "before" },
   function(event)
     -- Draw custom geometry before entities render
   end)
@@ -53,6 +53,7 @@ The `world_render` event also exposes the following fields on the event table:
 | `cancel_vanilla` | boolean | Set to `true` to skip vanilla rendering for this stage |
 | `vanilla_stage_ran` | boolean | Whether vanilla already rendered this stage |
 | `shadow_pass` | boolean | `true` while an offscreen shadow-depth pass renders the `entities` stage |
+| `excluded_entity_id` | int | Entity ID omitted from the current offscreen camera pass, or `-1` |
 | `celestial_angle` | number | Current sun angle (0.0–1.0) |
 | `sky_yaw_deg` | number | Skybox rotation in degrees |
 | `star_brightness` | number | Current star brightness (stars/before; writable) |
@@ -69,10 +70,9 @@ The `world_render` event also exposes the following fields on the event table:
 
 ### `minecraft.render.quads(spec)`
 
-Draw textured or colored quads in world space. Only works when a world draw
-context is active (i.e. inside a `world_render` callback). The camera offset
-is handled automatically — position values are world-absolute unless
-`world_space` is specified.
+Draw textured or colored quads in a world draw context (i.e. inside a
+`world_render` callback). Coordinates are camera-relative by default; set
+`world_space = true` to anchor an `x/y/z` transform in absolute world space.
 
 **spec table fields:**
 
@@ -119,11 +119,12 @@ The vertex count is rounded down to the nearest multiple of 4. Returns the
 number of quads drawn (integer), or `0` if no world draw context is active.
 
 ```lua
-minecraft.on(minecraft.events.world_render, { stage = "entities", moment = "after" }, function(event)
+minecraft.on("world_render", { stage = "entities", moment = "after" }, function(event)
   minecraft.render.quads({
     texture = "mymod:textures/blocks/test.png",
-    x = event.camera.x, y = event.camera.y - 1, z = event.camera.z,
-    yaw = event.camera.yaw,
+    x = event.camera_x, y = event.camera_y - 1, z = event.camera_z,
+    world_space = true,
+    yaw = event.camera_yaw,
     vertices = {
       { x = -0.5, y = 0, z = -0.5, u = 0, v = 0 },
       { x =  0.5, y = 0, z = -0.5, u = 1, v = 0 },
@@ -182,45 +183,6 @@ override, `false` to restore vanilla rendering.
 ```lua
 minecraft.render.set_item_entity_override(true)
 ```
-
----
-
-## `minecraft.tessellator.*`
-
-### `minecraft.tessellator.quad(spec)`
-
-Emit a single textured/colored quad to the currently active world tessellator
-(block or item draw). Must be called during a block or item model callback
-(i.e. from a model function registered via `register_block` or `register_item`).
-
-**spec table fields:**
-
-| Field | Type | Default | Description |
-|---|---|---|---|
-| `texture` | string | `""` | Texture path (overrides `texture_id`) |
-| `texture_id` | int | `-1` | Raw texture ID |
-| `r` | number | `1.0` | Red tint (0–1) |
-| `g` | number | `1.0` | Green tint (0–1) |
-| `b` | number | `1.0` | Blue tint (0–1) |
-| `a` | number | `1.0` | Alpha (0–1) |
-| `vertices` | array | required | Exactly 4 vertex tables `{x, y, z, u, v}` |
-
-Returns `true` if the quad was emitted, `false` otherwise.
-
-```lua
-minecraft.tessellator.quad({
-  texture = "minecraft:textures/blocks/diamond_block.png",
-  vertices = {
-    { x = 0, y = 0, z = 0, u = 0, v = 0 },
-    { x = 1, y = 0, z = 0, u = 1, v = 0 },
-    { x = 1, y = 1, z = 0, u = 1, v = 1 },
-    { x = 0, y = 1, z = 0, u = 0, v = 1 },
-  }
-})
-```
-
-Positions are in the block/item's local model space. The tessellator handles
-atlas UV mapping automatically.
 
 ---
 
@@ -302,6 +264,14 @@ Unbind the currently bound render target. Returns `true`.
 
 Baked model management: load JSON models, build procedural models from quads,
 place instances with physics hitboxes, and draw them in world space.
+
+Every model here — however it was created and wherever it is drawn (world,
+block in the chunk mesh, inventory icon, held item, dropped entity) — stores
+its texture coordinates the same way: **normalized 0..1 across the quad's own
+texture image**. JSON models get there by dividing their face `uv`s by the
+model's `texture_size`, so the texture file's real resolution never affects the
+mapping. `minecraft.model.build` takes `u`/`v` in that same 0..1 space. Mod
+textures are always standalone images, never tiles of the vanilla atlas.
 
 ### `minecraft.model.load(path)`
 
@@ -447,7 +417,7 @@ renderer is active or the handle is invalid.
 | `depth_write` | boolean | `true` | Enable depth buffer writes |
 
 ```lua
-minecraft.on(minecraft.events.world_render, { stage = "entities", moment = "after" }, function()
+minecraft.on("world_render", { stage = "entities", moment = "after" }, function()
   minecraft.model.draw(handle, { x = 100, y = 64, z = 100, yaw = 45, scale = 1.5 })
 end)
 ```

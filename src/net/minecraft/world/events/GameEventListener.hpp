@@ -44,6 +44,15 @@ class GameEventListener {
  virtual void notifyEntityRemoved(Entity* entity) {
   (void)entity;
  }
+ // A chunk column finished loading/generating and its block data is now
+ // readable. Distinct from setBlocksDirty: the renderer only needs to refresh
+ // the borders of the four orthogonally adjacent columns, and can coalesce a
+ // whole batch of arrivals into one pass instead of re-dirtying a 3x3
+ // neighbourhood over full height per chunk.
+ virtual void chunkAvailable(int chunkX, int chunkZ) {
+  (void)chunkX;
+  (void)chunkZ;
+ }
  virtual void notifyAmbientDarknessChanged() {
  }
  virtual void playStreaming(const std::string& name, int x, int y, int z) {

@@ -158,25 +158,16 @@ function(minecraft_copy_lua_runtime target)
     # Static runtime linking enabled
 endfunction()
 
-if (EXISTS "${MINECRAFT_TOOLCHAIN_ROOT}/lib/libogg.a")
-    set(MINECRAFT_OGG "${MINECRAFT_TOOLCHAIN_ROOT}/lib/libogg.a")
-else()
-    find_library(MINECRAFT_OGG
-        NAMES libogg.a ogg libogg
-        PATHS "${MINECRAFT_TOOLCHAIN_ROOT}/lib"
-        NO_DEFAULT_PATH
-    )
-endif()
-
-set(MINECRAFT_HAS_VORBIS_LIBS FALSE)
-if (MINECRAFT_OGG)
-    set(MINECRAFT_HAS_VORBIS_LIBS TRUE)
-    message(STATUS "Ogg audio enabled from ${MINECRAFT_TOOLCHAIN_ROOT}")
-else()
-    message(WARNING "libogg not found under ${MINECRAFT_TOOLCHAIN_ROOT}; OGG/.mus playback disabled")
-endif()
-
 set(MINECRAFT_MINGW_SYSROOT_LIB "${MINECRAFT_TOOLCHAIN_ROOT}/x86_64-w64-mingw32/lib")
+find_library(MINECRAFT_OGG NAMES libogg.a ogg PATHS "${MINECRAFT_TOOLCHAIN_ROOT}/lib" NO_DEFAULT_PATH)
+find_library(MINECRAFT_VORBIS NAMES libvorbis.a vorbis PATHS "${MINECRAFT_TOOLCHAIN_ROOT}/lib" NO_DEFAULT_PATH)
+find_library(MINECRAFT_VORBISFILE NAMES libvorbisfile.a vorbisfile PATHS "${MINECRAFT_TOOLCHAIN_ROOT}/lib" NO_DEFAULT_PATH)
+set(MINECRAFT_HAS_VORBIS FALSE)
+if(MINECRAFT_OGG AND MINECRAFT_VORBIS AND MINECRAFT_VORBISFILE)
+    set(MINECRAFT_HAS_VORBIS TRUE)
+else()
+    message(WARNING "libogg, libvorbis and libvorbisfile are required for OGG/.mus playback")
+endif()
 find_library(MINECRAFT_XAUDIO2
     NAMES xaudio2_9 xaudio2_8 xaudio2
     PATHS "${MINECRAFT_MINGW_SYSROOT_LIB}"
@@ -192,11 +183,8 @@ function(minecraft_link_audio target)
             message(WARNING "XAudio2 import library not found under ${MINECRAFT_MINGW_SYSROOT_LIB}")
         endif()
     endif()
-    if (MINECRAFT_HAS_VORBIS_LIBS)
-        target_link_libraries(${target} PRIVATE
-            "${MINECRAFT_OGG}"
-        )
-        target_compile_definitions(${target} PRIVATE MINECRAFT_HAS_VORBIS=1)
+    if(MINECRAFT_HAS_VORBIS)
+        target_link_libraries(${target} PRIVATE "${MINECRAFT_VORBISFILE}" "${MINECRAFT_VORBIS}" "${MINECRAFT_OGG}")
     endif()
 endfunction()
 
@@ -278,6 +266,9 @@ minecraft_configure_target(minecraft_registry_roots)
 
 add_library(minecraft_client OBJECT ${MINECRAFT_CLIENT_SOURCES})
 minecraft_configure_target(minecraft_client)
+if(MINECRAFT_HAS_VORBIS)
+    target_compile_definitions(minecraft_client PRIVATE MINECRAFT_HAS_VORBIS=1)
+endif()
 
 if (WIN32)
     target_compile_definitions(minecraft_client PRIVATE MINECRAFT_NATIVE_EXPORTS=1)
@@ -359,6 +350,7 @@ set(MINECRAFT_TEST_SOURCES
     tests/model_registry_parent_test.cpp
     tests/unified_light_registry_test.cpp
     tests/render_profiler_test.cpp
+    tests/chunk_mesh_golden_test.cpp
 )
 
 
@@ -403,9 +395,14 @@ include(GoogleTest)
 gtest_discover_tests(minecraft_omega_tests)
 
 add_executable(minecraft_installer src/installer/installer.cpp)
+set_target_properties(minecraft_installer PROPERTIES OUTPUT_NAME "setup")
 minecraft_configure_target(minecraft_installer)
 minecraft_link_platform(minecraft_installer)
 target_link_libraries(minecraft_installer PRIVATE comctl32 comdlg32 urlmon ws2_32)
 if (WIN32)
     target_link_options(minecraft_installer PRIVATE -mwindows)
 endif()
+add_custom_command(TARGET minecraft_installer POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy_directory
+        "${CMAKE_CURRENT_SOURCE_DIR}/resources"
+        "$<TARGET_FILE_DIR:minecraft_installer>/resources")

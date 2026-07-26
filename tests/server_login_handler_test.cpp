@@ -9,7 +9,10 @@
 #include <ws2tcpip.h>
 #endif
 #include <gtest/gtest.h>
+#include <atomic>
 #include <chrono>
+#include <filesystem>
+#include <fstream>
 #include <istream>
 #include <mutex>
 #include <optional>
@@ -22,6 +25,7 @@
 #include "net/minecraft/server/MinecraftServer.hpp"
 #include "net/minecraft/server/network/ServerLoginNetworkHandler.hpp"
 #include "net/minecraft/server/network/ServerSocket.hpp"
+#include "tests/support/empty_server_mod_host.hpp"
 namespace {
 using net::minecraft::server::MinecraftServer;
 using net::minecraft::server::network::ServerLoginNetworkHandler;
@@ -61,6 +65,15 @@ SOCKET connectLoopback(std::uint16_t port) {
  }
  ::freeaddrinfo(result);
  return socket;
+}
+std::filesystem::path makeTempWorldRoot(const std::string& name) {
+ static std::atomic<unsigned long long> counter{0};
+ const std::filesystem::path root = std::filesystem::temp_directory_path() / "minecraft_native_server_tests" /
+                                    (name + "_" + std::to_string(++counter));
+ std::error_code error;
+ std::filesystem::remove_all(root, error);
+ std::filesystem::create_directories(root, error);
+ return root;
 }
 [[nodiscard]] SOCKET acceptWithTimeout(ServerSocket& listenSocket, int timeoutMs = 3000) {
  const auto deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(timeoutMs);
@@ -160,5 +173,35 @@ TEST(ServerLoginNetworkHandler, LoginTimeout) {
   handler.tick();
  }
  EXPECT_TRUE(handler.closed);
+}
+TEST(ServerLoginNetworkHandler, MissingCameraModRejectsClientWithoutModList) {
+ const std::filesystem::path root = makeTempWorldRoot("login_camera_requirement");
+ initializeEmptyServerModHost(root / "runtime");
+ net::minecraft::server::host::ServerLaunchConfig config;
+ config.storageRoot = root;
+ config.worldName = "CameraWorld";
+ config.bindAddress = "127.0.0.1";
+ config.port = 0;
+ config.onlineMode = false;
+ config.useConsoleThread = false;
+ config.useGui = false;
+ MinecraftServer server(config);
+ ASSERT_TRUE(server.startAsync()) << server.lastError();
+ const std::filesystem::path requiredMods = config.storageRoot / config.worldName / "required-mods.txt";
+ {
+  std::ofstream output(requiredMods, std::ios::binary | std::ios::trunc);
+  output << "camera\n";
+ }
+ ServerSocket listenSocket;
+ listenSocket.bindAndListen("127.0.0.1", 0);
+ const SOCKET serverSide = makeLoopbackConnection(listenSocket);
+ ASSERT_NE(serverSide, INVALID_SOCKET);
+ ServerLoginNetworkHandler handler(&server, nullptr, serverSide, "test", false);
+ net::minecraft::LoginHelloPacket packet;
+ packet.protocolVersion = 14;
+ packet.username = "Player";
+ handler.onHello(packet);
+ EXPECT_TRUE(handler.closed);
+ server.stopAndJoin();
 }
 } // namespace net::minecraft::test

@@ -1,4 +1,4 @@
-param([string]$BuildDir="build-omega",[ValidateSet("Release","RelWithDebInfo","Debug")][string]$BuildType="Release",[int]$Jobs=0,[switch]$Clean,[switch]$Lto,[switch]$NoLto,[switch]$NoNativeCpu,[switch]$RunTests,[switch]$SkipModPackaging,[switch]$SkipResourceSync,[switch]$KeepDebugSymbols,[switch]$StripSymbols,[switch]$Gui,[switch]$Run,[switch]$NoGui,[switch]$CleanOnly,[switch]$Format,[string]$ModId="",[switch]$NoModDeploy,[ValidateSet("All","Client","Server")][string]$Target="All",[Parameter(ValueFromRemainingArguments=$true)][string[]]$RunArgs)
+param([string]$BuildDir="build-omega",[ValidateSet("Release","RelWithDebInfo","Debug")][string]$BuildType="Release",[int]$Jobs=0,[switch]$Clean,[switch]$Lto,[switch]$NoLto,[switch]$NoNativeCpu,[switch]$RunTests,[switch]$SkipModPackaging,[switch]$SkipResourceSync,[switch]$KeepDebugSymbols,[switch]$StripSymbols,[switch]$Log,[switch]$Gui,[switch]$Run,[switch]$NoGui,[switch]$CleanOnly,[switch]$Format,[string]$ModId="",[switch]$NoModDeploy,[ValidateSet("All","Client","Server")][string]$Target="All",[Parameter(ValueFromRemainingArguments=$true)][string[]]$RunArgs)
 $ErrorActionPreference="Stop"
 $ScriptDir=Split-Path -Parent $MyInvocation.MyCommand.Path
 sl $ScriptDir
@@ -149,7 +149,7 @@ if ($Gui) {
         )
     }
     function Invoke-GuiBuild {
-        param([string[]]$Arguments, [string]$FriendlyName)
+        param([object]$Arguments, [string]$FriendlyName)
         Write-Host ""
         Write-Host "  Starting: $FriendlyName ..." -ForegroundColor Cyan
         Write-GuiExplain @("This window will fill with technical build output - that is normal.", "Just wait for it to finish.")
@@ -201,45 +201,45 @@ if ($Gui) {
             "1" {
                 Write-GuiHeading "Build the game (Release)"
                 if (Confirm-GuiAction "Start the build now?") {
-                    Invoke-GuiBuild -Arguments @() -FriendlyName "Release build"
+                    Invoke-GuiBuild -Arguments @{} -FriendlyName "Release build"
                 }
             }
             "2" {
                 Write-GuiHeading "Build and play"
                 if (Confirm-GuiAction "Start the build now?") {
-                    Invoke-GuiBuild -Arguments @("-Target", "Client", "-Run") -FriendlyName "Client build"
+                    Invoke-GuiBuild -Arguments @{"Target"="Client"; "Run"=$true} -FriendlyName "Client build"
                 }
             }
             "3" {
                 Write-GuiHeading "Debug build"
                 Write-GuiExplain @("Full DWARF symbols, no optimization. Slow to run, best for chasing crashes.")
                 if (Confirm-GuiAction "Start the debug build now?") {
-                    Invoke-GuiBuild -Arguments @("-BuildType", "Debug", "-Target", "Client") -FriendlyName "Debug build"
+                    Invoke-GuiBuild -Arguments @{"BuildType"="Debug"; "Target"="Client"} -FriendlyName "Debug build"
                 }
             }
             "4" {
                 Write-GuiHeading "Profiling build"
                 Write-GuiExplain @("Optimized (-O3) but keeps debug symbols, so it stays large. Good for profilers.")
                 if (Confirm-GuiAction "Start the profiling build now?") {
-                    Invoke-GuiBuild -Arguments @("-BuildType", "RelWithDebInfo") -FriendlyName "Profiling build"
+                    Invoke-GuiBuild -Arguments @{"BuildType"="RelWithDebInfo"} -FriendlyName "Profiling build"
                 }
             }
             "5" {
                 Write-GuiHeading "Start completely fresh"
                 if (Confirm-GuiAction "Wipe the old build and start fresh?") {
-                    Invoke-GuiBuild -Arguments @("-Clean") -FriendlyName "Clean rebuild"
+                    Invoke-GuiBuild -Arguments @{"Clean"=$true} -FriendlyName "Clean rebuild"
                 }
             }
             "6" {
                 Write-GuiHeading "Build the multiplayer server"
                 if (Confirm-GuiAction "Start the build now?") {
-                    Invoke-GuiBuild -Arguments @("-Target", "Server") -FriendlyName "Server build"
+                    Invoke-GuiBuild -Arguments @{"Target"="Server"} -FriendlyName "Server build"
                 }
             }
             "7" {
                 Write-GuiHeading "Build and run the test suite"
                 if (Confirm-GuiAction "Start the build and tests now?") {
-                    Invoke-GuiBuild -Arguments @("-RunTests") -FriendlyName "Build with tests"
+                    Invoke-GuiBuild -Arguments @{"RunTests"=$true} -FriendlyName "Build with tests"
                 }
             }
             "8" {
@@ -331,8 +331,8 @@ iwr -Uri $U -OutFile $D -UseBasicParsing
 function Ensure-ZstdTool{$m=GM;$ze="$ToolsDir\zstd.exe";if(Test-Path -Li $ze){return $ze};ED $ToolsDir;$ar="$DownloadsDir\$($m.zstd.archive)";Download-File -U $m.zstd.url -D $ar;$er="$ToolsDir\zstd-extract";if(Test-Path -Li $er){ri -Li $er -R -Fo};Expand-Archive -Li $ar -DP $er -Fo;$se="$er\$($m.zstd.exe_subpath)";if(!(Test-Path -Li $se)){Write-Error "zstd.exe not found in $($m.zstd.archive)";exit 1};cp -Li $se -De $ze -Fo;return $ze}
 function Merge-Ucrt64IntoMingw64{param([string]$SD2,[string]$DR);$ur="$SD2\ucrt64";if(!(Test-Path -Li $ur)){Write-Error "MSYS2 package did not contain ucrt64/: $SD2";exit 1};foreach($s in @("bin","include","lib","share")){$fr="$ur\$s";if(!(Test-Path -Li $fr)){continue};$to="$DR\$s";ED $to;cp -Path "$fr\*" -De $to -R -Fo}}
 function Install-MsysUcrtPackage{param([string]$U,[string]$PN,[string]$MD2,[string]$ZT);$fn=Split-Path -Leaf $U;$ap="$DownloadsDir\$fn";Download-File -U $U -D $ap;$tp="$DownloadsDir\$fn.tar";if(Test-Path -Li $tp){ri -Li $tp -Fo};&$ZT -d $ap -o $tp -f;if($LASTEXITCODE -ne 0){Write-Error "zstd failed extracting $PN";exit 1};$sg="$DownloadsDir\stage-$PN";if(Test-Path -Li $sg){ri -Li $sg -R -Fo};ED $sg;tar -xf $tp -C $sg;if($LASTEXITCODE -ne 0){Write-Error "tar failed extracting $PN";exit 1};Merge-Ucrt64IntoMingw64 -SD2 $sg -DR $MD2;ri -Li $sg -R -Fo}
-function Test-ToolchainDepsPresent{param([string]$MD2);foreach($l in @("libz.a","libogg.a")){if(!(Test-Path -Li "$MD2\lib\$l")){return $false}};return $true}
-function Ensure-ToolchainDeps{param([string]$MD2);if((Test-Path -Li $DepsMarker)-or(Test-ToolchainDepsPresent -MD2 $MD2)){return};Write-Host "Installing bundled zlib/vorbis deps into toolchain/mingw64 ...";$m=GM;$zt=Ensure-ZstdTool;ED $MD2;foreach($p in $m.msys2_ucrt_packages){Write-Host "  -> $($p.name)";Install-MsysUcrtPackage -U $p.url -PN $p.name -MD2 $MD2 -ZT $zt};sc -Li $DepsMarker -Value ("installed "+(Get-Date -Format "o")) -En ASCII}
+function Test-ToolchainDepsPresent{param([string]$MD2);foreach($l in @("libz.a","libogg.a","libvorbis.a","libvorbisfile.a")){if(!(Test-Path -Li "$MD2\lib\$l")){return $false}};return $true}
+function Ensure-ToolchainDeps{param([string]$MD2);if((Test-Path -Li $DepsMarker)-and(Test-ToolchainDepsPresent -MD2 $MD2)){return};Write-Host "Installing bundled zlib/Ogg/Vorbis dependencies into toolchain/mingw64 ...";$m=GM;$zt=Ensure-ZstdTool;ED $MD2;foreach($p in $m.msys2_ucrt_packages){Write-Host "  -> $($p.name)";Install-MsysUcrtPackage -U $p.url -PN $p.name -MD2 $MD2 -ZT $zt};sc -Li $DepsMarker -Value ("installed "+(Get-Date -Format "o")) -En ASCII}
 function Test-LocalToolchainPresent{return(Test-Path -Li $GppExe)-and(Test-Path -Li $CmakeExe)-and(Test-Path -Li $NinjaExe)}
 function Ensure-BundledToolchain{if(Test-LocalToolchainPresent){Ensure-ToolchainDeps -MD2 $MingwRoot;Write-Host "Using downloaded toolchain: $RelToolchainRoot";return};$m=GM;ED $DownloadsDir;$ap="$DownloadsDir\$($m.winlibs.archive)";Download-File -U $m.winlibs.url -D $ap;$sg="$ToolchainDir\_staging";if(Test-Path -Li $sg){ri -Li $sg -R -Fo};ED $sg;Write-Host "Extracting bundled GCC toolchain ...";Expand-Archive -Li $ap -DP $sg -Fo;$em="$sg\mingw64";if(!(Test-Path -Li $em)){$cd=gci -Li $sg -Directory|?{Test-Path "$($_.FullName)\bin\g++.exe"}|select -First 1;if($null -eq $cd){Write-Error "WinLibs archive did not contain mingw64/bin/g++.exe";exit 1};$em=$cd.FullName};if(Test-Path -Li $MingwRoot){ri -Li $MingwRoot -R -Fo};mi -Li $em -De $MingwRoot;ri -Li $sg -R -Fo -EA SilentlyContinue;if(!(Test-Path -Li $GppExe)){Write-Error "Bundled toolchain install failed: $GppExe";exit 1};Ensure-ToolchainDeps -MD2 $MingwRoot;Write-Host "Bundled toolchain ready: $MingwRoot"}
 function Set-BundledToolchainEnvironment{param([string]$MBD);$fl=@();if($env:PATH){$fl=$env:PATH -split ';'|?{$_ -ne "" -and $_ -notmatch '(?i)msys64' -and $_ -notmatch '(?i)\\mingw64\\bin' -and $_ -notmatch '(?i)Microsoft Visual Studio'}};$env:PATH=($MBD+';'+($fl -join ';'));$env:CXX="$MBD\g++.exe";ri Env:\CC -EA SilentlyContinue}
@@ -401,8 +401,10 @@ if(!(Test-Path -Li $CmakeExe)){Write-Error "Bundled cmake not found at $CmakeExe
 if(!(Test-Path -Li $NinjaExe)){Write-Error "Bundled ninja not found at $NinjaExe";exit 1}
 Remove-StaleBuildOmegaLockFile -LPa $BuildOmegaLockPath
 try {
+if(Test-Path -Li $BuildOmegaLockPath){Remove-StaleBuildOmegaLockFile -LPa $BuildOmegaLockPath}
 try{$BuildOmegaLockStream=[System.IO.File]::Open($BuildOmegaLockPath,[System.IO.FileMode]::Create,[System.IO.FileAccess]::ReadWrite,[System.IO.FileShare]::None);$pb=[System.Text.Encoding]::ASCII.GetBytes("$PID`n");$BuildOmegaLockStream.Write($pb,0,$pb.Length);$BuildOmegaLockStream.Flush()}catch{Write-Error "Already in use";exit 1}
-if($Jobs -le 0){$Jobs=[Math]::Min(12,[Math]::Max(1,[Environment]::ProcessorCount-2))}
+if($Jobs -le 0){$Jobs=[Math]::Min(4,[Math]::Max(1,[Environment]::ProcessorCount-2))}
+if($Jobs -gt 4){Write-Host "Limiting parallel jobs to 4 to avoid MinGW compiler out-of-memory failures." -ForegroundColor Yellow;$Jobs=4}
 if($Clean -and(Test-Path $BuildDir)){Assert-BuildDirAvailable -BN $BuildDir -SDP $ScriptDir;Write-Host "Removing $BuildDir ...";ri -R -Fo $BuildDir;$cc="$MingwBin\ccache.exe";if(Test-Path -Li $cc){Write-Host "Clearing ccache (stale LTO objects) ...";&$cc -C}}
 Assert-BuildDirAvailable -BN $BuildDir -SDP $ScriptDir
 Write-Host "Toolchain: $RelToolchainRoot"
@@ -425,11 +427,12 @@ if($OL -ne ""){$CmakeArgs+="-DCMAKE_EXE_LINKER_FLAGS_RELEASE=$OL"}
 }
 $NeedsConfigure=Test-NeedsConfigure -BP "$ScriptDir\$BuildDir" -EC $GppExe -ETR "$ScriptDir\$($RelToolchainRoot.Replace('/','\'))" -EBT $BuildType -UL $UseLto -ECFR $OmegaCxxRelease
 if($NeedsConfigure){
-Assert-BuildDirAvailable -BN $BuildDir -SDP $ScriptDir
-Remove-StaleNinjaRestatFile -BP "$ScriptDir\$BuildDir"
-if($BuildType -eq "Release"){Write-Host "Configuring $BuildDir (Ninja + bundled GCC, Release, omega flags) ..."}else{Write-Host "Configuring $BuildDir (Ninja + bundled GCC, $BuildType) ..."}
-&$CmakeExe @CmakeArgs
-if($LASTEXITCODE -ne 0){Write-Host "Configuration failed (exit $LASTEXITCODE). See the CMake error above." -ForegroundColor Red;exit $LASTEXITCODE}
+    if($BuildType -eq "Debug"){Write-Host "build-omega Debug build started";Write-Host "WARNING: This will take a very long time (1.3h+)"}
+    Assert-BuildDirAvailable -BN $BuildDir -SDP $ScriptDir
+    Remove-StaleNinjaRestatFile -BP "$ScriptDir\$BuildDir"
+    if($BuildType -eq "Release"){Write-Host "Configuring $BuildDir (Ninja + bundled GCC, Release, omega flags) ..."}else{Write-Host "Configuring $BuildDir (Ninja + bundled GCC, $BuildType) ..."}
+    &$CmakeExe @CmakeArgs
+    if($LASTEXITCODE -ne 0){Write-Host "Configuration failed (exit $LASTEXITCODE). See the CMake error above." -ForegroundColor Red;exit $LASTEXITCODE}
 }
 Assert-BuildDirAvailable -BN $BuildDir -SDP $ScriptDir
 $buildTargets=@("minecraft_native","minecraft_server","minecraft_installer")
@@ -441,11 +444,11 @@ $relinkPaths=$buildTargets|%{"$ScriptDir\$BuildDir\$_.exe"}
 $relinkBackups=Prepare-Relink -Paths $relinkPaths
 $buildLog="$ScriptDir\$BuildDir\build-omega-last.log"
 $sw=[System.Diagnostics.Stopwatch]::StartNew()
-&$CmakeExe --build $BuildDir --target @buildTargets -j $Jobs 2>&1|Tee-Object -FilePath $buildLog
+if($Log){&$CmakeExe --build $BuildDir --target @buildTargets -j $Jobs 2>&1|Tee-Object -FilePath $buildLog}else{&$CmakeExe --build $BuildDir --target @buildTargets -j $Jobs}
 $exitCode=$LASTEXITCODE
 $sw.Stop()
 Complete-Relink -Backups $relinkBackups -Succeeded:($exitCode -eq 0)
-if($exitCode -ne 0){Show-BuildFailureSummary -LogPath $buildLog -Code $exitCode}
+if($exitCode -ne 0){if($Log){Show-BuildFailureSummary -LogPath $buildLog -Code $exitCode}else{Write-Host "Build failed (exit $exitCode). Compiler and linker diagnostics are shown above. Use -Log to save them." -ForegroundColor Red}}
 if($exitCode -eq 0){
 Sync-Shaderpacks -BN $BuildDir
 if(!$SkipResourceSync){Sync-Resources}
@@ -480,7 +483,7 @@ else{&$CtestExe --output-on-failure;if($LASTEXITCODE -ne 0){$exitCode=$LASTEXITC
 if(!$SkipModPackaging){
     try{Invoke-PackageMods -BN $BuildDir -MID $ModId -DP:$(-not $NoModDeploy)}catch{Write-Error $_;$exitCode=1}
 }
-if($BuildType -eq "Release" -and !$Run){
+if($Gui -and $BuildType -eq "Release" -and !$Run){
 $se=@()
 if($Target -eq "All" -or $Target -eq "Client"){$se+="minecraft_native.exe"}
 if($Target -eq "All" -or $Target -eq "Server"){$se+="minecraft_server.exe"}

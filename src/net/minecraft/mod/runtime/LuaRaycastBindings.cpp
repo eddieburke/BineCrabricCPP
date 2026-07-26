@@ -130,18 +130,15 @@ void pushRaycastResult(lua_State* state, const std::optional<HitResult>& hit, Wo
   setField(state, "entity_z", p.z);
  }
 }
-[[nodiscard]] bool readRaycastOrigin(lua_State* state,
-                                     int tableIndex,
-                                     Vec3d& origin,
-                                     Vec3d& direction,
-                                     double& maxDistance,
-                                     bool& ignoreLiquids,
-                                     bool& doBlocks,
-                                     bool& doEntities) {
+void readRaycastOrigin(lua_State* state,
+                       int tableIndex,
+                       Vec3d& origin,
+                       Vec3d& direction,
+                       double& maxDistance,
+                       bool& ignoreLiquids,
+                       bool& doBlocks,
+                       bool& doEntities) {
  LuaApi& api = luaApi();
- if(api.type(state, tableIndex) != kLuaTTable) {
-  return false;
- }
  if(api.getfield(state, tableIndex, "direction") == kLuaTTable) {
   const int dirIndex = api.gettop(state);
   direction.x = luaFloatAt(state, dirIndex, 1, luaFloatField(state, dirIndex, "x", 0.0));
@@ -186,22 +183,26 @@ void pushRaycastResult(lua_State* state, const std::optional<HitResult>& hit, Wo
  ignoreLiquids = luaBoolField(state, tableIndex, "ignore_liquids", false);
  doBlocks = luaBoolField(state, tableIndex, "blocks", true);
  doEntities = luaBoolField(state, tableIndex, "entities", true);
- return true;
 }
 #endif
 } // namespace
 #ifdef MINECRAFT_NATIVE_EXPORTS
 int luaRaycast(lua_State* state) {
  LuaApi& api = luaApi();
+ LuaArgs args(state);
+ if(args.count() > 1 || (args.count() == 1 && !args.table(1))) {
+  api.pushnil(state);
+  return 1;
+ }
  Vec3d origin{};
  Vec3d direction{};
  double maxDistance = 0.0;
  bool ignoreLiquids = false;
  bool doBlocks = true;
  bool doEntities = true;
- bool explicitRay = false;
- if(api.gettop(state) >= 1 && api.type(state, 1) == kLuaTTable) {
-  explicitRay = readRaycastOrigin(state, 1, origin, direction, maxDistance, ignoreLiquids, doBlocks, doEntities);
+ const bool explicitRay = args.count() == 1;
+ if(explicitRay) {
+  readRaycastOrigin(state, 1, origin, direction, maxDistance, ignoreLiquids, doBlocks, doEntities);
  }
  client::Minecraft* client = client::Minecraft::INSTANCE;
  if(client == nullptr || client->world == nullptr) {
@@ -281,6 +282,11 @@ int luaRaycast(lua_State* state) {
 }
 #else
 int luaRaycast(lua_State* state) {
+ LuaArgs args(state);
+ if(args.count() > 1 || (args.count() == 1 && !args.table(1))) {
+  luaApi().pushnil(state);
+  return 1;
+ }
  luaApi().pushnil(state);
  return 1;
 }

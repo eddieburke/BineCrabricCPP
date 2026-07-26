@@ -185,17 +185,15 @@ local function parse_geometry_text(text, level_name)
 end
 
 local function log_geometry(geometry)
-  if minecraft.log then
-    minecraft.log("info", string.format(
-      "globe coastline loaded: %d points in %d chunks",
-      geometry.points, #geometry.chunks))
-  end
+  minecraft.log("info", string.format(
+    "globe coastline loaded: %d points in %d chunks",
+    geometry.points, #geometry.chunks))
 end
 
 local function load_geometry(text)
-  if not text or text == "" then return nil end
+  assert(type(text) == "string" and text ~= "", "realtime_sky: coastline data is required")
   local geometry = parse_geometry_text(text, "coastline")
-  if geometry.points == 0 then return nil end
+  assert(geometry.points > 0, "realtime_sky: coastline data has no points")
   log_geometry(geometry)
   return geometry
 end
@@ -690,29 +688,14 @@ function globe_ui.pick_lat_lon(ui, width, height, mouse_x, mouse_y)
   return { lat = lat, lon = lon }
 end
 
-function globe_ui.contains_point(ui_or_mouse_x, mouse_x_or_y, maybe_y, y, size)
-  if type(ui_or_mouse_x) == "table" then
-    local ui = ui_or_mouse_x
-    local mouse_x = mouse_x_or_y
-    local mouse_y = maybe_y
-    local center_x, center_y, radius, viewport_size = globe_metrics(ui)
-    local left, top, right, bottom = viewport_bounds(ui, viewport_size)
-    if mouse_x < left or mouse_x > right or mouse_y < top or mouse_y > bottom then
-      return false
-    end
-    local dx = mouse_x - center_x
-    local dy = mouse_y - center_y
-    return dx * dx + dy * dy <= radius * radius
+function globe_ui.contains_point(ui, mouse_x, mouse_y)
+  local center_x, center_y, radius, viewport_size = globe_metrics(ui)
+  local left, top, right, bottom = viewport_bounds(ui, viewport_size)
+  if mouse_x < left or mouse_x > right or mouse_y < top or mouse_y > bottom then
+    return false
   end
-
-  -- Backward-compatible old signature: mouse_x, mouse_y, x, y, size.
-  local old_mouse_x, old_mouse_y = ui_or_mouse_x, mouse_x_or_y
-  local x = maybe_y
-  local center_x = x + size * 0.5
-  local center_y = y + size * 0.5
-  local dx = old_mouse_x - center_x
-  local dy = old_mouse_y - center_y
-  local radius = size * 0.49
+  local dx = mouse_x - center_x
+  local dy = mouse_y - center_y
   return dx * dx + dy * dy <= radius * radius
 end
 

@@ -37,10 +37,10 @@ TEST(RegistryBootstrap, RejectsContentRegistrationAfterInit) {
  net::minecraft::block::initializeBlocks();
  mod::lua::BlockRegistrationSpec blockSpec;
  blockSpec.blockId = 250;
- blockSpec.terrainTextureId = 1;
+ blockSpec.texturePath = "mods/test/block.png";
  mod::lua::ItemRegistrationSpec itemSpec;
  itemSpec.itemId = 31000;
- itemSpec.itemsTextureId = 1;
+ itemSpec.texturePath = "mods/test/item.png";
  std::string error;
  EXPECT_FALSE(mod::lua::registerBlockSpec(blockSpec, error));
  error.clear();

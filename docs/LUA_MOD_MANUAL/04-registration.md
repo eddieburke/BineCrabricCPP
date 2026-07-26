@@ -13,8 +13,7 @@ Registers a new block. Returns `true` on success, or throws an assertion error o
 | Field | Type | Default | Description |
 |---|---|---|---|
 | `id` | int | (required) | Numeric block ID (1–`BLOCK_COUNT - 1`). Must be unique and not already reserved. |
-| `texture` | string | (required unless `texture_id` given) | Texture path for the default face texture (e.g. `"textures/blocks/my_block.png"`). |
-| `texture_id` | int | `-1` | Vanilla terrain-atlas texture index override (0–255). Alternative to `texture`. |
+| `texture` | string | **required** | Mod resource path for the block's texture (e.g. `"mods/my_mod/my_block.png"`). |
 | `hardness` | float | `1.0` | Block hardness (mining time). |
 | `resistance` | float | `1.0` | Explosion resistance. |
 | `luminance` | float | `0.0` | Light emission level (clamped 0.0–1.0). |
@@ -34,8 +33,7 @@ Registers a new block. Returns `true` on success, or throws an assertion error o
 | `min_scale` | float | `0.9` | Minimum scale factor for coordinate-based bounds. |
 | `max_scale` | float | `1.1` | Maximum scale factor for coordinate-based bounds. |
 | `model` | int or function | — | Baked model handle (integer from `minecraft.model.load`/`minecraft.model.build`) or a model callback function. When set, overrides the default cube renderer with custom baked-model rendering. |
-| `item` | table | — | Sub-table for the block's corresponding item: `{texture = "...", texture_id = int}`. If omitted, the block item uses the block's terrain texture. |
-| `tile_entity` | string | — | Tile entity registry ID string. The full registry ID becomes `"<ownerModId>:<tile_entity>"`. Registers a block entity factory. |
+| `item` | table | — | Sub-table for the block's corresponding item: `{texture = "..."}`. If omitted, the block item uses the block's own texture. |
 | `on_use` | function | — | Right-click handler function. Automatically wires a `block_interact` event listener filtered to this block ID with `right_click = true`. |
 | `behavior_priority` | int | `0` | Priority for the auto-wired interact handler when `on_use` is set. |
 
@@ -77,24 +75,17 @@ minecraft.register_block({
   id = 1002,
   texture = "textures/blocks/custom.png",
   model = modelHandle,
-  item = {texture = "textures/items/custom_item.png"},
+  item_texture = "textures/items/custom_item.png",
   name = "Custom Model Block"
 })
 
--- With tile entity
-minecraft.register_block({
-  id = 1003,
-  texture = "textures/blocks/container.png",
-  tile_entity = "my_container",
-  name = "Container Block"
-})
 ```
 
 ### Validation Rules
 
 - `id` must be between 1 and `Block::BLOCK_COUNT - 1` (typically 1–255).
-- Either `texture` or `texture_id` (0–255) is required.
-- `texture_id` must be 0–255 (vanilla terrain atlas index).
+- `texture` is required, and must be a mod resource path.
+- `model` is required, and must be a handle from `minecraft.model.load` or `minecraft.model.build`.
 - Duplicate IDs are rejected.
 - The block must be registered before the game finishes bootstrapping (`!Registry::isBootstrapped()`).
 
@@ -109,8 +100,7 @@ Registers a new item. Returns `true` on success, or `false, error` on failure. T
 | Field | Type | Default | Description |
 |---|---|---|---|
 | `id` | int | (required) | Numeric item ID (absolute, 256–`ITEM_COUNT - 1`). Must be unique. |
-| `texture` | string | (required unless `texture_id` given) | Texture path for the item sprite. |
-| `texture_id` | int | `-1` | Vanilla items-atlas texture index (0–255). Alternative to `texture`. |
+| `texture` | string | **required** | Mod resource path for the item sprite. |
 | `max_count` | int | `64` | Maximum stack size. |
 | `max_damage` | int | `0` | Maximum damage (0 = not damageable). |
 | `translation_key` | string | `"item<id>"` | i18n key token (without `"item."` or `".name"` suffix). |
@@ -141,26 +131,24 @@ minecraft.register_item({
 ### Validation Rules
 
 - `id` must be ≥ 256 and < `ITEM_COUNT` (raw ID = `itemId - 256`).
-- Either `texture` or `texture_id` (0–255) is required.
+- `texture` is required, and must be a mod resource path.
 - If a `model` is provided, `texture` is also required.
-- `texture_id` must be 0–255.
 - Duplicate IDs are rejected.
 - Must be registered before game bootstrapping completes.
 
 ### Block Items
 
-When a block is registered via `register_block`, a corresponding item is automatically created (the block item). You can customize the block item's texture via the `item` sub-table in the block spec:
+When a block is registered via `register_block`, a corresponding item is automatically created (the block item). You can customize the block item's texture via the `item_texture` field in the block spec:
 
 ```lua
 minecraft.register_block({
   id = 1000,
   texture = "textures/blocks/my_block.png",
-  item = {
-    texture = "textures/items/my_block_item.png",
-    -- or: texture_id = 42
-  }
+  item_texture = "textures/items/my_block_item.png",
 })
 ```
+
+`item_texture` supplies the flat sprite used for the block's inventory icon and its dropped-item form. Without it, the item renders as a miniature of the block model.
 
 ---
 
@@ -261,7 +249,7 @@ Returns the current key code for a keybind, or `0` if unbound/not found. `id` mu
 ```lua
 minecraft.keybinds.register("boost", { default = minecraft.key_code("b"), label = "Activate Boost" })
 
-minecraft.on(minecraft.events.key_press, {}, function(event)
+minecraft.on("key_press", {}, function(event)
   if event.pressed and event.key == minecraft.keybinds.get_code("my_mod.boost") then
     -- activate boost
   end
@@ -394,29 +382,6 @@ minecraft.register_block({
   texture = "textures/blocks/stone.png",
   model = handle,
   name = "Voxel Block"
-})
-```
-
-### Model Callbacks (for `model` field)
-
-Instead of a static model handle, the `model` field in `register_block` and `register_item` can be a function. The function is called during rendering with an event table and a `tessellator` object already attached. It should issue draw calls; it does not return a model handle.
-
-```lua
-minecraft.register_block({
-  id = 1002,
-  texture = "textures/blocks/anim.png",
-  model = function(event)
-    -- event.type is "world" or "inventory"; event includes
-    -- x/y/z, brightness, block_id, texture, and texture_id.
-    minecraft.tessellator.quad({
-      texture = event.texture,
-      vertices = {
-        {x=0, y=0, z=0, u=0, v=0}, {x=1, y=0, z=0, u=1, v=0},
-        {x=1, y=1, z=0, u=1, v=1}, {x=0, y=1, z=0, u=0, v=1},
-      },
-    })
-  end,
-  name = "Dynamic Model Block"
 })
 ```
 

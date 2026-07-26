@@ -60,6 +60,9 @@ void WorldEvents::playStreaming(const std::string& name, int x, int y, int z) {
 void WorldEvents::blockBreakParticles(int x, int y, int z, int blockId, int blockMeta) {
  dispatch(&GameEventListener::blockBreakParticles, x, y, z, blockId, blockMeta);
 }
+void WorldEvents::chunkAvailable(int chunkX, int chunkZ) {
+ dispatch(&GameEventListener::chunkAvailable, chunkX, chunkZ);
+}
 void WorldEvents::setBlocksDirty(int minX, int minY, int minZ, int maxX, int maxY, int maxZ) {
  if(minY > maxY) {
   std::swap(minY, maxY);

@@ -55,6 +55,7 @@ class ServerLoginNetworkHandler : public NetworkHandler {
  std::optional<LoginHelloPacket> deferredLoginPacket_;
  std::string serverId_;
  std::string clientModsCsv_;
+ bool clientModProtocolNegotiated_ = false;
  std::thread verifyThread_;
  std::mutex verifyMutex_;
 };

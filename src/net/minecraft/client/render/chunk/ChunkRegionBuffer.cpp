@@ -123,54 +123,83 @@ void ChunkRegionBuffer::release(Slot& slot) noexcept {
  }
 }
 void ChunkRegionBuffer::beginFrame() noexcept {
- firsts_.clear();
- counts_.clear();
+ visible_.clear();
+ merged_.clear();
 }
 void ChunkRegionBuffer::addVisible(const Slot& slot) {
  if(slot.count <= 0) {
   return;
  }
- firsts_.push_back(slot.offset);
- counts_.push_back(slot.count);
+ visible_.push_back(DrawRange{slot.offset, slot.count});
 }
-int ChunkRegionBuffer::flush(int mode, bool useEnginePipeline) {
- if(firsts_.empty() || handle_ == 0) {
+// Sorts the frame's visible ranges by buffer offset and coalesces any that are
+// exactly adjacent into one. Sections are allocated in contiguous runs (see
+// allocate()/release()), so neighbouring sections frequently share a run and a
+// few hundred draw calls collapse into a few dozen.
+//
+// This is arithmetic only and cannot change the rendered result: the shared quad
+// index buffer is a positional 0,1,2,0,2,3 repeat over the whole vertex buffer,
+// so the indices for [a, a+n) followed by [a+n, a+n+m) are exactly the indices
+// for [a, a+n+m). Both offsets and counts are whole quads (multiples of 4)
+// because every upload comes from a quad-mode mesh; ranges that are not are
+// left unmerged rather than trusted.
+void ChunkRegionBuffer::buildMergedRanges() {
+ merged_.clear();
+ if(visible_.empty()) {
+  return;
+ }
+ std::sort(visible_.begin(), visible_.end(), [](const DrawRange& a, const DrawRange& b) noexcept {
+  return a.first < b.first;
+ });
+ merged_.push_back(visible_.front());
+ for(std::size_t i = 1; i < visible_.size(); ++i) {
+  DrawRange& tail = merged_.back();
+  const DrawRange& next = visible_[i];
+  const bool quadAligned = (tail.first % 4 == 0) && (tail.count % 4 == 0) && (next.first % 4 == 0);
+  if(quadAligned && tail.first + tail.count == next.first) {
+   tail.count += next.count;
+   continue;
+  }
+  merged_.push_back(next);
+ }
+}
+int ChunkRegionBuffer::flush() {
+ if(visible_.empty() || handle_ == 0) {
   return 0;
  }
  gl::GLCore::bindBuffer(kArrayBuffer, handle_);
- if(useEnginePipeline) {
-  if(!gl::engine_pipeline::ensureReady()) {
-   static bool sLogged = false;
-   if(!sLogged) {
-    sLogged = true;
-    ClientLog::LOGGER.log(LogLevel::Warning,
-                          "[render] terrain flush: engine_pipeline::ensureReady() returned false "
-                          "(ubershader/VAO not available) — terrain will not draw");
-   }
-   return 0;
+ if(!gl::engine_pipeline::ensureReady()) {
+  static bool sLogged = false;
+  if(!sLogged) {
+   sLogged = true;
+   ClientLog::LOGGER.log(LogLevel::Warning,
+                         "[render] terrain flush: engine_pipeline::ensureReady() returned false "
+                         "(ubershader/VAO not available) — terrain will not draw");
   }
-  gl::engine_pipeline::bindAndUploadUniforms();
-  if(gl::engine_pipeline::program() == nullptr) {
-   static bool sLoggedProgram = false;
-   if(!sLoggedProgram) {
-    sLoggedProgram = true;
-    ClientLog::LOGGER.log(LogLevel::Warning,
-                          "[render] terrain flush: no active program — terrain will not draw");
-   }
-   return 0;
-  }
+  return 0;
  }
- (void)mode;
+ gl::engine_pipeline::bindAndUploadUniforms();
+ if(gl::engine_pipeline::program() == nullptr) {
+  static bool sLoggedProgram = false;
+  if(!sLoggedProgram) {
+   sLoggedProgram = true;
+   ClientLog::LOGGER.log(LogLevel::Warning, "[render] terrain flush: no active program — terrain will not draw");
+  }
+  return 0;
+ }
  gl::engine_pipeline::configureAttribs(handle_, 0, kStride, hasTexture_, hasColor_, hasNormals_);
  if(!render::quad_index::ensure(shadow_.size())) {
   return 0;
  }
+ buildMergedRanges();
  gl::GLCore::bindBuffer(0x8893, render::quad_index::handle());
- for(std::size_t i = 0; i < firsts_.size(); ++i) {
-  const int indexCount = (counts_[i] / 4) * 6;
-  const std::size_t indexByteOffset = (static_cast<std::size_t>(firsts_[i]) / 4) * 6 * sizeof(std::uint32_t);
+ for(const DrawRange& range : merged_) {
+  const int indexCount = (range.count / 4) * 6;
+  const std::size_t indexByteOffset = (static_cast<std::size_t>(range.first) / 4) * 6 * sizeof(std::uint32_t);
   ::glDrawElements(0x0004, indexCount, 0x1405, reinterpret_cast<const void*>(indexByteOffset));
  }
- return static_cast<int>(firsts_.size());
+ frameVisibleRanges += static_cast<int>(visible_.size());
+ frameDrawCalls += static_cast<int>(merged_.size());
+ return static_cast<int>(merged_.size());
 }
 } // namespace net::minecraft::client::render::chunk

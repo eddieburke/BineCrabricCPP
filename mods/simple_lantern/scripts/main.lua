@@ -3,7 +3,7 @@
 -- Standardized structure with separated config
 -- ================================================================
 
-local config = require("simple_lantern.config")
+local config = require("config")
 
 local model = assert(minecraft.model.load("models/lantern.json"))
 

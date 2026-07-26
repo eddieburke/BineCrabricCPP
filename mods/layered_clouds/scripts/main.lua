@@ -1,4 +1,4 @@
-local config = require("layered_clouds.config")
+local config = require("config")
 
 local cloud_ticks = 0.0
 local layers = {}
@@ -14,7 +14,8 @@ local function build_layers()
     layers[i] = {
       height = base_height + (i - 1) * layer_spacing,
       opacity = (config.base_opacity or 0.7) * (1.0 - (i - 1) / layer_count),
-      offset = math.random() * 100,
+      offset = math.random() * 20000,
+      scale = (0.5 + math.random() * 1.5),
     }
   end
   layer_signature = string.format("%d_%.2f", layer_count, layer_spacing)
@@ -22,18 +23,21 @@ end
 
 build_layers()
 
-minecraft.event.register("tick", function(dt)
+minecraft.on("client_tick", { after_world = true }, function(event)
+  if event.paused then return event end
+  local dt = 0.05
   cloud_ticks = cloud_ticks + dt * (config.wind_speed or 1.0)
   
   local new_sig = string.format("%d_%.2f", config.layer_count or 7, config.layer_height_spacing or 12)
   if new_sig ~= layer_signature then
     build_layers()
   end
+  return event
 end)
 
-minecraft.on(minecraft.events.world_render, {
-  stage = minecraft.render.stages.clouds,
-  moment = minecraft.render.moments.before,
+minecraft.on("world_render", {
+  stage = "clouds",
+  moment = "before",
   priority = 100,
 }, function(event)
   if not config.enabled then
@@ -47,14 +51,16 @@ minecraft.on(minecraft.events.world_render, {
   local cloud_base_height = event.cloud_base_height or (128 - (event.camera_y or 0) + 0.33)
   local cloud_scale = config.cloud_scale or 1.0
   local tile_size = 32 * cloud_scale
-  local radius = 256 * cloud_scale
+  -- One texel of the 2048px cloud texture per world block.
   local texture_scale = 0.00048828125
-  
+
   for _, layer in ipairs(layers) do
     local y = cloud_base_height + (layer.height - 128)
     local alpha = layer.opacity
-    local x_offset = math.sin(time * 0.01 + layer.offset) * 20
-    local z_offset = math.cos(time * 0.015 + layer.offset) * 20
+    local layer_scale = layer.scale or 1.0
+    local x_offset = math.sin(time * 0.01 + layer.offset) * 20 * layer_scale
+    local z_offset = math.cos(time * 0.015 + layer.offset) * 20 * layer_scale
+    local radius = 256 * cloud_scale * layer_scale
     local vertex_count = 0
 
     for x = -radius, radius - tile_size, tile_size do
@@ -106,7 +112,13 @@ minecraft.on(minecraft.events.world_render, {
         vertex_count = vertex_count + 36
       end
     end
-    
+
+    -- render.quads sizes the batch from the table length, so a layer with a smaller
+    -- radius than the previous one would re-draw that layer's leftover tail.
+    for index = #cloud_vertices, vertex_count + 1, -1 do
+      cloud_vertices[index] = nil
+    end
+
     minecraft.render.quads({
       texture = "/environment/clouds.png",
       blend = true,

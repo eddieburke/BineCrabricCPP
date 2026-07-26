@@ -17,7 +17,7 @@ void cyclePreloadedChunks(GameOptions& o, int delta) {
  o.preloadedChunks =
      d::cycleDiscrete(o.preloadedChunks, delta, kPreloadedChunks.data(), static_cast<int>(kPreloadedChunks.size()));
 }
-std::array<OptionSpec, 10> kSpecs{{
+std::array<OptionSpec, 9> kSpecs{{
     d::makeCycle("fpsLimit",
                  9,
                  ApplyFlags::None,
@@ -45,13 +45,6 @@ std::array<OptionSpec, 10> kSpecs{{
                   d::cycleBoolMember<&GameOptions::entityShadows>,
                   d::loadBoolMember<&GameOptions::entityShadows>,
                   d::saveBoolMember<&GameOptions::entityShadows>),
-    d::makeToggle("vbo",
-                  23,
-                  ApplyFlags::ReloadWorld,
-                  d::getBoolMember<&GameOptions::vbo>,
-                  d::cycleBoolMember<&GameOptions::vbo>,
-                  d::loadBoolMember<&GameOptions::vbo>,
-                  d::saveBoolMember<&GameOptions::vbo>),
     d::makeSlider("chunkUpdates",
                   24,
                   ApplyFlags::None,
@@ -111,23 +104,22 @@ class PerformanceSettingsScreen : public SettingsScreen {
   gui.toggle(x2, y0, "smoothFps", "Smooth FPS");
   gui.toggle(x1, y0 + dy, "smoothInput", "Smooth Input");
   gui.toggle(x2, y0 + dy, "entityShadows", "Entity Shadows");
-  gui.toggle(x1, y0 + dy * 2, "vbo", "VBO");
-  gui.slider(x2, y0 + dy * 2, "chunkUpdates", "Chunk Updates", [](const GameOptions& o) {
+  gui.slider(x1, y0 + dy * 2, "chunkUpdates", "Chunk Updates", [](const GameOptions& o) {
    const float value = std::isfinite(o.chunkUpdates) ? std::clamp(o.chunkUpdates, 0.0f, 1.0f) : 0.5f;
    const int updates = 1 + static_cast<int>(std::lround(value * 15.0f));
    return optionLabel("Chunk Updates", std::to_string(updates) + "/frame");
   });
-  gui.toggle(x1, y0 + dy * 3, "chunkUpdatesDynamic", "Dynamic Updates");
-  gui.customCycle(x2, y0 + dy * 3, "preloadedChunks", [](const GameOptions& o) {
+  gui.toggle(x2, y0 + dy * 2, "chunkUpdatesDynamic", "Dynamic Updates");
+  gui.customCycle(x1, y0 + dy * 3, "preloadedChunks", [](const GameOptions& o) {
    return optionLabel("Preloaded Chunks",
                       o.preloadedChunks == 0 ? resource::language::I18n::getTranslation("options.off")
                                              : std::to_string(o.preloadedChunks));
   });
-  gui.mappedSlider(x1, y0 + dy * 4, "entityDistanceScale", d::getEntityDistanceSlider, [](const GameOptions& o) {
+  gui.mappedSlider(x2, y0 + dy * 3, "entityDistanceScale", d::getEntityDistanceSlider, [](const GameOptions& o) {
    const float pct = 25.0f + d::getEntityDistanceSlider(o) * 375.0f;
    return optionLabel("Entity Distance", std::to_string(static_cast<int>(pct)) + "%");
   });
-  gui.toggle(x2, y0 + dy * 4, "frustumCulling", "Frustum Culling");
+  gui.toggle(x1, y0 + dy * 4, "frustumCulling", "Frustum Culling");
  }
 };
 } // namespace performance_screen

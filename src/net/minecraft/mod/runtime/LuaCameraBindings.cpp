@@ -1,8 +1,11 @@
 #include "net/minecraft/mod/runtime/LuaCameraBindings.hpp"
 #include "net/minecraft/client/Minecraft.hpp"
 #include "net/minecraft/client/Screenshot.hpp"
+#include "net/minecraft/client/gl/GLCore.hpp"
+#include "net/minecraft/client/gl/GlConstants.hpp"
 #include "net/minecraft/client/render/GameRenderer.hpp"
 #include "net/minecraft/client/render/RenderTargets.hpp"
+#include "net/minecraft/client/render/RenderSystem.hpp"
 namespace net::minecraft::mod::runtime {
 using namespace net::minecraft::mod::lua;
 namespace {
@@ -11,6 +14,20 @@ net::minecraft::client::render::FramebufferManager* renderTargets() {
   return nullptr;
  }
  return &client::Minecraft::INSTANCE->gameRenderer->renderTargets();
+}
+bool optionalInteger(const LuaArgs& args, int index, int& value) {
+ return args.count() < index || args.integer(index, value);
+}
+bool optionalBoolean(lua_State* state, const LuaArgs& args, int index, bool& value) {
+ if(args.count() < index) {
+  return true;
+ }
+ LuaApi& api = luaApi();
+ if(api.type(state, index) != kLuaTBoolean) {
+  return false;
+ }
+ value = api.toboolean(state, index) != 0;
+ return true;
 }
 #define LUA_CAM_IMPL(FUNC_NAME, MIN_ARGS, FAIL_RET, BODY) \
  int FUNC_NAME(lua_State* state) {                        \
@@ -23,77 +40,119 @@ net::minecraft::client::render::FramebufferManager* renderTargets() {
   BODY return 1;                                          \
  }
 LUA_CAM_IMPL(luaCameraCreate, 2, api.pushinteger(state, -1), {
- const int w = static_cast<int>(api.tointegerx(state, 1, nullptr));
- const int h = static_cast<int>(api.tointegerx(state, 2, nullptr));
- const int colorCount = api.gettop(state) >= 3 ? static_cast<int>(api.tointegerx(state, 3, nullptr)) : 1;
- const bool useDepthTex = api.gettop(state) >= 4 ? api.toboolean(state, 4) != 0 : false;
+ LuaArgs args(state);
+ int w = 0;
+ int h = 0;
+ int colorCount = 1;
+ bool useDepthTex = false;
+ if(!args.integer(1, w) || !args.integer(2, h) || !optionalInteger(args, 3, colorCount) ||
+    !optionalBoolean(state, args, 4, useDepthTex)) {
+  api.pushinteger(state, -1);
+  return 1;
+ }
  api.pushinteger(state, m->create(w, h, colorCount, useDepthTex));
 })
 LUA_CAM_IMPL(luaCameraCreateDisplaySize, 0, api.pushinteger(state, -1), {
+ LuaArgs args(state);
  const int w = client::Minecraft::INSTANCE->displayWidth;
  const int h = client::Minecraft::INSTANCE->displayHeight;
- const int colorCount = api.gettop(state) >= 1 ? static_cast<int>(api.tointegerx(state, 1, nullptr)) : 1;
- const bool useDepthTex = api.gettop(state) >= 2 ? api.toboolean(state, 2) != 0 : false;
+ int colorCount = 1;
+ bool useDepthTex = false;
+ if(!optionalInteger(args, 1, colorCount) || !optionalBoolean(state, args, 2, useDepthTex)) {
+  api.pushinteger(state, -1);
+  return 1;
+ }
  api.pushinteger(state, m->create(w > 0 ? w : 1, h > 0 ? h : 1, colorCount, useDepthTex));
 })
 LUA_CAM_IMPL(luaCameraDestroy, 1, api.pushboolean(state, 0), {
- api.pushboolean(state, m->destroy(static_cast<int>(api.tointegerx(state, 1, nullptr))) ? 1 : 0);
+ LuaArgs args(state);
+ int handle = 0;
+ if(!args.integer(1, handle)) {
+  api.pushboolean(state, 0);
+  return 1;
+ }
+ api.pushboolean(state, m->destroy(handle) ? 1 : 0);
 })
 LUA_CAM_IMPL(luaCameraResize, 3, api.pushboolean(state, 0), {
- api.pushboolean(state,
-                 m->resize(static_cast<int>(api.tointegerx(state, 1, nullptr)),
-                           static_cast<int>(api.tointegerx(state, 2, nullptr)),
-                           static_cast<int>(api.tointegerx(state, 3, nullptr)))
-                     ? 1
-                     : 0);
+ LuaArgs args(state);
+ int handle = 0;
+ int width = 0;
+ int height = 0;
+ if(!args.integer(1, handle) || !args.integer(2, width) || !args.integer(3, height)) {
+  api.pushboolean(state, 0);
+  return 1;
+ }
+ api.pushboolean(state, m->resize(handle, width, height) ? 1 : 0);
 })
 LUA_CAM_IMPL(luaCameraWidth, 1, api.pushinteger(state, 0), {
- api.pushinteger(state, m->width(static_cast<int>(api.tointegerx(state, 1, nullptr))));
+ LuaArgs args(state);
+ int handle = 0;
+ if(!args.integer(1, handle)) {
+  api.pushinteger(state, 0);
+  return 1;
+ }
+ api.pushinteger(state, m->width(handle));
 })
 LUA_CAM_IMPL(luaCameraHeight, 1, api.pushinteger(state, 0), {
- api.pushinteger(state, m->height(static_cast<int>(api.tointegerx(state, 1, nullptr))));
+ LuaArgs args(state);
+ int handle = 0;
+ if(!args.integer(1, handle)) {
+  api.pushinteger(state, 0);
+  return 1;
+ }
+ api.pushinteger(state, m->height(handle));
 })
-// Shared body for the perspective render bindings: `render` and
-// `render_shadow_perspective` take the same eight leading arguments and differ
-// only in the shadow-pass flag and its optional near/far/include-entities tail.
 int renderPerspectiveImpl(lua_State* state,
-                          LuaApi& api,
-                          net::minecraft::client::render::FramebufferManager* m,
-                          bool shadowPass) {
- const int handle = static_cast<int>(api.tointegerx(state, 1, nullptr));
- const double x = api.tonumberx(state, 2, nullptr);
- const double y = api.tonumberx(state, 3, nullptr);
- const double z = api.tonumberx(state, 4, nullptr);
- const float yaw = static_cast<float>(api.tonumberx(state, 5, nullptr));
- const float pitch = static_cast<float>(api.tonumberx(state, 6, nullptr));
- const float roll = static_cast<float>(api.tonumberx(state, 7, nullptr));
- const float fov = static_cast<float>(api.tonumberx(state, 8, nullptr));
+                           LuaApi& api,
+                           net::minecraft::client::render::FramebufferManager* m,
+                           bool shadowPass) {
+ LuaArgs args(state);
+ int handle = 0;
+ double x = 0.0;
+ double y = 0.0;
+ double z = 0.0;
+ double yaw = 0.0;
+ double pitch = 0.0;
+ double roll = 0.0;
+ double fov = 0.0;
+ if(!args.integer(1, handle) || !args.number(2, x) || !args.number(3, y) || !args.number(4, z) ||
+    !args.number(5, yaw) || !args.number(6, pitch) || !args.number(7, roll) || !args.number(8, fov)) {
+  api.pushboolean(state, 0);
+  return 1;
+ }
  float nearPlane = 0.0f;
  float farPlane = 0.0f;
  bool includeEntities = true;
  int tickDeltaArg = 9;
  if(shadowPass) {
-  nearPlane = api.gettop(state) >= 9 ? static_cast<float>(api.tonumberx(state, 9, nullptr)) : 0.0f;
-  farPlane = api.gettop(state) >= 10 ? static_cast<float>(api.tonumberx(state, 10, nullptr)) : 0.0f;
-  includeEntities = api.gettop(state) >= 11 ? api.toboolean(state, 11) != 0 : true;
+  double nearValue = 0.0;
+  double farValue = 0.0;
+  if(!args.optionalNumber(9, nearValue) || !args.optionalNumber(10, farValue) ||
+     !optionalBoolean(state, args, 11, includeEntities)) {
+   api.pushboolean(state, 0);
+   return 1;
+  }
+  nearPlane = static_cast<float>(nearValue);
+  farPlane = static_cast<float>(farValue);
   tickDeltaArg = 12;
  }
- const float tickDelta =
-     api.gettop(state) >= tickDeltaArg ? static_cast<float>(api.tonumberx(state, tickDeltaArg, nullptr)) : 1.0f;
- const int excludedEntityId = api.gettop(state) > tickDeltaArg
-                                  ? static_cast<int>(api.tointegerx(state, tickDeltaArg + 1, nullptr))
-                                  : -1;
+ double tickDelta = 1.0;
+ int excludedEntityId = -1;
+ if(!args.optionalNumber(tickDeltaArg, tickDelta) || !optionalInteger(args, tickDeltaArg + 1, excludedEntityId)) {
+  api.pushboolean(state, 0);
+  return 1;
+ }
  api.pushboolean(state,
                  m->renderWorldTo(handle,
                                   *client::Minecraft::INSTANCE->gameRenderer,
-                                  tickDelta,
+                                  static_cast<float>(tickDelta),
                                   x,
                                   y,
                                   z,
-                                  yaw,
-                                  pitch,
-                                  roll,
-                                  fov,
+                                  static_cast<float>(yaw),
+                                  static_cast<float>(pitch),
+                                  static_cast<float>(roll),
+                                  static_cast<float>(fov),
                                   false,
                                   1.0f,
                                   1.0f,
@@ -108,52 +167,61 @@ int renderPerspectiveImpl(lua_State* state,
                      : 0);
  return 1;
 }
-// Shared body for the plain and shadow orthographic render bindings; they
-// take the same 11 leading arguments and differ only in the shadow pass flag
-// and its optional include-entities argument.
 int renderOrthographicImpl(lua_State* state,
                            LuaApi& api,
                            net::minecraft::client::render::FramebufferManager* m,
                            bool shadowPass) {
- const int handle = static_cast<int>(api.tointegerx(state, 1, nullptr));
- const double x = api.tonumberx(state, 2, nullptr);
- const double y = api.tonumberx(state, 3, nullptr);
- const double z = api.tonumberx(state, 4, nullptr);
- const float yaw = static_cast<float>(api.tonumberx(state, 5, nullptr));
- const float pitch = static_cast<float>(api.tonumberx(state, 6, nullptr));
- const float roll = static_cast<float>(api.tonumberx(state, 7, nullptr));
- const float halfWidth = static_cast<float>(api.tonumberx(state, 8, nullptr));
- const float halfHeight = static_cast<float>(api.tonumberx(state, 9, nullptr));
- const float nearPlane = static_cast<float>(api.tonumberx(state, 10, nullptr));
- const float farPlane = static_cast<float>(api.tonumberx(state, 11, nullptr));
+ LuaArgs args(state);
+ int handle = 0;
+ double x = 0.0;
+ double y = 0.0;
+ double z = 0.0;
+ double yaw = 0.0;
+ double pitch = 0.0;
+ double roll = 0.0;
+ double halfWidth = 0.0;
+ double halfHeight = 0.0;
+ double nearPlane = 0.0;
+ double farPlane = 0.0;
+ if(!args.integer(1, handle) || !args.number(2, x) || !args.number(3, y) || !args.number(4, z) ||
+    !args.number(5, yaw) || !args.number(6, pitch) || !args.number(7, roll) ||
+    !args.number(8, halfWidth) || !args.number(9, halfHeight) || !args.number(10, nearPlane) ||
+    !args.number(11, farPlane)) {
+  api.pushboolean(state, 0);
+  return 1;
+ }
  bool includeEntities = true;
  int tickDeltaArg = 12;
  if(shadowPass) {
-  includeEntities = api.gettop(state) >= 12 ? api.toboolean(state, 12) != 0 : true;
+  if(!optionalBoolean(state, args, 12, includeEntities)) {
+   api.pushboolean(state, 0);
+   return 1;
+  }
   tickDeltaArg = 13;
  }
- const float tickDelta =
-     api.gettop(state) >= tickDeltaArg ? static_cast<float>(api.tonumberx(state, tickDeltaArg, nullptr)) : 1.0f;
- const int excludedEntityId = api.gettop(state) > tickDeltaArg
-                                  ? static_cast<int>(api.tointegerx(state, tickDeltaArg + 1, nullptr))
-                                  : -1;
+ double tickDelta = 1.0;
+ int excludedEntityId = -1;
+ if(!args.optionalNumber(tickDeltaArg, tickDelta) || !optionalInteger(args, tickDeltaArg + 1, excludedEntityId)) {
+  api.pushboolean(state, 0);
+  return 1;
+ }
  const bool valid = halfWidth > 0.0f && halfHeight > 0.0f && nearPlane != farPlane;
  api.pushboolean(state,
                  valid && m->renderWorldTo(handle,
                                            *client::Minecraft::INSTANCE->gameRenderer,
-                                           tickDelta,
+                                           static_cast<float>(tickDelta),
                                            x,
                                            y,
                                            z,
-                                           yaw,
-                                           pitch,
-                                           roll,
+                                           static_cast<float>(yaw),
+                                           static_cast<float>(pitch),
+                                           static_cast<float>(roll),
                                            70.0f,
                                            true,
-                                           halfWidth,
-                                           halfHeight,
-                                           nearPlane,
-                                           farPlane,
+                                           static_cast<float>(halfWidth),
+                                           static_cast<float>(halfHeight),
+                                           static_cast<float>(nearPlane),
+                                           static_cast<float>(farPlane),
                                            shadowPass,
                                            includeEntities,
                                            0.0f,
@@ -178,12 +246,23 @@ LUA_CAM_IMPL(luaCameraUnbind, 0, api.pushboolean(state, 0), {
  api.pushboolean(state, 1);
 })
 LUA_CAM_IMPL(luaCameraTexture, 1, api.pushinteger(state, -1), {
- const int handle = static_cast<int>(api.tointegerx(state, 1, nullptr));
- const int attachmentIndex = api.gettop(state) >= 2 ? static_cast<int>(api.tointegerx(state, 2, nullptr)) : 0;
+ LuaArgs args(state);
+ int handle = 0;
+ int attachmentIndex = 0;
+ if(!args.integer(1, handle) || !optionalInteger(args, 2, attachmentIndex)) {
+  api.pushinteger(state, -1);
+  return 1;
+ }
  api.pushinteger(state, m->textureId(handle, attachmentIndex));
 })
 LUA_CAM_IMPL(luaCameraDepthTexture, 1, api.pushinteger(state, -1), {
- api.pushinteger(state, m->depthTextureId(static_cast<int>(api.tointegerx(state, 1, nullptr))));
+ LuaArgs args(state);
+ int handle = 0;
+ if(!args.integer(1, handle)) {
+  api.pushinteger(state, -1);
+  return 1;
+ }
+ api.pushinteger(state, m->depthTextureId(handle));
 })
 LUA_CAM_IMPL(luaCameraRendering, 0, api.pushinteger(state, -1), { api.pushinteger(state, m->renderingHandle()); })
 int luaCameraFarPlane(lua_State* state) {
@@ -197,12 +276,20 @@ int luaCameraFarPlane(lua_State* state) {
 }
 int luaCameraSaveScreenshot(lua_State* state) {
  LuaApi& api = luaApi();
+ LuaArgs args(state);
  auto* m = renderTargets();
- if(m == nullptr || api.gettop(state) < 1) {
+ if(m == nullptr) {
   api.pushstring(state, "Failed: no render targets");
   return 1;
  }
- const int handle = static_cast<int>(api.tointegerx(state, 1, nullptr));
+ int handle = 0;
+ if(!args.integer(1, handle)) {
+  api.pushstring(state, "Failed: invalid camera handle");
+  return 1;
+ }
+ int previousFbo = 0;
+ ::glGetIntegerv(0x8CA6, &previousFbo);
+ const client::render::RenderSystem::StateShadow previousState = client::render::RenderSystem::getShadow();
  if(!m->bind(handle)) {
   api.pushstring(state, "Failed: invalid camera handle");
   return 1;
@@ -210,11 +297,14 @@ int luaCameraSaveScreenshot(lua_State* state) {
  const int w = m->width(handle);
  const int h = m->height(handle);
  if(w <= 0 || h <= 0) {
+  client::gl::GLCore::bindFramebuffer(client::gl::framebuffer::Framebuffer, static_cast<unsigned>(previousFbo));
+  client::render::RenderSystem::setShadow(previousState);
   api.pushstring(state, "Failed: invalid dimensions");
   return 1;
  }
  const std::string result = client::Screenshot::take(client::Minecraft::getRunDirectory(), w, h);
- m->unbind();
+ client::gl::GLCore::bindFramebuffer(client::gl::framebuffer::Framebuffer, static_cast<unsigned>(previousFbo));
+ client::render::RenderSystem::setShadow(previousState);
  api.pushstring(state, result.c_str());
  return 1;
 }

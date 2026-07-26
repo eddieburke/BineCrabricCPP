@@ -3,7 +3,7 @@
 -- Standardized structure with separated config
 -- ================================================================
 
-local config = require("northern_stars.config")
+local config = require("config")
 
 local catalog = nil
 local compiled_billboards = nil
@@ -70,7 +70,7 @@ local function smoothstep(edge0, edge1, value)
 end
 
 local function magnitude_to_alpha(magnitude)
-  local min_star_alpha = minecraft.settings.get("min_star_alpha") or 0.05
+  local min_star_alpha = minecraft.settings.get("northern_stars.min_star_alpha") or 0.05
   if magnitude <= ALPHA_OPAQUE_THRESHOLD then
     return 1.0
   elseif magnitude >= ALPHA_TRANSPARENT_THRESHOLD then
@@ -115,13 +115,13 @@ local function compile_starfield(event)
     compiled_billboards = {}
     return
   end
-  local dimmest_magnitude = minecraft.settings.get("dimmest_magnitude") or 6.5
-  local magnitude_size_exponent = minecraft.settings.get("magnitude_size_exponent") or 0.4
-  local brightest_star_size = minecraft.settings.get("brightest_star_size") or 1.2
-  local dimmest_star_size = minecraft.settings.get("dimmest_star_size") or 0.1
-  local starfield_radius = minecraft.settings.get("starfield_radius") or 100.0
-  local horizon_cull_deg = minecraft.settings.get("horizon_cull_deg") or 0.35
-  local horizon_fade_end_deg = minecraft.settings.get("horizon_fade_end_deg") or 2.0
+  local dimmest_magnitude = minecraft.settings.get("northern_stars.dimmest_magnitude") or 6.5
+  local magnitude_size_exponent = minecraft.settings.get("northern_stars.magnitude_size_exponent") or 0.4
+  local brightest_star_size = minecraft.settings.get("northern_stars.brightest_star_size") or 1.2
+  local dimmest_star_size = minecraft.settings.get("northern_stars.dimmest_star_size") or 0.1
+  local starfield_radius = minecraft.settings.get("northern_stars.starfield_radius") or 100.0
+  local horizon_cull_deg = minecraft.settings.get("northern_stars.horizon_cull_deg") or 0.35
+  local horizon_fade_end_deg = minecraft.settings.get("northern_stars.horizon_fade_end_deg") or 2.0
   local billboards = {}
   local cursor = 0
   local seed = 12345
@@ -164,9 +164,9 @@ local function compile_starfield(event)
   compiled_billboards = billboards
 end
 
-minecraft.on(minecraft.events.world_render, {
-  stage = minecraft.render.stages.stars,
-  moment = minecraft.render.moments.before,
+minecraft.on("world_render", {
+  stage = "stars",
+  moment = "before",
   is_overworld = true,
   priority = 150,
 }, function(event)

@@ -201,6 +201,52 @@ double luaDoubleArg(lua_State* state, int index, double fallback) {
  const double value = luaApi().tonumberx(state, index, &isNumber);
  return isNumber == 0 ? fallback : value;
 }
+int LuaArgs::count() const {
+ return api_.gettop(state_);
+}
+bool LuaArgs::string(int index, std::string& value) const {
+ if(api_.type(state_, index) != kLuaTString) {
+  return false;
+ }
+ const char* text = api_.tolstring(state_, index, nullptr);
+ if(text == nullptr) {
+  return false;
+ }
+ value = text;
+ return true;
+}
+bool LuaArgs::table(int index) const {
+ return api_.type(state_, index) == kLuaTTable;
+}
+bool LuaArgs::integer(int index, int& value) const {
+ int isNumber = 0;
+ const long long number = api_.tointegerx(state_, index, &isNumber);
+ if(isNumber == 0) {
+  return false;
+ }
+ value = static_cast<int>(number);
+ return true;
+}
+bool LuaArgs::number(int index, double& value) const {
+ int isNumber = 0;
+ const double number = api_.tonumberx(state_, index, &isNumber);
+ if(isNumber == 0) {
+  return false;
+ }
+ value = number;
+ return true;
+}
+bool LuaArgs::optionalString(int index, std::string& value) const {
+ return count() < index || string(index, value);
+}
+bool LuaArgs::optionalNumber(int index, double& value) const {
+ return count() < index || number(index, value);
+}
+int LuaArgs::fail(std::string_view message) const {
+ api_.pushboolean(state_, 0);
+ api_.pushlstring(state_, message.data(), message.size());
+ return 2;
+}
 void readField(lua_State* state, const char* key, bool& value) {
  value = luaBoolField(state, -1, key, value);
 }
@@ -240,16 +286,8 @@ thread_local bool gModContextIsClient = false;
 #endif
 thread_local entity::player::PlayerEntity* gModContextPlayer = nullptr;
 } // namespace
-World* contextOrClientWorld() {
- if(gModContextWorld != nullptr) {
-  return gModContextWorld;
- }
-#ifdef MINECRAFT_NATIVE_EXPORTS
- if(client::Minecraft::INSTANCE != nullptr) {
-  return client::Minecraft::INSTANCE->world;
- }
-#endif
- return nullptr;
+World* activeModWorld() {
+ return gModContextWorld;
 }
 ModContextScope::ModContextScope(World* world, entity::player::PlayerEntity* player)
     : previousWorld_(gModContextWorld), previousIsClient_(gModContextIsClient), previousPlayer_(gModContextPlayer) {

@@ -3,7 +3,7 @@
 -- Standardized structure with separated config
 -- ================================================================
 
-local config = require("critical_hit.config")
+local config = require("config")
 
 minecraft.settings.register("Critical Hit", {
   { key = "damage_multiplier", label = "Damage Multiplier", kind = "slider", min = 1.0, max = 2.5, step = 0.05, default = 1.5 },
@@ -12,8 +12,8 @@ minecraft.settings.register("Critical Hit", {
 })
 
 local function spawn_crit_particles(x, y, z)
-  local count = minecraft.settings.get("particle_count") or 20
-  local scale = minecraft.settings.get("particle_scale") or 1.2
+  local count = minecraft.settings.get("critical_hit.particle_count") or 20
+  local scale = minecraft.settings.get("critical_hit.particle_scale") or 1.2
   for _ = 1, count do
     minecraft.particles.spawn({
       x = x,
@@ -32,7 +32,7 @@ local function spawn_crit_particles(x, y, z)
   end
 end
 
-minecraft.on(minecraft.events.attack_damage, {
+minecraft.on("attack_damage", {
   has_player = true,
   has_target = true,
   priority = 100,
@@ -40,7 +40,7 @@ minecraft.on(minecraft.events.attack_damage, {
     return not event.on_ground and (event.fall_distance or 0.0) > 0.5 and event.critical
   end,
 }, function(event)
-  local multiplier = minecraft.settings.get("damage_multiplier") or 1.5
+  local multiplier = minecraft.settings.get("critical_hit.damage_multiplier") or 1.5
   event.damage = math.max(event.damage + 1, math.floor(event.damage * multiplier + 0.5))
   event.critical = true
   spawn_crit_particles(event.target_x, event.target_y, event.target_z)

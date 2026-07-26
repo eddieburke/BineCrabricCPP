@@ -1,4 +1,5 @@
 #pragma once
+#include <cstddef>
 #include <memory>
 #include <mutex>
 #include <string>
@@ -6,6 +7,7 @@
 #include "net/minecraft/mod/lua/LuaHostApi.hpp"
 #include "net/minecraft/mod/runtime/ModHost.hpp"
 namespace net::minecraft {
+class ItemStack;
 class World;
 }
 namespace net::minecraft::entity {
@@ -20,11 +22,20 @@ struct ClientTickEvent;
 namespace net::minecraft::mod::runtime {
 inline ModHost::LoadedLuaMod* currentLuaMod(lua_State* state) {
  using namespace net::minecraft::mod::lua;
- return static_cast<ModHost::LoadedLuaMod*>(luaApi().touserdata(state, luaUpvalueIndex(1)));
+ if(auto* mod = static_cast<ModHost::LoadedLuaMod*>(luaApi().touserdata(state, luaUpvalueIndex(1)))) {
+  return mod;
+ }
+ for(const auto& mod : loadedLuaMods()) {
+  if(mod != nullptr && mod->state == state) {
+   return mod.get();
+  }
+ }
+ return nullptr;
 }
 void setWorldContextFields(lua_State* state, const World* world);
 void setLuaExecutionFields(lua_State* state, const World* world);
 void setEntityIdentityFields(lua_State* state, const net::minecraft::entity::Entity& entity);
+void pushItemStackFields(lua_State* state, const ItemStack& stack);
 void setClientTickFields(lua_State* state, const ClientTickEvent& event);
 [[nodiscard]] bool luaWorldIsOverworld(const World* world);
 [[nodiscard]] bool luaWorldIsOverworld(const World* world);

@@ -42,7 +42,6 @@ class GameOptions {
  bool smoothFps = false;
  bool smoothInput = false;
  bool entityShadows = true;
- bool vbo = false;
  float chunkUpdates = 0.5f;
  bool chunkUpdatesDynamic = false;
  int preloadedChunks = 0;

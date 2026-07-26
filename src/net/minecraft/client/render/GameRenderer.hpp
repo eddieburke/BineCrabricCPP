@@ -3,6 +3,7 @@
 #include <memory>
 #include <optional>
 #include "net/minecraft/client/gl/GlConstants.hpp"
+#include "net/minecraft/client/option/ResolvedRenderOptions.hpp"
 #include "net/minecraft/client/render/FrameRenderCamera.hpp"
 #include "net/minecraft/client/render/Framebuffer.hpp"
 #include "net/minecraft/client/render/RenderTargets.hpp"
@@ -96,16 +97,20 @@ class GameRenderer {
  float fogRed = 0.0f;
  float fogGreen = 0.0f;
  float fogBlue = 0.0f;
+ // Render options resolved once per frame (onFrameUpdate / renderToCurrentTarget)
+ // and read by every stage below. resolve() is a ~48-field rebuild with two
+ // std::pow calls; it used to run 11x per frame here, which also let different
+ // stages of one frame observe different option values if a Lua mod mutated
+ // GameOptions mid-frame.
+ option::ResolvedRenderOptions frameOptions_{};
  float lastFogEnd_ = 0.0f;
  mod::FogSettingsEvent fogSettings_{};
  FrameRenderCamera frameCamera_{};
  FramebufferManager renderTargets_{};
- unsigned int lightmapTexture_ = 0;
- std::uint32_t lastLightmapColors_[256]{};
- bool lightmapColorsValid_ = false;
+ int sunShadowTarget_ = -1;
+ FrameRenderCamera sunShadowCamera_{};
  Framebuffer sceneFramebuffer_;
  bool sceneFramebufferAttempted_ = false;
- void updateLightmap(float tickDelta);
  std::unique_ptr<shaderpack::ShaderPackManager> shaderPacks_;
 };
 } // namespace net::minecraft::client::render

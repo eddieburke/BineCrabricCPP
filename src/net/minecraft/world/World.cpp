@@ -493,6 +493,9 @@ void World::worldEvent(PlayerEntity* player, int event, int x, int y, int z, int
 void World::setBlocksDirty(int minX, int minY, int minZ, int maxX, int maxY, int maxZ) {
  events_.setBlocksDirty(minX, minY, minZ, maxX, maxY, maxZ);
 }
+void World::chunkAvailable(int chunkX, int chunkZ) {
+ events_.chunkAvailable(chunkX, chunkZ);
+}
 void World::setBlocksDirtyColumn(int x, int z, int minY, int maxY) {
  events_.setBlocksDirtyColumn(x, z, minY, maxY);
 }

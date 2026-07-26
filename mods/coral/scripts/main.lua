@@ -3,7 +3,7 @@
 -- Standardized structure with separated config
 -- ================================================================
 
-local config = require("coral.config")
+local config = require("config")
 
 local CORAL_ID = 180
 local WATER_ID = minecraft.world.block_id("water") or 0
@@ -82,9 +82,9 @@ local function generate_reef(center_x, center_y, center_z)
   end
 end
 
-minecraft.on(minecraft.events.chunk_generation, {
-  stage = minecraft.generation.stages.features,
-  moment = minecraft.generation.moments.after,
+minecraft.on("chunk_generation", {
+  stage = "features",
+  moment = "after",
   vanilla_stage_ran = true,
   when = minecraft.util.real_world,
   priority = 100,

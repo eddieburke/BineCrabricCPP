@@ -13,6 +13,7 @@ re-read that file every time — if the two disagree, the `.cpp` wins.
 {
   "format_version": "1.21.11",
   "parent": "optional/parent/model",
+  "texture_size": [16, 16],
   "textures": { "all": "mods/mymod/foo.png" },
   "elements": [ /* JsonModelElement, see below */ ]
 }
@@ -22,6 +23,13 @@ re-read that file every time — if the two disagree, the `.cpp` wins.
 - `parent`: resolves and flattens one level of inheritance (see **Parent
   chains** below). `elements` and `textures` from the child always win;
   parent-only entries fill the gaps.
+- `texture_size`: the coordinate space every face `uv` in this file is written
+  in, defaulting to `[16, 16]`. This is **Blockbench's UV space, not the
+  texture's pixel size** — a 32×32 png under `texture_size: [16, 16]` still
+  spans the whole image over uv `0..16`. Baking divides uvs by this to get
+  normalized 0..1 coordinates, so the image can be any resolution and the model
+  looks the same. Inherited from the parent when the child omits it (and it
+  then applies to the child's own elements too).
 - `textures`: a plain string map, `"key": "reference"`. Values follow the
   **Texture references** rules below (`#other-key`, `ns:name`, plain path).
 - `elements`: array of boxes that make up the model. A model with no elements
@@ -79,7 +87,7 @@ element. Match the source Blockbench project's intent, not the count of keys.
 
 | Field | Type | Default | Notes |
 |---|---|---|---|
-| `uv` | `[u1,v1,u2,v2]` | auto (see below) | 0–16 pixel-space, **not** normalized 0–1. `u2>u1` and `v2>v1` are not enforced but should hold or the quad bakes flipped. |
+| `uv` | `[u1,v1,u2,v2]` | auto (see below) | In the model's `texture_size` space (so 0–16 by default), **not** normalized 0–1. `u2>u1` and `v2>v1` are not enforced but should hold or the quad bakes flipped. |
 | `texture` | string | *(required, effectively)* | See **Texture references**. Missing/unresolvable texture silently drops the face (no error surfaced). |
 | `rotation` | int | `0` | Must be a multiple of 90 (parse error otherwise); normalized to `0..359`. Rotates which UV corner maps to which vertex, not the texture pixels themselves. |
 | `tintindex` | int | `-1` | **Parsed and stored on the baked quad but not currently consumed anywhere in the render path.** Setting it has no visible effect yet — don't rely on it for foliage/grass-style tinting. |
@@ -183,12 +191,32 @@ A "thin plane" element — `from`/`to` equal on one axis (e.g. a 1-unit-thick
 pane, or an authored 0-thick plane) — is fully supported and is the intended
 way to make crossed/billboard-style geometry (see `simple_lantern`). Both
 faces on that axis are baked as ordinary quads with opposite winding; GL
-culling naturally shows only the camera-facing one per angle. There is no
-special-casing for this in the current baker — earlier code used to skip one
-of the two faces here on a mistaken z-fighting concern; that skip was
-removed because back-face culling makes the two quads mutually exclusive
-per-view anyway, so they never contended for the same pixel in the first
-place. If you ever see this kind of skip reappear, it's wrong — remove it.
+culling naturally shows only the camera-facing one per angle. The baker
+special-cases nothing here, and the interior-seam removal below explicitly
+skips degenerate elements so it can never eat one of these pairs. If you ever
+see a skip that drops one side of a thin plane, it's wrong — remove it.
+
+## Interior seams between stacked elements
+
+When two **different, non-degenerate** elements meet — same plane, exactly the
+same rectangle, facing each other (e.g. `repair_table`'s base topping out at
+`y = 13` and its slab starting at `y = 13`) — both faces are sealed inside the
+model and can never be seen. Baking drops that pair (`facesSealAgainstEachOther`
+in `bakeJsonModel`). Left in, the two coplanar quads z-fight, which reads in
+game as one face sitting slightly proud of the other and flickering through it.
+
+The test is deliberately strict, and all of these conditions must hold:
+
+- the two faces belong to **different** elements (so a thin plane's own
+  north/south pair is never a candidate),
+- **neither** element is degenerate on any axis,
+- neither element has a `rotation`,
+- the plane coordinates are exactly equal, and
+- the rectangles match exactly on both other axes.
+
+Anything less than an exact seal is kept, because a partial overlap can still
+be visible from some angle. Nothing about this affects `cullface`, which is a
+separate neighbour-block test.
 
 ## Render-layer interaction (why a model can look "double-sided" even without two faces)
 

@@ -5,6 +5,7 @@
 struct lua_State;
 namespace net::minecraft::mod::runtime {
 void installEntityApi(lua_State* state, ModHost::LoadedLuaMod& mod);
+void clearLocalPoseHook(int entityId);
 void applyRegisteredPoseHooks(const net::minecraft::entity::LivingEntity& entity,
                               float tickDelta,
                               net::minecraft::mod::EntityRenderPose& pose);

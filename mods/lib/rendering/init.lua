@@ -39,7 +39,7 @@ end
 
 function render.BatchRenderer:add_quad(x, y, z, width, height, color, uv)
     if self.quad_count >= self.max_quads then
-        minetest.log("warning", "BatchRenderer: exceeded max quads")
+        minecraft.log("warn", "BatchRenderer: exceeded max quads")
         return
     end
     
@@ -88,7 +88,7 @@ end
 
 function render.BatchRenderer:add_cube(position, size, color)
     if self.quad_count + 6 > self.max_quads then
-        minetest.log("warning", "BatchRenderer: not enough space for cube")
+        minecraft.log("warn", "BatchRenderer: not enough space for cube")
         return
     end
     

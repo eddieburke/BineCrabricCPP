@@ -1,8 +1,10 @@
 #include "net/minecraft/client/gui/screen/world/CreateWorldScreen.hpp"
 #include <algorithm>
+#include <cstddef>
 #include <stdexcept>
 #include <string>
 #include <unordered_map>
+#include <vector>
 #include "net/minecraft/client/Minecraft.hpp"
 #include "net/minecraft/client/SingleplayerInteractionManager.hpp"
 #include "net/minecraft/client/gui/layout/ScreenLayout.hpp"
@@ -44,6 +46,33 @@ struct CreateWorldFormLayout {
 };
 [[nodiscard]] int footerStartY(int screenHeight) noexcept {
  return screenHeight / 4 + 72 + 12;
+}
+// Mods stack full-width footer buttons one per row, which does not fit next to the name
+// and seed fields once more than one mod contributes. Re-flow the injected block into the
+// standard two-column option grid so N buttons cost ceil(N/2) rows instead of N. Only the
+// stacked buttons move; anything a mod positioned explicitly is left alone. Returns the Y
+// of the first row below the block.
+[[nodiscard]] int packStackedFooter(const std::vector<widget::ActionButtonWidget*>& stacked,
+                                    int screenWidth,
+                                    int startY) {
+ if(stacked.empty()) {
+  return startY;
+ }
+ if(stacked.size() == 1) {
+  stacked.front()->x = layout::centerBtnX(screenWidth);
+  stacked.front()->width = layout::kDefaultButtonWidth;
+  stacked.front()->y = startY;
+  return startY + layout::kRowSpacing;
+ }
+ for(std::size_t i = 0; i < stacked.size(); ++i) {
+  if(stacked[i] == nullptr) {
+   continue;
+  }
+  stacked[i]->x = layout::optionsGridX(screenWidth, static_cast<int>(i % 2));
+  stacked[i]->width = layout::kConfirmButtonWidth;
+  stacked[i]->y = startY + static_cast<int>(i / 2) * layout::kRowSpacing;
+ }
+ return startY + static_cast<int>((stacked.size() + 1) / 2) * layout::kRowSpacing;
 }
 [[nodiscard]] CreateWorldFormLayout formLayout(int screenWidth, int screenHeight, int firstFooterY) noexcept {
  const int compactShift =
@@ -108,8 +137,11 @@ void CreateWorldScreen::init() {
  buttons_.clear();
  createButton_ = nullptr;
  const std::size_t footerFirstButton = buttons_.size();
- int nextButtonY = footerStartY(height());
- publishScreenUi(mod::screen_regions::kFooter, &nextButtonY);
+ const int footerTop = footerStartY(height());
+ int nextButtonY = footerTop;
+ std::vector<widget::ActionButtonWidget*> stackedFooter;
+ publishScreenUi(mod::screen_regions::kFooter, &nextButtonY, &stackedFooter);
+ nextButtonY = packStackedFooter(stackedFooter, width(), footerTop);
  for(std::size_t i = footerFirstButton; i < buttons_.size(); ++i) {
   if(buttons_[i] != nullptr) {
    nextButtonY = std::max(nextButtonY, buttons_[i]->y + buttons_[i]->height);

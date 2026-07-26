@@ -1,167 +1,165 @@
--- Item Renderer Module
--- Handles voxel rendering and orientation caching for item drops
+-- ============================================================================
+-- item_drop_physics: rendering
+--
+-- Builds the voxel fallback model for flat item icons and draws simulated
+-- items. Physics state arrives as flat scalars from physics/engine.lua; this
+-- module owns no simulation state of its own.
+-- ============================================================================
+
+local engine = require("physics.engine")
 
 local M = {}
 
---------------------------------------------------------------------------------
--- CONSTANTS
---------------------------------------------------------------------------------
-
 local DRAW_SCALE = 0.25
 local ICON_THICKNESS = DRAW_SCALE / 16.0
-local HALF = 0.125
-local HEIGHT = 0.25
-
---------------------------------------------------------------------------------
--- CACHES
---------------------------------------------------------------------------------
+local DEFAULT_HALF = 0.125
+local DEFAULT_HEIGHT = 0.25
+local GRID = 16
 
 local voxel_handles = {}
 local shape_cache = {}
 
+-- Face normal plus the corner selectors for that face's quad.
+local VOXEL_FACES = {
+  { 0, 0, 1, { {0,0,1}, {1,0,1}, {1,1,1}, {0,1,1} } },
+  { 0, 0, -1, { {1,0,0}, {0,0,0}, {0,1,0}, {1,1,0} } },
+  { -1, 0, 0, { {0,0,0}, {0,0,1}, {0,1,1}, {0,1,0} } },
+  { 1, 0, 0, { {1,0,1}, {1,0,0}, {1,1,0}, {1,1,1} } },
+  { 0, 1, 0, { {0,1,1}, {1,1,1}, {1,1,0}, {0,1,0} } },
+  { 0, -1, 0, { {0,0,0}, {1,0,0}, {1,0,1}, {0,0,1} } },
+}
+
 --------------------------------------------------------------------------------
--- VOXEL HANDLING
+-- VOXEL MODEL
 --------------------------------------------------------------------------------
 
-function M.get_voxel_handle(item)
+local function voxel_key(x, y, z)
+  return x .. ":" .. y .. ":" .. z
+end
+
+local function build_voxel_handle(item)
   local path = item.texture_path
-  if not path or path == "" then
-    return nil
+  local size = minecraft.texture.size(path)
+  local width, height = size.width, size.height
+  if width <= 0 or height <= 0 then return nil end
+
+  local atlas_index = item.atlas_index or -1
+  local tile_x, tile_y = 0, 0
+  if not item.mod_texture and atlas_index >= 0 then
+    tile_x = (atlas_index % GRID) * GRID
+    tile_y = math.floor(atlas_index / GRID) * GRID
   end
-  
+
+  local cells, present = {}, {}
+  for row = 0, GRID - 1 do
+    for col = 0, GRID - 1 do
+      local px, py
+      if item.mod_texture then
+        px = math.floor(col * width / GRID)
+        py = math.floor(row * height / GRID)
+      else
+        px, py = tile_x + col, tile_y + row
+      end
+      if px >= 0 and py >= 0 and px < width and py < height then
+        local pixel = minecraft.texture.pixel(path, px, py)
+        if pixel.a > 30 then
+          local cell = {
+            x = col, y = GRID - 1 - row, z = 0,
+            r = pixel.r / 255, g = pixel.g / 255, b = pixel.b / 255, a = pixel.a / 255,
+          }
+          cells[#cells + 1] = cell
+          present[voxel_key(cell.x, cell.y, cell.z)] = true
+        end
+      end
+    end
+  end
+  if #cells == 0 then return nil end
+
+  local scale = 1 / GRID
+  local quads = {}
+  for _, cell in ipairs(cells) do
+    local lo = { cell.x * scale, cell.y * scale, 0.5 - scale * 0.5 }
+    local hi = { lo[1] + scale, lo[2] + scale, lo[3] + scale }
+    for _, face in ipairs(VOXEL_FACES) do
+      -- Skip faces buried against a neighbouring opaque texel.
+      if not present[voxel_key(cell.x + face[1], cell.y + face[2], cell.z + face[3])] then
+        local vertices = {}
+        for index, selector in ipairs(face[4]) do
+          vertices[index] = {
+            x = selector[1] == 1 and hi[1] or lo[1],
+            y = selector[2] == 1 and hi[2] or lo[2],
+            z = selector[3] == 1 and hi[3] or lo[3],
+          }
+        end
+        quads[#quads + 1] = { r = cell.r, g = cell.g, b = cell.b, a = cell.a, vertices = vertices }
+      end
+    end
+  end
+  return minecraft.model.build({ quads = quads, key = "item-voxel|" .. path .. "|" .. atlas_index })
+end
+
+function M.voxel_handle(item)
+  local path = item.texture_path
+  if not path or path == "" then return nil end
+
   local key = path .. ":" .. (item.atlas_index or -1)
   local handle = voxel_handles[key]
-  
   if handle == nil then
-    handle = minecraft.model.voxel({
-      texture = path,
-      texture_id = item.item_id,
-      atlas_index = item.atlas_index or -1,
-      mod_texture = item.mod_texture or false,
-    }) or false
+    handle = build_voxel_handle(item) or false
     voxel_handles[key] = handle
   end
-  
   return handle or nil
 end
 
 --------------------------------------------------------------------------------
--- SHAPE CALCULATION
+-- COLLISION SHAPE
 --------------------------------------------------------------------------------
 
-function M.get_shape(item)
+--- Half extents for an item, taken from its real model bounds where available.
+-- Flat icons get an icon-thin slab so they tumble like cards.
+function M.half_extents(item)
   local key = item.item_id .. ":" .. (item.item_damage or 0)
   local shape = shape_cache[key]
-  
+
   if shape == nil then
     local bounds = minecraft.model.item_bounds(item.item_id, item.item_damage or 0)
     if bounds then
       shape = {
-        half_x = (bounds.max_x - bounds.min_x) * 0.5 * DRAW_SCALE,
-        half_z = (bounds.max_z - bounds.min_z) * 0.5 * DRAW_SCALE,
-        height = (bounds.max_y - bounds.min_y) * DRAW_SCALE,
+        (bounds.max_x - bounds.min_x) * 0.5 * DRAW_SCALE,
+        (bounds.max_y - bounds.min_y) * 0.5 * DRAW_SCALE,
+        (bounds.max_z - bounds.min_z) * 0.5 * DRAW_SCALE,
       }
     else
-      shape = false
+      shape = { DEFAULT_HALF, DEFAULT_HEIGHT * 0.5, ICON_THICKNESS * 0.5 }
     end
     shape_cache[key] = shape
   end
-  
-  return shape or nil
-end
 
-function M.half_extents(shape)
-  local half_x = shape and shape.half_x or HALF
-  local half_z = shape and shape.half_z or HALF
-  local half_y = (shape and shape.height or HEIGHT) * 0.5
-  return half_x, half_y, half_z
+  return shape[1], shape[2], shape[3]
 end
 
 --------------------------------------------------------------------------------
--- SIMULATION CREATION
+-- DRAWING
 --------------------------------------------------------------------------------
 
-function M.create_simulation(item, box3d, config)
-  local physics = config.get_physics(item.item_id, item.item_damage or 0)
-  local speed = math.sqrt(item.vx * item.vx + item.vy * item.vy + item.vz * item.vz)
-  local shape = M.get_shape(item)
-  local half_x, half_y, half_z = M.half_extents(shape)
-  
-  local body, com_offset
-  local is_flat = shape == nil
-  local is_cube = false
-  
-  if shape then
-    body = box3d.new_box(half_x, half_y, half_z, physics.mass)
-    com_offset = box3d.v3(0, 0, 0)
-    local largest = math.max(half_x, half_y, half_z)
-    local smallest = math.min(half_x, half_y, half_z)
-    is_cube = largest > 1e-6 and largest - smallest <= largest * 0.02
-  else
-    local tex_info = minecraft.render.get_texture_pixels(item.texture_path or item.item_id)
-    if tex_info and tex_info.pixels then
-      body, com_offset = box3d.new_voxel_body(
-        tex_info.pixels, tex_info.width, tex_info.height,
-        DRAW_SCALE, physics.mass, ICON_THICKNESS
-      )
-    else
-      body = box3d.new_box(half_x, half_y, ICON_THICKNESS * 0.5, physics.mass)
-      com_offset = box3d.v3(0, 0, 0)
-    end
-  end
-  
-  -- Random initial rotation
-  local axis = box3d.v3(math.random() - 0.5, math.random() - 0.5, math.random() - 0.5)
-  local axis_length = box3d.v3_len(axis)
-  if axis_length > 1e-6 then
-    body.orientation = box3d.make_quat_from_axis_angle(
-      box3d.v3_scale(axis, 1.0 / axis_length), math.random() * math.pi * 2.0
-    )
-  end
-  
-  -- Random angular velocity
-  local kick = math.min(1.5, 0.30 + speed * 2.2)
-  body.angular_velocity = box3d.v3(
-    (math.random() - 0.5) * kick,
-    (math.random() - 0.5) * kick,
-    (math.random() - 0.5) * kick
-  )
-  
-  return {
-    id = item.id,
-    x = item.x, y = item.y, z = item.z,
-    px = item.x, py = item.y, pz = item.z,
-    vx = item.vx or 0, vy = item.vy or 0, vz = item.vz or 0,
-    body = body,
-    com_offset = com_offset,
-    prev_orientation = {
-      x = body.orientation.x, y = body.orientation.y,
-      z = body.orientation.z, w = body.orientation.w,
-    },
-    shape = shape,
-    is_flat = is_flat,
-    is_cube = is_cube,
-    physics = physics,
-    grounded = false,
-    item_supported = false,
-    water_fraction = 0.0,
-    water_saturation = 0.0,
-    sleeping = false,
-    sleep_counter = 0,
-    sleep_recheck = 0,
-    contact_impulses = {},
-    render_yaw = nil,
-  }
-end
+local transform = {
+  x = 0, y = 0, z = 0, yaw = 0, pitch = 0, roll = 0,
+  pivot_y = 0.5, scale = DRAW_SCALE,
+}
 
---------------------------------------------------------------------------------
--- RENDER CACHING
---------------------------------------------------------------------------------
+--- Draw one simulated item, interpolated `delta` of the way through the tick.
+function M.draw(item, s, delta)
+  local qx, qy, qz, qw =
+    engine.quat_slerp(s.pqx, s.pqy, s.pqz, s.pqw, s.qx, s.qy, s.qz, s.qw, delta)
 
-function M.cache_render_state(s)
-  if s.body and s.body.orientation then
-    s.render_yaw, s.render_pitch, s.render_roll = box3d.quat_to_euler_degrees(s.body.orientation)
-    s.render_offset = box3d.quat_rotate(s.body.orientation, s.com_offset)
+  transform.x = s.px + (s.x - s.px) * delta
+  transform.y = s.py + (s.y - s.py) * delta
+  transform.z = s.pz + (s.z - s.pz) * delta
+  transform.yaw, transform.pitch, transform.roll = engine.quat_to_euler_degrees(qx, qy, qz, qw)
+
+  if not minecraft.model.draw_item(item.item_id, item.item_damage or 0, transform) then
+    local handle = M.voxel_handle(item)
+    if handle then minecraft.model.draw(handle, transform) end
   end
 end
 

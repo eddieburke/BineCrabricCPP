@@ -15,6 +15,7 @@ enum class ChunkStage {
  Surface,
  Carver,
  Features,
+ Count,
 };
 enum class HookMoment {
  Before = 0,

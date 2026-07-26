@@ -136,16 +136,4 @@ void registerLuaModEntityType() {
   return std::make_unique<LuaModEntity>(world);
  });
 }
-std::unique_ptr<net::minecraft::Packet> LuaModBlockEntity::createUpdatePacket() const {
- LuaModSnapshot snapshot;
- snapshot.x = x;
- snapshot.y = y;
- snapshot.z = z;
- snapshot.id = 0;
- snapshot.yaw = 0;
- snapshot.pitch = 0;
- snapshot.registryId = registryId_;
- snapshot.data = data_;
- return std::make_unique<LuaModSyncPacket>(makeLuaModSnapshotPacket(snapshot, LuaModSyncKind::BlockEntitySnapshot));
-}
 } // namespace net::minecraft::mod::lua

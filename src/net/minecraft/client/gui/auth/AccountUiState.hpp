@@ -9,6 +9,7 @@ namespace net::minecraft::client::gui::auth {
 struct AccountUiSnapshot {
  bool showSignOutButton = false;
  bool multiplayerReady = false;
+ bool fullGameReady = false;
  std::string buttonLabel;
  std::string statusLine;
 };

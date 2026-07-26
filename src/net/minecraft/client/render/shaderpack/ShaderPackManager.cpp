@@ -379,6 +379,15 @@ bool ShaderPackManager::activeHasPostProcess() const {
  const Pack* pack = activePack();
  return pack != nullptr && !pack->postPasses.empty();
 }
+int ShaderPackManager::sunShadowQuality() const {
+ const std::string value = settingValue("SHADOW_QUALITY");
+ if(value.empty()) {
+  return 0;
+ }
+ char* end = nullptr;
+ const long quality = std::strtol(value.c_str(), &end, 10);
+ return end != value.c_str() && *end == '\0' ? std::clamp(static_cast<int>(quality), 0, 3) : 0;
+}
 gl::ShaderProgram* ShaderPackManager::compileProgram(Pack& pack, const std::string& programName) {
  if(!pack.summary.valid || pack.programs == nullptr) {
   return nullptr;
@@ -462,10 +471,13 @@ const std::string& ShaderPackManager::cachedText(Pack& pack, const std::string& 
 }
 bool ShaderPackManager::renderPostProcess(int textureId,
                                           int depthTextureId,
+                                          int shadowDepthTextureId,
                                           int width,
                                           int height,
                                           float tickDelta,
                                           const FrameRenderCamera& camera,
+                                          const FrameRenderCamera& shadowCamera,
+                                          int shadowMapResolution,
                                           float farPlane,
                                           float worldTime,
                                           const net::minecraft::World* world,
@@ -491,6 +503,9 @@ bool ShaderPackManager::renderPostProcess(int textureId,
  std::unordered_map<std::string, int> textures;
  textures["colortex0"] = textureId;
  textures["depthtex0"] = depthTextureId;
+ if(shadowDepthTextureId >= 0) {
+  textures["shadowtex0"] = shadowDepthTextureId;
+ }
  float sunVisibility = 1.0f;
  if(world != nullptr) {
   const auto& sun = world->lightRegistry().sun();
@@ -591,7 +606,7 @@ bool ShaderPackManager::renderPostProcess(int textureId,
   program->set2f("uViewport", static_cast<float>(width), static_cast<float>(height));
   program->set1i("uDepthAvailable", 1);
   program->set1i("uNormalAvailable", textures.count("normaltex0") != 0 ? 1 : 0);
-  program->set1i("uShadowAvailable", 0);
+  program->set1i("uShadowAvailable", shadowDepthTextureId >= 0 ? 1 : 0);
   program->set1i("uVoxelAvailable", 0);
   program->set1f("uSunVisibility", sunVisibility);
   program->set1f("uFogEnd", fogEnd);
@@ -604,6 +619,22 @@ bool ShaderPackManager::renderPostProcess(int textureId,
                  static_cast<float>(camera.eyeZ));
   program->set2f("uProjectionScale", camera.projectionX, camera.projectionY);
   program->set2f("uNearFar", camera.perspectiveNear, farPlane);
+  if(shadowDepthTextureId >= 0) {
+   program->set3f("uShadowCameraWorld",
+                  static_cast<float>(shadowCamera.eyeX),
+                  static_cast<float>(shadowCamera.eyeY),
+                  static_cast<float>(shadowCamera.eyeZ));
+   program->set3f(
+       "uShadowViewRight", shadowCamera.viewRightX, shadowCamera.viewRightY, shadowCamera.viewRightZ);
+   program->set3f("uShadowViewUp", shadowCamera.viewUpX, shadowCamera.viewUpY, shadowCamera.viewUpZ);
+   program->set3f("uShadowViewForward",
+                  shadowCamera.viewForwardX,
+                  shadowCamera.viewForwardY,
+                  shadowCamera.viewForwardZ);
+   program->set2f("uShadowOrthoHalf", shadowCamera.orthoHalfWidth, shadowCamera.orthoHalfHeight);
+   program->set2f("uShadowNearFar", shadowCamera.orthoNear, shadowCamera.orthoFar);
+   program->set1f("uShadowTexelSize", 1.0f / static_cast<float>(std::max(1, shadowMapResolution)));
+  }
   if(world != nullptr) {
    const auto& sun = world->lightRegistry().sun();
    const float svx = sun.directionX * camera.viewRightX + sun.directionY * camera.viewRightY +

@@ -3,6 +3,7 @@ uniform sampler2D colortex0;
 uniform sampler2D depthtex0;
 uniform sampler2D bloomtex;
 uniform sampler2D vltex;
+uniform sampler2D shadowtex0;
 uniform vec3 uShadowCameraWorld;
 uniform vec3 uShadowViewRight;
 uniform vec3 uShadowViewUp;
@@ -50,9 +51,9 @@ float sunShadow(vec3 point, vec3 normal) {
   if(uShadowAvailable == 0) {
     return 1.0;
   }
-  float facing = dot(normal, normalize(uSunDirectionView));
+  float facing = max(dot(normal, normalize(uSunDirectionView)), 0.0);
   if(facing <= 0.0) {
-    return smoothstep(-0.18, 0.04, facing);
+    return 1.0;
   }
   vec3 worldPosition = uCameraWorld + viewToWorldRelative(point);
   vec3 relative = worldPosition - uShadowCameraWorld;
@@ -65,28 +66,15 @@ float sunShadow(vec3 point, vec3 normal) {
     return 1.0;
   }
   vec2 uv = projected * 0.5 + 0.5;
-  float bias = mix(0.0025, 0.0006, facing);
-#if SHADOW_QUALITY == 1
-  float visibility = 1.0;
-#else
-  float visibility = 0.0;
-  float samples = 0.0;
-  for(int y = -2; y <= 2; ++y) {
-    for(int x = -2; x <= 2; ++x) {
-#if SHADOW_QUALITY == 2
-      if(abs(x) > 1 || abs(y) > 1) {
-        continue;
-      }
-#endif
-      float storedDepth = 1.0;
-      visibility += currentDepth - bias <= storedDepth ? 1.0 : 0.0;
-      samples += 1.0;
+  float bias = max(mix(0.005, 0.001, facing * facing), 0.0001);
+  float total = 0.0;
+  for(int x = -1; x <= 1; ++x) {
+    for(int y = -1; y <= 1; ++y) {
+      float stored = texture(shadowtex0, uv + vec2(x, y) * uShadowTexelSize).r;
+      total += currentDepth - bias <= stored ? 1.0 : 0.0;
     }
   }
-  visibility /= max(samples, 1.0);
-#endif
-  float edgeFade = smoothstep(0.82, 0.98, max(abs(projected.x), abs(projected.y)));
-  return mix(visibility, 1.0, edgeFade);
+  return total / 9.0;
 #endif
 }
 

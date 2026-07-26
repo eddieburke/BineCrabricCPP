@@ -1,7 +1,7 @@
-local earth_time_solar = minecraft.require("scripts.earth_time_solar")
-local places = minecraft.require("scripts.cities")
-local globe_ui = minecraft.require("scripts.globe_ui")
-local settings_screen_mod = minecraft.require("scripts.settings_screen")
+local earth_time_solar = require("scripts.earth_time_solar")
+local places = require("scripts.cities")
+local globe_ui = require("scripts.globe_ui")
+local settings_screen_mod = require("scripts.settings_screen")
 
 local SETTINGS_SCREEN_ID = "realtime_sky:settings"
 
@@ -12,10 +12,9 @@ local SKY_PROVIDER_PRIORITY = 50
 
 local SETTINGS_DEFAULTS = {
   enabled = false,
-  time_zone_id = "GMT",
+  time_zone_id = "GMT+0",
   latitude = 45.0,
   longitude = 0.0,
-  use_dst = true,
   drive_sun = true,
   show_simulate_panel = false,
   override_enabled = false,
@@ -29,31 +28,10 @@ local SETTINGS_DEFAULTS = {
 }
 
 local SETTINGS_KEYS = {
-  "enabled", "time_zone_id", "latitude", "longitude", "use_dst", "drive_sun", "show_simulate_panel",
+  "enabled", "time_zone_id", "latitude", "longitude", "drive_sun", "show_simulate_panel",
   "override_enabled", "simulate_date", "simulate_time",
   "sim_year", "sim_month", "sim_day", "sim_hour", "sim_minute",
 }
-
-local SETTINGS_NAMES = {
-  enabled = "enabled",
-  time_zone_id = "timeZoneId",
-  use_dst = "useDst",
-  drive_sun = "driveSun",
-  show_simulate_panel = "showSimulatePanel",
-  override_enabled = "overrideEnabled",
-  simulate_date = "simulateDate",
-  simulate_time = "simulateTime",
-  sim_year = "simYear",
-  sim_month = "simMonth",
-  sim_day = "simDay",
-  sim_hour = "simHour",
-  sim_minute = "simMinute",
-}
-
-local SETTINGS_ALIASES = {}
-for internal_name, file_name in pairs(SETTINGS_NAMES) do
-  SETTINGS_ALIASES[file_name] = internal_name
-end
 
 local settings = minecraft.util.copy(SETTINGS_DEFAULTS)
 local ui = {
@@ -275,6 +253,7 @@ local function add_pixel_quad(packed, cursor, rx, ry, rz, ux, uy, uz,
     packed[cursor + 8] = blue
     packed[cursor + 9] = alpha
     cursor = cursor + 9
+    return cursor
   end
 
   cursor = emit(left, bottom)
@@ -509,34 +488,20 @@ local function clamp_settings()
 end
 
 local function normalize_time_zone_id(value)
-  if type(value) ~= "string" then
-    return "GMT"
-  end
-  value = value:gsub("^%s+", ""):gsub("%s+$", "")
-  if value == "" then
-    return "GMT"
-  end
-  value = value:gsub("\\", "/")
-  while value:sub(1, 1) == "/" do
-    value = value:sub(2)
-  end
+  assert(type(value) == "string", "realtime_sky: time zone must be a string")
+  assert(value:match("^GMT[+-]%d%d?$") or value:match("^GMT[+-]%d%d?:%d%d$"),
+    "realtime_sky: time zone must use GMT±H or GMT±H:MM")
   return value
 end
 
 local function save_settings()
   solar_frame_cache = nil
   settings.time_zone_id = normalize_time_zone_id(settings.time_zone_id)
-  minecraft.config.save(CONFIG_FILE, settings, {
-    keys = SETTINGS_KEYS,
-    names = SETTINGS_NAMES,
-    separator = ":",
-  })
+  minecraft.config.save(CONFIG_FILE, settings, SETTINGS_KEYS)
 end
 
 local function load_settings()
-  local loaded, found = minecraft.config.load(CONFIG_FILE, SETTINGS_DEFAULTS, {
-    aliases = SETTINGS_ALIASES,
-  })
+  local loaded, found = minecraft.config.load(CONFIG_FILE, SETTINGS_DEFAULTS)
   -- Keep the table identity stable. settings_screen.register() holds this exact
   -- table; replacing it made the UI edit an abandoned copy after the first save.
   for key in pairs(settings) do
@@ -574,11 +539,11 @@ local function ensure_coastlines()
   if ui.coast_loaded then
     return
   end
-  local coast_text = minecraft.read_asset("assets/globe_coasts.txt")
-  if coast_text and coast_text ~= "" then
-    globe_ui.load_coastlines(coast_text)
-    ui.coast_loaded = true
-  end
+  local coast_text = assert(minecraft.read_asset("assets/globe_coasts.txt"),
+    "realtime_sky: missing coastline data")
+  assert(coast_text ~= "", "realtime_sky: empty coastline data")
+  globe_ui.load_coastlines(coast_text)
+  ui.coast_loaded = true
 end
 
 local function refresh_filter()
@@ -647,19 +612,15 @@ local function layout(width, height)
   ui.globe_y = globe_top + math.floor((available_height - ui.globe_size) / 2)
   local left = list_column_left(width)
   local col_w = list_column_width(width)
-  local control_w = math.floor((col_w - 12) / 4)
+  local control_w = math.floor((col_w - 8) / 3)
   ui.search_x = left
   ui.search_y = 36
   ui.search_w = col_w
   ui.search_h = 18
-  ui.dst_toggle_y = height - 24
-  ui.dst_toggle_x = left + control_w + 4
-  ui.dst_toggle_w = control_w
-  ui.dst_toggle_h = 20
-  ui.settings_x = left + (control_w + 4) * 2
+  ui.settings_x = left + control_w + 4
   ui.settings_w = control_w
-  ui.done_x = left + (control_w + 4) * 3
-  ui.done_w = col_w - (control_w + 4) * 3
+  ui.done_x = left + (control_w + 4) * 2
+  ui.done_w = col_w - (control_w + 4) * 2
 end
 
 local function format_lat_lon(lat, lon)
@@ -760,8 +721,11 @@ local open_globe_screen
 load_settings()
 ensure_coastlines()
 
-minecraft.screen.on_ui(minecraft.screen.ids.world_settings,
-  minecraft.screen.regions.screen, function(event)
+minecraft.on("screen_ui", {
+  screen_id = minecraft.screen.ids.world_settings,
+  region = minecraft.screen.regions.screen,
+  priority = 100,
+}, function(event)
   if event.ui == nil then return event end
   local function realtime_label()
     return settings.enabled and "Realtime: ON" or "Realtime: OFF"
@@ -774,11 +738,11 @@ minecraft.screen.on_ui(minecraft.screen.ids.world_settings,
     end,
     realtime_label)
   return event
-end, 100)
+end)
 
-minecraft.on(minecraft.events.world_render, {
-  stage = minecraft.render.stages.sky,
-  moment = minecraft.render.moments.before,
+minecraft.on("world_render", {
+  stage = "sky",
+  moment = "before",
   is_overworld = true,
   priority = SKY_PROVIDER_PRIORITY + 1000,
   when = function()
@@ -814,8 +778,8 @@ minecraft.on(minecraft.events.world_render, {
   end
 end)
 
-minecraft.on(minecraft.events.world_color, {
-  kind = minecraft.colors.sky,
+minecraft.on("world_color", {
+  kind = "sky",
   is_overworld = true,
   priority = SKY_PROVIDER_PRIORITY,
   when = function()
@@ -831,8 +795,8 @@ minecraft.on(minecraft.events.world_color, {
   event.b = 0.070 + (1.00 - 0.070) * day + 0.02 * warm
 end)
 
-minecraft.on(minecraft.events.world_color, {
-  kind = minecraft.colors.fog,
+minecraft.on("world_color", {
+  kind = "fog",
   is_overworld = true,
   priority = SKY_PROVIDER_PRIORITY,
   when = function()
@@ -852,14 +816,18 @@ open_globe_screen = function()
   minecraft.screen.open(SCREEN_ID, { title = "" })
 end
 
-minecraft.screen.on_ui(minecraft.screen.ids.mod_settings, minecraft.screen.regions.footer, function(event)
+minecraft.on("screen_ui", {
+  screen_id = minecraft.screen.ids.mod_settings,
+  region = minecraft.screen.regions.footer,
+  priority = 90,
+}, function(event)
   if event.ui ~= nil then
     event.ui:add_stacked_centered_button("Sky Globe...", open_globe_screen)
   end
   return event
-end, 90)
+end)
 
-minecraft.on(minecraft.events.screen_event, { screen_id = SCREEN_ID, priority = 100 }, function(event)
+minecraft.on("screen_event", { screen_id = SCREEN_ID, priority = 100 }, function(event)
   if event.phase == "init" then
     layout(event.width, event.height)
     refresh_filter()
@@ -904,8 +872,6 @@ minecraft.on(minecraft.events.screen_event, { screen_id = SCREEN_ID, priority = 
     draw_globe_chrome()
     draw_globe_overlay(event.width)
     draw_list(event.width, event.height, event.mouse_x, event.mouse_y)
-    minecraft.gui.draw_toggle({ x = ui.dst_toggle_x, y = ui.dst_toggle_y, width = ui.dst_toggle_w,
-      height = ui.dst_toggle_h, label = "DST", value = settings.use_dst, mouse_x = event.mouse_x, mouse_y = event.mouse_y })
   elseif event.phase == "mouse" then
     if event.released then
       if ui.dragging and event.button == 0 then
@@ -925,12 +891,6 @@ minecraft.on(minecraft.events.screen_event, { screen_id = SCREEN_ID, priority = 
       return
     end
     if event.button ~= 0 then
-      return
-    end
-    if minecraft.util.in_rect(event.x, event.y, ui.dst_toggle_x, ui.dst_toggle_y, ui.dst_toggle_w, ui.dst_toggle_h) then
-      settings.use_dst = not settings.use_dst
-      save_settings()
-      event.handled = true
       return
     end
     if globe_ui.contains_point(ui, event.x, event.y) then
@@ -978,7 +938,7 @@ minecraft.on(minecraft.events.screen_event, { screen_id = SCREEN_ID, priority = 
       event.handled = true
     end
   elseif event.phase == "key" then
-    if event.key == minecraft.keys.escape then
+    if event.key == minecraft.key_code("escape") then
       save_settings()
       minecraft.screen.close()
       event.handled = true
@@ -989,9 +949,9 @@ minecraft.on(minecraft.events.screen_event, { screen_id = SCREEN_ID, priority = 
   end
 end)
 
-minecraft.on(minecraft.events.world_render, {
-  stage = minecraft.render.stages.stars,
-  moment = minecraft.render.moments.before,
+minecraft.on("world_render", {
+  stage = "stars",
+  moment = "before",
   is_overworld = true,
   priority = 30,
   when = function()
@@ -1008,9 +968,9 @@ end)
 -- runtime builds consequently omit stars/after callbacks. terrain_opaque/before
 -- still has a valid world draw context, runs after all star rendering, and lets
 -- terrain render over the celestial bodies normally.
-minecraft.on(minecraft.events.world_render, {
-  stage = minecraft.render.stages.terrain_opaque,
-  moment = minecraft.render.moments.before,
+minecraft.on("world_render", {
+  stage = "terrain_opaque",
+  moment = "before",
   is_overworld = true,
   priority = -1000,
   when = function()
@@ -1053,7 +1013,7 @@ end
 -- the visible sun. Minecraft normally advances 24000 ticks in 20 minutes, so a
 -- real-time sky must correct that automatic increment. Only the time-of-day
 -- phase is replaced; the nearest absolute day is retained across midnight.
-minecraft.on(minecraft.events.world_tick, { before = false }, function(event)
+minecraft.on("world_tick", { before = false }, function(event)
   if not realtime_active() or event.remote then
     return
   end

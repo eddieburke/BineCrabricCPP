@@ -1,4 +1,5 @@
 #include "net/minecraft/client/debug/ClientProfilerOverlay.hpp"
+#include <windows.h>
 #include <GL/gl.h>
 #include <chrono>
 #include "net/minecraft/client/Minecraft.hpp"

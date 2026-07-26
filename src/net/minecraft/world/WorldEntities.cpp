@@ -4,7 +4,6 @@
 #include "net/minecraft/entity/EntityRegistry.hpp"
 #include "net/minecraft/entity/LivingEntity.hpp"
 #include "net/minecraft/entity/player/PlayerEntity.hpp"
-#include "net/minecraft/mod/runtime/LuaBlockEntityBindings.hpp"
 #include "net/minecraft/mod/runtime/LuaDirectHooks.hpp"
 #include "net/minecraft/util/logging/Log.hpp"
 #include "net/minecraft/util/math/MathHelper.hpp"
@@ -463,25 +462,12 @@ void World::tickEntities() {
    continue;
   }
   if(!blockEntity->isRemoved()) {
-   bool canceled = false;
-   if(net::minecraft::mod::runtime::hasLuaHook(net::minecraft::mod::runtime::LuaEventId::TileEntityTick)) {
-    mod::TileEntityTickEvent tileEvent;
-    tileEvent.world = this;
-    tileEvent.entity = blockEntity;
-    tileEvent.remote = isRemote();
-    tileEvent.canceled = false;
-    net::minecraft::mod::runtime::luaHookTileEntityTick(tileEvent);
-    canceled = tileEvent.canceled;
-   }
-   if(!canceled) {
-    blockEntity->tick();
-   }
+   blockEntity->tick();
   }
   if(!blockEntity->isRemoved()) {
    continue;
   }
   blockEntities.erase(blockEntities.begin() + static_cast<std::ptrdiff_t>(i));
-  mod::runtime::clearTileEntityAnimation(blockEntity);
   --i;
   Chunk& chunk = getChunk(blockEntity->x >> 4, blockEntity->z >> 4);
   chunk.removeBlockEntityAt(blockEntity->x & 0xF, blockEntity->y, blockEntity->z & 0xF);

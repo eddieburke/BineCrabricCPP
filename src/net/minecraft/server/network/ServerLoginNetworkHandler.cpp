@@ -116,6 +116,7 @@ void ServerLoginNetworkHandler::onLuaModSync(const LuaModSyncPacket& packet) {
  if(packet.kind != LuaModSyncKind::ClientModList) {
   return;
  }
+ clientModProtocolNegotiated_ = true;
  clientModsCsv_.assign(packet.payload.begin(), packet.payload.end());
 }
 void ServerLoginNetworkHandler::onHello(const LoginHelloPacket& packet) {
@@ -197,7 +198,8 @@ void ServerLoginNetworkHandler::accept(const LoginHelloPacket& packet) {
  }
  {
   const Vec3i spawnPos = serverWorld->getSpawnPos();
-  auto playHandler = std::make_unique<ServerPlayNetworkHandler>(server_, connection_.get(), player);
+  auto playHandler = std::make_unique<ServerPlayNetworkHandler>(
+      server_, connection_.get(), player, clientModProtocolNegotiated_);
   const std::int8_t dimensionRawId =
       serverWorld->dimension != nullptr ? static_cast<std::int8_t>(serverWorld->dimension->id) : 0;
   LoginHelloPacket loginResponse;

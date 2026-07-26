@@ -19,6 +19,9 @@ class ModSettingsScreen : public screen::Screen {
  [[nodiscard]] std::string_view getScreenUiId() const override {
   return net::minecraft::mod::screen_ids::kModSettings;
  }
+ [[nodiscard]] screen::ScreenFactory getReopenFactory() const override {
+  return modPagesFactory();
+ }
 
  private:
  struct SettingWidget {
@@ -36,10 +39,6 @@ class ModSettingsScreen : public screen::Screen {
   std::string text;
   int contentY = 0;
  };
- struct InjectedPage {
-  std::string text;
-  std::function<void()> onClick;
- };
  void rebuildLayout();
  void updateListLayout();
  void scrollBy(int amount);
@@ -48,7 +47,6 @@ class ModSettingsScreen : public screen::Screen {
  std::vector<SettingWidget> settingWidgets_;
  std::vector<KeybindWidget> keybindWidgets_;
  std::vector<SectionHeader> sectionHeaders_;
- std::vector<InjectedPage> injectedPages_;
  int selectedKeybindIndex_ = -1;
  int listTop_ = 42;
  int listBottom_ = 42;

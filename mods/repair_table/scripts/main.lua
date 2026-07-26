@@ -3,9 +3,9 @@
 -- Standardized structure with separated config
 -- ================================================================
 
-local config = require("repair_table.config")
+local config = require("config")
 
-local repair_screen = minecraft.require("scripts.repair_screen")
+local repair_screen = require("scripts.repair_screen")
 local repair_table_model = assert(minecraft.model.load("models/repair_table.json"))
 
 minecraft.register_block({

@@ -11,7 +11,6 @@
 #include "net/minecraft/mod/runtime/LuaRenderBindings.hpp"
 #include "net/minecraft/mod/runtime/LuaScreenBindings.hpp"
 #endif
-#include "net/minecraft/mod/runtime/LuaBlockEntityBindings.hpp"
 #include "net/minecraft/mod/runtime/LuaEntityBindings.hpp"
 // LuaEventSubscribers.hpp deleted — dispatch is now in LuaDirectHooks.hpp
 #include "net/minecraft/mod/lua/LuaHostApi.hpp"
@@ -54,7 +53,6 @@ void installMinecraftTable(lua_State* state, ModHost::LoadedLuaMod& mod) {
  installRenderApi(state);
  installRaycastApi(state);
 #endif
- installTileEntityApi(state);
  installRecipeApi(state, mod);
  net::minecraft::mod::lua::installGenericModApi(state, mod);
  api.setglobal(state, "minecraft");
@@ -141,9 +139,6 @@ bool loadLuaMod(ModPackage& info, std::vector<std::shared_ptr<ModHost::LoadedLua
   return false;
  }
  mod->active = true;
- for(const auto& callback : mod->callbacks) {
-  subscribeLuaCallback(mod, callback);
- }
  loadedMods.push_back(std::move(mod));
  invalidateLuaHookCache();
  info.error.clear();
@@ -204,18 +199,6 @@ void ModHost::shutdown() {
     }
    }
    mod->buttonCallbackRefs.clear();
-   for(const int ref : mod->blockModelCallbackRefs) {
-    if(ref != kLuaNoRef) {
-     api->unref(state, kLuaRegistryIndex, ref);
-    }
-   }
-   mod->blockModelCallbackRefs.clear();
-   for(const int ref : mod->itemModelCallbackRefs) {
-    if(ref != kLuaNoRef) {
-     api->unref(state, kLuaRegistryIndex, ref);
-    }
-   }
-   mod->itemModelCallbackRefs.clear();
 #ifdef MINECRAFT_NATIVE_EXPORTS
    if(client::Minecraft::INSTANCE != nullptr) {
     for(const int textureId : mod->ownedTextureIds) {

@@ -1,12 +1,17 @@
 #pragma once
+#include <array>
 #include <functional>
 #include <memory>
 #include <string>
 #include <string_view>
 #include "net/minecraft/client/gui/screen/Screen.hpp"
 #include "net/minecraft/client/option/GameOptions.hpp"
+#include "net/minecraft/client/option/OptionSpec.hpp"
 namespace net::minecraft::client::gui::screen::option {
 namespace client_option = net::minecraft::client::option;
+namespace world_screen {
+extern std::array<net::minecraft::client::option::OptionSpec, 4> kSpecs;
+}
 class WorldSettingsScreen : public screen::Screen {
  public:
  using ParentFactory = std::function<std::unique_ptr<screen::Screen>()>;

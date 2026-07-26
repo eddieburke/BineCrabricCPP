@@ -1,4 +1,3 @@
-#include <cmath>
 #include <string>
 #include "net/minecraft/mod/lua/LuaBlockRegistry.hpp"
 #include "net/minecraft/mod/lua/LuaHostApi.hpp"
@@ -6,7 +5,6 @@
 #ifdef MINECRAFT_NATIVE_EXPORTS
 #include "net/minecraft/mod/model/ModModels.hpp"
 #endif
-#include "net/minecraft/mod/lua/LuaHostApi.hpp"
 #include "net/minecraft/mod/runtime/LuaEventGlue.hpp"
 #include "net/minecraft/mod/runtime/WorldRequiredMods.hpp"
 namespace net::minecraft::mod::runtime {
@@ -16,17 +14,15 @@ using namespace net::minecraft::mod::model;
 #endif
 int luaRegisterBlock(lua_State* state) {
  LuaApi& api = luaApi();
+ LuaArgs args(state);
  ModHost::LoadedLuaMod* mod = currentLuaMod(state);
- if(mod == nullptr || api.gettop(state) < 1 || api.type(state, 1) != kLuaTTable) {
-  api.pushboolean(state, 0);
-  api.pushstring(state, "minecraft.register_block expects a spec table");
-  return 2;
+ if(mod == nullptr || !args.table(1)) {
+  return args.fail("minecraft.register_block expects a spec table");
  }
  const int tableIndex = 1;
  BlockRegistrationSpec spec;
  spec.blockId = luaIntField(state, tableIndex, "id", 0);
  spec.texturePath = luaStringField(state, tableIndex, "texture", "");
- spec.terrainTextureId = luaIntField(state, tableIndex, "texture_id", -1);
  spec.hardness = luaFloatField(state, tableIndex, "hardness", 1.0f);
  spec.resistance = luaFloatField(state, tableIndex, "resistance", 1.0f);
  spec.luminance = luaFloatField(state, tableIndex, "luminance", 0.0f);
@@ -48,41 +44,36 @@ int luaRegisterBlock(lua_State* state) {
  spec.maxScale = luaFloatField(state, tableIndex, "max_scale", 1.1f);
  api.getfield(state, tableIndex, "model");
 #ifdef MINECRAFT_NATIVE_EXPORTS
- if(api.type(state, -1) == kLuaTNumber) {
+ // A block's shape comes from a JSON model, and only from a JSON model. The
+ // failure this guards against is silent and expensive to debug: model.load
+ // returns nil plus an error on a bad path, mods routinely drop that error
+ // ("local m = is_client and minecraft.model.load(...) or nil"), and a spec
+ // with no baked model used to fall back to getRenderType() == FULL_CUBE. The
+ // block then rendered as a vanilla cube skinned with its flat `texture`,
+ // which is why a model whose faces each take a different region of one sheet
+ // came out with the same wrong region on all six sides.
+ const int modelType = api.type(state, -1);
+ if(modelType == kLuaTNumber) {
   spec.bakedModel = luaIntField(state, tableIndex, "model", 0);
- } else if(api.type(state, -1) == kLuaTFunction) {
-  const int modelIndex = api.gettop(state);
-  std::string modelError;
-  if(!parseModelCallback(state, modelIndex, spec.modelRef, modelError)) {
-   api.settop(state, tableIndex);
-   api.pushboolean(state, 0);
-   api.pushstring(state, modelError.c_str());
-   return 2;
-  }
-  if(spec.modelRef != kLuaNoRef) {
-   mod->blockModelCallbackRefs.push_back(spec.modelRef);
-  }
  }
+ api.settop(state, tableIndex);
+ if(spec.bakedModel == 0) {
+  return args.fail(modelType == kLuaTFunction
+                       ? "register_block: model must be a handle from minecraft.model.load; "
+                         "draw-callback models are no longer supported"
+                       : "register_block: model is required and must be a handle from "
+                         "minecraft.model.load (check that the load succeeded — it returns nil "
+                         "plus an error message on failure)");
+ }
+#else
+ api.settop(state, tableIndex);
 #endif
- api.settop(state, tableIndex);
- api.getfield(state, tableIndex, "item");
- if(api.type(state, -1) == kLuaTTable) {
-  const int itemTable = api.gettop(state);
-  spec.itemTexturePath = luaStringField(state, itemTable, "texture", "");
-  spec.itemTextureId = luaIntField(state, itemTable, "texture_id", -1);
-  api.settop(state, itemTable);
- }
- api.settop(state, tableIndex);
- spec.tileEntityId = luaStringField(state, tableIndex, "tile_entity", "");
- api.settop(state, tableIndex);
+ // Optional flat sprite for the block's inventory/dropped item. Absent, the
+ // item renders as a miniature of the block model.
+ spec.itemTexturePath = luaStringField(state, tableIndex, "item_texture", "");
  std::string error;
  if(!registerBlockSpec(spec, error)) {
-  if(spec.modelRef != kLuaNoRef) {
-   api.unref(state, kLuaRegistryIndex, spec.modelRef);
-  }
-  api.pushboolean(state, 0);
-  api.pushstring(state, error.c_str());
-  return 2;
+  return args.fail(error);
  }
  WorldRequiredMods::registerContentBlock(mod->modId, spec.blockId);
  api.pushboolean(state, 1);

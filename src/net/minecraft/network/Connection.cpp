@@ -324,10 +324,11 @@ void Connection::writeLoop() {
      }
     }
    }
-  }
+ }
  } catch(const std::exception& error) {
   requestDisconnect(std::string("Internal exception: ") + error.what());
  }
+ shutdownSocket();
  writeThreadCounter.fetch_sub(1, std::memory_order_acq_rel);
 }
 void Connection::requestDisconnect(std::string reason) {
@@ -336,7 +337,9 @@ void Connection::requestDisconnect(std::string reason) {
   return;
  }
  disconnectReason_ = std::move(reason);
- shutdownSocket();
+ if(socket_ != INVALID_SOCKET) {
+  ::shutdown(socket_, SD_RECEIVE);
+ }
  writeCv_.notify_all();
 }
 void Connection::shutdownSocket() {

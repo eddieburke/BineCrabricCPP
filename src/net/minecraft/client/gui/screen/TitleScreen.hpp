@@ -18,7 +18,9 @@ class TitleScreen : public Screen {
  std::string chooseSplashText() const;
  float ticks_ = 0.0f;
  std::string splashText_{};
+ widget::ActionButtonWidget* singleplayerButton_ = nullptr;
  widget::ActionButtonWidget* multiplayerButton_ = nullptr;
+ widget::ActionButtonWidget* modsButton_ = nullptr;
  widget::ActionButtonWidget* accountButton_ = nullptr;
 };
 } // namespace net::minecraft::client::gui::screen

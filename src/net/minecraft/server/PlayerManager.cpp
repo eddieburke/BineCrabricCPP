@@ -490,10 +490,6 @@ void PlayerManager::updateBlockEntity(int x, int y, int z, block::entity::BlockE
   return;
  }
  ChunkMap& chunkMap = getChunkMap(blockEntity->world->dimension->id);
- if(dynamic_cast<mod::lua::LuaModBlockEntity*>(blockEntity) != nullptr) {
-  chunkMap.sendBlockEntityUpdate(x, z, *blockEntity);
-  return;
- }
  chunkMap.markBlockForUpdate(x, y, z);
 }
 void PlayerManager::addToWhitelist(const std::string& name) {

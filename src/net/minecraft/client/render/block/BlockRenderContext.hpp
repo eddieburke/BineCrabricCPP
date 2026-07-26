@@ -17,10 +17,13 @@ struct TileScale {
  int v = 0;
  double inv = 1.0 / 256.0;
 };
+// Tile origin and texel scale for a texture id, in the (u + n * 16) * inv form
+// the face renderers emit. See ResolvedTexture for the two cases; a mod texture
+// has no atlas origin, so its tile origin is 0,0.
 inline TileScale tileScaleFor(int textureId) {
  const net::minecraft::client::render::ResolvedTexture uv =
      net::minecraft::client::render::resolveBlockTextureUv(textureId);
- if(net::minecraft::registry::TextureRegistry::isCustomTexture(textureId)) {
+ if(uv.isModTexture) {
   return {0, 0, uv.uScale};
  }
  return {net::minecraft::block::Block::textureAtlasU(textureId),
@@ -28,10 +31,12 @@ inline TileScale tileScaleFor(int textureId) {
          uv.uScale};
 }
 inline net::minecraft::block::TerrainAtlasUv tileUvFor(int textureId, const net::minecraft::Box& bounds) {
- if(!net::minecraft::registry::TextureRegistry::isCustomTexture(textureId)) {
+ const net::minecraft::client::render::ResolvedTexture uv =
+     net::minecraft::client::render::resolveBlockTextureUv(textureId);
+ if(!uv.isModTexture) {
   return net::minecraft::block::Block::terrainTileUv(textureId);
  }
- const TileScale tile = tileScaleFor(textureId);
+ const TileScale tile{0, 0, uv.uScale};
  double uMin = (static_cast<double>(tile.u) + bounds.minX * 16.0) * tile.inv;
  double uMax = (static_cast<double>(tile.u) + bounds.maxX * 16.0) * tile.inv;
  double vMin = (static_cast<double>(tile.v) + bounds.minZ * 16.0) * tile.inv;
@@ -117,11 +122,16 @@ struct BlockRenderContext {
   }
   return *tess;
  }
+ // Mod textures each need their own bind; vanilla ids share the already-bound
+ // terrain atlas, so leave the binding alone for those.
  void bindTextureFor(int texture) const {
-  if(textureManager != nullptr && net::minecraft::registry::TextureRegistry::isCustomTexture(texture)) {
-   const net::minecraft::client::render::ResolvedTexture resolved =
-       net::minecraft::client::render::resolveBlockTexture(
-           texture, *textureManager, net::minecraft::client::render::AtlasDomain::Terrain);
+  if(textureManager == nullptr) {
+   return;
+  }
+  const net::minecraft::client::render::ResolvedTexture resolved =
+      net::minecraft::client::render::resolveBlockTexture(
+          texture, *textureManager, net::minecraft::client::render::AtlasDomain::Terrain);
+  if(resolved.isModTexture) {
    textureManager->bindTexture(resolved.glId);
   }
  }

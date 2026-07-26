@@ -61,7 +61,6 @@ class WorldRenderer : public net::minecraft::GameEventListener {
  [[nodiscard]] std::string getChunkDebugInfo() const;
  [[nodiscard]] std::string getEntityDebugInfo() const;
  int render(net::minecraft::LivingEntity& camera, int layer, double tickDelta, bool drawModMeshes = true);
- void render(const net::minecraft::Entity& camera, int layer, float tickDelta);
  bool compileChunks(net::minecraft::LivingEntity& camera, bool force);
  void renderLastChunks(int layer, double tickDelta);
  void renderMiningProgress(net::minecraft::PlayerEntity* entity,
@@ -77,6 +76,7 @@ class WorldRenderer : public net::minecraft::GameEventListener {
  void markDirty(int minX, int minY, int minZ, int maxX, int maxY, int maxZ);
  void blockUpdate(int x, int y, int z) override;
  void setBlocksDirty(int minX, int minY, int minZ, int maxX, int maxY, int maxZ) override;
+ void chunkAvailable(int chunkX, int chunkZ) override;
  void cullChunks(FrustumCuller* culler, float tickDelta, bool updateFrontier = true);
  void addParticle(const std::string& particle,
                   double x,
@@ -104,6 +104,9 @@ class WorldRenderer : public net::minecraft::GameEventListener {
  void setRenderCameraEntity(bool renderCameraEntity) noexcept {
   renderCameraEntity_ = renderCameraEntity;
  }
+ [[nodiscard]] int excludedEntityId() const noexcept {
+  return excludedEntityId_;
+ }
  void setFrameRenderCamera(double x, double y, double z) noexcept {
   frameCamX_ = x;
   frameCamY_ = y;
@@ -119,6 +122,13 @@ class WorldRenderer : public net::minecraft::GameEventListener {
  void setOptions(net::minecraft::client::option::GameOptions* options) {
   options_ = options;
  }
+ // Save/restore the per-frame culling result around a nested world render (the
+ // sun-shadow pass, Lua render-to-texture). Both directions are a vector swap
+ // plus a flat flag copy, so after warm-up neither allocates. Replaces the old
+ // deep copy of visibleDrawRings_ plus a full sections_ map walk, which ran
+ // every frame a shaderpack with shadows was active.
+ void pushCullState();
+ void popCullState();
 
  private:
  void renderOutline(const net::minecraft::Box& box);
@@ -155,8 +165,19 @@ class WorldRenderer : public net::minecraft::GameEventListener {
  std::unordered_set<chunk::ChunkBuilder*> nearDirtyChunks_{};
  std::vector<std::unordered_set<chunk::ChunkBuilder*>> drawRings_{};
  std::vector<std::vector<chunk::ChunkBuilder*>> visibleDrawRings_{};
+ // Scratch for pushCullState/popCullState. Kept resident so the inner vectors
+ // retain their capacity across frames.
+ std::vector<std::vector<chunk::ChunkBuilder*>> savedVisibleDrawRings_{};
+ std::vector<unsigned char> savedFrustumFlags_{};
+ std::size_t savedFrustumSectionCount_ = 0;
+ bool cullStateSaved_ = false;
  std::deque<world::SectionPos> pendingColumns_{};
  std::unordered_set<world::SectionPos, world::SectionPosHash> pendingSet_{};
+ // Chunk columns that arrived since the last compileChunks pass. Drained once
+ // per frame so a burst of arrivals refreshes each shared border exactly once
+ // instead of once per arriving neighbour. Keyed with y == 0.
+ std::unordered_set<world::SectionPos, world::SectionPosHash> pendingBorderRefresh_{};
+ void drainBorderRefresh();
  std::vector<std::unique_ptr<chunk::ChunkBuilder>> retiring_{};
  chunk::ChunkRegionManager regionManager_{};
  chunk::ChunkMeshScheduler meshScheduler_{};

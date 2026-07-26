@@ -117,7 +117,7 @@ function audio.load_sound(name, path)
     
     local ok, sound_data = pcall(love.audio.newSource, path, "static")
     if not ok then
-        minetest.log("error", "Failed to load sound: " .. name .. " at " .. path)
+        minecraft.log("error", "Failed to load sound: " .. name .. " at " .. path)
         return nil
     end
     
@@ -132,7 +132,7 @@ function audio.load_music(name, path)
     
     local ok, sound_data = pcall(love.audio.newSource, path, "stream")
     if not ok then
-        minetest.log("error", "Failed to load music: " .. name .. " at " .. path)
+        minecraft.log("error", "Failed to load music: " .. name .. " at " .. path)
         return nil
     end
     
@@ -146,13 +146,13 @@ function audio.play_sound(name, options)
     
     local sound_data = loaded_sounds[name]
     if not sound_data then
-        minetest.log("warning", "Attempted to play unloaded sound: " .. name)
+        minecraft.log("warn", "Attempted to play unloaded sound: " .. name)
         return nil
     end
     
     local wrapper = audio.acquire_source()
     if not wrapper then
-        minetest.log("warning", "No available audio sources")
+        minecraft.log("warn", "No available audio sources")
         return nil
     end
     
@@ -233,7 +233,7 @@ function audio.play_music(name, fade_in)
     
     local music_data = loaded_sounds[name]
     if not music_data then
-        minetest.log("error", "Music not found: " .. name)
+        minecraft.log("error", "Music not found: " .. name)
         return false
     end
     

@@ -58,7 +58,7 @@ local state = {
 
 local function log(message, level)
     level = level or "info"
-    minetest.log(level, "[" .. MOD_NAME .. "] " .. message)
+    minecraft.log(level, "[" .. MOD_NAME .. "] " .. message)
 end
 
 local function merge_tables(target, source)
@@ -198,7 +198,7 @@ end
 
 function spawn_entity(player, entity_type)
     if state.entity_count >= state.config.max_entities then
-        log("Maximum entities reached", "warning")
+        log("Maximum entities reached", "warn")
         return false
     end
     
@@ -275,7 +275,7 @@ function show_stats(player)
         stats.physics_stats = world_stats
     end
     
-    log("Stats: " .. minetest.serialize(stats))
+    log("Stats: " .. minecraft.util.json_encode(stats))
     
     if player then
         player:send_message("Entities: " .. stats.entity_count .. "/" .. stats.max_entities)
@@ -319,9 +319,9 @@ local function init_config()
     state.config = merge_tables({}, DEFAULT_CONFIG)
     
     -- Override with saved settings if available
-    local saved_config = minetest.settings_get(MOD_NAME .. "_config")
+    local saved_config = minecraft.storage.read(MOD_NAME .. "/config.json")
     if saved_config then
-        local ok, decoded = pcall(minetest.deserialize, saved_config)
+        local ok, decoded = pcall(minecraft.util.json_decode, saved_config)
         if ok then
             merge_tables(state.config, decoded)
         end

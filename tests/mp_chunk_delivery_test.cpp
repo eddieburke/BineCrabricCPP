@@ -11,7 +11,6 @@
 #include <gtest/gtest.h>
 #include <atomic>
 #include <chrono>
-#include <cstdlib>
 #include <filesystem>
 #include <iostream>
 #include <memory>
@@ -21,12 +20,12 @@
 #include <string>
 #include <system_error>
 #include <thread>
-#include "net/minecraft/mod/runtime/ModHost.hpp"
 #include "net/minecraft/network/Connection.hpp"
 #include "net/minecraft/network/NetworkHandler.hpp"
 #include "net/minecraft/network/packet/Packets.hpp"
 #include "net/minecraft/server/MinecraftServer.hpp"
 #include "net/minecraft/server/host/ServerLaunchConfig.hpp"
+#include "tests/support/empty_server_mod_host.hpp"
 namespace {
 using net::minecraft::Connection;
 using net::minecraft::NetworkHandler;
@@ -155,11 +154,7 @@ class ProbeClientHandler : public NetworkHandler {
 namespace net::minecraft::test {
 TEST(MultiplayerChunkDelivery, ServerDeliversChunksToSocketClient) {
  const std::filesystem::path appDataRoot = makeTempAppDataRoot("mp_chunk_delivery_appdata");
-#ifdef _WIN32
- _putenv_s("APPDATA", appDataRoot.string().c_str());
- _putenv_s("USERPROFILE", appDataRoot.string().c_str());
-#endif
- net::minecraft::mod::runtime::host().shutdown();
+ initializeEmptyServerModHost(appDataRoot / "runtime");
  net::minecraft::server::host::ServerLaunchConfig config;
  config.storageRoot = makeTempWorldRoot("mp_chunk_delivery");
  config.worldName = "ChunkDeliveryWorld";
@@ -197,11 +192,7 @@ TEST(MultiplayerChunkDelivery, ServerDeliversChunksToSocketClient) {
 }
 TEST(MultiplayerChunkDelivery, IdleSocketClientStaysConnectedAfterInitialChunkBurst) {
  const std::filesystem::path appDataRoot = makeTempAppDataRoot("mp_keepalive_appdata");
-#ifdef _WIN32
- _putenv_s("APPDATA", appDataRoot.string().c_str());
- _putenv_s("USERPROFILE", appDataRoot.string().c_str());
-#endif
- net::minecraft::mod::runtime::host().shutdown();
+ initializeEmptyServerModHost(appDataRoot / "runtime");
  net::minecraft::server::host::ServerLaunchConfig config;
  config.storageRoot = makeTempWorldRoot("mp_keepalive");
  config.worldName = "IdleConnectionWorld";

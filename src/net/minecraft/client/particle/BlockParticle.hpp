@@ -39,11 +39,12 @@ class BlockParticle : public Particle {
  [[nodiscard]] int getGroup() const override {
   return 1;
  }
+ // Vanilla ids ride the shared terrain atlas the particle pass already binds;
+ // only a mod texture needs its own bind.
  [[nodiscard]] int boundTextureGl(texture::TextureManager& textureManager) const override {
-  if(!net::minecraft::registry::TextureRegistry::isCustomTexture(textureId)) {
-   return -1;
-  }
-  return render::resolveBlockTexture(textureId, textureManager, render::AtlasDomain::Terrain).glId;
+  const render::ResolvedTexture resolved =
+      render::resolveBlockTexture(textureId, textureManager, render::AtlasDomain::Terrain);
+  return resolved.isModTexture ? resolved.glId : -1;
  }
  void render(render::Tessellator& tessellator,
              float partialTicks,

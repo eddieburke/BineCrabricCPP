@@ -34,7 +34,10 @@ struct BakedVertex {
  float x = 0.0f;
  float y = 0.0f;
  float z = 0.0f;
- // Normalized texture coordinates (0..1 across the face's texture).
+ // Normalized texture coordinates: 0..1 across the batch's own texture image.
+ // JSON models divide their face uvs by the model's "texture_size" (Blockbench
+ // semantics, default 16x16) to get here, so the texture's real pixel size
+ // never enters the mapping. Every draw path consumes this same convention.
  float u = 0.0f;
  float v = 0.0f;
 };
@@ -51,10 +54,11 @@ struct BakedQuad {
  BakedVertex vertices[4];
 };
 // Quads grouped by resolved texture path so draws bind each texture once.
-// An empty texturePath marks an untextured batch colored per quad.
+// An empty texturePath marks an untextured batch colored per quad; its
+// textureId stays -1 so block draws fall back to the block's own texture.
 struct BakedTextureBatch {
  std::string texturePath;
- int textureId = 0;
+ int textureId = -1;
  std::vector<BakedQuad> quads;
 };
 // Axis-aligned bounds over all baked vertices, in model space (0..1 units).
@@ -63,24 +67,26 @@ struct BakedBounds {
  float max[3] = {0.0f, 0.0f, 0.0f};
  bool empty = true;
 };
+// Immutable once stored. Chunk-mesh workers read baked models off the render
+// thread, so nothing here may be written after baking — the GPU buffers a world
+// draw needs live in a render-thread-owned cache keyed by handle instead of
+// being lazily filled through a const model.
 struct BakedModel {
  std::vector<BakedTextureBatch> batches;
  BakedBounds bounds;
- // GPU-uploaded vertex buffers (one per batch), lazily built on first world
- // draw. Only accessed from the render thread; mutable so const lookups can
- // cache them without external maps.
- mutable std::vector<net::minecraft::client::render::TessellatorMesh> gpuMeshes;
- mutable bool gpuMeshesBuilt = false;
 };
-// Recomputes bounds from the current batches; call after building quads.
+// Recomputes bounds from the current batches; call after building quads and
+// before the model is handed to storeBakedModel (which freezes it).
 void computeBakedBounds(BakedModel& model);
 // Loads and bakes a JSON model from a mod's assets (resolving parent chains),
 // caching by (modId, path). Returns a handle >= 1, or 0 with error set.
 int loadBakedModel(const std::string& modId, const std::string& path, std::string& error);
 // Cache entry points for external bakers (e.g. voxel sprite extrusion).
 [[nodiscard]] int bakedModelHandleForKey(const std::string& key) noexcept;
+// Takes ownership and publishes the model as immutable; the handle it returns
+// stays valid, and points at the same object, for the rest of the process.
 int storeBakedModel(const std::string& key, std::unique_ptr<BakedModel> baked);
-// Looks up a previously loaded model; nullptr for unknown handles.
+// Looks up a previously stored model; nullptr for unknown handles.
 [[nodiscard]] const BakedModel* bakedModelForHandle(int handle) noexcept;
 // Placement transform for a model instance. Matches minecraft.model.draw: the
 // anchor (x, y, z) is where model-space (0.5, pivotY, 0.5) lands, and is also
@@ -116,18 +122,6 @@ struct ModelRaycastHit {
 // maxDistance. Returns false if nothing is hit.
 bool raycastModelInstances(double ox, double oy, double oz, double dx, double dy, double dz, double maxDistance,
                            ModelRaycastHit& hit);
-struct ManualBlockVertex {
- double x = 0.0;
- double y = 0.0;
- double z = 0.0;
- double u = 0.0;
- double v = 0.0;
-};
-bool parseModelCallback(lua_State* state, int index, int& ref, std::string& error);
-bool emitManualBlockModelQuad(
-    const ManualBlockVertex* vertices, int textureId, float red, float green, float blue, float alpha);
-bool emitManualItemModelQuad(
-    const ManualBlockVertex* vertices, int textureId, float red, float green, float blue, float alpha);
 // Per-coordinate jitter applied to a baked model's quads at draw time (see
 // coordinate_bounds/coordinate_color on register_block): scale/offset are
 // applied around the model's (0.5, 0.5, 0.5) pivot in model space, color is
@@ -144,9 +138,6 @@ struct BakedQuadTransform {
  float colorG = 1.0f;
  float colorB = 1.0f;
 };
-// Emits a baked JSON model (ModelRegistry handle) into the active manual block
-// or item draw context, mapping each batch texture into the mod texture atlas.
-bool drawBakedModelQuads(int handle, const BakedQuadTransform& transform = {});
 bool drawLuaBlockWorld(client::render::block::BlockRenderManager& manager, block::Block& block, int x, int y, int z);
 void drawLuaBlockInventory(client::render::block::BlockRenderManager& manager,
                            block::Block& block,

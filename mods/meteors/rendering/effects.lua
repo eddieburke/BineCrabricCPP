@@ -1,5 +1,5 @@
 -- Meteors Rendering: Visual effects, trails, and model rendering
-local config = require("meteors.config")
+local config = require("config")
 local rendering = {}
 
 local TAU = config.tau
@@ -112,12 +112,12 @@ function rendering.renderMeteor(meteor, camera, geologyModule)
   local modelHandle = geologyModule.buildModel(meteor.kind, meteor.variant, meteor.thermal)
   
   if modelHandle then
-    -- Render the meteor model
-    minecraft.render.push()
-    minecraft.render.translate(meteor.x, meteor.y, meteor.z)
-    minecraft.render.scale(meteor.size, meteor.size, meteor.size)
-    minecraft.render.model(modelHandle)
-    minecraft.render.pop()
+    minecraft.model.draw(modelHandle, {
+      x = meteor.x,
+      y = meteor.y,
+      z = meteor.z,
+      scale = meteor.size,
+    })
   end
   
   -- Render trail

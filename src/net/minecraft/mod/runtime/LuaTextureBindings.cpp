@@ -13,15 +13,14 @@ using namespace net::minecraft::mod::lua;
 namespace {
 int luaTextureBind(lua_State* state) {
  LuaApi& api = luaApi();
- if(api.gettop(state) < 1) {
-  api.pushboolean(state, 0);
-  return 1;
+ LuaArgs args(state);
+ int textureId = 0;
+ int unit = 0;
+ if(!args.integer(1, textureId) || (args.count() >= 2 && !args.integer(2, unit))) {
+  return args.fail("minecraft.texture.bind expects (texture_id, unit?)");
  }
- const int textureId = static_cast<int>(api.tointegerx(state, 1, nullptr));
- const int unit = api.gettop(state) >= 2 ? static_cast<int>(api.tointegerx(state, 2, nullptr)) : 0;
  if(textureId < 0 || unit < 0 || unit > 31) {
-  api.pushboolean(state, 0);
-  return 1;
+  return args.fail("minecraft.texture.bind received an invalid texture id or unit");
  }
  client::gl::GLCore::ensureLoaded();
  if(unit != 0 && client::gl::GLCore::activeTexture == nullptr) {
@@ -57,38 +56,36 @@ const client::texture::RasterImage* cachedRaster(const std::string& path) {
 }
 int luaTextureSize(lua_State* state) {
  LuaApi& api = luaApi();
- const std::string path =
-     api.gettop(state) >= 1 && api.type(state, 1) == kLuaTString ? luaString(state, 1, "") : std::string();
+ LuaArgs args(state);
+ std::string path;
+ if(!args.string(1, path)) {
+  return args.fail("minecraft.texture.size expects (path)");
+ }
  const auto* img = cachedRaster(path);
  api.createtable(state, 0, 2);
- setField(state, "width", img != nullptr ? img->width : 0);
- setField(state, "height", img != nullptr ? img->height : 0);
+ setField(state, "width", img->width);
+ setField(state, "height", img->height);
  return 1;
 }
 int luaTexturePixel(lua_State* state) {
  LuaApi& api = luaApi();
- int isNumber = 0;
- const std::string path =
-     api.gettop(state) >= 1 && api.type(state, 1) == kLuaTString ? luaString(state, 1, "") : std::string();
- const int x = static_cast<int>(api.tonumberx(state, 2, &isNumber));
- const int y = static_cast<int>(api.tonumberx(state, 3, &isNumber));
- const auto* img = cachedRaster(path);
- int a = 0;
- int r = 0;
- int g = 0;
- int b = 0;
- if(img != nullptr && x >= 0 && y >= 0 && x < img->width && y < img->height) {
-  const std::uint32_t pixel = img->argb[static_cast<std::size_t>(y) * img->width + x];
-  b = static_cast<int>(pixel & 0xFF);
-  g = static_cast<int>((pixel >> 8) & 0xFF);
-  r = static_cast<int>((pixel >> 16) & 0xFF);
-  a = static_cast<int>((pixel >> 24) & 0xFF);
+ LuaArgs args(state);
+ std::string path;
+ int x = 0;
+ int y = 0;
+ if(!args.string(1, path) || !args.integer(2, x) || !args.integer(3, y)) {
+  return args.fail("minecraft.texture.pixel expects (path, x, y)");
  }
+ const auto* img = cachedRaster(path);
+ if(x < 0 || y < 0 || x >= img->width || y >= img->height) {
+  return args.fail("minecraft.texture.pixel coordinates are outside the image");
+ }
+ const std::uint32_t pixel = img->argb[static_cast<std::size_t>(y) * img->width + x];
  api.createtable(state, 0, 4);
- setField(state, "a", a);
- setField(state, "r", r);
- setField(state, "g", g);
- setField(state, "b", b);
+ setField(state, "a", static_cast<int>((pixel >> 24) & 0xFF));
+ setField(state, "r", static_cast<int>((pixel >> 16) & 0xFF));
+ setField(state, "g", static_cast<int>((pixel >> 8) & 0xFF));
+ setField(state, "b", static_cast<int>(pixel & 0xFF));
  return 1;
 }
 #else

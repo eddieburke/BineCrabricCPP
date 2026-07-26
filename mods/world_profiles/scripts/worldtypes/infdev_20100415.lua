@@ -554,11 +554,11 @@ return {
   end,
   generate = function(event)
     local state = state_for(event.world_seed)
-    if event.stage == minecraft.generation.stages.terrain then
+    if event.stage == "terrain" then
       terrain(event, state)
-    elseif event.stage == minecraft.generation.stages.surface then
+    elseif event.stage == "surface" then
       surface(event, state)
-    elseif event.stage == minecraft.generation.stages.features then
+    elseif event.stage == "features" then
       features(event, state)
     end
   end,

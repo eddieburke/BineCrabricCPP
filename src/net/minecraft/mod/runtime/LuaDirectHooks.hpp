@@ -5,7 +5,6 @@
 #include "net/minecraft/mod/runtime/LuaEventId.hpp"
 #include "net/minecraft/mod/events/ClientEvents.hpp"
 #include "net/minecraft/mod/events/EntityEvents.hpp"
-#include "net/minecraft/mod/events/TileEntityEvents.hpp"
 #include "net/minecraft/mod/events/WorldEvents.hpp"
 #include "net/minecraft/mod/runtime/ModHost.hpp"
 #include "net/minecraft/mod/runtime/LuaEventId.hpp"
@@ -49,6 +48,9 @@ struct CameraSetupEvent {
 };
 struct RenderFrameEvent {
  float tickDelta = 0.0f;
+ // Carried so the hook can establish a mod context and Lua can query the world
+ // (minecraft.entities.*) from a render-frame callback.
+ World* world = nullptr;
 };
 struct FovEvent {
  entity::LivingEntity* camera = nullptr;
@@ -96,6 +98,7 @@ struct WorldRenderEvent {
  float sunAzimuthDegrees = 0.0f;
  float sunAltitudeDegrees = 90.0f;
  bool shadowPass = false;
+ int excludedEntityId = -1;
 };
 struct FirstPersonHandRenderEvent {
  entity::LivingEntity* camera = nullptr;
@@ -184,8 +187,6 @@ void dispatchLuaHook(int eventIndex, Fill fill, Read read);
 }
 void invalidateLuaHookCache();
 [[nodiscard]] bool isSupportedLuaEvent(std::string_view event);
-void subscribeLuaCallback(const std::shared_ptr<ModHost::LoadedLuaMod>& mod,
-                          const ModHost::LoadedLuaMod::Callback& callback);
 using LifecycleListener = std::function<void(LifecyclePhase, LifecyclePhase)>;
 void registerLifecycleListener(int order, LifecycleListener listener);
 void fireLifecycle(LifecyclePhase previous, LifecyclePhase current);
@@ -193,6 +194,7 @@ using ChunkStageListener =
     std::function<void(world::gen::ChunkGenerationEvent&)>;
 void registerChunkStageListener(world::gen::ChunkStage stage, int priority, ChunkStageListener listener);
 void fireChunkGeneration(world::gen::ChunkGenerationEvent& event);
+[[nodiscard]] std::size_t chunkStageListenerCount(world::gen::ChunkStage stage);
 void luaHookClientTick(ClientTickEvent& event);
 void luaHookRenderFrame(RenderFrameEvent& event);
 void luaHookFirstPersonHand(FirstPersonHandRenderEvent& event);
@@ -207,7 +209,6 @@ void luaHookWorldStart(WorldStartEvent& event);
 void luaHookWorldOpen(WorldOpenEvent& event);
 void luaHookWorldTick(WorldTickEvent& event);
 void luaHookEntityTick(EntityTickEvent& event);
-void luaHookTileEntityTick(TileEntityTickEvent& event);
 void luaHookCreateWorld(CreateWorldEvent& event);
 void luaHookBlockInteract(BlockInteractEvent& event);
 void luaHookEntityInteract(EntityInteractEvent& event);
@@ -225,7 +226,6 @@ void luaHookScreenUi(ScreenUiEvent& event);
 void luaHookScreenEvent(LuaScreenEvent& event);
 #endif
 void luaHookPreEntityRender(PreEntityRenderEvent& event);
-void luaHookPreTileEntityRender(PreTileEntityRenderEvent& event);
 void luaHookEntitySpawn(EntitySpawnEvent& event);
 void luaHookEntityRemove(EntityRemoveEvent& event);
 } // namespace net::minecraft::mod::runtime

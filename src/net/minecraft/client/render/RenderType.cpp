@@ -120,7 +120,6 @@ RenderType::RenderType(std::string name,
                        bool hasTexture,
                        bool hasColor,
                        bool hasNormals,
-                       bool hasLightmap,
                        std::string programName,
                        State state,
                        std::string worldProgramKey)
@@ -129,7 +128,6 @@ RenderType::RenderType(std::string name,
       hasTexture_(hasTexture),
       hasColor_(hasColor),
       hasNormals_(hasNormals),
-      hasLightmap_(hasLightmap),
       programName_(std::move(programName)),
       state_(state),
       worldProgramKey_(std::move(worldProgramKey)) {
@@ -290,44 +288,44 @@ RenderType::State entityCutoutState() {
 } // namespace
 RenderType& RenderType::solid() {
  static RenderType instance =
-     RenderType("solid", 0x0004, true, true, true, true, "", solidState(), "gbuffers_terrain");
+     RenderType("solid", 0x0004, true, true, true, "", solidState(), "gbuffers_terrain");
  return instance;
 }
 RenderType& RenderType::cutout() {
  static RenderType instance =
-     RenderType("cutout", 0x0004, true, true, true, false, "", cutoutState(), "gbuffers_entities");
+     RenderType("cutout", 0x0004, true, true, true, "", cutoutState(), "gbuffers_entities");
  return instance;
 }
 RenderType& RenderType::translucent() {
  static RenderType instance =
-     RenderType("translucent", 0x0004, true, true, true, true, "", translucentState(), "gbuffers_terrain");
+     RenderType("translucent", 0x0004, true, true, true, "", translucentState(), "gbuffers_terrain");
  return instance;
 }
 RenderType& RenderType::gui() {
- static RenderType instance = RenderType("gui", 0x0004, false, true, false, false, "rendertype_gui", guiState());
+ static RenderType instance = RenderType("gui", 0x0004, false, true, false, "rendertype_gui", guiState());
  return instance;
 }
 RenderType& RenderType::guiTextured() {
  static RenderType instance =
-     RenderType("gui_textured", 0x0004, true, true, false, false, "rendertype_gui_textured", guiState());
+     RenderType("gui_textured", 0x0004, true, true, false, "rendertype_gui_textured", guiState());
  return instance;
 }
 RenderType& RenderType::guiItem3D() {
  static RenderType instance =
-     RenderType("gui_item_3d", 0x0004, true, true, true, false, "", guiItem3DState(), "gbuffers_entities");
+     RenderType("gui_item_3d", 0x0004, true, true, true, "", guiItem3DState(), "gbuffers_entities");
  return instance;
 }
 RenderType& RenderType::text() {
- static RenderType instance = RenderType("text", 0x0004, true, true, false, false, "rendertype_text", textState());
+ static RenderType instance = RenderType("text", 0x0004, true, true, false, "rendertype_text", textState());
  return instance;
 }
 RenderType& RenderType::sky() {
- static RenderType instance = RenderType("sky", 0x0004, false, false, false, false, "", skyState(), "gbuffers_sky");
+ static RenderType instance = RenderType("sky", 0x0004, false, false, false, "", skyState(), "gbuffers_sky");
  return instance;
 }
 RenderType& RenderType::entityCutout() {
  static RenderType instance =
-     RenderType("entity_cutout", 0x0004, true, true, true, false, "", entityCutoutState(), "gbuffers_entities");
+     RenderType("entity_cutout", 0x0004, true, true, true, "", entityCutoutState(), "gbuffers_entities");
  return instance;
 }
 } // namespace net::minecraft::client::render

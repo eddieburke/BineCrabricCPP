@@ -18,31 +18,38 @@ using namespace net::minecraft::mod::lua;
 namespace {
 int luaChunkSetBlock(lua_State* state) {
  LuaApi& api = luaApi();
+ LuaArgs args(state);
  const int argOffset = 1;
- if(!LuaChunkContext::hasActiveChunk() || api.gettop(state) < 4 + argOffset) {
+ int localX = 0;
+ int y = 0;
+ int localZ = 0;
+ int blockId = 0;
+ if(!LuaChunkContext::hasActiveChunk() || !args.integer(1 + argOffset, localX) ||
+    !args.integer(2 + argOffset, y) || !args.integer(3 + argOffset, localZ) ||
+    !args.integer(4 + argOffset, blockId)) {
   return 0;
  }
- const int localX = luaIntArg(state, 1 + argOffset);
- const int y = luaIntArg(state, 2 + argOffset);
- const int localZ = luaIntArg(state, 3 + argOffset);
- const int blockId = luaIntArg(state, 4 + argOffset);
  api.pushboolean(state, LuaChunkContext::setBlock(localX, y, localZ, blockId) ? 1 : 0);
  return 1;
 }
 int luaChunkFillBlock(lua_State* state) {
  LuaApi& api = luaApi();
+ LuaArgs args(state);
  const int argOffset = 1;
- if(!LuaChunkContext::hasActiveChunk() || api.gettop(state) < 7 + argOffset) {
+ int x1 = 0;
+ int y1 = 0;
+ int z1 = 0;
+ int x2 = 0;
+ int y2 = 0;
+ int z2 = 0;
+ int blockId = 0;
+ if(!LuaChunkContext::hasActiveChunk() || !args.integer(1 + argOffset, x1) ||
+    !args.integer(2 + argOffset, y1) || !args.integer(3 + argOffset, z1) ||
+    !args.integer(4 + argOffset, x2) || !args.integer(5 + argOffset, y2) ||
+    !args.integer(6 + argOffset, z2) || !args.integer(7 + argOffset, blockId)) {
   api.pushinteger(state, 0);
   return 1;
  }
- int x1 = luaIntArg(state, 1 + argOffset);
- int y1 = luaIntArg(state, 2 + argOffset);
- int z1 = luaIntArg(state, 3 + argOffset);
- int x2 = luaIntArg(state, 4 + argOffset);
- int y2 = luaIntArg(state, 5 + argOffset);
- int z2 = luaIntArg(state, 6 + argOffset);
- const int blockId = luaIntArg(state, 7 + argOffset);
  if(x1 > x2) {
   std::swap(x1, x2);
  }
@@ -73,57 +80,64 @@ int luaChunkFillBlock(lua_State* state) {
 }
 int luaChunkGetBlock(lua_State* state) {
  LuaApi& api = luaApi();
+ LuaArgs args(state);
  const int argOffset = 1;
- if(!LuaChunkContext::hasActiveChunk() || api.gettop(state) < 3 + argOffset) {
+ int localX = 0;
+ int y = 0;
+ int localZ = 0;
+ if(!LuaChunkContext::hasActiveChunk() || !args.integer(1 + argOffset, localX) ||
+    !args.integer(2 + argOffset, y) || !args.integer(3 + argOffset, localZ)) {
   api.pushinteger(state, 0);
   return 1;
  }
- const int localX = luaIntArg(state, 1 + argOffset);
- const int y = luaIntArg(state, 2 + argOffset);
- const int localZ = luaIntArg(state, 3 + argOffset);
  api.pushinteger(state, LuaChunkContext::getBlock(localX, y, localZ));
  return 1;
 }
 int luaChunkGetHeight(lua_State* state) {
  LuaApi& api = luaApi();
+ LuaArgs args(state);
  const int argOffset = 1;
- if(!LuaChunkContext::hasActiveChunk() || api.gettop(state) < 2 + argOffset) {
+ int localX = 0;
+ int localZ = 0;
+ if(!LuaChunkContext::hasActiveChunk() || !args.integer(1 + argOffset, localX) ||
+    !args.integer(2 + argOffset, localZ)) {
   api.pushinteger(state, 0);
   return 1;
  }
- const int localX = luaIntArg(state, 1 + argOffset);
- const int localZ = luaIntArg(state, 2 + argOffset);
  api.pushinteger(state, LuaChunkContext::getHeight(localX, localZ));
  return 1;
 }
 [[nodiscard]] World* luaActiveWorld() {
  World* world = LuaChunkContext::activeWorld();
  if(world == nullptr) {
-  world = contextOrClientWorld();
+  world = activeModWorld();
  }
  return world;
 }
 int luaWorldBlockId(lua_State* state) {
  LuaApi& api = luaApi();
- if(api.type(state, 1) != kLuaTString) {
+ LuaArgs args(state);
+ std::string name;
+ if(!args.string(1, name)) {
   api.pushinteger(state, 0);
   return 1;
  }
- api.pushinteger(state, blockIdFromName(luaString(state, 1, "").c_str()));
+ api.pushinteger(state, blockIdFromName(name.c_str()));
  return 1;
 }
 int luaWorldRandom(lua_State* state) {
  LuaApi& api = luaApi();
+ LuaArgs args(state);
  int bound = 1000;
- if(api.gettop(state) >= 1 && api.type(state, 1) == kLuaTNumber) {
-  bound = luaIntArg(state, 1, bound);
+ if(args.count() >= 1 && !args.integer(1, bound)) {
+  api.pushinteger(state, 0);
+  return 1;
  }
  World* world = luaActiveWorld();
  api.pushinteger(state, worldRandomInt(world, bound));
  return 1;
 }
 int luaWorldIsNight(lua_State* state) {
- (void)state;
  LuaApi& api = luaApi();
  World* world = luaActiveWorld();
  api.pushboolean(state, worldIsNight(world) ? 1 : 0);
@@ -137,8 +151,13 @@ int luaWorldGetTime(lua_State* state) {
 }
 int luaWorldTopSolidY(lua_State* state) {
  LuaApi& api = luaApi();
- const int x = luaIntArg(state, 1);
- const int z = luaIntArg(state, 2);
+ LuaArgs args(state);
+ int x = 0;
+ int z = 0;
+ if(!args.integer(1, x) || !args.integer(2, z)) {
+  api.pushinteger(state, -1);
+  return 1;
+ }
  World* world = luaActiveWorld();
  if(world == nullptr) {
   api.pushinteger(state, -1);
@@ -149,10 +168,19 @@ int luaWorldTopSolidY(lua_State* state) {
 }
 int luaWorldGetHeightmap(lua_State* state) {
  LuaApi& api = luaApi();
- const int originX = luaIntArg(state, 1);
- const int originZ = luaIntArg(state, 2);
- const int width = std::clamp(luaIntArg(state, 3, 128), 1, 512);
- const int height = std::clamp(luaIntArg(state, 4, 128), 1, 512);
+ LuaArgs args(state);
+ int originX = 0;
+ int originZ = 0;
+ int width = 128;
+ int height = 128;
+ if(!args.integer(1, originX) || !args.integer(2, originZ) ||
+    (args.count() >= 3 && !args.integer(3, width)) ||
+    (args.count() >= 4 && !args.integer(4, height))) {
+  api.pushnil(state);
+  return 1;
+ }
+ width = std::clamp(width, 1, 512);
+ height = std::clamp(height, 1, 512);
  World* world = luaActiveWorld();
  if(world == nullptr) {
   api.pushnil(state);
@@ -222,22 +250,22 @@ int luaWorldPlayer(lua_State* state) {
 }
 int luaWorldSpawnEntity(lua_State* state) {
  LuaApi& api = luaApi();
- if(api.gettop(state) < 2 || api.type(state, 1) != kLuaTString) {
+ LuaArgs args(state);
+ std::string entityId;
+ if(!args.string(1, entityId) || args.count() < 2) {
   api.pushboolean(state, 0);
   return 1;
  }
- const std::string entityId = luaString(state, 1, "");
  double x = 0.0;
  double y = 0.0;
  double z = 0.0;
- if(api.type(state, 2) == kLuaTTable) {
-  x = luaFloatField(state, 2, "x", luaFloatAt(state, 2, 1, 0.0f));
-  y = luaFloatField(state, 2, "y", luaFloatAt(state, 2, 2, 64.0f));
-  z = luaFloatField(state, 2, "z", luaFloatAt(state, 2, 3, 0.0f));
- } else {
-  x = luaDoubleArg(state, 2);
-  y = api.gettop(state) >= 3 ? luaDoubleArg(state, 3) : 64.0;
-  z = api.gettop(state) >= 4 ? luaDoubleArg(state, 4) : 0.0;
+ if(args.table(2)) {
+  x = luaDoubleField(state, 2, "x", luaFloatAt(state, 2, 1, 0.0f));
+  y = luaDoubleField(state, 2, "y", luaFloatAt(state, 2, 2, 64.0f));
+  z = luaDoubleField(state, 2, "z", luaFloatAt(state, 2, 3, 0.0f));
+ } else if(!args.number(2, x) || !args.optionalNumber(3, y) || !args.optionalNumber(4, z)) {
+  api.pushboolean(state, 0);
+  return 1;
  }
  World* world = luaActiveWorld();
  api.pushboolean(
@@ -246,32 +274,50 @@ int luaWorldSpawnEntity(lua_State* state) {
 }
 int luaWorldCountEntities(lua_State* state) {
  LuaApi& api = luaApi();
- if(api.type(state, 1) != kLuaTString) {
+ LuaArgs args(state);
+ std::string name;
+ if(!args.string(1, name)) {
   api.pushinteger(state, 0);
   return 1;
  }
  World* world = luaActiveWorld();
- api.pushinteger(state, countEntitiesByName(world, luaString(state, 1, "").c_str()));
+ api.pushinteger(state, countEntitiesByName(world, name.c_str()));
  return 1;
 }
 int luaWorldGetBlock(lua_State* state) {
  LuaApi& api = luaApi();
- if(api.gettop(state) < 3) {
+ LuaArgs args(state);
+ int x = 0;
+ int y = 0;
+ int z = 0;
+ if(!args.integer(1, x) || !args.integer(2, y) || !args.integer(3, z)) {
   api.pushinteger(state, 0);
   return 1;
  }
- const int x = luaIntArg(state, 1);
- const int y = luaIntArg(state, 2);
- const int z = luaIntArg(state, 3);
  World* world = luaActiveWorld();
  api.pushinteger(state, getBlockIdAt(world, x, y, z));
  return 1;
 }
+int luaWorldGetBlockMeta(lua_State* state) {
+ LuaApi& api = luaApi();
+ LuaArgs args(state);
+ int x = 0;
+ int y = 0;
+ int z = 0;
+ if(!args.integer(1, x) || !args.integer(2, y) || !args.integer(3, z)) {
+  api.pushinteger(state, 0);
+  return 1;
+ }
+ World* world = luaActiveWorld();
+ api.pushinteger(state, world != nullptr ? world->getBlockMeta(x, y, z) : 0);
+ return 1;
+}
 int luaWorldSetTime(lua_State* state) {
  LuaApi& api = luaApi();
+ LuaArgs args(state);
  int isNumber = 0;
  const long long tick = api.tointegerx(state, 1, &isNumber);
- if(isNumber == 0) {
+ if(args.count() < 1 || isNumber == 0) {
   api.pushboolean(state, 0);
   return 1;
  }
@@ -286,17 +332,18 @@ int luaWorldSetTime(lua_State* state) {
 }
 int luaParticlesSpawn(lua_State* state) {
  LuaApi& api = luaApi();
- if(api.type(state, 1) != kLuaTTable) {
+ LuaArgs args(state);
+ if(!args.table(1)) {
   api.pushboolean(state, 0);
   return 1;
  }
  const int tableIndex = 1;
- const double x = luaFloatField(state, tableIndex, "x", 0.0f);
- const double y = luaFloatField(state, tableIndex, "y", 64.0f);
- const double z = luaFloatField(state, tableIndex, "z", 0.0f);
- const double vx = luaFloatField(state, tableIndex, "vx", 0.0f);
- const double vy = luaFloatField(state, tableIndex, "vy", 0.0f);
- const double vz = luaFloatField(state, tableIndex, "vz", 0.0f);
+ const double x = luaDoubleField(state, tableIndex, "x", 0.0);
+ const double y = luaDoubleField(state, tableIndex, "y", 64.0);
+ const double z = luaDoubleField(state, tableIndex, "z", 0.0);
+ const double vx = luaDoubleField(state, tableIndex, "vx", 0.0);
+ const double vy = luaDoubleField(state, tableIndex, "vy", 0.0);
+ const double vz = luaDoubleField(state, tableIndex, "vz", 0.0);
  const float scale = luaFloatField(state, tableIndex, "scale", 4.0f);
  const float red = luaFloatField(state, tableIndex, "r", 1.0f);
  const float green = luaFloatField(state, tableIndex, "g", 1.0f);
@@ -336,9 +383,10 @@ void installWorldApi(lua_State* state, ModHost::LoadedLuaMod& mod) {
  (void)mod;
  pushFunctionTable(state,
                    {
-                       {"block_id", luaWorldBlockId},
-                       {"get_block", luaWorldGetBlock},
-                       {"random", luaWorldRandom},
+                        {"block_id", luaWorldBlockId},
+                        {"get_block", luaWorldGetBlock},
+                        {"get_block_meta", luaWorldGetBlockMeta},
+                        {"random", luaWorldRandom},
                        {"is_night", luaWorldIsNight},
                        {"get_time", luaWorldGetTime},
                        {"get_top_y", luaWorldTopSolidY},

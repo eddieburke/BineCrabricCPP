@@ -92,7 +92,7 @@ The loading sequence for each mod is:
 ```
 1. C++ bindings     → installMinecraftTable() populates the `minecraft` global
                        with CoreApi, WorldApi, EntityApi, BlockApi, ItemApi,
-                       RecipeApi, TileEntityApi, and (on client) CameraApi,
+                       RecipeApi and (on client) CameraApi,
                        FboApi, TextureApi, ModelApi, SoundApi, InventoryApi,
                        ScreenApi, RenderApi, RaycastApi, GenericModApi.
 
@@ -179,14 +179,12 @@ minecraft.events = {
   mouse_button           = "mouse_button",
   player_travel          = "player_travel",
   pre_entity_render      = "pre_entity_render",
-  pre_tile_entity_render = "pre_tile_entity_render",
   raycast                = "raycast",
   render_frame           = "render_frame",
   screen_event           = "screen_event",
   screen_region          = "screen_region",
   screen_ui              = "screen_ui",
   tick_rate              = "tick_rate",
-  tile_entity_tick       = "tile_entity_tick",
   world_color            = "world_color",
   world_open             = "world_open",
   world_render           = "world_render",
@@ -297,17 +295,17 @@ end
 
 ```lua
 -- Run once when any block is right-clicked
-minecraft.on(minecraft.events.block_interact, { right_click = true, once = true }, function(event)
+minecraft.on("block_interact", { right_click = true, once = true }, function(event)
   print("Block right-clicked at " .. event.x .. "," .. event.y .. "," .. event.z)
 end)
 
 -- Filter by block_id with a set
-minecraft.on(minecraft.events.block_interact, { block_id = { [1] = true, [2] = true } }, function(event)
+minecraft.on("block_interact", { block_id = { [1] = true, [2] = true } }, function(event)
   -- matches block_id 1 or 2
 end)
 
 -- Filter by predicate
-minecraft.on(minecraft.events.world_tick, { when = minecraft.util.real_world }, function(event)
+minecraft.on("world_tick", { when = minecraft.util.real_world }, function(event)
   -- only in real worlds (not mod generation)
 end)
 ```

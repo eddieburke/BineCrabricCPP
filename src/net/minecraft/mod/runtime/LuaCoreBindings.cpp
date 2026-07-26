@@ -14,6 +14,8 @@
 #include "net/minecraft/client/option/GameOptions.hpp"
 #include "net/minecraft/client/option/KeyBinding.hpp"
 #include "net/minecraft/client/option/OptionRegistry.hpp"
+#include "net/minecraft/entity/ItemEntity.hpp"
+#include "net/minecraft/item/ItemStack.hpp"
 #endif
 #include <chrono>
 #include <fstream>
@@ -555,38 +557,6 @@ int luaOn(lua_State* state) {
  callback.functionRef = ref;
  callback.priority = priority;
  callback.eventIndex = eventIndex;
- if(top >= 4 && api.type(state, 4) == kLuaTTable) {
-  api.pushnil(state);
-  while(api.next(state, 4) != 0) {
-   if(api.type(state, -2) == kLuaTString) {
-    const std::string filterKey = luaString(state, -2, "");
-    const int valueType = api.type(state, -1);
-    if(filterKey != "once" && filterKey != "priority" && filterKey != "when" && !filterKey.empty()) {
-     ModHost::LoadedLuaMod::ScalarFilter filter;
-     filter.key = filterKey;
-     bool usable = false;
-     if(valueType == kLuaTString) {
-      filter.kind = ModHost::LoadedLuaMod::ScalarFilter::Kind::Str;
-      filter.str = luaString(state, -1, "");
-      usable = true;
-     } else if(valueType == kLuaTNumber) {
-      int isNumber = 0;
-      filter.kind = ModHost::LoadedLuaMod::ScalarFilter::Kind::Num;
-      filter.num = api.tonumberx(state, -1, &isNumber);
-      usable = isNumber != 0;
-     } else if(valueType == kLuaTBoolean) {
-      filter.kind = ModHost::LoadedLuaMod::ScalarFilter::Kind::Bool;
-      filter.boolean = api.toboolean(state, -1) != 0;
-      usable = true;
-     }
-     if(usable) {
-      callback.filters.push_back(std::move(filter));
-     }
-    }
-   }
-   api.settop(state, -2);
-  }
- }
  mod->callbacks.push_back(std::move(callback));
  invalidateLuaHookCache();
  api.pushboolean(state, 1);
@@ -647,11 +617,43 @@ int luaIsClient(lua_State* state) {
  luaApi().pushboolean(state, modContextIsClient() ? 1 : 0);
  return 1;
 }
+int luaDropItem(lua_State* state) {
+ LuaApi& api = luaApi();
+ const int itemId = luaIntArg(state, 1, 0);
+ const int count = luaIntArg(state, 2, 1);
+ const double x = luaDoubleArg(state, 3, 0.0);
+ const double y = luaDoubleArg(state, 4, 0.0);
+ const double z = luaDoubleArg(state, 5, 0.0);
+ if(itemId <= 0 || count <= 0) {
+  api.pushboolean(state, 0);
+  return 1;
+ }
+#ifdef MINECRAFT_NATIVE_EXPORTS
+ if(client::Minecraft::INSTANCE == nullptr || client::Minecraft::INSTANCE->world == nullptr) {
+  api.pushboolean(state, 0);
+  return 1;
+ }
+ auto* item = new entity::ItemEntity(client::Minecraft::INSTANCE->world, x, y, z, ItemStack(itemId, count, 0));
+ item->pickupDelay = 10;
+ client::Minecraft::INSTANCE->world->spawnEntity(item);
+ api.pushboolean(state, 1);
+ return 1;
+#else
+ (void)itemId;
+ (void)count;
+ (void)x;
+ (void)y;
+ (void)z;
+ api.pushboolean(state, 0);
+ return 1;
+#endif
+}
 void installCoreApi(lua_State* state, ModHost::LoadedLuaMod& mod) {
  LuaApi& api = luaApi();
  bindModFunction(state, &mod, "log", luaLog);
  bindModFunction(state, &mod, "notify", luaNotify);
  bindModFunction(state, &mod, "is_client", luaIsClient);
+ bindModFunction(state, &mod, "drop_item", luaDropItem);
  bindModFunction(state, &mod, "asset_path", luaAssetPath);
  bindModFunction(state, &mod, "list_assets", luaListAssets);
  bindModFunction(state, &mod, "read_asset", luaReadAsset);
@@ -672,7 +674,7 @@ void installCoreApi(lua_State* state, ModHost::LoadedLuaMod& mod) {
 #ifdef MINECRAFT_NATIVE_EXPORTS
  pushFunctionTable(state, {{"get", luaOptionsGet}, {"keys", luaOptionsKeys}, {"cycle", luaOptionsCycle}});
  api.setfield(state, -2, "options");
- installModSettingsApi(state, mod);
 #endif
+ installModSettingsApi(state, mod);
 }
 } // namespace net::minecraft::mod::runtime

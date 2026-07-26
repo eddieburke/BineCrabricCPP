@@ -9,7 +9,7 @@
 | World Profiles | Create World/World Open option map: selected profile id and numeric option strings. |
 | Seed Finder | Imported JSON rule/objective arrays; the encoder is hand-built and only safely targets controlled data. |
 | Northern Stars | NBT catalogue asset, validated before cached billboard build. |
-| Item Drop Physics | A file named `.json`, but loaded with `minetest.deserialize`; it is not a normal JSON contract. |
+| Item Drop Physics | `database.json`, decoded and encoded with `minecraft.util.json_decode` and `minecraft.util.json_encode`. |
 | Realtime coastlines/cities | Coastline geometry and `cities.json`, with bundled place fallback. |
 
 ## Verified runtime limitations
@@ -19,17 +19,13 @@
 - The engine defines the `attack_damage` hook but does not publish it in
   `minecraft.events`; Critical Hit cannot register its callback through the
   public table.
-- `minecraft.events.tick` and `minecraft.events.item_spawn` do not exist.
+- `"tick"` and `"item_spawn"` do not exist.
   Item Drop Physics uses both and fails before useful simulation begins.
 
 ### Simulation defects
 
 - Box3D collision calls missing `core.vec3_lerp`, compares plain tables with
   `<` when forming a pair key, and leaks query-bound vectors.
-- The Item Drop Physics world calls missing `water.sample_water` and reads
-  undefined speed/sleep constants. Its water module uses Minetest names and
-  requires a block callback its own callers omit. No item entity render/writeback
-  is wired from its simulation records.
 - The shared particle update reads undefined `options.initial_alpha`; its stats
   count is unreachable.
 

@@ -32,7 +32,16 @@ class Screen : public gui::DrawContext {
  [[nodiscard]] virtual std::string_view getScreenUiId() const {
   return {};
  }
- void publishScreenUi(std::string_view region, int* stackedButtonY = nullptr);
+ /// Factory that rebuilds an equivalent copy of this screen, or null when the screen
+ /// cannot be reconstructed from scratch. Screens that a mod can be launched *from*
+ /// override this so the mod screen knows where "back" goes, without the mod runtime
+ /// having to know any concrete screen type.
+ [[nodiscard]] virtual ScreenFactory getReopenFactory() const {
+  return nullptr;
+ }
+ void publishScreenUi(std::string_view region,
+                      int* stackedButtonY = nullptr,
+                      std::vector<widget::ActionButtonWidget*>* stackedButtons = nullptr);
  virtual void tick() {
  }
  virtual void render(int mouseX, int mouseY, float tickDelta);

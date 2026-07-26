@@ -27,6 +27,25 @@ struct PoseHookRegistration {
  std::shared_ptr<ModHost::LoadedLuaMod> mod;
  int ref = 0;
 };
+// entities.* are reachable both as minecraft.entities.get(id) and as
+// handle:get(id); the latter passes the table as argument 1.
+int selfArgOffset(lua_State* state) {
+ return luaApi().type(state, 1) == kLuaTTable ? 1 : 0;
+}
+// The shared_ptr the host holds for the mod running this call. Pose hooks keep
+// the mod alive for as long as the hook is registered.
+std::shared_ptr<ModHost::LoadedLuaMod> currentLuaModShared(lua_State* state) {
+ const ModHost::LoadedLuaMod* mod = currentLuaMod(state);
+ if(mod == nullptr) {
+  return nullptr;
+ }
+ for(const auto& loaded : loadedLuaMods()) {
+  if(loaded.get() == mod) {
+   return loaded;
+  }
+ }
+ return nullptr;
+}
 std::unordered_map<std::string, std::vector<PoseHookRegistration>>& globalPoseHooks() {
  static std::unordered_map<std::string, std::vector<PoseHookRegistration>> hooks;
  return hooks;
@@ -43,7 +62,7 @@ void pushPosePart(lua_State* state, const net::minecraft::mod::ModelPartPose& pa
 }
 void pushPoseTable(lua_State* state, const net::minecraft::mod::EntityRenderPose& pose) {
  LuaApi& api = luaApi();
- api.createtable(state, 0, 11);
+ api.createtable(state, 0, 13);
  setField(state, "body_yaw", pose.bodyYaw);
  setField(state, "head_yaw", pose.headYaw);
  setField(state, "head_pitch", pose.headPitch);
@@ -120,55 +139,42 @@ void applyPoseHook(const PoseHookRegistration& hook,
       pop(state, 1);
      });
 }
+// Shared by both pose-hook registrars: validate (key, function), take a registry
+// ref to the callback, and hand back the owning mod. Returns nullptr on reject.
+std::shared_ptr<ModHost::LoadedLuaMod> takePoseHookRef(lua_State* state, int keyType, int& refOut) {
+ LuaApi& api = luaApi();
+ if(api.gettop(state) < 2 || api.type(state, 1) != keyType || api.type(state, 2) != kLuaTFunction) {
+  return nullptr;
+ }
+ std::shared_ptr<ModHost::LoadedLuaMod> owner = currentLuaModShared(state);
+ if(owner == nullptr) {
+  return nullptr;
+ }
+ api.pushvalue(state, 2);
+ refOut = api.ref(state, kLuaRegistryIndex);
+ return owner;
+}
 int luaRegisterGlobalPoseHook(lua_State* state) {
  LuaApi& api = luaApi();
- ModHost::LoadedLuaMod* mod = currentLuaMod(state);
- if(mod == nullptr || api.gettop(state) < 2 || api.type(state, 1) != kLuaTString ||
-    api.type(state, 2) != kLuaTFunction) {
-  api.pushboolean(state, 0);
-  return 1;
- }
- std::shared_ptr<ModHost::LoadedLuaMod> owner;
- for(const auto& loaded : loadedLuaMods()) {
-  if(loaded.get() == mod) {
-   owner = loaded;
-   break;
-  }
- }
+ int ref = 0;
+ std::shared_ptr<ModHost::LoadedLuaMod> owner = takePoseHookRef(state, kLuaTString, ref);
  if(owner == nullptr) {
   api.pushboolean(state, 0);
   return 1;
  }
- const std::string entityType = luaString(state, 1, "");
- api.pushvalue(state, 2);
- const int ref = api.ref(state, kLuaRegistryIndex);
- globalPoseHooks()[entityType].push_back({owner, ref});
+ globalPoseHooks()[luaString(state, 1, "")].push_back({std::move(owner), ref});
  api.pushboolean(state, 1);
  return 1;
 }
 int luaRegisterLocalPoseHook(lua_State* state) {
  LuaApi& api = luaApi();
- ModHost::LoadedLuaMod* mod = currentLuaMod(state);
- if(mod == nullptr || api.gettop(state) < 2 || api.type(state, 1) != kLuaTNumber ||
-    api.type(state, 2) != kLuaTFunction) {
-  api.pushboolean(state, 0);
-  return 1;
- }
- std::shared_ptr<ModHost::LoadedLuaMod> owner;
- for(const auto& loaded : loadedLuaMods()) {
-  if(loaded.get() == mod) {
-   owner = loaded;
-   break;
-  }
- }
+ int ref = 0;
+ std::shared_ptr<ModHost::LoadedLuaMod> owner = takePoseHookRef(state, kLuaTNumber, ref);
  if(owner == nullptr) {
   api.pushboolean(state, 0);
   return 1;
  }
- const int entityId = luaIntArg(state, 1);
- api.pushvalue(state, 2);
- const int ref = api.ref(state, kLuaRegistryIndex);
- localPoseHooks()[entityId].push_back({owner, ref});
+ localPoseHooks()[luaIntArg(state, 1)].push_back({std::move(owner), ref});
  api.pushboolean(state, 1);
  return 1;
 }
@@ -182,59 +188,48 @@ int luaUnregisterLocalPoseHook(lua_State* state) {
  api.pushboolean(state, localPoseHooks().erase(entityId) > 0 ? 1 : 0);
  return 1;
 }
-World* entityWorld() {
- return contextOrClientWorld();
+void clearLocalPoseHook(int entityId) {
+ localPoseHooks().erase(entityId);
 }
-bool canMutateEntity(const World* world, const net::minecraft::mod::lua::LuaModEntity* entity = nullptr) {
- return world != nullptr && (!world->isRemote() || (entity != nullptr && entity->isClientLocal()));
-}
-bool canSpawnModEntity(const World* world, bool clientLocal) {
- return world != nullptr && (!world->isRemote() || clientLocal);
-}
-bool ownsModEntity(lua_State* state, const net::minecraft::mod::lua::LuaModEntity* entity) {
- ModHost::LoadedLuaMod* mod = currentLuaMod(state);
- return mod != nullptr && entity != nullptr && entity->registryId().starts_with(mod->modId + ":");
-}
-std::unordered_map<int, net::minecraft::entity::Entity*> buildIndex(World* world) {
- std::unordered_map<int, net::minecraft::entity::Entity*> index;
- if(world != nullptr) {
-  for(net::minecraft::entity::Entity* e : world->entities()) {
-   if(e != nullptr) {
-    index[e->id] = e;
-   }
+// A world holds a flat entity list, so an id lookup is a scan either way. The
+// map this used to build cost one allocation-heavy pass per call — including on
+// entities.get, which then used exactly one entry of it.
+net::minecraft::entity::Entity* findEntity(World* world, int id) {
+ if(world == nullptr) {
+  return nullptr;
+ }
+ for(net::minecraft::entity::Entity* e : world->entities()) {
+  if(e != nullptr && e->id == id) {
+   return e;
   }
  }
- return index;
+ return nullptr;
 }
-void applySingleEntityState(lua_State* state,
-                            int id,
-                            int entryIndex,
-                            const std::unordered_map<int, net::minecraft::entity::Entity*>& index) {
+// The handle passed to a mod-entity mutator has to name a LuaModEntity this mod
+// registered, and the client may only touch its own client-local replicas.
+net::minecraft::mod::lua::LuaModEntity* ownedModEntity(lua_State* state, World* world, int id) {
+ auto* entity = dynamic_cast<net::minecraft::mod::lua::LuaModEntity*>(findEntity(world, id));
+ if(entity == nullptr || (world->isRemote() && !entity->isClientLocal())) {
+  return nullptr;
+ }
+ ModHost::LoadedLuaMod* mod = currentLuaMod(state);
+ if(mod == nullptr || !entity->registryId().starts_with(mod->modId + ":")) {
+  return nullptr;
+ }
+ return entity;
+}
+void applySingleEntityState(lua_State* state, net::minecraft::mod::lua::LuaModEntity* e, int entryIndex) {
  LuaApi& api = luaApi();
- auto it = index.find(id);
- if(it == index.end()) {
-  return;
- }
- auto* e = dynamic_cast<net::minecraft::mod::lua::LuaModEntity*>(it->second);
- if(e == nullptr) {
-  return;
- }
  if(api.getfield(state, entryIndex, "x") == kLuaTNumber) {
-  int isNumber = 0;
-  const double x = api.tonumberx(state, -1, &isNumber);
-  const double y = luaFloatField(state, entryIndex, "y", static_cast<float>(e->y));
-  const double z = luaFloatField(state, entryIndex, "z", static_cast<float>(e->z));
-  e->setPosition(x, y, z);
+  e->setPosition(api.tonumberx(state, -1, nullptr),
+                 luaDoubleField(state, entryIndex, "y", e->y),
+                 luaDoubleField(state, entryIndex, "z", e->z));
  }
  pop(state, 1);
  if(api.getfield(state, entryIndex, "vx") == kLuaTNumber) {
-  int isNumber = 0;
-  const double vx = api.tonumberx(state, -1, &isNumber);
-  const double vy = luaFloatField(state, entryIndex, "vy", static_cast<float>(e->velocityY));
-  const double vz = luaFloatField(state, entryIndex, "vz", static_cast<float>(e->velocityZ));
-  e->velocityX = vx;
-  e->velocityY = vy;
-  e->velocityZ = vz;
+  e->velocityX = api.tonumberx(state, -1, nullptr);
+  e->velocityY = luaDoubleField(state, entryIndex, "vy", e->velocityY);
+  e->velocityZ = luaDoubleField(state, entryIndex, "vz", e->velocityZ);
  }
  pop(state, 1);
  if(api.getfield(state, entryIndex, "yaw") == kLuaTNumber) {
@@ -252,45 +247,35 @@ void applySingleEntityState(lua_State* state,
 }
 int luaEntitiesApplyState(lua_State* state) {
  LuaApi& api = luaApi();
- World* world = entityWorld();
+ World* world = activeModWorld();
  if(world == nullptr || api.gettop(state) < 2 || api.type(state, 1) != kLuaTTable ||
     api.type(state, 2) != kLuaTTable) {
   api.pushboolean(state, 0);
   return 1;
  }
- const int id = luaIntField(state, 1, "id", -1);
- auto index = buildIndex(world);
- const auto it = index.find(id);
- const auto* modEntity = it != index.end() ? dynamic_cast<net::minecraft::mod::lua::LuaModEntity*>(it->second) : nullptr;
- if(!canMutateEntity(world, modEntity) || !ownsModEntity(state, modEntity)) {
+ auto* entity = ownedModEntity(state, world, luaIntField(state, 1, "id", -1));
+ if(entity == nullptr) {
   api.pushboolean(state, 0);
   return 1;
  }
- applySingleEntityState(state, id, 2, index);
+ applySingleEntityState(state, entity, 2);
  api.pushboolean(state, 1);
  return 1;
 }
 int luaEntitiesTeleport(lua_State* state) {
  LuaApi& api = luaApi();
- World* world = entityWorld();
+ World* world = activeModWorld();
  if(world == nullptr || api.gettop(state) < 2 || api.type(state, 1) != kLuaTTable) {
   api.pushboolean(state, 0);
   return 1;
  }
  const int id = luaIntField(state, 1, "id", -1);
- auto index = buildIndex(world);
- auto it = index.find(id);
- if(it == index.end() || it->second == nullptr) {
+ // The server may move any entity; a client only its own client-local replicas.
+ net::minecraft::entity::Entity* e =
+     world->isRemote() ? ownedModEntity(state, world, id) : findEntity(world, id);
+ if(e == nullptr) {
   api.pushboolean(state, 0);
   return 1;
- }
- net::minecraft::entity::Entity* e = it->second;
- if(world->isRemote()) {
-  const auto* modEntity = dynamic_cast<net::minecraft::mod::lua::LuaModEntity*>(e);
-  if(!canMutateEntity(world, modEntity) || !ownsModEntity(state, modEntity)) {
-   api.pushboolean(state, 0);
-   return 1;
-  }
  }
  double x = e->x;
  double y = e->y;
@@ -321,24 +306,13 @@ int luaEntitiesTeleport(lua_State* state) {
 }
 int luaEntitiesRemove(lua_State* state) {
  LuaApi& api = luaApi();
- World* world = entityWorld();
+ World* world = activeModWorld();
  if(world == nullptr || api.gettop(state) < 1 || api.type(state, 1) != kLuaTTable) {
   api.pushboolean(state, 0);
   return 1;
  }
- const int id = luaIntField(state, 1, "id", -1);
- auto index = buildIndex(world);
- auto it = index.find(id);
- if(it == index.end()) {
-  api.pushboolean(state, 0);
-  return 1;
- }
- auto* e = dynamic_cast<net::minecraft::mod::lua::LuaModEntity*>(it->second);
+ auto* e = ownedModEntity(state, world, luaIntField(state, 1, "id", -1));
  if(e == nullptr) {
-  api.pushboolean(state, 0);
-  return 1;
- }
- if(!canMutateEntity(world, e) || !ownsModEntity(state, e)) {
   api.pushboolean(state, 0);
   return 1;
  }
@@ -386,26 +360,7 @@ void pushEntityHandle(lua_State* state, net::minecraft::entity::Entity* e) {
  setField(state, "on_ground", e->onGround);
  if(type == "Item") {
   auto* item = static_cast<net::minecraft::entity::ItemEntity*>(e);
-  const ItemStack& stack = item->stack;
-  setField(state, "item_id", stack.itemId);
-  setField(state, "item_count", stack.count);
-  setField(state, "item_damage", stack.damage);
-  setField(state, "item_max_damage", stack.getMaxDamage());
-#ifdef MINECRAFT_NATIVE_EXPORTS
-  const bool modTex = net::minecraft::client::render::item::ItemModelRenderer::usesModTexture(stack);
-  if(modTex) {
-   const auto* spec = itemRegistrationSpecForId(stack.itemId);
-   const std::string path = spec != nullptr ? spec->texturePath : std::string();
-   setField(state, "texture_path", path);
-   setField(state, "mod_texture", true);
-   setField(state, "atlas_index", -1);
-  } else {
-   setField(
-       state, "texture_path", net::minecraft::client::render::item::ItemModelRenderer::spriteAtlasPath(stack));
-   setField(state, "mod_texture", false);
-   setField(state, "atlas_index", stack.getTextureId());
-  }
-#endif
+  pushItemStackFields(state, item->stack);
  }
  bindFunctions(state,
                {
@@ -417,14 +372,11 @@ void pushEntityHandle(lua_State* state, net::minecraft::entity::Entity* e) {
 int luaEntitiesList(lua_State* state) {
  LuaApi& api = luaApi();
  api.createtable(state, 0, 16);
- World* world = entityWorld();
+ World* world = activeModWorld();
  if(world == nullptr) {
   return 1;
  }
- int argOffset = 0;
- if(api.type(state, 1) == kLuaTTable) {
-  argOffset = 1;
- }
+ const int argOffset = selfArgOffset(state);
  const std::string filter = api.gettop(state) >= 1 + argOffset && api.type(state, 1 + argOffset) == kLuaTString
                                 ? luaString(state, 1 + argOffset, "")
                                 : std::string();
@@ -446,28 +398,18 @@ int luaEntitiesList(lua_State* state) {
 }
 int luaEntitiesGet(lua_State* state) {
  LuaApi& api = luaApi();
- World* world = entityWorld();
+ World* world = activeModWorld();
  if(world == nullptr || api.gettop(state) < 1) {
   api.pushnil(state);
   return 1;
  }
- int argOffset = 0;
- if(api.type(state, 1) == kLuaTTable) {
-  argOffset = 1;
- }
- const int id = luaIntArg(state, 1 + argOffset);
- auto index = buildIndex(world);
- auto it = index.find(id);
- if(it == index.end()) {
-  api.pushnil(state);
-  return 1;
- }
- pushEntityHandle(state, it->second);
+ // pushEntityHandle(nil) already pushes nil, so a miss needs no special case.
+ pushEntityHandle(state, findEntity(world, luaIntArg(state, 1 + selfArgOffset(state))));
  return 1;
 }
 int luaEntitiesSpawnMod(lua_State* state) {
  LuaApi& api = luaApi();
- World* world = entityWorld();
+ World* world = activeModWorld();
  if(world == nullptr || api.gettop(state) < 2 || api.type(state, 1) != kLuaTString ||
     api.type(state, 2) != kLuaTTable) {
   api.pushnil(state);
@@ -487,8 +429,10 @@ int luaEntitiesSpawnMod(lua_State* state) {
  const double z = luaDoubleField(state, specIndex, "z", 0.0);
  const float yaw = luaFloatField(state, specIndex, "yaw", 0.0f);
  const float pitch = luaFloatField(state, specIndex, "pitch", 0.0f);
+ // The client may only spawn replicas it owns outright; everything else is the
+ // server's to create and replicate.
  const bool clientLocal = luaBoolField(state, specIndex, "client_local", false);
- if(!canSpawnModEntity(world, clientLocal)) {
+ if(world->isRemote() && !clientLocal) {
   api.pushnil(state);
   return 1;
  }

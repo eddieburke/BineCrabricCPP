@@ -371,7 +371,7 @@ minecraft.screen.on_lua_screen("my_mod:config", {
     end
   end,
   key = function(event)
-    if event.key == minecraft.keys.escape then
+    if event.key == minecraft.key_code("escape") then
       event.handled = true -- prevent closing
     end
   end,

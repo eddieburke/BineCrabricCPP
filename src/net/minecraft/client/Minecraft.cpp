@@ -676,7 +676,7 @@ void Minecraft::runRenderPhase(std::int64_t tickDuration, int& frames, std::int6
   options.thirdPerson = false;
  }
  if(!skipGameRender) {
-  mod::RenderFrameEvent rfEvent{timer.partialTick};
+  mod::RenderFrameEvent rfEvent{timer.partialTick, world};
   net::minecraft::mod::runtime::luaHookRenderFrame(rfEvent);
   if(interactionManager != nullptr) {
    interactionManager->update(timer.partialTick);

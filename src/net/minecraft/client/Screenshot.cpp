@@ -12,8 +12,8 @@
 #ifndef NOMINMAX
 #define NOMINMAX
 #endif
-#include <GL/gl.h>
 #include <Windows.h>
+#include <GL/gl.h>
 #include <gdiplus.h>
 namespace net::minecraft::client {
 namespace {

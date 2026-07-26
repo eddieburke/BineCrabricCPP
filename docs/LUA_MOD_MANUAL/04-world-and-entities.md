@@ -14,6 +14,10 @@ Functions under `minecraft.world` allow reading and mutating blocks, lighting, b
 - **Signature**: `minecraft.world.get_block(x: integer, y: integer, z: integer) -> block_id: integer`
 - **Returns**: Numerical block ID at world coordinates `(x, y, z)` (0 if empty/air or out of bounds).
 
+#### `minecraft.world.get_block_meta(x, y, z)`
+- **Signature**: `minecraft.world.get_block_meta(x: integer, y: integer, z: integer) -> meta: integer`
+- **Returns**: The metadata value at world coordinates `(x, y, z)` (0 if empty/air or out of bounds).
+
 #### `minecraft.world.set_block(x, y, z, block_id, meta)`
 - **Signature**: `minecraft.world.set_block(x: integer, y: integer, z: integer, block_id: integer, meta?: integer) -> success: boolean`
 - **Behavior**: Replaces block at `(x, y, z)` with `block_id` and optional metadata value. Triggers block update and lighting recalculation.

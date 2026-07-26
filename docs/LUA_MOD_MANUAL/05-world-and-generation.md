@@ -37,6 +37,23 @@ local block = minecraft.world.get_block(100, 64, 200)
 
 ---
 
+### `minecraft.world.get_block_meta(x, y, z)`
+Get the numeric metadata value at the given world position in the active world.
+
+| Param | Type | Description |
+|-------|------|-------------|
+| `x` | int | World X coordinate |
+| `y` | int | World Y coordinate |
+| `z` | int | World Z coordinate |
+
+**Returns:** integer — block metadata at the position, or `0` if out of bounds or no world.
+
+```lua
+local meta = minecraft.world.get_block_meta(100, 64, 200)
+```
+
+---
+
 ### `minecraft.world.random(bound?)`
 Generate a world-scoped random integer. Uses the active world's random number generator for deterministic/reproducible sequences tied to the world seed.
 
@@ -311,6 +328,8 @@ Apply position, velocity, rotation, and/or custom data to one LuaModEntity. Only
 | `entity` | table | Entity handle table containing `id` |
 | `state` | table | Optional fields: `x`, `y`, `z`, `vx`, `vy`, `vz`, `yaw`, `pitch`, `data` |
 
+`x`, `y`, `z`, `vx`, `vy`, `vz` are all full double precision.
+
 **Returns:** boolean — `true` on success.
 
 ```lua
@@ -468,107 +487,6 @@ minecraft.entities.register_global_pose_hook("Creeper", function(event)
   event.pose.roll = 180
   event.pose.offset_y = 2.0
 end)
-```
-
----
-
-## `minecraft.tile_entities.*`
-
-### `minecraft.tile_entities.list(filter?)`
-List all tile entities (block entities) in the world.
-
-| Param | Type | Description |
-|-------|------|-------------|
-| `filter` | string (optional) | If provided, only returns tile entities whose type ID matches |
-
-**Returns:** array of tile entity handle tables (see handle methods below).
-
-```lua
-local tes = minecraft.tile_entities.list()
-for _, te in ipairs(tes) do
-  print(te:get_id(), te.x, te.y, te.z)
-end
-
--- Filter by type
-local chests = minecraft.tile_entities.list("Chest")
-```
-
----
-
-### `minecraft.tile_entities.get(x, y, z)`
-Get the tile entity handle at a specific world position.
-
-| Param | Type | Description |
-|-------|------|-------------|
-| `x` | int | World X coordinate |
-| `y` | int | World Y coordinate |
-| `z` | int | World Z coordinate |
-
-**Returns:** tile entity handle table, or `nil` if no tile entity at that position.
-
-```lua
-local te = minecraft.tile_entities.get(100, 64, 200)
-```
-
----
-
-### `minecraft.tile_entities.count(filter?)`
-Count tile entities in the world.
-
-| Param | Type | Description |
-|-------|------|-------------|
-| `filter` | string (optional) | Type filter string |
-
-**Returns:** integer — number of tile entities.
-
-```lua
-local total = minecraft.tile_entities.count()
-local chestCount = minecraft.tile_entities.count("Chest")
-```
-
----
-
-### Tile entity handle methods
-
-Handles returned from `list()` and `get()` support the following methods:
-
-| Method | Returns | Description |
-|--------|---------|-------------|
-| `:get_id()` | string or nil | Tile entity type string (e.g. `"Chest"`, `"Furnace"`) |
-| `:get_block_id()` | int | Numeric block ID at this tile entity's position |
-| `:get_block_meta()` | int | Block metadata value |
-| `:is_removed()` | boolean | Whether the tile entity has been removed |
-| `:mark_dirty()` | nothing | Mark the tile entity for saving to disk (server-side only) |
-| `:distance_from(tx, ty, tz)` | double | Euclidean distance from the tile entity to the given point |
-| `:get_world_time()` | double | Current world tick time |
-| `:get_data()` | table or nil | Custom NBT data as a Lua table (only for LuaModBlockEntities) |
-| `:set_data(table)` | nothing | Set custom NBT data (only for LuaModBlockEntities) |
-| `:get_animation_frame()` | int | Current animation frame count (= tick × speed) |
-| `:set_animation_speed(speed)` | nothing | Set animation speed multiplier |
-
-Handles also have read-only fields `x`, `y`, `z` for world position.
-
-```lua
-local te = minecraft.tile_entities.get(100, 64, 200)
-if te then
-  print("ID:", te:get_id())
-  print("Block:", te:get_block_id())
-  print("Meta:", te:get_block_meta())
-  print("Dist from origin:", te:distance_from(0, 0, 0))
-  print("World time:", te:get_world_time())
-  te:mark_dirty()
-
-  -- For mod block entities
-  local data = te:get_data()
-  if data then
-    data.my_custom_field = 42
-    te:set_data(data)
-  end
-
-  -- Animation control
-  print("Frame:", te:get_animation_frame())
-  te:set_animation_speed(2.0)  -- double speed
-end
 ```
 
 ---
@@ -754,7 +672,7 @@ The `terrain`, `surface`, and `carver` stages use raw generation writes (bypass 
 
 ```lua
 -- Replace vanilla terrain with custom blocks
-minecraft.on(minecraft.events.chunk_generation, {}, function(event)
+minecraft.on("chunk_generation", {}, function(event)
   if event.stage == "terrain" and event.moment == "before" then
     event.cancel_vanilla = true
 
@@ -770,7 +688,7 @@ minecraft.on(minecraft.events.chunk_generation, {}, function(event)
 end)
 
 -- Decorate after vanilla features
-minecraft.on(minecraft.events.chunk_generation, {}, function(event)
+minecraft.on("chunk_generation", {}, function(event)
   if event.stage == "features" and event.moment == "after" then
     local chunk = event.chunk
     local h = chunk:get_height(7, 7)
@@ -798,7 +716,7 @@ Fired when the game searches for a valid world spawn point. Can be used to overr
 | `is_overworld` | boolean | Whether this is the Overworld |
 
 ```lua
-minecraft.on(minecraft.events.world_spawn_search, {}, function(event)
+minecraft.on("world_spawn_search", {}, function(event)
   if not event.resolved then
     event.x = 0
     event.y = 70
@@ -826,7 +744,7 @@ Fired when a new world is being created. Cancellable.
 | `options` | table | Map of string key-value pairs persisted in `level.dat` (read-write) |
 
 ```lua
-minecraft.on(minecraft.events.create_world, {}, function(event)
+minecraft.on("create_world", {}, function(event)
   event.options = event.options or {}
   event.options["mymod:difficulty"] = "hard"
   event.options["mymod:starting_items"] = "yes"
@@ -874,7 +792,7 @@ Fired every world tick.
 | `before` | boolean | `true` for pre-tick, `false` for post-tick |
 
 ```lua
-minecraft.on(minecraft.events.world_tick, {}, function(event)
+minecraft.on("world_tick", {}, function(event)
   if event.before then
     -- Pre-tick logic
   else

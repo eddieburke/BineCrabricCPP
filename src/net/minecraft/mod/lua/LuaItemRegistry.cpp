@@ -48,8 +48,7 @@ void registerItemClass(const ItemRegistrationSpec& spec) {
  if(translationKey.empty()) {
   translationKey = "item" + std::to_string(spec.itemId);
  }
- const int textureId = !spec.texturePath.empty() ? registry::TextureRegistry::getOrRegisterTexture(spec.texturePath)
-                                                 : spec.itemsTextureId;
+ const int textureId = registry::TextureRegistry::getOrRegisterTexture(spec.texturePath);
  registerModItemDisplayName(spec);
  const int rawId = spec.itemId - 256;
  (new LuaModItem(rawId, spec.maxDamage))
@@ -57,26 +56,16 @@ void registerItemClass(const ItemRegistrationSpec& spec) {
      ->setMaxCount(spec.maxCount)
      ->setTranslationKey(translationKey);
 }
-void instantiateLuaModItem(const ItemRegistrationSpec& spec) {
- registerItemClass(spec);
-}
 struct ItemTraits {
  using Spec = ItemRegistrationSpec;
  static constexpr const char* kKind = "item";
  static constexpr mod::LifecyclePhase kPhase = mod::LifecyclePhase::Init;
  static void instantiate(const Spec& spec) {
-  instantiateLuaModItem(spec);
+  registerItemClass(spec);
  }
 };
 using ItemRegistry = ModIdRegistry<ItemTraits>;
-bool gItemModelHandOverride = false;
 } // namespace
-[[nodiscard]] bool itemModelHandOverrideActive() {
- return gItemModelHandOverride;
-}
-void setItemModelHandOverride(const bool enabled) {
- gItemModelHandOverride = enabled;
-}
 bool registerItemSpec(const ItemRegistrationSpec& spec, std::string& error) {
  constexpr int kRawIdCount = Item::ITEM_COUNT - 256;
  const int rawId = spec.itemId - 256;
@@ -84,17 +73,8 @@ bool registerItemSpec(const ItemRegistrationSpec& spec, std::string& error) {
   error = "register_item id must be between 256 and " + std::to_string(Item::ITEM_COUNT - 1);
   return false;
  }
- const bool hasModel = spec.modelRef != kLuaNoRef;
- if(spec.texturePath.empty() && spec.itemsTextureId < 0) {
-  error = "register_item requires texture or texture_id";
-  return false;
- }
- if(hasModel && spec.texturePath.empty()) {
-  error = "register_item requires texture for a model";
-  return false;
- }
- if(spec.itemsTextureId > 255) {
-  error = "register_item texture_id must be a vanilla items-atlas index from 0 to 255";
+ if(spec.texturePath.empty()) {
+  error = "register_item requires texture (a mod resource path)";
   return false;
  }
  if(mod::ModLifecycle::currentPhase() == mod::LifecyclePhase::PostInit ||
@@ -110,9 +90,9 @@ bool registerItemSpec(const ItemRegistrationSpec& spec, std::string& error) {
   error = "register_item id is already reserved: " + std::to_string(spec.itemId);
   return false;
  }
- if(hasModel) {
-  (void)registry::TextureRegistry::getOrRegisterTexture(spec.texturePath);
- }
+ // Claim the texture id at script-load time so a model-backed item's sprite
+ // index is stable regardless of when the Init pass instantiates the item.
+ (void)registry::TextureRegistry::getOrRegisterTexture(spec.texturePath);
  ItemRegistry::instance().add(spec.itemId, spec);
  return true;
 }

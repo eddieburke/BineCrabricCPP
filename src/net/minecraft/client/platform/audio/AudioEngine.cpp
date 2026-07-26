@@ -36,10 +36,6 @@ struct SoundLookup {
 };
 [[nodiscard]] std::string normalizeSoundBaseId(const std::string& soundName, bool stripVariantSuffix) {
  std::string baseId = soundName;
- const std::size_t dot = baseId.find('.');
- if(dot != std::string::npos) {
-  baseId = baseId.substr(0, dot);
- }
  if(stripVariantSuffix) {
   while(!baseId.empty() && std::isdigit(static_cast<unsigned char>(baseId.back())) != 0) {
    baseId.pop_back();
@@ -56,7 +52,15 @@ void registerSound(SoundRegistry& registry, const std::string& soundName, const 
  auto sound = std::make_unique<RegisteredSound>();
  sound->id = soundName;
  sound->path = file.generic_string();
- const std::string baseId = normalizeSoundBaseId(soundName, registry.pickRandomVariant);
+ std::string nameWithoutExt = soundName;
+ const std::string ext = file.extension().generic_string();
+ if(!ext.empty() && nameWithoutExt.size() > ext.size()) {
+  const auto pos = nameWithoutExt.rfind(ext);
+  if(pos != std::string::npos && pos + ext.size() == nameWithoutExt.size()) {
+   nameWithoutExt = nameWithoutExt.substr(0, pos);
+  }
+ }
+ const std::string baseId = normalizeSoundBaseId(nameWithoutExt, registry.pickRandomVariant);
  registry.byBaseId[baseId].push_back(sound.get());
  registry.owned.push_back(std::move(sound));
 }

@@ -1,6 +1,6 @@
 # 03 — API Functions
 
-All functions are accessed through the global `minecraft` table injected into every Lua mod's sandbox. Mods also have `os.clock`, `os.date`, `os.difftime`, `os.time`, `math`, `string`, `table`, and the sandboxed `require`/`minecraft.require`. `io`, `debug`, `dofile`, `loadfile`, `package.cpath`, `package.loadlib`, and `package` itself are removed.
+All functions are accessed through the global `minecraft` table injected into every Lua mod's sandbox. Mods also have `os.clock`, `os.date`, `os.difftime`, `os.time`, `math`, `string`, `table`, and sandboxed `require`. `io`, `debug`, `dofile`, `loadfile`, `package.cpath`, and `package.loadlib` are removed.
 
 ---
 
@@ -290,13 +290,13 @@ Subscribes to a game event. The `options` table supports:
 The callback receives the event table and should return the (possibly mutated) event table.
 
 ```lua
-minecraft.on(minecraft.events.client_tick, {priority = 50}, function(event)
+minecraft.on("client_tick", {priority = 50}, function(event)
   -- called every client tick
   return event
 end)
 
 -- Filter by block_id and right_click
-minecraft.on(minecraft.events.block_interact, {
+minecraft.on("block_interact", {
   block_id = 42,
   right_click = true,
   priority = 10
@@ -308,7 +308,7 @@ minecraft.on(minecraft.events.block_interact, {
 end)
 
 -- Using a predicate
-minecraft.on(minecraft.events.entity_tick, {
+minecraft.on("entity_tick", {
   when = function(e) return e.entity_type == "Zombie" end
 }, function(event)
   return event
@@ -321,16 +321,15 @@ See the [event reference](#event-reference) section below for supported event na
 
 ## Lua Helpers
 
-### `minecraft.require(name)`
+### `require(name)`
 
-Safe module loader. Only allows module names matching `[%w_.-]+` (alphanumeric, underscore, dot, hyphen). Path traversal is rejected. Modules are searched via the mod's asset path.
+Lua's sandboxed module loader searches the mod's asset path.
 
 ```lua
-local mylib = minecraft.require("mylib")
-local utils = minecraft.require("utils.helpers")
+local mylib = require("mylib")
+local utils = require("utils.helpers")
 ```
 
-Inside `require`'d files, `require` is also sandboxed to `minecraft.require`.
 
 ### `minecraft.util.clamp(value, min, max)`
 
@@ -442,7 +441,7 @@ NBT values read via `minecraft.read_nbt_asset` are automatically converted to Lu
 
 Depth is limited to 256 levels.
 
-To convert a Lua table back to NBT (e.g. for entity or tile entity data), the engine uses `luaValueToNbt` internally: booleans become bytes, integers become ints, floats become doubles, strings become strings, and tables with string keys become compounds. This conversion is used automatically for entity data, tile entity data, and similar write paths.
+To convert a Lua table back to NBT for entity data, the engine uses `luaValueToNbt` internally: booleans become bytes, integers become ints, floats become doubles, strings become strings, and tables with string keys become compounds.
 
 ---
 
@@ -496,6 +495,14 @@ Returns the block ID at the given world position.
 
 ```lua
 local id = minecraft.world.get_block(100, 64, 200)
+```
+
+### `minecraft.world.get_block_meta(x, y, z)`
+
+Returns the metadata value stored with the block at the given world position.
+
+```lua
+local meta = minecraft.world.get_block_meta(100, 64, 200)
 ```
 
 ### `minecraft.world.random(bound?)`
@@ -635,7 +642,7 @@ Returns an array table of entity handle objects in the current world, optionally
 #### Methods
 
 - `entity:teleport(position | x, y, z, yaw?, pitch?)` — Teleports the entity. Accepts a table `{x, y, z, yaw?, pitch?}` or individual coordinate arguments. Returns `true` on success. Server-side only.
-- `entity:apply_state(state)` — Applies state mutations. Accepts a state table with optional fields `x`, `y`, `z`, `vx`, `vy`, `vz`, `yaw`, `pitch`, and `data`. Returns `true` on success. Server-side only.
+- `entity:apply_state(state)` — Applies state mutations. Accepts a state table with optional fields `x`, `y`, `z`, `vx`, `vy`, `vz`, `yaw`, `pitch`, and `data`. `x`, `y`, `z`, `vx`, `vy`, `vz` are all full double precision. Returns `true` on success. Server-side only.
 - `entity:remove()` — Marks the entity for removal. Returns `true` on success. Server-side only.
 
 ```lua
@@ -764,64 +771,6 @@ end
 
 -- Default player raycast
 local look = minecraft.raycast()
-```
-
----
-
-## Tile Entities
-
-### `minecraft.tile_entities.list(filter?)`
-
-Returns an array of tile entity handles in the current world, optionally filtered by ID string. Each handle is a table with methods (see below).
-
-```lua
-for _, te in ipairs(minecraft.tile_entities.list()) do
-  print(te.x, te.y, te.z, te:get_id())
-end
-```
-
-### `minecraft.tile_entities.get(x, y, z)`
-
-Returns the tile entity handle at the given position, or `nil`.
-
-```lua
-local te = minecraft.tile_entities.get(100, 64, 200)
-```
-
-### `minecraft.tile_entities.count(filter?)`
-
-Returns the count of tile entities, optionally filtered by ID.
-
-```lua
-local n = minecraft.tile_entities.count("mymod:my_tile")
-```
-
-### Tile Entity Handle Methods
-
-Each handle returned by `list()` or `get()` has these methods:
-
-| Method | Returns | Description |
-|---|---|---|
-| `:get_id()` | string | Tile entity registry ID |
-| `:get_block_id()` | int | Block ID at this position |
-| `:get_block_meta()` | int | Block metadata at this position |
-| `:is_removed()` | bool | Whether the entity was removed |
-| `:mark_dirty()` | — | Marks the entity as needing saving (server only) |
-| `:distance_from(x, y, z)` | number | Euclidean distance to point |
-| `:get_world_time()` | number | Current world time in ticks |
-| `:get_data()` | table | (mod tile entities) NBT data table |
-| `:set_data(table)` | — | (mod tile entities, server only) Sets NBT data from a table |
-| `:get_animation_frame()` | int | Current animation frame |
-| `:set_animation_speed(speed)` | — | Sets animation speed multiplier |
-
-```lua
-local te = minecraft.tile_entities.get(100, 64, 200)
-if te then
-  print(te:get_id())
-  print(te:get_block_id())
-  local data = te:get_data()
-  te:set_animation_speed(2.0)
-end
 ```
 
 ---
@@ -1013,12 +962,6 @@ minecraft.render.quads({
   }
 })
 ```
-
-### `minecraft.tessellator.*`
-
-| Function | Description |
-|---|---|
-| `quad({texture?, texture_id?, r?, g?, b?, a?, vertices = {{x, y, z, u, v}, ...}})` | Emits a single quad into the manual block model buffer. Returns `true`/`false`. |
 
 ---
 
@@ -1220,7 +1163,6 @@ All supported event names for `minecraft.on()`:
 | `world_open` | `save_name`, `new_world`, `options` (table) | — |
 | `world_tick` | `remote`, `before` | — |
 | `entity_tick` | `remote`, `canceled`, `entity_id`, `entity_type`, `x`, `y`, `z`, `yaw`, `pitch` | `canceled` |
-| `tile_entity_tick` | `x`, `y`, `z`, `id`, `remote`, `removed`, `canceled`, `world_time`, `animation_frame`, `animation_tick`, `animation_speed`, `entity` | `canceled`, `animation_speed` |
 | `create_world` | `save_name`, `seed`, `canceled`, `options` (table) | `canceled`, `options` |
 | `block_interact` | `x`, `y`, `z`, `block_id`, `side`, `right_click`, `remote`, `canceled`, `handled`, `has_player`, `local_player`, `has_item`, `player_x/y/z`, `player_yaw/pitch`, `item_id/count/damage/max_damage/damageable` | `canceled`, `handled`, `item_count`, `item_damage` |
 | `entity_interact` | `attack`, `remote`, `canceled`, `handled`, `sneaking`, `has_player`, `local_player`, `has_target`, `player_yaw/pitch`, `has_item`, `item_id/count/damage`, `entity_id`, `entity_type`, `target_id` | `canceled`, `handled`, `item_count` |
@@ -1235,7 +1177,6 @@ All supported event names for `minecraft.on()`:
 | `screen_event` | `screen_id`, `phase`, `width`, `height`, `mouse_x`, `mouse_y`, `tick_delta`, `key`, `char`, `button`, `released`, `delta`, `handled` | `handled` |
 | `world_spawn_search` | `x`, `y`, `z`, `resolved` | `x`, `y`, `z`, `resolved` |
 | `pre_entity_render` | `entity_id`, `entity_type`, `tick_delta`, `canceled`, item fields | `canceled` |
-| `pre_tile_entity_render` | `x`, `y`, `z`, `id`, `tick_delta`, `canceled` | `canceled` |
 | `entity_spawn` | `entity_id`, `entity_type`, item fields | — |
 | `entity_remove` | `entity_id`, `entity_type`, item fields | — |
 

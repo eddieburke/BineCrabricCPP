@@ -53,13 +53,18 @@ minecraft.register_block({
 Registers a block with a crafting recipe.
 
 ```lua
+-- assert() the load: model.load returns nil plus an error message on failure,
+-- and a block with no model is rejected at registration.
+local model = assert(minecraft.model.load("models/stone_bricks.json"))
+
 minecraft.register_block({
   id = 98,
-  texture_id = 7,            -- uses vanilla texture index 7 (stone)
+  texture = "mods/stone_bricks/stone_bricks.png",
   hardness = 2.0,
   resistance = 10.0,
   translation_key = "stoneBrick",
   material = "stone",
+  model = model,
 })
 
 minecraft.register_shaped_recipe({
@@ -74,7 +79,7 @@ minecraft.log("info", "stone_bricks registered from Lua")
 ```
 
 **Key patterns:**
-- `texture_id` references a vanilla texture atlas index instead of a custom texture path.
+- Every block ships a JSON model and its own texture; `assert()` the `model.load` so a bad path fails loudly.
 - `register_shaped_recipe` supports 2×2 and 3×3 patterns with up to 3 keys (`key`, `key2`, `key3`).
 - Use `minecraft.log("info", ...)` for debug output.
 
@@ -122,9 +127,9 @@ local function set_block(chunk, x, y, z, id)
   end
 end
 
-minecraft.on(minecraft.events.chunk_generation, {
-  stage = minecraft.generation.stages.features,
-  moment = minecraft.generation.moments.after,
+minecraft.on("chunk_generation", {
+  stage = "features",
+  moment = "after",
   vanilla_stage_ran = true,
   when = minecraft.util.real_world,
   priority = 100,
@@ -165,9 +170,7 @@ minecraft.register_block({
   full_cube = false,
   stack_on_same = true,         -- stacking behavior like fences
   model = iron_bars_model,
-  item = {
-    texture = "mods/iron_bars/iron_bars.png",
-  },
+  item_texture = "mods/iron_bars/iron_bars.png",
 })
 
 minecraft.register_shaped_recipe({
@@ -181,7 +184,7 @@ minecraft.register_shaped_recipe({
 
 **Key patterns:**
 - `collision_height` sets a non-full-block collision box.
-- The nested `item` table defines a separate texture for the inventory item.
+- `item_texture` supplies the flat sprite for the block's inventory and dropped-item form; without it the item renders as a miniature of the block model.
 - `stack_on_same` enables visual stacking when placed on the same block type.
 
 ---
@@ -208,7 +211,7 @@ local function spawn_crit_particles(x, y, z)
   end
 end
 
-minecraft.on(minecraft.events.attack_damage, {
+minecraft.on("attack_damage", {
   has_player = true,
   has_target = true,
   priority = 100,
@@ -239,7 +242,7 @@ Implements a double-tap-to-sprint mod using `client_tick`, `player_travel`, and 
 ```lua
 local SPRINT_MULTIPLIER = 1.45
 
-minecraft.on(minecraft.events.client_tick, {
+minecraft.on("client_tick", {
   before = false,
   after_world = false,
   priority = 100,
@@ -247,7 +250,7 @@ minecraft.on(minecraft.events.client_tick, {
   update_sprint_state()
 end)
 
-minecraft.on(minecraft.events.player_travel, {
+minecraft.on("player_travel", {
   is_local_player = true,
   priority = 100,
 }, function(event)
@@ -261,7 +264,7 @@ minecraft.on(minecraft.events.player_travel, {
   end
 end)
 
-minecraft.on(minecraft.events.fov, { priority = 100 }, function(event)
+minecraft.on("fov", { priority = 100 }, function(event)
   if sprinting then
     event.fov = event.fov * 1.08
   end
@@ -311,7 +314,7 @@ local function spawn_meteor_shower()
   end
 end
 
-minecraft.on(minecraft.events.client_tick, {
+minecraft.on("client_tick", {
   before = false, paused = false, has_world = true, priority = 100,
 }, function(event)
   if event.is_night and minecraft.world.random(CHANCE_TO_SPAWN) == 0 then
@@ -319,7 +322,7 @@ minecraft.on(minecraft.events.client_tick, {
   end
 end)
 
-minecraft.on(minecraft.events.key_press, {
+minecraft.on("key_press", {
   key = METEOR_KEY,
   pressed = true,
   handled = false,
@@ -340,26 +343,25 @@ end)
 
 ## 8. `item_drop_physics` — Custom Physics Simulation
 
-**Files:** `scripts/main.lua`, `scripts/box3d.lua`, `assets/item_physics.json`, `mod.json`
+**Files:** `scripts/main.lua`, `physics/engine.lua`, `physics/materials.lua`, `rendering/item_renderer.lua`, `mod.json`
 
-Full physics engine for dropped items. Hides vanilla entity rendering, runs a rigid-body sim, and draws tumbling 3D models.
+Self-contained physics engine for dropped items, written entirely in Lua. Hides vanilla entity rendering, runs a rigid-body sim, and draws tumbling 3D models.
 
 ### Main loop
 
 ```lua
-minecraft.on(minecraft.events.pre_entity_render, { entity_type = "Item" }, function(event)
+minecraft.on("pre_entity_render", { entity_type = "Item" }, function(event)
   event.canceled = true
   return event
 end)
 
-minecraft.on(minecraft.events.client_tick, {
+minecraft.on("client_tick", {
   before = false, after_world = true, paused = false,
 }, function(event)
   if not event.has_world then return end
-  local list = minecraft.entities.list("Item")
-  simulate_items(list)
-  resolve_item_collisions(list)
-  queue_server_sync(list)
+  local items = minecraft.entities.list("Item")
+  sync_sims(items)                    -- spawn/retire bodies, follow server corrections
+  engine.step(sims, 1 / 20)
 end)
 
 local function render_items(event)
@@ -367,8 +369,9 @@ local function render_items(event)
   for _, item in ipairs(minecraft.entities.list("Item") or {}) do
     local s = sims[item.id]
     if s then
-      local q = box3d.quat_slerp(s.prev_orientation, s.body.orientation, d)
-      local yaw, pitch, roll = box3d.quat_to_euler_degrees(q)
+      local qx, qy, qz, qw =
+        engine.quat_slerp(s.pqx, s.pqy, s.pqz, s.pqw, s.qx, s.qy, s.qz, s.qw, d)
+      local yaw, pitch, roll = engine.quat_to_euler_degrees(qx, qy, qz, qw)
       local transform = {
         x = s.px + (s.x - s.px) * d,
         y = s.py + (s.y - s.py) * d,
@@ -384,23 +387,33 @@ local function render_items(event)
   end
 end
 
-minecraft.on(minecraft.events.world_render, {
-  stage = minecraft.render.stages.terrain_opaque,
-  moment = minecraft.render.moments.after,
+minecraft.on("world_render", {
+  stage = "terrain_opaque",
+  moment = "after",
 }, function(event)
   if not event.shadow_pass then render_items(event) end
 end)
 
-minecraft.on(minecraft.events.world_render, {
-  stage = minecraft.render.stages.entities,
-  moment = minecraft.render.moments.after,
+minecraft.on("world_render", {
+  stage = "entities",
+  moment = "after",
 }, function(event)
   if not event.shadow_pass then return end
   render_items(event)
 end)
 ```
 
-`box3d.lua` supplies swept block collision, contact impulses, quaternion rotation, and AABB depenetration. `main.lua` adds iterative item-item contact resolution, including restitution, friction, resting support, and swept collision for fast throws.
+### Engine
+
+`physics/engine.lua` is the whole simulation, in about 350 lines:
+
+- Body state is flat scalars (`x/y/z`, `vx/vy/vz`, `qx/qy/qz/qw`, `wx/wy/wz`) on one table, so a tick allocates nothing.
+- Movement is a swept AABB resolved Y-then-X-then-Z against `minecraft.world.get_block_collisions` — one host call per body per tick, substepped only when a body would otherwise tunnel.
+- Contacts apply restitution plus Coulomb friction and couple the removed slip into angular velocity, so items tumble and then roll to a stop.
+- Buoyancy is `(rho_water / rho_body) * g` scaled by submersion, sampled from the block column the body occupies; flowing water adds a lateral push.
+- Resting bodies sleep and are skipped entirely, with a cheap wake test every 10 ticks.
+
+`physics/materials.lua` maps item ids to one of ten material classes, each defined by four numbers (`density`, `friction`, `restitution`, `drag`). Mass, buoyancy, angular damping and rest thresholds are all derived from those plus the item's model bounds — there is no per-item tuning table, and unknown or modded ids fall back to `generic` rather than needing an entry.
 
 **Entity fields used on Item entities:**
 - `item_id`, `item_count`, `item_damage`, `texture_path`, `atlas_index`, `mod_texture`
@@ -408,13 +421,12 @@ end)
 
 **Key patterns:**
 - `pre_entity_render` with `entity_type = "Item"` and `canceled = true` hides vanilla rendering.
-- Server-side synchronization applies simulated item positions; client callbacks only queue updates.
+- The server stays authoritative over item positions. The client sim runs freely and is snapped back onto the entity only when it drifts past ~1.5 blocks, so it never fights server corrections. (`apply_state` cannot mutate vanilla entities on a remote world — it only works on mod-owned entities.)
 - Render in `terrain_opaque/after` for normal shader lighting, then in `entities/after` only when `event.shadow_pass` is true to write the shadow map.
 - `minecraft.render.set_item_entity_override(true)` can be used to take full control.
 - `minecraft.model.draw_item(id, damage, transform)` draws the item's real 3D model.
-- `minecraft.model.voxel({...})` creates a voxel model from a texture for fallback rendering.
-- `minecraft.model.item_bounds(id, damage)` returns the model's AABB for physics.
-- `minecraft.require("scripts.box3d")` provides collision and rigid-body math.
+- `minecraft.model.build({quads = ...})` builds the voxel fallback model from the item's icon texels.
+- `minecraft.model.item_bounds(id, damage)` returns the model's AABB, used for both the collision half-extents and the derived mass.
 - `minecraft.world.get_block_collisions(query)` retrieves block collision AABBs.
 
 ---
@@ -446,8 +458,7 @@ minecraft.register_block({
   opaque = false,
   full_cube = false,
   model = tv_model,
-  tile_entity = "tv",          -- tile entity type
-  item = { texture = "mods/camera/tv_icon.png" },
+  item_texture = "mods/camera/tv_icon.png",
 })
 ```
 
@@ -467,7 +478,7 @@ minecraft.entities.spawn_mod("camera:tripod", {
 local channel = minecraft.camera.create_display_size()
 
 -- Render camera view to channel
-minecraft.on(minecraft.events.render_frame, {}, function(event)
+minecraft.on("render_frame", {}, function(event)
   minecraft.camera.render(channel, x, y + 0.4, z, camera.yaw, camera.pitch or 0, 0, 70, event.tick_delta)
 end)
 ```
@@ -475,13 +486,13 @@ end)
 ### Full-screen viewfinder with `screen_event`
 
 ```lua
-minecraft.on(minecraft.events.block_interact, {
+minecraft.on("block_interact", {
   right_click = true, block_id = TV_BLOCK
 }, function(event)
   minecraft.screen.open(SCREEN_ID, { title = "Camera Viewfinder", pause = false })
 end)
 
-minecraft.on(minecraft.events.screen_event, { screen_id = SCREEN_ID }, function(event)
+minecraft.on("screen_event", { screen_id = SCREEN_ID }, function(event)
   if event.phase == "init" then
     -- Add channel selector buttons
     minecraft.screen.add_button(bx, by, 50, 20, "CH " .. i, function()
@@ -500,9 +511,9 @@ end)
 ### Custom entity rendering
 
 ```lua
-minecraft.on(minecraft.events.world_render, {
-  stage = minecraft.render.stages.entities,
-  moment = minecraft.render.moments.after,
+minecraft.on("world_render", {
+  stage = "entities",
+  moment = "after",
 }, function(event)
   for _, entity in ipairs(client_entities("camera:tripod")) do
     minecraft.model.draw(tripod_bottom_model, {
@@ -520,7 +531,6 @@ end)
 - `minecraft.camera.destroy(channel)` cleans up.
 - `render_frame` event is the correct place to call `camera.render`.
 - `screen_event` phases include `init`, `render`, `tick`, `key`, `mouse`, `scroll`, and `close`; callbacks are event-driven.
-- Tile entities accessed via `minecraft.tile_entities.get(x, y, z)`.
 
 ---
 
@@ -533,7 +543,7 @@ Creative item browser that adds a side panel to the inventory screen with scroll
 ### Side panel region hook
 
 ```lua
-minecraft.on(minecraft.events.screen_region, {
+minecraft.on("screen_region", {
   screen_id = minecraft.screen.ids.inventory,
   region = minecraft.screen.regions.side_panel,
   priority = 100,
@@ -546,7 +556,7 @@ end)
 ### Rendering the item grid
 
 ```lua
-minecraft.on(minecraft.events.screen_region, {
+minecraft.on("screen_region", {
   screen_id = minecraft.screen.ids.inventory,
   region = minecraft.screen.regions.side_panel,
   phase_name = "render",
@@ -572,7 +582,7 @@ end)
 ### Click handling and giving items
 
 ```lua
-minecraft.on(minecraft.events.screen_region, {
+minecraft.on("screen_region", {
   phase_name = "mouse_click",
 }, function(event)
   local item_id = item_at(items, event, event.mouse_x, event.mouse_y)
@@ -587,7 +597,7 @@ end)
 ### Toggle with keybind
 
 ```lua
-minecraft.on(minecraft.events.key_press, {
+minecraft.on("key_press", {
   key = minecraft.key_code("o"),
   pressed = true,
   priority = 100,
@@ -615,7 +625,7 @@ Adds world type profiles (Default, Flatlands, Highlands, Caves) with custom gene
 ### Hooking world creation
 
 ```lua
-minecraft.on(minecraft.events.create_world, {}, function(event)
+minecraft.on("create_world", {}, function(event)
   event.options = event.options or {}
   event.options[PROFILE_OPTION] = selected_id()
   event.options[FLAT_HEIGHT_OPTION] = tostring(options.flat_height)
@@ -658,9 +668,9 @@ minecraft.screen.settings({
 ### Custom chunk generation
 
 ```lua
-minecraft.on(minecraft.events.chunk_generation, {
-  stage = minecraft.generation.stages.surface,
-  moment = minecraft.generation.moments.after,
+minecraft.on("chunk_generation", {
+  stage = "surface",
+  moment = "after",
   when = minecraft.util.real_world,
   is_overworld = true,
   priority = 100,
@@ -670,9 +680,9 @@ minecraft.on(minecraft.events.chunk_generation, {
 end)
 
 -- Cancel vanilla for flatlands
-minecraft.on(minecraft.events.chunk_generation, {
-  stage = { minecraft.generation.stages.carver, minecraft.generation.stages.features },
-  moment = minecraft.generation.moments.before,
+minecraft.on("chunk_generation", {
+  stage = { "carver", "features" },
+  moment = "before",
   priority = 100,
 }, function(event)
   event.cancel_vanilla = true
@@ -682,7 +692,7 @@ end)
 ### Spawn search customization
 
 ```lua
-minecraft.on(minecraft.events.world_spawn_search, {
+minecraft.on("world_spawn_search", {
   resolved = false, is_overworld = true,
   when = minecraft.util.real_world, priority = 100,
 }, function(event)
@@ -710,14 +720,14 @@ end)
 Darkens fog based on the player's Y-level to simulate void darkness.
 
 ```lua
-minecraft.on(minecraft.events.client_tick, {
+minecraft.on("client_tick", {
   before = false, paused = false, has_world = true, is_overworld = true, priority = 100,
 }, function(event)
   last_camera_y = event.camera_y or 64.0
 end)
 
-minecraft.on(minecraft.events.world_color, {
-  kind = minecraft.colors.fog,
+minecraft.on("world_color", {
+  kind = "fog",
   is_overworld = true,
   priority = 100,
 }, function(event)
@@ -730,7 +740,7 @@ end)
 ```
 
 **Key patterns:**
-- `world_color` with `kind = minecraft.colors.fog` (or `minecraft.colors.sky`) lets you modify ambient colors.
+- `world_color` with `kind = "fog"` (or `"sky"`) lets you modify ambient colors.
 - Mutate `event.r`, `event.g`, `event.b` in 0–1 range.
 - Camera Y is available from `client_tick` via `event.camera_y`.
 
@@ -751,9 +761,9 @@ local root, error_message = minecraft.read_nbt_asset("assets/star_catalog.nbt")
 ### Rendering stars as billboards
 
 ```lua
-minecraft.on(minecraft.events.world_render, {
-  stage = minecraft.render.stages.stars,
-  moment = minecraft.render.moments.before,
+minecraft.on("world_render", {
+  stage = "stars",
+  moment = "before",
   is_overworld = true,
   priority = 150,
 }, function(event)
@@ -771,7 +781,7 @@ end)
 ```
 
 **Key patterns:**
-- `world_render` with `stage = minecraft.render.stages.stars` replaces the vanilla star renderer.
+- `world_render` with `stage = "stars"` replaces the vanilla star renderer.
 - `event.cancel_vanilla = true` disables the built-in star rendering.
 - `minecraft.render.billboards({...})` draws billboard quads with `x`, `y`, `z`, `size`, `alpha` per star.
 - `blend = "additive"` gives glowing star appearance.
@@ -794,15 +804,15 @@ local function sky_color_for_celestial(celestial)
   return r, g, b
 end
 
-minecraft.on(minecraft.events.world_color, {
-  kind = minecraft.colors.sky,
+minecraft.on("world_color", {
+  kind = "sky",
   is_overworld = true, priority = 100,
 }, function(event)
   return apply_colorful_tint(event, 0.75)
 end)
 
-minecraft.on(minecraft.events.world_color, {
-  kind = minecraft.colors.fog,
+minecraft.on("world_color", {
+  kind = "fog",
   is_overworld = true, priority = 100,
 }, function(event)
   return apply_colorful_tint(event, 0.5)
@@ -810,7 +820,7 @@ end)
 ```
 
 **Key patterns:**
-- Multiple `world_color` handlers can target `minecraft.colors.sky` and `minecraft.colors.fog` independently.
+- Multiple `world_color` handlers can target `"sky"` and `"fog"` independently.
 - `event.celestial` provides the current sun angle (0–1 normalized).
 
 ---
@@ -824,7 +834,7 @@ A complete seed-finding tool with custom GUI, text fields, search/filter, biome 
 ### Opening a custom screen
 
 ```lua
-minecraft.on(minecraft.events.screen_ui, {
+minecraft.on("screen_ui", {
   screen_id = minecraft.screen.ids.create_world,
   region = minecraft.screen.regions.footer,
   priority = 90,
@@ -835,7 +845,7 @@ minecraft.on(minecraft.events.screen_ui, {
 end)
 
 -- The finder screen
-minecraft.on(minecraft.events.screen_event, { screen_id = SCREEN_ID }, function(event)
+minecraft.on("screen_event", { screen_id = SCREEN_ID }, function(event)
   if event.phase == "init" then
     for _, f in ipairs(L.fields) do
       minecraft.screen.add_field(f.name, f.x, f.y, f.w, f.h, {
@@ -918,7 +928,7 @@ local function save_config()
 end
 
 -- Load on client ready
-minecraft.on(minecraft.events.client_tick, {
+minecraft.on("client_tick", {
   has_player = true, once = true, priority = 0,
 }, function()
   load_config()
@@ -929,7 +939,7 @@ end)
 ### Custom settings screen
 
 ```lua
-minecraft.on(minecraft.events.screen_event, {
+minecraft.on("screen_event", {
   screen_id = "offline_mode:settings", priority = 100,
 }, function(event)
   if event.phase == "init" then
@@ -947,7 +957,7 @@ end)
 ### Inject button into login screen
 
 ```lua
-minecraft.on(minecraft.events.screen_ui, {
+minecraft.on("screen_ui", {
   screen_id = minecraft.screen.ids.login,
   region = minecraft.screen.regions.screen,
   priority = 100,
@@ -973,9 +983,9 @@ end)
 Simple procedural ravine generation via `chunk_generation`.
 
 ```lua
-minecraft.on(minecraft.events.chunk_generation, {
-  stage = minecraft.generation.stages.carver,
-  moment = minecraft.generation.moments.after,
+minecraft.on("chunk_generation", {
+  stage = "carver",
+  moment = "after",
   when = minecraft.util.real_world,
 }, function(event)
   local seed = math.floor(event.world_seed or 0)
@@ -994,7 +1004,7 @@ end)
 ```
 
 **Key patterns:**
-- `moment = minecraft.generation.moments.after` runs after vanilla carving.
+- `moment = "after"` runs after vanilla carving.
 - `event.world_seed`, `event.chunk_x`, `event.chunk_z` from chunk generation event.
 - `event.chunk:get_height(x, z)` returns the surface height at the given column.
 - Deterministic seeded randomness using arithmetic on chunk coordinates.
@@ -1010,9 +1020,9 @@ Replaces vanilla clouds with multiple layers of procedurally-animated cloud quad
 ### Render-time cloud quads
 
 ```lua
-minecraft.on(minecraft.events.world_render, {
-  stage = minecraft.render.stages.clouds,
-  moment = minecraft.render.moments.before,
+minecraft.on("world_render", {
+  stage = "clouds",
+  moment = "before",
   priority = 100,
 }, function(event)
   if not mod_active() or not event.is_overworld then return event end
@@ -1092,7 +1102,7 @@ local open_settings = minecraft.screen.settings({
 ```
 
 **Key patterns:**
-- `world_render` with `stage = minecraft.render.stages.clouds` replaces clouds.
+- `world_render` with `stage = "clouds"` replaces clouds.
 - `minecraft.render.quads({...})` renders custom geometry with texture, color, alpha, and render state.
 - `minecraft.config.save` / `minecraft.config.load` provides automatic config file I/O with key aliasing.
 - `minecraft.screen.settings({...})` creates a slider settings screen.
@@ -1110,9 +1120,9 @@ Full real-time astronomy: computes the sun's position from UTC time and GPS coor
 ### Sky event hooks
 
 ```lua
-minecraft.on(minecraft.events.world_render, {
-  stage = minecraft.render.stages.sky,
-  moment = minecraft.render.moments.before,
+minecraft.on("world_render", {
+  stage = "sky",
+  moment = "before",
   is_overworld = true,
   priority = SKY_PROVIDER_PRIORITY,
   when = function() return realtime_active() end,
@@ -1278,7 +1288,7 @@ end
 ### Screen lifecycle events
 
 ```lua
-minecraft.on(minecraft.events.screen_event, { screen_id = spec.id, priority = priority }, function(event)
+minecraft.on("screen_event", { screen_id = spec.id, priority = priority }, function(event)
   if event.phase == "init" then
     panel_origin(event.width, event.height)
   elseif event.phase == "render" then
@@ -1288,7 +1298,7 @@ minecraft.on(minecraft.events.screen_event, { screen_id = spec.id, priority = pr
   elseif event.phase == "mouse" then
     handle_click(event.x, event.y, event.button)
   elseif event.phase == "key" then
-    if event.key == minecraft.keys.escape or event.key == minecraft.key_code("inventory") then
+    if event.key == minecraft.key_code("escape") or event.key == minecraft.key_code("inventory") then
       minecraft.screen.close()
     end
   elseif event.phase == "close" then
@@ -1390,7 +1400,7 @@ Higher priority values run first. Common conventions:
 ### Clean up models on world unload
 
 ```lua
-minecraft.on(minecraft.events.world_start, {}, function(event)
+minecraft.on("world_start", {}, function(event)
   minecraft.model.clear()
   client.channels = {}
 end)
@@ -1475,8 +1485,8 @@ For mod entities (`spawn_mod`), `registry_id` holds the mod-specific identifier 
 | Field | Type | Default | Description |
 |-------|------|---------|-------------|
 | `id` | number | required | Unique block ID |
-| `texture` | string | — | Custom texture path |
-| `texture_id` | number | — | Vanilla texture atlas index |
+| `texture` | string | required | Mod resource path for the block's texture |
+| `model` | number | required | Model handle from `minecraft.model.load`/`build` |
 | `hardness` | number | 0 | Mining time base |
 | `resistance` | number | 0 | Explosion resistance |
 | `luminance` | number | 0 | Light emission (0–1) |
@@ -1487,7 +1497,6 @@ For mod entities (`spawn_mod`), `registry_id` holds the mod-specific identifier 
 | `model` | model | — | Custom model handle |
 | `collision_height` | number | 1 | Collision box height |
 | `item` | table | — | Item override (e.g., different texture) |
-| `tile_entity` | string | — | Tile entity type |
 | `behavior_priority` | number | 0 | Block behavior ordering |
 | `on_use` | function | — | Right-click handler |
 | `requires_solid_below` | boolean | true | Plant-like placement |

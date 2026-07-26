@@ -10,42 +10,33 @@ local function clamp_int(v, lo, hi)
   return math.floor(clamp(math.floor(v + 0.5), lo, hi))
 end
 
-local function read_int(field, default, lo, hi)
+local function read_int(field, lo, hi)
   local raw = minecraft.screen.field_text(field)
-  if not raw or #raw == 0 then
-    minecraft.log("debug", "realtime_sky: using default for empty int field '" .. field .. "'")
-    return default
-  end
-  return clamp_int(tonumber(raw) or default, lo, hi)
+  local value = assert(tonumber(raw), "realtime_sky: invalid integer field " .. field)
+  return clamp_int(value, lo, hi)
 end
 
-local function read_num(field, default, lo, hi)
+local function read_num(field, lo, hi)
   local raw = minecraft.screen.field_text(field)
-  if not raw or #raw == 0 then
-    minecraft.log("debug", "realtime_sky: using default for empty num field '" .. field .. "'")
-    return default
-  end
-  return clamp(tonumber(raw) or default, lo, hi)
+  local value = assert(tonumber(raw), "realtime_sky: invalid numeric field " .. field)
+  return clamp(value, lo, hi)
 end
 
-local function read_str(field, default)
+local function read_str(field)
   local raw = minecraft.screen.field_text(field)
-  if not raw or #raw == 0 then
-    minecraft.log("debug", "realtime_sky: using default for empty str field '" .. field .. "'")
-    return default
-  end
+  assert(type(raw) == "string" and #raw > 0, "realtime_sky: empty text field " .. field)
   return raw
 end
 
 local function save_fields(settings, save_fn)
-  settings.sim_year = read_int("sim_year", settings.sim_year, 1, 9999)
-  settings.sim_month = read_int("sim_month", settings.sim_month, 1, 12)
-  settings.sim_day = read_int("sim_day", settings.sim_day, 1, 31)
-  settings.sim_hour = read_int("sim_hour", settings.sim_hour, 0, 23)
-  settings.sim_minute = read_int("sim_minute", settings.sim_minute, 0, 59)
-  settings.latitude = read_num("latitude", settings.latitude, -90, 90)
-  settings.longitude = read_num("longitude", settings.longitude, -180, 180)
-  settings.time_zone_id = read_str("timezone", settings.time_zone_id or "GMT+0")
+  settings.sim_year = read_int("sim_year", 1, 9999)
+  settings.sim_month = read_int("sim_month", 1, 12)
+  settings.sim_day = read_int("sim_day", 1, 31)
+  settings.sim_hour = read_int("sim_hour", 0, 23)
+  settings.sim_minute = read_int("sim_minute", 0, 59)
+  settings.latitude = read_num("latitude", -90, 90)
+  settings.longitude = read_num("longitude", -180, 180)
+  settings.time_zone_id = read_str("timezone")
   save_fn()
   ui.saved_ticks = 40
 end
@@ -169,7 +160,7 @@ end
 local SCREEN_ID = "realtime_sky:settings"
 
 local function register(settings, save_fn)
-  minecraft.on(minecraft.events.screen_event, {
+  minecraft.on("screen_event", {
     screen_id = SCREEN_ID,
     priority = 100,
   }, function(event)
@@ -195,7 +186,7 @@ local function register(settings, save_fn)
         event.handled = true
       end
     elseif event.phase == "key" then
-      if event.key == minecraft.keys.escape then
+      if event.key == minecraft.key_code("escape") then
         save_fields(settings, save_fn)
         open_globe()
         event.handled = true

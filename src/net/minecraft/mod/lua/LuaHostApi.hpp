@@ -89,6 +89,23 @@ inline int getglobal(lua_State* state, const char* name) {
 [[nodiscard]] int luaIntArg(lua_State* state, int index, int fallback = 0);
 [[nodiscard]] float luaFloatArg(lua_State* state, int index, float fallback = 0.0f);
 [[nodiscard]] double luaDoubleArg(lua_State* state, int index, double fallback = 0.0);
+class LuaArgs {
+ public:
+  explicit LuaArgs(lua_State* state) : state_(state), api_(luaApi()) {
+  }
+  [[nodiscard]] int count() const;
+  [[nodiscard]] bool string(int index, std::string& value) const;
+  [[nodiscard]] bool table(int index) const;
+  [[nodiscard]] bool integer(int index, int& value) const;
+  [[nodiscard]] bool number(int index, double& value) const;
+  [[nodiscard]] bool optionalString(int index, std::string& value) const;
+  [[nodiscard]] bool optionalNumber(int index, double& value) const;
+  [[nodiscard]] int fail(std::string_view message) const;
+
+ private:
+  lua_State* state_;
+  LuaApi& api_;
+};
 [[nodiscard]] bool luaBoolField(lua_State* state, int tableIndex, const char* key, bool fallback);
 [[nodiscard]] float luaFloatField(lua_State* state, int tableIndex, const char* key, float fallback);
 [[nodiscard]] float luaFloatAt(lua_State* state, int tableIndex, int index, float fallback);
@@ -152,7 +169,7 @@ inline constexpr std::uintmax_t kMaxModArchiveBytes = 256U * 1024U * 1024U;
 inline constexpr std::uint64_t kMaxModEntryBytes = 64U * 1024U * 1024U;
 inline constexpr std::uint64_t kMaxModExtractedBytes = 512U * 1024U * 1024U;
 inline constexpr std::uint16_t kMaxModArchiveEntries = 4096;
-[[nodiscard]] World* contextOrClientWorld();
+[[nodiscard]] World* activeModWorld();
 void setModContext(World* world, bool isClient, entity::player::PlayerEntity* player = nullptr);
 void clearModContext();
 [[nodiscard]] bool modContextIsClient();

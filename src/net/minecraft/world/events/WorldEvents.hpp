@@ -22,6 +22,7 @@ class WorldEvents {
  void notifyEntityRemoved(Entity* entity);
  void notifyEntityPickup(Entity* entity, PlayerEntity* collector);
  void notifyAmbientDarknessChanged();
+ void chunkAvailable(int chunkX, int chunkZ);
  void playSound(double x, double y, double z, const std::string& name, float volume, float pitch);
  void playSound(Entity* source, const std::string& name, float volume, float pitch);
  void playSound(PlayerEntity* player, const std::string& name, float volume, float pitch);

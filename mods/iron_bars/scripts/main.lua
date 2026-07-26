@@ -3,7 +3,7 @@
 -- Standardized structure with separated config
 -- ================================================================
 
-local config = require("iron_bars.config")
+local config = require("config")
 
 minecraft.log("info", "iron_bars loading")
 local iron_bars_model = assert(minecraft.model.load("models/iron_bars.json"))

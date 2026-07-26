@@ -22,13 +22,13 @@ names. Implementation: `LuaRuntimePrelude.hpp:50-109,491-554`.
 | `tick_rate` | client | `target_tps`, `tps_scale` | Client tick timing. |
 | `world_start`, `world_open` | both | none | World lifecycle and saved options. |
 | `world_tick` | server | none | Server-world tick. |
-| `entity_tick`, `tile_entity_tick` | both | `canceled`; tile animation speed | Entity lifecycle. |
+| `entity_tick` | both | `canceled` | Entity lifecycle. |
 | `create_world` | server | `canceled`, `options` | Capture or change new-world options. |
 | `block_interact`, `entity_interact` | both | `canceled`, `handled`, stack count/damage | Interaction override. |
 | `attack_damage` | server | `damage`, `critical`, `canceled` | Damage calculation. |
 | `entity_teleport` | server | target pose, `canceled` | Teleport interception. |
 | `world_color`, `fog_settings` | client | colour/fog fields | Atmospheric rendering. |
-| `entity_render`, `pre_entity_render`, `pre_tile_entity_render` | client | pose/parts or `canceled` | Rendering override. |
+| `entity_render`, `pre_entity_render` | client | pose/parts or `canceled` | Rendering override. |
 | `world_render` | client | `cancel_vanilla`, sky/stars fields | World rendering phases. |
 | `chunk_generation` | server | `cancel_vanilla` | Terrain, surface, carver, or feature stage. |
 | `world_spawn_search` | server | `x`, `y`, `z`, `resolved` | Custom spawn location. |
@@ -53,7 +53,7 @@ surface stage.
 ## Important current mismatch
 
 The native hook supports `attack_damage`, but the prelude omits
-`minecraft.events.attack_damage`; `critical_hit` consequently subscribes with a
+`"attack_damage"`; `critical_hit` consequently subscribes with a
 nil event reference. There is no canonical `tick` or `item_spawn` event:
 `item_drop_physics` tries both and cannot register through `minecraft.on`.
 Use `client_tick`, `world_tick`, or `entity_spawn` as appropriate, or correct the

@@ -39,22 +39,11 @@ struct ModPackage {
 class ModHost {
  public:
  struct LoadedLuaMod {
-  struct ScalarFilter {
-   enum class Kind : std::uint8_t { Str,
-                                    Num,
-                                    Bool };
-   std::string key;
-   Kind kind = Kind::Str;
-   std::string str;
-   double num = 0.0;
-   bool boolean = false;
-  };
   struct Callback {
    std::string event;
    int functionRef = 0;
    int priority = 0;
    int eventIndex = -1;
-   std::vector<ScalarFilter> filters;
   };
   std::string modId;
   void* state = nullptr;
@@ -62,8 +51,6 @@ class ModHost {
   std::recursive_mutex stateMutex;
   std::vector<Callback> callbacks;
   std::vector<int> buttonCallbackRefs;
-  std::vector<int> blockModelCallbackRefs;
-  std::vector<int> itemModelCallbackRefs;
   std::vector<int> ownedTextureIds;
  };
  void initialize(const std::filesystem::path& runDirectory);

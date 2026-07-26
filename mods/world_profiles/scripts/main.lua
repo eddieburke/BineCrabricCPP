@@ -3,7 +3,8 @@
 -- Standardized structure with separated config
 -- ================================================================
 
-local config = require("world_profiles.config")
+local config = require("config")
+local settings_screen = require("scripts.settings_screen")
 
 local PROFILE_OPTION = "world_profiles:type"
 
@@ -44,8 +45,15 @@ local function register_profile(profile, source)
   end
 end
 
-for _, entry in ipairs(minecraft.require_dir("scripts/worldtypes")) do
-  register_profile(entry.module, "scripts/worldtypes/" .. entry.name .. ".lua")
+for _, name in ipairs({
+  "scripts.worldtypes.default",
+  "scripts.worldtypes.flatlands",
+  "scripts.worldtypes.highlands",
+  "scripts.worldtypes.caves",
+  "scripts.worldtypes.infdev_20100227",
+  "scripts.worldtypes.infdev_20100415",
+}) do
+  register_profile(require(name), name:gsub("%.", "/") .. ".lua")
 end
 
 table.sort(profiles, function(a, b)
@@ -98,7 +106,7 @@ local function profile_for_event(event)
   return active_profile
 end
 
-minecraft.on(minecraft.events.create_world, {}, function(event)
+minecraft.on("create_world", {}, function(event)
   event.options = event.options or {}
   event.options[PROFILE_OPTION] = selected_id()
   for key, spec in pairs(option_specs) do
@@ -107,7 +115,7 @@ minecraft.on(minecraft.events.create_world, {}, function(event)
   active_profile = selected_profile()
 end)
 
-minecraft.on(minecraft.events.world_open, {}, function(event)
+minecraft.on("world_open", {}, function(event)
   local id = event.options and event.options[PROFILE_OPTION] or "default"
   local profile, index = profile_by_id(id)
   if profile == nil then
@@ -124,15 +132,19 @@ minecraft.on(minecraft.events.world_open, {}, function(event)
   minecraft.log("info", "world_profiles: opened " .. tostring(event.save_name) .. " as " .. profile.id)
 end)
 
-minecraft.screen.on_ui(minecraft.screen.ids.create_world, minecraft.screen.regions.footer, function(event)
+minecraft.on("screen_ui", {
+  screen_id = minecraft.screen.ids.create_world,
+  region = minecraft.screen.regions.footer,
+  priority = 100,
+}, function(event)
   if event.ui ~= nil then
     event.ui:add_stacked_centered_button(profile_label(), cycle_profile, profile_label)
   end
   return event
-end, 100)
+end)
 
 if #sliders > 0 then
-  minecraft.screen.settings({
+  settings_screen.register({
     id = "world_profiles:options",
     title = "World Profile Options",
     parent_screen = minecraft.screen.ids.create_world,
@@ -145,7 +157,7 @@ if #sliders > 0 then
 end
 
 -- A world type without `spawn` leaves the vanilla sand beach search alone.
-minecraft.on(minecraft.events.world_spawn_search, {
+minecraft.on("world_spawn_search", {
   resolved = false,
   is_overworld = true,
   when = minecraft.util.real_world,
@@ -171,14 +183,14 @@ minecraft.on(minecraft.events.world_spawn_search, {
   end
 end)
 
-minecraft.on(minecraft.events.chunk_generation, {
+minecraft.on("chunk_generation", {
   stage = {
-    minecraft.generation.stages.terrain,
-    minecraft.generation.stages.surface,
-    minecraft.generation.stages.carver,
-    minecraft.generation.stages.features,
+    "terrain",
+    "surface",
+    "carver",
+    "features",
   },
-  moment = minecraft.generation.moments.before,
+  moment = "before",
   is_overworld = true,
   priority = 100,
   when = function(event)
@@ -196,9 +208,9 @@ minecraft.on(minecraft.events.chunk_generation, {
   end
 end)
 
-minecraft.on(minecraft.events.chunk_generation, {
-  stage = minecraft.generation.stages.surface,
-  moment = minecraft.generation.moments.after,
+minecraft.on("chunk_generation", {
+  stage = "surface",
+  moment = "after",
   when = minecraft.util.real_world,
   is_overworld = true,
   priority = 100,

@@ -6,7 +6,6 @@ namespace net::minecraft::mod::lua {
 struct BlockRegistrationSpec {
  int blockId = 0;
  std::string texturePath;
- int terrainTextureId = -1;
  float hardness = 1.0f;
  float resistance = 1.0f;
  float luminance = 0.0f;
@@ -14,8 +13,7 @@ struct BlockRegistrationSpec {
  std::string displayName;
  std::string material = "stone";
  std::string ownerModId;
- int modelRef = kLuaNoRef;
- int bakedModel = 0; // model::ModelRegistry handle; preferred over modelRef
+ int bakedModel = 0; // model::ModelRegistry handle (from minecraft.model.load/build)
  bool opaque = true;
  bool fullCube = true;
  // Render layer: solid/cutout (false) or alpha-blended (true). Defaults to
@@ -33,8 +31,6 @@ struct BlockRegistrationSpec {
  float minScale = 0.9f;
  float maxScale = 1.1f;
  std::string itemTexturePath;
- int itemTextureId = -1;
- std::string tileEntityId; // non-empty => block owns a mod tile entity (registry id = ownerModId + ":" + this)
 };
 bool registerBlockSpec(const BlockRegistrationSpec& spec, std::string& error);
 // Raw per-block-coordinate scale/offset (built on util::math::coordinateRandom,

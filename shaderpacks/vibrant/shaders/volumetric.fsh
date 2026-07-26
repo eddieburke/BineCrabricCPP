@@ -1,5 +1,6 @@
 in vec2 vUV;
 uniform sampler2D depthtex0;
+uniform sampler2D shadowtex0;
 uniform int uShadowAvailable;
 uniform int uVoxelAvailable;
 uniform vec3 uShadowCameraWorld;
@@ -74,8 +75,10 @@ void main() {
     vec2 projected = shadowPos.xy * invOrtho;
     float currentDepth = (-shadowPos.z - uShadowNearFar.x) * invRange;
     float visibility = 1.0;
-    if(currentDepth > 0.0 && currentDepth < 1.0 && all(lessThan(abs(projected), vec2(1.0)))) {
-      visibility = 1.0;
+    if(uShadowAvailable != 0 && currentDepth > 0.0 && currentDepth < 1.0 &&
+       all(lessThan(abs(projected), vec2(1.0)))) {
+      float storedDepth = texture(shadowtex0, projected * 0.5 + 0.5).r;
+      visibility = currentDepth - 0.0012 <= storedDepth ? 1.0 : 0.0;
     }
     if(useVoxel && all(greaterThanEqual(uvw, vec3(0.0))) && all(lessThanEqual(uvw, vec3(1.0)))) {
       visibility *= 1.0;

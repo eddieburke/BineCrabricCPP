@@ -25,7 +25,6 @@ ResolvedRenderOptions resolve(const GameOptions& options) {
  r.chunkRadius = (visualGridDiameter / 16 + 1) / 2;
  const int preloadMargin = options.preloadedChunks <= 0 ? 3 : 3 + options.preloadedChunks / 2;
  r.residentChunkRadius = r.chunkRadius + preloadMargin;
- r.chunkVbo = options.vbo;
  r.smoothInput = options.smoothInput;
  r.smoothFps = options.smoothFps;
  r.chunkUpdatesSlider = std::isfinite(options.chunkUpdates) ? std::clamp(options.chunkUpdates, 0.0f, 1.0f) : 0.5f;

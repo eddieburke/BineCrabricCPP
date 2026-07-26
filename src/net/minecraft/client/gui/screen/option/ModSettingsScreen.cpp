@@ -3,6 +3,7 @@
 #include <cmath>
 #include <functional>
 #include <iomanip>
+#include <limits>
 #include <sstream>
 #include "net/minecraft/client/Minecraft.hpp"
 #include "net/minecraft/client/gui/layout/ScreenLayout.hpp"
@@ -147,7 +148,7 @@ void ModSettingsScreen::rebuildLayout() {
  settingWidgets_.clear();
  keybindWidgets_.clear();
  sectionHeaders_.clear();
- injectedPages_.clear();
+ listTop_ = kListTop;
  auto& registry = net::minecraft::mod::ModSettingsRegistry::instance();
  const auto allSettings = registry.getAllSettings();
  const auto allKeybinds = registry.getAllKeybinds();
@@ -262,34 +263,38 @@ void ModSettingsScreen::rebuildLayout() {
   contentY += static_cast<int>((allKeybinds.size() + 1) / 2) * layout::kRowSpacing + kSectionGap;
  }
  contentHeight_ = std::max(0, contentY - kSectionGap);
+ const int doneY = height() - kDoneYInset;
+ // Offer mods the footer seam. Stacked buttons grow downward from the Done row, then the
+ // whole injected block is translated as a unit so it ends just above Done. Moving the
+ // widgets that were actually created -- rather than harvesting their text/callback and
+ // rebuilding copies -- keeps explicitly positioned buttons where the mod put them and
+ // keeps the widget pointers captured by mod label callbacks valid.
  const std::size_t firstInjectedWidget = buttons_.size();
- int injectedY = 0;
+ int injectedY = doneY;
  publishScreenUi(net::minecraft::mod::screen_regions::kFooter, &injectedY);
- for(std::size_t i = firstInjectedWidget; i < buttons_.size(); ++i) {
-  auto* action = dynamic_cast<widget::ActionButtonWidget*>(buttons_[i].get());
-  if(action != nullptr) {
-   injectedPages_.push_back({action->text, action->onClick});
+ int injectedTop = doneY;
+ if(firstInjectedWidget < buttons_.size()) {
+  int top = std::numeric_limits<int>::max();
+  int bottom = std::numeric_limits<int>::min();
+  for(std::size_t i = firstInjectedWidget; i < buttons_.size(); ++i) {
+   if(buttons_[i] == nullptr) {
+    continue;
+   }
+   top = std::min(top, buttons_[i]->y);
+   bottom = std::max(bottom, buttons_[i]->y + buttons_[i]->height);
+  }
+  if(top <= bottom) {
+   const int shift = (doneY - kSectionGap) - bottom;
+   for(std::size_t i = firstInjectedWidget; i < buttons_.size(); ++i) {
+    if(buttons_[i] != nullptr) {
+     buttons_[i]->y += shift;
+    }
+   }
+   injectedTop = top + shift;
   }
  }
- buttons_.resize(firstInjectedWidget);
- const std::size_t injectedWidgetCount = injectedPages_.size();
- const int doneY = height() - kDoneYInset;
- const int injectedRows = static_cast<int>((injectedWidgetCount + 1) / 2);
- const int injectedTop = doneY - injectedRows * layout::kRowSpacing;
  listTop_ = kListTop;
  listBottom_ = std::max(listTop_, injectedTop - kSectionGap);
- for(std::size_t i = 0; i < injectedWidgetCount; ++i) {
-  const int row = static_cast<int>(i / 2);
-  const int column = static_cast<int>(i % 2);
-  const int buttonX =
-      injectedWidgetCount == 1 ? layout::centerBtnX(width()) : layout::optionsGridX(width(), column);
-  addActionButton(buttonX,
-                  injectedTop + row * layout::kRowSpacing,
-                  kButtonWidth,
-                  kButtonHeight,
-                  injectedPages_[i].text,
-                  injectedPages_[i].onClick);
- }
  addActionButton(layout::centerBtnX(width()),
                  doneY,
                  kButtonWidth,

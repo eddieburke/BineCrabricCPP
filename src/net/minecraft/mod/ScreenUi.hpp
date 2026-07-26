@@ -2,6 +2,7 @@
 #include <functional>
 #include <string>
 #include <string_view>
+#include <vector>
 #include "net/minecraft/mod/runtime/LuaDirectHooks.hpp"
 namespace net::minecraft::client::gui::screen {
 class Screen;
@@ -15,6 +16,11 @@ struct ScreenUiContext {
  std::string_view screenId;
  std::string_view region;
  int* stackedButtonY = nullptr;
+ // Every button created through addStackedCenteredButton(), in creation order, when the
+ // publishing screen asked for them. A screen uses this to re-flow the injected block it
+ // does not know the size of in advance (e.g. pack it into two columns) without touching
+ // buttons the mod positioned itself.
+ std::vector<client::gui::widget::ActionButtonWidget*>* stackedButtons = nullptr;
  [[nodiscard]] client::gui::widget::ActionButtonWidget& addCenteredButton(int y,
                                                                           std::string text,
                                                                           std::function<void()> onClick) const;

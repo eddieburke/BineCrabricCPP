@@ -4,9 +4,7 @@
 #ifdef MINECRAFT_NATIVE_EXPORTS
 #include "net/minecraft/mod/model/ModModels.hpp"
 #endif
-#include <cmath>
 #include <string>
-#include "net/minecraft/mod/lua/LuaHostApi.hpp"
 #include "net/minecraft/mod/runtime/LuaEventGlue.hpp"
 #include "net/minecraft/mod/runtime/WorldRequiredMods.hpp"
 namespace net::minecraft::mod::runtime {
@@ -16,17 +14,15 @@ using namespace net::minecraft::mod::model;
 #endif
 int luaRegisterItem(lua_State* state) {
  LuaApi& api = luaApi();
+ LuaArgs args(state);
  ModHost::LoadedLuaMod* mod = currentLuaMod(state);
- if(mod == nullptr || api.gettop(state) < 1 || api.type(state, 1) != kLuaTTable) {
-  api.pushboolean(state, 0);
-  api.pushstring(state, "minecraft.register_item expects a spec table");
-  return 2;
+ if(mod == nullptr || !args.table(1)) {
+  return args.fail("minecraft.register_item expects a spec table");
  }
  const int tableIndex = 1;
  ItemRegistrationSpec spec;
  spec.itemId = luaIntField(state, tableIndex, "id", 0);
  spec.texturePath = luaStringField(state, tableIndex, "texture", "");
- spec.itemsTextureId = luaIntField(state, tableIndex, "texture_id", -1);
  spec.maxCount = luaIntField(state, tableIndex, "max_count", 64);
  spec.maxDamage = luaIntField(state, tableIndex, "max_damage", 0);
  spec.translationKey = luaStringField(state, tableIndex, "translation_key", "");
@@ -34,31 +30,22 @@ int luaRegisterItem(lua_State* state) {
  spec.ownerModId = mod->modId;
  api.getfield(state, tableIndex, "model");
 #ifdef MINECRAFT_NATIVE_EXPORTS
- if(api.type(state, -1) == kLuaTNumber) {
+ // Items still make model optional (plain sprite items have none), but when
+ // present it must be a baked handle from minecraft.model.load/build — see
+ // register_block's identical rule in LuaBlockBindings.cpp.
+ const int modelType = api.type(state, -1);
+ if(modelType == kLuaTNumber) {
   spec.bakedModel = luaIntField(state, tableIndex, "model", 0);
- } else if(api.type(state, -1) == kLuaTFunction) {
-  const int modelIndex = api.gettop(state);
-  std::string modelError;
-  if(!parseModelCallback(state, modelIndex, spec.modelRef, modelError)) {
-   api.settop(state, tableIndex);
-   api.pushboolean(state, 0);
-   api.pushstring(state, modelError.c_str());
-   return 2;
-  }
+ } else if(modelType == kLuaTFunction) {
+  api.settop(state, tableIndex);
+  return args.fail("register_item: model must be a handle from minecraft.model.load; "
+                    "draw-callback models are no longer supported");
  }
 #endif
  api.settop(state, tableIndex);
  std::string error;
  if(!registerItemSpec(spec, error)) {
-  if(spec.modelRef != kLuaNoRef) {
-   api.unref(state, kLuaRegistryIndex, spec.modelRef);
-  }
-  api.pushboolean(state, 0);
-  api.pushstring(state, error.c_str());
-  return 2;
- }
- if(spec.modelRef != kLuaNoRef) {
-  mod->itemModelCallbackRefs.push_back(spec.modelRef);
+  return args.fail(error);
  }
  WorldRequiredMods::registerContentItem(mod->modId, spec.itemId);
  api.pushboolean(state, 1);

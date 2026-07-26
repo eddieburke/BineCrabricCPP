@@ -40,22 +40,33 @@ class ChunkRegionBuffer {
  void upload(Slot& slot, const TessellatorVertex* data, int count, bool hasTexture, bool hasColor, bool hasNormals);
  // Return a slot's range to the free list. Leaves slot invalid.
  void release(Slot& slot) noexcept;
+ // A contiguous run of vertices to draw, in vertices. Adjacent sections often
+ // occupy adjacent slots, so flush() coalesces these before drawing.
+ struct DrawRange {
+  int first = 0;
+  int count = 0;
+ };
  // Per-frame visible-range collection.
  void beginFrame() noexcept;
  void addVisible(const Slot& slot);
  [[nodiscard]] bool hasVisible() const noexcept {
-  return !firsts_.empty();
+  return !visible_.empty();
  }
- // Bind the buffer, set fixed-function vertex arrays, and draw visible slots.
- // The caller owns the modelview transform (region origin translate). Returns
- // the number of draw ranges submitted.
- int flush(int mode, bool useEnginePipeline = true);
+ // Bind the buffer, configure the shared vertex layout, and draw the visible
+ // slots as coalesced ranges. The caller owns the modelview transform (region
+ // origin translate). Returns the number of draw calls actually submitted.
+ int flush();
  [[nodiscard]] bool empty() const noexcept {
   return shadow_.empty();
  }
+ // Per-frame draw-call accounting for the debug HUD. Reset by WorldRenderer at
+ // the start of each frame's draw-list build; accumulated across all regions.
+ inline static int frameVisibleRanges = 0;
+ inline static int frameDrawCalls = 0;
 
  private:
  void reallocBuffer(std::size_t newCapacityVertices);
+ void buildMergedRanges();
  [[nodiscard]] Slot allocate(int count);
  unsigned int handle_ = 0; // GL buffer name; 0 until first flush
  std::size_t gpuCapacity_ = 0; // vertices the GL buffer can hold
@@ -66,7 +77,7 @@ class ChunkRegionBuffer {
  bool hasColor_ = false;
  bool hasNormals_ = false;
  bool layoutSet_ = false;
- std::vector<int> firsts_; // per-frame draw range starts (vertices)
- std::vector<int> counts_; // per-frame draw range lengths (vertices)
+ std::vector<DrawRange> visible_; // per-frame, in insertion (ring) order
+ std::vector<DrawRange> merged_; // per-frame, sorted by offset and coalesced
 };
 } // namespace net::minecraft::client::render::chunk

@@ -94,10 +94,10 @@ Lua mods can generate and bake 3D quad models on top of the native GPU model sys
 ## 4. Camera & Environment API (`minecraft.camera`, `minecraft.colors`)
 
 ### Camera Setup & Dynamic FOV
-- Subscribe to `minecraft.events.camera_setup` to modify camera position `(x, y, z)` or rotation `(yaw, pitch)`.
-- Subscribe to `minecraft.events.fov` to modify field of view dynamically (e.g., sprint zoom, scope effects):
+- Subscribe to `"camera_setup"` to modify camera position `(x, y, z)` or rotation `(yaw, pitch)`.
+- Subscribe to `"fov"` to modify field of view dynamically (e.g., sprint zoom, scope effects):
   ```lua
-  minecraft.on(minecraft.events.fov, { priority = 100 }, function(event)
+  minecraft.on("fov", { priority = 100 }, function(event)
     event.fov_multiplier = event.fov_multiplier * 1.15 -- 15% FOV boost
     return event
   end)

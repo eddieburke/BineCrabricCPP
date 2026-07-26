@@ -1,7 +1,7 @@
 #pragma once
 // GLCore - VBO and multi-texture entry points for fixed-function rendering.
-#include <GL/gl.h>
 #include <windows.h>
+#include <GL/gl.h>
 #include <cstdint>
 namespace net::minecraft::client::gl {
 using PFN_GenBuffers = void(APIENTRY*)(int, unsigned*);

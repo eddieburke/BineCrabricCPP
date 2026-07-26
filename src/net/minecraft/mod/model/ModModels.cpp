@@ -62,6 +62,10 @@ struct JsonModelElement {
  double from[3] = {0.0, 0.0, 0.0};
  double to[3] = {16.0, 16.0, 16.0};
  std::string basePath;
+ // Blockbench "texture_size" of the model file this element came from; face uv
+ // values are expressed in this space, not in the texture's pixel size.
+ double textureWidth = 16.0;
+ double textureHeight = 16.0;
  bool hasRotation = false;
  JsonModelRotationSpec rotation;
  bool shade = true;
@@ -77,6 +81,8 @@ struct JsonModel {
  std::vector<JsonModelTexture> textures;
  std::vector<JsonModelElement> elements;
  bool hasElements = false;
+ double textureSize[2] = {16.0, 16.0};
+ bool hasTextureSize = false;
 };
 const JsonModelTexture* findTexture(const JsonModel& model, const std::string& key) noexcept {
  for(const JsonModelTexture& texture : model.textures) {
@@ -197,6 +203,15 @@ bool parseJsonModel(const JsonValue& root, JsonModel& out, std::string& error) {
   return false;
  }
  out.parent = root["parent"].asString();
+ // Blockbench writes the uv coordinate space here; it is independent of the
+ // texture image's real pixel size (a 32x32 png with texture_size [16, 16]
+ // still uses 0..16 uvs across the whole image).
+ if(readVec(root["texture_size"], out.textureSize, 2) && out.textureSize[0] > 0.0 && out.textureSize[1] > 0.0) {
+  out.hasTextureSize = true;
+ } else {
+  out.textureSize[0] = 16.0;
+  out.textureSize[1] = 16.0;
+ }
  const JsonValue& textures = root["textures"];
  if(textures.isObject()) {
   for(const auto& [key, value] : textures.members()) {
@@ -220,6 +235,17 @@ bool parseJsonModel(const JsonValue& root, JsonModel& out, std::string& error) {
 // Vanilla flattening: child elements win outright; parent textures fill only
 // keys the child leaves unbound.
 void mergeParentModel(JsonModel& child, const JsonModel& parent) {
+ // texture_size is inherited too, and it re-scopes the uvs of the elements the
+ // child itself declared. Parent elements already carry the parent's size.
+ if(!child.hasTextureSize && parent.hasTextureSize) {
+  for(JsonModelElement& element : child.elements) {
+   element.textureWidth = parent.textureSize[0];
+   element.textureHeight = parent.textureSize[1];
+  }
+  child.textureSize[0] = parent.textureSize[0];
+  child.textureSize[1] = parent.textureSize[1];
+  child.hasTextureSize = true;
+ }
  if(!child.hasElements && parent.hasElements) {
   child.elements = parent.elements;
   child.hasElements = true;
@@ -399,15 +425,65 @@ int boundaryCullFace(const JsonModelElement& element, int faceIndex) {
  const double coordinate = negative ? element.from[axis] : element.to[axis];
  return coordinate == (negative ? 0.0 : 16.0) ? faceIndex : -1;
 }
+// True when the element has thickness on every axis, i.e. it is a real box and
+// not one of the flat planes Blockbench exports for cross/billboard shapes
+// (whose two opposite faces are the same rectangle and must both survive).
+bool isSolidElement(const JsonModelElement& element) noexcept {
+ return element.from[0] < element.to[0] && element.from[1] < element.to[1] && element.from[2] < element.to[2];
+}
+// Two faces of different elements that sit on the same plane, cover the same
+// rectangle and point at each other are sealed against one another: whatever
+// the camera angle, each is hidden by the element behind the other. Blockbench
+// models made of stacked boxes (repair_table's top and base) produce these in
+// bulk and they z-fight when drawn, so they are dropped while baking.
+bool facesSealAgainstEachOther(const JsonModelElement& a, int faceA, const JsonModelElement& b, int faceB) {
+ if(faceA / 2 != faceB / 2 || faceA == faceB || a.hasRotation || b.hasRotation) {
+  return false;
+ }
+ if(!isSolidElement(a) || !isSolidElement(b)) {
+  return false;
+ }
+ const int axis = kFaceAxis[faceA / 2];
+ const double planeA = (faceA % 2) == 0 ? a.from[axis] : a.to[axis];
+ const double planeB = (faceB % 2) == 0 ? b.from[axis] : b.to[axis];
+ if(planeA != planeB) {
+  return false;
+ }
+ for(int other = 0; other < 3; ++other) {
+  if(other != axis && (a.from[other] != b.from[other] || a.to[other] != b.to[other])) {
+   return false;
+  }
+ }
+ return true;
+}
 // Bakes a parent-flattened model into world-space quads (positions in block
 // units, 0..1 for a full cube). basePath is the model file's directory and
 // anchors relative texture paths.
 bool bakeJsonModel(const JsonModel& model, const std::string& basePath, BakedModel& out, std::string& error) {
  out.batches.clear();
- for(const JsonModelElement& element : model.elements) {
+ const std::size_t elementCount = model.elements.size();
+ std::vector<bool> sealed(elementCount * kModelFaceCount, false);
+ for(std::size_t i = 0; i < elementCount; ++i) {
+  for(std::size_t j = i + 1; j < elementCount; ++j) {
+   for(int faceA = 0; faceA < kModelFaceCount; ++faceA) {
+    if(!model.elements[i].faces[faceA].present) {
+     continue;
+    }
+    const int faceB = (faceA % 2) == 0 ? faceA + 1 : faceA - 1;
+    if(!model.elements[j].faces[faceB].present ||
+       !facesSealAgainstEachOther(model.elements[i], faceA, model.elements[j], faceB)) {
+     continue;
+    }
+    sealed[i * kModelFaceCount + static_cast<std::size_t>(faceA)] = true;
+    sealed[j * kModelFaceCount + static_cast<std::size_t>(faceB)] = true;
+   }
+  }
+ }
+ for(std::size_t elementIndex = 0; elementIndex < elementCount; ++elementIndex) {
+  const JsonModelElement& element = model.elements[elementIndex];
   for(int faceIndex = 0; faceIndex < kModelFaceCount; ++faceIndex) {
    const JsonModelFaceSpec& face = element.faces[faceIndex];
-   if(!face.present) {
+   if(!face.present || sealed[elementIndex * kModelFaceCount + static_cast<std::size_t>(faceIndex)]) {
     continue;
    }
    std::string texturePath;
@@ -453,8 +529,8 @@ bool bakeJsonModel(const JsonModel& model, const std::string& basePath, BakedMod
     vertex.x = static_cast<float>(point[0] / 16.0);
     vertex.y = static_cast<float>(point[1] / 16.0);
     vertex.z = static_cast<float>(point[2] / 16.0);
-    vertex.u = static_cast<float>(corner[0] / 16.0);
-    vertex.v = static_cast<float>(corner[1] / 16.0);
+    vertex.u = static_cast<float>(corner[0] / element.textureWidth);
+    vertex.v = static_cast<float>(corner[1] / element.textureHeight);
    }
    batchFor(out, texturePath).push_back(quad);
   }
@@ -467,9 +543,13 @@ bool bakeJsonModel(const JsonModel& model, const std::string& basePath, BakedMod
  return true;
 }
 // --- Handle cache ------------------------------------------------------------
+// Models are const from the moment they land here, and the unique_ptr keeps each
+// one at a fixed address as the vector grows. That is what lets lookups hand out
+// a bare pointer and drop the lock: the callers (chunk-mesh workers, the render
+// thread, Lua) only ever read, and never race with a concurrent store.
 struct ModelStore {
  std::mutex mutex;
- std::vector<std::unique_ptr<BakedModel>> models; // handle - 1 indexes this
+ std::vector<std::unique_ptr<const BakedModel>> models; // handle - 1 indexes this
  std::unordered_map<std::string, int> handlesByKey;
 };
 ModelStore& store() {
@@ -531,6 +611,8 @@ bool loadModelFile(const std::string& modId, const std::string& path, JsonModel&
  }
  for(JsonModelElement& element : out.elements) {
   element.basePath = basePath;
+  element.textureWidth = out.textureSize[0];
+  element.textureHeight = out.textureSize[1];
  }
  return true;
 }
@@ -872,12 +954,10 @@ float worldBrightness(const WorldModelDraw& options) {
  return 1.0f;
 }
 #endif
-net::minecraft::block::TerrainAtlasUv uvAtPixels(int textureId, double u, double v) {
- const net::minecraft::client::render::block::TileScale tile =
-     net::minecraft::client::render::block::tileScaleFor(textureId);
- return {(static_cast<double>(tile.u) + u) * tile.inv, 0.0, (static_cast<double>(tile.v) + v) * tile.inv, 0.0};
-}
-struct ActiveManualBlockDraw {
+// Where a block's baked model is being drawn. Passed explicitly down the draw
+// path; it used to be a thread-local that every emit helper reached for, which
+// meant a missing scope guard produced no geometry and no diagnostic.
+struct BlockModelDraw {
  BlockRenderManager* manager = nullptr;
  Block* block = nullptr;
  int x = 0;
@@ -886,171 +966,129 @@ struct ActiveManualBlockDraw {
  bool inventory = false;
  float brightness = 1.0f;
 };
-thread_local ActiveManualBlockDraw* gManualBlockDraw = nullptr;
-class ScopedManualBlockDraw {
- public:
- explicit ScopedManualBlockDraw(ActiveManualBlockDraw& context) : previous_(gManualBlockDraw) {
-  gManualBlockDraw = &context;
+// Item draws bind their sprite up front, but a baked model can reference other
+// textures; rebind per quad so multi-texture item models look like their block
+// counterparts.
+void bindItemModelTexture(int textureId) {
+#ifdef MINECRAFT_NATIVE_EXPORTS
+ if(!net::minecraft::registry::TextureRegistry::isCustomTexture(textureId) || client::Minecraft::INSTANCE == nullptr) {
+  return;
  }
- ~ScopedManualBlockDraw() {
-  gManualBlockDraw = previous_;
+ client::texture::TextureManager& textures = client::Minecraft::INSTANCE->textureManager;
+ const int glId = net::minecraft::registry::TextureRegistry::resolveGlId(textureId, textures);
+ if(glId >= 0) {
+  textures.bindTexture(glId);
  }
- ScopedManualBlockDraw(const ScopedManualBlockDraw&) = delete;
- ScopedManualBlockDraw& operator=(const ScopedManualBlockDraw&) = delete;
-
- private:
- ActiveManualBlockDraw* previous_;
+#else
+ (void)textureId;
+#endif
+}
+// ---------------------------------------------------------------------------
+// Baked-model quad emission.
+//
+// One loop turns a BakedModel into quads for every destination — world blocks,
+// inventory icons, item models, minecraft.model.draw. A caller supplies where
+// each texture batch goes and what to do with a finished quad; the cullface
+// test, the per-quad transform, the shade/tint math, the face normal and the uv
+// mapping live here and nowhere else.
+// A baked vertex after the per-quad transform, in double precision so a world
+// draw can carry the block's grid offset without losing model detail.
+struct TransformedVertex {
+ double x = 0.0;
+ double y = 0.0;
+ double z = 0.0;
+ double u = 0.0;
+ double v = 0.0;
 };
-struct ActiveManualItemDraw {
- float brightness = 1.0f;
+struct EmittedQuad {
+ const TransformedVertex* vertices = nullptr;
+ float nx = 0.0f;
+ float ny = 1.0f;
+ float nz = 0.0f;
+ float red = 1.0f;
+ float green = 1.0f;
+ float blue = 1.0f;
+ float alpha = 1.0f;
 };
-thread_local ActiveManualItemDraw* gManualItemDraw = nullptr;
-class ScopedManualItemDraw {
- public:
- explicit ScopedManualItemDraw(ActiveManualItemDraw& context) : previous_(gManualItemDraw) {
-  gManualItemDraw = &context;
+// Face normal from the first three vertices, in the winding the vanilla face
+// renderers hand to Tessellator::normal.
+void assignQuadNormal(EmittedQuad& quad) {
+ client::render::block::quadNormal(quad.vertices[0].x,
+                                   quad.vertices[0].y,
+                                   quad.vertices[0].z,
+                                   quad.vertices[1].x,
+                                   quad.vertices[1].y,
+                                   quad.vertices[1].z,
+                                   quad.vertices[2].x,
+                                   quad.vertices[2].y,
+                                   quad.vertices[2].z,
+                                   quad.nx,
+                                   quad.ny,
+                                   quad.nz);
+}
+// The one place a baked vertex reaches a Tessellator. Same shape as the vanilla
+// face renderers: normal, colour, then four uv-mapped vertices.
+void writeQuad(Tessellator& t,
+               const EmittedQuad& quad,
+               double baseX,
+               double baseY,
+               double baseZ,
+               float light,
+               float alphaScale) {
+ t.color(quad.red * light, quad.green * light, quad.blue * light, quad.alpha * alphaScale);
+ for(int i = 0; i < 4; ++i) {
+  // uv is already normalized 0..1 across the batch's own image, which is what
+  // the bound texture is: mod content never lives in the vanilla atlas, so
+  // there is no tile to fold these into.
+  client::render::block::emitBlockVertex(t,
+                                         quad.nx,
+                                         quad.ny,
+                                         quad.nz,
+                                         baseX + quad.vertices[i].x,
+                                         baseY + quad.vertices[i].y,
+                                         baseZ + quad.vertices[i].z,
+                                         quad.vertices[i].u,
+                                         quad.vertices[i].v);
  }
- ~ScopedManualItemDraw() {
-  gManualItemDraw = previous_;
- }
-
- private:
- ActiveManualItemDraw* previous_;
-};
-template <typename BuildFields>
-bool invokeModelRender(const std::string& ownerModId, int luaModelRef, BuildFields buildFields) {
- LuaApi& api = luaApi();
- if(!api.ready() || luaModelRef == kLuaNoRef || ownerModId.empty()) {
-  return false;
- }
- for(const std::shared_ptr<runtime::ModHost::LoadedLuaMod>& mod : runtime::host().loadedMods()) {
-  if(mod == nullptr || mod->modId != ownerModId) {
+}
+// beginBatch(batch) -> bool  : false skips the batch (texture unresolvable).
+// takeQuad(batch, quad)      : consume one transformed, culled quad.
+template <typename BeginBatch, typename TakeQuad>
+bool forEachBakedQuad(const BakedModel& baked,
+                      const BakedQuadTransform& transform,
+                      const BlockModelDraw* cullDraw,
+                      const BlockView* cullView,
+                      BeginBatch beginBatch,
+                      TakeQuad takeQuad) {
+ // The overwhelmingly common case: a block or icon drawn at its baked pose.
+ // Nothing then needs the per-vertex rotate/scale below, and cullface (which
+ // only means anything against the block grid) stays meaningful.
+ const bool placedAsBaked = transform.scale == 1.0f && transform.offsetX == 0.0f && transform.offsetY == 0.0f &&
+                            transform.offsetZ == 0.0f && transform.yaw == 0.0f && transform.pitch == 0.0f &&
+                            transform.roll == 0.0f;
+ const bool cullFaces = placedAsBaked && cullDraw != nullptr && cullView != nullptr;
+ static constexpr double zeroOrigin[3] = {0.0, 0.0, 0.0};
+ bool emitted = false;
+ for(const BakedTextureBatch& batch : baked.batches) {
+  if(!beginBatch(batch)) {
    continue;
   }
-  const std::lock_guard<std::recursive_mutex> lock(mod->stateMutex);
-  if(!mod->active || mod->state == nullptr) {
-   return false;
-  }
-  auto* state = static_cast<lua_State*>(mod->state);
-  const int top = api.gettop(state);
-  if(api.checkstack(state, 32) == 0) {
-   runtimeLog(ownerModId, "error", "model render skipped: Lua stack exhausted");
-   return false;
-  }
-  api.rawgeti(state, kLuaRegistryIndex, luaModelRef);
-  if(api.type(state, -1) != kLuaTFunction) {
-   api.settop(state, top);
-   return false;
-  }
-  api.createtable(state, 0, 9);
-  buildFields(state);
-  api.getglobal(state, "minecraft");
-  if(api.type(state, -1) == kLuaTTable) {
-   api.getfield(state, -1, "tessellator");
-   if(api.type(state, -1) == kLuaTTable) {
-    api.setfield(state, -3, "tessellator");
-   } else {
-    pop(state, 1);
-   }
-  }
-  pop(state, 1);
-  const int status = api.pcallk(state, 1, 0, 0, 0, nullptr);
-  api.settop(state, top);
-  return status == kLuaOk;
- }
- return false;
-}
-} // namespace
-bool parseModelCallback(lua_State* state, int index, int& ref, std::string& error) {
- LuaApi& api = luaApi();
- if(api.type(state, index) == kLuaTFunction) {
-  api.pushvalue(state, index);
-  ref = api.ref(state, kLuaRegistryIndex);
-  return true;
- }
- error = "model must be a function";
- return false;
-}
-bool emitManualBlockModelQuad(
-    const ManualBlockVertex* vertices, int textureId, float red, float green, float blue, float alpha) {
- if(gManualBlockDraw == nullptr || gManualBlockDraw->manager == nullptr || gManualBlockDraw->block == nullptr ||
-    vertices == nullptr) {
-  return false;
- }
- if(textureId < 0) {
-  textureId = gManualBlockDraw->block->textureId;
- }
- BlockRenderManager& manager = *gManualBlockDraw->manager;
- if(!gManualBlockDraw->inventory && manager.ctx.textureOverride >= 0) {
-  textureId = manager.ctx.textureOverride;
- }
- if(!gManualBlockDraw->inventory) {
-  manager.ctx.bindTextureFor(textureId);
- }
- Tessellator& t = gManualBlockDraw->inventory ? *manager.ctx.tess : manager.ctx.activeTess(textureId);
- const bool capturing = !gManualBlockDraw->inventory && manager.ctx.modMeshes != nullptr;
- const double baseX = gManualBlockDraw->inventory ? 0.0 : static_cast<double>(gManualBlockDraw->x);
- const double baseY = gManualBlockDraw->inventory ? 0.0 : static_cast<double>(gManualBlockDraw->y);
- const double baseZ = gManualBlockDraw->inventory ? 0.0 : static_cast<double>(gManualBlockDraw->z);
- if(!capturing) {
-  t.startQuads();
- }
- t.color(red * gManualBlockDraw->brightness,
-         green * gManualBlockDraw->brightness,
-         blue * gManualBlockDraw->brightness,
-         alpha);
- for(int i = 0; i < 4; ++i) {
-  const auto uv = uvAtPixels(textureId, vertices[i].u, vertices[i].v);
-  t.vertex(baseX + vertices[i].x, baseY + vertices[i].y, baseZ + vertices[i].z, uv.uMin, uv.vMin);
- }
- if(!capturing) {
-  t.draw();
- }
- return true;
-}
-bool emitManualItemModelQuad(
-    const ManualBlockVertex* vertices, int textureId, float red, float green, float blue, float alpha) {
- if(gManualItemDraw == nullptr || vertices == nullptr) {
-  return false;
- }
- Tessellator& t = Tessellator::INSTANCE;
- t.startQuads();
- t.color(red * gManualItemDraw->brightness,
-         green * gManualItemDraw->brightness,
-         blue * gManualItemDraw->brightness,
-         alpha);
- for(int i = 0; i < 4; ++i) {
-  const auto uv = uvAtPixels(textureId, vertices[i].u, vertices[i].v);
-  t.vertex(vertices[i].x, vertices[i].y, vertices[i].z, uv.uMin, uv.vMin);
- }
- t.draw();
- return true;
-}
-bool drawBakedModelQuads(int handle, const BakedQuadTransform& transform) {
-  const BakedModel* baked = bakedModelForHandle(handle);
-  if(baked == nullptr) {
-   return false;
-  }
-  const ActiveManualBlockDraw* draw = gManualBlockDraw;
-  const BlockView* blockView = (draw != nullptr && draw->manager != nullptr) ? draw->manager->ctx.blockView : nullptr;
-  const bool cullFaces = draw != nullptr && !draw->inventory && draw->block != nullptr && blockView != nullptr &&
-                         transform.scale == 1.0f && transform.offsetX == 0.0f && transform.offsetY == 0.0f &&
-                         transform.offsetZ == 0.0f && transform.yaw == 0.0f && transform.pitch == 0.0f &&
-                         transform.roll == 0.0f;
-  static constexpr double zeroOrigin[3] = {0.0, 0.0, 0.0};
-  bool emitted = false;
-  for(const BakedTextureBatch& batch : baked->batches) {
-   const int textureId = batch.textureId;
-   for(const BakedQuad& quad : batch.quads) {
-    if(cullFaces && quad.cullFace >= 0) {
-     const int* offset = kFaceOffsets[quad.cullFace];
-     if(!draw->block->isSideVisible(
-            blockView, draw->x + offset[0], draw->y + offset[1], draw->z + offset[2], quad.cullFace)) {
-      continue;
-     }
+  for(const BakedQuad& quad : batch.quads) {
+   if(cullFaces && quad.cullFace >= 0) {
+    const int* offset = kFaceOffsets[quad.cullFace];
+    if(!cullDraw->block->isSideVisible(
+           cullView, cullDraw->x + offset[0], cullDraw->y + offset[1], cullDraw->z + offset[2], quad.cullFace)) {
+     continue;
     }
-    ManualBlockVertex vertices[4];
-    for(int i = 0; i < 4; ++i) {
+   }
+   TransformedVertex vertices[4];
+   for(int i = 0; i < 4; ++i) {
+    if(placedAsBaked) {
+     vertices[i].x = quad.vertices[i].x;
+     vertices[i].y = quad.vertices[i].y;
+     vertices[i].z = quad.vertices[i].z;
+    } else {
+     // Rotation and scale act around the model's centre, so shift there first.
      double point[3] = {quad.vertices[i].x - 0.5, quad.vertices[i].y - 0.5, quad.vertices[i].z - 0.5};
      if(transform.pitch != 0.0f) {
       rotatePoint(point, zeroOrigin, 'x', transform.pitch);
@@ -1064,47 +1102,100 @@ bool drawBakedModelQuads(int handle, const BakedQuadTransform& transform) {
      vertices[i].x = point[0] * transform.scale + 0.5 + transform.offsetX;
      vertices[i].y = point[1] * transform.scale + 0.5 + transform.offsetY;
      vertices[i].z = point[2] * transform.scale + 0.5 + transform.offsetZ;
-     vertices[i].u = quad.vertices[i].u * 16.0;
-     vertices[i].v = quad.vertices[i].v * 16.0;
     }
-    const float red = quad.red * quad.shade * transform.colorR;
-    const float green = quad.green * quad.shade * transform.colorG;
-    const float blue = quad.blue * quad.shade * transform.colorB;
-    emitted = emitManualBlockModelQuad(vertices, textureId, red, green, blue, quad.alpha) ||
-              emitManualItemModelQuad(vertices, textureId, red, green, blue, quad.alpha) || emitted;
+    vertices[i].u = quad.vertices[i].u;
+    vertices[i].v = quad.vertices[i].v;
    }
+   EmittedQuad out;
+   out.vertices = vertices;
+   out.red = quad.red * quad.shade * transform.colorR;
+   out.green = quad.green * quad.shade * transform.colorG;
+   out.blue = quad.blue * quad.shade * transform.colorB;
+   out.alpha = quad.alpha;
+   assignQuadNormal(out);
+   takeQuad(batch, out);
+   emitted = true;
   }
-  return emitted;
+ }
+ return emitted;
 }
-bool invokeManualBlockModelDraw(
-    const BlockRegistrationSpec& spec, bool inventory, int x, int y, int z, float brightness) {
- LuaApi& api = luaApi();
- return invokeModelRender(spec.ownerModId, spec.modelRef, [&](lua_State* state) {
-  api.pushstring(state, inventory ? "inventory" : "world");
-  api.setfield(state, -2, "type");
-  api.pushinteger(state, x);
-  api.setfield(state, -2, "x");
-  api.pushinteger(state, y);
-  api.setfield(state, -2, "y");
-  api.pushinteger(state, z);
-  api.setfield(state, -2, "z");
-  api.pushboolean(state, inventory ? 1 : 0);
-  api.setfield(state, -2, "inventory");
-  api.pushnumber(state, brightness);
-  api.setfield(state, -2, "brightness");
-  api.pushinteger(state, spec.blockId);
-  api.setfield(state, -2, "block_id");
-  api.pushstring(state, spec.texturePath.c_str());
-  api.setfield(state, -2, "texture");
-  api.pushinteger(state, spec.terrainTextureId);
-  api.setfield(state, -2, "texture_id");
- });
+#ifdef MINECRAFT_NATIVE_EXPORTS
+// Render-thread-only scratch tessellator for the world draw paths. Shared
+// rather than local because constructing a Tessellator reserves a
+// multi-megabyte vertex buffer; every user brackets its own startQuads/draw.
+Tessellator& worldDrawTessellator() {
+ static Tessellator tess;
+ return tess;
+}
+#endif
+// Resolves a block quad's final texture and tessellator and writes it.
+bool writeBlockQuad(const BlockModelDraw& draw, const EmittedQuad& quad, int textureId) {
+ if(draw.manager == nullptr || draw.block == nullptr) {
+  return false;
+ }
+ if(textureId < 0) {
+  textureId = draw.block->textureId;
+ }
+ BlockRenderManager& manager = *draw.manager;
+ if(!draw.inventory && manager.ctx.textureOverride >= 0) {
+  textureId = manager.ctx.textureOverride;
+ }
+ manager.ctx.bindTextureFor(textureId);
+ Tessellator& t = draw.inventory ? *manager.ctx.tess : manager.ctx.activeTess(textureId);
+ // Capture mode owns the batch lifecycle (the chunk builder started it and will
+ // draw it); an immediate draw has to bracket every quad itself.
+ const bool capturing = !draw.inventory && manager.ctx.modMeshes != nullptr;
+ // World quads sit at the block's grid position; inventory quads stay in 0..1.
+ const double baseX = draw.inventory ? 0.0 : static_cast<double>(draw.x);
+ const double baseY = draw.inventory ? 0.0 : static_cast<double>(draw.y);
+ const double baseZ = draw.inventory ? 0.0 : static_cast<double>(draw.z);
+ if(!capturing) {
+  t.startQuads();
+ }
+ writeQuad(t, quad, baseX, baseY, baseZ, draw.brightness, 1.0f);
+ if(!capturing) {
+  t.draw();
+ }
+ return true;
+}
+bool drawBakedBlockModel(const BlockModelDraw& draw, int handle, const BakedQuadTransform& transform) {
+ const BakedModel* baked = bakedModelForHandle(handle);
+ if(baked == nullptr) {
+  return false;
+ }
+ // Cullface only means anything against the block grid, so an inventory icon
+ // keeps every quad.
+ const bool grid = !draw.inventory && draw.block != nullptr && draw.manager != nullptr;
+ return forEachBakedQuad(*baked,
+                         transform,
+                         grid ? &draw : nullptr,
+                         grid ? draw.manager->ctx.blockView : nullptr,
+                         [](const BakedTextureBatch&) { return true; },
+                         [&](const BakedTextureBatch& batch, const EmittedQuad& quad) {
+                          writeBlockQuad(draw, quad, batch.textureId);
+                         });
+}
+bool drawBakedItemModel(Tessellator& tess, float brightness, int handle) {
+ const BakedModel* baked = bakedModelForHandle(handle);
+ if(baked == nullptr) {
+  return false;
+ }
+ return forEachBakedQuad(*baked,
+                         BakedQuadTransform{},
+                         nullptr,
+                         nullptr,
+                         [](const BakedTextureBatch&) { return true; },
+                         [&](const BakedTextureBatch& batch, const EmittedQuad& quad) {
+                          bindItemModelTexture(batch.textureId);
+                          tess.startQuads();
+                          writeQuad(tess, quad, 0.0, 0.0, 0.0, brightness, 1.0f);
+                          tess.draw();
+                         });
 }
 // Baked-model equivalent of LuaModBlock::getRenderBounds/getColorMultiplier:
-// register_block's coordinate_bounds/coordinate_color only affect the vanilla
-// cube-shaped render path unless applied here too, since a block with a
-// model takes the drawBakedModelQuads path instead.
-static BakedQuadTransform coordinateQuadTransform(const BlockRegistrationSpec& spec, int x, int y, int z) {
+// register_block's coordinate_bounds/coordinate_color have to be applied here
+// too, since a block with a model never takes the vanilla cube path.
+BakedQuadTransform coordinateQuadTransform(const BlockRegistrationSpec& spec, int x, int y, int z) {
  BakedQuadTransform transform;
  if(spec.coordinateBounds) {
   const lua::CoordinateVariedTransform varied = lua::coordinateVariedTransform(spec, x, y, z);
@@ -1121,86 +1212,43 @@ static BakedQuadTransform coordinateQuadTransform(const BlockRegistrationSpec& s
  }
  return transform;
 }
+} // namespace
 bool drawLuaBlockWorld(BlockRenderManager& manager, Block& block, int x, int y, int z) {
  const BlockRegistrationSpec* spec = blockRegistrationSpecForId(block.id);
- if(spec == nullptr || (spec->modelRef == kLuaNoRef && spec->bakedModel == 0)) {
+ if(spec == nullptr || spec->bakedModel == 0) {
   return false;
  }
- ActiveManualBlockDraw context{&manager, &block, x, y, z, false, block.getLuminance(manager.ctx.blockView, x, y, z)};
- const ScopedManualBlockDraw scope(context);
+ const BlockModelDraw draw{
+     &manager, &block, x, y, z, false, block.getLuminance(manager.ctx.blockView, x, y, z)};
  RenderSystem::alphaTest(0.1f);
- if(spec->bakedModel != 0) {
-  if(spec->coordinateBounds || spec->coordinateColor) {
-   return drawBakedModelQuads(spec->bakedModel, coordinateQuadTransform(*spec, x, y, z));
-  }
-  return drawBakedModelQuads(spec->bakedModel);
+ if(spec->coordinateBounds || spec->coordinateColor) {
+  return drawBakedBlockModel(draw, spec->bakedModel, coordinateQuadTransform(*spec, x, y, z));
  }
- return invokeManualBlockModelDraw(*spec, false, x, y, z, context.brightness);
+ return drawBakedBlockModel(draw, spec->bakedModel, BakedQuadTransform{});
 }
 void drawLuaBlockInventory(BlockRenderManager& manager, Block& block, int /*metadata*/, float brightness) {
  const BlockRegistrationSpec* spec = blockRegistrationSpecForId(block.id);
- if(spec == nullptr || (spec->modelRef == kLuaNoRef && spec->bakedModel == 0)) {
+ if(spec == nullptr || spec->bakedModel == 0) {
   return;
  }
  const ModBlockInventoryScope inventoryDraw;
  const MatrixScope matrix;
  RenderSystem::translate(-0.5f, -0.5f, -0.5f);
- ActiveManualBlockDraw context{&manager, &block, 0, 0, 0, true, brightness};
- const ScopedManualBlockDraw scope(context);
- if(spec->bakedModel != 0) {
-  drawBakedModelQuads(spec->bakedModel);
-  return;
- }
- invokeManualBlockModelDraw(*spec, true, 0, 0, 0, brightness);
+ const BlockModelDraw draw{&manager, &block, 0, 0, 0, true, brightness};
+ drawBakedBlockModel(draw, spec->bakedModel, BakedQuadTransform{});
 }
 bool drawLuaItemModel(Tessellator& tessellator, const ItemStack& stack, float brightness) {
- (void)tessellator;
  const ItemRegistrationSpec* spec = itemRegistrationSpecForId(stack.itemId);
- if(spec == nullptr || (spec->modelRef == kLuaNoRef && spec->bakedModel == 0)) {
+ if(spec == nullptr || spec->bakedModel == 0) {
   return false;
  }
- LuaApi& api = luaApi();
- ActiveManualItemDraw context{brightness};
- const ScopedManualItemDraw scope(context);
- if(spec->bakedModel != 0) {
-  return drawBakedModelQuads(spec->bakedModel);
- }
- return invokeModelRender(spec->ownerModId, spec->modelRef, [&](lua_State* state) {
-  api.pushstring(state, "item");
-  api.setfield(state, -2, "type");
-  api.pushnumber(state, brightness);
-  api.setfield(state, -2, "brightness");
-  api.pushinteger(state, spec->itemId);
-  api.setfield(state, -2, "item_id");
-  api.pushstring(state, spec->texturePath.c_str());
-  api.setfield(state, -2, "texture");
-  api.pushinteger(state, spec->itemsTextureId);
-  api.setfield(state, -2, "texture_id");
- });
+ return drawBakedItemModel(tessellator, brightness, spec->bakedModel);
 }
 #ifdef MINECRAFT_NATIVE_EXPORTS
 bool drawBakedModelWorld(int handle, const WorldModelDraw& options) {
  const BakedModel* baked = bakedModelForHandle(handle);
  if(baked == nullptr || !runtime::ModWorldDrawContext::active() || client::Minecraft::INSTANCE == nullptr) {
   return false;
- }
- if(!baked->gpuMeshesBuilt) {
-  baked->gpuMeshes.reserve(baked->batches.size());
-  for(const BakedTextureBatch& batch : baked->batches) {
-   Tessellator tess;
-   tess.startQuads();
-   tess.setCaptureOnly(true);
-   for(const BakedQuad& quad : batch.quads) {
-    tess.color(quad.red * quad.shade, quad.green * quad.shade, quad.blue * quad.shade, quad.alpha);
-    for(const BakedVertex& v : quad.vertices) {
-     tess.vertex(v.x, v.y, v.z, v.u, v.v);
-    }
-   }
-   auto mesh = tess.takeMesh();
-   (void)mesh.uploadToGpu();
-   baked->gpuMeshes.push_back(std::move(mesh));
-  }
-  baked->gpuMeshesBuilt = true;
  }
  const float brightness = worldBrightness(options);
  const bool textured = !baked->batches.empty() && !baked->batches.front().texturePath.empty();
@@ -1209,17 +1257,37 @@ bool drawBakedModelWorld(int handle, const WorldModelDraw& options) {
  applyWorldDrawTransform(options);
  RenderSystem::translate(-0.5f, -options.pivotY, -0.5f);
  client::texture::TextureManager& textures = client::Minecraft::INSTANCE->textureManager;
- RenderSystem::color4f(brightness, brightness, brightness, options.alpha);
- for(std::size_t i = 0; i < baked->batches.size(); ++i) {
-  const BakedTextureBatch& batch = baked->batches[i];
-  if(i < baked->gpuMeshes.size() && !baked->gpuMeshes[i].empty()) {
-   if(!batch.texturePath.empty()) {
-    RenderSystem::bindTexture(textures.getTextureId(batch.texturePath));
-   }
-   Tessellator::drawMesh(baked->gpuMeshes[i]);
-  }
+ Tessellator& tess = worldDrawTessellator();
+ bool open = false;
+ // A world draw places the model with the matrix above, so the quads go out at
+ // their baked pose: no per-quad transform, and no grid to cull against. Each
+ // batch binds its own texture by path, so one open batch spans its quads.
+ forEachBakedQuad(
+     *baked,
+     BakedQuadTransform{},
+     nullptr,
+     nullptr,
+     [&](const BakedTextureBatch& batch) {
+      if(batch.texturePath.empty()) {
+       return false;
+      }
+      if(open) {
+       tess.draw();
+      }
+      const int glId = textures.getTextureId(batch.texturePath);
+      if(glId >= 0) {
+       textures.bindTexture(glId);
+      }
+      tess.startQuads();
+      open = true;
+      return true;
+     },
+     [&](const BakedTextureBatch& /*batch*/, const EmittedQuad& quad) {
+      writeQuad(tess, quad, 0.0, 0.0, 0.0, brightness, options.alpha);
+     });
+ if(open) {
+  tess.draw();
  }
- RenderSystem::color4f(1.0f, 1.0f, 1.0f, 1.0f);
  return true;
 }
 bool drawItemStackWorld(const ItemStack& stack, const WorldModelDraw& options) {
@@ -1244,7 +1312,10 @@ bool drawItemStackWorld(const ItemStack& stack, const WorldModelDraw& options) {
   // Custom item models are baked in 0..1 model space; recentre onto the pivot.
   RenderSystem::translate(-0.5f, -options.pivotY, -0.5f);
   textures.bindTextureOrAtlas(stack.getTextureId(), ItemModelRenderer::spriteAtlasPath(stack));
-  return drawLuaItemModel(Tessellator::INSTANCE, stack, brightness);
+  // Not Tessellator::INSTANCE: a world item draw can happen while an outer
+  // renderer has a batch open on INSTANCE, and draw()ing it here would flush
+  // that half-built geometry with this item's matrix and texture.
+  return drawLuaItemModel(worldDrawTessellator(), stack, brightness);
  }
  // The inventory block renderers (vanilla and drawLuaBlockInventory) emit
  // geometry already centred on the origin, so only the pivot's deviation
@@ -1445,23 +1516,6 @@ int luaModelDraw(lua_State* state) {
  const int handle = luaIntArg(state, 1, 0);
  const int optsIndex = api.gettop(state) >= 2 && api.type(state, 2) == kLuaTTable ? 2 : 0;
  const model::WorldModelDraw options = readWorldModelDraw(state, optsIndex);
- if(model::gManualBlockDraw != nullptr) {
-  model::BakedQuadTransform transform;
-  transform.scale = options.scale;
-  transform.offsetX = static_cast<float>(options.x - model::gManualBlockDraw->x);
-  transform.offsetY = static_cast<float>(options.y - model::gManualBlockDraw->y);
-  transform.offsetZ = static_cast<float>(options.z - model::gManualBlockDraw->z);
-  transform.yaw = options.yaw;
-  transform.pitch = options.pitch;
-  transform.roll = options.roll;
-  if(options.brightness >= 0.0f) {
-   transform.colorR = options.brightness;
-   transform.colorG = options.brightness;
-   transform.colorB = options.brightness;
-  }
-  api.pushboolean(state, model::drawBakedModelQuads(handle, transform) ? 1 : 0);
-  return 1;
- }
  api.pushboolean(state, model::drawBakedModelWorld(handle, options) ? 1 : 0);
  return 1;
 }
@@ -1551,6 +1605,10 @@ int luaModelBuild(lua_State* state) {
   }
   model::BakedTextureBatch& batch = baked->batches.emplace_back();
   batch.texturePath = texture;
+  // Same rule as the JSON baker: a named texture becomes a registry id so the
+  // block/item draw paths can bind and uv-map it; untextured batches keep -1.
+  batch.textureId =
+      texture.empty() ? -1 : net::minecraft::registry::TextureRegistry::getOrRegisterTexture(texture);
   return batch.quads;
  };
  for(std::size_t qi = 1; qi <= quadCount; ++qi) {

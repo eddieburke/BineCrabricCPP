@@ -35,7 +35,8 @@ class ServerPlayNetworkHandler : public NetworkHandler, public command::CommandO
  public:
  ServerPlayNetworkHandler(MinecraftServer* server,
                           Connection* connection,
-                          ::net::minecraft::entity::player::ServerPlayerEntity* player);
+                          ::net::minecraft::entity::player::ServerPlayerEntity* player,
+                          bool modProtocolEnabled = false);
  void tick();
  void disconnect(const std::string& reason);
  void setPlayer(::net::minecraft::entity::player::ServerPlayerEntity* player);

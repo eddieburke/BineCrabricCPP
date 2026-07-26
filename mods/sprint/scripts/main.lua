@@ -1,7 +1,7 @@
 -- Sprint: Double-tap and keyhold sprinting with FOV effects
 -- Refactored with separation of concerns
 
-local config = require("sprint.config")
+local config = require("config")
 
 -- Module state
 local sprinting = false
@@ -11,21 +11,12 @@ local sprint_toggle_timer = 0
 local sprint_boost_timer = 0
 local current_fov_multiplier = 1.0
 
--- Input helpers
-local function key_code(name, fallback)
-  local code = minecraft.key_code(name)
-  if code ~= nil and code ~= 0 then
-    return code
-  end
-  return fallback
-end
-
 local function forward_down()
-  return minecraft.is_key_down(key_code("forward", 17))
+  return minecraft.is_key_down(minecraft.key_code("forward"))
 end
 
 local function sprint_key_down()
-  return minecraft.is_key_down(key_code("sprint", config.SPRINT_KEY_FALLBACK))
+  return minecraft.is_key_down(minecraft.key_code("sprint"))
 end
 
 -- Sprint state management
@@ -68,7 +59,9 @@ local function update_sprint_state()
   end
 end
 
-minecraft.event.register("tick", function(dt)
+minecraft.on("client_tick", { after_world = true }, function(event)
+  if event.paused then return event end
+  local dt = 0.05
   update_sprint_state()
   if sprint_boost_timer > 0 then
     sprint_boost_timer = sprint_boost_timer - 1
@@ -79,20 +72,23 @@ minecraft.event.register("tick", function(dt)
   local lerp_rate = config.fov_lerp_rate or 8.0
   local t = 1.0 - math.exp(-lerp_rate * dt)
   current_fov_multiplier = current_fov_multiplier + (target - current_fov_multiplier) * t
+  return event
 end)
 
-minecraft.event.register("player_move", function(event)
+minecraft.on("player_travel", { is_local_player = true, priority = 100 }, function(event)
   if sprinting and event.forward > 0.0 then
     local multiplier = config.sprint_multiplier or 1.45
     if sprint_boost_timer > 0 then
       multiplier = multiplier * (config.start_boost_multiplier or 1.08)
     end
-    event.speed_multiplier = (event.speed_multiplier or 1.0) * multiplier
+    event.speed_multiplier = event.speed_multiplier * multiplier
   end
+  return event
 end)
 
-minecraft.event.register("fov", function(event)
-  event.fov = (tonumber(event.fov) or 70.0) * current_fov_multiplier
+minecraft.on("fov", { priority = 100 }, function(event)
+  event.fov = event.fov * current_fov_multiplier
+  return event
 end)
 
 minecraft.log("info", "Sprint mod loaded (refactored with lib.settings)")

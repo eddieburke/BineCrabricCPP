@@ -1,4 +1,3 @@
-#include "net/minecraft/mod/lua/LuaChunkContext.hpp"
 #include "net/minecraft/mod/lua/LuaGameApi.hpp"
 #include "net/minecraft/mod/lua/LuaHostApi.hpp"
 #include "net/minecraft/mod/lua/LuaJsonApi.hpp"
@@ -13,7 +12,6 @@
 #include "net/minecraft/world/gen/chunk/OverworldChunkGenerator.hpp"
 #ifdef MINECRAFT_NATIVE_EXPORTS
 #include "net/minecraft/block/Block.hpp"
-#include "net/minecraft/client/ClientLog.hpp"
 #include "net/minecraft/client/Minecraft.hpp"
 #include "net/minecraft/client/gl/GLCore.hpp"
 #include "net/minecraft/client/gl/GlConstants.hpp"
@@ -36,25 +34,13 @@ using LoadedLuaMod = net::minecraft::mod::runtime::ModHost::LoadedLuaMod;
  return static_cast<LoadedLuaMod*>(luaApi().touserdata(state, luaUpvalueIndex(1)));
 }
 #ifdef MINECRAFT_NATIVE_EXPORTS
-void warnLegacyRawTextureId(int textureId) {
- static std::unordered_map<int, bool> warned;
- if(warned.emplace(textureId, true).second) {
-  net::minecraft::client::ClientLog::LOGGER.log(
-      net::minecraft::util::logging::LogLevel::Warning,
-      "Lua mod passed a raw GL texture id (" + std::to_string(textureId) +
-          ") to a texture API; this is deprecated, use the id returned by create_texture directly");
- }
-}
 int resolveLuaTextureGlId(int textureId) {
- if(net::minecraft::registry::TextureRegistry::isCustomTexture(textureId)) {
-  if(client::Minecraft::INSTANCE == nullptr) {
-   return -1;
-  }
-  return net::minecraft::registry::TextureRegistry::resolveGlId(textureId,
-                                                                client::Minecraft::INSTANCE->textureManager);
+ if(!net::minecraft::registry::TextureRegistry::isCustomTexture(textureId) ||
+    client::Minecraft::INSTANCE == nullptr) {
+  return -1;
  }
- warnLegacyRawTextureId(textureId);
- return textureId;
+ return net::minecraft::registry::TextureRegistry::resolveGlId(textureId,
+                                                               client::Minecraft::INSTANCE->textureManager);
 }
 #endif
 [[nodiscard]] int floorDiv16(int value) {
@@ -164,12 +150,7 @@ int luaWorldGetBlockCollisions(lua_State* state) {
  const double maxX = luaFloatField(state, 1, "max_x", 0.0f);
  const double maxY = luaFloatField(state, 1, "max_y", 0.0f);
  const double maxZ = luaFloatField(state, 1, "max_z", 0.0f);
- World* world = LuaChunkContext::hasActiveChunk() ? LuaChunkContext::activeWorld() : nullptr;
- if(world == nullptr) {
-#ifdef MINECRAFT_NATIVE_EXPORTS
-  world = client::Minecraft::INSTANCE != nullptr ? client::Minecraft::INSTANCE->world : nullptr;
-#endif
- }
+ World* world = activeModWorld();
  if(world == nullptr) {
   api.pushnil(state);
   return 1;
@@ -192,23 +173,24 @@ int luaWorldGetBlockCollisions(lua_State* state) {
 }
 int luaWorldSampleGrid(lua_State* state) {
  LuaApi& api = luaApi();
- int isNumber = 0;
- const long long signedSeed = api.tointegerx(state, 1, &isNumber);
- const std::uint64_t seed = isNumber != 0 ? static_cast<std::uint64_t>(signedSeed) : 0;
- isNumber = 0;
- const long long requestedCenterX = api.tointegerx(state, 2, &isNumber);
- const int centerX = isNumber != 0 ? static_cast<int>(std::clamp(requestedCenterX, -30'000'000LL, 30'000'000LL)) : 0;
- isNumber = 0;
- const long long requestedCenterZ = api.tointegerx(state, 3, &isNumber);
- const int centerZ = isNumber != 0 ? static_cast<int>(std::clamp(requestedCenterZ, -30'000'000LL, 30'000'000LL)) : 0;
+ LuaArgs args(state);
+ int signedSeed = 0;
+ int requestedCenterX = 0;
+ int requestedCenterZ = 0;
+ if(!args.integer(1, signedSeed) || !args.integer(2, requestedCenterX) || !args.integer(3, requestedCenterZ) ||
+    (args.count() >= 4 && !args.table(4))) {
+  return args.fail("minecraft.world.sample expects (seed, center_x, center_z, options?)");
+ }
+ const std::uint64_t seed = static_cast<std::uint64_t>(signedSeed);
+ const int centerX = std::clamp(requestedCenterX, -30'000'000, 30'000'000);
+ const int centerZ = std::clamp(requestedCenterZ, -30'000'000, 30'000'000);
  int radiusChunks = 6;
  int maxSide = 48;
  std::string channel = "grass";
  std::vector<std::string> channels;
  bool modGeneration = false;
  if(api.type(state, 4) == kLuaTTable) {
-  radiusChunks =
-      std::clamp(luaIntField(state, 4, "radius_chunks", luaIntField(state, 4, "radius", radiusChunks)), 1, 4096);
+  radiusChunks = std::clamp(luaIntField(state, 4, "radius_chunks", radiusChunks), 1, 4096);
   maxSide = std::clamp(luaIntField(state, 4, "max_side", maxSide), 8, 256);
   channel = luaStringField(state, 4, "channel", channel);
   modGeneration = luaBoolField(state, 4, "mod_generation", false);
@@ -304,8 +286,6 @@ int luaWorldSampleGrid(lua_State* state) {
    api.rawseti(state, -2, static_cast<long long>(i + 1));
   }
  };
- pushSamples(samples.front());
- api.setfield(state, -2, "values");
  api.createtable(state, 0, static_cast<int>(channels.size()));
  for(std::size_t i = 0; i < channels.size(); ++i) {
   pushSamples(samples[i]);
@@ -327,15 +307,16 @@ int luaWorldSampleChannels(lua_State* state) {
 #ifdef MINECRAFT_NATIVE_EXPORTS
 int luaFilesPick(lua_State* state) {
  LuaApi& api = luaApi();
- std::string extension;
- if(api.type(state, 1) == kLuaTTable) {
-  extension = luaStringField(state, 1, "extension", "");
-  if(extension.empty()) {
-   extension = luaStringField(state, 1, "filter", "");
-  }
- } else if(api.type(state, 1) == kLuaTString) {
-  extension = luaString(state, 1, "");
+ LuaArgs args(state);
+ if(!args.table(1)) {
+  return args.fail("minecraft.files.pick expects an options table");
  }
+ api.getfield(state, 1, "extension");
+ if(api.type(state, -1) != kLuaTString) {
+  return args.fail("minecraft.files.pick requires a string extension");
+ }
+ const std::string extension = luaString(state, -1, "");
+ api.settop(state, 1);
  std::optional<std::filesystem::path> picked;
  if(extension.empty() || extension == "json" || extension == ".json" || extension == "*.json") {
   picked = client::platform::pickJsonFile();
@@ -407,48 +388,41 @@ int luaFilesRead(lua_State* state) {
 }
 int luaRenderCreateTexture(lua_State* state) {
  LuaApi& api = luaApi();
+ LuaArgs args(state);
  LoadedLuaMod* mod = modFromUpvalue(state);
  if(mod == nullptr || client::Minecraft::INSTANCE == nullptr) {
   api.pushnil(state);
   return 1;
  }
- int width = 1;
- int height = 1;
- int colorsIndex = 0;
- if(api.type(state, 1) == kLuaTTable) {
-  width = std::max(1, luaIntField(state, 1, "width", luaIntField(state, 1, "side", 1)));
-  height = std::max(1, luaIntField(state, 1, "height", width));
-  api.getfield(state, 1, "values");
-  if(api.type(state, -1) != kLuaTTable) {
-   api.getfield(state, 1, "colors");
-  }
-  colorsIndex = api.gettop(state);
- } else {
-  int isNumber = 0;
-  width = std::max(1, static_cast<int>(api.tointegerx(state, 1, &isNumber)));
-  height = std::max(1, static_cast<int>(api.tointegerx(state, 2, &isNumber)));
-  colorsIndex = 3;
+ if(!args.table(1)) {
+  return args.fail("minecraft.render.create_texture expects a texture spec table");
  }
- if(api.type(state, colorsIndex) != kLuaTTable) {
-  api.settop(state, -2);
-  api.pushnil(state);
-  return 1;
+ const int width = luaIntField(state, 1, "width", 0);
+ const int height = luaIntField(state, 1, "height", 0);
+ if(width <= 0 || height <= 0) {
+  return args.fail("minecraft.render.create_texture requires positive width and height");
  }
+ api.getfield(state, 1, "pixels");
+ if(api.type(state, -1) != kLuaTTable) {
+  return args.fail("minecraft.render.create_texture requires a pixels array");
+ }
+ const int pixelsIndex = api.gettop(state);
  const int cellCount = width * height;
  client::texture::RasterImage image{};
  image.width = width;
  image.height = height;
  image.argb.assign(static_cast<std::size_t>(cellCount), 0xFF000000U);
  for(int i = 1; i <= cellCount; ++i) {
-  api.rawgeti(state, colorsIndex, static_cast<long long>(i));
+  api.rawgeti(state, pixelsIndex, static_cast<long long>(i));
   int isNumber = 0;
   const long long argb = api.tointegerx(state, -1, &isNumber);
   api.settop(state, -2);
-  if(isNumber != 0) {
-   image.argb[static_cast<std::size_t>(i - 1)] = static_cast<std::uint32_t>(argb);
+  if(isNumber == 0) {
+   return args.fail("minecraft.render.create_texture pixels must be integers");
   }
+  image.argb[static_cast<std::size_t>(i - 1)] = static_cast<std::uint32_t>(argb);
  }
- api.settop(state, colorsIndex - 1);
+ api.settop(state, 1);
  const int glId = client::Minecraft::INSTANCE->textureManager.load(image);
  static std::atomic<long long> nextModTextureSerial{0};
  const std::string syntheticPath =
@@ -486,16 +460,18 @@ int luaRenderReleaseTexture(lua_State* state) {
 }
 int luaRenderUpdateTexture(lua_State* state) {
  LuaApi& api = luaApi();
+ LuaArgs args(state);
  LoadedLuaMod* mod = modFromUpvalue(state);
  if(mod == nullptr || client::Minecraft::INSTANCE == nullptr) {
   api.pushboolean(state, 0);
   return 1;
  }
- int isNum = 0;
- const int textureId = static_cast<int>(api.tointegerx(state, 1, &isNum));
- if(isNum == 0 || textureId <= 0) {
-  api.pushboolean(state, 0);
-  return 1;
+ int textureId = 0;
+ if(!args.integer(1, textureId) || !args.table(2)) {
+  return args.fail("minecraft.render.update_texture expects (texture_id, texture_spec)");
+ }
+ if(textureId <= 0) {
+  return args.fail("minecraft.render.update_texture requires a positive texture id");
  }
  const auto it = std::find(mod->ownedTextureIds.begin(), mod->ownedTextureIds.end(), textureId);
  if(it == mod->ownedTextureIds.end()) {
@@ -508,43 +484,32 @@ int luaRenderUpdateTexture(lua_State* state) {
   api.pushboolean(state, 0);
   return 1;
  }
- int width = cached->width;
- int height = cached->height;
- int colorsIndex = 2;
- if(api.type(state, 2) == kLuaTTable) {
-  api.getfield(state, 2, "values");
-  if(api.type(state, -1) != kLuaTTable) {
-   api.settop(state, -2);
-   api.getfield(state, 2, "colors");
-  }
-  if(api.type(state, -1) == kLuaTTable) {
-   width = std::max(1, luaIntField(state, 2, "width", luaIntField(state, 2, "side", width)));
-   height = std::max(1, luaIntField(state, 2, "height", width));
-   colorsIndex = api.gettop(state);
-  } else {
-   api.settop(state, -2);
-   colorsIndex = 2;
-  }
+ const int width = luaIntField(state, 2, "width", 0);
+ const int height = luaIntField(state, 2, "height", 0);
+ if(width <= 0 || height <= 0) {
+  return args.fail("minecraft.render.update_texture requires positive width and height");
  }
- if(api.type(state, colorsIndex) != kLuaTTable) {
-  api.pushboolean(state, 0);
-  return 1;
+ api.getfield(state, 2, "pixels");
+ if(api.type(state, -1) != kLuaTTable) {
+  return args.fail("minecraft.render.update_texture requires a pixels array");
  }
+ const int pixelsIndex = api.gettop(state);
  const int cellCount = width * height;
  client::texture::RasterImage image{};
  image.width = width;
  image.height = height;
  image.argb.assign(static_cast<std::size_t>(cellCount), 0xFF000000U);
  for(int i = 1; i <= cellCount; ++i) {
-  api.rawgeti(state, colorsIndex, static_cast<long long>(i));
+  api.rawgeti(state, pixelsIndex, static_cast<long long>(i));
   int isNumber = 0;
   const long long argb = api.tointegerx(state, -1, &isNumber);
   api.settop(state, -2);
-  if(isNumber != 0) {
-   image.argb[static_cast<std::size_t>(i - 1)] = static_cast<std::uint32_t>(argb);
+  if(isNumber == 0) {
+   return args.fail("minecraft.render.update_texture pixels must be integers");
   }
+  image.argb[static_cast<std::size_t>(i - 1)] = static_cast<std::uint32_t>(argb);
  }
- api.settop(state, colorsIndex - 1);
+ api.settop(state, 2);
  client::Minecraft::INSTANCE->textureManager.update(glId, image);
  api.pushboolean(state, 1);
  return 1;
@@ -653,9 +618,8 @@ void installGenericModApi(lua_State* state, [[maybe_unused]] LoadedLuaMod& mod) 
  api.setfield(state, root, "registry");
  api.getfield(state, root, "world");
  bindFunctions(state,
-               {{"sample", luaWorldSampleGrid},
-                {"sample_grid", luaWorldSampleGrid},
-                {"sample_channels", luaWorldSampleChannels},
+                {{"sample", luaWorldSampleGrid},
+                 {"sample_channels", luaWorldSampleChannels},
                 {"get_block_collisions", luaWorldGetBlockCollisions}});
  api.settop(state, root);
 #ifdef MINECRAFT_NATIVE_EXPORTS

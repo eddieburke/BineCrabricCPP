@@ -10,19 +10,6 @@
 namespace net::minecraft::mod::runtime {
 using namespace net::minecraft::mod::lua;
 namespace {
-float readFloatArg(lua_State* state, int index, float fallback) {
- LuaApi& api = luaApi();
- if(api.gettop(state) < index) {
-  return fallback;
- }
- int isNumber = 0;
- const double value = api.tonumberx(state, index, &isNumber);
- return isNumber != 0 ? static_cast<float>(value) : fallback;
-}
-std::string readStringArg(lua_State* state, int index, std::string fallback = {}) {
- LuaApi& api = luaApi();
- return api.gettop(state) >= index ? luaString(state, index, std::move(fallback)) : std::move(fallback);
-}
 client::Minecraft* clientInstance() {
  return client::Minecraft::INSTANCE;
 }
@@ -49,20 +36,19 @@ bool registerSoundKind(client::platform::audio::AudioEngine& audio,
 #ifdef MINECRAFT_NATIVE_EXPORTS
 int luaRegisterSound(lua_State* state) {
  LuaApi& api = luaApi();
+ LuaArgs args(state);
  ModHost::LoadedLuaMod* mod = currentLuaMod(state);
- if(mod == nullptr || api.gettop(state) < 2 || api.type(state, 1) != kLuaTString ||
-    api.type(state, 2) != kLuaTString) {
-  api.pushboolean(state, 0);
-  api.pushstring(state, "minecraft.sound.register expects (id, path, kind?)");
-  return 2;
+ std::string id;
+ std::string path;
+ if(mod == nullptr || !args.string(1, id) || !args.string(2, path)) {
+  return args.fail("minecraft.sound.register expects (id, path, kind?)");
  }
- const std::string id = luaString(state, 1, "");
- const std::string path = luaString(state, 2, "");
- const std::string kind = readStringArg(state, 3, "effect");
+ std::string kind = "effect";
+ if(!args.optionalString(3, kind)) {
+  return args.fail("minecraft.sound.register expects kind to be a string");
+ }
  if(id.empty() || path.empty()) {
-  api.pushboolean(state, 0);
-  api.pushstring(state, "sound id and path are required");
-  return 2;
+  return args.fail("sound id and path are required");
  }
  const std::optional<std::filesystem::path> resolved = host().resolveResourcePath(path);
  if(!resolved.has_value()) {
@@ -81,45 +67,81 @@ int luaRegisterSound(lua_State* state) {
 }
 int luaPlaySound(lua_State* state) {
  LuaApi& api = luaApi();
+ LuaArgs args(state);
  client::Minecraft* client = clientInstance();
- if(client == nullptr || api.type(state, 1) != kLuaTString) {
+ std::string id;
+ if(!args.string(1, id)) {
+  return args.fail("minecraft.sound.play expects (id, volume?, pitch?)");
+ }
+ double volume = 1.0;
+ double pitch = 1.0;
+ if(!args.optionalNumber(2, volume) || !args.optionalNumber(3, pitch)) {
+  return args.fail("minecraft.sound.play expects numeric volume and pitch");
+ }
+ if(client == nullptr) {
   api.pushboolean(state, 0);
   return 1;
  }
- const std::string id = luaString(state, 1, "");
- api.pushboolean(state, client->audio.play(id, readFloatArg(state, 2, 1.0f), readFloatArg(state, 3, 1.0f)) ? 1 : 0);
+ api.pushboolean(state, client->audio.play(id, static_cast<float>(volume), static_cast<float>(pitch)) ? 1 : 0);
  return 1;
 }
 int luaPlaySoundAt(lua_State* state) {
  LuaApi& api = luaApi();
+ LuaArgs args(state);
  client::Minecraft* client = clientInstance();
- if(client == nullptr || api.type(state, 1) != kLuaTString) {
+ std::string id;
+ if(!args.string(1, id)) {
+  return args.fail("minecraft.sound.play_at expects (id, x?, y?, z?, volume?, pitch?)");
+ }
+ double x = 0.0;
+ double y = 0.0;
+ double z = 0.0;
+ double volume = 1.0;
+ double pitch = 1.0;
+ if(!args.optionalNumber(2, x) || !args.optionalNumber(3, y) || !args.optionalNumber(4, z) ||
+    !args.optionalNumber(5, volume) || !args.optionalNumber(6, pitch)) {
+  return args.fail("minecraft.sound.play_at expects numeric coordinates, volume, and pitch");
+ }
+ if(client == nullptr) {
   api.pushboolean(state, 0);
   return 1;
  }
- const std::string id = luaString(state, 1, "");
- const float x = readFloatArg(state, 2, 0.0f);
- const float y = readFloatArg(state, 3, 0.0f);
- const float z = readFloatArg(state, 4, 0.0f);
- const float volume = readFloatArg(state, 5, 1.0f);
- const float pitch = readFloatArg(state, 6, 1.0f);
- api.pushboolean(state, client->audio.playAt(id, x, y, z, volume, pitch) ? 1 : 0);
+ api.pushboolean(state,
+                 client->audio.playAt(id,
+                                      static_cast<float>(x),
+                                      static_cast<float>(y),
+                                      static_cast<float>(z),
+                                      static_cast<float>(volume),
+                                      static_cast<float>(pitch)) ? 1 : 0);
  return 1;
 }
 int luaPlaySoundLoopAt(lua_State* state) {
  LuaApi& api = luaApi();
+ LuaArgs args(state);
  client::Minecraft* client = clientInstance();
- if(client == nullptr || api.type(state, 1) != kLuaTString) {
+ std::string id;
+ if(!args.string(1, id)) {
+  return args.fail("minecraft.sound.play_loop_at expects (id, x?, y?, z?, volume?, pitch?)");
+ }
+ double x = 0.0;
+ double y = 0.0;
+ double z = 0.0;
+ double volume = 1.0;
+ double pitch = 1.0;
+ if(!args.optionalNumber(2, x) || !args.optionalNumber(3, y) || !args.optionalNumber(4, z) ||
+    !args.optionalNumber(5, volume) || !args.optionalNumber(6, pitch)) {
+  return args.fail("minecraft.sound.play_loop_at expects numeric coordinates, volume, and pitch");
+ }
+ if(client == nullptr) {
   api.pushnil(state);
   return 1;
  }
- const std::string id = luaString(state, 1, "");
- const float x = readFloatArg(state, 2, 0.0f);
- const float y = readFloatArg(state, 3, 0.0f);
- const float z = readFloatArg(state, 4, 0.0f);
- const float volume = readFloatArg(state, 5, 1.0f);
- const float pitch = readFloatArg(state, 6, 1.0f);
- const std::string handle = client->audio.playLoopAt(id, x, y, z, volume, pitch);
+ const std::string handle = client->audio.playLoopAt(id,
+                                                      static_cast<float>(x),
+                                                      static_cast<float>(y),
+                                                      static_cast<float>(z),
+                                                      static_cast<float>(volume),
+                                                      static_cast<float>(pitch));
  if(handle.empty()) {
   api.pushnil(state);
  } else {
@@ -129,12 +151,16 @@ int luaPlaySoundLoopAt(lua_State* state) {
 }
 int luaStopSound(lua_State* state) {
  LuaApi& api = luaApi();
+ LuaArgs args(state);
  client::Minecraft* client = clientInstance();
- if(client == nullptr || api.type(state, 1) != kLuaTString) {
+ std::string handle;
+ if(!args.string(1, handle)) {
+  return args.fail("minecraft.sound.stop expects (handle)");
+ }
+ if(client == nullptr) {
   api.pushboolean(state, 0);
   return 1;
  }
- const std::string handle = luaString(state, 1, "");
  if(handle.empty()) {
   api.pushboolean(state, 0);
   return 1;

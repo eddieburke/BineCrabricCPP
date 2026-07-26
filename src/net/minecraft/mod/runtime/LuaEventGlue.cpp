@@ -1,11 +1,14 @@
 #include "net/minecraft/mod/runtime/LuaEventGlue.hpp"
 #include "net/minecraft/entity/Entity.hpp"
 #include "net/minecraft/entity/EntityRegistry.hpp"
+#include "net/minecraft/item/ItemStack.hpp"
 #include "net/minecraft/mod/lua/LuaGameApi.hpp"
 #include "net/minecraft/mod/lua/LuaHostApi.hpp"
+#include "net/minecraft/mod/lua/LuaItemRegistry.hpp"
 #include "net/minecraft/mod/runtime/LuaDirectHooks.hpp"
 #ifdef MINECRAFT_NATIVE_EXPORTS
 #include "net/minecraft/client/Minecraft.hpp"
+#include "net/minecraft/client/render/item/ItemModelRenderer.hpp"
 #include "net/minecraft/entity/Entity.hpp"
 #include "net/minecraft/entity/player/ClientPlayerEntity.hpp"
 #endif
@@ -16,6 +19,26 @@ using namespace net::minecraft::mod::lua;
 [[nodiscard]] bool luaWorldIsOverworld(const World* world) {
  return world != nullptr && world->dimension != nullptr && !world->dimension->isNether &&
         !world->dimension->hasCeiling;
+}
+void pushItemStackFields(lua_State* state, const ItemStack& stack) {
+ setFields(state, "item_id", stack.itemId, "item_count", stack.count, "item_damage", stack.damage,
+           "item_max_damage", stack.getMaxDamage());
+#ifdef MINECRAFT_NATIVE_EXPORTS
+ const bool modTex = net::minecraft::client::render::item::ItemModelRenderer::usesModTexture(stack);
+ if(modTex) {
+  const auto* spec = itemRegistrationSpecForId(stack.itemId);
+  const std::string path = spec != nullptr ? spec->texturePath : std::string();
+  setFields(state, "texture_path", path, "mod_texture", true, "atlas_index", -1);
+ } else {
+  setFields(state,
+            "texture_path",
+            net::minecraft::client::render::item::ItemModelRenderer::spriteAtlasPath(stack),
+            "mod_texture",
+            false,
+            "atlas_index",
+            stack.getTextureId());
+ }
+#endif
 }
 void setWorldContextFields(lua_State* state, const World* world) {
  setField(state, "has_world", world != nullptr);
@@ -72,7 +95,6 @@ void setClientTickFields(lua_State* state, const ClientTickEvent& event) {
  setField(state, "after_world", event.afterWorld);
  setField(state, "paused", event.paused);
  setField(state, "has_player", event.player != nullptr);
- setField(state, "has_world", event.world != nullptr);
  setWorldContextFields(state, event.world);
  double cameraY = 64.0;
  double playerY = 64.0;
@@ -81,7 +103,7 @@ void setClientTickFields(lua_State* state, const ClientTickEvent& event) {
 #ifdef MINECRAFT_NATIVE_EXPORTS
  if(event.client != nullptr && event.client->camera != nullptr) {
   const entity::Entity* camera = event.client->camera;
-  cameraY = camera->lastTickY + (camera->y - camera->lastTickY);
+   cameraY = camera->y;
  }
  if(event.player != nullptr) {
   playerY = event.player->y;
@@ -125,7 +147,7 @@ bool isLuaModExecutionEnabled() {
  // Gate on the active mod-context world (server interact sets the server world).
  // Never use only Minecraft::INSTANCE->world — that is ClientWorld (remote) in SP and
  // would suppress server-side Lua (entity spawn, inventory, etc.).
- World* world = contextOrClientWorld();
+ World* world = activeModWorld();
  if(world != nullptr && world->isRemote() && !world->isLuaModGenerationEnabled()) {
   return false;
  }

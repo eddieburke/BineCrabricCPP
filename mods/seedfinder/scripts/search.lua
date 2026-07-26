@@ -1,5 +1,5 @@
 local search = {}
-local rules = minecraft.require("scripts.rules")
+local rules = require("scripts.rules")
 
 function search.field_num(name, default)
   local text = minecraft.screen.field_text(name)

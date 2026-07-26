@@ -18,7 +18,6 @@ enum class LuaEventId : std::uint8_t {
  WorldOpen,
  WorldTick,
  EntityTick,
- TileEntityTick,
  CreateWorld,
  BlockInteract,
  EntityInteract,
@@ -34,7 +33,6 @@ enum class LuaEventId : std::uint8_t {
  ScreenUi,
  ScreenEvent,
  PreEntityRender,
- PreTileEntityRender,
  EntitySpawn,
  EntityRemove,
  Count
@@ -55,7 +53,6 @@ inline constexpr std::string_view kLuaEventNames[kLuaEventCount] = {
     "world_open",
     "world_tick",
     "entity_tick",
-    "tile_entity_tick",
     "create_world",
     "block_interact",
     "entity_interact",
@@ -71,7 +68,6 @@ inline constexpr std::string_view kLuaEventNames[kLuaEventCount] = {
     "screen_ui",
     "screen_event",
     "pre_entity_render",
-    "pre_tile_entity_render",
     "entity_spawn",
     "entity_remove",
 };
@@ -82,8 +78,5 @@ inline constexpr std::string_view kLuaEventNames[kLuaEventCount] = {
   }
  }
  return -1;
-}
-[[nodiscard]] constexpr int luaEventIndexOf(LuaEventId id) {
- return static_cast<int>(id);
 }
 } // namespace net::minecraft::mod::runtime

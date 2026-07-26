@@ -3,7 +3,7 @@
 -- Standardized structure with separated config
 -- ================================================================
 
-local config = require("offline_mode.config")
+local config = require("config")
 
 local MOD_ID = "offline_mode"
 local CONFIG_PATH = "offline_mode.cfg"
@@ -76,7 +76,7 @@ local function status_line()
 end
 
 -- Apply any saved preference once the client is ready.
-minecraft.on(minecraft.events.client_tick, {
+minecraft.on("client_tick", {
   has_player = true,
   once = true,
   priority = 0,
@@ -86,7 +86,7 @@ minecraft.on(minecraft.events.client_tick, {
 end)
 
 -- Custom settings screen opened from the authenticator menu.
-minecraft.on(minecraft.events.screen_event, { screen_id = "offline_mode:settings", priority = 100 }, function(event)
+minecraft.on("screen_event", { screen_id = "offline_mode:settings", priority = 100 }, function(event)
   if event.phase == "init" then
     minecraft.screen.add_field("username", 60, 64, 200, 20, { text = state.username, max_len = 16 })
     minecraft.screen.add_button(60, 92, 200, 20, toggle_label(), function()
@@ -119,7 +119,7 @@ end)
 
 -- Inject the entry button into the authenticator (login) screen while logged out.
 -- Placed at a fixed y so repeated re-inits overlap the same button instead of stacking.
-minecraft.on(minecraft.events.screen_ui, {
+minecraft.on("screen_ui", {
   screen_id = minecraft.screen.ids.login,
   region = minecraft.screen.regions.screen,
   priority = 100,

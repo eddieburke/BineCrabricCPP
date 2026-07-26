@@ -13,18 +13,29 @@ Beta 1.7.3 Minecraft port. Java reference in `mcp/`; native C++ in `native/`.
 
 ## 2. Build and compile
 
-Use **only** `native/build-omega.ps1` to build or compile native C++.
+Use **only** `build-omega.ps1` to build or compile native C++.
 
-- Run from `native/`: `.\build-omega.ps1`
+- Run from project root: `.\build-omega.ps1`
 - Do **not** invoke `cmake`, `ninja`, `msbuild`, `make`, or other build tools directly unless the user explicitly asks for a one-off diagnostic command.
 - After editing native sources, always verify with this script.
 
 ```powershell
-Set-Location native
+set location native
 .\build-omega.ps1
 .\build-omega.ps1 -Clean
 .\build-omega.ps1 -RunTests
 ```
+
+**Toolchain location**: The build script requires a bundled GCC toolchain at `toolchain\mingw64`. This contains:
+- `g++.exe` - GCC compiler
+- `gdb.exe` - GDB debugger (at `toolchain\mingw64\bin\gdb.exe`)
+- `gdbserver.exe` - GDB server
+
+When a toolchain is present, the script uses:
+- `toolchain\mingw64` as the compiler prefix (sets `CXX="toolchain\mingw64\g++.exe"`)
+- The bundled GDB for debugging, regardless of other GDB installations
+
+**Environment path**: The script prepends `toolchain\mingw64\bin` to the PATH to ensure the correct tools are used.
 
 In **Multitask Mode**, only the **compile fixer** stage may build or test, and it must use this script.
 

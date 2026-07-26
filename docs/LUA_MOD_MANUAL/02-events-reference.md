@@ -38,7 +38,7 @@ Default priority is `0`. Use negative values for early execution, positive for l
 function minecraft.register_block(spec)
   -- ...
   if spec.on_use then
-    minecraft.on(minecraft.events.block_interact, { block_id = spec.id, ... }, function(event)
+    minecraft.on("block_interact", { block_id = spec.id, ... }, function(event)
       local result = spec.on_use(event)
       if event.handled then event.canceled = true end
       return result
@@ -66,7 +66,7 @@ Fires every world tick (both before and after the main tick processing).
 | `side` | string | `"server"` or `"client"` | No |
 
 ```lua
-minecraft.on(minecraft.events.world_tick, { before = false }, function(event)
+minecraft.on("world_tick", { before = false }, function(event)
   -- post-tick logic
 end)
 ```
@@ -170,7 +170,7 @@ Fires to query/adjust the server tick rate.
 | `tps_scale` | float | Multiplier applied to TPS (default 1.0) | Yes |
 
 ```lua
-minecraft.on(minecraft.events.tick_rate, {}, function(event)
+minecraft.on("tick_rate", {}, function(event)
   event.target_tps = 10.0  -- slow down to 10 TPS
 end)
 ```
@@ -197,7 +197,7 @@ Fires during chunk generation for each stage/moment.
 | `side` | string | `"server"` or `"client"` | No |
 
 ```lua
-minecraft.on(minecraft.events.chunk_generation, {
+minecraft.on("chunk_generation", {
   stage = "features", moment = "after",
   when = minecraft.util.real_world,
 }, function(event)
@@ -219,7 +219,7 @@ Fires when a new world is being created (before world generation begins).
 | `options` | table | Map of string → string options | Yes |
 
 ```lua
-minecraft.on(minecraft.events.create_world, {}, function(event)
+minecraft.on("create_world", {}, function(event)
   event.options["gamemode"] = "creative"
   event.seed = 42  -- not mutable (but options is)
 end)
@@ -244,7 +244,7 @@ Fires when a world is opened/loaded (before it starts ticking).
 | `side` | string | `"server"` or `"client"` | No |
 
 ```lua
-minecraft.on(minecraft.events.world_open, { new_world = true }, function(event)
+minecraft.on("world_open", { new_world = true }, function(event)
   print("New world created: " .. event.save_name)
 end)
 ```
@@ -265,7 +265,7 @@ Fires when the world starts ticking for the first time.
 | `side` | string | `"server"` or `"client"` | No |
 
 ```lua
-minecraft.on(minecraft.events.world_start, { when = minecraft.util.real_world }, function(event)
+minecraft.on("world_start", { when = minecraft.util.real_world }, function(event)
   print("World started: " .. event.save_name)
 end)
 ```
@@ -288,7 +288,7 @@ Fires when the game searches for a valid spawn position.
 | `side` | string | `"server"` or `"client"` | No |
 
 ```lua
-minecraft.on(minecraft.events.world_spawn_search, {}, function(event)
+minecraft.on("world_spawn_search", {}, function(event)
   event.x = 0
   event.z = 0
   event.y = 80
@@ -330,7 +330,7 @@ Fires when a player interacts with a block (right-click or left-click).
 | `side` | string | `"server"` or `"client"` | No |
 
 ```lua
-minecraft.on(minecraft.events.block_interact, { right_click = true }, function(event)
+minecraft.on("block_interact", { right_click = true }, function(event)
   print("Block at " .. event.x .. "," .. event.y .. "," .. event.z .. " was right-clicked")
   event.handled = true
 end)
@@ -362,7 +362,7 @@ Fires when a player interacts with an entity (attack or right-click).
 | `side` | string | `"server"` or `"client"` | No |
 
 ```lua
-minecraft.on(minecraft.events.entity_interact, { attack = true }, function(event)
+minecraft.on("entity_interact", { attack = true }, function(event)
   if event.entity_type == "minecraft:cow" then
     event.canceled = true  -- prevent cow attacks
   end
@@ -396,7 +396,7 @@ Fires when an entity teleports.
 Note: This event is SKIPPED on remote (client) worlds — only fires on server side.
 
 ```lua
-minecraft.on(minecraft.events.entity_teleport, {}, function(event)
+minecraft.on("entity_teleport", {}, function(event)
   -- Redirect all endermen to the sky
   if event.entity_type == "minecraft:enderman" then
     event.y = 200
@@ -424,7 +424,7 @@ Fires when a player attacks an entity and damage is calculated.
 | `side` | string | `"server"` or `"client"` | No |
 
 ```lua
-minecraft.on(minecraft.events.attack_damage, {}, function(event)
+minecraft.on("attack_damage", {}, function(event)
   event.damage = event.damage * 2  -- double all damage
   event.critical = true             -- always critical
 end)
@@ -445,7 +445,7 @@ Fires when a player moves/travels, before movement processing.
 | `side` | string | `"server"` or `"client"` | No |
 
 ```lua
-minecraft.on(minecraft.events.player_travel, { is_local_player = true }, function(event)
+minecraft.on("player_travel", { is_local_player = true }, function(event)
   event.speed_multiplier = 2.0  -- double player speed
 end)
 ```
@@ -486,7 +486,7 @@ Fires when an entity is spawned into the world (client-only).
 | `atlas_index` | int | Atlas tile index (if vanilla texture) | No |
 
 ```lua
-minecraft.on(minecraft.events.entity_spawn, {}, function(event)
+minecraft.on("entity_spawn", {}, function(event)
   if event.entity_type == "minecraft:item" then
     print("Item spawned: " .. event.item_id)
   end
@@ -509,7 +509,7 @@ Fires when an entity is removed from the world (client-only).
 | `atlas_index` | int | Atlas tile index (if vanilla texture) | No |
 
 ```lua
-minecraft.on(minecraft.events.entity_remove, { entity_type = "minecraft:item" }, function(event)
+minecraft.on("entity_remove", { entity_type = "minecraft:item" }, function(event)
   -- track item despawn
 end)
 ```
@@ -532,7 +532,7 @@ Fires every tick for each entity in the world.
 | `side` | string | `"server"` or `"client"` | No |
 
 ```lua
-minecraft.on(minecraft.events.entity_tick, { entity_type = "minecraft:zombie" }, function(event)
+minecraft.on("entity_tick", { entity_type = "minecraft:zombie" }, function(event)
   -- zombies tick slower
   event.canceled = true  -- would freeze zombie AI
 end)
@@ -566,7 +566,7 @@ Fires every client tick (both before and after world tick, and when paused).
 | `is_night` | boolean | Nighttime check | No |
 
 ```lua
-minecraft.on(minecraft.events.client_tick, { before = true, when = minecraft.util.real_world }, function(event)
+minecraft.on("client_tick", { before = true, when = minecraft.util.real_world }, function(event)
   -- HUD update logic
   if event.is_night then
     -- render night vision overlay
@@ -601,7 +601,7 @@ Fires when the client performs a raycast (crosshair targeting).
 | `side` | string | `"server"` or `"client"` | No |
 
 ```lua
-minecraft.on(minecraft.events.raycast, {}, function(event)
+minecraft.on("raycast", {}, function(event)
   if event.has_hit and event.type == "block" then
     print("Looking at block " .. event.block_id .. " at " .. event.block_x .. "," .. event.block_y .. "," .. event.block_z)
   end
@@ -620,7 +620,7 @@ Fires on key press/release events.
 | `handled` | boolean | Mark as handled (prevents further processing) | Yes |
 
 ```lua
-minecraft.on(minecraft.events.key_press, { key = minecraft.keys.space, pressed = true }, function(event)
+minecraft.on("key_press", { key = minecraft.key_code("space"), pressed = true }, function(event)
   print("Space bar pressed!")
   event.handled = true
 end)
@@ -637,7 +637,7 @@ Fires on mouse button press/release events.
 | `handled` | boolean | Mark as handled | Yes |
 
 ```lua
-minecraft.on(minecraft.events.mouse_button, { button = 0, pressed = true }, function(event)
+minecraft.on("mouse_button", { button = 0, pressed = true }, function(event)
   print("Left click!")
 end)
 ```
@@ -735,7 +735,7 @@ Fires during camera setup, before rendering. All position/rotation fields are mu
 | `hide_first_person_hand` | boolean | Hide the first-person hand model | Yes |
 
 ```lua
-minecraft.on(minecraft.events.camera_setup, {}, function(event)
+minecraft.on("camera_setup", {}, function(event)
   event.roll = 15  -- tilt the camera
   event.custom_view = true
 end)
@@ -750,7 +750,7 @@ Fires at the beginning of each rendered frame.
 | `tick_delta` | float | Render tick delta (partial ticks) | No |
 
 ```lua
-minecraft.on(minecraft.events.render_frame, {}, function(event)
+minecraft.on("render_frame", {}, function(event)
   -- frame-level render logic
 end)
 ```
@@ -765,7 +765,7 @@ Fires to query/adjust the field of view.
 | `fov` | float | Field of view in degrees (default 70.0) | Yes |
 
 ```lua
-minecraft.on(minecraft.events.fov, {}, function(event)
+minecraft.on("fov", {}, function(event)
   event.fov = 120  -- wider FOV
 end)
 ```
@@ -782,6 +782,7 @@ Fires around each world rendering stage. Provides `minecraft.render.stages` and 
 | `cancel_vanilla` | boolean | Skip vanilla rendering for this stage | Yes |
 | `vanilla_stage_ran` | boolean | Whether vanilla stage executed | No |
 | `shadow_pass` | boolean | `true` while an offscreen shadow-depth pass renders entities | No |
+| `excluded_entity_id` | int | Entity omitted from the current offscreen camera pass, or `-1` | No |
 | `celestial_angle` | float | Celestial angle (only read/written at sky/before) | Yes |
 | `sky_yaw_deg` | float | Sky yaw in degrees (sky/before) | Yes |
 | `star_brightness` | float | Star brightness (stars/before only) | Yes |
@@ -808,9 +809,9 @@ Fires around each world rendering stage. Provides `minecraft.render.stages` and 
 | `mod_generation` | boolean | Mod generation flag | No |
 
 ```lua
-minecraft.on(minecraft.events.world_render, {
-  stage = minecraft.render.stages.sky,
-  moment = minecraft.render.moments.before,
+minecraft.on("world_render", {
+  stage = "sky",
+  moment = "before",
 }, function(event)
   event.cancel_vanilla = true        -- custom sky
   event.celestial_angle = 0.25       -- set to noon
@@ -834,7 +835,7 @@ Fires before rendering the first-person hand model.
 | `entity_type` | string | Camera entity type | No |
 
 ```lua
-minecraft.on(minecraft.events.first_person_hand, { eye = 0 }, function(event)
+minecraft.on("first_person_hand", { eye = 0 }, function(event)
   event.canceled = true  -- hide main hand
 end)
 ```
@@ -859,7 +860,7 @@ Fires to query/adjust world colors (sky and fog).
 | `mod_generation` | boolean | Mod generation flag | No |
 
 ```lua
-minecraft.on(minecraft.events.world_color, { kind = minecraft.colors.sky }, function(event)
+minecraft.on("world_color", { kind = "sky" }, function(event)
   event.r = 1.0  -- red sky
   event.g = 0.0
   event.b = 0.0
@@ -884,7 +885,7 @@ Fires before an entity is rendered.
 | `atlas_index` | int | Atlas tile index | No |
 
 ```lua
-minecraft.on(minecraft.events.pre_entity_render, { entity_type = "minecraft:item" }, function(event)
+minecraft.on("pre_entity_render", { entity_type = "minecraft:item" }, function(event)
   if event.item_id == 10 then  -- skip rendering a specific item
     event.canceled = true
   end
@@ -916,58 +917,10 @@ Fires during entity rendering to apply pose overrides (rotation, scale, offset, 
 | `pose.parts` | table | Map of part name → `{ yaw, pitch, roll }` (NaN = leave as-is) | Yes |
 
 ```lua
-minecraft.on(minecraft.events.entity_render, { entity_type = "minecraft:zombie" }, function(event)
+minecraft.on("entity_render", { entity_type = "minecraft:zombie" }, function(event)
   event.pose.scale = 2.0           -- giant zombies
   event.pose.roll = 180            -- upside down
   event.pose.parts.head = { yaw = 45, pitch = 30, roll = 0 }
-end)
-```
-
----
-
-## TileEntity Events
-
-### `pre_tile_entity_render`
-
-Fires before a block entity is rendered.
-
-| Field | Type | Description | Mutable |
-|-------|------|-------------|---------|
-| `x` | int | Block entity X | No |
-| `y` | int | Block entity Y | No |
-| `z` | int | Block entity Z | No |
-| `id` | string | Block entity ID | No |
-| `tick_delta` | float | Render tick delta | No |
-| `canceled` | boolean | Skip rendering | Yes |
-
-```lua
-minecraft.on(minecraft.events.pre_tile_entity_render, { id = "chest" }, function(event)
-  event.canceled = true  -- hide all chests
-end)
-```
-
-### `tile_entity_tick`
-
-Fires every tick for each block entity. The engine also drives animation.
-
-| Field | Type | Description | Mutable |
-|-------|------|-------------|---------|
-| `x` | int | Block entity X | No |
-| `y` | int | Block entity Y | No |
-| `z` | int | Block entity Z | No |
-| `id` | string | Block entity type ID | No |
-| `remote` | boolean | Client replica flag | No |
-| `removed` | boolean | Entity is marked removed | No |
-| `canceled` | boolean | Cancel the tick | Yes |
-| `world_time` | double | Current world time | No |
-| `animation_frame` | int | Current animation frame | No |
-| `animation_tick` | double | Current animation tick | No |
-| `animation_speed` | float | Animation speed multiplier | Yes |
-| `entity` | userdata | Block entity handle | No |
-
-```lua
-minecraft.on(minecraft.events.tile_entity_tick, { id = "beehive" }, function(event)
-  event.animation_speed = 2.0  -- speed up beehive animation
 end)
 ```
 
@@ -986,7 +939,7 @@ The lifecycle phase transition uses `LifecycleEvent` internally, exposed via `mi
 minecraft.at_phase("ready", 0, function(event)
   print("From phase " .. event.previous .. " to " .. event.current)
   -- All registration is complete. Register runtime callbacks here.
-  minecraft.on(minecraft.events.world_tick, { when = minecraft.util.real_world }, function(tick)
+  minecraft.on("world_tick", { when = minecraft.util.real_world }, function(tick)
     -- ...
   end)
 end)

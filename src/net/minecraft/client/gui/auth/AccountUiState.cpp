@@ -11,6 +11,7 @@ AccountUiSnapshot pollAccountUi(const Minecraft& client) {
  const std::optional<msauth::MicrosoftAccount> savedAccount = msauth::loadAccount(runDirectory);
  const bool hasSavedAccount = savedAccount.has_value() && savedAccount->restorable();
  snapshot.multiplayerReady = msauth::isAuthenticated(client.session);
+ snapshot.fullGameReady = snapshot.multiplayerReady;
  snapshot.showSignOutButton = snapshot.multiplayerReady || hasSavedAccount;
  snapshot.buttonLabel = snapshot.showSignOutButton ? "Sign out" : "Sign in";
  if(msauth::isAuthenticated(client.session)) {
@@ -34,6 +35,8 @@ AccountUiSnapshot pollAccountUi(const Minecraft& client) {
  }
  if(hasSavedAccount) {
   snapshot.statusLine = "Saved account: " + savedAccount->profileName;
+ } else {
+  snapshot.statusLine = "Demo mode - sign in to unlock multiplayer and mods";
  }
  return snapshot;
 }

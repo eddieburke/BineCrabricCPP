@@ -13,7 +13,6 @@
 namespace net::minecraft {
 enum class LuaModSyncKind : std::uint8_t {
  ClientModList,
- BlockEntitySnapshot,
  Entity
 };
 struct LuaModSnapshot {
@@ -73,7 +72,7 @@ inline LuaModSyncPacket makeLuaModSnapshotPacket(const LuaModSnapshot& snapshot,
  return packet;
 }
 inline LuaModSnapshot readLuaModSnapshotPacket(const LuaModSyncPacket& packet) {
- if(packet.kind != LuaModSyncKind::BlockEntitySnapshot && packet.kind != LuaModSyncKind::Entity) {
+ if(packet.kind != LuaModSyncKind::Entity) {
   throw std::runtime_error("Expected Lua mod snapshot packet");
  }
  const std::string bytes(packet.payload.begin(), packet.payload.end());

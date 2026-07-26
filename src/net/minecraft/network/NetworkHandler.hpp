@@ -63,7 +63,7 @@ class NetworkHandler {
  virtual ~NetworkHandler() = default;
  [[nodiscard]] virtual bool isServerSide() const = 0;
  // Set true once the connection has negotiated the lua-mod protocol (via the
- // login handshake). Mod-only packets (custom tile-entity / entity sync) are
+ // login handshake). Mod-only entity-sync packets are
  // sent and parsed only when this is true, so they never reach a vanilla
  // server or client that does not speak the mod protocol.
  [[nodiscard]] bool modProtocolEnabled() const noexcept {

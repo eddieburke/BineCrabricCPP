@@ -39,7 +39,6 @@ class RenderType {
             bool hasTexture,
             bool hasColor,
             bool hasNormals,
-            bool hasLightmap,
             std::string programName,
             State state,
             std::string worldProgramKey = "");
@@ -61,9 +60,6 @@ class RenderType {
  [[nodiscard]] bool hasNormals() const {
   return hasNormals_;
  }
- [[nodiscard]] bool hasLightmap() const {
-  return hasLightmap_;
- }
  [[nodiscard]] gl::ShaderProgram* program() const {
   return program_;
  }
@@ -84,7 +80,6 @@ class RenderType {
  bool hasTexture_;
  bool hasColor_;
  bool hasNormals_;
- bool hasLightmap_;
  std::string programName_;
  State state_;
  // When non-empty, the program is resolved through the world program resolver each pass

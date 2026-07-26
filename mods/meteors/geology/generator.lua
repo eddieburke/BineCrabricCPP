@@ -1,5 +1,5 @@
 -- Meteors Geology: Procedural mesh generation and impact site creation
-local config = require("meteors.config")
+local config = require("config")
 local geology = {}
 
 local TAU = config.tau
@@ -195,13 +195,7 @@ local function meshSubdivisions(quality)
 end
 
 function geology.buildModel(kind, variant, thermal)
-  local setting = function(name, fallback)
-    local value = minecraft.settings.get(config.settings[name].key)
-    if value == nil then return fallback end
-    return value
-  end
-  
-  local quality = math.floor(setting("visual_quality", 3))
+  local quality = math.floor(config.get("visual_quality"))
   local subdivisions = meshSubdivisions(quality)
   local key = table.concat({ config.model_version, kind, variant, subdivisions, thermal and "hot" or "body" }, "_")
   if modelCache[key] ~= nil then return modelCache[key] end

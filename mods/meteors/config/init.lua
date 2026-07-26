@@ -37,7 +37,7 @@ end
 function config.get(name)
   local setting = config.settings[name]
   if not setting then return nil end
-  local value = minecraft.settings.get(setting.key)
+  local value = minecraft.settings.get("meteors." .. setting.key)
   if value == nil then
     return setting.default
   end

@@ -4,8 +4,8 @@
 #error "OpenGL rendering requires Windows"
 #endif
 #define MINECRAFT_GL_REAL 1
-#include <GL/gl.h>
 #include <windows.h>
+#include <GL/gl.h>
 #undef GL_QUADS
 #undef GL_TRIANGLES
 #undef GL_LINES

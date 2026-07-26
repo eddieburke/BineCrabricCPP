@@ -3,9 +3,9 @@
 -- Clean, separated logic with standardized config access
 -- ================================================================
 
-local config = require("fog_settings.config")
+local config = require("config")
 
-minecraft.on(minecraft.events.fog_settings, {}, function(event)
+minecraft.on("fog_settings", {}, function(event)
   event.enabled = config.enabled
   event.spherical = config.spherical
   event.start = config.start

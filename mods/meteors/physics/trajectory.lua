@@ -1,5 +1,5 @@
 -- Meteors Physics: Trajectory and collision calculations
-local config = require("meteors.config")
+local config = require("config")
 local physics = {}
 
 local TAU = config.tau

@@ -85,19 +85,6 @@ TEST(PacketRegistry, LuaModSnapshotsRoundTrip) {
  EXPECT_EQ(decodedEntity.yaw, entity.yaw);
  EXPECT_EQ(decodedEntity.pitch, entity.pitch);
  EXPECT_EQ(decodedEntity.data.getInt("count"), 7);
- LuaModSnapshot blockEntity;
- blockEntity.x = -20;
- blockEntity.y = 72;
- blockEntity.z = 144;
- blockEntity.registryId = "test:block_entity";
- blockEntity.data.putString("name", "snapshot");
- const LuaModSnapshot decodedBlockEntity =
-     readLuaModSnapshotPacket(makeLuaModSnapshotPacket(blockEntity, LuaModSyncKind::BlockEntitySnapshot));
- EXPECT_EQ(decodedBlockEntity.x, blockEntity.x);
- EXPECT_EQ(decodedBlockEntity.y, blockEntity.y);
- EXPECT_EQ(decodedBlockEntity.z, blockEntity.z);
- EXPECT_EQ(decodedBlockEntity.registryId, blockEntity.registryId);
- EXPECT_EQ(decodedBlockEntity.data.getString("name"), "snapshot");
 }
 TEST(PacketRegistry, DataTrackerByteArrayRoundTrip) {
  entity::data::DataTracker source;

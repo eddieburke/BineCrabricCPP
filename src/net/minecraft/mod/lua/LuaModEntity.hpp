@@ -3,7 +3,6 @@
 #include <memory>
 #include <optional>
 #include <string>
-#include "net/minecraft/block/entity/BlockEntity.hpp"
 #include "net/minecraft/entity/Entity.hpp"
 #include "net/minecraft/nbt/NbtCompound.hpp"
 namespace net::minecraft {
@@ -73,35 +72,6 @@ class LuaModEntity : public entity::Entity {
  NbtCompound data_;
  bool dirty_ = false;
  bool clientLocal_ = false;
-};
-class LuaModBlockEntity : public block::entity::BlockEntity {
- public:
- explicit LuaModBlockEntity(std::string registryId) : registryId_(std::move(registryId)) {
- }
- [[nodiscard]] std::string id() const override {
-  return registryId_;
- }
- [[nodiscard]] NbtCompound& data() noexcept {
-  return data_;
- }
- [[nodiscard]] const NbtCompound& data() const noexcept {
-  return data_;
- }
- void writeNbt(NbtCompound& nbt) const override {
-  BlockEntity::writeNbt(nbt);
-  nbt.put("Data", data_);
- }
- void readNbt(const NbtCompound& nbt) override {
-  BlockEntity::readNbt(nbt);
-  if(nbt.contains("Data")) {
-   data_ = nbt.getCompound("Data");
-  }
- }
- [[nodiscard]] std::unique_ptr<net::minecraft::Packet> createUpdatePacket() const override;
-
- private:
- std::string registryId_;
- NbtCompound data_;
 };
 void registerLuaModEntityType();
 } // namespace net::minecraft::mod::lua

@@ -191,7 +191,6 @@ void bindAndUploadUniforms(const RenderPass& pass) {
  }
  if(programChanged) {
   active->set1i("uTexture", 0);
-  active->set1i("uLightMap", 1);
  }
  if(programChanged || p.texture2D != s_snapshot.texture2D) {
   active->set1i("uUseTexture", p.texture2D ? 1 : 0);

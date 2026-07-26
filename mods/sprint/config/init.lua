@@ -13,6 +13,4 @@ local cfg = settings.define("sprint", {
   }
 })
 
-cfg.SPRINT_KEY_FALLBACK = 29
-
 return cfg

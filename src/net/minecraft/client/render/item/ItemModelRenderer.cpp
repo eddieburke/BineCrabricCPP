@@ -27,11 +27,8 @@ bool rendersAsBlockModel(const ItemStack& stack) {
  return block != nullptr && block::BlockRenderManager::isSideLit(block->getRenderType());
 }
 bool hasCustomModel(const ItemStack& stack) {
- if(net::minecraft::mod::lua::itemModelHandOverrideActive() && !rendersAsBlockModel(stack)) {
-  return true;
- }
  const auto* spec = net::minecraft::mod::lua::itemRegistrationSpecForId(stack.itemId);
- return spec != nullptr && spec->modelRef != net::minecraft::mod::lua::kLuaNoRef;
+ return spec != nullptr && spec->bakedModel != 0;
 }
 bool usesModTexture(const ItemStack& stack) {
  return net::minecraft::registry::TextureRegistry::isCustomTexture(stack.getTextureId());

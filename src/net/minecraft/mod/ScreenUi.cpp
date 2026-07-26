@@ -17,6 +17,9 @@ client::gui::widget::ActionButtonWidget& ScreenUiContext::addStackedCenteredButt
  client::gui::widget::ActionButtonWidget& button =
      screen->addCenteredActionButton(*stackedButtonY, std::move(text), std::move(onClick));
  *stackedButtonY += client::gui::layout::kRowSpacing;
+ if(stackedButtons != nullptr) {
+  stackedButtons->push_back(&button);
+ }
  return button;
 }
 } // namespace net::minecraft::mod

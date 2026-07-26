@@ -262,7 +262,7 @@ return {
     return 1, nil
   end,
   generate = function(event)
-    if event.stage == minecraft.generation.stages.terrain then
+    if event.stage == "terrain" then
       terrain(event, state_for(event.world_seed))
     end
   end,

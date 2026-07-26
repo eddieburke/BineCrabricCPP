@@ -104,9 +104,6 @@ Below is the complete specification of all engine event payload schemas (`minecr
 - `pre_entity_render`: `{ entity: entity, entity_id: int, x: double, y: double, z: double, tick_delta: float, cancelled: bool }` (set `cancelled = true` to skip rendering entity).
 - `entity_render`: `{ entity: entity, entity_id: int, x: double, y: double, z: double, tick_delta: float }`.
 
-#### `pre_tile_entity_render` & `tile_entity_tick`
-- Payload: `{ x: int, y: int, z: int, block_id: int, tile_entity: userdata, cancelled: bool }`.
-
 #### `fog_settings` & `world_color`
 - `fog_settings`: `{ density: float, red: float, green: float, blue: float, start_val: float, end_val: float }`.
 - `world_color`: `{ color_type: string ("sky"|"fog"), time: double, red: float, green: float, blue: float }`.

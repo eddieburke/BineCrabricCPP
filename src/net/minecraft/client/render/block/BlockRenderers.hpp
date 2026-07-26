@@ -25,6 +25,14 @@ class BlockFaceRenderer {
  private:
  BlockRenderContext& ctx_;
 };
+// NOTE(ao): renderSmooth currently computes each face's four ambient-occlusion
+// corner brightnesses inline, interleaved with the calls that draw that face,
+// off one hoisted neighbourhood sample of the surrounding 3x3x3 blocks. The mod
+// baked-model path (mod::model::emitBakedModel) has a per-vertex AO channel
+// ready but no way to reach these numbers, so mod blocks shade flat next to
+// vanilla ones. Splitting this into "sample the neighbourhood and fill 6 faces
+// x 4 corners" followed by "render each face" would let both paths share the
+// result without adding getLuminance calls to the chunk-meshing hot path.
 class CubeBlockRenderer {
  public:
  CubeBlockRenderer(BlockRenderContext& ctx, BlockFaceRenderer& faces) : ctx_(ctx), faces_(faces) {

@@ -1,15 +1,16 @@
 -- Meteors: Stunning procedural meteor and comet renderer
 -- Refactored with separation of concerns: config, physics, geology, rendering
 
-local config = require("meteors.config")
-local physics = require("meteors.physics.trajectory")
-local geology = require("meteors.geology.generator")
-local rendering = require("meteors.rendering.effects")
+local config = require("config")
+local physics = require("physics.trajectory")
+local geology = require("geology.generator")
+local rendering = require("rendering.effects")
 
 -- Module state
 local meteors = { list = {}, nextId = 1 }
 local explosions = {}
 local cometTimer = 0
+local nextCometTick = 3600
 local lastCamera = { x = 0, y = 70, z = 0, yaw = 0, pitch = 0, valid = false }
 
 -- Register settings and keybinds
@@ -33,9 +34,11 @@ local function spawnComet()
 end
 
 -- Tick handler
-minecraft.event.register("tick", function(dt)
+minecraft.on("client_tick", { after_world = true }, function(event)
+  if event.paused then return event end
+  local dt = 0.05
   cometTimer = cometTimer + dt
-  if cometTimer > (nextCometTick or 3600) then
+  if cometTimer > nextCometTick then
     spawnComet()
     cometTimer = 0
     nextCometTick = 3600 + math.random() * 3600
@@ -87,14 +90,25 @@ minecraft.event.register("tick", function(dt)
   if minecraft.keybinds.consume("spawn_comet") then
     spawnComet()
   end
+  return event
 end)
 
-minecraft.event.register("render", function(camera)
-  if camera then
-    lastCamera.x, lastCamera.y, lastCamera.z = camera.x, camera.y, camera.z
-    lastCamera.yaw, lastCamera.pitch = camera.yaw or 0, camera.pitch or 0
-    lastCamera.valid = true
-  end
+minecraft.on("world_render", {
+  stage = "entities",
+  moment = "after",
+  priority = 120,
+}, function(event)
+  if event.shadow_pass or not event.has_world then return event end
+  local camera = {
+    x = event.camera_x,
+    y = event.camera_y,
+    z = event.camera_z,
+    yaw = event.camera_yaw,
+    pitch = event.camera_pitch,
+  }
+  lastCamera.x, lastCamera.y, lastCamera.z = camera.x, camera.y, camera.z
+  lastCamera.yaw, lastCamera.pitch = camera.yaw, camera.pitch
+  lastCamera.valid = true
   local vertices = {}
   
   -- Render all meteors
@@ -125,22 +139,31 @@ minecraft.event.register("render", function(camera)
   
   -- Submit quads for rendering if any
   if #vertices >= 4 then
-    local quadCount = math.floor(#vertices / 4)
-    local quads = {}
-    for i = 1, quadCount do
-      local idx = (i - 1) * 4
-      quads[#quads + 1] = {
-        r = vertices[idx + 1].r, g = vertices[idx + 1].g, b = vertices[idx + 1].b, a = vertices[idx + 1].a,
-        vertices = {
-          { x = vertices[idx + 1].x, y = vertices[idx + 1].y, z = vertices[idx + 1].z, u = 0, v = 0 },
-          { x = vertices[idx + 2].x, y = vertices[idx + 2].y, z = vertices[idx + 2].z, u = 1, v = 0 },
-          { x = vertices[idx + 3].x, y = vertices[idx + 3].y, z = vertices[idx + 3].z, u = 1, v = 1 },
-          { x = vertices[idx + 4].x, y = vertices[idx + 4].y, z = vertices[idx + 4].z, u = 0, v = 1 },
-        }
-      }
+    local count = math.floor(#vertices / 4) * 4
+    local packed = {}
+    for i = 1, count do
+      local vertex = vertices[i]
+      local base = (i - 1) * 9
+      packed[base + 1] = vertex.x
+      packed[base + 2] = vertex.y
+      packed[base + 3] = vertex.z
+      packed[base + 4] = 0
+      packed[base + 5] = 0
+      packed[base + 6] = vertex.r
+      packed[base + 7] = vertex.g
+      packed[base + 8] = vertex.b
+      packed[base + 9] = vertex.a
     end
-    minecraft.render.quads(quads)
+    minecraft.render.quads({
+      world_space = true,
+      blend = true,
+      cull = false,
+      depth_test = true,
+      depth_write = false,
+      packed = packed,
+    })
   end
+  return event
 end)
 
 minecraft.log("info", "Meteors mod loaded (refactored)")

@@ -357,28 +357,7 @@ void ClientNetworkHandler::onLuaModSync(const LuaModSyncPacket& packet) {
  if(!modProtocolEnabled()) {
   return;
  }
- if(packet.kind == LuaModSyncKind::BlockEntitySnapshot) {
-  ClientWorld* clientWorld = asClientWorld(world);
-  if(clientWorld == nullptr) {
-   return;
-  }
-  try {
-   const LuaModSnapshot snapshot = readLuaModSnapshotPacket(packet);
-   auto* entity = clientWorld->getBlockEntity(snapshot.x, snapshot.y, snapshot.z);
-   auto* modEntity = entity != nullptr && entity->id() == snapshot.registryId
-                         ? dynamic_cast<mod::lua::LuaModBlockEntity*>(entity)
-                         : nullptr;
-   if(modEntity == nullptr && clientWorld->isPosLoaded(snapshot.x, snapshot.y, snapshot.z)) {
-    auto replacement = std::make_unique<mod::lua::LuaModBlockEntity>(snapshot.registryId);
-    modEntity = replacement.get();
-    clientWorld->setBlockEntity(snapshot.x, snapshot.y, snapshot.z, std::move(replacement));
-   }
-   if(modEntity != nullptr) {
-    modEntity->data() = snapshot.data;
-   }
-  } catch(const std::exception&) {
-  }
- } else if(packet.kind == LuaModSyncKind::Entity) {
+ if(packet.kind == LuaModSyncKind::Entity) {
   ClientWorld* clientWorld = asClientWorld(world);
   if(clientWorld == nullptr) {
    return;

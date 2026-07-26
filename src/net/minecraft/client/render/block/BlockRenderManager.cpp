@@ -79,13 +79,15 @@ void BlockRenderManager::renderWithoutCulling(net::minecraft::block::Block& bloc
 }
 bool BlockRenderManager::render(net::minecraft::block::Block& block, int x, int y, int z) {
  ctx.faceState.useAo = false;
+ // Bounds live on the context, not the Block singleton: mesh workers and
+ // the main-thread tick must never race on Block::minX..maxZ. They are set
+ // before the mod hook because baked models cull their faces through
+ // isSideVisibleForBounds, which reads them.
+ ctx.renderBounds = block.getRenderBounds(ctx.blockView, x, y, z);
  if(ctx.textureOverride < 0 && net::minecraft::mod::drawBlockWorld(*this, block, x, y, z)) {
   return true;
  }
  const int renderType = block.getRenderType();
- // Bounds live on the context, not the Block singleton: mesh workers and
- // the main-thread tick must never race on Block::minX..maxZ.
- ctx.renderBounds = block.getRenderBounds(ctx.blockView, x, y, z);
  switch(renderType) {
  case BlockRenderType::FULL_CUBE:
   return cube_.renderBlock(block, x, y, z);
@@ -138,17 +140,19 @@ void BlockRenderManager::renderPistonHeadWithoutCulling(
  piston_.renderPistonHeadWithoutCulling(block, x, y, z, extendedHalfway);
 }
 void BlockRenderManager::render(net::minecraft::block::Block& block, int metadata, float brightness) {
- if(net::minecraft::registry::TextureRegistry::isCustomTexture(block.textureId)) {
-  client::texture::TextureManager* tm = ctx.textureManager;
-  if(tm == nullptr && Minecraft::INSTANCE != nullptr) {
-   tm = &Minecraft::INSTANCE->textureManager;
-  }
-  if(tm != nullptr) {
-   const net::minecraft::client::render::ResolvedTexture resolved =
-       net::minecraft::client::render::resolveBlockTexture(
-           block.textureId, *tm, net::minecraft::client::render::AtlasDomain::Terrain);
-   tm->bindTexture(resolved.glId);
-  }
+ // Inventory/dropped-item draws always run on the main thread with a live
+ // texture manager. Adopting it matters beyond the bind below: a baked model
+ // with several textures rebinds per batch via ctx.bindTextureFor, which is a
+ // no-op while ctx.textureManager is null, so every batch would otherwise be
+ // drawn with whatever the caller happened to bind.
+ if(ctx.textureManager == nullptr && Minecraft::INSTANCE != nullptr) {
+  ctx.textureManager = &Minecraft::INSTANCE->textureManager;
+ }
+ if(ctx.textureManager != nullptr && net::minecraft::registry::TextureRegistry::isCustomTexture(block.textureId)) {
+  const net::minecraft::client::render::ResolvedTexture resolved =
+      net::minecraft::client::render::resolveBlockTexture(
+          block.textureId, *ctx.textureManager, net::minecraft::client::render::AtlasDomain::Terrain);
+  ctx.textureManager->bindTexture(resolved.glId);
  }
  if(net::minecraft::mod::drawBlockInventory(*this, block, metadata, brightness)) {
   return;

@@ -1,85 +1,46 @@
 #include "net/minecraft/client/platform/audio/decode/AudioDecoder.hpp"
 #if defined(MINECRAFT_HAS_VORBIS)
-#include <ogg/ogg.h>
-#include "stb_vorbis.h"
+#include <vorbis/vorbisfile.h>
+#include <algorithm>
 #include <cstring>
 #include <fstream>
 #include <vector>
-
 namespace net::minecraft::client::platform::audio::decode {
-
-bool decodeVorbisMemory(const std::uint8_t* data, std::size_t size, PcmBuffer& out) {
- if(!data || size == 0) {
-  return false;
- }
- ogg_sync_state oy;
- ogg_sync_init(&oy);
- char* buffer = ogg_sync_buffer(&oy, static_cast<long>(size));
- if(buffer != nullptr) {
-  std::memcpy(buffer, data, size);
-  ogg_sync_wrote(&oy, static_cast<long>(size));
- }
- ogg_page og;
- const bool validOgg = (ogg_sync_pageout(&oy, &og) == 1);
- ogg_sync_clear(&oy);
- if(!validOgg) {
-  return false;
- }
-
- int error = 0;
- stb_vorbis* v = stb_vorbis_open_memory(data, static_cast<int>(size), &error, nullptr);
- if(v == nullptr) {
-  return false;
- }
-
- stb_vorbis_info info = stb_vorbis_get_info(v);
- out.sampleRate = info.sample_rate;
- out.channels = static_cast<std::uint16_t>(info.channels);
+struct MemoryVorbis { const std::uint8_t* data; std::size_t size; std::size_t pos; };
+std::size_t readVorbis(void* p,std::size_t s,std::size_t n,void* d){auto&m=*static_cast<MemoryVorbis*>(d);auto z=std::min(s*n,m.size-m.pos);std::memcpy(p,m.data+m.pos,z);m.pos+=z;return s?z/s:0;}
+int seekVorbis(void* d,ogg_int64_t o,int w){auto&m=*static_cast<MemoryVorbis*>(d);ogg_int64_t b=w==SEEK_SET?0:w==SEEK_CUR?(ogg_int64_t)m.pos:(ogg_int64_t)m.size;auto p=b+o;if(p<0||(std::size_t)p>m.size)return -1;m.pos=(std::size_t)p;return 0;}
+long tellVorbis(void* d){return (long)static_cast<MemoryVorbis*>(d)->pos;}
+bool decodeVorbisMemory(const std::uint8_t* data,std::size_t size,PcmBuffer& out){
+ if(!data||!size)return false;
+ MemoryVorbis memory{data,size,0};
+ OggVorbis_File file{};
+ ov_callbacks callbacks{readVorbis,seekVorbis,nullptr,tellVorbis};
+ if(ov_open_callbacks(&memory,&file,nullptr,0,callbacks)<0)return false;
+ vorbis_info* info=ov_info(&file,-1);
+ if(!info||info->channels<1||info->rate<1){ov_clear(&file);return false;}
+ out.sampleRate=(std::uint32_t)info->rate;
+ out.channels=(std::uint16_t)info->channels;
  out.samples.clear();
-
- if(out.channels == 0 || out.sampleRate == 0) {
-  stb_vorbis_close(v);
-  return false;
+ float** pcm=nullptr;
+ for(;;){
+  int section=0;
+  long frames=ov_read_float(&file,&pcm,4096,&section);
+  if(frames<=0)break;
+  auto start=out.samples.size();
+  out.samples.resize(start+(std::size_t)frames*out.channels);
+  for(long f=0;f<frames;++f)for(int c=0;c<info->channels;++c)out.samples[start+(std::size_t)f*out.channels+c]=pcm[c][f];
  }
-
- int channels = 0;
- float** outputs = nullptr;
- while(true) {
-  int samplesPerChannel = stb_vorbis_get_frame_float(v, &channels, &outputs);
-  if(samplesPerChannel <= 0) {
-   break;
-  }
-  const std::size_t oldSize = out.samples.size();
-  out.samples.resize(oldSize + static_cast<std::size_t>(samplesPerChannel) * out.channels);
-  for(int s = 0; s < samplesPerChannel; ++s) {
-   for(int c = 0; c < out.channels; ++c) {
-    out.samples[oldSize + static_cast<std::size_t>(s) * out.channels + c] = outputs[c][s];
-   }
-  }
- }
-
- stb_vorbis_close(v);
+ ov_clear(&file);
  return !out.samples.empty();
 }
-
-bool decodeVorbisFile(const std::string& path, PcmBuffer& out) {
- std::ifstream input(path, std::ios::binary | std::ios::ate);
- if(!input) {
-  return false;
- }
- const auto fileSize = input.tellg();
- if(fileSize <= 0) {
-  return false;
- }
- input.seekg(0, std::ios::beg);
-
- std::vector<std::uint8_t> buffer(static_cast<std::size_t>(fileSize));
- if(!input.read(reinterpret_cast<char*>(buffer.data()), fileSize)) {
-  return false;
- }
-
- return decodeVorbisMemory(buffer.data(), buffer.size(), out);
+bool decodeVorbisFile(const std::string& path,PcmBuffer& out){
+ std::ifstream input(path,std::ios::binary|std::ios::ate);
+ if(!input)return false;
+ auto n=input.tellg();
+ if(n<=0)return false;
+ input.seekg(0);
+ std::vector<std::uint8_t> data((std::size_t)n);
+ return input.read((char*)data.data(),n)&&decodeVorbisMemory(data.data(),data.size(),out);
 }
-
-} // namespace net::minecraft::client::platform::audio::decode
+}
 #endif

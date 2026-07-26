@@ -7,7 +7,7 @@
 #include "net/minecraft/client/option/OptionSpec.hpp"
 namespace net::minecraft::client::gui::screen::option {
 namespace performance_screen {
-extern std::array<net::minecraft::client::option::OptionSpec, 10> kSpecs;
+extern std::array<net::minecraft::client::option::OptionSpec, 9> kSpecs;
 }
 std::unique_ptr<screen::Screen> makePerformanceSettingsScreen(
     std::function<std::unique_ptr<screen::Screen>()> parentFactory,

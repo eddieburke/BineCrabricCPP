@@ -1,4 +1,4 @@
-local common = minecraft.require("scripts.common")
+local common = require("scripts.common")
 
 return {
   id = "flatlands",

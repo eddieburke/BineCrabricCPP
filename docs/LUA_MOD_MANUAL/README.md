@@ -10,13 +10,13 @@ It documents all native C++ bindings (`LuaHostApi`, `LuaGameApi`, `LuaCoreBindin
 
 1. [Core & Lifecycle](01-core-and-lifecycle.md)
    - Runtime Environment & Lua 5.4 Sandbox (`os`, `package`, blocked libs)
-   - Module Loading (`minecraft.require`, `minecraft.require_dir`)
+   - Module Loading (`require`)
    - Storage & Persistence (`minecraft.storage`, `minecraft.config`)
    - Mod Package Metadata (`mod.json`) & Execution Lifecycles (`init`, `post_init`, `ready`)
    - Core Utilities (`minecraft.util.*`)
 
 2. [Event System & Engine Hooks](02-event-system.md)
-   - Subscription Model (`minecraft.on`, `minecraft.event.register`)
+   - Subscription Model (`minecraft.on`)
    - Event Priority, Cancellation, and Property Matching
    - Complete Catalog of 30+ Engine Events (Tick, World, Entity, Render, Screen, Generation, FOV, Raycast, Input)
 
@@ -34,14 +34,14 @@ It documents all native C++ bindings (`LuaHostApi`, `LuaGameApi`, `LuaCoreBindin
 
 5. [Rendering, Models & Camera](05-rendering-and-models.md)
    - Render Pipeline & Pass Hooks (`minecraft.render.*`: stages & moments)
-   - Model Baking & Voxel Builders (`minecraft.model.build`, `minecraft.model.voxels`, `minecraft.model.voxel`)
+   - Model Baking (`minecraft.model.build`)
    - Texture Metadata & Pixel Inspection (`minecraft.texture.*`)
    - Camera Manipulation (`minecraft.camera.*`) & Sky / Fog Color Systems
 
 6. [GUI Screens & Audio](06-gui-and-audio.md)
    - Screen Injection & Event System (`minecraft.screen.*`)
    - GUI Rendering Primitives (`minecraft.gui.*`)
-   - Mod Settings Screen Builder (`minecraft.screen.settings`)
+   - Screen and GUI events (`minecraft.screen.*`, `minecraft.on`)
    - Audio Engine (`minecraft.audio.*`, positional sound, music channels)
 
 ---
@@ -49,7 +49,6 @@ It documents all native C++ bindings (`LuaHostApi`, `LuaGameApi`, `LuaCoreBindin
 ## Global Namespaces
 
 - **`minecraft`**: Primary root namespace exposing all engine sub-systems and functions.
-- **`minetest`**: Global alias bound directly to `minecraft` for cross-engine compatibility.
 
 ---
 

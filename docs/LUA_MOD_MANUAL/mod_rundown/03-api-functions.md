@@ -12,7 +12,7 @@ Use it as an availability map; client namespaces are conditional.
   `copy`, `resolve_seed`, JSON encode/decode/null, and registry name/list helpers.
 - `minecraft.config`: load and save Lua data.
 - `minecraft.storage`: scoped read/write and subscription helpers.
-- Module helpers: `minecraft.require` and `minecraft.require_dir`.
+- Modules use Lua's built-in `require`.
 
 `read_nbt_asset` returns `(value, error)` and applies a safe path and entry-size
 check. JSON encode accepts tables only and rejects non-finite or unsupported
@@ -23,13 +23,12 @@ values; decode returns `nil, error` for empty or invalid data. See
 
 `minecraft.world` provides block lookup/ids, random, time/night helpers,
 height/top-Y lookup, player lookup, entity spawn/count, and time setting.
-Generic additions provide `sample`, `sample_grid`, `sample_channels`, and
-`get_block_collisions`. `minecraft.particles.spawn` submits particles.
+Generic additions provide `sample`, `sample_channels`, and `get_block_collisions`.
+`minecraft.particles.spawn` submits particles.
 
 `minecraft.entities` lists, retrieves, moves, removes, and applies state to
 entities; mod-specific APIs spawn mod entities and register pose hooks.
-`minecraft.tile_entities` lists, retrieves, and counts tile entities. `items.ids`
-is broadly available; item descriptions and inventory functions are client-only.
+`items.ids` is broadly available; item descriptions and inventory functions are client-only.
 
 ## Client-only API
 

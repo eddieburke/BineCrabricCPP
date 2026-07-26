@@ -1,11 +1,12 @@
 #include "net/minecraft/mod/runtime/LuaDirectHooks.hpp"
+#include <optional>
 #include "net/minecraft/client/render/FrameRenderCamera.hpp"
 #include "net/minecraft/mod/lua/LuaChunkContext.hpp"
 #include "net/minecraft/mod/lua/LuaGameApi.hpp"
 #include "net/minecraft/mod/lua/LuaHostApi.hpp"
 #include "net/minecraft/mod/lua/LuaItemRegistry.hpp"
 #include "net/minecraft/mod/runtime/LuaBindings.hpp"
-#include "net/minecraft/mod/runtime/LuaBlockEntityBindings.hpp"
+#include "net/minecraft/mod/runtime/LuaEntityBindings.hpp"
 #include "net/minecraft/mod/runtime/LuaEventGlue.hpp"
 #include "net/minecraft/mod/runtime/LuaScreenBindings.hpp"
 // ModHostUtil.hpp deleted — its functions now live in LuaHostApi.hpp and others
@@ -74,7 +75,7 @@ entity::player::PlayerEntity* eventPlayer(Event& event) {
  return nullptr;
 }
 constexpr auto kNoRead = [](lua_State*, auto&) {};
-[[maybe_unused]] [[nodiscard]] ChunkWriteMode chunkWriteModeForStage(world::gen::ChunkStage stage) {
+[[nodiscard]] ChunkWriteMode chunkWriteModeForStage(world::gen::ChunkStage stage) {
  switch(stage) {
  case world::gen::ChunkStage::Terrain:
  case world::gen::ChunkStage::Surface:
@@ -150,22 +151,7 @@ void pushItemEntityFields(lua_State* state, const net::minecraft::entity::Entity
  if(item == nullptr) {
   return;
  }
- const ItemStack& stack = item->stack;
- setFields(state, "item_id", stack.itemId, "item_count", stack.count, "item_damage", stack.damage);
- const bool modTex = net::minecraft::client::render::item::ItemModelRenderer::usesModTexture(stack);
- if(modTex) {
-  const auto* spec = itemRegistrationSpecForId(stack.itemId);
-  const std::string path = spec != nullptr ? spec->texturePath : std::string();
-  setFields(state, "texture_path", path, "mod_texture", true, "atlas_index", -1);
- } else {
-  setFields(state,
-            "texture_path",
-            net::minecraft::client::render::item::ItemModelRenderer::spriteAtlasPath(stack),
-            "mod_texture",
-            false,
-            "atlas_index",
-            stack.getTextureId());
- }
+ pushItemStackFields(state, item->stack);
 }
 #endif
 void setChunkContextFields(lua_State* state) {
@@ -189,67 +175,92 @@ void runLuaHook(LuaEventId id, Event& e, Push push, Read read) {
   push(state, e);
   setLuaExecutionFields(state, world);
  };
- auto apply = [&e, &read](lua_State* state) { read(state, e); };
- if(world != nullptr) {
+  auto apply = [&e, &read](lua_State* state) { read(state, e); };
   ModContextScope scope(world, eventPlayer(e));
   dispatchLuaHook(eventIndex, fill, apply);
- } else {
-  dispatchLuaHook(eventIndex, fill, apply);
  }
-}
 } // namespace
 namespace {
-std::array<std::uint16_t, kLuaEventCount> gHookCounts{};
-bool gHookCountsValid = false;
-void rebuildHookCounts() {
- gHookCounts.fill(0);
+// One entry per subscribed callback, pre-sorted so dispatch is a flat walk. The mod is
+// held by shared_ptr because a callback may trigger a mod rescan, which reallocates
+// loadedLuaMods() underneath an in-flight dispatch.
+struct LuaHookEntry {
+ std::shared_ptr<ModHost::LoadedLuaMod> mod;
+ int functionRef = 0;
+};
+std::array<std::vector<LuaHookEntry>, kLuaEventCount> gHookTable{};
+bool gHookTableValid = false;
+void rebuildHookTable() {
+ struct PendingEntry {
+  LuaHookEntry entry;
+  int priority = 0;
+  std::size_t order = 0;
+ };
+ std::array<std::vector<PendingEntry>, kLuaEventCount> pending{};
+ std::size_t order = 0;
  for(const auto& mod : loadedLuaMods()) {
   if(mod == nullptr || !mod->active) {
    continue;
   }
   for(const auto& cb : mod->callbacks) {
-   if(cb.eventIndex >= 0 && static_cast<std::size_t>(cb.eventIndex) < kLuaEventCount) {
-    ++gHookCounts[static_cast<std::size_t>(cb.eventIndex)];
+   if(cb.eventIndex < 0 || static_cast<std::size_t>(cb.eventIndex) >= kLuaEventCount) {
+    continue;
    }
+   pending[static_cast<std::size_t>(cb.eventIndex)].push_back({{mod, cb.functionRef}, cb.priority, order++});
   }
  }
- gHookCountsValid = true;
+ for(std::size_t i = 0; i < kLuaEventCount; ++i) {
+  // Documented contract: higher priority runs first. Ties keep declaration order
+  // (mod load order, then registration order within a mod) so ordering stays stable.
+  std::stable_sort(pending[i].begin(), pending[i].end(), [](const PendingEntry& a, const PendingEntry& b) {
+   return a.priority != b.priority ? a.priority > b.priority : a.order < b.order;
+  });
+  gHookTable[i].clear();
+  gHookTable[i].reserve(pending[i].size());
+  for(auto& entry : pending[i]) {
+   gHookTable[i].push_back(std::move(entry.entry));
+  }
+ }
+ gHookTableValid = true;
+}
+[[nodiscard]] const std::vector<LuaHookEntry>& luaHookEntries(std::size_t eventIndex) {
+ if(!gHookTableValid) {
+  rebuildHookTable();
+ }
+ return gHookTable[eventIndex];
 }
 } // namespace
 void invalidateLuaHookCache() {
- gHookCountsValid = false;
+ gHookTableValid = false;
+ // Drop the retained mod handles right away so an unloaded mod is not kept alive by the
+ // cache. Safe mid-dispatch: dispatchLuaHook() iterates its own copy of the entry list.
+ for(auto& entries : gHookTable) {
+  entries.clear();
+ }
 }
 bool hasLuaHook(int eventIndex) {
  if(eventIndex < 0 || static_cast<std::size_t>(eventIndex) >= kLuaEventCount) {
   return false;
  }
- if(!gHookCountsValid) {
-  rebuildHookCounts();
- }
- return gHookCounts[static_cast<std::size_t>(eventIndex)] != 0;
+ return !luaHookEntries(static_cast<std::size_t>(eventIndex)).empty();
 }
 template <typename Fill, typename Read>
 void dispatchLuaHook(int eventIndex, Fill fill, Read read) {
- if(!isLuaModExecutionEnabled()) {
+ if(!isLuaModExecutionEnabled() || eventIndex < 0 || static_cast<std::size_t>(eventIndex) >= kLuaEventCount) {
   return;
  }
- for(const auto& mod : loadedLuaMods()) {
-  if(mod == nullptr || !mod->active) {
+ // Copy the entry list: a callback can subscribe, unsubscribe, or reload mods, any of
+ // which invalidates and rebuilds the table we would otherwise be iterating.
+ const std::vector<LuaHookEntry> entries = luaHookEntries(static_cast<std::size_t>(eventIndex));
+ for(const LuaHookEntry& entry : entries) {
+  if(entry.mod == nullptr || !entry.mod->active) {
    continue;
   }
-  for(const auto& cb : mod->callbacks) {
-   if(cb.eventIndex != eventIndex) {
-    continue;
-   }
-   callLuaEvent(mod, cb.functionRef, fill, read);
-  }
+  callLuaEvent(entry.mod, entry.functionRef, fill, read);
  }
 }
 [[nodiscard]] bool isSupportedLuaEvent(std::string_view event) {
  return luaEventIndexOf(event) >= 0;
-}
-void subscribeLuaCallback(const std::shared_ptr<ModHost::LoadedLuaMod>&, const ModHost::LoadedLuaMod::Callback&) {
- invalidateLuaHookCache();
 }
 namespace {
 struct LifecycleListenerEntry {
@@ -264,8 +275,9 @@ struct ChunkStageListenerEntry {
  int priority = 0;
  ChunkStageListener listener;
 };
-std::array<std::vector<ChunkStageListenerEntry>, 4>& chunkStageListeners() {
- static std::array<std::vector<ChunkStageListenerEntry>, 4> value{};
+constexpr std::size_t kChunkStageCount = static_cast<std::size_t>(world::gen::ChunkStage::Count);
+std::array<std::vector<ChunkStageListenerEntry>, kChunkStageCount>& chunkStageListeners() {
+ static std::array<std::vector<ChunkStageListenerEntry>, kChunkStageCount> value{};
  return value;
 }
 std::size_t chunkStageIndex(world::gen::ChunkStage stage) {
@@ -285,7 +297,11 @@ void fireLifecycle(LifecyclePhase previous, LifecyclePhase current) {
  }
 }
 void registerChunkStageListener(world::gen::ChunkStage stage, int priority, ChunkStageListener listener) {
- chunkStageListeners()[chunkStageIndex(stage)].push_back({priority, std::move(listener)});
+ auto& list = chunkStageListeners()[chunkStageIndex(stage)];
+ list.push_back({priority, std::move(listener)});
+ std::stable_sort(list.begin(), list.end(), [](const ChunkStageListenerEntry& a, const ChunkStageListenerEntry& b) {
+  return a.priority > b.priority;
+ });
 }
 void fireChunkGeneration(world::gen::ChunkGenerationEvent& event) {
  for(const auto& entry : chunkStageListeners()[chunkStageIndex(event.stage)]) {
@@ -294,6 +310,9 @@ void fireChunkGeneration(world::gen::ChunkGenerationEvent& event) {
  if(hasLuaHook(LuaEventId::ChunkGeneration)) {
   luaHookChunkGeneration(event);
  }
+}
+[[nodiscard]] std::size_t chunkStageListenerCount(world::gen::ChunkStage stage) {
+ return chunkStageListeners()[chunkStageIndex(stage)].size();
 }
 void luaHookClientTick(ClientTickEvent& e) {
  runLuaHook(
@@ -371,11 +390,12 @@ void luaHookRaycast(RaycastEvent& e) {
                 "side",
                 ev.side,
                 "block_id",
-                ev.blockId,
-                "block_name",
-                blockWireNameFromId(ev.blockId),
-                "item_id",
-                ev.blockId);
+                 ev.blockId,
+                 "block_name",
+                 blockWireNameFromId(ev.blockId),
+                 // Deprecated alias for block_id — kept for backward compatibility.
+                 "item_id",
+                 ev.blockId);
       if(ev.entity != nullptr) {
        const auto pos = ev.entity->position();
        setEntityIdentityFields(state, *ev.entity);
@@ -539,54 +559,6 @@ void luaHookEntityTick(EntityTickEvent& e) {
       }
      },
      [](lua_State* state, EntityTickEvent& ev) { readField(state, "canceled", ev.canceled); });
-}
-void luaHookTileEntityTick(TileEntityTickEvent& e) {
-#ifdef MINECRAFT_NATIVE_EXPORTS
- if(e.entity == nullptr) {
-  return;
- }
- ModContextScope context(e.world);
- if(!e.animationTicked) {
-  tickTileEntityAnimation(e.entity);
-  e.animationTicked = true;
- }
- dispatchLuaHook(
-     static_cast<int>(LuaEventId::TileEntityTick),
-     [&e](lua_State* state) {
-      setFields(state,
-                "x",
-                e.entity->x,
-                "y",
-                e.entity->y,
-                "z",
-                e.entity->z,
-                "id",
-                e.entity->id(),
-                "remote",
-                e.remote,
-                "removed",
-                e.entity->isRemoved(),
-                "canceled",
-                e.canceled,
-                "world_time",
-                e.entity->world != nullptr ? static_cast<double>(e.entity->world->getTime()) : 0.0,
-                "animation_frame",
-                tileEntityAnimationFrame(e.entity),
-                "animation_tick",
-                static_cast<double>(tileEntityAnimTick(e.entity)),
-                "animation_speed",
-                tileEntityAnimationSpeed(e.entity));
-      pushTileEntityHandle(state, e.entity);
-      luaApi().setfield(state, -2, "entity");
-     },
-     [&e](lua_State* state) {
-      readField(state, "canceled", e.canceled);
-      setTileEntityAnimationSpeed(
-          e.entity, luaFloatField(state, -1, "animation_speed", tileEntityAnimationSpeed(e.entity)));
-     });
-#else
- (void)e;
-#endif
 }
 void luaHookCreateWorld(CreateWorldEvent& e) {
  runLuaHook(
@@ -990,6 +962,13 @@ void luaHookWorldRender(WorldRenderEvent& e) {
  }
  ScopedModWorldDrawContext worldDrawScope{e.world, e.tickDelta};
  const ModDrawScope modCaps;
+ // World-render callbacks routinely query the world they are drawing
+ // (minecraft.entities.list to draw mod entities, for one), so the mod context
+ // has to be live here just as it is for the runLuaHook-based events.
+ std::optional<ModContextScope> contextScope;
+ if(e.world != nullptr) {
+  contextScope.emplace(e.world, nullptr);
+ }
  dispatchLuaHook(
      static_cast<int>(LuaEventId::WorldRender),
      [&e](lua_State* state) {
@@ -1006,6 +985,8 @@ void luaHookWorldRender(WorldRenderEvent& e) {
                 e.vanillaStageRan,
                 "shadow_pass",
                 e.shadowPass,
+                "excluded_entity_id",
+                e.excludedEntityId,
                 "celestial_angle",
                 static_cast<double>(e.celestialAngle),
                 "sky_yaw_deg",
@@ -1223,6 +1204,7 @@ void luaHookScreenUi(ScreenUiEvent& e) {
  if(e.context == nullptr || e.context->screen == nullptr) {
   return;
  }
+ ScreenUiContext* previousScreenUi = g_activeScreenUi;
  g_activeScreenUi = e.context;
  dispatchLuaHook(
      static_cast<int>(LuaEventId::ScreenUi),
@@ -1234,7 +1216,7 @@ void luaHookScreenUi(ScreenUiEvent& e) {
       luaApi().setfield(state, -2, "ui");
      },
      [](lua_State*) {});
- g_activeScreenUi = nullptr;
+ g_activeScreenUi = previousScreenUi;
 #else
  (void)e;
 #endif
@@ -1314,19 +1296,6 @@ void luaHookPreEntityRender(PreEntityRenderEvent& e) {
  (void)e;
 #endif
 }
-void luaHookPreTileEntityRender(PreTileEntityRenderEvent& e) {
-#ifdef MINECRAFT_NATIVE_EXPORTS
- dispatchLuaHook(
-     static_cast<int>(LuaEventId::PreTileEntityRender),
-     [&e](lua_State* state) {
-      setFields(
-          state, "x", e.x, "y", e.y, "z", e.z, "id", e.id, "tick_delta", e.tickDelta, "canceled", e.canceled);
-     },
-     [&e](lua_State* state) { readField(state, "canceled", e.canceled); });
-#else
- (void)e;
-#endif
-}
 void luaHookEntitySpawn(EntitySpawnEvent& e) {
 #ifdef MINECRAFT_NATIVE_EXPORTS
  dispatchLuaHook(
@@ -1341,6 +1310,7 @@ void luaHookEntitySpawn(EntitySpawnEvent& e) {
 #endif
 }
 void luaHookEntityRemove(EntityRemoveEvent& e) {
+ clearLocalPoseHook(e.entityId);
 #ifdef MINECRAFT_NATIVE_EXPORTS
  dispatchLuaHook(
      static_cast<int>(LuaEventId::EntityRemove),

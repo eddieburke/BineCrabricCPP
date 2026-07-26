@@ -4,7 +4,8 @@ in vec3 vNormal;
 in vec3 vViewPos;
 
 uniform sampler2D uTexture;
-uniform sampler2D uLightMap;
+// Terrain lighting is baked into vColor by the chunk mesher plus the world-sun
+// uniform block; there is no lightmap texture. Do not re-add a sampler here.
 uniform vec4 uConstColor;
 uniform int uAlphaTest;
 uniform float uAlphaRef;

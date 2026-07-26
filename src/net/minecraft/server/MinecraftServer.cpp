@@ -274,13 +274,6 @@ bool MinecraftServer::init() {
   lastError_ = exception.what();
   return false;
  }
- if(launchConfig_.has_value() && !launchConfig_->readyFile.empty()) {
-  std::ofstream ready(launchConfig_->readyFile, std::ios::binary | std::ios::trunc);
-  if(!ready) {
-   lastError_ = "Could not write server ready file.";
-   return false;
-  }
- }
  if(!onlineMode) {
   ServerLog::LOGGER.log(LogLevel::Warning, "**** SERVER IS RUNNING IN OFFLINE/INSECURE MODE!");
   ServerLog::LOGGER.log(LogLevel::Warning, "The server will make no attempt to authenticate usernames. Beware.");
@@ -296,14 +289,21 @@ bool MinecraftServer::init() {
   const std::vector<std::string> missingMods =
       mod::runtime::WorldRequiredMods::missingForDirectory(storageRoot / worldName);
   if(!missingMods.empty()) {
-   ServerLog::LOGGER.log(LogLevel::Severe,
-                         "Cannot load world \"" + worldName + "\": missing required Lua mods: " +
-                             mod::runtime::WorldRequiredMods::joinCsv(missingMods));
+   lastError_ = "Cannot load world \"" + worldName + "\": missing required Lua mods: " +
+                mod::runtime::WorldRequiredMods::joinCsv(missingMods);
+   ServerLog::LOGGER.log(LogLevel::Severe, lastError_);
    return false;
   }
  }
  ServerLog::LOGGER.info("Preparing level \"" + worldName + "\"");
  loadWorld(storageRoot, worldName, seed);
+ if(launchConfig_.has_value() && !launchConfig_->readyFile.empty()) {
+  std::ofstream ready(launchConfig_->readyFile, std::ios::binary | std::ios::trunc);
+  if(!ready) {
+   lastError_ = "Could not write server ready file.";
+   return false;
+  }
+ }
  const auto elapsed = std::chrono::duration_cast<std::chrono::nanoseconds>(Clock::now() - start).count();
  ServerLog::LOGGER.info("Done (" + std::to_string(elapsed) + "ns)! For help, type \"help\" or \"?\"");
  return true;

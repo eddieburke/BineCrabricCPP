@@ -8,14 +8,12 @@
 #include "net/minecraft/block/Block.hpp"
 #include "net/minecraft/block/material/Material.hpp"
 #ifdef MINECRAFT_NATIVE_EXPORTS
-#include "net/minecraft/client/render/block/BlockRenderType.hpp"
 #include "net/minecraft/client/resource/language/I18n.hpp"
 #endif
 #include "net/minecraft/item/BlockItem.hpp"
 #include "net/minecraft/item/Item.hpp"
 #include "net/minecraft/mod/ModClient.hpp"
 #include "net/minecraft/mod/ModLifecycle.hpp"
-#include "net/minecraft/mod/lua/LuaModEntity.hpp"
 #include "net/minecraft/mod/lua/LuaModNaming.hpp"
 #include "net/minecraft/mod/lua/ModIdRegistry.hpp"
 #include "net/minecraft/mod/model/ModModels.hpp"
@@ -38,19 +36,19 @@ CoordinateVariedTransform coordinateVariedTransform(const BlockRegistrationSpec&
 net::minecraft::Box coordinateVariedBlockBounds(const BlockRegistrationSpec& spec, int x, int y, int z) {
  const CoordinateVariedTransform transform = coordinateVariedTransform(spec, x, y, z);
  const float padding = std::clamp(spec.boundsPadding, 0.0f, 0.49f);
- float minX = 0.5f - (0.5f - padding) * transform.scale;
- float maxX = 0.5f + (0.5f - padding) * transform.scale;
- float minY = 0.5f - (0.5f - padding) * transform.scale;
- float maxY = 0.5f + (0.5f - padding) * transform.scale;
- float minZ = 0.5f - (0.5f - padding) * transform.scale;
- float maxZ = 0.5f + (0.5f - padding) * transform.scale;
- minX = std::clamp(minX + transform.offsetX, 0.0f, 1.0f);
- maxX = std::clamp(maxX + transform.offsetX, 0.0f, 1.0f);
- minY = std::clamp(minY + transform.offsetY, 0.0f, 1.0f);
- maxY = std::clamp(maxY + transform.offsetY, 0.0f, 1.0f);
- minZ = std::clamp(minZ + transform.offsetZ, 0.0f, 1.0f);
- maxZ = std::clamp(maxZ + transform.offsetZ, 0.0f, 1.0f);
- return {minX, minY, minZ, maxX, maxY, maxZ};
+ const float half = (0.5f - padding) * transform.scale;
+ const auto low = [half](float offset) {
+  return std::clamp(0.5f - half + offset, 0.0f, 1.0f);
+ };
+ const auto high = [half](float offset) {
+  return std::clamp(0.5f + half + offset, 0.0f, 1.0f);
+ };
+ return {low(transform.offsetX),
+         low(transform.offsetY),
+         low(transform.offsetZ),
+         high(transform.offsetX),
+         high(transform.offsetY),
+         high(transform.offsetZ)};
 }
 namespace {
 using net::minecraft::BlockSoundGroup;
@@ -99,6 +97,10 @@ class LuaModBlock : public Block {
  LuaModBlock(int id, int textureId, Material& material, const BlockRegistrationSpec& spec)
      : Block(id, textureId, material), spec_(spec) {
 #ifdef MINECRAFT_NATIVE_EXPORTS
+  // A baked model's bounds are fixed once it is baked, so resolve everything
+  // that depends on them here. isFullCube() in particular is asked once per
+  // block face while meshing chunks, and the model lookup behind it takes a
+  // global mutex — not something to pay on that path.
   if(spec.bakedModel != 0) {
    if(const net::minecraft::mod::model::BakedModel* baked =
           net::minecraft::mod::model::bakedModelForHandle(spec.bakedModel)) {
@@ -109,6 +111,8 @@ class LuaModBlock : public Block {
                     baked->bounds.max[0],
                     baked->bounds.max[1],
                     baked->bounds.max[2]);
+     fullCube_ = baked->bounds.min[0] <= 0.0f && baked->bounds.min[1] <= 0.0f && baked->bounds.min[2] <= 0.0f &&
+                 baked->bounds.max[0] >= 1.0f && baked->bounds.max[1] >= 1.0f && baked->bounds.max[2] >= 1.0f;
     }
    }
   }
@@ -118,12 +122,12 @@ class LuaModBlock : public Block {
   return spec_.opaque;
  }
  [[nodiscard]] bool isFullCube() const override {
-  return spec_.fullCube;
+  return fullCube_;
  }
  [[nodiscard]] bool receivesEntityShadow() const override {
   // Custom-shaped mod blocks are rarely flagged full-cube, but anything
   // solid enough to stand on should still catch entity blob shadows.
-  return spec_.fullCube || material.isSolid();
+  return fullCube_ || material.isSolid();
  }
  [[nodiscard]] int getColorMultiplier(const BlockView* blockView, int x, int y, int z) const override {
   if(spec_.coordinateColor) {
@@ -133,9 +137,8 @@ class LuaModBlock : public Block {
  }
  [[nodiscard]] int getRenderType() const override {
 #ifdef MINECRAFT_NATIVE_EXPORTS
-  if(spec_.modelRef == kLuaNoRef && spec_.bakedModel == 0) {
-   return net::minecraft::client::render::block::BlockRenderType::FULL_CUBE;
-  }
+  // register_block requires a baked model (LuaBlockBindings.cpp), so every
+  // LuaModBlock instance takes the custom-model render path.
   return 31; // custom type
 #else
   return Block::getRenderType();
@@ -161,13 +164,15 @@ class LuaModBlock : public Block {
   return Block::isSideVisibleForBounds(blockView, x, y, z, side, bounds);
  }
  [[nodiscard]] bool canPlaceAt(World* world, int x, int y, int z) const override {
-  if(world != nullptr && spec_.stackOnSame && world->getBlockId(x, y - 1, z) == id) {
-   return true;
+  if(world == nullptr) {
+   return Block::canPlaceAt(world, x, y, z);
   }
-  if(world != nullptr && !spec_.stackOnSame && world->getBlockId(x, y - 1, z) == id) {
-   return false;
+  // Landing on another copy of this block is decided entirely by stack_on_same:
+  // it either supports the new block outright or forbids it outright.
+  if(world->getBlockId(x, y - 1, z) == id) {
+   return spec_.stackOnSame;
   }
-  if(spec_.requiresSolidBelow && world != nullptr && !world->getMaterial(x, y - 1, z).isSolid()) {
+  if(spec_.requiresSolidBelow && !world->getMaterial(x, y - 1, z).isSolid()) {
    return false;
   }
   return Block::canPlaceAt(world, x, y, z);
@@ -194,8 +199,10 @@ class LuaModBlock : public Block {
  void setItemOverrideTexture(int textureId) {
   itemOverrideTextureId_ = textureId;
  }
- void setTileEntityId(std::string teId) {
-  tileEntityId_ = std::move(teId);
+ // With an explicit item texture the inventory/dropped sprite is that flat
+ // texture, not a miniature of the block model.
+ [[nodiscard]] bool hasItemOverride() const override {
+  return itemOverrideTextureId_ >= 0;
  }
  void registerBlockItem() override {
   Block::registerBlockItem();
@@ -206,33 +213,15 @@ class LuaModBlock : public Block {
    }
   }
  }
- void onPlaced(World* world, int x, int y, int z) override {
-  Block::onPlaced(world, x, y, z);
-  if(world != nullptr && !tileEntityId_.empty()) {
-   auto entity = std::make_unique<LuaModBlockEntity>(tileEntityId_);
-   entity->x = x;
-   entity->y = y;
-   entity->z = z;
-   entity->world = world;
-   world->setBlockEntity(x, y, z, std::move(entity));
-  }
- }
- void onBreak(World* world, int x, int y, int z) override {
-  Block::onBreak(world, x, y, z);
-  if(world != nullptr && !tileEntityId_.empty()) {
-   world->removeBlockEntity(x, y, z);
-  }
- }
-
  private:
  BlockRegistrationSpec spec_;
+ // Declared shape, overridden in the constructor when a baked model turns out
+ // to fill the whole cube after all.
+ bool fullCube_ = spec_.fullCube;
  int itemOverrideTextureId_ = -1;
- std::string tileEntityId_;
 };
 void registerBlockClass(const BlockRegistrationSpec& spec) {
- const int textureId = spec.terrainTextureId >= 0
-                           ? spec.terrainTextureId
-                           : registry::TextureRegistry::getOrRegisterTexture(spec.texturePath);
+ const int textureId = registry::TextureRegistry::getOrRegisterTexture(spec.texturePath);
  Material* material = materialFromName(spec.material);
  std::string translationKey = spec.translationKey;
  if(translationKey.empty()) {
@@ -256,34 +245,22 @@ void registerBlockClass(const BlockRegistrationSpec& spec) {
  if(!block->isOpaque()) {
   Block::BLOCKS_LIGHT_OPACITY[static_cast<std::size_t>(spec.blockId)] = 0;
  }
- if(spec.modelRef != kLuaNoRef || spec.bakedModel != 0) {
+ if(spec.bakedModel != 0) {
 #ifdef MINECRAFT_NATIVE_EXPORTS
   registerDraw(spec.blockId, model::drawLuaBlockWorld, model::drawLuaBlockInventory);
 #endif
  }
  if(!spec.itemTexturePath.empty()) {
-  const int itemTextureId = spec.itemTextureId >= 0
-                                ? spec.itemTextureId
-                                : registry::TextureRegistry::getOrRegisterTexture(spec.itemTexturePath);
+  const int itemTextureId = registry::TextureRegistry::getOrRegisterTexture(spec.itemTexturePath);
   static_cast<LuaModBlock*>(block)->setItemOverrideTexture(itemTextureId);
  }
- if(!spec.tileEntityId.empty()) {
-  const std::string teId = spec.ownerModId + ":" + spec.tileEntityId;
-  Block::BLOCKS_WITH_ENTITY[static_cast<std::size_t>(spec.blockId)] = true;
-  registry::BlockEntityRegistry::instance().registerFactory(
-      teId, [teId]() { return std::make_unique<LuaModBlockEntity>(teId); });
-  static_cast<LuaModBlock*>(block)->setTileEntityId(teId);
- }
-}
-void instantiateLuaModBlock(const BlockRegistrationSpec& spec) {
- registerBlockClass(spec);
 }
 struct BlockTraits {
  using Spec = BlockRegistrationSpec;
  static constexpr const char* kKind = "block";
  static constexpr mod::LifecyclePhase kPhase = mod::LifecyclePhase::Init;
  static void instantiate(const Spec& spec) {
-  instantiateLuaModBlock(spec);
+  registerBlockClass(spec);
  }
 };
 using BlockRegistry = ModIdRegistry<BlockTraits>;
@@ -293,12 +270,8 @@ bool registerBlockSpec(const BlockRegistrationSpec& spec, std::string& error) {
   error = "register_block id must be between 1 and " + std::to_string(Block::BLOCK_COUNT - 1);
   return false;
  }
- if(spec.texturePath.empty() && spec.terrainTextureId < 0) {
-  error = "register_block requires texture or texture_id";
-  return false;
- }
- if(spec.terrainTextureId > 255) {
-  error = "register_block texture_id must be a vanilla terrain-atlas index from 0 to 255";
+ if(spec.texturePath.empty()) {
+  error = "register_block requires texture (a mod resource path)";
   return false;
  }
  if(mod::ModLifecycle::currentPhase() == mod::LifecyclePhase::PostInit ||

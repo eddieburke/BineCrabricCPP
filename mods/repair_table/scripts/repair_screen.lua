@@ -1,4 +1,4 @@
-local inventory_helper = minecraft.require("scripts.inventory_helper")
+local inventory_helper = require("scripts.inventory_helper")
 local SCREEN_ID = "repair_table:repair"
 
 local screen = inventory_helper.slots({

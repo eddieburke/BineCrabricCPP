@@ -337,7 +337,7 @@ function M.slots(spec)
     end
     minecraft.screen.open(spec.id, { title = spec.title or spec.label or spec.id })
   end
-  minecraft.on(minecraft.events.screen_event, { screen_id = spec.id, priority = priority }, function(event)
+  minecraft.on("screen_event", { screen_id = spec.id, priority = priority }, function(event)
     if event.phase == "init" then
       panel_origin(event.width, event.height)
     elseif event.phase == "render" then
@@ -356,7 +356,7 @@ function M.slots(spec)
         event.handled = true
       end
     elseif event.phase == "key" then
-      if event.key == minecraft.keys.escape or event.key == minecraft.key_code("inventory") then
+      if event.key == minecraft.key_code("escape") or event.key == minecraft.key_code("inventory") then
         minecraft.screen.close()
         event.handled = true
       end

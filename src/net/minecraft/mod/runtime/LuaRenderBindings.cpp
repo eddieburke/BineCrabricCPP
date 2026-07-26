@@ -26,7 +26,6 @@ using namespace net::minecraft::mod::model;
 using net::minecraft::client::render::RenderSystem;
 namespace {
 bool gItemModelRenderOverride = false;
-using RenderMatrixGuard = RenderSystem::MatrixScope;
 } // namespace
 [[nodiscard]] bool itemModelRenderOverrideActive() {
  return gItemModelRenderOverride;
@@ -34,64 +33,11 @@ using RenderMatrixGuard = RenderSystem::MatrixScope;
 void setItemModelRenderOverride(const bool enabled) {
  gItemModelRenderOverride = enabled;
 }
+namespace {
 int luaRenderSetItemEntityOverride(lua_State* state) {
  LuaApi& api = luaApi();
  gItemModelRenderOverride = api.gettop(state) >= 1 && api.toboolean(state, 1) != 0;
  return 0;
-}
-namespace {
-bool readManualBlockVertex(lua_State* state, int tableIndex, ManualBlockVertex& vertex) {
- LuaApi& api = luaApi();
- if(api.type(state, tableIndex) != kLuaTTable) {
-  return false;
- }
- vertex.x = luaFloatField(state, tableIndex, "x", luaFloatAt(state, tableIndex, 1, 0.0f));
- vertex.y = luaFloatField(state, tableIndex, "y", luaFloatAt(state, tableIndex, 2, 0.0f));
- vertex.z = luaFloatField(state, tableIndex, "z", luaFloatAt(state, tableIndex, 3, 0.0f));
- vertex.u = luaFloatField(state, tableIndex, "u", luaFloatAt(state, tableIndex, 4, 0.0f));
- vertex.v = luaFloatField(state, tableIndex, "v", luaFloatAt(state, tableIndex, 5, 0.0f));
- return std::isfinite(vertex.x) && std::isfinite(vertex.y) && std::isfinite(vertex.z) && std::isfinite(vertex.u) &&
-        std::isfinite(vertex.v);
-}
-int luaTessellatorQuad(lua_State* state) {
- LuaApi& api = luaApi();
- if(api.type(state, 1) != kLuaTTable) {
-  api.pushboolean(state, 0);
-  return 1;
- }
- const int tableIndex = 1;
- int textureId = luaIntField(state, tableIndex, "texture_id", -1);
- const std::string texturePath = luaStringField(state, tableIndex, "texture", "");
- if(!texturePath.empty()) {
-  textureId = net::minecraft::registry::TextureRegistry::getOrRegisterTexture(texturePath);
- }
- const float red = std::clamp(luaFloatField(state, tableIndex, "r", 1.0f), 0.0f, 1.0f);
- const float green = std::clamp(luaFloatField(state, tableIndex, "g", 1.0f), 0.0f, 1.0f);
- const float blue = std::clamp(luaFloatField(state, tableIndex, "b", 1.0f), 0.0f, 1.0f);
- const float alpha = std::clamp(luaFloatField(state, tableIndex, "a", 1.0f), 0.0f, 1.0f);
- ManualBlockVertex vertices[4];
- api.getfield(state, tableIndex, "vertices");
- if(api.type(state, -1) != kLuaTTable) {
-  api.settop(state, tableIndex);
-  api.pushboolean(state, 0);
-  return 1;
- }
- const int verticesIndex = api.gettop(state);
- for(int i = 0; i < 4; ++i) {
-  api.rawgeti(state, verticesIndex, i + 1);
-  const bool ok = readManualBlockVertex(state, api.gettop(state), vertices[i]);
-  api.settop(state, -2);
-  if(!ok) {
-   api.settop(state, tableIndex);
-   api.pushboolean(state, 0);
-   return 1;
-  }
- }
- api.settop(state, tableIndex);
- const bool emitted = emitManualBlockModelQuad(vertices, textureId, red, green, blue, alpha) ||
-                      emitManualItemModelQuad(vertices, textureId, red, green, blue, alpha);
- api.pushboolean(state, emitted ? 1 : 0);
- return 1;
 }
 int luaRenderDrawQuads(lua_State* state) {
  LuaApi& api = luaApi();
@@ -174,7 +120,7 @@ int luaRenderDrawQuads(lua_State* state) {
   }
   RenderSystem::bindTexture(glTexture);
  }
- const RenderMatrixGuard modelScope;
+ const RenderSystem::MatrixScope modelScope;
  if(hasTransform) {
   RenderSystem::translate(static_cast<float>(modelX), static_cast<float>(modelY), static_cast<float>(modelZ));
   if(modelYaw != 0.0f) {
@@ -230,12 +176,12 @@ int luaRenderDrawQuads(lua_State* state) {
    const float b = std::clamp(luaFloatField(state, vertexIndex, "b", defaultB), 0.0f, 1.0f);
    const float a = std::clamp(luaFloatField(state, vertexIndex, "a", defaultA), 0.0f, 1.0f);
    tessellator.color(r, g, b, a);
-   const double x = luaFloatField(state, vertexIndex, "x", 0.0f);
-   const double y = luaFloatField(state, vertexIndex, "y", 0.0f);
-   const double z = luaFloatField(state, vertexIndex, "z", 0.0f);
+   const double x = luaDoubleField(state, vertexIndex, "x", 0.0);
+   const double y = luaDoubleField(state, vertexIndex, "y", 0.0);
+   const double z = luaDoubleField(state, vertexIndex, "z", 0.0);
    if(textured) {
-    const double u = luaFloatField(state, vertexIndex, "u", 0.0f);
-    const double v = luaFloatField(state, vertexIndex, "v", 0.0f);
+    const double u = luaDoubleField(state, vertexIndex, "u", 0.0);
+    const double v = luaDoubleField(state, vertexIndex, "v", 0.0);
     tessellator.vertex(x, y, z, u, v);
    } else {
     tessellator.vertex(x, y, z);
@@ -312,6 +258,19 @@ void drawBillboard(client::render::Tessellator& tessellator,
  tessellator.vertex(starX + rdx - udx, starY + rdy - udy, starZ + rdz - udz);
  tessellator.vertex(starX - rdx - udx, starY - rdy - udy, starZ - rdz - udz);
 }
+// Converts a billboard's direction vector to yaw/pitch degrees; shared by the
+// packed and non-packed loops below, which previously duplicated this.
+void directionToYawPitch(float x, float y, float z, float& yawDeg, float& pitchDeg) {
+ const float xyLen = std::sqrt(x * x + z * z);
+ if(xyLen < 0.0001f && std::abs(y) > 0.9999f) {
+  yawDeg = 0.0f;
+  pitchDeg = (y >= 0.0f) ? 90.0f : -90.0f;
+ } else {
+  constexpr float kRadToDeg = 57.29578f;
+  yawDeg = std::atan2(x, -z) * kRadToDeg;
+  pitchDeg = std::atan2(y, xyLen) * kRadToDeg;
+ }
+}
 int luaRenderDrawBillboards(lua_State* state) {
  LuaApi& api = luaApi();
  if(!ModWorldDrawContext::active() || api.type(state, 1) != kLuaTTable) {
@@ -339,9 +298,7 @@ int luaRenderDrawBillboards(lua_State* state) {
   const std::size_t numberCount = api.rawlen(state, sourceIndex);
   billboardCount = static_cast<int>(std::min(numberCount / 5, static_cast<std::size_t>(kMaxBillboardsPerBatch)));
  } else {
-  if(!usePacked) {
-   pop(state, 1);
-  }
+  pop(state, 1);
   api.getfield(state, tableIndex, "billboards");
   if(api.type(state, -1) != kLuaTTable) {
    api.getfield(state, tableIndex, "points");
@@ -384,17 +341,7 @@ int luaRenderDrawBillboards(lua_State* state) {
    const float alpha = static_cast<float>(values[4]);
    float yawDeg;
    float pitchDeg;
-   {
-    const float xyLen = std::sqrt(x * x + z * z);
-    if(xyLen < 0.0001f && std::abs(y) > 0.9999f) {
-     yawDeg = 0.0f;
-     pitchDeg = (y >= 0.0f) ? 90.0f : -90.0f;
-    } else {
-     constexpr float kRadToDeg = 57.29578f;
-     yawDeg = std::atan2(x, -z) * kRadToDeg;
-     pitchDeg = std::atan2(y, xyLen) * kRadToDeg;
-    }
-   }
+   directionToYawPitch(x, y, z, yawDeg, pitchDeg);
    drawBillboard(tessellator, yawDeg, pitchDeg, size, alpha, brightness, rotationXRad, rotationYRad);
    ++emitted;
   }
@@ -411,17 +358,7 @@ int luaRenderDrawBillboards(lua_State* state) {
    const float z = luaFloatField(state, pointIndex, "z", 0.0f);
    float yawDeg;
    float pitchDeg;
-   {
-    const float xyLen = std::sqrt(x * x + z * z);
-    if(xyLen < 0.0001f && std::abs(y) > 0.9999f) {
-     yawDeg = 0.0f;
-     pitchDeg = (y >= 0.0f) ? 90.0f : -90.0f;
-    } else {
-     constexpr float kRadToDeg = 57.29578f;
-     yawDeg = std::atan2(x, -z) * kRadToDeg;
-     pitchDeg = std::atan2(y, xyLen) * kRadToDeg;
-    }
-   }
+   directionToYawPitch(x, y, z, yawDeg, pitchDeg);
    const double size = static_cast<double>(luaFloatField(state, pointIndex, "size", 0.2f));
    const float alpha = luaFloatField(state, pointIndex, "alpha", 1.0f);
    drawBillboard(tessellator, yawDeg, pitchDeg, size, alpha, brightness, rotationXRad, rotationYRad);
@@ -446,11 +383,6 @@ void installRenderApi(lua_State* state) {
                        {"set_item_entity_override", luaRenderSetItemEntityOverride},
                    });
  api.setfield(state, -2, "render");
- pushFunctionTable(state,
-                   {
-                       {"quad", luaTessellatorQuad},
-                   });
- api.setfield(state, -2, "tessellator");
 }
 #else
 void installRenderApi(lua_State* state) {

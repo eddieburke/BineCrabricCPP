@@ -1,5 +1,6 @@
 #include "net/minecraft/client/render/RenderTargets.hpp"
 #include <algorithm>
+#include <cmath>
 #include <utility>
 #include "net/minecraft/client/Minecraft.hpp"
 #include "net/minecraft/client/gl/GLCore.hpp"
@@ -9,17 +10,31 @@
 #include "net/minecraft/client/render/RenderSystem.hpp"
 #include "net/minecraft/client/render/chunk/ChunkBuilder.hpp"
 #include "net/minecraft/client/render/world/WorldRenderer.hpp"
+#include "net/minecraft/util/math/MatrixStacks.hpp"
 namespace net::minecraft::client::render {
 namespace {
 constexpr int kFramebufferBinding = 0x8CA6;
+constexpr int kRenderbufferBinding = 0x8CA7;
 constexpr int kViewport = 0x0BA2;
+bool finite(float value) {
+ return std::isfinite(value);
+}
+bool finite(double value) {
+ return std::isfinite(value);
+}
 } // namespace
 bool RenderTarget::initialize(int widthIn, int heightIn, int colorCount, bool useDepthTexture) {
  destroy();
  gl::GLCore::ensureLoaded();
- if(!gl::GLCore::framebufferSupported || widthIn <= 0 || heightIn <= 0 || colorCount <= 0) {
+ if(!gl::GLCore::framebufferSupported || widthIn <= 0 || heightIn <= 0 || colorCount < 0 ||
+    (colorCount == 0 && !useDepthTexture)) {
   return false;
  }
+ int previousFbo = 0;
+ int previousRenderbuffer = 0;
+ ::glGetIntegerv(static_cast<unsigned>(kFramebufferBinding), &previousFbo);
+ ::glGetIntegerv(static_cast<unsigned>(kRenderbufferBinding), &previousRenderbuffer);
+ const RenderSystem::StateShadow previousState = RenderSystem::getShadow();
  width = widthIn;
  height = heightIn;
  gl::GLCore::genFramebuffers(1, &fbo);
@@ -50,9 +65,14 @@ bool RenderTarget::initialize(int widthIn, int heightIn, int colorCount, bool us
                                    0);
   drawBuffers.push_back(static_cast<unsigned>(gl::framebuffer::ColorAttachment0 + i));
  }
- if(gl::GLCore::drawBuffers != nullptr) {
-  gl::GLCore::drawBuffers(colorCount, drawBuffers.data());
- }
+  if(colorCount > 0) {
+    if(gl::GLCore::drawBuffers != nullptr) {
+      gl::GLCore::drawBuffers(colorCount, drawBuffers.data());
+    }
+  } else {
+    ::glDrawBuffer(0);
+    ::glReadBuffer(0);
+  }
  if(useDepthTexture) {
   depthTexture = RenderSystem::genTexture();
   RenderSystem::bindTexture(gl::cap::Texture2D, static_cast<int>(depthTexture));
@@ -82,8 +102,9 @@ bool RenderTarget::initialize(int widthIn, int heightIn, int colorCount, bool us
  }
  const bool ok = gl::GLCore::checkFramebufferStatus(gl::framebuffer::Framebuffer) ==
                  static_cast<unsigned>(gl::framebuffer::Complete);
- gl::GLCore::bindRenderbuffer(gl::framebuffer::Renderbuffer, 0);
- gl::GLCore::bindFramebuffer(gl::framebuffer::Framebuffer, 0);
+ gl::GLCore::bindRenderbuffer(gl::framebuffer::Renderbuffer, static_cast<unsigned>(previousRenderbuffer));
+ gl::GLCore::bindFramebuffer(gl::framebuffer::Framebuffer, static_cast<unsigned>(previousFbo));
+ RenderSystem::setShadow(previousState);
  if(!ok) {
   destroy();
  }
@@ -204,15 +225,25 @@ bool FramebufferManager::renderWorldTo(int handle,
                                        bool shadowEntities,
                                        float perspectiveNear,
                                        float perspectiveFar,
-                                       int excludedEntityId) {
+                                       int excludedEntityId,
+                                       FrameRenderCamera* renderedCamera) {
  auto it = targets_.find(handle);
- if(it == targets_.end() || it->second.fbo == 0 || renderer.client == nullptr) {
+ if(it == targets_.end() || it->second.fbo == 0 || it->second.width <= 0 || it->second.height <= 0 ||
+    renderer.client == nullptr || renderingHandle_ != -1 || !finite(tickDelta) || !finite(x) || !finite(y) ||
+    !finite(z) || !finite(yaw) || !finite(pitch) || !finite(roll) || !finite(fov) ||
+    (orthographic && (!finite(orthoHalfWidth) || !finite(orthoHalfHeight) || !finite(orthoNear) ||
+                      !finite(orthoFar) || orthoHalfWidth <= 0.0f || orthoHalfHeight <= 0.0f ||
+                      orthoNear == orthoFar)) ||
+    (!orthographic && (!finite(perspectiveNear) || !finite(perspectiveFar)))) {
   return false;
  }
  int prevFbo = 0;
  ::glGetIntegerv(static_cast<unsigned>(kFramebufferBinding), &prevFbo);
  int prevViewport[4] = {0, 0, 0, 0};
  RenderSystem::getIntegerv(kViewport, prevViewport);
+ const RenderSystem::StateShadow prevRenderState = RenderSystem::getShadow();
+ const net::minecraft::util::math::MatrixStack prevModelView = net::minecraft::util::math::g_modelView;
+ const net::minecraft::util::math::MatrixStack prevProjection = net::minecraft::util::math::g_projection;
  const int prevRenderingHandle = renderingHandle_;
  const FrameRenderCamera prevFrameCamera = renderer.frameCamera_;
  const FrameRenderCamera prevPublishedCamera = RenderCameraState::instance().frame();
@@ -224,8 +255,6 @@ bool FramebufferManager::renderWorldTo(int handle,
  double prevFrameCamY = 0.0;
  double prevFrameCamZ = 0.0;
  bool prevHasFrameCam = false;
- std::vector<std::pair<chunk::ChunkBuilder*, bool>> prevFrustumState;
- std::vector<std::vector<chunk::ChunkBuilder*>> prevVisibleDrawRings;
  if(worldRenderer != nullptr) {
   prevWorldCam = worldRenderer->cameraEntity_;
   prevRenderCamEntity = worldRenderer->renderCameraEntity_;
@@ -234,11 +263,7 @@ bool FramebufferManager::renderWorldTo(int handle,
   prevFrameCamY = worldRenderer->frameCamY_;
   prevFrameCamZ = worldRenderer->frameCamZ_;
   prevHasFrameCam = worldRenderer->hasFrameCamera_;
-  prevVisibleDrawRings = worldRenderer->visibleDrawRings_;
-  prevFrustumState.reserve(worldRenderer->sections_.size());
-  for(auto& entry : worldRenderer->sections_) {
-   prevFrustumState.emplace_back(entry.second.get(), entry.second->inFrustum);
-  }
+  worldRenderer->pushCullState();
  }
  FrameRenderCamera camera;
  camera.x = x;
@@ -269,7 +294,15 @@ bool FramebufferManager::renderWorldTo(int handle,
  it->second.bind();
  RenderSystem::viewport(0, 0, it->second.width, it->second.height);
  renderingHandle_ = handle;
- renderer.renderToCurrentTarget(tickDelta, camera, clampedFov, it->second.width, it->second.height, true);
+ renderer.renderToCurrentTarget(std::clamp(tickDelta, 0.0f, 1.0f),
+                                camera,
+                                clampedFov,
+                                it->second.width,
+                                it->second.height,
+                                true);
+ if(renderedCamera != nullptr) {
+  *renderedCamera = renderer.frameCamera_;
+ }
  renderingHandle_ = prevRenderingHandle;
  if(worldRenderer != nullptr) {
   worldRenderer->cameraEntity_ = prevWorldCam;
@@ -279,14 +312,15 @@ bool FramebufferManager::renderWorldTo(int handle,
   worldRenderer->frameCamY_ = prevFrameCamY;
   worldRenderer->frameCamZ_ = prevFrameCamZ;
   worldRenderer->hasFrameCamera_ = prevHasFrameCam;
-  worldRenderer->visibleDrawRings_ = std::move(prevVisibleDrawRings);
-  for(const auto& [section, inFrustum] : prevFrustumState) {
-   section->inFrustum = inFrustum;
-  }
+  worldRenderer->popCullState();
  }
  renderer.frameCamera_ = prevFrameCamera;
  RenderCameraState::instance().setFrame(prevPublishedCamera);
+ net::minecraft::util::math::g_modelView = prevModelView;
+ net::minecraft::util::math::g_projection = prevProjection;
  gl::GLCore::bindFramebuffer(gl::framebuffer::Framebuffer, static_cast<unsigned>(prevFbo));
+ RenderSystem::setShadow(prevRenderState);
+ RenderSystem::matrixMode(gl::matrix_::ModelView);
  RenderSystem::viewport(prevViewport[0], prevViewport[1], prevViewport[2], prevViewport[3]);
  return true;
 }
