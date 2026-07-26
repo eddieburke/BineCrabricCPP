@@ -1,6 +1,5 @@
 #include "net/minecraft/client/gl/ShaderProgram.hpp"
 #include <utility>
-#include "net/minecraft/client/ClientLog.hpp"
 #include "net/minecraft/client/gl/GLCore.hpp"
 #include "net/minecraft/util/math/Matrix4f.hpp"
 namespace net::minecraft::client::gl {
@@ -99,14 +98,12 @@ bool ShaderProgram::compile(const std::string& vertexSource,
  const std::string vsrc = assemble(versionPreamble, defines, vertexSource);
  const std::string fsrc = assemble(versionPreamble, defines, fragmentSource);
  const unsigned int vertex = compileStage(kVertexShader, vsrc, lastError_);
- if(vertex == 0) {
-  ClientLog::LOGGER.log(LogLevel::Warning, "[shader] vertex compile failed:\n" + lastError_);
-  return false;
- }
- const unsigned int fragment = compileStage(kFragmentShader, fsrc, lastError_);
- if(fragment == 0) {
-  ClientLog::LOGGER.log(LogLevel::Warning, "[shader] fragment compile failed:\n" + lastError_);
-  GLCore::deleteShader(vertex);
+  if(vertex == 0) {
+   return false;
+  }
+  const unsigned int fragment = compileStage(kFragmentShader, fsrc, lastError_);
+  if(fragment == 0) {
+   GLCore::deleteShader(vertex);
   return false;
  }
  const unsigned int program = GLCore::createProgram();
@@ -128,9 +125,8 @@ bool ShaderProgram::compile(const std::string& vertexSource,
  if(success == 0) {
   char log[2048]{};
   GLCore::getProgramInfoLog(program, sizeof(log), nullptr, log);
-  lastError_ = log;
-  ClientLog::LOGGER.log(LogLevel::Warning, "[shader] link failed:\n" + lastError_);
-  GLCore::deleteProgram(program);
+   lastError_ = log;
+   GLCore::deleteProgram(program);
   return false;
  }
  program_ = program;

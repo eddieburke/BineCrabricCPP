@@ -7,12 +7,9 @@
 #include "net/minecraft/nbt/NbtCompound.hpp"
 #include "net/minecraft/nbt/NbtFileIo.hpp"
 #include "net/minecraft/nbt/NbtIo.hpp"
-#include "net/minecraft/util/logging/Log.hpp"
 #include "net/minecraft/world/dimension/Dimension.hpp"
 #include "net/minecraft/world/storage/PlayerSaveSafeguards.hpp"
 #include "net/minecraft/world/storage/exception/SessionLockException.hpp"
-using net::minecraft::util::logging::Log;
-using net::minecraft::util::logging::LogLevel;
 namespace net::minecraft {
 namespace {
 [[nodiscard]] std::uint64_t nowMillis() {
@@ -86,9 +83,8 @@ std::optional<WorldProperties> AlphaWorldStorage::loadPropertiesFrom(const fs::p
    return std::nullopt;
   }
   return WorldProperties(root.getCompound("Data"));
- } catch(...) {
-  Log::LOGGER.log(LogLevel::Warning, "AlphaWorldStorage: level.dat load failed, trying _old backup");
-  return std::nullopt;
+  } catch(...) {
+   return std::nullopt;
  }
 }
 void AlphaWorldStorage::writeLevelDat(const WorldProperties& properties,
@@ -122,9 +118,8 @@ void AlphaWorldStorage::save(const WorldProperties& properties,
                              const std::vector<entity::player::PlayerEntity*>& players) {
  try {
   writeLevelDat(properties, players);
- } catch(const std::exception&) {
-  Log::LOGGER.log(LogLevel::Warning, "AlphaWorldStorage: save failed silently");
- }
+  } catch(const std::exception&) {
+  }
 }
 void AlphaWorldStorage::saveUnload(const WorldProperties& properties,
                                    const std::vector<entity::player::PlayerEntity*>& players) {

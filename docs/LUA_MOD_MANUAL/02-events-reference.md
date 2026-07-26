@@ -481,6 +481,7 @@ Fires when an entity is spawned into the world (client-only).
 | `item_id` | int | Item ID (if item entity) | No |
 | `item_count` | int | Stack count (if item entity) | No |
 | `item_damage` | int | Item damage (if item entity) | No |
+| `item_max_damage` | int | Item max damage (if item entity) | No |
 | `texture_path` | string | Item texture path (if item entity) | No |
 | `mod_texture` | boolean | Whether item uses mod texture | No |
 | `atlas_index` | int | Atlas tile index (if vanilla texture) | No |
@@ -504,6 +505,7 @@ Fires when an entity is removed from the world (client-only).
 | `item_id` | int | Item ID (if item entity) | No |
 | `item_count` | int | Stack count (if item entity) | No |
 | `item_damage` | int | Item damage (if item entity) | No |
+| `item_max_damage` | int | Item max damage (if item entity) | No |
 | `texture_path` | string | Item texture path (if item entity) | No |
 | `mod_texture` | boolean | Whether item uses mod texture | No |
 | `atlas_index` | int | Atlas tile index (if vanilla texture) | No |
@@ -591,7 +593,7 @@ Fires when the client performs a raycast (crosshair targeting).
 | `side` | int | Block face hit (0-5) | No |
 | `block_id` | int | Block ID at position | No |
 | `block_name` | string | Block wire name | No |
-| `item_id` | int | Same as block_id for block hits | No |
+| `item_id` | int | Deprecated alias for `block_id`. Use `block_id` instead. | No |
 | `entity_id` | int | Entity ID (if entity hit) | No |
 | `entity_type` | string | Entity type (if entity hit) | No |
 | `entity_raw_id` | int | Entity raw registry ID | No |
@@ -880,6 +882,7 @@ Fires before an entity is rendered.
 | `item_id` | int | Item ID (if item entity) | No |
 | `item_count` | int | Stack count (if item entity) | No |
 | `item_damage` | int | Item damage (if item entity) | No |
+| `item_max_damage` | int | Item max damage (if item entity) | No |
 | `texture_path` | string | Item texture path | No |
 | `mod_texture` | boolean | Uses mod texture | No |
 | `atlas_index` | int | Atlas tile index | No |

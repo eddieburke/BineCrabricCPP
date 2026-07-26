@@ -3,9 +3,7 @@
 #include <cmath>
 #include "net/minecraft/entity/player/PlayerEntity.hpp"
 #include "net/minecraft/nbt/NbtList.hpp"
-#include "net/minecraft/util/logging/Log.hpp"
-using net::minecraft::util::logging::Log;
-using net::minecraft::util::logging::LogLevel;
+
 namespace net::minecraft::world::storage {
 namespace {
 [[nodiscard]] bool isDefaultSpawnPosition(const NbtCompound& playerNbt) {
@@ -45,19 +43,14 @@ bool hasSavedPosition(const NbtCompound& playerNbt) {
  return !isDefaultSpawnPosition(playerNbt);
 }
 NbtCompound applyPlayerSaveSafeguards(NbtCompound proposed, const NbtCompound& previous) {
- if(countInventoryStacks(proposed) == 0 && countInventoryStacks(previous) > 0) {
-  Log::LOGGER.log(
-      LogLevel::Warning,
-      "PlayerSaveSafeguards: restored inventory from previous save (current save had empty inventory)");
-  proposed.put("Inventory", previous.getList("Inventory"));
+  if(countInventoryStacks(proposed) == 0 && countInventoryStacks(previous) > 0) {
+   proposed.put("Inventory", previous.getList("Inventory"));
   if(previous.contains("SelectedItemSlot")) {
    proposed.putInt("SelectedItemSlot", previous.getInt("SelectedItemSlot"));
   }
  }
- if(isDefaultSpawnPosition(proposed) && hasSavedPosition(previous)) {
-  Log::LOGGER.log(LogLevel::Warning,
-                  "PlayerSaveSafeguards: restored position from previous save (current save had default spawn)");
-  proposed.put("Pos", previous.getList("Pos"));
+  if(isDefaultSpawnPosition(proposed) && hasSavedPosition(previous)) {
+   proposed.put("Pos", previous.getList("Pos"));
   if(previous.contains("Rotation")) {
    proposed.put("Rotation", previous.getList("Rotation"));
   }

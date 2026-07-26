@@ -50,7 +50,6 @@ local ui = {
   press_y = 0,
   drag_last_x = 0,
   drag_last_y = 0,
-  coast_loaded = false,
 }
 
 local clamp = minecraft.util.clamp
@@ -535,15 +534,8 @@ local function current_solar_frame(partial_ticks)
   return solar_frame_cache
 end
 
-local function ensure_coastlines()
-  if ui.coast_loaded then
-    return
-  end
-  local coast_text = assert(minecraft.read_asset("assets/globe_coasts.txt"),
-    "realtime_sky: missing coastline data")
-  assert(coast_text ~= "", "realtime_sky: empty coastline data")
-  globe_ui.load_coastlines(coast_text)
-  ui.coast_loaded = true
+local function ensure_globe_data()
+  globe_ui.load_data()
 end
 
 local function refresh_filter()
@@ -719,7 +711,7 @@ end
 local open_globe_screen
 
 load_settings()
-ensure_coastlines()
+ensure_globe_data()
 
 minecraft.on("screen_ui", {
   screen_id = minecraft.screen.ids.world_settings,
@@ -758,7 +750,7 @@ minecraft.on("world_render", {
   event.solar_day_tick = frame.day_tick
   event.solar_time_hours = frame.solar_time_hours
   if settings.drive_sun then
-    event.celestial_angle = frame.sun_angle
+    event.celestial_angle = frame.celestial
     event.celestial = frame.celestial
     event.sky_yaw_deg = frame.skydome_yaw_deg
     event.sun_direction_x = frame.sun_direction_x
@@ -846,7 +838,7 @@ minecraft.on("screen_event", { screen_id = SCREEN_ID, priority = 100 }, function
       minecraft.screen.open(SETTINGS_SCREEN_ID, { title = "" })
     end)
   elseif event.phase == "render" then
-    ensure_coastlines()
+    ensure_globe_data()
     layout(event.width, event.height)
     local query = minecraft.screen.field_text(SEARCH_FIELD) or ""
     if query ~= ui.search then

@@ -12,6 +12,7 @@
 #include "net/minecraft/entity/player/ClientPlayerEntity.hpp"
 #include "net/minecraft/util/hit/HitResult.hpp"
 #include "net/minecraft/util/hit/HitResultType.hpp"
+#include "net/minecraft/util/math/Intersect.hpp"
 #include "net/minecraft/util/math/MathConstants.hpp"
 #include "net/minecraft/util/math/Types.hpp"
 #include "net/minecraft/world/World.hpp"
@@ -25,40 +26,19 @@ using namespace net::minecraft::util::math;
 namespace {
 #ifdef MINECRAFT_NATIVE_EXPORTS
 [[nodiscard]] std::optional<HitResult> boxRaycast(const Box& box, const Vec3d& start, const Vec3d& end) {
- Vec3d dir{end.x - start.x, end.y - start.y, end.z - start.z};
- double tMin = 0.0;
- double tMax = 1.0;
- for(int axis = 0; axis < 3; ++axis) {
-  const double s = axis == 0 ? start.x : (axis == 1 ? start.y : start.z);
-  const double d = axis == 0 ? dir.x : (axis == 1 ? dir.y : dir.z);
-  const double bMin = axis == 0 ? box.minX : (axis == 1 ? box.minY : box.minZ);
-  const double bMax = axis == 0 ? box.maxX : (axis == 1 ? box.maxY : box.maxZ);
-  if(std::abs(d) < 1.0e-7) {
-   if(s < bMin || s > bMax) {
-    return std::nullopt;
-   }
-   continue;
-  }
-  double t1 = (bMin - s) / d;
-  double t2 = (bMax - s) / d;
-  if(t1 > t2) {
-   std::swap(t1, t2);
-  }
-  tMin = std::max(tMin, t1);
-  tMax = std::min(tMax, t2);
-  if(tMin > tMax) {
-   return std::nullopt;
-  }
- }
- const double tHit = tMin >= 0.0 ? tMin : tMax;
- if(tHit < 0.0 || tHit > 1.0) {
+ const double origin[3] = {start.x, start.y, start.z};
+ const double dir[3] = {end.x - start.x, end.y - start.y, end.z - start.z};
+ const double min[3] = {box.minX, box.minY, box.minZ};
+ const double max[3] = {box.maxX, box.maxY, box.maxZ};
+ const double t = raySlabIntersect(min, max, origin, dir, 1.0);
+ if(t < 0.0) {
   return std::nullopt;
  }
- return HitResult{MathHelper::floor(start.x + dir.x * tHit),
-                  MathHelper::floor(start.y + dir.y * tHit),
-                  MathHelper::floor(start.z + dir.z * tHit),
+ return HitResult{MathHelper::floor(start.x + dir[0] * t),
+                  MathHelper::floor(start.y + dir[1] * t),
+                  MathHelper::floor(start.z + dir[2] * t),
                   0,
-                  {start.x + dir.x * tHit, start.y + dir.y * tHit, start.z + dir.z * tHit}};
+                  {start.x + dir[0] * t, start.y + dir[1] * t, start.z + dir[2] * t}};
 }
 [[nodiscard]] std::optional<HitResult> entityRaycast(
     World* world, Entity* except, const Vec3d& start, const Vec3d& end, double maxDistance) {

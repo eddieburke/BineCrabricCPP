@@ -4,8 +4,6 @@
 #include "net/minecraft/mod/runtime/LuaBindings.hpp"
 #include "net/minecraft/mod/runtime/LuaDirectHooks.hpp"
 #include "net/minecraft/mod/runtime/LuaEventGlue.hpp"
-// LuaEventSubscribers.hpp deleted — dispatch is now in LuaDirectHooks.hpp
-#include "net/minecraft/mod/lua/LuaHostApi.hpp"
 #include "net/minecraft/mod/runtime/LuaEventId.hpp"
 #include "net/minecraft/mod/runtime/LuaModSettingsBindings.hpp"
 #ifdef MINECRAFT_NATIVE_EXPORTS

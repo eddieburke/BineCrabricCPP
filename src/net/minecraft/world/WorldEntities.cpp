@@ -5,13 +5,10 @@
 #include "net/minecraft/entity/LivingEntity.hpp"
 #include "net/minecraft/entity/player/PlayerEntity.hpp"
 #include "net/minecraft/mod/runtime/LuaDirectHooks.hpp"
-#include "net/minecraft/util/logging/Log.hpp"
 #include "net/minecraft/util/math/MathHelper.hpp"
 #include "net/minecraft/world/World.hpp"
 #include "net/minecraft/world/chunk/Chunk.hpp"
 #include "net/minecraft/world/chunk/ChunkSource.hpp"
-using net::minecraft::util::logging::Log;
-using net::minecraft::util::logging::LogLevel;
 namespace net::minecraft {
 namespace {
 bool isInvalidDouble(double value) {
@@ -236,9 +233,8 @@ void World::addPlayer(PlayerEntity* player) {
   }
   setChunkCacheCenterFromBlockPos(MathHelper::floor(player->x), MathHelper::floor(player->z));
   spawnEntity(player);
- } catch(...) {
-  Log::LOGGER.log(LogLevel::Warning, "WorldEntities: addPlayer failed, player spawn silently discarded");
- }
+  } catch(...) {
+  }
 }
 void World::updateEntity(Entity* entity, bool requireLoaded, int depth) {
  if(entity == nullptr) {

@@ -64,16 +64,23 @@ int resolveLuaTextureGlId(int textureId) {
  }
  return found->second;
 }
+constexpr std::array kTerrainChannels{"height", "surface_block", "surface_block_below"};
+constexpr std::array kSampleChannels{"height", "surface_block", "surface_block_below", "biome_id", "grass"};
 [[nodiscard]] bool isTerrainGridChannel(const std::string& channel) {
- return channel == "height" || channel == "surface_block" || channel == "surface_block_below";
+ for(auto* c : kTerrainChannels) {
+  if(channel == c) {
+   return true;
+  }
+ }
+ return false;
 }
 [[nodiscard]] bool isSupportedSampleChannel(const std::string& channel) {
- return isTerrainGridChannel(channel) || channel == "biome_id" || channel == "grass";
-}
-[[nodiscard]] const std::array<const char*, 5>& sampleChannels() {
- static const std::array<const char*, 5> channels = {
-     "height", "surface_block", "surface_block_below", "biome_id", "grass"};
- return channels;
+ for(auto* c : kSampleChannels) {
+  if(channel == c) {
+   return true;
+  }
+ }
+ return false;
 }
 [[nodiscard]] long long sampleTerrainChannel(OverworldChunkGenerator& generator,
                                              std::unordered_map<std::uint64_t, Chunk>& chunks,
@@ -296,7 +303,7 @@ int luaWorldSampleGrid(lua_State* state) {
 }
 int luaWorldSampleChannels(lua_State* state) {
  LuaApi& api = luaApi();
- const auto& channels = sampleChannels();
+ const auto& channels = kSampleChannels;
  api.createtable(state, static_cast<int>(channels.size()), 0);
  for(std::size_t i = 0; i < channels.size(); ++i) {
   api.pushstring(state, channels[i]);

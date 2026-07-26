@@ -5,7 +5,6 @@
 #include <stdexcept>
 #include <string>
 #include <vector>
-#include "net/minecraft/client/ClientLog.hpp"
 #include "net/minecraft/client/Minecraft.hpp"
 namespace net::minecraft::client::resource {
 namespace {
@@ -48,17 +47,13 @@ void parseResourceListing(const std::string& xml, const std::function<void(const
 }
 bool downloadFile(const std::string& url, const std::filesystem::path& destination) {
  const HttpResponse response = fetchUrl(url, true);
- if(!response.ok() || response.body.empty()) {
-  ClientLog::LOGGER.log(LogLevel::Warning,
-                        "[resource-download] failed (HTTP " + std::to_string(response.statusCode) +
-                            ", betacraft.ee:11705 proxy): " + url);
-  return false;
+  if(!response.ok() || response.body.empty()) {
+   return false;
  }
  std::ofstream out(destination, std::ios::binary);
- if(!out) {
-  ClientLog::LOGGER.log(LogLevel::Warning, "[resource-download] could not write " + destination.string());
-  return false;
- }
+  if(!out) {
+   return false;
+  }
  out.write(reinterpret_cast<const char*>(response.body.data()), static_cast<std::streamsize>(response.body.size()));
  return out.good();
 }
@@ -118,9 +113,9 @@ void ResourceDownloadThread::run() {
     return;
    }
   }
- } catch(const std::exception& ex) {
-  ClientLog::LOGGER.log(LogLevel::Warning, "[resource-download] falling back to local resources directory", &ex);
-  loadFromDirectory(resourcesDirectory, "");
+  } catch(const std::exception& ex) {
+   (void)ex;
+   loadFromDirectory(resourcesDirectory, "");
  }
 }
 void ResourceDownloadThread::loadFromDirectory(const std::filesystem::path& directory, const std::string& type) {

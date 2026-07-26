@@ -12,33 +12,24 @@ local PIN_BORDER_COLOR = 0xFF6A3608
 local PIN_COLOR = 0xFFFFA52A
 local PIN_CENTER_COLOR = 0xFFFFF1C4
 
-local CHUNK_POINTS = 80
 local HORIZON_EPSILON = 0.006
 local MIN_WORLD_SEGMENT_DOT = 0.82
 local MIN_SCREEN_SEGMENT_SQ = 0.09
 
--- Camera distance is inverse zoom. The original 1.5 lower clamp allowed only
--- a tiny enlargement. This range supports a full globe and an approximately
--- 82x close view without letting values reach zero or destabilize projection.
 local DEFAULT_GLOBE_CAMERA = 2.05
 local MIN_GLOBE_CAMERA = 0.025
 local MAX_GLOBE_CAMERA = 8.0
 local ZOOM_STEP = 0.72
 
-local coastline = nil
+local coastline_data = nil
 local graticule_paths = nil
-local geometry_generation = 0
 
 local projection_cache = {
   key = nil,
-  generation = -1,
   coast = {},
   river = {},
   grid = {},
   equator = {},
-  visible_chunks = 0,
-  source_points = 0,
-  rebuilds = 0,
 }
 
 local sphere_cache = {
@@ -100,104 +91,6 @@ local function make_point(lat, lon)
   return { x = x, y = y, z = z }
 end
 
-local function finalize_chunk(level, coordinates, point_count, kind)
-  if point_count < 2 then return end
-
-  local sx, sy, sz = 0.0, 0.0, 0.0
-  for index = 1, point_count * 3, 3 do
-    sx = sx + coordinates[index]
-    sy = sy + coordinates[index + 1]
-    sz = sz + coordinates[index + 2]
-  end
-
-  local length = math.sqrt(sx * sx + sy * sy + sz * sz)
-  local cx, cy, cz, margin
-  if length < 1.0e-8 then
-    cx, cy, cz, margin = 0.0, 0.0, 1.0, 1.0
-  else
-    cx, cy, cz = sx / length, sy / length, sz / length
-    local minimum_dot = 1.0
-    for index = 1, point_count * 3, 3 do
-      local dot = cx * coordinates[index] +
-        cy * coordinates[index + 1] + cz * coordinates[index + 2]
-      if dot < minimum_dot then minimum_dot = dot end
-    end
-    if minimum_dot <= 0.0 then
-      margin = 1.0
-    else
-      margin = math.sqrt(math.max(0.0, 1.0 - minimum_dot * minimum_dot))
-    end
-  end
-
-  level.chunks[#level.chunks + 1] = {
-    coordinates = coordinates,
-    count = point_count,
-    kind = kind,
-    cx = cx,
-    cy = cy,
-    cz = cz,
-    margin = margin,
-  }
-  level.points = level.points + point_count
-end
-
-local function parse_geometry_text(text, level_name)
-  local level = {
-    name = level_name,
-    chunks = {},
-    points = 0,
-    paths = 0,
-  }
-
-  for segment in tostring(text or ""):gmatch("[^|]+") do
-    local kind = segment:match("^%s*([CR])%s") or "C"
-    local coordinates = {}
-    local point_count = 0
-    local previous_x, previous_y, previous_z
-    local segment_has_points = false
-
-    for lat_text, lon_text in segment:gmatch("([%+%-]?[%d%.]+),([%+%-]?[%d%.]+)") do
-      local lat = tonumber(lat_text)
-      local lon = tonumber(lon_text)
-      if lat and lon and lat >= -90.0 and lat <= 90.0 and lon >= -180.0 and lon <= 180.0 then
-        local x, y, z = lat_lon_xyz(lat, lon)
-        if point_count >= CHUNK_POINTS then
-          finalize_chunk(level, coordinates, point_count, kind)
-          coordinates = { previous_x, previous_y, previous_z }
-          point_count = 1
-        end
-        coordinates[#coordinates + 1] = x
-        coordinates[#coordinates + 1] = y
-        coordinates[#coordinates + 1] = z
-        point_count = point_count + 1
-        previous_x, previous_y, previous_z = x, y, z
-        segment_has_points = true
-      end
-    end
-
-    if point_count >= 2 then
-      finalize_chunk(level, coordinates, point_count, kind)
-    end
-    if segment_has_points then level.paths = level.paths + 1 end
-  end
-
-  return level
-end
-
-local function log_geometry(geometry)
-  minecraft.log("info", string.format(
-    "globe coastline loaded: %d points in %d chunks",
-    geometry.points, #geometry.chunks))
-end
-
-local function load_geometry(text)
-  assert(type(text) == "string" and text ~= "", "realtime_sky: coastline data is required")
-  local geometry = parse_geometry_text(text, "coastline")
-  assert(geometry.points > 0, "realtime_sky: coastline data has no points")
-  log_geometry(geometry)
-  return geometry
-end
-
 local function build_graticule()
   local paths = {}
   for lat = -80, 80, 20 do
@@ -237,19 +130,6 @@ local function viewport_bounds(ui, size)
   local left = math.floor(ui.globe_x or 0)
   local top = math.floor(ui.globe_y or 0)
   return left, top, left + size - 1, top + size - 1
-end
-
-local function rotate_from_view(x1, y2, z2, yaw_deg, pitch_deg)
-  local yaw = (tonumber(yaw_deg) or 0.0) * DEG
-  local pitch = (tonumber(pitch_deg) or 0.0) * DEG
-  local cy, sy = math.cos(yaw), math.sin(yaw)
-  local cp, sp = math.cos(pitch), math.sin(pitch)
-
-  local y = y2 * cp - z2 * sp
-  local z1 = y2 * sp + z2 * cp
-  local x = x1 * cy - z1 * sy
-  local z = x1 * sy + z1 * cy
-  return x, y, z
 end
 
 local function clip_segment(x0, y0, x1, y1, left, top, right, bottom)
@@ -295,13 +175,13 @@ local function append_segment(target, x0, y0, x1, y1,
   target[#target + 1] = y1
 end
 
-local function append_world_path(target, path, center_x, center_y, radius,
+local function append_polyline(target, polyline, center_x, center_y, radius,
     cyaw, syaw, cpitch, spitch, left, top, right, bottom)
   local previous_x, previous_y, previous_z
   local previous_vx, previous_vy, previous_vz
 
-  for index = 1, #path do
-    local point = path[index]
+  for index = 1, #polyline do
+    local point = polyline[index]
     local x, y, z = point.x, point.y, point.z
     local vx = x * cyaw + z * syaw
     local z1 = -x * syaw + z * cyaw
@@ -339,53 +219,7 @@ local function append_world_path(target, path, center_x, center_y, radius,
   end
 end
 
-local function append_chunk(target, chunk, center_x, center_y, radius,
-    cyaw, syaw, cpitch, spitch, left, top, right, bottom)
-  local coordinates = chunk.coordinates
-  local previous_x, previous_y, previous_z
-  local previous_vx, previous_vy, previous_vz
-
-  for index = 1, chunk.count * 3, 3 do
-    local x = coordinates[index]
-    local y = coordinates[index + 1]
-    local z = coordinates[index + 2]
-    local vx = x * cyaw + z * syaw
-    local z1 = -x * syaw + z * cyaw
-    local vy = y * cpitch + z1 * spitch
-    local vz = -y * spitch + z1 * cpitch
-
-    if previous_x then
-      local world_dot = previous_x * x + previous_y * y + previous_z * z
-      if world_dot > MIN_WORLD_SEGMENT_DOT and
-          (previous_vz > HORIZON_EPSILON or vz > HORIZON_EPSILON) then
-        local ax, ay, az = previous_vx, previous_vy, previous_vz
-        local bx, by, bz = vx, vy, vz
-        if az <= HORIZON_EPSILON or bz <= HORIZON_EPSILON then
-          local denominator = bz - az
-          if math.abs(denominator) > 1.0e-8 then
-            local t = (HORIZON_EPSILON - az) / denominator
-            local ix = ax + (bx - ax) * t
-            local iy = ay + (by - ay) * t
-            if az <= HORIZON_EPSILON then
-              ax, ay, az = ix, iy, HORIZON_EPSILON
-            else
-              bx, by, bz = ix, iy, HORIZON_EPSILON
-            end
-          end
-        end
-        append_segment(target,
-          center_x + ax * radius, center_y - ay * radius,
-          center_x + bx * radius, center_y - by * radius,
-          left, top, right, bottom)
-      end
-    end
-
-    previous_x, previous_y, previous_z = x, y, z
-    previous_vx, previous_vy, previous_vz = vx, vy, vz
-  end
-end
-
-local function rebuild_projection_cache(level, center_x, center_y,
+local function rebuild_projection_cache(data, center_x, center_y,
     radius, yaw_deg, pitch_deg, key, left, top, right, bottom)
   local yaw = yaw_deg * DEG
   local pitch = pitch_deg * DEG
@@ -393,54 +227,43 @@ local function rebuild_projection_cache(level, center_x, center_y,
   local cpitch, spitch = math.cos(pitch), math.sin(pitch)
 
   local coast, river, grid, equator = {}, {}, {}, {}
-  local visible_chunks = 0
-  local source_points = 0
 
   for _, path in ipairs(graticule_paths) do
-    append_world_path(path.color == EQUATOR_COLOR and equator or grid,
+    append_polyline(path.color == EQUATOR_COLOR and equator or grid,
       path, center_x, center_y, radius, cyaw, syaw, cpitch, spitch,
       left, top, right, bottom)
   end
 
-  for _, chunk in ipairs(level.chunks) do
-    -- Transform the chunk bound once. At close zoom this rejects nearly all of
-    -- the far side and all front-side chunks whose projected bound misses the
-    -- cropped viewport, instead of projecting an entire hemisphere.
-    local cvx = chunk.cx * cyaw + chunk.cz * syaw
-    local cz1 = -chunk.cx * syaw + chunk.cz * cyaw
-    local cvy = chunk.cy * cpitch + cz1 * spitch
-    local cvz = -chunk.cy * spitch + cz1 * cpitch
-    if cvz > -chunk.margin - 0.025 then
-      local screen_margin = chunk.margin * radius + 3.0
-      local screen_x = center_x + cvx * radius
-      local screen_y = center_y - cvy * radius
-      if screen_x + screen_margin >= left and
-          screen_x - screen_margin <= right and
-          screen_y + screen_margin >= top and
-          screen_y - screen_margin <= bottom then
-        visible_chunks = visible_chunks + 1
-        source_points = source_points + chunk.count
-        append_chunk(chunk.kind == "R" and river or coast,
-          chunk, center_x, center_y, radius, cyaw, syaw, cpitch, spitch,
-          left, top, right, bottom)
-      end
+  for _, segment in ipairs(data.coasts) do
+    local polyline = {}
+    for i, coord in ipairs(segment) do
+      local x, y, z = lat_lon_xyz(coord[1], coord[2])
+      polyline[i] = { x = x, y = y, z = z }
     end
+    append_polyline(coast, polyline, center_x, center_y, radius,
+      cyaw, syaw, cpitch, spitch, left, top, right, bottom)
+  end
+
+  for _, segment in ipairs(data.rivers) do
+    local polyline = {}
+    for i, coord in ipairs(segment) do
+      local x, y, z = lat_lon_xyz(coord[1], coord[2])
+      polyline[i] = { x = x, y = y, z = z }
+    end
+    append_polyline(river, polyline, center_x, center_y, radius,
+      cyaw, syaw, cpitch, spitch, left, top, right, bottom)
   end
 
   projection_cache.key = key
-  projection_cache.generation = geometry_generation
   projection_cache.coast = coast
   projection_cache.river = river
   projection_cache.grid = grid
   projection_cache.equator = equator
-  projection_cache.visible_chunks = visible_chunks
-  projection_cache.source_points = source_points
-  projection_cache.rebuilds = projection_cache.rebuilds + 1
 end
 
 local function projection_parameters(ui, center_x, center_y, radius, size)
   local dragging = ui.dragging == true
-  if not coastline then return nil end
+  if not coastline_data then return nil end
 
   local pixel_angle_deg = RAD_TO_DEG / math.max(radius, 1.0)
   local angle_quantum = math.max(0.018,
@@ -454,7 +277,6 @@ local function projection_parameters(ui, center_x, center_y, radius, size)
   local cached_center_y = quantize(center_y, 0.25)
 
   local key = table.concat({
-    geometry_generation,
     round(cached_center_x * 4.0),
     round(cached_center_y * 4.0),
     round(cached_radius * 4.0),
@@ -464,7 +286,7 @@ local function projection_parameters(ui, center_x, center_y, radius, size)
     size,
   }, ":")
 
-  return coastline, cached_center_x, cached_center_y,
+  return coastline_data, cached_center_x, cached_center_y,
     cached_radius, yaw, pitch, key
 end
 
@@ -478,7 +300,7 @@ local function fill_rect_clipped(x, y, width, height, color,
   minecraft.gui.fill_rect(x0, y0, x1 - x0 + 1, y1 - y0 + 1, color)
 end
 
-local function draw_line(x0, y0, x1, y1, color, thickness,
+local function draw_line_segment(x0, y0, x1, y1, color, thickness,
     left, top, right, bottom)
   x0, y0, x1, y1 = clip_segment(x0, y0, x1, y1,
     left, top, right, bottom)
@@ -500,7 +322,7 @@ end
 local function draw_segments(segments, color, thickness,
     left, top, right, bottom)
   for index = 1, #segments, 4 do
-    draw_line(segments[index], segments[index + 1],
+    draw_line_segment(segments[index], segments[index + 1],
       segments[index + 2], segments[index + 3], color, thickness,
       left, top, right, bottom)
   end
@@ -518,8 +340,6 @@ local function build_sphere_cache(radius, size)
   local segment_count = radius >= size * 2.0 and 9 or
     (radius >= 150.0 and 11 or 9)
 
-  -- Only generate rows inside the viewport. Runtime work is O(viewport area),
-  -- not O(the enormous off-screen globe diameter) at extreme zoom.
   for local_y = 0, size - 1, row_step do
     local dy = local_y - center
     if math.abs(dy) <= outer_radius then
@@ -544,9 +364,9 @@ local function build_sphere_cache(radius, size)
         local span = inner_x1 - inner_x0 + 1
         if span > 0 then
           local segments = math.min(segment_count, span)
-          for segment = 0, segments - 1 do
-            local x0 = inner_x0 + math.floor(span * segment / segments)
-            local x1 = inner_x0 + math.floor(span * (segment + 1) / segments) - 1
+          for seg = 0, segments - 1 do
+            local x0 = inner_x0 + math.floor(span * seg / segments)
+            local x1 = inner_x0 + math.floor(span * (seg + 1) / segments) - 1
             if x1 >= x0 then
               local view_x = (((x0 + x1) * 0.5) - center) / inner_radius
               local view_z = math.sqrt(math.max(0.0,
@@ -609,49 +429,35 @@ local function draw_pin(ui, center_x, center_y, radius, lat, lon,
     left, top, right, bottom)
 end
 
-function globe_ui.load_coastlines(text)
-  coastline = load_geometry(text)
-  geometry_generation = geometry_generation + 1
-  projection_cache.key = nil
-  projection_cache.generation = -1
+function globe_ui.load_data()
+  if coastline_data ~= nil then return end
+  local raw = assert(minecraft.read_asset("assets/globe.json"),
+    "realtime_sky: missing globe.json")
+  local data, err = minecraft.util.json_decode(raw)
+  assert(type(data) == "table" and type(data.coasts) == "table",
+    "realtime_sky: invalid globe.json: " .. tostring(err))
+  coastline_data = data
+  minecraft.log("info", string.format(
+    "globe loaded: %d coast segments, %d river segments",
+    #data.coasts, #data.rivers))
 end
 
 function globe_ui.cleanup()
-end
-
-function globe_ui.viewport_opts(ui, width, height)
-  return {
-    x = ui.globe_x,
-    y = ui.globe_y,
-    width = ui.globe_size,
-    height = ui.globe_size,
-    gui_width = width,
-    gui_height = height,
-    yaw_deg = ui.globe_yaw,
-    pitch_deg = ui.globe_pitch,
-    distance = clamp(tonumber(ui.globe_cam) or DEFAULT_GLOBE_CAMERA,
-      MIN_GLOBE_CAMERA, MAX_GLOBE_CAMERA),
-    fov_deg = 40.0,
-    clear_color = CLEAR_COLOR,
-  }
 end
 
 function globe_ui.draw(ui, width, height, pin_lat, pin_lon)
   ensure_geometry()
   local center_x, center_y, radius, size = globe_metrics(ui)
   local left, top, right, bottom = viewport_bounds(ui, size)
-  local level, cached_center_x, cached_center_y,
+  local data, cached_center_x, cached_center_y,
     cached_radius, cached_yaw, cached_pitch, cache_key =
     projection_parameters(ui, center_x, center_y, radius, size)
 
-  -- The panel is the viewport. Every primitive is explicitly clipped because
-  -- this GUI API does not guarantee a hardware scissor rectangle.
   minecraft.gui.fill_rect(left, top, size, size, CLEAR_COLOR)
 
-  if level then
-    if projection_cache.key ~= cache_key or
-        projection_cache.generation ~= geometry_generation then
-      rebuild_projection_cache(level,
+  if data then
+    if projection_cache.key ~= cache_key then
+      rebuild_projection_cache(data,
         cached_center_x, cached_center_y, cached_radius,
         cached_yaw, cached_pitch, cache_key,
         left, top, right, bottom)
@@ -681,8 +487,18 @@ function globe_ui.pick_lat_lon(ui, width, height, mouse_x, mouse_y)
   if radius_squared > 1.0 then return nil end
 
   local view_z = math.sqrt(math.max(0.0, 1.0 - radius_squared))
-  local x, y, z = rotate_from_view(
-    view_x, view_y, view_z, ui.globe_yaw, ui.globe_pitch)
+  local yaw = (tonumber(ui.globe_yaw) or 0.0) * DEG
+  local pitch = (tonumber(ui.globe_pitch) or 0.0) * DEG
+  local cy, sy = math.cos(yaw), math.sin(yaw)
+  local cp, sp = math.cos(pitch), math.sin(pitch)
+
+  local x1 = view_x
+  local y2 = view_y * cp + view_z * sp
+  local z1 = -view_y * sp + view_z * cp
+  local x = x1 * cy - z1 * sy
+  local z = x1 * sy + z1 * cy
+  local y = y2
+
   local lat, lon = xyz_to_lat_lon(x, y, z)
   if not lat then return nil end
   return { lat = lat, lon = lon }
@@ -720,17 +536,6 @@ end
 function globe_ui.drag_degrees_per_pixel(ui)
   local _, _, radius = globe_metrics(ui)
   return clamp(RAD_TO_DEG / math.max(radius, 1.0) * 1.25, 0.0025, 1.25)
-end
-
-
-function globe_ui.stats()
-  return {
-    visible_chunks = projection_cache.visible_chunks,
-    projected_source_points = projection_cache.source_points,
-    coast_segments = math.floor(#projection_cache.coast / 4),
-    river_segments = math.floor(#projection_cache.river / 4),
-    projection_rebuilds = projection_cache.rebuilds,
-  }
 end
 
 return globe_ui

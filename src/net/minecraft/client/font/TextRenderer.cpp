@@ -3,7 +3,6 @@
 #include <memory>
 #include <stdexcept>
 #include <vector>
-#include "net/minecraft/client/ClientLog.hpp"
 #include "net/minecraft/client/gl/GlConstants.hpp"
 #include "net/minecraft/client/option/GameOptions.hpp"
 #include "net/minecraft/client/render/RenderSystem.hpp"
@@ -126,9 +125,7 @@ std::unique_ptr<TextRenderer> TextRenderer::create(option::GameOptions& options,
  if(fontImage.width > 0 && fontImage.height > 0) {
   return std::make_unique<TextRenderer>(options, fontImage, textureManager);
  }
- ClientLog::LOGGER.log(LogLevel::Warning,
-                       "TextRenderer: font '" + fontPath + "' failed to load, using synthetic fallback font atlas");
- texture::RasterImage fallback;
+  texture::RasterImage fallback;
  fallback.width = 128;
  fallback.height = 128;
  fallback.argb.assign(128 * 128, 0x00000000U);

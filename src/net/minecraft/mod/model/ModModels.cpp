@@ -28,6 +28,7 @@
 #include "net/minecraft/mod/runtime/ModHost.hpp"
 #include "net/minecraft/registry/TextureRegistry.hpp"
 #include "net/minecraft/util/math/CoordinateHash.hpp"
+#include "net/minecraft/util/math/Intersect.hpp"
 #include "net/minecraft/world/BlockView.hpp"
 #ifdef MINECRAFT_NATIVE_EXPORTS
 #include "net/minecraft/client/Minecraft.hpp"
@@ -413,7 +414,7 @@ std::vector<BakedQuad>& batchFor(BakedModel& model, const std::string& texturePa
  }
  BakedTextureBatch& batch = model.batches.emplace_back();
  batch.texturePath = texturePath;
- batch.textureId = net::minecraft::registry::TextureRegistry::getOrRegisterTexture(texturePath);
+ batch.textureId = texturePath.empty() ? -1 : net::minecraft::registry::TextureRegistry::getOrRegisterTexture(texturePath);
  return batch.quads;
 }
 int boundaryCullFace(const JsonModelElement& element, int faceIndex) {
@@ -725,39 +726,20 @@ InstanceStore& instanceStore() {
 // Applies the draw transform (yaw*pitch*roll, scale, pivot) to a model-space
 // point and returns its world position.
 void transformPoint(const ModelTransform& t, double px, double py, double pz, double* out) {
- double x = (px - 0.5) * t.scale;
- double y = (py - t.pivotY) * t.scale;
- double z = (pz - 0.5) * t.scale;
+ double point[3] = {(px - 0.5) * t.scale, (py - t.pivotY) * t.scale, (pz - 0.5) * t.scale};
+ static constexpr double origin[3] = {0.0, 0.0, 0.0};
  if(t.roll != 0.0f) {
-  const double a = t.roll * kPi / 180.0;
-  const double c = std::cos(a);
-  const double s = std::sin(a);
-  const double nx = x * c - y * s;
-  const double ny = x * s + y * c;
-  x = nx;
-  y = ny;
+  rotatePoint(point, origin, 'z', t.roll);
  }
  if(t.pitch != 0.0f) {
-  const double a = t.pitch * kPi / 180.0;
-  const double c = std::cos(a);
-  const double s = std::sin(a);
-  const double ny = y * c - z * s;
-  const double nz = y * s + z * c;
-  y = ny;
-  z = nz;
+  rotatePoint(point, origin, 'x', t.pitch);
  }
  if(t.yaw != 0.0f) {
-  const double a = t.yaw * kPi / 180.0;
-  const double c = std::cos(a);
-  const double s = std::sin(a);
-  const double nx = x * c + z * s;
-  const double nz = -x * s + z * c;
-  x = nx;
-  z = nz;
+  rotatePoint(point, origin, 'y', t.yaw);
  }
- out[0] = t.x + x;
- out[1] = t.y + y;
- out[2] = t.z + z;
+ out[0] = t.x + point[0];
+ out[1] = t.y + point[1];
+ out[2] = t.z + point[2];
 }
 WorldBox worldBoxFor(int handle, const ModelTransform& transform) {
  WorldBox box;
@@ -787,30 +769,8 @@ WorldBox worldBoxFor(int handle, const ModelTransform& transform) {
  }
  return box;
 }
-// Slab test; returns the entry distance along the (unit-length) ray, or a
-// negative value when the box is missed.
 double boxRayEntry(const WorldBox& box, const double* origin, const double* dir, double maxDistance) {
- double tMin = 0.0;
- double tMax = maxDistance;
- for(int axis = 0; axis < 3; ++axis) {
-  if(std::abs(dir[axis]) < 1.0e-9) {
-   if(origin[axis] < box.min[axis] || origin[axis] > box.max[axis]) {
-    return -1.0;
-   }
-   continue;
-  }
-  double t1 = (box.min[axis] - origin[axis]) / dir[axis];
-  double t2 = (box.max[axis] - origin[axis]) / dir[axis];
-  if(t1 > t2) {
-   std::swap(t1, t2);
-  }
-  tMin = std::max(tMin, t1);
-  tMax = std::min(tMax, t2);
-  if(tMin > tMax) {
-   return -1.0;
-  }
- }
- return tMin;
+ return util::math::raySlabIntersect(box.min, box.max, origin, dir, maxDistance, 1.0e-9);
 }
 } // namespace
 int placeModelInstance(const std::string& modId, int handle, const ModelTransform& transform, const std::string& tag) {
@@ -905,22 +865,8 @@ using net::minecraft::client::render::Tessellator;
 using net::minecraft::client::render::block::BlockRenderManager;
 #ifdef MINECRAFT_NATIVE_EXPORTS
 using net::minecraft::client::render::RenderSystem;
-class ModBlockInventoryScope {
- public:
- ModBlockInventoryScope() : saved_(RenderSystem::getShadow()) {
-  RenderSystem::depthTestWrite(true);
-  RenderSystem::disableLighting();
-  RenderSystem::enableTexture();
-  RenderSystem::color4f(1.0f, 1.0f, 1.0f, 1.0f);
- }
- ~ModBlockInventoryScope() {
-  RenderSystem::setShadow(saved_);
- }
-
- private:
- RenderSystem::StateShadow saved_;
-};
 using runtime::ModLuaDrawScope;
+using runtime::ModStateScope;
 using MatrixScope = RenderSystem::MatrixScope;
 // Camera-relative placement shared by drawBakedModelWorld and drawItemStackWorld.
 // Leaves the caller to apply whatever model-space recentring its geometry needs.
@@ -1231,7 +1177,11 @@ void drawLuaBlockInventory(BlockRenderManager& manager, Block& block, int /*meta
  if(spec == nullptr || spec->bakedModel == 0) {
   return;
  }
- const ModBlockInventoryScope inventoryDraw;
+ const ModStateScope stateGuard;
+ RenderSystem::depthTestWrite(true);
+ RenderSystem::disableLighting();
+ RenderSystem::enableTexture();
+ RenderSystem::color4f(1.0f, 1.0f, 1.0f, 1.0f);
  const MatrixScope matrix;
  RenderSystem::translate(-0.5f, -0.5f, -0.5f);
  const BlockModelDraw draw{&manager, &block, 0, 0, 0, true, brightness};
@@ -1595,22 +1545,8 @@ int luaModelBuild(lua_State* state) {
   return 2;
  }
  const int quadsIndex = api.gettop(state);
- const std::size_t quadCount = api.rawlen(state, quadsIndex);
- auto baked = std::make_unique<model::BakedModel>();
- const auto batchFor = [&](const std::string& texture) -> std::vector<model::BakedQuad>& {
-  for(model::BakedTextureBatch& batch : baked->batches) {
-   if(batch.texturePath == texture) {
-    return batch.quads;
-   }
-  }
-  model::BakedTextureBatch& batch = baked->batches.emplace_back();
-  batch.texturePath = texture;
-  // Same rule as the JSON baker: a named texture becomes a registry id so the
-  // block/item draw paths can bind and uv-map it; untextured batches keep -1.
-  batch.textureId =
-      texture.empty() ? -1 : net::minecraft::registry::TextureRegistry::getOrRegisterTexture(texture);
-  return batch.quads;
- };
+  const std::size_t quadCount = api.rawlen(state, quadsIndex);
+  auto baked = std::make_unique<model::BakedModel>();
  for(std::size_t qi = 1; qi <= quadCount; ++qi) {
   api.rawgeti(state, quadsIndex, static_cast<long long>(qi));
   const int quadIndex = api.gettop(state);
@@ -1642,7 +1578,7 @@ int luaModelBuild(lua_State* state) {
    }
    api.settop(state, quadIndex);
    if(ok) {
-    batchFor(texture).push_back(quad);
+     model::batchFor(*baked, texture).push_back(quad);
    }
   }
   api.settop(state, quadsIndex);

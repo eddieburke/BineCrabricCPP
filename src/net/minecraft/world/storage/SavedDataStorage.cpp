@@ -5,10 +5,7 @@
 #include "net/minecraft/nbt/NbtCompound.hpp"
 #include "net/minecraft/nbt/NbtFileIo.hpp"
 #include "net/minecraft/nbt/NbtIo.hpp"
-#include "net/minecraft/util/logging/Log.hpp"
 #include "net/minecraft/world/PersistentStateRegistry.hpp"
-using net::minecraft::util::logging::Log;
-using net::minecraft::util::logging::LogLevel;
 namespace net::minecraft {
 SavedDataStorage::SavedDataStorage(WorldStorage* storage) : storage_(storage) {
  loadIdCounts();
@@ -42,7 +39,6 @@ PersistentState* SavedDataStorage::getOrCreate(const std::type_index& stateClass
      }
     }
    } catch(const std::exception&) {
-    Log::LOGGER.log(LogLevel::Warning, "SavedDataStorage: load failed for '" + id + "', returning nullptr");
    }
   }
  }
@@ -83,9 +79,8 @@ void SavedDataStorage::save(PersistentState& state) {
   NbtCompound root;
   root.put("data", data);
   writeFileAtomic(file, [&root](std::ostream& output) { NbtIo::writeCompressed(root, output); });
- } catch(const std::exception&) {
-  Log::LOGGER.log(LogLevel::Warning, "SavedDataStorage: save failed for '" + state.id + "'");
- }
+  } catch(const std::exception&) {
+  }
 }
 void SavedDataStorage::loadIdCounts() {
  impl_->idCounts_.clear();
@@ -107,9 +102,8 @@ void SavedDataStorage::loadIdCounts() {
     impl_->idCounts_[entry.first] = static_cast<int>(entry.second.asShort());
    }
   }
- } catch(const std::exception&) {
-  Log::LOGGER.log(LogLevel::Warning, "SavedDataStorage: loadIdCounts failed");
- }
+  } catch(const std::exception&) {
+  }
 }
 int SavedDataStorage::getIdCount(const std::string& id) {
  int value = 0;
@@ -131,9 +125,8 @@ int SavedDataStorage::getIdCount(const std::string& id) {
   }
   // Uncompressed, matching loadIdCounts()'s NbtIo::read.
   writeFileAtomic(file, [&root](std::ostream& output) { NbtIo::write(root, output); });
- } catch(const std::exception&) {
-  Log::LOGGER.log(LogLevel::Warning, "SavedDataStorage: getIdCount write failed");
- }
+  } catch(const std::exception&) {
+  }
  return value;
 }
 } // namespace net::minecraft

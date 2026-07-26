@@ -10,10 +10,7 @@
 #include "net/minecraft/nbt/NbtCompound.hpp"
 #include "net/minecraft/nbt/NbtFileIo.hpp"
 #include "net/minecraft/nbt/NbtIo.hpp"
-#include "net/minecraft/util/logging/Log.hpp"
 #include "net/minecraft/world/chunk/storage/RegionIo.hpp"
-using net::minecraft::util::logging::Log;
-using net::minecraft::util::logging::LogLevel;
 namespace net::minecraft {
 namespace {
 // Alpha and McRegion store the *same* chunk NBT; only the container differs (alpha = one
@@ -101,11 +98,8 @@ void convertDimension(const fs::path& dimDir) {
     continue;
    }
    RegionIo::writeChunkData(dimDir, chunkX, chunkZ, raw);
-  } catch(const std::exception&) {
-   Log::LOGGER.log(LogLevel::Warning,
-                   "RegionWorldStorage: conversion failed for chunk (" + std::to_string(chunkX) + ", " +
-                       std::to_string(chunkZ) + ")");
-  }
+   } catch(const std::exception&) {
+   }
  }
 }
 // Mark the save as McRegion (version 19132) so it loads region-native and is not re-converted
@@ -122,10 +116,9 @@ void convertDimension(const fs::path& dimDir) {
    return false;
   }
   root = NbtIo::readCompressed(input);
- } catch(const std::exception&) {
-  Log::LOGGER.log(LogLevel::Warning, "RegionWorldStorage: level.dat read/convert failed");
-  return false;
- }
+  } catch(const std::exception&) {
+   return false;
+  }
  if(!root.contains("Data")) {
   return false;
  }
@@ -136,10 +129,9 @@ void convertDimension(const fs::path& dimDir) {
   AtomicWriteOptions options;
   options.keepBackup = true;
   writeFileAtomic(levelDat, [&root](std::ostream& output) { NbtIo::writeCompressed(root, output); }, options);
- } catch(const std::exception&) {
-  Log::LOGGER.log(LogLevel::Warning, "RegionWorldStorage: atomic write failed during conversion");
-  return false;
- }
+  } catch(const std::exception&) {
+   return false;
+  }
  return true;
 }
 } // namespace

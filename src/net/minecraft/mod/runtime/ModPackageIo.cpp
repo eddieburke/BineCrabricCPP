@@ -4,9 +4,7 @@
 #include "net/minecraft/mod/lua/LuaHostApi.hpp"
 #include "net/minecraft/nbt/Compression.hpp"
 #include "net/minecraft/util/json/JsonFields.hpp"
-#include "net/minecraft/util/logging/Log.hpp"
-using net::minecraft::util::logging::Log;
-using net::minecraft::util::logging::LogLevel;
+
 namespace net::minecraft::mod::runtime {
 using namespace net::minecraft::mod::lua;
 namespace {
@@ -107,10 +105,9 @@ std::vector<std::uint8_t> readZipEntryData(const std::vector<std::uint8_t>& arch
   }
   try {
    return zlibDecompress(compressed);
-  } catch(...) {
-   Log::LOGGER.log(LogLevel::Warning, "ModPackageIo: deflate+zlib fallback both failed for entry method=8");
-   return {};
-  }
+   } catch(...) {
+    return {};
+   }
  }
  return {};
 }

@@ -17,7 +17,6 @@
 #include "net/minecraft/mod/lua/LuaHostApi.hpp"
 #include "net/minecraft/mod/runtime/LuaDirectHooks.hpp"
 #include "net/minecraft/mod/runtime/WorldRequiredMods.hpp"
-#include "net/minecraft/util/logging/Log.hpp"
 #include "net/minecraft/util/math/MathHelper.hpp"
 #include "net/minecraft/world/NaturalSpawner.hpp"
 #include "net/minecraft/world/WorldRegion.hpp"
@@ -31,8 +30,6 @@
 #include "net/minecraft/world/storage/AlphaWorldStorage.hpp"
 #include "net/minecraft/world/storage/RegionWorldStorage.hpp"
 #include "net/minecraft/world/storage/WorldStorage.hpp"
-using net::minecraft::util::logging::Log;
-using net::minecraft::util::logging::LogLevel;
 namespace net::minecraft {
 World::World(std::string name, std::uint64_t seed, std::unordered_map<std::string, std::string> creationOptions)
     : events_(*this),
@@ -315,7 +312,6 @@ void World::save(bool blocking) {
      dimensionData_->save(properties_, players);
     }
    } catch(const std::exception&) {
-    Log::LOGGER.log(LogLevel::Warning, "World: saveUnload/save failed during dimension teardown");
    }
   } else if(!asyncSaveFuture_.valid() ||
             asyncSaveFuture_.wait_for(std::chrono::seconds(0)) == std::future_status::ready) {
@@ -328,9 +324,8 @@ void World::save(bool blocking) {
        [this, snapshot = std::move(snapshot), playersSnapshot = std::move(playersSnapshot)]() mutable {
         try {
          dimensionData_->save(snapshot, playersSnapshot);
-        } catch(const std::exception&) {
-         Log::LOGGER.log(LogLevel::Warning, "World: async save failed");
-        }
+         } catch(const std::exception&) {
+         }
        });
   }
  }

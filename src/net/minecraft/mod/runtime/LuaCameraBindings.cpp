@@ -29,17 +29,13 @@ bool optionalBoolean(lua_State* state, const LuaArgs& args, int index, bool& val
  value = api.toboolean(state, index) != 0;
  return true;
 }
-#define LUA_CAM_IMPL(FUNC_NAME, MIN_ARGS, FAIL_RET, BODY) \
- int FUNC_NAME(lua_State* state) {                        \
-  LuaApi& api = luaApi();                                 \
-  auto* m = renderTargets();                              \
-  if(m == nullptr || api.gettop(state) < MIN_ARGS) {      \
-   FAIL_RET;                                              \
-   return 1;                                              \
-  }                                                       \
-  BODY return 1;                                          \
+int luaCameraCreate(lua_State* state) {
+ LuaApi& api = luaApi();
+ auto* m = renderTargets();
+ if(m == nullptr || api.gettop(state) < 2) {
+  api.pushinteger(state, -1);
+  return 1;
  }
-LUA_CAM_IMPL(luaCameraCreate, 2, api.pushinteger(state, -1), {
  LuaArgs args(state);
  int w = 0;
  int h = 0;
@@ -51,8 +47,15 @@ LUA_CAM_IMPL(luaCameraCreate, 2, api.pushinteger(state, -1), {
   return 1;
  }
  api.pushinteger(state, m->create(w, h, colorCount, useDepthTex));
-})
-LUA_CAM_IMPL(luaCameraCreateDisplaySize, 0, api.pushinteger(state, -1), {
+ return 1;
+}
+int luaCameraCreateDisplaySize(lua_State* state) {
+ LuaApi& api = luaApi();
+ auto* m = renderTargets();
+ if(m == nullptr || api.gettop(state) < 0) {
+  api.pushinteger(state, -1);
+  return 1;
+ }
  LuaArgs args(state);
  const int w = client::Minecraft::INSTANCE->displayWidth;
  const int h = client::Minecraft::INSTANCE->displayHeight;
@@ -63,8 +66,15 @@ LUA_CAM_IMPL(luaCameraCreateDisplaySize, 0, api.pushinteger(state, -1), {
   return 1;
  }
  api.pushinteger(state, m->create(w > 0 ? w : 1, h > 0 ? h : 1, colorCount, useDepthTex));
-})
-LUA_CAM_IMPL(luaCameraDestroy, 1, api.pushboolean(state, 0), {
+ return 1;
+}
+int luaCameraDestroy(lua_State* state) {
+ LuaApi& api = luaApi();
+ auto* m = renderTargets();
+ if(m == nullptr || api.gettop(state) < 1) {
+  api.pushboolean(state, 0);
+  return 1;
+ }
  LuaArgs args(state);
  int handle = 0;
  if(!args.integer(1, handle)) {
@@ -72,8 +82,15 @@ LUA_CAM_IMPL(luaCameraDestroy, 1, api.pushboolean(state, 0), {
   return 1;
  }
  api.pushboolean(state, m->destroy(handle) ? 1 : 0);
-})
-LUA_CAM_IMPL(luaCameraResize, 3, api.pushboolean(state, 0), {
+ return 1;
+}
+int luaCameraResize(lua_State* state) {
+ LuaApi& api = luaApi();
+ auto* m = renderTargets();
+ if(m == nullptr || api.gettop(state) < 3) {
+  api.pushboolean(state, 0);
+  return 1;
+ }
  LuaArgs args(state);
  int handle = 0;
  int width = 0;
@@ -83,8 +100,15 @@ LUA_CAM_IMPL(luaCameraResize, 3, api.pushboolean(state, 0), {
   return 1;
  }
  api.pushboolean(state, m->resize(handle, width, height) ? 1 : 0);
-})
-LUA_CAM_IMPL(luaCameraWidth, 1, api.pushinteger(state, 0), {
+ return 1;
+}
+int luaCameraWidth(lua_State* state) {
+ LuaApi& api = luaApi();
+ auto* m = renderTargets();
+ if(m == nullptr || api.gettop(state) < 1) {
+  api.pushinteger(state, 0);
+  return 1;
+ }
  LuaArgs args(state);
  int handle = 0;
  if(!args.integer(1, handle)) {
@@ -92,8 +116,15 @@ LUA_CAM_IMPL(luaCameraWidth, 1, api.pushinteger(state, 0), {
   return 1;
  }
  api.pushinteger(state, m->width(handle));
-})
-LUA_CAM_IMPL(luaCameraHeight, 1, api.pushinteger(state, 0), {
+ return 1;
+}
+int luaCameraHeight(lua_State* state) {
+ LuaApi& api = luaApi();
+ auto* m = renderTargets();
+ if(m == nullptr || api.gettop(state) < 1) {
+  api.pushinteger(state, 0);
+  return 1;
+ }
  LuaArgs args(state);
  int handle = 0;
  if(!args.integer(1, handle)) {
@@ -101,7 +132,8 @@ LUA_CAM_IMPL(luaCameraHeight, 1, api.pushinteger(state, 0), {
   return 1;
  }
  api.pushinteger(state, m->height(handle));
-})
+ return 1;
+}
 int renderPerspectiveImpl(lua_State* state,
                            LuaApi& api,
                            net::minecraft::client::render::FramebufferManager* m,
@@ -231,21 +263,64 @@ int renderOrthographicImpl(lua_State* state,
                      : 0);
  return 1;
 }
-LUA_CAM_IMPL(luaCameraRender, 8, api.pushboolean(state, 0), { renderPerspectiveImpl(state, api, m, false); })
-LUA_CAM_IMPL(luaCameraRenderShadowPerspective, 8, api.pushboolean(state, 0), {
+int luaCameraRender(lua_State* state) {
+ LuaApi& api = luaApi();
+ auto* m = renderTargets();
+ if(m == nullptr || api.gettop(state) < 8) {
+  api.pushboolean(state, 0);
+  return 1;
+ }
+ renderPerspectiveImpl(state, api, m, false);
+ return 1;
+}
+int luaCameraRenderShadowPerspective(lua_State* state) {
+ LuaApi& api = luaApi();
+ auto* m = renderTargets();
+ if(m == nullptr || api.gettop(state) < 8) {
+  api.pushboolean(state, 0);
+  return 1;
+ }
  renderPerspectiveImpl(state, api, m, true);
-})
-LUA_CAM_IMPL(luaCameraRenderOrthographic, 11, api.pushboolean(state, 0), {
+ return 1;
+}
+int luaCameraRenderOrthographic(lua_State* state) {
+ LuaApi& api = luaApi();
+ auto* m = renderTargets();
+ if(m == nullptr || api.gettop(state) < 11) {
+  api.pushboolean(state, 0);
+  return 1;
+ }
  renderOrthographicImpl(state, api, m, false);
-})
-LUA_CAM_IMPL(luaCameraRenderShadowOrthographic, 11, api.pushboolean(state, 0), {
+ return 1;
+}
+int luaCameraRenderShadowOrthographic(lua_State* state) {
+ LuaApi& api = luaApi();
+ auto* m = renderTargets();
+ if(m == nullptr || api.gettop(state) < 11) {
+  api.pushboolean(state, 0);
+  return 1;
+ }
  renderOrthographicImpl(state, api, m, true);
-})
-LUA_CAM_IMPL(luaCameraUnbind, 0, api.pushboolean(state, 0), {
+ return 1;
+}
+int luaCameraUnbind(lua_State* state) {
+ LuaApi& api = luaApi();
+ auto* m = renderTargets();
+ if(m == nullptr || api.gettop(state) < 0) {
+  api.pushboolean(state, 0);
+  return 1;
+ }
  m->unbind();
  api.pushboolean(state, 1);
-})
-LUA_CAM_IMPL(luaCameraTexture, 1, api.pushinteger(state, -1), {
+ return 1;
+}
+int luaCameraTexture(lua_State* state) {
+ LuaApi& api = luaApi();
+ auto* m = renderTargets();
+ if(m == nullptr || api.gettop(state) < 1) {
+  api.pushinteger(state, -1);
+  return 1;
+ }
  LuaArgs args(state);
  int handle = 0;
  int attachmentIndex = 0;
@@ -254,8 +329,15 @@ LUA_CAM_IMPL(luaCameraTexture, 1, api.pushinteger(state, -1), {
   return 1;
  }
  api.pushinteger(state, m->textureId(handle, attachmentIndex));
-})
-LUA_CAM_IMPL(luaCameraDepthTexture, 1, api.pushinteger(state, -1), {
+ return 1;
+}
+int luaCameraDepthTexture(lua_State* state) {
+ LuaApi& api = luaApi();
+ auto* m = renderTargets();
+ if(m == nullptr || api.gettop(state) < 1) {
+  api.pushinteger(state, -1);
+  return 1;
+ }
  LuaArgs args(state);
  int handle = 0;
  if(!args.integer(1, handle)) {
@@ -263,8 +345,18 @@ LUA_CAM_IMPL(luaCameraDepthTexture, 1, api.pushinteger(state, -1), {
   return 1;
  }
  api.pushinteger(state, m->depthTextureId(handle));
-})
-LUA_CAM_IMPL(luaCameraRendering, 0, api.pushinteger(state, -1), { api.pushinteger(state, m->renderingHandle()); })
+ return 1;
+}
+int luaCameraRendering(lua_State* state) {
+ LuaApi& api = luaApi();
+ auto* m = renderTargets();
+ if(m == nullptr || api.gettop(state) < 0) {
+  api.pushinteger(state, -1);
+  return 1;
+ }
+ api.pushinteger(state, m->renderingHandle());
+ return 1;
+}
 int luaCameraFarPlane(lua_State* state) {
  LuaApi& api = luaApi();
  if(client::Minecraft::INSTANCE == nullptr || client::Minecraft::INSTANCE->gameRenderer == nullptr) {

@@ -83,6 +83,8 @@ constexpr auto kNoRead = [](lua_State*, auto&) {};
   return ChunkWriteMode::RawGeneration;
  case world::gen::ChunkStage::Features:
   return ChunkWriteMode::ChunkApi;
+ default:
+  break;
  }
  return ChunkWriteMode::ChunkApi;
 }
@@ -96,23 +98,12 @@ constexpr auto kNoRead = [](lua_State*, auto&) {};
   return "carver";
  case world::gen::ChunkStage::Features:
   return "features";
+ default:
+  break;
  }
  return "unknown";
 }
 #ifdef MINECRAFT_NATIVE_EXPORTS
-class ModDrawScope {
- public:
- ModDrawScope() : saved_(client::render::RenderSystem::getShadow()) {
- }
- ~ModDrawScope() {
-  client::render::RenderSystem::setShadow(saved_);
- }
- ModDrawScope(const ModDrawScope&) = delete;
- ModDrawScope& operator=(const ModDrawScope&) = delete;
-
- private:
- client::render::RenderSystem::StateShadow saved_;
-};
 [[nodiscard]] const char* renderStageName(WorldRenderStage stage) {
  switch(stage) {
  case WorldRenderStage::Sky:
@@ -961,7 +952,7 @@ void luaHookWorldRender(WorldRenderEvent& e) {
   return;
  }
  ScopedModWorldDrawContext worldDrawScope{e.world, e.tickDelta};
- const ModDrawScope modCaps;
+ const ModStateScope modCaps;
  // World-render callbacks routinely query the world they are drawing
  // (minecraft.entities.list to draw mod entities, for one), so the mod context
  // has to be live here just as it is for the runLuaHook-based events.

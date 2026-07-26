@@ -3,10 +3,7 @@
 #include <cstdlib>
 #include <limits>
 #include <thread>
-#include "net/minecraft/util/logging/Log.hpp"
 #include "net/minecraft/world/World.hpp"
-using net::minecraft::util::logging::Log;
-using net::minecraft::util::logging::LogLevel;
 namespace net::minecraft::world::chunk {
 ChunkCache::ChunkCache(World* world, std::unique_ptr<ChunkStorage> storage, ChunkSource* generator)
     : empty_(world, 0, 0), world_(world), storage_(std::move(storage)), generator_(generator) {
@@ -103,11 +100,8 @@ std::unique_ptr<Chunk> ChunkCache::produceChunk(int chunkX, int chunkZ) {
    if(!loaded->empty && loaded->chunkPosEquals(chunkX, chunkZ)) {
     return loaded;
    }
-  } catch(...) {
-   Log::LOGGER.log(LogLevel::Warning,
-                   "ChunkCache: chunk load failed for (" + std::to_string(chunkX) + ", " +
-                       std::to_string(chunkZ) + "), falling back to generation");
-  }
+   } catch(...) {
+   }
  }
  if(generator_ != nullptr) {
   return std::make_unique<Chunk>(std::move(generator_->getChunk(chunkX, chunkZ)));

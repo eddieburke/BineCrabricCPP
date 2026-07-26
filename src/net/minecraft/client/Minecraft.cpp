@@ -4,12 +4,10 @@
 #include <cstdlib>
 #include <ctime>
 #include <functional>
-#include <iostream>
 #include <sstream>
 #include <thread>
 #include "net/minecraft/achievement/Achievements.hpp"
 #include "net/minecraft/block/Block.hpp"
-#include "net/minecraft/client/ClientLog.hpp"
 #include "net/minecraft/client/MinecraftApplet.hpp"
 #include "net/minecraft/client/Screenshot.hpp"
 #include "net/minecraft/client/SingleplayerInteractionManager.hpp"
@@ -207,7 +205,6 @@ class RunnableMinecraft final : public Minecraft {
  }
  void handleCrash(const net::minecraft::util::crash::CrashReport& crashReport) override {
   const std::string reportText = formatCrashReport(crashReport);
-  ClientLog::LOGGER.log(LogLevel::Severe, reportText);
 #ifdef _WIN32
   diagnostics::reportFatalError("Minecraft has crashed!", reportText);
   diagnostics::pauseBeforeExit();
@@ -347,25 +344,22 @@ void Minecraft::stop() {
   if(resourceDownloadThread != nullptr) {
    try {
     resourceDownloadThread->cancel();
-   } catch(...) {
-    ClientLog::LOGGER.log(LogLevel::Warning, "resourceDownloadThread->cancel() failed during shutdown");
-   }
+    } catch(...) {
+    }
   }
   try {
    setWorld(nullptr);
-  } catch(const std::exception& e) {
-   ClientLog::LOGGER.log(LogLevel::Warning, "World teardown failed", &e);
-  }
+   } catch(const std::exception& e) {
+    (void)e;
+   }
   try {
    RegionIo::flush();
-  } catch(...) {
-   ClientLog::LOGGER.log(LogLevel::Warning, "RegionIo::flush() failed during shutdown");
-  }
+   } catch(...) {
+   }
   try {
    render::RenderSystem::clearAllocatedTextures();
-  } catch(...) {
-   ClientLog::LOGGER.log(LogLevel::Warning, "clearAllocatedTextures() failed during shutdown");
-  }
+   } catch(...) {
+   }
   if(serverProcessCoordinator_ != nullptr) {
    serverProcessCoordinator_->shutdown();
   }
@@ -379,10 +373,9 @@ void Minecraft::stop() {
 #ifdef _WIN32
  util::DisplayManager::destroy();
 #endif
- if(!crashed) {
-  std::cout.flush();
-  std::_Exit(0);
- }
+  if(!crashed) {
+   std::_Exit(0);
+  }
 }
 void Minecraft::cleanHeap() {
  try {
@@ -390,14 +383,12 @@ void Minecraft::cleanHeap() {
   if(worldRenderer != nullptr) {
    worldRenderer->releaseSections();
   }
- } catch(...) {
-  ClientLog::LOGGER.log(LogLevel::Warning, "cleanHeap failed during crash recovery");
- }
+  } catch(...) {
+  }
  try {
   setWorld(nullptr);
- } catch(...) {
-  ClientLog::LOGGER.log(LogLevel::Warning, "setWorld(nullptr) failed during crash recovery");
- }
+  } catch(...) {
+  }
 }
 void Minecraft::handleScreenshotKey() {
  if(input::InputSystem::instance().isKeyDown(input::keys::kF2)) {
@@ -718,9 +709,8 @@ void Minecraft::run() {
  running = true;
  try {
   init();
- } catch(const std::exception& exception) {
-  ClientLog::LOGGER.log(LogLevel::Severe, "Failed to start game", &exception);
-  gameCrashed(net::minecraft::util::crash::CrashReport("Failed to start game", exception.what()));
+  } catch(const std::exception& exception) {
+   gameCrashed(net::minecraft::util::crash::CrashReport("Failed to start game", exception.what()));
   return;
  }
  try {
@@ -766,9 +756,8 @@ void Minecraft::run() {
      ++ticksPlayed;
      try {
       tick();
-     } catch(const net::minecraft::SessionLockException&) {
-      ClientLog::LOGGER.log(LogLevel::Warning, "Session lock lost during tick; tearing down world");
-      world = nullptr;
+      } catch(const net::minecraft::SessionLockException&) {
+       world = nullptr;
       setWorld(nullptr);
       setScreen(std::make_unique<gui::screen::world::WorldSaveConflictScreen>());
      }
@@ -779,17 +768,16 @@ void Minecraft::run() {
     setWorld(nullptr);
     setScreen(std::make_unique<gui::screen::world::WorldSaveConflictScreen>());
    } catch(const std::bad_alloc& exception) {
-    ClientLog::LOGGER.log(LogLevel::Severe, "Out of memory", &exception);
-    cleanHeap();
+     (void)exception;
+     cleanHeap();
     setScreen(std::make_unique<gui::screen::OutOfMemoryScreen>());
     break;
    }
   }
  } catch(const render::ProgressRenderError&) {
  } catch(const std::exception& exception) {
-  cleanHeap();
-  ClientLog::LOGGER.log(LogLevel::Severe, "Unexpected error", &exception);
-  gameCrashed(net::minecraft::util::crash::CrashReport("Unexpected error", exception.what()));
+   cleanHeap();
+   gameCrashed(net::minecraft::util::crash::CrashReport("Unexpected error", exception.what()));
  }
  stop();
 }
@@ -1103,16 +1091,14 @@ int Minecraft::main(int argc, char** argv) {
  }
  try {
   startAndConnect(username, sessionId, serverPtr);
- } catch(const std::exception& exception) {
-  ClientLog::LOGGER.log(LogLevel::Severe, "Failed to start", &exception);
+  } catch(const std::exception& exception) {
 #ifdef _WIN32
   diagnostics::reportFatalError("Minecraft Native - failed to start", std::string(exception.what()));
   diagnostics::pauseBeforeExit();
 #endif
   return 1;
  } catch(...) {
-  const char* message = "Unknown exception during startup.";
-  ClientLog::LOGGER.log(LogLevel::Severe, message);
+   const char* message = "Unknown exception during startup.";
 #ifdef _WIN32
   diagnostics::reportFatalError("Minecraft Native - failed to start", message);
   diagnostics::pauseBeforeExit();

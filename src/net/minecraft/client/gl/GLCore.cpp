@@ -1,5 +1,4 @@
 #include "net/minecraft/client/gl/GLCore.hpp"
-#include "net/minecraft/client/ClientLog.hpp"
 #include "net/minecraft/client/gl/GlConstants.hpp"
 namespace net::minecraft::client::gl {
 #ifndef NDEBUG
@@ -11,10 +10,9 @@ void APIENTRY glDebugCallback(unsigned /*source*/,
                               int /*length*/,
                               const char* message,
                               const void* /*userParam*/) {
- // 0x9146 = GL_DEBUG_SEVERITY_HIGH, 0x824C = GL_DEBUG_TYPE_ERROR.
- if(severity == 0x9146 || type == 0x824C) {
-  ClientLog::LOGGER.log(LogLevel::Warning, std::string("[GL] ") + (message ? message : "(null)"));
- }
+  // 0x9146 = GL_DEBUG_SEVERITY_HIGH, 0x824C = GL_DEBUG_TYPE_ERROR.
+  if(severity == 0x9146 || type == 0x824C) {
+  }
 }
 } // namespace
 #endif
@@ -193,10 +191,8 @@ void GLCore::init() {
  vaoSupported = genVertexArrays && bindVertexArray && deleteVertexArrays;
  timerQuerySupported =
      genQueries && deleteQueries && beginQuery && endQuery && getQueryObjectiv && getQueryObjectui64v;
- if(multiDrawArrays == nullptr) {
-  ClientLog::LOGGER.log(LogLevel::Warning,
-                        "[GL] glMultiDrawArrays unavailable; chunk draws fall back to per-slot glDrawArrays");
- }
+  if(multiDrawArrays == nullptr) {
+  }
  shaderSupported = createShader && shaderSource && compileShader && createProgram && linkProgram && useProgram &&
                    getUniformLocation && vertexAttribPointer && enableVertexAttribArray;
 #ifndef NDEBUG

@@ -1,6 +1,5 @@
 #include "net/minecraft/client/util/DisplayManager.hpp"
 #include <thread>
-#include "net/minecraft/client/ClientLog.hpp"
 #include "net/minecraft/client/Minecraft.hpp"
 #include "net/minecraft/client/gl/GLCore.hpp"
 #include "net/minecraft/client/gl/GlConstants.hpp"
@@ -44,9 +43,8 @@ void DisplayManager::setupAndCreateDisplay(Minecraft& client) {
  display::Window::setTitle("Minecraft Minecraft Beta 1.7.3");
  try {
   display::Window::create();
- } catch(...) {
-  ClientLog::LOGGER.log(LogLevel::Warning, "Window creation failed on first attempt, retrying...");
-  std::this_thread::sleep_for(std::chrono::seconds(1));
+  } catch(...) {
+   std::this_thread::sleep_for(std::chrono::seconds(1));
   display::Window::create();
  }
  ensureGlContext();
@@ -70,11 +68,7 @@ void DisplayManager::logGlError(Minecraft& client, const std::string& phase) {
   const int error = static_cast<int>(::glGetError());
   if(error == 0)
    break;
-  if(count == 0) {
-   ClientLog::LOGGER.log(LogLevel::Warning, "########## GL ERROR ##########\n@ " + phase);
-  }
-  ClientLog::LOGGER.log(LogLevel::Warning, "  error " + std::to_string(error));
-  ++count;
+   ++count;
  }
 }
 void DisplayManager::scheduleScreenResize(Minecraft& client) {
@@ -118,9 +112,9 @@ void DisplayManager::toggleFullscreen(Minecraft& client) {
    input::InputSystem::instance().lockCursor();
   }
 #endif
- } catch(const std::exception& exception) {
-  ClientLog::LOGGER.log(LogLevel::Warning, "Failed to toggle fullscreen", &exception);
- }
+  } catch(const std::exception& exception) {
+   (void)exception;
+  }
 }
 void DisplayManager::resize(Minecraft& client, int width, int height) {
  if(width <= 0) {

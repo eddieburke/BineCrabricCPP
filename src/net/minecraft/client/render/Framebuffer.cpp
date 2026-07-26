@@ -1,6 +1,5 @@
 #include "net/minecraft/client/render/Framebuffer.hpp"
 #include <string>
-#include "net/minecraft/client/ClientLog.hpp"
 #include "net/minecraft/client/gl/EnginePipeline.hpp"
 #include "net/minecraft/client/gl/GLCore.hpp"
 #include "net/minecraft/client/render/RenderSystem.hpp"
@@ -29,11 +28,9 @@ Framebuffer::~Framebuffer() {
  destroy();
 }
 bool Framebuffer::allocate(int width, int height, ColorFormat format) {
- if(!gl::GLCore::framebufferSupported) {
-  ClientLog::LOGGER.log(LogLevel::Warning,
-                        "[shader] framebuffer objects unsupported by driver — offscreen targets unavailable");
-  return false;
- }
+  if(!gl::GLCore::framebufferSupported) {
+   return false;
+  }
  const int internalFormat = format == ColorFormat::Rgba16F ? kRgba16F : kRgba8;
  const unsigned pixelType = format == ColorFormat::Rgba16F ? kFloat : kUnsignedByte;
  gl::GLCore::genFramebuffers(1, &fbo_);
@@ -57,11 +54,8 @@ bool Framebuffer::allocate(int width, int height, ColorFormat format) {
  gl::GLCore::framebufferTexture2D(kFramebuffer, kDepthStencilAttachment, kTexture2D, depthStencilTexture_, 0);
  const unsigned status = gl::GLCore::checkFramebufferStatus(kFramebuffer);
  gl::GLCore::bindFramebuffer(kFramebuffer, 0);
- if(status != kFramebufferComplete) {
-  ClientLog::LOGGER.log(LogLevel::Warning,
-                        "[shader] framebuffer " + std::to_string(width) + "x" + std::to_string(height) + " " +
-                            formatName(format) + " incomplete (status 0x" + std::to_string(status) + ")");
-  destroy();
+  if(status != kFramebufferComplete) {
+   destroy();
   return false;
  }
  width_ = width;

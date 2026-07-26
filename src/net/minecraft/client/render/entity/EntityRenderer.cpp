@@ -1,6 +1,5 @@
 #include "net/minecraft/client/render/entity/EntityRenderer.hpp"
 #include "net/minecraft/block/Block.hpp"
-#include "net/minecraft/client/ClientLog.hpp"
 #include "net/minecraft/client/Minecraft.hpp"
 #include "net/minecraft/client/font/TextRenderer.hpp"
 #include "net/minecraft/client/gl/GlConstants.hpp"

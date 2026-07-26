@@ -1,5 +1,4 @@
 #include <exception>
-#include <iostream>
 #include "net/minecraft/client/ClientLog.hpp"
 #include "net/minecraft/client/Minecraft.hpp"
 #ifdef _WIN32
@@ -34,15 +33,13 @@ int main(int argc, char** argv) {
   net::minecraft::client::diagnostics::reportFatalError("Minecraft Native - startup failed", details);
   net::minecraft::client::diagnostics::pauseBeforeExit();
 #endif
-  std::cerr << details << std::endl;
-  return 1;
- } catch(...) {
-  const std::string details = "Uncaught unknown exception in main.";
+   return 1;
+  } catch(...) {
+   const std::string details = "Uncaught unknown exception in main.";
 #ifdef _WIN32
-  net::minecraft::client::diagnostics::reportFatalError("Minecraft Native - startup failed", details);
-  net::minecraft::client::diagnostics::pauseBeforeExit();
+   net::minecraft::client::diagnostics::reportFatalError("Minecraft Native - startup failed", details);
+   net::minecraft::client::diagnostics::pauseBeforeExit();
 #endif
-  std::cerr << details << std::endl;
-  return 1;
+   return 1;
  }
 }

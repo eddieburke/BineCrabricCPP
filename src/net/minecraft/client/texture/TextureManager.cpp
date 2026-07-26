@@ -2,7 +2,6 @@
 #include <algorithm>
 #include <stdexcept>
 #include <vector>
-#include "net/minecraft/client/ClientLog.hpp"
 #include "net/minecraft/client/auth/microsoft/MicrosoftAuth.hpp"
 #include "net/minecraft/client/gl/GlConstants.hpp"
 #include "net/minecraft/client/option/GameOptions.hpp"
@@ -415,10 +414,8 @@ int TextureManager::getTextureId(const std::string& path) {
  const TexturePathSpec spec = parseTexturePath(path);
  RasterImage image = loadRasterForResource(spec.resourcePath);
  if(image.width <= 0 || image.height <= 0) {
-  if(missingTextureWarned_.insert(path).second) {
-   ClientLog::LOGGER.log(net::minecraft::util::logging::LogLevel::Warning,
-                         "Unable to load texture, using missing fallback: " + path);
-  }
+   if(missingTextureWarned_.insert(path).second) {
+   }
   textures_[path] = missingTextureId_;
   return missingTextureId_;
  }

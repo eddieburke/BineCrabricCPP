@@ -188,9 +188,7 @@ int luaUnregisterLocalPoseHook(lua_State* state) {
  api.pushboolean(state, localPoseHooks().erase(entityId) > 0 ? 1 : 0);
  return 1;
 }
-void clearLocalPoseHook(int entityId) {
- localPoseHooks().erase(entityId);
-}
+
 // A world holds a flat entity list, so an id lookup is a scan either way. The
 // map this used to build cost one allocation-heavy pass per call — including on
 // entities.get, which then used exactly one entry of it.
@@ -453,6 +451,9 @@ int luaEntitiesSpawnMod(lua_State* state) {
  return 1;
 }
 } // namespace
+void clearLocalPoseHook(int entityId) {
+ localPoseHooks().erase(entityId);
+}
 void applyRegisteredPoseHooks(const net::minecraft::LivingEntity& entity,
                               float tickDelta,
                               net::minecraft::mod::EntityRenderPose& pose) {

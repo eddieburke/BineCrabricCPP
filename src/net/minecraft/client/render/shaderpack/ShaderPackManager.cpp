@@ -2,11 +2,12 @@
 #include <algorithm>
 #include <cctype>
 #include <cmath>
-#include <cstdlib>
+#include <cstdint>
+#include <filesystem>
 #include <fstream>
-#include <set>
 #include <sstream>
-#include "net/minecraft/client/ClientLog.hpp"
+#include <string>
+#include <vector>
 #include "net/minecraft/client/gl/EnginePipeline.hpp"
 #include "net/minecraft/client/gl/GLCore.hpp"
 #include "net/minecraft/client/gl/GlConstants.hpp"
@@ -669,9 +670,8 @@ bool ShaderPackManager::renderPostProcess(int textureId,
  return ok;
 }
 void ShaderPackManager::logOnce(Pack& pack, const std::string& message) const {
- if(pack.logged.insert(message).second) {
-  ClientLog::LOGGER.log(LogLevel::Warning, "[shader] " + pack.summary.name + ": " + message);
- }
+ (void)pack;
+ (void)message;
 }
 render::ColorFormat ShaderPackManager::sceneColorFormat() const {
  const Pack* pack = activePack();

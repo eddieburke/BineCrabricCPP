@@ -1,4 +1,3 @@
-#include "net/minecraft/client/ClientLog.hpp"
 #include "net/minecraft/client/texture/TextureManager.hpp"
 #include "net/minecraft/registry/TextureRegistry.hpp"
 #include "net/minecraft/registry/TextureRegistryInternal.hpp"
@@ -14,11 +13,8 @@ int TextureRegistry::resolveGlId(int textureId, net::minecraft::client::texture:
   auto& entries = detail::registryEntries();
   if(index < 0 || index >= static_cast<int>(entries.size())) {
    if(detail::warnedInvalidIds().insert(textureId).second) {
-    net::minecraft::client::ClientLog::LOGGER.log(
-        net::minecraft::util::logging::LogLevel::Warning,
-        "Unregistered custom texture id, using missing fallback: " + std::to_string(textureId));
-   }
-   return textureManager.getTextureId(std::string());
+    }
+    return textureManager.getTextureId(std::string());
   }
   Entry& entry = entries[static_cast<std::size_t>(index)];
   if(entry.glId >= 0) {

@@ -26,6 +26,20 @@ class ScopedModWorldDrawContext {
  bool entered_ = false;
 };
 #ifdef MINECRAFT_NATIVE_EXPORTS
+// Shared save/restore of RenderSystem state. All mod draw scopes build on this.
+class ModStateScope {
+ public:
+ ModStateScope() : saved_(client::render::RenderSystem::getShadow()) {
+ }
+ ~ModStateScope() {
+  client::render::RenderSystem::setShadow(saved_);
+ }
+ ModStateScope(const ModStateScope&) = delete;
+ ModStateScope& operator=(const ModStateScope&) = delete;
+
+ protected:
+ client::render::RenderSystem::StateShadow saved_;
+};
 // State for one Lua-issued world draw. Opening the pass is what binds a shader
 // program: without one every draw in engine_pipeline silently returns and
 // nothing reaches the screen. The pass sets the base state and restores it (and

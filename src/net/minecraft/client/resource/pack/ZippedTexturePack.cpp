@@ -6,7 +6,6 @@
 #include <fstream>
 #include <sstream>
 #include <string>
-#include "net/minecraft/client/ClientLog.hpp"
 #include "net/minecraft/client/gl/GlConstants.hpp"
 #include "net/minecraft/client/render/RenderSystem.hpp"
 #include "net/minecraft/client/texture/TextureManager.hpp"
@@ -14,26 +13,6 @@
 namespace net::minecraft::client::resource::pack {
 using net::minecraft::client::render::RenderSystem;
 namespace {
-bool texturePackTraceEnabled() {
- static const bool enabled = [] {
-  const char* value = std::getenv("MINECRAFT_TRACE_TEXTURE_PACKS");
-  if(value == nullptr || *value == '\0') {
-   return false;
-  }
-  std::string normalized(value);
-  for(char& ch : normalized) {
-   ch = static_cast<char>(std::tolower(static_cast<unsigned char>(ch)));
-  }
-  return normalized == "1" || normalized == "true" || normalized == "yes" || normalized == "on";
- }();
- return enabled;
-}
-void texturePackTrace(std::string message) {
- if(!texturePackTraceEnabled()) {
-  return;
- }
- ClientLog::LOGGER.log(LogLevel::Fine, "[texture-pack-trace] " + message);
-}
 std::uint32_t readU32(const std::vector<std::uint8_t>& data, std::size_t offset) {
  if(offset + 4 > data.size()) {
   return 0;
@@ -138,15 +117,11 @@ std::vector<std::uint8_t> readZipEntryData(const std::vector<std::uint8_t>& arch
   try {
    // Fallback for non-standard zip writers that embed zlib-wrapped deflate.
    return zlibDecompress(compressed);
-  } catch(...) {
-   texturePackTrace("failed to inflate entry '" + entry.name +
-                    "' method=8 (raw deflate and zlib fallback both failed)");
-   return {};
+   } catch(...) {
+    return {};
+   }
   }
- }
- texturePackTrace("unsupported compression method for entry '" + entry.name +
-                  "' method=" + std::to_string(entry.compressionMethod));
- return {};
+  return {};
 }
 } // namespace
 ZippedTexturePack::ZippedTexturePack(std::filesystem::path file, const TexturePack* fallbackResources)
@@ -176,14 +151,12 @@ void ZippedTexturePack::open() {
   archive_.clear();
   return;
  }
- if(!buildZipIndex(archive_, entries_)) {
-  texturePackTrace("failed to index texture pack zip '" + file_.string() + "'");
-  archive_.clear();
+  if(!buildZipIndex(archive_, entries_)) {
+   archive_.clear();
   entries_.clear();
   return;
  }
- texturePackTrace("opened texture pack zip '" + file_.string() + "' entries=" + std::to_string(entries_.size()));
-}
+ }
 void ZippedTexturePack::close() {
  archive_.clear();
  entries_.clear();
@@ -262,9 +235,7 @@ std::vector<std::uint8_t> ZippedTexturePack::getResource(std::string_view path) 
   }
  }
  if(fallbackResources_ != nullptr) {
-  texturePackTrace("resource '" + std::string(path) + "' not found in pack '" + name +
-                   "', falling back to parent pack");
-  return fallbackResources_->getResource(path);
+   return fallbackResources_->getResource(path);
  }
  return {};
 }

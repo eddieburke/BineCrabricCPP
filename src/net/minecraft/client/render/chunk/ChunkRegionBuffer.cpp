@@ -3,7 +3,6 @@
 #include <cstddef>
 #include <cstdint>
 #include <cstdio>
-#include "net/minecraft/client/ClientLog.hpp"
 #include "net/minecraft/client/Minecraft.hpp"
 #include "net/minecraft/client/gl/EnginePipeline.hpp"
 #include "net/minecraft/client/gl/GLCore.hpp"
@@ -168,25 +167,13 @@ int ChunkRegionBuffer::flush() {
   return 0;
  }
  gl::GLCore::bindBuffer(kArrayBuffer, handle_);
- if(!gl::engine_pipeline::ensureReady()) {
-  static bool sLogged = false;
-  if(!sLogged) {
-   sLogged = true;
-   ClientLog::LOGGER.log(LogLevel::Warning,
-                         "[render] terrain flush: engine_pipeline::ensureReady() returned false "
-                         "(ubershader/VAO not available) — terrain will not draw");
+  if(!gl::engine_pipeline::ensureReady()) {
+   return 0;
   }
-  return 0;
- }
  gl::engine_pipeline::bindAndUploadUniforms();
- if(gl::engine_pipeline::program() == nullptr) {
-  static bool sLoggedProgram = false;
-  if(!sLoggedProgram) {
-   sLoggedProgram = true;
-   ClientLog::LOGGER.log(LogLevel::Warning, "[render] terrain flush: no active program — terrain will not draw");
+  if(gl::engine_pipeline::program() == nullptr) {
+   return 0;
   }
-  return 0;
- }
  gl::engine_pipeline::configureAttribs(handle_, 0, kStride, hasTexture_, hasColor_, hasNormals_);
  if(!render::quad_index::ensure(shadow_.size())) {
   return 0;

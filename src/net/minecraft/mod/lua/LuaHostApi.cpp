@@ -2,6 +2,7 @@
 #include <algorithm>
 #include <cctype>
 #include <cmath>
+#include <cstdio>
 #include <cstring>
 #include <filesystem>
 #include <fstream>
@@ -103,14 +104,7 @@ void loadLuaApi() {
 #endif
 }
 void runtimeLog(const std::string& modId, const char* level, const std::string& message) {
- std::cout << "[lua-mod";
- if(!modId.empty()) {
-  std::cout << ':' << modId;
- }
- if(level != nullptr && *level != '\0') {
-  std::cout << ':' << level;
- }
- std::cout << "] " << message << std::endl;
+ std::printf("[lua-mod:%s:%s] %s\n", modId.c_str(), level ? level : "", message.c_str());
 }
 void pop(lua_State* state, int count) {
  luaApi().settop(state, -count - 1);
