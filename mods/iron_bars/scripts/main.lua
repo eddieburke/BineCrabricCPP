@@ -1,12 +1,7 @@
--- ================================================================
--- MOD: iron_bars
--- Standardized structure with separated config
--- ================================================================
-
 local config = require("config")
 
 minecraft.log("info", "iron_bars loading")
-local iron_bars_model = assert(minecraft.model.load("models/iron_bars.json"))
+local iron_bars_model = assert(minecraft.model.load("models/iron_bars/iron_bars.json"))
 
 minecraft.register_block({
   id = 101,

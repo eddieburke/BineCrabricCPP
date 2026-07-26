@@ -6,11 +6,12 @@
 -- module owns no simulation state of its own.
 -- ============================================================================
 
-local engine = require("physics.engine")
+local engine = require("scripts.physics.engine")
+local config = require("config")
 
 local M = {}
 
-local DRAW_SCALE = 0.25
+local DRAW_SCALE = config.draw_scale
 local ICON_THICKNESS = DRAW_SCALE / 16.0
 local DEFAULT_HALF = 0.125
 local DEFAULT_HEIGHT = 0.25
@@ -28,10 +29,6 @@ local VOXEL_FACES = {
   { 0, 1, 0, { {0,1,1}, {1,1,1}, {1,1,0}, {0,1,0} } },
   { 0, -1, 0, { {0,0,0}, {1,0,0}, {1,0,1}, {0,0,1} } },
 }
-
---------------------------------------------------------------------------------
--- VOXEL MODEL
---------------------------------------------------------------------------------
 
 local function voxel_key(x, y, z)
   return x .. ":" .. y .. ":" .. z
@@ -111,12 +108,6 @@ function M.voxel_handle(item)
   return handle or nil
 end
 
---------------------------------------------------------------------------------
--- COLLISION SHAPE
---------------------------------------------------------------------------------
-
---- Half extents for an item, taken from its real model bounds where available.
--- Flat icons get an icon-thin slab so they tumble like cards.
 function M.half_extents(item)
   local key = item.item_id .. ":" .. (item.item_damage or 0)
   local shape = shape_cache[key]
@@ -137,10 +128,6 @@ function M.half_extents(item)
 
   return shape[1], shape[2], shape[3]
 end
-
---------------------------------------------------------------------------------
--- DRAWING
---------------------------------------------------------------------------------
 
 local transform = {
   x = 0, y = 0, z = 0, yaw = 0, pitch = 0, roll = 0,

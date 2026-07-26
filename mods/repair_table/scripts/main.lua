@@ -1,12 +1,7 @@
--- ================================================================
--- MOD: repair_table
--- Standardized structure with separated config
--- ================================================================
-
 local config = require("config")
 
 local repair_screen = require("scripts.repair_screen")
-local repair_table_model = assert(minecraft.model.load("models/repair_table.json"))
+local repair_table_model = assert(minecraft.model.load("models/repair_table/repair_table.json"))
 
 minecraft.register_block({
   id = 150,

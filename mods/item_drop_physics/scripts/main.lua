@@ -6,8 +6,8 @@
 -- physics/materials.lua; there is no per-item tuning table.
 -- ============================================================================
 
-local engine = require("physics.engine")
-local renderer = require("rendering.item_renderer")
+local engine = require("scripts.physics.engine")
+local renderer = require("scripts.rendering.item_renderer")
 
 local TICK_SECONDS = 1.0 / 20.0
 -- The server owns the authoritative item position. The local sim is free to

@@ -11,7 +11,8 @@
 --   * Sleeping bodies are skipped entirely and only re-checked periodically.
 -- ============================================================================
 
-local materials = require("physics.materials")
+local materials = require("scripts.physics.materials")
+local config = require("config")
 
 local M = {}
 
@@ -19,36 +20,15 @@ local sqrt, min, max, abs = math.sqrt, math.min, math.max, math.abs
 local floor, asin, random, pi = math.floor, math.asin, math.random, math.pi
 local atan2 = math.atan2 or math.atan
 
---------------------------------------------------------------------------------
--- CONSTANTS
---------------------------------------------------------------------------------
-
-local GRAVITY = -16.0            -- blocks/s^2, matches vanilla item fall
-local MAX_SPEED = 12.0           -- blocks/s, keeps the sweep bounded
-local MAX_SPIN = 14.0            -- rad/s
-local MAX_SWEEP = 0.25           -- blocks per substep before subdividing
-local MAX_SUBSTEPS = 4
-local SKIN = 1.0e-3              -- contact separation to avoid re-penetration
-local BOUNCE_CUTOFF = 1.2        -- below this impact speed, no bounce
-local SLEEP_SPEED = 0.02
-local SLEEP_SPIN = 0.10
-local SLEEP_TICKS = 12
-local SLEEP_RECHECK = 10         -- ticks between wake tests for sleeping bodies
-local BUOYANCY_CLAMP = 2.5       -- limits upward accel for very light items
-local WATER_DRAG = 0.80          -- per-tick retention while submerged
-local FLOW_ACCEL = 4.0           -- blocks/s^2 imparted by flowing water
-
 local WATER_STILL, WATER_FLOWING = 9, 8
+local SKIN = 1.0e-3
+local MAX_SWEEP = 0.25
+local SLEEP_RECHECK = 10
 
 -- Beta flowing-water metadata -> horizontal flow direction, flattened as
 -- (dx, dz) pairs indexed by (meta % 4) * 2.
 local FLOW_DIRS = { [0] = -1, [1] = 0, [2] = 1, [3] = 0, [4] = 0, [5] = -1, [6] = 0, [7] = 1 }
 
---------------------------------------------------------------------------------
--- QUATERNIONS (flat scalars in, flat scalars out)
---------------------------------------------------------------------------------
-
---- Normalized quaternion for a rotation of `angle` radians about a random axis.
 local function random_quat()
   local ax, ay, az = random() - 0.5, random() - 0.5, random() - 0.5
   local len = sqrt(ax * ax + ay * ay + az * az)
@@ -103,11 +83,6 @@ function M.quat_to_euler_degrees(qx, qy, qz, qw)
   return yaw * k, pitch * k, roll * k
 end
 
---------------------------------------------------------------------------------
--- WATER
---------------------------------------------------------------------------------
-
---- Water surface height inside the cell at (x, y, z), or nil if it holds no water.
 local function water_surface(x, y, z)
   local id = minecraft.world.get_block(x, y, z)
   if id ~= WATER_STILL and id ~= WATER_FLOWING then return nil end
@@ -141,10 +116,6 @@ local function sample_water(s)
   end
   return submersion, 0.0, 0.0
 end
-
---------------------------------------------------------------------------------
--- BLOCK COLLISION
---------------------------------------------------------------------------------
 
 local query = { min_x = 0, min_y = 0, min_z = 0, max_x = 0, max_y = 0, max_z = 0 }
 
@@ -223,18 +194,12 @@ local function move(s, dx, dy, dz)
   return hit_x, hit_y, hit_z
 end
 
---------------------------------------------------------------------------------
--- SIMULATION
---------------------------------------------------------------------------------
-
---- Build a simulation body for an item entity.
--- Mass comes from density * model volume, so no per-item mass table is needed.
 function M.create(item, half_x, half_y, half_z)
   local mat = materials.get(item.item_id)
   local volume = 8.0 * half_x * half_y * half_z
   local qx, qy, qz, qw = random_quat()
   local vx, vy, vz = item.vx or 0.0, item.vy or 0.0, item.vz or 0.0
-  local kick = min(MAX_SPIN, 2.0 + sqrt(vx * vx + vy * vy + vz * vz) * 3.0)
+  local kick = min(config.max_spin, 2.0 + sqrt(vx * vx + vy * vy + vz * vz) * 3.0)
 
   return {
     id = item.id,
@@ -276,9 +241,8 @@ local function contact(s, axis, normal)
     vn, t1, t2 = s.vz, s.vx, s.vy
   end
 
-  -- Normal response.
   local impact = abs(vn)
-  if impact > BOUNCE_CUTOFF then
+  if impact > config.bounce_cutoff then
     vn = -vn * mat.restitution
   else
     vn = 0.0
@@ -316,21 +280,18 @@ local function step_body(s, dt)
   local submersion, flow_x, flow_z = sample_water(s)
   s.submersion = submersion
 
-  -- Gravity and buoyancy. Buoyant acceleration is (rho_water / rho_body) * g
-  -- upward, scaled by how much of the body is under the surface.
-  local accel = GRAVITY
+  local accel = config.gravity
   if submersion > 0.0 then
-    accel = GRAVITY * max(-BUOYANCY_CLAMP, 1.0 - submersion / mat.density)
+    accel = config.gravity * max(-config.buoyancy_clamp, 1.0 - submersion / mat.density)
   end
   s.vy = s.vy + accel * dt
 
   if submersion > 0.0 then
     if flow_x ~= 0.0 or flow_z ~= 0.0 then
-      s.vx = s.vx + flow_x * FLOW_ACCEL * submersion * dt
-      s.vz = s.vz + flow_z * FLOW_ACCEL * submersion * dt
+      s.vx = s.vx + flow_x * config.flow_accel * submersion * dt
+      s.vz = s.vz + flow_z * config.flow_accel * submersion * dt
     end
-    -- Drag blends between air and water with submersion.
-    local drag = mat.drag + (WATER_DRAG - mat.drag) * submersion
+    local drag = mat.drag + (config.water_drag - mat.drag) * submersion
     local f = drag ^ (dt * 20.0)
     s.vx, s.vy, s.vz = s.vx * f, s.vy * f, s.vz * f
     s.wx, s.wy, s.wz = s.wx * f, s.wy * f, s.wz * f
@@ -341,10 +302,10 @@ local function step_body(s, dt)
   end
 
   local speed = sqrt(s.vx * s.vx + s.vy * s.vy + s.vz * s.vz)
-  if speed > MAX_SPEED then
-    local k = MAX_SPEED / speed
+  if speed > config.max_speed then
+    local k = config.max_speed / speed
     s.vx, s.vy, s.vz = s.vx * k, s.vy * k, s.vz * k
-    speed = MAX_SPEED
+    speed = config.max_speed
   end
 
   local hit_x, hit_y, hit_z = move(s, s.vx * dt, s.vy * dt, s.vz * dt)
@@ -362,21 +323,20 @@ local function step_body(s, dt)
   end
 
   local spin = sqrt(s.wx * s.wx + s.wy * s.wy + s.wz * s.wz)
-  if spin > MAX_SPIN then
-    local k = MAX_SPIN / spin
+  if spin > config.max_spin then
+    local k = config.max_spin / spin
     s.wx, s.wy, s.wz = s.wx * k, s.wy * k, s.wz * k
   end
 
   s.qx, s.qy, s.qz, s.qw = integrate_quat(s.qx, s.qy, s.qz, s.qw, s.wx, s.wy, s.wz, dt)
 end
 
---- Decide whether a body has come to rest, or should wake up again.
 local function update_sleep(s)
   local speed = sqrt(s.vx * s.vx + s.vy * s.vy + s.vz * s.vz)
   local spin = sqrt(s.wx * s.wx + s.wy * s.wy + s.wz * s.wz)
-  if speed < SLEEP_SPEED and spin < SLEEP_SPIN and s.grounded then
+  if speed < config.sleep_speed and spin < config.sleep_spin and s.grounded then
     s.sleep_ticks = s.sleep_ticks + 1
-    if s.sleep_ticks >= SLEEP_TICKS then
+    if s.sleep_ticks >= config.sleep_ticks then
       s.sleeping = true
       s.vx, s.vy, s.vz = 0.0, 0.0, 0.0
       s.wx, s.wy, s.wz = 0.0, 0.0, 0.0
@@ -411,11 +371,10 @@ function M.step(sims, dt)
         end
       end
     else
-      -- Subdivide only when the body would tunnel; most ticks run one step.
       local speed = sqrt(s.vx * s.vx + s.vy * s.vy + s.vz * s.vz)
       local steps = 1
       if speed * dt > MAX_SWEEP then
-        steps = min(MAX_SUBSTEPS, floor(speed * dt / MAX_SWEEP) + 1)
+        steps = min(config.max_substeps, floor(speed * dt / MAX_SWEEP) + 1)
       end
       local sub_dt = dt / steps
       for _ = 1, steps do step_body(s, sub_dt) end

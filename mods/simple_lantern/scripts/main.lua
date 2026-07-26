@@ -1,11 +1,6 @@
--- ================================================================
--- MOD: simple_lantern
--- Standardized structure with separated config
--- ================================================================
-
 local config = require("config")
 
-local model = assert(minecraft.model.load("models/lantern.json"))
+local model = assert(minecraft.model.load("models/simple_lantern/lantern.json"))
 
 minecraft.register_block({
   id = 151,
