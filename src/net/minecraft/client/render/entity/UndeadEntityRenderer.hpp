@@ -7,7 +7,10 @@ class UndeadEntityRenderer : public LivingEntityRenderer {
  UndeadEntityRenderer(model::BipedEntityModel* model, float shadowSize);
 
  protected:
- void renderMore(const net::minecraft::LivingEntity& entity, float tickDelta) override;
+ void renderMore(const net::minecraft::LivingEntity& entity,
+                 float tickDelta,
+                 net::minecraft::util::math::MatrixStack& matrices,
+                 const net::minecraft::util::math::Matrix4f& projection) override;
 
  private:
  model::BipedEntityModel* entityModel_ = nullptr;

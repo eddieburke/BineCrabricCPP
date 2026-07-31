@@ -6,7 +6,6 @@
 #include <string_view>
 #include <utility>
 #include <vector>
-#include "net/minecraft/client/gui/DrawContext.hpp"
 #include "net/minecraft/client/gui/widget/ActionButtonWidget.hpp"
 #include "net/minecraft/client/gui/widget/ButtonWidget.hpp"
 #include "net/minecraft/client/input/Keys.hpp"
@@ -23,7 +22,7 @@ class TextFieldWidget;
 namespace net::minecraft::client::gui::screen {
 class Screen;
 using ScreenFactory = std::function<std::unique_ptr<Screen>()>;
-class Screen : public gui::DrawContext {
+class Screen {
  public:
  virtual ~Screen() = default;
  void init(client::Minecraft* minecraft, int width, int height);

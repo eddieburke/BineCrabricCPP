@@ -3,8 +3,8 @@
 #include "net/minecraft/client/Minecraft.hpp"
 #include "net/minecraft/client/gl/GlConstants.hpp"
 #include "net/minecraft/client/option/GameOptions.hpp"
-#include "net/minecraft/client/option/ResolvedRenderOptions.hpp"
-#include "net/minecraft/client/render/RenderSystem.hpp"
+#include "net/minecraft/client/option/RenderSettings.hpp"
+#include "net/minecraft/client/render/RenderCore.hpp"
 #include "net/minecraft/client/render/RenderType.hpp"
 #include "net/minecraft/client/render/Tessellator.hpp"
 #include "net/minecraft/client/render/atmosphere/AtmosphereContext.hpp"
@@ -14,14 +14,14 @@
 #include "net/minecraft/world/World.hpp"
 #include "net/minecraft/world/biome/Biome.hpp"
 #include "net/minecraft/world/biome/source/BiomeSource.hpp"
+#include "net/minecraft/world/light/LightType.hpp"
 namespace net::minecraft::client::render::atmosphere {
 void PrecipitationRenderer::renderPrecipitation(const AtmosphereContext& ctx, float tickDelta) {
  if(ctx.world == nullptr || ctx.camera == nullptr) {
   return;
  }
- const float rain = ctx.client != nullptr
-                        ? client::option::rainGradient(client::option::resolve(ctx.options), ctx.world, tickDelta)
-                        : ctx.world->getRainGradient(tickDelta);
+ const float rain = ctx.client != nullptr ? client::option::rainGradient(ctx.settings, ctx.world, tickDelta)
+                                          : ctx.world->getRainGradient(tickDelta);
  if(rain <= 0.0f) {
   return;
  }
@@ -43,13 +43,14 @@ void PrecipitationRenderer::renderPrecipitation(const AtmosphereContext& ctx, fl
  const double interpZ = ctx.livingCamera->lastTickZ +
                         (ctx.livingCamera->z - ctx.livingCamera->lastTickZ) * static_cast<double>(tickDelta);
  Tessellator& tessellator = INSTANCE;
- render::RenderPassScope passScope(render::RenderType::guiTextured());
- render::RenderSystem::alphaTest(0.01f);
+ render::RenderPassScope passScope(render::RenderType::weather());
+ core::depthMask(ctx.settings.rainDepth);
+ core::setAlphaTestRef(0.01f);
  const int floorY = MathHelper::floor(interpY);
- int radius = client::option::resolve(ctx.options).fancyPrecipitation ? 10 : 5;
+ int radius = ctx.settings.fancyPrecipitation ? 10 : 5;
  std::vector<Biome*> biomeScratch;
  biomeSource->getBiomesInArea(biomeScratch, centerX - radius, centerZ - radius, radius * 2 + 1, radius * 2 + 1);
- render::RenderSystem::bindTexture(ctx.textureManager->getTextureId("/environment/snow.png"));
+ render::core::bindTexture(ctx.textureManager->getTextureId("/environment/snow.png"));
  int biomeIndex = 0;
  tessellator.startQuads();
  tessellator.translate(-interpX, -interpY, -interpZ);
@@ -86,9 +87,10 @@ void PrecipitationRenderer::renderPrecipitation(const AtmosphereContext& ctx, fl
    const double dx = static_cast<double>(static_cast<float>(x) + 0.5f) - ctx.livingCamera->x;
    const double dz = static_cast<double>(static_cast<float>(z) + 0.5f) - ctx.livingCamera->z;
    const float dist = MathHelper::sqrt(static_cast<float>(dx * dx + dz * dz)) / static_cast<float>(radius);
-   const float brightness = world->getLightBrightness(x, low, z);
-   render::RenderSystem::color4f(
-       brightness, brightness, brightness, ((1.0f - dist * dist) * 0.3f + 0.5f) * rain);
+   const float alpha = ((1.0f - dist * dist) * 0.3f + 0.5f) * rain;
+   tessellator.light(world->getBrightness(net::minecraft::LightType::Block, x, low, z),
+                     world->getBrightness(net::minecraft::LightType::Sky, x, low, z));
+   tessellator.color(1.0f, 1.0f, 1.0f, alpha);
    constexpr float texScale = 1.0f;
    tessellator.vertex(x + 0,
                       high,
@@ -134,8 +136,8 @@ void PrecipitationRenderer::renderPrecipitation(const AtmosphereContext& ctx, fl
  }
  tessellator.draw();
  tessellator.translate(0.0, 0.0, 0.0);
- render::RenderSystem::bindTexture(ctx.textureManager->getTextureId("/environment/rain.png"));
- if(client::option::resolve(ctx.options).fancyPrecipitation) {
+ render::core::bindTexture(ctx.textureManager->getTextureId("/environment/rain.png"));
+ if(ctx.settings.fancyPrecipitation) {
   radius = 10;
  }
  biomeIndex = 0;
@@ -168,9 +170,10 @@ void PrecipitationRenderer::renderPrecipitation(const AtmosphereContext& ctx, fl
    const double dx = static_cast<double>(static_cast<float>(x) + 0.5f) - ctx.livingCamera->x;
    const double dz = static_cast<double>(static_cast<float>(z) + 0.5f) - ctx.livingCamera->z;
    const float dist = MathHelper::sqrt(static_cast<float>(dx * dx + dz * dz)) / static_cast<float>(radius);
-   const float brightness = world->getLightBrightness(x, 128, z) * 0.85f + 0.15f;
-   render::RenderSystem::color4f(
-       brightness, brightness, brightness, ((1.0f - dist * dist) * 0.5f + 0.5f) * rain);
+   const float alpha = ((1.0f - dist * dist) * 0.5f + 0.5f) * rain;
+   tessellator.light(world->getBrightness(net::minecraft::LightType::Block, x, low, z),
+                     world->getBrightness(net::minecraft::LightType::Sky, x, low, z));
+   tessellator.color(1.0f, 1.0f, 1.0f, alpha);
    constexpr float texScale = 1.0f;
    tessellator.vertex(x + 0,
                       low,
@@ -216,5 +219,6 @@ void PrecipitationRenderer::renderPrecipitation(const AtmosphereContext& ctx, fl
  }
  tessellator.draw();
  tessellator.translate(0.0, 0.0, 0.0);
+ core::depthMask(true);
 }
 } // namespace net::minecraft::client::render::atmosphere

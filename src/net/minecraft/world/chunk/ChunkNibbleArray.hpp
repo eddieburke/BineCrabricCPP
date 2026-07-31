@@ -13,6 +13,7 @@ namespace net::minecraft {
 // nibbles there are transient and corrected by follow-up light updates.
 class ChunkNibbleArray {
  public:
+ ChunkNibbleArray() = default;
  explicit ChunkNibbleArray(int size) : bytes(static_cast<std::size_t>(size >> 1), 0) {
  }
  explicit ChunkNibbleArray(std::vector<std::uint8_t> data) : bytes(std::move(data)) {

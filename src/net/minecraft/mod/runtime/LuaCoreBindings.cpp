@@ -517,14 +517,77 @@ int luaWriteGameFile(lua_State* state) {
  api.pushboolean(state, writeFileText(path, content) ? 1 : 0);
  return 1;
 }
+std::uint16_t worldRenderStageBit(std::string_view name) {
+ static constexpr std::string_view names[] = {
+     "sky",
+     "stars",
+     "terrain_opaque",
+     "entities",
+     "particles_lit",
+     "particles",
+     "terrain_translucent",
+     "weather",
+     "clouds",
+     "hand",
+     "framebuffer",
+ };
+ for(std::size_t i = 0; i < sizeof(names) / sizeof(names[0]); ++i) {
+  if(name == names[i]) {
+   return static_cast<std::uint16_t>(1u << i);
+  }
+ }
+ return 0;
+}
+std::uint8_t worldRenderMomentBit(std::string_view name) {
+ if(name == "before") {
+  return 1u;
+ }
+ if(name == "after") {
+  return 2u;
+ }
+ return 0;
+}
+template <typename Mask, typename Resolve>
+Mask stringFilterMask(lua_State* state, int optionsIndex, const char* field, Mask all, Resolve resolve) {
+ LuaApi& api = luaApi();
+ api.getfield(state, optionsIndex, field);
+ const int type = api.type(state, -1);
+ if(type == kLuaTString) {
+  const Mask mask = resolve(luaString(state, -1, ""));
+  api.settop(state, -2);
+  return mask;
+ }
+ if(type != kLuaTTable) {
+  api.settop(state, -2);
+  return all;
+ }
+ const int tableIndex = api.gettop(state);
+ Mask mask = 0;
+ api.pushnil(state);
+ while(api.next(state, tableIndex) != 0) {
+  if(api.type(state, -1) == kLuaTString) {
+   mask = static_cast<Mask>(mask | resolve(luaString(state, -1, "")));
+  }
+  if(api.type(state, -2) == kLuaTString && api.toboolean(state, -1) != 0) {
+   mask = static_cast<Mask>(mask | resolve(luaString(state, -2, "")));
+  }
+  api.settop(state, -2);
+ }
+ api.settop(state, tableIndex - 1);
+ return mask;
+}
 int luaOn(lua_State* state) {
  LuaApi& api = luaApi();
  ModHost::LoadedLuaMod* mod = currentLuaMod(state);
  const int top = api.gettop(state);
- if(mod == nullptr || top < 2 || api.type(state, 1) != kLuaTString || api.type(state, 2) != kLuaTFunction) {
+ const bool hasOptions = top >= 3 && api.type(state, 2) == kLuaTTable && api.type(state, 3) == kLuaTFunction;
+ const int functionIndex = hasOptions ? 3 : 2;
+ const int priorityIndex = hasOptions ? 4 : 3;
+ if(mod == nullptr || top < functionIndex || api.type(state, 1) != kLuaTString ||
+    api.type(state, functionIndex) != kLuaTFunction) {
   runtimeLog(mod != nullptr ? mod->modId : "",
              "error",
-             "minecraft._subscribe expects (event_name, function, priority?)");
+             "minecraft._subscribe expects (event_name, options?, function, priority?)");
   api.pushboolean(state, 0);
   return 1;
  }
@@ -536,14 +599,14 @@ int luaOn(lua_State* state) {
   return 1;
  }
  int priority = 0;
- if(top >= 3) {
+ if(top >= priorityIndex) {
   int isNumber = 0;
-  const long long value = api.tointegerx(state, 3, &isNumber);
+  const long long value = api.tointegerx(state, priorityIndex, &isNumber);
   if(isNumber != 0) {
    priority = static_cast<int>(value);
   }
  }
- api.pushvalue(state, 2);
+ api.pushvalue(state, functionIndex);
  const int ref = api.ref(state, kLuaRegistryIndex);
  if(ref == kLuaNoRef) {
   runtimeLog(mod->modId, "error", "failed to retain Lua callback");
@@ -555,6 +618,19 @@ int luaOn(lua_State* state) {
  callback.functionRef = ref;
  callback.priority = priority;
  callback.eventIndex = eventIndex;
+ if(hasOptions && eventIndex == static_cast<int>(LuaEventId::WorldRender)) {
+  callback.worldRenderStageMask =
+      stringFilterMask<std::uint16_t>(state, 2, "stage", 0xFFFFu, worldRenderStageBit);
+  callback.worldRenderMomentMask =
+      stringFilterMask<std::uint8_t>(state, 2, "moment", 0xFFu, worldRenderMomentBit);
+ }
+ if(hasOptions && eventIndex == static_cast<int>(LuaEventId::PreEntityRender)) {
+  api.getfield(state, 2, "entity_type");
+  if(api.type(state, -1) == kLuaTString) {
+   callback.entityTypeFilter = luaString(state, -1, "");
+  }
+  api.settop(state, -2);
+ }
  mod->callbacks.push_back(std::move(callback));
  invalidateLuaHookCache();
  api.pushboolean(state, 1);

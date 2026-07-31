@@ -1,13 +1,13 @@
-#include "net/minecraft/client/render/RenderSystem.hpp"
 #include "net/minecraft/client/render/entity/EntityRenderers.hpp"
 namespace net::minecraft::client::render::entity {
 GiantEntityRenderer::GiantEntityRenderer(model::EntityModel* model, float shadowSize, float scale)
     : LivingEntityRenderer(model, shadowSize * scale), scale_(scale) {
 }
-void GiantEntityRenderer::applyScale(const net::minecraft::LivingEntity& entity, float tickDelta) {
+void GiantEntityRenderer::applyScale(const net::minecraft::LivingEntity& entity, float tickDelta,
+                                     net::minecraft::util::math::MatrixStack& matrices) {
  (void)entity;
  (void)tickDelta;
- RenderSystem::scale(scale_, scale_, scale_);
+ matrices.scale(scale_, scale_, scale_);
 }
 } // namespace net::minecraft::client::render::entity
 #include "net/minecraft/client/entity/EntityClientRendererRegistration.hpp"

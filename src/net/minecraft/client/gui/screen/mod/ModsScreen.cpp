@@ -78,10 +78,10 @@ class ModsScreen::ModListWidget : public widget::EntryListWidget {
   }
   const net::minecraft::mod::runtime::ModPackage& mod = owner_.mods_[static_cast<std::size_t>(index)];
   const int titleColor = mod.error.empty() ? 0xFFFFFF : 0xFF8080;
-  owner_.drawTextWithShadow(*owner_.textRenderer(), mod.name, x, y + 1, titleColor);
-  owner_.drawTextWithShadow(*owner_.textRenderer(), entryStatus(mod), x, y + 13, 0xA0A0A0);
-  owner_.drawTextWithShadow(
-      *owner_.textRenderer(), detailLine(mod), x, y + 25, mod.error.empty() ? 0x808080 : 0xFFB0B0);
+  owner_.textRenderer()->drawWithShadow(mod.name, x, y + 1, titleColor);
+  owner_.textRenderer()->drawWithShadow(entryStatus(mod), x, y + 13, 0xA0A0A0);
+  owner_.textRenderer()->drawWithShadow(
+      detailLine(mod), x, y + 25, mod.error.empty() ? 0x808080 : 0xFFB0B0);
  }
 
  private:
@@ -136,11 +136,11 @@ void ModsScreen::render(int mouseX, int mouseY, float tickDelta) {
   modList_->render(mouseX, mouseY, tickDelta);
  }
  if(textRenderer() != nullptr) {
-  drawCenteredTextWithShadow(*textRenderer(), "Mods", width() / 2, 14, 0xFFFFFF);
-  drawCenteredTextWithShadow(
-      *textRenderer(), "Zip and folder mods. Changes apply on restart.", width() / 2, 28, 0xA0A0A0);
+  textRenderer()->drawCenteredWithShadow("Mods", width() / 2, 14, 0xFFFFFF);
+  textRenderer()->drawCenteredWithShadow(
+      "Zip and folder mods. Changes apply on restart.", width() / 2, 28, 0xA0A0A0);
   if(!footerText_.empty()) {
-   drawCenteredTextWithShadow(*textRenderer(), footerText_, width() / 2, height() - 88, 0xD0D0D0);
+   textRenderer()->drawCenteredWithShadow(footerText_, width() / 2, height() - 88, 0xD0D0D0);
   }
  }
  Screen::render(mouseX, mouseY, tickDelta);

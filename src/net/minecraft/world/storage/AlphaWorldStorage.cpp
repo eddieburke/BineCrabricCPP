@@ -83,8 +83,8 @@ std::optional<WorldProperties> AlphaWorldStorage::loadPropertiesFrom(const fs::p
    return std::nullopt;
   }
   return WorldProperties(root.getCompound("Data"));
-  } catch(...) {
-   return std::nullopt;
+ } catch(...) {
+  return std::nullopt;
  }
 }
 void AlphaWorldStorage::writeLevelDat(const WorldProperties& properties,
@@ -118,8 +118,8 @@ void AlphaWorldStorage::save(const WorldProperties& properties,
                              const std::vector<entity::player::PlayerEntity*>& players) {
  try {
   writeLevelDat(properties, players);
-  } catch(const std::exception&) {
-  }
+ } catch(const std::exception&) {
+ }
 }
 void AlphaWorldStorage::saveUnload(const WorldProperties& properties,
                                    const std::vector<entity::player::PlayerEntity*>& players) {

@@ -36,7 +36,7 @@ class ServerWorld : public World {
  void forceSave();
  void saveWithLoadingDisplay(bool saveEntities, client::gui::screen::LoadingDisplay* display);
  void updateWeatherCycles() override;
-  bool savingDisabled = false;
+ bool savingDisabled = false;
  bool isSavingDisabled() const override { return savingDisabled; }
 
  private:

@@ -73,6 +73,13 @@ void loadIntMember(GameOptions& options, std::string_view value) {
  } catch(...) {
  }
 }
+template <int GameOptions::* Member, int MinValue>
+void loadClampedIntMember(GameOptions& options, std::string_view value) {
+ try {
+  options.*Member = std::max(MinValue, std::stoi(std::string(value)));
+ } catch(...) {
+ }
+}
 template <int GameOptions::* Member>
 void saveIntMember(const GameOptions& options, std::ostream& out) {
  out << options.*Member;

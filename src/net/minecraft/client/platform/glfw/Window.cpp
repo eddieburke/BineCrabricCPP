@@ -1,6 +1,7 @@
 #include "net/minecraft/client/platform/glfw/Window.hpp"
 #ifdef MINECRAFT_USE_GLFW
 #include <GLFW/glfw3.h>
+#include "net/minecraft/client/gl/GLCore.hpp"
 #include "net/minecraft/client/input/InputSystem.hpp"
 #ifdef _WIN32
 #define GLFW_EXPOSE_NATIVE_WIN32
@@ -233,7 +234,10 @@ void Window::setFullscreen(bool value) {
   const int height = windowedHeight_ > 0 ? windowedHeight_ : pendingHeight_;
   glfwSetWindowMonitor(window_, nullptr, windowedX_, windowedY_, width, height, 0);
  }
+ // Keep GLFW's cached interval at 0 so its DwmFlush path never arms; real
+ // pacing is owned by GLCore::setSwapPacing.
  glfwSwapInterval(0);
+ gl::GLCore::resetSwapPacingCache();
  notifyResize();
 }
 void Window::setDisplayMode(const DisplayMode& mode) {
@@ -311,17 +315,12 @@ void Window::create() {
  // (translucent overlay compounds it). Requesting zero alpha bits makes the
  // window opaque at the OS level regardless of what the app clears/writes.
  glfwWindowHint(GLFW_ALPHA_BITS, 0);
- // Core profile OpenGL 3.3 (forward-compatible): the renderer is fully shader-based
- // with VAO/UBO and no fixed-function state. 3.3 over 4.x for wider GPU reach; nothing
- // needs 4.x features.
- glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 3);
+ // Core profile OpenGL 4.3 (forward-compatible): compute shaders and image
+ // load/store are available to shader packs.
+ glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 4);
  glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 3);
  glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
  glfwWindowHint(GLFW_OPENGL_FORWARD_COMPAT, GLFW_TRUE);
-#ifndef NDEBUG
- // Debug context so glDebugMessageCallback surfaces strict-core violations early.
- glfwWindowHint(GLFW_OPENGL_DEBUG_CONTEXT, GLFW_TRUE);
-#endif
  GLFWmonitor* monitor = fullscreen_ ? primaryMonitor() : nullptr;
  if(fullscreen_) {
   const GLFWvidmode* mode = glfwGetVideoMode(primaryMonitor());
@@ -333,11 +332,12 @@ void Window::create() {
  }
  window_ = glfwCreateWindow(pendingWidth_, pendingHeight_, title_.c_str(), monitor, nullptr);
  if(window_ == nullptr) {
-  throw std::runtime_error("glfwCreateWindow failed — OpenGL 3.2 compatibility required");
+  throw std::runtime_error("glfwCreateWindow failed — OpenGL 4.3 core required");
  }
  applyCallbacks(window_);
  glfwMakeContextCurrent(window_);
  glfwSwapInterval(0);
+ gl::GLCore::resetSwapPacingCache();
  glfwShowWindow(window_);
  notifyResize();
 }
@@ -352,6 +352,7 @@ void Window::destroy() {
   glfwDestroyWindow(window_);
   window_ = nullptr;
  }
+ gl::GLCore::resetSwapPacingCache();
  if(initialized_) {
   glfwTerminate();
   initialized_ = false;
@@ -364,14 +365,13 @@ void Window::pumpMessages() {
  }
 }
 void Window::present() {
- if(window_ != nullptr) {
+ if(window_ == nullptr) {
+  return;
+ }
+ gl::GLCore::ensureLoaded();
+ if(!gl::GLCore::present()) {
   glfwSwapBuffers(window_);
  }
-}
-void Window::pumpAndPresent() {
- pumpMessages();
- input::InputSystem::compactQueues();
- present();
 }
 bool Window::isCloseRequested() {
  return closeRequested_;

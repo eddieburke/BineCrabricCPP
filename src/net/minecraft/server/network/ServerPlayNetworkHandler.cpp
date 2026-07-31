@@ -172,9 +172,9 @@ void ServerPlayNetworkHandler::onPlayerMove(const PlayerMovePacket& packet) {
    moveX = packet.x;
    moveZ = packet.z;
   }
-   player_->onGround = packet.onGround;
-   player_->playerTick(true);
-   player_->move(moveX, 0.0, moveZ);
+  player_->onGround = packet.onGround;
+  player_->playerTick(true);
+  player_->move(moveX, 0.0, moveZ);
   player_->setPositionAndAngles(savedX, savedY, savedZ, yaw, pitch);
   player_->velocityX = moveX;
   player_->velocityZ = moveZ;
@@ -191,9 +191,9 @@ void ServerPlayNetworkHandler::onPlayerMove(const PlayerMovePacket& packet) {
   serverWorld->updateEntity(player_, true);
   return;
  }
-  if(player_->isSleeping()) {
-   player_->playerTick(true);
-   player_->setPositionAndAngles(
+ if(player_->isSleeping()) {
+  player_->playerTick(true);
+  player_->setPositionAndAngles(
       teleportTargetX_, teleportTargetY_, teleportTargetZ_, player_->yaw, player_->pitch);
   serverWorld->updateEntity(player_, true);
   return;
@@ -224,12 +224,12 @@ void ServerPlayNetworkHandler::onPlayerMove(const PlayerMovePacket& packet) {
    return;
   }
  }
-  if(workingPacket.changeLook) {
-   targetYaw = workingPacket.yaw;
-   targetPitch = workingPacket.pitch;
+ if(workingPacket.changeLook) {
+  targetYaw = workingPacket.yaw;
+  targetPitch = workingPacket.pitch;
  }
-  player_->playerTick(true);
-  player_->cameraOffset = 0.0f;
+ player_->playerTick(true);
+ player_->cameraOffset = 0.0f;
  player_->setPositionAndAngles(teleportTargetX_, teleportTargetY_, teleportTargetZ_, targetYaw, targetPitch);
  double deltaX = targetX - player_->x;
  double deltaY = targetY - player_->y;
@@ -340,18 +340,18 @@ void ServerPlayNetworkHandler::handlePlayerAction(const PlayerActionC2SPacket& p
   const double dx = player_->x - (static_cast<double>(packet.x) + 0.5);
   const double dy = player_->y - (static_cast<double>(packet.y) + 0.5);
   const double dz = player_->z - (static_cast<double>(packet.z) + 0.5);
-   if(dx * dx + dy * dy + dz * dz < 256.0 && player_->networkHandler != nullptr) {
-    BlockUpdateS2CPacket blockPacket;
-    blockPacket.x = packet.x;
-    blockPacket.y = packet.y;
-    blockPacket.z = packet.z;
-    blockPacket.blockRawId = serverWorld->getBlockId(packet.x, packet.y, packet.z);
-    blockPacket.blockMetadata = serverWorld->getBlockMeta(packet.x, packet.y, packet.z);
-    player_->networkHandler->sendPacket(blockPacket);
-   }
+  if(dx * dx + dy * dy + dz * dz < 256.0 && player_->networkHandler != nullptr) {
+   BlockUpdateS2CPacket blockPacket;
+   blockPacket.x = packet.x;
+   blockPacket.y = packet.y;
+   blockPacket.z = packet.z;
+   blockPacket.blockRawId = serverWorld->getBlockId(packet.x, packet.y, packet.z);
+   blockPacket.blockMetadata = serverWorld->getBlockMeta(packet.x, packet.y, packet.z);
+   player_->networkHandler->sendPacket(blockPacket);
   }
  }
- void ServerPlayNetworkHandler::onPlayerInteractBlock(const PlayerInteractBlockC2SPacket& packet) {
+}
+void ServerPlayNetworkHandler::onPlayerInteractBlock(const PlayerInteractBlockC2SPacket& packet) {
  if(player_ == nullptr || server_ == nullptr) {
   return;
  }
@@ -360,13 +360,13 @@ void ServerPlayNetworkHandler::handlePlayerAction(const PlayerActionC2SPacket& p
   return;
  }
  ItemStack* itemStack = player_->inventory.getSelectedItem();
-  const bool bypassSpawnProtection = serverWorld->dimension == nullptr || serverWorld->dimension->id != 0 ||
-                                     !server_->playerManager.hasOperators() ||
-                                     server_->playerManager.isOperator(player_->name);
-  if(packet.side == 255) {
-   if(itemStack == nullptr || itemStack->empty()) {
-    return;
-   }
+ const bool bypassSpawnProtection = serverWorld->dimension == nullptr || serverWorld->dimension->id != 0 ||
+                                    !server_->playerManager.hasOperators() ||
+                                    server_->playerManager.isOperator(player_->name);
+ if(packet.side == 255) {
+  if(itemStack == nullptr || itemStack->empty()) {
+   return;
+  }
   player_->interactionManager.interactItem(player_, serverWorld, itemStack);
  } else {
   int spawnDistance = std::abs(packet.x - serverWorld->getSpawnPos().x);
@@ -438,9 +438,9 @@ void ServerPlayNetworkHandler::handlePlayerAction(const PlayerActionC2SPacket& p
    player_->networkHandler->sendPacket(slotPacket);
   }
  } else {
-   player_->skipPacketSlotUpdates = false;
-  }
+  player_->skipPacketSlotUpdates = false;
  }
+}
 void ServerPlayNetworkHandler::onDisconnected(const std::string& reason, const std::vector<std::string>& args) {
  (void)args;
  if(player_ != nullptr) {

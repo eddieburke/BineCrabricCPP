@@ -10,14 +10,15 @@
 #include "net/minecraft/block/LeavesBlock.hpp"
 #include "net/minecraft/block/entity/BlockEntity.hpp"
 #include "net/minecraft/client/Minecraft.hpp"
-#include "net/minecraft/client/gl/EnginePipeline.hpp"
+#include "net/minecraft/client/render/RenderCore.hpp"
 #include "net/minecraft/client/gl/GLCore.hpp"
 #include "net/minecraft/client/gl/GlConstants.hpp"
-#include "net/minecraft/client/option/ResolvedRenderOptions.hpp"
+#include "net/minecraft/client/option/RenderSettings.hpp"
 #include "net/minecraft/client/particle/ParticleRegistry.hpp"
 #include "net/minecraft/client/particle/PickupParticle.hpp"
 #include "net/minecraft/client/render/GameRenderer.hpp"
-#include "net/minecraft/client/render/RenderSystem.hpp"
+#include "net/minecraft/client/render/shaderpack/ShaderPackManager.hpp"
+#include "net/minecraft/client/render/FrameRenderCamera.hpp"
 #include "net/minecraft/client/render/RenderType.hpp"
 #include "net/minecraft/client/render/Tessellator.hpp"
 #include "net/minecraft/client/render/block/BlockRenderManager.hpp"
@@ -28,6 +29,7 @@
 #include "net/minecraft/client/render/entity/EntityRenderDispatcher.hpp"
 #include "net/minecraft/entity/Entity.hpp"
 #include "net/minecraft/entity/LivingEntity.hpp"
+#include "net/minecraft/entity/player/ClientPlayerEntity.hpp"
 #include "net/minecraft/entity/player/PlayerEntity.hpp"
 #include "net/minecraft/mod/lua/LuaModEntity.hpp"
 #include "net/minecraft/registry/TextureRegistry.hpp"
@@ -42,16 +44,6 @@ namespace {
 constexpr int kChunkSectionSize = 16;
 constexpr int kChunkSectionCountY = 8;
 constexpr int kBaselineRadius = 13;
-struct MatrixScope {
- MatrixScope() {
-  RenderSystem::pushMatrix();
- }
- ~MatrixScope() {
-  RenderSystem::popMatrix();
- }
- MatrixScope(const MatrixScope&) = delete;
- MatrixScope& operator=(const MatrixScope&) = delete;
-};
 struct ModChunkMeshScope {
  render::RenderPassScope passScope_;
  explicit ModChunkMeshScope(const RenderType& rt) : passScope_(rt) {
@@ -62,13 +54,13 @@ struct ModChunkMeshScope {
 struct WorldOverlayScope {
  render::RenderPassScope passScope_;
  explicit WorldOverlayScope(const RenderType& rt) : passScope_(rt) {
-  RenderSystem::enableDepthTest();
-  RenderSystem::depthMask(false);
-  RenderSystem::enableBlend();
-  RenderSystem::blendAlpha();
+  core::enableDepthTest();
+  core::depthMask(false);
+  core::enableBlend();
+  core::blendAlpha();
  }
  ~WorldOverlayScope() {
-  RenderSystem::disableBlend();
+  core::disableBlend();
  }
  WorldOverlayScope(const WorldOverlayScope&) = delete;
  WorldOverlayScope& operator=(const WorldOverlayScope&) = delete;
@@ -76,46 +68,37 @@ struct WorldOverlayScope {
 struct WorldCrackOverlayScope {
  render::RenderPassScope passScope_;
  explicit WorldCrackOverlayScope(const RenderType& rt) : passScope_(rt) {
-  RenderSystem::enableDepthTest();
-  RenderSystem::depthMask(false);
-  RenderSystem::enableCull();
-  RenderSystem::cullBackFaces();
-  RenderSystem::blendAlpha();
-  RenderSystem::polygonOffset(-3.0f, -3.0f);
-  RenderSystem::enablePolygonOffset();
+  core::enableDepthTest();
+  core::depthMask(false);
+  core::enableCull();
+  core::cullBackFaces();
+  core::blendAlpha();
+  core::polygonOffset(-3.0f, -3.0f);
+  core::enablePolygonOffset();
  }
  ~WorldCrackOverlayScope() {
-  RenderSystem::disablePolygonOffset();
-  RenderSystem::disableBlend();
+  core::disablePolygonOffset();
+  core::disableBlend();
  }
  WorldCrackOverlayScope(const WorldCrackOverlayScope&) = delete;
  WorldCrackOverlayScope& operator=(const WorldCrackOverlayScope&) = delete;
 };
 struct BlockOutlineScope {
- render::RenderPassScope passScope_;
- BlockOutlineScope() : passScope_(RenderType::gui()) {
-  RenderSystem::enableBlend();
-  RenderSystem::blendAlpha();
-  RenderSystem::enableDepthTest();
-  RenderSystem::depthMask(false);
+ RenderPassScope pass;
+ core::RenderStageScope stage;
+ BlockOutlineScope() : pass(RenderType::lines()), stage(core::RenderStage::Outline) {
+  core::enableBlend();
+  core::blendAlpha();
+  core::enableDepthTest();
+  core::depthMask(false);
  }
  ~BlockOutlineScope() {
-  RenderSystem::enableDepthTest();
-  RenderSystem::depthMask(true);
-  RenderSystem::disableBlend();
+  core::enableDepthTest();
+  core::depthMask(true);
+  core::disableBlend();
  }
  BlockOutlineScope(const BlockOutlineScope&) = delete;
  BlockOutlineScope& operator=(const BlockOutlineScope&) = delete;
-};
-struct OutlineTextureOffScope {
- OutlineTextureOffScope() {
-  RenderSystem::disableTexture();
- }
- ~OutlineTextureOffScope() {
-  RenderSystem::enableTexture();
- }
- OutlineTextureOffScope(const OutlineTextureOffScope&) = delete;
- OutlineTextureOffScope& operator=(const OutlineTextureOffScope&) = delete;
 };
 } // namespace
 WorldRenderer::WorldRenderer(net::minecraft::client::Minecraft* minecraftIn,
@@ -125,6 +108,7 @@ WorldRenderer::WorldRenderer(net::minecraft::client::Minecraft* minecraftIn,
  if(client != nullptr) {
   options_ = &client->options;
  }
+ settings_ = option::renderSettings(activeOptions());
 }
 net::minecraft::client::option::GameOptions& WorldRenderer::activeOptions() const {
  if(options_ != nullptr) {
@@ -193,7 +177,7 @@ void WorldRenderer::enqueueColumn(int sectionX, int sectionZ) {
 }
 void WorldRenderer::createColumn(int sectionX, int sectionZ) {
  if(world == nullptr || world->getChunkSource() == nullptr ||
-     !world->getChunkSource()->isChunkLoaded(sectionX, sectionZ)) {
+    !world->getChunkSource()->isChunkLoaded(sectionX, sectionZ)) {
   return;
  }
  const int ring = ringOf(sectionX, sectionZ);
@@ -277,12 +261,28 @@ void WorldRenderer::rebuildDrawRings() {
 }
 void WorldRenderer::rebuildVisibleDrawRings() {
  visibleDrawRings_.resize(drawRings_.size());
+ const bool collectDebugCounts = activeOptions().debugHud;
+ if(collectDebugCounts) {
+  chunkCount = static_cast<int>(sectionList_.size());
+  invisibleChunkCount = 0;
+  compiledChunkCount = 0;
+  emptyChunkCount = 0;
+ }
  for(std::size_t ring = 0; ring < drawRings_.size(); ++ring) {
   const auto& src = drawRings_[ring];
   std::vector<chunk::ChunkBuilder*>& dst = visibleDrawRings_[ring];
   dst.clear();
   dst.reserve(src.size());
   for(chunk::ChunkBuilder* chunk : src) {
+   if(collectDebugCounts && chunk != nullptr) {
+    if(chunk->hasNoGeometry()) {
+     ++emptyChunkCount;
+    } else if(!chunk->inFrustum) {
+     ++invisibleChunkCount;
+    } else {
+     ++compiledChunkCount;
+    }
+   }
    if(chunk != nullptr && chunk->inFrustum) {
     dst.push_back(chunk);
    }
@@ -353,12 +353,10 @@ void WorldRenderer::clearSections() {
  centerSectionZ_ = std::numeric_limits<int>::min();
 }
 void WorldRenderer::updateSectionFrontier() {
- double camX = 0.0;
- double camZ = 0.0;
- if(hasFrameCamera_) {
-  camX = frameCamX_;
-  camZ = frameCamZ_;
- } else {
+ const auto& frameCam = RenderCameraState::instance().frame();
+ double camX = frameCam.x;
+ double camZ = frameCam.z;
+ if(camX == 0.0 && camZ == 0.0) {
   const net::minecraft::LivingEntity* camera = frontierCamera();
   if(camera == nullptr) {
    return;
@@ -476,8 +474,16 @@ void WorldRenderer::reload() {
  if(world == nullptr) {
   return;
  }
+ // Resolve options + pack bake flags before sections rebuild. Stale
+ // separateAo/oldLighting from the previous pack made Smooth Lighting look
+ // broken until the slider forced another remesh.
+ const shaderpack::ShaderPackDefinition* pack = nullptr;
+ if(client != nullptr && client->gameRenderer != nullptr && client->gameRenderer->shaderPacks() != nullptr) {
+  pack = client->gameRenderer->shaderPacks()->meshDefinition();
+ }
+ settings_ = option::renderSettings(activeOptions(), pack);
  net::minecraft::client::option::GameOptions& opts = activeOptions();
- const option::ResolvedRenderOptions resolved = option::resolve(opts);
+ const option::RenderSettings& resolved = settings_;
  if(Block::LEAVES != nullptr) {
   static_cast<net::minecraft::block::LeavesBlock*>(Block::LEAVES)->setFancyGraphics(resolved.fancyLeaves);
  }
@@ -492,7 +498,7 @@ void WorldRenderer::reload() {
 }
 void WorldRenderer::reloadIfViewDistanceChanged() {
  const net::minecraft::client::option::GameOptions& opts = activeOptions();
- const option::ResolvedRenderOptions resolved = option::resolve(opts);
+ const option::RenderSettings& resolved = settings_;
  if(opts.viewDistance != lastViewDistance || resolved.renderScale != lastRenderScale) {
   reload();
  }
@@ -500,7 +506,7 @@ void WorldRenderer::reloadIfViewDistanceChanged() {
 bool WorldRenderer::startMeshJob(chunk::ChunkBuilder* chunk,
                                  bool nearLane,
                                  int priority,
-                                 const client::option::ResolvedRenderOptions& resolvedOpts,
+                                 const client::option::RenderSettings& resolvedOpts,
                                  bool fancyGraphics) {
  if(chunk == nullptr || chunk->meshJobInFlight || !chunk->dirty) {
   return false;
@@ -509,7 +515,7 @@ bool WorldRenderer::startMeshJob(chunk::ChunkBuilder* chunk,
  if(job == nullptr) {
   return false;
  }
- job->captureSnapshot();
+ // Snapshot capture runs on the mesh worker while pins are held.
  chunk->meshJobInFlight = true;
  dirtyChunks_.erase(chunk);
  if(nearLane) {
@@ -523,14 +529,7 @@ int WorldRenderer::render(net::minecraft::LivingEntity& camera, int layer, doubl
  if(sections_.empty()) {
   return 0;
  }
- if(layer == 0) {
-  chunkCount = 0;
-  invisibleChunkCount = 0;
-  compiledChunkCount = 0;
-  emptyChunkCount = 0;
- }
  cameraEntity_ = &camera;
- render::RenderSystem::disableLighting();
  renderChunks(layer, tickDelta, drawModMeshes);
  return lastDrawnRegionCount_;
 }
@@ -546,18 +545,28 @@ void WorldRenderer::renderLastChunks(int layer, double tickDelta) {
 int WorldRenderer::renderChunksVbo(
     int layer, double /*tickDelta*/, double interpX, double interpY, double interpZ, bool skipBuildDrawLists) {
  lastDrawnRegionCount_ = 0;
+ chunk::ChunkRegion& pool = regionManager_.pool();
+ chunk::ChunkRegionBuffer& buffer = pool.layers[static_cast<std::size_t>(layer)];
+ // chunkOffset = sectionOrigin - active draw camera (player or shadow).
+ double camX = interpX;
+ double camY = interpY;
+ double camZ = interpZ;
+ if(core::drawCameraStateValid()) {
+  const float* eye = core::drawCameraPosition();
+  camX = static_cast<double>(eye[0]);
+  camY = static_cast<double>(eye[1]);
+  camZ = static_cast<double>(eye[2]);
+ }
  if(!skipBuildDrawLists) {
   // Reset on the first layer of the player's own pass only. Nested passes
-  // (sun shadow, Lua render-to-texture) set renderCameraEntity_, and letting
+  // (sun shadow) set renderCameraEntity_, and letting
   // them reset would leave the F3 counter showing the shadow map's draw calls
   // instead of the frame's.
   if(layer == 0 && !renderCameraEntity_) {
    chunk::ChunkRegionBuffer::frameVisibleRanges = 0;
    chunk::ChunkRegionBuffer::frameDrawCalls = 0;
   }
-  for(auto& entry : regionManager_) {
-   entry.second->layers[static_cast<std::size_t>(layer)].beginFrame();
-  }
+  buffer.beginFrame();
   for(const std::vector<chunk::ChunkBuilder*>& ring : visibleDrawRings_) {
    for(chunk::ChunkBuilder* chunk : ring) {
     if(chunk == nullptr || chunk->region_ == nullptr ||
@@ -568,43 +577,20 @@ int WorldRenderer::renderChunksVbo(
     if(!slot.valid() || slot.count <= 0) {
      continue;
     }
-    chunk->region_->layers[static_cast<std::size_t>(layer)].addVisible(slot);
+    const float ox = static_cast<float>(static_cast<double>(chunk->x) - camX);
+    const float oy = static_cast<float>(static_cast<double>(chunk->y) - camY);
+    const float oz = static_cast<float>(static_cast<double>(chunk->z) - camZ);
+    buffer.addVisible(slot, ox, oy, oz);
    }
   }
  }
- RenderSystem::matrixMode(gl::matrix_::ModelView);
- for(auto& entry : regionManager_) {
-  chunk::ChunkRegion& region = *entry.second;
-  chunk::ChunkRegionBuffer& buffer = region.layers[static_cast<std::size_t>(layer)];
-  if(!buffer.hasVisible()) {
-   continue;
-  }
-  const float offsetX = static_cast<float>(static_cast<double>(region.offsetX) - interpX);
-  const float offsetY = static_cast<float>(static_cast<double>(region.offsetY) - interpY);
-  const float offsetZ = static_cast<float>(static_cast<double>(region.offsetZ) - interpZ);
-  const MatrixScope matrix;
-  RenderSystem::translate(offsetX, offsetY, offsetZ);
-  buffer.flush();
-  ++lastDrawnRegionCount_;
+ if(!buffer.hasVisible()) {
+  return 0;
  }
+ lastDrawnRegionCount_ = buffer.flush();
  return lastDrawnRegionCount_;
 }
 void WorldRenderer::renderChunks(int layer, double tickDelta, bool drawModMeshes, bool skipBuildDrawLists) {
- if(layer == 0) {
-  if(activeOptions().debugHud) {
-   for(chunk::ChunkBuilder* chunkPtr : sectionList_) {
-    const chunk::ChunkBuilder& chunk = *chunkPtr;
-    ++chunkCount;
-    if(chunk.hasNoGeometry()) {
-     ++emptyChunkCount;
-    } else if(!chunk.inFrustum) {
-     ++invisibleChunkCount;
-    } else {
-     ++compiledChunkCount;
-    }
-   }
-  }
- }
  double interpX = 0.0;
  double interpY = 0.0;
  double interpZ = 0.0;
@@ -620,6 +606,15 @@ int WorldRenderer::renderModChunkMeshes(int layer, double interpX, double interp
  }
  const ModChunkMeshScope meshCaps(layer == 1 ? RenderType::translucent() : RenderType::solid());
  int drawn = 0;
+ double camX = interpX;
+ double camY = interpY;
+ double camZ = interpZ;
+ if(core::drawCameraStateValid()) {
+  const float* eye = core::drawCameraPosition();
+  camX = static_cast<double>(eye[0]);
+  camY = static_cast<double>(eye[1]);
+  camZ = static_cast<double>(eye[2]);
+ }
  struct ModMeshDraw {
   int textureId;
   chunk::ChunkBuilder* chunk;
@@ -651,7 +646,7 @@ int WorldRenderer::renderModChunkMeshes(int layer, double interpX, double interp
   for(const ModMeshDraw& entry : ringDraws) {
    if(!boundValid || entry.textureId != boundTextureId) {
     boundTextureId = entry.textureId;
-    boundGlId = textureManager->getCustomTextureGlId(entry.textureId);
+    boundGlId = net::minecraft::registry::TextureRegistry::resolveGlId(entry.textureId, *textureManager);
     boundValid = true;
     if(boundGlId >= 0) {
      textureManager->bindTexture(boundGlId);
@@ -660,13 +655,12 @@ int WorldRenderer::renderModChunkMeshes(int layer, double interpX, double interp
    if(boundGlId < 0) {
     continue;
    }
-   const float offsetX = static_cast<float>(static_cast<double>(entry.chunk->x) - interpX);
-   const float offsetY = static_cast<float>(static_cast<double>(entry.chunk->y) - interpY);
-   const float offsetZ = static_cast<float>(static_cast<double>(entry.chunk->z) - interpZ);
-   RenderSystem::pushMatrix();
-   RenderSystem::translate(offsetX, offsetY, offsetZ);
+   const float ox = static_cast<float>(static_cast<double>(entry.chunk->x) - camX);
+   const float oy = static_cast<float>(static_cast<double>(entry.chunk->y) - camY);
+   const float oz = static_cast<float>(static_cast<double>(entry.chunk->z) - camZ);
+   core::setPendingTerrainDraw(ox, oy, oz);
    Tessellator::drawMesh(*entry.mesh);
-   RenderSystem::popMatrix();
+   core::clearPendingTerrainDraw();
    ++drawn;
   }
  }
@@ -674,7 +668,7 @@ int WorldRenderer::renderModChunkMeshes(int layer, double interpX, double interp
 }
 bool WorldRenderer::compileChunks(net::minecraft::LivingEntity& /*camera*/, bool force) {
  drainBorderRefresh();
- const client::option::ResolvedRenderOptions resolvedOpts = client::option::resolve(activeOptions());
+ const client::option::RenderSettings& resolvedOpts = settings_;
  const bool fancyGraphics = activeOptions().fancyGraphics;
  const float gridAreaScale = static_cast<float>(renderRadiusChunks_ * renderRadiusChunks_) /
                              static_cast<float>(kBaselineRadius * kBaselineRadius);
@@ -684,7 +678,7 @@ bool WorldRenderer::compileChunks(net::minecraft::LivingEntity& /*camera*/, bool
  const int minUploadsPerFrame = loadingBacklog ? std::clamp(static_cast<int>(workerCount * 2u), 4, 16)
                                                : std::clamp(static_cast<int>(std::ceil(2.0f * gridAreaScale)), 1, 6);
  const net::minecraft::util::concurrent::FrameBudget uploadBudget =
-     net::minecraft::util::concurrent::FrameBudget::fromMs(loadingBacklog ? 5 : 2, minUploadsPerFrame);
+     net::minecraft::util::concurrent::FrameBudget::fromMs(loadingBacklog ? 6 : 3, minUploadsPerFrame);
  int uploadCount = 0;
  std::vector<std::shared_ptr<chunk::ChunkMeshJob>> deferredUploads;
  deferredUploads.reserve(pendingMeshUploads_.size() + meshScheduler_.pendingJobs());
@@ -729,7 +723,7 @@ bool WorldRenderer::compileChunks(net::minecraft::LivingEntity& /*camera*/, bool
   const int minCapturesPerFrame = force ? static_cast<int>(workerCount * 2u)
                                         : std::clamp(requestedCaptures, 1, static_cast<int>(workerCount));
   const net::minecraft::util::concurrent::FrameBudget captureBudget =
-      net::minecraft::util::concurrent::FrameBudget::fromMs((force || loadingBacklog) ? 6 : 2,
+      net::minecraft::util::concurrent::FrameBudget::fromMs((force || loadingBacklog) ? 2 : 1,
                                                             minCapturesPerFrame);
   int captures = 0;
   const auto canCapture = [&] { return inFlight < targetInFlight && captureBudget.hasRemaining(captures); };
@@ -771,7 +765,11 @@ bool WorldRenderer::compileChunks(net::minecraft::LivingEntity& /*camera*/, bool
  }
  return dirtyChunks_.empty() && nearDirtyChunks_.empty() && pendingMeshUploads_.empty() && meshScheduler_.idle();
 }
-void WorldRenderer::renderEntities(const Vec3d& cameraPos, FrustumCuller* culler, float tickDelta) {
+void WorldRenderer::renderEntities(const Vec3d& cameraPos,
+                                   FrustumCuller* culler,
+                                   float tickDelta,
+                                   net::minecraft::util::math::MatrixStack& matrices,
+                                   const net::minecraft::util::math::Matrix4f& projection) {
  if(entityRenderCooldown > 0) {
   --entityRenderCooldown;
   return;
@@ -804,28 +802,39 @@ void WorldRenderer::renderEntities(const Vec3d& cameraPos, FrustumCuller* culler
  }
  const std::vector<Entity*>& entities = world->entities();
  entityCount = static_cast<int>(entities.size()) + static_cast<int>(world->globalEntities.size());
- const client::option::ResolvedRenderOptions resolved = client::option::resolve(activeOptions());
+ const client::option::RenderSettings& resolved = settings_;
+ const FrameRenderCamera& renderCamera = RenderCameraState::instance().frame();
+ const double shadowEntityDistanceSq =
+     static_cast<double>(renderCamera.shadowEntityDistance) * renderCamera.shadowEntityDistance;
+ const auto excludedFromShadow = [&](const Entity* entity) {
+  if(!renderCamera.shadowPass || entity == nullptr) return false;
+  if(!renderCamera.shadowEntities && client->player != nullptr &&
+     entity != client->player && entity != client->player->vehicle) return true;
+  if(!renderCamera.shadowPlayer && client->player != nullptr &&
+     (entity == client->player || entity == client->player->vehicle)) return true;
+  if(shadowEntityDistanceSq <= 0.0 || client->player == nullptr) return shadowEntityDistanceSq == 0.0;
+  const double dx = entity->x - client->player->x;
+  const double dy = entity->y - client->player->y;
+  const double dz = entity->z - client->player->z;
+  return dx * dx + dy * dy + dz * dz > shadowEntityDistanceSq;
+ };
  for(Entity* entity : world->globalEntities) {
   if(entity == nullptr) {
    continue;
   }
-  if(entity->id == excludedEntityId_) {
-   continue;
-  }
+  if(excludedFromShadow(entity)) continue;
   if(!client::option::shouldRenderEntity(resolved, *entity, cameraPos)) {
    ++culledEntityCount;
    continue;
   }
   ++renderedEntityCount;
-  entityDispatcher.render(*entity, tickDelta);
+  entityDispatcher.render(*entity, tickDelta, matrices, projection);
  }
  for(Entity* entity : entities) {
   if(entity == nullptr) {
    continue;
   }
-  if(entity->id == excludedEntityId_) {
-   continue;
-  }
+  if(excludedFromShadow(entity)) continue;
   if(!client::option::shouldRenderEntity(resolved, *entity, cameraPos)) {
    ++culledEntityCount;
    continue;
@@ -851,25 +860,58 @@ void WorldRenderer::renderEntities(const Vec3d& cameraPos, FrustumCuller* culler
    continue;
   }
   ++renderedEntityCount;
-  entityDispatcher.render(*entity, tickDelta);
+  entityDispatcher.render(*entity, tickDelta, matrices, projection);
  }
  for(::net::minecraft::block::entity::BlockEntity* blockEntity : globalBlockEntities) {
-  if(blockEntity != nullptr) {
-   blockDispatcher.render(*blockEntity, tickDelta);
+  if(blockEntity == nullptr) continue;
+  if(renderCamera.shadowPass) {
+   bool allow = renderCamera.shadowBlockEntities;
+   if(!allow && renderCamera.shadowLightBlockEntities && world != nullptr) {
+    const int id = world->getBlockId(blockEntity->x, blockEntity->y, blockEntity->z);
+    if(id >= 0 && id < net::minecraft::block::Block::BLOCK_COUNT) {
+     const net::minecraft::block::Block* block = net::minecraft::block::Block::BLOCKS[static_cast<std::size_t>(id)];
+     allow = block != nullptr && block->emission() > 0;
+    }
+   }
+   if(!allow) continue;
+   if(shadowEntityDistanceSq > 0.0 && client->player != nullptr) {
+    const double dx = blockEntity->x - client->player->x;
+    const double dy = blockEntity->y - client->player->y;
+    const double dz = blockEntity->z - client->player->z;
+    if(dx * dx + dy * dy + dz * dz > shadowEntityDistanceSq) continue;
+   }
   }
+  blockDispatcher.render(*blockEntity, tickDelta);
  }
 }
 void WorldRenderer::cullChunks(FrustumCuller* culler, float /*tickDelta*/, bool updateFrontier) {
- constexpr double kNearFrustumBypassBlocks = 48.0;
- constexpr double kNearFrustumBypassDistanceSq = kNearFrustumBypassBlocks * kNearFrustumBypassBlocks;
+ const FrameRenderCamera& renderCamera = RenderCameraState::instance().frame();
+ const double nearFrustumBypassBlocks = std::max(0.0f, renderCamera.frustumBypassDistance);
+ const double nearFrustumBypassDistanceSq = nearFrustumBypassBlocks * nearFrustumBypassBlocks;
+ const double shadowRenderDistance = std::max(0.0f, renderCamera.shadowRenderDistance);
+ const double shadowRenderDistanceSq = shadowRenderDistance * shadowRenderDistance;
+ const double camX = core::drawCameraStateValid() ? static_cast<double>(core::drawCameraPosition()[0])
+                                                    : renderCamera.eyeX;
+ const double camY = core::drawCameraStateValid() ? static_cast<double>(core::drawCameraPosition()[1])
+                                                    : renderCamera.eyeY;
+ const double camZ = core::drawCameraStateValid() ? static_cast<double>(core::drawCameraPosition()[2])
+                                                    : renderCamera.eyeZ;
  if(updateFrontier) {
   reloadIfViewDistanceChanged();
   updateSectionFrontier();
   drainPendingColumns();
  }
- if(culler == nullptr || !activeOptions().frustumCulling) {
+ if(culler == nullptr || !settings_.frustumCulling) {
   for(chunk::ChunkBuilder* chunk : sectionList_) {
    chunk->inFrustum = true;
+   if(renderCamera.shadowPass && shadowRenderDistanceSq > 0.0) {
+    const double dx = camX - static_cast<double>(chunk->centerX);
+    const double dy = camY - static_cast<double>(chunk->centerY);
+    const double dz = camZ - static_cast<double>(chunk->centerZ);
+    if(dx * dx + dy * dy + dz * dz > shadowRenderDistanceSq) {
+     chunk->inFrustum = false;
+    }
+   }
   }
   rebuildVisibleDrawRings();
   return;
@@ -877,34 +919,37 @@ void WorldRenderer::cullChunks(FrustumCuller* culler, float /*tickDelta*/, bool 
  for(chunk::ChunkBuilder* chunkPtr : sectionList_) {
   chunk::ChunkBuilder& chunk = *chunkPtr;
   chunk.updateFrustum(*culler);
-  if(cameraEntity_ != nullptr) {
-   const double camX = hasFrameCamera_ ? frameCamX_ : cameraEntity_->x;
-   const double camZ = hasFrameCamera_ ? frameCamZ_ : cameraEntity_->z;
-   const double dx = camX - static_cast<double>(chunk.centerX);
-   const double dz = camZ - static_cast<double>(chunk.centerZ);
-   if(dx * dx + dz * dz <= kNearFrustumBypassDistanceSq) {
-    chunk.inFrustum = true;
-   }
+  const double dx = camX - static_cast<double>(chunk.centerX);
+  const double dy = camY - static_cast<double>(chunk.centerY);
+  const double dz = camZ - static_cast<double>(chunk.centerZ);
+  const double distSq = dx * dx + dy * dy + dz * dz;
+  if(dx * dx + dz * dz <= nearFrustumBypassDistanceSq) {
+   chunk.inFrustum = true;
+  }
+  if(renderCamera.shadowPass && shadowRenderDistanceSq > 0.0 && distSq > shadowRenderDistanceSq) {
+   chunk.inFrustum = false;
   }
  }
  applyOcclusionCulling();
  rebuildVisibleDrawRings();
 }
 void WorldRenderer::applyOcclusionCulling() {
- constexpr double kNearOcclusionBypassSq = 48.0 * 48.0;
- double camX = 0.0;
- double camY = 0.0;
- double camZ = 0.0;
- if(hasFrameCamera_) {
-  camX = frameCamX_;
-  camY = frameCamY_;
-  camZ = frameCamZ_;
- } else if(cameraEntity_ != nullptr) {
-  camX = cameraEntity_->x;
-  camY = cameraEntity_->y;
-  camZ = cameraEntity_->z;
- } else {
+ if(!settings_.occlusionCulling) {
   return;
+ }
+ constexpr double kNearOcclusionBypassSq = 48.0 * 48.0;
+ const auto& frameCam = RenderCameraState::instance().frame();
+ double camX = frameCam.x;
+ double camY = frameCam.y;
+ double camZ = frameCam.z;
+ if(camX == 0.0 && camY == 0.0 && camZ == 0.0) {
+  if(cameraEntity_ != nullptr) {
+   camX = cameraEntity_->x;
+   camY = cameraEntity_->y;
+   camZ = cameraEntity_->z;
+  } else {
+   return;
+  }
  }
  const int startX = MathHelper::floor(camX) >> 4;
  int startY = MathHelper::floor(camY) >> 4;
@@ -1054,7 +1099,7 @@ void WorldRenderer::addParticle(
  if(client == nullptr) {
   return;
  }
- if(!client::option::shouldSpawnParticle(client::option::resolve(client->options), particle)) {
+ if(!client::option::shouldSpawnParticle(settings_, particle)) {
   return;
  }
  net::minecraft::Entity* camera = cameraEntity_ != nullptr ? cameraEntity_ : client->camera;
@@ -1128,21 +1173,21 @@ void WorldRenderer::blockBreakParticles(int x, int y, int z, int blockId, int bl
 }
 void WorldRenderer::renderOutline(const Box& box) {
  Tessellator& tessellator = INSTANCE;
- tessellator.start(gl::prim::LineStrip);
- tessellator.vertex(box.minX, box.minY, box.minZ);
- tessellator.vertex(box.maxX, box.minY, box.minZ);
- tessellator.vertex(box.maxX, box.minY, box.maxZ);
- tessellator.vertex(box.minX, box.minY, box.maxZ);
- tessellator.vertex(box.minX, box.minY, box.minZ);
- tessellator.draw();
- tessellator.start(gl::prim::LineStrip);
- tessellator.vertex(box.minX, box.maxY, box.minZ);
- tessellator.vertex(box.maxX, box.maxY, box.minZ);
- tessellator.vertex(box.maxX, box.maxY, box.maxZ);
- tessellator.vertex(box.minX, box.maxY, box.maxZ);
- tessellator.vertex(box.minX, box.maxY, box.minZ);
- tessellator.draw();
+ auto emitStrip = [&](bool top) {
+  const double y = top ? box.maxY : box.minY;
+  tessellator.start(gl::prim::LineStrip);
+  tessellator.color(0.0f, 0.0f, 0.0f, 0.4f);
+  tessellator.vertex(box.minX, y, box.minZ);
+  tessellator.vertex(box.maxX, y, box.minZ);
+  tessellator.vertex(box.maxX, y, box.maxZ);
+  tessellator.vertex(box.minX, y, box.maxZ);
+  tessellator.vertex(box.minX, y, box.minZ);
+  tessellator.draw();
+ };
+ emitStrip(false);
+ emitStrip(true);
  tessellator.start(gl::prim::Lines);
+ tessellator.color(0.0f, 0.0f, 0.0f, 0.4f);
  tessellator.vertex(box.minX, box.minY, box.minZ);
  tessellator.vertex(box.minX, box.maxY, box.minZ);
  tessellator.vertex(box.maxX, box.minY, box.minZ);
@@ -1170,7 +1215,6 @@ void WorldRenderer::renderMiningProgress(net::minecraft::PlayerEntity* player,
   return;
  }
  Block* block = Block::BLOCKS[blockId];
-
  int stage = static_cast<int>(miningProgress * 10.0f);
  if(stage < 0) {
   stage = 0;
@@ -1179,49 +1223,38 @@ void WorldRenderer::renderMiningProgress(net::minecraft::PlayerEntity* player,
   stage = 9;
  }
  const int destroyTexture = 240 + stage;
-
  double interpX = 0.0, interpY = 0.0, interpZ = 0.0;
  cameraInterpPosition(static_cast<double>(tickDelta), interpX, interpY, interpZ);
-
- const RenderPassScope passScope(RenderType::solid());
-
+ const RenderPassScope passScope(RenderType::damagedBlock());
  net::minecraft::client::texture::TextureManager* texMgr =
      textureManager != nullptr ? textureManager : (client != nullptr ? &client->textureManager : nullptr);
  if(texMgr != nullptr) {
-  RenderSystem::activeTexture(gl::tex::Texture0);
-  RenderSystem::enableTexture();
-  RenderSystem::bindTexture(static_cast<unsigned int>(texMgr->getTextureId("/terrain.png")));
+  core::activeTexture(gl::tex::Texture0);
+  core::bindTexture(static_cast<unsigned int>(texMgr->getTextureId("/terrain.png")));
  }
-
- RenderSystem::enableBlend();
- RenderSystem::blendAlpha();
- RenderSystem::color4f(1.0f, 1.0f, 1.0f, 1.0f);
- RenderSystem::depthMask(false);
- RenderSystem::depthTest();
-
- RenderSystem::polygonOffset(-3.0f, -3.0f);
- RenderSystem::enablePolygonOffset();
-
+ core::enableBlend();
+ core::blendAlpha();
+ core::setConstColor(1.0f, 1.0f, 1.0f, 1.0f);
+ core::depthMask(false);
+ core::depthTest();
+ core::polygonOffset(-3.0f, -3.0f);
+ core::enablePolygonOffset();
  blockRenderManager.snapshotGlobals();
  blockRenderManager.ctx.blockView = world;
  blockRenderManager.ctx.textureManager = texMgr;
  blockRenderManager.ctx.skipFaceCulling = true;
-
  Tessellator& tess = Tessellator::INSTANCE;
  tess.startQuads();
  tess.translate(-interpX, -interpY, -interpZ);
  tess.color(1.0f, 1.0f, 1.0f, 1.0f);
-
  blockRenderManager.renderWithTexture(
      *block, hitResult.blockX, hitResult.blockY, hitResult.blockZ, destroyTexture);
-
  tess.draw();
  tess.translate(0.0, 0.0, 0.0);
-
  blockRenderManager.ctx.skipFaceCulling = false;
- RenderSystem::disablePolygonOffset();
- RenderSystem::depthMask(true);
- RenderSystem::disableBlend();
+ core::disablePolygonOffset();
+ core::depthMask(true);
+ core::disableBlend();
 }
 void WorldRenderer::renderBlockOutline(net::minecraft::PlayerEntity* player,
                                        const net::minecraft::HitResult& hitResult,
@@ -1233,10 +1266,10 @@ void WorldRenderer::renderBlockOutline(net::minecraft::PlayerEntity* player,
   return;
  }
  const BlockOutlineScope outlineCaps;
- const OutlineTextureOffScope outlineTextureCaps;
- RenderSystem::color4f(0.0f, 0.0f, 0.0f, 0.4f);
+ core::setEntityColor(0.0f, 0.0f, 0.0f, 0.0f);
+ Tessellator::INSTANCE.light(15, 15);
  ::glLineWidth(1.0f);
- RenderSystem::depthMask(false);
+ core::depthMask(false);
  constexpr float expand = 0.002f;
  const int blockId = world->getBlockId(hitResult.blockX, hitResult.blockY, hitResult.blockZ);
  if(blockId > 0 && blockId < Block::BLOCK_COUNT && Block::BLOCKS[blockId] != nullptr) {
@@ -1250,10 +1283,11 @@ void WorldRenderer::renderBlockOutline(net::minecraft::PlayerEntity* player,
  }
 }
 void WorldRenderer::cameraInterpPosition(double tickDelta, double& x, double& y, double& z) const {
- if(hasFrameCamera_) {
-  x = frameCamX_;
-  y = frameCamY_;
-  z = frameCamZ_;
+ const auto& frameCam = RenderCameraState::instance().frame();
+ if(frameCam.x != 0.0 || frameCam.y != 0.0 || frameCam.z != 0.0) {
+  x = frameCam.x;
+  y = frameCam.y;
+  z = frameCam.z;
   return;
  }
  if(cameraEntity_ == nullptr) {

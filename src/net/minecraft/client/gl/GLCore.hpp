@@ -1,5 +1,7 @@
 #pragma once
-// GLCore - VBO and multi-texture entry points for fixed-function rendering.
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
 #include <windows.h>
 #include <GL/gl.h>
 #include <cstdint>
@@ -21,10 +23,15 @@ using PFN_DeleteRenderbuffers = void(APIENTRY*)(int, const unsigned*);
 using PFN_RenderbufferStorage = void(APIENTRY*)(unsigned, unsigned, int, int);
 using PFN_FramebufferRenderbuffer = void(APIENTRY*)(unsigned, unsigned, unsigned, unsigned);
 using PFN_DrawBuffers = void(APIENTRY*)(int, const unsigned*);
+using PFN_ClearBufferfv = void(APIENTRY*)(unsigned, int, const float*);
+using PFN_ClearBufferuiv = void(APIENTRY*)(unsigned, int, const unsigned*);
+using PFN_ClearBufferiv = void(APIENTRY*)(unsigned, int, const int*);
+using PFN_PatchParameteri = void(APIENTRY*)(unsigned, int);
 using PFN_MultiDrawArrays = void(APIENTRY*)(unsigned, const int*, const int*, int);
 using PFN_CreateShader = unsigned int(APIENTRY*)(unsigned int);
 using PFN_ShaderSource = void(APIENTRY*)(unsigned int, int, const char* const*, const int*);
 using PFN_CompileShader = void(APIENTRY*)(unsigned int);
+using PFN_MaxShaderCompilerThreadsKHR = void(APIENTRY*)(unsigned int);
 using PFN_GetShaderiv = void(APIENTRY*)(unsigned int, unsigned int, int*);
 using PFN_GetShaderInfoLog = void(APIENTRY*)(unsigned int, int, int*, char*);
 using PFN_CreateProgram = unsigned int(APIENTRY*)();
@@ -32,11 +39,11 @@ using PFN_AttachShader = void(APIENTRY*)(unsigned int, unsigned int);
 using PFN_LinkProgram = void(APIENTRY*)(unsigned int);
 using PFN_GetProgramiv = void(APIENTRY*)(unsigned int, unsigned int, int*);
 using PFN_GetProgramInfoLog = void(APIENTRY*)(unsigned int, int, int*, char*);
+using PFN_GetActiveUniform = void(APIENTRY*)(unsigned int, unsigned int, int, int*, int*, unsigned int*, char*);
 using PFN_UseProgram = void(APIENTRY*)(unsigned int);
 using PFN_DeleteShader = void(APIENTRY*)(unsigned int);
 using PFN_DeleteProgram = void(APIENTRY*)(unsigned int);
 using PFN_GetUniformLocation = int(APIENTRY*)(unsigned int, const char*);
-using PFN_GetActiveUniform = void(APIENTRY*)(unsigned int, unsigned int, int, int*, int*, unsigned int*, char*);
 using PFN_Uniform1f = void(APIENTRY*)(int, float);
 using PFN_Uniform2f = void(APIENTRY*)(int, float, float);
 using PFN_Uniform3f = void(APIENTRY*)(int, float, float, float);
@@ -45,7 +52,7 @@ using PFN_Uniform1i = void(APIENTRY*)(int, int);
 using PFN_Uniform2i = void(APIENTRY*)(int, int, int);
 using PFN_Uniform3i = void(APIENTRY*)(int, int, int, int);
 using PFN_Uniform4i = void(APIENTRY*)(int, int, int, int, int);
-// Core-profile plumbing (loaded in Phase A; wired up in Phase B/C).
+using PFN_UniformMatrix3fv = void(APIENTRY*)(int, int, unsigned char, const float*);
 using PFN_UniformMatrix4fv = void(APIENTRY*)(int, int, unsigned char, const float*);
 using PFN_GetAttribLocation = int(APIENTRY*)(unsigned, const char*);
 using PFN_BindAttribLocation = void(APIENTRY*)(unsigned, unsigned, const char*);
@@ -57,10 +64,10 @@ using PFN_EnableVertexAttribArray = void(APIENTRY*)(unsigned);
 using PFN_DisableVertexAttribArray = void(APIENTRY*)(unsigned);
 using PFN_VertexAttrib4f = void(APIENTRY*)(unsigned, float, float, float, float);
 using PFN_BindBufferRange = void(APIENTRY*)(unsigned, unsigned, unsigned, intptr_t, intptr_t);
+using PFN_GetUniformBlockIndex = unsigned int(APIENTRY*)(unsigned int, const char*);
+using PFN_UniformBlockBinding = void(APIENTRY*)(unsigned int, unsigned int, unsigned int);
 using PFN_GenerateMipmap = void(APIENTRY*)(unsigned);
 using PFN_GetStringi = const unsigned char*(APIENTRY*)(unsigned, unsigned);
-using PFN_DebugProc = void(APIENTRY*)(unsigned, unsigned, unsigned, unsigned, int, const char*, const void*);
-using PFN_DebugMessageCallback = void(APIENTRY*)(PFN_DebugProc, const void*);
 using PFN_BlitFramebuffer = void(APIENTRY*)(int, int, int, int, int, int, int, int, unsigned, unsigned);
 using PFN_MapBufferRange = void*(APIENTRY*)(unsigned, intptr_t, intptr_t, unsigned);
 using PFN_UnmapBuffer = unsigned char(APIENTRY*)(unsigned);
@@ -73,6 +80,32 @@ using PFN_BeginQuery = void(APIENTRY*)(unsigned, unsigned);
 using PFN_EndQuery = void(APIENTRY*)(unsigned);
 using PFN_GetQueryObjectiv = void(APIENTRY*)(unsigned, unsigned, int*);
 using PFN_GetQueryObjectui64v = void(APIENTRY*)(unsigned, unsigned, std::uint64_t*);
+using PFN_DispatchCompute = void(APIENTRY*)(unsigned, unsigned, unsigned);
+using PFN_DispatchComputeIndirect = void(APIENTRY*)(intptr_t);
+using PFN_MemoryBarrier = void(APIENTRY*)(unsigned);
+using PFN_BindImageTexture =
+    void(APIENTRY*)(unsigned, unsigned, int, unsigned char, int, unsigned, unsigned);
+using PFN_TexStorage3D = void(APIENTRY*)(unsigned, int, unsigned, int, int, int);
+using PFN_ClearTexImage = void(APIENTRY*)(unsigned, int, unsigned, unsigned, const void*);
+using PFN_GetProgramResourceIndex = unsigned(APIENTRY*)(unsigned, unsigned, const char*);
+using PFN_GetProgramResourceName = void(APIENTRY*)(unsigned, unsigned, unsigned, int, int*, char*);
+using PFN_ShaderStorageBlockBinding = void(APIENTRY*)(unsigned, unsigned, unsigned);
+using PFN_BindBufferBase = void(APIENTRY*)(unsigned, unsigned, unsigned);
+using PFN_DrawArraysIndirect = void(APIENTRY*)(unsigned, const void*);
+using PFN_GenSamplers = void(APIENTRY*)(int, unsigned*);
+using PFN_DeleteSamplers = void(APIENTRY*)(int, const unsigned*);
+using PFN_BindSampler = void(APIENTRY*)(unsigned, unsigned);
+using PFN_SamplerParameteri = void(APIENTRY*)(unsigned, unsigned, int);
+using PFN_BlendFunci = void(APIENTRY*)(unsigned, unsigned, unsigned);
+using PFN_BlendFuncSeparate = void(APIENTRY*)(unsigned, unsigned, unsigned, unsigned);
+using PFN_BlendFuncSeparatei = void(APIENTRY*)(unsigned, unsigned, unsigned, unsigned, unsigned);
+using PFN_Enablei = void(APIENTRY*)(unsigned, unsigned);
+using PFN_Disablei = void(APIENTRY*)(unsigned, unsigned);
+enum class SwapPacing {
+ Unlimited = 0,
+ VSync = 1,
+ Adaptive = 2,
+};
 struct GLCore {
  static PFN_GenBuffers genBuffers;
  static PFN_BindBuffer bindBuffer;
@@ -91,10 +124,15 @@ struct GLCore {
  static PFN_RenderbufferStorage renderbufferStorage;
  static PFN_FramebufferRenderbuffer framebufferRenderbuffer;
  static PFN_DrawBuffers drawBuffers;
+ static PFN_ClearBufferfv clearBufferfv;
+ static PFN_ClearBufferuiv clearBufferuiv;
+ static PFN_ClearBufferiv clearBufferiv;
+ static PFN_PatchParameteri patchParameteri;
  static PFN_MultiDrawArrays multiDrawArrays;
  static PFN_CreateShader createShader;
  static PFN_ShaderSource shaderSource;
  static PFN_CompileShader compileShader;
+ static PFN_MaxShaderCompilerThreadsKHR maxShaderCompilerThreadsKHR;
  static PFN_GetShaderiv getShaderiv;
  static PFN_GetShaderInfoLog getShaderInfoLog;
  static PFN_CreateProgram createProgram;
@@ -102,11 +140,11 @@ struct GLCore {
  static PFN_LinkProgram linkProgram;
  static PFN_GetProgramiv getProgramiv;
  static PFN_GetProgramInfoLog getProgramInfoLog;
+ static PFN_GetActiveUniform getActiveUniform;
  static PFN_UseProgram useProgram;
  static PFN_DeleteShader deleteShader;
  static PFN_DeleteProgram deleteProgram;
  static PFN_GetUniformLocation getUniformLocation;
- static PFN_GetActiveUniform getActiveUniform;
  static PFN_Uniform1f uniform1f;
  static PFN_Uniform2f uniform2f;
  static PFN_Uniform3f uniform3f;
@@ -115,6 +153,7 @@ struct GLCore {
  static PFN_Uniform2i uniform2i;
  static PFN_Uniform3i uniform3i;
  static PFN_Uniform4i uniform4i;
+ static PFN_UniformMatrix3fv uniformMatrix3fv;
  static PFN_UniformMatrix4fv uniformMatrix4fv;
  static PFN_GetAttribLocation getAttribLocation;
  static PFN_BindAttribLocation bindAttribLocation;
@@ -126,9 +165,10 @@ struct GLCore {
  static PFN_DisableVertexAttribArray disableVertexAttribArray;
  static PFN_VertexAttrib4f vertexAttrib4f;
  static PFN_BindBufferRange bindBufferRange;
+ static PFN_GetUniformBlockIndex getUniformBlockIndex;
+ static PFN_UniformBlockBinding uniformBlockBinding;
  static PFN_GenerateMipmap generateMipmap;
  static PFN_GetStringi getStringi;
- static PFN_DebugMessageCallback debugMessageCallback;
  static PFN_BlitFramebuffer blitFramebuffer;
  static PFN_MapBufferRange mapBufferRange;
  static PFN_UnmapBuffer unmapBuffer;
@@ -141,13 +181,44 @@ struct GLCore {
  static PFN_EndQuery endQuery;
  static PFN_GetQueryObjectiv getQueryObjectiv;
  static PFN_GetQueryObjectui64v getQueryObjectui64v;
+ static PFN_DispatchCompute dispatchCompute;
+ static PFN_DispatchComputeIndirect dispatchComputeIndirect;
+ static PFN_MemoryBarrier memoryBarrier;
+ static PFN_BindImageTexture bindImageTexture;
+ static PFN_TexStorage3D texStorage3D;
+ static PFN_ClearTexImage clearTexImage;
+ static PFN_GetProgramResourceIndex getProgramResourceIndex;
+ static PFN_GetProgramResourceName getProgramResourceName;
+ static PFN_ShaderStorageBlockBinding shaderStorageBlockBinding;
+ static PFN_BindBufferBase bindBufferBase;
+ static PFN_DrawArraysIndirect drawArraysIndirect;
+ static PFN_GenSamplers genSamplers;
+ static PFN_DeleteSamplers deleteSamplers;
+ static PFN_BindSampler bindSampler;
+ static PFN_SamplerParameteri samplerParameteri;
+ static PFN_BlendFunci blendFunci;
+ static PFN_BlendFuncSeparate blendFuncSeparate;
+ static PFN_BlendFuncSeparatei blendFuncSeparatei;
+ static PFN_Enablei enablei;
+ static PFN_Disablei disablei;
  static void* activeTexture;
  static bool vboSupported;
  static bool framebufferSupported;
  static bool vaoSupported;
  static bool shaderSupported;
+ static bool uboSupported;
  static bool timerQuerySupported;
+ static bool computeSupported;
+ static bool ssboSupported;
+ static bool samplerObjectsSupported;
+ static bool perBufferBlendingSupported;
+ static bool parallelShaderCompileSupported;
+ static bool swapControlTearSupported;
  static void init();
  static void ensureLoaded();
+ // Driver swap-interval (0 / 1 / -1). Never applies interval >= 2.
+ static void setSwapPacing(SwapPacing pacing);
+ static void resetSwapPacingCache();
+ static bool present();
 };
 } // namespace net::minecraft::client::gl

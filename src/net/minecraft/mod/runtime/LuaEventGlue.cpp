@@ -9,6 +9,7 @@
 #ifdef MINECRAFT_NATIVE_EXPORTS
 #include "net/minecraft/client/Minecraft.hpp"
 #include "net/minecraft/client/render/item/ItemModelRenderer.hpp"
+#include "net/minecraft/registry/TextureRegistry.hpp"
 #include "net/minecraft/entity/Entity.hpp"
 #include "net/minecraft/entity/player/ClientPlayerEntity.hpp"
 #endif
@@ -24,7 +25,7 @@ void pushItemStackFields(lua_State* state, const ItemStack& stack) {
  setFields(state, "item_id", stack.itemId, "item_count", stack.count, "item_damage", stack.damage,
            "item_max_damage", stack.getMaxDamage());
 #ifdef MINECRAFT_NATIVE_EXPORTS
- const bool modTex = net::minecraft::client::render::item::ItemModelRenderer::usesModTexture(stack);
+ const bool modTex = net::minecraft::registry::TextureRegistry::isCustomTexture(stack.getTextureId());
  if(modTex) {
   const auto* spec = itemRegistrationSpecForId(stack.itemId);
   const std::string path = spec != nullptr ? spec->texturePath : std::string();
@@ -45,6 +46,7 @@ void setWorldContextFields(lua_State* state, const World* world) {
  setField(state, "world_name", world != nullptr ? world->name() : std::string());
  setField(state, "is_overworld", luaWorldIsOverworld(world));
  setField(state, "mod_generation", world != nullptr && world->isLuaModGenerationEnabled());
+ setField(state, "time_mode", world != nullptr ? world->clientTimeMode() : 0);
 }
 void setLuaExecutionFields(lua_State* state, const World* world) {
  const bool remote = world != nullptr ? world->isRemote() : isClientBuild();
@@ -103,7 +105,7 @@ void setClientTickFields(lua_State* state, const ClientTickEvent& event) {
 #ifdef MINECRAFT_NATIVE_EXPORTS
  if(event.client != nullptr && event.client->camera != nullptr) {
   const entity::Entity* camera = event.client->camera;
-   cameraY = camera->y;
+  cameraY = camera->y;
  }
  if(event.player != nullptr) {
   playerY = event.player->y;

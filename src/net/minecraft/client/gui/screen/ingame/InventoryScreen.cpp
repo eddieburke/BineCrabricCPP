@@ -5,7 +5,10 @@
 #include "net/minecraft/client/gl/GlConstants.hpp"
 #include "net/minecraft/client/gui/layout/ContainerLayout.hpp"
 #include "net/minecraft/client/input/InputSystem.hpp"
-#include "net/minecraft/client/render/RenderSystem.hpp"
+#include "net/minecraft/client/render/GameRenderer.hpp"
+#include "net/minecraft/client/render/shaderpack/ShaderPackManager.hpp"
+#include "net/minecraft/client/render/RenderCore.hpp"
+#include "net/minecraft/client/render/Tessellator.hpp"
 #include "net/minecraft/client/render/entity/EntityRenderDispatcher.hpp"
 #include "net/minecraft/client/texture/TextureManager.hpp"
 #include "net/minecraft/client/util/UiScale.hpp"
@@ -13,48 +16,9 @@
 #include "net/minecraft/mod/ScreenUi.hpp"
 #include "net/minecraft/mod/runtime/LuaDirectHooks.hpp"
 namespace net::minecraft::client::gui::screen::ingame {
+namespace core = net::minecraft::client::render::core;
 namespace {
-using net::minecraft::client::render::RenderSystem;
 constexpr int kSidePanelGap = 4;
-class MatrixScope {
- public:
- MatrixScope() {
-  RenderSystem::pushMatrix();
- }
- ~MatrixScope() {
-  RenderSystem::popMatrix();
- }
- MatrixScope(const MatrixScope&) = delete;
- MatrixScope& operator=(const MatrixScope&) = delete;
-};
-class ScreenFogOffScope {
- public:
- ScreenFogOffScope() : saved_(RenderSystem::getShadow()) {
- }
- ~ScreenFogOffScope() {
-  RenderSystem::setShadow(saved_);
- }
- ScreenFogOffScope(const ScreenFogOffScope&) = delete;
- ScreenFogOffScope& operator=(const ScreenFogOffScope&) = delete;
-
- private:
- RenderSystem::StateShadow saved_;
-};
-class PlayerPreviewScope {
- public:
- PlayerPreviewScope() : saved_(RenderSystem::getShadow()) {
-  RenderSystem::enableDepthTest();
-  RenderSystem::depthMask(true);
- }
- ~PlayerPreviewScope() {
-  RenderSystem::setShadow(saved_);
- }
- PlayerPreviewScope(const PlayerPreviewScope&) = delete;
- PlayerPreviewScope& operator=(const PlayerPreviewScope&) = delete;
-
- private:
- RenderSystem::StateShadow saved_;
-};
 } // namespace
 void InventoryScreen::init() {
  HandledScreen::init();
@@ -75,9 +39,8 @@ void InventoryScreen::publishSidePanelEvent(mod::ScreenRegionEvent& event) const
  event.width = available > 0 ? available : 0;
  event.height = backgroundHeight;
  if(event.phase == mod::ScreenRegionPhase::Render) {
-  const ScreenFogOffScope fogCaps;
-  RenderSystem::color4f(1.0f, 1.0f, 1.0f, 1.0f);
-  render::RenderSystem::disableLighting();
+  core::setConstColor(1.0f, 1.0f, 1.0f, 1.0f);
+  core::setLightingEnabled(false);
   net::minecraft::mod::runtime::luaHookScreenRegion(event);
   return;
  }
@@ -160,27 +123,35 @@ void InventoryScreen::drawBackground(float tickDelta) {
  if(minecraft()->player == nullptr) {
   return;
  }
- const PlayerPreviewScope previewCaps;
- MatrixScope previewMatrix;
- RenderSystem::translate(static_cast<float>(originX + 51), static_cast<float>(originY + 75), 50.0f);
+ const core::DepthScope previewCaps(true, true);
+ core::setEntityColor(0.0f, 0.0f, 0.0f, 0.0f);
+ core::setConstColor(1.0f, 1.0f, 1.0f, 1.0f);
+ if(minecraft()->gameRenderer != nullptr) {
+  if(render::shaderpack::ShaderPackManager* shaderPacks = minecraft()->gameRenderer->shaderPacks();
+     shaderPacks != nullptr) {
+   shaderPacks->refreshLightmap(minecraft()->world);
+  }
+ }
+ core::ScopedModelView previewMatrix;
+ core::modelViewStack().translate(static_cast<float>(originX + 51), static_cast<float>(originY + 75), 50.0f);
  constexpr float scale = 30.0f;
- RenderSystem::scale(-scale, scale, scale);
- RenderSystem::rotate(180.0f, 0.0f, 0.0f, 1.0f);
+ core::modelViewStack().scale(-scale, scale, scale);
+ core::modelViewStack().rotate(180.0f, 0.0f, 0.0f, 1.0f);
  entity::player::ClientPlayerEntity& player = *minecraft()->player;
  const float savedBodyYaw = player.bodyYaw;
  const float savedYaw = player.yaw;
  const float savedPitch = player.pitch;
  const float deltaX = static_cast<float>(originX + 51) - mouseX_;
  const float deltaY = static_cast<float>(originY + 75 - 50) - mouseY_;
- RenderSystem::rotate(135.0f, 0.0f, 1.0f, 0.0f);
- render::RenderSystem::enableLighting();
- RenderSystem::rotate(-135.0f, 0.0f, 1.0f, 0.0f);
- RenderSystem::rotate(-static_cast<float>(std::atan(static_cast<double>(deltaY) / 40.0)) * 20.0f, 1.0f, 0.0f, 0.0f);
+ core::modelViewStack().rotate(135.0f, 0.0f, 1.0f, 0.0f);
+ core::setLightingEnabled(true);
+ core::modelViewStack().rotate(-135.0f, 0.0f, 1.0f, 0.0f);
+ core::modelViewStack().rotate(-static_cast<float>(std::atan(static_cast<double>(deltaY) / 40.0)) * 20.0f, 1.0f, 0.0f, 0.0f);
  player.bodyYaw = static_cast<float>(std::atan(static_cast<double>(deltaX) / 40.0)) * 20.0f;
  player.yaw = static_cast<float>(std::atan(static_cast<double>(deltaX) / 40.0)) * 40.0f;
  player.pitch = -static_cast<float>(std::atan(static_cast<double>(deltaY) / 40.0)) * 20.0f;
  player.minBrightness = 1.0f;
- RenderSystem::translate(0.0f, player.standingEyeHeight, 0.0f);
+ core::modelViewStack().translate(0.0f, player.standingEyeHeight, 0.0f);
  auto& dispatcher = render::entity::EntityRenderDispatcher::instance();
  dispatcher.init(minecraft()->world,
                  &minecraft()->textureManager,
@@ -189,11 +160,13 @@ void InventoryScreen::drawBackground(float tickDelta) {
                  &minecraft()->options,
                  tickDelta);
  dispatcher.yaw_ = 180.0f;
- dispatcher.render(player, 0.0, 0.0, 0.0, 0.0f, 1.0f);
+ // Fullbright lightmap: 8-arg render skips the world-path light(15,15) setup.
+ render::Tessellator::INSTANCE.light(15, 15);
+ dispatcher.render(player, 0.0, 0.0, 0.0, 0.0f, 1.0f, core::modelViewStack(), core::currentProjection());
  player.minBrightness = 0.0f;
  player.bodyYaw = savedBodyYaw;
  player.yaw = savedYaw;
  player.pitch = savedPitch;
- render::RenderSystem::disableLighting();
+ core::setLightingEnabled(false);
 }
 } // namespace net::minecraft::client::gui::screen::ingame

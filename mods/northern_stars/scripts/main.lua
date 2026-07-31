@@ -1,8 +1,3 @@
--- ================================================================
--- MOD: northern_stars
--- Standardized structure with separated config
--- ================================================================
-
 local config = require("config")
 
 local catalog = nil

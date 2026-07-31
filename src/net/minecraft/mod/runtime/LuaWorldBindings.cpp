@@ -322,12 +322,19 @@ int luaWorldSetTime(lua_State* state) {
   return 1;
  }
  World* world = luaActiveWorld();
- if(world != nullptr && !world->isRemote()) {
-  world->synchronizeTimeAndUpdates(static_cast<std::uint64_t>(tick));
-  api.pushboolean(state, 1);
+ if(world == nullptr) {
+  api.pushboolean(state, 0);
   return 1;
  }
- api.pushboolean(state, 0);
+ // Client worlds must accept solar sync (realtime_sky); rendering reads the
+ // client clock, not the integrated server's. Server worlds still shift
+ // scheduled ticks when the phase jumps.
+ if(world->isRemote()) {
+  world->setTime(static_cast<std::uint64_t>(tick));
+ } else {
+  world->synchronizeTimeAndUpdates(static_cast<std::uint64_t>(tick));
+ }
+ api.pushboolean(state, 1);
  return 1;
 }
 int luaParticlesSpawn(lua_State* state) {
@@ -383,10 +390,10 @@ void installWorldApi(lua_State* state, ModHost::LoadedLuaMod& mod) {
  (void)mod;
  pushFunctionTable(state,
                    {
-                        {"block_id", luaWorldBlockId},
-                        {"get_block", luaWorldGetBlock},
-                        {"get_block_meta", luaWorldGetBlockMeta},
-                        {"random", luaWorldRandom},
+                       {"block_id", luaWorldBlockId},
+                       {"get_block", luaWorldGetBlock},
+                       {"get_block_meta", luaWorldGetBlockMeta},
+                       {"random", luaWorldRandom},
                        {"is_night", luaWorldIsNight},
                        {"get_time", luaWorldGetTime},
                        {"get_top_y", luaWorldTopSolidY},

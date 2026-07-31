@@ -1,10 +1,6 @@
--- ============================================================================
--- MOD: item_drop_physics
---
 -- Hides vanilla dropped-item rendering, simulates the drops with the mod's own
 -- rigid-body engine, and draws them tumbling. Material response is derived from
--- physics/materials.lua; there is no per-item tuning table.
--- ============================================================================
+-- scripts/physics/materials.lua; there is no per-item tuning table.
 
 local engine = require("scripts.physics.engine")
 local renderer = require("scripts.rendering.item_renderer")
@@ -18,10 +14,6 @@ local REANCHOR_DISTANCE = 1.5
 local sims = {}
 -- Bodies seen this tick, used to retire drops that despawned or were picked up.
 local seen = {}
-
---------------------------------------------------------------------------------
--- SIMULATION
---------------------------------------------------------------------------------
 
 local function sync_sims(items)
   for id in pairs(seen) do seen[id] = nil end
@@ -61,10 +53,6 @@ minecraft.on("client_tick", { before = false, after_world = true, paused = false
   sync_sims(items)
   engine.step(sims, TICK_SECONDS)
 end)
-
---------------------------------------------------------------------------------
--- RENDERING
---------------------------------------------------------------------------------
 
 minecraft.on("pre_entity_render", { entity_type = "Item" }, function(event)
   event.canceled = true

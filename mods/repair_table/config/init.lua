@@ -1,8 +1,3 @@
--- ================================================================
--- CONFIG: repair_table
--- Centralized configuration with validation and persistence
--- ================================================================
-
 local settings = require("lib.settings")
 
 local config = settings.define("repair_table", {

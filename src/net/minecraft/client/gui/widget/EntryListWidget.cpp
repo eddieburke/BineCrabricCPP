@@ -3,7 +3,7 @@
 #include "net/minecraft/client/Minecraft.hpp"
 #include "net/minecraft/client/gl/GlConstants.hpp"
 #include "net/minecraft/client/gui/Draw2D.hpp"
-#include "net/minecraft/client/render/RenderSystem.hpp"
+#include "net/minecraft/client/render/RenderCore.hpp"
 #include "net/minecraft/client/render/RenderType.hpp"
 #include "net/minecraft/client/render/Tessellator.hpp"
 #include "net/minecraft/client/texture/TextureManager.hpp"
@@ -11,54 +11,21 @@
 #include "net/minecraft/client/input/InputSystem.hpp"
 #endif
 namespace net::minecraft::client::gui::widget {
+namespace core = net::minecraft::client::render::core;
 namespace {
-using net::minecraft::client::render::RenderSystem;
 class ListDrawScope {
  public:
- ListDrawScope() : saved_(RenderSystem::getShadow()) {
-  RenderSystem::disableDepthTest();
- }
- ~ListDrawScope() {
-  RenderSystem::setShadow(saved_);
+ ListDrawScope() : depth_(false, core::depthWriteEnabled()) {
  }
  ListDrawScope(const ListDrawScope&) = delete;
  ListDrawScope& operator=(const ListDrawScope&) = delete;
 
  private:
- RenderSystem::StateShadow saved_;
-};
-class TextureOffScope {
- public:
- TextureOffScope() : saved_(RenderSystem::getShadow()) {
-  RenderSystem::disableTexture();
- }
- ~TextureOffScope() {
-  RenderSystem::setShadow(saved_);
- }
- TextureOffScope(const TextureOffScope&) = delete;
- TextureOffScope& operator=(const TextureOffScope&) = delete;
-
- private:
- RenderSystem::StateShadow saved_;
-};
-class ListScrollbarScope {
- public:
- ListScrollbarScope() : saved_(RenderSystem::getShadow()) {
-  RenderSystem::blendAlpha();
- }
- ~ListScrollbarScope() {
-  RenderSystem::setShadow(saved_);
- }
- ListScrollbarScope(const ListScrollbarScope&) = delete;
- ListScrollbarScope& operator=(const ListScrollbarScope&) = delete;
-
- private:
- RenderSystem::StateShadow saved_;
+ core::DepthScope depth_;
 };
 void bindAtlas(int textureId) {
- RenderSystem::enableTexture();
- RenderSystem::bindTexture(textureId);
- RenderSystem::color4f(1.0f, 1.0f, 1.0f, 1.0f);
+ core::bindTexture(textureId);
+ render::core::setConstColor(1.0f, 1.0f, 1.0f, 1.0f);
 }
 } // namespace
 void EntryListWidget::setViewport(int width, int height, int top, int bottom) {
@@ -229,10 +196,9 @@ void EntryListWidget::render(int mouseX, int mouseY, float tickDelta) {
   renderHeader(entryX, entryY, tessellator);
  }
  if(renderSelectionHighlight_) {
-  RenderSystem::color4f(1.0f, 1.0f, 1.0f, 1.0f);
+  render::core::setConstColor(1.0f, 1.0f, 1.0f, 1.0f);
   {
    const render::RenderPassScope passScope(render::RenderType::gui());
-   const TextureOffScope highlightCaps;
    tessellator.startQuads();
    for(int index = 0; index < entryCount; ++index) {
     if(!isSelectedEntry(index)) {
@@ -260,7 +226,7 @@ void EntryListWidget::render(int mouseX, int mouseY, float tickDelta) {
   renderEntry(index, entryX, rowY, rowHeight, tessellator);
  }
  {
-  const ListScrollbarScope scrollbarCaps;
+  const core::BlendScope scrollbarCaps(true);
   constexpr int fadeHeight = 4;
   {
    const render::RenderPassScope passScope(render::RenderType::guiTextured());
@@ -272,7 +238,6 @@ void EntryListWidget::render(int mouseX, int mouseY, float tickDelta) {
   }
   {
    const render::RenderPassScope passScope(render::RenderType::gui());
-   const TextureOffScope scrollbarFillCaps;
    tessellator.startQuads();
    draw::appendVerticalGradientQuad(tessellator, left_, top_, right_, top_ + fadeHeight, 0, 255, 0, 0);
    draw::appendVerticalGradientQuad(tessellator, left_, bottom_ - fadeHeight, right_, bottom_, 0, 0, 0, 255);

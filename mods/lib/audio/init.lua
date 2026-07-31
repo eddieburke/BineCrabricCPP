@@ -1,20 +1,9 @@
--- Audio Management System
--- Centralized audio handling with pooling and volume control
-
 local audio = {}
-
---------------------------------------------------------------------------------
--- CONSTANTS
---------------------------------------------------------------------------------
 
 local MAX_SIMULTANEOUS_SOUNDS = 32
 local DEFAULT_MASTER_VOLUME = 0.8
 local DEFAULT_SFX_VOLUME = 0.7
 local DEFAULT_MUSIC_VOLUME = 0.5
-
---------------------------------------------------------------------------------
--- AUDIO SOURCE POOL
---------------------------------------------------------------------------------
 
 local source_pool = {
     available = {},
@@ -67,10 +56,6 @@ function audio.release_source(source_wrapper)
     end
 end
 
---------------------------------------------------------------------------------
--- VOLUME CONTROL
---------------------------------------------------------------------------------
-
 local volumes = {
     master = DEFAULT_MASTER_VOLUME,
     sfx = DEFAULT_SFX_VOLUME,
@@ -103,10 +88,6 @@ function audio.update_all_volumes()
         end
     end
 end
-
---------------------------------------------------------------------------------
--- SOUND LOADING AND PLAYBACK
---------------------------------------------------------------------------------
 
 local loaded_sounds = {}
 
@@ -213,10 +194,6 @@ function audio.stop_all_sounds()
     end
 end
 
---------------------------------------------------------------------------------
--- MUSIC CONTROL
---------------------------------------------------------------------------------
-
 local current_music = nil
 local music_playlist = {}
 local playlist_index = 1
@@ -278,10 +255,6 @@ function audio.next_track()
     
     audio.play_music(music_playlist[playlist_index])
 end
-
---------------------------------------------------------------------------------
--- UPDATE LOOP
---------------------------------------------------------------------------------
 
 function audio.update(dt)
     -- Clean up finished sounds

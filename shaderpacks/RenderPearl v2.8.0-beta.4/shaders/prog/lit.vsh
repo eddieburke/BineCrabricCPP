@@ -1,0 +1,270 @@
+#include "/prelude/core.glsl"
+
+#ifdef EMISSIVE_REDSTONE_BLOCK
+#endif
+#ifdef EMISSIVE_EMERALD_BLOCK
+#endif
+#ifdef EMISSIVE_LAPIS_BLOCK
+#endif
+#ifdef SM
+#endif
+
+out gl_PerVertex { vec4 gl_Position; };
+
+#include "/lib/mmul.glsl"
+#include "/lib/luminance.glsl"
+#include "/lib/srgb.glsl"
+#include "/lib/norm_light_level.glsl"
+#include "/lib/mv_inv.glsl"
+
+// TODO: Handle these better:
+in vec2 mc_midTexCoord;
+uniform mat4 gbufferProjectionInverse;
+uniform sampler2D gtexture;
+
+#ifdef SHADOWS_ENABLED
+	uniform mat4 shadowModelView;
+
+	#include "/lib/sm/distort.glsl"
+#endif
+
+#ifdef HAND
+	uniform int handLightPackedLR;
+
+	#if HAND_LIGHT
+		#include "/buf/hlq.glsl"
+	#endif
+#endif
+
+#ifdef TERRAIN
+	uniform bool LLCollect;
+	uniform vec3 cameraPosition, cameraPositionFract;
+
+	in vec2 mc_Entity;
+	in vec4 at_midBlock;
+
+	#if defined TRANSLUCENT || (WAVES != 0 && defined SOLID_TERRAIN)
+		#include "/lib/waves/offset.glsl"
+	#endif
+
+	#include "/lib/push_to_llq.glsl"
+#endif
+
+#ifdef ENTITY_COLOR
+	uniform vec4 entityColor;
+#endif
+
+#ifndef NO_NORMAL
+	in vec4 at_tangent;
+
+	#include "/lib/octa_enc.glsl"
+#endif
+
+out
+#include "/lib/v_data_lit.glsl"
+
+void main() {
+	vec3 model = vec3(gl_Vertex);
+
+	#ifdef TERRAIN
+		#if defined TRANSLUCENT || (WAVES != 0 && defined SOLID_TERRAIN)
+			immut bool fluid = mc_Entity.y == 1.0;
+			if (fluid) { model.y += wave(model.xz); }
+		#endif
+	#endif
+
+	immut vec3 view = rot_trans_mmul(mat4(gl_ModelViewMatrix), model);
+	immut vec4 clip = proj_mmul(mat4(gl_ProjectionMatrix), view);
+	gl_Position = clip;
+
+	v.coord = rot_trans_mmul(mat4(gl_TextureMatrix[0]), vec2(gl_MultiTexCoord0));
+
+	immut vec3 pe = MV_INV * view;
+	immut f16vec3 f16_pe = f16vec3(pe);
+	immut f16vec3 abs_pe = abs(f16_pe);
+	immut float16_t chebyshev_dist = max3(abs_pe.x, abs_pe.y, abs_pe.z);
+
+	#ifdef NO_NORMAL
+		immut f16vec3 w_normal = f16vec3(mvInv2); // == MV_INV * vec3(0.0, 0.0, 1.0)
+	#else
+		immut mat3 normal_model_view_inverse = MV_INV * mat3(gl_NormalMatrix);
+		immut f16vec3 w_normal = f16vec3(normal_model_view_inverse * normalize(vec3(gl_Normal)));
+		immut f16vec3 w_tangent = f16vec3(normal_model_view_inverse * normalize(at_tangent.xyz));
+
+		v.snorm4x8_octa_tangent_normal = packSnorm4x8(f16vec4(octa_encode(w_tangent), octa_encode(w_normal)));
+
+		#if NORMALS != 2 && !(NORMALS == 1 && defined MC_NORMAL_MAP)
+			immut u16vec2 texels = u16vec2(fma(abs(v.coord - mc_midTexCoord), vec2(2 * textureSize(gtexture, 0)), vec2(0.5)));
+			v.uint2x16_face_tex_size = packUint2x16(texels);
+			v.unorm2x16_mid_coord = packUnorm2x16(mc_midTexCoord);
+		#endif
+
+		// Pack handedness.
+		v.misc_packed = bitfieldInsert(
+			v.misc_packed,
+			floatBitsToUint(at_tangent.w) >> 31u, // The sign bit.
+			4, 1
+		);
+	#endif
+
+	f16vec4 color_alpha_or_ao = f16vec4(gl_Color);
+	#ifdef ENTITY_COLOR
+		immut f16vec4 entity_color = f16vec4(entityColor);
+		color_alpha_or_ao.rgb = mix(color_alpha_or_ao.rgb, entity_color.rgb, entity_color.a);
+	#endif
+	immut f16vec3 avg_col = color_alpha_or_ao.rgb * f16vec3(textureLod(gtexture, mc_midTexCoord, 4.0).rgb);
+	immut float16_t avg_luma = luminance(avg_col);
+	v.misc_packed = packFloat2x16(f16vec2(float16_t(0.0), avg_luma));
+
+	#if defined TERRAIN && !defined TRANSLUCENT
+		immut bool is_metal = abs(mc_Entity.x) < 0.1; // `mc_Entity.x == 0.0`.
+		if (is_metal) {
+			v.misc_packed |= 0x80000000u; // Pack is_water_or_metal (set last bit to 1).
+		}
+	#endif
+
+	#ifdef TERRAIN
+		v.ao = saturate(fma(color_alpha_or_ao.a, float16_t(1.0 / (1.0 - min_vanilla_ao)), float16_t(-min_vanilla_ao))); // Scale AO range to full [0, 1].
+		v.tint = vec3(color_alpha_or_ao.rgb);
+
+		immut float16_t emission = max(float16_t(mc_Entity.x), float16_t(at_midBlock.w));
+		v.misc_packed |= uint(emission + float16_t(0.5));
+		// float16_t norm_emission = min(emission / float16_t(15.0), float16_t(1.0));
+		// v.light.x = float(min(fma(float16_t(norm_emission), float16_t(0.3), max(float16_t(v.light.x), norm_emission)), float16_t(1.0)));
+
+		float16_t alpha = float16_t(
+			#ifdef IRIS_FEATURE_FADE_VARIABLE
+				mc_chunkFade // `mc_chunkFade` is patched in by Iris.
+			#else
+				1.0
+			#endif
+		);
+
+		#ifdef TRANSLUCENT
+			if (fluid) {
+				alpha *= float16_t(WATER_OPACITY * 0.01);
+				v.misc_packed |= 0x80000000u; // Pack is_water_or_metal (set last bit to 1).
+			}
+		#endif
+
+		if (LLCollect) {
+			immut f16vec3 clamped_pe = f16vec3(MV_INV * proj_inv(gbufferProjectionInverse,
+				clamp(clip.xyz / clip.w,
+				vec3(-1.0, -1.0, 0.0),
+				vec3(1.0, 1.0, 1.0))
+			)); // Player eye position clamped to frustum.
+
+			#if !(WAVES != 0 && defined SOLID_TERRAIN)
+				immut bool fluid = mc_Entity.y == 1.0;
+			#endif
+
+			// Add '0.5' to account for the distance from the light source to the edge of the block it belongs to, where the falloff actually starts in vanilla lighting.
+			immut float16_t offset_intensity = emission + float16_t(0.5);
+
+			// Distance between light and closest point in frustum.
+			// In world-aligned space (player-eye) we can use Manhattan distance.
+			immut float16_t light_mhtn_dist_from_bb = dot(abs(f16_pe - clamped_pe), f16vec3(1.0));
+
+			if (
+				// Run once per face.
+				(gl_VertexID & 3) == 1 && // gl_VertexID % 4 == 1
+				// Cull too weak or non-lights.
+				emission >= float16_t(MIN_LL_INTENSITY) &&
+				// Cull vertices outside LL_DIST using Chebyshev distance.
+				chebyshev_dist < float16_t(LL_DIST) &&
+				// Cull lights too far outside frustum, using the same method as in per-work group culling when sampling.
+				light_mhtn_dist_from_bb <= offset_intensity
+			) {
+				immut uvec3 seed = uvec3(ivec3((0.5 + cameraPosition) + pe));
+
+				// LOD culling
+				// Increase times two each LOD.
+				// The fact that the values resulting from higher LODs are divisible by the lower ones means that no lights will appear only further away.
+				if (uint8_t(pcg(seed.x + pcg(seed.y + pcg(seed.z)))) % (uint8_t(1u) << uint8_t(min(float16_t(7.0), fma(
+					(fluid ? float16_t(LAVA_LOD_BIAS) : float16_t(0.0)) + length(clamped_pe) / float16_t(LL_DIST),
+					float16_t(LOD_FALLOFF),
+					float16_t(0.5)
+				)))) == uint8_t(0u)) {
+					immut vec3 pf = pe + mvInv3;
+					immut uvec3 offset_floor_pf = clamp(uvec3(fma(at_midBlock.xyz, vec3(1.0/64.0), 256.0 + cameraPositionFract + pf)), 0u, 511u);
+
+					push_to_llq(offset_floor_pf, avg_col, v.misc_packed, fluid);
+				}
+			}
+		}
+	#else
+		#ifdef TRANSLUCENT
+			immut float16_t alpha = color_alpha_or_ao.a;
+		#endif
+
+		v.unorm4x8_tint_zero = packUnorm4x8(f16vec4(color_alpha_or_ao.rgb, 0.0));
+
+		#ifdef HAND
+			immut bool is_right = view.x > 0.0;
+			immut u16vec2 hand_light_lr = unpackUint2x16(uint(handLightPackedLR));
+			immut uint16_t this_hand_light = is_right ? hand_light_lr.y : hand_light_lr.x;
+			v.misc_packed |= uint(this_hand_light);
+
+			#if HAND_LIGHT
+				if (this_hand_light != uint16_t(0u) && abs(view.x) > 0.3) { // Use a margin around the center to not register e.g. a swinging sword as being on the opposite side.
+					// Scale and round to fit packing.
+					immut u16vec3 scaled_color = u16vec3(fma(
+						linear(color_alpha_or_ao.rgb * f16vec3(textureLod(gtexture, mix(v.coord, mc_midTexCoord, 0.5), 3.0).rgb)),
+						f16vec3(hand_light_pack_scale),
+						f16vec3(0.5)
+					));
+
+					uint rg = packUint2x16(scaled_color.rg);
+					uint b_count = packUint2x16(u16vec2(scaled_color.g, uint16_t(1u))); // The second component is just 1, to count the number of times we're adding to the sum.
+
+					if (is_right) {
+						#ifdef SUBGROUP_ENABLED
+							rg = subgroupAdd(rg);
+							b_count = subgroupAdd(b_count);
+
+							if (subgroupElect())
+						#endif
+						{
+							atomicAdd(hlq.uint2x16_right.x, rg);
+							atomicAdd(hlq.uint2x16_right.y, b_count);
+						}
+					} else {
+						#ifdef SUBGROUP_ENABLED
+							rg = subgroupAdd(rg);
+							b_count = subgroupAdd(b_count);
+
+							if (subgroupElect())
+						#endif
+						{
+							atomicAdd(hlq.uint2x16_left.x, rg);
+							atomicAdd(hlq.uint2x16_left.y, b_count);
+						}
+					}
+				}
+			#endif
+		#endif
+	#endif
+
+	#ifndef CLRWL
+		#if defined TERRAIN || defined TRANSLUCENT
+			v.misc_packed = bitfieldInsert(
+				v.misc_packed,
+				uint(min(uint16_t(fma(alpha, float16_t(2047.0), float16_t(0.5))), uint16_t(2047u))), // Scale and round from (0.0, 1.0] to [0, 2047].
+				5, 11
+			); // Pack alpha.
+		#endif
+
+		#ifdef TERRAIN
+			v.light = vec2(norm_light_level());
+		#else
+			v.float2x16_light = packFloat2x16(norm_light_level());
+		#endif
+	#endif
+
+	#ifdef SHADOWS_ENABLED
+		if (chebyshev_dist < float16_t(shadowDistance * shadowDistanceRenderMul)) {
+			immut vec2 s_ndc = shadow_proj_scale.x * (mat3x2(shadowModelView) * (pe + mvInv3));
+			v.s_distortion = distortion(s_ndc);
+		}
+	#endif
+}

@@ -28,6 +28,33 @@ TEST(UnifiedLightRegistry, BlockLightColorPacksAndUnpacks) {
  EXPECT_FLOAT_EQ(dg, 1.0f);
  EXPECT_FLOAT_EQ(db, 1.0f);
 }
+TEST(UnifiedLightRegistry, BlockEmissionRGBIsColorTimesLevel) {
+ world::light::UnifiedLightRegistry::setBlockLightColor(64, 1.0f, 0.5f, 0.0f);
+ world::light::UnifiedLightRegistry::setBlockEmission(64, 15);
+ float r = -1.0f;
+ float g = -1.0f;
+ float b = -1.0f;
+ world::light::UnifiedLightRegistry::blockEmissionRGB(64, r, g, b);
+ EXPECT_NEAR(r, 1.0f, 1.0f / 255.0f);
+ EXPECT_NEAR(g, 0.5f, 1.0f / 255.0f);
+ EXPECT_NEAR(b, 0.0f, 1.0f / 255.0f);
+ // Level scales the emission.
+ world::light::UnifiedLightRegistry::setBlockEmission(64, 3);
+ world::light::UnifiedLightRegistry::blockEmissionRGB(64, r, g, b);
+ EXPECT_NEAR(r, 3.0f / 15.0f, 1e-4f);
+ EXPECT_NEAR(g, 0.5f * 3.0f / 15.0f, 1e-3f);
+ // Zero emission → zero regardless of color.
+ world::light::UnifiedLightRegistry::setBlockEmission(64, 0);
+ world::light::UnifiedLightRegistry::blockEmissionRGB(64, r, g, b);
+ EXPECT_FLOAT_EQ(r, 0.0f);
+ EXPECT_FLOAT_EQ(g, 0.0f);
+ EXPECT_FLOAT_EQ(b, 0.0f);
+ // Out-of-range → zero.
+ world::light::UnifiedLightRegistry::blockEmissionRGB(-1, r, g, b);
+ EXPECT_FLOAT_EQ(r, 0.0f);
+ world::light::UnifiedLightRegistry::blockEmissionRGB(999, r, g, b);
+ EXPECT_FLOAT_EQ(r, 0.0f);
+}
 TEST(UnifiedLightRegistry, SunIsPerInstance) {
  world::light::UnifiedLightRegistry registry;
  world::light::SunLight sun;

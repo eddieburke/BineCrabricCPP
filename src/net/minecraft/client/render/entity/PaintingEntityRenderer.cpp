@@ -1,4 +1,4 @@
-#include "net/minecraft/client/render/RenderSystem.hpp"
+#include "net/minecraft/client/render/RenderCore.hpp"
 #include "net/minecraft/client/render/RenderType.hpp"
 #include "net/minecraft/client/render/Tessellator.hpp"
 #include "net/minecraft/client/render/entity/EntityRenderDispatcher.hpp"
@@ -7,25 +7,29 @@
 #include "net/minecraft/util/math/MathHelper.hpp"
 namespace net::minecraft::client::render::entity {
 void PaintingEntityRenderer::render(
-    const net::minecraft::Entity& entity, double x, double y, double z, float yaw, float tickDelta) {
+    const net::minecraft::Entity& entity, double x, double y, double z, float yaw, float tickDelta,
+    net::minecraft::util::math::MatrixStack& matrices, const net::minecraft::util::math::Matrix4f& projection) {
  (void)tickDelta;
  const auto* painting = dynamic_cast<const ::net::minecraft::entity::decoration::painting::PaintingEntity*>(&entity);
  if(painting == nullptr) {
   return;
  }
+ beginDraw(matrices, projection);
+ const RenderPassScope passScope(RenderType::entityCutout());
  random_.seed(187ULL);
- RenderSystem::pushMatrix();
- RenderSystem::translate(static_cast<float>(x), static_cast<float>(y), static_cast<float>(z));
- RenderSystem::rotate(yaw, 0.0f, 1.0f, 0.0f);
+ matrices.push();
+ matrices.translate(static_cast<float>(x), static_cast<float>(y), static_cast<float>(z));
+ matrices.rotate(yaw, 0.0f, 1.0f, 0.0f);
  bindTexture("/art/kz.png");
  constexpr float scale = 0.0625f;
- RenderSystem::scale(scale, scale, scale);
+ matrices.scale(scale, scale, scale);
  renderPainting(*painting,
                 painting->variant.width,
                 painting->variant.height,
                 painting->variant.textureOffsetX,
                 painting->variant.textureOffsetY);
- RenderSystem::popMatrix();
+ matrices.pop();
+ endDraw();
 }
 void PaintingEntityRenderer::renderPainting(
     const ::net::minecraft::entity::decoration::painting::PaintingEntity& painting,
@@ -101,11 +105,13 @@ void PaintingEntityRenderer::applyBrightness(
  if(painting.facing == 3) {
   bz = MathHelper::floor(painting.z + static_cast<double>(u / 16.0f));
  }
+ // MCP RenderPainting.func_159_a: glColor3f(world.getLightBrightness(i,j,k)).
  float brightness = 0.0f;
  if(dispatcher != nullptr && dispatcher->world() != nullptr) {
   brightness = dispatcher->world()->getLightBrightness(bx, by, bz);
  }
- RenderSystem::color3f(brightness, brightness, brightness);
+ Tessellator::INSTANCE.light(15, 15);
+ render::core::setConstColor(brightness, brightness, brightness, 1.0f);
 }
 } // namespace net::minecraft::client::render::entity
 #include "net/minecraft/client/entity/EntityClientRendererRegistration.hpp"

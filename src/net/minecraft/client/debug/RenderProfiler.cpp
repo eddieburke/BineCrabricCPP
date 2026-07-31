@@ -30,7 +30,7 @@ const char* RenderProfiler::stageName(RenderStage stage) {
  case RenderStage::Cull:
   return "cull";
  case RenderStage::Compile:
-  return "compile";
+  return "chunks";
  case RenderStage::SolidTerrain:
   return "solid";
  case RenderStage::Entities:
@@ -84,27 +84,27 @@ void RenderProfiler::collectQueries() {
   return;
  }
  const int slot = (ringSlot_ + 1) % kRingDepth;
- double gpuFrame = 0.0;
+ double gpuMeasured = 0.0;
  for(int stage = 0; stage < kRenderStageCount; ++stage) {
   const auto index = static_cast<std::size_t>(stage);
   if(!queryPending_[static_cast<std::size_t>(slot)][index]) {
-   gpuFrame += gpuAvgNs_[index];
+   gpuMeasured += gpuAvgNs_[index];
    continue;
   }
   const unsigned query = queries_[static_cast<std::size_t>(slot)][index];
   int available = 0;
   gl::GLCore::getQueryObjectiv(query, kQueryResultAvailable, &available);
   if(available == 0) {
-   gpuFrame += gpuAvgNs_[index];
+   gpuMeasured += gpuAvgNs_[index];
    continue;
   }
   std::uint64_t elapsed = 0;
   gl::GLCore::getQueryObjectui64v(query, kQueryResult, &elapsed);
   queryPending_[static_cast<std::size_t>(slot)][index] = false;
   gpuAvgNs_[index] += (static_cast<double>(elapsed) - gpuAvgNs_[index]) * kSmoothing;
-  gpuFrame += gpuAvgNs_[index];
+  gpuMeasured += gpuAvgNs_[index];
  }
- gpuFrameAvgNs_ = gpuFrame;
+ gpuMeasuredAvgNs_ = gpuMeasured;
 }
 void RenderProfiler::beginFrame() {
  if(!enabled_) {
@@ -177,7 +177,7 @@ void RenderProfiler::destroy() {
  cpuAvgNs_.fill(0.0);
  gpuAvgNs_.fill(0.0);
  frameAvgNs_ = 0.0;
- gpuFrameAvgNs_ = 0.0;
+ gpuMeasuredAvgNs_ = 0.0;
 }
 std::vector<std::string> RenderProfiler::lines() const {
  std::vector<std::string> out;
@@ -207,12 +207,12 @@ std::vector<std::string> RenderProfiler::lines() const {
   }
   out.push_back(line);
  }
- std::string total = "world";
+ std::string total = "measured";
  total.resize(12, ' ');
  total += formatMs(cpuAccounted);
  if(gpuReady_) {
   total.resize(19, ' ');
-  total += formatMs(gpuFrameAvgNs_);
+  total += formatMs(gpuMeasuredAvgNs_);
  }
  out.push_back(total);
  std::string other = "unmeasured";

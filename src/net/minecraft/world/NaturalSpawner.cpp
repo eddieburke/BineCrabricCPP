@@ -184,10 +184,10 @@ int NaturalSpawner::tick(World* world, bool spawnHostile, bool spawnPeaceful) {
       continue;
      }
      entity::LivingEntity* living = world->spawnMob(chosen->entityType, std::function<bool(entity::LivingEntity&)>{[&](entity::LivingEntity& mob) {
-      limitPerChunk = mob.getLimitPerChunk();
-      mob.setPositionAndAnglesKeepPrevAngles(fx, fy, fz, world->random().nextFloat() * 360.0f, 0.0f);
-      return mob.canSpawn() && (rules.creatureType != 2 || world->canSpawnEntity(mob.boundingBox));
-     }});
+                                                     limitPerChunk = mob.getLimitPerChunk();
+                                                     mob.setPositionAndAnglesKeepPrevAngles(fx, fy, fz, world->random().nextFloat() * 360.0f, 0.0f);
+                                                     return mob.canSpawn() && (rules.creatureType != 2 || world->canSpawnEntity(mob.boundingBox));
+                                                    }});
      if(living == nullptr) {
       continue;
      }

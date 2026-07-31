@@ -1,8 +1,9 @@
 #include "net/minecraft/client/render/entity/LivingEntityRenderer.hpp"
+#include "net/minecraft/client/render/RenderCore.hpp"
 #include <cmath>
 #include "net/minecraft/client/font/TextRenderer.hpp"
 #include "net/minecraft/client/gl/GlConstants.hpp"
-#include "net/minecraft/client/render/RenderSystem.hpp"
+#include "net/minecraft/client/render/FrameRenderCamera.hpp"
 #include "net/minecraft/client/render/RenderType.hpp"
 #include "net/minecraft/client/render/Tessellator.hpp"
 #include "net/minecraft/client/render/entity/EntityRenderDispatcher.hpp"
@@ -85,15 +86,17 @@ void LivingEntityRenderer::setDecorationModel(model::EntityModel* modelIn) {
  decorationModel = modelIn;
 }
 void LivingEntityRenderer::render(
-    const net::minecraft::Entity& entity, double x, double y, double z, float /*yaw*/, float tickDelta) {
+    const net::minecraft::Entity& entity, double x, double y, double z, float /*yaw*/, float tickDelta,
+    net::minecraft::util::math::MatrixStack& matrices, const net::minecraft::util::math::Matrix4f& projection) {
  const auto* living = dynamic_cast<const net::minecraft::LivingEntity*>(&entity);
  if(living == nullptr || model == nullptr) {
   return;
  }
+ beginDraw(matrices, projection);
  render::RenderPassScope passScope(render::RenderType::entityCutout());
  { // entityMatrix must be popped before renderNameTag, which pushes its own unrelated matrix.
-  RenderSystem::pushMatrix();
-  RenderSystem::disableCull();
+  matrices.push();
+  core::disableCull();
   model->handSwingProgress = getHandSwingProgress(*living, tickDelta);
   if(decorationModel != nullptr) {
    decorationModel->handSwingProgress = model->handSwingProgress;
@@ -161,19 +164,19 @@ void LivingEntityRenderer::render(
     out.roll = std::isnan(part.roll) ? part.roll : part.roll * kDegToRad;
    }
   }
-  applyTranslation(*living, x, y, z);
+  applyTranslation(*living, x, y, z, matrices);
   if(offsetX != 0.0f || offsetY != 0.0f || offsetZ != 0.0f) {
-   RenderSystem::translate(offsetX, offsetY, offsetZ);
+   matrices.translate(offsetX, offsetY, offsetZ);
   }
   const float headBob = getHeadBob(*living, tickDelta);
-  applyHandSwingRotation(*living, headBob, bodyYaw, tickDelta);
+  applyHandSwingRotation(*living, headBob, bodyYaw, tickDelta, matrices);
   constexpr float scaleUnit = 0.0625f;
-  RenderSystem::scale(-1.0f, -1.0f, 1.0f);
-  applyScale(*living, tickDelta);
+  matrices.scale(-1.0f, -1.0f, 1.0f);
+  applyScale(*living, tickDelta, matrices);
   if(poseScale != 1.0f) {
-   RenderSystem::scale(poseScale, poseScale, poseScale);
+   matrices.scale(poseScale, poseScale, poseScale);
   }
-  RenderSystem::translate(0.0f, -24.0f * scaleUnit - 0.0078125f, 0.0f);
+  matrices.translate(0.0f, -24.0f * scaleUnit - 0.0078125f, 0.0f);
   if(!bindDownloadedTexture(living->skinUrl, living->texture)) {
    EntityRenderer::bindTexture(living->texture);
   }
@@ -193,26 +196,27 @@ void LivingEntityRenderer::render(
     syncDecorationPose();
     decorationModel->render(limbDistance, limbAngle, headBob, headYawRel, headPitch, scaleUnit);
    }
-   RenderSystem::disableBlend();
+   render::core::setRenderedItemId(0);
+   core::disableBlend();
   }
-  renderMore(*living, tickDelta);
+  renderMore(*living, tickDelta, matrices, projection);
   const float brightness = living->getBrightnessAtEyes(tickDelta);
   const int overlay = getOverlayColor(*living, brightness, tickDelta);
   if(((overlay >> 24) & 0xFF) > 0 || living->hurtTime > 0 || living->deathTime > 0) {
-   render::RenderPassScope overlayScope(render::RenderType::entityCutout());
-   RenderSystem::disableCull();
-   RenderSystem::disableTexture();
-   RenderSystem::enableBlend();
-   RenderSystem::blendFunc(0x0302, 0x0303); // GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA
-   RenderSystem::depthFunc(0x0202); // GL_EQUAL
+   render::RenderPassScope overlayScope(render::RenderType::basic());
+   core::disableCull();
+   core::enableBlend();
+   core::blendFunc(0x0302, 0x0303); // GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA
+   core::depthFunc(0x0202); // GL_EQUAL
    if(living->hurtTime > 0 || living->deathTime > 0) {
-    RenderSystem::color4f(brightness, 0.0f, 0.0f, 0.4f);
+    render::core::setConstColor(brightness, 0.0f, 0.0f, 0.4f);
+    render::core::setEntityColor(brightness, 0.0f, 0.0f, 0.4f);
     model->render(limbDistance, limbAngle, headBob, headYawRel, headPitch, scaleUnit);
     for(int layer = 0; layer < 4; ++layer) {
      if(!bindDecorationTexture(*living, layer, tickDelta)) {
       continue;
      }
-     RenderSystem::color4f(brightness, 0.0f, 0.0f, 0.4f);
+     render::core::setConstColor(brightness, 0.0f, 0.0f, 0.4f);
      if(decorationModel != nullptr) {
       syncDecorationPose();
       decorationModel->render(limbDistance, limbAngle, headBob, headYawRel, headPitch, scaleUnit);
@@ -224,44 +228,48 @@ void LivingEntityRenderer::render(
     const float cg = static_cast<float>((overlay >> 8) & 0xFF) / 255.0f;
     const float cb = static_cast<float>(overlay & 0xFF) / 255.0f;
     const float ca = static_cast<float>((overlay >> 24) & 0xFF) / 255.0f;
-    RenderSystem::color4f(cr, cg, cb, ca);
+    render::core::setConstColor(cr, cg, cb, ca);
+    render::core::setEntityColor(cr, cg, cb, ca);
     model->render(limbDistance, limbAngle, headBob, headYawRel, headPitch, scaleUnit);
     for(int layer = 0; layer < 4; ++layer) {
      if(!bindDecorationTexture(*living, layer, tickDelta)) {
       continue;
      }
-     RenderSystem::color4f(cr, cg, cb, ca);
+     render::core::setConstColor(cr, cg, cb, ca);
      if(decorationModel != nullptr) {
       syncDecorationPose();
       decorationModel->render(limbDistance, limbAngle, headBob, headYawRel, headPitch, scaleUnit);
      }
     }
    }
-   RenderSystem::depthTest();
-   RenderSystem::disableBlend();
-   RenderSystem::enableTexture();
+   render::core::setEntityColor(0.0f, 0.0f, 0.0f, 0.0f);
+   core::depthTest();
+   core::disableBlend();
   }
-  RenderSystem::cullBackFaces();
-  RenderSystem::popMatrix();
+  core::cullBackFaces();
+  matrices.pop();
  } // pop entityMatrix here, before renderNameTag pushes its own matrix
- renderNameTag(*living, x, y, z);
+ renderNameTag(*living, x, y, z, matrices, projection);
+ endDraw();
 }
-void LivingEntityRenderer::applyTranslation(const net::minecraft::LivingEntity& entity, double x, double y, double z) {
+void LivingEntityRenderer::applyTranslation(const net::minecraft::LivingEntity& entity, double x, double y, double z,
+                                            net::minecraft::util::math::MatrixStack& matrices) {
  (void)entity;
- RenderSystem::translate(static_cast<float>(x), static_cast<float>(y), static_cast<float>(z));
+ matrices.translate(static_cast<float>(x), static_cast<float>(y), static_cast<float>(z));
 }
 void LivingEntityRenderer::applyHandSwingRotation(const net::minecraft::LivingEntity& entity,
                                                   float /*headBob*/,
                                                   float bodyYaw,
-                                                  float tickDelta) {
- RenderSystem::rotate(180.0f - bodyYaw, 0.0f, 1.0f, 0.0f);
+                                                  float tickDelta,
+                                                  net::minecraft::util::math::MatrixStack& matrices) {
+ matrices.rotate(180.0f - bodyYaw, 0.0f, 1.0f, 0.0f);
  if(entity.deathTime > 0) {
   float deathAnim = (static_cast<float>(entity.deathTime) + tickDelta - 1.0f) / 20.0f * 1.6f;
   deathAnim = MathHelper::sqrt(deathAnim);
   if(deathAnim > 1.0f) {
    deathAnim = 1.0f;
   }
-  RenderSystem::rotate(deathAnim * getDeathYaw(entity), 0.0f, 0.0f, 1.0f);
+  matrices.rotate(deathAnim * getDeathYaw(entity), 0.0f, 0.0f, 1.0f);
  }
 }
 float LivingEntityRenderer::getHandSwingProgress(const net::minecraft::LivingEntity& entity, float tickDelta) const {
@@ -270,9 +278,13 @@ float LivingEntityRenderer::getHandSwingProgress(const net::minecraft::LivingEnt
 float LivingEntityRenderer::getHeadBob(const net::minecraft::LivingEntity& entity, float tickDelta) const {
  return static_cast<float>(entity.age) + tickDelta;
 }
-void LivingEntityRenderer::renderMore(const net::minecraft::LivingEntity& entity, float tickDelta) {
+void LivingEntityRenderer::renderMore(const net::minecraft::LivingEntity& entity, float tickDelta,
+                                      net::minecraft::util::math::MatrixStack& matrices,
+                                      const net::minecraft::util::math::Matrix4f& projection) {
  (void)entity;
  (void)tickDelta;
+ (void)matrices;
+ (void)projection;
 }
 bool LivingEntityRenderer::bindDecorationTexture(const net::minecraft::LivingEntity& entity,
                                                  int layer,
@@ -297,17 +309,24 @@ int LivingEntityRenderer::getOverlayColor(const net::minecraft::LivingEntity& en
  (void)tickDelta;
  return 0;
 }
-void LivingEntityRenderer::applyScale(const net::minecraft::LivingEntity& entity, float tickDelta) {
+void LivingEntityRenderer::applyScale(const net::minecraft::LivingEntity& entity, float tickDelta,
+                                      net::minecraft::util::math::MatrixStack& matrices) {
  (void)entity;
  (void)tickDelta;
+ (void)matrices;
 }
-void LivingEntityRenderer::renderNameTag(const net::minecraft::LivingEntity& entity, double x, double y, double z) {
- if(dispatcher != nullptr && dispatcher->options().debugHud) {
-  renderNameTag(entity, std::to_string(entity.id), x, y, z, 64);
+void LivingEntityRenderer::renderNameTag(const net::minecraft::LivingEntity& entity, double x, double y, double z,
+                                         net::minecraft::util::math::MatrixStack& matrices,
+                                         const net::minecraft::util::math::Matrix4f& projection) {
+ if(dispatcher != nullptr && dispatcher->options().debugHud &&
+    !RenderCameraState::instance().frame().shadowPass) {
+  renderNameTag(entity, std::to_string(entity.id), x, y, z, 64, matrices, projection);
  }
 }
 void LivingEntityRenderer::renderNameTag(
-    const net::minecraft::LivingEntity& entity, const std::string& name, double x, double y, double z, int range) {
+    const net::minecraft::LivingEntity& entity, const std::string& name, double x, double y, double z, int range,
+    net::minecraft::util::math::MatrixStack& matrices, const net::minecraft::util::math::Matrix4f& projection) {
+ (void)projection;
  if(dispatcher == nullptr || dispatcher->cameraEntity() == nullptr) {
   return;
  }
@@ -322,34 +341,35 @@ void LivingEntityRenderer::renderNameTag(
  constexpr float nameScale = 1.6f;
  const float pixelScale = 0.016666668f * nameScale;
  {
-  RenderSystem::pushMatrix();
-  RenderSystem::translate(static_cast<float>(x), static_cast<float>(y) + 2.3f, static_cast<float>(z));
-  RenderSystem::rotate(-dispatcher->yaw_, 0.0f, 1.0f, 0.0f);
-  RenderSystem::rotate(dispatcher->pitch_, 1.0f, 0.0f, 0.0f);
-  RenderSystem::scale(-pixelScale, -pixelScale, pixelScale);
+  matrices.push();
+  matrices.translate(static_cast<float>(x), static_cast<float>(y) + 2.3f, static_cast<float>(z));
+  matrices.rotate(-dispatcher->yaw_, 0.0f, 1.0f, 0.0f);
+  matrices.rotate(dispatcher->pitch_, 1.0f, 0.0f, 0.0f);
+  matrices.scale(-pixelScale, -pixelScale, pixelScale);
   render::RenderPassScope passScope(render::RenderType::guiTextured());
   Tessellator& tessellator = Tessellator::INSTANCE;
   int yOffset = 0;
   if(name == "deadmau5") {
    yOffset = -10;
   }
-  RenderSystem::disableTexture();
-  tessellator.startQuads();
-  const int halfWidth = textRenderer->getWidth(name) / 2;
-  tessellator.color(0.0f, 0.0f, 0.0f, 0.25f);
-  tessellator.vertex(-halfWidth - 1, -1 + yOffset, 0.0);
-  tessellator.vertex(-halfWidth - 1, 8 + yOffset, 0.0);
-  tessellator.vertex(halfWidth + 1, 8 + yOffset, 0.0);
-  tessellator.vertex(halfWidth + 1, -1 + yOffset, 0.0);
-  tessellator.draw();
   {
-   RenderSystem::enableTexture();
+   render::RenderPassScope backdropPass(render::RenderType::basic());
+   tessellator.startQuads();
+   const int halfWidth = textRenderer->getWidth(name) / 2;
+   tessellator.color(0.0f, 0.0f, 0.0f, 0.25f);
+   tessellator.vertex(-halfWidth - 1, -1 + yOffset, 0.0);
+   tessellator.vertex(-halfWidth - 1, 8 + yOffset, 0.0);
+   tessellator.vertex(halfWidth + 1, 8 + yOffset, 0.0);
+   tessellator.vertex(halfWidth + 1, -1 + yOffset, 0.0);
+   tessellator.draw();
+  }
+  {
    textRenderer->draw(name, -textRenderer->getWidth(name) / 2, yOffset, 0x20FFFFFF);
-   RenderSystem::depthTest();
-   RenderSystem::depthMask(true);
+   core::depthTest();
+   core::depthMask(true);
    textRenderer->draw(name, -textRenderer->getWidth(name) / 2, yOffset, -1);
   }
-  RenderSystem::popMatrix();
+  matrices.pop();
  }
 }
 } // namespace net::minecraft::client::render::entity

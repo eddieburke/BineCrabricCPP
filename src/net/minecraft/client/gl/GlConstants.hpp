@@ -4,6 +4,9 @@
 #error "OpenGL rendering requires Windows"
 #endif
 #define MINECRAFT_GL_REAL 1
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
 #include <windows.h>
 #include <GL/gl.h>
 #undef GL_QUADS
@@ -97,6 +100,8 @@ namespace net::minecraft::client::gl {
 namespace cap {
 inline constexpr int Blend = 0x0BE2;
 inline constexpr int Texture2D = 0x0DE1;
+// Removed in core profile — never pass to glEnable/glDisable (INVALID_ENUM).
+// Alpha cutout is shader-only via uniform alphaTestRef (Iris).
 inline constexpr int AlphaTest = 0x0BC0;
 inline constexpr int DepthTest = 0x0B71;
 inline constexpr int CullFace = 0x0B44;
@@ -152,12 +157,14 @@ inline constexpr int NearestMipmapLinear = 0x2702;
 inline constexpr int LinearMipmapLinear = 0x2703;
 } // namespace filter
 namespace wrap {
-inline constexpr int Clamp = 0x2900;
+// Alias of ClampToEdge — legacy GL_CLAMP (0x2900) is invalid on core profiles.
+inline constexpr int Clamp = 0x812F;
 inline constexpr int ClampToEdge = 0x812F;
 inline constexpr int Repeat = 0x2901;
 } // namespace wrap
 namespace pixel {
 inline constexpr int Rgba = 0x1908;
+inline constexpr int Rgba8 = 0x8058;
 inline constexpr int UnsignedByte = 0x1401;
 inline constexpr int UnsignedInt = 0x1405;
 inline constexpr int Byte = 0x1400;

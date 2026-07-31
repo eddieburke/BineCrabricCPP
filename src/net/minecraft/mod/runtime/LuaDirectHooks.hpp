@@ -37,14 +37,6 @@ struct CameraSetupEvent {
  entity::LivingEntity* camera = nullptr;
  float tickDelta = 0.0f;
  client::render::FrameRenderCamera* frame = nullptr;
- double x = 0.0;
- double y = 0.0;
- double z = 0.0;
- float yaw = 0.0f;
- float pitch = 0.0f;
- float roll = 0.0f;
- bool customView = false;
- bool hideFirstPersonHand = false;
 };
 struct RenderFrameEvent {
  float tickDelta = 0.0f;
@@ -126,10 +118,6 @@ struct FogSettingsEvent {
  float start = 0.2f;
  float end = 0.8f;
  float density = 0.1f;
- bool customColor = false;
- float red = 0.0f;
- float green = 0.0f;
- float blue = 0.0f;
 };
 struct ModelPartPose {
  float yaw = std::numeric_limits<float>::quiet_NaN();
@@ -180,7 +168,12 @@ struct LifecycleEvent {
 } // namespace net::minecraft::mod
 namespace net::minecraft::mod::runtime {
 template <typename Fill, typename Read>
-void dispatchLuaHook(int eventIndex, Fill fill, Read read);
+void dispatchLuaHook(int eventIndex,
+                     Fill fill,
+                     Read read,
+                     std::uint16_t worldRenderStageBit = 0,
+                     std::uint8_t worldRenderMomentBit = 0,
+                     std::string_view entityType = {});
 [[nodiscard]] bool hasLuaHook(int eventIndex);
 [[nodiscard]] inline bool hasLuaHook(LuaEventId id) {
  return hasLuaHook(static_cast<int>(id));
@@ -228,4 +221,5 @@ void luaHookScreenEvent(LuaScreenEvent& event);
 void luaHookPreEntityRender(PreEntityRenderEvent& event);
 void luaHookEntitySpawn(EntitySpawnEvent& event);
 void luaHookEntityRemove(EntityRemoveEvent& event);
+void luaHookSnowIcePlacement(SnowIcePlacementEvent& event);
 } // namespace net::minecraft::mod::runtime

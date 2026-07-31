@@ -85,10 +85,10 @@ class SelectWorldScreen::WorldListWidget : public widget::EntryListWidget {
   if(info.isSameVersion()) {
    conversion = owner_.conversionText_ + " " + conversion;
   }
-  owner_.drawTextWithShadow(*owner_.textRenderer(), title, x + 2, y + 1, 0xFFFFFF);
-  owner_.drawTextWithShadow(*owner_.textRenderer(), subtitle, x + 2, y + 12, 0x808080);
+  owner_.textRenderer()->drawWithShadow(title, x + 2, y + 1, 0xFFFFFF);
+  owner_.textRenderer()->drawWithShadow(subtitle, x + 2, y + 12, 0x808080);
   if(!conversion.empty()) {
-   owner_.drawTextWithShadow(*owner_.textRenderer(), conversion, x + 2, y + 22, 0x808080);
+   owner_.textRenderer()->drawWithShadow(conversion, x + 2, y + 22, 0x808080);
   }
  }
 
@@ -216,7 +216,7 @@ void SelectWorldScreen::render(int mouseX, int mouseY, float tickDelta) {
   worldList_->render(mouseX, mouseY, tickDelta);
  }
  if(textRenderer() != nullptr) {
-  drawCenteredTextWithShadow(*textRenderer(), title_, width() / 2, 20, 0xFFFFFF);
+  textRenderer()->drawCenteredWithShadow(title_, width() / 2, 20, 0xFFFFFF);
  }
  screen::Screen::render(mouseX, mouseY, tickDelta);
 }

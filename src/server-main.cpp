@@ -4,6 +4,9 @@
 #include "net/minecraft/stat/Stats.hpp"
 #ifdef _WIN32
 #include <timeapi.h>
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
 #include <windows.h>
 #include "net/minecraft/server/dedicated/gui/DedicatedServerGui.hpp"
 struct WindowsTimerResolutionReserver {
@@ -119,9 +122,9 @@ int main(int argc, char** argv) {
    net::minecraft::server::dedicated::gui::DedicatedServerGui::create(*server);
   }
 #endif
- std::thread serverThread([&server]() { server->run(); });
- serverThread.join();
-} catch(const std::exception& exception) {
+  std::thread serverThread([&server]() { server->run(); });
+  serverThread.join();
+ } catch(const std::exception& exception) {
   std::cerr << "Failed to start the minecraft server: " << exception.what() << '\n';
   return 1;
  }

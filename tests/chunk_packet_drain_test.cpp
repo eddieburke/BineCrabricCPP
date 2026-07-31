@@ -80,25 +80,25 @@ SOCKET connectLoopback(std::uint16_t port) {
 }
 class ChunkCountingHandler : public net::minecraft::NetworkHandler {
  public:
-  explicit ChunkCountingHandler(bool serverSide) : serverSide_(serverSide) {}
-  [[nodiscard]] bool isServerSide() const override {
-   return serverSide_;
-  }
-  void handleChunkData(const net::minecraft::ChunkDataS2CPacket& packet) override {
-   applied_.fetch_add(1, std::memory_order_relaxed);
-   totalBytes_.fetch_add(packet.chunkData.size(), std::memory_order_relaxed);
-  }
-  [[nodiscard]] int applied() const {
-   return applied_.load(std::memory_order_relaxed);
-  }
-  [[nodiscard]] std::size_t totalBytes() const {
-   return totalBytes_.load(std::memory_order_relaxed);
-  }
+ explicit ChunkCountingHandler(bool serverSide) : serverSide_(serverSide) {}
+ [[nodiscard]] bool isServerSide() const override {
+  return serverSide_;
+ }
+ void handleChunkData(const net::minecraft::ChunkDataS2CPacket& packet) override {
+  applied_.fetch_add(1, std::memory_order_relaxed);
+  totalBytes_.fetch_add(packet.chunkData.size(), std::memory_order_relaxed);
+ }
+ [[nodiscard]] int applied() const {
+  return applied_.load(std::memory_order_relaxed);
+ }
+ [[nodiscard]] std::size_t totalBytes() const {
+  return totalBytes_.load(std::memory_order_relaxed);
+ }
 
  private:
-  bool serverSide_;
-  std::atomic<int> applied_{0};
-  std::atomic<std::size_t> totalBytes_{0};
+ bool serverSide_;
+ std::atomic<int> applied_{0};
+ std::atomic<std::size_t> totalBytes_{0};
 };
 std::vector<std::uint8_t> makeFakeChunkData(int seed) {
  // 16x128x16 chunk: blocks (1 byte each) + metadata (nibble) + blockLight (nibble) + skyLight (nibble)

@@ -281,6 +281,13 @@ void PlayerEntity::readNbt(const NbtCompound& nbt) {
   inventory.selectedSlot = std::clamp(nbt.getInt("SelectedItemSlot"), 0, 8);
  }
  if(sleeping) {
+  // Pos was written while the sleeping body was active (0.2 wide, 0.2 eye height), but
+  // Entity::readNbt just rebuilt the bounding box using this fresh entity's standing
+  // 1.62 eye height, putting the feet 1.42 blocks below where they were saved. Restore
+  // the body that produced the saved coordinate so wakeUp() stands up from the bed.
+  setBoundingBoxSpacing(0.2f, 0.2f);
+  standingEyeHeight = 0.2f;
+  setPosition(x, y, z);
   sleepingPos = Vec3i(MathHelper::floor(x), MathHelper::floor(y), MathHelper::floor(z));
   wakeUp(true, true, false);
  }
@@ -510,12 +517,20 @@ SleepAttemptResult PlayerEntity::trySleep(int xIn, int yIn, int zIn) {
  return SleepAttemptResult::Ok;
 }
 void PlayerEntity::wakeUp(bool resetSleepTimer, bool updateSleepingPlayers, bool setSpawnPosFlag) {
+ const double feetY = boundingBox.minY;
  setBoundingBoxSpacing(0.6f, 1.8f);
  resetEyeHeight();
+ // The bounding box still describes the 0.2-tall sleeping body until something calls
+ // setPosition, and y is still expressed against the 0.2 sleeping eye height. Rebuild
+ // both from the feet unconditionally: when the bed had been broken, or its chunk was
+ // not resident yet on load, the branch below never ran and the restored 1.62 eye
+ // height silently sank the player more than a block into the floor.
+ setPosition(x, feetY + static_cast<double>(standingEyeHeight) - static_cast<double>(cameraOffset), z);
  if(sleepingPos.has_value() && world != nullptr) {
   const Vec3i bedPos = *sleepingPos;
   std::optional<Vec3i> wakePos;
   if(Block::BED != nullptr && world->getBlockId(bedPos.x, bedPos.y, bedPos.z) == Block::BED->id) {
+   block::BedBlock::updateState(world, bedPos.x, bedPos.y, bedPos.z, false);
    wakePos = block::BedBlock::findWakeUpPosition(world, bedPos.x, bedPos.y, bedPos.z, 0);
   }
   if(!wakePos.has_value()) {

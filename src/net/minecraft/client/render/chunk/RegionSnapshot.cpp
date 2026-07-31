@@ -223,8 +223,8 @@ int RegionSnapshot::getSkyLight(const int x, const int y, const int z) const {
   return 0;
  }
  if(y >= Chunk::height) {
-  const int brightness = 15 - ambientDarkness_;
-  return brightness < 0 ? 0 : brightness;
+  // Raw sky for UV2 — ambientDarkness applied only in the lightmap texture.
+  return 15;
  }
  const ChunkCopy* chunk = chunkAt(x, z);
  if(chunk == nullptr || !containsY(y)) {
@@ -234,7 +234,7 @@ int RegionSnapshot::getSkyLight(const int x, const int y, const int z) const {
  if(sky > 0) {
   sawSkyLight_ = true;
  }
- sky -= ambientDarkness_;
+ // Do not subtract ambientDarkness here: packs sample lightmap with raw lmcoord.
  return sky < 0 ? 0 : sky;
 }
 net::minecraft::block::material::Material& RegionSnapshot::getMaterial(int x, int y, int z) const {

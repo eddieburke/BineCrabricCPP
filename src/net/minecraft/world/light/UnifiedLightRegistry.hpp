@@ -12,6 +12,7 @@ struct SunLight {
  float blue = 1.0f;
  float intensity = 1.0f;
 };
+// Emission 0..15 and optional RGB for torch-coloured packs. No LPV float tables.
 class UnifiedLightRegistry {
  public:
  static constexpr std::size_t kBlockProfileCount = 256;
@@ -19,6 +20,7 @@ class UnifiedLightRegistry {
  [[nodiscard]] static int blockEmission(int blockId) noexcept;
  static void setBlockLightColor(int blockId, float red, float green, float blue) noexcept;
  static void blockLightColor(int blockId, float& red, float& green, float& blue) noexcept;
+ static void blockEmissionRGB(int blockId, float& r, float& g, float& b) noexcept;
  void setSun(const SunLight& sun) noexcept { sun_ = sun; }
  [[nodiscard]] const SunLight& sun() const noexcept { return sun_; }
 

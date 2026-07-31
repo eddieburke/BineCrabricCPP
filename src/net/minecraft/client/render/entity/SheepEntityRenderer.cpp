@@ -1,4 +1,4 @@
-#include "net/minecraft/client/render/RenderSystem.hpp"
+#include "net/minecraft/client/render/RenderCore.hpp"
 #include "net/minecraft/client/render/entity/EntityRenderers.hpp"
 #include "net/minecraft/entity/LivingEntity.hpp"
 #include "net/minecraft/entity/passive/SheepEntity.hpp"
@@ -14,9 +14,10 @@ bool SheepEntityRenderer::bindTexture(const net::minecraft::LivingEntity& entity
  }
  EntityRenderer::bindTexture("/mob/sheep_fur.png");
  const int colorIndex = sheep->getColor() & 0xF;
+ // MCP RenderSheep.setWoolColorAndRender: glColor3f(brightness * fleeceTint).
  const float brightness = sheep->getBrightnessAtEyes(tickDelta);
  const float* tint = net::minecraft::entity::passive::SheepEntity::COLORS[colorIndex];
- RenderSystem::color3f(tint[0] * brightness, tint[1] * brightness, tint[2] * brightness);
+ render::core::setConstColor(tint[0] * brightness, tint[1] * brightness, tint[2] * brightness, 1.0f);
  return true;
 }
 } // namespace net::minecraft::client::render::entity

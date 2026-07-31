@@ -183,9 +183,6 @@ void MultiplayerInteractionManager::setWorld(World* world) {
 void MultiplayerInteractionManager::tick() {
  updateSelectedSlot();
  lastBlockBreakingProgress = blockBreakingProgress;
- if(minecraft != nullptr) {
-  minecraft->audio.tick();
- }
 }
 float MultiplayerInteractionManager::getBlockBreakingProgress(float partialTick) const {
  return lastBlockBreakingProgress + (blockBreakingProgress - lastBlockBreakingProgress) * partialTick;

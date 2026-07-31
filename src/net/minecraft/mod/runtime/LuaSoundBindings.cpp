@@ -112,7 +112,9 @@ int luaPlaySoundAt(lua_State* state) {
                                       static_cast<float>(y),
                                       static_cast<float>(z),
                                       static_cast<float>(volume),
-                                      static_cast<float>(pitch)) ? 1 : 0);
+                                      static_cast<float>(pitch))
+                     ? 1
+                     : 0);
  return 1;
 }
 int luaPlaySoundLoopAt(lua_State* state) {
@@ -137,11 +139,11 @@ int luaPlaySoundLoopAt(lua_State* state) {
   return 1;
  }
  const std::string handle = client->audio.playLoopAt(id,
-                                                      static_cast<float>(x),
-                                                      static_cast<float>(y),
-                                                      static_cast<float>(z),
-                                                      static_cast<float>(volume),
-                                                      static_cast<float>(pitch));
+                                                     static_cast<float>(x),
+                                                     static_cast<float>(y),
+                                                     static_cast<float>(z),
+                                                     static_cast<float>(volume),
+                                                     static_cast<float>(pitch));
  if(handle.empty()) {
   api.pushnil(state);
  } else {

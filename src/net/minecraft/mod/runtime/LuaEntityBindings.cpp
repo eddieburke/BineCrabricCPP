@@ -188,7 +188,6 @@ int luaUnregisterLocalPoseHook(lua_State* state) {
  api.pushboolean(state, localPoseHooks().erase(entityId) > 0 ? 1 : 0);
  return 1;
 }
-
 // A world holds a flat entity list, so an id lookup is a scan either way. The
 // map this used to build cost one allocation-heavy pass per call — including on
 // entities.get, which then used exactly one entry of it.

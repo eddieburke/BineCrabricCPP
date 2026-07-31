@@ -1,8 +1,3 @@
--- ================================================================
--- CONFIG: simple_lantern
--- Centralized configuration with validation and persistence
--- ================================================================
-
 local settings = require("lib.settings")
 
 local config = settings.define("simple_lantern", {

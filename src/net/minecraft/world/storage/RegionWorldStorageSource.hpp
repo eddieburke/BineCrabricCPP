@@ -5,7 +5,7 @@
 #include <vector>
 #include "net/minecraft/util/math/MathHelper.hpp"
 #include "net/minecraft/world/chunk/storage/RegionIo.hpp"
-#include "net/minecraft/world/storage/AlphaWorldStorageSource.hpp"
+#include "net/minecraft/world/storage/AlphaWorldStorage.hpp"
 #include "net/minecraft/world/storage/RegionWorldStorage.hpp"
 #include "net/minecraft/world/storage/WorldSaveInfo.hpp"
 namespace net::minecraft {

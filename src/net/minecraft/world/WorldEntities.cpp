@@ -16,20 +16,20 @@ bool isInvalidDouble(double value) {
 }
 } // namespace
 std::vector<Entity*> World::getEntities(Entity* except, const Box& box) {
-  std::vector<Entity*> result;
-  for(Entity* entity : entities_) {
-   if(entity == nullptr || entity == except || entity->dead) {
-    continue;
-   }
-   if(*reinterpret_cast<const void* const*>(entity) == nullptr) {
-    continue;
-   }
-   if(entity->boundingBox.intersects(box)) {
-    result.push_back(entity);
-   }
+ std::vector<Entity*> result;
+ for(Entity* entity : entities_) {
+  if(entity == nullptr || entity == except || entity->dead) {
+   continue;
   }
-  return result;
+  if(*reinterpret_cast<const void* const*>(entity) == nullptr) {
+   continue;
+  }
+  if(entity->boundingBox.intersects(box)) {
+   result.push_back(entity);
+  }
  }
+ return result;
+}
 void World::updateEntityLists() {
  entities_.erase(std::remove_if(entities_.begin(),
                                 entities_.end(),
@@ -228,13 +228,29 @@ void World::addPlayer(PlayerEntity* player) {
  }
  try {
   if(const NbtCompound* playerNbt = properties_.getPlayerNbt(); playerNbt != nullptr) {
+   // Terrain was prepared around wherever the entity was constructed, not around the
+   // position about to be restored, so make the saved position's chunk resident first.
+   // readNbt wakes a sleeping player, and that has to see the real bed and the real
+   // blocks around it: an unloaded chunk reads as air, so it fell back to "one above
+   // the bed" and every collision check below silently found nothing to collide with.
+   if(const Nbt* pos = playerNbt->storage().get("Pos");
+      pos != nullptr && pos->isList() && pos->asList().size() >= 3) {
+    const auto& posList = pos->asList();
+    if(ChunkSource* chunkSource = getChunkSource(); chunkSource != nullptr) {
+     chunkSource->loadChunk(MathHelper::floor(posList[0].asDouble()) >> 4,
+                            MathHelper::floor(posList[2].asDouble()) >> 4);
+    }
+   }
    player->readNbt(*playerNbt);
    properties_.clearPlayerNbt();
   }
   setChunkCacheCenterFromBlockPos(MathHelper::floor(player->x), MathHelper::floor(player->z));
+  // Last line of defence: whatever the saved coordinate was, never drop the player
+  // inside geometry.
+  player->nudgeOutOfCollision();
   spawnEntity(player);
-  } catch(...) {
-  }
+ } catch(...) {
+ }
 }
 void World::updateEntity(Entity* entity, bool requireLoaded, int depth) {
  if(entity == nullptr) {

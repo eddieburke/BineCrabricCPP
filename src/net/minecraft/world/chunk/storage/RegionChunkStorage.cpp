@@ -2,7 +2,6 @@
 #include "net/minecraft/nbt/NbtCompound.hpp"
 #include "net/minecraft/world/World.hpp"
 #include "net/minecraft/world/chunk/EmptyChunk.hpp"
-#include "net/minecraft/world/chunk/storage/AlphaChunkNbtCodec.hpp"
 #include "net/minecraft/world/chunk/storage/AlphaChunkStorage.hpp"
 #include "net/minecraft/world/chunk/storage/RegionIo.hpp"
 namespace net::minecraft {
@@ -28,13 +27,16 @@ void RegionChunkStorage::saveChunk(World* world, Chunk& chunk) {
  world->checkSessionLock();
  try {
   std::vector<std::uint8_t> raw;
-  AlphaChunkNbtCodec::writeRootChunk(raw, chunk, world);
-  RegionIo::writeChunkData(dir_, chunk.x, chunk.z, raw);
+  AlphaChunkStorage::writeRootChunk(raw, chunk, world);
+  writeSerializedChunk(chunk.x, chunk.z, raw);
   WorldProperties& properties = world->getProperties();
   properties.setSizeOnDisk(properties.getSizeOnDisk() +
                            static_cast<std::uint64_t>(RegionIo::getChunkSize(dir_, chunk.x, chunk.z)));
  } catch(const std::exception&) {
  }
+}
+void RegionChunkStorage::writeSerializedChunk(int chunkX, int chunkZ, const std::vector<std::uint8_t>& data) {
+ RegionIo::writeChunkData(dir_, chunkX, chunkZ, data);
 }
 void RegionChunkStorage::saveEntities(World* world, Chunk& chunk) {
  (void)world;

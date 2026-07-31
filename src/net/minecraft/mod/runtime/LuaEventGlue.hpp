@@ -9,7 +9,7 @@
 namespace net::minecraft {
 class ItemStack;
 class World;
-}
+} // namespace net::minecraft
 namespace net::minecraft::entity {
 class Entity;
 }

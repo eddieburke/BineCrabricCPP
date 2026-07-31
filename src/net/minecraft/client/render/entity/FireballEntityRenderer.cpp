@@ -1,30 +1,21 @@
-#include "net/minecraft/client/render/RenderSystem.hpp"
 #include "net/minecraft/client/render/Tessellator.hpp"
 #include "net/minecraft/client/render/entity/EntityRenderDispatcher.hpp"
 #include "net/minecraft/client/render/entity/EntityRenderers.hpp"
 namespace net::minecraft::client::render::entity {
 namespace {
 constexpr int kSnowballTexture = 14;
-struct MatrixScope {
- MatrixScope() {
-  RenderSystem::pushMatrix();
- }
- ~MatrixScope() {
-  RenderSystem::popMatrix();
- }
- MatrixScope(const MatrixScope&) = delete;
- MatrixScope& operator=(const MatrixScope&) = delete;
-};
 } // namespace
 void FireballEntityRenderer::render(
-    const net::minecraft::Entity& entity, double x, double y, double z, float yaw, float tickDelta) {
+    const net::minecraft::Entity& entity, double x, double y, double z, float yaw, float tickDelta,
+    net::minecraft::util::math::MatrixStack& matrices, const net::minecraft::util::math::Matrix4f& projection) {
  (void)entity;
  (void)yaw;
  (void)tickDelta;
- const MatrixScope matrix;
- RenderSystem::translate(static_cast<float>(x), static_cast<float>(y), static_cast<float>(z));
+ beginDraw(matrices, projection);
+ matrices.push();
+ matrices.translate(static_cast<float>(x), static_cast<float>(y), static_cast<float>(z));
  constexpr float sizeScale = 2.0f;
- RenderSystem::scale(sizeScale, sizeScale, sizeScale);
+ matrices.scale(sizeScale, sizeScale, sizeScale);
  bindTexture("/gui/items.png");
  Tessellator& tessellator = Tessellator::INSTANCE;
  const float uMin = static_cast<float>((kSnowballTexture % 16 * 16) + 0) / 256.0f;
@@ -35,8 +26,8 @@ void FireballEntityRenderer::render(
  constexpr float half = 0.5f;
  constexpr float quarter = 0.25f;
  if(dispatcher != nullptr) {
-  RenderSystem::rotate(180.0f - dispatcher->yaw_, 0.0f, 1.0f, 0.0f);
-  RenderSystem::rotate(-dispatcher->pitch_, 1.0f, 0.0f, 0.0f);
+  matrices.rotate(180.0f - dispatcher->yaw_, 0.0f, 1.0f, 0.0f);
+  matrices.rotate(-dispatcher->pitch_, 1.0f, 0.0f, 0.0f);
  }
  tessellator.startQuads();
  tessellator.normal(0.0f, 1.0f, 0.0f);
@@ -45,6 +36,8 @@ void FireballEntityRenderer::render(
  tessellator.vertex(size - half, size - quarter, 0.0, uMax, vMin);
  tessellator.vertex(0.0f - half, size - quarter, 0.0, uMin, vMin);
  tessellator.draw();
+ matrices.pop();
+ endDraw();
 }
 } // namespace net::minecraft::client::render::entity
 #include "net/minecraft/client/entity/EntityClientRendererRegistration.hpp"

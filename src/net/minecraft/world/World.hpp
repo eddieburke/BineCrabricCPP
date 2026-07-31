@@ -4,6 +4,7 @@
 #include <functional>
 #include <future>
 #include <memory>
+#include <mutex>
 #include <optional>
 #include <string>
 #include <typeinfo>
@@ -99,6 +100,10 @@ class World : public IEntityWorld {
   return time_;
  }
  [[nodiscard]] float getTime(float partialTicks) const;
+ // 0 Default, 1 Day, 2 Night — client visual override for celestial phase.
+ [[nodiscard]] int clientTimeMode() const noexcept {
+  return clientTimeMode_;
+ }
  void applyWorldSettings(bool weatherEnabled, int autoSaveTicks, int timeMode);
  void setChunkResidentRadius(int radiusChunks);
  [[nodiscard]] std::uint64_t time() const noexcept {
@@ -178,7 +183,6 @@ class World : public IEntityWorld {
  void tickEntities();
  void displayTick(int x, int y, int z);
  void loadChunksNearEntity(Entity* entity);
- void pumpChunkPublish();
  void setChunkCacheCenter(int chunkX, int chunkZ);
  void setChunkCacheCenterFromBlockPos(int blockX, int blockZ);
  void populateChunkCacheReadyChunks();
@@ -191,6 +195,7 @@ class World : public IEntityWorld {
  // renderer. Cheap; call once per frame/tick. Returns true while the
  // lighting thread still has work queued.
  bool doLightingUpdates(std::size_t maxDirtyRegions = 128);
+ void pumpChunkPublish();
  // Block until the lighting thread has fully converged (world load).
  void finishLightingUpdates();
  [[nodiscard]] bool hasPendingLightingUpdates() const noexcept {
@@ -381,7 +386,7 @@ class World : public IEntityWorld {
  std::vector<block::entity::BlockEntity*> blockEntityUpdateQueue_;
  world::light::UnifiedLightRegistry lightRegistry_{};
  LightingEngine lighting_{lightRegistry_};
- int saveInterval_ = 40;
+ int saveInterval_ = 4000;
  int chunkResidentRadiusChunks_ = 15;
  WorldWeather weather_;
  int clientTimeMode_ = 0;

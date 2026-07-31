@@ -1,6 +1,8 @@
 #include "net/minecraft/client/gl/ShaderProgram.hpp"
+#include <algorithm>
 #include <utility>
 #include "net/minecraft/client/gl/GLCore.hpp"
+#include "net/minecraft/client/gl/GlConstants.hpp"
 #include "net/minecraft/util/math/Matrix4f.hpp"
 namespace net::minecraft::client::gl {
 namespace {
@@ -8,28 +10,43 @@ namespace {
 // fixed-function constant headers.
 constexpr unsigned int kVertexShader = 0x8B31;
 constexpr unsigned int kFragmentShader = 0x8B30;
+constexpr unsigned int kGeometryShader = 0x8DD9;
+constexpr unsigned int kTessControlShader = 0x8E88;
+constexpr unsigned int kTessEvaluationShader = 0x8E87;
+constexpr unsigned int kComputeShader = 0x91B9;
 constexpr unsigned int kCompileStatus = 0x8B81;
 constexpr unsigned int kLinkStatus = 0x8B82;
-// Builds a stage source string: version preamble, then defines, then the body.
+std::string stripLeadingVersionDirective(const std::string& body) {
+ // If the body starts with a #version directive, strip it so the caller-supplied
+ // preamble is not duplicated.
+ const char* p = body.c_str();
+ // skip leading whitespace
+ while(*p == ' ' || *p == '\t') {
+  ++p;
+ }
+ if(body.compare(static_cast<std::size_t>(p - body.c_str()), 9, "#version ", 0, 9) != 0) {
+  return body;
+ }
+ // find end of the #version line
+ const char* eol = p;
+ while(*eol != '\0' && *eol != '\n') {
+  ++eol;
+ }
+ while(*eol == '\n') {
+  ++eol;
+ }
+ return std::string(eol);
+}
 std::string assemble(const std::string& versionPreamble,
-                     const std::vector<ShaderDefine>& defines,
                      const std::string& body) {
+ std::string stripped = stripLeadingVersionDirective(body);
  std::string out;
- out.reserve(versionPreamble.size() + body.size() + 64 * defines.size() + 64);
+ out.reserve(versionPreamble.size() + stripped.size() + 1);
  out += versionPreamble;
  if(!out.empty() && out.back() != '\n') {
   out += '\n';
  }
- for(const ShaderDefine& def : defines) {
-  out += "#define ";
-  out += def.name;
-  if(!def.value.empty()) {
-   out += ' ';
-   out += def.value;
-  }
-  out += '\n';
- }
- out += body;
+ out += stripped;
  return out;
 }
 unsigned int compileStage(unsigned int type, const std::string& source, std::string& errorOut) {
@@ -61,10 +78,11 @@ ShaderProgram::ShaderProgram(ShaderProgram&& other) noexcept
       uniformCache_(std::move(other.uniformCache_)),
       samplerKinds_(std::move(other.samplerKinds_)),
       samplerNames_(std::move(other.samplerNames_)),
-      samplersReflected_(other.samplersReflected_),
+      legacyAttributes_(other.legacyAttributes_),
+      tessellation_(other.tessellation_),
+      drawBuffers_(std::move(other.drawBuffers_)),
       lastError_(std::move(other.lastError_)) {
  other.program_ = 0;
- other.samplersReflected_ = false;
 }
 ShaderProgram& ShaderProgram::operator=(ShaderProgram&& other) noexcept {
  if(this != &other) {
@@ -73,10 +91,11 @@ ShaderProgram& ShaderProgram::operator=(ShaderProgram&& other) noexcept {
   uniformCache_ = std::move(other.uniformCache_);
   samplerKinds_ = std::move(other.samplerKinds_);
   samplerNames_ = std::move(other.samplerNames_);
-  samplersReflected_ = other.samplersReflected_;
+  legacyAttributes_ = other.legacyAttributes_;
+  tessellation_ = other.tessellation_;
+  drawBuffers_ = std::move(other.drawBuffers_);
   lastError_ = std::move(other.lastError_);
   other.program_ = 0;
-  other.samplersReflected_ = false;
  }
  return *this;
 }
@@ -87,7 +106,9 @@ bool ShaderProgram::supported() {
 bool ShaderProgram::compile(const std::string& vertexSource,
                             const std::string& fragmentSource,
                             const std::string& versionPreamble,
-                            const std::vector<ShaderDefine>& defines) {
+                            const std::string& geometrySource,
+                            const std::string& tessControlSource,
+                            const std::string& tessEvaluationSource) {
  GLCore::ensureLoaded();
  destroy();
  lastError_.clear();
@@ -95,45 +116,93 @@ bool ShaderProgram::compile(const std::string& vertexSource,
   lastError_ = "shader entry points unavailable";
   return false;
  }
- const std::string vsrc = assemble(versionPreamble, defines, vertexSource);
- const std::string fsrc = assemble(versionPreamble, defines, fragmentSource);
- const unsigned int vertex = compileStage(kVertexShader, vsrc, lastError_);
-  if(vertex == 0) {
-   return false;
-  }
-  const unsigned int fragment = compileStage(kFragmentShader, fsrc, lastError_);
-  if(fragment == 0) {
-   GLCore::deleteShader(vertex);
+ const std::string vsrc = assemble(versionPreamble, vertexSource);
+ const std::string fsrc = assemble(versionPreamble, fragmentSource);
+ const std::string gsrc = geometrySource.empty() ? std::string{} : assemble(versionPreamble, geometrySource);
+ const std::string tcsrc = tessControlSource.empty() ? std::string{} : assemble(versionPreamble, tessControlSource);
+ const std::string tesrc = tessEvaluationSource.empty() ? std::string{} : assemble(versionPreamble, tessEvaluationSource);
+ std::vector<unsigned int> shaders;
+ const auto add = [&](unsigned int type, const std::string& source) {
+  if(source.empty()) return true;
+  const unsigned int shader = compileStage(type, source, lastError_);
+  if(shader == 0) return false;
+  shaders.push_back(shader);
+  return true;
+ };
+ if(!add(kVertexShader, vsrc) || !add(kTessControlShader, tcsrc) || !add(kTessEvaluationShader, tesrc) ||
+    !add(kGeometryShader, gsrc) || !add(kFragmentShader, fsrc)) {
+  for(unsigned int shader : shaders) GLCore::deleteShader(shader);
   return false;
  }
  const unsigned int program = GLCore::createProgram();
- GLCore::attachShader(program, vertex);
- GLCore::attachShader(program, fragment);
- // Fixed attribute locations so a single VAO layout works across all programs.
+ for(unsigned int shader : shaders) GLCore::attachShader(program, shader);
  if(GLCore::bindAttribLocation != nullptr) {
-  GLCore::bindAttribLocation(program, 0, "aPos");
-  GLCore::bindAttribLocation(program, 1, "aUV");
-  GLCore::bindAttribLocation(program, 2, "aColor");
-  GLCore::bindAttribLocation(program, 3, "aNormal");
-  GLCore::bindAttribLocation(program, 4, "aLight");
+  GLCore::bindAttribLocation(program, 0, "vaPosition");
+  GLCore::bindAttribLocation(program, 1, "vaUV0");
+  GLCore::bindAttribLocation(program, 2, "vaColor");
+  GLCore::bindAttribLocation(program, 3, "vaNormal");
+  GLCore::bindAttribLocation(program, 4, "at_midBlock");
+  GLCore::bindAttribLocation(program, 5, "vaUV2");
+  GLCore::bindAttribLocation(program, 6, "mc_Entity");
+  GLCore::bindAttribLocation(program, 7, "mc_midTexCoord");
+  GLCore::bindAttribLocation(program, 11, "at_tangent");
+  GLCore::bindAttribLocation(program, 12, "mc_chunkFade");
  }
  GLCore::linkProgram(program);
- GLCore::deleteShader(vertex);
- GLCore::deleteShader(fragment);
+ for(unsigned int shader : shaders) GLCore::deleteShader(shader);
  int success = 0;
  GLCore::getProgramiv(program, kLinkStatus, &success);
  if(success == 0) {
   char log[2048]{};
   GLCore::getProgramInfoLog(program, sizeof(log), nullptr, log);
-   lastError_ = log;
-   GLCore::deleteProgram(program);
+  lastError_ = log;
+  GLCore::deleteProgram(program);
   return false;
  }
  program_ = program;
  uniformCache_.clear();
  samplerKinds_.clear();
  samplerNames_.clear();
- samplersReflected_ = false;
+ legacyAttributes_ = vertexSource.find("gl_Vertex") != std::string::npos ||
+                     vertexSource.find("gl_MultiTexCoord") != std::string::npos;
+ tessellation_ = !tessControlSource.empty() && !tessEvaluationSource.empty();
+ reflectSamplers();
+ return true;
+}
+bool ShaderProgram::compileCompute(const std::string& computeSource,
+                                   const std::string& versionPreamble) {
+ GLCore::ensureLoaded();
+ destroy();
+ lastError_.clear();
+ if(!GLCore::computeSupported) {
+  lastError_ = "compute shader entry points unavailable (needs GL 4.3 core)";
+  return false;
+ }
+ const std::string csrc = assemble(versionPreamble, computeSource);
+ const unsigned int stage = compileStage(kComputeShader, csrc, lastError_);
+ if(stage == 0) {
+  return false;
+ }
+ const unsigned int program = GLCore::createProgram();
+ GLCore::attachShader(program, stage);
+ GLCore::linkProgram(program);
+ GLCore::deleteShader(stage);
+ int success = 0;
+ GLCore::getProgramiv(program, kLinkStatus, &success);
+ if(success == 0) {
+  char log[2048]{};
+  GLCore::getProgramInfoLog(program, sizeof(log), nullptr, log);
+  lastError_ = log;
+  GLCore::deleteProgram(program);
+  return false;
+ }
+ program_ = program;
+ uniformCache_.clear();
+ samplerKinds_.clear();
+ samplerNames_.clear();
+ legacyAttributes_ = false;
+ tessellation_ = false;
+ reflectSamplers();
  return true;
 }
 void ShaderProgram::destroy() {
@@ -144,7 +213,9 @@ void ShaderProgram::destroy() {
  uniformCache_.clear();
  samplerKinds_.clear();
  samplerNames_.clear();
- samplersReflected_ = false;
+ drawBuffers_.clear();
+ legacyAttributes_ = false;
+ tessellation_ = false;
 }
 void ShaderProgram::bind() const {
  if(program_ != 0 && GLCore::useProgram != nullptr) {
@@ -156,7 +227,42 @@ void ShaderProgram::unbind() {
   GLCore::useProgram(0);
  }
 }
-int ShaderProgram::location(const std::string& name) const {
+void ShaderProgram::setDrawBufferColortexIndices(const std::vector<int>& colortexIndices) {
+ constexpr unsigned int kColorAttachment0 = 0x8CE0;
+ drawBuffers_.clear();
+ drawBuffers_.reserve(colortexIndices.size());
+ for(int index : colortexIndices) {
+  if(index < 0 || index >= 32) {
+   continue;
+  }
+  drawBuffers_.push_back(kColorAttachment0 + static_cast<unsigned int>(index));
+ }
+}
+void ShaderProgram::applyDrawBuffers(int colorAttachmentCount) const {
+ constexpr unsigned int kColorAttachment0 = 0x8CE0;
+ if(drawBuffers_.empty() || GLCore::drawBuffers == nullptr) {
+  return;
+ }
+ int currentFbo = 0;
+ ::glGetIntegerv(query::FramebufferBinding, &currentFbo);
+ if(currentFbo == 0) {
+  return;
+ }
+ const int maxAttachments = std::max(1, colorAttachmentCount);
+ std::vector<unsigned int> attached;
+ attached.reserve(drawBuffers_.size());
+ for(unsigned int buffer : drawBuffers_) {
+  const int index = static_cast<int>(buffer - kColorAttachment0);
+  if(index >= 0 && index < maxAttachments) {
+   attached.push_back(buffer);
+  }
+ }
+ if(attached.empty()) {
+  attached.push_back(kColorAttachment0);
+ }
+ GLCore::drawBuffers(static_cast<int>(attached.size()), attached.data());
+}
+int ShaderProgram::location(std::string_view name) const {
  if(program_ == 0 || GLCore::getUniformLocation == nullptr) {
   return -1;
  }
@@ -164,126 +270,165 @@ int ShaderProgram::location(const std::string& name) const {
  if(found != uniformCache_.end()) {
   return found->second;
  }
- const int loc = GLCore::getUniformLocation(program_, name.c_str());
- uniformCache_.emplace(name, loc);
- return loc;
+ const int location = GLCore::getUniformLocation(program_, std::string(name).c_str());
+ uniformCache_.emplace(std::string(name), location);
+ return location;
 }
-void ShaderProgram::reflectSamplers() const {
- if(samplersReflected_) {
-  return;
- }
- samplersReflected_ = true;
- if(program_ == 0 || GLCore::getActiveUniform == nullptr || GLCore::getProgramiv == nullptr) {
-  return;
- }
+void ShaderProgram::reflectSamplers() {
+ if(GLCore::getActiveUniform == nullptr) return;
  int count = 0;
+ int maxName = 0;
  GLCore::getProgramiv(program_, 0x8B86, &count);
- int maxLength = 0;
- GLCore::getProgramiv(program_, 0x8B87, &maxLength);
- if(count <= 0 || maxLength <= 0) {
-  return;
- }
- std::vector<char> nameBuffer(static_cast<std::size_t>(maxLength) + 1, '\0');
- for(int i = 0; i < count; ++i) {
+ GLCore::getProgramiv(program_, 0x8B87, &maxName);
+ std::vector<char> name(static_cast<std::size_t>(std::max(maxName, 1)));
+ for(int index = 0; index < count; ++index) {
   int length = 0;
   int size = 0;
   unsigned int type = 0;
-  GLCore::getActiveUniform(
-      program_, static_cast<unsigned int>(i), maxLength, &length, &size, &type, nameBuffer.data());
-  if(length <= 0) {
-   continue;
-  }
-  std::string name(nameBuffer.data(), static_cast<std::size_t>(length));
-  const std::size_t bracket = name.find('[');
-  if(bracket != std::string::npos) {
-   name.erase(bracket);
-  }
+  GLCore::getActiveUniform(program_, static_cast<unsigned int>(index), maxName, &length, &size, &type, name.data());
   SamplerKind kind = SamplerKind::None;
   switch(type) {
-  case 0x8B5E:
   case 0x8B5F:
-  case 0x8B60:
-  case 0x8B62:
-  case 0x8DC1:
-  case 0x8DC4:
-  case 0x8B5D:
-  case 0x8DCA:
-  case 0x904D:
-   kind = SamplerKind::Float;
-   break;
-  case 0x8DD2:
-  case 0x8DD3:
-  case 0x8DD4:
-  case 0x8DD6:
-  case 0x8DD7:
-  case 0x8DD1:
-   kind = SamplerKind::Unsigned;
-   break;
-  case 0x8DC9:
   case 0x8DCB:
+  case 0x8DD3: kind = SamplerKind::Volume; break;
+  case 0x8B61:
+  case 0x8B62:
+  case 0x8B64:
+  case 0x8DC3:
+  case 0x8DC4:
+  case 0x8DC5:
+  case 0x900D: kind = SamplerKind::Shadow; break;
+  case 0x8DC9:
+  case 0x8DCA:
   case 0x8DCC:
+  case 0x8DCD:
   case 0x8DCE:
   case 0x8DCF:
-  case 0x8DC8:
-   kind = SamplerKind::Integer;
-   break;
-  default:
-   break;
+  case 0x900E:
+  case 0x9109:
+  case 0x910C: kind = SamplerKind::Integer; break;
+  case 0x8DD1:
+  case 0x8DD2:
+  case 0x8DD4:
+  case 0x8DD5:
+  case 0x8DD6:
+  case 0x8DD7:
+  case 0x8DD8:
+  case 0x900F:
+  case 0x910A:
+  case 0x910D: kind = SamplerKind::Unsigned; break;
+  case 0x8B5D:
+  case 0x8B5E:
+  case 0x8B60:
+  case 0x8B63:
+  case 0x8DC0:
+  case 0x8DC1:
+  case 0x8DC2:
+  case 0x900C:
+  case 0x9108:
+  case 0x910B: kind = SamplerKind::Float; break;
   }
-  if(kind == SamplerKind::None) {
-   continue;
-  }
-  if(samplerKinds_.emplace(name, kind).second) {
-   samplerNames_.push_back(name);
-  }
+  if(kind == SamplerKind::None || length <= 0) continue;
+  std::string uniform(name.data(), static_cast<std::size_t>(length));
+  if(uniform.ends_with("[0]")) uniform.resize(uniform.size() - 3);
+  samplerKinds_.emplace(uniform, kind);
+  samplerNames_.push_back(std::move(uniform));
  }
 }
-ShaderProgram::SamplerKind ShaderProgram::samplerKind(const std::string& name) const {
- reflectSamplers();
+void ShaderProgram::set1iAt(int loc, int value) const {
+ if(loc >= 0 && GLCore::uniform1i != nullptr) {
+  GLCore::uniform1i(loc, value);
+ }
+}
+void ShaderProgram::set1fAt(int loc, float value) const {
+ if(loc >= 0 && GLCore::uniform1f != nullptr) {
+  GLCore::uniform1f(loc, value);
+ }
+}
+void ShaderProgram::set2fAt(int loc, const float* values) const {
+ if(loc >= 0 && GLCore::uniform2f != nullptr) {
+  GLCore::uniform2f(loc, values[0], values[1]);
+ }
+}
+void ShaderProgram::set3fAt(int loc, const float* values) const {
+ if(loc >= 0 && GLCore::uniform3f != nullptr) {
+  GLCore::uniform3f(loc, values[0], values[1], values[2]);
+ }
+}
+void ShaderProgram::set4fAt(int loc, const float* values) const {
+ if(loc >= 0 && GLCore::uniform4f != nullptr) {
+  GLCore::uniform4f(loc, values[0], values[1], values[2], values[3]);
+ }
+}
+void ShaderProgram::set2iAt(int loc, const int* values) const {
+ if(loc >= 0 && GLCore::uniform2i != nullptr) GLCore::uniform2i(loc, values[0], values[1]);
+}
+void ShaderProgram::set3iAt(int loc, const int* values) const {
+ if(loc >= 0 && GLCore::uniform3i != nullptr) GLCore::uniform3i(loc, values[0], values[1], values[2]);
+}
+void ShaderProgram::set4iAt(int loc, const int* values) const {
+ if(loc >= 0 && GLCore::uniform4i != nullptr) GLCore::uniform4i(loc, values[0], values[1], values[2], values[3]);
+}
+void ShaderProgram::setMatrix3At(int loc, const float* values) const {
+ if(loc >= 0 && GLCore::uniformMatrix3fv != nullptr) {
+  GLCore::uniformMatrix3fv(loc, 1, 0, values);
+ }
+}
+void ShaderProgram::setMatrix4At(int loc, const float* values) const {
+ if(loc >= 0 && GLCore::uniformMatrix4fv != nullptr) {
+  GLCore::uniformMatrix4fv(loc, 1, 0, values);
+ }
+}
+ShaderProgram::SamplerKind ShaderProgram::samplerKind(std::string_view name) const {
  const auto found = samplerKinds_.find(name);
  return found == samplerKinds_.end() ? SamplerKind::None : found->second;
 }
 const std::vector<std::string>& ShaderProgram::declaredSamplers() const {
- reflectSamplers();
  return samplerNames_;
 }
-void ShaderProgram::set1i(const std::string& name, int value) const {
+void ShaderProgram::set1i(std::string_view name, int value) const {
  const int loc = location(name);
  if(loc >= 0 && GLCore::uniform1i != nullptr) {
   GLCore::uniform1i(loc, value);
  }
 }
-void ShaderProgram::set1f(const std::string& name, float value) const {
+void ShaderProgram::set1f(std::string_view name, float value) const {
  const int loc = location(name);
  if(loc >= 0 && GLCore::uniform1f != nullptr) {
   GLCore::uniform1f(loc, value);
  }
 }
-void ShaderProgram::set2f(const std::string& name, float x, float y) const {
+void ShaderProgram::set2f(std::string_view name, float x, float y) const {
  const int loc = location(name);
  if(loc >= 0 && GLCore::uniform2f != nullptr) {
   GLCore::uniform2f(loc, x, y);
  }
 }
-void ShaderProgram::set3f(const std::string& name, float x, float y, float z) const {
+void ShaderProgram::set3f(std::string_view name, float x, float y, float z) const {
  const int loc = location(name);
  if(loc >= 0 && GLCore::uniform3f != nullptr) {
   GLCore::uniform3f(loc, x, y, z);
  }
 }
-void ShaderProgram::set4f(const std::string& name, float x, float y, float z, float w) const {
+void ShaderProgram::set4f(std::string_view name, float x, float y, float z, float w) const {
  const int loc = location(name);
  if(loc >= 0 && GLCore::uniform4f != nullptr) {
   GLCore::uniform4f(loc, x, y, z, w);
  }
 }
-void ShaderProgram::setMatrix4(const std::string& name, const float* value, bool transpose) const {
+void ShaderProgram::setMatrix3(std::string_view name, const float* value, bool transpose) const {
+ const int loc = location(name);
+ if(loc >= 0 && GLCore::uniformMatrix3fv != nullptr) {
+  GLCore::uniformMatrix3fv(loc, 1, transpose ? 1 : 0, value);
+ }
+}
+void ShaderProgram::setMatrix4(std::string_view name, const float* value, bool transpose) const {
  const int loc = location(name);
  if(loc >= 0 && GLCore::uniformMatrix4fv != nullptr) {
   GLCore::uniformMatrix4fv(loc, 1, transpose ? 1 : 0, value);
  }
 }
-void ShaderProgram::setMatrix4(const std::string& name, const net::minecraft::util::math::Matrix4f& value) const {
+void ShaderProgram::setMatrix4(std::string_view name, const net::minecraft::util::math::Matrix4f& value) const {
  setMatrix4(name, value.data(), false);
 }
 } // namespace net::minecraft::client::gl

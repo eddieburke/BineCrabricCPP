@@ -1,10 +1,9 @@
 #include "net/minecraft/client/render/atmosphere/SkyDome.hpp"
 #include <array>
 #include <cmath>
-#include "net/minecraft/client/gl/EnginePipeline.hpp"
 #include "net/minecraft/client/gl/GlConstants.hpp"
-#include "net/minecraft/client/option/GameOptions.hpp"
-#include "net/minecraft/client/render/RenderSystem.hpp"
+#include "net/minecraft/client/option/RenderSettings.hpp"
+#include "net/minecraft/client/render/RenderCore.hpp"
 #include "net/minecraft/client/render/RenderType.hpp"
 #include "net/minecraft/client/render/Tessellator.hpp"
 #include "net/minecraft/client/render/atmosphere/AtmosphereContext.hpp"
@@ -102,22 +101,17 @@ void buildSkyDomes(SkyMeshes& meshes) {
  tessellator.setCaptureOnly(false);
  meshes.built = true;
 }
-void setFogCapEnabled(bool enabled) {
- gl::engine_pipeline::FogUniforms fog = gl::engine_pipeline::fog();
- fog.enabled = enabled;
- gl::engine_pipeline::setFog(fog);
- RenderSystem::hintFogEnabled(enabled);
-}
 void publishRenderStage(mod::WorldRenderEvent& event, mod::WorldRenderStage stage, mod::RenderHookMoment moment) {
  event.stage = stage;
  event.moment = moment;
  net::minecraft::mod::runtime::luaHookWorldRender(event);
 }
 void drawBackgroundFan(const AtmosphereContext& ctx, float tickDelta, const std::array<float, 4>& bg) {
+ const core::RenderStageScope stage(core::RenderStage::Sunset);
  const float timeOfDay = ctx.world->getTime(tickDelta);
- RenderSystem::pushMatrix();
- RenderSystem::rotate(90.0f, 1.0f, 0.0f, 0.0f);
- RenderSystem::rotate(timeOfDay > 0.5f ? 180.0f : 0.0f, 0.0f, 0.0f, 1.0f);
+ core::modelViewStack().push();
+ core::modelViewStack().rotate(90.0f, 1.0f, 0.0f, 0.0f);
+ core::modelViewStack().rotate(timeOfDay > 0.5f ? 180.0f : 0.0f, 0.0f, 0.0f, 1.0f);
  Tessellator& tessellator = Tessellator::INSTANCE;
  tessellator.start(gl::prim::TriangleFan);
  tessellator.color(bg[0], bg[1], bg[2], bg[3]);
@@ -130,32 +124,35 @@ void drawBackgroundFan(const AtmosphereContext& ctx, float tickDelta, const std:
   tessellator.vertex(sinA * 120.0, cosA * 120.0, -cosA * 40.0f * bg[3]);
  }
  tessellator.draw();
- RenderSystem::popMatrix();
+ core::modelViewStack().pop();
 }
 void drawSunMoon(const AtmosphereContext& ctx, float starAlpha) {
- RenderSystem::enableTexture();
- RenderSystem::blendFunc(0x0302, 1);
- RenderSystem::color4f(1.0f, 1.0f, 1.0f, starAlpha);
  Tessellator& tessellator = Tessellator::INSTANCE;
- if(ctx.textureManager != nullptr) {
-  render::RenderSystem::bindTexture(ctx.textureManager->getTextureId("/terrain/sun.png"));
+ tessellator.color(1.0f, 1.0f, 1.0f, starAlpha);
+ if(ctx.settings.renderSun) {
+  const core::RenderStageScope stage(core::RenderStage::Sun);
+  if(ctx.textureManager != nullptr) {
+   core::bindDiffuse(ctx.textureManager->getTextureId("/terrain/sun.png"));
+  }
+  tessellator.startQuads();
+  tessellator.vertex(-30.0, 100.0, -30.0, 0.0, 0.0);
+  tessellator.vertex(30.0, 100.0, -30.0, 1.0, 0.0);
+  tessellator.vertex(30.0, 100.0, 30.0, 1.0, 1.0);
+  tessellator.vertex(-30.0, 100.0, 30.0, 0.0, 1.0);
+  tessellator.draw();
  }
- tessellator.startQuads();
- tessellator.vertex(-30.0, 100.0, -30.0, 0.0, 0.0);
- tessellator.vertex(30.0, 100.0, -30.0, 1.0, 0.0);
- tessellator.vertex(30.0, 100.0, 30.0, 1.0, 1.0);
- tessellator.vertex(-30.0, 100.0, 30.0, 0.0, 1.0);
- tessellator.draw();
- if(ctx.textureManager != nullptr) {
-  render::RenderSystem::bindTexture(ctx.textureManager->getTextureId("/terrain/moon.png"));
+ if(ctx.settings.renderMoon) {
+  const core::RenderStageScope stage(core::RenderStage::Moon);
+  if(ctx.textureManager != nullptr) {
+   core::bindDiffuse(ctx.textureManager->getTextureId("/terrain/moon.png"));
+  }
+  tessellator.startQuads();
+  tessellator.vertex(-20.0, -100.0, 20.0, 1.0, 1.0);
+  tessellator.vertex(20.0, -100.0, 20.0, 0.0, 1.0);
+  tessellator.vertex(20.0, -100.0, -20.0, 0.0, 0.0);
+  tessellator.vertex(-20.0, -100.0, -20.0, 1.0, 0.0);
+  tessellator.draw();
  }
- tessellator.startQuads();
- tessellator.vertex(-20.0, -100.0, 20.0, 1.0, 1.0);
- tessellator.vertex(20.0, -100.0, 20.0, 0.0, 1.0);
- tessellator.vertex(20.0, -100.0, -20.0, 0.0, 0.0);
- tessellator.vertex(-20.0, -100.0, -20.0, 1.0, 0.0);
- tessellator.draw();
- RenderSystem::blendAlpha();
 }
 } // namespace
 void renderSkyDome(const AtmosphereContext& ctx, float tickDelta) {
@@ -172,7 +169,7 @@ void renderSkyDome(const AtmosphereContext& ctx, float tickDelta) {
      mod::RenderHookMoment::Before,
      false,
      false,
-     timeOfDay * kPi * 2.0f,
+     timeOfDay,
      0.0f,
  };
  publishRenderStage(skyEvent, mod::WorldRenderStage::Sky, mod::RenderHookMoment::Before);
@@ -182,9 +179,10 @@ void renderSkyDome(const AtmosphereContext& ctx, float tickDelta) {
   float sunZ = skyEvent.sunDirectionZ;
   if(!skyEvent.solarDirectionValid) {
    const float yaw = skyEvent.skyYawDegrees * kPi / 180.0f;
-   sunX = std::sin(yaw) * std::sin(skyEvent.celestialAngle);
-   sunY = std::cos(skyEvent.celestialAngle);
-   sunZ = std::cos(yaw) * std::sin(skyEvent.celestialAngle);
+   const float angle = skyEvent.celestialAngle * kPi * 2.0f;
+   sunX = std::sin(yaw) * std::sin(angle);
+   sunY = std::cos(angle);
+   sunZ = std::cos(yaw) * std::sin(angle);
   }
   const float length = std::sqrt(sunX * sunX + sunY * sunY + sunZ * sunZ);
   if(length > 0.0001f) {
@@ -203,12 +201,19 @@ void renderSkyDome(const AtmosphereContext& ctx, float tickDelta) {
   sun.blue = 0.88f - horizon * 0.48f;
   sun.intensity = daylight;
   ctx.world->lightRegistry().setSun(sun);
+  render::core::SkyUniforms skyUniforms{};
+  skyUniforms.sunDirection[0] = sunX;
+  skyUniforms.sunDirection[1] = sunY;
+  skyUniforms.sunDirection[2] = sunZ;
+  skyUniforms.sunIntensity = daylight;
+  skyUniforms.renderStars = ctx.settings.renderStars;
+  render::core::setSkyUniforms(skyUniforms);
  }
  if(skyEvent.cancelVanilla) {
   return;
  }
  const RenderPassScope skyPass(RenderType::sky());
- RenderSystem::depthMask(false);
+ core::depthMask(false);
  SkyMeshes& meshes = skyMeshes();
  if(!meshes.built) {
   buildSkyDomes(meshes);
@@ -219,29 +224,33 @@ void renderSkyDome(const AtmosphereContext& ctx, float tickDelta) {
  float skyB = static_cast<float>(sky.z);
  const float starAlpha = 1.0f - ctx.world->getRainGradient(tickDelta);
  const float starBrightness = ctx.world->calculateSkyLightIntensity(tickDelta) * starAlpha;
- RenderSystem::disableTexture();
- RenderSystem::color3f(skyR, skyG, skyB);
- RenderSystem::alphaFunc(0x0207, 0.0f);
- setFogCapEnabled(true);
- Tessellator::drawMesh(meshes.lightSky);
- setFogCapEnabled(false);
  {
-  RenderSystem::enableBlend();
-  RenderSystem::blendAlpha();
-  RenderSystem::alphaFunc(0x0207, 0.0f);
-  RenderSystem::disableTexture();
-  render::RenderSystem::disableLighting();
+  render::core::SkyUniforms skyUniforms = render::core::skyUniforms();
+  skyUniforms.skyColor[0] = skyR;
+  skyUniforms.skyColor[1] = skyG;
+  skyUniforms.skyColor[2] = skyB;
+  skyUniforms.starBrightness = starBrightness;
+  render::core::setSkyUniforms(skyUniforms);
+ }
+ core::setConstColor(skyR, skyG, skyB, 1.0f);
+ Tessellator::drawMesh(meshes.lightSky);
+ {
+  core::enableBlend();
+  core::blendAlpha();
   if(std::array<float, 4>* background = ctx.world->dimension->getBackgroundColor(timeOfDay, tickDelta);
      background != nullptr) {
    drawBackgroundFan(ctx, tickDelta, *background);
   }
  }
  {
-  RenderSystem::pushMatrix();
-  RenderSystem::rotate(skyEvent.skyYawDegrees, 0.0f, 1.0f, 0.0f);
-  RenderSystem::rotate(skyEvent.celestialAngle * 180.0f / kPi, 1.0f, 0.0f, 0.0f);
-  drawSunMoon(ctx, starAlpha);
-  RenderSystem::popMatrix();
+  core::modelViewStack().push();
+  core::modelViewStack().rotate(skyEvent.skyYawDegrees, 0.0f, 1.0f, 0.0f);
+  core::modelViewStack().rotate(skyEvent.celestialAngle * 360.0f, 1.0f, 0.0f, 0.0f);
+  {
+   const RenderPassScope sunMoonPass(RenderType::skyTextured());
+   drawSunMoon(ctx, starAlpha);
+  }
+  core::modelViewStack().pop();
  }
  {
   mod::WorldRenderEvent starsEvent = skyEvent;
@@ -249,31 +258,26 @@ void renderSkyDome(const AtmosphereContext& ctx, float tickDelta) {
   starsEvent.vanillaStageRan = false;
   starsEvent.starBrightness = starBrightness;
   starsEvent.rainStrength = ctx.world->getRainGradient(tickDelta);
-  starsEvent.starsEnabled = ctx.options.stars;
+  starsEvent.starsEnabled = ctx.settings.renderStars;
   publishRenderStage(starsEvent, mod::WorldRenderStage::Stars, mod::RenderHookMoment::Before);
-  if(starsEvent.starBrightness > 0.0f && ctx.options.stars && !starsEvent.cancelVanilla) {
-   RenderSystem::color4f(starsEvent.starBrightness,
-                         starsEvent.starBrightness,
-                         starsEvent.starBrightness,
-                         starsEvent.starBrightness);
-   RenderSystem::disableTexture();
+  if(starsEvent.starBrightness > 0.0f && ctx.settings.renderStars && !starsEvent.cancelVanilla) {
+   const core::RenderStageScope stage(core::RenderStage::Stars);
+   core::setConstColor(starsEvent.starBrightness,
+                       starsEvent.starBrightness,
+                       starsEvent.starBrightness,
+                       starsEvent.starBrightness);
    Tessellator::drawMesh(meshes.stars);
    starsEvent.vanillaStageRan = true;
   }
   publishRenderStage(starsEvent, mod::WorldRenderStage::Stars, mod::RenderHookMoment::After);
  }
- RenderSystem::disableBlend();
- RenderSystem::alphaTest();
- RenderSystem::disableTexture();
- setFogCapEnabled(true);
- if(ctx.world->dimension->hasGround()) {
-  RenderSystem::color3f(skyR * 0.2f + 0.04f, skyG * 0.2f + 0.04f, skyB * 0.6f + 0.1f);
- } else {
-  RenderSystem::color3f(skyR, skyG, skyB);
+ core::disableBlend();
+ core::setConstColor(skyR * 0.2f, skyG * 0.2f, skyB * 0.2f, 1.0f);
+ {
+  const core::RenderStageScope stage(core::RenderStage::Void);
+  Tessellator::drawMesh(meshes.darkSky);
  }
- Tessellator::drawMesh(meshes.darkSky);
- RenderSystem::enableTexture();
- RenderSystem::depthMask(true);
+ core::depthMask(true);
  skyEvent.vanillaStageRan = true;
  publishRenderStage(skyEvent, mod::WorldRenderStage::Sky, mod::RenderHookMoment::After);
 }

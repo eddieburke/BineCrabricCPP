@@ -2,6 +2,7 @@
 #include <functional>
 #include <memory>
 #include <string>
+#include "net/minecraft/client/gui/layout/OptionsListScroll.hpp"
 #include "net/minecraft/client/gui/screen/Screen.hpp"
 #include "net/minecraft/client/gui/screen/option/OptionGui.hpp"
 #include "net/minecraft/client/option/GameOptions.hpp"
@@ -13,11 +14,15 @@ class SettingsScreen : public screen::Screen {
  SettingsScreen(ParentFactory parentFactory, client_option::GameOptions* gameOptions, std::string title);
  void init() override;
  void render(int mouseX, int mouseY, float tickDelta) override;
+ void mouseScrolled(int mouseX, int mouseY, int delta) override;
+ void mouseClicked(int mouseX, int mouseY, int button) override;
+ void mouseReleased(int mouseX, int mouseY, int button) override;
+ void keyPressed(char character, int keyCode) override;
 
  protected:
  virtual void buildOptions(OptionGuiBuilder& gui) = 0;
  virtual int doneButtonY() const {
-  return height() / 6 + 24 * 8;
+  return height() - 28;
  }
  [[nodiscard]] client_option::GameOptions* gameOptions() const noexcept {
   return gameOptions_;
@@ -28,8 +33,11 @@ class SettingsScreen : public screen::Screen {
 
  private:
  void refreshOptionStates();
+ void updateScrollLayout();
  ParentFactory parentFactory_;
  client_option::GameOptions* gameOptions_ = nullptr;
  std::string title_;
+ layout::OptionsListScroll scroll_;
+ std::size_t optionButtonCount_ = 0;
 };
 } // namespace net::minecraft::client::gui::screen::option

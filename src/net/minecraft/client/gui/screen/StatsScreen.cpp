@@ -6,7 +6,7 @@
 #include "net/minecraft/client/Minecraft.hpp"
 #include "net/minecraft/client/gl/GlConstants.hpp"
 #include "net/minecraft/client/gui/layout/ScreenLayout.hpp"
-#include "net/minecraft/client/render/RenderSystem.hpp"
+#include "net/minecraft/client/render/RenderCore.hpp"
 #include "net/minecraft/client/render/Tessellator.hpp"
 #include "net/minecraft/client/render/item/ItemRenderer.hpp"
 #include "net/minecraft/client/resource/language/I18n.hpp"
@@ -14,7 +14,10 @@
 #include "net/minecraft/item/ItemStack.hpp"
 #include "net/minecraft/stat/PlayerStats.hpp"
 #include "net/minecraft/stat/Stats.hpp"
+#include "net/minecraft/client/gui/Draw2D.hpp"
+#include "net/minecraft/client/render/RenderType.hpp"
 namespace net::minecraft::client::gui::screen {
+namespace core = net::minecraft::client::render::core;
 namespace {
 using StatResolver = stat::StatId* (*)(stat::StatId*);
 struct StatColumn {
@@ -335,30 +338,34 @@ void StatsScreen::renderIcon(int x, int y, int u, int v) {
   return;
  }
  const int textureId = minecraft()->textureManager.getTextureId("/gui/slot.png");
- render::RenderSystem::color4f(1.0f, 1.0f, 1.0f, 1.0f);
- render::RenderSystem::bindTexture(textureId);
- drawTexture(x, y, u, v, 18, 18);
+ render::core::setConstColor(1.0f, 1.0f, 1.0f, 1.0f);
+ render::core::bindTexture(textureId);
+ {
+  const render::RenderPassScope passScope(render::RenderType::guiTextured());
+  const float* c = render::core::constColor();
+  render::Tessellator& tess = render::INSTANCE;
+  tess.startQuads();
+  tess.color(c[0], c[1], c[2], c[3]);
+  draw::appendAtlasQuad(tess, x, y, u, v, 18, 18, 0.0f);
+  tess.draw();
+ }
 }
 void StatsScreen::renderItemIcon(int x, int y, int itemOrBlockId) {
  if(minecraft() == nullptr || minecraft()->textRenderer == nullptr) {
   return;
  }
  renderIcon(x + 1, y + 1);
- render::RenderSystem::pushMatrix();
- render::RenderSystem::rotate(180.0f, 1.0f, 0.0f, 0.0f);
- render::RenderSystem::enableLighting();
- render::RenderSystem::popMatrix();
  static render::item::ItemRenderer itemRenderer;
  itemRenderer.renderGuiItem(
      *minecraft()->textRenderer, minecraft()->textureManager, ItemStack(itemOrBlockId), x + 2, y + 2);
- render::RenderSystem::disableLighting();
+ render::core::setLightingEnabled(false);
 }
 void StatsScreen::render(int mouseX, int mouseY, float tickDelta) {
  if(selectedStatsList_ != nullptr) {
   selectedStatsList_->render(mouseX, mouseY, tickDelta);
  }
  if(textRenderer() != nullptr) {
-  drawCenteredTextWithShadow(*textRenderer(), title_, width_ / 2, 20, 0xFFFFFF);
+  textRenderer()->drawCenteredWithShadow(title_, width_ / 2, 20, 0xFFFFFF);
  }
  Screen::render(mouseX, mouseY, tickDelta);
 }

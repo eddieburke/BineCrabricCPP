@@ -91,20 +91,20 @@ inline int getglobal(lua_State* state, const char* name) {
 [[nodiscard]] double luaDoubleArg(lua_State* state, int index, double fallback = 0.0);
 class LuaArgs {
  public:
-  explicit LuaArgs(lua_State* state) : state_(state), api_(luaApi()) {
-  }
-  [[nodiscard]] int count() const;
-  [[nodiscard]] bool string(int index, std::string& value) const;
-  [[nodiscard]] bool table(int index) const;
-  [[nodiscard]] bool integer(int index, int& value) const;
-  [[nodiscard]] bool number(int index, double& value) const;
-  [[nodiscard]] bool optionalString(int index, std::string& value) const;
-  [[nodiscard]] bool optionalNumber(int index, double& value) const;
-  [[nodiscard]] int fail(std::string_view message) const;
+ explicit LuaArgs(lua_State* state) : state_(state), api_(luaApi()) {
+ }
+ [[nodiscard]] int count() const;
+ [[nodiscard]] bool string(int index, std::string& value) const;
+ [[nodiscard]] bool table(int index) const;
+ [[nodiscard]] bool integer(int index, int& value) const;
+ [[nodiscard]] bool number(int index, double& value) const;
+ [[nodiscard]] bool optionalString(int index, std::string& value) const;
+ [[nodiscard]] bool optionalNumber(int index, double& value) const;
+ [[nodiscard]] int fail(std::string_view message) const;
 
  private:
-  lua_State* state_;
-  LuaApi& api_;
+ lua_State* state_;
+ LuaApi& api_;
 };
 [[nodiscard]] bool luaBoolField(lua_State* state, int tableIndex, const char* key, bool fallback);
 [[nodiscard]] float luaFloatField(lua_State* state, int tableIndex, const char* key, float fallback);

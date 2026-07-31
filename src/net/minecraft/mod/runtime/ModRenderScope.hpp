@@ -1,7 +1,9 @@
 #pragma once
+#include <string_view>
 #ifdef MINECRAFT_NATIVE_EXPORTS
-#include "net/minecraft/client/render/RenderSystem.hpp"
+#include "net/minecraft/client/render/RenderCore.hpp"
 #include "net/minecraft/client/render/RenderType.hpp"
+#include <optional>
 #endif
 namespace net::minecraft {
 class World;
@@ -25,70 +27,172 @@ class ScopedModWorldDrawContext {
  private:
  bool entered_ = false;
 };
-#ifdef MINECRAFT_NATIVE_EXPORTS
-// Shared save/restore of RenderSystem state. All mod draw scopes build on this.
-class ModStateScope {
- public:
- ModStateScope() : saved_(client::render::RenderSystem::getShadow()) {
- }
- ~ModStateScope() {
-  client::render::RenderSystem::setShadow(saved_);
- }
- ModStateScope(const ModStateScope&) = delete;
- ModStateScope& operator=(const ModStateScope&) = delete;
-
- protected:
- client::render::RenderSystem::StateShadow saved_;
+enum class ModDrawLayer {
+ Auto = 0,
+ Entity,
+ Terrain,
+ Block,
+ Sky,
+ Basic,
 };
-// State for one Lua-issued world draw. Opening the pass is what binds a shader
-// program: without one every draw in engine_pipeline silently returns and
-// nothing reaches the screen. The pass sets the base state and restores it (and
-// the previous program) on exit; the per-draw options here layer on top of it.
+[[nodiscard]] inline ModDrawLayer parseModDrawLayer(std::string_view name) noexcept {
+ if(name == "entity") {
+  return ModDrawLayer::Entity;
+ }
+ if(name == "terrain") {
+  return ModDrawLayer::Terrain;
+ }
+ if(name == "block") {
+  return ModDrawLayer::Block;
+ }
+ if(name == "sky") {
+  return ModDrawLayer::Sky;
+ }
+ if(name == "basic") {
+  return ModDrawLayer::Basic;
+ }
+ return ModDrawLayer::Auto;
+}
+#ifdef MINECRAFT_NATIVE_EXPORTS
 class ModLuaDrawScope {
  public:
- ModLuaDrawScope(bool textured, bool blend, bool cull, bool depthTest, bool depthWrite)
-     : saved_(client::render::RenderSystem::getShadow()) {
-  using client::render::RenderSystem;
-  RenderSystem::alphaTest(0.1f);
-  if(textured) {
-   RenderSystem::enableTexture();
-  } else {
-   RenderSystem::disableTexture();
-  }
-  if(blend) {
-   RenderSystem::enableBlend();
-   RenderSystem::blendAlpha();
-  } else {
-   RenderSystem::disableBlend();
-  }
-  if(cull) {
-   RenderSystem::enableCull();
-  } else {
-   RenderSystem::disableCull();
-  }
-  if(depthTest) {
-   // Also pins the depth func to LEQUAL rather than inheriting the stage's.
-   RenderSystem::depthTestWrite(depthWrite);
-  } else {
-   RenderSystem::disableDepthTest();
-   RenderSystem::depthMask(depthWrite);
-  }
-  RenderSystem::disableLighting();
-  // The entity pass leaves uConstColor at the last entity's brightness; without
-  // this reset every Lua model would be multiplied by it a second time.
-  RenderSystem::color4f(1.0f, 1.0f, 1.0f, 1.0f);
- }
- ~ModLuaDrawScope() {
-  client::render::RenderSystem::setShadow(saved_);
+ ModLuaDrawScope(bool textured, bool blend, bool cull, bool depthTest, bool depthWrite,
+                 ModDrawLayer layer = ModDrawLayer::Auto)
+     : kind_(pickPass(textured, blend, depthTest, depthWrite, layer)),
+       pass_(passFor(kind_)) {
+  applyOverrides(kind_, blend, cull, depthTest, depthWrite);
+  client::render::core::setConstColor(1.0f, 1.0f, 1.0f, 1.0f);
  }
  ModLuaDrawScope(const ModLuaDrawScope&) = delete;
  ModLuaDrawScope& operator=(const ModLuaDrawScope&) = delete;
+ [[nodiscard]] bool usesTerrainProgram() const noexcept {
+  return kind_ == PassKind::TerrainCutout || kind_ == PassKind::TerrainTranslucent;
+ }
+ [[nodiscard]] bool usesEntityLighting() const noexcept {
+  return kind_ == PassKind::EntityCutout || kind_ == PassKind::EntityTranslucent ||
+         kind_ == PassKind::Block || kind_ == PassKind::BlockTranslucent;
+ }
 
  private:
- // Declared first so the pass opens before the state below is captured and
- // overridden, and closes last — restoring the program the caller had bound.
- client::render::RenderPassScope pass_{client::render::RenderType::entityCutout()};
- client::render::RenderSystem::StateShadow saved_;
+ enum class PassKind {
+  Sky,
+  SkyTextured,
+  EntityCutout,
+  EntityTranslucent,
+  ParticlesTranslucent,
+  TerrainCutout,
+  TerrainTranslucent,
+  Block,
+  BlockTranslucent,
+  Basic
+ };
+ [[nodiscard]] static PassKind pickPass(bool textured, bool blend, bool depthTest, bool depthWrite,
+                                        ModDrawLayer layer) {
+  if(!depthTest || layer == ModDrawLayer::Sky) {
+   return textured ? PassKind::SkyTextured : PassKind::Sky;
+  }
+  if(layer == ModDrawLayer::Basic || !textured) {
+   return PassKind::Basic;
+  }
+  if(layer == ModDrawLayer::Terrain) {
+   if(blend) {
+    return PassKind::TerrainTranslucent;
+   }
+   return PassKind::TerrainCutout;
+  }
+  if(layer == ModDrawLayer::Block) {
+   return blend ? PassKind::BlockTranslucent : PassKind::Block;
+  }
+  if(textured) {
+   if(blend && !depthWrite) {
+    return PassKind::ParticlesTranslucent;
+   }
+   if(blend) {
+    return PassKind::EntityTranslucent;
+   }
+   return PassKind::EntityCutout;
+  }
+  return PassKind::Basic;
+ }
+ [[nodiscard]] static client::render::RenderType& passFor(PassKind kind) {
+  using client::render::RenderType;
+  switch(kind) {
+  case PassKind::Sky:
+   return RenderType::sky();
+  case PassKind::SkyTextured:
+   return RenderType::skyTextured();
+  case PassKind::EntityCutout:
+   return RenderType::entityCutout();
+  case PassKind::EntityTranslucent:
+   return RenderType::entityTranslucent();
+  case PassKind::ParticlesTranslucent:
+   return RenderType::particlesTranslucent();
+  case PassKind::TerrainCutout:
+   return RenderType::cutout();
+  case PassKind::TerrainTranslucent:
+   return RenderType::translucent();
+  case PassKind::Block:
+   return RenderType::block();
+  case PassKind::BlockTranslucent:
+   return RenderType::blockTranslucent();
+  case PassKind::Basic:
+   return RenderType::basic();
+  }
+  return RenderType::entityCutout();
+ }
+ void applyOverrides(PassKind kind, bool blend, bool cull, bool depthTest, bool depthWrite) {
+  namespace core = client::render::core;
+  bool passBlend = false;
+  bool passDepthTest = true;
+  bool passDepthWrite = true;
+  bool passCull = false;
+  bool passLighting = false;
+  switch(kind) {
+  case PassKind::Sky:
+  case PassKind::SkyTextured:
+   passDepthTest = false;
+   passDepthWrite = false;
+   break;
+  case PassKind::EntityCutout:
+  case PassKind::Block:
+   passCull = true;
+   passLighting = true;
+   break;
+  case PassKind::TerrainCutout:
+   passCull = false;
+   passLighting = true;
+   break;
+  case PassKind::EntityTranslucent:
+  case PassKind::BlockTranslucent:
+  case PassKind::TerrainTranslucent:
+   passBlend = true;
+   break;
+  case PassKind::ParticlesTranslucent:
+   passBlend = true;
+   passDepthWrite = false;
+   break;
+  case PassKind::Basic:
+   passBlend = true;
+   break;
+  }
+  if(blend != passBlend) {
+   blendOverride_.emplace(blend);
+  }
+  if(cull != passCull) {
+   cullOverride_.emplace(cull);
+  }
+  if(depthTest != passDepthTest || depthWrite != passDepthWrite) {
+   depthOverride_.emplace(depthTest, depthWrite);
+  }
+  if(passLighting) {
+   client::render::core::setLightingEnabled(false);
+  }
+ }
+ PassKind kind_;
+ client::render::RenderPassScope pass_;
+ std::optional<client::render::core::BlendScope> blendOverride_;
+ std::optional<client::render::core::CullScope> cullOverride_;
+ std::optional<client::render::core::DepthScope> depthOverride_;
 };
 #endif
 } // namespace net::minecraft::mod::runtime

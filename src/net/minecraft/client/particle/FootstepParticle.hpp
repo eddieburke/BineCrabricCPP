@@ -1,25 +1,9 @@
 #pragma once
 #include "net/minecraft/client/gl/GlConstants.hpp"
 #include "net/minecraft/client/particle/Particle.hpp"
-#include "net/minecraft/client/render/RenderSystem.hpp"
+#include "net/minecraft/client/render/RenderCore.hpp"
 #include "net/minecraft/client/texture/TextureManager.hpp"
 namespace net::minecraft::client::particle {
-namespace {
-class FootstepDecalScope {
- public:
- FootstepDecalScope() : saved_(render::RenderSystem::getShadow()) {
-  render::RenderSystem::blendAlpha();
- }
- ~FootstepDecalScope() {
-  render::RenderSystem::setShadow(saved_);
- }
- FootstepDecalScope(const FootstepDecalScope&) = delete;
- FootstepDecalScope& operator=(const FootstepDecalScope&) = delete;
-
- private:
- render::RenderSystem::StateShadow saved_;
-};
-} // namespace
 class FootstepParticle : public Particle {
  public:
  FootstepParticle(texture::TextureManager* textureManager, World* world, double x, double y, double z)
@@ -45,7 +29,7 @@ class FootstepParticle : public Particle {
   const float brightness =
       world->getLightBrightness(MathHelper::floor(x), MathHelper::floor(y), MathHelper::floor(z));
   textureManager_->bindTexture(textureManager_->getTextureId("/misc/footprint.png"));
-  const FootstepDecalScope footCaps;
+  const render::core::BlendScope footCaps(true);
   tessellator.startQuads();
   tessellator.color(brightness, brightness, brightness, alpha);
   tessellator.vertex(px - size, py, pz + size, 0.0, 1.0);

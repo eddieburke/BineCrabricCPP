@@ -1,8 +1,3 @@
--- ================================================================
--- CONFIG: too_many_items
--- Centralized configuration with validation and persistence
--- ================================================================
-
 local settings = require("lib.settings")
 
 local config = settings.define("too_many_items", {

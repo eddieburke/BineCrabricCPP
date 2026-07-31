@@ -8,7 +8,10 @@
 #include "net/minecraft/client/gl/GlConstants.hpp"
 #include "net/minecraft/client/input/InputSystem.hpp"
 #include "net/minecraft/client/option/GameOptions.hpp"
-#include "net/minecraft/client/render/RenderSystem.hpp"
+#include "net/minecraft/client/gui/Draw2D.hpp"
+#include "net/minecraft/client/render/RenderCore.hpp"
+#include "net/minecraft/client/render/RenderType.hpp"
+#include "net/minecraft/client/render/Tessellator.hpp"
 #include "net/minecraft/client/render/item/ItemRenderer.hpp"
 #include "net/minecraft/client/render/texture/DynamicTextureDetail.hpp"
 #include "net/minecraft/client/resource/language/I18n.hpp"
@@ -19,17 +22,14 @@
 #include "net/minecraft/world/World.hpp"
 #include "net/minecraft/world/chunk/Chunk.hpp"
 namespace net::minecraft::client::gui::screen {
+namespace core = net::minecraft::client::render::core;
 namespace {
-using net::minecraft::client::render::RenderSystem;
 constexpr int kMinColumn = achievement::Achievements::minColumn * 24 - 112;
 constexpr int kMaxColumn = achievement::Achievements::maxColumn * 24 - 77;
 constexpr int kMinRow = achievement::Achievements::minRow * 24 - 112;
 constexpr int kMaxRow = achievement::Achievements::maxRow * 24 - 77;
 constexpr int kDefaultScrollPixelX = achievement::Achievements::OPEN_INVENTORY.column * 24 - 141 / 2 - 12;
 constexpr int kDefaultTileColumn = (kDefaultScrollPixelX + 288) >> 4;
-int stoneTextureId() {
- return block::Block::STONE != nullptr ? block::Block::STONE->textureId : 1;
-}
 int proceduralTerrainTexture(int tileColumn, int tileRow, int row, net::minecraft::JavaRandom& random) {
  random.setSeed(1234 + tileColumn + row);
  [[maybe_unused]] const int discard = random.nextInt();
@@ -56,108 +56,6 @@ std::int64_t nowMillis() {
  return std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch())
      .count();
 }
-class MatrixScope {
- public:
- MatrixScope() {
-  RenderSystem::pushMatrix();
- }
- ~MatrixScope() {
-  RenderSystem::popMatrix();
- }
- MatrixScope(const MatrixScope&) = delete;
- MatrixScope& operator=(const MatrixScope&) = delete;
-};
-class AchievementMapScope {
- public:
- AchievementMapScope() : saved_(RenderSystem::getShadow()) {
-  RenderSystem::depthTest();
-  RenderSystem::enableTexture();
- }
- ~AchievementMapScope() {
-  RenderSystem::setShadow(saved_);
- }
- AchievementMapScope(const AchievementMapScope&) = delete;
- AchievementMapScope& operator=(const AchievementMapScope&) = delete;
-
- private:
- RenderSystem::StateShadow saved_;
-};
-class AchievementMapLinesScope {
- public:
- AchievementMapLinesScope() : saved_(RenderSystem::getShadow()) {
-  RenderSystem::depthTest();
-  RenderSystem::disableTexture();
- }
- ~AchievementMapLinesScope() {
-  RenderSystem::setShadow(saved_);
- }
- AchievementMapLinesScope(const AchievementMapLinesScope&) = delete;
- AchievementMapLinesScope& operator=(const AchievementMapLinesScope&) = delete;
-
- private:
- RenderSystem::StateShadow saved_;
-};
-class AchievementMapIconsScope {
- public:
- AchievementMapIconsScope() : saved_(RenderSystem::getShadow()) {
-  RenderSystem::enableTexture();
-  RenderSystem::depthTest();
-  RenderSystem::blendAlpha();
- }
- ~AchievementMapIconsScope() {
-  RenderSystem::setShadow(saved_);
- }
- AchievementMapIconsScope(const AchievementMapIconsScope&) = delete;
- AchievementMapIconsScope& operator=(const AchievementMapIconsScope&) = delete;
-
- private:
- RenderSystem::StateShadow saved_;
-};
-class AchievementIconItemScope {
- public:
- AchievementIconItemScope() : saved_(RenderSystem::getShadow()) {
-  RenderSystem::cullBackFaces();
- }
- ~AchievementIconItemScope() {
-  RenderSystem::setShadow(saved_);
- }
- AchievementIconItemScope(const AchievementIconItemScope&) = delete;
- AchievementIconItemScope& operator=(const AchievementIconItemScope&) = delete;
-
- private:
- RenderSystem::StateShadow saved_;
-};
-class AchievementMapFrameScope {
- public:
- AchievementMapFrameScope() : saved_(RenderSystem::getShadow()) {
-  RenderSystem::disableDepthTest();
-  RenderSystem::enableBlend();
-  RenderSystem::enableTexture();
- }
- ~AchievementMapFrameScope() {
-  RenderSystem::setShadow(saved_);
- }
- AchievementMapFrameScope(const AchievementMapFrameScope&) = delete;
- AchievementMapFrameScope& operator=(const AchievementMapFrameScope&) = delete;
-
- private:
- RenderSystem::StateShadow saved_;
-};
-class ScreenTextOverlayScope {
- public:
- ScreenTextOverlayScope() : saved_(RenderSystem::getShadow()) {
-  RenderSystem::disableDepthTest();
-  RenderSystem::enableTexture();
- }
- ~ScreenTextOverlayScope() {
-  RenderSystem::setShadow(saved_);
- }
- ScreenTextOverlayScope(const ScreenTextOverlayScope&) = delete;
- ScreenTextOverlayScope& operator=(const ScreenTextOverlayScope&) = delete;
-
- private:
- RenderSystem::StateShadow saved_;
-};
 } // namespace
 AchievementsScreen::AchievementsScreen(stat::PlayerStats* stats) : stats_(stats) {
  constexpr int centerX = 141;
@@ -195,13 +93,29 @@ void AchievementsScreen::drawHorizontalLine(int x1, int x2, int y, int color) {
  if(x2 < x1) {
   std::swap(x1, x2);
  }
- fill(x1, y, x2 + 1, y + 1, static_cast<std::uint32_t>(color));
+ const std::uint32_t c = static_cast<std::uint32_t>(color);
+ const render::RenderPassScope passScope(render::RenderType::gui());
+ draw::coloredQuad(render::INSTANCE,
+                   x1,
+                   y,
+                   x2 + 1,
+                   y + 1,
+                   static_cast<int>(c & 0x00FFFFFFU),
+                   static_cast<int>((c >> 24U) & 0xFFU));
 }
 void AchievementsScreen::drawVerticalLine(int x, int y1, int y2, int color) {
  if(y2 < y1) {
   std::swap(y1, y2);
  }
- fill(x, y1, x + 1, y2 + 1, static_cast<std::uint32_t>(color));
+ const std::uint32_t c = static_cast<std::uint32_t>(color);
+ const render::RenderPassScope passScope(render::RenderType::gui());
+ draw::coloredQuad(render::INSTANCE,
+                   x,
+                   y1,
+                   x + 1,
+                   y2 + 1,
+                   static_cast<int>(c & 0x00FFFFFFU),
+                   static_cast<int>((c >> 24U) & 0xFFU));
 }
 void AchievementsScreen::setTitle() {
  const int frameX = (width_ - iconWidth_) / 2;
@@ -220,17 +134,17 @@ void AchievementsScreen::renderIcons(int mouseX, int mouseY, float tickDelta) {
      static_cast<float>(mouseY_ + (scaledMouseDy_ - mouseY_) * static_cast<double>(tickDelta)));
  scrollPixelX = std::max(kMinColumn, std::min(scrollPixelX, kMaxColumn - 1));
  scrollPixelY = std::max(kMinRow, std::min(scrollPixelY, kMaxRow - 1));
- zOffset = 0.0f;
+ constexpr float kMapZ = 0.0f;
  const int terrainTexture = minecraft()->textureManager.getTextureId("/terrain.png");
  const int achievementTexture = minecraft()->textureManager.getTextureId("/achievement/bg.png");
  const int frameX = (width_ - iconWidth_) / 2;
  const int frameY = (height_ - iconHeight_) / 2;
  const int contentX = frameX + 16;
  const int contentY = frameY + 17;
- const AchievementMapScope mapCaps;
- RenderSystem::depthFunc(net::minecraft::client::gl::compare::Gequal);
- MatrixScope mapMatrix;
- RenderSystem::translate(0.0f, 0.0f, -200.0f);
+ const core::DepthScope mapCaps(true, core::depthWriteEnabled());
+ core::depthFunc(net::minecraft::client::gl::compare::Gequal);
+ core::ScopedModelView mapMatrix;
+ core::modelViewStack().translate(0.0f, 0.0f, -200.0f);
  minecraft()->textureManager.bindTexture(terrainTexture);
  const int tileColumn = (scrollPixelX + 288) >> 4;
  const int tileRow = (scrollPixelY + 288) >> 4;
@@ -239,19 +153,27 @@ void AchievementsScreen::renderIcons(int mouseX, int mouseY, float tickDelta) {
  net::minecraft::JavaRandom random;
  for(int row = 0; row * 16 - offsetY < 155; ++row) {
   const float shade = std::max(0.1f, 0.6f - static_cast<float>(tileRow + row) / 25.0f * 0.3f);
-  RenderSystem::color4f(shade, shade, shade, 1.0f);
+  core::setConstColor(shade, shade, shade, 1.0f);
+  const render::RenderPassScope passScope(render::RenderType::guiTextured());
+  const float* cc = core::constColor();
+  render::Tessellator& tess = render::INSTANCE;
+  tess.startQuads();
+  tess.color(cc[0], cc[1], cc[2], cc[3]);
   for(int column = 0; column * 16 - offsetX < 224; ++column) {
    const int texture = proceduralTerrainTexture(tileColumn + column, tileRow, row, random);
-   drawTexture(contentX + column * 16 - offsetX,
-               contentY + row * 16 - offsetY,
-               (texture % 16) << 4,
-               (texture >> 4) << 4,
-               16,
-               16);
+   draw::appendAtlasQuad(tess,
+                         contentX + column * 16 - offsetX,
+                         contentY + row * 16 - offsetY,
+                         (texture % 16) << 4,
+                         (texture >> 4) << 4,
+                         16,
+                         16,
+                         kMapZ);
   }
+  tess.draw();
  }
  {
-  const AchievementMapLinesScope lineCaps;
+  const core::DepthScope lineCaps(true, core::depthWriteEnabled());
   for(const achievement::AchievementDef& achievement : achievement::Achievements::ALL) {
    if(achievement.parentIndex < 0) {
     continue;
@@ -278,12 +200,8 @@ void AchievementsScreen::renderIcons(int mouseX, int mouseY, float tickDelta) {
  const achievement::AchievementDef* hovered = nullptr;
  render::item::ItemRenderer itemRenderer;
  {
-  MatrixScope lightingMatrix;
-  RenderSystem::rotate(180.0f, 1.0f, 0.0f, 0.0f);
-  render::RenderSystem::enableLighting();
- }
- {
-  const AchievementMapIconsScope iconCaps;
+  const core::DepthScope iconDepth(true, core::depthWriteEnabled());
+  const core::BlendScope iconBlend(true);
   for(const achievement::AchievementDef& achievement : achievement::Achievements::ALL) {
    const int iconX = achievement.column * 24 - scrollPixelX;
    const int iconY = achievement.row * 24 - scrollPixelY;
@@ -299,21 +217,29 @@ void AchievementsScreen::renderIcons(int mouseX, int mouseY, float tickDelta) {
     const double pulse = std::sin(static_cast<double>(nowMillis() % 600) / 600.0 * 3.141592653589793 * 2.0);
     shade = pulse < 0.6 ? 0.6f : 0.8f;
    }
-   RenderSystem::color4f(shade, shade, shade, 1.0f);
+   core::setConstColor(shade, shade, shade, 1.0f);
    minecraft()->textureManager.bindTexture(achievementTexture);
    const int drawX = contentX + iconX;
    const int drawY = contentY + iconY;
-   if(achievement.challenge) {
-    drawTexture(drawX - 2, drawY - 2, 26, 202, 26, 26);
-   } else {
-    drawTexture(drawX - 2, drawY - 2, 0, 202, 26, 26);
+   {
+    const render::RenderPassScope passScope(render::RenderType::guiTextured());
+    const float* cc = core::constColor();
+    render::Tessellator& tess = render::INSTANCE;
+    tess.startQuads();
+    tess.color(cc[0], cc[1], cc[2], cc[3]);
+    if(achievement.challenge) {
+     draw::appendAtlasQuad(tess, drawX - 2, drawY - 2, 26, 202, 26, 26, kMapZ);
+    } else {
+     draw::appendAtlasQuad(tess, drawX - 2, drawY - 2, 0, 202, 26, 26, kMapZ);
+    }
+    tess.draw();
    }
    if(!parentUnlocked) {
-    RenderSystem::color4f(0.1f, 0.1f, 0.1f, 1.0f);
+    core::setConstColor(0.1f, 0.1f, 0.1f, 1.0f);
     itemRenderer.useCustomDisplayColor = false;
    }
    {
-    const AchievementIconItemScope itemCaps;
+    const core::CullScope itemCaps(true);
     itemRenderer.renderGuiItem(*textRenderer(),
                                minecraft()->textureManager,
                                achievement::Achievements::iconStack(achievement),
@@ -323,7 +249,7 @@ void AchievementsScreen::renderIcons(int mouseX, int mouseY, float tickDelta) {
    if(!parentUnlocked) {
     itemRenderer.useCustomDisplayColor = true;
    }
-   RenderSystem::color4f(1.0f, 1.0f, 1.0f, 1.0f);
+   core::setConstColor(1.0f, 1.0f, 1.0f, 1.0f);
    if(mouseX >= contentX && mouseY >= contentY && mouseX < contentX + 224 && mouseY < contentY + 155 &&
       mouseX >= drawX && mouseX <= drawX + 22 && mouseY >= drawY && mouseY <= drawY + 22) {
     hovered = &achievement;
@@ -331,14 +257,22 @@ void AchievementsScreen::renderIcons(int mouseX, int mouseY, float tickDelta) {
   }
  }
  {
-  const AchievementMapFrameScope frameCaps;
-  RenderSystem::color4f(1.0f, 1.0f, 1.0f, 1.0f);
+  const core::DepthScope frameDepth(false, core::depthWriteEnabled());
+  const core::BlendScope frameBlend(true);
+  core::setConstColor(1.0f, 1.0f, 1.0f, 1.0f);
   minecraft()->textureManager.bindTexture(achievementTexture);
-  drawTexture(frameX, frameY, 0, 0, iconWidth_, iconHeight_);
+  {
+   const render::RenderPassScope passScope(render::RenderType::guiTextured());
+   const float* cc = core::constColor();
+   render::Tessellator& tess = render::INSTANCE;
+   tess.startQuads();
+   tess.color(cc[0], cc[1], cc[2], cc[3]);
+   draw::appendAtlasQuad(tess, frameX, frameY, 0, 0, iconWidth_, iconHeight_, kMapZ);
+   tess.draw();
+  }
  }
- zOffset = 0.0f;
  {
-  const ScreenTextOverlayScope titleCaps;
+  const core::DepthScope titleCaps(false, core::depthWriteEnabled());
   Screen::render(mouseX, mouseY, tickDelta);
   if(hovered != nullptr) {
    const std::string title = achievement::Achievements::getTranslatedTitle(*hovered);
@@ -352,12 +286,18 @@ void AchievementsScreen::renderIcons(int mouseX, int mouseY, float tickDelta) {
     if(stats_->hasStat(hovered->statId())) {
      bodyHeight += 12;
     }
-    fillGradient(tooltipX - 3,
-                 tooltipY - 3,
-                 tooltipX + width + 3,
-                 tooltipY + bodyHeight + 15,
-                 0xC0000000U,
-                 0xC0000000U);
+    {
+     const render::RenderPassScope passScope(render::RenderType::gui());
+     draw::verticalGradientQuad(render::INSTANCE,
+                                tooltipX - 3,
+                                tooltipY - 3,
+                                tooltipX + width + 3,
+                                tooltipY + bodyHeight + 15,
+                                0,
+                                0xC0,
+                                0,
+                                0xC0);
+    }
     textRenderer()->drawSplit(description, tooltipX, tooltipY + 12, width, 0xFFA09FA0);
     if(stats_->hasStat(hovered->statId())) {
      textRenderer()->drawWithShadow(resource::language::I18n::getTranslation("achievement.taken"),
@@ -374,12 +314,18 @@ void AchievementsScreen::renderIcons(int mouseX, int mouseY, float tickDelta) {
         resource::language::I18n::getTranslation("achievement.requires", parentTitle);
     const int width = std::max(textRenderer()->getWidth(title), 120);
     const int bodyHeight = textRenderer()->splitAndGetHeight(requirementText, width);
-    fillGradient(tooltipX - 3,
-                 tooltipY - 3,
-                 tooltipX + width + 3,
-                 tooltipY + bodyHeight + 15,
-                 0xC0000000U,
-                 0xC0000000U);
+    {
+     const render::RenderPassScope passScope(render::RenderType::gui());
+     draw::verticalGradientQuad(render::INSTANCE,
+                                tooltipX - 3,
+                                tooltipY - 3,
+                                tooltipX + width + 3,
+                                tooltipY + bodyHeight + 15,
+                                0,
+                                0xC0,
+                                0,
+                                0xC0);
+    }
     textRenderer()->drawSplit(requirementText, tooltipX, tooltipY + 12, width, 0xFF6F6E90);
    }
    const int titleColor = stats_->hasParentAchievement(hovered->statId())
@@ -387,7 +333,7 @@ void AchievementsScreen::renderIcons(int mouseX, int mouseY, float tickDelta) {
                               : (hovered->challenge ? 0xFF808080 : 0xFF808080);
    textRenderer()->drawWithShadow(title, tooltipX, tooltipY, titleColor);
   }
-  render::RenderSystem::disableLighting();
+  core::setLightingEnabled(false);
  }
 }
 void AchievementsScreen::render(int mouseX, int mouseY, float tickDelta) {
@@ -416,7 +362,7 @@ void AchievementsScreen::render(int mouseX, int mouseY, float tickDelta) {
  }
  renderBackground();
  renderIcons(mouseX, mouseY, tickDelta);
- const ScreenTextOverlayScope titleCaps;
+ const core::DepthScope titleCaps(false, core::depthWriteEnabled());
  setTitle();
 }
 void AchievementsScreen::keyPressed(char character, int keyCode) {

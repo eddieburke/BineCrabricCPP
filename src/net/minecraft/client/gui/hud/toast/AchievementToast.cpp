@@ -3,59 +3,23 @@
 #include <cmath>
 #include "net/minecraft/achievement/Achievements.hpp"
 #include "net/minecraft/client/Minecraft.hpp"
-#include "net/minecraft/client/gl/GlConstants.hpp"
-#include "net/minecraft/client/render/RenderSystem.hpp"
+#include "net/minecraft/client/gui/Draw2D.hpp"
+#include "net/minecraft/client/render/GuiProjection.hpp"
+#include "net/minecraft/client/render/RenderCore.hpp"
+#include "net/minecraft/client/render/RenderType.hpp"
+#include "net/minecraft/client/render/Tessellator.hpp"
 #include "net/minecraft/client/render/item/ItemRenderer.hpp"
 #include "net/minecraft/client/resource/language/I18n.hpp"
 #include "net/minecraft/client/util/UiScale.hpp"
 namespace net::minecraft::client::gui::hud::toast {
+namespace core = net::minecraft::client::render::core;
+namespace math = net::minecraft::util::math;
+namespace gui_proj = net::minecraft::client::render::gui_proj;
 namespace {
-using net::minecraft::client::render::RenderSystem;
 std::int64_t nowMillis() {
  return std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now().time_since_epoch())
      .count();
 }
-class ToastDrawScope {
- public:
- ToastDrawScope() : saved_(RenderSystem::getShadow()) {
-  RenderSystem::disableDepthTest();
-  RenderSystem::depthMask(false);
-  RenderSystem::disableCull();
-  RenderSystem::enableTexture();
- }
- ~ToastDrawScope() {
-  RenderSystem::setShadow(saved_);
- }
- ToastDrawScope(const ToastDrawScope&) = delete;
- ToastDrawScope& operator=(const ToastDrawScope&) = delete;
-
- private:
- RenderSystem::StateShadow saved_;
-};
-class ToastItemIconScope {
- public:
- ToastItemIconScope() : saved_(RenderSystem::getShadow()) {
- }
- ~ToastItemIconScope() {
-  RenderSystem::setShadow(saved_);
- }
- ToastItemIconScope(const ToastItemIconScope&) = delete;
- ToastItemIconScope& operator=(const ToastItemIconScope&) = delete;
-
- private:
- RenderSystem::StateShadow saved_;
-};
-class MatrixScope {
- public:
- MatrixScope() {
-  RenderSystem::pushMatrix();
- }
- ~MatrixScope() {
-  RenderSystem::popMatrix();
- }
- MatrixScope(const MatrixScope&) = delete;
- MatrixScope& operator=(const MatrixScope&) = delete;
-};
 } // namespace
 void AchievementToast::set(int achievementStatId) {
  const achievement::AchievementDef* achievement = achievement::Achievements::getByStatId(achievementStatId);
@@ -115,23 +79,30 @@ void AchievementToast::renderOverlay() {
  }
  slide *= slide;
  slide *= slide;
- const ToastDrawScope toastCaps;
+ const core::DepthScope toastDepth(false, false);
+ const core::CullScope toastCull(false);
  const int textureId = client_->textureManager.getTextureId("/achievement/bg.png");
  const achievement::AchievementDef* achievement = achievement::Achievements::getByStatId(achievementStatId_);
  const util::UiScale scale = util::uiScale(client_->options, client_->displayWidth, client_->displayHeight);
- RenderSystem::color4f(1.0f, 1.0f, 1.0f, 1.0f);
- RenderSystem::clear(0x00000100);
- RenderSystem::matrixMode(0x1701);
- RenderSystem::loadIdentity();
- RenderSystem::ortho(0.0, scale.rawWidth, scale.rawHeight, 0.0, 1000.0, 3000.0);
- RenderSystem::matrixMode(0x1700);
- RenderSystem::loadIdentity();
- RenderSystem::translate(0.0f, 0.0f, -2000.0f);
+ core::setConstColor(1.0f, 1.0f, 1.0f, 1.0f);
+ core::clear(0x00000100);
+ math::MatrixStack modelView;
+ math::MatrixStack projection;
+ const core::ScopedMatrixStacks matrixBind(modelView, projection);
+ gui_proj::load(scale);
  const int x = scale.scaledWidth - 160;
  const int y = 0 - static_cast<int>(slide * 36.0);
- RenderSystem::color4f(1.0f, 1.0f, 1.0f, 1.0f);
- RenderSystem::bindTexture(0x0DE1, textureId);
- drawTexture(x, y, 96, 202, 160, 32);
+ core::setConstColor(1.0f, 1.0f, 1.0f, 1.0f);
+ core::bindTexture(0x0DE1, textureId);
+ {
+  const render::RenderPassScope passScope(render::RenderType::guiTextured());
+  const float* c = core::constColor();
+  render::Tessellator& tess = render::INSTANCE;
+  tess.startQuads();
+  tess.color(c[0], c[1], c[2], c[3]);
+  draw::appendAtlasQuad(tess, x, y, 96, 202, 160, 32, 0.0f);
+  tess.draw();
+ }
  if(tutorialMode_) {
   client_->textRenderer->drawSplit(description_, x + 30, y + 7, 120, 0xFFFFFFFF);
  } else {
@@ -140,21 +111,14 @@ void AchievementToast::renderOverlay() {
  }
  if(achievement != nullptr) {
   render::item::ItemRenderer itemRenderer;
-  {
-   MatrixScope itemMatrix;
-   RenderSystem::rotate(180.0f, 1.0f, 0.0f, 0.0f);
-   render::RenderSystem::enableLighting();
-  }
-  {
-   const ToastItemIconScope itemCaps;
-   itemRenderer.renderGuiItem(*client_->textRenderer,
-                              client_->textureManager,
-                              achievement::Achievements::iconStack(*achievement),
-                              x + 8,
-                              y + 8);
-  }
+  itemRenderer.renderGuiItem(*client_->textRenderer,
+                             client_->textureManager,
+                             achievement::Achievements::iconStack(*achievement),
+                             x + 8,
+                             y + 8);
+  core::setLightingEnabled(false);
  }
- RenderSystem::color4f(1.0f, 1.0f, 1.0f, 1.0f);
+ core::setConstColor(1.0f, 1.0f, 1.0f, 1.0f);
 }
 void AchievementToast::tick() {
  renderOverlay();

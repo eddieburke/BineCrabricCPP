@@ -1,27 +1,29 @@
-#include "net/minecraft/client/render/RenderSystem.hpp"
 #include "net/minecraft/client/render/entity/EntityRenderers.hpp"
 #include "net/minecraft/entity/passive/SquidEntity.hpp"
 namespace net::minecraft::client::render::entity {
 void SquidEntityRenderer::applyHandSwingRotation(const net::minecraft::LivingEntity& entity,
                                                  float headBob,
                                                  float bodyYaw,
-                                                 float tickDelta) {
+                                                 float tickDelta,
+                                                 net::minecraft::util::math::MatrixStack& matrices) {
  const auto* squid = dynamic_cast<const net::minecraft::entity::passive::SquidEntity*>(&entity);
  if(squid == nullptr) {
-  LivingEntityRenderer::applyHandSwingRotation(entity, headBob, bodyYaw, tickDelta);
+  LivingEntityRenderer::applyHandSwingRotation(entity, headBob, bodyYaw, tickDelta, matrices);
   return;
  }
  const float tilt = squid->lastTiltAngle + (squid->tiltAngle - squid->lastTiltAngle) * tickDelta;
  const float roll = squid->lastRollAngle + (squid->rollAngle - squid->lastRollAngle) * tickDelta;
- RenderSystem::translate(0.0f, 0.5f, 0.0f);
- RenderSystem::rotate(180.0f - bodyYaw, 0.0f, 1.0f, 0.0f);
- RenderSystem::rotate(tilt, 1.0f, 0.0f, 0.0f);
- RenderSystem::rotate(roll, 0.0f, 1.0f, 0.0f);
- RenderSystem::translate(0.0f, -1.2f, 0.0f);
+ matrices.translate(0.0f, 0.5f, 0.0f);
+ matrices.rotate(180.0f - bodyYaw, 0.0f, 1.0f, 0.0f);
+ matrices.rotate(tilt, 1.0f, 0.0f, 0.0f);
+ matrices.rotate(roll, 0.0f, 1.0f, 0.0f);
+ matrices.translate(0.0f, -1.2f, 0.0f);
 }
-void SquidEntityRenderer::applyScale(const net::minecraft::LivingEntity& entity, float tickDelta) {
+void SquidEntityRenderer::applyScale(const net::minecraft::LivingEntity& entity, float tickDelta,
+                                     net::minecraft::util::math::MatrixStack& matrices) {
  (void)entity;
  (void)tickDelta;
+ (void)matrices;
 }
 float SquidEntityRenderer::getHeadBob(const net::minecraft::LivingEntity& entity, float tickDelta) const {
  const auto* squid = dynamic_cast<const net::minecraft::entity::passive::SquidEntity*>(&entity);

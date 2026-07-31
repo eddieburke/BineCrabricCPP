@@ -159,7 +159,7 @@ bool PistonBlockRenderer::renderPistonHead(
     net::minecraft::block::Block& block, int x, int y, int z, bool extendedHalfway) {
  const int blockMeta = ctx_.blockView->getBlockMeta(x, y, z);
  const int facing = net::minecraft::block::PistonHeadBlock::getFacing(blockMeta);
- const float brightness = block.getLuminance(ctx_.blockView, x, y, z);
+ const float brightness = 1.0f; // absolute light now comes from the lightmap
  const float extensionDepth = extendedHalfway ? 1.0f : 0.5f;
  const double textureScrollU = extendedHalfway ? 16.0 : 8.0;
  switch(facing) {

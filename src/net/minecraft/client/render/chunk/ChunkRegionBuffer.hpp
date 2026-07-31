@@ -1,21 +1,10 @@
 #pragma once
+#include <array>
 #include <cstddef>
+#include <memory>
 #include <vector>
 #include "net/minecraft/client/render/Tessellator.hpp"
 namespace net::minecraft::client::render::chunk {
-// One persistent GL vertex buffer holding the geometry of every resident render
-// section that shares a camera-offset group, for a single render layer. Each
-// section owns a contiguous sub-range (a Slot) inside the buffer; sections are
-// uploaded once per rebuild via bufferSubData and drawn together every frame
-// through one shared interleaved vertex layout.
-//
-// A CPU shadow of the buffer is kept so the buffer can be grown (reallocated)
-// without re-tessellating: on growth we just re-upload the shadow. The shadow
-// doubles vertex RAM versus the old discard-after-compile path; that is the
-// deliberate trade for safe, stall-free growth and can later be replaced with a
-// GPU-to-GPU copy.
-//
-// All methods touch GL and must run on the render (main) thread.
 class ChunkRegionBuffer {
  public:
  // A section's allocation within the buffer. offset/capacity/count are in
@@ -40,21 +29,20 @@ class ChunkRegionBuffer {
  void upload(Slot& slot, const TessellatorVertex* data, int count, bool hasTexture, bool hasColor, bool hasNormals);
  // Return a slot's range to the free list. Leaves slot invalid.
  void release(Slot& slot) noexcept;
- // A contiguous run of vertices to draw, in vertices. Adjacent sections often
- // occupy adjacent slots, so flush() coalesces these before drawing.
  struct DrawRange {
   int first = 0;
   int count = 0;
+  float chunkOffset[3] = {0.0f, 0.0f, 0.0f};
  };
  // Per-frame visible-range collection.
  void beginFrame() noexcept;
- void addVisible(const Slot& slot);
+ void addVisible(const Slot& slot, float chunkOffsetX, float chunkOffsetY, float chunkOffsetZ);
  [[nodiscard]] bool hasVisible() const noexcept {
   return !visible_.empty();
  }
- // Bind the buffer, configure the shared vertex layout, and draw the visible
- // slots as coalesced ranges. The caller owns the modelview transform (region
- // origin translate). Returns the number of draw calls actually submitted.
+ // Bind the buffer, configure the shared vertex layout, and draw each visible
+ // slot with its chunkOffset. Ranges that share the exact same chunkOffset and
+ // are adjacent in the VBO may coalesce. Returns draw calls submitted.
  int flush();
  [[nodiscard]] bool empty() const noexcept {
   return shadow_.empty();
@@ -78,6 +66,33 @@ class ChunkRegionBuffer {
  bool hasNormals_ = false;
  bool layoutSet_ = false;
  std::vector<DrawRange> visible_; // per-frame, in insertion (ring) order
+ std::vector<DrawRange> lastVisible_;
  std::vector<DrawRange> merged_; // per-frame, sorted by offset and coalesced
+};
+
+struct ChunkRegion {
+ std::array<ChunkRegionBuffer, 2> layers{};
+};
+class ChunkRegionManager {
+ public:
+ // Shared pool used by every section. Created on first use.
+ ChunkRegion& pool() {
+  if(region_ == nullptr) {
+   region_ = std::make_unique<ChunkRegion>();
+  }
+  return *region_;
+ }
+ // Backward-compatible alias — camera offsets are ignored.
+ ChunkRegion& regionFor(int /*offsetX*/, int /*offsetY*/, int /*offsetZ*/) {
+  return pool();
+ }
+ // Destroy the pool. GL buffers are freed by ~ChunkRegionBuffer, so this must
+ // run with the GL context current.
+ void clear() noexcept {
+  region_.reset();
+ }
+
+ private:
+ std::unique_ptr<ChunkRegion> region_;
 };
 } // namespace net::minecraft::client::render::chunk

@@ -74,10 +74,10 @@ TEST(RenderProfilerTest, GrabProfilerMetricsInSingleplayerWorld) {
  bool foundSky = false;
  bool foundTranslucent = false;
  bool foundParticles = false;
- bool foundCompile = false;
+ bool foundChunks = false;
  bool foundHand = false;
  bool foundClouds = false;
- bool foundWorld = false;
+ bool foundMeasured = false;
  bool foundUnmeasured = false;
  for(const std::string& line : lines) {
   if(line.rfind("stage", 0) == 0) {
@@ -101,8 +101,8 @@ TEST(RenderProfilerTest, GrabProfilerMetricsInSingleplayerWorld) {
   if(line.rfind("particles", 0) == 0) {
    foundParticles = true;
   }
-  if(line.rfind("compile", 0) == 0) {
-   foundCompile = true;
+  if(line.rfind("chunks", 0) == 0) {
+   foundChunks = true;
   }
   if(line.rfind("hand", 0) == 0) {
    foundHand = true;
@@ -110,8 +110,8 @@ TEST(RenderProfilerTest, GrabProfilerMetricsInSingleplayerWorld) {
   if(line.rfind("clouds", 0) == 0) {
    foundClouds = true;
   }
-  if(line.rfind("world", 0) == 0) {
-   foundWorld = true;
+  if(line.rfind("measured", 0) == 0) {
+   foundMeasured = true;
   }
   if(line.rfind("unmeasured", 0) == 0) {
    foundUnmeasured = true;
@@ -124,10 +124,10 @@ TEST(RenderProfilerTest, GrabProfilerMetricsInSingleplayerWorld) {
  EXPECT_TRUE(foundSky);
  EXPECT_TRUE(foundTranslucent);
  EXPECT_TRUE(foundParticles);
- EXPECT_TRUE(foundCompile);
+ EXPECT_TRUE(foundChunks);
  EXPECT_TRUE(foundHand);
  EXPECT_TRUE(foundClouds);
- EXPECT_TRUE(foundWorld);
+ EXPECT_TRUE(foundMeasured);
  EXPECT_TRUE(foundUnmeasured);
  client.setWorld(nullptr);
  profiler.setEnabled(false);

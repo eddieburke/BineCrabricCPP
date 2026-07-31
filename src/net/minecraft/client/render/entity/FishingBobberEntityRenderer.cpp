@@ -1,4 +1,4 @@
-#include "net/minecraft/client/render/RenderSystem.hpp"
+#include "net/minecraft/client/render/RenderCore.hpp"
 #include "net/minecraft/client/render/RenderType.hpp"
 #include "net/minecraft/client/render/Tessellator.hpp"
 #include "net/minecraft/client/render/entity/EntityRenderDispatcher.hpp"
@@ -10,15 +10,17 @@
 #include "net/minecraft/util/math/Vec3dClient.hpp"
 namespace net::minecraft::client::render::entity {
 void FishingBobberEntityRenderer::render(
-    const net::minecraft::Entity& entity, double x, double y, double z, float yaw, float tickDelta) {
+    const net::minecraft::Entity& entity, double x, double y, double z, float yaw, float tickDelta,
+    net::minecraft::util::math::MatrixStack& matrices, const net::minecraft::util::math::Matrix4f& projection) {
  (void)yaw;
  const auto* bobber = dynamic_cast<const ::net::minecraft::entity::projectile::FishingBobberEntity*>(&entity);
  if(bobber == nullptr) {
   return;
  }
- RenderSystem::pushMatrix();
- RenderSystem::translate(static_cast<float>(x), static_cast<float>(y), static_cast<float>(z));
- RenderSystem::scale(0.5f, 0.5f, 0.5f);
+ beginDraw(matrices, projection);
+ matrices.push();
+ matrices.translate(static_cast<float>(x), static_cast<float>(y), static_cast<float>(z));
+ matrices.scale(0.5f, 0.5f, 0.5f);
  constexpr int atlasCol = 1;
  constexpr int atlasRow = 2;
  bindTexture("/particles.png");
@@ -31,8 +33,8 @@ void FishingBobberEntityRenderer::render(
  constexpr float halfWidth = 0.5f;
  constexpr float halfHeight = 0.5f;
  if(dispatcher != nullptr) {
-  RenderSystem::rotate(180.0f - dispatcher->yaw_, 0.0f, 1.0f, 0.0f);
-  RenderSystem::rotate(-dispatcher->pitch_, 1.0f, 0.0f, 0.0f);
+  matrices.rotate(180.0f - dispatcher->yaw_, 0.0f, 1.0f, 0.0f);
+  matrices.rotate(-dispatcher->pitch_, 1.0f, 0.0f, 0.0f);
  }
  tessellator.startQuads();
  tessellator.normal(0.0f, 1.0f, 0.0f);
@@ -41,8 +43,9 @@ void FishingBobberEntityRenderer::render(
  tessellator.vertex(quadWidth - halfWidth, quadWidth - halfHeight, 0.0, uMax, vMin);
  tessellator.vertex(0.0f - halfWidth, quadWidth - halfHeight, 0.0, uMin, vMin);
  tessellator.draw();
- RenderSystem::popMatrix();
+ matrices.pop();
  if(bobber->owner == nullptr || dispatcher == nullptr) {
+  endDraw();
   return;
  }
  const net::minecraft::LivingEntity& owner = *bobber->owner;
@@ -75,8 +78,9 @@ void FishingBobberEntityRenderer::render(
  const double deltaX = static_cast<float>(rodTipX - bobberX);
  const double deltaY = static_cast<float>(rodTipY - bobberY);
  const double deltaZ = static_cast<float>(rodTipZ - bobberZ);
- render::RenderPassScope passScope(render::RenderType::entityCutout());
- render::RenderSystem::disableLighting();
+ render::RenderPassScope passScope(render::RenderType::lines());
+ render::core::setEntityColor(0.0f, 0.0f, 0.0f, 0.0f);
+ Tessellator::INSTANCE.light(15, 15);
  tessellator.start(3); // GL_LINE_STRIP
  tessellator.color(0);
  constexpr int segments = 16;
@@ -87,7 +91,7 @@ void FishingBobberEntityRenderer::render(
                      z + deltaZ * static_cast<double>(t));
  }
  tessellator.draw();
- render::RenderSystem::enableLighting();
+ endDraw();
 }
 } // namespace net::minecraft::client::render::entity
 #include "net/minecraft/client/entity/EntityClientRendererRegistration.hpp"

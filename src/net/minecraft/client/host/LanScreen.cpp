@@ -143,18 +143,18 @@ void LanScreen::render(int mouseX, int mouseY, float tickDelta) {
  renderBackground();
  if(textRenderer() != nullptr) {
   const int baseY = height() / 4;
-  drawCenteredTextWithShadow(
-      *textRenderer(), "Start Dedicated Server", width() / 2, gui::layout::formTitleY(height()), 0xFFFFFF);
+  textRenderer()->drawCenteredWithShadow(
+      "Start Dedicated Server", width() / 2, gui::layout::formTitleY(height()), 0xFFFFFF);
   if(!errorMessage_.empty()) {
-   drawCenteredTextWithShadow(*textRenderer(), errorMessage_, width() / 2, baseY + 2, 0xFF5555);
+   textRenderer()->drawCenteredWithShadow(errorMessage_, width() / 2, baseY + 2, 0xFF5555);
   } else if(startingServer_) {
-   drawCenteredTextWithShadow(
-       *textRenderer(), "Starting dedicated server...", width() / 2, baseY + 2, 0xFFFFFF);
+   textRenderer()->drawCenteredWithShadow(
+       "Starting dedicated server...", width() / 2, baseY + 2, 0xFFFFFF);
   } else {
-   drawCenteredTextWithShadow(
-       *textRenderer(), "Runs this world in minecraft_server.exe", width() / 2, baseY + 2, 0xA0A0A0);
+   textRenderer()->drawCenteredWithShadow(
+       "Runs this world in minecraft_server.exe", width() / 2, baseY + 2, 0xA0A0A0);
   }
-  drawTextWithShadow(*textRenderer(), "Port", width() / 2 - 100, baseY + 16, 0xA0A0A0);
+  textRenderer()->drawWithShadow("Port", width() / 2 - 100, baseY + 16, 0xA0A0A0);
  }
  if(portField_ != nullptr) {
   portField_->render();

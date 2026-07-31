@@ -2,10 +2,12 @@
 #include <algorithm>
 #include <cmath>
 #include <cstring>
-#include "net/minecraft/client/gl/EnginePipeline.hpp"
+#include "net/minecraft/client/render/RenderCore.hpp"
+#include "net/minecraft/client/gl/ShaderProgram.hpp"
 #include "net/minecraft/client/gl/GLCore.hpp"
 #include "net/minecraft/client/render/QuadIndexBuffer.hpp"
 namespace net::minecraft::client::render {
+namespace math = net::minecraft::util::math;
 TessellatorMesh::TessellatorMesh(const TessellatorMesh& other)
     : vertices(other.vertices),
       mode(other.mode),
@@ -108,20 +110,82 @@ void Tessellator::expandQuadToTriangles() {
  std::size_t count = size / sizeof(TessellatorVertex);
  TessellatorVertex v0 = ptr[count - 3];
  TessellatorVertex v2 = ptr[count - 1];
- builder_.vertex(v0.x, v0.y, v0.z)
-     .tex(v0.u, v0.v)
-     .color(v0.color)
-     .normal(static_cast<float>(v0.normal & 0xFF) / 127.0f,
-             static_cast<float>((v0.normal >> 8) & 0xFF) / 127.0f,
-             static_cast<float>((v0.normal >> 16) & 0xFF) / 127.0f)
-     .next();
- builder_.vertex(v2.x, v2.y, v2.z)
-     .tex(v2.u, v2.v)
-     .color(v2.color)
-     .normal(static_cast<float>(v2.normal & 0xFF) / 127.0f,
-             static_cast<float>((v2.normal >> 8) & 0xFF) / 127.0f,
-             static_cast<float>((v2.normal >> 16) & 0xFF) / 127.0f)
-     .next();
+ const auto append = [&](const TessellatorVertex& vertex) {
+  auto& bytes = builder_.buffer();
+  const std::size_t offset = bytes.size();
+  bytes.resize(offset + sizeof(vertex));
+  std::memcpy(bytes.data() + offset, &vertex, sizeof(vertex));
+  builder_.nextVertex();
+ };
+ append(v0);
+ append(v2);
+}
+namespace {
+void fillMidTexAndTangent(TessellatorVertex* const* corners,
+                          std::size_t cornerCount,
+                          TessellatorVertex* write,
+                          std::size_t writeCount) {
+ float midU = 0.0f, midV = 0.0f;
+ for(std::size_t i = 0; i < cornerCount; ++i) {
+  midU += corners[i]->u;
+  midV += corners[i]->v;
+ }
+ midU /= static_cast<float>(cornerCount);
+ midV /= static_cast<float>(cornerCount);
+ const float e1[3] = {corners[1]->x - corners[0]->x, corners[1]->y - corners[0]->y, corners[1]->z - corners[0]->z};
+ const float e2[3] = {corners[2]->x - corners[0]->x, corners[2]->y - corners[0]->y, corners[2]->z - corners[0]->z};
+ const float du1 = corners[1]->u - corners[0]->u, dv1 = corners[1]->v - corners[0]->v;
+ const float du2 = corners[2]->u - corners[0]->u, dv2 = corners[2]->v - corners[0]->v;
+ const float det = du1 * dv2 - du2 * dv1;
+ float tangent[3] = {1.0f, 0.0f, 0.0f};
+ float handedness = 1.0f;
+ if(std::abs(det) > 1.0e-8f) {
+  const float inv = 1.0f / det;
+  for(int a = 0; a < 3; ++a) tangent[a] = (e1[a] * dv2 - e2[a] * dv1) * inv;
+  const float len = std::sqrt(tangent[0] * tangent[0] + tangent[1] * tangent[1] + tangent[2] * tangent[2]);
+  if(len > 1.0e-8f)
+   for(float& t : tangent) t /= len;
+  const float bitangent[3] = {(e2[0] * du1 - e1[0] * du2) * inv, (e2[1] * du1 - e1[1] * du2) * inv,
+                              (e2[2] * du1 - e1[2] * du2) * inv};
+  const float nx = static_cast<std::int8_t>(corners[0]->normal & 0xFF) / 127.0f;
+  const float ny = static_cast<std::int8_t>((corners[0]->normal >> 8) & 0xFF) / 127.0f;
+  const float nz = static_cast<std::int8_t>((corners[0]->normal >> 16) & 0xFF) / 127.0f;
+  if(nx * nx + ny * ny + nz * nz > 1.0e-8f) {
+   const float cross[3] = {ny * tangent[2] - nz * tangent[1], nz * tangent[0] - nx * tangent[2],
+                           nx * tangent[1] - ny * tangent[0]};
+   if(cross[0] * bitangent[0] + cross[1] * bitangent[1] + cross[2] * bitangent[2] < 0.0f) handedness = -1.0f;
+  }
+ }
+ const std::int16_t packed[4] = {
+     static_cast<std::int16_t>(std::lround(std::clamp(tangent[0], -1.0f, 1.0f) * 32767.0f)),
+     static_cast<std::int16_t>(std::lround(std::clamp(tangent[1], -1.0f, 1.0f) * 32767.0f)),
+     static_cast<std::int16_t>(std::lround(std::clamp(tangent[2], -1.0f, 1.0f) * 32767.0f)),
+     static_cast<std::int16_t>(handedness * 32767.0f)};
+ for(std::size_t i = 0; i < writeCount; ++i) {
+  write[i].midU = midU;
+  write[i].midV = midV;
+  std::copy(std::begin(packed), std::end(packed), write[i].tangent);
+ }
+}
+void fillUnsetAttribs(TessellatorVertex* vertices, std::size_t count) {
+ for(std::size_t i = 0; i < count; ++i) {
+  TessellatorVertex& v = vertices[i];
+  if(v.tangent[0] | v.tangent[1] | v.tangent[2] | v.tangent[3]) continue;
+  v.midU = v.u;
+  v.midV = v.v;
+  v.tangent[0] = 32767;
+  v.tangent[3] = 32767;
+ }
+}
+} // namespace
+void Tessellator::finishQuad() {
+ auto& bytes = builder_.buffer();
+ const std::size_t count = bytes.size() / sizeof(TessellatorVertex);
+ const std::size_t quadSize = captureOnly_ ? 4 : 6;
+ if(count < quadSize) return;
+ TessellatorVertex* vertices = reinterpret_cast<TessellatorVertex*>(bytes.data()) + count - quadSize;
+ TessellatorVertex* corners[4] = {vertices, vertices + 1, vertices + 2, vertices + (captureOnly_ ? 3 : 5)};
+ fillMidTexAndTangent(corners, 4, vertices, quadSize);
 }
 void Tessellator::texture(double u, double v) {
  hasTexture_ = true;
@@ -153,6 +217,10 @@ void Tessellator::color(int rgb) {
 void Tessellator::color(int rgb, int a) {
  color((rgb >> 16) & 0xFF, (rgb >> 8) & 0xFF, rgb & 0xFF, a);
 }
+void Tessellator::light(int blockLight, int skyLight) {
+ blockLight_ = std::clamp(blockLight, 0, 15);
+ skyLight_ = std::clamp(skyLight, 0, 15);
+}
 void Tessellator::disableColor() {
  colorDisabled_ = true;
 }
@@ -163,15 +231,28 @@ void Tessellator::normal(float x, float y, float z) {
      (static_cast<std::int32_t>(static_cast<std::uint8_t>(static_cast<std::int8_t>(y * 127.0f))) << 8U) |
      (static_cast<std::int32_t>(static_cast<std::uint8_t>(static_cast<std::int8_t>(z * 127.0f))) << 16U);
 }
+void Tessellator::blockData(
+    double x, double y, double z, int emission, int blockLight, int skyLight, int blockId, int renderType, int metadata) {
+ blockCenterX_ = x + 0.5;
+ blockCenterY_ = y + 0.5;
+ blockCenterZ_ = z + 0.5;
+ blockEmission_ = std::clamp(emission, 0, 15);
+ blockLight_ = std::clamp(blockLight, 0, 15);
+ skyLight_ = std::clamp(skyLight, 0, 15);
+ blockId_ = blockId;
+ blockRenderType_ = renderType;
+ blockMetadata_ = metadata;
+ hasBlockData_ = true;
+}
 void Tessellator::translate(double x, double y, double z) {
- xOffset_ = static_cast<float>(x);
- yOffset_ = static_cast<float>(y);
- zOffset_ = static_cast<float>(z);
+ xOffset_ = x;
+ yOffset_ = y;
+ zOffset_ = z;
 }
 void Tessellator::translate(float x, float y, float z) {
- xOffset_ += x;
- yOffset_ += y;
- zOffset_ += z;
+ xOffset_ += static_cast<double>(x);
+ yOffset_ += static_cast<double>(y);
+ zOffset_ += static_cast<double>(z);
 }
 void Tessellator::vertex(double x, double y, double z, double u, double v) {
  texture(u, v);
@@ -184,10 +265,27 @@ void Tessellator::vertex(double x, double y, double z) {
  if(mode_ == kGlQuads && kTriangleMode && !captureOnly_ && addedVertexCount_ % 4 == 0) {
   expandQuadToTriangles();
  }
- float vx = static_cast<float>(x) + xOffset_;
- float vy = static_cast<float>(y) + yOffset_;
- float vz = static_cast<float>(z) + zOffset_;
+ // Add in double, then cast once — avoids float(world) + float(offset) collapse at far coords.
+ const float vx = static_cast<float>(x + xOffset_);
+ const float vy = static_cast<float>(y + yOffset_);
+ const float vz = static_cast<float>(z + zOffset_);
  auto vProxy = builder_.vertex(vx, vy, vz);
+ TessellatorVertex* vertex = reinterpret_cast<TessellatorVertex*>(
+     builder_.buffer().data() + builder_.buffer().size() - sizeof(TessellatorVertex));
+ vertex->light = blockLight_ * 16 | (skyLight_ * 16 << 16);
+ if(hasBlockData_) {
+  const auto component = [](double value) {
+   return static_cast<std::uint32_t>(static_cast<std::uint8_t>(
+       static_cast<std::int8_t>(std::clamp(std::lround(value * 64.0), -128L, 127L))));
+  };
+  vertex->midBlock = static_cast<std::int32_t>(
+      component(blockCenterX_ - x) | (component(blockCenterY_ - y) << 8U) |
+      (component(blockCenterZ_ - z) << 16U) | (static_cast<std::uint32_t>(blockEmission_) << 24U));
+  vertex->entity[0] = static_cast<std::int16_t>(blockId_);
+  vertex->entity[1] = static_cast<std::int16_t>(blockRenderType_);
+  vertex->entity[2] = static_cast<std::int16_t>(blockMetadata_);
+  vertex->entity[3] = 0;
+ }
  if(hasTexture_)
   vProxy.tex(u_, v_);
  if(hasColor_)
@@ -198,13 +296,34 @@ void Tessellator::vertex(double x, double y, double z) {
                 static_cast<float>((currentNormal_ >> 16) & 0xFF) / 127.0f);
  }
  vProxy.next();
+ if(mode_ == kGlQuads && addedVertexCount_ % 4 == 0) {
+  finishQuad();
+ } else if((mode_ == 4 && addedVertexCount_ % 3 == 0) || (mode_ == 5 && addedVertexCount_ >= 3)) {
+  // GL_TRIANGLES / GL_TRIANGLE_STRIP — fill last triangle.
+  auto& bytes = builder_.buffer();
+  const std::size_t count = bytes.size() / sizeof(TessellatorVertex);
+  if(count >= 3) {
+   TessellatorVertex* v = reinterpret_cast<TessellatorVertex*>(bytes.data()) + count - 3;
+   TessellatorVertex* corners[3] = {v, v + 1, v + 2};
+   fillMidTexAndTangent(corners, 3, v, 3);
+  }
+ }
 }
 void Tessellator::draw() {
  if(!drawing_)
   return;
  drawing_ = false;
  if(builder_.vertexCount() > 0 && !captureOnly_) {
-  builder_.draw();
+  auto& bytes = builder_.buffer();
+  fillUnsetAttribs(reinterpret_cast<TessellatorVertex*>(bytes.data()),
+                          bytes.size() / sizeof(TessellatorVertex));
+  render::core::drawInterleaved(builder_.buffer().data(),
+                                builder_.vertexCount(),
+                                static_cast<int>(sizeof(TessellatorVertex)),
+                                builder_.drawMode(),
+                                hasTexture_,
+                                hasColor_,
+                                hasNormals_);
  }
  reset();
 }
@@ -213,6 +332,7 @@ TessellatorMesh Tessellator::takeMesh() {
  std::vector<TessellatorVertex> verts(count);
  if(count > 0) {
   std::memcpy(verts.data(), builder_.buffer().data(), count * sizeof(TessellatorVertex));
+  fillUnsetAttribs(verts.data(), count);
  }
  TessellatorMesh mesh(std::move(verts), mode_, hasTexture_, hasColor_, hasNormals_);
  reset();
@@ -226,18 +346,32 @@ bool drawQuadMeshIndexed(const TessellatorMesh& mesh, unsigned vbo, int stride) 
  if(vertexCount == 0 || vbo == 0 || !gl::GLCore::vboSupported) {
   return false;
  }
- if(!quad_index::ensure(vertexCount) || !gl::engine_pipeline::ensureReady()) {
+ if(!quad_index::ensure(vertexCount) || !render::core::ensureReady()) {
   return false;
  }
- gl::engine_pipeline::bindAndUploadUniforms();
- if(gl::engine_pipeline::program() == nullptr) {
+ {
+  render::core::RenderPass pass;
+  pass.modelView = render::core::currentModelView();
+  pass.projection = render::core::currentProjection();
+  pass.fog = render::core::fog();
+  pass.hasTexture = mesh.hasTexture;
+  pass.hasColor = mesh.hasColor;
+  pass.hasNormals = mesh.hasNormals;
+  if(!mesh.hasTexture) {
+   render::core::bindWhiteDiffuse();
+  }
+  // Use the no-arg uploader so pending section-local chunkOffset from WorldRenderer applies.
+  render::core::bindAndUploadUniforms();
+ }
+ if(render::core::program() == nullptr) {
   return false;
  }
  gl::GLCore::bindBuffer(0x8892, vbo);
- gl::engine_pipeline::configureAttribs(vbo, 0, stride, mesh.hasTexture, mesh.hasColor, mesh.hasNormals);
+ render::core::configureAttribs(vbo, 0, stride, mesh.hasTexture, mesh.hasColor, mesh.hasNormals);
  gl::GLCore::bindBuffer(0x8893, quad_index::handle());
- ::glDrawElements(0x0004, static_cast<int>((vertexCount / 4) * 6), 0x1405, nullptr);
- gl::engine_pipeline::finishAttribs();
+ const int mode = render::core::program()->tessellation() ? 0x000E : 0x0004;
+ if(mode == 0x000E && gl::GLCore::patchParameteri != nullptr) gl::GLCore::patchParameteri(0x8E72, 3);
+ ::glDrawElements(mode, static_cast<int>((vertexCount / 4) * 6), 0x1405, nullptr);
  gl::GLCore::bindBuffer(0x8892, 0);
  return true;
 }
@@ -255,7 +389,7 @@ void drawQuadMeshExpanded(const TessellatorMesh& mesh, int stride) {
   scratch.push_back(v[2]);
   scratch.push_back(v[3]);
  }
- gl::engine_pipeline::drawInterleaved(
+ render::core::drawInterleaved(
      scratch.data(), scratch.size(), stride, 0x0004, mesh.hasTexture, mesh.hasColor, mesh.hasNormals);
 }
 } // namespace
@@ -272,18 +406,19 @@ void Tessellator::drawMesh(const TessellatorMesh& mesh) {
  int mode = effectiveDrawMode(mesh.mode);
  if(mesh.vbo_ != 0 && gl::GLCore::vboSupported) {
   gl::GLCore::bindBuffer(0x8892, mesh.vbo_);
-  gl::engine_pipeline::drawFromBoundBuffer(
+  render::core::drawFromBoundBuffer(
       mesh.vbo_, 0, mesh.vertices.size(), stride, mode, mesh.hasTexture, mesh.hasColor, mesh.hasNormals);
   gl::GLCore::bindBuffer(0x8892, 0);
  } else {
-  gl::engine_pipeline::drawInterleaved(
+  render::core::drawInterleaved(
       mesh.vertices.data(), mesh.vertices.size(), stride, mode, mesh.hasTexture, mesh.hasColor, mesh.hasNormals);
  }
 }
 void Tessellator::reset() {
  builder_.reset();
- xOffset_ = 0.0f;
- yOffset_ = 0.0f;
- zOffset_ = 0.0f;
+ xOffset_ = 0.0;
+ yOffset_ = 0.0;
+ zOffset_ = 0.0;
+ hasBlockData_ = false;
 }
 } // namespace net::minecraft::client::render

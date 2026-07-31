@@ -488,9 +488,6 @@ void finalizeBlockRegistryProperties() {
  }
  Block::BLOCKS_ALLOW_VISION[0] = true;
 }
-void initializeBlocks() {
- registry::Registry::bootstrap();
-}
 bool Block::usesNeighborLightSampling(int blockId) {
  if(blockId <= 0 || blockId >= BLOCK_COUNT) {
   return false;

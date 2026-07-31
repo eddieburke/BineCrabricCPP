@@ -7,7 +7,7 @@
 #include "net/minecraft/client/option/OptionSpec.hpp"
 namespace net::minecraft::client::gui::screen::option {
 namespace detail_screen {
-extern std::array<net::minecraft::client::option::OptionSpec, 8> kSpecs;
+extern std::array<net::minecraft::client::option::OptionSpec, 10> kSpecs;
 }
 std::unique_ptr<screen::Screen> makeDetailSettingsScreen(std::function<std::unique_ptr<screen::Screen>()> parentFactory,
                                                          net::minecraft::client::option::GameOptions* gameOptions);

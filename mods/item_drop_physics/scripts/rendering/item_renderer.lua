@@ -1,10 +1,6 @@
--- ============================================================================
--- item_drop_physics: rendering
---
 -- Builds the voxel fallback model for flat item icons and draws simulated
--- items. Physics state arrives as flat scalars from physics/engine.lua; this
--- module owns no simulation state of its own.
--- ============================================================================
+-- items. Physics state arrives as flat scalars from scripts/physics/engine.lua;
+-- this module owns no simulation state of its own.
 
 local engine = require("scripts.physics.engine")
 local config = require("config")

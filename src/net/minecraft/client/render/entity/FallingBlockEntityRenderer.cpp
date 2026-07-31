@@ -1,46 +1,41 @@
 #include "net/minecraft/block/Block.hpp"
-#include "net/minecraft/client/render/RenderSystem.hpp"
+#include "net/minecraft/client/render/RenderCore.hpp"
+#include "net/minecraft/client/render/RenderType.hpp"
 #include "net/minecraft/client/render/entity/EntityRenderers.hpp"
 #include "net/minecraft/entity/FallingBlockEntity.hpp"
 #include "net/minecraft/util/math/MathHelper.hpp"
 #include "net/minecraft/world/World.hpp"
 namespace net::minecraft::client::render::entity {
-namespace {
-struct MatrixScope {
- MatrixScope() {
-  RenderSystem::pushMatrix();
- }
- ~MatrixScope() {
-  RenderSystem::popMatrix();
- }
- MatrixScope(const MatrixScope&) = delete;
- MatrixScope& operator=(const MatrixScope&) = delete;
-};
-} // namespace
 FallingBlockEntityRenderer::FallingBlockEntityRenderer() {
  shadowRadius = 0.5f;
 }
 void FallingBlockEntityRenderer::render(
-    const net::minecraft::Entity& entity, double x, double y, double z, float yaw, float tickDelta) {
+    const net::minecraft::Entity& entity, double x, double y, double z, float yaw, float tickDelta,
+    net::minecraft::util::math::MatrixStack& matrices, const net::minecraft::util::math::Matrix4f& projection) {
  (void)yaw;
  (void)tickDelta;
  const auto* falling = dynamic_cast<const net::minecraft::FallingBlockEntity*>(&entity);
  if(falling == nullptr) {
   return;
  }
- const MatrixScope matrix;
- RenderSystem::translate(static_cast<float>(x), static_cast<float>(y), static_cast<float>(z));
+ beginDraw(matrices, projection);
+ matrices.push();
+ matrices.translate(static_cast<float>(x), static_cast<float>(y), static_cast<float>(z));
  bindTexture("/terrain.png");
  net::minecraft::block::Block* block =
      net::minecraft::block::Block::BLOCKS[static_cast<std::size_t>(falling->blockId)];
  if(block != nullptr) {
-  const render::RenderSystem::LightingOffGuard lighting;
+  // Face colours already encode shade; keep the pass unlit.
+  render::RenderPassScope passScope(render::RenderType::entityCutout());
+  render::core::setLightingEnabled(false);
   blockRenderManager_.renderFallingBlockEntity(*block,
                                                falling->world,
                                                MathHelper::floor(falling->x),
                                                MathHelper::floor(falling->y),
                                                MathHelper::floor(falling->z));
  }
+ matrices.pop();
+ endDraw();
 }
 } // namespace net::minecraft::client::render::entity
 #include "net/minecraft/client/entity/EntityClientRendererRegistration.hpp"

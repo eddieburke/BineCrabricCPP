@@ -1,0 +1,70 @@
+#include "/prelude/core.glsl"
+
+/* RENDERTARGETS: 0 */
+
+#ifdef CLRWL
+	#define TEXTURED
+#endif
+
+#if SM_DIST == 0 || defined END || defined NETHER
+	layout(depth_unchanged) out float gl_FragDepth;
+
+	void main() {}
+#else
+	#ifdef TEXTURED
+		uniform sampler2D gtexture;
+
+		in VertexData { layout(location = 0) noperspective vec2 coord; } v;
+
+		#ifdef TRANSLUCENT
+			layout(location = 0) out f16vec3 shadowcolor0;
+			layout(depth_unchanged) out float gl_FragDepth;
+
+			uniform sampler2D shadowtex1;
+
+			#include "/lib/srgb.glsl"
+		#else
+			layout(depth_greater) out float gl_FragDepth;
+
+			uniform float alphaTestRef;
+		#endif
+	#else
+		layout(depth_unchanged) out float gl_FragDepth;
+	#endif
+
+	void main() {
+		#ifdef TEXTURED
+			immut vec4 raw_color = texture(gtexture, v.coord);
+
+			#ifdef TRANSLUCENT
+				#ifdef CLRWL
+					vec4 clrwl_color; vec2 _clrwl_light; float _clrwl_ao; vec4 clrwl_overlay_color;
+					clrwl_computeFragment(raw_color, clrwl_color, _clrwl_light, _clrwl_ao, clrwl_overlay_color);
+					clrwl_color.rgb = mix(clrwl_color.rgb, clrwl_overlay_color.rgb, clrwl_overlay_color.a);
+					f16vec4 color = f16vec4(clrwl_color);
+				#else
+					f16vec4 color = f16vec4(raw_color);
+				#endif
+
+				// Beer–Lambert law https://discord.com/channels/237199950235041794/276979724922781697/612009520117448764
+				// TODO: Make this configurable.
+				immut float16_t falloff = float16_t(1.0) - exp(float16_t(-75.0) * (
+					float16_t(texelFetch(shadowtex1, ivec2(gl_FragCoord.xy), 0).r) - float16_t(gl_FragCoord.z)
+				));
+				color.a += falloff;
+
+				color.rgb = linear(color.rgb);
+				color.rgb *= float16_t(1.0) - max(float16_t(0.0), color.a - float16_t(1.0));
+
+				shadowcolor0 = mix(f16vec3(1.0), color.rgb, min(color.a, float16_t(1.0)));
+			#else
+				#ifdef CLRWL
+					vec4 _clrwl_color; vec2 _clrwl_light; float _clrwl_ao; vec4 _clrwl_overlay_color;
+					clrwl_computeFragment(raw_color, _clrwl_color, _clrwl_light, _clrwl_ao, _clrwl_overlay_color);
+				#else
+					if (raw_color.a < alphaTestRef) discard;
+				#endif
+			#endif
+		#endif
+	}
+#endif

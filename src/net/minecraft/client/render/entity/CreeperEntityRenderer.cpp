@@ -1,6 +1,6 @@
 #include <algorithm>
 #include "net/minecraft/client/gl/GlConstants.hpp"
-#include "net/minecraft/client/render/RenderSystem.hpp"
+#include "net/minecraft/client/render/RenderCore.hpp"
 #include "net/minecraft/client/render/entity/EntityRenderers.hpp"
 #include "net/minecraft/client/render/entity/model/CreeperEntityModel.hpp"
 #include "net/minecraft/entity/mob/CreeperEntity.hpp"
@@ -13,7 +13,8 @@ CreeperEntityRenderer::~CreeperEntityRenderer() {
  delete chargedModel_;
  chargedModel_ = nullptr;
 }
-void CreeperEntityRenderer::applyScale(const net::minecraft::LivingEntity& entity, float tickDelta) {
+void CreeperEntityRenderer::applyScale(const net::minecraft::LivingEntity& entity, float tickDelta,
+                                       net::minecraft::util::math::MatrixStack& matrices) {
  const auto* creeper = dynamic_cast<const net::minecraft::entity::mob::CreeperEntity*>(&entity);
  float swell = creeper != nullptr ? creeper->getScale(tickDelta) : 0.0f;
  float pulse = 1.0f + net::minecraft::util::math::MathHelper::sin(swell * 100.0f) * swell * 0.01f;
@@ -25,7 +26,7 @@ void CreeperEntityRenderer::applyScale(const net::minecraft::LivingEntity& entit
  swell *= swell;
  const float sx = (1.0f + swell * 0.4f) * pulse;
  const float sy = (1.0f + swell * 0.1f) / pulse;
- RenderSystem::scale(sx, sy, sx);
+ matrices.scale(sx, sy, sx);
 }
 int CreeperEntityRenderer::getOverlayColor(const net::minecraft::LivingEntity& entity,
                                            float /*brightness*/,
@@ -49,12 +50,12 @@ bool CreeperEntityRenderer::bindTexture(const net::minecraft::LivingEntity& enti
   // modelview stack and loadIdentity() would wipe it). Drop the texture
   // matrix emulation so we never corrupt the live modelview.
   setDecorationModel(chargedModel_);
-  RenderSystem::color4f(0.5f, 0.5f, 0.5f, 1.0f);
-  RenderSystem::blendAdditive();
+  render::core::setConstColor(0.5f, 0.5f, 0.5f, 1.0f);
+  core::blendAdditive();
   return true;
  }
  if(layer == 2) {
-  RenderSystem::disableBlend();
+  core::disableBlend();
  }
  return false;
 }

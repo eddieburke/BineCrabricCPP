@@ -126,9 +126,6 @@ void SingleplayerInteractionManager::setWorld(World* world) {
 }
 void SingleplayerInteractionManager::tick() {
  lastBlockBreakingProgress = blockBreakingProgress;
- if(minecraft != nullptr) {
-  minecraft->audio.tick();
- }
 }
 float SingleplayerInteractionManager::getBlockBreakingProgress(float partialTick) const {
  return lastBlockBreakingProgress + (blockBreakingProgress - lastBlockBreakingProgress) * partialTick;

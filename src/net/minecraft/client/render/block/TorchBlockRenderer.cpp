@@ -6,11 +6,7 @@ namespace net::minecraft::client::render::block {
 bool TorchBlockRenderer::render(net::minecraft::block::Block& block, int x, int y, int z) {
  const int blockMeta = ctx_.blockView->getBlockMeta(x, y, z);
  Tessellator& tessellator = *ctx_.tess;
- float brightness = block.getLuminance(ctx_.blockView, x, y, z);
- if(block.emission() > 0) {
-  brightness = 1.0f;
- }
- tessellator.color(brightness, brightness, brightness);
+ tessellator.color(1.0f, 1.0f, 1.0f);
  constexpr double tiltAmount = 0.4;
  constexpr double wallInset = 0.1;
  constexpr double yOffset = 0.2;

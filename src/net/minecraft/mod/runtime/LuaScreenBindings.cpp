@@ -14,7 +14,7 @@
 #include "net/minecraft/client/font/TextRenderer.hpp"
 #include "net/minecraft/client/gl/GlConstants.hpp"
 #include "net/minecraft/client/gui/Draw2D.hpp"
-#include "net/minecraft/client/render/RenderSystem.hpp"
+#include "net/minecraft/client/render/RenderCore.hpp"
 #include "net/minecraft/client/render/RenderType.hpp"
 #include "net/minecraft/client/render/Tessellator.hpp"
 #include "net/minecraft/client/render/item/ItemRenderer.hpp"
@@ -27,8 +27,8 @@
 namespace net::minecraft::mod::runtime {
 using namespace net::minecraft::mod::lua;
 #ifdef MINECRAFT_NATIVE_EXPORTS
+namespace core = net::minecraft::client::render::core;
 namespace {
-using net::minecraft::client::render::RenderSystem;
 client::render::item::ItemRenderer g_luaItemRenderer;
 } // namespace
 thread_local int g_luaGuiDepth = 0;
@@ -128,7 +128,7 @@ void LuaScreen::tick() {
 }
 void LuaScreen::render(int mouseX, int mouseY, float tickDelta) {
  if(!title_.empty() && textRenderer() != nullptr) {
-  drawCenteredTextWithShadow(*textRenderer(), title_, width() / 2, 20, 0xFFFFFF);
+  textRenderer()->drawCenteredWithShadow(title_, width() / 2, 20, 0xFFFFFF);
  }
  {
   const ActiveLuaScreenScope screenScope(this);
@@ -345,30 +345,21 @@ bool invokeLabelCallback(ModHost::LoadedLuaMod* mod, int ref, std::string& outTe
 namespace {
 // Reimplementation of the removed client::gl::preset::ModLuaGuiDraw /
 // SolidFill / ModLuaGuiTextDraw / ModLuaGuiItemDraw / ModLuaGuiSpriteDraw
-// scopes on top of RenderSystem's state shadow: 2D overlay draws are always
-// unculled and undepth-tested with alpha blending, and either bind a texture
-// (button/slider/toggle/text/item/sprite draws) or leave it off (flat fills).
+// scopes: 2D overlay draws are always unculled and undepth-tested with alpha
+// blending. Textured vs white diffuse is owned by the caller's RenderPassScope
+// (gui / guiTextured).
 class ModLuaGuiDrawScope {
  public:
- explicit ModLuaGuiDrawScope(bool textured) : saved_(RenderSystem::getShadow()) {
-  if(textured) {
-   RenderSystem::enableTexture();
-  } else {
-   RenderSystem::disableTexture();
-  }
-  RenderSystem::enableBlend();
-  RenderSystem::blendFunc(client::gl::blend::SrcAlpha, client::gl::blend::OneMinusSrcAlpha);
-  RenderSystem::disableCull();
-  RenderSystem::disableDepthTest();
- }
- ~ModLuaGuiDrawScope() {
-  RenderSystem::setShadow(saved_);
+ explicit ModLuaGuiDrawScope(bool /*textured*/)
+     : blend_(true), cull_(false), depth_(false, false) {
  }
  ModLuaGuiDrawScope(const ModLuaGuiDrawScope&) = delete;
  ModLuaGuiDrawScope& operator=(const ModLuaGuiDrawScope&) = delete;
 
  private:
- RenderSystem::StateShadow saved_;
+ core::BlendScope blend_;
+ core::CullScope cull_;
+ core::DepthScope depth_;
 };
 // Shared guard for gui.draw_* calls: only valid inside a Lua GUI draw scope
 // with a live client + text renderer.
@@ -379,7 +370,6 @@ class ModLuaGuiDrawScope {
  client::Minecraft* client = client::Minecraft::INSTANCE;
  return (client == nullptr || client->textRenderer == nullptr) ? nullptr : client;
 }
-struct LuaGuiWidgetDrawer : client::gui::DrawContext {};
 // The vanilla button texture in gui.png is only 200px wide, so the classic
 // "two stretched halves" trick (sample width/2 from each edge) only holds up
 // to width == 200; past that the right half's source U goes negative and
@@ -387,27 +377,34 @@ struct LuaGuiWidgetDrawer : client::gui::DrawContext {};
 // wide, so draw fixed-size end caps and tile a flat interior slice between
 // them instead of stretching the whole source region.
 void drawVanillaButtonBackground(client::Minecraft& minecraft, int x, int y, int width, int height, int textureV) {
- LuaGuiWidgetDrawer drawer;
  const int textureId = minecraft.textureManager.getTextureId("/gui/gui.png");
- RenderSystem::bindTexture(textureId);
- RenderSystem::color4f(1.0f, 1.0f, 1.0f, 1.0f);
+ core::bindTexture(textureId);
+ client::render::core::setConstColor(1.0f, 1.0f, 1.0f, 1.0f);
  constexpr int kCap = 2;
  constexpr int kTile = 4;
+ const client::render::RenderPassScope passScope(client::render::RenderType::guiTextured());
+ const float* c = client::render::core::constColor();
+ client::render::Tessellator& tess = client::render::INSTANCE;
+ tess.startQuads();
+ tess.color(c[0], c[1], c[2], c[3]);
  if(width <= kCap * 2) {
-  drawer.drawTexture(x, y, 0, textureV, width / 2, height);
-  drawer.drawTexture(x + width / 2, y, 200 - width / 2, textureV, width - width / 2, height);
+  client::gui::draw::appendAtlasQuad(tess, x, y, 0, textureV, width / 2, height, 0.0f);
+  client::gui::draw::appendAtlasQuad(
+      tess, x + width / 2, y, 200 - width / 2, textureV, width - width / 2, height, 0.0f);
+  tess.draw();
   return;
  }
- drawer.drawTexture(x, y, 0, textureV, kCap, height);
- drawer.drawTexture(x + width - kCap, y, 200 - kCap, textureV, kCap, height);
+ client::gui::draw::appendAtlasQuad(tess, x, y, 0, textureV, kCap, height, 0.0f);
+ client::gui::draw::appendAtlasQuad(tess, x + width - kCap, y, 200 - kCap, textureV, kCap, height, 0.0f);
  const int midX = x + kCap;
  const int midWidth = width - kCap * 2;
  int drawn = 0;
  while(drawn < midWidth) {
   const int w = std::min(kTile, midWidth - drawn);
-  drawer.drawTexture(midX + drawn, y, 98, textureV, w, height);
+  client::gui::draw::appendAtlasQuad(tess, midX + drawn, y, 98, textureV, w, height, 0.0f);
   drawn += w;
  }
+ tess.draw();
 }
 void drawVanillaButton(client::Minecraft& minecraft,
                        client::font::TextRenderer& textRenderer,
@@ -425,14 +422,13 @@ void drawVanillaButton(client::Minecraft& minecraft,
   imageY = 2;
  }
  drawVanillaButtonBackground(minecraft, x, y, width, height, 46 + imageY * 20);
- LuaGuiWidgetDrawer drawer;
  const int textY = y + (height - 8) / 2;
  if(!active) {
-  drawer.drawCenteredTextWithShadow(textRenderer, text, x + width / 2, textY, 0xFFA0A0A0);
+  textRenderer.drawCenteredWithShadow(text, x + width / 2, textY, 0xFFA0A0A0);
  } else if(hovered) {
-  drawer.drawCenteredTextWithShadow(textRenderer, text, x + width / 2, textY, 0xFFFFA0);
+  textRenderer.drawCenteredWithShadow(text, x + width / 2, textY, 0xFFFFA0);
  } else {
-  drawer.drawCenteredTextWithShadow(textRenderer, text, x + width / 2, textY, 0xFFE0E0E0);
+  textRenderer.drawCenteredWithShadow(text, x + width / 2, textY, 0xFFE0E0E0);
  }
 }
 void drawVanillaSlider(client::Minecraft& minecraft,
@@ -445,14 +441,22 @@ void drawVanillaSlider(client::Minecraft& minecraft,
                        const std::string& text,
                        bool hovered) {
  drawVanillaButtonBackground(minecraft, x, y, width, height, 46);
- LuaGuiWidgetDrawer drawer;
  const float clamped = std::clamp(normalized, 0.0f, 1.0f);
  const int knobX = x + static_cast<int>(clamped * static_cast<float>(width - 8));
- drawer.drawTexture(knobX, y, 0, 66, 4, height);
- drawer.drawTexture(knobX + 4, y, 196, 66, 4, height);
- drawer.drawCenteredTextWithShadow(
-     textRenderer, text, x + width / 2, y + (height - 8) / 2, hovered ? 0xFFFFA0 : 0xFFE0E0E0);
+ {
+  const client::render::RenderPassScope passScope(client::render::RenderType::guiTextured());
+  const float* c = client::render::core::constColor();
+  client::render::Tessellator& tess = client::render::INSTANCE;
+  tess.startQuads();
+  tess.color(c[0], c[1], c[2], c[3]);
+  client::gui::draw::appendAtlasQuad(tess, knobX, y, 0, 66, 4, height, 0.0f);
+  client::gui::draw::appendAtlasQuad(tess, knobX + 4, y, 196, 66, 4, height, 0.0f);
+  tess.draw();
+ }
+ textRenderer.drawCenteredWithShadow(
+     text, x + width / 2, y + (height - 8) / 2, hovered ? 0xFFFFA0 : 0xFFE0E0E0);
 }
+} // namespace
 [[nodiscard]] std::string toggleStateLabel(bool enabled) {
  const char* key = enabled ? "options.on" : "options.off";
  const std::string translated = client::resource::language::I18n::getTranslation(key);
@@ -475,11 +479,10 @@ void drawVanillaToggle(client::Minecraft& minecraft,
 }
 void prepareGuiDrawState() {
  const ModLuaGuiDrawScope guiDraw(true);
- RenderSystem::disableLighting();
+ client::render::core::setLightingEnabled(false);
 }
 void drawGuiFillRect(int x, int y, int width, int height, std::uint32_t color) {
- // A pass must be open for the quad to get a shader program bound; without it the
- // tessellator draw is a no-op (this is what DrawContext::fill does internally).
+ // A pass must be open for the quad to get a shader program bound.
  const client::render::RenderPassScope passScope(client::render::RenderType::gui());
  const ModLuaGuiDrawScope fillCaps(false);
  const int rgb = static_cast<int>(color & 0x00FFFFFFU);
@@ -602,7 +605,7 @@ int luaGuiDrawItem(lua_State* state) {
  const ModLuaGuiDrawScope itemCaps(true);
  g_luaItemRenderer.renderGuiItem(*client->textRenderer, client->textureManager, stack, x, y);
  g_luaItemRenderer.renderGuiItemDecoration(*client->textRenderer, client->textureManager, stack, x, y);
- RenderSystem::color4f(1.0f, 1.0f, 1.0f, 1.0f);
+ client::render::core::setConstColor(1.0f, 1.0f, 1.0f, 1.0f);
  return 0;
 }
 int luaGuiTextWidth(lua_State* state) {
@@ -654,7 +657,7 @@ int luaGuiDrawSprite(lua_State* state) {
  const int h = luaIntArg(state, arg + 5);
  const client::render::RenderPassScope passScope(client::render::RenderType::guiTextured());
  const ModLuaGuiDrawScope spriteCaps(true);
- RenderSystem::bindTexture(textureId);
+ core::bindTexture(textureId);
  client::render::Tessellator& tess = client::render::Tessellator::INSTANCE;
  tess.startQuads();
  client::gui::draw::appendAtlasQuad(tess, x, y, u, v, w, h, 0.0f);
@@ -675,8 +678,8 @@ int luaGuiDrawTexture(lua_State* state) {
  }
  const client::render::RenderPassScope passScope(client::render::RenderType::guiTextured());
  const ModLuaGuiDrawScope spriteCaps(true);
- RenderSystem::bindTexture(textureId);
- RenderSystem::color4f(1.0f, 1.0f, 1.0f, 1.0f);
+ core::bindTexture(textureId);
+ client::render::core::setConstColor(1.0f, 1.0f, 1.0f, 1.0f);
  client::render::Tessellator& tess = client::render::Tessellator::INSTANCE;
  client::gui::draw::texturedQuad(tess, x, y, x + w, y + h, 0.0f, 1.0f, 1.0f, 0.0f);
  return 0;
@@ -752,24 +755,24 @@ int luaScreenUiAddStackedCenteredButton(lua_State* state) {
  if(api.gettop(state) < 1 + argOffset || api.type(state, 1 + argOffset) != kLuaTString) {
   return 0;
  }
-  const std::string text = luaString(state, 1 + argOffset, "");
-  const int ref = api.gettop(state) >= 2 + argOffset ? retainButtonCallback(state, mod, 2 + argOffset) : kLuaNoRef;
-  const int labelRef = api.gettop(state) >= 3 + argOffset ? retainButtonCallback(state, mod, 3 + argOffset) : kLuaNoRef;
-  client::gui::widget::ActionButtonWidget& button =
-      g_activeScreenUi->addStackedCenteredButton(text, [mod, ref]() { invokeButtonCallback(mod, ref); });
-  if(labelRef != kLuaNoRef) {
-   auto* widget = &button;
-   button.onClick = [previous = std::move(button.onClick), mod, labelRef, widget]() {
-    if(previous) {
-     previous();
-    }
-    std::string label;
-    if(invokeLabelCallback(mod, labelRef, label)) {
-     widget->text = std::move(label);
-    }
-   };
-  }
-  return 0;
+ const std::string text = luaString(state, 1 + argOffset, "");
+ const int ref = api.gettop(state) >= 2 + argOffset ? retainButtonCallback(state, mod, 2 + argOffset) : kLuaNoRef;
+ const int labelRef = api.gettop(state) >= 3 + argOffset ? retainButtonCallback(state, mod, 3 + argOffset) : kLuaNoRef;
+ client::gui::widget::ActionButtonWidget& button =
+     g_activeScreenUi->addStackedCenteredButton(text, [mod, ref]() { invokeButtonCallback(mod, ref); });
+ if(labelRef != kLuaNoRef) {
+  auto* widget = &button;
+  button.onClick = [previous = std::move(button.onClick), mod, labelRef, widget]() {
+   if(previous) {
+    previous();
+   }
+   std::string label;
+   if(invokeLabelCallback(mod, labelRef, label)) {
+    widget->text = std::move(label);
+   }
+  };
+ }
+ return 0;
 }
 int luaScreenOpen(lua_State* state) {
  LuaApi& api = luaApi();
@@ -915,7 +918,6 @@ int luaScreenAddButton(lua_State* state) {
  g_activeLuaScreen->addLuaButton(x, y, width, height, text, [mod, ref]() { invokeButtonCallback(mod, ref); });
  return 0;
 }
-} // namespace
 void pushScreenUiTable(lua_State* state) {
  LuaApi& api = luaApi();
  api.createtable(state, 0, 3);

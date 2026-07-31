@@ -6,8 +6,8 @@ namespace net::minecraft::util::math {
 // origin + t*dir (clamped to [0, maxDist]) or -1.0 on miss.
 // eps is the near-zero threshold for dir components.
 [[nodiscard]] inline double raySlabIntersect(const double boxMin[3], const double boxMax[3],
-                                              const double origin[3], const double dir[3],
-                                              double maxDist, double eps = 1.0e-7) {
+                                             const double origin[3], const double dir[3],
+                                             double maxDist, double eps = 1.0e-7) {
  double tMin = 0.0;
  double tMax = maxDist;
  for(int axis = 0; axis < 3; ++axis) {

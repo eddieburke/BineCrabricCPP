@@ -13,7 +13,7 @@ using net::minecraft::client::option::OptionSpec;
 [[nodiscard]] bool cloudsHeightEnabled(const GameOptions& options) noexcept {
  return (options.clouds & 3) != 2;
 }
-std::array<OptionSpec, 8> kSpecs{{
+std::array<OptionSpec, 10> kSpecs{{
     d::makeCycle("clouds",
                  28,
                  ApplyFlags::None,
@@ -66,6 +66,20 @@ std::array<OptionSpec, 8> kSpecs{{
                   d::cycleBoolMember<&GameOptions::stars>,
                   d::loadBoolMember<&GameOptions::stars>,
                   d::saveBoolMember<&GameOptions::stars>),
+    d::makeToggle("vignette",
+                  44,
+                  ApplyFlags::None,
+                  d::getBoolMember<&GameOptions::vignette>,
+                  d::cycleBoolMember<&GameOptions::vignette>,
+                  d::loadBoolMember<&GameOptions::vignette>,
+                  d::saveBoolMember<&GameOptions::vignette>),
+    d::makeToggle("underwaterOverlay",
+                  45,
+                  ApplyFlags::None,
+                  d::getBoolMember<&GameOptions::underwaterOverlay>,
+                  d::cycleBoolMember<&GameOptions::underwaterOverlay>,
+                  d::loadBoolMember<&GameOptions::underwaterOverlay>,
+                  d::saveBoolMember<&GameOptions::underwaterOverlay>),
 }};
 class DetailSettingsScreen : public SettingsScreen {
  public:
@@ -102,6 +116,8 @@ class DetailSettingsScreen : public SettingsScreen {
   gui.intCycle(x2, y0 + dy * 2, "rain", "Rain & Snow", {"Fancy", "Fast", "OFF"}, &GameOptions::rain);
   gui.toggle(x1, y0 + dy * 3, "sky", "Sky");
   gui.toggle(x2, y0 + dy * 3, "stars", "Stars");
+  gui.toggle(x1, y0 + dy * 4, "vignette", "Vignette");
+  gui.toggle(x2, y0 + dy * 4, "underwaterOverlay", "Underwater Overlay");
  }
 };
 } // namespace detail_screen

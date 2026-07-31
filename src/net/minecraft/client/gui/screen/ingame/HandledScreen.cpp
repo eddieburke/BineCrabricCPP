@@ -3,7 +3,10 @@
 #include "net/minecraft/client/gl/GlConstants.hpp"
 #include "net/minecraft/client/input/InputSystem.hpp"
 #include "net/minecraft/client/option/GameOptions.hpp"
-#include "net/minecraft/client/render/RenderSystem.hpp"
+#include "net/minecraft/client/gui/Draw2D.hpp"
+#include "net/minecraft/client/render/RenderCore.hpp"
+#include "net/minecraft/client/render/RenderType.hpp"
+#include "net/minecraft/client/render/Tessellator.hpp"
 #include "net/minecraft/client/render/item/ItemRenderer.hpp"
 #include "net/minecraft/client/resource/language/I18n.hpp"
 #include "net/minecraft/client/texture/TextureManager.hpp"
@@ -11,120 +14,9 @@
 #include "net/minecraft/entity/player/PlayerEntity.hpp"
 #include "net/minecraft/screen/slot/Slot.hpp"
 namespace net::minecraft::client::gui::screen::ingame {
+namespace core = net::minecraft::client::render::core;
 namespace {
-using net::minecraft::client::render::RenderSystem;
 render::item::ItemRenderer itemRenderer;
-class MatrixScope {
- public:
- MatrixScope() {
-  RenderSystem::pushMatrix();
- }
- ~MatrixScope() {
-  RenderSystem::popMatrix();
- }
- MatrixScope(const MatrixScope&) = delete;
- MatrixScope& operator=(const MatrixScope&) = delete;
-};
-class ContainerScreenScope {
- public:
- ContainerScreenScope() : saved_(RenderSystem::getShadow()) {
- }
- ~ContainerScreenScope() {
-  RenderSystem::setShadow(saved_);
- }
- ContainerScreenScope(const ContainerScreenScope&) = delete;
- ContainerScreenScope& operator=(const ContainerScreenScope&) = delete;
-
- private:
- RenderSystem::StateShadow saved_;
-};
-class HandledSlotItemScope {
- public:
- HandledSlotItemScope() : saved_(RenderSystem::getShadow()) {
- }
- ~HandledSlotItemScope() {
-  RenderSystem::setShadow(saved_);
- }
- HandledSlotItemScope(const HandledSlotItemScope&) = delete;
- HandledSlotItemScope& operator=(const HandledSlotItemScope&) = delete;
-
- private:
- RenderSystem::StateShadow saved_;
-};
-class SlotHighlightScope {
- public:
- SlotHighlightScope() : saved_(RenderSystem::getShadow()) {
-  RenderSystem::disableDepthTest();
- }
- ~SlotHighlightScope() {
-  RenderSystem::setShadow(saved_);
- }
- SlotHighlightScope(const SlotHighlightScope&) = delete;
- SlotHighlightScope& operator=(const SlotHighlightScope&) = delete;
-
- private:
- RenderSystem::StateShadow saved_;
-};
-class HandledSlotDecorationScope {
- public:
- HandledSlotDecorationScope() : saved_(RenderSystem::getShadow()) {
-  RenderSystem::disableDepthTest();
- }
- ~HandledSlotDecorationScope() {
-  RenderSystem::setShadow(saved_);
- }
- HandledSlotDecorationScope(const HandledSlotDecorationScope&) = delete;
- HandledSlotDecorationScope& operator=(const HandledSlotDecorationScope&) = delete;
-
- private:
- RenderSystem::StateShadow saved_;
-};
-class HandledTooltipDrawScope {
- public:
- HandledTooltipDrawScope() : saved_(RenderSystem::getShadow()) {
-  RenderSystem::enableTexture();
- }
- ~HandledTooltipDrawScope() {
-  RenderSystem::setShadow(saved_);
- }
- HandledTooltipDrawScope(const HandledTooltipDrawScope&) = delete;
- HandledTooltipDrawScope& operator=(const HandledTooltipDrawScope&) = delete;
-
- private:
- RenderSystem::StateShadow saved_;
-};
-class ScreenTextOverlayScope {
- public:
- ScreenTextOverlayScope() : saved_(RenderSystem::getShadow()) {
-  RenderSystem::disableDepthTest();
-  RenderSystem::enableTexture();
- }
- ~ScreenTextOverlayScope() {
-  RenderSystem::setShadow(saved_);
- }
- ScreenTextOverlayScope(const ScreenTextOverlayScope&) = delete;
- ScreenTextOverlayScope& operator=(const ScreenTextOverlayScope&) = delete;
-
- private:
- RenderSystem::StateShadow saved_;
-};
-class BoundTextureScope {
- public:
- BoundTextureScope() {
-  const RenderSystem::StateShadow shadow = RenderSystem::getShadow();
-  if(shadow.activeTexture >= 0 && shadow.activeTexture < 32) {
-   previous_ = shadow.boundTextures[shadow.activeTexture];
-  }
- }
- ~BoundTextureScope() {
-  RenderSystem::bindTexture(0x0DE1, static_cast<int>(previous_));
- }
- BoundTextureScope(const BoundTextureScope&) = delete;
- BoundTextureScope& operator=(const BoundTextureScope&) = delete;
-
- private:
- unsigned previous_ = 0;
-};
 } // namespace
 void HandledScreen::init() {
  buttons_.clear();
@@ -137,21 +29,14 @@ void HandledScreen::render(int mouseX, int mouseY, float tickDelta) {
   return;
  }
  renderBackground();
- const ContainerScreenScope screenCaps;
- RenderSystem::color4f(1.0f, 1.0f, 1.0f, 1.0f);
+ core::setConstColor(1.0f, 1.0f, 1.0f, 1.0f);
  const int originX = (width_ - backgroundWidth) / 2;
  const int originY = (height_ - backgroundHeight) / 2;
  drawBackground(tickDelta);
  {
-  MatrixScope lightingMatrix;
-  RenderSystem::rotate(120.0f, 1.0f, 0.0f, 0.0f);
-  render::RenderSystem::enableLighting();
- }
- {
-  const HandledSlotItemScope slotCaps;
-  MatrixScope slotMatrix;
-  RenderSystem::translate(static_cast<float>(originX), static_cast<float>(originY), 0.0f);
-  RenderSystem::color4f(1.0f, 1.0f, 1.0f, 1.0f);
+  core::ScopedModelView slotMatrix;
+  core::modelViewStack().translate(static_cast<float>(originX), static_cast<float>(originY), 0.0f);
+  core::setConstColor(1.0f, 1.0f, 1.0f, 1.0f);
   ::net::minecraft::screen::slot::Slot* hoveredSlot = nullptr;
   PlayerEntity& player = static_cast<PlayerEntity&>(*minecraft_->player);
   const ItemStack cursorStack = player.inventory.getCursorStack();
@@ -161,22 +46,25 @@ void HandledScreen::render(int mouseX, int mouseY, float tickDelta) {
    }
    if(isPointOverSlot(*slot, mouseX, mouseY)) {
     hoveredSlot = slot;
-    const SlotHighlightScope hoverCaps;
-    fillGradient(slot->x, slot->y, slot->x + 16, slot->y + 16, 0x80FFFFFFU, 0x80FFFFFFU);
-    RenderSystem::color4f(1.0f, 1.0f, 1.0f, 1.0f);
+    const core::DepthScope hoverCaps(false, core::depthWriteEnabled());
+    {
+     const render::RenderPassScope passScope(render::RenderType::gui());
+     draw::verticalGradientQuad(render::INSTANCE, slot->x, slot->y, slot->x + 16, slot->y + 16, 0xFFFFFF, 0x80, 0xFFFFFF, 0x80);
+    }
+    core::setConstColor(1.0f, 1.0f, 1.0f, 1.0f);
    }
    drawSlot(*slot);
   }
   if(!cursorStack.empty()) {
-   RenderSystem::translate(0.0f, 0.0f, 32.0f);
+   core::modelViewStack().translate(0.0f, 0.0f, 32.0f);
    itemRenderer.renderGuiItem(
        *textRenderer_, minecraft_->textureManager, cursorStack, mouseX - originX - 8, mouseY - originY - 8);
    itemRenderer.renderGuiItemDecoration(
        *textRenderer_, minecraft_->textureManager, cursorStack, mouseX - originX - 8, mouseY - originY - 8);
   }
   {
-   const HandledSlotDecorationScope decorationCaps;
-   render::RenderSystem::disableLighting();
+   const core::DepthScope decorationCaps(false, core::depthWriteEnabled());
+   core::setLightingEnabled(false);
    drawForeground();
    if(cursorStack.empty() && hoveredSlot != nullptr && hoveredSlot->hasStack()) {
     std::string label =
@@ -195,17 +83,20 @@ void HandledScreen::render(int mouseX, int mouseY, float tickDelta) {
      const int tooltipX = mouseX - originX + 12;
      const int tooltipY = mouseY - originY - 12;
      const int textWidth = textRenderer_->getWidth(label);
-     fillGradient(tooltipX - 3,
-                  tooltipY - 3,
-                  tooltipX + textWidth + 3,
-                  tooltipY + 8 + 3,
-                  0xC0000000U,
-                  0xC0000000U);
      {
-      const HandledTooltipDrawScope tooltipCaps;
-      textRenderer_->drawWithShadow(label, tooltipX, tooltipY, 0xFFFFFF);
+      const render::RenderPassScope passScope(render::RenderType::gui());
+      draw::verticalGradientQuad(render::INSTANCE,
+                                 tooltipX - 3,
+                                 tooltipY - 3,
+                                 tooltipX + textWidth + 3,
+                                 tooltipY + 8 + 3,
+                                 0,
+                                 0xC0,
+                                 0,
+                                 0xC0);
      }
-     RenderSystem::color4f(1.0f, 1.0f, 1.0f, 1.0f);
+     textRenderer_->drawWithShadow(label, tooltipX, tooltipY, 0xFFFFFF);
+     core::setConstColor(1.0f, 1.0f, 1.0f, 1.0f);
     }
    }
   }
@@ -225,31 +116,55 @@ void HandledScreen::drawContainerTexture(const char* texturePath, int srcU, int 
   return;
  }
  const int textureId = minecraft_->textureManager.getTextureId(texturePath);
- RenderSystem::color4f(1.0f, 1.0f, 1.0f, 1.0f);
- RenderSystem::bindTexture(0x0DE1, textureId);
- drawTexture(containerOriginX(), containerOriginY(), srcU, srcV, drawW, drawH);
+ core::setConstColor(1.0f, 1.0f, 1.0f, 1.0f);
+ core::bindTexture(textureId);
+ {
+  const render::RenderPassScope passScope(render::RenderType::guiTextured());
+  const float* c = core::constColor();
+  render::Tessellator& tess = render::INSTANCE;
+  tess.startQuads();
+  tess.color(c[0], c[1], c[2], c[3]);
+  draw::appendAtlasQuad(tess, containerOriginX(), containerOriginY(), srcU, srcV, drawW, drawH, 0.0f);
+  tess.draw();
+ }
 }
 void HandledScreen::drawContainerTextureSplit(const char* texturePath, int topDrawH, int bottomSrcV, int bottomDrawH) {
  if(minecraft_ == nullptr) {
   return;
  }
  const int textureId = minecraft_->textureManager.getTextureId(texturePath);
- RenderSystem::color4f(1.0f, 1.0f, 1.0f, 1.0f);
- RenderSystem::bindTexture(0x0DE1, textureId);
+ core::setConstColor(1.0f, 1.0f, 1.0f, 1.0f);
+ core::bindTexture(textureId);
  const int originX = containerOriginX();
  const int originY = containerOriginY();
- drawTexture(originX, originY, 0, 0, backgroundWidth, topDrawH);
- drawTexture(originX, originY + topDrawH, 0, bottomSrcV, backgroundWidth, bottomDrawH);
+ {
+  const render::RenderPassScope passScope(render::RenderType::guiTextured());
+  const float* c = core::constColor();
+  render::Tessellator& tess = render::INSTANCE;
+  tess.startQuads();
+  tess.color(c[0], c[1], c[2], c[3]);
+  draw::appendAtlasQuad(tess, originX, originY, 0, 0, backgroundWidth, topDrawH, 0.0f);
+  draw::appendAtlasQuad(tess, originX, originY + topDrawH, 0, bottomSrcV, backgroundWidth, bottomDrawH, 0.0f);
+  tess.draw();
+ }
 }
 void HandledScreen::drawSlot(const ::net::minecraft::screen::slot::Slot& slot) {
  const ItemStack stack = slot.getStack();
  if(stack.empty()) {
   const int background = slot.getBackgroundTextureId();
   if(background >= 0) {
-   const BoundTextureScope savedTexture;
-   const ScreenTextOverlayScope slotOverlayCaps;
-   RenderSystem::bindTexture(0x0DE1, minecraft_->textureManager.getTextureId("/gui/items.png"));
-   drawTexture(slot.x, slot.y, background % 16 * 16, background / 16 * 16, 16, 16);
+   const core::TextureBindScope savedTexture;
+   const core::DepthScope slotOverlayCaps(false, core::depthWriteEnabled());
+   core::bindTexture(minecraft_->textureManager.getTextureId("/gui/items.png"));
+   {
+    const render::RenderPassScope passScope(render::RenderType::guiTextured());
+    const float* c = core::constColor();
+    render::Tessellator& tess = render::INSTANCE;
+    tess.startQuads();
+    tess.color(c[0], c[1], c[2], c[3]);
+    draw::appendAtlasQuad(tess, slot.x, slot.y, background % 16 * 16, background / 16 * 16, 16, 16, 0.0f);
+    tess.draw();
+   }
   }
   return;
  }

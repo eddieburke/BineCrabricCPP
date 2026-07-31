@@ -17,7 +17,10 @@ bool BedBlockRenderer::render(net::minecraft::block::Block& block, int x, int y,
  constexpr float shadeTop = 1.0f;
  constexpr float shadeNorthSouth = 0.8f;
  constexpr float shadeEastWest = 0.6f;
- const float baseBrightness = block.getLuminance(ctx_.blockView, x, y, z);
+ // Absolute light travels to the shader as a lightmap coordinate; the vertex
+ // colour keeps only the per-face shade.
+ const float baseBrightness = 1.0f;
+ ctx_.sampleFaceLight(x, y, z);
  tessellator.color(shadeBottom * baseBrightness, shadeBottom * baseBrightness, shadeBottom * baseBrightness);
  const int footTexture = block.getTexture(0, blockMeta);
  const int footTexU = net::minecraft::block::Block::textureAtlasU(footTexture);
@@ -35,7 +38,8 @@ bool BedBlockRenderer::render(net::minecraft::block::Block& block, int x, int y,
  tessellator.vertex(footX0, footY, footZ0, footUvMin, footVvMin);
  tessellator.vertex(footX1, footY, footZ0, footUvMax, footVvMin);
  tessellator.vertex(footX1, footY, footZ1, footUvMax, footVvMax);
- const float topBrightness = block.getLuminance(ctx_.blockView, x, y + 1, z);
+ const float topBrightness = 1.0f;
+ ctx_.sampleFaceLight(x, y + 1, z);
  tessellator.color(shadeTop * topBrightness, shadeTop * topBrightness, shadeTop * topBrightness);
  const int topTexture = block.getTexture(1, blockMeta);
  const int topTexU = net::minecraft::block::Block::textureAtlasU(topTexture);
@@ -103,40 +107,32 @@ bool BedBlockRenderer::render(net::minecraft::block::Block& block, int x, int y,
   break;
  }
  if(skipFaceDir != 2 && (ctx_.skipFaceCulling || ctx_.isSideVisible(block, x, y, z - 1, 2))) {
-  float northBrightness = block.getLuminance(ctx_.blockView, x, y, z - 1);
-  if(ctx_.renderBounds.minZ > 0.0) {
-   northBrightness = baseBrightness;
-  }
+  const float northBrightness = 1.0f;
+  ctx_.sampleFaceLight(x, y, ctx_.renderBounds.minZ > 0.0 ? z : z - 1);
   tessellator.color(
       shadeNorthSouth * northBrightness, shadeNorthSouth * northBrightness, shadeNorthSouth * northBrightness);
   ctx_.flipTextureHorizontally = sideFaceTex == 2;
   faces_.renderEastFace(block, x, y, z, block.getTextureId(ctx_.blockView, x, y, z, 2));
  }
  if(skipFaceDir != 3 && (ctx_.skipFaceCulling || ctx_.isSideVisible(block, x, y, z + 1, 3))) {
-  float southBrightness = block.getLuminance(ctx_.blockView, x, y, z + 1);
-  if(ctx_.renderBounds.maxZ < 1.0) {
-   southBrightness = baseBrightness;
-  }
+  const float southBrightness = 1.0f;
+  ctx_.sampleFaceLight(x, y, ctx_.renderBounds.maxZ < 1.0 ? z : z + 1);
   tessellator.color(
       shadeNorthSouth * southBrightness, shadeNorthSouth * southBrightness, shadeNorthSouth * southBrightness);
   ctx_.flipTextureHorizontally = sideFaceTex == 3;
   faces_.renderWestFace(block, x, y, z, block.getTextureId(ctx_.blockView, x, y, z, 3));
  }
  if(skipFaceDir != 4 && (ctx_.skipFaceCulling || ctx_.isSideVisible(block, x - 1, y, z, 4))) {
-  float westBrightness = block.getLuminance(ctx_.blockView, x - 1, y, z);
-  if(ctx_.renderBounds.minX > 0.0) {
-   westBrightness = baseBrightness;
-  }
+  const float westBrightness = 1.0f;
+  ctx_.sampleFaceLight(ctx_.renderBounds.minX > 0.0 ? x : x - 1, y, z);
   tessellator.color(
       shadeEastWest * westBrightness, shadeEastWest * westBrightness, shadeEastWest * westBrightness);
   ctx_.flipTextureHorizontally = sideFaceTex == 4;
   faces_.renderNorthFace(block, x, y, z, block.getTextureId(ctx_.blockView, x, y, z, 4));
  }
  if(skipFaceDir != 5 && (ctx_.skipFaceCulling || ctx_.isSideVisible(block, x + 1, y, z, 5))) {
-  float eastBrightness = block.getLuminance(ctx_.blockView, x + 1, y, z);
-  if(ctx_.renderBounds.maxX < 1.0) {
-   eastBrightness = baseBrightness;
-  }
+  const float eastBrightness = 1.0f;
+  ctx_.sampleFaceLight(ctx_.renderBounds.maxX < 1.0 ? x : x + 1, y, z);
   tessellator.color(
       shadeEastWest * eastBrightness, shadeEastWest * eastBrightness, shadeEastWest * eastBrightness);
   ctx_.flipTextureHorizontally = sideFaceTex == 5;

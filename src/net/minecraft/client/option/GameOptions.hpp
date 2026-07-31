@@ -28,6 +28,7 @@ class GameOptions {
  bool frustumCulling = true;
  std::string skin = "Default";
  std::string shaderPack;
+ int colorSpace = 0;
  int difficulty = 2;
  int guiScale = 0;
  float fieldOfView = 0.0f;
@@ -55,6 +56,9 @@ class GameOptions {
  int rain = 0;
  bool sky = true;
  bool stars = true;
+ // Vanilla-style overlay / Iris shaders.properties counterparts (user preference).
+ bool vignette = true;
+ bool underwaterOverlay = true;
  // Animations
  int animatedWater = 0;
  int animatedLava = 0;
@@ -77,8 +81,8 @@ class GameOptions {
  bool discreteScroll = false;
  float totalDiscreteScroll = 1.0f;
  std::string lastServer;
-  bool modsEnabled = true;
-  KeyBinding forwardKey{"key.forward", 17};
+ bool modsEnabled = true;
+ KeyBinding forwardKey{"key.forward", 17};
  KeyBinding leftKey{"key.left", 30};
  KeyBinding backKey{"key.back", 31};
  KeyBinding rightKey{"key.right", 32};
@@ -106,10 +110,10 @@ class GameOptions {
  [[nodiscard]] std::string getKeybindName(int index) const;
  [[nodiscard]] std::string getKeybindKey(int index) const;
  void setKeybindKey(int index, int keyCode);
+ void applyDerivedSettings();
  static constexpr int kKeybindCount = 10;
 
  private:
- void applyDerivedSettings();
  void applySideEffects(ApplyFlags flags);
 };
 } // namespace net::minecraft::client::option

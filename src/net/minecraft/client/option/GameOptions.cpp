@@ -6,7 +6,7 @@
 #include "net/minecraft/client/Minecraft.hpp"
 #include "net/minecraft/client/input/KeyCodes.hpp"
 #include "net/minecraft/client/option/OptionRegistry.hpp"
-#include "net/minecraft/client/option/ResolvedRenderOptions.hpp"
+#include "net/minecraft/client/option/RenderSettings.hpp"
 #include "net/minecraft/client/render/world/WorldRenderer.hpp"
 #include "net/minecraft/client/resource/language/I18n.hpp"
 #include "net/minecraft/client/texture/TextureManager.hpp"
@@ -47,6 +47,10 @@ void GameOptions::load() {
    }
    if(key == "shaderPack") {
     shaderPack = val;
+    continue;
+   }
+   if(key == "colorSpace") {
+    colorSpace = std::clamp(std::stoi(val), 0, 4);
     continue;
    }
    if(key == "lastServer") {
@@ -100,6 +104,7 @@ void GameOptions::save() {
  }
  out << "skin:" << skin << "\n"
      << "shaderPack:" << shaderPack << "\n"
+     << "colorSpace:" << colorSpace << "\n"
      << "lastServer:" << lastServer << "\n"
      << "modsEnabled:" << (modsEnabled ? "1" : "0") << "\n";
  for(KeyBinding* kb : allKeys) {
@@ -111,10 +116,10 @@ void GameOptions::applyToWorld(World* world) const {
   return;
  }
  world->applyWorldSettings(weather, autoSaveTicks, time);
- world->setChunkResidentRadius(resolve(*this).residentChunkRadius);
+ world->setChunkResidentRadius(renderSettings(*this).residentChunkRadius);
 }
 void GameOptions::applyDerivedSettings() {
- const ResolvedRenderOptions resolved = resolve(*this);
+ const RenderSettings resolved = renderSettings(*this);
  texture::TextureManager::MIPMAP = mipmapLevel > 0;
  texture::TextureManager::MIPMAP_LINEAR = resolved.mipmapLinearFilter;
  ao = aoLevel > 0.0f;

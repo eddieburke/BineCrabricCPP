@@ -10,9 +10,11 @@ float WolfEntityRenderer::getHeadBob(const net::minecraft::LivingEntity& entity,
  }
  return LivingEntityRenderer::getHeadBob(entity, tickDelta);
 }
-void WolfEntityRenderer::applyScale(const net::minecraft::LivingEntity& entity, float tickDelta) {
+void WolfEntityRenderer::applyScale(const net::minecraft::LivingEntity& entity, float tickDelta,
+                                    net::minecraft::util::math::MatrixStack& matrices) {
  (void)entity;
  (void)tickDelta;
+ (void)matrices;
 }
 } // namespace net::minecraft::client::render::entity
 #include "net/minecraft/client/entity/EntityClientRendererRegistration.hpp"

@@ -9,6 +9,7 @@
 #include "net/minecraft/client/particle/BlockParticle.hpp"
 #include "net/minecraft/client/particle/Particle.hpp"
 #include "net/minecraft/client/render/FrameRenderCamera.hpp"
+#include "net/minecraft/client/render/RenderType.hpp"
 #include "net/minecraft/client/texture/TextureManager.hpp"
 #include "net/minecraft/entity/EntityTypes.hpp"
 #include "net/minecraft/entity/LivingEntity.hpp"
@@ -48,6 +49,7 @@ class ParticleManager {
   }
  }
  void render(Entity* entity, float partialTicks) {
+  const render::RenderPassScope pass(render::RenderType::particlesTranslucent());
   // Particles must share the exact render origin AND orientation used by
   // terrain and entities (the frame camera), not the passed-in entity's
   // rotation. The frame camera honors mod camera overrides (e.g. a
@@ -94,6 +96,7 @@ class ParticleManager {
   if(bucket.empty()) {
    return;
   }
+  const render::RenderPassScope pass(render::RenderType::particles());
   // renderLit runs before render(), so establish the shared frame-camera
   // origin here too rather than relying on last frame's stale offsets.
   syncCameraOffset();

@@ -7,11 +7,10 @@
 #include <sstream>
 #include <string>
 #include "net/minecraft/client/gl/GlConstants.hpp"
-#include "net/minecraft/client/render/RenderSystem.hpp"
+#include "net/minecraft/client/render/RenderCore.hpp"
 #include "net/minecraft/client/texture/TextureManager.hpp"
 #include "net/minecraft/nbt/Compression.hpp"
 namespace net::minecraft::client::resource::pack {
-using net::minecraft::client::render::RenderSystem;
 namespace {
 std::uint32_t readU32(const std::vector<std::uint8_t>& data, std::size_t offset) {
  if(offset + 4 > data.size()) {
@@ -117,11 +116,11 @@ std::vector<std::uint8_t> readZipEntryData(const std::vector<std::uint8_t>& arch
   try {
    // Fallback for non-standard zip writers that embed zlib-wrapped deflate.
    return zlibDecompress(compressed);
-   } catch(...) {
-    return {};
-   }
+  } catch(...) {
+   return {};
   }
-  return {};
+ }
+ return {};
 }
 } // namespace
 ZippedTexturePack::ZippedTexturePack(std::filesystem::path file, const TexturePack* fallbackResources)
@@ -151,12 +150,12 @@ void ZippedTexturePack::open() {
   archive_.clear();
   return;
  }
-  if(!buildZipIndex(archive_, entries_)) {
-   archive_.clear();
+ if(!buildZipIndex(archive_, entries_)) {
+  archive_.clear();
   entries_.clear();
   return;
  }
- }
+}
 void ZippedTexturePack::close() {
  archive_.clear();
  entries_.clear();
@@ -225,7 +224,7 @@ void ZippedTexturePack::bindIcon(texture::TextureManager& textureManager) {
   textureManager.bindTexture(iconId_);
   return;
  }
- RenderSystem::bindTexture(textureManager.getTextureId("/gui/unknown_pack.png"));
+ render::core::bindTexture(textureManager.getTextureId("/gui/unknown_pack.png"));
 }
 std::vector<std::uint8_t> ZippedTexturePack::getResource(std::string_view path) const {
  if(!archive_.empty()) {
@@ -235,7 +234,7 @@ std::vector<std::uint8_t> ZippedTexturePack::getResource(std::string_view path) 
   }
  }
  if(fallbackResources_ != nullptr) {
-   return fallbackResources_->getResource(path);
+  return fallbackResources_->getResource(path);
  }
  return {};
 }

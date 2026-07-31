@@ -25,7 +25,6 @@ class ItemRenderer {
  block::BlockRenderManager blockRenderManager{};
 
  private:
- void setupGuiItemLighting();
  void renderCustomModelInGui(::net::minecraft::client::texture::TextureManager& textureManager,
                              const ItemStack& stack,
                              int x,

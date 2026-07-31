@@ -4,9 +4,34 @@
 #include <limits>
 #include <thread>
 #include "net/minecraft/world/World.hpp"
+#include "net/minecraft/world/chunk/storage/AlphaChunkStorage.hpp"
+#include "net/minecraft/world/dimension/Dimension.hpp"
+#ifdef _WIN32
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#include <windows.h>
+#endif
 namespace net::minecraft::world::chunk {
+namespace {
+void setIoThreadPriority() {
+#ifdef _WIN32
+ SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_BELOW_NORMAL);
+#endif
+}
+} // namespace
 ChunkCache::ChunkCache(World* world, std::unique_ptr<ChunkStorage> storage, ChunkSource* generator)
     : empty_(world, 0, 0), world_(world), storage_(std::move(storage)), generator_(generator) {
+}
+ChunkCache::~ChunkCache() {
+ waitForPendingWrites();
+ if(loaderPool_ != nullptr) {
+  loaderPool_->cancelPending();
+  loaderPool_->drain();
+ }
+ if(savePool_ != nullptr) {
+  savePool_->drain();
+ }
 }
 bool ChunkCache::isChunkLoaded(int chunkX, int chunkZ) const {
  return chunksByPos_.find(ChunkPos{chunkX, chunkZ}) != chunksByPos_.end();
@@ -38,7 +63,7 @@ void ChunkCache::retireFromLighting(Chunk* chunk) {
   return;
  }
  while(!chunk->beginRenderEviction()) {
-  std::this_thread::yield();
+  std::this_thread::sleep_for(std::chrono::microseconds(200));
  }
 }
 void ChunkCache::unloadChunk(int chunkX, int chunkZ) {
@@ -57,6 +82,47 @@ void ChunkCache::unloadChunk(int chunkX, int chunkZ) {
  chunksByPos_.erase(it);
  ownedChunks_.erase(chunk);
 }
+ChunkSource* ChunkCache::workerGenerator() {
+ if(generator_ == nullptr || world_ == nullptr || world_->dimension == nullptr) {
+  return generator_;
+ }
+ const std::thread::id threadId = std::this_thread::get_id();
+ {
+  const std::lock_guard lock(workerGeneratorMutex_);
+  const auto it = workerGenerators_.find(threadId);
+  if(it != workerGenerators_.end()) {
+   return it->second.get();
+  }
+ }
+ std::unique_ptr<ChunkSource> clone = world_->dimension->createChunkGeneratorFromSeed(world_->getSeed());
+ if(clone == nullptr) {
+  return generator_;
+ }
+ ChunkSource* raw = clone.get();
+ const std::lock_guard lock(workerGeneratorMutex_);
+ workerGenerators_.emplace(threadId, std::move(clone));
+ return raw;
+}
+std::unique_ptr<Chunk> ChunkCache::produceChunk(int chunkX, int chunkZ) {
+ if(storage_ != nullptr && world_ != nullptr) {
+  try {
+   std::unique_ptr<Chunk> loaded;
+   {
+    const std::lock_guard lock(ioMutex_);
+    loaded = std::make_unique<Chunk>(std::move(storage_->loadChunk(world_, chunkX, chunkZ)));
+   }
+   if(!loaded->empty && loaded->chunkPosEquals(chunkX, chunkZ)) {
+    return loaded;
+   }
+  } catch(...) {
+  }
+ }
+ ChunkSource* generator = workerGenerator();
+ if(generator != nullptr) {
+  return std::make_unique<Chunk>(std::move(generator->getChunk(chunkX, chunkZ)));
+ }
+ return nullptr;
+}
 Chunk& ChunkCache::loadChunk(int chunkX, int chunkZ) {
  const ChunkPos pos{chunkX, chunkZ};
  chunksToUnload_.erase(pos);
@@ -66,10 +132,6 @@ Chunk& ChunkCache::loadChunk(int chunkX, int chunkZ) {
  }
  const auto pendingIt = pendingLoads_.find(pos);
  if(pendingIt != pendingLoads_.end()) {
-  // Demanded before the background load finished. If it is done, adopt the
-  // result; otherwise drop the pending entry and produce synchronously (the
-  // worker's late result is discarded). Never wait on the worker here: the
-  // caller may already hold ioMutex_ (decoration), and waiting would deadlock.
   const std::shared_ptr<PendingLoad> pending = pendingIt->second;
   pendingLoads_.erase(pendingIt);
   if(pending->done.load(std::memory_order_acquire) && pending->chunk != nullptr) {
@@ -77,7 +139,6 @@ Chunk& ChunkCache::loadChunk(int chunkX, int chunkZ) {
   }
  }
  if(generator_ == nullptr && storage_ == nullptr) {
-  // Multiplayer mode: instantiate new blank chunk
   auto generated = std::make_unique<Chunk>(world_, chunkX, chunkZ);
   std::fill(generated->skyLight.bytes.begin(), generated->skyLight.bytes.end(), static_cast<std::uint8_t>(0xFF));
   generated->loaded = true;
@@ -91,22 +152,6 @@ Chunk& ChunkCache::loadChunk(int chunkX, int chunkZ) {
   return *chunk;
  }
  return adoptChunk(chunkX, chunkZ, produceChunk(chunkX, chunkZ));
-}
-std::unique_ptr<Chunk> ChunkCache::produceChunk(int chunkX, int chunkZ) {
- const std::lock_guard lock(ioMutex_);
- if(storage_ != nullptr && world_ != nullptr) {
-  try {
-   auto loaded = std::make_unique<Chunk>(std::move(storage_->loadChunk(world_, chunkX, chunkZ)));
-   if(!loaded->empty && loaded->chunkPosEquals(chunkX, chunkZ)) {
-    return loaded;
-   }
-   } catch(...) {
-   }
- }
- if(generator_ != nullptr) {
-  return std::make_unique<Chunk>(std::move(generator_->getChunk(chunkX, chunkZ)));
- }
- return nullptr;
 }
 Chunk& ChunkCache::adoptChunk(int chunkX, int chunkZ, std::unique_ptr<Chunk> owned) {
  const ChunkPos pos{chunkX, chunkZ};
@@ -150,13 +195,6 @@ Chunk& ChunkCache::adoptChunk(int chunkX, int chunkZ, std::unique_ptr<Chunk> own
   }
  }
  if(world_ != nullptr && chunk != &empty_) {
-  // Neighboring sections may have meshed against this then-missing chunk
-  // (treated as sky-lit air), leaving stale water faces and light seams at
-  // the border. Announce the arrival instead of dirtying a one-block shell:
-  // the shell expanded to a 3x3 column neighbourhood over full height (72
-  // sections) per chunk, so a world load re-meshed ~9x more than it needed to.
-  // WorldRenderer coalesces arrivals and refreshes only the four orthogonal
-  // neighbours' borders once per frame.
   world_->chunkAvailable(chunkX, chunkZ);
  }
  return *chunk;
@@ -171,7 +209,21 @@ Chunk& ChunkCache::getChunk(int chunkX, int chunkZ) {
  }
  return *it->second;
 }
-void ChunkCache::requestChunkAsync(int chunkX, int chunkZ) {
+void ChunkCache::ensureLoaderPool() {
+ if(loaderPool_ != nullptr) {
+  return;
+ }
+ const unsigned workers =
+     net::minecraft::util::concurrent::WorkerPool::recommendedThreadCount(3, 2, 4);
+ loaderPool_ = std::make_unique<net::minecraft::util::concurrent::WorkerPool>(workers);
+}
+void ChunkCache::ensureSavePool() {
+ if(savePool_ != nullptr || storage_ == nullptr || !storage_->supportsAsyncWrites()) {
+  return;
+ }
+ savePool_ = std::make_unique<net::minecraft::util::concurrent::WorkerPool>(1U);
+}
+void ChunkCache::requestChunkAsync(int chunkX, int chunkZ, int priority) {
  if(world_ == nullptr || (storage_ == nullptr && generator_ == nullptr)) {
   return;
  }
@@ -183,17 +235,17 @@ void ChunkCache::requestChunkAsync(int chunkX, int chunkZ) {
  pending->chunkX = chunkX;
  pending->chunkZ = chunkZ;
  pendingLoads_.emplace(pos, pending);
- if(loaderPool_ == nullptr) {
-  loaderPool_ = std::make_unique<net::minecraft::util::concurrent::WorkerPool>(1U);
- }
- loaderPool_->submit([this, pending] {
-  try {
-   pending->chunk = produceChunk(pending->chunkX, pending->chunkZ);
-  } catch(...) {
-   pending->chunk.reset();
-  }
-  pending->done.store(true, std::memory_order_release);
- });
+ ensureLoaderPool();
+ loaderPool_->submit(
+     [this, pending] {
+      try {
+       pending->chunk = produceChunk(pending->chunkX, pending->chunkZ);
+      } catch(...) {
+       pending->chunk.reset();
+      }
+      pending->done.store(true, std::memory_order_release);
+     },
+     priority);
 }
 void ChunkCache::integrateFinishedLoads(int budget) {
  while(budget > 0) {
@@ -244,14 +296,77 @@ void ChunkCache::saveEntities(Chunk& chunk) {
  } catch(...) {
  }
 }
+void ChunkCache::enqueueSerializedWrite(int chunkX, int chunkZ, std::vector<std::uint8_t> raw) {
+ if(storage_ == nullptr) {
+  return;
+ }
+ ensureSavePool();
+ if(savePool_ == nullptr) {
+  const std::lock_guard lock(ioMutex_);
+  storage_->writeSerializedChunk(chunkX, chunkZ, raw);
+  return;
+ }
+ pendingSaveWrites_.fetch_add(1, std::memory_order_acq_rel);
+ savePool_->submit([this, chunkX, chunkZ, payload = std::move(raw)]() mutable {
+  setIoThreadPriority();
+  try {
+   storage_->writeSerializedChunk(chunkX, chunkZ, payload);
+  } catch(...) {
+  }
+  if(pendingSaveWrites_.fetch_sub(1, std::memory_order_acq_rel) == 1) {
+   const std::lock_guard lock(saveCompleteMutex_);
+   saveCompleteCv_.notify_all();
+  }
+ });
+}
+void ChunkCache::enqueueSerializedWrite(int chunkX, int chunkZ, AlphaChunkStorage::ChunkSnapshot snapshot) {
+ if(storage_ == nullptr) {
+  return;
+ }
+ ensureSavePool();
+ if(savePool_ == nullptr) {
+  const std::lock_guard lock(ioMutex_);
+  std::vector<std::uint8_t> raw;
+  AlphaChunkStorage::writeRootChunkFromSnapshot(raw, snapshot);
+  storage_->writeSerializedChunk(chunkX, chunkZ, raw);
+  return;
+ }
+ pendingSaveWrites_.fetch_add(1, std::memory_order_acq_rel);
+ savePool_->submit([this, chunkX, chunkZ, snap = std::move(snapshot)]() mutable {
+  setIoThreadPriority();
+  try {
+   std::vector<std::uint8_t> raw;
+   AlphaChunkStorage::writeRootChunkFromSnapshot(raw, snap);
+   storage_->writeSerializedChunk(chunkX, chunkZ, raw);
+  } catch(...) {
+  }
+  if(pendingSaveWrites_.fetch_sub(1, std::memory_order_acq_rel) == 1) {
+   const std::lock_guard lock(saveCompleteMutex_);
+   saveCompleteCv_.notify_all();
+  }
+ });
+}
+void ChunkCache::waitForPendingWrites() {
+ std::unique_lock lock(saveCompleteMutex_);
+ saveCompleteCv_.wait(lock, [this] { return pendingSaveWrites_.load(std::memory_order_acquire) == 0; });
+ if(savePool_ != nullptr) {
+  savePool_->drain();
+ }
+}
 void ChunkCache::saveChunk(Chunk& chunk) {
  if(storage_ == nullptr || world_ == nullptr) {
   return;
  }
- const std::lock_guard lock(ioMutex_);
  try {
   chunk.lastSaveTime = static_cast<long long>(world_->getTime());
-  storage_->saveChunk(world_, chunk);
+  if(storage_->supportsAsyncWrites()) {
+   world_->checkSessionLock();
+   AlphaChunkStorage::ChunkSnapshot snapshot = AlphaChunkStorage::takeSnapshot(chunk, world_);
+   enqueueSerializedWrite(chunk.x, chunk.z, std::move(snapshot));
+  } else {
+   const std::lock_guard lock(ioMutex_);
+   storage_->saveChunk(world_, chunk);
+  }
  } catch(...) {
  }
 }
@@ -270,6 +385,7 @@ void ChunkCache::decorate(ChunkSource* source, int chunkX, int chunkZ) {
 bool ChunkCache::save(bool saveEntityData, client::gui::screen::LoadingDisplay* display) {
  (void)display;
  int saved = 0;
+ constexpr int kAutosaveBudget = 8;
  for(Chunk* chunk : chunks_) {
   if(chunk == nullptr) {
    continue;
@@ -282,22 +398,33 @@ bool ChunkCache::save(bool saveEntityData, client::gui::screen::LoadingDisplay* 
   }
   saveChunk(*chunk);
   chunk->dirty = false;
-  if(++saved == 24 && !saveEntityData) {
-   if(storage_ != nullptr) {
-    const std::lock_guard lock(ioMutex_);
-    storage_->flush();
-   }
+  ++saved;
+  if(!saveEntityData && saved >= kAutosaveBudget) {
+   pendingIncrementalSave_ = true;
    return false;
   }
  }
+ pendingIncrementalSave_ = false;
+ if(saveEntityData) {
+  waitForPendingWrites();
+ }
  if(storage_ != nullptr && (saveEntityData || saved > 0)) {
-  const std::lock_guard lock(ioMutex_);
-  storage_->flush();
+  if(saveEntityData) {
+   const std::lock_guard lock(ioMutex_);
+   storage_->flush();
+  }
  }
  return true;
 }
+void ChunkCache::prepareForSave() {
+ pendingIncrementalSave_ = false;
+ waitForPendingWrites();
+}
 bool ChunkCache::tick() {
- integrateFinishedLoads(8);
+ integrateFinishedLoads(2);
+ if(pendingIncrementalSave_ && world_ != nullptr && !world_->isSavingDisabled()) {
+  save(false, nullptr);
+ }
  if(world_ != nullptr && !world_->isSavingDisabled()) {
   for(int i = 0; i < 100; ++i) {
    if(chunksToUnload_.empty()) {
@@ -365,16 +492,11 @@ void ChunkCache::prefetchChunksNear(int centerChunkX, int centerChunkZ) {
     if(isChunkLoaded(cx, cz)) {
      continue;
     }
-    if(ring > 1) {
-     if(pendingLoads_.contains(ChunkPos{cx, cz})) {
-      continue;
-     }
-     requestChunkAsync(cx, cz);
-    } else {
-     // Innermost rings load synchronously: player movement is gated on the
-     // surrounding region being resident, so these can never lag behind.
-     loadChunk(cx, cz);
+    if(pendingLoads_.contains(ChunkPos{cx, cz})) {
+     continue;
     }
+    const int priority = ring <= 1 ? std::numeric_limits<int>::min() : ring;
+    requestChunkAsync(cx, cz, priority);
     ++loaded;
    }
   }

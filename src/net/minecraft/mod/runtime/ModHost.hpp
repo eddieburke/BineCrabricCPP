@@ -44,6 +44,9 @@ class ModHost {
    int functionRef = 0;
    int priority = 0;
    int eventIndex = -1;
+   std::uint16_t worldRenderStageMask = 0xFFFFu;
+   std::uint8_t worldRenderMomentMask = 0xFFu;
+   std::string entityTypeFilter;
   };
   std::string modId;
   void* state = nullptr;

@@ -9,7 +9,6 @@
 #include "net/minecraft/server/host/ServerLaunchConfig.hpp"
 #include "net/minecraft/server/network/ServerSocket.hpp"
 #include "tests/support/empty_server_mod_host.hpp"
-
 namespace {
 std::filesystem::path makeTempWorldRoot(const std::string& name) {
  static std::atomic<int> counter{0};
@@ -28,7 +27,6 @@ std::uint16_t reservePort() {
  return port;
 }
 } // namespace
-
 namespace net::minecraft::test {
 TEST(IntegratedServerHost, UsesAutomaticPortAndInMemoryProperties) {
  const std::filesystem::path root = makeTempWorldRoot("integrated_host");
@@ -54,7 +52,6 @@ TEST(IntegratedServerHost, UsesAutomaticPortAndInMemoryProperties) {
  EXPECT_TRUE(server.playerManager.isOperator("worldhost"));
  server.stopAndJoin();
 }
-
 TEST(IntegratedServerHost, PreservesCustomPort) {
  const std::filesystem::path root = makeTempWorldRoot("integrated_host_custom_port");
  initializeEmptyServerModHost(root / "runtime");
@@ -74,7 +71,6 @@ TEST(IntegratedServerHost, PreservesCustomPort) {
  EXPECT_EQ(server.properties->getProperty("server-port", -1), config.port);
  server.stopAndJoin();
 }
-
 TEST(IntegratedServerHost, WritesReadyFileOnlyAfterWorldInitialization) {
  const std::filesystem::path root = makeTempWorldRoot("integrated_host_ready");
  initializeEmptyServerModHost(root / "runtime");
@@ -93,7 +89,6 @@ TEST(IntegratedServerHost, WritesReadyFileOnlyAfterWorldInitialization) {
  EXPECT_TRUE(std::filesystem::is_regular_file(config.readyFile));
  server.stopAndJoin();
 }
-
 TEST(IntegratedServerHost, MissingRequiredModDoesNotWriteReadyFile) {
  const std::filesystem::path root = makeTempWorldRoot("integrated_host_missing_mod");
  initializeEmptyServerModHost(root / "runtime");
@@ -117,7 +112,6 @@ TEST(IntegratedServerHost, MissingRequiredModDoesNotWriteReadyFile) {
  EXPECT_EQ(server.lastError(), "Cannot load world \"IntegratedWorld\": missing required Lua mods: missing_ready_mod");
  EXPECT_FALSE(std::filesystem::exists(config.readyFile));
 }
-
 TEST(IntegratedServerHost, FirstManagedLoopbackLoginClaimsActualOwnerIdentity) {
  const std::filesystem::path root = makeTempWorldRoot("integrated_host_owner_claim");
  initializeEmptyServerModHost(root / "runtime");
@@ -139,7 +133,6 @@ TEST(IntegratedServerHost, FirstManagedLoopbackLoginClaimsActualOwnerIdentity) {
  EXPECT_FALSE(server.playerManager.isOperator("SecondLocalPlayer"));
  server.stopAndJoin();
 }
-
 TEST(IntegratedServerHost, AcceptsIpv4MappedLoopbackOwner) {
  const std::filesystem::path root = makeTempWorldRoot("integrated_host_mapped_owner");
  initializeEmptyServerModHost(root / "runtime");
@@ -157,5 +150,4 @@ TEST(IntegratedServerHost, AcceptsIpv4MappedLoopbackOwner) {
  EXPECT_TRUE(server.playerManager.isOperator("JoinedIdentity"));
  server.stopAndJoin();
 }
-
 } // namespace net::minecraft::test

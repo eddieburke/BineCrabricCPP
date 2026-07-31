@@ -13,7 +13,7 @@
 #include "net/minecraft/client/gui/widget/TextFieldWidget.hpp"
 #include "net/minecraft/client/input/InputSystem.hpp"
 #include "net/minecraft/client/input/Keys.hpp"
-#include "net/minecraft/client/render/RenderSystem.hpp"
+#include "net/minecraft/client/render/RenderCore.hpp"
 #include "net/minecraft/client/render/RenderType.hpp"
 #include "net/minecraft/client/render/Tessellator.hpp"
 #include "net/minecraft/client/texture/TextureManager.hpp"
@@ -27,6 +27,7 @@
 #include <windows.h>
 #endif
 namespace net::minecraft::client::gui::screen {
+namespace core = net::minecraft::client::render::core;
 void Screen::init(client::Minecraft* minecraft, int width, int height) {
  minecraft_ = minecraft;
  textRenderer_ = minecraft != nullptr ? minecraft->textRenderer.get() : nullptr;
@@ -270,21 +271,23 @@ void Screen::renderBackground() {
 }
 void Screen::renderBackground(int vOffset) {
  if(minecraft_ != nullptr && minecraft_->world != nullptr) {
-  fillGradient(0, 0, width_, height_, 0xC0101010U, 0xD0101010U);
+  const render::RenderPassScope passScope(render::RenderType::gui());
+  draw::verticalGradientQuad(render::INSTANCE, 0, 0, width_, height_, 0x101010, 0xC0, 0x101010, 0xD0);
  } else {
   renderBackgroundTexture(vOffset);
  }
 }
 void Screen::renderBackgroundTexture(int vOffset) {
  if(minecraft_ == nullptr) {
-  fillGradient(0, 0, width_, height_, 0xFF101020U, 0xFF202040U);
+  const render::RenderPassScope passScope(render::RenderType::gui());
+  draw::verticalGradientQuad(render::INSTANCE, 0, 0, width_, height_, 0x101020, 0xFF, 0x202040, 0xFF);
   return;
  }
  render::Tessellator& tessellator = render::INSTANCE;
  const int textureId = minecraft_->textureManager.getTextureId("/gui/background.png");
  const render::RenderPassScope passScope(render::RenderType::guiTextured());
- render::RenderSystem::bindTexture(textureId);
- render::RenderSystem::color4f(1.0f, 1.0f, 1.0f, 1.0f);
+ render::core::bindTexture(textureId);
+ core::setConstColor(1.0f, 1.0f, 1.0f, 1.0f);
  draw::tiledPanel(tessellator, 0, 0, width_, height_, static_cast<float>(vOffset), 0x404040);
 }
 void Screen::confirmed(bool confirmed, int id) {

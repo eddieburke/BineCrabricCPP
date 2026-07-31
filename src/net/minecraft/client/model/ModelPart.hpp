@@ -2,6 +2,7 @@
 #include <vector>
 #include "net/minecraft/client/model/Quad.hpp"
 #include "net/minecraft/client/model/Vertex.hpp"
+#include "net/minecraft/util/math/MatrixStack.hpp"
 namespace net::minecraft::client::model {
 class ModelPart {
  public:
@@ -15,8 +16,11 @@ class ModelPart {
  void clearCuboids();
  void setPivot(float x, float y, float z);
  void render(float scale);
+ void render(float scale, net::minecraft::util::math::MatrixStack& matrices);
  void renderForceTransform(float scale);
+ void renderForceTransform(float scale, net::minecraft::util::math::MatrixStack& matrices);
  void transform(float scale);
+ void transform(float scale, net::minecraft::util::math::MatrixStack& matrices);
  void addChild(ModelPart& child);
  int textureU = 0;
  int textureV = 0;

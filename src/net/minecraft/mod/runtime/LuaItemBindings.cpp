@@ -39,7 +39,7 @@ int luaRegisterItem(lua_State* state) {
  } else if(modelType == kLuaTFunction) {
   api.settop(state, tableIndex);
   return args.fail("register_item: model must be a handle from minecraft.model.load; "
-                    "draw-callback models are no longer supported");
+                   "draw-callback models are no longer supported");
  }
 #endif
  api.settop(state, tableIndex);

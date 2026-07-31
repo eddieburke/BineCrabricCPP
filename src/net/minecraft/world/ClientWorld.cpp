@@ -42,7 +42,6 @@ void ClientWorld::tick() {
  net::minecraft::mod::runtime::luaHookWorldTick(beforeTick);
  mod::lua::clearModContext();
  setTime(time() + 1);
- updateSkyBrightness();
  for(int i = 0; i < 10 && !pendingEntities_.empty(); ++i) {
   auto it = pendingEntities_.begin();
   Entity* entity = *it;

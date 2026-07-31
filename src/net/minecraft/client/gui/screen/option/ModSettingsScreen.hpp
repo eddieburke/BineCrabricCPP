@@ -3,6 +3,7 @@
 #include <memory>
 #include <string>
 #include <vector>
+#include "net/minecraft/client/gui/layout/OptionsListScroll.hpp"
 #include "net/minecraft/client/gui/screen/Screen.hpp"
 #include "net/minecraft/mod/ScreenUi.hpp"
 namespace net::minecraft::client::gui::screen::option {
@@ -14,6 +15,7 @@ class ModSettingsScreen : public screen::Screen {
  void init() override;
  void render(int mouseX, int mouseY, float tickDelta) override;
  void mouseReleased(int mouseX, int mouseY, int button) override;
+ void mouseClicked(int mouseX, int mouseY, int button) override;
  void keyPressed(char character, int keyCode) override;
  void mouseScrolled(int mouseX, int mouseY, int delta) override;
  [[nodiscard]] std::string_view getScreenUiId() const override {
@@ -28,30 +30,18 @@ class ModSettingsScreen : public screen::Screen {
   std::string modId;
   std::string key;
   int widgetIndex = 0;
-  int contentY = 0;
  };
  struct KeybindWidget {
   std::string kbId;
   int widgetIndex = 0;
-  int contentY = 0;
- };
- struct SectionHeader {
-  std::string text;
-  int contentY = 0;
  };
  void rebuildLayout();
  void updateListLayout();
- void scrollBy(int amount);
  ParentFactory parentFactory_;
  std::string title_;
  std::vector<SettingWidget> settingWidgets_;
  std::vector<KeybindWidget> keybindWidgets_;
- std::vector<SectionHeader> sectionHeaders_;
+ layout::OptionsListScroll scroll_;
  int selectedKeybindIndex_ = -1;
- int listTop_ = 42;
- int listBottom_ = 42;
- int contentHeight_ = 0;
- int scrollOffset_ = 0;
- int maxScroll_ = 0;
 };
 } // namespace net::minecraft::client::gui::screen::option

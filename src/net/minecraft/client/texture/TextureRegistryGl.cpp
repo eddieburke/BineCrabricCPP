@@ -13,8 +13,8 @@ int TextureRegistry::resolveGlId(int textureId, net::minecraft::client::texture:
   auto& entries = detail::registryEntries();
   if(index < 0 || index >= static_cast<int>(entries.size())) {
    if(detail::warnedInvalidIds().insert(textureId).second) {
-    }
-    return textureManager.getTextureId(std::string());
+   }
+   return textureManager.getTextureId(std::string());
   }
   Entry& entry = entries[static_cast<std::size_t>(index)];
   if(entry.glId >= 0) {

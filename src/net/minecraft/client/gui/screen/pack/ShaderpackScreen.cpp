@@ -6,28 +6,23 @@
 #include <iomanip>
 #include <sstream>
 #include "net/minecraft/client/Minecraft.hpp"
+#include "net/minecraft/client/gui/Draw2D.hpp"
 #include "net/minecraft/client/gui/layout/OptionsLayout.hpp"
 #include "net/minecraft/client/gui/layout/ScreenLayout.hpp"
 #include "net/minecraft/client/gui/widget/ButtonWidget.hpp"
 #include "net/minecraft/client/input/KeyCodes.hpp"
 #include "net/minecraft/client/render/GameRenderer.hpp"
-#include "net/minecraft/client/render/RenderSystem.hpp"
+#include "net/minecraft/client/render/RenderCore.hpp"
+#include "net/minecraft/client/render/RenderType.hpp"
+#include "net/minecraft/client/render/Tessellator.hpp"
 #include "net/minecraft/client/render/shaderpack/ShaderPackManager.hpp"
-
 namespace net::minecraft::client::gui::screen::pack {
 namespace shaderpack = net::minecraft::client::render::shaderpack;
 namespace {
 using shaderpack::PackSetting;
 using shaderpack::SettingType;
-using net::minecraft::client::render::RenderSystem;
-
-constexpr int kListTop = 42;
-constexpr int kSectionLabelHeight = 14;
-constexpr int kSectionGap = 8;
-constexpr int kScrollStep = 24;
 constexpr int kButtonWidth = 150;
 constexpr int kButtonHeight = 20;
-
 class ShaderSliderWidget : public widget::ButtonWidget {
  public:
  using Change = std::function<float(float)>;
@@ -48,10 +43,18 @@ class ShaderSliderWidget : public widget::ButtonWidget {
   if(dragging_) {
    updateValue(mouseX);
   }
-  RenderSystem::color4f(1.0f, 1.0f, 1.0f, 1.0f);
+  render::core::setConstColor(1.0f, 1.0f, 1.0f, 1.0f);
   const int knobX = x + static_cast<int>(value_ * static_cast<float>(width - 8));
-  drawTexture(knobX, y, 0, 66, 4, 20);
-  drawTexture(knobX + 4, y, 196, 66, 4, 20);
+  {
+   const render::RenderPassScope passScope(render::RenderType::guiTextured());
+   const float* c = render::core::constColor();
+   render::Tessellator& tess = render::INSTANCE;
+   tess.startQuads();
+   tess.color(c[0], c[1], c[2], c[3]);
+   draw::appendAtlasQuad(tess, knobX, y, 0, 66, 4, 20, 0.0f);
+   draw::appendAtlasQuad(tess, knobX + 4, y, 196, 66, 4, 20, 0.0f);
+   tess.draw();
+  }
  }
  [[nodiscard]] bool isMouseOver(int mouseX, int mouseY) const override {
   return ButtonWidget::isMouseOver(mouseX, mouseY);
@@ -78,7 +81,6 @@ class ShaderSliderWidget : public widget::ButtonWidget {
  Change change_;
  Format format_;
 };
-
 float sliderPosition(const PackSetting& setting, const std::string& rawValue) {
  const double range = setting.maximum - setting.minimum;
  if(range <= 0.0) {
@@ -87,7 +89,6 @@ float sliderPosition(const PackSetting& setting, const std::string& rawValue) {
  const double current = std::strtod(rawValue.c_str(), nullptr);
  return static_cast<float>(std::clamp((current - setting.minimum) / range, 0.0, 1.0));
 }
-
 float applySliderPosition(shaderpack::ShaderPackManager* manager, const PackSetting& setting, float position) {
  const double range = setting.maximum - setting.minimum;
  if(range <= 0.0 || manager == nullptr) {
@@ -102,51 +103,54 @@ float applySliderPosition(shaderpack::ShaderPackManager* manager, const PackSett
  manager->setSetting(setting.key, next);
  return sliderPosition(setting, next);
 }
-
 std::string settingLabel(const PackSetting& setting, const std::string& value) {
  std::ostringstream text;
  text << setting.label << ": ";
+ std::string display = value;
  if(setting.type == SettingType::Bool) {
-  text << (value == "0" ? "OFF" : "ON");
+  display = value == "0" ? "OFF" : "ON";
  } else if(setting.type == SettingType::Int) {
-  text << static_cast<int>(std::strtod(value.c_str(), nullptr));
- } else {
-  text << std::fixed << std::setprecision(2) << std::strtod(value.c_str(), nullptr);
+  display = std::to_string(static_cast<int>(std::strtod(value.c_str(), nullptr)));
+ } else if(setting.type == SettingType::Float) {
+  std::ostringstream num;
+  num << std::fixed << std::setprecision(2) << std::strtod(value.c_str(), nullptr);
+  display = num.str();
  }
+ const auto labeled = setting.valueLabels.find(value);
+ if(labeled != setting.valueLabels.end()) display = labeled->second;
+ else {
+  const auto labeledDisplay = setting.valueLabels.find(display);
+  if(labeledDisplay != setting.valueLabels.end()) display = labeledDisplay->second;
+ }
+ text << setting.valuePrefix << display << setting.valueSuffix;
  return text.str();
 }
 } // namespace
-
 ShaderpackScreen::ShaderpackScreen(ParentFactory parentFactory) : parentFactory_(std::move(parentFactory)) {
 }
-
 void ShaderpackScreen::init() {
- scrollOffset_ = 0;
  rebuildLayout();
 }
-
 void ShaderpackScreen::rebuildLayout() {
  buttons_.clear();
- settingWidgets_.clear();
- sectionHeaders_.clear();
+ scroll_.clear();
  title_ = "Shaderpack Settings";
-
  if(minecraft() == nullptr || minecraft()->gameRenderer == nullptr ||
     minecraft()->gameRenderer->shaderPacks() == nullptr) {
   return;
  }
  auto* manager = minecraft()->gameRenderer->shaderPacks();
+ manager->poll();
  const auto packs = manager->available();
+ const int listTop = layout::OptionsListScroll::kModListTop;
  int contentY = 0;
-
- sectionHeaders_.push_back({"Installed Shaderpacks", contentY});
- contentY += kSectionLabelHeight;
-
+ scroll_.addHeader("Installed Shaderpacks", contentY);
+ contentY += layout::OptionsListScroll::kSectionLabelHeight;
  addActionButton(layout::optionsGridX(width(), 0),
-                 listTop_ + contentY,
+                 listTop + contentY,
                  kButtonWidth,
                  kButtonHeight,
-                 std::string("None") + (manager->active() ? "" : " (selected)"),
+                 std::string("None") + (manager->usingUserPack() ? "" : " (selected)"),
                  [this] {
                   if(minecraft() != nullptr && minecraft()->gameRenderer != nullptr &&
                      minecraft()->gameRenderer->shaderPacks() != nullptr) {
@@ -154,16 +158,14 @@ void ShaderpackScreen::rebuildLayout() {
                    rebuildLayout();
                   }
                  });
-
- settingWidgets_.push_back({"", static_cast<int>(buttons_.size() - 1), contentY});
-
+ scroll_.addEntry(static_cast<int>(buttons_.size() - 1), contentY);
  for(std::size_t i = 0; i < packs.size(); ++i) {
   const auto pack = packs[i];
   const int row = static_cast<int>((i + 1) / 2);
   const int col = static_cast<int>((i + 1) % 2);
   const int widgetY = contentY + row * layout::kRowSpacing;
   addActionButton(layout::optionsGridX(width(), col),
-                  listTop_ + widgetY,
+                  listTop + widgetY,
                   kButtonWidth,
                   kButtonHeight,
                   pack.name + (pack.valid ? "" : " (invalid)"),
@@ -174,27 +176,115 @@ void ShaderpackScreen::rebuildLayout() {
                     rebuildLayout();
                    }
                   });
-  settingWidgets_.push_back({pack.key, static_cast<int>(buttons_.size() - 1), widgetY});
+  scroll_.addEntry(static_cast<int>(buttons_.size() - 1), widgetY);
  }
-
- contentY += static_cast<int>((packs.size() + 2) / 2) * layout::kRowSpacing + kSectionGap;
-
- const shaderpack::PackManifest* manifest = manager->activeManifest();
+ contentY += static_cast<int>((packs.size() + 2) / 2) * layout::kRowSpacing +
+             layout::OptionsListScroll::kSectionGap;
+ const shaderpack::ShaderPackDefinition* manifest = manager->activeDefinition();
  if(manifest != nullptr && !manifest->settings.empty()) {
-  sectionHeaders_.push_back({"Shader Options", contentY});
-  contentY += kSectionLabelHeight;
-
-  for(std::size_t i = 0; i < manifest->settings.size(); ++i) {
-   const PackSetting setting = manifest->settings[i];
+  const std::vector<std::string>* layoutTokens = nullptr;
+  if(!currentPage_.empty()) {
+   const auto page = manifest->screenPages.find(currentPage_);
+   if(page != manifest->screenPages.end()) layoutTokens = &page->second;
+  } else if(!manifest->screenRoot.empty()) {
+   layoutTokens = &manifest->screenRoot;
+  }
+  std::vector<const PackSetting*> visible;
+  visible.reserve(manifest->settings.size());
+  auto findSetting = [&](const std::string& key) -> const PackSetting* {
+   for(const PackSetting& setting : manifest->settings) {
+    if(setting.key == key) return &setting;
+   }
+   return nullptr;
+  };
+  if(layoutTokens != nullptr) {
+   scroll_.addHeader(currentPage_.empty() ? "Shader Options" : currentPage_, contentY);
+   contentY += layout::OptionsListScroll::kSectionLabelHeight;
+   if(!currentPage_.empty()) {
+    addActionButton(layout::optionsGridX(width(), 0),
+                    listTop + contentY,
+                    kButtonWidth,
+                    kButtonHeight,
+                    "< Back",
+                    [this] {
+                     currentPage_.clear();
+                     rebuildLayout();
+                    });
+    scroll_.addEntry(static_cast<int>(buttons_.size() - 1), contentY);
+    contentY += layout::kRowSpacing;
+   }
+   if(!manifest->profiles.empty() &&
+      std::find(layoutTokens->begin(), layoutTokens->end(), "<profile>") != layoutTokens->end()) {
+    for(std::size_t pi = 0; pi < manifest->profiles.size(); ++pi) {
+     const shaderpack::PackProfile profile = manifest->profiles[pi];
+     const int col = static_cast<int>(pi % 2);
+     const int row = static_cast<int>(pi / 2);
+     const int widgetY = contentY + row * layout::kRowSpacing;
+     addActionButton(layout::optionsGridX(width(), col),
+                     listTop + widgetY,
+                     kButtonWidth,
+                     kButtonHeight,
+                     "Profile: " + profile.name,
+                     [this, profile] {
+                      if(minecraft() == nullptr || minecraft()->gameRenderer == nullptr ||
+                         minecraft()->gameRenderer->shaderPacks() == nullptr) {
+                       return;
+                      }
+                      auto* current = minecraft()->gameRenderer->shaderPacks();
+                      for(const auto& [key, value] : profile.values) {
+                       current->setSetting(key, value);
+                      }
+                      rebuildLayout();
+                     });
+     scroll_.addEntry(static_cast<int>(buttons_.size() - 1), widgetY);
+    }
+    contentY += static_cast<int>((manifest->profiles.size() + 1) / 2) * layout::kRowSpacing;
+   }
+   std::size_t optionSlot = 0;
+   for(const std::string& token : *layoutTokens) {
+    if(token == "<empty>" || token == "<profile>") continue;
+    if(!token.empty() && token.front() == '[' && token.back() == ']') {
+     const std::string page = token.substr(1, token.size() - 2);
+     const int col = static_cast<int>(optionSlot % 2);
+     const int row = static_cast<int>(optionSlot / 2);
+     const int widgetY = contentY + row * layout::kRowSpacing;
+     addActionButton(layout::optionsGridX(width(), col),
+                     listTop + widgetY,
+                     kButtonWidth,
+                     kButtonHeight,
+                     page + " >",
+                     [this, page] {
+                      currentPage_ = page;
+                      rebuildLayout();
+                     });
+     scroll_.addEntry(static_cast<int>(buttons_.size() - 1), widgetY);
+     ++optionSlot;
+     continue;
+    }
+    if(token == "*") {
+     for(const PackSetting& setting : manifest->settings) visible.push_back(&setting);
+     continue;
+    }
+    if(const PackSetting* setting = findSetting(token)) visible.push_back(setting);
+   }
+   contentY += static_cast<int>((optionSlot + 1) / 2) * layout::kRowSpacing;
+  } else {
+   scroll_.addHeader("Shader Options", contentY);
+   contentY += layout::OptionsListScroll::kSectionLabelHeight;
+   for(const PackSetting& setting : manifest->settings) visible.push_back(&setting);
+  }
+  const int optionsBase = contentY;
+  for(std::size_t i = 0; i < visible.size(); ++i) {
+   const PackSetting setting = *visible[i];
    const int row = static_cast<int>(i / 2);
    const int col = static_cast<int>(i % 2);
-   const int widgetY = contentY + row * layout::kRowSpacing;
+   const int widgetY = optionsBase + row * layout::kRowSpacing;
    const int widgetIndex = static_cast<int>(buttons_.size());
    const int x = layout::optionsGridX(width(), col);
-
-   if(setting.type == SettingType::Bool) {
+   const bool useSlider = setting.asSlider || setting.type != SettingType::Bool;
+   if(!useSlider) {
     addActionButton(x,
-                    listTop_ + widgetY,
+                    listTop + widgetY,
                     kButtonWidth,
                     kButtonHeight,
                     settingLabel(setting, manager->settingValue(setting.key)),
@@ -216,7 +306,7 @@ void ShaderpackScreen::rebuildLayout() {
     const std::string val = manager->settingValue(setting.key);
     addButton<ShaderSliderWidget>(
         x,
-        listTop_ + widgetY,
+        listTop + widgetY,
         kButtonWidth,
         kButtonHeight,
         settingLabel(setting, val),
@@ -235,65 +325,52 @@ void ShaderpackScreen::rebuildLayout() {
          return settingLabel(setting, minecraft()->gameRenderer->shaderPacks()->settingValue(setting.key));
         });
    }
-   settingWidgets_.push_back({setting.key, widgetIndex, widgetY});
+   scroll_.addEntry(widgetIndex, widgetY);
   }
-  contentY += static_cast<int>((manifest->settings.size() + 1) / 2) * layout::kRowSpacing + kSectionGap;
+  contentY = optionsBase + static_cast<int>((visible.size() + 1) / 2) * layout::kRowSpacing +
+             layout::OptionsListScroll::kSectionGap;
  }
-
- contentHeight_ = std::max(0, contentY - kSectionGap);
+ const int contentHeight = std::max(0, contentY - layout::OptionsListScroll::kSectionGap);
  const int doneY = height() - 28;
- listTop_ = kListTop;
- listBottom_ = std::max(listTop_, doneY - kSectionGap);
-
- addActionButton(layout::centerBtnX(width()),
+ scroll_.setViewport(listTop, std::max(listTop, doneY - layout::OptionsListScroll::kSectionGap));
+ scroll_.setContentHeight(contentHeight);
+ addActionButton(width() / 2 - kButtonWidth / 2,
                  doneY,
                  kButtonWidth,
                  kButtonHeight,
                  "Done",
                  [this] { navigateTo(parentFactory_); });
-
- maxScroll_ = std::max(0, contentHeight_ - (listBottom_ - listTop_));
- scrollOffset_ = std::clamp(scrollOffset_, 0, maxScroll_);
  updateListLayout();
 }
-
 void ShaderpackScreen::updateListLayout() {
- for(const auto& widgetEntry : settingWidgets_) {
-  if(widgetEntry.widgetIndex < 0 || widgetEntry.widgetIndex >= static_cast<int>(buttons_.size())) {
-   continue;
-  }
-  auto& button = buttons_[static_cast<std::size_t>(widgetEntry.widgetIndex)];
-  if(button == nullptr) {
-   continue;
-  }
-  button->y = listTop_ + widgetEntry.contentY - scrollOffset_;
-  button->visible = button->y >= listTop_ && button->y + button->height <= listBottom_;
- }
+ scroll_.apply(buttons_);
 }
-
-void ShaderpackScreen::scrollBy(int amount) {
- if(maxScroll_ <= 0) {
-  return;
- }
- scrollOffset_ = std::clamp(scrollOffset_ + amount, 0, maxScroll_);
- updateListLayout();
-}
-
 void ShaderpackScreen::mouseScrolled(int mouseX, int mouseY, int delta) {
  (void)mouseX;
- if(mouseY < listTop_ || mouseY > listBottom_ || delta == 0) {
+ if(scroll_.mouseScrolled(mouseY, delta)) {
+  updateListLayout();
+ }
+}
+void ShaderpackScreen::mouseClicked(int mouseX, int mouseY, int button) {
+ if(button == 0 && scroll_.mouseClicked(mouseX, mouseY, width())) {
+  updateListLayout();
   return;
  }
- scrollBy(delta < 0 ? kScrollStep : -kScrollStep);
+ Screen::mouseClicked(mouseX, mouseY, button);
 }
-
+void ShaderpackScreen::mouseReleased(int mouseX, int mouseY, int button) {
+ scroll_.mouseReleased();
+ Screen::mouseReleased(mouseX, mouseY, button);
+}
 void ShaderpackScreen::keyPressed(char character, int keyCode) {
  if(arrowUpPressed(keyCode)) {
-  scrollBy(-kScrollStep);
+  scroll_.scrollBy(-layout::OptionsListScroll::kScrollStep);
+  updateListLayout();
   return;
  }
  if(arrowDownPressed(keyCode)) {
-  scrollBy(kScrollStep);
+  scroll_.scrollBy(layout::OptionsListScroll::kScrollStep);
+  updateListLayout();
   return;
  }
  if(escapePressed(keyCode)) {
@@ -302,29 +379,18 @@ void ShaderpackScreen::keyPressed(char character, int keyCode) {
  }
  Screen::keyPressed(character, keyCode);
 }
-
 void ShaderpackScreen::render(int mouseX, int mouseY, float tickDelta) {
- renderBackground();
- fill(0, listBottom_, width(), height(), 0xE0101010U);
- if(textRenderer() != nullptr) {
-  drawCenteredTextWithShadow(*textRenderer(), title_, width() / 2, 12, 0xFFFFFF);
-  for(const auto& header : sectionHeaders_) {
-   const int y = listTop_ + header.contentY - scrollOffset_;
-   if(y >= listTop_ && y + 8 <= listBottom_) {
-    drawTextWithShadow(*textRenderer(), header.text, layout::twoColumnLeftX(width()), y, 0xFFFFA0);
-   }
-  }
-  if(maxScroll_ > 0) {
-   const int trackX = width() / 2 + 164;
-   const int trackHeight = listBottom_ - listTop_;
-   const int thumbHeight = std::max(16, trackHeight * trackHeight / std::max(trackHeight, contentHeight_));
-   const int thumbTravel = std::max(0, trackHeight - thumbHeight);
-   const int thumbY = listTop_ + (maxScroll_ == 0 ? 0 : scrollOffset_ * thumbTravel / maxScroll_);
-   fill(trackX, listTop_, trackX + 2, listBottom_, 0x60000000);
-   fill(trackX, thumbY, trackX + 2, thumbY + thumbHeight, 0xFFC0C0C0);
-  }
+ if(scroll_.draggingThumb()) {
+  scroll_.mouseDragged(mouseY);
+  updateListLayout();
  }
+ renderBackground();
+ scroll_.renderFooterDim(width(), height());
+ if(textRenderer() != nullptr) {
+  textRenderer()->drawCenteredWithShadow(title_, width() / 2, 12, 0xFFFFFF);
+ }
+ scroll_.renderHeaders(textRenderer(), width());
+ scroll_.renderScrollbar(width());
  Screen::render(mouseX, mouseY, tickDelta);
 }
 } // namespace net::minecraft::client::gui::screen::pack
-

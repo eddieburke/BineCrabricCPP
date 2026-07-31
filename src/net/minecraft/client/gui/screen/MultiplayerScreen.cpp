@@ -120,26 +120,22 @@ void MultiplayerScreen::mouseClicked(int mouseX, int mouseY, int button) {
 void MultiplayerScreen::render(int mouseX, int mouseY, float tickDelta) {
  renderBackground();
  if(textRenderer() != nullptr) {
-  drawCenteredTextWithShadow(*textRenderer(),
-                             resource::language::I18n::getTranslation("multiplayer.title"),
-                             width() / 2,
-                             layout::formTitleY(height()),
-                             0xFFFFFF);
-  drawTextWithShadow(*textRenderer(),
-                     resource::language::I18n::getTranslation("multiplayer.info1"),
-                     layout::formBodyLeftX(width()),
-                     height() / 4 - 60 + 60 + 0,
-                     0xA0A0A0);
-  drawTextWithShadow(*textRenderer(),
-                     resource::language::I18n::getTranslation("multiplayer.info2"),
-                     layout::formBodyLeftX(width()),
-                     height() / 4 - 60 + 60 + 9,
-                     0xA0A0A0);
-  drawTextWithShadow(*textRenderer(),
-                     resource::language::I18n::getTranslation("multiplayer.ipinfo"),
-                     width() / 2 - 100,
-                     height() / 4 - 10 + 50,
-                     0xA0A0A0);
+  textRenderer()->drawCenteredWithShadow(resource::language::I18n::getTranslation("multiplayer.title"),
+                                         width() / 2,
+                                         layout::formTitleY(height()),
+                                         0xFFFFFF);
+  textRenderer()->drawWithShadow(resource::language::I18n::getTranslation("multiplayer.info1"),
+                                 layout::formBodyLeftX(width()),
+                                 height() / 4 - 60 + 60 + 0,
+                                 0xA0A0A0);
+  textRenderer()->drawWithShadow(resource::language::I18n::getTranslation("multiplayer.info2"),
+                                 layout::formBodyLeftX(width()),
+                                 height() / 4 - 60 + 60 + 9,
+                                 0xA0A0A0);
+  textRenderer()->drawWithShadow(resource::language::I18n::getTranslation("multiplayer.ipinfo"),
+                                 width() / 2 - 100,
+                                 height() / 4 - 10 + 50,
+                                 0xA0A0A0);
  }
  if(serverField_ != nullptr) {
   serverField_->render();

@@ -1,8 +1,3 @@
--- ================================================================
--- CONFIG: seedfinder
--- Centralized configuration with validation and persistence
--- ================================================================
-
 local settings = require("lib.settings")
 
 local config = settings.define("seedfinder", {

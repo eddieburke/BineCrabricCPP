@@ -3,6 +3,7 @@
 #include <cctype>
 #include <filesystem>
 #include <memory>
+#include <mutex>
 #include <string>
 #include <unordered_map>
 #include <vector>
@@ -107,6 +108,7 @@ struct AudioEngine::Impl {
  int loopSlotSuffix = 0;
  JavaRandom random;
  int ticksUntilMusic = 0;
+ std::mutex mutex;
  Impl() : ticksUntilMusic(random.nextInt(12000)) {
  }
  void ensureBackend() {
@@ -154,6 +156,7 @@ void AudioEngine::shutdown() {
 }
 void AudioEngine::reset() {
  shutdown();
+ const std::scoped_lock lock(impl_->mutex);
  impl_->effects.byBaseId.clear();
  impl_->effects.owned.clear();
  impl_->streaming.byBaseId.clear();
@@ -165,12 +168,15 @@ void AudioEngine::reset() {
  impl_->ticksUntilMusic = impl_->random.nextInt(12000);
 }
 void AudioEngine::registerEffect(const std::string& id, const std::filesystem::path& file) {
+ const std::scoped_lock lock(impl_->mutex);
  registerSound(impl_->effects, id, file);
 }
 void AudioEngine::registerStreaming(const std::string& id, const std::filesystem::path& file) {
+ const std::scoped_lock lock(impl_->mutex);
  registerSound(impl_->streaming, id, file);
 }
 void AudioEngine::registerMusic(const std::string& id, const std::filesystem::path& file) {
+ const std::scoped_lock lock(impl_->mutex);
  registerSound(impl_->music, id, file);
 }
 void AudioEngine::refreshMusicVolume() {
@@ -210,55 +216,64 @@ void AudioEngine::tick() {
  if(impl_->backend->playing(kMusicSlot) || impl_->backend->playing(kRecordSlot)) {
   return;
  }
- if(impl_->ticksUntilMusic > 0) {
-  --impl_->ticksUntilMusic;
-  return;
+ std::string path;
+ {
+  const std::scoped_lock lock(impl_->mutex);
+  if(impl_->ticksUntilMusic > 0) {
+   --impl_->ticksUntilMusic;
+   return;
+  }
+  const RegisteredSound* track = pickRandomSound(impl_->music);
+  if(track == nullptr) {
+   return;
+  }
+  impl_->ticksUntilMusic = impl_->random.nextInt(12000) + 12000;
+  path = track->path;
  }
- const RegisteredSound* track = pickRandomSound(impl_->music);
- if(track == nullptr) {
-  return;
- }
- impl_->ticksUntilMusic = impl_->random.nextInt(12000) + 12000;
- if(!impl_->backend->loadSourceFile(kMusicSlot, track->path, {})) {
-  return;
- }
- impl_->backend->setVolume(kMusicSlot, impl_->options->musicVolume);
- impl_->backend->play(kMusicSlot);
+ impl_->backend->playSourceFile(kMusicSlot, path, {}, impl_->options->musicVolume, 1.0f);
 }
 bool AudioEngine::playAt(const std::string& id, float x, float y, float z, float volume, float pitch) {
  if(!impl_->ready() || impl_->options->soundVolume == 0.0f || volume <= 0.0f) {
   return false;
  }
- const SoundLookup lookup = findAnySound(id, impl_->effects, impl_->streaming, impl_->music);
- if(lookup.sound == nullptr) {
-  return false;
+ std::string path;
+ std::string slot;
+ {
+  const std::scoped_lock lock(impl_->mutex);
+  const SoundLookup lookup = findAnySound(id, impl_->effects, impl_->streaming, impl_->music);
+  if(lookup.sound == nullptr) {
+   return false;
+  }
+  path = lookup.sound->path;
+  slot = impl_->nextEffectSlotName();
  }
- const std::string slot = impl_->nextEffectSlotName();
  const float maxDistance = volume > 1.0f ? kWorldAttenuationDistance * volume : kWorldAttenuationDistance;
- if(!impl_->backend->loadSourceFile(slot, lookup.sound->path, {false, true, x, y, z, maxDistance})) {
-  return false;
- }
- impl_->backend->setPitch(slot, pitch);
- impl_->backend->setVolume(slot, std::clamp(volume, 0.0f, 1.0f) * impl_->options->soundVolume);
- impl_->backend->play(slot);
- return true;
+ return impl_->backend->playSourceFile(slot,
+                                      path,
+                                      {false, true, x, y, z, maxDistance},
+                                      std::clamp(volume, 0.0f, 1.0f) * impl_->options->soundVolume,
+                                      pitch);
 }
 bool AudioEngine::play(const std::string& id, float volume, float pitch) {
  if(!impl_->ready() || impl_->options->soundVolume == 0.0f) {
   return false;
  }
- const SoundLookup lookup = findAnySound(id, impl_->effects, impl_->streaming, impl_->music);
- if(lookup.sound == nullptr) {
-  return false;
+ std::string path;
+ std::string slot;
+ {
+  const std::scoped_lock lock(impl_->mutex);
+  const SoundLookup lookup = findAnySound(id, impl_->effects, impl_->streaming, impl_->music);
+  if(lookup.sound == nullptr) {
+   return false;
+  }
+  path = lookup.sound->path;
+  slot = impl_->nextEffectSlotName();
  }
- const std::string slot = impl_->nextEffectSlotName();
- if(!impl_->backend->loadSourceFile(slot, lookup.sound->path, {})) {
-  return false;
- }
- impl_->backend->setPitch(slot, pitch);
- impl_->backend->setVolume(slot, std::clamp(volume, 0.0f, 1.0f) * kUiSoundScale * impl_->options->soundVolume);
- impl_->backend->play(slot);
- return true;
+ return impl_->backend->playSourceFile(slot,
+                                      path,
+                                      {},
+                                      std::clamp(volume, 0.0f, 1.0f) * kUiSoundScale * impl_->options->soundVolume,
+                                      pitch);
 }
 bool AudioEngine::playRecord(const std::string& id, float x, float y, float z, float volume) {
  if(!impl_->ready() || impl_->options->soundVolume == 0.0f) {
@@ -270,36 +285,47 @@ bool AudioEngine::playRecord(const std::string& id, float x, float y, float z, f
  if(id.empty()) {
   return false;
  }
- const RegisteredSound* sound = findSound(impl_->streaming, id);
- if(sound == nullptr || volume <= 0.0f) {
-  return false;
+ std::string path;
+ {
+  const std::scoped_lock lock(impl_->mutex);
+  const RegisteredSound* sound = findSound(impl_->streaming, id);
+  if(sound == nullptr || volume <= 0.0f) {
+   return false;
+  }
+  path = sound->path;
  }
  if(impl_->backend->playing(kMusicSlot)) {
   impl_->backend->stop(kMusicSlot);
  }
- if(!impl_->backend->loadSourceFile(kRecordSlot, sound->path, {false, true, x, y, z, kRecordAttenuationDistance})) {
-  return false;
- }
- impl_->backend->setVolume(kRecordSlot, kRecordVolumeScale * impl_->options->soundVolume);
- impl_->backend->play(kRecordSlot);
- return true;
+ return impl_->backend->playSourceFile(kRecordSlot,
+                                       path,
+                                       {false, true, x, y, z, kRecordAttenuationDistance},
+                                       kRecordVolumeScale * impl_->options->soundVolume,
+                                       1.0f);
 }
 std::string AudioEngine::playLoopAt(const std::string& id, float x, float y, float z, float volume, float pitch) {
  if(!impl_->ready() || impl_->options->soundVolume == 0.0f || volume <= 0.0f) {
   return {};
  }
- const SoundLookup lookup = findAnySound(id, impl_->effects, impl_->streaming, impl_->music);
- if(lookup.sound == nullptr) {
-  return {};
+ std::string path;
+ std::string slot;
+ {
+  const std::scoped_lock lock(impl_->mutex);
+  const SoundLookup lookup = findAnySound(id, impl_->effects, impl_->streaming, impl_->music);
+  if(lookup.sound == nullptr) {
+   return {};
+  }
+  path = lookup.sound->path;
+  slot = impl_->nextLoopSlotName();
  }
- const std::string slot = impl_->nextLoopSlotName();
  const float maxDistance = volume > 1.0f ? kWorldAttenuationDistance * volume : kWorldAttenuationDistance;
- if(!impl_->backend->loadSourceFile(slot, lookup.sound->path, {true, true, x, y, z, maxDistance})) {
+ if(!impl_->backend->playSourceFile(slot,
+                                    path,
+                                    {true, true, x, y, z, maxDistance},
+                                    std::clamp(volume, 0.0f, 1.0f) * impl_->options->soundVolume,
+                                    pitch)) {
   return {};
  }
- impl_->backend->setPitch(slot, pitch);
- impl_->backend->setVolume(slot, std::clamp(volume, 0.0f, 1.0f) * impl_->options->soundVolume);
- impl_->backend->play(slot);
  return slot;
 }
 void AudioEngine::stop(const std::string& handle) {

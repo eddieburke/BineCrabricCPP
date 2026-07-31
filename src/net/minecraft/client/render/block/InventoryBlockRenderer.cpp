@@ -1,12 +1,14 @@
 #include "net/minecraft/block/Block.hpp"
-#include "net/minecraft/client/render/RenderSystem.hpp"
+#include "net/minecraft/client/render/RenderCore.hpp"
 #include "net/minecraft/client/render/Tessellator.hpp"
 #include "net/minecraft/client/render/block/BlockRenderType.hpp"
 #include "net/minecraft/client/render/block/BlockRenderers.hpp"
 namespace net::minecraft::client::render::block {
 namespace {
+// Tint/brightness only in vaColor. Inventory 3D shade is the two-light diffuse
+// in gbuffers_item (enableGUIStandardItemLighting dirs), not terrain faceShade.
 void applyInventoryColor(float red, float green, float blue, float brightness) {
- net::minecraft::client::render::RenderSystem::color4f(
+ net::minecraft::client::render::core::setConstColor(
      red * brightness, green * brightness, blue * brightness, 1.0f);
 }
 void drawInventoryCubeFaces(Tessellator& tessellator,
@@ -19,17 +21,11 @@ void drawInventoryCubeFaces(Tessellator& tessellator,
                             float brightness) {
  applyInventoryColor(red, green, blue, brightness);
  tessellator.startQuads();
- tessellator.normal(0.0f, -1.0f, 0.0f);
  faces.renderBottomFace(block, 0.0, 0.0, 0.0, block.getTexture(0, metadata));
- tessellator.normal(0.0f, 1.0f, 0.0f);
  faces.renderTopFace(block, 0.0, 0.0, 0.0, block.getTexture(1, metadata));
- tessellator.normal(0.0f, 0.0f, -1.0f);
  faces.renderEastFace(block, 0.0, 0.0, 0.0, block.getTexture(2, metadata));
- tessellator.normal(0.0f, 0.0f, 1.0f);
  faces.renderWestFace(block, 0.0, 0.0, 0.0, block.getTexture(3, metadata));
- tessellator.normal(-1.0f, 0.0f, 0.0f);
  faces.renderNorthFace(block, 0.0, 0.0, 0.0, block.getTexture(4, metadata));
- tessellator.normal(1.0f, 0.0f, 0.0f);
  faces.renderSouthFace(block, 0.0, 0.0, 0.0, block.getTexture(5, metadata));
  tessellator.draw();
 }
@@ -53,54 +49,45 @@ void InventoryBlockRenderer::render(net::minecraft::block::Block& block, int met
   }
   block.setupRenderBoundingBox();
   ctx_.renderBounds = block.getCollisionShapeLocal();
-  net::minecraft::client::render::RenderSystem::translate(-0.5f, -0.5f, -0.5f);
+  net::minecraft::client::render::core::modelViewStack().translate(-0.5f, -0.5f, -0.5f);
   drawInventoryCubeFaces(tessellator, faces_, block, metadata, red, green, blue, brightness);
-  net::minecraft::client::render::RenderSystem::translate(0.5f, 0.5f, 0.5f);
+  net::minecraft::client::render::core::modelViewStack().translate(0.5f, 0.5f, 0.5f);
  } else if(renderType == BlockRenderType::CROSS) {
   applyInventoryColor(red, green, blue, brightness);
   tessellator.startQuads();
-  tessellator.normal(0.0f, -1.0f, 0.0f);
   cross_.render(block, metadata, -0.5, -0.5, -0.5);
   tessellator.draw();
  } else if(renderType == BlockRenderType::CACTUS) {
   block.setupRenderBoundingBox();
   ctx_.renderBounds = block.getCollisionShapeLocal();
-  net::minecraft::client::render::RenderSystem::translate(-0.5f, -0.5f, -0.5f);
+  net::minecraft::client::render::core::modelViewStack().translate(-0.5f, -0.5f, -0.5f);
   const float faceInset = 0.0625f;
   applyInventoryColor(red, green, blue, brightness);
   tessellator.startQuads();
-  tessellator.normal(0.0f, -1.0f, 0.0f);
   faces_.renderBottomFace(block, 0.0, 0.0, 0.0, block.getTexture(0));
-  tessellator.normal(0.0f, 1.0f, 0.0f);
   faces_.renderTopFace(block, 0.0, 0.0, 0.0, block.getTexture(1));
-  tessellator.normal(0.0f, 0.0f, -1.0f);
   tessellator.translate(0.0f, 0.0f, faceInset);
   faces_.renderEastFace(block, 0.0, 0.0, 0.0, block.getTexture(2));
   tessellator.translate(0.0f, 0.0f, -faceInset);
-  tessellator.normal(0.0f, 0.0f, 1.0f);
   tessellator.translate(0.0f, 0.0f, -faceInset);
   faces_.renderWestFace(block, 0.0, 0.0, 0.0, block.getTexture(3));
   tessellator.translate(0.0f, 0.0f, faceInset);
-  tessellator.normal(-1.0f, 0.0f, 0.0f);
   tessellator.translate(faceInset, 0.0f, 0.0f);
   faces_.renderNorthFace(block, 0.0, 0.0, 0.0, block.getTexture(4));
   tessellator.translate(-faceInset, 0.0f, 0.0f);
-  tessellator.normal(1.0f, 0.0f, 0.0f);
   tessellator.translate(-faceInset, 0.0f, 0.0f);
   faces_.renderSouthFace(block, 0.0, 0.0, 0.0, block.getTexture(5));
   tessellator.translate(faceInset, 0.0f, 0.0f);
   tessellator.draw();
-  net::minecraft::client::render::RenderSystem::translate(0.5f, 0.5f, 0.5f);
+  net::minecraft::client::render::core::modelViewStack().translate(0.5f, 0.5f, 0.5f);
  } else if(renderType == BlockRenderType::CROP) {
   applyInventoryColor(red, green, blue, brightness);
   tessellator.startQuads();
-  tessellator.normal(0.0f, -1.0f, 0.0f);
   crop_.render(block, metadata, -0.5, -0.5, -0.5);
   tessellator.draw();
  } else if(renderType == BlockRenderType::TORCH) {
   applyInventoryColor(red, green, blue, brightness);
   tessellator.startQuads();
-  tessellator.normal(0.0f, -1.0f, 0.0f);
   torch_.renderTiltedTorch(block, -0.5, -0.5, -0.5, 0.0, 0.0);
   tessellator.draw();
  } else if(renderType == BlockRenderType::STAIRS) {
@@ -111,9 +98,9 @@ void InventoryBlockRenderer::render(net::minecraft::block::Block& block, int met
    if(i == 1) {
     ctx_.setRenderBounds(0.0f, 0.0f, 0.5f, 1.0f, 0.5f, 1.0f);
    }
-   net::minecraft::client::render::RenderSystem::translate(-0.5f, -0.5f, -0.5f);
+   net::minecraft::client::render::core::modelViewStack().translate(-0.5f, -0.5f, -0.5f);
    drawInventoryCubeFaces(tessellator, faces_, block, metadata, red, green, blue, brightness);
-   net::minecraft::client::render::RenderSystem::translate(0.5f, 0.5f, 0.5f);
+   net::minecraft::client::render::core::modelViewStack().translate(0.5f, 0.5f, 0.5f);
   }
  } else if(renderType == BlockRenderType::FENCE) {
   for(int i = 0; i < 4; ++i) {
@@ -143,9 +130,9 @@ void InventoryBlockRenderer::render(net::minecraft::block::Block& block, int met
                          0.5f - postHalfWidth,
                          1.0f + postHalfWidth * 2.0f);
    }
-   net::minecraft::client::render::RenderSystem::translate(-0.5f, -0.5f, -0.5f);
+   net::minecraft::client::render::core::modelViewStack().translate(-0.5f, -0.5f, -0.5f);
    drawInventoryCubeFaces(tessellator, faces_, block, metadata, red, green, blue, brightness);
-   net::minecraft::client::render::RenderSystem::translate(0.5f, 0.5f, 0.5f);
+   net::minecraft::client::render::core::modelViewStack().translate(0.5f, 0.5f, 0.5f);
   }
   ctx_.setRenderBounds(0.0f, 0.0f, 0.0f, 1.0f, 1.0f, 1.0f);
  }

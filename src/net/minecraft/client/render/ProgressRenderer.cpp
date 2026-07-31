@@ -4,7 +4,8 @@
 #include "net/minecraft/client/font/TextRenderer.hpp"
 #include "net/minecraft/client/gl/GlConstants.hpp"
 #include "net/minecraft/client/gui/Draw2D.hpp"
-#include "net/minecraft/client/render/RenderSystem.hpp"
+#include "net/minecraft/client/render/GuiProjection.hpp"
+#include "net/minecraft/client/render/RenderCore.hpp"
 #include "net/minecraft/client/render/RenderType.hpp"
 #include "net/minecraft/client/render/Tessellator.hpp"
 #include "net/minecraft/client/util/UiScale.hpp"
@@ -12,7 +13,6 @@
 #include "net/minecraft/client/util/DisplayManager.hpp"
 #endif
 #include <chrono>
-#include <thread>
 namespace net::minecraft::client::render {
 namespace {
 constexpr int kColorDepthClearMask = gl::attrib::ColorBufferBit | gl::attrib::DepthBufferBit;
@@ -33,13 +33,7 @@ void ProgressRenderer::setupLoadingProjection() {
   return;
  }
  const util::UiScale scale = util::uiScale(minecraft->options, minecraft->displayWidth, minecraft->displayHeight);
- RenderSystem::clear(gl::attrib::DepthBufferBit);
- RenderSystem::matrixMode(gl::matrix_::Projection);
- RenderSystem::loadIdentity();
- RenderSystem::ortho(0.0, scale.rawWidth, scale.rawHeight, 0.0, 100.0, 300.0);
- RenderSystem::matrixMode(gl::matrix_::ModelView);
- RenderSystem::loadIdentity();
- RenderSystem::translate(0.0f, 0.0f, -200.0f);
+ gui_proj::begin(scale, minecraft->displayWidth, minecraft->displayHeight, true);
 }
 void ProgressRenderer::progressStart(const std::string& titleIn) {
  noAbort = false;
@@ -74,11 +68,11 @@ void ProgressRenderer::renderLoadingFrame(int percentage) {
  const int scaledWidth = scale.scaledWidth;
  const int scaledHeight = scale.scaledHeight;
  setupLoadingProjection();
- RenderSystem::clear(kColorDepthClearMask);
+ core::clear(kColorDepthClearMask);
  Tessellator& tessellator = Tessellator::INSTANCE;
  {
   render::RenderPassScope passScope(render::RenderType::guiTextured());
-  RenderSystem::bindTexture(minecraft->textureManager.getTextureId("/gui/background.png"));
+  core::bindTexture(minecraft->textureManager.getTextureId("/gui/background.png"));
   gui::draw::tiledPanel(tessellator, 0, 0, scaledWidth, scaledHeight, 0.0f, 0x404040);
  }
  if(percentage >= 0) {
@@ -101,7 +95,6 @@ void ProgressRenderer::renderLoadingFrame(int percentage) {
 #ifdef _WIN32
  util::DisplayManager::present();
 #endif
- std::this_thread::yield();
 }
 void ProgressRenderer::progressStagePercentage(int percentage) {
  if(!checkRunningOrAbort()) {

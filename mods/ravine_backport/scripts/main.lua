@@ -1,8 +1,3 @@
--- ================================================================
--- MOD: ravine_backport
--- Standardized structure with separated config
--- ================================================================
-
 local config = require("config")
 
 local AIR = 0

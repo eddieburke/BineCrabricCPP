@@ -1,5 +1,5 @@
 #include "net/minecraft/client/gl/GlConstants.hpp"
-#include "net/minecraft/client/render/RenderSystem.hpp"
+#include "net/minecraft/client/render/RenderCore.hpp"
 #include "net/minecraft/client/render/entity/EntityRenderers.hpp"
 #include "net/minecraft/client/render/entity/model/SpiderEntityModel.hpp"
 #include "net/minecraft/entity/LivingEntity.hpp"
@@ -17,11 +17,12 @@ bool SpiderEntityRenderer::bindTexture(const net::minecraft::LivingEntity& entit
   return false;
  }
  EntityRenderer::bindTexture("/mob/spider_eyes.png");
+ // MCP RenderSpider: getEntityBrightness(1.0F) — hardcoded 1.0F partial tick.
  const float brightness = entity.getBrightnessAtEyes(1.0f);
  const float alpha = (1.0f - brightness) * 0.5f;
- RenderSystem::blendAlpha();
- RenderSystem::alphaTest(0.0f);
- RenderSystem::color4f(1.0f, 1.0f, 1.0f, alpha);
+ core::blendAlpha();
+ render::core::setAlphaTestRef(0.0f);
+ render::core::setConstColor(1.0f, 1.0f, 1.0f, alpha);
  (void)tickDelta;
  return true;
 }

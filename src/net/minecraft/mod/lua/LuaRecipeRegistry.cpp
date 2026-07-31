@@ -93,42 +93,42 @@ void ensureRecipeBatchQueued() {
   error = "shaped recipe rows must contain 1 to 3 columns";
   return false;
  }
-  const bool hasMultiIngredients = !spec.extraIngredients.empty();
-  bool usesIngredient = !hasMultiIngredients;
-  for(const std::string& row : spec.pattern) {
-   if(row.size() != width) {
-    error = "shaped recipe rows must have equal widths";
-    return false;
-   }
-   if(!hasMultiIngredients) {
-    usesIngredient = usesIngredient || row.find(spec.key) != std::string::npos;
-   }
+ const bool hasMultiIngredients = !spec.extraIngredients.empty();
+ bool usesIngredient = !hasMultiIngredients;
+ for(const std::string& row : spec.pattern) {
+  if(row.size() != width) {
+   error = "shaped recipe rows must have equal widths";
+   return false;
   }
   if(!hasMultiIngredients) {
-   if(!usesIngredient) {
-    error = "shaped recipe pattern does not use the ingredient key";
+   usesIngredient = usesIngredient || row.find(spec.key) != std::string::npos;
+  }
+ }
+ if(!hasMultiIngredients) {
+  if(!usesIngredient) {
+   error = "shaped recipe pattern does not use the ingredient key";
+   return false;
+  }
+  if(spec.ingredientItemId <= 0) {
+   error = "shaped recipe requires item_id";
+   return false;
+  }
+ } else {
+  for(const auto& [key, id] : spec.extraIngredients) {
+   if(id <= 0) {
+    error = "shaped recipe ingredient item_id must be positive";
     return false;
    }
-   if(spec.ingredientItemId <= 0) {
-    error = "shaped recipe requires item_id";
-    return false;
+   bool found = false;
+   for(const std::string& row : spec.pattern) {
+    found = found || row.find(key) != std::string::npos;
    }
-  } else {
-   for(const auto& [key, id] : spec.extraIngredients) {
-    if(id <= 0) {
-     error = "shaped recipe ingredient item_id must be positive";
-     return false;
-    }
-    bool found = false;
-    for(const std::string& row : spec.pattern) {
-     found = found || row.find(key) != std::string::npos;
-    }
-    if(!found) {
-     error = std::string("shaped recipe key '") + key + "' not found in pattern";
-     return false;
-    }
+   if(!found) {
+    error = std::string("shaped recipe key '") + key + "' not found in pattern";
+    return false;
    }
   }
+ }
  return true;
 }
 } // namespace

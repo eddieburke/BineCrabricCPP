@@ -107,7 +107,11 @@ void LuaModEntity::tick() {
  prevX = x;
  prevY = y;
  prevZ = z;
- velocityY -= 0.04;
+ // Placed props (cameras, tripods, …) opt out of gravity via data.no_gravity.
+ const bool noGravity = data_.contains("no_gravity") && data_.getBoolean("no_gravity");
+ if(!noGravity) {
+  velocityY -= 0.04;
+ }
  move(velocityX, velocityY, velocityZ);
  velocityX *= 0.6;
  velocityZ *= 0.6;

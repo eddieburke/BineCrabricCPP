@@ -1,7 +1,13 @@
 #include "net/minecraft/client/render/culling/Frustum.hpp"
+#if defined(_MSC_VER)
+#include <intrin.h>
+#else
 #include <x86intrin.h>
+#endif
+#include <cstring>
 #include "net/minecraft/client/gl/GlConstants.hpp"
-#include "net/minecraft/client/render/RenderSystem.hpp"
+#include "net/minecraft/client/render/RenderCore.hpp"
+#include "net/minecraft/client/render/RenderCore.hpp"
 #include "net/minecraft/util/math/MathHelper.hpp"
 namespace net::minecraft::client::render {
 Frustum& Frustum::getInstance() {
@@ -35,8 +41,10 @@ void Frustum::normalize(float plane[4]) {
 #endif
 }
 void Frustum::compute() {
- RenderSystem::getFloatv(gl::matrix_::ProjectionMatrix, projectionMatrix.data());
- RenderSystem::getFloatv(gl::matrix_::ModelViewMatrix, modelMatrix.data());
+ const float* projection = net::minecraft::client::render::core::currentProjection().data();
+ const float* modelView = net::minecraft::client::render::core::currentModelView().data();
+ std::memcpy(projectionMatrix.data(), projection, sizeof(float) * 16);
+ std::memcpy(modelMatrix.data(), modelView, sizeof(float) * 16);
 #ifdef __SSE2__
  const __m128 p0 = _mm_loadu_ps(&projectionMatrix[0]);
  const __m128 p1 = _mm_loadu_ps(&projectionMatrix[4]);

@@ -1,7 +1,13 @@
+#include <algorithm>
 #include "net/minecraft/block/Block.hpp"
-#include "net/minecraft/client/option/ResolvedRenderOptions.hpp"
+#include "net/minecraft/client/option/RenderSettings.hpp"
 #include "net/minecraft/client/render/Tessellator.hpp"
 #include "net/minecraft/client/render/block/BlockRenderers.hpp"
+#include "net/minecraft/world/BlockView.hpp"
+#include "net/minecraft/world/World.hpp"
+#include "net/minecraft/world/WorldRegion.hpp"
+#include "net/minecraft/world/chunk/Chunk.hpp"
+#include "net/minecraft/world/light/LightType.hpp"
 namespace net::minecraft::client::render::block {
 namespace option = net::minecraft::client::option;
 namespace {
@@ -15,36 +21,127 @@ bool edgeAllowsVision(const net::minecraft::BlockView* blockView, int x, int y, 
  }
  return net::minecraft::block::Block::BLOCKS_ALLOW_VISION[static_cast<std::size_t>(blockId)];
 }
-void assignAoVertexColors(const option::ResolvedRenderOptions& resolved,
-                          BlockFaceRenderState& state,
-                          float corner0,
-                          float corner1,
-                          float corner2,
-                          float corner3,
-                          bool applyTint,
-                          float shade,
-                          float red,
-                          float green,
-                          float blue) {
- corner0 = option::scaleAoCorner(corner0, resolved);
- corner1 = option::scaleAoCorner(corner1, resolved);
- corner2 = option::scaleAoCorner(corner2, resolved);
- corner3 = option::scaleAoCorner(corner3, resolved);
- const float baseRed = (applyTint ? red : 1.0f) * shade;
- const float baseGreen = (applyTint ? green : 1.0f) * shade;
- const float baseBlue = (applyTint ? blue : 1.0f) * shade;
- state.colors.red[0] = baseRed * corner0;
- state.colors.green[0] = baseGreen * corner0;
- state.colors.blue[0] = baseBlue * corner0;
- state.colors.red[1] = baseRed * corner1;
- state.colors.green[1] = baseGreen * corner1;
- state.colors.blue[1] = baseBlue * corner1;
- state.colors.red[2] = baseRed * corner2;
- state.colors.green[2] = baseGreen * corner2;
- state.colors.blue[2] = baseBlue * corner2;
- state.colors.red[3] = baseRed * corner3;
- state.colors.green[3] = baseGreen * corner3;
- state.colors.blue[3] = baseBlue * corner3;
+float opacityAo(const net::minecraft::BlockView* blockView, int x, int y, int z) {
+ return edgeAllowsVision(blockView, x, y, z) ? 1.0f : 0.2f;
+}
+void readBlockSky(BlockRenderContext& ctx, int x, int y, int z, int& blockLight, int& skyLight) {
+ ctx.sampleFaceLight(x, y, z);
+ blockLight = ctx.faceBlockLight;
+ skyLight = ctx.faceSkyLight;
+}
+void averageCornerLight(BlockRenderContext& ctx,
+                        int x0,
+                        int y0,
+                        int z0,
+                        int x1,
+                        int y1,
+                        int z1,
+                        int x2,
+                        int y2,
+                        int z2,
+                        int x3,
+                        int y3,
+                        int z3,
+                        int& blockLight,
+                        int& skyLight) {
+ int b0 = 0;
+ int b1 = 0;
+ int b2 = 0;
+ int b3 = 0;
+ int s0 = 0;
+ int s1 = 0;
+ int s2 = 0;
+ int s3 = 0;
+ readBlockSky(ctx, x0, y0, z0, b0, s0);
+ readBlockSky(ctx, x1, y1, z1, b1, s1);
+ readBlockSky(ctx, x2, y2, z2, b2, s2);
+ readBlockSky(ctx, x3, y3, z3, b3, s3);
+ blockLight = (b0 + b1 + b2 + b3) / 4;
+ skyLight = (s0 + s1 + s2 + s3) / 4;
+}
+void assignAoVertex(const option::RenderSettings& resolved,
+                    BlockFaceRenderState& state,
+                    int corner,
+                    float ao,
+                    bool applyTint,
+                    float red,
+                    float green,
+                    float blue) {
+ ao = option::scaleAoCorner(ao, resolved);
+ const float tintRed = applyTint ? red : 1.0f;
+ const float tintGreen = applyTint ? green : 1.0f;
+ const float tintBlue = applyTint ? blue : 1.0f;
+ if(resolved.separateAo) {
+  state.colors.red[corner] = tintRed;
+  state.colors.green[corner] = tintGreen;
+  state.colors.blue[corner] = tintBlue;
+  state.colors.alpha[corner] = ao;
+ } else {
+  state.colors.red[corner] = tintRed * ao;
+  state.colors.green[corner] = tintGreen * ao;
+  state.colors.blue[corner] = tintBlue * ao;
+  state.colors.alpha[corner] = 1.0f;
+ }
+}
+float oldLightingFaceShade(int face) {
+ switch(face) {
+ case 0:
+  return 0.5f;
+ case 1:
+  return 1.0f;
+ case 2:
+ case 3:
+  return 0.8f;
+ default:
+  return 0.6f;
+ }
+}
+void applyOldLightingIfEnabled(const option::RenderSettings& resolved, BlockFaceRenderState& state, int face) {
+ if(!resolved.oldLighting) {
+  return;
+ }
+ const float shade = oldLightingFaceShade(face);
+ for(int i = 0; i < 4; ++i) {
+  state.colors.red[i] *= shade;
+  state.colors.green[i] *= shade;
+  state.colors.blue[i] *= shade;
+ }
+}
+float flatFaceColor(const option::RenderSettings& resolved, int face, float channel) {
+ return resolved.oldLighting ? channel * oldLightingFaceShade(face) : channel;
+}
+void assignAoCorners(const option::RenderSettings& resolved,
+                     BlockFaceRenderState& state,
+                     int face,
+                     float c0,
+                     float c1,
+                     float c2,
+                     float c3,
+                     bool applyTint,
+                     float red,
+                     float green,
+                     float blue,
+                     int b0,
+                     int s0,
+                     int b1,
+                     int s1,
+                     int b2,
+                     int s2,
+                     int b3,
+                     int s3) {
+ assignAoVertex(resolved, state, 0, c0, applyTint, red, green, blue);
+ assignAoVertex(resolved, state, 1, c1, applyTint, red, green, blue);
+ assignAoVertex(resolved, state, 2, c2, applyTint, red, green, blue);
+ assignAoVertex(resolved, state, 3, c3, applyTint, red, green, blue);
+ state.blockLight[0] = b0;
+ state.skyLight[0] = s0;
+ state.blockLight[1] = b1;
+ state.skyLight[1] = s1;
+ state.blockLight[2] = b2;
+ state.skyLight[2] = s2;
+ state.blockLight[3] = b3;
+ state.skyLight[3] = s3;
+ applyOldLightingIfEnabled(resolved, state, face);
 }
 void multiplyAoVertexColors(BlockFaceRenderState& state, float red, float green, float blue) {
  for(int i = 0; i < 4; ++i) {
@@ -53,7 +150,7 @@ void multiplyAoVertexColors(BlockFaceRenderState& state, float red, float green,
   state.colors.blue[i] *= blue;
  }
 }
-[[nodiscard]] bool grassSideTintActive(const option::ResolvedRenderOptions& resolved) {
+[[nodiscard]] bool grassSideTintActive(const option::RenderSettings& resolved) {
  return resolved.fancyGrass;
 }
 } // namespace
@@ -69,7 +166,8 @@ bool CubeBlockRenderer::renderBlock(net::minecraft::block::Block& block, int x, 
  }
  return renderFlat(block, x, y, z, red, green, blue);
 }
-// Faithful port of BlockRenderManager.renderSmooth (beta 1.7.3).
+// Smooth lighting: C++ writes opacity AO into vaColor and per-vertex lightmap
+// averages into vaUV2. Packs own lighting application (face shade, lightmap sample).
 bool CubeBlockRenderer::renderSmooth(
     net::minecraft::block::Block& block, int x, int y, int z, float red, float green, float blue) {
  if(ctx_.blockView == nullptr) {
@@ -82,18 +180,20 @@ bool CubeBlockRenderer::renderSmooth(
  float corner1 = 0.0f;
  float corner2 = 0.0f;
  float corner3 = 0.0f;
+ int lb0 = 15;
+ int ls0 = 15;
+ int lb1 = 15;
+ int ls1 = 15;
+ int lb2 = 15;
+ int ls2 = 15;
+ int lb3 = 15;
+ int ls3 = 15;
  bool tintDown = true;
  bool tintUp = true;
  bool tintEast = true;
  bool tintWest = true;
  bool tintNorth = true;
  bool tintSouth = true;
- float northBrightness = block.getLuminance(ctx_.blockView, x - 1, y, z);
- float bottomBrightness = block.getLuminance(ctx_.blockView, x, y - 1, z);
- float eastBrightness = block.getLuminance(ctx_.blockView, x, y, z - 1);
- float southBrightness = block.getLuminance(ctx_.blockView, x + 1, y, z);
- float topBrightness = block.getLuminance(ctx_.blockView, x, y + 1, z);
- float westBrightness = block.getLuminance(ctx_.blockView, x, y, z + 1);
  const bool topEastEdgeTranslucent = edgeAllowsVision(ctx_.blockView, x + 1, y + 1, z);
  const bool bottomEastEdgeTranslucent = edgeAllowsVision(ctx_.blockView, x + 1, y - 1, z);
  const bool southEastEdgeTranslucent = edgeAllowsVision(ctx_.blockView, x + 1, y, z + 1);
@@ -121,80 +221,91 @@ bool CubeBlockRenderer::renderSmooth(
   tintDown = false;
  }
  if(ctx_.skipFaceCulling || ctx_.isSideVisible(block, x, y - 1, z, 0)) {
-  float northBottomBrightness = block.getLuminance(ctx_.blockView, x - 1, y - 1, z);
-  float eastBottomBrightness = block.getLuminance(ctx_.blockView, x, y - 1, z - 1);
-  float westBottomBrightness = block.getLuminance(ctx_.blockView, x, y - 1, z + 1);
-  float southBottomBrightness = block.getLuminance(ctx_.blockView, x + 1, y - 1, z);
-  const float northEastBottomBrightness = bottomNorthEdgeTranslucent || bottomWestEdgeTranslucent
-                                              ? block.getLuminance(ctx_.blockView, x - 1, y - 1, z - 1)
-                                              : northBottomBrightness;
-  const float northWestBottomBrightness = bottomSouthEdgeTranslucent || bottomWestEdgeTranslucent
-                                              ? block.getLuminance(ctx_.blockView, x - 1, y - 1, z + 1)
-                                              : northBottomBrightness;
-  const float southEastBottomBrightness = bottomNorthEdgeTranslucent || bottomEastEdgeTranslucent
-                                              ? block.getLuminance(ctx_.blockView, x + 1, y - 1, z - 1)
-                                              : southBottomBrightness;
-  const float southWestBottomBrightness = bottomSouthEdgeTranslucent || bottomEastEdgeTranslucent
-                                              ? block.getLuminance(ctx_.blockView, x + 1, y - 1, z + 1)
-                                              : southBottomBrightness;
-  corner0 = (northWestBottomBrightness + northBottomBrightness + westBottomBrightness + bottomBrightness) / 4.0f;
-  corner3 = (westBottomBrightness + bottomBrightness + southWestBottomBrightness + southBottomBrightness) / 4.0f;
-  corner2 = (bottomBrightness + eastBottomBrightness + southBottomBrightness + southEastBottomBrightness) / 4.0f;
-  corner1 = (northBottomBrightness + northEastBottomBrightness + bottomBrightness + eastBottomBrightness) / 4.0f;
-  assignAoVertexColors(
-      ctx_.opts, ctx_.faceState, corner0, corner1, corner2, corner3, tintDown, 0.5f, red, green, blue);
+  const float n = opacityAo(ctx_.blockView, x - 1, y - 1, z);
+  const float e = opacityAo(ctx_.blockView, x, y - 1, z - 1);
+  const float w = opacityAo(ctx_.blockView, x, y - 1, z + 1);
+  const float s = opacityAo(ctx_.blockView, x + 1, y - 1, z);
+  const float face = opacityAo(ctx_.blockView, x, y - 1, z);
+  const float ne = bottomNorthEdgeTranslucent || bottomWestEdgeTranslucent
+                       ? opacityAo(ctx_.blockView, x - 1, y - 1, z - 1)
+                       : n;
+  const float nw = bottomSouthEdgeTranslucent || bottomWestEdgeTranslucent
+                       ? opacityAo(ctx_.blockView, x - 1, y - 1, z + 1)
+                       : n;
+  const float se = bottomNorthEdgeTranslucent || bottomEastEdgeTranslucent
+                       ? opacityAo(ctx_.blockView, x + 1, y - 1, z - 1)
+                       : s;
+  const float sw = bottomSouthEdgeTranslucent || bottomEastEdgeTranslucent
+                       ? opacityAo(ctx_.blockView, x + 1, y - 1, z + 1)
+                       : s;
+  corner0 = (nw + n + w + face) / 4.0f;
+  corner3 = (w + face + sw + s) / 4.0f;
+  corner2 = (face + e + s + se) / 4.0f;
+  corner1 = (n + ne + face + e) / 4.0f;
+  averageCornerLight(ctx_, x - 1, y - 1, z + 1, x - 1, y - 1, z, x, y - 1, z + 1, x, y - 1, z, lb0, ls0);
+  averageCornerLight(ctx_, x - 1, y - 1, z, x - 1, y - 1, z - 1, x, y - 1, z, x, y - 1, z - 1, lb1, ls1);
+  averageCornerLight(ctx_, x, y - 1, z, x, y - 1, z - 1, x + 1, y - 1, z, x + 1, y - 1, z - 1, lb2, ls2);
+  averageCornerLight(ctx_, x, y - 1, z + 1, x, y - 1, z, x + 1, y - 1, z + 1, x + 1, y - 1, z, lb3, ls3);
+  assignAoCorners(ctx_.opts, ctx_.faceState, 0, corner0, corner1, corner2, corner3, tintDown, red, green, blue, lb0,
+                  ls0, lb1, ls1, lb2, ls2, lb3, ls3);
   faces_.renderBottomFace(block, x, y, z, block.getTextureId(ctx_.blockView, x, y, z, 0));
   drewAnyFace = true;
  }
  if(ctx_.skipFaceCulling || ctx_.isSideVisible(block, x, y + 1, z, 1)) {
-  float northTopBrightness = block.getLuminance(ctx_.blockView, x - 1, y + 1, z);
-  float southTopBrightness = block.getLuminance(ctx_.blockView, x + 1, y + 1, z);
-  float eastTopBrightness = block.getLuminance(ctx_.blockView, x, y + 1, z - 1);
-  float westTopBrightness = block.getLuminance(ctx_.blockView, x, y + 1, z + 1);
-  const float northEastTopBrightness = topNorthEdgeTranslucent || topWestEdgeTranslucent
-                                           ? block.getLuminance(ctx_.blockView, x - 1, y + 1, z - 1)
-                                           : northTopBrightness;
-  const float southEastTopBrightness = topNorthEdgeTranslucent || topEastEdgeTranslucent
-                                           ? block.getLuminance(ctx_.blockView, x + 1, y + 1, z - 1)
-                                           : southTopBrightness;
-  const float northWestTopBrightness = topSouthEdgeTranslucent || topWestEdgeTranslucent
-                                           ? block.getLuminance(ctx_.blockView, x - 1, y + 1, z + 1)
-                                           : northTopBrightness;
-  const float southWestTopBrightness = topSouthEdgeTranslucent || topEastEdgeTranslucent
-                                           ? block.getLuminance(ctx_.blockView, x + 1, y + 1, z + 1)
-                                           : southTopBrightness;
-  corner3 = (northWestTopBrightness + northTopBrightness + westTopBrightness + topBrightness) / 4.0f;
-  corner0 = (westTopBrightness + topBrightness + southWestTopBrightness + southTopBrightness) / 4.0f;
-  corner1 = (topBrightness + eastTopBrightness + southTopBrightness + southEastTopBrightness) / 4.0f;
-  corner2 = (northTopBrightness + northEastTopBrightness + topBrightness + eastTopBrightness) / 4.0f;
-  assignAoVertexColors(
-      ctx_.opts, ctx_.faceState, corner0, corner1, corner2, corner3, tintUp, 1.0f, red, green, blue);
+  const float n = opacityAo(ctx_.blockView, x - 1, y + 1, z);
+  const float s = opacityAo(ctx_.blockView, x + 1, y + 1, z);
+  const float e = opacityAo(ctx_.blockView, x, y + 1, z - 1);
+  const float w = opacityAo(ctx_.blockView, x, y + 1, z + 1);
+  const float face = opacityAo(ctx_.blockView, x, y + 1, z);
+  const float ne = topNorthEdgeTranslucent || topWestEdgeTranslucent ? opacityAo(ctx_.blockView, x - 1, y + 1, z - 1)
+                                                                     : n;
+  const float se = topNorthEdgeTranslucent || topEastEdgeTranslucent ? opacityAo(ctx_.blockView, x + 1, y + 1, z - 1)
+                                                                     : s;
+  const float nw = topSouthEdgeTranslucent || topWestEdgeTranslucent ? opacityAo(ctx_.blockView, x - 1, y + 1, z + 1)
+                                                                     : n;
+  const float sw = topSouthEdgeTranslucent || topEastEdgeTranslucent ? opacityAo(ctx_.blockView, x + 1, y + 1, z + 1)
+                                                                     : s;
+  corner3 = (nw + n + w + face) / 4.0f;
+  corner0 = (w + face + sw + s) / 4.0f;
+  corner1 = (face + e + s + se) / 4.0f;
+  corner2 = (n + ne + face + e) / 4.0f;
+  averageCornerLight(ctx_, x, y + 1, z + 1, x, y + 1, z, x + 1, y + 1, z + 1, x + 1, y + 1, z, lb0, ls0);
+  averageCornerLight(ctx_, x, y + 1, z, x, y + 1, z - 1, x + 1, y + 1, z, x + 1, y + 1, z - 1, lb1, ls1);
+  averageCornerLight(ctx_, x - 1, y + 1, z, x - 1, y + 1, z - 1, x, y + 1, z, x, y + 1, z - 1, lb2, ls2);
+  averageCornerLight(ctx_, x - 1, y + 1, z + 1, x - 1, y + 1, z, x, y + 1, z + 1, x, y + 1, z, lb3, ls3);
+  assignAoCorners(ctx_.opts, ctx_.faceState, 1, corner0, corner1, corner2, corner3, tintUp, red, green, blue, lb0, ls0,
+                  lb1, ls1, lb2, ls2, lb3, ls3);
   faces_.renderTopFace(block, x, y, z, block.getTextureId(ctx_.blockView, x, y, z, 1));
   drewAnyFace = true;
  }
  if(ctx_.skipFaceCulling || ctx_.isSideVisible(block, x, y, z - 1, 2)) {
-  float northEastBrightness = block.getLuminance(ctx_.blockView, x - 1, y, z - 1);
-  float eastBottomBrightness = block.getLuminance(ctx_.blockView, x, y - 1, z - 1);
-  float eastTopBrightness = block.getLuminance(ctx_.blockView, x, y + 1, z - 1);
-  float southEastBrightness = block.getLuminance(ctx_.blockView, x + 1, y, z - 1);
-  const float northEastBottomBrightness = northWestEdgeTranslucent || bottomNorthEdgeTranslucent
-                                              ? block.getLuminance(ctx_.blockView, x - 1, y - 1, z - 1)
-                                              : northEastBrightness;
-  const float northEastTopBrightness = northWestEdgeTranslucent || topNorthEdgeTranslucent
-                                           ? block.getLuminance(ctx_.blockView, x - 1, y + 1, z - 1)
-                                           : northEastBrightness;
-  const float southEastBottomBrightness = northEastEdgeTranslucent || bottomNorthEdgeTranslucent
-                                              ? block.getLuminance(ctx_.blockView, x + 1, y - 1, z - 1)
-                                              : southEastBrightness;
-  const float southEastTopBrightness = northEastEdgeTranslucent || topNorthEdgeTranslucent
-                                           ? block.getLuminance(ctx_.blockView, x + 1, y + 1, z - 1)
-                                           : southEastBrightness;
-  corner0 = (northEastBrightness + northEastTopBrightness + eastBrightness + eastTopBrightness) / 4.0f;
-  corner1 = (eastBrightness + eastTopBrightness + southEastBrightness + southEastTopBrightness) / 4.0f;
-  corner2 = (eastBottomBrightness + eastBrightness + southEastBottomBrightness + southEastBrightness) / 4.0f;
-  corner3 = (northEastBottomBrightness + northEastBrightness + eastBottomBrightness + eastBrightness) / 4.0f;
-  assignAoVertexColors(
-      ctx_.opts, ctx_.faceState, corner0, corner1, corner2, corner3, tintEast, 0.8f, red, green, blue);
+  const float n = opacityAo(ctx_.blockView, x - 1, y, z - 1);
+  const float bot = opacityAo(ctx_.blockView, x, y - 1, z - 1);
+  const float top = opacityAo(ctx_.blockView, x, y + 1, z - 1);
+  const float s = opacityAo(ctx_.blockView, x + 1, y, z - 1);
+  const float face = opacityAo(ctx_.blockView, x, y, z - 1);
+  const float nb = northWestEdgeTranslucent || bottomNorthEdgeTranslucent
+                       ? opacityAo(ctx_.blockView, x - 1, y - 1, z - 1)
+                       : n;
+  const float nt = northWestEdgeTranslucent || topNorthEdgeTranslucent
+                       ? opacityAo(ctx_.blockView, x - 1, y + 1, z - 1)
+                       : n;
+  const float sb = northEastEdgeTranslucent || bottomNorthEdgeTranslucent
+                       ? opacityAo(ctx_.blockView, x + 1, y - 1, z - 1)
+                       : s;
+  const float st = northEastEdgeTranslucent || topNorthEdgeTranslucent
+                       ? opacityAo(ctx_.blockView, x + 1, y + 1, z - 1)
+                       : s;
+  corner0 = (n + nt + face + top) / 4.0f;
+  corner1 = (face + top + s + st) / 4.0f;
+  corner2 = (bot + face + sb + s) / 4.0f;
+  corner3 = (nb + n + bot + face) / 4.0f;
+  averageCornerLight(ctx_, x - 1, y, z - 1, x - 1, y + 1, z - 1, x, y, z - 1, x, y + 1, z - 1, lb0, ls0);
+  averageCornerLight(ctx_, x, y, z - 1, x, y + 1, z - 1, x + 1, y, z - 1, x + 1, y + 1, z - 1, lb1, ls1);
+  averageCornerLight(ctx_, x, y - 1, z - 1, x, y, z - 1, x + 1, y - 1, z - 1, x + 1, y, z - 1, lb2, ls2);
+  averageCornerLight(ctx_, x - 1, y - 1, z - 1, x - 1, y, z - 1, x, y - 1, z - 1, x, y, z - 1, lb3, ls3);
+  assignAoCorners(ctx_.opts, ctx_.faceState, 2, corner0, corner1, corner2, corner3, tintEast, red, green, blue, lb0,
+                  ls0, lb1, ls1, lb2, ls2, lb3, ls3);
   textureId = block.getTextureId(ctx_.blockView, x, y, z, 2);
   faces_.renderEastFace(block, x, y, z, textureId);
   if(grassSideTintActive(ctx_.opts) && textureId == 3 && ctx_.textureOverride < 0) {
@@ -204,28 +315,33 @@ bool CubeBlockRenderer::renderSmooth(
   drewAnyFace = true;
  }
  if(ctx_.skipFaceCulling || ctx_.isSideVisible(block, x, y, z + 1, 3)) {
-  float northWestBrightness = block.getLuminance(ctx_.blockView, x - 1, y, z + 1);
-  float southWestBrightness = block.getLuminance(ctx_.blockView, x + 1, y, z + 1);
-  float westBottomBrightness = block.getLuminance(ctx_.blockView, x, y - 1, z + 1);
-  float westTopBrightness = block.getLuminance(ctx_.blockView, x, y + 1, z + 1);
-  const float northWestBottomBrightness = southWestEdgeTranslucent || bottomSouthEdgeTranslucent
-                                              ? block.getLuminance(ctx_.blockView, x - 1, y - 1, z + 1)
-                                              : northWestBrightness;
-  const float northWestTopBrightness = southWestEdgeTranslucent || topSouthEdgeTranslucent
-                                           ? block.getLuminance(ctx_.blockView, x - 1, y + 1, z + 1)
-                                           : northWestBrightness;
-  const float southWestBottomBrightness = southEastEdgeTranslucent || bottomSouthEdgeTranslucent
-                                              ? block.getLuminance(ctx_.blockView, x + 1, y - 1, z + 1)
-                                              : southWestBrightness;
-  const float southWestTopBrightness = southEastEdgeTranslucent || topSouthEdgeTranslucent
-                                           ? block.getLuminance(ctx_.blockView, x + 1, y + 1, z + 1)
-                                           : southWestBrightness;
-  corner0 = (northWestBrightness + northWestTopBrightness + westBrightness + westTopBrightness) / 4.0f;
-  corner3 = (westBrightness + westTopBrightness + southWestBrightness + southWestTopBrightness) / 4.0f;
-  corner2 = (westBottomBrightness + westBrightness + southWestBottomBrightness + southWestBrightness) / 4.0f;
-  corner1 = (northWestBottomBrightness + northWestBrightness + westBottomBrightness + westBrightness) / 4.0f;
-  assignAoVertexColors(
-      ctx_.opts, ctx_.faceState, corner0, corner1, corner2, corner3, tintWest, 0.8f, red, green, blue);
+  const float n = opacityAo(ctx_.blockView, x - 1, y, z + 1);
+  const float s = opacityAo(ctx_.blockView, x + 1, y, z + 1);
+  const float bot = opacityAo(ctx_.blockView, x, y - 1, z + 1);
+  const float top = opacityAo(ctx_.blockView, x, y + 1, z + 1);
+  const float face = opacityAo(ctx_.blockView, x, y, z + 1);
+  const float nb = southWestEdgeTranslucent || bottomSouthEdgeTranslucent
+                       ? opacityAo(ctx_.blockView, x - 1, y - 1, z + 1)
+                       : n;
+  const float nt = southWestEdgeTranslucent || topSouthEdgeTranslucent
+                       ? opacityAo(ctx_.blockView, x - 1, y + 1, z + 1)
+                       : n;
+  const float sb = southEastEdgeTranslucent || bottomSouthEdgeTranslucent
+                       ? opacityAo(ctx_.blockView, x + 1, y - 1, z + 1)
+                       : s;
+  const float st = southEastEdgeTranslucent || topSouthEdgeTranslucent
+                       ? opacityAo(ctx_.blockView, x + 1, y + 1, z + 1)
+                       : s;
+  corner0 = (n + nt + face + top) / 4.0f;
+  corner3 = (face + top + s + st) / 4.0f;
+  corner2 = (bot + face + sb + s) / 4.0f;
+  corner1 = (nb + n + bot + face) / 4.0f;
+  averageCornerLight(ctx_, x - 1, y, z + 1, x - 1, y + 1, z + 1, x, y, z + 1, x, y + 1, z + 1, lb0, ls0);
+  averageCornerLight(ctx_, x - 1, y - 1, z + 1, x - 1, y, z + 1, x, y - 1, z + 1, x, y, z + 1, lb1, ls1);
+  averageCornerLight(ctx_, x, y - 1, z + 1, x, y, z + 1, x + 1, y - 1, z + 1, x + 1, y, z + 1, lb2, ls2);
+  averageCornerLight(ctx_, x, y, z + 1, x, y + 1, z + 1, x + 1, y, z + 1, x + 1, y + 1, z + 1, lb3, ls3);
+  assignAoCorners(ctx_.opts, ctx_.faceState, 3, corner0, corner1, corner2, corner3, tintWest, red, green, blue, lb0,
+                  ls0, lb1, ls1, lb2, ls2, lb3, ls3);
   textureId = block.getTextureId(ctx_.blockView, x, y, z, 3);
   faces_.renderWestFace(block, x, y, z, textureId);
   if(grassSideTintActive(ctx_.opts) && textureId == 3 && ctx_.textureOverride < 0) {
@@ -235,28 +351,33 @@ bool CubeBlockRenderer::renderSmooth(
   drewAnyFace = true;
  }
  if(ctx_.skipFaceCulling || ctx_.isSideVisible(block, x - 1, y, z, 4)) {
-  float northBottomBrightness = block.getLuminance(ctx_.blockView, x - 1, y - 1, z);
-  float northEastBrightness = block.getLuminance(ctx_.blockView, x - 1, y, z - 1);
-  float northWestBrightness = block.getLuminance(ctx_.blockView, x - 1, y, z + 1);
-  float northTopBrightness = block.getLuminance(ctx_.blockView, x - 1, y + 1, z);
-  const float northEastBottomBrightness = northWestEdgeTranslucent || bottomWestEdgeTranslucent
-                                              ? block.getLuminance(ctx_.blockView, x - 1, y - 1, z - 1)
-                                              : northEastBrightness;
-  const float northWestBottomBrightness = southWestEdgeTranslucent || bottomWestEdgeTranslucent
-                                              ? block.getLuminance(ctx_.blockView, x - 1, y - 1, z + 1)
-                                              : northWestBrightness;
-  const float northEastTopBrightness = northWestEdgeTranslucent || topWestEdgeTranslucent
-                                           ? block.getLuminance(ctx_.blockView, x - 1, y + 1, z - 1)
-                                           : northEastBrightness;
-  const float northWestTopBrightness = southWestEdgeTranslucent || topWestEdgeTranslucent
-                                           ? block.getLuminance(ctx_.blockView, x - 1, y + 1, z + 1)
-                                           : northWestBrightness;
-  corner3 = (northBottomBrightness + northWestBottomBrightness + northBrightness + northWestBrightness) / 4.0f;
-  corner0 = (northBrightness + northWestBrightness + northTopBrightness + northWestTopBrightness) / 4.0f;
-  corner1 = (northEastBrightness + northBrightness + northEastTopBrightness + northTopBrightness) / 4.0f;
-  corner2 = (northEastBottomBrightness + northBottomBrightness + northEastBrightness + northBrightness) / 4.0f;
-  assignAoVertexColors(
-      ctx_.opts, ctx_.faceState, corner0, corner1, corner2, corner3, tintNorth, 0.6f, red, green, blue);
+  const float bot = opacityAo(ctx_.blockView, x - 1, y - 1, z);
+  const float e = opacityAo(ctx_.blockView, x - 1, y, z - 1);
+  const float w = opacityAo(ctx_.blockView, x - 1, y, z + 1);
+  const float top = opacityAo(ctx_.blockView, x - 1, y + 1, z);
+  const float face = opacityAo(ctx_.blockView, x - 1, y, z);
+  const float eb = northWestEdgeTranslucent || bottomWestEdgeTranslucent
+                       ? opacityAo(ctx_.blockView, x - 1, y - 1, z - 1)
+                       : e;
+  const float wb = southWestEdgeTranslucent || bottomWestEdgeTranslucent
+                       ? opacityAo(ctx_.blockView, x - 1, y - 1, z + 1)
+                       : w;
+  const float et = northWestEdgeTranslucent || topWestEdgeTranslucent
+                       ? opacityAo(ctx_.blockView, x - 1, y + 1, z - 1)
+                       : e;
+  const float wt = southWestEdgeTranslucent || topWestEdgeTranslucent
+                       ? opacityAo(ctx_.blockView, x - 1, y + 1, z + 1)
+                       : w;
+  corner3 = (bot + wb + face + w) / 4.0f;
+  corner0 = (face + w + top + wt) / 4.0f;
+  corner1 = (e + face + et + top) / 4.0f;
+  corner2 = (eb + bot + e + face) / 4.0f;
+  averageCornerLight(ctx_, x - 1, y, z + 1, x - 1, y + 1, z + 1, x - 1, y, z, x - 1, y + 1, z, lb0, ls0);
+  averageCornerLight(ctx_, x - 1, y, z - 1, x - 1, y, z, x - 1, y + 1, z - 1, x - 1, y + 1, z, lb1, ls1);
+  averageCornerLight(ctx_, x - 1, y - 1, z - 1, x - 1, y - 1, z, x - 1, y, z - 1, x - 1, y, z, lb2, ls2);
+  averageCornerLight(ctx_, x - 1, y - 1, z, x - 1, y - 1, z + 1, x - 1, y, z, x - 1, y, z + 1, lb3, ls3);
+  assignAoCorners(ctx_.opts, ctx_.faceState, 4, corner0, corner1, corner2, corner3, tintNorth, red, green, blue, lb0,
+                  ls0, lb1, ls1, lb2, ls2, lb3, ls3);
   textureId = block.getTextureId(ctx_.blockView, x, y, z, 4);
   faces_.renderNorthFace(block, x, y, z, textureId);
   if(grassSideTintActive(ctx_.opts) && textureId == 3 && ctx_.textureOverride < 0) {
@@ -266,28 +387,33 @@ bool CubeBlockRenderer::renderSmooth(
   drewAnyFace = true;
  }
  if(ctx_.skipFaceCulling || ctx_.isSideVisible(block, x + 1, y, z, 5)) {
-  float southBottomBrightness = block.getLuminance(ctx_.blockView, x + 1, y - 1, z);
-  float southEastBrightness = block.getLuminance(ctx_.blockView, x + 1, y, z - 1);
-  float southWestBrightness = block.getLuminance(ctx_.blockView, x + 1, y, z + 1);
-  float southTopBrightness = block.getLuminance(ctx_.blockView, x + 1, y + 1, z);
-  const float southEastBottomBrightness = bottomEastEdgeTranslucent || northEastEdgeTranslucent
-                                              ? block.getLuminance(ctx_.blockView, x + 1, y - 1, z - 1)
-                                              : southEastBrightness;
-  const float southWestBottomBrightness = bottomEastEdgeTranslucent || southEastEdgeTranslucent
-                                              ? block.getLuminance(ctx_.blockView, x + 1, y - 1, z + 1)
-                                              : southWestBrightness;
-  const float southEastTopBrightness = topEastEdgeTranslucent || northEastEdgeTranslucent
-                                           ? block.getLuminance(ctx_.blockView, x + 1, y + 1, z - 1)
-                                           : southEastBrightness;
-  const float southWestTopBrightness = topEastEdgeTranslucent || southEastEdgeTranslucent
-                                           ? block.getLuminance(ctx_.blockView, x + 1, y + 1, z + 1)
-                                           : southWestBrightness;
-  corner0 = (southBottomBrightness + southWestBottomBrightness + southBrightness + southWestBrightness) / 4.0f;
-  corner3 = (southBrightness + southWestBrightness + southTopBrightness + southWestTopBrightness) / 4.0f;
-  corner2 = (southEastBrightness + southBrightness + southEastTopBrightness + southTopBrightness) / 4.0f;
-  corner1 = (southEastBottomBrightness + southBottomBrightness + southEastBrightness + southBrightness) / 4.0f;
-  assignAoVertexColors(
-      ctx_.opts, ctx_.faceState, corner0, corner1, corner2, corner3, tintSouth, 0.6f, red, green, blue);
+  const float bot = opacityAo(ctx_.blockView, x + 1, y - 1, z);
+  const float e = opacityAo(ctx_.blockView, x + 1, y, z - 1);
+  const float w = opacityAo(ctx_.blockView, x + 1, y, z + 1);
+  const float top = opacityAo(ctx_.blockView, x + 1, y + 1, z);
+  const float face = opacityAo(ctx_.blockView, x + 1, y, z);
+  const float eb = bottomEastEdgeTranslucent || northEastEdgeTranslucent
+                       ? opacityAo(ctx_.blockView, x + 1, y - 1, z - 1)
+                       : e;
+  const float wb = bottomEastEdgeTranslucent || southEastEdgeTranslucent
+                       ? opacityAo(ctx_.blockView, x + 1, y - 1, z + 1)
+                       : w;
+  const float et = topEastEdgeTranslucent || northEastEdgeTranslucent
+                       ? opacityAo(ctx_.blockView, x + 1, y + 1, z - 1)
+                       : e;
+  const float wt = topEastEdgeTranslucent || southEastEdgeTranslucent
+                       ? opacityAo(ctx_.blockView, x + 1, y + 1, z + 1)
+                       : w;
+  corner0 = (bot + wb + face + w) / 4.0f;
+  corner3 = (face + w + top + wt) / 4.0f;
+  corner2 = (e + face + et + top) / 4.0f;
+  corner1 = (eb + bot + e + face) / 4.0f;
+  averageCornerLight(ctx_, x + 1, y - 1, z, x + 1, y - 1, z + 1, x + 1, y, z, x + 1, y, z + 1, lb0, ls0);
+  averageCornerLight(ctx_, x + 1, y - 1, z - 1, x + 1, y - 1, z, x + 1, y, z - 1, x + 1, y, z, lb1, ls1);
+  averageCornerLight(ctx_, x + 1, y, z - 1, x + 1, y, z, x + 1, y + 1, z - 1, x + 1, y + 1, z, lb2, ls2);
+  averageCornerLight(ctx_, x + 1, y, z, x + 1, y, z + 1, x + 1, y + 1, z, x + 1, y + 1, z + 1, lb3, ls3);
+  assignAoCorners(ctx_.opts, ctx_.faceState, 5, corner0, corner1, corner2, corner3, tintSouth, red, green, blue, lb0,
+                  ls0, lb1, ls1, lb2, ls2, lb3, ls3);
   textureId = block.getTextureId(ctx_.blockView, x, y, z, 5);
   faces_.renderSouthFace(block, x, y, z, textureId);
   if(grassSideTintActive(ctx_.opts) && textureId == 3 && ctx_.textureOverride < 0) {
@@ -299,7 +425,8 @@ bool CubeBlockRenderer::renderSmooth(
  ctx_.faceState.useAo = false;
  return drewAnyFace;
 }
-// Faithful port of BlockRenderManager.renderFlat (beta 1.7.3).
+// Flat lighting: tint only in vertex colour; absolute light in the lightmap.
+// Face orientation shade is pack-owned (vanilla gbuffers).
 bool CubeBlockRenderer::renderFlat(
     net::minecraft::block::Block& block, int x, int y, int z, float red, float green, float blue) {
  if(ctx_.blockView == nullptr) {
@@ -309,104 +436,92 @@ bool CubeBlockRenderer::renderFlat(
  Tessellator& tessellator = *ctx_.tess;
  bool drewAnyFace = false;
  int textureId = 0;
- float brightness = 0.0f;
- const float downRedBase = 0.5f;
- const float upRedBase = 1.0f;
- const float horizRedBase = 0.8f;
- const float nsRedBase = 0.6f;
- float downRed = downRedBase;
- float downGreen = downRedBase;
- float downBlue = downRedBase;
- float upRed = upRedBase * red;
- float upGreen = upRedBase * green;
- float upBlue = upRedBase * blue;
- float horizRed = horizRedBase;
- float horizGreen = horizRedBase;
- float horizBlue = horizRedBase;
- float nsRed = nsRedBase;
- float nsGreen = nsRedBase;
- float nsBlue = nsRedBase;
- if(net::minecraft::block::Block::GRASS_BLOCK == nullptr || &block != net::minecraft::block::Block::GRASS_BLOCK) {
-  downRed *= red;
-  horizRed *= red;
-  nsRed *= red;
-  downGreen *= green;
-  horizGreen *= green;
-  nsGreen *= green;
-  downBlue *= blue;
-  horizBlue *= blue;
-  nsBlue *= blue;
+ float downRed = red;
+ float downGreen = green;
+ float downBlue = blue;
+ float upRed = red;
+ float upGreen = green;
+ float upBlue = blue;
+ float horizRed = red;
+ float horizGreen = green;
+ float horizBlue = blue;
+ float nsRed = red;
+ float nsGreen = green;
+ float nsBlue = blue;
+ if(net::minecraft::block::Block::GRASS_BLOCK != nullptr && &block == net::minecraft::block::Block::GRASS_BLOCK) {
+  downRed = 1.0f;
+  downGreen = 1.0f;
+  downBlue = 1.0f;
+  horizRed = 1.0f;
+  horizGreen = 1.0f;
+  horizBlue = 1.0f;
+  nsRed = 1.0f;
+  nsGreen = 1.0f;
+  nsBlue = 1.0f;
  }
- const float selfBrightness = block.getLuminance(ctx_.blockView, x, y, z);
  if(ctx_.skipFaceCulling || ctx_.isSideVisible(block, x, y - 1, z, 0)) {
-  brightness = block.getLuminance(ctx_.blockView, x, y - 1, z);
-  tessellator.color(downRed * brightness, downGreen * brightness, downBlue * brightness);
+  ctx_.sampleFaceLight(x, y - 1, z);
+  tessellator.color(flatFaceColor(ctx_.opts, 0, downRed), flatFaceColor(ctx_.opts, 0, downGreen),
+                    flatFaceColor(ctx_.opts, 0, downBlue));
   faces_.renderBottomFace(block, x, y, z, block.getTextureId(ctx_.blockView, x, y, z, 0));
   drewAnyFace = true;
  }
  if(ctx_.skipFaceCulling || ctx_.isSideVisible(block, x, y + 1, z, 1)) {
-  brightness = block.getLuminance(ctx_.blockView, x, y + 1, z);
-  if(ctx_.renderBounds.maxY != 1.0 && !block.material.isFluid()) {
-   brightness = selfBrightness;
-  }
-  tessellator.color(upRed * brightness, upGreen * brightness, upBlue * brightness);
+  const bool self = ctx_.renderBounds.maxY != 1.0 && !block.material.isFluid();
+  ctx_.sampleFaceLight(x, self ? y : y + 1, z);
+  tessellator.color(flatFaceColor(ctx_.opts, 1, upRed), flatFaceColor(ctx_.opts, 1, upGreen),
+                    flatFaceColor(ctx_.opts, 1, upBlue));
   faces_.renderTopFace(block, x, y, z, block.getTextureId(ctx_.blockView, x, y, z, 1));
   drewAnyFace = true;
  }
  if(ctx_.skipFaceCulling || ctx_.isSideVisible(block, x, y, z - 1, 2)) {
-  brightness = block.getLuminance(ctx_.blockView, x, y, z - 1);
-  if(ctx_.renderBounds.minZ > 0.0) {
-   brightness = selfBrightness;
-  }
-  tessellator.color(horizRed * brightness, horizGreen * brightness, horizBlue * brightness);
+  ctx_.sampleFaceLight(x, y, ctx_.renderBounds.minZ > 0.0 ? z : z - 1);
+  tessellator.color(flatFaceColor(ctx_.opts, 2, horizRed), flatFaceColor(ctx_.opts, 2, horizGreen),
+                    flatFaceColor(ctx_.opts, 2, horizBlue));
   textureId = block.getTextureId(ctx_.blockView, x, y, z, 2);
   faces_.renderEastFace(block, x, y, z, textureId);
   if(grassSideTintActive(ctx_.opts) && textureId == 3 && ctx_.textureOverride < 0) {
-   tessellator.color(
-       horizRed * brightness * red, horizGreen * brightness * green, horizBlue * brightness * blue);
+   tessellator.color(flatFaceColor(ctx_.opts, 2, horizRed * red), flatFaceColor(ctx_.opts, 2, horizGreen * green),
+                     flatFaceColor(ctx_.opts, 2, horizBlue * blue));
    faces_.renderEastFace(block, x, y, z, 38);
   }
   drewAnyFace = true;
  }
  if(ctx_.skipFaceCulling || ctx_.isSideVisible(block, x, y, z + 1, 3)) {
-  brightness = block.getLuminance(ctx_.blockView, x, y, z + 1);
-  if(ctx_.renderBounds.maxZ < 1.0) {
-   brightness = selfBrightness;
-  }
-  tessellator.color(horizRed * brightness, horizGreen * brightness, horizBlue * brightness);
+  ctx_.sampleFaceLight(x, y, ctx_.renderBounds.maxZ < 1.0 ? z : z + 1);
+  tessellator.color(flatFaceColor(ctx_.opts, 3, horizRed), flatFaceColor(ctx_.opts, 3, horizGreen),
+                    flatFaceColor(ctx_.opts, 3, horizBlue));
   textureId = block.getTextureId(ctx_.blockView, x, y, z, 3);
   faces_.renderWestFace(block, x, y, z, textureId);
   if(grassSideTintActive(ctx_.opts) && textureId == 3 && ctx_.textureOverride < 0) {
-   tessellator.color(
-       horizRed * brightness * red, horizGreen * brightness * green, horizBlue * brightness * blue);
+   tessellator.color(flatFaceColor(ctx_.opts, 3, horizRed * red), flatFaceColor(ctx_.opts, 3, horizGreen * green),
+                     flatFaceColor(ctx_.opts, 3, horizBlue * blue));
    faces_.renderWestFace(block, x, y, z, 38);
   }
   drewAnyFace = true;
  }
  if(ctx_.skipFaceCulling || ctx_.isSideVisible(block, x - 1, y, z, 4)) {
-  brightness = block.getLuminance(ctx_.blockView, x - 1, y, z);
-  if(ctx_.renderBounds.minX > 0.0) {
-   brightness = selfBrightness;
-  }
-  tessellator.color(nsRed * brightness, nsGreen * brightness, nsBlue * brightness);
+  ctx_.sampleFaceLight(ctx_.renderBounds.minX > 0.0 ? x : x - 1, y, z);
+  tessellator.color(flatFaceColor(ctx_.opts, 4, nsRed), flatFaceColor(ctx_.opts, 4, nsGreen),
+                    flatFaceColor(ctx_.opts, 4, nsBlue));
   textureId = block.getTextureId(ctx_.blockView, x, y, z, 4);
   faces_.renderNorthFace(block, x, y, z, textureId);
   if(grassSideTintActive(ctx_.opts) && textureId == 3 && ctx_.textureOverride < 0) {
-   tessellator.color(nsRed * brightness * red, nsGreen * brightness * green, nsBlue * brightness * blue);
+   tessellator.color(flatFaceColor(ctx_.opts, 4, nsRed * red), flatFaceColor(ctx_.opts, 4, nsGreen * green),
+                     flatFaceColor(ctx_.opts, 4, nsBlue * blue));
    faces_.renderNorthFace(block, x, y, z, 38);
   }
   drewAnyFace = true;
  }
  if(ctx_.skipFaceCulling || ctx_.isSideVisible(block, x + 1, y, z, 5)) {
-  brightness = block.getLuminance(ctx_.blockView, x + 1, y, z);
-  if(ctx_.renderBounds.maxX < 1.0) {
-   brightness = selfBrightness;
-  }
-  tessellator.color(nsRed * brightness, nsGreen * brightness, nsBlue * brightness);
+  ctx_.sampleFaceLight(ctx_.renderBounds.maxX < 1.0 ? x : x + 1, y, z);
+  tessellator.color(flatFaceColor(ctx_.opts, 5, nsRed), flatFaceColor(ctx_.opts, 5, nsGreen),
+                    flatFaceColor(ctx_.opts, 5, nsBlue));
   textureId = block.getTextureId(ctx_.blockView, x, y, z, 5);
   faces_.renderSouthFace(block, x, y, z, textureId);
   if(grassSideTintActive(ctx_.opts) && textureId == 3 && ctx_.textureOverride < 0) {
-   tessellator.color(nsRed * brightness * red, nsGreen * brightness * green, nsBlue * brightness * blue);
+   tessellator.color(flatFaceColor(ctx_.opts, 5, nsRed * red), flatFaceColor(ctx_.opts, 5, nsGreen * green),
+                     flatFaceColor(ctx_.opts, 5, nsBlue * blue));
    faces_.renderSouthFace(block, x, y, z, 38);
   }
   drewAnyFace = true;
@@ -423,67 +538,50 @@ bool CubeBlockRenderer::renderCactus(net::minecraft::block::Block& block, int x,
 bool CubeBlockRenderer::renderCactus(
     net::minecraft::block::Block& block, int x, int y, int z, float red, float green, float blue) {
  ctx_.faceState.useAo = false;
- float brightness;
  Tessellator& tessellator = *ctx_.tess;
  bool drewAnyFace = false;
  const float inset = 0.0625f;
- const float selfBrightness = block.getLuminance(ctx_.blockView, x, y, z);
- const float downShade = 0.5f;
- const float upShade = 1.0f;
- const float horizShade = 0.8f;
- const float nsShade = 0.6f;
  const auto savedBounds = ctx_.renderBounds;
  ctx_.renderBounds = {inset, 0.0, inset, 1.0f - inset, 1.0, 1.0f - inset};
  if(ctx_.skipFaceCulling || ctx_.isSideVisible(block, x, y - 1, z, 0)) {
-  brightness = block.getLuminance(ctx_.blockView, x, y - 1, z);
-  tessellator.color(downShade * red * brightness, downShade * green * brightness, downShade * blue * brightness);
+  ctx_.sampleFaceLight(x, y - 1, z);
+  tessellator.color(flatFaceColor(ctx_.opts, 0, red), flatFaceColor(ctx_.opts, 0, green),
+                    flatFaceColor(ctx_.opts, 0, blue));
   faces_.renderBottomFace(block, x, y, z, block.getTextureId(ctx_.blockView, x, y, z, 0));
   drewAnyFace = true;
  }
  if(ctx_.skipFaceCulling || ctx_.isSideVisible(block, x, y + 1, z, 1)) {
-  brightness = block.getLuminance(ctx_.blockView, x, y + 1, z);
-  if(ctx_.renderBounds.maxY != 1.0 && !block.material.isFluid()) {
-   brightness = selfBrightness;
-  }
-  tessellator.color(upShade * red * brightness, upShade * green * brightness, upShade * blue * brightness);
+  ctx_.sampleFaceLight(ctx_.renderBounds.maxY < 1.0 && !block.material.isFluid() ? x : x, y + 1, z);
+  tessellator.color(flatFaceColor(ctx_.opts, 1, red), flatFaceColor(ctx_.opts, 1, green),
+                    flatFaceColor(ctx_.opts, 1, blue));
   faces_.renderTopFace(block, x, y, z, block.getTextureId(ctx_.blockView, x, y, z, 1));
   drewAnyFace = true;
  }
  if(ctx_.skipFaceCulling || ctx_.isSideVisible(block, x, y, z - 1, 2)) {
-  brightness = block.getLuminance(ctx_.blockView, x, y, z - 1);
-  if(ctx_.renderBounds.minZ > 0.0) {
-   brightness = selfBrightness;
-  }
-  tessellator.color(
-      horizShade * red * brightness, horizShade * green * brightness, horizShade * blue * brightness);
+  ctx_.sampleFaceLight(x, y, ctx_.renderBounds.minZ > 0.0 ? z : z - 1);
+  tessellator.color(flatFaceColor(ctx_.opts, 2, red), flatFaceColor(ctx_.opts, 2, green),
+                    flatFaceColor(ctx_.opts, 2, blue));
   faces_.renderEastFace(block, x, y, z, block.getTextureId(ctx_.blockView, x, y, z, 2));
   drewAnyFace = true;
  }
  if(ctx_.skipFaceCulling || ctx_.isSideVisible(block, x, y, z + 1, 3)) {
-  brightness = block.getLuminance(ctx_.blockView, x, y, z + 1);
-  if(ctx_.renderBounds.maxZ < 1.0) {
-   brightness = selfBrightness;
-  }
-  tessellator.color(
-      horizShade * red * brightness, horizShade * green * brightness, horizShade * blue * brightness);
+  ctx_.sampleFaceLight(x, y, ctx_.renderBounds.maxZ < 1.0 ? z : z + 1);
+  tessellator.color(flatFaceColor(ctx_.opts, 3, red), flatFaceColor(ctx_.opts, 3, green),
+                    flatFaceColor(ctx_.opts, 3, blue));
   faces_.renderWestFace(block, x, y, z, block.getTextureId(ctx_.blockView, x, y, z, 3));
   drewAnyFace = true;
  }
  if(ctx_.skipFaceCulling || ctx_.isSideVisible(block, x - 1, y, z, 4)) {
-  brightness = block.getLuminance(ctx_.blockView, x - 1, y, z);
-  if(ctx_.renderBounds.minX > 0.0) {
-   brightness = selfBrightness;
-  }
-  tessellator.color(nsShade * red * brightness, nsShade * green * brightness, nsShade * blue * brightness);
+  ctx_.sampleFaceLight(ctx_.renderBounds.minX > 0.0 ? x : x - 1, y, z);
+  tessellator.color(flatFaceColor(ctx_.opts, 4, red), flatFaceColor(ctx_.opts, 4, green),
+                    flatFaceColor(ctx_.opts, 4, blue));
   faces_.renderNorthFace(block, x, y, z, block.getTextureId(ctx_.blockView, x, y, z, 4));
   drewAnyFace = true;
  }
  if(ctx_.skipFaceCulling || ctx_.isSideVisible(block, x + 1, y, z, 5)) {
-  brightness = block.getLuminance(ctx_.blockView, x + 1, y, z);
-  if(ctx_.renderBounds.maxX < 1.0) {
-   brightness = selfBrightness;
-  }
-  tessellator.color(nsShade * red * brightness, nsShade * green * brightness, nsShade * blue * brightness);
+  ctx_.sampleFaceLight(ctx_.renderBounds.maxX < 1.0 ? x : x + 1, y, z);
+  tessellator.color(flatFaceColor(ctx_.opts, 5, red), flatFaceColor(ctx_.opts, 5, green),
+                    flatFaceColor(ctx_.opts, 5, blue));
   faces_.renderSouthFace(block, x, y, z, block.getTextureId(ctx_.blockView, x, y, z, 5));
   drewAnyFace = true;
  }

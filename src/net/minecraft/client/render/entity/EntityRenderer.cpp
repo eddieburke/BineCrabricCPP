@@ -3,8 +3,9 @@
 #include "net/minecraft/client/Minecraft.hpp"
 #include "net/minecraft/client/font/TextRenderer.hpp"
 #include "net/minecraft/client/gl/GlConstants.hpp"
+#include "net/minecraft/client/render/FrameRenderCamera.hpp"
+#include "net/minecraft/client/render/RenderCore.hpp"
 #include "net/minecraft/client/option/GameOptions.hpp"
-#include "net/minecraft/client/render/RenderSystem.hpp"
 #include "net/minecraft/client/render/RenderType.hpp"
 #include "net/minecraft/client/render/Tessellator.hpp"
 #include "net/minecraft/client/render/entity/EntityRenderDispatcher.hpp"
@@ -20,30 +21,41 @@ void EntityRenderer::setDispatcher(EntityRenderDispatcher* dispatcherIn) {
  dispatcher = dispatcherIn;
 }
 void EntityRenderer::postRender(
-    const net::minecraft::Entity& entity, double x, double y, double z, float /*yaw*/, float tickDelta) {
+    const net::minecraft::Entity& entity,
+    double x,
+    double y,
+    double z,
+    float /*yaw*/,
+    float tickDelta,
+    net::minecraft::util::math::MatrixStack& matrices,
+    const net::minecraft::util::math::Matrix4f& projection) {
  if(dispatcher == nullptr) {
   return;
  }
+ beginDraw(matrices, projection);
  const auto& options = dispatcher->options();
- if(options.fancyGraphics && options.entityShadows && shadowRadius > 0.0f) {
+ if(!RenderCameraState::instance().frame().shadowPass &&
+    options.fancyGraphics &&
+    options.entityShadows &&
+    shadowRadius > 0.0f) {
   const double dist = dispatcher->squaredDistanceTo(entity.x, entity.y, entity.z);
   float shade = static_cast<float>((1.0 - dist / 256.0) * static_cast<double>(shadowDarkness));
   if(shade > 0.0f) {
-   renderShadow(entity, x, y, z, shade, tickDelta);
+   renderShadow(entity, x, y, z, shade, tickDelta, matrices);
   }
  }
  if(entity.isOnFire()) {
-  renderOnFire(entity, x, y, z, tickDelta);
+  renderOnFire(entity, x, y, z, tickDelta, matrices);
  }
+ endDraw();
 }
 void EntityRenderer::bindTexture(std::string_view texturePath) {
  if(dispatcher == nullptr || dispatcher->textureManager() == nullptr) {
   return;
  }
  const int textureId = dispatcher->textureManager()->getTextureId(std::string(texturePath));
- RenderSystem::activeTexture(0x84C0);
- RenderSystem::enableTexture();
- RenderSystem::bindTexture(0x0DE1, textureId);
+ core::activeTexture(0x84C0);
+ core::bindTexture(0x0DE1, textureId);
 }
 bool EntityRenderer::bindDownloadedTexture(std::string_view url, std::string_view backup) {
  if(dispatcher == nullptr || dispatcher->textureManager() == nullptr) {
@@ -65,16 +77,23 @@ bool EntityRenderer::bindDownloadedTexture(std::string_view url, std::string_vie
  if(textureId < 0) {
   return false;
  }
- RenderSystem::activeTexture(0x84C0);
- RenderSystem::enableTexture();
- RenderSystem::bindTexture(0x0DE1, textureId);
+ core::activeTexture(0x84C0);
+ core::bindTexture(0x0DE1, textureId);
  return true;
 }
 font::TextRenderer* EntityRenderer::getTextRenderer() const noexcept {
  return dispatcher != nullptr ? dispatcher->getTextRenderer() : nullptr;
 }
 void EntityRenderer::renderOnFire(
-    const net::minecraft::Entity& entity, double dx, double dy, double dz, float tickDelta) {
+    const net::minecraft::Entity& entity,
+    double dx,
+    double dy,
+    double dz,
+    float tickDelta,
+    net::minecraft::util::math::MatrixStack& matrices) {
+ const render::core::EntityIdScope entityScope(
+     resolveShaderObjectId("entity", "minecraft:entity_flame", 0));
+ const render::RenderPassScope passScope(render::RenderType::entityTranslucent());
  (void)tickDelta;
  net::minecraft::block::Block* fireBlock = net::minecraft::block::Block::BLOCKS[kFireBlockId];
  const int texture = fireBlock != nullptr ? fireBlock->textureId : 31;
@@ -85,10 +104,10 @@ void EntityRenderer::renderOnFire(
  float vMin = static_cast<float>(v0) / 256.0f;
  float vMax = (static_cast<float>(v0) + 15.99f) / 256.0f;
  {
-  RenderSystem::pushMatrix();
-  RenderSystem::translate(static_cast<float>(dx), static_cast<float>(dy), static_cast<float>(dz));
+  matrices.push();
+  matrices.translate(static_cast<float>(dx), static_cast<float>(dy), static_cast<float>(dz));
   const float scale = entity.width * 1.4f;
-  RenderSystem::scale(scale, scale, scale);
+  matrices.scale(scale, scale, scale);
   bindTexture("/terrain.png");
   Tessellator& tessellator = Tessellator::INSTANCE;
   float radius = 0.35f;
@@ -96,10 +115,10 @@ void EntityRenderer::renderOnFire(
   float remaining = entity.height / scale;
   const float yBase = static_cast<float>(entity.y - entity.boundingBox.minY);
   if(dispatcher != nullptr) {
-   RenderSystem::rotate(-dispatcher->yaw_, 0.0f, 1.0f, 0.0f);
+   matrices.rotate(-dispatcher->yaw_, 0.0f, 1.0f, 0.0f);
   }
-  RenderSystem::translate(0.0f, 0.0f, -0.3f + static_cast<float>(static_cast<int>(remaining)) * 0.02f);
-  RenderSystem::color4f(1.0f, 1.0f, 1.0f, 1.0f);
+  matrices.translate(0.0f, 0.0f, -0.3f + static_cast<float>(static_cast<int>(remaining)) * 0.02f);
+  render::core::setConstColor(1.0f, 1.0f, 1.0f, 1.0f);
   float layerOffset = 0.0f;
   int layer = 0;
   tessellator.startQuads();
@@ -131,28 +150,36 @@ void EntityRenderer::renderOnFire(
    ++layer;
   }
   tessellator.draw();
-  RenderSystem::popMatrix();
+  matrices.pop();
  }
 }
 World* EntityRenderer::getWorld() const {
  return dispatcher != nullptr ? dispatcher->world() : nullptr;
 }
 void EntityRenderer::renderShadow(
-    const net::minecraft::Entity& entity, double dx, double dy, double dz, float yaw, float tickDelta) {
- render::RenderPassScope passScope(render::RenderType::entityCutout());
- RenderSystem::enableBlend();
- RenderSystem::blendFunc(0x0302, 0x0303);
+    const net::minecraft::Entity& entity,
+    double dx,
+    double dy,
+    double dz,
+    float yaw,
+    float tickDelta,
+    net::minecraft::util::math::MatrixStack& /*matrices*/) {
+ const render::core::EntityIdScope entityScope(
+     resolveShaderObjectId("entity", "minecraft:entity_shadow", 0));
+ render::RenderPassScope passScope(render::RenderType::entityTranslucent());
+ // Soft shadow: opacity lives in vaColor.a (see gbuffers_entities.fsh).
+ core::enableBlend();
+ core::blendFunc(0x0302, 0x0303);
  if(dispatcher != nullptr && dispatcher->textureManager() != nullptr) {
   const int shadowTex = dispatcher->textureManager()->getTextureId("%clamp%/misc/shadow.png");
-  RenderSystem::activeTexture(0x84C0);
-  RenderSystem::enableTexture();
-  RenderSystem::bindTexture(0x0DE1, shadowTex);
+  core::activeTexture(0x84C0);
+  core::bindTexture(shadowTex);
  }
  World* world = getWorld();
  if(world == nullptr) {
   return;
  }
- RenderSystem::depthMask(false);
+ core::depthMask(false);
  const float shadowSize = shadowRadius;
  const double ex = entity.lastTickX + (entity.x - entity.lastTickX) * static_cast<double>(tickDelta);
  const double ey = entity.lastTickY + (entity.y - entity.lastTickY) * static_cast<double>(tickDelta) +
@@ -169,6 +196,7 @@ void EntityRenderer::renderShadow(
  const double cz = dz - ez;
  Tessellator& tessellator = Tessellator::INSTANCE;
  tessellator.startQuads();
+ tessellator.light(15, 15);
  for(int i = minX; i <= maxX; ++i) {
   for(int j = minY; j <= maxY; ++j) {
    for(int k = minZ; k <= maxZ; ++k) {
@@ -196,9 +224,9 @@ void EntityRenderer::renderShadow(
   }
  }
  tessellator.draw();
- RenderSystem::color4f(1.0f, 1.0f, 1.0f, 1.0f);
- RenderSystem::disableBlend();
- RenderSystem::depthMask(true);
+ render::core::setConstColor(1.0f, 1.0f, 1.0f, 1.0f);
+ core::disableBlend();
+ core::depthMask(true);
 }
 void EntityRenderer::renderShadowOnBlock(net::minecraft::block::Block& block,
                                          double dx,
@@ -246,9 +274,10 @@ void EntityRenderer::renderShadowOnBlock(net::minecraft::block::Block& block,
  tessellator.vertex(x2, yPlane, z1, u2, v1);
 }
 void EntityRenderer::renderShape(const Box& box, double x, double y, double z) {
- RenderSystem::disableTexture();
+ // Debug hitbox geometry carries no texture, so it draws through gbuffers_basic.
+ render::RenderPassScope shapePass(render::RenderType::basic());
  Tessellator& tessellator = Tessellator::INSTANCE;
- RenderSystem::color4f(1.0f, 1.0f, 1.0f, 1.0f);
+ render::core::setConstColor(1.0f, 1.0f, 1.0f, 1.0f);
  tessellator.startQuads();
  tessellator.translate(x, y, z);
  tessellator.normal(0.0f, 0.0f, -1.0f);
@@ -283,7 +312,6 @@ void EntityRenderer::renderShape(const Box& box, double x, double y, double z) {
  tessellator.vertex(box.maxX, box.minY, box.maxZ);
  tessellator.translate(0.0, 0.0, 0.0);
  tessellator.draw();
- RenderSystem::enableTexture();
 }
 void EntityRenderer::renderShapeFlat(const Box& box) {
  Tessellator& tessellator = Tessellator::INSTANCE;

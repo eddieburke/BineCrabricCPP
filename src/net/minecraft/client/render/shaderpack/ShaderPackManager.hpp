@@ -1,47 +1,44 @@
 #pragma once
+#include <atomic>
 #include <filesystem>
+#include <chrono>
 #include <memory>
-#include <optional>
-#include <set>
+#include <cstdint>
 #include <string>
-#include <unordered_map>
+#include <thread>
 #include <vector>
-#include "net/minecraft/client/render/shaderpack/PackManifest.hpp"
+#include "net/minecraft/client/render/shaderpack/ShaderPackInstance.hpp"
+#include "net/minecraft/client/render/shaderpack/ShaderUniforms.hpp"
 namespace net::minecraft::client::gl {
-class ProgramCache;
 class ShaderProgram;
-} // namespace net::minecraft::client::gl
+}
 namespace net::minecraft::client::option {
 class GameOptions;
 }
 namespace net::minecraft::client::render {
-class Framebuffer;
-class ShaderTextureSource;
 enum class ColorFormat;
-struct FrameRenderCamera;
-} // namespace net::minecraft::client::render
+}
 namespace net::minecraft {
 class World;
 }
-namespace net::minecraft::client::resource::pack {
-class ZippedTexturePack;
-}
 namespace net::minecraft::client::render::shaderpack {
-struct ShaderPackSummary {
- std::string key;
- std::string name;
- std::string version;
- std::string error;
- bool valid = false;
- bool selected = false;
+enum class WorldPipelinePhase {
+ None,
+ Shadow,
+ World
 };
 class ShaderPackManager {
  public:
  ShaderPackManager(std::filesystem::path gameDirectory, option::GameOptions* options);
  ~ShaderPackManager();
  void reload();
+ void poll();
  bool select(const std::string& key);
+ void reloadWorldMeshes();
  [[nodiscard]] bool active() const noexcept {
+  return true;
+ }
+ [[nodiscard]] bool usingUserPack() const noexcept {
   return activeIndex_ < packs_.size();
  }
  bool setSetting(const std::string& key, std::string value);
@@ -49,69 +46,126 @@ class ShaderPackManager {
  [[nodiscard]] const std::vector<ShaderPackSummary>& available() const noexcept {
   return summaries_;
  }
- [[nodiscard]] const PackManifest* activeManifest() const noexcept;
+ [[nodiscard]] const ShaderPackDefinition* activeDefinition() const noexcept;
+ [[nodiscard]] const ShaderPackDefinition* meshDefinition() const noexcept;
  [[nodiscard]] bool activeHasPostProcess() const;
- [[nodiscard]] int sunShadowQuality() const;
- [[nodiscard]] render::ColorFormat sceneColorFormat() const;
- // Resolves a canonical world program key ("gbuffers_terrain", "gbuffers_entities")
- // through the active user pack, then the always-loaded vanilla base pack. Returns the
- // compiled program (unbound; EnginePipeline uploads its uniforms), or nullptr. This is
- // the single entry point the RenderType world program resolver calls.
+ [[nodiscard]] bool hasDeferredPasses() const;
+ [[nodiscard]] int shadowMapResolution() const;
+ [[nodiscard]] int shadowColorBuffers() const;
+ [[nodiscard]] std::vector<render::ColorFormat> sceneColorFormats() const;
+ [[nodiscard]] bool ensureSceneTargets(int width, int height);
+ void bindScene();
+ void endScene();
+ void destroyScene();
+ [[nodiscard]] int sceneColorCount() const;
+ [[nodiscard]] unsigned int sceneDepthTexture() const;
+ void clearScene(float fogR = 0.0f, float fogG = 0.0f, float fogB = 0.0f);
+ void resetPresentState();
+ void setPipelinePhase(WorldPipelinePhase phase) noexcept {
+  pipelinePhase_ = phase;
+ }
+ [[nodiscard]] WorldPipelinePhase pipelinePhase() const noexcept {
+  return pipelinePhase_;
+ }
+ [[nodiscard]] bool interfaceProgramsActive() const noexcept {
+  return pipelinePhase_ == WorldPipelinePhase::None;
+ }
  gl::ShaderProgram* worldProgram(const std::string& key);
- bool renderPostProcess(int textureId,
-                        int depthTextureId,
-                        int shadowDepthTextureId,
-                        int width,
-                        int height,
-                        float tickDelta,
-                        const FrameRenderCamera& camera,
-                        const FrameRenderCamera& shadowCamera,
-                        int shadowMapResolution,
-                        float farPlane,
-                        float worldTime,
-                        const net::minecraft::World* world,
-                        float fogEnd = 0.0f);
+ class PipelinePhaseScope {
+public:
+  PipelinePhaseScope(ShaderPackManager* manager, WorldPipelinePhase phase)
+      : manager_(manager), previous_(manager != nullptr ? manager->pipelinePhase() : WorldPipelinePhase::None) {
+   if(manager_ != nullptr) {
+    manager_->setPipelinePhase(phase);
+   }
+  }
+  ~PipelinePhaseScope() {
+   if(manager_ != nullptr) {
+    manager_->setPipelinePhase(previous_);
+   }
+  }
+  PipelinePhaseScope(const PipelinePhaseScope&) = delete;
+  PipelinePhaseScope& operator=(const PipelinePhaseScope&) = delete;
+
+private:
+  ShaderPackManager* manager_ = nullptr;
+  WorldPipelinePhase previous_ = WorldPipelinePhase::None;
+ };
+ void prepareFrame(net::minecraft::World* world);
+ void refreshLightmap(net::minecraft::World* world);
+ void setFrameUniforms(const FrameUniformSet& frame);
+ bool renderBegin();
+ bool renderPreWorld(int shadowDepthTextureId,
+                     int shadowOpaqueDepthTextureId,
+                     const int* shadowColorTextureIds,
+                     int shadowColorTextureCount);
+ bool renderDeferred(int shadowDepthTextureId,
+                     int shadowOpaqueDepthTextureId,
+                     const int* shadowColorTextureIds,
+                     int shadowColorTextureCount);
+ bool renderPostProcess(int shadowDepthTextureId,
+                        int shadowOpaqueDepthTextureId,
+                        const int* shadowColorTextureIds,
+                        int shadowColorTextureCount);
+ void sampleCenterDepth();
+ void captureOpaqueDepth();
+ void captureHandDepth();
 
  private:
- struct Pack {
-  ~Pack();
-  ShaderPackSummary summary;
-  std::filesystem::path path;
-  bool directory = false;
-  std::unique_ptr<net::minecraft::client::resource::pack::ZippedTexturePack> zip;
-  PackManifest manifest;
-  std::unordered_map<std::string, std::string> settings;
-  std::unordered_map<std::string, std::string> sourceCache;
-  std::unordered_map<std::string, gl::ShaderProgram*> compiledPrograms;
-  std::vector<std::size_t> postPasses;
-  std::optional<std::size_t> terrainPass;
-  std::optional<std::size_t> entitiesPass;
-  std::unique_ptr<gl::ProgramCache> programs;
-  struct RenderTarget {
-   std::unique_ptr<net::minecraft::client::render::Framebuffer> buffers[2];
-   int front = 0;
-  };
-  std::unordered_map<std::string, RenderTarget> targets;
-  std::set<std::string> logged;
- };
- void logOnce(Pack& pack, const std::string& message) const;
- [[nodiscard]] std::string readText(const Pack& pack, const std::string& path) const;
- [[nodiscard]] const std::string& cachedText(Pack& pack, const std::string& path) const;
- [[nodiscard]] Pack* activePack() noexcept;
- [[nodiscard]] const Pack* activePack() const noexcept;
- std::unique_ptr<Pack> loadDirectoryPack(const std::filesystem::path& path);
+ void captureDepth(std::size_t index);
+ void ensurePbrFallbackTextures();
+ void refreshResourcePackState();
+ void logOnce(ShaderPackInstance& pack, const std::string& message) const;
+ [[nodiscard]] ShaderPackInstance* activePack() noexcept;
+ [[nodiscard]] const ShaderPackInstance* activePack() const noexcept;
+ void presentFinalToScreen(int screenWidth, int screenHeight);
+ bool runPasses(ShaderPackInstance& pack,
+                const std::vector<std::size_t>& passes,
+                bool present,
+                const std::string& stage,
+                int shadowDepth,
+                int shadowOpaqueDepth,
+                const int* shadowColors,
+                int shadowColorCount);
+ std::unique_ptr<ShaderPackInstance> loadDirectoryPack(const std::filesystem::path& path);
  void addDirectoryPack(const std::filesystem::path& path);
  void addZipPack(const std::filesystem::path& path);
- static void indexPasses(Pack& pack);
- gl::ShaderProgram* programFromPack(Pack& pack, const std::string& key);
- gl::ShaderProgram* compileProgram(Pack& pack, const std::string& programName);
+ void activateDimension(ShaderPackInstance& pack, const net::minecraft::World* world);
+ gl::ShaderProgram* programFromPack(ShaderPackInstance& pack, const std::string& key);
+ void updateLightmap(const net::minecraft::World* world);
  void refreshSummaries();
+ void applyBlockIds(const ShaderPackDefinition* definition);
+ void warmBasePrograms();
+ void startDirectoryWatcher();
+ void stopDirectoryWatcher();
+ void directoryWatchLoop(const std::stop_token& stop);
  std::filesystem::path gameDirectory_;
  option::GameOptions* options_ = nullptr;
- std::vector<std::unique_ptr<Pack>> packs_;
- std::unique_ptr<Pack> basePack_;
+ std::vector<std::unique_ptr<ShaderPackInstance>> packs_;
+ std::unique_ptr<ShaderPackInstance> basePack_;
  std::vector<ShaderPackSummary> summaries_;
  static constexpr std::size_t kNoActivePack = static_cast<std::size_t>(-1);
  std::size_t activeIndex_ = kNoActivePack;
+ FrameUniformSet worldUniforms_{};
+ unsigned int lightmapTexture_ = 0;
+ unsigned int normalFallbackTexture_ = 0;
+ unsigned int specularFallbackTexture_ = 0;
+ std::string resourcePackKey_;
+ bool labPbr_ = false;
+ bool labPbr13_ = false;
+ bool lightmapLit_ = false;
+ int lightmapAmbient_ = -1;
+ float lightmapBrightness_ = -1.0f;
+ int shadowDepthTexture_ = -1;
+ int shadowOpaqueDepthTexture_ = -1;
+ int shadowColorTextures_[8]{};
+ int shadowColorTextureCount_ = 0;
+ bool packWroteToScreen_ = false;
+ std::string lastWorldProgramKey_;
+ WorldPipelinePhase pipelinePhase_ = WorldPipelinePhase::None;
+ std::uint64_t packDirectoryStamp_ = 0;
+ std::atomic<std::uint64_t> watchedStamp_{0};
+ std::atomic<bool> directoryChanged_{false};
+ std::jthread directoryWatcher_;
 };
 } // namespace net::minecraft::client::render::shaderpack

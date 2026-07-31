@@ -2,7 +2,6 @@
 #include <cstddef>
 #include <optional>
 #include <string>
-#include "net/minecraft/client/gui/DrawContext.hpp"
 namespace net::minecraft::client {
 class Minecraft;
 }
@@ -10,7 +9,7 @@ namespace net::minecraft::client::font {
 class TextRenderer;
 }
 namespace net::minecraft::client::gui::widget {
-class ButtonWidget : public gui::DrawContext {
+class ButtonWidget {
  public:
  ButtonWidget() = default;
  ButtonWidget(int idIn, int xIn, int yIn, std::string textIn)

@@ -1,9 +1,10 @@
 #pragma once
 #include <functional>
+#include <array>
 #include <memory>
 #include <string>
 #include "net/minecraft/client/gl/ShaderProgram.hpp"
-#include "net/minecraft/client/render/RenderSystem.hpp"
+#include "net/minecraft/client/render/RenderCore.hpp"
 namespace net::minecraft::client::gl {
 class ShaderProgram;
 }
@@ -13,12 +14,29 @@ namespace net::minecraft::client::render {
 // live pack (or the vanilla base pack) owns their shader. nullptr resolver / result means
 // no program is bound. Set to nullptr on manager teardown.
 using WorldProgramResolver = std::function<gl::ShaderProgram*(const std::string& key)>;
+using ShaderObjectIdResolver = std::function<int(const std::string& kind, const std::string& name, int fallback)>;
+using WorldPassDirectiveApplier = std::function<void(const std::string& key)>;
 void setWorldProgramResolver(WorldProgramResolver resolver);
+void setWorldPassDirectiveApplier(WorldPassDirectiveApplier applier);
+void setShaderObjectIdResolver(ShaderObjectIdResolver resolver);
+int resolveShaderObjectId(const std::string& kind, const std::string& name, int fallback = 0);
+void setShaderBlockIds(const std::array<int, 256>& ids);
+int resolveShaderBlockId(int id);
+enum class DrawPhase {
+ All,
+ Opaque,
+ Translucent
+};
+void setDrawPhase(DrawPhase phase);
+// Looks a canonical program key up through the installed resolver.
+gl::ShaderProgram* resolveWorldProgram(const std::string& key);
 // A rendering pass: a dedicated shader program plus the GL state it expects. Instances
 // are immutable singletons (solid/cutout/translucent/gui/...). To draw with one, open a
 // RenderPassScope — it binds the program and applies the GL state on construction and
 // restores the previous state on destruction. Callers NEVER call setup/clear directly.
 class RenderType {
+ friend class RenderPassScope;
+
  public:
  // GL state description applied by setupRenderState(). Data-driven so the concrete
  // pass subclasses carry no duplicated code.
@@ -44,7 +62,7 @@ class RenderType {
             std::string worldProgramKey = "");
  virtual ~RenderType() = default;
  void setupRenderState() const;
- void restoreRenderState(const RenderSystem::StateShadow& saved, gl::ShaderProgram* savedProgram) const;
+ void restoreRenderState(const core::PassGlBits& saved, gl::ShaderProgram* savedProgram) const;
  [[nodiscard]] std::string name() const {
   return name_;
  }
@@ -60,9 +78,6 @@ class RenderType {
  [[nodiscard]] bool hasNormals() const {
   return hasNormals_;
  }
- [[nodiscard]] gl::ShaderProgram* program() const {
-  return program_;
- }
  static RenderType& solid();
  static RenderType& cutout();
  static RenderType& translucent();
@@ -71,10 +86,22 @@ class RenderType {
  static RenderType& guiItem3D();
  static RenderType& text();
  static RenderType& entityCutout();
+ static RenderType& entityTranslucent();
+ static RenderType& lightning();
+ static RenderType& block();
+ static RenderType& blockTranslucent();
+ static RenderType& particles();
+ static RenderType& particlesTranslucent();
  static RenderType& sky();
+ static RenderType& skyTextured();
+ static RenderType& basic();
+ static RenderType& lines();
+ static RenderType& clouds();
+ static RenderType& weather();
+ static RenderType& hand();
+ static RenderType& damagedBlock();
 
  protected:
- static gl::ShaderProgram* loadProgram(const std::string& baseName);
  std::string name_;
  int glMode_;
  bool hasTexture_;
@@ -83,9 +110,8 @@ class RenderType {
  std::string programName_;
  State state_;
  // When non-empty, the program is resolved through the world program resolver each pass
- // (pack-driven); when empty, programName_ names an engine-internal program (gui/text).
+ // (pack-driven); when empty, no program is bound.
  std::string worldProgramKey_;
- mutable gl::ShaderProgram* program_ = nullptr;
 };
 // RAII guard: opens a pass for the lifetime of the scope. This is the ONLY supported way
 // to use a RenderType for immediate-mode drawing. Mandatory restore, zero boilerplate.
@@ -98,7 +124,11 @@ class RenderPassScope {
 
  private:
  const RenderType* type_;
- RenderSystem::StateShadow saved_;
+ core::PassGlBits saved_;
  gl::ShaderProgram* savedProgram_ = nullptr;
+ bool savedDrawEnabled_ = true;
+ net::minecraft::client::render::core::WorldLightUniforms savedWorldLight_{};
+ float savedConstColor_[4] = {1.0f, 1.0f, 1.0f, 1.0f};
+ float savedAlphaTestRef_ = 0.1f;
 };
 } // namespace net::minecraft::client::render

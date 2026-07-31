@@ -1,5 +1,4 @@
 #include <random>
-#include "net/minecraft/client/render/RenderSystem.hpp"
 #include "net/minecraft/client/render/RenderType.hpp"
 #include "net/minecraft/client/render/Tessellator.hpp"
 #include "net/minecraft/client/render/entity/EntityRenderers.hpp"
@@ -7,16 +6,18 @@
 #include "net/minecraft/util/math/MathHelper.hpp"
 namespace net::minecraft::client::render::entity {
 void LightningEntityRenderer::render(
-    const net::minecraft::Entity& entity, double x, double y, double z, float yaw, float tickDelta) {
+    const net::minecraft::Entity& entity, double x, double y, double z, float yaw, float tickDelta,
+    net::minecraft::util::math::MatrixStack& matrices, const net::minecraft::util::math::Matrix4f& projection) {
  (void)yaw;
  (void)tickDelta;
  const auto* lightning = dynamic_cast<const net::minecraft::LightningEntity*>(&entity);
  if(lightning == nullptr) {
   return;
  }
+ beginDraw(matrices, projection);
  Tessellator& tessellator = Tessellator::INSTANCE;
- render::RenderPassScope passScope(render::RenderType::entityCutout());
- render::RenderSystem::disableLighting();
+ // entityTranslucent has State.lighting=false — no FF lighting toggles needed.
+ render::RenderPassScope passScope(render::RenderType::lightning());
  double offsets[8]{};
  double offsets2[8]{};
  double offsetX = 0.0;
@@ -88,7 +89,7 @@ void LightningEntityRenderer::render(
    }
   }
  }
- render::RenderSystem::enableLighting();
+ endDraw();
 }
 } // namespace net::minecraft::client::render::entity
 #include "net/minecraft/client/entity/EntityClientRendererRegistration.hpp"

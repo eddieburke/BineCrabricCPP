@@ -41,7 +41,7 @@ function minecraft.on(event_name, options, callback)
   assert(type(options) == "table", "minecraft.on expects (event, options, callback)")
   assert(type(callback) == "function", "minecraft.on expects (event, options, callback)")
   local active = true
-  return subscribe(event_name, function(event)
+  return subscribe(event_name, options, function(event)
     if active and matches(event, options) then
       local result = callback(event)
       if options.once then active = false end

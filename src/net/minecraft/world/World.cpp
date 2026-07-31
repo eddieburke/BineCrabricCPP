@@ -6,6 +6,7 @@
 #include <iostream>
 #include <limits>
 #include <stdexcept>
+#include <utility>
 #include "net/minecraft/block/Block.hpp"
 #include "net/minecraft/block/LiquidBlock.hpp"
 #include "net/minecraft/block/entity/BlockEntity.hpp"
@@ -17,6 +18,7 @@
 #include "net/minecraft/mod/lua/LuaHostApi.hpp"
 #include "net/minecraft/mod/runtime/LuaDirectHooks.hpp"
 #include "net/minecraft/mod/runtime/WorldRequiredMods.hpp"
+#include "net/minecraft/registry/Registry.hpp"
 #include "net/minecraft/util/math/MathHelper.hpp"
 #include "net/minecraft/world/NaturalSpawner.hpp"
 #include "net/minecraft/world/WorldRegion.hpp"
@@ -31,6 +33,13 @@
 #include "net/minecraft/world/storage/RegionWorldStorage.hpp"
 #include "net/minecraft/world/storage/WorldStorage.hpp"
 namespace net::minecraft {
+namespace {
+void requireBootstrap() {
+ if(!registry::Registry::isBootstrapped()) {
+  throw std::logic_error("Registry::bootstrap() must run before creating a world");
+ }
+}
+}
 World::World(std::string name, std::uint64_t seed, std::unordered_map<std::string, std::string> creationOptions)
     : events_(*this),
       blockMutationContext_(*this),
@@ -42,7 +51,7 @@ World::World(std::string name, std::uint64_t seed, std::unordered_map<std::strin
       spawnPos_{8, 64, 8},
       random_(seed),
       chunkGenerator_(nullptr, seed) {
- initializeBlocks();
+ requireBootstrap();
  newWorld = true;
  luaModGenerationEnabled_ = true;
  properties_ = WorldProperties(seed, name_);
@@ -68,7 +77,7 @@ World::World(WorldStorage* dimensionData,
       spawnPos_{8, 64, 8},
       random_(static_cast<std::uint64_t>(seed)),
       chunkGenerator_(nullptr, static_cast<std::uint64_t>(seed)) {
- initializeBlocks();
+ requireBootstrap();
  if(dimensionData_ == nullptr) {
   throw std::runtime_error("World storage is null");
  }
@@ -119,10 +128,10 @@ World::World(World* parentWorld, std::unique_ptr<Dimension> dimensionIn)
       spawnPos_(parentWorld != nullptr ? parentWorld->spawnPos_ : Vec3i{8, 64, 8}),
       random_(parentWorld != nullptr ? parentWorld->seed_ : 0),
       chunkGenerator_(nullptr, parentWorld != nullptr ? parentWorld->seed_ : 0) {
+ requireBootstrap();
  if(parentWorld == nullptr) {
   throw std::runtime_error("Parent world is null");
  }
- initializeBlocks();
  luaModGenerationEnabled_ = parentWorld->luaModGenerationEnabled_;
  time_ = parentWorld->time_;
  spawnPos_ = parentWorld->spawnPos_;
@@ -324,8 +333,8 @@ void World::save(bool blocking) {
        [this, snapshot = std::move(snapshot), playersSnapshot = std::move(playersSnapshot)]() mutable {
         try {
          dimensionData_->save(snapshot, playersSnapshot);
-         } catch(const std::exception&) {
-         }
+        } catch(const std::exception&) {
+        }
        });
   }
  }
@@ -401,27 +410,27 @@ void World::updateSpawnPosition() {
   setSpawnPos(Vec3i{spawnEvent.x, spawnEvent.y, spawnEvent.z});
   return;
  }
-  int x = properties_.getSpawnX();
-  int z = properties_.getSpawnZ();
-  const int spawnChunkX = chunk_coord(x);
-  const int spawnChunkZ = chunk_coord(z);
-  Chunk* spawnChunk = getChunkIfLoaded(spawnChunkX * 16, spawnChunkZ * 16);
-  if(spawnChunk != nullptr && spawnChunk->dataReady) {
-   while(getSpawnBlockId(x, z) == 0) {
-    x += random_.nextInt(8) - random_.nextInt(8);
-    z += random_.nextInt(8) - random_.nextInt(8);
-    const int curChunkX = chunk_coord(x);
-    const int curChunkZ = chunk_coord(z);
-    if(curChunkX != spawnChunkX || curChunkZ != spawnChunkZ) {
-     Chunk* curChunk = getChunkIfLoaded(curChunkX * 16, curChunkZ * 16);
-     if(curChunk == nullptr || !curChunk->dataReady) {
-      break;
-     }
+ int x = properties_.getSpawnX();
+ int z = properties_.getSpawnZ();
+ const int spawnChunkX = chunk_coord(x);
+ const int spawnChunkZ = chunk_coord(z);
+ Chunk* spawnChunk = getChunkIfLoaded(spawnChunkX * 16, spawnChunkZ * 16);
+ if(spawnChunk != nullptr && spawnChunk->dataReady) {
+  while(getSpawnBlockId(x, z) == 0) {
+   x += random_.nextInt(8) - random_.nextInt(8);
+   z += random_.nextInt(8) - random_.nextInt(8);
+   const int curChunkX = chunk_coord(x);
+   const int curChunkZ = chunk_coord(z);
+   if(curChunkX != spawnChunkX || curChunkZ != spawnChunkZ) {
+    Chunk* curChunk = getChunkIfLoaded(curChunkX * 16, curChunkZ * 16);
+    if(curChunk == nullptr || !curChunk->dataReady) {
+     break;
     }
    }
   }
-  properties_.setSpawn(x, properties_.getSpawnY(), z);
-  setSpawnPos(Vec3i{x, properties_.getSpawnY(), z});
+ }
+ properties_.setSpawn(x, properties_.getSpawnY(), z);
+ setSpawnPos(Vec3i{x, properties_.getSpawnY(), z});
 }
 void World::addEventListener(GameEventListener* listener) {
  events_.addEventListener(listener);
@@ -580,11 +589,15 @@ void World::savingProgress(client::gui::screen::LoadingDisplay* display) {
 }
 void World::applyWorldSettings(bool weatherEnabled, int autoSaveTicks, int timeMode) {
  weather_.setEnabled(weatherEnabled);
+ // Client visual override — apply on ClientWorld too so Day/Night settings stick.
+ clientTimeMode_ = timeMode;
+ // Update sky brightness after clientTimeMode_ changes (including on remote clients).
+ updateSkyBrightness();
  if(isRemote_) {
   return;
  }
- saveInterval_ = autoSaveTicks;
- clientTimeMode_ = timeMode;
+ // Clamp: 0 would modulo-by-zero; negatives cast to huge uint64 and never fire.
+ saveInterval_ = std::max(40, autoSaveTicks);
  if(!weather_.enabled()) {
   clearWeather();
   weather_.resetGradients();
@@ -598,6 +611,9 @@ void World::setTime(std::uint64_t value) noexcept {
  if(hasStorageBackedProperties_) {
   properties_.setTime(time_);
  }
+ // Lightmap / skylight subtract depend on ambientDarkness; keep them aligned
+ // with any clock write (mod set_time, packets, dawn skip).
+ updateSkyBrightness();
 }
 void World::synchronizeTimeAndUpdates(std::uint64_t time) noexcept {
  const std::uint64_t previousTime = getTime();
@@ -693,7 +709,8 @@ void World::queueLightUpdate(LightType type, int minX, int minY, int minZ, int m
  lighting_.push(type, minX, minY, minZ, maxX, maxY, maxZ, merge);
 }
 bool World::doLightingUpdates(std::size_t maxDirtyRegions) {
- for(const LightingEngine::DirtyRegion& region : lighting_.drainDirtyRegions(maxDirtyRegions)) {
+ std::vector<LightingEngine::DirtyRegion> drained = lighting_.drainDirtyRegions(maxDirtyRegions);
+ for(const LightingEngine::DirtyRegion& region : drained) {
   events_.setBlocksDirty(region.minX, region.minY, region.minZ, region.maxX, region.maxY, region.maxZ);
  }
  return lighting_.busy() || lighting_.hasDirtyRegions();
@@ -851,7 +868,7 @@ bool World::isEmittingRedstonePower(int x, int y, int z) {
  return isEmittingRedstonePowerInDirection(x + 1, y, z, 5);
 }
 float World::getTime(float partialTicks) const {
- if(!isRemote_ && clientTimeMode_ != 0 && dimension) {
+ if(clientTimeMode_ != 0 && dimension) {
   const long long baseTime = clientTimeMode_ == 1 ? 6000LL : 18000LL;
   return dimension->getTimeOfDay(baseTime, partialTicks);
  }
@@ -904,14 +921,14 @@ void World::tick() {
   chunkCache_->tick();
  }
  const std::uint64_t nextTime = time_ + 1;
- if(hasStorageBackedProperties_ && nextTime % static_cast<std::uint64_t>(saveInterval_) == 0) {
+ if(hasStorageBackedProperties_ && saveInterval_ > 0 &&
+    nextTime % static_cast<std::uint64_t>(saveInterval_) == 0) {
   save();
   if(chunkCache_ != nullptr) {
    chunkCache_->save(false, nullptr);
   }
  }
  setTime(nextTime);
- updateSkyBrightness();
  processScheduledTicks(false);
  manageChunkUpdatesAndEvents();
  mod::WorldTickEvent afterTick{this, false, false};

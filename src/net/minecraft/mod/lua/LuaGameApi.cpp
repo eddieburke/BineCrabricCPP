@@ -2,10 +2,11 @@
 #include "net/minecraft/block/Block.hpp"
 #ifdef MINECRAFT_NATIVE_EXPORTS
 #include "net/minecraft/client/Minecraft.hpp"
-#include "net/minecraft/client/particle/Particle.hpp"
+#include "net/minecraft/client/particle/FireSmokeParticle.hpp"
 #include "net/minecraft/client/particle/ParticleManager.hpp"
 #include "net/minecraft/entity/player/ClientPlayerEntity.hpp"
 #endif
+#include <algorithm>
 #include <cctype>
 #include <cmath>
 #include <cstring>
@@ -158,6 +159,14 @@ bool worldIsNight(const World* world) {
  if(world == nullptr) {
   return false;
  }
+ // Honor World Settings Day/Night override (same values as getTime(float)).
+ const int timeMode = world->clientTimeMode();
+ if(timeMode == 1) {
+  return false;
+ }
+ if(timeMode == 2) {
+  return true;
+ }
  const std::uint64_t time = world->getTime() % 24000ULL;
  return time > 13000ULL && time < 23000ULL;
 }
@@ -208,16 +217,18 @@ bool spawnClientParticle(double x,
  if(client == nullptr || client->world == nullptr) {
   return false;
  }
- auto* particle = new client::particle::Particle(client->world, x, y, z, vx, vy, vz);
- particle->scale = std::clamp(scale, 0.05f, 4.0f);
- particle->red = red;
- particle->green = green;
- particle->blue = blue;
- particle->maxParticleAge = maxAge;
+ // FireSmokeParticle owns the particles.png smoke frames + grow-in scale. A bare
+ // Particle stays on textureId 0 as a solid tinted quad — that is what mods were
+ // seeing as grey rectangles stacked on the tripod.
+ const float scaleIn = std::clamp(scale, 0.05f, 4.0f);
+ auto* particle = new client::particle::FireSmokeParticle(client->world, x, y, z, vx, vy, vz, scaleIn);
+ particle->red = std::clamp(red, 0.0f, 1.0f);
+ particle->green = std::clamp(green, 0.0f, 1.0f);
+ particle->blue = std::clamp(blue, 0.0f, 1.0f);
+ if(maxAge > 0) {
+  particle->maxParticleAge = maxAge;
+ }
  particle->gravityStrength = gravity;
- particle->velocityX = vx;
- particle->velocityY = vy;
- particle->velocityZ = vz;
  client->particleManager.addParticle(particle);
  return true;
 }
@@ -257,11 +268,12 @@ float normalizedCelestial(const World* world, float tickDelta) {
  if(world == nullptr) {
   return 0.0f;
  }
- double time = world->getTime(tickDelta);
- time = std::fmod(time, 24000.0);
- if(time < 0.0) {
-  time += 24000.0;
+ // getTime(float) already returns Dimension::getTimeOfDay in ~[0, 1].
+ float angle = world->getTime(tickDelta);
+ angle = angle - std::floor(angle);
+ if(angle < 0.0f) {
+  angle += 1.0f;
  }
- return static_cast<float>(time / 24000.0);
+ return angle;
 }
 } // namespace net::minecraft::mod::lua

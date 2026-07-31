@@ -5,20 +5,41 @@ namespace net::minecraft::client::render::entity {
 class PlayerEntityRenderer : public LivingEntityRenderer {
  public:
  PlayerEntityRenderer();
- void render(
-     const net::minecraft::Entity& entity, double x, double y, double z, float yaw, float tickDelta) override;
+ void render(const net::minecraft::Entity& entity,
+             double x,
+             double y,
+             double z,
+             float yaw,
+             float tickDelta,
+             net::minecraft::util::math::MatrixStack& matrices,
+             const net::minecraft::util::math::Matrix4f& projection) override;
  void renderHand();
 
  protected:
  bool bindTexture(const net::minecraft::LivingEntity& entity, int layer, float tickDelta) override;
- void applyScale(const net::minecraft::LivingEntity& entity, float tickDelta) override;
- void applyTranslation(const net::minecraft::LivingEntity& entity, double x, double y, double z) override;
+ void applyScale(const net::minecraft::LivingEntity& entity,
+                 float tickDelta,
+                 net::minecraft::util::math::MatrixStack& matrices) override;
+ void applyTranslation(const net::minecraft::LivingEntity& entity,
+                       double x,
+                       double y,
+                       double z,
+                       net::minecraft::util::math::MatrixStack& matrices) override;
  void applyHandSwingRotation(const net::minecraft::LivingEntity& entity,
                              float headBob,
                              float bodyYaw,
-                             float tickDelta) override;
- void renderNameTag(const net::minecraft::LivingEntity& entity, double x, double y, double z) override;
- void renderMore(const net::minecraft::LivingEntity& entity, float tickDelta) override;
+                             float tickDelta,
+                             net::minecraft::util::math::MatrixStack& matrices) override;
+ void renderNameTag(const net::minecraft::LivingEntity& entity,
+                    double x,
+                    double y,
+                    double z,
+                    net::minecraft::util::math::MatrixStack& matrices,
+                    const net::minecraft::util::math::Matrix4f& projection) override;
+ void renderMore(const net::minecraft::LivingEntity& entity,
+                 float tickDelta,
+                 net::minecraft::util::math::MatrixStack& matrices,
+                 const net::minecraft::util::math::Matrix4f& projection) override;
 
  private:
  model::BipedEntityModel* bipedModel = nullptr; // non-owning; aliases base `model`

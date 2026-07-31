@@ -1,8 +1,3 @@
--- ================================================================
--- MOD: colorful_skies
--- Clean, separated logic with standardized config access
--- ================================================================
-
 local config = require("config")
 local clamp = minecraft.util.clamp
 local PI = 3.14159265

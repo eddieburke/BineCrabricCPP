@@ -7,6 +7,7 @@
 #include "net/minecraft/util/math/MathHelper.hpp"
 #include "net/minecraft/world/World.hpp"
 #include "net/minecraft/world/chunk/Chunk.hpp"
+#include "net/minecraft/world/chunk/ChunkSource.hpp"
 #include "net/minecraft/world/storage/AlphaWorldStorage.hpp"
 #include "net/minecraft/world/storage/WorldStorageSource.hpp"
 namespace net::minecraft::client::core {
@@ -122,6 +123,8 @@ void WorldSession::setWorld(Minecraft& client,
                                             MathHelper::floor(client.player->z));
    client.camera = client.player;
   }
+  // Sync ao from aoLevel before the first chunk remesh in setWorld/reload.
+  client.options.applyDerivedSettings();
   if(client.worldRenderer != nullptr) {
    client.worldRenderer->setWorld(worldIn);
   }
@@ -159,7 +162,7 @@ void WorldSession::prepareWorld(Minecraft& client, const std::string& worldName)
  if(client.world == nullptr) {
   return;
  }
- constexpr int radius = 128;
+ constexpr int radius = 48;
  Vec3i center = client.world->getSpawnPos();
  if(client.player != nullptr) {
   center.x = MathHelper::floor(client.player->x);
@@ -171,15 +174,18 @@ void WorldSession::prepareWorld(Minecraft& client, const std::string& worldName)
  int loaded = 0;
  const int centerChunkX = center.x >> 4;
  const int centerChunkZ = center.z >> 4;
- // Synchronous load: call getChunk() which blocks on disk read / generation.
  for(int dx = -chunkRadius; dx <= chunkRadius; ++dx) {
   for(int dz = -chunkRadius; dz <= chunkRadius; ++dz) {
    (void)client.world->getChunk(centerChunkX + dx, centerChunkZ + dz);
    ++loaded;
-   if(loaded % 10 == 0) {
+   if(loaded % 5 == 0) {
     client.progressRenderer.progressStagePercentage(loaded * 100 / totalChunks);
    }
   }
+ }
+ if(ChunkSource* source = client.world->getChunkSource(); source != nullptr) {
+  source->prefetchChunksNear(centerChunkX, centerChunkZ);
+  source->pumpChunkPublish();
  }
  client.world->populateChunkCacheReadyChunks();
  relightSkylightForPreparedArea(*client.world, center.x, center.z, radius);

@@ -346,11 +346,11 @@ void LoginScreen::render(int mouseX, int mouseY, float tickDelta) {
  }
  const int centerX = width() / 2;
  const int top = height() / 4;
- drawCenteredTextWithShadow(*textRenderer(), "Microsoft Account", centerX, top - 30, 0xFFFFFF);
- drawCenteredTextWithShadow(*textRenderer(), statusLine1_, centerX, top + 8, 0xFFFFFF);
+ textRenderer()->drawCenteredWithShadow("Microsoft Account", centerX, top - 30, 0xFFFFFF);
+ textRenderer()->drawCenteredWithShadow(statusLine1_, centerX, top + 8, 0xFFFFFF);
  if(!statusLine2_.empty()) {
   const int codeColor = phase_ == Phase::WaitingForUser ? 0xFFFF55 : 0xA0A0A0;
-  drawCenteredTextWithShadow(*textRenderer(), statusLine2_, centerX, top + 22, codeColor);
+  textRenderer()->drawCenteredWithShadow(statusLine2_, centerX, top + 22, codeColor);
  }
  if(phase_ == Phase::CreateProfile && profileNameField_ != nullptr) {
   profileNameField_->render();
@@ -359,10 +359,10 @@ void LoginScreen::render(int mouseX, int mouseY, float tickDelta) {
     authStage_.load(std::memory_order_acquire) == msauth::AuthStage::WaitingForUser && expiresInSeconds_ > 0) {
   const int remaining = expiresInSeconds_ - elapsedSeconds_;
   const std::string timerLine = "Waiting for sign-in... " + std::to_string(remaining > 0 ? remaining : 0) + "s";
-  drawCenteredTextWithShadow(*textRenderer(), timerLine, centerX, top + 48, 0xA0A0A0);
+  textRenderer()->drawCenteredWithShadow(timerLine, centerX, top + 48, 0xA0A0A0);
  }
  if(!errorMessage_.empty()) {
-  drawCenteredTextWithShadow(*textRenderer(), errorMessage_, centerX, top + 64, 0xFF5555);
+  textRenderer()->drawCenteredWithShadow(errorMessage_, centerX, top + 64, 0xFF5555);
  }
  Screen::render(mouseX, mouseY, tickDelta);
 }

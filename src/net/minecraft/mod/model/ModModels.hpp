@@ -6,6 +6,7 @@
 #include "net/minecraft/client/render/Tessellator.hpp"
 #include "net/minecraft/mod/lua/LuaHostApi.hpp"
 #include "net/minecraft/mod/runtime/ModHost.hpp"
+#include "net/minecraft/mod/runtime/ModRenderScope.hpp"
 #include "net/minecraft/registry/TextureRegistry.hpp"
 namespace net::minecraft {
 class ItemStack;
@@ -46,6 +47,10 @@ struct BakedQuad {
  int cullFace = -1;
  // Vanilla directional shading factor (1.0 when the element disables shade).
  float shade = 1.0f;
+ // Historically flagged on the max-side face of a flat element's opposite-face
+ // pair. The baker now drops those twins at bake time; draw paths still skip
+ // if set so older/cached meshes cannot Z-fight under cull-off.
+ bool coplanarBackFace = false;
  int tintIndex = -1;
  float red = 1.0f;
  float green = 1.0f;
@@ -144,10 +149,11 @@ void drawLuaBlockInventory(client::render::block::BlockRenderManager& manager,
                            int metadata,
                            float brightness);
 bool drawLuaItemModel(client::render::Tessellator& tessellator, const ItemStack& stack, float brightness);
-// Options for minecraft.model.draw: positions are absolute world coordinates
-// (the active render camera is subtracted so mods never handle camera
-// offsets); the anchor (x, y, z) lands on model-space (0.5, pivotY, 0.5),
-// which is also the yaw/pitch/roll rotation pivot.
+// Draws a 2.5D extruded sprite at the origin (x=[0,1], y=[0,1], z=[-depth,0])
+// using front/back faces and 16 edge slices per axis. Used by both
+// HeldItemRenderer (first-person) and drawItemStackWorld (world drops).
+void drawExtrudedSprite(client::render::Tessellator& tess,
+                        float uMin, float uMax, float vMin, float vMax);
 struct WorldModelDraw {
  double x = 0.0;
  double y = 0.0;
@@ -159,23 +165,30 @@ struct WorldModelDraw {
  float scale = 1.0f;
  float brightness = -1.0f;
  float alpha = 1.0f;
- bool blend = true;
- bool cull = false;
+ // Opaque props are the common case; translucent opt-in matches vanilla entities.
+ bool blend = false;
+ bool cull = true;
  bool depthTest = true;
  bool depthWrite = true;
+ runtime::ModDrawLayer layer = runtime::ModDrawLayer::Auto;
+ int entityId = 0;
+ // Optional name for resolveShaderObjectId("entity", …) when entityId is 0.
+ std::string shaderEntity;
+ // Optional mc_Entity.x (and metadata) for terrain/block layers.
+ int blockId = 0;
+ int blockMeta = 0;
 };
 // World-space immediate draw of a baked model; false when the handle is
 // unknown, no world draw context is active, or the client renderer is absent.
 bool drawBakedModelWorld(int handle, const WorldModelDraw& options);
 // World-space draw of an item stack using its *real* model: a custom Lua
-// item/block baked model, or the vanilla/mod block-cube renderer (same path
-// vanilla uses for dropped block items and inventory icons) for full block
-// items. Returns false for plain sprite items (tools, food, ...) so callers
-// fall back to their own flat-icon representation.
+// item/block baked model, the vanilla/mod block-cube renderer for full block
+// items, or a 2.5D extruded sprite for flat items (tools, food, ...). Returns
+// false only when no world draw context is active or the client is absent.
 bool drawItemStackWorld(const ItemStack& stack, const WorldModelDraw& options);
 // Model-space bounds (pre-scale, pre-transform) for the same items
-// drawItemStackWorld draws. Returns false (bounds left untouched) for plain
-// sprite items with no real 3D shape to measure.
+// drawItemStackWorld draws. Covers custom models, block models, and flat
+// sprite items (the latter using the 2.5D extrusion footprint).
 bool itemStackBounds(const ItemStack& stack, BakedBounds& outBounds);
 } // namespace net::minecraft::mod::model
 namespace net::minecraft::mod::runtime {

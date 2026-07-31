@@ -6,7 +6,6 @@
 #include "net/minecraft/mod/runtime/LuaBindings.hpp"
 #ifdef MINECRAFT_NATIVE_EXPORTS
 #include "net/minecraft/mod/model/ModModels.hpp"
-#include "net/minecraft/mod/runtime/LuaCameraBindings.hpp"
 #include "net/minecraft/mod/runtime/LuaRaycastBindings.hpp"
 #include "net/minecraft/mod/runtime/LuaRenderBindings.hpp"
 #include "net/minecraft/mod/runtime/LuaScreenBindings.hpp"
@@ -44,7 +43,6 @@ void installMinecraftTable(lua_State* state, ModHost::LoadedLuaMod& mod) {
  installBlockApi(state, mod);
  installItemApi(state, mod);
 #ifdef MINECRAFT_NATIVE_EXPORTS
- installCameraApi(state);
  installTextureApi(state);
  installModelApi(state, mod);
  installSoundApi(state, mod);

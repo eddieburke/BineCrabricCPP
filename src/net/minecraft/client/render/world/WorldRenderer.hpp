@@ -1,4 +1,5 @@
 #pragma once
+#include <array>
 #include <cstdint>
 #include <deque>
 #include <limits>
@@ -8,13 +9,14 @@
 #include <unordered_set>
 #include <vector>
 #include "net/minecraft/client/option/GameOptions.hpp"
+#include "net/minecraft/client/option/RenderSettings.hpp"
 #include "net/minecraft/client/render/block/BlockRenderManager.hpp"
 #include "net/minecraft/client/render/chunk/ChunkBuilder.hpp"
-#include "net/minecraft/client/render/chunk/ChunkMeshScheduler.hpp"
-#include "net/minecraft/client/render/chunk/ChunkRegionManager.hpp"
 #include "net/minecraft/item/ItemStack.hpp"
 #include "net/minecraft/util/hit/HitResult.hpp"
 #include "net/minecraft/util/math/Types.hpp"
+#include "net/minecraft/util/math/Matrix4f.hpp"
+#include "net/minecraft/util/math/MatrixStack.hpp"
 #include "net/minecraft/world/events/GameEventListener.hpp"
 namespace net::minecraft::block::entity {
 class BlockEntity;
@@ -49,7 +51,7 @@ struct SectionPosHash {
 } // namespace world
 class FrustumCuller;
 class WorldRenderer : public net::minecraft::GameEventListener {
- friend class FramebufferManager;
+ friend class GameRenderer;
 
  public:
  WorldRenderer(net::minecraft::client::Minecraft* minecraft = nullptr,
@@ -57,7 +59,11 @@ class WorldRenderer : public net::minecraft::GameEventListener {
  void setWorld(net::minecraft::World* world);
  void reload();
  void reloadIfViewDistanceChanged();
- void renderEntities(const Vec3d& cameraPos, FrustumCuller* culler, float tickDelta);
+ void renderEntities(const Vec3d& cameraPos,
+                     FrustumCuller* culler,
+                     float tickDelta,
+                     net::minecraft::util::math::MatrixStack& matrices,
+                     const net::minecraft::util::math::Matrix4f& projection);
  [[nodiscard]] std::string getChunkDebugInfo() const;
  [[nodiscard]] std::string getEntityDebugInfo() const;
  int render(net::minecraft::LivingEntity& camera, int layer, double tickDelta, bool drawModMeshes = true);
@@ -104,15 +110,6 @@ class WorldRenderer : public net::minecraft::GameEventListener {
  void setRenderCameraEntity(bool renderCameraEntity) noexcept {
   renderCameraEntity_ = renderCameraEntity;
  }
- [[nodiscard]] int excludedEntityId() const noexcept {
-  return excludedEntityId_;
- }
- void setFrameRenderCamera(double x, double y, double z) noexcept {
-  frameCamX_ = x;
-  frameCamY_ = y;
-  frameCamZ_ = z;
-  hasFrameCamera_ = true;
- }
  // Force section columns to rebuild around the next camera position (e.g. first
  // server teleport after the loading screen tracked a stale position).
  void resetSectionFrontier() noexcept {
@@ -121,12 +118,9 @@ class WorldRenderer : public net::minecraft::GameEventListener {
  }
  void setOptions(net::minecraft::client::option::GameOptions* options) {
   options_ = options;
+  settings_ = option::renderSettings(activeOptions());
  }
- // Save/restore the per-frame culling result around a nested world render (the
- // sun-shadow pass, Lua render-to-texture). Both directions are a vector swap
- // plus a flat flag copy, so after warm-up neither allocates. Replaces the old
- // deep copy of visibleDrawRings_ plus a full sections_ map walk, which ran
- // every frame a shaderpack with shadows was active.
+ void setRenderSettings(const net::minecraft::client::option::RenderSettings& settings) { settings_ = settings; }
  void pushCullState();
  void popCullState();
 
@@ -140,7 +134,7 @@ class WorldRenderer : public net::minecraft::GameEventListener {
  bool startMeshJob(chunk::ChunkBuilder* chunk,
                    bool nearLane,
                    int priority,
-                   const client::option::ResolvedRenderOptions& resolvedOpts,
+                   const client::option::RenderSettings& resolvedOpts,
                    bool fancyGraphics);
  void renderChunks(int layer, double tickDelta, bool drawModMeshes = true, bool skipBuildDrawLists = false);
  int renderChunksVbo(
@@ -200,14 +194,10 @@ class WorldRenderer : public net::minecraft::GameEventListener {
  int occlusionStamp_ = 0;
  std::vector<chunk::ChunkBuilder*> occlusionQueue_{};
  void cameraInterpPosition(double tickDelta, double& x, double& y, double& z) const;
- double frameCamX_ = 0.0;
- double frameCamY_ = 0.0;
- double frameCamZ_ = 0.0;
- bool hasFrameCamera_ = false;
  net::minecraft::Entity* cameraEntity_ = nullptr;
  bool renderCameraEntity_ = false;
- int excludedEntityId_ = -1;
  net::minecraft::client::option::GameOptions* options_ = nullptr;
  net::minecraft::client::option::GameOptions defaultOptions_{};
+ net::minecraft::client::option::RenderSettings settings_{};
 };
 } // namespace net::minecraft::client::render

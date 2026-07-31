@@ -37,12 +37,11 @@ void emitCrossQuad(Tessellator& tessellator,
 } // namespace
 bool CrossBlockRenderer::render(net::minecraft::block::Block& block, int x, int y, int z) {
  Tessellator& tessellator = *ctx_.tess;
- float brightness = block.getLuminance(ctx_.blockView, x, y, z);
  int colorMult = block.getColorMultiplier(ctx_.blockView, x, y, z);
  float red = (float)(colorMult >> 16 & 0xFF) / 255.0f;
  float green = (float)(colorMult >> 8 & 0xFF) / 255.0f;
  float blue = (float)(colorMult & 0xFF) / 255.0f;
- tessellator.color(brightness * red, brightness * green, brightness * blue);
+ tessellator.color(red, green, blue);
  double dx = x;
  double dy = y;
  double dz = z;
@@ -69,6 +68,8 @@ void CrossBlockRenderer::render(net::minecraft::block::Block& block, int metadat
  double x1 = x + 0.5 + (double)0.45f;
  double z0 = z + 0.5 - (double)0.45f;
  double z1 = z + 0.5 + (double)0.45f;
+ // One quad per diagonal. Back faces are not emitted; solid/cutout draws with
+ // cull disabled so each plane stays visible from both sides without coplanar Z-fight.
  emitCrossQuad(tessellator,
                x0,
                y + 1.0,
@@ -91,27 +92,6 @@ void CrossBlockRenderer::render(net::minecraft::block::Block& block, int metadat
                uMax,
                vMin);
  emitCrossQuad(tessellator,
-               x1,
-               y + 1.0,
-               z1,
-               uMin,
-               vMin,
-               x1,
-               y + 0.0,
-               z1,
-               uMin,
-               vMax,
-               x0,
-               y + 0.0,
-               z0,
-               uMax,
-               vMax,
-               x0,
-               y + 1.0,
-               z0,
-               uMax,
-               vMin);
- emitCrossQuad(tessellator,
                x0,
                y + 1.0,
                z1,
@@ -130,27 +110,6 @@ void CrossBlockRenderer::render(net::minecraft::block::Block& block, int metadat
                x1,
                y + 1.0,
                z0,
-               uMax,
-               vMin);
- emitCrossQuad(tessellator,
-               x1,
-               y + 1.0,
-               z0,
-               uMin,
-               vMin,
-               x1,
-               y + 0.0,
-               z0,
-               uMin,
-               vMax,
-               x0,
-               y + 0.0,
-               z1,
-               uMax,
-               vMax,
-               x0,
-               y + 1.0,
-               z1,
                uMax,
                vMin);
 }

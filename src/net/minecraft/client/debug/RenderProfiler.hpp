@@ -65,7 +65,7 @@ private:
  std::array<double, kRenderStageCount> gpuAvgNs_{};
  std::int64_t frameNs_ = 0;
  double frameAvgNs_ = 0.0;
- double gpuFrameAvgNs_ = 0.0;
+ double gpuMeasuredAvgNs_ = 0.0;
  std::array<std::array<unsigned, kRenderStageCount>, kRingDepth> queries_{};
  std::array<std::array<bool, kRenderStageCount>, kRingDepth> queryPending_{};
 };

@@ -18,7 +18,7 @@
 #include <memory>
 #include <vector>
 #include "net/minecraft/block/Block.hpp"
-#include "net/minecraft/client/option/ResolvedRenderOptions.hpp"
+#include "net/minecraft/client/option/RenderSettings.hpp"
 #include "net/minecraft/client/render/Tessellator.hpp"
 #include "net/minecraft/client/render/block/BlockRenderManager.hpp"
 #include "net/minecraft/client/render/chunk/RegionSnapshot.hpp"
@@ -110,7 +110,7 @@ MeshStats meshLayer(int layer, bool ambientOcclusion) {
                          kSectionSize + 1,
                          kSectionSize,
                          kSectionSize + 1);
- client::option::ResolvedRenderOptions opts{};
+ client::option::RenderSettings opts{};
  opts.ambientOcclusionActive = ambientOcclusion;
  opts.ambientOcclusionStrength = ambientOcclusion ? 1.0f : 0.0f;
  opts.fancyLeaves = true;
@@ -152,7 +152,6 @@ MeshStats meshLayer(int layer, bool ambientOcclusion) {
 }
 } // namespace
 TEST(ChunkMeshGolden, SolidLayerIsStableWithSmoothLighting) {
- block::initializeBlocks();
  const MeshStats stats = meshLayer(/*layer=*/0, /*ambientOcclusion=*/true);
  EXPECT_GT(stats.vertexCount, 0u);
  EXPECT_EQ(stats.vertexCount % 4, 0u) << "solid layer must be whole quads; the region buffer's "
@@ -160,7 +159,6 @@ TEST(ChunkMeshGolden, SolidLayerIsStableWithSmoothLighting) {
  EXPECT_TRUE(stats.sawSkyLight);
 }
 TEST(ChunkMeshGolden, SolidLayerIsStableWithFlatLighting) {
- block::initializeBlocks();
  const MeshStats stats = meshLayer(/*layer=*/0, /*ambientOcclusion=*/false);
  EXPECT_GT(stats.vertexCount, 0u);
  EXPECT_EQ(stats.vertexCount % 4, 0u);
@@ -169,22 +167,19 @@ TEST(ChunkMeshGolden, SolidLayerIsStableWithFlatLighting) {
 // a live global read off Minecraft::INSTANCE. Same geometry, different vertex
 // colours, so vertex counts match while the hashes must differ.
 TEST(ChunkMeshGolden, AmbientOcclusionFlagIsHonouredFromResolvedOptions) {
- block::initializeBlocks();
  const MeshStats smooth = meshLayer(/*layer=*/0, /*ambientOcclusion=*/true);
  const MeshStats flat = meshLayer(/*layer=*/0, /*ambientOcclusion=*/false);
  EXPECT_EQ(smooth.vertexCount, flat.vertexCount);
  EXPECT_NE(smooth.hash, flat.hash) << "smooth and flat lighting produced byte-identical meshes; the "
-                                      "renderer is ignoring ResolvedRenderOptions::ambientOcclusionActive";
+                                      "renderer is ignoring RenderSettings::ambientOcclusionActive";
 }
 TEST(ChunkMeshGolden, MeshingIsDeterministic) {
- block::initializeBlocks();
  const MeshStats first = meshLayer(/*layer=*/0, /*ambientOcclusion=*/true);
  const MeshStats second = meshLayer(/*layer=*/0, /*ambientOcclusion=*/true);
  EXPECT_EQ(first.vertexCount, second.vertexCount);
  EXPECT_EQ(first.hash, second.hash);
 }
 TEST(ChunkMeshGolden, TranslucentLayerEmitsWaterGeometry) {
- block::initializeBlocks();
  const MeshStats stats = meshLayer(/*layer=*/1, /*ambientOcclusion=*/true);
  EXPECT_GT(stats.vertexCount, 0u) << "the water pool should produce translucent-layer geometry";
  EXPECT_EQ(stats.vertexCount % 4, 0u);
@@ -193,7 +188,6 @@ TEST(ChunkMeshGolden, TranslucentLayerEmitsWaterGeometry) {
 // rather than dark, so neighbour-light sampling does not bake a dark fringe at
 // section borders. The flat-shell rewrite must preserve this exactly.
 TEST(ChunkMeshGolden, OutOfRangeReadsAreAirAndSkyLit) {
- block::initializeBlocks();
  auto chunk = std::make_unique<Chunk>(nullptr, 0, 0);
  paintScene(*chunk);
  std::vector<RegionSnapshot::SourceChunk> sources{RegionSnapshot::SourceChunk{0, 0, chunk.get()}};

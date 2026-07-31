@@ -4,7 +4,6 @@
 #include "net/minecraft/mod/lua/LuaHostApi.hpp"
 #include "net/minecraft/nbt/Compression.hpp"
 #include "net/minecraft/util/json/JsonFields.hpp"
-
 namespace net::minecraft::mod::runtime {
 using namespace net::minecraft::mod::lua;
 namespace {
@@ -105,9 +104,9 @@ std::vector<std::uint8_t> readZipEntryData(const std::vector<std::uint8_t>& arch
   }
   try {
    return zlibDecompress(compressed);
-   } catch(...) {
-    return {};
-   }
+  } catch(...) {
+   return {};
+  }
  }
  return {};
 }

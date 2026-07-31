@@ -6,6 +6,8 @@
 #include <vector>
 #include "net/minecraft/client/option/GameOptions.hpp"
 #include "net/minecraft/entity/EntityTypes.hpp"
+#include "net/minecraft/util/math/Matrix4f.hpp"
+#include "net/minecraft/util/math/MatrixStack.hpp"
 namespace net::minecraft {
 class World;
 }
@@ -43,8 +45,18 @@ class EntityRenderDispatcher {
            net::minecraft::client::option::GameOptions* options,
            float tickDelta);
  void setWorld(net::minecraft::World* world);
- void render(const net::minecraft::Entity& entity, float tickDelta);
- void render(const net::minecraft::Entity& entity, double x, double y, double z, float yaw, float tickDelta);
+ void render(const net::minecraft::Entity& entity,
+             float tickDelta,
+             net::minecraft::util::math::MatrixStack& matrices,
+             const net::minecraft::util::math::Matrix4f& projection);
+ void render(const net::minecraft::Entity& entity,
+             double x,
+             double y,
+             double z,
+             float yaw,
+             float tickDelta,
+             net::minecraft::util::math::MatrixStack& matrices,
+             const net::minecraft::util::math::Matrix4f& projection);
  [[nodiscard]] double squaredDistanceTo(double x, double y, double z) const;
  [[nodiscard]] net::minecraft::client::font::TextRenderer* getTextRenderer() const noexcept {
   return textRenderer_;

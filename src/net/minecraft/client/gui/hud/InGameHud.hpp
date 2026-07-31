@@ -2,7 +2,6 @@
 #include <random>
 #include <string>
 #include <vector>
-#include "net/minecraft/client/gui/DrawContext.hpp"
 #include "net/minecraft/client/gui/hud/ChatHudLine.hpp"
 namespace net::minecraft::client {
 class Minecraft;
@@ -14,7 +13,7 @@ namespace net::minecraft::client::font {
 class TextRenderer;
 }
 namespace net::minecraft::client::gui::hud {
-class InGameHud : public gui::DrawContext {
+class InGameHud {
  public:
  void setClient(Minecraft* client) {
   minecraft = client;

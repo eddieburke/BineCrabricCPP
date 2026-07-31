@@ -1,17 +1,65 @@
 #include "net/minecraft/client/render/block/BlockRenderManager.hpp"
+#include <algorithm>
+#include <atomic>
+#include <cmath>
 #include "net/minecraft/block/Block.hpp"
 #include "net/minecraft/block/RailBlock.hpp"
 #include "net/minecraft/block/material/Material.hpp"
 #include "net/minecraft/client/Minecraft.hpp"
-#include "net/minecraft/client/option/ResolvedRenderOptions.hpp"
+#include "net/minecraft/client/option/RenderSettings.hpp"
 #include "net/minecraft/client/render/TextureResolve.hpp"
 #include "net/minecraft/client/render/block/BlockRenderType.hpp"
+#include "net/minecraft/client/render/chunk/RegionSnapshot.hpp"
 #include "net/minecraft/client/texture/TextureManager.hpp"
 #include "net/minecraft/mod/ModClient.hpp"
 #include "net/minecraft/registry/TextureRegistry.hpp"
+#include "net/minecraft/world/World.hpp"
+#include "net/minecraft/world/WorldRegion.hpp"
+#include "net/minecraft/world/chunk/Chunk.hpp"
+#include "net/minecraft/world/light/LightType.hpp"
 namespace net::minecraft::client::render::block {
 namespace option = net::minecraft::client::option;
+void BlockRenderContext::resolveLightSource() {
+ lightRegion = dynamic_cast<const net::minecraft::WorldRegion*>(blockView);
+ lightWorld = lightRegion != nullptr ? nullptr : dynamic_cast<const net::minecraft::World*>(blockView);
+ lightSnapshot = lightRegion == nullptr && lightWorld == nullptr
+                     ? dynamic_cast<const chunk::RegionSnapshot*>(blockView)
+                     : nullptr;
+}
+void BlockRenderContext::sampleFaceLight(int x, int y, int z) {
+ // Chunk::index packs y into seven bits, so y = 128 (the face above a block at
+ // the build limit) aliases into the z field and reads a different column.
+ y = std::clamp(y, 0, net::minecraft::Chunk::height - 1);
+ if(lightRegion != nullptr) {
+  faceBlockLight = lightRegion->getBlockLight(x, y, z);
+  faceSkyLight = lightRegion->getSkyLight(x, y, z);
+ } else if(lightSnapshot != nullptr) {
+  faceBlockLight = lightSnapshot->getBlockLight(x, y, z);
+  faceSkyLight = lightSnapshot->getSkyLight(x, y, z);
+ } else if(lightWorld != nullptr) {
+  faceBlockLight = lightWorld->getBrightness(net::minecraft::LightType::Block, x, y, z);
+  faceSkyLight = lightWorld->getBrightness(net::minecraft::LightType::Sky, x, y, z);
+ } else {
+  faceBlockLight = 15;
+  faceSkyLight = 15;
+ }
+ faceBlockLight = std::max(faceBlockLight, blockEmission);
+}
+void BlockRenderContext::sampleSurroundingLight(int x, int y, int z) {
+ static constexpr int kOffsets[6][3] = {{0, -1, 0}, {0, 1, 0}, {0, 0, -1}, {0, 0, 1}, {-1, 0, 0}, {1, 0, 0}};
+ sampleFaceLight(x, y, z);
+ int bestBlock = faceBlockLight;
+ int bestSky = faceSkyLight;
+ for(const auto& offset : kOffsets) {
+  sampleFaceLight(x + offset[0], y + offset[1], z + offset[2]);
+  bestBlock = std::max(bestBlock, faceBlockLight);
+  bestSky = std::max(bestSky, faceSkyLight);
+ }
+ faceBlockLight = bestBlock;
+ faceSkyLight = bestSky;
+}
 namespace {
+std::atomic_bool g_voxelizeLightBlocks = false;
 net::minecraft::block::Block* blockAt(int blockId) {
  if(blockId < 0 || blockId >= net::minecraft::block::Block::BLOCK_COUNT) {
   return nullptr;
@@ -19,9 +67,12 @@ net::minecraft::block::Block* blockAt(int blockId) {
  return net::minecraft::block::Block::BLOCKS[static_cast<std::size_t>(blockId)];
 }
 } // namespace
+void BlockRenderManager::setVoxelizeLightBlocks(bool enabled) noexcept {
+ g_voxelizeLightBlocks.store(enabled, std::memory_order_relaxed);
+}
 void BlockRenderManager::snapshotGlobals() {
  if(Minecraft::INSTANCE != nullptr) {
-  ctx.opts = option::resolve(Minecraft::INSTANCE->options);
+  ctx.opts = option::renderSettings(Minecraft::INSTANCE->options);
  }
 }
 void BlockRenderManager::renderWithTexture(int blockId, int x, int y, int z, int textureOverrideIn) {
@@ -79,6 +130,24 @@ void BlockRenderManager::renderWithoutCulling(net::minecraft::block::Block& bloc
 }
 bool BlockRenderManager::render(net::minecraft::block::Block& block, int x, int y, int z) {
  ctx.faceState.useAo = false;
+ ctx.blockX = x;
+ ctx.blockY = y;
+ ctx.blockZ = z;
+ ctx.blockEmission = block.emission();
+ ctx.resolveLightSource();
+ // Renderers that know their face override this per face; the ones that don't —
+ // baked models, mod blocks, the item path — keep this value, so it has to be
+ // the light reaching the block's surfaces rather than the nothing stored inside
+ // a solid block.
+ ctx.sampleSurroundingLight(x, y, z);
+ ctx.blockLight = ctx.faceBlockLight;
+ ctx.skyLight = ctx.faceSkyLight;
+ ctx.blockId = resolveShaderBlockId(block.id);
+ ctx.blockRenderType = block.getRenderType();
+ ctx.blockMetadata = ctx.blockView->getBlockMeta(x, y, z);
+ if(ctx.tess != nullptr)
+  ctx.tess->blockData(x, y, z, ctx.blockEmission, ctx.blockLight, ctx.skyLight, ctx.blockId, ctx.blockRenderType,
+                      ctx.blockMetadata);
  // Bounds live on the context, not the Block singleton: mesh workers and
  // the main-thread tick must never race on Block::minX..maxZ. They are set
  // before the mod hook because baked models cull their faces through
@@ -129,6 +198,22 @@ bool BlockRenderManager::render(net::minecraft::block::Block& block, int x, int 
  case BlockRenderType::PISTON_HEAD:
   return piston_.renderPistonHead(block, x, y, z, true);
  default:
+  if(g_voxelizeLightBlocks.load(std::memory_order_relaxed) && renderType < 0 && block.emission() > 0 &&
+     !block.isOpaque()) {
+   Tessellator& tessellator = ctx.activeTess(block.textureId);
+   tessellator.blockData(x + 0.5,
+                         y + 0.5,
+                         z + 0.5,
+                         block.emission(),
+                         block.emission(),
+                         block.emission(),
+                         ctx.blockId,
+                         ctx.blockRenderType,
+                         ctx.blockMetadata);
+   tessellator.texture(0.0, 0.0);
+   for(int i = 0; i < 4; ++i) tessellator.vertex(x + 0.5, y + 0.5, z + 0.5);
+   return true;
+  }
   return false;
  }
 }
@@ -148,11 +233,8 @@ void BlockRenderManager::render(net::minecraft::block::Block& block, int metadat
  if(ctx.textureManager == nullptr && Minecraft::INSTANCE != nullptr) {
   ctx.textureManager = &Minecraft::INSTANCE->textureManager;
  }
- if(ctx.textureManager != nullptr && net::minecraft::registry::TextureRegistry::isCustomTexture(block.textureId)) {
-  const net::minecraft::client::render::ResolvedTexture resolved =
-      net::minecraft::client::render::resolveBlockTexture(
-          block.textureId, *ctx.textureManager, net::minecraft::client::render::AtlasDomain::Terrain);
-  ctx.textureManager->bindTexture(resolved.glId);
+ if(ctx.textureManager != nullptr) {
+  ctx.bindTextureFor(block.textureId);
  }
  if(net::minecraft::mod::drawBlockInventory(*this, block, metadata, brightness)) {
   return;

@@ -1,8 +1,10 @@
 #pragma once
 #include <atomic>
+#include <condition_variable>
 #include <memory>
 #include <mutex>
 #include <string>
+#include <thread>
 #include <unordered_map>
 #include <unordered_set>
 #include <vector>
@@ -11,6 +13,7 @@
 #include "net/minecraft/util/math/Types.hpp"
 #include "net/minecraft/world/chunk/ChunkSource.hpp"
 #include "net/minecraft/world/chunk/EmptyChunk.hpp"
+#include "net/minecraft/world/chunk/storage/AlphaChunkStorage.hpp"
 #include "net/minecraft/world/chunk/storage/ChunkStorage.hpp"
 namespace net::minecraft {
 class Chunk;
@@ -19,6 +22,7 @@ namespace world::chunk {
 class ChunkCache : public ChunkSource {
  public:
  ChunkCache(World* world, std::unique_ptr<ChunkStorage> storage, ChunkSource* generator);
+ ~ChunkCache() override;
  bool forceLoad = false;
  [[nodiscard]] bool isChunkLoaded(int chunkX, int chunkZ) const override;
  [[nodiscard]] bool isChunkDataReady(int chunkX, int chunkZ) const override;
@@ -28,16 +32,17 @@ class ChunkCache : public ChunkSource {
  void decorate(ChunkSource* source, int chunkX, int chunkZ) override;
  bool save(bool saveEntityData, client::gui::screen::LoadingDisplay* display) override;
  bool tick() override;
- void pumpChunkPublish() override;
+ void prepareForSave() override;
  [[nodiscard]] bool canSave() const override;
  [[nodiscard]] std::string getDebugInfo() const override;
  void unloadChunk(int chunkX, int chunkZ);
  void setActiveRadius(int radius) override;
  void setChunkCacheCenter(int chunkX, int chunkZ) override;
+ void pumpChunkPublish() override;
  void prefetchChunksNear(int centerChunkX, int centerChunkZ) override;
  // Queue a background load/generate for the chunk; the result is folded into
  // the world by tick(). No-op if loaded, pending, or async-incapable.
- void requestChunkAsync(int chunkX, int chunkZ);
+ void requestChunkAsync(int chunkX, int chunkZ, int priority = 0);
  void markChunkDataReady(int chunkX, int chunkZ) override;
 
  private:
@@ -47,13 +52,20 @@ class ChunkCache : public ChunkSource {
   std::unique_ptr<Chunk> chunk;
   std::atomic<bool> done{false};
  };
- // Storage/generator work only; safe off-thread under ioMutex_.
+ // Storage/generator work only; safe off-thread.
  std::unique_ptr<Chunk> produceChunk(int chunkX, int chunkZ);
+ // Worker-local terrain generator clone (seed-deterministic, local BiomeSource).
+ ChunkSource* workerGenerator();
  // Main-thread integration: ownership, maps, light population, load, decorate.
  Chunk& adoptChunk(int chunkX, int chunkZ, std::unique_ptr<Chunk> owned);
  void integrateFinishedLoads(int budget);
  void saveEntities(Chunk& chunk);
  void saveChunk(Chunk& chunk);
+ void enqueueSerializedWrite(int chunkX, int chunkZ, std::vector<std::uint8_t> raw);
+ void enqueueSerializedWrite(int chunkX, int chunkZ, AlphaChunkStorage::ChunkSnapshot snapshot);
+ void waitForPendingWrites();
+ void ensureLoaderPool();
+ void ensureSavePool();
  static void retireFromLighting(Chunk* chunk);
  EmptyChunk empty_;
  World* world_ = nullptr;
@@ -67,12 +79,19 @@ class ChunkCache : public ChunkSource {
  int centerChunkX_ = 0;
  int centerChunkZ_ = 0;
  std::unordered_map<ChunkPos, std::shared_ptr<PendingLoad>, ChunkPosHash> pendingLoads_{};
- // Serializes storage_/generator_ access between the loader thread and the
- // main thread (saves, decoration, synchronous demand loads). Recursive so
- // decoration that demand-loads a neighbor can re-enter produceChunk.
+ // Serializes storage_ access and decoration (must stay serial for vanilla feature
+ // spill order). Terrain generation uses per-worker generators and does not need this.
  std::recursive_mutex ioMutex_;
- // Declared last: destroyed first, so in-flight loads finish before
+ // Per-thread generator clones, owned here so they never outlive world_.
+ std::mutex workerGeneratorMutex_;
+ std::unordered_map<std::thread::id, std::unique_ptr<ChunkSource>> workerGenerators_{};
+ bool pendingIncrementalSave_ = false;
+ std::atomic<int> pendingSaveWrites_{0};
+ std::mutex saveCompleteMutex_;
+ std::condition_variable saveCompleteCv_;
+ // Declared last: destroyed first, so in-flight loads/saves finish before
  // storage_/generator_ go away.
+ std::unique_ptr<net::minecraft::util::concurrent::WorkerPool> savePool_{};
  std::unique_ptr<net::minecraft::util::concurrent::WorkerPool> loaderPool_{};
 };
 } // namespace world::chunk

@@ -2,11 +2,14 @@
 #include <array>
 #include <cmath>
 #include <cstdint>
+#include <limits>
+#include <memory>
 #include <vector>
 #include "net/minecraft/block/entity/BlockEntity.hpp"
 #include "net/minecraft/client/render/chunk/ChunkMeshJob.hpp"
-#include "net/minecraft/client/render/chunk/ChunkRegionManager.hpp"
+#include "net/minecraft/client/render/chunk/ChunkRegionBuffer.hpp"
 #include "net/minecraft/client/render/culling/Frustum.hpp"
+#include "net/minecraft/util/concurrent/WorkerHandoff.hpp"
 #include "net/minecraft/util/math/Types.hpp"
 #include "net/minecraft/world/World.hpp"
 namespace net::minecraft::client::render::chunk {
@@ -28,12 +31,6 @@ class ChunkBuilder {
   centerX = this->x + sizeX / 2;
   centerY = this->y + sizeY / 2;
   centerZ = this->z + sizeZ / 2;
-  renderX = this->x & 0x3FF;
-  renderY = this->y;
-  renderZ = this->z & 0x3FF;
-  cameraOffsetX = this->x - renderX;
-  cameraOffsetY = this->y - renderY;
-  cameraOffsetZ = this->z - renderZ;
   constexpr float padding = 6.0f;
   cullingBox = net::minecraft::Box(static_cast<double>(this->x) - padding,
                                    static_cast<double>(this->y) - padding,
@@ -91,12 +88,6 @@ class ChunkBuilder {
  int sizeX = 0;
  int sizeY = 0;
  int sizeZ = 0;
- int cameraOffsetX = 0;
- int cameraOffsetY = 0;
- int cameraOffsetZ = 0;
- int renderX = 0;
- int renderY = 0;
- int renderZ = 0;
  bool inFrustum = true;
  std::array<bool, 2> renderLayerEmpty{true, true};
  std::array<std::vector<ModChunkMesh>, 2> modLayerMeshes_{};
@@ -121,5 +112,47 @@ class ChunkBuilder {
  int occEntryFace = -1;
  std::vector<::net::minecraft::block::entity::BlockEntity*> blockEntities_{};
  std::vector<::net::minecraft::block::entity::BlockEntity*>* currentBlockEntities_ = nullptr;
+};
+
+// Runs ChunkBuilder::buildMesh on a worker pool and hands finished jobs back to
+// the main thread. Near-camera edits and the distance backlog share one priority
+// queue so edits jump ahead of queued distant work.
+class ChunkMeshScheduler {
+ public:
+ void enqueue(std::shared_ptr<ChunkMeshJob> job, int priority) {
+  handoff_.enqueue(
+      std::move(job),
+      [](ChunkMeshJob& meshJob) {
+       try {
+        ChunkBuilder::buildMesh(meshJob);
+       } catch(...) {
+        meshJob.failed = true;
+       }
+      },
+      priority);
+ }
+ void enqueueNear(std::shared_ptr<ChunkMeshJob> job) {
+  job->nearLane = true;
+  enqueue(std::move(job), std::numeric_limits<int>::min());
+ }
+ [[nodiscard]] std::vector<std::shared_ptr<ChunkMeshJob>> drainCompleted() {
+  return handoff_.drainCompleted();
+ }
+ void cancelAll() {
+  handoff_.cancelAll();
+ }
+ [[nodiscard]] bool idle() const {
+  return handoff_.idle();
+ }
+ [[nodiscard]] std::size_t pendingJobs() const {
+  return handoff_.pendingJobs();
+ }
+ [[nodiscard]] unsigned workerCount() const noexcept {
+  return handoff_.workerCount();
+ }
+
+ private:
+ net::minecraft::util::concurrent::WorkerHandoff<ChunkMeshJob> handoff_{
+     net::minecraft::util::concurrent::WorkerPool::recommendedThreadCount(3, 2, 6)};
 };
 } // namespace net::minecraft::client::render::chunk

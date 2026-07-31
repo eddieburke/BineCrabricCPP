@@ -29,9 +29,6 @@ void ClientNetworkHandler::onWorldTimeUpdate(const WorldTimeUpdateS2CPacket& pac
   return;
  }
  targetWorld->setTime(static_cast<std::uint64_t>(packet.time));
- if (auto* clientWorld = dynamic_cast<ClientWorld*>(targetWorld)) {
-  clientWorld->updateSkyBrightness();
- }
 }
 void ClientNetworkHandler::onChunkStatusUpdate(const ChunkStatusUpdateS2CPacket& packet) {
  ClientWorld* clientWorld = asClientWorld(world);

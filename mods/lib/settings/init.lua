@@ -1,17 +1,7 @@
--- ================================================================
--- LIB: settings
--- Unified configuration system for all mods
--- Eliminates duplication, provides automatic persistence & validation
--- ================================================================
-
 local settings = {}
 
 -- Internal storage for mod configurations
 local _mod_configs = {}
-
---------------------------------------------------------------------------------
--- TYPE VALIDATION & CLAMPING
---------------------------------------------------------------------------------
 
 local function clamp_number(value, min_val, max_val)
   if type(value) ~= "number" or value ~= value then -- NaN check
@@ -43,10 +33,6 @@ local function validate_field(field_type, value, def)
   return value
 end
 
---------------------------------------------------------------------------------
--- PERSISTENCE LAYER (Simple Key-Value via C++ API)
---------------------------------------------------------------------------------
-
 local function _load_value(mod_id, key, default)
   local value = minecraft.settings.get(mod_id .. "." .. key)
   if value == nil then
@@ -58,10 +44,6 @@ end
 local function _save_value(mod_id, key, value)
   minecraft.settings.set(mod_id .. "." .. key, value)
 end
-
---------------------------------------------------------------------------------
--- CONFIG DEFINITION DSL
---------------------------------------------------------------------------------
 
 function settings.define(mod_id, definition)
   if _mod_configs[mod_id] then
@@ -139,10 +121,6 @@ function settings.define(mod_id, definition)
 
   return config_proxy
 end
-
---------------------------------------------------------------------------------
--- UTILITY FUNCTIONS
---------------------------------------------------------------------------------
 
 function settings.get_mod_config(mod_id)
   return _mod_configs[mod_id]

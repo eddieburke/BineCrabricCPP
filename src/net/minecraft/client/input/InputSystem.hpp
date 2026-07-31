@@ -78,7 +78,6 @@ class InputSystem {
  static void shutdown();
  static void clearOnDeactivate();
  static void compactQueues();
- static LRESULT handleWindowMessage(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam);
  static void pushKeyEvent(int key, bool down);
  static void pushCharEvent(int character);
  static void pushMouseButtonEvent(int button, bool down, int x, int y);
@@ -125,13 +124,11 @@ class InputSystem {
  void pollGameMouse(Minecraft& client);
  void pollGameKeyboard(Minecraft& client);
  void dispatchGameKey(Minecraft& client, int key);
- void ingestKey(int vk, bool down);
  void ingestKeyCode(int key, bool down);
  void ingestChar(int character);
  void ingestMouseButton(int button, bool down, int x, int y);
  void ingestMouseWheel(int delta, int x, int y);
  void updateCursorPosition(); // beginFrame; use syncCursorFromOs() before UI hover reads
- [[nodiscard]] static int clientMouseY(HWND hwnd, int clientY);
 #endif
  std::vector<InputLayer> layerStack_;
  ModifierState modifiers_;
@@ -172,7 +169,6 @@ class InputSystem {
  int cursorX_ = 0;
  int cursorY_ = 0;
  HWND mouseWindow_ = nullptr;
- HCURSOR mouseCursor_ = nullptr;
  bool cursorGrabbed_ = false;
  POINT mouseLastPoint_{0, 0};
  bool mouseHasLastPoint_ = false;

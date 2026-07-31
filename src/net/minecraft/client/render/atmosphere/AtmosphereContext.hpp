@@ -13,7 +13,7 @@ namespace net::minecraft::client::texture {
 class TextureManager;
 }
 namespace net::minecraft::client::option {
-class GameOptions;
+struct RenderSettings;
 }
 namespace net::minecraft::client::render::atmosphere {
 struct AtmosphereContext {
@@ -22,7 +22,7 @@ struct AtmosphereContext {
  net::minecraft::client::texture::TextureManager* textureManager;
  net::minecraft::entity::Entity* camera;
  const net::minecraft::entity::LivingEntity* livingCamera;
- const net::minecraft::client::option::GameOptions& options;
+ const net::minecraft::client::option::RenderSettings& settings;
  int atmosphereTicks;
 };
 } // namespace net::minecraft::client::render::atmosphere

@@ -9,7 +9,7 @@ bool RedstoneDustBlockRenderer::render(net::minecraft::block::Block& block, int 
  Tessellator& tessellator = *ctx_.tess;
  int meta = ctx_.blockView->getBlockMeta(x, y, z);
  const int tex = ctx_.resolveTexture(1, block.getTexture(1, meta));
- float brightness = block.getLuminance(ctx_.blockView, x, y, z);
+ float brightness = 1.0f; // absolute light now comes from the lightmap
  float power = (float)meta / 15.0f;
  float colorRed = power * 0.6f + 0.4f;
  if(meta == 0) {

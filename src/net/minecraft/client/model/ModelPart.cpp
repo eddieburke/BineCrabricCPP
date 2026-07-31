@@ -1,8 +1,10 @@
 #include "net/minecraft/client/model/ModelPart.hpp"
 #include <array>
-#include "net/minecraft/client/render/RenderSystem.hpp"
+#include "net/minecraft/client/render/RenderCore.hpp"
 #include "net/minecraft/client/render/Tessellator.hpp"
 namespace net::minecraft::client::model {
+namespace math = net::minecraft::util::math;
+namespace core = net::minecraft::client::render::core;
 ModelPart::ModelPart(const ModelPart& other)
     : textureU(other.textureU),
       textureV(other.textureV),
@@ -118,78 +120,87 @@ void ModelPart::renderFaces(float scale) const {
  }
  tessellator.draw();
 }
-void ModelPart::render(float scale) {
+void ModelPart::render(float scale, math::MatrixStack& matrices) {
  if(hidden || !visible) {
   return;
  }
- const auto renderChildren = [this, scale]() {
+ const auto renderChildren = [this, scale, &matrices]() {
   for(ModelPart* child : children_) {
    if(child != nullptr) {
-    child->render(scale);
+    child->render(scale, matrices);
    }
   }
  };
  if(pitch != 0.0f || yaw != 0.0f || roll != 0.0f) {
-  render::RenderSystem::pushMatrix();
-  render::RenderSystem::translate(pivotX * scale, pivotY * scale, pivotZ * scale);
+  matrices.push();
+  matrices.translate(pivotX * scale, pivotY * scale, pivotZ * scale);
   if(roll != 0.0f) {
-   render::RenderSystem::rotate(roll * 57.295776f, 0.0f, 0.0f, 1.0f);
+   matrices.rotate(roll * 57.295776f, 0.0f, 0.0f, 1.0f);
   }
   if(yaw != 0.0f) {
-   render::RenderSystem::rotate(yaw * 57.295776f, 0.0f, 1.0f, 0.0f);
+   matrices.rotate(yaw * 57.295776f, 0.0f, 1.0f, 0.0f);
   }
   if(pitch != 0.0f) {
-   render::RenderSystem::rotate(pitch * 57.295776f, 1.0f, 0.0f, 0.0f);
+   matrices.rotate(pitch * 57.295776f, 1.0f, 0.0f, 0.0f);
   }
   renderFaces(scale);
   renderChildren();
-  render::RenderSystem::popMatrix();
+  matrices.pop();
  } else if(pivotX != 0.0f || pivotY != 0.0f || pivotZ != 0.0f) {
-  render::RenderSystem::translate(pivotX * scale, pivotY * scale, pivotZ * scale);
+  matrices.translate(pivotX * scale, pivotY * scale, pivotZ * scale);
   renderFaces(scale);
   renderChildren();
-  render::RenderSystem::translate(-pivotX * scale, -pivotY * scale, -pivotZ * scale);
+  matrices.translate(-pivotX * scale, -pivotY * scale, -pivotZ * scale);
  } else {
   renderFaces(scale);
   renderChildren();
  }
 }
-void ModelPart::renderForceTransform(float scale) {
+void ModelPart::render(float scale) {
+ render(scale, core::modelViewStack());
+}
+void ModelPart::renderForceTransform(float scale, math::MatrixStack& matrices) {
  if(hidden || !visible) {
   return;
  }
- render::RenderSystem::pushMatrix();
- render::RenderSystem::translate(pivotX * scale, pivotY * scale, pivotZ * scale);
+ matrices.push();
+ matrices.translate(pivotX * scale, pivotY * scale, pivotZ * scale);
  if(yaw != 0.0f) {
-  render::RenderSystem::rotate(yaw * 57.295776f, 0.0f, 1.0f, 0.0f);
+  matrices.rotate(yaw * 57.295776f, 0.0f, 1.0f, 0.0f);
  }
  if(pitch != 0.0f) {
-  render::RenderSystem::rotate(pitch * 57.295776f, 1.0f, 0.0f, 0.0f);
+  matrices.rotate(pitch * 57.295776f, 1.0f, 0.0f, 0.0f);
  }
  if(roll != 0.0f) {
-  render::RenderSystem::rotate(roll * 57.295776f, 0.0f, 0.0f, 1.0f);
+  matrices.rotate(roll * 57.295776f, 0.0f, 0.0f, 1.0f);
  }
  renderFaces(scale);
- render::RenderSystem::popMatrix();
+ matrices.pop();
 }
-void ModelPart::transform(float scale) {
+void ModelPart::renderForceTransform(float scale) {
+ renderForceTransform(scale, core::modelViewStack());
+}
+void ModelPart::transform(float scale, math::MatrixStack& matrices) {
  if(hidden || !visible) {
   return;
  }
  if(pitch != 0.0f || yaw != 0.0f || roll != 0.0f) {
-  render::RenderSystem::translate(pivotX * scale, pivotY * scale, pivotZ * scale);
+  matrices.translate(pivotX * scale, pivotY * scale, pivotZ * scale);
   if(roll != 0.0f) {
-   render::RenderSystem::rotate(roll * 57.295776f, 0.0f, 0.0f, 1.0f);
+   matrices.rotate(roll * 57.295776f, 0.0f, 0.0f, 1.0f);
   }
   if(yaw != 0.0f) {
-   render::RenderSystem::rotate(yaw * 57.295776f, 0.0f, 1.0f, 0.0f);
+   matrices.rotate(yaw * 57.295776f, 0.0f, 1.0f, 0.0f);
   }
   if(pitch != 0.0f) {
-   render::RenderSystem::rotate(pitch * 57.295776f, 1.0f, 0.0f, 0.0f);
+   matrices.rotate(pitch * 57.295776f, 1.0f, 0.0f, 0.0f);
   }
  } else if(pivotX != 0.0f || pivotY != 0.0f || pivotZ != 0.0f) {
-  render::RenderSystem::translate(pivotX * scale, pivotY * scale, pivotZ * scale);
+  matrices.translate(pivotX * scale, pivotY * scale, pivotZ * scale);
  }
+}
+void ModelPart::transform(float scale) {
+ transform(scale, core::modelViewStack());
 }
 void ModelPart::addChild(ModelPart& child) {
  children_.push_back(&child);

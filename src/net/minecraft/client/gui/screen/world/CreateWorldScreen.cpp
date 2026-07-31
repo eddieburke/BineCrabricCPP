@@ -288,32 +288,27 @@ void CreateWorldScreen::render(int mouseX, int mouseY, float tickDelta) {
  renderBackground();
  if(textRenderer() != nullptr) {
   const CreateWorldFormLayout layout = formLayout(width(), height(), firstFooterButtonY_);
-  drawCenteredTextWithShadow(*textRenderer(),
-                             resource::language::I18n::getTranslation("selectWorld.create"),
-                             width() / 2,
-                             layout.titleY,
-                             0xFFFFFF);
-  drawTextWithShadow(*textRenderer(),
-                     resource::language::I18n::getTranslation("selectWorld.enterName"),
-                     layout.fieldX,
-                     layout.nameLabelY,
-                     0xA0A0A0);
-  drawTextWithShadow(*textRenderer(),
-                     resource::language::I18n::getTranslation("selectWorld.resultFolder") + " " + worldSaveName_,
-                     layout.fieldX,
-                     layout.resultFolderY,
-                     0xA0A0A0);
-  drawTextWithShadow(*textRenderer(),
-                     resource::language::I18n::getTranslation("selectWorld.enterSeed"),
-                     layout.fieldX,
-                     layout.seedLabelY,
-                     0xA0A0A0);
+  textRenderer()->drawCenteredWithShadow(resource::language::I18n::getTranslation("selectWorld.create"),
+                                         width() / 2,
+                                         layout.titleY,
+                                         0xFFFFFF);
+  textRenderer()->drawWithShadow(resource::language::I18n::getTranslation("selectWorld.enterName"),
+                                 layout.fieldX,
+                                 layout.nameLabelY,
+                                 0xA0A0A0);
+  textRenderer()->drawWithShadow(resource::language::I18n::getTranslation("selectWorld.resultFolder") + " " + worldSaveName_,
+                                 layout.fieldX,
+                                 layout.resultFolderY,
+                                 0xA0A0A0);
+  textRenderer()->drawWithShadow(resource::language::I18n::getTranslation("selectWorld.enterSeed"),
+                                 layout.fieldX,
+                                 layout.seedLabelY,
+                                 0xA0A0A0);
   if(layout.showSeedInfo) {
-   drawTextWithShadow(*textRenderer(),
-                      resource::language::I18n::getTranslation("selectWorld.seedInfo"),
-                      layout.fieldX,
-                      layout.seedInfoY,
-                      0xA0A0A0);
+   textRenderer()->drawWithShadow(resource::language::I18n::getTranslation("selectWorld.seedInfo"),
+                                  layout.fieldX,
+                                  layout.seedInfoY,
+                                  0xA0A0A0);
   }
  }
  if(worldNameField_ != nullptr) {

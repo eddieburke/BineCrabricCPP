@@ -32,8 +32,8 @@ class DisconnectedScreen : public Screen {
  void render(int mouseX, int mouseY, float tickDelta) override {
   renderBackground();
   if(textRenderer_ != nullptr) {
-   drawCenteredTextWithShadow(*textRenderer_, title_, width_ / 2, height_ / 2 - 50, 0xFFFFFF);
-   drawCenteredTextWithShadow(*textRenderer_, reason_, width_ / 2, height_ / 2 - 10, 0xFFFFFF);
+   textRenderer_->drawCenteredWithShadow(title_, width_ / 2, height_ / 2 - 50, 0xFFFFFF);
+   textRenderer_->drawCenteredWithShadow(reason_, width_ / 2, height_ / 2 - 10, 0xFFFFFF);
   }
   Screen::render(mouseX, mouseY, tickDelta);
  }

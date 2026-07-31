@@ -2,9 +2,9 @@
 -- Refactored with separation of concerns: config, physics, geology, rendering
 
 local config = require("config")
-local physics = require("physics.trajectory")
-local geology = require("geology.generator")
-local rendering = require("rendering.effects")
+local physics = require("scripts.physics.trajectory")
+local geology = require("scripts.geology.generator")
+local rendering = require("scripts.rendering.effects")
 
 -- Module state
 local meteors = { list = {}, nextId = 1 }

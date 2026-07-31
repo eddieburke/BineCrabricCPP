@@ -24,17 +24,14 @@ struct DynamicPhaseRegistration {
 DynamicPhaseRegistration gDynamicPhaseRegistration;
 } // namespace
 TEST(RegistryBootstrap, VanillaCriticalEntriesAvailable) {
- net::minecraft::block::initializeBlocks();
  ASSERT_NE(net::minecraft::block::Block::GRASS_BLOCK, nullptr);
  EXPECT_NE(net::minecraft::entity::EntityRegistry::create("Zombie", nullptr), nullptr);
  EXPECT_NE(net::minecraft::registry::BlockEntityRegistry::instance().create("Chest"), nullptr);
 }
 TEST(RegistryBootstrap, RunsCallbacksEnqueuedDuringCurrentPhase) {
- net::minecraft::block::initializeBlocks();
  EXPECT_TRUE(gDynamicPhaseCallbackRan);
 }
 TEST(RegistryBootstrap, RejectsContentRegistrationAfterInit) {
- net::minecraft::block::initializeBlocks();
  mod::lua::BlockRegistrationSpec blockSpec;
  blockSpec.blockId = 250;
  blockSpec.texturePath = "mods/test/block.png";

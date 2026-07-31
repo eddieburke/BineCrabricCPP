@@ -1,21 +1,13 @@
 #pragma once
-// ShaderProgram — GLSL compile/link with #define injection, uniform-location cache,
-// and typed setters. Backs the uniform-driven pipeline (Phase B) and the standalone
-// shaderpack system (Phase D). Version preamble is supplied by the caller so the same
-// source can target GLSL 120 (Phase B compat) or 330 core (Phase C+).
+#include <functional>
 #include <string>
+#include <string_view>
 #include <unordered_map>
 #include <vector>
 namespace net::minecraft::util::math {
 struct Matrix4f;
 }
 namespace net::minecraft::client::gl {
-// A single key=value define injected into both stages before compilation. Value may be
-// empty for a bare `#define NAME`.
-struct ShaderDefine {
- std::string name;
- std::string value;
-};
 class ShaderProgram {
  public:
  ShaderProgram() = default;
@@ -24,13 +16,14 @@ class ShaderProgram {
  ShaderProgram& operator=(const ShaderProgram&) = delete;
  ShaderProgram(ShaderProgram&& other) noexcept;
  ShaderProgram& operator=(ShaderProgram&& other) noexcept;
- // Compiles + links. `versionPreamble` is emitted verbatim as the first line(s)
- // (e.g. "#version 120\n" or "#version 330 core\n"). Returns false on failure; the
- // GL info log is captured in lastError().
  bool compile(const std::string& vertexSource,
               const std::string& fragmentSource,
               const std::string& versionPreamble,
-              const std::vector<ShaderDefine>& defines = {});
+              const std::string& geometrySource = {},
+              const std::string& tessControlSource = {},
+              const std::string& tessEvaluationSource = {});
+ bool compileCompute(const std::string& computeSource,
+                     const std::string& versionPreamble);
  void destroy();
  [[nodiscard]] bool valid() const {
   return program_ != 0;
@@ -43,34 +36,64 @@ class ShaderProgram {
  }
  void bind() const;
  static void unbind();
- // Uniform setters. Location lookups are cached by name; unknown names are cached as
- // -1 and become no-ops, so callers can set uniforms unconditionally.
- int location(const std::string& name) const;
+ // Iris /* RENDERTARGETS: a,b */ → glDrawBuffers(COLOR_ATTACHMENT0+a, ...).
+ // Empty = leave DrawBuffers unchanged (composite write FBOs remap attachments).
+ void setDrawBufferColortexIndices(const std::vector<int>& colortexIndices);
+ void applyDrawBuffers(int colorAttachmentCount = 8) const;
+ int location(std::string_view name) const;
  enum class SamplerKind {
   None,
   Float,
   Integer,
-  Unsigned
+  Unsigned,
+  Shadow,
+  Volume
  };
- [[nodiscard]] SamplerKind samplerKind(const std::string& name) const;
+ [[nodiscard]] SamplerKind samplerKind(std::string_view name) const;
  [[nodiscard]] const std::vector<std::string>& declaredSamplers() const;
- void set1i(const std::string& name, int value) const;
- void set1f(const std::string& name, float value) const;
- void set2f(const std::string& name, float x, float y) const;
- void set3f(const std::string& name, float x, float y, float z) const;
- void set4f(const std::string& name, float x, float y, float z, float w) const;
- void setMatrix4(const std::string& name, const float* value, bool transpose = false) const;
- void setMatrix4(const std::string& name, const net::minecraft::util::math::Matrix4f& value) const;
- // True only if the driver exposes every entry point the class relies on.
+ [[nodiscard]] bool legacyAttributes() const {
+  return legacyAttributes_;
+ }
+ [[nodiscard]] bool tessellation() const {
+  return tessellation_;
+ }
+ void set1iAt(int location, int value) const;
+ void set1fAt(int location, float value) const;
+ void set2fAt(int location, const float* values) const;
+ void set3fAt(int location, const float* values) const;
+ void set4fAt(int location, const float* values) const;
+ void set2iAt(int location, const int* values) const;
+ void set3iAt(int location, const int* values) const;
+ void set4iAt(int location, const int* values) const;
+ void setMatrix3At(int location, const float* values) const;
+ void setMatrix4At(int location, const float* values) const;
+ void set1i(std::string_view name, int value) const;
+ void set1f(std::string_view name, float value) const;
+ void set2f(std::string_view name, float x, float y) const;
+ void set3f(std::string_view name, float x, float y, float z) const;
+ void set4f(std::string_view name, float x, float y, float z, float w) const;
+ void setMatrix3(std::string_view name, const float* value, bool transpose = false) const;
+ void setMatrix4(std::string_view name, const float* value, bool transpose = false) const;
+ void setMatrix4(std::string_view name, const net::minecraft::util::math::Matrix4f& value) const;
  [[nodiscard]] static bool supported();
 
  private:
- void reflectSamplers() const;
+ struct TransparentStringHash {
+  using is_transparent = void;
+  std::size_t operator()(std::string_view value) const noexcept {
+   return std::hash<std::string_view>{}(value);
+  }
+ };
+ template <typename Value>
+ using NameMap = std::unordered_map<std::string, Value, TransparentStringHash, std::equal_to<>>;
+ void reflectSamplers();
  unsigned int program_ = 0;
- mutable std::unordered_map<std::string, int> uniformCache_;
- mutable std::unordered_map<std::string, SamplerKind> samplerKinds_;
- mutable std::vector<std::string> samplerNames_;
- mutable bool samplersReflected_ = false;
+ mutable NameMap<int> uniformCache_;
+ NameMap<SamplerKind> samplerKinds_;
+ std::vector<std::string> samplerNames_;
+ bool legacyAttributes_ = false;
+ bool tessellation_ = false;
+ std::vector<unsigned int> drawBuffers_{};
  std::string lastError_;
 };
 } // namespace net::minecraft::client::gl

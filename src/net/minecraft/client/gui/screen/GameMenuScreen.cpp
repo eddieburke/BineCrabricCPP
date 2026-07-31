@@ -69,11 +69,11 @@ void GameMenuScreen::render(int mouseX, int mouseY, float tickDelta) {
   const int brightness = static_cast<int>(255.0f * pulse);
   const int color = (brightness << 16) | (brightness << 8) | brightness;
   if(textRenderer() != nullptr) {
-   drawTextWithShadow(*textRenderer(), "Saving level..", 8, height() - 16, color);
+   textRenderer()->drawWithShadow("Saving level..", 8, height() - 16, color);
   }
  }
  if(textRenderer() != nullptr) {
-  drawCenteredTextWithShadow(*textRenderer(), "Game menu", width() / 2, 40, 0xFFFFFF);
+  textRenderer()->drawCenteredWithShadow("Game menu", width() / 2, 40, 0xFFFFFF);
  }
  Screen::render(mouseX, mouseY, tickDelta);
 }

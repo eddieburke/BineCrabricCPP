@@ -1,6 +1,6 @@
 #pragma once
 #include <cmath>
-#include "net/minecraft/client/option/ResolvedRenderOptions.hpp"
+#include "net/minecraft/client/option/RenderSettings.hpp"
 #include "net/minecraft/client/render/Tessellator.hpp"
 #include "net/minecraft/client/render/TextureResolve.hpp"
 #include "net/minecraft/client/texture/TextureManager.hpp"
@@ -9,45 +9,127 @@
 #include "net/minecraft/util/math/Types.hpp"
 namespace net::minecraft {
 class BlockView;
-}
+class World;
+class WorldRegion;
+} // namespace net::minecraft
 #include "net/minecraft/block/Block.hpp"
+namespace net::minecraft::client::render::chunk {
+class RegionSnapshot;
+}
 namespace net::minecraft::client::render::block {
-struct TileScale {
- int u = 0;
- int v = 0;
- double inv = 1.0 / 256.0;
+enum class SideFaceDirection { east,
+                               west,
+                               north,
+                               south };
+struct UvCoordinate {
+ double u = 0.0;
+ double v = 0.0;
 };
-// Tile origin and texel scale for a texture id, in the (u + n * 16) * inv form
-// the face renderers emit. See ResolvedTexture for the two cases; a mod texture
-// has no atlas origin, so its tile origin is 0,0.
-inline TileScale tileScaleFor(int textureId) {
- const net::minecraft::client::render::ResolvedTexture uv =
-     net::minecraft::client::render::resolveBlockTextureUv(textureId);
- if(uv.isModTexture) {
-  return {0, 0, uv.uScale};
+struct SideFaceUv {
+ UvCoordinate vertices[4];
+};
+inline SideFaceUv sideFaceUvFor(const net::minecraft::client::render::ResolvedTexture& texture,
+                                const net::minecraft::Box& bounds,
+                                bool flipTextureHorizontally,
+                                SideFaceDirection face,
+                                int rotation) {
+ const bool xAxis = face == SideFaceDirection::east || face == SideFaceDirection::west;
+ const double minHorizontal = xAxis ? bounds.minX : bounds.minZ;
+ const double maxHorizontal = xAxis ? bounds.maxX : bounds.maxZ;
+ const double minU = texture.uFromStart(minHorizontal);
+ const double maxU = texture.uFromStart(maxHorizontal) - net::minecraft::client::render::kTextureEdgeInset * texture.uScale;
+ double uMin = minU;
+ double uMax = maxU;
+ double vMin = texture.vFromEnd(bounds.maxY);
+ double vMax = texture.vFromEnd(bounds.minY) - net::minecraft::client::render::kTextureEdgeInset * texture.vScale;
+ if(flipTextureHorizontally) {
+  const double flippedMin = uMin;
+  uMin = uMax;
+  uMax = flippedMin;
  }
- return {net::minecraft::block::Block::textureAtlasU(textureId),
-         net::minecraft::block::Block::textureAtlasV(textureId),
-         uv.uScale};
+ if(minHorizontal < 0.0 || maxHorizontal > 1.0) {
+  uMin = texture.uMin;
+  uMax = texture.uMax - net::minecraft::client::render::kTextureEdgeInset * texture.uScale;
+ }
+ if(bounds.minY < 0.0 || bounds.maxY > 1.0) {
+  vMin = texture.vMin;
+  vMax = texture.vMax - net::minecraft::client::render::kTextureEdgeInset * texture.vScale;
+ }
+ const bool patternA = (face == SideFaceDirection::east || face == SideFaceDirection::south)
+                           ? rotation == 2
+                           : rotation == 1;
+ const bool patternB = (face == SideFaceDirection::east || face == SideFaceDirection::south)
+                           ? rotation == 1
+                           : rotation == 2;
+ UvCoordinate minCorner{uMin, vMin};
+ UvCoordinate maxCorner{uMax, vMax};
+ UvCoordinate cornerA{uMax, vMin};
+ UvCoordinate cornerB{uMin, vMax};
+ if(patternA) {
+  const double rotatedUMin = texture.uFromStart(bounds.minY);
+  const double rotatedUMax = texture.uFromStart(bounds.maxY);
+  const double rotatedVMin = texture.vFromEnd(minHorizontal);
+  const double rotatedVMax = texture.vFromEnd(maxHorizontal);
+  minCorner = {rotatedUMin, rotatedVMax};
+  maxCorner = {rotatedUMax, rotatedVMin};
+  cornerA = {rotatedUMin, rotatedVMin};
+  cornerB = {rotatedUMax, rotatedVMax};
+ } else if(patternB) {
+  const double rotatedUMin = texture.uFromEnd(bounds.maxY);
+  const double rotatedUMax = texture.uFromEnd(bounds.minY);
+  const bool reverseHorizontal = face == SideFaceDirection::east || face == SideFaceDirection::south;
+  const double rotatedVMin = texture.vFromStart(reverseHorizontal ? maxHorizontal : minHorizontal);
+  const double rotatedVMax = texture.vFromStart(reverseHorizontal ? minHorizontal : maxHorizontal);
+  minCorner = {rotatedUMax, rotatedVMin};
+  maxCorner = {rotatedUMin, rotatedVMax};
+  cornerA = {rotatedUMax, rotatedVMax};
+  cornerB = {rotatedUMin, rotatedVMin};
+ } else if(rotation == 3) {
+  const double rotatedUMin = texture.uFromEnd(minHorizontal);
+  const double rotatedUMax = texture.uFromEnd(maxHorizontal) - net::minecraft::client::render::kTextureEdgeInset * texture.uScale;
+  const double rotatedVMin = texture.vFromStart(bounds.maxY);
+  const double rotatedVMax = texture.vFromStart(bounds.minY) - net::minecraft::client::render::kTextureEdgeInset * texture.vScale;
+  minCorner = {rotatedUMin, rotatedVMin};
+  maxCorner = {rotatedUMax, rotatedVMax};
+  cornerA = {rotatedUMax, rotatedVMin};
+  cornerB = {rotatedUMin, rotatedVMax};
+ }
+ SideFaceUv uv;
+ if(face == SideFaceDirection::east || face == SideFaceDirection::north) {
+  uv.vertices[0] = cornerA;
+  uv.vertices[1] = minCorner;
+  uv.vertices[2] = cornerB;
+  uv.vertices[3] = maxCorner;
+ } else if(face == SideFaceDirection::west) {
+  uv.vertices[0] = minCorner;
+  uv.vertices[1] = cornerB;
+  uv.vertices[2] = maxCorner;
+  uv.vertices[3] = cornerA;
+ } else {
+  uv.vertices[0] = cornerB;
+  uv.vertices[1] = maxCorner;
+  uv.vertices[2] = cornerA;
+  uv.vertices[3] = minCorner;
+ }
+ return uv;
 }
 inline net::minecraft::block::TerrainAtlasUv tileUvFor(int textureId, const net::minecraft::Box& bounds) {
- const net::minecraft::client::render::ResolvedTexture uv =
-     net::minecraft::client::render::resolveBlockTextureUv(textureId);
- if(!uv.isModTexture) {
+ if(!net::minecraft::registry::TextureRegistry::isCustomTexture(textureId)) {
   return net::minecraft::block::Block::terrainTileUv(textureId);
  }
- const TileScale tile{0, 0, uv.uScale};
- double uMin = (static_cast<double>(tile.u) + bounds.minX * 16.0) * tile.inv;
- double uMax = (static_cast<double>(tile.u) + bounds.maxX * 16.0) * tile.inv;
- double vMin = (static_cast<double>(tile.v) + bounds.minZ * 16.0) * tile.inv;
- double vMax = (static_cast<double>(tile.v) + bounds.maxZ * 16.0) * tile.inv;
+ const net::minecraft::client::render::ResolvedTexture texture =
+     net::minecraft::client::render::resolveBlockTextureUv(textureId);
+ double uMin = texture.uFromStart(bounds.minX);
+ double uMax = texture.uFromStart(bounds.maxX);
+ double vMin = texture.vFromStart(bounds.minZ);
+ double vMax = texture.vFromStart(bounds.maxZ);
  if(bounds.minX < 0.0 || bounds.maxX > 1.0) {
-  uMin = static_cast<double>(tile.u) * tile.inv;
-  uMax = static_cast<double>(tile.u + 16) * tile.inv;
+  uMin = texture.uMin;
+  uMax = texture.uMax;
  }
  if(bounds.minZ < 0.0 || bounds.maxZ > 1.0) {
-  vMin = static_cast<double>(tile.v) * tile.inv;
-  vMax = static_cast<double>(tile.v + 16) * tile.inv;
+  vMin = texture.vMin;
+  vMax = texture.vMax;
  }
  return {uMin, uMax, vMin, vMax};
 }
@@ -58,10 +140,13 @@ struct BlockFaceVertexColors {
  float red[4] = {1.0f, 1.0f, 1.0f, 1.0f};
  float green[4] = {1.0f, 1.0f, 1.0f, 1.0f};
  float blue[4] = {1.0f, 1.0f, 1.0f, 1.0f};
+ float alpha[4] = {1.0f, 1.0f, 1.0f, 1.0f};
 };
 struct BlockFaceRenderState {
  bool useAo = false;
  BlockFaceVertexColors colors;
+ int blockLight[4] = {15, 15, 15, 15};
+ int skyLight[4] = {15, 15, 15, 15};
 };
 // Mutable rendering state shared by the cooperating block renderers (faces,
 // cube, fluid, plants, mechanisms, inventory icon). In the original beta 1.7.3
@@ -86,7 +171,7 @@ struct BlockRenderContext {
  // Render options snapshotted when the owning BlockRenderManager is created
  // (or when a mesh job is enqueued), so renderers never read the live
  // GameOptions from a worker thread.
- option::ResolvedRenderOptions opts{};
+ option::RenderSettings opts{};
  // When >= 0, forces every face to this atlas tile (used by levers, fire,
  // redstone, ... that re-skin a block).
  int textureOverride = -1;
@@ -113,13 +198,45 @@ struct BlockRenderContext {
  bool inventoryColorEnabled = true;
  client::texture::TextureManager* textureManager = nullptr;
  chunk::ModMeshCollector* modMeshes = nullptr;
+ double blockX = 0.0;
+ double blockY = 0.0;
+ double blockZ = 0.0;
+ int blockEmission = 0;
+ int blockLight = 15;
+ int skyLight = 15;
+ int blockId = 0;
+ int blockRenderType = 0;
+ int blockMetadata = 0;
+ // Light the face currently being emitted samples. A solid block stores no
+ // light of its own, so the lightmap coordinate for each face has to come from
+ // the neighbour that face looks at — exactly where vanilla samples the
+ // brightness it used to bake into the vertex colour. Defaults to the block's
+ // own light for renderers that draw non-cube geometry.
+ const net::minecraft::WorldRegion* lightRegion = nullptr;
+ const net::minecraft::World* lightWorld = nullptr;
+ const chunk::RegionSnapshot* lightSnapshot = nullptr;
+ int faceBlockLight = 15;
+ int faceSkyLight = 15;
+ // Absolute luminance of the block itself is no longer used to invent relative
+ // AO — packs own lighting; C++ only writes opacity AO + lightmap coords.
+ void resolveLightSource();
+ void sampleFaceLight(int x, int y, int z);
+ // Default for renderers that emit geometry without telling us which face they
+ // are on — baked models and mod blocks. A solid block stores no light of its
+ // own, so the surfaces take the brightest light reaching them from around it.
+ void sampleSurroundingLight(int x, int y, int z);
  [[nodiscard]] Tessellator& activeTess(int texture) {
   if(tess == nullptr) {
    return Tessellator::INSTANCE;
   }
   if(modMeshes != nullptr) {
-   return modMeshes->tessFor(texture, *tess);
+   Tessellator& active = modMeshes->tessFor(texture, *tess);
+   active.blockData(blockX, blockY, blockZ, blockEmission, faceBlockLight, faceSkyLight, blockId, blockRenderType,
+                    blockMetadata);
+   return active;
   }
+  tess->blockData(blockX, blockY, blockZ, blockEmission, faceBlockLight, faceSkyLight, blockId, blockRenderType,
+                  blockMetadata);
   return *tess;
  }
  // Mod textures each need their own bind; vanilla ids share the already-bound

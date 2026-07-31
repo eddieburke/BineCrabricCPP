@@ -1,12 +1,9 @@
--- ============================================================================
--- item_drop_physics: material model
---
--- Replaces the per-item physics database. An item is mapped to one of a handful
+-- Material model. Replaces the per-item physics database.
+-- An item is mapped to one of a handful
 -- of material classes; everything the solver needs (mass, buoyancy, angular
 -- damping, rest thresholds) is derived from four numbers plus the item's own
 -- model bounds. Unknown ids -- including modded ones -- fall back to "generic"
 -- instead of needing a table entry.
--- ============================================================================
 
 local M = {}
 

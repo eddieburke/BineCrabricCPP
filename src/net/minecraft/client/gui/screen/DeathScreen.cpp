@@ -1,12 +1,13 @@
 #include "net/minecraft/client/gui/screen/DeathScreen.hpp"
 #include "net/minecraft/client/Minecraft.hpp"
+#include "net/minecraft/client/gui/Draw2D.hpp"
 #include "net/minecraft/client/gui/layout/ScreenLayout.hpp"
-#include "net/minecraft/client/render/RenderSystem.hpp"
+#include "net/minecraft/client/render/RenderCore.hpp"
+#include "net/minecraft/client/render/RenderType.hpp"
+#include "net/minecraft/client/render/Tessellator.hpp"
 #include "net/minecraft/entity/player/ClientPlayerEntity.hpp"
 namespace net::minecraft::client::gui::screen {
-namespace {
-using net::minecraft::client::render::RenderSystem;
-} // namespace
+namespace core = net::minecraft::client::render::core;
 void DeathScreen::init() {
  buttons_.clear();
  addCenteredActionButton(layout::deathScreenBtnY(height(), 0), "Respawn", [this] {
@@ -25,18 +26,20 @@ void DeathScreen::init() {
  }
 }
 void DeathScreen::render(int mouseX, int mouseY, float tickDelta) {
- fillGradient(0, 0, width_, height_, 0x60500000U, 0xA0600000U);
+ {
+  const render::RenderPassScope passScope(render::RenderType::gui());
+  draw::verticalGradientQuad(render::INSTANCE, 0, 0, width_, height_, 0x500000, 0x60, 0x600000, 0xA0);
+ }
  if(textRenderer() != nullptr) {
-  RenderSystem::pushMatrix();
-  RenderSystem::scale(2.0f, 2.0f, 2.0f);
-  drawCenteredTextWithShadow(*textRenderer(), "Game over!", width_ / 2 / 2, 30, 0xFFFFFF);
-  RenderSystem::popMatrix();
+  core::modelViewStack().push();
+  core::modelViewStack().scale(2.0f, 2.0f, 2.0f);
+  textRenderer()->drawCenteredWithShadow("Game over!", width_ / 2 / 2, 30, 0xFFFFFF);
+  core::modelViewStack().pop();
   if(minecraft() != nullptr && minecraft()->player != nullptr) {
-   drawCenteredTextWithShadow(*textRenderer(),
-                              "Score: &e" + std::to_string(minecraft()->player->getScore()),
-                              width_ / 2,
-                              100,
-                              0xFFFFFF);
+   textRenderer()->drawCenteredWithShadow("Score: &e" + std::to_string(minecraft()->player->getScore()),
+                                          width_ / 2,
+                                          100,
+                                          0xFFFFFF);
   }
  }
  Screen::render(mouseX, mouseY, tickDelta);

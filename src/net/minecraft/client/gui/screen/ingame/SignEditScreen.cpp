@@ -9,11 +9,11 @@ void SignEditScreen::init() {
 void SignEditScreen::render(int mouseX, int mouseY, float tickDelta) {
  renderBackground();
  if(textRenderer() != nullptr) {
-  drawCenteredTextWithShadow(*textRenderer(), "Edit sign message", width() / 2, 40, 0xFFFFFF);
+  textRenderer()->drawCenteredWithShadow("Edit sign message", width() / 2, 40, 0xFFFFFF);
   for(int i = 0; i < 4; ++i) {
    const int color = (i == currentLine) ? 0xFFFF00 : 0xFFFFFF;
-   drawCenteredTextWithShadow(
-       *textRenderer(), text[static_cast<std::size_t>(i)], width() / 2, 70 + i * 12, color);
+   textRenderer()->drawCenteredWithShadow(
+       text[static_cast<std::size_t>(i)], width() / 2, 70 + i * 12, color);
   }
  }
  Screen::render(mouseX, mouseY, tickDelta);

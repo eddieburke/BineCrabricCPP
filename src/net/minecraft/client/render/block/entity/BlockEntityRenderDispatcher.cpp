@@ -1,6 +1,8 @@
 #include "net/minecraft/client/render/block/entity/BlockEntityRenderDispatcher.hpp"
-#include "net/minecraft/client/render/RenderSystem.hpp"
+#include "net/minecraft/client/render/RenderCore.hpp"
 #include "net/minecraft/client/render/RenderType.hpp"
+#include "net/minecraft/client/render/Tessellator.hpp"
+#include "net/minecraft/block/Block.hpp"
 namespace net::minecraft::client::render::block::entity {
 BlockEntityRenderDispatcher& BlockEntityRenderDispatcher::instance() {
  static BlockEntityRenderDispatcher dispatcher;
@@ -38,10 +40,22 @@ void BlockEntityRenderDispatcher::prepare(net::minecraft::World* worldIn,
 void BlockEntityRenderDispatcher::render(const net::minecraft::block::entity::BlockEntity& blockEntity,
                                          float tickDelta) {
  if(blockEntity.distanceFrom(cameraX, cameraY, cameraZ) < 4096.0) {
-  const float brightness = world->getLightBrightness(blockEntity.x, blockEntity.y, blockEntity.z);
-  render::RenderSystem::color3f(brightness, brightness, brightness);
+  // MCP TileEntityRenderer.renderTileEntity: glColor3f(getLightBrightness(x,y,z)).
+  const float brightness =
+      world != nullptr ? world->getLightBrightness(blockEntity.x, blockEntity.y, blockEntity.z) : 1.0f;
+  Tessellator::INSTANCE.light(15, 15);
+  render::core::setConstColor(brightness, brightness, brightness, 1.0f);
+  int blockEntityShaderId = 0;
+  if(world != nullptr) {
+   const int blockId = world->getBlockId(blockEntity.x, blockEntity.y, blockEntity.z);
+   if(blockId > 0 && blockId < Block::BLOCK_COUNT && Block::BLOCKS[static_cast<std::size_t>(blockId)] != nullptr) {
+    Block* block = Block::BLOCKS[static_cast<std::size_t>(blockId)];
+    blockEntityShaderId = resolveShaderObjectId("block", block->getTranslationKey(), blockId);
+   }
+  }
+  const render::core::BlockEntityIdScope blockEntityIdScope(blockEntityShaderId);
   {
-   const RenderPassScope passScope(RenderType::entityCutout());
+   const RenderPassScope passScope(RenderType::block());
    render(blockEntity,
           static_cast<double>(blockEntity.x) - offsetX,
           static_cast<double>(blockEntity.y) - offsetY,

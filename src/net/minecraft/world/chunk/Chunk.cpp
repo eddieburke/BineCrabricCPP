@@ -121,19 +121,19 @@ void Chunk::relightSkylightGaps() {
  }
 }
 void Chunk::populateBlockLight() {
-  if(world == nullptr || world->isRemote()) {
-   return;
-  }
-  if(!blockLight.isAllZero()) {
-   return;
-  }
-  const int blockX = this->x * 16;
-  const int blockZ = this->z * 16;
-  world->queueLightUpdate(LightType::Block, blockX, 0, blockZ, blockX + 15, height - 1, blockZ + 15);
-  dirty = true;
+ if(world == nullptr || world->isRemote()) {
+  return;
+ }
+ if(!blockLight.isAllZero()) {
+  return;
+ }
+ const int blockX = this->x * 16;
+ const int blockZ = this->z * 16;
+ world->queueLightUpdate(LightType::Block, blockX, 0, blockZ, blockX + 15, height - 1, blockZ + 15);
+ dirty = true;
 }
 void Chunk::populateHeightMap(bool fixCrossChunkGaps) {
- assert(registry::Registry::isBootstrapped() && "Chunk: call initializeBlocks() before populateHeightMap");
+ assert(registry::Registry::isBootstrapped() && "Chunk: call Registry::bootstrap() before populateHeightMap");
  int minHeight = 127;
  const bool skipSkyLight = world != nullptr && world->dimension != nullptr && world->dimension->hasCeiling;
  for(int localX = 0; localX < 16; ++localX) {

@@ -4,22 +4,28 @@
 #include <cstdint>
 #include <cstdio>
 #include "net/minecraft/client/Minecraft.hpp"
-#include "net/minecraft/client/gl/EnginePipeline.hpp"
+#include "net/minecraft/client/render/RenderCore.hpp"
 #include "net/minecraft/client/gl/GLCore.hpp"
 #include "net/minecraft/client/render/QuadIndexBuffer.hpp"
 #include "net/minecraft/client/render/Tessellator.hpp"
+#include "net/minecraft/util/math/Matrix4f.hpp"
 namespace net::minecraft::client::render::chunk {
+namespace math = net::minecraft::util::math;
 namespace {
 constexpr int kStride = static_cast<int>(sizeof(TessellatorVertex));
 constexpr int kSplitSlack = 64;
 constexpr std::size_t kInitialVertices = 4096;
 constexpr unsigned kArrayBuffer = 0x8892;
 constexpr unsigned kDynamicDraw = 0x88E8;
+bool sameChunkOffset(const ChunkRegionBuffer::DrawRange& a, const ChunkRegionBuffer::DrawRange& b) noexcept {
+ return a.chunkOffset[0] == b.chunkOffset[0] && a.chunkOffset[1] == b.chunkOffset[1] &&
+        a.chunkOffset[2] == b.chunkOffset[2];
+}
 } // namespace
 ChunkRegionBuffer::~ChunkRegionBuffer() {
  if(handle_ != 0) {
   gl::GLCore::deleteBuffers(1, &handle_);
-  gl::engine_pipeline::invalidateAttribCache();
+  render::core::invalidateAttribCache();
   handle_ = 0;
  }
 }
@@ -123,26 +129,27 @@ void ChunkRegionBuffer::release(Slot& slot) noexcept {
 }
 void ChunkRegionBuffer::beginFrame() noexcept {
  visible_.clear();
- merged_.clear();
 }
-void ChunkRegionBuffer::addVisible(const Slot& slot) {
+void ChunkRegionBuffer::addVisible(const Slot& slot, float chunkOffsetX, float chunkOffsetY, float chunkOffsetZ) {
  if(slot.count <= 0) {
   return;
  }
- visible_.push_back(DrawRange{slot.offset, slot.count});
+ DrawRange range{};
+ range.first = slot.offset;
+ range.count = slot.count;
+ range.chunkOffset[0] = chunkOffsetX;
+ range.chunkOffset[1] = chunkOffsetY;
+ range.chunkOffset[2] = chunkOffsetZ;
+ visible_.push_back(range);
 }
-// Sorts the frame's visible ranges by buffer offset and coalesces any that are
-// exactly adjacent into one. Sections are allocated in contiguous runs (see
-// allocate()/release()), so neighbouring sections frequently share a run and a
-// few hundred draw calls collapse into a few dozen.
-//
-// This is arithmetic only and cannot change the rendered result: the shared quad
-// index buffer is a positional 0,1,2,0,2,3 repeat over the whole vertex buffer,
-// so the indices for [a, a+n) followed by [a+n, a+n+m) are exactly the indices
-// for [a, a+n+m). Both offsets and counts are whole quads (multiples of 4)
-// because every upload comes from a quad-mode mesh; ranges that are not are
-// left unmerged rather than trusted.
 void ChunkRegionBuffer::buildMergedRanges() {
+ if(visible_.size() == lastVisible_.size() &&
+    std::equal(visible_.begin(), visible_.end(), lastVisible_.begin(), [](const DrawRange& a, const DrawRange& b) {
+     return a.first == b.first && a.count == b.count && sameChunkOffset(a, b);
+    })) {
+  return;
+ }
+ lastVisible_ = visible_;
  merged_.clear();
  if(visible_.empty()) {
   return;
@@ -155,7 +162,7 @@ void ChunkRegionBuffer::buildMergedRanges() {
   DrawRange& tail = merged_.back();
   const DrawRange& next = visible_[i];
   const bool quadAligned = (tail.first % 4 == 0) && (tail.count % 4 == 0) && (next.first % 4 == 0);
-  if(quadAligned && tail.first + tail.count == next.first) {
+  if(quadAligned && sameChunkOffset(tail, next) && tail.first + tail.count == next.first) {
    tail.count += next.count;
    continue;
   }
@@ -167,26 +174,42 @@ int ChunkRegionBuffer::flush() {
   return 0;
  }
  gl::GLCore::bindBuffer(kArrayBuffer, handle_);
-  if(!gl::engine_pipeline::ensureReady()) {
-   return 0;
-  }
- gl::engine_pipeline::bindAndUploadUniforms();
-  if(gl::engine_pipeline::program() == nullptr) {
-   return 0;
-  }
- gl::engine_pipeline::configureAttribs(handle_, 0, kStride, hasTexture_, hasColor_, hasNormals_);
+ if(!render::core::ensureReady()) {
+  return 0;
+ }
+ if(render::core::program() == nullptr) {
+  return 0;
+ }
+ render::core::configureAttribs(handle_, 0, kStride, hasTexture_, hasColor_, hasNormals_);
  if(!render::quad_index::ensure(shadow_.size())) {
   return 0;
  }
  buildMergedRanges();
  gl::GLCore::bindBuffer(0x8893, render::quad_index::handle());
+ int draws = 0;
  for(const DrawRange& range : merged_) {
+  render::core::RenderPass pass;
+  pass.modelView = render::core::currentModelView();
+  pass.projection = render::core::currentProjection();
+  pass.fog = render::core::fog();
+  pass.hasTexture = hasTexture_;
+  pass.hasColor = hasColor_;
+  pass.hasNormals = hasNormals_;
+  pass.sectionLocal = true;
+  pass.chunkOffset[0] = range.chunkOffset[0];
+  pass.chunkOffset[1] = range.chunkOffset[1];
+  pass.chunkOffset[2] = range.chunkOffset[2];
+  if(!hasTexture_) {
+   render::core::bindWhiteDiffuse();
+  }
+  render::core::bindAndUploadUniforms(pass);
   const int indexCount = (range.count / 4) * 6;
   const std::size_t indexByteOffset = (static_cast<std::size_t>(range.first) / 4) * 6 * sizeof(std::uint32_t);
   ::glDrawElements(0x0004, indexCount, 0x1405, reinterpret_cast<const void*>(indexByteOffset));
+  ++draws;
  }
  frameVisibleRanges += static_cast<int>(visible_.size());
- frameDrawCalls += static_cast<int>(merged_.size());
- return static_cast<int>(merged_.size());
+ frameDrawCalls += draws;
+ return draws;
 }
 } // namespace net::minecraft::client::render::chunk

@@ -1,13 +1,5 @@
--- Rendering Utilities
--- Efficient batch rendering and debug visualization
-
 local render = {}
 local core = require("lib.core.init")
-
---------------------------------------------------------------------------------
--- BATCH RENDERER
--- Minimizes draw calls by batching similar objects
---------------------------------------------------------------------------------
 
 render.BatchRenderer = {}
 render.BatchRenderer.__index = render.BatchRenderer
@@ -131,11 +123,6 @@ function render.BatchRenderer:flush()
     
     self:begin()
 end
-
---------------------------------------------------------------------------------
--- DEBUG RENDERER
--- Visualization for physics debugging
---------------------------------------------------------------------------------
 
 render.DebugRenderer = {}
 render.DebugRenderer.__index = render.DebugRenderer
@@ -314,11 +301,6 @@ function render.DebugRenderer:clear()
     self.boxes = {}
     self.points = {}
 end
-
---------------------------------------------------------------------------------
--- PARTICLE SYSTEM
--- Efficient particle rendering with pooling
---------------------------------------------------------------------------------
 
 render.ParticleSystem = {}
 render.ParticleSystem.__index = render.ParticleSystem

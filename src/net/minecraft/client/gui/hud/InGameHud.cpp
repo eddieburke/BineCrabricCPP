@@ -10,7 +10,8 @@
 #include "net/minecraft/client/gui/Draw2D.hpp"
 #include "net/minecraft/client/option/GameOptions.hpp"
 #include "net/minecraft/client/render/GameRenderer.hpp"
-#include "net/minecraft/client/render/RenderSystem.hpp"
+#include "net/minecraft/client/render/GuiProjection.hpp"
+#include "net/minecraft/client/render/RenderCore.hpp"
 #include "net/minecraft/client/render/RenderType.hpp"
 #include "net/minecraft/client/render/Tessellator.hpp"
 #include "net/minecraft/client/render/item/ItemRenderer.hpp"
@@ -23,105 +24,10 @@
 #include "net/minecraft/mod/runtime/LuaDirectHooks.hpp"
 #include "net/minecraft/util/math/MathHelper.hpp"
 namespace net::minecraft::client::gui::hud {
+namespace core = net::minecraft::client::render::core;
 namespace {
-using net::minecraft::client::render::RenderSystem;
 constexpr int kColorWhite = 0xFFFFFF;
 constexpr int kColorLightGray = 0xE0E0E0;
-class MatrixScope {
- public:
- MatrixScope() {
-  RenderSystem::pushMatrix();
- }
- ~MatrixScope() {
-  RenderSystem::popMatrix();
- }
- MatrixScope(const MatrixScope&) = delete;
- MatrixScope& operator=(const MatrixScope&) = delete;
-};
-class DebugHudScope {
- public:
- DebugHudScope() : saved_(RenderSystem::getShadow()) {
-  RenderSystem::enableTexture();
- }
- ~DebugHudScope() {
-  RenderSystem::setShadow(saved_);
- }
- DebugHudScope(const DebugHudScope&) = delete;
- DebugHudScope& operator=(const DebugHudScope&) = delete;
-
- private:
- RenderSystem::StateShadow saved_;
-};
-class HudFadeTextScope {
- public:
- HudFadeTextScope() : saved_(RenderSystem::getShadow()) {
-  RenderSystem::blendAlpha();
- }
- ~HudFadeTextScope() {
-  RenderSystem::setShadow(saved_);
- }
- HudFadeTextScope(const HudFadeTextScope&) = delete;
- HudFadeTextScope& operator=(const HudFadeTextScope&) = delete;
-
- private:
- RenderSystem::StateShadow saved_;
-};
-class TextureOffScope {
- public:
- TextureOffScope() : saved_(RenderSystem::getShadow()) {
-  RenderSystem::disableTexture();
- }
- ~TextureOffScope() {
-  RenderSystem::setShadow(saved_);
- }
- TextureOffScope(const TextureOffScope&) = delete;
- TextureOffScope& operator=(const TextureOffScope&) = delete;
-
- private:
- RenderSystem::StateShadow saved_;
-};
-class HudCrosshairBlendScope {
- public:
- HudCrosshairBlendScope() : saved_(RenderSystem::getShadow()) {
-  RenderSystem::blendMultiply();
- }
- ~HudCrosshairBlendScope() {
-  RenderSystem::setShadow(saved_);
- }
- HudCrosshairBlendScope(const HudCrosshairBlendScope&) = delete;
- HudCrosshairBlendScope& operator=(const HudCrosshairBlendScope&) = delete;
-
- private:
- RenderSystem::StateShadow saved_;
-};
-class HudPassScope {
- public:
- HudPassScope() : saved_(RenderSystem::getShadow()) {
-  RenderSystem::blendAlpha();
- }
- ~HudPassScope() {
-  RenderSystem::setShadow(saved_);
- }
- HudPassScope(const HudPassScope&) = delete;
- HudPassScope& operator=(const HudPassScope&) = delete;
-
- private:
- RenderSystem::StateShadow saved_;
-};
-class HudSleepOverlayScope {
- public:
- HudSleepOverlayScope() : saved_(RenderSystem::getShadow()) {
-  RenderSystem::disableDepthTest();
- }
- ~HudSleepOverlayScope() {
-  RenderSystem::setShadow(saved_);
- }
- HudSleepOverlayScope(const HudSleepOverlayScope&) = delete;
- HudSleepOverlayScope& operator=(const HudSleepOverlayScope&) = delete;
-
- private:
- RenderSystem::StateShadow saved_;
-};
 int hsbToRgb(float hue, float saturation, float brightness) {
  hue = std::fmod(hue, 1.0f);
  if(hue < 0.0f) {
@@ -228,15 +134,15 @@ void InGameHud::renderHotbarItem(int slot, int x, int y, float tickDelta) {
  static render::item::ItemRenderer itemRenderer;
  const float bobTime = static_cast<float>(stack.bobbingAnimationTime) - tickDelta;
  if(bobTime > 0.0f) {
-  RenderSystem::pushMatrix();
+  core::modelViewStack().push();
   const float scale = 1.0f + bobTime / 5.0f;
-  RenderSystem::translate(static_cast<float>(x + 8), static_cast<float>(y + 12), 0.0f);
-  RenderSystem::scale(1.0f / scale, (scale + 1.0f) / 2.0f, 1.0f);
-  RenderSystem::translate(static_cast<float>(-(x + 8)), static_cast<float>(-(y + 12)), 0.0f);
+  core::modelViewStack().translate(static_cast<float>(x + 8), static_cast<float>(y + 12), 0.0f);
+  core::modelViewStack().scale(1.0f / scale, (scale + 1.0f) / 2.0f, 1.0f);
+  core::modelViewStack().translate(static_cast<float>(-(x + 8)), static_cast<float>(-(y + 12)), 0.0f);
  }
  itemRenderer.renderGuiItem(*minecraft->textRenderer, minecraft->textureManager, stack, x, y);
  if(bobTime > 0.0f) {
-  RenderSystem::popMatrix();
+  core::modelViewStack().pop();
  }
  itemRenderer.renderGuiItemDecoration(*minecraft->textRenderer, minecraft->textureManager, stack, x, y);
 }
@@ -246,19 +152,19 @@ void InGameHud::renderVignette(float brightness, int width, int height) {
  vignetteDarkness = static_cast<float>(static_cast<double>(vignetteDarkness) +
                                        static_cast<double>(darkness - vignetteDarkness) * 0.01);
  const render::RenderPassScope guiPass(render::RenderType::guiTextured());
- RenderSystem::depthMask(false);
- RenderSystem::blendInverseColor();
- RenderSystem::color4f(vignetteDarkness, vignetteDarkness, vignetteDarkness, 1.0f);
- RenderSystem::bindTexture(0x0DE1, minecraft->textureManager.getTextureId("%blur%/misc/vignette.png"));
+ core::depthMask(false);
+ core::blendInverseColor();
+ core::setConstColor(vignetteDarkness, vignetteDarkness, vignetteDarkness, 1.0f);
+ core::bindTexture(minecraft->textureManager.getTextureId("%blur%/misc/vignette.png"));
  drawFullscreenTexturedQuad(render::Tessellator::INSTANCE, width, height, -90.0f);
- RenderSystem::color4f(1.0f, 1.0f, 1.0f, 1.0f);
+ core::setConstColor(1.0f, 1.0f, 1.0f, 1.0f);
 }
 void InGameHud::renderPumpkinOverlay(int width, int height) {
  const render::RenderPassScope guiPass(render::RenderType::guiTextured());
- RenderSystem::depthMask(false);
- RenderSystem::bindTexture(0x0DE1, minecraft->textureManager.getTextureId("%blur%/misc/pumpkinblur.png"));
+ core::depthMask(false);
+ core::bindTexture(minecraft->textureManager.getTextureId("%blur%/misc/pumpkinblur.png"));
  drawFullscreenTexturedQuad(render::Tessellator::INSTANCE, width, height, -90.0f);
- RenderSystem::color4f(1.0f, 1.0f, 1.0f, 1.0f);
+ core::setConstColor(1.0f, 1.0f, 1.0f, 1.0f);
 }
 void InGameHud::renderPortalOverlay(float strength, int width, int height) {
  float alpha = strength;
@@ -271,9 +177,9 @@ void InGameHud::renderPortalOverlay(float strength, int width, int height) {
   return;
  }
  const render::RenderPassScope guiPass(render::RenderType::guiTextured());
- RenderSystem::depthMask(false);
- RenderSystem::color4f(1.0f, 1.0f, 1.0f, alpha);
- RenderSystem::bindTexture(0x0DE1, minecraft->textureManager.getTextureId("/terrain.png"));
+ core::depthMask(false);
+ core::setConstColor(1.0f, 1.0f, 1.0f, alpha);
+ core::bindTexture(minecraft->textureManager.getTextureId("/terrain.png"));
  const int textureIndex = Block::NETHER_PORTAL->textureId;
  const float uMin = static_cast<float>(textureIndex % 16) / 16.0f;
  const float vMin = static_cast<float>(textureIndex / 16) / 16.0f;
@@ -281,34 +187,33 @@ void InGameHud::renderPortalOverlay(float strength, int width, int height) {
  const float vMax = static_cast<float>(textureIndex / 16 + 1) / 16.0f;
  render::Tessellator& tessellator = render::Tessellator::INSTANCE;
  draw::texturedQuad(tessellator, 0, 0, width, height, uMin, vMin, uMax, vMax, -90.0f);
- RenderSystem::color4f(1.0f, 1.0f, 1.0f, 1.0f);
+ core::setConstColor(1.0f, 1.0f, 1.0f, 1.0f);
 }
 void InGameHud::renderDebugHud(font::TextRenderer& textRenderer,
                                int scaledWidth,
                                const entity::player::PlayerEntity& player) {
- const DebugHudScope debugCaps;
- MatrixScope debugMatrix;
+ core::ScopedModelView debugMatrix;
  if(Minecraft::failedSessionCheckTime().load(std::memory_order_relaxed) > 0) {
-  RenderSystem::translate(0.0f, 32.0f, 0.0f);
+  core::modelViewStack().translate(0.0f, 32.0f, 0.0f);
  }
- drawTextWithShadow(textRenderer, "Minecraft Beta 1.7.3 (" + minecraft->debugText + ")", 2, 2, kColorWhite);
- drawTextWithShadow(textRenderer, minecraft->getRenderChunkDebugInfo(), 2, 12, kColorWhite);
- drawTextWithShadow(textRenderer, minecraft->getRenderEntityDebugInfo(), 2, 22, kColorWhite);
- drawTextWithShadow(textRenderer, minecraft->getWorldDebugInfo(), 2, 32, kColorWhite);
- drawTextWithShadow(textRenderer, minecraft->getChunkSourceDebugInfo(), 2, 42, kColorWhite);
- drawTextWithShadow(textRenderer, "x: " + std::to_string(player.x), 2, 64, kColorLightGray);
- drawTextWithShadow(textRenderer, "y: " + std::to_string(player.y), 2, 72, kColorLightGray);
- drawTextWithShadow(textRenderer, "z: " + std::to_string(player.z), 2, 80, kColorLightGray);
+ textRenderer.drawWithShadow("Minecraft Beta 1.7.3 (" + minecraft->debugText + ")", 2, 2, kColorWhite);
+ textRenderer.drawWithShadow(minecraft->getRenderChunkDebugInfo(), 2, 12, kColorWhite);
+ textRenderer.drawWithShadow(minecraft->getRenderEntityDebugInfo(), 2, 22, kColorWhite);
+ textRenderer.drawWithShadow(minecraft->getWorldDebugInfo(), 2, 32, kColorWhite);
+ textRenderer.drawWithShadow(minecraft->getChunkSourceDebugInfo(), 2, 42, kColorWhite);
+ textRenderer.drawWithShadow("x: " + std::to_string(player.x), 2, 64, kColorLightGray);
+ textRenderer.drawWithShadow("y: " + std::to_string(player.y), 2, 72, kColorLightGray);
+ textRenderer.drawWithShadow("z: " + std::to_string(player.z), 2, 80, kColorLightGray);
  const int facing = (MathHelper::floor(static_cast<double>(player.yaw * 4.0f / 360.0f) + 0.5) & 3);
- drawTextWithShadow(textRenderer, "f: " + std::to_string(facing), 2, 88, kColorLightGray);
+ textRenderer.drawWithShadow("f: " + std::to_string(facing), 2, 88, kColorLightGray);
  const std::vector<std::string> profilerLines = debug::RenderProfiler::instance().lines();
  int profilerY = 2;
  for(const std::string& line : profilerLines) {
-  drawTextWithShadow(
-      textRenderer, line, scaledWidth - textRenderer.getWidth(line) - 2, profilerY, kColorLightGray);
+  textRenderer.drawWithShadow(
+      line, scaledWidth - textRenderer.getWidth(line) - 2, profilerY, kColorLightGray);
   profilerY += 10;
  }
- RenderSystem::color4f(1.0f, 1.0f, 1.0f, 1.0f);
+ core::setConstColor(1.0f, 1.0f, 1.0f, 1.0f);
 }
 void InGameHud::renderRecordOverlay(font::TextRenderer& textRenderer,
                                     float tickDelta,
@@ -322,9 +227,9 @@ void InGameHud::renderRecordOverlay(font::TextRenderer& textRenderer,
  if(alpha <= 0) {
   return;
  }
- MatrixScope recordMatrix;
- RenderSystem::translate(static_cast<float>(scaledWidth) / 2.0f, static_cast<float>(scaledHeight - 48), 0.0f);
- const HudFadeTextScope fadeCaps;
+ core::ScopedModelView recordMatrix;
+ core::modelViewStack().translate(static_cast<float>(scaledWidth) / 2.0f, static_cast<float>(scaledHeight - 48), 0.0f);
+ const core::BlendScope fadeCaps(true);
  int color = kColorWhite;
  if(overlayTinted) {
   color = hsbToRgb(remaining / 50.0f, 0.7f, 0.6f);
@@ -337,10 +242,9 @@ void InGameHud::renderChat(font::TextRenderer& textRenderer, bool chatOpen, int 
  if(chatOpen) {
   maxLines = 20;
  }
- const HudFadeTextScope chatCaps;
- const TextureOffScope chatTextureCaps;
- MatrixScope chatMatrix;
- RenderSystem::translate(0.0f, static_cast<float>(scaledHeight - 48), 0.0f);
+ const core::BlendScope chatCaps(true);
+ core::ScopedModelView chatMatrix;
+ core::modelViewStack().translate(0.0f, static_cast<float>(scaledHeight - 48), 0.0f);
  struct VisibleLine {
   int y = 0;
   int alpha = 0;
@@ -368,17 +272,17 @@ void InGameHud::renderChat(font::TextRenderer& textRenderer, bool chatOpen, int 
  }
  if(!visible.empty()) {
   render::Tessellator& tessellator = render::Tessellator::INSTANCE;
-  const TextureOffScope chatBg;
+  const render::RenderPassScope chatBgPass(render::RenderType::gui());
   tessellator.startQuads();
   for(const VisibleLine& line : visible) {
-   draw::appendColoredQuad(tessellator, 2, line.y - 1, 322, line.y + 8, 0, line.alpha / 2, zOffset);
+   draw::appendColoredQuad(tessellator, 2, line.y - 1, 322, line.y + 8, 0, line.alpha / 2, -90.0f);
   }
   tessellator.draw();
  }
  for(const VisibleLine& line : visible) {
-  drawTextWithShadow(textRenderer, messages[line.index].text, 2, line.y, kColorWhite + (line.alpha << 24));
+  textRenderer.drawWithShadow(messages[line.index].text, 2, line.y, kColorWhite + (line.alpha << 24));
  }
- RenderSystem::disableBlend();
+ core::disableBlend();
 }
 void InGameHud::render(float tickDelta, bool screenOpen, int mouseX, int mouseY) {
  if(minecraft == nullptr || minecraft->player == nullptr || minecraft->textRenderer == nullptr) {
@@ -393,10 +297,16 @@ void InGameHud::render(float tickDelta, bool screenOpen, int mouseX, int mouseY)
  font::TextRenderer& textRenderer = *minecraft->textRenderer;
  PlayerEntity& player = *minecraft->player;
  if(minecraft->gameRenderer != nullptr) {
-  minecraft->gameRenderer->setupHudRender();
+  {
+   const int width = std::max(1, minecraft->displayWidth);
+   const int height = std::max(1, minecraft->displayHeight);
+   render::gui_proj::begin(util::uiScale(minecraft->options, width, height), width, height, false);
+  }
  }
- const HudPassScope hudPass;
- if(Minecraft::isFancyGraphicsEnabled()) {
+ const core::BlendScope hudPass(true);
+ const bool drawVignette = Minecraft::isFancyGraphicsEnabled() &&
+                           (minecraft->gameRenderer == nullptr || minecraft->gameRenderer->frameSettings().vignette);
+ if(drawVignette) {
   renderVignette(player.getBrightnessAtEyes(tickDelta), scaledWidth, scaledHeight);
  }
  const ItemStack& helmet = player.inventory.armor[3];
@@ -409,19 +319,35 @@ void InGameHud::render(float tickDelta, bool screenOpen, int mouseX, int mouseY)
  if(portalStrength > 0.0f) {
   renderPortalOverlay(portalStrength, scaledWidth, scaledHeight);
  }
- RenderSystem::color4f(1.0f, 1.0f, 1.0f, 1.0f);
- RenderSystem::bindTexture(0x0DE1, minecraft->textureManager.getTextureId("/gui/gui.png"));
- zOffset = -90.0f;
+ constexpr float kHudZ = -90.0f;
+ core::setConstColor(1.0f, 1.0f, 1.0f, 1.0f);
+ core::bindTexture(minecraft->textureManager.getTextureId("/gui/gui.png"));
  const std::array<draw::AtlasRect, 2> hotbarSprites{
      draw::AtlasRect{scaledWidth / 2 - 91, scaledHeight - 22, 0, 0, 182, 22},
      draw::AtlasRect{
          scaledWidth / 2 - 91 - 1 + player.inventory.selectedSlot * 20, scaledHeight - 22 - 1, 0, 22, 24, 22},
  };
- drawTextures(hotbarSprites);
- RenderSystem::bindTexture(0x0DE1, minecraft->textureManager.getTextureId("/gui/icons.png"));
  {
-  const HudCrosshairBlendScope crosshairCaps;
-  drawTexture(scaledWidth / 2 - 7, scaledHeight / 2 - 7, 0, 0, 16, 16);
+  const render::RenderPassScope passScope(render::RenderType::guiTextured());
+  const float* c = core::constColor();
+  render::Tessellator& tess = render::Tessellator::INSTANCE;
+  tess.startQuads();
+  tess.color(c[0], c[1], c[2], c[3]);
+  for(const draw::AtlasRect& rect : hotbarSprites) {
+   draw::appendAtlasQuad(tess, rect.x, rect.y, rect.u, rect.v, rect.w, rect.h, kHudZ);
+  }
+  tess.draw();
+ }
+ core::bindTexture(minecraft->textureManager.getTextureId("/gui/icons.png"));
+ {
+  const core::BlendScope crosshairCaps(true, gl::blend::OneMinusDstColor, gl::blend::OneMinusSrcColor);
+  const render::RenderPassScope passScope(render::RenderType::guiTextured());
+  const float* c = core::constColor();
+  render::Tessellator& tess = render::Tessellator::INSTANCE;
+  tess.startQuads();
+  tess.color(c[0], c[1], c[2], c[3]);
+  draw::appendAtlasQuad(tess, scaledWidth / 2 - 7, scaledHeight / 2 - 7, 0, 0, 16, 16, kHudZ);
+  tess.draw();
  }
  bool blinkHearts = player.hearts / 3 % 2 == 1;
  if(player.hearts < 10) {
@@ -479,29 +405,44 @@ void InGameHud::render(float tickDelta, bool screenOpen, int mouseX, int mouseY)
     }
    }
   }
-  drawTextures(statusSprites);
+  {
+   const render::RenderPassScope passScope(render::RenderType::guiTextured());
+   const float* c = core::constColor();
+   render::Tessellator& tess = render::Tessellator::INSTANCE;
+   tess.startQuads();
+   tess.color(c[0], c[1], c[2], c[3]);
+   for(const draw::AtlasRect& rect : statusSprites) {
+    draw::appendAtlasQuad(tess, rect.x, rect.y, rect.u, rect.v, rect.w, rect.h, kHudZ);
+   }
+   tess.draw();
+  }
  }
- RenderSystem::disableBlend();
- {
-  MatrixScope lightingMatrix;
-  RenderSystem::rotate(120.0f, 1.0f, 0.0f, 0.0f);
-  render::RenderSystem::enableLighting();
- }
+ core::disableBlend();
  for(int slot = 0; slot < 9; ++slot) {
   const int x = scaledWidth / 2 - 90 + slot * 20 + 2;
   const int y = scaledHeight - 16 - 3;
   renderHotbarItem(slot, x, y, tickDelta);
  }
- render::RenderSystem::disableLighting();
+ core::setLightingEnabled(false);
  if(player.getSleepTimer() > 0) {
-  const HudSleepOverlayScope sleepCaps;
+  const core::DepthScope sleepCaps(false, core::depthWriteEnabled());
   const int sleepTimer = player.getSleepTimer();
   float fade = static_cast<float>(sleepTimer) / 100.0f;
   if(fade > 1.0f) {
    fade = 1.0f - static_cast<float>(sleepTimer - 100) / 10.0f;
   }
   const int color = (static_cast<int>(220.0f * fade) << 24) | 0x101020;
-  fill(0, 0, scaledWidth, scaledHeight, static_cast<std::uint32_t>(color));
+  {
+   const render::RenderPassScope passScope(render::RenderType::gui());
+   draw::coloredQuad(render::Tessellator::INSTANCE,
+                     scaledWidth,
+                     scaledHeight,
+                     0,
+                     0,
+                     static_cast<int>(static_cast<std::uint32_t>(color) & 0x00FFFFFFU),
+                     static_cast<int>((static_cast<std::uint32_t>(color) >> 24U) & 0xFFU),
+                     kHudZ);
+  }
  }
  if(minecraft->options.debugHud) {
   renderDebugHud(textRenderer, scaledWidth, player);
@@ -510,7 +451,7 @@ void InGameHud::render(float tickDelta, bool screenOpen, int mouseX, int mouseY)
   renderRecordOverlay(textRenderer, tickDelta, scaledWidth, scaledHeight);
  }
  renderChat(textRenderer, screenOpen, scaledWidth, scaledHeight);
- RenderSystem::color4f(1.0f, 1.0f, 1.0f, 1.0f);
+ core::setConstColor(1.0f, 1.0f, 1.0f, 1.0f);
  mod::ScreenRegionEvent hudRegion;
  hudRegion.screenId = mod::screen_ids::kHud;
  hudRegion.region = mod::screen_regions::kHud;
@@ -522,6 +463,6 @@ void InGameHud::render(float tickDelta, bool screenOpen, int mouseX, int mouseY)
  hudRegion.width = scaledWidth;
  hudRegion.height = scaledHeight;
  net::minecraft::mod::runtime::luaHookScreenRegion(hudRegion);
- RenderSystem::color4f(1.0f, 1.0f, 1.0f, 1.0f);
+ core::setConstColor(1.0f, 1.0f, 1.0f, 1.0f);
 }
 } // namespace net::minecraft::client::gui::hud

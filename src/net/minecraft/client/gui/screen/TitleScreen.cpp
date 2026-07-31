@@ -9,18 +9,21 @@
 #include "net/minecraft/client/auth/microsoft/SessionRestore.hpp"
 #include "net/minecraft/client/font/TextRenderer.hpp"
 #include "net/minecraft/client/gl/GlConstants.hpp"
+#include "net/minecraft/client/gui/Draw2D.hpp"
 #include "net/minecraft/client/gui/auth/AccountUiState.hpp"
 #include "net/minecraft/client/gui/layout/ScreenLayout.hpp"
 #include "net/minecraft/client/gui/screen/MultiplayerScreen.hpp"
 #include "net/minecraft/client/gui/screen/mod/ModsScreen.hpp"
 #include "net/minecraft/client/gui/screen/option/OptionsScreen.hpp"
 #include "net/minecraft/client/gui/screen/world/SelectWorldScreen.hpp"
-#include "net/minecraft/client/render/RenderSystem.hpp"
+#include "net/minecraft/client/render/RenderCore.hpp"
+#include "net/minecraft/client/render/RenderType.hpp"
 #include "net/minecraft/client/render/Tessellator.hpp"
 #include "net/minecraft/client/resource/language/I18n.hpp"
 #include "net/minecraft/client/texture/TextureManager.hpp"
 #include "net/minecraft/util/math/MathHelper.hpp"
 namespace net::minecraft::client::gui::screen {
+namespace core = net::minecraft::client::render::core;
 namespace {
 std::vector<std::string> loadSplashes() {
  std::vector<std::string> lines;
@@ -160,14 +163,22 @@ void TitleScreen::render(int mouseX, int mouseY, float tickDelta) {
  const int logoX = width() / 2 - logoWidth / 2;
  constexpr int logoY = 30;
  const int logoTexture = minecraft()->textureManager.getTextureId("/title/mclogo.png");
- render::RenderSystem::bindTexture(logoTexture);
- render::RenderSystem::color4f(1.0f, 1.0f, 1.0f, 1.0f);
- drawTexture(logoX + 0, logoY + 0, 0, 0, 155, 44);
- drawTexture(logoX + 155, logoY + 0, 0, 45, 155, 44);
+ render::core::bindTexture(logoTexture);
+ core::setConstColor(1.0f, 1.0f, 1.0f, 1.0f);
+ {
+  const render::RenderPassScope passScope(render::RenderType::guiTextured());
+  const float* c = core::constColor();
+  render::Tessellator& tess = render::INSTANCE;
+  tess.startQuads();
+  tess.color(c[0], c[1], c[2], c[3]);
+  draw::appendAtlasQuad(tess, logoX + 0, logoY + 0, 0, 0, 155, 44, 0.0f);
+  draw::appendAtlasQuad(tess, logoX + 155, logoY + 0, 0, 45, 155, 44, 0.0f);
+  tess.draw();
+ }
  render::INSTANCE.color(0xFFFFFF);
- render::RenderSystem::pushMatrix();
- render::RenderSystem::translate(static_cast<float>(width() / 2 + 90), 70.0f, 0.0f);
- render::RenderSystem::rotate(-20.0f, 0.0f, 0.0f, 1.0f);
+ render::core::modelViewStack().push();
+ render::core::modelViewStack().translate(static_cast<float>(width() / 2 + 90), 70.0f, 0.0f);
+ render::core::modelViewStack().rotate(-20.0f, 0.0f, 0.0f, 1.0f);
  const std::int64_t nowMillis =
      std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch())
          .count();
@@ -177,17 +188,17 @@ void TitleScreen::render(int mouseX, int mouseY, float tickDelta) {
      0.1f);
  float scale = 1.8f - wave;
  scale = scale * 100.0f / static_cast<float>(textRenderer()->getWidth(splashText_) + 32);
- render::RenderSystem::scale(scale, scale, scale);
- drawCenteredTextWithShadow(*textRenderer(), splashText_, 0, -8, 0xFFFF00);
- render::RenderSystem::popMatrix();
- drawTextWithShadow(*textRenderer(), "Minecraft Beta 1.7.3", 2, 2, 0xFF505050);
+ render::core::modelViewStack().scale(scale, scale, scale);
+ textRenderer()->drawCenteredWithShadow(splashText_, 0, -8, 0xFFFF00);
+ render::core::modelViewStack().pop();
+ textRenderer()->drawWithShadow("Minecraft Beta 1.7.3", 2, 2, 0xFF505050);
  const auth::AccountUiSnapshot accountUi = auth::pollAccountUi(*minecraft());
  if(!accountUi.statusLine.empty()) {
-  drawTextWithShadow(*textRenderer(), accountUi.statusLine, 2, 14, 0xFFAAAAAA);
+  textRenderer()->drawWithShadow(accountUi.statusLine, 2, 14, 0xFFAAAAAA);
  }
  const std::string copyright = "Copyright Mojang AB. Do not distribute.";
- drawTextWithShadow(
-     *textRenderer(), copyright, width() - textRenderer()->getWidth(copyright) - 2, height() - 10, 0xFFFFFFFF);
+ textRenderer()->drawWithShadow(
+     copyright, width() - textRenderer()->getWidth(copyright) - 2, height() - 10, 0xFFFFFFFF);
  Screen::render(mouseX, mouseY, tickDelta);
 }
 void TitleScreen::keyPressed(char character, int keyCode) {

@@ -10,6 +10,10 @@ class RegionChunkStorage : public ChunkStorage {
  explicit RegionChunkStorage(fs::path dir);
  Chunk loadChunk(World* world, int chunkX, int chunkZ) override;
  void saveChunk(World* world, Chunk& chunk) override;
+ void writeSerializedChunk(int chunkX, int chunkZ, const std::vector<std::uint8_t>& data) override;
+ [[nodiscard]] bool supportsAsyncWrites() const noexcept override {
+  return true;
+ }
  void saveEntities(World* world, Chunk& chunk) override;
  void tick() override;
  void flush() override;

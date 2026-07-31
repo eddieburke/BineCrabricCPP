@@ -3,7 +3,6 @@
 #include <cmath>
 #include "net/minecraft/entity/player/PlayerEntity.hpp"
 #include "net/minecraft/nbt/NbtList.hpp"
-
 namespace net::minecraft::world::storage {
 namespace {
 [[nodiscard]] bool isDefaultSpawnPosition(const NbtCompound& playerNbt) {
@@ -43,14 +42,14 @@ bool hasSavedPosition(const NbtCompound& playerNbt) {
  return !isDefaultSpawnPosition(playerNbt);
 }
 NbtCompound applyPlayerSaveSafeguards(NbtCompound proposed, const NbtCompound& previous) {
-  if(countInventoryStacks(proposed) == 0 && countInventoryStacks(previous) > 0) {
-   proposed.put("Inventory", previous.getList("Inventory"));
+ if(countInventoryStacks(proposed) == 0 && countInventoryStacks(previous) > 0) {
+  proposed.put("Inventory", previous.getList("Inventory"));
   if(previous.contains("SelectedItemSlot")) {
    proposed.putInt("SelectedItemSlot", previous.getInt("SelectedItemSlot"));
   }
  }
-  if(isDefaultSpawnPosition(proposed) && hasSavedPosition(previous)) {
-   proposed.put("Pos", previous.getList("Pos"));
+ if(isDefaultSpawnPosition(proposed) && hasSavedPosition(previous)) {
+  proposed.put("Pos", previous.getList("Pos"));
   if(previous.contains("Rotation")) {
    proposed.put("Rotation", previous.getList("Rotation"));
   }

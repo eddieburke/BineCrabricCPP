@@ -10,7 +10,7 @@ bool RailBlockRenderer::render(net::minecraft::block::RailBlock& rail, int x, in
  if(rail.alwaysStraight) {
   meta &= 7;
  }
- float brightness = rail.getLuminance(ctx_.blockView, x, y, z);
+ float brightness = 1.0f; // absolute light now comes from the lightmap
  tessellator.color(brightness, brightness, brightness);
  const net::minecraft::block::TerrainAtlasUv uv = net::minecraft::block::Block::terrainTileUv(tex);
  const double uMin = uv.uMin;

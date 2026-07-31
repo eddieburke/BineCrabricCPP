@@ -36,7 +36,7 @@ std::array<OptionSpec, 4> kSpecs{{
                  46,
                  ApplyFlags::ApplyToWorld,
                  cycleAutoSaveTicks,
-                 d::loadIntMember<&GameOptions::autoSaveTicks>,
+                 d::loadClampedIntMember<&GameOptions::autoSaveTicks, 40>,
                  d::saveIntMember<&GameOptions::autoSaveTicks>),
     d::makeToggle("fastDebugInfo",
                   47,
@@ -90,7 +90,7 @@ void WorldSettingsScreen::init() {
 void WorldSettingsScreen::render(int mouseX, int mouseY, float tickDelta) {
  renderBackground();
  if(textRenderer() != nullptr) {
-  drawCenteredTextWithShadow(*textRenderer(), title_, width() / 2, 20, 0xFFFFFF);
+  textRenderer()->drawCenteredWithShadow(title_, width() / 2, 20, 0xFFFFFF);
  }
  Screen::render(mouseX, mouseY, tickDelta);
 }

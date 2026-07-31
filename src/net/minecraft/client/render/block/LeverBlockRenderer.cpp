@@ -44,7 +44,7 @@ bool LeverBlockRenderer::render(net::minecraft::block::Block& block, int x, int 
  if(!hadTextureOverride) {
   ctx_.textureOverride = -1;
  }
- float brightness = block.getLuminance(ctx_.blockView, x, y, z);
+ float brightness = 1.0f; // absolute light now comes from the lightmap
  if(block.emission() > 0) {
   brightness = 1.0f;
  }

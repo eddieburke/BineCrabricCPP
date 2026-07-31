@@ -429,11 +429,6 @@ class Block {
  [[nodiscard]] bool containsInXZPlane(const std::optional<Vec3d>& v) const;
  [[nodiscard]] bool containsInXYPlane(const std::optional<Vec3d>& v) const;
 };
-// Triggers Registry::bootstrap() (std::call_once; idempotent). Safe from any entry point.
-// Call sites: Minecraft ctor/init (client/Minecraft.cpp), World ctors (world/World.cpp),
-// Chunk/BlockSource/AlphaChunkStorage (world/chunk/**), runtime world probes,
-// tests/block_registry_properties_test.cpp.
-void initializeBlocks();
 // Recomputes registry fields that Java initializes through virtual dispatch
 // from the Block constructor. C++ cannot dispatch to derived overrides during
 // base construction, so call this after all vanilla block instances and chained

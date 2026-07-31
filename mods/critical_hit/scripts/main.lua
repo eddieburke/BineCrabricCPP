@@ -1,8 +1,3 @@
--- ================================================================
--- MOD: critical_hit
--- Standardized structure with separated config
--- ================================================================
-
 local config = require("config")
 
 minecraft.settings.register("Critical Hit", {

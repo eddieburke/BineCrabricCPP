@@ -188,7 +188,7 @@ void OptionsScreen::init() {
 void OptionsScreen::render(int mouseX, int mouseY, float tickDelta) {
  renderBackground();
  if(textRenderer() != nullptr) {
-  drawCenteredTextWithShadow(*textRenderer(), title_, width() / 2, 20, 0xFFFFFF);
+  textRenderer()->drawCenteredWithShadow(title_, width() / 2, 20, 0xFFFFFF);
  }
  Screen::render(mouseX, mouseY, tickDelta);
 }

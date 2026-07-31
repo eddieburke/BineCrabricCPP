@@ -59,9 +59,9 @@ void ConnectScreen::render(int mouseX, int mouseY, float delta) {
   const bool connected = bridge != nullptr;
   const std::string title = connected ? resource::language::I18n::getTranslation("connect.authorizing")
                                       : resource::language::I18n::getTranslation("connect.connecting");
-  drawCenteredTextWithShadow(*textRenderer(), title, width_ / 2, height_ / 2 - 50, 0xFFFFFF);
+  textRenderer()->drawCenteredWithShadow(title, width_ / 2, height_ / 2 - 50, 0xFFFFFF);
   const std::string message = connected && bridge->handler() != nullptr ? bridge->handler()->message : "";
-  drawCenteredTextWithShadow(*textRenderer(), message, width_ / 2, height_ / 2 - 10, 0xFFFFFF);
+  textRenderer()->drawCenteredWithShadow(message, width_ / 2, height_ / 2 - 10, 0xFFFFFF);
  }
  Screen::render(mouseX, mouseY, delta);
 }

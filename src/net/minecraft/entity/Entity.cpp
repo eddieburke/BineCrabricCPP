@@ -553,6 +553,8 @@ bool Entity::isInsideWall() const {
  return false;
 }
 float Entity::getBrightnessAtEyes(float tickDelta) const {
+ // MCP Entity.getEntityBrightness(float): partial-tick arg is unused. Sample the
+ // entity's current pos (same on SP and MP) — mesh lerp uses tickDelta separately.
  (void)tickDelta;
  if(world == nullptr) {
   return minBrightness;

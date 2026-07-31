@@ -27,25 +27,23 @@ void ServerModDownloadScreen::init() {
 void ServerModDownloadScreen::render(int mouseX, int mouseY, float tickDelta) {
  renderBackground();
  if(textRenderer() != nullptr) {
-  drawCenteredTextWithShadow(*textRenderer(), "Server mods required", width() / 2, height() / 2 - 70, 0xFFFFFF);
-  drawCenteredTextWithShadow(*textRenderer(),
-                             "This native C++ server can send missing mods for download.",
-                             width() / 2,
-                             height() / 2 - 52,
-                             0xD0D0D0);
+  textRenderer()->drawCenteredWithShadow("Server mods required", width() / 2, height() / 2 - 70, 0xFFFFFF);
+  textRenderer()->drawCenteredWithShadow("This native C++ server can send missing mods for download.",
+                                         width() / 2,
+                                         height() / 2 - 52,
+                                         0xD0D0D0);
   int y = height() / 2 - 28;
   for(const std::string& modId : missingMods_) {
-   drawCenteredTextWithShadow(*textRenderer(), modId, width() / 2, y, 0xFFFFFF);
+   textRenderer()->drawCenteredWithShadow(modId, width() / 2, y, 0xFFFFFF);
    y += 12;
   }
   if(status_.empty()) {
-   drawCenteredTextWithShadow(*textRenderer(),
-                              "Accept to download into AppData and install before login.",
-                              width() / 2,
-                              height() / 2 + 32,
-                              0xA0A0A0);
+   textRenderer()->drawCenteredWithShadow("Accept to download into AppData and install before login.",
+                                          width() / 2,
+                                          height() / 2 + 32,
+                                          0xA0A0A0);
   } else {
-   drawCenteredTextWithShadow(*textRenderer(), status_, width() / 2, height() / 2 + 32, 0xFFD080);
+   textRenderer()->drawCenteredWithShadow(status_, width() / 2, height() / 2 + 32, 0xFFD080);
   }
  }
  Screen::render(mouseX, mouseY, tickDelta);

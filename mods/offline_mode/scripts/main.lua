@@ -1,8 +1,3 @@
--- ================================================================
--- MOD: offline_mode
--- Standardized structure with separated config
--- ================================================================
-
 local config = require("config")
 
 local MOD_ID = "offline_mode"

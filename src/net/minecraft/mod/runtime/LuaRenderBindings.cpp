@@ -7,10 +7,9 @@
 #include <unordered_map>
 #include <vector>
 #include "net/minecraft/client/Minecraft.hpp"
-#include "net/minecraft/client/gl/EnginePipeline.hpp"
+#include "net/minecraft/client/render/RenderCore.hpp"
 #include "net/minecraft/client/gl/GlConstants.hpp"
 #include "net/minecraft/client/render/FrameRenderCamera.hpp"
-#include "net/minecraft/client/render/RenderSystem.hpp"
 #include "net/minecraft/client/render/RenderType.hpp"
 #include "net/minecraft/client/render/Tessellator.hpp"
 #include "net/minecraft/client/texture/TextureManager.hpp"
@@ -20,10 +19,10 @@
 #include "net/minecraft/registry/TextureRegistry.hpp"
 #endif
 namespace net::minecraft::mod::runtime {
+namespace core = net::minecraft::client::render::core;
 using namespace net::minecraft::mod::lua;
 using namespace net::minecraft::mod::model;
 #ifdef MINECRAFT_NATIVE_EXPORTS
-using net::minecraft::client::render::RenderSystem;
 namespace {
 bool gItemModelRenderOverride = false;
 } // namespace
@@ -49,10 +48,15 @@ int luaRenderDrawQuads(lua_State* state) {
  const std::string texturePath = luaStringField(state, specIndex, "texture", "");
  const int rawTextureId = luaIntField(state, specIndex, "texture_id", -1);
  const bool textured = !texturePath.empty() || rawTextureId > 0;
- const bool blend = luaBoolField(state, specIndex, "blend", true);
- const bool cull = luaBoolField(state, specIndex, "cull", false);
+ const bool blend = luaBoolField(state, specIndex, "blend", false);
+ const bool cull = luaBoolField(state, specIndex, "cull", true);
  const bool depthTest = luaBoolField(state, specIndex, "depth_test", true);
  const bool depthWrite = luaBoolField(state, specIndex, "depth_write", true);
+ const ModDrawLayer layer = parseModDrawLayer(luaStringField(state, specIndex, "layer", ""));
+ const int entityId = luaIntField(state, specIndex, "entity_id", 0);
+ const std::string shaderEntity = luaStringField(state, specIndex, "shader_entity", "");
+ const int resolvedEntityId =
+     !shaderEntity.empty() ? client::render::resolveShaderObjectId("entity", shaderEntity, entityId) : entityId;
  const float defaultR = std::clamp(luaFloatField(state, specIndex, "r", 1.0f), 0.0f, 1.0f);
  const float defaultG = std::clamp(luaFloatField(state, specIndex, "g", 1.0f), 0.0f, 1.0f);
  const float defaultB = std::clamp(luaFloatField(state, specIndex, "b", 1.0f), 0.0f, 1.0f);
@@ -64,8 +68,6 @@ int luaRenderDrawQuads(lua_State* state) {
  const float modelPitch = luaFloatField(state, specIndex, "pitch", 0.0f);
  const float modelRoll = luaFloatField(state, specIndex, "roll", 0.0f);
  const float modelScale = luaFloatField(state, specIndex, "scale", 1.0f);
- // world_space anchors x/y/z (and therefore the vertices) in absolute world
- // coordinates; the active render camera is subtracted here.
  const bool worldSpace = luaBoolField(state, specIndex, "world_space", false);
  if(worldSpace) {
   const client::render::FrameRenderCamera& camera = client::render::RenderCameraState::instance().frame();
@@ -105,7 +107,8 @@ int luaRenderDrawQuads(lua_State* state) {
   api.pushinteger(state, 0);
   return 1;
  }
- const ModLuaDrawScope modCaps(textured, blend, cull, depthTest, depthWrite);
+ const ModLuaDrawScope modCaps(textured, blend, cull, depthTest, depthWrite, layer);
+ const client::render::core::EntityIdScope entityIdScope(resolvedEntityId);
  if(textured) {
   int glTexture = -1;
   if(!texturePath.empty()) {
@@ -118,22 +121,22 @@ int luaRenderDrawQuads(lua_State* state) {
     glTexture = rawTextureId;
    }
   }
-  RenderSystem::bindTexture(glTexture);
+  core::bindTexture(glTexture);
  }
- const RenderSystem::MatrixScope modelScope;
+ const core::ScopedModelView modelScope;
  if(hasTransform) {
-  RenderSystem::translate(static_cast<float>(modelX), static_cast<float>(modelY), static_cast<float>(modelZ));
+  core::modelViewStack().translate(static_cast<float>(modelX), static_cast<float>(modelY), static_cast<float>(modelZ));
   if(modelYaw != 0.0f) {
-   RenderSystem::rotate(modelYaw, 0.0f, 1.0f, 0.0f);
+   core::modelViewStack().rotate(modelYaw, 0.0f, 1.0f, 0.0f);
   }
   if(modelPitch != 0.0f) {
-   RenderSystem::rotate(modelPitch, 1.0f, 0.0f, 0.0f);
+   core::modelViewStack().rotate(modelPitch, 1.0f, 0.0f, 0.0f);
   }
   if(modelRoll != 0.0f) {
-   RenderSystem::rotate(modelRoll, 0.0f, 0.0f, 1.0f);
+   core::modelViewStack().rotate(modelRoll, 0.0f, 0.0f, 1.0f);
   }
   if(modelScale != 1.0f) {
-   RenderSystem::scale(modelScale, modelScale, modelScale);
+   core::modelViewStack().scale(modelScale, modelScale, modelScale);
   }
  }
  client::render::Tessellator& tessellator = client::render::Tessellator::INSTANCE;
@@ -258,8 +261,6 @@ void drawBillboard(client::render::Tessellator& tessellator,
  tessellator.vertex(starX + rdx - udx, starY + rdy - udy, starZ + rdz - udz);
  tessellator.vertex(starX - rdx - udx, starY - rdy - udy, starZ - rdz - udz);
 }
-// Converts a billboard's direction vector to yaw/pitch degrees; shared by the
-// packed and non-packed loops below, which previously duplicated this.
 void directionToYawPitch(float x, float y, float z, float& yawDeg, float& pitchDeg) {
  const float xyLen = std::sqrt(x * x + z * z);
  if(xyLen < 0.0001f && std::abs(y) > 0.9999f) {
@@ -301,9 +302,6 @@ int luaRenderDrawBillboards(lua_State* state) {
   pop(state, 1);
   api.getfield(state, tableIndex, "billboards");
   if(api.type(state, -1) != kLuaTTable) {
-   api.getfield(state, tableIndex, "points");
-  }
-  if(api.type(state, -1) != kLuaTTable) {
    pop(state, 1);
    api.pushinteger(state, 0);
    return 1;
@@ -311,11 +309,9 @@ int luaRenderDrawBillboards(lua_State* state) {
   sourceIndex = api.gettop(state);
   billboardCount = kMaxBillboardsPerBatch;
  }
- // Billboards are untextured, never culled, and always blended; "additive"
- // only swaps the destination factor the shared scope already set up.
  const ModLuaDrawScope modCaps(false, true, false, depthTest, depthWrite);
  if(blendMode == "additive") {
-  RenderSystem::blendCustom(client::gl::blend::SrcAlpha, client::gl::blend::One);
+  core::blendCustom(client::gl::blend::SrcAlpha, client::gl::blend::One);
  }
  client::render::Tessellator& tessellator = client::render::Tessellator::INSTANCE;
  tessellator.startQuads();

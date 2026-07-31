@@ -1,5 +1,6 @@
 #pragma once
 #include "net/minecraft/block/Block.hpp"
+#include "net/minecraft/client/render/TextureResolve.hpp"
 #include "net/minecraft/item/ItemStack.hpp"
 namespace net::minecraft::block {
 class Block;
@@ -14,9 +15,10 @@ namespace ItemModelRenderer {
 [[nodiscard]] net::minecraft::block::Block* blockOf(const ItemStack& stack);
 [[nodiscard]] bool rendersAsBlockModel(const ItemStack& stack);
 [[nodiscard]] bool hasCustomModel(const ItemStack& stack);
-[[nodiscard]] bool usesModTexture(const ItemStack& stack);
+[[nodiscard]] net::minecraft::client::render::AtlasDomain atlasDomain(const ItemStack& stack);
 [[nodiscard]] net::minecraft::block::TerrainAtlasUv spriteUv(const ItemStack& stack);
 [[nodiscard]] const char* spriteAtlasPath(const ItemStack& stack);
 [[nodiscard]] ItemTint tintColor(const ItemStack& stack);
+[[nodiscard]] int shaderId(const ItemStack& stack);
 } // namespace ItemModelRenderer
 } // namespace net::minecraft::client::render::item

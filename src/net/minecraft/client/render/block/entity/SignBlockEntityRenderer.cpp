@@ -2,7 +2,7 @@
 #include "net/minecraft/block/Block.hpp"
 #include "net/minecraft/block/entity/SignBlockEntity.hpp"
 #include "net/minecraft/client/font/TextRenderer.hpp"
-#include "net/minecraft/client/render/RenderSystem.hpp"
+#include "net/minecraft/client/render/RenderCore.hpp"
 #include "net/minecraft/client/render/RenderType.hpp"
 namespace net::minecraft::client::render::block::entity {
 void SignBlockEntityRenderer::render(
@@ -13,13 +13,13 @@ void SignBlockEntityRenderer::render(
   return;
  }
  net::minecraft::block::Block* block = sign->getBlock();
- render::RenderSystem::pushMatrix();
+ render::core::modelViewStack().push();
  const float scale = 0.6666667f;
  if(block == net::minecraft::block::Block::SIGN) {
-  render::RenderSystem::translate(
+  render::core::modelViewStack().translate(
       static_cast<float>(x) + 0.5f, static_cast<float>(y) + 0.75f * scale, static_cast<float>(z) + 0.5f);
   const float yaw = static_cast<float>(sign->getPushedBlockData() * 360) / 16.0f;
-  render::RenderSystem::rotate(-yaw, 0.0f, 1.0f, 0.0f);
+  render::core::modelViewStack().rotate(-yaw, 0.0f, 1.0f, 0.0f);
   model.stick.visible = true;
  } else {
   const int meta = sign->getPushedBlockData();
@@ -31,28 +31,28 @@ void SignBlockEntityRenderer::render(
   } else if(meta == 5) {
    yaw = -90.0f;
   }
-  render::RenderSystem::translate(
+  render::core::modelViewStack().translate(
       static_cast<float>(x) + 0.5f, static_cast<float>(y) + 0.75f * scale, static_cast<float>(z) + 0.5f);
-  render::RenderSystem::rotate(-yaw, 0.0f, 1.0f, 0.0f);
-  render::RenderSystem::translate(0.0f, -0.3125f, -0.4375f);
+  render::core::modelViewStack().rotate(-yaw, 0.0f, 1.0f, 0.0f);
+  render::core::modelViewStack().translate(0.0f, -0.3125f, -0.4375f);
   model.stick.visible = false;
  }
  bindTexture("/item/sign.png");
- render::RenderSystem::pushMatrix();
- render::RenderSystem::scale(scale, -scale, -scale);
+ render::core::modelViewStack().push();
+ render::core::modelViewStack().scale(scale, -scale, -scale);
  model.render();
- render::RenderSystem::popMatrix();
+ render::core::modelViewStack().pop();
  font::TextRenderer* textRenderer = getTextRenderer();
  if(textRenderer == nullptr) {
-  render::RenderSystem::popMatrix();
+  render::core::modelViewStack().pop();
   return;
  }
  const float textScale = 0.016666668f * scale;
- render::RenderSystem::translate(0.0f, 0.5f * scale, 0.07f * scale);
- render::RenderSystem::scale(textScale, -textScale, textScale);
+ render::core::modelViewStack().translate(0.0f, 0.5f * scale, 0.07f * scale);
+ render::core::modelViewStack().scale(textScale, -textScale, textScale);
  render::RenderPassScope passScope(render::RenderType::text());
- render::RenderSystem::enableDepthTest();
- render::RenderSystem::depthMask(false);
+ render::core::enableDepthTest();
+ render::core::depthMask(false);
  const int color = 0;
  for(int i = 0; i < 4; ++i) {
   std::string line = sign->texts[static_cast<std::size_t>(i)];
@@ -62,6 +62,6 @@ void SignBlockEntityRenderer::render(
   textRenderer->draw(
       line, -textRenderer->getWidth(line) / 2, i * 10 - static_cast<int>(sign->texts.size()) * 5, color);
  }
- render::RenderSystem::popMatrix();
+ render::core::modelViewStack().pop();
 }
 } // namespace net::minecraft::client::render::block::entity

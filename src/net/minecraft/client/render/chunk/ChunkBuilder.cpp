@@ -3,11 +3,14 @@
 #include <array>
 #include <unordered_set>
 #include "net/minecraft/block/Block.hpp"
+#include "net/minecraft/client/Minecraft.hpp"
+#include "net/minecraft/client/render/GameRenderer.hpp"
 #include "net/minecraft/client/render/Tessellator.hpp"
 #include "net/minecraft/client/render/block/BlockRenderManager.hpp"
 #include "net/minecraft/client/render/block/entity/BlockEntityRenderDispatcher.hpp"
 #include "net/minecraft/client/render/chunk/ChunkMeshJob.hpp"
 #include "net/minecraft/client/render/chunk/RegionSnapshot.hpp"
+#include "net/minecraft/client/render/shaderpack/ShaderPackManager.hpp"
 #include "net/minecraft/world/World.hpp"
 #include "net/minecraft/world/chunk/Chunk.hpp"
 #include "net/minecraft/world/chunk/ChunkSource.hpp"
@@ -46,9 +49,9 @@ std::uint64_t computeVisibilityBits(const RegionSnapshot& snapshot, int minX, in
  std::array<bool, 4096> opaque{};
  std::array<std::int8_t, 256> opaqueForId{};
  opaqueForId.fill(-1);
-  for(int x = 0; x < 16; ++x) {
-   for(int z = 0; z < 16; ++z) {
-    for(int y = 0; y < 16; ++y) {
+ for(int x = 0; x < 16; ++x) {
+  for(int z = 0; z < 16; ++z) {
+   for(int y = 0; y < 16; ++y) {
     const int blockId = snapshot.getBlockId(minX + x, minY + y, minZ + z);
     bool cellOpaque = false;
     if(blockId > 0) {
@@ -127,7 +130,7 @@ std::uint64_t computeVisibilityBits(const RegionSnapshot& snapshot, int minX, in
 }
 } // namespace
 std::shared_ptr<ChunkMeshJob> ChunkMeshJob::capture(ChunkBuilder& owner,
-                                                    client::option::ResolvedRenderOptions options,
+                                                    client::option::RenderSettings options,
                                                     bool fancyGraphics) {
  net::minecraft::World* world = owner.world;
  if(world == nullptr) {
@@ -176,16 +179,24 @@ std::shared_ptr<ChunkMeshJob> ChunkMeshJob::capture(ChunkBuilder& owner,
    lightLevelToLuminance[static_cast<std::size_t>(level)] = Dimension::luminanceForLightLevel(level);
   }
  }
- return std::shared_ptr<ChunkMeshJob>(new ChunkMeshJob(owner,
-                                                       options,
-                                                       fancyGraphics,
-                                                       std::move(sourceChunks),
-                                                       owner.world->ambientDarkness,
-                                                       lightLevelToLuminance,
-                                                       std::move(biomeSource)));
+ auto job = std::shared_ptr<ChunkMeshJob>(new ChunkMeshJob(owner,
+                                                           options,
+                                                           fancyGraphics,
+                                                           std::move(sourceChunks),
+                                                           owner.world->ambientDarkness,
+                                                           lightLevelToLuminance,
+                                                           std::move(biomeSource)));
+ if(auto* minecraft = net::minecraft::client::Minecraft::INSTANCE;
+    minecraft != nullptr && minecraft->gameRenderer != nullptr &&
+    minecraft->gameRenderer->shaderPacks() != nullptr) {
+  if(const auto* def = minecraft->gameRenderer->shaderPacks()->activeDefinition(); def != nullptr) {
+   job->blockRenderLayers = def->blockRenderLayers;
+  }
+ }
+ return job;
 }
 ChunkMeshJob::ChunkMeshJob(ChunkBuilder& owner,
-                           client::option::ResolvedRenderOptions options,
+                           client::option::RenderSettings options,
                            bool fancyGraphicsIn,
                            std::vector<RegionSnapshot::SourceChunk> sourceChunks,
                            int ambientDarkness,
@@ -199,9 +210,6 @@ ChunkMeshJob::ChunkMeshJob(ChunkBuilder& owner,
       sizeX(owner.sizeX),
       sizeY(owner.sizeY),
       sizeZ(owner.sizeZ),
-      renderX(owner.renderX),
-      renderY(owner.renderY),
-      renderZ(owner.renderZ),
       opts(options),
       fancyGraphics(fancyGraphicsIn),
       sourceChunks_(std::move(sourceChunks)),
@@ -243,10 +251,12 @@ void ChunkMeshJob::releasePins() noexcept {
  pinsReleased_ = true;
 }
 void ChunkBuilder::buildMesh(ChunkMeshJob& job) {
- // The snapshot is captured on the main thread before dispatch (WorldRendererCore
- // enqueueMeshJob) so the memcpy of live chunk blocks/light cannot race main-thread
- // writes. Do NOT capture here on the worker. A null snapshot means a buggy enqueue
- // path: fail so the job reschedules and gets captured on main next frame.
+ // Pins hold the live chunks against eviction. Capture the RegionSnapshot on the
+ // worker so the main thread only pays for pin acquisition; memcpy of block/light
+ // bands is the expensive part and no longer eats the capture budget.
+ if(job.snapshot == nullptr) {
+  job.captureSnapshot();
+ }
  if(job.snapshot == nullptr) {
   job.failed = true;
   return;
@@ -284,9 +294,9 @@ void ChunkBuilder::buildMesh(ChunkMeshJob& job) {
   modMeshes.chunkOffY = -static_cast<double>(job.y);
   modMeshes.chunkOffZ = -static_cast<double>(job.z);
   blockRenderManager.ctx.modMeshes = &modMeshes;
-   for(int blockX = minX; blockX < maxX; ++blockX) {
-    for(int blockZ = minZ; blockZ < maxZ; ++blockZ) {
-     for(int blockY = minY; blockY < maxY; ++blockY) {
+  for(int blockX = minX; blockX < maxX; ++blockX) {
+   for(int blockZ = minZ; blockZ < maxZ; ++blockZ) {
+    for(int blockY = minY; blockY < maxY; ++blockY) {
      const int blockId = snapshot.getBlockId(blockX, blockY, blockZ);
      if(blockId <= 0) {
       continue;
@@ -299,7 +309,13 @@ void ChunkBuilder::buildMesh(ChunkMeshJob& job) {
      if(layer == 0 && Block::BLOCKS_WITH_ENTITY[static_cast<std::size_t>(blockId)]) {
       result.blockEntityPositions.push_back(net::minecraft::Vec3i{blockX, blockY, blockZ});
      }
-     const int blockLayer = block->getRenderLayer();
+     const int blockLayer = [&] {
+      const auto found = job.blockRenderLayers.find(blockId);
+      if(found != job.blockRenderLayers.end()) {
+       return found->second;
+      }
+      return block->getRenderLayer();
+     }();
      if(blockLayer != layer) {
       hasOtherLayer = true;
       continue;
@@ -307,11 +323,9 @@ void ChunkBuilder::buildMesh(ChunkMeshJob& job) {
      if(!beganCompile) {
       beganCompile = true;
       tessellator.startQuads();
-      // Region-space bake folded into the capture translate: vertices land at
-      // renderX-relative coordinates directly, replacing the old post-pass.
-      tessellator.translate(static_cast<double>(job.renderX - job.x),
-                            static_cast<double>(job.renderY - job.y),
-                            static_cast<double>(job.renderZ - job.z));
+      tessellator.translate(static_cast<double>(-job.x),
+                            static_cast<double>(-job.y),
+                            static_cast<double>(-job.z));
      }
      drewGeometry |= blockRenderManager.render(*block, blockX, blockY, blockZ);
     }
@@ -338,7 +352,7 @@ void ChunkBuilder::buildMesh(ChunkMeshJob& job) {
 void ChunkBuilder::uploadMesh(ChunkMeshJob& job) {
  ++chunkUpdates;
  if(region_ == nullptr) {
-  region_ = &regionManager_->regionFor(cameraOffsetX, cameraOffsetY, cameraOffsetZ);
+  region_ = &regionManager_->pool();
  }
  for(int layer = 0; layer < 2; ++layer) {
   const TessellatorMesh& mesh = job.result.layers[static_cast<std::size_t>(layer)];
@@ -394,7 +408,7 @@ void ChunkBuilder::uploadMesh(ChunkMeshJob& job) {
  modLayerMeshes_[1] = std::move(job.result.modLayers[1]);
  for(int layer = 0; layer < 2; ++layer) {
   for(ModChunkMesh& modMesh : modLayerMeshes_[static_cast<std::size_t>(layer)]) {
-   modMesh.mesh.uploadToGpu();
+   (void)modMesh.mesh.uploadToGpu();
   }
  }
  built = true;

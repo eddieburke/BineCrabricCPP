@@ -10,12 +10,16 @@ namespace {
 // (0 disables the shadow).
 class LuaModEntityRenderer : public EntityRenderer {
  public:
- void render(const net::minecraft::Entity& entity, double, double, double, float, float) override {
+ void render(const net::minecraft::Entity& entity, double, double, double, float, float,
+             net::minecraft::util::math::MatrixStack& matrices,
+             const net::minecraft::util::math::Matrix4f& projection) override {
+  beginDraw(matrices, projection);
   shadowRadius = entity.width * 0.5f;
   const auto* modEntity = dynamic_cast<const net::minecraft::mod::lua::LuaModEntity*>(&entity);
   if(modEntity != nullptr && modEntity->data().contains("shadow_radius")) {
    shadowRadius = modEntity->data().getFloat("shadow_radius");
   }
+  endDraw();
  }
 };
 }

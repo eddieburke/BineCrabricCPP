@@ -4,10 +4,11 @@
 #include "net/minecraft/client/Minecraft.hpp"
 #include "net/minecraft/client/gl/GLCore.hpp"
 #include "net/minecraft/client/gl/GlConstants.hpp"
-#include "net/minecraft/client/render/RenderSystem.hpp"
+#include "net/minecraft/client/render/RenderCore.hpp"
 #include "net/minecraft/client/texture/TextureManager.hpp"
 #include "net/minecraft/mod/lua/LuaHostApi.hpp"
 #include "net/minecraft/mod/runtime/LuaBindings.hpp"
+#include "net/minecraft/registry/TextureRegistry.hpp"
 namespace net::minecraft::mod::runtime {
 using namespace net::minecraft::mod::lua;
 namespace {
@@ -19,17 +20,33 @@ int luaTextureBind(lua_State* state) {
  if(!args.integer(1, textureId) || (args.count() >= 2 && !args.integer(2, unit))) {
   return args.fail("minecraft.texture.bind expects (texture_id, unit?)");
  }
- if(textureId < 0 || unit < 0 || unit > 31) {
+ if(textureId <= 0 || unit < 0) {
   return args.fail("minecraft.texture.bind received an invalid texture id or unit");
  }
- client::gl::GLCore::ensureLoaded();
- if(unit != 0 && client::gl::GLCore::activeTexture == nullptr) {
+ if(client::Minecraft::INSTANCE == nullptr) {
   api.pushboolean(state, 0);
   return 1;
  }
- client::render::RenderSystem::activeTexture(client::gl::tex::Texture0 + unit);
- client::render::RenderSystem::bindTexture(textureId);
- client::render::RenderSystem::activeTexture(client::gl::tex::Texture0);
+ const int glId = net::minecraft::registry::TextureRegistry::isCustomTexture(textureId)
+                      ? net::minecraft::registry::TextureRegistry::resolveGlId(
+                            textureId, client::Minecraft::INSTANCE->textureManager)
+                      : textureId;
+ if(glId < 0) {
+  api.pushboolean(state, 0);
+  return 1;
+ }
+ client::gl::GLCore::ensureLoaded();
+ int maxUnits = 0;
+ client::render::core::getIntegerv(client::gl::tex::MaxTextureImageUnits, &maxUnits);
+ if(unit >= maxUnits || (unit != 0 && client::gl::GLCore::activeTexture == nullptr)) {
+  api.pushboolean(state, 0);
+  return 1;
+ }
+ int previousActive = client::gl::tex::Texture0;
+ client::render::core::getIntegerv(client::gl::tex::ActiveTexture, &previousActive);
+ client::render::core::activeTexture(client::gl::tex::Texture0 + unit);
+ client::render::core::bindTexture(glId);
+ client::render::core::activeTexture(previousActive);
  api.pushboolean(state, 1);
  return 1;
 }

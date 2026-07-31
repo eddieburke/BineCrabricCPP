@@ -10,17 +10,15 @@
 #include "net/minecraft/client/gui/widget/ActionButtonWidget.hpp"
 #include "net/minecraft/client/gui/widget/ButtonWidget.hpp"
 #include "net/minecraft/client/input/KeyCodes.hpp"
-#include "net/minecraft/client/render/RenderSystem.hpp"
 #include "net/minecraft/client/resource/language/I18n.hpp"
+#include "net/minecraft/client/gui/Draw2D.hpp"
+#include "net/minecraft/client/render/RenderCore.hpp"
+#include "net/minecraft/client/render/RenderType.hpp"
+#include "net/minecraft/client/render/Tessellator.hpp"
 #include "net/minecraft/mod/ModSettingsRegistry.hpp"
 #include "net/minecraft/mod/ScreenUi.hpp"
 namespace net::minecraft::client::gui::screen::option {
 namespace {
-using net::minecraft::client::render::RenderSystem;
-constexpr int kListTop = 42;
-constexpr int kSectionLabelHeight = 14;
-constexpr int kSectionGap = 8;
-constexpr int kScrollStep = 24;
 constexpr int kButtonWidth = 150;
 constexpr int kButtonHeight = 20;
 constexpr int kDoneYInset = 28;
@@ -44,10 +42,18 @@ class ModSliderWidget : public widget::ButtonWidget {
   if(dragging_) {
    updateValue(mouseX);
   }
-  RenderSystem::color4f(1.0f, 1.0f, 1.0f, 1.0f);
+  render::core::setConstColor(1.0f, 1.0f, 1.0f, 1.0f);
   const int knobX = x + static_cast<int>(value_ * static_cast<float>(width - 8));
-  drawTexture(knobX, y, 0, 66, 4, 20);
-  drawTexture(knobX + 4, y, 196, 66, 4, 20);
+  {
+   const render::RenderPassScope passScope(render::RenderType::guiTextured());
+   const float* c = render::core::constColor();
+   render::Tessellator& tess = render::INSTANCE;
+   tess.startQuads();
+   tess.color(c[0], c[1], c[2], c[3]);
+   draw::appendAtlasQuad(tess, knobX, y, 0, 66, 4, 20, 0.0f);
+   draw::appendAtlasQuad(tess, knobX + 4, y, 196, 66, 4, 20, 0.0f);
+   tess.draw();
+  }
  }
  [[nodiscard]] bool isMouseOver(int mouseX, int mouseY) const override {
   return ButtonWidget::isMouseOver(mouseX, mouseY);
@@ -139,7 +145,6 @@ ModSettingsScreen::ParentFactory ModSettingsScreen::modPagesFactory() const {
 }
 void ModSettingsScreen::init() {
  selectedKeybindIndex_ = -1;
- scrollOffset_ = 0;
  rebuildLayout();
 }
 void ModSettingsScreen::rebuildLayout() {
@@ -147,17 +152,17 @@ void ModSettingsScreen::rebuildLayout() {
  buttons_.clear();
  settingWidgets_.clear();
  keybindWidgets_.clear();
- sectionHeaders_.clear();
- listTop_ = kListTop;
+ scroll_.clear();
  auto& registry = net::minecraft::mod::ModSettingsRegistry::instance();
  const auto allSettings = registry.getAllSettings();
  const auto allKeybinds = registry.getAllKeybinds();
  const auto& modNames = registry.getModNames();
+ const int listTop = layout::OptionsListScroll::kModListTop;
  int contentY = 0;
  for(const auto& [modId, settings] : allSettings) {
   const auto nameIt = modNames.find(modId);
-  sectionHeaders_.push_back({nameIt == modNames.end() ? modId : nameIt->second, contentY});
-  contentY += kSectionLabelHeight;
+  scroll_.addHeader(nameIt == modNames.end() ? modId : nameIt->second, contentY);
+  contentY += layout::OptionsListScroll::kSectionLabelHeight;
   for(std::size_t i = 0; i < settings.size(); ++i) {
    auto* setting = settings[i];
    const int row = static_cast<int>(i / 2);
@@ -169,7 +174,7 @@ void ModSettingsScreen::rebuildLayout() {
     const std::string key = setting->key;
     addButton<ModSliderWidget>(
         x,
-        listTop_ + widgetY,
+        listTop + widgetY,
         kButtonWidth,
         kButtonHeight,
         formatSliderLabel(*setting),
@@ -185,7 +190,7 @@ void ModSettingsScreen::rebuildLayout() {
         });
    } else if(setting->kind == net::minecraft::mod::ModSettingDef::Options) {
     addActionButton(x,
-                    listTop_ + widgetY,
+                    listTop + widgetY,
                     kButtonWidth,
                     kButtonHeight,
                     formatOptionsLabel(*setting),
@@ -205,7 +210,7 @@ void ModSettingsScreen::rebuildLayout() {
                     });
    } else {
     addActionButton(x,
-                    listTop_ + widgetY,
+                    listTop + widgetY,
                     kButtonWidth,
                     kButtonHeight,
                     formatToggleLabel(*setting),
@@ -224,13 +229,15 @@ void ModSettingsScreen::rebuildLayout() {
                      settingsRegistry.save();
                     });
    }
-   settingWidgets_.push_back({modId, setting->key, widgetIndex, widgetY});
+   scroll_.addEntry(widgetIndex, widgetY);
+   settingWidgets_.push_back({modId, setting->key, widgetIndex});
   }
-  contentY += static_cast<int>((settings.size() + 1) / 2) * layout::kRowSpacing + kSectionGap;
+  contentY += static_cast<int>((settings.size() + 1) / 2) * layout::kRowSpacing +
+              layout::OptionsListScroll::kSectionGap;
  }
  if(!allKeybinds.empty()) {
-  sectionHeaders_.push_back({"Controls", contentY});
-  contentY += kSectionLabelHeight;
+  scroll_.addHeader("Controls", contentY);
+  contentY += layout::OptionsListScroll::kSectionLabelHeight;
   for(std::size_t i = 0; i < allKeybinds.size(); ++i) {
    auto* keybind = allKeybinds[i];
    const int row = static_cast<int>(i / 2);
@@ -239,7 +246,7 @@ void ModSettingsScreen::rebuildLayout() {
    const int widgetIndex = static_cast<int>(buttons_.size());
    const int keybindIndex = static_cast<int>(keybindWidgets_.size());
    addActionButton(layout::optionsGridX(width(), column),
-                   listTop_ + widgetY,
+                   listTop + widgetY,
                    kButtonWidth,
                    kButtonHeight,
                    formatKeybindLabel(*keybind, selectedKeybindIndex_ == keybindIndex),
@@ -258,17 +265,14 @@ void ModSettingsScreen::rebuildLayout() {
                      }
                     }
                    });
-   keybindWidgets_.push_back({keybind->id, widgetIndex, widgetY});
+   scroll_.addEntry(widgetIndex, widgetY);
+   keybindWidgets_.push_back({keybind->id, widgetIndex});
   }
-  contentY += static_cast<int>((allKeybinds.size() + 1) / 2) * layout::kRowSpacing + kSectionGap;
+  contentY += static_cast<int>((allKeybinds.size() + 1) / 2) * layout::kRowSpacing +
+              layout::OptionsListScroll::kSectionGap;
  }
- contentHeight_ = std::max(0, contentY - kSectionGap);
+ const int contentHeight = std::max(0, contentY - layout::OptionsListScroll::kSectionGap);
  const int doneY = height() - kDoneYInset;
- // Offer mods the footer seam. Stacked buttons grow downward from the Done row, then the
- // whole injected block is translated as a unit so it ends just above Done. Moving the
- // widgets that were actually created -- rather than harvesting their text/callback and
- // rebuilding copies -- keeps explicitly positioned buttons where the mod put them and
- // keeps the widget pointers captured by mod label callbacks valid.
  const std::size_t firstInjectedWidget = buttons_.size();
  int injectedY = doneY;
  publishScreenUi(net::minecraft::mod::screen_regions::kFooter, &injectedY);
@@ -284,7 +288,7 @@ void ModSettingsScreen::rebuildLayout() {
    bottom = std::max(bottom, buttons_[i]->y + buttons_[i]->height);
   }
   if(top <= bottom) {
-   const int shift = (doneY - kSectionGap) - bottom;
+   const int shift = (doneY - layout::OptionsListScroll::kSectionGap) - bottom;
    for(std::size_t i = firstInjectedWidget; i < buttons_.size(); ++i) {
     if(buttons_[i] != nullptr) {
      buttons_[i]->y += shift;
@@ -293,8 +297,8 @@ void ModSettingsScreen::rebuildLayout() {
    injectedTop = top + shift;
   }
  }
- listTop_ = kListTop;
- listBottom_ = std::max(listTop_, injectedTop - kSectionGap);
+ scroll_.setViewport(listTop, std::max(listTop, injectedTop - layout::OptionsListScroll::kSectionGap));
+ scroll_.setContentHeight(contentHeight);
  addActionButton(layout::centerBtnX(width()),
                  doneY,
                  kButtonWidth,
@@ -309,83 +313,53 @@ void ModSettingsScreen::rebuildLayout() {
                    closeScreen();
                   }
                  });
- maxScroll_ = std::max(0, contentHeight_ - (listBottom_ - listTop_));
- scrollOffset_ = std::clamp(scrollOffset_, 0, maxScroll_);
  updateListLayout();
 }
 void ModSettingsScreen::updateListLayout() {
- for(const auto& settingWidget : settingWidgets_) {
-  if(settingWidget.widgetIndex < 0 || settingWidget.widgetIndex >= static_cast<int>(buttons_.size())) {
-   continue;
-  }
-  auto& button = buttons_[static_cast<std::size_t>(settingWidget.widgetIndex)];
-  if(button == nullptr) {
-   continue;
-  }
-  button->y = listTop_ + settingWidget.contentY - scrollOffset_;
-  button->visible = button->y >= listTop_ && button->y + button->height <= listBottom_;
- }
- for(const auto& keybindWidget : keybindWidgets_) {
-  if(keybindWidget.widgetIndex < 0 || keybindWidget.widgetIndex >= static_cast<int>(buttons_.size())) {
-   continue;
-  }
-  auto& button = buttons_[static_cast<std::size_t>(keybindWidget.widgetIndex)];
-  if(button == nullptr) {
-   continue;
-  }
-  button->y = listTop_ + keybindWidget.contentY - scrollOffset_;
-  button->visible = button->y >= listTop_ && button->y + button->height <= listBottom_;
- }
-}
-void ModSettingsScreen::scrollBy(int amount) {
- if(maxScroll_ <= 0) {
-  return;
- }
- scrollOffset_ = std::clamp(scrollOffset_ + amount, 0, maxScroll_);
- updateListLayout();
+ scroll_.apply(buttons_);
 }
 void ModSettingsScreen::mouseScrolled(int mouseX, int mouseY, int delta) {
  (void)mouseX;
- if(mouseY < listTop_ || mouseY > listBottom_ || delta == 0) {
+ if(scroll_.mouseScrolled(mouseY, delta)) {
+  updateListLayout();
+ }
+}
+void ModSettingsScreen::mouseClicked(int mouseX, int mouseY, int button) {
+ if(button == 0 && scroll_.mouseClicked(mouseX, mouseY, width())) {
+  updateListLayout();
   return;
  }
- scrollBy(delta < 0 ? kScrollStep : -kScrollStep);
+ Screen::mouseClicked(mouseX, mouseY, button);
 }
 void ModSettingsScreen::render(int mouseX, int mouseY, float tickDelta) {
- renderBackground();
- fill(0, listBottom_, width(), height(), 0xE0101010U);
- if(textRenderer() != nullptr) {
-  drawCenteredTextWithShadow(*textRenderer(), title_, width() / 2, 12, 0xFFFFFF);
-  drawCenteredTextWithShadow(*textRenderer(), "Click to change", width() / 2, 25, 0xA0A0A0);
-  for(const auto& header : sectionHeaders_) {
-   const int y = listTop_ + header.contentY - scrollOffset_;
-   if(y >= listTop_ && y + 8 <= listBottom_) {
-    drawTextWithShadow(*textRenderer(), header.text, layout::twoColumnLeftX(width()), y, 0xFFFFA0);
-   }
-  }
-  if(maxScroll_ > 0) {
-   const int trackX = width() / 2 + 164;
-   const int trackHeight = listBottom_ - listTop_;
-   const int thumbHeight = std::max(16, trackHeight * trackHeight / std::max(trackHeight, contentHeight_));
-   const int thumbTravel = std::max(0, trackHeight - thumbHeight);
-   const int thumbY = listTop_ + (maxScroll_ == 0 ? 0 : scrollOffset_ * thumbTravel / maxScroll_);
-   fill(trackX, listTop_, trackX + 2, listBottom_, 0x60000000);
-   fill(trackX, thumbY, trackX + 2, thumbY + thumbHeight, 0xFFC0C0C0);
-  }
+ if(scroll_.draggingThumb()) {
+  scroll_.mouseDragged(mouseY);
+  updateListLayout();
  }
+ renderBackground();
+ scroll_.renderFooterDim(width(), height());
+ if(textRenderer() != nullptr) {
+  textRenderer()->drawCenteredWithShadow(title_, width() / 2, 12, 0xFFFFFF);
+  textRenderer()->drawCenteredWithShadow("Click to change", width() / 2, 25, 0xA0A0A0);
+ }
+ scroll_.renderHeaders(textRenderer(), width());
+ scroll_.renderScrollbar(width());
  Screen::render(mouseX, mouseY, tickDelta);
 }
 void ModSettingsScreen::mouseReleased(int mouseX, int mouseY, int button) {
+ scroll_.mouseReleased();
  Screen::mouseReleased(mouseX, mouseY, button);
 }
 void ModSettingsScreen::keyPressed(char character, int keyCode) {
  if(selectedKeybindIndex_ < 0) {
   if(arrowUpPressed(keyCode)) {
-   scrollBy(-kScrollStep);
+   scroll_.scrollBy(-layout::OptionsListScroll::kScrollStep);
+   updateListLayout();
    return;
   }
   if(arrowDownPressed(keyCode)) {
-   scrollBy(kScrollStep);
+   scroll_.scrollBy(layout::OptionsListScroll::kScrollStep);
+   updateListLayout();
    return;
   }
   if(escapePressed(keyCode)) {

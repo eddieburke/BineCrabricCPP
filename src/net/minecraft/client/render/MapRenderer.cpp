@@ -1,8 +1,9 @@
+#include <cstring>
 #include "net/minecraft/client/render/MapRenderer.hpp"
 #include "net/minecraft/block/MapColor.hpp"
 #include "net/minecraft/client/font/TextRenderer.hpp"
 #include "net/minecraft/client/gl/GlConstants.hpp"
-#include "net/minecraft/client/render/RenderSystem.hpp"
+#include "net/minecraft/client/render/RenderCore.hpp"
 #include "net/minecraft/client/render/RenderType.hpp"
 #include "net/minecraft/client/render/Tessellator.hpp"
 #include "net/minecraft/client/texture/TextureManager.hpp"
@@ -88,7 +89,7 @@ void MapRenderer::render(net::minecraft::PlayerEntity& player,
  {
   render::RenderPassScope passScope(render::RenderType::guiTextured());
   const float inset = 0.0f;
-  RenderSystem::bindTexture(static_cast<int>(texture_));
+  core::bindTexture(static_cast<int>(texture_));
   tessellator.startQuads();
   tessellator.vertex(
       static_cast<float>(originX) + inset, static_cast<float>(originY + 128) - inset, -0.01f, 0.0f, 1.0f);
@@ -102,7 +103,7 @@ void MapRenderer::render(net::minecraft::PlayerEntity& player,
   if(!mapState.icons.empty()) {
    textureManagerIn.bindTexture(textureManagerIn.getTextureId("misc/mapicons.png"));
    float baseModelView[16]{};
-   RenderSystem::getFloatv(gl::matrix_::ModelViewMatrix, baseModelView);
+   std::memcpy(baseModelView, core::currentModelView().data(), sizeof(baseModelView));
    tessellator.startQuads();
    for(const net::minecraft::map::MapState::MapIcon& mapIcon : mapState.icons) {
     net::minecraft::util::math::Matrix4f model;
@@ -129,10 +130,10 @@ void MapRenderer::render(net::minecraft::PlayerEntity& player,
   }
  }
  if(textRenderer_ != nullptr) {
-  RenderSystem::pushMatrix();
-  RenderSystem::translate(0.0f, 0.0f, -0.04f);
+  core::modelViewStack().push();
+  core::modelViewStack().translate(0.0f, 0.0f, -0.04f);
   textRenderer_->draw(mapState.id, originX, originY, static_cast<int>(0xFF000000u));
-  RenderSystem::popMatrix();
+  core::modelViewStack().pop();
  }
 }
 } // namespace net::minecraft::client::render

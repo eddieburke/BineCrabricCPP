@@ -14,25 +14,22 @@ class WorldSaveConflictScreen : public screen::Screen {
  void render(int mouseX, int mouseY, float delta) override {
   renderBackground();
   if(textRenderer() != nullptr) {
-   drawCenteredTextWithShadow(
-       *textRenderer(), "Level save conflict", width_ / 2, height_ / 4 - 60 + 20, 0xFFFFFF);
-   drawTextWithShadow(*textRenderer(),
-                      "Minecraft detected a conflict in the level save data.",
-                      width_ / 2 - 140,
-                      height_ / 4 - 60 + 60 + 0,
-                      0xA0A0A0);
-   drawTextWithShadow(*textRenderer(),
-                      "This could be caused by two copies of the game",
-                      width_ / 2 - 140,
-                      height_ / 4 - 60 + 60 + 18,
-                      0xA0A0A0);
-   drawTextWithShadow(
-       *textRenderer(), "accessing the same level.", width_ / 2 - 140, height_ / 4 - 60 + 60 + 27, 0xA0A0A0);
-   drawTextWithShadow(*textRenderer(),
-                      "To prevent level corruption, the current game has quit.",
-                      width_ / 2 - 140,
-                      height_ / 4 - 60 + 60 + 45,
-                      0xA0A0A0);
+   textRenderer()->drawCenteredWithShadow(
+       "Level save conflict", width_ / 2, height_ / 4 - 60 + 20, 0xFFFFFF);
+   textRenderer()->drawWithShadow("Minecraft detected a conflict in the level save data.",
+                                  width_ / 2 - 140,
+                                  height_ / 4 - 60 + 60 + 0,
+                                  0xA0A0A0);
+   textRenderer()->drawWithShadow("This could be caused by two copies of the game",
+                                  width_ / 2 - 140,
+                                  height_ / 4 - 60 + 60 + 18,
+                                  0xA0A0A0);
+   textRenderer()->drawWithShadow(
+       "accessing the same level.", width_ / 2 - 140, height_ / 4 - 60 + 60 + 27, 0xA0A0A0);
+   textRenderer()->drawWithShadow("To prevent level corruption, the current game has quit.",
+                                  width_ / 2 - 140,
+                                  height_ / 4 - 60 + 60 + 45,
+                                  0xA0A0A0);
   }
   screen::Screen::render(mouseX, mouseY, delta);
  }

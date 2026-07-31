@@ -72,16 +72,14 @@ void EditWorldScreen::mouseClicked(int mouseX, int mouseY, int button) {
 void EditWorldScreen::render(int mouseX, int mouseY, float tickDelta) {
  renderBackground();
  if(textRenderer() != nullptr) {
-  drawCenteredTextWithShadow(*textRenderer(),
-                             resource::language::I18n::getTranslation("selectWorld.renameTitle"),
-                             width() / 2,
-                             layout::formTitleY(height()),
-                             0xFFFFFF);
-  drawTextWithShadow(*textRenderer(),
-                     resource::language::I18n::getTranslation("selectWorld.enterName"),
-                     width() / 2 - 100,
-                     47,
-                     0xA0A0A0);
+  textRenderer()->drawCenteredWithShadow(resource::language::I18n::getTranslation("selectWorld.renameTitle"),
+                                         width() / 2,
+                                         layout::formTitleY(height()),
+                                         0xFFFFFF);
+  textRenderer()->drawWithShadow(resource::language::I18n::getTranslation("selectWorld.enterName"),
+                                 width() / 2 - 100,
+                                 47,
+                                 0xA0A0A0);
  }
  if(levelNameField_ != nullptr) {
   levelNameField_->render();

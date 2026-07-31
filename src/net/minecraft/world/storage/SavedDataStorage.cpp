@@ -79,8 +79,8 @@ void SavedDataStorage::save(PersistentState& state) {
   NbtCompound root;
   root.put("data", data);
   writeFileAtomic(file, [&root](std::ostream& output) { NbtIo::writeCompressed(root, output); });
-  } catch(const std::exception&) {
-  }
+ } catch(const std::exception&) {
+ }
 }
 void SavedDataStorage::loadIdCounts() {
  impl_->idCounts_.clear();
@@ -102,8 +102,8 @@ void SavedDataStorage::loadIdCounts() {
     impl_->idCounts_[entry.first] = static_cast<int>(entry.second.asShort());
    }
   }
-  } catch(const std::exception&) {
-  }
+ } catch(const std::exception&) {
+ }
 }
 int SavedDataStorage::getIdCount(const std::string& id) {
  int value = 0;
@@ -125,8 +125,8 @@ int SavedDataStorage::getIdCount(const std::string& id) {
   }
   // Uncompressed, matching loadIdCounts()'s NbtIo::read.
   writeFileAtomic(file, [&root](std::ostream& output) { NbtIo::write(root, output); });
-  } catch(const std::exception&) {
-  }
+ } catch(const std::exception&) {
+ }
  return value;
 }
 } // namespace net::minecraft

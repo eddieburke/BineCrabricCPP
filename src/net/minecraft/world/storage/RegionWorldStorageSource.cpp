@@ -98,8 +98,8 @@ void convertDimension(const fs::path& dimDir) {
     continue;
    }
    RegionIo::writeChunkData(dimDir, chunkX, chunkZ, raw);
-   } catch(const std::exception&) {
-   }
+  } catch(const std::exception&) {
+  }
  }
 }
 // Mark the save as McRegion (version 19132) so it loads region-native and is not re-converted
@@ -116,9 +116,9 @@ void convertDimension(const fs::path& dimDir) {
    return false;
   }
   root = NbtIo::readCompressed(input);
-  } catch(const std::exception&) {
-   return false;
-  }
+ } catch(const std::exception&) {
+  return false;
+ }
  if(!root.contains("Data")) {
   return false;
  }
@@ -129,9 +129,9 @@ void convertDimension(const fs::path& dimDir) {
   AtomicWriteOptions options;
   options.keepBackup = true;
   writeFileAtomic(levelDat, [&root](std::ostream& output) { NbtIo::writeCompressed(root, output); }, options);
-  } catch(const std::exception&) {
-   return false;
-  }
+ } catch(const std::exception&) {
+  return false;
+ }
  return true;
 }
 } // namespace

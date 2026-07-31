@@ -34,7 +34,6 @@ class Window {
  static void destroy();
  static void pumpMessages();
  static void present();
- static void pumpAndPresent();
  [[nodiscard]] static bool isCloseRequested();
  [[nodiscard]] static bool isActive();
  [[nodiscard]] static bool isFullscreen();

@@ -1,11 +1,4 @@
--- UI Component Library
--- Standardized UI components for consistent mod interfaces
-
 local ui = {}
-
---------------------------------------------------------------------------------
--- UI ELEMENT BASE CLASS
---------------------------------------------------------------------------------
 
 ui.Element = {}
 ui.Element.__index = ui.Element
@@ -54,10 +47,6 @@ function ui.Element:contains_point(x, y)
     return x >= self.x and x <= self.x + self.width and
            y >= self.y and y <= self.y + self.height
 end
-
---------------------------------------------------------------------------------
--- BUTTON
---------------------------------------------------------------------------------
 
 ui.Button = setmetatable({}, {__index = ui.Element})
 ui.Button.__index = ui.Button
@@ -124,10 +113,6 @@ function ui.Button:render()
     ui.Element.render(self)
 end
 
---------------------------------------------------------------------------------
--- LABEL
---------------------------------------------------------------------------------
-
 ui.Label = setmetatable({}, {__index = ui.Element})
 ui.Label.__index = ui.Label
 
@@ -151,10 +136,6 @@ function ui.Label:render()
     -- Render children
     ui.Element.render(self)
 end
-
---------------------------------------------------------------------------------
--- SLIDER
---------------------------------------------------------------------------------
 
 ui.Slider = setmetatable({}, {__index = ui.Element})
 ui.Slider.__index = ui.Slider
@@ -225,10 +206,6 @@ function ui.Slider:render()
     -- Render children
     ui.Element.render(self)
 end
-
---------------------------------------------------------------------------------
--- PANEL
---------------------------------------------------------------------------------
 
 ui.Panel = setmetatable({}, {__index = ui.Element})
 ui.Panel.__index = ui.Panel

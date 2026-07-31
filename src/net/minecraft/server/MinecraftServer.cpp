@@ -10,6 +10,7 @@
 #include "net/minecraft/client/gui/screen/LoadingDisplay.hpp"
 #include "net/minecraft/mod/runtime/WorldRequiredMods.hpp"
 #include "net/minecraft/network/packet/WorldPackets.hpp"
+#include "net/minecraft/registry/Registry.hpp"
 #include "net/minecraft/server/ServerLog.hpp"
 #include "net/minecraft/server/command/Command.hpp"
 #include "net/minecraft/server/network/ConnectionListener.hpp"
@@ -34,7 +35,7 @@ namespace {
  return host == "127.0.0.1" || host == "::1" || host == "0:0:0:0:0:0:0:1" ||
         host == "::ffff:127.0.0.1";
 }
-}
+} // namespace
 namespace {
 using Clock = std::chrono::steady_clock;
 class WorldConversionProgress final : public client::gui::screen::LoadingDisplay {
@@ -190,7 +191,7 @@ std::uint16_t MinecraftServer::boundPort() const {
  return connections != nullptr ? connections->boundPort() : 0;
 }
 bool MinecraftServer::init() {
- initializeBlocks();
+ registry::Registry::bootstrap();
  commandHandler_ = std::make_unique<command::ServerCommandHandler>(this);
  if(!launchConfig_.has_value() || launchConfig_->useConsoleThread) {
   commandThread_ = std::jthread([this](const std::stop_token& stopToken) {
@@ -337,8 +338,12 @@ void MinecraftServer::loadWorld(const std::filesystem::path& storageRoot,
       std::make_unique<world::ServerWorldEventListener>(this, world);
   world->addEventListener(worldEventListeners_[static_cast<std::size_t>(i)].get());
   const bool spawnMonsters = properties != nullptr ? properties->getProperty("spawn-monsters", true) : true;
+  const int autoSaveTicks = properties != nullptr ? properties->getProperty("auto-save-ticks", 4000) : 4000;
   world->difficulty = spawnMonsters ? 1 : 0;
   world->allowSpawning(spawnMonsters, spawnAnimals);
+  // Dedicated/integrated server worlds never see GameOptions::applyToWorld; apply
+  // the autosave interval here so they don't keep the unsafe 40-tick default.
+  world->applyWorldSettings(true, autoSaveTicks, 0);
  }
  playerManager.saveAllPlayers(worlds);
  constexpr int radius = 196;

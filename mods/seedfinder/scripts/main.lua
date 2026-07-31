@@ -1,8 +1,3 @@
--- ================================================================
--- MOD: seedfinder
--- Standardized structure with separated config
--- ================================================================
-
 local config = require("config")
 
 local rules = require("scripts.rules")

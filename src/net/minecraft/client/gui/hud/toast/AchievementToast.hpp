@@ -1,12 +1,11 @@
 #pragma once
 #include <cstdint>
 #include <string>
-#include "net/minecraft/client/gui/DrawContext.hpp"
 namespace net::minecraft::client {
 class Minecraft;
 }
 namespace net::minecraft::client::gui::hud::toast {
-class AchievementToast : public gui::DrawContext {
+class AchievementToast {
  public:
  void setClient(Minecraft* client) {
   client_ = client;

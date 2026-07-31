@@ -1,48 +1,40 @@
 #include "net/minecraft/client/debug/ClientProfilerOverlay.hpp"
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
 #include <windows.h>
 #include <GL/gl.h>
 #include <chrono>
 #include "net/minecraft/client/Minecraft.hpp"
 #include "net/minecraft/client/gl/GlConstants.hpp"
-#include "net/minecraft/client/render/RenderSystem.hpp"
+#include "net/minecraft/client/render/GuiProjection.hpp"
+#include "net/minecraft/client/render/RenderCore.hpp"
+#include "net/minecraft/client/render/RenderType.hpp"
 #include "net/minecraft/client/render/Tessellator.hpp"
+#include "net/minecraft/util/math/MatrixStack.hpp"
 #include "net/minecraft/world/World.hpp"
 #include "net/minecraft/world/chunk/ChunkSource.hpp"
 namespace net::minecraft::client::debug {
+namespace core = net::minecraft::client::render::core;
+namespace gui_proj = net::minecraft::client::render::gui_proj;
 namespace {
 std::int64_t nanoTime() {
  return std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::steady_clock::now().time_since_epoch())
      .count();
 }
-class DebugChartScope {
- public:
- DebugChartScope() : saved_(render::RenderSystem::getShadow()) {
-  render::RenderSystem::disableCull();
-  render::RenderSystem::disableTexture();
- }
- ~DebugChartScope() {
-  render::RenderSystem::setShadow(saved_);
- }
- DebugChartScope(const DebugChartScope&) = delete;
- DebugChartScope& operator=(const DebugChartScope&) = delete;
-
- private:
- render::RenderSystem::StateShadow saved_;
-};
 void renderProfilerChartInViewport(int viewportWidth, int viewportHeight) {
  constexpr std::int64_t frameBudgetNs = 16666666LL;
  const int frameTimeIndex = ClientProfilerOverlay::frameTimeIndex;
  const auto& frameTimes = ClientProfilerOverlay::frameTimes;
  const auto& tickTimes = ClientProfilerOverlay::tickTimes;
- const DebugChartScope chartCaps;
- render::RenderSystem::color4f(1.0f, 1.0f, 1.0f, 1.0f);
- render::RenderSystem::clear(0x00000100);
- render::RenderSystem::matrixMode(0x1701);
- render::RenderSystem::loadIdentity();
- render::RenderSystem::ortho(0.0, viewportWidth, viewportHeight, 0.0, 1000.0, 3000.0);
- render::RenderSystem::matrixMode(0x1700);
- render::RenderSystem::loadIdentity();
- render::RenderSystem::translate(0.0f, 0.0f, -2000.0f);
+ const render::RenderPassScope chartPass(render::RenderType::gui());
+ render::core::disableCull();
+ core::setConstColor(1.0f, 1.0f, 1.0f, 1.0f);
+ render::core::clear(0x00000100);
+ net::minecraft::util::math::MatrixStack modelView;
+ net::minecraft::util::math::MatrixStack projection;
+ const core::ScopedMatrixStacks matrixBind(modelView, projection);
+ gui_proj::load(static_cast<float>(viewportWidth), static_cast<float>(viewportHeight));
  glLineWidth(1.0f);
  render::Tessellator& tessellator = render::Tessellator::INSTANCE;
  const int budgetPixels = static_cast<int>(frameBudgetNs / 200000LL);

@@ -1,13 +1,9 @@
-// The full model registration pipeline: load a JSON model asset, parse it,
-// flatten its parent chain, bake it into textured quads, and cache the result
-// by handle. Sections below follow that order.
 #include "net/minecraft/mod/model/ModModels.hpp"
 #include <algorithm>
 #include <atomic>
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
-#include <filesystem>
 #include <memory>
 #include <mutex>
 #include <set>
@@ -15,15 +11,17 @@
 #include <utility>
 #include <vector>
 #include "net/minecraft/block/Block.hpp"
-#include "net/minecraft/client/render/RenderSystem.hpp"
+#include "net/minecraft/client/render/RenderCore.hpp"
 #include "net/minecraft/client/render/Tessellator.hpp"
+#include "net/minecraft/client/render/TextureResolve.hpp"
 #include "net/minecraft/client/render/block/BlockRenderManager.hpp"
 #include "net/minecraft/client/render/item/ItemModelRenderer.hpp"
 #include "net/minecraft/item/ItemStack.hpp"
 #include "net/minecraft/mod/lua/LuaBlockRegistry.hpp"
 #include "net/minecraft/mod/lua/LuaHostApi.hpp"
 #include "net/minecraft/mod/lua/LuaItemRegistry.hpp"
-#include "net/minecraft/mod/model/JsonValue.hpp"
+#include "net/minecraft/mod/model/JsonModelBaker.hpp"
+#include "net/minecraft/mod/model/JsonModelParser.hpp"
 #include "net/minecraft/mod/runtime/LuaEventGlue.hpp"
 #include "net/minecraft/mod/runtime/ModHost.hpp"
 #include "net/minecraft/registry/TextureRegistry.hpp"
@@ -36,242 +34,12 @@
 #include "net/minecraft/client/render/RenderType.hpp"
 #include "net/minecraft/client/texture/TextureManager.hpp"
 #include "net/minecraft/mod/runtime/ModRenderScope.hpp"
+#include "net/minecraft/world/World.hpp"
+#include "net/minecraft/world/light/LightType.hpp"
 #endif
 namespace net::minecraft::mod::model {
+namespace core = net::minecraft::client::render::core;
 namespace {
-// --- Parsed JSON model representation -------------------------------------
-struct JsonModelFaceSpec {
- bool present = false;
- bool hasUv = false;
- double uv[4] = {0.0, 0.0, 16.0, 16.0};
- std::string texture;
- int rotation = 0;
- int tintIndex = -1;
- int cullFace = -1;
-};
-struct JsonModelRotationSpec {
- // 'x'/'y'/'z' for vanilla single-axis rotation; 0 for Blockbench free x/y/z
- char axis = 0;
- double angle = 0.0;
- double x = 0.0;
- double y = 0.0;
- double z = 0.0;
- double origin[3] = {8.0, 8.0, 8.0};
- bool rescale = false;
-};
-struct JsonModelElement {
- double from[3] = {0.0, 0.0, 0.0};
- double to[3] = {16.0, 16.0, 16.0};
- std::string basePath;
- // Blockbench "texture_size" of the model file this element came from; face uv
- // values are expressed in this space, not in the texture's pixel size.
- double textureWidth = 16.0;
- double textureHeight = 16.0;
- bool hasRotation = false;
- JsonModelRotationSpec rotation;
- bool shade = true;
- JsonModelFaceSpec faces[kModelFaceCount];
-};
-struct JsonModelTexture {
- std::string name;
- std::string value;
- std::string basePath;
-};
-struct JsonModel {
- std::string parent;
- std::vector<JsonModelTexture> textures;
- std::vector<JsonModelElement> elements;
- bool hasElements = false;
- double textureSize[2] = {16.0, 16.0};
- bool hasTextureSize = false;
-};
-const JsonModelTexture* findTexture(const JsonModel& model, const std::string& key) noexcept {
- for(const JsonModelTexture& texture : model.textures) {
-  if(texture.name == key) {
-   return &texture;
-  }
- }
- return nullptr;
-}
-// --- JSON parsing ----------------------------------------------------------
-constexpr const char* kFaceNames[kModelFaceCount] = {"down", "up", "north", "south", "west", "east"};
-bool readVec(const JsonValue& value, double* out, int count) {
- if(!value.isArray() || value.size() < static_cast<std::size_t>(count)) {
-  return false;
- }
- for(int i = 0; i < count; ++i) {
-  if(!value.at(static_cast<std::size_t>(i)).isNumber()) {
-   return false;
-  }
-  out[i] = value.at(static_cast<std::size_t>(i)).asNumber();
- }
- return true;
-}
-bool parseFace(const JsonValue& value, JsonModelFaceSpec& out, std::string& error) {
- if(!value.isObject()) {
-  error = "face must be an object";
-  return false;
- }
- out.present = true;
- const JsonValue& uv = value["uv"];
- if(!uv.isNull()) {
-  if(!readVec(uv, out.uv, 4)) {
-   error = "face uv must be an array of 4 numbers";
-   return false;
-  }
-  out.hasUv = true;
- }
- out.texture = value["texture"].asString();
- const int rotation = static_cast<int>(value["rotation"].asNumber(0.0));
- if(rotation % 90 != 0) {
-  error = "face rotation must be a multiple of 90";
-  return false;
- }
- out.rotation = ((rotation % 360) + 360) % 360;
- out.tintIndex = static_cast<int>(value["tintindex"].asNumber(-1.0));
- const std::string cullFace = value["cullface"].asString();
- if(!cullFace.empty()) {
-  const auto* it =
-      std::find(std::begin(kFaceNames), std::end(kFaceNames), cullFace == "bottom" ? "down" : cullFace);
-  if(it == std::end(kFaceNames)) {
-   error = "unknown cullface name: " + cullFace;
-   return false;
-  }
-  out.cullFace = static_cast<int>(it - std::begin(kFaceNames));
- }
- return true;
-}
-bool parseRotation(const JsonValue& value, JsonModelRotationSpec& out, std::string& error) {
- if(!value.isObject()) {
-  error = "element rotation must be an object";
-  return false;
- }
- readVec(value["origin"], out.origin, 3);
- const std::string axis = value["axis"].asString();
- if(!axis.empty()) {
-  if(axis != "x" && axis != "y" && axis != "z") {
-   error = "element rotation axis must be x, y, or z";
-   return false;
-  }
-  out.axis = axis[0];
-  out.angle = value["angle"].asNumber(0.0);
- } else {
-  out.axis = 0;
-  out.x = value["x"].asNumber(0.0);
-  out.y = value["y"].asNumber(0.0);
-  out.z = value["z"].asNumber(0.0);
- }
- out.rescale = value["rescale"].asBool(false);
- return true;
-}
-bool parseElement(const JsonValue& value, JsonModelElement& out, std::string& error) {
- if(!value.isObject()) {
-  error = "element must be an object";
-  return false;
- }
- if(!readVec(value["from"], out.from, 3) || !readVec(value["to"], out.to, 3)) {
-  error = "element requires from/to arrays of 3 numbers";
-  return false;
- }
- const JsonValue& rotation = value["rotation"];
- if(!rotation.isNull()) {
-  if(!parseRotation(rotation, out.rotation, error)) {
-   return false;
-  }
-  out.hasRotation = true;
- }
- out.shade = value["shade"].asBool(true);
- const JsonValue& faces = value["faces"];
- if(!faces.isObject()) {
-  error = "element requires a faces object";
-  return false;
- }
- for(const auto& [name, face] : faces.members()) {
-  const auto* it = std::find(std::begin(kFaceNames), std::end(kFaceNames), name);
-  if(it == std::end(kFaceNames)) {
-   error = "unknown face name: " + name;
-   return false;
-  }
-  if(!parseFace(face, out.faces[it - std::begin(kFaceNames)], error)) {
-   return false;
-  }
- }
- return true;
-}
-bool parseJsonModel(const JsonValue& root, JsonModel& out, std::string& error) {
- if(!root.isObject()) {
-  error = "model root must be an object";
-  return false;
- }
- out.parent = root["parent"].asString();
- // Blockbench writes the uv coordinate space here; it is independent of the
- // texture image's real pixel size (a 32x32 png with texture_size [16, 16]
- // still uses 0..16 uvs across the whole image).
- if(readVec(root["texture_size"], out.textureSize, 2) && out.textureSize[0] > 0.0 && out.textureSize[1] > 0.0) {
-  out.hasTextureSize = true;
- } else {
-  out.textureSize[0] = 16.0;
-  out.textureSize[1] = 16.0;
- }
- const JsonValue& textures = root["textures"];
- if(textures.isObject()) {
-  for(const auto& [key, value] : textures.members()) {
-   if(value.isString()) {
-    out.textures.push_back({key, value.asString(), {}});
-   }
-  }
- }
- const JsonValue& elements = root["elements"];
- if(elements.isArray()) {
-  out.hasElements = true;
-  out.elements.resize(elements.size());
-  for(std::size_t i = 0; i < elements.size(); ++i) {
-   if(!parseElement(elements.at(i), out.elements[i], error)) {
-    return false;
-   }
-  }
- }
- return true;
-}
-// Vanilla flattening: child elements win outright; parent textures fill only
-// keys the child leaves unbound.
-void mergeParentModel(JsonModel& child, const JsonModel& parent) {
- // texture_size is inherited too, and it re-scopes the uvs of the elements the
- // child itself declared. Parent elements already carry the parent's size.
- if(!child.hasTextureSize && parent.hasTextureSize) {
-  for(JsonModelElement& element : child.elements) {
-   element.textureWidth = parent.textureSize[0];
-   element.textureHeight = parent.textureSize[1];
-  }
-  child.textureSize[0] = parent.textureSize[0];
-  child.textureSize[1] = parent.textureSize[1];
-  child.hasTextureSize = true;
- }
- if(!child.hasElements && parent.hasElements) {
-  child.elements = parent.elements;
-  child.hasElements = true;
- }
- for(const JsonModelTexture& texture : parent.textures) {
-  if(findTexture(child, texture.name) == nullptr) {
-   child.textures.push_back(texture);
-  }
- }
-}
-// --- Baking ----------------------------------------------------------------
-constexpr double kPi = 3.14159265358979323846;
-// Corner selectors per face: which of from(0)/to(1) supplies each axis, in
-// vanilla EnumFaceDirection vertex order. Vertex i pairs with UV corner
-// (i + rotation/90) % 4 of [(u1,v1),(u1,v2),(u2,v2),(u2,v1)].
-constexpr int kFaceCorners[kModelFaceCount][4][3] = {
-    {{0, 0, 1}, {0, 0, 0}, {1, 0, 0}, {1, 0, 1}}, // down
-    {{0, 1, 0}, {0, 1, 1}, {1, 1, 1}, {1, 1, 0}}, // up
-    {{0, 1, 0}, {0, 0, 0}, {1, 0, 0}, {1, 1, 0}}, // north
-    {{1, 1, 1}, {1, 0, 1}, {0, 0, 1}, {0, 1, 1}}, // south
-    {{0, 1, 0}, {0, 0, 0}, {0, 0, 1}, {0, 1, 1}}, // west
-    {{1, 1, 1}, {1, 0, 1}, {1, 0, 0}, {1, 1, 0}}, // east
-};
-constexpr float kFaceShade[kModelFaceCount] = {0.5f, 1.0f, 0.8f, 0.8f, 0.6f, 0.6f};
-constexpr int kFaceAxis[3] = {1, 2, 0};
 constexpr int kFaceOffsets[kModelFaceCount][3] = {
     {0, -1, 0},
     {0, 1, 0},
@@ -280,342 +48,14 @@ constexpr int kFaceOffsets[kModelFaceCount][3] = {
     {-1, 0, 0},
     {1, 0, 0},
 };
-// Vanilla default UVs derived from the element bounds when a face omits uv.
-void autoUv(ModelFace face, const double* from, const double* to, double* uv) {
- switch(face) {
- case ModelFace::Down:
-  uv[0] = from[0];
-  uv[1] = 16.0 - to[2];
-  uv[2] = to[0];
-  uv[3] = 16.0 - from[2];
-  break;
- case ModelFace::Up:
-  uv[0] = from[0];
-  uv[1] = from[2];
-  uv[2] = to[0];
-  uv[3] = to[2];
-  break;
- case ModelFace::North:
-  uv[0] = 16.0 - to[0];
-  uv[1] = 16.0 - to[1];
-  uv[2] = 16.0 - from[0];
-  uv[3] = 16.0 - from[1];
-  break;
- case ModelFace::South:
-  uv[0] = from[0];
-  uv[1] = 16.0 - to[1];
-  uv[2] = to[0];
-  uv[3] = 16.0 - from[1];
-  break;
- case ModelFace::West:
-  uv[0] = from[2];
-  uv[1] = 16.0 - to[1];
-  uv[2] = to[2];
-  uv[3] = 16.0 - from[1];
-  break;
- case ModelFace::East:
-  uv[0] = 16.0 - to[2];
-  uv[1] = 16.0 - to[1];
-  uv[2] = 16.0 - from[2];
-  uv[3] = 16.0 - from[1];
-  break;
- }
-}
-void rotatePoint(double* point, const double* origin, char axis, double angleDeg) {
- if(angleDeg == 0.0) {
-  return;
- }
- const double a = angleDeg * kPi / 180.0;
- const double c = std::cos(a);
- const double s = std::sin(a);
- const double x = point[0] - origin[0];
- const double y = point[1] - origin[1];
- const double z = point[2] - origin[2];
- double rx = x;
- double ry = y;
- double rz = z;
- switch(axis) {
- case 'x':
-  ry = y * c - z * s;
-  rz = y * s + z * c;
-  break;
- case 'y':
-  rx = x * c + z * s;
-  rz = -x * s + z * c;
-  break;
- case 'z':
-  rx = x * c - y * s;
-  ry = x * s + y * c;
-  break;
- default:
-  break;
- }
- point[0] = rx + origin[0];
- point[1] = ry + origin[1];
- point[2] = rz + origin[2];
-}
-void rescalePoint(double* point, const double* origin, char axis, double angleDeg) {
- const double c = std::cos(angleDeg * kPi / 180.0);
- if(c == 0.0) {
-  return;
- }
- const double scale = 1.0 / std::abs(c);
- if(axis != 'x') {
-  point[0] = origin[0] + (point[0] - origin[0]) * scale;
- }
- if(axis != 'y') {
-  point[1] = origin[1] + (point[1] - origin[1]) * scale;
- }
- if(axis != 'z') {
-  point[2] = origin[2] + (point[2] - origin[2]) * scale;
- }
-}
-// Resolves a face texture reference ("#key" chains, "ns:name", relative names)
-// to a runtime texture path.
-bool resolveTexture(const JsonModel& model,
-                    const std::string& reference,
-                    const std::string& basePath,
-                    std::string& out) {
- std::string key = reference;
- std::string textureBasePath = basePath;
- std::set<std::string> seen;
- while(!key.empty() && key[0] == '#') {
-  key.erase(0, 1);
-  if(!seen.insert(key).second) {
-   return false;
-  }
-  const JsonModelTexture* texture = findTexture(model, key);
-  if(texture == nullptr) {
-   return false;
-  }
-  key = texture->value;
-  textureBasePath = texture->basePath;
- }
- if(key.empty() || key == "missing") {
-  return false;
- }
- const std::size_t colon = key.find(':');
- if(colon != std::string::npos) {
-  key = "assets/" + key.substr(0, colon) + "/textures/" + key.substr(colon + 1);
- } else if(key.compare(0, 7, "assets/") != 0 && key.compare(0, 5, "mods/") != 0) {
-  key = textureBasePath + key;
- }
- if(key.size() < 4 || key.compare(key.size() - 4, 4, ".png") != 0) {
-  key += ".png";
- }
- out = std::move(key);
- return true;
-}
-std::vector<BakedQuad>& batchFor(BakedModel& model, const std::string& texturePath) {
- for(BakedTextureBatch& batch : model.batches) {
-  if(batch.texturePath == texturePath) {
-   return batch.quads;
-  }
- }
- BakedTextureBatch& batch = model.batches.emplace_back();
- batch.texturePath = texturePath;
- batch.textureId = texturePath.empty() ? -1 : net::minecraft::registry::TextureRegistry::getOrRegisterTexture(texturePath);
- return batch.quads;
-}
-int boundaryCullFace(const JsonModelElement& element, int faceIndex) {
- if(element.hasRotation) {
-  return -1;
- }
- const int axis = kFaceAxis[faceIndex / 2];
- const bool negative = (faceIndex % 2) == 0;
- const double coordinate = negative ? element.from[axis] : element.to[axis];
- return coordinate == (negative ? 0.0 : 16.0) ? faceIndex : -1;
-}
-// True when the element has thickness on every axis, i.e. it is a real box and
-// not one of the flat planes Blockbench exports for cross/billboard shapes
-// (whose two opposite faces are the same rectangle and must both survive).
-bool isSolidElement(const JsonModelElement& element) noexcept {
- return element.from[0] < element.to[0] && element.from[1] < element.to[1] && element.from[2] < element.to[2];
-}
-// Two faces of different elements that sit on the same plane, cover the same
-// rectangle and point at each other are sealed against one another: whatever
-// the camera angle, each is hidden by the element behind the other. Blockbench
-// models made of stacked boxes (repair_table's top and base) produce these in
-// bulk and they z-fight when drawn, so they are dropped while baking.
-bool facesSealAgainstEachOther(const JsonModelElement& a, int faceA, const JsonModelElement& b, int faceB) {
- if(faceA / 2 != faceB / 2 || faceA == faceB || a.hasRotation || b.hasRotation) {
-  return false;
- }
- if(!isSolidElement(a) || !isSolidElement(b)) {
-  return false;
- }
- const int axis = kFaceAxis[faceA / 2];
- const double planeA = (faceA % 2) == 0 ? a.from[axis] : a.to[axis];
- const double planeB = (faceB % 2) == 0 ? b.from[axis] : b.to[axis];
- if(planeA != planeB) {
-  return false;
- }
- for(int other = 0; other < 3; ++other) {
-  if(other != axis && (a.from[other] != b.from[other] || a.to[other] != b.to[other])) {
-   return false;
-  }
- }
- return true;
-}
-// Bakes a parent-flattened model into world-space quads (positions in block
-// units, 0..1 for a full cube). basePath is the model file's directory and
-// anchors relative texture paths.
-bool bakeJsonModel(const JsonModel& model, const std::string& basePath, BakedModel& out, std::string& error) {
- out.batches.clear();
- const std::size_t elementCount = model.elements.size();
- std::vector<bool> sealed(elementCount * kModelFaceCount, false);
- for(std::size_t i = 0; i < elementCount; ++i) {
-  for(std::size_t j = i + 1; j < elementCount; ++j) {
-   for(int faceA = 0; faceA < kModelFaceCount; ++faceA) {
-    if(!model.elements[i].faces[faceA].present) {
-     continue;
-    }
-    const int faceB = (faceA % 2) == 0 ? faceA + 1 : faceA - 1;
-    if(!model.elements[j].faces[faceB].present ||
-       !facesSealAgainstEachOther(model.elements[i], faceA, model.elements[j], faceB)) {
-     continue;
-    }
-    sealed[i * kModelFaceCount + static_cast<std::size_t>(faceA)] = true;
-    sealed[j * kModelFaceCount + static_cast<std::size_t>(faceB)] = true;
-   }
-  }
- }
- for(std::size_t elementIndex = 0; elementIndex < elementCount; ++elementIndex) {
-  const JsonModelElement& element = model.elements[elementIndex];
-  for(int faceIndex = 0; faceIndex < kModelFaceCount; ++faceIndex) {
-   const JsonModelFaceSpec& face = element.faces[faceIndex];
-   if(!face.present || sealed[elementIndex * kModelFaceCount + static_cast<std::size_t>(faceIndex)]) {
-    continue;
-   }
-   std::string texturePath;
-   const std::string& textureBasePath = element.basePath.empty() ? basePath : element.basePath;
-   if(!resolveTexture(model, face.texture, textureBasePath, texturePath)) {
-    continue;
-   }
-   double uv[4];
-   if(face.hasUv) {
-    for(int i = 0; i < 4; ++i) {
-     uv[i] = face.uv[i];
-    }
-   } else {
-    autoUv(static_cast<ModelFace>(faceIndex), element.from, element.to, uv);
-   }
-   const double uvCorners[4][2] = {{uv[0], uv[1]}, {uv[0], uv[3]}, {uv[2], uv[3]}, {uv[2], uv[1]}};
-   const int uvShift = face.rotation / 90;
-   BakedQuad quad;
-   quad.face = static_cast<ModelFace>(faceIndex);
-   quad.cullFace = face.cullFace >= 0 ? face.cullFace : boundaryCullFace(element, faceIndex);
-   quad.shade = element.shade ? kFaceShade[faceIndex] : 1.0f;
-   quad.tintIndex = face.tintIndex;
-   for(int i = 0; i < 4; ++i) {
-    double point[3];
-    for(int axis = 0; axis < 3; ++axis) {
-     point[axis] = kFaceCorners[faceIndex][i][axis] != 0 ? element.to[axis] : element.from[axis];
-    }
-    if(element.hasRotation) {
-     const JsonModelRotationSpec& rotation = element.rotation;
-     if(rotation.axis != 0) {
-      rotatePoint(point, rotation.origin, rotation.axis, rotation.angle);
-      if(rotation.rescale) {
-       rescalePoint(point, rotation.origin, rotation.axis, rotation.angle);
-      }
-     } else {
-      rotatePoint(point, rotation.origin, 'x', rotation.x);
-      rotatePoint(point, rotation.origin, 'y', rotation.y);
-      rotatePoint(point, rotation.origin, 'z', rotation.z);
-     }
-    }
-    const double* corner = uvCorners[(i + uvShift) % 4];
-    BakedVertex& vertex = quad.vertices[i];
-    vertex.x = static_cast<float>(point[0] / 16.0);
-    vertex.y = static_cast<float>(point[1] / 16.0);
-    vertex.z = static_cast<float>(point[2] / 16.0);
-    vertex.u = static_cast<float>(corner[0] / element.textureWidth);
-    vertex.v = static_cast<float>(corner[1] / element.textureHeight);
-   }
-   batchFor(out, texturePath).push_back(quad);
-  }
- }
- if(out.batches.empty()) {
-  error = "model has no renderable faces";
-  return false;
- }
- computeBakedBounds(out);
- return true;
-}
-// --- Handle cache ------------------------------------------------------------
-// Models are const from the moment they land here, and the unique_ptr keeps each
-// one at a fixed address as the vector grows. That is what lets lookups hand out
-// a bare pointer and drop the lock: the callers (chunk-mesh workers, the render
-// thread, Lua) only ever read, and never race with a concurrent store.
 struct ModelStore {
  std::mutex mutex;
- std::vector<std::unique_ptr<const BakedModel>> models; // handle - 1 indexes this
+ std::vector<std::unique_ptr<const BakedModel>> models;
  std::unordered_map<std::string, int> handlesByKey;
 };
 ModelStore& store() {
  static ModelStore instance;
  return instance;
-}
-std::string directoryOf(const std::string& path) {
- const std::size_t slash = path.find_last_of("/\\");
- return slash == std::string::npos ? std::string() : path.substr(0, slash + 1);
-}
-std::string normalizeModelPath(std::string path) {
- std::replace(path.begin(), path.end(), '\\', '/');
- path = std::filesystem::path(path).lexically_normal().generic_string();
- while(path.starts_with("./")) {
-  path.erase(0, 2);
- }
- return path == "." ? std::string() : path;
-}
-std::string parentModelPath(const std::string& parent, const std::string& basePath) {
- const bool explicitRelative = parent.starts_with("./") || parent.starts_with(".\\") || parent.starts_with("../") ||
-                               parent.starts_with("..\\");
- std::string path = normalizeModelPath(parent);
- const std::size_t colon = path.find(':');
- if(colon != std::string::npos) {
-  path = "assets/" + path.substr(0, colon) + "/models/" + path.substr(colon + 1);
- } else if(!path.starts_with("assets/") && !path.starts_with("mods/") && !path.starts_with("models/")) {
-  if(explicitRelative) {
-   path = basePath + path;
-  } else if(path.find('/') != std::string::npos) {
-   path = "assets/minecraft/models/" + path;
-  } else {
-   path = basePath + path;
-  }
- }
- if(path.size() < 5 || path.compare(path.size() - 5, 5, ".json") != 0) {
-  path += ".json";
- }
- return normalizeModelPath(path);
-}
-bool loadModelFile(const std::string& modId, const std::string& path, JsonModel& out, std::string& error) {
- const std::filesystem::path file = runtime::host().assetPath(modId, path);
- if(file.empty() || !std::filesystem::is_regular_file(file)) {
-  error = "model not found: " + path;
-  return false;
- }
- const std::string text = lua::readFileText(file);
- JsonValue root;
- if(!JsonValue::parse(text, root, error)) {
-  error = path + ": " + error;
-  return false;
- }
- if(!parseJsonModel(root, out, error)) {
-  error = path + ": " + error;
-  return false;
- }
- const std::string basePath = directoryOf(path);
- for(JsonModelTexture& texture : out.textures) {
-  texture.basePath = basePath;
- }
- for(JsonModelElement& element : out.elements) {
-  element.basePath = basePath;
-  element.textureWidth = out.textureSize[0];
-  element.textureHeight = out.textureSize[1];
- }
- return true;
 }
 } // namespace
 void computeBakedBounds(BakedModel& model) {
@@ -656,38 +96,38 @@ int storeBakedModel(const std::string& key, std::unique_ptr<BakedModel> baked) {
  return handle;
 }
 int loadBakedModel(const std::string& modId, const std::string& path, std::string& error) {
- const std::string normalizedPath = normalizeModelPath(path);
+ const std::string normalizedPath = detail::normalizeModelPath(path);
  const std::string key = modId + "|" + normalizedPath;
  if(const int cached = bakedModelHandleForKey(key)) {
   return cached;
  }
- JsonModel merged;
- if(!loadModelFile(modId, normalizedPath, merged, error)) {
+ detail::JsonModel merged;
+ if(!detail::loadModelFile(modId, normalizedPath, merged, error)) {
   return 0;
  }
  // Flatten the parent chain. Blockbench exports sometimes carry dangling or
  // self-referential parents; those are skipped rather than fatal.
  std::set<std::string> visited{normalizedPath};
- std::string basePath = directoryOf(normalizedPath);
+ std::string basePath = detail::directoryOf(normalizedPath);
  std::string parent = merged.parent;
  while(!parent.empty()) {
-  const std::string parentPath = parentModelPath(parent, basePath);
+  const std::string parentPath = detail::parentModelPath(parent, basePath);
   if(!visited.insert(parentPath).second) {
    break;
   }
-  JsonModel parentModel;
+  detail::JsonModel parentModel;
   std::string parentError;
-  if(!loadModelFile(modId, parentPath, parentModel, parentError)) {
+  if(!detail::loadModelFile(modId, parentPath, parentModel, parentError)) {
    lua::runtimeLog(
        modId, "warn", "model " + normalizedPath + " skipping parent " + parent + " (" + parentError + ")");
    break;
   }
-  mergeParentModel(merged, parentModel);
-  basePath = directoryOf(parentPath);
+  detail::mergeParentModel(merged, parentModel);
+  basePath = detail::directoryOf(parentPath);
   parent = parentModel.parent;
  }
  auto baked = std::make_unique<BakedModel>();
- if(!bakeJsonModel(merged, directoryOf(normalizedPath), *baked, error)) {
+ if(!detail::bakeJsonModel(merged, detail::directoryOf(normalizedPath), *baked, error)) {
   error = normalizedPath + ": " + error;
   return 0;
  }
@@ -729,13 +169,13 @@ void transformPoint(const ModelTransform& t, double px, double py, double pz, do
  double point[3] = {(px - 0.5) * t.scale, (py - t.pivotY) * t.scale, (pz - 0.5) * t.scale};
  static constexpr double origin[3] = {0.0, 0.0, 0.0};
  if(t.roll != 0.0f) {
-  rotatePoint(point, origin, 'z', t.roll);
+  detail::rotatePoint(point, origin, 'z', t.roll);
  }
  if(t.pitch != 0.0f) {
-  rotatePoint(point, origin, 'x', t.pitch);
+  detail::rotatePoint(point, origin, 'x', t.pitch);
  }
  if(t.yaw != 0.0f) {
-  rotatePoint(point, origin, 'y', t.yaw);
+  detail::rotatePoint(point, origin, 'y', t.yaw);
  }
  out[0] = t.x + point[0];
  out[1] = t.y + point[1];
@@ -864,40 +304,54 @@ using net::minecraft::block::Block;
 using net::minecraft::client::render::Tessellator;
 using net::minecraft::client::render::block::BlockRenderManager;
 #ifdef MINECRAFT_NATIVE_EXPORTS
-using net::minecraft::client::render::RenderSystem;
 using runtime::ModLuaDrawScope;
-using runtime::ModStateScope;
-using MatrixScope = RenderSystem::MatrixScope;
 // Camera-relative placement shared by drawBakedModelWorld and drawItemStackWorld.
 // Leaves the caller to apply whatever model-space recentring its geometry needs.
 void applyWorldDrawTransform(const WorldModelDraw& options) {
  const client::render::FrameRenderCamera& camera = client::render::RenderCameraState::instance().frame();
- RenderSystem::translate(static_cast<float>(options.x - camera.x),
-                         static_cast<float>(options.y - camera.y),
-                         static_cast<float>(options.z - camera.z));
+ core::modelViewStack().translate(static_cast<float>(options.x - camera.x),
+                                  static_cast<float>(options.y - camera.y),
+                                  static_cast<float>(options.z - camera.z));
  if(options.yaw != 0.0f) {
-  RenderSystem::rotate(options.yaw, 0.0f, 1.0f, 0.0f);
+  core::modelViewStack().rotate(options.yaw, 0.0f, 1.0f, 0.0f);
  }
  if(options.pitch != 0.0f) {
-  RenderSystem::rotate(options.pitch, 1.0f, 0.0f, 0.0f);
+  core::modelViewStack().rotate(options.pitch, 1.0f, 0.0f, 0.0f);
  }
  if(options.roll != 0.0f) {
-  RenderSystem::rotate(options.roll, 0.0f, 0.0f, 1.0f);
+  core::modelViewStack().rotate(options.roll, 0.0f, 0.0f, 1.0f);
  }
  if(options.scale != 1.0f) {
-  RenderSystem::scale(options.scale, options.scale, options.scale);
+  core::modelViewStack().scale(options.scale, options.scale, options.scale);
  }
 }
+// A model is placed by its anchor, and a tall one (a tripod's camera head, a
+// sign on a wall) routinely has that anchor land inside terrain: a low ceiling,
+// the block it is mounted against. Light inside an opaque block is 0, which
+// would render the whole model black while everything around it is lit, so
+// borrow the brightest exposed neighbour — the same trick World::getLightLevel
+// plays for slabs and stairs.
 float worldBrightness(const WorldModelDraw& options) {
  if(options.brightness >= 0.0f) {
   return options.brightness;
  }
- if(client::Minecraft::INSTANCE != nullptr && client::Minecraft::INSTANCE->world != nullptr) {
-  return client::Minecraft::INSTANCE->world->getLightBrightness(static_cast<int>(std::floor(options.x)),
-                                                                static_cast<int>(std::floor(options.y)),
-                                                                static_cast<int>(std::floor(options.z)));
+ if(client::Minecraft::INSTANCE == nullptr || client::Minecraft::INSTANCE->world == nullptr) {
+  return 1.0f;
  }
- return 1.0f;
+ World& world = *client::Minecraft::INSTANCE->world;
+ const int x = static_cast<int>(std::floor(options.x));
+ const int y = static_cast<int>(std::floor(options.y));
+ const int z = static_cast<int>(std::floor(options.z));
+ float brightness = world.getLightBrightness(x, y, z);
+ const int blockId = world.getBlockId(x, y, z);
+ if(blockId <= 0 || blockId >= block::Block::BLOCK_COUNT ||
+    !block::Block::BLOCKS_OPAQUE[static_cast<std::size_t>(blockId)]) {
+  return brightness;
+ }
+ for(const int (&offset)[3] : kFaceOffsets) {
+  brightness = std::max(brightness, world.getLightBrightness(x + offset[0], y + offset[1], z + offset[2]));
+ }
+ return brightness;
 }
 #endif
 // Where a block's baked model is being drawn. Passed explicitly down the draw
@@ -912,23 +366,6 @@ struct BlockModelDraw {
  bool inventory = false;
  float brightness = 1.0f;
 };
-// Item draws bind their sprite up front, but a baked model can reference other
-// textures; rebind per quad so multi-texture item models look like their block
-// counterparts.
-void bindItemModelTexture(int textureId) {
-#ifdef MINECRAFT_NATIVE_EXPORTS
- if(!net::minecraft::registry::TextureRegistry::isCustomTexture(textureId) || client::Minecraft::INSTANCE == nullptr) {
-  return;
- }
- client::texture::TextureManager& textures = client::Minecraft::INSTANCE->textureManager;
- const int glId = net::minecraft::registry::TextureRegistry::resolveGlId(textureId, textures);
- if(glId >= 0) {
-  textures.bindTexture(glId);
- }
-#else
- (void)textureId;
-#endif
-}
 // ---------------------------------------------------------------------------
 // Baked-model quad emission.
 //
@@ -948,6 +385,7 @@ struct TransformedVertex {
 };
 struct EmittedQuad {
  const TransformedVertex* vertices = nullptr;
+ bool coplanarBackFace = false;
  float nx = 0.0f;
  float ny = 1.0f;
  float nz = 0.0f;
@@ -972,6 +410,15 @@ void assignQuadNormal(EmittedQuad& quad) {
                                    quad.ny,
                                    quad.nz);
 }
+enum class QuadLightMode {
+ // light 0..1 → identical block+sky in vaUV2 (legacy immediate approx).
+ Absolute,
+ // Match EntityRenderDispatcher: fullbright lightmap; caller puts world
+ // brightness in uConstColor / vertex colour.
+ Entity,
+ // Keep whatever Tessellator::blockData / light already set (chunk mod meshes).
+ Preserve,
+};
 // The one place a baked vertex reaches a Tessellator. Same shape as the vanilla
 // face renderers: normal, colour, then four uv-mapped vertices.
 void writeQuad(Tessellator& t,
@@ -980,8 +427,16 @@ void writeQuad(Tessellator& t,
                double baseY,
                double baseZ,
                float light,
-               float alphaScale) {
- t.color(quad.red * light, quad.green * light, quad.blue * light, quad.alpha * alphaScale);
+               float alphaScale,
+               QuadLightMode lightMode = QuadLightMode::Absolute) {
+ if(lightMode == QuadLightMode::Absolute) {
+  const int level = std::clamp(static_cast<int>(std::lround(light * 15.0f)), 0, 15);
+  t.light(level, level);
+ } else if(lightMode == QuadLightMode::Entity) {
+  t.light(15, 15);
+ }
+ // Preserve: leave blockLight_/skyLight_ from activeTess::blockData alone.
+ t.color(quad.red, quad.green, quad.blue, quad.alpha * alphaScale);
  for(int i = 0; i < 4; ++i) {
   // uv is already normalized 0..1 across the batch's own image, which is what
   // the bound texture is: mod content never lives in the vanilla atlas, so
@@ -1037,13 +492,13 @@ bool forEachBakedQuad(const BakedModel& baked,
      // Rotation and scale act around the model's centre, so shift there first.
      double point[3] = {quad.vertices[i].x - 0.5, quad.vertices[i].y - 0.5, quad.vertices[i].z - 0.5};
      if(transform.pitch != 0.0f) {
-      rotatePoint(point, zeroOrigin, 'x', transform.pitch);
+      detail::rotatePoint(point, zeroOrigin, 'x', transform.pitch);
      }
      if(transform.yaw != 0.0f) {
-      rotatePoint(point, zeroOrigin, 'y', transform.yaw);
+      detail::rotatePoint(point, zeroOrigin, 'y', transform.yaw);
      }
      if(transform.roll != 0.0f) {
-      rotatePoint(point, zeroOrigin, 'z', transform.roll);
+      detail::rotatePoint(point, zeroOrigin, 'z', transform.roll);
      }
      vertices[i].x = point[0] * transform.scale + 0.5 + transform.offsetX;
      vertices[i].y = point[1] * transform.scale + 0.5 + transform.offsetY;
@@ -1054,6 +509,7 @@ bool forEachBakedQuad(const BakedModel& baked,
    }
    EmittedQuad out;
    out.vertices = vertices;
+   out.coplanarBackFace = quad.coplanarBackFace;
    out.red = quad.red * quad.shade * transform.colorR;
    out.green = quad.green * quad.shade * transform.colorG;
    out.blue = quad.blue * quad.shade * transform.colorB;
@@ -1079,6 +535,10 @@ bool writeBlockQuad(const BlockModelDraw& draw, const EmittedQuad& quad, int tex
  if(draw.manager == nullptr || draw.block == nullptr) {
   return false;
  }
+ // Same rule as minecraft.model.draw: never emit both faces of a thin plane.
+ if(quad.coplanarBackFace) {
+  return true;
+ }
  if(textureId < 0) {
   textureId = draw.block->textureId;
  }
@@ -1098,45 +558,38 @@ bool writeBlockQuad(const BlockModelDraw& draw, const EmittedQuad& quad, int tex
  if(!capturing) {
   t.startQuads();
  }
- writeQuad(t, quad, baseX, baseY, baseZ, draw.brightness, 1.0f);
+ // World/chunk path: activeTess already wrote face light + mc_Entity. Inventory
+ // icons have no blockData — pack luminance into the lightmap from brightness.
+ const QuadLightMode lightMode = draw.inventory ? QuadLightMode::Absolute : QuadLightMode::Preserve;
+ writeQuad(t, quad, baseX, baseY, baseZ, draw.brightness, 1.0f, lightMode);
  if(!capturing) {
   t.draw();
  }
  return true;
 }
-bool drawBakedBlockModel(const BlockModelDraw& draw, int handle, const BakedQuadTransform& transform) {
- const BakedModel* baked = bakedModelForHandle(handle);
- if(baked == nullptr) {
-  return false;
- }
+bool drawBakedBlockModel(const BlockModelDraw& draw, const BakedModel& baked, const BakedQuadTransform& transform) {
  // Cullface only means anything against the block grid, so an inventory icon
  // keeps every quad.
  const bool grid = !draw.inventory && draw.block != nullptr && draw.manager != nullptr;
- return forEachBakedQuad(*baked,
-                         transform,
-                         grid ? &draw : nullptr,
-                         grid ? draw.manager->ctx.blockView : nullptr,
-                         [](const BakedTextureBatch&) { return true; },
-                         [&](const BakedTextureBatch& batch, const EmittedQuad& quad) {
-                          writeBlockQuad(draw, quad, batch.textureId);
-                         });
+ return forEachBakedQuad(baked, transform, grid ? &draw : nullptr, grid ? draw.manager->ctx.blockView : nullptr, [](const BakedTextureBatch&) { return true; }, [&](const BakedTextureBatch& batch, const EmittedQuad& quad) { writeBlockQuad(draw, quad, batch.textureId); });
 }
-bool drawBakedItemModel(Tessellator& tess, float brightness, int handle) {
- const BakedModel* baked = bakedModelForHandle(handle);
- if(baked == nullptr) {
-  return false;
- }
- return forEachBakedQuad(*baked,
-                         BakedQuadTransform{},
-                         nullptr,
-                         nullptr,
-                         [](const BakedTextureBatch&) { return true; },
-                         [&](const BakedTextureBatch& batch, const EmittedQuad& quad) {
-                          bindItemModelTexture(batch.textureId);
+bool drawBakedItemModel(Tessellator& tess, float brightness, const BakedModel& baked) {
+ return forEachBakedQuad(baked, BakedQuadTransform{}, nullptr, nullptr, [](const BakedTextureBatch&) { return true; }, [&](const BakedTextureBatch& batch, const EmittedQuad& quad) {
+                          if(quad.coplanarBackFace) {
+                           return;
+                          }
+                          if(client::Minecraft::INSTANCE != nullptr) {
+                           const client::render::ResolvedTexture resolved = client::render::resolveBlockTexture(
+                               batch.textureId,
+                               client::Minecraft::INSTANCE->textureManager,
+                               client::render::AtlasDomain::Terrain);
+                           if(resolved.isModTexture) {
+                            client::Minecraft::INSTANCE->textureManager.bindTexture(resolved.glId);
+                           }
+                          }
                           tess.startQuads();
                           writeQuad(tess, quad, 0.0, 0.0, 0.0, brightness, 1.0f);
-                          tess.draw();
-                         });
+                          tess.draw(); });
 }
 // Baked-model equivalent of LuaModBlock::getRenderBounds/getColorMultiplier:
 // register_block's coordinate_bounds/coordinate_color have to be applied here
@@ -1164,37 +617,71 @@ bool drawLuaBlockWorld(BlockRenderManager& manager, Block& block, int x, int y, 
  if(spec == nullptr || spec->bakedModel == 0) {
   return false;
  }
- const BlockModelDraw draw{
-     &manager, &block, x, y, z, false, block.getLuminance(manager.ctx.blockView, x, y, z)};
- RenderSystem::alphaTest(0.1f);
- if(spec->coordinateBounds || spec->coordinateColor) {
-  return drawBakedBlockModel(draw, spec->bakedModel, coordinateQuadTransform(*spec, x, y, z));
+ const BakedModel* baked = bakedModelForHandle(spec->bakedModel);
+ if(baked == nullptr) {
+  return false;
  }
- return drawBakedBlockModel(draw, spec->bakedModel, BakedQuadTransform{});
+ const BlockModelDraw draw{&manager, &block, x, y, z, false, 1.0f};
+ core::setAlphaTestRef(0.1f);
+ const BakedQuadTransform transform =
+     spec->coordinateBounds || spec->coordinateColor ? coordinateQuadTransform(*spec, x, y, z) : BakedQuadTransform{};
+ return drawBakedBlockModel(draw, *baked, transform);
 }
 void drawLuaBlockInventory(BlockRenderManager& manager, Block& block, int /*metadata*/, float brightness) {
  const BlockRegistrationSpec* spec = blockRegistrationSpecForId(block.id);
  if(spec == nullptr || spec->bakedModel == 0) {
   return;
  }
- const ModStateScope stateGuard;
- RenderSystem::depthTestWrite(true);
- RenderSystem::disableLighting();
- RenderSystem::enableTexture();
- RenderSystem::color4f(1.0f, 1.0f, 1.0f, 1.0f);
- const MatrixScope matrix;
- RenderSystem::translate(-0.5f, -0.5f, -0.5f);
+ const BakedModel* baked = bakedModelForHandle(spec->bakedModel);
+ if(baked == nullptr) {
+  return;
+ }
+ core::depthTestWrite(true);
+ core::setLightingEnabled(false);
+ core::setConstColor(1.0f, 1.0f, 1.0f, 1.0f);
+ const core::ScopedModelView matrix;
+ core::modelViewStack().translate(-0.5f, -0.5f, -0.5f);
  const BlockModelDraw draw{&manager, &block, 0, 0, 0, true, brightness};
- drawBakedBlockModel(draw, spec->bakedModel, BakedQuadTransform{});
+ drawBakedBlockModel(draw, *baked, BakedQuadTransform{});
 }
 bool drawLuaItemModel(Tessellator& tessellator, const ItemStack& stack, float brightness) {
  const ItemRegistrationSpec* spec = itemRegistrationSpecForId(stack.itemId);
  if(spec == nullptr || spec->bakedModel == 0) {
   return false;
  }
- return drawBakedItemModel(tessellator, brightness, spec->bakedModel);
+ const BakedModel* baked = bakedModelForHandle(spec->bakedModel);
+ return baked != nullptr && drawBakedItemModel(tessellator, brightness, *baked);
 }
 #ifdef MINECRAFT_NATIVE_EXPORTS
+void sampleWorldBlockSkyLight(const WorldModelDraw& options, int& blockLight, int& skyLight) {
+ blockLight = 15;
+ skyLight = 15;
+ if(client::Minecraft::INSTANCE == nullptr || client::Minecraft::INSTANCE->world == nullptr) {
+  return;
+ }
+ World& world = *client::Minecraft::INSTANCE->world;
+ const int x = static_cast<int>(std::floor(options.x));
+ const int y = static_cast<int>(std::floor(options.y));
+ const int z = static_cast<int>(std::floor(options.z));
+ blockLight = world.getBrightness(LightType::Block, x, y, z);
+ skyLight = world.getBrightness(LightType::Sky, x, y, z);
+ const int blockId = world.getBlockId(x, y, z);
+ if(blockId <= 0 || blockId >= block::Block::BLOCK_COUNT ||
+    !block::Block::BLOCKS_OPAQUE[static_cast<std::size_t>(blockId)]) {
+  return;
+ }
+ for(const int (&offset)[3] : kFaceOffsets) {
+  blockLight =
+      std::max(blockLight, world.getBrightness(LightType::Block, x + offset[0], y + offset[1], z + offset[2]));
+  skyLight = std::max(skyLight, world.getBrightness(LightType::Sky, x + offset[0], y + offset[1], z + offset[2]));
+ }
+}
+int resolveDrawEntityId(const WorldModelDraw& options) {
+ if(!options.shaderEntity.empty()) {
+  return client::render::resolveShaderObjectId("entity", options.shaderEntity, options.entityId);
+ }
+ return options.entityId;
+}
 bool drawBakedModelWorld(int handle, const WorldModelDraw& options) {
  const BakedModel* baked = bakedModelForHandle(handle);
  if(baked == nullptr || !runtime::ModWorldDrawContext::active() || client::Minecraft::INSTANCE == nullptr) {
@@ -1202,16 +689,38 @@ bool drawBakedModelWorld(int handle, const WorldModelDraw& options) {
  }
  const float brightness = worldBrightness(options);
  const bool textured = !baked->batches.empty() && !baked->batches.front().texturePath.empty();
- const ModLuaDrawScope modCaps(textured, options.blend, options.cull, options.depthTest, options.depthWrite);
- const MatrixScope matrix;
+ if(!textured) {
+  // Empty / failed bake: refuse gbuffers_basic + white diffuse (classic grey pillar).
+  return false;
+ }
+ const ModLuaDrawScope modCaps(true, options.blend, options.cull, options.depthTest, options.depthWrite,
+                               options.layer);
+ const client::render::core::EntityIdScope entityIdScope(resolveDrawEntityId(options));
+ const bool entityLighting = modCaps.usesEntityLighting();
+ if(entityLighting) {
+  core::setConstColor(brightness, brightness, brightness, 1.0f);
+ }
+ if(modCaps.usesTerrainProgram()) {
+  core::setPendingTerrainDraw(0.0f, 0.0f, 0.0f);
+ }
+ const core::ScopedModelView matrix;
  applyWorldDrawTransform(options);
- RenderSystem::translate(-0.5f, -options.pivotY, -0.5f);
+ core::modelViewStack().translate(-0.5f, -options.pivotY, -0.5f);
  client::texture::TextureManager& textures = client::Minecraft::INSTANCE->textureManager;
  Tessellator& tess = worldDrawTessellator();
+ int blockLight = 15;
+ int skyLight = 15;
+ const bool wantBlockData = modCaps.usesTerrainProgram() || options.blockId != 0;
+ if(wantBlockData) {
+  sampleWorldBlockSkyLight(options, blockLight, skyLight);
+ }
+ const int shaderBlockId =
+     options.blockId != 0 ? client::render::resolveShaderBlockId(options.blockId) : 0;
+ const QuadLightMode lightMode =
+     entityLighting ? QuadLightMode::Entity
+                    : (wantBlockData ? QuadLightMode::Preserve : QuadLightMode::Absolute);
  bool open = false;
- // A world draw places the model with the matrix above, so the quads go out at
- // their baked pose: no per-quad transform, and no grid to cull against. Each
- // batch binds its own texture by path, so one open batch spans its quads.
+ bool drew = false;
  forEachBakedQuad(
      *baked,
      BakedQuadTransform{},
@@ -1221,24 +730,103 @@ bool drawBakedModelWorld(int handle, const WorldModelDraw& options) {
       if(batch.texturePath.empty()) {
        return false;
       }
+      const int glId = textures.getTextureId(batch.texturePath);
+      if(glId < 0) {
+       return false;
+      }
       if(open) {
        tess.draw();
       }
-      const int glId = textures.getTextureId(batch.texturePath);
-      if(glId >= 0) {
-       textures.bindTexture(glId);
-      }
+      textures.bindTexture(glId);
       tess.startQuads();
+      if(wantBlockData) {
+       tess.blockData(options.x, options.y, options.z, 0, blockLight, skyLight, shaderBlockId, 0,
+                      options.blockMeta);
+      }
       open = true;
       return true;
      },
      [&](const BakedTextureBatch& /*batch*/, const EmittedQuad& quad) {
-      writeQuad(tess, quad, 0.0, 0.0, 0.0, brightness, options.alpha);
+      // Thin-plane face pairs are coplanar; keep the front of the pair only.
+      if(quad.coplanarBackFace) {
+       return;
+      }
+      writeQuad(tess, quad, 0.0, 0.0, 0.0, brightness, options.alpha, lightMode);
+      drew = true;
      });
  if(open) {
   tess.draw();
  }
- return true;
+ if(modCaps.usesTerrainProgram()) {
+  core::clearPendingTerrainDraw();
+ }
+ return drew;
+}
+// Draws a 2.5D extruded sprite for a flat item (front face, back face, and 16
+// edge slices along each axis). Shared between HeldItemRenderer and world-item
+// draws so the voxel extrusion is authored once. The geometry is emitted at the
+// origin spanning x=[0,1], y=[0,1], z=[-depth,0]; callers position it.
+void drawExtrudedSprite(Tessellator& tess, float uMin, float uMax, float vMin, float vMax) {
+ constexpr float itemWidth = 1.0f;
+ constexpr float depth = 0.0625f;
+ tess.startQuads();
+ // Front face (z = 0)
+ tess.normal(0.0f, 0.0f, 1.0f);
+ tess.vertex(0.0, 0.0, 0.0, uMax, vMax);
+ tess.vertex(itemWidth, 0.0, 0.0, uMin, vMax);
+ tess.vertex(itemWidth, 1.0, 0.0, uMin, vMin);
+ tess.vertex(0.0, 1.0, 0.0, uMax, vMin);
+ // Back face (z = -depth)
+ tess.normal(0.0f, 0.0f, -1.0f);
+ tess.vertex(0.0, 1.0, 0.0 - depth, uMax, vMin);
+ tess.vertex(itemWidth, 1.0, 0.0 - depth, uMin, vMin);
+ tess.vertex(itemWidth, 0.0, 0.0 - depth, uMin, vMax);
+ tess.vertex(0.0, 0.0, 0.0 - depth, uMax, vMax);
+ // Left edge (x slices, normal -X)
+ tess.normal(-1.0f, 0.0f, 0.0f);
+ for(int slice = 0; slice < 16; ++slice) {
+  const float t = static_cast<float>(slice) / 16.0f;
+  const float u = uMax + (uMin - uMax) * t - 0.001953125f;
+  const float x = itemWidth * t;
+  tess.vertex(x, 0.0, 0.0 - depth, u, vMax);
+  tess.vertex(x, 0.0, 0.0, u, vMax);
+  tess.vertex(x, 1.0, 0.0, u, vMin);
+  tess.vertex(x, 1.0, 0.0 - depth, u, vMin);
+ }
+ // Right edge (x slices, normal +X)
+ tess.normal(1.0f, 0.0f, 0.0f);
+ for(int slice = 0; slice < 16; ++slice) {
+  const float t = static_cast<float>(slice) / 16.0f;
+  const float u = uMax + (uMin - uMax) * t - 0.001953125f;
+  const float x = itemWidth * t + 0.0625f;
+  tess.vertex(x, 1.0, 0.0 - depth, u, vMin);
+  tess.vertex(x, 1.0, 0.0, u, vMin);
+  tess.vertex(x, 0.0, 0.0, u, vMax);
+  tess.vertex(x, 0.0, 0.0 - depth, u, vMax);
+ }
+ // Top edge (y slices, normal +Y)
+ tess.normal(0.0f, 1.0f, 0.0f);
+ for(int slice = 0; slice < 16; ++slice) {
+  const float t = static_cast<float>(slice) / 16.0f;
+  const float v = vMax + (vMin - vMax) * t - 0.001953125f;
+  const float y = itemWidth * t + 0.0625f;
+  tess.vertex(0.0, y, 0.0, uMax, v);
+  tess.vertex(itemWidth, y, 0.0, uMin, v);
+  tess.vertex(itemWidth, y, 0.0 - depth, uMin, v);
+  tess.vertex(0.0, y, 0.0 - depth, uMax, v);
+ }
+ // Bottom edge (y slices, normal -Y)
+ tess.normal(0.0f, -1.0f, 0.0f);
+ for(int slice = 0; slice < 16; ++slice) {
+  const float t = static_cast<float>(slice) / 16.0f;
+  const float v = vMax + (vMin - vMax) * t - 0.001953125f;
+  const float y = itemWidth * t;
+  tess.vertex(itemWidth, y, 0.0, uMin, v);
+  tess.vertex(0.0, y, 0.0, uMax, v);
+  tess.vertex(0.0, y, 0.0 - depth, uMax, v);
+  tess.vertex(itemWidth, y, 0.0 - depth, uMin, v);
+ }
+ tess.draw();
 }
 bool drawItemStackWorld(const ItemStack& stack, const WorldModelDraw& options) {
  if(!runtime::ModWorldDrawContext::active() || client::Minecraft::INSTANCE == nullptr) {
@@ -1246,43 +834,62 @@ bool drawItemStackWorld(const ItemStack& stack, const WorldModelDraw& options) {
  }
  const bool custom = ItemModelRenderer::hasCustomModel(stack);
  const bool blockModel = !custom && ItemModelRenderer::rendersAsBlockModel(stack);
- if(!custom && !blockModel) {
-  return false;
- }
  Block* block = blockModel ? ItemModelRenderer::blockOf(stack) : nullptr;
  if(blockModel && block == nullptr) {
   return false;
  }
  const float brightness = worldBrightness(options);
- const ModLuaDrawScope modCaps(true, options.blend, options.cull, options.depthTest, options.depthWrite);
- const MatrixScope matrix;
+ const ModLuaDrawScope modCaps(true, options.blend, options.cull, options.depthTest, options.depthWrite,
+                               options.layer);
+ const client::render::core::EntityIdScope entityIdScope(resolveDrawEntityId(options));
+ if(modCaps.usesEntityLighting()) {
+  core::setConstColor(brightness, brightness, brightness, 1.0f);
+ }
+ const core::ScopedModelView matrix;
  applyWorldDrawTransform(options);
  client::texture::TextureManager& textures = client::Minecraft::INSTANCE->textureManager;
  if(custom) {
   // Custom item models are baked in 0..1 model space; recentre onto the pivot.
-  RenderSystem::translate(-0.5f, -options.pivotY, -0.5f);
-  textures.bindTextureOrAtlas(stack.getTextureId(), ItemModelRenderer::spriteAtlasPath(stack));
-  // Not Tessellator::INSTANCE: a world item draw can happen while an outer
-  // renderer has a batch open on INSTANCE, and draw()ing it here would flush
-  // that half-built geometry with this item's matrix and texture.
-  return drawLuaItemModel(worldDrawTessellator(), stack, brightness);
+  core::modelViewStack().translate(-0.5f, -options.pivotY, -0.5f);
+  textures.bindTexture(
+      client::render::resolveBlockTexture(stack.getTextureId(), textures, ItemModelRenderer::atlasDomain(stack)).glId);
+  // Entity lighting: brightness already in uConstColor; lightmap fullbright.
+  return drawLuaItemModel(worldDrawTessellator(), stack, modCaps.usesEntityLighting() ? 1.0f : brightness);
  }
- // The inventory block renderers (vanilla and drawLuaBlockInventory) emit
- // geometry already centred on the origin, so only the pivot's deviation
- // from centre needs compensating; a second -0.5 shift would put the cube's
- // visual centre half a block off the rotation pivot (lopsided tumbling).
- if(options.pivotY != 0.5f) {
-  RenderSystem::translate(0.0f, 0.5f - options.pivotY, 0.0f);
+ if(blockModel) {
+  // The inventory block renderers emit geometry already centred on the origin,
+  // so only the pivot's deviation from centre needs compensating.
+  if(options.pivotY != 0.5f) {
+   core::modelViewStack().translate(0.0f, 0.5f - options.pivotY, 0.0f);
+  }
+  textures.bindTexture(client::render::resolveBlockTexture(block->textureId, textures,
+                                                            client::render::AtlasDomain::Terrain)
+                           .glId);
+  static BlockRenderManager itemDropBlockManager;
+  auto* previousTextureManager = itemDropBlockManager.ctx.textureManager;
+  const bool previousUseAo = itemDropBlockManager.ctx.faceState.useAo;
+  itemDropBlockManager.ctx.textureManager = &textures;
+  itemDropBlockManager.ctx.faceState.useAo = false;
+  itemDropBlockManager.render(*block, stack.getDamage(), brightness);
+  itemDropBlockManager.ctx.textureManager = previousTextureManager;
+  itemDropBlockManager.ctx.faceState.useAo = previousUseAo;
+  return true;
  }
- textures.bindTextureOrAtlas(block->textureId, "/terrain.png");
- static BlockRenderManager itemDropBlockManager;
- auto* previousTextureManager = itemDropBlockManager.ctx.textureManager;
- const bool previousUseAo = itemDropBlockManager.ctx.faceState.useAo;
- itemDropBlockManager.ctx.textureManager = &textures;
- itemDropBlockManager.ctx.faceState.useAo = false;
- itemDropBlockManager.render(*block, stack.getDamage(), brightness);
- itemDropBlockManager.ctx.textureManager = previousTextureManager;
- itemDropBlockManager.ctx.faceState.useAo = previousUseAo;
+ // Flat sprite items (tools, food, ...) get a 2.5D extruded icon. The
+ // geometry spans x=[0,1], y=[0,1], z=[-depth,0]; recentre onto the pivot.
+ const auto uv = ItemModelRenderer::spriteUv(stack);
+ core::modelViewStack().translate(-0.5f, -options.pivotY, 0.0625f * 0.5f);
+ textures.bindTexture(
+     client::render::resolveBlockTexture(stack.getTextureId(), textures, ItemModelRenderer::atlasDomain(stack)).glId);
+ {
+  Tessellator& tess = worldDrawTessellator();
+  const int level = std::clamp(static_cast<int>(std::lround(brightness * 15.0f)), 0, 15);
+  tess.light(level, level);
+  core::setConstColor(1.0f, 1.0f, 1.0f, options.alpha);
+  drawExtrudedSprite(tess,
+                     static_cast<float>(uv.uMin), static_cast<float>(uv.uMax),
+                     static_cast<float>(uv.vMin), static_cast<float>(uv.vMax));
+ }
  return true;
 }
 #else
@@ -1327,10 +934,22 @@ bool itemStackBounds(const ItemStack& stack, BakedBounds& outBounds) {
   outBounds.empty = false;
   return true;
  }
- return false;
+ // Flat sprite items: match the extruded 2.5D icon geometry (x=[0,1], y=[0,1],
+ // z=[-depth,0]). Centre is (0.5, 0.5, -depth/2) which aligns with the
+ // pivot used by drawItemStackWorld.
+ constexpr float depth = 0.0625f;
+ outBounds.min[0] = 0.0f;
+ outBounds.min[1] = 0.0f;
+ outBounds.min[2] = -depth;
+ outBounds.max[0] = 1.0f;
+ outBounds.max[1] = 1.0f;
+ outBounds.max[2] = 0.0f;
+ outBounds.empty = false;
+ return true;
 }
 } // namespace net::minecraft::mod::model
 namespace net::minecraft::mod::runtime {
+namespace core = net::minecraft::client::render::core;
 using namespace net::minecraft::mod::lua;
 namespace {
 int luaModelLoad(lua_State* state) {
@@ -1451,10 +1070,17 @@ model::WorldModelDraw readWorldModelDraw(lua_State* state, int optsIndex) {
    options.brightness = std::clamp(options.brightness, 0.0f, 1.0f);
   }
   options.alpha = std::clamp(luaFloatField(state, optsIndex, "a", 1.0f), 0.0f, 1.0f);
-  options.blend = luaBoolField(state, optsIndex, "blend", true);
-  options.cull = luaBoolField(state, optsIndex, "cull", false);
+  // Opaque-first default: translucent is opt-in (entity cutout / terrain cutout).
+  options.blend = luaBoolField(state, optsIndex, "blend", false);
+  options.cull = luaBoolField(state, optsIndex, "cull", true);
   options.depthTest = luaBoolField(state, optsIndex, "depth_test", true);
   options.depthWrite = luaBoolField(state, optsIndex, "depth_write", true);
+  const std::string layerName = luaStringField(state, optsIndex, "layer", "");
+  options.layer = runtime::parseModDrawLayer(layerName);
+  options.entityId = luaIntField(state, optsIndex, "entity_id", 0);
+  options.shaderEntity = luaStringField(state, optsIndex, "shader_entity", "");
+  options.blockId = luaIntField(state, optsIndex, "block_id", 0);
+  options.blockMeta = luaIntField(state, optsIndex, "block_meta", 0);
  }
  return options;
 }
@@ -1545,8 +1171,8 @@ int luaModelBuild(lua_State* state) {
   return 2;
  }
  const int quadsIndex = api.gettop(state);
-  const std::size_t quadCount = api.rawlen(state, quadsIndex);
-  auto baked = std::make_unique<model::BakedModel>();
+ const std::size_t quadCount = api.rawlen(state, quadsIndex);
+ auto baked = std::make_unique<model::BakedModel>();
  for(std::size_t qi = 1; qi <= quadCount; ++qi) {
   api.rawgeti(state, quadsIndex, static_cast<long long>(qi));
   const int quadIndex = api.gettop(state);
@@ -1578,7 +1204,7 @@ int luaModelBuild(lua_State* state) {
    }
    api.settop(state, quadIndex);
    if(ok) {
-     model::batchFor(*baked, texture).push_back(quad);
+    model::detail::batchFor(*baked, texture).push_back(quad);
    }
   }
   api.settop(state, quadsIndex);

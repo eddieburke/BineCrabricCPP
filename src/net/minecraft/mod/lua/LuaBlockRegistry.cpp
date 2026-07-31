@@ -213,6 +213,7 @@ class LuaModBlock : public Block {
    }
   }
  }
+
  private:
  BlockRegistrationSpec spec_;
  // Declared shape, overridden in the constructor when a baked model turns out

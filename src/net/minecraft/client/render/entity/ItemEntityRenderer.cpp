@@ -1,6 +1,6 @@
 #include "net/minecraft/block/Block.hpp"
 #include "net/minecraft/client/gl/GlConstants.hpp"
-#include "net/minecraft/client/render/RenderSystem.hpp"
+#include "net/minecraft/client/render/RenderCore.hpp"
 #include "net/minecraft/client/render/RenderType.hpp"
 #include "net/minecraft/client/render/Tessellator.hpp"
 #include "net/minecraft/client/render/TextureResolve.hpp"
@@ -15,24 +15,13 @@
 #include "net/minecraft/registry/TextureRegistry.hpp"
 #include "net/minecraft/util/math/MathHelper.hpp"
 namespace net::minecraft::client::render::entity {
-namespace {
-struct MatrixScope {
- MatrixScope() {
-  RenderSystem::pushMatrix();
- }
- ~MatrixScope() {
-  RenderSystem::popMatrix();
- }
- MatrixScope(const MatrixScope&) = delete;
- MatrixScope& operator=(const MatrixScope&) = delete;
-};
-} // namespace
 ItemEntityRenderer::ItemEntityRenderer() {
  shadowRadius = 0.15f;
  shadowDarkness = 0.75f;
 }
 void ItemEntityRenderer::render(
-    const net::minecraft::Entity& entity, double x, double y, double z, float /*yaw*/, float tickDelta) {
+    const net::minecraft::Entity& entity, double x, double y, double z, float /*yaw*/, float tickDelta,
+    net::minecraft::util::math::MatrixStack& matrices, const net::minecraft::util::math::Matrix4f& projection) {
  if(net::minecraft::mod::runtime::itemModelRenderOverrideActive()) {
   return;
  }
@@ -40,10 +29,12 @@ void ItemEntityRenderer::render(
  if(itemEntity == nullptr || itemEntity->stack.empty()) {
   return;
  }
+ beginDraw(matrices, projection);
  random_.setSeed(187L);
  const ItemStack& stack = itemEntity->stack;
+ const render::core::RenderedItemScope itemScope(item::ItemModelRenderer::shaderId(stack));
  const RenderPassScope passScope(RenderType::entityCutout());
- const MatrixScope matrix;
+ matrices.push();
  const float bob = MathHelper::sin((static_cast<float>(itemEntity->itemAge) + tickDelta) / 10.0f +
                                    itemEntity->initialRotationAngle) *
                        0.1f +
@@ -60,15 +51,15 @@ void ItemEntityRenderer::render(
  if(stack.count > 20) {
   duplicateCount = 4;
  }
- RenderSystem::translate(static_cast<float>(x), static_cast<float>(y) + bob, static_cast<float>(z));
+ matrices.translate(static_cast<float>(x), static_cast<float>(y) + bob, static_cast<float>(z));
  if(item::ItemModelRenderer::rendersAsBlockModel(stack)) {
-  RenderSystem::rotate(spin, 0.0f, 1.0f, 0.0f);
+  matrices.rotate(spin, 0.0f, 1.0f, 0.0f);
   net::minecraft::block::Block* block = item::ItemModelRenderer::blockOf(stack);
   if(block != nullptr && dispatcher != nullptr && dispatcher->textureManager() != nullptr) {
    const client::render::ResolvedTexture resolved = client::render::resolveBlockTexture(
        block->textureId, *dispatcher->textureManager(), client::render::AtlasDomain::Terrain);
    if(resolved.glId >= 0) {
-    RenderSystem::bindTexture(0x0DE1, resolved.glId);
+    core::bindTexture(0x0DE1, resolved.glId);
    }
   } else {
    bindTexture("/terrain.png");
@@ -77,22 +68,23 @@ void ItemEntityRenderer::render(
   if(block != nullptr && !block->isFullCube() && stack.itemId != 44 && block->getRenderType() != 16) {
    scale = 0.5f;
   }
-  RenderSystem::scale(scale, scale, scale);
+  matrices.scale(scale, scale, scale);
   for(int i = 0; i < duplicateCount; ++i) {
-   RenderSystem::pushMatrix();
+   matrices.push();
    if(i > 0) {
     const float offsetX = (random_.nextFloat() * 2.0f - 1.0f) * 0.2f / scale;
     const float offsetY = (random_.nextFloat() * 2.0f - 1.0f) * 0.2f / scale;
     const float offsetZ = (random_.nextFloat() * 2.0f - 1.0f) * 0.2f / scale;
-    RenderSystem::translate(offsetX, offsetY, offsetZ);
+    matrices.translate(offsetX, offsetY, offsetZ);
    }
    if(block != nullptr) {
+    // MCP RenderItem: renderBlockOnInventory(..., getEntityBrightness(partialTick)).
     blockRenderManager_.render(*block, stack.getDamage(), entity.getBrightnessAtEyes(tickDelta));
    }
-   RenderSystem::popMatrix();
+   matrices.pop();
   }
  } else {
-  RenderSystem::scale(0.5f, 0.5f, 0.5f);
+  matrices.scale(0.5f, 0.5f, 0.5f);
   const int textureId = stack.getTextureId();
   const bool isBlockSprite =
       stack.itemId < Block::BLOCK_COUNT && Block::BLOCKS[static_cast<std::size_t>(stack.itemId)] != nullptr;
@@ -102,9 +94,8 @@ void ItemEntityRenderer::render(
        *dispatcher->textureManager(),
        isBlockSprite ? client::render::AtlasDomain::Terrain : client::render::AtlasDomain::Items);
    if(resolved.glId >= 0) {
-    RenderSystem::activeTexture(0x84C0);
-    RenderSystem::enableTexture();
-    RenderSystem::bindTexture(0x0DE1, resolved.glId);
+    core::activeTexture(0x84C0);
+    core::bindTexture(0x0DE1, resolved.glId);
    }
   } else if(isBlockSprite) {
    bindTexture("/terrain.png");
@@ -120,23 +111,24 @@ void ItemEntityRenderer::render(
   constexpr float width = 1.0f;
   constexpr float halfWidth = 0.5f;
   constexpr float quarterHeight = 0.25f;
+  // MCP RenderItem sprite path: glColor4f(tint * getEntityBrightness(partialTick)).
   const float brightness = entity.getBrightnessAtEyes(tickDelta);
   if(useCustomDisplayColor_ && stack.getItem() != nullptr) {
    const item::ItemTint tint = item::ItemModelRenderer::tintColor(stack);
-   RenderSystem::color4f(tint.red * brightness, tint.green * brightness, tint.blue * brightness, 1.0f);
+   render::core::setConstColor(tint.red * brightness, tint.green * brightness, tint.blue * brightness, 1.0f);
   } else {
-   RenderSystem::color4f(brightness, brightness, brightness, 1.0f);
+   render::core::setConstColor(brightness, brightness, brightness, 1.0f);
   }
   for(int i = 0; i < duplicateCount; ++i) {
-   RenderSystem::pushMatrix();
+   matrices.push();
    if(i > 0) {
     const float offsetX = (random_.nextFloat() * 2.0f - 1.0f) * 0.3f;
     const float offsetY = (random_.nextFloat() * 2.0f - 1.0f) * 0.3f;
     const float offsetZ = (random_.nextFloat() * 2.0f - 1.0f) * 0.3f;
-    RenderSystem::translate(offsetX, offsetY, offsetZ);
+    matrices.translate(offsetX, offsetY, offsetZ);
    }
    if(dispatcher != nullptr) {
-    RenderSystem::rotate(180.0f - dispatcher->yaw_, 0.0f, 1.0f, 0.0f);
+    matrices.rotate(180.0f - dispatcher->yaw_, 0.0f, 1.0f, 0.0f);
    }
    tessellator.startQuads();
    tessellator.normal(0.0f, 1.0f, 0.0f);
@@ -145,10 +137,12 @@ void ItemEntityRenderer::render(
    tessellator.vertex(width - halfWidth, 1.0f - quarterHeight, 0.0, uMax, vMin);
    tessellator.vertex(0.0f - halfWidth, 1.0f - quarterHeight, 0.0, uMin, vMin);
    tessellator.draw();
-   RenderSystem::popMatrix();
+   matrices.pop();
   }
  }
- RenderSystem::color4f(1.0f, 1.0f, 1.0f, 1.0f);
+ render::core::setConstColor(1.0f, 1.0f, 1.0f, 1.0f);
+ matrices.pop();
+ endDraw();
 }
 } // namespace net::minecraft::client::render::entity
 #include "net/minecraft/client/entity/EntityClientRendererRegistration.hpp"

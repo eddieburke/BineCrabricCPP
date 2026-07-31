@@ -1,8 +1,3 @@
--- ================================================================
--- MOD: void_fog
--- Standardized structure with separated config
--- ================================================================
-
 local config = require("config")
 
 local last_camera_y = 64.0

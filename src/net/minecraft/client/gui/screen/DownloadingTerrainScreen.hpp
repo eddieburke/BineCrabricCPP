@@ -28,11 +28,10 @@ class DownloadingTerrainScreen : public Screen {
  void render(int mouseX, int mouseY, float tickDelta) override {
   renderBackgroundTexture(0);
   if(textRenderer_ != nullptr) {
-   drawCenteredTextWithShadow(*textRenderer_,
-                              resource::language::I18n::getTranslation("multiplayer.downloadingTerrain"),
-                              width_ / 2,
-                              height_ / 2 - 50,
-                              0xFFFFFF);
+   textRenderer_->drawCenteredWithShadow(resource::language::I18n::getTranslation("multiplayer.downloadingTerrain"),
+                                         width_ / 2,
+                                         height_ / 2 - 50,
+                                         0xFFFFFF);
   }
   Screen::render(mouseX, mouseY, tickDelta);
  }

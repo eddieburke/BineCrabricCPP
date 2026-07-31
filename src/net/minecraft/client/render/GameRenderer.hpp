@@ -3,13 +3,14 @@
 #include <memory>
 #include <optional>
 #include "net/minecraft/client/gl/GlConstants.hpp"
-#include "net/minecraft/client/option/ResolvedRenderOptions.hpp"
+#include "net/minecraft/client/option/RenderSettings.hpp"
 #include "net/minecraft/client/render/FrameRenderCamera.hpp"
-#include "net/minecraft/client/render/Framebuffer.hpp"
-#include "net/minecraft/client/render/RenderTargets.hpp"
+#include "net/minecraft/client/render/GuiProjection.hpp"
+#include "net/minecraft/client/render/ShadowMapPass.hpp"
 #include "net/minecraft/client/render/atmosphere/CloudRenderer.hpp"
 #include "net/minecraft/client/render/atmosphere/PrecipitationRenderer.hpp"
 #include "net/minecraft/client/render/item/HeldItemRenderer.hpp"
+#include "net/minecraft/client/render/shaderpack/ShaderUniforms.hpp"
 #include "net/minecraft/client/util/SmoothUtil.hpp"
 #include "net/minecraft/entity/EntityTypes.hpp"
 #include "net/minecraft/mod/runtime/LuaDirectHooks.hpp"
@@ -19,10 +20,16 @@ class Minecraft;
 }
 namespace net::minecraft::client::render::shaderpack {
 class ShaderPackManager;
-}
+struct ShaderPackDefinition;
+} // namespace net::minecraft::client::render::shaderpack
 namespace net::minecraft::client::render {
 class GameRenderer {
- friend class FramebufferManager;
+ friend shadowmap::ShadowMapResult shadowmap::update(shadowmap::ShadowMapState&,
+                                                     GameRenderer&,
+                                                     float,
+                                                     const FrameRenderCamera&,
+                                                     float,
+                                                     const shaderpack::ShaderPackDefinition*);
 
  public:
  explicit GameRenderer(net::minecraft::client::Minecraft* client);
@@ -30,18 +37,6 @@ class GameRenderer {
  void updateCamera();
  void updateTargetedEntity(float tickDelta);
  void onFrameUpdate(float tickDelta);
- void setupHudRender();
- void renderFrame(float tickDelta, std::int64_t timeNs = 0);
- void renderToCurrentTarget(float tickDelta,
-                            const FrameRenderCamera& camera,
-                            float fov,
-                            int viewportWidth,
-                            int viewportHeight,
-                            bool renderCameraEntity,
-                            bool captureWorldDepth = false);
- bool beginSceneCapture();
- void resolveSceneCapture(float tickDelta);
- [[nodiscard]] float farPlaneBlocks() const;
  [[nodiscard]] item::HeldItemRenderer* heldItemRendererPtr() {
   return heldItemRenderer.get();
  }
@@ -51,8 +46,8 @@ class GameRenderer {
  [[nodiscard]] shaderpack::ShaderPackManager* shaderPacks() {
   return shaderPacks_.get();
  }
- [[nodiscard]] FramebufferManager& renderTargets() noexcept {
-  return renderTargets_;
+ [[nodiscard]] const option::RenderSettings& frameSettings() const noexcept {
+  return frameSettings_;
  }
 
  private:
@@ -60,12 +55,29 @@ class GameRenderer {
  void applyDamageTiltEffect(float tickDelta);
  void applyViewBobbing(float tickDelta);
  void applyCameraTransform(float tickDelta);
- void updateSkyAndFogColors(float tickDelta);
- void applyFog(int mode);
  void renderWorld(float tickDelta, float fov);
+ void renderFrame(float tickDelta);
+ void renderToCurrentTarget(float tickDelta,
+                            const FrameRenderCamera& camera,
+                            float fov,
+                            int viewportWidth,
+                            int viewportHeight,
+                            bool renderCameraEntity,
+                            bool captureWorldDepth = false);
+ bool renderWorldToFbo(unsigned int fbo,
+                       int width,
+                       int height,
+                       float tickDelta,
+                       const FrameRenderCamera& camera,
+                       float fov,
+                       FrameRenderCamera* outCamera = nullptr);
+ bool beginSceneCapture();
+ void resolveSceneCapture();
  void renderFirstPersonHand(float tickDelta);
  void renderRain();
- void throttleAndTimestamp(int fpsCap);
+ [[nodiscard]] shaderpack::FrameUniformSet buildFrameUniforms(float tickDelta,
+                                                              float farPlane,
+                                                              bool shadowAvailable) const;
  net::minecraft::client::Minecraft* client = nullptr;
  atmosphere::CloudRenderer cloudRenderer{};
  atmosphere::PrecipitationRenderer precipitationRenderer{};
@@ -90,27 +102,13 @@ class GameRenderer {
  double zoomX = 0.0;
  double zoomY = 0.0;
  std::int64_t lastInactiveTime = 0;
- std::int64_t lastFrameTime = 0;
  JavaRandom random{};
  float lastViewBob = 0.0f;
  float viewBob = 0.0f;
- float fogRed = 0.0f;
- float fogGreen = 0.0f;
- float fogBlue = 0.0f;
- // Render options resolved once per frame (onFrameUpdate / renderToCurrentTarget)
- // and read by every stage below. resolve() is a ~48-field rebuild with two
- // std::pow calls; it used to run 11x per frame here, which also let different
- // stages of one frame observe different option values if a Lua mod mutated
- // GameOptions mid-frame.
- option::ResolvedRenderOptions frameOptions_{};
- float lastFogEnd_ = 0.0f;
- mod::FogSettingsEvent fogSettings_{};
+ option::RenderSettings frameSettings_{};
  FrameRenderCamera frameCamera_{};
- FramebufferManager renderTargets_{};
- int sunShadowTarget_ = -1;
- FrameRenderCamera sunShadowCamera_{};
- Framebuffer sceneFramebuffer_;
- bool sceneFramebufferAttempted_ = false;
+ shadowmap::ShadowMapState shadowState_{};
+ shadowmap::ShadowMapResult frameShadow_{};
  std::unique_ptr<shaderpack::ShaderPackManager> shaderPacks_;
 };
 } // namespace net::minecraft::client::render

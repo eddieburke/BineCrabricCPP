@@ -1,0 +1,40 @@
+#include "/prelude/core_profile_core.glsl"
+
+uniform int packedView;
+uniform vec3 chunkOffset;
+uniform mat4 modelViewMatrix, projectionMatrix;
+
+in vec3 vaNormal, vaPosition;
+in vec4 vaColor;
+
+out VertexData {
+	layout(location = 0, component = 0) flat uint tint;
+} v;
+
+#include "/lib/mmul.glsl"
+#include "/lib/srgb.glsl"
+#include "/lib/un11_11_10.glsl"
+
+void main() {
+	immut vec4 color = vec4(vaColor);
+	v.tint = packUnorm4x8(vec4(linear(color.rgb), saturate(2.0 * color.a)));
+
+	immut vec3 model = vec3(vaPosition) + vec3(chunkOffset);
+
+	const float view_shrink = 1.0 - (1.0 / 256.0);
+	immut mat4 model_view_mat = mat4(modelViewMatrix);
+	immut mat4 projection_mat = mat4(projectionMatrix);
+	immut vec4 start_clip = proj_mmul(projection_mat, view_shrink * rot_trans_mmul(model_view_mat, model));
+	immut vec4 end_clip = proj_mmul(projection_mat, view_shrink * rot_trans_mmul(model_view_mat, model + vec3(vaNormal)));
+
+	vec3 start_ndc = start_clip.xyz / start_clip.w;
+	immut vec3 end_ndc = end_clip.xyz / end_clip.w;
+
+	immut vec2 view_size = vec2(unpackUint2x16(uint(packedView)));
+	immut vec2 dir_screen = normalize((end_ndc.xy - start_ndc.xy) * view_size);
+	vec2 offset_ndc = float(LINE_WIDTH) / view_size * vec2(-dir_screen.y, dir_screen.x);
+
+	start_ndc.xy += ((gl_VertexID & 1) == 0 ^^ offset_ndc.x < 0.0) ? -offset_ndc : offset_ndc;
+
+	gl_Position = vec4(start_ndc * start_clip.w, start_clip.w);
+}

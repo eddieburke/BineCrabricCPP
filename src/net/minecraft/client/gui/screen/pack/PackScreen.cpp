@@ -3,13 +3,13 @@
 #include "net/minecraft/client/gui/Draw2D.hpp"
 #include "net/minecraft/client/gui/layout/ScreenLayout.hpp"
 #include "net/minecraft/client/gui/screen/TitleScreen.hpp"
-#include "net/minecraft/client/render/RenderSystem.hpp"
 #include "net/minecraft/client/render/Tessellator.hpp"
 #include "net/minecraft/client/resource/language/I18n.hpp"
 #include "net/minecraft/client/resource/pack/TexturePack.hpp"
 #include "net/minecraft/client/resource/pack/TexturePacks.hpp"
 #ifdef _WIN32
 #include <shellapi.h>
+#include "net/minecraft/client/render/RenderCore.hpp"
 #endif
 namespace net::minecraft::client::gui::screen::pack {
 class PackScreen::PackListWidget : public widget::EntryListWidget {
@@ -64,11 +64,11 @@ class PackScreen::PackListWidget : public widget::EntryListWidget {
    return;
   }
   pack->bindIcon(minecraft_.textureManager);
-  render::RenderSystem::color4f(1.0f, 1.0f, 1.0f, 1.0f);
+  render::core::setConstColor(1.0f, 1.0f, 1.0f, 1.0f);
   draw::coloredTexturedQuad(tessellator, x, y, x + 32, y + height, 0.0f, 0.0f, 1.0f, 1.0f, 0xFFFFFF);
-  owner_.drawTextWithShadow(*owner_.textRenderer(), pack->name, x + 34, y + 1, 0xFFFFFF);
-  owner_.drawTextWithShadow(*owner_.textRenderer(), pack->descriptionLine1, x + 34, y + 12, 0x808080);
-  owner_.drawTextWithShadow(*owner_.textRenderer(), pack->descriptionLine2, x + 34, y + 22, 0x808080);
+  owner_.textRenderer()->drawWithShadow(pack->name, x + 34, y + 1, 0xFFFFFF);
+  owner_.textRenderer()->drawWithShadow(pack->descriptionLine1, x + 34, y + 12, 0x808080);
+  owner_.textRenderer()->drawWithShadow(pack->descriptionLine2, x + 34, y + 22, 0x808080);
  }
 
  private:
@@ -116,13 +116,12 @@ void PackScreen::render(int mouseX, int mouseY, float tickDelta) {
   reloadCooldown_ += 20;
  }
  if(textRenderer() != nullptr) {
-  drawCenteredTextWithShadow(
-      *textRenderer(), resource::language::I18n::getTranslation("texturePack.title"), width() / 2, 16, 0xFFFFFF);
-  drawCenteredTextWithShadow(*textRenderer(),
-                             resource::language::I18n::getTranslation("texturePack.folderInfo"),
-                             width() / 2,
-                             height() - 26,
-                             0x808080);
+  textRenderer()->drawCenteredWithShadow(
+      resource::language::I18n::getTranslation("texturePack.title"), width() / 2, 16, 0xFFFFFF);
+  textRenderer()->drawCenteredWithShadow(resource::language::I18n::getTranslation("texturePack.folderInfo"),
+                                         width() / 2,
+                                         height() - 26,
+                                         0x808080);
  }
  Screen::render(mouseX, mouseY, tickDelta);
 }

@@ -77,6 +77,23 @@ TEST_F(ModelRegistryParentTest, TvBlockModelMapsItsBodyTexture) {
  EXPECT_EQ(model->batches[0].texturePath, "models/camera/tv/tv_body.png");
  EXPECT_EQ(model->batches[0].quads.size(), 6u);
 }
+TEST_F(ModelRegistryParentTest, FacesUsingDifferentTexturesKeepSeparateBatches) {
+ writeModel("models/texture/two_faces.json", R"({
+    "textures":{"front":"front","back":"back"},
+    "elements":[{"from":[0,0,0],"to":[16,16,16],"faces":{
+      "north":{"texture":"#front"},
+      "south":{"texture":"#back"}
+    }}]
+  })");
+ std::string error;
+ const BakedModel* model = load("models/texture/two_faces.json", error);
+ ASSERT_NE(model, nullptr) << error;
+ ASSERT_EQ(model->batches.size(), 2u);
+ EXPECT_EQ(model->batches[0].texturePath, "models/texture/front.png");
+ EXPECT_EQ(model->batches[1].texturePath, "models/texture/back.png");
+ EXPECT_EQ(model->batches[0].quads.size(), 1u);
+ EXPECT_EQ(model->batches[1].quads.size(), 1u);
+}
 TEST_F(ModelRegistryParentTest, MultilevelParentUsesChildTextureOverride) {
  writeModel("models/shared/base.json", R"({
     "textures":{"surface":"base_surface"},
@@ -176,6 +193,31 @@ TEST_F(ModelRegistryParentTest, NonDefaultTextureSizeRescalesUvs) {
  EXPECT_FLOAT_EQ(maxU, 1.0f);
  EXPECT_FLOAT_EQ(maxV, 1.0f);
 }
+TEST_F(ModelRegistryParentTest, FaceRotationPermutesBakedUvCorners) {
+ const float expected[4][4][2] = {
+     {{0.0f, 0.0f}, {0.0f, 1.0f}, {1.0f, 1.0f}, {1.0f, 0.0f}},
+     {{0.0f, 1.0f}, {1.0f, 1.0f}, {1.0f, 0.0f}, {0.0f, 0.0f}},
+     {{1.0f, 1.0f}, {1.0f, 0.0f}, {0.0f, 0.0f}, {0.0f, 1.0f}},
+     {{1.0f, 0.0f}, {0.0f, 0.0f}, {0.0f, 1.0f}, {1.0f, 1.0f}},
+ };
+ for(int quarterTurns = 0; quarterTurns < 4; ++quarterTurns) {
+  const std::string path = "models/uv/rotated_" + std::to_string(quarterTurns) + ".json";
+  const std::string json =
+      R"({"textures":{"body":"body"},"elements":[{"from":[0,0,0],"to":[16,16,16],"faces":{"north":{"uv":[0,0,16,16],"rotation":)" +
+      std::to_string(quarterTurns * 90) + R"(,"texture":"#body"}}}]})";
+  writeModel(path, json);
+  std::string error;
+  const BakedModel* model = load(path, error);
+  ASSERT_NE(model, nullptr) << error;
+  ASSERT_EQ(model->batches.size(), 1u);
+  ASSERT_EQ(model->batches[0].quads.size(), 1u);
+  const BakedQuad& quad = model->batches[0].quads[0];
+  for(int vertex = 0; vertex < 4; ++vertex) {
+   EXPECT_FLOAT_EQ(quad.vertices[vertex].u, expected[quarterTurns][vertex][0]);
+   EXPECT_FLOAT_EQ(quad.vertices[vertex].v, expected[quarterTurns][vertex][1]);
+  }
+ }
+}
 TEST_F(ModelRegistryParentTest, TextureSizeIsInheritedFromParent) {
  writeModel("models/uv/parent.json", R"({"texture_size":[32,32]})");
  writeModel("models/uv/child.json", R"({
@@ -227,9 +269,9 @@ TEST_F(ModelRegistryParentTest, SealedSeamBetweenStackedElementsIsDropped) {
  EXPECT_FLOAT_EQ(model->bounds.max[1], 1.0f);
 }
 // A crossed billboard (simple_lantern, the tripod) is built from zero-thickness
-// planes whose two faces are the same rectangle. Those must both survive — they
-// are the whole model, not an interior seam.
-TEST_F(ModelRegistryParentTest, ThinPlaneKeepsBothOfItsFaces) {
+// planes whose two faces are the same rectangle. Bake keeps one face per plane
+// (drops the coplanar back) so cull-off draws cannot Z-fight.
+TEST_F(ModelRegistryParentTest, ThinPlaneDropsCoplanarBackFaces) {
  writeModel("models/seal/plane.json", R"({
     "textures":{"0":"tripod"},
     "elements":[
@@ -247,11 +289,36 @@ TEST_F(ModelRegistryParentTest, ThinPlaneKeepsBothOfItsFaces) {
  const BakedModel* model = load("models/seal/plane.json", error);
  ASSERT_NE(model, nullptr) << error;
  ASSERT_EQ(model->batches.size(), 1u);
- EXPECT_EQ(model->batches[0].quads.size(), 4u);
+ EXPECT_EQ(model->batches[0].quads.size(), 2u);
  EXPECT_EQ(model->batches[0].texturePath, "models/seal/tripod.png");
+ for(const BakedQuad& quad : model->batches[0].quads) {
+  EXPECT_EQ(quad.face, ModelFace::North);
+  EXPECT_FALSE(quad.coplanarBackFace);
+ }
+}
+// Only the twin of an identical face counts as redundant: a plane with
+// different art on each side needs both quads whatever the draw does.
+TEST_F(ModelRegistryParentTest, ThinPlaneWithTwoTexturesFlagsNoBackFace) {
+ writeModel("models/seal/two_sided.json", R"({
+    "textures":{"0":"front","1":"back"},
+    "elements":[
+      {"from":[0,0,8],"to":[16,16,8],
+       "faces":{"north":{"uv":[0,0,16,16],"texture":"#0"},
+                "south":{"uv":[0,0,16,16],"texture":"#1"}}}
+    ]
+  })");
+ std::string error;
+ const BakedModel* model = load("models/seal/two_sided.json", error);
+ ASSERT_NE(model, nullptr) << error;
+ for(const BakedTextureBatch& batch : model->batches) {
+  for(const BakedQuad& quad : batch.quads) {
+   EXPECT_FALSE(quad.coplanarBackFace);
+  }
+ }
 }
 // Unresolvable references drop their face silently; a model that is nothing but
-// those is a load failure rather than an empty draw.
+// those is a load failure rather than an empty draw. Same-texture thin-plane
+// backs are also dropped at bake, so only the kept front remains here.
 TEST_F(ModelRegistryParentTest, MissingTextureReferenceDropsOnlyThatFace) {
  writeModel("models/seal/partial.json", R"({
     "textures":{"0":"real"},
@@ -266,7 +333,7 @@ TEST_F(ModelRegistryParentTest, MissingTextureReferenceDropsOnlyThatFace) {
  const BakedModel* model = load("models/seal/partial.json", error);
  ASSERT_NE(model, nullptr) << error;
  ASSERT_EQ(model->batches.size(), 1u);
- EXPECT_EQ(model->batches[0].quads.size(), 2u);
+ EXPECT_EQ(model->batches[0].quads.size(), 1u);
 }
 TEST_F(ModelRegistryParentTest, ParentCycleStopsAfterMergingAvailableData) {
  writeModel("models/cycle/a.json", R"({"parent":"b"})");

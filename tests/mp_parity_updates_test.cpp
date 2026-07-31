@@ -289,7 +289,6 @@ TEST(MultiplayerParityUpdates, HealthIncreaseDoesNotTriggerHurt) {
  EXPECT_EQ(player.damagedTime, 0);
 }
 TEST(MultiplayerParityUpdates, PredictedClientBlockBreakResetsWithoutAuthority) {
- block::initializeBlocks();
  client::multiplayer::ClientNetworkHandler handler(nullptr);
  ClientWorld world(&handler, 12345ULL, 0);
  ASSERT_NE(block::Block::DIRT, nullptr);
@@ -302,7 +301,6 @@ TEST(MultiplayerParityUpdates, PredictedClientBlockBreakResetsWithoutAuthority) 
  EXPECT_EQ(world.getBlockId(8, 64, 8), block::Block::DIRT->id);
 }
 TEST(MultiplayerParityUpdates, AuthoritativeBlockUpdateClearsPredictedReset) {
- block::initializeBlocks();
  client::multiplayer::ClientNetworkHandler handler(nullptr);
  ClientWorld world(&handler, 12345ULL, 0);
  ASSERT_NE(block::Block::DIRT, nullptr);
@@ -315,7 +313,6 @@ TEST(MultiplayerParityUpdates, AuthoritativeBlockUpdateClearsPredictedReset) {
  EXPECT_EQ(world.getBlockId(8, 64, 8), 0);
 }
 TEST(MultiplayerParityUpdates, ChunkDeltaAppliesBeforeFullChunkData) {
- block::initializeBlocks();
  client::multiplayer::ClientNetworkHandler handler(nullptr);
  ClientWorld world(&handler, 12345ULL, 0);
  handler.world = &world;
@@ -361,7 +358,6 @@ TEST(MultiplayerParityUpdates, AbortActionPacketUsesAction1) {
  EXPECT_EQ(abortPacket.action, 1);
 }
 TEST(MultiplayerParityUpdates, HostedOwnerBreaksSpawnBlockAndReceivesDrop) {
- block::initializeBlocks();
  ServerEventFixture fixture;
  fixture.world.setSpawnPos(Vec3i{8, 64, 8});
  fixture.world.setEventProcessingEnabled(true);
@@ -403,7 +399,6 @@ TEST(MultiplayerParityUpdates, HostedOwnerBreaksSpawnBlockAndReceivesDrop) {
  EXPECT_TRUE(foundDrop);
 }
 TEST(MultiplayerParityUpdates, ServerBlockBreakPersistsHeldToolDamage) {
- block::initializeBlocks();
  ServerEventFixture fixture;
  (void)fixture.world.getChunk(0, 0);
  ASSERT_NE(block::Block::STONE, nullptr);
@@ -418,7 +413,6 @@ TEST(MultiplayerParityUpdates, ServerBlockBreakPersistsHeldToolDamage) {
  EXPECT_EQ(player.inventory.main[0].damage, 1);
 }
 TEST(MultiplayerParityUpdates, ServerTicksPlayerOncePerNetworkTick) {
- block::initializeBlocks();
  ServerEventFixture fixture;
  (void)fixture.world.getChunk(0, 0);
  ASSERT_NE(block::Block::WATER, nullptr);
@@ -429,12 +423,12 @@ TEST(MultiplayerParityUpdates, ServerTicksPlayerOncePerNetworkTick) {
  server::network::ServerPlayNetworkHandler handler(&fixture.server, nullptr, &player);
  PlayerMovePositionAndOnGroundPacket packet;
  packet.setMove(player.x, player.y, player.y + player.getEyeHeight(), player.z, 0.0f, 0.0f, false);
-  player.air = 300;
-  handler.onPlayerMove(packet);
-  handler.onPlayerMove(packet);
-  EXPECT_EQ(player.air, 298);
-  handler.tick();
-  EXPECT_EQ(player.air, 298);
+ player.air = 300;
+ handler.onPlayerMove(packet);
+ handler.onPlayerMove(packet);
+ EXPECT_EQ(player.air, 298);
+ handler.tick();
+ EXPECT_EQ(player.air, 298);
 }
 TEST(MultiplayerParityUpdates, WorldTimeUpdateAppliesUnconditionally) {
  client::multiplayer::ClientNetworkHandler handler(nullptr);
@@ -446,14 +440,12 @@ TEST(MultiplayerParityUpdates, WorldTimeUpdateAppliesUnconditionally) {
  handler.onWorldTimeUpdate(packet);
  EXPECT_EQ(world.time(), 95ULL);
 }
-
 // Java ServerPlayNetworkHandler.teleport sends PlayerMoveFullPacket(x, y + 1.62, y, z, ...):
 // server->client the y and stance wire fields are swapped relative to the client->server
 // direction (see MovementAckUsesActualPlayerY above) -- "y" carries the eye, "stance"
 // carries the feet. Drives the packet over a real loopback socket so the assertion is
 // against actual wire bytes, not just the in-process struct ServerPlayNetworkHandler built.
 TEST(MultiplayerParityUpdates, ServerTeleportSendsFeetYAndStanceCorrectly) {
- block::initializeBlocks();
  ServerEventFixture fixture;
  (void)fixture.world.getChunk(0, 0);
  server::network::ServerPlayerInteractionManager interactionManager(&fixture.world);

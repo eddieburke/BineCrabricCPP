@@ -1,8 +1,3 @@
--- ================================================================
--- MOD: world_profiles
--- Standardized structure with separated config
--- ================================================================
-
 local config = require("config")
 local settings_screen = require("scripts.settings_screen")
 

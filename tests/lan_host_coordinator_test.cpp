@@ -7,7 +7,6 @@
 #include "net/minecraft/world/ClientWorld.hpp"
 #include "net/minecraft/world/World.hpp"
 #include "net/minecraft/world/storage/AlphaWorldStorage.hpp"
-
 namespace {
 class TestMinecraft final : public net::minecraft::client::Minecraft {
  public:
@@ -15,7 +14,6 @@ class TestMinecraft final : public net::minecraft::client::Minecraft {
  void handleCrash(const net::minecraft::util::crash::CrashReport&) override {
  }
 };
-
 std::filesystem::path makeTempWorldRoot(const std::string& name) {
  static std::atomic<int> counter{0};
  const std::filesystem::path root = std::filesystem::temp_directory_path() / "minecraft_native_client_tests" / (name + "_" + std::to_string(++counter));
@@ -25,7 +23,6 @@ std::filesystem::path makeTempWorldRoot(const std::string& name) {
  return root;
 }
 } // namespace
-
 namespace net::minecraft::test {
 TEST(ServerProcessCoordinator, LocalWorldCanTransferAndRemoteWorldCannot) {
  const std::filesystem::path root = makeTempWorldRoot("server_process_coordinator");
@@ -36,7 +33,6 @@ TEST(ServerProcessCoordinator, LocalWorldCanTransferAndRemoteWorldCannot) {
      std::make_unique<net::minecraft::World>(client.worldSession().ownedWorldStorage(), "ServerWorld", 12345, false);
  client.world = client.worldSession().ownedWorld();
  EXPECT_TRUE(client.serverProcessCoordinator().canStartServer());
-
  net::minecraft::ClientWorld remoteWorld(nullptr, 12345, 0);
  EXPECT_FALSE(net::minecraft::client::host::ServerProcessCoordinator::canHostWorld(&remoteWorld));
 }

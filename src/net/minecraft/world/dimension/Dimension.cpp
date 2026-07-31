@@ -78,6 +78,8 @@ float Dimension::getTimeOfDay(long long time, float tickDelta) const {
  if(value > 1.0f) {
   value -= 1.0f;
  }
+ const float curved = 1.0f - static_cast<float>((MathHelper::cos(value * 3.14159265358979323846f) + 1.0) / 2.0);
+ value = value + (curved - value) / 3.0f;
  return value;
 }
 std::array<float, 4>* Dimension::getBackgroundColor(float timeOfDay, float) {

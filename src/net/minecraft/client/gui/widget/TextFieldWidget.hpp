@@ -1,7 +1,6 @@
 #pragma once
 // Faithful port of gui.widget.TextFieldWidget (beta 1.7.3 MCP).
 #include <string>
-#include "net/minecraft/client/gui/DrawContext.hpp"
 namespace net::minecraft::client::font {
 class TextRenderer;
 }
@@ -9,7 +8,7 @@ namespace net::minecraft::client::gui::screen {
 class Screen;
 }
 namespace net::minecraft::client::gui::widget {
-class TextFieldWidget : public gui::DrawContext {
+class TextFieldWidget {
  public:
  TextFieldWidget(screen::Screen* parent,
                  font::TextRenderer* textRenderer,

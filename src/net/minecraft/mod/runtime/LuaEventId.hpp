@@ -35,6 +35,7 @@ enum class LuaEventId : std::uint8_t {
  PreEntityRender,
  EntitySpawn,
  EntityRemove,
+ SnowIcePlacement,
  Count
 };
 inline constexpr std::size_t kLuaEventCount = static_cast<std::size_t>(LuaEventId::Count);
@@ -70,6 +71,7 @@ inline constexpr std::string_view kLuaEventNames[kLuaEventCount] = {
     "pre_entity_render",
     "entity_spawn",
     "entity_remove",
+    "snow_ice_placement",
 };
 [[nodiscard]] constexpr int luaEventIndexOf(std::string_view name) {
  for(std::size_t i = 0; i < kLuaEventCount; ++i) {

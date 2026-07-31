@@ -5,9 +5,10 @@
 #include "net/minecraft/block/material/Material.hpp"
 #include "net/minecraft/client/Minecraft.hpp"
 #include "net/minecraft/client/gl/GLCore.hpp"
-#include "net/minecraft/client/gl/GlConstants.hpp"
-#include "net/minecraft/client/render/RenderSystem.hpp"
+#include "net/minecraft/client/render/GameRenderer.hpp"
+#include "net/minecraft/client/render/RenderCore.hpp"
 #include "net/minecraft/client/render/RenderType.hpp"
+#include "net/minecraft/client/render/TextureResolve.hpp"
 #include "net/minecraft/client/render/Tessellator.hpp"
 #include "net/minecraft/client/render/block/BlockRenderManager.hpp"
 #include "net/minecraft/client/render/entity/EntityRenderDispatcher.hpp"
@@ -34,8 +35,8 @@ constexpr float kPi = 3.14159265358979323846f;
 void renderTexturedOverlay(int textureId) {
  Tessellator& tessellator = Tessellator::INSTANCE;
  constexpr float brightness = 0.1f;
- RenderSystem::color4f(brightness, brightness, brightness, 0.5f);
- RenderSystem::pushMatrix();
+ render::core::setConstColor(brightness, brightness, brightness, 0.5f);
+ core::modelViewStack().push();
  constexpr float left = -1.0f;
  constexpr float right = 1.0f;
  constexpr float bottom = -1.0f;
@@ -52,15 +53,15 @@ void renderTexturedOverlay(int textureId) {
  tessellator.vertex(right, top, depth, uMax, vMax);
  tessellator.vertex(left, top, depth, uMin, vMax);
  tessellator.draw();
- RenderSystem::popMatrix();
- RenderSystem::color4f(1.0f, 1.0f, 1.0f, 1.0f);
+ core::modelViewStack().pop();
+ render::core::setConstColor(1.0f, 1.0f, 1.0f, 1.0f);
 }
 void renderUnderwaterOverlay(net::minecraft::entity::player::PlayerEntity& player, float tickDelta) {
  Tessellator& tessellator = Tessellator::INSTANCE;
  const float brightness = player.getBrightnessAtEyes(tickDelta);
  render::RenderPassScope scope(render::RenderType::guiTextured());
- RenderSystem::color4f(brightness, brightness, brightness, 0.5f);
- RenderSystem::pushMatrix();
+ render::core::setConstColor(brightness, brightness, brightness, 0.5f);
+ core::modelViewStack().push();
  constexpr float scroll = 4.0f;
  constexpr float left = -1.0f;
  constexpr float right = 1.0f;
@@ -75,13 +76,13 @@ void renderUnderwaterOverlay(net::minecraft::entity::player::PlayerEntity& playe
  tessellator.vertex(left, top, depth, uScroll, vScroll);
  tessellator.vertex(right, top, depth, scroll + uScroll, vScroll);
  tessellator.draw();
- RenderSystem::popMatrix();
- RenderSystem::color4f(1.0f, 1.0f, 1.0f, 1.0f);
+ core::modelViewStack().pop();
+ render::core::setConstColor(1.0f, 1.0f, 1.0f, 1.0f);
 }
 void renderFireOverlay() {
  Tessellator& tessellator = Tessellator::INSTANCE;
  render::RenderPassScope scope(render::RenderType::guiTextured());
- RenderSystem::color4f(1.0f, 1.0f, 1.0f, 0.9f);
+ render::core::setConstColor(1.0f, 1.0f, 1.0f, 0.9f);
  constexpr float size = 1.0f;
  net::minecraft::block::Block* fireBlock = net::minecraft::block::Block::FIRE;
  const float x0 = (0.0f - size) / 2.0f;
@@ -89,8 +90,6 @@ void renderFireOverlay() {
  const float y0 = 0.0f - size / 2.0f;
  const float y1 = y0 + size;
  constexpr float depth = -0.5f;
- float baseModelView[16]{};
- RenderSystem::getFloatv(gl::matrix_::ModelViewMatrix, baseModelView);
  tessellator.startQuads();
  for(int layer = 0; layer < 2; ++layer) {
   const int texture = (fireBlock != nullptr ? fireBlock->textureId : 31) + layer * 16;
@@ -101,7 +100,7 @@ void renderFireOverlay() {
   const float vMin = static_cast<float>(vOrigin) / 256.0f;
   const float vMax = (static_cast<float>(vOrigin) + 15.99f) / 256.0f;
   net::minecraft::util::math::Matrix4f model;
-  model.set(baseModelView);
+  model.set(core::currentModelView().data());
   model.translate(static_cast<float>(-(layer * 2 - 1)) * 0.24f, -0.3f, 0.0f);
   model.rotate(static_cast<float>(layer * 2 - 1) * 10.0f, 0.0f, 1.0f, 0.0f);
   struct Corner {
@@ -126,7 +125,7 @@ void renderFireOverlay() {
   }
  }
  tessellator.draw();
- RenderSystem::color4f(1.0f, 1.0f, 1.0f, 1.0f);
+ render::core::setConstColor(1.0f, 1.0f, 1.0f, 1.0f);
 }
 } // namespace
 HeldItemRenderer::HeldItemRenderer(net::minecraft::client::Minecraft* minecraftIn)
@@ -138,103 +137,54 @@ void HeldItemRenderer::renderItem(const net::minecraft::entity::LivingEntity& en
  if(minecraft == nullptr || itemStack.empty()) {
   return;
  }
- RenderSystem::pushMatrix();
+ const render::core::RenderedItemScope itemScope(ItemModelRenderer::shaderId(itemStack));
+ core::modelViewStack().push();
  if(ItemModelRenderer::hasCustomModel(itemStack)) {
-  minecraft->textureManager.bindTextureOrAtlas(itemStack.getTextureId(),
-                                               ItemModelRenderer::spriteAtlasPath(itemStack));
-  RenderSystem::translate(0.0f, -0.3f, 0.0f);
-  RenderSystem::scale(1.5f, 1.5f, 1.5f);
-  RenderSystem::rotate(50.0f, 0.0f, 1.0f, 0.0f);
-  RenderSystem::rotate(335.0f, 0.0f, 0.0f, 1.0f);
-  RenderSystem::translate(-0.5f, -0.5f, -0.5f);
+  minecraft->textureManager.bindTexture(
+      resolveBlockTexture(itemStack.getTextureId(), minecraft->textureManager, ItemModelRenderer::atlasDomain(itemStack))
+          .glId);
+  core::modelViewStack().translate(0.0f, -0.3f, 0.0f);
+  core::modelViewStack().scale(1.5f, 1.5f, 1.5f);
+  core::modelViewStack().rotate(50.0f, 0.0f, 1.0f, 0.0f);
+  core::modelViewStack().rotate(335.0f, 0.0f, 0.0f, 1.0f);
+  core::modelViewStack().translate(-0.5f, -0.5f, -0.5f);
   net::minecraft::mod::model::drawLuaItemModel(
       Tessellator::INSTANCE, itemStack, entity.getBrightnessAtEyes(1.0f));
-  RenderSystem::popMatrix();
+  core::modelViewStack().pop();
   return;
  }
  if(ItemModelRenderer::rendersAsBlockModel(itemStack)) {
   net::minecraft::block::Block* block = ItemModelRenderer::blockOf(itemStack);
-  RenderSystem::bindTexture(minecraft->textureManager.getTextureId("/terrain.png"));
+  core::bindTexture(minecraft->textureManager.getTextureId("/terrain.png"));
   blockRenderManager.ctx.textureManager = &minecraft->textureManager;
-  const bool cullWasEnabled = RenderSystem::getShadow().cullFace;
-  RenderSystem::disableCull();
+  const bool cullWasEnabled = core::cullEnabled();
+  core::disableCull();
+  // MCP ItemRenderer.renderItem: getEntityBrightness(1.0F).
   blockRenderManager.render(*block, itemStack.getDamage(), entity.getBrightnessAtEyes(1.0f));
   if(cullWasEnabled) {
-   RenderSystem::enableCull();
+   core::enableCull();
   }
   blockRenderManager.ctx.textureManager = nullptr;
-  RenderSystem::popMatrix();
+  core::modelViewStack().pop();
   return;
  }
- minecraft->textureManager.bindTextureOrAtlas(itemStack.getTextureId(),
-                                              ItemModelRenderer::spriteAtlasPath(itemStack));
+ minecraft->textureManager.bindTexture(
+     resolveBlockTexture(itemStack.getTextureId(), minecraft->textureManager, ItemModelRenderer::atlasDomain(itemStack))
+         .glId);
  Tessellator& tessellator = Tessellator::INSTANCE;
  const auto uv = ItemModelRenderer::spriteUv(itemStack);
  const float uMin = static_cast<float>(uv.uMin);
  const float uMax = static_cast<float>(uv.uMax);
  const float vMin = static_cast<float>(uv.vMin);
  const float vMax = static_cast<float>(uv.vMax);
- constexpr float itemWidth = 1.0f;
- RenderSystem::translate(0.0f, -0.3f, 0.0f);
+ core::modelViewStack().translate(0.0f, -0.3f, 0.0f);
  constexpr float itemScale = 1.5f;
- RenderSystem::scale(itemScale, itemScale, itemScale);
- RenderSystem::rotate(50.0f, 0.0f, 1.0f, 0.0f);
- RenderSystem::rotate(335.0f, 0.0f, 0.0f, 1.0f);
- RenderSystem::translate(-0.9375f, -0.0625f, 0.0f);
- constexpr float depth = 0.0625f;
- tessellator.startQuads();
- tessellator.normal(0.0f, 0.0f, 1.0f);
- tessellator.vertex(0.0, 0.0, 0.0, uMax, vMax);
- tessellator.vertex(itemWidth, 0.0, 0.0, uMin, vMax);
- tessellator.vertex(itemWidth, 1.0, 0.0, uMin, vMin);
- tessellator.vertex(0.0, 1.0, 0.0, uMax, vMin);
- tessellator.normal(0.0f, 0.0f, -1.0f);
- tessellator.vertex(0.0, 1.0, 0.0 - depth, uMax, vMin);
- tessellator.vertex(itemWidth, 1.0, 0.0 - depth, uMin, vMin);
- tessellator.vertex(itemWidth, 0.0, 0.0 - depth, uMin, vMax);
- tessellator.vertex(0.0, 0.0, 0.0 - depth, uMax, vMax);
- tessellator.normal(-1.0f, 0.0f, 0.0f);
- for(int slice = 0; slice < 16; ++slice) {
-  const float t = static_cast<float>(slice) / 16.0f;
-  const float u = uMax + (uMin - uMax) * t - 0.001953125f;
-  const float x = itemWidth * t;
-  tessellator.vertex(x, 0.0, 0.0 - depth, u, vMax);
-  tessellator.vertex(x, 0.0, 0.0, u, vMax);
-  tessellator.vertex(x, 1.0, 0.0, u, vMin);
-  tessellator.vertex(x, 1.0, 0.0 - depth, u, vMin);
- }
- tessellator.normal(1.0f, 0.0f, 0.0f);
- for(int slice = 0; slice < 16; ++slice) {
-  const float t = static_cast<float>(slice) / 16.0f;
-  const float u = uMax + (uMin - uMax) * t - 0.001953125f;
-  const float x = itemWidth * t + 0.0625f;
-  tessellator.vertex(x, 1.0, 0.0 - depth, u, vMin);
-  tessellator.vertex(x, 1.0, 0.0, u, vMin);
-  tessellator.vertex(x, 0.0, 0.0, u, vMax);
-  tessellator.vertex(x, 0.0, 0.0 - depth, u, vMax);
- }
- tessellator.normal(0.0f, 1.0f, 0.0f);
- for(int slice = 0; slice < 16; ++slice) {
-  const float t = static_cast<float>(slice) / 16.0f;
-  const float v = vMax + (vMin - vMax) * t - 0.001953125f;
-  const float y = itemWidth * t + 0.0625f;
-  tessellator.vertex(0.0, y, 0.0, uMax, v);
-  tessellator.vertex(itemWidth, y, 0.0, uMin, v);
-  tessellator.vertex(itemWidth, y, 0.0 - depth, uMin, v);
-  tessellator.vertex(0.0, y, 0.0 - depth, uMax, v);
- }
- tessellator.normal(0.0f, -1.0f, 0.0f);
- for(int slice = 0; slice < 16; ++slice) {
-  const float t = static_cast<float>(slice) / 16.0f;
-  const float v = vMax + (vMin - vMax) * t - 0.001953125f;
-  const float y = itemWidth * t;
-  tessellator.vertex(itemWidth, y, 0.0, uMin, v);
-  tessellator.vertex(0.0, y, 0.0, uMax, v);
-  tessellator.vertex(0.0, y, 0.0 - depth, uMax, v);
-  tessellator.vertex(itemWidth, y, 0.0 - depth, uMin, v);
- }
- tessellator.draw();
- RenderSystem::popMatrix();
+ core::modelViewStack().scale(itemScale, itemScale, itemScale);
+ core::modelViewStack().rotate(50.0f, 0.0f, 1.0f, 0.0f);
+ core::modelViewStack().rotate(335.0f, 0.0f, 0.0f, 1.0f);
+ core::modelViewStack().translate(-0.9375f, -0.0625f, 0.0f);
+ net::minecraft::mod::model::drawExtrudedSprite(tessellator, uMin, uMax, vMin, vMax);
+ core::modelViewStack().pop();
 }
 void HeldItemRenderer::render(float tickDelta) {
  if(minecraft == nullptr || minecraft->player == nullptr || minecraft->world == nullptr) {
@@ -246,71 +196,73 @@ void HeldItemRenderer::render(float tickDelta) {
  }
  const float equipProgress = prevHeight + (height - prevHeight) * tickDelta;
  const float pitch = clientPlayer->prevPitch + (clientPlayer->pitch - clientPlayer->prevPitch) * tickDelta;
- RenderSystem::pushMatrix();
- RenderSystem::rotate(pitch, 1.0f, 0.0f, 0.0f);
- RenderSystem::rotate(
+ core::modelViewStack().push();
+ core::modelViewStack().rotate(pitch, 1.0f, 0.0f, 0.0f);
+ core::modelViewStack().rotate(
      clientPlayer->prevYaw + (clientPlayer->yaw - clientPlayer->prevYaw) * tickDelta, 0.0f, 1.0f, 0.0f);
- render::RenderSystem::enableLighting();
- RenderSystem::popMatrix();
+ core::modelViewStack().pop();
  const ItemStack* selectedItem = stack.empty() ? nullptr : &stack;
- const float brightness = minecraft->world->getLightBrightness(
-     MathHelper::floor(clientPlayer->x), MathHelper::floor(clientPlayer->y), MathHelper::floor(clientPlayer->z));
+ const float handLight = minecraft->world->getLightBrightness(MathHelper::floor(clientPlayer->x),
+                                                              MathHelper::floor(clientPlayer->y),
+                                                              MathHelper::floor(clientPlayer->z));
+ Tessellator::INSTANCE.light(15, 15);
+ entity::EntityRenderer* entityRenderer = entity::EntityRenderDispatcher::instance().get(*clientPlayer);
+ auto* playerRenderer = dynamic_cast<entity::PlayerEntityRenderer*>(entityRenderer);
+ // hand() pass owns lighting=true via entityCutoutState.
+ render::RenderPassScope firstPersonScope(render::RenderType::hand());
  if(selectedItem != nullptr && selectedItem->getItem() != nullptr) {
   const int tint = selectedItem->getItem()->getColorMultiplier(selectedItem->getDamage());
   const float red = static_cast<float>((tint >> 16) & 0xFF) / 255.0f;
   const float green = static_cast<float>((tint >> 8) & 0xFF) / 255.0f;
   const float blue = static_cast<float>(tint & 0xFF) / 255.0f;
-  RenderSystem::color4f(brightness * red, brightness * green, brightness * blue, 1.0f);
+  render::core::setConstColor(handLight * red, handLight * green, handLight * blue, 1.0f);
  } else {
-  RenderSystem::color4f(brightness, brightness, brightness, 1.0f);
+  render::core::setConstColor(handLight, handLight, handLight, 1.0f);
  }
- entity::EntityRenderer* entityRenderer = entity::EntityRenderDispatcher::instance().get(*clientPlayer);
- auto* playerRenderer = dynamic_cast<entity::PlayerEntityRenderer*>(entityRenderer);
- render::RenderPassScope firstPersonScope(render::RenderType::entityCutout());
  if(selectedItem != nullptr && Item::byRawId(102) != nullptr && selectedItem->itemId == Item::byRawId(102)->id) {
-  RenderSystem::pushMatrix();
+  core::modelViewStack().push();
   constexpr float scale = 0.8f;
   float swing = handSwingProgress(*clientPlayer, tickDelta);
   float swingSin = MathHelper::sin(swing * static_cast<float>(kPi));
   float swingSqrt = MathHelper::sin(MathHelper::sqrt(swing) * static_cast<float>(kPi));
-  RenderSystem::translate(-swingSqrt * 0.4f,
-                          MathHelper::sin(MathHelper::sqrt(swing) * static_cast<float>(kPi) * 2.0f) * 0.2f,
-                          -swingSin * 0.2f);
+  core::modelViewStack().translate(-swingSqrt * 0.4f,
+                                   MathHelper::sin(MathHelper::sqrt(swing) * static_cast<float>(kPi) * 2.0f) * 0.2f,
+                                   -swingSin * 0.2f);
   float pitchFactor = 1.0f - pitch / 45.0f + 0.1f;
   pitchFactor = std::clamp(pitchFactor, 0.0f, 1.0f);
   pitchFactor = -MathHelper::cos(pitchFactor * static_cast<float>(kPi)) * 0.5f + 0.5f;
-  RenderSystem::translate(
+  core::modelViewStack().translate(
       0.0f, 0.0f * scale - (1.0f - equipProgress) * 1.2f - pitchFactor * 0.5f + 0.04f, -0.9f * scale);
-  RenderSystem::rotate(90.0f, 0.0f, 1.0f, 0.0f);
-  RenderSystem::rotate(pitchFactor * -85.0f, 0.0f, 0.0f, 1.0f);
+  core::modelViewStack().rotate(90.0f, 0.0f, 1.0f, 0.0f);
+  core::modelViewStack().rotate(pitchFactor * -85.0f, 0.0f, 0.0f, 1.0f);
   const std::string& skinUrl = clientPlayer->skinUrl;
   const int skinTexture = minecraft->textureManager.downloadTexture(skinUrl, clientPlayer->getTexture());
-  RenderSystem::bindTexture(skinTexture);
+  core::bindTexture(skinTexture);
   if(playerRenderer != nullptr) {
    for(int side = 0; side < 2; ++side) {
     const int mirror = side * 2 - 1;
-    RenderSystem::pushMatrix();
-    RenderSystem::translate(0.0f, -0.6f, 1.1f * static_cast<float>(mirror));
-    RenderSystem::rotate(static_cast<float>(-45 * mirror), 1.0f, 0.0f, 0.0f);
-    RenderSystem::rotate(-90.0f, 0.0f, 0.0f, 1.0f);
-    RenderSystem::rotate(59.0f, 0.0f, 0.0f, 1.0f);
-    RenderSystem::rotate(static_cast<float>(-65 * mirror), 0.0f, 1.0f, 0.0f);
+    core::modelViewStack().push();
+    core::modelViewStack().translate(0.0f, -0.6f, 1.1f * static_cast<float>(mirror));
+    core::modelViewStack().rotate(static_cast<float>(-45 * mirror), 1.0f, 0.0f, 0.0f);
+    core::modelViewStack().rotate(-90.0f, 0.0f, 0.0f, 1.0f);
+    core::modelViewStack().rotate(59.0f, 0.0f, 0.0f, 1.0f);
+    core::modelViewStack().rotate(static_cast<float>(-65 * mirror), 0.0f, 1.0f, 0.0f);
     playerRenderer->renderHand();
-    RenderSystem::popMatrix();
+    core::modelViewStack().pop();
    }
   }
   swing = handSwingProgress(*clientPlayer, tickDelta);
   const float swingSin2 = MathHelper::sin(swing * swing * static_cast<float>(kPi));
   swingSqrt = MathHelper::sin(MathHelper::sqrt(swing) * static_cast<float>(kPi));
-  RenderSystem::rotate(-swingSin2 * 20.0f, 0.0f, 1.0f, 0.0f);
-  RenderSystem::rotate(-swingSqrt * 20.0f, 0.0f, 0.0f, 1.0f);
-  RenderSystem::rotate(-swingSqrt * 80.0f, 1.0f, 0.0f, 0.0f);
-  RenderSystem::scale(0.38f, 0.38f, 0.38f);
-  RenderSystem::rotate(90.0f, 0.0f, 1.0f, 0.0f);
-  RenderSystem::rotate(180.0f, 0.0f, 0.0f, 1.0f);
-  RenderSystem::translate(-1.0f, -1.0f, 0.0f);
-  RenderSystem::scale(0.015625f, 0.015625f, 0.015625f);
-  RenderSystem::bindTexture(minecraft->textureManager.getTextureId("/misc/mapbg.png"));
+  core::modelViewStack().rotate(-swingSin2 * 20.0f, 0.0f, 1.0f, 0.0f);
+  core::modelViewStack().rotate(-swingSqrt * 20.0f, 0.0f, 0.0f, 1.0f);
+  core::modelViewStack().rotate(-swingSqrt * 80.0f, 1.0f, 0.0f, 0.0f);
+  core::modelViewStack().scale(0.38f, 0.38f, 0.38f);
+  core::modelViewStack().rotate(90.0f, 0.0f, 1.0f, 0.0f);
+  core::modelViewStack().rotate(180.0f, 0.0f, 0.0f, 1.0f);
+  core::modelViewStack().translate(-1.0f, -1.0f, 0.0f);
+  core::modelViewStack().scale(0.015625f, 0.015625f, 0.015625f);
+  core::bindTexture(minecraft->textureManager.getTextureId("/misc/mapbg.png"));
   Tessellator& tessellator = Tessellator::INSTANCE;
   tessellator.startQuads();
   constexpr int border = 7;
@@ -327,57 +279,56 @@ void HeldItemRenderer::render(float tickDelta) {
     }
    }
   }
-  RenderSystem::popMatrix();
+  core::modelViewStack().pop();
  } else if(selectedItem != nullptr) {
-  RenderSystem::pushMatrix();
+  core::modelViewStack().push();
   constexpr float scale = 0.8f;
   float swing = handSwingProgress(*clientPlayer, tickDelta);
   float swingSin = MathHelper::sin(swing * static_cast<float>(kPi));
   float swingSqrt = MathHelper::sin(MathHelper::sqrt(swing) * static_cast<float>(kPi));
-  RenderSystem::translate(-swingSqrt * 0.4f,
-                          MathHelper::sin(MathHelper::sqrt(swing) * static_cast<float>(kPi) * 2.0f) * 0.2f,
-                          -swingSin * 0.2f);
-  RenderSystem::translate(0.7f * scale, -0.65f * scale - (1.0f - equipProgress) * 0.6f, -0.9f * scale);
-  RenderSystem::rotate(45.0f, 0.0f, 1.0f, 0.0f);
+  core::modelViewStack().translate(-swingSqrt * 0.4f,
+                                   MathHelper::sin(MathHelper::sqrt(swing) * static_cast<float>(kPi) * 2.0f) * 0.2f,
+                                   -swingSin * 0.2f);
+  core::modelViewStack().translate(0.7f * scale, -0.65f * scale - (1.0f - equipProgress) * 0.6f, -0.9f * scale);
+  core::modelViewStack().rotate(45.0f, 0.0f, 1.0f, 0.0f);
   swing = handSwingProgress(*clientPlayer, tickDelta);
   swingSin = MathHelper::sin(swing * swing * static_cast<float>(kPi));
   swingSqrt = MathHelper::sin(MathHelper::sqrt(swing) * static_cast<float>(kPi));
-  RenderSystem::rotate(-swingSin * 20.0f, 0.0f, 1.0f, 0.0f);
-  RenderSystem::rotate(-swingSqrt * 20.0f, 0.0f, 0.0f, 1.0f);
-  RenderSystem::rotate(-swingSqrt * 80.0f, 1.0f, 0.0f, 0.0f);
-  RenderSystem::scale(0.4f, 0.4f, 0.4f);
+  core::modelViewStack().rotate(-swingSin * 20.0f, 0.0f, 1.0f, 0.0f);
+  core::modelViewStack().rotate(-swingSqrt * 20.0f, 0.0f, 0.0f, 1.0f);
+  core::modelViewStack().rotate(-swingSqrt * 80.0f, 1.0f, 0.0f, 0.0f);
+  core::modelViewStack().scale(0.4f, 0.4f, 0.4f);
   if(selectedItem->getItem() != nullptr && selectedItem->getItem()->isHandheldRod()) {
-   RenderSystem::rotate(180.0f, 0.0f, 1.0f, 0.0f);
+   core::modelViewStack().rotate(180.0f, 0.0f, 1.0f, 0.0f);
   }
   renderItem(*clientPlayer, *selectedItem);
-  RenderSystem::popMatrix();
+  core::modelViewStack().pop();
  } else if(playerRenderer != nullptr) {
-  RenderSystem::pushMatrix();
+  core::modelViewStack().push();
   constexpr float scale = 0.8f;
   float swing = handSwingProgress(*clientPlayer, tickDelta);
   float swingSin = MathHelper::sin(swing * static_cast<float>(kPi));
   float swingSqrt = MathHelper::sin(MathHelper::sqrt(swing) * static_cast<float>(kPi));
-  RenderSystem::translate(-swingSqrt * 0.3f,
-                          MathHelper::sin(MathHelper::sqrt(swing) * static_cast<float>(kPi) * 2.0f) * 0.4f,
-                          -swingSin * 0.4f);
-  RenderSystem::translate(0.8f * scale, -0.75f * scale - (1.0f - equipProgress) * 0.6f, -0.9f * scale);
-  RenderSystem::rotate(45.0f, 0.0f, 1.0f, 0.0f);
+  core::modelViewStack().translate(-swingSqrt * 0.3f,
+                                   MathHelper::sin(MathHelper::sqrt(swing) * static_cast<float>(kPi) * 2.0f) * 0.4f,
+                                   -swingSin * 0.4f);
+  core::modelViewStack().translate(0.8f * scale, -0.75f * scale - (1.0f - equipProgress) * 0.6f, -0.9f * scale);
+  core::modelViewStack().rotate(45.0f, 0.0f, 1.0f, 0.0f);
   swing = handSwingProgress(*clientPlayer, tickDelta);
   swingSin = MathHelper::sin(swing * swing * static_cast<float>(kPi));
   swingSqrt = MathHelper::sin(MathHelper::sqrt(swing) * static_cast<float>(kPi));
-  RenderSystem::rotate(swingSqrt * 70.0f, 0.0f, 1.0f, 0.0f);
-  RenderSystem::rotate(-swingSin * 20.0f, 0.0f, 0.0f, 1.0f);
+  core::modelViewStack().rotate(swingSqrt * 70.0f, 0.0f, 1.0f, 0.0f);
+  core::modelViewStack().rotate(-swingSin * 20.0f, 0.0f, 0.0f, 1.0f);
   const int skinTexture = minecraft->textureManager.downloadTexture(clientPlayer->skinUrl, clientPlayer->getTexture());
-  RenderSystem::bindTexture(skinTexture);
-  RenderSystem::translate(-1.0f, 3.6f, 3.5f);
-  RenderSystem::rotate(120.0f, 0.0f, 0.0f, 1.0f);
-  RenderSystem::rotate(200.0f, 1.0f, 0.0f, 0.0f);
-  RenderSystem::rotate(-135.0f, 0.0f, 1.0f, 0.0f);
-  RenderSystem::translate(5.6f, 0.0f, 0.0f);
+  core::bindTexture(skinTexture);
+  core::modelViewStack().translate(-1.0f, 3.6f, 3.5f);
+  core::modelViewStack().rotate(120.0f, 0.0f, 0.0f, 1.0f);
+  core::modelViewStack().rotate(200.0f, 1.0f, 0.0f, 0.0f);
+  core::modelViewStack().rotate(-135.0f, 0.0f, 1.0f, 0.0f);
+  core::modelViewStack().translate(5.6f, 0.0f, 0.0f);
   playerRenderer->renderHand();
-  RenderSystem::popMatrix();
+  core::modelViewStack().pop();
  }
- render::RenderSystem::disableLighting();
 }
 void HeldItemRenderer::renderScreenOverlays(float tickDelta) {
  if(minecraft == nullptr || minecraft->player == nullptr || minecraft->world == nullptr) {
@@ -385,14 +336,14 @@ void HeldItemRenderer::renderScreenOverlays(float tickDelta) {
  }
  render::RenderPassScope overlayScope(render::RenderType::guiTextured());
  if(minecraft->player->isOnFire()) {
-  RenderSystem::bindTexture(minecraft->textureManager.getTextureId("/terrain.png"));
+  core::bindTexture(minecraft->textureManager.getTextureId("/terrain.png"));
   renderFireOverlay();
  }
  if(minecraft->player->isInsideWall()) {
   const int blockX = MathHelper::floor(minecraft->player->x);
   const int blockY = MathHelper::floor(minecraft->player->y);
   const int blockZ = MathHelper::floor(minecraft->player->z);
-  RenderSystem::bindTexture(minecraft->textureManager.getTextureId("/terrain.png"));
+  core::bindTexture(minecraft->textureManager.getTextureId("/terrain.png"));
   int blockId = minecraft->world->getBlockId(blockX, blockY, blockZ);
   if(minecraft->world->shouldSuffocate(blockX, blockY, blockZ)) {
    if(net::minecraft::block::Block* block =
@@ -420,8 +371,9 @@ void HeldItemRenderer::renderScreenOverlays(float tickDelta) {
    renderTexturedOverlay(block->getTexture(2));
   }
  }
- if(minecraft->player->isInFluid(net::minecraft::block::material::Material::WATER)) {
-  RenderSystem::bindTexture(minecraft->textureManager.getTextureId("/misc/water.png"));
+ if(minecraft->player->isInFluid(net::minecraft::block::material::Material::WATER) &&
+    (minecraft->gameRenderer == nullptr || minecraft->gameRenderer->frameSettings().underwaterOverlay)) {
+  core::bindTexture(minecraft->textureManager.getTextureId("/misc/water.png"));
   renderUnderwaterOverlay(*minecraft->player, tickDelta);
  }
 }

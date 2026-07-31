@@ -1,21 +1,11 @@
 #include "net/minecraft/client/gl/GLCore.hpp"
 #include "net/minecraft/client/gl/GlConstants.hpp"
+#include <algorithm>
+#include <cstddef>
+#include <cstring>
+#include <limits>
+#include <thread>
 namespace net::minecraft::client::gl {
-#ifndef NDEBUG
-namespace {
-void APIENTRY glDebugCallback(unsigned /*source*/,
-                              unsigned type,
-                              unsigned /*id*/,
-                              unsigned severity,
-                              int /*length*/,
-                              const char* message,
-                              const void* /*userParam*/) {
-  // 0x9146 = GL_DEBUG_SEVERITY_HIGH, 0x824C = GL_DEBUG_TYPE_ERROR.
-  if(severity == 0x9146 || type == 0x824C) {
-  }
-}
-} // namespace
-#endif
 #define GLFN(type, name) type GLCore::name = nullptr
 GLFN(PFN_GenBuffers, genBuffers);
 GLFN(PFN_BindBuffer, bindBuffer);
@@ -34,10 +24,15 @@ GLFN(PFN_DeleteRenderbuffers, deleteRenderbuffers);
 GLFN(PFN_RenderbufferStorage, renderbufferStorage);
 GLFN(PFN_FramebufferRenderbuffer, framebufferRenderbuffer);
 GLFN(PFN_DrawBuffers, drawBuffers);
+GLFN(PFN_ClearBufferfv, clearBufferfv);
+GLFN(PFN_ClearBufferuiv, clearBufferuiv);
+GLFN(PFN_ClearBufferiv, clearBufferiv);
+GLFN(PFN_PatchParameteri, patchParameteri);
 GLFN(PFN_MultiDrawArrays, multiDrawArrays);
 GLFN(PFN_CreateShader, createShader);
 GLFN(PFN_ShaderSource, shaderSource);
 GLFN(PFN_CompileShader, compileShader);
+GLFN(PFN_MaxShaderCompilerThreadsKHR, maxShaderCompilerThreadsKHR);
 GLFN(PFN_GetShaderiv, getShaderiv);
 GLFN(PFN_GetShaderInfoLog, getShaderInfoLog);
 GLFN(PFN_CreateProgram, createProgram);
@@ -45,11 +40,11 @@ GLFN(PFN_AttachShader, attachShader);
 GLFN(PFN_LinkProgram, linkProgram);
 GLFN(PFN_GetProgramiv, getProgramiv);
 GLFN(PFN_GetProgramInfoLog, getProgramInfoLog);
+GLFN(PFN_GetActiveUniform, getActiveUniform);
 GLFN(PFN_UseProgram, useProgram);
 GLFN(PFN_DeleteShader, deleteShader);
 GLFN(PFN_DeleteProgram, deleteProgram);
 GLFN(PFN_GetUniformLocation, getUniformLocation);
-GLFN(PFN_GetActiveUniform, getActiveUniform);
 GLFN(PFN_Uniform1f, uniform1f);
 GLFN(PFN_Uniform2f, uniform2f);
 GLFN(PFN_Uniform3f, uniform3f);
@@ -58,6 +53,7 @@ GLFN(PFN_Uniform1i, uniform1i);
 GLFN(PFN_Uniform2i, uniform2i);
 GLFN(PFN_Uniform3i, uniform3i);
 GLFN(PFN_Uniform4i, uniform4i);
+GLFN(PFN_UniformMatrix3fv, uniformMatrix3fv);
 GLFN(PFN_UniformMatrix4fv, uniformMatrix4fv);
 GLFN(PFN_GetAttribLocation, getAttribLocation);
 GLFN(PFN_BindAttribLocation, bindAttribLocation);
@@ -69,9 +65,10 @@ GLFN(PFN_EnableVertexAttribArray, enableVertexAttribArray);
 GLFN(PFN_DisableVertexAttribArray, disableVertexAttribArray);
 GLFN(PFN_VertexAttrib4f, vertexAttrib4f);
 GLFN(PFN_BindBufferRange, bindBufferRange);
+GLFN(PFN_GetUniformBlockIndex, getUniformBlockIndex);
+GLFN(PFN_UniformBlockBinding, uniformBlockBinding);
 GLFN(PFN_GenerateMipmap, generateMipmap);
 GLFN(PFN_GetStringi, getStringi);
-GLFN(PFN_DebugMessageCallback, debugMessageCallback);
 GLFN(PFN_BlitFramebuffer, blitFramebuffer);
 GLFN(PFN_MapBufferRange, mapBufferRange);
 GLFN(PFN_UnmapBuffer, unmapBuffer);
@@ -84,14 +81,42 @@ GLFN(PFN_BeginQuery, beginQuery);
 GLFN(PFN_EndQuery, endQuery);
 GLFN(PFN_GetQueryObjectiv, getQueryObjectiv);
 GLFN(PFN_GetQueryObjectui64v, getQueryObjectui64v);
+GLFN(PFN_DispatchCompute, dispatchCompute);
+GLFN(PFN_DispatchComputeIndirect, dispatchComputeIndirect);
+GLFN(PFN_MemoryBarrier, memoryBarrier);
+GLFN(PFN_BindImageTexture, bindImageTexture);
+GLFN(PFN_TexStorage3D, texStorage3D);
+GLFN(PFN_ClearTexImage, clearTexImage);
+GLFN(PFN_GetProgramResourceIndex, getProgramResourceIndex);
+GLFN(PFN_GetProgramResourceName, getProgramResourceName);
+GLFN(PFN_ShaderStorageBlockBinding, shaderStorageBlockBinding);
+GLFN(PFN_BindBufferBase, bindBufferBase);
+GLFN(PFN_DrawArraysIndirect, drawArraysIndirect);
+GLFN(PFN_GenSamplers, genSamplers);
+GLFN(PFN_DeleteSamplers, deleteSamplers);
+GLFN(PFN_BindSampler, bindSampler);
+GLFN(PFN_SamplerParameteri, samplerParameteri);
+GLFN(PFN_BlendFunci, blendFunci);
+GLFN(PFN_BlendFuncSeparate, blendFuncSeparate);
+GLFN(PFN_BlendFuncSeparatei, blendFuncSeparatei);
+GLFN(PFN_Enablei, enablei);
+GLFN(PFN_Disablei, disablei);
 void* GLCore::activeTexture = nullptr;
 #undef GLFN
 bool GLCore::vboSupported = false;
 bool GLCore::framebufferSupported = false;
 bool GLCore::vaoSupported = false;
 bool GLCore::shaderSupported = false;
+bool GLCore::uboSupported = false;
 bool GLCore::timerQuerySupported = false;
+bool GLCore::computeSupported = false;
+bool GLCore::ssboSupported = false;
+bool GLCore::samplerObjectsSupported = false;
+bool GLCore::perBufferBlendingSupported = false;
+bool GLCore::parallelShaderCompileSupported = false;
+bool GLCore::swapControlTearSupported = false;
 static bool g_loaded = false;
+static int g_appliedSwapInterval = std::numeric_limits<int>::min();
 static void* loadProc(const char* name) {
  PROC proc = wglGetProcAddress(name);
  const auto value = reinterpret_cast<std::uintptr_t>(proc);
@@ -123,6 +148,24 @@ void GLCore::init() {
  LOAD_TRY(bufferSubData, "glBufferSubDataARB", "glBufferSubData");
  LOAD_TRY(deleteBuffers, "glDeleteBuffersARB", "glDeleteBuffers");
  LOAD_TRY(swapInterval, "wglSwapIntervalEXT");
+ {
+  using PFN_GetExtensionsStringEXT = const char*(APIENTRY*)();
+  using PFN_GetExtensionsStringARB = const char*(APIENTRY*)(HDC);
+  const char* extensions = nullptr;
+  auto getExt = reinterpret_cast<PFN_GetExtensionsStringEXT>(loadProc("wglGetExtensionsStringEXT"));
+  if(getExt != nullptr) {
+   extensions = getExt();
+  }
+  if(extensions == nullptr) {
+   auto getArb = reinterpret_cast<PFN_GetExtensionsStringARB>(loadProc("wglGetExtensionsStringARB"));
+   if(getArb != nullptr) {
+    const HDC dc = wglGetCurrentDC();
+    extensions = dc != nullptr ? getArb(dc) : nullptr;
+   }
+  }
+  swapControlTearSupported =
+      extensions != nullptr && std::strstr(extensions, "WGL_EXT_swap_control_tear") != nullptr;
+ }
  LOAD_TRY(genFramebuffers, "glGenFramebuffers", "glGenFramebuffersEXT");
  LOAD_TRY(bindFramebuffer, "glBindFramebuffer", "glBindFramebufferEXT");
  LOAD_TRY(deleteFramebuffers, "glDeleteFramebuffers", "glDeleteFramebuffersEXT");
@@ -134,10 +177,15 @@ void GLCore::init() {
  LOAD_TRY(renderbufferStorage, "glRenderbufferStorage", "glRenderbufferStorageEXT");
  LOAD_TRY(framebufferRenderbuffer, "glFramebufferRenderbuffer", "glFramebufferRenderbufferEXT");
  LOAD_TRY(drawBuffers, "glDrawBuffers", "glDrawBuffersARB", "glDrawBuffersEXT");
+ LOAD_TRY(clearBufferfv, "glClearBufferfv");
+ LOAD_TRY(clearBufferuiv, "glClearBufferuiv");
+ LOAD_TRY(clearBufferiv, "glClearBufferiv");
+ LOAD_TRY(patchParameteri, "glPatchParameteri");
  LOAD_TRY(multiDrawArrays, "glMultiDrawArrays", "glMultiDrawArraysEXT");
  LOAD_TRY(createShader, "glCreateShader", "glCreateShaderObjectARB");
  LOAD_TRY(shaderSource, "glShaderSource", "glShaderSourceARB");
  LOAD_TRY(compileShader, "glCompileShader", "glCompileShaderARB");
+ LOAD_TRY(maxShaderCompilerThreadsKHR, "glMaxShaderCompilerThreadsKHR", "glMaxShaderCompilerThreadsARB");
  LOAD_TRY(getShaderiv, "glGetShaderiv", "glGetObjectParameterivARB");
  LOAD_TRY(getShaderInfoLog, "glGetShaderInfoLog", "glGetInfoLogARB");
  LOAD_TRY(createProgram, "glCreateProgram", "glCreateProgramObjectARB");
@@ -145,11 +193,11 @@ void GLCore::init() {
  LOAD_TRY(linkProgram, "glLinkProgram", "glLinkProgramARB");
  LOAD_TRY(getProgramiv, "glGetProgramiv", "glGetObjectParameterivARB");
  LOAD_TRY(getProgramInfoLog, "glGetProgramInfoLog", "glGetInfoLogARB");
+ LOAD_TRY(getActiveUniform, "glGetActiveUniform", "glGetActiveUniformARB");
  LOAD_TRY(useProgram, "glUseProgram", "glUseProgramObjectARB");
  LOAD_TRY(deleteShader, "glDeleteShader", "glDeleteObjectARB");
  LOAD_TRY(deleteProgram, "glDeleteProgram", "glDeleteObjectARB");
  LOAD_TRY(getUniformLocation, "glGetUniformLocation", "glGetUniformLocationARB");
- LOAD_TRY(getActiveUniform, "glGetActiveUniform", "glGetActiveUniformARB");
  LOAD_TRY(uniform1f, "glUniform1f", "glUniform1fARB");
  LOAD_TRY(uniform2f, "glUniform2f", "glUniform2fARB");
  LOAD_TRY(uniform3f, "glUniform3f", "glUniform3fARB");
@@ -158,6 +206,7 @@ void GLCore::init() {
  LOAD_TRY(uniform2i, "glUniform2i", "glUniform2iARB");
  LOAD_TRY(uniform3i, "glUniform3i", "glUniform3iARB");
  LOAD_TRY(uniform4i, "glUniform4i", "glUniform4iARB");
+ LOAD_TRY(uniformMatrix3fv, "glUniformMatrix3fv", "glUniformMatrix3fvARB");
  LOAD_TRY(uniformMatrix4fv, "glUniformMatrix4fv", "glUniformMatrix4fvARB");
  LOAD_TRY(getAttribLocation, "glGetAttribLocation", "glGetAttribLocationARB");
  LOAD_TRY(bindAttribLocation, "glBindAttribLocation", "glBindAttribLocationARB");
@@ -169,9 +218,10 @@ void GLCore::init() {
  LOAD_TRY(disableVertexAttribArray, "glDisableVertexAttribArray", "glDisableVertexAttribArrayARB");
  LOAD_TRY(vertexAttrib4f, "glVertexAttrib4f", "glVertexAttrib4fARB");
  LOAD_TRY(bindBufferRange, "glBindBufferRange", "glBindBufferRangeEXT");
+ LOAD_TRY(getUniformBlockIndex, "glGetUniformBlockIndex");
+ LOAD_TRY(uniformBlockBinding, "glUniformBlockBinding");
  LOAD_TRY(generateMipmap, "glGenerateMipmap", "glGenerateMipmapEXT");
  LOAD_TRY(getStringi, "glGetStringi");
- LOAD_TRY(debugMessageCallback, "glDebugMessageCallback", "glDebugMessageCallbackARB", "glDebugMessageCallbackKHR");
  LOAD_TRY(blitFramebuffer, "glBlitFramebuffer", "glBlitFramebufferEXT");
  LOAD_TRY(mapBufferRange, "glMapBufferRange");
  LOAD_TRY(unmapBuffer, "glUnmapBuffer", "glUnmapBufferARB");
@@ -182,6 +232,26 @@ void GLCore::init() {
  LOAD_TRY(endQuery, "glEndQuery", "glEndQueryARB");
  LOAD_TRY(getQueryObjectiv, "glGetQueryObjectiv", "glGetQueryObjectivARB");
  LOAD_TRY(getQueryObjectui64v, "glGetQueryObjectui64v", "glGetQueryObjectui64vEXT");
+ LOAD_TRY(dispatchCompute, "glDispatchCompute");
+ LOAD_TRY(dispatchComputeIndirect, "glDispatchComputeIndirect");
+ LOAD_TRY(memoryBarrier, "glMemoryBarrier");
+ LOAD_TRY(bindImageTexture, "glBindImageTexture");
+ LOAD_TRY(texStorage3D, "glTexStorage3D");
+ LOAD_TRY(clearTexImage, "glClearTexImage");
+ LOAD_TRY(getProgramResourceIndex, "glGetProgramResourceIndex");
+ LOAD_TRY(getProgramResourceName, "glGetProgramResourceName");
+ LOAD_TRY(shaderStorageBlockBinding, "glShaderStorageBlockBinding");
+ LOAD_TRY(bindBufferBase, "glBindBufferBase");
+ LOAD_TRY(drawArraysIndirect, "glDrawArraysIndirect");
+ LOAD_TRY(genSamplers, "glGenSamplers");
+ LOAD_TRY(deleteSamplers, "glDeleteSamplers");
+ LOAD_TRY(bindSampler, "glBindSampler");
+ LOAD_TRY(samplerParameteri, "glSamplerParameteri");
+ LOAD_TRY(blendFunci, "glBlendFunci", "glBlendFunciARB");
+ LOAD_TRY(blendFuncSeparate, "glBlendFuncSeparate", "glBlendFuncSeparateEXT");
+ LOAD_TRY(blendFuncSeparatei, "glBlendFuncSeparatei", "glBlendFuncSeparateiARB");
+ LOAD_TRY(enablei, "glEnablei");
+ LOAD_TRY(disablei, "glDisablei");
  GLCore::activeTexture =
      reinterpret_cast<void*>(reinterpret_cast<std::size_t>(wglGetProcAddress("glActiveTexture")));
  vboSupported = genBuffers && bindBuffer && bufferData;
@@ -191,19 +261,56 @@ void GLCore::init() {
  vaoSupported = genVertexArrays && bindVertexArray && deleteVertexArrays;
  timerQuerySupported =
      genQueries && deleteQueries && beginQuery && endQuery && getQueryObjectiv && getQueryObjectui64v;
-  if(multiDrawArrays == nullptr) {
-  }
  shaderSupported = createShader && shaderSource && compileShader && createProgram && linkProgram && useProgram &&
                    getUniformLocation && vertexAttribPointer && enableVertexAttribArray;
-#ifndef NDEBUG
- if(debugMessageCallback != nullptr) {
-  ::glEnable(0x92E0); // GL_DEBUG_OUTPUT
-  debugMessageCallback(glDebugCallback, nullptr);
+ uboSupported = shaderSupported && getUniformBlockIndex && uniformBlockBinding && bindBufferRange &&
+                bufferData && bufferSubData;
+ computeSupported = shaderSupported && dispatchCompute && memoryBarrier;
+ ssboSupported = shaderSupported && shaderStorageBlockBinding && bindBufferBase && bufferData;
+ samplerObjectsSupported = genSamplers && deleteSamplers && bindSampler && samplerParameteri;
+ perBufferBlendingSupported = blendFunci != nullptr && enablei != nullptr && disablei != nullptr;
+ parallelShaderCompileSupported = maxShaderCompilerThreadsKHR != nullptr;
+ if(parallelShaderCompileSupported) {
+  const unsigned threads =
+      std::max(1U, std::thread::hardware_concurrency() > 2 ? std::thread::hardware_concurrency() - 2 : 1U);
+  maxShaderCompilerThreadsKHR(threads);
  }
-#endif
 }
 #undef LOAD_TRY
 void GLCore::ensureLoaded() {
  init();
+}
+void GLCore::setSwapPacing(SwapPacing pacing) {
+ ensureLoaded();
+ int interval = 0;
+ switch(pacing) {
+ case SwapPacing::Unlimited:
+  interval = 0;
+  break;
+ case SwapPacing::Adaptive:
+  interval = swapControlTearSupported ? -1 : 1;
+  break;
+ case SwapPacing::VSync:
+ default:
+  interval = 1;
+  break;
+ }
+ if(interval == g_appliedSwapInterval) {
+  return;
+ }
+ if(swapInterval != nullptr) {
+  swapInterval(interval);
+  g_appliedSwapInterval = interval;
+ }
+}
+void GLCore::resetSwapPacingCache() {
+ g_appliedSwapInterval = std::numeric_limits<int>::min();
+}
+bool GLCore::present() {
+ const HDC dc = wglGetCurrentDC();
+ if(dc == nullptr) {
+  return false;
+ }
+ return SwapBuffers(dc) != FALSE;
 }
 } // namespace net::minecraft::client::gl

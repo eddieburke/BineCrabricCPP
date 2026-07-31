@@ -1,16 +1,20 @@
 #include "net/minecraft/client/font/TextRenderer.hpp"
+#include <algorithm>
 #include <cctype>
+#include <chrono>
+#include <cmath>
 #include <memory>
 #include <stdexcept>
 #include <vector>
 #include "net/minecraft/client/gl/GlConstants.hpp"
 #include "net/minecraft/client/option/GameOptions.hpp"
-#include "net/minecraft/client/render/RenderSystem.hpp"
+#include "net/minecraft/client/render/RenderCore.hpp"
 #include "net/minecraft/client/render/RenderType.hpp"
 #include "net/minecraft/client/render/Tessellator.hpp"
 #include "net/minecraft/client/texture/TextureManager.hpp"
 #include "net/minecraft/util/CharacterUtils.hpp"
 namespace net::minecraft::client::font {
+namespace core = net::minecraft::client::render::core;
 namespace {
 int indexOfChar(const std::string& haystack, char needle) {
  const auto pos = haystack.find(needle);
@@ -125,7 +129,7 @@ std::unique_ptr<TextRenderer> TextRenderer::create(option::GameOptions& options,
  if(fontImage.width > 0 && fontImage.height > 0) {
   return std::make_unique<TextRenderer>(options, fontImage, textureManager);
  }
-  texture::RasterImage fallback;
+ texture::RasterImage fallback;
  fallback.width = 128;
  fallback.height = 128;
  fallback.argb.assign(128 * 128, 0x00000000U);
@@ -141,67 +145,47 @@ std::unique_ptr<TextRenderer> TextRenderer::create(option::GameOptions& options,
  return std::make_unique<TextRenderer>(options, fallback, textureManager);
 }
 void TextRenderer::appendGlyphQuad(
-    render::Tessellator& tessellator, int glyph, float penX, float r, float g, float b, float a) const {
+    render::Tessellator& tessellator, int glyph, float penX, float penY, float r, float g, float b, float a) const {
  const int u = (glyph % 16) * 8;
  const int v = (glyph / 16) * 8;
  constexpr float size = 7.99f;
  tessellator.color(r, g, b, a);
  tessellator.vertex(static_cast<double>(penX),
-                    static_cast<double>(size),
+                    static_cast<double>(penY) + size,
                     0.0,
                     static_cast<double>(u) / 128.0,
                     (static_cast<double>(v) + size) / 128.0);
  tessellator.vertex(static_cast<double>(penX) + size,
-                    static_cast<double>(size),
+                    static_cast<double>(penY) + size,
                     0.0,
                     (static_cast<double>(u) + size) / 128.0,
                     (static_cast<double>(v) + size) / 128.0);
  tessellator.vertex(static_cast<double>(penX) + size,
-                    0.0,
+                    static_cast<double>(penY),
                     0.0,
                     (static_cast<double>(u) + size) / 128.0,
                     static_cast<double>(v) / 128.0);
- tessellator.vertex(
-     static_cast<double>(penX), 0.0, 0.0, static_cast<double>(u) / 128.0, static_cast<double>(v) / 128.0);
+ tessellator.vertex(static_cast<double>(penX),
+                    static_cast<double>(penY),
+                    0.0,
+                    static_cast<double>(u) / 128.0,
+                    static_cast<double>(v) / 128.0);
 }
-void TextRenderer::drawWithShadow(const std::string& text, int x, int y, int color) {
- draw(text, x + 1, y + 1, color, true);
- draw(text, x, y, color, false);
-}
-void TextRenderer::draw(const std::string& text, int x, int y, int color) {
- draw(text, x, y, color, false);
-}
-void TextRenderer::draw(const std::string& text, int x, int y, int color, bool shadow) {
- if(text.empty()) {
-  return;
- }
+void TextRenderer::emitGlyphs(render::Tessellator& tessellator,
+                              const std::string& text,
+                              float offsetX,
+                              float offsetY,
+                              int color,
+                              bool shadow,
+                              float alpha) const {
  if(shadow) {
-  const int alpha = color & 0xFF000000;
-  color = ((color & 0xFCFCFC) >> 2) + alpha;
+  const int a = color & 0xFF000000;
+  color = ((color & 0xFCFCFC) >> 2) + a;
  }
- const float rf = static_cast<float>((color >> 16) & 0xFF) / 255.0f;
- const float gf = static_cast<float>((color >> 8) & 0xFF) / 255.0f;
- const float bf = static_cast<float>(color & 0xFF) / 255.0f;
- float af = static_cast<float>((color >> 24) & 0xFF) / 255.0f;
- if(af == 0.0f) {
-  af = 1.0f;
- }
- const render::RenderSystem::StateShadow savedShadow = render::RenderSystem::getShadow();
- const render::RenderPassScope passScope(render::RenderType::text());
- if(savedShadow.depthTest) {
-  render::RenderSystem::enableDepthTest();
- }
- render::RenderSystem::enableTexture();
- render::RenderSystem::bindTexture(static_cast<int>(boundTexture));
- render::RenderSystem::color4f(1.0f, 1.0f, 1.0f, 1.0f);
- float currentR = rf;
- float currentG = gf;
- float currentB = bf;
- render::RenderSystem::pushMatrix();
- render::RenderSystem::translate(static_cast<float>(x), static_cast<float>(y), 0.0f);
- render::Tessellator& tessellator = render::INSTANCE;
- tessellator.startQuads();
- float penX = 0.0f;
+ float currentR = static_cast<float>((color >> 16) & 0xFF) / 255.0f;
+ float currentG = static_cast<float>((color >> 8) & 0xFF) / 255.0f;
+ float currentB = static_cast<float>(color & 0xFF) / 255.0f;
+ float penX = offsetX;
  const std::string& valid = CharacterUtils::validCharacters();
  for(std::size_t i = 0; i < text.size();) {
   if(isSectionSign(text, i)) {
@@ -224,14 +208,129 @@ void TextRenderer::draw(const std::string& text, int x, int y, int color, bool s
   const unsigned char ch = static_cast<unsigned char>(text[i]);
   const int glyph = getGlyphIndex(ch, valid);
   if(glyph >= 0 && glyph < 256) {
-   appendGlyphQuad(tessellator, glyph, penX, currentR, currentG, currentB, af);
+   appendGlyphQuad(tessellator, glyph, penX, offsetY, currentR, currentG, currentB, alpha);
    penX += static_cast<float>(characterWidths_[static_cast<std::size_t>(glyph)]);
   }
   ++i;
  }
+}
+void TextRenderer::drawWithShadow(const std::string& text, int x, int y, int color) {
+ if(text.empty()) {
+  return;
+ }
+ // Shadow and foreground share one pass / one draw call instead of two full
+ // render passes per string (halves HUD text draw calls and state changes).
+ float alpha = static_cast<float>((color >> 24) & 0xFF) / 255.0f;
+ if(alpha == 0.0f) {
+  alpha = 1.0f;
+ }
+ const bool keepDepth = render::core::depthTestEnabled();
+ const render::RenderPassScope passScope(render::RenderType::text());
+ if(keepDepth) {
+  render::core::enableDepthTest();
+ }
+ render::core::bindTexture(static_cast<int>(boundTexture));
+ core::setConstColor(1.0f, 1.0f, 1.0f, 1.0f);
+ render::core::modelViewStack().push();
+ render::core::modelViewStack().translate(static_cast<float>(x), static_cast<float>(y), 0.0f);
+ render::Tessellator& tessellator = render::INSTANCE;
+ tessellator.startQuads();
+ emitGlyphs(tessellator, text, 1.0f, 1.0f, color, true, alpha);
+ emitGlyphs(tessellator, text, 0.0f, 0.0f, color, false, alpha);
  tessellator.draw();
- render::RenderSystem::popMatrix();
- render::RenderSystem::setShadow(savedShadow);
+ render::core::modelViewStack().pop();
+}
+void TextRenderer::drawCenteredWithShadow(const std::string& text, int x, int y, int color) {
+ drawWithShadow(text, x - getWidth(text) / 2, y, color);
+}
+void TextRenderer::drawClippedCenteredWithShadow(
+    const std::string& text, int centerX, int y, int minX, int maxX, int color) {
+ const int textWidth = getWidth(text);
+ const int availableWidth = maxX - minX;
+ if(textWidth <= availableWidth) {
+  drawWithShadow(text, centerX - textWidth / 2, y, color);
+  return;
+ }
+ const int maxScroll = textWidth - availableWidth;
+ const std::uint64_t nowMs =
+     std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now().time_since_epoch())
+         .count();
+ const double cycleMs = 4000.0;
+ double phase = std::fmod(static_cast<double>(nowMs), cycleMs) / cycleMs;
+ double offsetFraction = 0.0;
+ if(phase < 0.2) {
+  offsetFraction = 0.0;
+ } else if(phase < 0.7) {
+  offsetFraction = (phase - 0.2) / 0.5;
+ } else if(phase < 0.8) {
+  offsetFraction = 1.0;
+ } else {
+  offsetFraction = 1.0 - (phase - 0.8) / 0.2;
+ }
+ const int textX = minX - static_cast<int>(offsetFraction * maxScroll);
+ int origViewport[4] = {0, 0, 800, 600};
+ render::core::getCachedViewport(origViewport);
+ const int sf = render::core::getGuiScaleFactor();
+ const int scissorX = (std::max)(0, minX * sf);
+ const int scissorY = (std::max)(0, origViewport[3] - (y + 10) * sf);
+ const int scissorW = (std::max)(0, (maxX - minX) * sf);
+ const int scissorH = 10 * sf;
+ ::glEnable(gl::cap::ScissorTest);
+ ::glScissor(scissorX, scissorY, scissorW, scissorH);
+ drawWithShadow(text, textX, y, color);
+ ::glDisable(gl::cap::ScissorTest);
+}
+void TextRenderer::draw(const std::string& text, int x, int y, int color) {
+ draw(text, x, y, color, false);
+}
+void TextRenderer::draw(const std::string& text, int x, int y, int color, bool shadow) {
+ if(text.empty()) {
+  return;
+ }
+ float alpha = static_cast<float>((color >> 24) & 0xFF) / 255.0f;
+ if(alpha == 0.0f) {
+  alpha = 1.0f;
+ }
+ const bool keepDepth = render::core::depthTestEnabled();
+ const render::RenderPassScope passScope(render::RenderType::text());
+ if(keepDepth) {
+  render::core::enableDepthTest();
+ }
+ render::core::bindTexture(static_cast<int>(boundTexture));
+ core::setConstColor(1.0f, 1.0f, 1.0f, 1.0f);
+ render::core::modelViewStack().push();
+ render::core::modelViewStack().translate(static_cast<float>(x), static_cast<float>(y), 0.0f);
+ render::Tessellator& tessellator = render::INSTANCE;
+ tessellator.startQuads();
+ emitGlyphs(tessellator, text, 0.0f, 0.0f, color, shadow, alpha);
+ tessellator.draw();
+ render::core::modelViewStack().pop();
+}
+std::size_t TextRenderer::fitPrefixLength(const std::string& text, int maxWidth) const {
+ int width = 0;
+ bool consumedGlyph = false;
+ const std::string& valid = CharacterUtils::validCharacters();
+ std::size_t i = 0;
+ while(i < text.size()) {
+  if(isSectionSign(text, i)) {
+   i += static_cast<unsigned char>(text[i]) == 0xC2 ? 2 : 1;
+   if(i < text.size()) {
+    ++i; // color code character
+   }
+   continue;
+  }
+  const unsigned char ch = static_cast<unsigned char>(text[i]);
+  const int glyph = getGlyphIndex(ch, valid);
+  if(glyph >= 0 && glyph < 256) {
+   width += characterWidths_[static_cast<std::size_t>(glyph)];
+   if(width > maxWidth && consumedGlyph) {
+    return i;
+   }
+   consumedGlyph = true;
+  }
+  ++i;
+ }
+ return text.size();
 }
 int TextRenderer::getWidth(const std::string& text) const {
  if(text.empty()) {
@@ -276,10 +375,7 @@ void TextRenderer::drawSplit(const std::string& text, int x, int y, int width, i
    line += words[index++] + " ";
   }
   while(getWidth(line) > width) {
-   std::size_t cut = 0;
-   while(cut < line.size() && getWidth(line.substr(0, cut + 1)) <= width) {
-    ++cut;
-   }
+   const std::size_t cut = fitPrefixLength(line, width);
    const std::string part = line.substr(0, cut);
    if(!part.empty()) {
     draw(part, x, y, color);
@@ -318,11 +414,8 @@ int TextRenderer::splitAndGetHeight(const std::string& text, int width) const {
    line += words[index++] + " ";
   }
   while(getWidth(line) > width) {
-   std::size_t cut = 0;
-   while(cut < line.size() && getWidth(line.substr(0, cut + 1)) <= width) {
-    ++cut;
-   }
-   if(!line.substr(0, cut).empty()) {
+   const std::size_t cut = fitPrefixLength(line, width);
+   if(cut > 0) {
     height += 8;
    }
    line = line.substr(cut);

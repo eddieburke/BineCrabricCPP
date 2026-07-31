@@ -17,15 +17,15 @@ std::uint64_t resolveSeedText(const std::string& text) {
  for(; digit < text.size(); ++digit) {
   signedDecimal = signedDecimal && text[digit] >= '0' && text[digit] <= '9';
  }
-  if(!signedDecimal) {
-   return static_cast<std::uint64_t>(static_cast<std::int64_t>(javaStringHashCode(text)));
+ if(!signedDecimal) {
+  return static_cast<std::uint64_t>(static_cast<std::int64_t>(javaStringHashCode(text)));
  }
  try {
   return static_cast<std::uint64_t>(std::stoll(text));
-  } catch(const std::invalid_argument&) {
-   return static_cast<std::uint64_t>(static_cast<std::int64_t>(javaStringHashCode(text)));
-  } catch(const std::out_of_range&) {
-   return static_cast<std::uint64_t>(static_cast<std::int64_t>(javaStringHashCode(text)));
+ } catch(const std::invalid_argument&) {
+  return static_cast<std::uint64_t>(static_cast<std::int64_t>(javaStringHashCode(text)));
+ } catch(const std::out_of_range&) {
+  return static_cast<std::uint64_t>(static_cast<std::int64_t>(javaStringHashCode(text)));
  }
 }
 } // namespace net::minecraft::util

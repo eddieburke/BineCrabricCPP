@@ -1,7 +1,7 @@
 #include "net/minecraft/client/render/item/ItemRenderer.hpp"
 #include "net/minecraft/block/Block.hpp"
 #include "net/minecraft/client/font/TextRenderer.hpp"
-#include "net/minecraft/client/render/RenderSystem.hpp"
+#include "net/minecraft/client/render/RenderCore.hpp"
 #include "net/minecraft/client/render/RenderType.hpp"
 #include "net/minecraft/client/render/Tessellator.hpp"
 #include "net/minecraft/client/render/TextureResolve.hpp"
@@ -10,8 +10,26 @@
 #include "net/minecraft/item/Item.hpp"
 #include "net/minecraft/item/ItemStack.hpp"
 #include "net/minecraft/mod/model/ModModels.hpp"
-#include "net/minecraft/registry/TextureRegistry.hpp"
 namespace net::minecraft::client::render::item {
+namespace {
+// enableGUIStandardItemLighting: lights after Ry(-30)*Rx(165) on
+// normalize(0.2,1,-0.7) / normalize(-0.2,1,0.7), ambient 0.4, diffuse 0.6.
+void enableGuiItemLighting() {
+ core::WorldLightUniforms light = core::worldLight();
+ light.sunDirView[0] = -0.23791005f;
+ light.sunDirView[1] = -0.63443479f;
+ light.sunDirView[2] = 0.73545313f;
+ light.fillDirView[0] = 0.02866725f;
+ light.fillDirView[1] = -0.92737470f;
+ light.fillDirView[2] = -0.37303398f;
+ light.sunColor[0] = light.sunColor[1] = light.sunColor[2] = 1.0f;
+ light.sunIntensity = 0.6f;
+ light.fillIntensity = 0.6f;
+ light.ambient[0] = light.ambient[1] = light.ambient[2] = 0.4f;
+ core::setWorldLight(light);
+ core::setLightingEnabled(true);
+}
+} // namespace
 void ItemRenderer::renderGuiItem(client::font::TextRenderer& textRenderer,
                                  client::texture::TextureManager& textureManager,
                                  const ItemStack& stack,
@@ -21,41 +39,36 @@ void ItemRenderer::renderGuiItem(client::font::TextRenderer& textRenderer,
  if(stack.count <= 0 || stack.itemId <= 0) {
   return;
  }
+ const render::core::RenderedItemScope itemScope(ItemModelRenderer::shaderId(stack));
  if(ItemModelRenderer::hasCustomModel(stack)) {
-  setupGuiItemLighting();
   renderCustomModelInGui(textureManager, stack, x, y);
-  RenderSystem::disableLighting();
  } else if(ItemModelRenderer::rendersAsBlockModel(stack)) {
-  setupGuiItemLighting();
   renderBlockItemInGui(textureManager, stack, x, y);
-  RenderSystem::disableLighting();
  } else {
-  RenderSystem::disableLighting();
   renderSpriteItemInGui(textureManager, stack, x, y);
  }
- RenderSystem::cullBackFaces();
-}
-void ItemRenderer::setupGuiItemLighting() {
- RenderSystem::setupGuiFlatItemLighting();
+ core::cullBackFaces();
 }
 void ItemRenderer::renderCustomModelInGui(client::texture::TextureManager& textureManager,
                                           const ItemStack& stack,
                                           int x,
                                           int y) {
- textureManager.bindTextureOrAtlas(stack.getTextureId(), ItemModelRenderer::spriteAtlasPath(stack));
+ textureManager.bindTexture(
+     resolveBlockTexture(stack.getTextureId(), textureManager, ItemModelRenderer::atlasDomain(stack)).glId);
+ enableGuiItemLighting();
  render::RenderPassScope scope(render::RenderType::guiItem3D());
- RenderSystem::pushMatrix();
- RenderSystem::translate(static_cast<float>(x - 2), static_cast<float>(y + 3), -3.0f);
- RenderSystem::scale(10.0f, 10.0f, 10.0f);
- RenderSystem::translate(0.5f, 0.5f, 0.5f);
- RenderSystem::scale(1.0f, 1.0f, -1.0f);
- RenderSystem::rotate(210.0f, 1.0f, 0.0f, 0.0f);
- RenderSystem::rotate(45.0f, 0.0f, 1.0f, 0.0f);
+ core::modelViewStack().push();
+ core::modelViewStack().translate(static_cast<float>(x - 2), static_cast<float>(y + 3), -3.0f);
+ core::modelViewStack().scale(10.0f, 10.0f, 10.0f);
+ core::modelViewStack().translate(0.5f, 0.5f, 0.5f);
+ core::modelViewStack().scale(1.0f, 1.0f, -1.0f);
+ core::modelViewStack().rotate(210.0f, 1.0f, 0.0f, 0.0f);
+ core::modelViewStack().rotate(45.0f, 0.0f, 1.0f, 0.0f);
  applyDisplayColor(stack);
- RenderSystem::rotate(-90.0f, 0.0f, 1.0f, 0.0f);
- RenderSystem::translate(-0.5f, -0.5f, -0.5f);
+ core::modelViewStack().rotate(-90.0f, 0.0f, 1.0f, 0.0f);
+ core::modelViewStack().translate(-0.5f, -0.5f, -0.5f);
  net::minecraft::mod::model::drawLuaItemModel(Tessellator::INSTANCE, stack, 1.0f);
- RenderSystem::popMatrix();
+ core::modelViewStack().pop();
 }
 void ItemRenderer::renderBlockItemInGui(client::texture::TextureManager& textureManager,
                                         const ItemStack& stack,
@@ -69,16 +82,17 @@ void ItemRenderer::renderBlockItemInGui(client::texture::TextureManager& texture
  const bool previousUseAo = blockRenderManager.ctx.faceState.useAo;
  const bool previousInventoryColorEnabled = blockRenderManager.ctx.inventoryColorEnabled;
  auto* previousTextureManager = blockRenderManager.ctx.textureManager;
+ enableGuiItemLighting();
  render::RenderPassScope scope(render::RenderType::guiItem3D());
- RenderSystem::pushMatrix();
- RenderSystem::translate(static_cast<float>(x - 2), static_cast<float>(y + 3), -3.0f);
- RenderSystem::scale(10.0f, 10.0f, 10.0f);
- RenderSystem::translate(1.0f, 0.5f, 1.0f);
- RenderSystem::scale(1.0f, 1.0f, -1.0f);
- RenderSystem::rotate(210.0f, 1.0f, 0.0f, 0.0f);
- RenderSystem::rotate(45.0f, 0.0f, 1.0f, 0.0f);
+ core::modelViewStack().push();
+ core::modelViewStack().translate(static_cast<float>(x - 2), static_cast<float>(y + 3), -3.0f);
+ core::modelViewStack().scale(10.0f, 10.0f, 10.0f);
+ core::modelViewStack().translate(1.0f, 0.5f, 1.0f);
+ core::modelViewStack().scale(1.0f, 1.0f, -1.0f);
+ core::modelViewStack().rotate(210.0f, 1.0f, 0.0f, 0.0f);
+ core::modelViewStack().rotate(45.0f, 0.0f, 1.0f, 0.0f);
  applyDisplayColor(stack);
- RenderSystem::rotate(-90.0f, 0.0f, 1.0f, 0.0f);
+ core::modelViewStack().rotate(-90.0f, 0.0f, 1.0f, 0.0f);
  blockRenderManager.ctx.inventoryColorEnabled = useCustomDisplayColor;
  blockRenderManager.ctx.textureManager = &textureManager;
  blockRenderManager.ctx.faceState.useAo = false;
@@ -86,7 +100,7 @@ void ItemRenderer::renderBlockItemInGui(client::texture::TextureManager& texture
  blockRenderManager.ctx.textureManager = previousTextureManager;
  blockRenderManager.ctx.inventoryColorEnabled = previousInventoryColorEnabled;
  blockRenderManager.ctx.faceState.useAo = previousUseAo;
- RenderSystem::popMatrix();
+ core::modelViewStack().pop();
  textureManager.bindTexture(textureManager.getTextureId("/terrain.png"));
 }
 void ItemRenderer::renderSpriteItemInGui(client::texture::TextureManager& textureManager,
@@ -98,7 +112,8 @@ void ItemRenderer::renderSpriteItemInGui(client::texture::TextureManager& textur
   return;
  }
  render::RenderPassScope scope(render::RenderType::guiTextured());
- textureManager.bindTextureOrAtlas(sprite, ItemModelRenderer::spriteAtlasPath(stack));
+ textureManager.bindTexture(
+     resolveBlockTexture(sprite, textureManager, ItemModelRenderer::atlasDomain(stack)).glId);
  applyDisplayColor(stack);
  const auto [uMin, uMax, vMin, vMax] = ItemModelRenderer::spriteUv(stack);
  Tessellator& tessellator = Tessellator::INSTANCE;
@@ -111,7 +126,7 @@ void ItemRenderer::renderSpriteItemInGui(client::texture::TextureManager& textur
 }
 void ItemRenderer::applyDisplayColor(const ItemStack& stack) {
  const ItemTint tint = useCustomDisplayColor ? ItemModelRenderer::tintColor(stack) : ItemTint{};
- RenderSystem::color4f(tint.red, tint.green, tint.blue, 1.0f);
+ render::core::setConstColor(tint.red, tint.green, tint.blue, 1.0f);
 }
 void ItemRenderer::renderGuiItemDecoration(client::font::TextRenderer& textRenderer,
                                            client::texture::TextureManager& textureManager,
@@ -141,7 +156,7 @@ void ItemRenderer::drawDurabilityBar(const ItemStack& stack, int x, int y) {
  fillRect(x + 2, y + 13, 13, 2, 0);
  fillRect(x + 2, y + 13, 12, 1, ((255 - barColorAmount) / 4 << 16) | 0x3F00);
  fillRect(x + 2, y + 13, barPixels, 1, ((255 - barColorAmount) << 16) | (barColorAmount << 8));
- RenderSystem::color4f(1.0f, 1.0f, 1.0f, 1.0f);
+ render::core::setConstColor(1.0f, 1.0f, 1.0f, 1.0f);
 }
 void ItemRenderer::fillRect(int x, int y, int width, int height, int color) {
  Tessellator& tessellator = Tessellator::INSTANCE;

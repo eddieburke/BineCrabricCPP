@@ -10,4 +10,4 @@ inline void initializeEmptyServerModHost(const std::filesystem::path& runDirecto
  modHost.initialize(runDirectory);
  modHost.loadEnabledPackageMods();
 }
-}
+} // namespace net::minecraft::test

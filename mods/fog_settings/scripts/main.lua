@@ -1,8 +1,3 @@
--- ================================================================
--- MOD: fog_settings
--- Clean, separated logic with standardized config access
--- ================================================================
-
 local config = require("config")
 
 minecraft.on("fog_settings", {}, function(event)

@@ -3,8 +3,9 @@
 #include <cstdint>
 #include <memory>
 #include <optional>
+#include <unordered_map>
 #include <vector>
-#include "net/minecraft/client/option/ResolvedRenderOptions.hpp"
+#include "net/minecraft/client/option/RenderSettings.hpp"
 #include "net/minecraft/client/render/Tessellator.hpp"
 #include "net/minecraft/client/render/chunk/RegionSnapshot.hpp"
 #include "net/minecraft/mod/model/ModModels.hpp"
@@ -41,11 +42,8 @@ struct ChunkMeshJob {
  int sizeX = 0;
  int sizeY = 0;
  int sizeZ = 0;
- int renderX = 0;
- int renderY = 0;
- int renderZ = 0;
  std::unique_ptr<RegionSnapshot> snapshot;
- client::option::ResolvedRenderOptions opts{};
+ client::option::RenderSettings opts{};
  bool fancyGraphics = true;
  ChunkMeshResult result{};
  // Set when the worker hit an exception; the main thread reschedules.
@@ -54,15 +52,16 @@ struct ChunkMeshJob {
  // per-frame time budget so block edits next to the player land the
  // frame their mesh finishes.
  bool nearLane = false;
+ std::unordered_map<int, int> blockRenderLayers;
  [[nodiscard]] static std::shared_ptr<ChunkMeshJob> capture(ChunkBuilder& owner,
-                                                            client::option::ResolvedRenderOptions options,
+                                                            client::option::RenderSettings options,
                                                             bool fancyGraphics);
  void captureSnapshot();
  void releasePins() noexcept;
 
  private:
  explicit ChunkMeshJob(ChunkBuilder& owner,
-                       client::option::ResolvedRenderOptions options,
+                       client::option::RenderSettings options,
                        bool fancyGraphics,
                        std::vector<RegionSnapshot::SourceChunk> sourceChunks,
                        int ambientDarkness,

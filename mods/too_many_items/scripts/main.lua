@@ -1,8 +1,3 @@
--- ================================================================
--- MOD: too_many_items
--- Standardized structure with separated config
--- ================================================================
-
 local config = require("config")
 
 local visible = false

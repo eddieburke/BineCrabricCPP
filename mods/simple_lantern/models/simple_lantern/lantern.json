@@ -1,7 +1,7 @@
 {
   "format_version": "1.21.11",
   "textures": {
-    "all": "mods/simple_lantern/lantern.png"
+    "all": "lantern"
   },
   "elements": [
     {

@@ -1,6 +1,6 @@
 #include "net/minecraft/block/Block.hpp"
 #include "net/minecraft/client/gl/GlConstants.hpp"
-#include "net/minecraft/client/render/RenderSystem.hpp"
+#include "net/minecraft/client/render/RenderCore.hpp"
 #include "net/minecraft/client/render/RenderType.hpp"
 #include "net/minecraft/client/render/entity/EntityRenderers.hpp"
 #include "net/minecraft/entity/TntEntity.hpp"
@@ -12,14 +12,16 @@ TntEntityRenderer::TntEntityRenderer() {
  shadowRadius = 0.5f;
 }
 void TntEntityRenderer::render(
-    const net::minecraft::Entity& entity, double x, double y, double z, float yaw, float tickDelta) {
+    const net::minecraft::Entity& entity, double x, double y, double z, float yaw, float tickDelta,
+    net::minecraft::util::math::MatrixStack& matrices, const net::minecraft::util::math::Matrix4f& projection) {
  (void)yaw;
  const auto* tnt = dynamic_cast<const net::minecraft::TntEntity*>(&entity);
  if(tnt == nullptr) {
   return;
  }
- RenderSystem::pushMatrix();
- RenderSystem::translate(static_cast<float>(x), static_cast<float>(y), static_cast<float>(z));
+ beginDraw(matrices, projection);
+ matrices.push();
+ matrices.translate(static_cast<float>(x), static_cast<float>(y), static_cast<float>(z));
  if(static_cast<float>(tnt->fuse) - tickDelta + 1.0f < 10.0f) {
   float pulse = 1.0f - (static_cast<float>(tnt->fuse) - tickDelta + 1.0f) / 10.0f;
   if(pulse < 0.0f) {
@@ -31,23 +33,24 @@ void TntEntityRenderer::render(
   pulse *= pulse;
   pulse *= pulse;
   const float scale = 1.0f + pulse * 0.3f;
-  RenderSystem::scale(scale, scale, scale);
+  matrices.scale(scale, scale, scale);
  }
  const float flash = (1.0f - (static_cast<float>(tnt->fuse) - tickDelta + 1.0f) / 100.0f) * 0.8f;
  bindTexture("/terrain.png");
  if(net::minecraft::block::Block* block = net::minecraft::block::Block::BLOCKS[kTntBlockId]) {
+  // MCP RenderTNTPrimed: renderBlockOnInventory(..., getEntityBrightness(partialTick)).
   blockRenderManager_.render(*block, 0, entity.getBrightnessAtEyes(tickDelta));
   if(tnt->fuse / 5 % 2 == 0) {
    render::RenderPassScope passScope(render::RenderType::entityCutout());
-   render::RenderSystem::disableLighting();
-   RenderSystem::blendDstAlpha();
-   RenderSystem::color4f(1.0f, 1.0f, 1.0f, flash);
+   render::core::setLightingEnabled(false);
+   core::blendDstAlpha();
+   render::core::setConstColor(1.0f, 1.0f, 1.0f, flash);
    blockRenderManager_.render(*block, 0, 1.0f);
-   RenderSystem::color4f(1.0f, 1.0f, 1.0f, 1.0f);
-   render::RenderSystem::enableLighting();
+   render::core::setConstColor(1.0f, 1.0f, 1.0f, 1.0f);
   }
  }
- RenderSystem::popMatrix();
+ matrices.pop();
+ endDraw();
 }
 } // namespace net::minecraft::client::render::entity
 #include "net/minecraft/client/entity/EntityClientRendererRegistration.hpp"

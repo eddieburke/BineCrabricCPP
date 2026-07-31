@@ -1,8 +1,3 @@
--- ================================================================
--- CONFIG: colorful_skies
--- Centralized configuration with validation and persistence
--- ================================================================
-
 local settings = require("lib.settings")
 
 local config = settings.define("colorful_skies", {
@@ -53,10 +48,10 @@ local config = settings.define("colorful_skies", {
     night_brightness = {
       type = "slider",
       label = "Night Brightness",
-      min = 0.05,
+      min = 0.01,
       max = 0.6,
       step = 0.01,
-      default = 0.18,
+      default = 0.05,
     },
     night_sky_r = {
       type = "slider",

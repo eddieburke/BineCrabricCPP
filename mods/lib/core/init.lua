@@ -1,13 +1,4 @@
--- Minetest Shared Core Library
--- Provides standardized utilities, event handling, and object pooling
--- for high-performance Lua mods
-
 local core = {}
-
---------------------------------------------------------------------------------
--- MODULE LOADER
--- Standardized module loading with caching
---------------------------------------------------------------------------------
 
 local loaded_modules = {}
 
@@ -20,11 +11,6 @@ function core.load_module(name, path)
     loaded_modules[name] = mod
     return mod
 end
-
---------------------------------------------------------------------------------
--- EVENT BUS
--- Centralized event registration and dispatching
---------------------------------------------------------------------------------
 
 local event_handlers = {}
 local event_queue = {}
@@ -68,11 +54,6 @@ function core.process_event_queue()
     end
     event_queue = {}
 end
-
---------------------------------------------------------------------------------
--- OBJECT POOL
--- Critical for physics performance - reduces GC pressure
---------------------------------------------------------------------------------
 
 function core.create_object_pool(factory, reset_func, initial_size)
     initial_size = initial_size or 100
@@ -136,11 +117,6 @@ function core.create_object_pool(factory, reset_func, initial_size)
     
     return pool
 end
-
---------------------------------------------------------------------------------
--- VECTOR MATH UTILITIES
--- Optimized vector operations for physics engine
---------------------------------------------------------------------------------
 
 core.vec3_pool = core.create_object_pool(
     function() return {x=0, y=0, z=0} end,
@@ -227,11 +203,6 @@ function core.vec3_release(v)
     core.vec3_pool.release(v)
 end
 
---------------------------------------------------------------------------------
--- AABB UTILITIES
--- Axis-aligned bounding box operations for collision detection
---------------------------------------------------------------------------------
-
 function core.aabb_intersect(min1, max1, min2, max2)
     return min1.x <= max2.x and max1.x >= min2.x and
            min1.y <= max2.y and max1.y >= min2.y and
@@ -259,11 +230,6 @@ function core.aabb_center(center, min, max)
     center.z = (min.z + max.z) * 0.5
     return center
 end
-
---------------------------------------------------------------------------------
--- SPATIAL HASH GRID
--- Broadphase collision detection optimization
---------------------------------------------------------------------------------
 
 function core.create_spatial_hash(cell_size)
     cell_size = cell_size or 10.0
@@ -365,10 +331,6 @@ function core.create_spatial_hash(cell_size)
     }
 end
 
---------------------------------------------------------------------------------
--- MATH UTILITIES
---------------------------------------------------------------------------------
-
 function core.clamp(value, min_val, max_val)
     if value < min_val then return min_val end
     if value > max_val then return max_val end
@@ -392,10 +354,6 @@ function core.sign(x)
     if x < 0 then return -1 end
     return 0
 end
-
---------------------------------------------------------------------------------
--- PERFORMANCE MONITOR
---------------------------------------------------------------------------------
 
 local perf_stats = {}
 

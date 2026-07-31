@@ -3,6 +3,9 @@
 #include "net/minecraft/client/Minecraft.hpp"
 #ifdef _WIN32
 #include <timeapi.h>
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
 #include <windows.h>
 #include "net/minecraft/client/diagnostics/ClientDiagnostics.hpp"
 struct WindowsTimerResolutionReserver {
@@ -33,13 +36,13 @@ int main(int argc, char** argv) {
   net::minecraft::client::diagnostics::reportFatalError("Minecraft Native - startup failed", details);
   net::minecraft::client::diagnostics::pauseBeforeExit();
 #endif
-   return 1;
-  } catch(...) {
-   const std::string details = "Uncaught unknown exception in main.";
+  return 1;
+ } catch(...) {
+  const std::string details = "Uncaught unknown exception in main.";
 #ifdef _WIN32
-   net::minecraft::client::diagnostics::reportFatalError("Minecraft Native - startup failed", details);
-   net::minecraft::client::diagnostics::pauseBeforeExit();
+  net::minecraft::client::diagnostics::reportFatalError("Minecraft Native - startup failed", details);
+  net::minecraft::client::diagnostics::pauseBeforeExit();
 #endif
-   return 1;
+  return 1;
  }
 }

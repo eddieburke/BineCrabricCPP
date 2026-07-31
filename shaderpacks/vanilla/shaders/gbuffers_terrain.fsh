@@ -1,44 +1,22 @@
-in vec2 vUV;
-in vec4 vColor;
-in vec3 vNormal;
-in vec3 vViewPos;
-
-uniform sampler2D uTexture;
-// Terrain lighting is baked into vColor by the chunk mesher plus the world-sun
-// uniform block; there is no lightmap texture. Do not re-add a sampler here.
-uniform vec4 uConstColor;
-uniform int uAlphaTest;
-uniform float uAlphaRef;
-
-uniform float uBrightness;
-
-uniform int uFogMode;
-uniform vec4 uFogColor;
-uniform float uFogDensity;
-uniform float uFogStart;
-uniform float uFogEnd;
-
-layout(location = 0) out vec4 fragColor;
-
+#version 430 core
+#include "/lib/common.glsl"
+in vec2 texcoord;
+in vec2 lmcoord;
+in vec4 color;
+in vec3 normal;
+in float viewDistance;
+uniform sampler2D gtexture;
+uniform sampler2D lightmap;
+uniform mat4 gbufferModelViewInverse;
+/* RENDERTARGETS: 0 */
+layout(location = 0) out vec4 outColor;
 void main() {
-  vec4 base = uConstColor * vColor * texture(uTexture, vUV);
-  if(uAlphaTest == 1 && base.a <= uAlphaRef) {
-    discard;
-  }
-  if(uFogMode > 0) {
-    float dist = length(vViewPos);
-    float f;
-    if(uFogMode == 1) {
-      f = (uFogEnd - dist) / max(uFogEnd - uFogStart, 1e-4);
-    } else if(uFogMode == 2) {
-      f = exp(-uFogDensity * dist);
-    } else {
-      float fd = uFogDensity * dist;
-      f = exp(-(fd * fd));
-    }
-    f = clamp(f, 0.0, 1.0);
-    base.rgb = mix(uFogColor.rgb, base.rgb, f);
-  }
-  base.rgb = pow(max(base.rgb, 0.0), vec3(1.0 / (1.0 + uBrightness * 4.0)));
-  fragColor = base;
+ vec4 tex = texture(gtexture, texcoord);
+ // tintAndAo: separateAo puts AO in alpha; otherwise a=1 and rgb already has AO.
+ vec4 surface = vec4(tex.rgb * tintAndAo(color), tex.a);
+ if(surface.a < alphaTestRef) discard;
+ vec3 worldNormal = normalize(mat3(gbufferModelViewInverse) * normal);
+ surface.rgb *= faceShade(worldNormal);
+ surface.rgb *= texture(lightmap, lmcoord).rgb;
+ outColor = vec4(applyFog(surface.rgb, viewDistance), surface.a);
 }

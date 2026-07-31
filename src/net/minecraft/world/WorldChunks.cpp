@@ -101,30 +101,30 @@ Chunk& World::ensureChunk(int blockX, int blockZ) {
  return it->second;
 }
 const Chunk* World::getChunkIfLoaded(int blockX, int blockZ) const {
-  if(chunkCache_ != nullptr) {
-   const int chunkX = chunk_coord(blockX);
-   const int chunkZ = chunk_coord(blockZ);
-   return chunkCache_->isChunkLoaded(chunkX, chunkZ) ? &chunkCache_->getChunk(chunkX, chunkZ) : nullptr;
-  }
-  const ChunkPos pos{chunk_coord(blockX), chunk_coord(blockZ)};
-  const auto it = chunks_.find(pos);
-  if(it == chunks_.end()) {
-   return nullptr;
-  }
-  return &it->second;
+ if(chunkCache_ != nullptr) {
+  const int chunkX = chunk_coord(blockX);
+  const int chunkZ = chunk_coord(blockZ);
+  return chunkCache_->isChunkLoaded(chunkX, chunkZ) ? &chunkCache_->getChunk(chunkX, chunkZ) : nullptr;
+ }
+ const ChunkPos pos{chunk_coord(blockX), chunk_coord(blockZ)};
+ const auto it = chunks_.find(pos);
+ if(it == chunks_.end()) {
+  return nullptr;
+ }
+ return &it->second;
 }
 Chunk* World::getChunkIfLoaded(int blockX, int blockZ) {
-  if(chunkCache_ != nullptr) {
-   const int chunkX = chunk_coord(blockX);
-   const int chunkZ = chunk_coord(blockZ);
-   return chunkCache_->isChunkLoaded(chunkX, chunkZ) ? &chunkCache_->getChunk(chunkX, chunkZ) : nullptr;
-  }
-  const ChunkPos pos{chunk_coord(blockX), chunk_coord(blockZ)};
-  const auto it = chunks_.find(pos);
-  if(it == chunks_.end()) {
-   return nullptr;
-  }
-  return &it->second;
+ if(chunkCache_ != nullptr) {
+  const int chunkX = chunk_coord(blockX);
+  const int chunkZ = chunk_coord(blockZ);
+  return chunkCache_->isChunkLoaded(chunkX, chunkZ) ? &chunkCache_->getChunk(chunkX, chunkZ) : nullptr;
+ }
+ const ChunkPos pos{chunk_coord(blockX), chunk_coord(blockZ)};
+ const auto it = chunks_.find(pos);
+ if(it == chunks_.end()) {
+  return nullptr;
+ }
+ return &it->second;
 }
 const Chunk& World::getChunk(int chunkX, int chunkZ) const {
  if(chunkCache_ != nullptr) {
@@ -168,7 +168,7 @@ int World::getBlockMeta(int x, int y, int z) const {
  return getChunk(chunk_coord(x), chunk_coord(z)).getBlockMeta(mod_16(x), y, mod_16(z));
 }
 bool World::hasChunk(int chunkX, int chunkZ) const {
-  return getChunkIfLoaded(chunkX << 4, chunkZ << 4) != nullptr;
+ return getChunkIfLoaded(chunkX << 4, chunkZ << 4) != nullptr;
 }
 Chunk& World::getChunkFromPos(int x, int z) {
  return getChunk(chunk_coord(x), chunk_coord(z));
@@ -255,7 +255,6 @@ bool World::hasSkyLight(int x, int y, int z) const {
  return getChunk(chunk_coord(x), chunk_coord(z)).isAboveMaxHeight(mod_16(x), y, mod_16(z));
 }
 void World::loadSpawnChunks(int chunkRadius) {
- initializeBlocks();
  for(int cx = -chunkRadius; cx <= chunkRadius; ++cx) {
   for(int cz = -chunkRadius; cz <= chunkRadius; ++cz) {
    [[maybe_unused]] Chunk& chunk = getChunk(cx, cz);
@@ -353,19 +352,14 @@ void World::setChunkCacheCenterFromBlockPos(int blockX, int blockZ) {
 }
 void World::populateChunkCacheReadyChunks() {
 }
-void World::pumpChunkPublish() {
- if(chunkCache_ != nullptr) {
-  chunkCache_->pumpChunkPublish();
- }
-}
 bool World::isChunkDataReady(int chunkX, int chunkZ) const {
  return chunkCache_ == nullptr || chunkCache_->isChunkDataReady(chunkX, chunkZ);
 }
 bool World::isPosLoaded(int x, int y, int z) const {
-  if(y < 0 || y >= Chunk::height) {
-   return false;
-  }
-  return getChunkIfLoaded(x, z) != nullptr;
+ if(y < 0 || y >= Chunk::height) {
+  return false;
+ }
+ return getChunkIfLoaded(x, z) != nullptr;
 }
 void World::handleChunkDataUpdate(
     int x, int y, int z, int sizeX, int sizeY, int sizeZ, const std::vector<std::uint8_t>& chunkData) {
@@ -405,9 +399,9 @@ void World::handleChunkDataUpdate(
    }
    offset = getChunk(chunkX, chunkZ)
                 .loadFromPacket(chunkData, localMinX, minY, localMinZ, localMaxX, maxY, localMaxZ, offset);
-    if(chunkCache_ != nullptr) {
-     chunkCache_->markChunkDataReady(chunkX, chunkZ);
-    }
+   if(chunkCache_ != nullptr) {
+    chunkCache_->markChunkDataReady(chunkX, chunkZ);
+   }
    setBlocksDirty(chunkX * 16 + localMinX,
                   minY,
                   chunkZ * 16 + localMinZ,
@@ -539,15 +533,21 @@ void World::manageChunkUpdatesAndEvents() {
       chunk.getLight(LightType::Block, localX, worldY, localZ) < 10) {
     const int belowId = chunk.getBlockId(localX, worldY - 1, localZ);
     const int currentId = chunk.getBlockId(localX, worldY, localZ);
-    if(isRaining() && currentId == 0 && Block::SNOW != nullptr &&
-       Block::SNOW->canPlaceAt(this, worldX, worldY, worldZ) && belowId != 0 &&
-       Block::BLOCKS[static_cast<std::size_t>(belowId)] != nullptr &&
-       Block::BLOCKS[static_cast<std::size_t>(belowId)]->material.blocksMovement()) {
-     setBlock(worldX, worldY, worldZ, Block::SNOW->id);
-    }
-    if(Block::WATER != nullptr && belowId == Block::WATER->id &&
-       chunk.getBlockMeta(localX, worldY - 1, localZ) == 0) {
-     setBlock(worldX, worldY - 1, worldZ, Block::ICE->id);
+    const bool placeSnow = isRaining() && currentId == 0 && Block::SNOW != nullptr &&
+                           Block::SNOW->canPlaceAt(this, worldX, worldY, worldZ) && belowId != 0 &&
+                           Block::BLOCKS[static_cast<std::size_t>(belowId)] != nullptr &&
+                           Block::BLOCKS[static_cast<std::size_t>(belowId)]->material.blocksMovement();
+    const bool placeIce = Block::WATER != nullptr && belowId == Block::WATER->id &&
+                          chunk.getBlockMeta(localX, worldY - 1, localZ) == 0;
+    if(placeSnow || placeIce) {
+     mod::SnowIcePlacementEvent event{this, worldX, worldY, worldZ, placeSnow, placeIce};
+     mod::runtime::luaHookSnowIcePlacement(event);
+     if(event.placeSnow) {
+      setBlock(worldX, worldY, worldZ, Block::SNOW->id);
+     }
+     if(event.placeIce) {
+      setBlock(worldX, worldY - 1, worldZ, Block::ICE->id);
+     }
     }
    }
   }
@@ -571,6 +571,11 @@ void World::manageChunkUpdatesAndEvents() {
     }
    }
   }
+ }
+}
+void World::pumpChunkPublish() {
+ if(chunkCache_ != nullptr) {
+  chunkCache_->pumpChunkPublish();
  }
 }
 } // namespace net::minecraft

@@ -54,10 +54,10 @@ void ensureConsole() {
 void writeCrashReportFile(const std::string& details, const char* fileName = "crash-report.txt") {
  const std::string path = executableDirectory() + "\\" + fileName;
  std::ofstream file(path, std::ios::binary | std::ios::trunc);
-  if(!file.is_open()) {
-   return;
-  }
-  file << details;
+ if(!file.is_open()) {
+  return;
+ }
+ file << details;
 }
 void showCrashMessageBox(const std::string& title, const std::string& details) {
  std::string message = details;
@@ -134,9 +134,9 @@ void writeMinidump(EXCEPTION_POINTERS* info, const char* fileName = "crash.dmp")
  const std::string path = executableDirectory() + "\\" + fileName;
  const HANDLE file =
      CreateFileA(path.c_str(), GENERIC_WRITE, 0, nullptr, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
-  if(file == INVALID_HANDLE_VALUE) {
-   return;
-  }
+ if(file == INVALID_HANDLE_VALUE) {
+  return;
+ }
  MINIDUMP_EXCEPTION_INFORMATION exceptionInfo{};
  exceptionInfo.ThreadId = GetCurrentThreadId();
  exceptionInfo.ExceptionPointers = info;
@@ -151,9 +151,9 @@ void writeMinidump(EXCEPTION_POINTERS* info, const char* fileName = "crash.dmp")
                                    nullptr,
                                    nullptr);
  CloseHandle(file);
-  if(ok) {
-  } else {
-  }
+ if(ok) {
+ } else {
+ }
 }
 std::string formatUnhandledException(EXCEPTION_POINTERS* info) {
  std::ostringstream stream;
@@ -211,13 +211,13 @@ void installCrashDiagnostics() {
  std::set_terminate(terminateHandler);
 }
 void reportFatalError(const std::string& title, const std::string& details) {
-  (void)title;
-  writeCrashReportFile(details);
+ (void)title;
+ writeCrashReportFile(details);
  showCrashMessageBox(title, details);
 }
 void pauseBeforeExit() {
-  if(GetConsoleWindow() != nullptr) {
-   std::cin.clear();
+ if(GetConsoleWindow() != nullptr) {
+  std::cin.clear();
   std::cin.get();
   return;
  }
@@ -254,7 +254,7 @@ void installHangWatchdog() {
    }
    bool expected = false;
    if(gHangDumpWritten.compare_exchange_strong(expected, true)) {
-     writeMinidump(nullptr, "hang.dmp");
+    writeMinidump(nullptr, "hang.dmp");
     writeCrashReportFile(std::string("Main loop hang detected.\nStartup phase: ") +
                              (gStartupPhase != nullptr ? gStartupPhase : "(null)") +
                              "\nSee hang.dmp for thread states.\n",

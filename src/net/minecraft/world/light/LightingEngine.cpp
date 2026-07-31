@@ -1,7 +1,9 @@
 #include "net/minecraft/world/light/LightingEngine.hpp"
 #include <algorithm>
+#include <memory>
 #include <utility>
 #include "net/minecraft/block/Block.hpp"
+#include "net/minecraft/util/concurrent/WorkerPool.hpp"
 #include "net/minecraft/world/chunk/Chunk.hpp"
 #include "net/minecraft/world/light/UnifiedLightRegistry.hpp"
 namespace net::minecraft {
@@ -41,8 +43,17 @@ void LightingEngine::Box::cover(int x0, int y0, int z0, int x1, int y1, int z1) 
  maxY = std::max(maxY, y1);
  maxZ = std::max(maxZ, z1);
 }
-LightingEngine::LightingEngine(world::light::UnifiedLightRegistry& registry)
-    : lightRegistry_(registry), thread_([this](const std::stop_token& stop) { threadLoop(stop); }) {
+LightingEngine::LightingEngine(world::light::UnifiedLightRegistry& registry) : lightRegistry_(registry) {
+ // Share the hardware budget with mesh + loader pools (competingPools=3).
+ const unsigned workers =
+     std::max(1U, util::concurrent::WorkerPool::recommendedThreadCount(3, 2, 3));
+ workerStates_.reserve(workers);
+ threads_.reserve(workers);
+ for(unsigned i = 0; i < workers; ++i) {
+  workerStates_.push_back(std::make_unique<WorkerState>());
+  WorkerState* state = workerStates_.back().get();
+  threads_.emplace_back([this, state](const std::stop_token& stop) { threadLoop(stop, *state); });
+ }
 }
 void LightingEngine::push(LightType type, int minX, int minY, int minZ, int maxX, int maxY, int maxZ, bool merge) {
  {
@@ -56,14 +67,12 @@ void LightingEngine::push(LightType type, int minX, int minY, int minZ, int maxX
     }
    }
   }
-  // Bound memory without ever dropping coverage: once the backlog is huge, fold new work into the most recent box
-  // of the same type (it over-covers and is re-split by runUpdate) rather than discarding queued regions.
   constexpr std::size_t kMaxQueue = 200000;
   if(queue_.size() >= kMaxQueue) {
    for(auto it = queue_.rbegin(); it != queue_.rend(); ++it) {
     if(it->type == type) {
      it->cover(minX, minY, minZ, maxX, maxY, maxZ);
-     pendingCount_.store(queue_.size() + (working_ ? 1U : 0U), std::memory_order_relaxed);
+     pendingCount_.store(queue_.size() + activeBoxes_.size(), std::memory_order_relaxed);
      return;
     }
    }
@@ -76,9 +85,9 @@ void LightingEngine::push(LightType type, int minX, int minY, int minZ, int maxX
   } else {
    queue_.push_back(Box{type, minX, minY, minZ, maxX, maxY, maxZ});
   }
-  pendingCount_.store(queue_.size() + (working_ ? 1U : 0U), std::memory_order_relaxed);
+  pendingCount_.store(queue_.size() + activeBoxes_.size(), std::memory_order_relaxed);
  }
- workCv_.notify_one();
+ workCv_.notify_all();
 }
 void LightingEngine::registerChunk(Chunk* chunk) {
  if(chunk == nullptr || chunk->isEmpty()) {
@@ -120,42 +129,84 @@ bool LightingEngine::hasDirtyRegions() const {
  return !outbox_.empty();
 }
 void LightingEngine::stop() {
- if(!thread_.joinable()) {
-  return;
+ {
+  // Request stops under the queue mutex so a worker cannot check the stop
+  // flag, lose the race with notify_all, and sleep on the CV forever.
+  const std::lock_guard lock(queueMutex_);
+  for(std::jthread& thread : threads_) {
+   if(thread.joinable()) {
+    thread.request_stop();
+   }
+  }
  }
- thread_.request_stop();
  workCv_.notify_all();
- thread_.join();
+ threads_.clear();
  const std::lock_guard lock(queueMutex_);
  queue_.clear();
+ activeBoxes_.clear();
  pendingCount_.store(0, std::memory_order_relaxed);
 }
-void LightingEngine::threadLoop(const std::stop_token& stop) {
+bool LightingEngine::tryClaimBox(Box& out) {
+ // Claim the first queued box that does not conflict with any active box so
+ // workers can propagate light in disjoint regions concurrently.
+ for(auto it = queue_.begin(); it != queue_.end(); ++it) {
+  bool conflicts = false;
+  for(const Box& active : activeBoxes_) {
+   if(it->conflictsWith(active)) {
+    conflicts = true;
+    break;
+   }
+  }
+  if(conflicts) {
+   continue;
+  }
+  out = *it;
+  queue_.erase(it);
+  activeBoxes_.push_back(out);
+  pendingCount_.store(queue_.size() + activeBoxes_.size(), std::memory_order_relaxed);
+  return true;
+ }
+ return false;
+}
+void LightingEngine::releaseClaimedBox(const Box& box) {
+ const std::lock_guard lock(queueMutex_);
+ activeBoxes_.erase(std::remove_if(activeBoxes_.begin(),
+                                   activeBoxes_.end(),
+                                   [&](const Box& active) {
+                                    return active.type == box.type && active.minX == box.minX &&
+                                           active.minY == box.minY && active.minZ == box.minZ &&
+                                           active.maxX == box.maxX && active.maxY == box.maxY &&
+                                           active.maxZ == box.maxZ;
+                                   }),
+                    activeBoxes_.end());
+ pendingCount_.store(queue_.size() + activeBoxes_.size(), std::memory_order_relaxed);
+ if(!queue_.empty()) {
+  workCv_.notify_all();
+ }
+}
+void LightingEngine::threadLoop(const std::stop_token& stop, WorkerState& state) {
  for(;;) {
   Box box{LightType::Block, 0, 0, 0, 0, 0, 0};
   {
    std::unique_lock lock(queueMutex_);
-   workCv_.wait(lock, [&] { return stop.stop_requested() || !queue_.empty(); });
-   if(stop.stop_requested()) {
-    return;
+   for(;;) {
+    if(stop.stop_requested()) {
+     return;
+    }
+    if(tryClaimBox(box)) {
+     break;
+    }
+    workCv_.wait(lock);
    }
-   box = queue_.front();
-   queue_.pop_front();
-   working_ = true;
-   pendingCount_.store(queue_.size() + 1, std::memory_order_relaxed);
   }
-  runUpdate(box);
-  releasePins();
-  {
-   const std::lock_guard lock(queueMutex_);
-   working_ = false;
-   pendingCount_.store(queue_.size(), std::memory_order_relaxed);
-  }
+  runUpdate(box, state);
+  releasePins(state);
+  releaseClaimedBox(box);
  }
 }
-Chunk* LightingEngine::chunkAt(int chunkX, int chunkZ) {
+Chunk* LightingEngine::chunkAt(int chunkX, int chunkZ, WorkerState& state) {
  const std::uint64_t key = chunkKey(chunkX, chunkZ);
- if(const auto it = pinCache_.find(key); it != pinCache_.end()) {
+ if(const auto it = state.pinCache.find(key); it != state.pinCache.end()) {
   return it->second;
  }
  Chunk* chunk = nullptr;
@@ -165,54 +216,54 @@ Chunk* LightingEngine::chunkAt(int chunkX, int chunkZ) {
    chunk = reg->second;
   }
  }
- // Pin against eviction; a chunk mid-eviction reads as absent so the owner can free it without ever waiting on us.
  if(chunk != nullptr && !chunk->tryAcquireRenderPin()) {
   chunk = nullptr;
  }
- pinCache_.emplace(key, chunk);
+ state.pinCache.emplace(key, chunk);
  return chunk;
 }
-void LightingEngine::releasePins() {
- for(const auto& [key, chunk] : pinCache_) {
+void LightingEngine::releasePins(WorkerState& state) {
+ for(const auto& [key, chunk] : state.pinCache) {
+  (void)key;
   if(chunk != nullptr) {
    chunk->releaseRenderPin();
   }
  }
- pinCache_.clear();
+ state.pinCache.clear();
 }
-int LightingEngine::blockId(int x, int y, int z) {
+int LightingEngine::blockId(int x, int y, int z, WorkerState& state) {
  if(x < -32000000 || z < -32000000 || x >= 32000000 || z > 32000000 || y < 0 || y >= Chunk::height) {
   return 0;
  }
- Chunk* chunk = chunkAt(x >> 4, z >> 4);
+ Chunk* chunk = chunkAt(x >> 4, z >> 4, state);
  return chunk != nullptr ? chunk->getBlockId(x & 15, y, z & 15) : 0;
 }
-int LightingEngine::brightness(LightType type, int x, int y, int z) {
+int LightingEngine::brightness(LightType type, int x, int y, int z, WorkerState& state) {
  y = std::clamp(y, 0, Chunk::height - 1);
  if(x < -32000000 || z < -32000000 || x >= 32000000 || z > 32000000) {
   return lightValue(type);
  }
- Chunk* chunk = chunkAt(x >> 4, z >> 4);
+ Chunk* chunk = chunkAt(x >> 4, z >> 4, state);
  return chunk != nullptr ? chunk->getLight(type, x & 15, y, z & 15) : 0;
 }
-void LightingEngine::setBrightness(LightType type, int x, int y, int z, int value) {
+void LightingEngine::setBrightness(LightType type, int x, int y, int z, int value, WorkerState& state) {
  if(x < -32000000 || z < -32000000 || x >= 32000000 || z > 32000000 || y < 0 || y >= Chunk::height) {
   return;
  }
- Chunk* chunk = chunkAt(x >> 4, z >> 4);
+ Chunk* chunk = chunkAt(x >> 4, z >> 4, state);
  if(chunk == nullptr || chunk->getLight(type, x & 15, y, z & 15) == value) {
   return;
  }
  chunk->setLight(type, x & 15, y, z & 15, value);
 }
-bool LightingEngine::topY(int x, int y, int z) {
+bool LightingEngine::topY(int x, int y, int z, WorkerState& state) {
  if(x < -32000000 || z < -32000000 || x >= 32000000 || z > 32000000 || y < 0) {
   return false;
  }
  if(y >= Chunk::height) {
   return true;
  }
- Chunk* chunk = chunkAt(x >> 4, z >> 4);
+ Chunk* chunk = chunkAt(x >> 4, z >> 4, state);
  return chunk != nullptr && chunk->isAboveMaxHeight(x & 15, y, z & 15);
 }
 void LightingEngine::queuePropagationBox(LightType type, int minX, int minY, int minZ, int maxX, int maxY, int maxZ) {
@@ -232,7 +283,7 @@ void LightingEngine::queuePropagationBox(LightType type, int minX, int minY, int
  }
  push(type, minX, minY, minZ, maxX, maxY, maxZ, true);
 }
-void LightingEngine::runUpdate(const Box& update) {
+void LightingEngine::runUpdate(const Box& update, WorkerState& state) {
  using block::Block;
  const LightType lightType = update.type;
  int minY = std::max(0, update.minY);
@@ -257,8 +308,6 @@ void LightingEngine::runUpdate(const Box& update) {
   }
   return;
  }
- // Spill accumulators for light escaping each face of the update box:
- // -X, -Y, -Z, +X, +Y, +Z.
  struct Spill {
   bool active = false;
   int minX = 0, minY = 0, minZ = 0, maxX = 0, maxY = 0, maxZ = 0;
@@ -295,7 +344,7 @@ void LightingEngine::runUpdate(const Box& update) {
      loaded = true;
      for(int cx = (x - 1) >> 4; cx <= (x + 1) >> 4 && loaded; ++cx) {
       for(int cz = (z - 1) >> 4; cz <= (z + 1) >> 4; ++cz) {
-       if(chunkAt(cx, cz) == nullptr) {
+       if(chunkAt(cx, cz, state) == nullptr) {
         loaded = false;
         break;
        }
@@ -309,15 +358,15 @@ void LightingEngine::runUpdate(const Box& update) {
      continue;
     }
     for(int y = minY; y <= maxY; ++y) {
-     const int current = brightness(lightType, x, y, z);
-     const int block = blockId(x, y, z);
+     const int current = brightness(lightType, x, y, z, state);
+     const int block = blockId(x, y, z, state);
      int opacity = Block::BLOCKS_LIGHT_OPACITY[static_cast<std::size_t>(block)];
      if(opacity == 0) {
       opacity = 1;
      }
      int emission = 0;
      if(lightType == LightType::Sky) {
-      if(topY(x, y, z)) {
+      if(topY(x, y, z, state)) {
        emission = 15;
       }
      } else {
@@ -325,19 +374,19 @@ void LightingEngine::runUpdate(const Box& update) {
      }
      int newLight = 0;
      if(opacity < 15 || emission != 0) {
-      int best = brightness(lightType, x - 1, y, z);
-      best = std::max(best, brightness(lightType, x + 1, y, z));
-      best = std::max(best, brightness(lightType, x, y - 1, z));
-      best = std::max(best, brightness(lightType, x, y + 1, z));
-      best = std::max(best, brightness(lightType, x, y, z - 1));
-      best = std::max(best, brightness(lightType, x, y, z + 1));
+      int best = brightness(lightType, x - 1, y, z, state);
+      best = std::max(best, brightness(lightType, x + 1, y, z, state));
+      best = std::max(best, brightness(lightType, x, y - 1, z, state));
+      best = std::max(best, brightness(lightType, x, y + 1, z, state));
+      best = std::max(best, brightness(lightType, x, y, z - 1, state));
+      best = std::max(best, brightness(lightType, x, y, z + 1, state));
       best = std::max(0, best - opacity);
       newLight = std::max(best, emission);
      }
      if(current == newLight) {
       continue;
      }
-     setBrightness(lightType, x, y, z, newLight);
+     setBrightness(lightType, x, y, z, newLight, state);
      changed = true;
      anyChanged = true;
      if(x <= update.minX) {
@@ -375,8 +424,8 @@ void LightingEngine::runUpdate(const Box& update) {
  if(!outbox_.empty()) {
   DirtyRegion& last = outbox_.back();
   const bool overlapsOrTouches = last.maxX + 1 >= update.minX && update.maxX + 1 >= last.minX &&
-                                 last.maxY + 1 >= minY && maxY + 1 >= last.minY && last.maxZ + 1 >= update.minZ &&
-                                 update.maxZ + 1 >= last.minZ;
+                                  last.maxY + 1 >= minY && maxY + 1 >= last.minY && last.maxZ + 1 >= update.minZ &&
+                                  update.maxZ + 1 >= last.minZ;
   if(overlapsOrTouches || outbox_.size() >= maxOutbox) {
    last.minX = std::min(last.minX, update.minX);
    last.minY = std::min(last.minY, minY);

@@ -33,15 +33,14 @@ void KeybindsScreen::init() {
 void KeybindsScreen::render(int mouseX, int mouseY, float tickDelta) {
  renderBackground();
  if(textRenderer() != nullptr) {
-  drawCenteredTextWithShadow(*textRenderer(), title_, width() / 2, 20, 0xFFFFFF);
+  textRenderer()->drawCenteredWithShadow(title_, width() / 2, 20, 0xFFFFFF);
   if(gameOptions_ != nullptr) {
    const int listX = controlsListX();
    for(int i = 0; i < client_option::GameOptions::kKeybindCount; ++i) {
-    drawTextWithShadow(*textRenderer(),
-                       gameOptions_->getKeybindName(i),
-                       listX + (i % 2) * 160 + 70 + 6,
-                       height() / 6 + layout::kRowSpacing * (i / 2) + 7,
-                       0xFFFFFFFF);
+    textRenderer()->drawWithShadow(gameOptions_->getKeybindName(i),
+                                   listX + (i % 2) * 160 + 70 + 6,
+                                   height() / 6 + layout::kRowSpacing * (i / 2) + 7,
+                                   0xFFFFFFFF);
    }
   }
  }

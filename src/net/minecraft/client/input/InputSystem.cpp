@@ -3,7 +3,6 @@
 #include "net/minecraft/client/Minecraft.hpp"
 #include "net/minecraft/client/gui/screen/ChatScreen.hpp"
 #include "net/minecraft/client/gui/screen/ingame/InventoryScreen.hpp"
-#include "net/minecraft/client/input/KeyCodes.hpp"
 #include "net/minecraft/client/input/Keys.hpp"
 #include "net/minecraft/client/option/GameOptions.hpp"
 #include "net/minecraft/client/util/DisplayManager.hpp"
@@ -18,12 +17,6 @@
 namespace net::minecraft::client::input {
 namespace {
 #ifdef _WIN32
-POINT clientPointFromLParam(LPARAM lParam) {
- return POINT{
-     static_cast<LONG>(static_cast<short>(LOWORD(lParam))),
-     static_cast<LONG>(static_cast<short>(HIWORD(lParam))),
- };
-}
 std::int64_t currentTimeMillis() {
  return std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch())
      .count();
@@ -161,16 +154,6 @@ void InputSystem::compactQueues() {
  }
  sys.updateCursorPosition();
 }
-int InputSystem::clientMouseY(HWND hwnd, int clientY) {
- if(hwnd == nullptr) {
-  return clientY;
- }
- RECT clientRect{};
- if(!GetClientRect(hwnd, &clientRect)) {
-  return clientY;
- }
- return (clientRect.bottom - clientRect.top) - clientY;
-}
 void InputSystem::pushKeyEvent(int key, bool down) {
  instance().ingestKeyCode(key, down);
 }
@@ -187,44 +170,6 @@ void InputSystem::setCursorPosition(int x, int y) {
  InputSystem& sys = instance();
  sys.cursorX_ = x;
  sys.cursorY_ = y;
-}
-LRESULT InputSystem::handleWindowMessage(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
- InputSystem& sys = instance();
- if(msg == WM_KEYDOWN || msg == WM_SYSKEYDOWN) {
-  sys.ingestKey(resolveExtendedVirtualKey(static_cast<int>(wParam), lParam), true);
-  return 0;
- }
- if(msg == WM_KEYUP || msg == WM_SYSKEYUP) {
-  sys.ingestKey(resolveExtendedVirtualKey(static_cast<int>(wParam), lParam), false);
-  return 0;
- }
- if(msg == WM_CHAR) {
-  sys.ingestChar(static_cast<int>(wParam));
-  return 0;
- }
- if(msg == WM_LBUTTONDOWN || msg == WM_LBUTTONUP || msg == WM_RBUTTONDOWN || msg == WM_RBUTTONUP ||
-    msg == WM_MBUTTONDOWN || msg == WM_MBUTTONUP) {
-  const int button =
-      msg == WM_LBUTTONDOWN || msg == WM_LBUTTONUP ? 0 : (msg == WM_RBUTTONDOWN || msg == WM_RBUTTONUP ? 1 : 2);
-  const bool down = msg == WM_LBUTTONDOWN || msg == WM_RBUTTONDOWN || msg == WM_MBUTTONDOWN;
-  const POINT point = clientPointFromLParam(lParam);
-  sys.ingestMouseButton(button, down, point.x, clientMouseY(hwnd, static_cast<int>(point.y)));
-  return 0;
- }
- if(msg == WM_MOUSEWHEEL) {
-  POINT point{
-      static_cast<LONG>(static_cast<short>(LOWORD(lParam))),
-      static_cast<LONG>(static_cast<short>(HIWORD(lParam))),
-  };
-  ScreenToClient(hwnd, &point);
-  sys.ingestMouseWheel(GET_WHEEL_DELTA_WPARAM(wParam), point.x, clientMouseY(hwnd, static_cast<int>(point.y)));
-  return 0;
- }
- return -1;
-}
-void InputSystem::ingestKey(int vk, bool down) {
- const int key = keyFromVirtualKey(vk);
- ingestKeyCode(key, down);
 }
 void InputSystem::ingestKeyCode(int key, bool down) {
  if(key < 0 || key >= static_cast<int>(keyboardDown_.size())) {
@@ -290,7 +235,6 @@ void InputSystem::updateCursorPosition() {
 }
 void InputSystem::initMouse(HWND parentWindow) {
  mouseWindow_ = parentWindow;
- mouseCursor_ = LoadCursor(nullptr, IDC_ARROW);
  if(mouseWindow_ != nullptr) {
   RECT rect{};
   if(GetClientRect(mouseWindow_, &rect)) {
@@ -388,17 +332,7 @@ bool InputSystem::isKeyDown(int keyCode) const {
  if(keyCode < 0 || keyCode >= 256) {
   return false;
  }
- if(keyboardDown_[static_cast<std::size_t>(keyCode)]) {
-  return true;
- }
- if(!util::DisplayManager::isActive()) {
-  return false;
- }
- const int vk = virtualKeyFromKey(keyCode);
- if(vk < 0) {
-  return false;
- }
- return (GetAsyncKeyState(vk) & 0x8000) != 0;
+ return keyboardDown_[static_cast<std::size_t>(keyCode)];
 }
 #endif
 bool InputSystem::isMouseButtonDown(int button) const {

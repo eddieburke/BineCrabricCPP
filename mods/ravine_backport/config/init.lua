@@ -1,8 +1,3 @@
--- ================================================================
--- CONFIG: ravine_backport
--- Centralized configuration with validation and persistence
--- ================================================================
-
 local settings = require("lib.settings")
 
 local config = settings.define("ravine_backport", {

@@ -1,13 +1,5 @@
--- High-Performance Box3D Physics Engine (Pure Lua)
--- Optimized for minimal allocations and maximum throughput
--- Replaces C bindings with efficient Lua implementation
-
 local core = require("lib.core.init")
 local box3d = {}
-
---------------------------------------------------------------------------------
--- CONSTANTS
---------------------------------------------------------------------------------
 
 local GRAVITY = -9.81
 local DEFAULT_FRICTION = 0.7
@@ -15,10 +7,6 @@ local DEFAULT_RESTITUTION = 0.2
 local MAX_CONTACTS = 4
 local SLEEP_THRESHOLD = 0.01
 local SLEEP_DELAY = 1.0
-
---------------------------------------------------------------------------------
--- OBJECT POOLS
---------------------------------------------------------------------------------
 
 local contact_pool = core.create_object_pool(
     function() return {
@@ -48,10 +36,6 @@ local manifold_pool = core.create_object_pool(
     end,
     500
 )
-
---------------------------------------------------------------------------------
--- RIGID BODY
---------------------------------------------------------------------------------
 
 box3d.Body = {}
 box3d.Body.__index = box3d.Body
@@ -172,10 +156,6 @@ function box3d.Body:apply_impulse(impulse, contact_point)
     core.vec3_release(torque)
 end
 
---------------------------------------------------------------------------------
--- COLLISION DETECTION
---------------------------------------------------------------------------------
-
 function box3d.detect_collision(body_a, body_b, manifold)
     local min_a, max_a = core.vec3_new(), core.vec3_new()
     local min_b, max_b = core.vec3_new(), core.vec3_new()
@@ -248,10 +228,6 @@ function box3d.detect_collision(body_a, body_b, manifold)
     
     return true
 end
-
---------------------------------------------------------------------------------
--- COLLISION RESOLUTION
---------------------------------------------------------------------------------
 
 function box3d.resolve_contact(contact)
     local body_a = contact.body_a
@@ -345,10 +321,6 @@ function box3d.resolve_contact(contact)
     core.vec3_release(impulse)
     core.vec3_release(tangent)
 end
-
---------------------------------------------------------------------------------
--- PHYSICS WORLD
---------------------------------------------------------------------------------
 
 box3d.World = {}
 box3d.World.__index = box3d.World

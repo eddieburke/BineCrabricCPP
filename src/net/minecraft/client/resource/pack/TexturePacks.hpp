@@ -107,6 +107,9 @@ class TexturePacks {
  [[nodiscard]] std::vector<TexturePack*> getAvailable() const {
   return packs_;
  }
+ [[nodiscard]] bool usesDefaultPack() const noexcept {
+  return selected == defaultPack_.get();
+ }
  TexturePack* selected = nullptr;
 
  private:

@@ -1,7 +1,7 @@
 #include "net/minecraft/client/sound/WorldSoundListener.hpp"
 #include "net/minecraft/block/Block.hpp"
 #include "net/minecraft/client/Minecraft.hpp"
-#include "net/minecraft/client/option/ResolvedRenderOptions.hpp"
+#include "net/minecraft/client/option/RenderSettings.hpp"
 #include "net/minecraft/entity/LivingEntity.hpp"
 #include "net/minecraft/util/math/MathHelper.hpp"
 #include "net/minecraft/world/World.hpp"
@@ -48,7 +48,7 @@ void WorldSoundListener::tickWeather(Minecraft& client) {
  if(client.world == nullptr || client.camera == nullptr) {
   return;
  }
- float rain = option::rainGradient(option::resolve(client.options), client.world, 1.0f);
+ float rain = option::rainGradient(option::renderSettings(client.options), client.world, 1.0f);
  if(!client.options.fancyGraphics) {
   rain /= 2.0f;
  }

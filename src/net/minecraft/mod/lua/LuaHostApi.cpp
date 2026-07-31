@@ -14,6 +14,9 @@
 #endif
 #include "net/minecraft/world/World.hpp"
 #ifdef _WIN32
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
 #include <windows.h>
 #endif
 namespace net::minecraft::mod::lua {

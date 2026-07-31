@@ -5,7 +5,7 @@
 #include "net/minecraft/client/auth/microsoft/MicrosoftAuth.hpp"
 #include "net/minecraft/client/gl/GlConstants.hpp"
 #include "net/minecraft/client/option/GameOptions.hpp"
-#include "net/minecraft/client/render/RenderSystem.hpp"
+#include "net/minecraft/client/render/RenderCore.hpp"
 #include "net/minecraft/client/render/texture/FireSprite.hpp"
 #include "net/minecraft/client/render/texture/LavaSideSprite.hpp"
 #include "net/minecraft/client/render/texture/LavaSprite.hpp"
@@ -21,6 +21,9 @@
 #include "net/minecraft/world/World.hpp"
 #ifdef _WIN32
 #include <gdiplus.h>
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
 #include <windows.h>
 #include "net/minecraft/client/resource/ResourceDownloadThread.hpp"
 #include "net/minecraft/client/util/DisplayManager.hpp"
@@ -114,6 +117,17 @@ int smoothBlend(int color1, int color2) {
  }
  return blended;
 }
+// Cutout/cross models sample high mips when a plane is nearly edge-on. Soft
+// alpha in those mips passes alphaTest (~0.1) as opaque grey/mud and draws as
+// thin vertical strips. Quantize like vanilla/OptiFine cutout mips: majority
+// transparent → fully discarded; majority opaque → solid.
+int mipBlend(int color1, int color2) {
+ const int blended = smoothBlend(color1, color2);
+ if(((blended >> 24) & 0xFF) < 128) {
+  return 0;
+ }
+ return (blended & 0x00FFFFFF) | static_cast<int>(0xFF000000U);
+}
 int getPixelInt(const std::uint8_t* data, int index) {
  const std::size_t offset = static_cast<std::size_t>(index) * 4U;
  return static_cast<int>(data[offset + 0]) | (static_cast<int>(data[offset + 1]) << 8) |
@@ -141,13 +155,13 @@ void uploadStaticMipmapLevels(int width, int height, std::vector<std::uint8_t>& 
     const int topRight = getPixelInt(rgba.data(), x * 2 + 1 + (y * 2 + 0) * sourceWidth);
     const int bottomRight = getPixelInt(rgba.data(), x * 2 + 1 + (y * 2 + 1) * sourceWidth);
     const int bottomLeft = getPixelInt(rgba.data(), x * 2 + 0 + (y * 2 + 1) * sourceWidth);
-    const int blended = smoothBlend(smoothBlend(topLeft, topRight), smoothBlend(bottomRight, bottomLeft));
+    const int blended = mipBlend(mipBlend(topLeft, topRight), mipBlend(bottomRight, bottomLeft));
     putPixelInt(rgba.data(), x + y * targetWidth, blended);
    }
   }
   ::glTexImage2D(gl::cap::Texture2D,
                  level,
-                 gl::pixel::Rgba,
+                 gl::pixel::Rgba8,
                  targetWidth,
                  targetHeight,
                  0,
@@ -166,7 +180,7 @@ void uploadDynamicMipmapLevels(int sprite, std::vector<std::uint8_t>& imageBuffe
     const int topRight = getPixelInt(imageBuffer.data(), x * 2 + 1 + (y * 2 + 0) * sourceSize);
     const int bottomRight = getPixelInt(imageBuffer.data(), x * 2 + 1 + (y * 2 + 1) * sourceSize);
     const int bottomLeft = getPixelInt(imageBuffer.data(), x * 2 + 0 + (y * 2 + 1) * sourceSize);
-    const int blended = smoothBlend(smoothBlend(topLeft, topRight), smoothBlend(bottomRight, bottomLeft));
+    const int blended = mipBlend(mipBlend(topLeft, topRight), mipBlend(bottomRight, bottomLeft));
     putPixelInt(imageBuffer.data(), x + y * targetSize, blended);
    }
   }
@@ -195,9 +209,16 @@ TextureManager::TextureManager(option::GameOptions* options) : gameOptions_(opti
  // OpenGL calls require an active context (created in Minecraft::init).
 }
 void TextureManager::setTexturePacks(resource::pack::TexturePacks* texturePacks) {
+ companionTextures_.clear();
  texturePacks_ = texturePacks;
 }
 RasterImage TextureManager::loadRasterForResource(const std::string& resourcePath) {
+ if(texturePacks_ != nullptr && texturePacks_->selected != nullptr && !texturePacks_->usesDefaultPack()) {
+  const std::vector<std::uint8_t> bytes = texturePacks_->selected->getResource(resourcePath);
+  if(!bytes.empty()) {
+   return loadRasterFromBytes(bytes);
+  }
+ }
  return loadRasterFromFile(resolveResourcePath(resourcePath));
 }
 TextureManager::~TextureManager() = default;
@@ -208,7 +229,7 @@ void TextureManager::ensureMissingTexture() {
 #ifdef _WIN32
  util::DisplayManager::ensureGlContext();
 #endif
- unsigned int id = render::RenderSystem::genTexture();
+ unsigned int id = render::core::genTexture();
  const RasterImage missing = makeMissingImage();
  load(missing, static_cast<int>(id));
  images_[static_cast<int>(id)] = missing;
@@ -298,11 +319,13 @@ RasterImage TextureManager::loadRasterFromUrl(const std::string& url, bool useBe
 #endif
 }
 void TextureManager::deleteTexture(int textureId) {
+ companionTextures_.clear();
  images_.erase(textureId);
+ textureDimensions_.erase(textureId);
  if(textureId > 0) {
-  render::RenderSystem::unbindTexture(textureId);
+  render::core::unbindTexture(textureId);
  }
- render::RenderSystem::deleteTexture(static_cast<unsigned int>(textureId));
+ render::core::deleteTexture(static_cast<unsigned int>(textureId));
 }
 int TextureManager::downloadTexture(const std::string& url, const std::string& backup) {
  if(url.empty()) {
@@ -403,6 +426,10 @@ const std::vector<int>& TextureManager::getColors(const std::string& path) {
 }
 bool TextureManager::resourceExists(const std::string& path) const {
  const TexturePathSpec spec = parseTexturePath(path);
+ if(texturePacks_ != nullptr && texturePacks_->selected != nullptr && !texturePacks_->usesDefaultPack() &&
+    !texturePacks_->selected->getResource(spec.resourcePath).empty()) {
+  return true;
+ }
  return std::filesystem::exists(resolveResourcePath(spec.resourcePath));
 }
 int TextureManager::getTextureId(const std::string& path) {
@@ -414,8 +441,8 @@ int TextureManager::getTextureId(const std::string& path) {
  const TexturePathSpec spec = parseTexturePath(path);
  RasterImage image = loadRasterForResource(spec.resourcePath);
  if(image.width <= 0 || image.height <= 0) {
-   if(missingTextureWarned_.insert(path).second) {
-   }
+  if(missingTextureWarned_.insert(path).second) {
+  }
   textures_[path] = missingTextureId_;
   return missingTextureId_;
  }
@@ -427,7 +454,7 @@ int TextureManager::getTextureId(const std::string& path) {
 #ifdef _WIN32
  util::DisplayManager::ensureGlContext();
 #endif
- unsigned int id = render::RenderSystem::genTexture();
+ unsigned int id = render::core::genTexture();
  const bool previousBlur = blur;
  const bool previousClamp = clamp;
  blur = spec.blur;
@@ -440,6 +467,9 @@ int TextureManager::getTextureId(const std::string& path) {
 }
 bool TextureManager::getTextureDimensions(const std::string& path, int& outWidth, int& outHeight) {
  const int glId = getTextureId(path);
+ if(getTextureDimensionsForId(glId, outWidth, outHeight)) {
+  return true;
+ }
  if(const RasterImage* cached = getRasterImage(glId)) {
   outWidth = cached->width;
   outHeight = cached->height;
@@ -454,7 +484,51 @@ bool TextureManager::getTextureDimensions(const std::string& path, int& outWidth
  outHeight = image.height;
  return true;
 }
+bool TextureManager::getTextureDimensionsForId(int textureId, int& outWidth, int& outHeight) const {
+ const auto found = textureDimensions_.find(textureId);
+ if(found == textureDimensions_.end()) {
+  return false;
+ }
+ outWidth = found->second[0];
+ outHeight = found->second[1];
+ return outWidth > 0 && outHeight > 0;
+}
+int TextureManager::getCompanionTextureId(int textureId, std::string_view suffix) {
+ if(textureId <= 0 || suffix.empty()) {
+  return -1;
+ }
+ const int slot = suffix == "_n" ? 0 : suffix == "_s" ? 1 : -1;
+ if(slot >= 0) {
+  const auto cached = companionTextures_.find(textureId);
+  if(cached != companionTextures_.end() && cached->second[slot] != 0) {
+   return cached->second[slot];
+  }
+ }
+ std::string companion;
+ for(const auto& [path, id] : textures_) {
+  if(id != textureId) {
+   continue;
+  }
+  const std::size_t extension = path.find_last_of('.');
+  const std::size_t separator = path.find_last_of("/\\");
+  if(extension == std::string::npos || (separator != std::string::npos && extension < separator)) {
+   continue;
+  }
+  std::string candidate = path;
+  candidate.insert(extension, suffix);
+  if(resourceExists(candidate)) {
+   companion = std::move(candidate);
+   break;
+  }
+ }
+ const int result = companion.empty() ? -1 : getTextureId(companion);
+ if(slot >= 0) {
+  companionTextures_[textureId][slot] = result;
+ }
+ return result;
+}
 void TextureManager::reload() {
+ companionTextures_.clear();
  net::minecraft::registry::TextureRegistry::invalidateGlIds();
  if(texturePacks_ == nullptr) {
   return;
@@ -495,30 +569,13 @@ void TextureManager::bindTexture(int id) {
  if(id < 0) {
   return;
  }
- render::RenderSystem::activeTexture(0x84C0);
- render::RenderSystem::bindTexture(id);
-}
-int TextureManager::getCustomTextureGlId(int textureId) {
- if(!net::minecraft::registry::TextureRegistry::isCustomTexture(textureId)) {
-  return -1;
- }
- return net::minecraft::registry::TextureRegistry::resolveGlId(textureId, *this);
-}
-void TextureManager::bindTextureOrAtlas(int textureId, const std::string& defaultAtlasPath) {
- if(net::minecraft::registry::TextureRegistry::isCustomTexture(textureId)) {
-  const int glId = net::minecraft::registry::TextureRegistry::resolveGlId(textureId, *this);
-  if(glId >= 0) {
-   bindTexture(glId);
-  }
- } else {
-  bindTexture(getTextureId(defaultAtlasPath));
- }
+ render::core::bindDiffuse(id);
 }
 int TextureManager::load(const RasterImage& image) {
 #ifdef _WIN32
  util::DisplayManager::ensureGlContext();
 #endif
- unsigned int id = render::RenderSystem::genTexture();
+ unsigned int id = render::core::genTexture();
  load(image, static_cast<int>(id));
  images_[static_cast<int>(id)] = image;
  return static_cast<int>(id);
@@ -531,12 +588,13 @@ void TextureManager::load(const RasterImage& image, int id) {
  if(image.width <= 0 || image.height <= 0) {
   return;
  }
+ textureDimensions_[id] = {image.width, image.height};
  int previousBoundTexture = 0;
  ::glGetIntegerv(gl::tex::Binding2D, &previousBoundTexture);
  struct TextureStateScope {
   int previous;
   ~TextureStateScope() {
-   render::RenderSystem::bindTexture(static_cast<unsigned int>(previous));
+   render::core::bindTexture(static_cast<unsigned int>(previous));
   }
  } textureState{previousBoundTexture};
  std::vector<std::uint8_t> rgba(static_cast<std::size_t>(image.width) * image.height * 4);
@@ -554,7 +612,7 @@ void TextureManager::load(const RasterImage& image, int id) {
    rgba[o + 3] = a;
   }
  }
- render::RenderSystem::bindTexture(static_cast<unsigned int>(id));
+ render::core::bindTexture(static_cast<unsigned int>(id));
  // Faithful to TextureManager.load: default GL_NEAREST (pixelated), mipmap or
  // blur override it; wrap is REPEAT unless clamp.
  if(MIPMAP) {
@@ -570,8 +628,8 @@ void TextureManager::load(const RasterImage& image, int id) {
   ::glTexParameteri(gl::cap::Texture2D, gl::tex::MagFilter, gl::filter::Linear);
  }
  if(clamp) {
-  ::glTexParameteri(gl::cap::Texture2D, gl::tex::WrapS, gl::wrap::Clamp);
-  ::glTexParameteri(gl::cap::Texture2D, gl::tex::WrapT, gl::wrap::Clamp);
+  ::glTexParameteri(gl::cap::Texture2D, gl::tex::WrapS, gl::wrap::ClampToEdge);
+  ::glTexParameteri(gl::cap::Texture2D, gl::tex::WrapT, gl::wrap::ClampToEdge);
  } else {
   ::glTexParameteri(gl::cap::Texture2D, gl::tex::WrapS, gl::wrap::Repeat);
   ::glTexParameteri(gl::cap::Texture2D, gl::tex::WrapT, gl::wrap::Repeat);
@@ -589,7 +647,7 @@ void TextureManager::load(const RasterImage& image, int id) {
  ::glTexParameteri(gl::cap::Texture2D, gl::tex::MaxLevel, maxMipmapLevel);
  ::glTexImage2D(gl::cap::Texture2D,
                 0,
-                gl::pixel::Rgba,
+                gl::pixel::Rgba8,
                 image.width,
                 image.height,
                 0,
@@ -666,7 +724,7 @@ void TextureManager::tick() {
    continue;
   }
   std::copy(texture->pixels.begin(), texture->pixels.end(), imageBuffer.begin());
-  render::RenderSystem::bindTexture(static_cast<unsigned int>(texture->copyTo));
+  render::core::bindTexture(static_cast<unsigned int>(texture->copyTo));
   ::glTexSubImage2D(
       gl::cap::Texture2D, 0, 0, 0, 16, 16, gl::pixel::Rgba, gl::pixel::UnsignedByte, imageBuffer.data());
   if(MIPMAP) {

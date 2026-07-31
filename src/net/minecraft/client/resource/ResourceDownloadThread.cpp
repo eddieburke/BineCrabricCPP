@@ -47,13 +47,13 @@ void parseResourceListing(const std::string& xml, const std::function<void(const
 }
 bool downloadFile(const std::string& url, const std::filesystem::path& destination) {
  const HttpResponse response = fetchUrl(url, true);
-  if(!response.ok() || response.body.empty()) {
-   return false;
+ if(!response.ok() || response.body.empty()) {
+  return false;
  }
  std::ofstream out(destination, std::ios::binary);
-  if(!out) {
-   return false;
-  }
+ if(!out) {
+  return false;
+ }
  out.write(reinterpret_cast<const char*>(response.body.data()), static_cast<std::streamsize>(response.body.size()));
  return out.good();
 }
@@ -113,9 +113,9 @@ void ResourceDownloadThread::run() {
     return;
    }
   }
-  } catch(const std::exception& ex) {
-   (void)ex;
-   loadFromDirectory(resourcesDirectory, "");
+ } catch(const std::exception& ex) {
+  (void)ex;
+  loadFromDirectory(resourcesDirectory, "");
  }
 }
 void ResourceDownloadThread::loadFromDirectory(const std::filesystem::path& directory, const std::string& type) {

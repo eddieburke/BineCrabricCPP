@@ -4,10 +4,13 @@
 #include <functional>
 #include <string>
 #include "net/minecraft/client/Minecraft.hpp"
+#include "net/minecraft/client/gui/Draw2D.hpp"
 #include "net/minecraft/client/gui/widget/ButtonWidget.hpp"
 #include "net/minecraft/client/option/GameOptions.hpp"
 #include "net/minecraft/client/option/OptionRegistry.hpp"
-#include "net/minecraft/client/render/RenderSystem.hpp"
+#include "net/minecraft/client/render/RenderCore.hpp"
+#include "net/minecraft/client/render/RenderType.hpp"
+#include "net/minecraft/client/render/Tessellator.hpp"
 namespace net::minecraft::client::gui::widget {
 class SliderWidget : public ButtonWidget {
  public:
@@ -46,22 +49,28 @@ class SliderWidget : public ButtonWidget {
   if(dragging) {
    updateValue(mouseX);
   }
-  render::RenderSystem::color4f(1.0f, 1.0f, 1.0f, 1.0f);
+  render::core::setConstColor(1.0f, 1.0f, 1.0f, 1.0f);
   const int knobX = x + static_cast<int>(value * static_cast<float>(width - 8));
-  drawTexture(knobX, y, 0, 66, 4, 20);
-  drawTexture(knobX + 4, y, 196, 66, 4, 20);
+  const render::RenderPassScope passScope(render::RenderType::guiTextured());
+  const float* c = render::core::constColor();
+  render::Tessellator& tess = render::INSTANCE;
+  tess.startQuads();
+  tess.color(c[0], c[1], c[2], c[3]);
+  draw::appendAtlasQuad(tess, knobX, y, 0, 66, 4, 20, 0.0f);
+  draw::appendAtlasQuad(tess, knobX + 4, y, 196, 66, 4, 20, 0.0f);
+  tess.draw();
  }
  [[nodiscard]] bool isMouseOver(int mouseX, int mouseY) const override {
   return ButtonWidget::isMouseOver(mouseX, mouseY);
  }
-  void onMouseDown(int mouseX, int mouseY) override {
-   (void)mouseY;
-   startDragging(mouseX);
-  }
-  void startDragging(int mouseX) {
-   dragging = true;
-   updateValue(mouseX);
-  }
+ void onMouseDown(int mouseX, int mouseY) override {
+  (void)mouseY;
+  startDragging(mouseX);
+ }
+ void startDragging(int mouseX) {
+  dragging = true;
+  updateValue(mouseX);
+ }
  void mouseReleased(int mouseX, int mouseY) override {
   (void)mouseX;
   (void)mouseY;

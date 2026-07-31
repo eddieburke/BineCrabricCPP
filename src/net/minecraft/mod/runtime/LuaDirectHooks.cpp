@@ -17,8 +17,7 @@
 #ifdef MINECRAFT_NATIVE_EXPORTS
 #include "net/minecraft/client/Minecraft.hpp"
 #include "net/minecraft/client/option/GameOptions.hpp"
-#include "net/minecraft/client/option/ResolvedRenderOptions.hpp"
-#include "net/minecraft/client/render/RenderSystem.hpp"
+#include "net/minecraft/client/option/RenderSettings.hpp"
 #include "net/minecraft/client/render/item/ItemModelRenderer.hpp"
 #include "net/minecraft/entity/Entity.hpp"
 #include "net/minecraft/entity/EntityRegistry.hpp"
@@ -166,10 +165,10 @@ void runLuaHook(LuaEventId id, Event& e, Push push, Read read) {
   push(state, e);
   setLuaExecutionFields(state, world);
  };
-  auto apply = [&e, &read](lua_State* state) { read(state, e); };
-  ModContextScope scope(world, eventPlayer(e));
-  dispatchLuaHook(eventIndex, fill, apply);
- }
+ auto apply = [&e, &read](lua_State* state) { read(state, e); };
+ ModContextScope scope(world, eventPlayer(e));
+ dispatchLuaHook(eventIndex, fill, apply);
+}
 } // namespace
 namespace {
 // One entry per subscribed callback, pre-sorted so dispatch is a flat walk. The mod is
@@ -178,8 +177,12 @@ namespace {
 struct LuaHookEntry {
  std::shared_ptr<ModHost::LoadedLuaMod> mod;
  int functionRef = 0;
+ std::uint16_t worldRenderStageMask = 0xFFFFu;
+ std::uint8_t worldRenderMomentMask = 0xFFu;
+ std::string entityTypeFilter;
 };
-std::array<std::vector<LuaHookEntry>, kLuaEventCount> gHookTable{};
+using LuaHookEntries = std::vector<LuaHookEntry>;
+std::array<std::shared_ptr<const LuaHookEntries>, kLuaEventCount> gHookTable{};
 bool gHookTableValid = false;
 void rebuildHookTable() {
  struct PendingEntry {
@@ -197,7 +200,10 @@ void rebuildHookTable() {
    if(cb.eventIndex < 0 || static_cast<std::size_t>(cb.eventIndex) >= kLuaEventCount) {
     continue;
    }
-   pending[static_cast<std::size_t>(cb.eventIndex)].push_back({{mod, cb.functionRef}, cb.priority, order++});
+   pending[static_cast<std::size_t>(cb.eventIndex)].push_back(
+       {{mod, cb.functionRef, cb.worldRenderStageMask, cb.worldRenderMomentMask, cb.entityTypeFilter},
+        cb.priority,
+        order++});
   }
  }
  for(std::size_t i = 0; i < kLuaEventCount; ++i) {
@@ -206,15 +212,16 @@ void rebuildHookTable() {
   std::stable_sort(pending[i].begin(), pending[i].end(), [](const PendingEntry& a, const PendingEntry& b) {
    return a.priority != b.priority ? a.priority > b.priority : a.order < b.order;
   });
-  gHookTable[i].clear();
-  gHookTable[i].reserve(pending[i].size());
+  LuaHookEntries entries;
+  entries.reserve(pending[i].size());
   for(auto& entry : pending[i]) {
-   gHookTable[i].push_back(std::move(entry.entry));
+   entries.push_back(std::move(entry.entry));
   }
+  gHookTable[i] = std::make_shared<const LuaHookEntries>(std::move(entries));
  }
  gHookTableValid = true;
 }
-[[nodiscard]] const std::vector<LuaHookEntry>& luaHookEntries(std::size_t eventIndex) {
+[[nodiscard]] std::shared_ptr<const LuaHookEntries> luaHookEntries(std::size_t eventIndex) {
  if(!gHookTableValid) {
   rebuildHookTable();
  }
@@ -223,28 +230,42 @@ void rebuildHookTable() {
 } // namespace
 void invalidateLuaHookCache() {
  gHookTableValid = false;
- // Drop the retained mod handles right away so an unloaded mod is not kept alive by the
- // cache. Safe mid-dispatch: dispatchLuaHook() iterates its own copy of the entry list.
  for(auto& entries : gHookTable) {
-  entries.clear();
+  entries.reset();
  }
 }
 bool hasLuaHook(int eventIndex) {
  if(eventIndex < 0 || static_cast<std::size_t>(eventIndex) >= kLuaEventCount) {
   return false;
  }
- return !luaHookEntries(static_cast<std::size_t>(eventIndex)).empty();
+ const std::shared_ptr<const LuaHookEntries> entries = luaHookEntries(static_cast<std::size_t>(eventIndex));
+ return entries != nullptr && !entries->empty();
 }
 template <typename Fill, typename Read>
-void dispatchLuaHook(int eventIndex, Fill fill, Read read) {
+void dispatchLuaHook(int eventIndex,
+                     Fill fill,
+                     Read read,
+                     std::uint16_t worldRenderStageBit,
+                     std::uint8_t worldRenderMomentBit,
+                     std::string_view entityType) {
  if(!isLuaModExecutionEnabled() || eventIndex < 0 || static_cast<std::size_t>(eventIndex) >= kLuaEventCount) {
   return;
  }
- // Copy the entry list: a callback can subscribe, unsubscribe, or reload mods, any of
- // which invalidates and rebuilds the table we would otherwise be iterating.
- const std::vector<LuaHookEntry> entries = luaHookEntries(static_cast<std::size_t>(eventIndex));
- for(const LuaHookEntry& entry : entries) {
+ const std::shared_ptr<const LuaHookEntries> entries = luaHookEntries(static_cast<std::size_t>(eventIndex));
+ if(entries == nullptr) {
+  return;
+ }
+ for(const LuaHookEntry& entry : *entries) {
   if(entry.mod == nullptr || !entry.mod->active) {
+   continue;
+  }
+  if(worldRenderStageBit != 0 && (entry.worldRenderStageMask & worldRenderStageBit) == 0) {
+   continue;
+  }
+  if(worldRenderMomentBit != 0 && (entry.worldRenderMomentMask & worldRenderMomentBit) == 0) {
+   continue;
+  }
+  if(!entityType.empty() && !entry.entityTypeFilter.empty() && entry.entityTypeFilter != entityType) {
    continue;
   }
   callLuaEvent(entry.mod, entry.functionRef, fill, read);
@@ -381,12 +402,12 @@ void luaHookRaycast(RaycastEvent& e) {
                 "side",
                 ev.side,
                 "block_id",
-                 ev.blockId,
-                 "block_name",
-                 blockWireNameFromId(ev.blockId),
-                 // Deprecated alias for block_id — kept for backward compatibility.
-                 "item_id",
-                 ev.blockId);
+                ev.blockId,
+                "block_name",
+                blockWireNameFromId(ev.blockId),
+                // Deprecated alias for block_id — kept for backward compatibility.
+                "item_id",
+                ev.blockId);
       if(ev.entity != nullptr) {
        const auto pos = ev.entity->position();
        setEntityIdentityFields(state, *ev.entity);
@@ -415,44 +436,48 @@ void luaHookCameraSetup(CameraSetupEvent& e) {
      LuaEventId::CameraSetup,
      e,
      [](lua_State* state, CameraSetupEvent& ev) {
-      setFields(state,
-                "tick_delta",
-                ev.tickDelta,
-                "x",
-                ev.x,
-                "y",
-                ev.y,
-                "z",
-                ev.z,
-                "yaw",
-                ev.yaw,
-                "pitch",
-                ev.pitch,
-                "roll",
-                ev.roll,
-                "custom_view",
-                ev.customView,
-                "hide_first_person_hand",
-                ev.hideFirstPersonHand);
+      if(ev.frame != nullptr) {
+       setFields(state,
+                 "tick_delta",
+                 ev.tickDelta,
+                 "x",
+                 ev.frame->x,
+                 "y",
+                 ev.frame->y,
+                 "z",
+                 ev.frame->z,
+                 "yaw",
+                 ev.frame->yaw,
+                 "pitch",
+                 ev.frame->pitch,
+                 "roll",
+                 ev.frame->roll,
+                 "custom_view",
+                 ev.frame->customView,
+                 "hide_first_person_hand",
+                 ev.frame->hideFirstPersonHand);
+      }
      },
      [](lua_State* state, CameraSetupEvent& ev) {
-      readFields(state,
-                 "x",
-                 ev.x,
-                 "y",
-                 ev.y,
-                 "z",
-                 ev.z,
-                 "yaw",
-                 ev.yaw,
-                 "pitch",
-                 ev.pitch,
-                 "roll",
-                 ev.roll,
-                 "custom_view",
-                 ev.customView,
-                 "hide_first_person_hand",
-                 ev.hideFirstPersonHand);
+      if(ev.frame != nullptr) {
+       readFields(state,
+                  "x",
+                  ev.frame->x,
+                  "y",
+                  ev.frame->y,
+                  "z",
+                  ev.frame->z,
+                  "yaw",
+                  ev.frame->yaw,
+                  "pitch",
+                  ev.frame->pitch,
+                  "roll",
+                  ev.frame->roll,
+                  "custom_view",
+                  ev.frame->customView,
+                  "hide_first_person_hand",
+                  ev.frame->hideFirstPersonHand);
+      }
      });
 }
 void luaHookPlayerTravel(PlayerTravelEvent& e) {
@@ -527,6 +552,18 @@ void luaHookWorldTick(WorldTickEvent& e) {
      e,
      [](lua_State* state, WorldTickEvent& ev) { setFields(state, "remote", ev.remote, "before", ev.before); },
      kNoRead);
+}
+void luaHookSnowIcePlacement(SnowIcePlacementEvent& e) {
+ runLuaHook(
+     LuaEventId::SnowIcePlacement,
+     e,
+     [](lua_State* state, SnowIcePlacementEvent& ev) {
+      setFields(
+          state, "x", ev.x, "y", ev.y, "z", ev.z, "place_snow", ev.placeSnow, "place_ice", ev.placeIce);
+     },
+     [](lua_State* state, SnowIcePlacementEvent& ev) {
+      readFields(state, "place_snow", ev.placeSnow, "place_ice", ev.placeIce);
+     });
 }
 void luaHookEntityTick(EntityTickEvent& e) {
  runLuaHook(
@@ -785,7 +822,7 @@ void luaHookWorldColor(WorldColorEvent& e) {
 #ifdef MINECRAFT_NATIVE_EXPORTS
       if(ev.world != nullptr) {
        setFields(state,
-                 "celestial",
+                 "celestial_angle",
                  static_cast<double>(normalizedCelestial(ev.world, ev.partialTicks)),
                  "world_time",
                  static_cast<double>(ev.world->getTime() % 24000ULL),
@@ -821,15 +858,7 @@ void luaHookFogSettings(FogSettingsEvent& e) {
                 "end",
                 ev.end,
                 "density",
-                ev.density,
-                "custom_color",
-                ev.customColor,
-                "red",
-                ev.red,
-                "green",
-                ev.green,
-                "blue",
-                ev.blue);
+                ev.density);
       setWorldContextFields(state, ev.world);
      },
      [](lua_State* state, FogSettingsEvent& ev) {
@@ -839,15 +868,10 @@ void luaHookFogSettings(FogSettingsEvent& e) {
                  "spherical",
                  ev.spherical,
                  "exponential",
-                 ev.exponential,
-                 "custom_color",
-                 ev.customColor);
+                 ev.exponential);
       ev.start = std::clamp(luaFloatField(state, -1, "start", ev.start), 0.0f, 1.0f);
       ev.end = std::clamp(luaFloatField(state, -1, "end", ev.end), 0.0f, 1.0f);
       ev.density = std::clamp(luaFloatField(state, -1, "density", ev.density), 0.0f, 1.0f);
-      ev.red = std::clamp(luaFloatField(state, -1, "red", ev.red), 0.0f, 1.0f);
-      ev.green = std::clamp(luaFloatField(state, -1, "green", ev.green), 0.0f, 1.0f);
-      ev.blue = std::clamp(luaFloatField(state, -1, "blue", ev.blue), 0.0f, 1.0f);
      });
 }
 void luaHookEntityRender(EntityRenderEvent& e) {
@@ -948,17 +972,29 @@ void luaHookEntityRender(EntityRenderEvent& e) {
 }
 void luaHookWorldRender(WorldRenderEvent& e) {
 #ifdef MINECRAFT_NATIVE_EXPORTS
- if(!hasLuaHook(LuaEventId::WorldRender)) {
+ const std::uint16_t stageBit = static_cast<std::uint16_t>(1u << static_cast<unsigned int>(e.stage));
+ const std::uint8_t momentBit = static_cast<std::uint8_t>(1u << static_cast<unsigned int>(e.moment));
+ const std::shared_ptr<const LuaHookEntries> entries =
+     luaHookEntries(static_cast<std::size_t>(LuaEventId::WorldRender));
+ if(entries == nullptr ||
+    std::none_of(entries->begin(), entries->end(), [stageBit, momentBit](const LuaHookEntry& entry) {
+     return entry.mod != nullptr && entry.mod->active && (entry.worldRenderStageMask & stageBit) != 0 &&
+            (entry.worldRenderMomentMask & momentBit) != 0;
+    })) {
   return;
  }
  ScopedModWorldDrawContext worldDrawScope{e.world, e.tickDelta};
- const ModStateScope modCaps;
  // World-render callbacks routinely query the world they are drawing
  // (minecraft.entities.list to draw mod entities, for one), so the mod context
  // has to be live here just as it is for the runLuaHook-based events.
  std::optional<ModContextScope> contextScope;
  if(e.world != nullptr) {
   contextScope.emplace(e.world, nullptr);
+ }
+ // Sky seeds celestialAngle (writable); other stages expose live world time under
+ // the same celestial_angle field (former duplicate "celestial").
+ if(e.world != nullptr && e.stage != WorldRenderStage::Sky) {
+  e.celestialAngle = normalizedCelestial(e.world, e.tickDelta);
  }
  dispatchLuaHook(
      static_cast<int>(LuaEventId::WorldRender),
@@ -1020,8 +1056,6 @@ void luaHookWorldRender(WorldRenderEvent& e) {
        setFields(state,
                  "world_time",
                  static_cast<double>(e.world->getTime() % 24000ULL),
-                 "celestial",
-                 static_cast<double>(normalizedCelestial(e.world, e.tickDelta)),
                  "is_night",
                  worldIsNight(e.world));
       }
@@ -1029,7 +1063,7 @@ void luaHookWorldRender(WorldRenderEvent& e) {
        float cloudBaseHeight = e.world->dimension->getCloudHeight() - static_cast<float>(cameraY) + 0.33f;
        if(client::Minecraft* client = client::Minecraft::INSTANCE; client != nullptr) {
         cloudBaseHeight =
-            client::option::cloudHeightOffset(cloudBaseHeight, client::option::resolve(client->options));
+            client::option::cloudHeightOffset(cloudBaseHeight, client::option::renderSettings(client->options));
        }
        setField(state, "cloud_base_height", cloudBaseHeight);
       }
@@ -1096,7 +1130,9 @@ void luaHookWorldRender(WorldRenderEvent& e) {
       if(e.stage == WorldRenderStage::Stars && e.moment == RenderHookMoment::Before) {
        readField(state, "star_brightness", e.starBrightness);
       }
-     });
+     },
+     stageBit,
+     momentBit);
 #else
  (void)e;
 #endif
@@ -1282,7 +1318,10 @@ void luaHookPreEntityRender(PreEntityRenderEvent& e) {
                 e.canceled);
       pushItemEntityFields(state, e.entity);
      },
-     [&e](lua_State* state) { readField(state, "canceled", e.canceled); });
+     [&e](lua_State* state) { readField(state, "canceled", e.canceled); },
+     0,
+     0,
+     e.entityType);
 #else
  (void)e;
 #endif

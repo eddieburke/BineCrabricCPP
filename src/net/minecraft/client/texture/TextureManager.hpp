@@ -1,9 +1,11 @@
 #pragma once
+#include <array>
 #include <cstdint>
 #include <filesystem>
 #include <memory>
 #include <optional>
 #include <string>
+#include <string_view>
 #include <unordered_map>
 #include <unordered_set>
 #include <vector>
@@ -37,12 +39,12 @@ class TextureManager {
  void setTexturePacks(resource::pack::TexturePacks* texturePacks);
  void reload();
  [[nodiscard]] int getTextureId(const std::string& path);
- [[nodiscard]] int getCustomTextureGlId(int textureId);
  [[nodiscard]] bool getTextureDimensions(const std::string& path, int& outWidth, int& outHeight);
+ [[nodiscard]] bool getTextureDimensionsForId(int textureId, int& outWidth, int& outHeight) const;
+ [[nodiscard]] int getCompanionTextureId(int textureId, std::string_view suffix);
  [[nodiscard]] bool resourceExists(const std::string& path) const;
  [[nodiscard]] const std::vector<int>& getColors(const std::string& path);
  void bindTexture(int id);
- void bindTextureOrAtlas(int textureId, const std::string& defaultAtlasPath);
  void deleteTexture(int textureId);
  int load(const RasterImage& image);
  void load(const RasterImage& image, int id);
@@ -78,6 +80,8 @@ class TextureManager {
  option::GameOptions* gameOptions_ = nullptr;
  resource::pack::TexturePacks* texturePacks_ = nullptr;
  std::unordered_map<std::string, int> textures_;
+ std::unordered_map<int, std::array<int, 2>> companionTextures_;
+ std::unordered_map<int, std::array<int, 2>> textureDimensions_;
  std::unordered_map<std::string, std::vector<int>> colors_;
  // CPU copies for textures loaded without a pack path (font, pack icons, etc.).
  // Pack-path textures reload from the active texture pack via textures_.

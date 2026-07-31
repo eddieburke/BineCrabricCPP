@@ -1,6 +1,6 @@
 #include "net/minecraft/client/resource/pack/BuiltInTexturePack.hpp"
 #include "net/minecraft/client/gl/GlConstants.hpp"
-#include "net/minecraft/client/render/RenderSystem.hpp"
+#include "net/minecraft/client/render/RenderCore.hpp"
 namespace net::minecraft::client::resource::pack {
 BuiltInTexturePack::BuiltInTexturePack(const ResourcePack& resources) : resources_(resources) {
  name = "Default";
@@ -24,7 +24,7 @@ void BuiltInTexturePack::bindIcon(texture::TextureManager& textureManager) {
   textureManager.bindTexture(iconId_);
   return;
  }
- render::RenderSystem::bindTexture(textureManager.getTextureId("/gui/unknown_pack.png"));
+ render::core::bindTexture(textureManager.getTextureId("/gui/unknown_pack.png"));
 }
 std::vector<std::uint8_t> BuiltInTexturePack::getResource(std::string_view path) const {
  std::string relative(path);

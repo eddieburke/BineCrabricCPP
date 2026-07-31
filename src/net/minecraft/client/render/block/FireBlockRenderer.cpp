@@ -10,7 +10,7 @@ bool FireBlockRenderer::render(net::minecraft::block::Block& block, int x, int y
  const net::minecraft::block::TerrainAtlasUv uv = net::minecraft::block::Block::terrainTileUv(texture);
  const int texU = net::minecraft::block::Block::textureAtlasU(texture);
  const int texV = net::minecraft::block::Block::textureAtlasV(texture);
- float brightness = block.getLuminance(ctx_.blockView, x, y, z);
+ float brightness = 1.0f; // absolute light now comes from the lightmap
  tessellator.color(brightness, brightness, brightness);
  double uMin = uv.uMin;
  double uMax = uv.uMax;

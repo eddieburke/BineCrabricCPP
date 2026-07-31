@@ -14,6 +14,7 @@ namespace net::minecraft::client::render::block {
 // Faithful port of net.minecraft.client.render.block.BlockRenderManager (beta 1.7.3).
 class BlockRenderManager {
  public:
+ static void setVoxelizeLightBlocks(bool enabled) noexcept;
  explicit BlockRenderManager(const net::minecraft::BlockView* view = nullptr) {
   ctx.blockView = view;
   ctx.tess = &Tessellator::INSTANCE;
@@ -26,7 +27,7 @@ class BlockRenderManager {
  }
  // Worker-thread construction: render settings were captured on the main
  // thread at job-enqueue time; never touch Minecraft::INSTANCE here.
- BlockRenderManager(const net::minecraft::BlockView* view, const option::ResolvedRenderOptions& opts) {
+ BlockRenderManager(const net::minecraft::BlockView* view, const option::RenderSettings& opts) {
   ctx.blockView = view;
   ctx.opts = opts;
  }

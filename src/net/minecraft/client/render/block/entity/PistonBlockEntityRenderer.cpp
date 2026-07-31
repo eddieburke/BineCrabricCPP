@@ -4,7 +4,6 @@
 #include "net/minecraft/block/PistonHeadBlock.hpp"
 #include "net/minecraft/block/entity/PistonBlockEntity.hpp"
 #include "net/minecraft/client/Minecraft.hpp"
-#include "net/minecraft/client/render/RenderSystem.hpp"
 #include "net/minecraft/client/render/RenderType.hpp"
 #include "net/minecraft/client/render/Tessellator.hpp"
 namespace net::minecraft::client::render::block::entity {
@@ -24,8 +23,8 @@ void PistonBlockEntityRenderer::render(
  }
  Tessellator& tessellator = render::INSTANCE;
  bindTexture("/terrain.png");
- render::RenderSystem::disableLighting();
- render::RenderPassScope passScope(render::RenderType::translucent());
+ // blockTranslucent has State.lighting=false — no FF lighting toggles.
+ render::RenderPassScope passScope(render::RenderType::blockTranslucent());
  tessellator.startQuads();
  tessellator.translate(static_cast<double>(static_cast<float>(x) - static_cast<float>(piston->x) +
                                            piston->getRenderOffsetX(tickDelta)),
@@ -60,6 +59,5 @@ void PistonBlockEntityRenderer::render(
  }
  tessellator.translate(0.0, 0.0, 0.0);
  tessellator.draw();
- render::RenderSystem::enableLighting();
 }
 } // namespace net::minecraft::client::render::block::entity

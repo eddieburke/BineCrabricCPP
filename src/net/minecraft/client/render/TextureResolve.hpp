@@ -3,6 +3,7 @@
 #include "net/minecraft/client/texture/TextureManager.hpp"
 #include "net/minecraft/registry/TextureRegistry.hpp"
 namespace net::minecraft::client::render {
+inline constexpr double kTextureEdgeInset = 0.01;
 enum class AtlasDomain {
  Terrain,
  Items
@@ -35,6 +36,18 @@ struct ResolvedTexture {
  // rather than a tile of the shared atlas. Callers branch on this instead of
  // re-querying TextureRegistry.
  bool isModTexture = false;
+ [[nodiscard]] double uFromStart(double blockCoordinate) const noexcept {
+  return uMin + blockCoordinate * 16.0 * uScale;
+ }
+ [[nodiscard]] double uFromEnd(double blockCoordinate) const noexcept {
+  return uMax - blockCoordinate * 16.0 * uScale;
+ }
+ [[nodiscard]] double vFromStart(double blockCoordinate) const noexcept {
+  return vMin + blockCoordinate * 16.0 * vScale;
+ }
+ [[nodiscard]] double vFromEnd(double blockCoordinate) const noexcept {
+  return vMax - blockCoordinate * 16.0 * vScale;
+ }
 };
 [[nodiscard]] inline const char* atlasPathFor(AtlasDomain domain) noexcept {
  return domain == AtlasDomain::Terrain ? "/terrain.png" : "/gui/items.png";

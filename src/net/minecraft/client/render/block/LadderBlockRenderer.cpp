@@ -7,7 +7,7 @@ bool LadderBlockRenderer::render(net::minecraft::block::Block& block, int x, int
  Tessellator& tessellator = *ctx_.tess;
  const int tex = ctx_.resolveTexture(0, block.getTexture(0));
  const net::minecraft::block::TerrainAtlasUv uv = net::minecraft::block::Block::terrainTileUv(tex);
- float brightness = block.getLuminance(ctx_.blockView, x, y, z);
+ float brightness = 1.0f; // absolute light now comes from the lightmap
  tessellator.color(brightness, brightness, brightness);
  const double uMin = uv.uMin;
  const double uMax = uv.uMax;

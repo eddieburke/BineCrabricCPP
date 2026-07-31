@@ -324,7 +324,7 @@ void Connection::writeLoop() {
      }
     }
    }
- }
+  }
  } catch(const std::exception& error) {
   requestDisconnect(std::string("Internal exception: ") + error.what());
  }

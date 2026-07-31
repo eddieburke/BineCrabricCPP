@@ -2,12 +2,12 @@
 #include <cstddef>
 #include "net/minecraft/block/Block.hpp"
 #include "net/minecraft/client/render/TextureResolve.hpp"
+#include "net/minecraft/client/render/RenderType.hpp"
 #include "net/minecraft/client/render/block/BlockRenderManager.hpp"
 #include "net/minecraft/item/Item.hpp"
 #include "net/minecraft/mod/lua/LuaBlockRegistry.hpp"
 #include "net/minecraft/mod/lua/LuaHostApi.hpp"
 #include "net/minecraft/mod/lua/LuaItemRegistry.hpp"
-#include "net/minecraft/registry/TextureRegistry.hpp"
 namespace net::minecraft::client::render::item {
 namespace ItemModelRenderer {
 net::minecraft::block::Block* blockOf(const ItemStack& stack) {
@@ -30,8 +30,8 @@ bool hasCustomModel(const ItemStack& stack) {
  const auto* spec = net::minecraft::mod::lua::itemRegistrationSpecForId(stack.itemId);
  return spec != nullptr && spec->bakedModel != 0;
 }
-bool usesModTexture(const ItemStack& stack) {
- return net::minecraft::registry::TextureRegistry::isCustomTexture(stack.getTextureId());
+AtlasDomain atlasDomain(const ItemStack& stack) {
+ return stack.itemId < net::minecraft::block::Block::BLOCK_COUNT ? AtlasDomain::Terrain : AtlasDomain::Items;
 }
 net::minecraft::block::TerrainAtlasUv spriteUv(const ItemStack& stack) {
  const int sprite = stack.getTextureId();
@@ -52,6 +52,13 @@ ItemTint tintColor(const ItemStack& stack) {
      static_cast<float>((packed >> 8) & 0xFF) / 255.0f,
      static_cast<float>(packed & 0xFF) / 255.0f,
  };
+}
+int shaderId(const ItemStack& stack) {
+ const net::minecraft::Item* item = stack.getItem();
+ if(item == nullptr) return 0;
+ std::string name = item->getTranslationKey(&stack);
+ if(name.rfind("item.", 0) == 0) name.erase(0, 5);
+ return net::minecraft::client::render::resolveShaderObjectId("item", name, 0);
 }
 }
 } // namespace net::minecraft::client::render::item::ItemModelRenderer

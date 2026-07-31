@@ -1,7 +1,5 @@
--- ============================================================================
--- item_drop_physics: rigid-body engine
---
--- Replaces lib/box3d.lua and the old world/water split. Design notes:
+-- Rigid-body engine. Replaces lib/box3d.lua and the old world/water split.
+-- Design notes:
 --   * Body state is flat scalars on the sim table. No vector or quaternion
 --     tables are allocated after spawn, so a tick does zero garbage work.
 --   * Movement is a swept AABB resolved axis-by-axis against block collision
@@ -9,7 +7,6 @@
 --   * Orientation is a quaternion integrated from angular velocity; contacts
 --     couple tangential slip into spin so items roll and settle.
 --   * Sleeping bodies are skipped entirely and only re-checked periodically.
--- ============================================================================
 
 local materials = require("scripts.physics.materials")
 local config = require("config")

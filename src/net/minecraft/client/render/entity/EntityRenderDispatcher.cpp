@@ -1,10 +1,14 @@
 #include "net/minecraft/client/render/entity/EntityRenderDispatcher.hpp"
+#include <algorithm>
 #include <cassert>
+#include <cmath>
 #include <functional>
 #include <unordered_map>
 #include <vector>
 #include "net/minecraft/client/gl/GlConstants.hpp"
-#include "net/minecraft/client/render/RenderSystem.hpp"
+#include "net/minecraft/client/render/RenderCore.hpp"
+#include "net/minecraft/client/render/RenderType.hpp"
+#include "net/minecraft/client/render/Tessellator.hpp"
 #include "net/minecraft/client/render/entity/EntityRenderer.hpp"
 #include "net/minecraft/client/render/entity/EntityRenderers.hpp"
 #include "net/minecraft/client/render/entity/LivingEntityRenderer.hpp"
@@ -139,17 +143,29 @@ void EntityRenderDispatcher::setWorld(net::minecraft::World* world) {
  // nothing renders against a freed entity before the next init().
  cameraEntity_ = nullptr;
 }
-void EntityRenderDispatcher::render(const net::minecraft::Entity& entity, float tickDelta) {
+void EntityRenderDispatcher::render(const net::minecraft::Entity& entity,
+                                    float tickDelta,
+                                    net::minecraft::util::math::MatrixStack& matrices,
+                                    const net::minecraft::util::math::Matrix4f& projection) {
  const double x = entity.lastTickX + (entity.x - entity.lastTickX) * static_cast<double>(tickDelta) - offsetX;
  const double y = entity.lastTickY + (entity.y - entity.lastTickY) * static_cast<double>(tickDelta) - offsetY;
  const double z = entity.lastTickZ + (entity.z - entity.lastTickZ) * static_cast<double>(tickDelta) - offsetZ;
  const float yaw = entity.prevYaw + (entity.yaw - entity.prevYaw) * tickDelta;
  const float brightness = entity.getBrightnessAtEyes(tickDelta);
- RenderSystem::color3f(brightness, brightness, brightness);
- render(entity, x, y, z, yaw, tickDelta);
+ Tessellator::INSTANCE.light(15, 15);
+ render::core::setConstColor(brightness, brightness, brightness, 1.0f);
+ render(entity, x, y, z, yaw, tickDelta, matrices, projection);
 }
-void EntityRenderDispatcher::render(
-    const net::minecraft::Entity& entity, double x, double y, double z, float yaw, float tickDelta) {
+void EntityRenderDispatcher::render(const net::minecraft::Entity& entity,
+                                    double x,
+                                    double y,
+                                    double z,
+                                    float yaw,
+                                    float tickDelta,
+                                    net::minecraft::util::math::MatrixStack& matrices,
+                                    const net::minecraft::util::math::Matrix4f& projection) {
+ const std::string entityName = net::minecraft::entity::EntityRegistry::getId(entity);
+ render::core::setEntityId(resolveShaderObjectId("entity", entityName, 0));
  if(net::minecraft::mod::runtime::hasLuaHook(net::minecraft::mod::runtime::LuaEventId::PreEntityRender)) {
   net::minecraft::mod::PreEntityRenderEvent event;
   event.entity = &entity;
@@ -159,13 +175,15 @@ void EntityRenderDispatcher::render(
   event.tickDelta = tickDelta;
   net::minecraft::mod::runtime::luaHookPreEntityRender(event);
   if(event.canceled) {
+   render::core::setEntityId(0);
    return;
   }
  }
  if(EntityRenderer* renderer = get(entity); renderer != nullptr) {
-  renderer->render(entity, x, y, z, yaw, tickDelta);
-  renderer->postRender(entity, x, y, z, yaw, tickDelta);
+  renderer->render(entity, x, y, z, yaw, tickDelta, matrices, projection);
+  renderer->postRender(entity, x, y, z, yaw, tickDelta, matrices, projection);
  }
+ render::core::setEntityId(0);
 }
 double EntityRenderDispatcher::squaredDistanceTo(double x, double y, double z) const {
  const double dx = x - x_;

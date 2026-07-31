@@ -50,8 +50,8 @@ void ConfirmScreen::init() {
 void ConfirmScreen::render(int mouseX, int mouseY, float tickDelta) {
  renderBackground();
  if(textRenderer() != nullptr) {
-  drawCenteredTextWithShadow(*textRenderer(), message1_, width() / 2, 70, 0xFFFFFF);
-  drawCenteredTextWithShadow(*textRenderer(), message2_, width() / 2, 90, 0xFFFFFF);
+  textRenderer()->drawCenteredWithShadow(message1_, width() / 2, 70, 0xFFFFFF);
+  textRenderer()->drawCenteredWithShadow(message2_, width() / 2, 90, 0xFFFFFF);
  }
  Screen::render(mouseX, mouseY, tickDelta);
 }

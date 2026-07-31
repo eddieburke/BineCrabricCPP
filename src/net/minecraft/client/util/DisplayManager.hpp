@@ -1,5 +1,6 @@
 #pragma once
 #include <string>
+#include "net/minecraft/client/gl/GLCore.hpp"
 #ifdef _WIN32
 #ifndef NOMINMAX
 #define NOMINMAX
@@ -21,6 +22,7 @@ class DisplayManager {
  static void logGlError(Minecraft& client, const std::string& phase);
 #ifdef _WIN32
  static void ensureGlContext();
+ static void setSwapPacing(gl::SwapPacing pacing);
  static void present();
  static void pumpAndPresent();
  static void destroy();

@@ -2,7 +2,7 @@
 #include "net/minecraft/block/Block.hpp"
 #include "net/minecraft/block/LiquidBlock.hpp"
 #include "net/minecraft/block/material/Material.hpp"
-#include "net/minecraft/client/option/ResolvedRenderOptions.hpp"
+#include "net/minecraft/client/option/RenderSettings.hpp"
 #include "net/minecraft/client/render/Tessellator.hpp"
 #include "net/minecraft/client/render/block/BlockRenderers.hpp"
 #include "net/minecraft/util/math/MathHelper.hpp"
@@ -62,9 +62,8 @@ bool FluidBlockRenderer::renderFluid(net::minecraft::block::Block& block, int x,
   }
   const float flowSin = net::minecraft::util::math::MathHelper::sin(flowAngle) * 8.0f / 256.0f;
   const float flowCos = net::minecraft::util::math::MathHelper::cos(flowAngle) * 8.0f / 256.0f;
-  const float topBrightness = block.getLuminance(ctx_.blockView, x, y, z);
-  tessellator.color(
-      upShade * topBrightness * red, upShade * topBrightness * green, upShade * topBrightness * blue);
+  ctx_.sampleFaceLight(x, y, z);
+  tessellator.color(upShade * red, upShade * green, upShade * blue);
   const double topU0 = uvBaseU - static_cast<double>(flowCos) - static_cast<double>(flowSin);
   const double topV0 = uvBaseV - static_cast<double>(flowCos) + static_cast<double>(flowSin);
   const double topU1 = uvBaseU - static_cast<double>(flowCos) + static_cast<double>(flowSin);
@@ -79,8 +78,8 @@ bool FluidBlockRenderer::renderFluid(net::minecraft::block::Block& block, int x,
   emitBlockVertex(tessellator, 0.0f, 1.0f, 0.0f, x + 1, static_cast<float>(y) + h10, z + 0, topU3, topV3);
  }
  if(ctx_.skipFaceCulling || bottomVisible) {
-  float brightness = block.getLuminance(ctx_.blockView, x, y - 1, z);
-  tessellator.color(downShade * brightness, downShade * brightness, downShade * brightness);
+  ctx_.sampleFaceLight(x, y - 1, z);
+  tessellator.color(downShade, downShade, downShade);
   faces_.renderBottomFace(block, x, y, z, block.getTexture(0));
   drewAnyFace = true;
  }
@@ -158,9 +157,9 @@ bool FluidBlockRenderer::renderFluid(net::minecraft::block::Block& block, int x,
   } else {
    sideNx = 1.0f;
   }
-  float brightness = block.getLuminance(ctx_.blockView, nx, ny, nz);
-  brightness *= i < 2 ? horizShade : nsShade;
-  tessellator.color(upShade * brightness * red, upShade * brightness * green, upShade * brightness * blue);
+  ctx_.sampleFaceLight(nx, ny, nz);
+  const float sideShade = upShade * (i < 2 ? horizShade : nsShade);
+  tessellator.color(sideShade * red, sideShade * green, sideShade * blue);
   emitBlockVertex(tessellator, sideNx, sideNy, sideNz, sideX0, (float)y + sideH0, sideZ0, uMin, vTop0);
   emitBlockVertex(tessellator, sideNx, sideNy, sideNz, sideX1, (float)y + sideH1, sideZ1, uMax, vTop1);
   emitBlockVertex(tessellator, sideNx, sideNy, sideNz, sideX1, y + 0, sideZ1, uMax, vBottom);

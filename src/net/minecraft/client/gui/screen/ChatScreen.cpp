@@ -1,6 +1,9 @@
 #include "net/minecraft/client/gui/screen/ChatScreen.hpp"
 #include "net/minecraft/client/Minecraft.hpp"
+#include "net/minecraft/client/gui/Draw2D.hpp"
 #include "net/minecraft/client/gui/hud/InGameHud.hpp"
+#include "net/minecraft/client/render/RenderType.hpp"
+#include "net/minecraft/client/render/Tessellator.hpp"
 #include "net/minecraft/entity/player/ClientPlayerEntity.hpp"
 #include "net/minecraft/util/CharacterUtils.hpp"
 namespace net::minecraft::client::gui::screen {
@@ -35,10 +38,13 @@ void ChatScreen::render(int mouseX, int mouseY, float tickDelta) {
  (void)mouseX;
  (void)mouseY;
  (void)tickDelta;
- fill(2, height_ - 14, width_ - 2, height_ - 2, 0x80000000U);
+ {
+  const render::RenderPassScope passScope(render::RenderType::gui());
+  draw::coloredQuad(render::INSTANCE, width_ - 2, height_ - 2, 2, height_ - 14, 0, 0x80);
+ }
  if(textRenderer() != nullptr) {
   const std::string cursor = (focusedTicks_ / 6 % 2 == 0) ? "_" : "";
-  drawTextWithShadow(*textRenderer(), "> " + text_ + cursor, 4, height_ - 12, 0xE0E0E0);
+  textRenderer()->drawWithShadow("> " + text_ + cursor, 4, height_ - 12, 0xE0E0E0);
  }
  Screen::render(mouseX, mouseY, tickDelta);
 }

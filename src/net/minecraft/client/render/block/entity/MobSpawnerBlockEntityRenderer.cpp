@@ -1,7 +1,7 @@
 #include "net/minecraft/client/render/block/entity/MobSpawnerBlockEntityRenderer.hpp"
 #include "net/minecraft/block/entity/MobSpawnerBlockEntity.hpp"
 #include "net/minecraft/client/Minecraft.hpp"
-#include "net/minecraft/client/render/RenderSystem.hpp"
+#include "net/minecraft/client/render/RenderCore.hpp"
 #include "net/minecraft/client/render/entity/EntityRenderDispatcher.hpp"
 #include "net/minecraft/client/render/entity/EntityRenderers.hpp"
 #include "net/minecraft/entity/EntityRegistry.hpp"
@@ -12,8 +12,8 @@ void MobSpawnerBlockEntityRenderer::render(
  if(mobSpawner == nullptr) {
   return;
  }
- render::RenderSystem::pushMatrix();
- render::RenderSystem::translate(static_cast<float>(x) + 0.5f, static_cast<float>(y), static_cast<float>(z) + 0.5f);
+ render::core::modelViewStack().push();
+ render::core::modelViewStack().translate(static_cast<float>(x) + 0.5f, static_cast<float>(y), static_cast<float>(z) + 0.5f);
  const std::string& entityId = mobSpawner->getSpawnedEntityId();
  auto& cachedEntity = models[entityId];
  if(!cachedEntity) {
@@ -26,18 +26,19 @@ void MobSpawnerBlockEntityRenderer::render(
  if(entity != nullptr) {
   entity->setWorld(mobSpawner->world);
   constexpr float entityScale = 0.4375f;
-  render::RenderSystem::translate(0.0f, 0.4f, 0.0f);
+  render::core::modelViewStack().translate(0.0f, 0.4f, 0.0f);
   const float spin =
       static_cast<float>((mobSpawner->lastRotation +
                           (mobSpawner->rotation - mobSpawner->lastRotation) * static_cast<double>(tickDelta)) *
                          10.0);
-  render::RenderSystem::rotate(spin, 0.0f, 1.0f, 0.0f);
-  render::RenderSystem::rotate(-30.0f, 1.0f, 0.0f, 0.0f);
-  render::RenderSystem::translate(0.0f, -0.4f, 0.0f);
-  render::RenderSystem::scale(entityScale, entityScale, entityScale);
+  render::core::modelViewStack().rotate(spin, 0.0f, 1.0f, 0.0f);
+  render::core::modelViewStack().rotate(-30.0f, 1.0f, 0.0f, 0.0f);
+  render::core::modelViewStack().translate(0.0f, -0.4f, 0.0f);
+  render::core::modelViewStack().scale(entityScale, entityScale, entityScale);
   entity->setPositionAndAnglesKeepPrevAngles(x, y, z, 0.0f, 0.0f);
-  render::entity::EntityRenderDispatcher::instance().render(*entity, tickDelta);
+  render::entity::EntityRenderDispatcher::instance().render(
+      *entity, tickDelta, render::core::modelViewStack(), render::core::currentProjection());
  }
- render::RenderSystem::popMatrix();
+ render::core::modelViewStack().pop();
 }
 } // namespace net::minecraft::client::render::block::entity

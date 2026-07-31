@@ -391,7 +391,6 @@ local function lunar_position(utc_millis)
   if lon_terms[#lon_terms][5] == 0 then
     lon_terms[#lon_terms] = nil
   end
-  }
 
   -- Moon latitude periodic terms (Meeus Table 47.B).
   local lat_terms = {

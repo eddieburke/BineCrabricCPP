@@ -55,7 +55,7 @@ std::array<OptionSpec, 9> kSpecs{{
     d::makeSlider("aoLevel",
                   19,
                   ApplyFlags::None,
-                  ApplyFlags::ReloadWorld,
+                  ApplyFlags::ApplyDerived | ApplyFlags::ReloadWorld,
                   d::getFloatMember<&GameOptions::aoLevel>,
                   d::setAoLevel,
                   d::loadFloatMember<&GameOptions::aoLevel>,

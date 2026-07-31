@@ -10,34 +10,18 @@ bool DoorBlockRenderer::render(net::minecraft::block::Block& block, int x, int y
  const float upShade = 1.0f;
  const float horizShade = 0.8f;
  const float nsShade = 0.6f;
- const float selfBrightness = block.getLuminance(ctx_.blockView, x, y, z);
- float brightness = block.getLuminance(ctx_.blockView, x, y - 1, z);
- if(ctx_.renderBounds.minY > 0.0) {
-  brightness = selfBrightness;
- }
- if(block.emission() > 0) {
-  brightness = 1.0f;
- }
+ // Each face's light level reaches the shader as a lightmap coordinate now,
+ // so the vertex colour carries only the per-face shade.
+ const float brightness = 1.0f;
+ ctx_.sampleFaceLight(x, ctx_.renderBounds.minY > 0.0 ? y : y - 1, z);
  tessellator.color(downShade * brightness, downShade * brightness, downShade * brightness);
  faces_.renderBottomFace(block, x, y, z, block.getTextureId(ctx_.blockView, x, y, z, 0));
  drewAnyFace = true;
- brightness = block.getLuminance(ctx_.blockView, x, y + 1, z);
- if(ctx_.renderBounds.maxY < 1.0) {
-  brightness = selfBrightness;
- }
- if(block.emission() > 0) {
-  brightness = 1.0f;
- }
+ ctx_.sampleFaceLight(x, ctx_.renderBounds.maxY < 1.0 ? y : y + 1, z);
  tessellator.color(upShade * brightness, upShade * brightness, upShade * brightness);
  faces_.renderTopFace(block, x, y, z, block.getTextureId(ctx_.blockView, x, y, z, 1));
  drewAnyFace = true;
- brightness = block.getLuminance(ctx_.blockView, x, y, z - 1);
- if(ctx_.renderBounds.minZ > 0.0) {
-  brightness = selfBrightness;
- }
- if(block.emission() > 0) {
-  brightness = 1.0f;
- }
+ ctx_.sampleFaceLight(x, y, ctx_.renderBounds.minZ > 0.0 ? z : z - 1);
  tessellator.color(horizShade * brightness, horizShade * brightness, horizShade * brightness);
  int texture = block.getTextureId(ctx_.blockView, x, y, z, 2);
  if(texture < 0) {
@@ -47,13 +31,7 @@ bool DoorBlockRenderer::render(net::minecraft::block::Block& block, int x, int y
  faces_.renderEastFace(block, x, y, z, texture);
  drewAnyFace = true;
  ctx_.flipTextureHorizontally = false;
- brightness = block.getLuminance(ctx_.blockView, x, y, z + 1);
- if(ctx_.renderBounds.maxZ < 1.0) {
-  brightness = selfBrightness;
- }
- if(block.emission() > 0) {
-  brightness = 1.0f;
- }
+ ctx_.sampleFaceLight(x, y, ctx_.renderBounds.maxZ < 1.0 ? z : z + 1);
  tessellator.color(horizShade * brightness, horizShade * brightness, horizShade * brightness);
  texture = block.getTextureId(ctx_.blockView, x, y, z, 3);
  if(texture < 0) {
@@ -63,13 +41,7 @@ bool DoorBlockRenderer::render(net::minecraft::block::Block& block, int x, int y
  faces_.renderWestFace(block, x, y, z, texture);
  drewAnyFace = true;
  ctx_.flipTextureHorizontally = false;
- brightness = block.getLuminance(ctx_.blockView, x - 1, y, z);
- if(ctx_.renderBounds.minX > 0.0) {
-  brightness = selfBrightness;
- }
- if(block.emission() > 0) {
-  brightness = 1.0f;
- }
+ ctx_.sampleFaceLight(ctx_.renderBounds.minX > 0.0 ? x : x - 1, y, z);
  tessellator.color(nsShade * brightness, nsShade * brightness, nsShade * brightness);
  texture = block.getTextureId(ctx_.blockView, x, y, z, 4);
  if(texture < 0) {
@@ -79,13 +51,7 @@ bool DoorBlockRenderer::render(net::minecraft::block::Block& block, int x, int y
  faces_.renderNorthFace(block, x, y, z, texture);
  drewAnyFace = true;
  ctx_.flipTextureHorizontally = false;
- brightness = block.getLuminance(ctx_.blockView, x + 1, y, z);
- if(ctx_.renderBounds.maxX < 1.0) {
-  brightness = selfBrightness;
- }
- if(block.emission() > 0) {
-  brightness = 1.0f;
- }
+ ctx_.sampleFaceLight(ctx_.renderBounds.maxX < 1.0 ? x : x + 1, y, z);
  tessellator.color(nsShade * brightness, nsShade * brightness, nsShade * brightness);
  texture = block.getTextureId(ctx_.blockView, x, y, z, 5);
  if(texture < 0) {

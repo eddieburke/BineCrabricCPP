@@ -1,8 +1,3 @@
--- ================================================================
--- CONFIG: void_fog
--- Centralized configuration with validation and persistence
--- ================================================================
-
 local settings = require("lib.settings")
 
 local config = settings.define("void_fog", {

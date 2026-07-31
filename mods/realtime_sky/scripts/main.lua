@@ -2,38 +2,13 @@ local earth_time_solar = require("scripts.earth_time_solar")
 local places = require("scripts.cities")
 local globe_ui = require("scripts.globe_ui")
 local settings_screen_mod = require("scripts.settings_screen")
+local config = require("config")
 
 local SETTINGS_SCREEN_ID = "realtime_sky:settings"
 
 local SCREEN_ID = "realtime_sky:globe"
 local SEARCH_FIELD = "place_search"
-local CONFIG_FILE = "realtime_sky.txt"
 local SKY_PROVIDER_PRIORITY = 50
-
-local SETTINGS_DEFAULTS = {
-  enabled = false,
-  time_zone_id = "GMT+0",
-  latitude = 45.0,
-  longitude = 0.0,
-  drive_sun = true,
-  show_simulate_panel = false,
-  override_enabled = false,
-  simulate_date = false,
-  simulate_time = false,
-  sim_year = 2000,
-  sim_month = 1,
-  sim_day = 1,
-  sim_hour = 0,
-  sim_minute = 0,
-}
-
-local SETTINGS_KEYS = {
-  "enabled", "time_zone_id", "latitude", "longitude", "drive_sun", "show_simulate_panel",
-  "override_enabled", "simulate_date", "simulate_time",
-  "sim_year", "sim_month", "sim_day", "sim_hour", "sim_minute",
-}
-
-local settings = minecraft.util.copy(SETTINGS_DEFAULTS)
 local ui = {
   search = "",
   list_scroll = 0,
@@ -476,16 +451,6 @@ end
 local solar_frame_cache
 local fit_text
 
-local function clamp_settings()
-  settings.latitude = clamp(settings.latitude, -90.0, 90.0)
-  settings.longitude = clamp(settings.longitude, -180.0, 180.0)
-  settings.sim_year = math.floor(clamp(settings.sim_year, 1, 9999))
-  settings.sim_month = math.floor(clamp(settings.sim_month, 1, 12))
-  settings.sim_day = math.floor(clamp(settings.sim_day, 1, 31))
-  settings.sim_hour = math.floor(clamp(settings.sim_hour, 0, 23))
-  settings.sim_minute = math.floor(clamp(settings.sim_minute, 0, 59))
-end
-
 local function normalize_time_zone_id(value)
   assert(type(value) == "string", "realtime_sky: time zone must be a string")
   assert(value:match("^GMT[+-]%d%d?$") or value:match("^GMT[+-]%d%d?:%d%d$"),
@@ -495,29 +460,11 @@ end
 
 local function save_settings()
   solar_frame_cache = nil
-  settings.time_zone_id = normalize_time_zone_id(settings.time_zone_id)
-  minecraft.config.save(CONFIG_FILE, settings, SETTINGS_KEYS)
-end
-
-local function load_settings()
-  local loaded, found = minecraft.config.load(CONFIG_FILE, SETTINGS_DEFAULTS)
-  -- Keep the table identity stable. settings_screen.register() holds this exact
-  -- table; replacing it made the UI edit an abandoned copy after the first save.
-  for key in pairs(settings) do
-    settings[key] = nil
-  end
-  for key, value in pairs(loaded) do
-    settings[key] = value
-  end
-  settings.time_zone_id = normalize_time_zone_id(settings.time_zone_id)
-  clamp_settings()
-  if not found then
-    save_settings()
-  end
+  config.time_zone_id = normalize_time_zone_id(config.time_zone_id)
 end
 
 local function realtime_active()
-  return settings.enabled == true
+  return config.enabled == true
 end
 
 local function utc_millis()
@@ -528,7 +475,7 @@ local function current_solar_frame(partial_ticks)
   local now = utc_millis()
   if solar_frame_cache == nil or now < solar_frame_cache.sample_millis or
       now - solar_frame_cache.sample_millis >= 50.0 then
-    solar_frame_cache = earth_time_solar.build_frame(settings, partial_ticks or 0.0, now)
+    solar_frame_cache = earth_time_solar.build_frame(config, partial_ticks or 0.0, now)
     solar_frame_cache.sample_millis = now
   end
   return solar_frame_cache
@@ -564,10 +511,9 @@ local function frame_globe_to(lat, lon)
 end
 
 local function apply_place(place)
-  settings.latitude = place.lat
-  settings.longitude = place.lon
-  settings.time_zone_id = normalize_time_zone_id(place.time_zone_id)
-  clamp_settings()
+  config.latitude = place.lat
+  config.longitude = place.lon
+  config.time_zone_id = normalize_time_zone_id(place.time_zone_id)
   frame_globe_to(place.lat, place.lon)
   save_settings()
 end
@@ -651,7 +597,7 @@ local function draw_list(width, height, mouse_x, mouse_y)
   minecraft.gui.draw_text(left, 22, "LOCATIONS", 0xFF7EC8F2)
   local count_text = tostring(#ui.filtered) .. " places"
   minecraft.gui.draw_text(left, 59, count_text, 0xFF9BB0C2)
-  local zone_text = fit_text("Zone  " .. settings.time_zone_id, col_w - minecraft.gui.text_width(count_text) - 10)
+  local zone_text = fit_text("Zone  " .. config.time_zone_id, col_w - minecraft.gui.text_width(count_text) - 10)
   minecraft.gui.draw_text(left + col_w - minecraft.gui.text_width(zone_text), 59, zone_text, 0xFFFFD36A)
 
   for row = 0, rows - 1 do
@@ -692,7 +638,7 @@ local function draw_globe_overlay(width)
   local bar_h = 28
   local y0 = ui.globe_y + ui.globe_size - bar_h
   minecraft.gui.fill_rect(ui.globe_x, y0, ui.globe_size, bar_h, 0xC0202020)
-  local coords = format_lat_lon(settings.latitude, settings.longitude)
+  local coords = format_lat_lon(config.latitude, config.longitude)
   minecraft.gui.draw_centered_text(ui.globe_x, y0 + 3, ui.globe_size, coords, 0xFFFFFFFF)
   local frame = current_solar_frame(0.0)
   local sun_line = string.format("Sun %03.0f deg   %+.1f deg", frame.sun_azimuth_deg, frame.sun_altitude_deg)
@@ -710,7 +656,6 @@ end
 
 local open_globe_screen
 
-load_settings()
 ensure_globe_data()
 
 minecraft.on("screen_ui", {
@@ -720,12 +665,12 @@ minecraft.on("screen_ui", {
 }, function(event)
   if event.ui == nil then return event end
   local function realtime_label()
-    return settings.enabled and "Realtime: ON" or "Realtime: OFF"
+    return config.enabled and "Realtime: ON" or "Realtime: OFF"
   end
   event.ui:add_centered_button(143,
     realtime_label(),
     function()
-      settings.enabled = not settings.enabled
+      config.enabled = not config.enabled
       save_settings()
     end,
     realtime_label)
@@ -744,12 +689,12 @@ minecraft.on("world_render", {
   local frame = current_solar_frame(event.tick_delta)
   event.astronomy_enabled = true
   event.astronomy_utc_millis = frame.utc_millis
-  event.observer_latitude_deg = settings.latitude
-  event.observer_longitude_deg = settings.longitude
+  event.observer_latitude_deg = config.latitude
+  event.observer_longitude_deg = config.longitude
 
   event.solar_day_tick = frame.day_tick
   event.solar_time_hours = frame.solar_time_hours
-  if settings.drive_sun then
+  if config.drive_sun then
     event.celestial_angle = frame.celestial
     event.celestial = frame.celestial
     event.sky_yaw_deg = frame.skydome_yaw_deg
@@ -823,7 +768,7 @@ minecraft.on("screen_event", { screen_id = SCREEN_ID, priority = 100 }, function
   if event.phase == "init" then
     layout(event.width, event.height)
     refresh_filter()
-    frame_globe_to(settings.latitude, settings.longitude)
+    frame_globe_to(config.latitude, config.longitude)
     local button_y = event.height - 24
     minecraft.screen.add_field(SEARCH_FIELD, ui.search_x, ui.search_y, ui.search_w, ui.search_h, {
       text = ui.search,
@@ -860,7 +805,7 @@ minecraft.on("screen_event", { screen_id = SCREEN_ID, priority = 100 }, function
       end
     end
     draw_screen_chrome(event.width, event.height)
-    globe_ui.draw(ui, event.width, event.height, settings.latitude, settings.longitude)
+    globe_ui.draw(ui, event.width, event.height, config.latitude, config.longitude)
     draw_globe_chrome()
     draw_globe_overlay(event.width)
     draw_list(event.width, event.height, event.mouse_x, event.mouse_y)
@@ -872,10 +817,9 @@ minecraft.on("screen_event", { screen_id = SCREEN_ID, priority = 100 }, function
         if dx * dx + dy * dy <= 9 then
           local picked = globe_ui.pick_lat_lon(ui, event.width, event.height, event.x, event.y)
           if picked then
-            settings.latitude = picked.lat
-            settings.longitude = picked.lon
-            clamp_settings()
-            save_settings()
+            config.latitude = picked.lat
+            config.longitude = picked.lon
+                      save_settings()
           end
         end
       end
@@ -1020,7 +964,7 @@ minecraft.on("world_tick", { before = false }, function(event)
   end
 end)
 
-settings_screen_mod.register(settings, function()
+settings_screen_mod.register(config, function()
   save_settings()
 end)
 

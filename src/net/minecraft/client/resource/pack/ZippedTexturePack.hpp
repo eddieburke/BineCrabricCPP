@@ -28,6 +28,9 @@ class ZippedTexturePack : public TexturePack {
  [[nodiscard]] const std::filesystem::path& file() const noexcept {
   return file_;
  }
+ [[nodiscard]] const std::vector<ZipEntry>& entries() const noexcept {
+  return entries_;
+ }
 
  private:
  std::filesystem::path file_;

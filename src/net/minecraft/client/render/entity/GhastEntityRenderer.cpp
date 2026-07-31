@@ -1,11 +1,12 @@
-#include "net/minecraft/client/render/RenderSystem.hpp"
+#include "net/minecraft/client/render/RenderCore.hpp"
 #include "net/minecraft/client/render/entity/EntityRenderers.hpp"
 #include "net/minecraft/client/render/entity/model/GhastEntityModel.hpp"
 #include "net/minecraft/entity/mob/GhastEntity.hpp"
 namespace net::minecraft::client::render::entity {
 GhastEntityRenderer::GhastEntityRenderer() : LivingEntityRenderer(new model::GhastEntityModel(), 0.5f) {
 }
-void GhastEntityRenderer::applyScale(const net::minecraft::LivingEntity& entity, float tickDelta) {
+void GhastEntityRenderer::applyScale(const net::minecraft::LivingEntity& entity, float tickDelta,
+                                     net::minecraft::util::math::MatrixStack& matrices) {
  const auto* ghast = dynamic_cast<const ::net::minecraft::entity::mob::GhastEntity*>(&entity);
  if(ghast == nullptr) {
   return;
@@ -19,8 +20,8 @@ void GhastEntityRenderer::applyScale(const net::minecraft::LivingEntity& entity,
  charge = 1.0f / (charge * charge * charge * charge * charge * 2.0f + 1.0f);
  const float scaleY = (8.0f + charge) / 2.0f;
  const float scaleXZ = (8.0f + 1.0f / charge) / 2.0f;
- RenderSystem::scale(scaleXZ, scaleY, scaleXZ);
- RenderSystem::color4f(1.0f, 1.0f, 1.0f, 1.0f);
+ matrices.scale(scaleXZ, scaleY, scaleXZ);
+ render::core::setConstColor(1.0f, 1.0f, 1.0f, 1.0f);
 }
 } // namespace net::minecraft::client::render::entity
 #include "net/minecraft/client/entity/EntityClientRendererRegistration.hpp"

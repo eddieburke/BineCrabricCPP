@@ -50,7 +50,7 @@ class BufferBuilder {
   }
   VertexProxy& light(std::int16_t block, std::int16_t sky) {
    if constexpr(requires { ptr->light; }) {
-    ptr->light = static_cast<std::int16_t>((block & 0xFFFF) | ((sky & 0xFFFF) << 16));
+    ptr->light = static_cast<std::int32_t>((block & 0xFFFF) | ((sky & 0xFFFF) << 16));
    }
    return *this;
   }
@@ -75,6 +75,22 @@ class BufferBuilder {
   ptr->z = z;
   if constexpr(requires { ptr->color; }) {
    ptr->color = 0xFFFFFFFFU;
+  }
+  if constexpr(requires { ptr->midBlock; }) {
+   ptr->midBlock = 0;
+  }
+  if constexpr(requires { ptr->light; }) {
+   ptr->light = 0x00F000F0;
+  }
+  if constexpr(requires { ptr->entity; }) {
+   for(auto& value : ptr->entity) value = 0;
+  }
+  if constexpr(requires { ptr->midU; }) {
+   ptr->midU = 0.0f;
+   ptr->midV = 0.0f;
+  }
+  if constexpr(requires { ptr->tangent; }) {
+   for(auto& value : ptr->tangent) value = 0;
   }
   return VertexProxy{*this, ptr};
  }
@@ -120,14 +136,14 @@ class BufferBuilder {
  int drawMode_ = 0;
 };
 } // namespace net::minecraft::client::render
-#include "net/minecraft/client/gl/EnginePipeline.hpp"
+#include "net/minecraft/client/render/RenderCore.hpp"
 namespace net::minecraft::client::render {
 template <typename TVertex>
 inline void BufferBuilder<TVertex>::draw() {
  constexpr bool hasTexture = requires(TVertex v) { v.u; };
  constexpr bool hasColor = requires(TVertex v) { v.color; };
  constexpr bool hasNormals = requires(TVertex v) { v.normal; };
- gl::engine_pipeline::drawInterleaved(
+ render::core::drawInterleaved(
      buffer_.data(), vertexCount_, sizeof(TVertex), drawMode_, hasTexture, hasColor, hasNormals);
 }
 } // namespace net::minecraft::client::render

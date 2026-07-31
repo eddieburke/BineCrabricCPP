@@ -1,0 +1,67 @@
+#include "/prelude/core.glsl"
+
+#ifndef IS_LSP_MCSHADER
+	#ifdef IS_OCULUS
+		#warning "RenderPearl: RenderPearl requires Iris, but seems to have been loaded by Oculus instead, which may not be fully compatible. No support will be provided for using RenderPearl in this configuration."
+	#elif !defined IS_IRIS
+		#warning "RenderPearl: RenderPearl requires Iris, but seems to have been loaded by a different, unknown shader loader. Various issues may occur. No support will be provided for using RenderPearl in this configuration."
+	#endif
+
+	#ifdef IS_MONOCLE
+		#warning "RenderPearl: The Monocle mod is incompatible with RenderPearl. Visual issues may occur. No support will be provided for using RenderPearl in this configuration."
+	#endif
+
+	#ifdef CHUNKS_FADE_IN_ENABLED
+		#warning "RenderPearl: Chunks Fade In support is experimental. Various issues may occur."
+	#endif
+
+	#ifdef HAS_COLORWHEEL
+		#if COLORWHEEL_VERSION < 10205
+			#warning "RenderPearl: The currently installed version of Colorwheel does not support accessing the crumbling texture in block breaking overlay vertex shaders. Please update to Colorwheel 1.2.5 or later if possible. Falling back to unlit rendering."
+		#endif
+
+		#if COLORWHEEL_VERSION < 10209 && defined MC_OS_WINDOWS && (defined MC_GL_VENDOR_AMD || defined MC_GL_VENDOR_ATI)
+			#warning "RenderPearl: Colorwheel shaders may fail to compile on this version of Colorwheel with AMD graphics drivers for Windows. Please update to Colorwheel 1.2.9 or later if you encounter any issues."
+		#endif
+	#endif
+#endif
+
+const ivec3 workGroups = ivec3(1, 1, 1);
+layout(local_size_x = 1, local_size_y = 1, local_size_z = 1) in;
+
+writeonly
+#include "/buf/ll.glsl"
+
+writeonly
+#include "/buf/llq.glsl"
+
+#if AUTO_EXP
+	writeonly
+	#include "/buf/auto_exp.glsl"
+#endif
+
+#if HAND_LIGHT
+	writeonly
+	#include "/buf/hl.glsl"
+
+	writeonly
+	#include "/buf/hlq.glsl"
+#endif
+
+void main() {
+	#if AUTO_EXP
+		auto_exp.sum_log_luma = 0;
+		auto_exp.exposure = float16_t(1.0);
+	#endif
+
+	llq.len = 0u;
+	ll.len = uint16_t(0u);
+
+	#if HAND_LIGHT
+		hl.unorm11_11_10_left = 0u;
+		hl.unorm11_11_10_right = 0u;
+
+		hlq.uint2x16_left = uvec2(0u);
+		hlq.uint2x16_right = uvec2(0u);
+	#endif
+}
