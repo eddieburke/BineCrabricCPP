@@ -162,27 +162,24 @@ ShadowMapResult update(ShadowMapState& state,
   reset(state);
   return {};
  }
+ // https://github.com/IrisShaders/Iris/issues/764
+ if(shadowDistance <= 0.0f) {
+  reset(state);
+  return {};
+ }
  const int resolution = std::clamp(requestedResolution, 256, 16384);
  if(!state.targets.ensure(resolution, colorBuffers)) {
   return {};
  }
- const auto& sun = renderer.client->world->lightRegistry().sun();
- const float length =
-     std::sqrt(sun.directionX * sun.directionX + sun.directionY * sun.directionY + sun.directionZ * sun.directionZ);
- if(length <= 0.0001f || sun.intensity <= 0.0f) {
-  return {};
- }
- float sx = sun.directionX / length, sy = sun.directionY / length, sz = sun.directionZ / length;
- if(definition != nullptr && definition->sunPathRotation != 0.0f) {
-  const float rad = definition->sunPathRotation * 0.017453292519943295f;
-  const float c = std::cos(rad), s = std::sin(rad);
-  const float ny = sy * c - sz * s, nz = sy * s + sz * c;
-  sy = ny;
-  sz = nz;
- }
+ // https://github.com/IrisShaders/Iris/blob/26.1/common/src/main/java/net/irisshaders/iris/shadows/ShadowRenderer.java
+ // https://github.com/IrisShaders/Iris/blob/26.1/common/src/main/java/net/irisshaders/iris/shadows/ShadowMatrices.java
+ const float sunPathRotation = definition != nullptr ? definition->sunPathRotation : 0.0f;
+ const float celestialAngle = renderer.client->world->getTime(tickDelta);
+ float sunAngle = celestialAngle < 0.75f ? celestialAngle + 0.25f : celestialAngle - 0.75f;
+ // https://github.com/IrisShaders/Iris/blob/26.1/common/src/main/java/net/irisshaders/iris/uniforms/CelestialUniforms.java
+ const float shadowAngle = sunAngle < 0.5f ? sunAngle : sunAngle - 0.5f;
  const float coverage = shadowDistance > 0.0f ? std::max(shadowDistance, voxelDistance)
                                               : std::max(48.0f, std::min(farPlane, 192.0f) * 0.72f);
- const float distance = coverage * 1.45f;
  const float entityDistance = entityDistanceMultiplier > 0.0f ? coverage * entityDistanceMultiplier : 0.0f;
  float frustumBypass = 0.0f;
  if(!shadowCulling) {
@@ -195,21 +192,29 @@ ShadowMapResult update(ShadowMapState& state,
   renderDistance = shadowDistance * shadowDistanceRenderMul;
  }
  const bool perspectiveShadow = shadowMapFov > 0.0f;
- double centerX = camera.x, centerY = camera.y, centerZ = camera.z;
- if(shadowIntervalSize > 0.0f) {
-  const double interval = static_cast<double>(shadowIntervalSize);
-  centerX = std::floor(centerX / interval) * interval;
-  centerY = std::floor(centerY / interval) * interval;
-  centerZ = std::floor(centerZ / interval) * interval;
+ // Entity/terrain offsets use the player camera, not a light-eye translation.
+ // https://github.com/IrisShaders/Iris/blob/26.1/common/src/main/java/net/irisshaders/iris/shadows/ShadowRenderer.java
+ const double centerX = camera.x;
+ const double centerY = camera.y;
+ const double centerZ = camera.z;
+ // https://github.com/IrisShaders/Iris/blob/26.1/common/src/main/java/net/irisshaders/iris/shadows/ShadowMatrices.java
+ // NEAR = -100.05f; FAR = 156.0f when pack leaves planes at engine defaults.
+ float nearZ = shadowNearPlane;
+ float farZ = shadowFarPlane;
+ const bool packLeftPlanesDefault =
+     definition != nullptr && definition->shadowNearPlane == 0.05f && definition->shadowFarPlane == 256.0f;
+ if(packLeftPlanesDefault) {
+  nearZ = -100.05f;
+  farZ = 156.0f;
  }
- const float nearZ = std::max(0.0f, shadowNearPlane);
- const float farZ = shadowFarPlane > nearZ ? shadowFarPlane : nearZ + 1.0f;
+ if(farZ <= nearZ) farZ = nearZ + 1.0f;
  FrameRenderCamera shadowCam{};
- shadowCam.x = centerX + sx * distance;
- shadowCam.y = centerY + sy * distance;
- shadowCam.z = centerZ + sz * distance;
- shadowCam.yaw = std::atan2(sx, -sz) * 57.29577951308232f;
- shadowCam.pitch = std::asin(std::clamp(sy, -1.0f, 1.0f)) * 57.29577951308232f;
+ shadowCam.x = centerX;
+ shadowCam.y = centerY;
+ shadowCam.z = centerZ;
+ shadowCam.eyeX = centerX;
+ shadowCam.eyeY = centerY;
+ shadowCam.eyeZ = centerZ;
  shadowCam.customView = true;
  shadowCam.hideFirstPersonHand = true;
  shadowCam.orthographic = !perspectiveShadow;
@@ -227,8 +232,11 @@ ShadowMapResult update(ShadowMapState& state,
  shadowCam.shadowEntityDistance = std::max(0.0f, entityDistance);
  shadowCam.frustumBypassDistance = std::max(0.0f, frustumBypass);
  shadowCam.shadowRenderDistance = std::max(0.0f, renderDistance);
+ shadowCam.hasExplicitModelView = true;
+ buildShadowCelestialModelView(shadowCam.explicitModelView, shadowAngle, sunPathRotation, shadowIntervalSize,
+                               centerX, centerY, centerZ);
  if(perspectiveShadow) {
-  shadowCam.perspectiveNear = nearZ;
+  shadowCam.perspectiveNear = std::max(0.05f, nearZ);
   shadowCam.perspectiveFar = farZ;
  }
  const float fov = perspectiveShadow ? shadowMapFov : 70.0f;

@@ -225,8 +225,21 @@ TEST(ShaderPackLoaderTest, LoadsDimensionOnlyPackWithWildcard) {
  EXPECT_TRUE(pack.programs.contains("composite#compute"));
  EXPECT_EQ(pack.dimensionDefinitions.at("*")->programs.at("gbuffers_basic").fragment,
            "shaders/world_default/gbuffers_basic.fsh");
- EXPECT_EQ(pack.dimensionDefinitions.at("minecraft:the_nether")->programs.at("gbuffers_basic").fragment,
-           "shaders/world_nether/gbuffers_basic.fsh");
+  EXPECT_EQ(pack.dimensionDefinitions.at("minecraft:the_nether")->programs.at("gbuffers_basic").fragment,
+            "shaders/world_nether/gbuffers_basic.fsh");
+}
+TEST(ShaderPackLoaderTest, LoadsDimensionOnlyPackWithRootInclude) {
+ ShaderPackDefinition pack;
+ std::unordered_map<std::string, ShaderSourceOption> options;
+ std::string error;
+ EXPECT_TRUE(load({{"shaders/dimension.properties", "dimension.world_default=*\n"},
+                   {"shaders/prog/unlit.fsh", "void main(){}"},
+                   {"shaders/world_default/gbuffers_basic.vsh", "void main(){}"},
+                   {"shaders/world_default/gbuffers_basic.fsh", "#include \"/prog/unlit.fsh\"\n"}},
+                  pack,
+                  options,
+                  error))
+     << error;
 }
 TEST(ShaderPackLoaderTest, DimensionPropertiesMultiIdMapsEachKey) {
  ShaderPackDefinition pack;
@@ -706,5 +719,35 @@ TEST(ShaderPackSourcePreparation, ChunkFadeMatchesTheAdvertisedFeatureAbi) {
  EXPECT_NE(prepare("gbuffers_entities").find("const float mc_chunkFade = -1.0;"),
            std::string::npos);
  EXPECT_EQ(prepare("shadow").find("mc_chunkFade ="), std::string::npos);
+}
+TEST(ShaderPackLoaderTest, InfersColortexFormatsFromImageAndUsamplerLayouts) {
+ // RenderPearl leaves const colortexNFormat commented; formats come from layouts.
+ // https://github.com/Luracasmus/renderpearl/blob/main/DEV.md
+ // https://www.khronos.org/opengl/wiki/Image_Load_Store
+ ShaderPackDefinition pack;
+ std::unordered_map<std::string, ShaderSourceOption> options;
+ std::string error;
+ EXPECT_TRUE(load({{"shaders/gbuffers_basic.vsh", "void main(){}"},
+                   {"shaders/gbuffers_basic.fsh", "void main(){}"},
+                   {"shaders/deferred.csh",
+                    "layout(local_size_x = 8) in;\n"
+                    "uniform usampler2D colortex2;\n"
+                    "uniform layout(rgba16f) restrict image2D colorimg1;\n"
+                    "void main(){}\n"},
+                   {"shaders/gbuffers_entities.vsh", "void main(){}"},
+                   {"shaders/gbuffers_entities.fsh",
+                    "/* RENDERTARGETS: 1,2 */\n"
+                    "layout(location = 0) out f16vec4 colortex1;\n"
+                    "layout(location = 1) out uvec4 colortex2;\n"
+                    "void main(){}\n"}},
+                  pack,
+                  options,
+                  error))
+     << error;
+ ASSERT_TRUE(pack.targets.contains("colortex1"));
+ ASSERT_TRUE(pack.targets.contains("colortex2"));
+ EXPECT_EQ(pack.targets.at("colortex1").format, "RGBA16F");
+ EXPECT_EQ(pack.targets.at("colortex2").format, "RGBA32UI");
+ EXPECT_GE(pack.gbufferColorBuffers, 3);
 }
 } // namespace net::minecraft::client::render::shaderpack

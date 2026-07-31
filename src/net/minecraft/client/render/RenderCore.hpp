@@ -123,6 +123,16 @@ void disableBlend();
 [[nodiscard]] bool blendEnabled();
 [[nodiscard]] int blendSrcFactor();
 [[nodiscard]] int blendDstFactor();
+// Pack bufferBlend directives — sticky until unlockBlend (fullscreen pass end).
+struct BlendMode {
+ int srcRgb = 0x0302;
+ int dstRgb = 0x0303;
+ int srcAlpha = 0x0302;
+ int dstAlpha = 0x0303;
+};
+void lockBlend(const BlendMode* mode);
+void lockBufferBlend(int drawBufferIndex, const BlendMode* mode);
+void unlockBlend();
 void enableDepthTest();
 void depthTest();
 void depthTestWrite(bool write);

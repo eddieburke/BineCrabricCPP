@@ -15,8 +15,11 @@ struct ShadowTargets {
  std::array<unsigned int, 8> shadowcolor{};
  int colorCount = 0;
  int resolution = 0;
- // GL_TEXTURE_COMPARE for sampler2DShadow / *HW when packs enable hardware filtering.
- bool depthCompare = true;
+ // With SEPARATE_HARDWARE_SAMPLERS, compare mode lives on sampler objects for *HW
+ // names — not on the depth texture itself.
+ // https://shaders.properties/current/reference/buffers/shadowtex/
+ // https://github.com/IrisShaders/Iris/blob/26.1/common/src/main/java/net/irisshaders/iris/shadows/ShadowRenderer.java
+ bool depthCompare = false;
 
  bool ensure(int resolutionIn, int colorBuffers);
  void destroy();

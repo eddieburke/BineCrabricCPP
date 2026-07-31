@@ -1,4 +1,5 @@
 #pragma once
+#include <cstdint>
 #include <functional>
 #include <string>
 #include <string_view>
@@ -8,8 +9,22 @@ namespace net::minecraft::util::math {
 struct Matrix4f;
 }
 namespace net::minecraft::client::gl {
+struct ProgramBinaryBlob {
+ std::uint64_t contentHash = 0;
+ unsigned int binaryFormat = 0;
+ std::uint32_t flags = 0;
+ bool compute = false;
+ bool legacyAttributes = false;
+ bool tessellation = false;
+ std::vector<unsigned char> bytes;
+};
+
 class ShaderProgram {
  public:
+ static constexpr std::uint32_t kFlagCompute = 1u << 0;
+ static constexpr std::uint32_t kFlagLegacyAttribs = 1u << 1;
+ static constexpr std::uint32_t kFlagTessellation = 1u << 2;
+
  ShaderProgram() = default;
  ~ShaderProgram();
  ShaderProgram(const ShaderProgram&) = delete;
@@ -24,6 +39,24 @@ class ShaderProgram {
               const std::string& tessEvaluationSource = {});
  bool compileCompute(const std::string& computeSource,
                      const std::string& versionPreamble);
+ // Async compile service helpers — extract GL program binary after link.
+ bool compileToBinary(ProgramBinaryBlob& out,
+                      const std::string& vertexSource,
+                      const std::string& fragmentSource,
+                      const std::string& versionPreamble,
+                      const std::string& geometrySource = {},
+                      const std::string& tessControlSource = {},
+                      const std::string& tessEvaluationSource = {});
+ bool compileComputeToBinary(ProgramBinaryBlob& out,
+                             const std::string& computeSource,
+                             const std::string& versionPreamble);
+ [[nodiscard]] static std::uint64_t contentHash(bool compute,
+                                                const std::string& preamble,
+                                                const std::string& a,
+                                                const std::string& b = {},
+                                                const std::string& c = {},
+                                                const std::string& d = {},
+                                                const std::string& e = {});
  void destroy();
  [[nodiscard]] bool valid() const {
   return program_ != 0;
@@ -39,6 +72,9 @@ class ShaderProgram {
  // Iris /* RENDERTARGETS: a,b */ → glDrawBuffers(COLOR_ATTACHMENT0+a, ...).
  // Empty = leave DrawBuffers unchanged (composite write FBOs remap attachments).
  void setDrawBufferColortexIndices(const std::vector<int>& colortexIndices);
+ [[nodiscard]] const std::vector<int>& drawBufferColortexIndices() const {
+  return drawBufferColortexIndices_;
+ }
  void applyDrawBuffers(int colorAttachmentCount = 8) const;
  int location(std::string_view name) const;
  enum class SamplerKind {
@@ -87,6 +123,7 @@ class ShaderProgram {
  template <typename Value>
  using NameMap = std::unordered_map<std::string, Value, TransparentStringHash, std::equal_to<>>;
  void reflectSamplers();
+ bool extractProgramBinary(ProgramBinaryBlob& out);
  unsigned int program_ = 0;
  mutable NameMap<int> uniformCache_;
  NameMap<SamplerKind> samplerKinds_;
@@ -94,6 +131,7 @@ class ShaderProgram {
  bool legacyAttributes_ = false;
  bool tessellation_ = false;
  std::vector<unsigned int> drawBuffers_{};
+ std::vector<int> drawBufferColortexIndices_{};
  std::string lastError_;
 };
 } // namespace net::minecraft::client::gl

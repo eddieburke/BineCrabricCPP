@@ -340,6 +340,13 @@ void GameRenderer::applyCameraTransform(float tickDelta) {
  if(client == nullptr || client->camera == nullptr) {
   return;
  }
+ // https://github.com/IrisShaders/Iris/blob/26.1/common/src/main/java/net/irisshaders/iris/shadows/ShadowRenderer.java
+ if(frameCamera_.hasExplicitModelView) {
+  math::Matrix4f mv;
+  mv.set(frameCamera_.explicitModelView);
+  core::modelViewStack().load(mv);
+  return;
+ }
  auto* living = dynamic_cast<LivingEntity*>(client->camera);
  if(living == nullptr) {
   return;
@@ -973,8 +980,11 @@ void GameRenderer::renderToCurrentTarget(float tickDelta,
   Frustum::getInstance().compute();
  }
  core::setFogEnabled(!frameCamera_.shadowPass);
+ const shaderpack::ShaderPackDefinition* packDefinition =
+     shaderPacks_ != nullptr ? shaderPacks_->activeDefinition() : nullptr;
  if(!frameCamera_.shadowPass && !frameCamera_.skipAllRendering &&
-    resolvedOptions.viewDistanceSetting < 2 && resolvedOptions.renderSky) {
+    resolvedOptions.viewDistanceSetting < 2 && resolvedOptions.renderSky &&
+    (packDefinition == nullptr || packDefinition->renderSky)) {
   const debug::RenderProfiler::Scope skyScope(debug::RenderStage::Sky);
   core::fogApplyMode(client, -1, frameSettings_);
   if(client->world->dimension != nullptr && !client->world->dimension->isNether) {
@@ -1055,8 +1065,6 @@ void GameRenderer::renderToCurrentTarget(float tickDelta,
  core::setLightingEnabled(true);
  applyEntityLightingRig(frameCamera_, worldLight);
  const Vec3d frameCameraPos{frameCamera_.x, frameCamera_.y, frameCamera_.z};
- const shaderpack::ShaderPackDefinition* packDefinition =
-     shaderPacks_ != nullptr ? shaderPacks_->activeDefinition() : nullptr;
  const bool hasDeferred = shaderPacks_ != nullptr && shaderPacks_->hasDeferredPasses() && captureWorldDepth;
  const bool splitEntities = hasDeferred && packDefinition != nullptr && packDefinition->separateEntityDraws;
  std::string particleOrder = packDefinition != nullptr ? packDefinition->particleOrdering : std::string{};

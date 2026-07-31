@@ -3,6 +3,7 @@
 #include <array>
 #include <cmath>
 #include <cstring>
+#include "net/minecraft/util/math/Matrix4f.hpp"
 namespace net::minecraft::entity {
 class LivingEntity;
 }
@@ -48,7 +49,39 @@ struct FrameRenderCamera {
  float shadowEntityDistance = 0.0f;
  float frustumBypassDistance = 48.0f;
  float shadowRenderDistance = 0.0f;
+ // https://github.com/IrisShaders/Iris/blob/26.1/common/src/main/java/net/irisshaders/iris/shadows/ShadowMatrices.java
+ bool hasExplicitModelView = false;
+ float explicitModelView[16] = {1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1};
 };
+
+// https://github.com/IrisShaders/Iris/blob/26.1/common/src/main/java/net/irisshaders/iris/shadows/ShadowMatrices.java
+inline void buildShadowCelestialModelView(float* out,
+                                          float shadowAngle,
+                                          float sunPathRotation,
+                                          float shadowIntervalSize,
+                                          double cameraX,
+                                          double cameraY,
+                                          double cameraZ) {
+ net::minecraft::util::math::Matrix4f pose;
+ // createBaselineModelViewMatrix
+ float skyAngle = shadowAngle < 0.25f ? shadowAngle + 0.75f : shadowAngle - 0.25f;
+ pose.rotate(90.0f, 1.0f, 0.0f, 0.0f);
+ pose.rotate(skyAngle * -360.0f, 0.0f, 0.0f, 1.0f);
+ pose.rotate(sunPathRotation, 1.0f, 0.0f, 0.0f);
+ // snapModelViewToGrid
+ if(std::abs(shadowIntervalSize) > 0.0f) {
+  // Java: (float) cameraX % shadowIntervalSize
+  float offsetX = std::fmod(static_cast<float>(cameraX), shadowIntervalSize);
+  float offsetY = std::fmod(static_cast<float>(cameraY), shadowIntervalSize);
+  float offsetZ = std::fmod(static_cast<float>(cameraZ), shadowIntervalSize);
+  const float half = shadowIntervalSize * 0.5f;
+  offsetX -= half;
+  offsetY -= half;
+  offsetZ -= half;
+  pose.translate(offsetX, offsetY, offsetZ);
+ }
+ std::memcpy(out, pose.data(), sizeof(float) * 16);
+}
 inline void directionToView(float x, float y, float z, const FrameRenderCamera& c, float out[3]) {
  out[0] = x * c.viewRightX + y * c.viewRightY + z * c.viewRightZ;
  out[1] = x * c.viewUpX + y * c.viewUpY + z * c.viewUpZ;
@@ -58,6 +91,10 @@ inline void dirToView(float wx, float wy, float wz, const FrameRenderCamera& cam
  directionToView(wx, wy, wz, cam, out);
 }
 inline void buildCameraModelView(float* m, const FrameRenderCamera& c) {
+ if(c.hasExplicitModelView) {
+  std::memcpy(m, c.explicitModelView, sizeof(float) * 16);
+  return;
+ }
  std::fill(m, m + 16, 0.0f);
  m[0] = c.viewRightX;
  m[4] = c.viewRightY;

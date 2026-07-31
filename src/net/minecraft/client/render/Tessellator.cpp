@@ -281,9 +281,18 @@ void Tessellator::vertex(double x, double y, double z) {
   vertex->midBlock = static_cast<std::int32_t>(
       component(blockCenterX_ - x) | (component(blockCenterY_ - y) << 8U) |
       (component(blockCenterZ_ - z) << 16U) | (static_cast<std::uint32_t>(blockEmission_) << 24U));
+  // https://shaders.properties/current/reference/attributes/mc_entity/
+  // x = block id; y = 1.0 fluids, -1.0 other blocks.
   vertex->entity[0] = static_cast<std::int16_t>(blockId_);
   vertex->entity[1] = static_cast<std::int16_t>(blockRenderType_);
   vertex->entity[2] = static_cast<std::int16_t>(blockMetadata_);
+  vertex->entity[3] = 0;
+ } else {
+  // Non-terrain geometry must not look like fluid (RenderPearl SM_ENTITY wave).
+  // https://shaders.properties/current/reference/attributes/mc_entity/
+  vertex->entity[0] = -1;
+  vertex->entity[1] = -1;
+  vertex->entity[2] = 0;
   vertex->entity[3] = 0;
  }
  if(hasTexture_)

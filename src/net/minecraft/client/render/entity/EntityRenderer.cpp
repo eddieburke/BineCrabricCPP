@@ -4,7 +4,9 @@
 #include "net/minecraft/client/font/TextRenderer.hpp"
 #include "net/minecraft/client/gl/GlConstants.hpp"
 #include "net/minecraft/client/render/FrameRenderCamera.hpp"
+#include "net/minecraft/client/render/GameRenderer.hpp"
 #include "net/minecraft/client/render/RenderCore.hpp"
+#include "net/minecraft/client/render/shaderpack/ShaderPackManager.hpp"
 #include "net/minecraft/client/option/GameOptions.hpp"
 #include "net/minecraft/client/render/RenderType.hpp"
 #include "net/minecraft/client/render/Tessellator.hpp"
@@ -34,7 +36,15 @@ void EntityRenderer::postRender(
  }
  beginDraw(matrices, projection);
  const auto& options = dispatcher->options();
+ // Soft ground blob is OptiFine/vanilla path; packs replace it with the shadow map.
+ // https://shaders.properties/current/reference/programs/shadow/
+ auto* minecraft = net::minecraft::client::Minecraft::INSTANCE;
+ const bool shaderpackActive =
+     minecraft != nullptr && minecraft->gameRenderer != nullptr &&
+     minecraft->gameRenderer->shaderPacks() != nullptr &&
+     minecraft->gameRenderer->shaderPacks()->usingUserPack();
  if(!RenderCameraState::instance().frame().shadowPass &&
+    !shaderpackActive &&
     options.fancyGraphics &&
     options.entityShadows &&
     shadowRadius > 0.0f) {

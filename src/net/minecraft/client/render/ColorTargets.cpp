@@ -38,6 +38,8 @@ GlFormat glFormat(ColorFormat format) {
  case ColorFormat::Rgb32F: return {0x8815, 0x1907, 0x1406};
  case ColorFormat::R11G11B10F: return {0x8C3A, 0x1907, 0x1406};
  case ColorFormat::Rgb10A2: return {0x8059, 0x1908, 0x1405};
+ case ColorFormat::Rgb565: return {0x8D62, 0x1907, 0x1401};
+ case ColorFormat::Rgb5A1: return {0x8057, 0x1908, 0x1401};
  case ColorFormat::Rgba16: return {0x805B, 0x1908, 0x1403};
  case ColorFormat::Rgba16F: return {0x881A, 0x1908, 0x1406};
  case ColorFormat::Rgba32F: return {0x8814, 0x1908, 0x1406};
@@ -386,6 +388,10 @@ unsigned int ColorTargets::readTexture(const std::string& name) const {
 unsigned int ColorTargets::writeTexture(const std::string& name) const {
  const Slot* slot = findSlot(name);
  return slot == nullptr ? 0u : slot->tex[1 - slot->main];
+}
+ColorFormat ColorTargets::formatOf(const std::string& name) const {
+ const Slot* slot = findSlot(name);
+ return slot == nullptr ? ColorFormat::Rgba8 : slot->format;
 }
 void ColorTargets::fillReadSamplers(std::unordered_map<std::string, int>& textures) const {
  for(int i = 0; i < colorCount(); ++i) {

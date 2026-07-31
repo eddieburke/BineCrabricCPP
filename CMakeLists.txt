@@ -343,14 +343,14 @@ set(MINECRAFT_TEST_SOURCES
     tests/multiplayer_client_player_entity_test.cpp
     tests/mp_parity_updates_test.cpp
     tests/client_timer_test.cpp
-    tests/resolved_render_options_test.cpp
-    tests/pack_manifest_test.cpp
+    tests/render_settings_test.cpp
     tests/lua_runtime_prelude_test.cpp
     tests/mod_settings_registry_test.cpp
     tests/model_registry_parent_test.cpp
     tests/unified_light_registry_test.cpp
     tests/render_profiler_test.cpp
     tests/chunk_mesh_golden_test.cpp
+    tests/shader_pack_loader_test.cpp
 )
 
 

@@ -153,6 +153,7 @@ inline constexpr int Front = 0x0404;
 namespace filter {
 inline constexpr int Nearest = 0x2600;
 inline constexpr int Linear = 0x2601;
+inline constexpr int NearestMipmapNearest = 0x2700;
 inline constexpr int NearestMipmapLinear = 0x2702;
 inline constexpr int LinearMipmapLinear = 0x2703;
 } // namespace filter

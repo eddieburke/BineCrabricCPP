@@ -7,6 +7,7 @@
 #include "net/minecraft/client/gl/GLCore.hpp"
 #include "net/minecraft/client/render/GameRenderer.hpp"
 #include "net/minecraft/client/render/RenderCore.hpp"
+#include "net/minecraft/client/render/shaderpack/ShaderPackManager.hpp"
 #include "net/minecraft/client/render/RenderType.hpp"
 #include "net/minecraft/client/render/TextureResolve.hpp"
 #include "net/minecraft/client/render/Tessellator.hpp"
@@ -202,23 +203,28 @@ void HeldItemRenderer::render(float tickDelta) {
      clientPlayer->prevYaw + (clientPlayer->yaw - clientPlayer->prevYaw) * tickDelta, 0.0f, 1.0f, 0.0f);
  core::modelViewStack().pop();
  const ItemStack* selectedItem = stack.empty() ? nullptr : &stack;
- const float handLight = minecraft->world->getLightBrightness(MathHelper::floor(clientPlayer->x),
+ const float rawHandLight = minecraft->world->getLightBrightness(MathHelper::floor(clientPlayer->x),
                                                               MathHelper::floor(clientPlayer->y),
                                                               MathHelper::floor(clientPlayer->z));
- Tessellator::INSTANCE.light(15, 15);
- entity::EntityRenderer* entityRenderer = entity::EntityRenderDispatcher::instance().get(*clientPlayer);
- auto* playerRenderer = dynamic_cast<entity::PlayerEntityRenderer*>(entityRenderer);
- // hand() pass owns lighting=true via entityCutoutState.
- render::RenderPassScope firstPersonScope(render::RenderType::hand());
- if(selectedItem != nullptr && selectedItem->getItem() != nullptr) {
-  const int tint = selectedItem->getItem()->getColorMultiplier(selectedItem->getDamage());
-  const float red = static_cast<float>((tint >> 16) & 0xFF) / 255.0f;
-  const float green = static_cast<float>((tint >> 8) & 0xFF) / 255.0f;
-  const float blue = static_cast<float>(tint & 0xFF) / 255.0f;
-  render::core::setConstColor(handLight * red, handLight * green, handLight * blue, 1.0f);
- } else {
-  render::core::setConstColor(handLight, handLight, handLight, 1.0f);
- }
+ const bool useOldHandLight =
+      minecraft->gameRenderer != nullptr && minecraft->gameRenderer->shaderPacks() != nullptr &&
+              minecraft->gameRenderer->shaderPacks()->activeDefinition() != nullptr
+          ? minecraft->gameRenderer->shaderPacks()->activeDefinition()->oldHandLight
+          : true;
+  const float colorMult = useOldHandLight ? rawHandLight : 1.0f;
+  Tessellator::INSTANCE.light(15, 15);
+  entity::EntityRenderer* entityRenderer = entity::EntityRenderDispatcher::instance().get(*clientPlayer);
+  auto* playerRenderer = dynamic_cast<entity::PlayerEntityRenderer*>(entityRenderer);
+  render::RenderPassScope firstPersonScope(render::RenderType::hand());
+  if(selectedItem != nullptr && selectedItem->getItem() != nullptr) {
+   const int tint = selectedItem->getItem()->getColorMultiplier(selectedItem->getDamage());
+   const float red = static_cast<float>((tint >> 16) & 0xFF) / 255.0f;
+   const float green = static_cast<float>((tint >> 8) & 0xFF) / 255.0f;
+   const float blue = static_cast<float>(tint & 0xFF) / 255.0f;
+   render::core::setConstColor(colorMult * red, colorMult * green, colorMult * blue, 1.0f);
+  } else {
+   render::core::setConstColor(colorMult, colorMult, colorMult, 1.0f);
+  }
  if(selectedItem != nullptr && Item::byRawId(102) != nullptr && selectedItem->itemId == Item::byRawId(102)->id) {
   core::modelViewStack().push();
   constexpr float scale = 0.8f;

@@ -1,0 +1,96 @@
+option.VARIABLE_PENUMBRA_SHADOWS=Variable Penumbra Shadows
+option.shadowDistance=Shadow Distance
+
+option.SUNLIGHT_BRIGHTNESS=Sunlight Intensity
+option.TORCHLIGHT_BRIGHTNESS=Torchlight Brightness
+option.TORCHLIGHT_COLOR_TEMPERATURE=Torchlight Color Temp
+option.HELD_LIGHT=Dynamic Held Light
+
+
+option.GODRAYS=Atmospheric Godrays
+option.CUMULUS_CLOUDS=Cumulus Clouds
+option.CIRRUS_CLOUDS=Cirrus Clouds
+option.CLOUDS_BLOCKY=Blocky Clouds
+option.CLOUDS_IN_REFLECTIONS=Clouds in Reflections
+option.CLOUDS_IN_GI=Clouds in GI
+
+
+
+option.WATER_PARALLAX=Water Parallax
+option.TEXTURE_RESOLUTION=Texture Resolution
+option.FORCE_WET_EFFECT=Force Wet Effect
+option.PHYSICALLY_BASED_MAX_ROUGHNESS=Physically Based Max Roughness
+option.SPEC_CHANNEL_SMOOTHNESS=Specular Tex Smoothness
+option.SPEC_CHANNEL_METALNESS=Specular Tex Metalness
+option.SPEC_SMOOTHNESS_AS_ROUGHNESS=Smoothness as Roughness
+
+
+option.DIFFUSE_TRACE_LENGTH=Diffuse GI Trace Length
+value.DIFFUSE_TRACE_LENGTH.60=Low
+value.DIFFUSE_TRACE_LENGTH.80=High
+value.DIFFUSE_TRACE_LENGTH.100=Ultra
+value.DIFFUSE_TRACE_LENGTH.120=Extreme
+
+option.GI_RESPONSIVENESS=GI Responsiveness
+option.GI_SCREEN_SPACE_TRACING=Screen-Space GI Tracing
+option.GI_FILTER_QUALITY=GI Filter Quality
+value.GI_FILTER_QUALITY.0=Low
+value.GI_FILTER_QUALITY.1=High
+
+option.GI_LIGHT_BLOCK_INTENSITY=Block Light Intensity
+option.GI_LIGHT_TORCH_INTENSITY=Torch Light Intensity
+
+option.GI_SIMPLE_SKY_TERM=Simpler GI Sky Model
+
+
+option.FULL_RT_REFLECTIONS=Full Raytrace Reflections
+option.REFLECTION_TRACE_LENGTH=Reflection Trace Length
+value.REFLECTION_TRACE_LENGTH.60=Low
+value.REFLECTION_TRACE_LENGTH.90=Medium
+value.REFLECTION_TRACE_LENGTH.120=High
+value.REFLECTION_TRACE_LENGTH.150=Ultra
+option.REFLECTION_SCREEN_SPACE_TRACING=Screen-Space Reflection Tracing
+
+
+option.GI_SECONDARY_SAMPLES=Secondary GI Samples
+option.SUNLIGHT_LEAK_FIX=Sunlight Leak Fix
+option.CAVE_GI_LEAK_FIX=Full Cave GI Leak Fix
+option.RAYTRACE_GEOMETRY_QUALITY=Geometry Trace Quality
+option.GI_LEAF_TRANSPARENCY=GI Leaf Transparency
+
+
+option.GLOWING_LAPIS_LAZULI_BLOCK=Glowing Lapis Lazuli Block
+option.GLOWING_REDSTONE_BLOCK=Glowing Redstone Block
+option.GLOWING_EMERALD_BLOCK=Glowing Emerald Block
+
+option.TONEMAP_CURVE=Tonemapping Curve
+option.EXPOSURE=Exposure
+option.GAMMA=Gamma
+option.BLACK_DEPTH=Black Depth
+option.SATURATION=Saturation
+option.TONEMAP_OPERATOR=Tonemap Operator
+option.MOTION_BLUR=Motion Blur
+option.MOTION_BLUR_HQ=Motion Blur HQ
+option.MOTION_BLUR_INTENSITY=Motion Blur Intensity
+option.TONEMAP_STRENGTH=Tonemap Curve
+option.BLOOM_AMOUNT=Bloom Strength
+option.POST_SHARPENING=Post Sharpening
+
+
+
+option.VISUALIZE_DANGEROUS_LIGHT_LEVEL=Visualize Dangerous Light Level
+
+
+
+screen.ATMOSPHERICS=Atmospherics Options
+screen.ATMOSPHERICS.comment=Godrays, clouds, and atmosphere
+screen.LIGHTING=Lighting & Shadows Options
+screen.LIGHTING.comment=Lighting colors and intensities
+screen.SURFACE=Surface Options
+screen.SURFACE.comment=All about rendering of surfaces and textures
+screen.RAYTRACING=Raytracing Options
+screen.RAYTRACING.comment=Raytracing!
+screen.POSTPROCESSING=Post-Processing Settings
+screen.POSTPROCESSING.comment=Color grading, motion blur, final presentation stuff.
+screen.UTILITY=Utility
+screen.UTILITY.comment=Gameplay utility stuff.

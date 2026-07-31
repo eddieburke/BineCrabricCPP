@@ -969,6 +969,46 @@ void blendFunc(int src, int dst) {
   ::glBlendFunc(static_cast<unsigned>(src), static_cast<unsigned>(dst));
  }
 }
+void lockBlend(const BlendMode* mode) {
+ if(mode == nullptr) {
+  disableBlend();
+  return;
+ }
+ enableBlend();
+ if(gl::GLCore::blendFuncSeparate != nullptr) {
+  gl::GLCore::blendFuncSeparate(static_cast<unsigned>(mode->srcRgb), static_cast<unsigned>(mode->dstRgb),
+                                static_cast<unsigned>(mode->srcAlpha), static_cast<unsigned>(mode->dstAlpha));
+  g_gl.blendSrc = mode->srcRgb;
+  g_gl.blendDst = mode->dstRgb;
+ } else {
+  blendFunc(mode->srcRgb, mode->dstRgb);
+ }
+}
+void lockBufferBlend(int drawBufferIndex, const BlendMode* mode) {
+ if(drawBufferIndex < 0) {
+  return;
+ }
+ if(mode == nullptr) {
+  if(gl::GLCore::blendFunci != nullptr) {
+   // GL_FUNC_ADD with ZERO/ZERO effectively disables contribution when supported via separatei.
+   if(gl::GLCore::blendFuncSeparatei != nullptr) {
+    gl::GLCore::blendFuncSeparatei(static_cast<unsigned>(drawBufferIndex), 0, 1, 0, 1);
+   }
+  }
+  return;
+ }
+ if(gl::GLCore::blendFuncSeparatei != nullptr) {
+  gl::GLCore::blendFuncSeparatei(static_cast<unsigned>(drawBufferIndex),
+                                 static_cast<unsigned>(mode->srcRgb), static_cast<unsigned>(mode->dstRgb),
+                                 static_cast<unsigned>(mode->srcAlpha), static_cast<unsigned>(mode->dstAlpha));
+ } else if(gl::GLCore::blendFunci != nullptr) {
+  gl::GLCore::blendFunci(static_cast<unsigned>(drawBufferIndex), static_cast<unsigned>(mode->srcRgb),
+                         static_cast<unsigned>(mode->dstRgb));
+ }
+}
+void unlockBlend() {
+ blendAlpha();
+}
 void blendAlpha() {
  enableBlend();
  blendFunc(0x0302, 0x0303);

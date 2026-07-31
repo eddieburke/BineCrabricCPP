@@ -1,5 +1,6 @@
 #include "net/minecraft/client/gl/ShaderProgram.hpp"
 #include <algorithm>
+#include <cstdint>
 #include <utility>
 #include "net/minecraft/client/gl/GLCore.hpp"
 #include "net/minecraft/client/gl/GlConstants.hpp"
@@ -81,6 +82,7 @@ ShaderProgram::ShaderProgram(ShaderProgram&& other) noexcept
       legacyAttributes_(other.legacyAttributes_),
       tessellation_(other.tessellation_),
       drawBuffers_(std::move(other.drawBuffers_)),
+      drawBufferColortexIndices_(std::move(other.drawBufferColortexIndices_)),
       lastError_(std::move(other.lastError_)) {
  other.program_ = 0;
 }
@@ -94,6 +96,7 @@ ShaderProgram& ShaderProgram::operator=(ShaderProgram&& other) noexcept {
   legacyAttributes_ = other.legacyAttributes_;
   tessellation_ = other.tessellation_;
   drawBuffers_ = std::move(other.drawBuffers_);
+  drawBufferColortexIndices_ = std::move(other.drawBufferColortexIndices_);
   lastError_ = std::move(other.lastError_);
   other.program_ = 0;
  }
@@ -229,6 +232,7 @@ void ShaderProgram::unbind() {
 }
 void ShaderProgram::setDrawBufferColortexIndices(const std::vector<int>& colortexIndices) {
  constexpr unsigned int kColorAttachment0 = 0x8CE0;
+ drawBufferColortexIndices_ = colortexIndices;
  drawBuffers_.clear();
  drawBuffers_.reserve(colortexIndices.size());
  for(int index : colortexIndices) {
@@ -430,5 +434,113 @@ void ShaderProgram::setMatrix4(std::string_view name, const float* value, bool t
 }
 void ShaderProgram::setMatrix4(std::string_view name, const net::minecraft::util::math::Matrix4f& value) const {
  setMatrix4(name, value.data(), false);
+}
+
+namespace {
+using PFN_GetProgramBinary = void(APIENTRY*)(unsigned int, int, int*, unsigned int*, void*);
+using PFN_GetProgramivLocal = void(APIENTRY*)(unsigned int, unsigned int, int*);
+constexpr unsigned int kProgramBinaryLength = 0x8741;
+
+void* loadGlProc(const char* name) {
+ PROC proc = wglGetProcAddress(name);
+ if(proc == nullptr || proc == reinterpret_cast<PROC>(1) || proc == reinterpret_cast<PROC>(2) ||
+    proc == reinterpret_cast<PROC>(3) || proc == reinterpret_cast<PROC>(-1)) {
+  HMODULE module = GetModuleHandleA("opengl32.dll");
+  return module != nullptr ? reinterpret_cast<void*>(GetProcAddress(module, name)) : nullptr;
+ }
+ return reinterpret_cast<void*>(proc);
+}
+
+std::uint64_t mixHash(std::uint64_t h, const std::string& s) {
+ // FNV-1a 64-bit over bytes, then avalanche into running hash.
+ std::uint64_t x = 14695981039346656037ull;
+ for(unsigned char c : s) {
+  x ^= c;
+  x *= 1099511628211ull;
+ }
+ h ^= x + 0x9e3779b97f4a7c15ull + (h << 6) + (h >> 2);
+ return h;
+}
+} // namespace
+
+std::uint64_t ShaderProgram::contentHash(bool compute,
+                                         const std::string& preamble,
+                                         const std::string& a,
+                                         const std::string& b,
+                                         const std::string& c,
+                                         const std::string& d,
+                                         const std::string& e) {
+ std::uint64_t h = compute ? 1ull : 0ull;
+ h = mixHash(h, preamble);
+ h = mixHash(h, a);
+ h = mixHash(h, b);
+ h = mixHash(h, c);
+ h = mixHash(h, d);
+ h = mixHash(h, e);
+ return h == 0 ? 1ull : h;
+}
+
+bool ShaderProgram::extractProgramBinary(ProgramBinaryBlob& out) {
+ if(program_ == 0) {
+  lastError_ = "no program";
+  return false;
+ }
+ auto getProgramiv = reinterpret_cast<PFN_GetProgramivLocal>(loadGlProc("glGetProgramiv"));
+ auto getProgramBinary = reinterpret_cast<PFN_GetProgramBinary>(loadGlProc("glGetProgramBinary"));
+ if(getProgramiv == nullptr || getProgramBinary == nullptr) {
+  lastError_ = "glGetProgramBinary unavailable";
+  return false;
+ }
+ int length = 0;
+ getProgramiv(program_, kProgramBinaryLength, &length);
+ if(length <= 0) {
+  lastError_ = "empty program binary";
+  return false;
+ }
+ out.bytes.resize(static_cast<std::size_t>(length));
+ int written = 0;
+ unsigned int format = 0;
+ getProgramBinary(program_, length, &written, &format, out.bytes.data());
+ if(written <= 0 || format == 0) {
+  out.bytes.clear();
+  lastError_ = "glGetProgramBinary failed";
+  return false;
+ }
+ out.bytes.resize(static_cast<std::size_t>(written));
+ out.binaryFormat = format;
+ out.legacyAttributes = legacyAttributes_;
+ out.tessellation = tessellation_;
+ out.flags = 0;
+ if(out.compute) out.flags |= kFlagCompute;
+ if(legacyAttributes_) out.flags |= kFlagLegacyAttribs;
+ if(tessellation_) out.flags |= kFlagTessellation;
+ return true;
+}
+
+bool ShaderProgram::compileToBinary(ProgramBinaryBlob& out,
+                                    const std::string& vertexSource,
+                                    const std::string& fragmentSource,
+                                    const std::string& versionPreamble,
+                                    const std::string& geometrySource,
+                                    const std::string& tessControlSource,
+                                    const std::string& tessEvaluationSource) {
+ out = {};
+ out.compute = false;
+ if(!compile(vertexSource, fragmentSource, versionPreamble, geometrySource, tessControlSource,
+             tessEvaluationSource)) {
+  return false;
+ }
+ return extractProgramBinary(out);
+}
+
+bool ShaderProgram::compileComputeToBinary(ProgramBinaryBlob& out,
+                                           const std::string& computeSource,
+                                           const std::string& versionPreamble) {
+ out = {};
+ out.compute = true;
+ if(!compileCompute(computeSource, versionPreamble)) {
+  return false;
+ }
+ return extractProgramBinary(out);
 }
 } // namespace net::minecraft::client::gl

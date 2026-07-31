@@ -7,7 +7,7 @@ namespace net::minecraft::client::render {
 inline constexpr int kMaxColorAttachments = 8;
 enum class ColorFormat {
  Rgba8, R8, R16, R16F, R32F, Rg8, Rg16, Rg16F, Rg32F, Rgb8, Rgb16, Rgb16F, Rgb32F,
- R11G11B10F, Rgb10A2, Rgba16, Rgba16F, Rgba32F,
+ R11G11B10F, Rgb10A2, Rgb565, Rgb5A1, Rgba16, Rgba16F, Rgba32F,
  R8Ui, R16Ui, R32Ui, Rg8Ui, Rg16Ui, Rg32Ui, Rgba8Ui, Rgba16Ui, Rgba32Ui,
  R8I, R16I, R32I, Rg8I, Rg16I, Rg32I, Rgba8I, Rgba16I, Rgba32I
 };
@@ -43,9 +43,10 @@ class ColorTargets {
   void clearColors(const std::vector<bool>& enabled, const std::vector<std::array<float, 4>>& colors);
   [[nodiscard]] unsigned int readTexture(int index) const noexcept;
   [[nodiscard]] unsigned int writeTexture(int index) const noexcept;
-  [[nodiscard]] unsigned int readTexture(const std::string& name) const;
-  [[nodiscard]] unsigned int writeTexture(const std::string& name) const;
-  void fillReadSamplers(std::unordered_map<std::string, int>& textures) const;
+ [[nodiscard]] unsigned int readTexture(const std::string& name) const;
+ [[nodiscard]] unsigned int writeTexture(const std::string& name) const;
+ [[nodiscard]] ColorFormat formatOf(const std::string& name) const;
+ void fillReadSamplers(std::unordered_map<std::string, int>& textures) const;
   void fillImageBindings(std::unordered_map<std::string, int>& images) const;
   void prepareWrite(const std::string& name);
   void prepareWrites(const std::vector<std::string>& names);
