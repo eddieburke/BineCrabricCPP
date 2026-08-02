@@ -4,6 +4,7 @@
 // {Connection-here, World, Entity, Player, Screen}PacketHandlers.cpp; see
 // ClientNetworkHandlerInternal.hpp for the rationale behind the split.
 #include "net/minecraft/client/multiplayer/ClientNetworkHandler.hpp"
+#include <chrono>
 #include <filesystem>
 #include <memory>
 #include <utility>
@@ -86,7 +87,12 @@ void ClientNetworkHandler::tick() {
  if(++keepAliveTicks_ % 20 == 0) {
   sendPacket(KeepAlivePacket{});
  }
+ // A remote (Java-MP) server streams chunk data in bursts; cap the per-tick
+ // drain so a large join backlog cannot freeze the frame loop.
+ const Connection::DrainLimit drainLimit{std::chrono::steady_clock::now() + std::chrono::milliseconds(3), 100};
+ connection_->setDrainLimit(drainLimit);
  connection_->tick();
+ connection_->clearDrainLimit();
  connection_->interrupt();
 }
 void ClientNetworkHandler::onHello(std::uint64_t worldSeed, int dimensionId, int playerEntityId) {

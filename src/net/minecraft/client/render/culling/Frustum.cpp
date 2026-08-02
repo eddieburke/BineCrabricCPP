@@ -7,7 +7,6 @@
 #include <cstring>
 #include "net/minecraft/client/gl/GlConstants.hpp"
 #include "net/minecraft/client/render/RenderCore.hpp"
-#include "net/minecraft/client/render/RenderCore.hpp"
 #include "net/minecraft/util/math/MathHelper.hpp"
 namespace net::minecraft::client::render {
 Frustum& Frustum::getInstance() {

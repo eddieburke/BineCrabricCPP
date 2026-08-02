@@ -185,10 +185,9 @@ void WorldSession::prepareWorld(Minecraft& client, const std::string& worldName)
  }
  if(ChunkSource* source = client.world->getChunkSource(); source != nullptr) {
   source->prefetchChunksNear(centerChunkX, centerChunkZ);
-  source->pumpChunkPublish();
- }
- client.world->populateChunkCacheReadyChunks();
- relightSkylightForPreparedArea(*client.world, center.x, center.z, radius);
+   source->pumpChunkPublish();
+  }
+  relightSkylightForPreparedArea(*client.world, center.x, center.z, radius);
  client.world->finishLightingUpdates();
  client.progressRenderer.progressStage("Simulating world for a bit");
  client.world->tickChunks();

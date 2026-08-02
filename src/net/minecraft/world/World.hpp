@@ -186,7 +186,6 @@ class World : public IEntityWorld {
  void loadChunksNearEntity(Entity* entity);
  void setChunkCacheCenter(int chunkX, int chunkZ);
  void setChunkCacheCenterFromBlockPos(int blockX, int blockZ);
- void populateChunkCacheReadyChunks();
  [[nodiscard]] ChunkSource* getChunkSource() noexcept {
   return chunkCache_.get();
  }

@@ -6,7 +6,7 @@ void FramePipeline::run() {
  run({});
 }
 void FramePipeline::run(const PhaseTask& task) {
- (void)net::minecraft::util::concurrent::FrameBudget::beginFrame(16);
+ net::minecraft::util::concurrent::FrameBudget::beginFrame(16);
  FrameProfiler& profiler = FrameProfiler::instance();
  profiler.beginFrame();
  for(const Phase phase : kPhaseOrder) {

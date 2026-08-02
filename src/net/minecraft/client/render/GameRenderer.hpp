@@ -20,10 +20,9 @@ namespace net::minecraft::client {
 class Minecraft;
 }
 namespace net::minecraft::client::render {
+namespace math = net::minecraft::util::math;
 class PackManager;
 struct PackDefinition;
-} // namespace net::minecraft::client::render
-namespace net::minecraft::client::render {
 class GameRenderer {
  friend shadowmap::ShadowMapResult shadowmap::update(shadowmap::ShadowMapState&,
                                                      GameRenderer&,
@@ -32,7 +31,7 @@ class GameRenderer {
                                                      const PackDefinition*);
 
  public:
- explicit GameRenderer(net::minecraft::client::Minecraft* client);
+ explicit GameRenderer(Minecraft* client);
  ~GameRenderer();
  void updateCamera();
  void updateTargetedEntity(float tickDelta);
@@ -52,13 +51,13 @@ class GameRenderer {
 
  private:
  float getFov(float tickDelta) const;
- void applyDamageTiltEffect(float tickDelta, net::minecraft::util::math::MatrixStack& modelView);
- void applyViewBobbing(float tickDelta, net::minecraft::util::math::MatrixStack& modelView);
- void applyCameraTransform(float tickDelta, net::minecraft::util::math::MatrixStack& modelView);
+ void applyDamageTiltEffect(float tickDelta, math::MatrixStack& modelView);
+ void applyViewBobbing(float tickDelta, math::MatrixStack& modelView);
+ void applyCameraTransform(float tickDelta, math::MatrixStack& modelView);
  void renderWorld(float tickDelta,
                   float fov,
-                  net::minecraft::util::math::MatrixStack& modelView,
-                  net::minecraft::util::math::MatrixStack& projection);
+                  math::MatrixStack& modelView,
+                  math::MatrixStack& projection);
  void renderFrame(float tickDelta);
  void renderToCurrentTarget(float tickDelta,
                             const FrameRenderCamera& camera,
@@ -81,7 +80,7 @@ class GameRenderer {
   [[nodiscard]] PackUniformValues buildFrameUniforms(float tickDelta,
                                                                    float farPlane,
                                                                    bool shadowAvailable) const;
- net::minecraft::client::Minecraft* client = nullptr;
+ Minecraft* client = nullptr;
  atmosphere::CloudRenderer cloudRenderer{};
  atmosphere::PrecipitationRenderer precipitationRenderer{};
  std::unique_ptr<item::HeldItemRenderer> heldItemRenderer;

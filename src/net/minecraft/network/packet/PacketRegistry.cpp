@@ -1,12 +1,9 @@
-#include "net/minecraft/network/packet/PacketRegistry.hpp"
 #include <mutex>
 #include "net/minecraft/network/Packet.hpp"
 #include "net/minecraft/network/packet/Packets.hpp"
 namespace net::minecraft {
-void Packet::ensureRegistered() {
- PacketRegistry::bootstrap();
-}
-void PacketRegistry::bootstrap() {
+namespace {
+void bootstrap() {
  static std::once_flag once;
  std::call_once(once, []() {
   Packet::registerPacket<KeepAlivePacket>(0, true, true);
@@ -68,5 +65,9 @@ void PacketRegistry::bootstrap() {
   Packet::registerPacket<LuaModSyncPacket>(251, true, true);
   Packet::registerPacket<DisconnectPacket>(255, true, true);
  });
+}
+} // namespace
+void Packet::ensureRegistered() {
+ bootstrap();
 }
 } // namespace net::minecraft

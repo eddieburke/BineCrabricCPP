@@ -64,6 +64,7 @@ class Connection {
  static std::atomic<int> readThreadCounter;
  static std::atomic<int> writeThreadCounter;
  static void configureAcceptedSocket(SOCKET socket);
+ [[nodiscard]] static std::string formatPeerAddress(SOCKET socket);
  [[nodiscard]] static int getReadThreadCount() noexcept;
  [[nodiscard]] static int getWriteThreadCount() noexcept;
  Connection(SOCKET socket, std::string name, NetworkHandler& networkHandler);
@@ -91,10 +92,10 @@ class Connection {
   };
   void setDrainLimit(const DrainLimit& limit);
   void clearDrainLimit();
+  static void ensureWinsock();
 
  private:
- static void ensureWinsock();
- void setSocketOptions();
+  void setSocketOptions();
  [[nodiscard]] std::string formatAddress() const;
  void readLoop();
  void writeLoop();
@@ -114,13 +115,13 @@ class Connection {
   std::ostream output_;
   mutable std::mutex readMutex_;
   mutable std::mutex writeMutex_;
+  std::condition_variable readCv_;
   std::condition_variable writeCv_;
   std::deque<std::unique_ptr<Packet>> readQueue_;
   std::deque<std::unique_ptr<Packet>> sendQueue_;
   std::deque<std::unique_ptr<Packet>> delayedSendQueue_;
   std::atomic<std::size_t> sendQueueSize_{0};
   std::atomic<std::size_t> readQueueSize_{0};
-  std::atomic<bool> readOverflow_{false};
   std::vector<std::pair<int, int>> readStats_;
   std::optional<DrainLimit> externalDrainLimit_;
   std::thread reader_;

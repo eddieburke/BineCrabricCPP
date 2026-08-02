@@ -2,28 +2,8 @@
 #include <mutex>
 #include <sstream>
 #include <stdexcept>
+#include "net/minecraft/network/Connection.hpp"
 namespace net::minecraft::server::network {
-namespace {
-std::string formatPeerAddress(SOCKET socket) {
- sockaddr_storage storage{};
- int length = sizeof(storage);
- if(::getpeername(socket, reinterpret_cast<sockaddr*>(&storage), &length) != 0) {
-  return "unknown";
- }
- char host[NI_MAXHOST]{};
- char service[NI_MAXSERV]{};
- if(::getnameinfo(reinterpret_cast<sockaddr*>(&storage),
-                  length,
-                  host,
-                  sizeof(host),
-                  service,
-                  sizeof(service),
-                  NI_NUMERICHOST | NI_NUMERICSERV) != 0) {
-  return "unknown";
- }
- return std::string(host) + ":" + service;
-}
-} // namespace
 ServerSocket::ServerSocket(ServerSocket&& other) noexcept : socket_(other.socket_) {
  other.socket_ = INVALID_SOCKET;
 }
@@ -39,13 +19,7 @@ ServerSocket::~ServerSocket() {
  close();
 }
 void ServerSocket::ensureWinsock() {
- static std::once_flag once;
- std::call_once(once, []() {
-  WSADATA data{};
-  if(::WSAStartup(MAKEWORD(2, 2), &data) != 0) {
-   throw std::runtime_error("WSAStartup failed");
-  }
- });
+ net::minecraft::Connection::ensureWinsock();
 }
 void ServerSocket::bindAndListen(const std::string& bindAddress, std::uint16_t port, int backlog) {
  close();
@@ -105,7 +79,7 @@ SOCKET ServerSocket::accept(std::string& remoteAddressOut) {
   return INVALID_SOCKET;
  }
  configureAcceptedSocket(client);
- remoteAddressOut = formatPeerAddress(client);
+ remoteAddressOut = net::minecraft::Connection::formatPeerAddress(client);
  return client;
 }
 void ServerSocket::close() {
@@ -133,13 +107,6 @@ std::uint16_t ServerSocket::boundPort() const {
  return 0;
 }
 void ServerSocket::configureAcceptedSocket(SOCKET socket) {
- const BOOL trueValue = TRUE;
- ::setsockopt(socket, IPPROTO_TCP, TCP_NODELAY, reinterpret_cast<const char*>(&trueValue), sizeof(trueValue));
- const int recvTimeoutMs = 30'000;
- const int sendTimeoutMs = 30'000;
- ::setsockopt(socket, SOL_SOCKET, SO_RCVTIMEO, reinterpret_cast<const char*>(&recvTimeoutMs), sizeof(recvTimeoutMs));
- ::setsockopt(socket, SOL_SOCKET, SO_SNDTIMEO, reinterpret_cast<const char*>(&sendTimeoutMs), sizeof(sendTimeoutMs));
- const int trafficClass = 24;
- ::setsockopt(socket, IPPROTO_IP, IP_TOS, reinterpret_cast<const char*>(&trafficClass), sizeof(trafficClass));
+ net::minecraft::Connection::configureAcceptedSocket(socket);
 }
 } // namespace net::minecraft::server::network

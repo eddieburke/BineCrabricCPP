@@ -85,15 +85,11 @@ class ChunkRegionManager {
   if(region_ == nullptr) {
    region_ = std::make_unique<ChunkRegion>();
   }
-  return *region_;
- }
- // Backward-compatible alias — camera offsets are ignored.
- ChunkRegion& regionFor(int /*offsetX*/, int /*offsetY*/, int /*offsetZ*/) {
-  return pool();
- }
- // Destroy the pool. GL buffers are freed by ~ChunkRegionBuffer, so this must
- // run with the GL context current.
- void clear() noexcept {
+   return *region_;
+  }
+  // Destroy the pool. GL buffers are freed by ~ChunkRegionBuffer, so this must
+  // run with the GL context current.
+  void clear() noexcept {
   region_.reset();
  }
 

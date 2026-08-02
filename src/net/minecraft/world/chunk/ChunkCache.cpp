@@ -567,19 +567,16 @@ void ChunkCache::pumpChunkPublish() {
   const auto& frame = net::minecraft::util::concurrent::FrameBudget::frameDeadline();
   std::int64_t budget = 16'000'000;
   if(frame.active()) {
-   if(frame.hasExpired()) {
+   if(frame.expired()) {
     // The shared frame deadline is already in the past (this frame ran over
     // budget). Clamping to 0 here would throttle adoption to exactly one chunk
     // per frame while prefetchChunksNear keeps queueing up to 16/tick, so the
     // world stream crawls and the renderer's section counters climb forever.
-    // Fall back to a fresh local slice (same pattern as FrameBudget::fromSharedMs)
-    // so the backlog keeps draining at a sane rate during overloaded frames.
+    // Fall back to a fresh local slice so the backlog keeps draining at a sane
+    // rate during overloaded frames.
     budget = 4'000'000;
    } else {
-    budget = std::max<std::int64_t>(
-        0,
-        std::chrono::duration_cast<std::chrono::nanoseconds>(
-            frame.point() - std::chrono::steady_clock::now()).count());
+    budget = frame.remaining().count();
    }
   }
   integrateFinishedLoads(32, budget);

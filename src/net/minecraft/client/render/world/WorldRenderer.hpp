@@ -188,8 +188,6 @@ class WorldRenderer : public net::minecraft::GameEventListener {
  // Scratch for pushCullState/popCullState. Kept resident so the inner vectors
  // retain their capacity across frames.
  std::vector<std::vector<chunk::ChunkBuilder*>> savedVisibleDrawRings_{};
- std::vector<unsigned char> savedFrustumFlags_{};
- std::size_t savedFrustumSectionCount_ = 0;
  bool cullStateSaved_ = false;
  std::deque<world::SectionPos> pendingColumns_{};
  std::unordered_set<world::SectionPos, world::SectionPosHash> pendingSet_{};
@@ -204,9 +202,8 @@ class WorldRenderer : public net::minecraft::GameEventListener {
  std::vector<std::shared_ptr<chunk::ChunkMeshJob>> pendingMeshUploads_{};
  int centerSectionX_ = std::numeric_limits<int>::min();
  int centerSectionZ_ = std::numeric_limits<int>::min();
- int renderRadiusChunks_ = 0;
- int nextSectionId_ = 0;
- int lastViewDistance = -1;
+  int renderRadiusChunks_ = 0;
+  int lastViewDistance = -1;
  float lastRenderScale = -1.0f;
  int entityRenderCooldown = 2;
  int entityCount = 0;

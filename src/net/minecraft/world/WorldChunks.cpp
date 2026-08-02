@@ -350,8 +350,6 @@ void World::setChunkCacheCenter(int chunkX, int chunkZ) {
 void World::setChunkCacheCenterFromBlockPos(int blockX, int blockZ) {
  setChunkCacheCenter(chunk_coord(blockX), chunk_coord(blockZ));
 }
-void World::populateChunkCacheReadyChunks() {
-}
 bool World::isChunkDataReady(int chunkX, int chunkZ) const {
  return chunkCache_ == nullptr || chunkCache_->isChunkDataReady(chunkX, chunkZ);
 }

@@ -5,6 +5,7 @@ build.log
 client.log
 server.log
 third_party/mcp/
+third_party/iris/
 resources/
 toolchain/
 .claude/

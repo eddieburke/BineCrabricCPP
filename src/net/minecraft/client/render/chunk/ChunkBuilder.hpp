@@ -1,6 +1,5 @@
 #pragma once
 #include <array>
-#include <cmath>
 #include <cstdint>
 #include <limits>
 #include <memory>
@@ -26,11 +25,10 @@ class ChunkBuilder {
               int size,
               ChunkRegionManager* regionManager)
      : world(world), regionManager_(regionManager), x(x), y(y), z(z), currentBlockEntities_(&blockEntityUpdateList) {
-  sizeX = size;
-  sizeY = size;
-  sizeZ = size;
-  radius = std::sqrt(static_cast<float>(sizeX * sizeX + sizeY * sizeY + sizeZ * sizeZ)) / 2.0f;
-  centerX = this->x + sizeX / 2;
+   sizeX = size;
+   sizeY = size;
+   sizeZ = size;
+   centerX = this->x + sizeX / 2;
   centerY = this->y + sizeY / 2;
   centerZ = this->z + sizeZ / 2;
   constexpr float padding = 6.0f;
@@ -99,12 +97,10 @@ class ChunkBuilder {
  std::array<std::vector<ModChunkMesh>, terrain_layer::Count> modLayerMeshes_{};
  int centerX = 0;
  int centerY = 0;
- int centerZ = 0;
- float radius = 0.0f;
- bool dirty = false;
- net::minecraft::Box cullingBox{0, 0, 0, 0, 0, 0};
- int id = 0;
- int drawRing = 0;
+  int centerZ = 0;
+  bool dirty = false;
+  net::minecraft::Box cullingBox{0, 0, 0, 0, 0, 0};
+  int drawRing = 0;
  bool hasSkyLight = false;
  bool built = false;
  int version = 0;
@@ -158,9 +154,9 @@ class ChunkMeshScheduler {
  }
 
  private:
-  // Mesh submits to the shared Compute pool (one pool for all compute owners);
-  // completed jobs cross back on a bounded Channel. Lighting/loader keep their
-  // computeShare(3) sub-pools until PASS-2 WI-6/7 join them to the shared pool.
+  // Mesh jobs run on the shared Compute pool; completed jobs cross back on a
+  // bounded Channel. Lighting and the chunk loader keep their own computeShare(3)
+  // sub-pools so a mesh burst cannot starve them.
   net::minecraft::util::concurrent::WorkerHandoff<ChunkMeshJob> handoff_{
       net::minecraft::util::concurrent::ThreadCoordinator::instance().pool(
           net::minecraft::util::concurrent::Domain::Compute)};

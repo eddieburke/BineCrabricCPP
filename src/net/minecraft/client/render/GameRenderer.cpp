@@ -57,15 +57,17 @@
 namespace net::minecraft::client::render {
 namespace option = net::minecraft::client::option;
 namespace math = net::minecraft::util::math;
+namespace material = ::net::minecraft::block::material;
+namespace mod = ::net::minecraft::mod;
+namespace light = ::net::minecraft::world::light;
 namespace {
 constexpr int kBedBlockId = 26;
 constexpr float kPiF = 3.14159265f;
 constexpr float kHandDepth = 0.125f;
 void updateSunLight(World* world, float tickDelta) {
  if(world == nullptr) return;
- constexpr float kPi = 3.14159265358979323846f;
  const float timeOfDay = world->getTime(tickDelta);
- const float angle = timeOfDay * kPi * 2.0f;
+ const float angle = timeOfDay * kPiF * 2.0f;
  float sunX = std::sin(0.0f) * std::sin(angle);
  float sunY = std::cos(angle);
  float sunZ = std::cos(0.0f) * std::sin(angle);
@@ -77,7 +79,7 @@ void updateSunLight(World* world, float tickDelta) {
  }
  const float daylight = std::clamp((sunY + 0.08f) / 0.28f, 0.0f, 1.0f);
  const float horizon = 1.0f - std::clamp(std::abs(sunY) * 5.0f, 0.0f, 1.0f);
- ::net::minecraft::world::light::SunLight sun;
+ light::SunLight sun;
  sun.directionX = sunX;
  sun.directionY = sunY;
  sun.directionZ = sunZ;
@@ -102,7 +104,7 @@ void updateSunLight(World* world, float tickDelta) {
  const double dir[3] = {end.x - start.x, end.y - start.y, end.z - start.z};
  const double min[3] = {box.minX, box.minY, box.minZ};
  const double max[3] = {box.maxX, box.maxY, box.maxZ};
- const double t = net::minecraft::util::math::raySlabIntersect(min, max, origin, dir, 1.0);
+ const double t = math::raySlabIntersect(min, max, origin, dir, 1.0);
  if(t < 0.0) {
   return std::nullopt;
  }
@@ -117,9 +119,6 @@ void updateSunLight(World* world, float tickDelta) {
   return 1.0f;
  }
  return world->getLightBrightness(x, y, z);
-}
-[[nodiscard]] float worldRainGradient(const option::RenderSettings& options, World* world, float tickDelta) {
- return client::option::rainGradient(options, world, tickDelta);
 }
 [[nodiscard]] std::optional<HitResult> entityRaycast(World* world,
                                                      LivingEntity* camera,
@@ -143,12 +142,12 @@ void updateSunLight(World* world, float tickDelta) {
      .count();
 }
 } // namespace
-GameRenderer::GameRenderer(net::minecraft::client::Minecraft* clientIn)
+GameRenderer::GameRenderer(Minecraft* clientIn)
     : client(clientIn),
       heldItemRenderer(std::make_unique<item::HeldItemRenderer>(clientIn)),
       lastInactiveTime(nowMillis()),
       shaderPacks_(clientIn != nullptr ? std::make_unique<PackManager>(
-                                             net::minecraft::client::Minecraft::getRunDirectory(), &clientIn->options)
+                                             Minecraft::getRunDirectory(), &clientIn->options)
                                        : nullptr) {}
 GameRenderer::~GameRenderer() {
  shadowmap::reset(shadowState_);
@@ -159,14 +158,13 @@ PackUniformValues GameRenderer::buildFrameUniforms(float tickDelta,
  const int width = client != nullptr ? std::max(1, client->displayWidth) : 1;
  const int height = client != nullptr ? std::max(1, client->displayHeight) : 1;
  const float worldTime = static_cast<float>(ticks) + tickDelta;
- const float eyeHalf =
-     shaderPacks_ != nullptr && shaderPacks_->activeDefinition() != nullptr
-         ? shaderPacks_->activeDefinition()->eyeBrightnessHalflife
-         : 10.0f;
+ const PackDefinition* definition =
+     shaderPacks_ != nullptr ? shaderPacks_->activeDefinition() : nullptr;
+ const float eyeHalf = definition != nullptr ? definition->eyeBrightnessHalflife : 10.0f;
  return buildShaderFrameData(width, height, farPlane, worldTime,
-                                         frameShadow_.resolution, shaderPacks_->sceneColorCount() > 1, shadowAvailable,
-                                         frameCamera_, shadowState_.shadowCamera, client != nullptr ? client->world : nullptr,
-                                         eyeHalf);
+                             frameShadow_.resolution, shaderPacks_ != nullptr && shaderPacks_->sceneColorCount() > 1,
+                             shadowAvailable, frameCamera_, shadowState_.shadowCamera,
+                             client != nullptr ? client->world : nullptr, eyeHalf);
 }
 void GameRenderer::updateCamera() {
  if(client == nullptr) {
@@ -249,8 +247,8 @@ void GameRenderer::updateTargetedEntity(float tickDelta) {
   targetedEntity = entity;
   closest = dist;
  }
- net::minecraft::mod::model::ModelRaycastHit modelHit;
- if(net::minecraft::mod::model::raycastModelInstances(
+ mod::model::ModelRaycastHit modelHit;
+ if(mod::model::raycastModelInstances(
         eyePos.x, eyePos.y, eyePos.z, look.x, look.y, look.z, reach, modelHit)) {
   const double limit = targetedEntity != nullptr ? (closest == 0.0 ? 0.0 : closest) : reach;
   if(modelHit.distance < limit) {
@@ -283,7 +281,7 @@ float GameRenderer::getFov(float tickDelta) const {
   return 70.0f;
  }
  float fov = 70.0f;
- if(living->isInFluid(::net::minecraft::block::material::Material::WATER)) {
+ if(living->isInFluid(material::Material::WATER)) {
   fov = 60.0f;
  }
  if(living->health <= 0) {
@@ -292,7 +290,7 @@ float GameRenderer::getFov(float tickDelta) const {
  }
  fov = option::adjustFieldOfView(fov, frameSettings_);
  mod::FovEvent event{living, tickDelta, fov};
- net::minecraft::mod::runtime::luaHookFov(event);
+ mod::runtime::luaHookFov(event);
  return event.fov + prevCameraRoll + (cameraRoll - prevCameraRoll) * tickDelta;
 }
 void GameRenderer::applyDamageTiltEffect(float tickDelta, math::MatrixStack& modelView) {
@@ -538,7 +536,7 @@ void GameRenderer::renderFirstPersonHand(float tickDelta) {
   core::setDrawModelView(modelView.top());
   if(living != nullptr) {
    mod::FirstPersonHandRenderEvent event{living, tickDelta, 0, false};
-   net::minecraft::mod::runtime::luaHookFirstPersonHand(event);
+   mod::runtime::luaHookFirstPersonHand(event);
    if(event.canceled) {
     return;
    }
@@ -645,16 +643,12 @@ void GameRenderer::onFrameUpdate(float tickDelta) {
  }
 }
 bool GameRenderer::beginSceneCapture() {
- if(client == nullptr) {
+ if(client == nullptr || shaderPacks_ == nullptr) {
   return false;
  }
- if(shaderPacks_ != nullptr) {
-  shaderPacks_->poll();
- }
- if(shaderPacks_ == nullptr || !shaderPacks_->activeHasPostProcess()) {
-  if(shaderPacks_ != nullptr) {
-   shaderPacks_->destroyScene();
-  }
+ shaderPacks_->poll();
+ if(!shaderPacks_->activeHasPostProcess()) {
+  shaderPacks_->destroyScene();
   return false;
  }
  const int width = std::max(1, client->displayWidth);
@@ -662,31 +656,25 @@ bool GameRenderer::beginSceneCapture() {
  if(!shaderPacks_->ensureSceneTargets(width, height)) {
   return false;
  }
- if(shaderPacks_ != nullptr) {
-  shaderPacks_->clearScene(core::fog().color[0], core::fog().color[1], core::fog().color[2]);
- }
-  core::clear(gl::attrib::DepthBufferBit);
-  return true;
+ shaderPacks_->clearScene(core::fog().color[0], core::fog().color[1], core::fog().color[2]);
+ core::clear(gl::attrib::DepthBufferBit);
+ return true;
 }
 void GameRenderer::resolveSceneCapture() {
- if(shaderPacks_ != nullptr) {
-  shaderPacks_->endScene();
- }
- if(client == nullptr) {
+ if(client == nullptr || shaderPacks_ == nullptr) {
   return;
  }
+ shaderPacks_->endScene();
  const int width = std::max(1, client->displayWidth);
  const int height = std::max(1, client->displayHeight);
-  gl::GLCore::bindFramebuffer(static_cast<unsigned>(gl::framebuffer::Framebuffer), 0);
-  core::viewport(0, 0, width, height);
-   core::clear(gl::attrib::ColorBufferBit | gl::attrib::DepthBufferBit);
-    if(shaderPacks_ != nullptr) {
-     shaderPacks_->renderPostProcess(frameShadow_.depthTexture, frameShadow_.opaqueDepthTexture,
-                                     frameShadow_.colorTextures.data(), frameShadow_.colorCount,
-                                     frameShadow_.colorAltTextures.data());
-     shaderPacks_->pipeline().reset();
-     core::viewport(0, 0, width, height);
-   }
+ gl::GLCore::bindFramebuffer(static_cast<unsigned>(gl::framebuffer::Framebuffer), 0);
+ core::viewport(0, 0, width, height);
+ core::clear(gl::attrib::ColorBufferBit | gl::attrib::DepthBufferBit);
+ shaderPacks_->renderPostProcess(frameShadow_.depthTexture, frameShadow_.opaqueDepthTexture,
+                                 frameShadow_.colorTextures.data(), frameShadow_.colorCount,
+                                 frameShadow_.colorAltTextures.data());
+ shaderPacks_->pipeline().reset();
+ core::viewport(0, 0, width, height);
 }
 namespace {
 using atmosphere::AtmosphereContext;
@@ -697,7 +685,7 @@ using atmosphere::AtmosphereContext;
  const ItemStack* stack = player->inventory.getSelectedItem();
  return stack != nullptr ? *stack : ItemStack{};
 }
-[[nodiscard]] AtmosphereContext makeAtmosphereContext(net::minecraft::client::Minecraft* client,
+[[nodiscard]] AtmosphereContext makeAtmosphereContext(Minecraft* client,
                                                       LivingEntity* camera,
                                                       const option::RenderSettings& settings,
                                                       int atmosphereTicks) {
@@ -786,7 +774,7 @@ void drawTranslucentTerrain(WorldRenderer& worldRenderer,
  core::cullBackFaces();
 }
 void renderBlockOverlay(WorldRenderer& worldRenderer,
-                        net::minecraft::client::Minecraft* client,
+                        Minecraft* client,
                         PlayerEntity& player,
                         float tickDelta) {
  const ItemStack hand = selectedItemOrEmpty(&player);
@@ -809,13 +797,13 @@ bool renderWorldStage(const AtmosphereContext& context,
  };
  event.shadowPass = shadowPass;
  event.excludedEntityId = -1;
- net::minecraft::mod::runtime::luaHookWorldRender(event);
+ mod::runtime::luaHookWorldRender(event);
  if(enabled && !event.cancelVanilla) {
   draw();
   event.vanillaStageRan = true;
  }
  event.moment = mod::RenderHookMoment::After;
- net::minecraft::mod::runtime::luaHookWorldRender(event);
+ mod::runtime::luaHookWorldRender(event);
  return event.vanillaStageRan;
 }
 } // namespace
@@ -926,7 +914,7 @@ void GameRenderer::renderToCurrentTarget(float tickDelta,
   mod::CameraSetupEvent cameraEvent{};
   cameraEvent.tickDelta = tickDelta;
   cameraEvent.frame = &frameCamera_;
-  net::minecraft::mod::runtime::luaHookCameraSetup(cameraEvent);
+  mod::runtime::luaHookCameraSetup(cameraEvent);
  }
  if(!renderCameraEntity) {
   client->world->setChunkCacheCenterFromBlockPos(MathHelper::floor(frameCamera_.x),
@@ -1033,8 +1021,6 @@ void GameRenderer::renderToCurrentTarget(float tickDelta,
  }
   if(!frameCamera_.shadowPass && !renderCameraEntity && shaderPacks_ != nullptr) {
    shaderPacks_->prepareFrame(client->world);
-  }
-  if(!frameCamera_.shadowPass && !renderCameraEntity && shaderPacks_ != nullptr) {
    shaderPacks_->setFrameUniforms(buildFrameUniforms(tickDelta, farPlane, frameShadow_.depthTexture >= 0));
    if(captureWorldDepth) {
      // Java runs the BEGIN stage before the shadow map render (onBeginClear →
@@ -1058,11 +1044,9 @@ void GameRenderer::renderToCurrentTarget(float tickDelta,
    Frustum::getInstance().compute();
   }
   core::setFogEnabled(!frameCamera_.shadowPass);
-  const PackDefinition* packDefinition =
-      shaderPacks_ != nullptr ? shaderPacks_->activeDefinition() : nullptr;
   if(!frameCamera_.shadowPass && !frameCamera_.skipAllRendering &&
      resolvedOptions.renderSky &&
-     (packDefinition == nullptr || packDefinition->renderSky)) {
+     (definition == nullptr || definition->renderSky)) {
     const debug::RenderProfiler::Scope skyScope(debug::RenderStage::Sky);
     // Vanilla draws the sky dome with the same world fog as the terrain so the
     // horizon fades into the fog colour; the sky must use the terrain start/end,
@@ -1156,8 +1140,8 @@ void GameRenderer::renderToCurrentTarget(float tickDelta,
  applyEntityLightingRig(frameCamera_, worldLight);
  const Vec3d frameCameraPos{frameCamera_.x, frameCamera_.y, frameCamera_.z};
  const bool hasDeferred = shaderPacks_ != nullptr && shaderPacks_->hasDeferredPasses() && captureWorldDepth;
- const bool splitEntities = hasDeferred && packDefinition != nullptr && packDefinition->separateEntityDraws;
- std::string particleOrder = packDefinition != nullptr ? packDefinition->particleOrdering : std::string{};
+ const bool splitEntities = hasDeferred && definition != nullptr && definition->separateEntityDraws;
+ std::string particleOrder = definition != nullptr ? definition->particleOrdering : std::string{};
  if(particleOrder.empty()) particleOrder = hasDeferred ? "after" : "mixed";
  renderWorldStage(atmosphereCtx, tickDelta, mod::WorldRenderStage::Entities, !skipGbuffers, false, [&] {
   const debug::RenderProfiler::Scope entityScope(debug::RenderStage::Entities);
@@ -1210,7 +1194,7 @@ void GameRenderer::renderToCurrentTarget(float tickDelta,
  if(!skipGbuffers && particleOrder != "before") renderTranslucentParticles();
  if(client->crosshairTarget.has_value()) {
   if(auto* player = dynamic_cast<PlayerEntity*>(camera)) {
-   if(camera->isInFluid(::net::minecraft::block::material::Material::WATER)) {
+   if(camera->isInFluid(material::Material::WATER)) {
     renderBlockOverlay(*worldRenderer, client, *player, tickDelta);
    }
   }
@@ -1224,26 +1208,21 @@ void GameRenderer::renderToCurrentTarget(float tickDelta,
    shaderPacks_->sampleCenterDepth();
   }
  if(client->crosshairTarget.has_value() && zoom == 1.0 &&
-    !camera->isInFluid(::net::minecraft::block::material::Material::WATER)) {
+    !camera->isInFluid(material::Material::WATER)) {
   if(auto* player = dynamic_cast<PlayerEntity*>(camera)) {
    renderBlockOverlay(*worldRenderer, client, *player, tickDelta);
   }
  }
- if(!skipGbuffers) {
-  if(resolvedOptions.weatherEnabled) {
-   precipitationRenderer.renderPrecipitation(atmosphereCtx, tickDelta);
+  if(!skipGbuffers) {
+   if(resolvedOptions.weatherEnabled) {
+    precipitationRenderer.renderPrecipitation(atmosphereCtx, tickDelta);
+   }
   }
- }
- {
-  core::setFogEnabled(false);
-  core::fogApplyMode(client, 0, frameSettings_);
-  core::setFogEnabled(true);
- }
- renderWorldStage(atmosphereCtx,
+  renderWorldStage(atmosphereCtx,
                   tickDelta,
                   mod::WorldRenderStage::Clouds,
                   !skipGbuffers && resolvedOptions.renderClouds &&
-                      (packDefinition == nullptr || packDefinition->renderClouds),
+                      (definition == nullptr || definition->renderClouds),
                   false,
                   [&] {
                    const debug::RenderProfiler::Scope cloudScope(debug::RenderStage::Clouds);
@@ -1266,7 +1245,7 @@ void GameRenderer::renderRain() {
  if(client == nullptr || client->world == nullptr || client->camera == nullptr) {
   return;
  }
- float rain = worldRainGradient(frameSettings_, client->world, 1.0f);
+ float rain = option::rainGradient(frameSettings_, client->world, 1.0f);
  if(!client->options.fancyGraphics) {
   rain /= 2.0f;
  }
@@ -1309,7 +1288,7 @@ void GameRenderer::renderRain() {
   const float rx = random.nextFloat();
   const float rz = random.nextFloat();
   const double py = static_cast<double>(static_cast<float>(topY) + 0.1f) - block->minY;
-  if(&block->material == &::net::minecraft::block::material::Material::LAVA) {
+  if(&block->material == &material::Material::LAVA) {
    world->addParticle("smoke", static_cast<float>(px) + rx, py, static_cast<float>(pz) + rz, 0.0, 0.0, 0.0);
    continue;
   }

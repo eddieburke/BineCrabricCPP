@@ -2,63 +2,77 @@
 #include <algorithm>
 #include <chrono>
 namespace net::minecraft::util::concurrent {
-// Time-sliced main-thread work: run at least minItems, then stop at deadline.
-struct FrameBudget {
- std::chrono::steady_clock::time_point deadline{};
- int minItems = 0;
- [[nodiscard]] static FrameBudget fromMs(int ms, int minItems) {
-  return {std::chrono::steady_clock::now() + std::chrono::milliseconds(ms), minItems};
- }
- [[nodiscard]] bool hasRemaining(int done) const noexcept {
-  return done < minItems || std::chrono::steady_clock::now() < deadline;
- }
- // Per-frame shared deadline, set once per frame so every drain/upload
- // consumer reads the same remaining budget (see FramePipeline).
- struct Deadline {
-  void set(int ms) noexcept {
-   point_ = std::chrono::steady_clock::now() + std::chrono::milliseconds(ms);
-   active_ = true;
+// A bounded slice of main-thread work. Every slice runs at least minItems items
+// unconditionally, then stops once its wall-clock deadline passes. All frame-loop
+// consumers (chunk mesh upload, chunk-column adoption, pending-column drain)
+// share ONE per-frame deadline so a slow slice cannot stretch a single frame far
+// past budget; local slices are derived from it via fromSharedMs().
+class FrameBudget {
+ public:
+  // Local slice that ignores the shared frame deadline: now + ms, at least
+  // minItems.
+  [[nodiscard]] static FrameBudget fromMs(int ms, int minItems) noexcept {
+   return FrameBudget{std::chrono::steady_clock::now() + std::chrono::milliseconds(ms), minItems};
   }
-  [[nodiscard]] std::chrono::milliseconds remaining() const noexcept {
-   const std::chrono::steady_clock::time_point now = std::chrono::steady_clock::now();
-   if(now >= point_) {
-    return std::chrono::milliseconds(0);
+  // Slice bounded by the shared frame deadline: at least minItems, then stop at
+  // the earlier of now + ms and the frame deadline. If no frame deadline is
+  // armed or it has already expired (this frame ran over budget), use a fresh
+  // now + ms slice so work keeps making progress instead of stalling at zero.
+  [[nodiscard]] static FrameBudget fromSharedMs(int ms, int minItems) noexcept {
+   const FrameBudget& frame = frameDeadline();
+   if(!frame.active()) {
+    return fromMs(ms, minItems);
    }
-   return std::chrono::duration_cast<std::chrono::milliseconds>(point_ - now);
+   if(frame.expired()) {
+    return fromMs(ms, minItems);
+   }
+   const auto local = std::chrono::steady_clock::now() + std::chrono::milliseconds(ms);
+   return FrameBudget{std::min(local, frame.deadline()), minItems};
   }
-  [[nodiscard]] bool hasExpired() const noexcept {
-   return active_ && std::chrono::steady_clock::now() >= point_;
+  // True while at least minItems are not yet done, or the deadline has not passed.
+  [[nodiscard]] bool hasRemaining(int done) const noexcept {
+   return done < minItems_ || std::chrono::steady_clock::now() < deadline_;
   }
+  // True once the deadline has passed.
+  [[nodiscard]] bool expired() const noexcept {
+   return std::chrono::steady_clock::now() >= deadline_;
+  }
+  // True once a deadline is armed (only the shared frame deadline can be unarmed).
   [[nodiscard]] bool active() const noexcept {
-   return active_;
+   return deadline_ != std::chrono::steady_clock::time_point{};
   }
-  [[nodiscard]] std::chrono::steady_clock::time_point point() const noexcept {
-   return point_;
+  // Wall time until the deadline (zero once passed).
+  [[nodiscard]] std::chrono::nanoseconds remaining() const noexcept {
+   const auto now = std::chrono::steady_clock::now();
+   if(now >= deadline_) {
+    return std::chrono::nanoseconds(0);
+   }
+   return std::chrono::duration_cast<std::chrono::nanoseconds>(deadline_ - now);
   }
-  std::chrono::steady_clock::time_point point_{};
-  bool active_ = false;
- };
- // Sets the shared per-frame deadline to now + ms and returns it.
- [[nodiscard]] static Deadline& beginFrame(int ms) noexcept {
-  Deadline& frame = frameDeadline();
-  frame.set(ms);
-  return frame;
- }
- // The shared per-frame deadline (read remaining() from the run loop).
- [[nodiscard]] static Deadline& frameDeadline() noexcept {
-  static Deadline frameDeadline_;
-  return frameDeadline_;
- }
- [[nodiscard]] static FrameBudget fromSharedMs(int ms, int minItems) {
-  const auto local = std::chrono::steady_clock::now() + std::chrono::milliseconds(ms);
-  const Deadline& frame = frameDeadline();
-  if(!frame.active()) {
-   return {local, minItems};
+
+  // The one shared per-frame deadline. Inactive until beginFrame() runs.
+  [[nodiscard]] static const FrameBudget& frameDeadline() noexcept {
+   return frameDeadlineMutable();
   }
-  if(!frame.hasExpired()) {
-   return {std::min(local, frame.point()), minItems};
+  // Arms the shared per-frame deadline to now + ms. Called once per frame by
+  // FramePipeline before any consumer slices are derived.
+  static void beginFrame(int ms) noexcept {
+   frameDeadlineMutable() = fromMs(ms, 0);
   }
-  return {local, minItems};
- }
+
+ private:
+  FrameBudget() = default;
+  FrameBudget(std::chrono::steady_clock::time_point deadline, int minItems)
+      : deadline_(deadline), minItems_(minItems) {
+  }
+  [[nodiscard]] std::chrono::steady_clock::time_point deadline() const noexcept {
+   return deadline_;
+  }
+  [[nodiscard]] static FrameBudget& frameDeadlineMutable() noexcept {
+   static FrameBudget frame;
+   return frame;
+  }
+  std::chrono::steady_clock::time_point deadline_{};
+  int minItems_ = 0;
 };
 } // namespace net::minecraft::util::concurrent

@@ -203,8 +203,7 @@ void WorldRenderer::createColumn(int sectionX, int sectionZ) {
                                                        sectionZ * kChunkSectionSize,
                                                        kChunkSectionSize,
                                                        &regionManager_);
-  builder->id = nextSectionId_++;
-  builder->inFrustum = true;
+   builder->inFrustum = true;
   builder->invalidate();
   chunk::ChunkBuilder* raw = builder.get();
   sections_.emplace(pos, std::move(builder));
@@ -301,11 +300,6 @@ void WorldRenderer::pushCullState() {
  // (whose inner capacity the nested pass immediately reuses via
  // rebuildVisibleDrawRings), and the player's rings park in the scratch slot.
  savedVisibleDrawRings_.swap(visibleDrawRings_);
- savedFrustumFlags_.resize(sectionList_.size());
- for(std::size_t i = 0; i < sectionList_.size(); ++i) {
-  savedFrustumFlags_[i] = sectionList_[i]->inFrustum ? 1U : 0U;
- }
- savedFrustumSectionCount_ = sectionList_.size();
  cullStateSaved_ = true;
 }
 void WorldRenderer::popCullState() {
@@ -314,17 +308,8 @@ void WorldRenderer::popCullState() {
  }
  cullStateSaved_ = false;
  savedVisibleDrawRings_.swap(visibleDrawRings_);
- // Flags are restored by position, which is only valid while sectionList_ is
- // untouched. Nested passes render with renderCameraEntity=true, which skips
- // both the frontier update and compileChunks, so nothing adds or removes a
- // section. If that ever stops holding, drop the restore: the next cullChunks
- // rebuilds inFrustum from scratch anyway.
- if(savedFrustumSectionCount_ != sectionList_.size()) {
-  return;
- }
- for(std::size_t i = 0; i < sectionList_.size(); ++i) {
-  sectionList_[i]->inFrustum = savedFrustumFlags_[i] != 0U;
- }
+ // No inFrustum backup/restore needed: the nested (shadow) pass runs before the
+ // main pass's cullChunks, which rebuilds inFrustum from scratch afterwards.
 }
 void WorldRenderer::clearSections() {
  meshScheduler_.cancelAll();
@@ -346,8 +331,6 @@ void WorldRenderer::clearSections() {
  visibleDrawRings_.clear();
  // Dangling ChunkBuilder* would otherwise survive in the nested-pass scratch.
  savedVisibleDrawRings_.clear();
- savedFrustumFlags_.clear();
- savedFrustumSectionCount_ = 0;
  cullStateSaved_ = false;
  globalBlockEntities.clear();
   pendingColumns_.clear();

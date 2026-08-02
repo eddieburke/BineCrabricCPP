@@ -9,10 +9,12 @@
 #include <stdexcept>
 #include "net/minecraft/network/packet/ChunkPackets.hpp"
 #include "net/minecraft/util/concurrent/ThreadCoordinator.hpp"
-#include "net/minecraft/util/concurrent/FrameBudget.hpp"
 #include "net/minecraft/util/concurrent/ThreadNames.hpp"
 namespace {
-constexpr std::size_t kMaxReadQueueBytes = 0x100000;
+constexpr std::size_t kMaxReadQueueBytes = 0x2000000;
+constexpr std::size_t kReadQueueHighWater = kMaxReadQueueBytes / 2;
+constexpr std::size_t kReadQueueLowWater = kMaxReadQueueBytes / 4;
+constexpr std::size_t kMaxSendQueueBytes = 0x100000;
 } // namespace
 namespace net::minecraft {
 std::atomic<int> Connection::readThreadCounter{0};
@@ -195,56 +197,50 @@ void Connection::sendPacket(std::unique_ptr<Packet> packet) {
  writeCv_.notify_one();
 }
 void Connection::tick() {
- if(sendQueueSize_.load(std::memory_order_acquire) > 0x100000) {
-  requestDisconnect("disconnect.overflow");
- }
- if(readOverflow_.load(std::memory_order_acquire)) {
-  requestDisconnect("disconnect.overflow");
- }
- if(readQueueEmpty()) {
+  if(sendQueueSize_.load(std::memory_order_acquire) > kMaxSendQueueBytes) {
+   requestDisconnect("disconnect.overflow");
+  }
+  if(readQueueEmpty()) {
   if(++timeoutTicks_ >= 1200) {
    requestDisconnect("disconnect.timeout");
   }
  } else {
   timeoutTicks_ = 0;
  }
- // Time-boxed adaptive drain. Keep a small minimum so steady-state packet flow does
- // not stall, but honor the wall-clock budget quickly so a burst of expensive packet
- // applies (notably chunk data during local/LAN joins) cannot freeze the game loop.
- constexpr int kMinDrain = 8;
- constexpr int kMaxDrain = 4096;
- constexpr auto kDrainBudget = std::chrono::milliseconds(3);
- std::chrono::steady_clock::time_point drainDeadline =
-     externalDrainLimit_.has_value() ? externalDrainLimit_->deadline
-                                     : std::chrono::steady_clock::now() + kDrainBudget;
- const auto& frameDeadline = util::concurrent::FrameBudget::frameDeadline();
- if(!externalDrainLimit_.has_value() && frameDeadline.active()) {
-  drainDeadline = std::min(drainDeadline, frameDeadline.point());
- }
- const int maxDrain =
-     externalDrainLimit_.has_value() ? std::min(externalDrainLimit_->maxPackets, kMaxDrain) : kMaxDrain;
- int applied = 0;
- while(applied < maxDrain) {
-  std::unique_ptr<Packet> packet;
-  {
-   std::lock_guard lock(readMutex_);
-   if(readQueue_.empty()) {
+  // Drain budget is opt-in: only a Java-MP join or a hosted server sets a
+  // drain limit (ConnectionListener sets one per tick). Everything else — the
+  // integrated/singleplayer path never goes through Connection at all, and a
+  // plain client connection is budgeted by its handler — drains the whole
+  // backlog up to kMaxDrain with no wall-clock cap, so a burst of expensive
+  // applies (chunk data during a local/LAN join) clears in a single tick.
+  constexpr int kMinDrain = 8;
+  constexpr int kMaxDrain = 4096;
+  int maxDrain =
+      externalDrainLimit_.has_value() ? std::min(externalDrainLimit_->maxPackets, kMaxDrain) : kMaxDrain;
+  const std::optional<std::chrono::steady_clock::time_point> drainDeadline =
+      externalDrainLimit_.has_value() ? std::optional(externalDrainLimit_->deadline) : std::nullopt;
+  int applied = 0;
+  while(applied < maxDrain) {
+   std::unique_ptr<Packet> packet;
+   {
+    std::lock_guard lock(readMutex_);
+    if(readQueue_.empty()) {
+     break;
+    }
+    const std::size_t packetBytes = readQueue_.front()->size() + 1;
+    packet = std::move(readQueue_.front());
+    readQueue_.pop_front();
+    readQueueSize_ -= std::min(readQueueSize_.load(std::memory_order_acquire), packetBytes);
+   }
+   if(packet != nullptr) {
+    if(NetworkHandler* handler = networkHandler()) {
+     packet->apply(*handler);
+    }
+   }
+   if(++applied >= kMinDrain && drainDeadline.has_value() && std::chrono::steady_clock::now() >= *drainDeadline) {
     break;
    }
-   const std::size_t packetBytes = readQueue_.front()->size() + 1;
-   packet = std::move(readQueue_.front());
-   readQueue_.pop_front();
-   readQueueSize_ -= std::min(readQueueSize_.load(std::memory_order_acquire), packetBytes);
   }
-  if(packet != nullptr) {
-   if(NetworkHandler* handler = networkHandler()) {
-    packet->apply(*handler);
-   }
-  }
-  if(++applied >= kMinDrain && std::chrono::steady_clock::now() >= drainDeadline) {
-   break;
-  }
- }
  {
   std::lock_guard lock(readMutex_);
   if(!readStats_.empty()) {
@@ -252,12 +248,14 @@ void Connection::tick() {
    readStats_.clear();
   }
  }
- if(!isOpen() && readQueueEmpty() && !disconnectedNotified_) {
-  disconnectedNotified_ = true;
-  if(NetworkHandler* handler = networkHandler()) {
-   handler->onDisconnected(disconnectReason_, disconnectReasonArgs_);
+  if(!isOpen() && readQueueEmpty() && !disconnectedNotified_) {
+   disconnectedNotified_ = true;
+   if(NetworkHandler* handler = networkHandler()) {
+    handler->onDisconnected(disconnectReason_, disconnectReasonArgs_);
+   }
   }
- }
+  // Wake the reader if backpressure paused it above the low-water mark.
+  readCv_.notify_all();
 }
 void Connection::ensureWinsock() {
  static std::once_flag once;
@@ -280,10 +278,10 @@ void Connection::setSocketOptions() {
  const int sendTimeoutMs = 1000;
  ::setsockopt(socket, SOL_SOCKET, SO_SNDTIMEO, reinterpret_cast<const char*>(&sendTimeoutMs), sizeof(sendTimeoutMs));
 }
-std::string Connection::formatAddress() const {
+std::string Connection::formatPeerAddress(SOCKET socket) {
  sockaddr_storage storage{};
  int length = sizeof(storage);
- if(::getpeername(socket_.load(std::memory_order_acquire), reinterpret_cast<sockaddr*>(&storage), &length) != 0) {
+ if(::getpeername(socket, reinterpret_cast<sockaddr*>(&storage), &length) != 0) {
   return "unknown";
  }
  char host[NI_MAXHOST]{};
@@ -299,6 +297,9 @@ std::string Connection::formatAddress() const {
  }
  return std::string(host) + ":" + service;
 }
+std::string Connection::formatAddress() const {
+ return formatPeerAddress(socket_.load(std::memory_order_acquire));
+}
 void Connection::readLoop() {
  util::concurrent::tl_domain = util::concurrent::Domain::NetIo;
  readThreadCounter.fetch_add(1, std::memory_order_acq_rel);
@@ -312,20 +313,19 @@ void Connection::readLoop() {
    }
    const int rawId = packet->rawId();
    const int size = static_cast<int>(packet->size());
-   bool overflow = false;
    {
-    std::lock_guard lock(readMutex_);
-    if(readQueueSize_.load(std::memory_order_acquire) + static_cast<std::size_t>(size) + 1 > kMaxReadQueueBytes) {
-     readOverflow_.store(true, std::memory_order_release);
-     overflow = true;
-    } else {
-     readQueue_.push_back(std::move(packet));
-     readQueueSize_.fetch_add(static_cast<std::size_t>(size) + 1, std::memory_order_acq_rel);
-     readStats_.emplace_back(rawId, size);
+    // Backpressure: hold a large inbound backlog (e.g. a burst of chunk packets
+    // during a join) at the high-water mark until the game thread drains it below
+    // the low-water mark, rather than buffering without bound or killing the
+    // connection. requestDisconnect() wakes the wait so teardown is not blocked.
+    std::unique_lock lock(readMutex_);
+    readCv_.wait(lock, [this] { return !isOpen() || readQueueSize_.load(std::memory_order_acquire) <= kReadQueueHighWater; });
+    if(!isOpen()) {
+     break;
     }
-   }
-   if(overflow) {
-    break;
+    readQueue_.push_back(std::move(packet));
+    readQueueSize_.fetch_add(static_cast<std::size_t>(size) + 1, std::memory_order_acq_rel);
+    readStats_.emplace_back(rawId, size);
    }
   }
  } catch(const std::exception& error) {
@@ -407,6 +407,7 @@ void Connection::requestDisconnect(std::string reason) {
   ::shutdown(socket, SD_RECEIVE);
  }
  writeCv_.notify_all();
+ readCv_.notify_all();
 }
 void Connection::shutdownSocket() {
  const SOCKET socket = socket_.exchange(INVALID_SOCKET);
