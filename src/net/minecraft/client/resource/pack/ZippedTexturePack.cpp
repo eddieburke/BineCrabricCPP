@@ -6,6 +6,7 @@
 #include <fstream>
 #include <sstream>
 #include <string>
+#include "net/minecraft/client/diagnostics/ClientDiagnostics.hpp"
 #include "net/minecraft/client/gl/GlConstants.hpp"
 #include "net/minecraft/client/render/RenderCore.hpp"
 #include "net/minecraft/client/texture/TextureManager.hpp"
@@ -161,6 +162,7 @@ void ZippedTexturePack::close() {
  entries_.clear();
 }
 void ZippedTexturePack::load() {
+ diagnostics::WorkSpan span("io.texturepack.load");
  descriptionLine1 = name;
  descriptionLine2.clear();
  icon_.reset();

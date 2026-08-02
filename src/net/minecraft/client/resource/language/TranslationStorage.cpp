@@ -2,8 +2,10 @@
 #include <cctype>
 #include <sstream>
 #include <string>
+#include "net/minecraft/client/diagnostics/ClientDiagnostics.hpp"
 namespace net::minecraft::client::resource::language {
 TranslationStorage::TranslationStorage(const ResourcePack& resources) {
+ diagnostics::WorkSpan span("io.translations");
  loadProperties(resources.readText("lang/en_US.lang"));
  loadProperties(resources.readText("lang/stats_US.lang"));
 }

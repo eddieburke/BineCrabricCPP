@@ -1,4 +1,5 @@
 #include "net/minecraft/client/render/shaders/Compiler.hpp"
+#include "net/minecraft/client/diagnostics/ClientDiagnostics.hpp"
 #include "net/minecraft/client/render/GlState.hpp"
 #include "net/minecraft/client/render/shaders/IncludeResolver.hpp"
 #include "net/minecraft/client/render/shaders/PassIndex.hpp"
@@ -14,6 +15,7 @@
 #include <string>
 #include <vector>
 namespace net::minecraft::client::render {
+namespace diagnostics = net::minecraft::client::diagnostics;
 namespace {
 std::string makeCacheKey(const std::string& programName, const std::string& vertex, const std::string& fragment) {
  return programName + "|" + vertex + "|" + fragment;
@@ -105,6 +107,7 @@ bool prepareProgram(PackInstance& pack, const std::string& programName, const Pa
 }
 } // namespace
 std::string PackCompiler::readText(const PackInstance& pack, const std::string& path) {
+ diagnostics::WorkSpan span("shaderpack.read");
  const std::filesystem::path normalized = std::filesystem::path(path).lexically_normal();
  if(normalized.empty() || normalized.is_absolute() ||
     std::any_of(

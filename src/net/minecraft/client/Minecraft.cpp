@@ -256,9 +256,11 @@ void Minecraft::setStartupServer(const std::string& address, int port) {
  startupServerPort = port;
 }
 void Minecraft::init() {
+ diagnostics::setStartupPhase("init: registry");
  registry::Registry::bootstrap();
  util::DisplayManager::setupAndCreateDisplay(*this);
  bootstrapAfterDisplay();
+ diagnostics::setStartupPhase("init: threads");
  net::minecraft::util::concurrent::ThreadCoordinator::instance().configure(
      std::thread::hardware_concurrency(),
      2,
@@ -301,6 +303,7 @@ void Minecraft::bootstrapAfterDisplay() {
  render::core::clearDepth(1.0);
  {
   util::DisplayManager::logGlError(*this, "Startup");
+  diagnostics::StartupStep loadingScreen("init: loading screen render");
   renderBootstrapLoadingScreen(*this);
  }
 #ifdef _WIN32
@@ -763,6 +766,8 @@ void Minecraft::run() {
   return;
  }
  try {
+  diagnostics::setStartupPhase("main: running");
+  diagnostics::dumpStartupWork();
   std::int64_t fpsWindowStart = currentTimeMillis();
   int frames = 0;
   util::FramePipeline framePipeline;
@@ -855,6 +860,7 @@ void Minecraft::run() {
   cleanHeap();
   gameCrashed(net::minecraft::util::crash::CrashReport("Unexpected error", exception.what()));
  }
+ diagnostics::dumpStartupWork();
  stop();
 }
 void Minecraft::forceResourceReload() {

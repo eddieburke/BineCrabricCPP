@@ -2,10 +2,12 @@
 #include <algorithm>
 #define GLFW_INCLUDE_NONE
 #include <GLFW/glfw3.h>
+#include "net/minecraft/client/diagnostics/ClientDiagnostics.hpp"
 #include "net/minecraft/client/gl/GLCore.hpp"
 #include "net/minecraft/client/render/shaders/SourceProcessor.hpp"
 #include "net/minecraft/util/concurrent/ThreadCoordinator.hpp"
 namespace net::minecraft::client::gl {
+namespace diagnostics = net::minecraft::client::diagnostics;
 namespace {
 GLFWwindow* createWorkerWindow(GLFWwindow* shareWith) {
  glfwWindowHint(GLFW_CLIENT_API, GLFW_OPENGL_API);
@@ -153,6 +155,7 @@ ShaderCompileResult ShaderCompileService::compileBlocking(ShaderCompileRequest r
    result.ok = true;
    result.fromDisk = true;
    result.binary = std::move(*cached);
+   diagnostics::recordWorkSpan("shader.disk.hit", 0);
    return result;
   }
   if(!started_ || workerWindows_.empty()) {
@@ -195,11 +198,14 @@ ShaderCompileResult ShaderCompileService::runJobOnCurrentContext(const ShaderCom
   result.ok = true;
   result.fromDisk = true;
   result.binary = std::move(*cached);
+  diagnostics::recordWorkSpan("shader.disk.hit", 0);
   return result;
  }
+ diagnostics::recordWorkSpan("shader.disk.miss", 0);
  GLCore::ensureLoaded();
  ShaderProgram program;
  ProgramBinaryBlob blob;
+ diagnostics::WorkSpan compileSpan("shader.compile");
  const bool compiled =
      request.compute ? program.compileComputeToBinary(blob, request.vertex, request.preamble)
                      : program.compileToBinary(blob, request.vertex, request.fragment, request.preamble,

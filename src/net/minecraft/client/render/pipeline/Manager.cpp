@@ -1,4 +1,5 @@
 #include "net/minecraft/client/render/pipeline/Manager.hpp"
+#include "net/minecraft/client/diagnostics/ClientDiagnostics.hpp"
 #include "net/minecraft/client/render/shaderpack/Catalog.hpp"
 #include "net/minecraft/client/render/shaders/Compiler.hpp"
 #include "net/minecraft/client/render/GlState.hpp"
@@ -28,6 +29,7 @@
 #include <windows.h>
 #endif
 namespace net::minecraft::client::render {
+namespace diagnostics = net::minecraft::client::diagnostics;
 namespace {
 using PackCatalog::directoryResources;
 using PackCatalog::lower;
@@ -243,6 +245,7 @@ void PackManager::poll() {
 }
 
 std::unique_ptr<PackInstance> PackManager::loadPack(const std::filesystem::path& path, bool directory) {
+ diagnostics::WorkSpan span("shaderpack.load");
  auto pack = std::make_unique<PackInstance>();
  pack->path = path;
  pack->directory = directory;

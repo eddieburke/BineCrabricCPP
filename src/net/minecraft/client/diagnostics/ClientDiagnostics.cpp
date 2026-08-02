@@ -1,5 +1,16 @@
 #include "net/minecraft/client/diagnostics/ClientDiagnostics.hpp"
+#include <algorithm>
+#include <chrono>
+#include <cstdio>
+#include <cstdlib>
+#include <iomanip>
+#include <mutex>
+#include <sstream>
+#include <string>
 #include <thread>
+#include <unordered_map>
+#include <utility>
+#include <vector>
 #ifdef _WIN32
 #ifndef NOMINMAX
 #define NOMINMAX
@@ -19,6 +30,23 @@
 namespace net::minecraft::client::diagnostics {
 namespace {
 const char* gStartupPhase = "before main";
+bool startupProfilingEnabled() {
+ static const bool enabled = [] {
+  const char* value = std::getenv("MINECRAFT_STARTUP_PROFILE");
+  return value != nullptr && value[0] == '1';
+ }();
+ return enabled;
+}
+std::int64_t steadyNanos() {
+ return std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::steady_clock::now().time_since_epoch())
+     .count();
+}
+struct WorkAccumulator {
+ std::int64_t elapsedNanos = 0;
+ std::int64_t calls = 0;
+};
+std::mutex gWorkMutex;
+std::unordered_map<std::string, WorkAccumulator> gWork;
 #ifdef _WIN32
 std::atomic<std::uint64_t> gHeartbeat{0};
 std::atomic<bool> gHangDumpWritten{false};
@@ -199,9 +227,89 @@ LONG WINAPI unhandledExceptionFilter(EXCEPTION_POINTERS* info) {
  std::abort();
 }
 #endif // _WIN32
+std::FILE* startupProfileFile() {
+ static std::FILE* file = [] {
+#ifdef _WIN32
+  const std::string path = executableDirectory() + "\\startup-profile.log";
+#else
+  const std::string path = "startup-profile.log";
+#endif
+  return std::fopen(path.c_str(), "w");
+ }();
+ return file;
+}
 } // namespace
 void setStartupPhase(const char* phase) {
+ markStartupStep(gStartupPhase);
  gStartupPhase = phase != nullptr ? phase : "(null)";
+}
+void markStartupStep(const char* label) {
+ using Clock = std::chrono::steady_clock;
+ if(!startupProfilingEnabled()) {
+  return;
+ }
+ static const Clock::time_point processStart = Clock::now();
+ static Clock::time_point previous = processStart;
+ const Clock::time_point now = Clock::now();
+ const long long step = std::chrono::duration_cast<std::chrono::microseconds>(now - previous).count();
+ const long long total = std::chrono::duration_cast<std::chrono::microseconds>(now - processStart).count();
+ previous = now;
+ std::fprintf(stderr, "[startup] %-44s %8.1f ms  (t=%8.1f ms)\n", label != nullptr ? label : "(null)",
+              static_cast<double>(step) / 1000.0, static_cast<double>(total) / 1000.0);
+ if(std::FILE* file = startupProfileFile(); file != nullptr) {
+  std::fprintf(file, "%-44s %8.1f ms  (t=%8.1f ms)\n", label != nullptr ? label : "(null)",
+               static_cast<double>(step) / 1000.0, static_cast<double>(total) / 1000.0);
+  std::fflush(file);
+ }
+}
+WorkSpan::WorkSpan(const char* category) : category_(category), startNanos_(steadyNanos()) {
+}
+WorkSpan::~WorkSpan() {
+ recordWorkSpan(category_, steadyNanos() - startNanos_);
+}
+void recordWorkSpan(const char* category, std::int64_t elapsedNanos) {
+ if(!startupProfilingEnabled() || category == nullptr) {
+  return;
+ }
+ std::lock_guard lock(gWorkMutex);
+ WorkAccumulator& accumulator = gWork[category];
+ accumulator.elapsedNanos += elapsedNanos;
+ accumulator.calls += 1;
+}
+std::string startupWorkSummary() {
+ if(!startupProfilingEnabled()) {
+  return {};
+ }
+ std::vector<std::pair<std::string, WorkAccumulator>> rows;
+ {
+  std::lock_guard lock(gWorkMutex);
+  rows.assign(gWork.begin(), gWork.end());
+ }
+ if(rows.empty()) {
+  return {};
+ }
+ std::sort(rows.begin(), rows.end(), [](const auto& lhs, const auto& rhs) {
+  return lhs.second.elapsedNanos > rhs.second.elapsedNanos;
+ });
+ std::ostringstream out;
+ out << "\nStartup work breakdown (cumulative wall time across threads):\n";
+ for(const auto& [name, accumulator] : rows) {
+  out << "  " << std::left << std::setw(30) << name << std::right << std::fixed << std::setprecision(1)
+      << std::setw(10) << static_cast<double>(accumulator.elapsedNanos) / 1000000.0 << " ms  (" << accumulator.calls
+      << " calls)\n";
+ }
+ return out.str();
+}
+void dumpStartupWork() {
+ const std::string summary = startupWorkSummary();
+ if(summary.empty()) {
+  return;
+ }
+ std::fprintf(stderr, "%s", summary.c_str());
+ if(std::FILE* file = startupProfileFile(); file != nullptr) {
+  std::fprintf(file, "%s", summary.c_str());
+  std::fflush(file);
+ }
 }
 #ifdef _WIN32
 void installCrashDiagnostics() {

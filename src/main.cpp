@@ -1,13 +1,13 @@
 #include <exception>
 #include "net/minecraft/client/ClientLog.hpp"
 #include "net/minecraft/client/Minecraft.hpp"
+#include "net/minecraft/client/diagnostics/ClientDiagnostics.hpp"
 #ifdef _WIN32
 #include <timeapi.h>
 #ifndef NOMINMAX
 #define NOMINMAX
 #endif
 #include <windows.h>
-#include "net/minecraft/client/diagnostics/ClientDiagnostics.hpp"
 struct WindowsTimerResolutionReserver {
  WindowsTimerResolutionReserver() {
   timeBeginPeriod(1);
@@ -25,9 +25,7 @@ int main(int argc, char** argv) {
 #endif
  net::minecraft::client::ClientLog::init();
  try {
-#ifdef _WIN32
   net::minecraft::client::diagnostics::setStartupPhase("main: starting client");
-#endif
   const int exitCode = net::minecraft::client::Minecraft::main(argc, argv);
   return exitCode;
  } catch(const std::exception& exception) {

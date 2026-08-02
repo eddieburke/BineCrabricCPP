@@ -3,7 +3,9 @@
 #include <cstring>
 #include <fstream>
 #include <system_error>
+#include "net/minecraft/client/diagnostics/ClientDiagnostics.hpp"
 namespace net::minecraft::client::gl {
+namespace diagnostics = net::minecraft::client::diagnostics;
 namespace {
 constexpr char kMagic[8] = {'M', 'C', 'S', 'P', 'B', 'I', 'N', '1'};
 constexpr std::uint32_t kFileVersion = 4;
@@ -33,6 +35,7 @@ std::filesystem::path ShaderBinaryCache::pathFor(std::uint64_t contentHash) cons
 }
 
 std::optional<ProgramBinaryBlob> ShaderBinaryCache::tryLoad(std::uint64_t contentHash) const {
+ diagnostics::WorkSpan span("io.shader.disk.read");
  if(root_.empty()) return std::nullopt;
  const std::filesystem::path path = pathFor(contentHash);
  std::ifstream in(path, std::ios::binary);
@@ -62,6 +65,7 @@ std::optional<ProgramBinaryBlob> ShaderBinaryCache::tryLoad(std::uint64_t conten
 }
 
 bool ShaderBinaryCache::store(const ProgramBinaryBlob& blob) const {
+ diagnostics::WorkSpan span("io.shader.disk.write");
  if(root_.empty() || blob.bytes.empty() || blob.contentHash == 0 || blob.binaryFormat == 0) return false;
  std::error_code ec;
  std::filesystem::create_directories(root_, ec);
