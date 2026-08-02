@@ -203,11 +203,14 @@ void InGameHud::renderDebugHud(font::TextRenderer& textRenderer,
   textRenderer.drawWithShadow(minecraft->getRenderEntityDebugInfo(), 2, 22, kColorWhite);
   textRenderer.drawWithShadow(minecraft->getWorldDebugInfo(), 2, 32, kColorWhite);
   textRenderer.drawWithShadow(minecraft->getChunkSourceDebugInfo(), 2, 42, kColorWhite);
-  textRenderer.drawWithShadow("x: " + std::to_string(player.x), 2, 64, kColorLightGray);
-  textRenderer.drawWithShadow("y: " + std::to_string(player.y), 2, 72, kColorLightGray);
-  textRenderer.drawWithShadow("z: " + std::to_string(player.z), 2, 80, kColorLightGray);
-  const int facing = (MathHelper::floor(static_cast<double>(player.yaw * 4.0f / 360.0f) + 0.5) & 3);
-  textRenderer.drawWithShadow("f: " + std::to_string(facing), 2, 88, kColorLightGray);
+   textRenderer.drawWithShadow("X: " + std::to_string(player.x), 2, 64, kColorLightGray);
+   textRenderer.drawWithShadow("Y: " + std::to_string(player.y), 2, 72, kColorLightGray);
+   textRenderer.drawWithShadow("Z: " + std::to_string(player.z), 2, 80, kColorLightGray);
+   const int facing = (MathHelper::floor(static_cast<double>(player.yaw * 4.0f / 360.0f) + 0.5) & 3);
+   static const char* kFacingNames[] = {"South", "West", "North", "East"};
+   textRenderer.drawWithShadow(
+       "Facing: " + std::string(kFacingNames[facing]) + " (" + std::to_string(facing) + ")", 2, 88,
+       kColorLightGray);
   const std::vector<std::string> profilerLines = debug::RenderProfiler::instance().lines();
   int profilerY = 2;
   for(const std::string& line : profilerLines) {

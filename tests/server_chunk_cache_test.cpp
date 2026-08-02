@@ -35,11 +35,11 @@ TEST(ServerChunkCache, IsLoadedUsesSpawnRadius) {
  fixture.cache->loadChunk(5, 5);
  EXPECT_TRUE(fixture.cache->isChunkLoaded(5, 5));
  fixture.cache->dropChunk(5, 5);
- EXPECT_NE(fixture.cache->getDebugInfo().find("Drop: 0"), std::string::npos);
+ EXPECT_NE(fixture.cache->getDebugInfo().find("unload: 0"), std::string::npos);
  fixture.cache->loadChunk(12, 12);
  EXPECT_TRUE(fixture.cache->isChunkLoaded(12, 12));
  fixture.cache->dropChunk(12, 12);
- EXPECT_NE(fixture.cache->getDebugInfo().find("Drop: 1"), std::string::npos);
+ EXPECT_NE(fixture.cache->getDebugInfo().find("unload: 1"), std::string::npos);
 }
 TEST(ServerChunkCache, GetChunkReturnsEmptyWhenEventsDisabled) {
  ServerChunkCacheFixture fixture;

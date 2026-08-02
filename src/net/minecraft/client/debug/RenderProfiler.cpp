@@ -18,6 +18,14 @@ std::string formatMs(double nanos) {
  std::snprintf(buffer, sizeof(buffer), "%.2f", nanos / 1.0e6);
  return buffer;
 }
+std::string paddedColumn(std::string text, std::size_t width) {
+ if(text.size() < width) {
+  text.append(width - text.size(), ' ');
+ }
+ return text;
+}
+constexpr std::size_t kStageColumnWidth = 18;
+constexpr std::size_t kCpuColumnWidth = 7;
 } // namespace
 RenderProfiler& RenderProfiler::instance() {
  static RenderProfiler profiler;
@@ -26,23 +34,23 @@ RenderProfiler& RenderProfiler::instance() {
 const char* RenderProfiler::stageName(RenderStage stage) {
  switch(stage) {
  case RenderStage::Sky:
-  return "sky";
+  return "Sky";
  case RenderStage::Cull:
-  return "cull";
+  return "Frustum cull";
  case RenderStage::Compile:
-  return "chunks";
+  return "Chunk meshes";
  case RenderStage::SolidTerrain:
-  return "solid";
+  return "Solid terrain";
  case RenderStage::Entities:
-  return "entities";
+  return "Entities";
  case RenderStage::Particles:
-  return "particles";
+  return "Particles";
  case RenderStage::TranslucentTerrain:
-  return "translucent";
+  return "Translucent terrain";
  case RenderStage::Clouds:
-  return "clouds";
+  return "Clouds";
  case RenderStage::Hand:
-  return "hand";
+  return "Hand";
  default:
   return "?";
  }
@@ -207,7 +215,11 @@ std::vector<std::string> RenderProfiler::lines() const {
   return linesCache_;
  }
  out.reserve(static_cast<std::size_t>(kRenderStageCount) + 3);
- out.push_back(gpuReady_ ? std::string("stage      cpu    gpu") : std::string("stage      cpu"));
+ std::string header = paddedColumn("Stage", kStageColumnWidth) + paddedColumn("CPU", kCpuColumnWidth);
+ if(gpuReady_) {
+  header += "GPU";
+ }
+ out.push_back(header);
  double cpuAccounted = 0.0;
  std::array<int, kRenderStageCount> order{};
  for(int stage = 0; stage < kRenderStageCount; ++stage) {
@@ -220,27 +232,22 @@ std::vector<std::string> RenderProfiler::lines() const {
  });
  for(const int stage : order) {
   const auto index = static_cast<std::size_t>(stage);
-  std::string line = stageName(static_cast<RenderStage>(stage));
-  line.resize(12, ' ');
-  line += formatMs(cpuAvgNs_[index]);
+  std::string line = paddedColumn(stageName(static_cast<RenderStage>(stage)), kStageColumnWidth);
+  line += paddedColumn(formatMs(cpuAvgNs_[index]), kCpuColumnWidth);
   if(gpuReady_) {
-   line.resize(19, ' ');
    line += formatMs(gpuAvgNs_[index]);
   }
   out.push_back(line);
  }
- std::string total = "measured";
- total.resize(12, ' ');
- total += formatMs(cpuAccounted);
+ std::string total = paddedColumn("Total measured", kStageColumnWidth);
+ total += paddedColumn(formatMs(cpuAccounted), kCpuColumnWidth);
  if(gpuReady_) {
-  total.resize(19, ' ');
   total += formatMs(gpuMeasuredAvgNs_);
  }
  out.push_back(total);
-  std::string other = "unmeasured";
-  other.resize(12, ' ');
-  other += formatMs(std::max(0.0, frameAvgNs_ - cpuAccounted));
-  out.push_back(other);
+ std::string other = paddedColumn("Unmeasured", kStageColumnWidth);
+ other += paddedColumn(formatMs(std::max(0.0, frameAvgNs_ - cpuAccounted)), kCpuColumnWidth);
+ out.push_back(other);
   linesCache_ = out;
   lastLinesAt_ = now;
   return out;

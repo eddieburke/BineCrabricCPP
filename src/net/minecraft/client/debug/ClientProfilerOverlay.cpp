@@ -122,6 +122,7 @@ std::string ClientProfilerOverlay::getWorldDebugInfo(const Minecraft& client) {
  if(client.world == nullptr) {
   return {};
  }
- return "P: " + client.particleManager.toString() + ". T: All: " + std::to_string(client.world->entities().size());
+ return "Particles: " + client.particleManager.toString() + ". Total entities: " +
+        std::to_string(client.world->entities().size());
 }
 } // namespace net::minecraft::client::debug

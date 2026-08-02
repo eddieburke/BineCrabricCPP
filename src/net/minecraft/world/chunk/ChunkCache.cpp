@@ -573,6 +573,7 @@ void ChunkCache::prefetchChunksNear(int centerChunkX, int centerChunkZ) {
  }
 }
 std::string ChunkCache::getDebugInfo() const {
- return "ChunkCache: " + std::to_string(chunksByPos_.size()) + " Drop: " + std::to_string(chunksToUnload_.size());
+ return "Chunks loaded: " + std::to_string(chunksByPos_.size()) +
+        ", Pending unload: " + std::to_string(chunksToUnload_.size());
 }
 } // namespace net::minecraft::world::chunk

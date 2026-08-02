@@ -79,44 +79,44 @@ TEST(RenderProfilerTest, GrabProfilerMetricsInSingleplayerWorld) {
  bool foundClouds = false;
  bool foundMeasured = false;
  bool foundUnmeasured = false;
- for(const std::string& line : lines) {
-  if(line.rfind("stage", 0) == 0) {
-   foundStageHeader = true;
+  for(const std::string& line : lines) {
+   if(line.rfind("Stage", 0) == 0) {
+    foundStageHeader = true;
+   }
+   if(line.rfind("Solid terrain", 0) == 0) {
+    foundSolid = true;
+   }
+   if(line.rfind("Entities", 0) == 0) {
+    foundEntities = true;
+   }
+   if(line.rfind("Frustum cull", 0) == 0) {
+    foundCull = true;
+   }
+   if(line.rfind("Sky", 0) == 0) {
+    foundSky = true;
+   }
+   if(line.rfind("Translucent terrain", 0) == 0) {
+    foundTranslucent = true;
+   }
+   if(line.rfind("Particles", 0) == 0) {
+    foundParticles = true;
+   }
+   if(line.rfind("Chunk meshes", 0) == 0) {
+    foundChunks = true;
+   }
+   if(line.rfind("Hand", 0) == 0) {
+    foundHand = true;
+   }
+   if(line.rfind("Clouds", 0) == 0) {
+    foundClouds = true;
+   }
+   if(line.rfind("Total measured", 0) == 0) {
+    foundMeasured = true;
+   }
+   if(line.rfind("Unmeasured", 0) == 0) {
+    foundUnmeasured = true;
+   }
   }
-  if(line.rfind("solid", 0) == 0) {
-   foundSolid = true;
-  }
-  if(line.rfind("entities", 0) == 0) {
-   foundEntities = true;
-  }
-  if(line.rfind("cull", 0) == 0) {
-   foundCull = true;
-  }
-  if(line.rfind("sky", 0) == 0) {
-   foundSky = true;
-  }
-  if(line.rfind("translucent", 0) == 0) {
-   foundTranslucent = true;
-  }
-  if(line.rfind("particles", 0) == 0) {
-   foundParticles = true;
-  }
-  if(line.rfind("chunks", 0) == 0) {
-   foundChunks = true;
-  }
-  if(line.rfind("hand", 0) == 0) {
-   foundHand = true;
-  }
-  if(line.rfind("clouds", 0) == 0) {
-   foundClouds = true;
-  }
-  if(line.rfind("measured", 0) == 0) {
-   foundMeasured = true;
-  }
-  if(line.rfind("unmeasured", 0) == 0) {
-   foundUnmeasured = true;
-  }
- }
  EXPECT_TRUE(foundStageHeader);
  EXPECT_TRUE(foundSolid);
  EXPECT_TRUE(foundEntities);

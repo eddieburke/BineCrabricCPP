@@ -1067,15 +1067,16 @@ void WorldRenderer::applyOcclusionCulling() {
  }
 }
 std::string WorldRenderer::getChunkDebugInfo() const {
- return "C: " + std::to_string(compiledChunkCount) + "/" + std::to_string(chunkCount) +
-        ". F: " + std::to_string(invisibleChunkCount) + ", E: " + std::to_string(emptyChunkCount) +
-        ", D: " + std::to_string(chunk::ChunkRegionBuffer::frameDrawCalls) + "/" +
+ return "Chunks drawn: " + std::to_string(compiledChunkCount) + " of " + std::to_string(chunkCount) +
+        ". Frustum-culled: " + std::to_string(invisibleChunkCount) + ", Empty: " +
+        std::to_string(emptyChunkCount) + ", Draw calls: " +
+        std::to_string(chunk::ChunkRegionBuffer::frameDrawCalls) + "/" +
         std::to_string(chunk::ChunkRegionBuffer::frameVisibleRanges);
 }
 std::string WorldRenderer::getEntityDebugInfo() const {
- return "E: " + std::to_string(renderedEntityCount) + "/" + std::to_string(entityCount) +
-        ". B: " + std::to_string(culledEntityCount) +
-        ", I: " + std::to_string(entityCount - culledEntityCount - renderedEntityCount);
+ return "Entities rendered: " + std::to_string(renderedEntityCount) + " of " +
+        std::to_string(entityCount) + ". Frustum-culled: " + std::to_string(culledEntityCount) +
+        ", Hidden: " + std::to_string(entityCount - culledEntityCount - renderedEntityCount);
 }
 void WorldRenderer::markDirty(int minX, int minY, int minZ, int maxX, int maxY, int maxZ) {
  const int startX = MathHelper::floorDiv(minX, kChunkSectionSize);
