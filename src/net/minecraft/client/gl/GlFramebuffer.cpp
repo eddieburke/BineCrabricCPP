@@ -2,13 +2,6 @@
 #include "net/minecraft/client/gl/GLCore.hpp"
 #include "net/minecraft/client/gl/GlConstants.hpp"
 namespace net::minecraft::client::gl {
-namespace {
-unsigned boundFramebuffer() {
-  int bound = 0;
-  ::glGetIntegerv(static_cast<unsigned>(query::FramebufferBinding), &bound);
-  return static_cast<unsigned>(bound);
-}
-} // namespace
 GlFramebuffer::~GlFramebuffer() {
   destroy();
 }

@@ -23,17 +23,6 @@ client::option::GameOptions& defaultOptions() {
  static client::option::GameOptions options;
  return options;
 }
-bool hasTerrainSupport(entity::player::ClientPlayerEntity& player) {
- if(player.world == nullptr) {
-  return false;
- }
- const Box supportBox = player.boundingBox.contract(0.03125, 0.0, 0.03125).stretch(0.0, -0.55, 0.0);
- if(!player.world->getBlockCollisions(supportBox).empty()) {
-  return true;
- }
- return player.world->isMaterialInBox(player.boundingBox, block::material::Material::WATER) ||
-        player.world->isMaterialInBox(player.boundingBox, block::material::Material::LAVA);
-}
 } // namespace
 MultiplayerClientPlayerEntity::MultiplayerClientPlayerEntity(client::Minecraft* minecraft,
                                                              World* world,

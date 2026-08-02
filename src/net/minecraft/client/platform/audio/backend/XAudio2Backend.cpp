@@ -432,14 +432,14 @@ enum class CommandType {
 };
 struct Command {
  CommandType type = CommandType::Playback;
- std::string name;
- std::string path;
- SourceParams params;
+ std::string name{};
+ std::string path{};
+ SourceParams params{};
  float volume = 1.0f;
  float pitch = 1.0f;
  std::uint64_t generation = 0;
  Clock::time_point queuedAt{};
- std::shared_ptr<const decode::PcmBuffer> pcm;
+ std::shared_ptr<const decode::PcmBuffer> pcm{};
 };
 struct ListenerState {
  float x = 0.0f;

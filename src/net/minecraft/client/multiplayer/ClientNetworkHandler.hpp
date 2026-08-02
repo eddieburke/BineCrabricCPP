@@ -163,12 +163,12 @@ class ClientNetworkHandler : public NetworkHandler {
   std::filesystem::path temporary;
   std::filesystem::path destination;
  };
- struct PendingModEvent {
-  enum class Kind { Progress, Complete, Failed };
-  Kind kind = Kind::Progress;
-  std::string text;
-  std::vector<PendingModFile> files;
- };
+struct PendingModEvent {
+   enum class Kind { Progress, Complete, Failed };
+   Kind kind = Kind::Progress;
+   std::string text{};
+   std::vector<PendingModFile> files{};
+  };
  struct PendingModWork {
   std::atomic_bool cancelled{false};
   std::atomic_bool running{false};

@@ -1,7 +1,7 @@
 build/
 build-test/
 build-omega/
-build.log
+build*.log
 client.log
 server.log
 third_party/mcp/
@@ -23,3 +23,6 @@ AGENTS.md
 agents.md
 
 .build-omega.lock
+
+# Licensed shaderpacks kept local-only (path renamed to shaders/)
+shaders/RenderPearl*/
