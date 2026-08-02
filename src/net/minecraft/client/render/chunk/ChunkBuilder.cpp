@@ -168,7 +168,11 @@ std::shared_ptr<ChunkMeshJob> ChunkMeshJob::capture(ChunkBuilder& owner,
    sourceChunks.push_back(RegionSnapshot::SourceChunk{chunkX, chunkZ, &chunk});
   }
  }
- pinGuard.disarm();
+ // Keep the guard armed until the job fully owns the pins: an exception during
+ // job construction (allocation, options copy) or the post-construction shader
+ // setup would otherwise leak every acquired pin, which would wedge the chunk
+ // eviction path forever. The guard releases them on unwind; once we disarm, the
+ // job (whose ~ChunkMeshJob/releasePins releases exactly once) owns them.
  std::array<float, 16> lightLevelToLuminance{};
  std::unique_ptr<net::minecraft::BiomeSource> biomeSource;
  if(owner.world->dimension != nullptr) {
@@ -195,7 +199,8 @@ std::shared_ptr<ChunkMeshJob> ChunkMeshJob::capture(ChunkBuilder& owner,
     job->blockRenderLayers = def->blockRenderLayers;
    }
   }
-  job->alphaTestRef = net::minecraft::client::render::core::alphaTestRef();
+   job->alphaTestRef = net::minecraft::client::render::core::alphaTestRef();
+  pinGuard.disarm();
   return job;
 }
 ChunkMeshJob::ChunkMeshJob(ChunkBuilder& owner,

@@ -81,8 +81,11 @@ class ChunkCache : public ChunkSource {
  void waitForPendingWrites();
  void drainSerializedWrites();
  void completeSerializedWrite();
- void waitForPendingLoads();
- static void retireFromLighting(Chunk* chunk);
+  void waitForPendingLoads();
+  // Waits (bounded) for in-flight render pins to drain before eviction. Returns
+  // false if the pins did not drain within the timeout; the caller must keep the
+  // chunk loaded and retry later rather than unload a chunk workers may still read.
+  static bool retireFromLighting(Chunk* chunk);
  EmptyChunk empty_;
  World* world_ = nullptr;
  std::unique_ptr<ChunkStorage> storage_{};

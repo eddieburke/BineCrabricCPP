@@ -21,26 +21,39 @@ TEST(GlslSnippetsTest, ReinstalledMapClearsStaleCache) {
  GlslSnippets::setSourceMapForTesting({{"probe", "second"}});
  EXPECT_EQ(GlslSnippets::get("probe"), "second");
 }
-TEST(GlslSnippetsTest, EmptyMapRestoresDiskMode) {
+TEST(GlslSnippetsTest, EmptyMapRestoresEmbeddedMode) {
  GlslSnippets::setSourceMapForTesting({{"probe", "first"}});
  EXPECT_EQ(GlslSnippets::get("probe"), "first");
  GlslSnippets::setSourceMapForTesting({});
- // Back to disk-backed mode: a name that can never ship as an engine snippet
+ // Back to embedded mode: a name that can never ship as an engine snippet
  // must come back empty without resurrecting the injected value.
  EXPECT_TRUE(GlslSnippets::get("probe").empty());
 }
 TEST(GlslSnippetsTest, SnippetFilesShippedAndComplete) {
- // Guard against resources/glsl/ losing files: every engine snippet name must
- // resolve to non-empty text in the repo's own resource tree.
+ // Guard against src/.../shaders/glsl/ losing files: every engine snippet name
+ // must resolve to non-empty text in the repo's own source tree.
  const std::unordered_map<std::string, std::string>& snippets = testGlslSnippets();
  EXPECT_FALSE(snippets.empty());
  for(const auto& [name, text] : snippets) {
-  EXPECT_FALSE(text.empty()) << "resources/glsl/" << name << ".glsl is missing or empty";
+  EXPECT_FALSE(text.empty()) << "src/.../shaders/glsl/" << name << ".glsl is missing or empty";
+ }
+}
+TEST(GlslSnippetsTest, EmbeddedMapMatchesSourceFiles) {
+ // The executable's embedded table must agree byte-for-byte with the source
+ // .glsl files (the same input the build embeds), so a snippet added to
+ // src/.../shaders/glsl/ but not re-embedded is caught here.
+ const std::unordered_map<std::string, std::string>& source = testGlslSnippets();
+ const std::unordered_map<std::string, std::string>& embedded = GlslSnippets::embeddedGlslSnippets();
+ EXPECT_EQ(embedded.size(), source.size());
+ for(const auto& [name, text] : source) {
+  const auto found = embedded.find(name);
+  ASSERT_NE(found, embedded.end()) << "embedded table missing snippet '" << name << "'";
+  EXPECT_EQ(found->second, text) << "embedded text differs from source for '" << name << "'";
  }
 }
 TEST(GlslSnippetsTest, EngineSnippetsPreserveOriginalText) {
- // Spot-check the byte-exact text of snippets the transform tests assert on;
- // these must match the strings that used to live in the .cpp files.
+  // Spot-check the byte-exact text of snippets the transform tests assert on;
+  // these must match the strings that used to live in the .cpp files.
  const std::unordered_map<std::string, std::string>& snippets = testGlslSnippets();
  EXPECT_EQ(snippets.at("alpha_test_discard"),
            "\tif (!(ALPHA_TEST_ACCESSOR > alphaTestRef)) {\n\t\tdiscard;\n\t}\n");

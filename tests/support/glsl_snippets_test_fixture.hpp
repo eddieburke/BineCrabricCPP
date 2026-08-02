@@ -9,10 +9,11 @@
 
 // Installs the engine GLSL snippet set into GlslSnippets so transform tests
 // are hermetic: no %APPDATA%/.minecraft/resources, no texture packs, no GL.
-// The text is read from the repo's own resources/glsl/ (MINECRAFT_TEST_SOURCE_DIR
-// is baked into the test target by CMake), so the fixture can never drift from
-// the shipped snippets. The pure map-injection path is exercised directly by
-// tests/glsl_snippets_test.cpp with hand-built maps.
+// The text is read from the repo's own src/.../shaders/glsl/ source directory
+// (MINECRAFT_TEST_SOURCE_DIR is baked into the test target by CMake), which is
+// the same source the build embeds into the executable, so the fixture can
+// never drift from the shipped snippets. The pure map-injection path is
+// exercised directly by tests/glsl_snippets_test.cpp with hand-built maps.
 namespace net::minecraft::test {
 namespace {
 const std::vector<std::string>& glslSnippetNames() {
@@ -48,7 +49,8 @@ const std::vector<std::string>& glslSnippetNames() {
  return names;
 }
 std::string readSnippetFile(const std::string& name) {
- std::ifstream input(std::filesystem::path(MINECRAFT_TEST_SOURCE_DIR) / "resources" / "glsl" /
+ std::ifstream input(std::filesystem::path(MINECRAFT_TEST_SOURCE_DIR) / "src" /
+                         "net" / "minecraft" / "client" / "render" / "shaders" / "glsl" /
                          (name + ".glsl"),
                      std::ios::binary);
  if(!input) {

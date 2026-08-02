@@ -54,13 +54,14 @@ Scope: GLSL source-level parity between the C++ port (`src/net/minecraft/client/
    `IrisFunctions.functions` as a `FunctionResolver`). The C++ 1:1 counterpart is
    `CustomUniforms.cpp` (parser + `callFunction`, `CustomUniforms.cpp:551-699`), which is a faithful
    port (see §2 rows U1–U4). The actual GLSL snippets the engine injects live in
-   `resources/glsl/*.glsl` and match their Java transform sources well (`MC_HAND_DEPTH 0.125` ==
+   `src/net/minecraft/client/render/shaders/glsl/*.glsl` (embedded into the executable by CMake)
+   and match their Java transform sources well (`MC_HAND_DEPTH 0.125` ==
    `HandRenderer.java:43`; `iris_FogFragCoord`/`iris_FrontColor` == `CommonTransformer.java:160-180`).
 
 5. **`const …Format = RGB8;` strip has no visible Java equivalent.** `isBufferFormatDirective` +
    `stripFormatDirectives` (`IncludeResolver.cpp:10-22,39-42`, on at `Compiler.cpp:142`) removes
    `const <type> colortexNFormat/shadowcolorNFormat = <ident>;` lines from every stage before compile.
-   Real packs ship these *uncommented* (`shaderpacks/SEUS PTGI Iris/shaders/deferred10.fsh:18`), and
+   Real packs ship these *uncommented* (`shaders/SEUS PTGI Iris/shaders/deferred10.fsh:18`), and
    they are a GLSL compile error if left in, so Java must remove them somewhere — but this mirror
    only *parses* them (`ConstDirectiveParser.java:7-177`, `ProgramDirectives.java:115-119`) and shows
    no source removal. **Open item the refactor must close** (empirically or by finding the Java
@@ -262,7 +263,7 @@ either break packs or silently invalidate the shader-binary disk cache:
    including `clrwl_` early-out `:744`). These mirror `ProgramId.java`/`ProgramFallbackResolver.java`
    and must stay in lockstep.
 
-8. **Snippet text and names** (`resources/glsl/*.glsl`): `mc_hand_depth` (0.125), `alpha_test_discard`
+8. **Snippet text and names** (`src/net/minecraft/client/render/shaders/glsl/*.glsl`): `mc_hand_depth` (0.125), `alpha_test_discard`
    (accessor placeholder + `alphaTestRef`), `iris_fog_frag_coord_*`, `iris_front_color_global`,
    `iris_lightmap_matrix`, `chunk_fade_*`, `compat_alpha_check` (the exact `f16vec3 color =
    f16vec3(texture(gtexture, v.coord).rgb);` needle), `default_composite.vsh`. These are the port's

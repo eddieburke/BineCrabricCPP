@@ -63,13 +63,26 @@ void ChunkCache::dropChunk(int chunkX, int chunkZ) {
   chunksToUnload_.insert(ChunkPos{chunkX, chunkZ});
  }
 }
-void ChunkCache::retireFromLighting(Chunk* chunk) {
+bool ChunkCache::retireFromLighting(Chunk* chunk) {
  if(chunk == nullptr || chunk->isEmpty()) {
-  return;
+  return true;
  }
+ // Bounded wait for in-flight render pins (mesh/lighting jobs) to drain instead
+ // of an unbounded spin. A chunk whose arrays a worker is still copying cannot be
+ // unloaded safely; but if the pins do not drain quickly (e.g. workers blocked
+ // behind a full completed-job channel the main thread would have to drain), the
+ // spin would hang the caller forever. On timeout, cancel the eviction marker so
+ // the chunk stays usable and the caller retries the eviction later.
+ constexpr auto kEvictionTimeout = std::chrono::milliseconds(10);
+ const auto deadline = std::chrono::steady_clock::now() + kEvictionTimeout;
  while(!chunk->beginRenderEviction()) {
+  if(std::chrono::steady_clock::now() >= deadline) {
+   chunk->cancelRenderEviction();
+   return false;
+  }
   std::this_thread::sleep_for(std::chrono::microseconds(200));
  }
+ return true;
 }
 void ChunkCache::unloadChunk(int chunkX, int chunkZ) {
  const ChunkPos pos{chunkX, chunkZ};
@@ -83,12 +96,19 @@ void ChunkCache::unloadChunk(int chunkX, int chunkZ) {
  }
  Chunk* chunk = it->second;
  if(chunk != nullptr && !chunk->isEmpty()) {
-  retireFromLighting(chunk);
+  if(!retireFromLighting(chunk)) {
+   // Still pinned by an in-flight mesh/lighting job; keep the chunk loaded and
+   // let a later drain retry the eviction.
+   return;
+  }
   chunk->unload();
  }
  chunks_.erase(std::remove(chunks_.begin(), chunks_.end(), chunk), chunks_.end());
  chunksByPos_.erase(it);
  ownedChunks_.erase(chunk);
+ if(world_ != nullptr) {
+  world_->chunkUnloaded(chunkX, chunkZ);
+ }
 }
 ChunkSource* ChunkCache::workerGenerator() {
  if(generator_ == nullptr || world_ == nullptr || world_->dimension == nullptr) {
@@ -475,7 +495,12 @@ void ChunkCache::drainChunksToUnload(int maxChunks) {
    continue;
   }
   Chunk* chunk = mapIt->second;
-  retireFromLighting(chunk);
+  if(!retireFromLighting(chunk)) {
+   // Pinned by an in-flight mesh/lighting job; leave the chunk loaded and retry
+   // the eviction on a later drain instead of blocking this frame.
+   chunksToUnload_.insert(pos);
+   continue;
+  }
   chunk->unload();
   if(chunk->shouldSave(true)) {
    saveChunk(*chunk);
@@ -485,6 +510,9 @@ void ChunkCache::drainChunksToUnload(int maxChunks) {
   chunksByPos_.erase(mapIt);
   chunks_.erase(std::remove(chunks_.begin(), chunks_.end(), chunk), chunks_.end());
   ownedChunks_.erase(chunk);
+  if(world_ != nullptr) {
+   world_->chunkUnloaded(pos.x, pos.z);
+  }
  }
 }
 bool ChunkCache::tick() {
@@ -536,14 +564,25 @@ void ChunkCache::pumpChunkPublish() {
  // publish to a few ms so a backlog of ready chunks cannot turn one frame into
  // a multi-second hitch. The count cap still bounds the burst when adoption is
  // cheap, and tick() keeps streaming server-side chunks at its own rate.
- const auto& frame = net::minecraft::util::concurrent::FrameBudget::frameDeadline();
- const std::int64_t budget = frame.active()
-                                 ? std::max<std::int64_t>(
-                                       0,
-                                       std::chrono::duration_cast<std::chrono::nanoseconds>(
-                                           frame.point() - std::chrono::steady_clock::now()).count())
-                                              : 16'000'000;
- integrateFinishedLoads(32, budget);
+  const auto& frame = net::minecraft::util::concurrent::FrameBudget::frameDeadline();
+  std::int64_t budget = 16'000'000;
+  if(frame.active()) {
+   if(frame.hasExpired()) {
+    // The shared frame deadline is already in the past (this frame ran over
+    // budget). Clamping to 0 here would throttle adoption to exactly one chunk
+    // per frame while prefetchChunksNear keeps queueing up to 16/tick, so the
+    // world stream crawls and the renderer's section counters climb forever.
+    // Fall back to a fresh local slice (same pattern as FrameBudget::fromSharedMs)
+    // so the backlog keeps draining at a sane rate during overloaded frames.
+    budget = 4'000'000;
+   } else {
+    budget = std::max<std::int64_t>(
+        0,
+        std::chrono::duration_cast<std::chrono::nanoseconds>(
+            frame.point() - std::chrono::steady_clock::now()).count());
+   }
+  }
+  integrateFinishedLoads(32, budget);
  if(world_ != nullptr && !world_->isSavingDisabled()) {
   drainChunksToUnload(100);
  }

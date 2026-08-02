@@ -654,7 +654,8 @@ void inferColortexFormatsFromLayouts(PackDefinition& pack, const std::string& so
 }
 void addPostPrograms(PackDefinition& pack,
                      const std::vector<std::string>& resources,
-                     const PackLoader::ReadText& readText) {
+                     const PackLoader::ReadText& readText,
+                     const std::unordered_map<std::string, std::string>& resolvedFragments) {
  const std::array<std::string, 6> prefixes = {"begin", "shadowcomp", "prepare", "deferred", "composite", "final"};
  for(const std::string& prefix : prefixes) {
   const int programCount = prefix == "final" ? 1 : 100;
@@ -674,8 +675,11 @@ void addPostPrograms(PackDefinition& pack,
                                          : prefix == "prepare"      ? "prepare"
                                          : prefix == "deferred"     ? "deferred"
                                                                     : "post";
-   pass.program = key;
-   const std::string source = resolvedFragmentSource(readText, path + ".fsh");
+    pass.program = key;
+    const auto resolved = resolvedFragments.find(path + ".fsh");
+    const std::string source = resolved != resolvedFragments.end()
+                                   ? resolved->second
+                                   : resolvedFragmentSource(readText, path + ".fsh");
    pass.outputs = key == "final" ? std::vector<std::string>{"screen"} : renderTargetOutputNames(source);
    pass.mipmapBuffers = scanMipmapEnabled(source);
    if(prefix == "shadowcomp")
@@ -1394,14 +1398,18 @@ void reprefixProgramPaths(PackDefinition& pack, const std::string& prefix) {
 void loadProgramSet(PackDefinition& out,
                     const std::vector<std::string>& resources,
                     const PackLoader::ReadText& readText) {
+ // Resolve each fragment's include graph once; addPostPrograms reuses these so
+ // post-program sources are not include-resolved a second time.
+ std::unordered_map<std::string, std::string> resolvedFragments;
  for(const PackProgramId& id : packProgramIds()) addProgram(out, resources, id.name);
  for(const std::string& path : resources) {
   if(!path.ends_with(".fsh")) continue;
-  const std::string source = resolvedFragmentSource(readText, path);
+  std::string source = resolvedFragmentSource(readText, path);
   scanTargetFormats(out, source);
+  resolvedFragments.emplace(path, std::move(source));
   const std::string name = std::filesystem::path(path).stem().string();
   if(name.rfind("shadowcomp", 0) == 0) continue;
-  noteRenderTargetOutputs(out, source, name == "shadow" || name.rfind("shadow_", 0) == 0);
+  noteRenderTargetOutputs(out, resolvedFragments.at(path), name == "shadow" || name.rfind("shadow_", 0) == 0);
  }
  for(const std::string& path : resources) {
   if(!path.ends_with(".glsl") && !path.ends_with(".vsh") && !path.ends_with(".csh") &&
@@ -1447,7 +1455,7 @@ void loadProgramSet(PackDefinition& out,
  }
  out.shadowColorBuffers = std::clamp(out.shadowColorBuffers, 0, 8);
  if(out.programs.contains("shadow") && out.shadowMapResolution == 0) out.shadowMapResolution = 1024;
- addPostPrograms(out, resources, readText);
+  addPostPrograms(out, resources, readText, resolvedFragments);
  out.shadowColorBuffers = std::clamp(out.shadowColorBuffers, 0, 8);
  addComputePrograms(out, resources, readText);
 }

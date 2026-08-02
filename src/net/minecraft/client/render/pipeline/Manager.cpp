@@ -151,7 +151,7 @@ void PackManager::reload() {
  summaries_.clear();
  activeIndex_ = kNoActivePack;
  pendingIndex_.reset();
- const std::filesystem::path directory = gameDirectory_ / "shaderpacks";
+ const std::filesystem::path directory = gameDirectory_ / "shaders";
  std::error_code ec;
  std::filesystem::create_directories(directory, ec);
  basePack_ = loadPack(directory / "vanilla", true);
@@ -227,7 +227,7 @@ void PackManager::directoryWatchLoop(const std::stop_token& stop) {
   if(stop.stop_requested()) {
    break;
   }
-  const std::uint64_t stamp = packDirectoryStamp(gameDirectory_ / "shaderpacks");
+  const std::uint64_t stamp = packDirectoryStamp(gameDirectory_ / "shaders");
   const std::uint64_t previous = watchedStamp_.load(std::memory_order_relaxed);
   if(stamp != previous) {
    watchedStamp_.store(stamp, std::memory_order_relaxed);
@@ -258,10 +258,10 @@ std::unique_ptr<PackInstance> PackManager::loadPack(const std::filesystem::path&
   pack->zip->open();
   resources = zipResources(*pack->zip);
  }
- if(PackLoader::load(
-        resources,
-        [&pack](std::string_view resource) { return PackCompiler::readText(*pack, std::string(resource)); },
-        pack->definition, pack->sourceOptions, pack->summary.error)) {
+  if(PackLoader::load(
+         resources,
+         [&pack](std::string_view resource) { return PackCompiler::cachedText(*pack, std::string(resource)); },
+         pack->definition, pack->sourceOptions, pack->summary.error)) {
   pack->summary.valid = true;
   pack->rootDefinition = pack->definition;
   pack->summary.name = path.filename().string();

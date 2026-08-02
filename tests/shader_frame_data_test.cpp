@@ -186,7 +186,7 @@ TEST(ShaderFrameData, VersionPreambleEmitsBiomeDefinesMatchingUniformIds) {
 }
 TEST(VanillaShaderAbi, GeometryUsesPerDrawCoreMatrices) {
  const std::filesystem::path shaders =
-     std::filesystem::path(MINECRAFT_TEST_SOURCE_DIR) / "shaderpacks" / "vanilla" / "shaders";
+     std::filesystem::path(MINECRAFT_TEST_SOURCE_DIR) / "shaders" / "vanilla" / "shaders";
  const std::vector<std::string> names = {
      "gbuffers_basic.vsh",          "gbuffers_entities.vsh", "gbuffers_gui.vsh",
      "gbuffers_gui_textured.vsh",   "gbuffers_hand.vsh",     "gbuffers_item.vsh",

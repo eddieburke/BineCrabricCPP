@@ -1,4 +1,4 @@
-param([string]$BuildDir="build-omega",[ValidateSet("Release","RelWithDebInfo","Debug")][string]$BuildType="Release",[int]$Jobs=0,[switch]$Clean,[switch]$Lto,[switch]$NoLto,[switch]$NoNativeCpu,[switch]$RunTests,[switch]$SkipModPackaging,[switch]$SkipResourceSync,[switch]$KeepDebugSymbols,[switch]$StripSymbols,[switch]$Log,[switch]$Gui,[switch]$Run,[switch]$NoGui,[switch]$CleanOnly,[switch]$Format,[string]$ModId="",[switch]$NoModDeploy,[ValidateSet("All","Client","Server")][string]$Target="All",[Parameter(ValueFromRemainingArguments=$true)][string[]]$RunArgs)
+param([string]$BuildDir="build-omega",[ValidateSet("Release","RelWithDebInfo","Debug")][string]$BuildType="Release",[int]$Jobs=0,[switch]$Clean,[switch]$Lto,[switch]$NoLto,[switch]$NoNativeCpu,[switch]$StartupProfile,[switch]$RunTests,[switch]$SkipModPackaging,[switch]$SkipResourceSync,[switch]$KeepDebugSymbols,[switch]$StripSymbols,[switch]$Log,[switch]$Gui,[switch]$Run,[switch]$NoGui,[switch]$CleanOnly,[switch]$Format,[string]$ModId="",[switch]$NoModDeploy,[ValidateSet("All","Client","Server")][string]$Target="All",[Parameter(ValueFromRemainingArguments=$true)][string[]]$RunArgs)
 $ErrorActionPreference="Stop"
 $ScriptDir=Split-Path -Parent $MyInvocation.MyCommand.Path
 sl $ScriptDir
@@ -13,7 +13,7 @@ $CmakeExe="$MingwBin\cmake.exe"
 $NinjaExe="$MingwBin\ninja.exe"
 $CtestExe="$MingwBin\ctest.exe"
 $DepsMarker="$ToolchainDir\.deps-installed"
-$ShaderpacksSource="$ScriptDir\shaderpacks"
+$ShadersSource="$ScriptDir\shaders"
 $ResourcesSource="$ScriptDir\resources"
 $RelToolchainRoot="toolchain/mingw64"
 $RelGpp="$RelToolchainRoot/bin/g++.exe"
@@ -126,7 +126,8 @@ if ($Gui) {
         Write-Host "  [11] Clean build folder only (no rebuild)"
         Write-Host "  [12] Format C++ source (clang-format)"
         Write-Host "  [13] Explain all this again"
-        Write-Host "  [14] Exit"
+        Write-Host "  [14] Advanced options (build flags: startup profiling, LTO, symbols, ...)"
+        Write-Host "  [15] Exit"
         Write-Host ""
         return Read-Host "Type a number and press Enter"
     }
@@ -150,11 +151,22 @@ if ($Gui) {
     }
     function Invoke-GuiBuild {
         param([object]$Arguments, [string]$FriendlyName)
+        $merged = @{}
+        if ($null -ne $Arguments) {
+            foreach ($k in $Arguments.Keys) { $merged[$k] = $Arguments[$k] }
+        }
+        $mergedBuildType = if ($merged.ContainsKey("BuildType")) { $merged["BuildType"] } else { "Release" }
+        foreach ($k in $AdvancedOptions.Keys) {
+            if ($merged.ContainsKey($k)) { continue }
+            # LTO is only valid for Release builds; never inject it into Debug/Profiling builds.
+            if ($k -eq "Lto" -and $mergedBuildType -ne "Release") { continue }
+            $merged[$k] = $AdvancedOptions[$k]
+        }
         Write-Host ""
         Write-Host "  Starting: $FriendlyName ..." -ForegroundColor Cyan
         Write-GuiExplain @("This window will fill with technical build output - that is normal.", "Just wait for it to finish.")
         Write-Host ""
-        & $PSCommandPath @Arguments
+        & $PSCommandPath @merged
         $code = $LASTEXITCODE
         Write-Host ""
         if ($code -eq 0) {
@@ -191,6 +203,60 @@ if ($Gui) {
                 $after = [Math]::Round((Get-Item -LiteralPath $t).Length / 1MB, 1)
                 Write-Host "  $t : $before MB -> $after MB"
             }
+        }
+    }
+    $AdvancedOptions = @{
+        StartupProfile   = $false
+        Lto              = $false
+        NoNativeCpu      = $false
+        KeepDebugSymbols = $false
+        Log              = $false
+        RunTests         = $false
+        SkipResourceSync = $false
+        SkipModPackaging = $false
+    }
+    function Get-GuiAdvancedLabels {
+        return @{
+            StartupProfile   = "Launch the game with startup profiling (MINECRAFT_STARTUP_PROFILE=1)"
+            Lto              = "Link-time optimization (opt-in; Release only, may fail on MinGW GCC 15)"
+            NoNativeCpu      = "Portable build (do not use -march=native)"
+            KeepDebugSymbols = "Keep debug symbols in Release builds"
+            Log              = "Save the full build log to build-omega-last.log"
+            RunTests         = "Run the test suite after building"
+            SkipResourceSync = "Skip copying resources to %APPDATA%\\.minecraft"
+            SkipModPackaging = "Skip packaging and deploying mods"
+        }
+    }
+    function Show-GuiAdvancedOptions {
+        $order = @("StartupProfile", "Lto", "NoNativeCpu", "KeepDebugSymbols", "Log", "RunTests", "SkipResourceSync", "SkipModPackaging")
+        $labels = Get-GuiAdvancedLabels
+        $open = $true
+        while ($open) {
+            Write-GuiHeading "Advanced options (build flags)"
+            Write-GuiExplain @("These settings apply to the build/run options in the main menu for this session.", "Startup profiling makes the game write startup-profile.log (startup phase timing +", "a breakdown of shader compile and IO work) next to its exe.")
+            Write-Host ""
+            for ($i = 0; $i -lt $order.Count; $i++) {
+                $state = if ($AdvancedOptions[$order[$i]]) { "On " } else { "Off" }
+                Write-Host ("  [{0}] {1,-14} {2}   {3}" -f ($i + 1), $order[$i], $state, $labels[$order[$i]])
+            }
+            Write-Host ""
+            Write-Host "  [A] Turn all on"
+            Write-Host "  [N] Turn all off"
+            Write-Host "  [B] Back to main menu"
+            $answer = (Read-Host "  Pick a number, or A / N / B").Trim()
+            if ($answer -match '^(b|back)$') { $open = $false; continue }
+            if ($answer -match '^(a|all)$') { foreach ($k in $order) { $AdvancedOptions[$k] = $true }; continue }
+            if ($answer -match '^(n|none)$') { foreach ($k in $order) { $AdvancedOptions[$k] = $false }; continue }
+            if ($answer -match '^\d+$') {
+                $idx = [int]$answer
+                if ($idx -ge 1 -and $idx -le $order.Count) {
+                    $key = $order[$idx - 1]
+                    $AdvancedOptions[$key] = -not $AdvancedOptions[$key]
+                    Write-Host ("  {0} is now {1}." -f $key, $(if ($AdvancedOptions[$key]) { "ON" } else { "off" })) -ForegroundColor Cyan
+                    continue
+                }
+            }
+            Write-Host "  Please enter a number from 1 to $($order.Count), A, N, or B." -ForegroundColor Yellow
         }
     }
     Show-GuiWelcome
@@ -267,11 +333,15 @@ if ($Gui) {
                 Show-GuiWelcome
             }
             "14" {
+                Write-GuiHeading "Advanced options"
+                Show-GuiAdvancedOptions
+            }
+            "15" {
                 $running = $false
             }
             default {
                 Write-Host ""
-                Write-Host "  Please type a number from 1 to 14." -ForegroundColor Yellow
+                Write-Host "  Please type a number from 1 to 15." -ForegroundColor Yellow
             }
         }
     }
@@ -282,12 +352,12 @@ if ($Gui) {
 # ===== end CLGUI =====
 function GM{if(!(Test-Path -Li $ManifestPath)){Write-Error "Missing toolchain manifest: $ManifestPath";exit 1};return gc -Li $ManifestPath -Raw|ConvertFrom-Json}
 function ED{param([string]$Pa)if(!(Test-Path -Li $Pa)){ni -ItemType Directory -Fo -Path $Pa|Out-Null}}
-function Sync-Shaderpacks{param([string]$BN)
-if(!(Test-Path -Li $ShaderpacksSource)){Write-Error "Shaderpacks source directory not found: $ShaderpacksSource";return}
-$bs="$ScriptDir\$BN\shaderpacks";ED $bs;$pk=gci -Li $ShaderpacksSource -Fo
+function Sync-Shaders{param([string]$BN)
+if(!(Test-Path -Li $ShadersSource)){Write-Error "Shaders source directory not found: $ShadersSource";return}
+$bs="$ScriptDir\$BN\shaders";ED $bs;$pk=gci -Li $ShadersSource -Fo
 foreach($p in $pk){cp -Li $p.FullName -De $bs -R -Fo}
-Write-Host "Shaderpacks: $bs"
-if($env:APPDATA){$rr="$env:APPDATA\.minecraft\shaderpacks";if(Test-Path -Li $rr){ri -Li $rr -R -Fo -EA SilentlyContinue};ED $rr;foreach($p in $pk){cp -Li $p.FullName -De $rr -R -Fo};Write-Host "Shaderpacks deployed: $rr"}
+Write-Host "Shaders: $bs"
+if($env:APPDATA){$rr="$env:APPDATA\.minecraft\shaders";if(Test-Path -Li $rr){ri -Li $rr -R -Fo -EA SilentlyContinue};ED $rr;foreach($p in $pk){cp -Li $p.FullName -De $rr -R -Fo};Write-Host "Shaders deployed: $rr"}
 }
 function Sync-Resources{
 if(!(Test-Path -Li $ResourcesSource)){Write-Host "Resources source directory not found: $ResourcesSource (skipping)";return}
@@ -397,6 +467,10 @@ return $false
 }
 Ensure-BundledToolchain
 Set-BundledToolchainEnvironment -MBD $MingwBin
+if($StartupProfile){
+$env:MINECRAFT_STARTUP_PROFILE="1"
+Write-Host "Startup profiling enabled (MINECRAFT_STARTUP_PROFILE=1) - the game will write startup-profile.log next to its exe." -ForegroundColor Cyan
+}
 if(!(Test-Path -Li $CmakeExe)){Write-Error "Bundled cmake not found at $CmakeExe";exit 1}
 if(!(Test-Path -Li $NinjaExe)){Write-Error "Bundled ninja not found at $NinjaExe";exit 1}
 Remove-StaleBuildOmegaLockFile -LPa $BuildOmegaLockPath
@@ -450,7 +524,7 @@ $sw.Stop()
 Complete-Relink -Backups $relinkBackups -Succeeded:($exitCode -eq 0)
 if($exitCode -ne 0){if($Log){Show-BuildFailureSummary -LogPath $buildLog -Code $exitCode}else{Write-Host "Build failed (exit $exitCode). Compiler and linker diagnostics are shown above. Use -Log to save them." -ForegroundColor Red}}
 if($exitCode -eq 0){
-Sync-Shaderpacks -BN $BuildDir
+Sync-Shaders -BN $BuildDir
 if(!$SkipResourceSync){Sync-Resources}
 $StripExe="$MingwBin\strip.exe"
 function Show-ExeInfo{param([string]$Label,[string]$Pth)

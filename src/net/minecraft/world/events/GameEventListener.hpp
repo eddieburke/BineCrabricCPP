@@ -49,13 +49,20 @@ class GameEventListener {
  // the borders of the four orthogonally adjacent columns, and can coalesce a
  // whole batch of arrivals into one pass instead of re-dirtying a 3x3
  // neighbourhood over full height per chunk.
-  virtual void chunkAvailable(int chunkX, int chunkZ) {
-   (void)chunkX;
-   (void)chunkZ;
-  }
-  // P-LITGATE: a chunk column's lighting drained (or the lighting engine went
-  // fully idle), so the chunk renderer may mesh a freshly-created column whose
-  // first build was held until now.
+   virtual void chunkAvailable(int chunkX, int chunkZ) {
+    (void)chunkX;
+    (void)chunkZ;
+   }
+   // A chunk column was unloaded/evicted; its block data is no longer readable.
+   // Listeners that mirrored the column (e.g. the chunk renderer) must drop it so
+   // a later reload starts fresh instead of reusing stale state.
+   virtual void chunkUnloaded(int chunkX, int chunkZ) {
+    (void)chunkX;
+    (void)chunkZ;
+   }
+   // P-LITGATE: a chunk column's lighting drained (or the lighting engine went
+   // fully idle), so the chunk renderer may mesh a freshly-created column whose
+   // first build was held until now.
   virtual void markChunkColumnLit(int chunkX, int chunkZ) {
    (void)chunkX;
    (void)chunkZ;

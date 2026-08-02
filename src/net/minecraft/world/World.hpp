@@ -284,8 +284,9 @@ class World : public IEntityWorld {
  [[nodiscard]] bool isEmittingRedstonePower(int x, int y, int z);
  [[nodiscard]] bool isEmittingRedstonePowerInDirection(int x, int y, int z, int direction);
   void setBlocksDirty(int minX, int minY, int minZ, int maxX, int maxY, int maxZ);
-  void chunkAvailable(int chunkX, int chunkZ);
-  void markChunkColumnLit(int chunkX, int chunkZ);
+   void chunkAvailable(int chunkX, int chunkZ);
+   void chunkUnloaded(int chunkX, int chunkZ);
+   void markChunkColumnLit(int chunkX, int chunkZ);
   void markAllChunksLit();
   void setBlocksDirtyColumn(int x, int z, int minY, int maxY);
  [[nodiscard]] block::entity::BlockEntity* getBlockEntity(int x, int y, int z) override;

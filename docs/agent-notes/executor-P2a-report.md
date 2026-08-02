@@ -27,7 +27,7 @@ test agree.
 - `src/net/minecraft/client/render/shaders/CustomUniforms.cpp:343` —
   **verified, no change**: `return i1(frame.fogMode)` already passes the
   transformed value straight through.
-- `shaderpacks/vanilla/shaders/lib/common.glsl:18-26` — `fogFactor` rewritten to
+- `shaders/vanilla/shaders/lib/common.glsl:18-26` — `fogFactor` rewritten to
   decode the GL constants: `fogMode == 9729` → linear branch, `fogMode == 2049`
   → exp2, else `1.0`. The `==1/2/3` branches and the false "as Iris reports
   them" comment are gone. Only the vanilla pack is touched (it is the only pack

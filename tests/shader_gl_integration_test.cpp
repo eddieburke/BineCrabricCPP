@@ -325,7 +325,7 @@ void main() {
 TEST_F(ShaderGlIntegrationTest, RenderPearlCompilesEveryProgramInEveryDimension) {
  net::minecraft::test::installTestGlslSnippets();
  const std::filesystem::path root =
-     std::filesystem::path(MINECRAFT_TEST_SOURCE_DIR) / "shaderpacks" / "RenderPearl v2.8.0-beta.4";
+     std::filesystem::path(MINECRAFT_TEST_SOURCE_DIR) / "shaders" / "RenderPearl v2.8.0-beta.4";
  ASSERT_TRUE(std::filesystem::is_directory(root));
  PackInstance pack;
  pack.path = root;
@@ -381,7 +381,7 @@ TEST_F(ShaderGlIntegrationTest, RenderPearlCompilesEveryProgramInEveryDimension)
 TEST_F(ShaderGlIntegrationTest, RenderPearlDeferredExposesImageUniforms) {
   net::minecraft::test::installTestGlslSnippets();
   const std::filesystem::path root =
-      std::filesystem::path(MINECRAFT_TEST_SOURCE_DIR) / "shaderpacks" / "RenderPearl v2.8.0-beta.4";
+      std::filesystem::path(MINECRAFT_TEST_SOURCE_DIR) / "shaders" / "RenderPearl v2.8.0-beta.4";
   PackInstance pack;
   pack.path = root;
   pack.directory = true;
@@ -416,7 +416,7 @@ TEST_F(ShaderGlIntegrationTest, RenderPearlDeferredExposesImageUniforms) {
 TEST_F(ShaderGlIntegrationTest, RenderPearlGbufferDrawBuffersParse) {
   net::minecraft::test::installTestGlslSnippets();
   const std::filesystem::path root =
-      std::filesystem::path(MINECRAFT_TEST_SOURCE_DIR) / "shaderpacks" / "RenderPearl v2.8.0-beta.4";
+      std::filesystem::path(MINECRAFT_TEST_SOURCE_DIR) / "shaders" / "RenderPearl v2.8.0-beta.4";
   PackInstance pack;
   pack.path = root;
   pack.directory = true;
@@ -446,7 +446,7 @@ TEST_F(ShaderGlIntegrationTest, RenderPearlGbufferDrawBuffersParse) {
 }
 TEST_F(ShaderGlIntegrationTest, RenderPearlDeferredWriteBuffersMatchComposite) {
   const std::filesystem::path root =
-      std::filesystem::path(MINECRAFT_TEST_SOURCE_DIR) / "shaderpacks" / "RenderPearl v2.8.0-beta.4";
+      std::filesystem::path(MINECRAFT_TEST_SOURCE_DIR) / "shaders" / "RenderPearl v2.8.0-beta.4";
   PackInstance pack;
   pack.path = root;
   pack.directory = true;
@@ -493,7 +493,7 @@ TEST_F(ShaderGlIntegrationTest, RenderPearlDeferredWriteBuffersMatchComposite) {
 }
 TEST_F(ShaderGlIntegrationTest, RenderPearlListsComputePassesAndPrograms) {
   const std::filesystem::path root =
-      std::filesystem::path(MINECRAFT_TEST_SOURCE_DIR) / "shaderpacks" / "RenderPearl v2.8.0-beta.4";
+      std::filesystem::path(MINECRAFT_TEST_SOURCE_DIR) / "shaders" / "RenderPearl v2.8.0-beta.4";
   PackInstance pack;
   pack.path = root;
   pack.directory = true;

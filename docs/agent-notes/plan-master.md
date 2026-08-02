@@ -401,7 +401,7 @@ working-tree-verified 2026-08-01; grep before edit.** PASS-1 items are §4.1, PA
     (`fog.enabled ? (fog.mode == 1 ? 0x2601 : 0x0801) : 0`). `g_fog.mode` values stay internal (1/2/3,
     `RenderCore.cpp:782-803`) — only the **uploaded** value changes.
   - `client/render/shaders/CustomUniforms.cpp:343` — `return i1(frame.fogMode)` now returns the GL constant.
-  - `shaderpacks/vanilla/shaders/lib/common.glsl:18-26` — interpret `0/9729/2049` (rewrite the function body;
+  - `shaders/vanilla/shaders/lib/common.glsl:18-26` — interpret `0/9729/2049` (rewrite the function body;
     `fogMode == 9729` → linear branch, `fogMode == 2049` → exp2; the current `==1/2/3` and the **false
     comment "as Iris reports them"** go away).
 - **Keep:** `fogShape` OFF→−1/ON→1 (`FrameData.cpp:239`, `RenderCore.cpp:465`) — unchanged.
@@ -638,7 +638,7 @@ working-tree-verified 2026-08-01; grep before edit.** PASS-1 items are §4.1, PA
     `gl_FragData[i]`→`layout(location=i) out vec4 iris_FragDatai`.
   - `client/render/shaders/SourceProcessor.cpp:709-778` (`versionPreamble`) — emit `#version 330 core` (compute
     keeps ≥430); `#define MC_GLSL_VERSION` = driver GLSL (or leave to WI-15 — sequence: P-GLSL330 after WI-15's M1).
-  - Upgrade port snippets to 330 forms (`resources/glsl/*.glsl`: `iris_fog_frag_coord_*`,
+  - Upgrade port snippets to 330 forms (`src/net/minecraft/client/render/shaders/glsl/*.glsl`: `iris_fog_frag_coord_*`,
     `iris_front_color_global`, `alpha_test_discard`, `iris_lightmap_matrix`, `compat_alpha_check`,
     `default_composite.vsh` `SourceProcessor.cpp:518-520`).
   - `client/gl/ShaderBinaryCache.cpp:8-9` — bump cache format again (≥3).
@@ -806,7 +806,7 @@ compile-fixer reconciles the small number of same-file, disjoint-region cases li
 | **P1a** | `world/chunk/Chunk.hpp`, `world/chunk/Chunk.cpp`, `world/light/LightingEngine.cpp`, `client/render/chunk/RegionSnapshot.cpp`, `world/chunk/ChunkCache.cpp`, `mod/model/ModModels.cpp`, `client/render/chunk/ChunkBuilder.cpp`, `client/render/chunk/ChunkMeshJob.hpp`, `client/render/RenderCore.cpp`, `client/render/RenderCore.hpp`, `client/gl/GLCore.cpp` |
 | **P1b** | `client/render/chunk/ChunkBuilder.hpp`, `util/concurrent/WorkerHandoff.hpp`, `client/render/world/WorldRenderer.cpp` |
 | **P1c** | `network/Packet.hpp`, `network/Connection.hpp`, `network/Connection.cpp`, `server/network/ServerLoginNetworkHandler.cpp`, `server/network/ConnectionListener.cpp`, `client/multiplayer/ClientNetworkHandler.hpp/.cpp`, `client/gui/screen/DownloadingTerrainScreen.hpp`, `world/ClientWorld.cpp`, `client/multiplayer/MultiplayerSession.cpp` |
-| **P2a** | `client/render/uniforms/FrameData.cpp`, `client/render/RenderCore.cpp`, `client/render/shaders/CustomUniforms.cpp`, `shaderpacks/vanilla/shaders/lib/common.glsl`, `world/World.cpp`, `client/render/world/WorldRenderer.cpp` |
+| **P2a** | `client/render/uniforms/FrameData.cpp`, `client/render/RenderCore.cpp`, `client/render/shaders/CustomUniforms.cpp`, `shaders/vanilla/shaders/lib/common.glsl`, `world/World.cpp`, `client/render/world/WorldRenderer.cpp` |
 | **P2b** | `client/render/shaders/SourceProcessor.cpp`, `client/render/shaders/PreProcessor.hpp/.cpp`, `client/render/shaderpack/Loader.cpp`, `client/gl/ShaderBinaryCache.cpp`, ✚ `client/render/shaders/ConditionalState.hpp` |
 
 **Disjointness proof:**

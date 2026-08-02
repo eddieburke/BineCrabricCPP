@@ -185,7 +185,7 @@ static void Install() {
 static void Optional(bool shaders) {
  wchar_t app[MAX_PATH];
  SHGetFolderPathW(0, CSIDL_APPDATA, 0, 0, app);
- auto d = Join(Join(app, L".minecraft"), shaders ? L"shaderpacks" : L"mods");
+  auto d = Join(Join(app, L".minecraft"), shaders ? L"shaders" : L"mods");
  Status(shaders ? L"Downloading test shaders..." : L"Downloading test mods...");
  Status(DownloadZip(shaders ? L"shaders" : L"mods", d) ? (shaders ? L"Test shaders installed." : L"Test mods installed.") : L"Optional content download failed.");
 }

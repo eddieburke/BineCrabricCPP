@@ -55,7 +55,7 @@ verified: `IRIS_REQUIRES_SEPARATE_ENTITY_DRAWS` :58, `IRIS_HAS_TRANSLUCENCY_SORT
 - :726 `result += "#define IRIS_TAG_SUPPORT 2\n";`
 - :745-748 `#define MC_NORMAL_MAP`, `#define MC_SPECULAR_MAP`, `#define MC_RENDER_QUALITY 1.0`,
   `#define MC_SHADOW_QUALITY 1.0` — now unconditional, emitted before the LabPBR block (:751-753,
-  left untouched; identical redefinition is legal GLSL and resources/glsl is out of ownership).
+  left untouched; identical redefinition is legal GLSL and src/net/minecraft/client/render/shaders/glsl is out of ownership).
 - :731 `kCategories` 17 → **19** entries; appends `MOUNTAIN` (index 17) and `UNDERGROUND`
   (index 18), matching `BiomeCategories.java` ordinals (verified 19 entries).
 - Comments at :718-721 and :742-744 document the Q6 decision (capability macros defined though
@@ -114,7 +114,7 @@ format bump (a version-1 cache file is rejected, a version-2 file loads, store�
    1-space indent. New code in SourceProcessor.cpp matches that file's 1-space style to minimize
    diff noise; the new `ConditionalState.hpp` uses 2-space per the RULES.
 3. **LabPBR block kept:** `mc_normal_specular_map.glsl` is still emitted for LabPBR packs after
-   the unconditional defines (identical empty-body redefinition, legal GLSL); resources/glsl is
+   the unconditional defines (identical empty-body redefinition, legal GLSL); src/net/minecraft/client/render/shaders/glsl is
    outside this lane's ownership and parity-glsl §5.8 pins snippet text.
 4. **Golden-compare on shipped packs:** could not be executed (no build/test allowed). Instead
    regression coverage rests on the unchanged existing tests (`shader_pack_loader_test`,

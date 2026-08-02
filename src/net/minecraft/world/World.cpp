@@ -502,6 +502,9 @@ void World::setBlocksDirty(int minX, int minY, int minZ, int maxX, int maxY, int
 void World::chunkAvailable(int chunkX, int chunkZ) {
  events_.chunkAvailable(chunkX, chunkZ);
 }
+void World::chunkUnloaded(int chunkX, int chunkZ) {
+ events_.chunkUnloaded(chunkX, chunkZ);
+}
 void World::markChunkColumnLit(int chunkX, int chunkZ) {
  events_.markChunkColumnLit(chunkX, chunkZ);
 }

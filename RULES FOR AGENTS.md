@@ -1,5 +1,7 @@
 # RULES FOR AGENTS
 
+> **READ THIS FILE IN FULL BEFORE DOING ANY WORK.** All agents (main agent and subagents) must read this entire document top to bottom before reading, editing, building, or committing anything. Do not skim, skip sections, or rely on a summary of these rules.
+
 Beta 1.7.3 Minecraft port. Java reference in `mcp/`; native C++ in `native/`.
 
 ---
@@ -58,8 +60,8 @@ textures, wrong colors):
 - **Do** trace the C++ draw path end to end: RenderType/RenderPassScope -> RenderCore
   state (blend/depth/alpha test) -> Tessellator -> bindAndUploadUniforms -> shader
   selection (worldProgram resolver, program fallback chains) -> the pack's GLSL.
-- Cross-reference the active shaderpack's shaders (e.g. `shaderpacks/RenderPearl .../`,
-  `shaderpacks/SEUS PTGI Iris`) and the Java Iris reference in `third_party/mcp/iris/`
+- Cross-reference the active shaderpack's shaders (e.g. `shaders/RenderPearl .../`,
+  `shaders/SEUS PTGI Iris`) and the Java Iris reference in `third_party/mcp/iris/`
   for how the pass is *supposed* to behave (blend directives, alphaTestRef, entityColor,
   RENDERTARGETS, draw buffers).
 - Consult the online shaderpack documentation when a directive or uniform contract is
@@ -143,3 +145,29 @@ See `native/docs/world-profile-generation-refactor.md` before editing world prof
 - New world profile state must exist before `WorldSession::prepareWorld` builds spawn chunks.
 - Remote Java multiplayer client worlds are packet-driven only; profile terrain generation/decorate hooks must not run there.
 - Foliage theme tint applies to fixed spruce/birch/default leaf colors as well as biome-derived colors.
+
+---
+
+## 11. Git / PR discipline (subagents only, large changes only)
+
+Applies **only** when a **subagent** executes a **massively large change** (touches many files, large diffs, or files likely shared with other agents). The main agent and small routine edits ignore this rule.
+
+1. **Never commit or push on `main` directly.** All work goes through a feature branch + pull request.
+2. **One branch per task/subagent.** Before starting, branch off current `main`: `git checkout -b <name>/<task>`. Do not share branches.
+3. **Full staging separation before every commit.** The shared worktree may hold other agents' uncommitted changes in the same files. Use the checkout-and-restore split (`git checkout -- <file>`, re-apply only your edit, `git add`, restore the combined file) or hunk-level staging so **only your changes** enter the commit. Never `git add -A` / blind `git add <file>` on a mixed file without verifying `git diff --cached` shows nothing foreign.
+4. **Verify staged content before committing:** `git diff --cached --stat` + spot-check hunks; confirm `git status --short` shows your files `M ` (staged) and others' ` M` (unstaged).
+5. **Commit only your own work.** Leave other agents' files/diffs untouched in the worktree.
+6. **Rebase onto latest `main` before pushing** (`git fetch` + `git rebase`), resolving conflicts to keep BOTH agents' changes. Never force-push.
+7. **PR merges must not clobber concurrent work.** Merge `main` into your branch (not reverse); if another agent is actively editing a file, coordinate or split your hunk and leave theirs untouched.
+8. **Assume other agents are active.** Re-check `git status`, `git diff`, `git log` immediately before any `add`/`commit`/`push` — index and HEAD can change mid-task.
+9. **Handle races gracefully:** if the index is reset or someone commits while you're staging, re-verify your edits are intact and re-stage — never blind-reapply or overwrite.
+10. **Clean up:** delete your branch after the PR merges; never leave the repo half-staged.
+
+---
+
+## 12. Commits and build locks (all agents)
+
+Applies to **every** agent (main agent and subagents), for both small routine edits and large changes.
+
+1. **Never commit with compilation errors.** Do not `git commit` or push any change until the build passes cleanly via `build-omega.ps1` — no compile errors, and tests pass when `-RunTests` applies. Code that fails to compile (or is unverified) is a hard block on committing.
+2. **If the build is locked, wait — do not resolve it yourself.** If `.build-omega.lock` exists, `build-omega.ps1` reports another build in progress, or the build directory is held by another process, stop and wait. Do **not** kill processes, delete the lock file, or force-edit the build directory to break the lock. The main agent will eventually address the locked build. Only the main agent (or, in Multitask Mode, the compile fixer stage) may touch a locked build.

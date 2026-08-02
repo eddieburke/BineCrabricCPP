@@ -1117,6 +1117,12 @@ void WorldRenderer::chunkAvailable(int chunkX, int chunkZ) {
  if(centerSectionX_ == std::numeric_limits<int>::min()) {
   return;
  }
+ // Defensive: never gate/enqueue a column whose chunk is not actually loaded
+ // (an eviction may have raced the notification).
+ if(world == nullptr || world->getChunkSource() == nullptr ||
+    !world->getChunkSource()->isChunkLoaded(chunkX, chunkZ)) {
+  return;
+ }
  // Allow one extra ring: a column just outside the render radius still shares a
  // border with one just inside it, and that inside column's faces were meshed
  // against the missing data.
@@ -1127,6 +1133,15 @@ void WorldRenderer::chunkAvailable(int chunkX, int chunkZ) {
   lightingGate_.gate(chunkX, chunkZ);
   enqueueColumn(chunkX, chunkZ);
   pendingBorderRefresh_.insert(world::SectionPos{chunkX, 0, chunkZ});
+}
+// The chunk cache evicted a column. Drop the mirroring sections (plus any stale
+// gate / border-refresh bookkeeping) so the renderer never keeps meshes for data
+// that is gone, and a later reload rebuilds the column from scratch instead of
+// reusing stale state.
+void WorldRenderer::chunkUnloaded(int chunkX, int chunkZ) {
+ lightingGate_.release(chunkX, chunkZ);
+ pendingBorderRefresh_.erase(world::SectionPos{chunkX, 0, chunkZ});
+ removeColumn(chunkX, chunkZ);
 }
 // P-LITGATE: the column's lighting drained (World::doLightingUpdates). Release
 // its gate and re-enqueue the unbuilt sections whose first mesh was held.

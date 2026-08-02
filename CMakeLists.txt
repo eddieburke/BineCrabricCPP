@@ -105,6 +105,26 @@ list(FILTER MINECRAFT_CLIENT_SOURCES EXCLUDE REGEX "/net/minecraft/mod/runtime/L
 list(APPEND MINECRAFT_CLIENT_SOURCES ${MINECRAFT_CLIENT_ONLY_SOURCES})
 list(REMOVE_DUPLICATES MINECRAFT_CLIENT_SOURCES)
 
+# Engine GLSL snippets are embedded in the executable: bake src/.../shaders/glsl/*.glsl
+# into a generated TU (EmbeddedGlslSnippets.cpp) at configure time. The shader text
+# ships inside the binary; there is no resources/glsl runtime lookup.
+set(MINECRAFT_GLSL_EMBED_GENERATOR "${CMAKE_CURRENT_SOURCE_DIR}/tools/gen-embedded-glsl.cmake")
+set(MINECRAFT_GLSL_DIR "${CMAKE_CURRENT_SOURCE_DIR}/src/net/minecraft/client/render/shaders/glsl")
+set(MINECRAFT_EMBEDDED_GLSL_SOURCE "${CMAKE_CURRENT_BINARY_DIR}/generated/EmbeddedGlslSnippets.cpp")
+file(GLOB MINECRAFT_GLSL_FILES CONFIGURE_DEPENDS "${MINECRAFT_GLSL_DIR}/*.glsl")
+if(MINECRAFT_GLSL_FILES)
+    execute_process(
+        COMMAND "${CMAKE_COMMAND}" "-DGLSL_DIR=${MINECRAFT_GLSL_DIR}" "-DOUTPUT=${MINECRAFT_EMBEDDED_GLSL_SOURCE}" -P "${MINECRAFT_GLSL_EMBED_GENERATOR}"
+        WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}"
+        RESULT_VARIABLE MINECRAFT_GLSL_EMBED_RESULT
+    )
+    if(NOT MINECRAFT_GLSL_EMBED_RESULT EQUAL 0)
+        message(FATAL_ERROR "Failed to generate embedded GLSL snippets (gen-embedded-glsl.cmake)")
+    endif()
+    set_source_files_properties("${MINECRAFT_EMBEDDED_GLSL_SOURCE}" PROPERTIES GENERATED TRUE)
+    list(APPEND MINECRAFT_CLIENT_SOURCES "${MINECRAFT_EMBEDDED_GLSL_SOURCE}")
+endif()
+
 set(MINECRAFT_SERVER_MOD_SOURCES ${MINECRAFT_PORT_SOURCES})
 list(FILTER MINECRAFT_SERVER_MOD_SOURCES INCLUDE REGEX "/net/minecraft/mod/")
 list(FILTER MINECRAFT_SERVER_MOD_SOURCES EXCLUDE REGEX
@@ -314,6 +334,7 @@ minecraft_copy_lua_runtime(minecraft_native)
 add_executable(minecraft_server
     src/server-main.cpp
     src/net/minecraft/client/auth/microsoft/PlayerTextureUrls.cpp
+    src/net/minecraft/client/diagnostics/ClientDiagnostics.cpp
     src/net/minecraft/client/resource/language/TranslationStorage.cpp
     src/net/minecraft/client/util/MinecraftDirectories.cpp
     $<TARGET_OBJECTS:minecraft_server_mod>
