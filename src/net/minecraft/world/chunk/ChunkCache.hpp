@@ -73,6 +73,7 @@ class ChunkCache : public ChunkSource {
   // cannot turn one caller's frame into a multi-second hitch. At least one
   // chunk is always integrated when one is ready.
   void integrateFinishedLoads(int budget, std::int64_t timeBudgetNs = -1);
+  void drainChunksToUnload(int maxChunks);
  void saveEntities(Chunk& chunk);
  void saveChunk(Chunk& chunk);
  void enqueueSerializedWrite(int chunkX, int chunkZ, std::vector<std::uint8_t> raw);

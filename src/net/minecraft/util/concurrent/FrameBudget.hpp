@@ -52,7 +52,13 @@ struct FrameBudget {
  [[nodiscard]] static FrameBudget fromSharedMs(int ms, int minItems) {
   const auto local = std::chrono::steady_clock::now() + std::chrono::milliseconds(ms);
   const Deadline& frame = frameDeadline();
-  return {frame.active() ? std::min(local, frame.point()) : local, minItems};
+  if(!frame.active()) {
+   return {local, minItems};
+  }
+  if(!frame.hasExpired()) {
+   return {std::min(local, frame.point()), minItems};
+  }
+  return {local, minItems};
  }
 };
 } // namespace net::minecraft::util::concurrent

@@ -463,34 +463,37 @@ void ChunkCache::prepareForSave() {
  pendingIncrementalSave_ = false;
  waitForPendingWrites();
 }
+void ChunkCache::drainChunksToUnload(int maxChunks) {
+ for(int i = 0; i < maxChunks; ++i) {
+  if(chunksToUnload_.empty()) {
+   break;
+  }
+  const ChunkPos pos = *chunksToUnload_.begin();
+  chunksToUnload_.erase(chunksToUnload_.begin());
+  const auto mapIt = chunksByPos_.find(pos);
+  if(mapIt == chunksByPos_.end()) {
+   continue;
+  }
+  Chunk* chunk = mapIt->second;
+  retireFromLighting(chunk);
+  chunk->unload();
+  if(chunk->shouldSave(true)) {
+   saveChunk(*chunk);
+   saveEntities(*chunk);
+   chunk->dirty = false;
+  }
+  chunksByPos_.erase(mapIt);
+  chunks_.erase(std::remove(chunks_.begin(), chunks_.end(), chunk), chunks_.end());
+  ownedChunks_.erase(chunk);
+ }
+}
 bool ChunkCache::tick() {
  integrateFinishedLoads(2);
  if(pendingIncrementalSave_ && world_ != nullptr && !world_->isSavingDisabled()) {
   save(false, nullptr);
  }
  if(world_ != nullptr && !world_->isSavingDisabled()) {
-  for(int i = 0; i < 100; ++i) {
-   if(chunksToUnload_.empty()) {
-    break;
-   }
-   const ChunkPos pos = *chunksToUnload_.begin();
-   chunksToUnload_.erase(chunksToUnload_.begin());
-   const auto mapIt = chunksByPos_.find(pos);
-   if(mapIt == chunksByPos_.end()) {
-    continue;
-   }
-   Chunk* chunk = mapIt->second;
-   retireFromLighting(chunk);
-   chunk->unload();
-   if(chunk->shouldSave(true)) {
-    saveChunk(*chunk);
-    saveEntities(*chunk);
-    chunk->dirty = false;
-   }
-   chunksByPos_.erase(mapIt);
-   chunks_.erase(std::remove(chunks_.begin(), chunks_.end(), chunk), chunks_.end());
-   ownedChunks_.erase(chunk);
-  }
+  drainChunksToUnload(100);
   if(storage_ != nullptr) {
    const std::lock_guard lock(ioMutex_);
    storage_->tick();
@@ -520,6 +523,12 @@ void ChunkCache::setChunkCacheCenter(int chunkX, int chunkZ) {
   it->second->cancelledGeneration.store(it->second->generation, std::memory_order_release);
   it = pendingLoads_.erase(it);
  }
+ for(const auto& [pos, chunk] : chunksByPos_) {
+  (void)chunk;
+  if(std::max(std::abs(pos.x - centerChunkX_), std::abs(pos.z - centerChunkZ_)) > activeRadius_) {
+   chunksToUnload_.insert(pos);
+  }
+ }
 }
 void ChunkCache::pumpChunkPublish() {
  // Pacing: each adopted chunk can run main-thread decoration + block-light
@@ -533,13 +542,21 @@ void ChunkCache::pumpChunkPublish() {
                                        0,
                                        std::chrono::duration_cast<std::chrono::nanoseconds>(
                                            frame.point() - std::chrono::steady_clock::now()).count())
-                                 : 16'000'000;
+                                              : 16'000'000;
  integrateFinishedLoads(32, budget);
+ if(world_ != nullptr && !world_->isSavingDisabled()) {
+  drainChunksToUnload(100);
+ }
 }
 void ChunkCache::prefetchChunksNear(int centerChunkX, int centerChunkZ) {
  setChunkCacheCenter(centerChunkX, centerChunkZ);
- const bool asyncCapable = world_ != nullptr && (storage_ != nullptr || generator_ != nullptr);
- if(!asyncCapable) {
+ for(const auto& [pos, chunk] : chunksByPos_) {
+  (void)chunk;
+  if(std::max(std::abs(pos.x - centerChunkX), std::abs(pos.z - centerChunkZ)) > activeRadius_) {
+   chunksToUnload_.insert(pos);
+  }
+ }
+ if(world_ == nullptr || (storage_ == nullptr && generator_ == nullptr)) {
   return;
  }
  const int maxLoadsPerCall = 16;
@@ -563,12 +580,6 @@ void ChunkCache::prefetchChunksNear(int centerChunkX, int centerChunkZ) {
     requestChunkAsync(cx, cz, priority);
     ++loaded;
    }
-  }
- }
- for(const auto& [pos, chunk] : chunksByPos_) {
-  (void)chunk;
-  if(std::max(std::abs(pos.x - centerChunkX), std::abs(pos.z - centerChunkZ)) > activeRadius_) {
-   chunksToUnload_.insert(pos);
   }
  }
 }

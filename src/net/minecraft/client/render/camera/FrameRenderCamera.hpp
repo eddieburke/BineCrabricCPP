@@ -21,10 +21,22 @@ struct FrameRenderCamera {
  float viewUpX = 0.0f;
  float viewUpY = 1.0f;
  float viewUpZ = 0.0f;
- float viewForwardX = 0.0f;
- float viewForwardY = 0.0f;
- float viewForwardZ = 1.0f;
- float projectionX = 1.0f;
+  float viewForwardX = 0.0f;
+  float viewForwardY = 0.0f;
+  float viewForwardZ = 1.0f;
+  double cleanEyeX = 0.0;
+  double cleanEyeY = 0.0;
+  double cleanEyeZ = 0.0;
+  float cleanViewRightX = 1.0f;
+  float cleanViewRightY = 0.0f;
+  float cleanViewRightZ = 0.0f;
+  float cleanViewUpX = 0.0f;
+  float cleanViewUpY = 1.0f;
+  float cleanViewUpZ = 0.0f;
+  float cleanViewForwardX = 0.0f;
+  float cleanViewForwardY = 0.0f;
+  float cleanViewForwardZ = 1.0f;
+  float projectionX = 1.0f;
  float projectionY = 1.0f;
  float yaw = 0.0f;
  float pitch = 0.0f;
@@ -111,6 +123,11 @@ inline void directionToView(float x, float y, float z, const FrameRenderCamera& 
  out[0] = x * c.viewRightX + y * c.viewRightY + z * c.viewRightZ;
  out[1] = x * c.viewUpX + y * c.viewUpY + z * c.viewUpZ;
  out[2] = -(x * c.viewForwardX + y * c.viewForwardY + z * c.viewForwardZ);
+}
+inline void directionToViewClean(float x, float y, float z, const FrameRenderCamera& c, float out[3]) {
+ out[0] = x * c.cleanViewRightX + y * c.cleanViewRightY + z * c.cleanViewRightZ;
+ out[1] = x * c.cleanViewUpX + y * c.cleanViewUpY + z * c.cleanViewUpZ;
+ out[2] = -(x * c.cleanViewForwardX + y * c.cleanViewForwardY + z * c.cleanViewForwardZ);
 }
 inline void buildCameraModelView(float* m, const FrameRenderCamera& c) {
  if(c.hasExplicitModelView) {

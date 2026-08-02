@@ -977,6 +977,44 @@ void GameRenderer::renderToCurrentTarget(float tickDelta,
   frameCamera_.projectionX = p[0];
   frameCamera_.projectionY = p[5];
  }
+ if(!frameCamera_.customView && client != nullptr && client->camera != nullptr) {
+  math::MatrixStack cleanMV;
+  cleanMV.loadIdentity();
+  applyCameraTransform(tickDelta, cleanMV);
+  const float* cv = cleanMV.top().data();
+  for(int i = 0; i < 3; ++i) {
+   const double e = -(static_cast<double>(cv[i * 4 + 0]) * cv[12] + static_cast<double>(cv[i * 4 + 1]) * cv[13] +
+                      static_cast<double>(cv[i * 4 + 2]) * cv[14]);
+   (i == 0   ? frameCamera_.cleanEyeX
+    : i == 1 ? frameCamera_.cleanEyeY
+             : frameCamera_.cleanEyeZ) = (i == 0   ? frameCamera_.x
+                                        : i == 1 ? frameCamera_.y
+                                                 : frameCamera_.z) +
+                                       e;
+  }
+  frameCamera_.cleanViewRightX = cv[0];
+  frameCamera_.cleanViewRightY = cv[4];
+  frameCamera_.cleanViewRightZ = cv[8];
+  frameCamera_.cleanViewUpX = cv[1];
+  frameCamera_.cleanViewUpY = cv[5];
+  frameCamera_.cleanViewUpZ = cv[9];
+  frameCamera_.cleanViewForwardX = -cv[2];
+  frameCamera_.cleanViewForwardY = -cv[6];
+  frameCamera_.cleanViewForwardZ = -cv[10];
+ } else {
+  frameCamera_.cleanEyeX = frameCamera_.eyeX;
+  frameCamera_.cleanEyeY = frameCamera_.eyeY;
+  frameCamera_.cleanEyeZ = frameCamera_.eyeZ;
+  frameCamera_.cleanViewRightX = frameCamera_.viewRightX;
+  frameCamera_.cleanViewRightY = frameCamera_.viewRightY;
+  frameCamera_.cleanViewRightZ = frameCamera_.viewRightZ;
+  frameCamera_.cleanViewUpX = frameCamera_.viewUpX;
+  frameCamera_.cleanViewUpY = frameCamera_.viewUpY;
+  frameCamera_.cleanViewUpZ = frameCamera_.viewUpZ;
+  frameCamera_.cleanViewForwardX = frameCamera_.viewForwardX;
+  frameCamera_.cleanViewForwardY = frameCamera_.viewForwardY;
+  frameCamera_.cleanViewForwardZ = frameCamera_.viewForwardZ;
+ }
  const PackDefinition* definition =
      shaderPacks_ != nullptr ? shaderPacks_->activeDefinition() : nullptr;
  if(!frameCamera_.shadowPass) {
@@ -1061,7 +1099,7 @@ void GameRenderer::renderToCurrentTarget(float tickDelta,
  FrustumCuller frustumCuller;
  FrustumCuller* activeCuller = nullptr;
  if(client->options.frustumCulling && resolvedOptions.frustumCulling) {
-  frustumCuller.prepare(frameCamera_.eyeX, frameCamera_.eyeY, frameCamera_.eyeZ);
+   frustumCuller.prepare(frameCamera_.cleanEyeX, frameCamera_.cleanEyeY, frameCamera_.cleanEyeZ);
   activeCuller = &frustumCuller;
  }
  {

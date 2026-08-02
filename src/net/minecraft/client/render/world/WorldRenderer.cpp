@@ -17,6 +17,7 @@
 #include "net/minecraft/client/particle/ParticleRegistry.hpp"
 #include "net/minecraft/client/particle/PickupParticle.hpp"
 #include "net/minecraft/client/render/GameRenderer.hpp"
+#include "net/minecraft/client/render/QuadIndexBuffer.hpp"
 #include "net/minecraft/client/render/pipeline/Manager.hpp"
 #include "net/minecraft/client/render/camera/FrameRenderCamera.hpp"
 #include "net/minecraft/client/render/RenderType.hpp"
@@ -502,17 +503,18 @@ void WorldRenderer::reload() {
  lastRenderScale = resolved.renderScale;
   gl::GLCore::ensureLoaded();
   renderRadiusChunks_ = resolved.chunkRadius;
-  // Pre-size the shared terrain VBO so the initial chunk stream does not repeatedly
-  // grow the buffer and re-upload every accumulated range (a per-frame stall on
-  // world load / teleport). Estimate ~384 vertices/section/layer at steady state,
-  // capped so a giant view distance does not reserve gigabytes up front.
-  if(renderRadiusChunks_ > 0) {
-   const std::size_t columns = static_cast<std::size_t>(2 * renderRadiusChunks_ + 1);
-   const std::size_t sections = columns * columns * static_cast<std::size_t>(kChunkSectionCountY);
-   const std::size_t estimate = std::min<std::size_t>(sections * 384u, 2u * 1024u * 1024u);
-   chunk::ChunkRegion& region = regionManager_.pool();
-   for(auto& layer : region.layers) layer.reserve(estimate);
-  }
+   // Pre-size the shared terrain VBO so the initial chunk stream does not repeatedly
+   // grow the buffer and re-upload every accumulated range (a per-frame stall on
+   // world load / teleport). Estimate ~384 vertices/section/layer at steady state,
+   // capped so a giant view distance does not reserve gigabytes up front.
+   if(renderRadiusChunks_ > 0) {
+    const std::size_t columns = static_cast<std::size_t>(2 * renderRadiusChunks_ + 1);
+    const std::size_t sections = columns * columns * static_cast<std::size_t>(kChunkSectionCountY);
+    const std::size_t estimate = std::min<std::size_t>(sections * 384u, 16u * 1024u * 1024u);
+    chunk::ChunkRegion& region = regionManager_.pool();
+    for(auto& layer : region.layers) layer.reserve(estimate);
+    net::minecraft::client::render::quad_index::ensure(estimate);
+   }
   globalBlockEntities.clear();
   entityRenderCooldown = 2;
 }
@@ -988,7 +990,13 @@ void WorldRenderer::cullChunks(FrustumCuller* culler, float /*tickDelta*/, bool 
    chunk.inFrustum = false;
   }
  }
-  applyOcclusionCulling();
+  // Light-space occlusion is invalid for the shadow pass (player-viewpoint flood
+  // fill); the frustum loop above already applied the shadow render-distance cut.
+  // pushCullState() snapshotted the main-pass inFrustum flags, so popCullState()
+  // restores them unchanged, leaving the main pass unaffected.
+  if(!renderCamera.shadowPass) {
+   applyOcclusionCulling();
+  }
   rebuildVisibleDrawRings();
 }
 void WorldRenderer::applyOcclusionCulling() {
