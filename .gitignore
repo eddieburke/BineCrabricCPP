@@ -22,3 +22,6 @@ AGENTS.md
 agents.md
 
 .build-omega.lock
+
+# Licensed shaderpacks kept local-only
+shaderpacks/RenderPearl*/
