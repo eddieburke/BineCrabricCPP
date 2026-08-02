@@ -13,7 +13,6 @@
 #include <vector>
 #include "net/minecraft/client/gl/ShaderBinaryCache.hpp"
 #include "net/minecraft/client/gl/ShaderProgram.hpp"
-struct GLFWwindow;
 namespace net::minecraft::client::gl {
 struct ShaderCompileRequest {
  std::uint64_t contentHash = 0;
@@ -59,8 +58,10 @@ class ShaderCompileService {
   return disk_.root();
  }
 
-  // Creates worker contexts sharing the current GL context (or standalone if
-  // none is current). Safe to call multiple times; no-op if already running.
+  // Spawns worker threads that create their own hidden shared contexts on their
+  // own threads (never calling glfwCreateWindow, which is main-thread-only and
+  // stalls the frame). Returns immediately; the workers come online as soon as
+  // their contexts are built. Safe to call multiple times; no-op if already running.
   void start();
   void stop();
   // True once start() has created worker threads. Callers that must not block
@@ -83,7 +84,11 @@ class ShaderCompileService {
   void storeDiskEntry(const ProgramBinaryBlob& blob);
 
 private:
- void workerMain(std::size_t index, GLFWwindow* window);
+ // Captured from the primary context on the main thread in start(); worker
+ // threads build an identical pixel-format context and share into it.
+ struct ContextSpec;
+ std::unique_ptr<ContextSpec> contextSpec_;
+ void workerMain();
  ShaderCompileResult runJobOnCurrentContext(const ShaderCompileRequest& request);
  std::shared_ptr<Job> findOrCreateJob(ShaderCompileRequest request);
 
@@ -94,8 +99,11 @@ private:
  std::unordered_map<std::uint64_t, std::shared_ptr<Job>> jobs_;
  std::vector<std::shared_ptr<Job>> completed_;
  std::vector<std::thread> workers_;
- std::vector<GLFWwindow*> workerWindows_;
  bool stop_ = false;
  bool started_ = false;
+ // Number of worker threads still alive. Drops to zero if every worker fails
+ // to create a shared context; the service then falls back to synchronous
+ // compilation on the caller's context.
+ unsigned liveWorkers_ = 0;
 };
 } // namespace net::minecraft::client::gl

@@ -416,21 +416,35 @@ std::string preprocessProperties(const std::string& source,
   return result;
 }
 namespace {
-bool has(const std::vector<std::string>& resources, const std::string& path) {
- return std::find(resources.begin(), resources.end(), path) != resources.end();
+// Transparent string hasher/compare enable zero-allocation `.contains(string_view)`
+// lookups (same pattern as net/minecraft/client/gl/ShaderProgram.hpp NameMap).
+struct TransparentStringHash {
+ using is_transparent = void;
+ std::size_t operator()(std::string_view value) const noexcept {
+  return std::hash<std::string_view>{}(value);
+ }
+};
+using ResourceSet = std::unordered_set<std::string, TransparentStringHash, std::equal_to<>>;
+template <typename Container>
+bool has(const Container& resources, std::string_view path) {
+ if constexpr(requires { resources.contains(path); }) {
+  return resources.contains(path);
+ } else {
+  return std::find(resources.begin(), resources.end(), path) != resources.end();
+ }
 }
 void addProgram(PackDefinition& pack,
-                const std::vector<std::string>& resources,
+                const ResourceSet& resources,
                 std::string_view key) {
  const std::string path = "shaders/" + std::string(key);
  const std::string fragmentPath = path + ".fsh";
- if(!has(resources, fragmentPath)) return;
+ if(!resources.contains(fragmentPath)) return;
  PackProgramSource source;
- if(has(resources, path + ".vsh")) source.vertex = path + ".vsh";
+ if(resources.contains(path + ".vsh")) source.vertex = path + ".vsh";
  source.fragment = fragmentPath;
- if(has(resources, path + ".gsh")) source.geometry = path + ".gsh";
- if(has(resources, path + ".tcs")) source.tessControl = path + ".tcs";
- if(has(resources, path + ".tes")) source.tessEvaluation = path + ".tes";
+ if(resources.contains(path + ".gsh")) source.geometry = path + ".gsh";
+ if(resources.contains(path + ".tcs")) source.tessControl = path + ".tcs";
+ if(resources.contains(path + ".tes")) source.tessEvaluation = path + ".tes";
  pack.programs.emplace(std::string(key), std::move(source));
 }
 std::string resolvedFragmentSource(const PackLoader::ReadText& readText, const std::string& fragmentPath) {
@@ -653,7 +667,7 @@ void inferColortexFormatsFromLayouts(PackDefinition& pack, const std::string& so
   }
 }
 void addPostPrograms(PackDefinition& pack,
-                     const std::vector<std::string>& resources,
+                     const ResourceSet& resources,
                      const PackLoader::ReadText& readText,
                      const std::unordered_map<std::string, std::string>& resolvedFragments) {
  const std::array<std::string, 6> prefixes = {"begin", "shadowcomp", "prepare", "deferred", "composite", "final"};
@@ -662,12 +676,12 @@ void addPostPrograms(PackDefinition& pack,
   for(int index = 0; index < programCount; ++index) {
    const std::string key = prefix + (index == 0 ? std::string{} : std::to_string(index));
    const std::string path = "shaders/" + key;
-   if(!has(resources, path + ".fsh")) continue;
-   const std::string vertex = has(resources, path + ".vsh") ? path + ".vsh" : std::string{};
+   if(!resources.contains(path + ".fsh")) continue;
+   const std::string vertex = resources.contains(path + ".vsh") ? path + ".vsh" : std::string{};
    PackProgramSource program;
    program.vertex = vertex;
    program.fragment = path + ".fsh";
-   if(has(resources, path + ".gsh")) program.geometry = path + ".gsh";
+   if(resources.contains(path + ".gsh")) program.geometry = path + ".gsh";
    pack.programs.emplace(key, std::move(program));
    PackPass pass;
    pass.name = key;
@@ -1401,7 +1415,8 @@ void loadProgramSet(PackDefinition& out,
  // Resolve each fragment's include graph once; addPostPrograms reuses these so
  // post-program sources are not include-resolved a second time.
  std::unordered_map<std::string, std::string> resolvedFragments;
- for(const PackProgramId& id : packProgramIds()) addProgram(out, resources, id.name);
+ const ResourceSet resourceSet(resources.begin(), resources.end());
+ for(const PackProgramId& id : packProgramIds()) addProgram(out, resourceSet, id.name);
  for(const std::string& path : resources) {
   if(!path.ends_with(".fsh")) continue;
   std::string source = resolvedFragmentSource(readText, path);
@@ -1455,7 +1470,7 @@ void loadProgramSet(PackDefinition& out,
  }
  out.shadowColorBuffers = std::clamp(out.shadowColorBuffers, 0, 8);
  if(out.programs.contains("shadow") && out.shadowMapResolution == 0) out.shadowMapResolution = 1024;
-  addPostPrograms(out, resources, readText, resolvedFragments);
+  addPostPrograms(out, resourceSet, readText, resolvedFragments);
  out.shadowColorBuffers = std::clamp(out.shadowColorBuffers, 0, 8);
  addComputePrograms(out, resources, readText);
 }

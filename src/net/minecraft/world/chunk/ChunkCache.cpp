@@ -275,53 +275,56 @@ void ChunkCache::requestChunkAsync(int chunkX, int chunkZ, int priority) {
 }
 void ChunkCache::integrateFinishedLoads(int budget, std::int64_t timeBudgetNs) {
  const auto start = std::chrono::steady_clock::now();
- int processed = 0;
- while(budget > 0) {
-  if(processed > 0 && timeBudgetNs >= 0 &&
+ // Single O(n) sweep instead of one full scan per adopted chunk: drop finished
+ // dead (cancelled) and out-of-radius entries, and collect the ready in-radius
+ // candidates ordered by distance. Adoption then walks the collected list with
+ // the per-call budget and wall-clock budget.
+ struct Candidate {
+  std::shared_ptr<PendingLoad> load;
+  int distance = 0;
+ };
+ std::vector<Candidate> ready;
+ for(auto it = pendingLoads_.begin(); it != pendingLoads_.end();) {
+  const std::shared_ptr<PendingLoad>& pending = it->second;
+  if(!pending->done.load(std::memory_order_acquire)) {
+   ++it;
+   continue;
+  }
+  if(pending->cancelledGeneration.load(std::memory_order_acquire) == pending->generation) {
+   it = pendingLoads_.erase(it);
+   continue;
+  }
+  const int distance =
+      std::max(std::abs(pending->chunkX - centerChunkX_), std::abs(pending->chunkZ - centerChunkZ_));
+  if(distance > activeRadius_) {
+   it = pendingLoads_.erase(it);
+   continue;
+  }
+  ready.push_back({pending, distance});
+  ++it;
+ }
+ std::stable_sort(ready.begin(), ready.end(),
+                  [](const Candidate& a, const Candidate& b) { return a.distance < b.distance; });
+ int adopted = 0;
+ for(Candidate& candidate : ready) {
+  if(budget <= 0) break;
+  if(adopted > 0 && timeBudgetNs >= 0 &&
      std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::steady_clock::now() - start).count() >=
          timeBudgetNs) {
    break;
   }
-  auto best = pendingLoads_.end();
-  int bestDistance = std::numeric_limits<int>::max();
-  for(auto it = pendingLoads_.begin(); it != pendingLoads_.end(); ++it) {
-   const PendingLoad& pending = *it->second;
-   if(!pending.done.load(std::memory_order_acquire)) {
-    continue;
-   }
-   if(pending.cancelledGeneration.load(std::memory_order_acquire) == pending.generation) {
-    best = it;
-    break;
-   }
-   const int distance =
-       std::max(std::abs(pending.chunkX - centerChunkX_), std::abs(pending.chunkZ - centerChunkZ_));
-   if(distance > activeRadius_) {
-    best = it;
-    bestDistance = distance;
-    break;
-   }
-   if(distance < bestDistance) {
-    best = it;
-    bestDistance = distance;
-   }
-  }
-  if(best == pendingLoads_.end()) {
-   break;
-  }
-  PendingLoad& pending = *best->second;
-  std::unique_ptr<Chunk> chunk = std::move(pending.chunk);
+  PendingLoad& pending = *candidate.load;
   const int chunkX = pending.chunkX;
   const int chunkZ = pending.chunkZ;
-  const bool cancelled = pending.cancelledGeneration.load(std::memory_order_acquire) == pending.generation;
-  pendingLoads_.erase(best);
-  ++processed;
   const ChunkPos pos{chunkX, chunkZ};
-  if(cancelled || chunk == nullptr || chunksByPos_.contains(pos) ||
-     std::max(std::abs(chunkX - centerChunkX_), std::abs(chunkZ - centerChunkZ_)) > activeRadius_) {
+  if(pending.chunk == nullptr || chunksByPos_.contains(pos)) {
+   pendingLoads_.erase(pos);
    continue;
   }
+  pendingLoads_.erase(pos);
   chunksToUnload_.erase(pos);
-  adoptChunk(chunkX, chunkZ, std::move(chunk));
+  adoptChunk(chunkX, chunkZ, std::move(pending.chunk));
+  ++adopted;
   --budget;
  }
 }

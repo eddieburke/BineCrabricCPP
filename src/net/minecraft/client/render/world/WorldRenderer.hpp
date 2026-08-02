@@ -62,8 +62,10 @@ class WorldRenderer : public net::minecraft::GameEventListener {
  void markDirty(int minX, int minY, int minZ, int maxX, int maxY, int maxZ);
  void blockUpdate(int x, int y, int z) override;
  void setBlocksDirty(int minX, int minY, int minZ, int maxX, int maxY, int maxZ) override;
-   void chunkAvailable(int chunkX, int chunkZ) override;
-   void chunkUnloaded(int chunkX, int chunkZ) override;
+    void chunkAvailable(int chunkX, int chunkZ) override;
+    void chunkUnloaded(int chunkX, int chunkZ) override;
+    void markChunkColumnLit(int chunkX, int chunkZ) override;
+    void markAllChunksLit() override;
   void cullChunks(FrustumCuller* culler, float tickDelta, bool updateFrontier = true);
  void addParticle(const std::string& particle,
                   double x,

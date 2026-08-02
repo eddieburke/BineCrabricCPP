@@ -42,8 +42,9 @@ class PackInstance {
  std::unordered_map<std::string, PackSourceOption> sourceOptions;
  std::unordered_map<std::string, std::string> settings;
  CustomUniformRuntime customUniforms;
- std::unordered_map<std::string, std::string> sourceCache;
- std::unordered_map<std::string, gl::ShaderProgram*> compiledPrograms;
+std::unordered_map<std::string, std::string> sourceCache;
+  std::unordered_map<std::string, std::string> resolvedSourceCache;
+  std::unordered_map<std::string, gl::ShaderProgram*> compiledPrograms;
  PackProgramState programState = PackProgramState::Cold;
  std::vector<std::size_t> postPasses;
  std::vector<std::size_t> deferredPasses;

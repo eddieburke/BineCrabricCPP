@@ -14,9 +14,16 @@
 namespace net::minecraft::client::render {
 namespace {
 constexpr int kBaselineRadius = 13;
+constexpr int kMeshBias = 4;
 } // namespace
 void ChunkCompilePipeline::enqueueDirtyChunk(chunk::ChunkBuilder* chunk) {
  if(chunk == nullptr || chunk->meshJobInFlight) {
+  return;
+ }
+ // P-LITGATE: hold the FIRST mesh of a freshly-created column until its column
+ // is marked lit (markChunkColumnLit re-enqueues it). Re-meshes of already-built
+ // sections are never held — the gate only delays the first build.
+ if(!chunk->built && facade_.chunkSections_.columnPendingLit(chunk->x >> 4, chunk->z >> 4)) {
   return;
  }
  noteNearDirty(chunk);
@@ -73,11 +80,11 @@ bool ChunkCompilePipeline::startMeshJob(chunk::ChunkBuilder* chunk,
  // Snapshot capture runs on the mesh worker while pins are held.
  chunk->meshJobInFlight = true;
  dirtyChunks_.erase(chunk);
- if(nearLane) {
-  meshScheduler_.enqueueNear(std::move(job));
- } else {
-  meshScheduler_.enqueue(std::move(job), priority);
- }
+  if(nearLane) {
+   meshScheduler_.enqueueNear(std::move(job));
+  } else {
+   meshScheduler_.enqueue(std::move(job), priority - kMeshBias);
+  }
  return true;
 }
 bool ChunkCompilePipeline::compileChunks(net::minecraft::entity::LivingEntity& /*camera*/, bool force) {

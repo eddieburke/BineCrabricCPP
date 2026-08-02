@@ -49,11 +49,21 @@ class GameEventListener {
  // the borders of the four orthogonally adjacent columns, and can coalesce a
  // whole batch of arrivals into one pass instead of re-dirtying a 3x3
  // neighbourhood over full height per chunk.
-   virtual void chunkAvailable(int chunkX, int chunkZ) {
-    (void)chunkX;
-    (void)chunkZ;
-   }
-   // A chunk column was unloaded/evicted; its block data is no longer readable.
+    virtual void chunkAvailable(int chunkX, int chunkZ) {
+     (void)chunkX;
+     (void)chunkZ;
+    }
+    // The column's lighting drained (World::doLightingUpdates); the renderer may
+    // now build the first mesh that was held pending lighting.
+    virtual void markChunkColumnLit(int chunkX, int chunkZ) {
+     (void)chunkX;
+     (void)chunkZ;
+    }
+    // The lighting engine went fully idle; every held column is lit (non-optional
+    // completion for columns whose lighting produced no drained region).
+    virtual void markAllChunksLit() {
+    }
+    // A chunk column was unloaded/evicted; its block data is no longer readable.
    // Listeners that mirrored the column (e.g. the chunk renderer) must drop it so
    // a later reload starts fresh instead of reusing stale state.
    virtual void chunkUnloaded(int chunkX, int chunkZ) {

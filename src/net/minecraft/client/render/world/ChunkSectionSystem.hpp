@@ -63,9 +63,11 @@ class ChunkSectionSystem {
   void markDirty(int minX, int minY, int minZ, int maxX, int maxY, int maxZ);
   void blockUpdate(int x, int y, int z);
   void setBlocksDirty(int minX, int minY, int minZ, int maxX, int maxY, int maxZ);
-  void chunkAvailable(int chunkX, int chunkZ);
-  void chunkUnloaded(int chunkX, int chunkZ);
-  void notifyAmbientDarknessChanged();
+   void chunkAvailable(int chunkX, int chunkZ);
+   void chunkUnloaded(int chunkX, int chunkZ);
+   void markChunkColumnLit(int chunkX, int chunkZ);
+   void markAllChunksLit();
+   void notifyAmbientDarknessChanged();
   void updateBlockEntity(int x, int y, int z, net::minecraft::block::entity::BlockEntity* blockEntity);
   [[nodiscard]] std::string getChunkDebugInfo() const;
   [[nodiscard]] bool empty() const noexcept {
@@ -82,7 +84,10 @@ class ChunkSectionSystem {
   [[nodiscard]] const std::vector<std::unordered_set<chunk::ChunkBuilder*>>& drawRings() const noexcept {
    return drawRings_;
   }
-  void drainBorderRefresh();
+   void drainBorderRefresh();
+   [[nodiscard]] bool columnPendingLit(int sectionX, int sectionZ) const noexcept {
+    return pendingLit_.contains(world::SectionPos{sectionX, 0, sectionZ});
+   }
 
  private:
   [[nodiscard]] const net::minecraft::entity::LivingEntity* frontierCamera() const;
@@ -106,10 +111,12 @@ class ChunkSectionSystem {
   bool cullStateSaved_ = false;
   std::deque<world::SectionPos> pendingColumns_{};
   std::unordered_set<world::SectionPos, world::SectionPosHash> pendingSet_{};
-  // Chunk columns that arrived since the last compileChunks pass. Drained once
-  // per frame so a burst of arrivals refreshes each shared border exactly once
-  // instead of once per arriving neighbour. Keyed with y == 0.
-  std::unordered_set<world::SectionPos, world::SectionPosHash> pendingBorderRefresh_{};
+   // Chunk columns that arrived since the last compileChunks pass. Drained once
+   // per frame so a burst of arrivals refreshes each shared border exactly once
+   // instead of once per arriving neighbour. Keyed with y == 0.
+   std::unordered_set<world::SectionPos, world::SectionPosHash> pendingBorderRefresh_{};
+   // Columns whose first mesh is held until their lighting drains. Keyed y == 0.
+   std::unordered_set<world::SectionPos, world::SectionPosHash> pendingLit_{};
   int centerSectionX_ = std::numeric_limits<int>::min();
   int centerSectionZ_ = std::numeric_limits<int>::min();
   int renderRadiusChunks_ = 0;

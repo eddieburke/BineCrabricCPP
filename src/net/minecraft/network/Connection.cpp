@@ -215,10 +215,16 @@ void Connection::tick() {
   // applies (chunk data during a local/LAN join) clears in a single tick.
   constexpr int kMinDrain = 8;
   constexpr int kMaxDrain = 4096;
+  constexpr std::chrono::milliseconds kFallbackDrainBudget = std::chrono::milliseconds(3);
   int maxDrain =
       externalDrainLimit_.has_value() ? std::min(externalDrainLimit_->maxPackets, kMaxDrain) : kMaxDrain;
-  const std::optional<std::chrono::steady_clock::time_point> drainDeadline =
-      externalDrainLimit_.has_value() ? std::optional(externalDrainLimit_->deadline) : std::nullopt;
+  // Always impose a wall-clock budget: a fallback with no external limit must not
+  // drain the whole backlog (up to kMaxDrain) synchronously in one main-thread
+  // tick, which stalls the frame on a join/stream burst.
+  const std::chrono::steady_clock::time_point drainDeadline =
+      externalDrainLimit_.has_value()
+          ? externalDrainLimit_->deadline
+          : std::chrono::steady_clock::now() + kFallbackDrainBudget;
   int applied = 0;
   while(applied < maxDrain) {
    std::unique_ptr<Packet> packet;
@@ -237,7 +243,7 @@ void Connection::tick() {
      packet->apply(*handler);
     }
    }
-   if(++applied >= kMinDrain && drainDeadline.has_value() && std::chrono::steady_clock::now() >= *drainDeadline) {
+   if(++applied >= kMinDrain && std::chrono::steady_clock::now() >= drainDeadline) {
     break;
    }
   }

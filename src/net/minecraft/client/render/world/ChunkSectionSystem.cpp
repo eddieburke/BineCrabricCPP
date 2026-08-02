@@ -183,9 +183,10 @@ void ChunkSectionSystem::clearSections() {
  savedVisibleDrawRings_.clear();
  cullStateSaved_ = false;
   facade_.globalBlockEntities.clear();
-   pendingColumns_.clear();
-   pendingSet_.clear();
-   pendingBorderRefresh_.clear();
+    pendingColumns_.clear();
+    pendingSet_.clear();
+    pendingBorderRefresh_.clear();
+    pendingLit_.clear();
   // Retired sections still reference the shared region pool until reaped; only
   // clear it once nothing is in flight.
  facade_.compilePipeline_.clearRegionPool();
@@ -481,6 +482,7 @@ void ChunkSectionSystem::chunkAvailable(int chunkX, int chunkZ) {
    return;
   }
    enqueueColumn(chunkX, chunkZ);
+   pendingLit_.insert(world::SectionPos{chunkX, 0, chunkZ});
    pendingBorderRefresh_.insert(world::SectionPos{chunkX, 0, chunkZ});
 }
 // The chunk cache evicted a column. Drop the mirroring sections (plus any stale
@@ -488,8 +490,42 @@ void ChunkSectionSystem::chunkAvailable(int chunkX, int chunkZ) {
 // that is gone, and a later reload rebuilds the column from scratch instead of
 // reusing stale state.
 void ChunkSectionSystem::chunkUnloaded(int chunkX, int chunkZ) {
+ pendingLit_.erase(world::SectionPos{chunkX, 0, chunkZ});
  pendingBorderRefresh_.erase(world::SectionPos{chunkX, 0, chunkZ});
  removeColumn(chunkX, chunkZ);
+}
+// P-LITGATE: the column's lighting drained (World::doLightingUpdates). Release
+// its gate and re-enqueue the unbuilt sections whose first mesh was held.
+void ChunkSectionSystem::markChunkColumnLit(int chunkX, int chunkZ) {
+ pendingLit_.erase(world::SectionPos{chunkX, 0, chunkZ});
+ for(int sectionY = 0; sectionY < kChunkSectionCountY; ++sectionY) {
+  chunk::ChunkBuilder* section = sectionAt(chunkX, sectionY, chunkZ);
+  if(section != nullptr && section->dirty && !section->built) {
+   facade_.compilePipeline_.enqueueDirtyChunk(section);
+  }
+ }
+}
+// P-LITGATE: the lighting engine went fully idle — no remaining boxes could
+// produce a region for a held column, so every gate is released (non-optional
+// completion; a column with no pending boxes is never held forever).
+void ChunkSectionSystem::markAllChunksLit() {
+ if(pendingLit_.empty()) {
+  return;
+ }
+ std::vector<world::SectionPos> columns;
+ columns.reserve(pendingLit_.size());
+ for(const world::SectionPos& column : pendingLit_) {
+  columns.push_back(column);
+ }
+ pendingLit_.clear();
+ for(const world::SectionPos& column : columns) {
+  for(int sectionY = 0; sectionY < kChunkSectionCountY; ++sectionY) {
+   chunk::ChunkBuilder* section = sectionAt(column.x, sectionY, column.z);
+   if(section != nullptr && section->dirty && !section->built) {
+    facade_.compilePipeline_.enqueueDirtyChunk(section);
+   }
+  }
+ }
 }
 void ChunkSectionSystem::drainBorderRefresh() {
  if(pendingBorderRefresh_.empty()) {

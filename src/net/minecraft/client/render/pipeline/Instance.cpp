@@ -41,6 +41,7 @@ bool PackInstance::rebuildRuntime(std::string& error) {
  const bool compiled = customUniforms.compile(definition.customUniforms, error);
  resetPrograms();
  programEnabledCache.clear();
+ resolvedSourceCache.clear();
  PackPassBuckets buckets;
  indexPackPasses(definition, settings, buckets, programEnabledCache);
  postPasses = std::move(buckets.postPasses);

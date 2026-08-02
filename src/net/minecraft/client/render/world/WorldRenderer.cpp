@@ -480,6 +480,12 @@ void WorldRenderer::chunkAvailable(int chunkX, int chunkZ) {
 void WorldRenderer::chunkUnloaded(int chunkX, int chunkZ) {
  chunkSections_.chunkUnloaded(chunkX, chunkZ);
 }
+void WorldRenderer::markChunkColumnLit(int chunkX, int chunkZ) {
+ chunkSections_.markChunkColumnLit(chunkX, chunkZ);
+}
+void WorldRenderer::markAllChunksLit() {
+ chunkSections_.markAllChunksLit();
+}
 void WorldRenderer::notifyAmbientDarknessChanged() {
  chunkSections_.notifyAmbientDarknessChanged();
 }

@@ -131,28 +131,33 @@ const std::string& PackCompiler::cachedText(PackInstance& pack, const std::strin
  return pack.sourceCache.emplace(path, readText(pack, path)).first->second;
 }
 std::string PackCompiler::resolveIncludes(PackInstance& pack, const std::string& path) {
- std::string dimPrefix;
- if(path.rfind("shaders/", 0) == 0) {
-  const std::size_t slash = path.find('/', 8);
-  if(slash != std::string::npos) {
-   dimPrefix = path.substr(0, slash + 1);
-  }
+ if(const auto cached = pack.resolvedSourceCache.find(path); cached != pack.resolvedSourceCache.end()) {
+  return cached->second;
  }
- return resolveShaderIncludes(
-     [&](std::string_view current) {
-      std::string target(current);
-      if(!dimPrefix.empty() && target.rfind("shaders/", 0) == 0 && target.rfind(dimPrefix, 0) != 0) {
-       const std::string dimTarget = dimPrefix + target.substr(8);
-       std::string source = cachedText(pack, dimTarget);
-       if(!source.empty()) {
-        return PackLoader::rewriteOptions(source, pack.sourceOptions, pack.settings);
+std::string dimPrefix;
+  if(path.rfind("shaders/", 0) == 0) {
+   const std::size_t slash = path.find('/', 8);
+   if(slash != std::string::npos) {
+    dimPrefix = path.substr(0, slash + 1);
+   }
+  }
+  std::string resolved = resolveShaderIncludes(
+      [&](std::string_view current) {
+       std::string target(current);
+       if(!dimPrefix.empty() && target.rfind("shaders/", 0) == 0 && target.rfind(dimPrefix, 0) != 0) {
+        const std::string dimTarget = dimPrefix + target.substr(8);
+        std::string source = cachedText(pack, dimTarget);
+        if(!source.empty()) {
+         return PackLoader::rewriteOptions(source, pack.sourceOptions, pack.settings);
+        }
        }
-      }
-      std::string source = cachedText(pack, target);
-      return PackLoader::rewriteOptions(source, pack.sourceOptions, pack.settings);
-     },
-     path,
-     true);
+       std::string source = cachedText(pack, target);
+       return PackLoader::rewriteOptions(source, pack.sourceOptions, pack.settings);
+      },
+      path,
+      true);
+  pack.resolvedSourceCache.emplace(path, resolved);
+  return resolved;
 }
 gl::ShaderProgram* PackCompiler::compile(PackInstance& pack, const std::string& programName,
                                                 const LogFnLevel& logOnce) {
