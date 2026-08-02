@@ -395,7 +395,6 @@ set(MINECRAFT_TEST_SOURCES
     tests/iris_hemisphere_chunk_offset_test.cpp
     tests/lifecycle_test.cpp
     tests/lighting_channel_test.cpp
-    tests/lighting_ready_gate_test.cpp
     tests/macro_parity_test.cpp
     tests/mesh_cancel_test.cpp
     tests/pack_blend_drawbuffer_test.cpp

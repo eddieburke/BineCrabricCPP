@@ -505,12 +505,6 @@ void World::chunkAvailable(int chunkX, int chunkZ) {
 void World::chunkUnloaded(int chunkX, int chunkZ) {
  events_.chunkUnloaded(chunkX, chunkZ);
 }
-void World::markChunkColumnLit(int chunkX, int chunkZ) {
- events_.markChunkColumnLit(chunkX, chunkZ);
-}
-void World::markAllChunksLit() {
- events_.markAllChunksLit();
-}
 void World::setBlocksDirtyColumn(int x, int z, int minY, int maxY) {
  events_.setBlocksDirtyColumn(x, z, minY, maxY);
 }
@@ -723,21 +717,6 @@ bool World::doLightingUpdates(std::size_t maxDirtyRegions) {
  std::vector<LightingEngine::DirtyRegion> drained = lighting_.drainDirtyRegions(maxDirtyRegions);
  for(const LightingEngine::DirtyRegion& region : drained) {
   events_.setBlocksDirty(region.minX, region.minY, region.minZ, region.maxX, region.maxY, region.maxZ);
-  const int minChunkX = MathHelper::floorDiv(region.minX, 16);
-  const int maxChunkX = MathHelper::floorDiv(region.maxX, 16);
-  const int minChunkZ = MathHelper::floorDiv(region.minZ, 16);
-  const int maxChunkZ = MathHelper::floorDiv(region.maxZ, 16);
-  for(int chunkX = minChunkX; chunkX <= maxChunkX; ++chunkX) {
-   for(int chunkZ = minChunkZ; chunkZ <= maxChunkZ; ++chunkZ) {
-    markChunkColumnLit(chunkX, chunkZ);
-   }
-  }
- }
- // Non-optional completion: a column whose lighting never produces a drained
- // region (no boxes queued, or boxes that change nothing) must not stall its
- // first mesh forever — once the engine is fully idle every held column is lit.
- if(!lighting_.busy() && !lighting_.hasDirtyRegions()) {
-  markAllChunksLit();
  }
  return lighting_.busy() || lighting_.hasDirtyRegions();
 }

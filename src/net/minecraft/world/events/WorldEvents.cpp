@@ -66,12 +66,6 @@ void WorldEvents::chunkAvailable(int chunkX, int chunkZ) {
 void WorldEvents::chunkUnloaded(int chunkX, int chunkZ) {
  dispatch(&GameEventListener::chunkUnloaded, chunkX, chunkZ);
 }
-void WorldEvents::markChunkColumnLit(int chunkX, int chunkZ) {
- dispatch(&GameEventListener::markChunkColumnLit, chunkX, chunkZ);
-}
-void WorldEvents::markAllChunksLit() {
- dispatch(&GameEventListener::markAllChunksLit);
-}
 void WorldEvents::setBlocksDirty(int minX, int minY, int minZ, int maxX, int maxY, int maxZ) {
  if(minY > maxY) {
   std::swap(minY, maxY);

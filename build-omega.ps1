@@ -126,8 +126,9 @@ if ($Gui) {
         Write-Host "  [11] Clean build folder only (no rebuild)"
         Write-Host "  [12] Format C++ source (clang-format)"
         Write-Host "  [13] Explain all this again"
-        Write-Host "  [14] Advanced options (build flags: startup profiling, LTO, symbols, ...)"
-        Write-Host "  [15] Exit"
+        Write-Host "  [14] Advanced options (build flags: LTO, symbols, mods, ...)"
+        Write-Host "  [15] Build AND launch with startup hang/profiling logging (writes startup-profile.log)"
+        Write-Host "  [16] Exit"
         Write-Host ""
         return Read-Host "Type a number and press Enter"
     }
@@ -337,11 +338,36 @@ if ($Gui) {
                 Show-GuiAdvancedOptions
             }
             "15" {
+                Write-GuiHeading "Build and launch with startup hang/profiling logging"
+                Write-GuiExplain @(
+                    "Builds the client and launches it with MINECRAFT_STARTUP_PROFILE=1.",
+                    "This writes startup-profile.log next to the exe: per-phase startup timing",
+                    "plus a breakdown of shader compile, disk cache hits/misses, and IO work.",
+                    "If the main loop stalls (e.g. during shader load) the hang watchdog also",
+                    "writes hang-report.txt + hang.dmp next to the exe.",
+                    "",
+                    "You will need to close the game window for the script to finish."
+                )
+                if (Confirm-GuiAction "Start the build and launch now?") {
+                    Invoke-GuiBuild -Arguments @{"Target"="Client"; "Run"=$true; "StartupProfile"=$true} -FriendlyName "Client build with startup logging"
+                    $sp = Join-Path $ScriptDir (Join-Path $BuildDir "startup-profile.log")
+                    if (Test-Path -LiteralPath $sp) {
+                        Write-Host ""
+                        Write-Host "  Startup profile written to:" -ForegroundColor Green
+                        Write-Host "  $sp" -ForegroundColor Green
+                    } else {
+                        Write-Host ""
+                        Write-Host "  No startup-profile.log found yet." -ForegroundColor Yellow
+                        Write-Host "  Launch the game and close it, then check: $sp" -ForegroundColor Yellow
+                    }
+                }
+            }
+            "16" {
                 $running = $false
             }
             default {
                 Write-Host ""
-                Write-Host "  Please type a number from 1 to 15." -ForegroundColor Yellow
+                Write-Host "  Please type a number from 1 to 16." -ForegroundColor Yellow
             }
         }
     }

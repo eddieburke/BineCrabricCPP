@@ -27,8 +27,6 @@ class ChunkSource {
  }
  virtual void setActiveRadius(int /*radius*/) {
  }
- virtual void populateReadyChunks() {
- }
  virtual void pumpChunkPublish() {
  }
  virtual void prefetchChunksNear(int /*centerChunkX*/, int /*centerChunkZ*/) {

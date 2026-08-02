@@ -60,17 +60,8 @@ class GameEventListener {
     (void)chunkX;
     (void)chunkZ;
    }
-   // P-LITGATE: a chunk column's lighting drained (or the lighting engine went
-   // fully idle), so the chunk renderer may mesh a freshly-created column whose
-   // first build was held until now.
-  virtual void markChunkColumnLit(int chunkX, int chunkZ) {
-   (void)chunkX;
-   (void)chunkZ;
+  virtual void notifyAmbientDarknessChanged() {
   }
-  virtual void markAllChunksLit() {
-  }
- virtual void notifyAmbientDarknessChanged() {
- }
  virtual void playStreaming(const std::string& name, int x, int y, int z) {
   (void)name;
   (void)x;
