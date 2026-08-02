@@ -225,10 +225,9 @@ void EntryListWidget::render(int mouseX, int mouseY, float tickDelta) {
   }
   renderEntry(index, entryX, rowY, rowHeight, tessellator);
  }
- {
-  const core::BlendScope scrollbarCaps(true);
-  constexpr int fadeHeight = 4;
   {
+   constexpr int fadeHeight = 4;
+   {
    const render::RenderPassScope passScope(render::RenderType::guiTextured());
    bindAtlas(textureId);
    tessellator.startQuads();

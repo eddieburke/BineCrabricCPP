@@ -13,6 +13,8 @@
 #include <typeindex>
 #include <unordered_map>
 #include <unordered_set>
+#include <utility>
+#include <vector>
 #include "net/minecraft/network/PacketIO.hpp"
 #include "net/minecraft/network/packet/PacketTracker.hpp"
 namespace net::minecraft {
@@ -76,8 +78,6 @@ class Packet {
    throw std::runtime_error("Bad packet id " + std::to_string(rawId));
   }
   packet->read(input);
-  packetTrackers()[rawId].update(static_cast<int>(packet->size()));
-  ++incomingCount();
   return packet;
  }
  static void write(const Packet& packet, std::ostream& output) {
@@ -97,8 +97,24 @@ class Packet {
  virtual void read(std::istream& input) = 0;
  virtual void write(std::ostream& output) const = 0;
  virtual void apply(NetworkHandler& networkHandler) const = 0;
- [[nodiscard]] virtual std::size_t size() const = 0;
- static void ensureRegistered();
+  [[nodiscard]] virtual std::size_t size() const = 0;
+  static void ensureRegistered();
+  static void mergeReadStats(const std::vector<std::pair<int, int>>& stats) {
+   for(const auto& [rawId, size] : stats) {
+    packetTrackers()[rawId].update(size);
+   }
+   incomingCount() += static_cast<int>(stats.size());
+  }
+  static void resetReadStats() {
+   packetTrackers().clear();
+   incomingCount() = 0;
+  }
+  [[nodiscard]] static std::unordered_map<int, PacketTracker> snapshotReadStats() {
+   return packetTrackers();
+  }
+  [[nodiscard]] static int incomingReadCount() noexcept {
+   return incomingCount();
+  }
 
  private:
  using PacketFactory = std::function<std::unique_ptr<Packet>()>;

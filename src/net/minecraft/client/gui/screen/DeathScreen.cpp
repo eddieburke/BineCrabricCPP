@@ -31,10 +31,13 @@ void DeathScreen::render(int mouseX, int mouseY, float tickDelta) {
   draw::verticalGradientQuad(render::INSTANCE, 0, 0, width_, height_, 0x500000, 0x60, 0x600000, 0xA0);
  }
  if(textRenderer() != nullptr) {
-  core::modelViewStack().push();
-  core::modelViewStack().scale(2.0f, 2.0f, 2.0f);
-  textRenderer()->drawCenteredWithShadow("Game over!", width_ / 2 / 2, 30, 0xFFFFFF);
-  core::modelViewStack().pop();
+  {
+   const core::ScopedDrawCameraState textGuard;
+   net::minecraft::util::math::Matrix4f pose = core::drawModelView();
+   pose.scale(2.0f, 2.0f, 2.0f);
+   core::setDrawModelView(pose);
+   textRenderer()->drawCenteredWithShadow("Game over!", width_ / 2 / 2, 30, 0xFFFFFF);
+  }
   if(minecraft() != nullptr && minecraft()->player != nullptr) {
    textRenderer()->drawCenteredWithShadow("Score: &e" + std::to_string(minecraft()->player->getScore()),
                                           width_ / 2,

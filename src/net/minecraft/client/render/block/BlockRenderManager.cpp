@@ -143,10 +143,10 @@ bool BlockRenderManager::render(net::minecraft::block::Block& block, int x, int 
  ctx.blockLight = ctx.faceBlockLight;
  ctx.skyLight = ctx.faceSkyLight;
  ctx.blockId = resolveShaderBlockId(block.id);
- ctx.blockRenderType = block.getRenderType();
+ ctx.blockFluid = block.getRenderType() == BlockRenderType::FLUID;
  ctx.blockMetadata = ctx.blockView->getBlockMeta(x, y, z);
  if(ctx.tess != nullptr)
-  ctx.tess->blockData(x, y, z, ctx.blockEmission, ctx.blockLight, ctx.skyLight, ctx.blockId, ctx.blockRenderType,
+  ctx.tess->blockData(x, y, z, ctx.blockEmission, ctx.blockLight, ctx.skyLight, ctx.blockId, ctx.blockFluid,
                       ctx.blockMetadata);
  // Bounds live on the context, not the Block singleton: mesh workers and
  // the main-thread tick must never race on Block::minX..maxZ. They are set
@@ -208,7 +208,7 @@ bool BlockRenderManager::render(net::minecraft::block::Block& block, int x, int 
                          block.emission(),
                          block.emission(),
                          ctx.blockId,
-                         ctx.blockRenderType,
+                         ctx.blockFluid,
                          ctx.blockMetadata);
    tessellator.texture(0.0, 0.0);
    for(int i = 0; i < 4; ++i) tessellator.vertex(x + 0.5, y + 0.5, z + 0.5);

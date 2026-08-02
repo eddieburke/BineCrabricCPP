@@ -8,7 +8,7 @@
 #include "net/minecraft/block/Block.hpp"
 #include "net/minecraft/client/particle/BlockParticle.hpp"
 #include "net/minecraft/client/particle/Particle.hpp"
-#include "net/minecraft/client/render/FrameRenderCamera.hpp"
+#include "net/minecraft/client/render/camera/FrameRenderCamera.hpp"
 #include "net/minecraft/client/render/RenderType.hpp"
 #include "net/minecraft/client/texture/TextureManager.hpp"
 #include "net/minecraft/entity/EntityTypes.hpp"

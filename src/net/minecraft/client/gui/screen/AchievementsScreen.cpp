@@ -139,13 +139,15 @@ void AchievementsScreen::renderIcons(int mouseX, int mouseY, float tickDelta) {
  const int achievementTexture = minecraft()->textureManager.getTextureId("/achievement/bg.png");
  const int frameX = (width_ - iconWidth_) / 2;
  const int frameY = (height_ - iconHeight_) / 2;
- const int contentX = frameX + 16;
- const int contentY = frameY + 17;
- const core::DepthScope mapCaps(true, core::depthWriteEnabled());
- core::depthFunc(net::minecraft::client::gl::compare::Gequal);
- core::ScopedModelView mapMatrix;
- core::modelViewStack().translate(0.0f, 0.0f, -200.0f);
- minecraft()->textureManager.bindTexture(terrainTexture);
+  const int contentX = frameX + 16;
+  const int contentY = frameY + 17;
+  core::depthFunc(net::minecraft::client::gl::compare::Gequal);
+ {
+  const core::ScopedDrawCameraState mapGuard;
+  net::minecraft::util::math::Matrix4f mapPose = core::drawModelView();
+  mapPose.translate(0.0f, 0.0f, -200.0f);
+  core::setDrawModelView(mapPose);
+  minecraft()->textureManager.bindTexture(terrainTexture);
  const int tileColumn = (scrollPixelX + 288) >> 4;
  const int tileRow = (scrollPixelY + 288) >> 4;
  const int offsetX = (scrollPixelX + 288) % 16;
@@ -172,12 +174,11 @@ void AchievementsScreen::renderIcons(int mouseX, int mouseY, float tickDelta) {
   }
   tess.draw();
  }
- {
-  const core::DepthScope lineCaps(true, core::depthWriteEnabled());
-  for(const achievement::AchievementDef& achievement : achievement::Achievements::ALL) {
-   if(achievement.parentIndex < 0) {
-    continue;
-   }
+  {
+   for(const achievement::AchievementDef& achievement : achievement::Achievements::ALL) {
+    if(achievement.parentIndex < 0) {
+     continue;
+    }
    const int childX = achievement.column * 24 - scrollPixelX + 11 + contentX;
    const int childY = achievement.row * 24 - scrollPixelY + 11 + contentY;
    const achievement::AchievementDef* parent =
@@ -197,12 +198,10 @@ void AchievementsScreen::renderIcons(int mouseX, int mouseY, float tickDelta) {
    drawVerticalLine(parentX, childY, parentY, lineColor);
   }
  }
- const achievement::AchievementDef* hovered = nullptr;
- render::item::ItemRenderer itemRenderer;
- {
-  const core::DepthScope iconDepth(true, core::depthWriteEnabled());
-  const core::BlendScope iconBlend(true);
-  for(const achievement::AchievementDef& achievement : achievement::Achievements::ALL) {
+  const achievement::AchievementDef* hovered = nullptr;
+  render::item::ItemRenderer itemRenderer;
+  {
+   for(const achievement::AchievementDef& achievement : achievement::Achievements::ALL) {
    const int iconX = achievement.column * 24 - scrollPixelX;
    const int iconY = achievement.row * 24 - scrollPixelY;
    if(iconX < -24 || iconY < -24 || iconX > 224 || iconY > 155) {
@@ -238,14 +237,13 @@ void AchievementsScreen::renderIcons(int mouseX, int mouseY, float tickDelta) {
     core::setConstColor(0.1f, 0.1f, 0.1f, 1.0f);
     itemRenderer.useCustomDisplayColor = false;
    }
-   {
-    const core::CullScope itemCaps(true);
-    itemRenderer.renderGuiItem(*textRenderer(),
-                               minecraft()->textureManager,
-                               achievement::Achievements::iconStack(achievement),
-                               drawX + 3,
-                               drawY + 3);
-   }
+    {
+     itemRenderer.renderGuiItem(*textRenderer(),
+                                minecraft()->textureManager,
+                                achievement::Achievements::iconStack(achievement),
+                                drawX + 3,
+                                drawY + 3);
+    }
    if(!parentUnlocked) {
     itemRenderer.useCustomDisplayColor = true;
    }
@@ -256,13 +254,11 @@ void AchievementsScreen::renderIcons(int mouseX, int mouseY, float tickDelta) {
    }
   }
  }
- {
-  const core::DepthScope frameDepth(false, core::depthWriteEnabled());
-  const core::BlendScope frameBlend(true);
-  core::setConstColor(1.0f, 1.0f, 1.0f, 1.0f);
-  minecraft()->textureManager.bindTexture(achievementTexture);
   {
-   const render::RenderPassScope passScope(render::RenderType::guiTextured());
+   core::setConstColor(1.0f, 1.0f, 1.0f, 1.0f);
+   minecraft()->textureManager.bindTexture(achievementTexture);
+   {
+    const render::RenderPassScope passScope(render::RenderType::guiTextured());
    const float* cc = core::constColor();
    render::Tessellator& tess = render::INSTANCE;
    tess.startQuads();
@@ -271,10 +267,9 @@ void AchievementsScreen::renderIcons(int mouseX, int mouseY, float tickDelta) {
    tess.draw();
   }
  }
- {
-  const core::DepthScope titleCaps(false, core::depthWriteEnabled());
-  Screen::render(mouseX, mouseY, tickDelta);
-  if(hovered != nullptr) {
+  {
+   Screen::render(mouseX, mouseY, tickDelta);
+   if(hovered != nullptr) {
    const std::string title = achievement::Achievements::getTranslatedTitle(*hovered);
    const std::string description = achievement::Achievements::getFormattedDescription(
        *hovered, static_cast<int>(minecraft()->options.inventoryKey.code));
@@ -333,7 +328,8 @@ void AchievementsScreen::renderIcons(int mouseX, int mouseY, float tickDelta) {
                               : (hovered->challenge ? 0xFF808080 : 0xFF808080);
    textRenderer()->drawWithShadow(title, tooltipX, tooltipY, titleColor);
   }
-  core::setLightingEnabled(false);
+   core::setLightingEnabled(false);
+  }
  }
 }
 void AchievementsScreen::render(int mouseX, int mouseY, float tickDelta) {
@@ -360,10 +356,9 @@ void AchievementsScreen::render(int mouseX, int mouseY, float tickDelta) {
  } else {
   scroll_ = 0;
  }
- renderBackground();
- renderIcons(mouseX, mouseY, tickDelta);
- const core::DepthScope titleCaps(false, core::depthWriteEnabled());
- setTitle();
+  renderBackground();
+  renderIcons(mouseX, mouseY, tickDelta);
+  setTitle();
 }
 void AchievementsScreen::keyPressed(char character, int keyCode) {
  (void)character;

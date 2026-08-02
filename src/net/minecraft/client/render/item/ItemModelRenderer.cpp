@@ -55,10 +55,12 @@ ItemTint tintColor(const ItemStack& stack) {
 }
 int shaderId(const ItemStack& stack) {
  const net::minecraft::Item* item = stack.getItem();
- if(item == nullptr) return 0;
+ if(item == nullptr) return -1;
  std::string name = item->getTranslationKey(&stack);
  if(name.rfind("item.", 0) == 0) name.erase(0, 5);
- return net::minecraft::client::render::resolveShaderObjectId("item", name, 0);
+ // Java item.properties lookups default to -1 (IdMap.parseIdMap
+ // defaultReturnValue(-1)).
+ return net::minecraft::client::render::resolveShaderObjectId("item", name, -1);
 }
 }
 } // namespace net::minecraft::client::render::item::ItemModelRenderer

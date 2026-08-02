@@ -89,7 +89,7 @@ void MapRenderer::render(net::minecraft::PlayerEntity& player,
  {
   render::RenderPassScope passScope(render::RenderType::guiTextured());
   const float inset = 0.0f;
-  core::bindTexture(static_cast<int>(texture_));
+   textureManagerIn.bindTexture(texture_);
   tessellator.startQuads();
   tessellator.vertex(
       static_cast<float>(originX) + inset, static_cast<float>(originY + 128) - inset, -0.01f, 0.0f, 1.0f);
@@ -103,7 +103,7 @@ void MapRenderer::render(net::minecraft::PlayerEntity& player,
   if(!mapState.icons.empty()) {
    textureManagerIn.bindTexture(textureManagerIn.getTextureId("misc/mapicons.png"));
    float baseModelView[16]{};
-   std::memcpy(baseModelView, core::currentModelView().data(), sizeof(baseModelView));
+   std::memcpy(baseModelView, core::drawModelView().data(), sizeof(baseModelView));
    tessellator.startQuads();
    for(const net::minecraft::map::MapState::MapIcon& mapIcon : mapState.icons) {
     net::minecraft::util::math::Matrix4f model;
@@ -130,10 +130,11 @@ void MapRenderer::render(net::minecraft::PlayerEntity& player,
   }
  }
  if(textRenderer_ != nullptr) {
-  core::modelViewStack().push();
-  core::modelViewStack().translate(0.0f, 0.0f, -0.04f);
+  const core::ScopedDrawCameraState labelGuard;
+  net::minecraft::util::math::Matrix4f labelPose = core::drawModelView();
+  labelPose.translate(0.0f, 0.0f, -0.04f);
+  core::setDrawModelView(labelPose);
   textRenderer_->draw(mapState.id, originX, originY, static_cast<int>(0xFF000000u));
-  core::modelViewStack().pop();
  }
 }
 } // namespace net::minecraft::client::render

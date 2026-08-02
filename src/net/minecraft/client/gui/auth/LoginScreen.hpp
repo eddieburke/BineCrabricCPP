@@ -2,14 +2,14 @@
 #include <atomic>
 #include <chrono>
 #include <memory>
-#include <mutex>
 #include <optional>
 #include <string>
-#include <thread>
+#include <utility>
 #include "net/minecraft/client/auth/microsoft/MicrosoftAuth.hpp"
 #include "net/minecraft/client/gui/screen/Screen.hpp"
 #include "net/minecraft/client/gui/widget/ActionButtonWidget.hpp"
 #include "net/minecraft/client/gui/widget/TextFieldWidget.hpp"
+#include "net/minecraft/util/concurrent/Channel.hpp"
 namespace net::minecraft::client::gui::auth {
 class LoginScreen : public gui::screen::Screen {
  public:
@@ -43,6 +43,16 @@ class LoginScreen : public gui::screen::Screen {
  void showSignInError(std::string message);
  void updateCreateProfileButtonState();
  void updateAuthStatus();
+ [[nodiscard]] msauth::AuthStage currentAuthStage() const;
+ struct WorkResult {
+  std::optional<msauth::DeviceCodeRequestResult> codeRequest;
+  std::optional<msauth::AuthResult> authResult;
+ };
+ struct WorkState {
+  std::atomic_bool canceled{false};
+  std::atomic<msauth::AuthStage> stage{msauth::AuthStage::Idle};
+  net::minecraft::util::concurrent::Channel<WorkResult> completed{1};
+ };
  gui::screen::ScreenFactory returnFactory_;
  Phase phase_ = Phase::Idle;
  std::string statusLine1_;
@@ -60,14 +70,9 @@ class LoginScreen : public gui::screen::Screen {
  std::unique_ptr<widget::TextFieldWidget> profileNameField_;
  msauth::MicrosoftAccount pendingProfileAccount_;
  std::atomic<bool> workerRunning_{false};
- std::atomic<bool> workerFinished_{false};
- std::atomic_bool cancelRequested_{false};
  std::atomic<msauth::AuthStage> authStage_{msauth::AuthStage::Idle};
- std::mutex workerMutex_;
- std::optional<msauth::DeviceCodeRequestResult> pendingCodeRequest_;
- std::optional<msauth::AuthResult> pendingAuthResult_;
+ std::shared_ptr<WorkState> work_;
  msauth::DeviceCodeChallenge activeChallenge_;
- std::thread workerThread_;
  bool firstInit_ = true;
 };
 } // namespace net::minecraft::client::gui::auth

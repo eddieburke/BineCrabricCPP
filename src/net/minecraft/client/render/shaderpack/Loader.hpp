@@ -1,0 +1,29 @@
+#pragma once
+#include <functional>
+#include <string>
+#include <string_view>
+#include <unordered_map>
+#include <vector>
+#include "net/minecraft/client/render/shaderpack/Pack.hpp"
+namespace net::minecraft::client::render {
+enum class PackOptionForm {
+ Define,
+ Constant
+};
+struct PackSourceOption {
+ PackSetting setting;
+ PackOptionForm form = PackOptionForm::Define;
+};
+class PackLoader {
+ public:
+ using ReadText = std::function<std::string(std::string_view)>;
+ static bool load(const std::vector<std::string>& resources,
+                  const ReadText& readText,
+                  PackDefinition& out,
+                  std::unordered_map<std::string, PackSourceOption>& options,
+                  std::string& error);
+ static std::string rewriteOptions(const std::string& source,
+                                   const std::unordered_map<std::string, PackSourceOption>& options,
+                                   const std::unordered_map<std::string, std::string>& values);
+};
+} // namespace net::minecraft::client::render

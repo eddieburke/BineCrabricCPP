@@ -8,6 +8,7 @@
 #include "net/minecraft/client/render/entity/EntityRenderDispatcher.hpp"
 #include "net/minecraft/client/render/entity/EntityRenderers.hpp"
 #include "net/minecraft/client/render/item/ItemModelRenderer.hpp"
+#include "net/minecraft/client/texture/TextureManager.hpp"
 #include "net/minecraft/entity/ItemEntity.hpp"
 #include "net/minecraft/item/Item.hpp"
 #include "net/minecraft/item/ItemStack.hpp"
@@ -58,9 +59,9 @@ void ItemEntityRenderer::render(
   if(block != nullptr && dispatcher != nullptr && dispatcher->textureManager() != nullptr) {
    const client::render::ResolvedTexture resolved = client::render::resolveBlockTexture(
        block->textureId, *dispatcher->textureManager(), client::render::AtlasDomain::Terrain);
-   if(resolved.glId >= 0) {
-    core::bindTexture(0x0DE1, resolved.glId);
-   }
+    if(resolved.glId >= 0) {
+     dispatcher->textureManager()->bindTexture(resolved.glId);
+    }
   } else {
    bindTexture("/terrain.png");
   }
@@ -69,20 +70,21 @@ void ItemEntityRenderer::render(
    scale = 0.5f;
   }
   matrices.scale(scale, scale, scale);
-  for(int i = 0; i < duplicateCount; ++i) {
-   matrices.push();
-   if(i > 0) {
-    const float offsetX = (random_.nextFloat() * 2.0f - 1.0f) * 0.2f / scale;
-    const float offsetY = (random_.nextFloat() * 2.0f - 1.0f) * 0.2f / scale;
-    const float offsetZ = (random_.nextFloat() * 2.0f - 1.0f) * 0.2f / scale;
-    matrices.translate(offsetX, offsetY, offsetZ);
+   for(int i = 0; i < duplicateCount; ++i) {
+    matrices.push();
+    if(i > 0) {
+     const float offsetX = (random_.nextFloat() * 2.0f - 1.0f) * 0.2f / scale;
+     const float offsetY = (random_.nextFloat() * 2.0f - 1.0f) * 0.2f / scale;
+     const float offsetZ = (random_.nextFloat() * 2.0f - 1.0f) * 0.2f / scale;
+     matrices.translate(offsetX, offsetY, offsetZ);
+    }
+    if(block != nullptr) {
+     // MCP RenderItem: renderBlockOnInventory(..., getEntityBrightness(partialTick)).
+     render::core::setDrawModelView(matrices.top());
+     blockRenderManager_.render(*block, stack.getDamage(), entity.getBrightnessAtEyes(tickDelta));
+    }
+    matrices.pop();
    }
-   if(block != nullptr) {
-    // MCP RenderItem: renderBlockOnInventory(..., getEntityBrightness(partialTick)).
-    blockRenderManager_.render(*block, stack.getDamage(), entity.getBrightnessAtEyes(tickDelta));
-   }
-   matrices.pop();
-  }
  } else {
   matrices.scale(0.5f, 0.5f, 0.5f);
   const int textureId = stack.getTextureId();
@@ -94,8 +96,7 @@ void ItemEntityRenderer::render(
        *dispatcher->textureManager(),
        isBlockSprite ? client::render::AtlasDomain::Terrain : client::render::AtlasDomain::Items);
    if(resolved.glId >= 0) {
-    core::activeTexture(0x84C0);
-    core::bindTexture(0x0DE1, resolved.glId);
+    dispatcher->textureManager()->bindTexture(resolved.glId);
    }
   } else if(isBlockSprite) {
    bindTexture("/terrain.png");
@@ -119,18 +120,19 @@ void ItemEntityRenderer::render(
   } else {
    render::core::setConstColor(brightness, brightness, brightness, 1.0f);
   }
-  for(int i = 0; i < duplicateCount; ++i) {
-   matrices.push();
-   if(i > 0) {
-    const float offsetX = (random_.nextFloat() * 2.0f - 1.0f) * 0.3f;
-    const float offsetY = (random_.nextFloat() * 2.0f - 1.0f) * 0.3f;
-    const float offsetZ = (random_.nextFloat() * 2.0f - 1.0f) * 0.3f;
-    matrices.translate(offsetX, offsetY, offsetZ);
-   }
-   if(dispatcher != nullptr) {
-    matrices.rotate(180.0f - dispatcher->yaw_, 0.0f, 1.0f, 0.0f);
-   }
-   tessellator.startQuads();
+   for(int i = 0; i < duplicateCount; ++i) {
+    matrices.push();
+    if(i > 0) {
+     const float offsetX = (random_.nextFloat() * 2.0f - 1.0f) * 0.3f;
+     const float offsetY = (random_.nextFloat() * 2.0f - 1.0f) * 0.3f;
+     const float offsetZ = (random_.nextFloat() * 2.0f - 1.0f) * 0.3f;
+     matrices.translate(offsetX, offsetY, offsetZ);
+    }
+    if(dispatcher != nullptr) {
+     matrices.rotate(180.0f - dispatcher->yaw_, 0.0f, 1.0f, 0.0f);
+    }
+    render::core::setDrawModelView(matrices.top());
+    tessellator.startQuads();
    tessellator.normal(0.0f, 1.0f, 0.0f);
    tessellator.vertex(0.0f - halfWidth, 0.0f - quarterHeight, 0.0, uMin, vMax);
    tessellator.vertex(width - halfWidth, 0.0f - quarterHeight, 0.0, uMax, vMax);

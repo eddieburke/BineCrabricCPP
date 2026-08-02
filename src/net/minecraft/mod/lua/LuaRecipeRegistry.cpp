@@ -3,6 +3,7 @@
 #include "net/minecraft/block/Block.hpp"
 #include "net/minecraft/item/Item.hpp"
 #include "net/minecraft/item/ItemStack.hpp"
+#include "net/minecraft/mod/ModLifecycle.hpp"
 #include "net/minecraft/recipe/CraftingRecipeManager.hpp"
 #include "net/minecraft/registry/Registry.hpp"
 namespace net::minecraft::mod::lua {
@@ -28,46 +29,67 @@ std::vector<ShapedRecipeSpec>& pendingShapedRecipes() {
  }
  return net::minecraft::ItemStack(block, spec.outputCount);
 }
-void registerShapedRecipeImpl(const ShapedRecipeSpec& spec) {
- const net::minecraft::ItemStack output = shapedRecipeOutput(spec);
- if(output.empty()) {
-  return;
- }
- const bool hasMultiIngredients = !spec.extraIngredients.empty();
- const int pairCount = hasMultiIngredients ? static_cast<int>(spec.extraIngredients.size()) : 1;
- std::vector<RecipeArg> args;
- args.reserve(spec.pattern.size() + static_cast<std::size_t>(pairCount) * 2);
- for(const std::string& row : spec.pattern) {
-  args.emplace_back(row);
- }
- auto addIngredient = [&](char key, int itemId) {
-  net::minecraft::Item* item = net::minecraft::Item::byId(itemId);
-  if(item != nullptr) {
-   args.emplace_back(key);
-   args.emplace_back(item);
+void registerShapedRecipeImpl(ShapedRecipeSpec& spec) {
+  if(spec.instantiated) {
+   return;
   }
- };
- if(hasMultiIngredients) {
-  for(const auto& [key, itemId] : spec.extraIngredients) {
-   addIngredient(key, itemId);
+  const net::minecraft::ItemStack output = shapedRecipeOutput(spec);
+  if(output.empty()) {
+   return;
   }
- } else {
-  addIngredient(spec.key, spec.ingredientItemId);
- }
- CraftingRecipeManager::getInstance().addShapedRecipe(output, std::move(args));
+  const bool hasMultiIngredients = !spec.extraIngredients.empty();
+  const int pairCount = hasMultiIngredients ? static_cast<int>(spec.extraIngredients.size()) : 1;
+  std::vector<RecipeArg> args;
+  args.reserve(spec.pattern.size() + static_cast<std::size_t>(pairCount) * 2);
+  for(const std::string& row : spec.pattern) {
+   args.emplace_back(row);
+  }
+  auto addIngredient = [&](char key, int itemId) {
+   net::minecraft::Item* item = net::minecraft::Item::byId(itemId);
+   if(item != nullptr) {
+    args.emplace_back(key);
+    args.emplace_back(item);
+   }
+  };
+  if(hasMultiIngredients) {
+   for(const auto& [key, itemId] : spec.extraIngredients) {
+    addIngredient(key, itemId);
+   }
+  } else {
+   addIngredient(spec.key, spec.ingredientItemId);
+  }
+  CraftingRecipeManager::getInstance().addShapedRecipe(output, std::move(args));
+  spec.instantiated = true;
 }
 void initAllShapedRecipes() {
- for(const ShapedRecipeSpec& spec : pendingShapedRecipes()) {
-  registerShapedRecipeImpl(spec);
- }
+  for(ShapedRecipeSpec& spec : pendingShapedRecipes()) {
+   if(!spec.instantiated) {
+    registerShapedRecipeImpl(spec);
+   }
+  }
 }
 void ensureRecipeBatchQueued() {
- static bool queued = false;
- if(queued) {
-  return;
- }
- queued = true;
- registry::Registry::enqueue(mod::LifecyclePhase::PostInit, 50000, initAllShapedRecipes);
+  static bool queued = false;
+  if(queued) {
+   return;
+  }
+  queued = true;
+  registry::Registry::enqueue(mod::LifecyclePhase::PostInit, 50000, initAllShapedRecipes);
+}
+// Idempotency for live re-enable / Reload List: a recipe already handed to the
+// CraftingRecipeManager this session (content persists by design) is a no-op.
+bool recipeAlreadyRegistered(const ShapedRecipeSpec& spec) {
+  for(const ShapedRecipeSpec& candidate : pendingShapedRecipes()) {
+   if(!candidate.instantiated || candidate.ownerModId.empty() || spec.ownerModId.empty() ||
+      candidate.ownerModId != spec.ownerModId) {
+    continue;
+   }
+   if(candidate.outputBlockId == spec.outputBlockId && candidate.outputItemId == spec.outputItemId &&
+      candidate.outputCount == spec.outputCount && candidate.pattern == spec.pattern) {
+    return true;
+   }
+  }
+  return false;
 }
 [[nodiscard]] bool validateShapedRecipeSpec(const ShapedRecipeSpec& spec, std::string& error) {
  const bool hasBlockOutput = spec.outputBlockId > 0 && spec.outputBlockId < Block::BLOCK_COUNT;
@@ -133,32 +155,20 @@ void ensureRecipeBatchQueued() {
 }
 } // namespace
 bool registerShapedRecipe(const ShapedRecipeSpec& spec, std::string& error) {
- if(!validateShapedRecipeSpec(spec, error)) {
-  return false;
- }
- if(registry::Registry::isBootstrapped()) {
-  if(shapedRecipeOutput(spec).empty()) {
-   error = "shaped recipe output is unknown";
+  if(!validateShapedRecipeSpec(spec, error)) {
    return false;
   }
-  const bool hasMulti = !spec.extraIngredients.empty();
-  if(!hasMulti && net::minecraft::Item::byId(spec.ingredientItemId) == nullptr) {
-   error = "shaped recipe ingredient is unknown";
-   return false;
+  if(recipeAlreadyRegistered(spec)) {
+   return true;
   }
-  if(hasMulti) {
-   for(const auto& [k, id] : spec.extraIngredients) {
-    if(net::minecraft::Item::byId(id) == nullptr) {
-     error = std::string("shaped recipe ingredient '") + k + "' (id " + std::to_string(id) + ") is unknown";
-     return false;
-    }
-   }
+  pendingShapedRecipes().push_back(spec);
+  if(mod::ModLifecycle::currentPhase() <= mod::LifecyclePhase::PostInit) {
+   // Startup: the PostInit batch runs once vanilla + Lua content exists.
+   ensureRecipeBatchQueued();
+  } else {
+   // Runtime load (live enable / Reload List): register against live content now.
+   initAllShapedRecipes();
   }
-  registerShapedRecipeImpl(spec);
   return true;
- }
- pendingShapedRecipes().push_back(spec);
- ensureRecipeBatchQueued();
- return true;
 }
 } // namespace net::minecraft::mod::lua

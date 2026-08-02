@@ -163,7 +163,7 @@ void TitleScreen::render(int mouseX, int mouseY, float tickDelta) {
  const int logoX = width() / 2 - logoWidth / 2;
  constexpr int logoY = 30;
  const int logoTexture = minecraft()->textureManager.getTextureId("/title/mclogo.png");
- render::core::bindTexture(logoTexture);
+ minecraft()->textureManager.bindTexture(logoTexture);
  core::setConstColor(1.0f, 1.0f, 1.0f, 1.0f);
  {
   const render::RenderPassScope passScope(render::RenderType::guiTextured());
@@ -176,21 +176,24 @@ void TitleScreen::render(int mouseX, int mouseY, float tickDelta) {
   tess.draw();
  }
  render::INSTANCE.color(0xFFFFFF);
- render::core::modelViewStack().push();
- render::core::modelViewStack().translate(static_cast<float>(width() / 2 + 90), 70.0f, 0.0f);
- render::core::modelViewStack().rotate(-20.0f, 0.0f, 0.0f, 1.0f);
- const std::int64_t nowMillis =
-     std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch())
-         .count();
- const float wave = net::minecraft::util::math::MathHelper::abs(
-     net::minecraft::util::math::MathHelper::sin(static_cast<float>(nowMillis % 1000) / 1000.0f * 3.14159265f *
-                                                 2.0f) *
-     0.1f);
- float scale = 1.8f - wave;
- scale = scale * 100.0f / static_cast<float>(textRenderer()->getWidth(splashText_) + 32);
- render::core::modelViewStack().scale(scale, scale, scale);
- textRenderer()->drawCenteredWithShadow(splashText_, 0, -8, 0xFFFF00);
- render::core::modelViewStack().pop();
+ {
+  const render::core::ScopedDrawCameraState splashGuard;
+  net::minecraft::util::math::Matrix4f splashPose = render::core::drawModelView();
+  splashPose.translate(static_cast<float>(width() / 2 + 90), 70.0f, 0.0f);
+  splashPose.rotate(-20.0f, 0.0f, 0.0f, 1.0f);
+  const std::int64_t nowMillis =
+      std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch())
+          .count();
+  const float wave = net::minecraft::util::math::MathHelper::abs(
+      net::minecraft::util::math::MathHelper::sin(static_cast<float>(nowMillis % 1000) / 1000.0f * 3.14159265f *
+                                                  2.0f) *
+      0.1f);
+  float scale = 1.8f - wave;
+  scale = scale * 100.0f / static_cast<float>(textRenderer()->getWidth(splashText_) + 32);
+  splashPose.scale(scale, scale, scale);
+  render::core::setDrawModelView(splashPose);
+  textRenderer()->drawCenteredWithShadow(splashText_, 0, -8, 0xFFFF00);
+ }
  textRenderer()->drawWithShadow("Minecraft Beta 1.7.3", 2, 2, 0xFF505050);
  const auth::AccountUiSnapshot accountUi = auth::pollAccountUi(*minecraft());
  if(!accountUi.statusLine.empty()) {

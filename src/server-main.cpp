@@ -2,6 +2,7 @@
 #include "net/minecraft/server/MinecraftServer.hpp"
 #include "net/minecraft/server/host/ServerLaunchConfig.hpp"
 #include "net/minecraft/stat/Stats.hpp"
+#include "net/minecraft/util/concurrent/ThreadCoordinator.hpp"
 #ifdef _WIN32
 #include <timeapi.h>
 #ifndef NOMINMAX
@@ -110,6 +111,8 @@ int main(int argc, char** argv) {
  using net::minecraft::stat::Stats;
  try {
   const auto launchConfig = parseLaunchConfig(argc, argv);
+  net::minecraft::util::concurrent::ThreadCoordinator::instance().configure(
+      std::thread::hardware_concurrency(), 2);
   net::minecraft::mod::runtime::host().setRuntimeSide(net::minecraft::mod::runtime::ModRuntimeSide::Server);
   net::minecraft::mod::runtime::host().setPackageLoadingEnabled(!launchConfig.has_value() ||
                                                                 launchConfig->modsEnabled);
@@ -122,9 +125,16 @@ int main(int argc, char** argv) {
    net::minecraft::server::dedicated::gui::DedicatedServerGui::create(*server);
   }
 #endif
-  std::thread serverThread([&server]() { server->run(); });
-  serverThread.join();
+  server->run();
+#ifdef _WIN32
+  net::minecraft::server::dedicated::gui::DedicatedServerGui::shutdown();
+#endif
+ net::minecraft::util::concurrent::ThreadCoordinator::instance().shutdown();
  } catch(const std::exception& exception) {
+#ifdef _WIN32
+  net::minecraft::server::dedicated::gui::DedicatedServerGui::shutdown();
+#endif
+  net::minecraft::util::concurrent::ThreadCoordinator::instance().shutdown();
   std::cerr << "Failed to start the minecraft server: " << exception.what() << '\n';
   return 1;
  }

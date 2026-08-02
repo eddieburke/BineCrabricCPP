@@ -10,6 +10,7 @@ class ServerModDownloadScreen : public Screen {
  public:
  ServerModDownloadScreen(multiplayer::ClientNetworkHandler* handler, std::vector<std::string> missingMods);
  void init() override;
+ void tick() override;
  void render(int mouseX, int mouseY, float tickDelta) override;
  void keyPressed(char character, int keyCode) override;
  [[nodiscard]] std::string_view getScreenUiId() const override {

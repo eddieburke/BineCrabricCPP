@@ -1,5 +1,6 @@
 #include <random>
 #include "net/minecraft/client/render/RenderType.hpp"
+#include "net/minecraft/client/render/RenderCore.hpp"
 #include "net/minecraft/client/render/Tessellator.hpp"
 #include "net/minecraft/client/render/entity/EntityRenderers.hpp"
 #include "net/minecraft/entity/LightningEntity.hpp"
@@ -18,6 +19,8 @@ void LightningEntityRenderer::render(
  Tessellator& tessellator = Tessellator::INSTANCE;
  // entityTranslucent has State.lighting=false — no FF lighting toggles needed.
  render::RenderPassScope passScope(render::RenderType::lightning());
+ // Lightning draws in camera-relative world coords on the frame base.
+ render::core::setDrawModelView(matrices.top());
  double offsets[8]{};
  double offsets2[8]{};
  double offsetX = 0.0;

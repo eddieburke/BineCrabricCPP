@@ -224,7 +224,7 @@ void ZippedTexturePack::bindIcon(texture::TextureManager& textureManager) {
   textureManager.bindTexture(iconId_);
   return;
  }
- render::core::bindTexture(textureManager.getTextureId("/gui/unknown_pack.png"));
+  textureManager.bindTexture(textureManager.getTextureId("/gui/unknown_pack.png"));
 }
 std::vector<std::uint8_t> ZippedTexturePack::getResource(std::string_view path) const {
  if(!archive_.empty()) {

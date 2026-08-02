@@ -2,6 +2,7 @@
 #include "net/minecraft/client/particle/Particle.hpp"
 #include "net/minecraft/client/render/RenderCore.hpp"
 #include "net/minecraft/client/render/entity/EntityRenderDispatcher.hpp"
+#include "net/minecraft/util/math/MatrixStack.hpp"
 namespace net::minecraft::client::particle {
 class PickupParticle : public Particle {
  public:
@@ -44,17 +45,19 @@ class PickupParticle : public Particle {
   const int blockY = MathHelper::floor(renderY + static_cast<double>(standingEyeHeight / 2.0f));
   const int blockZ = MathHelper::floor(renderZ);
   const float brightness = world->getLightBrightness(blockX, blockY, blockZ);
-  render::core::setConstColor(brightness, brightness, brightness, 1.0f);
-  render::entity::EntityRenderDispatcher::instance().render(
-      *entity_,
-      renderX - xOffset,
-      renderY - yOffset,
-      renderZ - zOffset,
-      entity_->yaw,
-      partialTicks,
-      render::core::modelViewStack(),
-      render::core::currentProjection());
- }
+ render::core::setConstColor(brightness, brightness, brightness, 1.0f);
+ net::minecraft::util::math::MatrixStack pose;
+ pose.load(render::core::drawModelView());
+ render::entity::EntityRenderDispatcher::instance().render(
+     *entity_,
+     renderX - xOffset,
+     renderY - yOffset,
+     renderZ - zOffset,
+     entity_->yaw,
+     partialTicks,
+     pose,
+     render::core::drawProjection());
+}
  void tick() override {
   ++pickupAge_;
   if(pickupAge_ == lifetime_) {

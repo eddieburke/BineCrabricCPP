@@ -6,6 +6,7 @@
 #include "net/minecraft/entity/LivingEntity.hpp"
 #include "net/minecraft/item/Item.hpp"
 #include "net/minecraft/item/ItemStack.hpp"
+#include "net/minecraft/client/render/RenderCore.hpp"
 namespace net::minecraft::client::render::entity {
 UndeadEntityRenderer::UndeadEntityRenderer(model::BipedEntityModel* model, float shadowSize)
     : LivingEntityRenderer(model, shadowSize), entityModel_(model) {
@@ -20,7 +21,7 @@ void UndeadEntityRenderer::renderMore(const net::minecraft::LivingEntity& entity
   return;
  }
  matrices.push();
- entityModel_->rightArm.transform(0.0625f);
+ entityModel_->rightArm.transform(0.0625f, matrices);
  matrices.translate(-0.0625f, 0.4375f, 0.0625f);
  if(itemStack.itemId < 256) {
   net::minecraft::block::Block* block =
@@ -60,6 +61,7 @@ void UndeadEntityRenderer::renderMore(const net::minecraft::LivingEntity& entity
   matrices.rotate(-90.0f, 1.0f, 0.0f, 0.0f);
   matrices.rotate(20.0f, 0.0f, 0.0f, 1.0f);
  }
+ render::core::setDrawModelView(matrices.top());
  dispatcher->heldItemRenderer()->renderItem(entity, itemStack);
  matrices.pop();
 }

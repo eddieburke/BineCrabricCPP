@@ -12,8 +12,6 @@ int TextureRegistry::resolveGlId(int textureId, net::minecraft::client::texture:
   const int index = textureId - kCustomTextureBase;
   auto& entries = detail::registryEntries();
   if(index < 0 || index >= static_cast<int>(entries.size())) {
-   if(detail::warnedInvalidIds().insert(textureId).second) {
-   }
    return textureManager.getTextureId(std::string());
   }
   Entry& entry = entries[static_cast<std::size_t>(index)];

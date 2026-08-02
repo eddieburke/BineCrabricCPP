@@ -2,8 +2,6 @@
 #include <algorithm>
 #include <cstddef>
 #include <cstdint>
-#include <cstdio>
-#include "net/minecraft/client/Minecraft.hpp"
 #include "net/minecraft/client/render/RenderCore.hpp"
 #include "net/minecraft/client/gl/GLCore.hpp"
 #include "net/minecraft/client/render/QuadIndexBuffer.hpp"
@@ -14,7 +12,7 @@ namespace math = net::minecraft::util::math;
 namespace {
 constexpr int kStride = static_cast<int>(sizeof(TessellatorVertex));
 constexpr int kSplitSlack = 64;
-constexpr std::size_t kInitialVertices = 4096;
+constexpr std::size_t kInitialVertices = 1u << 16;
 constexpr unsigned kArrayBuffer = 0x8892;
 constexpr unsigned kDynamicDraw = 0x88E8;
 bool sameChunkOffset(const ChunkRegionBuffer::DrawRange& a, const ChunkRegionBuffer::DrawRange& b) noexcept {
@@ -58,6 +56,17 @@ void ChunkRegionBuffer::reallocBuffer(std::size_t newCapacityVertices) {
                             static_cast<std::ptrdiff_t>(shadow_.size() * static_cast<std::size_t>(kStride)),
                             shadow_.data());
  }
+}
+void ChunkRegionBuffer::reserve(std::size_t vertexCapacity) {
+ if(vertexCapacity <= gpuCapacity_) {
+  return;
+ }
+ if(handle_ == 0) {
+  gl::GLCore::genBuffers(1, &handle_);
+ }
+ gl::GLCore::bindBuffer(kArrayBuffer, handle_);
+ reallocBuffer(vertexCapacity);
+ gl::GLCore::bindBuffer(kArrayBuffer, 0);
 }
 void ChunkRegionBuffer::upload(
     Slot& slot, const TessellatorVertex* data, int count, bool hasTexture, bool hasColor, bool hasNormals) {
@@ -184,32 +193,32 @@ int ChunkRegionBuffer::flush() {
  if(!render::quad_index::ensure(shadow_.size())) {
   return 0;
  }
- buildMergedRanges();
- gl::GLCore::bindBuffer(0x8893, render::quad_index::handle());
- int draws = 0;
- for(const DrawRange& range : merged_) {
-  render::core::RenderPass pass;
-  pass.modelView = render::core::currentModelView();
-  pass.projection = render::core::currentProjection();
-  pass.fog = render::core::fog();
-  pass.hasTexture = hasTexture_;
-  pass.hasColor = hasColor_;
-  pass.hasNormals = hasNormals_;
-  pass.sectionLocal = true;
-  pass.chunkOffset[0] = range.chunkOffset[0];
-  pass.chunkOffset[1] = range.chunkOffset[1];
-  pass.chunkOffset[2] = range.chunkOffset[2];
-  if(!hasTexture_) {
-   render::core::bindWhiteDiffuse();
+  buildMergedRanges();
+  gl::GLCore::bindBuffer(0x8893, render::quad_index::handle());
+  int draws = 0;
+  for(const DrawRange& range : merged_) {
+   render::core::RenderPass pass;
+   pass.modelView = render::core::drawModelView();
+   pass.projection = render::core::drawProjection();
+   pass.fog = render::core::fog();
+   pass.hasTexture = hasTexture_;
+   pass.hasColor = hasColor_;
+   pass.hasNormals = hasNormals_;
+   pass.sectionLocal = true;
+   pass.chunkOffset[0] = range.chunkOffset[0];
+   pass.chunkOffset[1] = range.chunkOffset[1];
+   pass.chunkOffset[2] = range.chunkOffset[2];
+   if(!hasTexture_) {
+    render::core::bindWhiteDiffuse();
+   }
+   render::core::bindAndUploadUniforms(pass);
+   const int indexCount = (range.count / 4) * 6;
+   const std::size_t indexByteOffset = (static_cast<std::size_t>(range.first) / 4) * 6 * sizeof(std::uint32_t);
+   ::glDrawElements(0x0004, indexCount, 0x1405, reinterpret_cast<const void*>(indexByteOffset));
+   ++draws;
   }
-  render::core::bindAndUploadUniforms(pass);
-  const int indexCount = (range.count / 4) * 6;
-  const std::size_t indexByteOffset = (static_cast<std::size_t>(range.first) / 4) * 6 * sizeof(std::uint32_t);
-  ::glDrawElements(0x0004, indexCount, 0x1405, reinterpret_cast<const void*>(indexByteOffset));
-  ++draws;
+  frameVisibleRanges += static_cast<int>(visible_.size());
+  frameDrawCalls += draws;
+  return draws;
  }
- frameVisibleRanges += static_cast<int>(visible_.size());
- frameDrawCalls += draws;
- return draws;
-}
 } // namespace net::minecraft::client::render::chunk

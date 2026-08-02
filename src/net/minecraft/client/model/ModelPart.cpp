@@ -143,21 +143,30 @@ void ModelPart::render(float scale, math::MatrixStack& matrices) {
   if(pitch != 0.0f) {
    matrices.rotate(pitch * 57.295776f, 1.0f, 0.0f, 0.0f);
   }
+  // Publish the composed bone matrix so the face draws use it (the draw camera
+  // state is the single matrix source the Tessellator path reads).
+  core::setDrawModelView(matrices.top());
   renderFaces(scale);
   renderChildren();
   matrices.pop();
  } else if(pivotX != 0.0f || pivotY != 0.0f || pivotZ != 0.0f) {
   matrices.translate(pivotX * scale, pivotY * scale, pivotZ * scale);
+  core::setDrawModelView(matrices.top());
   renderFaces(scale);
   renderChildren();
   matrices.translate(-pivotX * scale, -pivotY * scale, -pivotZ * scale);
  } else {
+  core::setDrawModelView(matrices.top());
   renderFaces(scale);
   renderChildren();
  }
 }
 void ModelPart::render(float scale) {
- render(scale, core::modelViewStack());
+ const math::Matrix4f base = core::drawModelView();
+ math::MatrixStack matrices;
+ matrices.load(base);
+ render(scale, matrices);
+ core::setDrawModelView(base);
 }
 void ModelPart::renderForceTransform(float scale, math::MatrixStack& matrices) {
  if(hidden || !visible) {
@@ -174,11 +183,16 @@ void ModelPart::renderForceTransform(float scale, math::MatrixStack& matrices) {
  if(roll != 0.0f) {
   matrices.rotate(roll * 57.295776f, 0.0f, 0.0f, 1.0f);
  }
+ core::setDrawModelView(matrices.top());
  renderFaces(scale);
  matrices.pop();
 }
 void ModelPart::renderForceTransform(float scale) {
- renderForceTransform(scale, core::modelViewStack());
+ const math::Matrix4f base = core::drawModelView();
+ math::MatrixStack matrices;
+ matrices.load(base);
+ renderForceTransform(scale, matrices);
+ core::setDrawModelView(base);
 }
 void ModelPart::transform(float scale, math::MatrixStack& matrices) {
  if(hidden || !visible) {
@@ -200,7 +214,12 @@ void ModelPart::transform(float scale, math::MatrixStack& matrices) {
  }
 }
 void ModelPart::transform(float scale) {
- transform(scale, core::modelViewStack());
+ // transform() mutates the caller's live matrix (beta stack semantics):
+ // compose onto the current per-draw base and publish the result.
+ math::MatrixStack matrices;
+ matrices.load(core::drawModelView());
+ transform(scale, matrices);
+ core::setDrawModelView(matrices.top());
 }
 void ModelPart::addChild(ModelPart& child) {
  children_.push_back(&child);

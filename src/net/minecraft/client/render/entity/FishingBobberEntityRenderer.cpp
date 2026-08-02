@@ -36,6 +36,7 @@ void FishingBobberEntityRenderer::render(
   matrices.rotate(180.0f - dispatcher->yaw_, 0.0f, 1.0f, 0.0f);
   matrices.rotate(-dispatcher->pitch_, 1.0f, 0.0f, 0.0f);
  }
+ render::core::setDrawModelView(matrices.top());
  tessellator.startQuads();
  tessellator.normal(0.0f, 1.0f, 0.0f);
  tessellator.vertex(0.0f - halfWidth, 0.0f - halfHeight, 0.0, uMin, vMax);
@@ -81,6 +82,8 @@ void FishingBobberEntityRenderer::render(
  render::RenderPassScope passScope(render::RenderType::lines());
  render::core::setEntityColor(0.0f, 0.0f, 0.0f, 0.0f);
  Tessellator::INSTANCE.light(15, 15);
+ // The line draw runs on the frame base (the bobber pose popped above).
+ render::core::setDrawModelView(matrices.top());
  tessellator.start(3); // GL_LINE_STRIP
  tessellator.color(0);
  constexpr int segments = 16;

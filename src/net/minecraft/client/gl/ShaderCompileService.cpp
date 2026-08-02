@@ -3,6 +3,8 @@
 #define GLFW_INCLUDE_NONE
 #include <GLFW/glfw3.h>
 #include "net/minecraft/client/gl/GLCore.hpp"
+#include "net/minecraft/client/render/shaders/SourceProcessor.hpp"
+#include "net/minecraft/util/concurrent/ThreadCoordinator.hpp"
 namespace net::minecraft::client::gl {
 namespace {
 GLFWwindow* createWorkerWindow(GLFWwindow* shareWith) {
@@ -38,13 +40,13 @@ void ShaderCompileService::setCacheDirectory(std::filesystem::path dir) {
  disk_.setRoot(std::move(dir));
 }
 
-void ShaderCompileService::start(GLFWwindow* shareWith) {
+void ShaderCompileService::start() {
  std::lock_guard lock(mutex_);
  if(started_) return;
  stop_ = false;
- unsigned count =
-     std::max(1U, std::thread::hardware_concurrency() > 2 ? std::thread::hardware_concurrency() - 2 : 1U);
- count = std::min(count, 4U);
+ render::captureGlShaderSnapshot();
+  GLFWwindow* shareWith = glfwGetCurrentContext();
+  const unsigned count = std::min(2u, net::minecraft::util::concurrent::ThreadCoordinator::instance().budget().glCompile);
  workerWindows_.reserve(count);
  workers_.reserve(count);
  for(unsigned i = 0; i < count; ++i) {
@@ -74,21 +76,31 @@ void ShaderCompileService::stop() {
   if(window != nullptr) glfwDestroyWindow(window);
  }
  workerWindows_.clear();
- {
-  std::lock_guard lock(mutex_);
-  jobs_.clear();
-  while(!queue_.empty()) queue_.pop();
-  started_ = false;
-  stop_ = false;
- }
+  {
+   std::lock_guard lock(mutex_);
+   jobs_.clear();
+   while(!queue_.empty()) queue_.pop();
+   completed_.clear();
+   started_ = false;
+   stop_ = false;
+  }
+}
+
+bool ShaderCompileService::started() const noexcept {
+ const std::lock_guard lock(mutex_);
+ return started_;
 }
 
 std::shared_ptr<ShaderCompileService::Job> ShaderCompileService::findOrCreateJob(ShaderCompileRequest request) {
  request.contentHash = hashRequest(request);
  auto found = jobs_.find(request.contentHash);
- if(found != jobs_.end()) return found->second;
+ if(found != jobs_.end()) {
+  ++found->second->waiters;
+  return found->second;
+ }
  auto job = std::make_shared<Job>();
  job->request = std::move(request);
+ job->waiters = 1;
  jobs_.emplace(job->request.contentHash, job);
  queue_.push(job);
  queueCv_.notify_one();
@@ -102,6 +114,32 @@ std::uint64_t ShaderCompileService::submit(ShaderCompileRequest request) {
   return request.contentHash;
  }
  return findOrCreateJob(std::move(request))->request.contentHash;
+}
+
+std::vector<std::shared_ptr<ShaderCompileService::Job>> ShaderCompileService::peekCompleted() {
+ std::lock_guard lock(mutex_);
+ return completed_;
+}
+
+void ShaderCompileService::releaseJob(std::uint64_t contentHash) {
+ std::lock_guard lock(mutex_);
+ // In-flight: the worker will still run, but drops the job from completed_ when
+ // no waiter is left (see workerMain).
+ if(auto found = jobs_.find(contentHash); found != jobs_.end()) {
+  if(found->second->waiters > 0) {
+   --found->second->waiters;
+  }
+  return;
+ }
+ for(auto it = completed_.begin(); it != completed_.end(); ++it) {
+  if((*it)->request.contentHash != contentHash) {
+   continue;
+  }
+  if(--(*it)->waiters == 0) {
+   completed_.erase(it);
+  }
+  return;
+ }
 }
 
 ShaderCompileResult ShaderCompileService::compileBlocking(ShaderCompileRequest request) {
@@ -134,6 +172,8 @@ ShaderCompileResult ShaderCompileService::compileBlocking(ShaderCompileRequest r
   failed.error = "compile service stopped";
   return failed;
  }
+ lock.unlock();
+ releaseJob(job->request.contentHash);
  return job->result;
 }
 
@@ -166,6 +206,11 @@ ShaderCompileResult ShaderCompileService::runJobOnCurrentContext(const ShaderCom
                                                request.geometry, request.tessControl, request.tessEvaluation);
  if(!compiled) {
   result.ok = false;
+  // The source compiled but extracting a GL program binary failed (driver lacks
+  // glGetProgramBinary / returned an empty binary). The program handle survives a
+  // failed extraction, so valid() distinguishes this from a genuine shader error
+  // and lets the caller fall back to a plain source compile.
+  result.binaryUnsupported = program.valid();
   result.error = program.lastError().empty() ? std::string("compile failed") : program.lastError();
   return result;
  }
@@ -188,15 +233,22 @@ void ShaderCompileService::workerMain(std::size_t, GLFWwindow* window) {
    if(stop_ && queue_.empty()) break;
    job = queue_.front();
    queue_.pop();
+   if(job->waiters == 0) {
+    jobs_.erase(job->request.contentHash);
+    continue;
+   }
   }
-  ShaderCompileResult result = runJobOnCurrentContext(job->request);
-  {
-   std::lock_guard lock(mutex_);
-   job->result = std::move(result);
-   job->done = true;
-   jobs_.erase(job->request.contentHash);
-  }
-  job->cv.notify_all();
+   ShaderCompileResult result = runJobOnCurrentContext(job->request);
+   {
+    std::lock_guard lock(mutex_);
+    job->result = std::move(result);
+    job->done = true;
+    jobs_.erase(job->request.contentHash);
+    if(job->waiters > 0) {
+     completed_.push_back(job);
+    }
+   }
+   job->cv.notify_all();
  }
  glfwMakeContextCurrent(nullptr);
 }

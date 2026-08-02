@@ -92,11 +92,10 @@ void Registry::addEntity(int rawId, void (*initFunc)()) {
  enqueue(mod::LifecyclePhase::Init, rawId, initFunc);
 }
 void Registry::bootstrap() {
- std::call_once(g_bootstrapFlag, [] {
-  // Load Lua zip mods before content phases run so at_phase registrations and
-  // hook subscriptions are live for the rest of the session.
-  mod::runtime::host().initialize(mod::runtime::ModHost::defaultRunDirectory());
-  mod::runtime::host().loadEnabledPackageMods();
+  std::call_once(g_bootstrapFlag, [] {
+   // Load Lua zip mods before content phases run so at_phase registrations and
+   // hook subscriptions are live for the rest of the session.
+   mod::runtime::host().initialize(mod::runtime::ModHost::defaultRunDirectory());
   // Phases run in this fixed order.
   static constexpr mod::LifecyclePhase kOrder[] = {
       mod::LifecyclePhase::Init,

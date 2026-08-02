@@ -205,7 +205,7 @@ struct BlockRenderContext {
  int blockLight = 15;
  int skyLight = 15;
  int blockId = 0;
- int blockRenderType = 0;
+ bool blockFluid = false;
  int blockMetadata = 0;
  // Light the face currently being emitted samples. A solid block stores no
  // light of its own, so the lightmap coordinate for each face has to come from
@@ -217,8 +217,9 @@ struct BlockRenderContext {
  const chunk::RegionSnapshot* lightSnapshot = nullptr;
  int faceBlockLight = 15;
  int faceSkyLight = 15;
- // Absolute luminance of the block itself is no longer used to invent relative
- // AO — packs own lighting; C++ only writes opacity AO + lightmap coords.
+  // Absolute luminance of the block itself is no longer used to invent relative
+  // AO — packs own lighting; C++ writes vanilla corner-averaged light into the
+  // per-vertex lightmap coords and keeps the vertex colour tint-only.
  void resolveLightSource();
  void sampleFaceLight(int x, int y, int z);
  // Default for renderers that emit geometry without telling us which face they
@@ -231,11 +232,11 @@ struct BlockRenderContext {
   }
   if(modMeshes != nullptr) {
    Tessellator& active = modMeshes->tessFor(texture, *tess);
-   active.blockData(blockX, blockY, blockZ, blockEmission, faceBlockLight, faceSkyLight, blockId, blockRenderType,
+   active.blockData(blockX, blockY, blockZ, blockEmission, faceBlockLight, faceSkyLight, blockId, blockFluid,
                     blockMetadata);
    return active;
   }
-  tess->blockData(blockX, blockY, blockZ, blockEmission, faceBlockLight, faceSkyLight, blockId, blockRenderType,
+  tess->blockData(blockX, blockY, blockZ, blockEmission, faceBlockLight, faceSkyLight, blockId, blockFluid,
                   blockMetadata);
   return *tess;
  }

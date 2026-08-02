@@ -6,7 +6,7 @@
 namespace net::minecraft::client::gl {
 namespace {
 constexpr char kMagic[8] = {'M', 'C', 'S', 'P', 'B', 'I', 'N', '1'};
-constexpr std::uint32_t kFileVersion = 1;
+constexpr std::uint32_t kFileVersion = 4;
 
 template <typename T>
 bool writePod(std::ostream& out, const T& value) {
@@ -52,9 +52,8 @@ std::optional<ProgramBinaryBlob> ShaderBinaryCache::tryLoad(std::uint64_t conten
  blob.contentHash = hash;
  blob.binaryFormat = format;
  blob.flags = flags;
- blob.compute = (flags & ShaderProgram::kFlagCompute) != 0;
- blob.legacyAttributes = (flags & ShaderProgram::kFlagLegacyAttribs) != 0;
- blob.tessellation = (flags & ShaderProgram::kFlagTessellation) != 0;
+  blob.compute = (flags & ShaderProgram::kFlagCompute) != 0;
+  blob.tessellation = (flags & ShaderProgram::kFlagTessellation) != 0;
  blob.bytes.resize(size);
  if(!in.read(reinterpret_cast<char*>(blob.bytes.data()), static_cast<std::streamsize>(size))) {
   return std::nullopt;

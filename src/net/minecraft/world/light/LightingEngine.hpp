@@ -4,15 +4,16 @@
 #include <cstddef>
 #include <cstdint>
 #include <deque>
-#include <memory>
 #include <mutex>
-#include <stop_token>
-#include <thread>
 #include <unordered_map>
 #include <vector>
+#include "net/minecraft/util/concurrent/Channel.hpp"
 #include "net/minecraft/world/light/LightType.hpp"
 namespace net::minecraft {
 class Chunk;
+namespace util::concurrent {
+class WorkerPool;
+}
 namespace world::light {
 class UnifiedLightRegistry;
 }
@@ -66,9 +67,11 @@ class LightingEngine {
  struct WorkerState {
   std::unordered_map<std::uint64_t, Chunk*> pinCache;
  };
- void threadLoop(const std::stop_token& stop, WorkerState& state);
+ void scheduleWorkersLocked();
+ void runScheduledWork();
  [[nodiscard]] bool tryClaimBox(Box& out);
- void releaseClaimedBox(const Box& box);
+ void releaseClaimedBoxLocked(const Box& box);
+ void publishDirtyRegion(DirtyRegion region);
  void runUpdate(const Box& box, WorkerState& state);
  Chunk* chunkAt(int chunkX, int chunkZ, WorkerState& state);
  void releasePins(WorkerState& state);
@@ -82,17 +85,19 @@ class LightingEngine {
          static_cast<std::uint64_t>(static_cast<std::uint32_t>(chunkZ));
  }
  mutable std::mutex queueMutex_;
- std::condition_variable workCv_;
+ std::condition_variable idleCv_;
  std::deque<Box> queue_;
  std::vector<Box> activeBoxes_;
+ std::size_t scheduledWorkers_ = 0;
+ bool stopping_ = false;
  std::atomic<std::size_t> pendingCount_{0};
  std::atomic<bool> skyLightSuppressed_{false};
  std::mutex registryMutex_;
  std::unordered_map<std::uint64_t, Chunk*> registry_;
  mutable std::mutex outboxMutex_;
- std::vector<DirtyRegion> outbox_;
+ util::concurrent::Channel<DirtyRegion> outbox_{4096};
  world::light::UnifiedLightRegistry& lightRegistry_;
- std::vector<std::jthread> threads_;
- std::vector<std::unique_ptr<WorkerState>> workerStates_;
+ util::concurrent::WorkerPool& computePool_;
+ unsigned workerLimit_;
 };
 } // namespace net::minecraft

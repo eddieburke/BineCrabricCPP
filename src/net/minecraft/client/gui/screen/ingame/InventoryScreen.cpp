@@ -6,7 +6,7 @@
 #include "net/minecraft/client/gui/layout/ContainerLayout.hpp"
 #include "net/minecraft/client/input/InputSystem.hpp"
 #include "net/minecraft/client/render/GameRenderer.hpp"
-#include "net/minecraft/client/render/shaderpack/ShaderPackManager.hpp"
+#include "net/minecraft/client/render/pipeline/Manager.hpp"
 #include "net/minecraft/client/render/RenderCore.hpp"
 #include "net/minecraft/client/render/Tessellator.hpp"
 #include "net/minecraft/client/render/entity/EntityRenderDispatcher.hpp"
@@ -15,6 +15,7 @@
 #include "net/minecraft/entity/player/ClientPlayerEntity.hpp"
 #include "net/minecraft/mod/ScreenUi.hpp"
 #include "net/minecraft/mod/runtime/LuaDirectHooks.hpp"
+#include "net/minecraft/util/math/MatrixStack.hpp"
 namespace net::minecraft::client::gui::screen::ingame {
 namespace core = net::minecraft::client::render::core;
 namespace {
@@ -127,46 +128,51 @@ void InventoryScreen::drawBackground(float tickDelta) {
  core::setEntityColor(0.0f, 0.0f, 0.0f, 0.0f);
  core::setConstColor(1.0f, 1.0f, 1.0f, 1.0f);
  if(minecraft()->gameRenderer != nullptr) {
-  if(render::shaderpack::ShaderPackManager* shaderPacks = minecraft()->gameRenderer->shaderPacks();
+  if(render::PackManager* shaderPacks = minecraft()->gameRenderer->shaderPacks();
      shaderPacks != nullptr) {
-   shaderPacks->refreshLightmap(minecraft()->world);
+    shaderPacks->pipeline().refreshLightmap(minecraft()->world);
   }
  }
- core::ScopedModelView previewMatrix;
- core::modelViewStack().translate(static_cast<float>(originX + 51), static_cast<float>(originY + 75), 50.0f);
- constexpr float scale = 30.0f;
- core::modelViewStack().scale(-scale, scale, scale);
- core::modelViewStack().rotate(180.0f, 0.0f, 0.0f, 1.0f);
- entity::player::ClientPlayerEntity& player = *minecraft()->player;
- const float savedBodyYaw = player.bodyYaw;
- const float savedYaw = player.yaw;
- const float savedPitch = player.pitch;
- const float deltaX = static_cast<float>(originX + 51) - mouseX_;
- const float deltaY = static_cast<float>(originY + 75 - 50) - mouseY_;
- core::modelViewStack().rotate(135.0f, 0.0f, 1.0f, 0.0f);
- core::setLightingEnabled(true);
- core::modelViewStack().rotate(-135.0f, 0.0f, 1.0f, 0.0f);
- core::modelViewStack().rotate(-static_cast<float>(std::atan(static_cast<double>(deltaY) / 40.0)) * 20.0f, 1.0f, 0.0f, 0.0f);
- player.bodyYaw = static_cast<float>(std::atan(static_cast<double>(deltaX) / 40.0)) * 20.0f;
- player.yaw = static_cast<float>(std::atan(static_cast<double>(deltaX) / 40.0)) * 40.0f;
- player.pitch = -static_cast<float>(std::atan(static_cast<double>(deltaY) / 40.0)) * 20.0f;
- player.minBrightness = 1.0f;
- core::modelViewStack().translate(0.0f, player.standingEyeHeight, 0.0f);
- auto& dispatcher = render::entity::EntityRenderDispatcher::instance();
- dispatcher.init(minecraft()->world,
-                 &minecraft()->textureManager,
-                 minecraft()->textRenderer.get(),
-                 &player,
-                 &minecraft()->options,
-                 tickDelta);
- dispatcher.yaw_ = 180.0f;
- // Fullbright lightmap: 8-arg render skips the world-path light(15,15) setup.
- render::Tessellator::INSTANCE.light(15, 15);
- dispatcher.render(player, 0.0, 0.0, 0.0, 0.0f, 1.0f, core::modelViewStack(), core::currentProjection());
- player.minBrightness = 0.0f;
- player.bodyYaw = savedBodyYaw;
- player.yaw = savedYaw;
- player.pitch = savedPitch;
- core::setLightingEnabled(false);
+ {
+  const core::ScopedDrawCameraState previewGuard;
+  net::minecraft::util::math::MatrixStack previewPose;
+  previewPose.load(core::drawModelView());
+  previewPose.translate(static_cast<float>(originX + 51), static_cast<float>(originY + 75), 50.0f);
+  constexpr float scale = 30.0f;
+  previewPose.scale(-scale, scale, scale);
+  previewPose.rotate(180.0f, 0.0f, 0.0f, 1.0f);
+  entity::player::ClientPlayerEntity& player = *minecraft()->player;
+  const float savedBodyYaw = player.bodyYaw;
+  const float savedYaw = player.yaw;
+  const float savedPitch = player.pitch;
+  const float deltaX = static_cast<float>(originX + 51) - mouseX_;
+  const float deltaY = static_cast<float>(originY + 75 - 50) - mouseY_;
+  previewPose.rotate(135.0f, 0.0f, 1.0f, 0.0f);
+  core::setLightingEnabled(true);
+  previewPose.rotate(-135.0f, 0.0f, 1.0f, 0.0f);
+  previewPose.rotate(-static_cast<float>(std::atan(static_cast<double>(deltaY) / 40.0)) * 20.0f, 1.0f, 0.0f, 0.0f);
+  player.bodyYaw = static_cast<float>(std::atan(static_cast<double>(deltaX) / 40.0)) * 20.0f;
+  player.yaw = static_cast<float>(std::atan(static_cast<double>(deltaX) / 40.0)) * 40.0f;
+  player.pitch = -static_cast<float>(std::atan(static_cast<double>(deltaY) / 40.0)) * 20.0f;
+  player.minBrightness = 1.0f;
+  previewPose.translate(0.0f, player.standingEyeHeight, 0.0f);
+ core::setDrawModelView(previewPose.top());
+  auto& dispatcher = render::entity::EntityRenderDispatcher::instance();
+  dispatcher.init(minecraft()->world,
+                  &minecraft()->textureManager,
+                  minecraft()->textRenderer.get(),
+                  &player,
+                  &minecraft()->options,
+                  tickDelta);
+  dispatcher.yaw_ = 180.0f;
+  // Fullbright lightmap: 8-arg render skips the world-path light(15,15) setup.
+  render::Tessellator::INSTANCE.light(15, 15);
+  dispatcher.render(player, 0.0, 0.0, 0.0, 0.0f, 1.0f, previewPose, core::drawProjection());
+  player.minBrightness = 0.0f;
+  player.bodyYaw = savedBodyYaw;
+  player.yaw = savedYaw;
+  player.pitch = savedPitch;
+  core::setLightingEnabled(false);
+ }
 }
 } // namespace net::minecraft::client::gui::screen::ingame

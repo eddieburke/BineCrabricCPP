@@ -49,10 +49,19 @@ class GameEventListener {
  // the borders of the four orthogonally adjacent columns, and can coalesce a
  // whole batch of arrivals into one pass instead of re-dirtying a 3x3
  // neighbourhood over full height per chunk.
- virtual void chunkAvailable(int chunkX, int chunkZ) {
-  (void)chunkX;
-  (void)chunkZ;
- }
+  virtual void chunkAvailable(int chunkX, int chunkZ) {
+   (void)chunkX;
+   (void)chunkZ;
+  }
+  // P-LITGATE: a chunk column's lighting drained (or the lighting engine went
+  // fully idle), so the chunk renderer may mesh a freshly-created column whose
+  // first build was held until now.
+  virtual void markChunkColumnLit(int chunkX, int chunkZ) {
+   (void)chunkX;
+   (void)chunkZ;
+  }
+  virtual void markAllChunksLit() {
+  }
  virtual void notifyAmbientDarknessChanged() {
  }
  virtual void playStreaming(const std::string& name, int x, int y, int z) {

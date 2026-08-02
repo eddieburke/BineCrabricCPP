@@ -6,6 +6,7 @@
 #include <string>
 #include <vector>
 #include "net/minecraft/client/Minecraft.hpp"
+#include "net/minecraft/util/concurrent/ThreadCoordinator.hpp"
 namespace net::minecraft::client::resource {
 namespace {
 constexpr const char* kResourceBaseUrl = "http://s3.amazonaws.com/MinecraftResources/";
@@ -71,30 +72,43 @@ std::string encodeUrlPath(std::string path) {
 }
 } // namespace
 ResourceDownloadThread::ResourceDownloadThread(std::filesystem::path resourcesRoot, Minecraft* minecraft)
-    : resourcesDirectory(std::move(resourcesRoot)), minecraft_(minecraft) {
+    : resourcesDirectory(std::move(resourcesRoot)), minecraft_(minecraft), state_(std::make_shared<State>(resourcesDirectory)) {
  if(!std::filesystem::exists(resourcesDirectory) && !std::filesystem::create_directories(resourcesDirectory)) {
   throw std::runtime_error("The working directory could not be created: " + resourcesDirectory.string());
  }
 }
 ResourceDownloadThread::~ResourceDownloadThread() {
  cancel();
- if(worker_.joinable()) {
-  worker_.join();
- }
 }
 void ResourceDownloadThread::start() {
- if(started_.exchange(true)) {
+ if(state_->started.exchange(true)) {
   return;
  }
- worker_ = std::thread([this]() { run(); });
+ const auto state = state_;
+ net::minecraft::util::concurrent::ThreadCoordinator::instance()
+     .pool(net::minecraft::util::concurrent::Domain::Io)
+     .submit([state]() { run(state); });
 }
 void ResourceDownloadThread::cancel() {
- cancelled_.store(true);
+ state_->cancelled.store(true);
+ state_->completed.request_stop();
 }
 void ResourceDownloadThread::reload() {
- loadFromDirectory(resourcesDirectory, "");
+ loadFromDirectory(state_, resourcesDirectory, "");
 }
-void ResourceDownloadThread::run() {
+void ResourceDownloadThread::tick() {
+ if(minecraft_ == nullptr) {
+  return;
+ }
+ PendingResource resource;
+ while(state_->completed.tryPop(resource)) {
+  try {
+   minecraft_->loadResource(resource.path, resource.file);
+  } catch(const std::exception&) {
+  }
+ }
+}
+void ResourceDownloadThread::run(const std::shared_ptr<State>& state) {
  try {
   const HttpResponse listing = fetchUrl(kResourceBaseUrl, true);
   if(!listing.ok()) {
@@ -103,45 +117,46 @@ void ResourceDownloadThread::run() {
   }
   const std::string xml = listing.bodyAsString();
   for(int pass = 0; pass < 2; ++pass) {
-   parseResourceListing(xml, [this, pass](const std::string& path, long long size) {
-    if(size <= 0 || cancelled_.load()) {
+   parseResourceListing(xml, [state, pass](const std::string& path, long long size) {
+    if(size <= 0 || state->cancelled.load()) {
      return;
     }
-    loadFromUrl(path, size, pass);
+    loadFromUrl(state, path, size, pass);
    });
-   if(cancelled_.load()) {
+   if(state->cancelled.load()) {
     return;
    }
   }
  } catch(const std::exception& ex) {
   (void)ex;
-  loadFromDirectory(resourcesDirectory, "");
+  loadFromDirectory(state, state->resourcesDirectory, "");
  }
 }
-void ResourceDownloadThread::loadFromDirectory(const std::filesystem::path& directory, const std::string& type) {
- if(minecraft_ == nullptr || cancelled_.load() || !std::filesystem::exists(directory)) {
+void ResourceDownloadThread::loadFromDirectory(const std::shared_ptr<State>& state,
+                                               const std::filesystem::path& directory,
+                                               const std::string& type) {
+ if(state->cancelled.load() || !std::filesystem::exists(directory)) {
   return;
  }
  for(const auto& entry : std::filesystem::directory_iterator(directory)) {
-  if(cancelled_.load()) {
+  if(state->cancelled.load()) {
    return;
   }
   if(entry.is_directory()) {
-   loadFromDirectory(entry.path(), type + entry.path().filename().string() + "/");
+   loadFromDirectory(state, entry.path(), type + entry.path().filename().string() + "/");
    continue;
   }
   if(!entry.is_regular_file()) {
    continue;
   }
-  const std::string resourcePath = type + entry.path().filename().string();
-  try {
-   minecraft_->loadResource(resourcePath, entry.path());
-  } catch(const std::exception&) {
-  }
+  state->completed.push(PendingResource{type + entry.path().filename().string(), entry.path()});
  }
 }
-void ResourceDownloadThread::loadFromUrl(const std::string& path, long long size, int type) {
- if(minecraft_ == nullptr || cancelled_.load()) {
+void ResourceDownloadThread::loadFromUrl(const std::shared_ptr<State>& state,
+                                         const std::string& path,
+                                         long long size,
+                                         int type) {
+ if(state->cancelled.load()) {
   return;
  }
  try {
@@ -154,18 +169,18 @@ void ResourceDownloadThread::loadFromUrl(const std::string& path, long long size
   if(isSound ? type != 0 : type != 1) {
    return;
   }
-  const std::filesystem::path file = resourcesDirectory / path;
+  const std::filesystem::path file = state->resourcesDirectory / path;
   if(!std::filesystem::exists(file) || static_cast<long long>(std::filesystem::file_size(file)) != size) {
    std::filesystem::create_directories(file.parent_path());
    const std::string url = kResourceBaseUrl + encodeUrlPath(path);
    if(!downloadFile(url, file)) {
     return;
    }
-   if(cancelled_.load()) {
+   if(state->cancelled.load()) {
     return;
    }
   }
-  minecraft_->loadResource(path, file);
+  state->completed.push(PendingResource{path, file});
  } catch(const std::exception&) {
  }
 }

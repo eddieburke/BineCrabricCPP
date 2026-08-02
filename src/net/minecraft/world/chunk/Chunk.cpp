@@ -13,6 +13,17 @@ Chunk::~Chunk() {
   unload();
  }
 }
+void Chunk::lockRenderWrite() const noexcept {
+ if(++detail::tl_renderWriteLockDepth == 1) {
+  while(renderWriteLock_.test_and_set(std::memory_order_acquire)) {
+  }
+ }
+}
+void Chunk::unlockRenderWrite() const noexcept {
+ if(--detail::tl_renderWriteLockDepth == 0) {
+  renderWriteLock_.clear(std::memory_order_release);
+ }
+}
 bool Chunk::setBlock(int localX, int yPos, int localZ, int rawId, int metadataValue) {
  const int topHeight = static_cast<int>(heightmap[static_cast<std::size_t>((localZ << 4) | localX)] & 0xFFU);
  const int previousId = getBlockId(localX, yPos, localZ);
@@ -22,14 +33,18 @@ bool Chunk::setBlock(int localX, int yPos, int localZ, int rawId, int metadataVa
  }
  const int blockX = this->x * 16 + localX;
  const int blockZ = this->z * 16 + localZ;
+ lockRenderWrite();
  blocks[index(localX, yPos, localZ)] = static_cast<std::uint8_t>(rawId & 0xFF);
+ unlockRenderWrite();
  if(previousId != 0 && world != nullptr && !world->isRemote()) {
   Block* previousBlock = Block::BLOCKS[static_cast<std::size_t>(previousId)];
   if(previousBlock != nullptr) {
    previousBlock->onBreak(world, blockX, yPos, blockZ);
   }
  }
+ lockRenderWrite();
  meta.set(localX, yPos, localZ, metadataValue);
+ unlockRenderWrite();
  if(world != nullptr) {
   const bool hasSkyLight = world->dimension == nullptr || !world->dimension->hasCeiling;
   if(hasSkyLight) {
@@ -66,14 +81,18 @@ bool Chunk::setBlock(int localX, int yPos, int localZ, int rawId) {
  }
  const int blockX = this->x * 16 + localX;
  const int blockZ = this->z * 16 + localZ;
+ lockRenderWrite();
  blocks[index(localX, yPos, localZ)] = static_cast<std::uint8_t>(rawId & 0xFF);
+ unlockRenderWrite();
  if(previousId != 0 && world != nullptr) {
   Block* previousBlock = Block::BLOCKS[static_cast<std::size_t>(previousId)];
   if(previousBlock != nullptr) {
    previousBlock->onBreak(world, blockX, yPos, blockZ);
   }
  }
+ lockRenderWrite();
  meta.set(localX, yPos, localZ, 0);
+ unlockRenderWrite();
  if(world != nullptr) {
   if(Block::BLOCKS_LIGHT_OPACITY[static_cast<std::size_t>(rawId & 0xFF)] != 0) {
    if(yPos >= topHeight) {
@@ -104,7 +123,9 @@ void Chunk::setBlockMeta(int localX, int yPos, int localZ, int metadataValue) {
  if(previousMeta == metadataValue) {
   return;
  }
+ lockRenderWrite();
  meta.set(localX, yPos, localZ, metadataValue);
+ unlockRenderWrite();
  dirty = true;
  if(world != nullptr) {
   world->setBlockDirty(x * 16 + localX, yPos, z * 16 + localZ);

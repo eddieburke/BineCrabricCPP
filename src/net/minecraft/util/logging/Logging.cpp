@@ -10,13 +10,17 @@
 #endif
 namespace net::minecraft::util::logging {
 namespace {
+// Leaked singletons: the dispatcher's writer thread outlives the main thread,
+// so these must never be destroyed at process exit (static destruction order
+// would otherwise race the writer). The OS reclaims them on teardown.
 std::mutex& loggerMutex() {
- static std::mutex value;
- return value;
+ static std::mutex* value = new std::mutex;
+ return *value;
 }
 std::unordered_map<std::string, std::unique_ptr<Logger>>& loggers() {
- static std::unordered_map<std::string, std::unique_ptr<Logger>> value;
- return value;
+ static std::unordered_map<std::string, std::unique_ptr<Logger>>* value =
+     new std::unordered_map<std::string, std::unique_ptr<Logger>>;
+ return *value;
 }
 constexpr const char* kLevelFinest = " [FINEST] ";
 constexpr const char* kLevelFiner = " [FINER] ";
@@ -58,6 +62,13 @@ void FileLogHandler::publish(const LogRecord& record) {
  const std::string formatted = formatter_->format(record);
  std::lock_guard<std::mutex> lock(mutex_);
  output_ << formatted;
+ if(++recordsSinceFlush_ >= kFlushInterval) {
+  recordsSinceFlush_ = 0;
+  output_.flush();
+ }
+}
+void FileLogHandler::flush() {
+ std::lock_guard<std::mutex> lock(mutex_);
  output_.flush();
 }
 Logger& Logger::getLogger(const std::string& name) {
@@ -86,11 +97,81 @@ void Logger::log(LogLevel level, const std::string& message, const std::exceptio
  LogRecord record;
  record.level = level;
  record.message = message;
- record.thrown = thrown;
+ if(thrown != nullptr) {
+  record.message += '\n';
+  record.message += ConsoleFormatter::formatThrown(*thrown);
+ }
+ // The exception object only lives for the duration of this call, so fold it
+ // into the message now and never hand a dangling pointer to the writer.
+ record.thrown = nullptr;
+ LogDispatcher::instance().enqueue(this, std::move(record));
+}
+void Logger::publish(const LogRecord& record) {
  std::lock_guard<std::mutex> lock(mutex_);
  for(const std::unique_ptr<LogHandler>& handler : handlers_) {
   if(handler != nullptr) {
    handler->publish(record);
+  }
+ }
+}
+void Logger::flush() {
+ std::lock_guard<std::mutex> lock(mutex_);
+ for(const std::unique_ptr<LogHandler>& handler : handlers_) {
+  if(handler != nullptr) {
+   handler->flush();
+  }
+ }
+}
+LogDispatcher& LogDispatcher::instance() {
+ static LogDispatcher* value = new LogDispatcher;
+ return *value;
+}
+void LogDispatcher::start() {
+ std::lock_guard<std::mutex> lock(mutex_);
+ if(running_) {
+  return;
+ }
+ running_ = true;
+ thread_ = std::thread(&LogDispatcher::writerMain, this);
+}
+void LogDispatcher::shutdown() {
+ {
+  std::lock_guard<std::mutex> lock(mutex_);
+  if(!running_) {
+   return;
+  }
+  running_ = false;
+ }
+ cv_.notify_all();
+ if(thread_.joinable()) {
+  thread_.join();
+ }
+}
+void LogDispatcher::enqueue(Logger* logger, LogRecord record) {
+ record.logger = logger;
+ std::lock_guard<std::mutex> lock(mutex_);
+ if(queue_.size() >= kMaxQueued) {
+  queue_.pop_front();
+ }
+ const bool wakeWriter = queue_.empty();
+ queue_.push_back(std::move(record));
+ if(wakeWriter && running_) {
+  cv_.notify_one();
+ }
+}
+void LogDispatcher::writerMain() {
+ std::unique_lock<std::mutex> lock(mutex_);
+ for(;;) {
+  cv_.wait(lock, [this] { return !queue_.empty() || !running_; });
+  while(!queue_.empty()) {
+   LogRecord record = std::move(queue_.front());
+   queue_.pop_front();
+   lock.unlock();
+   record.logger->publish(record);
+   lock.lock();
+  }
+  if(!running_) {
+   break;
   }
  }
 }

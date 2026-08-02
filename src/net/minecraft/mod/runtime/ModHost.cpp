@@ -1,4 +1,5 @@
 #include "net/minecraft/mod/runtime/ModHost.hpp"
+#include "net/minecraft/mod/ModLifecycle.hpp"
 #include "net/minecraft/mod/ModSettingsRegistry.hpp"
 #include "net/minecraft/mod/lua/LuaHostApi.hpp"
 #include "net/minecraft/mod/lua/LuaModApi.hpp"
@@ -33,6 +34,30 @@
 namespace net::minecraft::mod::runtime {
 namespace {
 using namespace net::minecraft::mod::lua;
+std::uint64_t directoryContentStamp(const std::filesystem::path& root) {
+  std::uint64_t hash = 1469598103934665603ULL; // FNV-1a basis
+  std::error_code ec;
+  if(!std::filesystem::is_directory(root, ec)) {
+   return hash;
+  }
+  for(auto it = std::filesystem::recursive_directory_iterator(root, ec);
+      it != std::filesystem::recursive_directory_iterator();
+      ++it) {
+   if(!it->is_regular_file(ec)) {
+    continue;
+   }
+   const std::string relative = it->path().lexically_relative(root).generic_string();
+   for(const char ch : relative) {
+    hash ^= static_cast<std::uint8_t>(ch);
+    hash *= 1099511628211ULL;
+   }
+   hash ^= static_cast<std::uint64_t>(it->file_size(ec));
+   hash *= 1099511628211ULL;
+   hash ^= static_cast<std::uint64_t>(it->last_write_time(ec).time_since_epoch().count());
+   hash *= 1099511628211ULL;
+  }
+  return hash;
+}
 void installMinecraftTable(lua_State* state, ModHost::LoadedLuaMod& mod) {
  LuaApi& api = luaApi();
  api.createtable(state, 0, 12);
@@ -108,10 +133,12 @@ bool loadLuaMod(ModPackage& info, std::vector<std::shared_ptr<ModHost::LoadedLua
   runtimeLog(info.id, "error", info.error);
   return false;
  }
- api.openlibs(state);
- auto mod = std::make_shared<ModHost::LoadedLuaMod>();
- mod->modId = info.id;
- mod->state = state;
+  api.openlibs(state);
+  auto mod = std::make_shared<ModHost::LoadedLuaMod>();
+  mod->modId = info.id;
+  mod->state = state;
+  static int nextLoadGeneration = 1;
+  mod->loadGeneration = nextLoadGeneration++;
  installMinecraftTable(state, *mod);
  if(!installLuaPrelude(state, info.error)) {
   api.close(state);
@@ -136,12 +163,21 @@ bool loadLuaMod(ModPackage& info, std::vector<std::shared_ptr<ModHost::LoadedLua
   runtimeLog(info.id, "error", info.error);
   return false;
  }
- mod->active = true;
- loadedMods.push_back(std::move(mod));
- invalidateLuaHookCache();
- info.error.clear();
- runtimeLog(info.id, "info", "loaded " + info.name + " " + info.version);
- return true;
+  mod->active = true;
+  loadedMods.push_back(std::move(mod));
+  invalidateLuaHookCache();
+  info.error.clear();
+  // A mod loaded after startup (live enable / Reload List) missed the bootstrap
+  // phase transitions, so its at_phase("init"/"post_init"/"ready") registrations
+  // made during script load would never fire. Replay the transitions; per-mod
+  // firedPhases gating keeps every mod's callbacks firing exactly once.
+  if(net::minecraft::mod::ModLifecycle::currentPhase() == net::minecraft::mod::LifecyclePhase::Ready) {
+   fireLifecycle(net::minecraft::mod::LifecyclePhase::NotStarted, net::minecraft::mod::LifecyclePhase::Init);
+   fireLifecycle(net::minecraft::mod::LifecyclePhase::Init, net::minecraft::mod::LifecyclePhase::PostInit);
+   fireLifecycle(net::minecraft::mod::LifecyclePhase::PostInit, net::minecraft::mod::LifecyclePhase::Ready);
+  }
+  runtimeLog(info.id, "info", "loaded " + info.name + " " + info.version);
+  return true;
 }
 } // namespace
 ModHost& host() {
@@ -177,14 +213,25 @@ void ModHost::initialize(const std::filesystem::path& runDirectory) {
  rescan();
 }
 void ModHost::shutdown() {
- LuaApi* api = loadedLuaMods_.empty() ? nullptr : &luaApi();
- for(const std::shared_ptr<LoadedLuaMod>& mod : loadedLuaMods_) {
-  if(mod == nullptr) {
-   continue;
+  for(const std::shared_ptr<LoadedLuaMod>& mod : loadedLuaMods_) {
+   if(mod != nullptr) {
+    closeLoadedLuaMod(mod);
+   }
   }
+  invalidateLuaHookCache();
+  loadedLuaMods_.clear();
+  invalidateLuaHookCache();
+  packageMods_.clear();
+  initialized_ = false;
+}
+void ModHost::closeLoadedLuaMod(const std::shared_ptr<LoadedLuaMod>& mod) {
+  if(mod == nullptr) {
+   return;
+  }
+  LuaApi* api = &luaApi();
   const std::lock_guard<std::recursive_mutex> lock(mod->stateMutex);
   mod->active = false;
-  if(api != nullptr && api->ready() && mod->state != nullptr) {
+  if(api->ready() && mod->state != nullptr) {
    auto* state = static_cast<lua_State*>(mod->state);
    for(const LoadedLuaMod::Callback& callback : mod->callbacks) {
     if(callback.functionRef != kLuaNoRef) {
@@ -214,13 +261,28 @@ void ModHost::shutdown() {
    api->close(state);
    mod->state = nullptr;
   }
- }
- invalidateLuaHookCache();
- loadedLuaMods_.clear();
- invalidateLuaHookCache();
- packageMods_.clear();
- packageModsLoaded_ = false;
- initialized_ = false;
+  mod->callbacks.clear();
+  mod->firedPhases.clear();
+}
+bool ModHost::hasLoadedScript(const std::string& modId) const {
+  for(const std::shared_ptr<LoadedLuaMod>& mod : loadedLuaMods_) {
+   if(mod != nullptr && mod->modId == modId && mod->active && mod->state != nullptr) {
+    return true;
+   }
+  }
+  return false;
+}
+bool ModHost::unloadScript(const std::string& modId) {
+  for(auto it = loadedLuaMods_.begin(); it != loadedLuaMods_.end(); ++it) {
+   if((*it) == nullptr || (*it)->modId != modId) {
+    continue;
+   }
+   closeLoadedLuaMod(*it);
+   loadedLuaMods_.erase(it);
+   invalidateLuaHookCache();
+   return true;
+  }
+  return false;
 }
 void ModHost::loadStateFile() {
  savedEnabledStates_.clear();
@@ -290,12 +352,13 @@ bool ModHost::isEnabled(const std::string& modId, bool enabledByDefault) const {
  return enabledByDefault;
 }
 bool ModHost::setEnabled(const std::string& modId, bool enabled) {
- savedEnabledStates_[modId] = enabled;
- if(ModPackage* mod = findPackageMod(modId)) {
-  mod->configuredEnabled = enabled;
- }
- saveStateFile();
- return true;
+  savedEnabledStates_[modId] = enabled;
+  if(ModPackage* mod = findPackageMod(modId)) {
+   mod->configuredEnabled = enabled;
+  }
+  saveStateFile();
+  reconcileEnabled();
+  return true;
 }
 void ModHost::rescan() {
  if(!initialized_) {
@@ -331,9 +394,11 @@ void ModHost::rescan() {
      modInfo.rootPath = path;
      modInfo.resourceOverlay = std::filesystem::is_directory(modInfo.rootPath / "resources");
     }
+    modInfo.contentStamp = directoryContentStamp(path);
     modInfo.configuredEnabled = isEnabled(modInfo.id, modInfo.enabledByDefault);
     if(const auto previousIt = previous.find(modInfo.id); previousIt != previous.end()) {
      modInfo.active = previousIt->second.active;
+     modInfo.loadedStamp = previousIt->second.loadedStamp;
      if(modInfo.error.empty()) {
       modInfo.error = previousIt->second.error;
      }
@@ -402,9 +467,16 @@ void ModHost::rescan() {
    if(modInfo.id.empty()) {
     continue;
    }
+   {
+    std::error_code stampEc;
+    const auto stamp = std::filesystem::last_write_time(path, stampEc).time_since_epoch().count();
+    modInfo.contentStamp = static_cast<std::uint64_t>(archiveSize) ^
+                           (static_cast<std::uint64_t>(stamp) * 0x9E3779B97F4A7C15ULL);
+   }
    modInfo.configuredEnabled = isEnabled(modInfo.id, modInfo.enabledByDefault);
    if(const auto previousIt = previous.find(modInfo.id); previousIt != previous.end()) {
     modInfo.active = previousIt->second.active;
+    modInfo.loadedStamp = previousIt->second.loadedStamp;
     if(modInfo.error.empty()) {
      modInfo.error = previousIt->second.error;
     }
@@ -417,38 +489,80 @@ void ModHost::rescan() {
    packageMods_.push_back(std::move(modInfo));
   }
  }
- sortMods(packageMods_);
- if(packageModsLoaded_) {
+  sortMods(packageMods_);
+  reconcileEnabled();
+}
+void ModHost::reconcileEnabled() {
+  if(!initialized_) {
+   return;
+  }
+  if(!packageLoadingEnabled_) {
+   for(ModPackage& mod : packageMods_) {
+    mod.active = false;
+   }
+   for(const std::shared_ptr<LoadedLuaMod>& mod : loadedLuaMods_) {
+    if(mod != nullptr) {
+     closeLoadedLuaMod(mod);
+    }
+   }
+   loadedLuaMods_.clear();
+   invalidateLuaHookCache();
+   return;
+  }
   for(ModPackage& mod : packageMods_) {
    const bool wrongSide = (runtimeSide_ == ModRuntimeSide::Client && mod.side == "server") ||
                           (runtimeSide_ == ModRuntimeSide::Server && mod.side == "client");
-   if(!mod.configuredEnabled || mod.active || wrongSide) {
+   const bool enabled = mod.configuredEnabled && !wrongSide;
+   const bool scriptLoadable = mod.runtimeScript && !mod.entry.empty();
+   const bool loaded = hasLoadedScript(mod.id);
+   if(!scriptLoadable) {
+    // Resource-only overlay (or un-loadable entry): active only serves
+    // findResourceFile; a stale script from an edit that removed the entry is
+    // torn down. Content registrations from earlier loads persist by design.
+    if(!enabled) {
+     if(loaded) {
+      unloadScript(mod.id);
+     }
+     mod.active = false;
+    } else {
+     mod.active = mod.resourceOverlay;
+    }
     continue;
    }
-   (void)loadLuaMod(mod, loadedLuaMods_);
+   if(!enabled) {
+    if(loaded) {
+     unloadScript(mod.id);
+    }
+    mod.active = false;
+    continue;
+   }
+   if(loaded && mod.loadedStamp != mod.contentStamp) {
+    unloadScript(mod.id);
+   }
+   if(!loaded) {
+    if(loadLuaMod(mod, loadedLuaMods_)) {
+     mod.loadedStamp = mod.contentStamp;
+    }
+   }
   }
- }
-}
-void ModHost::loadEnabledPackageMods() {
- if(packageModsLoaded_) {
-  return;
- }
- packageModsLoaded_ = true;
- if(!packageLoadingEnabled_) {
-  for(ModPackage& mod : packageMods_) {
-   mod.active = false;
+  // Mods removed from the folder (or whose ids vanished) drop their scripts too.
+  std::vector<std::string> ids;
+  ids.reserve(packageMods_.size());
+  for(const ModPackage& mod : packageMods_) {
+   if(!mod.id.empty()) {
+    ids.push_back(mod.id);
+   }
   }
-  return;
- }
- for(ModPackage& mod : packageMods_) {
-  mod.active = false;
-  const bool wrongSide = (runtimeSide_ == ModRuntimeSide::Client && mod.side == "server") ||
-                         (runtimeSide_ == ModRuntimeSide::Server && mod.side == "client");
-  if(!mod.configuredEnabled || wrongSide) {
-   continue;
+  std::vector<std::string> stale;
+  for(const std::shared_ptr<LoadedLuaMod>& mod : loadedLuaMods_) {
+   if(mod != nullptr && std::find(ids.begin(), ids.end(), mod->modId) == ids.end()) {
+    stale.push_back(mod->modId);
+   }
   }
-  (void)loadLuaMod(mod, loadedLuaMods_);
- }
+  for(const std::string& modId : stale) {
+   unloadScript(modId);
+  }
+  invalidateLuaHookCache();
 }
 std::vector<ModPackage> ModHost::packageMods() const {
  return packageMods_;

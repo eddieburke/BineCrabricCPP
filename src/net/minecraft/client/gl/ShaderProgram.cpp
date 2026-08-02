@@ -1,11 +1,17 @@
 #include "net/minecraft/client/gl/ShaderProgram.hpp"
 #include <algorithm>
+#include <cctype>
 #include <cstdint>
+#include <string_view>
 #include <utility>
 #include "net/minecraft/client/gl/GLCore.hpp"
 #include "net/minecraft/client/gl/GlConstants.hpp"
+#include "net/minecraft/client/render/VertexAbi.hpp"
 #include "net/minecraft/util/math/Matrix4f.hpp"
 namespace net::minecraft::client::gl {
+// Last program passed to glUseProgram (0 = none). Lets bind() skip redundant
+// glUseProgram calls and unbind()/destroy() reset the cached state.
+thread_local unsigned int s_lastBoundProgram = 0;
 namespace {
 // GL enum literals kept local so this file does not depend on the (undef-heavy)
 // fixed-function constant headers.
@@ -17,6 +23,27 @@ constexpr unsigned int kTessEvaluationShader = 0x8E87;
 constexpr unsigned int kComputeShader = 0x91B9;
 constexpr unsigned int kCompileStatus = 0x8B81;
 constexpr unsigned int kLinkStatus = 0x8B82;
+bool corePreambleAtLeast(std::string_view source, int minimumVersion) {
+ std::size_t cursor = 0;
+ while(cursor < source.size() && std::isspace(static_cast<unsigned char>(source[cursor]))) ++cursor;
+ constexpr std::string_view directive = "#version";
+ if(!source.substr(cursor).starts_with(directive)) return false;
+ cursor += directive.size();
+ if(cursor >= source.size() || !std::isspace(static_cast<unsigned char>(source[cursor]))) return false;
+ while(cursor < source.size() && std::isspace(static_cast<unsigned char>(source[cursor]))) ++cursor;
+ int version = 0;
+ const std::size_t digits = cursor;
+ while(cursor < source.size() && std::isdigit(static_cast<unsigned char>(source[cursor]))) {
+  version = version * 10 + source[cursor] - '0';
+  ++cursor;
+ }
+ if(cursor == digits || version < minimumVersion) return false;
+ while(cursor < source.size() && (source[cursor] == ' ' || source[cursor] == '\t')) ++cursor;
+ constexpr std::string_view profile = "core";
+ if(!source.substr(cursor).starts_with(profile)) return false;
+ cursor += profile.size();
+ return cursor >= source.size() || std::isspace(static_cast<unsigned char>(source[cursor]));
+}
 std::string stripLeadingVersionDirective(const std::string& body) {
  // If the body starts with a #version directive, strip it so the caller-supplied
  // preamble is not duplicated.
@@ -79,7 +106,6 @@ ShaderProgram::ShaderProgram(ShaderProgram&& other) noexcept
       uniformCache_(std::move(other.uniformCache_)),
       samplerKinds_(std::move(other.samplerKinds_)),
       samplerNames_(std::move(other.samplerNames_)),
-      legacyAttributes_(other.legacyAttributes_),
       tessellation_(other.tessellation_),
       drawBuffers_(std::move(other.drawBuffers_)),
       drawBufferColortexIndices_(std::move(other.drawBufferColortexIndices_)),
@@ -93,7 +119,6 @@ ShaderProgram& ShaderProgram::operator=(ShaderProgram&& other) noexcept {
   uniformCache_ = std::move(other.uniformCache_);
   samplerKinds_ = std::move(other.samplerKinds_);
   samplerNames_ = std::move(other.samplerNames_);
-  legacyAttributes_ = other.legacyAttributes_;
   tessellation_ = other.tessellation_;
   drawBuffers_ = std::move(other.drawBuffers_);
   drawBufferColortexIndices_ = std::move(other.drawBufferColortexIndices_);
@@ -112,9 +137,13 @@ bool ShaderProgram::compile(const std::string& vertexSource,
                             const std::string& geometrySource,
                             const std::string& tessControlSource,
                             const std::string& tessEvaluationSource) {
- GLCore::ensureLoaded();
  destroy();
  lastError_.clear();
+ if(!corePreambleAtLeast(versionPreamble, 330)) {
+  lastError_ = "raster shaders require #version 330 core or newer";
+  return false;
+ }
+ GLCore::ensureLoaded();
  if(!GLCore::shaderSupported) {
   lastError_ = "shader entry points unavailable";
   return false;
@@ -140,16 +169,8 @@ bool ShaderProgram::compile(const std::string& vertexSource,
  const unsigned int program = GLCore::createProgram();
  for(unsigned int shader : shaders) GLCore::attachShader(program, shader);
  if(GLCore::bindAttribLocation != nullptr) {
-  GLCore::bindAttribLocation(program, 0, "vaPosition");
-  GLCore::bindAttribLocation(program, 1, "vaUV0");
-  GLCore::bindAttribLocation(program, 2, "vaColor");
-  GLCore::bindAttribLocation(program, 3, "vaNormal");
-  GLCore::bindAttribLocation(program, 4, "at_midBlock");
-  GLCore::bindAttribLocation(program, 5, "vaUV2");
-  GLCore::bindAttribLocation(program, 6, "mc_Entity");
-  GLCore::bindAttribLocation(program, 7, "mc_midTexCoord");
-  GLCore::bindAttribLocation(program, 11, "at_tangent");
-  GLCore::bindAttribLocation(program, 12, "mc_chunkFade");
+  for(const auto& binding : render::vertex_abi::Bindings)
+   GLCore::bindAttribLocation(program, binding.location, binding.name);
  }
  GLCore::linkProgram(program);
  for(unsigned int shader : shaders) GLCore::deleteShader(shader);
@@ -166,17 +187,19 @@ bool ShaderProgram::compile(const std::string& vertexSource,
  uniformCache_.clear();
  samplerKinds_.clear();
  samplerNames_.clear();
- legacyAttributes_ = vertexSource.find("gl_Vertex") != std::string::npos ||
-                     vertexSource.find("gl_MultiTexCoord") != std::string::npos;
  tessellation_ = !tessControlSource.empty() && !tessEvaluationSource.empty();
  reflectSamplers();
  return true;
 }
 bool ShaderProgram::compileCompute(const std::string& computeSource,
                                    const std::string& versionPreamble) {
- GLCore::ensureLoaded();
  destroy();
  lastError_.clear();
+ if(!corePreambleAtLeast(versionPreamble, 430)) {
+  lastError_ = "compute shaders require #version 430 core or newer";
+  return false;
+ }
+ GLCore::ensureLoaded();
  if(!GLCore::computeSupported) {
   lastError_ = "compute shader entry points unavailable (needs GL 4.3 core)";
   return false;
@@ -203,12 +226,12 @@ bool ShaderProgram::compileCompute(const std::string& computeSource,
  uniformCache_.clear();
  samplerKinds_.clear();
  samplerNames_.clear();
- legacyAttributes_ = false;
  tessellation_ = false;
  reflectSamplers();
  return true;
 }
 void ShaderProgram::destroy() {
+ if(program_ != 0 && program_ == s_lastBoundProgram) s_lastBoundProgram = 0;
  if(program_ != 0 && GLCore::deleteProgram != nullptr) {
   GLCore::deleteProgram(program_);
  }
@@ -217,16 +240,19 @@ void ShaderProgram::destroy() {
  samplerKinds_.clear();
  samplerNames_.clear();
  drawBuffers_.clear();
- legacyAttributes_ = false;
+ drawBufferColortexIndices_.clear();
  tessellation_ = false;
 }
 void ShaderProgram::bind() const {
  if(program_ != 0 && GLCore::useProgram != nullptr) {
+  if(program_ == s_lastBoundProgram) return;
+  s_lastBoundProgram = program_;
   GLCore::useProgram(program_);
  }
 }
 void ShaderProgram::unbind() {
  if(GLCore::useProgram != nullptr) {
+  s_lastBoundProgram = 0;
   GLCore::useProgram(0);
  }
 }
@@ -438,6 +464,7 @@ void ShaderProgram::setMatrix4(std::string_view name, const net::minecraft::util
 
 namespace {
 using PFN_GetProgramBinary = void(APIENTRY*)(unsigned int, int, int*, unsigned int*, void*);
+using PFN_ProgramBinary = void(APIENTRY*)(unsigned int, unsigned int, const void*, int);
 using PFN_GetProgramivLocal = void(APIENTRY*)(unsigned int, unsigned int, int*);
 constexpr unsigned int kProgramBinaryLength = 0x8741;
 
@@ -508,11 +535,9 @@ bool ShaderProgram::extractProgramBinary(ProgramBinaryBlob& out) {
  }
  out.bytes.resize(static_cast<std::size_t>(written));
  out.binaryFormat = format;
- out.legacyAttributes = legacyAttributes_;
  out.tessellation = tessellation_;
  out.flags = 0;
  if(out.compute) out.flags |= kFlagCompute;
- if(legacyAttributes_) out.flags |= kFlagLegacyAttribs;
  if(tessellation_) out.flags |= kFlagTessellation;
  return true;
 }
@@ -542,5 +567,46 @@ bool ShaderProgram::compileComputeToBinary(ProgramBinaryBlob& out,
   return false;
  }
  return extractProgramBinary(out);
+}
+
+bool ShaderProgram::loadFromBinary(const ProgramBinaryBlob& binary) {
+ GLCore::ensureLoaded();
+ destroy();
+ lastError_.clear();
+ if(!GLCore::shaderSupported) {
+  lastError_ = "shader entry points unavailable";
+  return false;
+ }
+ if(binary.binaryFormat == 0 || binary.bytes.empty()) {
+  lastError_ = "empty program binary";
+  return false;
+ }
+ auto programBinary = reinterpret_cast<PFN_ProgramBinary>(loadGlProc("glProgramBinary"));
+ if(programBinary == nullptr) {
+  lastError_ = "glProgramBinary unavailable";
+  return false;
+ }
+ const unsigned int program = GLCore::createProgram();
+ if(program == 0) {
+  lastError_ = "glCreateProgram returned 0";
+  return false;
+ }
+ programBinary(program, binary.binaryFormat, binary.bytes.data(), static_cast<int>(binary.bytes.size()));
+ int success = 0;
+ GLCore::getProgramiv(program, kLinkStatus, &success);
+ if(success == 0) {
+  char log[2048]{};
+  GLCore::getProgramInfoLog(program, sizeof(log), nullptr, log);
+  lastError_ = log;
+  GLCore::deleteProgram(program);
+  return false;
+ }
+ program_ = program;
+ uniformCache_.clear();
+ samplerKinds_.clear();
+ samplerNames_.clear();
+ tessellation_ = binary.tessellation;
+ reflectSamplers();
+ return true;
 }
 } // namespace net::minecraft::client::gl

@@ -8,6 +8,7 @@
 #include "net/minecraft/mod/runtime/LuaDirectHooks.hpp"
 #ifdef MINECRAFT_NATIVE_EXPORTS
 #include "net/minecraft/client/Minecraft.hpp"
+#include "net/minecraft/client/render/camera/FrameRenderCamera.hpp"
 #include "net/minecraft/client/render/item/ItemModelRenderer.hpp"
 #include "net/minecraft/registry/TextureRegistry.hpp"
 #include "net/minecraft/entity/Entity.hpp"
@@ -98,20 +99,26 @@ void setClientTickFields(lua_State* state, const ClientTickEvent& event) {
  setField(state, "paused", event.paused);
  setField(state, "has_player", event.player != nullptr);
  setWorldContextFields(state, event.world);
- double cameraY = 64.0;
- double playerY = 64.0;
- float playerFallDistance = 0.0f;
- bool playerOnGround = false;
+  double cameraY = 64.0;
+  double playerY = 64.0;
+  float playerFallDistance = 0.0f;
+  bool playerOnGround = false;
 #ifdef MINECRAFT_NATIVE_EXPORTS
- if(event.client != nullptr && event.client->camera != nullptr) {
-  const entity::Entity* camera = event.client->camera;
-  cameraY = camera->y;
- }
- if(event.player != nullptr) {
-  playerY = event.player->y;
-  playerFallDistance = event.player->fallDistance;
-  playerOnGround = event.player->onGround;
- }
+  // Camera frame info comes from the iris frame camera (RenderCameraState) published
+  // every frame; the vanilla camera-entity read was the dual path. Defaults to the
+  // fallback height before the first frame is published.
+  {
+   const client::render::FrameRenderCamera& frame =
+       client::render::RenderCameraState::instance().frame();
+   if(frame.x != 0.0 || frame.y != 0.0 || frame.z != 0.0) {
+    cameraY = frame.y;
+   }
+  }
+  if(event.player != nullptr) {
+   playerY = event.player->y;
+   playerFallDistance = event.player->fallDistance;
+   playerOnGround = event.player->onGround;
+  }
 #endif
  setField(state, "camera_y", cameraY);
  setField(state, "player_y", playerY);

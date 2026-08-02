@@ -22,6 +22,7 @@
 #include "net/minecraft/client/render/Tessellator.hpp"
 #include "net/minecraft/client/render/block/BlockRenderManager.hpp"
 #include "net/minecraft/client/render/chunk/RegionSnapshot.hpp"
+#include "net/minecraft/client/render/chunk/TerrainLayers.hpp"
 #include "net/minecraft/world/chunk/Chunk.hpp"
 #include "net/minecraft/world/dimension/Dimension.hpp"
 namespace net::minecraft::test {
@@ -130,7 +131,7 @@ MeshStats meshLayer(int layer, bool ambientOcclusion) {
      continue;
     }
     block::Block* block = block::Block::BLOCKS[static_cast<std::size_t>(blockId)];
-    if(block == nullptr || block->getRenderLayer() != layer) {
+    if(block == nullptr || client::render::chunk::resolveTerrainMeshLayer(*block, blockId, {}) != layer) {
      continue;
     }
     if(!began) {
@@ -180,9 +181,33 @@ TEST(ChunkMeshGolden, MeshingIsDeterministic) {
  EXPECT_EQ(first.hash, second.hash);
 }
 TEST(ChunkMeshGolden, TranslucentLayerEmitsWaterGeometry) {
- const MeshStats stats = meshLayer(/*layer=*/1, /*ambientOcclusion=*/true);
+ const MeshStats stats = meshLayer(/*layer=*/2, /*ambientOcclusion=*/true);
  EXPECT_GT(stats.vertexCount, 0u) << "the water pool should produce translucent-layer geometry";
  EXPECT_EQ(stats.vertexCount % 4, 0u);
+}
+TEST(ChunkMeshGolden, CutoutLayerEmitsNonOpaqueGeometry) {
+ const MeshStats stats = meshLayer(/*layer=*/1, /*ambientOcclusion=*/true);
+ EXPECT_GT(stats.vertexCount, 0u);
+ EXPECT_EQ(stats.vertexCount % 4, 0u);
+}
+TEST(TessellatorVertexAbi, EncodesOnlyFluidGeometryAsFluid) {
+ const auto encode = [](bool fluid) {
+  Tessellator tessellator;
+  tessellator.setCaptureOnly(true);
+  tessellator.startQuads();
+  tessellator.blockData(0.0, 0.0, 0.0, 0, 15, 15, -1, fluid, 0);
+  tessellator.vertex(0.0, 0.0, 0.0);
+  tessellator.vertex(1.0, 0.0, 0.0);
+  tessellator.vertex(1.0, 1.0, 0.0);
+  tessellator.vertex(0.0, 1.0, 0.0);
+  return tessellator.takeMesh();
+ };
+ const TessellatorMesh solid = encode(false);
+ const TessellatorMesh fluid = encode(true);
+ ASSERT_EQ(solid.vertices.size(), 4u);
+ ASSERT_EQ(fluid.vertices.size(), 4u);
+ for(const auto& vertex : solid.vertices) EXPECT_EQ(vertex.entity[1], -1);
+ for(const auto& vertex : fluid.vertices) EXPECT_EQ(vertex.entity[1], 1);
 }
 // RegionSnapshot deliberately reports out-of-range cells as fully sky-lit air
 // rather than dark, so neighbour-light sampling does not bake a dark fringe at

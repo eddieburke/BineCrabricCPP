@@ -30,7 +30,7 @@ inline constexpr int Count = 3;
  if(block.getRenderLayer() == 1) {
   return terrain_layer::Translucent;
  }
- using namespace block::block_render_type;
+ using namespace block::BlockRenderType;
  switch(block.getRenderType()) {
  case CROSS:
  case CROP:

@@ -339,7 +339,7 @@ void StatsScreen::renderIcon(int x, int y, int u, int v) {
  }
  const int textureId = minecraft()->textureManager.getTextureId("/gui/slot.png");
  render::core::setConstColor(1.0f, 1.0f, 1.0f, 1.0f);
- render::core::bindTexture(textureId);
+ minecraft()->textureManager.bindTexture(textureId);
  {
   const render::RenderPassScope passScope(render::RenderType::guiTextured());
   const float* c = render::core::constColor();

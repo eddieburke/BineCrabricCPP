@@ -4,6 +4,7 @@
 #include <memory>
 #include <mutex>
 #include <optional>
+#include <set>
 #include <string>
 #include <string_view>
 #include <unordered_map>
@@ -30,11 +31,17 @@ struct ModPackage {
  bool active = false;
  bool resourceOverlay = false;
  bool runtimeScript = false;
- std::string side = "both";
- std::string downloadUrl;
- std::string error;
- std::filesystem::path sourcePath;
- std::filesystem::path rootPath;
+  std::string side = "both";
+  std::string downloadUrl;
+  std::string error;
+  std::filesystem::path sourcePath;
+  std::filesystem::path rootPath;
+  // Fingerprint of the mod's on-disk content. Reconcile reloads a loaded mod when
+  // this changes (Reload List re-reads edited mods live); for a zip it is derived
+  // from the archive itself, for a directory from a recursive mtime hash.
+  std::uint64_t contentStamp = 0;
+  // Content fingerprint at the time the mod's script was last successfully loaded.
+  std::uint64_t loadedStamp = 0;
 };
 class ModHost {
  public:
@@ -51,22 +58,31 @@ class ModHost {
   std::string modId;
   void* state = nullptr;
   bool active = false;
+  // Increments on every fresh script load. at_phase listeners capture the value
+  // at registration so a stale listener from a previous load (same modId, now
+  // closed Lua state) never fires a dangling function ref against the new state.
+  int loadGeneration = 0;
   std::recursive_mutex stateMutex;
   std::vector<Callback> callbacks;
   std::vector<int> buttonCallbackRefs;
   std::vector<int> ownedTextureIds;
+  // Lifecycle phases whose at_phase callbacks have already fired for this mod.
+  // Lets a mod loaded at runtime replay Init/PostInit/Ready without re-firing
+  // the same phases for mods that already ran them at startup. Stored as the
+  // underlying int because ModHost.hpp must not depend on the phase enum
+  // (defined in LuaDirectHooks.hpp, which includes ModHost.hpp).
+  std::set<int> firedPhases;
  };
- void initialize(const std::filesystem::path& runDirectory);
- void shutdown();
- void rescan();
- [[nodiscard]] bool initialized() const noexcept {
-  return initialized_;
- }
- [[nodiscard]] bool isEnabled(const std::string& modId, bool enabledByDefault = true) const;
- bool setEnabled(const std::string& modId, bool enabled);
- void setPackageLoadingEnabled(bool enabled) noexcept { packageLoadingEnabled_ = enabled; }
- void setRuntimeSide(ModRuntimeSide side) noexcept { runtimeSide_ = side; }
- void loadEnabledPackageMods();
+  void initialize(const std::filesystem::path& runDirectory);
+  void shutdown();
+  void rescan();
+  [[nodiscard]] bool initialized() const noexcept {
+   return initialized_;
+  }
+  [[nodiscard]] bool isEnabled(const std::string& modId, bool enabledByDefault = true) const;
+  bool setEnabled(const std::string& modId, bool enabled);
+  void setPackageLoadingEnabled(bool enabled) noexcept { packageLoadingEnabled_ = enabled; }
+  void setRuntimeSide(ModRuntimeSide side) noexcept { runtimeSide_ = side; }
  [[nodiscard]] std::vector<ModPackage> packageMods() const;
  [[nodiscard]] std::vector<std::uint8_t> readResource(std::string_view path) const;
  [[nodiscard]] std::optional<std::filesystem::path> resolveResourcePath(std::string_view path) const;
@@ -80,17 +96,22 @@ class ModHost {
  }
  static std::filesystem::path defaultRunDirectory();
 
- private:
- void loadStateFile();
- void saveStateFile() const;
- [[nodiscard]] std::optional<std::filesystem::path> findResourceFile(std::string_view path) const;
- ModPackage* findPackageMod(const std::string& modId);
- std::filesystem::path runDirectory_;
- std::filesystem::path modsDirectory_;
- std::filesystem::path cacheDirectory_;
- bool initialized_ = false;
- bool packageModsLoaded_ = false;
- bool packageLoadingEnabled_ = true;
+  private:
+  void loadStateFile();
+  void saveStateFile() const;
+  void reconcileEnabled();
+  // Unloads one mod's Lua script (content registrations persist — world state is
+  // untouched by design). Returns true if a loaded script was torn down.
+  bool unloadScript(const std::string& modId);
+  void closeLoadedLuaMod(const std::shared_ptr<LoadedLuaMod>& mod);
+  [[nodiscard]] bool hasLoadedScript(const std::string& modId) const;
+  [[nodiscard]] std::optional<std::filesystem::path> findResourceFile(std::string_view path) const;
+  ModPackage* findPackageMod(const std::string& modId);
+  std::filesystem::path runDirectory_;
+  std::filesystem::path modsDirectory_;
+  std::filesystem::path cacheDirectory_;
+  bool initialized_ = false;
+  bool packageLoadingEnabled_ = true;
  ModRuntimeSide runtimeSide_ = ModRuntimeSide::Client;
  std::unordered_map<std::string, bool> savedEnabledStates_;
  std::vector<ModPackage> packageMods_;

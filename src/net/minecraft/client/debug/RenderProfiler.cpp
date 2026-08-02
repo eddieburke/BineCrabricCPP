@@ -66,6 +66,11 @@ void RenderProfiler::ensureQueries() {
   if(!gl::GLCore::timerQuerySupported) {
    return;
   }
+  if(gl::GLCore::genQueries == nullptr || gl::GLCore::deleteQueries == nullptr ||
+     gl::GLCore::beginQuery == nullptr || gl::GLCore::endQuery == nullptr ||
+     gl::GLCore::getQueryObjectiv == nullptr || gl::GLCore::getQueryObjectui64v == nullptr) {
+   return;
+  }
   for(int slot = 0; slot < kRingDepth; ++slot) {
    gl::GLCore::genQueries(kRenderStageCount, queries_[static_cast<std::size_t>(slot)].data());
    for(int stage = 0; stage < kRenderStageCount; ++stage) {
@@ -83,35 +88,44 @@ void RenderProfiler::collectQueries() {
  if(!gpuReady_) {
   return;
  }
- const int slot = (ringSlot_ + 1) % kRingDepth;
- double gpuMeasured = 0.0;
- for(int stage = 0; stage < kRenderStageCount; ++stage) {
-  const auto index = static_cast<std::size_t>(stage);
-  if(!queryPending_[static_cast<std::size_t>(slot)][index]) {
+ try {
+  const int slot = (ringSlot_ + 1) % kRingDepth;
+  double gpuMeasured = 0.0;
+  for(int stage = 0; stage < kRenderStageCount; ++stage) {
+   const auto index = static_cast<std::size_t>(stage);
+   if(!queryPending_[static_cast<std::size_t>(slot)][index]) {
+    gpuMeasured += gpuAvgNs_[index];
+    continue;
+   }
+   const unsigned query = queries_[static_cast<std::size_t>(slot)][index];
+   int available = 0;
+   gl::GLCore::getQueryObjectiv(query, kQueryResultAvailable, &available);
+   if(available == 0) {
+    gpuMeasured += gpuAvgNs_[index];
+    continue;
+   }
+   std::uint64_t elapsed = 0;
+   gl::GLCore::getQueryObjectui64v(query, kQueryResult, &elapsed);
+   queryPending_[static_cast<std::size_t>(slot)][index] = false;
+   gpuAvgNs_[index] += (static_cast<double>(elapsed) - gpuAvgNs_[index]) * kSmoothing;
    gpuMeasured += gpuAvgNs_[index];
-   continue;
   }
-  const unsigned query = queries_[static_cast<std::size_t>(slot)][index];
-  int available = 0;
-  gl::GLCore::getQueryObjectiv(query, kQueryResultAvailable, &available);
-  if(available == 0) {
-   gpuMeasured += gpuAvgNs_[index];
-   continue;
-  }
-  std::uint64_t elapsed = 0;
-  gl::GLCore::getQueryObjectui64v(query, kQueryResult, &elapsed);
-  queryPending_[static_cast<std::size_t>(slot)][index] = false;
-  gpuAvgNs_[index] += (static_cast<double>(elapsed) - gpuAvgNs_[index]) * kSmoothing;
-  gpuMeasured += gpuAvgNs_[index];
+  gpuMeasuredAvgNs_ = gpuMeasured;
+ } catch(...) {
+  gpuReady_ = false;
+  gpuActiveThisFrame_ = false;
  }
- gpuMeasuredAvgNs_ = gpuMeasured;
 }
 void RenderProfiler::beginFrame() {
  if(!enabled_) {
   return;
  }
  ensureQueries();
- collectQueries();
+ ++frameCounter_;
+ gpuActiveThisFrame_ = (frameCounter_ % kGpuQueryInterval == 0);
+ if(gpuActiveThisFrame_) {
+  collectQueries();
+ }
  ringSlot_ = (ringSlot_ + 1) % kRingDepth;
  cpuNs_.fill(0);
  activeStage_ = -1;
@@ -140,7 +154,7 @@ void RenderProfiler::beginStage(RenderStage stage) {
  activeStage_ = static_cast<int>(stage);
  activeQueryBegun_ = false;
  stageStartNs_ = nanoTime();
- if(gpuReady_) {
+ if(gpuReady_ && gpuActiveThisFrame_) {
   const auto slot = static_cast<std::size_t>(ringSlot_);
   const auto index = static_cast<std::size_t>(activeStage_);
   if(!queryPending_[slot][index]) {
@@ -172,17 +186,25 @@ void RenderProfiler::destroy() {
  }
  gpuReady_ = false;
  gpuAttempted_ = false;
+ gpuActiveThisFrame_ = false;
+ frameCounter_ = 0;
  inFrame_ = false;
  activeStage_ = -1;
  cpuAvgNs_.fill(0.0);
  gpuAvgNs_.fill(0.0);
  frameAvgNs_ = 0.0;
  gpuMeasuredAvgNs_ = 0.0;
+ linesCache_.clear();
+ lastLinesAt_ = {};
 }
 std::vector<std::string> RenderProfiler::lines() const {
  std::vector<std::string> out;
  if(!enabled_) {
   return out;
+ }
+ const auto now = std::chrono::steady_clock::now();
+ if(!linesCache_.empty() && now - lastLinesAt_ < std::chrono::milliseconds(250)) {
+  return linesCache_;
  }
  out.reserve(static_cast<std::size_t>(kRenderStageCount) + 3);
  out.push_back(gpuReady_ ? std::string("stage      cpu    gpu") : std::string("stage      cpu"));
@@ -215,10 +237,12 @@ std::vector<std::string> RenderProfiler::lines() const {
   total += formatMs(gpuMeasuredAvgNs_);
  }
  out.push_back(total);
- std::string other = "unmeasured";
- other.resize(12, ' ');
- other += formatMs(std::max(0.0, frameAvgNs_ - cpuAccounted));
- out.push_back(other);
- return out;
+  std::string other = "unmeasured";
+  other.resize(12, ' ');
+  other += formatMs(std::max(0.0, frameAvgNs_ - cpuAccounted));
+  out.push_back(other);
+  linesCache_ = out;
+  lastLinesAt_ = now;
+  return out;
 }
 } // namespace net::minecraft::client::debug

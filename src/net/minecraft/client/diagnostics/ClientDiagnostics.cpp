@@ -23,6 +23,7 @@ const char* gStartupPhase = "before main";
 std::atomic<std::uint64_t> gHeartbeat{0};
 std::atomic<bool> gHangDumpWritten{false};
 std::atomic<bool> gWatchdogDisarmed{false};
+std::jthread gWatchdog;
 std::string executableDirectory() {
  char path[MAX_PATH] = {};
  const DWORD length = GetModuleFileNameA(nullptr, path, MAX_PATH);
@@ -230,14 +231,19 @@ void pingMainLoopHeartbeat() {
 }
 void disarmHangWatchdog() {
  gWatchdogDisarmed.store(true, std::memory_order_relaxed);
+ gWatchdog.request_stop();
 }
 void installHangWatchdog() {
- std::thread([]() {
+ if(gWatchdog.joinable()) {
+  return;
+ }
+ gWatchdogDisarmed.store(false, std::memory_order_relaxed);
+ gWatchdog = std::jthread([](const std::stop_token& stop) {
   std::uint64_t lastSeen = gHeartbeat.load(std::memory_order_relaxed);
   int stalledChecks = 0;
   constexpr int kCheckIntervalSeconds = 1;
   constexpr int kStallThresholdChecks = 6;
-  while(true) {
+  while(!stop.stop_requested()) {
    std::this_thread::sleep_for(std::chrono::seconds(kCheckIntervalSeconds));
    if(gWatchdogDisarmed.load(std::memory_order_relaxed)) {
     return;
@@ -261,7 +267,7 @@ void installHangWatchdog() {
                          "hang-report.txt");
    }
   }
- }).detach();
+ });
 }
 #endif // _WIN32
 } // namespace net::minecraft::client::diagnostics

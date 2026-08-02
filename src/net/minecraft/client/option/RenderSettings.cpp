@@ -2,7 +2,7 @@
 #include <algorithm>
 #include <cmath>
 #include "net/minecraft/client/option/GameOptions.hpp"
-#include "net/minecraft/client/render/shaderpack/ShaderPack.hpp"
+#include "net/minecraft/client/render/shaderpack/Pack.hpp"
 #include "net/minecraft/entity/Entity.hpp"
 #include "net/minecraft/util/math/Types.hpp"
 #include "net/minecraft/world/World.hpp"
@@ -57,7 +57,7 @@ RenderSettings renderSettings(const GameOptions& options) {
  r.animatedSmoke = options.animatedSmoke;
  return r;
 }
-void applyShaderPack(RenderSettings& settings, const render::shaderpack::ShaderPackDefinition& pack) {
+void applyShaderPack(RenderSettings& settings, const render::PackDefinition& pack) {
  settings.ambientOcclusionStrength *= std::clamp(pack.ambientOcclusionLevel, 0.0f, 1.0f);
  settings.separateAo = pack.separateAo;
  settings.oldLighting = pack.oldLighting;
@@ -90,7 +90,7 @@ void applyShaderPack(RenderSettings& settings, const render::shaderpack::ShaderP
  settings.backFaceCutout = pack.backFaceCutout;
  settings.backFaceTranslucent = pack.backFaceTranslucent;
 }
-RenderSettings renderSettings(const GameOptions& options, const render::shaderpack::ShaderPackDefinition* pack) {
+RenderSettings renderSettings(const GameOptions& options, const render::PackDefinition* pack) {
  RenderSettings settings = renderSettings(options);
  if(pack != nullptr) {
   applyShaderPack(settings, *pack);
@@ -99,17 +99,6 @@ RenderSettings renderSettings(const GameOptions& options, const render::shaderpa
 }
 float adjustFieldOfView(float baseFov, const RenderSettings& resolved) noexcept {
  return baseFov + resolved.fovOffset;
-}
-float scaleAoCorner(float cornerBrightness, const RenderSettings& resolved) noexcept {
- // Soft AO strength only. Brightness is applied once: in lightmap for flat
- // lighting, or via applyBrightnessBoost on baked AO corners (fullbright lm).
- return 1.0f - (1.0f - cornerBrightness) * resolved.ambientOcclusionStrength;
-}
-float applyBrightnessBoost(float luminance, const RenderSettings& resolved) noexcept {
- const float boost = resolved.brightnessBoost;
- if(boost <= 0.0f) return luminance;
- const float exponent = 1.0f / (1.0f + boost * 4.0f);
- return std::pow(luminance, exponent);
 }
 float cloudHeightOffset(float baseHeight, const RenderSettings& resolved) noexcept {
  return baseHeight + resolved.cloudHeightScale * 128.0f;

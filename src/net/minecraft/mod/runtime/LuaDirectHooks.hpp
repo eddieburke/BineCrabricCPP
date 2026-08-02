@@ -33,8 +33,10 @@ namespace net::minecraft::mod::runtime {
 struct LuaScreenEvent;
 }
 namespace net::minecraft::mod {
+// The camera_setup hook operates on the iris frame camera only (GameRenderer
+// publishes frameCamera_ before invoking it); the vanilla camera-entity member was
+// never read by the hook and has been removed with the dual-path collapse.
 struct CameraSetupEvent {
- entity::LivingEntity* camera = nullptr;
  float tickDelta = 0.0f;
  client::render::FrameRenderCamera* frame = nullptr;
 };

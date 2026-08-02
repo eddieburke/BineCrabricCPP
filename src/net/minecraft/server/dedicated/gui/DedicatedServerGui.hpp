@@ -16,6 +16,7 @@ class PlayerStatsGui;
 class DedicatedServerGui : public command::CommandOutput {
  public:
  static void create(MinecraftServer& server);
+ static void shutdown();
  explicit DedicatedServerGui(MinecraftServer& server);
  ~DedicatedServerGui() override;
  DedicatedServerGui(const DedicatedServerGui&) = delete;

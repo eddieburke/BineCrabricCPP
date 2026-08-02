@@ -4,7 +4,7 @@
 #include "net/minecraft/client/font/TextRenderer.hpp"
 #include "net/minecraft/client/gl/GlConstants.hpp"
 #include "net/minecraft/client/gui/Draw2D.hpp"
-#include "net/minecraft/client/render/GuiProjection.hpp"
+#include "net/minecraft/client/render/camera/GuiProjection.hpp"
 #include "net/minecraft/client/render/RenderCore.hpp"
 #include "net/minecraft/client/render/RenderType.hpp"
 #include "net/minecraft/client/render/Tessellator.hpp"
@@ -72,7 +72,7 @@ void ProgressRenderer::renderLoadingFrame(int percentage) {
  Tessellator& tessellator = Tessellator::INSTANCE;
  {
   render::RenderPassScope passScope(render::RenderType::guiTextured());
-  core::bindTexture(minecraft->textureManager.getTextureId("/gui/background.png"));
+  minecraft->textureManager.bindTexture(minecraft->textureManager.getTextureId("/gui/background.png"));
   gui::draw::tiledPanel(tessellator, 0, 0, scaledWidth, scaledHeight, 0.0f, 0x404040);
  }
  if(percentage >= 0) {

@@ -8,6 +8,7 @@
 #include "net/minecraft/client/auth/microsoft/PlayerTextures.hpp"
 #include "net/minecraft/client/auth/microsoft/SecretProtection.hpp"
 #include "net/minecraft/client/util/MinecraftDirectories.hpp"
+#include "net/minecraft/util/concurrent/ThreadCoordinator.hpp"
 namespace msauth {
 namespace {
 struct SavedAccountRestoreState {
@@ -17,13 +18,6 @@ struct SavedAccountRestoreState {
  std::atomic<AuthStage> stage{AuthStage::Idle};
  std::mutex mutex;
  std::optional<AuthResult> result;
- std::thread worker;
- ~SavedAccountRestoreState() {
-  canceled = true;
-  if(worker.joinable()) {
-   worker.join();
-  }
- }
 };
 std::mutex gLastRestoreErrorMutex;
 std::optional<std::string> gLastRestoreError;
@@ -56,9 +50,6 @@ void startSavedAccountRestoreWorker(const MicrosoftAccount& savedAccount) {
  if(gSavedAccountRestore.running.load()) {
   return;
  }
- if(gSavedAccountRestore.worker.joinable()) {
-  gSavedAccountRestore.worker.join();
- }
  gSavedAccountRestore.running = true;
  gSavedAccountRestore.finished = false;
  gSavedAccountRestore.canceled = false;
@@ -68,7 +59,9 @@ void startSavedAccountRestoreWorker(const MicrosoftAccount& savedAccount) {
   gSavedAccountRestore.result.reset();
  }
  MicrosoftAccount account = savedAccount;
- gSavedAccountRestore.worker = std::thread([account = std::move(account)]() mutable {
+ net::minecraft::util::concurrent::ThreadCoordinator::instance()
+     .pool(net::minecraft::util::concurrent::Domain::Io)
+     .submit([account = std::move(account)]() mutable {
   const auto progress = [](AuthStage stage) {
    gSavedAccountRestore.stage.store(stage, std::memory_order_release);
   };
@@ -138,9 +131,6 @@ void cancelSavedAccountRestore() {
   }
   gPendingProfileAccount.reset();
  }
- if(!gSavedAccountRestore.running.load() && gSavedAccountRestore.worker.joinable()) {
-  gSavedAccountRestore.worker.join();
- }
  {
   std::lock_guard<std::mutex> lock(gSavedAccountRestore.mutex);
   gSavedAccountRestore.result.reset();
@@ -148,8 +138,8 @@ void cancelSavedAccountRestore() {
  gSavedAccountRestore.finished = false;
  gSavedAccountRestore.stage = AuthStage::Idle;
 }
-bool ensureAuthenticatedForJoin(net::minecraft::client::Minecraft& client, const std::atomic_bool* canceled) {
- if(isAuthenticated(client.session)) {
+bool ensureAuthenticatedForJoin(net::minecraft::client::util::Session& session, const std::atomic_bool* canceled) {
+ if(isAuthenticated(session)) {
   return true;
  }
  const std::filesystem::path runDirectory = net::minecraft::client::util::MinecraftDirectories::getRunDirectory();
@@ -169,9 +159,6 @@ bool ensureAuthenticatedForJoin(net::minecraft::client::Minecraft& client, const
  // The async worker may have finished with a result the main-loop tick has not applied
  // yet. Claim it here (whoever wins the exchange owns the join) and apply it.
  if(gSavedAccountRestore.finished.exchange(false)) {
-  if(gSavedAccountRestore.worker.joinable()) {
-   gSavedAccountRestore.worker.join();
-  }
   std::optional<AuthResult> restored;
   {
    std::lock_guard<std::mutex> lock(gSavedAccountRestore.mutex);
@@ -179,7 +166,7 @@ bool ensureAuthenticatedForJoin(net::minecraft::client::Minecraft& client, const
    gSavedAccountRestore.result.reset();
   }
   if(restored.has_value() && restored->ok) {
-   applyAccount(restored->account, client.session);
+   applyAccount(restored->account, session);
    if(saveAccount(runDirectory, restored->account)) {
     clearRestoreError();
    } else {
@@ -198,7 +185,7 @@ bool ensureAuthenticatedForJoin(net::minecraft::client::Minecraft& client, const
    return false;
   }
  }
- if(isAuthenticated(client.session)) {
+ if(isAuthenticated(session)) {
   return true;
  }
  // No usable async result: refresh synchronously on this (worker) thread.
@@ -213,7 +200,7 @@ bool ensureAuthenticatedForJoin(net::minecraft::client::Minecraft& client, const
   rememberRestoreError(restored);
   return false;
  }
- applyAccount(restored.account, client.session);
+ applyAccount(restored.account, session);
  if(!saveAccount(runDirectory, restored.account)) {
   AuthResult saveFailure;
   saveFailure.error = "Microsoft account refreshed, but the rotated refresh token could not be saved.";
@@ -221,7 +208,7 @@ bool ensureAuthenticatedForJoin(net::minecraft::client::Minecraft& client, const
  } else {
   clearRestoreError();
  }
- return isAuthenticated(client.session);
+ return isAuthenticated(session);
 }
 void beginRestoreSavedAccount(net::minecraft::client::Minecraft& client) {
  if(isAuthenticated(client.session) || gSavedAccountRestore.running.load()) {
@@ -237,9 +224,6 @@ void beginRestoreSavedAccount(net::minecraft::client::Minecraft& client) {
 void tickRestoreSavedAccount(net::minecraft::client::Minecraft& client) {
  if(!gSavedAccountRestore.finished.exchange(false)) {
   return;
- }
- if(gSavedAccountRestore.worker.joinable()) {
-  gSavedAccountRestore.worker.join();
  }
  std::optional<AuthResult> restored;
  {

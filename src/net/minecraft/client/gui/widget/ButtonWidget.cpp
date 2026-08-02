@@ -25,7 +25,7 @@ void ButtonWidget::render(client::Minecraft& minecraft, font::TextRenderer& text
   return;
  }
  const int textureId = minecraft.textureManager.getTextureId("/gui/gui.png");
- render::core::bindTexture(textureId);
+ minecraft.textureManager.bindTexture(textureId);
  core::setConstColor(1.0f, 1.0f, 1.0f, 1.0f);
  // Inline bounds check for hover rendering only; isMouseOver() is reserved for
  // click handling (SliderWidget overrides it to begin dragging on mouse down).

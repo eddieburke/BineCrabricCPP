@@ -6,6 +6,7 @@
 #include "net/minecraft/client/gl/ShaderProgram.hpp"
 #include "net/minecraft/client/gl/GLCore.hpp"
 #include "net/minecraft/client/render/QuadIndexBuffer.hpp"
+#include "net/minecraft/util/concurrent/ThreadNames.hpp"
 namespace net::minecraft::client::render {
 namespace math = net::minecraft::util::math;
 TessellatorMesh::TessellatorMesh(const TessellatorMesh& other)
@@ -232,7 +233,7 @@ void Tessellator::normal(float x, float y, float z) {
      (static_cast<std::int32_t>(static_cast<std::uint8_t>(static_cast<std::int8_t>(z * 127.0f))) << 16U);
 }
 void Tessellator::blockData(
-    double x, double y, double z, int emission, int blockLight, int skyLight, int blockId, int renderType, int metadata) {
+    double x, double y, double z, int emission, int blockLight, int skyLight, int blockId, bool fluid, int metadata) {
  blockCenterX_ = x + 0.5;
  blockCenterY_ = y + 0.5;
  blockCenterZ_ = z + 0.5;
@@ -240,7 +241,7 @@ void Tessellator::blockData(
  blockLight_ = std::clamp(blockLight, 0, 15);
  skyLight_ = std::clamp(skyLight, 0, 15);
  blockId_ = blockId;
- blockRenderType_ = renderType;
+ blockFluid_ = fluid;
  blockMetadata_ = metadata;
  hasBlockData_ = true;
 }
@@ -284,7 +285,7 @@ void Tessellator::vertex(double x, double y, double z) {
   // https://shaders.properties/current/reference/attributes/mc_entity/
   // x = block id; y = 1.0 fluids, -1.0 other blocks.
   vertex->entity[0] = static_cast<std::int16_t>(blockId_);
-  vertex->entity[1] = static_cast<std::int16_t>(blockRenderType_);
+  vertex->entity[1] = static_cast<std::int16_t>(blockFluid_ ? 1 : -1);
   vertex->entity[2] = static_cast<std::int16_t>(blockMetadata_);
   vertex->entity[3] = 0;
  } else {
@@ -294,6 +295,15 @@ void Tessellator::vertex(double x, double y, double z) {
   vertex->entity[1] = -1;
   vertex->entity[2] = 0;
   vertex->entity[3] = 0;
+ }
+ if(util::concurrent::tl_is_main_thread) {
+  vertex->irisEntity[0] = core::entityId();
+  vertex->irisEntity[1] = core::blockEntityId();
+  vertex->irisEntity[2] = core::renderedItemId();
+ } else {
+  vertex->irisEntity[0] = -1;
+  vertex->irisEntity[1] = -1;
+  vertex->irisEntity[2] = -1;
  }
  if(hasTexture_)
   vProxy.tex(u_, v_);
@@ -326,13 +336,20 @@ void Tessellator::draw() {
   auto& bytes = builder_.buffer();
   fillUnsetAttribs(reinterpret_cast<TessellatorVertex*>(bytes.data()),
                           bytes.size() / sizeof(TessellatorVertex));
-  render::core::drawInterleaved(builder_.buffer().data(),
-                                builder_.vertexCount(),
-                                static_cast<int>(sizeof(TessellatorVertex)),
-                                builder_.drawMode(),
-                                hasTexture_,
-                                hasColor_,
-                                hasNormals_);
+  render::core::RenderPass pass;
+  pass.modelView = render::core::drawModelView();
+  pass.projection = render::core::drawProjection();
+  pass.fog = render::core::fog();
+  // Apply pending section-local chunkOffset from WorldRenderer.
+  render::core::applyPendingTerrain(pass);
+  pass.vertexData = builder_.buffer().data();
+  pass.vertexCount = builder_.vertexCount();
+  pass.stride = static_cast<int>(sizeof(TessellatorVertex));
+  pass.glMode = builder_.drawMode();
+  pass.hasTexture = hasTexture_;
+  pass.hasColor = hasColor_;
+  pass.hasNormals = hasNormals_;
+  render::core::submit(pass);
  }
  reset();
 }
@@ -360,8 +377,8 @@ bool drawQuadMeshIndexed(const TessellatorMesh& mesh, unsigned vbo, int stride) 
  }
  {
   render::core::RenderPass pass;
-  pass.modelView = render::core::currentModelView();
-  pass.projection = render::core::currentProjection();
+  pass.modelView = render::core::drawModelView();
+  pass.projection = render::core::drawProjection();
   pass.fog = render::core::fog();
   pass.hasTexture = mesh.hasTexture;
   pass.hasColor = mesh.hasColor;
@@ -369,8 +386,9 @@ bool drawQuadMeshIndexed(const TessellatorMesh& mesh, unsigned vbo, int stride) 
   if(!mesh.hasTexture) {
    render::core::bindWhiteDiffuse();
   }
-  // Use the no-arg uploader so pending section-local chunkOffset from WorldRenderer applies.
-  render::core::bindAndUploadUniforms();
+  // Apply pending section-local chunkOffset from WorldRenderer.
+  render::core::applyPendingTerrain(pass);
+  render::core::bindAndUploadUniforms(pass);
  }
  if(render::core::program() == nullptr) {
   return false;
@@ -398,9 +416,21 @@ void drawQuadMeshExpanded(const TessellatorMesh& mesh, int stride) {
   scratch.push_back(v[2]);
   scratch.push_back(v[3]);
  }
- render::core::drawInterleaved(
-     scratch.data(), scratch.size(), stride, 0x0004, mesh.hasTexture, mesh.hasColor, mesh.hasNormals);
-}
+  render::core::RenderPass pass;
+  pass.modelView = render::core::drawModelView();
+  pass.projection = render::core::drawProjection();
+  pass.fog = render::core::fog();
+  // Apply pending section-local chunkOffset from WorldRenderer.
+  render::core::applyPendingTerrain(pass);
+  pass.vertexData = scratch.data();
+  pass.vertexCount = scratch.size();
+  pass.stride = stride;
+  pass.glMode = 0x0004;
+  pass.hasTexture = mesh.hasTexture;
+  pass.hasColor = mesh.hasColor;
+  pass.hasNormals = mesh.hasNormals;
+  render::core::submit(pass);
+ }
 } // namespace
 void Tessellator::drawMesh(const TessellatorMesh& mesh) {
  if(mesh.vertices.empty())
@@ -413,15 +443,28 @@ void Tessellator::drawMesh(const TessellatorMesh& mesh) {
   return;
  }
  int mode = effectiveDrawMode(mesh.mode);
+ render::core::RenderPass pass;
+ pass.modelView = render::core::drawModelView();
+ pass.projection = render::core::drawProjection();
+ pass.fog = render::core::fog();
+ // Apply pending section-local chunkOffset from WorldRenderer.
+ render::core::applyPendingTerrain(pass);
+ pass.hasTexture = mesh.hasTexture;
+ pass.hasColor = mesh.hasColor;
+ pass.hasNormals = mesh.hasNormals;
+ pass.stride = stride;
+ pass.glMode = mode;
  if(mesh.vbo_ != 0 && gl::GLCore::vboSupported) {
   gl::GLCore::bindBuffer(0x8892, mesh.vbo_);
-  render::core::drawFromBoundBuffer(
-      mesh.vbo_, 0, mesh.vertices.size(), stride, mode, mesh.hasTexture, mesh.hasColor, mesh.hasNormals);
-  gl::GLCore::bindBuffer(0x8892, 0);
+  pass.buffer = mesh.vbo_;
+  pass.byteOffset = 0;
+  pass.vertexCount = mesh.vertices.size();
  } else {
-  render::core::drawInterleaved(
-      mesh.vertices.data(), mesh.vertices.size(), stride, mode, mesh.hasTexture, mesh.hasColor, mesh.hasNormals);
+  pass.vertexData = mesh.vertices.data();
+  pass.vertexCount = mesh.vertices.size();
  }
+ render::core::submit(pass);
+ gl::GLCore::bindBuffer(0x8892, 0);
 }
 void Tessellator::reset() {
  builder_.reset();

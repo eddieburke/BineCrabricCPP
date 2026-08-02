@@ -119,6 +119,8 @@ list(FILTER MINECRAFT_SERVER_MOD_SOURCES EXCLUDE REGEX
 
 add_subdirectory(mods)
 
+option(MINECRAFT_FRAME_PROFILE "Enable frame-phase profiling" OFF)
+
 function(minecraft_configure_target target)
     target_include_directories(${target} PRIVATE
         "${CMAKE_CURRENT_SOURCE_DIR}/src"
@@ -128,6 +130,7 @@ function(minecraft_configure_target target)
     )
     target_compile_definitions(${target} PRIVATE
         "$<$<COMPILE_LANGUAGE:CXX>:MINECRAFT_NATIVE_SOURCE_DIR=\"${MINECRAFT_NATIVE_SOURCE_DIR}\">"
+        "$<$<AND:$<BOOL:${MINECRAFT_FRAME_PROFILE}>,$<COMPILE_LANGUAGE:CXX>>:MINECRAFT_FRAME_PROFILE=1>"
     )
     if (MSVC)
         target_compile_options(${target} PRIVATE /W4 /wd4996)
@@ -336,6 +339,7 @@ FetchContent_MakeAvailable(googletest)
 enable_testing()
 
 set(MINECRAFT_TEST_SOURCES
+    tests/test-main.cpp
     tests/packet_roundtrip_test.cpp
     tests/registry_bootstrap_test.cpp
     tests/lan_host_coordinator_test.cpp
@@ -346,12 +350,41 @@ set(MINECRAFT_TEST_SOURCES
     tests/render_settings_test.cpp
     tests/lua_runtime_prelude_test.cpp
     tests/mod_settings_registry_test.cpp
+    tests/mod_render_scope_test.cpp
     tests/model_registry_parent_test.cpp
     tests/unified_light_registry_test.cpp
     tests/render_profiler_test.cpp
     tests/chunk_mesh_golden_test.cpp
+    tests/draw_camera_state_test.cpp
     tests/shader_pack_loader_test.cpp
+    tests/shader_frame_data_test.cpp
+    tests/shader_gl_integration_test.cpp
+    tests/lab_pbr_mipmap_test.cpp
+    tests/glsl_snippets_test.cpp
+    tests/camera_position_tracker_test.cpp
+    tests/block_face_uv_test.cpp
+    tests/channel_test.cpp
+    tests/color_targets_test.cpp
+    tests/connection_async_teardown_test.cpp
+    tests/custom_uniforms_test.cpp
+    tests/fog_mode_parity_test.cpp
+    tests/frame_pipeline_order_test.cpp
+    tests/handshake_metadata_test.cpp
+    tests/if_engine_unified_test.cpp
+    tests/iris_hemisphere_chunk_offset_test.cpp
+    tests/lifecycle_test.cpp
+    tests/lighting_channel_test.cpp
+    tests/lighting_ready_gate_test.cpp
+    tests/macro_parity_test.cpp
+    tests/mesh_cancel_test.cpp
+    tests/pack_blend_drawbuffer_test.cpp
+    tests/packet_accounting_test.cpp
+    tests/region_snapshot_race_test.cpp
+    tests/shadow_celestial_modelview_test.cpp
+    tests/thread_budget_test.cpp
+    tests/thread_coordinator_test.cpp
 )
+
 
 
 
@@ -389,7 +422,7 @@ minecraft_link_display(minecraft_omega_tests)
 if (WIN32)
     target_link_libraries(minecraft_omega_tests PRIVATE opengl32 glu32)
 endif()
-target_link_libraries(minecraft_omega_tests PRIVATE GTest::gtest_main)
+target_link_libraries(minecraft_omega_tests PRIVATE GTest::gtest)
 
 include(GoogleTest)
 gtest_discover_tests(minecraft_omega_tests)

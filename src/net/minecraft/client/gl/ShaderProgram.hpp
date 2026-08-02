@@ -9,21 +9,19 @@ namespace net::minecraft::util::math {
 struct Matrix4f;
 }
 namespace net::minecraft::client::gl {
-struct ProgramBinaryBlob {
- std::uint64_t contentHash = 0;
- unsigned int binaryFormat = 0;
- std::uint32_t flags = 0;
- bool compute = false;
- bool legacyAttributes = false;
- bool tessellation = false;
- std::vector<unsigned char> bytes;
-};
+ struct ProgramBinaryBlob {
+  std::uint64_t contentHash = 0;
+  unsigned int binaryFormat = 0;
+  std::uint32_t flags = 0;
+  bool compute = false;
+  bool tessellation = false;
+  std::vector<unsigned char> bytes;
+ };
 
-class ShaderProgram {
- public:
- static constexpr std::uint32_t kFlagCompute = 1u << 0;
- static constexpr std::uint32_t kFlagLegacyAttribs = 1u << 1;
- static constexpr std::uint32_t kFlagTessellation = 1u << 2;
+ class ShaderProgram {
+  public:
+  static constexpr std::uint32_t kFlagCompute = 1u << 0;
+  static constexpr std::uint32_t kFlagTessellation = 1u << 2;
 
  ShaderProgram() = default;
  ~ShaderProgram();
@@ -39,6 +37,11 @@ class ShaderProgram {
               const std::string& tessEvaluationSource = {});
  bool compileCompute(const std::string& computeSource,
                      const std::string& versionPreamble);
+ // Restores a program from a GL program binary (driver cache hit). The binary was
+ // produced by compileToBinary/compileComputeToBinary (or a previous session's disk
+ // cache), so no shader source is recompiled. Falls back to compile() in the caller
+ // when the driver rejects the binary.
+ bool loadFromBinary(const ProgramBinaryBlob& binary);
  // Async compile service helpers — extract GL program binary after link.
  bool compileToBinary(ProgramBinaryBlob& out,
                       const std::string& vertexSource,
@@ -86,11 +89,8 @@ class ShaderProgram {
   Volume
  };
  [[nodiscard]] SamplerKind samplerKind(std::string_view name) const;
- [[nodiscard]] const std::vector<std::string>& declaredSamplers() const;
- [[nodiscard]] bool legacyAttributes() const {
-  return legacyAttributes_;
- }
- [[nodiscard]] bool tessellation() const {
+  [[nodiscard]] const std::vector<std::string>& declaredSamplers() const;
+  [[nodiscard]] bool tessellation() const {
   return tessellation_;
  }
  void set1iAt(int location, int value) const;
@@ -127,9 +127,8 @@ class ShaderProgram {
  unsigned int program_ = 0;
  mutable NameMap<int> uniformCache_;
  NameMap<SamplerKind> samplerKinds_;
- std::vector<std::string> samplerNames_;
- bool legacyAttributes_ = false;
- bool tessellation_ = false;
+  std::vector<std::string> samplerNames_;
+  bool tessellation_ = false;
  std::vector<unsigned int> drawBuffers_{};
  std::vector<int> drawBufferColortexIndices_{};
  std::string lastError_;

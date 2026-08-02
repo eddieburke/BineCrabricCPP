@@ -1,16 +1,16 @@
 #pragma once
 #include <atomic>
 #include <cstdint>
+#include <filesystem>
 #include <memory>
-#include <mutex>
 #include <string>
-#include <thread>
 #include <unordered_map>
 #include <utility>
 #include <vector>
 #include "net/minecraft/client/auth/LegacySessionAuth.hpp"
 #include "net/minecraft/network/Connection.hpp"
 #include "net/minecraft/network/NetworkHandler.hpp"
+#include "net/minecraft/util/concurrent/Channel.hpp"
 #include "net/minecraft/util/math/Types.hpp"
 #include "net/minecraft/world/ClientWorld.hpp"
 namespace net::minecraft {
@@ -66,7 +66,9 @@ class ClientNetworkHandler : public NetworkHandler {
   disconnected = true;
  }
  void disconnect(const std::string& reason = "Disconnected");
- bool downloadPendingMods(std::string& error);
+ enum class PendingModDownloadState { Idle, Running, Succeeded, Failed };
+ bool startPendingModDownload();
+ PendingModDownloadState pollPendingModDownload(std::string& status, std::string& error);
  void continuePendingLogin();
  void cancelPendingModPrompt();
  [[nodiscard]] const std::vector<std::string>& pendingMissingMods() const noexcept {
@@ -152,17 +154,34 @@ class ClientNetworkHandler : public NetworkHandler {
  std::unique_ptr<SimpleInventory> openScreenInventory_;
  std::unique_ptr<block::entity::FurnaceBlockEntity> openScreenFurnace_;
  std::unique_ptr<block::entity::DispenserBlockEntity> openScreenDispenser_;
- enum class JoinServerState {
-  None,
-  Pending,
-  Succeeded,
-  Failed,
+ struct JoinServerWork {
+  std::atomic_bool cancelled{false};
+  std::atomic_bool inFlight{false};
+  ::net::minecraft::util::concurrent::Channel<auth::JoinServerResult> completed{1};
  };
- JoinServerState joinServerState_ = JoinServerState::None;
- auth::JoinServerResult joinServerResult_{};
- std::mutex joinServerMutex_{};
- std::thread joinServerThread_{};
- std::atomic_bool joinServerCanceled_{false};
+ struct PendingModFile {
+  std::filesystem::path temporary;
+  std::filesystem::path destination;
+ };
+ struct PendingModEvent {
+  enum class Kind { Progress, Complete, Failed };
+  Kind kind = Kind::Progress;
+  std::string text;
+  std::vector<PendingModFile> files;
+ };
+ struct PendingModWork {
+  std::atomic_bool cancelled{false};
+  std::atomic_bool running{false};
+  ::net::minecraft::util::concurrent::Channel<PendingModEvent> events{32};
+ };
+ static void downloadPendingMods(const std::shared_ptr<PendingModWork>& work,
+                                 std::vector<std::string> missing,
+                                 std::unordered_map<std::string, std::string> urls,
+                                 std::filesystem::path temporaryDirectory,
+                                 std::filesystem::path modsDirectory);
+ std::shared_ptr<JoinServerWork> joinServerWork_ = std::make_shared<JoinServerWork>();
+ std::shared_ptr<PendingModWork> pendingModWork_;
+  int keepAliveTicks_ = 0;
  enum class RemoteServerKind {
   JavaCompatible,
   NativeCppMods

@@ -4,6 +4,7 @@
 #include <memory>
 #include <vector>
 #include "net/minecraft/client/render/Tessellator.hpp"
+#include "net/minecraft/client/render/chunk/TerrainLayers.hpp"
 namespace net::minecraft::client::render::chunk {
 class ChunkRegionBuffer {
  public:
@@ -23,12 +24,16 @@ class ChunkRegionBuffer {
  ChunkRegionBuffer& operator=(const ChunkRegionBuffer&) = delete;
  ChunkRegionBuffer(ChunkRegionBuffer&&) = delete;
  ChunkRegionBuffer& operator=(ChunkRegionBuffer&&) = delete;
- // Write a section's vertices into slot, allocating or reallocating as needed.
- // The first call should pass an empty slot. Attribute layout flags for the
- // whole buffer are taken from the first non-empty upload.
- void upload(Slot& slot, const TessellatorVertex* data, int count, bool hasTexture, bool hasColor, bool hasNormals);
- // Return a slot's range to the free list. Leaves slot invalid.
- void release(Slot& slot) noexcept;
+  // Write a section's vertices into slot, allocating or reallocating as needed.
+  // The first call should pass an empty slot. Attribute layout flags for the
+  // whole buffer are taken from the first non-empty upload.
+  void upload(Slot& slot, const TessellatorVertex* data, int count, bool hasTexture, bool hasColor, bool hasNormals);
+  // Pre-allocate GPU storage (and the free/tail bookkeeping) so the initial world
+  // load does not repeatedly grow the buffer and re-upload every accumulated
+  // vertex range. Calling it after uploads is harmless — it only ever grows.
+  void reserve(std::size_t vertexCapacity);
+  // Return a slot's range to the free list. Leaves slot invalid.
+  void release(Slot& slot) noexcept;
  struct DrawRange {
   int first = 0;
   int count = 0;
@@ -71,7 +76,7 @@ class ChunkRegionBuffer {
 };
 
 struct ChunkRegion {
- std::array<ChunkRegionBuffer, 2> layers{};
+ std::array<ChunkRegionBuffer, terrain_layer::Count> layers{};
 };
 class ChunkRegionManager {
  public:

@@ -11,26 +11,27 @@
 #include "net/minecraft/client/Minecraft.hpp"
 #include "net/minecraft/client/gl/GLCore.hpp"
 #include "net/minecraft/client/gl/GlConstants.hpp"
+#include "net/minecraft/client/gl/GlResource.hpp"
 #include "net/minecraft/client/gl/ProgramCache.hpp"
 #include "net/minecraft/client/gl/ShaderProgram.hpp"
 #include "net/minecraft/client/option/RenderSettings.hpp"
-#include "net/minecraft/client/render/FrameRenderCamera.hpp"
+#include "net/minecraft/client/render/camera/FrameRenderCamera.hpp"
 #include "net/minecraft/client/render/RenderType.hpp"
-#include "net/minecraft/client/render/shaderpack/ShaderUniforms.hpp"
+#include "net/minecraft/client/render/VertexAbi.hpp"
+#include "net/minecraft/client/render/uniforms/Uniforms.hpp"
 #include "net/minecraft/entity/LivingEntity.hpp"
 #include "net/minecraft/mod/runtime/LuaDirectHooks.hpp"
+#include "net/minecraft/client/ClientLog.hpp"
+#include "net/minecraft/util/concurrent/ThreadNames.hpp"
+#include "net/minecraft/util/logging/Logging.hpp"
 #include "net/minecraft/world/World.hpp"
 #include "net/minecraft/world/dimension/Dimension.hpp"
 namespace net::minecraft::client::render {
 namespace math = net::minecraft::util::math;
 namespace gl = net::minecraft::client::gl;
+namespace abi = vertex_abi;
 namespace core {
 namespace {
-thread_local math::MatrixStack t_defaultModelView;
-thread_local math::MatrixStack t_defaultProjection;
-thread_local math::MatrixStack* t_modelView = &t_defaultModelView;
-thread_local math::MatrixStack* t_projection = &t_defaultProjection;
-thread_local std::vector<std::pair<math::MatrixStack*, math::MatrixStack*>> t_bindStack;
 WorldLightUniforms g_worldLight{};
 FogUniforms g_fog{};
 SkyUniforms g_skyUniforms{};
@@ -40,17 +41,6 @@ const float kDefaultNormal[3] = {0.0f, 0.0f, 0.0f};
 constexpr unsigned int kArrayBuffer = 0x8892; // GL_ARRAY_BUFFER
 constexpr unsigned int kStreamDraw = 0x88E0; // GL_STREAM_DRAW
 constexpr unsigned int kFloat = 0x1406; // GL_FLOAT
-constexpr unsigned int kUnsignedByte = 0x1401; // GL_UNSIGNED_BYTE
-constexpr unsigned int kByte = 0x1400; // GL_BYTE
-constexpr std::size_t kOffPos = 0;
-constexpr std::size_t kOffUV = 12;
-constexpr std::size_t kOffColor = 20;
-constexpr std::size_t kOffNormal = 24;
-constexpr std::size_t kOffMidBlock = 28;
-constexpr std::size_t kOffLight = 32;
-constexpr std::size_t kOffEntity = 36;
-constexpr std::size_t kOffMidTexCoord = 44;
-constexpr std::size_t kOffTangent = 52;
 struct AttribCache {
  unsigned buffer = 0;
  std::size_t baseOffset = 0;
@@ -58,7 +48,6 @@ struct AttribCache {
  bool hasTexture = false;
  bool hasColor = false;
  bool hasNormals = false;
- bool legacy = false;
  bool valid = false;
 };
 AttribCache g_attribCache;
@@ -70,15 +59,15 @@ float g_constColor[4] = {1.0f, 1.0f, 1.0f, 1.0f};
 float g_uploadedConstColor[4] = {1.0f, 1.0f, 1.0f, 1.0f};
 bool g_constColorUploaded = false;
 float g_alphaTestRef = 0.1f;
-unsigned int g_whiteTexture = 0;
+gl::GlTexture g_whiteTexture;
 unsigned int whiteTexture() {
- if(g_whiteTexture == 0) {
+ if(!g_whiteTexture) {
   const int previous = std::max(0, getActiveTextureUnit());
-  g_whiteTexture = genTexture();
-  if(g_whiteTexture == 0) return 0;
+  g_whiteTexture = gl::GlTexture(genTexture());
+  if(!g_whiteTexture) return 0;
   const unsigned char pixel[4] = {255, 255, 255, 255};
   activeTexture(gl::tex::Texture0);
-  bindTexture(static_cast<int>(g_whiteTexture));
+  bindTexture(static_cast<int>(g_whiteTexture.handle()));
   // Sized internal format required: unsized GL_RGBA (0x1908) is INVALID_ENUM
   // on forward-compatible core (GLFW_OPENGL_FORWARD_COMPAT).
   ::glTexImage2D(0x0DE1, 0, 0x8058, 1, 1, 0, 0x1908, 0x1401, pixel);
@@ -86,8 +75,10 @@ unsigned int whiteTexture() {
   ::glTexParameteri(0x0DE1, 0x2800, 0x2600);
   activeTexture(gl::tex::Texture0 + previous);
  }
- return g_whiteTexture;
+ return g_whiteTexture.handle();
 }
+gl::GlTexture g_entityOverlayTexture;
+bool g_entityOverlayDirty = true;
 float g_entityColor[4] = {0.0f, 0.0f, 0.0f, 0.0f};
 ShaderProgram* g_activeProgram = nullptr;
 ShaderProgram* g_lastProgram = nullptr;
@@ -103,6 +94,11 @@ math::Matrix4f g_drawModelView{};
 math::Matrix4f g_drawProjection{};
 math::Matrix4f g_drawModelViewInverse{};
 math::Matrix4f g_drawProjectionInverse{};
+// Rotation-only camera base for section-local terrain: the shader applies
+// chunkOffset to camera-relative positions, so the uploaded modelViewMatrix is
+// the camera rotation alone (iris gbuffer convention).
+math::Matrix4f g_drawSectionLocalModelView{};
+math::Matrix4f g_drawSectionLocalModelViewInverse{};
 float g_drawCameraPosition[3] = {0.0f, 0.0f, 0.0f};
 bool g_drawCameraValid = false;
 float g_uploadedChunkOffset[3] = {0.0f, 0.0f, 0.0f};
@@ -115,9 +111,9 @@ int g_uploadedBlendFunc[4] = {-1, -1, -1, -1};
 bool g_passUniformsUploaded = false;
 float g_pendingChunkOffset[3] = {0.0f, 0.0f, 0.0f};
 bool g_pendingTerrainDraw = false;
-int g_entityId = 0;
-int g_blockEntityId = 0;
-int g_renderedItemId = 0;
+int g_entityId = -1;
+int g_blockEntityId = -1;
+int g_renderedItemId = -1;
 RenderStage g_renderStage = RenderStage::None;
 int g_textureFilteringMode = 0;
 int g_uploadedEntityId = -1;
@@ -126,24 +122,28 @@ int g_uploadedRenderedItemId = -1;
 int g_uploadedRenderStage = -1;
 int g_uploadedTextureFilteringMode = -1;
 int g_uploadedFogShape = -1;
-unsigned int g_vao = 0;
-unsigned int g_streamVbo = 0;
+gl::GlVao g_vao;
+gl::GlBuffer g_streamVbo;
 bool g_triedFullscreen = false;
-unsigned int g_fullscreenVao = 0;
-unsigned int g_fullscreenVbo = 0;
+gl::GlVao g_fullscreenVao;
+gl::GlBuffer g_fullscreenVbo;
 const void* bufOffset(std::size_t o) {
  return reinterpret_cast<const void*>(static_cast<std::uintptr_t>(o));
 }
 void ensureVao() {
- if(g_vao == 0 && gl::GLCore::vaoSupported) {
-  gl::GLCore::genVertexArrays(1, &g_vao);
+ if(!g_vao && gl::GLCore::vaoSupported) {
+  unsigned int h = 0;
+  gl::GLCore::genVertexArrays(1, &h);
+  g_vao = gl::GlVao(h);
  }
- if(g_streamVbo == 0 && gl::GLCore::genBuffers != nullptr) {
-  gl::GLCore::genBuffers(1, &g_streamVbo);
+ if(!g_streamVbo && gl::GLCore::genBuffers != nullptr) {
+  unsigned int h = 0;
+  gl::GLCore::genBuffers(1, &h);
+  g_streamVbo = gl::GlBuffer(h);
  }
 }
 void uploadStreaming(const void* data, std::size_t bytes) {
- gl::GLCore::bindBuffer(kArrayBuffer, g_streamVbo);
+ gl::GLCore::bindBuffer(kArrayBuffer, g_streamVbo.handle());
  gl::GLCore::bufferData(kArrayBuffer, static_cast<intptr_t>(bytes), data, kStreamDraw);
 }
 bool g_fullscreenReady = false;
@@ -154,13 +154,17 @@ bool ensureFullscreenResources() {
  }
  if(!g_triedFullscreen) {
   g_triedFullscreen = true;
-  gl::GLCore::genVertexArrays(1, &g_fullscreenVao);
-  gl::GLCore::genBuffers(1, &g_fullscreenVbo);
+  unsigned int h = 0;
+  gl::GLCore::genVertexArrays(1, &h);
+  g_fullscreenVao = gl::GlVao(h);
+  unsigned int hb = 0;
+  gl::GLCore::genBuffers(1, &hb);
+  g_fullscreenVbo = gl::GlBuffer(hb);
   const float tri[] = {-1.0f, -1.0f, 0.0f, 0.0f, 3.0f, -1.0f, 2.0f, 0.0f, -1.0f, 3.0f, 0.0f, 2.0f};
-  gl::GLCore::bindBuffer(kArrayBuffer, g_fullscreenVbo);
+  gl::GLCore::bindBuffer(kArrayBuffer, g_fullscreenVbo.handle());
   gl::GLCore::bufferData(kArrayBuffer, static_cast<intptr_t>(sizeof(tri)), tri, 0x88E4);
-  if(g_fullscreenVao != 0) {
-   gl::GLCore::bindVertexArray(g_fullscreenVao);
+  if(g_fullscreenVao) {
+   gl::GLCore::bindVertexArray(g_fullscreenVao.handle());
    const int stride = 4 * static_cast<int>(sizeof(float));
    gl::GLCore::enableVertexAttribArray(0);
    gl::GLCore::vertexAttribPointer(0, 2, kFloat, 0, stride, bufOffset(0));
@@ -174,60 +178,26 @@ bool ensureFullscreenResources() {
  return g_fullscreenReady;
 }
 void drawFullscreenTriangle() {
- gl::GLCore::bindVertexArray(g_fullscreenVao);
- ::glDrawArrays(static_cast<GLenum>(0x0004), 0, 3);
- gl::GLCore::bindVertexArray(0);
- invalidateAttribCache();
+  gl::GLCore::bindVertexArray(g_fullscreenVao.handle());
+  ::glDrawArrays(static_cast<GLenum>(0x0004), 0, 3);
+  gl::GLCore::bindVertexArray(0);
+  invalidateAttribCache();
 }
 } // namespace
-void bindDiffuse(int texture) {
- activeTexture(gl::tex::Texture0);
- bindTexture(texture);
-}
 void bindWhiteDiffuse() {
- const unsigned int white = whiteTexture();
- if(white != 0) {
-  bindDiffuse(static_cast<int>(white));
- }
-}
-void bindMatrixStacks(math::MatrixStack* modelView, math::MatrixStack* projection) {
- t_bindStack.emplace_back(t_modelView, t_projection);
- if(modelView != nullptr) {
-  t_modelView = modelView;
- }
- if(projection != nullptr) {
-  t_projection = projection;
- }
-}
-void unbindMatrixStacks() {
- if(t_bindStack.empty()) {
-  t_modelView = &t_defaultModelView;
-  t_projection = &t_defaultProjection;
-  return;
- }
- t_modelView = t_bindStack.back().first;
- t_projection = t_bindStack.back().second;
- t_bindStack.pop_back();
-}
-math::MatrixStack& modelViewStack() {
- return *t_modelView;
-}
-math::MatrixStack& projectionStack() {
- return *t_projection;
-}
-const math::Matrix4f& currentModelView() {
- return t_modelView->top();
-}
-const math::Matrix4f& currentProjection() {
- return t_projection->top();
+  const unsigned int white = whiteTexture();
+  if(white != 0) {
+   activeTexture(gl::tex::Texture0);
+   bindTexture(static_cast<int>(white));
+  }
 }
 bool ensureReady() {
  gl::GLCore::ensureLoaded();
  if(!gl::GLCore::shaderSupported || !gl::GLCore::vaoSupported) {
   return false;
  }
- ensureVao();
- return g_vao != 0;
+  ensureVao();
+  return g_vao.handle() != 0;
 }
 ShaderProgram* program() {
  return g_activeProgram;
@@ -246,25 +216,43 @@ void setDrawCameraState(const float* modelView,
  std::memcpy(g_drawProjection.m, projection, sizeof(float) * 16);
  std::memcpy(g_drawModelViewInverse.m, modelViewInverse, sizeof(float) * 16);
  std::memcpy(g_drawProjectionInverse.m, projectionInverse, sizeof(float) * 16);
- g_drawCameraPosition[0] = cameraPosition[0];
- g_drawCameraPosition[1] = cameraPosition[1];
- g_drawCameraPosition[2] = cameraPosition[2];
- g_drawCameraValid = true;
- g_matricesUploaded = false;
+ // Section-local terrain (shader contract: modelViewMatrix * (vaPosition +
+ // chunkOffset) with chunkOffset = sectionOrigin - cameraPosition) needs the
+ // rotation part of the camera only.
+ g_drawSectionLocalModelView.identity();
+ for(int column = 0; column < 3; ++column)
+  for(int row = 0; row < 3; ++row)
+   g_drawSectionLocalModelView.m[column * 4 + row] = g_drawModelView.m[column * 4 + row];
+ g_drawSectionLocalModelViewInverse = g_drawSectionLocalModelView;
+ g_drawSectionLocalModelViewInverse.transpose();
+  g_drawCameraPosition[0] = cameraPosition[0];
+  g_drawCameraPosition[1] = cameraPosition[1];
+  g_drawCameraPosition[2] = cameraPosition[2];
+  g_drawCameraValid = true;
+  g_matricesUploaded = false;
 }
 void setDrawCameraStateFromCamera(const FrameRenderCamera& camera, float farPlane) {
- float modelView[16]{};
- float modelViewInverse[16]{};
- float projection[16]{};
- buildCameraModelView(modelView, camera);
- buildCameraModelViewInverse(modelViewInverse, camera);
- buildCameraProjection(projection, camera, farPlane);
+  float modelView[16]{};
+  float projection[16]{};
+  buildCameraModelView(modelView, camera);
+  buildCameraProjection(projection, camera, farPlane);
+ // Per-draw base: rotation * translate(origin - eye). This equals the full
+ // camera model view the matrix stacks carried at draw time (camera-relative
+ // poses compose onto it and reproduce the vanilla-captured modelViewMatrix;
+ // see docs/agent-notes/matrix.md for the derivation).
+ math::Matrix4f fullModelView;
+ fullModelView.set(modelView);
+ fullModelView.translate(static_cast<float>(camera.x - camera.eyeX),
+                         static_cast<float>(camera.y - camera.eyeY),
+                         static_cast<float>(camera.z - camera.eyeZ));
+ math::Matrix4f fullModelViewInverse = fullModelView;
+ fullModelViewInverse.invert();
  math::Matrix4f projectionInverseMatrix;
  projectionInverseMatrix.set(projection);
  projectionInverseMatrix.invert();
  const float cameraPosition[3] = {static_cast<float>(camera.eyeX), static_cast<float>(camera.eyeY),
                                   static_cast<float>(camera.eyeZ)};
- setDrawCameraState(modelView, projection, modelViewInverse, projectionInverseMatrix.m, cameraPosition);
+ setDrawCameraState(fullModelView.m, projection, fullModelViewInverse.m, projectionInverseMatrix.m, cameraPosition);
 }
 void clearDrawCameraState() {
  g_drawCameraValid = false;
@@ -275,6 +263,16 @@ bool drawCameraStateValid() noexcept {
 }
 const float* drawCameraPosition() noexcept {
  return g_drawCameraPosition;
+}
+const math::Matrix4f& drawModelView() noexcept {
+ return g_drawModelView;
+}
+const math::Matrix4f& drawProjection() noexcept {
+ return g_drawProjection;
+}
+void setDrawModelView(const math::Matrix4f& modelView) noexcept {
+  g_drawModelView = modelView;
+  g_matricesUploaded = false;
 }
 ScopedDrawCameraState::ScopedDrawCameraState()
     : modelView_(g_drawModelView),
@@ -313,23 +311,23 @@ void bindAndUploadUniforms(const RenderPass& pass) {
  }
  const FogUniforms& fog = pass.fog.enabled ? pass.fog : g_fog;
  const bool sectionLocal = pass.sectionLocal && g_drawCameraValid;
- const math::Matrix4f& modelView = sectionLocal ? g_drawModelView : pass.modelView;
+ const math::Matrix4f& modelView = sectionLocal ? g_drawSectionLocalModelView : pass.modelView;
  const math::Matrix4f& projection = sectionLocal ? g_drawProjection : pass.projection;
  const bool matricesChanged = !g_matricesUploaded || programChanged ||
                               std::memcmp(g_uploadedModelView.m, modelView.m, sizeof(modelView.m)) != 0 ||
                               std::memcmp(g_uploadedProjection.m, projection.m, sizeof(projection.m)) != 0;
- if(matricesChanged) {
-  math::Matrix4f modelViewInverse = sectionLocal ? g_drawModelViewInverse : modelView;
-  math::Matrix4f projectionInverse = sectionLocal ? g_drawProjectionInverse : projection;
-  if(!sectionLocal) {
-   modelViewInverse.invert();
-   projectionInverse.invert();
+  if(matricesChanged) {
+   math::Matrix4f modelViewInverse = sectionLocal ? g_drawSectionLocalModelViewInverse : modelView;
+   math::Matrix4f projectionInverse = sectionLocal ? g_drawProjectionInverse : projection;
+   if(!sectionLocal) {
+    modelViewInverse.invert();
+    projectionInverse.invert();
+   }
+   uploadGeometryDrawMatrices(*active, modelView.m, projection.m, modelViewInverse.m, projectionInverse.m);
+   g_uploadedModelView = modelView;
+   g_uploadedProjection = projection;
+   g_matricesUploaded = true;
   }
-  shaderpack::uploadGeometryDrawMatrices(*active, modelView.m, projection.m, modelViewInverse.m, projectionInverse.m);
-  g_uploadedModelView = modelView;
-  g_uploadedProjection = projection;
-  g_matricesUploaded = true;
- }
  const bool fogChanged = !g_passUniformsUploaded || programChanged ||
                          g_uploadedFog.enabled != fog.enabled || g_uploadedFog.mode != fog.mode ||
                          g_uploadedFog.shape != fog.shape ||
@@ -355,7 +353,7 @@ void bindAndUploadUniforms(const RenderPass& pass) {
   active->set1f("fogDensity", fog.density);
   active->set1f("fogStart", fog.start);
   active->set1f("fogEnd", fog.end);
-  active->set1i("fogMode", fog.enabled ? fog.mode : 0);
+  active->set1i("fogMode", fog.enabled ? fogModeToGlConstant(fog.mode) : 0);
   active->set1i("fogShape", fog.shape);
   g_uploadedFog = fog;
   g_uploadedFogShape = fog.shape;
@@ -451,24 +449,24 @@ void submit(const RenderPass& pass) {
  if(active == nullptr) {
   return;
  }
- if(pass.buffer != 0) {
-  configureAttribs(pass.buffer,
-                   pass.byteOffset,
-                   pass.stride,
-                   pass.hasTexture,
-                   pass.hasColor,
-                   pass.hasNormals);
-  const int mode = active != nullptr && active->tessellation() ? 0x000E : pass.glMode;
-  if(mode == 0x000E && gl::GLCore::patchParameteri != nullptr) gl::GLCore::patchParameteri(0x8E72, 3);
-  ::glDrawArrays(static_cast<GLenum>(mode), 0, static_cast<GLsizei>(pass.vertexCount));
- } else {
-  uploadStreaming(pass.vertexData, pass.vertexCount * static_cast<std::size_t>(pass.stride));
-  configureAttribs(
-      g_streamVbo, 0, pass.stride, pass.hasTexture, pass.hasColor, pass.hasNormals);
-  const int mode = active != nullptr && active->tessellation() ? 0x000E : pass.glMode;
-  if(mode == 0x000E && gl::GLCore::patchParameteri != nullptr) gl::GLCore::patchParameteri(0x8E72, 3);
-  ::glDrawArrays(static_cast<GLenum>(mode), 0, static_cast<GLsizei>(pass.vertexCount));
- }
+  if(pass.buffer != 0) {
+   configureAttribs(pass.buffer,
+                    pass.byteOffset,
+                    pass.stride,
+                    pass.hasTexture,
+                    pass.hasColor,
+                    pass.hasNormals);
+   const int mode = active != nullptr && active->tessellation() ? 0x000E : pass.glMode;
+   if(mode == 0x000E && gl::GLCore::patchParameteri != nullptr) gl::GLCore::patchParameteri(0x8E72, 3);
+   ::glDrawArrays(static_cast<GLenum>(mode), 0, static_cast<GLsizei>(pass.vertexCount));
+  } else {
+    uploadStreaming(pass.vertexData, pass.vertexCount * static_cast<std::size_t>(pass.stride));
+    configureAttribs(
+        g_streamVbo.handle(), 0, pass.stride, pass.hasTexture, pass.hasColor, pass.hasNormals);
+   const int mode = active != nullptr && active->tessellation() ? 0x000E : pass.glMode;
+   if(mode == 0x000E && gl::GLCore::patchParameteri != nullptr) gl::GLCore::patchParameteri(0x8E72, 3);
+   ::glDrawArrays(static_cast<GLenum>(mode), 0, static_cast<GLsizei>(pass.vertexCount));
+  }
 }
 void setActiveProgram(ShaderProgram* program) {
  if(g_activeProgram == program) {
@@ -550,7 +548,14 @@ const float* constColor() {
  return g_constColor;
 }
 void setAlphaTestRef(float ref) {
- g_alphaTestRef = ref;
+#ifndef NDEBUG
+ // WI-5: g_alphaTestRef is main-GL-thread-write-only; mesh workers never touch
+ // it (the value is captured into the ChunkMeshJob snapshot instead).
+ net::minecraft::util::concurrent::assertOnMainThread();
+#endif
+ if(g_alphaTestRef != ref) {
+   g_alphaTestRef = ref;
+  }
 }
 float alphaTestRef() {
  return g_alphaTestRef;
@@ -679,75 +684,50 @@ void configureAttribs(unsigned buffer,
  const bool cached = g_attribCache.valid && buffer != 0 && g_attribCache.buffer == buffer &&
                      g_attribCache.baseOffset == baseOffset && g_attribCache.stride == stride &&
                      g_attribCache.hasTexture == hasTexture && g_attribCache.hasColor == hasColor &&
-                     g_attribCache.hasNormals == hasNormals &&
-                     g_attribCache.legacy == (g_lastProgram != nullptr && g_lastProgram->legacyAttributes());
- if(!cached) {
-  const bool legacy = g_lastProgram != nullptr && g_lastProgram->legacyAttributes();
-  if(g_vao != 0) {
-   gl::GLCore::bindVertexArray(g_vao);
+                     g_attribCache.hasNormals == hasNormals;
+  if(!cached) {
+   if(g_vao.handle() != 0) {
+    gl::GLCore::bindVertexArray(g_vao.handle());
+   }
+  for(const abi::Format& format : abi::Formats) {
+   const bool enabled = format.availability == abi::Availability::Always ||
+                        (format.availability == abi::Availability::Texture && hasTexture) ||
+                        (format.availability == abi::Availability::Color && hasColor) ||
+                        (format.availability == abi::Availability::Normal && hasNormals);
+   if(!enabled) {
+    gl::GLCore::disableVertexAttribArray(format.location);
+    continue;
+   }
+   gl::GLCore::enableVertexAttribArray(format.location);
+   if(format.integer) {
+    if(gl::GLCore::vertexAttribIPointer != nullptr)
+     gl::GLCore::vertexAttribIPointer(format.location, format.components, format.type, stride,
+                                      bufOffset(baseOffset + format.offset));
+   } else {
+    gl::GLCore::vertexAttribPointer(format.location, format.components, format.type,
+                                    format.normalized ? 1 : 0, stride,
+                                    bufOffset(baseOffset + format.offset));
+   }
   }
-  gl::GLCore::enableVertexAttribArray(0);
-  gl::GLCore::vertexAttribPointer(0, 3, kFloat, 0, stride, bufOffset(baseOffset + kOffPos));
-  const unsigned int uvIndex = legacy ? 8u : 1u;
-  const unsigned int colorIndex = legacy ? 3u : 2u;
-  const unsigned int normalIndex = legacy ? 2u : 3u;
-  gl::GLCore::disableVertexAttribArray(legacy ? 1u : 8u);
-  if(hasTexture) {
-   gl::GLCore::enableVertexAttribArray(uvIndex);
-   gl::GLCore::vertexAttribPointer(uvIndex, 2, kFloat, 0, stride, bufOffset(baseOffset + kOffUV));
-  } else {
-   gl::GLCore::disableVertexAttribArray(uvIndex);
-   gl::GLCore::vertexAttrib4f(uvIndex, 0.0f, 0.0f, 0.0f, 1.0f);
-  }
-  if(hasColor) {
-   gl::GLCore::enableVertexAttribArray(colorIndex);
-   gl::GLCore::vertexAttribPointer(colorIndex, 4, kUnsignedByte, 1, stride, bufOffset(baseOffset + kOffColor));
-  } else {
-   // The constant colour is supplied below, outside the cache, because it
-   // changes far more often than the vertex layout does.
-   gl::GLCore::disableVertexAttribArray(colorIndex);
-  }
-  if(hasNormals) {
-   gl::GLCore::enableVertexAttribArray(normalIndex);
-   gl::GLCore::vertexAttribPointer(normalIndex, 3, kByte, 1, stride, bufOffset(baseOffset + kOffNormal));
-  } else {
-   gl::GLCore::disableVertexAttribArray(normalIndex);
-  }
-  gl::GLCore::enableVertexAttribArray(4);
-  gl::GLCore::vertexAttribPointer(4, 4, kByte, 0, stride, bufOffset(baseOffset + kOffMidBlock));
-  const unsigned int lightIndex = legacy ? 10u : 5u;
-  gl::GLCore::disableVertexAttribArray(legacy ? 5u : 10u);
-  gl::GLCore::enableVertexAttribArray(lightIndex);
-  gl::GLCore::vertexAttribPointer(lightIndex, 2, 0x1403, 0, stride, bufOffset(baseOffset + kOffLight));
-  if(legacy) {
-   gl::GLCore::enableVertexAttribArray(9);
-   gl::GLCore::vertexAttribPointer(9, 2, 0x1403, 0, stride, bufOffset(baseOffset + kOffLight));
-  } else {
-   gl::GLCore::disableVertexAttribArray(9);
-  }
-  gl::GLCore::enableVertexAttribArray(6);
-  gl::GLCore::vertexAttribPointer(6, 4, 0x1402, 0, stride, bufOffset(baseOffset + kOffEntity));
-  gl::GLCore::enableVertexAttribArray(7);
-  gl::GLCore::vertexAttribPointer(7, 2, kFloat, 0, stride, bufOffset(baseOffset + kOffMidTexCoord));
-  gl::GLCore::enableVertexAttribArray(11);
-  gl::GLCore::vertexAttribPointer(11, 4, 0x1402, 1, stride, bufOffset(baseOffset + kOffTangent));
-  gl::GLCore::disableVertexAttribArray(12);
-  if(gl::GLCore::vertexAttrib4f != nullptr) gl::GLCore::vertexAttrib4f(12, 1.0f, 0.0f, 0.0f, 0.0f);
-  g_attribCache = AttribCache{buffer, baseOffset, stride, hasTexture, hasColor, hasNormals, legacy, buffer != 0};
+  if(!hasTexture)
+   gl::GLCore::vertexAttrib4f(abi::Texture, 0.0f, 0.0f, 0.0f, 1.0f);
+  gl::GLCore::disableVertexAttribArray(abi::ChunkFade);
+  if(gl::GLCore::vertexAttrib4f != nullptr)
+   gl::GLCore::vertexAttrib4f(abi::ChunkFade, 1.0f, 0.0f, 0.0f, 0.0f);
+  g_attribCache = AttribCache{buffer, baseOffset, stride, hasTexture, hasColor, hasNormals, buffer != 0};
  }
  if(!hasNormals) {
   const float* n = kDefaultNormal;
   if(!g_constNormalSet || std::memcmp(g_constNormal, n, sizeof(float) * 3) != 0) {
-   const unsigned int normalIndex = g_lastProgram != nullptr && g_lastProgram->legacyAttributes() ? 2u : 3u;
-   gl::GLCore::vertexAttrib4f(normalIndex, n[0], n[1], n[2], 0.0f);
+   gl::GLCore::vertexAttrib4f(abi::Normal, n[0], n[1], n[2], 0.0f);
    std::memcpy(g_constNormal, n, sizeof(float) * 3);
    g_constNormalSet = true;
   }
  }
  if(!hasColor) {
   if(!g_constColorUploaded || std::memcmp(g_uploadedConstColor, g_constColor, sizeof(float) * 4) != 0) {
-   const unsigned int colorIndex = g_lastProgram != nullptr && g_lastProgram->legacyAttributes() ? 3u : 2u;
-   gl::GLCore::vertexAttrib4f(colorIndex, g_constColor[0], g_constColor[1], g_constColor[2], g_constColor[3]);
+   gl::GLCore::vertexAttrib4f(abi::Color, g_constColor[0], g_constColor[1], g_constColor[2],
+                              g_constColor[3]);
    std::memcpy(g_uploadedConstColor, g_constColor, sizeof(float) * 4);
    g_constColorUploaded = true;
   }
@@ -766,7 +746,32 @@ void setEntityColor(float red, float green, float blue, float alpha) {
  g_entityColor[1] = green;
  g_entityColor[2] = blue;
  g_entityColor[3] = alpha;
+ g_entityOverlayDirty = true;
  ++g_globalsGeneration;
+ ++g_programUniformGeneration;
+}
+unsigned int entityOverlayTexture() {
+ if(!g_entityOverlayTexture) {
+  g_entityOverlayTexture = gl::GlTexture(genTexture());
+  g_entityOverlayDirty = true;
+ }
+ if(!g_entityOverlayTexture) return 0;
+ if(g_entityOverlayDirty) {
+  const int previous = std::max(0, getActiveTextureUnit());
+  const auto channel = [](float value) {
+   return static_cast<unsigned char>(std::lround(std::clamp(value, 0.0f, 1.0f) * 255.0f));
+  };
+  const unsigned char pixel[4] = {
+      channel(g_entityColor[0]), channel(g_entityColor[1]), channel(g_entityColor[2]), channel(1.0f - g_entityColor[3])};
+  activeTexture(gl::tex::Texture0 + 2);
+  bindTexture(static_cast<int>(g_entityOverlayTexture.handle()));
+  ::glTexImage2D(0x0DE1, 0, 0x8058, 1, 1, 0, 0x1908, 0x1401, pixel);
+  ::glTexParameteri(0x0DE1, 0x2801, 0x2600);
+  ::glTexParameteri(0x0DE1, 0x2800, 0x2600);
+  activeTexture(gl::tex::Texture0 + previous);
+  g_entityOverlayDirty = false;
+ }
+ return g_entityOverlayTexture.handle();
 }
 void setPendingTerrainDraw(float chunkOffsetX, float chunkOffsetY, float chunkOffsetZ) {
  g_pendingChunkOffset[0] = chunkOffsetX;
@@ -787,76 +792,6 @@ void applyPendingTerrain(RenderPass& pass) {
  pass.chunkOffset[2] = g_pendingChunkOffset[2];
  pass.sectionLocal = true;
 }
-void bindAndUploadUniforms() {
- RenderPass pass;
- pass.modelView = currentModelView();
- pass.projection = currentProjection();
- pass.fog = g_fog;
- applyPendingTerrain(pass);
- bindAndUploadUniforms(pass);
-}
-void drawFromBoundBuffer(unsigned buffer,
-                         std::size_t byteOffset,
-                         std::size_t vertexCount,
-                         int stride,
-                         int glMode,
-                         bool hasTexture,
-                         bool hasColor,
-                         bool hasNormals) {
- if(!ensureReady() || vertexCount == 0) {
-  return;
- }
- RenderPass pass;
- pass.modelView = currentModelView();
- pass.projection = currentProjection();
- pass.fog = g_fog;
- pass.hasTexture = hasTexture;
- pass.hasColor = hasColor;
- pass.hasNormals = hasNormals;
- applyPendingTerrain(pass);
- if(!hasTexture) {
-  bindWhiteDiffuse();
- }
- bindAndUploadUniforms(pass);
- if(g_activeProgram == nullptr) {
-  return;
- }
- configureAttribs(buffer, byteOffset, stride, hasTexture, hasColor, hasNormals);
- const int mode = g_activeProgram->tessellation() ? 0x000E : glMode;
- if(mode == 0x000E && gl::GLCore::patchParameteri != nullptr) gl::GLCore::patchParameteri(0x8E72, 3);
- ::glDrawArrays(static_cast<GLenum>(mode), 0, static_cast<GLsizei>(vertexCount));
-}
-void drawInterleaved(const void* data,
-                     std::size_t vertexCount,
-                     int stride,
-                     int glMode,
-                     bool hasTexture,
-                     bool hasColor,
-                     bool hasNormals) {
- if(!ensureReady() || vertexCount == 0) {
-  return;
- }
- RenderPass pass;
- pass.modelView = currentModelView();
- pass.projection = currentProjection();
- pass.fog = g_fog;
- pass.hasTexture = hasTexture;
- pass.hasColor = hasColor;
- pass.hasNormals = hasNormals;
- applyPendingTerrain(pass);
- if(!hasTexture) {
-  bindWhiteDiffuse();
- }
- bindAndUploadUniforms(pass);
- if(g_activeProgram == nullptr) {
-  return;
- }
- uploadStreaming(data, vertexCount * static_cast<std::size_t>(stride));
- configureAttribs(g_streamVbo, 0, stride, hasTexture, hasColor, hasNormals);
- const int mode = g_activeProgram->tessellation() ? 0x000E : glMode;
- if(mode == 0x000E && gl::GLCore::patchParameteri != nullptr) gl::GLCore::patchParameteri(0x8E72, 3);
- ::glDrawArrays(static_cast<GLenum>(mode), 0, static_cast<GLsizei>(vertexCount));
-}
 void drawFullscreen() {
  if(!g_drawEnabled || !ensureFullscreenResources()) {
   return;
@@ -875,8 +810,13 @@ struct GlCache {
  bool colorMaskG = true;
  bool colorMaskB = true;
  bool colorMaskA = true;
- int blendSrc = 0x0302; // GL_SRC_ALPHA
- int blendDst = 0x0303; // GL_ONE_MINUS_SRC_ALPHA
+ // OpenGL's INITIAL blend function is GL_ONE/GL_ZERO, not SRC_ALPHA/ONE_MINUS_SRC_ALPHA.
+ // The dirty-cache elides glBlendFunc when cached == requested, so seeding these with the
+ // engine default would let the first blendFunc(0x0302,0x0303) pass be elided and leave the
+ // driver on ONE/ZERO (source replaces destination -> GUI renders opaque). Seed the cache
+ // with the true GL initial state so the first request always flushes.
+ int blendSrc = 0x0001; // GL_ONE
+ int blendDst = 0x0000; // GL_ZERO
  int depthFunc = 0x0201;
  int cullFaceMode = 0x0405;
  float polygonFactor = 0.0f;
@@ -951,61 +891,61 @@ int boundTexture() {
  return static_cast<int>(g_gl.boundTextures[g_gl.activeTexture]);
 }
 void enableBlend() {
- if(!g_gl.blend) {
-  g_gl.blend = true;
-  ::glEnable(0x0BE2);
- }
-}
-void disableBlend() {
- if(g_gl.blend) {
-  g_gl.blend = false;
-  ::glDisable(0x0BE2);
- }
-}
-void blendFunc(int src, int dst) {
- if(g_gl.blendSrc != src || g_gl.blendDst != dst) {
-  g_gl.blendSrc = src;
-  g_gl.blendDst = dst;
-  ::glBlendFunc(static_cast<unsigned>(src), static_cast<unsigned>(dst));
- }
-}
-void lockBlend(const BlendMode* mode) {
- if(mode == nullptr) {
-  disableBlend();
-  return;
- }
- enableBlend();
- if(gl::GLCore::blendFuncSeparate != nullptr) {
-  gl::GLCore::blendFuncSeparate(static_cast<unsigned>(mode->srcRgb), static_cast<unsigned>(mode->dstRgb),
-                                static_cast<unsigned>(mode->srcAlpha), static_cast<unsigned>(mode->dstAlpha));
-  g_gl.blendSrc = mode->srcRgb;
-  g_gl.blendDst = mode->dstRgb;
- } else {
-  blendFunc(mode->srcRgb, mode->dstRgb);
- }
-}
-void lockBufferBlend(int drawBufferIndex, const BlendMode* mode) {
- if(drawBufferIndex < 0) {
-  return;
- }
- if(mode == nullptr) {
-  if(gl::GLCore::blendFunci != nullptr) {
-   // GL_FUNC_ADD with ZERO/ZERO effectively disables contribution when supported via separatei.
-   if(gl::GLCore::blendFuncSeparatei != nullptr) {
-    gl::GLCore::blendFuncSeparatei(static_cast<unsigned>(drawBufferIndex), 0, 1, 0, 1);
-   }
+  if(!g_gl.blend) {
+   g_gl.blend = true;
+   ::glEnable(0x0BE2);
   }
-  return;
  }
- if(gl::GLCore::blendFuncSeparatei != nullptr) {
-  gl::GLCore::blendFuncSeparatei(static_cast<unsigned>(drawBufferIndex),
-                                 static_cast<unsigned>(mode->srcRgb), static_cast<unsigned>(mode->dstRgb),
+ void disableBlend() {
+  if(g_gl.blend) {
+   g_gl.blend = false;
+   ::glDisable(0x0BE2);
+  }
+ }
+ void blendFunc(int src, int dst) {
+  if(g_gl.blendSrc != src || g_gl.blendDst != dst) {
+   g_gl.blendSrc = src;
+   g_gl.blendDst = dst;
+   ::glBlendFunc(static_cast<unsigned>(src), static_cast<unsigned>(dst));
+  }
+ }
+ void lockBlend(const BlendMode* mode) {
+  if(mode == nullptr) {
+   disableBlend();
+   return;
+  }
+  enableBlend();
+  if(gl::GLCore::blendFuncSeparate != nullptr) {
+   gl::GLCore::blendFuncSeparate(static_cast<unsigned>(mode->srcRgb), static_cast<unsigned>(mode->dstRgb),
                                  static_cast<unsigned>(mode->srcAlpha), static_cast<unsigned>(mode->dstAlpha));
- } else if(gl::GLCore::blendFunci != nullptr) {
-  gl::GLCore::blendFunci(static_cast<unsigned>(drawBufferIndex), static_cast<unsigned>(mode->srcRgb),
-                         static_cast<unsigned>(mode->dstRgb));
+   g_gl.blendSrc = mode->srcRgb;
+   g_gl.blendDst = mode->dstRgb;
+  } else {
+   blendFunc(mode->srcRgb, mode->dstRgb);
+  }
  }
-}
+ void lockBufferBlend(int drawBufferIndex, const BlendMode* mode) {
+  if(drawBufferIndex < 0) {
+   return;
+  }
+  if(mode == nullptr) {
+   if(gl::GLCore::blendFunci != nullptr) {
+    // GL_FUNC_ADD with ZERO/ZERO effectively disables contribution when supported via separatei.
+    if(gl::GLCore::blendFuncSeparatei != nullptr) {
+     gl::GLCore::blendFuncSeparatei(static_cast<unsigned>(drawBufferIndex), 0, 1, 0, 1);
+    }
+   }
+   return;
+  }
+  if(gl::GLCore::blendFuncSeparatei != nullptr) {
+   gl::GLCore::blendFuncSeparatei(static_cast<unsigned>(drawBufferIndex),
+                                  static_cast<unsigned>(mode->srcRgb), static_cast<unsigned>(mode->dstRgb),
+                                  static_cast<unsigned>(mode->srcAlpha), static_cast<unsigned>(mode->dstAlpha));
+  } else if(gl::GLCore::blendFunci != nullptr) {
+   gl::GLCore::blendFunci(static_cast<unsigned>(drawBufferIndex), static_cast<unsigned>(mode->srcRgb),
+                          static_cast<unsigned>(mode->dstRgb));
+  }
+ }
 void unlockBlend() {
  blendAlpha();
 }
@@ -1034,11 +974,11 @@ void blendMultiply() {
  blendFunc(0x0307, 0x0301);
 }
 void enableDepthTest() {
- if(!g_gl.depthTest) {
-  g_gl.depthTest = true;
-  ::glEnable(0x0B71);
+  if(!g_gl.depthTest) {
+   g_gl.depthTest = true;
+   ::glEnable(0x0B71);
+  }
  }
-}
 void depthTest() {
  enableDepthTest();
  depthFunc(0x0203);
@@ -1049,41 +989,41 @@ void depthTestWrite(bool write) {
  depthMask(write);
 }
 void disableDepthTest() {
- if(g_gl.depthTest) {
-  g_gl.depthTest = false;
-  ::glDisable(0x0B71);
+  if(g_gl.depthTest) {
+   g_gl.depthTest = false;
+   ::glDisable(0x0B71);
+  }
  }
-}
-void depthFunc(int func) {
- if(g_gl.depthFunc != func) {
-  g_gl.depthFunc = func;
-  ::glDepthFunc(static_cast<unsigned>(func));
+ void depthFunc(int func) {
+  if(g_gl.depthFunc != func) {
+   g_gl.depthFunc = func;
+   ::glDepthFunc(static_cast<unsigned>(func));
+  }
  }
-}
-void depthMask(bool enabled) {
- if(g_gl.depthWrite != enabled) {
-  g_gl.depthWrite = enabled;
-  ::glDepthMask(enabled ? 1 : 0);
+ void depthMask(bool enabled) {
+  if(g_gl.depthWrite != enabled) {
+   g_gl.depthWrite = enabled;
+   ::glDepthMask(enabled ? 1 : 0);
+  }
  }
-}
-void enableCull() {
- if(!g_gl.cullFace) {
-  g_gl.cullFace = true;
-  ::glEnable(0x0B44);
+ void enableCull() {
+  if(!g_gl.cullFace) {
+   g_gl.cullFace = true;
+   ::glEnable(0x0B44);
+  }
  }
-}
-void disableCull() {
- if(g_gl.cullFace) {
-  g_gl.cullFace = false;
-  ::glDisable(0x0B44);
+ void disableCull() {
+  if(g_gl.cullFace) {
+   g_gl.cullFace = false;
+   ::glDisable(0x0B44);
+  }
  }
-}
-void cullFace(int mode) {
- if(g_gl.cullFaceMode != mode) {
-  g_gl.cullFaceMode = mode;
-  ::glCullFace(static_cast<unsigned>(mode));
+ void cullFace(int mode) {
+  if(g_gl.cullFaceMode != mode) {
+   g_gl.cullFaceMode = mode;
+   ::glCullFace(static_cast<unsigned>(mode));
+  }
  }
-}
 void cullBackFaces() {
  enableCull();
  cullFace(0x0405);
@@ -1113,11 +1053,11 @@ void clearColor(float r, float g, float b, float a) {
   g_gl.clearColor[1] = g;
   g_gl.clearColor[2] = b;
   g_gl.clearColor[3] = a;
-  ::glClearColor(r, g, b, a);
+   ::glClearColor(r, g, b, a);
+  }
  }
-}
-void clear(int mask) {
- ::glClear(static_cast<unsigned>(mask));
+  void clear(int mask) {
+   ::glClear(static_cast<unsigned>(mask));
 }
 void clearDepth(double depth) {
  ::glClearDepth(depth);
@@ -1139,10 +1079,7 @@ void activeTexture(int texture) {
  }
 }
 void bindTexture(int texture) {
- bindTexture(0x0DE1, texture);
-}
-void bindTexture(unsigned int texture) {
- bindTexture(0x0DE1, static_cast<int>(texture));
+  bindTexture(0x0DE1, texture);
 }
 void bindTexture(int target, int texture) {
  if(target <= 0) {
@@ -1162,7 +1099,7 @@ void bindTexture(int target, int texture) {
   }
  }
  ::glBindTexture(static_cast<unsigned>(target), uTex);
-}
+ }
 void invalidateTextureBindCache() {
  for(unsigned int& bound : g_gl.boundTextures) {
   bound = 0xFFFFFFFFu;
@@ -1173,17 +1110,8 @@ void unbindTexture(int texture) {
  if(texture <= 0)
   return;
  const unsigned uTex = static_cast<unsigned>(texture);
- const auto it = g_textureUnitOf.find(uTex);
- if(it != g_textureUnitOf.end()) {
-  const int unit = it->second;
-  g_textureUnitOf.erase(it);
-  if(unit >= 0 && unit < 32 && g_gl.boundTextures[unit] == uTex) {
-   activeTexture(0x84C0 + unit);
-   ::glBindTexture(0x0DE1, 0);
-   g_gl.boundTextures[unit] = 0;
-  }
-  return;
- }
+ const int previousUnit = g_gl.activeTexture;
+ g_textureUnitOf.erase(uTex);
  for(int i = 0; i < 32; ++i) {
   if(g_gl.boundTextures[i] == uTex) {
    activeTexture(0x84C0 + i);
@@ -1191,6 +1119,7 @@ void unbindTexture(int texture) {
    g_gl.boundTextures[i] = 0;
   }
  }
+ if(previousUnit >= 0 && previousUnit < 32) activeTexture(0x84C0 + previousUnit);
 }
 unsigned int genTexture() {
  std::lock_guard lock(g_textureMutex);
@@ -1210,6 +1139,8 @@ void deleteTexture(unsigned int texture) {
  ::glDeleteTextures(1, &texture);
 }
 void clearAllocatedTextures() {
+ g_whiteTexture.reset();
+ g_entityOverlayTexture.reset();
  std::lock_guard lock(g_textureMutex);
  if(!g_allocatedTextures.empty()) {
   ::glDeleteTextures(static_cast<int>(g_allocatedTextures.size()), g_allocatedTextures.data());
@@ -1222,9 +1153,9 @@ void colorMask(bool r, bool g, bool b, bool a) {
   g_gl.colorMaskG = g;
   g_gl.colorMaskB = b;
   g_gl.colorMaskA = a;
-  ::glColorMask(r ? 1 : 0, g ? 1 : 0, b ? 1 : 0, a ? 1 : 0);
+   ::glColorMask(r ? 1 : 0, g ? 1 : 0, b ? 1 : 0, a ? 1 : 0);
+  }
  }
-}
 void hintFogEnabled(bool enabled) {
  setFogEnabled(enabled);
 }
@@ -1235,10 +1166,10 @@ void viewport(int x, int y, int width, int height) {
   g_gl.viewport[1] = y;
   g_gl.viewport[2] = width;
   g_gl.viewport[3] = height;
-  g_gl.viewportValid = true;
-  ::glViewport(x, y, width, height);
+   g_gl.viewportValid = true;
+   ::glViewport(x, y, width, height);
+  }
  }
-}
 void setGuiScaleFactor(int factor) {
  g_gl.guiScaleFactor = factor > 0 ? factor : 1;
 }
@@ -1330,11 +1261,13 @@ TextureBindScope::TextureBindScope() : savedUnit_(g_gl.activeTexture), savedTex_
  }
 }
 TextureBindScope::TextureBindScope(int texture) : TextureBindScope() {
- bindTexture(texture);
+  // Bind on the saved unit so the scope can restore the exact bind later.
+  bindTexture(0x0DE1, texture);
 }
 TextureBindScope::~TextureBindScope() {
- activeTexture(0x84C0 + savedUnit_);
- bindTexture(static_cast<int>(savedTex_));
+  // Restore on the saved unit (the saved bind belongs to that unit).
+  activeTexture(0x84C0 + savedUnit_);
+  bindTexture(0x0DE1, static_cast<int>(savedTex_));
 }
 } // namespace core
 } // namespace net::minecraft::client::render

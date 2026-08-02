@@ -8,7 +8,9 @@
 #include "net/minecraft/block/entity/BlockEntity.hpp"
 #include "net/minecraft/client/render/chunk/ChunkMeshJob.hpp"
 #include "net/minecraft/client/render/chunk/ChunkRegionBuffer.hpp"
+#include "net/minecraft/client/render/chunk/TerrainLayers.hpp"
 #include "net/minecraft/client/render/culling/Frustum.hpp"
+#include "net/minecraft/util/concurrent/ThreadCoordinator.hpp"
 #include "net/minecraft/util/concurrent/WorkerHandoff.hpp"
 #include "net/minecraft/util/math/Types.hpp"
 #include "net/minecraft/world/World.hpp"
@@ -50,14 +52,14 @@ class ChunkBuilder {
  void uploadMesh(ChunkMeshJob& job);
  void freeRegionSlots() noexcept {
   if(region_ != nullptr) {
-   for(int layer = 0; layer < 2; ++layer) {
+   for(int layer = 0; layer < terrain_layer::Count; ++layer) {
     region_->layers[static_cast<std::size_t>(layer)].release(regionSlots_[static_cast<std::size_t>(layer)]);
    }
   }
   freeModMeshGpuBuffers();
  }
  void freeModMeshGpuBuffers() noexcept {
-  for(int layer = 0; layer < 2; ++layer) {
+  for(int layer = 0; layer < terrain_layer::Count; ++layer) {
    for(ModChunkMesh& modMesh : modLayerMeshes_[static_cast<std::size_t>(layer)]) {
     modMesh.mesh.freeGpuBuffer();
    }
@@ -70,8 +72,12 @@ class ChunkBuilder {
   if(!built) {
    return false;
   }
-  const bool modEmpty = modLayerMeshes_[0].empty() && modLayerMeshes_[1].empty();
-  return renderLayerEmpty[0] && renderLayerEmpty[1] && modEmpty;
+  bool empty = true;
+  for(int layer = 0; layer < terrain_layer::Count; ++layer) {
+   empty = empty && renderLayerEmpty[static_cast<std::size_t>(layer)] &&
+           modLayerMeshes_[static_cast<std::size_t>(layer)].empty();
+  }
+  return empty;
  }
  void invalidate() noexcept {
   dirty = true;
@@ -80,7 +86,7 @@ class ChunkBuilder {
  World* world = nullptr;
  ChunkRegionManager* regionManager_ = nullptr;
  ChunkRegion* region_ = nullptr;
- std::array<ChunkRegionBuffer::Slot, 2> regionSlots_{};
+ std::array<ChunkRegionBuffer::Slot, terrain_layer::Count> regionSlots_{};
  inline static int chunkUpdates = 0;
  int x = 0;
  int y = 0;
@@ -89,8 +95,8 @@ class ChunkBuilder {
  int sizeY = 0;
  int sizeZ = 0;
  bool inFrustum = true;
- std::array<bool, 2> renderLayerEmpty{true, true};
- std::array<std::vector<ModChunkMesh>, 2> modLayerMeshes_{};
+ std::array<bool, terrain_layer::Count> renderLayerEmpty{true, true, true};
+ std::array<std::vector<ModChunkMesh>, terrain_layer::Count> modLayerMeshes_{};
  int centerX = 0;
  int centerY = 0;
  int centerZ = 0;
@@ -152,7 +158,11 @@ class ChunkMeshScheduler {
  }
 
  private:
- net::minecraft::util::concurrent::WorkerHandoff<ChunkMeshJob> handoff_{
-     net::minecraft::util::concurrent::WorkerPool::recommendedThreadCount(3, 2, 6)};
+  // Mesh submits to the shared Compute pool (one pool for all compute owners);
+  // completed jobs cross back on a bounded Channel. Lighting/loader keep their
+  // computeShare(3) sub-pools until PASS-2 WI-6/7 join them to the shared pool.
+  net::minecraft::util::concurrent::WorkerHandoff<ChunkMeshJob> handoff_{
+      net::minecraft::util::concurrent::ThreadCoordinator::instance().pool(
+          net::minecraft::util::concurrent::Domain::Compute)};
 };
 } // namespace net::minecraft::client::render::chunk

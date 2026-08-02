@@ -1,10 +1,13 @@
 #include "net/minecraft/server/network/ConnectionListener.hpp"
+#include <chrono>
 #include <stdexcept>
 #include <utility>
 #include "net/minecraft/network/Connection.hpp"
 #include "net/minecraft/server/MinecraftServer.hpp"
 #include "net/minecraft/server/network/ServerLoginNetworkHandler.hpp"
 #include "net/minecraft/server/network/ServerPlayNetworkHandler.hpp"
+#include "net/minecraft/util/concurrent/ThreadCoordinator.hpp"
+#include "net/minecraft/util/concurrent/ThreadNames.hpp"
 namespace net::minecraft::server::network {
 namespace {
 [[nodiscard]] std::string hostFromAddress(const std::string& address) {
@@ -25,7 +28,13 @@ ConnectionListener::ConnectionListener(MinecraftServer* server,
     : server_(server), onlineMode_(onlineMode) {
  socket_.bindAndListen(bindAddress, static_cast<std::uint16_t>(port));
  open_.store(true, std::memory_order_release);
- thread_ = std::thread([this]() { listenLoop(); });
+ util::concurrent::ThreadCoordinator::instance().reserveDynamic(1);
+ thread_ = std::jthread([this]() {
+  util::concurrent::tl_domain = util::concurrent::Domain::NetIo;
+  util::concurrent::setCurrentThreadName("server-accept");
+  listenLoop();
+  util::concurrent::ThreadCoordinator::instance().releaseDynamic(1);
+ });
 }
 ConnectionListener::~ConnectionListener() {
  close();
@@ -35,6 +44,7 @@ void ConnectionListener::stopAccepting() {
   open_.store(false, std::memory_order_release);
   socket_.close();
   if(thread_.joinable()) {
+   thread_.request_stop();
    thread_.join();
   }
  });
@@ -106,12 +116,24 @@ void ConnectionListener::tick() {
   playSnapshot = std::move(playConnections_);
   playConnections_.clear();
  }
+ // One shared per-tick budget across every connection with a per-connection cap
+ // (Java's <=100 packets/player/tick fairness floor), so a single flooding player
+ // cannot starve the others inside this tick.
+ constexpr int kPerConnectionCap = 100;
+ constexpr auto kTickBudget = std::chrono::milliseconds(3);
+ const Connection::DrainLimit drainLimit{std::chrono::steady_clock::now() + kTickBudget, kPerConnectionCap};
  for(std::size_t index = 0; index < pendingSnapshot.size();) {
   ServerLoginNetworkHandler& handler = *pendingSnapshot[index];
+  if(Connection* connection = handler.connection()) {
+   connection->setDrainLimit(drainLimit);
+  }
   try {
    handler.tick();
   } catch(const std::exception&) {
    handler.disconnect("Internal server error");
+  }
+  if(Connection* connection = handler.connection()) {
+   connection->clearDrainLimit();
   }
   if(handler.closed) {
    pendingSnapshot.erase(pendingSnapshot.begin() + static_cast<std::ptrdiff_t>(index));
@@ -124,6 +146,9 @@ void ConnectionListener::tick() {
  }
  for(std::size_t index = 0; index < playSnapshot.size();) {
   ActivePlayConnection& active = playSnapshot[index];
+  if(Connection* connection = active.connection.get()) {
+   connection->setDrainLimit(drainLimit);
+  }
   try {
    if(active.handler != nullptr) {
     active.handler->tick();
@@ -132,6 +157,9 @@ void ConnectionListener::tick() {
    if(active.handler != nullptr) {
     active.handler->disconnect("Internal server error");
    }
+  }
+  if(Connection* connection = active.connection.get()) {
+   connection->clearDrainLimit();
   }
   const bool disconnected = active.handler == nullptr || active.handler->disconnected ||
                             active.connection == nullptr || !active.connection->isOpen();

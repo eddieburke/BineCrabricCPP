@@ -10,8 +10,7 @@ void BlockEntityRenderer::bindTexture(const std::string& path) {
   return;
  }
  const int textureId = dispatcher->textureManager->getTextureId(path);
- render::core::activeTexture(0x84C0);
- render::core::bindTexture(0x0DE1, textureId);
+ dispatcher->textureManager->bindTexture(textureId);
 }
 font::TextRenderer* BlockEntityRenderer::getTextRenderer() const {
  return dispatcher != nullptr ? dispatcher->getTextRenderer() : nullptr;

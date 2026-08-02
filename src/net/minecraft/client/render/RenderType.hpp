@@ -10,12 +10,16 @@ class ShaderProgram;
 }
 namespace net::minecraft::client::render {
 // Resolves a canonical world program key (e.g. "gbuffers_terrain") to a compiled program,
-// installed by ShaderPackManager. World RenderTypes call it every setupRenderState so the
+// installed by PackManager. World RenderTypes call it every setupRenderState so the
 // live pack (or the vanilla base pack) owns their shader. nullptr resolver / result means
 // no program is bound. Set to nullptr on manager teardown.
 using WorldProgramResolver = std::function<gl::ShaderProgram*(const std::string& key)>;
 using ShaderObjectIdResolver = std::function<int(const std::string& kind, const std::string& name, int fallback)>;
-using WorldPassDirectiveApplier = std::function<void(const std::string& key)>;
+// Applies the resolved program's blend/alphaTest directives. Key-less by design: the
+// pipeline publishes the RESOLVED program source (shadow mapping + ProgramId fallback
+// chain) that the pack directives key by (ProgramDirectives.java:80-83), so the applier
+// never re-derives or mismatches the key.
+using WorldPassDirectiveApplier = std::function<void()>;
 void setWorldProgramResolver(WorldProgramResolver resolver);
 void setWorldPassDirectiveApplier(WorldPassDirectiveApplier applier);
 void setShaderObjectIdResolver(ShaderObjectIdResolver resolver);

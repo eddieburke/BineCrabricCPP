@@ -5,12 +5,14 @@
 #include "net/minecraft/block/Block.hpp"
 #include "net/minecraft/client/Minecraft.hpp"
 #include "net/minecraft/client/render/GameRenderer.hpp"
+#include "net/minecraft/client/render/RenderCore.hpp"
 #include "net/minecraft/client/render/Tessellator.hpp"
 #include "net/minecraft/client/render/block/BlockRenderManager.hpp"
 #include "net/minecraft/client/render/block/entity/BlockEntityRenderDispatcher.hpp"
 #include "net/minecraft/client/render/chunk/ChunkMeshJob.hpp"
 #include "net/minecraft/client/render/chunk/RegionSnapshot.hpp"
-#include "net/minecraft/client/render/shaderpack/ShaderPackManager.hpp"
+#include "net/minecraft/client/render/pipeline/Manager.hpp"
+#include "net/minecraft/util/concurrent/ThreadNames.hpp"
 #include "net/minecraft/world/World.hpp"
 #include "net/minecraft/world/chunk/Chunk.hpp"
 #include "net/minecraft/world/chunk/ChunkSource.hpp"
@@ -189,11 +191,12 @@ std::shared_ptr<ChunkMeshJob> ChunkMeshJob::capture(ChunkBuilder& owner,
  if(auto* minecraft = net::minecraft::client::Minecraft::INSTANCE;
     minecraft != nullptr && minecraft->gameRenderer != nullptr &&
     minecraft->gameRenderer->shaderPacks() != nullptr) {
-  if(const auto* def = minecraft->gameRenderer->shaderPacks()->activeDefinition(); def != nullptr) {
-   job->blockRenderLayers = def->blockRenderLayers;
+   if(const auto* def = minecraft->gameRenderer->shaderPacks()->activeDefinition(); def != nullptr) {
+    job->blockRenderLayers = def->blockRenderLayers;
+   }
   }
- }
- return job;
+  job->alphaTestRef = net::minecraft::client::render::core::alphaTestRef();
+  return job;
 }
 ChunkMeshJob::ChunkMeshJob(ChunkBuilder& owner,
                            client::option::RenderSettings options,
@@ -220,6 +223,12 @@ ChunkMeshJob::ChunkMeshJob(ChunkBuilder& owner,
 ChunkMeshJob::~ChunkMeshJob() {
  releasePins();
  if(builder != nullptr) {
+#ifndef NDEBUG
+  // R3: the last shared_ptr<ChunkMeshJob> dies on the main GL thread (cancelAll/
+  // drops stay main-thread-only, WI-4); a worker dropping it would strand the
+  // in-flight flag. The marker is latched by GLCore::init() at display setup.
+  net::minecraft::util::concurrent::assertOnMainThread();
+#endif
   builder->meshJobInFlight = false;
  }
 }
@@ -269,7 +278,7 @@ void ChunkBuilder::buildMesh(ChunkMeshJob& job) {
  const int maxZ = job.z + job.sizeZ;
  RegionSnapshot& snapshot = *job.snapshot;
  if(!snapshot.columnHasBlocks(job.x, job.z, minY, maxY)) {
-  job.result.layerEmpty = {true, true};
+  job.result.layerEmpty.fill(true);
   job.result.visibilityBits = ~0ULL;
   job.result.hasSkyLight = snapshot.sawSkyLight();
   return;
@@ -280,7 +289,7 @@ void ChunkBuilder::buildMesh(ChunkMeshJob& job) {
  block::BlockRenderManager blockRenderManager(&snapshot, job.opts);
  blockRenderManager.ctx.tess = &tessellator;
  ChunkMeshResult& result = job.result;
- for(int layer = 0; layer < 2; ++layer) {
+ for(int layer = 0; layer < terrain_layer::Count; ++layer) {
   bool hasOtherLayer = false;
   bool beganCompile = false;
   bool drewGeometry = false;
@@ -309,13 +318,7 @@ void ChunkBuilder::buildMesh(ChunkMeshJob& job) {
      if(layer == 0 && Block::BLOCKS_WITH_ENTITY[static_cast<std::size_t>(blockId)]) {
       result.blockEntityPositions.push_back(net::minecraft::Vec3i{blockX, blockY, blockZ});
      }
-     const int blockLayer = [&] {
-      const auto found = job.blockRenderLayers.find(blockId);
-      if(found != job.blockRenderLayers.end()) {
-       return found->second;
-      }
-      return block->getRenderLayer();
-     }();
+     const int blockLayer = resolveTerrainMeshLayer(*block, blockId, job.blockRenderLayers);
      if(blockLayer != layer) {
       hasOtherLayer = true;
       continue;
@@ -354,7 +357,7 @@ void ChunkBuilder::uploadMesh(ChunkMeshJob& job) {
  if(region_ == nullptr) {
   region_ = &regionManager_->pool();
  }
- for(int layer = 0; layer < 2; ++layer) {
+ for(int layer = 0; layer < terrain_layer::Count; ++layer) {
   const TessellatorMesh& mesh = job.result.layers[static_cast<std::size_t>(layer)];
   renderLayerEmpty[static_cast<std::size_t>(layer)] = job.result.layerEmpty[static_cast<std::size_t>(layer)];
   ChunkRegionBuffer& buffer = region_->layers[static_cast<std::size_t>(layer)];
@@ -404,9 +407,8 @@ void ChunkBuilder::uploadMesh(ChunkMeshJob& job) {
  hasSkyLight = job.result.hasSkyLight;
  visBits = job.result.visibilityBits;
  freeModMeshGpuBuffers();
- modLayerMeshes_[0] = std::move(job.result.modLayers[0]);
- modLayerMeshes_[1] = std::move(job.result.modLayers[1]);
- for(int layer = 0; layer < 2; ++layer) {
+ modLayerMeshes_ = std::move(job.result.modLayers);
+ for(int layer = 0; layer < terrain_layer::Count; ++layer) {
   for(ModChunkMesh& modMesh : modLayerMeshes_[static_cast<std::size_t>(layer)]) {
    (void)modMesh.mesh.uploadToGpu();
   }

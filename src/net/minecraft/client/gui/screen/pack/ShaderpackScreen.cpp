@@ -15,12 +15,12 @@
 #include "net/minecraft/client/render/RenderCore.hpp"
 #include "net/minecraft/client/render/RenderType.hpp"
 #include "net/minecraft/client/render/Tessellator.hpp"
-#include "net/minecraft/client/render/shaderpack/ShaderPackManager.hpp"
+#include "net/minecraft/client/render/pipeline/Manager.hpp"
 namespace net::minecraft::client::gui::screen::pack {
-namespace shaderpack = net::minecraft::client::render::shaderpack;
+namespace render = net::minecraft::client::render;
 namespace {
-using shaderpack::PackSetting;
-using shaderpack::SettingType;
+using render::PackSetting;
+using render::SettingType;
 constexpr int kButtonWidth = 150;
 constexpr int kButtonHeight = 20;
 class ShaderSliderWidget : public widget::ButtonWidget {
@@ -89,7 +89,7 @@ float sliderPosition(const PackSetting& setting, const std::string& rawValue) {
  const double current = std::strtod(rawValue.c_str(), nullptr);
  return static_cast<float>(std::clamp((current - setting.minimum) / range, 0.0, 1.0));
 }
-float applySliderPosition(shaderpack::ShaderPackManager* manager, const PackSetting& setting, float position) {
+float applySliderPosition(render::PackManager* manager, const PackSetting& setting, float position) {
  const double range = setting.maximum - setting.minimum;
  if(range <= 0.0 || manager == nullptr) {
   return 0.0f;
@@ -142,6 +142,9 @@ void ShaderpackScreen::rebuildLayout() {
  auto* manager = minecraft()->gameRenderer->shaderPacks();
  manager->poll();
  const auto packs = manager->available();
+ const bool userPackSelected = std::any_of(packs.begin(), packs.end(), [](const auto& pack) {
+  return pack.selected;
+ });
  const int listTop = layout::OptionsListScroll::kModListTop;
  int contentY = 0;
  scroll_.addHeader("Installed Shaderpacks", contentY);
@@ -150,7 +153,7 @@ void ShaderpackScreen::rebuildLayout() {
                  listTop + contentY,
                  kButtonWidth,
                  kButtonHeight,
-                 std::string("None") + (manager->usingUserPack() ? "" : " (selected)"),
+                 std::string("None") + (userPackSelected ? "" : " (selected)"),
                  [this] {
                   if(minecraft() != nullptr && minecraft()->gameRenderer != nullptr &&
                      minecraft()->gameRenderer->shaderPacks() != nullptr) {
@@ -168,7 +171,7 @@ void ShaderpackScreen::rebuildLayout() {
                   listTop + widgetY,
                   kButtonWidth,
                   kButtonHeight,
-                  pack.name + (pack.valid ? "" : " (invalid)"),
+                  pack.name + (pack.valid ? "" : " (invalid)") + (pack.selected ? " (selected)" : ""),
                   [this, key = pack.key] {
                    if(minecraft() != nullptr && minecraft()->gameRenderer != nullptr &&
                       minecraft()->gameRenderer->shaderPacks() != nullptr) {
@@ -180,7 +183,7 @@ void ShaderpackScreen::rebuildLayout() {
  }
  contentY += static_cast<int>((packs.size() + 2) / 2) * layout::kRowSpacing +
              layout::OptionsListScroll::kSectionGap;
- const shaderpack::ShaderPackDefinition* manifest = manager->activeDefinition();
+ const render::PackDefinition* manifest = manager->selectedDefinition();
  if(manifest != nullptr && !manifest->settings.empty()) {
   const std::vector<std::string>* layoutTokens = nullptr;
   if(!currentPage_.empty()) {
@@ -216,7 +219,7 @@ void ShaderpackScreen::rebuildLayout() {
    if(!manifest->profiles.empty() &&
       std::find(layoutTokens->begin(), layoutTokens->end(), "<profile>") != layoutTokens->end()) {
     for(std::size_t pi = 0; pi < manifest->profiles.size(); ++pi) {
-     const shaderpack::PackProfile profile = manifest->profiles[pi];
+     const render::PackProfile profile = manifest->profiles[pi];
      const int col = static_cast<int>(pi % 2);
      const int row = static_cast<int>(pi / 2);
      const int widgetY = contentY + row * layout::kRowSpacing;

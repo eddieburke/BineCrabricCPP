@@ -10,6 +10,7 @@
 #include "net/minecraft/item/Item.hpp"
 #include "net/minecraft/item/ItemStack.hpp"
 #include "net/minecraft/mod/model/ModModels.hpp"
+#include "net/minecraft/util/math/MatrixStack.hpp"
 namespace net::minecraft::client::render::item {
 namespace {
 // enableGUIStandardItemLighting: lights after Ry(-30)*Rx(165) on
@@ -57,18 +58,20 @@ void ItemRenderer::renderCustomModelInGui(client::texture::TextureManager& textu
      resolveBlockTexture(stack.getTextureId(), textureManager, ItemModelRenderer::atlasDomain(stack)).glId);
  enableGuiItemLighting();
  render::RenderPassScope scope(render::RenderType::guiItem3D());
- core::modelViewStack().push();
- core::modelViewStack().translate(static_cast<float>(x - 2), static_cast<float>(y + 3), -3.0f);
- core::modelViewStack().scale(10.0f, 10.0f, 10.0f);
- core::modelViewStack().translate(0.5f, 0.5f, 0.5f);
- core::modelViewStack().scale(1.0f, 1.0f, -1.0f);
- core::modelViewStack().rotate(210.0f, 1.0f, 0.0f, 0.0f);
- core::modelViewStack().rotate(45.0f, 0.0f, 1.0f, 0.0f);
+ const core::ScopedDrawCameraState itemGuard;
+ net::minecraft::util::math::MatrixStack pose;
+ pose.load(core::drawModelView());
+ pose.translate(static_cast<float>(x - 2), static_cast<float>(y + 3), -3.0f);
+ pose.scale(10.0f, 10.0f, 10.0f);
+ pose.translate(0.5f, 0.5f, 0.5f);
+ pose.scale(1.0f, 1.0f, -1.0f);
+ pose.rotate(210.0f, 1.0f, 0.0f, 0.0f);
+ pose.rotate(45.0f, 0.0f, 1.0f, 0.0f);
  applyDisplayColor(stack);
- core::modelViewStack().rotate(-90.0f, 0.0f, 1.0f, 0.0f);
- core::modelViewStack().translate(-0.5f, -0.5f, -0.5f);
+ pose.rotate(-90.0f, 0.0f, 1.0f, 0.0f);
+ pose.translate(-0.5f, -0.5f, -0.5f);
+ core::setDrawModelView(pose.top());
  net::minecraft::mod::model::drawLuaItemModel(Tessellator::INSTANCE, stack, 1.0f);
- core::modelViewStack().pop();
 }
 void ItemRenderer::renderBlockItemInGui(client::texture::TextureManager& textureManager,
                                         const ItemStack& stack,
@@ -84,15 +87,18 @@ void ItemRenderer::renderBlockItemInGui(client::texture::TextureManager& texture
  auto* previousTextureManager = blockRenderManager.ctx.textureManager;
  enableGuiItemLighting();
  render::RenderPassScope scope(render::RenderType::guiItem3D());
- core::modelViewStack().push();
- core::modelViewStack().translate(static_cast<float>(x - 2), static_cast<float>(y + 3), -3.0f);
- core::modelViewStack().scale(10.0f, 10.0f, 10.0f);
- core::modelViewStack().translate(1.0f, 0.5f, 1.0f);
- core::modelViewStack().scale(1.0f, 1.0f, -1.0f);
- core::modelViewStack().rotate(210.0f, 1.0f, 0.0f, 0.0f);
- core::modelViewStack().rotate(45.0f, 0.0f, 1.0f, 0.0f);
+ const core::ScopedDrawCameraState itemGuard;
+ net::minecraft::util::math::MatrixStack pose;
+ pose.load(core::drawModelView());
+ pose.translate(static_cast<float>(x - 2), static_cast<float>(y + 3), -3.0f);
+ pose.scale(10.0f, 10.0f, 10.0f);
+ pose.translate(1.0f, 0.5f, 1.0f);
+ pose.scale(1.0f, 1.0f, -1.0f);
+ pose.rotate(210.0f, 1.0f, 0.0f, 0.0f);
+ pose.rotate(45.0f, 0.0f, 1.0f, 0.0f);
  applyDisplayColor(stack);
- core::modelViewStack().rotate(-90.0f, 0.0f, 1.0f, 0.0f);
+ pose.rotate(-90.0f, 0.0f, 1.0f, 0.0f);
+ core::setDrawModelView(pose.top());
  blockRenderManager.ctx.inventoryColorEnabled = useCustomDisplayColor;
  blockRenderManager.ctx.textureManager = &textureManager;
  blockRenderManager.ctx.faceState.useAo = false;
@@ -100,7 +106,6 @@ void ItemRenderer::renderBlockItemInGui(client::texture::TextureManager& texture
  blockRenderManager.ctx.textureManager = previousTextureManager;
  blockRenderManager.ctx.inventoryColorEnabled = previousInventoryColorEnabled;
  blockRenderManager.ctx.faceState.useAo = previousUseAo;
- core::modelViewStack().pop();
  textureManager.bindTexture(textureManager.getTextureId("/terrain.png"));
 }
 void ItemRenderer::renderSpriteItemInGui(client::texture::TextureManager& textureManager,

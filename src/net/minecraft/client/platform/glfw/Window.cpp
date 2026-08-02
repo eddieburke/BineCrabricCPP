@@ -194,6 +194,32 @@ GLFWmonitor* primaryMonitor() {
  }
  return monitor;
 }
+const GLFWvidmode* primaryVideoMode() {
+ return glfwGetVideoMode(primaryMonitor());
+}
+void resetSwapPacing() {
+ glfwSwapInterval(0);
+ gl::GLCore::resetSwapPacingCache();
+}
+void resolveFullscreenSize() {
+ const GLFWvidmode* mode = primaryVideoMode();
+ if(mode != nullptr) {
+  pendingWidth_ = pendingWidth_ > 0 ? pendingWidth_ : mode->width;
+  pendingHeight_ = pendingHeight_ > 0 ? pendingHeight_ : mode->height;
+ }
+}
+void applyDisplaySize(int x, int y, int width, int height, int refreshRate) {
+ if(fullscreen_) {
+  if(refreshRate == GLFW_DONT_CARE) {
+   const GLFWvidmode* mode = primaryVideoMode();
+   refreshRate = mode != nullptr ? mode->refreshRate : GLFW_DONT_CARE;
+  }
+  glfwSetWindowMonitor(window_, primaryMonitor(), 0, 0, width, height, refreshRate);
+ } else {
+  glfwSetWindowSize(window_, width, height);
+  glfwSetWindowPos(window_, x, y);
+ }
+}
 void rememberWindowedPlacement() {
  if(window_ == nullptr || fullscreen_) {
   return;
@@ -220,24 +246,15 @@ void Window::setFullscreen(bool value) {
  }
  if(value) {
   rememberWindowedPlacement();
-  const GLFWvidmode* mode = glfwGetVideoMode(primaryMonitor());
-  if(mode == nullptr) {
-   throw std::runtime_error("glfwGetVideoMode failed");
-  }
-  const int width = pendingWidth_ > 0 ? pendingWidth_ : mode->width;
-  const int height = pendingHeight_ > 0 ? pendingHeight_ : mode->height;
+  resolveFullscreenSize();
   fullscreen_ = true;
-  glfwSetWindowMonitor(window_, primaryMonitor(), 0, 0, width, height, mode->refreshRate);
+  applyDisplaySize(0, 0, pendingWidth_, pendingHeight_, GLFW_DONT_CARE);
  } else {
   fullscreen_ = false;
-  const int width = windowedWidth_ > 0 ? windowedWidth_ : pendingWidth_;
-  const int height = windowedHeight_ > 0 ? windowedHeight_ : pendingHeight_;
-  glfwSetWindowMonitor(window_, nullptr, windowedX_, windowedY_, width, height, 0);
+  applyDisplaySize(windowedX_, windowedY_, windowedWidth_ > 0 ? windowedWidth_ : pendingWidth_,
+                   windowedHeight_ > 0 ? windowedHeight_ : pendingHeight_, 0);
  }
- // Keep GLFW's cached interval at 0 so its DwmFlush path never arms; real
- // pacing is owned by GLCore::setSwapPacing.
- glfwSwapInterval(0);
- gl::GLCore::resetSwapPacingCache();
+ resetSwapPacing();
  notifyResize();
 }
 void Window::setDisplayMode(const DisplayMode& mode) {
@@ -247,14 +264,12 @@ void Window::setDisplayMode(const DisplayMode& mode) {
   return;
  }
  if(fullscreen_) {
-  const GLFWvidmode* videoMode = glfwGetVideoMode(primaryMonitor());
-  const int refreshRate = videoMode != nullptr ? videoMode->refreshRate : GLFW_DONT_CARE;
-  glfwSetWindowMonitor(window_, primaryMonitor(), 0, 0, pendingWidth_, pendingHeight_, refreshRate);
+  applyDisplaySize(0, 0, pendingWidth_, pendingHeight_, GLFW_DONT_CARE);
  } else {
   rememberWindowedPlacement();
   windowedWidth_ = pendingWidth_;
   windowedHeight_ = pendingHeight_;
-  glfwSetWindowSize(window_, pendingWidth_, pendingHeight_);
+  applyDisplaySize(windowedX_, windowedY_, pendingWidth_, pendingHeight_, 0);
  }
  notifyResize();
 }
@@ -323,10 +338,9 @@ void Window::create() {
  glfwWindowHint(GLFW_OPENGL_FORWARD_COMPAT, GLFW_TRUE);
  GLFWmonitor* monitor = fullscreen_ ? primaryMonitor() : nullptr;
  if(fullscreen_) {
-  const GLFWvidmode* mode = glfwGetVideoMode(primaryMonitor());
+  resolveFullscreenSize();
+  const GLFWvidmode* mode = primaryVideoMode();
   if(mode != nullptr) {
-   pendingWidth_ = pendingWidth_ > 0 ? pendingWidth_ : mode->width;
-   pendingHeight_ = pendingHeight_ > 0 ? pendingHeight_ : mode->height;
    glfwWindowHint(GLFW_REFRESH_RATE, mode->refreshRate);
   }
  }
@@ -336,8 +350,7 @@ void Window::create() {
  }
  applyCallbacks(window_);
  glfwMakeContextCurrent(window_);
- glfwSwapInterval(0);
- gl::GLCore::resetSwapPacingCache();
+ resetSwapPacing();
  glfwShowWindow(window_);
  notifyResize();
 }
@@ -360,9 +373,6 @@ void Window::destroy() {
 }
 void Window::pumpMessages() {
  glfwPollEvents();
- if(window_ != nullptr && glfwWindowShouldClose(window_) == GLFW_TRUE) {
-  notifyCloseRequested();
- }
 }
 void Window::present() {
  if(window_ == nullptr) {

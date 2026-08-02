@@ -1,6 +1,8 @@
 #pragma once
 
 #include <memory>
+#include "net/minecraft/client/gl/GlFramebuffer.hpp"
+#include "net/minecraft/client/gl/GlResource.hpp"
 
 namespace net::minecraft::client::gl {
 class ShaderProgram;
@@ -32,23 +34,23 @@ class ColorSpaceConverter {
  void rebuild(int width, int height, ColorSpace space);
  void process(unsigned int targetTexture);
 
- [[nodiscard]] unsigned int writeFramebuffer() const noexcept { return presentFbo_; }
- [[nodiscard]] unsigned int presentTexture() const noexcept { return presentTexture_; }
- [[nodiscard]] bool ready() const noexcept;
+  [[nodiscard]] unsigned int writeFramebuffer() const noexcept { return presentFbo_.id(); }
+  [[nodiscard]] unsigned int presentTexture() const noexcept { return presentTexture_.handle(); }
+  [[nodiscard]] bool ready() const noexcept;
 
- bool blitPresentToScreen(int screenWidth, int screenHeight);
+  bool blitPresentToScreen(int screenWidth, int screenHeight);
 
- private:
- bool ensureTargets(int width, int height);
- bool ensureProgram(ColorSpace space);
+  private:
+  bool ensureTargets(int width, int height);
+  bool ensureProgram(ColorSpace space);
 
- int width_ = 0;
- int height_ = 0;
- ColorSpace space_ = ColorSpace::Srgb;
- unsigned int presentTexture_ = 0;
- unsigned int presentFbo_ = 0;
- unsigned int swapTexture_ = 0;
- unsigned int swapFbo_ = 0;
+  int width_ = 0;
+  int height_ = 0;
+  ColorSpace space_ = ColorSpace::Srgb;
+  gl::GlTexture presentTexture_;
+  gl::GlFramebuffer presentFbo_;
+  gl::GlTexture swapTexture_;
+  gl::GlFramebuffer swapFbo_;
  std::unique_ptr<gl::ShaderProgram> program_;
 };
 

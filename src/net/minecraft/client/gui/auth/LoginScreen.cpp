@@ -6,6 +6,7 @@
 #include "net/minecraft/client/gui/widget/ActionButtonWidget.hpp"
 #include "net/minecraft/client/platform/Browser.hpp"
 #include "net/minecraft/client/util/MinecraftDirectories.hpp"
+#include "net/minecraft/util/concurrent/ThreadCoordinator.hpp"
 namespace net::minecraft::client::gui::auth {
 LoginScreen::LoginScreen(gui::screen::ScreenFactory returnFactory) : returnFactory_(std::move(returnFactory)) {
  if(std::optional<msauth::MicrosoftAccount> account = msauth::pendingProfileCreationAccount()) {
@@ -91,19 +92,19 @@ void LoginScreen::beginSignIn() {
   signInButton_->active = false;
  }
  workerRunning_ = true;
- workerFinished_ = false;
- cancelRequested_ = false;
  authStage_ = msauth::AuthStage::RequestingDeviceCode;
  const std::string clientId = clientId_;
- workerThread_ = std::thread([this, clientId]() {
-  const auto progress = [this](msauth::AuthStage stage) { authStage_.store(stage, std::memory_order_release); };
-  msauth::DeviceCodeRequestResult codeRequest = msauth::requestDeviceCode(clientId, &cancelRequested_, progress);
-  {
-   std::lock_guard<std::mutex> lock(workerMutex_);
-   pendingCodeRequest_ = std::move(codeRequest);
-  }
-  workerFinished_ = true;
- });
+ work_ = std::make_shared<WorkState>();
+ work_->stage = msauth::AuthStage::RequestingDeviceCode;
+ const auto work = work_;
+ net::minecraft::util::concurrent::ThreadCoordinator::instance()
+     .pool(net::minecraft::util::concurrent::Domain::Io)
+     .submit([clientId, work]() {
+      const auto progress = [work](msauth::AuthStage stage) { work->stage.store(stage, std::memory_order_release); };
+      WorkResult result;
+      result.codeRequest = msauth::requestDeviceCode(clientId, &work->canceled, progress);
+      work->completed.tryPush(std::move(result));
+     });
 }
 void LoginScreen::beginCreateProfile() {
  if(minecraft() == nullptr || workerRunning_.load() || profileNameField_ == nullptr ||
@@ -115,23 +116,22 @@ void LoginScreen::beginCreateProfile() {
   createProfileButton_->active = false;
  }
  workerRunning_ = true;
- workerFinished_ = false;
- cancelRequested_ = false;
  authStage_ = msauth::AuthStage::CreatingMinecraftProfile;
  statusLine1_ = "Creating Minecraft profile...";
  statusLine2_.clear();
  const msauth::MicrosoftAccount account = pendingProfileAccount_;
  const std::string profileName = profileNameField_->getText();
- workerThread_ = std::thread([this, account, profileName]() {
-  const auto progress = [this](msauth::AuthStage stage) { authStage_.store(stage, std::memory_order_release); };
-  msauth::AuthResult authResult =
-      msauth::createMinecraftProfile(account, profileName, &cancelRequested_, progress);
-  {
-   std::lock_guard<std::mutex> lock(workerMutex_);
-   pendingAuthResult_ = std::move(authResult);
-  }
-  workerFinished_ = true;
- });
+ work_ = std::make_shared<WorkState>();
+ work_->stage = msauth::AuthStage::CreatingMinecraftProfile;
+ const auto work = work_;
+ net::minecraft::util::concurrent::ThreadCoordinator::instance()
+     .pool(net::minecraft::util::concurrent::Domain::Io)
+     .submit([account, profileName, work]() {
+      const auto progress = [work](msauth::AuthStage stage) { work->stage.store(stage, std::memory_order_release); };
+      WorkResult result;
+      result.authResult = msauth::createMinecraftProfile(account, profileName, &work->canceled, progress);
+      work->completed.tryPush(std::move(result));
+     });
 }
 void LoginScreen::openBrowser() {
  if(loginUrl_.empty()) {
@@ -142,18 +142,12 @@ void LoginScreen::openBrowser() {
  }
 }
 void LoginScreen::cancelSignIn() {
- cancelRequested_ = true;
- if(workerThread_.joinable()) {
-  workerThread_.join();
+ if(work_ != nullptr) {
+  work_->canceled = true;
  }
+ work_.reset();
  workerRunning_ = false;
- workerFinished_ = false;
  authStage_ = msauth::AuthStage::Idle;
- {
-  std::lock_guard<std::mutex> lock(workerMutex_);
-  pendingCodeRequest_.reset();
-  pendingAuthResult_.reset();
- }
  activeChallenge_ = {};
  msauth::secret::wipeString(pendingProfileAccount_.accessToken);
  msauth::secret::wipeString(pendingProfileAccount_.refreshToken);
@@ -204,9 +198,11 @@ void LoginScreen::updateCreateProfileButtonState() {
  }
 }
 void LoginScreen::mergePendingWork() {
- if(!workerFinished_.exchange(false)) {
+ WorkResult result;
+ const auto work = work_;
+ if(work == nullptr || !work->completed.tryPop(result)) {
   if(phase_ == Phase::WaitingForUser &&
-     authStage_.load(std::memory_order_acquire) == msauth::AuthStage::WaitingForUser && expiresInSeconds_ > 0) {
+     currentAuthStage() == msauth::AuthStage::WaitingForUser && expiresInSeconds_ > 0) {
    const auto elapsed =
        std::chrono::duration_cast<std::chrono::seconds>(std::chrono::steady_clock::now() - waitingStarted_);
    elapsedSeconds_ = static_cast<int>(elapsed.count());
@@ -221,16 +217,9 @@ void LoginScreen::mergePendingWork() {
   }
   return;
  }
- if(workerThread_.joinable()) {
-  workerThread_.join();
- }
+ work_.reset();
  if(phase_ == Phase::RequestingCode) {
-  std::optional<msauth::DeviceCodeRequestResult> codeRequest;
-  {
-   std::lock_guard<std::mutex> lock(workerMutex_);
-   codeRequest = std::move(pendingCodeRequest_);
-   pendingCodeRequest_.reset();
-  }
+  std::optional<msauth::DeviceCodeRequestResult> codeRequest = std::move(result.codeRequest);
   if(!codeRequest.has_value() || !codeRequest->ok) {
    workerRunning_ = false;
    showSignInError(codeRequest.has_value() ? codeRequest->error : "Could not request a sign-in code.");
@@ -252,32 +241,26 @@ void LoginScreen::mergePendingWork() {
   init();
   (void)platform::openUrlInBrowser(loginUrl_);
   workerRunning_ = true;
-  workerFinished_ = false;
-  cancelRequested_ = false;
   authStage_ = msauth::AuthStage::WaitingForUser;
   const std::string clientId = clientId_;
   const msauth::DeviceCodeChallenge challenge = activeChallenge_;
-  workerThread_ = std::thread([this, clientId, challenge]() {
-   const auto progress = [this](msauth::AuthStage stage) {
-    authStage_.store(stage, std::memory_order_release);
-   };
-   msauth::AuthResult authResult =
-       msauth::loginWithDeviceCode(clientId, challenge, &cancelRequested_, progress);
-   {
-    std::lock_guard<std::mutex> lock(workerMutex_);
-    pendingAuthResult_ = std::move(authResult);
-   }
-   workerFinished_ = true;
-  });
+  work_ = std::make_shared<WorkState>();
+  work_->stage = msauth::AuthStage::WaitingForUser;
+  const auto nextWork = work_;
+  net::minecraft::util::concurrent::ThreadCoordinator::instance()
+      .pool(net::minecraft::util::concurrent::Domain::Io)
+      .submit([clientId, challenge, nextWork]() {
+       const auto progress = [nextWork](msauth::AuthStage stage) {
+        nextWork->stage.store(stage, std::memory_order_release);
+       };
+       WorkResult nextResult;
+       nextResult.authResult = msauth::loginWithDeviceCode(clientId, challenge, &nextWork->canceled, progress);
+       nextWork->completed.tryPush(std::move(nextResult));
+      });
   return;
  }
  if(phase_ == Phase::WaitingForUser || phase_ == Phase::CreateProfile) {
-  std::optional<msauth::AuthResult> authResult;
-  {
-   std::lock_guard<std::mutex> lock(workerMutex_);
-   authResult = std::move(pendingAuthResult_);
-   pendingAuthResult_.reset();
-  }
+  std::optional<msauth::AuthResult> authResult = std::move(result.authResult);
   workerRunning_ = false;
   if(!authResult.has_value()) {
    showSignInError(phase_ == Phase::CreateProfile ? "Could not create Minecraft profile."
@@ -307,7 +290,7 @@ void LoginScreen::mergePendingWork() {
  }
 }
 void LoginScreen::updateAuthStatus() {
- const msauth::AuthStage stage = authStage_.load(std::memory_order_acquire);
+ const msauth::AuthStage stage = currentAuthStage();
  if(stage == msauth::AuthStage::Idle || stage == msauth::AuthStage::WaitingForUser ||
     stage == msauth::AuthStage::Complete) {
   return;
@@ -319,6 +302,12 @@ void LoginScreen::updateAuthStatus() {
    openBrowserButton_->active = false;
   }
  }
+}
+msauth::AuthStage LoginScreen::currentAuthStage() const {
+ if(work_ != nullptr) {
+  return work_->stage.load(std::memory_order_acquire);
+ }
+ return authStage_.load(std::memory_order_acquire);
 }
 void LoginScreen::tick() {
  if(phase_ == Phase::CreateProfile) {

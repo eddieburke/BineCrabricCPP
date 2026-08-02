@@ -1,9 +1,11 @@
 #pragma once
 #include <atomic>
 #include <filesystem>
+#include <memory>
 #include <string>
-#include <thread>
+#include <utility>
 #include "net/minecraft/util/http/HttpClient.hpp"
+#include "net/minecraft/util/concurrent/Channel.hpp"
 namespace net::minecraft::client {
 class Minecraft;
 }
@@ -22,15 +24,28 @@ class ResourceDownloadThread {
  void start();
  void cancel();
  void reload();
+ void tick();
  std::filesystem::path resourcesDirectory;
 
  private:
- void run();
- void loadFromDirectory(const std::filesystem::path& directory, const std::string& type);
- void loadFromUrl(const std::string& path, long long size, int type);
+ struct PendingResource {
+  std::string path;
+  std::filesystem::path file;
+ };
+ struct State {
+  explicit State(std::filesystem::path root) : resourcesDirectory(std::move(root)) {
+  }
+  std::filesystem::path resourcesDirectory;
+  std::atomic_bool cancelled{false};
+  std::atomic_bool started{false};
+  net::minecraft::util::concurrent::Channel<PendingResource> completed{16};
+ };
+ static void run(const std::shared_ptr<State>& state);
+ static void loadFromDirectory(const std::shared_ptr<State>& state,
+                               const std::filesystem::path& directory,
+                               const std::string& type);
+ static void loadFromUrl(const std::shared_ptr<State>& state, const std::string& path, long long size, int type);
  Minecraft* minecraft_ = nullptr;
- std::atomic_bool cancelled_{false};
- std::atomic_bool started_{false};
- std::thread worker_;
+ std::shared_ptr<State> state_;
 };
 } // namespace net::minecraft::client::resource

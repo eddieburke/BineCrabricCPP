@@ -14,7 +14,6 @@ class TextureRegistry {
   int height = 0;
  };
  static int getOrRegisterTexture(const std::string& path);
- static const std::string& getTexturePath(int textureId);
  static bool isCustomTexture(int textureId) noexcept;
  static const Entry* getEntry(int textureId);
  static int resolveGlId(int textureId, net::minecraft::client::texture::TextureManager& textureManager);

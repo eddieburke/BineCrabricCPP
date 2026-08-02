@@ -35,16 +35,6 @@ bool TextureRegistry::isCustomTexture(int textureId) noexcept {
  const int index = textureId - kCustomTextureBase;
  return index >= 0 && index < static_cast<int>(detail::registryEntries().size());
 }
-const std::string& TextureRegistry::getTexturePath(int textureId) {
- static const std::string kEmpty;
- std::lock_guard<std::mutex> lock(detail::registryMutex());
- const int index = textureId - kCustomTextureBase;
- auto& entries = detail::registryEntries();
- if(textureId < kCustomTextureBase || index < 0 || index >= static_cast<int>(entries.size())) {
-  return kEmpty;
- }
- return entries[static_cast<std::size_t>(index)].path;
-}
 const TextureRegistry::Entry* TextureRegistry::getEntry(int textureId) {
  std::lock_guard<std::mutex> lock(detail::registryMutex());
  const int index = textureId - kCustomTextureBase;

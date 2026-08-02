@@ -51,11 +51,12 @@ int luaRegisterShapedRecipe(lua_State* state) {
    api.settop(state, -2);
   }
  }
- api.settop(state, tableIndex);
- std::string error;
- if(!lua::registerShapedRecipe(spec, error)) {
-  return args.fail(error);
- }
+  api.settop(state, tableIndex);
+  spec.ownerModId = mod != nullptr ? mod->modId : std::string();
+  std::string error;
+  if(!lua::registerShapedRecipe(spec, error)) {
+   return args.fail(error);
+  }
  api.pushboolean(state, 1);
  return 1;
 }

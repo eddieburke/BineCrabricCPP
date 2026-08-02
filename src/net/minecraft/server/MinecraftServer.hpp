@@ -1,4 +1,5 @@
 #pragma once
+#include <atomic>
 #include <array>
 #include <condition_variable>
 #include <deque>
@@ -58,7 +59,7 @@ class MinecraftServer : public command::CommandOutput {
  bool flightEnabled = false;
  bool allowNether = true;
  bool running = true;
- bool stopped = false;
+ std::atomic_bool stopped{false};
  int ticks = 0;
  std::string progressMessage;
  int progress = 0;

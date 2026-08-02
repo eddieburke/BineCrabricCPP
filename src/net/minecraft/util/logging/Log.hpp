@@ -4,5 +4,6 @@ namespace net::minecraft::util::logging {
 struct Log {
  static Logger& LOGGER;
  static void init(const std::string& logFile);
+ static void shutdown();
 };
 } // namespace net::minecraft::util::logging

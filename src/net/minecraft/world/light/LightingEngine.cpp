@@ -1,9 +1,7 @@
 #include "net/minecraft/world/light/LightingEngine.hpp"
 #include <algorithm>
-#include <memory>
-#include <utility>
 #include "net/minecraft/block/Block.hpp"
-#include "net/minecraft/util/concurrent/WorkerPool.hpp"
+#include "net/minecraft/util/concurrent/ThreadCoordinator.hpp"
 #include "net/minecraft/world/chunk/Chunk.hpp"
 #include "net/minecraft/world/light/UnifiedLightRegistry.hpp"
 namespace net::minecraft {
@@ -43,26 +41,23 @@ void LightingEngine::Box::cover(int x0, int y0, int z0, int x1, int y1, int z1) 
  maxY = std::max(maxY, y1);
  maxZ = std::max(maxZ, z1);
 }
-LightingEngine::LightingEngine(world::light::UnifiedLightRegistry& registry) : lightRegistry_(registry) {
- // Share the hardware budget with mesh + loader pools (competingPools=3).
- const unsigned workers =
-     std::max(1U, util::concurrent::WorkerPool::recommendedThreadCount(3, 2, 3));
- workerStates_.reserve(workers);
- threads_.reserve(workers);
- for(unsigned i = 0; i < workers; ++i) {
-  workerStates_.push_back(std::make_unique<WorkerState>());
-  WorkerState* state = workerStates_.back().get();
-  threads_.emplace_back([this, state](const std::stop_token& stop) { threadLoop(stop, *state); });
- }
+LightingEngine::LightingEngine(world::light::UnifiedLightRegistry& registry)
+    : lightRegistry_(registry),
+      computePool_(util::concurrent::ThreadCoordinator::instance().pool(util::concurrent::Domain::Compute)),
+      workerLimit_(util::concurrent::ThreadCoordinator::instance().computeShare(3)) {
 }
 void LightingEngine::push(LightType type, int minX, int minY, int minZ, int maxX, int maxY, int maxZ, bool merge) {
  {
   const std::lock_guard lock(queueMutex_);
+  if(stopping_) {
+   return;
+  }
   if(merge) {
    const std::size_t n = std::min<std::size_t>(queue_.size(), 5);
    for(std::size_t i = 0; i < n; ++i) {
     Box& existing = queue_[queue_.size() - i - 1];
     if(existing.type == type && existing.expand(minX, minY, minZ, maxX, maxY, maxZ)) {
+     scheduleWorkersLocked();
      return;
     }
    }
@@ -73,6 +68,7 @@ void LightingEngine::push(LightType type, int minX, int minY, int minZ, int maxX
     if(it->type == type) {
      it->cover(minX, minY, minZ, maxX, maxY, maxZ);
      pendingCount_.store(queue_.size() + activeBoxes_.size(), std::memory_order_relaxed);
+     scheduleWorkersLocked();
      return;
     }
    }
@@ -86,8 +82,8 @@ void LightingEngine::push(LightType type, int minX, int minY, int minZ, int maxX
    queue_.push_back(Box{type, minX, minY, minZ, maxX, maxY, maxZ});
   }
   pendingCount_.store(queue_.size() + activeBoxes_.size(), std::memory_order_relaxed);
+  scheduleWorkersLocked();
  }
- workCv_.notify_all();
 }
 void LightingEngine::registerChunk(Chunk* chunk) {
  if(chunk == nullptr || chunk->isEmpty()) {
@@ -112,43 +108,43 @@ void LightingEngine::unregisterChunk(Chunk* chunk) {
 }
 std::vector<LightingEngine::DirtyRegion> LightingEngine::drainDirtyRegions(std::size_t maxRegions) {
  const std::lock_guard lock(outboxMutex_);
- if(maxRegions == 0 || outbox_.empty()) {
-  return {};
+ std::vector<DirtyRegion> regions;
+ regions.reserve(std::min(maxRegions, outbox_.size()));
+ DirtyRegion region{};
+ while(regions.size() < maxRegions && outbox_.tryPop(region)) {
+  regions.push_back(region);
  }
- if(maxRegions >= outbox_.size()) {
-  return std::exchange(outbox_, {});
- }
- const std::size_t count = std::min(maxRegions, outbox_.size());
- auto first = outbox_.end() - static_cast<std::ptrdiff_t>(count);
- std::vector<DirtyRegion> regions(first, outbox_.end());
- outbox_.erase(first, outbox_.end());
  return regions;
 }
 bool LightingEngine::hasDirtyRegions() const {
  const std::lock_guard lock(outboxMutex_);
- return !outbox_.empty();
+ return outbox_.size() != 0;
 }
 void LightingEngine::stop() {
- {
-  // Request stops under the queue mutex so a worker cannot check the stop
-  // flag, lose the race with notify_all, and sleep on the CV forever.
-  const std::lock_guard lock(queueMutex_);
-  for(std::jthread& thread : threads_) {
-   if(thread.joinable()) {
-    thread.request_stop();
-   }
-  }
+ std::unique_lock lock(queueMutex_);
+ if(stopping_ && scheduledWorkers_ == 0) {
+  return;
  }
- workCv_.notify_all();
- threads_.clear();
- const std::lock_guard lock(queueMutex_);
+ stopping_ = true;
+ outbox_.request_stop();
+ idleCv_.wait(lock, [this] { return scheduledWorkers_ == 0; });
  queue_.clear();
  activeBoxes_.clear();
  pendingCount_.store(0, std::memory_order_relaxed);
 }
+void LightingEngine::scheduleWorkersLocked() {
+ const std::size_t desired = std::min<std::size_t>(workerLimit_, queue_.size() + activeBoxes_.size());
+ while(!stopping_ && scheduledWorkers_ < desired) {
+  ++scheduledWorkers_;
+  try {
+   computePool_.submit([this] { runScheduledWork(); }, static_cast<int>(util::concurrent::TaskPriority::High));
+  } catch(...) {
+   --scheduledWorkers_;
+   throw;
+  }
+ }
+}
 bool LightingEngine::tryClaimBox(Box& out) {
- // Claim the first queued box that does not conflict with any active box so
- // workers can propagate light in disjoint regions concurrently.
  for(auto it = queue_.begin(); it != queue_.end(); ++it) {
   bool conflicts = false;
   for(const Box& active : activeBoxes_) {
@@ -168,8 +164,7 @@ bool LightingEngine::tryClaimBox(Box& out) {
  }
  return false;
 }
-void LightingEngine::releaseClaimedBox(const Box& box) {
- const std::lock_guard lock(queueMutex_);
+void LightingEngine::releaseClaimedBoxLocked(const Box& box) {
  activeBoxes_.erase(std::remove_if(activeBoxes_.begin(),
                                    activeBoxes_.end(),
                                    [&](const Box& active) {
@@ -180,28 +175,31 @@ void LightingEngine::releaseClaimedBox(const Box& box) {
                                    }),
                     activeBoxes_.end());
  pendingCount_.store(queue_.size() + activeBoxes_.size(), std::memory_order_relaxed);
- if(!queue_.empty()) {
-  workCv_.notify_all();
- }
 }
-void LightingEngine::threadLoop(const std::stop_token& stop, WorkerState& state) {
- for(;;) {
-  Box box{LightType::Block, 0, 0, 0, 0, 0, 0};
-  {
-   std::unique_lock lock(queueMutex_);
-   for(;;) {
-    if(stop.stop_requested()) {
-     return;
-    }
-    if(tryClaimBox(box)) {
-     break;
-    }
-    workCv_.wait(lock);
+void LightingEngine::runScheduledWork() {
+ Box box{LightType::Block, 0, 0, 0, 0, 0, 0};
+ {
+  const std::lock_guard lock(queueMutex_);
+  if(stopping_ || !tryClaimBox(box)) {
+   --scheduledWorkers_;
+   if(scheduledWorkers_ == 0) {
+    idleCv_.notify_all();
    }
+   return;
   }
+ }
+ WorkerState state;
+ try {
   runUpdate(box, state);
-  releasePins(state);
-  releaseClaimedBox(box);
+ } catch(...) {
+ }
+ releasePins(state);
+ const std::lock_guard lock(queueMutex_);
+ releaseClaimedBoxLocked(box);
+ --scheduledWorkers_;
+ scheduleWorkersLocked();
+ if(scheduledWorkers_ == 0) {
+  idleCv_.notify_all();
  }
 }
 Chunk* LightingEngine::chunkAt(int chunkX, int chunkZ, WorkerState& state) {
@@ -419,23 +417,23 @@ void LightingEngine::runUpdate(const Box& update, WorkerState& state) {
    queuePropagationBox(lightType, s.minX, s.minY, s.minZ, s.maxX, s.maxY, s.maxZ);
   }
  }
+ publishDirtyRegion(DirtyRegion{update.minX, minY, update.minZ, update.maxX, maxY, update.maxZ});
+}
+void LightingEngine::publishDirtyRegion(DirtyRegion region) {
  const std::lock_guard lock(outboxMutex_);
- constexpr std::size_t maxOutbox = 4096;
- if(!outbox_.empty()) {
-  DirtyRegion& last = outbox_.back();
-  const bool overlapsOrTouches = last.maxX + 1 >= update.minX && update.maxX + 1 >= last.minX &&
-                                  last.maxY + 1 >= minY && maxY + 1 >= last.minY && last.maxZ + 1 >= update.minZ &&
-                                  update.maxZ + 1 >= last.minZ;
-  if(overlapsOrTouches || outbox_.size() >= maxOutbox) {
-   last.minX = std::min(last.minX, update.minX);
-   last.minY = std::min(last.minY, minY);
-   last.minZ = std::min(last.minZ, update.minZ);
-   last.maxX = std::max(last.maxX, update.maxX);
-   last.maxY = std::max(last.maxY, maxY);
-   last.maxZ = std::max(last.maxZ, update.maxZ);
-   return;
-  }
+ if(outbox_.tryPush(region)) {
+  return;
  }
- outbox_.push_back(DirtyRegion{update.minX, minY, update.minZ, update.maxX, maxY, update.maxZ});
+ DirtyRegion merged{};
+ if(!outbox_.tryPop(merged)) {
+  return;
+ }
+ merged.minX = std::min(merged.minX, region.minX);
+ merged.minY = std::min(merged.minY, region.minY);
+ merged.minZ = std::min(merged.minZ, region.minZ);
+ merged.maxX = std::max(merged.maxX, region.maxX);
+ merged.maxY = std::max(merged.maxY, region.maxY);
+ merged.maxZ = std::max(merged.maxZ, region.maxZ);
+ outbox_.tryPush(merged);
 }
 } // namespace net::minecraft

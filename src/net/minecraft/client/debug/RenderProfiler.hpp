@@ -1,5 +1,6 @@
 #pragma once
 #include <array>
+#include <chrono>
 #include <cstddef>
 #include <cstdint>
 #include <string>
@@ -48,6 +49,7 @@ private:
 
  private:
  static constexpr int kRingDepth = 4;
+ static constexpr std::uint32_t kGpuQueryInterval = 3;
  [[nodiscard]] static const char* stageName(RenderStage stage);
  void ensureQueries();
  void collectQueries();
@@ -55,9 +57,11 @@ private:
  bool inFrame_ = false;
  bool gpuReady_ = false;
  bool gpuAttempted_ = false;
+ bool gpuActiveThisFrame_ = false;
  int activeStage_ = -1;
  bool activeQueryBegun_ = false;
  int ringSlot_ = 0;
+ std::uint32_t frameCounter_ = 0;
  std::int64_t stageStartNs_ = 0;
  std::int64_t frameStartNs_ = 0;
  std::array<std::int64_t, kRenderStageCount> cpuNs_{};
@@ -68,5 +72,7 @@ private:
  double gpuMeasuredAvgNs_ = 0.0;
  std::array<std::array<unsigned, kRenderStageCount>, kRingDepth> queries_{};
  std::array<std::array<bool, kRenderStageCount>, kRingDepth> queryPending_{};
+ mutable std::chrono::steady_clock::time_point lastLinesAt_{};
+ mutable std::vector<std::string> linesCache_;
 };
 } // namespace net::minecraft::client::debug

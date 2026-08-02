@@ -286,7 +286,7 @@ void Screen::renderBackgroundTexture(int vOffset) {
  render::Tessellator& tessellator = render::INSTANCE;
  const int textureId = minecraft_->textureManager.getTextureId("/gui/background.png");
  const render::RenderPassScope passScope(render::RenderType::guiTextured());
- render::core::bindTexture(textureId);
+ minecraft_->textureManager.bindTexture(textureId);
  core::setConstColor(1.0f, 1.0f, 1.0f, 1.0f);
  draw::tiledPanel(tessellator, 0, 0, width_, height_, static_cast<float>(vOffset), 0x404040);
 }

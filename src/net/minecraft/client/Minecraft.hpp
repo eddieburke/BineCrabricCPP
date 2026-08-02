@@ -211,7 +211,9 @@ class Minecraft {
  void handlePickBlock();
  void notifyWorldChanged(World* world);
  void startSessionCheck();
- void runRenderPhase(std::int64_t tickDuration, int& frames, std::int64_t& fpsWindowStart);
+ void runRenderPhase();
+ void runPacePhase();
+ void runDiagnosticsPhase(std::int64_t tickDuration, int& frames, std::int64_t& fpsWindowStart);
  void runWorldSimulation();
  void bootstrapAfterDisplay();
  friend class core::WorldSession;

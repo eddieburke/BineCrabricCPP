@@ -246,15 +246,20 @@ void registerBlockClass(const BlockRegistrationSpec& spec) {
  if(!block->isOpaque()) {
   Block::BLOCKS_LIGHT_OPACITY[static_cast<std::size_t>(spec.blockId)] = 0;
  }
- if(spec.bakedModel != 0) {
+  if(spec.bakedModel != 0) {
 #ifdef MINECRAFT_NATIVE_EXPORTS
-  registerDraw(spec.blockId, model::drawLuaBlockWorld, model::drawLuaBlockInventory);
+   registerDraw(spec.blockId, model::drawLuaBlockWorld, model::drawLuaBlockInventory);
 #endif
- }
- if(!spec.itemTexturePath.empty()) {
-  const int itemTextureId = registry::TextureRegistry::getOrRegisterTexture(spec.itemTexturePath);
-  static_cast<LuaModBlock*>(block)->setItemOverrideTexture(itemTextureId);
- }
+  }
+  if(!spec.itemTexturePath.empty()) {
+   const int itemTextureId = registry::TextureRegistry::getOrRegisterTexture(spec.itemTexturePath);
+   static_cast<LuaModBlock*>(block)->setItemOverrideTexture(itemTextureId);
+  }
+  // The generic block-item pass only runs during the startup Init phase; a block
+  // registered at runtime (live enable / Reload List) must get its item here.
+  // registerBlockItem() is guarded, so the startup pass no-ops for blocks that
+  // already have one.
+  block->registerBlockItem();
 }
 struct BlockTraits {
  using Spec = BlockRegistrationSpec;
@@ -271,25 +276,27 @@ bool registerBlockSpec(const BlockRegistrationSpec& spec, std::string& error) {
   error = "register_block id must be between 1 and " + std::to_string(Block::BLOCK_COUNT - 1);
   return false;
  }
- if(spec.texturePath.empty()) {
-  error = "register_block requires texture (a mod resource path)";
-  return false;
- }
- if(mod::ModLifecycle::currentPhase() == mod::LifecyclePhase::PostInit ||
-    mod::ModLifecycle::currentPhase() == mod::LifecyclePhase::Ready) {
-  error = "register_block must run while Lua mod scripts load at startup";
-  return false;
- }
- if(BlockRegistry::instance().contains(spec.blockId)) {
-  error = "register_block duplicate id: " + std::to_string(spec.blockId);
-  return false;
- }
- if(!registry::Registry::tryReserveBlockId(spec.blockId)) {
-  error = "register_block id is already reserved: " + std::to_string(spec.blockId);
-  return false;
- }
- BlockRegistry::instance().add(spec.blockId, spec);
- return true;
+  if(spec.texturePath.empty()) {
+   error = "register_block requires texture (a mod resource path)";
+   return false;
+  }
+  if(BlockRegistry::instance().contains(spec.blockId)) {
+   // Re-registration by the same mod (live re-enable / Reload List) is a no-op:
+   // content registrations persist for the session and the world is untouched by
+   // design. A different owner claiming the id is a genuine conflict.
+   if(const BlockRegistrationSpec* existing = BlockRegistry::instance().specForId(spec.blockId);
+      existing != nullptr && !spec.ownerModId.empty() && existing->ownerModId == spec.ownerModId) {
+    return true;
+   }
+   error = "register_block duplicate id: " + std::to_string(spec.blockId);
+   return false;
+  }
+  if(!registry::Registry::tryReserveBlockId(spec.blockId)) {
+   error = "register_block id is already reserved: " + std::to_string(spec.blockId);
+   return false;
+  }
+  BlockRegistry::instance().add(spec.blockId, spec);
+  return true;
 }
 int modBlockIdFromName(const char* name) {
  return BlockRegistry::instance().idFromName(name);

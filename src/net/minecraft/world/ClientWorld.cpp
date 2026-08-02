@@ -105,6 +105,13 @@ void ClientWorld::remove(Entity* entity) {
   pendingEntities_.erase(entity);
  }
 }
+void ClientWorld::serverRemove(Entity* entity) {
+ World::serverRemove(entity);
+ if(entity != nullptr) {
+  forcedEntities_.erase(entity);
+  pendingEntities_.erase(entity);
+ }
+}
 void ClientWorld::notifyEntityAdded(Entity* entity) {
  World::notifyEntityAdded(entity);
  if(entity != nullptr) {

@@ -2,7 +2,6 @@
 #include <cstddef>
 #include <functional>
 #include "net/minecraft/util/math/Matrix4f.hpp"
-#include "net/minecraft/util/math/MatrixStack.hpp"
 namespace net::minecraft::client::gl {
 class ShaderProgram;
 }
@@ -37,40 +36,12 @@ enum class RenderStage : int {
  Debug,
  HandSolid,
  TerrainTranslucent,
- Tripwire,
- Particles,
- Clouds,
- RainSnow,
- WorldBorder,
- HandTranslucent
-};
-void bindMatrixStacks(math::MatrixStack* modelView, math::MatrixStack* projection);
-void unbindMatrixStacks();
-[[nodiscard]] math::MatrixStack& modelViewStack();
-[[nodiscard]] math::MatrixStack& projectionStack();
-[[nodiscard]] const math::Matrix4f& currentModelView();
-[[nodiscard]] const math::Matrix4f& currentProjection();
-class ScopedMatrixStacks {
- public:
- ScopedMatrixStacks(math::MatrixStack& modelView, math::MatrixStack& projection) {
-  bindMatrixStacks(&modelView, &projection);
- }
- ~ScopedMatrixStacks() {
-  unbindMatrixStacks();
- }
- ScopedMatrixStacks(const ScopedMatrixStacks&) = delete;
- ScopedMatrixStacks& operator=(const ScopedMatrixStacks&) = delete;
-};
-class ScopedModelView {
- public:
- ScopedModelView() {
-  modelViewStack().push();
- }
- ~ScopedModelView() {
-  modelViewStack().pop();
- }
- ScopedModelView(const ScopedModelView&) = delete;
- ScopedModelView& operator=(const ScopedModelView&) = delete;
+  Tripwire,
+  Particles,
+  Clouds,
+  RainSnow,
+  WorldBorder,
+  HandTranslucent
 };
 struct WorldLightUniforms {
  bool enabled = false;
@@ -97,8 +68,14 @@ struct FogUniforms {
  bool modExponential = false;
  float modStart = 0.2f;
  float modEnd = 0.8f;
- float modDensity = 0.1f;
+  float modDensity = 0.1f;
 };
+// Java Iris uploads the GL fog-mode constants (0 / GL_LINEAR / GL_EXP2); the
+// engine keeps internal 1/2/3 (0 off, 1 linear, 2 exp, 3 exp2) and maps at the
+// producers so packs decode 0/9729/2049 (Q3 P-FOGMODE).
+inline constexpr int fogModeToGlConstant(int mode) {
+ return mode == 1 ? 0x2601 : 0x0801;
+}
 struct SkyUniforms {
  float sunDirection[3] = {0.0f, 0.0f, 1.0f};
  float skyColor[3] = {0.5f, 0.6f, 0.8f};
@@ -154,8 +131,9 @@ void clear(int mask);
 void clearDepth(double depth);
 void activeTexture(int texture);
 void invalidateTextureBindCache();
+// Single-arg form binds on the current active unit; the target form does the same.
+// Callers that need the diffuse unit activate unit 0 first (bindWhiteDiffuse does).
 void bindTexture(int texture);
-void bindTexture(unsigned int texture);
 void bindTexture(int target, int texture);
 void unbindTexture(int texture);
 [[nodiscard]] int boundTexture();
@@ -215,7 +193,9 @@ class ColorMaskScope {
  private:
  bool savedR_, savedG_, savedB_, savedA_;
 };
-// Saves the active-unit 2D bind; optional ctor binds `texture` for the scope.
+// Saves the active-unit 2D bind; optional ctor binds `texture` on that same
+// unit, and the destructor restores the exact unit + bind (unit 0 is never
+// touched implicitly).
 class TextureBindScope {
  public:
  TextureBindScope();
@@ -272,6 +252,21 @@ void setDrawCameraStateFromCamera(const FrameRenderCamera& camera, float farPlan
 void clearDrawCameraState();
 [[nodiscard]] bool drawCameraStateValid() noexcept;
 [[nodiscard]] const float* drawCameraPosition() noexcept;
+// The camera state is the ONE matrix source: gbuffer camera matrices are uploaded
+// per frame by the shaderpack frame uniforms; these carry the per-draw base.
+// drawModelView()/drawProjection() mirror what the beta matrix stacks' tops held:
+// the FULL camera model view (rotation + translation, iris modelViewMatrix
+// semantics — see docs/agent-notes/matrix.md). Consumers compose a per-draw pose
+// onto drawModelView() and publish it with setDrawModelView().
+[[nodiscard]] const math::Matrix4f& drawModelView() noexcept;
+[[nodiscard]] const math::Matrix4f& drawProjection() noexcept;
+// Per-draw pose publish: replaces the matrix-stack push/ops/pop pattern. The
+// uploader derives modelViewMatrixInverse from the drawn RenderPass, so only the
+// base matrix (and the upload gate) change here. Restore with ScopedDrawCameraState.
+void setDrawModelView(const math::Matrix4f& modelView) noexcept;
+// Fills chunkOffset/sectionLocal from the pending terrain draw if one is set
+// (WorldRenderer sets it per section; used by the quad-mesh path).
+void applyPendingTerrain(RenderPass& pass);
 class ScopedDrawCameraState {
  public:
  ScopedDrawCameraState();
@@ -298,6 +293,7 @@ void setLightingEnabled(bool enabled);
 void setConstColor(float r, float g, float b, float a);
 [[nodiscard]] const float* constColor();
 // Shader alpha test reference. Disabled / ALWAYS semantics are expressed as ref 0.
+// Main-GL-thread write only (WI-5); mesh workers capture it into the job snapshot.
 void setAlphaTestRef(float ref);
 [[nodiscard]] float alphaTestRef();
 void setFog(const FogUniforms& fog);
@@ -312,7 +308,6 @@ const SkyUniforms& skyUniforms();
 bool ensureReady();
 ShaderProgram* program();
 void bindAndUploadUniforms(const RenderPass& pass);
-void bindAndUploadUniforms();
 void submit(const RenderPass& pass);
 // Pending section-local terrain params for Tessellator / bound-buffer draws.
 void setPendingTerrainDraw(float chunkOffsetX, float chunkOffsetY, float chunkOffsetZ);
@@ -329,69 +324,37 @@ void setRenderedItemId(int id);
 void setRenderStage(RenderStage stage);
 [[nodiscard]] RenderStage renderStage();
 void setEntityColor(float red, float green, float blue, float alpha);
+unsigned int entityOverlayTexture();
 int entityId();
 int blockEntityId();
 int renderedItemId();
 void setTextureFilteringMode(int mode);
-// Diffuse always lives on unit 0. Untextured passes bind a 1x1 white texel there
-// so gtexture * colour still works without an enableTexture flag.
-void bindDiffuse(int texture);
+// Untextured passes bind a 1x1 white texel on unit 0 so gtexture * colour still
+// works without an enableTexture flag.
 void bindWhiteDiffuse();
-class RenderedItemScope {
+// Generic save/set/restore for one tracked draw-state value. The four uniform
+// scopes below differ only in which core global they touch. Java Iris leaves
+// these values to be overwritten by the next draw
+// (CapturedRenderingState.currentRenderedEntity/currentRenderedBlockEntity/
+// currentRenderedItem and the pipeline phase in GbufferPrograms.setPhase); the
+// port restores them for engine-internal safety.
+template <typename T, T (*Getter)(), void (*Setter)(T)>
+class StateValueScope {
  public:
- explicit RenderedItemScope(int id) : previous_(renderedItemId()) { setRenderedItemId(id); }
- ~RenderedItemScope() { setRenderedItemId(previous_); }
- RenderedItemScope(const RenderedItemScope&) = delete;
- RenderedItemScope& operator=(const RenderedItemScope&) = delete;
+ explicit StateValueScope(T value) : previous_(Getter()) { Setter(value); }
+ ~StateValueScope() { Setter(previous_); }
+ StateValueScope(const StateValueScope&) = delete;
+ StateValueScope& operator=(const StateValueScope&) = delete;
 
  private:
- int previous_ = 0;
+ T previous_{};
 };
-class RenderStageScope {
- public:
- explicit RenderStageScope(RenderStage stage) : previous_(renderStage()) { setRenderStage(stage); }
- ~RenderStageScope() { setRenderStage(previous_); }
- RenderStageScope(const RenderStageScope&) = delete;
- RenderStageScope& operator=(const RenderStageScope&) = delete;
-
- private:
- RenderStage previous_;
-};
-class BlockEntityIdScope {
- public:
- explicit BlockEntityIdScope(int id) : previous_(blockEntityId()) { setBlockEntityId(id); }
- ~BlockEntityIdScope() { setBlockEntityId(previous_); }
- BlockEntityIdScope(const BlockEntityIdScope&) = delete;
- BlockEntityIdScope& operator=(const BlockEntityIdScope&) = delete;
-
- private:
- int previous_ = 0;
-};
-class EntityIdScope {
- public:
- explicit EntityIdScope(int id) : previous_(entityId()) { setEntityId(id); }
- ~EntityIdScope() { setEntityId(previous_); }
- EntityIdScope(const EntityIdScope&) = delete;
- EntityIdScope& operator=(const EntityIdScope&) = delete;
-
- private:
- int previous_ = 0;
-};
-void drawInterleaved(const void* data,
-                     std::size_t vertexCount,
-                     int stride,
-                     int glMode,
-                     bool hasTexture,
-                     bool hasColor,
-                     bool hasNormals);
-void drawFromBoundBuffer(unsigned buffer,
-                         std::size_t byteOffset,
-                         std::size_t vertexCount,
-                         int stride,
-                         int glMode,
-                         bool hasTexture,
-                         bool hasColor,
-                         bool hasNormals);
+// https://github.com/IrisShaders/Iris/blob/26.1/common/src/main/java/net/irisshaders/iris/uniforms/CapturedRenderingState.java
+using RenderedItemScope = StateValueScope<int, renderedItemId, setRenderedItemId>;
+// https://github.com/IrisShaders/Iris/blob/26.1/common/src/main/java/net/irisshaders/iris/uniforms/CommonUniforms.java
+using RenderStageScope = StateValueScope<RenderStage, renderStage, setRenderStage>;
+using BlockEntityIdScope = StateValueScope<int, blockEntityId, setBlockEntityId>;
+using EntityIdScope = StateValueScope<int, entityId, setEntityId>;
 void configureAttribs(unsigned buffer,
                       std::size_t baseOffset,
                       int stride,

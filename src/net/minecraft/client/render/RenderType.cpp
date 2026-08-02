@@ -1,6 +1,10 @@
 #include "net/minecraft/client/render/RenderType.hpp"
 #include <atomic>
+#include <cstdio>
+#include "net/minecraft/client/ClientLog.hpp"
+#include "net/minecraft/client/gl/GLCore.hpp"
 #include "net/minecraft/client/render/RenderCore.hpp"
+#include "net/minecraft/util/logging/Logging.hpp"
 namespace net::minecraft::client::render {
 namespace {
 WorldProgramResolver g_worldProgramResolver;
@@ -80,12 +84,12 @@ void RenderType::setupRenderState() const {
  } else {
   core::disableCull();
  }
- core::setAlphaTestRef(state_.alphaTest ? state_.alphaRef : 0.0f);
- core::setLightingEnabled(state_.lighting);
- if(!worldProgramKey_.empty() && g_worldPassDirectiveApplier) {
-  g_worldPassDirectiveApplier(worldProgramKey_);
- }
-}
+   core::setAlphaTestRef(state_.alphaTest ? state_.alphaRef : 0.0f);
+   core::setLightingEnabled(state_.lighting);
+    if(!worldProgramKey_.empty() && g_worldPassDirectiveApplier) {
+     g_worldPassDirectiveApplier();
+    }
+  }
 void RenderType::restoreRenderState(const core::PassGlBits& saved, gl::ShaderProgram* savedProgram) const {
  core::restorePassGlBits(saved);
  // Fog is owned by the frame stage (GameRenderer), not by pass enter/exit.
@@ -307,7 +311,7 @@ RenderType& RenderType::particlesTranslucent() {
 }
 RenderType& RenderType::clouds() {
  static RenderType instance =
-     RenderType("clouds", 0x0004, true, true, true, "", translucentState(), "gbuffers_clouds");
+     RenderType("clouds", 0x0004, true, true, false, "", translucentState(), "gbuffers_clouds");
  return instance;
 }
 RenderType& RenderType::weather() {

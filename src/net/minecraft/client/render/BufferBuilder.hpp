@@ -143,7 +143,19 @@ inline void BufferBuilder<TVertex>::draw() {
  constexpr bool hasTexture = requires(TVertex v) { v.u; };
  constexpr bool hasColor = requires(TVertex v) { v.color; };
  constexpr bool hasNormals = requires(TVertex v) { v.normal; };
- render::core::drawInterleaved(
-     buffer_.data(), vertexCount_, sizeof(TVertex), drawMode_, hasTexture, hasColor, hasNormals);
+ render::core::RenderPass pass;
+ pass.modelView = render::core::drawModelView();
+ pass.projection = render::core::drawProjection();
+ pass.fog = render::core::fog();
+ // Apply pending section-local chunkOffset from WorldRenderer.
+ render::core::applyPendingTerrain(pass);
+ pass.vertexData = buffer_.data();
+ pass.vertexCount = vertexCount_;
+ pass.stride = sizeof(TVertex);
+ pass.glMode = drawMode_;
+ pass.hasTexture = hasTexture;
+ pass.hasColor = hasColor;
+ pass.hasNormals = hasNormals;
+ render::core::submit(pass);
 }
 } // namespace net::minecraft::client::render

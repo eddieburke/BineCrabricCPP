@@ -1,5 +1,7 @@
 #pragma once
 #include <array>
+#include <bit>
+#include <cstdint>
 #include "net/minecraft/util/math/Types.hpp"
 namespace net::minecraft::client::render {
 class Frustum {
@@ -8,18 +10,20 @@ class Frustum {
  void compute();
  [[nodiscard]] bool intersects(float minX, float minY, float minZ, float maxX, float maxY, float maxZ) const {
   constexpr float kPlaneEpsilon = 1.0e-5f;
+  float dist[6];
   for(int i = 0; i < 6; ++i) {
    const float a = frustum[static_cast<std::size_t>(i)][0];
    const float b = frustum[static_cast<std::size_t>(i)][1];
    const float c = frustum[static_cast<std::size_t>(i)][2];
    const float d = frustum[static_cast<std::size_t>(i)][3];
-   const float px = (a >= 0.0f) ? maxX : minX;
-   const float py = (b >= 0.0f) ? maxY : minY;
-   const float pz = (c >= 0.0f) ? maxZ : minZ;
-   if(a * px + b * py + c * pz + d <= -kPlaneEpsilon) {
-    return false;
-   }
+   const float px = pickBound(a, maxX, minX);
+   const float py = pickBound(b, maxY, minY);
+   const float pz = pickBound(c, maxZ, minZ);
+   dist[i] = ((a * px + b * py) + c * pz) + d;
   }
+  for(int i = 0; i < 6; ++i)
+   if(dist[i] <= -kPlaneEpsilon)
+    return false;
   return true;
  }
  std::array<std::array<float, 4>, 6> frustum{};
@@ -28,6 +32,10 @@ class Frustum {
  std::array<float, 16> clipMatrix{};
 
  private:
+ static float pickBound(float sign, float hi, float lo) {
+  const std::int32_t sel = static_cast<std::int32_t>(std::bit_cast<std::uint32_t>(sign)) >> 31;
+  return std::bit_cast<float>((std::bit_cast<std::uint32_t>(hi) & ~static_cast<std::uint32_t>(sel)) | (std::bit_cast<std::uint32_t>(lo) & static_cast<std::uint32_t>(sel)));
+ }
  static void normalize(float plane[4]);
 };
 class FrustumCuller {

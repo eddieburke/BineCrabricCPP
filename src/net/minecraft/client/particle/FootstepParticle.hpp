@@ -29,7 +29,6 @@ class FootstepParticle : public Particle {
   const float brightness =
       world->getLightBrightness(MathHelper::floor(x), MathHelper::floor(y), MathHelper::floor(z));
   textureManager_->bindTexture(textureManager_->getTextureId("/misc/footprint.png"));
-  const render::core::BlendScope footCaps(true);
   tessellator.startQuads();
   tessellator.color(brightness, brightness, brightness, alpha);
   tessellator.vertex(px - size, py, pz + size, 0.0, 1.0);

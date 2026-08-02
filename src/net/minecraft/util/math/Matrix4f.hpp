@@ -1,6 +1,13 @@
 #pragma once
 #include <cmath>
 #include <cstring>
+#if defined(__SSE2__) || defined(_MSC_VER)
+#if defined(_MSC_VER)
+#include <intrin.h>
+#else
+#include <x86intrin.h>
+#endif
+#endif
 namespace net::minecraft::util::math {
 struct Matrix4f {
  float m[16]{};
@@ -22,6 +29,14 @@ struct Matrix4f {
  }
  Matrix4f& multiply(const Matrix4f& r) {
   float tmp[16]{};
+#if defined(__SSE2__) || defined(_MSC_VER)
+  for(int col = 0; col < 4; ++col) {
+   __m128 acc = _mm_setzero_ps();
+   for(int k = 0; k < 4; ++k)
+    acc = _mm_add_ps(acc, _mm_mul_ps(_mm_loadu_ps(&m[k * 4]), _mm_set1_ps(r.m[col * 4 + k])));
+   _mm_storeu_ps(&tmp[col * 4], acc);
+  }
+#else
   for(int col = 0; col < 4; ++col)
    for(int row = 0; row < 4; ++row) {
     float sum = 0.0f;
@@ -29,6 +44,7 @@ struct Matrix4f {
      sum += m[k * 4 + row] * r.m[col * 4 + k];
     tmp[col * 4 + row] = sum;
    }
+#endif
   std::memcpy(m, tmp, sizeof(m));
   return *this;
  }
@@ -38,18 +54,20 @@ struct Matrix4f {
   return result;
  }
  void translate(float x, float y, float z) {
-  Matrix4f t;
-  t.m[12] = x;
-  t.m[13] = y;
-  t.m[14] = z;
-  multiply(t);
+  m[12] += x * m[0] + y * m[4] + z * m[8];
+  m[13] += x * m[1] + y * m[5] + z * m[9];
+  m[14] += x * m[2] + y * m[6] + z * m[10];
  }
  void scale(float x, float y, float z) {
-  Matrix4f s;
-  s.m[0] = x;
-  s.m[5] = y;
-  s.m[10] = z;
-  multiply(s);
+  m[0] *= x;
+  m[1] *= x;
+  m[2] *= x;
+  m[4] *= y;
+  m[5] *= y;
+  m[6] *= y;
+  m[8] *= z;
+  m[9] *= z;
+  m[10] *= z;
  }
  void rotate(float deg, float ax, float ay, float az) {
   float rad = deg * 3.14159265f / 180.0f;

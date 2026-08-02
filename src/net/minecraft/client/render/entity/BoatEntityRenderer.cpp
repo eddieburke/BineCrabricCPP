@@ -1,4 +1,5 @@
 #include "net/minecraft/client/render/entity/EntityRenderers.hpp"
+#include "net/minecraft/client/render/RenderCore.hpp"
 #include "net/minecraft/client/render/entity/model/BoatEntityModel.hpp"
 #include "net/minecraft/entity/vehicle/BoatEntity.hpp"
 #include "net/minecraft/util/math/MathHelper.hpp"
@@ -40,6 +41,7 @@ void BoatEntityRenderer::render(
  matrices.scale(1.0f / scalePass, 1.0f / scalePass, 1.0f / scalePass);
  bindTexture("/item/boat.png");
  matrices.scale(-1.0f, -1.0f, 1.0f);
+ render::core::setDrawModelView(matrices.top());
  model_->render(0.0f, 0.0f, -0.1f, 0.0f, 0.0f, 0.0625f);
  matrices.pop();
  endDraw();

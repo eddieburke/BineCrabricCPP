@@ -1,26 +1,10 @@
 #pragma once
 #include <cstddef>
-#include <cstdint>
 #include <utility>
 #include <vector>
 #include "net/minecraft/client/render/BufferBuilder.hpp"
+#include "net/minecraft/client/render/VertexAbi.hpp"
 namespace net::minecraft::client::render {
-struct TessellatorVertex {
- float x = 0.0f;
- float y = 0.0f;
- float z = 0.0f;
- float u = 0.0f;
- float v = 0.0f;
- std::uint32_t color = 0xFFFFFFFFU; // bytes in memory: r,g,b,a
- std::int32_t normal = 0; // nx, ny, nz
- std::int32_t midBlock = 0;
- std::int32_t light = 0x00F000F0;
- std::int16_t entity[4]{};
- float midU = 0.0f;
- float midV = 0.0f;
- std::int16_t tangent[4]{};
-};
-static_assert(sizeof(TessellatorVertex) == 60);
 struct TessellatorMesh {
  std::vector<TessellatorVertex> vertices;
  int mode = 7;
@@ -72,7 +56,7 @@ class Tessellator {
                 int blockLight = 15,
                 int skyLight = 15,
                 int blockId = 0,
-                int renderType = 0,
+                bool fluid = false,
                 int metadata = 0);
  void translate(double x, double y, double z);
  void translate(float x, float y, float z);
@@ -121,7 +105,7 @@ class Tessellator {
  int blockLight_ = 15;
  int skyLight_ = 15;
  int blockId_ = 0;
- int blockRenderType_ = 0;
+ bool blockFluid_ = false;
  int blockMetadata_ = 0;
  bool hasBlockData_ = false;
 };

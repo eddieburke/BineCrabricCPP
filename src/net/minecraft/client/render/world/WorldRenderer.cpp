@@ -17,8 +17,8 @@
 #include "net/minecraft/client/particle/ParticleRegistry.hpp"
 #include "net/minecraft/client/particle/PickupParticle.hpp"
 #include "net/minecraft/client/render/GameRenderer.hpp"
-#include "net/minecraft/client/render/shaderpack/ShaderPackManager.hpp"
-#include "net/minecraft/client/render/FrameRenderCamera.hpp"
+#include "net/minecraft/client/render/pipeline/Manager.hpp"
+#include "net/minecraft/client/render/camera/FrameRenderCamera.hpp"
 #include "net/minecraft/client/render/RenderType.hpp"
 #include "net/minecraft/client/render/Tessellator.hpp"
 #include "net/minecraft/client/render/block/BlockRenderManager.hpp"
@@ -150,6 +150,12 @@ void WorldRenderer::enqueueDirtyChunk(chunk::ChunkBuilder* chunk) {
  if(chunk == nullptr || chunk->meshJobInFlight) {
   return;
  }
+ // P-LITGATE: hold the FIRST mesh of a freshly-created column until its column
+ // is marked lit (markChunkColumnLit re-enqueues it). Re-meshes of already-built
+ // sections are never held — the gate only delays the first build.
+ if(!lightingGate_.lit(chunk->x >> 4, chunk->z >> 4) && !chunk->built) {
+  return;
+ }
  noteNearDirty(chunk);
  dirtyChunks_.insert(chunk);
 }
@@ -180,11 +186,11 @@ void WorldRenderer::createColumn(int sectionX, int sectionZ) {
     !world->getChunkSource()->isChunkLoaded(sectionX, sectionZ)) {
   return;
  }
- const int ring = ringOf(sectionX, sectionZ);
- if(ring >= static_cast<int>(drawRings_.size())) {
-  drawRings_.resize(static_cast<std::size_t>(ring) + 1);
- }
- for(int sectionY = 0; sectionY < kChunkSectionCountY; ++sectionY) {
+  const int ring = ringOf(sectionX, sectionZ);
+  if(ring >= static_cast<int>(drawRings_.size())) {
+   drawRings_.resize(static_cast<std::size_t>(ring) + 1);
+  }
+  for(int sectionY = 0; sectionY < kChunkSectionCountY; ++sectionY) {
   const world::SectionPos pos{sectionX, sectionY, sectionZ};
   if(sections_.contains(pos)) {
    continue;
@@ -322,19 +328,17 @@ void WorldRenderer::popCullState() {
 void WorldRenderer::clearSections() {
  meshScheduler_.cancelAll();
  pendingMeshUploads_.clear();
+ // Non-blocking cancelAll: a worker may still hold the last shared_ptr of an
+ // in-flight job whose builder lives in sections_ (R3). Those sections must
+ // outlive the job; retire them and let sweepRetiring reap them once the job
+ // drains and ~ChunkMeshJob clears meshJobInFlight on the main thread.
  for(auto& entry : sections_) {
   if(entry.second != nullptr) {
-   entry.second->freeModMeshGpuBuffers();
-  }
- }
- for(std::unique_ptr<chunk::ChunkBuilder>& section : retiring_) {
-  if(section != nullptr) {
-   section->freeModMeshGpuBuffers();
+   retireOrFreeSection(std::move(entry.second));
   }
  }
  sections_.clear();
  sectionList_.clear();
- retiring_.clear();
  dirtyChunks_.clear();
  nearDirtyChunks_.clear();
  drawRings_.clear();
@@ -345,10 +349,15 @@ void WorldRenderer::clearSections() {
  savedFrustumSectionCount_ = 0;
  cullStateSaved_ = false;
  globalBlockEntities.clear();
- pendingColumns_.clear();
- pendingSet_.clear();
- pendingBorderRefresh_.clear();
- regionManager_.clear();
+  pendingColumns_.clear();
+  pendingSet_.clear();
+  pendingBorderRefresh_.clear();
+  lightingGate_.releaseAll();
+ // Retired sections still reference the shared region pool until reaped; only
+ // clear it once nothing is in flight.
+ if(retiring_.empty()) {
+  regionManager_.clear();
+ }
  centerSectionX_ = std::numeric_limits<int>::min();
  centerSectionZ_ = std::numeric_limits<int>::min();
 }
@@ -432,7 +441,7 @@ void WorldRenderer::drainPendingColumns() {
  }
  const int radius = renderRadiusChunks_;
  const net::minecraft::util::concurrent::FrameBudget budget =
-     net::minecraft::util::concurrent::FrameBudget::fromMs(2, 1);
+     net::minecraft::util::concurrent::FrameBudget::fromSharedMs(2, 1);
  std::size_t inspected = 0;
  while(!pendingColumns_.empty() && budget.hasRemaining(static_cast<int>(inspected))) {
   const world::SectionPos col = pendingColumns_.front();
@@ -477,7 +486,7 @@ void WorldRenderer::reload() {
  // Resolve options + pack bake flags before sections rebuild. Stale
  // separateAo/oldLighting from the previous pack made Smooth Lighting look
  // broken until the slider forced another remesh.
- const shaderpack::ShaderPackDefinition* pack = nullptr;
+ const PackDefinition* pack = nullptr;
  if(client != nullptr && client->gameRenderer != nullptr && client->gameRenderer->shaderPacks() != nullptr) {
   pack = client->gameRenderer->shaderPacks()->meshDefinition();
  }
@@ -491,10 +500,21 @@ void WorldRenderer::reload() {
  blockRenderManager.snapshotGlobals();
  lastViewDistance = opts.viewDistance;
  lastRenderScale = resolved.renderScale;
- gl::GLCore::ensureLoaded();
- renderRadiusChunks_ = resolved.chunkRadius;
- globalBlockEntities.clear();
- entityRenderCooldown = 2;
+  gl::GLCore::ensureLoaded();
+  renderRadiusChunks_ = resolved.chunkRadius;
+  // Pre-size the shared terrain VBO so the initial chunk stream does not repeatedly
+  // grow the buffer and re-upload every accumulated range (a per-frame stall on
+  // world load / teleport). Estimate ~384 vertices/section/layer at steady state,
+  // capped so a giant view distance does not reserve gigabytes up front.
+  if(renderRadiusChunks_ > 0) {
+   const std::size_t columns = static_cast<std::size_t>(2 * renderRadiusChunks_ + 1);
+   const std::size_t sections = columns * columns * static_cast<std::size_t>(kChunkSectionCountY);
+   const std::size_t estimate = std::min<std::size_t>(sections * 384u, 2u * 1024u * 1024u);
+   chunk::ChunkRegion& region = regionManager_.pool();
+   for(auto& layer : region.layers) layer.reserve(estimate);
+  }
+  globalBlockEntities.clear();
+  entityRenderCooldown = 2;
 }
 void WorldRenderer::reloadIfViewDistanceChanged() {
  const net::minecraft::client::option::GameOptions& opts = activeOptions();
@@ -604,7 +624,11 @@ int WorldRenderer::renderModChunkMeshes(int layer, double interpX, double interp
  if(textureManager == nullptr) {
   return 0;
  }
- const ModChunkMeshScope meshCaps(layer == 1 ? RenderType::translucent() : RenderType::solid());
+ const RenderType& renderType = layer == chunk::terrain_layer::Translucent
+                                    ? RenderType::translucent()
+                                    : layer == chunk::terrain_layer::Cutout ? RenderType::cutout()
+                                                                           : RenderType::solid();
+ const ModChunkMeshScope meshCaps(renderType);
  int drawn = 0;
  double camX = interpX;
  double camY = interpY;
@@ -678,11 +702,17 @@ bool WorldRenderer::compileChunks(net::minecraft::LivingEntity& /*camera*/, bool
  const int minUploadsPerFrame = loadingBacklog ? std::clamp(static_cast<int>(workerCount * 2u), 4, 16)
                                                : std::clamp(static_cast<int>(std::ceil(2.0f * gridAreaScale)), 1, 6);
  const net::minecraft::util::concurrent::FrameBudget uploadBudget =
-     net::minecraft::util::concurrent::FrameBudget::fromMs(loadingBacklog ? 6 : 3, minUploadsPerFrame);
+     net::minecraft::util::concurrent::FrameBudget::fromSharedMs(loadingBacklog ? 6 : 3, minUploadsPerFrame);
+ // Near-camera edits get a dedicated slice (QD-21): they are uploaded before
+ // the ring backlog so a block edit next to the player lands the frame its
+ // mesh finishes, not when the distant ring's budget allows (HZ-31).
+ const net::minecraft::util::concurrent::FrameBudget nearBudget =
+     net::minecraft::util::concurrent::FrameBudget::fromSharedMs(2, minUploadsPerFrame);
  int uploadCount = 0;
+ int nearUploadCount = 0;
  std::vector<std::shared_ptr<chunk::ChunkMeshJob>> deferredUploads;
  deferredUploads.reserve(pendingMeshUploads_.size() + meshScheduler_.pendingJobs());
- const auto processUpload = [&](std::shared_ptr<chunk::ChunkMeshJob> job) {
+ const auto processUpload = [&](std::shared_ptr<chunk::ChunkMeshJob> job, bool nearLane) {
   chunk::ChunkBuilder* builder = job->builder;
   if(builder == nullptr) {
    return;
@@ -691,7 +721,9 @@ bool WorldRenderer::compileChunks(net::minecraft::LivingEntity& /*camera*/, bool
    builder->meshJobInFlight = false;
    return;
   }
-  if(!uploadBudget.hasRemaining(uploadCount)) {
+  const net::minecraft::util::concurrent::FrameBudget& budget = nearLane ? nearBudget : uploadBudget;
+  const int budgetCount = nearLane ? nearUploadCount : uploadCount;
+  if(!budget.hasRemaining(budgetCount)) {
    deferredUploads.push_back(std::move(job));
    return;
   }
@@ -704,14 +736,36 @@ bool WorldRenderer::compileChunks(net::minecraft::LivingEntity& /*camera*/, bool
   builder->uploadMesh(*job);
   builder->dirty = false;
   dirtyChunks_.erase(builder);
-  ++uploadCount;
+  if(nearLane) {
+   ++nearUploadCount;
+  } else {
+   ++uploadCount;
+  }
  };
+ std::vector<std::shared_ptr<chunk::ChunkMeshJob>> nearUploads;
+ std::vector<std::shared_ptr<chunk::ChunkMeshJob>> ringUploads;
+ nearUploads.reserve(pendingMeshUploads_.size());
+ ringUploads.reserve(pendingMeshUploads_.size());
  for(std::shared_ptr<chunk::ChunkMeshJob>& job : pendingMeshUploads_) {
-  processUpload(std::move(job));
+  if(job->nearLane) {
+   nearUploads.push_back(std::move(job));
+  } else {
+   ringUploads.push_back(std::move(job));
+  }
  }
  pendingMeshUploads_.clear();
  for(std::shared_ptr<chunk::ChunkMeshJob>& job : meshScheduler_.drainCompleted()) {
-  processUpload(std::move(job));
+  if(job->nearLane) {
+   nearUploads.push_back(std::move(job));
+  } else {
+   ringUploads.push_back(std::move(job));
+  }
+ }
+ for(std::shared_ptr<chunk::ChunkMeshJob>& job : nearUploads) {
+  processUpload(std::move(job), true);
+ }
+ for(std::shared_ptr<chunk::ChunkMeshJob>& job : ringUploads) {
+  processUpload(std::move(job), false);
  }
  pendingMeshUploads_ = std::move(deferredUploads);
  sweepRetiring();
@@ -723,8 +777,8 @@ bool WorldRenderer::compileChunks(net::minecraft::LivingEntity& /*camera*/, bool
   const int minCapturesPerFrame = force ? static_cast<int>(workerCount * 2u)
                                         : std::clamp(requestedCaptures, 1, static_cast<int>(workerCount));
   const net::minecraft::util::concurrent::FrameBudget captureBudget =
-      net::minecraft::util::concurrent::FrameBudget::fromMs((force || loadingBacklog) ? 2 : 1,
-                                                            minCapturesPerFrame);
+      net::minecraft::util::concurrent::FrameBudget::fromSharedMs((force || loadingBacklog) ? 2 : 1,
+                                                                   minCapturesPerFrame);
   int captures = 0;
   const auto canCapture = [&] { return inFlight < targetInFlight && captureBudget.hasRemaining(captures); };
   for(auto it = nearDirtyChunks_.begin(); it != nearDirtyChunks_.end() && canCapture();) {
@@ -767,9 +821,7 @@ bool WorldRenderer::compileChunks(net::minecraft::LivingEntity& /*camera*/, bool
 }
 void WorldRenderer::renderEntities(const Vec3d& cameraPos,
                                    FrustumCuller* culler,
-                                   float tickDelta,
-                                   net::minecraft::util::math::MatrixStack& matrices,
-                                   const net::minecraft::util::math::Matrix4f& projection) {
+                                   float tickDelta) {
  if(entityRenderCooldown > 0) {
   --entityRenderCooldown;
   return;
@@ -780,6 +832,12 @@ void WorldRenderer::renderEntities(const Vec3d& cameraPos,
   culledEntityCount = 0;
   return;
  }
+ // Iris per-draw base: the full camera matrix the draw state publishes
+ // (rotation * translate(camera - eye)); entity poses compose onto it. This is the
+ // same matrix the old vanilla stack carried at draw time (see matrix.md).
+ net::minecraft::util::math::MatrixStack matrices;
+ matrices.load(core::drawModelView());
+ const net::minecraft::util::math::Matrix4f& projection = core::drawProjection();
  auto* livingCamera = dynamic_cast<LivingEntity*>(cameraEntity_);
  auto& blockDispatcher = block::entity::BlockEntityRenderDispatcher::instance();
  blockDispatcher.prepare(world, textureManager, client->textRenderer.get(), cameraEntity_, tickDelta);
@@ -901,7 +959,7 @@ void WorldRenderer::cullChunks(FrustumCuller* culler, float /*tickDelta*/, bool 
   updateSectionFrontier();
   drainPendingColumns();
  }
- if(culler == nullptr || !settings_.frustumCulling) {
+  if(culler == nullptr || !settings_.frustumCulling) {
   for(chunk::ChunkBuilder* chunk : sectionList_) {
    chunk->inFrustum = true;
    if(renderCamera.shadowPass && shadowRenderDistanceSq > 0.0) {
@@ -930,8 +988,8 @@ void WorldRenderer::cullChunks(FrustumCuller* culler, float /*tickDelta*/, bool 
    chunk.inFrustum = false;
   }
  }
- applyOcclusionCulling();
- rebuildVisibleDrawRings();
+  applyOcclusionCulling();
+  rebuildVisibleDrawRings();
 }
 void WorldRenderer::applyOcclusionCulling() {
  if(!settings_.occlusionCulling) {
@@ -1057,8 +1115,42 @@ void WorldRenderer::chunkAvailable(int chunkX, int chunkZ) {
     std::abs(chunkZ - centerSectionZ_) > renderRadiusChunks_ + 1) {
   return;
  }
- enqueueColumn(chunkX, chunkZ);
- pendingBorderRefresh_.insert(world::SectionPos{chunkX, 0, chunkZ});
+  lightingGate_.gate(chunkX, chunkZ);
+  enqueueColumn(chunkX, chunkZ);
+  pendingBorderRefresh_.insert(world::SectionPos{chunkX, 0, chunkZ});
+}
+// P-LITGATE: the column's lighting drained (World::doLightingUpdates). Release
+// its gate and re-enqueue the unbuilt sections whose first mesh was held.
+void WorldRenderer::markChunkColumnLit(int chunkX, int chunkZ) {
+ lightingGate_.release(chunkX, chunkZ);
+ for(int sectionY = 0; sectionY < kChunkSectionCountY; ++sectionY) {
+  chunk::ChunkBuilder* section = sectionAt(chunkX, sectionY, chunkZ);
+  if(section != nullptr && section->dirty && !section->built) {
+   enqueueDirtyChunk(section);
+  }
+ }
+}
+// P-LITGATE: the lighting engine went fully idle — no remaining boxes could
+// produce a region for a held column, so every gate is released (non-optional
+// completion; a column with no pending boxes is never held forever).
+void WorldRenderer::markAllChunksLit() {
+ if(lightingGate_.empty()) {
+  return;
+ }
+ std::vector<world::SectionPos> columns;
+ columns.reserve(lightingGate_.pending_.size());
+ for(const world::SectionPos& column : lightingGate_.pending_) {
+  columns.push_back(column);
+ }
+ lightingGate_.releaseAll();
+ for(const world::SectionPos& column : columns) {
+  for(int sectionY = 0; sectionY < kChunkSectionCountY; ++sectionY) {
+   chunk::ChunkBuilder* section = sectionAt(column.x, sectionY, column.z);
+   if(section != nullptr && section->dirty && !section->built) {
+    enqueueDirtyChunk(section);
+   }
+  }
+ }
 }
 void WorldRenderer::drainBorderRefresh() {
  if(pendingBorderRefresh_.empty()) {
@@ -1228,10 +1320,9 @@ void WorldRenderer::renderMiningProgress(net::minecraft::PlayerEntity* player,
  const RenderPassScope passScope(RenderType::damagedBlock());
  net::minecraft::client::texture::TextureManager* texMgr =
      textureManager != nullptr ? textureManager : (client != nullptr ? &client->textureManager : nullptr);
- if(texMgr != nullptr) {
-  core::activeTexture(gl::tex::Texture0);
-  core::bindTexture(static_cast<unsigned int>(texMgr->getTextureId("/terrain.png")));
- }
+  if(texMgr != nullptr) {
+   texMgr->bindTexture(texMgr->getTextureId("/terrain.png"));
+  }
  core::enableBlend();
  core::blendAlpha();
  core::setConstColor(1.0f, 1.0f, 1.0f, 1.0f);
@@ -1283,22 +1374,14 @@ void WorldRenderer::renderBlockOutline(net::minecraft::PlayerEntity* player,
  }
 }
 void WorldRenderer::cameraInterpPosition(double tickDelta, double& x, double& y, double& z) const {
+ // The render origin is the iris frame camera position (GameRenderer publishes
+ // RenderCameraState before world rendering); the vanilla camera-entity fallback
+ // duplicated the same interpolation.
+ (void)tickDelta;
  const auto& frameCam = RenderCameraState::instance().frame();
- if(frameCam.x != 0.0 || frameCam.y != 0.0 || frameCam.z != 0.0) {
-  x = frameCam.x;
-  y = frameCam.y;
-  z = frameCam.z;
-  return;
- }
- if(cameraEntity_ == nullptr) {
-  x = 0.0;
-  y = 0.0;
-  z = 0.0;
-  return;
- }
- x = cameraEntity_->lastTickX + (cameraEntity_->x - cameraEntity_->lastTickX) * tickDelta;
- y = cameraEntity_->lastTickY + (cameraEntity_->y - cameraEntity_->lastTickY) * tickDelta;
- z = cameraEntity_->lastTickZ + (cameraEntity_->z - cameraEntity_->lastTickZ) * tickDelta;
+ x = frameCam.x;
+ y = frameCam.y;
+ z = frameCam.z;
 }
 void WorldRenderer::releaseSections() {
  clearSections();

@@ -1,4 +1,5 @@
 #include "net/minecraft/client/render/Tessellator.hpp"
+#include "net/minecraft/client/render/RenderCore.hpp"
 #include "net/minecraft/client/render/entity/EntityRenderDispatcher.hpp"
 #include "net/minecraft/client/render/entity/EntityRenderers.hpp"
 namespace net::minecraft::client::render::entity {
@@ -29,6 +30,7 @@ void FireballEntityRenderer::render(
   matrices.rotate(180.0f - dispatcher->yaw_, 0.0f, 1.0f, 0.0f);
   matrices.rotate(-dispatcher->pitch_, 1.0f, 0.0f, 0.0f);
  }
+ render::core::setDrawModelView(matrices.top());
  tessellator.startQuads();
  tessellator.normal(0.0f, 1.0f, 0.0f);
  tessellator.vertex(0.0f - half, 0.0f - quarter, 0.0, uMin, vMax);

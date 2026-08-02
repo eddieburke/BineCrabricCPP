@@ -22,7 +22,7 @@ void cancelSavedAccountRestore();
 // or when there is no saved account (offline join allowed); returns false only when a
 // saved account exists but could not be restored - the caller must then refuse the
 // connect instead of joining under the launch fallback name.
-[[nodiscard]] bool ensureAuthenticatedForJoin(net::minecraft::client::Minecraft& client,
+[[nodiscard]] bool ensureAuthenticatedForJoin(net::minecraft::client::util::Session& session,
                                               const std::atomic_bool* canceled = nullptr);
 // Non-blocking startup restore; call tickRestoreSavedAccount from the main loop.
 void beginRestoreSavedAccount(net::minecraft::client::Minecraft& client);

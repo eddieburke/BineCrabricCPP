@@ -24,6 +24,23 @@ void ServerModDownloadScreen::init() {
                  resource::language::I18n::getTranslation("gui.cancel"),
                  [this] { cancel(); });
 }
+void ServerModDownloadScreen::tick() {
+ if(!busy_ || handler_ == nullptr || minecraft() == nullptr) {
+  return;
+ }
+ std::string error;
+ const multiplayer::ClientNetworkHandler::PendingModDownloadState state =
+     handler_->pollPendingModDownload(status_, error);
+ if(state == multiplayer::ClientNetworkHandler::PendingModDownloadState::Failed) {
+  minecraft()->setScreen(std::make_unique<DisconnectedScreen>(
+      "connect.failed", "disconnect.genericReason", std::vector<std::string>{std::move(error)}));
+  return;
+ }
+ if(state == multiplayer::ClientNetworkHandler::PendingModDownloadState::Succeeded) {
+  status_ = "Authorizing...";
+  handler_->continuePendingLogin();
+ }
+}
 void ServerModDownloadScreen::render(int mouseX, int mouseY, float tickDelta) {
  renderBackground();
  if(textRenderer() != nullptr) {
@@ -63,14 +80,7 @@ void ServerModDownloadScreen::accept() {
  }
  busy_ = true;
  status_ = "Downloading...";
- std::string error;
- if(!handler_->downloadPendingMods(error)) {
-  minecraft()->setScreen(std::make_unique<DisconnectedScreen>(
-      "connect.failed", "disconnect.genericReason", std::vector<std::string>{error}));
-  return;
- }
- status_ = "Authorizing...";
- handler_->continuePendingLogin();
+ handler_->startPendingModDownload();
 }
 void ServerModDownloadScreen::cancel() {
  if(handler_ != nullptr) {

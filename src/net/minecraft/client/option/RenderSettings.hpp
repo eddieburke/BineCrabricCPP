@@ -7,8 +7,8 @@ struct Vec3d;
 namespace net::minecraft::entity {
 class Entity;
 }
-namespace net::minecraft::client::render::shaderpack {
-struct ShaderPackDefinition;
+namespace net::minecraft::client::render {
+struct PackDefinition;
 }
 namespace net::minecraft::client::option {
 class GameOptions;
@@ -69,12 +69,10 @@ struct RenderSettings {
  bool animatedSmoke = true;
 };
 [[nodiscard]] RenderSettings renderSettings(const GameOptions& options);
-void applyShaderPack(RenderSettings& settings, const render::shaderpack::ShaderPackDefinition& pack);
+void applyShaderPack(RenderSettings& settings, const render::PackDefinition& pack);
 [[nodiscard]] RenderSettings renderSettings(const GameOptions& options,
-                                            const render::shaderpack::ShaderPackDefinition* pack);
+                                            const render::PackDefinition* pack);
 [[nodiscard]] float adjustFieldOfView(float baseFov, const RenderSettings& settings) noexcept;
-[[nodiscard]] float scaleAoCorner(float cornerBrightness, const RenderSettings& settings) noexcept;
-[[nodiscard]] float applyBrightnessBoost(float luminance, const RenderSettings& settings) noexcept;
 [[nodiscard]] float cloudHeightOffset(float baseHeight, const RenderSettings& settings) noexcept;
 [[nodiscard]] int chunkUpdatesPerPass(const RenderSettings& settings, int dirtyChunkCount = 0) noexcept;
 [[nodiscard]] float rainGradient(const RenderSettings& settings, const World* world, float tickDelta);

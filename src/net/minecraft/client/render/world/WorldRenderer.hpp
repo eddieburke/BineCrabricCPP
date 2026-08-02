@@ -48,6 +48,27 @@ struct SectionPosHash {
   return h;
  }
 };
+// P-LITGATE: chunk columns whose first mesh is held until their lighting
+// drains (World::doLightingUpdates marks columns lit per drained region, and
+// releases everything once the engine goes fully idle — non-optional).
+struct ColumnLightingGate {
+ [[nodiscard]] bool lit(int sectionX, int sectionZ) const noexcept {
+  return pending_.find(SectionPos{sectionX, 0, sectionZ}) == pending_.end();
+ }
+ void gate(int sectionX, int sectionZ) {
+  pending_.insert(SectionPos{sectionX, 0, sectionZ});
+ }
+ void release(int sectionX, int sectionZ) {
+  pending_.erase(SectionPos{sectionX, 0, sectionZ});
+ }
+ void releaseAll() {
+  pending_.clear();
+ }
+ [[nodiscard]] bool empty() const noexcept {
+  return pending_.empty();
+ }
+ std::unordered_set<SectionPos, SectionPosHash> pending_{};
+};
 } // namespace world
 class FrustumCuller;
 class WorldRenderer : public net::minecraft::GameEventListener {
@@ -59,11 +80,10 @@ class WorldRenderer : public net::minecraft::GameEventListener {
  void setWorld(net::minecraft::World* world);
  void reload();
  void reloadIfViewDistanceChanged();
- void renderEntities(const Vec3d& cameraPos,
-                     FrustumCuller* culler,
-                     float tickDelta,
-                     net::minecraft::util::math::MatrixStack& matrices,
-                     const net::minecraft::util::math::Matrix4f& projection);
+  // Entities compose their poses onto the iris per-draw base (core::drawModelView)
+  // instead of a separately-maintained camera stack; the projection is the iris draw
+  // projection. cameraPos is the frame camera position (RenderCameraState).
+  void renderEntities(const Vec3d& cameraPos, FrustumCuller* culler, float tickDelta);
  [[nodiscard]] std::string getChunkDebugInfo() const;
  [[nodiscard]] std::string getEntityDebugInfo() const;
  int render(net::minecraft::LivingEntity& camera, int layer, double tickDelta, bool drawModMeshes = true);
@@ -82,7 +102,9 @@ class WorldRenderer : public net::minecraft::GameEventListener {
  void markDirty(int minX, int minY, int minZ, int maxX, int maxY, int maxZ);
  void blockUpdate(int x, int y, int z) override;
  void setBlocksDirty(int minX, int minY, int minZ, int maxX, int maxY, int maxZ) override;
- void chunkAvailable(int chunkX, int chunkZ) override;
+  void chunkAvailable(int chunkX, int chunkZ) override;
+  void markChunkColumnLit(int chunkX, int chunkZ) override;
+  void markAllChunksLit() override;
  void cullChunks(FrustumCuller* culler, float tickDelta, bool updateFrontier = true);
  void addParticle(const std::string& particle,
                   double x,
@@ -153,8 +175,11 @@ class WorldRenderer : public net::minecraft::GameEventListener {
  void clearSections();
  [[nodiscard]] int ringOf(int sectionX, int sectionZ) const noexcept;
  [[nodiscard]] int ringOf(const chunk::ChunkBuilder& chunk) const noexcept;
- std::unordered_map<world::SectionPos, std::unique_ptr<chunk::ChunkBuilder>, world::SectionPosHash> sections_{};
- std::vector<chunk::ChunkBuilder*> sectionList_{};
+  std::unordered_map<world::SectionPos, std::unique_ptr<chunk::ChunkBuilder>, world::SectionPosHash> sections_{};
+  std::vector<chunk::ChunkBuilder*> sectionList_{};
+  // P-LITGATE gate state: columns waiting on their lighting drain before the
+  // first mesh. Keyed with y == 0 (one entry per chunk column).
+  world::ColumnLightingGate lightingGate_{};
  std::unordered_set<chunk::ChunkBuilder*> dirtyChunks_{};
  std::unordered_set<chunk::ChunkBuilder*> nearDirtyChunks_{};
  std::vector<std::unordered_set<chunk::ChunkBuilder*>> drawRings_{};

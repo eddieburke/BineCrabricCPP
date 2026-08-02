@@ -5,6 +5,7 @@
 #include "net/minecraft/client/auth/microsoft/MicrosoftAuth.hpp"
 #include "net/minecraft/client/gl/GlConstants.hpp"
 #include "net/minecraft/client/option/GameOptions.hpp"
+#include "net/minecraft/client/render/PbrTextures.hpp"
 #include "net/minecraft/client/render/RenderCore.hpp"
 #include "net/minecraft/client/render/texture/FireSprite.hpp"
 #include "net/minecraft/client/render/texture/LavaSideSprite.hpp"
@@ -35,12 +36,6 @@ struct TexturePathSpec {
  bool blur = false;
  bool clamp = false;
 };
-std::string normalizeResourcePath(std::string path) {
- while(!path.empty() && (path.front() == '/' || path.front() == '\\')) {
-  path.erase(path.begin());
- }
- return path;
-}
 TexturePathSpec parseTexturePath(const std::string& path) {
  TexturePathSpec spec;
  spec.resourcePath = path;
@@ -236,8 +231,28 @@ void TextureManager::ensureMissingTexture() {
  missingTextureId_ = static_cast<int>(id);
  missingTextureReady_ = true;
 }
+std::string TextureManager::normalizePath(std::string path) {
+ while(!path.empty() && (path.front() == '/' || path.front() == '\\')) {
+  path.erase(path.begin());
+ }
+ return path;
+}
+std::vector<std::uint8_t> TextureManager::rasterToRgba(const RasterImage& image) {
+ std::vector<std::uint8_t> rgba(static_cast<std::size_t>(image.width) * image.height * 4);
+ for(int y = 0; y < image.height; ++y) {
+  for(int x = 0; x < image.width; ++x) {
+   const std::uint32_t pixel = image.argb[static_cast<std::size_t>(y) * image.width + x];
+   const std::size_t offset = (static_cast<std::size_t>(y) * image.width + x) * 4;
+   rgba[offset + 0] = static_cast<std::uint8_t>(pixel >> 16);
+   rgba[offset + 1] = static_cast<std::uint8_t>(pixel >> 8);
+   rgba[offset + 2] = static_cast<std::uint8_t>(pixel);
+   rgba[offset + 3] = static_cast<std::uint8_t>(pixel >> 24);
+  }
+ }
+ return rgba;
+}
 std::filesystem::path TextureManager::resolveResourcePath(const std::string& path) {
- const std::string normalized = normalizeResourcePath(path);
+ const std::string normalized = normalizePath(path);
  const mod::runtime::ModHost& modHost = mod::runtime::host();
  if(modHost.initialized()) {
   if(const std::optional<std::filesystem::path> modPath = modHost.resolveResourcePath(normalized);
@@ -320,6 +335,7 @@ RasterImage TextureManager::loadRasterFromUrl(const std::string& url, bool useBe
 }
 void TextureManager::deleteTexture(int textureId) {
  companionTextures_.clear();
+ render::PbrTextures::onDeleteTexture(textureId);
  images_.erase(textureId);
  textureDimensions_.erase(textureId);
  if(textureId > 0) {
@@ -338,6 +354,9 @@ int TextureManager::downloadTexture(const std::string& url, const std::string& b
  const auto it = downloadedImages_.find(url);
  if(it != downloadedImages_.end()) {
   imageDownload = it->second.get();
+ }
+ if(imageDownload != nullptr) {
+  imageDownload->applyCompleted();
  }
  if(imageDownload != nullptr && imageDownload->image.has_value() && !imageDownload->uploaded) {
   if(imageDownload->textureId < 0) {
@@ -395,7 +414,11 @@ void TextureManager::releaseImage(const std::string& url) {
 }
 std::optional<bool> TextureManager::skinSlimArms(const std::string& url) const {
  const auto it = downloadedImages_.find(url);
- if(it == downloadedImages_.end() || !it->second->image.has_value()) {
+ if(it == downloadedImages_.end()) {
+  return std::nullopt;
+ }
+ it->second->applyCompleted();
+ if(!it->second->image.has_value()) {
   return std::nullopt;
  }
  return it->second->slimArms;
@@ -441,12 +464,11 @@ int TextureManager::getTextureId(const std::string& path) {
  const TexturePathSpec spec = parseTexturePath(path);
  RasterImage image = loadRasterForResource(spec.resourcePath);
  if(image.width <= 0 || image.height <= 0) {
-  if(missingTextureWarned_.insert(path).second) {
-  }
   textures_[path] = missingTextureId_;
+  texturePaths_.try_emplace(missingTextureId_, path);
   return missingTextureId_;
  }
- const std::string normalizedPath = normalizeResourcePath(spec.resourcePath);
+ const std::string normalizedPath = normalizePath(spec.resourcePath);
  if(normalizedPath == "mob/char.png") {
   static SkinImageProcessor skinProcessor;
   image = skinProcessor.process(image);
@@ -463,6 +485,7 @@ int TextureManager::getTextureId(const std::string& path) {
  blur = previousBlur;
  clamp = previousClamp;
  textures_[path] = static_cast<int>(id);
+ texturePaths_.try_emplace(static_cast<int>(id), path);
  return static_cast<int>(id);
 }
 bool TextureManager::getTextureDimensions(const std::string& path, int& outWidth, int& outHeight) {
@@ -493,6 +516,27 @@ bool TextureManager::getTextureDimensionsForId(int textureId, int& outWidth, int
  outHeight = found->second[1];
  return outWidth > 0 && outHeight > 0;
 }
+std::string TextureManager::getCompanionTexturePath(int textureId, std::string_view suffix) const {
+ if(textureId <= 0 || suffix.empty()) {
+  return {};
+ }
+ const auto pathIt = texturePaths_.find(textureId);
+ if(pathIt == texturePaths_.end()) {
+  return {};
+ }
+ const std::string& path = pathIt->second;
+ const std::size_t extension = path.find_last_of('.');
+ const std::size_t separator = path.find_last_of("/\\");
+ if(extension == std::string::npos || (separator != std::string::npos && extension < separator)) {
+  return {};
+ }
+ std::string candidate = path;
+ candidate.insert(extension, suffix);
+ if(resourceExists(candidate)) {
+  return candidate;
+ }
+ return {};
+}
 int TextureManager::getCompanionTextureId(int textureId, std::string_view suffix) {
  if(textureId <= 0 || suffix.empty()) {
   return -1;
@@ -504,23 +548,7 @@ int TextureManager::getCompanionTextureId(int textureId, std::string_view suffix
    return cached->second[slot];
   }
  }
- std::string companion;
- for(const auto& [path, id] : textures_) {
-  if(id != textureId) {
-   continue;
-  }
-  const std::size_t extension = path.find_last_of('.');
-  const std::size_t separator = path.find_last_of("/\\");
-  if(extension == std::string::npos || (separator != std::string::npos && extension < separator)) {
-   continue;
-  }
-  std::string candidate = path;
-  candidate.insert(extension, suffix);
-  if(resourceExists(candidate)) {
-   companion = std::move(candidate);
-   break;
-  }
- }
+ const std::string companion = getCompanionTexturePath(textureId, suffix);
  const int result = companion.empty() ? -1 : getTextureId(companion);
  if(slot >= 0) {
   companionTextures_[textureId][slot] = result;
@@ -564,12 +592,17 @@ void TextureManager::reload() {
    colors[i] = static_cast<int>(image.argb[i]);
   }
  }
+ // The re-upload loop above clobbered any LabPBR mip levels / sampler
+ // parameters applied to companion textures; drop the PBR cache so the next
+ // resolution re-applies them (Java: MixinTextureManager ->
+ // PBRTextureManager.clear()).
+ render::PbrTextures::clear();
 }
 void TextureManager::bindTexture(int id) {
  if(id < 0) {
   return;
  }
- render::core::bindDiffuse(id);
+ render::core::bindTexture(id);
 }
 int TextureManager::load(const RasterImage& image) {
 #ifdef _WIN32
@@ -594,25 +627,11 @@ void TextureManager::load(const RasterImage& image, int id) {
  struct TextureStateScope {
   int previous;
   ~TextureStateScope() {
-   render::core::bindTexture(static_cast<unsigned int>(previous));
+   render::core::bindTexture(previous);
   }
  } textureState{previousBoundTexture};
- std::vector<std::uint8_t> rgba(static_cast<std::size_t>(image.width) * image.height * 4);
- for(int y = 0; y < image.height; ++y) {
-  for(int x = 0; x < image.width; ++x) {
-   const std::uint32_t pixel = image.argb[static_cast<std::size_t>(y) * image.width + x];
-   const std::uint8_t a = static_cast<std::uint8_t>((pixel >> 24U) & 0xFFU);
-   std::uint8_t r = static_cast<std::uint8_t>((pixel >> 16U) & 0xFFU);
-   std::uint8_t g = static_cast<std::uint8_t>((pixel >> 8U) & 0xFFU);
-   std::uint8_t b = static_cast<std::uint8_t>(pixel & 0xFFU);
-   const std::size_t o = (static_cast<std::size_t>(y) * image.width + x) * 4;
-   rgba[o + 0] = r;
-   rgba[o + 1] = g;
-   rgba[o + 2] = b;
-   rgba[o + 3] = a;
-  }
- }
- render::core::bindTexture(static_cast<unsigned int>(id));
+ std::vector<std::uint8_t> rgba = rasterToRgba(image);
+ render::core::bindTexture(id);
  // Faithful to TextureManager.load: default GL_NEAREST (pixelated), mipmap or
  // blur override it; wrap is REPEAT unless clamp.
  if(MIPMAP) {
@@ -724,7 +743,7 @@ void TextureManager::tick() {
    continue;
   }
   std::copy(texture->pixels.begin(), texture->pixels.end(), imageBuffer.begin());
-  render::core::bindTexture(static_cast<unsigned int>(texture->copyTo));
+   render::core::bindTexture(texture->copyTo);
   ::glTexSubImage2D(
       gl::cap::Texture2D, 0, 0, 0, 16, 16, gl::pixel::Rgba, gl::pixel::UnsignedByte, imageBuffer.data());
   if(MIPMAP) {

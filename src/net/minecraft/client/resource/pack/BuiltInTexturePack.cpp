@@ -24,7 +24,7 @@ void BuiltInTexturePack::bindIcon(texture::TextureManager& textureManager) {
   textureManager.bindTexture(iconId_);
   return;
  }
- render::core::bindTexture(textureManager.getTextureId("/gui/unknown_pack.png"));
+  textureManager.bindTexture(textureManager.getTextureId("/gui/unknown_pack.png"));
 }
 std::vector<std::uint8_t> BuiltInTexturePack::getResource(std::string_view path) const {
  std::string relative(path);

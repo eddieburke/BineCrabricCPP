@@ -14,9 +14,6 @@
 namespace net::minecraft::client::util {
 namespace diagnostics = net::minecraft::client::diagnostics;
 namespace {
-#ifdef _WIN32
-gl::SwapPacing desiredSwapPacing_ = gl::SwapPacing::VSync;
-#endif
 void clampPositive(int& width, int& height) {
  if(width <= 0) {
   width = 1;
@@ -153,10 +150,9 @@ void DisplayManager::ensureGlContext() {
  display::Window::ensureGlContext();
 }
 void DisplayManager::setSwapPacing(gl::SwapPacing pacing) {
- desiredSwapPacing_ = pacing;
+ gl::GLCore::setSwapPacing(pacing);
 }
 void DisplayManager::present() {
- gl::GLCore::setSwapPacing(desiredSwapPacing_);
  display::Window::present();
 }
 void DisplayManager::pumpAndPresent() {

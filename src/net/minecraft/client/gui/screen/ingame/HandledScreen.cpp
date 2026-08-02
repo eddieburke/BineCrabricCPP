@@ -34,8 +34,10 @@ void HandledScreen::render(int mouseX, int mouseY, float tickDelta) {
  const int originY = (height_ - backgroundHeight) / 2;
  drawBackground(tickDelta);
  {
-  core::ScopedModelView slotMatrix;
-  core::modelViewStack().translate(static_cast<float>(originX), static_cast<float>(originY), 0.0f);
+  const core::ScopedDrawCameraState slotGuard;
+  net::minecraft::util::math::Matrix4f slotPose = core::drawModelView();
+  slotPose.translate(static_cast<float>(originX), static_cast<float>(originY), 0.0f);
+  core::setDrawModelView(slotPose);
   core::setConstColor(1.0f, 1.0f, 1.0f, 1.0f);
   ::net::minecraft::screen::slot::Slot* hoveredSlot = nullptr;
   PlayerEntity& player = static_cast<PlayerEntity&>(*minecraft_->player);
@@ -44,24 +46,25 @@ void HandledScreen::render(int mouseX, int mouseY, float tickDelta) {
    if(slot == nullptr) {
     continue;
    }
-   if(isPointOverSlot(*slot, mouseX, mouseY)) {
-    hoveredSlot = slot;
-    const core::DepthScope hoverCaps(false, core::depthWriteEnabled());
-    {
-     const render::RenderPassScope passScope(render::RenderType::gui());
+    if(isPointOverSlot(*slot, mouseX, mouseY)) {
+     hoveredSlot = slot;
+     {
+      const render::RenderPassScope passScope(render::RenderType::gui());
      draw::verticalGradientQuad(render::INSTANCE, slot->x, slot->y, slot->x + 16, slot->y + 16, 0xFFFFFF, 0x80, 0xFFFFFF, 0x80);
     }
     core::setConstColor(1.0f, 1.0f, 1.0f, 1.0f);
    }
    drawSlot(*slot);
   }
-  if(!cursorStack.empty()) {
-   core::modelViewStack().translate(0.0f, 0.0f, 32.0f);
-   itemRenderer.renderGuiItem(
-       *textRenderer_, minecraft_->textureManager, cursorStack, mouseX - originX - 8, mouseY - originY - 8);
-   itemRenderer.renderGuiItemDecoration(
-       *textRenderer_, minecraft_->textureManager, cursorStack, mouseX - originX - 8, mouseY - originY - 8);
-  }
+   if(!cursorStack.empty()) {
+    net::minecraft::util::math::Matrix4f cursorPose = core::drawModelView();
+    cursorPose.translate(0.0f, 0.0f, 32.0f);
+    core::setDrawModelView(cursorPose);
+    itemRenderer.renderGuiItem(
+        *textRenderer_, minecraft_->textureManager, cursorStack, mouseX - originX - 8, mouseY - originY - 8);
+    itemRenderer.renderGuiItemDecoration(
+        *textRenderer_, minecraft_->textureManager, cursorStack, mouseX - originX - 8, mouseY - originY - 8);
+   }
   {
    const core::DepthScope decorationCaps(false, core::depthWriteEnabled());
    core::setLightingEnabled(false);
@@ -117,7 +120,7 @@ void HandledScreen::drawContainerTexture(const char* texturePath, int srcU, int 
  }
  const int textureId = minecraft_->textureManager.getTextureId(texturePath);
  core::setConstColor(1.0f, 1.0f, 1.0f, 1.0f);
- core::bindTexture(textureId);
+ minecraft_->textureManager.bindTexture(textureId);
  {
   const render::RenderPassScope passScope(render::RenderType::guiTextured());
   const float* c = core::constColor();
@@ -134,7 +137,7 @@ void HandledScreen::drawContainerTextureSplit(const char* texturePath, int topDr
  }
  const int textureId = minecraft_->textureManager.getTextureId(texturePath);
  core::setConstColor(1.0f, 1.0f, 1.0f, 1.0f);
- core::bindTexture(textureId);
+ minecraft_->textureManager.bindTexture(textureId);
  const int originX = containerOriginX();
  const int originY = containerOriginY();
  {
@@ -151,11 +154,10 @@ void HandledScreen::drawContainerTextureSplit(const char* texturePath, int topDr
 void HandledScreen::drawSlot(const ::net::minecraft::screen::slot::Slot& slot) {
  const ItemStack stack = slot.getStack();
  if(stack.empty()) {
-  const int background = slot.getBackgroundTextureId();
-  if(background >= 0) {
-   const core::TextureBindScope savedTexture;
-   const core::DepthScope slotOverlayCaps(false, core::depthWriteEnabled());
-   core::bindTexture(minecraft_->textureManager.getTextureId("/gui/items.png"));
+   const int background = slot.getBackgroundTextureId();
+   if(background >= 0) {
+    const core::TextureBindScope savedTexture;
+    minecraft_->textureManager.bindTexture(minecraft_->textureManager.getTextureId("/gui/items.png"));
    {
     const render::RenderPassScope passScope(render::RenderType::guiTextured());
     const float* c = core::constColor();

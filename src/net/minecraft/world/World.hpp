@@ -1,8 +1,9 @@
 #pragma once
+#include <atomic>
 #include <cstddef>
 #include <cstdint>
+#include <condition_variable>
 #include <functional>
-#include <future>
 #include <memory>
 #include <mutex>
 #include <optional>
@@ -220,8 +221,8 @@ class World : public IEntityWorld {
  virtual bool spawnGlobalEntity(Entity* entity);
  virtual void notifyEntityAdded(Entity* entity);
  virtual void notifyEntityRemoved(Entity* entity);
- virtual void remove(Entity* entity);
- void serverRemove(Entity* entity);
+  virtual void remove(Entity* entity);
+  virtual void serverRemove(Entity* entity);
  [[nodiscard]] const std::vector<Entity*>& entities() const noexcept {
   return entities_;
  }
@@ -282,9 +283,11 @@ class World : public IEntityWorld {
  [[nodiscard]] bool canTransferPower(int x, int y, int z);
  [[nodiscard]] bool isEmittingRedstonePower(int x, int y, int z);
  [[nodiscard]] bool isEmittingRedstonePowerInDirection(int x, int y, int z, int direction);
- void setBlocksDirty(int minX, int minY, int minZ, int maxX, int maxY, int maxZ);
- void chunkAvailable(int chunkX, int chunkZ);
- void setBlocksDirtyColumn(int x, int z, int minY, int maxY);
+  void setBlocksDirty(int minX, int minY, int minZ, int maxX, int maxY, int maxZ);
+  void chunkAvailable(int chunkX, int chunkZ);
+  void markChunkColumnLit(int chunkX, int chunkZ);
+  void markAllChunksLit();
+  void setBlocksDirtyColumn(int x, int z, int minY, int maxY);
  [[nodiscard]] block::entity::BlockEntity* getBlockEntity(int x, int y, int z) override;
  void setBlockEntity(int x, int y, int z, std::unique_ptr<block::entity::BlockEntity> blockEntity);
  void removeBlockEntity(int x, int y, int z);
@@ -426,6 +429,12 @@ class World : public IEntityWorld {
  JavaRandom random_;
  OverworldChunkGenerator chunkGenerator_;
  std::unordered_map<ChunkPos, Chunk, ChunkPosHash> chunks_;
- std::future<void> asyncSaveFuture_;
+ struct AsyncSaveState {
+  std::atomic_bool inFlight{false};
+  std::mutex mutex;
+  std::condition_variable completed;
+ };
+ void waitForAsyncSave();
+ std::shared_ptr<AsyncSaveState> asyncSaveState_ = std::make_shared<AsyncSaveState>();
 };
 } // namespace net::minecraft

@@ -39,6 +39,7 @@ void copyChunkBand(std::vector<std::uint8_t>& blocks,
                    int halfSpan,
                    std::size_t blockBytes,
                    std::size_t nibbleBytes) {
+ const ChunkRenderWriteScope guard(chunk);
  const std::size_t blockNeed = minBlockBytesForBand(minY, ySpan);
  if(chunk.blocks.size() < blockNeed) {
   blocks.assign(blockBytes, 0);
@@ -128,10 +129,21 @@ bool RegionSnapshot::columnHasBlocks(int blockX, int blockZ, int minY, int maxY)
   return false;
  }
  const std::size_t spanBytes = static_cast<std::size_t>(clampedMaxY - clampedMinY);
+ constexpr std::size_t kWordBytes = sizeof(std::uint64_t);
+ // Scan each column's span in 64-bit words so the compiler issues wide loads
+ // instead of byte loops (this early-out runs for every section on every rebuild).
  for(int column = 0; column < 16 * 16; ++column) {
   const std::uint8_t* base =
       chunk->blocks.data() + static_cast<std::size_t>(column * ySpan_ + (clampedMinY - minY_));
-  for(std::size_t i = 0; i < spanBytes; ++i) {
+  std::size_t i = 0;
+  for(; i + kWordBytes <= spanBytes; i += kWordBytes) {
+   std::uint64_t word = 0;
+   std::memcpy(&word, base + i, kWordBytes);
+   if(word != 0) {
+    return true;
+   }
+  }
+  for(; i < spanBytes; ++i) {
    if(base[i] != 0) {
     return true;
    }

@@ -13,12 +13,14 @@
 #endif
 #include <array>
 #include <atomic>
+#include <chrono>
 #include <condition_variable>
 #include <cstddef>
 #include <deque>
 #include <istream>
 #include <memory>
 #include <mutex>
+#include <optional>
 #include <ostream>
 #include <streambuf>
 #include <string>
@@ -28,6 +30,7 @@
 #include <vector>
 #include "net/minecraft/network/NetworkHandler.hpp"
 #include "net/minecraft/network/Packet.hpp"
+#include "net/minecraft/network/packet/PacketTracker.hpp"
 namespace net::minecraft {
 class SocketInputStreamBuf : public std::streambuf {
  public:
@@ -80,8 +83,14 @@ class Connection {
   static_assert(std::is_base_of_v<Packet, T>, "sendPacket requires a Packet type");
   sendPacket(std::make_unique<T>(std::forward<Args>(args)...));
  }
- void sendPacket(std::unique_ptr<Packet> packet);
- void tick();
+  void sendPacket(std::unique_ptr<Packet> packet);
+  void tick();
+  struct DrainLimit {
+   std::chrono::steady_clock::time_point deadline;
+   int maxPackets;
+  };
+  void setDrainLimit(const DrainLimit& limit);
+  void clearDrainLimit();
 
  private:
  static void ensureWinsock();
@@ -94,27 +103,31 @@ class Connection {
  void joinThreads();
  [[nodiscard]] bool hasPendingWrites() const;
  [[nodiscard]] bool readQueueEmpty() const;
- SOCKET socket_ = INVALID_SOCKET;
- std::string name_;
- std::string address_;
- mutable std::atomic<NetworkHandler*> networkHandler_{nullptr};
- std::atomic<bool> open_{true};
- SocketInputStreamBuf inputBuf_;
- std::istream input_;
- SocketOutputStreamBuf outputBuf_;
- std::ostream output_;
- mutable std::mutex readMutex_;
- mutable std::mutex writeMutex_;
- std::condition_variable writeCv_;
- std::deque<std::unique_ptr<Packet>> readQueue_;
- std::deque<std::unique_ptr<Packet>> sendQueue_;
- std::deque<std::unique_ptr<Packet>> delayedSendQueue_;
- std::atomic<std::size_t> sendQueueSize_{0};
- std::thread reader_;
- std::thread writer_;
- int timeoutTicks_ = 0;
- bool disconnectedNotified_ = false;
- std::string disconnectReason_;
- std::vector<std::string> disconnectReasonArgs_;
+  std::atomic<SOCKET> socket_{INVALID_SOCKET};
+  std::string name_;
+  std::string address_;
+  mutable std::atomic<NetworkHandler*> networkHandler_{nullptr};
+  std::atomic<bool> open_{true};
+  SocketInputStreamBuf inputBuf_;
+  std::istream input_;
+  SocketOutputStreamBuf outputBuf_;
+  std::ostream output_;
+  mutable std::mutex readMutex_;
+  mutable std::mutex writeMutex_;
+  std::condition_variable writeCv_;
+  std::deque<std::unique_ptr<Packet>> readQueue_;
+  std::deque<std::unique_ptr<Packet>> sendQueue_;
+  std::deque<std::unique_ptr<Packet>> delayedSendQueue_;
+  std::atomic<std::size_t> sendQueueSize_{0};
+  std::atomic<std::size_t> readQueueSize_{0};
+  std::atomic<bool> readOverflow_{false};
+  std::vector<std::pair<int, int>> readStats_;
+  std::optional<DrainLimit> externalDrainLimit_;
+  std::thread reader_;
+  std::thread writer_;
+  int timeoutTicks_ = 0;
+  bool disconnectedNotified_ = false;
+  std::string disconnectReason_;
+  std::vector<std::string> disconnectReasonArgs_;
 };
 } // namespace net::minecraft

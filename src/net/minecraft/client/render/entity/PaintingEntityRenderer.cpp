@@ -23,6 +23,7 @@ void PaintingEntityRenderer::render(
  bindTexture("/art/kz.png");
  constexpr float scale = 0.0625f;
  matrices.scale(scale, scale, scale);
+ render::core::setDrawModelView(matrices.top());
  renderPainting(*painting,
                 painting->variant.width,
                 painting->variant.height,

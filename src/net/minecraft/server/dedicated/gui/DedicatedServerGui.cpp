@@ -7,10 +7,14 @@
 #include "net/minecraft/server/dedicated/gui/PlayerStatsGui.hpp"
 #include "net/minecraft/server/platform/win32/MessageLoop.hpp"
 #include "net/minecraft/server/platform/win32/WindowClass.hpp"
+#include "net/minecraft/util/concurrent/ThreadCoordinator.hpp"
+#include "net/minecraft/util/concurrent/ThreadNames.hpp"
 #ifdef _MSC_VER
 #pragma comment(lib, "Comctl32.lib")
 #endif
+#include <atomic>
 #include <condition_variable>
+#include <memory>
 #include <mutex>
 #include <thread>
 namespace net::minecraft::server::dedicated::gui {
@@ -23,6 +27,15 @@ constexpr int kMargin = 8;
 constexpr int kGroupInset = 8;
 constexpr int kStatsChildWidth = PlayerStatsGui::kWidth;
 constexpr int kStatsChildHeight = PlayerStatsGui::kHeight;
+constexpr UINT kShutdownMessage = WM_APP + 0x51;
+struct GuiReadyState {
+ std::mutex mutex;
+ std::condition_variable completed;
+ bool ready = false;
+};
+std::mutex guiThreadMutex;
+std::jthread guiThread;
+std::atomic<HWND> guiFrame = nullptr;
 std::wstring readWindowTextUtf8(HWND hwnd) {
  const int length = GetWindowTextLengthW(hwnd);
  if(length <= 0) {
@@ -59,26 +72,44 @@ LRESULT CALLBACK playerListSubclassProc(HWND hwnd, UINT message, WPARAM wParam, 
 }
 } // namespace
 void DedicatedServerGui::create(MinecraftServer& server) {
- std::mutex readyMutex;
- std::condition_variable readyCv;
- bool ready = false;
- std::thread guiThread([&server, &readyMutex, &readyCv, &ready]() {
+ std::lock_guard<std::mutex> threadLock(guiThreadMutex);
+ if(guiThread.joinable()) {
+  return;
+ }
+ auto ready = std::make_shared<GuiReadyState>();
+ util::concurrent::ThreadCoordinator::instance().reserveDynamic(1);
+ guiThread = std::jthread([&server, ready]() {
+  util::concurrent::setCurrentThreadName("server-gui");
+  util::concurrent::tl_domain = util::concurrent::Domain::Io;
   DedicatedServerGui gui(server);
   const bool windowCreated = gui.createWindow();
+  guiFrame.store(windowCreated ? gui.frameHwnd_ : nullptr, std::memory_order_release);
   {
-   std::lock_guard<std::mutex> lock(readyMutex);
-   ready = true;
+   std::lock_guard<std::mutex> lock(ready->mutex);
+   ready->ready = true;
   }
-  readyCv.notify_one();
+  ready->completed.notify_one();
   if(windowCreated) {
    static_cast<void>(platform::win32::MessageLoop::run());
   }
+  guiFrame.store(nullptr, std::memory_order_release);
+  util::concurrent::ThreadCoordinator::instance().releaseDynamic(1);
  });
  {
-  std::unique_lock<std::mutex> lock(readyMutex);
-  readyCv.wait(lock, [&ready] { return ready; });
+  std::unique_lock<std::mutex> lock(ready->mutex);
+  ready->completed.wait(lock, [&ready] { return ready->ready; });
  }
- guiThread.detach();
+}
+void DedicatedServerGui::shutdown() {
+ std::lock_guard<std::mutex> threadLock(guiThreadMutex);
+ if(!guiThread.joinable()) {
+  return;
+ }
+ if(const HWND frame = guiFrame.load(std::memory_order_acquire); frame != nullptr) {
+  PostMessageW(frame, kShutdownMessage, 0, 0);
+ }
+ guiThread.request_stop();
+ guiThread.join();
 }
 DedicatedServerGui::DedicatedServerGui(MinecraftServer& server) : server_(server) {
 }
@@ -157,7 +188,6 @@ void DedicatedServerGui::onClose() {
  }
  DestroyWindow(frameHwnd_);
  platform::win32::MessageLoop::postQuit(0);
- ExitProcess(0);
 }
 LRESULT CALLBACK DedicatedServerGui::frameWindowProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam) {
  DedicatedServerGui* gui = reinterpret_cast<DedicatedServerGui*>(GetWindowLongPtrW(hwnd, GWLP_USERDATA));
@@ -263,6 +293,10 @@ LRESULT CALLBACK DedicatedServerGui::frameWindowProc(HWND hwnd, UINT message, WP
  }
  case WM_CLOSE:
   gui->onClose();
+  return 0;
+ case kShutdownMessage:
+  DestroyWindow(hwnd);
+  platform::win32::MessageLoop::postQuit(0);
   return 0;
  case WM_DESTROY:
   platform::win32::MessageLoop::postQuit(0);

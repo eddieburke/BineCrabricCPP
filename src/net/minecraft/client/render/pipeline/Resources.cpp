@@ -1,0 +1,331 @@
+#include "net/minecraft/client/render/pipeline/Resources.hpp"
+#include "net/minecraft/client/render/GlState.hpp"
+#include "net/minecraft/client/render/shaders/IncludeResolver.hpp"
+#include "net/minecraft/client/render/shaders/SourceProcessor.hpp"
+#include "net/minecraft/client/render/pipeline/Instance.hpp"
+#include "net/minecraft/client/render/PbrTextures.hpp"
+#include "net/minecraft/client/render/shaderpack/PackTexture.hpp"
+#include "net/minecraft/client/gl/GLCore.hpp"
+#include "net/minecraft/client/gl/GlResource.hpp"
+#include "net/minecraft/client/gl/ShaderProgram.hpp"
+#include "net/minecraft/client/render/RenderCore.hpp"
+#include "net/minecraft/client/Minecraft.hpp"
+#include <algorithm>
+#include <cmath>
+#include <cstdint>
+#include <cstring>
+#include <limits>
+#include <string>
+#include <utility>
+#include <vector>
+namespace net::minecraft::client::render {
+namespace {
+std::string textureKey(const CustomTexture& texture) {
+ return texture.stage.empty() ? texture.name : texture.stage + "." + texture.name;
+}
+std::uint64_t vramBytes() {
+ // Java: IrisRenderSystem.getVRAM() — NVX_GPU_memory_info query in KiB * 1024, else 4 GiB fallback.
+ // https://github.com/IrisShaders/Iris/blob/26.1/common/src/main/java/net/irisshaders/iris/gl/IrisRenderSystem.java
+ const char* extensions = reinterpret_cast<const char*>(::glGetString(0x1F03));
+ if(extensions != nullptr && std::strstr(extensions, "GL_NVX_gpu_memory_info") != nullptr) {
+  int available = 0;
+  ::glGetIntegerv(0x9049, &available);
+  if(available > 0) return static_cast<std::uint64_t>(available) * 1024ull;
+ }
+ return 4294967296ull;
+}
+} // namespace
+bool PackResources::ensure(PackInstance& pack, int width, int height, const gl::GlTexture& lightmapTexture,
+                                 const std::function<std::string(const PackInstance&, const std::string&)>& readText) {
+ if(!hasGlContext()) return false;
+ if(!pack.definition.images.empty() && gl::GLCore::bindImageTexture == nullptr) return false;
+ const bool customNoise = std::any_of(pack.definition.customTextures.begin(), pack.definition.customTextures.end(),
+                                      [](const CustomTexture& texture) { return texture.name == "noisetex"; });
+  if(!customNoise && (!pack.noiseTexture || pack.noiseResolution != pack.definition.noiseTextureResolution)) {
+   pack.noiseTexture = gl::GlTexture(core::genTexture());
+   pack.noiseResolution = pack.definition.noiseTextureResolution;
+   if(!pack.noiseTexture) return false;
+   const std::size_t count = static_cast<std::size_t>(pack.noiseResolution) * pack.noiseResolution * 3;
+   std::vector<std::uint8_t> noise(count);
+   std::uint32_t state = 0x9E3779B9u;
+   for(std::uint8_t& value : noise) {
+    state ^= state << 13;
+    state ^= state >> 17;
+    state ^= state << 5;
+    value = static_cast<std::uint8_t>(state);
+   }
+   core::bindTexture(static_cast<int>(pack.noiseTexture.handle()));
+  ::glTexImage2D(kTexture2D, 0, 0x8051, pack.noiseResolution, pack.noiseResolution, 0, 0x1907, 0x1401,
+                 noise.data());
+  ::glTexParameteri(kTexture2D, 0x2801, 0x2601);
+  ::glTexParameteri(kTexture2D, 0x2800, 0x2601);
+  ::glTexParameteri(kTexture2D, 0x2802, 0x2901);
+  ::glTexParameteri(kTexture2D, 0x2803, 0x2901);
+ }
+ const std::uint64_t vram = vramBytes();
+ for(const BufferObject& declaration : pack.definition.bufferObjects) {
+  if(declaration.index < 0 || declaration.index >= kMaxShaderStorageBuffers || !gl::GLCore::ssboSupported)
+   return false;
+  // Java: ShaderStorageBufferHolder ctor throws OutOfVideoMemoryError when the requested size
+  // exceeds available VRAM.
+  // https://github.com/IrisShaders/Iris/blob/26.1/common/src/main/java/net/irisshaders/iris/gl/buffer/ShaderStorageBufferHolder.java
+  if(declaration.byteSize > vram) return false;
+  // Java: "We don't have enough SSBO units???" when the index exceeds the GL limit.
+  if(declaration.index > gl::GLCore::maxShaderStorageUnits) return false;
+  std::size_t bytes = declaration.byteSize;
+  if(declaration.relative) {
+   // Java: ShaderStorageBuffer.resizeIfRelative computes (long)(width * scaleX) * (long)(height * scaleY) * size().
+   // https://github.com/IrisShaders/Iris/blob/26.1/common/src/main/java/net/irisshaders/iris/gl/buffer/ShaderStorageBuffer.java
+   const std::size_t scaledWidth =
+       static_cast<std::size_t>(std::max(0.0, static_cast<double>(width) * declaration.scaleX));
+   const std::size_t scaledHeight =
+       static_cast<std::size_t>(std::max(0.0, static_cast<double>(height) * declaration.scaleY));
+   if(scaledWidth != 0 && bytes > std::numeric_limits<std::size_t>::max() / scaledWidth) return false;
+   bytes *= scaledWidth;
+   if(scaledHeight != 0 && bytes > std::numeric_limits<std::size_t>::max() / scaledHeight) return false;
+   bytes *= scaledHeight;
+  }
+   gl::GlBuffer& buffer = pack.bufferObjects[declaration.index];
+   if(!buffer || pack.bufferBytes[declaration.index] != bytes) {
+    std::vector<std::uint8_t> initData;
+    if(!declaration.initPath.empty()) {
+     std::string path = declaration.initPath;
+     while(!path.empty() && path.front() == '/') path.erase(path.begin());
+     // Java resolves the content path against the pack root (ShaderPack ctor); content is
+     // loaded for every named buffer, relative or not.
+     // https://github.com/IrisShaders/Iris/blob/26.1/common/src/main/java/net/irisshaders/iris/shaderpack/ShaderPack.java
+     const std::string data = readText(pack, path);
+     if(!data.empty()) {
+      // Java: "Tried to load a shader storage file with no space in the buffer! Increase the buffer size."
+      if(data.size() > declaration.byteSize) return false;
+      initData.assign(data.begin(), data.end());
+     }
+    }
+    // Java deletes and regenerates the buffer object on every (re)allocation; gen into a
+    // temp so a failed allocation leaves the old buffer intact.
+    unsigned int handle = 0;
+    gl::GLCore::genBuffers(1, &handle);
+    if(handle == 0) return false;
+    buffer = gl::GlBuffer(handle);
+    gl::GLCore::bindBuffer(0x90D2, handle);
+    const int zero = 0;
+    if(declaration.relative) {
+     // Java: resizeIfRelative — immutable storage, then an R8 zero fill.
+     gl::GLCore::bufferStorage(0x90D2, static_cast<intptr_t>(bytes), nullptr, 0);
+     gl::GLCore::clearBufferSubData(0x90D2, 0x8229, 0, static_cast<intptr_t>(bytes), 0x1903, 0x1400, &zero);
+    } else {
+     // Java: createStatic — GL_DYNAMIC_STORAGE_BIT (0x0100) only when init content exists.
+     gl::GLCore::bufferStorage(0x90D2, static_cast<intptr_t>(bytes), nullptr, initData.empty() ? 0 : 0x0100);
+     if(!initData.empty()) {
+      gl::GLCore::bufferSubData(0x90D2, 0, static_cast<intptr_t>(initData.size()), initData.data());
+     } else {
+      gl::GLCore::clearBufferSubData(0x90D2, 0x8229, 0, static_cast<intptr_t>(bytes), 0x1903, 0x1400, &zero);
+     }
+    }
+     pack.bufferBytes[declaration.index] = bytes;
+    }
+    gl::GLCore::bindBufferBase(0x90D2, static_cast<unsigned int>(declaration.index), buffer.handle());
+   }
+  gl::GLCore::bindBuffer(0x90D2, 0);
+ for(const CustomTexture& declaration : pack.definition.customTextures) {
+  const std::string key = textureKey(declaration);
+  if(pack.customTextures.contains(key)) continue;
+  std::string path = declaration.path;
+  if(path.rfind("minecraft:", 0) == 0) {
+   if(path == "minecraft:dynamic/lightmap_1" || path == "minecraft:dynamic/light_map_1") {
+    if(!lightmapTexture) return false;
+    pack.customTextures[key] = lightmapTexture.handle();
+    continue;
+   }
+   net::minecraft::client::Minecraft* minecraft = net::minecraft::client::Minecraft::INSTANCE;
+   if(minecraft == nullptr) return false;
+   std::string resource = path.substr(10);
+   static constexpr std::pair<const char*, const char*> kAtlasRemap[] = {
+       {"textures/atlas/blocks.png", "/terrain.png"},
+       {"textures/atlas/blocks_n.png", "/terrain_n.png"},
+       {"textures/atlas/blocks_s.png", "/terrain_s.png"},
+       {"textures/atlas/items.png", "/gui/items.png"},
+       {"textures/atlas/items_n.png", "/gui/items_n.png"},
+       {"textures/atlas/items_s.png", "/gui/items_s.png"},
+   };
+   bool remapped = false;
+   for(const auto& [from, to] : kAtlasRemap) {
+    if(resource == from) {
+     resource = to;
+     remapped = true;
+     break;
+    }
+   }
+   if(!remapped) resource = "/" + resource;
+   const int texture = minecraft->textureManager.getTextureId(resource);
+   if(texture < 0) return false;
+   // Java CustomTextureManager.createCustomTexture resolves *_n/*_s custom
+   // textures to the base texture's PBR holder (with LabPBR texture
+   // parameters); do the same so texture.atlas_blocks_n-style samplers see
+   // the PBR atlas instead of a raw companion upload.
+   // https://github.com/IrisShaders/Iris/blob/26.1/common/src/main/java/net/irisshaders/iris/pipeline/CustomTextureManager.java
+   if(const std::size_t extension = resource.find_last_of('.'); extension != std::string::npos &&
+      extension > 2) {
+    const std::string base = resource.substr(0, extension);
+    const bool normal = base.ends_with("_n");
+    const bool specular = base.ends_with("_s");
+    if(normal || specular) {
+     const std::string basePath = base.substr(0, base.size() - 2) + resource.substr(extension);
+     const int baseId = minecraft->textureManager.getTextureId(basePath);
+     if(baseId > 0) {
+      const render::PbrTextures::Holder holder =
+          render::PbrTextures::getOrLoad(baseId, minecraft->textureManager,
+                                         pack.definition.labPbr);
+      const int pbrId = normal ? holder.normal : holder.specular;
+      if(pbrId > 0) {
+       pack.customTextures[key] = static_cast<unsigned int>(pbrId);
+       continue;
+      }
+     }
+    }
+   }
+   pack.customTextures[key] = static_cast<unsigned int>(texture);
+   continue;
+  }
+  while(!path.empty() && path.front() == '/') path.erase(path.begin());
+  std::string data = readText(pack, "shaders/" + path);
+  if(data.empty()) data = readText(pack, path);
+  if(data.empty()) return false;
+  DecodedTexture decoded;
+  std::vector<int> textureDimensions = declaration.dimensions;
+  const void* pixels = data.data();
+  if(declaration.encoded) {
+   decoded = decodeTexture(data);
+   if(decoded.rgba.empty()) return false;
+   textureDimensions = {decoded.width, decoded.height};
+   pixels = decoded.rgba.data();
+  }
+  bool blur = !declaration.encoded;
+  bool clamp = !declaration.encoded;
+  const std::string metadata = readText(pack, "shaders/" + path + ".mcmeta");
+  auto metadataFlag = [&metadata](std::string_view name, bool fallback) {
+   const std::size_t key = metadata.find(name);
+   if(key == std::string::npos) return fallback;
+   const std::size_t value = metadata.find_first_not_of(" \t\r\n:", key + name.size());
+   return value == std::string::npos ? fallback : metadata.compare(value, 4, "true") == 0;
+  };
+  blur = metadataFlag("\"blur\"", blur);
+  clamp = metadataFlag("\"clamp\"", clamp);
+  const unsigned int target = textureTarget(declaration.type, textureDimensions.size());
+  if((target == kTexture3D && textureDimensions.size() < 3) ||
+     (target == kTexture2D && textureDimensions.size() < 2)) return false;
+  const unsigned int texture = core::genTexture();
+  if(texture == 0) return false;
+  if(target == kTexture2D) {
+   core::bindTexture(kTexture2D, static_cast<int>(texture));
+  } else {
+   ::glBindTexture(target, texture);
+   core::invalidateTextureBindCache();
+  }
+  ::glPixelStorei(0x0CF5, 1);
+  const unsigned int internal = internalFormat(declaration.internalFormat);
+  const unsigned int format = pixelFormat(declaration.pixelFormat);
+  const unsigned int type = pixelType(declaration.pixelType);
+  if(target == kTexture3D && gl::GLCore::texImage3D != nullptr) {
+   gl::GLCore::texImage3D(target, 0, static_cast<int>(internal), textureDimensions[0], textureDimensions[1],
+                          textureDimensions[2], 0, format, type, pixels);
+  } else if(target == 0x0DE0) {
+   ::glTexImage1D(target, 0, static_cast<int>(internal), textureDimensions[0], 0, format, type, pixels);
+  } else {
+   ::glTexImage2D(target, 0, static_cast<int>(internal), textureDimensions[0], textureDimensions[1], 0,
+                  format, type, pixels);
+  }
+  ::glTexParameteri(target, 0x2801, blur ? 0x2601 : 0x2600);
+  ::glTexParameteri(target, 0x2800, blur ? 0x2601 : 0x2600);
+  ::glTexParameteri(target, 0x2802, clamp ? 0x812F : 0x2901);
+  if(target != 0x0DE0) ::glTexParameteri(target, 0x2803, clamp ? 0x812F : 0x2901);
+   if(target == kTexture3D) ::glTexParameteri(target, 0x8072, clamp ? 0x812F : 0x2901);
+   pack.customTextures[key] = texture;
+   pack.ownedCustomTextures.insert(texture);
+  }
+ for(const CustomImage& declaration : pack.definition.images) {
+  const int imageWidth = declaration.relative ? std::max(1, static_cast<int>(std::ceil(width * declaration.width)))
+                                              : std::max(1, static_cast<int>(declaration.width));
+  const int imageHeight = declaration.relative ? std::max(1, static_cast<int>(std::ceil(height * declaration.height)))
+                                               : std::max(1, static_cast<int>(declaration.height));
+  PackInstance::ImageTarget& image = pack.images[declaration.name];
+  if(image.texture && image.width == imageWidth && image.height == imageHeight && image.depth == declaration.depth) continue;
+  image.texture = gl::GlTexture(core::genTexture());
+  image.width = imageWidth;
+  image.height = imageHeight;
+  image.depth = declaration.depth;
+  if(!image.texture) return false;
+  const unsigned int target = image.depth > 1 ? kTexture3D : kTexture2D;
+  if(target == kTexture2D) {
+   core::bindTexture(static_cast<int>(image.texture.handle()));
+  } else {
+   ::glBindTexture(target, image.texture.handle());
+   core::invalidateTextureBindCache();
+  }
+  if(target == kTexture3D && gl::GLCore::texImage3D != nullptr) {
+   gl::GLCore::texImage3D(target, 0, static_cast<int>(internalFormat(declaration.internalFormat)), image.width,
+                          image.height, image.depth, 0, pixelFormat(declaration.format),
+                          pixelType(declaration.pixelType), nullptr);
+  } else {
+   ::glTexImage2D(target, 0, static_cast<int>(internalFormat(declaration.internalFormat)), image.width, image.height,
+                  0, pixelFormat(declaration.format), pixelType(declaration.pixelType), nullptr);
+  }
+   ::glTexParameteri(target, 0x2801, 0x2601);
+   ::glTexParameteri(target, 0x2800, 0x2601);
+   ::glTexParameteri(target, 0x2802, 0x812F);
+   ::glTexParameteri(target, 0x2803, 0x812F);
+   if(target == kTexture3D) ::glTexParameteri(target, 0x8072, 0x812F);
+  }
+ int maxDim = std::max(width, height);
+ for(const auto& [name, target] : pack.definition.targets) {
+  (void)name;
+  if(target.absoluteWidth > 0 && target.absoluteHeight > 0) {
+   maxDim = std::max(maxDim, std::max(target.absoluteWidth, target.absoluteHeight));
+  } else {
+   maxDim = std::max(maxDim,
+                     std::max(1, static_cast<int>(std::ceil(width * target.scaleX))));
+   maxDim = std::max(maxDim,
+                     std::max(1, static_cast<int>(std::ceil(height * target.scaleY))));
+  }
+ }
+ int level = 0;
+ for(int d = std::max(1, maxDim); d > 1; d >>= 1) ++level;
+ pack.definition.mcMipmapLevel = std::max(0, level);
+ return true;
+}
+void PackResources::bind(PackInstance& pack, gl::ShaderProgram& program, unsigned int imageUnitStart) {
+  for(const BufferObject& declaration : pack.definition.bufferObjects) {
+    if(pack.bufferObjects[declaration.index]) {
+     gl::GLCore::bindBufferBase(0x90D2, static_cast<unsigned int>(declaration.index), pack.bufferObjects[declaration.index].handle());
+    }
+   }
+  unsigned int imageUnit = imageUnitStart;
+  for(const CustomImage& declaration : pack.definition.images) {
+   const auto found = pack.images.find(declaration.name);
+   if(found == pack.images.end() || !found->second.texture || imageUnit >= 16) continue;
+   program.set1i(declaration.name, static_cast<int>(imageUnit));
+    gl::GLCore::bindImageTexture(imageUnit, found->second.texture.handle(), 0, found->second.depth > 1 ? 1 : 0, 0, 0x88BA,
+                                 internalFormat(declaration.internalFormat));
+  ++imageUnit;
+ }
+}
+void PackResources::addTextures(PackInstance& pack,
+                                      const std::string& stage,
+                                      std::unordered_map<std::string, int>& textures,
+                                      std::unordered_map<std::string, int>& volumes) {
+ if(pack.noiseTexture) textures["noisetex"] = static_cast<int>(pack.noiseTexture.handle());
+ for(const CustomTexture& declaration : pack.definition.customTextures) {
+  if(!declaration.stage.empty() && declaration.stage != stage) continue;
+  const auto found = pack.customTextures.find(textureKey(declaration));
+  if(found != pack.customTextures.end())
+   (declaration.dimensions.size() == 3 ? volumes : textures)[declaration.name] =
+       static_cast<int>(found->second);
+ }
+ for(const CustomImage& declaration : pack.definition.images) {
+  const auto found = pack.images.find(declaration.name);
+  if(found != pack.images.end())
+    (found->second.depth > 1 ? volumes : textures)[declaration.sampler] =
+        static_cast<int>(found->second.texture.handle());
+ }
+}
+} // namespace net::minecraft::client::render

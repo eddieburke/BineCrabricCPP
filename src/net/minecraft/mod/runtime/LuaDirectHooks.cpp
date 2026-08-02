@@ -1,6 +1,6 @@
 #include "net/minecraft/mod/runtime/LuaDirectHooks.hpp"
 #include <optional>
-#include "net/minecraft/client/render/FrameRenderCamera.hpp"
+#include "net/minecraft/client/render/camera/FrameRenderCamera.hpp"
 #include "net/minecraft/mod/lua/LuaChunkContext.hpp"
 #include "net/minecraft/mod/lua/LuaGameApi.hpp"
 #include "net/minecraft/mod/lua/LuaHostApi.hpp"
@@ -983,7 +983,9 @@ void luaHookWorldRender(WorldRenderEvent& e) {
     })) {
   return;
  }
- ScopedModWorldDrawContext worldDrawScope{e.world, e.tickDelta};
+ const ModDrawLayer drawLayer =
+     e.stage == WorldRenderStage::Clouds ? ModDrawLayer::Clouds : ModDrawLayer::Auto;
+ ScopedModWorldDrawContext worldDrawScope{e.world, e.tickDelta, drawLayer};
  // World-render callbacks routinely query the world they are drawing
  // (minecraft.entities.list to draw mod entities, for one), so the mod context
  // has to be live here just as it is for the runLuaHook-based events.

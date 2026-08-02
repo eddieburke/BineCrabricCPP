@@ -4,13 +4,18 @@
 #include <cstddef>
 #include <cstring>
 #include <limits>
+#include <mutex>
 #include <thread>
+#include "net/minecraft/util/concurrent/ThreadCoordinator.hpp"
+#include "net/minecraft/util/concurrent/ThreadNames.hpp"
 namespace net::minecraft::client::gl {
 #define GLFN(type, name) type GLCore::name = nullptr
 GLFN(PFN_GenBuffers, genBuffers);
 GLFN(PFN_BindBuffer, bindBuffer);
 GLFN(PFN_BufferData, bufferData);
 GLFN(PFN_BufferSubData, bufferSubData);
+GLFN(PFN_BufferStorage, bufferStorage);
+GLFN(PFN_ClearBufferSubData, clearBufferSubData);
 GLFN(PFN_DeleteBuffers, deleteBuffers);
 GLFN(PFN_SwapInterval, swapInterval);
 GLFN(PFN_GenFramebuffers, genFramebuffers);
@@ -61,6 +66,7 @@ GLFN(PFN_GenVertexArrays, genVertexArrays);
 GLFN(PFN_BindVertexArray, bindVertexArray);
 GLFN(PFN_DeleteVertexArrays, deleteVertexArrays);
 GLFN(PFN_VertexAttribPointer, vertexAttribPointer);
+GLFN(PFN_VertexAttribIPointer, vertexAttribIPointer);
 GLFN(PFN_EnableVertexAttribArray, enableVertexAttribArray);
 GLFN(PFN_DisableVertexAttribArray, disableVertexAttribArray);
 GLFN(PFN_VertexAttrib4f, vertexAttrib4f);
@@ -111,11 +117,12 @@ bool GLCore::uboSupported = false;
 bool GLCore::timerQuerySupported = false;
 bool GLCore::computeSupported = false;
 bool GLCore::ssboSupported = false;
+int GLCore::maxShaderStorageUnits = 0;
 bool GLCore::samplerObjectsSupported = false;
 bool GLCore::perBufferBlendingSupported = false;
 bool GLCore::parallelShaderCompileSupported = false;
 bool GLCore::swapControlTearSupported = false;
-static bool g_loaded = false;
+static std::once_flag g_initOnce;
 static int g_appliedSwapInterval = std::numeric_limits<int>::min();
 static void* loadProc(const char* name) {
  PROC proc = wglGetProcAddress(name);
@@ -136,16 +143,22 @@ static void* loadProc(const char* name) {
   }                                                                      \
  } while(0)
 void GLCore::init() {
- if(g_loaded || wglGetCurrentContext() == nullptr) {
+ if(wglGetCurrentContext() == nullptr) {
   return;
  }
- g_loaded = true;
- LOAD_TRY(texImage3D, "glTexImage3D", "glTexImage3DEXT");
+ std::call_once(g_initOnce, [] {
+  // init() first runs on the main GL thread at display setup; latch the
+  // ThreadNames main-thread marker so the Debug confinement asserts (WI-5)
+  // are effective before PASS-2 wires setMainThread() into the frame loop.
+  net::minecraft::util::concurrent::setMainThread();
+  LOAD_TRY(texImage3D, "glTexImage3D", "glTexImage3DEXT");
  LOAD_TRY(texSubImage3D, "glTexSubImage3D", "glTexSubImage3DEXT");
  LOAD_TRY(genBuffers, "glGenBuffersARB", "glGenBuffers");
  LOAD_TRY(bindBuffer, "glBindBufferARB", "glBindBuffer");
  LOAD_TRY(bufferData, "glBufferDataARB", "glBufferData");
  LOAD_TRY(bufferSubData, "glBufferSubDataARB", "glBufferSubData");
+ LOAD_TRY(bufferStorage, "glBufferStorage", "glBufferStorageARB", "glBufferStorageEXT");
+ LOAD_TRY(clearBufferSubData, "glClearBufferSubData");
  LOAD_TRY(deleteBuffers, "glDeleteBuffersARB", "glDeleteBuffers");
  LOAD_TRY(swapInterval, "wglSwapIntervalEXT");
  {
@@ -214,6 +227,7 @@ void GLCore::init() {
  LOAD_TRY(bindVertexArray, "glBindVertexArray", "glBindVertexArrayAPPLE");
  LOAD_TRY(deleteVertexArrays, "glDeleteVertexArrays", "glDeleteVertexArraysAPPLE");
  LOAD_TRY(vertexAttribPointer, "glVertexAttribPointer", "glVertexAttribPointerARB");
+ LOAD_TRY(vertexAttribIPointer, "glVertexAttribIPointer");
  LOAD_TRY(enableVertexAttribArray, "glEnableVertexAttribArray", "glEnableVertexAttribArrayARB");
  LOAD_TRY(disableVertexAttribArray, "glDisableVertexAttribArray", "glDisableVertexAttribArrayARB");
  LOAD_TRY(vertexAttrib4f, "glVertexAttrib4f", "glVertexAttrib4fARB");
@@ -262,19 +276,28 @@ void GLCore::init() {
  timerQuerySupported =
      genQueries && deleteQueries && beginQuery && endQuery && getQueryObjectiv && getQueryObjectui64v;
  shaderSupported = createShader && shaderSource && compileShader && createProgram && linkProgram && useProgram &&
-                   getUniformLocation && vertexAttribPointer && enableVertexAttribArray;
+                   getUniformLocation && vertexAttribPointer && vertexAttribIPointer && enableVertexAttribArray;
  uboSupported = shaderSupported && getUniformBlockIndex && uniformBlockBinding && bindBufferRange &&
                 bufferData && bufferSubData;
- computeSupported = shaderSupported && dispatchCompute && memoryBarrier;
- ssboSupported = shaderSupported && shaderStorageBlockBinding && bindBufferBase && bufferData;
+  computeSupported = shaderSupported && dispatchCompute && memoryBarrier;
+  // Java: IrisRenderSystem.supportsSSBO() = OpenGL44 || (ARB_SSBO && ARB_buffer_storage).
+  // clearBufferSubData is required because the SSBO holder always zero-fills with it.
+  ssboSupported = shaderSupported && shaderStorageBlockBinding && bindBufferBase && bufferStorage &&
+                  clearBufferSubData;
+  // Java: SamplerLimits queries GL_MAX_SHADER_STORAGE_BUFFER_BINDINGS when SSBO is supported.
+  int maxStorageUnits = 0;
+  if(ssboSupported) {
+   ::glGetIntegerv(0x90DD, &maxStorageUnits);
+  }
+  maxShaderStorageUnits = maxStorageUnits;
  samplerObjectsSupported = genSamplers && deleteSamplers && bindSampler && samplerParameteri;
  perBufferBlendingSupported = blendFunci != nullptr && enablei != nullptr && disablei != nullptr;
  parallelShaderCompileSupported = maxShaderCompilerThreadsKHR != nullptr;
- if(parallelShaderCompileSupported) {
-  const unsigned threads =
-      std::max(1U, std::thread::hardware_concurrency() > 2 ? std::thread::hardware_concurrency() - 2 : 1U);
-  maxShaderCompilerThreadsKHR(threads);
- }
+  if(parallelShaderCompileSupported) {
+   const unsigned threads = net::minecraft::util::concurrent::ThreadCoordinator::instance().budget().glDriverThreads();
+   maxShaderCompilerThreadsKHR(threads);
+  }
+ });
 }
 #undef LOAD_TRY
 void GLCore::ensureLoaded() {

@@ -1,60 +1,78 @@
 #pragma once
+#include <algorithm>
+#include <atomic>
+#include <cstdint>
 #include <functional>
 #include <memory>
-#include <mutex>
+#include <thread>
 #include <utility>
 #include <vector>
+#include "net/minecraft/util/concurrent/Channel.hpp"
 #include "net/minecraft/util/concurrent/WorkerPool.hpp"
 namespace net::minecraft::util::concurrent {
-// Worker pool that hands finished jobs back to the main thread via drainCompleted().
-// Worker lambdas run off-thread; all other methods are main-thread only.
+// Worker pool that hands finished jobs back to the main thread via
+// drainCompleted(). Workers run on a caller-owned shared pool; completed jobs
+// cross back on a bounded Channel so the main thread is the only thread that
+// drops the last shared_ptr (R3). cancelAll() is non-blocking: it bumps an
+// epoch token so queued/in-flight tasks skip their work and hand their job
+// back through the channel for a main-thread drop. All methods except
+// enqueue() are main-thread only.
 template <typename Job>
 class WorkerHandoff {
  public:
- explicit WorkerHandoff(unsigned threadCount = WorkerPool::recommendedThreadCount(2, 2)) : pool_(threadCount) {
- }
- ~WorkerHandoff() {
-  cancelAll();
- }
- WorkerHandoff(const WorkerHandoff&) = delete;
- WorkerHandoff& operator=(const WorkerHandoff&) = delete;
- template <typename Fn>
- void enqueue(std::shared_ptr<Job> job, Fn&& work, int priority = 0) {
-  pool_.submit(
-      [this, job = std::move(job), work = std::forward<Fn>(work)]() mutable {
-       work(*job);
-       const std::lock_guard lock(mutex_);
-       completed_.push_back(std::move(job));
-      },
-      priority);
- }
- [[nodiscard]] std::vector<std::shared_ptr<Job>> drainCompleted() {
-  const std::lock_guard lock(mutex_);
-  return std::exchange(completed_, {});
- }
- void cancelAll() {
-  pool_.cancelPending();
-  pool_.drain();
-  const std::lock_guard lock(mutex_);
-  completed_.clear();
- }
- [[nodiscard]] bool idle() const {
-  if(pool_.pendingCount() != 0) {
-   return false;
+  explicit WorkerHandoff(WorkerPool& pool)
+      : pool_(pool), completed_(std::max<std::size_t>(64, pool.threadCount() * 32)) {
   }
-  const std::lock_guard lock(mutex_);
-  return completed_.empty();
- }
- [[nodiscard]] std::size_t pendingJobs() const {
-  return pool_.pendingCount();
- }
- [[nodiscard]] unsigned workerCount() const noexcept {
-  return pool_.threadCount();
- }
+  ~WorkerHandoff() {
+   cancelAll();
+   // In-flight tasks still capture `this`; wait for every one to hand its job
+   // back before the channel goes away.
+   while(inFlight_.load(std::memory_order::acquire) != 0) {
+    std::vector<std::shared_ptr<Job>> remaining = completed_.drain();
+    remaining.clear();
+    std::this_thread::yield();
+   }
+   std::vector<std::shared_ptr<Job>> remaining = completed_.drain();
+   remaining.clear();
+  }
+  WorkerHandoff(const WorkerHandoff&) = delete;
+  WorkerHandoff& operator=(const WorkerHandoff&) = delete;
+  template <typename Fn>
+  void enqueue(std::shared_ptr<Job> job, Fn&& work, int priority = 0) {
+   const std::uint64_t epoch = epoch_.load(std::memory_order::acquire);
+   inFlight_.fetch_add(1, std::memory_order::release);
+   pool_.submit(
+       [this, job = std::move(job), work = std::forward<Fn>(work), epoch]() mutable {
+        if(epoch_.load(std::memory_order::acquire) == epoch) {
+         work(*job);
+        }
+        completed_.push(std::move(job));
+        inFlight_.fetch_sub(1, std::memory_order::release);
+       },
+       priority);
+  }
+  [[nodiscard]] std::vector<std::shared_ptr<Job>> drainCompleted() {
+   return completed_.drain();
+  }
+  void cancelAll() {
+   epoch_.fetch_add(1, std::memory_order::acq_rel);
+   std::vector<std::shared_ptr<Job>> dropped = completed_.drain();
+   dropped.clear();
+  }
+  [[nodiscard]] bool idle() const {
+   return inFlight_.load(std::memory_order::acquire) == 0 && completed_.size() == 0;
+  }
+  [[nodiscard]] std::size_t pendingJobs() const {
+   return inFlight_.load(std::memory_order::acquire);
+  }
+  [[nodiscard]] unsigned workerCount() const noexcept {
+   return pool_.threadCount();
+  }
 
  private:
- WorkerPool pool_;
- mutable std::mutex mutex_;
- std::vector<std::shared_ptr<Job>> completed_;
+  WorkerPool& pool_;
+  Channel<std::shared_ptr<Job>> completed_;
+  std::atomic<std::uint64_t> epoch_{0};
+  std::atomic<std::size_t> inFlight_{0};
 };
 } // namespace net::minecraft::util::concurrent

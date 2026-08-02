@@ -7,7 +7,7 @@
 #include <chrono>
 #include "net/minecraft/client/Minecraft.hpp"
 #include "net/minecraft/client/gl/GlConstants.hpp"
-#include "net/minecraft/client/render/GuiProjection.hpp"
+#include "net/minecraft/client/render/camera/GuiProjection.hpp"
 #include "net/minecraft/client/render/RenderCore.hpp"
 #include "net/minecraft/client/render/RenderType.hpp"
 #include "net/minecraft/client/render/Tessellator.hpp"
@@ -31,9 +31,6 @@ void renderProfilerChartInViewport(int viewportWidth, int viewportHeight) {
  render::core::disableCull();
  core::setConstColor(1.0f, 1.0f, 1.0f, 1.0f);
  render::core::clear(0x00000100);
- net::minecraft::util::math::MatrixStack modelView;
- net::minecraft::util::math::MatrixStack projection;
- const core::ScopedMatrixStacks matrixBind(modelView, projection);
  gui_proj::load(static_cast<float>(viewportWidth), static_cast<float>(viewportHeight));
  glLineWidth(1.0f);
  render::Tessellator& tessellator = render::Tessellator::INSTANCE;

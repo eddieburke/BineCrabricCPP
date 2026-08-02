@@ -6,6 +6,7 @@
 #include <unordered_map>
 #include <vector>
 #include "net/minecraft/client/gl/GlConstants.hpp"
+#include "net/minecraft/client/render/camera/FrameRenderCamera.hpp"
 #include "net/minecraft/client/render/RenderCore.hpp"
 #include "net/minecraft/client/render/RenderType.hpp"
 #include "net/minecraft/client/render/Tessellator.hpp"
@@ -112,11 +113,11 @@ void EntityRenderDispatcher::init(net::minecraft::World* world,
  world_ = world;
  textureManager_ = textureManager;
  textRenderer_ = textRenderer;
- cameraEntity_ = cameraEntity;
- if(options != nullptr) {
-  defaultOptions_ = *options;
- }
- if(cameraEntity != nullptr && cameraEntity->isSleeping() && world != nullptr) {
+   cameraEntity_ = cameraEntity;
+   if(options != nullptr) {
+    defaultOptions_ = *options;
+   }
+   if(cameraEntity != nullptr && cameraEntity->isSleeping() && world != nullptr) {
   const int blockId = world->getBlockId(
       MathHelper::floor(cameraEntity->x), MathHelper::floor(cameraEntity->y), MathHelper::floor(cameraEntity->z));
   if(blockId == 26) { // Block.BED
@@ -164,8 +165,11 @@ void EntityRenderDispatcher::render(const net::minecraft::Entity& entity,
                                     float tickDelta,
                                     net::minecraft::util::math::MatrixStack& matrices,
                                     const net::minecraft::util::math::Matrix4f& projection) {
- const std::string entityName = net::minecraft::entity::EntityRegistry::getId(entity);
- render::core::setEntityId(resolveShaderObjectId("entity", entityName, 0));
+  const std::string& entityName = net::minecraft::entity::EntityRegistry::getIdRef(entity);
+ // Java resolves the current entity through entity.properties with a -1
+ // default (IdMap.parseIdMap defaultReturnValue(-1),
+ // MixinEntityRenderDispatcher.iris$beginEntityRender).
+ render::core::setEntityId(resolveShaderObjectId("entity", entityName, -1));
  if(net::minecraft::mod::runtime::hasLuaHook(net::minecraft::mod::runtime::LuaEventId::PreEntityRender)) {
   net::minecraft::mod::PreEntityRenderEvent event;
   event.entity = &entity;
@@ -180,6 +184,12 @@ void EntityRenderDispatcher::render(const net::minecraft::Entity& entity,
   }
  }
  if(EntityRenderer* renderer = get(entity); renderer != nullptr) {
+  // The renderer composes entity poses onto `matrices` and publishes the
+  // composed matrix to the draw camera state before its draws; restore the
+  // frame base afterwards (renderers that draw without composing, e.g. the
+  // debug hitbox, see the base published here).
+  const render::core::ScopedDrawCameraState drawGuard;
+  render::core::setDrawModelView(matrices.top());
   renderer->render(entity, x, y, z, yaw, tickDelta, matrices, projection);
   renderer->postRender(entity, x, y, z, yaw, tickDelta, matrices, projection);
  }

@@ -3,10 +3,10 @@
 #include "net/minecraft/client/Minecraft.hpp"
 #include "net/minecraft/client/font/TextRenderer.hpp"
 #include "net/minecraft/client/gl/GlConstants.hpp"
-#include "net/minecraft/client/render/FrameRenderCamera.hpp"
+#include "net/minecraft/client/render/camera/FrameRenderCamera.hpp"
 #include "net/minecraft/client/render/GameRenderer.hpp"
 #include "net/minecraft/client/render/RenderCore.hpp"
-#include "net/minecraft/client/render/shaderpack/ShaderPackManager.hpp"
+#include "net/minecraft/client/render/pipeline/Manager.hpp"
 #include "net/minecraft/client/option/GameOptions.hpp"
 #include "net/minecraft/client/render/RenderType.hpp"
 #include "net/minecraft/client/render/Tessellator.hpp"
@@ -63,9 +63,11 @@ void EntityRenderer::bindTexture(std::string_view texturePath) {
  if(dispatcher == nullptr || dispatcher->textureManager() == nullptr) {
   return;
  }
+ // Diffuse is unit 0 under the shader pipeline (gbuffers_entities samples
+ // gtexture there; the lightmap takes unit 1). The legacy beta unit-1 (0x84C0)
+ // multitexture bind placed the entity texture where the pipeline puts lightmap.
  const int textureId = dispatcher->textureManager()->getTextureId(std::string(texturePath));
- core::activeTexture(0x84C0);
- core::bindTexture(0x0DE1, textureId);
+  dispatcher->textureManager()->bindTexture(textureId);
 }
 bool EntityRenderer::bindDownloadedTexture(std::string_view url, std::string_view backup) {
  if(dispatcher == nullptr || dispatcher->textureManager() == nullptr) {
@@ -87,8 +89,7 @@ bool EntityRenderer::bindDownloadedTexture(std::string_view url, std::string_vie
  if(textureId < 0) {
   return false;
  }
- core::activeTexture(0x84C0);
- core::bindTexture(0x0DE1, textureId);
+ dispatcher->textureManager()->bindTexture(textureId);
  return true;
 }
 font::TextRenderer* EntityRenderer::getTextRenderer() const noexcept {
@@ -102,7 +103,7 @@ void EntityRenderer::renderOnFire(
     float tickDelta,
     net::minecraft::util::math::MatrixStack& matrices) {
  const render::core::EntityIdScope entityScope(
-     resolveShaderObjectId("entity", "minecraft:entity_flame", 0));
+     resolveShaderObjectId("entity", "minecraft:entity_flame", -1));
  const render::RenderPassScope passScope(render::RenderType::entityTranslucent());
  (void)tickDelta;
  net::minecraft::block::Block* fireBlock = net::minecraft::block::Block::BLOCKS[kFireBlockId];
@@ -127,9 +128,10 @@ void EntityRenderer::renderOnFire(
   if(dispatcher != nullptr) {
    matrices.rotate(-dispatcher->yaw_, 0.0f, 1.0f, 0.0f);
   }
-  matrices.translate(0.0f, 0.0f, -0.3f + static_cast<float>(static_cast<int>(remaining)) * 0.02f);
-  render::core::setConstColor(1.0f, 1.0f, 1.0f, 1.0f);
-  float layerOffset = 0.0f;
+   matrices.translate(0.0f, 0.0f, -0.3f + static_cast<float>(static_cast<int>(remaining)) * 0.02f);
+   render::core::setConstColor(1.0f, 1.0f, 1.0f, 1.0f);
+   render::core::setDrawModelView(matrices.top());
+   float layerOffset = 0.0f;
   int layer = 0;
   tessellator.startQuads();
   while(remaining > 0.0f) {
@@ -173,17 +175,15 @@ void EntityRenderer::renderShadow(
     double dz,
     float yaw,
     float tickDelta,
-    net::minecraft::util::math::MatrixStack& /*matrices*/) {
+    net::minecraft::util::math::MatrixStack& matrices) {
  const render::core::EntityIdScope entityScope(
-     resolveShaderObjectId("entity", "minecraft:entity_shadow", 0));
+     resolveShaderObjectId("entity", "minecraft:entity_shadow", -1));
  render::RenderPassScope passScope(render::RenderType::entityTranslucent());
  // Soft shadow: opacity lives in vaColor.a (see gbuffers_entities.fsh).
- core::enableBlend();
- core::blendFunc(0x0302, 0x0303);
+ render::core::setDrawModelView(matrices.top());
  if(dispatcher != nullptr && dispatcher->textureManager() != nullptr) {
   const int shadowTex = dispatcher->textureManager()->getTextureId("%clamp%/misc/shadow.png");
-  core::activeTexture(0x84C0);
-  core::bindTexture(shadowTex);
+  dispatcher->textureManager()->bindTexture(shadowTex);
  }
  World* world = getWorld();
  if(world == nullptr) {

@@ -182,6 +182,7 @@ void PlayerEntityRenderer::renderNameTag(const net::minecraft::LivingEntity& ent
  matrices.scale(-pixelScale, -pixelScale, pixelScale);
  render::RenderPassScope passScope(render::RenderType::guiTextured());
  Tessellator& tessellator = Tessellator::INSTANCE;
+ render::core::setDrawModelView(matrices.top());
  {
   // Untextured backing quad behind the name, so it uses gbuffers_basic.
   render::RenderPassScope backdropPass(render::RenderType::basic());
@@ -213,19 +214,20 @@ void PlayerEntityRenderer::renderMore(const net::minecraft::LivingEntity& entity
   return;
  }
  const ItemStack helmetStack = player->inventory.armor[3];
- if(!helmetStack.empty() && helmetStack.itemId < 256) {
-  matrices.push();
-  bipedModel->head.transform(0.0625f);
-  Block* block = Block::BLOCKS[static_cast<std::size_t>(helmetStack.itemId)];
-  if(block != nullptr && block::BlockRenderManager::isSideLit(block->getRenderType())) {
-   constexpr float scale = 0.625f;
-   matrices.translate(0.0f, -0.25f, 0.0f);
-   matrices.rotate(180.0f, 0.0f, 1.0f, 0.0f);
-   matrices.scale(scale, -scale, scale);
+  if(!helmetStack.empty() && helmetStack.itemId < 256) {
+   matrices.push();
+   bipedModel->head.transform(0.0625f, matrices);
+   Block* block = Block::BLOCKS[static_cast<std::size_t>(helmetStack.itemId)];
+   if(block != nullptr && block::BlockRenderManager::isSideLit(block->getRenderType())) {
+    constexpr float scale = 0.625f;
+    matrices.translate(0.0f, -0.25f, 0.0f);
+    matrices.rotate(180.0f, 0.0f, 1.0f, 0.0f);
+    matrices.scale(scale, -scale, scale);
+   }
+   render::core::setDrawModelView(matrices.top());
+   heldItemRenderer->renderItem(*player, helmetStack);
+   matrices.pop();
   }
-  heldItemRenderer->renderItem(*player, helmetStack);
-  matrices.pop();
- }
  if(player->name == "deadmau5" && !player->skinUrl.empty() && bindDownloadedTexture(player->skinUrl, player->texture)) {
   for(int ear = 0; ear < 2; ++ear) {
    const float headYaw = player->prevYaw + (player->yaw - player->prevYaw) * tickDelta -
@@ -238,15 +240,16 @@ void PlayerEntityRenderer::renderMore(const net::minecraft::LivingEntity& entity
    matrices.translate(0.0f, -0.375f, 0.0f);
    matrices.rotate(-headPitch, 1.0f, 0.0f, 0.0f);
    matrices.rotate(-headYaw, 0.0f, 1.0f, 0.0f);
-   constexpr float earScale = 1.3333334f;
-   matrices.scale(earScale, earScale, earScale);
-   bipedModel->renderEars(0.0625f);
-   matrices.pop();
+    constexpr float earScale = 1.3333334f;
+    matrices.scale(earScale, earScale, earScale);
+    render::core::setDrawModelView(matrices.top());
+    bipedModel->renderEars(0.0625f);
+    matrices.pop();
   }
  }
  if(!player->playerCapeUrl.empty() && bindDownloadedTexture(player->playerCapeUrl)) {
-  const render::core::EntityIdScope capeScope(
-      resolveShaderObjectId("entity", "minecraft:player_cape", 0));
+ const render::core::EntityIdScope capeScope(
+     resolveShaderObjectId("entity", "minecraft:player_cape", -1));
   matrices.push();
   matrices.translate(0.0f, 0.0f, 0.125f);
   const double capeDx = player->prevCapeX + (player->capeX - player->prevCapeX) * static_cast<double>(tickDelta) -
@@ -279,12 +282,13 @@ void PlayerEntityRenderer::renderMore(const net::minecraft::LivingEntity& entity
   if(player->isSneaking()) {
    capeLift += 25.0f;
   }
-  matrices.rotate(6.0f + capeAngle / 2.0f + capeLift, 1.0f, 0.0f, 0.0f);
-  matrices.rotate(capeTwist / 2.0f, 0.0f, 0.0f, 1.0f);
-  matrices.rotate(-capeTwist / 2.0f, 0.0f, 1.0f, 0.0f);
-  matrices.rotate(180.0f, 0.0f, 1.0f, 0.0f);
-  bipedModel->renderCape(0.0625f);
-  matrices.pop();
+   matrices.rotate(6.0f + capeAngle / 2.0f + capeLift, 1.0f, 0.0f, 0.0f);
+   matrices.rotate(capeTwist / 2.0f, 0.0f, 0.0f, 1.0f);
+   matrices.rotate(-capeTwist / 2.0f, 0.0f, 1.0f, 0.0f);
+   matrices.rotate(180.0f, 0.0f, 1.0f, 0.0f);
+   render::core::setDrawModelView(matrices.top());
+   bipedModel->renderCape(0.0625f);
+   matrices.pop();
  }
  ItemStack handStack =
      player->inventory.getSelectedItem() != nullptr ? *player->inventory.getSelectedItem() : ItemStack{};
@@ -293,7 +297,7 @@ void PlayerEntityRenderer::renderMore(const net::minecraft::LivingEntity& entity
  }
  if(!handStack.empty()) {
   matrices.push();
-  bipedModel->rightArm.transform(0.0625f);
+  bipedModel->rightArm.transform(0.0625f, matrices);
   matrices.translate(-0.0625f, 0.4375f, 0.0625f);
   if(handStack.itemId < 256) {
    Block* block = Block::BLOCKS[static_cast<std::size_t>(handStack.itemId)];
@@ -340,6 +344,7 @@ void PlayerEntityRenderer::renderMore(const net::minecraft::LivingEntity& entity
    matrices.rotate(-90.0f, 1.0f, 0.0f, 0.0f);
    matrices.rotate(20.0f, 0.0f, 0.0f, 1.0f);
   }
+  render::core::setDrawModelView(matrices.top());
   heldItemRenderer->renderItem(*player, handStack);
   matrices.pop();
  }

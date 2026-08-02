@@ -3,7 +3,7 @@
 #include <string_view>
 #include <unordered_map>
 #include <vector>
-#include "net/minecraft/client/render/Pack.hpp"
+#include "net/minecraft/client/render/shaderpack/Pack.hpp"
 
 namespace net::minecraft::client::gl {
 class ShaderProgram;
@@ -13,7 +13,6 @@ namespace net::minecraft::client::render {
 enum class ColorFormat;
 class ColorTargets;
 
-namespace glutil {
 constexpr unsigned int kTexture2D = 0x0DE1;
 constexpr unsigned int kTexture3D = 0x806F;
 
@@ -61,13 +60,11 @@ unsigned int internalFormat(std::string value);
 unsigned int internalFormat(ColorFormat format);
 unsigned int textureTarget(std::string value, std::size_t dimensions);
 unsigned int blendFactor(std::string value);
-void applyBufferBlends(const PackDefinition& pack, const std::string& program);
 void applyBufferBlends(const PackDefinition& pack, const std::string& program,
                        const std::vector<int>& rendertargets);
 [[nodiscard]] int colortexToDrawBufferIndex(const std::vector<int>& rendertargets, int colortexIndex);
 void applyAlphaTest(const PackDefinition& pack, const std::string& program);
 bool normalizeSettingValue(const PackSetting& setting, const std::string& input, std::string& output);
 bool hasGlContext();
-const std::vector<std::string>& supportedGlExtensions();
-}
-}
+std::vector<std::string> supportedGlExtensions();
+} // namespace net::minecraft::client::render

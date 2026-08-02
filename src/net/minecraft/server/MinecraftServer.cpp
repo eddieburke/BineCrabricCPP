@@ -16,6 +16,8 @@
 #include "net/minecraft/server/network/ConnectionListener.hpp"
 #include "net/minecraft/server/world/ReadOnlyServerWorld.hpp"
 #include "net/minecraft/server/world/ServerWorldEventListener.hpp"
+#include "net/minecraft/util/concurrent/ThreadCoordinator.hpp"
+#include "net/minecraft/util/concurrent/ThreadNames.hpp"
 #include "net/minecraft/util/math/Types.hpp"
 #include "net/minecraft/world/ServerWorld.hpp"
 #include "net/minecraft/world/chunk/ChunkCache.hpp"
@@ -194,7 +196,10 @@ bool MinecraftServer::init() {
  registry::Registry::bootstrap();
  commandHandler_ = std::make_unique<command::ServerCommandHandler>(this);
  if(!launchConfig_.has_value() || launchConfig_->useConsoleThread) {
+  util::concurrent::ThreadCoordinator::instance().reserveDynamic(1);
   commandThread_ = std::jthread([this](const std::stop_token& stopToken) {
+   util::concurrent::tl_domain = util::concurrent::Domain::Io;
+   util::concurrent::setCurrentThreadName("server-console");
    std::string line;
    std::streambuf* inputBuffer = std::cin.rdbuf();
    while(!stopToken.stop_requested() && running && !stopped) {
@@ -210,6 +215,7 @@ bool MinecraftServer::init() {
      queueCommands(line, *this);
     }
    }
+   util::concurrent::ThreadCoordinator::instance().releaseDynamic(1);
   });
  }
  ServerLog::init();

@@ -39,12 +39,14 @@ void TntEntityRenderer::render(
  bindTexture("/terrain.png");
  if(net::minecraft::block::Block* block = net::minecraft::block::Block::BLOCKS[kTntBlockId]) {
   // MCP RenderTNTPrimed: renderBlockOnInventory(..., getEntityBrightness(partialTick)).
+  render::core::setDrawModelView(matrices.top());
   blockRenderManager_.render(*block, 0, entity.getBrightnessAtEyes(tickDelta));
   if(tnt->fuse / 5 % 2 == 0) {
    render::RenderPassScope passScope(render::RenderType::entityCutout());
    render::core::setLightingEnabled(false);
    core::blendDstAlpha();
    render::core::setConstColor(1.0f, 1.0f, 1.0f, flash);
+   render::core::setDrawModelView(matrices.top());
    blockRenderManager_.render(*block, 0, 1.0f);
    render::core::setConstColor(1.0f, 1.0f, 1.0f, 1.0f);
   }

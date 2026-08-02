@@ -1,10 +1,11 @@
 #include <gtest/gtest.h>
 #include <cmath>
-#include "net/minecraft/client/render/FrameRenderCamera.hpp"
+#include "net/minecraft/client/render/camera/FrameRenderCamera.hpp"
 
 namespace net::minecraft::test {
 namespace {
 using net::minecraft::client::render::buildShadowCelestialModelView;
+using net::minecraft::client::render::shadowAngleFromCelestial;
 
 // https://github.com/IrisShaders/Iris/blob/26.1/common/src/main/java/net/irisshaders/iris/shadows/ShadowMatrices.java
 TEST(ShadowCelestialModelView, MatchesIrisDawnFixture) {
@@ -36,6 +37,53 @@ TEST(ShadowCelestialModelView, QuarterShadowAngleIsXp90) {
  EXPECT_NEAR(m[6], 1.0f, 1e-5f);
  EXPECT_NEAR(m[9], -1.0f, 1e-5f);
  EXPECT_NEAR(m[10], 0.0f, 1e-5f);
+}
+
+// The shadow angle fed to the model view is Java's getShadowAngle():
+// getSunAngle(isDay())/360 where getSunAngle(sun) = (SUN_ANGLE + 90) mod 360 and
+// isDay() = getSunAngle(sun) < 180. The moon angle is 180 degrees from the sun. The
+// wrap is `c > 360` only, so an exact 360 does NOT wrap: at celestial 0.75 the sun
+// angle is 1.0 (still "night"), and the shadow angle is the moon's (0.5).
+// https://github.com/IrisShaders/Iris/blob/26.1/common/src/main/java/net/irisshaders/iris/uniforms/CelestialUniforms.java
+TEST(ShadowCelestialModelView, ShadowAngleMatchesIrisCelestialUniforms) {
+ // Day quadrants (isDay: getSunAngle(true) < 180): shadowAngle = (celestial + 0.25) mod 1.
+ EXPECT_NEAR(shadowAngleFromCelestial(0.0f), 0.25f, 1e-6f);
+ EXPECT_NEAR(shadowAngleFromCelestial(0.1f), 0.35f, 1e-6f);
+ // Celestial 0.75 → SUN_ANGLE 270 + 90 = 360; 360 is NOT > 360 so it does not wrap,
+ // isDay(360 < 180) is false, and the moon angle (90 + 90 = 180) /360 = 0.5.
+ EXPECT_NEAR(shadowAngleFromCelestial(0.75f), 0.5f, 1e-6f);
+ EXPECT_NEAR(shadowAngleFromCelestial(0.9f), 0.15f, 1e-6f);
+ // Night quadrants (moon above the horizon): shadowAngle = (celestial - 0.25).
+ EXPECT_NEAR(shadowAngleFromCelestial(0.3f), 0.05f, 1e-6f);
+ EXPECT_NEAR(shadowAngleFromCelestial(0.5f), 0.25f, 1e-6f);
+ EXPECT_NEAR(shadowAngleFromCelestial(0.6f), 0.35f, 1e-6f);
+ // Continuous at the day/night boundaries.
+ EXPECT_NEAR(shadowAngleFromCelestial(0.24f), 0.49f, 1e-6f);
+ EXPECT_NEAR(shadowAngleFromCelestial(0.26f), 0.01f, 1e-6f);
+}
+
+// Night-time model view: shadowAngle 0.05 (celestial 0.3) → skyAngle 0.8 → Z rotation
+// of -288 degrees. The matrix is Rx(90) * Rz(skyAngle * -360) * Rx(sunPathRotation)
+// (the dawn fixture pins m[1]=m[5]=0, m[9]=-1), so the top-left 2x2 is
+// [[cos, -sin], [0, 0]] and column 3 holds [sin, 0, cos].
+TEST(ShadowCelestialModelView, NightSkyAngleRotation) {
+ float m[16]{};
+ buildShadowCelestialModelView(m, 0.05f, 0.0f, 0.0f, 0.0, 0.0, 0.0);
+ const float skyAngle = 0.8f; // (0.05 + 0.75)
+ const float theta = skyAngle * -360.0f * 3.14159265358979323846f / 180.0f;
+ const float c = std::cos(theta);
+ const float s = std::sin(theta);
+ EXPECT_NEAR(m[0], c, 1e-4f);
+ EXPECT_NEAR(m[4], -s, 1e-4f);
+ EXPECT_NEAR(m[2], s, 1e-4f);
+ EXPECT_NEAR(m[6], c, 1e-4f);
+ EXPECT_NEAR(m[1], 0.0f, 1e-5f);
+ EXPECT_NEAR(m[5], 0.0f, 1e-5f);
+ EXPECT_NEAR(m[9], -1.0f, 1e-5f);
+ EXPECT_NEAR(m[10], 0.0f, 1e-5f);
+ EXPECT_NEAR(m[12], 0.0f, 1e-5f);
+ EXPECT_NEAR(m[13], 0.0f, 1e-5f);
+ EXPECT_NEAR(m[14], 0.0f, 1e-5f);
 }
 
 TEST(ShadowCelestialOrthoScale, HalfPlaneMatchesPearlProjScale) {

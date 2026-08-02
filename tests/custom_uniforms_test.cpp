@@ -1,15 +1,15 @@
 #include <gtest/gtest.h>
 #include <cmath>
-#include "net/minecraft/client/render/shaderpack/CustomUniforms.hpp"
-#include "net/minecraft/client/render/shaderpack/ShaderPack.hpp"
-#include "net/minecraft/client/render/shaderpack/ShaderPackLoader.hpp"
+#include "net/minecraft/client/render/shaders/CustomUniforms.hpp"
+#include "net/minecraft/client/render/shaderpack/Pack.hpp"
+#include "net/minecraft/client/render/shaderpack/Loader.hpp"
 #include <string>
 #include <unordered_map>
 #include <vector>
-namespace net::minecraft::client::render::shaderpack {
+namespace net::minecraft::client::render {
 namespace {
-ShaderUniformValues frameStub() {
- ShaderUniformValues v{};
+PackUniformValues frameStub() {
+ PackUniformValues v{};
  v.frameTime = 0.05f;
  v.sunAngle = 0.25f;
  v.rainStrength = 0.5f;
@@ -69,11 +69,28 @@ TEST(CustomUniformsTest, SmoothAndArithmetic) {
  EXPECT_EQ(runtime.values().at("c").asInt(), 3);
  EXPECT_FLOAT_EQ(runtime.values().at("d").asFloat(), 1.0f);
 }
+TEST(CustomUniformsTest, VariadicMinMaxAcceptUpToSixteenArguments) {
+ std::vector<CustomUniformDecl> decls = {
+     {"minimum", CustomUniformType::Float, true, "min(9.0, 4.0, 7.0, -2.0, 3.0)"},
+     {"maximum", CustomUniformType::Int, true, "max(1, 7, 3, 16, 9, 2)"},
+     {"vectorMaximum", CustomUniformType::Vec3, true,
+      "max(vec3(1.0, 8.0, 3.0), vec3(4.0, 2.0, 9.0), vec3(0.0, 7.0, 5.0))"},
+ };
+ CustomUniformRuntime runtime;
+ std::string error;
+ ASSERT_TRUE(runtime.compile(decls, error)) << error;
+ runtime.evaluate(frameStub());
+ EXPECT_FLOAT_EQ(runtime.values().at("minimum").asFloat(), -2.0f);
+ EXPECT_EQ(runtime.values().at("maximum").asInt(), 16);
+ EXPECT_FLOAT_EQ(runtime.values().at("vectorMaximum").f[0], 4.0f);
+ EXPECT_FLOAT_EQ(runtime.values().at("vectorMaximum").f[1], 8.0f);
+ EXPECT_FLOAT_EQ(runtime.values().at("vectorMaximum").f[2], 9.0f);
+}
 // RenderPearl transforms directions with expressions like
 // `gbufferModelViewInverse.0.0 * d.x + gbufferModelViewInverse.1.0 * d.y`, which
 // only parse if `.0.0` lexes as two indices rather than the float ".0.0".
 TEST(CustomUniformsTest, ParsesChainedMatrixIndices) {
- ShaderUniformValues frame{};
+ PackUniformValues frame{};
  for(int i = 0; i < 16; ++i) frame.gbufferModelViewInverse[i] = static_cast<float>(i);
  std::vector<CustomUniformDecl> decls = {
      {"a", CustomUniformType::Float, true, "gbufferModelViewInverse.2.1"},
@@ -93,16 +110,16 @@ TEST(CustomUniformsTest, ParsesChainedMatrixIndices) {
  EXPECT_FLOAT_EQ(runtime.values().at("c").f[2], 8.0f);
  EXPECT_FLOAT_EQ(runtime.values().at("d").asFloat(), 7.5f);
 }
-bool load(const std::unordered_map<std::string, std::string>& files, ShaderPackDefinition& pack,
-          std::unordered_map<std::string, ShaderSourceOption>& options, std::string& error) {
+bool load(const std::unordered_map<std::string, std::string>& files, PackDefinition& pack,
+          std::unordered_map<std::string, PackSourceOption>& options, std::string& error) {
  std::vector<std::string> resources;
  for(const auto& [path, _] : files) resources.push_back(path);
- return ShaderPackLoader::load(
+ return PackLoader::load(
      resources, [&](std::string_view path) { return files.at(std::string(path)); }, pack, options, error);
 }
 TEST(CustomUniformsTest, ParsesUniformAndVariableDirectives) {
- ShaderPackDefinition pack;
- std::unordered_map<std::string, ShaderSourceOption> options;
+ PackDefinition pack;
+ std::unordered_map<std::string, PackSourceOption> options;
  std::string error;
  ASSERT_TRUE(load({{"shaders/gbuffers_basic.vsh", "void main(){}"},
                    {"shaders/gbuffers_basic.fsh", "void main(){}"},
@@ -127,4 +144,4 @@ TEST(CustomUniformsTest, ParsesUniformAndVariableDirectives) {
  ASSERT_TRUE(runtime.compile(pack.customUniforms, error)) << error;
 }
 }
-} // namespace net::minecraft::client::render::shaderpack
+} // namespace net::minecraft::client::render

@@ -662,29 +662,37 @@ int luaAtPhase(lua_State* state) {
   runtimeLog(mod->modId, "error", "failed to retain Lua lifecycle callback");
   return 0;
  }
- const LifecyclePhase targetPhase = *phase;
- const std::string modId = mod->modId;
- net::minecraft::mod::runtime::registerLifecycleListener(
-     order, [modId, ref, targetPhase](LifecyclePhase previous, LifecyclePhase current) {
-      if(current != targetPhase) {
-       return;
-      }
-      for(const std::shared_ptr<ModHost::LoadedLuaMod>& loaded : host().loadedMods()) {
-       if(loaded == nullptr || !loaded->active || loaded->modId != modId) {
-        continue;
+  const LifecyclePhase targetPhase = *phase;
+  const std::string modId = mod->modId;
+  const int loadGeneration = mod->loadGeneration;
+  net::minecraft::mod::runtime::registerLifecycleListener(
+      order, [modId, ref, targetPhase, loadGeneration](LifecyclePhase previous, LifecyclePhase current) {
+       if(current != targetPhase) {
+        return;
        }
-       callLuaEvent(
-           loaded,
-           ref,
-           [current, previous](lua_State* luaState) {
-            setField(luaState, "previous", static_cast<int>(previous));
-            setField(luaState, "current", static_cast<int>(current));
-           },
-           [](lua_State*) {});
-       break;
-      }
-     });
- return 0;
+       for(const std::shared_ptr<ModHost::LoadedLuaMod>& loaded : host().loadedMods()) {
+        if(loaded == nullptr || !loaded->active || loaded->modId != modId ||
+           loaded->loadGeneration != loadGeneration) {
+         continue;
+        }
+        // Per-mod gate: a mod loaded at runtime replays the bootstrap phase
+        // transitions, so without this its callbacks would fire again on later
+        // runtime loads of other mods. Each at_phase fires exactly once per mod.
+        if(!loaded->firedPhases.insert(static_cast<int>(targetPhase)).second) {
+         return;
+        }
+        callLuaEvent(
+            loaded,
+            ref,
+            [current, previous](lua_State* luaState) {
+             setField(luaState, "previous", static_cast<int>(previous));
+             setField(luaState, "current", static_cast<int>(current));
+            },
+            [](lua_State*) {});
+        break;
+       }
+      });
+  return 0;
 }
 } // namespace
 int luaIsClient(lua_State* state) {

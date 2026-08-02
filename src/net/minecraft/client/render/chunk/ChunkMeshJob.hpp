@@ -8,6 +8,7 @@
 #include "net/minecraft/client/option/RenderSettings.hpp"
 #include "net/minecraft/client/render/Tessellator.hpp"
 #include "net/minecraft/client/render/chunk/RegionSnapshot.hpp"
+#include "net/minecraft/client/render/chunk/TerrainLayers.hpp"
 #include "net/minecraft/mod/model/ModModels.hpp"
 #include "net/minecraft/util/math/Types.hpp"
 namespace net::minecraft::client::render::chunk {
@@ -15,9 +16,9 @@ class ChunkBuilder;
 // CPU-side output of a chunk mesh rebuild: one captured tessellation per
 // render layer plus everything the main thread needs at upload time.
 struct ChunkMeshResult {
- std::array<TessellatorMesh, 2> layers{};
- std::array<std::vector<ModChunkMesh>, 2> modLayers{};
- std::array<bool, 2> layerEmpty{true, true};
+ std::array<TessellatorMesh, terrain_layer::Count> layers{};
+ std::array<std::vector<ModChunkMesh>, terrain_layer::Count> modLayers{};
+ std::array<bool, terrain_layer::Count> layerEmpty{true, true, true};
  bool hasSkyLight = false;
  // 6x6 face-to-face connectivity through non-opaque blocks (bit a*6+b), fed
  // to the per-frame occlusion BFS. All-ones = fully see-through.
@@ -51,8 +52,12 @@ struct ChunkMeshJob {
  // Built on the dedicated near-camera worker; its upload skips the
  // per-frame time budget so block edits next to the player land the
  // frame their mesh finishes.
- bool nearLane = false;
- std::unordered_map<int, int> blockRenderLayers;
+  bool nearLane = false;
+  std::unordered_map<int, int> blockRenderLayers;
+  // Snapshot of the GL alpha-test reference captured on the main thread at
+  // job-enqueue time (WI-5); mesh workers no longer write GL state. The mod
+  // draw path (ModChunkMeshScope) applies this 0.1 default itself.
+  float alphaTestRef = 0.1f;
  [[nodiscard]] static std::shared_ptr<ChunkMeshJob> capture(ChunkBuilder& owner,
                                                             client::option::RenderSettings options,
                                                             bool fancyGraphics);

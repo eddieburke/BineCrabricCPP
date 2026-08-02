@@ -2,6 +2,7 @@
 #include <random>
 #include <sstream>
 #include <unordered_map>
+#include <utility>
 #include "net/minecraft/entity/player/ServerPlayerEntity.hpp"
 #include "net/minecraft/mod/runtime/ModHost.hpp"
 #include "net/minecraft/mod/runtime/WorldRequiredMods.hpp"
@@ -15,6 +16,7 @@
 #include "net/minecraft/server/ServerLog.hpp"
 #include "net/minecraft/server/network/ConnectionListener.hpp"
 #include "net/minecraft/server/network/ServerPlayNetworkHandler.hpp"
+#include "net/minecraft/util/concurrent/ThreadCoordinator.hpp"
 #include "net/minecraft/util/http/HttpClient.hpp"
 #include "net/minecraft/world/ServerWorld.hpp"
 #include "net/minecraft/world/storage/WorldStorage.hpp"
@@ -27,22 +29,22 @@ ServerLoginNetworkHandler::ServerLoginNetworkHandler(
  connection_ = std::make_unique<Connection>(socket, connectionName, *this);
 }
 ServerLoginNetworkHandler::~ServerLoginNetworkHandler() {
- if(verifyThread_.joinable()) {
-  verifyThread_.join();
- }
+ verifyState_->cancelled = true;
+ verifyState_->completed.request_stop();
 }
 Connection* ServerLoginNetworkHandler::connection() const noexcept {
  return connection_.get();
 }
 void ServerLoginNetworkHandler::tick() {
- {
-  std::lock_guard lock(verifyMutex_);
-  if(deferredLoginPacket_.has_value()) {
-   const LoginHelloPacket packet = *deferredLoginPacket_;
-   deferredLoginPacket_.reset();
+ VerifyResult result;
+ if(verifyState_->completed.tryPop(result)) {
+  if(result.verified) {
+   const LoginHelloPacket packet(result.username, result.protocolVersion);
    accept(packet);
-   return;
+  } else {
+   disconnect(result.error);
   }
+  return;
  }
  if(loginTicks_++ == 600) {
   disconnect("Took too long to log in");
@@ -106,9 +108,14 @@ void ServerLoginNetworkHandler::onHandshake(const HandshakePacket& /*packet*/) {
  }
  const std::vector<std::string> required = requiredWorldMods();
  const bool luaModsAvailable = !mod::runtime::host().loadedMods().empty();
- if(luaModsAvailable) {
+ // Only worlds that actually require mods get the ";omega=" extension; a Java
+ // b1.7.3 client echoes the plain handshake id into the session-verification
+ // request, so appending metadata unconditionally would break online-mode joins
+ // against parity Java clients. Mod-required worlds reject modless clients
+ // anyway, so the extension is only ever seen by C++ clients.
+ if(!required.empty()) {
   reply = ::net::minecraft::network::appendHandshakeMetadata(
-      reply, true, true, required, downloadUrlsForRequiredMods(required));
+      reply, true, luaModsAvailable, required, downloadUrlsForRequiredMods(required));
  }
  connection_->sendPacket<HandshakePacket>(reply);
 }
@@ -142,34 +149,43 @@ void ServerLoginNetworkHandler::onHello(const LoginHelloPacket& packet) {
  verifyUsernameOnline(packet);
 }
 void ServerLoginNetworkHandler::verifyUsernameOnline(const LoginHelloPacket& packet) {
- if(verifyThread_.joinable()) {
-  verifyThread_.join();
+ const auto state = verifyState_;
+ if(state->inFlight.exchange(true, std::memory_order_acq_rel)) {
+  return;
  }
- ServerLoginNetworkHandler* self = this;
- verifyThread_ = std::thread([self, packet]() {
-  try {
-   const std::string serverId = self->serverId_;
-   std::ostringstream url;
-   url << "http://www.minecraft.net/game/checkserver.jsp"
-       << "?user=" << urlEncodeComponent(packet.username) << "&serverId=" << urlEncodeComponent(serverId);
-   http::HttpRequest request;
-   request.url = url.str();
-   request.useBetacraftProxy = false;
-   request.maxResponseBytes = 64U * 1024U;
-   const http::HttpResponse response = http::httpRequest(request);
-   const std::string body = response.bodyAsString();
-   const std::size_t lineEnd = body.find_first_of("\r\n");
-   const std::string firstLine = lineEnd == std::string::npos ? body : body.substr(0, lineEnd);
-   if(firstLine == "YES") {
-    std::lock_guard lock(self->verifyMutex_);
-    self->deferredLoginPacket_.emplace(packet);
-   } else {
-    self->disconnect("Failed to verify username!");
-   }
-  } catch(const std::exception& error) {
-   self->disconnect("Failed to verify username! [internal error " + std::string(error.what()) + "]");
-  }
- });
+ const std::string serverId = serverId_;
+ const std::string username = packet.username;
+ const int protocolVersion = packet.protocolVersion;
+ util::concurrent::ThreadCoordinator::instance().pool(util::concurrent::Domain::Io).submit(
+     [state, username, protocolVersion, serverId]() {
+      VerifyResult result;
+      try {
+       std::ostringstream url;
+       url << "http://www.minecraft.net/game/checkserver.jsp"
+           << "?user=" << urlEncodeComponent(username) << "&serverId=" << urlEncodeComponent(serverId);
+       http::HttpRequest request;
+       request.url = url.str();
+       request.useBetacraftProxy = false;
+       request.maxResponseBytes = 64U * 1024U;
+       const http::HttpResponse response = http::httpRequest(request);
+       const std::string body = response.bodyAsString();
+       const std::size_t lineEnd = body.find_first_of("\r\n");
+       const std::string firstLine = lineEnd == std::string::npos ? body : body.substr(0, lineEnd);
+       if(firstLine == "YES") {
+        result.verified = true;
+        result.username = username;
+        result.protocolVersion = protocolVersion;
+       } else {
+        result.error = "Failed to verify username!";
+       }
+      } catch(const std::exception& error) {
+       result.error = "Failed to verify username! [internal error " + std::string(error.what()) + "]";
+      }
+      if(!state->cancelled.load(std::memory_order_acquire)) {
+       state->completed.push(std::move(result));
+      }
+      state->inFlight.store(false, std::memory_order_release);
+     });
 }
 void ServerLoginNetworkHandler::accept(const LoginHelloPacket& packet) {
  if(server_ == nullptr || listener_ == nullptr || connection_ == nullptr) {

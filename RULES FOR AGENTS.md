@@ -49,7 +49,28 @@ Do **not** use stale copies such as `c:\Users\Eddie\Desktop\mcp43 - Copy - Copy`
 
 ---
 
-## 4. Never stub
+## 4. Debugging rendering: trace, don't screenshot
+
+When investigating rendering bugs (transparency, blending, alpha, missing/black
+textures, wrong colors):
+
+- **Do not** rely on screenshot pixel analysis or image captures to diagnose the bug.
+- **Do** trace the C++ draw path end to end: RenderType/RenderPassScope -> RenderCore
+  state (blend/depth/alpha test) -> Tessellator -> bindAndUploadUniforms -> shader
+  selection (worldProgram resolver, program fallback chains) -> the pack's GLSL.
+- Cross-reference the active shaderpack's shaders (e.g. `shaderpacks/RenderPearl .../`,
+  `shaderpacks/SEUS PTGI Iris`) and the Java Iris reference in `third_party/mcp/iris/`
+  for how the pass is *supposed* to behave (blend directives, alphaTestRef, entityColor,
+  RENDERTARGETS, draw buffers).
+- Consult the online shaderpack documentation when a directive or uniform contract is
+  ambiguous: https://shaders.properties/current/reference/ (or the version pinned by
+  the repo comments).
+- Verify what each GLSL uniform/attribute receives by reading the upload sites in
+  RenderCore.cpp / WorldProgramBinder.cpp / Uniforms.cpp before suspecting the shader.
+
+---
+
+## 6. Never stub
 
 When porting Java → C++:
 
@@ -60,7 +81,7 @@ When porting Java → C++:
 
 ---
 
-## 5. Agent workflow
+## 7. Agent workflow
 
 ### Normal mode
 
@@ -95,7 +116,7 @@ Launch parallel stages where possible; wait for prerequisites; re-run the pipeli
 
 ---
 
-## 6. Wenyan-ultra (optional)
+## 8. Wenyan-ultra (optional)
 
 Only when the user sets or requests this mode: high information density using Classical Chinese grammatical backbone, German compounds for complex concepts, Latinate terms for precision, and unchanged technical domain terms.
 
@@ -106,13 +127,13 @@ Only when the user sets or requests this mode: high information density using Cl
 
 ---
 
-## 7. Shell scripts
+## 9. Shell scripts
 
 Use **PowerShell 5** syntax in project scripts and commands. Do not use PowerShell 7-only features (e.g. `&&` chaining).
 
 ---
 
-## 8. World profile / generation rules
+## 10. World profile / generation rules
 
 See `native/docs/world-profile-generation-refactor.md` before editing world profiles, chunk decoration, or terrain generation.
 

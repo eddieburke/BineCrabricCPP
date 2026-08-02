@@ -50,7 +50,7 @@ void PrecipitationRenderer::renderPrecipitation(const AtmosphereContext& ctx, fl
  int radius = ctx.settings.fancyPrecipitation ? 10 : 5;
  std::vector<Biome*> biomeScratch;
  biomeSource->getBiomesInArea(biomeScratch, centerX - radius, centerZ - radius, radius * 2 + 1, radius * 2 + 1);
- render::core::bindTexture(ctx.textureManager->getTextureId("/environment/snow.png"));
+ ctx.textureManager->bindTexture(ctx.textureManager->getTextureId("/environment/snow.png"));
  int biomeIndex = 0;
  tessellator.startQuads();
  tessellator.translate(-interpX, -interpY, -interpZ);
@@ -136,7 +136,7 @@ void PrecipitationRenderer::renderPrecipitation(const AtmosphereContext& ctx, fl
  }
  tessellator.draw();
  tessellator.translate(0.0, 0.0, 0.0);
- render::core::bindTexture(ctx.textureManager->getTextureId("/environment/rain.png"));
+ ctx.textureManager->bindTexture(ctx.textureManager->getTextureId("/environment/rain.png"));
  if(ctx.settings.fancyPrecipitation) {
   radius = 10;
  }

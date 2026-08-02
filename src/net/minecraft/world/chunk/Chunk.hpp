@@ -18,6 +18,11 @@
 #include "net/minecraft/world/chunk/BlockSource.hpp"
 #include "net/minecraft/world/chunk/ChunkNibbleArray.hpp"
 namespace net::minecraft {
+namespace detail {
+// Render-write-lock nesting depth for the current thread; backs the Debug
+// lock-order asserts in Chunk::tryAcquireRenderPin / beginRenderEviction.
+inline thread_local int tl_renderWriteLockDepth = 0;
+} // namespace detail
 class World;
 class Chunk {
  public:
@@ -130,14 +135,16 @@ class Chunk {
  [[nodiscard]] int getLight(LightType lightType, int localX, int yPos, int localZ) const {
   return lightType == LightType::Sky ? skyLight.get(localX, yPos, localZ) : blockLight.get(localX, yPos, localZ);
  }
- void setLight(LightType lightType, int localX, int yPos, int localZ, int value) {
-  if(lightType == LightType::Sky) {
-   skyLight.set(localX, yPos, localZ, value);
-  } else {
-   blockLight.set(localX, yPos, localZ, value);
+  void setLight(LightType lightType, int localX, int yPos, int localZ, int value) {
+   lockRenderWrite();
+   if(lightType == LightType::Sky) {
+    skyLight.set(localX, yPos, localZ, value);
+   } else {
+    blockLight.set(localX, yPos, localZ, value);
+   }
+   dirty = true;
+   unlockRenderWrite();
   }
-  dirty = true;
- }
  [[nodiscard]] int getLight(int localX, int yPos, int localZ, int ambientDarkness) const {
   int sky = skyLight.get(localX, yPos, localZ);
   if(sky > 0) {
@@ -202,27 +209,46 @@ class Chunk {
  void removeBlockEntityAt(int localX, int yPos, int localZ);
  void load();
  void unload();
- [[nodiscard]] bool tryAcquireRenderPin() noexcept {
-  if(renderEvicting_.load(std::memory_order_acquire)) {
+  [[nodiscard]] bool tryAcquireRenderPin() noexcept {
+#ifndef NDEBUG
+   // WI-3 lock order: the render pin is always acquired BEFORE the chunk
+   // light/block write lock, never the reverse (workers that copy the arrays
+   // must hold a pin, then the lock).
+   assert(detail::tl_renderWriteLockDepth == 0 && "render pin acquired while holding the chunk write lock");
+#endif
+   if(renderEvicting_.load(std::memory_order_acquire)) {
+    return false;
+   }
+   renderPinCount_.fetch_add(1, std::memory_order_acquire);
+   if(!renderEvicting_.load(std::memory_order_acquire)) {
+    return true;
+   }
+   releaseRenderPin();
    return false;
   }
-  renderPinCount_.fetch_add(1, std::memory_order_acquire);
-  if(!renderEvicting_.load(std::memory_order_acquire)) {
-   return true;
+  void releaseRenderPin() noexcept {
+   renderPinCount_.fetch_sub(1, std::memory_order_release);
   }
-  releaseRenderPin();
-  return false;
- }
- void releaseRenderPin() noexcept {
-  renderPinCount_.fetch_sub(1, std::memory_order_release);
- }
- [[nodiscard]] bool beginRenderEviction() noexcept {
-  renderEvicting_.store(true, std::memory_order_release);
-  return renderPinCount_.load(std::memory_order_acquire) == 0;
- }
- void cancelRenderEviction() noexcept {
-  renderEvicting_.store(false, std::memory_order_release);
- }
+  [[nodiscard]] bool beginRenderEviction() noexcept {
+#ifndef NDEBUG
+   // WI-3 lock order: the chunk write lock is never held across eviction.
+   assert(detail::tl_renderWriteLockDepth == 0 && "chunk eviction while holding the chunk write lock");
+#endif
+   renderEvicting_.store(true, std::memory_order_release);
+   return renderPinCount_.load(std::memory_order_acquire) == 0;
+  }
+  void cancelRenderEviction() noexcept {
+   renderEvicting_.store(false, std::memory_order_release);
+  }
+  // Per-chunk light/block write guard. Held while mutating blocks[]/meta/skyLight/
+  // blockLight so render/lighting workers copying those arrays (RegionSnapshot
+  // copyChunkBand) never see a torn snapshot. Cross-thread exclusive; the same
+  // thread may nest (ChunkCache::decorate holds it while feature setBlock calls
+  // re-enter, Chunk::setBlock scopes it to the raw writes). Lock-order contract:
+  // acquire AFTER tryAcquireRenderPin, release BEFORE beginRenderEviction, never
+  // held while taking LightingEngine::outboxMutex_ or registryMutex_ (WI-3).
+  void lockRenderWrite() const noexcept;
+  void unlockRenderWrite() const noexcept;
  void markDirty() {
   dirty = true;
  }
@@ -404,8 +430,9 @@ class Chunk {
  long long lastSaveTime = 0;
 
  private:
- std::atomic<int> renderPinCount_{0};
- std::atomic<bool> renderEvicting_{false};
+  std::atomic<int> renderPinCount_{0};
+  std::atomic<bool> renderEvicting_{false};
+  mutable std::atomic_flag renderWriteLock_{};
  [[nodiscard]] static constexpr std::size_t index(int localX, int yPos, int localZ) {
   return static_cast<std::size_t>((localX << 11) | (localZ << 7) | yPos);
  }
@@ -425,6 +452,22 @@ class Chunk {
  }
  void updateHeightMap(int localX, int yPos, int localZ);
  void lightGaps(int localX, int localZ);
- void lightGap(int blockX, int blockZ, int yPos);
+  void lightGap(int blockX, int blockZ, int yPos);
+};
+// RAII hold of a Chunk's render-write guard; releases on scope exit so an
+// exception (e.g. a decorating feature) cannot leak the spinlock.
+class ChunkRenderWriteScope {
+ public:
+  explicit ChunkRenderWriteScope(const Chunk& chunk) : chunk_(chunk) {
+   chunk_.lockRenderWrite();
+  }
+  ~ChunkRenderWriteScope() {
+   chunk_.unlockRenderWrite();
+  }
+  ChunkRenderWriteScope(const ChunkRenderWriteScope&) = delete;
+  ChunkRenderWriteScope& operator=(const ChunkRenderWriteScope&) = delete;
+
+ private:
+  const Chunk& chunk_;
 };
 } // namespace net::minecraft

@@ -4,9 +4,9 @@
 #include <mutex>
 #include <optional>
 #include <string>
-#include <thread>
 #include <utility>
 #include "net/minecraft/client/multiplayer/ClientNetworkBridge.hpp"
+#include "net/minecraft/client/util/Session.hpp"
 namespace net::minecraft::client {
 class Minecraft;
 }
@@ -17,8 +17,6 @@ namespace net::minecraft::client::multiplayer {
 struct ConnectOptions {
  bool bypassAuthentication = false;
 };
-/// Background connect worker. Owns the connect thread and hands the live bridge to
-/// MultiplayerSession once the socket is open.
 class MultiplayerConnector {
  public:
  MultiplayerConnector(Minecraft* minecraft, std::string host, int port, ConnectOptions options = {});
@@ -33,11 +31,16 @@ class MultiplayerConnector {
  [[nodiscard]] ClientNetworkBridge* activeBridge(Minecraft* client) const;
 
  private:
- ConnectOptions options_;
- std::unique_ptr<ClientNetworkBridge> pendingBridge_;
- std::atomic<bool> cancelled_{false};
- mutable std::mutex mutex_;
- std::optional<std::string> connectError_;
- std::thread thread_;
+ struct Result {
+  std::unique_ptr<ClientNetworkBridge> bridge;
+  std::optional<util::Session> authenticatedSession;
+  std::optional<std::string> error;
+ };
+ struct State {
+  std::atomic_bool cancelled{false};
+  mutable std::mutex mutex;
+  std::optional<Result> result;
+ };
+ std::shared_ptr<State> state_ = std::make_shared<State>();
 };
 } // namespace net::minecraft::client::multiplayer

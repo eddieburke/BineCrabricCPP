@@ -8,6 +8,12 @@
 #include <sstream>
 #include <stdexcept>
 #include "net/minecraft/network/packet/ChunkPackets.hpp"
+#include "net/minecraft/util/concurrent/ThreadCoordinator.hpp"
+#include "net/minecraft/util/concurrent/FrameBudget.hpp"
+#include "net/minecraft/util/concurrent/ThreadNames.hpp"
+namespace {
+constexpr std::size_t kMaxReadQueueBytes = 0x100000;
+} // namespace
 namespace net::minecraft {
 std::atomic<int> Connection::readThreadCounter{0};
 std::atomic<int> Connection::writeThreadCounter{0};
@@ -120,20 +126,22 @@ void SocketOutputStreamBuf::sendAll(const char* data, std::size_t length) {
 Connection::Connection(SOCKET socket, std::string name, NetworkHandler& networkHandler)
     : socket_(socket),
       name_(std::move(name)),
-      inputBuf_(socket_),
+      inputBuf_(socket),
       input_(&inputBuf_),
-      outputBuf_(socket_),
+      outputBuf_(socket),
       output_(&outputBuf_) {
  ensureWinsock();
  setSocketOptions();
  address_ = formatAddress();
  setNetworkHandler(networkHandler);
+ util::concurrent::ThreadCoordinator::instance().reserveDynamic(2);
  reader_ = std::thread([this]() { readLoop(); });
  writer_ = std::thread([this]() { writeLoop(); });
 }
 Connection::~Connection() {
  disconnect();
  joinThreads();
+ util::concurrent::ThreadCoordinator::instance().releaseDynamic(2);
 }
 void Connection::setNetworkHandler(NetworkHandler& networkHandler) {
  networkHandler_.store(&networkHandler, std::memory_order_release);
@@ -156,12 +164,17 @@ void Connection::interrupt() {
 }
 void Connection::disconnect() {
  requestDisconnect("disconnect.closed");
- joinThreads();
 }
 void Connection::disconnect(const std::string& reasonKey, const std::vector<std::string>& args) {
  disconnectReason_ = reasonKey;
  disconnectReasonArgs_ = args;
  requestDisconnect(reasonKey);
+}
+void Connection::setDrainLimit(const DrainLimit& limit) {
+ externalDrainLimit_ = limit;
+}
+void Connection::clearDrainLimit() {
+ externalDrainLimit_.reset();
 }
 void Connection::sendPacket(std::unique_ptr<Packet> packet) {
  if(packet == nullptr || !isOpen()) {
@@ -185,6 +198,9 @@ void Connection::tick() {
  if(sendQueueSize_.load(std::memory_order_acquire) > 0x100000) {
   requestDisconnect("disconnect.overflow");
  }
+ if(readOverflow_.load(std::memory_order_acquire)) {
+  requestDisconnect("disconnect.overflow");
+ }
  if(readQueueEmpty()) {
   if(++timeoutTicks_ >= 1200) {
    requestDisconnect("disconnect.timeout");
@@ -198,17 +214,27 @@ void Connection::tick() {
  constexpr int kMinDrain = 8;
  constexpr int kMaxDrain = 4096;
  constexpr auto kDrainBudget = std::chrono::milliseconds(3);
- const auto drainDeadline = std::chrono::steady_clock::now() + kDrainBudget;
+ std::chrono::steady_clock::time_point drainDeadline =
+     externalDrainLimit_.has_value() ? externalDrainLimit_->deadline
+                                     : std::chrono::steady_clock::now() + kDrainBudget;
+ const auto& frameDeadline = util::concurrent::FrameBudget::frameDeadline();
+ if(!externalDrainLimit_.has_value() && frameDeadline.active()) {
+  drainDeadline = std::min(drainDeadline, frameDeadline.point());
+ }
+ const int maxDrain =
+     externalDrainLimit_.has_value() ? std::min(externalDrainLimit_->maxPackets, kMaxDrain) : kMaxDrain;
  int applied = 0;
- while(applied < kMaxDrain) {
+ while(applied < maxDrain) {
   std::unique_ptr<Packet> packet;
   {
    std::lock_guard lock(readMutex_);
    if(readQueue_.empty()) {
     break;
    }
+   const std::size_t packetBytes = readQueue_.front()->size() + 1;
    packet = std::move(readQueue_.front());
    readQueue_.pop_front();
+   readQueueSize_ -= std::min(readQueueSize_.load(std::memory_order_acquire), packetBytes);
   }
   if(packet != nullptr) {
    if(NetworkHandler* handler = networkHandler()) {
@@ -217,6 +243,13 @@ void Connection::tick() {
   }
   if(++applied >= kMinDrain && std::chrono::steady_clock::now() >= drainDeadline) {
    break;
+  }
+ }
+ {
+  std::lock_guard lock(readMutex_);
+  if(!readStats_.empty()) {
+   Packet::mergeReadStats(readStats_);
+   readStats_.clear();
   }
  }
  if(!isOpen() && readQueueEmpty() && !disconnectedNotified_) {
@@ -238,12 +271,19 @@ void Connection::ensureWinsock() {
 }
 void Connection::setSocketOptions() {
  const BOOL trueValue = TRUE;
- ::setsockopt(socket_, IPPROTO_TCP, TCP_NODELAY, reinterpret_cast<const char*>(&trueValue), sizeof(trueValue));
+ const SOCKET socket = socket_.load(std::memory_order_acquire);
+ ::setsockopt(socket, IPPROTO_TCP, TCP_NODELAY, reinterpret_cast<const char*>(&trueValue), sizeof(trueValue));
+ // Backstop for a peer that stops reading: a blocked send() must not stall the
+ // writer thread forever (WI-10 async teardown). joinThreads() force-closes the
+ // socket to unblock a pending send immediately; this timeout bounds the worst
+ // case for sockets that were never given a graceful close.
+ const int sendTimeoutMs = 1000;
+ ::setsockopt(socket, SOL_SOCKET, SO_SNDTIMEO, reinterpret_cast<const char*>(&sendTimeoutMs), sizeof(sendTimeoutMs));
 }
 std::string Connection::formatAddress() const {
  sockaddr_storage storage{};
  int length = sizeof(storage);
- if(::getpeername(socket_, reinterpret_cast<sockaddr*>(&storage), &length) != 0) {
+ if(::getpeername(socket_.load(std::memory_order_acquire), reinterpret_cast<sockaddr*>(&storage), &length) != 0) {
   return "unknown";
  }
  char host[NI_MAXHOST]{};
@@ -260,6 +300,7 @@ std::string Connection::formatAddress() const {
  return std::string(host) + ":" + service;
 }
 void Connection::readLoop() {
+ util::concurrent::tl_domain = util::concurrent::Domain::NetIo;
  readThreadCounter.fetch_add(1, std::memory_order_acq_rel);
  try {
   while(isOpen()) {
@@ -269,9 +310,22 @@ void Connection::readLoop() {
     requestDisconnect("disconnect.endOfStream");
     break;
    }
+   const int rawId = packet->rawId();
+   const int size = static_cast<int>(packet->size());
+   bool overflow = false;
    {
     std::lock_guard lock(readMutex_);
-    readQueue_.push_back(std::move(packet));
+    if(readQueueSize_.load(std::memory_order_acquire) + static_cast<std::size_t>(size) + 1 > kMaxReadQueueBytes) {
+     readOverflow_.store(true, std::memory_order_release);
+     overflow = true;
+    } else {
+     readQueue_.push_back(std::move(packet));
+     readQueueSize_.fetch_add(static_cast<std::size_t>(size) + 1, std::memory_order_acq_rel);
+     readStats_.emplace_back(rawId, size);
+    }
+   }
+   if(overflow) {
+    break;
    }
   }
  } catch(const std::exception& error) {
@@ -280,16 +334,27 @@ void Connection::readLoop() {
  readThreadCounter.fetch_sub(1, std::memory_order_acq_rel);
 }
 void Connection::writeLoop() {
+ util::concurrent::tl_domain = util::concurrent::Domain::NetIo;
  writeThreadCounter.fetch_add(1, std::memory_order_acq_rel);
  try {
   bool preferImmediate = true;
+  std::optional<std::chrono::steady_clock::time_point> closeGrace;
   while(isOpen() || hasPendingWrites()) {
    std::vector<std::unique_ptr<Packet>> batch;
    {
     std::unique_lock lock(writeMutex_);
+    if(!isOpen() && !closeGrace.has_value()) {
+     closeGrace = std::chrono::steady_clock::now() + std::chrono::milliseconds(100);
+    }
     writeCv_.wait_for(lock, std::chrono::milliseconds(20), [this]() {
      return !isOpen() || !sendQueue_.empty() || !delayedSendQueue_.empty();
     });
+    if(!isOpen() && closeGrace.has_value() && std::chrono::steady_clock::now() >= *closeGrace) {
+     sendQueue_.clear();
+     delayedSendQueue_.clear();
+     sendQueueSize_.store(0, std::memory_order_release);
+     break;
+    }
     while(!sendQueue_.empty() || !delayedSendQueue_.empty()) {
      std::unique_ptr<Packet> packet;
      if(!sendQueue_.empty() && !delayedSendQueue_.empty()) {
@@ -337,20 +402,38 @@ void Connection::requestDisconnect(std::string reason) {
   return;
  }
  disconnectReason_ = std::move(reason);
- if(socket_ != INVALID_SOCKET) {
-  ::shutdown(socket_, SD_RECEIVE);
+ const SOCKET socket = socket_.load(std::memory_order_acquire);
+ if(socket != INVALID_SOCKET) {
+  ::shutdown(socket, SD_RECEIVE);
  }
  writeCv_.notify_all();
 }
 void Connection::shutdownSocket() {
- if(socket_ != INVALID_SOCKET) {
-  ::shutdown(socket_, SD_BOTH);
-  ::closesocket(socket_);
-  socket_ = INVALID_SOCKET;
+ const SOCKET socket = socket_.exchange(INVALID_SOCKET);
+ if(socket != INVALID_SOCKET) {
+  ::shutdown(socket, SD_BOTH);
+  ::closesocket(socket);
  }
 }
 void Connection::joinThreads() {
  const std::thread::id current = std::this_thread::get_id();
+ const std::chrono::steady_clock::time_point deadline =
+     std::chrono::steady_clock::now() + std::chrono::milliseconds(250);
+ while((reader_.joinable() && reader_.get_id() != current) ||
+       (writer_.joinable() && writer_.get_id() != current)) {
+  if(std::chrono::steady_clock::now() >= deadline) {
+   // shutdown(SD_BOTH) does not reliably unblock a blocked send() on Windows;
+   // force-close the socket so any pending recv/send returns immediately. The
+   // exchange keeps this idempotent with shutdownSocket().
+   const SOCKET socket = socket_.exchange(INVALID_SOCKET);
+   if(socket != INVALID_SOCKET) {
+    ::shutdown(socket, SD_BOTH);
+    ::closesocket(socket);
+   }
+   break;
+  }
+  std::this_thread::sleep_for(std::chrono::milliseconds(1));
+ }
  if(reader_.joinable() && reader_.get_id() != current) {
   reader_.join();
  }

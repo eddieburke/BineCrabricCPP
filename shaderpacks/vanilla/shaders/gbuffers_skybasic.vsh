@@ -1,10 +1,12 @@
 #version 430 core
-uniform mat4 modelViewMatrix;
-uniform mat4 projectionMatrix;
+#include "/lib/common.glsl"
 in vec3 vaPosition;
 in vec4 vaColor;
 out vec4 color;
+out float viewDistance;
 void main() {
- gl_Position = projectionMatrix * modelViewMatrix * vec4(vaPosition, 1.0);
+ vec4 viewPosition = modelViewMatrix * vec4(vaPosition, 1.0);
+ gl_Position = projectionMatrix * viewPosition;
  color = vaColor;
+ viewDistance = length(viewPosition.xyz);
 }

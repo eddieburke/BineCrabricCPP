@@ -30,6 +30,7 @@
 #include "net/minecraft/network/packet/Packets.hpp"
 #include "net/minecraft/stat/PlayerStats.hpp"
 #include "net/minecraft/stat/Stats.hpp"
+#include "net/minecraft/util/concurrent/ThreadCoordinator.hpp"
 #include "net/minecraft/util/http/HttpClient.hpp"
 #include "net/minecraft/world/ClientWorld.hpp"
 #include "net/minecraft/world/World.hpp"
@@ -47,27 +48,22 @@ LuaModSyncPacket makeLuaModListPacket(const std::string& csv) {
 ClientNetworkHandler::ClientNetworkHandler(client::Minecraft* minecraft) : minecraft(minecraft) {
 }
 ClientNetworkHandler::~ClientNetworkHandler() {
- joinServerCanceled_ = true;
- if(joinServerThread_.joinable()) {
-  joinServerThread_.join();
+ joinServerWork_->cancelled = true;
+ joinServerWork_->completed.request_stop();
+ if(pendingModWork_ != nullptr) {
+  pendingModWork_->cancelled = true;
+  pendingModWork_->events.request_stop();
  }
 }
 void ClientNetworkHandler::processPendingJoinServer() {
  if(minecraft == nullptr || disconnected) {
   return;
  }
- JoinServerState state = JoinServerState::None;
  auth::JoinServerResult result;
- {
-  std::lock_guard lock(joinServerMutex_);
-  state = joinServerState_;
-  if(state == JoinServerState::None || state == JoinServerState::Pending) {
-   return;
-  }
-  result = joinServerResult_;
-  joinServerState_ = JoinServerState::None;
+ if(!joinServerWork_->completed.tryPop(result)) {
+  return;
  }
- if(state == JoinServerState::Succeeded) {
+ if(result.ok) {
   sendPacket(LoginHelloPacket{::net::minecraft::client::session::resolveJoinUsername(minecraft->session),
                               kProtocolVersionBeta173});
   return;
@@ -86,6 +82,9 @@ void ClientNetworkHandler::tick() {
  processPendingJoinServer();
  if(disconnected || connection_ == nullptr) {
   return;
+ }
+ if(++keepAliveTicks_ % 20 == 0) {
+  sendPacket(KeepAlivePacket{});
  }
  connection_->tick();
  connection_->interrupt();
@@ -115,7 +114,7 @@ void ClientNetworkHandler::onHello(const LoginHelloPacket& packet) {
 void ClientNetworkHandler::disconnect(const std::string& reason) {
  (void)reason;
  disconnected = true;
- joinServerCanceled_ = true;
+ joinServerWork_->cancelled = true;
  if(minecraft != nullptr) {
   minecraft->setWorld(nullptr);
  }
@@ -130,7 +129,7 @@ void ClientNetworkHandler::onDisconnected(const std::string& reason, const std::
   return;
  }
  disconnected = true;
- joinServerCanceled_ = true;
+ joinServerWork_->cancelled = true;
  minecraft->setWorld(nullptr);
  retireOwnedWorld();
  world = nullptr;
@@ -179,8 +178,8 @@ void ClientNetworkHandler::onHandshake(const HandshakePacket& packet) {
     minecraft->setScreen(std::make_unique<client::gui::screen::ServerModDownloadScreen>(this, missing));
     return;
    }
-   disconnected = true;
-   joinServerCanceled_ = true;
+    disconnected = true;
+    joinServerWork_->cancelled = true;
    minecraft->setWorld(nullptr);
    retireOwnedWorld();
    world = nullptr;
@@ -204,7 +203,7 @@ void ClientNetworkHandler::onChatMessage(const ChatMessagePacket& packet) {
 }
 void ClientNetworkHandler::onDisconnect(const DisconnectPacket& packet) {
  disconnected = true;
- joinServerCanceled_ = true;
+ joinServerWork_->cancelled = true;
  if(minecraft != nullptr) {
   minecraft->setWorld(nullptr);
   retireOwnedWorld();
@@ -232,92 +231,170 @@ void ClientNetworkHandler::beginPendingLogin(const std::string& serverId) {
                               kProtocolVersionBeta173});
   return;
  }
- {
-  std::lock_guard lock(joinServerMutex_);
-  if(joinServerState_ == JoinServerState::Pending) {
-   return;
-  }
-  joinServerState_ = JoinServerState::Pending;
- }
  const client::util::Session session = minecraft->session;
- if(joinServerThread_.joinable()) {
-  joinServerThread_.join();
+ const auto work = joinServerWork_;
+ if(work->inFlight.exchange(true, std::memory_order_acq_rel)) {
+  return;
  }
- joinServerCanceled_ = false;
- joinServerThread_ = std::thread([this, session = std::move(session), serverId]() mutable {
-  auth::JoinServerResult result = auth::verifyJoinServer(session, serverId, &joinServerCanceled_);
-  msauth::secret::wipeString(session.mpPass);
-  if(joinServerCanceled_.load(std::memory_order_acquire)) {
+ work->cancelled = false;
+ net::minecraft::util::concurrent::ThreadCoordinator::instance()
+     .pool(net::minecraft::util::concurrent::Domain::Io)
+     .submit([work, session = std::move(session), serverId]() mutable {
+      auth::JoinServerResult result = auth::verifyJoinServer(session, serverId, &work->cancelled);
+      msauth::secret::wipeString(session.mpPass);
+      if(!work->cancelled.load(std::memory_order_acquire)) {
+       work->completed.push(std::move(result));
+      }
+      work->inFlight.store(false, std::memory_order_release);
+     });
+}
+void ClientNetworkHandler::downloadPendingMods(const std::shared_ptr<PendingModWork>& work,
+                                               std::vector<std::string> missing,
+                                               std::unordered_map<std::string, std::string> urls,
+                                               std::filesystem::path temporaryDirectory,
+                                               std::filesystem::path modsDirectory) {
+ std::vector<PendingModFile> files;
+ std::error_code filesystemError;
+ std::filesystem::create_directories(temporaryDirectory, filesystemError);
+ if(filesystemError) {
+  work->events.push(PendingModEvent{PendingModEvent::Kind::Failed, "Could not create mod download directory"});
+  work->running = false;
+  return;
+ }
+ for(const std::string& modId : missing) {
+  if(work->cancelled.load(std::memory_order_acquire)) {
+   work->running = false;
    return;
   }
-  std::lock_guard lock(joinServerMutex_);
-  joinServerResult_ = std::move(result);
-  joinServerState_ = joinServerResult_.ok ? JoinServerState::Succeeded : JoinServerState::Failed;
- });
-}
-bool ClientNetworkHandler::downloadPendingMods(std::string& error) {
- if(pendingMissingMods_.empty()) {
-  return true;
- }
- const std::filesystem::path runDir = mod::runtime::ModHost::defaultRunDirectory();
- const std::filesystem::path tempDir = runDir / "mod-downloads";
- const std::filesystem::path modsDir = mod::runtime::host().modsDirectory();
- std::filesystem::create_directories(tempDir);
- std::filesystem::create_directories(modsDir);
- for(const std::string& modId : pendingMissingMods_) {
-  const auto urlIt = pendingDownloadUrls_.find(modId);
-  if(urlIt == pendingDownloadUrls_.end()) {
-   error = "No download URL available for required mod " + modId;
-   return false;
+  work->events.tryPush(PendingModEvent{PendingModEvent::Kind::Progress, "Downloading " + modId + "..."});
+  const auto url = urls.find(modId);
+  if(url == urls.end()) {
+   work->events.push(PendingModEvent{PendingModEvent::Kind::Failed,
+                                    "No download URL available for required mod " + modId});
+   work->running = false;
+   return;
   }
   http::HttpRequest request;
-  request.url = urlIt->second;
+  request.url = url->second;
   request.maxResponseBytes = static_cast<std::size_t>(mod::lua::kMaxModArchiveBytes);
   const http::HttpResponse response = http::httpRequest(request);
   if(!response.ok() || response.body.empty()) {
-   error = "Failed to download required mod " + modId;
-   return false;
+   work->events.push(PendingModEvent{PendingModEvent::Kind::Failed,
+                                    "Failed to download required mod " + modId});
+   work->running = false;
+   return;
   }
-  const std::filesystem::path tempPath = tempDir / (mod::lua::sanitizeName(modId) + ".zip.tmp");
-  if(!mod::lua::writeFileBytes(tempPath, response.body)) {
-   error = "Could not write temporary download for " + modId;
-   return false;
-  }
+  const std::filesystem::path temporary = temporaryDirectory / (mod::lua::sanitizeName(modId) + ".zip.tmp");
   std::vector<mod::runtime::ZipEntry> entries;
   if(!mod::runtime::buildZipIndex(response.body, entries)) {
-   error = "Downloaded file for " + modId + " is not a valid mod zip";
-   return false;
+   work->events.push(PendingModEvent{PendingModEvent::Kind::Failed,
+                                    "Downloaded file for " + modId + " is not a valid mod zip"});
+   work->running = false;
+   return;
   }
   const mod::runtime::ZipEntry* manifestEntry = mod::runtime::findZipEntry(entries, "mod.json");
   if(manifestEntry == nullptr) {
-   error = "Downloaded file for " + modId + " is missing mod.json";
-   return false;
+   work->events.push(PendingModEvent{PendingModEvent::Kind::Failed,
+                                    "Downloaded file for " + modId + " is missing mod.json"});
+   work->running = false;
+   return;
   }
-  mod::runtime::ModPackage pkg;
-  const std::vector<std::uint8_t> manifestBytes = mod::runtime::readZipEntryData(response.body, *manifestEntry);
-  if(!mod::runtime::parseManifestJson(std::string(manifestBytes.begin(), manifestBytes.end()),
-                                      pkg,
-                                      tempPath,
+  mod::runtime::ModPackage package;
+  const std::vector<std::uint8_t> manifest = mod::runtime::readZipEntryData(response.body, *manifestEntry);
+  if(!mod::runtime::parseManifestJson(std::string(manifest.begin(), manifest.end()),
+                                      package,
+                                      temporary,
                                       mod::runtime::ModPackageSource::Zip,
                                       "mod.json: ") ||
-     pkg.id != modId) {
-   error = "Downloaded file does not match required mod " + modId;
-   return false;
+     package.id != modId) {
+   work->events.push(PendingModEvent{PendingModEvent::Kind::Failed,
+                                    "Downloaded file does not match required mod " + modId});
+   work->running = false;
+   return;
   }
-  const std::filesystem::path finalPath = modsDir / (mod::lua::sanitizeName(modId) + ".zip");
-  if(!mod::lua::writeFileBytes(finalPath, response.body)) {
-   error = "Could not install downloaded mod " + modId;
-   return false;
+  if(!mod::lua::writeFileBytes(temporary, response.body)) {
+   work->events.push(PendingModEvent{PendingModEvent::Kind::Failed,
+                                    "Could not write temporary download for " + modId});
+   work->running = false;
+   return;
   }
+  files.push_back(PendingModFile{temporary, modsDirectory / (mod::lua::sanitizeName(modId) + ".zip")});
  }
- mod::runtime::host().rescan();
- mod::runtime::host().loadEnabledPackageMods();
- if(!mod::runtime::WorldRequiredMods::missingMods(pendingRequiredMods_).empty()) {
-  error = "Downloaded mods are still missing after install";
+ work->events.push(PendingModEvent{PendingModEvent::Kind::Complete, "Installing...", std::move(files)});
+ work->running = false;
+}
+bool ClientNetworkHandler::startPendingModDownload() {
+ if(pendingMissingMods_.empty()) {
   return false;
  }
- pendingMissingMods_.clear();
+ if(pendingModWork_ != nullptr && pendingModWork_->running.load(std::memory_order_acquire)) {
+  return false;
+ }
+ pendingModWork_ = std::make_shared<PendingModWork>();
+ pendingModWork_->running = true;
+ const auto work = pendingModWork_;
+ const std::filesystem::path temporaryDirectory =
+     mod::runtime::ModHost::defaultRunDirectory() / "mod-downloads";
+ const std::filesystem::path modsDirectory = mod::runtime::host().modsDirectory();
+ net::minecraft::util::concurrent::ThreadCoordinator::instance()
+     .pool(net::minecraft::util::concurrent::Domain::Io)
+     .submit([work,
+              missing = pendingMissingMods_,
+              urls = pendingDownloadUrls_,
+              temporaryDirectory,
+              modsDirectory]() mutable {
+      downloadPendingMods(work,
+                          std::move(missing),
+                          std::move(urls),
+                          temporaryDirectory,
+                          modsDirectory);
+     });
  return true;
+}
+ClientNetworkHandler::PendingModDownloadState ClientNetworkHandler::pollPendingModDownload(
+    std::string& status,
+    std::string& error) {
+ if(pendingModWork_ == nullptr) {
+  return PendingModDownloadState::Idle;
+ }
+ PendingModDownloadState state = pendingModWork_->running.load(std::memory_order_acquire)
+                                     ? PendingModDownloadState::Running
+                                     : PendingModDownloadState::Idle;
+ PendingModEvent event;
+ while(pendingModWork_->events.tryPop(event)) {
+  status = event.text;
+  if(event.kind == PendingModEvent::Kind::Progress) {
+   state = PendingModDownloadState::Running;
+   continue;
+  }
+  if(event.kind == PendingModEvent::Kind::Failed) {
+   error = std::move(event.text);
+   return PendingModDownloadState::Failed;
+  }
+  std::error_code filesystemError;
+  for(const PendingModFile& file : event.files) {
+   std::filesystem::create_directories(file.destination.parent_path(), filesystemError);
+   if(filesystemError) {
+    error = "Could not create mod directory";
+    return PendingModDownloadState::Failed;
+   }
+   std::filesystem::copy_file(
+       file.temporary, file.destination, std::filesystem::copy_options::overwrite_existing, filesystemError);
+   if(filesystemError) {
+    error = "Could not install downloaded mod " + file.destination.stem().string();
+    return PendingModDownloadState::Failed;
+   }
+   std::filesystem::remove(file.temporary, filesystemError);
+  }
+  mod::runtime::host().rescan();
+  if(!mod::runtime::WorldRequiredMods::missingMods(pendingRequiredMods_).empty()) {
+   error = "Downloaded mods are still missing after install";
+   return PendingModDownloadState::Failed;
+  }
+  pendingMissingMods_.clear();
+  return PendingModDownloadState::Succeeded;
+ }
+ return state;
 }
 void ClientNetworkHandler::continuePendingLogin() {
  waitingForModDownloadAcceptance_ = false;
@@ -328,7 +405,11 @@ void ClientNetworkHandler::continuePendingLogin() {
 }
 void ClientNetworkHandler::cancelPendingModPrompt() {
  waitingForModDownloadAcceptance_ = false;
- joinServerCanceled_ = true;
+ joinServerWork_->cancelled = true;
+ if(pendingModWork_ != nullptr) {
+  pendingModWork_->cancelled = true;
+  pendingModWork_->events.request_stop();
+ }
  if(connection_ != nullptr) {
   connection_->disconnect();
  }

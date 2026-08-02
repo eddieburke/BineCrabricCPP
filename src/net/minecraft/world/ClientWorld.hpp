@@ -32,10 +32,11 @@ class ClientWorld : public World {
   return false;
  }
  void updateChunk(int chunkX, int chunkZ, bool load);
- bool spawnEntity(Entity* entity) override;
- void remove(Entity* entity) override;
- void notifyEntityAdded(Entity* entity) override;
- void notifyEntityRemoved(Entity* entity) override;
+  bool spawnEntity(Entity* entity) override;
+  void remove(Entity* entity) override;
+  void serverRemove(Entity* entity) override;
+  void notifyEntityAdded(Entity* entity) override;
+  void notifyEntityRemoved(Entity* entity) override;
  void forceEntity(int id, Entity* entity);
  Entity* getEntity(int id);
  Entity* removeEntity(int id);

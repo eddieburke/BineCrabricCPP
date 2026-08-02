@@ -2,7 +2,6 @@
 #include <algorithm>
 #include <chrono>
 #include <cmath>
-#include <future>
 #include <iostream>
 #include <limits>
 #include <stdexcept>
@@ -19,6 +18,7 @@
 #include "net/minecraft/mod/runtime/LuaDirectHooks.hpp"
 #include "net/minecraft/mod/runtime/WorldRequiredMods.hpp"
 #include "net/minecraft/registry/Registry.hpp"
+#include "net/minecraft/util/concurrent/ThreadCoordinator.hpp"
 #include "net/minecraft/util/math/MathHelper.hpp"
 #include "net/minecraft/world/NaturalSpawner.hpp"
 #include "net/minecraft/world/WorldRegion.hpp"
@@ -30,6 +30,7 @@
 #include "net/minecraft/world/events/GameEventListener.hpp"
 #include "net/minecraft/world/explosion/Explosion.hpp"
 #include "net/minecraft/world/storage/AlphaWorldStorage.hpp"
+#include "net/minecraft/world/storage/PlayerSaveSafeguards.hpp"
 #include "net/minecraft/world/storage/RegionWorldStorage.hpp"
 #include "net/minecraft/world/storage/WorldStorage.hpp"
 namespace net::minecraft {
@@ -304,14 +305,7 @@ void World::save(bool blocking) {
  if(dimensionData_ != nullptr) {
   checkSessionLock();
   if(blocking) {
-   // Shutdown / world-unload: the process may terminate the moment this returns
-   // (Minecraft::stop -> std::_Exit, which skips ~World's future-member wait), so the
-   // level.dat write must finish here rather than on a detached future. Drain any
-   // in-flight async write first so we don't race it on the same files, then write the
-   // current state synchronously.
-   if(asyncSaveFuture_.valid()) {
-    asyncSaveFuture_.wait();
-   }
+    waitForAsyncSave();
    try {
     if(auto* regionStorage = dynamic_cast<RegionWorldStorage*>(dimensionData_)) {
      regionStorage->saveUnload(properties_, players);
@@ -322,26 +316,34 @@ void World::save(bool blocking) {
     }
    } catch(const std::exception&) {
    }
-  } else if(!asyncSaveFuture_.valid() ||
-            asyncSaveFuture_.wait_for(std::chrono::seconds(0)) == std::future_status::ready) {
-   // Snapshot properties and player refs by value; launch async level.dat write.
-   // Skip if previous async save still in progress — the previous snapshot is recent enough.
-   WorldProperties snapshot = properties_;
-   std::vector<PlayerEntity*> playersSnapshot = players;
-   asyncSaveFuture_ = std::async(
-       std::launch::async,
-       [this, snapshot = std::move(snapshot), playersSnapshot = std::move(playersSnapshot)]() mutable {
-        try {
-         dimensionData_->save(snapshot, playersSnapshot);
-        } catch(const std::exception&) {
-        }
-       });
-  }
+   } else if(!asyncSaveState_->inFlight.exchange(true, std::memory_order_acq_rel)) {
+    WorldProperties snapshot = properties_;
+    if(!players.empty() && players.front() != nullptr) {
+     snapshot.setPlayerNbt(world::storage::buildSafeguardedPlayerNbt(*players.front(), snapshot.getPlayerNbt()));
+    }
+    const auto state = asyncSaveState_;
+    WorldStorage* storage = dimensionData_;
+    util::concurrent::ThreadCoordinator::instance().pool(util::concurrent::Domain::Io).submit(
+        [state, storage, snapshot = std::move(snapshot)]() mutable {
+         try {
+          storage->save(snapshot);
+         } catch(const std::exception&) {
+         }
+         state->inFlight.store(false, std::memory_order_release);
+         const std::lock_guard lock(state->mutex);
+         state->completed.notify_all();
+        });
+   }
  }
  persistentStateManager.save();
  if(dimensionData_ != nullptr && !isRemote_) {
   mod::runtime::WorldRequiredMods::writeWorldFile(dimensionData_->worldDirectory(), this);
  }
+}
+void World::waitForAsyncSave() {
+ std::unique_lock lock(asyncSaveState_->mutex);
+ asyncSaveState_->completed.wait(
+     lock, [this] { return !asyncSaveState_->inFlight.load(std::memory_order_acquire); });
 }
 void World::checkSessionLock() {
  if(dimensionData_ != nullptr) {
@@ -499,6 +501,12 @@ void World::setBlocksDirty(int minX, int minY, int minZ, int maxX, int maxY, int
 }
 void World::chunkAvailable(int chunkX, int chunkZ) {
  events_.chunkAvailable(chunkX, chunkZ);
+}
+void World::markChunkColumnLit(int chunkX, int chunkZ) {
+ events_.markChunkColumnLit(chunkX, chunkZ);
+}
+void World::markAllChunksLit() {
+ events_.markAllChunksLit();
 }
 void World::setBlocksDirtyColumn(int x, int z, int minY, int maxY) {
  events_.setBlocksDirtyColumn(x, z, minY, maxY);
@@ -712,6 +720,21 @@ bool World::doLightingUpdates(std::size_t maxDirtyRegions) {
  std::vector<LightingEngine::DirtyRegion> drained = lighting_.drainDirtyRegions(maxDirtyRegions);
  for(const LightingEngine::DirtyRegion& region : drained) {
   events_.setBlocksDirty(region.minX, region.minY, region.minZ, region.maxX, region.maxY, region.maxZ);
+  const int minChunkX = MathHelper::floorDiv(region.minX, 16);
+  const int maxChunkX = MathHelper::floorDiv(region.maxX, 16);
+  const int minChunkZ = MathHelper::floorDiv(region.minZ, 16);
+  const int maxChunkZ = MathHelper::floorDiv(region.maxZ, 16);
+  for(int chunkX = minChunkX; chunkX <= maxChunkX; ++chunkX) {
+   for(int chunkZ = minChunkZ; chunkZ <= maxChunkZ; ++chunkZ) {
+    markChunkColumnLit(chunkX, chunkZ);
+   }
+  }
+ }
+ // Non-optional completion: a column whose lighting never produces a drained
+ // region (no boxes queued, or boxes that change nothing) must not stall its
+ // first mesh forever — once the engine is fully idle every held column is lit.
+ if(!lighting_.busy() && !lighting_.hasDirtyRegions()) {
+  markAllChunksLit();
  }
  return lighting_.busy() || lighting_.hasDirtyRegions();
 }
@@ -724,6 +747,7 @@ void World::finishLightingUpdates() {
 World::~World() {
  mod::runtime::WorldRequiredMods::forgetWorld(this);
  lighting_.stop();
+ waitForAsyncSave();
 }
 void World::scheduleBlockUpdate(int x, int y, int z, int id, int tickRate) {
  BlockEvent blockEvent(x, y, z, id);

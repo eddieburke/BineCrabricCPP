@@ -4,32 +4,32 @@
 #include <optional>
 #include "net/minecraft/client/gl/GlConstants.hpp"
 #include "net/minecraft/client/option/RenderSettings.hpp"
-#include "net/minecraft/client/render/FrameRenderCamera.hpp"
-#include "net/minecraft/client/render/GuiProjection.hpp"
-#include "net/minecraft/client/render/ShadowMapPass.hpp"
+#include "net/minecraft/client/render/camera/FrameRenderCamera.hpp"
+#include "net/minecraft/client/render/camera/GuiProjection.hpp"
+#include "net/minecraft/client/render/targets/ShadowMapPass.hpp"
 #include "net/minecraft/client/render/atmosphere/CloudRenderer.hpp"
 #include "net/minecraft/client/render/atmosphere/PrecipitationRenderer.hpp"
 #include "net/minecraft/client/render/item/HeldItemRenderer.hpp"
-#include "net/minecraft/client/render/shaderpack/ShaderUniforms.hpp"
+#include "net/minecraft/client/render/uniforms/Uniforms.hpp"
 #include "net/minecraft/client/util/SmoothUtil.hpp"
 #include "net/minecraft/entity/EntityTypes.hpp"
 #include "net/minecraft/mod/runtime/LuaDirectHooks.hpp"
+#include "net/minecraft/util/math/MatrixStack.hpp"
 #include "net/minecraft/util/math/Types.hpp"
 namespace net::minecraft::client {
 class Minecraft;
 }
-namespace net::minecraft::client::render::shaderpack {
-class ShaderPackManager;
-struct ShaderPackDefinition;
-} // namespace net::minecraft::client::render::shaderpack
+namespace net::minecraft::client::render {
+class PackManager;
+struct PackDefinition;
+} // namespace net::minecraft::client::render
 namespace net::minecraft::client::render {
 class GameRenderer {
  friend shadowmap::ShadowMapResult shadowmap::update(shadowmap::ShadowMapState&,
                                                      GameRenderer&,
                                                      float,
                                                      const FrameRenderCamera&,
-                                                     float,
-                                                     const shaderpack::ShaderPackDefinition*);
+                                                     const PackDefinition*);
 
  public:
  explicit GameRenderer(net::minecraft::client::Minecraft* client);
@@ -43,7 +43,7 @@ class GameRenderer {
  [[nodiscard]] const item::HeldItemRenderer* heldItemRendererPtr() const {
   return heldItemRenderer.get();
  }
- [[nodiscard]] shaderpack::ShaderPackManager* shaderPacks() {
+ [[nodiscard]] PackManager* shaderPacks() {
   return shaderPacks_.get();
  }
  [[nodiscard]] const option::RenderSettings& frameSettings() const noexcept {
@@ -52,10 +52,13 @@ class GameRenderer {
 
  private:
  float getFov(float tickDelta) const;
- void applyDamageTiltEffect(float tickDelta);
- void applyViewBobbing(float tickDelta);
- void applyCameraTransform(float tickDelta);
- void renderWorld(float tickDelta, float fov);
+ void applyDamageTiltEffect(float tickDelta, net::minecraft::util::math::MatrixStack& modelView);
+ void applyViewBobbing(float tickDelta, net::minecraft::util::math::MatrixStack& modelView);
+ void applyCameraTransform(float tickDelta, net::minecraft::util::math::MatrixStack& modelView);
+ void renderWorld(float tickDelta,
+                  float fov,
+                  net::minecraft::util::math::MatrixStack& modelView,
+                  net::minecraft::util::math::MatrixStack& projection);
  void renderFrame(float tickDelta);
  void renderToCurrentTarget(float tickDelta,
                             const FrameRenderCamera& camera,
@@ -75,9 +78,9 @@ class GameRenderer {
  void resolveSceneCapture();
  void renderFirstPersonHand(float tickDelta);
  void renderRain();
- [[nodiscard]] shaderpack::FrameUniformSet buildFrameUniforms(float tickDelta,
-                                                              float farPlane,
-                                                              bool shadowAvailable) const;
+  [[nodiscard]] PackUniformValues buildFrameUniforms(float tickDelta,
+                                                                   float farPlane,
+                                                                   bool shadowAvailable) const;
  net::minecraft::client::Minecraft* client = nullptr;
  atmosphere::CloudRenderer cloudRenderer{};
  atmosphere::PrecipitationRenderer precipitationRenderer{};
@@ -109,6 +112,6 @@ class GameRenderer {
  FrameRenderCamera frameCamera_{};
  shadowmap::ShadowMapState shadowState_{};
  shadowmap::ShadowMapResult frameShadow_{};
- std::unique_ptr<shaderpack::ShaderPackManager> shaderPacks_;
+ std::unique_ptr<PackManager> shaderPacks_;
 };
 } // namespace net::minecraft::client::render

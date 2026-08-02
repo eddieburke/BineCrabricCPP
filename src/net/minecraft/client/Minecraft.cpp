@@ -3,6 +3,7 @@
 #include <chrono>
 #include <cstdlib>
 #include <ctime>
+#include <filesystem>
 #include <functional>
 #include <sstream>
 #include <thread>
@@ -18,6 +19,7 @@
 #include "net/minecraft/client/color/world/WaterColors.hpp"
 #include "net/minecraft/client/debug/ClientProfilerOverlay.hpp"
 #include "net/minecraft/client/diagnostics/ClientDiagnostics.hpp"
+#include "net/minecraft/client/gl/ShaderCompileService.hpp"
 #include "net/minecraft/client/gui/Draw2D.hpp"
 #include "net/minecraft/client/gui/screen/ConfirmScreen.hpp"
 #include "net/minecraft/client/gui/screen/ConnectScreen.hpp"
@@ -36,7 +38,7 @@
 #include "net/minecraft/client/option/OptionRegistry.hpp"
 #include "net/minecraft/client/option/RenderSettings.hpp"
 #include "net/minecraft/client/render/GameRenderer.hpp"
-#include "net/minecraft/client/render/GuiProjection.hpp"
+#include "net/minecraft/client/render/camera/GuiProjection.hpp"
 #include "net/minecraft/client/render/ProgressRenderer.hpp"
 #include "net/minecraft/client/render/RenderCore.hpp"
 #include "net/minecraft/client/render/RenderType.hpp"
@@ -55,6 +57,7 @@
 #include "net/minecraft/client/session/SessionValidator.hpp"
 #include "net/minecraft/client/sound/WorldSoundListener.hpp"
 #include "net/minecraft/client/util/DisplayManager.hpp"
+#include "net/minecraft/client/util/FramePipeline.hpp"
 #include "net/minecraft/client/util/FramePacing.hpp"
 #include "net/minecraft/client/util/MinecraftDirectories.hpp"
 #include "net/minecraft/client/util/UiScale.hpp"
@@ -68,6 +71,8 @@
 #include "net/minecraft/stat/PlayerStats.hpp"
 #include "net/minecraft/stat/Stats.hpp"
 #include "net/minecraft/util/crash/CrashReport.hpp"
+#include "net/minecraft/util/concurrent/Lifecycle.hpp"
+#include "net/minecraft/util/concurrent/ThreadCoordinator.hpp"
 #include "net/minecraft/util/hit/HitResultType.hpp"
 #include "net/minecraft/util/math/MathHelper.hpp"
 #include "net/minecraft/world/ClientWorld.hpp"
@@ -179,7 +184,7 @@ void renderBootstrapLoadingScreen(Minecraft& client) {
  {
   render::RenderPassScope scope(render::RenderType::guiTextured());
   util::DisplayManager::logGlError(client, "Startup gui program");
-  render::core::bindTexture(client.textureManager.getTextureId("/title/mojang.png"));
+  client.textureManager.bindTexture(client.textureManager.getTextureId("/title/mojang.png"));
   util::DisplayManager::logGlError(client, "Startup gui texture");
   render::core::setConstColor(1.0f, 1.0f, 1.0f, 1.0f);
   render::Tessellator& tessellator = render::Tessellator::INSTANCE;
@@ -243,6 +248,7 @@ Minecraft::~Minecraft() {
 }
 void Minecraft::gameCrashed(const net::minecraft::util::crash::CrashReport& crashReport) {
  crashed = true;
+ running = false;
  handleCrash(crashReport);
 }
 void Minecraft::setStartupServer(const std::string& address, int port) {
@@ -253,10 +259,19 @@ void Minecraft::init() {
  registry::Registry::bootstrap();
  util::DisplayManager::setupAndCreateDisplay(*this);
  bootstrapAfterDisplay();
+ net::minecraft::util::concurrent::ThreadCoordinator::instance().configure(
+     std::thread::hardware_concurrency(),
+     2,
+     net::minecraft::util::concurrent::ThreadCoordinator::Options{.maxComputeThreads = 8});
 }
 void Minecraft::bootstrapAfterDisplay() {
  diagnostics::setStartupPhase("init: directories");
  runDirectory_ = getRunDirectory();
+ // Disk-backed shader program cache. The main GL context is current here, so the
+ // service's worker contexts can share it and extract driver program binaries.
+ // Cache directory must be set before start() (the workers read it).
+ gl::ShaderCompileService::instance().setCacheDirectory(runDirectory_ / "shader-cache");
+ gl::ShaderCompileService::instance().start();
  options.optionsFile = runDirectory_ / "options.txt";
  options.bindMinecraft(this);
  option::OptionRegistry::registerAll();
@@ -285,11 +300,6 @@ void Minecraft::bootstrapAfterDisplay() {
  util::DisplayManager::logGlError(*this, "Pre startup");
  render::core::clearDepth(1.0);
  {
-  net::minecraft::util::math::MatrixStack modelView;
-  net::minecraft::util::math::MatrixStack projection;
-  const render::core::ScopedMatrixStacks matrixBind(modelView, projection);
-  render::core::projectionStack().loadIdentity();
-  render::core::modelViewStack().loadIdentity();
   util::DisplayManager::logGlError(*this, "Startup");
   renderBootstrapLoadingScreen(*this);
  }
@@ -344,39 +354,66 @@ void Minecraft::stop() {
 #ifdef _WIN32
  diagnostics::disarmHangWatchdog();
 #endif
+ if(applet != nullptr) {
+  applet->clearMemory();
+ }
+ if(resourceDownloadThread != nullptr) {
+  resourceDownloadThread->cancel();
+ }
  try {
-  if(applet != nullptr) {
-   applet->clearMemory();
-  }
-  if(resourceDownloadThread != nullptr) {
-   try {
-    resourceDownloadThread->cancel();
-   } catch(...) {
-   }
-  }
-  try {
-   setWorld(nullptr);
-  } catch(const std::exception& e) {
-   (void)e;
-  }
-  try {
-   RegionIo::flush();
-  } catch(...) {
-  }
-  try {
-   render::core::clearAllocatedTextures();
-  } catch(...) {
-  }
-  if(serverProcessCoordinator_ != nullptr) {
-   serverProcessCoordinator_->shutdown();
-  }
-  mod::runtime::host().shutdown();
-  audio.shutdown();
-#ifdef _WIN32
-  input::InputSystem::shutdown();
-#endif
+  setWorld(nullptr);
  } catch(...) {
  }
+ try {
+  RegionIo::flush();
+ } catch(...) {
+ }
+ auto& lifecycle = net::minecraft::util::concurrent::Lifecycle::instance();
+ lifecycle.registerOwner(
+     "shader-compile",
+     {{}, {}, [](std::chrono::steady_clock::time_point) {
+       gl::ShaderCompileService::instance().stop();
+       return true;
+      }, std::chrono::seconds(5)});
+ lifecycle.registerOwner(
+     "render-resources",
+     {{}, {}, [](std::chrono::steady_clock::time_point) {
+       render::core::clearAllocatedTextures();
+       return true;
+      }, std::chrono::seconds(2)});
+ lifecycle.registerOwner(
+     "server-process",
+     {{}, {}, [this](std::chrono::steady_clock::time_point) {
+       if(serverProcessCoordinator_ != nullptr) serverProcessCoordinator_->shutdown();
+       return true;
+      }, std::chrono::seconds(12)});
+ lifecycle.registerOwner(
+     "mod-runtime",
+     {{}, {}, [](std::chrono::steady_clock::time_point) {
+       mod::runtime::host().shutdown();
+       return true;
+      }, std::chrono::seconds(3)});
+ lifecycle.registerOwner(
+     "audio",
+     {{}, {}, [this](std::chrono::steady_clock::time_point) {
+       audio.shutdown();
+       return true;
+      }, std::chrono::seconds(3)});
+#ifdef _WIN32
+ lifecycle.registerOwner(
+     "input",
+     {{}, {}, [](std::chrono::steady_clock::time_point) {
+       input::InputSystem::shutdown();
+       return true;
+      }, std::chrono::seconds(2)});
+#endif
+ lifecycle.registerOwner(
+     "worker-domains",
+     {{}, {}, [](std::chrono::steady_clock::time_point) {
+       net::minecraft::util::concurrent::ThreadCoordinator::instance().shutdown();
+       return true;
+      }, std::chrono::seconds(5)});
+ lifecycle.shutdown();
 #ifdef _WIN32
  util::DisplayManager::destroy();
 #endif
@@ -587,6 +624,9 @@ void Minecraft::tick() {
  if(serverProcessCoordinator_ != nullptr) {
   serverProcessCoordinator_->tick();
  }
+ if(resourceDownloadThread != nullptr) {
+  resourceDownloadThread->tick();
+ }
  mod::ClientTickEvent beforeClientTick{this, player, world, paused.load(), true, false};
  net::minecraft::mod::runtime::luaHookClientTick(beforeClientTick);
  msauth::tickRestoreSavedAccount(*this);
@@ -633,7 +673,7 @@ void Minecraft::tick() {
    worldRenderer->miningProgress = interactionManager->getBlockBreakingProgress(timer.partialTick);
   }
  }
- render::core::bindTexture(textureManager.getTextureId("/terrain.png"));
+  textureManager.bindTexture(textureManager.getTextureId("/terrain.png"));
  if(!paused.load()) {
   textureManager.tick();
  }
@@ -660,11 +700,10 @@ void Minecraft::tick() {
  mod::ClientTickEvent afterClientTick{this, player, world, paused.load(), false, true};
  net::minecraft::mod::runtime::luaHookClientTick(afterClientTick);
 }
-void Minecraft::runRenderPhase(std::int64_t tickDuration, int& frames, std::int64_t& fpsWindowStart) {
+void Minecraft::runRenderPhase() {
  audio.updateListener(player, timer.partialTick);
  if(world != nullptr) {
   world->doLightingUpdates();
-  world->pumpChunkPublish();
  }
 #ifdef _WIN32
  util::DisplayManager::setSwapPacing(util::swapPacingFromOptions(options.fpsLimit, options.smoothFps));
@@ -679,18 +718,25 @@ void Minecraft::runRenderPhase(std::int64_t tickDuration, int& frames, std::int6
   if(interactionManager != nullptr) {
    interactionManager->update(timer.partialTick);
   }
-  if(gameRenderer != nullptr) {
-   gameRenderer->onFrameUpdate(timer.partialTick);
-  }
+   if(gameRenderer != nullptr) {
+    gameRenderer->onFrameUpdate(timer.partialTick);
+    }
+   }
+ if(world != nullptr) {
+  world->pumpChunkPublish();
  }
+}
+void Minecraft::runPacePhase() {
 #ifdef _WIN32
  if(!util::DisplayManager::isActive()) {
   if(fullscreen) {
    toggleFullscreen();
   }
   std::this_thread::sleep_for(std::chrono::milliseconds(10));
- }
+  }
 #endif
+}
+void Minecraft::runDiagnosticsPhase(std::int64_t tickDuration, int& frames, std::int64_t& fpsWindowStart) {
  if(options.debugHud) {
   debug::ClientProfilerOverlay::renderProfilerChart(*this, tickDuration);
  } else {
@@ -705,8 +751,8 @@ void Minecraft::runRenderPhase(std::int64_t tickDuration, int& frames, std::int6
               " chunk updates";
   render::chunk::ChunkBuilder::chunkUpdates = 0;
   fpsWindowStart += 1000;
-  frames = 0;
- }
+   frames = 0;
+  }
 }
 void Minecraft::run() {
  running = true;
@@ -719,53 +765,80 @@ void Minecraft::run() {
  try {
   std::int64_t fpsWindowStart = currentTimeMillis();
   int frames = 0;
+  util::FramePipeline framePipeline;
   while(running.load()) {
    try {
-#ifdef _WIN32
-    diagnostics::pingMainLoopHeartbeat();
-#endif
-    screenStack_.flushRetired();
-    // Free network bridges retired last iteration, then retire the active one once it
-    // has disconnected. Both happen here (no tick on the stack) so a handler whose
-    // tick() requested teardown is destroyed only after that stack has unwound.
-    multiplayerSession_.flushRetired();
-    if(multiplayer::ClientNetworkBridge* bridge = multiplayerSession_.bridge()) {
-     multiplayer::ClientNetworkHandler* handler = bridge->handler();
-     if(handler == nullptr || handler->disconnected) {
-      multiplayerSession_.retireBridge();
+    bool continueFrame = true;
+    std::int64_t tickStart = 0;
+    std::int64_t tickDuration = 0;
+    framePipeline.run([&](util::FramePipeline::Phase phase) {
+     if(!continueFrame) {
+      return;
      }
-    }
-    if(applet != nullptr && !applet->isActive()) {
+     switch(phase) {
+     case util::FramePipeline::Phase::Drain:
+#ifdef _WIN32
+      diagnostics::pingMainLoopHeartbeat();
+#endif
+      screenStack_.flushRetired();
+      multiplayerSession_.flushRetired();
+      if(multiplayer::ClientNetworkBridge* bridge = multiplayerSession_.bridge()) {
+       multiplayer::ClientNetworkHandler* handler = bridge->handler();
+       if(handler == nullptr || handler->disconnected) {
+        multiplayerSession_.retireBridge();
+       }
+      }
+      if(applet != nullptr && !applet->isActive()) {
+       continueFrame = false;
+      }
+#ifdef _WIN32
+      if(canvas == nullptr && util::DisplayManager::isCloseRequested()) {
+       scheduleStop();
+      }
+#endif
+      break;
+     case util::FramePipeline::Phase::Input: {
+      mod::TickRateEvent tickRateEvent{timer.tps, timer.tpsScale};
+      net::minecraft::mod::runtime::luaHookTickRate(tickRateEvent);
+      timer.tps = tickRateEvent.targetTps;
+      timer.tpsScale = tickRateEvent.tpsScale;
+      if(paused.load() && world != nullptr) {
+       const float savedPartial = timer.partialTick;
+       timer.advance();
+       timer.partialTick = savedPartial;
+      } else {
+       timer.advance();
+      }
+      tickStart = nanoTime();
+      break;
+     }
+     case util::FramePipeline::Phase::Ticks:
+      for(int i = 0; i < timer.ticksThisFrame; ++i) {
+       ++ticksPlayed;
+       try {
+        tick();
+       } catch(const net::minecraft::SessionLockException&) {
+        world = nullptr;
+        setWorld(nullptr);
+        setScreen(std::make_unique<gui::screen::world::WorldSaveConflictScreen>());
+       }
+      }
+      tickDuration = nanoTime() - tickStart;
+      break;
+     case util::FramePipeline::Phase::Render:
+      runRenderPhase();
+      break;
+     case util::FramePipeline::Phase::Pace:
+      runPacePhase();
+      break;
+     case util::FramePipeline::Phase::Diagnostics:
+      runDiagnosticsPhase(tickDuration, frames, fpsWindowStart);
+      break;
+     }
+    });
+    if(!continueFrame) {
      break;
     }
-#ifdef _WIN32
-    if(canvas == nullptr && util::DisplayManager::isCloseRequested()) {
-     scheduleStop();
-    }
-#endif
-    mod::TickRateEvent tickRateEvent{timer.tps, timer.tpsScale};
-    net::minecraft::mod::runtime::luaHookTickRate(tickRateEvent);
-    timer.tps = tickRateEvent.targetTps;
-    timer.tpsScale = tickRateEvent.tpsScale;
-    if(paused.load() && world != nullptr) {
-     const float savedPartial = timer.partialTick;
-     timer.advance();
-     timer.partialTick = savedPartial;
-    } else {
-     timer.advance();
-    }
-    const std::int64_t tickStart = nanoTime();
-    for(int i = 0; i < timer.ticksThisFrame; ++i) {
-     ++ticksPlayed;
-     try {
-      tick();
-     } catch(const net::minecraft::SessionLockException&) {
-      world = nullptr;
-      setWorld(nullptr);
-      setScreen(std::make_unique<gui::screen::world::WorldSaveConflictScreen>());
-     }
-    }
-    runRenderPhase(nanoTime() - tickStart, frames, fpsWindowStart);
    } catch(const net::minecraft::SessionLockException&) {
     world = nullptr;
     setWorld(nullptr);

@@ -55,17 +55,9 @@ class WorkerPool {
   const std::lock_guard lock(mutex_);
   return queue_.size() + static_cast<std::size_t>(activeCount_);
  }
- [[nodiscard]] unsigned threadCount() const noexcept {
-  return static_cast<unsigned>(workers_.size());
- }
- [[nodiscard]] static unsigned recommendedThreadCount(unsigned competingPools = 1,
-                                                      unsigned reservedThreads = 1,
-                                                      unsigned maxThreads = 8) noexcept {
-  const unsigned hardwareThreads = std::max(1U, std::thread::hardware_concurrency());
-  const unsigned availableThreads = hardwareThreads > reservedThreads ? hardwareThreads - reservedThreads : 1U;
-  const unsigned poolCount = std::max(1U, competingPools);
-  return std::clamp(availableThreads / poolCount, 1U, std::max(1U, maxThreads));
- }
+  [[nodiscard]] unsigned threadCount() const noexcept {
+   return static_cast<unsigned>(workers_.size());
+  }
 
  private:
  struct Task {

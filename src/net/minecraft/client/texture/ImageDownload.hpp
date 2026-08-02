@@ -4,9 +4,9 @@
 #include <memory>
 #include <optional>
 #include <string>
-#include <thread>
 #include "net/minecraft/client/texture/ImageProcessor.hpp"
 #include "net/minecraft/client/texture/TextureManager.hpp"
+#include "net/minecraft/util/concurrent/Channel.hpp"
 namespace net::minecraft::client::texture {
 class ImageDownload {
  public:
@@ -14,6 +14,7 @@ class ImageDownload {
  [[nodiscard]] const std::string& url() const noexcept {
   return url_;
  }
+ void applyCompleted();
  std::optional<RasterImage> image;
  bool slimArms = false;
  int requestCount = 1;
@@ -23,5 +24,13 @@ class ImageDownload {
  private:
  std::string url_;
  bool useBetacraftProxy_ = true;
+ struct Result {
+  std::optional<RasterImage> image;
+  bool slimArms = false;
+ };
+ struct PendingResult {
+  net::minecraft::util::concurrent::Channel<Result> completed{1};
+ };
+ std::shared_ptr<PendingResult> pending_;
 };
 } // namespace net::minecraft::client::texture

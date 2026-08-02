@@ -9,7 +9,7 @@
 #include "net/minecraft/client/Minecraft.hpp"
 #include "net/minecraft/client/render/RenderCore.hpp"
 #include "net/minecraft/client/gl/GlConstants.hpp"
-#include "net/minecraft/client/render/FrameRenderCamera.hpp"
+#include "net/minecraft/client/render/camera/FrameRenderCamera.hpp"
 #include "net/minecraft/client/render/RenderType.hpp"
 #include "net/minecraft/client/render/Tessellator.hpp"
 #include "net/minecraft/client/texture/TextureManager.hpp"
@@ -18,6 +18,7 @@
 #include "net/minecraft/mod/runtime/ModRenderScope.hpp"
 #include "net/minecraft/registry/TextureRegistry.hpp"
 #endif
+#include "net/minecraft/util/math/MatrixStack.hpp"
 namespace net::minecraft::mod::runtime {
 namespace core = net::minecraft::client::render::core;
 using namespace net::minecraft::mod::lua;
@@ -52,7 +53,10 @@ int luaRenderDrawQuads(lua_State* state) {
  const bool cull = luaBoolField(state, specIndex, "cull", true);
  const bool depthTest = luaBoolField(state, specIndex, "depth_test", true);
  const bool depthWrite = luaBoolField(state, specIndex, "depth_write", true);
- const ModDrawLayer layer = parseModDrawLayer(luaStringField(state, specIndex, "layer", ""));
+ ModDrawLayer layer = parseModDrawLayer(luaStringField(state, specIndex, "layer", ""));
+ if(layer == ModDrawLayer::Auto) {
+  layer = ModWorldDrawContext::layer();
+ }
  const int entityId = luaIntField(state, specIndex, "entity_id", 0);
  const std::string shaderEntity = luaStringField(state, specIndex, "shader_entity", "");
  const int resolvedEntityId =
@@ -123,21 +127,24 @@ int luaRenderDrawQuads(lua_State* state) {
   }
   core::bindTexture(glTexture);
  }
- const core::ScopedModelView modelScope;
+ const core::ScopedDrawCameraState modelGuard;
  if(hasTransform) {
-  core::modelViewStack().translate(static_cast<float>(modelX), static_cast<float>(modelY), static_cast<float>(modelZ));
+  net::minecraft::util::math::MatrixStack pose;
+  pose.load(core::drawModelView());
+  pose.translate(static_cast<float>(modelX), static_cast<float>(modelY), static_cast<float>(modelZ));
   if(modelYaw != 0.0f) {
-   core::modelViewStack().rotate(modelYaw, 0.0f, 1.0f, 0.0f);
+   pose.rotate(modelYaw, 0.0f, 1.0f, 0.0f);
   }
   if(modelPitch != 0.0f) {
-   core::modelViewStack().rotate(modelPitch, 1.0f, 0.0f, 0.0f);
+   pose.rotate(modelPitch, 1.0f, 0.0f, 0.0f);
   }
   if(modelRoll != 0.0f) {
-   core::modelViewStack().rotate(modelRoll, 0.0f, 0.0f, 1.0f);
+   pose.rotate(modelRoll, 0.0f, 0.0f, 1.0f);
   }
   if(modelScale != 1.0f) {
-   core::modelViewStack().scale(modelScale, modelScale, modelScale);
+   pose.scale(modelScale, modelScale, modelScale);
   }
+  core::setDrawModelView(pose.top());
  }
  client::render::Tessellator& tessellator = client::render::Tessellator::INSTANCE;
  tessellator.startQuads();
@@ -309,10 +316,12 @@ int luaRenderDrawBillboards(lua_State* state) {
   sourceIndex = api.gettop(state);
   billboardCount = kMaxBillboardsPerBatch;
  }
- const ModLuaDrawScope modCaps(false, true, false, depthTest, depthWrite);
- if(blendMode == "additive") {
-  core::blendCustom(client::gl::blend::SrcAlpha, client::gl::blend::One);
- }
+  // Blend factors ride in the pass state; additive is SRC_ALPHA/ONE like the old
+  // raw blendCustom poke. Java ref (Iris): gl/blending/BlendModeOverride.java.
+  const ModLuaDrawScope modCaps(false, true, false, depthTest, depthWrite, ModDrawLayer::Auto,
+                                client::gl::blend::SrcAlpha,
+                                blendMode == "additive" ? client::gl::blend::One
+                                                        : client::gl::blend::OneMinusSrcAlpha);
  client::render::Tessellator& tessellator = client::render::Tessellator::INSTANCE;
  tessellator.startQuads();
  int emitted = 0;

@@ -1,6 +1,8 @@
 #pragma once
 #include <atomic>
 #include <condition_variable>
+#include <cstdint>
+#include <deque>
 #include <memory>
 #include <mutex>
 #include <string>
@@ -8,7 +10,6 @@
 #include <unordered_map>
 #include <unordered_set>
 #include <vector>
-#include "net/minecraft/util/concurrent/WorkerPool.hpp"
 #include "net/minecraft/client/gui/screen/LoadingDisplay.hpp"
 #include "net/minecraft/util/math/Types.hpp"
 #include "net/minecraft/world/chunk/ChunkSource.hpp"
@@ -49,23 +50,37 @@ class ChunkCache : public ChunkSource {
  struct PendingLoad {
   int chunkX = 0;
   int chunkZ = 0;
+  std::uint64_t generation = 0;
   std::unique_ptr<Chunk> chunk;
   std::atomic<bool> done{false};
+  std::atomic<std::uint64_t> cancelledGeneration{0};
+ };
+ struct SerializedWrite {
+  int chunkX = 0;
+  int chunkZ = 0;
+  std::vector<std::uint8_t> raw;
+  std::unique_ptr<AlphaChunkStorage::ChunkSnapshot> snapshot;
  };
  // Storage/generator work only; safe off-thread.
  std::unique_ptr<Chunk> produceChunk(int chunkX, int chunkZ);
  // Worker-local terrain generator clone (seed-deterministic, local BiomeSource).
  ChunkSource* workerGenerator();
- // Main-thread integration: ownership, maps, light population, load, decorate.
- Chunk& adoptChunk(int chunkX, int chunkZ, std::unique_ptr<Chunk> owned);
- void integrateFinishedLoads(int budget);
+  // Main-thread integration: ownership, maps, light population, load, decorate.
+  Chunk& adoptChunk(int chunkX, int chunkZ, std::unique_ptr<Chunk> owned);
+  // Integrate up to `budget` finished async loads. When timeBudgetNs > 0, stop
+  // as soon as that much wall time elapses too, so a backlog of ready chunks
+  // (each of which may run main-thread decoration + block-light population)
+  // cannot turn one caller's frame into a multi-second hitch. At least one
+  // chunk is always integrated when one is ready.
+  void integrateFinishedLoads(int budget, std::int64_t timeBudgetNs = -1);
  void saveEntities(Chunk& chunk);
  void saveChunk(Chunk& chunk);
  void enqueueSerializedWrite(int chunkX, int chunkZ, std::vector<std::uint8_t> raw);
  void enqueueSerializedWrite(int chunkX, int chunkZ, AlphaChunkStorage::ChunkSnapshot snapshot);
  void waitForPendingWrites();
- void ensureLoaderPool();
- void ensureSavePool();
+ void drainSerializedWrites();
+ void completeSerializedWrite();
+ void waitForPendingLoads();
  static void retireFromLighting(Chunk* chunk);
  EmptyChunk empty_;
  World* world_ = nullptr;
@@ -79,6 +94,10 @@ class ChunkCache : public ChunkSource {
  int centerChunkX_ = 0;
  int centerChunkZ_ = 0;
  std::unordered_map<ChunkPos, std::shared_ptr<PendingLoad>, ChunkPosHash> pendingLoads_{};
+ std::uint64_t nextLoadGeneration_ = 1;
+ std::atomic<int> pendingLoadTasks_{0};
+ std::mutex loadCompleteMutex_;
+ std::condition_variable loadCompleteCv_;
  // Serializes storage_ access and decoration (must stay serial for vanilla feature
  // spill order). Terrain generation uses per-worker generators and does not need this.
  std::recursive_mutex ioMutex_;
@@ -87,12 +106,11 @@ class ChunkCache : public ChunkSource {
  std::unordered_map<std::thread::id, std::unique_ptr<ChunkSource>> workerGenerators_{};
  bool pendingIncrementalSave_ = false;
  std::atomic<int> pendingSaveWrites_{0};
+ std::mutex saveQueueMutex_;
+ std::deque<SerializedWrite> saveQueue_;
+ bool saveDrainScheduled_ = false;
  std::mutex saveCompleteMutex_;
  std::condition_variable saveCompleteCv_;
- // Declared last: destroyed first, so in-flight loads/saves finish before
- // storage_/generator_ go away.
- std::unique_ptr<net::minecraft::util::concurrent::WorkerPool> savePool_{};
- std::unique_ptr<net::minecraft::util::concurrent::WorkerPool> loaderPool_{};
 };
 } // namespace world::chunk
 } // namespace net::minecraft

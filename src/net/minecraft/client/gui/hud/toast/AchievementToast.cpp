@@ -4,7 +4,7 @@
 #include "net/minecraft/achievement/Achievements.hpp"
 #include "net/minecraft/client/Minecraft.hpp"
 #include "net/minecraft/client/gui/Draw2D.hpp"
-#include "net/minecraft/client/render/GuiProjection.hpp"
+#include "net/minecraft/client/render/camera/GuiProjection.hpp"
 #include "net/minecraft/client/render/RenderCore.hpp"
 #include "net/minecraft/client/render/RenderType.hpp"
 #include "net/minecraft/client/render/Tessellator.hpp"
@@ -86,14 +86,11 @@ void AchievementToast::renderOverlay() {
  const util::UiScale scale = util::uiScale(client_->options, client_->displayWidth, client_->displayHeight);
  core::setConstColor(1.0f, 1.0f, 1.0f, 1.0f);
  core::clear(0x00000100);
- math::MatrixStack modelView;
- math::MatrixStack projection;
- const core::ScopedMatrixStacks matrixBind(modelView, projection);
  gui_proj::load(scale);
  const int x = scale.scaledWidth - 160;
  const int y = 0 - static_cast<int>(slide * 36.0);
  core::setConstColor(1.0f, 1.0f, 1.0f, 1.0f);
- core::bindTexture(0x0DE1, textureId);
+ client_->textureManager.bindTexture(textureId);
  {
   const render::RenderPassScope passScope(render::RenderType::guiTextured());
   const float* c = core::constColor();

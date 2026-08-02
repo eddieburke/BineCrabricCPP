@@ -21,14 +21,14 @@ std::string sourceLabel(const net::minecraft::mod::runtime::ModPackage& mod) {
  return "Unknown";
 }
 std::string entryStatus(const net::minecraft::mod::runtime::ModPackage& mod) {
- std::string text = mod.configuredEnabled ? "Enabled next launch" : "Disabled next launch";
- text += mod.active ? " | Active now" : " | Inactive now";
- if(mod.runtimeScript) {
-  text += " | Lua";
- } else if(mod.resourceOverlay) {
-  text += " | Resources";
- }
- return text;
+  std::string text = mod.configuredEnabled ? "Enabled" : "Disabled";
+  text += mod.active ? " | Active now" : " | Inactive now";
+  if(mod.runtimeScript) {
+   text += " | Lua";
+  } else if(mod.resourceOverlay) {
+   text += " | Resources";
+  }
+  return text;
 }
 std::string detailLine(const net::minecraft::mod::runtime::ModPackage& mod) {
  if(!mod.error.empty()) {
@@ -135,14 +135,14 @@ void ModsScreen::render(int mouseX, int mouseY, float tickDelta) {
  if(modList_ != nullptr) {
   modList_->render(mouseX, mouseY, tickDelta);
  }
- if(textRenderer() != nullptr) {
-  textRenderer()->drawCenteredWithShadow("Mods", width() / 2, 14, 0xFFFFFF);
-  textRenderer()->drawCenteredWithShadow(
-      "Zip and folder mods. Changes apply on restart.", width() / 2, 28, 0xA0A0A0);
-  if(!footerText_.empty()) {
-   textRenderer()->drawCenteredWithShadow(footerText_, width() / 2, height() - 88, 0xD0D0D0);
+  if(textRenderer() != nullptr) {
+   textRenderer()->drawCenteredWithShadow("Mods", width() / 2, 14, 0xFFFFFF);
+   textRenderer()->drawCenteredWithShadow(
+       "Zip and folder mods. Changes apply instantly.", width() / 2, 28, 0xA0A0A0);
+   if(!footerText_.empty()) {
+    textRenderer()->drawCenteredWithShadow(footerText_, width() / 2, height() - 88, 0xD0D0D0);
+   }
   }
- }
  Screen::render(mouseX, mouseY, tickDelta);
 }
 void ModsScreen::tick() {
@@ -157,18 +157,23 @@ void ModsScreen::refreshMods() {
  } else if(selectedIndex_ < 0 || selectedIndex_ >= static_cast<int>(mods_.size())) {
   selectedIndex_ = 0;
  }
- footerText_ = "Changes take effect after restarting the game.";
- updateToggleButton();
+  footerText_ = "Reload list detects new, removed, and edited mods.";
+  updateToggleButton();
 }
 void ModsScreen::toggleSelected() {
- if(selectedIndex_ < 0 || selectedIndex_ >= static_cast<int>(mods_.size())) {
-  return;
- }
- net::minecraft::mod::runtime::ModPackage& mod = mods_[static_cast<std::size_t>(selectedIndex_)];
- mod.configuredEnabled = !mod.configuredEnabled;
- net::minecraft::mod::runtime::host().setEnabled(mod.id, mod.configuredEnabled);
- footerText_ = "Saved. Restart the game to apply the new mod state.";
- updateToggleButton();
+  if(selectedIndex_ < 0 || selectedIndex_ >= static_cast<int>(mods_.size())) {
+   return;
+  }
+  net::minecraft::mod::runtime::ModPackage& mod = mods_[static_cast<std::size_t>(selectedIndex_)];
+  const bool nowEnabled = !mod.configuredEnabled;
+  mod.configuredEnabled = nowEnabled;
+  // setEnabled applies immediately: the Lua script is loaded or torn down live,
+  // no restart required. Content the mod registered earlier persists by design
+  // (the world is never mutated by a toggle).
+  net::minecraft::mod::runtime::host().setEnabled(mod.id, nowEnabled);
+  mods_ = net::minecraft::mod::runtime::host().packageMods();
+  footerText_ = nowEnabled ? "Enabled now." : "Disabled now.";
+  updateToggleButton();
 }
 void ModsScreen::updateToggleButton() {
  if(toggleButton_ == nullptr) {

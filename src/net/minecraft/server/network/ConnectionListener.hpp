@@ -39,7 +39,7 @@ class ConnectionListener {
  MinecraftServer* server_ = nullptr;
  bool onlineMode_ = false;
  ServerSocket socket_;
- std::thread thread_;
+ std::jthread thread_;
  std::once_flag acceptStopFlag_;
  std::atomic<bool> open_{false};
  int connectionCounter_ = 0;

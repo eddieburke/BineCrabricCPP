@@ -73,28 +73,30 @@ bool registerItemSpec(const ItemRegistrationSpec& spec, std::string& error) {
   error = "register_item id must be between 256 and " + std::to_string(Item::ITEM_COUNT - 1);
   return false;
  }
- if(spec.texturePath.empty()) {
-  error = "register_item requires texture (a mod resource path)";
-  return false;
- }
- if(mod::ModLifecycle::currentPhase() == mod::LifecyclePhase::PostInit ||
-    mod::ModLifecycle::currentPhase() == mod::LifecyclePhase::Ready) {
-  error = "register_item must run while Lua mod scripts load at startup";
-  return false;
- }
- if(ItemRegistry::instance().contains(spec.itemId)) {
-  error = "register_item duplicate id: " + std::to_string(spec.itemId);
-  return false;
- }
- if(!registry::Registry::tryReserveItemId(rawId)) {
-  error = "register_item id is already reserved: " + std::to_string(spec.itemId);
-  return false;
- }
- // Claim the texture id at script-load time so a model-backed item's sprite
- // index is stable regardless of when the Init pass instantiates the item.
- (void)registry::TextureRegistry::getOrRegisterTexture(spec.texturePath);
- ItemRegistry::instance().add(spec.itemId, spec);
- return true;
+  if(spec.texturePath.empty()) {
+   error = "register_item requires texture (a mod resource path)";
+   return false;
+  }
+  if(ItemRegistry::instance().contains(spec.itemId)) {
+   // Re-registration by the same mod (live re-enable / Reload List) is a no-op:
+   // content registrations persist for the session and the world is untouched by
+   // design. A different owner claiming the id is a genuine conflict.
+   if(const ItemRegistrationSpec* existing = ItemRegistry::instance().specForId(spec.itemId);
+      existing != nullptr && !spec.ownerModId.empty() && existing->ownerModId == spec.ownerModId) {
+    return true;
+   }
+   error = "register_item duplicate id: " + std::to_string(spec.itemId);
+   return false;
+  }
+  if(!registry::Registry::tryReserveItemId(rawId)) {
+   error = "register_item id is already reserved: " + std::to_string(spec.itemId);
+   return false;
+  }
+  // Claim the texture id at script-load time so a model-backed item's sprite
+  // index is stable regardless of when the Init pass instantiates the item.
+  (void)registry::TextureRegistry::getOrRegisterTexture(spec.texturePath);
+  ItemRegistry::instance().add(spec.itemId, spec);
+  return true;
 }
 int modItemIdFromName(const char* name) {
  return ItemRegistry::instance().idFromName(name);

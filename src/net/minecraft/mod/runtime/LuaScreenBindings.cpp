@@ -378,7 +378,7 @@ class ModLuaGuiDrawScope {
 // them instead of stretching the whole source region.
 void drawVanillaButtonBackground(client::Minecraft& minecraft, int x, int y, int width, int height, int textureV) {
  const int textureId = minecraft.textureManager.getTextureId("/gui/gui.png");
- core::bindTexture(textureId);
+ minecraft.textureManager.bindTexture(textureId);
  client::render::core::setConstColor(1.0f, 1.0f, 1.0f, 1.0f);
  constexpr int kCap = 2;
  constexpr int kTile = 4;

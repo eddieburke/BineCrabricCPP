@@ -15,11 +15,10 @@ uniform int fogMode;
 // against it — Iris has no "is the test enabled" uniform.
 uniform float alphaTestRef;
 
-// GL_LINEAR / GL_EXP / GL_EXP2 as Iris reports them. fogMode 0 disables fog.
+// GL_LINEAR / GL_EXP2 as the GL fog-mode constants. fogMode 0 disables fog.
 float fogFactor(float viewDistance) {
- if(fogMode == 1) return clamp((fogEnd - viewDistance) / max(fogEnd - fogStart, 0.0001), 0.0, 1.0);
- if(fogMode == 2) return clamp(exp(-fogDensity * viewDistance), 0.0, 1.0);
- if(fogMode == 3) {
+ if(fogMode == 9729) return clamp((fogEnd - viewDistance) / max(fogEnd - fogStart, 0.0001), 0.0, 1.0);
+ if(fogMode == 2049) {
   float scaled = fogDensity * viewDistance;
   return clamp(exp(-scaled * scaled), 0.0, 1.0);
  }

@@ -2,17 +2,17 @@
 // 1024-region wrap, so both world hemispheres draw correctly.
 #include <gtest/gtest.h>
 #include <cmath>
-#include "net/minecraft/client/render/shaderpack/ComputeDispatcher.hpp"
-#include "net/minecraft/client/render/shaderpack/ShaderPack.hpp"
-#include "net/minecraft/client/render/shaderpack/ShaderPassScheduler.hpp"
+#include "net/minecraft/client/render/shaders/ComputeDispatcher.hpp"
+#include "net/minecraft/client/render/shaderpack/Pack.hpp"
+#include "net/minecraft/client/render/shaders/PassIndex.hpp"
 namespace net::minecraft::test {
 namespace {
-namespace ComputeDispatcher = net::minecraft::client::render::shaderpack::ComputeDispatcher;
-using net::minecraft::client::render::shaderpack::indexShaderPasses;
-using net::minecraft::client::render::shaderpack::isProgramEnabled;
-using net::minecraft::client::render::shaderpack::ShaderPackDefinition;
-using net::minecraft::client::render::shaderpack::ShaderPass;
-using net::minecraft::client::render::shaderpack::ShaderPassBuckets;
+namespace ComputeDispatcher = net::minecraft::client::render::ComputeDispatcher;
+using net::minecraft::client::render::indexPackPasses;
+using net::minecraft::client::render::isProgramEnabled;
+using net::minecraft::client::render::PackDefinition;
+using net::minecraft::client::render::PackPass;
+using net::minecraft::client::render::PackPassBuckets;
 void chunkOffset(int sectionX, int sectionY, int sectionZ, double camX, double camY, double camZ,
                  float& ox, float& oy, float& oz) {
  // Mirrors WorldRenderer::renderChunksVbo Iris path.
@@ -52,7 +52,7 @@ TEST(IrisChunkOffsetHemisphere, NoRegionWrapArtifact) {
  EXPECT_NE(oz, 1008.5f);
 }
 TEST(IrisComputeWorkGroups, DefaultsMatchSpec) {
- ShaderPass pass;
+ PackPass pass;
  // Defaults: relativeGroups=true, groupScale=1, localSize=1 → ceil(view/1).
  const auto groups = ComputeDispatcher::workGroups(pass, 1920, 1080);
  EXPECT_EQ(groups[0], 1920u);
@@ -60,7 +60,7 @@ TEST(IrisComputeWorkGroups, DefaultsMatchSpec) {
  EXPECT_EQ(groups[2], 1u);
 }
 TEST(IrisComputeWorkGroups, RelativeScaleAndLocalSize) {
- ShaderPass pass;
+ PackPass pass;
  pass.groupScale[0] = 0.5f;
  pass.groupScale[1] = 0.5f;
  pass.localSize[0] = 8;
@@ -86,7 +86,7 @@ TEST(IrisComputeOrder, ParentNameAndNumericOrder) {
  EXPECT_FALSE(ComputeDispatcher::lessComputeParent("composite10", "composite2"));
 }
 TEST(IrisProgramEnabled, TrueFalseAndOption) {
- ShaderPackDefinition definition;
+ PackDefinition definition;
  definition.programEnabled["composite"] = "false";
  definition.programEnabled["deferred"] = "true";
  definition.programEnabled["prepare"] = "BLOOM";
@@ -95,25 +95,37 @@ TEST(IrisProgramEnabled, TrueFalseAndOption) {
  EXPECT_FALSE(isProgramEnabled(definition, settings, "composite#compute"));
  EXPECT_TRUE(isProgramEnabled(definition, settings, "deferred"));
  EXPECT_TRUE(isProgramEnabled(definition, settings, "prepare"));
- settings["BLOOM"] = "false";
- EXPECT_FALSE(isProgramEnabled(definition, settings, "prepare"));
- EXPECT_TRUE(isProgramEnabled(definition, settings, "gbuffers_terrain"));
+  settings["BLOOM"] = "false";
+  EXPECT_FALSE(isProgramEnabled(definition, settings, "prepare"));
+  // Java option values are Boolean only (MutableOptionValues.addAll): "true"/"false"
+  // are honored, any other string falls back to the option default (true).
+  settings["BLOOM"] = "off";
+  EXPECT_TRUE(isProgramEnabled(definition, settings, "prepare"));
+  settings["BLOOM"] = "FALSE";
+  EXPECT_TRUE(isProgramEnabled(definition, settings, "prepare"));
+  // Normalized values ("1"/"0") are the engine's setting vocabulary.
+  settings["BLOOM"] = "1";
+  EXPECT_TRUE(isProgramEnabled(definition, settings, "prepare"));
+  settings["BLOOM"] = "0";
+  EXPECT_FALSE(isProgramEnabled(definition, settings, "prepare"));
+  EXPECT_TRUE(isProgramEnabled(definition, settings, "gbuffers_terrain"));
 }
 TEST(IrisProgramEnabled, IndexesSkipDisabledPasses) {
- ShaderPackDefinition definition;
- ShaderPass post;
+ PackDefinition definition;
+ PackPass post;
  post.name = "composite";
  post.type = "post";
  post.program = "composite";
- ShaderPass deferred;
+ PackPass deferred;
  deferred.name = "deferred";
  deferred.type = "deferred";
  deferred.program = "deferred";
  definition.passes.push_back(post);
  definition.passes.push_back(deferred);
  definition.programEnabled["composite"] = "false";
- ShaderPassBuckets buckets;
- indexShaderPasses(definition, {}, buckets);
+  PackPassBuckets buckets;
+  net::minecraft::client::render::ProgramEnabledCache cache;
+  indexPackPasses(definition, {}, buckets, cache);
  EXPECT_TRUE(buckets.postPasses.empty());
  ASSERT_EQ(buckets.deferredPasses.size(), 1u);
  EXPECT_EQ(buckets.deferredPasses[0], 1u);

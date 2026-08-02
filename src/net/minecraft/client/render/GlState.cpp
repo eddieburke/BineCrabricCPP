@@ -1,12 +1,13 @@
 #include "net/minecraft/client/render/GlState.hpp"
-#include "net/minecraft/client/render/Pack.hpp"
-#include "net/minecraft/client/render/Catalog.hpp"
-#include "net/minecraft/client/render/SourceProcessor.hpp"
-#include "net/minecraft/client/render/ShaderFail.hpp"
+#include "net/minecraft/client/render/shaderpack/Pack.hpp"
+#include "net/minecraft/client/render/shaderpack/Catalog.hpp"
+#include "net/minecraft/client/render/shaders/SourceProcessor.hpp"
+#include "net/minecraft/client/render/shaders/ShaderFail.hpp"
 #include "net/minecraft/client/gl/GLCore.hpp"
 #include "net/minecraft/client/gl/GlConstants.hpp"
+#include "net/minecraft/client/gl/GlResource.hpp"
 #include "net/minecraft/client/gl/ShaderProgram.hpp"
-#include "net/minecraft/client/render/RenderTargets.hpp"
+#include "net/minecraft/client/render/targets/RenderTargets.hpp"
 #include "net/minecraft/client/render/RenderCore.hpp"
 #include <algorithm>
 #include <array>
@@ -14,6 +15,7 @@
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
+#include <mutex>
 #include <sstream>
 #include <utility>
 
@@ -21,26 +23,29 @@
 #include <windows.h>
 #endif
 
-namespace net::minecraft::client::render::glutil {
-using pack_catalog::lower;
+namespace net::minecraft::client::render {
+using PackCatalog::lower;
 
 unsigned int samplerObject(bool compare, bool linear, bool mipmap) {
  if(!compare || !gl::GLCore::samplerObjectsSupported) return 0;
- static unsigned int samplers[4]{};
+ static std::array<gl::GlSampler, 4> samplers;
  const int index = (linear ? 1 : 0) | (mipmap ? 2 : 0);
- if(samplers[index] == 0) {
-  gl::GLCore::genSamplers(1, &samplers[index]);
+ if(!samplers[index]) {
+  unsigned int h = 0;
+  gl::GLCore::genSamplers(1, &h);
+  if(h == 0) return 0;
+  samplers[index] = gl::GlSampler(h);
   const int mag = linear ? gl::filter::Linear : gl::filter::Nearest;
   const int min =
       mipmap ? (linear ? 0x2703 : 0x2700) : (linear ? gl::filter::Linear : gl::filter::Nearest);
-  gl::GLCore::samplerParameteri(samplers[index], gl::tex::MagFilter, mag);
-  gl::GLCore::samplerParameteri(samplers[index], gl::tex::MinFilter, min);
-  gl::GLCore::samplerParameteri(samplers[index], gl::tex::WrapS, gl::wrap::ClampToEdge);
-  gl::GLCore::samplerParameteri(samplers[index], gl::tex::WrapT, gl::wrap::ClampToEdge);
-  gl::GLCore::samplerParameteri(samplers[index], 0x884C, 0x884E);
-  gl::GLCore::samplerParameteri(samplers[index], 0x884D, gl::compare::Lequal);
+  gl::GLCore::samplerParameteri(h, gl::tex::MagFilter, mag);
+  gl::GLCore::samplerParameteri(h, gl::tex::MinFilter, min);
+  gl::GLCore::samplerParameteri(h, gl::tex::WrapS, gl::wrap::ClampToEdge);
+  gl::GLCore::samplerParameteri(h, gl::tex::WrapT, gl::wrap::ClampToEdge);
+  gl::GLCore::samplerParameteri(h, 0x884C, 0x884E);
+  gl::GLCore::samplerParameteri(h, 0x884D, gl::compare::Lequal);
  }
- return samplers[index];
+ return samplers[index].handle();
 }
 
 static int g_highestSamplerUnit = -1;
@@ -78,8 +83,8 @@ void bindOneSamplerUnit(gl::ShaderProgram& program, const std::string& name, uns
   gl::GLCore::bindSampler(static_cast<unsigned int>(unit),
                           compare ? samplerObject(true, linear, mipmap) : 0);
  }
- program.set1i(name, unit);
- g_highestSamplerUnit = std::max(g_highestSamplerUnit, unit);
+  program.set1i(name, unit);
+  g_highestSamplerUnit = std::max(g_highestSamplerUnit, unit);
 }
 }
 
@@ -211,9 +216,11 @@ void refreshTextureAliases(std::unordered_map<std::string, int>& textures, bool 
  }
 }
 
-const std::vector<std::string>& supportedGlExtensions() {
+std::vector<std::string> supportedGlExtensions() {
  static std::vector<std::string> extensions;
  static bool initialized = false;
+ static std::mutex mutex;
+ std::lock_guard lock(mutex);
  if(!initialized && hasGlContext()) {
   initialized = true;
   int count = 0;
@@ -304,7 +311,26 @@ static constexpr std::array kFormats = {
     FormatInfo{"rg32i", ColorFormat::Rg32I, 0x823B},
     FormatInfo{"rgba8i", ColorFormat::Rgba8I, 0x8D8E},
     FormatInfo{"rgba16i", ColorFormat::Rgba16I, 0x8D88},
-    FormatInfo{"rgba32i", ColorFormat::Rgba32I, 0x8D82}};
+    FormatInfo{"rgba32i", ColorFormat::Rgba32I, 0x8D82},
+    FormatInfo{"rgb8i", ColorFormat::Rgb8I, 0x8D8F},
+    FormatInfo{"rgb16i", ColorFormat::Rgb16I, 0x8D89},
+    FormatInfo{"rgb32i", ColorFormat::Rgb32I, 0x8D83},
+    FormatInfo{"rgb8ui", ColorFormat::Rgb8Ui, 0x8D7D},
+    FormatInfo{"rgb16ui", ColorFormat::Rgb16Ui, 0x8D77},
+    FormatInfo{"rgb32ui", ColorFormat::Rgb32Ui, 0x8D71},
+    FormatInfo{"r8_snorm", ColorFormat::R8Snorm, 0x8F94},
+    FormatInfo{"rg8_snorm", ColorFormat::Rg8Snorm, 0x8F95},
+    FormatInfo{"rgb8_snorm", ColorFormat::Rgb8Snorm, 0x8F96},
+    FormatInfo{"rgba8_snorm", ColorFormat::Rgba8Snorm, 0x8F97},
+    FormatInfo{"r16_snorm", ColorFormat::R16Snorm, 0x8F98},
+    FormatInfo{"rg16_snorm", ColorFormat::Rg16Snorm, 0x8F99},
+    FormatInfo{"rgb16_snorm", ColorFormat::Rgb16Snorm, 0x8F9A},
+    FormatInfo{"rgba16_snorm", ColorFormat::Rgba16Snorm, 0x8F9B},
+    FormatInfo{"rgba2", ColorFormat::Rgba2, 0x8056},
+    FormatInfo{"rgba4", ColorFormat::Rgba4, 0x805A},
+    FormatInfo{"r3_g3_b2", ColorFormat::R3G3B2, 0x8050},
+    FormatInfo{"rgb10_a2ui", ColorFormat::Rgb10A2Ui, 0x906F},
+    FormatInfo{"rgb9_e5", ColorFormat::Rgb9E5, 0x8C3D}};
 
 const FormatInfo* findFormat(std::string value) {
  value = lower(std::move(value));
@@ -357,13 +383,32 @@ void texImageFormat(ColorFormat format, int& internal, unsigned& external, unsig
  case ColorFormat::Rgb16F: internal = 0x881B; external = 0x1907; type = 0x1406; return;
  case ColorFormat::Rgb32F: internal = 0x8815; external = 0x1907; type = 0x1406; return;
  case ColorFormat::R11G11B10F: internal = 0x8C3A; external = 0x1907; type = 0x1406; return;
- case ColorFormat::Rgb10A2: internal = 0x8059; external = 0x1908; type = 0x1405; return;
- case ColorFormat::Rgb565: internal = 0x8D62; external = 0x1907; type = 0x8363; return;
- case ColorFormat::Rgb5A1: internal = 0x8057; external = 0x1908; type = 0x8034; return;
- case ColorFormat::Rgba16: internal = 0x805B; external = 0x1908; type = 0x1403; return;
- case ColorFormat::Rgba16F: internal = 0x881A; external = 0x1908; type = 0x1406; return;
- case ColorFormat::Rgba32F: internal = 0x8814; external = 0x1908; type = 0x1406; return;
- default: internal = 0x8058; external = 0x1908; type = 0x1401; return;
+  case ColorFormat::Rgb10A2: internal = 0x8059; external = 0x1908; type = 0x1405; return;
+  case ColorFormat::Rgb565: internal = 0x8D62; external = 0x1907; type = 0x8363; return;
+  case ColorFormat::Rgb5A1: internal = 0x8057; external = 0x1908; type = 0x8034; return;
+  case ColorFormat::Rgba16: internal = 0x805B; external = 0x1908; type = 0x1403; return;
+  case ColorFormat::Rgba16F: internal = 0x881A; external = 0x1908; type = 0x1406; return;
+  case ColorFormat::Rgba32F: internal = 0x8814; external = 0x1908; type = 0x1406; return;
+  case ColorFormat::R8Snorm: internal = 0x8F94; external = 0x1903; type = 0x1400; return;
+  case ColorFormat::Rg8Snorm: internal = 0x8F95; external = 0x8227; type = 0x1400; return;
+  case ColorFormat::Rgb8Snorm: internal = 0x8F96; external = 0x1907; type = 0x1400; return;
+  case ColorFormat::Rgba8Snorm: internal = 0x8F97; external = 0x1908; type = 0x1400; return;
+  case ColorFormat::R16Snorm: internal = 0x8F98; external = 0x1903; type = 0x1402; return;
+  case ColorFormat::Rg16Snorm: internal = 0x8F99; external = 0x8227; type = 0x1402; return;
+  case ColorFormat::Rgb16Snorm: internal = 0x8F9A; external = 0x1907; type = 0x1402; return;
+  case ColorFormat::Rgba16Snorm: internal = 0x8F9B; external = 0x1908; type = 0x1402; return;
+  case ColorFormat::Rgba2: internal = 0x8056; external = 0x1908; type = 0x1401; return;
+  case ColorFormat::Rgba4: internal = 0x805A; external = 0x1908; type = 0x1401; return;
+  case ColorFormat::R3G3B2: internal = 0x8050; external = 0x1907; type = 0x1401; return;
+  case ColorFormat::Rgb10A2Ui: internal = 0x906F; external = 0x8D99; type = 0x1405; return;
+  case ColorFormat::Rgb9E5: internal = 0x8C3D; external = 0x1907; type = 0x1401; return;
+  case ColorFormat::Rgb8Ui: internal = 0x8D7D; external = 0x8D98; type = 0x1401; return;
+  case ColorFormat::Rgb16Ui: internal = 0x8D77; external = 0x8D98; type = 0x1403; return;
+  case ColorFormat::Rgb32Ui: internal = 0x8D71; external = 0x8D98; type = 0x1405; return;
+  case ColorFormat::Rgb8I: internal = 0x8D8F; external = 0x8D98; type = 0x1400; return;
+  case ColorFormat::Rgb16I: internal = 0x8D89; external = 0x8D98; type = 0x1402; return;
+  case ColorFormat::Rgb32I: internal = 0x8D83; external = 0x8D98; type = 0x1404; return;
+  default: internal = 0x8058; external = 0x1908; type = 0x1401; return;
  }
 }
 
@@ -405,7 +450,7 @@ unsigned int bindColorImages(gl::ShaderProgram& program,
                              const ColorTargets* colorTargets) {
  if(gl::GLCore::bindImageTexture == nullptr) return 0;
  unsigned int unit = 0;
- const auto bindPrefix = [&](const char* imagePrefix, const char* bufferPrefix, int count) {
+ const auto bindPrefix = [&](const char* imagePrefix, const char* bufferPrefix, int count, bool sceneColor) {
   for(int index = 0; index < count && unit < 16; ++index) {
    const std::string imageName = std::string(imagePrefix) + std::to_string(index);
    if(program.location(imageName) < 0) continue;
@@ -413,19 +458,19 @@ unsigned int bindColorImages(gl::ShaderProgram& program,
    const auto found = colorTextures.find(bufferName);
    if(found == colorTextures.end() || found->second <= 0) continue;
    unsigned int format = 0x8058;
-   if(colorTargets != nullptr) {
+   if(sceneColor && colorTargets != nullptr) {
     format = internalFormat(colorTargets->formatOf(bufferName));
    } else if(definition != nullptr) {
     const auto target = definition->targets.find(bufferName);
     if(target != definition->targets.end()) format = internalFormat(target->second.format);
    }
-   gl::GLCore::bindImageTexture(unit, static_cast<unsigned int>(found->second), 0, 0, 0, 0x88BA, format);
-   program.set1i(imageName, static_cast<int>(unit));
-   ++unit;
+    gl::GLCore::bindImageTexture(unit, static_cast<unsigned int>(found->second), 0, 0, 0, 0x88BA, format);
+    program.set1i(imageName, static_cast<int>(unit));
+    ++unit;
   }
  };
- bindPrefix("colorimg", "colortex", 32);
- bindPrefix("shadowcolorimg", "shadowcolor", 8);
+ bindPrefix("colorimg", "colortex", 32, true);
+ bindPrefix("shadowcolorimg", "shadowcolor", 8, false);
  return unit;
 }
 
@@ -466,16 +511,12 @@ int colortexToDrawBufferIndex(const std::vector<int>& rendertargets, int colorte
  return static_cast<int>(found - rendertargets.begin());
 }
 
-void applyBufferBlends(const PackDefinition& pack, const std::string& program) {
- applyBufferBlends(pack, program, {});
-}
-
 void applyBufferBlends(const PackDefinition& pack, const std::string& program,
                        const std::vector<int>& rendertargets) {
  // https://shaders.properties/current/reference/shadersproperties/rendering/
  // https://github.com/IrisShaders/Iris/blob/1.20.1/src/main/java/net/irisshaders/iris/gl/blending/BlendModeStorage.java
  int drawFbo = 0;
- ::glGetIntegerv(0x8CA6, &drawFbo);
+ ::glGetIntegerv(static_cast<unsigned>(gl::query::FramebufferBinding), &drawFbo);
  const bool indexed = drawFbo != 0 && gl::GLCore::perBufferBlendingSupported && gl::GLCore::blendFunci != nullptr;
  for(const BufferBlend& blend : pack.bufferBlends) {
   if(blend.program != program) continue;
@@ -494,6 +535,7 @@ void applyBufferBlends(const PackDefinition& pack, const std::string& program,
 }
 
 void applyAlphaTest(const PackDefinition& pack, const std::string& program) {
+ // https://github.com/IrisShaders/Iris/blob/26.1/common/src/main/java/net/irisshaders/iris/shaderpack/properties/ProgramDirectives.java#L80
  for(const AlphaTestDirective& directive : pack.alphaTests) {
   if(directive.program != program) continue;
   if(!directive.enabled) {

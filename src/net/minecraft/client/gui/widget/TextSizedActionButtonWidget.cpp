@@ -19,7 +19,7 @@ void TextSizedActionButtonWidget::render(client::Minecraft& minecraft,
   return;
  }
  const int textureId = minecraft.textureManager.getTextureId("/gui/gui.png");
- render::core::bindTexture(textureId);
+ minecraft.textureManager.bindTexture(textureId);
  core::setConstColor(1.0f, 1.0f, 1.0f, 1.0f);
  const bool hovered = mouseX >= x && mouseY >= y && mouseX < x + width && mouseY < y + height;
  const int imageY = getYImage(hovered);

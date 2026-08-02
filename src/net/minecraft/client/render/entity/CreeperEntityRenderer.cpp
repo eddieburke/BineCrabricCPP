@@ -40,6 +40,7 @@ int CreeperEntityRenderer::getOverlayColor(const net::minecraft::LivingEntity& e
  return (alpha << 24) | (255 << 16) | (255 << 8) | 255;
 }
 bool CreeperEntityRenderer::bindTexture(const net::minecraft::LivingEntity& entity, int layer, float tickDelta) {
+ (void)tickDelta; // kept for MCP Render.bindTexture signature parity (mcp/.../Render.java)
  const auto* creeper = dynamic_cast<const net::minecraft::entity::mob::CreeperEntity*>(&entity);
  if(creeper == nullptr || !creeper->isCharged())
   return false;

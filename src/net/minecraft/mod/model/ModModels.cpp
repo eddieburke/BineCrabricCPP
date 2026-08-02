@@ -27,10 +27,11 @@
 #include "net/minecraft/registry/TextureRegistry.hpp"
 #include "net/minecraft/util/math/CoordinateHash.hpp"
 #include "net/minecraft/util/math/Intersect.hpp"
+#include "net/minecraft/util/math/MatrixStack.hpp"
 #include "net/minecraft/world/BlockView.hpp"
 #ifdef MINECRAFT_NATIVE_EXPORTS
 #include "net/minecraft/client/Minecraft.hpp"
-#include "net/minecraft/client/render/FrameRenderCamera.hpp"
+#include "net/minecraft/client/render/camera/FrameRenderCamera.hpp"
 #include "net/minecraft/client/render/RenderType.hpp"
 #include "net/minecraft/client/texture/TextureManager.hpp"
 #include "net/minecraft/mod/runtime/ModRenderScope.hpp"
@@ -307,22 +308,22 @@ using net::minecraft::client::render::block::BlockRenderManager;
 using runtime::ModLuaDrawScope;
 // Camera-relative placement shared by drawBakedModelWorld and drawItemStackWorld.
 // Leaves the caller to apply whatever model-space recentring its geometry needs.
-void applyWorldDrawTransform(const WorldModelDraw& options) {
+void applyWorldDrawTransform(net::minecraft::util::math::MatrixStack& pose, const WorldModelDraw& options) {
  const client::render::FrameRenderCamera& camera = client::render::RenderCameraState::instance().frame();
- core::modelViewStack().translate(static_cast<float>(options.x - camera.x),
-                                  static_cast<float>(options.y - camera.y),
-                                  static_cast<float>(options.z - camera.z));
+ pose.translate(static_cast<float>(options.x - camera.x),
+                static_cast<float>(options.y - camera.y),
+                static_cast<float>(options.z - camera.z));
  if(options.yaw != 0.0f) {
-  core::modelViewStack().rotate(options.yaw, 0.0f, 1.0f, 0.0f);
+  pose.rotate(options.yaw, 0.0f, 1.0f, 0.0f);
  }
  if(options.pitch != 0.0f) {
-  core::modelViewStack().rotate(options.pitch, 1.0f, 0.0f, 0.0f);
+  pose.rotate(options.pitch, 1.0f, 0.0f, 0.0f);
  }
  if(options.roll != 0.0f) {
-  core::modelViewStack().rotate(options.roll, 0.0f, 0.0f, 1.0f);
+  pose.rotate(options.roll, 0.0f, 0.0f, 1.0f);
  }
  if(options.scale != 1.0f) {
-  core::modelViewStack().scale(options.scale, options.scale, options.scale);
+  pose.scale(options.scale, options.scale, options.scale);
  }
 }
 // A model is placed by its anchor, and a tall one (a tripod's camera head, a
@@ -621,9 +622,8 @@ bool drawLuaBlockWorld(BlockRenderManager& manager, Block& block, int x, int y, 
  if(baked == nullptr) {
   return false;
  }
- const BlockModelDraw draw{&manager, &block, x, y, z, false, 1.0f};
- core::setAlphaTestRef(0.1f);
- const BakedQuadTransform transform =
+  const BlockModelDraw draw{&manager, &block, x, y, z, false, 1.0f};
+  const BakedQuadTransform transform =
      spec->coordinateBounds || spec->coordinateColor ? coordinateQuadTransform(*spec, x, y, z) : BakedQuadTransform{};
  return drawBakedBlockModel(draw, *baked, transform);
 }
@@ -639,8 +639,11 @@ void drawLuaBlockInventory(BlockRenderManager& manager, Block& block, int /*meta
  core::depthTestWrite(true);
  core::setLightingEnabled(false);
  core::setConstColor(1.0f, 1.0f, 1.0f, 1.0f);
- const core::ScopedModelView matrix;
- core::modelViewStack().translate(-0.5f, -0.5f, -0.5f);
+ const core::ScopedDrawCameraState drawGuard;
+ net::minecraft::util::math::MatrixStack pose;
+ pose.load(core::drawModelView());
+ pose.translate(-0.5f, -0.5f, -0.5f);
+ core::setDrawModelView(pose.top());
  const BlockModelDraw draw{&manager, &block, 0, 0, 0, true, brightness};
  drawBakedBlockModel(draw, *baked, BakedQuadTransform{});
 }
@@ -703,9 +706,12 @@ bool drawBakedModelWorld(int handle, const WorldModelDraw& options) {
  if(modCaps.usesTerrainProgram()) {
   core::setPendingTerrainDraw(0.0f, 0.0f, 0.0f);
  }
- const core::ScopedModelView matrix;
- applyWorldDrawTransform(options);
- core::modelViewStack().translate(-0.5f, -options.pivotY, -0.5f);
+ const core::ScopedDrawCameraState drawGuard;
+ net::minecraft::util::math::MatrixStack pose;
+ pose.load(core::drawModelView());
+ applyWorldDrawTransform(pose, options);
+ pose.translate(-0.5f, -options.pivotY, -0.5f);
+ core::setDrawModelView(pose.top());
  client::texture::TextureManager& textures = client::Minecraft::INSTANCE->textureManager;
  Tessellator& tess = worldDrawTessellator();
  int blockLight = 15;
@@ -740,7 +746,7 @@ bool drawBakedModelWorld(int handle, const WorldModelDraw& options) {
       textures.bindTexture(glId);
       tess.startQuads();
       if(wantBlockData) {
-       tess.blockData(options.x, options.y, options.z, 0, blockLight, skyLight, shaderBlockId, 0,
+       tess.blockData(options.x, options.y, options.z, 0, blockLight, skyLight, shaderBlockId, false,
                       options.blockMeta);
       }
       open = true;
@@ -845,12 +851,16 @@ bool drawItemStackWorld(const ItemStack& stack, const WorldModelDraw& options) {
  if(modCaps.usesEntityLighting()) {
   core::setConstColor(brightness, brightness, brightness, 1.0f);
  }
- const core::ScopedModelView matrix;
- applyWorldDrawTransform(options);
+ const core::ScopedDrawCameraState drawGuard;
+ net::minecraft::util::math::MatrixStack pose;
+ pose.load(core::drawModelView());
+ applyWorldDrawTransform(pose, options);
+ core::setDrawModelView(pose.top());
  client::texture::TextureManager& textures = client::Minecraft::INSTANCE->textureManager;
  if(custom) {
   // Custom item models are baked in 0..1 model space; recentre onto the pivot.
-  core::modelViewStack().translate(-0.5f, -options.pivotY, -0.5f);
+  pose.translate(-0.5f, -options.pivotY, -0.5f);
+  core::setDrawModelView(pose.top());
   textures.bindTexture(
       client::render::resolveBlockTexture(stack.getTextureId(), textures, ItemModelRenderer::atlasDomain(stack)).glId);
   // Entity lighting: brightness already in uConstColor; lightmap fullbright.
@@ -860,7 +870,8 @@ bool drawItemStackWorld(const ItemStack& stack, const WorldModelDraw& options) {
   // The inventory block renderers emit geometry already centred on the origin,
   // so only the pivot's deviation from centre needs compensating.
   if(options.pivotY != 0.5f) {
-   core::modelViewStack().translate(0.0f, 0.5f - options.pivotY, 0.0f);
+   pose.translate(0.0f, 0.5f - options.pivotY, 0.0f);
+   core::setDrawModelView(pose.top());
   }
   textures.bindTexture(client::render::resolveBlockTexture(block->textureId, textures,
                                                             client::render::AtlasDomain::Terrain)
@@ -878,7 +889,8 @@ bool drawItemStackWorld(const ItemStack& stack, const WorldModelDraw& options) {
  // Flat sprite items (tools, food, ...) get a 2.5D extruded icon. The
  // geometry spans x=[0,1], y=[0,1], z=[-depth,0]; recentre onto the pivot.
  const auto uv = ItemModelRenderer::spriteUv(stack);
- core::modelViewStack().translate(-0.5f, -options.pivotY, 0.0625f * 0.5f);
+ pose.translate(-0.5f, -options.pivotY, 0.0625f * 0.5f);
+ core::setDrawModelView(pose.top());
  textures.bindTexture(
      client::render::resolveBlockTexture(stack.getTextureId(), textures, ItemModelRenderer::atlasDomain(stack)).glId);
  {

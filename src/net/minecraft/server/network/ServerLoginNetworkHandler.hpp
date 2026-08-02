@@ -1,13 +1,12 @@
 #pragma once
+#include <atomic>
 #include <memory>
-#include <mutex>
-#include <optional>
 #include <string>
-#include <thread>
 #include <vector>
 #include "net/minecraft/network/NetworkHandler.hpp"
 #include "net/minecraft/network/packet/ConnectionPackets.hpp"
 #include "net/minecraft/server/network/ServerSocket.hpp"
+#include "net/minecraft/util/concurrent/Channel.hpp"
 namespace net::minecraft {
 class Connection;
 class LuaModSyncPacket;
@@ -52,11 +51,20 @@ class ServerLoginNetworkHandler : public NetworkHandler {
  std::unique_ptr<Connection> connection_;
  int loginTicks_ = 0;
  std::string username_;
- std::optional<LoginHelloPacket> deferredLoginPacket_;
- std::string serverId_;
- std::string clientModsCsv_;
- bool clientModProtocolNegotiated_ = false;
- std::thread verifyThread_;
- std::mutex verifyMutex_;
+  struct VerifyResult {
+   bool verified = false;
+   std::string username;
+   int protocolVersion = 14;
+   std::string error;
+  };
+  struct VerifyState {
+   std::atomic_bool inFlight{false};
+   std::atomic_bool cancelled{false};
+   util::concurrent::Channel<VerifyResult> completed{1};
+  };
+  std::string serverId_;
+  std::string clientModsCsv_;
+  bool clientModProtocolNegotiated_ = false;
+  std::shared_ptr<VerifyState> verifyState_ = std::make_shared<VerifyState>();
 };
 } // namespace net::minecraft::server::network
