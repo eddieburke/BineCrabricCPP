@@ -5,6 +5,7 @@
 #include <functional>
 #include <iomanip>
 #include <sstream>
+#include <utility>
 #include "net/minecraft/client/Minecraft.hpp"
 #include "net/minecraft/client/gui/Draw2D.hpp"
 #include "net/minecraft/client/gui/layout/OptionsLayout.hpp"
@@ -233,10 +234,15 @@ void ShaderpackScreen::rebuildLayout() {
                          minecraft()->gameRenderer->shaderPacks() == nullptr) {
                        return;
                       }
-                      auto* current = minecraft()->gameRenderer->shaderPacks();
+                      std::vector<std::pair<std::string, std::string>> values;
+                      values.reserve(profile.values.size());
                       for(const auto& [key, value] : profile.values) {
-                       current->setSetting(key, value);
+                       values.emplace_back(key, value);
                       }
+                      // One atomic rebuild: per-option setSetting calls made a
+                      // profile click restart the whole pack compile once per
+                      // option and freeze the game.
+                      minecraft()->gameRenderer->shaderPacks()->setSettings(values);
                       rebuildLayout();
                      });
      scroll_.addEntry(static_cast<int>(buttons_.size() - 1), widgetY);

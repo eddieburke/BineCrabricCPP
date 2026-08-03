@@ -80,9 +80,14 @@ void updateSunLight(World* world, float tickDelta) {
  const float daylight = std::clamp((sunY + 0.08f) / 0.28f, 0.0f, 1.0f);
  const float horizon = 1.0f - std::clamp(std::abs(sunY) * 5.0f, 0.0f, 1.0f);
  light::SunLight sun;
- sun.directionX = sunX;
+ // Iris rotates the celestial chain by the fixed RY(-90) renderSky yaw
+ // (CelestialUniforms.getCelestialPosition); the beta formula below is the pre-yaw
+ // direction. Publish the yawed direction so the light registry agrees with the
+ // pack-facing sunPosition and the shadow map light axis (see applyRenderSkyYaw).
+ // https://github.com/IrisShaders/Iris/blob/26.1/common/src/main/java/net/irisshaders/iris/uniforms/CelestialUniforms.java
+ sun.directionX = -sunZ;
  sun.directionY = sunY;
- sun.directionZ = sunZ;
+ sun.directionZ = sunX;
  sun.red = 1.0f;
  sun.green = 0.96f - horizon * 0.25f;
  sun.blue = 0.88f - horizon * 0.48f;
@@ -1087,7 +1092,7 @@ void GameRenderer::renderToCurrentTarget(float tickDelta,
   } else if(!frameCamera_.shadowPass && !renderCameraEntity) {
    frameShadow_ = {};
   }
-  if(client->options.frustumCulling && resolvedOptions.frustumCulling) {
+  if(!frameCamera_.shadowPass && client->options.frustumCulling && resolvedOptions.frustumCulling) {
    Frustum::getInstance().compute();
   }
   core::setFogEnabled(!frameCamera_.shadowPass);
@@ -1129,7 +1134,10 @@ void GameRenderer::renderToCurrentTarget(float tickDelta,
  }
  FrustumCuller frustumCuller;
  FrustumCuller* activeCuller = nullptr;
- if(client->options.frustumCulling && resolvedOptions.frustumCulling) {
+ // The shadow pass never uses the camera frustum: it culls against the shadow frusta
+ // ShadowMapPass built (Java ShadowRenderer.createShadowFrustum), which both the chunk
+ // and the entity loops read off the frame camera.
+ if(!frameCamera_.shadowPass && client->options.frustumCulling && resolvedOptions.frustumCulling) {
    frustumCuller.prepare(frameCamera_.eyeX, frameCamera_.eyeY, frameCamera_.eyeZ);
   activeCuller = &frustumCuller;
  }

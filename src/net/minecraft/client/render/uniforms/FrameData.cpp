@@ -305,16 +305,27 @@ PackUniformValues buildShaderFrameData(int width, int height, float farPlane, fl
            : nullptr;
    const float sunPathRotation = activeDef != nullptr ? activeDef->sunPathRotation : 0.0f;
    // Java getCelestialPosition transforms vec4(0, +/-100, 0, 0) through
-   // gbufferModelView * RY(-90) * RZ(sunPathRotation) * RX(skyAngle * 360). w == 0, so
-   // the model view contributes its rotation only — the BOBBED rotation, since Iris
-   // captures the pose stack after bobView()/bobHurt(). Using the clean basis here
-   // would leave sunPosition still while the view-space normals packs light against
-   // (and this engine's own sunDirectionView, GameRenderer.cpp:1102) rock with the bob.
+   // gbufferModelView * RY(-90) * RZ(sunPathRotation) * RX(angle). w == 0, so the model
+   // view contributes its rotation only — the BOBBED rotation, since Iris captures the
+   // pose stack after bobView()/bobHurt(). Using the clean basis here would leave
+   // sunPosition still while the view-space normals packs light against (and this
+   // engine's own sunDirectionView, GameRenderer.cpp:1102) rock with the bob.
    // https://github.com/IrisShaders/Iris/blob/26.1/common/src/main/java/net/irisshaders/iris/uniforms/CelestialUniforms.java
    float sunDirection[3] = {sun.directionX, sun.directionY, sun.directionZ};
+   // The registry carries the fixed RY(-90) renderSky yaw (see the light registry
+   // writers); Iris composes the celestial chain as RY(-90) * RZ(sunPathRotation) *
+   // RX(angle), so sunPathRotation acts in the PRE-yaw celestial frame. Undo the yaw,
+   // rotate, then re-apply it — the yawed direction lands on the shadow map's light
+   // axis, keeping packs' sunPosition/shadowLightPosition consistent with the map.
+   const float preYawX = sunDirection[2];
+   const float preYawZ = -sunDirection[0];
+   sunDirection[0] = preYawX;
+   sunDirection[2] = preYawZ;
    applySunPathRotation(sunDirection, sunPathRotation, sunDirection);
-    render::directionToView(sunDirection[0], sunDirection[1], sunDirection[2], camera, values.sunPosition);
-    render::directionToView(-sunDirection[0], -sunDirection[1], -sunDirection[2], camera, values.moonPosition);
+   float celestialSun[3];
+   render::applyRenderSkyYaw(sunDirection, celestialSun);
+    render::directionToView(celestialSun[0], celestialSun[1], celestialSun[2], camera, values.sunPosition);
+    render::directionToView(-celestialSun[0], -celestialSun[1], -celestialSun[2], camera, values.moonPosition);
    auto scaleTo100 = [](float v[3]) {
     const float len = std::sqrt(v[0]*v[0] + v[1]*v[1] + v[2]*v[2]);
     if(len > 1e-6f) {

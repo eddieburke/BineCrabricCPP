@@ -157,6 +157,21 @@ RenderType::State translucentState() {
  s.cull = false;
  return s;
 }
+RenderType::State damagedBlockState() {
+ // Iris ShaderKey.CRUMBLING (ShaderKey.java:61) declares AlphaTests.ONE_TENTH_ALPHA
+ // for the destroyed-block overlay. The destroy tiles carry a ~transparent white
+ // background (a=1/255) that must be discarded, or packs with an ALPHA_CHECK +
+ // TEX_ALPHA damagedblock program (RenderPearl gbuffers_damagedblock.fsh) blend it
+ // into the scene at ~2x via their DST_COLOR/SRC_COLOR buffer directive.
+ RenderType::State s{};
+ s.blend = true;
+ s.depthTest = true;
+ s.depthWrite = false;
+ s.cull = false;
+ s.alphaTest = true;
+ s.alphaRef = 0.1f;
+ return s;
+}
 RenderType::State particlesTranslucentState() {
  RenderType::State s{};
  s.blend = true;
@@ -335,7 +350,7 @@ RenderType& RenderType::hand() {
 }
 RenderType& RenderType::damagedBlock() {
  static RenderType instance =
-     RenderType("damaged_block", 0x0004, true, true, true, "", translucentState(), "gbuffers_damagedblock");
+     RenderType("damaged_block", 0x0004, true, true, true, "", damagedBlockState(), "gbuffers_damagedblock");
  return instance;
 }
 } // namespace net::minecraft::client::render

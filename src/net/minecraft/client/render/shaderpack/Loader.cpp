@@ -970,11 +970,9 @@ void parsePackProperties(PackDefinition& pack, const std::string& source) {
     // https://github.com/IrisShaders/Iris/blob/26.1/common/src/main/java/net/irisshaders/iris/shaderpack/properties/ShaderProperties.java#L180-L187
     // false -> DISTANCE, true -> ADVANCED, reversed/safe_zone -> SAFE_ZONE.
     if(value == "reversed" || value == "safe_zone") {
-     pack.shadowCulling = true;
-     pack.reversedShadowCulling = true;
+     pack.shadowCulling = ShadowCullState::SafeZone;
     } else if(boolean(value, flag)) {
-     pack.shadowCulling = flag;
-     pack.reversedShadowCulling = false;
+     pack.shadowCulling = flag ? ShadowCullState::Advanced : ShadowCullState::Distance;
     }
   } else if(key.rfind("program.", 0) == 0 && key.size() > 16 && key.compare(key.size() - 8, 8, ".enabled") == 0) {
    const std::string programName = key.substr(8, key.size() - 16);

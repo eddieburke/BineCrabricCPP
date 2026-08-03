@@ -388,8 +388,7 @@ TEST(PackLoaderTest, ReadsIrisGeometrySkipAndCullingDirectives) {
  EXPECT_FALSE(pack.shadowBlockEntities);
  EXPECT_FALSE(pack.shadowEntities);
  EXPECT_TRUE(pack.skipAllRendering);
- EXPECT_FALSE(pack.shadowCulling);
- EXPECT_FALSE(pack.reversedShadowCulling);
+ EXPECT_EQ(pack.shadowCulling, ShadowCullState::Distance);
  EXPECT_FALSE(pack.renderClouds);
  EXPECT_FLOAT_EQ(pack.shadowDistance, 128.0f);
  EXPECT_FLOAT_EQ(pack.shadowDistanceRenderMul, 1.0f);
@@ -406,8 +405,7 @@ TEST(PackLoaderTest, ReadsReversedShadowCulling) {
                   pack,
                   options,
                   error));
- EXPECT_TRUE(pack.shadowCulling);
- EXPECT_TRUE(pack.reversedShadowCulling);
+ EXPECT_EQ(pack.shadowCulling, ShadowCullState::SafeZone);
 }
 TEST(PackLoaderTest, ReadsIrisFourFactorBlendAndCloudsOff) {
  PackDefinition pack;
@@ -992,8 +990,7 @@ TEST(PackLoaderTest, ReadsShadowCullingSafeZone) {
                   options,
                   error))
      << error;
- EXPECT_TRUE(pack.shadowCulling);
- EXPECT_TRUE(pack.reversedShadowCulling);
+ EXPECT_EQ(pack.shadowCulling, ShadowCullState::SafeZone);
 }
 TEST(PackLoaderTest, SizeBufferAllowsMixedAbsoluteRelativeAxes) {
  PackDefinition pack;

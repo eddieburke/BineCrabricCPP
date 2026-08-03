@@ -109,10 +109,13 @@ void publishRenderStage(mod::WorldRenderEvent& event, mod::WorldRenderStage stag
 void drawBackgroundFan(const AtmosphereContext& ctx, float tickDelta, const std::array<float, 4>& bg) {
  const core::RenderStageScope stage(core::RenderStage::Sunset);
  const float timeOfDay = ctx.world->getTime(tickDelta);
- const core::ScopedDrawCameraState fanGuard;
- net::minecraft::util::math::Matrix4f fanPose = core::drawModelView();
- fanPose.rotate(90.0f, 1.0f, 0.0f, 0.0f);
- fanPose.rotate(timeOfDay > 0.5f ? 180.0f : 0.0f, 0.0f, 0.0f, 1.0f);
+  const core::ScopedDrawCameraState fanGuard;
+  net::minecraft::util::math::Matrix4f fanPose = core::drawModelView();
+  // Fixed RY(-90) renderSky yaw first, keeping the dawn/dusk glow on the sun's horizon
+  // side (same chain as the sun disc pose and the pack-facing sunPosition).
+  fanPose.rotate(-90.0f, 0.0f, 1.0f, 0.0f);
+  fanPose.rotate(90.0f, 1.0f, 0.0f, 0.0f);
+  fanPose.rotate(timeOfDay > 0.5f ? 180.0f : 0.0f, 0.0f, 0.0f, 1.0f);
  core::setDrawModelView(fanPose);
  Tessellator& tessellator = Tessellator::INSTANCE;
  tessellator.start(gl::prim::TriangleFan);
@@ -179,17 +182,26 @@ void renderSkyDome(const AtmosphereContext& ctx, float tickDelta) {
  };
  publishRenderStage(skyEvent, mod::WorldRenderStage::Sky, mod::RenderHookMoment::Before);
  {
-  float sunX = skyEvent.sunDirectionX;
-  float sunY = skyEvent.sunDirectionY;
-  float sunZ = skyEvent.sunDirectionZ;
-  if(!skyEvent.solarDirectionValid) {
-   const float yaw = skyEvent.skyYawDegrees * kPi / 180.0f;
-   const float angle = skyEvent.celestialAngle * kPi * 2.0f;
-   sunX = std::sin(yaw) * std::sin(angle);
-   sunY = std::cos(angle);
-   sunZ = std::cos(yaw) * std::sin(angle);
-  }
-  const float length = std::sqrt(sunX * sunX + sunY * sunY + sunZ * sunZ);
+   float sunX = skyEvent.sunDirectionX;
+   float sunY = skyEvent.sunDirectionY;
+   float sunZ = skyEvent.sunDirectionZ;
+   if(!skyEvent.solarDirectionValid) {
+    const float yaw = skyEvent.skyYawDegrees * kPi / 180.0f;
+    const float angle = skyEvent.celestialAngle * kPi * 2.0f;
+    sunX = std::sin(yaw) * std::sin(angle);
+    sunY = std::cos(angle);
+    sunZ = std::cos(yaw) * std::sin(angle);
+   }
+   // Iris rotates the celestial chain by the fixed RY(-90) renderSky yaw
+   // (CelestialUniforms.getCelestialPosition); the beta formula above is the pre-yaw
+   // direction. Publish the yawed direction so the registry agrees with the
+   // pack-facing sunPosition and the shadow map light axis (see applyRenderSkyYaw).
+   // https://github.com/IrisShaders/Iris/blob/26.1/common/src/main/java/net/irisshaders/iris/uniforms/CelestialUniforms.java
+   const float yawedX = -sunZ;
+   const float yawedZ = sunX;
+   sunX = yawedX;
+   sunZ = yawedZ;
+   const float length = std::sqrt(sunX * sunX + sunY * sunY + sunZ * sunZ);
   if(length > 0.0001f) {
    sunX /= length;
    sunY /= length;
@@ -247,11 +259,14 @@ void renderSkyDome(const AtmosphereContext& ctx, float tickDelta) {
    drawBackgroundFan(ctx, tickDelta, *background);
   }
  }
-  {
-   const core::ScopedDrawCameraState sunMoonGuard;
-   net::minecraft::util::math::Matrix4f sunMoonPose = core::drawModelView();
-   sunMoonPose.rotate(skyEvent.skyYawDegrees, 0.0f, 1.0f, 0.0f);
-   sunMoonPose.rotate(skyEvent.celestialAngle * 360.0f, 1.0f, 0.0f, 0.0f);
+   {
+    const core::ScopedDrawCameraState sunMoonGuard;
+    net::minecraft::util::math::Matrix4f sunMoonPose = core::drawModelView();
+    // Fixed RY(-90) renderSky yaw first (CelestialUniforms.getCelestialPosition), so the
+    // sun disc sits on the same axis as the pack-facing sunPosition and the shadow map.
+    sunMoonPose.rotate(-90.0f, 0.0f, 1.0f, 0.0f);
+    sunMoonPose.rotate(skyEvent.skyYawDegrees, 0.0f, 1.0f, 0.0f);
+    sunMoonPose.rotate(skyEvent.celestialAngle * 360.0f, 1.0f, 0.0f, 0.0f);
    core::setDrawModelView(sunMoonPose);
    {
     const RenderPassScope sunMoonPass(RenderType::skyTextured());

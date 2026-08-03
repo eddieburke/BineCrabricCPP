@@ -1,5 +1,6 @@
 #include "net/minecraft/client/gl/ShaderCompileService.hpp"
 #include <algorithm>
+#include <chrono>
 #ifndef NOMINMAX
 #define NOMINMAX
 #endif
@@ -138,6 +139,18 @@ void ShaderCompileService::stop() {
   started_ = false;
  }
  queueCv_.notify_all();
+ {
+  // Bounded wind-down. Workers exit as soon as stop_ is visible (they do not
+  // drain the queue), but if one is wedged inside a driver call, detach it
+  // instead of hanging shutdown forever on an unbounded join().
+  std::unique_lock lock(mutex_);
+  if(!queueCv_.wait_for(lock, std::chrono::seconds(3), [&] { return liveWorkers_ == 0; })) {
+   for(std::thread& worker : workers_) {
+    if(worker.joinable()) worker.detach();
+   }
+   workers_.clear();
+  }
+ }
  for(std::thread& worker : workers_) {
   if(worker.joinable()) worker.join();
  }
@@ -174,10 +187,25 @@ std::shared_ptr<ShaderCompileService::Job> ShaderCompileService::findOrCreateJob
 }
 
 std::uint64_t ShaderCompileService::submit(ShaderCompileRequest request) {
+ request.contentHash = hashRequest(request);
  std::lock_guard lock(mutex_);
  if(!started_) {
-  request.contentHash = hashRequest(request);
-  return request.contentHash;
+  // No worker can ever complete this job (service not running or every worker
+  // failed to come online). Mark it done with binaryUnsupported so async
+  // pollers resolve the pending key with a main-thread source compile; leaving
+  // it unsubmitted stranded the key in ProgramCache::pending_ forever
+  // (hasPending() never went false and the pack never activated).
+  auto job = std::make_shared<Job>();
+  job->request = std::move(request);
+  job->waiters = 1;
+  job->result.contentHash = job->request.contentHash;
+  job->result.ok = false;
+  job->result.binaryUnsupported = true;
+  job->result.error = "shader compile service not running";
+  job->done = true;
+  const std::uint64_t hash = job->request.contentHash;
+  completed_.push_back(std::move(job));
+  return hash;
  }
  return findOrCreateJob(std::move(request))->request.contentHash;
 }
@@ -211,20 +239,26 @@ void ShaderCompileService::releaseJob(std::uint64_t contentHash) {
 ShaderCompileResult ShaderCompileService::compileBlocking(ShaderCompileRequest request) {
  request.contentHash = hashRequest(request);
  // Fast path: disk hit without needing a worker.
+ if(auto cached = disk_.tryLoad(request.contentHash)) {
+  ShaderCompileResult result;
+  result.contentHash = request.contentHash;
+  result.ok = true;
+  result.fromDisk = true;
+  result.binary = std::move(*cached);
+  diagnostics::recordWorkSpan("shader.disk.hit", 0);
+  return result;
+ }
+ bool haveWorker = false;
  {
   std::lock_guard lock(mutex_);
-  if(auto cached = disk_.tryLoad(request.contentHash)) {
-   ShaderCompileResult result;
-   result.contentHash = request.contentHash;
-   result.ok = true;
-   result.fromDisk = true;
-   result.binary = std::move(*cached);
-   diagnostics::recordWorkSpan("shader.disk.hit", 0);
-   return result;
-  }
-  if(!started_) {
-   return runJobOnCurrentContext(request);
-  }
+  haveWorker = started_;
+ }
+ if(!haveWorker) {
+  // No worker available (headless/tests, or every worker failed to come
+  // online). Compile on the caller's context, but never while holding the
+  // service mutex: a synchronous compile plus disk write must not block every
+  // other user of the service.
+  return runJobOnCurrentContext(request);
  }
  std::shared_ptr<Job> job;
  {
@@ -301,6 +335,13 @@ ShaderCompileResult ShaderCompileService::runJobOnCurrentContext(const ShaderCom
 void ShaderCompileService::workerMain() {
  ContextSpec* spec = contextSpec_.get();
  WorkerContext context = createWorkerContext(spec->share, spec->pixelFormat, spec->pfd);
+ if(context.ctx != nullptr && !wglMakeCurrent(context.dc, context.ctx)) {
+  // CRITICAL: every GL call below must run with this thread's context current,
+  // or the driver wedges the whole process (all threads parked in nvoglv64.dll
+  // on NVIDIA). The WGL rewrite dropped the GLFW make-current step; treat a
+  // failed make-current exactly like a failed context creation.
+  destroyWorkerContext(context);
+ }
  if(context.ctx == nullptr) {
   std::vector<std::shared_ptr<Job>> stranded;
   {
@@ -337,6 +378,7 @@ void ShaderCompileService::workerMain() {
      stranded.push_back(std::move(job));
     }
    }
+   queueCv_.notify_all();
   }
   for(const std::shared_ptr<Job>& job : stranded) job->cv.notify_all();
   return;
@@ -344,34 +386,48 @@ void ShaderCompileService::workerMain() {
  GLCore::ensureLoaded();
  for(;;) {
   std::shared_ptr<Job> job;
+  bool dropped = false;
   {
    std::unique_lock lock(mutex_);
    queueCv_.wait(lock, [&] { return stop_ || !queue_.empty(); });
-   if(stop_ && queue_.empty()) break;
+   // Wind down without draining the queue; stop() discards what is left.
+   if(stop_) break;
    job = queue_.front();
    queue_.pop();
    if(job->waiters == 0) {
+    // Lost-wakeup guard: releaseJob (e.g. ProgramCache::releasePending) can
+    // race a compileBlocking waiter still blocked on job->cv. Mark the job done
+    // so that waiter wakes instead of waiting forever on a job that never
+    // completes.
     jobs_.erase(job->request.contentHash);
-    continue;
+    job->result = ShaderCompileResult{};
+    job->result.contentHash = job->request.contentHash;
+    job->done = true;
+    dropped = true;
    }
   }
-   ShaderCompileResult result = runJobOnCurrentContext(job->request);
-   {
-    std::lock_guard lock(mutex_);
-    job->result = std::move(result);
-    job->done = true;
-    jobs_.erase(job->request.contentHash);
-    if(job->waiters > 0) {
-     completed_.push_back(job);
-    }
-   }
+  if(dropped) {
    job->cv.notify_all();
+   continue;
+  }
+  ShaderCompileResult result = runJobOnCurrentContext(job->request);
+  {
+   std::lock_guard lock(mutex_);
+   job->result = std::move(result);
+   job->done = true;
+   jobs_.erase(job->request.contentHash);
+   if(job->waiters > 0) {
+    completed_.push_back(job);
+   }
+  }
+  job->cv.notify_all();
  }
  destroyWorkerContext(context);
  {
   std::lock_guard lock(mutex_);
   if(liveWorkers_ > 0) --liveWorkers_;
   if(liveWorkers_ == 0) started_ = false;
+  queueCv_.notify_all();
  }
 }
 } // namespace net::minecraft::client::gl

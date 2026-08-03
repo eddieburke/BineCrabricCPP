@@ -1,7 +1,9 @@
 #include "net/minecraft/client/render/targets/ShadowMapPass.hpp"
 #include <algorithm>
 #include <cmath>
+#include <cstring>
 #include <vector>
+#include "net/minecraft/util/math/Matrix4f.hpp"
 #include "net/minecraft/client/Minecraft.hpp"
 #include "net/minecraft/client/gl/GLCore.hpp"
 #include "net/minecraft/client/gl/GlConstants.hpp"
@@ -192,8 +194,8 @@ ShadowMapResult update(ShadowMapState& state,
                        const PackDefinition* definition) {
   const int requestedResolution = definition != nullptr ? definition->shadowMapResolution : 0;
   const int colorBuffers = std::clamp(definition != nullptr ? definition->shadowColorBuffers : 0, 0, 8);
-  const bool shadowCulling = definition == nullptr || definition->shadowCulling;
-  const bool reversedCulling = definition != nullptr && definition->reversedShadowCulling;
+  const ShadowCullState cullState =
+      definition != nullptr ? definition->shadowCulling : ShadowCullState::Default;
   const float voxelDistance = definition != nullptr ? definition->voxelDistance : 0.0f;
   const float shadowDistance = definition != nullptr ? definition->shadowDistance : 0.0f;
   const float shadowDistanceRenderMul = definition != nullptr ? definition->shadowDistanceRenderMul : -1.0f;
@@ -241,17 +243,6 @@ ShadowMapResult update(ShadowMapState& state,
   // Java: the shadow map half plane is shadowDistance alone; voxelDistance only affects
   // culling. https://github.com/IrisShaders/Iris/blob/26.1/common/src/main/java/net/irisshaders/iris/shaderpack/properties/PackShadowDirectives.java
   const float coverage = shadowDistance;
-  const float entityDistance = entityDistanceMultiplier > 0.0f ? coverage * entityDistanceMultiplier : 0.0f;
-  float frustumBypass = 0.0f;
-  if(!shadowCulling) {
-   frustumBypass = coverage;
-  } else if(reversedCulling) {
-   frustumBypass = std::max(0.0f, voxelDistance);
-  }
-  float renderDistance = 0.0f;
-  if(shadowDistanceRenderMul > 0.0f && shadowDistance > 0.0f) {
-   renderDistance = shadowDistance * shadowDistanceRenderMul;
-  }
   const bool perspectiveShadow = shadowMapFov > 0.0f;
   // Iris centres the shadow camera on cameraPosition — the same origin the gbuffer
   // pass uploads against. The pack's sample transforms `pe = gbufferModelViewInverse *
@@ -291,12 +282,66 @@ ShadowMapResult update(ShadowMapState& state,
   shadowCam.shadowTranslucent = shadowTranslucent;
   shadowCam.shadowBlockEntities = shadowBlockEntities;
   shadowCam.shadowLightBlockEntities = shadowLightBlockEntities;
-  shadowCam.shadowEntityDistance = std::max(0.0f, entityDistance);
-  shadowCam.frustumBypassDistance = std::max(0.0f, frustumBypass);
-  shadowCam.shadowRenderDistance = std::max(0.0f, renderDistance);
   shadowCam.hasExplicitModelView = true;
   buildShadowCelestialModelView(shadowCam.explicitModelView, shadowAngle, sunPathRotation, shadowIntervalSize,
                                 centerX, centerY, centerZ);
+  // Java feeds createShadowFrustum the world-space shadow light position
+  // (CelestialUniforms.getShadowLightPositionInWorldSpace). That vector is by
+  // construction the shadow model view's toward-light axis, R^T * (0, 0, 1) — row 2 of
+  // the matrix — so read it from the matrix the map is actually rendered with instead
+  // of rebuilding the celestial chain, and the frustum can never disagree with the map.
+  float lightVector[3] = {shadowCam.explicitModelView[2], shadowCam.explicitModelView[6],
+                          shadowCam.explicitModelView[10]};
+  {
+   const float length =
+       std::sqrt(lightVector[0] * lightVector[0] + lightVector[1] * lightVector[1] + lightVector[2] * lightVector[2]);
+   if(length > 1.0e-6f) {
+    for(float& component : lightVector) component /= length;
+   }
+  }
+  // Java createShadowFrustum: the shadow pass is culled against the PLAYER's frustum
+  // extruded toward the light, never against the shadow ortho box.
+  // https://github.com/IrisShaders/Iris/blob/26.1/common/src/main/java/net/irisshaders/iris/shadows/ShadowRenderer.java
+  float playerModelViewProjection[16]{};
+  {
+   const float playerFarPlane = renderer.frameSettings().renderDistanceBlocks;
+   float playerProjection[16]{};
+   float playerModelView[16]{};
+   buildCameraProjection(playerProjection, camera, playerFarPlane);
+   buildCameraModelView(playerModelView, camera);
+   net::minecraft::util::math::Matrix4f composed;
+   composed.set(playerProjection);
+   net::minecraft::util::math::Matrix4f modelView;
+   modelView.set(playerModelView);
+   composed.multiply(modelView); // gbufferProjection * gbufferModelView
+   std::memcpy(playerModelViewProjection, composed.data(), sizeof(float) * 16);
+  }
+  ShadowFrustumParams frustumParams;
+  frustumParams.cullState = cullState;
+  // Java assumes voxelization when the shadow program has a geometry stage
+  // (ShadowRenderer.java:165); the image-store path (setUsesImages) is never called.
+  frustumParams.packHasVoxelization = definition != nullptr && [&] {
+   const auto found = definition->programs.find("shadow");
+   return found != definition->programs.end() && !found->second.geometry.empty();
+  }();
+  frustumParams.halfPlaneLength = shadowDistance;
+  frustumParams.voxelDistance = voxelDistance;
+  frustumParams.renderMultiplier = shadowDistanceRenderMul;
+  frustumParams.renderDistanceBlocks = renderer.frameSettings().renderDistanceBlocks;
+  state.terrainFrustum = createShadowFrustum(frustumParams, playerModelViewProjection, lightVector);
+  state.terrainFrustum.prepare(centerX, centerY, centerZ);
+  // Java: entities share the terrain frustum unless the pack asked for a different
+  // entity shadow distance (multiplier neither 1 nor negative).
+  if(entityDistanceMultiplier == 1.0f || entityDistanceMultiplier < 0.0f) {
+   state.entityFrustum = state.terrainFrustum;
+  } else {
+   ShadowFrustumParams entityParams = frustumParams;
+   entityParams.renderMultiplier = shadowDistanceRenderMul * entityDistanceMultiplier;
+   state.entityFrustum = createShadowFrustum(entityParams, playerModelViewProjection, lightVector);
+  }
+  state.entityFrustum.prepare(centerX, centerY, centerZ);
+  shadowCam.shadowTerrainFrustum = &state.terrainFrustum;
+  shadowCam.shadowEntityFrustum = &state.entityFrustum;
   if(perspectiveShadow) {
    // Iris' perspective shadow projection always uses the fixed NEAR/FAR constants.
    // https://github.com/IrisShaders/Iris/blob/26.1/common/src/main/java/net/irisshaders/iris/shadows/ShadowMatrices.java

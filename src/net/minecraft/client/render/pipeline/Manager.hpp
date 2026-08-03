@@ -7,6 +7,7 @@
 #include <optional>
 #include <string>
 #include <thread>
+#include <utility>
 #include <vector>
 #include "net/minecraft/client/render/pipeline/Pipeline.hpp"
 #include "net/minecraft/client/render/pipeline/Instance.hpp"
@@ -46,7 +47,14 @@ class PackManager {
   render::Pipeline& pipeline() noexcept {
    return pipeline_;
   }
-  bool setSetting(const std::string& key, std::string value);
+   bool setSetting(const std::string& key, std::string value);
+   // Applies several settings as one atomic pack rebuild: a single clone, runtime
+   // rebuild and program prewarm for the whole batch. Profiles (which set dozens
+   // of options) must go through this path — calling setSetting per option made
+   // every option discard the previous staged pack's in-flight compile and restart
+   // a full pack re-read + recompile, so a RenderPearl profile click ran ~25 full
+   // reload/recompile cycles and froze the game.
+   bool setSettings(const std::vector<std::pair<std::string, std::string>>& values);
  [[nodiscard]] std::string settingValue(const std::string& key) const;
  [[nodiscard]] const std::vector<PackSummary>& available() const noexcept {
   return summaries_;
@@ -127,11 +135,15 @@ private:
  [[nodiscard]] PackInstance* renderPack() noexcept;
  [[nodiscard]] PackInstance* selectedPack() noexcept;
  [[nodiscard]] const PackInstance* selectedPack() const noexcept;
- void preparePendingPack(net::minecraft::World* world);
- [[nodiscard]] bool packReady(PackInstance& pack);
- void prepareStagedPack(net::minecraft::World* world);
- void commitStagedPack();
- void discardStagedPack();
+  void preparePendingPack(net::minecraft::World* world);
+  [[nodiscard]] bool packReady(PackInstance& pack);
+  void prepareStagedPack(net::minecraft::World* world);
+  void commitStagedPack();
+  void discardStagedPack();
+  // Returns the pack a settings change mutates: the pending pack, the already
+  // staged clone (so consecutive setting changes never restart its in-flight
+  // compile), or a fresh clone of the active pack. nullptr when nothing applies.
+  [[nodiscard]] PackInstance* settingsTarget();
  [[nodiscard]] std::unique_ptr<PackInstance> clonePack(const PackInstance& source);
  void activatePack(std::size_t index);
  void cancelPendingPack();

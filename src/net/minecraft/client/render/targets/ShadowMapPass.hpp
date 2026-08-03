@@ -2,6 +2,7 @@
 #include <array>
 #include "net/minecraft/client/gl/GlFramebuffer.hpp"
 #include "net/minecraft/client/render/camera/FrameRenderCamera.hpp"
+#include "net/minecraft/client/render/culling/ShadowFrustum.hpp"
 namespace net::minecraft::client::render {
 class GameRenderer;
 struct PackDefinition;
@@ -50,6 +51,12 @@ struct ShadowMapResult {
 struct ShadowMapState {
   ShadowTargets targets{};
   FrameRenderCamera shadowCamera{};
+  // Java's terrainFrustumHolder / entityFrustumHolder: rebuilt every shadow pass from
+  // the player's view frustum and the world-space light vector, and owned here so the
+  // FrameRenderCamera pointers stay valid for the whole pass.
+  // https://github.com/IrisShaders/Iris/blob/26.1/common/src/main/java/net/irisshaders/iris/shadows/ShadowRenderer.java
+  ShadowCullingFrustum terrainFrustum{};
+  ShadowCullingFrustum entityFrustum{};
 };
 
 void reset(ShadowMapState& state);

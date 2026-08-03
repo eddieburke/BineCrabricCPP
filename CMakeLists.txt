@@ -401,6 +401,7 @@ set(MINECRAFT_TEST_SOURCES
     tests/packet_accounting_test.cpp
     tests/region_snapshot_race_test.cpp
     tests/shadow_celestial_modelview_test.cpp
+    tests/shadow_culling_frustum_test.cpp
     tests/thread_budget_test.cpp
     tests/thread_coordinator_test.cpp
 )

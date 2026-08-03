@@ -394,51 +394,87 @@ void PackManager::pollPrograms() {
  }
 }
 
-bool PackManager::setSetting(const std::string& key, std::string value) {
- PackInstance* pack = selectedPack();
- if(pack == nullptr || pack->definition.settings.empty()) {
-  return false;
- }
- for(const PackSetting& setting : pack->definition.settings) {
-  if(setting.key == key) {
-   std::string normalized;
-   if(!normalizeSettingValue(setting, value, normalized)) {
-    return false;
-   }
-   if(!pendingIndex_.has_value()) {
-    const PackInstance* source = stagedPack_ != nullptr ? stagedPack_.get() : activePack();
-    if(source == nullptr) return false;
-    std::unique_ptr<PackInstance> staged = clonePack(*source);
-    discardStagedPack();
-    stagedPack_ = std::move(staged);
-    stagedIndex_ = activeIndex_;
-    pipeline_.selectDimension(
-        *stagedPack_,
-        net::minecraft::client::Minecraft::INSTANCE != nullptr
-            ? net::minecraft::client::Minecraft::INSTANCE->world
-            : nullptr,
-        false);
-    pack = stagedPack_.get();
-   }
-   pack->settings[key] = std::move(normalized);
-   std::string customError;
-   if(!pack->rebuildRuntime(customError)) logOnce(*pack, customError);
-     if(pendingIndex_.has_value()) {
-      preparePendingPack(net::minecraft::client::Minecraft::INSTANCE != nullptr
-                             ? net::minecraft::client::Minecraft::INSTANCE->world
-                             : nullptr);
-     } else if(stagedPack_ != nullptr) {
-      PackCompiler::prewarm(*stagedPack_,
-                            [this](PackInstance& p, const std::string& message,
-                                   ::net::minecraft::util::logging::LogLevel) {
-                             logOnce(p, message);
-                            });
-      if(packReady(*stagedPack_)) commitStagedPack();
-     }
-     return true;
+PackInstance* PackManager::settingsTarget() {
+  if(pendingIndex_.has_value() && *pendingIndex_ < packs_.size()) {
+   return packs_[*pendingIndex_].get();
   }
+  // Reuse the staged clone when it is still staged for the active pack: the
+  // previous setSetting's compile is in flight and discarding it here would throw
+  // away work and restart the whole pack compile for every option in a profile.
+  if(stagedPack_ != nullptr && stagedIndex_ == activeIndex_) {
+   return stagedPack_.get();
+  }
+  const PackInstance* source = activePack();
+  if(source == nullptr) {
+   return nullptr;
+  }
+  std::unique_ptr<PackInstance> staged = clonePack(*source);
+  discardStagedPack();
+  stagedPack_ = std::move(staged);
+  stagedIndex_ = activeIndex_;
+  pipeline_.selectDimension(
+      *stagedPack_,
+      net::minecraft::client::Minecraft::INSTANCE != nullptr
+          ? net::minecraft::client::Minecraft::INSTANCE->world
+          : nullptr,
+      false);
+  return stagedPack_.get();
  }
- return false;
+
+bool PackManager::setSetting(const std::string& key, std::string value) {
+  return setSettings({{key, std::move(value)}});
+}
+
+bool PackManager::setSettings(const std::vector<std::pair<std::string, std::string>>& values) {
+  if(values.empty()) {
+   return false;
+  }
+  PackInstance* pack = selectedPack();
+  if(pack == nullptr || pack->definition.settings.empty()) {
+   return false;
+  }
+  bool changed = false;
+  for(const auto& [key, value] : values) {
+   for(const PackSetting& setting : pack->definition.settings) {
+    if(setting.key != key) {
+     continue;
+    }
+    std::string normalized;
+    if(!normalizeSettingValue(setting, value, normalized)) {
+     break;
+    }
+    if(const auto existing = pack->settings.find(key);
+       existing != pack->settings.end() && existing->second == normalized) {
+     break;
+    }
+    PackInstance* target = settingsTarget();
+    if(target == nullptr) {
+     return changed;
+    }
+    target->settings[key] = std::move(normalized);
+    changed = true;
+    pack = target;
+    break;
+   }
+  }
+  if(!changed) {
+   return false;
+  }
+  std::string customError;
+  if(!pack->rebuildRuntime(customError)) logOnce(*pack, customError);
+  if(pendingIndex_.has_value()) {
+   preparePendingPack(net::minecraft::client::Minecraft::INSTANCE != nullptr
+                          ? net::minecraft::client::Minecraft::INSTANCE->world
+                          : nullptr);
+  } else if(stagedPack_ != nullptr) {
+   PackCompiler::prewarm(*stagedPack_,
+                         [this](PackInstance& p, const std::string& message,
+                                ::net::minecraft::util::logging::LogLevel) {
+                          logOnce(p, message);
+                         });
+   if(packReady(*stagedPack_)) commitStagedPack();
+  }
+  return true;
 }
 
 std::string PackManager::settingValue(const std::string& key) const {

@@ -8,6 +8,7 @@ namespace net::minecraft::entity {
 class LivingEntity;
 }
 namespace net::minecraft::client::render {
+class ShadowCullingFrustum;
 struct FrameRenderCamera {
  // Camera ENTITY position (interpolated feet position), not the camera.
  double x = 0.0;
@@ -63,9 +64,13 @@ struct FrameRenderCamera {
  bool shadowBlockEntities = true;
  bool shadowLightBlockEntities = true;
  bool skipAllRendering = false;
- float shadowEntityDistance = 0.0f;
  float frustumBypassDistance = 48.0f;
- float shadowRenderDistance = 0.0f;
+ // The shadow pass frusta Java builds in ShadowRenderer.createShadowFrustum: one for
+ // terrain/block entities, one for entities (entityShadowDistanceMul). They are owned
+ // by ShadowMapState and stay alive for the whole shadow pass. Null outside it.
+ // https://github.com/IrisShaders/Iris/blob/26.1/common/src/main/java/net/irisshaders/iris/shadows/ShadowRenderer.java
+ const ShadowCullingFrustum* shadowTerrainFrustum = nullptr;
+ const ShadowCullingFrustum* shadowEntityFrustum = nullptr;
  // https://github.com/IrisShaders/Iris/blob/26.1/common/src/main/java/net/irisshaders/iris/shadows/ShadowMatrices.java
  bool hasExplicitModelView = false;
  float explicitModelView[16] = {1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1};
@@ -188,6 +193,22 @@ inline void directionToView(float x, float y, float z, const FrameRenderCamera& 
  out[0] = b[0] * cameraSpaceX + b[4] * cameraSpaceY + b[8] * cameraSpaceZ;
  out[1] = b[1] * cameraSpaceX + b[5] * cameraSpaceY + b[9] * cameraSpaceZ;
  out[2] = b[2] * cameraSpaceX + b[6] * cameraSpaceY + b[10] * cameraSpaceZ;
+}
+// Iris publishes the celestial positions through the fixed -90 degree renderSky yaw
+// (`celestial.rotate(Axis.YP.rotationDegrees(-90.0F))`, CelestialUniforms.java:154-158)
+// BEFORE the sunPathRotation/angle rotations. The light-registry direction is the beta
+// renderSky direction (0, cos 2pi*c, sin 2pi*c) — that pre-yaw frame — so rotating it by
+// RY(-90) yields (worldX, worldY, worldZ) -> (-worldZ, worldY, worldX), landing on the
+// same axis the shadow map is oriented by (ShadowMatrices.createBaselineModelViewMatrix
+// light axis = R^T * (0,0,1)). Without the yaw, packs' shadowLightDirection /
+// sunPosition disagree with the map by up to 90 degrees of azimuth, and the slope-scaled
+// normal bias + lit gate in sample_shadow smear shadow boundaries into wedges on
+// vertical faces.
+// https://github.com/IrisShaders/Iris/blob/26.1/common/src/main/java/net/irisshaders/iris/uniforms/CelestialUniforms.java
+inline void applyRenderSkyYaw(const float in[3], float out[3]) {
+ out[0] = -in[2];
+ out[1] = in[1];
+ out[2] = in[0];
 }
 inline void buildCameraProjection(float* m, const FrameRenderCamera& c, float farPlane) {
  std::fill(m, m + 16, 0.0f);

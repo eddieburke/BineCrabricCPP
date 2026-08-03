@@ -117,5 +117,41 @@ TEST(ShadowCelestialOrthoScale, HalfPlaneMatchesPearlProjScale) {
  EXPECT_NEAR(proj[5], 1.0f / 160.0f, 1e-6f);
  EXPECT_NEAR(proj[10], -2.0f / (227.0f - (-227.0f)), 1e-6f);
 }
+
+// The pack-facing shadow light direction must agree with the orientation of the shadow
+// map itself. Iris publishes the celestial positions through the fixed RY(-90) renderSky
+// yaw (CelestialUniforms.getCelestialPosition: gbufferModelView * RY(-90) * RZ(spr) *
+// RX(angle) * (0, 100, 0, w)); the light-registry direction is the beta renderSky frame
+// BEFORE that yaw, so the yawed direction must land exactly on the shadow matrix's
+// toward-light axis R^T * (0,0,1) = (m[2], m[6], m[10]) — sunPosition by day,
+// moonPosition (= -sunPosition) by night. Before the yaw was applied, the two disagreed
+// by up to ~87 degrees of azimuth, and the pack's slope-scaled normal bias + lit gate in
+// lib/light/shadows.glsl (sample_shadow) smeared shadow boundaries into wedges on
+// vertical faces.
+// https://github.com/IrisShaders/Iris/blob/26.1/common/src/main/java/net/irisshaders/iris/uniforms/CelestialUniforms.java
+TEST(ShadowCelestialModelView, PackFacingLightDirectionMatchesMapOrientation) {
+ using net::minecraft::client::render::applyRenderSkyYaw;
+ using net::minecraft::client::render::buildShadowCelestialModelView;
+ using net::minecraft::client::render::celestialSunAngle;
+ for(int i = 0; i <= 24; ++i) {
+  const float celestial = static_cast<float>(i) / 24.0f;
+  // Light-registry sun direction: beta renderSky frame (0, cos 2pi*c, sin 2pi*c).
+  const float angle = celestial * 6.28318530718f;
+  const float registry[3] = {0.0f, std::cos(angle), std::sin(angle)};
+  float yawed[3]{};
+  applyRenderSkyYaw(registry, yawed);
+  // Day/night split mirrors FrameData's shadowLightPosition selection
+  // (sunAngleDegrees < 180 -> sun).
+  const bool day = celestialSunAngle(celestial) < 0.5f;
+  const float light[3] = {day ? yawed[0] : -yawed[0], day ? yawed[1] : -yawed[1],
+                          day ? yawed[2] : -yawed[2]};
+  // Shadow matrix toward-light axis: R^T * (0,0,1) = row 2 of the model view.
+  float m[16]{};
+  buildShadowCelestialModelView(m, shadowAngleFromCelestial(celestial), 0.0f, 0.0f, 0.0, 0.0, 0.0);
+  const float axis[3] = {m[2], m[6], m[10]};
+  const float dot = light[0] * axis[0] + light[1] * axis[1] + light[2] * axis[2];
+  EXPECT_NEAR(dot, 1.0f, 1e-4f) << "celestial " << celestial;
+ }
+}
 } // namespace
 } // namespace net::minecraft::test

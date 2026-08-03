@@ -27,6 +27,7 @@
 #include "net/minecraft/client/render/chunk/ChunkMeshJob.hpp"
 #include "net/minecraft/client/render/chunk/ChunkRegionBuffer.hpp"
 #include "net/minecraft/client/render/culling/Frustum.hpp"
+#include "net/minecraft/client/render/culling/ShadowFrustum.hpp"
 #include "net/minecraft/client/render/entity/EntityRenderDispatcher.hpp"
 #include "net/minecraft/entity/Entity.hpp"
 #include "net/minecraft/entity/LivingEntity.hpp"
@@ -362,19 +363,20 @@ void WorldRenderer::renderEntities(const Vec3d& cameraPos,
  entityCount = static_cast<int>(entities.size()) + static_cast<int>(world->globalEntities.size());
  const client::option::RenderSettings& resolved = settings_;
  const FrameRenderCamera& renderCamera = RenderCameraState::instance().frame();
- const double shadowEntityDistanceSq =
-     static_cast<double>(renderCamera.shadowEntityDistance) * renderCamera.shadowEntityDistance;
+ // Java culls shadow entities with the entity shadow frustum
+ // (ShadowRenderer.renderEntities → entityShadowFrustum), the same extruded-player
+ // volume as the terrain, optionally narrowed by entityShadowDistanceMul.
+ // https://github.com/IrisShaders/Iris/blob/26.1/common/src/main/java/net/irisshaders/iris/shadows/ShadowRenderer.java
+ const ShadowCullingFrustum* shadowEntityFrustum =
+     renderCamera.shadowPass ? renderCamera.shadowEntityFrustum : nullptr;
  const auto excludedFromShadow = [&](const Entity* entity) {
   if(!renderCamera.shadowPass || entity == nullptr) return false;
   if(!renderCamera.shadowEntities && client->player != nullptr &&
      entity != client->player && entity != client->player->vehicle) return true;
   if(!renderCamera.shadowPlayer && client->player != nullptr &&
      (entity == client->player || entity == client->player->vehicle)) return true;
-  if(shadowEntityDistanceSq <= 0.0 || client->player == nullptr) return shadowEntityDistanceSq == 0.0;
-  const double dx = entity->x - client->player->x;
-  const double dy = entity->y - client->player->y;
-  const double dz = entity->z - client->player->z;
-  return dx * dx + dy * dy + dz * dz > shadowEntityDistanceSq;
+  return shadowEntityFrustum != nullptr && !entity->ignoreFrustumCull &&
+         !shadowEntityFrustum->isVisible(entity->boundingBox);
  };
  for(Entity* entity : world->globalEntities) {
   if(entity == nullptr) {
@@ -432,11 +434,15 @@ void WorldRenderer::renderEntities(const Vec3d& cameraPos,
     }
    }
    if(!allow) continue;
-   if(shadowEntityDistanceSq > 0.0 && client->player != nullptr) {
-    const double dx = blockEntity->x - client->player->x;
-    const double dy = blockEntity->y - client->player->y;
-    const double dz = blockEntity->z - client->player->z;
-    if(dx * dx + dy * dy + dz * dz > shadowEntityDistanceSq) continue;
+   // Java block entities ride along with the terrain the shadow frustum kept, so cull
+   // them against the terrain frustum rather than a distance sphere of our own.
+   if(renderCamera.shadowTerrainFrustum != nullptr &&
+      !renderCamera.shadowTerrainFrustum->isVisible(
+          net::minecraft::Box(static_cast<double>(blockEntity->x), static_cast<double>(blockEntity->y),
+                              static_cast<double>(blockEntity->z), static_cast<double>(blockEntity->x) + 1.0,
+                              static_cast<double>(blockEntity->y) + 1.0,
+                              static_cast<double>(blockEntity->z) + 1.0))) {
+    continue;
    }
   }
   blockDispatcher.render(*blockEntity, tickDelta);
@@ -558,29 +564,42 @@ void WorldRenderer::blockBreakParticles(int x, int y, int z, int blockId, int bl
 }
 void WorldRenderer::renderOutline(const Box& box) {
  Tessellator& tessellator = INSTANCE;
- auto emitStrip = [&](bool top) {
-  const double y = top ? box.maxY : box.minY;
-  tessellator.start(gl::prim::LineStrip);
-  tessellator.color(0.0f, 0.0f, 0.0f, 0.4f);
-  tessellator.vertex(box.minX, y, box.minZ);
-  tessellator.vertex(box.maxX, y, box.minZ);
-  tessellator.vertex(box.maxX, y, box.maxZ);
-  tessellator.vertex(box.minX, y, box.maxZ);
-  tessellator.vertex(box.minX, y, box.minZ);
-  tessellator.draw();
- };
- emitStrip(false);
- emitStrip(true);
+ // Modern line rendering (Iris 26.1 line format) carries each line's direction in
+ // vaNormal so packs can expand it to a screen-space width (RenderPearl
+ // gbuffers_line.vsh: start = model, end = model + vaNormal, ±offset by gl_VertexID).
+ // Emit every edge as an explicit GL_LINES segment with that direction; a constant
+ // (0,0,0) normal degenerates normalize(0) into undefined geometry.
  tessellator.start(gl::prim::Lines);
  tessellator.color(0.0f, 0.0f, 0.0f, 0.4f);
- tessellator.vertex(box.minX, box.minY, box.minZ);
- tessellator.vertex(box.minX, box.maxY, box.minZ);
- tessellator.vertex(box.maxX, box.minY, box.minZ);
- tessellator.vertex(box.maxX, box.maxY, box.minZ);
- tessellator.vertex(box.maxX, box.minY, box.maxZ);
- tessellator.vertex(box.maxX, box.maxY, box.maxZ);
- tessellator.vertex(box.minX, box.minY, box.maxZ);
- tessellator.vertex(box.minX, box.maxY, box.maxZ);
+ auto emitEdge = [&tessellator](double ax, double ay, double az, double bx, double by, double bz) {
+  double dx = bx - ax, dy = by - ay, dz = bz - az;
+  const double len = std::sqrt(dx * dx + dy * dy + dz * dz);
+  if(len > 1.0e-12) {
+   dx /= len;
+   dy /= len;
+   dz /= len;
+  } else {
+   dx = 1.0;
+   dy = 0.0;
+   dz = 0.0;
+  }
+  tessellator.normal(static_cast<float>(dx), static_cast<float>(dy), static_cast<float>(dz));
+  tessellator.vertex(ax, ay, az);
+  tessellator.normal(static_cast<float>(dx), static_cast<float>(dy), static_cast<float>(dz));
+  tessellator.vertex(bx, by, bz);
+ };
+ emitEdge(box.minX, box.minY, box.minZ, box.maxX, box.minY, box.minZ);
+ emitEdge(box.maxX, box.minY, box.minZ, box.maxX, box.minY, box.maxZ);
+ emitEdge(box.maxX, box.minY, box.maxZ, box.minX, box.minY, box.maxZ);
+ emitEdge(box.minX, box.minY, box.maxZ, box.minX, box.minY, box.minZ);
+ emitEdge(box.minX, box.maxY, box.minZ, box.maxX, box.maxY, box.minZ);
+ emitEdge(box.maxX, box.maxY, box.minZ, box.maxX, box.maxY, box.maxZ);
+ emitEdge(box.maxX, box.maxY, box.maxZ, box.minX, box.maxY, box.maxZ);
+ emitEdge(box.minX, box.maxY, box.maxZ, box.minX, box.maxY, box.minZ);
+ emitEdge(box.minX, box.minY, box.minZ, box.minX, box.maxY, box.minZ);
+ emitEdge(box.maxX, box.minY, box.minZ, box.maxX, box.maxY, box.minZ);
+ emitEdge(box.maxX, box.minY, box.maxZ, box.maxX, box.maxY, box.maxZ);
+ emitEdge(box.minX, box.minY, box.maxZ, box.minX, box.maxY, box.maxZ);
  tessellator.draw();
 }
 void WorldRenderer::renderMiningProgress(net::minecraft::PlayerEntity* player,

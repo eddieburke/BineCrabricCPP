@@ -10,6 +10,7 @@
 #include "net/minecraft/client/render/world/WorldRenderer.hpp"
 #include "net/minecraft/client/render/camera/FrameRenderCamera.hpp"
 #include "net/minecraft/client/render/culling/Frustum.hpp"
+#include "net/minecraft/client/render/culling/ShadowFrustum.hpp"
 #include "net/minecraft/entity/Entity.hpp"
 #include "net/minecraft/entity/LivingEntity.hpp"
 #include "net/minecraft/util/concurrent/FrameBudget.hpp"
@@ -304,8 +305,6 @@ void ChunkSectionSystem::cullChunks(FrustumCuller* culler, float /*tickDelta*/, 
  const FrameRenderCamera& renderCamera = RenderCameraState::instance().frame();
  const double nearFrustumBypassBlocks = std::max(0.0f, renderCamera.frustumBypassDistance);
  const double nearFrustumBypassDistanceSq = nearFrustumBypassBlocks * nearFrustumBypassBlocks;
- const double shadowRenderDistance = std::max(0.0f, renderCamera.shadowRenderDistance);
- const double shadowRenderDistanceSq = shadowRenderDistance * shadowRenderDistance;
  const double camX = core::drawCameraStateValid() ? static_cast<double>(core::drawCameraPosition()[0])
                                                    : renderCamera.eyeX;
  const double camY = core::drawCameraStateValid() ? static_cast<double>(core::drawCameraPosition()[1])
@@ -317,17 +316,21 @@ void ChunkSectionSystem::cullChunks(FrustumCuller* culler, float /*tickDelta*/, 
   updateSectionFrontier();
   drainPendingColumns();
  }
+ // The shadow pass has its own frustum (Java ShadowRenderer.createShadowFrustum): the
+ // player's view volume extruded toward the light, so casters outside the player's
+ // frustum that still shadow it survive. Nothing about the camera's own frustum, the
+ // near bypass or occlusion culling applies here.
+ if(renderCamera.shadowPass) {
+  const ShadowCullingFrustum* shadowFrustum = renderCamera.shadowTerrainFrustum;
+  for(chunk::ChunkBuilder* chunk : sectionList_) {
+   chunk->inFrustum = shadowFrustum == nullptr || shadowFrustum->isVisible(chunk->cullingBox);
+  }
+  rebuildVisibleDrawRings();
+  return;
+ }
   if(culler == nullptr || !facade_.settings_.frustumCulling) {
   for(chunk::ChunkBuilder* chunk : sectionList_) {
    chunk->inFrustum = true;
-   if(renderCamera.shadowPass && shadowRenderDistanceSq > 0.0) {
-    const double dx = camX - static_cast<double>(chunk->centerX);
-    const double dy = camY - static_cast<double>(chunk->centerY);
-    const double dz = camZ - static_cast<double>(chunk->centerZ);
-    if(dx * dx + dy * dy + dz * dz > shadowRenderDistanceSq) {
-     chunk->inFrustum = false;
-    }
-   }
   }
   rebuildVisibleDrawRings();
   return;
@@ -336,23 +339,12 @@ void ChunkSectionSystem::cullChunks(FrustumCuller* culler, float /*tickDelta*/, 
   chunk::ChunkBuilder& chunk = *chunkPtr;
   chunk.updateFrustum(*culler);
   const double dx = camX - static_cast<double>(chunk.centerX);
-  const double dy = camY - static_cast<double>(chunk.centerY);
   const double dz = camZ - static_cast<double>(chunk.centerZ);
-  const double distSq = dx * dx + dy * dy + dz * dz;
   if(dx * dx + dz * dz <= nearFrustumBypassDistanceSq) {
    chunk.inFrustum = true;
   }
-  if(renderCamera.shadowPass && shadowRenderDistanceSq > 0.0 && distSq > shadowRenderDistanceSq) {
-   chunk.inFrustum = false;
-  }
  }
-  // Light-space occlusion is invalid for the shadow pass (player-viewpoint flood
-  // fill); the frustum loop above already applied the shadow render-distance cut.
-  // pushCullState() snapshotted the main-pass inFrustum flags, so popCullState()
-  // restores them unchanged, leaving the main pass unaffected.
-  if(!renderCamera.shadowPass) {
-   applyOcclusionCulling();
-  }
+  applyOcclusionCulling();
   rebuildVisibleDrawRings();
 }
 void ChunkSectionSystem::applyOcclusionCulling() {

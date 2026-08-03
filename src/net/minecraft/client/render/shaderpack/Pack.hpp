@@ -5,6 +5,7 @@
 #include <set>
 #include <unordered_map>
 #include <vector>
+#include "net/minecraft/client/render/culling/ShadowFrustum.hpp"
 #include "net/minecraft/client/render/shaders/CustomUniforms.hpp"
 namespace net::minecraft::client::render {
 enum class SettingType {
@@ -151,8 +152,10 @@ struct PackDefinition {
  bool prepareBeforeShadow = false;
  bool breaksAnisotropy = false;
  int fallbackTex = 0;
- bool shadowCulling = true;
- bool reversedShadowCulling = false;
+ // Java PackShadowDirectives.getCullingState(), consumed by
+ // ShadowRenderer.createShadowFrustum to pick the shadow pass frustum.
+ // https://github.com/IrisShaders/Iris/blob/26.1/common/src/main/java/net/irisshaders/iris/shaderpack/properties/ShaderProperties.java
+ ShadowCullState shadowCulling = ShadowCullState::Default;
  bool voxelizeLightBlocks = false;
  bool separateEntityDraws = false;
  bool oldLighting = false;
