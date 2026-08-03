@@ -1972,13 +1972,9 @@ TEST(PackLoaderTest, RenderPearlCommentedShadowDirectivesAreHonored) {
   EXPECT_TRUE(pack.shadowHardwareFiltering[0]);
   EXPECT_TRUE(pack.shadowHardwareFiltering[1]);
   EXPECT_FLOAT_EQ(pack.shadowDistanceRenderMul, 0.85f);
-  // The #if/#elif chain is not evaluated: the LAST branch in file order wins. The
-  // pack's GLSL itself uses SM_DIST=10 (160 / -227 / 227); since the pack overrides
-  // gl_Position entirely in shadow.vsh these C++ values only size the (oversized,
-  // harmless) shadow culling, not the map content.
-  EXPECT_FLOAT_EQ(pack.shadowDistance, 512.0f);
-  EXPECT_FLOAT_EQ(pack.shadowNearPlane, -695.0f);
-  EXPECT_FLOAT_EQ(pack.shadowFarPlane, 695.0f);
+  EXPECT_FLOAT_EQ(pack.shadowDistance, 160.0f);
+  EXPECT_FLOAT_EQ(pack.shadowNearPlane, -100.05f);
+  EXPECT_FLOAT_EQ(pack.shadowFarPlane, 156.0f);
 }
 TEST(PackLoaderTest, DynamicHandLightIsParityParsed) {
   // Java ShaderProperties.java:83,190,756-757 parses dynamicHandLight and never

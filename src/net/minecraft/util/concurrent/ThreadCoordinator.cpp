@@ -48,17 +48,9 @@ ThreadBudget ThreadCoordinator::budget() const noexcept {
  std::lock_guard lock(mutex_);
  return budget_;
 }
-void ThreadCoordinator::reserveDynamic(unsigned count) {
- std::lock_guard lock(mutex_);
- dynamicReserved_ += count;
-}
-void ThreadCoordinator::releaseDynamic(unsigned count) {
- std::lock_guard lock(mutex_);
- dynamicReserved_ = dynamicReserved_ > count ? dynamicReserved_ - count : 0U;
-}
 std::uint64_t ThreadCoordinator::totalPending() const noexcept {
  std::lock_guard lock(mutex_);
- std::uint64_t total = dynamicReserved_;
+ std::uint64_t total = 0;
  if(computePool_ != nullptr) {
   total += computePool_->pendingCount();
  }

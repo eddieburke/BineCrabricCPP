@@ -1,4 +1,4 @@
-﻿#include "net/minecraft/server/PlayerManager.hpp"
+#include "net/minecraft/server/PlayerManager.hpp"
 #include <algorithm>
 #include <cctype>
 #include <fstream>
@@ -333,27 +333,39 @@ void PlayerManager::unbanPlayer(const std::string& name) {
  bannedPlayers_.erase(toLowerCopy(name));
  saveBannedPlayers();
 }
-void PlayerManager::loadBannedPlayers() {
+namespace {
+void loadSetFile(const std::filesystem::path& path, std::unordered_set<std::string>& set, const char* label) {
  try {
-  bannedPlayers_.clear();
-  std::ifstream input(bannedPlayersFile_);
+  set.clear();
+  std::ifstream input(path);
   std::string line;
   while(std::getline(input, line)) {
-   bannedPlayers_.insert(toLowerCopy(trimCopy(line)));
+   const std::string trimmed = toLowerCopy(trimCopy(line));
+   if(!trimmed.empty()) {
+    set.insert(trimmed);
+   }
   }
  } catch(const std::exception& exception) {
-  ServerLog::LOGGER.log(LogLevel::Warning, "Failed to load ban list: " + std::string(exception.what()));
+  ServerLog::LOGGER.log(LogLevel::Warning, "Failed to load " + std::string(label) + ": " + exception.what());
  }
 }
-void PlayerManager::saveBannedPlayers() {
+void saveSetFile(const std::filesystem::path& path, const std::unordered_set<std::string>& set, const char* label) {
  try {
-  std::ofstream output(bannedPlayersFile_, std::ios::trunc);
-  for(const std::string& name : bannedPlayers_) {
-   output << name << '\n';
+  std::ofstream output(path, std::ios::trunc);
+  for(const std::string& entry : set) {
+   output << entry << '\n';
   }
  } catch(const std::exception& exception) {
-  ServerLog::LOGGER.log(LogLevel::Warning, "Failed to save ban list: " + std::string(exception.what()));
+  ServerLog::LOGGER.log(LogLevel::Warning, "Failed to save " + std::string(label) + ": " + exception.what());
  }
+}
+} // namespace
+
+void PlayerManager::loadBannedPlayers() {
+ loadSetFile(bannedPlayersFile_, bannedPlayers_, "ban list");
+}
+void PlayerManager::saveBannedPlayers() {
+ saveSetFile(bannedPlayersFile_, bannedPlayers_, "ban list");
 }
 void PlayerManager::banIp(const std::string& ip) {
  bannedIps_.insert(toLowerCopy(ip));
@@ -364,26 +376,10 @@ void PlayerManager::unbanIp(const std::string& ip) {
  saveBannedIps();
 }
 void PlayerManager::loadBannedIps() {
- try {
-  bannedIps_.clear();
-  std::ifstream input(bannedIpsFile_);
-  std::string line;
-  while(std::getline(input, line)) {
-   bannedIps_.insert(toLowerCopy(trimCopy(line)));
-  }
- } catch(const std::exception& exception) {
-  ServerLog::LOGGER.log(LogLevel::Warning, "Failed to load ip ban list: " + std::string(exception.what()));
- }
+ loadSetFile(bannedIpsFile_, bannedIps_, "IP ban list");
 }
 void PlayerManager::saveBannedIps() {
- try {
-  std::ofstream output(bannedIpsFile_, std::ios::trunc);
-  for(const std::string& ip : bannedIps_) {
-   output << ip << '\n';
-  }
- } catch(const std::exception& exception) {
-  ServerLog::LOGGER.log(LogLevel::Warning, "Failed to save ip ban list: " + std::string(exception.what()));
- }
+ saveSetFile(bannedIpsFile_, bannedIps_, "IP ban list");
 }
 void PlayerManager::addToOperators(const std::string& name) {
  ops_.insert(toLowerCopy(name));
@@ -397,48 +393,16 @@ void PlayerManager::removeFromOperators(const std::string& name) {
  saveOperators();
 }
 void PlayerManager::loadOperators() {
- try {
-  ops_.clear();
-  std::ifstream input(operatorsFile_);
-  std::string line;
-  while(std::getline(input, line)) {
-   ops_.insert(toLowerCopy(trimCopy(line)));
-  }
- } catch(const std::exception& exception) {
-  ServerLog::LOGGER.log(LogLevel::Warning, "Failed to load ip ban list: " + std::string(exception.what()));
- }
+ loadSetFile(operatorsFile_, ops_, "operator list");
 }
 void PlayerManager::saveOperators() {
- try {
-  std::ofstream output(operatorsFile_, std::ios::trunc);
-  for(const std::string& name : ops_) {
-   output << name << '\n';
-  }
- } catch(const std::exception& exception) {
-  ServerLog::LOGGER.log(LogLevel::Warning, "Failed to save ip ban list: " + std::string(exception.what()));
- }
+ saveSetFile(operatorsFile_, ops_, "operator list");
 }
 void PlayerManager::loadWhitelist() {
- try {
-  whitelist_.clear();
-  std::ifstream input(whitelistFile_);
-  std::string line;
-  while(std::getline(input, line)) {
-   whitelist_.insert(toLowerCopy(trimCopy(line)));
-  }
- } catch(const std::exception& exception) {
-  ServerLog::LOGGER.log(LogLevel::Warning, "Failed to load white-list: " + std::string(exception.what()));
- }
+ loadSetFile(whitelistFile_, whitelist_, "whitelist");
 }
 void PlayerManager::saveWhitelist() {
- try {
-  std::ofstream output(whitelistFile_, std::ios::trunc);
-  for(const std::string& name : whitelist_) {
-   output << name << '\n';
-  }
- } catch(const std::exception& exception) {
-  ServerLog::LOGGER.log(LogLevel::Warning, "Failed to save white-list: " + std::string(exception.what()));
- }
+ saveSetFile(whitelistFile_, whitelist_, "whitelist");
 }
 bool PlayerManager::isWhitelisted(const std::string& name) const {
  const std::string lowered = toLowerCopy(trimCopy(name));

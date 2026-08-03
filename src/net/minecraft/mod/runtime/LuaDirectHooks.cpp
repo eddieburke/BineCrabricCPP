@@ -982,10 +982,7 @@ void luaHookWorldRender(WorldRenderEvent& e) {
   if(e.world != nullptr) {
    contextScope.emplace(e.world, nullptr);
   }
-  if(e.world != nullptr && e.stage != WorldRenderStage::Sky) {
-  e.celestialAngle = normalizedCelestial(e.world, e.tickDelta);
- }
- dispatchLuaHook(
+  dispatchLuaHook(
      static_cast<int>(LuaEventId::WorldRender),
      [&e](lua_State* state) {
       setFields(state,
@@ -998,42 +995,7 @@ void luaHookWorldRender(WorldRenderEvent& e) {
                 "cancel_vanilla",
                 e.cancelVanilla,
                 "vanilla_stage_ran",
-                e.vanillaStageRan,
-                "shadow_pass",
-                e.shadowPass,
-                "excluded_entity_id",
-                e.excludedEntityId,
-                "celestial_angle",
-                static_cast<double>(e.celestialAngle),
-                "sky_yaw_deg",
-                static_cast<double>(e.skyYawDegrees),
-                "star_brightness",
-                static_cast<double>(e.starBrightness),
-                "rain_strength",
-                static_cast<double>(e.rainStrength),
-                "stars_enabled",
-                e.starsEnabled,
-                "astronomy_enabled",
-                e.astronomyEnabled,
-                "astronomy_utc_millis",
-                e.astronomyUtcMillis,
-                "observer_latitude_deg",
-                static_cast<double>(e.observerLatitudeDegrees),
-                "observer_longitude_deg",
-                static_cast<double>(e.observerLongitudeDegrees));
-      if(e.solarDirectionValid) {
-       setFields(state,
-                 "sun_direction_x",
-                 e.sunDirectionX,
-                 "sun_direction_y",
-                 e.sunDirectionY,
-                 "sun_direction_z",
-                 e.sunDirectionZ,
-                 "sun_azimuth_deg",
-                 e.sunAzimuthDegrees,
-                 "sun_altitude_deg",
-                 e.sunAltitudeDegrees);
-      }
+                e.vanillaStageRan);
       setWorldContextFields(state, e.world);
       const client::render::FrameRenderCamera& frameCamera =
           client::render::RenderCameraState::instance().frame();
@@ -1047,14 +1009,6 @@ void luaHookWorldRender(WorldRenderEvent& e) {
                  static_cast<double>(e.world->getTime() % 24000ULL),
                  "is_night",
                  worldIsNight(e.world));
-      }
-      if(e.stage == WorldRenderStage::Clouds && e.world != nullptr && e.world->dimension != nullptr) {
-       float cloudBaseHeight = e.world->dimension->getCloudHeight() - static_cast<float>(cameraY) + 0.33f;
-       if(client::Minecraft* client = client::Minecraft::INSTANCE; client != nullptr) {
-        cloudBaseHeight =
-            client::option::cloudHeightOffset(cloudBaseHeight, client::option::renderSettings(client->options));
-       }
-       setField(state, "cloud_base_height", cloudBaseHeight);
       }
 #endif
       setFields(state,
@@ -1081,44 +1035,6 @@ void luaHookWorldRender(WorldRenderEvent& e) {
      },
      [&e](lua_State* state) {
       readField(state, "cancel_vanilla", e.cancelVanilla);
-      if(e.stage == WorldRenderStage::Sky && e.moment == RenderHookMoment::Before) {
-       readFields(state,
-                  "celestial_angle",
-                  e.celestialAngle,
-                  "sky_yaw_deg",
-                  e.skyYawDegrees,
-                  "astronomy_enabled",
-                  e.astronomyEnabled,
-                  "astronomy_utc_millis",
-                  e.astronomyUtcMillis,
-                  "observer_latitude_deg",
-                  e.observerLatitudeDegrees,
-                  "observer_longitude_deg",
-                  e.observerLongitudeDegrees);
-       float sunX = std::numeric_limits<float>::quiet_NaN();
-       float sunY = std::numeric_limits<float>::quiet_NaN();
-       float sunZ = std::numeric_limits<float>::quiet_NaN();
-       readFields(state,
-                  "sun_direction_x",
-                  sunX,
-                  "sun_direction_y",
-                  sunY,
-                  "sun_direction_z",
-                  sunZ,
-                  "sun_azimuth_deg",
-                  e.sunAzimuthDegrees,
-                  "sun_altitude_deg",
-                  e.sunAltitudeDegrees);
-       if(std::isfinite(sunX) && std::isfinite(sunY) && std::isfinite(sunZ)) {
-        e.sunDirectionX = sunX;
-        e.sunDirectionY = sunY;
-        e.sunDirectionZ = sunZ;
-        e.solarDirectionValid = true;
-       }
-      }
-      if(e.stage == WorldRenderStage::Stars && e.moment == RenderHookMoment::Before) {
-       readField(state, "star_brightness", e.starBrightness);
-      }
      },
      stageBit,
      momentBit);

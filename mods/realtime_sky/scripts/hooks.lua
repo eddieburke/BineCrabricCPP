@@ -328,19 +328,7 @@ local function register()
   }, function(event)
     if event.time_mode and event.time_mode ~= 0 then return event end
     local frame = current_solar_frame(event.tick_delta)
-    event.astronomy_enabled = true
-    event.astronomy_utc_millis = frame.utc_millis
-    event.observer_latitude_deg = config.latitude
-    event.observer_longitude_deg = config.longitude
-
     if config.drive_sun then
-      event.celestial_angle = frame.celestial
-      event.sky_yaw_deg = frame.skydome_yaw_deg
-      event.sun_direction_x = frame.sun_direction_x
-      event.sun_direction_y = frame.sun_direction_y
-      event.sun_direction_z = frame.sun_direction_z
-      event.sun_azimuth_deg = frame.sun_azimuth_deg
-      event.sun_altitude_deg = frame.sun_altitude_deg
       event.cancel_vanilla = true
       sky_render.draw_dome(event, frame)
       sky_render.draw_stars(event, frame)

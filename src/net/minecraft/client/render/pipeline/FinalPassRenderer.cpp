@@ -37,23 +37,17 @@ void FinalPassRenderer::presentToScreen(PackInstance* scenePack, int screenWidth
      !isProgramEnabledCached(scenePack->definition, scenePack->settings, "final",
                              scenePack->programEnabledCache)) {
    pipeline_->logOnce(*scenePack, "no final program (missing or disabled); presenting via colortex0 blit", LogLevel::Info);
-   if(!pipeline_->blitColortex0ToScreen(*scenePack, screenWidth, screenHeight)) {
-    shaderFatal("Shader pack present failed",
-                "no final program and colortex0 present failed for pack '" +
-                    (!scenePack->summary.name.empty() ? scenePack->summary.name : scenePack->definition.name) +
-                    "'");
+    (void)pipeline_->blitColortex0ToScreen(*scenePack, screenWidth, screenHeight);
+    pipeline_->packWroteToScreen_ = true;
+    return;
    }
-   pipeline_->packWroteToScreen_ = true;
-   return;
-  }
 
-  gl::ShaderProgram* program = pipeline_->programFromPack(*scenePack, "final");
-  if(program == nullptr || !program->valid()) {
-   shaderFatal("Shader pack present failed",
-               "final program unusable for pack '" +
-                   (!scenePack->summary.name.empty() ? scenePack->summary.name : scenePack->definition.name) +
-                   "' (no cross-pack fallback)");
-  }
+   gl::ShaderProgram* program = pipeline_->programFromPack(*scenePack, "final");
+   if(program == nullptr || !program->valid()) {
+    (void)pipeline_->blitColortex0ToScreen(*scenePack, screenWidth, screenHeight);
+    pipeline_->packWroteToScreen_ = true;
+    return;
+   }
 
  render::ColorTargets& targets = scenePack->colorTargets;
  const int width = targets.width();

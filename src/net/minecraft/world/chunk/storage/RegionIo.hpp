@@ -45,44 +45,33 @@ class RegionIo {
   return region->file.resetBytesWritten();
  }
  static void flush() {
-  std::vector<std::shared_ptr<LockedRegion>> snapshot;
-  {
-   const std::lock_guard lock(registryMutex());
-   snapshot.reserve(openFiles().size());
-   for(auto& [key, file] : openFiles()) {
-    (void)key;
-    snapshot.push_back(file);
-   }
-   openFiles().clear();
-  }
-  for(const std::shared_ptr<LockedRegion>& region : snapshot) {
-   if(region == nullptr) {
-    continue;
-   }
-   const std::lock_guard lock(region->mutex);
-   region->file.flush();
-  }
+  flushInternal(true);
  }
  static void sync() {
-  std::vector<std::shared_ptr<LockedRegion>> snapshot;
-  {
-   const std::lock_guard lock(registryMutex());
-   snapshot.reserve(openFiles().size());
-   for(auto& [key, file] : openFiles()) {
-    (void)key;
-    snapshot.push_back(file);
-   }
-  }
-  for(const std::shared_ptr<LockedRegion>& region : snapshot) {
-   if(region == nullptr) {
-    continue;
-   }
-   const std::lock_guard lock(region->mutex);
-   region->file.flush();
-  }
+  flushInternal(false);
  }
 
  private:
+ static void flushInternal(bool clearRegistry) {
+  std::vector<std::shared_ptr<LockedRegion>> snapshot;
+  {
+   const std::lock_guard lock(registryMutex());
+   snapshot.reserve(openFiles().size());
+   for(auto& [key, file] : openFiles()) {
+    snapshot.push_back(file);
+   }
+   if(clearRegistry) {
+    openFiles().clear();
+   }
+  }
+  for(const std::shared_ptr<LockedRegion>& region : snapshot) {
+   if(region != nullptr) {
+    const std::lock_guard lock(region->mutex);
+    region->file.flush();
+   }
+  }
+ }
+
  struct LockedRegion {
   explicit LockedRegion(fs::path path) : file(std::move(path)) {
   }

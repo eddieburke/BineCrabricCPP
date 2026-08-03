@@ -71,23 +71,6 @@ struct WorldRenderEvent {
  RenderHookMoment moment = RenderHookMoment::Before;
  bool cancelVanilla = false;
  bool vanillaStageRan = false;
- float celestialAngle = 0.0f;
- float skyYawDegrees = 0.0f;
- float starBrightness = 0.0f;
- float rainStrength = 0.0f;
- bool starsEnabled = true;
- bool astronomyEnabled = false;
- double astronomyUtcMillis = 0.0;
- float observerLatitudeDegrees = 0.0f;
- float observerLongitudeDegrees = 0.0f;
- bool solarDirectionValid = false;
- float sunDirectionX = 0.0f;
- float sunDirectionY = 1.0f;
- float sunDirectionZ = 0.0f;
- float sunAzimuthDegrees = 0.0f;
- float sunAltitudeDegrees = 90.0f;
- bool shadowPass = false;
- int excludedEntityId = -1;
 };
 struct FirstPersonHandRenderEvent {
  entity::LivingEntity* camera = nullptr;

@@ -87,16 +87,13 @@ inline void buildShadowCelestialModelView(float* out,
                                           float shadowIntervalSize,
                                           double cameraX,
                                           double cameraY,
-                                           double cameraZ) {
- net::minecraft::util::math::Matrix4f pose;
- // createBaselineModelViewMatrix
+                                          double cameraZ) {
  float skyAngle = shadowAngle < 0.25f ? shadowAngle + 0.75f : shadowAngle - 0.25f;
+ net::minecraft::util::math::Matrix4f pose;
  pose.rotate(90.0f, 1.0f, 0.0f, 0.0f);
  pose.rotate(skyAngle * -360.0f, 0.0f, 0.0f, 1.0f);
- pose.rotate(sunPathRotation, 1.0f, 0.0f, 0.0f);
- // snapModelViewToGrid
+ pose.rotate(-sunPathRotation, 1.0f, 0.0f, 0.0f);
  if(std::abs(shadowIntervalSize) > 0.0f) {
-  // Java: (float) cameraX % shadowIntervalSize
   float offsetX = std::fmod(static_cast<float>(cameraX), shadowIntervalSize);
   float offsetY = std::fmod(static_cast<float>(cameraY), shadowIntervalSize);
   float offsetZ = std::fmod(static_cast<float>(cameraZ), shadowIntervalSize);
@@ -217,7 +214,7 @@ inline float cameraNearPlane(const FrameRenderCamera& c) noexcept {
 }
 inline float cameraFarPlane(const FrameRenderCamera& c, float renderDistanceBlocks) noexcept {
  const float nearPlane = cameraNearPlane(c);
- return c.perspectiveFar > nearPlane ? c.perspectiveFar : renderDistanceBlocks;
+ return (c.customView || c.shadowPass) && c.perspectiveFar > nearPlane ? c.perspectiveFar : renderDistanceBlocks;
 }
 inline void buildCameraProjection(float* m, const FrameRenderCamera& c, float farPlane) {
  std::fill(m, m + 16, 0.0f);

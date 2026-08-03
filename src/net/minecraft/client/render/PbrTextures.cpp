@@ -136,11 +136,11 @@ void PbrTextures::onNewFrame() noexcept {
  // by getOrLoadHolder, which this port never defers.
 }
 void PbrTextures::onDeleteTexture(int textureId) noexcept {
- (void)textureId;
- // TextureManager::deleteTexture clears its whole companion cache for the
- // same reason: GL ids can be reused after deletion, so any holder keyed by a
- // still-alive id may reference a texture whose id was recycled.
- cache().clear();
+ if(textureId > 0) {
+  cache().erase(textureId);
+ } else {
+  cache().clear();
+ }
 }
 void PbrTextures::uploadMipLevels(int textureId, const net::minecraft::client::texture::RasterImage& image, Type type,
                                   bool labPbr) {

@@ -64,13 +64,24 @@ namespace {
 constexpr int kBedBlockId = 26;
 constexpr float kPiF = 3.14159265f;
 constexpr float kHandDepth = 0.125f;
-void updateSunLight(World* world, float tickDelta) {
- if(world == nullptr) return;
- const float timeOfDay = world->getTime(tickDelta);
- const float angle = timeOfDay * kPiF * 2.0f;
- float sunX = std::sin(0.0f) * std::sin(angle);
- float sunY = std::cos(angle);
- float sunZ = std::cos(0.0f) * std::sin(angle);
+void updateSunLight(World* world, float tickDelta, ::net::minecraft::entity::Entity* camera) {
+ if(world == nullptr || camera == nullptr) {
+  return;
+ }
+ const float celestialAngle = world->getTime(tickDelta);
+ const float sunAngle = celestialSunAngle(celestialAngle);
+ const float skyAngle = sunAngle < 0.25f ? sunAngle + 0.75f : sunAngle - 0.25f;
+ const net::minecraft::client::Minecraft* celestialClient = net::minecraft::client::Minecraft::INSTANCE;
+ const float sunPathRotation = celestialClient != nullptr && celestialClient->gameRenderer != nullptr
+                                   ? celestialClient->gameRenderer->packDefinition().sunPathRotation
+                                   : 25.0f;
+ net::minecraft::util::math::Matrix4f celestialMat;
+ celestialMat.rotate(sunPathRotation, 0.0f, 0.0f, 1.0f);
+ celestialMat.rotate(-90.0f, 0.0f, 1.0f, 0.0f);
+ celestialMat.rotate(skyAngle * 360.0f, 1.0f, 0.0f, 0.0f);
+ float sunX = celestialMat.m[8];
+ float sunY = celestialMat.m[9];
+ float sunZ = celestialMat.m[10];
  const float length = std::sqrt(sunX * sunX + sunY * sunY + sunZ * sunZ);
  if(length > 0.0001f) {
   sunX /= length;
@@ -79,20 +90,21 @@ void updateSunLight(World* world, float tickDelta) {
  }
  const float daylight = std::clamp((sunY + 0.08f) / 0.28f, 0.0f, 1.0f);
  const float horizon = 1.0f - std::clamp(std::abs(sunY) * 5.0f, 0.0f, 1.0f);
- light::SunLight sun;
- // Iris rotates the celestial chain by the fixed RY(-90) renderSky yaw
- // (CelestialUniforms.getCelestialPosition); the beta formula below is the pre-yaw
- // direction. Publish the yawed direction so the light registry agrees with the
- // pack-facing sunPosition and the shadow map light axis (see applyRenderSkyYaw).
- // https://github.com/IrisShaders/Iris/blob/26.1/common/src/main/java/net/irisshaders/iris/uniforms/CelestialUniforms.java
- sun.directionX = -sunZ;
+ ::net::minecraft::world::light::SunLight sun;
+ sun.directionX = sunX;
  sun.directionY = sunY;
- sun.directionZ = sunX;
+ sun.directionZ = sunZ;
  sun.red = 1.0f;
  sun.green = 0.96f - horizon * 0.25f;
  sun.blue = 0.88f - horizon * 0.48f;
  sun.intensity = daylight;
  world->lightRegistry().setSun(sun);
+ core::SkyUniforms skyUniforms{};
+ skyUniforms.sunDirection[0] = sunX;
+ skyUniforms.sunDirection[1] = sunY;
+ skyUniforms.sunDirection[2] = sunZ;
+ skyUniforms.sunIntensity = daylight;
+ core::setSkyUniforms(skyUniforms);
 }
 [[nodiscard]] double vec3Distance(const Vec3d& a, const Vec3d& b) {
  const double dx = a.x - b.x;
@@ -769,50 +781,6 @@ void drawCutoutTerrain(WorldRenderer& worldRenderer,
  core::setConstColor(1.0f, 1.0f, 1.0f, 1.0f);
  worldRenderer.render(camera, chunk::terrain_layer::Cutout, static_cast<double>(tickDelta));
 }
-// TEMP DIAGNOSTIC — water/ice not drawing under RenderPearl/SEUS.
-// See docs/agent-notes/HANDOFF-water-ice-not-drawing.md. DELETE THIS FUNCTION AND ITS
-// CALL below once the cause is found.
-// frameCounter must be a DISTINCT static per call site: a shared counter increments
-// once per call, so with two call sites per frame the `% N` gate only ever lands on one
-// of them (even/odd aliasing) and the other pass silently never reports.
-void logTranslucentPassState(const char* whenLabel, int drawnRegions, int& frameCounter) {
- // First 3 frames, then every 60th, so a session yields a readable trace not a flood.
- const int current = frameCounter++;
- if(current >= 3 && current % 60 != 0) {
-  return;
- }
- const gl::ShaderProgram* program = core::program();
- int boundFbo = 0;
- ::glGetIntegerv(0x8CA6, &boundFbo); // GL_DRAW_FRAMEBUFFER_BINDING
- std::string drawBufferList;
- for(int i = 0; i < 4; ++i) {
-  int value = 0;
-  ::glGetIntegerv(static_cast<unsigned>(0x8825 + i), &value); // GL_DRAW_BUFFER0 + i
-  if(value == 0) continue; // GL_NONE
-  if(!drawBufferList.empty()) drawBufferList += ",";
-  // 0x8CE0 == GL_COLOR_ATTACHMENT0
-  drawBufferList += "DB" + std::to_string(i) + "=attach" + std::to_string(value - 0x8CE0);
- }
- if(drawBufferList.empty()) drawBufferList = "NONE";
- // Read the SEPARATE alpha factors straight from GL. core::blendSrcFactor/blendDstFactor
- // only mirror the RGB pair, so a pack's `blend.<program>=RGBsrc RGBdst Asrc Adst`
- // (RenderPearl water uses ZERO ZERO for alpha) is invisible in the cached values.
- int blendSrcAlpha = 0;
- int blendDstAlpha = 0;
- ::glGetIntegerv(0x80CB, &blendSrcAlpha); // GL_BLEND_SRC_ALPHA
- ::glGetIntegerv(0x80CA, &blendDstAlpha); // GL_BLEND_DST_ALPHA
- ClientLog::LOGGER.log(
-     ::net::minecraft::util::logging::LogLevel::Info,
-     std::string("[water-probe] ") +
-         (RenderCameraState::instance().frame().shadowPass ? "SHADOW " : "WORLD  ") + whenLabel + " program=" +
-         (program == nullptr ? std::string("NULL") : std::to_string(program->handle())) +
-         " drawEnabled=" + (core::drawEnabled() ? "1" : "0") + " blend=" +
-         (core::blendEnabled() ? "1" : "0") + " src=" + std::to_string(core::blendSrcFactor()) + " dst=" +
-         std::to_string(core::blendDstFactor()) + " srcA=" + std::to_string(blendSrcAlpha) + " dstA=" +
-         std::to_string(blendDstAlpha) + " alphaRef=" + std::to_string(core::alphaTestRef()) +
-         " depthWrite=" + (core::depthWriteEnabled() ? "1" : "0") + " fbo=" + std::to_string(boundFbo) +
-         " drawBuffers=[" + drawBufferList + "] layer2Draws=" + std::to_string(drawnRegions));
-}
 void drawTranslucentTerrain(WorldRenderer& worldRenderer,
                             LivingEntity& camera,
                             float tickDelta,
@@ -826,15 +794,9 @@ void drawTranslucentTerrain(WorldRenderer& worldRenderer,
     const core::ColorMaskScope colorMaskPass(false, false, false, false);
     worldRenderer.render(camera, chunk::terrain_layer::Translucent, static_cast<double>(tickDelta), false);
    }
-   static int prepassFrames = 0;                                                            // TEMP DIAGNOSTIC
-   logTranslucentPassState("depth-prepass", worldRenderer.lastDrawnRegions(), prepassFrames); // TEMP DIAGNOSTIC
    worldRenderer.renderLastChunks(chunk::terrain_layer::Translucent, static_cast<double>(tickDelta));
-   static int colorFrames = 0;                                                              // TEMP DIAGNOSTIC
-   logTranslucentPassState("color-pass   ", worldRenderer.lastDrawnRegions(), colorFrames);  // TEMP DIAGNOSTIC
   } else {
    worldRenderer.render(camera, chunk::terrain_layer::Translucent, static_cast<double>(tickDelta));
-   static int singleFrames = 0;                                                             // TEMP DIAGNOSTIC
-   logTranslucentPassState("single-pass  ", worldRenderer.lastDrawnRegions(), singleFrames); // TEMP DIAGNOSTIC
   }
  }
  core::depthMask(true);
@@ -855,6 +817,7 @@ bool renderWorldStage(const AtmosphereContext& context,
                       bool enabled,
                       bool shadowPass,
                       Draw&& draw) {
+ (void)shadowPass;
  mod::WorldRenderEvent event{
      context.world,
      context.camera,
@@ -862,8 +825,6 @@ bool renderWorldStage(const AtmosphereContext& context,
      stage,
      mod::RenderHookMoment::Before,
  };
- event.shadowPass = shadowPass;
- event.excludedEntityId = -1;
  mod::runtime::luaHookWorldRender(event);
  if(enabled && !event.cancelVanilla) {
   draw();
@@ -918,8 +879,18 @@ bool GameRenderer::renderWorldToFbo(unsigned int fbo,
  }
  gl::GLCore::bindFramebuffer(gl::framebuffer::Framebuffer, fbo);
  core::viewport(0, 0, width, height);
- renderToCurrentTarget(std::clamp(tickDelta, 0.0f, 1.0f), camera, std::clamp(fov, 1.0f, 179.0f), width,
-                       height, true);
+  const bool hwOffset = camera.shadowPass && (shaderPacks_ == nullptr || shaderPacks_->shadowHardwareOffset);
+  if(hwOffset) {
+   const float factor = shaderPacks_ != nullptr ? shaderPacks_->shadowHardwareOffsetFactor : 2.0f;
+   const float units = shaderPacks_ != nullptr ? shaderPacks_->shadowHardwareOffsetUnits : 4.0f;
+   core::enablePolygonOffset();
+   core::polygonOffset(factor, units);
+  }
+  renderToCurrentTarget(std::clamp(tickDelta, 0.0f, 1.0f), camera, std::clamp(fov, 1.0f, 179.0f), width,
+                        height, true);
+  if(hwOffset) {
+   core::disablePolygonOffset();
+  }
  if(outCamera != nullptr) {
   *outCamera = frameCamera_;
  }
@@ -1060,12 +1031,9 @@ void GameRenderer::renderToCurrentTarget(float tickDelta,
  RenderCameraState::instance().setFrame(frameCamera_);
   const float farPlane = cameraFarPlane(frameCamera_, frameSettings_.renderDistanceBlocks);
  core::setDrawCameraStateFromCamera(frameCamera_, farPlane);
-  const bool skyWillCommit =
-      !frameCamera_.shadowPass && frameSettings_.renderSky &&
-      client->world->dimension != nullptr && !client->world->dimension->isNether;
- if(!skyWillCommit) {
-  updateSunLight(client->world, tickDelta);
- }
+  if(!frameCamera_.shadowPass && client->world != nullptr) {
+   updateSunLight(client->world, tickDelta, client->camera);
+  }
   if(!frameCamera_.shadowPass && !renderCameraEntity && shaderPacks_ != nullptr) {
    shaderPacks_->prepareFrame(client->world);
    shaderPacks_->setFrameUniforms(buildFrameUniforms(tickDelta, farPlane, frameShadow_.depthTexture >= 0));
@@ -1092,14 +1060,7 @@ void GameRenderer::renderToCurrentTarget(float tickDelta,
   core::setFogEnabled(!frameCamera_.shadowPass);
    if(!frameCamera_.shadowPass && !frameCamera_.skipAllRendering &&
       frameSettings_.renderSky) {
-    // Iris parity: the pack's `sky`/`stars` directives are never applied (see
-    // RenderSettings.cpp applyShaderPack); only the sun/moon sprites are gated inside
-    // renderSkyDome via ctx.settings. frameSettings_.renderSky is the vanilla game
-    // option, not a pack directive.
     const debug::RenderProfiler::Scope skyScope(debug::RenderStage::Sky);
-    // Vanilla draws the sky dome with the same world fog as the terrain so the
-    // horizon fades into the fog colour; the sky must use the terrain start/end,
-    // not a start-at-zero override that washes the whole dome toward fog.
     core::fogApplyMode(client, 0, frameSettings_);
    if(client->world->dimension != nullptr && !client->world->dimension->isNether) {
     atmosphere::renderSkyDome(atmosphereCtx, tickDelta);

@@ -520,6 +520,7 @@ void setProgramUniformUploader(ProgramUniformUploader uploader) {
 }
 void advanceProgramUniforms() {
  ++g_programUniformGeneration;
+ g_programUniformDiffuseTexture = -1;
 }
 void setEntityId(int id) {
  if(g_entityId != id) {
@@ -777,6 +778,7 @@ void invalidateAttribCache() {
  g_lastProgram = nullptr;
  g_matricesUploaded = false;
  g_passUniformsUploaded = false;
+ g_programUniformDiffuseTexture = -1;
 }
 void setEntityColor(float red, float green, float blue, float alpha) {
  g_entityColor[0] = red;

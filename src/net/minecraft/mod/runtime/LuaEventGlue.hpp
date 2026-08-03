@@ -38,7 +38,6 @@ void setEntityIdentityFields(lua_State* state, const net::minecraft::entity::Ent
 void pushItemStackFields(lua_State* state, const ItemStack& stack);
 void setClientTickFields(lua_State* state, const ClientTickEvent& event);
 [[nodiscard]] bool luaWorldIsOverworld(const World* world);
-[[nodiscard]] bool luaWorldIsOverworld(const World* world);
 void pushStringMap(lua_State* state, const std::unordered_map<std::string, std::string>& values);
 void readStringMapField(lua_State* state,
                         int tableIndex,

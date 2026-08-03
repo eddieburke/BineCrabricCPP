@@ -52,7 +52,7 @@ void shadowModelView(float* m, const render::FrameRenderCamera& shadow, const re
   return;
  }
  const float right[3] = {shadow.viewRightX, shadow.viewRightY, shadow.viewRightZ}, up[3] = {shadow.viewUpX, shadow.viewUpY, shadow.viewUpZ}, forward[3] = {-shadow.viewForwardX, -shadow.viewForwardY, -shadow.viewForwardZ};
-  const float delta[3] = {static_cast<float>(camera.eyeX - shadow.eyeX), static_cast<float>(camera.eyeY - shadow.eyeY), static_cast<float>(camera.eyeZ - shadow.eyeZ)};
+ const float delta[3] = {static_cast<float>(camera.eyeX - shadow.eyeX), static_cast<float>(camera.eyeY - shadow.eyeY), static_cast<float>(camera.eyeZ - shadow.eyeZ)};
  column(m, 0, right[0], up[0], forward[0], 0.0f);
  column(m, 1, right[1], up[1], forward[1], 0.0f);
  column(m, 2, right[2], up[2], forward[2], 0.0f);
@@ -165,22 +165,7 @@ float smoothExponential(float target, float& accumulator, bool& initialized, flo
  accumulator += (target - accumulator) * std::clamp(alpha, 0.0f, 1.0f);
  return accumulator;
 }
-namespace {
-void applySunPathRotation(const float in[3], float sunPathRotationDegrees, float out[3]) {
- if(sunPathRotationDegrees == 0.0f) {
-  out[0] = in[0];
-  out[1] = in[1];
-  out[2] = in[2];
-  return;
- }
- const float radians = sunPathRotationDegrees * (kPiF / 180.0f);
- const float cs = std::cos(radians);
- const float sn = std::sin(radians);
- out[0] = in[0] * cs - in[1] * sn;
- out[1] = in[0] * sn + in[1] * cs;
- out[2] = in[2];
-}
-} // namespace
+
 PackUniformValues buildShaderFrameData(int width, int height, float farPlane, float worldTime, int shadowMapResolution, bool normalAvailable, bool shadowAvailable, const render::FrameRenderCamera& camera, const render::FrameRenderCamera& shadowCamera, const net::minecraft::World* world, float eyeBrightnessHalflife) {
   static PackUniformValues previousFrame;
   static PackUniformValues currentFrame;
@@ -280,69 +265,69 @@ PackUniformValues buildShaderFrameData(int width, int height, float farPlane, fl
   inverse(values.shadowModelView, values.shadowModelViewInverse);
  }
  systemTime(values);
-  if(world != nullptr) {
-   const auto& sun = world->lightRegistry().sun();
-   const net::minecraft::client::Minecraft* celestialClient = net::minecraft::client::Minecraft::INSTANCE;
-   const PackDefinition& celestialDefinition =
-       celestialClient != nullptr && celestialClient->gameRenderer != nullptr
-           ? celestialClient->gameRenderer->packDefinition()
-           : vanillaPackDefinition();
-   const float sunPathRotation = celestialDefinition.sunPathRotation;
-   // CelestialUniforms.getCelestialPosition: RY(-90) * RZ(sunPathRotation) * RX(angle).
-   // The registry direction already carries the RY(-90), so it is undone, rotated, and
-   // re-applied below.
-   // https://github.com/IrisShaders/Iris/blob/26.1/common/src/main/java/net/irisshaders/iris/uniforms/CelestialUniforms.java
-   float sunDirection[3] = {sun.directionX, sun.directionY, sun.directionZ};
-   const float preYawX = sunDirection[2];
-   const float preYawZ = -sunDirection[0];
-   sunDirection[0] = preYawX;
-   sunDirection[2] = preYawZ;
-   applySunPathRotation(sunDirection, sunPathRotation, sunDirection);
-   float celestialSun[3];
-   render::applyRenderSkyYaw(sunDirection, celestialSun);
-    render::directionToView(celestialSun[0], celestialSun[1], celestialSun[2], camera, values.sunPosition);
-    render::directionToView(-celestialSun[0], -celestialSun[1], -celestialSun[2], camera, values.moonPosition);
-   auto scaleTo100 = [](float v[3]) {
-    const float len = std::sqrt(v[0]*v[0] + v[1]*v[1] + v[2]*v[2]);
-    if(len > 1e-6f) {
-     const float s = 100.0f / len;
-     v[0] *= s; v[1] *= s; v[2] *= s;
-    }
-   };
-   scaleTo100(values.sunPosition);
-   scaleTo100(values.moonPosition);
-   
-   values.sunColor[0] = sun.red;
-   values.sunColor[1] = sun.green;
-   values.sunColor[2] = sun.blue;
-   values.sunIntensity = sun.intensity;
-   const std::uint64_t absoluteTime = world->getTime();
-   
-   if(world->clientTimeMode() == 1) {
-    values.worldDay = static_cast<int>(absoluteTime / 24000ULL);
-    values.worldTime = 6000;
-   } else if(world->clientTimeMode() == 2) {
-    values.worldDay = static_cast<int>(absoluteTime / 24000ULL);
-    values.worldTime = 18000;
-   } else {
-    values.worldTime = static_cast<int>(absoluteTime % 24000ULL);
-    values.worldDay = static_cast<int>(absoluteTime / 24000ULL);
-   }
-   
-    values.moonPhase = static_cast<int>((absoluteTime / 24000ULL) % 8ULL);
+   if(world != nullptr) {
     const float celestialAngle = world->getTime(tickDelta);
-    // https://github.com/IrisShaders/Iris/blob/26.1/common/src/main/java/net/irisshaders/iris/uniforms/CelestialUniforms.java
-    values.sunAngle = celestialSunAngle(celestialAngle);
+    const float sunAngle = celestialSunAngle(celestialAngle);
+    values.sunAngle = sunAngle;
     values.shadowAngle = shadowAngleFromCelestial(celestialAngle);
+
+    const net::minecraft::client::Minecraft* celestialClient = net::minecraft::client::Minecraft::INSTANCE;
+    const PackDefinition& celestialDefinition =
+        celestialClient != nullptr && celestialClient->gameRenderer != nullptr
+            ? celestialClient->gameRenderer->packDefinition()
+            : vanillaPackDefinition();
+    const float sunPathRotation = celestialDefinition.sunPathRotation;
+
+    // https://github.com/IrisShaders/Iris/blob/26.1/common/src/main/java/net/irisshaders/iris/uniforms/CelestialUniforms.java
+    const float skyAngle = sunAngle < 0.25f ? sunAngle + 0.75f : sunAngle - 0.25f;
+    net::minecraft::util::math::Matrix4f celestialMat;
+    celestialMat.rotate(sunPathRotation, 0.0f, 0.0f, 1.0f);
+    celestialMat.rotate(-90.0f, 0.0f, 1.0f, 0.0f);
+    celestialMat.rotate(skyAngle * 360.0f, 1.0f, 0.0f, 0.0f);
+    const float worldSunX = celestialMat.m[8];
+    const float worldSunY = celestialMat.m[9];
+    const float worldSunZ = celestialMat.m[10];
+
+    render::directionToView(worldSunX, worldSunY, worldSunZ, camera, values.sunPosition);
+    render::directionToView(-worldSunX, -worldSunY, -worldSunZ, camera, values.moonPosition);
+    auto scaleTo100 = [](float v[3]) {
+     const float len = std::sqrt(v[0]*v[0] + v[1]*v[1] + v[2]*v[2]);
+     if(len > 1e-6f) {
+      const float s = 100.0f / len;
+      v[0] *= s; v[1] *= s; v[2] *= s;
+     }
+    };
+    scaleTo100(values.sunPosition);
+    scaleTo100(values.moonPosition);
+
+    const auto& sun = world->lightRegistry().sun();
+    values.sunColor[0] = sun.red;
+    values.sunColor[1] = sun.green;
+    values.sunColor[2] = sun.blue;
+    values.sunIntensity = sun.intensity;
+    const std::uint64_t absoluteTime = world->getTime();
+
+    if(world->clientTimeMode() == 1) {
+     values.worldDay = static_cast<int>(absoluteTime / 24000ULL);
+     values.worldTime = 6000;
+    } else if(world->clientTimeMode() == 2) {
+     values.worldDay = static_cast<int>(absoluteTime / 24000ULL);
+     values.worldTime = 18000;
+    } else {
+     values.worldTime = static_cast<int>(absoluteTime % 24000ULL);
+     values.worldDay = static_cast<int>(absoluteTime / 24000ULL);
+    }
+
+    values.moonPhase = static_cast<int>((absoluteTime / 24000ULL) % 8ULL);
     const float sunAngleDegrees = values.sunAngle * 360.0f;
-   const bool isEnd = world->dimension != nullptr && world->dimension->id == 1;
-   if(isEnd && celestialDefinition.endFlashShadows) {
-    std::copy(std::begin(values.endFlashPosition), std::end(values.endFlashPosition), values.shadowLightPosition);
-   } else if(sunAngleDegrees < 180.0f) {
-    std::copy(std::begin(values.sunPosition), std::end(values.sunPosition), values.shadowLightPosition);
-   } else {
-    std::copy(std::begin(values.moonPosition), std::end(values.moonPosition), values.shadowLightPosition);
-   }
+    const bool isEnd = world->dimension != nullptr && world->dimension->id == 1;
+    if(isEnd && celestialDefinition.endFlashShadows) {
+     std::copy(std::begin(values.endFlashPosition), std::end(values.endFlashPosition), values.shadowLightPosition);
+    } else if(sunAngleDegrees < 180.0f) {
+     std::copy(std::begin(values.sunPosition), std::end(values.sunPosition), values.shadowLightPosition);
+    } else {
+     std::copy(std::begin(values.moonPosition), std::end(values.moonPosition), values.shadowLightPosition);
+    }
   
   values.rainStrength = world->getRainGradient(tickDelta);
   values.wetness = g_wetnessSmooth;

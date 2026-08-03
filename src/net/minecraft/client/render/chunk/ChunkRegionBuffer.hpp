@@ -80,20 +80,12 @@ struct ChunkRegion {
 };
 class ChunkRegionManager {
  public:
- // Shared pool used by every section. Created on first use.
- ChunkRegion& pool() {
-  if(region_ == nullptr) {
-   region_ = std::make_unique<ChunkRegion>();
+  ChunkRegion& pool() noexcept {
+   return region_;
   }
-   return *region_;
-  }
-  // Destroy the pool. GL buffers are freed by ~ChunkRegionBuffer, so this must
-  // run with the GL context current.
-  void clear() noexcept {
-  region_.reset();
- }
+  void clear() noexcept {}
 
  private:
- std::unique_ptr<ChunkRegion> region_;
+  ChunkRegion region_;
 };
 } // namespace net::minecraft::client::render::chunk

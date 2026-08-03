@@ -70,15 +70,11 @@ void applyShaderPack(RenderSettings& settings, const render::PackDefinition& pac
   settings.renderClouds = true;
   settings.fancyClouds = true;
  }
-  // Iris parity: the `sky` directive (PackDirectives.shouldRenderSkyDisc) only gates
-  // Iris's own horizon-box mesh (IrisRenderingPipeline.onBeginClear), which this engine
-  // doesn't have, so it's a no-op here. The `stars` directive (shouldRenderStars) is
-  // parsed but never consumed by Iris. MixinSkyRenderer cancels exactly two vanilla
-  // draws — the `sun` and `moon` sprites — so only those are gated below; the rest of
-  // the vanilla sky/sun/moon/stars/void chain always runs, exactly like Iris.
  if(!pack.renderWeather) {
   settings.weatherEnabled = false;
  }
+ settings.renderSky = pack.renderSky;
+ settings.renderStars = pack.renderStars;
  settings.renderSun = pack.renderSun;
  settings.renderMoon = pack.renderMoon;
  settings.underwaterOverlay = settings.underwaterOverlay && pack.underwaterOverlay;

@@ -869,28 +869,6 @@ bool Pipeline::renderDeferred(PackInstance* activePack, int shadowDepthTextureId
        return ComputeDispatcher::matchesStage(activePack->definition.passes[index].name, "deferred");
       });
   if(activePack->deferredPasses.empty() && !hasComputeDeferred) return false;
-  {
-   static int preDeferredFrames = 0;
-   const int pre = preDeferredFrames++;
-   if(pre < 3 || pre % 90 == 0) {
-    auto& targets = activePack->colorTargets;
-    const int px = std::max(1, targets.width() / 2);
-    const int py = std::max(1, targets.height() * 3 / 4);
-    float rgba[4]{};
-    ::glReadPixels(px, py, 1, 1, 0x1908, 0x1406, rgba);
-    float depth = -1.0f;
-    if(targets.depthTexture() != 0) {
-     targets.bindGbuffers();
-     ::glReadPixels(px, py, 1, 1, 0x1902, 0x1406, &depth);
-     targets.endGbuffers();
-    }
-    ::net::minecraft::client::ClientLog::LOGGER.log(
-        ::net::minecraft::util::logging::LogLevel::Info,
-        std::string("[pre-deferred-probe] frame=") + std::to_string(pre) + " colortex1 pre-deferred sky=(" +
-            std::to_string(rgba[0]) + "," + std::to_string(rgba[1]) + "," + std::to_string(rgba[2]) +
-            ") depth=" + std::to_string(depth));
-   }
-  }
   return CompositeRenderer(this).render(*activePack, activePack->deferredPasses, false, "deferred",
                                         shadowDepthTextureId, shadowOpaqueDepthTextureId,
                                         shadowColorTextureIds, shadowColorTextureCount,
@@ -922,92 +900,6 @@ bool Pipeline::renderPostProcess(PackInstance* activePack, PackInstance* /*baseP
                                    shadowColorTextureIds, shadowColorTextureCount,
                                    shadowTargets_, shadowColorAltTextureIds);
    }
-  {
-   static int probeFrames = 0;
-   const int probe = probeFrames++;
-   if(probe < 5 || probe % 90 == 0) {
-    const auto halfToFloat = [](std::uint16_t h) {
-     const std::uint32_t sign = static_cast<std::uint32_t>(h & 0x8000u) << 16;
-     const std::uint32_t exp = (h >> 10) & 0x1Fu;
-     const std::uint32_t man = h & 0x3FFu;
-     if(exp == 0) return 0.0f;
-     std::uint32_t bits = sign | ((exp - 15 + 127) << 23) | (man << 13);
-     float f = 0.0f;
-     std::memcpy(&f, &bits, 4);
-     return f;
-    };
-    std::string computeList;
-    for(std::size_t index : activePack->computePasses) {
-     const PackPass& pass = activePack->definition.passes[index];
-     const bool compiled = programFromPack(*activePack, pass.program) != nullptr;
-     if(!computeList.empty()) computeList += " ";
-     computeList += pass.name + ":" + std::to_string(pass.order) + (compiled ? ":ok" : ":FAIL");
-    }
-    std::string exposure;
-    if(activePack->bufferObjects[0].handle() != 0 && activePack->bufferBytes[0] >= 6 &&
-       gl::GLCore::mapBufferRange != nullptr) {
-      gl::GLCore::bindBuffer(0x90D2, activePack->bufferObjects[0].handle());
-      if(const void* mapped = gl::GLCore::mapBufferRange(0x90D2, 0, 6, 0x0001); mapped != nullptr) {
-      const int sumLog = *static_cast<const int*>(mapped);
-      std::uint16_t expBits = 0;
-      std::memcpy(&expBits, static_cast<const char*>(mapped) + 4, 2);
-      exposure = "sum_log_luma=" + std::to_string(sumLog) + " exposure=" +
-                 std::to_string(halfToFloat(expBits)) + " (raw0x" +
-                 std::to_string(static_cast<unsigned>(expBits)) + ")";
-      gl::GLCore::unmapBuffer(0x90D2);
-     } else {
-      exposure = "map FAILED";
-     }
-      gl::GLCore::bindBuffer(0x90D2, 0);
-    } else {
-     exposure = "buffer0 missing (handle=" + std::to_string(activePack->bufferObjects[0].handle()) +
-                " bytes=" + std::to_string(activePack->bufferBytes[0]) + ")";
-    }
-    const float* fogColor = worldUniforms_.fogColor;
-    const float* smv = worldUniforms_.shadowModelView;
-    const float lightAxisWorld[3] = {smv[2], smv[6], smv[10]};
-    net::minecraft::util::math::Matrix4f gbufferModelView;
-    gbufferModelView.set(worldUniforms_.gbufferModelView);
-    float axisView[3] = {0.0f, 0.0f, 0.0f};
-    gbufferModelView.transformPoint(lightAxisWorld[0], lightAxisWorld[1], lightAxisWorld[2], axisView[0],
-                                    axisView[1], axisView[2]);
-    const float* slp = worldUniforms_.shadowLightPosition;
-    float slpLen = std::sqrt(slp[0] * slp[0] + slp[1] * slp[1] + slp[2] * slp[2]);
-    const float dot = slpLen > 1e-6f
-                          ? (axisView[0] * slp[0] + axisView[1] * slp[1] + axisView[2] * slp[2]) / slpLen
-                          : 0.0f;
-    int shadowW = 0;
-    if(shadowDepthTextureId > 0) {
-     core::bindTexture(0x0DE1, shadowDepthTextureId);
-     ::glGetTexLevelParameteriv(0x0DE1, 0, 0x1000, &shadowW);
-    }
-    std::string deferred =
-        std::any_of(activePack->computePasses.begin(), activePack->computePasses.end(),
-                    [activePack](std::size_t index) {
-                     return ComputeDispatcher::matchesStage(activePack->definition.passes[index].name, "deferred");
-                    })
-            ? "deferred:present"
-            : "deferred:absent";
-    const bool skybasic = programFromPack(*activePack, "gbuffers_skybasic") != nullptr;
-    const bool finalProgram = programFromPack(*activePack, "final") != nullptr;
-    ::net::minecraft::client::ClientLog::LOGGER.log(
-        ::net::minecraft::util::logging::LogLevel::Info,
-        std::string("[renderpearl-probe] frame=") + std::to_string(probe) + " computes[" + computeList + "] " +
-            deferred + " skybasic=" + (skybasic ? "ok" : "MISSING") +
-            " final=" + (finalProgram ? "ok" : "MISSING") + " " + exposure +
-            " fogStart=" + std::to_string(worldUniforms_.fogStart) +
-            " fogEnd=" + std::to_string(worldUniforms_.fogEnd) +
-            " fogMode=" + std::to_string(worldUniforms_.fogMode) +
-            " far=" + std::to_string(worldUniforms_.farPlane) +
-            " fogColor=(" + std::to_string(fogColor[0]) + "," + std::to_string(fogColor[1]) + "," +
-            std::to_string(fogColor[2]) + ")" + " axisView=(" + std::to_string(axisView[0]) + "," +
-            std::to_string(axisView[1]) + "," + std::to_string(axisView[2]) + ")" +
-            " shadowLightPos=(" + std::to_string(slp[0]) + "," + std::to_string(slp[1]) + "," +
-            std::to_string(slp[2]) + ") dot(axis,light)=" + std::to_string(dot) +
-            " shadowMapRes=" + std::to_string(shadowW) + " (uniform=" +
-            std::to_string(worldUniforms_.shadowMapResolution) + ")");
-   }
-  }
    if(!packWroteToScreen_) presentFinalToScreen(activePack, screenW, screenH);
  finalizeEngineColorCorrection(screenW, screenH);
  return packWroteToScreen_;
@@ -1038,101 +930,12 @@ bool Pipeline::blitColortex0ToScreen(PackInstance& pack, int screenWidth, int sc
  }
   presentReadFbo_.addColorAttachment(0, color0);
   presentReadFbo_.bindAsReadBuffer();
-  static int postProbeFrames = 0;
-  const int postProbe = postProbeFrames++;
-  if(postProbe < 3 || postProbe % 90 == 0) {
-   const int px = std::max(1, width / 2);
-   const int py = std::max(1, height / 2);
-   const int skyY = std::max(1, height * 3 / 4);
-   const int leftX = std::max(1, width / 4);
-   float px0c[4]{}, px0s[4]{}, px0l[4]{};
-   ::glReadPixels(px, py, 1, 1, 0x1908, 0x1406, px0c);
-   ::glReadPixels(px, skyY, 1, 1, 0x1908, 0x1406, px0s);
-   ::glReadPixels(leftX, py, 1, 1, 0x1908, 0x1406, px0l);
-   float px1c[4]{}, px1s[4]{}, px1l[4]{};
-   if(targets.colorCount() > 1) {
-    presentReadFbo_.addColorAttachment(0, targets.readTexture(1));
-    presentReadFbo_.bindAsReadBuffer();
-    ::glReadPixels(px, py, 1, 1, 0x1908, 0x1406, px1c);
-    ::glReadPixels(px, skyY, 1, 1, 0x1908, 0x1406, px1s);
-    ::glReadPixels(leftX, py, 1, 1, 0x1908, 0x1406, px1l);
-    presentReadFbo_.addColorAttachment(0, color0);
-    presentReadFbo_.bindAsReadBuffer();
-   }
-    std::string cu;
-    for(const char* name : {"sunDirectionPlr", "skyColorLinear", "skyState", "shadowLightDirection"}) {
-     const auto found = pack.customUniforms.values().find(name);
-     if(found == pack.customUniforms.values().end()) continue;
-     if(!cu.empty()) cu += " ";
-     cu += name;
-     for(int k = 0; k < 3; ++k) {
-      std::ostringstream f;
-      f << '=' << std::fixed << std::setprecision(3) << found->second.f[k];
-      cu += f.str();
-     }
-    }
-    std::vector<float> skyScan(static_cast<std::size_t>(width) * (height / 2) * 4);
-    float peak0[3]{}, peak1[3]{};
-    int peak0x = -1, peak0y = -1, peak1x = -1, peak1y = -1;
-    if(!skyScan.empty()) {
-     ::glReadPixels(0, height / 2, width, height / 2, 0x1908, 0x1406, skyScan.data());
-     for(int y = 0; y < height / 2; ++y) {
-      for(int x = 0; x < width; ++x) {
-       const std::size_t o = static_cast<std::size_t>((y * width + x) * 4);
-       const float l = skyScan[o] + skyScan[o + 1] + skyScan[o + 2];
-       if(peak0x < 0 || l > peak0[0] + peak0[1] + peak0[2]) {
-        peak0[0] = skyScan[o]; peak0[1] = skyScan[o + 1]; peak0[2] = skyScan[o + 2];
-        peak0x = x; peak0y = y;
-       }
-      }
-     }
-     if(targets.colorCount() > 1) {
-      presentReadFbo_.addColorAttachment(0, targets.readTexture(1));
-      presentReadFbo_.bindAsReadBuffer();
-      ::glReadPixels(0, height / 2, width, height / 2, 0x1908, 0x1406, skyScan.data());
-      presentReadFbo_.addColorAttachment(0, color0);
-      presentReadFbo_.bindAsReadBuffer();
-      for(int y = 0; y < height / 2; ++y) {
-       for(int x = 0; x < width; ++x) {
-        const std::size_t o = static_cast<std::size_t>((y * width + x) * 4);
-        const float l = skyScan[o] + skyScan[o + 1] + skyScan[o + 2];
-        if(peak1x < 0 || l > peak1[0] + peak1[1] + peak1[2]) {
-         peak1[0] = skyScan[o]; peak1[1] = skyScan[o + 1]; peak1[2] = skyScan[o + 2];
-         peak1x = x; peak1y = y;
-        }
-       }
-      }
-     }
-    }
-   ::net::minecraft::client::ClientLog::LOGGER.log(
-       ::net::minecraft::util::logging::LogLevel::Info,
-       std::string("[post-probe] frame=") + std::to_string(postProbe) + " colortex0 center=(" +
-           std::to_string(px0c[0]) + "," + std::to_string(px0c[1]) + "," + std::to_string(px0c[2]) +
-           ") sky=(" + std::to_string(px0s[0]) + "," + std::to_string(px0s[1]) + "," + std::to_string(px0s[2]) +
-           ") left=(" + std::to_string(px0l[0]) + "," + std::to_string(px0l[1]) + "," + std::to_string(px0l[2]) +
-           ") colortex1 center=(" + std::to_string(px1c[0]) + "," + std::to_string(px1c[1]) + "," +
-           std::to_string(px1c[2]) + ") sky=(" + std::to_string(px1s[0]) + "," + std::to_string(px1s[1]) + "," +
-           std::to_string(px1s[2]) + ") left=(" + std::to_string(px1l[0]) + "," + std::to_string(px1l[1]) + "," +
-           std::to_string(px1l[2]) + ")" + (cu.empty() ? std::string() : std::string(" customs[") + cu + "]") +
-           " sunPeak colortex0=(" + std::to_string(peak0x) + "," + std::to_string(peak0y) + ") rgb=(" +
-           std::to_string(peak0[0]) + "," + std::to_string(peak0[1]) + "," + std::to_string(peak0[2]) +
-           ") colortex1=(" + std::to_string(peak1x) + "," + std::to_string(peak1y) + ") rgb=(" +
-           std::to_string(peak1[0]) + "," + std::to_string(peak1[1]) + "," + std::to_string(peak1[2]) + ")");
-  }
   gl::GLCore::bindFramebuffer(static_cast<unsigned>(gl::framebuffer::DrawFramebuffer), 0);
   core::viewport(0, 0, screenWidth, screenHeight);
   gl::GLCore::blitFramebuffer(0, 0, width, height, 0, 0, screenWidth, screenHeight, gl::attrib::ColorBufferBit,
                               gl::filter::Nearest);
   gl::GLCore::bindFramebuffer(static_cast<unsigned>(gl::framebuffer::ReadFramebuffer), 0);
   gl::GLCore::bindFramebuffer(static_cast<unsigned>(gl::framebuffer::Framebuffer), 0);
-  if(postProbe < 3 || postProbe % 90 == 0) {
-   float scr[4]{};
-   ::glReadPixels(0, 0, 1, 1, 0x1908, 0x1406, scr);
-   ::net::minecraft::client::ClientLog::LOGGER.log(
-       ::net::minecraft::util::logging::LogLevel::Info,
-       std::string("[post-probe] screen BL=(0,0)=(") + std::to_string(scr[0]) + "," + std::to_string(scr[1]) + "," +
-           std::to_string(scr[2]) + ")");
-  }
   return true;
 }
 

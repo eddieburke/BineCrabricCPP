@@ -27,25 +27,41 @@ void bindWorldProgram(gl::ShaderProgram& program, const WorldProgramBindContext&
   core::bindTexture(static_cast<int>(*context.lightmapTexture));
   program.set1i("lightmap", 1);
  }
- if(context.overlayTexture != 0 && maxUnits > 2 && program.location("iris_overlay") >= 0) {
-  core::activeTexture(gl::tex::Texture0 + 2);
-  core::bindTexture(static_cast<int>(context.overlayTexture));
-  program.set1i("iris_overlay", 2);
- }
- int unit = 3;
- const auto bindOptional = [&](const char* name, unsigned int texture) {
-  if(texture == 0 || unit >= maxUnits || program.location(name) < 0) {
-   return;
-  }
-  core::activeTexture(gl::tex::Texture0 + unit);
-  core::bindTexture(static_cast<int>(texture));
-  program.set1i(name, unit++);
- };
  if(context.bindTextureAtlases) {
   const int atlasSize[2] = {context.atlasWidth, context.atlasHeight};
   program.set2iAt(program.location("atlasSize"), atlasSize);
-  bindOptional("normals", context.normalTexture);
-  bindOptional("specular", context.specularTexture);
+
+  if(context.normalTexture != 0 && maxUnits > 2) {
+   const int locNormals = program.location("normals");
+   const int locGtex1 = program.location("gtexture1");
+   const int locNormMap = program.location("normalMap");
+   if(locNormals >= 0 || locGtex1 >= 0 || locNormMap >= 0) {
+    core::activeTexture(gl::tex::Texture0 + 2);
+    core::bindTexture(static_cast<int>(context.normalTexture));
+    if(locNormals >= 0) program.set1i("normals", 2);
+    if(locGtex1 >= 0) program.set1i("gtexture1", 2);
+    if(locNormMap >= 0) program.set1i("normalMap", 2);
+   }
+  }
+
+  if(context.specularTexture != 0 && maxUnits > 3) {
+   const int locSpec = program.location("specular");
+   const int locGtex2 = program.location("gtexture2");
+   const int locSpecMap = program.location("specularMap");
+   if(locSpec >= 0 || locGtex2 >= 0 || locSpecMap >= 0) {
+    core::activeTexture(gl::tex::Texture0 + 3);
+    core::bindTexture(static_cast<int>(context.specularTexture));
+    if(locSpec >= 0) program.set1i("specular", 3);
+    if(locGtex2 >= 0) program.set1i("gtexture2", 3);
+    if(locSpecMap >= 0) program.set1i("specularMap", 3);
+   }
+  }
+ }
+ int unit = 4;
+ if(context.overlayTexture != 0 && unit < maxUnits && program.location("iris_overlay") >= 0) {
+  core::activeTexture(gl::tex::Texture0 + unit);
+  core::bindTexture(static_cast<int>(context.overlayTexture));
+  program.set1i("iris_overlay", unit++);
  }
  if(context.noiseTexture != 0 && unit < maxUnits && program.location("noisetex") >= 0) {
   core::activeTexture(gl::tex::Texture0 + unit);

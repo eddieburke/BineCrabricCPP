@@ -278,6 +278,10 @@ void scanPackConstants(const std::string& source, PackDefinition& pack) {
    pack.shadowHardwareFiltering[1] = on;
    continue;
   }
+  if(left == "const bool shadowHardwareOffset") {
+   pack.shadowHardwareOffset = on;
+   continue;
+  }
   if(left == "const bool generateShadowMipmap" || left == "const bool shadowtexMipmap") {
    if(on) pack.shadowtexMipmap[0] = pack.shadowtexMipmap[1] = true;
    continue;
@@ -354,6 +358,10 @@ void scanPackConstants(const std::string& source, PackDefinition& pack) {
     pack.shadowNearPlane = f;
    } else if(left == "const float shadowFarPlane") {
     pack.shadowFarPlane = f;
+   } else if(left == "const float shadowHardwareOffsetFactor") {
+    pack.shadowHardwareOffsetFactor = f;
+   } else if(left == "const float shadowHardwareOffsetUnits") {
+    pack.shadowHardwareOffsetUnits = f;
    } else if(left == "const float shadowIntervalSize") {
    pack.shadowIntervalSize = std::max(0.0f, f);
   } else if(left == "const float ambientOcclusionLevel") {

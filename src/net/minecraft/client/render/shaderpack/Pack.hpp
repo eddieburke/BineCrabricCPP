@@ -202,8 +202,11 @@ struct PackDefinition {
  bool occlusionCulling = true;
  bool rainDepth = false;
  bool beaconBeamDepth = false;
- bool shadowHardwareFiltering[2] = {false, false};
- bool usesWaterShadow = false;
+  bool shadowHardwareFiltering[2] = {false, false};
+  bool shadowHardwareOffset = true;
+  float shadowHardwareOffsetFactor = 2.0f;
+  float shadowHardwareOffsetUnits = 4.0f;
+  bool usesWaterShadow = false;
  std::string particleOrdering;
  std::set<std::string> requiredFeatures;
  std::set<std::string> optionalFeatures;

@@ -687,29 +687,7 @@ minecraft.on("world_render", {
   end,
 }, function(event)
   local frame = current_solar_frame(event.tick_delta)
-  event.astronomy_enabled = true
-  event.astronomy_utc_millis = frame.utc_millis
-  event.observer_latitude_deg = config.latitude
-  event.observer_longitude_deg = config.longitude
-
-  event.solar_day_tick = frame.day_tick
-  event.solar_time_hours = frame.solar_time_hours
   if config.drive_sun then
-    event.celestial_angle = frame.celestial
-    event.celestial = frame.celestial
-    event.sky_yaw_deg = frame.skydome_yaw_deg
-    event.sun_direction_x = frame.sun_direction_x
-    event.sun_direction_y = frame.sun_direction_y
-    event.sun_direction_z = frame.sun_direction_z
-    event.sun_azimuth_deg = frame.sun_azimuth_deg
-    event.sun_altitude_deg = frame.sun_altitude_deg
-    event.moon_direction_x = frame.moon_direction_x
-    event.moon_direction_y = frame.moon_direction_y
-    event.moon_direction_z = frame.moon_direction_z
-    event.moon_azimuth_deg = frame.moon_azimuth_deg
-    event.moon_altitude_deg = frame.moon_altitude_deg
-    event.moon_illumination = frame.moon_illumination
-    event.moon_phase = frame.moon_phase
     event.cancel_vanilla = true
     draw_sky_dome(event, frame)
   end

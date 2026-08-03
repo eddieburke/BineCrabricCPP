@@ -184,7 +184,7 @@ int WorldRenderer::render(net::minecraft::LivingEntity& camera, int layer, doubl
  }
  cameraEntity_ = &camera;
  renderChunks(layer, tickDelta, drawModMeshes);
- return lastDrawnRegionCount_;
+ return 0;
 }
 void WorldRenderer::renderLastChunks(int layer, double tickDelta) {
  // Java's GameRenderer draws translucent terrain twice when fancyGraphics is
@@ -197,7 +197,6 @@ void WorldRenderer::renderLastChunks(int layer, double tickDelta) {
 }
 int WorldRenderer::renderChunksVbo(
     int layer, double /*tickDelta*/, double interpX, double interpY, double interpZ, bool skipBuildDrawLists) {
- lastDrawnRegionCount_ = 0;
  chunk::ChunkRegion& pool = compilePipeline_.regionManager().pool();
  chunk::ChunkRegionBuffer& buffer = pool.layers[static_cast<std::size_t>(layer)];
  // chunkOffset = sectionOrigin - active draw camera (player or shadow).
@@ -240,17 +239,16 @@ int WorldRenderer::renderChunksVbo(
  if(!buffer.hasVisible()) {
   return 0;
  }
- lastDrawnRegionCount_ = buffer.flush();
- return lastDrawnRegionCount_;
+ return buffer.flush();
 }
 void WorldRenderer::renderChunks(int layer, double tickDelta, bool drawModMeshes, bool skipBuildDrawLists) {
  double interpX = 0.0;
  double interpY = 0.0;
  double interpZ = 0.0;
  cameraInterpPosition(tickDelta, interpX, interpY, interpZ);
- lastDrawnRegionCount_ = renderChunksVbo(layer, tickDelta, interpX, interpY, interpZ, skipBuildDrawLists);
+ renderChunksVbo(layer, tickDelta, interpX, interpY, interpZ, skipBuildDrawLists);
  if(drawModMeshes) {
-  lastDrawnRegionCount_ += renderModChunkMeshes(layer, interpX, interpY, interpZ);
+  renderModChunkMeshes(layer, interpX, interpY, interpZ);
  }
 }
 int WorldRenderer::renderModChunkMeshes(int layer, double interpX, double interpY, double interpZ) {
