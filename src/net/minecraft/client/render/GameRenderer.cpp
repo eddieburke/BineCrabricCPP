@@ -1097,8 +1097,11 @@ void GameRenderer::renderToCurrentTarget(float tickDelta,
   }
   core::setFogEnabled(!frameCamera_.shadowPass);
   if(!frameCamera_.shadowPass && !frameCamera_.skipAllRendering &&
-     resolvedOptions.renderSky &&
-     (definition == nullptr || definition->renderSky)) {
+     resolvedOptions.renderSky) {
+    // Iris's `sky` pack directive only gates its own horizon-box mesh (not present in
+    // this engine); the vanilla sky/sun/moon/stars/void chain always runs regardless
+    // of the pack, with sun/moon/stars individually cancelled inside renderSkyDome via
+    // ctx.settings (see RenderSettings.cpp applyShaderPack).
     const debug::RenderProfiler::Scope skyScope(debug::RenderStage::Sky);
     // Vanilla draws the sky dome with the same world fog as the terrain so the
     // horizon fades into the fog colour; the sky must use the terrain start/end,

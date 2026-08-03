@@ -309,6 +309,16 @@ ScopedDrawCameraState::~ScopedDrawCameraState() {
   clearDrawCameraState();
  }
 }
+// The five fog uniforms every gbuffers program reads. Fog is per-draw state here
+// (pass.fog / g_fog); the pack frame snapshot only mirrors it for the world pass.
+void uploadFogUniforms(ShaderProgram& program, const FogUniforms& fog) {
+ program.set3f("fogColor", fog.color[0], fog.color[1], fog.color[2]);
+ program.set1f("fogDensity", fog.density);
+ program.set1f("fogStart", fog.start);
+ program.set1f("fogEnd", fog.end);
+ program.set1i("fogMode", fog.enabled ? fogModeToGlConstant(fog.mode) : 0);
+ program.set1i("fogShape", fog.shape);
+}
 void bindAndUploadUniforms(const RenderPass& pass) {
  ShaderProgram* active = pass.programOverride != nullptr ? pass.programOverride : g_activeProgram;
  if(active == nullptr) {
@@ -367,12 +377,7 @@ void bindAndUploadUniforms(const RenderPass& pass) {
   std::memcpy(g_uploadedEntityColor, g_entityColor, sizeof(g_entityColor));
  }
  if(fogChanged) {
-  active->set3f("fogColor", fog.color[0], fog.color[1], fog.color[2]);
-  active->set1f("fogDensity", fog.density);
-  active->set1f("fogStart", fog.start);
-  active->set1f("fogEnd", fog.end);
-  active->set1i("fogMode", fog.enabled ? fogModeToGlConstant(fog.mode) : 0);
-  active->set1i("fogShape", fog.shape);
+  uploadFogUniforms(*active, fog);
   g_uploadedFog = fog;
   g_uploadedFogShape = fog.shape;
  }
@@ -428,6 +433,15 @@ void bindAndUploadUniforms(const RenderPass& pass) {
  const bool materialUniformsChanged = packUniformsChanged || diffuseTexture != g_programUniformDiffuseTexture;
  if(g_programUniformUploader && materialUniformsChanged) {
   g_programUniformUploader(*active);
+  // The uploader pushes the pack's PER-FRAME snapshot, whose fog fields were captured
+  // during the world pass. Interface draws (GUI screens, the inventory player preview)
+  // run with fog off and with view positions in GUI screen space — hundreds of units
+  // from the origin — so leaving the world's fogMode/fogStart/fogEnd in place fogged
+  // those draws out to a flat fogColor silhouette. Re-assert the live per-draw fog,
+  // which the world pass sets to exactly the same values it snapshotted.
+  uploadFogUniforms(*active, fog);
+  g_uploadedFog = fog;
+  g_uploadedFogShape = fog.shape;
  }
  if(packUniformsChanged) {
   g_programUniformPushed = g_programUniformGeneration;

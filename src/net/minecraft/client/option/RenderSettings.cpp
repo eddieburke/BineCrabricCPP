@@ -70,9 +70,12 @@ void applyShaderPack(RenderSettings& settings, const render::PackDefinition& pac
   settings.renderClouds = true;
   settings.fancyClouds = true;
  }
- if(!pack.renderSky) {
-  settings.renderSky = false;
- }
+ // Iris's `sky` directive (PackDirectives.shouldRenderSkyDisc) only gates Iris's own
+ // horizon-box mesh (IrisRenderingPipeline.onBeginClear), which this engine doesn't
+ // have; it never cancels vanilla's renderSky/sun/moon/stars/void chain
+ // (MixinSkyRenderer has no hook on renderSkyDisc/renderSunMoonAndStars/renderDarkDisc).
+ // Only `sun`/`moon` cancel their own sprite draws — see renderSun/renderMoon below and
+ // SkyDome.cpp's ctx.settings.renderSun/renderMoon gates.
  if(!pack.renderStars) {
   settings.renderStars = false;
  }
