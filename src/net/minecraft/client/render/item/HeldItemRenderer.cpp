@@ -161,14 +161,6 @@ void HeldItemRenderer::renderItem(const net::minecraft::entity::LivingEntity& en
   core::disableCull();
   // MCP ItemRenderer.renderItem: getEntityBrightness(1.0F).
   const core::ScopedDrawCameraState itemGuard;
-  net::minecraft::util::math::MatrixStack pose;
-  pose.load(core::drawModelView());
-  pose.translate(0.0f, -0.3f, 0.0f);
-  pose.scale(1.5f, 1.5f, 1.5f);
-  pose.rotate(50.0f, 0.0f, 1.0f, 0.0f);
-  pose.rotate(335.0f, 0.0f, 0.0f, 1.0f);
-  pose.translate(-0.5f, -0.5f, -0.5f);
-  core::setDrawModelView(pose.top());
   blockRenderManager.render(*block, itemStack.getDamage(), entity.getBrightnessAtEyes(1.0f));
   if(cullWasEnabled) {
    core::enableCull();
