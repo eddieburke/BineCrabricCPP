@@ -46,7 +46,11 @@ class Tessellator {
  void color(int r, int g, int b, int a);
  void color(int rgb);
  void color(int rgb, int a);
- void light(int blockLight, int skyLight);
+ // Light levels are fractional: smooth lighting averages four neighbours, and
+ // rounding that average to a whole level collapses distinct AO corners onto
+ // the same lightmap texel. vaUV2 carries level*16, so quarter-level averages
+ // survive the pack exactly.
+ void light(float blockLight, float skyLight);
  void disableColor();
  void normal(float x, float y, float z);
  void blockData(double x,
@@ -102,8 +106,8 @@ class Tessellator {
  double blockCenterY_ = 0.0;
  double blockCenterZ_ = 0.0;
  int blockEmission_ = 0;
- int blockLight_ = 15;
- int skyLight_ = 15;
+ float blockLight_ = 15.0f;
+ float skyLight_ = 15.0f;
  int blockId_ = 0;
  bool blockFluid_ = false;
  int blockMetadata_ = 0;

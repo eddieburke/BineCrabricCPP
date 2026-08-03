@@ -145,8 +145,9 @@ struct BlockFaceVertexColors {
 struct BlockFaceRenderState {
  bool useAo = false;
  BlockFaceVertexColors colors;
- int blockLight[4] = {15, 15, 15, 15};
- int skyLight[4] = {15, 15, 15, 15};
+ // Fractional so a four-neighbour corner average keeps its quarter-levels.
+ float blockLight[4] = {15.0f, 15.0f, 15.0f, 15.0f};
+ float skyLight[4] = {15.0f, 15.0f, 15.0f, 15.0f};
 };
 // Mutable rendering state shared by the cooperating block renderers (faces,
 // cube, fluid, plants, mechanisms, inventory icon). In the original beta 1.7.3

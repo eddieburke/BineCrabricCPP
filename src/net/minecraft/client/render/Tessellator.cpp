@@ -218,9 +218,9 @@ void Tessellator::color(int rgb) {
 void Tessellator::color(int rgb, int a) {
  color((rgb >> 16) & 0xFF, (rgb >> 8) & 0xFF, rgb & 0xFF, a);
 }
-void Tessellator::light(int blockLight, int skyLight) {
- blockLight_ = std::clamp(blockLight, 0, 15);
- skyLight_ = std::clamp(skyLight, 0, 15);
+void Tessellator::light(float blockLight, float skyLight) {
+ blockLight_ = std::clamp(blockLight, 0.0f, 15.0f);
+ skyLight_ = std::clamp(skyLight, 0.0f, 15.0f);
 }
 void Tessellator::disableColor() {
  colorDisabled_ = true;
@@ -238,8 +238,8 @@ void Tessellator::blockData(
  blockCenterY_ = y + 0.5;
  blockCenterZ_ = z + 0.5;
  blockEmission_ = std::clamp(emission, 0, 15);
- blockLight_ = std::clamp(blockLight, 0, 15);
- skyLight_ = std::clamp(skyLight, 0, 15);
+ blockLight_ = static_cast<float>(std::clamp(blockLight, 0, 15));
+ skyLight_ = static_cast<float>(std::clamp(skyLight, 0, 15));
  blockId_ = blockId;
  blockFluid_ = fluid;
  blockMetadata_ = metadata;
@@ -273,7 +273,14 @@ void Tessellator::vertex(double x, double y, double z) {
  auto vProxy = builder_.vertex(vx, vy, vz);
  TessellatorVertex* vertex = reinterpret_cast<TessellatorVertex*>(
      builder_.buffer().data() + builder_.buffer().size() - sizeof(TessellatorVertex));
- vertex->light = blockLight_ * 16 | (skyLight_ * 16 << 16);
+ // vaUV2 is an unnormalized ushort2 of level*16 (0..240). Keeping the fraction
+ // here is what lets a smooth-lit corner land between two lightmap texels, so
+ // the GL_LINEAR filter reproduces the vanilla averaged-luminance value instead
+ // of snapping to a whole level.
+ const auto packLevel = [](float level) {
+  return static_cast<std::uint32_t>(std::clamp(std::lround(level * 16.0f), 0L, 240L));
+ };
+ vertex->light = static_cast<std::int32_t>(packLevel(blockLight_) | (packLevel(skyLight_) << 16U));
  if(hasBlockData_) {
   const auto component = [](double value) {
    return static_cast<std::uint32_t>(static_cast<std::uint8_t>(

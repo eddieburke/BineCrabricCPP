@@ -33,6 +33,11 @@ void readCornerLight(BlockRenderContext& ctx, int x, int y, int z, int& blockLig
 // lightmap carries this per-corner light; the vertex AO colour term stays
 // neutral so the lightmap is not multiplied a second time (that double-dark
 // shading is what made smooth lighting look pitch black).
+//
+// The average stays fractional. Rounding it to a whole level used to fold
+// {15,15,15,14}, {15,15,14,14} and {15,14,14,14} all onto level 14, and the
+// luminance curve drops 21% between 15 and 14 — so a face had nothing between
+// "fully lit" and one hard step down, which read as banding rather than AO.
 void averageCornerLight(BlockRenderContext& ctx,
                         int dx,
                         int dy,
@@ -47,8 +52,8 @@ void averageCornerLight(BlockRenderContext& ctx,
                         int cy,
                         int cz,
                         bool closed,
-                        int& blockLight,
-                        int& skyLight) {
+                        float& blockLight,
+                        float& skyLight) {
  int bd = 0;
  int sd = 0;
  int bs = 0;
@@ -65,8 +70,8 @@ void averageCornerLight(BlockRenderContext& ctx,
   bd = bs;
   sd = ss;
  }
- blockLight = (bd + bs + bo + bc) / 4;
- skyLight = (sd + ss + so + sc) / 4;
+ blockLight = static_cast<float>(bd + bs + bo + bc) / 4.0f;
+ skyLight = static_cast<float>(sd + ss + so + sc) / 4.0f;
 }
 float oldLightingFaceShade(int face) {
  switch(face) {
@@ -109,14 +114,14 @@ void assignAoCorners(const option::RenderSettings& resolved,
                      float blue,
                      int fBlock,
                      int fSky,
-                     int b0,
-                     int s0,
-                     int b1,
-                     int s1,
-                     int b2,
-                     int s2,
-                     int b3,
-                     int s3) {
+                     float b0,
+                     float s0,
+                     float b1,
+                     float s1,
+                     float b2,
+                     float s2,
+                     float b3,
+                     float s3) {
  const float tintRed = applyTint ? red : 1.0f;
  const float tintGreen = applyTint ? green : 1.0f;
  const float tintBlue = applyTint ? blue : 1.0f;
@@ -126,16 +131,14 @@ void assignAoCorners(const option::RenderSettings& resolved,
   state.colors.blue[i] = tintBlue;
   state.colors.alpha[i] = 1.0f;
  }
- const int cornerBlock[4] = {b0, b1, b2, b3};
- const int cornerSky[4] = {s0, s1, s2, s3};
+ const float cornerBlock[4] = {b0, b1, b2, b3};
+ const float cornerSky[4] = {s0, s1, s2, s3};
  const float strength = resolved.ambientOcclusionStrength;
+ // No rounding: the slider has to fade continuously, not snap a whole level at
+ // a time, and the corner itself carries quarter-level detail.
  for(int i = 0; i < 4; ++i) {
-  state.blockLight[i] =
-      std::lround(static_cast<float>(fBlock) +
-                  (static_cast<float>(cornerBlock[i]) - static_cast<float>(fBlock)) * strength);
-  state.skyLight[i] =
-      std::lround(static_cast<float>(fSky) +
-                  (static_cast<float>(cornerSky[i]) - static_cast<float>(fSky)) * strength);
+  state.blockLight[i] = static_cast<float>(fBlock) + (cornerBlock[i] - static_cast<float>(fBlock)) * strength;
+  state.skyLight[i] = static_cast<float>(fSky) + (cornerSky[i] - static_cast<float>(fSky)) * strength;
  }
  applyOldLightingIfEnabled(resolved, state, face);
 }
@@ -174,14 +177,14 @@ bool CubeBlockRenderer::renderSmooth(
  int textureId = 0;
  ctx_.faceState.useAo = true;
  bool drewAnyFace = false;
- int lb0 = 15;
- int ls0 = 15;
- int lb1 = 15;
- int ls1 = 15;
- int lb2 = 15;
- int ls2 = 15;
- int lb3 = 15;
- int ls3 = 15;
+ float lb0 = 15.0f;
+ float ls0 = 15.0f;
+ float lb1 = 15.0f;
+ float ls1 = 15.0f;
+ float lb2 = 15.0f;
+ float ls2 = 15.0f;
+ float lb3 = 15.0f;
+ float ls3 = 15.0f;
  bool tintDown = true;
  bool tintUp = true;
  bool tintEast = true;
