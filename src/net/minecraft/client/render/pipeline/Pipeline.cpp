@@ -386,8 +386,8 @@ void Pipeline::prepareFrame(net::minecraft::World* world, PackInstance* activePa
   if(activePack->colorTargets.valid()) {
    activePack->colorTargets.fillImageBindings(colorImages);
   }
-  dispatchSetupIfNeeded(*activePack, worldUniforms_, width, height, textures, colorImages, volumes,
-                        &activePack->colorTargets,
+   dispatchSetupIfNeeded(*activePack, worldUniforms_, nullptr, width, height, textures, colorImages, volumes,
+                         &activePack->colorTargets,
                         [this](PackInstance& p, const std::string& name) {
                          return PackCompiler::compile(
                              p, name,

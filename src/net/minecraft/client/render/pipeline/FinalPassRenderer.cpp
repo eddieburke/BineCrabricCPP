@@ -89,12 +89,15 @@ void FinalPassRenderer::presentToScreen(PackInstance* scenePack, int screenWidth
                       scenePack->definition);
  PackResources::bind(*scenePack, *program, 0);
 
- PackUniformValues frameUniforms = pipeline_->worldUniforms_;
- frameUniforms.viewWidth = static_cast<float>(width);
- frameUniforms.viewHeight = static_cast<float>(height);
- frameUniforms.aspectRatio = frameUniforms.viewWidth / std::max(frameUniforms.viewHeight, 1.0f);
-  frameUniforms.normalAvailable = targets.colorCount() > 1 ? 1 : 0;
-  uploadShaderUniforms(*program, frameUniforms, true);
+ const PackUniformValues& frameUniforms = pipeline_->worldUniforms_;
+ const PackViewportValues viewport{static_cast<float>(width),
+                                   static_cast<float>(height),
+                                   static_cast<float>(width) / std::max(static_cast<float>(height), 1.0f),
+                                   frameUniforms.farPlane,
+                                   frameUniforms.shadowMapResolution,
+                                   frameUniforms.shadowAvailable,
+                                   targets.colorCount() > 1 ? 1 : 0};
+ uploadShaderUniforms(*program, frameUniforms, true, &viewport);
   uploadIdentityDrawMatrices(*program);
  scenePack->customUniforms.upload(*program);
  program->bind();

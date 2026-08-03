@@ -31,10 +31,11 @@ class BlockRenderManager {
   ctx.blockView = view;
   ctx.opts = opts;
  }
- // Copy the global render settings (resolved GameOptions, fancy flags) into
- // the context. Mesh jobs overwrite ctx.opts with values captured at enqueue
- // time instead.
- void snapshotGlobals();
+  // Copy the global render settings (resolved GameOptions, fancy flags) into
+  // the context. Mesh jobs overwrite ctx.opts with values captured at enqueue
+  // time instead. When a GameRenderer exists its frameSettings_ (pack-resolved)
+  // is authoritative; renderSettings(options) is only a unit-test fallback.
+  void snapshotGlobals(const option::RenderSettings* overrideSettings = nullptr);
  void setBlockView(const net::minecraft::BlockView* view) {
   ctx.blockView = view;
  }

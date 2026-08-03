@@ -70,15 +70,12 @@ void applyShaderPack(RenderSettings& settings, const render::PackDefinition& pac
   settings.renderClouds = true;
   settings.fancyClouds = true;
  }
- // Iris's `sky` directive (PackDirectives.shouldRenderSkyDisc) only gates Iris's own
- // horizon-box mesh (IrisRenderingPipeline.onBeginClear), which this engine doesn't
- // have; it never cancels vanilla's renderSky/sun/moon/stars/void chain
- // (MixinSkyRenderer has no hook on renderSkyDisc/renderSunMoonAndStars/renderDarkDisc).
- // Only `sun`/`moon` cancel their own sprite draws — see renderSun/renderMoon below and
- // SkyDome.cpp's ctx.settings.renderSun/renderMoon gates.
- if(!pack.renderStars) {
-  settings.renderStars = false;
- }
+  // Iris parity: the `sky` directive (PackDirectives.shouldRenderSkyDisc) only gates
+  // Iris's own horizon-box mesh (IrisRenderingPipeline.onBeginClear), which this engine
+  // doesn't have, so it's a no-op here. The `stars` directive (shouldRenderStars) is
+  // parsed but never consumed by Iris. MixinSkyRenderer cancels exactly two vanilla
+  // draws — the `sun` and `moon` sprites — so only those are gated below; the rest of
+  // the vanilla sky/sun/moon/stars/void chain always runs, exactly like Iris.
  if(!pack.renderWeather) {
   settings.weatherEnabled = false;
  }

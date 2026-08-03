@@ -98,20 +98,23 @@ class WorldRenderer : public net::minecraft::GameEventListener {
  void resetSectionFrontier() noexcept {
   chunkSections_.resetSectionFrontier();
  }
- void setOptions(net::minecraft::client::option::GameOptions* options) {
-  options_ = options;
-  settings_ = option::renderSettings(activeOptions());
- }
- void setRenderSettings(const net::minecraft::client::option::RenderSettings& settings) { settings_ = settings; }
- void pushCullState();
+  void setOptions(net::minecraft::client::option::GameOptions* options) {
+   options_ = options;
+  }
+  void pushCullState();
  void popCullState();
  // TEMP DIAGNOSTIC — water/ice not drawing under RenderPearl/SEUS.
  // See docs/agent-notes/HANDOFF-water-ice-not-drawing.md. Delete with the probe.
  [[nodiscard]] int lastDrawnRegions() const noexcept { return lastDrawnRegionCount_; }
 
- private:
- void renderOutline(const net::minecraft::Box& box);
- [[nodiscard]] net::minecraft::client::option::GameOptions& activeOptions() const;
+  private:
+  void renderOutline(const net::minecraft::Box& box);
+  [[nodiscard]] net::minecraft::client::option::GameOptions& activeOptions() const;
+  // Authoritative per-frame settings captured by GameRenderer::frameSettings_
+  // (the C++ equivalent of Iris' CapturedRenderingState). All renderers query
+  // this; none re-evaluate settings from raw GameOptions.
+  // see third_party/mcp/iris/common/src/main/java/net/irisshaders/iris/pipeline/CapturedRenderingState.java
+  [[nodiscard]] const option::RenderSettings& frameSettings() const;
  void renderChunks(int layer, double tickDelta, bool drawModMeshes = true, bool skipBuildDrawLists = false);
  int renderChunksVbo(
      int layer, double tickDelta, double interpX, double interpY, double interpZ, bool skipBuildDrawLists = false);
@@ -124,10 +127,8 @@ class WorldRenderer : public net::minecraft::GameEventListener {
  int culledEntityCount = 0;
  net::minecraft::Entity* cameraEntity_ = nullptr;
  bool renderCameraEntity_ = false;
- net::minecraft::client::option::GameOptions* options_ = nullptr;
- net::minecraft::client::option::GameOptions defaultOptions_{};
- net::minecraft::client::option::RenderSettings settings_{};
- ChunkSectionSystem chunkSections_{*this};
+  net::minecraft::client::option::GameOptions* options_ = nullptr;
+  ChunkSectionSystem chunkSections_{*this};
  ChunkCompilePipeline compilePipeline_{*this};
 };
 } // namespace net::minecraft::client::render

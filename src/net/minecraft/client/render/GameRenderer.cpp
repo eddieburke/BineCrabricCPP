@@ -459,13 +459,12 @@ void GameRenderer::renderWorld(float tickDelta,
   core::getIntegerv(gl::query::Viewport, viewport);
  }
  const float aspect = viewport[3] != 0 ? static_cast<float>(viewport[2]) / static_cast<float>(viewport[3]) : 1.0f;
- const option::RenderSettings& resolved = frameSettings_;
  projection.loadIdentity();
   // Keeping the far plane at the render distance rather than the old b1.7.3 2x
   // multiplier stops half the depth range being spent on fully fogged geometry, which
   // was Z-fighting crossed plants and fancy leaves.
   const float nearPlane = cameraNearPlane(frameCamera_);
-  const float farPlane = cameraFarPlane(frameCamera_, resolved.renderDistanceBlocks);
+  const float farPlane = cameraFarPlane(frameCamera_, frameSettings_.renderDistanceBlocks);
  frameCamera_.perspectiveFar = farPlane;
  if(frameCamera_.orthographic) {
   math::Matrix4f proj;
@@ -528,15 +527,14 @@ void GameRenderer::renderFirstPersonHand(float tickDelta) {
  if(!core::getCachedViewport(viewport)) {
   core::getIntegerv(gl::query::Viewport, viewport);
  }
- const option::RenderSettings& resolved = frameSettings_;
- const float aspect = viewport[3] != 0 ? static_cast<float>(viewport[2]) / static_cast<float>(viewport[3]) : 1.0f;
- math::Matrix4f handProjection;
+  const float aspect = viewport[3] != 0 ? static_cast<float>(viewport[2]) / static_cast<float>(viewport[3]) : 1.0f;
+  math::Matrix4f handProjection;
  if(zoom != 1.0) {
   handProjection.translate(static_cast<float>(zoomX), static_cast<float>(-zoomY), 0.0f);
   handProjection.scale(static_cast<float>(zoom), static_cast<float>(zoom), 1.0f);
  }
  math::Matrix4f handPersp;
-  handPersp.perspective(getFov(tickDelta), aspect, 0.05f, resolved.renderDistanceBlocks);
+   handPersp.perspective(getFov(tickDelta), aspect, 0.05f, frameSettings_.renderDistanceBlocks);
  for(int column = 0; column < 4; ++column) {
   handPersp.m[column * 4 + 2] *= kHandDepth;
  }
@@ -589,8 +587,7 @@ void GameRenderer::onFrameUpdate(float tickDelta) {
  if(shaderPacks_ != nullptr) {
   shaderPacks_->pollPrograms();
  }
- frameSettings_ = option::renderSettings(client->options, meshDefinition());
- if(client->worldRenderer != nullptr) client->worldRenderer->setRenderSettings(frameSettings_);
+  frameSettings_ = option::renderSettings(client->options, meshDefinition());
 #ifdef _WIN32
  if(!util::DisplayManager::isActive()) {
 #else
@@ -989,7 +986,6 @@ void GameRenderer::renderToCurrentTarget(float tickDelta,
   client->world->setChunkCacheCenterFromBlockPos(MathHelper::floor(frameCamera_.x),
                                                  MathHelper::floor(frameCamera_.z));
  }
- const option::RenderSettings& resolvedOptions = frameSettings_;
  const bool fancyGraphics = client->options.fancyGraphics;
  const int terrainTextureId = client->textureManager.getTextureId("/terrain.png");
   const AtmosphereContext atmosphereCtx = makeAtmosphereContext(client, camera, frameSettings_, ticks);
@@ -1064,9 +1060,9 @@ void GameRenderer::renderToCurrentTarget(float tickDelta,
  RenderCameraState::instance().setFrame(frameCamera_);
   const float farPlane = cameraFarPlane(frameCamera_, frameSettings_.renderDistanceBlocks);
  core::setDrawCameraStateFromCamera(frameCamera_, farPlane);
- const bool skyWillCommit =
-     !frameCamera_.shadowPass && resolvedOptions.renderSky &&
-     client->world->dimension != nullptr && !client->world->dimension->isNether;
+  const bool skyWillCommit =
+      !frameCamera_.shadowPass && frameSettings_.renderSky &&
+      client->world->dimension != nullptr && !client->world->dimension->isNether;
  if(!skyWillCommit) {
   updateSunLight(client->world, tickDelta);
  }
@@ -1090,16 +1086,16 @@ void GameRenderer::renderToCurrentTarget(float tickDelta,
   } else if(!frameCamera_.shadowPass && !renderCameraEntity) {
    frameShadow_ = {};
   }
-  if(!frameCamera_.shadowPass && client->options.frustumCulling && resolvedOptions.frustumCulling) {
+   if(!frameCamera_.shadowPass && client->options.frustumCulling && frameSettings_.frustumCulling) {
    Frustum::getInstance().compute();
   }
   core::setFogEnabled(!frameCamera_.shadowPass);
-  if(!frameCamera_.shadowPass && !frameCamera_.skipAllRendering &&
-     resolvedOptions.renderSky) {
-    // Iris's `sky` pack directive only gates its own horizon-box mesh (not present in
-    // this engine); the vanilla sky/sun/moon/stars/void chain always runs regardless
-    // of the pack, with sun/moon/stars individually cancelled inside renderSkyDome via
-    // ctx.settings (see RenderSettings.cpp applyShaderPack).
+   if(!frameCamera_.shadowPass && !frameCamera_.skipAllRendering &&
+      frameSettings_.renderSky) {
+    // Iris parity: the pack's `sky`/`stars` directives are never applied (see
+    // RenderSettings.cpp applyShaderPack); only the sun/moon sprites are gated inside
+    // renderSkyDome via ctx.settings. frameSettings_.renderSky is the vanilla game
+    // option, not a pack directive.
     const debug::RenderProfiler::Scope skyScope(debug::RenderStage::Sky);
     // Vanilla draws the sky dome with the same world fog as the terrain so the
     // horizon fades into the fog colour; the sky must use the terrain start/end,
@@ -1138,7 +1134,7 @@ void GameRenderer::renderToCurrentTarget(float tickDelta,
  // The shadow pass never uses the camera frustum: it culls against the shadow frusta
  // ShadowMapPass built (Java ShadowRenderer.createShadowFrustum), which both the chunk
  // and the entity loops read off the frame camera.
- if(!frameCamera_.shadowPass && client->options.frustumCulling && resolvedOptions.frustumCulling) {
+  if(!frameCamera_.shadowPass && client->options.frustumCulling && frameSettings_.frustumCulling) {
    frustumCuller.prepare(frameCamera_.eyeX, frameCamera_.eyeY, frameCamera_.eyeZ);
   activeCuller = &frustumCuller;
  }
@@ -1269,15 +1265,15 @@ void GameRenderer::renderToCurrentTarget(float tickDelta,
    renderBlockOverlay(*worldRenderer, client, *player, tickDelta);
   }
  }
-  if(!skipGbuffers) {
-   if(resolvedOptions.weatherEnabled) {
-    precipitationRenderer.renderPrecipitation(atmosphereCtx, tickDelta);
+   if(!skipGbuffers) {
+    if(frameSettings_.weatherEnabled) {
+     precipitationRenderer.renderPrecipitation(atmosphereCtx, tickDelta);
+    }
    }
-  }
-  renderWorldStage(atmosphereCtx,
-                  tickDelta,
-                  mod::WorldRenderStage::Clouds,
-                  !skipGbuffers && resolvedOptions.renderClouds && definition.renderClouds,
+   renderWorldStage(atmosphereCtx,
+                   tickDelta,
+                   mod::WorldRenderStage::Clouds,
+                   !skipGbuffers && frameSettings_.renderClouds && definition.renderClouds,
                   false,
                   [&] {
                    const debug::RenderProfiler::Scope cloudScope(debug::RenderStage::Clouds);

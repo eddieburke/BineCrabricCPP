@@ -184,14 +184,14 @@ bool CompositeRenderer::render(PackInstance& pack, const std::vector<std::size_t
  std::unordered_map<std::string, int> volumeTextures;
  PackResources::addTextures(pack, stage, textures, volumeTextures);
 
- PackUniformValues frameUniforms = pipeline_->worldUniforms_;
- frameUniforms.viewWidth = static_cast<float>(width);
- frameUniforms.viewHeight = static_cast<float>(height);
- frameUniforms.aspectRatio = frameUniforms.viewWidth / std::max(frameUniforms.viewHeight, 1.0f);
- frameUniforms.farPlane = farPlane;
- frameUniforms.shadowMapResolution = static_cast<float>(shadowMapResolution);
- frameUniforms.shadowAvailable = shadowDepthTextureId >= 0 ? 1 : 0;
- frameUniforms.normalAvailable = targets.colorCount() > 1 ? 1 : 0;
+ const PackUniformValues& frameUniforms = pipeline_->worldUniforms_;
+ const PackViewportValues viewport{static_cast<float>(width),
+                                   static_cast<float>(height),
+                                   static_cast<float>(width) / std::max(static_cast<float>(height), 1.0f),
+                                   farPlane,
+                                   static_cast<float>(shadowMapResolution),
+                                   shadowDepthTextureId >= 0 ? 1 : 0,
+                                   targets.colorCount() > 1 ? 1 : 0};
 
  const bool computeReady = gl::GLCore::computeSupported;
  auto compileFn = [this](PackInstance& p, const std::string& name) {
@@ -200,7 +200,7 @@ bool CompositeRenderer::render(PackInstance& pack, const std::vector<std::size_t
   });
  };
  if(computeReady &&
-    !dispatchSetupIfNeeded(pack, frameUniforms, width, height, textures, colorImages, volumeTextures, &targets,
+    !dispatchSetupIfNeeded(pack, frameUniforms, &viewport, width, height, textures, colorImages, volumeTextures, &targets,
                            compileFn)) {
   releaseSamplers(maxTextureUnits());
   return false;
@@ -272,8 +272,8 @@ bool CompositeRenderer::render(PackInstance& pack, const std::vector<std::size_t
  for(std::size_t passIndex : stageComputes) {
   if(computeDispatched[passIndex]) continue;
   if(ComputeDispatcher::computeParentName(pack.definition.passes[passIndex].name) != parent) continue;
-  if(!ComputeDispatcher::dispatch(pack, pack.definition.passes[passIndex], frameUniforms, textures,
-                                  colorImages, volumeTextures, &targets, width, height, !concurrent, compileFn)) {
+   if(!ComputeDispatcher::dispatch(pack, pack.definition.passes[passIndex], frameUniforms, &viewport, textures,
+                                   colorImages, volumeTextures, &targets, width, height, !concurrent, compileFn)) {
    return false;
   }
    computeDispatched[passIndex] = true;
@@ -439,7 +439,7 @@ bool CompositeRenderer::render(PackInstance& pack, const std::vector<std::size_t
   const unsigned int nextImageUnit =
       bindColorImages(*program, colorImages, pack.definition, &targets);
   PackResources::bind(pack, *program, nextImageUnit);
-  uploadShaderUniforms(*program, frameUniforms, true);
+   uploadShaderUniforms(*program, frameUniforms, true, &viewport);
   uploadIdentityDrawMatrices(*program);
   pack.customUniforms.upload(*program);
   program->bind();

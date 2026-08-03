@@ -9,6 +9,7 @@ namespace net::minecraft::client::render::ComputeDispatcher {
 bool dispatch(PackInstance& pack,
               const PackPass& pass,
               const PackUniformValues& uniforms,
+              const PackViewportValues* viewport,
               std::unordered_map<std::string, int>& textures,
               std::unordered_map<std::string, int>& colorImages,
               std::unordered_map<std::string, int>& volumeTextures,
@@ -22,7 +23,7 @@ bool dispatch(PackInstance& pack,
   return false;
  }
   program->bind();
-  uploadShaderUniforms(*program, uniforms);
+  uploadShaderUniforms(*program, uniforms, true, viewport);
   pack.customUniforms.upload(*program);
   refreshTextureAliases(textures);
   bindSamplers(*program, textures, volumeTextures, maxTextureUnits(), pack.definition);

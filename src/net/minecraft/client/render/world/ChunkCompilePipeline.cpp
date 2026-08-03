@@ -89,7 +89,7 @@ bool ChunkCompilePipeline::startMeshJob(chunk::ChunkBuilder* chunk,
 }
 bool ChunkCompilePipeline::compileChunks(net::minecraft::entity::LivingEntity& /*camera*/, bool force) {
  facade_.chunkSections_.drainBorderRefresh();
- const client::option::RenderSettings& resolvedOpts = facade_.settings_;
+ const client::option::RenderSettings& resolvedOpts = facade_.frameSettings();
  const bool fancyGraphics = facade_.activeOptions().fancyGraphics;
  const float gridAreaScale = static_cast<float>(facade_.chunkSections_.renderRadiusChunks() *
                                                 facade_.chunkSections_.renderRadiusChunks()) /

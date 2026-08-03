@@ -1280,19 +1280,19 @@ TEST(PipelineBlockIdsTest, CustomBlockPropertiesUseMinusOneForUnmappedBlocks) {
  Pipeline pipeline(nullptr);
  PackDefinition pack;
  pack.hasBlockProperties = true;
- pack.blockIds.emplace("sand", 2);
- pipeline.applyBlockIds(&pack);
- EXPECT_EQ(resolveShaderBlockId(1), -1);
- EXPECT_EQ(resolveShaderBlockId(12), 2);
- pipeline.applyBlockIds(nullptr);
+  pack.blockIds.emplace("sand", 2);
+  pipeline.applyBlockIds(pack);
+  EXPECT_EQ(resolveShaderBlockId(1), -1);
+  EXPECT_EQ(resolveShaderBlockId(12), 2);
+  pipeline.applyBlockIds(PackDefinition{});
 }
 TEST(PipelineBlockIdsTest, MissingBlockPropertiesUseLegacyNumericIds) {
  Pipeline pipeline(nullptr);
  PackDefinition pack;
- pipeline.applyBlockIds(&pack);
- EXPECT_EQ(resolveShaderBlockId(1), 1);
- EXPECT_EQ(resolveShaderBlockId(12), 12);
- pipeline.applyBlockIds(nullptr);
+  pipeline.applyBlockIds(pack);
+  EXPECT_EQ(resolveShaderBlockId(1), 1);
+  EXPECT_EQ(resolveShaderBlockId(12), 12);
+  pipeline.applyBlockIds(PackDefinition{});
 }
 TEST(PackSourcePreparation, MultiTexCoordAliasesMatchIrisTransformers) {
  net::minecraft::test::installTestGlslSnippets();

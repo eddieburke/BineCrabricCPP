@@ -1,6 +1,7 @@
 #include "net/minecraft/client/render/targets/ShadowMapPass.hpp"
 #include <algorithm>
 #include <cmath>
+#include <cstdlib>
 #include <cstring>
 #include <vector>
 #include "net/minecraft/util/math/Matrix4f.hpp"
@@ -8,6 +9,9 @@
 #include "net/minecraft/client/gl/GLCore.hpp"
 #include "net/minecraft/client/gl/GlConstants.hpp"
 #include "net/minecraft/client/render/GameRenderer.hpp"
+#include "net/minecraft/client/ClientLog.hpp"
+#include "net/minecraft/client/render/pipeline/Manager.hpp"
+#include "net/minecraft/client/render/world/WorldRenderer.hpp"
 #include "net/minecraft/client/render/shaderpack/Pack.hpp"
 #include "net/minecraft/client/render/GlState.hpp"
 #include "net/minecraft/world/World.hpp"
@@ -326,6 +330,148 @@ ShadowMapResult update(ShadowMapState& state,
    result.colorAltTextures[static_cast<std::size_t>(i)] =
        static_cast<int>(state.targets.shadowcolor[static_cast<std::size_t>(i)][1]);
   }
+  // TEMP DIAGNOSTIC — [shadow-probe]. Answers, in order: did anything land in the shadow
+  // map, do the directives the engine resolved match what the GLSL was compiled with,
+  // and is the map oriented the way the pack assumes. DELETE after investigation.
+  {
+   static int shadowProbeFrame = 0;
+   if((shadowProbeFrame++ % 120) == 0) {
+    // 1. Depth readback. The pack writes gl_Position.z itself, so a map that is
+    // entirely 1.0 means nothing rasterised (culled away, or the program failed) —
+    // which looks identical on screen to a badly oriented map.
+    constexpr int kPatch = 32;
+    std::vector<float> depth(static_cast<std::size_t>(kPatch * kPatch), 1.0f);
+    const int origin = std::max(0, resolution / 2 - kPatch / 2);
+    gl::GLCore::bindFramebuffer(gl::framebuffer::Framebuffer, state.targets.fbo.id());
+    ::glReadPixels(origin, origin, kPatch, kPatch, gl::pixel::DepthComponent, 0x1406, depth.data());
+    gl::GLCore::bindFramebuffer(gl::framebuffer::Framebuffer, 0);
+    float minDepth = 1.0f;
+    float maxDepth = 0.0f;
+    double sum = 0.0;
+    int written = 0;
+    for(const float d : depth) {
+     minDepth = std::min(minDepth, d);
+     maxDepth = std::max(maxDepth, d);
+     sum += static_cast<double>(d);
+     if(d < 0.999f) ++written;
+    }
+    const int total = kPatch * kPatch;
+    const int drawnRegions =
+        renderer.client != nullptr && renderer.client->worldRenderer != nullptr
+            ? renderer.client->worldRenderer->lastDrawnRegions()
+            : -1;
+    ::net::minecraft::client::ClientLog::LOGGER.log(
+        ::net::minecraft::util::logging::LogLevel::Info,
+        std::string("[shadow-probe] map res=") + std::to_string(resolution) + " centre " +
+            std::to_string(kPatch) + "x" + std::to_string(kPatch) + " depth min=" +
+            std::to_string(minDepth) + " max=" + std::to_string(maxDepth) + " mean=" +
+            std::to_string(sum / total) + " written=" + std::to_string(written) + "/" +
+            std::to_string(total) + (written == 0 ? "  <-- MAP IS EMPTY" : "") +
+            " shadowRegionsDrawn=" + std::to_string(drawnRegions));
+    // 2. Directives. shadowDistance/near/far must equal the pack's own consts, or the
+    // pack's shadow_proj_scale and the engine disagree about the volume.
+    ::net::minecraft::client::ClientLog::LOGGER.log(
+        ::net::minecraft::util::logging::LogLevel::Info,
+        std::string("[shadow-probe] shadowDistance=") + std::to_string(shadowDistance) +
+            " renderMul=" + std::to_string(shadowDistanceRenderMul) + " near=" +
+            std::to_string(shadowNearPlane) + " far=" + std::to_string(shadowFarPlane) +
+            " intervalSize=" + std::to_string(shadowIntervalSize) + " sunPathRotation=" +
+            std::to_string(sunPathRotation) + " fov=" + std::to_string(shadowMapFov) +
+            " colorBuffers=" + std::to_string(colorBuffers) + " hwFilter=" +
+            std::to_string(static_cast<int>(definition.shadowHardwareFiltering[0])) +
+            " depthCompare=" + std::to_string(static_cast<int>(state.targets.depthCompare)));
+    // 3. The matrix itself, column-major, as the four columns the shader receives.
+    const float* m = shadowCam.explicitModelView;
+    const auto col = [&](int c) {
+     return std::string("(") + std::to_string(m[c * 4 + 0]) + "," + std::to_string(m[c * 4 + 1]) +
+            "," + std::to_string(m[c * 4 + 2]) + "," + std::to_string(m[c * 4 + 3]) + ")";
+    };
+    ::net::minecraft::client::ClientLog::LOGGER.log(
+        ::net::minecraft::util::logging::LogLevel::Info,
+        std::string("[shadow-probe] shadowModelView c0=") + col(0) + " c1=" + col(1) +
+            " c2=" + col(2) + " c3=" + col(3));
+    ::net::minecraft::client::ClientLog::LOGGER.log(
+        ::net::minecraft::util::logging::LogLevel::Info,
+        std::string("[shadow-probe] lightVec=(") + std::to_string(lightVector[0]) + "," +
+            std::to_string(lightVector[1]) + "," + std::to_string(lightVector[2]) +
+            ") translation=(" + std::to_string(m[12]) + "," + std::to_string(m[13]) + "," +
+            std::to_string(m[14]) + ")" +
+            ((m[12] != 0.0f || m[13] != 0.0f || m[14] != 0.0f)
+                 ? "  <-- NONZERO, pack's shadow.vsh drops it via mat3()"
+                 : "") +
+            " cull=" + std::to_string(static_cast<int>(state.terrainFrustum.mode())) + " planes=" +
+            std::to_string(state.terrainFrustum.planeCount()));
+    // 4. Resolution agreement. The engine allocates the texture, but the pack's PCF uses
+    // its own compiled `shadowMapResolution` for tap offsets and the 64/res slope bias.
+    // scanOptions skips shadowMapResolution, so a profile/user override reaches the GLSL
+    // but never the engine — every PCF tap then lands at the wrong texel pitch.
+    std::string optionRes = "<none>";
+    std::string optionSmDist = "<none>";
+    if(renderer.shaderPacks() != nullptr) {
+     const std::string r = renderer.shaderPacks()->settingValue("shadowMapResolution");
+     const std::string d = renderer.shaderPacks()->settingValue("SM_DIST");
+     if(!r.empty()) optionRes = r;
+     if(!d.empty()) optionSmDist = d;
+    }
+    ::net::minecraft::client::ClientLog::LOGGER.log(
+        ::net::minecraft::util::logging::LogLevel::Info,
+        std::string("[shadow-probe] resolution engine=") + std::to_string(resolution) +
+            " allocated=" + std::to_string(state.targets.resolution) + " optionValue=" + optionRes +
+            " SM_DIST=" + optionSmDist +
+            ((optionRes != "<none>" && optionRes != std::to_string(resolution))
+                 ? "  <-- MISMATCH, shader PCF pitch != texture size"
+                 : ""));
+    // 5. Round-trip. Push camera-relative points through exactly what the pack does:
+    //   s_view = rot_trans_mmul(shadowModelView, pe)
+    //   s_ndc  = vec3(1/shadowDistance, 1/shadowDistance, -2/(far-near)) * s_view
+    //   s_ndc.xy *= distortion(s_ndc.xy);  uv = s_ndc*0.5 + 0.5
+    // Anything landing outside [0,1] in uv, or outside [-1,1] in z, is sampling off-map.
+    {
+     const float sxy = shadowDistance != 0.0f ? 1.0f / shadowDistance : 0.0f;
+     const float sz = (shadowFarPlane - shadowNearPlane) != 0.0f
+                          ? -2.0f / (shadowFarPlane - shadowNearPlane)
+                          : 0.0f;
+     float distortStrength = 0.9f; // SM_DISTORTION 90 -> *0.01
+     if(renderer.shaderPacks() != nullptr) {
+      const std::string sd = renderer.shaderPacks()->settingValue("SM_DISTORTION");
+      if(!sd.empty()) distortStrength = std::strtof(sd.c_str(), nullptr) * 0.01f;
+     }
+     const float squareness = shadowDistance != 0.0f ? 1.0f - 2.0f / shadowDistance : 0.0f;
+     const auto distortion = [&](float x, float y) {
+      const float a = x * x + y * y;
+      const float inner = a * a - 4.0f * squareness * squareness * x * x * y * y;
+      const float fg = 0.70710678f * std::sqrt(a + std::sqrt(std::max(0.0f, inner)));
+      const float denom = fg * distortStrength + (1.0f - distortStrength);
+      return denom != 0.0f ? 1.0f / denom : 0.0f;
+     };
+     const float points[][3] = {
+         {0.0f, -2.0f, 0.0f}, {0.0f, -2.0f, -16.0f}, {0.0f, -2.0f, -64.0f},
+         {0.0f, -2.0f, -140.0f}, {64.0f, -2.0f, 64.0f}, {0.0f, -2.0f, -300.0f}};
+     for(const auto& pe : points) {
+      const float vx = m[0] * pe[0] + m[4] * pe[1] + m[8] * pe[2] + m[12];
+      const float vy = m[1] * pe[0] + m[5] * pe[1] + m[9] * pe[2] + m[13];
+      const float vz = m[2] * pe[0] + m[6] * pe[1] + m[10] * pe[2] + m[14];
+      float nx = vx * sxy;
+      float ny = vy * sxy;
+      const float nz = vz * sz;
+      const float d = distortion(nx, ny);
+      nx *= d;
+      ny *= d;
+      const float u = nx * 0.5f + 0.5f;
+      const float v = ny * 0.5f + 0.5f;
+      const bool off = u < 0.0f || u > 1.0f || v < 0.0f || v > 1.0f || nz < -1.0f || nz > 1.0f;
+      ::net::minecraft::client::ClientLog::LOGGER.log(
+          ::net::minecraft::util::logging::LogLevel::Info,
+          std::string("[shadow-probe] pe=(") + std::to_string(pe[0]) + "," + std::to_string(pe[1]) +
+              "," + std::to_string(pe[2]) + ") sview=(" + std::to_string(vx) + "," +
+              std::to_string(vy) + "," + std::to_string(vz) + ") distort=" + std::to_string(d) +
+              " uv=(" + std::to_string(u) + "," + std::to_string(v) + ") ndcZ=" +
+              std::to_string(nz) + (off ? "  <-- OFF-MAP" : ""));
+     }
+    }
+   }
+  }
+  // END TEMP DIAGNOSTIC
   return result;
 }
 } // namespace net::minecraft::client::render::shadowmap

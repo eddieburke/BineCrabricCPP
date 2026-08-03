@@ -44,16 +44,23 @@ void uploadIdentityDrawMatrices(const gl::ShaderProgram& program) {
  program.setMatrix3At(program.location("normalMatrix"), kIdentityNormal);
 }
 void uploadShaderUniforms(const gl::ShaderProgram& program, const PackUniformValues& values,
-                          bool uploadGbufferCamera) {
+                          bool uploadGbufferCamera, const PackViewportValues* viewport) {
+ const float viewWidth = viewport != nullptr ? viewport->viewWidth : values.viewWidth;
+ const float viewHeight = viewport != nullptr ? viewport->viewHeight : values.viewHeight;
+ const float aspectRatio = viewport != nullptr ? viewport->aspectRatio : values.aspectRatio;
+ const float farPlane = viewport != nullptr ? viewport->farPlane : values.farPlane;
+ const float shadowMapResolution = viewport != nullptr ? viewport->shadowMapResolution : values.shadowMapResolution;
+ const int shadowAvailable = viewport != nullptr ? viewport->shadowAvailable : values.shadowAvailable;
+ const int normalAvailable = viewport != nullptr ? viewport->normalAvailable : values.normalAvailable;
  program.set1f("frameTimeCounter", values.frameTimeCounter);
  program.set1f("frameTime", values.frameTime);
  program.set1i("frameCounter", values.frameCounter);
- program.set1f("viewWidth", values.viewWidth);
- program.set1f("viewHeight", values.viewHeight);
- program.set1f("aspectRatio", values.aspectRatio);
+ program.set1f("viewWidth", viewWidth);
+ program.set1f("viewHeight", viewHeight);
+ program.set1f("aspectRatio", aspectRatio);
  program.set1f("near", values.nearPlane);
- program.set1f("far", values.farPlane);
- program.set1f("shadowMapResolution", values.shadowMapResolution);
+ program.set1f("far", farPlane);
+ program.set1f("shadowMapResolution", shadowMapResolution);
  program.set3fAt(program.location("cameraPosition"), values.cameraPosition);
  program.set3fAt(program.location("cameraPositionFract"), values.cameraPositionFract);
  program.set3iAt(program.location("cameraPositionInt"), values.cameraPositionInt);
@@ -162,8 +169,8 @@ void uploadShaderUniforms(const gl::ShaderProgram& program, const PackUniformVal
   program.set1i("worldDay", values.worldDay);
   program.set1i("moonPhase", values.moonPhase);
   program.set1i("isEyeInWater", values.isEyeInWater);
-  program.set1i("shadowAvailable", values.shadowAvailable);
-  program.set1i("normalAvailable", values.normalAvailable);
+   program.set1i("shadowAvailable", shadowAvailable);
+   program.set1i("normalAvailable", normalAvailable);
   // https://github.com/IrisShaders/Iris/blob/26.1/common/src/main/java/net/irisshaders/iris/uniforms/CommonUniforms.java
   program.set1i("entityId", values.entityId);
   program.set1i("blockEntityId", values.blockEntityId);
@@ -192,7 +199,7 @@ void uploadShaderUniforms(const gl::ShaderProgram& program, const PackUniformVal
   program.setMatrix4At(program.location("iris_DefaultModelViewMatrixInverse"), values.gbufferModelViewInverse);
   program.setMatrix4At(program.location("iris_ShadowModelViewMatrixInverse"), values.shadowModelViewInverse);
   program.setMatrix4At(program.location("iris_ShadowProjectionMatrixInverse"), values.shadowProjectionInverse);
-  program.set2f("iris_ScreenSize", values.viewWidth, values.viewHeight);
+   program.set2f("iris_ScreenSize", viewWidth, viewHeight);
   // https://github.com/IrisShaders/Iris/blob/26.1/common/src/main/java/net/irisshaders/iris/uniforms/HardcodedCustomUniforms.java
   program.set1f("timeAngle", values.timeAngle);
   program.set1f("timeBrightness", values.timeBrightness);

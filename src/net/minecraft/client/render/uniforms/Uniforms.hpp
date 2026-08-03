@@ -3,6 +3,17 @@ namespace net::minecraft::client::gl {
 class ShaderProgram;
 }
 namespace net::minecraft::client::render {
+// Per-pass viewport overrides applied at upload time; the rest of
+// PackUniformValues rides along by const reference (no per-pass struct copy).
+struct PackViewportValues {
+ float viewWidth = 1.0f;
+ float viewHeight = 1.0f;
+ float aspectRatio = 1.0f;
+ float farPlane = 256.0f;
+ float shadowMapResolution = 0.0f;
+ int shadowAvailable = 0;
+ int normalAvailable = 0;
+};
 struct PackUniformValues {
  float frameTimeCounter = 0.0f;
  float frameTime = 0.0f;
@@ -206,7 +217,8 @@ struct PackUniformValues {
   float effectStrength = 0.0f;
 };
 void uploadShaderUniforms(const gl::ShaderProgram& program, const PackUniformValues& values,
-                          bool uploadGbufferCamera = true);
+                          bool uploadGbufferCamera = true,
+                          const PackViewportValues* viewport = nullptr);
 void uploadGeometryDrawMatrices(const gl::ShaderProgram& program, const float* modelView, const float* projection,
                                 const float* modelViewInverse, const float* projectionInverse);
 void uploadIdentityDrawMatrices(const gl::ShaderProgram& program);

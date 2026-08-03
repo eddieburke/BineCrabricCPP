@@ -227,7 +227,7 @@ void main() {
      "#version 430 core\n")) << program.lastError();
  program.bind();
  std::unordered_map<std::string, int> images{{"colortex1", static_cast<int>(targets.writeTexture(1))}};
- ASSERT_EQ(client::render::bindColorImages(program, images, nullptr, &targets), 1u);
+  ASSERT_EQ(client::render::bindColorImages(program, images, PackDefinition{}, &targets), 1u);
  ASSERT_EQ(::glGetError(), 0u);
  GLCore::dispatchCompute(4, 4, 1);
  GLCore::memoryBarrier(0xFFFFFFFFu);

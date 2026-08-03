@@ -17,6 +17,7 @@ namespace net::minecraft::client::render {
 class PackInstance;
 class ColorTargets;
 struct PackUniformValues;
+struct PackViewportValues;
 namespace ComputeDispatcher {
 [[nodiscard]] inline bool matchesStage(std::string_view name, std::string_view stage) {
  if(!name.starts_with(stage)) {
@@ -122,6 +123,7 @@ inline constexpr unsigned int kBarrierBits = 0xFFFFFFFFu;
 bool dispatch(PackInstance& pack,
               const PackPass& pass,
               const PackUniformValues& uniforms,
+              const PackViewportValues* viewport,
               std::unordered_map<std::string, int>& textures,
               std::unordered_map<std::string, int>& colorImages,
               std::unordered_map<std::string, int>& volumes,

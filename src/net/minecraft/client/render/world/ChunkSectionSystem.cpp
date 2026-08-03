@@ -296,7 +296,7 @@ void ChunkSectionSystem::drainPendingColumns() {
 }
 void ChunkSectionSystem::reloadIfViewDistanceChanged() {
  const net::minecraft::client::option::GameOptions& opts = facade_.activeOptions();
- const option::RenderSettings& resolved = facade_.settings_;
+ const option::RenderSettings& resolved = facade_.frameSettings();
  if(opts.viewDistance != lastViewDistance || resolved.renderScale != lastRenderScale) {
   facade_.reload();
  }
@@ -328,7 +328,7 @@ void ChunkSectionSystem::cullChunks(FrustumCuller* culler, float /*tickDelta*/, 
   rebuildVisibleDrawRings();
   return;
  }
-  if(culler == nullptr || !facade_.settings_.frustumCulling) {
+  if(culler == nullptr || !facade_.frameSettings().frustumCulling) {
   for(chunk::ChunkBuilder* chunk : sectionList_) {
    chunk->inFrustum = true;
   }
@@ -353,7 +353,7 @@ void ChunkSectionSystem::cullChunks(FrustumCuller* culler, float /*tickDelta*/, 
   rebuildVisibleDrawRings();
 }
 void ChunkSectionSystem::applyOcclusionCulling() {
- if(!facade_.settings_.occlusionCulling) {
+ if(!facade_.frameSettings().occlusionCulling) {
   return;
  }
  constexpr double kNearOcclusionBypassSq = 48.0 * 48.0;

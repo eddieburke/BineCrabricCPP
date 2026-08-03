@@ -75,9 +75,13 @@ class EntityRenderDispatcher {
  void setCameraEntity(net::minecraft::LivingEntity* cameraEntity) noexcept {
   cameraEntity_ = cameraEntity;
  }
- [[nodiscard]] net::minecraft::client::option::GameOptions& options() const noexcept {
-  return options_;
- }
+  [[nodiscard]] net::minecraft::client::option::GameOptions& options() const noexcept {
+   if(options_ == nullptr) {
+    static net::minecraft::client::option::GameOptions fallback;
+    return fallback;
+   }
+   return *options_;
+  }
  [[nodiscard]] net::minecraft::client::render::item::HeldItemRenderer* heldItemRenderer() noexcept {
   return heldItemRenderer_.get();
  }
@@ -98,9 +102,10 @@ class EntityRenderDispatcher {
  net::minecraft::World* world_ = nullptr;
  net::minecraft::client::texture::TextureManager* textureManager_ = nullptr;
  net::minecraft::client::font::TextRenderer* textRenderer_ = nullptr;
- net::minecraft::LivingEntity* cameraEntity_ = nullptr;
- net::minecraft::client::option::GameOptions defaultOptions_;
- net::minecraft::client::option::GameOptions& options_;
+  net::minecraft::LivingEntity* cameraEntity_ = nullptr;
+  // Non-owning: refreshed by init() each frame from the caller's live GameOptions
+  // (no per-frame duplicate copy).
+  net::minecraft::client::option::GameOptions* options_ = nullptr;
  std::unique_ptr<net::minecraft::client::render::item::HeldItemRenderer> heldItemRenderer_;
 };
 } // namespace net::minecraft::client::render::entity

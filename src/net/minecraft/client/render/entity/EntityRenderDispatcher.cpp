@@ -47,8 +47,7 @@ void EntityRenderDispatcher::addPendingRenderer(std::type_index key,
  pendingRenderers().emplace_back(key, std::move(factory));
 }
 EntityRenderDispatcher::EntityRenderDispatcher()
-    : options_(defaultOptions_),
-      heldItemRenderer_(std::make_unique<net::minecraft::client::render::item::HeldItemRenderer>()) {
+    : heldItemRenderer_(std::make_unique<net::minecraft::client::render::item::HeldItemRenderer>()) {
  // Fallback renderers: catch-all chain when no specific renderer registered.
  registerRenderer<net::minecraft::LivingEntity>(
      std::make_unique<LivingEntityRenderer>(new model::BipedEntityModel(), 0.5f));
@@ -113,10 +112,8 @@ void EntityRenderDispatcher::init(net::minecraft::World* world,
  world_ = world;
  textureManager_ = textureManager;
  textRenderer_ = textRenderer;
-   cameraEntity_ = cameraEntity;
-   if(options != nullptr) {
-    defaultOptions_ = *options;
-   }
+    cameraEntity_ = cameraEntity;
+    options_ = options;
    if(cameraEntity != nullptr && cameraEntity->isSleeping() && world != nullptr) {
   const int blockId = world->getBlockId(
       MathHelper::floor(cameraEntity->x), MathHelper::floor(cameraEntity->y), MathHelper::floor(cameraEntity->z));

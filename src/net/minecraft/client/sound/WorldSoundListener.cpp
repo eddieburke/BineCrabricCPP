@@ -2,6 +2,7 @@
 #include "net/minecraft/block/Block.hpp"
 #include "net/minecraft/client/Minecraft.hpp"
 #include "net/minecraft/client/option/RenderSettings.hpp"
+#include "net/minecraft/client/render/GameRenderer.hpp"
 #include "net/minecraft/entity/LivingEntity.hpp"
 #include "net/minecraft/util/math/MathHelper.hpp"
 #include "net/minecraft/world/World.hpp"
@@ -48,7 +49,10 @@ void WorldSoundListener::tickWeather(Minecraft& client) {
  if(client.world == nullptr || client.camera == nullptr) {
   return;
  }
- float rain = option::rainGradient(option::renderSettings(client.options), client.world, 1.0f);
+ const option::RenderSettings settings =
+     client.gameRenderer != nullptr ? client.gameRenderer->frameSettings()
+                                    : option::renderSettings(client.options);
+ float rain = option::rainGradient(settings, client.world, 1.0f);
  if(!client.options.fancyGraphics) {
   rain /= 2.0f;
  }

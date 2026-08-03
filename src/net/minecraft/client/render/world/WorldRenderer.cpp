@@ -106,7 +106,6 @@ WorldRenderer::WorldRenderer(net::minecraft::client::Minecraft* minecraftIn,
  if(client != nullptr) {
   options_ = &client->options;
  }
- settings_ = option::renderSettings(activeOptions());
 }
 net::minecraft::client::option::GameOptions& WorldRenderer::activeOptions() const {
  if(options_ != nullptr) {
@@ -115,7 +114,15 @@ net::minecraft::client::option::GameOptions& WorldRenderer::activeOptions() cons
  if(client != nullptr) {
   return const_cast<net::minecraft::client::option::GameOptions&>(client->options);
  }
- return const_cast<WorldRenderer*>(this)->defaultOptions_;
+ static net::minecraft::client::option::GameOptions fallback;
+ return fallback;
+}
+const option::RenderSettings& WorldRenderer::frameSettings() const {
+ if(client != nullptr && client->gameRenderer != nullptr) {
+  return client->gameRenderer->frameSettings();
+ }
+ static const option::RenderSettings fallback;
+ return fallback;
 }
 void WorldRenderer::setWorld(net::minecraft::World* worldIn) {
  if(world != nullptr) {
@@ -142,12 +149,8 @@ void WorldRenderer::reload() {
  // Resolve options + pack bake flags before sections rebuild. Stale
  // separateAo/oldLighting from the previous pack made Smooth Lighting look
  // broken until the slider forced another remesh.
- settings_ = option::renderSettings(activeOptions(),
-                                   client != nullptr && client->gameRenderer != nullptr
-                                       ? client->gameRenderer->meshDefinition()
-                                       : vanillaPackDefinition());
+ const option::RenderSettings& resolved = frameSettings();
  net::minecraft::client::option::GameOptions& opts = activeOptions();
- const option::RenderSettings& resolved = settings_;
  if(Block::LEAVES != nullptr) {
   static_cast<net::minecraft::block::LeavesBlock*>(Block::LEAVES)->setFancyGraphics(resolved.fancyLeaves);
  }
@@ -361,7 +364,7 @@ void WorldRenderer::renderEntities(const Vec3d& cameraPos,
  }
  const std::vector<Entity*>& entities = world->entities();
  entityCount = static_cast<int>(entities.size()) + static_cast<int>(world->globalEntities.size());
- const client::option::RenderSettings& resolved = settings_;
+ const client::option::RenderSettings& resolved = frameSettings();
  const FrameRenderCamera& renderCamera = RenderCameraState::instance().frame();
  // Java culls shadow entities with the entity shadow frustum
  // (ShadowRenderer.renderEntities → entityShadowFrustum), the same extruded-player
@@ -506,7 +509,7 @@ void WorldRenderer::addParticle(
  if(client == nullptr) {
   return;
  }
- if(!client::option::shouldSpawnParticle(settings_, particle)) {
+ if(!client::option::shouldSpawnParticle(frameSettings(), particle)) {
   return;
  }
  net::minecraft::Entity* camera = cameraEntity_ != nullptr ? cameraEntity_ : client->camera;

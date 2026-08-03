@@ -7,6 +7,7 @@
 #include "net/minecraft/block/material/Material.hpp"
 #include "net/minecraft/client/Minecraft.hpp"
 #include "net/minecraft/client/option/RenderSettings.hpp"
+#include "net/minecraft/client/render/GameRenderer.hpp"
 #include "net/minecraft/client/render/TextureResolve.hpp"
 #include "net/minecraft/client/render/block/BlockRenderType.hpp"
 #include "net/minecraft/client/render/chunk/RegionSnapshot.hpp"
@@ -70,8 +71,17 @@ net::minecraft::block::Block* blockAt(int blockId) {
 void BlockRenderManager::setVoxelizeLightBlocks(bool enabled) noexcept {
  g_voxelizeLightBlocks.store(enabled, std::memory_order_relaxed);
 }
-void BlockRenderManager::snapshotGlobals() {
- if(Minecraft::INSTANCE != nullptr) {
+void BlockRenderManager::snapshotGlobals(const option::RenderSettings* overrideSettings) {
+ if(overrideSettings != nullptr) {
+  ctx.opts = *overrideSettings;
+  return;
+ }
+ if(Minecraft::INSTANCE == nullptr) {
+  return;
+ }
+ if(Minecraft::INSTANCE->gameRenderer != nullptr) {
+  ctx.opts = Minecraft::INSTANCE->gameRenderer->frameSettings();
+ } else {
   ctx.opts = option::renderSettings(Minecraft::INSTANCE->options);
  }
 }

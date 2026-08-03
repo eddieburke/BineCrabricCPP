@@ -11,6 +11,7 @@
 #include "net/minecraft/client/gl/ShaderProgram.hpp"
 namespace net::minecraft::client::render {
 struct PackUniformValues;
+struct PackViewportValues;
 
 inline int shadowColorIndex(const std::string& name) {
  if(name.rfind("shadowcolor", 0) != 0) return -1;
@@ -36,7 +37,7 @@ inline int flipSideTextureId(int index,
 
 // IrisRenderingPipeline.java:640). Runs before the first fullscreen stage of a frame.
 inline bool dispatchSetupIfNeeded(
-    PackInstance& pack, const PackUniformValues& uniforms, int width, int height,
+    PackInstance& pack, const PackUniformValues& uniforms, const PackViewportValues* viewport, int width, int height,
     std::unordered_map<std::string, int>& textures,
     std::unordered_map<std::string, int>& colorImages,
     std::unordered_map<std::string, int>& volumes,
@@ -46,7 +47,7 @@ inline bool dispatchSetupIfNeeded(
   return true;
  }
  for(std::size_t passIndex : pack.setupPasses) {
-  if(!ComputeDispatcher::dispatch(pack, pack.definition.passes[passIndex], uniforms, textures, colorImages,
+  if(!ComputeDispatcher::dispatch(pack, pack.definition.passes[passIndex], uniforms, viewport, textures, colorImages,
                                   volumes, colorTargets, width, height, !pack.definition.allowConcurrentCompute,
                                   compileFn)) {
    return false;
