@@ -2,10 +2,6 @@
 #include <cmath>
 namespace net::minecraft::client::render {
 namespace {
-// Java BaseClippingPlanes: plane_i = normalize(transpose(P * MV) * corner_i), with the
-// corners (-1,0,0,1), (1,0,0,1), (0,-1,0,1), (0,1,0,1), (0,0,-1,1), (0,0,1,1) — the
-// left/right/bottom/top/far/near planes of the player's view volume. With column-major
-// storage (m[column * 4 + row]) the transpose makes each plane one contiguous row.
 // https://github.com/IrisShaders/Iris/blob/26.1/common/src/main/java/net/irisshaders/iris/shadows/frustum/advanced/BaseClippingPlanes.java
 std::array<float, 4> clippingPlane(const float m[16], float cornerX, float cornerY, float cornerZ) {
  std::array<float, 4> plane{};
@@ -13,8 +9,6 @@ std::array<float, 4> clippingPlane(const float m[16], float cornerX, float corne
   plane[static_cast<std::size_t>(row)] = m[row * 4 + 0] * cornerX + m[row * 4 + 1] * cornerY +
                                          m[row * 4 + 2] * cornerZ + m[row * 4 + 3];
  }
- // Java normalizes the Vector4f over all four components. Scaling a plane equation
- // uniformly leaves both the plane and every test below unchanged; kept for parity.
  const float length = std::sqrt(plane[0] * plane[0] + plane[1] * plane[1] + plane[2] * plane[2] +
                                 plane[3] * plane[3]);
  if(length > 0.0f) {
@@ -25,8 +19,6 @@ std::array<float, 4> clippingPlane(const float m[16], float cornerX, float corne
 std::array<float, 3> cross(const float a[3], const float b[3]) {
  return {a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]};
 }
-// Java NeighboringPlaneSet.forPlane: TABLE[planeIndex >>> 1], the four planes that share
-// an edge with the given one.
 // https://github.com/IrisShaders/Iris/blob/26.1/common/src/main/java/net/irisshaders/iris/shadows/frustum/advanced/NeighboringPlaneSet.java
 constexpr int kNeighboringPlanes[3][4] = {
     {2, 3, 4, 5}, // +/-X
@@ -41,9 +33,6 @@ void ShadowCullingFrustum::addPlane(const std::array<float, 4>& plane) noexcept 
  planes_[planeCount_] = plane;
  ++planeCount_;
 }
-// Java addEdgePlane: the plane through the intersection line of a back and a front
-// plane whose normal is perpendicular to the light vector — the silhouette of the
-// player's frustum as seen from the light, extruded infinitely toward it.
 void ShadowCullingFrustum::addEdgePlane(const std::array<float, 4>& backPlane,
                                         const std::array<float, 4>& frontPlane) noexcept {
  const float backNormal[3] = {backPlane[0], backPlane[1], backPlane[2]};
@@ -55,7 +44,6 @@ void ShadowCullingFrustum::addEdgePlane(const std::array<float, 4>& backPlane,
  if(intersectionLengthSq <= 0.0f) {
   return;
  }
- // A point on the intersection line ("Line of intersection between two planes",
  // https://stackoverflow.com/a/32410473, as used by Java).
  std::array<float, 3> ixb = cross(intersection.data(), backNormal);
  const std::array<float, 3> fxi = cross(frontNormal, intersection.data());
@@ -77,9 +65,6 @@ void ShadowCullingFrustum::buildAdvanced(const float modelViewProjection[16],
      clippingPlane(modelViewProjection, 0.0f, -1.0f, 0.0f), clippingPlane(modelViewProjection, 0.0f, 1.0f, 0.0f),
      clippingPlane(modelViewProjection, 0.0f, 0.0f, -1.0f), clippingPlane(modelViewProjection, 0.0f, 0.0f, 1.0f),
  };
- // Back planes: the ones facing the same general direction as the light vector. Those
- // bound the volume that can cast onto the player's frustum; the front planes are
- // replaced by the extruded edge planes below.
  bool isBack[6]{};
  for(std::size_t index = 0; index < base.size(); ++index) {
   const float dot = base[index][0] * lightVector_[0] + base[index][1] * lightVector_[1] +
@@ -111,8 +96,6 @@ void ShadowCullingFrustum::prepare(double cameraX, double cameraY, double camera
  y_ = cameraY;
  z_ = cameraZ;
 }
-// Java checkCornerVisibility, ported from JOML's FrustumIntersection: a box is outside
-// as soon as its most-positive corner along a plane normal falls behind that plane.
 bool ShadowCullingFrustum::cornersVisible(float minX,
                                           float minY,
                                           float minZ,
@@ -143,11 +126,8 @@ bool ShadowCullingFrustum::isVisible(double minX,
   case Mode::NonCulling:
    return true;
   case Mode::BoxCulling:
-   // Java BoxCullingFrustum.isVisible.
    return !hasBoxCuller_ || !boxCuller_.isCulled(minX, minY, minZ, maxX, maxY, maxZ);
   case Mode::SafeZone:
-   // Java SafeZoneCullingFrustum.isVisible: the distance box is a hard cut, and
-   // anything inside the voxel box is kept regardless of the frustum.
    if(hasDistanceCuller_ && distanceCuller_.isCulled(minX, minY, minZ, maxX, maxY, maxZ)) {
     return false;
    }
@@ -156,7 +136,6 @@ bool ShadowCullingFrustum::isVisible(double minX,
    }
    break;
   case Mode::Advanced:
-   // Java AdvancedShadowCullingFrustum.isVisible.
    if(hasBoxCuller_ && boxCuller_.isCulled(minX, minY, minZ, maxX, maxY, maxZ)) {
     return false;
    }
@@ -173,9 +152,6 @@ ShadowCullingFrustum createShadowFrustum(const ShadowFrustumParams& params,
  const float renderDistanceBlocks = params.renderDistanceBlocks;
  if((params.cullState == ShadowCullState::Default && params.packHasVoxelization) ||
     params.cullState == ShadowCullState::Distance) {
-  // Voxelizing packs read the shadow pass as a world volume, so no view-derived
-  // culling is valid — only a distance box, and none at all when it would reach past
-  // the render distance.
   const double distance = static_cast<double>(params.halfPlaneLength) * params.renderMultiplier;
   if(distance <= 0.0 || distance > static_cast<double>(renderDistanceBlocks)) {
    frustum.setMode(ShadowCullingFrustum::Mode::NonCulling);
@@ -198,7 +174,6 @@ ShadowCullingFrustum createShadowFrustum(const ShadowFrustumParams& params,
  frustum.buildAdvanced(modelViewProjection, lightVectorFromOrigin);
  frustum.setMode(hasSafeZone ? ShadowCullingFrustum::Mode::SafeZone : ShadowCullingFrustum::Mode::Advanced);
  if(distance >= static_cast<double>(renderDistanceBlocks) && !hasSafeZone) {
-  // The box would never cut anything the render distance has not already dropped.
   frustum.clearBoxCuller();
  } else {
   frustum.setBoxCuller(BoxCuller(distance));

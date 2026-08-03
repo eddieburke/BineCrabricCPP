@@ -106,9 +106,7 @@ int loadBakedModel(const std::string& modId, const std::string& path, std::strin
  if(!detail::loadModelFile(modId, normalizedPath, merged, error)) {
   return 0;
  }
- // Flatten the parent chain. Blockbench exports sometimes carry dangling or
- // self-referential parents; those are skipped rather than fatal.
- std::set<std::string> visited{normalizedPath};
+  std::set<std::string> visited{normalizedPath};
  std::string basePath = detail::directoryOf(normalizedPath);
  std::string parent = merged.parent;
  while(!parent.empty()) {
@@ -164,8 +162,6 @@ InstanceStore& instanceStore() {
  static InstanceStore instance;
  return instance;
 }
-// Applies the draw transform (yaw*pitch*roll, scale, pivot) to a model-space
-// point and returns its world position.
 void transformPoint(const ModelTransform& t, double px, double py, double pz, double* out) {
  double point[3] = {(px - 0.5) * t.scale, (py - t.pivotY) * t.scale, (pz - 0.5) * t.scale};
  static constexpr double origin[3] = {0.0, 0.0, 0.0};
@@ -306,8 +302,6 @@ using net::minecraft::client::render::Tessellator;
 using net::minecraft::client::render::block::BlockRenderManager;
 #ifdef MINECRAFT_NATIVE_EXPORTS
 using runtime::ModLuaDrawScope;
-// Camera-relative placement shared by drawBakedModelWorld and drawItemStackWorld.
-// Leaves the caller to apply whatever model-space recentring its geometry needs.
 void applyWorldDrawTransform(net::minecraft::util::math::MatrixStack& pose, const WorldModelDraw& options) {
  const client::render::FrameRenderCamera& camera = client::render::RenderCameraState::instance().frame();
  pose.translate(static_cast<float>(options.x - camera.x),
@@ -326,12 +320,6 @@ void applyWorldDrawTransform(net::minecraft::util::math::MatrixStack& pose, cons
   pose.scale(options.scale, options.scale, options.scale);
  }
 }
-// A model is placed by its anchor, and a tall one (a tripod's camera head, a
-// sign on a wall) routinely has that anchor land inside terrain: a low ceiling,
-// the block it is mounted against. Light inside an opaque block is 0, which
-// would render the whole model black while everything around it is lit, so
-// borrow the brightest exposed neighbour — the same trick World::getLightLevel
-// plays for slabs and stairs.
 float worldBrightness(const WorldModelDraw& options) {
  if(options.brightness >= 0.0f) {
   return options.brightness;
@@ -355,9 +343,6 @@ float worldBrightness(const WorldModelDraw& options) {
  return brightness;
 }
 #endif
-// Where a block's baked model is being drawn. Passed explicitly down the draw
-// path; it used to be a thread-local that every emit helper reached for, which
-// meant a missing scope guard produced no geometry and no diagnostic.
 struct BlockModelDraw {
  BlockRenderManager* manager = nullptr;
  Block* block = nullptr;
@@ -367,16 +352,6 @@ struct BlockModelDraw {
  bool inventory = false;
  float brightness = 1.0f;
 };
-// ---------------------------------------------------------------------------
-// Baked-model quad emission.
-//
-// One loop turns a BakedModel into quads for every destination — world blocks,
-// inventory icons, item models, minecraft.model.draw. A caller supplies where
-// each texture batch goes and what to do with a finished quad; the cullface
-// test, the per-quad transform, the shade/tint math, the face normal and the uv
-// mapping live here and nowhere else.
-// A baked vertex after the per-quad transform, in double precision so a world
-// draw can carry the block's grid offset without losing model detail.
 struct TransformedVertex {
  double x = 0.0;
  double y = 0.0;
@@ -395,8 +370,6 @@ struct EmittedQuad {
  float blue = 1.0f;
  float alpha = 1.0f;
 };
-// Face normal from the first three vertices, in the winding the vanilla face
-// renderers hand to Tessellator::normal.
 void assignQuadNormal(EmittedQuad& quad) {
  client::render::block::quadNormal(quad.vertices[0].x,
                                    quad.vertices[0].y,
@@ -412,16 +385,10 @@ void assignQuadNormal(EmittedQuad& quad) {
                                    quad.nz);
 }
 enum class QuadLightMode {
- // light 0..1 → identical block+sky in vaUV2 (legacy immediate approx).
  Absolute,
- // Match EntityRenderDispatcher: fullbright lightmap; caller puts world
- // brightness in uConstColor / vertex colour.
  Entity,
- // Keep whatever Tessellator::blockData / light already set (chunk mod meshes).
  Preserve,
 };
-// The one place a baked vertex reaches a Tessellator. Same shape as the vanilla
-// face renderers: normal, colour, then four uv-mapped vertices.
 void writeQuad(Tessellator& t,
                const EmittedQuad& quad,
                double baseX,
@@ -436,13 +403,9 @@ void writeQuad(Tessellator& t,
  } else if(lightMode == QuadLightMode::Entity) {
   t.light(15, 15);
  }
- // Preserve: leave blockLight_/skyLight_ from activeTess::blockData alone.
- t.color(quad.red, quad.green, quad.blue, quad.alpha * alphaScale);
- for(int i = 0; i < 4; ++i) {
-  // uv is already normalized 0..1 across the batch's own image, which is what
-  // the bound texture is: mod content never lives in the vanilla atlas, so
-  // there is no tile to fold these into.
-  client::render::block::emitBlockVertex(t,
+  t.color(quad.red, quad.green, quad.blue, quad.alpha * alphaScale);
+  for(int i = 0; i < 4; ++i) {
+   client::render::block::emitBlockVertex(t,
                                          quad.nx,
                                          quad.ny,
                                          quad.nz,
@@ -453,8 +416,6 @@ void writeQuad(Tessellator& t,
                                          quad.vertices[i].v);
  }
 }
-// beginBatch(batch) -> bool  : false skips the batch (texture unresolvable).
-// takeQuad(batch, quad)      : consume one transformed, culled quad.
 template <typename BeginBatch, typename TakeQuad>
 bool forEachBakedQuad(const BakedModel& baked,
                       const BakedQuadTransform& transform,
@@ -462,10 +423,7 @@ bool forEachBakedQuad(const BakedModel& baked,
                       const BlockView* cullView,
                       BeginBatch beginBatch,
                       TakeQuad takeQuad) {
- // The overwhelmingly common case: a block or icon drawn at its baked pose.
- // Nothing then needs the per-vertex rotate/scale below, and cullface (which
- // only means anything against the block grid) stays meaningful.
- const bool placedAsBaked = transform.scale == 1.0f && transform.offsetX == 0.0f && transform.offsetY == 0.0f &&
+  const bool placedAsBaked = transform.scale == 1.0f && transform.offsetX == 0.0f && transform.offsetY == 0.0f &&
                             transform.offsetZ == 0.0f && transform.yaw == 0.0f && transform.pitch == 0.0f &&
                             transform.roll == 0.0f;
  const bool cullFaces = placedAsBaked && cullDraw != nullptr && cullView != nullptr;
@@ -489,9 +447,8 @@ bool forEachBakedQuad(const BakedModel& baked,
      vertices[i].x = quad.vertices[i].x;
      vertices[i].y = quad.vertices[i].y;
      vertices[i].z = quad.vertices[i].z;
-    } else {
-     // Rotation and scale act around the model's centre, so shift there first.
-     double point[3] = {quad.vertices[i].x - 0.5, quad.vertices[i].y - 0.5, quad.vertices[i].z - 0.5};
+     } else {
+      double point[3] = {quad.vertices[i].x - 0.5, quad.vertices[i].y - 0.5, quad.vertices[i].z - 0.5};
      if(transform.pitch != 0.0f) {
       detail::rotatePoint(point, zeroOrigin, 'x', transform.pitch);
      }
@@ -523,20 +480,15 @@ bool forEachBakedQuad(const BakedModel& baked,
  return emitted;
 }
 #ifdef MINECRAFT_NATIVE_EXPORTS
-// Render-thread-only scratch tessellator for the world draw paths. Shared
-// rather than local because constructing a Tessellator reserves a
-// multi-megabyte vertex buffer; every user brackets its own startQuads/draw.
 Tessellator& worldDrawTessellator() {
  static Tessellator tess;
  return tess;
 }
 #endif
-// Resolves a block quad's final texture and tessellator and writes it.
 bool writeBlockQuad(const BlockModelDraw& draw, const EmittedQuad& quad, int textureId) {
  if(draw.manager == nullptr || draw.block == nullptr) {
   return false;
  }
- // Same rule as minecraft.model.draw: never emit both faces of a thin plane.
  if(quad.coplanarBackFace) {
   return true;
  }
@@ -547,21 +499,16 @@ bool writeBlockQuad(const BlockModelDraw& draw, const EmittedQuad& quad, int tex
  if(!draw.inventory && manager.ctx.textureOverride >= 0) {
   textureId = manager.ctx.textureOverride;
  }
- manager.ctx.bindTextureFor(textureId);
- Tessellator& t = draw.inventory ? *manager.ctx.tess : manager.ctx.activeTess(textureId);
- // Capture mode owns the batch lifecycle (the chunk builder started it and will
- // draw it); an immediate draw has to bracket every quad itself.
- const bool capturing = !draw.inventory && manager.ctx.modMeshes != nullptr;
- // World quads sit at the block's grid position; inventory quads stay in 0..1.
- const double baseX = draw.inventory ? 0.0 : static_cast<double>(draw.x);
- const double baseY = draw.inventory ? 0.0 : static_cast<double>(draw.y);
- const double baseZ = draw.inventory ? 0.0 : static_cast<double>(draw.z);
- if(!capturing) {
-  t.startQuads();
- }
- // World/chunk path: activeTess already wrote face light + mc_Entity. Inventory
- // icons have no blockData — pack luminance into the lightmap from brightness.
- const QuadLightMode lightMode = draw.inventory ? QuadLightMode::Absolute : QuadLightMode::Preserve;
+  manager.ctx.bindTextureFor(textureId);
+  Tessellator& t = draw.inventory ? *manager.ctx.tess : manager.ctx.activeTess(textureId);
+  const bool capturing = !draw.inventory && manager.ctx.modMeshes != nullptr;
+  const double baseX = draw.inventory ? 0.0 : static_cast<double>(draw.x);
+  const double baseY = draw.inventory ? 0.0 : static_cast<double>(draw.y);
+  const double baseZ = draw.inventory ? 0.0 : static_cast<double>(draw.z);
+  if(!capturing) {
+   t.startQuads();
+  }
+  const QuadLightMode lightMode = draw.inventory ? QuadLightMode::Absolute : QuadLightMode::Preserve;
  writeQuad(t, quad, baseX, baseY, baseZ, draw.brightness, 1.0f, lightMode);
  if(!capturing) {
   t.draw();
@@ -569,8 +516,6 @@ bool writeBlockQuad(const BlockModelDraw& draw, const EmittedQuad& quad, int tex
  return true;
 }
 bool drawBakedBlockModel(const BlockModelDraw& draw, const BakedModel& baked, const BakedQuadTransform& transform) {
- // Cullface only means anything against the block grid, so an inventory icon
- // keeps every quad.
  const bool grid = !draw.inventory && draw.block != nullptr && draw.manager != nullptr;
  return forEachBakedQuad(baked, transform, grid ? &draw : nullptr, grid ? draw.manager->ctx.blockView : nullptr, [](const BakedTextureBatch&) { return true; }, [&](const BakedTextureBatch& batch, const EmittedQuad& quad) { writeBlockQuad(draw, quad, batch.textureId); });
 }
@@ -592,9 +537,6 @@ bool drawBakedItemModel(Tessellator& tess, float brightness, const BakedModel& b
                           writeQuad(tess, quad, 0.0, 0.0, 0.0, brightness, 1.0f);
                           tess.draw(); });
 }
-// Baked-model equivalent of LuaModBlock::getRenderBounds/getColorMultiplier:
-// register_block's coordinate_bounds/coordinate_color have to be applied here
-// too, since a block with a model never takes the vanilla cube path.
 BakedQuadTransform coordinateQuadTransform(const BlockRegistrationSpec& spec, int x, int y, int z) {
  BakedQuadTransform transform;
  if(spec.coordinateBounds) {
@@ -691,11 +633,10 @@ bool drawBakedModelWorld(int handle, const WorldModelDraw& options) {
   return false;
  }
  const float brightness = worldBrightness(options);
- const bool textured = !baked->batches.empty() && !baked->batches.front().texturePath.empty();
- if(!textured) {
-  // Empty / failed bake: refuse gbuffers_basic + white diffuse (classic grey pillar).
-  return false;
- }
+  const bool textured = !baked->batches.empty() && !baked->batches.front().texturePath.empty();
+  if(!textured) {
+   return false;
+  }
  const ModLuaDrawScope modCaps(true, options.blend, options.cull, options.depthTest, options.depthWrite,
                                options.layer);
  const client::render::core::EntityIdScope entityIdScope(resolveDrawEntityId(options));
@@ -752,11 +693,10 @@ bool drawBakedModelWorld(int handle, const WorldModelDraw& options) {
       open = true;
       return true;
      },
-     [&](const BakedTextureBatch& /*batch*/, const EmittedQuad& quad) {
-      // Thin-plane face pairs are coplanar; keep the front of the pair only.
-      if(quad.coplanarBackFace) {
-       return;
-      }
+      [&](const BakedTextureBatch& /*batch*/, const EmittedQuad& quad) {
+       if(quad.coplanarBackFace) {
+        return;
+       }
       writeQuad(tess, quad, 0.0, 0.0, 0.0, brightness, options.alpha, lightMode);
       drew = true;
      });
@@ -768,28 +708,21 @@ bool drawBakedModelWorld(int handle, const WorldModelDraw& options) {
  }
  return drew;
 }
-// Draws a 2.5D extruded sprite for a flat item (front face, back face, and 16
-// edge slices along each axis). Shared between HeldItemRenderer and world-item
-// draws so the voxel extrusion is authored once. The geometry is emitted at the
-// origin spanning x=[0,1], y=[0,1], z=[-depth,0]; callers position it.
 void drawExtrudedSprite(Tessellator& tess, float uMin, float uMax, float vMin, float vMax) {
  constexpr float itemWidth = 1.0f;
  constexpr float depth = 0.0625f;
- tess.startQuads();
- // Front face (z = 0)
- tess.normal(0.0f, 0.0f, 1.0f);
- tess.vertex(0.0, 0.0, 0.0, uMax, vMax);
- tess.vertex(itemWidth, 0.0, 0.0, uMin, vMax);
- tess.vertex(itemWidth, 1.0, 0.0, uMin, vMin);
- tess.vertex(0.0, 1.0, 0.0, uMax, vMin);
- // Back face (z = -depth)
- tess.normal(0.0f, 0.0f, -1.0f);
- tess.vertex(0.0, 1.0, 0.0 - depth, uMax, vMin);
- tess.vertex(itemWidth, 1.0, 0.0 - depth, uMin, vMin);
- tess.vertex(itemWidth, 0.0, 0.0 - depth, uMin, vMax);
- tess.vertex(0.0, 0.0, 0.0 - depth, uMax, vMax);
- // Left edge (x slices, normal -X)
- tess.normal(-1.0f, 0.0f, 0.0f);
+  tess.startQuads();
+  tess.normal(0.0f, 0.0f, 1.0f);
+  tess.vertex(0.0, 0.0, 0.0, uMax, vMax);
+  tess.vertex(itemWidth, 0.0, 0.0, uMin, vMax);
+  tess.vertex(itemWidth, 1.0, 0.0, uMin, vMin);
+  tess.vertex(0.0, 1.0, 0.0, uMax, vMin);
+  tess.normal(0.0f, 0.0f, -1.0f);
+  tess.vertex(0.0, 1.0, 0.0 - depth, uMax, vMin);
+  tess.vertex(itemWidth, 1.0, 0.0 - depth, uMin, vMin);
+  tess.vertex(itemWidth, 0.0, 0.0 - depth, uMin, vMax);
+  tess.vertex(0.0, 0.0, 0.0 - depth, uMax, vMax);
+  tess.normal(-1.0f, 0.0f, 0.0f);
  for(int slice = 0; slice < 16; ++slice) {
   const float t = static_cast<float>(slice) / 16.0f;
   const float u = uMax + (uMin - uMax) * t - 0.001953125f;
@@ -798,41 +731,38 @@ void drawExtrudedSprite(Tessellator& tess, float uMin, float uMax, float vMin, f
   tess.vertex(x, 0.0, 0.0, u, vMax);
   tess.vertex(x, 1.0, 0.0, u, vMin);
   tess.vertex(x, 1.0, 0.0 - depth, u, vMin);
- }
- // Right edge (x slices, normal +X)
- tess.normal(1.0f, 0.0f, 0.0f);
- for(int slice = 0; slice < 16; ++slice) {
-  const float t = static_cast<float>(slice) / 16.0f;
-  const float u = uMax + (uMin - uMax) * t - 0.001953125f;
-  const float x = itemWidth * t + 0.0625f;
-  tess.vertex(x, 1.0, 0.0 - depth, u, vMin);
-  tess.vertex(x, 1.0, 0.0, u, vMin);
-  tess.vertex(x, 0.0, 0.0, u, vMax);
-  tess.vertex(x, 0.0, 0.0 - depth, u, vMax);
- }
- // Top edge (y slices, normal +Y)
- tess.normal(0.0f, 1.0f, 0.0f);
- for(int slice = 0; slice < 16; ++slice) {
-  const float t = static_cast<float>(slice) / 16.0f;
-  const float v = vMax + (vMin - vMax) * t - 0.001953125f;
-  const float y = itemWidth * t + 0.0625f;
-  tess.vertex(0.0, y, 0.0, uMax, v);
-  tess.vertex(itemWidth, y, 0.0, uMin, v);
-  tess.vertex(itemWidth, y, 0.0 - depth, uMin, v);
-  tess.vertex(0.0, y, 0.0 - depth, uMax, v);
- }
- // Bottom edge (y slices, normal -Y)
- tess.normal(0.0f, -1.0f, 0.0f);
- for(int slice = 0; slice < 16; ++slice) {
-  const float t = static_cast<float>(slice) / 16.0f;
-  const float v = vMax + (vMin - vMax) * t - 0.001953125f;
-  const float y = itemWidth * t;
-  tess.vertex(itemWidth, y, 0.0, uMin, v);
-  tess.vertex(0.0, y, 0.0, uMax, v);
-  tess.vertex(0.0, y, 0.0 - depth, uMax, v);
-  tess.vertex(itemWidth, y, 0.0 - depth, uMin, v);
- }
- tess.draw();
+  }
+  tess.normal(1.0f, 0.0f, 0.0f);
+  for(int slice = 0; slice < 16; ++slice) {
+   const float t = static_cast<float>(slice) / 16.0f;
+   const float u = uMax + (uMin - uMax) * t - 0.001953125f;
+   const float x = itemWidth * t + 0.0625f;
+   tess.vertex(x, 1.0, 0.0 - depth, u, vMin);
+   tess.vertex(x, 1.0, 0.0, u, vMin);
+   tess.vertex(x, 0.0, 0.0, u, vMax);
+   tess.vertex(x, 0.0, 0.0 - depth, u, vMax);
+  }
+  tess.normal(0.0f, 1.0f, 0.0f);
+  for(int slice = 0; slice < 16; ++slice) {
+   const float t = static_cast<float>(slice) / 16.0f;
+   const float v = vMax + (vMin - vMax) * t - 0.001953125f;
+   const float y = itemWidth * t + 0.0625f;
+   tess.vertex(0.0, y, 0.0, uMax, v);
+   tess.vertex(itemWidth, y, 0.0, uMin, v);
+   tess.vertex(itemWidth, y, 0.0 - depth, uMin, v);
+   tess.vertex(0.0, y, 0.0 - depth, uMax, v);
+  }
+  tess.normal(0.0f, -1.0f, 0.0f);
+  for(int slice = 0; slice < 16; ++slice) {
+   const float t = static_cast<float>(slice) / 16.0f;
+   const float v = vMax + (vMin - vMax) * t - 0.001953125f;
+   const float y = itemWidth * t;
+   tess.vertex(itemWidth, y, 0.0, uMin, v);
+   tess.vertex(0.0, y, 0.0, uMax, v);
+   tess.vertex(0.0, y, 0.0 - depth, uMax, v);
+   tess.vertex(itemWidth, y, 0.0 - depth, uMin, v);
+  }
+  tess.draw();
 }
 bool drawItemStackWorld(const ItemStack& stack, const WorldModelDraw& options) {
  if(!runtime::ModWorldDrawContext::active() || client::Minecraft::INSTANCE == nullptr) {
@@ -857,19 +787,15 @@ bool drawItemStackWorld(const ItemStack& stack, const WorldModelDraw& options) {
  applyWorldDrawTransform(pose, options);
  core::setDrawModelView(pose.top());
  client::texture::TextureManager& textures = client::Minecraft::INSTANCE->textureManager;
- if(custom) {
-  // Custom item models are baked in 0..1 model space; recentre onto the pivot.
-  pose.translate(-0.5f, -options.pivotY, -0.5f);
-  core::setDrawModelView(pose.top());
-  textures.bindTexture(
-      client::render::resolveBlockTexture(stack.getTextureId(), textures, ItemModelRenderer::atlasDomain(stack)).glId);
-  // Entity lighting: brightness already in uConstColor; lightmap fullbright.
-  return drawLuaItemModel(worldDrawTessellator(), stack, modCaps.usesEntityLighting() ? 1.0f : brightness);
- }
- if(blockModel) {
-  // The inventory block renderers emit geometry already centred on the origin,
-  // so only the pivot's deviation from centre needs compensating.
-  if(options.pivotY != 0.5f) {
+  if(custom) {
+   pose.translate(-0.5f, -options.pivotY, -0.5f);
+   core::setDrawModelView(pose.top());
+   textures.bindTexture(
+       client::render::resolveBlockTexture(stack.getTextureId(), textures, ItemModelRenderer::atlasDomain(stack)).glId);
+   return drawLuaItemModel(worldDrawTessellator(), stack, modCaps.usesEntityLighting() ? 1.0f : brightness);
+  }
+  if(blockModel) {
+   if(options.pivotY != 0.5f) {
    pose.translate(0.0f, 0.5f - options.pivotY, 0.0f);
    core::setDrawModelView(pose.top());
   }
@@ -886,9 +812,7 @@ bool drawItemStackWorld(const ItemStack& stack, const WorldModelDraw& options) {
   itemDropBlockManager.ctx.faceState.useAo = previousUseAo;
   return true;
  }
- // Flat sprite items (tools, food, ...) get a 2.5D extruded icon. The
- // geometry spans x=[0,1], y=[0,1], z=[-depth,0]; recentre onto the pivot.
- const auto uv = ItemModelRenderer::spriteUv(stack);
+  const auto uv = ItemModelRenderer::spriteUv(stack);
  pose.translate(-0.5f, -options.pivotY, 0.0625f * 0.5f);
  core::setDrawModelView(pose.top());
  textures.bindTexture(
@@ -938,18 +862,12 @@ bool itemStackBounds(const ItemStack& stack, BakedBounds& outBounds) {
     return true;
    }
   }
-  // Vanilla (and shape-less custom) blocks: approximate with the full unit
-  // cube. Non-cube shapes (stairs, fences, ...) are subsets of this box, so
-  // it is a safe (if slightly loose) tumble hitbox rather than an exact one.
   outBounds.min[0] = outBounds.min[1] = outBounds.min[2] = 0.0f;
   outBounds.max[0] = outBounds.max[1] = outBounds.max[2] = 1.0f;
   outBounds.empty = false;
   return true;
  }
- // Flat sprite items: match the extruded 2.5D icon geometry (x=[0,1], y=[0,1],
- // z=[-depth,0]). Centre is (0.5, 0.5, -depth/2) which aligns with the
- // pivot used by drawItemStackWorld.
- constexpr float depth = 0.0625f;
+  constexpr float depth = 0.0625f;
  outBounds.min[0] = 0.0f;
  outBounds.min[1] = 0.0f;
  outBounds.min[2] = -depth;
@@ -983,7 +901,6 @@ int luaModelLoad(lua_State* state) {
  api.pushinteger(state, handle);
  return 1;
 }
-// Reads a placement transform from the options table at optsIndex.
 model::ModelTransform readTransform(lua_State* state, int optsIndex) {
  model::ModelTransform t;
  if(optsIndex != 0) {
@@ -998,8 +915,6 @@ model::ModelTransform readTransform(lua_State* state, int optsIndex) {
  }
  return t;
 }
-// model.place(handle, opts) -> instance id. Registers a hitbox the engine's
-// raycast honors; the box tracks the transform's scale automatically.
 int luaModelPlace(lua_State* state) {
  LuaApi& api = luaApi();
  ModHost::LoadedLuaMod* mod = currentLuaMod(state);
@@ -1065,7 +980,6 @@ int luaModelBounds(lua_State* state) {
            static_cast<double>(b.max[2]));
  return 1;
 }
-// Shared option parsing for minecraft.model.draw and minecraft.model.draw_item.
 model::WorldModelDraw readWorldModelDraw(lua_State* state, int optsIndex) {
  model::WorldModelDraw options;
  if(optsIndex != 0) {
@@ -1081,9 +995,8 @@ model::WorldModelDraw readWorldModelDraw(lua_State* state, int optsIndex) {
   if(options.brightness >= 0.0f) {
    options.brightness = std::clamp(options.brightness, 0.0f, 1.0f);
   }
-  options.alpha = std::clamp(luaFloatField(state, optsIndex, "a", 1.0f), 0.0f, 1.0f);
-  // Opaque-first default: translucent is opt-in (entity cutout / terrain cutout).
-  options.blend = luaBoolField(state, optsIndex, "blend", false);
+   options.alpha = std::clamp(luaFloatField(state, optsIndex, "a", 1.0f), 0.0f, 1.0f);
+   options.blend = luaBoolField(state, optsIndex, "blend", false);
   options.cull = luaBoolField(state, optsIndex, "cull", true);
   options.depthTest = luaBoolField(state, optsIndex, "depth_test", true);
   options.depthWrite = luaBoolField(state, optsIndex, "depth_write", true);
@@ -1096,9 +1009,6 @@ model::WorldModelDraw readWorldModelDraw(lua_State* state, int optsIndex) {
  }
  return options;
 }
-// World-space draw for a baked model; option parsing here, GL work in
-// model::drawBakedModelWorld (a no-op returning false without the client
-// renderer).
 int luaModelDraw(lua_State* state) {
  LuaApi& api = luaApi();
  const int handle = luaIntArg(state, 1, 0);
@@ -1107,10 +1017,6 @@ int luaModelDraw(lua_State* state) {
  api.pushboolean(state, model::drawBakedModelWorld(handle, options) ? 1 : 0);
  return 1;
 }
-// minecraft.model.draw_item(item_id, damage, opts) -> drew a real 3D model
-// (custom Lua item/block model, or the vanilla/mod block-cube renderer).
-// false for plain sprite items with no 3D shape; callers should fall back to
-// their own flat-icon representation in that case.
 int luaModelDrawItem(lua_State* state) {
  LuaApi& api = luaApi();
  const int itemId = luaIntArg(state, 1, 0);
@@ -1121,8 +1027,6 @@ int luaModelDrawItem(lua_State* state) {
  api.pushboolean(state, model::drawItemStackWorld(stack, options) ? 1 : 0);
  return 1;
 }
-// minecraft.model.item_bounds(item_id, damage) -> model-space bounds table for
-// the same items draw_item draws a real model for, or nil otherwise.
 int luaModelItemBounds(lua_State* state) {
  LuaApi& api = luaApi();
  const int itemId = luaIntArg(state, 1, 0);
@@ -1149,7 +1053,6 @@ int luaModelItemBounds(lua_State* state) {
            static_cast<double>(bounds.max[2]));
  return 1;
 }
-// Reads one {x,y,z,u,v} vertex from the table at vtxIndex into vertex.
 void readBuildVertex(lua_State* state, int vtxIndex, model::BakedVertex& vertex) {
  vertex.x = luaFloatField(state, vtxIndex, "x", 0.0f);
  vertex.y = luaFloatField(state, vtxIndex, "y", 0.0f);
@@ -1157,10 +1060,6 @@ void readBuildVertex(lua_State* state, int vtxIndex, model::BakedVertex& vertex)
  vertex.u = luaFloatField(state, vtxIndex, "u", 0.0f);
  vertex.v = luaFloatField(state, vtxIndex, "v", 0.0f);
 }
-// model.build{quads = {{texture?, r,g,b,a?, shade?, vertices = {v1,v2,v3,v4}}, ...},
-// key?} -> handle. Generic model builder: assembles arbitrary colored/textured
-// quads into a baked model. All voxel geometry (sprite sampling, interior-face
-// culling, cube generation) is built on top of this in Lua.
 int luaModelBuild(lua_State* state) {
  LuaApi& api = luaApi();
  if(api.type(state, 1) != kLuaTTable) {
@@ -1227,9 +1126,8 @@ int luaModelBuild(lua_State* state) {
   api.pushstring(state, "model.build requires at least one quad");
   return 2;
  }
- model::computeBakedBounds(*baked);
- // Keyless builds still need a unique registry key so their handles never alias.
- static std::atomic<std::uint64_t> anonCounter{0};
+  model::computeBakedBounds(*baked);
+  static std::atomic<std::uint64_t> anonCounter{0};
  const std::string storeKey = key.empty() ? ("\x01build#" + std::to_string(anonCounter.fetch_add(1))) : key;
  api.pushinteger(state, model::storeBakedModel(storeKey, std::move(baked)));
  return 1;

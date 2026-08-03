@@ -58,8 +58,6 @@ int shaderId(const ItemStack& stack) {
  if(item == nullptr) return -1;
  std::string name = item->getTranslationKey(&stack);
  if(name.rfind("item.", 0) == 0) name.erase(0, 5);
- // Java item.properties lookups default to -1 (IdMap.parseIdMap
- // defaultReturnValue(-1)).
  return net::minecraft::client::render::resolveShaderObjectId("item", name, -1);
 }
 }

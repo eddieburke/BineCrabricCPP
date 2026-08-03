@@ -47,13 +47,13 @@ class Pipeline {
   bool selectDimension(PackInstance& pack, const net::minecraft::World* world, bool applyIds);
   bool preparePackResources(PackInstance& pack, int width, int height);
   void refreshLightmap(net::minecraft::World* world);
-  void setFrameUniforms(const PackUniformValues& frame, const PackDefinition* activeDef, PackInstance* activePack);
+  void setFrameUniforms(const PackUniformValues& frame, const PackDefinition& activeDef, PackInstance* activePack);
   void updateLightmap(const net::minecraft::World* world);
 
   void ensurePbrFallbackTextures();
   void bindPbrTextures();
   void refreshResourcePackState(PackInstance* basePack, const std::vector<std::unique_ptr<PackInstance>>& packs);
-  void applyBlockIds(const PackDefinition* definition);
+  void applyBlockIds(const PackDefinition& definition);
 
   [[nodiscard]] bool hasDeferredPasses(const PackInstance* activePack) const;
 
@@ -66,7 +66,7 @@ class Pipeline {
   [[nodiscard]] int sceneColorCount(const PackInstance* activePack) const;
   [[nodiscard]] unsigned int sceneDepthTexture(const PackInstance* activePack) const;
 
-  void sampleCenterDepth(PackInstance* activePack, const PackDefinition* activeDef);
+  void sampleCenterDepth(PackInstance* activePack, const PackDefinition& activeDef);
   void captureOpaqueDepth(PackInstance* activePack);
   void captureHandDepth(PackInstance* activePack);
 
@@ -136,18 +136,11 @@ class Pipeline {
   [[nodiscard]] const std::string& lastWorldProgramKey() const noexcept {
    return lastWorldProgramKey_;
   }
-  // Final program source name after shadow mapping + ProgramId fallback-chain
-  // resolution (ProgramFallbackResolver.java); empty when no program resolves.
-  // The per-draw directive applier keys blend/alphaTest by this, matching Java's
-  // ProgramDirectives(source.getName()).
   [[nodiscard]] const std::string& resolvedWorldProgramKey() const noexcept {
    return resolvedWorldProgramKey_;
   }
 
  private:
-  // Fullscreen-pass runner extracted from runPasses (CompositeRenderer); the final
-  // present path is owned by FinalPassRenderer. They read/write the per-frame
-  // shadow-color flip state, packWroteToScreen_ and the present machinery.
   friend class CompositeRenderer;
   friend class FinalPassRenderer;
 
@@ -156,14 +149,10 @@ class Pipeline {
                ::net::minecraft::util::logging::LogLevel level =
                    ::net::minecraft::util::logging::LogLevel::Info) const;
   [[nodiscard]] bool blitColortex0ToScreen(PackInstance& pack, int screenWidth, int screenHeight);
-  [[nodiscard]] bool engineOwnsColorCorrection(const PackDefinition* def) const;
+  [[nodiscard]] bool engineOwnsColorCorrection(const PackDefinition& def) const;
   [[nodiscard]] unsigned int screenDrawFramebuffer(int width, int height);
   void finalizeEngineColorCorrection(int screenWidth, int screenHeight);
 
-  // Static shadow color flip state, mirroring Iris' ShadowRenderTargets flipped[]
-  // which is computed once at pipeline construction (pre-flips + one flip per shadow
-  // composite pass that writes the buffer). Per-pass read/write sides are snapshotted
-  // in shadowCompPassReadFlips_; composite/deferred stages read the final state.
   void initShadowColorFlips(const PackInstance& pack);
 
   option::GameOptions* options_ = nullptr;
@@ -184,7 +173,6 @@ class Pipeline {
 
   WorldPipelinePhase pipelinePhase_ = WorldPipelinePhase::None;
   bool packWroteToScreen_ = false;
-  // Read side of the colortex0 → screen blit (Java FinalPassRenderer's copy path).
   gl::GlFramebuffer presentReadFbo_;
   std::string lastWorldProgramKey_;
   std::string resolvedWorldProgramKey_;

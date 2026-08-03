@@ -159,8 +159,7 @@ bool worldIsNight(const World* world) {
  if(world == nullptr) {
   return false;
  }
- // Honor World Settings Day/Night override (same values as getTime(float)).
- const int timeMode = world->clientTimeMode();
+  const int timeMode = world->clientTimeMode();
  if(timeMode == 1) {
   return false;
  }
@@ -217,10 +216,7 @@ bool spawnClientParticle(double x,
  if(client == nullptr || client->world == nullptr) {
   return false;
  }
- // FireSmokeParticle owns the particles.png smoke frames + grow-in scale. A bare
- // Particle stays on textureId 0 as a solid tinted quad — that is what mods were
- // seeing as grey rectangles stacked on the tripod.
- const float scaleIn = std::clamp(scale, 0.05f, 4.0f);
+  const float scaleIn = std::clamp(scale, 0.05f, 4.0f);
  auto* particle = new client::particle::FireSmokeParticle(client->world, x, y, z, vx, vy, vz, scaleIn);
  particle->red = std::clamp(red, 0.0f, 1.0f);
  particle->green = std::clamp(green, 0.0f, 1.0f);
@@ -268,8 +264,7 @@ float normalizedCelestial(const World* world, float tickDelta) {
  if(world == nullptr) {
   return 0.0f;
  }
- // getTime(float) already returns Dimension::getTimeOfDay in ~[0, 1].
- float angle = world->getTime(tickDelta);
+  float angle = world->getTime(tickDelta);
  angle = angle - std::floor(angle);
  if(angle < 0.0f) {
   angle += 1.0f;

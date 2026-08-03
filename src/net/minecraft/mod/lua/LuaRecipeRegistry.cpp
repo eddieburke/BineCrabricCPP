@@ -76,8 +76,6 @@ void ensureRecipeBatchQueued() {
   queued = true;
   registry::Registry::enqueue(mod::LifecyclePhase::PostInit, 50000, initAllShapedRecipes);
 }
-// Idempotency for live re-enable / Reload List: a recipe already handed to the
-// CraftingRecipeManager this session (content persists by design) is a no-op.
 bool recipeAlreadyRegistered(const ShapedRecipeSpec& spec) {
   for(const ShapedRecipeSpec& candidate : pendingShapedRecipes()) {
    if(!candidate.instantiated || candidate.ownerModId.empty() || spec.ownerModId.empty() ||
@@ -162,13 +160,11 @@ bool registerShapedRecipe(const ShapedRecipeSpec& spec, std::string& error) {
    return true;
   }
   pendingShapedRecipes().push_back(spec);
-  if(mod::ModLifecycle::currentPhase() <= mod::LifecyclePhase::PostInit) {
-   // Startup: the PostInit batch runs once vanilla + Lua content exists.
-   ensureRecipeBatchQueued();
-  } else {
-   // Runtime load (live enable / Reload List): register against live content now.
-   initAllShapedRecipes();
-  }
+   if(mod::ModLifecycle::currentPhase() <= mod::LifecyclePhase::PostInit) {
+    ensureRecipeBatchQueued();
+   } else {
+    initAllShapedRecipes();
+   }
   return true;
 }
 } // namespace net::minecraft::mod::lua

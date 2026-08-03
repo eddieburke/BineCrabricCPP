@@ -69,9 +69,6 @@ inline constexpr unsigned int kBarrierBits = 0xFFFFFFFFu;
  return suffix >= 'a' && suffix <= 'z';
 }
 [[nodiscard]] inline int computePassOrder(const std::string& name) {
- // Java ProgramSet.readComputeArray: per pass index i the computes are
- // [base, base_a..base_z] (base = "name" for i=0, "name<i>" for i>=1), so the
- // order is index ascending, base before its letters.
  // https://github.com/IrisShaders/Iris/blob/26.1/common/src/main/java/net/irisshaders/iris/shaderpack/programs/ProgramSet.java
  const std::size_t under = name.rfind('_');
  const bool hasLetter = under != std::string::npos && under + 2 == name.size() &&

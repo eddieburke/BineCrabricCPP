@@ -70,8 +70,10 @@ struct RenderSettings {
 };
 [[nodiscard]] RenderSettings renderSettings(const GameOptions& options);
 void applyShaderPack(RenderSettings& settings, const render::PackDefinition& pack);
+// `pack` is always a real definition - vanillaPackDefinition() when none is loaded - so
+// the directives are applied unconditionally instead of being skipped for vanilla.
 [[nodiscard]] RenderSettings renderSettings(const GameOptions& options,
-                                            const render::PackDefinition* pack);
+                                            const render::PackDefinition& pack);
 [[nodiscard]] float adjustFieldOfView(float baseFov, const RenderSettings& settings) noexcept;
 [[nodiscard]] float cloudHeightOffset(float baseHeight, const RenderSettings& settings) noexcept;
 [[nodiscard]] int chunkUpdatesPerPass(const RenderSettings& settings, int dirtyChunkCount = 0) noexcept;

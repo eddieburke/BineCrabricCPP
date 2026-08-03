@@ -27,13 +27,9 @@ struct PoseHookRegistration {
  std::shared_ptr<ModHost::LoadedLuaMod> mod;
  int ref = 0;
 };
-// entities.* are reachable both as minecraft.entities.get(id) and as
-// handle:get(id); the latter passes the table as argument 1.
 int selfArgOffset(lua_State* state) {
  return luaApi().type(state, 1) == kLuaTTable ? 1 : 0;
 }
-// The shared_ptr the host holds for the mod running this call. Pose hooks keep
-// the mod alive for as long as the hook is registered.
 std::shared_ptr<ModHost::LoadedLuaMod> currentLuaModShared(lua_State* state) {
  const ModHost::LoadedLuaMod* mod = currentLuaMod(state);
  if(mod == nullptr) {
@@ -139,8 +135,6 @@ void applyPoseHook(const PoseHookRegistration& hook,
       pop(state, 1);
      });
 }
-// Shared by both pose-hook registrars: validate (key, function), take a registry
-// ref to the callback, and hand back the owning mod. Returns nullptr on reject.
 std::shared_ptr<ModHost::LoadedLuaMod> takePoseHookRef(lua_State* state, int keyType, int& refOut) {
  LuaApi& api = luaApi();
  if(api.gettop(state) < 2 || api.type(state, 1) != keyType || api.type(state, 2) != kLuaTFunction) {
@@ -188,9 +182,6 @@ int luaUnregisterLocalPoseHook(lua_State* state) {
  api.pushboolean(state, localPoseHooks().erase(entityId) > 0 ? 1 : 0);
  return 1;
 }
-// A world holds a flat entity list, so an id lookup is a scan either way. The
-// map this used to build cost one allocation-heavy pass per call — including on
-// entities.get, which then used exactly one entry of it.
 net::minecraft::entity::Entity* findEntity(World* world, int id) {
  if(world == nullptr) {
   return nullptr;
@@ -202,8 +193,6 @@ net::minecraft::entity::Entity* findEntity(World* world, int id) {
  }
  return nullptr;
 }
-// The handle passed to a mod-entity mutator has to name a LuaModEntity this mod
-// registered, and the client may only touch its own client-local replicas.
 net::minecraft::mod::lua::LuaModEntity* ownedModEntity(lua_State* state, World* world, int id) {
  auto* entity = dynamic_cast<net::minecraft::mod::lua::LuaModEntity*>(findEntity(world, id));
  if(entity == nullptr || (world->isRemote() && !entity->isClientLocal())) {
@@ -266,9 +255,8 @@ int luaEntitiesTeleport(lua_State* state) {
   api.pushboolean(state, 0);
   return 1;
  }
- const int id = luaIntField(state, 1, "id", -1);
- // The server may move any entity; a client only its own client-local replicas.
- net::minecraft::entity::Entity* e =
+  const int id = luaIntField(state, 1, "id", -1);
+  net::minecraft::entity::Entity* e =
      world->isRemote() ? ownedModEntity(state, world, id) : findEntity(world, id);
  if(e == nullptr) {
   api.pushboolean(state, 0);
@@ -400,9 +388,8 @@ int luaEntitiesGet(lua_State* state) {
   api.pushnil(state);
   return 1;
  }
- // pushEntityHandle(nil) already pushes nil, so a miss needs no special case.
- pushEntityHandle(state, findEntity(world, luaIntArg(state, 1 + selfArgOffset(state))));
- return 1;
+  pushEntityHandle(state, findEntity(world, luaIntArg(state, 1 + selfArgOffset(state))));
+  return 1;
 }
 int luaEntitiesSpawnMod(lua_State* state) {
  LuaApi& api = luaApi();
@@ -425,10 +412,8 @@ int luaEntitiesSpawnMod(lua_State* state) {
  const double y = luaDoubleField(state, specIndex, "y", 0.0);
  const double z = luaDoubleField(state, specIndex, "z", 0.0);
  const float yaw = luaFloatField(state, specIndex, "yaw", 0.0f);
- const float pitch = luaFloatField(state, specIndex, "pitch", 0.0f);
- // The client may only spawn replicas it owns outright; everything else is the
- // server's to create and replicate.
- const bool clientLocal = luaBoolField(state, specIndex, "client_local", false);
+  const float pitch = luaFloatField(state, specIndex, "pitch", 0.0f);
+  const bool clientLocal = luaBoolField(state, specIndex, "client_local", false);
  if(world->isRemote() && !clientLocal) {
   api.pushnil(state);
   return 1;

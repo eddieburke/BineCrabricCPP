@@ -72,9 +72,6 @@ void LuaModEntity::onTrackedDataUpdated(int key) {
  }
 }
 void LuaModEntity::tick() {
- // Client replica: it is packet-driven, so simulating physics here would fight
- // the server's authoritative motion. Just glide toward the last interpolation
- // targets (MinecartEntity::tick's remote branch, ported verbatim in shape).
  if(world != nullptr && world->isRemote()) {
   prevX = x;
   prevY = y;
@@ -102,12 +99,10 @@ void LuaModEntity::tick() {
   setRotation(yaw, pitch);
   return;
  }
- // Server: authoritative simulation.
  Entity::tick();
  prevX = x;
  prevY = y;
  prevZ = z;
- // Placed props (cameras, tripods, …) opt out of gravity via data.no_gravity.
  const bool noGravity = data_.contains("no_gravity") && data_.getBoolean("no_gravity");
  if(!noGravity) {
   velocityY -= 0.04;

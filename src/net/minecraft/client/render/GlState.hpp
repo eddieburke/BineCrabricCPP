@@ -19,13 +19,13 @@ constexpr unsigned int kTexture3D = 0x806F;
 // https://shaders.properties/current/reference/buffers/shadowtex/
 // https://shaders.properties/current/guides/your-first-shaderpack/4_shadows/
 unsigned int samplerObject(bool compare, bool linear = true, bool mipmap = false);
-void shadowSampleMode(std::string_view name, bool sampler2DShadow, const PackDefinition* definition,
+void shadowSampleMode(std::string_view name, bool sampler2DShadow, const PackDefinition& definition,
                       bool& compare, bool& linear, bool& mipmap);
 void bindSamplers(gl::ShaderProgram& program,
                   const std::unordered_map<std::string, int>& textures,
                   const std::unordered_map<std::string, int>& volumeTextures,
                   int maxUnits,
-                  const PackDefinition* definition = nullptr);
+                  const PackDefinition& definition);
 void releaseSamplers(int maxUnits);
 // https://shaders.properties/current/reference/buffers/shadowtex/
 void refreshTextureAliases(std::unordered_map<std::string, int>& textures,
@@ -36,16 +36,16 @@ void putShadowTextures(std::unordered_map<std::string, int>& textures,
                        int shadowtex1,
                        const int* shadowColorTextures,
                        int shadowColorCount,
-                       const PackDefinition* definition);
+                       const PackDefinition& definition);
 // Binds only shadow-related samplers declared by the program; returns next free unit.
 [[nodiscard]] int bindShadowSamplers(gl::ShaderProgram& program,
                                      int startUnit,
                                      int maxUnits,
                                      const std::unordered_map<std::string, int>& textures,
-                                     const PackDefinition* definition);
+                                     const PackDefinition& definition);
 [[nodiscard]] unsigned int bindColorImages(gl::ShaderProgram& program,
                                            const std::unordered_map<std::string, int>& colorTextures,
-                                           const PackDefinition* definition = nullptr,
+                                           const PackDefinition& definition,
                                            const ColorTargets* colorTargets = nullptr);
 bool featureSupported(const std::string& feature);
 [[nodiscard]] bool featureEnabled(const PackDefinition& pack, const std::string& feature);

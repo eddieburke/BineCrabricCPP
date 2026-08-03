@@ -239,8 +239,6 @@ bool bakeJsonModel(const JsonModel& model, const std::string& basePath, BakedMod
    if(!resolveTexture(model, face.texture, textureBasePath, texturePath)) {
     continue;
    }
-   // Drop the +side of a zero-thickness same-texture pair at bake time so no
-   // draw path can emit coplanar twins (cull-off shows the kept face both ways).
    if(isCoplanarBackFace(element, faceIndex)) {
     continue;
    }

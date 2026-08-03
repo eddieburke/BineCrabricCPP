@@ -181,10 +181,83 @@ void scanShadowMapResolution(const std::string& source, PackDefinition& pack) {
   }
  }
 }
+// Tracks whether the scan is inside a /* */ block at the END of `line`, so preprocessor
+// directives that only appear inside a comment are not evaluated as real conditionals.
+void advanceBlockComment(const std::string& line, bool& inBlockComment) {
+ for(std::size_t i = 0; i < line.size();) {
+  if(inBlockComment) {
+   const std::size_t close = line.find("*/", i);
+   if(close == std::string::npos) return;
+   i = close + 2;
+   inBlockComment = false;
+   continue;
+  }
+  if(line[i] == '/' && i + 1 < line.size() && line[i + 1] == '/') return;
+  if(line[i] == '/' && i + 1 < line.size() && line[i + 1] == '*') {
+   inBlockComment = true;
+   i += 2;
+   continue;
+  }
+  ++i;
+ }
+}
+std::string firstIdentifier(const std::string& text) {
+ std::size_t begin = 0;
+ while(begin < text.size() && !isIdentStart(text[begin])) ++begin;
+ std::size_t end = begin;
+ while(end < text.size() && isIdentChar(text[end])) ++end;
+ return text.substr(begin, end - begin);
+}
+// Iris runs every program source through the GLSL preprocessor with the pack's option
+// defines (ShaderPack's sourceProvider -> JcppProcessor.glslPreprocessSource) BEFORE
+// ConstDirectiveParser walks it, so only the branch the active options select can
+// contribute const directives. RenderPearl declares 32 mutually exclusive
+// shadowDistance/shadowNearPlane/shadowFarPlane triples behind `#if SM_DIST == n`;
+// scanning the text flat let the last branch win (512 / -695 / 695) instead of the
+// SM_DIST-selected one (160 / -227 / 227 at the shipped `#define SM_DIST 10`), which
+// desynchronised every engine-side shadow distance from the values the GLSL is actually
+// compiled with.
+//
+// Comments are deliberately NOT stripped for the const match itself: JCPP keeps them
+// (Feature.KEEPCOMMENTS) and ConstDirectiveParser is a plain per-line scan, so packs
+// hide directives such as `const float shadowIntervalSize = 0.0;` inside block comments
+// to keep the GLSL compiler quiet while Iris still honours them. Directives *inside* a
+// comment are still not evaluated as conditionals, which is what JCPP does.
 void scanPackConstants(const std::string& source, PackDefinition& pack) {
  std::istringstream lines(source);
  std::string line;
+ PPMacroTable macros;
+ seedMacrosFromDefines(std::string{}, macros);
+ ConditionalState conditionals(ConditionalState::Flavor::Glsl);
+ bool inBlockComment = false;
  while(std::getline(lines, line)) {
+  const bool startedInsideComment = inBlockComment;
+  advanceBlockComment(line, inBlockComment);
+  if(!startedInsideComment) {
+   std::string keyword;
+   std::string rest;
+   if(parseDirective(trim(lineForDirectiveParse(line)), keyword, rest)) {
+    if(keyword == "if") {
+     conditionals.push(evaluateIfExpression(rest, macros));
+    } else if(keyword == "ifdef") {
+     conditionals.push(macros.count(firstIdentifier(rest)) != 0);
+    } else if(keyword == "ifndef") {
+     conditionals.push(macros.count(firstIdentifier(rest)) == 0);
+    } else if(keyword == "elif") {
+     conditionals.elif(evaluateIfExpression(rest, macros));
+    } else if(keyword == "else") {
+     conditionals.else_();
+    } else if(keyword == "endif") {
+     conditionals.endif();
+    } else if(keyword == "define" && conditionals.active()) {
+     parseDefineDirective(rest, macros);
+    } else if(keyword == "undef" && conditionals.active()) {
+     macros.erase(firstIdentifier(rest));
+    }
+    continue;
+   }
+  }
+  if(!conditionals.active()) continue;
   const std::string cleaned = trim(line);
   const std::size_t equals = cleaned.find('=');
   const std::size_t semicolon = cleaned.find(';', equals == std::string::npos ? 0 : equals + 1);
@@ -278,8 +351,6 @@ void scanPackConstants(const std::string& source, PackDefinition& pack) {
    } else if(left == "const float shadowMapFov") {
     pack.shadowMapFov = f;
    } else if(left == "const float shadowNearPlane") {
-    // Java PackShadowDirectives.java:309-310 assigns raw values; the default near
-    // plane itself is negative (ShadowMatrices.NEAR = -100.05), so no clamp.
     pack.shadowNearPlane = f;
    } else if(left == "const float shadowFarPlane") {
     pack.shadowFarPlane = f;
@@ -311,9 +382,6 @@ std::string preprocessProperties(const std::string& source,
                                  int mcVersion,
                                  const std::unordered_map<std::string, PackSourceOption>& options,
                                  const std::vector<PackProfile>& profiles) {
-  // Iris PropertiesPreprocessor.preprocessSource: registers boolean options as bare
-  // macros (only when true) and string/number options as `name=value` macros, then
-  // evaluates #if/#elif/#else/#endif/#ifdef/#ifndef/#define/#undef with C semantics.
   // https://github.com/IrisShaders/Iris/blob/26.1/common/src/main/java/net/irisshaders/iris/shaderpack/preprocessor/PropertiesPreprocessor.java
   PPMacroTable macros;
   {
@@ -335,7 +403,6 @@ std::string preprocessProperties(const std::string& source,
     macros[name] = macro;
    }
   }
-  // Iris applies the default (first) profile when none is selected; overlay its values.
   if(!profiles.empty()) {
    for(const auto& [name, value] : profiles.front().values) {
     const bool trueValue = value == "true";
@@ -358,7 +425,6 @@ std::string preprocessProperties(const std::string& source,
    return stack.active();
   };
   while(std::getline(lines, line)) {
-   // Join backslash line continuations before interpreting directives.
    logical += line;
    if(!logical.empty() && logical.back() == '\\') {
     logical.pop_back();
@@ -402,12 +468,8 @@ std::string preprocessProperties(const std::string& source,
      if(lineActive()) macros.erase(trim(rest));
      continue;
     }
-    // Unknown directives (and bare `#` comment lines) are treated as comments:
-    // Iris' PropertyCollectingListener suppresses unknown preprocessor directive
-    // errors and treats `#` as a comment marker in .properties files.
     continue;
    }
-   // Non-directive lines that start with `#`/`!` are comments; keep only active ones.
    if(lineActive() && !cleaned.empty() && cleaned.front() != '#' && cleaned.front() != '!') {
     result += line;
     result.push_back('\n');
@@ -416,8 +478,6 @@ std::string preprocessProperties(const std::string& source,
   return result;
 }
 namespace {
-// Transparent string hasher/compare enable zero-allocation `.contains(string_view)`
-// lookups (same pattern as net/minecraft/client/gl/ShaderProgram.hpp NameMap).
 struct TransparentStringHash {
  using is_transparent = void;
  std::size_t operator()(std::string_view value) const noexcept {
@@ -559,10 +619,6 @@ void scanTargetDirective(PackDefinition& pack,
 void inferColortexFormatsFromLayouts(PackDefinition& pack, const std::string& source);
 void scanTargetFormats(PackDefinition& pack, const std::string& source) {
  // https://github.com/IrisShaders/Iris/blob/26.1/common/src/main/java/net/irisshaders/iris/shaderpack/properties/PackRenderTargetDirectives.java#L95-L101
- // Legacy buffer names alias colortex0..7 (gcolor=0, gdepth=1, gnormal=2,
- // composite=3, gaux1..4=4..7). Java registers Format/Clear/ClearColor const
- // directives for both the colortexN and the legacy spelling into the same
- // RenderTargetSettings; scan the legacy spelling into the colortex slot.
  static constexpr std::array<std::string_view, 8> legacyTargets = {
      "gcolor", "gdepth", "gnormal", "composite", "gaux1", "gaux2", "gaux3", "gaux4"};
  for(int index = 0; index < 32; ++index) {
@@ -577,7 +633,6 @@ void scanTargetFormats(PackDefinition& pack, const std::string& source) {
   scanTargetDirective(pack, source, key, key);
  }
  scanTargetDirective(pack, source, "shadowcolor", "shadowcolor");
- // Image / out layouts imply colortex formats when const *Format is absent.
  // https://shaders.properties/current/reference/buffers/colortex/
  // https://www.khronos.org/opengl/wiki/Image_Load_Store
  // https://github.com/Luracasmus/renderpearl/blob/main/DEV.md
@@ -592,7 +647,6 @@ void inferColortexFormatsFromLayouts(PackDefinition& pack, const std::string& so
   }
   pack.gbufferColorBuffers = std::max(pack.gbufferColorBuffers, index + 1);
  };
- // layout(rgba16f) ... colorimgN  /  layout(rgba32ui) writeonly image2D colorimgN
  for(std::size_t search = 0;;) {
   const std::size_t layout = source.find("layout(", search);
   if(layout == std::string::npos) break;
@@ -854,13 +908,11 @@ void parsePackProperties(PackDefinition& pack, const std::string& source) {
    } else if(key == "separateEntityDraws" && boolean(value, flag)) {
     pack.separateEntityDraws = flag;
     // https://github.com/IrisShaders/Iris/blob/26.1/common/src/main/java/net/irisshaders/iris/shaderpack/properties/ShaderProperties.java#L214-L217
-    // Iris forces MIXED particle rendering whenever the directive is present.
     pack.particleOrdering = "mixed";
    } else if(key == "oldLighting" && boolean(value, flag)) {
     pack.oldLighting = flag;
    } else if(key == "dynamicHandLight" && boolean(value, flag)) {
     // Java ShaderProperties.java:190 parses this and never consumes it; keep the
-    // parity parse so packs using the directive behave identically on both sides.
     pack.dynamicHandLight = flag;
    } else if(key == "prepareBeforeShadow" && boolean(value, flag)) {
     pack.prepareBeforeShadow = flag;
@@ -894,7 +946,6 @@ void parsePackProperties(PackDefinition& pack, const std::string& source) {
    pack.renderStars = flag;
    } else if(key == "weather") {
     // https://github.com/IrisShaders/Iris/blob/26.1/common/src/main/java/net/irisshaders/iris/shaderpack/properties/ShaderProperties.java#L259-L267
-    // Two optional tokens: weather itself and weatherParticles.
     const std::vector<std::string> parts = words(value);
     if(!parts.empty()) {
      pack.renderWeather = parts[0] == "true";
@@ -948,9 +999,6 @@ void parsePackProperties(PackDefinition& pack, const std::string& source) {
     }
     if(!page.empty()) pack.screenPages[page] = std::move(tokens);
    } else if(key.rfind("profile.", 0) == 0) {
-    // Profile directives are also seeded before preprocessing (preprocessProperties
-    // needs the first profile's option values as default macros); keep this branch
-    // for parity so parsePackProperties remains self-contained.
     if(pack.profiles.empty()) seedProfiles(pack, source);
     continue;
    } else if(key.rfind("uniform.", 0) == 0 || key.rfind("variable.", 0) == 0) {
@@ -968,7 +1016,6 @@ void parsePackProperties(PackDefinition& pack, const std::string& source) {
    if(!decl.name.empty() && !decl.expression.empty()) pack.customUniforms.push_back(std::move(decl));
    } else if(key == "shadow.culling") {
     // https://github.com/IrisShaders/Iris/blob/26.1/common/src/main/java/net/irisshaders/iris/shaderpack/properties/ShaderProperties.java#L180-L187
-    // false -> DISTANCE, true -> ADVANCED, reversed/safe_zone -> SAFE_ZONE.
     if(value == "reversed" || value == "safe_zone") {
      pack.shadowCulling = ShadowCullState::SafeZone;
     } else if(boolean(value, flag)) {
@@ -984,7 +1031,6 @@ void parsePackProperties(PackDefinition& pack, const std::string& source) {
     const std::vector<std::string> fields = words(value);
     if(bufferName.empty() || fields.size() != 2) continue;
     // https://github.com/IrisShaders/Iris/blob/26.1/common/src/main/java/net/irisshaders/iris/gl/texture/TextureScaleOverride.java#L8-L24
-    // Each axis is independently absolute (no '.') or relative (contains '.').
     PackTarget& target = pack.targets[bufferName];
     if(fields[0].find('.') == std::string::npos) {
      const int w = std::atoi(fields[0].c_str());
@@ -1027,7 +1073,6 @@ void parsePackProperties(PackDefinition& pack, const std::string& source) {
     AlphaTestDirective directive;
     directive.program = programName;
     // https://github.com/IrisShaders/Iris/blob/26.1/common/src/main/java/net/irisshaders/iris/shaderpack/properties/ShaderProperties.java#L280-L283
-    // Both "off" and "false" disable alpha testing.
     if(fields.size() == 1 && (lowercase(fields[0]) == "off" || lowercase(fields[0]) == "false")) {
      directive.enabled = false;
      directive.func = "ALWAYS";
@@ -1071,7 +1116,6 @@ void parsePackProperties(PackDefinition& pack, const std::string& source) {
     texture.stage = binding.substr(0, separator);
     texture.name = binding.substr(separator + 1);
     // https://github.com/IrisShaders/Iris/blob/26.1/common/src/main/java/net/irisshaders/iris/shaderpack/properties/ShaderProperties.java#L448
-    // Java truncates the sampler name at the first dot.
     const std::size_t samplerDot = texture.name.find('.');
     if(samplerDot != std::string::npos) texture.name = texture.name.substr(0, samplerDot);
     if(texture.stage != "setup" && texture.stage != "begin" && texture.stage != "shadowcomp" &&
@@ -1123,10 +1167,8 @@ void parsePackProperties(PackDefinition& pack, const std::string& source) {
    buffer.index = static_cast<int>(index);
    buffer.byteSize = static_cast<std::size_t>(size);
    if(fields.size() <= 2) {
-    // "<size>" or "<size> <content path>" — never relative.
     if(fields.size() == 2) buffer.initPath = fields[1];
    } else {
-    // "<size> <relative> <scaleX> <scaleY>" — Boolean.parseBoolean semantics, no content path.
     if(fields.size() < 4) continue;
     buffer.relative = lowercase(fields[1]) == "true";
     char* xEnd = nullptr;
@@ -1135,7 +1177,6 @@ void parsePackProperties(PackDefinition& pack, const std::string& source) {
     buffer.scaleY = std::strtof(fields[3].c_str(), &yEnd);
     if(xEnd == fields[2].c_str() || *xEnd != '\0' || yEnd == fields[3].c_str() || *yEnd != '\0') continue;
    }
-   // Java stores directives in an Int2ObjectArrayMap: a repeated index replaces the old entry.
    for(std::size_t i = 0; i < pack.bufferObjects.size();) {
     if(pack.bufferObjects[i].index == buffer.index) {
      pack.bufferObjects.erase(pack.bufferObjects.begin() + static_cast<std::ptrdiff_t>(i));
@@ -1154,19 +1195,15 @@ void parsePackProperties(PackDefinition& pack, const std::string& source) {
     image.format = fields[1];
     image.internalFormat = fields[2];
     image.pixelType = fields[3];
-    // Java keeps the directive suffix verbatim (key2 = key.substring(6),
-    // ShaderProperties.java "image." branch): numeric names like "0" are legal.
     if((image.sampler != "none" && !identifier(image.sampler)) ||
        !boolean(fields[4], image.clearEachFrame) || !boolean(fields[5], image.relative)) continue;
     if(image.sampler == "none") image.sampler.clear();
     if(image.relative) {
-     // "sampler format internalFormat pixelType clear true relativeWidth relativeHeight [ignored]"
      if(fields.size() < 8) continue;
      image.width = std::strtof(fields[6].c_str(), nullptr);
      image.height = std::strtof(fields[7].c_str(), nullptr);
      image.depth = 1;
     } else {
-     // 1D: 7 parts, 2D: 8 parts, 3D: 9 parts.
      image.width = std::strtof(fields[6].c_str(), nullptr);
      image.height = fields.size() >= 8 ? std::strtof(fields[7].c_str(), nullptr) : 1.0f;
      image.depth = fields.size() == 9 ? std::max(1, std::atoi(fields[8].c_str())) : 1;
@@ -1217,13 +1254,7 @@ void parseDimensionProperties(PackDefinition& pack, const std::string& source) {
 void parseIdProperties(std::unordered_map<std::string, int>& output,
                        const std::string& source,
                        std::string_view prefix) {
- // Java IdMap.parseIdMap / parseItemIdMap / parseEntityIdMap:
  // https://github.com/IrisShaders/Iris/blob/26.1/common/src/main/java/net/irisshaders/iris/shaderpack/IdMap.java
- // - the key holds the numeric id (`entity.<id>` / `item.<id>` / `block.<id>`),
- //   the value holds whitespace-separated names
- // - negative ids are legal (LegacyIdMap maps emerald_block to -123; SEUS PTGI
- //   reads mc_Entity.x == -123)
- // - value parts containing '=' are block-state properties, unsupported, and
  //   are skipped with a warning in Java (IdMap.parseIdMap line 188)
  for(const auto& [key, value] : properties(source)) {
   if(key.rfind(prefix, 0) != 0) continue;
@@ -1252,7 +1283,6 @@ void parseBlockLayerProperties(PackDefinition& pack, const std::string& source) 
   else
    continue;
   for(std::string name : words(value)) {
-   // Java IdMap.parseRenderTypeMap rejects tag values ('%...') outright.
    if(name.empty() || name.front() == '%') continue;
    name = lowercase(std::move(name));
    char* end = nullptr;
@@ -1261,8 +1291,6 @@ void parseBlockLayerProperties(PackDefinition& pack, const std::string& source) 
     pack.blockRenderLayers[static_cast<int>(numeric)] = layer;
     continue;
    }
-   // Names may come in "minecraft:stone" form; strip it like applyBlockIds
-   // does so both the id-map and the vanilla-name lookup below hit.
    std::string resolved = name;
    if(resolved.rfind("minecraft:", 0) == 0) resolved.erase(0, 10);
    for(const auto& [mappedName, id] : pack.blockIds) {
@@ -1410,8 +1438,6 @@ void reprefixProgramPaths(PackDefinition& pack, const std::string& prefix) {
 void loadProgramSet(PackDefinition& out,
                     const std::vector<std::string>& resources,
                     const PackLoader::ReadText& readText) {
- // Resolve each fragment's include graph once; addPostPrograms reuses these so
- // post-program sources are not include-resolved a second time.
  std::unordered_map<std::string, std::string> resolvedFragments;
  const ResourceSet resourceSet(resources.begin(), resources.end());
  for(const PackProgramId& id : packProgramIds()) addProgram(out, resourceSet, id.name);
@@ -1419,16 +1445,6 @@ void loadProgramSet(PackDefinition& out,
   if(!path.ends_with(".fsh")) continue;
   std::string source = resolvedFragmentSource(readText, path);
   scanTargetFormats(out, source);
-  // Scan consts off the INCLUDE-RESOLVED source, the same way scanTargetFormats does.
-  // The raw per-file scans in PackLoader::load only see a definition's own files, so a
-  // dimension folder (shaders/world_default/) never saw the consts that live in the
-  // pack-wide includes (shaders/prelude/, shaders/lib/). RenderPearl declares
-  // `const int shadowMapResolution = 2048;` in prelude/config.glsl, so the dimension
-  // definition came out at 0, fell through to the 1024 default below, and then overrode
-  // the root's correct 2048 in PackManager. The shadow texture was allocated at 1024
-  // while the compiled GLSL const still said 2048 — halving the pack's normal-offset
-  // bias and desynchronising its PCF tap grid, i.e. shadow acne.
-  // See docs/agent-notes/HANDOFF-visual-symptoms-2026-08-02.md section C.
   scanShadowMapResolution(source, out);
   scanPackConstants(source, out);
   resolvedFragments.emplace(path, std::move(source));
@@ -1445,10 +1461,6 @@ void loadProgramSet(PackDefinition& out,
  }
  out.gbufferColorBuffers = std::clamp(out.gbufferColorBuffers, 1, 32);
  // https://github.com/IrisShaders/Iris/blob/26.1/common/src/main/java/net/irisshaders/iris/shaderpack/properties/ProgramDirectives.java
- // ProgramId carries default blend overrides that apply when the pack has no
- // blend.<program> directive for that program (ShaderProperties blend. wins).
- // Shadow programs default to blending disabled; gbuffers_spidereyes defaults to
- // SRC_ALPHA, ONE / ZERO, ONE (additive entity eyes).
  auto hasBlendOverride = [&out](const std::string& program) {
   return std::any_of(out.bufferBlends.begin(), out.bufferBlends.end(),
                      [&program](const BufferBlend& blend) { return blend.program == program; });
@@ -1512,9 +1524,6 @@ bool PackLoader::load(const std::vector<std::string>& resources,
  }
   const bool customDimensionProperties =
       has(resources, "shaders/dimension.properties") || has(resources, "dimension.properties");
-  // Profiles are declared in shaders.properties; seed them from the raw source so
-  // preprocessProperties can use the first (default) profile's option values before
-  // the file is stripped by its own conditionals.
   if(has(resources, "shaders/shaders.properties")) {
    seedProfiles(out, readText("shaders/shaders.properties"));
   }

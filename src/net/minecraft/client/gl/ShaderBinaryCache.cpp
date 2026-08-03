@@ -25,7 +25,6 @@ bool readPod(std::istream& in, T& value) {
 ShaderBinaryCache::ShaderBinaryCache(std::filesystem::path root) : root_(std::move(root)) {}
 
 void ShaderBinaryCache::setRoot(std::filesystem::path root) {
- std::lock_guard lock(mutex_);
  root_ = std::move(root);
 }
 
@@ -36,7 +35,6 @@ std::filesystem::path ShaderBinaryCache::pathFor(std::uint64_t contentHash) cons
 }
 
 std::optional<ProgramBinaryBlob> ShaderBinaryCache::tryLoad(std::uint64_t contentHash) const {
- std::lock_guard lock(mutex_);
  diagnostics::WorkSpan span("io.shader.disk.read");
  if(root_.empty()) return std::nullopt;
  const std::filesystem::path path = pathFor(contentHash);
@@ -67,7 +65,6 @@ std::optional<ProgramBinaryBlob> ShaderBinaryCache::tryLoad(std::uint64_t conten
 }
 
 bool ShaderBinaryCache::store(const ProgramBinaryBlob& blob) const {
- std::lock_guard lock(mutex_);
  diagnostics::WorkSpan span("io.shader.disk.write");
  if(root_.empty() || blob.bytes.empty() || blob.contentHash == 0 || blob.binaryFormat == 0) return false;
  std::error_code ec;
@@ -98,7 +95,6 @@ bool ShaderBinaryCache::store(const ProgramBinaryBlob& blob) const {
 }
 
 void ShaderBinaryCache::remove(std::uint64_t contentHash) const {
- std::lock_guard lock(mutex_);
  if(root_.empty()) return;
  std::error_code ec;
  std::filesystem::remove(pathFor(contentHash), ec);

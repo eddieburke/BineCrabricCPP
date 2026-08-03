@@ -42,10 +42,6 @@ void CloudRenderer::renderFancyClouds(const AtmosphereContext& ctx, float tickDe
  cloudX -= static_cast<double>(originX * 2048);
  cloudZ -= static_cast<double>(originZ * 2048);
  ctx.textureManager->bindTexture(ctx.textureManager->getTextureId("/environment/clouds.png"));
- // Blend is owned by RenderType::clouds() and, after it, by the pack's
- // blend.gbuffers_clouds directive (RenderPearl asks for SRC_ALPHA ONE_MINUS_SRC_ALPHA
- // ZERO ZERO). Re-issuing blendAlpha() here ran AFTER the directive applier and reset the
- // separate alpha factors the pack had just installed.
  Vec3d cloudColor = cloudColorForWorld(ctx.world, tickDelta);
  float red = static_cast<float>(cloudColor.x);
  float green = static_cast<float>(cloudColor.y);
@@ -249,7 +245,6 @@ void CloudRenderer::renderClouds(const AtmosphereContext& ctx, float tickDelta) 
   constexpr int radius = 256 / tile;
   Tessellator& tessellator = INSTANCE;
   ctx.textureManager->bindTexture(ctx.textureManager->getTextureId("/environment/clouds.png"));
-  // Blend owned by RenderType::clouds() + the pack directive; see renderFancyClouds.
   Vec3d cloudColor = cloudColorForWorld(ctx.world, tickDelta);
   float red = static_cast<float>(cloudColor.x);
   float green = static_cast<float>(cloudColor.y);

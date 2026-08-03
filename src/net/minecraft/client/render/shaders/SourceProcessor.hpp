@@ -14,8 +14,6 @@ int glslVersionMacro();
 int maxColorBuffers();
 std::string driverPreamble();
 std::vector<std::string> glShaderExtensions();
-// Iris StandardMacros.formatVersionString — 122 encode (1 major, 2 minor, 2 release).
-// Accepts arbitrary semver-shaped input (suffixes/junk ignored), same as Iris getFormattedIrisVersion.
 // https://shaders.properties/current/reference/macros/iris_version/
 // https://shaders.properties/current/reference/macros/mc_version/
 // https://github.com/IrisShaders/Iris/blob/37c02037/common/src/main/java/net/irisshaders/iris/gl/shader/StandardMacros.java

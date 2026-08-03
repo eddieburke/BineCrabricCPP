@@ -33,17 +33,12 @@ namespace net::minecraft::mod::runtime {
 struct LuaScreenEvent;
 }
 namespace net::minecraft::mod {
-// The camera_setup hook operates on the iris frame camera only (GameRenderer
-// publishes frameCamera_ before invoking it); the vanilla camera-entity member was
-// never read by the hook and has been removed with the dual-path collapse.
 struct CameraSetupEvent {
  float tickDelta = 0.0f;
  client::render::FrameRenderCamera* frame = nullptr;
 };
 struct RenderFrameEvent {
  float tickDelta = 0.0f;
- // Carried so the hook can establish a mod context and Lua can query the world
- // (minecraft.entities.*) from a render-frame callback.
  World* world = nullptr;
 };
 struct FovEvent {

@@ -29,9 +29,6 @@ using ProgramEnabledCache = std::unordered_map<std::string, bool>;
                                           const std::unordered_map<std::string, std::string>& settings,
                                           const std::string& programName,
                                           ProgramEnabledCache& cache);
-// Caller supplies the enabled-state cache: call sites use the instance's
-// programEnabledCache (cleared before re-indexing), so bucket indexing and the
-// per-frame program resolution share ONE cache instead of two.
 void indexPackPasses(const PackDefinition& definition,
                      const std::unordered_map<std::string, std::string>& settings,
                      PackPassBuckets& buckets,
@@ -39,8 +36,6 @@ void indexPackPasses(const PackDefinition& definition,
 
 // https://shaders.properties/current/reference/programs/shadow/
 // https://github.com/IrisShaders/Iris/blob/26.1/common/src/main/java/net/irisshaders/iris/pipeline/IrisPipelines.java
-// gbuffers key -> shadow ProgramId (IrisPipelines coreShaderMapShadow); empty means
-// the render type has no shadow mapping in Iris (sky/clouds/hand/gui) or is clrwl_*.
 [[nodiscard]] std::string irisShadowProgramForGbuffers(const std::string& gbuffersKey);
 [[nodiscard]] std::string programFallbackKey(const std::string& programKey);
 [[nodiscard]] std::string resolveProgramKey(const PackDefinition& definition,

@@ -118,14 +118,36 @@ Launch parallel stages where possible; wait for prerequisites; re-run the pipeli
 
 ---
 
-## 8. Wenyan-ultra (optional)
+## 8. Wenyan-ultra mode (default)
 
-Only when the user sets or requests this mode: high information density using Classical Chinese grammatical backbone, German compounds for complex concepts, Latinate terms for precision, and unchanged technical domain terms.
+**Activation:** on by default, for every agent, in every session, from the first response — no request needed. It stays on unless the user explicitly turns it off ("no wenyan", "normal mode", "plain English", "verbose"), and it resumes as the default in the next session regardless.
+
+**What it is:** maximum information density per token, in *prose to the user*. It changes how you write, not what you do — every other rule in this file (never stub, build via `build-omega.ps1`, commit discipline, banned phrases) still applies in full.
+
+### 8.1 Prose style
+
+Classical Chinese grammatical backbone, German compounds for complex concepts, Latinate terms for precision, technical domain terms unchanged.
 
 - Short classical phrases carry full narrative arcs; omit subject/pronoun once established.
 - German compounds replace multi-word descriptors (e.g. `Klanglandschaftsentwicklung`).
 - Latin for terminus/paradigm concepts (e.g. `Discessus`, `Paradigma`).
-- Never abbreviate technical domain terms.
+- Never abbreviate technical domain terms, file paths, symbol names, or flags — those stay verbatim and unmangled.
+
+### 8.2 Ultimate terseness
+
+- No preamble, no postamble, no restating the request, no summarizing what you are about to do.
+- No "here's what I found", no bullet recaps of work already visible in the diff.
+- Answer first, in the fewest tokens that remain unambiguous. One line is a complete response.
+- Omit hedging, encouragement, and transitional filler entirely.
+- Report failures, skipped scope, and uncertainty **in full** — terseness compresses phrasing, never content. A shortened report that hides a broken build violates this mode.
+
+### 8.3 Comments in code
+
+- **Add no comments** while this mode is active.
+- **Sole exception:** a comment that points at another file — a cross-reference to the Java source being ported (`mcp/src/net/minecraft/...`), the Iris reference (`third_party/mcp/iris/`), a shaderpack GLSL, or a design doc. These are permitted and encouraged where the reason for the code lives elsewhere.
+- Cross-reference comments are one line, path first: `// see mcp/src/net/minecraft/client/render/EntityRenderer.java:412`.
+- Never delete existing comments just because this mode is on. Silence applies to new writing only.
+- Doc comments required by the surrounding file's convention still get written; matching local style outranks this rule.
 
 ---
 

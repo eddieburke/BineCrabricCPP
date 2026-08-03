@@ -16,10 +16,6 @@ struct ScreenUiContext {
  std::string_view screenId;
  std::string_view region;
  int* stackedButtonY = nullptr;
- // Every button created through addStackedCenteredButton(), in creation order, when the
- // publishing screen asked for them. A screen uses this to re-flow the injected block it
- // does not know the size of in advance (e.g. pack it into two columns) without touching
- // buttons the mod positioned itself.
  std::vector<client::gui::widget::ActionButtonWidget*>* stackedButtons = nullptr;
  [[nodiscard]] client::gui::widget::ActionButtonWidget& addCenteredButton(int y,
                                                                           std::string text,
@@ -52,10 +48,6 @@ struct ScreenRegionEvent {
  int height = 0;
  bool handled = false;
 };
-// Stable, first-party screen ids. Every GUI that a mod might want to inject into or
-// target exposes one of these from Screen::getScreenUiId(). Screens that do not
-// override getScreenUiId() still publish under their (mangled) typeid name, but
-// first-party screens should always declare a friendly id so mods have a stable target.
 namespace screen_ids {
 inline constexpr std::string_view kLogin = "minecraft:login";
 inline constexpr std::string_view kTitle = "minecraft:title";
@@ -97,12 +89,7 @@ inline constexpr std::string_view kHud = "minecraft:hud";
 namespace screen_regions {
 inline constexpr std::string_view kFooter = "footer";
 inline constexpr std::string_view kSidePanel = "side_panel";
-// Published by Screen::init() for *every* screen after it builds its widgets, so
-// a mod can add buttons/behaviour to any GUI by matching context->screenId.
-// Screens without an explicit getScreenUiId() expose their typeid name as the id.
 inline constexpr std::string_view kScreen = "screen";
-// Published once per frame by InGameHud::render(), after vanilla HUD drawing, so
-// mods can draw HUD overlays without patching InGameHud directly.
 inline constexpr std::string_view kHud = "hud";
 } // namespace screen_regions
 } // namespace net::minecraft::mod

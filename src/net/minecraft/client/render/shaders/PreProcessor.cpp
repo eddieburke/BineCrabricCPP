@@ -476,11 +476,6 @@ void seedMacrosFromDefines(const std::string& text, PPMacroTable& macros) {
   macros["IRIS_FEATURE_COMPUTE_SHADERS"] = flagOne;
   macros["IRIS_FEATURE_PER_BUFFER_BLENDING"] = flagOne;
   macros["IRIS_FEATURE_DIRECT_IMAGE_ACCESS"] = flagOne;
-  // Same textual macro set as versionPreamble (StandardMacros.java), so
-  // #if defined(MC_NORMAL_MAP) etc. evaluate identically from the preamble text
-  // scan AND when a hand-built preamble omits them. Capability macros
-  // (IRIS_REQUIRES_SEPARATE_ENTITY_DRAWS, IRIS_TAG_SUPPORT) are defined per user
-  // decision Q6 even though the engine does not implement those capabilities.
   macros["IRIS_REQUIRES_SEPARATE_ENTITY_DRAWS"] = flagOne;
   macros["IRIS_HAS_TRANSLUCENCY_SORTING"] = flagOne;
   macros["IRIS_TAG_SUPPORT"] = PPMacro{false, {}, "2"};

@@ -11,13 +11,7 @@
 #include "net/minecraft/client/gl/ShaderProgram.hpp"
 namespace net::minecraft::client::render {
 struct PackUniformValues;
-// Shared fullscreen-pass helpers used by the Pipeline stage methods and the
-// CompositeRenderer loop. Collapses the duplicate anonymous-namespace copies that the
-// runPasses extraction left behind (shadowColorIndex, dispatchSetupIfNeeded) and the
-// flip-side selection used by the shadow-color publish paths.
 
-// Resolves a shadowcolorN buffer name to 0..7, or -1 when the name is not a valid
-// shadow color buffer.
 inline int shadowColorIndex(const std::string& name) {
  if(name.rfind("shadowcolor", 0) != 0) return -1;
  const std::string number = name.substr(11);
@@ -26,9 +20,6 @@ inline int shadowColorIndex(const std::string& name) {
  return index >= 0 && index < 8 ? index : -1;
 }
 
-// The Pipeline's published shadow color ids follow the static flip state so world
-// gbuffer shaders, deferred, composite and final passes sample the flip side like
-// Iris' dynamic samplers (getColorTextureId).
 inline int flipSideTextureId(int index,
                              const int* mainIds,
                              const int* altIds,
@@ -43,7 +34,6 @@ inline int flipSideTextureId(int index,
  return id;
 }
 
-// Dispatches the pack's setup computes once per resolution (Java's createSetupComputes,
 // IrisRenderingPipeline.java:640). Runs before the first fullscreen stage of a frame.
 inline bool dispatchSetupIfNeeded(
     PackInstance& pack, const PackUniformValues& uniforms, int width, int height,

@@ -53,15 +53,9 @@ std::string programLookupKey(const std::string& programName) {
  return hash == std::string::npos ? programName : programName.substr(0, hash);
 }
 bool optionEnabled(const std::string& value) {
- // Java option values are Boolean only: "true"/"false" are honored, anything else
- // falls back to the option's default (true) — MutableOptionValues.addAll. "0" keeps
- // the normalized setting contract (normalizeSettingValue maps 0/false/off -> "0").
  return value != "0" && value != "false";
 }
 // https://github.com/IrisShaders/Iris/blob/26.1/common/src/main/java/net/irisshaders/iris/shaderpack/parsing/BooleanParser.java
-// Port of BooleanParser.parse: literals are exactly true/1/false/0; anything else is
-// an option lookup whose undefined default is true; on parse errors Java logs a
-// warning and defaults the whole expression to true.
 class BoolExpression {
  public:
  explicit BoolExpression(std::string expression,
@@ -203,18 +197,7 @@ void indexPackPasses(const PackDefinition& definition,
 }
 
 // https://github.com/IrisShaders/Iris/blob/26.1/common/src/main/java/net/irisshaders/iris/pipeline/IrisPipelines.java
-// Iris 26.1 selects the shadow program per render pipeline via coreShaderMapShadow
-// (RenderPipeline -> ShaderKey -> ProgramId). This maps the C++ renderer's gbuffers
-// keys to the shadow ProgramId Iris uses for the same pipeline:
-//   SOLID/CUTOUT terrain+block  -> SHADOW_TERRAIN_CUTOUT  -> shadow_cutout
-//   TRANSLUCENT terrain/block   -> SHADOW_TRANSLUCENT     -> shadow_water
-//   entity/item/eyes/glint/beam -> SHADOW_ENTITIES_CUTOUT -> shadow_entities
-//   LIGHTNING                   -> SHADOW_LIGHTNING       -> shadow_lightning
-//   END_GATEWAY/END_PORTAL      -> SHADOW_BLOCK           -> shadow_block
-//   CRUMBLING / WATER_MASK / LINES / PARTICLES / WEATHER  -> shadow
 // https://github.com/IrisShaders/Iris/blob/26.1/common/src/main/java/net/irisshaders/iris/shadows/ShadowRenderer.java
-// Sky, clouds, hands and GUI have no shadow mapping in Iris and are skipped in the
-// shadow pass; clrwl_* shadow programs are separate.
 std::string irisShadowProgramForGbuffers(const std::string& gbuffersKey) {
  if(gbuffersKey.rfind("clrwl_", 0) == 0) return {};
  if(gbuffersKey == "gbuffers_terrain_solid" || gbuffersKey == "gbuffers_terrain_cutout") return "shadow_cutout";
@@ -226,9 +209,6 @@ std::string irisShadowProgramForGbuffers(const std::string& gbuffersKey) {
  }
  if(gbuffersKey == "gbuffers_lightning") return "shadow_lightning";
  if(gbuffersKey.rfind("gbuffers_block", 0) == 0) return "shadow_block";
- // gbuffers_damagedblock (CRUMBLING -> SHADOW_TEX), gbuffers_basic (WATER_MASK ->
- // SHADOW_BASIC), gbuffers_line (LINES -> SHADOW_LINES), gbuffers_particles* and
- // gbuffers_weather (SHADOW_PARTICLES) all resolve to the root shadow program.
  if(gbuffersKey.rfind("gbuffers_sky", 0) == 0 || gbuffersKey == "gbuffers_clouds" ||
     gbuffersKey == "gbuffers_hand" || gbuffersKey == "gbuffers_hand_water" ||
     gbuffersKey.rfind("gbuffers_gui", 0) == 0) {

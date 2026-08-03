@@ -210,6 +210,15 @@ inline void applyRenderSkyYaw(const float in[3], float out[3]) {
  out[1] = in[1];
  out[2] = in[0];
 }
+// Vanilla/Iris: near is the fixed 0.05, far is the render distance in blocks. A custom
+// camera (the perspective shadow pass) may override either.
+inline float cameraNearPlane(const FrameRenderCamera& c) noexcept {
+ return c.perspectiveNear > 0.0f ? c.perspectiveNear : 0.05f;
+}
+inline float cameraFarPlane(const FrameRenderCamera& c, float renderDistanceBlocks) noexcept {
+ const float nearPlane = cameraNearPlane(c);
+ return c.perspectiveFar > nearPlane ? c.perspectiveFar : renderDistanceBlocks;
+}
 inline void buildCameraProjection(float* m, const FrameRenderCamera& c, float farPlane) {
  std::fill(m, m + 16, 0.0f);
  if(c.orthographic) {
@@ -226,8 +235,8 @@ inline void buildCameraProjection(float* m, const FrameRenderCamera& c, float fa
  }
  const float x = c.projectionX != 0.0f ? c.projectionX : 1.0f;
  const float y = c.projectionY != 0.0f ? c.projectionY : 1.0f;
- const float nearZ = std::max(0.001f, c.perspectiveNear);
- const float farZ = c.perspectiveFar > nearZ ? c.perspectiveFar : (farPlane > nearZ ? farPlane : nearZ + 1.0f);
+ const float nearZ = cameraNearPlane(c);
+ const float farZ = std::max(cameraFarPlane(c, farPlane), nearZ + 1e-3f);
  m[0] = x;
  m[5] = y;
  m[10] = -(farZ + nearZ) / (farZ - nearZ);
@@ -237,8 +246,8 @@ inline void buildCameraProjection(float* m, const FrameRenderCamera& c, float fa
 inline void buildCameraProjectionInverse(float* m, const FrameRenderCamera& c, float farPlane) {
  const float x = std::abs(c.projectionX) > 1e-6f ? c.projectionX : 1.0f;
  const float y = std::abs(c.projectionY) > 1e-6f ? c.projectionY : 1.0f;
- const float nearZ = std::max(c.perspectiveNear, 1e-4f);
- const float farZ = c.perspectiveFar > nearZ ? c.perspectiveFar : (farPlane > nearZ ? farPlane : nearZ + 1e-3f);
+ const float nearZ = cameraNearPlane(c);
+ const float farZ = std::max(cameraFarPlane(c, farPlane), nearZ + 1e-3f);
  std::fill(m, m + 16, 0.0f);
  if(c.orthographic) {
   const float w = std::max(c.orthoHalfWidth, 1e-3f);

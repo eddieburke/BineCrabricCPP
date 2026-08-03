@@ -23,8 +23,6 @@ namespace net::minecraft::client::render {
 using LogLevel = ::net::minecraft::util::logging::LogLevel;
 
 void FinalPassRenderer::finish(ColorTargets& targets, bool wroteToScreen) {
- // FinalPassRenderer.renderFinalPass tail: resets mipmapping on every target at the end
- // of the final stage and records whether the final stage wrote to the screen.
  // https://github.com/IrisShaders/Iris/blob/26.1/common/src/main/java/net/irisshaders/iris/pipeline/FinalPassRenderer.java
  targets.resetMipmaps();
  pipeline_->packWroteToScreen_ = wroteToScreen;
@@ -34,9 +32,6 @@ void FinalPassRenderer::presentToScreen(PackInstance* scenePack, int screenWidth
  if(pipeline_->packWroteToScreen_ || scenePack == nullptr || !scenePack->colorTargets.valid()) return;
  if(scenePack->colorTargets.readTexture(0) == 0 || !hasGlContext()) return;
 
-  // Java builds the final pass only when the program resolves (ProgramSet.get(
-  // ProgramId.Final) → ProgramFallbackResolver); a missing OR disabled final program
-  // makes FinalPassRenderer fall back to copying colortex0 into the main framebuffer.
   // https://github.com/IrisShaders/Iris/blob/26.1/common/src/main/java/net/irisshaders/iris/pipeline/FinalPassRenderer.java
   if(!scenePack->definition.programs.contains("final") ||
      !isProgramEnabledCached(scenePack->definition, scenePack->settings, "final",
@@ -88,10 +83,10 @@ void FinalPassRenderer::presentToScreen(PackInstance* scenePack, int screenWidth
  std::unordered_map<std::string, int> volumeTextures;
  putShadowTextures(textures, pipeline_->shadowDepthTexture_, pipeline_->shadowOpaqueDepthTexture_,
                            pipeline_->shadowColorTextures_,
-                           pipeline_->shadowColorTextureCount_, &scenePack->definition);
+                           pipeline_->shadowColorTextureCount_, scenePack->definition);
  PackResources::addTextures(*scenePack, "composite", textures, volumeTextures);
  bindSamplers(*program, textures, volumeTextures, maxTextureUnits(),
-                      &scenePack->definition);
+                      scenePack->definition);
  PackResources::bind(*scenePack, *program, 0);
 
  PackUniformValues frameUniforms = pipeline_->worldUniforms_;

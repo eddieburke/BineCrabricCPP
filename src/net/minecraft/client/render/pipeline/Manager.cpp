@@ -50,12 +50,7 @@ PackManager::PackManager(std::filesystem::path gameDirectory, option::GameOption
   if(pack == nullptr) {
    return;
   }
-  // The pipeline published the resolved program source name (shadow-program mapping +
-  // ProgramId fallback chain, ProgramFallbackResolver.java) in worldProgram. Java keys
   // blend/alphaTest directives by the resolved source name (ProgramDirectives.java:80-83),
-  // so apply with that key — never the draw's canonical key. Empty = no program resolved
-  // (draw will be skipped); applying nothing then matches Java (no ProgramSource -> no
-  // directives).
   const std::string programKey = pipeline_.resolvedWorldProgramKey();
   if(programKey.empty()) {
    return;
@@ -69,13 +64,12 @@ PackManager::PackManager(std::filesystem::path gameDirectory, option::GameOption
   applyAlphaTest(pack->definition, programKey);
  });
  render::setShaderObjectIdResolver([this](const std::string& kind, const std::string& name, int fallback) {
-  const PackDefinition* definition = activeDefinition();
-  if(definition == nullptr) {
-   return fallback;
-  }
+  // The vanilla definition carries empty id maps, so the lookups below miss and the
+  // caller's fallback is returned without a pack-presence branch.
+  const PackDefinition& definition = activeDefinition();
   const auto& ids =
-      kind == "entity" ? definition->entityIds : kind == "item" ? definition->itemIds
-                                                                : definition->blockIds;
+      kind == "entity" ? definition.entityIds : kind == "item" ? definition.itemIds
+                                                               : definition.blockIds;
   const std::string key = lower(name);
   if(const auto found = ids.find(key); found != ids.end()) {
    return found->second;
@@ -106,10 +100,7 @@ PackManager::PackManager(std::filesystem::path gameDirectory, option::GameOption
    auto& textureManager = net::minecraft::client::Minecraft::INSTANCE->textureManager;
    core::activeTexture(gl::tex::Texture0);
    const int diffuseTexture = core::boundTexture();
-   // Per-draw PBR resolution, the C++ analog of Iris' onSetAlbedoTex
    // (IrisRenderingPipeline.java:848): the holder carries LabPBR-mipmapped
-   // companion textures; -1 keeps the 1x1 fallbacks (PBRTextureManager
-   // defaultHolder).
    // https://github.com/IrisShaders/Iris/blob/26.1/common/src/main/java/net/irisshaders/iris/pipeline/IrisRenderingPipeline.java
    const render::PbrTextures::Holder holder =
        render::PbrTextures::getOrLoad(diffuseTexture, textureManager, pack->definition.labPbr);
@@ -117,8 +108,6 @@ PackManager::PackManager(std::filesystem::path gameDirectory, option::GameOption
    if(holder.specular > 0) ctx.specularTexture = static_cast<unsigned int>(holder.specular);
    if(!textureManager.getTextureDimensionsForId(diffuseTexture, ctx.atlasWidth, ctx.atlasHeight)) {
     // Java CommonUniforms.atlasSize (CommonUniforms.java:81-93) reports (0,0) for any
-    // non-TextureAtlas albedo — only a registered atlas reports its size. Overriding the
-    // 1x1 struct default here keeps packs that divide by atlasSize in parity with Iris.
     ctx.atlasWidth = 0;
     ctx.atlasHeight = 0;
    }
@@ -398,9 +387,6 @@ PackInstance* PackManager::settingsTarget() {
   if(pendingIndex_.has_value() && *pendingIndex_ < packs_.size()) {
    return packs_[*pendingIndex_].get();
   }
-  // Reuse the staged clone when it is still staged for the active pack: the
-  // previous setSetting's compile is in flight and discarding it here would throw
-  // away work and restart the whole pack compile for every option in a profile.
   if(stagedPack_ != nullptr && stagedIndex_ == activeIndex_) {
    return stagedPack_.get();
   }
@@ -517,9 +503,9 @@ void PackManager::activatePack(std::size_t index) {
  if(!changed) return;
  pipeline_.reset();
  if(previous != nullptr && previous != activePack()) previous->clearGpuResources();
- const PackDefinition* definition = activeDefinition();
+ const PackDefinition& definition = activeDefinition();
  render::block::BlockRenderManager::setVoxelizeLightBlocks(
-     activeIndex_ < packs_.size() && definition != nullptr && definition->voxelizeLightBlocks);
+     activeIndex_ < packs_.size() && definition.voxelizeLightBlocks);
  pipeline_.applyBlockIds(definition);
  reloadWorldMeshes();
 }
@@ -620,9 +606,9 @@ void PackManager::commitStagedPack() {
  stagedIndex_ = kNoActivePack;
  refreshSummaries();
  pipeline_.reset();
- const PackDefinition* definition = activeDefinition();
+ const PackDefinition& definition = activeDefinition();
  render::block::BlockRenderManager::setVoxelizeLightBlocks(
-     activeIndex_ < packs_.size() && definition != nullptr && definition->voxelizeLightBlocks);
+     activeIndex_ < packs_.size() && definition.voxelizeLightBlocks);
  pipeline_.applyBlockIds(definition);
  reloadWorldMeshes();
 }
@@ -662,9 +648,14 @@ const PackInstance* PackManager::selectedPack() const noexcept {
  return activePack();
 }
 
-const PackDefinition* PackManager::activeDefinition() const noexcept {
+bool PackManager::hasActivePack() const noexcept {
  const PackInstance* pack = activePack();
- return pack != nullptr && pack->summary.valid ? &pack->definition : nullptr;
+ return pack != nullptr && pack->summary.valid;
+}
+
+const PackDefinition& PackManager::activeDefinition() const noexcept {
+ const PackInstance* pack = activePack();
+ return pack != nullptr && pack->summary.valid ? pack->definition : vanillaPackDefinition();
 }
 
 const PackDefinition* PackManager::selectedDefinition() const noexcept {
@@ -672,11 +663,11 @@ const PackDefinition* PackManager::selectedDefinition() const noexcept {
  return pack != nullptr && pack->summary.valid ? &pack->definition : nullptr;
 }
 
-const PackDefinition* PackManager::meshDefinition() const noexcept {
- if(const PackDefinition* active = activeDefinition(); active != nullptr) {
-  return active;
+const PackDefinition& PackManager::meshDefinition() const noexcept {
+ if(hasActivePack()) {
+  return activeDefinition();
  }
- return basePack_ != nullptr && basePack_->summary.valid ? &basePack_->definition : nullptr;
+ return basePack_ != nullptr && basePack_->summary.valid ? basePack_->definition : vanillaPackDefinition();
 }
 
 bool PackManager::hasDeferredPasses() const {
@@ -684,13 +675,12 @@ bool PackManager::hasDeferredPasses() const {
 }
 
 int PackManager::shadowMapResolution() const {
- const PackDefinition* definition = activeDefinition();
- return definition == nullptr || !definition->shadowEnabled ? 0 : definition->shadowMapResolution;
+ const PackDefinition& definition = activeDefinition();
+ return definition.shadowEnabled ? definition.shadowMapResolution : 0;
 }
 
 int PackManager::shadowColorBuffers() const {
- const PackDefinition* definition = activeDefinition();
- return definition == nullptr ? 0 : definition->shadowColorBuffers;
+ return activeDefinition().shadowColorBuffers;
 }
 
 gl::ShaderProgram* PackManager::worldProgram(const std::string& key) {

@@ -273,7 +273,6 @@ void bindModFunction(lua_State* state, void* modContext, const char* name, LuaCF
  api.pushcclosure(state, function, 1);
  api.setfield(state, -2, name);
 }
-// ── Mod execution context (thread-local) ─────────────────────────────
 namespace {
 thread_local World* gModContextWorld = nullptr;
 #ifdef MINECRAFT_NATIVE_EXPORTS
@@ -317,7 +316,6 @@ bool modContextIsClient() {
 entity::player::PlayerEntity* activeModPlayer() {
  return gModContextPlayer;
 }
-// ── String / path sanitisation helpers ──────────────────────────────
 std::string trimCopy(std::string value) {
  while(!value.empty() && std::isspace(static_cast<unsigned char>(value.front()))) {
   value.erase(value.begin());
@@ -382,7 +380,6 @@ std::string sanitizeName(std::string_view value) {
  }
  return out.empty() ? "mod" : out;
 }
-// ── File I/O helpers (mod-scoped) ───────────────────────────────────
 std::vector<std::uint8_t> readFileBytes(const std::filesystem::path& path) {
  std::ifstream input(path, std::ios::binary);
  if(!input.is_open()) {

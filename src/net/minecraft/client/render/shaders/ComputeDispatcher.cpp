@@ -25,8 +25,8 @@ bool dispatch(PackInstance& pack,
   uploadShaderUniforms(*program, uniforms);
   pack.customUniforms.upload(*program);
   refreshTextureAliases(textures);
-  bindSamplers(*program, textures, volumeTextures, maxTextureUnits(), &pack.definition);
-  const unsigned int nextImageUnit = bindColorImages(*program, colorImages, &pack.definition, colorTargets);
+  bindSamplers(*program, textures, volumeTextures, maxTextureUnits(), pack.definition);
+  const unsigned int nextImageUnit = bindColorImages(*program, colorImages, pack.definition, colorTargets);
   PackResources::bind(pack, *program, nextImageUnit);
   const auto groups = workGroups(pass, width, height);
    const auto indirect = pack.definition.indirectDispatches.find(pass.name);

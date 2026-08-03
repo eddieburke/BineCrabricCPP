@@ -19,10 +19,6 @@ class PackCompiler {
                                     const LogFn& logOnce);
   static gl::ShaderProgram* compile(PackInstance& pack, const std::string& programName,
                                     const LogFnLevel& logOnce);
-  // Kick off asynchronous worker compilation of every enabled program in the pack
-  // without waiting. Call once after a pack loads (or its settings change) so the
-  // first frame that needs a program finds it compiled or completing in the
-  // background. No-op when the compile service is not running.
   static void prewarm(PackInstance& pack, const LogFnLevel& logOnce);
   static bool validate(PackInstance& pack, const LogFnLevel& logOnce);
 

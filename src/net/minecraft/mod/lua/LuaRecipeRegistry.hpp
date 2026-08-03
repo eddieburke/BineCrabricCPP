@@ -11,8 +11,6 @@ struct ShapedRecipeSpec {
  char key = '#';
  int ingredientItemId = 0;
  std::vector<std::pair<char, int>> extraIngredients;
- // Owning mod (for live re-registration idempotency) and whether the recipe has
- // already been handed to CraftingRecipeManager this session.
  std::string ownerModId;
  bool instantiated = false;
 };

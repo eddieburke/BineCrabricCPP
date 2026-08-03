@@ -38,10 +38,6 @@ class LuaModEntity : public entity::Entity {
  void readNbt(const NbtCompound& nbt) override;
  void onTrackedDataUpdated(int key) override;
  void tick() override;
- // Client replica only: feed interpolation targets from the same generic
- // move/rotate packets (and resent snapshots) every packet-driven entity gets,
- // so the replica glides instead of snapping. Mirrors the MinecartEntity /
- // BoatEntity client-side pattern; the server instance never calls this.
  void setPositionAndAnglesAvoidEntities(
      double x, double y, double z, float yaw, float pitch, int interpolationSteps) override;
  [[nodiscard]] bool isCollidable() const override {
@@ -59,10 +55,8 @@ class LuaModEntity : public entity::Entity {
   static std::unique_ptr<net::minecraft::client::render::entity::EntityRenderer> create();
  };
 
- private:
- // Client-side interpolation targets (MinecartEntity/BoatEntity pattern). Unused
- // on the server, which is the simulating authority and never sets these.
- int clientInterpolationSteps_ = 0;
+  private:
+  int clientInterpolationSteps_ = 0;
  double clientX_ = 0.0;
  double clientY_ = 0.0;
  double clientZ_ = 0.0;

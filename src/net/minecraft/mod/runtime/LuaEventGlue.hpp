@@ -45,14 +45,7 @@ void readStringMapField(lua_State* state,
                         const char* key,
                         std::unordered_map<std::string, std::string>& values);
 bool isLuaModExecutionEnabled();
-// True when this is the client build (MINECRAFT_NATIVE_EXPORTS) and Minecraft::INSTANCE
-// is live. The one place that answers "are we the client process" — binding/event code
-// should call this instead of open-coding #ifdef MINECRAFT_NATIVE_EXPORTS + INSTANCE
-// checks, so the client-detection logic has a single definition to fix or extend.
 bool isClientBuild();
-// True when `player` is this client's own local player. This is the right gate for
-// client-side reactions (opening screens, HUD): world remoteness alone says nothing
-// about who triggered the event, and is false for the singleplayer world.
 bool isLocalPlayer(const entity::player::PlayerEntity* player);
 template <typename Fill, typename Apply>
 void callLuaEvent(const std::shared_ptr<ModHost::LoadedLuaMod>& mod, int ref, Fill fill, Apply apply) {

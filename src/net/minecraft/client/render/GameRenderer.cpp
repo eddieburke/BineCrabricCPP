@@ -157,15 +157,21 @@ GameRenderer::GameRenderer(Minecraft* clientIn)
 GameRenderer::~GameRenderer() {
  shadowmap::reset(shadowState_);
 }
+// The only place the absence of a pack manager is turned into pack directives. Every
+// other site in the renderer just reads fields off the returned definition.
+const PackDefinition& GameRenderer::packDefinition() const noexcept {
+ return shaderPacks_ != nullptr ? shaderPacks_->activeDefinition() : vanillaPackDefinition();
+}
+const PackDefinition& GameRenderer::meshDefinition() const noexcept {
+ return shaderPacks_ != nullptr ? shaderPacks_->meshDefinition() : vanillaPackDefinition();
+}
 PackUniformValues GameRenderer::buildFrameUniforms(float tickDelta,
                                                              float farPlane,
                                                              bool shadowAvailable) const {
  const int width = client != nullptr ? std::max(1, client->displayWidth) : 1;
  const int height = client != nullptr ? std::max(1, client->displayHeight) : 1;
  const float worldTime = static_cast<float>(ticks) + tickDelta;
- const PackDefinition* definition =
-     shaderPacks_ != nullptr ? shaderPacks_->activeDefinition() : nullptr;
- const float eyeHalf = definition != nullptr ? definition->eyeBrightnessHalflife : 10.0f;
+ const float eyeHalf = packDefinition().eyeBrightnessHalflife;
  return buildShaderFrameData(width, height, farPlane, worldTime,
                              frameShadow_.resolution, shaderPacks_ != nullptr && shaderPacks_->sceneColorCount() > 1,
                              shadowAvailable, frameCamera_, shadowState_.shadowCamera,
@@ -455,15 +461,11 @@ void GameRenderer::renderWorld(float tickDelta,
  const float aspect = viewport[3] != 0 ? static_cast<float>(viewport[2]) / static_cast<float>(viewport[3]) : 1.0f;
  const option::RenderSettings& resolved = frameSettings_;
  projection.loadIdentity();
-  // Far plane = render distance in blocks. The old b1.7.3 2x multiplier wasted
-  // the top half of the depth range on geometry that is already fully fogged
-  // (fog ends at ~renderDistance), halving depth precision and making
-  // coincident / near-coplanar surfaces (crossed plants, fancy leaves) Z-fight.
-  // Iris/Java render out to exactly `renderDistance * 16` blocks — match that.
-  const float nearPlane = std::max(0.001f, frameCamera_.perspectiveNear);
-  const float farPlane = frameCamera_.perspectiveFar > nearPlane
-                             ? frameCamera_.perspectiveFar
-                             : resolved.renderDistanceBlocks;
+  // Keeping the far plane at the render distance rather than the old b1.7.3 2x
+  // multiplier stops half the depth range being spent on fully fogged geometry, which
+  // was Z-fighting crossed plants and fancy leaves.
+  const float nearPlane = cameraNearPlane(frameCamera_);
+  const float farPlane = cameraFarPlane(frameCamera_, resolved.renderDistanceBlocks);
  frameCamera_.perspectiveFar = farPlane;
  if(frameCamera_.orthographic) {
   math::Matrix4f proj;
@@ -587,9 +589,7 @@ void GameRenderer::onFrameUpdate(float tickDelta) {
  if(shaderPacks_ != nullptr) {
   shaderPacks_->pollPrograms();
  }
- const PackDefinition* pack =
-     shaderPacks_ != nullptr ? shaderPacks_->meshDefinition() : nullptr;
- frameSettings_ = option::renderSettings(client->options, pack);
+ frameSettings_ = option::renderSettings(client->options, meshDefinition());
  if(client->worldRenderer != nullptr) client->worldRenderer->setRenderSettings(frameSettings_);
 #ifdef _WIN32
  if(!util::DisplayManager::isActive()) {
@@ -1057,15 +1057,12 @@ void GameRenderer::renderToCurrentTarget(float tickDelta,
    }
   }
  }
- const PackDefinition* definition =
-     shaderPacks_ != nullptr ? shaderPacks_->activeDefinition() : nullptr;
+ const PackDefinition& definition = packDefinition();
  if(!frameCamera_.shadowPass) {
-  frameCamera_.skipAllRendering = definition != nullptr && definition->skipAllRendering;
+  frameCamera_.skipAllRendering = definition.skipAllRendering;
  }
  RenderCameraState::instance().setFrame(frameCamera_);
-  const float farPlane = frameCamera_.perspectiveFar > frameCamera_.perspectiveNear
-                             ? frameCamera_.perspectiveFar
-                             : frameSettings_.renderDistanceBlocks;
+  const float farPlane = cameraFarPlane(frameCamera_, frameSettings_.renderDistanceBlocks);
  core::setDrawCameraStateFromCamera(frameCamera_, farPlane);
  const bool skyWillCommit =
      !frameCamera_.shadowPass && resolvedOptions.renderSky &&
@@ -1089,6 +1086,7 @@ void GameRenderer::renderToCurrentTarget(float tickDelta,
   }
   if(!frameCamera_.shadowPass && !renderCameraEntity && shaderPacks_ != nullptr) {
    frameShadow_ = shadowmap::update(shadowState_, *this, tickDelta, frameCamera_, definition);
+
   } else if(!frameCamera_.shadowPass && !renderCameraEntity) {
    frameShadow_ = {};
   }
@@ -1198,8 +1196,8 @@ void GameRenderer::renderToCurrentTarget(float tickDelta,
  applyEntityLightingRig(frameCamera_, worldLight);
  const Vec3d frameCameraPos{frameCamera_.x, frameCamera_.y, frameCamera_.z};
  const bool hasDeferred = shaderPacks_ != nullptr && shaderPacks_->hasDeferredPasses();
- const bool splitEntities = hasDeferred && definition != nullptr && definition->separateEntityDraws;
- std::string particleOrder = definition != nullptr ? definition->particleOrdering : std::string{};
+ const bool splitEntities = hasDeferred && definition.separateEntityDraws;
+ std::string particleOrder = definition.particleOrdering;
  if(particleOrder.empty()) particleOrder = hasDeferred ? "after" : "mixed";
  renderWorldStage(atmosphereCtx, tickDelta, mod::WorldRenderStage::Entities, !skipGbuffers, false, [&] {
   const debug::RenderProfiler::Scope entityScope(debug::RenderStage::Entities);
@@ -1279,8 +1277,7 @@ void GameRenderer::renderToCurrentTarget(float tickDelta,
   renderWorldStage(atmosphereCtx,
                   tickDelta,
                   mod::WorldRenderStage::Clouds,
-                  !skipGbuffers && resolvedOptions.renderClouds &&
-                      (definition == nullptr || definition->renderClouds),
+                  !skipGbuffers && resolvedOptions.renderClouds && definition.renderClouds,
                   false,
                   [&] {
                    const debug::RenderProfiler::Scope cloudScope(debug::RenderStage::Clouds);

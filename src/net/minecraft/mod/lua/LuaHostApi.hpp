@@ -85,7 +85,6 @@ inline int getglobal(lua_State* state, const char* name) {
  return luaApi().getglobal(state, name);
 }
 [[nodiscard]] std::string luaString(lua_State* state, int index, std::string fallback = {});
-// Positional number args without the tonumberx/isNumber boilerplate.
 [[nodiscard]] int luaIntArg(lua_State* state, int index, int fallback = 0);
 [[nodiscard]] float luaFloatArg(lua_State* state, int index, float fallback = 0.0f);
 [[nodiscard]] double luaDoubleArg(lua_State* state, int index, double fallback = 0.0);
@@ -144,12 +143,10 @@ inline void setField(lua_State* state, const char* key, std::string_view value) 
  luaApi().pushlstring(state, value.data(), value.size());
  luaApi().setfield(state, -2, key);
 }
-// In-place readback of a field from the table at -1 (fallback = current value).
 void readField(lua_State* state, const char* key, bool& value);
 void readField(lua_State* state, const char* key, int& value);
 void readField(lua_State* state, const char* key, float& value);
 void readField(lua_State* state, const char* key, double& value);
-// Variadic key/value batches over setField/readField.
 inline void setFields(lua_State*) {
 }
 template <typename T, typename... Rest>
@@ -164,7 +161,6 @@ void readFields(lua_State* state, const char* key, T& value, Rest&&... rest) {
  readField(state, key, value);
  readFields(state, static_cast<Rest&&>(rest)...);
 }
-// ── Mod execution context (thread-local) ─────────────────────────────
 inline constexpr std::uintmax_t kMaxModArchiveBytes = 256U * 1024U * 1024U;
 inline constexpr std::uint64_t kMaxModEntryBytes = 64U * 1024U * 1024U;
 inline constexpr std::uint64_t kMaxModExtractedBytes = 512U * 1024U * 1024U;
@@ -181,7 +177,6 @@ struct ModContextScope {
  ModContextScope(World* world, entity::player::PlayerEntity* player = nullptr);
  ~ModContextScope();
 };
-// ── String / path sanitisation helpers ──────────────────────────────
 std::string trimCopy(std::string value);
 std::string toLowerCopy(std::string value);
 std::string normalizeRelativePath(std::string_view value);
@@ -189,7 +184,6 @@ bool isSafeRelativePath(std::string_view value);
 bool isSafeModId(std::string_view value);
 bool isDirectoryZipPath(std::string_view value);
 std::string sanitizeName(std::string_view value);
-// ── File I/O helpers (mod-scoped) ───────────────────────────────────
 std::vector<std::uint8_t> readFileBytes(const std::filesystem::path& path);
 std::string readFileText(const std::filesystem::path& path);
 bool writeFileBytes(const std::filesystem::path& path, const std::vector<std::uint8_t>& bytes);

@@ -97,10 +97,6 @@ class LuaModBlock : public Block {
  LuaModBlock(int id, int textureId, Material& material, const BlockRegistrationSpec& spec)
      : Block(id, textureId, material), spec_(spec) {
 #ifdef MINECRAFT_NATIVE_EXPORTS
-  // A baked model's bounds are fixed once it is baked, so resolve everything
-  // that depends on them here. isFullCube() in particular is asked once per
-  // block face while meshing chunks, and the model lookup behind it takes a
-  // global mutex — not something to pay on that path.
   if(spec.bakedModel != 0) {
    if(const net::minecraft::mod::model::BakedModel* baked =
           net::minecraft::mod::model::bakedModelForHandle(spec.bakedModel)) {
@@ -124,11 +120,9 @@ class LuaModBlock : public Block {
  [[nodiscard]] bool isFullCube() const override {
   return fullCube_;
  }
- [[nodiscard]] bool receivesEntityShadow() const override {
-  // Custom-shaped mod blocks are rarely flagged full-cube, but anything
-  // solid enough to stand on should still catch entity blob shadows.
-  return fullCube_ || material.isSolid();
- }
+  [[nodiscard]] bool receivesEntityShadow() const override {
+   return fullCube_ || material.isSolid();
+  }
  [[nodiscard]] int getColorMultiplier(const BlockView* blockView, int x, int y, int z) const override {
   if(spec_.coordinateColor) {
    return net::minecraft::util::math::coordinateColor(x, y, z);
@@ -137,8 +131,6 @@ class LuaModBlock : public Block {
  }
  [[nodiscard]] int getRenderType() const override {
 #ifdef MINECRAFT_NATIVE_EXPORTS
-  // register_block requires a baked model (LuaBlockBindings.cpp), so every
-  // LuaModBlock instance takes the custom-model render path.
   return 31; // custom type
 #else
   return Block::getRenderType();
@@ -163,13 +155,11 @@ class LuaModBlock : public Block {
   }
   return Block::isSideVisibleForBounds(blockView, x, y, z, side, bounds);
  }
- [[nodiscard]] bool canPlaceAt(World* world, int x, int y, int z) const override {
-  if(world == nullptr) {
-   return Block::canPlaceAt(world, x, y, z);
-  }
-  // Landing on another copy of this block is decided entirely by stack_on_same:
-  // it either supports the new block outright or forbids it outright.
-  if(world->getBlockId(x, y - 1, z) == id) {
+  [[nodiscard]] bool canPlaceAt(World* world, int x, int y, int z) const override {
+   if(world == nullptr) {
+    return Block::canPlaceAt(world, x, y, z);
+   }
+   if(world->getBlockId(x, y - 1, z) == id) {
    return spec_.stackOnSame;
   }
   if(spec_.requiresSolidBelow && !world->getMaterial(x, y - 1, z).isSolid()) {
@@ -199,9 +189,7 @@ class LuaModBlock : public Block {
  void setItemOverrideTexture(int textureId) {
   itemOverrideTextureId_ = textureId;
  }
- // With an explicit item texture the inventory/dropped sprite is that flat
- // texture, not a miniature of the block model.
- [[nodiscard]] bool hasItemOverride() const override {
+  [[nodiscard]] bool hasItemOverride() const override {
   return itemOverrideTextureId_ >= 0;
  }
  void registerBlockItem() override {
@@ -214,11 +202,9 @@ class LuaModBlock : public Block {
   }
  }
 
- private:
- BlockRegistrationSpec spec_;
- // Declared shape, overridden in the constructor when a baked model turns out
- // to fill the whole cube after all.
- bool fullCube_ = spec_.fullCube;
+  private:
+  BlockRegistrationSpec spec_;
+  bool fullCube_ = spec_.fullCube;
  int itemOverrideTextureId_ = -1;
 };
 void registerBlockClass(const BlockRegistrationSpec& spec) {
@@ -237,12 +223,10 @@ void registerBlockClass(const BlockRegistrationSpec& spec) {
  if(spec.luminance > 0.0f) {
   block->setLuminance(std::clamp(spec.luminance, 0.0f, 1.0f));
  }
- if(!spec.opaque) {
-  block->ignoreMetaUpdates();
- }
- // Block() ctor records BLOCKS_OPAQUE via base isOpaque() before LuaModBlock
- // overrides apply — refresh after the derived object exists.
- Block::BLOCKS_OPAQUE[static_cast<std::size_t>(spec.blockId)] = block->isOpaque();
+  if(!spec.opaque) {
+   block->ignoreMetaUpdates();
+  }
+  Block::BLOCKS_OPAQUE[static_cast<std::size_t>(spec.blockId)] = block->isOpaque();
  if(!block->isOpaque()) {
   Block::BLOCKS_LIGHT_OPACITY[static_cast<std::size_t>(spec.blockId)] = 0;
  }
@@ -251,15 +235,11 @@ void registerBlockClass(const BlockRegistrationSpec& spec) {
    registerDraw(spec.blockId, model::drawLuaBlockWorld, model::drawLuaBlockInventory);
 #endif
   }
-  if(!spec.itemTexturePath.empty()) {
-   const int itemTextureId = registry::TextureRegistry::getOrRegisterTexture(spec.itemTexturePath);
-   static_cast<LuaModBlock*>(block)->setItemOverrideTexture(itemTextureId);
-  }
-  // The generic block-item pass only runs during the startup Init phase; a block
-  // registered at runtime (live enable / Reload List) must get its item here.
-  // registerBlockItem() is guarded, so the startup pass no-ops for blocks that
-  // already have one.
-  block->registerBlockItem();
+   if(!spec.itemTexturePath.empty()) {
+    const int itemTextureId = registry::TextureRegistry::getOrRegisterTexture(spec.itemTexturePath);
+    static_cast<LuaModBlock*>(block)->setItemOverrideTexture(itemTextureId);
+   }
+   block->registerBlockItem();
 }
 struct BlockTraits {
  using Spec = BlockRegistrationSpec;
@@ -280,11 +260,8 @@ bool registerBlockSpec(const BlockRegistrationSpec& spec, std::string& error) {
    error = "register_block requires texture (a mod resource path)";
    return false;
   }
-  if(BlockRegistry::instance().contains(spec.blockId)) {
-   // Re-registration by the same mod (live re-enable / Reload List) is a no-op:
-   // content registrations persist for the session and the world is untouched by
-   // design. A different owner claiming the id is a genuine conflict.
-   if(const BlockRegistrationSpec* existing = BlockRegistry::instance().specForId(spec.blockId);
+   if(BlockRegistry::instance().contains(spec.blockId)) {
+    if(const BlockRegistrationSpec* existing = BlockRegistry::instance().specForId(spec.blockId);
       existing != nullptr && !spec.ownerModId.empty() && existing->ownerModId == spec.ownerModId) {
     return true;
    }

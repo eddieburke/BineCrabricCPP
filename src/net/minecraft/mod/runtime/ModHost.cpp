@@ -12,7 +12,6 @@
 #include "net/minecraft/mod/runtime/LuaScreenBindings.hpp"
 #endif
 #include "net/minecraft/mod/runtime/LuaEntityBindings.hpp"
-// LuaEventSubscribers.hpp deleted — dispatch is now in LuaDirectHooks.hpp
 #include "net/minecraft/mod/lua/LuaHostApi.hpp"
 #include "net/minecraft/mod/runtime/ModPackageIo.hpp"
 #ifdef MINECRAFT_NATIVE_EXPORTS
@@ -146,11 +145,8 @@ bool loadLuaMod(ModPackage& info, std::vector<std::shared_ptr<ModHost::LoadedLua
   runtimeLog(info.id, "error", info.error);
   return false;
  }
- // Mark active before running the script so the mod's own resource lookups
- // (e.g. minecraft.model.json during top-level init) can find its files via
- // findResourceFile, which only searches active mods.
- info.active = true;
- const std::string script = scriptPath.string();
+  info.active = true;
+  const std::string script = scriptPath.string();
  int status = api.loadfilex(state, script.c_str(), "t");
  if(status == kLuaOk) {
   status = api.pcallk(state, 0, 0, 0, 0, nullptr);
@@ -164,14 +160,10 @@ bool loadLuaMod(ModPackage& info, std::vector<std::shared_ptr<ModHost::LoadedLua
   return false;
  }
   mod->active = true;
-  loadedMods.push_back(std::move(mod));
-  invalidateLuaHookCache();
-  info.error.clear();
-  // A mod loaded after startup (live enable / Reload List) missed the bootstrap
-  // phase transitions, so its at_phase("init"/"post_init"/"ready") registrations
-  // made during script load would never fire. Replay the transitions; per-mod
-  // firedPhases gating keeps every mod's callbacks firing exactly once.
-  if(net::minecraft::mod::ModLifecycle::currentPhase() == net::minecraft::mod::LifecyclePhase::Ready) {
+   loadedMods.push_back(std::move(mod));
+   invalidateLuaHookCache();
+   info.error.clear();
+   if(net::minecraft::mod::ModLifecycle::currentPhase() == net::minecraft::mod::LifecyclePhase::Ready) {
    fireLifecycle(net::minecraft::mod::LifecyclePhase::NotStarted, net::minecraft::mod::LifecyclePhase::Init);
    fireLifecycle(net::minecraft::mod::LifecyclePhase::Init, net::minecraft::mod::LifecyclePhase::PostInit);
    fireLifecycle(net::minecraft::mod::LifecyclePhase::PostInit, net::minecraft::mod::LifecyclePhase::Ready);
@@ -515,11 +507,8 @@ void ModHost::reconcileEnabled() {
    const bool enabled = mod.configuredEnabled && !wrongSide;
    const bool scriptLoadable = mod.runtimeScript && !mod.entry.empty();
    const bool loaded = hasLoadedScript(mod.id);
-   if(!scriptLoadable) {
-    // Resource-only overlay (or un-loadable entry): active only serves
-    // findResourceFile; a stale script from an edit that removed the entry is
-    // torn down. Content registrations from earlier loads persist by design.
-    if(!enabled) {
+    if(!scriptLoadable) {
+     if(!enabled) {
      if(loaded) {
       unloadScript(mod.id);
      }
@@ -544,9 +533,8 @@ void ModHost::reconcileEnabled() {
      mod.loadedStamp = mod.contentStamp;
     }
    }
-  }
-  // Mods removed from the folder (or whose ids vanished) drop their scripts too.
-  std::vector<std::string> ids;
+   }
+   std::vector<std::string> ids;
   ids.reserve(packageMods_.size());
   for(const ModPackage& mod : packageMods_) {
    if(!mod.id.empty()) {

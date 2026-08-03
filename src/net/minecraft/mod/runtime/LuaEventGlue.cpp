@@ -104,23 +104,20 @@ void setClientTickFields(lua_State* state, const ClientTickEvent& event) {
   float playerFallDistance = 0.0f;
   bool playerOnGround = false;
 #ifdef MINECRAFT_NATIVE_EXPORTS
-  // Camera frame info comes from the iris frame camera (RenderCameraState) published
-  // every frame; the vanilla camera-entity read was the dual path. Defaults to the
-  // fallback height before the first frame is published.
-  {
-   const client::render::FrameRenderCamera& frame =
-       client::render::RenderCameraState::instance().frame();
-   if(frame.x != 0.0 || frame.y != 0.0 || frame.z != 0.0) {
-    cameraY = frame.y;
+   {
+    const client::render::FrameRenderCamera& frame =
+        client::render::RenderCameraState::instance().frame();
+    if(frame.x != 0.0 || frame.y != 0.0 || frame.z != 0.0) {
+     cameraY = frame.y;
+    }
    }
-  }
-  if(event.player != nullptr) {
-   playerY = event.player->y;
-   playerFallDistance = event.player->fallDistance;
-   playerOnGround = event.player->onGround;
-  }
+   if(event.player != nullptr) {
+    playerY = event.player->y;
+    playerFallDistance = event.player->fallDistance;
+    playerOnGround = event.player->onGround;
+   }
 #endif
- setField(state, "camera_y", cameraY);
+  setField(state, "camera_y", cameraY);
  setField(state, "player_y", playerY);
  setField(state, "player_fall_distance", playerFallDistance);
  setField(state, "player_on_ground", playerOnGround);
@@ -150,13 +147,10 @@ bool isLocalPlayer(const entity::player::PlayerEntity* player) {
 }
 bool isLuaModExecutionEnabled() {
 #ifdef MINECRAFT_NATIVE_EXPORTS
- if(isClientBuild() && !client::Minecraft::INSTANCE->options.modsEnabled) {
-  return false;
- }
- // Gate on the active mod-context world (server interact sets the server world).
- // Never use only Minecraft::INSTANCE->world — that is ClientWorld (remote) in SP and
- // would suppress server-side Lua (entity spawn, inventory, etc.).
- World* world = activeModWorld();
+  if(isClientBuild() && !client::Minecraft::INSTANCE->options.modsEnabled) {
+   return false;
+  }
+  World* world = activeModWorld();
  if(world != nullptr && world->isRemote() && !world->isLuaModGenerationEnabled()) {
   return false;
  }

@@ -70,16 +70,6 @@ void replaceGlMultiTexCoordBounded(std::string& source, int minimum, int maximum
   replaceAllToken(source, "gl_MultiTexCoord" + std::to_string(index), "vec4(0.0, 0.0, 0.0, 1.0)");
 }
 
-// Programs whose geometry comes from the chunk mesher. Iris routes exactly this set
-// through SodiumTransformer, which computes a real per-chunk fade; everything else gets
-// VanillaTransformer's `const float mc_chunkFade = -1.0;`.
-// gbuffers_water belongs here — water and ice are chunk geometry, not a separate model
-// path. Classifying it as "other" gave it the -1.0 const, so RenderPearl's
-//   float16_t alpha = float16_t(mc_chunkFade);  // prog/lit.vsh, IRIS_FEATURE_FADE_VARIABLE
-//   if (fluid) alpha *= float16_t(WATER_OPACITY * 0.01);
-// produced a negative alpha, packed it to 0 through an out-of-range float->uint
-// conversion, and `blend.gbuffers_water=SRC_ALPHA ...` then erased every water and ice
-// fragment. See docs/agent-notes/HANDOFF-visual-symptoms-2026-08-02.md section B.
 // https://github.com/IrisShaders/Iris/blob/26.1/common/src/main/java/net/irisshaders/iris/pipeline/transform/transformer/SodiumTransformer.java
 [[nodiscard]] bool isChunkMesherProgram(std::string_view programName) {
  return programName.starts_with("gbuffers_terrain") || programName == "gbuffers_water";
@@ -98,9 +88,6 @@ std::string injectChunkFadeAttribute(const std::string& programName,
                        hasStorageDeclaration(source, "const", "mc_chunkFade");
  const std::string_view name = programName;
  const bool shadow = isShadowProgramName(name);
- // Shadow programs previously fell out of this gate entirely and got no declaration at
- // all, which is a compile failure waiting for any pack that shares a vertex body between
- // gbuffers_water and shadow_water. Iris always gives the shadow pass the -1.0 const
  // (SodiumTransformer.java:124, `parameters.shadow` branch).
  if(!enabled || declared || !(name.starts_with("gbuffers_") || shadow)) return source;
  source.insert(sourceDeclarationOffset(source),

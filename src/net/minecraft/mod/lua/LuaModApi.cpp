@@ -341,16 +341,8 @@ int luaFilesPick(lua_State* state) {
 }
 int luaFilesRead(lua_State* state) {
  LuaApi& api = luaApi();
- const std::string path = luaString(state, 1, "");
- // Mod-bundled resources are addressed relative to the mod's root (e.g.
- // "resources/mods/<id>/foo.json"); ModHost::findResourceFile resolves that
- // against the mod's actual extraction/cache directory rather than the
- // process's current working directory. Using findResourceFile (which
- // returns an optional path) rather than readResource (which returns an
- // empty vector both when the resource is missing AND when it's a
- // legitimately empty file) keeps "not found" and "found but empty"
- // distinguishable.
- std::string resourcePath = path;
+  const std::string path = luaString(state, 1, "");
+  std::string resourcePath = path;
  constexpr std::string_view kResourcesPrefix = "resources/";
  if(resourcePath.rfind(kResourcesPrefix, 0) == 0) {
   resourcePath.erase(0, kResourcesPrefix.size());

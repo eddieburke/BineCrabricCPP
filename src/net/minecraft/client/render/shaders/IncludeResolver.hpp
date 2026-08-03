@@ -14,7 +14,6 @@ class IncludeResolveError : public std::runtime_error {
 };
 
 bool isBufferFormatDirective(const std::string& trimmed);
-// Throws IncludeResolveError on cycle, missing/empty include, or malformed #include.
 [[nodiscard]] std::string resolveShaderIncludes(const ShaderReadText& readText,
                                                 const std::string& path,
                                                 bool stripFormatDirectives = false);

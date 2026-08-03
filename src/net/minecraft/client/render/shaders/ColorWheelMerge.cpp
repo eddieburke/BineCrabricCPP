@@ -54,8 +54,6 @@ bool isColorWheelProgramName(std::string_view programName) {
 }
 
 void appendColorWheelMacros(std::string& preamble) {
- // The prefix ends mid-line (right after COLORWHEEL_VERSION's space); editors
- // may append a trailing line ending, so strip it before the value is joined.
  std::string prefix = GlslSnippets::get("colorwheel_macros_prefix");
  while(!prefix.empty() && (prefix.back() == '\n' || prefix.back() == '\r')) prefix.pop_back();
  preamble += prefix;

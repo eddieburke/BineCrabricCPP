@@ -92,7 +92,6 @@ void bindWorldProgram(gl::ShaderProgram& program, const WorldProgramBindContext&
       context.shadowOpaqueDepthTexture >= 0 ? context.shadowOpaqueDepthTexture : context.shadowDepthTexture;
   bindShadow("shadowtex1", opaqueDepth, shadowtex1Compare);
   if(separateHw) {
-   // Prefer compare on *HW when the program declares sampler2DShadow, matching Iris separate HW path.
    const bool hw0Shadow =
        hw0 || program.samplerKind("shadowtex0HW") == gl::ShaderProgram::SamplerKind::Shadow;
    const bool hw1Shadow =

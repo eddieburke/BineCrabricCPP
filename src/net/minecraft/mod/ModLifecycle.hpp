@@ -1,10 +1,6 @@
 #pragma once
 #include "net/minecraft/mod/runtime/LuaDirectHooks.hpp"
 namespace net::minecraft::mod {
-// Lifecycle phases run once at startup via Registry::bootstrap().
-// Lua mods register content with minecraft.at_phase() during script load.
-// Runtime hooks use minecraft.on(event, callback).
-// LifecyclePhase and LifecycleEvent are defined in LuaDirectHooks.hpp.
 class ModLifecycle {
  public:
  [[nodiscard]] static LifecyclePhase currentPhase() noexcept {

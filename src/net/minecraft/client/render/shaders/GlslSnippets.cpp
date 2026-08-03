@@ -9,17 +9,10 @@ std::mutex gMutex;
 std::unordered_map<std::string, std::string> gCache;
 std::unordered_map<std::string, std::string> gTestMap;
 std::unordered_set<std::string> gMissingWarned;
-// Snippet text is concatenated into shader preambles and injected into pack source, so it
-// must use LF regardless of how the .glsl files were checked out. CMake bakes the working
-// tree into EmbeddedGlslSnippets.cpp verbatim, and git's autocrlf hands Windows checkouts
-// CRLF — which put a stray CR after every injected `#define`, made preamble text differ
-// between checkouts, and left `#define MC_TEXTURE_FORMAT_LAB_PBR\r` in the shipped binary.
-// Normalising here covers the embedded table and the test map in one place.
 [[nodiscard]] std::string normalizeLineEndings(std::string text) {
  std::size_t out = 0;
  for(std::size_t in = 0; in < text.size(); ++in) {
   if(text[in] == '\r') {
-   // CRLF -> LF, lone CR -> LF.
    if(in + 1 < text.size() && text[in + 1] == '\n') continue;
    text[out++] = '\n';
    continue;

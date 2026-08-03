@@ -123,10 +123,10 @@ void Pipeline::reset() {
  core::advanceProgramUniforms();
 }
 
-bool Pipeline::engineOwnsColorCorrection(const PackDefinition* def) const {
+bool Pipeline::engineOwnsColorCorrection(const PackDefinition& def) const {
  // https://shaders.properties/current/reference/shadersproperties/features/
  if(options_ == nullptr || options_->colorSpace == 0) return false;
- return def == nullptr || !def->supportsColorCorrection;
+ return !def.supportsColorCorrection;
 }
 
 unsigned int Pipeline::screenDrawFramebuffer(int width, int height) {
@@ -155,11 +155,7 @@ void Pipeline::ensurePbrFallbackTextures() {
 }
 
 void Pipeline::bindPbrTextures() {
- // Frame-boundary PBR hook (Java: beginRender -> PBRTextureManager.onNewFrame,
  // IrisRenderingPipeline.java:935). Companion textures are resolved and bound
- // per draw in the world-program uniform uploader (Manager.cpp), which keeps
- // them in sync with the current diffuse texture; this hook only guarantees
- // the 1x1 fallback state (PBRType default values) before gbuffer passes run.
  ensurePbrFallbackTextures();
  PbrTextures::onNewFrame();
 }
@@ -201,12 +197,12 @@ void Pipeline::refreshResourcePackState(PackInstance* basePack,
  for(auto& pack : packs) apply(pack.get());
 }
 
-void Pipeline::applyBlockIds(const PackDefinition* definition) {
+void Pipeline::applyBlockIds(const PackDefinition& definition) {
  std::array<int, 256> ids{};
- if(definition != nullptr && definition->hasBlockProperties) ids.fill(-1);
+ if(definition.hasBlockProperties) ids.fill(-1);
  else
   for(int i = 0; i < 256; ++i) ids[static_cast<std::size_t>(i)] = i;
- if(definition != nullptr) {
+ {
   for(int id = 0; id < net::minecraft::block::Block::BLOCK_COUNT; ++id) {
    net::minecraft::block::Block* block = net::minecraft::block::Block::BLOCKS[static_cast<std::size_t>(id)];
    if(block == nullptr) {
@@ -216,12 +212,12 @@ void Pipeline::applyBlockIds(const PackDefinition* definition) {
    if(name.rfind("tile.", 0) == 0) {
     name.erase(0, 5);
    }
-   if(const auto found = definition->blockIds.find(name); found != definition->blockIds.end()) {
+   if(const auto found = definition.blockIds.find(name); found != definition.blockIds.end()) {
     ids[static_cast<std::size_t>(id)] = found->second;
     continue;
    }
-   if(const auto found = definition->blockIds.find("minecraft:" + name);
-      found != definition->blockIds.end()) {
+   if(const auto found = definition.blockIds.find("minecraft:" + name);
+      found != definition.blockIds.end()) {
     ids[static_cast<std::size_t>(id)] = found->second;
    }
   }
@@ -253,8 +249,6 @@ bool Pipeline::selectDimension(PackInstance& pack, const net::minecraft::World* 
   const PackDefinition* selected = selectedKey.empty()
                                        ? &pack.rootDefinition
                                        : pack.rootDefinition.dimensionDefinitions.at(selectedKey).get();
-  // Drop any bound ShaderProgram* before ProgramCache wipe — otherwise uniform
-  // upload / draw can call through a freed program (wild RIP on respawn/reload).
   core::setActiveProgram(nullptr);
   if(gl::GLCore::useProgram != nullptr) gl::GLCore::useProgram(0);
   const std::string transition =
@@ -278,11 +272,6 @@ bool Pipeline::selectDimension(PackInstance& pack, const net::minecraft::World* 
    pack.definition.gbufferColorBuffers =
        std::max(pack.definition.gbufferColorBuffers, selected->gbufferColorBuffers);
    pack.definition.shadowColorBuffers = std::max(pack.definition.shadowColorBuffers, selected->shadowColorBuffers);
-   // A dimension folder overriding the root's shadow resolution is legal but almost
-   // always a scanning bug rather than intent: the pack-wide const usually lives in a
-   // shared include (shaders/prelude/), so a dimension that reports a *different* number
-   // is reporting one it failed to see. Shout about it — this silently allocated a 1024
-   // shadow map against GLSL compiled for 2048, which reads as shadow acne.
    if(selected->shadowMapResolution > 0) {
     if(pack.definition.shadowMapResolution > 0 &&
        pack.definition.shadowMapResolution != selected->shadowMapResolution) {
@@ -310,15 +299,12 @@ bool Pipeline::selectDimension(PackInstance& pack, const net::minecraft::World* 
   if(!pack.rebuildRuntime(customError)) logOnce(pack, customError, LogLevel::Warning);
   logOnce(pack, transition, LogLevel::Info);
   if(applyIds) {
-   applyBlockIds(&pack.definition);
+   applyBlockIds(pack.definition);
   }
   return true;
 }
 
 bool Pipeline::preparePackResources(PackInstance& pack, int width, int height) {
- // The pipeline runs unconditionally: every pack renders through the scene targets,
- // even when it declares no post stages beyond the gbuffer passes (final-only packs
- // still present via the colortex0 blit).
  if(!ensureSceneTargets(&pack, width, height)) return false;
  return PackResources::ensure(pack, width, height, lightmapTexture_,
                               [](const PackInstance& candidate, const std::string& path) {
@@ -353,8 +339,6 @@ void Pipeline::prepareFrame(net::minecraft::World* world, PackInstance* activePa
    if(const ItemStack* held = minecraft->player->inventory.getSelectedItem()) {
     std::string name = lower(held->getTranslationKey());
     if(name.rfind("item.", 0) == 0 || name.rfind("tile.", 0) == 0) name.erase(0, 5);
-    // Java IdMapUniforms.HeldItemSupplier always resolves through the
-    // item.properties map (never block.properties), defaulting to -1.
     // https://github.com/IrisShaders/Iris/blob/26.1/common/src/main/java/net/irisshaders/iris/uniforms/IdMapUniforms.java
     worldUniforms_.heldItemId = render::resolveShaderObjectId("item", name, -1);
    }
@@ -418,15 +402,11 @@ void Pipeline::refreshLightmap(net::minecraft::World* world) {
  updateLightmap(world);
 }
 
-void Pipeline::setFrameUniforms(const PackUniformValues& frame, const PackDefinition* activeDef,
+void Pipeline::setFrameUniforms(const PackUniformValues& frame, const PackDefinition& activeDef,
                                       PackInstance* activePack) {
  worldUniforms_ = frame;
- if(activeDef != nullptr) {
-  worldUniforms_.wetness = updateWetnessSmooth(worldUniforms_.rainStrength, worldUniforms_.frameTime,
-                                               activeDef->wetnessHalflife, activeDef->drynessHalflife);
- } else {
-  worldUniforms_.wetness = worldUniforms_.rainStrength;
- }
+ worldUniforms_.wetness = updateWetnessSmooth(worldUniforms_.rainStrength, worldUniforms_.frameTime,
+                                              activeDef.wetnessHalflife, activeDef.drynessHalflife);
  if(activePack != nullptr) {
   activePack->customUniforms.evaluate(worldUniforms_);
  }
@@ -550,7 +530,6 @@ bool Pipeline::ensureSceneTargets(PackInstance* activePack, int width, int heigh
    const std::string name = "colortex" + std::to_string(i);
    slots << name << '=' << colorFormatName(activePack->colorTargets.formatOf(name));
   }
-  // Omit main/alt texture ids — they flip each compute pass and would defeat logOnce.
   logOnce(*activePack, "scene targets " + std::to_string(width) + "x" + std::to_string(height) + " {" +
                            slots.str() + "} depthtex");
  }
@@ -593,8 +572,6 @@ void Pipeline::clearScene(PackInstance* activePack, float fogR, float fogG, floa
  }
   const bool fullClear = scene.fullClearRequired();
   scene.clearColors(clear, colors);
- // Named (non-colortex) buffers are a C++ extension; apply the same ClearPassCreator
- // policy (clear flag, custom clear color, black default, force on full clear).
  for(const auto& [name, target] : activePack->definition.targets) {
   if(name.rfind("colortex", 0) == 0 || name.rfind("shadowcolor", 0) == 0 || name == "screen") continue;
   if(!fullClear && !target.clear) continue;
@@ -606,7 +583,7 @@ void Pipeline::clearScene(PackInstance* activePack, float fogR, float fogG, floa
  }
 }
 
-void Pipeline::sampleCenterDepth(PackInstance* activePack, const PackDefinition* activeDef) {
+void Pipeline::sampleCenterDepth(PackInstance* activePack, const PackDefinition& activeDef) {
  if(activePack == nullptr || !activePack->colorTargets.valid()) return;
  const auto& targets = activePack->colorTargets;
  if(targets.width() <= 0 || targets.height() <= 0 || targets.depthTexture() == 0) return;
@@ -616,20 +593,18 @@ void Pipeline::sampleCenterDepth(PackInstance* activePack, const PackDefinition*
 
  const float nearPlane = worldUniforms_.nearPlane > 0.0f ? worldUniforms_.nearPlane : 0.05f;
  const float farPlane = worldUniforms_.farPlane > nearPlane ? worldUniforms_.farPlane : 256.0f;
- const float halfLife = activeDef != nullptr ? activeDef->centerDepthHalflife : 1.0f;
+ const float halfLife = activeDef.centerDepthHalflife;
  worldUniforms_.centerDepthSmooth =
      updateCenterDepthSmooth(depth, nearPlane, farPlane, worldUniforms_.frameTime, halfLife);
 }
 
 void Pipeline::captureOpaqueDepth(PackInstance* activePack) {
- // Pre-hand copy → depthTextures[1] → depthtex2.
  // https://shaders.properties/current/reference/buffers/depthtex/
  // https://github.com/IrisShaders/Iris/blob/26.1/common/src/main/java/net/irisshaders/iris/pipeline/IrisRenderingPipeline.java
  captureDepth(activePack, 1);
 }
 
 void Pipeline::captureHandDepth(PackInstance* activePack) {
- // Pre-translucent copy → depthTextures[0] → depthtex1.
  // https://shaders.properties/current/reference/buffers/depthtex/
  // https://github.com/IrisShaders/Iris/blob/26.1/common/src/main/java/net/irisshaders/iris/pipeline/IrisRenderingPipeline.java
  captureDepth(activePack, 0);
@@ -671,10 +646,7 @@ gl::ShaderProgram* Pipeline::programFromPack(PackInstance& pack, const std::stri
 
 gl::ShaderProgram* Pipeline::worldProgram(const std::string& key, PackInstance* pack) {
  lastWorldProgramKey_ = key;
- // The applier (RenderType setupRenderState) keys blend/alphaTest directives by the
  // RESOLVED program source name (Java ProgramDirectives.java:80-83 reads the resolved
- // ProgramSource); publish the final key here and clear it on every failure path so the
- // applier never re-derives it or applies stale directives for a skipped draw.
  resolvedWorldProgramKey_.clear();
  if(pack == nullptr) return nullptr;
 
@@ -732,20 +704,12 @@ bool Pipeline::renderBegin(PackInstance* activePack, int shadowDepthTextureId,
   shadowColorTextures_[index] = shadowColorTextureIds == nullptr ? -1 : shadowColorTextureIds[index];
   shadowColorAltTextures_[index] = shadowColorAltTextureIds == nullptr ? -1 : shadowColorAltTextureIds[index];
  }
- // The shadow color flip state is static per pack (Iris computes it once when the
- // shadow composite renderer is created); recompute when the pack changes so the
- // shadow map render's gbuffer shaders sample the correct static flip side.
  // https://github.com/IrisShaders/Iris/blob/26.1/common/src/main/java/net/irisshaders/iris/shadows/ShadowCompositeRenderer.java
  if(shadowTargets_ != nullptr && shadowColorFlipPack_ != activePack) {
   shadowColorFlipPack_ = activePack;
   initShadowColorFlips(*activePack);
  }
-  // Java's BEGIN stage runs before the shadow map render (onBeginClear →
   // beginRenderer.renderAll, IrisRenderingPipeline.java:1022) and samples the shadow
-  // targets as they exist at that point — the previous frame's maps (Iris keeps the
-  // targets across frames). The caller passes the last frame's ids; on the very first
-  // frame they are -1 (the C++ targets are created lazily by the first map render,
-  // where Java creates them at pipeline construction).
   return CompositeRenderer(this).render(*activePack, activePack->beginPasses, false, "begin",
                                         shadowDepthTextureId, shadowOpaqueDepthTextureId,
                                         shadowColorTextureIds, shadowColorTextureCount,
@@ -795,15 +759,9 @@ bool Pipeline::renderShadowComposite(PackInstance* activePack, int shadowDepthTe
    }
   }
  }
- // Java runs the shadow composite stage after the shadow map render (ShadowRenderer
  // renderShadows → compositeRenderer.renderAll, ShadowRenderer.java:632) and only when
- // the shadow renderer is active (no shadow map this frame → no shadowcomp stage, like
- // Iris' renderShadows with null shadow renderer).
  // https://github.com/IrisShaders/Iris/blob/26.1/common/src/main/java/net/irisshaders/iris/pipeline/IrisRenderingPipeline.java
- // Java derives shadowMapResolution from the pack directives at pipeline construction
  // (IrisRenderingPipeline.java:315), while the C++ frame uniform set is built before
- // the map render and carries the previous frame's resolution; fill in the pack
- // constant so the shadowcomp viewport and uniform are right on the first frame.
  if(worldUniforms_.shadowMapResolution <= 0.0f && activePack->definition.shadowMapResolution > 0) {
   worldUniforms_.shadowMapResolution = static_cast<float>(activePack->definition.shadowMapResolution);
  }
@@ -830,9 +788,6 @@ bool Pipeline::renderPreWorld(PackInstance* activePack, int shadowDepthTextureId
    shadowColorTextures_[index] = shadowColorTextureIds == nullptr ? -1 : shadowColorTextureIds[index];
    shadowColorAltTextures_[index] = shadowColorAltTextureIds == nullptr ? -1 : shadowColorAltTextureIds[index];
   }
-  // The shadow color flip state is static per pack (Iris computes it once when the
-  // shadow composite renderer is created); the normal path initializes it in
-  // renderBegin (before the shadow map render); this guard covers direct callers.
   if(shadowTargets_ != nullptr && shadowColorFlipPack_ != activePack) {
    shadowColorFlipPack_ = activePack;
    initShadowColorFlips(*activePack);
@@ -853,8 +808,6 @@ bool Pipeline::renderPreWorld(PackInstance* activePack, int shadowDepthTextureId
   }
   shadowDepthTexture_ = shadowDepthTextureId;
   shadowOpaqueDepthTexture_ = shadowOpaqueDepthTextureId;
-  // World-pass gbuffer shaders and the final pass read the static final flip side,
-  // like Iris' dynamic samplers (flipped == null → getColorTextureId).
   if(shadowColorFlipPack_ == activePack) {
    for(int index = 0; index < shadowColorTextureCount_; ++index) {
     if(shadowColorFlipped_[static_cast<std::size_t>(index)] && shadowColorAltTextures_[index] >= 0) {
@@ -869,13 +822,6 @@ bool Pipeline::renderPreWorld(PackInstance* activePack, int shadowDepthTextureId
 }
 
 void Pipeline::initShadowColorFlips(const PackInstance& pack) {
-  // Mirrors ShadowCompositeRenderer's constructor: explicit shadowcomp_pre flips are
-  // applied first, then each shadow composite pass flips the buffers it writes (unless
-  // the pass's own flip directive says false) and every explicit true directive flips
-  // its buffer even when the pass does not write it (Java's drawBuffers loop followed by
-  // the explicitFlips sweep). The per-pass states are snapshotted so every pass reads
-  // and writes the same static flip-side textures; the state is never mutated during
-  // rendering (the old per-pass applyWroteFlips toggles were vestigial).
   // https://github.com/IrisShaders/Iris/blob/26.1/common/src/main/java/net/irisshaders/iris/shadows/ShadowCompositeRenderer.java
   shadowColorFlipped_.fill(false);
   shadowCompPassReadFlips_.clear();
@@ -923,9 +869,6 @@ bool Pipeline::renderDeferred(PackInstance* activePack, int shadowDepthTextureId
        return ComputeDispatcher::matchesStage(activePack->definition.passes[index].name, "deferred");
       });
   if(activePack->deferredPasses.empty() && !hasComputeDeferred) return false;
-  // TEMP DIAGNOSTIC — pre-deferred sky-pixel readback. What does colortex1's sky hold
-  // BEFORE the deferred dispatch (vs my [post-probe] after the whole chain)? Plus the
-  // scene depth at that pixel (is it sky=1.0 or geometry?) and the depth texture id.
   {
    static int preDeferredFrames = 0;
    const int pre = preDeferredFrames++;
@@ -948,7 +891,6 @@ bool Pipeline::renderDeferred(PackInstance* activePack, int shadowDepthTextureId
             ") depth=" + std::to_string(depth));
    }
   }
-  // END TEMP DIAGNOSTIC
   return CompositeRenderer(this).render(*activePack, activePack->deferredPasses, false, "deferred",
                                         shadowDepthTextureId, shadowOpaqueDepthTextureId,
                                         shadowColorTextureIds, shadowColorTextureCount,
@@ -960,14 +902,11 @@ bool Pipeline::renderPostProcess(PackInstance* activePack, PackInstance* /*baseP
                                        const int* shadowColorTextureIds, int shadowColorTextureCount,
                                        const int* shadowColorAltTextureIds) {
  if(activePack == nullptr) return false;
- engineColorCorrect_ = engineOwnsColorCorrection(&activePack->definition);
+ engineColorCorrect_ = engineOwnsColorCorrection(activePack->definition);
  const net::minecraft::client::Minecraft* minecraft = net::minecraft::client::Minecraft::INSTANCE;
  const int screenW = minecraft != nullptr ? std::max(1, minecraft->displayWidth) : 1;
  const int screenH = minecraft != nullptr ? std::max(1, minecraft->displayHeight) : 1;
   if(engineColorCorrect_) {
-   // Pre-create the color-space write FBO before the composite/final stage runs: the
-   // call's purpose is the colorSpace_.rebuild() side effect (allocates the present +
-   // write targets); the returned framebuffer is consumed by presentFinalToScreen later.
    (void)screenDrawFramebuffer(std::max(1, activePack->colorTargets.width()),
                                std::max(1, activePack->colorTargets.height()));
   }
@@ -983,9 +922,6 @@ bool Pipeline::renderPostProcess(PackInstance* activePack, PackInstance* /*baseP
                                    shadowColorTextureIds, shadowColorTextureCount,
                                    shadowTargets_, shadowColorAltTextureIds);
    }
-  // TEMP DIAGNOSTIC — [renderpearl-probe] exposure SSBO, compute inventory, fog and
-  // shadow light-axis sanity. Runs after the composite stage has executed. DELETE
-  // after investigation.
   {
    static int probeFrames = 0;
    const int probe = probeFrames++;
@@ -1072,7 +1008,6 @@ bool Pipeline::renderPostProcess(PackInstance* activePack, PackInstance* /*baseP
             std::to_string(worldUniforms_.shadowMapResolution) + ")");
    }
   }
-  // END TEMP DIAGNOSTIC
    if(!packWroteToScreen_) presentFinalToScreen(activePack, screenW, screenH);
  finalizeEngineColorCorrection(screenW, screenH);
  return packWroteToScreen_;
@@ -1086,8 +1021,6 @@ bool Pipeline::blitColortex0ToScreen(PackInstance& pack, int screenWidth, int sc
   if(color0 == 0 || width <= 0 || height <= 0 || screenWidth <= 0 || screenHeight <= 0) return false;
  if(engineColorCorrect_) {
   if(screenDrawFramebuffer(width, height) == 0) return false;
-  // Java FinalPassRenderer's copy fallback reads colortex0 through a fresh FBO and
-  // blits into the color-space swap target when the engine owns the correction.
   // https://github.com/IrisShaders/Iris/blob/26.1/common/src/main/java/net/irisshaders/iris/pipeline/FinalPassRenderer.java
   presentReadFbo_.addColorAttachment(0, color0);
   presentReadFbo_.bindAsReadBuffer();
@@ -1105,9 +1038,6 @@ bool Pipeline::blitColortex0ToScreen(PackInstance& pack, int screenWidth, int sc
  }
   presentReadFbo_.addColorAttachment(0, color0);
   presentReadFbo_.bindAsReadBuffer();
-  // TEMP DIAGNOSTIC — post-processing probe. DELETE after investigation.
-  // Compares the presented colortex0 against the raw gbuffer colortex1 and dumps
-  // the sky-bloom custom uniforms, once per pack load per stage and every 90 frames.
   static int postProbeFrames = 0;
   const int postProbe = postProbeFrames++;
   if(postProbe < 3 || postProbe % 90 == 0) {
@@ -1141,7 +1071,6 @@ bool Pipeline::blitColortex0ToScreen(PackInstance& pack, int screenWidth, int sc
       cu += f.str();
      }
     }
-    // Scan the top half of both buffers for the brightest pixel (sun disc / halo).
     std::vector<float> skyScan(static_cast<std::size_t>(width) * (height / 2) * 4);
     float peak0[3]{}, peak1[3]{};
     int peak0x = -1, peak0y = -1, peak1x = -1, peak1y = -1;
@@ -1190,14 +1119,12 @@ bool Pipeline::blitColortex0ToScreen(PackInstance& pack, int screenWidth, int sc
            ") colortex1=(" + std::to_string(peak1x) + "," + std::to_string(peak1y) + ") rgb=(" +
            std::to_string(peak1[0]) + "," + std::to_string(peak1[1]) + "," + std::to_string(peak1[2]) + ")");
   }
-  // END TEMP DIAGNOSTIC
   gl::GLCore::bindFramebuffer(static_cast<unsigned>(gl::framebuffer::DrawFramebuffer), 0);
   core::viewport(0, 0, screenWidth, screenHeight);
   gl::GLCore::blitFramebuffer(0, 0, width, height, 0, 0, screenWidth, screenHeight, gl::attrib::ColorBufferBit,
                               gl::filter::Nearest);
   gl::GLCore::bindFramebuffer(static_cast<unsigned>(gl::framebuffer::ReadFramebuffer), 0);
   gl::GLCore::bindFramebuffer(static_cast<unsigned>(gl::framebuffer::Framebuffer), 0);
-  // TEMP DIAGNOSTIC — screen readback to confirm the blit presents colortex0.
   if(postProbe < 3 || postProbe % 90 == 0) {
    float scr[4]{};
    ::glReadPixels(0, 0, 1, 1, 0x1908, 0x1406, scr);
@@ -1206,13 +1133,10 @@ bool Pipeline::blitColortex0ToScreen(PackInstance& pack, int screenWidth, int sc
        std::string("[post-probe] screen BL=(0,0)=(") + std::to_string(scr[0]) + "," + std::to_string(scr[1]) + "," +
            std::to_string(scr[2]) + ")");
   }
-  // END TEMP DIAGNOSTIC
   return true;
 }
 
 void Pipeline::presentFinalToScreen(PackInstance* scenePack, int screenWidth, int screenHeight) {
-  // Owned by the final pass runner (FinalPassRenderer.java renderFinalPass); the
-  // Pipeline entry is kept as a thin forwarder so external callers are untouched.
   FinalPassRenderer(this).presentToScreen(scenePack, screenWidth, screenHeight);
 }
 

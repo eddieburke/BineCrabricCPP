@@ -1,4 +1,5 @@
 #include "net/minecraft/client/render/item/HeldItemRenderer.hpp"
+#include "net/minecraft/client/render/shaderpack/Pack.hpp"
 #include <algorithm>
 #include <cmath>
 #include "net/minecraft/block/Block.hpp"
@@ -159,7 +160,6 @@ void HeldItemRenderer::renderItem(const net::minecraft::entity::LivingEntity& en
   blockRenderManager.ctx.textureManager = &minecraft->textureManager;
   const bool cullWasEnabled = core::cullEnabled();
   core::disableCull();
-  // MCP ItemRenderer.renderItem: getEntityBrightness(1.0F).
   const core::ScopedDrawCameraState itemGuard;
   blockRenderManager.render(*block, itemStack.getDamage(), entity.getBrightnessAtEyes(1.0f));
   if(cullWasEnabled) {
@@ -203,11 +203,9 @@ void HeldItemRenderer::render(float tickDelta) {
  const float rawHandLight = minecraft->world->getLightBrightness(MathHelper::floor(clientPlayer->x),
                                                               MathHelper::floor(clientPlayer->y),
                                                               MathHelper::floor(clientPlayer->z));
- const bool useOldHandLight =
-      minecraft->gameRenderer != nullptr && minecraft->gameRenderer->shaderPacks() != nullptr &&
-              minecraft->gameRenderer->shaderPacks()->activeDefinition() != nullptr
-          ? minecraft->gameRenderer->shaderPacks()->activeDefinition()->oldHandLight
-          : true;
+ const bool useOldHandLight = minecraft->gameRenderer == nullptr
+                                  ? vanillaPackDefinition().oldHandLight
+                                  : minecraft->gameRenderer->packDefinition().oldHandLight;
   const float colorMult = useOldHandLight ? rawHandLight : 1.0f;
   Tessellator::INSTANCE.light(15, 15);
   entity::EntityRenderer* entityRenderer = entity::EntityRenderDispatcher::instance().get(*clientPlayer);

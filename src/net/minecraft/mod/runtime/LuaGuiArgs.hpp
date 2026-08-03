@@ -13,7 +13,6 @@ struct GuiRect {
   return mouseX >= x && mouseY >= y && mouseX < x + w && mouseY < y + h;
  }
 };
-// Packed 0xAARRGGBB color arg; accepts negative (signed) encodings from Lua.
 [[nodiscard]] std::uint32_t luaArgb(lua_State* state, int index, std::uint32_t fallback = 0xFFFFFFFFU);
 class GuiDrawArgs {
  public:

@@ -20,11 +20,9 @@ enum class CustomUniformType {
 struct CustomUniformDecl {
  std::string name;
  CustomUniformType type = CustomUniformType::Float;
- // true = upload to GPU; false = intermediate `variable.` (not uploaded).
  bool upload = true;
  std::string expression;
 };
-// Runtime value held by the evaluator / uploaded to a program.
 struct CustomUniformValue {
  CustomUniformType type = CustomUniformType::Float;
  float f[4]{};
@@ -48,7 +46,6 @@ class CustomUniformRuntime {
  CustomUniformRuntime& operator=(const CustomUniformRuntime&) = delete;
  void clear();
  bool compile(const std::vector<CustomUniformDecl>& decls, std::string& error);
- // Shader pack option / const values (e.g. LL_RATE) referenced by custom uniform expressions.
  void setOptions(std::unordered_map<std::string, std::string> options);
  void evaluate(const PackUniformValues& frame);
  void upload(const gl::ShaderProgram& program) const;
@@ -57,8 +54,6 @@ class CustomUniformRuntime {
  }
 
  private:
- // Defined in CustomUniforms.cpp — out-of-line dtor so unique_ptr<Compiled> is
- // destroyed where Compiled is complete (PackInstance includes only the hpp).
  struct Compiled;
  std::vector<std::unique_ptr<Compiled>> compiled_;
  std::unordered_map<std::string, CustomUniformValue> values_;

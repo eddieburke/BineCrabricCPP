@@ -9,7 +9,6 @@
 #include "net/minecraft/mod/runtime/LuaEntityBindings.hpp"
 #include "net/minecraft/mod/runtime/LuaEventGlue.hpp"
 #include "net/minecraft/mod/runtime/LuaScreenBindings.hpp"
-// ModHostUtil.hpp deleted — its functions now live in LuaHostApi.hpp and others
 #include "net/minecraft/mod/ModSettingsRegistry.hpp"
 #include "net/minecraft/mod/ScreenUi.hpp"
 #include "net/minecraft/mod/runtime/ModRenderScope.hpp"
@@ -153,7 +152,6 @@ void setChunkContextFields(lua_State* state) {
            "has_chunk",
            LuaChunkContext::hasActiveChunk());
 }
-// Common shape: scope on the event world, fill + read the Lua table.
 template <typename Event, typename Push, typename Read>
 void runLuaHook(LuaEventId id, Event& e, Push push, Read read) {
  const int eventIndex = static_cast<int>(id);
@@ -171,9 +169,6 @@ void runLuaHook(LuaEventId id, Event& e, Push push, Read read) {
 }
 } // namespace
 namespace {
-// One entry per subscribed callback, pre-sorted so dispatch is a flat walk. The mod is
-// held by shared_ptr because a callback may trigger a mod rescan, which reallocates
-// loadedLuaMods() underneath an in-flight dispatch.
 struct LuaHookEntry {
  std::shared_ptr<ModHost::LoadedLuaMod> mod;
  int functionRef = 0;
@@ -206,10 +201,8 @@ void rebuildHookTable() {
         order++});
   }
  }
- for(std::size_t i = 0; i < kLuaEventCount; ++i) {
-  // Documented contract: higher priority runs first. Ties keep declaration order
-  // (mod load order, then registration order within a mod) so ordering stays stable.
-  std::stable_sort(pending[i].begin(), pending[i].end(), [](const PendingEntry& a, const PendingEntry& b) {
+  for(std::size_t i = 0; i < kLuaEventCount; ++i) {
+   std::stable_sort(pending[i].begin(), pending[i].end(), [](const PendingEntry& a, const PendingEntry& b) {
    return a.priority != b.priority ? a.priority > b.priority : a.order < b.order;
   });
   LuaHookEntries entries;
@@ -403,11 +396,10 @@ void luaHookRaycast(RaycastEvent& e) {
                 ev.side,
                 "block_id",
                 ev.blockId,
-                "block_name",
-                blockWireNameFromId(ev.blockId),
-                // Deprecated alias for block_id — kept for backward compatibility.
-                "item_id",
-                ev.blockId);
+                 "block_name",
+                 blockWireNameFromId(ev.blockId),
+                 "item_id",
+                 ev.blockId);
       if(ev.entity != nullptr) {
        const auto pos = ev.entity->position();
        setEntityIdentityFields(state, *ev.entity);
@@ -985,17 +977,12 @@ void luaHookWorldRender(WorldRenderEvent& e) {
  }
  const ModDrawLayer drawLayer =
      e.stage == WorldRenderStage::Clouds ? ModDrawLayer::Clouds : ModDrawLayer::Auto;
- ScopedModWorldDrawContext worldDrawScope{e.world, e.tickDelta, drawLayer};
- // World-render callbacks routinely query the world they are drawing
- // (minecraft.entities.list to draw mod entities, for one), so the mod context
- // has to be live here just as it is for the runLuaHook-based events.
- std::optional<ModContextScope> contextScope;
- if(e.world != nullptr) {
-  contextScope.emplace(e.world, nullptr);
- }
- // Sky seeds celestialAngle (writable); other stages expose live world time under
- // the same celestial_angle field (former duplicate "celestial").
- if(e.world != nullptr && e.stage != WorldRenderStage::Sky) {
+  ScopedModWorldDrawContext worldDrawScope{e.world, e.tickDelta, drawLayer};
+  std::optional<ModContextScope> contextScope;
+  if(e.world != nullptr) {
+   contextScope.emplace(e.world, nullptr);
+  }
+  if(e.world != nullptr && e.stage != WorldRenderStage::Sky) {
   e.celestialAngle = normalizedCelestial(e.world, e.tickDelta);
  }
  dispatchLuaHook(
@@ -1255,13 +1242,8 @@ void luaHookScreenEvent(LuaScreenEvent& e) {
  if(g_activeLuaScreen == nullptr) {
   return;
  }
- static constexpr const char* kPhaseNames[] = {"init", "render", "tick", "key", "mouse", "scroll", "close"};
- // dispatchLuaHook runs this fill lambda once per subscribed mod callback, and a callback is
- // free to close or replace the screen (LuaScreen::removed dispatches its own Close event and
- // resets g_activeLuaScreen). Re-reading the global per callback therefore dereferenced null
- // on the next iteration. Snapshot the screen identity up front: it also guarantees every mod
- // observes the same screen_id/width/height for a single event.
- const std::string screenId = g_activeLuaScreen->id();
+  static constexpr const char* kPhaseNames[] = {"init", "render", "tick", "key", "mouse", "scroll", "close"};
+  const std::string screenId = g_activeLuaScreen->id();
  const int screenWidth = g_activeLuaScreen->width();
  const int screenHeight = g_activeLuaScreen->height();
  dispatchLuaHook(

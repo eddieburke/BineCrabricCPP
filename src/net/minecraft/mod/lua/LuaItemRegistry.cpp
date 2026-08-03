@@ -77,11 +77,8 @@ bool registerItemSpec(const ItemRegistrationSpec& spec, std::string& error) {
    error = "register_item requires texture (a mod resource path)";
    return false;
   }
-  if(ItemRegistry::instance().contains(spec.itemId)) {
-   // Re-registration by the same mod (live re-enable / Reload List) is a no-op:
-   // content registrations persist for the session and the world is untouched by
-   // design. A different owner claiming the id is a genuine conflict.
-   if(const ItemRegistrationSpec* existing = ItemRegistry::instance().specForId(spec.itemId);
+   if(ItemRegistry::instance().contains(spec.itemId)) {
+    if(const ItemRegistrationSpec* existing = ItemRegistry::instance().specForId(spec.itemId);
       existing != nullptr && !spec.ownerModId.empty() && existing->ownerModId == spec.ownerModId) {
     return true;
    }
@@ -92,9 +89,7 @@ bool registerItemSpec(const ItemRegistrationSpec& spec, std::string& error) {
    error = "register_item id is already reserved: " + std::to_string(spec.itemId);
    return false;
   }
-  // Claim the texture id at script-load time so a model-backed item's sprite
-  // index is stable regardless of when the Init pass instantiates the item.
-  (void)registry::TextureRegistry::getOrRegisterTexture(spec.texturePath);
+   (void)registry::TextureRegistry::getOrRegisterTexture(spec.texturePath);
   ItemRegistry::instance().add(spec.itemId, spec);
   return true;
 }

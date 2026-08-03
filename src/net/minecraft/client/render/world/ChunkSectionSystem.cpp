@@ -338,9 +338,14 @@ void ChunkSectionSystem::cullChunks(FrustumCuller* culler, float /*tickDelta*/, 
  for(chunk::ChunkBuilder* chunkPtr : sectionList_) {
   chunk::ChunkBuilder& chunk = *chunkPtr;
   chunk.updateFrustum(*culler);
+  // Sections hugging the camera are kept regardless of the frustum so nothing pops in
+  // at the near plane. The radius is spherical, like the occlusion bypass below: a
+  // horizontal-only test left camY unused and made this an infinite vertical cylinder,
+  // which kept every section directly above and below the player in view.
   const double dx = camX - static_cast<double>(chunk.centerX);
+  const double dy = camY - static_cast<double>(chunk.centerY);
   const double dz = camZ - static_cast<double>(chunk.centerZ);
-  if(dx * dx + dz * dz <= nearFrustumBypassDistanceSq) {
+  if(dx * dx + dy * dy + dz * dz <= nearFrustumBypassDistanceSq) {
    chunk.inFrustum = true;
   }
  }

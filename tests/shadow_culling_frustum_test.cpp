@@ -66,7 +66,10 @@ TEST(ShadowCullingFrustum, KeepsCastersBehindThePlayerOnTheLightSide) {
  // Directly in view.
  EXPECT_TRUE(frustum.isVisible(blockAt(-8.0, 56.0, -64.0)));
  // Behind the camera, between the light and the visible region: casts into view.
- EXPECT_TRUE(frustum.isVisible(blockAt(-8.0, 80.0, 32.0)));
+ // Light rays run (0,-1,-1)/sqrt(2), so a caster reaches view depth u at height
+ // (y - z) - u; landing inside a 70 degree frustum needs 0.3u <= y - z <= 1.7u. This box
+ // is camera-relative y-z in [32, 64], so its shadow enters the view volume.
+ EXPECT_TRUE(frustum.isVisible(blockAt(-8.0, 128.0, 16.0)));
 }
 // The complement: geometry on the far side of the view volume from the light cannot
 // cast onto anything visible, so Java's back-plane test drops it.

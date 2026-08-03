@@ -21,18 +21,13 @@ class ModIdRegistry {
    specs_[id] = spec;
    names_[wireToken(id, spec)] = id;
    if(ModLifecycle::currentPhase() <= Traits::kPhase) {
-    // Startup: the trait's phase bucket (runs after vanilla at that phase) is
-    // still pending, so batch-instantiate there to preserve registration order.
     if(!queued_) {
      queued_ = true;
      registry::Registry::enqueue(Traits::kPhase, 50000, &ModIdRegistry::initAll);
     }
-   } else {
-    // Runtime load (mods enabled / Reload List after bootstrap): the phase
-    // bucket already drained, so instantiate this registration immediately.
-    // Vanilla content is fully present, so no ordering is needed.
-    Traits::instantiate(spec);
-   }
+    } else {
+     Traits::instantiate(spec);
+    }
   }
  [[nodiscard]] int idFromName(const char* name) const {
   if(name == nullptr || *name == '\0') {

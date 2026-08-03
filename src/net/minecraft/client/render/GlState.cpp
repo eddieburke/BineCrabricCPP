@@ -51,9 +51,9 @@ unsigned int samplerObject(bool compare, bool linear, bool mipmap) {
 static int g_highestSamplerUnit = -1;
 
 namespace {
-int shadowBufferIndex(std::string_view name, const PackDefinition* definition) {
+int shadowBufferIndex(std::string_view name, const PackDefinition& definition) {
  if(name == "shadowtex1" || name == "shadowtex1HW") return 1;
- if(name == "shadow" && definition != nullptr && definition->usesWaterShadow) return 1;
+ if(name == "shadow" && definition.usesWaterShadow) return 1;
  return 0;
 }
 bool isShadowDepthSampler(std::string_view name) {
@@ -67,7 +67,7 @@ bool isShadowRelatedSampler(std::string_view name) {
  return isShadowDepthSampler(name) || isShadowColorSampler(name);
 }
 void bindOneSamplerUnit(gl::ShaderProgram& program, const std::string& name, unsigned int tex, bool volume,
-                        int unit, const PackDefinition* definition) {
+                        int unit, const PackDefinition& definition) {
  core::activeTexture(gl::tex::Texture0 + unit);
  if(volume) {
   ::glBindTexture(kTexture3D, tex);
@@ -88,7 +88,7 @@ void bindOneSamplerUnit(gl::ShaderProgram& program, const std::string& name, uns
 }
 }
 
-void shadowSampleMode(std::string_view name, bool sampler2DShadow, const PackDefinition* definition,
+void shadowSampleMode(std::string_view name, bool sampler2DShadow, const PackDefinition& definition,
                       bool& compare, bool& linear, bool& mipmap) {
  // https://shaders.properties/current/reference/buffers/shadowtex/
  // https://shaders.properties/current/reference/constants/shadowhardwarefiltering/
@@ -100,14 +100,11 @@ void shadowSampleMode(std::string_view name, bool sampler2DShadow, const PackDef
   return;
  }
  const int idx = shadowBufferIndex(name, definition);
- if(definition != nullptr) {
-  linear = !definition->shadowtexNearest[idx];
-  mipmap = definition->shadowtexMipmap[idx];
- }
+ linear = !definition.shadowtexNearest[idx];
+ mipmap = definition.shadowtexMipmap[idx];
  const bool hwName = name.ends_with("HW");
- const bool separateHw =
-     definition != nullptr && featureEnabled(*definition, "SEPARATE_HARDWARE_SAMPLERS");
- const bool hwFilter = definition != nullptr && definition->shadowHardwareFiltering[idx];
+ const bool separateHw = featureEnabled(definition, "SEPARATE_HARDWARE_SAMPLERS");
+ const bool hwFilter = definition.shadowHardwareFiltering[idx];
  if(hwName) {
   // RenderPearl requires SEPARATE_HARDWARE_SAMPLERS and samples *HW as sampler2DShadow;
   // enable compare when the sampler is shadow-typed even if the const directive is commented.
@@ -127,7 +124,7 @@ void bindSamplers(gl::ShaderProgram& program,
                   const std::unordered_map<std::string, int>& textures,
                   const std::unordered_map<std::string, int>& volumeTextures,
                   int maxUnits,
-                  const PackDefinition* definition) {
+                  const PackDefinition& definition) {
  int unit = 0;
  for(const std::string& name : program.declaredSamplers()) {
   if(unit >= maxUnits) break;
@@ -147,14 +144,14 @@ void putShadowTextures(std::unordered_map<std::string, int>& textures,
                        int shadowtex1,
                        const int* shadowColorTextures,
                        int shadowColorCount,
-                       const PackDefinition* definition) {
+                       const PackDefinition& definition) {
  // https://shaders.properties/current/reference/buffers/shadowtex/
  // https://shaders.properties/current/reference/buffers/shadowcolor/
  if(shadowtex0 >= 0) {
   textures["shadowtex0"] = shadowtex0;
   const int opaque = shadowtex1 >= 0 ? shadowtex1 : shadowtex0;
   textures["shadowtex1"] = opaque;
-  if(definition != nullptr && featureEnabled(*definition, "SEPARATE_HARDWARE_SAMPLERS")) {
+  if(featureEnabled(definition, "SEPARATE_HARDWARE_SAMPLERS")) {
    textures["shadowtex0HW"] = shadowtex0;
    textures["shadowtex1HW"] = opaque;
   }
@@ -164,14 +161,14 @@ void putShadowTextures(std::unordered_map<std::string, int>& textures,
    textures["shadowcolor" + std::to_string(i)] = shadowColorTextures[i];
   }
  }
- refreshTextureAliases(textures, definition != nullptr && definition->usesWaterShadow);
+ refreshTextureAliases(textures, definition.usesWaterShadow);
 }
 
 int bindShadowSamplers(gl::ShaderProgram& program,
                        int startUnit,
                        int maxUnits,
                        const std::unordered_map<std::string, int>& textures,
-                       const PackDefinition* definition) {
+                       const PackDefinition& definition) {
  int unit = startUnit;
  for(const std::string& name : program.declaredSamplers()) {
   if(!isShadowRelatedSampler(name)) continue;
@@ -451,7 +448,7 @@ unsigned int internalFormat(ColorFormat format) {
 
 unsigned int bindColorImages(gl::ShaderProgram& program,
                              const std::unordered_map<std::string, int>& colorTextures,
-                             const PackDefinition* definition,
+                             const PackDefinition& definition,
                              const ColorTargets* colorTargets) {
  if(gl::GLCore::bindImageTexture == nullptr) return 0;
  unsigned int unit = 0;
@@ -465,9 +462,9 @@ unsigned int bindColorImages(gl::ShaderProgram& program,
    unsigned int format = 0x8058;
    if(sceneColor && colorTargets != nullptr) {
     format = internalFormat(colorTargets->formatOf(bufferName));
-   } else if(definition != nullptr) {
-    const auto target = definition->targets.find(bufferName);
-    if(target != definition->targets.end()) format = internalFormat(target->second.format);
+   } else {
+    const auto target = definition.targets.find(bufferName);
+    if(target != definition.targets.end()) format = internalFormat(target->second.format);
    }
     gl::GLCore::bindImageTexture(unit, static_cast<unsigned int>(found->second), 0, 0, 0, 0x88BA, format);
     program.set1i(imageName, static_cast<int>(unit));

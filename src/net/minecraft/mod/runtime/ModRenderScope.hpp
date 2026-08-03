@@ -85,10 +85,6 @@ class ScopedModWorldDrawContext {
  return blend ? "gbuffers_entities_translucent" : "gbuffers_entities";
 }
 #ifdef MINECRAFT_NATIVE_EXPORTS
-// The Lua spec composes a RenderType::State directly (program key + GL state shards);
-// RenderPassScope applies and restores it. No parallel PassKind table and no post-pass
-// override scopes — the Java analog is composing a RenderPipeline
-// (BlendState/DepthTestState/...) and letting RenderSetup apply it.
 class ModLuaDrawScope {
  public:
   ModLuaDrawScope(bool textured, bool blend, bool cull, bool depthTest, bool depthWrite,
@@ -117,11 +113,7 @@ class ModLuaDrawScope {
    bool hasNormals = false;
    client::render::RenderType::State state;
   };
-  // The override-scope semantics of the pre-collapse scope: every flag the Lua spec
-  // controls wins (blend/cull/depthTest/depthWrite), except sky passes keep depth test
-  // on and write only when the spec asked for both. Alpha/lighting come from the pass
-  // class (0.1 cutout alpha, lighting always off for mod draws).
-  [[nodiscard]] static PassSpec composePass(bool textured, bool blend, bool cull, bool depthTest,
+   [[nodiscard]] static PassSpec composePass(bool textured, bool blend, bool cull, bool depthTest,
                                             bool depthWrite, ModDrawLayer layer, int blendSrc, int blendDst) {
    const bool sky = !depthTest || layer == ModDrawLayer::Sky;
    const bool basic = !sky && (layer == ModDrawLayer::Basic || !textured);

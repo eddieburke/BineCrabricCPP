@@ -237,9 +237,7 @@ int luaRaycast(lua_State* state) {
  if(doEntities) {
   entityHit = entityRaycast(world, camera, origin, end, blockDist);
  }
- // Placed model instances share the entity-style hitbox path: they win when
- // their box is nearer than any block hit along the ray.
- model::ModelRaycastHit modelHit;
+  model::ModelRaycastHit modelHit;
  const bool haveModel = model::raycastModelInstances(
      origin.x, origin.y, origin.z, direction.x, direction.y, direction.z, blockDist, modelHit);
  if(haveModel) {

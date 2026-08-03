@@ -145,15 +145,15 @@ struct PackDefinition {
  bool skipAllRendering = false;
  bool allowConcurrentCompute = false;
  bool supportsColorCorrection = false;
-  bool oldHandLight = false;
+  // Defaults to true when the pack does not say otherwise (PackDirectives:
+  // getOldHandLight().orElse(true)), which is also the vanilla hand-light behaviour.
+  bool oldHandLight = true;
   // Java ShaderProperties.java:83,756 - parsed, never consumed (parity parse).
   bool dynamicHandLight = false;
   bool dhShadowEnabled = false;
  bool prepareBeforeShadow = false;
  bool breaksAnisotropy = false;
  int fallbackTex = 0;
- // Java PackShadowDirectives.getCullingState(), consumed by
- // ShadowRenderer.createShadowFrustum to pick the shadow pass frustum.
  // https://github.com/IrisShaders/Iris/blob/26.1/common/src/main/java/net/irisshaders/iris/shaderpack/properties/ShaderProperties.java
  ShadowCullState shadowCulling = ShadowCullState::Default;
  bool voxelizeLightBlocks = false;
@@ -166,7 +166,6 @@ struct PackDefinition {
   float entityShadowDistanceMul = 1.0f;
   float voxelDistance = 0.0f;
   // Java PackShadowDirectives.java:63-65 - distance 160.0f, nearPlane
-  // ShadowMatrices.NEAR (-100.05), farPlane ShadowMatrices.FAR (156.0).
   float shadowDistance = 160.0f;
   float shadowDistanceRenderMul = -1.0f;
   float shadowMapFov = 0.0f;
@@ -175,7 +174,6 @@ struct PackDefinition {
  float shadowIntervalSize = 2.0f; // 0 disables snap
  float sunPathRotation = 0.0f;
   // Java PackDirectives.java:63-66 - wetness 600.0f, dryness 200.0f, eyeBrightness 10.0f,
-  // centerDepth 1.0f. Half-life units are deciseconds (SmoothedFloat multiplies by 0.1).
   float wetnessHalflife = 600.0f;
   float drynessHalflife = 200.0f;
   float centerDepthHalflife = 1.0f;
@@ -238,4 +236,15 @@ struct PackDefinition {
   std::vector<PackPass> passes;
   std::vector<CustomUniformDecl> customUniforms;
 };
+// Iris' VanillaRenderingPipeline: with no shader pack loaded the renderer still asks the
+// same questions and gets the vanilla answers from one implementation, so no call site
+// ever branches on "is a pack active". A default-constructed PackDefinition IS that
+// pipeline - every member initialiser above is already the vanilla value, and
+// shadowMapResolution defaulting to 0 makes the shadow pass bail on its own - which
+// keeps vanilla behaviour defined in exactly one place instead of being respelled as a
+// fallback expression at each use.
+[[nodiscard]] inline const PackDefinition& vanillaPackDefinition() noexcept {
+ static const PackDefinition vanilla{};
+ return vanilla;
+}
 } // namespace net::minecraft::client::render

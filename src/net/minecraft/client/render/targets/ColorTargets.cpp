@@ -37,7 +37,6 @@ GlFormat glFormat(ColorFormat format) {
   case ColorFormat::Rgba16: return {0x805B, 0x1908, 0x1403};
   case ColorFormat::Rgba16F: return {0x881A, 0x1908, 0x1406};
   case ColorFormat::Rgba32F: return {0x8814, 0x1908, 0x1406};
-  // Signed normalized 8/16-bit; GL 3.1 (GL_ARB_texture_snorm).
   case ColorFormat::R8Snorm: return {0x8F94, 0x1903, 0x1400};
   case ColorFormat::Rg8Snorm: return {0x8F95, 0x8227, 0x1400};
   case ColorFormat::Rgb8Snorm: return {0x8F96, 0x1907, 0x1400};
@@ -46,13 +45,10 @@ GlFormat glFormat(ColorFormat format) {
   case ColorFormat::Rg16Snorm: return {0x8F99, 0x8227, 0x1402};
   case ColorFormat::Rgb16Snorm: return {0x8F9A, 0x1907, 0x1402};
   case ColorFormat::Rgba16Snorm: return {0x8F9B, 0x1908, 0x1402};
-  // 2/4-bit normalized and 3-3-2.
   case ColorFormat::Rgba2: return {0x8056, 0x1908, 0x1401};
   case ColorFormat::Rgba4: return {0x805A, 0x1908, 0x1401};
   case ColorFormat::R3G3B2: return {0x8050, 0x1907, 0x1401};
-  // 10-10-10-2 unsigned integer; GL 3.3 (GL_ARB_texture_rgb10_a2ui).
   case ColorFormat::Rgb10A2Ui: return {0x906F, 0x8D99, 0x1405};
-  // Shared-exponent float; GL 3.0 (GL_ARB_texture_rgb9_e5).
   case ColorFormat::Rgb9E5: return {0x8C3D, 0x1907, 0x1401};
   case ColorFormat::R8Ui: return {0x8232, 0x8D94, 0x1401};
   case ColorFormat::R16Ui: return {0x8234, 0x8D94, 0x1403};
@@ -126,7 +122,6 @@ bool ColorTargets::allocateSlot(Slot& slot, int width, int height, ColorFormat f
  }
  freeSlot(slot);
  const GlFormat spec = glFormat(format);
- // Integer colortex cannot use LINEAR filter (GL incomplete / undefined).
  const bool linear = !render::isIntegerColorFormat(format);
  for(int i = 0; i < 2; ++i) {
   const unsigned int h = core::genTexture();
@@ -189,9 +184,6 @@ bool ColorTargets::ensure(int width, int height, const std::vector<ColorFormat>&
                        if(slots_[i].format != normalized[i] || !slots_[i].tex[0] || !slots_[i].tex[1]) {
                         return false;
                        }
-                       // Scaled slots are managed by ensureNamed(); only unscaled slots
-                       // must match the scene size. Java per-target sizes live in the
-                       // RenderTarget (PackRenderTargetDirectives scale override).
                        if(!slots_[i].scaled &&
                           (slots_[i].width != width || slots_[i].height != height)) {
                         return false;
@@ -223,8 +215,6 @@ bool ColorTargets::ensure(int width, int height, const std::vector<ColorFormat>&
   width_ = width;
   height_ = height;
   valid_ = true;
-  // Freshly allocated textures hold undefined data; mirror RenderTargets.fullClearRequired
-  // so the next clear pass clears every buffer regardless of its clear flag.
   fullClearPending_ = true;
   gbufferFboDirty_ = true;
   rebuildGbufferFbo();
@@ -240,8 +230,6 @@ bool ColorTargets::ensureNamed(const std::string& name, int width, int height,
    if(index >= colorCount()) {
     return false;
    }
-   // Java keeps per-index RenderTarget sizes (textureScaleOverride); a scaled colortexN
-   // stays in its slot so reads/writes/flips/clears keep working at the scaled size.
    Slot& slot = slots_[static_cast<std::size_t>(index)];
    slot.scaled = width != width_ || height != height_;
    if(!allocateSlot(slot, width, height, format)) {
@@ -256,7 +244,6 @@ void ColorTargets::rebuildGbufferFbo() {
  if(!valid_ || slots_.empty()) {
   return;
  }
- // Java createGbufferFramebuffer: one FBO with every colortex on the main textures
  // plus the depth attachment (RenderTargets.java:309-321).
   gbufferFbo_.addDepthAttachment(depth_.handle());
   std::vector<int> drawBuffers;
@@ -323,8 +310,6 @@ bool ColorTargets::bindWrite(const std::vector<std::string>& outputs) {
   if(!writeFbo_.drawBuffers(drawBuffers)) {
    return false;
   }
- // Fullscreen passes have no depth attachment (Java createColorFramebuffer); the
- // shared write FBO must drop the depth state any prior binding left behind.
  writeFbo_.removeDepthAttachment();
   const unsigned status = writeFbo_.checkStatus();
   if(status != static_cast<unsigned>(gl::framebuffer::Complete)) {
@@ -340,8 +325,6 @@ void ColorTargets::clearAttachmentSet(const std::vector<unsigned int>& textures,
    if(textures.empty() || gl::GLCore::framebufferSupported == false) {
     return;
    }
-   // GL_MAX_COLOR_ATTACHMENTS is at least 8; chunk like ClearPassCreator chunks clears
-   // by GL_MAX_DRAW_BUFFERS.
    // https://github.com/IrisShaders/Iris/blob/26.1/common/src/main/java/net/irisshaders/iris/targets/ClearPassCreator.java
    constexpr std::size_t kMaxAttachments = 8;
    for(std::size_t start = 0; start < textures.size(); start += kMaxAttachments) {
@@ -409,9 +392,6 @@ void ColorTargets::clearColors(const std::vector<bool>& enabled,
   }
   const bool full = fullClearPending_;
   fullClearPending_ = false;
-  // ClearPassCreator issues two passes per buffer group: one writing the alt textures,
-  // one writing the main textures, so both sides hold the clear color regardless of the
-  // current flip state.
   // https://github.com/IrisShaders/Iris/blob/26.1/common/src/main/java/net/irisshaders/iris/targets/ClearPassCreator.java
   std::vector<unsigned int> mainTextures;
   std::vector<unsigned int> altTextures;
@@ -426,8 +406,6 @@ void ColorTargets::clearColors(const std::vector<bool>& enabled,
   }
   std::vector<bool> effective = enabled;
   if(full) {
-   // Freshly allocated buffers hold undefined data; clear everything this frame even
-   // when the pack cleared the flag (RenderTargets.fullClearRequired).
    effective.assign(slots_.size(), true);
   }
   int previousFbo = 0;
@@ -436,8 +414,6 @@ void ColorTargets::clearColors(const std::vector<bool>& enabled,
   clearAttachmentSet(altTextures, formats, effective, colors);
   gl::GLCore::bindFramebuffer(static_cast<unsigned>(gl::framebuffer::Framebuffer),
                               static_cast<unsigned>(previousFbo));
-  // Leave the gbuffer framebuffer bound (rebuilding it if flips/resizes dirtied it) so
-  // the frame's depth clear and world rendering attach to it.
   bindGbuffers();
  }
 void ColorTargets::clearNamedColors(const std::string& name, const std::array<float, 4>& color) {
@@ -507,11 +483,6 @@ ColorFormat ColorTargets::formatOf(const std::string& name) const {
  return slot == nullptr ? ColorFormat::Rgba8 : slot->format;
 }
 void ColorTargets::fillReadSamplers(std::unordered_map<std::string, int>& textures, bool fullscreenPass) const {
-  // colortex0-3 are only sampleable from fullscreen passes; world/GBUFFERS and shadow
-  // programs start at colortex4. The legacy aliases (gcolor..gaux4) are derived from
-  // these bindings by refreshTextureAliases and inherit the same restriction, while
-  // depthtex0-2 are wired separately by the callers (addWorldDepthSamplers /
-  // addCompositeSamplers) and stay available to every program kind.
   // https://github.com/IrisShaders/Iris/blob/26.1/common/src/main/java/net/irisshaders/iris/samplers/IrisSamplers.java
   for(int i = renderTargetSamplerStartIndex(fullscreenPass); i < colorCount(); ++i) {
    textures["colortex" + std::to_string(i)] = static_cast<int>(readTexture(i));
@@ -521,10 +492,6 @@ void ColorTargets::fillReadSamplers(std::unordered_map<std::string, int>& textur
   }
  }
  void ColorTargets::fillImageBindings(std::unordered_map<std::string, int>& images) const {
- // Image bindings (colorimgN) target the same textures a raster pass would attach
- // through bindWrite(): the write side (tex[1 - main]). prepareWrite() pre-copies the
- // read side into it so imageLoad sees the current content, and applyPassFlips()
- // toggles main afterward so the next pass reads the freshly written side.
  for(int i = 0; i < colorCount(); ++i) {
   images["colortex" + std::to_string(i)] = static_cast<int>(writeTexture(i));
  }
@@ -562,8 +529,6 @@ void ColorTargets::resetSlotFilters(Slot& slot) {
  }
 }
 void ColorTargets::resetMipmaps() {
-  // FinalPassRenderer resets mipmapping on every target at the end of the frame so the
-  // next frame's sampling falls back to the non-mipped filter.
   // https://github.com/IrisShaders/Iris/blob/26.1/common/src/main/java/net/irisshaders/iris/pipeline/FinalPassRenderer.java
   for(Slot& slot : slots_) {
    resetSlotFilters(slot);
@@ -597,16 +562,13 @@ void ColorTargets::flipIfEnabled(const PackDefinition& definition, const std::st
 }
 bool ColorTargets::flipExplicitlyBlocked(const PackDefinition& definition,
                                          const std::string& passName, const std::string& bufferName) {
-  // Java compares with Boolean.FALSE so an explicit true falls through to the default
   // flip; only an explicit false blocks it (CompositeRenderer.java:174).
   const auto declared = definition.flips.find(passName + "." + bufferName);
   return declared != definition.flips.end() && !declared->second;
 }
 std::vector<std::string> ColorTargets::explicitTrueFlips(const PackDefinition& definition,
                                                          const std::string& passName) {
-  // The explicitFlips sweep: every explicit true flips its buffer even when the pass
   // does not write it (CompositeRenderer.java:182-187). Pre-flip keys like
-  // "<pass>_pre.<buffer>" never match because the pass name is followed by '.'.
   std::vector<std::string> buffers;
   const std::string prefix = passName + ".";
   for(const auto& [binding, shouldFlip] : definition.flips) {
@@ -615,10 +577,6 @@ std::vector<std::string> ColorTargets::explicitTrueFlips(const PackDefinition& d
    }
    buffers.push_back(binding.substr(prefix.size()));
   }
-  // definition.flips is unordered, so the raw iteration order is hash-dependent and
-  // varies between runs and between builds. Flipping distinct buffers commutes, so this
-  // cannot change what is rendered — but it made the sweep non-reproducible in logs and
-  // in tests. Sort so the same pack always produces the same flip sequence.
   std::sort(buffers.begin(), buffers.end());
   return buffers;
 }
@@ -629,10 +587,6 @@ int ColorTargets::renderTargetSamplerStartIndex(bool fullscreenPass) {
 void ColorTargets::applyPassFlips(const PackDefinition& definition,
                                   const std::string& passName, const std::vector<std::string>& outputs) {
   // Mirrors CompositeRenderer.java:165-187: buffers the pass writes flip unless the
-  // pass's explicit directive says false, then every explicit true directive flips its
-  // buffer even when the pass does not write it. A written buffer with an explicit
-  // true is therefore toggled twice, exactly like Java's BufferFlipper in the
-  // drawBuffers loop followed by the explicitFlips sweep (net no change).
   for(const std::string& name : outputs) {
    flipIfEnabled(definition, passName, name);
   }
@@ -641,9 +595,6 @@ void ColorTargets::applyPassFlips(const PackDefinition& definition,
   }
 }
 void ColorTargets::applyPreFlips(const PackDefinition& definition, const std::string& stage) {
-  // Explicit flip.<stage>_pre.<buffer> directives are applied before that stage's passes
-  // run; only true entries flip (false entries are ignored), and pre-flips never count
-  // toward flippedAtLeastOnce.
   // https://github.com/IrisShaders/Iris/blob/26.1/common/src/main/java/net/irisshaders/iris/pipeline/CompositeRenderer.java
   // https://github.com/IrisShaders/Iris/blob/26.1/common/src/main/java/net/irisshaders/iris/pipeline/IrisRenderingPipeline.java
   static constexpr std::array<std::pair<std::string_view, std::string_view>, 5> stages = {

@@ -28,7 +28,6 @@ namespace net::minecraft {
 class World;
 }
 namespace net::minecraft::client::render {
-// Lifecycle shell: pack discovery/settings/watcher. Frame GL path is render::Pipeline.
 class PackManager {
  public:
  PackManager(std::filesystem::path gameDirectory, option::GameOptions* options);
@@ -48,20 +47,20 @@ class PackManager {
    return pipeline_;
   }
    bool setSetting(const std::string& key, std::string value);
-   // Applies several settings as one atomic pack rebuild: a single clone, runtime
-   // rebuild and program prewarm for the whole batch. Profiles (which set dozens
-   // of options) must go through this path — calling setSetting per option made
-   // every option discard the previous staged pack's in-flight compile and restart
-   // a full pack re-read + recompile, so a RenderPearl profile click ran ~25 full
-   // reload/recompile cycles and froze the game.
    bool setSettings(const std::vector<std::pair<std::string, std::string>>& values);
  [[nodiscard]] std::string settingValue(const std::string& key) const;
  [[nodiscard]] const std::vector<PackSummary>& available() const noexcept {
   return summaries_;
  }
- [[nodiscard]] const PackDefinition* activeDefinition() const noexcept;
+ // Never null: falls back to vanillaPackDefinition() so callers read the directives the
+ // same way with or without a pack, exactly like Iris' pipeline interface.
+ [[nodiscard]] const PackDefinition& activeDefinition() const noexcept;
+ [[nodiscard]] const PackDefinition& meshDefinition() const noexcept;
+ // True only when a valid pack is loaded, for the few decisions that are genuinely
+ // about the presence of a pack rather than about a directive's value.
+ [[nodiscard]] bool hasActivePack() const noexcept;
+ // Nullable on purpose: the pack selection UI distinguishes "nothing selected".
  [[nodiscard]] const PackDefinition* selectedDefinition() const noexcept;
- [[nodiscard]] const PackDefinition* meshDefinition() const noexcept;
  [[nodiscard]] bool hasDeferredPasses() const;
  [[nodiscard]] int shadowMapResolution() const;
  [[nodiscard]] int shadowColorBuffers() const;
@@ -140,9 +139,6 @@ private:
   void prepareStagedPack(net::minecraft::World* world);
   void commitStagedPack();
   void discardStagedPack();
-  // Returns the pack a settings change mutates: the pending pack, the already
-  // staged clone (so consecutive setting changes never restart its in-flight
-  // compile), or a fresh clone of the active pack. nullptr when nothing applies.
   [[nodiscard]] PackInstance* settingsTarget();
  [[nodiscard]] std::unique_ptr<PackInstance> clonePack(const PackInstance& source);
  void activatePack(std::size_t index);

@@ -28,7 +28,7 @@ class GameRenderer {
                                                      GameRenderer&,
                                                      float,
                                                      const FrameRenderCamera&,
-                                                     const PackDefinition*);
+                                                     const PackDefinition&);
 
  public:
  explicit GameRenderer(Minecraft* client);
@@ -45,6 +45,10 @@ class GameRenderer {
  [[nodiscard]] PackManager* shaderPacks() {
   return shaderPacks_.get();
  }
+ // The pack directives for this frame. Always a real definition, so callers read
+ // directives identically with or without a pack and never restate vanilla values.
+ [[nodiscard]] const PackDefinition& packDefinition() const noexcept;
+ [[nodiscard]] const PackDefinition& meshDefinition() const noexcept;
  [[nodiscard]] const option::RenderSettings& frameSettings() const noexcept {
   return frameSettings_;
  }

@@ -111,8 +111,6 @@ void drawBackgroundFan(const AtmosphereContext& ctx, float tickDelta, const std:
  const float timeOfDay = ctx.world->getTime(tickDelta);
   const core::ScopedDrawCameraState fanGuard;
   net::minecraft::util::math::Matrix4f fanPose = core::drawModelView();
-  // Fixed RY(-90) renderSky yaw first, keeping the dawn/dusk glow on the sun's horizon
-  // side (same chain as the sun disc pose and the pack-facing sunPosition).
   fanPose.rotate(-90.0f, 0.0f, 1.0f, 0.0f);
   fanPose.rotate(90.0f, 1.0f, 0.0f, 0.0f);
   fanPose.rotate(timeOfDay > 0.5f ? 180.0f : 0.0f, 0.0f, 0.0f, 1.0f);
@@ -136,8 +134,6 @@ void drawSunMoon(const AtmosphereContext& ctx, float starAlpha) {
   if(ctx.settings.renderSun) {
    const core::RenderStageScope stage(core::RenderStage::Sun);
    if(ctx.textureManager != nullptr) {
-    // The celestial shaders sample gtexture on unit 0; bind the diffuse on that unit
-    // explicitly so a prior unit-1 lightmap/PBR bind cannot strand the sun texture.
     core::activeTexture(gl::tex::Texture0);
     ctx.textureManager->bindTexture(ctx.textureManager->getTextureId("/terrain/sun.png"));
    }
@@ -192,10 +188,6 @@ void renderSkyDome(const AtmosphereContext& ctx, float tickDelta) {
     sunY = std::cos(angle);
     sunZ = std::cos(yaw) * std::sin(angle);
    }
-   // Iris rotates the celestial chain by the fixed RY(-90) renderSky yaw
-   // (CelestialUniforms.getCelestialPosition); the beta formula above is the pre-yaw
-   // direction. Publish the yawed direction so the registry agrees with the
-   // pack-facing sunPosition and the shadow map light axis (see applyRenderSkyYaw).
    // https://github.com/IrisShaders/Iris/blob/26.1/common/src/main/java/net/irisshaders/iris/uniforms/CelestialUniforms.java
    const float yawedX = -sunZ;
    const float yawedZ = sunX;
@@ -262,8 +254,6 @@ void renderSkyDome(const AtmosphereContext& ctx, float tickDelta) {
    {
     const core::ScopedDrawCameraState sunMoonGuard;
     net::minecraft::util::math::Matrix4f sunMoonPose = core::drawModelView();
-    // Fixed RY(-90) renderSky yaw first (CelestialUniforms.getCelestialPosition), so the
-    // sun disc sits on the same axis as the pack-facing sunPosition and the shadow map.
     sunMoonPose.rotate(-90.0f, 0.0f, 1.0f, 0.0f);
     sunMoonPose.rotate(skyEvent.skyYawDegrees, 0.0f, 1.0f, 0.0f);
     sunMoonPose.rotate(skyEvent.celestialAngle * 360.0f, 1.0f, 0.0f, 0.0f);
@@ -293,9 +283,6 @@ void renderSkyDome(const AtmosphereContext& ctx, float tickDelta) {
   publishRenderStage(starsEvent, mod::WorldRenderStage::Stars, mod::RenderHookMoment::After);
  }
  core::disableBlend();
- // RenderGlobal.renderSky glSkyList2: the void below the world is drawn with the
- // sky colour darkened by the beta 1.7.3 formula (overworld) or the plain sky
- // colour for groundless dimensions.
  const bool darkVoid = ctx.world->dimension->hasGround();
  const float voidR = darkVoid ? skyR * 0.2f + 0.04f : skyR;
  const float voidG = darkVoid ? skyG * 0.2f + 0.04f : skyG;

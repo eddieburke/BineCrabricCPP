@@ -8,7 +8,6 @@ class GlTexture;
 }
 namespace net::minecraft::client::render {
 class PackInstance;
-// Iris reserves SSBO indices 0..12 ("SSBO's cannot use buffer numbers higher than 12, they're reserved!").
 // https://github.com/IrisShaders/Iris/blob/26.1/common/src/main/java/net/irisshaders/iris/shaderpack/properties/ShaderProperties.java
 inline constexpr int kMaxShaderStorageBuffers = 13;
 class PackResources {

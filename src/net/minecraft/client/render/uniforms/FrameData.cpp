@@ -1,4 +1,5 @@
 #include "net/minecraft/client/render/uniforms/FrameData.hpp"
+#include "net/minecraft/client/render/shaderpack/Pack.hpp"
 #include <algorithm>
 #include <chrono>
 #include <cmath>
@@ -80,7 +81,6 @@ void biomeData(const Biome& biome, PackUniformValues& values) {
   break;
   case BiomeId::Savanna:
   case BiomeId::Shrubland:
-   // Java 26.1 BiomeCategories: SAVANNA = 6 (BiomeCategories.java); plains stays 5.
    values.biomeCategory = 6;
    values.temperature = 0.8f;
    values.rainfall = 0.4f;
@@ -150,7 +150,6 @@ void splitCameraPosition(double x, double y, double z, int* outInt, float* outFr
 constexpr float kPiF = 3.14159265358979323846f;
 } // namespace
 // https://github.com/IrisShaders/Iris/blob/26.1/common/src/main/java/net/irisshaders/iris/uniforms/transforms/SmoothedFloat.java
-// s_t = lerp(s_{t-1}, x_t, 1 - e^(-ln(2) * frameTime / halfLife)); the first value is used raw.
 float smoothExponential(float target, float& accumulator, bool& initialized, float frameTime,
                         float halfLifeSeconds) {
  if(!initialized) {
@@ -167,10 +166,6 @@ float smoothExponential(float target, float& accumulator, bool& initialized, flo
  return accumulator;
 }
 namespace {
-// Rotates a world-space direction about the world Z axis by sunPathRotation degrees. Iris applies
-// this as the RZ(sunPathRotation) term of the celestial matrix (CelestialUniforms.java); the beta
-// celestial frame is that chain without the fixed RY(-90) renderSky prefix, so the rotation acts
-// on the world direction directly.
 void applySunPathRotation(const float in[3], float sunPathRotationDegrees, float out[3]) {
  if(sunPathRotationDegrees == 0.0f) {
   out[0] = in[0];
@@ -198,7 +193,6 @@ PackUniformValues buildShaderFrameData(int width, int height, float farPlane, fl
  const auto now = std::chrono::steady_clock::now();
  if(initialized) {
   previousFrame = currentFrame;
-  // Java SystemTimeUniforms.Timer: frame time is truncated to millisecond resolution.
   const float elapsed = std::chrono::duration<float>(now - previousFrameTime).count();
   values.frameTime = std::max(0.0f, std::floor(elapsed * 1000.0f) / 1000.0f);
  } else {
@@ -207,7 +201,6 @@ PackUniformValues buildShaderFrameData(int width, int height, float farPlane, fl
  values.frameCounter = frameCounter;
  frameCounter = (frameCounter + 1) % 720720;
  previousFrameTime = now;
- // Java Timer.beginFrame: accumulate lastFrameTime and reset to zero once it reaches an hour.
  frameTimeCounterAccumulator += values.frameTime;
  if(frameTimeCounterAccumulator >= 3600.0f) {
   frameTimeCounterAccumulator = 0.0f;
@@ -250,11 +243,7 @@ PackUniformValues buildShaderFrameData(int width, int height, float farPlane, fl
   values.normalAvailable = normalAvailable ? 1 : 0;
   values.shadowAvailable = shadowAvailable ? 1 : 0;
   values.shadowMapResolution = static_cast<float>(shadowMapResolution);
-  // Java CameraUniforms.CameraPositionTracker: cameraPosition is the shifted position,
   // cameraPositionInt/Fract the unshifted one (CameraUniforms.java:31-34); previous*
-  // mirror last frame's state. The tracker is updated here, after the frame-time
-  // bookkeeping, so the first frame's previous* are zeros exactly like Java's
-  // notifier-driven update.
   // https://github.com/IrisShaders/Iris/blob/26.1/common/src/main/java/net/irisshaders/iris/uniforms/CameraUniforms.java
   static CameraPositionTracker cameraTracker;
   cameraTracker.update(camera.eyeX, camera.eyeY, camera.eyeZ);
@@ -276,10 +265,6 @@ PackUniformValues buildShaderFrameData(int width, int height, float farPlane, fl
  buildCameraModelViewInverse(values.gbufferModelViewInverse, camera);
  std::copy(std::begin(previousFrame.gbufferProjection), std::end(previousFrame.gbufferProjection), values.gbufferPreviousProjection);
  std::copy(std::begin(previousFrame.gbufferModelView), std::end(previousFrame.gbufferModelView), values.gbufferPreviousModelView);
-  // Java getUpPosition transforms vec4(0, 100, 0, 0) by gbufferModelView. w == 0, so
-  // only the rotation acts — and that rotation is the BOBBED one: Iris captures the
-  // pose stack after bobView()/bobHurt(), so upPosition tilts with the bob exactly
-  // like the view-space normals packs dot it against.
   // https://github.com/IrisShaders/Iris/blob/26.1/common/src/main/java/net/irisshaders/iris/uniforms/CelestialUniforms.java
   render::directionToView(0.0f, 1.0f, 0.0f, camera, values.upPosition);
  if(shadowAvailable) {
@@ -298,25 +283,16 @@ PackUniformValues buildShaderFrameData(int width, int height, float farPlane, fl
   if(world != nullptr) {
    const auto& sun = world->lightRegistry().sun();
    const net::minecraft::client::Minecraft* celestialClient = net::minecraft::client::Minecraft::INSTANCE;
-   const PackDefinition* activeDef =
-       celestialClient != nullptr && celestialClient->gameRenderer != nullptr &&
-               celestialClient->gameRenderer->shaderPacks() != nullptr
-           ? celestialClient->gameRenderer->shaderPacks()->activeDefinition()
-           : nullptr;
-   const float sunPathRotation = activeDef != nullptr ? activeDef->sunPathRotation : 0.0f;
-   // Java getCelestialPosition transforms vec4(0, +/-100, 0, 0) through
-   // gbufferModelView * RY(-90) * RZ(sunPathRotation) * RX(angle). w == 0, so the model
-   // view contributes its rotation only — the BOBBED rotation, since Iris captures the
-   // pose stack after bobView()/bobHurt(). Using the clean basis here would leave
-   // sunPosition still while the view-space normals packs light against (and this
-   // engine's own sunDirectionView, GameRenderer.cpp:1102) rock with the bob.
+   const PackDefinition& celestialDefinition =
+       celestialClient != nullptr && celestialClient->gameRenderer != nullptr
+           ? celestialClient->gameRenderer->packDefinition()
+           : vanillaPackDefinition();
+   const float sunPathRotation = celestialDefinition.sunPathRotation;
+   // CelestialUniforms.getCelestialPosition: RY(-90) * RZ(sunPathRotation) * RX(angle).
+   // The registry direction already carries the RY(-90), so it is undone, rotated, and
+   // re-applied below.
    // https://github.com/IrisShaders/Iris/blob/26.1/common/src/main/java/net/irisshaders/iris/uniforms/CelestialUniforms.java
    float sunDirection[3] = {sun.directionX, sun.directionY, sun.directionZ};
-   // The registry carries the fixed RY(-90) renderSky yaw (see the light registry
-   // writers); Iris composes the celestial chain as RY(-90) * RZ(sunPathRotation) *
-   // RX(angle), so sunPathRotation acts in the PRE-yaw celestial frame. Undo the yaw,
-   // rotate, then re-apply it — the yawed direction lands on the shadow map's light
-   // axis, keeping packs' sunPosition/shadowLightPosition consistent with the map.
    const float preYawX = sunDirection[2];
    const float preYawZ = -sunDirection[0];
    sunDirection[0] = preYawX;
@@ -342,7 +318,6 @@ PackUniformValues buildShaderFrameData(int width, int height, float farPlane, fl
    values.sunIntensity = sun.intensity;
    const std::uint64_t absoluteTime = world->getTime();
    
-   // Pin worldTime when clientTimeMode is Day (1) or Night (2).
    if(world->clientTimeMode() == 1) {
     values.worldDay = static_cast<int>(absoluteTime / 24000ULL);
     values.worldTime = 6000;
@@ -360,10 +335,8 @@ PackUniformValues buildShaderFrameData(int width, int height, float farPlane, fl
     values.sunAngle = celestialSunAngle(celestialAngle);
     values.shadowAngle = shadowAngleFromCelestial(celestialAngle);
     const float sunAngleDegrees = values.sunAngle * 360.0f;
-   // Java getShadowLightPosition: end flash in the end when the pack opts in, else the sun by
-   // day and the moon at night.
    const bool isEnd = world->dimension != nullptr && world->dimension->id == 1;
-   if(isEnd && activeDef != nullptr && activeDef->endFlashShadows) {
+   if(isEnd && celestialDefinition.endFlashShadows) {
     std::copy(std::begin(values.endFlashPosition), std::end(values.endFlashPosition), values.shadowLightPosition);
    } else if(sunAngleDegrees < 180.0f) {
     std::copy(std::begin(values.sunPosition), std::end(values.sunPosition), values.shadowLightPosition);
@@ -372,11 +345,9 @@ PackUniformValues buildShaderFrameData(int width, int height, float farPlane, fl
    }
   
   values.rainStrength = world->getRainGradient(tickDelta);
-  // Wetness EMA applied in PackManager::setFrameUniforms with pack halflife.
   values.wetness = g_wetnessSmooth;
   values.thunderStrength = world->getThunderGradient(tickDelta);
   {
-   // ShaderDoc skyColor = clear/sky RGB (World::getSkyColor → world_color Lua).
    const Vec3d sky = world->getSkyColor(
        net::minecraft::client::Minecraft::INSTANCE != nullptr
            ? net::minecraft::client::Minecraft::INSTANCE->camera
@@ -405,7 +376,6 @@ PackUniformValues buildShaderFrameData(int width, int height, float farPlane, fl
   biomeData(world->getBiome(static_cast<int>(camera.eyeX), static_cast<int>(camera.eyeZ)), values);
   for(Entity* entity : world->globalEntities) {
    if(dynamic_cast<LightningEntity*>(entity) == nullptr) continue;
-   // Java: bolt position relative to the unshifted camera position.
     values.lightningBoltPosition[0] = static_cast<float>(entity->x - camera.eyeX);
     values.lightningBoltPosition[1] = static_cast<float>(entity->y - camera.eyeY);
     values.lightningBoltPosition[2] = static_cast<float>(entity->z - camera.eyeZ);
@@ -427,11 +397,8 @@ PackUniformValues buildShaderFrameData(int width, int height, float farPlane, fl
  if(minecraft != nullptr) {
   values.firstPersonCamera = minecraft->options.thirdPerson ? 0 : 1;
   values.currentColorSpace = 0;
-  if(const auto* def =
-         minecraft->gameRenderer != nullptr && minecraft->gameRenderer->shaderPacks() != nullptr
-             ? minecraft->gameRenderer->shaderPacks()->activeDefinition()
-             : nullptr) {
-   if(def->supportsColorCorrection) {
+  if(minecraft->gameRenderer != nullptr) {
+   if(minecraft->gameRenderer->packDefinition().supportsColorCorrection) {
     values.currentColorSpace = std::clamp(minecraft->options.colorSpace, 0, 4);
    }
   } else {
@@ -462,12 +429,10 @@ PackUniformValues buildShaderFrameData(int width, int height, float farPlane, fl
    values.currentPlayerHealth = std::clamp(static_cast<float>(player->health) / values.maxPlayerHealth, 0.0f, 1.0f);
    values.maxPlayerAir = static_cast<float>(std::max(1, player->maxAir));
    values.currentPlayerAir = std::clamp(static_cast<float>(player->air) / values.maxPlayerAir, 0.0f, 1.0f);
-   // Java IrisExclusiveUniforms: armor is divided by 50 and maxPlayerArmor is fixed at 50.
    values.maxPlayerArmor = 50.0f;
    values.currentPlayerArmor = std::clamp(static_cast<float>(player->inventory.getTotalArmorDurability()) / values.maxPlayerArmor, 0.0f, 1.0f);
    values.currentPlayerHunger = 1.0f;
    values.maxPlayerHunger = 20.0f;
-   // Java IrisExclusiveUniforms.getEyePosition: unshifted (raw world) eye position.
    values.eyePosition[0] = static_cast<float>(player->x);
    values.eyePosition[1] = static_cast<float>(player->y + player->getEyeHeight());
    values.eyePosition[2] = static_cast<float>(player->z);
@@ -492,22 +457,18 @@ PackUniformValues buildShaderFrameData(int width, int height, float farPlane, fl
         net::minecraft::block::Block::BLOCKS[static_cast<std::size_t>(held->itemId)]->emission();
   }
   values.heldBlockLightValue2 = 0;
-  if(minecraft != nullptr && minecraft->gameRenderer != nullptr && minecraft->gameRenderer->shaderPacks() != nullptr) {
-   if(const auto* def = minecraft->gameRenderer->shaderPacks()->activeDefinition();
-      def != nullptr && def->oldHandLight) {
-    values.heldBlockLightValue = std::max(values.heldBlockLightValue, values.heldBlockLightValue2);
-   }
+  if(minecraft != nullptr && minecraft->gameRenderer != nullptr &&
+     minecraft->gameRenderer->packDefinition().oldHandLight) {
+   values.heldBlockLightValue = std::max(values.heldBlockLightValue, values.heldBlockLightValue2);
   }
   values.handLightPackedLR = static_cast<int>(
       (static_cast<std::uint32_t>(values.heldBlockLightValue2) & 0xFFFFu) |
       ((static_cast<std::uint32_t>(values.heldBlockLightValue) & 0xFFFFu) << 16));
   // Java IrisExclusiveUniforms.java:81: relativeEyePosition =
-  // getUnshiftedCameraPosition() - eye position (both unshifted).
   for(int axis = 0; axis < 3; ++axis) {
    values.relativeEyePosition[axis] =
        static_cast<float>(cameraTracker.currentUnshifted(axis)) - values.eyePosition[axis];
   }
-  // Java CommonUniforms.playerLookVector = getViewVector(tickDelta) — yaw/pitch interpolated.
   const Vec3d look = player->getLookVector(tickDelta);
   values.playerLookVector[0] = static_cast<float>(look.x);
   values.playerLookVector[1] = static_cast<float>(look.y);
@@ -549,7 +510,6 @@ PackUniformValues buildShaderFrameData(int width, int height, float farPlane, fl
    values.eyeBrightness[0] = world->getBrightness(net::minecraft::LightType::Block, bx, by, bz) * 16;
    values.eyeBrightness[1] = world->getBrightness(net::minecraft::LightType::Sky, bx, by, bz) * 16;
    // https://github.com/IrisShaders/Iris/blob/26.1/common/src/main/java/net/irisshaders/iris/uniforms/CommonUniforms.java
-   // SmoothedVec2f over getEyeBrightness; the half life directive is in deciseconds.
    static float smoothBlock = 0.0f;
    static bool smoothBlockInitialized = false;
    static float smoothSky = 0.0f;
@@ -564,7 +524,6 @@ PackUniformValues buildShaderFrameData(int width, int height, float farPlane, fl
   }
   {
    // https://github.com/IrisShaders/Iris/blob/26.1/common/src/main/java/net/irisshaders/iris/uniforms/HardcodedCustomUniforms.java
-   // Java SmoothedFloat instances carry separate up/down half lives in deciseconds.
    struct SmoothedState {
     float up = 0.0f;
     float down = 0.0f;
@@ -581,8 +540,6 @@ PackUniformValues buildShaderFrameData(int width, int height, float farPlane, fl
    values.day = std::clamp(5.4f - adjTime, 0.0f, 1.0f);
    values.night = std::clamp(adjTime - 6.0f, 0.0f, 1.0f);
    values.dawnDusk = (1.0f - values.day) - values.night;
-   // Java feeds un-normalized degrees into these; the formula collapses to zero for every valid
-   // angle, so replicate it verbatim (results stay identical to Iris 26.1).
    const float shadowAngleDegrees = values.shadowAngle * 360.0f;
    values.shadowFade = std::clamp(1.0f - (std::fabs(std::fabs(shadowAngleDegrees) - 0.25f) - 0.23f) * 100.0f,
                                   0.0f, 1.0f);
@@ -637,7 +594,6 @@ PackUniformValues buildShaderFrameData(int width, int height, float farPlane, fl
    sneakS.update(sneakFactor, values.frameTime);
    const float burnFactor = player != nullptr && player->isOnFire() ? 1.0f : 0.0f;
    burningS.update(burnFactor, values.frameTime);
-   // Java divides by the last frame time (0 on the first frame, giving NaN exactly like Iris).
    speedS.update(velocity / values.frameTime, values.frameTime);
    values.rainStrengthS = rainS.value;
    values.rainStrengthShiningStars = rainShining.value;
@@ -663,13 +619,11 @@ PackUniformValues buildShaderFrameData(int width, int height, float farPlane, fl
    values.dhFarPlane = 0.01f;
    values.dhNearPlane = 0.01f;
    values.dhRenderDistance = static_cast<int>(values.farPlane / 16.0f);
-   // Beta 1.7.3 has no anisotropic filtering, boss-bar fog or end flash: constants.
    values.anisotropicFiltering = 0;
    values.heavyFog = 0;
   }
  }
  {
-  // Populated by PackManager::sampleCenterDepth (real center depthtex0 read).
   values.centerDepthSmooth = g_centerDepthSmooth;
   }
   if(firstFrame) {
@@ -690,7 +644,6 @@ float updateCenterDepthSmooth(float windowDepth01, float nearPlane, float farPla
  const float n = std::max(nearPlane, 1e-4f);
  const float f = std::max(farPlane, n + 1e-3f);
  const float linear = (n * f) / std::max(1e-6f, f + z * (n - f));
- // Java CenterDepthSampler: decay = 1 / ((halfLife * 0.1) / LN2) — halfLife is in deciseconds.
  const float halfLifeSeconds = std::max(0.001f, halfLife * 0.1f);
  const float alpha = 1.0f - std::exp(-std::max(0.0f, frameTime) * 0.693147f / halfLifeSeconds);
  g_centerDepthSmooth += (linear - g_centerDepthSmooth) * std::clamp(alpha, 0.0f, 1.0f);
@@ -698,7 +651,6 @@ float updateCenterDepthSmooth(float windowDepth01, float nearPlane, float farPla
 }
 float updateWetnessSmooth(float rainStrength, float frameTime, float wetnessHalflife, float drynessHalflife) {
  // https://github.com/IrisShaders/Iris/blob/26.1/common/src/main/java/net/irisshaders/iris/uniforms/CommonUniforms.java
- // Java: SmoothedFloat(directives.getWetnessHalfLife(), getDrynessHalfLife(), getRainStrength).
  static float accumulator = 0.0f;
  static bool initialized = false;
  const float target = std::clamp(rainStrength, 0.0f, 1.0f);

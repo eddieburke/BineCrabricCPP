@@ -47,10 +47,6 @@ thread_local LuaScreen* g_activeLuaScreen = nullptr;
 thread_local ScreenUiContext* g_activeScreenUi = nullptr;
 thread_local bool g_luaScreenInitPhase = false;
 namespace {
-// A Lua callback dispatched from a screen event can open or close screens, which re-enters
-// these handlers (LuaScreen::removed fires its own Close event). Restoring the previous
-// value on scope exit -- rather than clearing to nullptr -- leaves the outer frame's context
-// intact once the nested event returns, and survives a Lua error unwinding through it.
 class ActiveLuaScreenScope {
  public:
  explicit ActiveLuaScreenScope(LuaScreen* screen) : previousScreen_(g_activeLuaScreen) {
@@ -66,10 +62,6 @@ class ActiveLuaScreenScope {
  LuaScreen* previousScreen_ = nullptr;
 };
 } // namespace
-// --- minecraft.session ---------------------------------------------------
-// Read/write the runtime identity override used for offline-mode joins, plus reads of
-// the live session. Exposed so any mod (e.g. an offline-mode helper) can change the name
-// the client presents to non-authenticated servers without touching engine internals.
 int luaSessionSetOfflineUsername(lua_State* state) {
  client::session::setOfflineUsername(luaString(state, 1, ""));
  return 0;
@@ -308,10 +300,6 @@ void invokeButtonCallback(ModHost::LoadedLuaMod* mod, int ref) {
   api.settop(state, -2);
  }
 }
-// Calls an optional label-refresh function and returns its string result. Used so
-// injected buttons whose click handler mutates mod state (e.g. a toggle) can update
-// their own displayed text instead of staying stuck on the label set at button
-// creation time.
 bool invokeLabelCallback(ModHost::LoadedLuaMod* mod, int ref, std::string& outText) {
  LuaApi& api = luaApi();
  if(mod == nullptr || ref == kLuaNoRef || !api.ready()) {
@@ -343,11 +331,6 @@ bool invokeLabelCallback(ModHost::LoadedLuaMod* mod, int ref, std::string& outTe
  return ok;
 }
 namespace {
-// Reimplementation of the removed client::gl::preset::ModLuaGuiDraw /
-// SolidFill / ModLuaGuiTextDraw / ModLuaGuiItemDraw / ModLuaGuiSpriteDraw
-// scopes: 2D overlay draws are always unculled and undepth-tested with alpha
-// blending. Textured vs white diffuse is owned by the caller's RenderPassScope
-// (gui / guiTextured).
 class ModLuaGuiDrawScope {
  public:
  explicit ModLuaGuiDrawScope(bool /*textured*/)
@@ -361,8 +344,6 @@ class ModLuaGuiDrawScope {
  core::CullScope cull_;
  core::DepthScope depth_;
 };
-// Shared guard for gui.draw_* calls: only valid inside a Lua GUI draw scope
-// with a live client + text renderer.
 [[nodiscard]] client::Minecraft* guiDrawClient() {
  if(!luaGuiDrawActive()) {
   return nullptr;
@@ -370,12 +351,6 @@ class ModLuaGuiDrawScope {
  client::Minecraft* client = client::Minecraft::INSTANCE;
  return (client == nullptr || client->textRenderer == nullptr) ? nullptr : client;
 }
-// The vanilla button texture in gui.png is only 200px wide, so the classic
-// "two stretched halves" trick (sample width/2 from each edge) only holds up
-// to width == 200; past that the right half's source U goes negative and
-// samples garbage/wrapped texture data. Lua GUI widgets can be arbitrarily
-// wide, so draw fixed-size end caps and tile a flat interior slice between
-// them instead of stretching the whole source region.
 void drawVanillaButtonBackground(client::Minecraft& minecraft, int x, int y, int width, int height, int textureV) {
  const int textureId = minecraft.textureManager.getTextureId("/gui/gui.png");
  minecraft.textureManager.bindTexture(textureId);
@@ -482,7 +457,6 @@ void prepareGuiDrawState() {
  client::render::core::setLightingEnabled(false);
 }
 void drawGuiFillRect(int x, int y, int width, int height, std::uint32_t color) {
- // A pass must be open for the quad to get a shader program bound.
  const client::render::RenderPassScope passScope(client::render::RenderType::gui());
  const ModLuaGuiDrawScope fillCaps(false);
  const int rgb = static_cast<int>(color & 0x00FFFFFFU);
@@ -785,10 +759,7 @@ int luaScreenOpen(lua_State* state) {
   title = luaStringField(state, 2, "title", "");
   shouldPause = luaBoolField(state, 2, "pause", true);
  }
- // Whichever screen we were on decides where this one's "back" goes; screens that can
- // rebuild themselves say so via getReopenFactory(). No concrete screen type is named
- // here, so any host screen -- or another Lua screen -- chains correctly.
- client::gui::screen::ScreenFactory returnFactory = nullptr;
+  client::gui::screen::ScreenFactory returnFactory = nullptr;
  if(auto* current = client::Minecraft::INSTANCE->currentScreen()) {
   returnFactory = current->getReopenFactory();
  }

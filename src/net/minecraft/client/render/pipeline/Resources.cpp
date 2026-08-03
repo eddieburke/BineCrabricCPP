@@ -24,7 +24,6 @@ std::string textureKey(const CustomTexture& texture) {
  return texture.stage.empty() ? texture.name : texture.stage + "." + texture.name;
 }
 std::uint64_t vramBytes() {
- // Java: IrisRenderSystem.getVRAM() — NVX_GPU_memory_info query in KiB * 1024, else 4 GiB fallback.
  // https://github.com/IrisShaders/Iris/blob/26.1/common/src/main/java/net/irisshaders/iris/gl/IrisRenderSystem.java
  const char* extensions = reinterpret_cast<const char*>(::glGetString(0x1F03));
  if(extensions != nullptr && std::strstr(extensions, "GL_NVX_gpu_memory_info") != nullptr) {
@@ -66,15 +65,11 @@ bool PackResources::ensure(PackInstance& pack, int width, int height, const gl::
  for(const BufferObject& declaration : pack.definition.bufferObjects) {
   if(declaration.index < 0 || declaration.index >= kMaxShaderStorageBuffers || !gl::GLCore::ssboSupported)
    return false;
-  // Java: ShaderStorageBufferHolder ctor throws OutOfVideoMemoryError when the requested size
-  // exceeds available VRAM.
   // https://github.com/IrisShaders/Iris/blob/26.1/common/src/main/java/net/irisshaders/iris/gl/buffer/ShaderStorageBufferHolder.java
   if(declaration.byteSize > vram) return false;
-  // Java: "We don't have enough SSBO units???" when the index exceeds the GL limit.
   if(declaration.index > gl::GLCore::maxShaderStorageUnits) return false;
   std::size_t bytes = declaration.byteSize;
   if(declaration.relative) {
-   // Java: ShaderStorageBuffer.resizeIfRelative computes (long)(width * scaleX) * (long)(height * scaleY) * size().
    // https://github.com/IrisShaders/Iris/blob/26.1/common/src/main/java/net/irisshaders/iris/gl/buffer/ShaderStorageBuffer.java
    const std::size_t scaledWidth =
        static_cast<std::size_t>(std::max(0.0, static_cast<double>(width) * declaration.scaleX));
@@ -91,18 +86,13 @@ bool PackResources::ensure(PackInstance& pack, int width, int height, const gl::
     if(!declaration.initPath.empty()) {
      std::string path = declaration.initPath;
      while(!path.empty() && path.front() == '/') path.erase(path.begin());
-     // Java resolves the content path against the pack root (ShaderPack ctor); content is
-     // loaded for every named buffer, relative or not.
      // https://github.com/IrisShaders/Iris/blob/26.1/common/src/main/java/net/irisshaders/iris/shaderpack/ShaderPack.java
      const std::string data = readText(pack, path);
      if(!data.empty()) {
-      // Java: "Tried to load a shader storage file with no space in the buffer! Increase the buffer size."
       if(data.size() > declaration.byteSize) return false;
       initData.assign(data.begin(), data.end());
      }
     }
-    // Java deletes and regenerates the buffer object on every (re)allocation; gen into a
-    // temp so a failed allocation leaves the old buffer intact.
     unsigned int handle = 0;
     gl::GLCore::genBuffers(1, &handle);
     if(handle == 0) return false;
@@ -110,11 +100,9 @@ bool PackResources::ensure(PackInstance& pack, int width, int height, const gl::
     gl::GLCore::bindBuffer(0x90D2, handle);
     const int zero = 0;
     if(declaration.relative) {
-     // Java: resizeIfRelative — immutable storage, then an R8 zero fill.
      gl::GLCore::bufferStorage(0x90D2, static_cast<intptr_t>(bytes), nullptr, 0);
      gl::GLCore::clearBufferSubData(0x90D2, 0x8229, 0, static_cast<intptr_t>(bytes), 0x1903, 0x1400, &zero);
     } else {
-     // Java: createStatic — GL_DYNAMIC_STORAGE_BIT (0x0100) only when init content exists.
      gl::GLCore::bufferStorage(0x90D2, static_cast<intptr_t>(bytes), nullptr, initData.empty() ? 0 : 0x0100);
      if(!initData.empty()) {
       gl::GLCore::bufferSubData(0x90D2, 0, static_cast<intptr_t>(initData.size()), initData.data());
@@ -159,10 +147,6 @@ bool PackResources::ensure(PackInstance& pack, int width, int height, const gl::
    if(!remapped) resource = "/" + resource;
    const int texture = minecraft->textureManager.getTextureId(resource);
    if(texture < 0) return false;
-   // Java CustomTextureManager.createCustomTexture resolves *_n/*_s custom
-   // textures to the base texture's PBR holder (with LabPBR texture
-   // parameters); do the same so texture.atlas_blocks_n-style samplers see
-   // the PBR atlas instead of a raw companion upload.
    // https://github.com/IrisShaders/Iris/blob/26.1/common/src/main/java/net/irisshaders/iris/pipeline/CustomTextureManager.java
    if(const std::size_t extension = resource.find_last_of('.'); extension != std::string::npos &&
       extension > 2) {

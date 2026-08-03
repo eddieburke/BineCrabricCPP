@@ -326,10 +326,7 @@ int luaWorldSetTime(lua_State* state) {
   api.pushboolean(state, 0);
   return 1;
  }
- // Client worlds must accept solar sync (realtime_sky); rendering reads the
- // client clock, not the integrated server's. Server worlds still shift
- // scheduled ticks when the phase jumps.
- if(world->isRemote()) {
+  if(world->isRemote()) {
   world->setTime(static_cast<std::uint64_t>(tick));
  } else {
   world->synchronizeTimeAndUpdates(static_cast<std::uint64_t>(tick));

@@ -49,7 +49,6 @@ void refreshColorMaps(render::ColorTargets& targets, std::unordered_map<std::str
   targets.fillImageBindings(colorImages);
 }
 
-// Republish the shadowcolor sampler + image bindings for a pass's static flip snapshot
 // (Iris' stageReadsFromAlt samplers/images, ShadowCompositeRenderer.java:125,301-302).
 void publishReadSide(std::unordered_map<std::string, int>& textures,
                      std::unordered_map<std::string, int>& colorImages,
@@ -67,7 +66,6 @@ void publishReadSide(std::unordered_map<std::string, int>& textures,
  refreshTextureAliases(textures, pack.definition.usesWaterShadow);
 }
 
-// Attach the flip-side shadow color buffers + shadow depth and bind the shadow composite
 // framebuffer (ShadowRenderTargets.java createColorFramebuffer, ShadowCompositeRenderer.java:123).
 void bindPassTargets(shadowmap::ShadowTargets* shadowTargets, const PackPass& pass,
                      const std::array<bool, 8>& readFlips, int width, int height) {
@@ -78,8 +76,6 @@ void bindPassTargets(shadowmap::ShadowTargets* shadowTargets, const PackPass& pa
   if(index >= 0) colorCount = std::max(colorCount, index + 1);
  }
  if(colorCount <= 0) {
-  // A shadow composite pass always writes shadow color buffers; fall back to the
-  // default draw buffer (shadowcolor0) like Iris' ProgramDirectives default.
   colorCount = 1;
  }
  shadowTargets->attachCompositeColors(readFlips, colorCount);
@@ -155,13 +151,9 @@ bool CompositeRenderer::render(PackInstance& pack, const std::vector<std::size_t
  const core::TextureBindScope textureScope;
   std::unordered_map<std::string, int> textures;
   std::unordered_map<std::string, int> colorImages;
-  // Every runPasses stage renders fullscreen (begin/shadowcomp/prepare/deferred/
-  // composite+final are CompositeRenderer/ShadowCompositeRenderer/FinalPassRenderer
-  // passes in Java), so colortex0-3 stay sampleable here.
   refreshColorMaps(targets, textures, colorImages, true);
   textures["depthtex0"] = static_cast<int>(targets.depthTexture());
   // https://shaders.properties/current/reference/buffers/depthtex/
-  // depthTextures[0] = pre-translucent (after hand); depthTextures[1] = pre-hand.
   if(pack.depthTextures[0]) textures["depthtex1"] = static_cast<int>(pack.depthTextures[0].handle());
   if(pack.depthTextures[1]) {
    textures["depthtex2"] = static_cast<int>(pack.depthTextures[1].handle());
@@ -176,16 +168,12 @@ bool CompositeRenderer::render(PackInstance& pack, const std::vector<std::size_t
  const int opaqueShadow =
      shadowOpaqueDepthTextureId >= 0 ? shadowOpaqueDepthTextureId : shadowDepthTextureId;
  putShadowTextures(textures, shadowDepthTextureId, opaqueShadow, shadowColorTextureIds,
-                           shadowColorTextureCount, &pack.definition);
+                           shadowColorTextureCount, pack.definition);
   for(int i = 0; i < std::min(shadowColorTextureCount, 8); ++i) {
    if(shadowColorTextureIds != nullptr && shadowColorTextureIds[i] >= 0) {
     colorImages["shadowcolor" + std::to_string(i)] = shadowColorTextureIds[i];
    }
   }
-  // Shadow composite passes sample the flip-side of each shadowcolor buffer (Iris
-  // builds per-pass framebuffers and samplers from the static flipped set), while the
-  // deferred/composite stages read the final flip state after all shadowcomp passes.
-  // Republish the shadow color sampler + image bindings for the current flip state.
   // https://github.com/IrisShaders/Iris/blob/26.1/common/src/main/java/net/irisshaders/iris/shadows/ShadowCompositeRenderer.java
   const bool shadowFlipsKnown = pipeline_->shadowColorFlipPack_ == &pack;
   if(stage != "shadowcomp" && shadowFlipsKnown) {
@@ -324,9 +312,6 @@ bool CompositeRenderer::render(PackInstance& pack, const std::vector<std::size_t
   }
  }
   const auto publishShadowColorReadSide = [&]() {
-   // The Pipeline's published shadow color ids follow the static flip state so world
-   // gbuffer shaders, deferred, composite and final passes sample the flip side like
-   // Iris' dynamic samplers (getColorTextureId).
    pipeline_->shadowDepthTexture_ = shadowDepthTextureId;
    pipeline_->shadowColorTextureCount_ = std::clamp(shadowColorTextureCount, 0, 8);
    for(int index = 0; index < pipeline_->shadowColorTextureCount_; ++index) {
@@ -338,9 +323,6 @@ bool CompositeRenderer::render(PackInstance& pack, const std::vector<std::size_t
 
  if(programChain.empty()) {
   if(present) {
-   // Java resets mipmapping on every target at the end of the final stage even when
-   // there are no passes (FinalPassRenderer.renderFinalPass's copy fallback is
-   // followed by the same reset loop).
    // https://github.com/IrisShaders/Iris/blob/26.1/common/src/main/java/net/irisshaders/iris/pipeline/FinalPassRenderer.java
    finalPass.finish(targets, false);
   } else if(gl::GLCore::bindFramebuffer != nullptr) {
@@ -361,8 +343,6 @@ bool CompositeRenderer::render(PackInstance& pack, const std::vector<std::size_t
    const bool shadowCompPass = stage == "shadowcomp" && shadowFlipsKnown &&
                                passPosition < pipeline_->shadowCompPassReadFlips_.size();
     if(shadowCompPass) {
-     // Publishes the flip-side shadowcolor ids for this pass before computes sample
-     // them via images (dispatchParentComputes runs below).
      publishReadSide(textures, colorImages,
                      pipeline_->shadowCompPassReadFlips_[passPosition],
                      shadowColorTextureIds, shadowColorAltTextureIds,
@@ -395,8 +375,6 @@ bool CompositeRenderer::render(PackInstance& pack, const std::vector<std::size_t
   }
   if(!toScreen) {
     if(shadowCompPass && shadowTargets != nullptr) {
-     // Iris' shadow composite framebuffers attach the shadow color buffers (flip-side
-     // textures) plus the shadow depth, sized to the shadow map resolution.
      // https://github.com/IrisShaders/Iris/blob/26.1/common/src/main/java/net/irisshaders/iris/shadows/ShadowRenderTargets.java
      bindPassTargets(shadowTargets, pass,
                      pipeline_->shadowCompPassReadFlips_[passPosition], width, height);
@@ -457,9 +435,9 @@ bool CompositeRenderer::render(PackInstance& pack, const std::vector<std::size_t
   refreshTextureAliases(textures, pack.definition.usesWaterShadow);
   PackResources::addTextures(pack, stage, textures, volumeTextures);
   bindSamplers(*program, textures, volumeTextures, maxTextureUnits(),
-                       &pack.definition);
+                       pack.definition);
   const unsigned int nextImageUnit =
-      bindColorImages(*program, colorImages, &pack.definition, &targets);
+      bindColorImages(*program, colorImages, pack.definition, &targets);
   PackResources::bind(pack, *program, nextImageUnit);
   uploadShaderUniforms(*program, frameUniforms, true);
   uploadIdentityDrawMatrices(*program);
@@ -471,9 +449,6 @@ bool CompositeRenderer::render(PackInstance& pack, const std::vector<std::size_t
    if(toScreen) {
     wroteToScreen = fullViewport;
    } else if(shadowCompPass) {
-    // The shadow color flip state is static (precomputed once per pack in
-    // initShadowColorFlips, matching Java's ShadowCompositeRenderer ctor staging); the
-    // next pass re-publishes its own read side at loop start, so nothing to toggle here.
    } else {
     std::vector<std::string> outputs = pass.outputs.empty() ? std::vector<std::string>{output} : pass.outputs;
     targets.applyPassFlips(pack.definition, pass.name, outputs);
@@ -492,9 +467,6 @@ bool CompositeRenderer::render(PackInstance& pack, const std::vector<std::size_t
   return false;
  }
  if(present) {
-  // Java resets mipmapping on every target after the final pass so the next frame's
-  // gbuffer passes sample non-mipped; the reset is the last render operation of the
-  // final stage (it runs after the final pass's computes and draws).
   // https://github.com/IrisShaders/Iris/blob/26.1/common/src/main/java/net/irisshaders/iris/pipeline/FinalPassRenderer.java (renderFinalPass)
   finalPass.finish(targets, wroteToScreen);
  }

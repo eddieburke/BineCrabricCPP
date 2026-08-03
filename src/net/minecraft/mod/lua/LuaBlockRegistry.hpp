@@ -16,11 +16,7 @@ struct BlockRegistrationSpec {
  int bakedModel = 0; // model::ModelRegistry handle (from minecraft.model.load/build)
  bool opaque = true;
  bool fullCube = true;
- // Render layer: solid/cutout (false) or alpha-blended (true). Defaults to
- // !opaque at parse time for backward compatibility; solid-looking non-opaque
- // blocks should pass translucent=false so they draw in the solid pass (and
- // cast shader shadows, which skip the translucent layer).
- bool translucent = false;
+  bool translucent = false;
  float collisionHeight = 1.0f;
  bool stackOnSame = false;
  bool requiresSolidBelow = true;
@@ -33,10 +29,6 @@ struct BlockRegistrationSpec {
  std::string itemTexturePath;
 };
 bool registerBlockSpec(const BlockRegistrationSpec& spec, std::string& error);
-// Raw per-block-coordinate scale/offset (built on util::math::coordinateRandom,
-// no padding applied). Shared by coordinateVariedBlockBounds (vanilla-shaped
-// render path) and baked-model quad rendering, so a block's collision/render
-// box and its custom model jitter by the same amount at the same position.
 struct CoordinateVariedTransform {
  float scale = 1.0f;
  float offsetX = 0.0f;
@@ -45,8 +37,6 @@ struct CoordinateVariedTransform {
 };
 [[nodiscard]] CoordinateVariedTransform coordinateVariedTransform(
     const BlockRegistrationSpec& spec, int x, int y, int z);
-// Padded render/collision box derived from coordinateVariedTransform, used by
-// the vanilla-shaped render path (getRenderBounds).
 [[nodiscard]] net::minecraft::Box coordinateVariedBlockBounds(const BlockRegistrationSpec& spec, int x, int y, int z);
 [[nodiscard]] int modBlockIdFromName(const char* name);
 [[nodiscard]] std::string modBlockWireName(int blockId);

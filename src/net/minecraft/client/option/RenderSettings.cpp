@@ -93,11 +93,9 @@ void applyShaderPack(RenderSettings& settings, const render::PackDefinition& pac
  settings.backFaceCutout = pack.backFaceCutout;
  settings.backFaceTranslucent = pack.backFaceTranslucent;
 }
-RenderSettings renderSettings(const GameOptions& options, const render::PackDefinition* pack) {
+RenderSettings renderSettings(const GameOptions& options, const render::PackDefinition& pack) {
  RenderSettings settings = renderSettings(options);
- if(pack != nullptr) {
-  applyShaderPack(settings, *pack);
- }
+ applyShaderPack(settings, pack);
  return settings;
 }
 float adjustFieldOfView(float baseFov, const RenderSettings& resolved) noexcept {

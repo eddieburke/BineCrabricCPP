@@ -43,9 +43,6 @@ struct Lexer {
  explicit Lexer(std::string_view source) : src_(source) {}
  Token next() {
   const Token token = lex();
-  // A '.' directly after a value is member access, and what follows it is a
-  // bare index, so `gbufferModelViewInverse.0.1` lexes as ident . 0 . 1 instead
-  // of collapsing into the bogus float ".0.1".
   memberIndex_ = token.kind == TokenKind::Dot && afterValue_;
   afterValue_ = token.kind == TokenKind::Ident || token.kind == TokenKind::Number ||
                 token.kind == TokenKind::RParen;
@@ -774,8 +771,6 @@ CustomUniformValue eval(const ExprNode& node, EvalContext& ctx) {
  return makeFloat(0.0f);
 }
 struct Parser {
- // NOTE: lex_ must be declared (and thus constructed) before cur_, because cur_
- // is initialized from lex_.next(). Members initialize in declaration order.
  explicit Parser(std::string_view source) : lex_(source), cur_(lex_.next()) {}
  std::unique_ptr<ExprNode> parse(std::string& error) {
   try {
@@ -920,8 +915,6 @@ struct Parser {
   while(cur_.kind == TokenKind::Dot) {
    advance();
    if(cur_.kind == TokenKind::Number) {
-    // GLSL semantics: the first index selects a column vector, the second a
-    // component of it, so `m.2.0` is `m[2][0]`.
     const int column = static_cast<int>(cur_.number);
     advance();
     if(cur_.kind == TokenKind::Dot) {
@@ -1179,7 +1172,6 @@ void CustomUniformRuntime::evaluate(const PackUniformValues& frame) {
  autoSmoothId_ = 100000;
  for(const auto& compiled : compiled_) {
   CustomUniformValue value = eval(*compiled->root, ctx);
-  // Coerce to declared type where sensible.
   switch(compiled->decl.type) {
   case CustomUniformType::Float: value = makeFloat(value.asFloat()); break;
   case CustomUniformType::Int: value = makeInt(value.asInt()); break;

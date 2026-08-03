@@ -1,7 +1,6 @@
 #pragma once
 #include <cstdint>
 #include <filesystem>
-#include <mutex>
 #include <optional>
 #include <string>
 #include "net/minecraft/client/gl/ShaderProgram.hpp"
@@ -19,9 +18,6 @@ class ShaderBinaryCache {
 
  private:
  [[nodiscard]] std::filesystem::path pathFor(std::uint64_t contentHash) const;
- // The service mutex does not guard disk_ on every path (workers read/write
- // without it), so the cache serializes its own file access.
- mutable std::mutex mutex_;
  std::filesystem::path root_;
 };
 } // namespace net::minecraft::client::gl

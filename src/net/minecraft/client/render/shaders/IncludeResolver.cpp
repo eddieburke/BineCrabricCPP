@@ -127,7 +127,6 @@ void scanDirectiveComment(std::string_view block,
 
 std::vector<int> defaultRenderTargetIndices() {
  // https://github.com/IrisShaders/Iris/blob/26.1/common/src/main/java/net/irisshaders/iris/shaderpack/properties/ProgramDirectives.java#L73-L76
- // A program without a RENDERTARGETS/DRAWBUFFERS directive defaults to /* DRAWBUFFERS:0 */.
  return {0};
 }
 

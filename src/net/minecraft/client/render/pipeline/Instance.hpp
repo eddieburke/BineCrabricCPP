@@ -72,8 +72,6 @@ std::unordered_map<std::string, std::string> sourceCache;
   gl::GlTexture noiseTexture;
   int noiseResolution = 0;
   std::array<gl::GlTexture, 2> depthTextures;
- // Allocated size of depthTextures[] — used so deferred/composite can
- // glCopyTexSubImage2D instead of reallocating with glCopyTexImage2D each frame.
  int depthTextureW[2]{};
  int depthTextureH[2]{};
  std::set<std::string> logged;

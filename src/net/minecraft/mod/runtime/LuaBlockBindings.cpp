@@ -44,15 +44,7 @@ int luaRegisterBlock(lua_State* state) {
  spec.maxScale = luaFloatField(state, tableIndex, "max_scale", 1.1f);
  api.getfield(state, tableIndex, "model");
 #ifdef MINECRAFT_NATIVE_EXPORTS
- // A block's shape comes from a JSON model, and only from a JSON model. The
- // failure this guards against is silent and expensive to debug: model.load
- // returns nil plus an error on a bad path, mods routinely drop that error
- // ("local m = is_client and minecraft.model.load(...) or nil"), and a spec
- // with no baked model used to fall back to getRenderType() == FULL_CUBE. The
- // block then rendered as a vanilla cube skinned with its flat `texture`,
- // which is why a model whose faces each take a different region of one sheet
- // came out with the same wrong region on all six sides.
- const int modelType = api.type(state, -1);
+  const int modelType = api.type(state, -1);
  if(modelType == kLuaTNumber) {
   spec.bakedModel = luaIntField(state, tableIndex, "model", 0);
  }
@@ -68,9 +60,7 @@ int luaRegisterBlock(lua_State* state) {
 #else
  api.settop(state, tableIndex);
 #endif
- // Optional flat sprite for the block's inventory/dropped item. Absent, the
- // item renders as a miniature of the block model.
- spec.itemTexturePath = luaStringField(state, tableIndex, "item_texture", "");
+  spec.itemTexturePath = luaStringField(state, tableIndex, "item_texture", "");
  std::string error;
  if(!registerBlockSpec(spec, error)) {
   return args.fail(error);

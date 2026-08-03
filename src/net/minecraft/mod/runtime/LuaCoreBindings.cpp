@@ -671,14 +671,11 @@ int luaAtPhase(lua_State* state) {
         return;
        }
        for(const std::shared_ptr<ModHost::LoadedLuaMod>& loaded : host().loadedMods()) {
-        if(loaded == nullptr || !loaded->active || loaded->modId != modId ||
-           loaded->loadGeneration != loadGeneration) {
-         continue;
-        }
-        // Per-mod gate: a mod loaded at runtime replays the bootstrap phase
-        // transitions, so without this its callbacks would fire again on later
-        // runtime loads of other mods. Each at_phase fires exactly once per mod.
-        if(!loaded->firedPhases.insert(static_cast<int>(targetPhase)).second) {
+         if(loaded == nullptr || !loaded->active || loaded->modId != modId ||
+            loaded->loadGeneration != loadGeneration) {
+          continue;
+         }
+         if(!loaded->firedPhases.insert(static_cast<int>(targetPhase)).second) {
          return;
         }
         callLuaEvent(

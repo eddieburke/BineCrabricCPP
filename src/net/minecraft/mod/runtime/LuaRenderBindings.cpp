@@ -316,8 +316,6 @@ int luaRenderDrawBillboards(lua_State* state) {
   sourceIndex = api.gettop(state);
   billboardCount = kMaxBillboardsPerBatch;
  }
-  // Blend factors ride in the pass state; additive is SRC_ALPHA/ONE like the old
-  // raw blendCustom poke. Java ref (Iris): gl/blending/BlendModeOverride.java.
   const ModLuaDrawScope modCaps(false, true, false, depthTest, depthWrite, ModDrawLayer::Auto,
                                 client::gl::blend::SrcAlpha,
                                 blendMode == "additive" ? client::gl::blend::One

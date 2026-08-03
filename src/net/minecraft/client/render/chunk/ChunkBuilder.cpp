@@ -195,9 +195,7 @@ std::shared_ptr<ChunkMeshJob> ChunkMeshJob::capture(ChunkBuilder& owner,
  if(auto* minecraft = net::minecraft::client::Minecraft::INSTANCE;
     minecraft != nullptr && minecraft->gameRenderer != nullptr &&
     minecraft->gameRenderer->shaderPacks() != nullptr) {
-   if(const auto* def = minecraft->gameRenderer->shaderPacks()->activeDefinition(); def != nullptr) {
-    job->blockRenderLayers = def->blockRenderLayers;
-   }
+   job->blockRenderLayers = minecraft->gameRenderer->packDefinition().blockRenderLayers;
   }
    job->alphaTestRef = net::minecraft::client::render::core::alphaTestRef();
   pinGuard.disarm();

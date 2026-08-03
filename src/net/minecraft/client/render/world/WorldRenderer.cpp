@@ -1,4 +1,5 @@
 #include "net/minecraft/client/render/world/WorldRenderer.hpp"
+#include "net/minecraft/client/render/shaderpack/Pack.hpp"
 #include <algorithm>
 #include <cmath>
 #include <cstdint>
@@ -141,11 +142,10 @@ void WorldRenderer::reload() {
  // Resolve options + pack bake flags before sections rebuild. Stale
  // separateAo/oldLighting from the previous pack made Smooth Lighting look
  // broken until the slider forced another remesh.
- const PackDefinition* pack = nullptr;
- if(client != nullptr && client->gameRenderer != nullptr && client->gameRenderer->shaderPacks() != nullptr) {
-  pack = client->gameRenderer->shaderPacks()->meshDefinition();
- }
- settings_ = option::renderSettings(activeOptions(), pack);
+ settings_ = option::renderSettings(activeOptions(),
+                                   client != nullptr && client->gameRenderer != nullptr
+                                       ? client->gameRenderer->meshDefinition()
+                                       : vanillaPackDefinition());
  net::minecraft::client::option::GameOptions& opts = activeOptions();
  const option::RenderSettings& resolved = settings_;
  if(Block::LEAVES != nullptr) {

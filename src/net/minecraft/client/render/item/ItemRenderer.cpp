@@ -13,8 +13,6 @@
 #include "net/minecraft/util/math/MatrixStack.hpp"
 namespace net::minecraft::client::render::item {
 namespace {
-// enableGUIStandardItemLighting: lights after Ry(-30)*Rx(165) on
-// normalize(0.2,1,-0.7) / normalize(-0.2,1,0.7), ambient 0.4, diffuse 0.6.
 void enableGuiItemLighting() {
  core::WorldLightUniforms light = core::worldLight();
  light.sunDirView[0] = -0.23791005f;

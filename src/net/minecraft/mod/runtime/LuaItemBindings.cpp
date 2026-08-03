@@ -30,9 +30,6 @@ int luaRegisterItem(lua_State* state) {
  spec.ownerModId = mod->modId;
  api.getfield(state, tableIndex, "model");
 #ifdef MINECRAFT_NATIVE_EXPORTS
- // Items still make model optional (plain sprite items have none), but when
- // present it must be a baked handle from minecraft.model.load/build — see
- // register_block's identical rule in LuaBlockBindings.cpp.
  const int modelType = api.type(state, -1);
  if(modelType == kLuaTNumber) {
   spec.bakedModel = luaIntField(state, tableIndex, "model", 0);
