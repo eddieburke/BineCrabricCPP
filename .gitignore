@@ -26,3 +26,4 @@ agents.md
 
 # Licensed shaderpacks kept local-only (path renamed to shaders/)
 shaders/RenderPearl*/
+shaders/SEUS*/
