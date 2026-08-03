@@ -58,8 +58,8 @@ class MinecraftServer : public command::CommandOutput {
  bool pvpEnabled = true;
  bool flightEnabled = false;
  bool allowNether = true;
- bool running = true;
- std::atomic_bool stopped{false};
+  std::atomic_bool running{true};
+  std::atomic_bool stopped{false};
  int ticks = 0;
  std::string progressMessage;
  int progress = 0;

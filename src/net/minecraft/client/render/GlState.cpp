@@ -273,8 +273,13 @@ struct FormatInfo {
 };
 
 static constexpr std::array kFormats = {
-    FormatInfo{"rgba", ColorFormat::Rgba8, 0x8058},
+    // colorFormatName() reverse-looks-up by returning the FIRST entry matching the enum,
+    // so the canonical (sized) name must come before its aliases. "RGBA" is the legacy
+    // unsized spelling of GL_RGBA8; both parse to Rgba8, but the name reported back — in
+    // logs and in the format round-trip — should be rgba8, which is what this function's
+    // own fallback already returns.
     FormatInfo{"rgba8", ColorFormat::Rgba8, 0x8058},
+    FormatInfo{"rgba", ColorFormat::Rgba8, 0x8058},
     FormatInfo{"r8", ColorFormat::R8, 0x8229},
     FormatInfo{"r16", ColorFormat::R16, 0x822A},
     FormatInfo{"r16f", ColorFormat::R16F, 0x822D},

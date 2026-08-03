@@ -122,13 +122,20 @@ RenderPassScope::~RenderPassScope() {
  core::setDrawEnabled(savedDrawEnabled_);
 }
 namespace {
+// Chunk-mesh passes cull back faces, which is the state Iris always renders terrain in:
+// its backFace.solid / backFace.cutout / backFace.cutoutMipped / backFace.translucent
+// directives are parsed (ShaderProperties.java:98-101) but never consumed anywhere in
+// 26.1, so no pack can turn culling off. Geometry that needs to be seen from both sides
+// emits both faces itself — cross/crop plants, fire, rails and redstone all do.
+// Culling off is not a free "make everything visible": a back face reaches the pack with
+// its normal pointing away from the viewer and with at_tangent.w handedness computed for
+// the opposite winding, which corrupts w_face_normal, the normal-mapping TBN basis and
+// DIR_SHADING (prog/lit_forward.fsh), on top of rasterising every hidden face.
 RenderType::State solidState() {
  RenderType::State s{};
  s.depthTest = true;
  s.depthWrite = true;
- // Crossed plants (and leaf-style alpha) share this pass; cull must stay off so
- // single-sided cross quads remain visible from both sides.
- s.cull = false;
+ s.cull = true;
  s.alphaTest = true;
  s.alphaRef = 0.1f;
  return s;
@@ -137,7 +144,7 @@ RenderType::State cutoutState() {
  RenderType::State s{};
  s.depthTest = true;
  s.depthWrite = true;
- s.cull = false;
+ s.cull = true;
  s.alphaTest = true;
  s.alphaRef = 0.1f;
  return s;
@@ -311,7 +318,9 @@ RenderType& RenderType::particlesTranslucent() {
 }
 RenderType& RenderType::clouds() {
  static RenderType instance =
-     RenderType("clouds", 0x0004, true, true, false, "", translucentState(), "gbuffers_clouds");
+     // hasNormals: CloudRenderer emits a per-face normal (top vs bottom sheet), so the
+     // attribute must be sourced rather than replaced with a constant.
+     RenderType("clouds", 0x0004, true, true, true, "", translucentState(), "gbuffers_clouds");
  return instance;
 }
 RenderType& RenderType::weather() {

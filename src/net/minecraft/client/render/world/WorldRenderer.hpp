@@ -105,6 +105,9 @@ class WorldRenderer : public net::minecraft::GameEventListener {
  void setRenderSettings(const net::minecraft::client::option::RenderSettings& settings) { settings_ = settings; }
  void pushCullState();
  void popCullState();
+ // TEMP DIAGNOSTIC — water/ice not drawing under RenderPearl/SEUS.
+ // See docs/agent-notes/HANDOFF-water-ice-not-drawing.md. Delete with the probe.
+ [[nodiscard]] int lastDrawnRegions() const noexcept { return lastDrawnRegionCount_; }
 
  private:
  void renderOutline(const net::minecraft::Box& box);

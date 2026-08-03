@@ -3,6 +3,7 @@
 #include <unordered_map>
 #include "net/minecraft/client/render/shaders/ComputeDispatcher.hpp"
 #include "net/minecraft/client/render/GlState.hpp"
+#include "net/minecraft/client/render/shaders/Core330Transformer.hpp"
 #include "net/minecraft/client/render/shaders/IncludeResolver.hpp"
 #include "net/minecraft/client/render/shaders/PassIndex.hpp"
 #include "net/minecraft/client/render/shaders/SourceProcessor.hpp"
@@ -796,9 +797,18 @@ TEST(PackSourcePreparation, ChunkFadeMatchesTheAdvertisedFeatureAbi) {
       program, ShaderStage::Vertex, pack, source, "#version 430 core\n");
  };
  EXPECT_NE(prepare("gbuffers_terrain").find("in float mc_chunkFade;"), std::string::npos);
+ // Water and ice are chunk geometry, so gbuffers_water takes the terrain attribute too.
+ EXPECT_NE(prepare("gbuffers_water").find("in float mc_chunkFade;"), std::string::npos);
  EXPECT_NE(prepare("gbuffers_entities").find("const float mc_chunkFade = -1.0;"),
            std::string::npos);
- EXPECT_EQ(prepare("shadow").find("mc_chunkFade ="), std::string::npos);
+ // Shadow programs get the -1.0 const, not nothing. This assertion used to require the
+ // opposite; that encoded the port's own behaviour rather than Iris'. SodiumTransformer
+ // declares `const float mc_chunkFade = -1.0;` on its `parameters.shadow` branch, and
+ // leaving the symbol undeclared is a compile failure for any pack that shares a vertex
+ // body between gbuffers_water and shadow_water.
+ // https://github.com/IrisShaders/Iris/blob/26.1/common/src/main/java/net/irisshaders/iris/pipeline/transform/transformer/SodiumTransformer.java
+ EXPECT_NE(prepare("shadow").find("const float mc_chunkFade = -1.0;"), std::string::npos);
+ EXPECT_NE(prepare("shadow_water").find("const float mc_chunkFade = -1.0;"), std::string::npos);
 }
 TEST(PackLoaderTest, InfersColortexFormatsFromImageAndUsamplerLayouts) {
  // RenderPearl leaves const colortexNFormat commented; formats come from layouts.
@@ -1923,6 +1933,56 @@ TEST(PackLoaderTest, ShadowNearFarPlanesAcceptNegativeNearLikeJava) {
   EXPECT_FLOAT_EQ(pack.shadowNearPlane, -100.05f);
   EXPECT_FLOAT_EQ(pack.shadowFarPlane, 156.0f);
 }
+TEST(PackLoaderTest, RenderPearlCommentedShadowDirectivesAreHonored) {
+  // RenderPearl declares its shadow tuning inside a `/* ... */` comment in
+  // prelude/directive.glsl (shadowIntervalSize = 0.0, shadowHardwareFiltering0/1 =
+  // true) and computes shadowDistance/near/far via a `#if SM_DIST == N` chain that
+  // the const scanner does not evaluate. scanPackConstants scans raw lines (comments
+  // included, unlike the format directives in scanTargetDirective which use
+  // isOffsetInComment), so the commented values ARE honored here. This is what the
+  // pack's shadow.vsh depends on: its mat3 model-view cut is only consistent with the
+  // deferred `rot_trans_mmul(shadowModelView, ...)` sample when the snap translation
+  // is disabled (shadowIntervalSize == 0.0).
+  PackDefinition pack;
+  std::unordered_map<std::string, PackSourceOption> options;
+  std::string error;
+  EXPECT_TRUE(load({{"shaders/gbuffers_basic.vsh", "void main(){}"},
+                    {"shaders/gbuffers_basic.fsh",
+                     "/*\n"
+                     "\tconst float shadowIntervalSize = 0.0;\n"
+                     "\tconst bool shadowHardwareFiltering0 = true;\n"
+                     "\tconst bool shadowHardwareFiltering1 = true;\n"
+                     "*/\n"
+                     "const float shadowDistanceRenderMul = 0.85;\n"
+                     "#if SM_DIST == 1\n"
+                     "\tconst float shadowDistance = 16;\n"
+                     "#elif SM_DIST == 10\n"
+                     "\tconst float shadowDistance = 160;\n"
+                     "\tconst float shadowNearPlane = -227;\n"
+                     "\tconst float shadowFarPlane = 227;\n"
+                     "#elif SM_DIST == 32\n"
+                     "\tconst float shadowDistance = 512;\n"
+                     "\tconst float shadowNearPlane = -695;\n"
+                     "\tconst float shadowFarPlane = 695;\n"
+                     "#endif\n"
+                     "void main(){}"}},
+                   pack,
+                   options,
+                   error))
+      << error;
+  // The commented consts are read: the pack's effective interval is 0 (no snap).
+  EXPECT_FLOAT_EQ(pack.shadowIntervalSize, 0.0f);
+  EXPECT_TRUE(pack.shadowHardwareFiltering[0]);
+  EXPECT_TRUE(pack.shadowHardwareFiltering[1]);
+  EXPECT_FLOAT_EQ(pack.shadowDistanceRenderMul, 0.85f);
+  // The #if/#elif chain is not evaluated: the LAST branch in file order wins. The
+  // pack's GLSL itself uses SM_DIST=10 (160 / -227 / 227); since the pack overrides
+  // gl_Position entirely in shadow.vsh these C++ values only size the (oversized,
+  // harmless) shadow culling, not the map content.
+  EXPECT_FLOAT_EQ(pack.shadowDistance, 512.0f);
+  EXPECT_FLOAT_EQ(pack.shadowNearPlane, -695.0f);
+  EXPECT_FLOAT_EQ(pack.shadowFarPlane, 695.0f);
+}
 TEST(PackLoaderTest, DynamicHandLightIsParityParsed) {
   // Java ShaderProperties.java:83,190,756-757 parses dynamicHandLight and never
   // consumes it; the C++ side keeps the parity parse so packs behave identically.
@@ -1937,5 +1997,75 @@ TEST(PackLoaderTest, DynamicHandLightIsParityParsed) {
                    error))
       << error;
   EXPECT_TRUE(pack.dynamicHandLight);
+}
+// mc_chunkFade must follow the geometry source, not the program-name prefix. Iris routes
+// every chunk-mesher program through SodiumTransformer, which computes a real fade (1.0
+// for a loaded chunk); gbuffers_water is chunk geometry and belongs in that set. Giving
+// it the non-terrain `const float mc_chunkFade = -1.0;` made RenderPearl's
+// `alpha = mc_chunkFade` negative, which packed to 0 and let `blend.gbuffers_water=
+// SRC_ALPHA ...` erase every water and ice fragment.
+// https://github.com/IrisShaders/Iris/blob/26.1/common/src/main/java/net/irisshaders/iris/pipeline/transform/transformer/SodiumTransformer.java
+TEST(PackLoaderTest, ChunkFadeFollowsChunkMesherProgramsNotNamePrefix) {
+  net::minecraft::test::installTestGlslSnippets();
+  PackDefinition pack;
+  pack.optionalFeatures.insert("FADE_VARIABLE");
+  const ShaderTransformContext context{};
+  const std::string body = "void main(){}\n";
+  const auto vertexFor = [&](const char* program) {
+    return canonicalizeCoreSource(program, ShaderStage::Vertex, pack, body, context);
+  };
+  // Chunk-mesher programs get the real attribute, which RenderCore seeds to 1.0.
+  for(const char* program :
+      {"gbuffers_terrain", "gbuffers_terrain_solid", "gbuffers_terrain_cutout", "gbuffers_water"}) {
+    const std::string out = vertexFor(program);
+    EXPECT_NE(out.find("in float mc_chunkFade;"), std::string::npos) << program;
+    EXPECT_EQ(out.find("const float mc_chunkFade"), std::string::npos) << program;
+  }
+  // Everything else — and the shadow pass, whatever its geometry — gets the -1.0 const.
+  for(const char* program : {"gbuffers_entities", "gbuffers_hand", "gbuffers_clouds", "shadow",
+                             "shadow_water", "shadow_solid"}) {
+    const std::string out = vertexFor(program);
+    EXPECT_NE(out.find("const float mc_chunkFade = -1.0;"), std::string::npos) << program;
+    EXPECT_EQ(out.find("in float mc_chunkFade;"), std::string::npos) << program;
+  }
+  // A pack that declares the symbol itself is left alone.
+  PackDefinition declaredPack;
+  declaredPack.optionalFeatures.insert("FADE_VARIABLE");
+  const std::string declared = canonicalizeCoreSource(
+      "gbuffers_water", ShaderStage::Vertex, declaredPack, "in float mc_chunkFade;\n" + body, context);
+  EXPECT_EQ(declared.find("const float mc_chunkFade"), std::string::npos);
+  // No FADE_VARIABLE means no injection at all (the vanilla and SEUS case).
+  PackDefinition noFeature;
+  const std::string untouched =
+      canonicalizeCoreSource("gbuffers_water", ShaderStage::Vertex, noFeature, body, context);
+  EXPECT_EQ(untouched.find("mc_chunkFade"), std::string::npos);
+}
+// A dimension folder must inherit consts that live in the pack-wide includes. RenderPearl
+// keeps its programs in world_default/ but declares `const int shadowMapResolution` in
+// prelude/config.glsl; the dimension scan only saw its own folder, came out at 0, fell
+// through to the 1024 default, and then overrode the root's correct value — allocating a
+// 1024 shadow map against GLSL compiled for 2048, which reads as shadow acne.
+TEST(PackLoaderTest, DimensionInheritsShadowMapResolutionFromSharedInclude) {
+  PackDefinition pack;
+  std::unordered_map<std::string, PackSourceOption> options;
+  std::string error;
+  EXPECT_TRUE(load({{"shaders/dimension.properties", "dimension.world_default=*\n"},
+                    {"shaders/prelude/config.glsl", "const int shadowMapResolution = 2048;\n"},
+                    {"shaders/prog/lit.fsh", "#include \"/prelude/config.glsl\"\nvoid main(){}\n"},
+                    {"shaders/world_default/gbuffers_basic.vsh", "void main(){}"},
+                    {"shaders/world_default/gbuffers_basic.fsh", "#include \"/prog/lit.fsh\"\n"},
+                    {"shaders/world_default/shadow.vsh", "void main(){}"},
+                    {"shaders/world_default/shadow.fsh", "#include \"/prog/lit.fsh\"\n"}},
+                   pack,
+                   options,
+                   error))
+      << error;
+  EXPECT_EQ(pack.shadowMapResolution, 2048);
+  const auto dimension = pack.dimensionDefinitions.find("*");
+  ASSERT_NE(dimension, pack.dimensionDefinitions.end());
+  ASSERT_NE(dimension->second, nullptr);
+  // Not 1024: the dimension resolves includes before scanning, so the shared const wins
+  // and the "pack ships a shadow program but declared no resolution" default never fires.
+  EXPECT_EQ(dimension->second->shadowMapResolution, 2048);
 }
 } // namespace net::minecraft::client::render

@@ -165,7 +165,18 @@ Applies **only** when a **subagent** executes a **massively large change** (touc
 
 ---
 
-## 12. Commits and build locks (all agents)
+## 12. Banned phrases
+
+Never use the following phrases when responding to the user:
+
+- **"You're absolutely right"**
+- **"You're right to push back"**
+
+Affirming agreement is fine; use a different, non-robotic phrasing (e.g. "Understood", "Agreed", or just restate the point). Do not use these phrases in any form, variant, or paraphrase intended to reproduce them.
+
+---
+
+## 13. Commits and build locks (all agents)
 
 Applies to **every** agent (main agent and subagents), for both small routine edits and large changes.
 

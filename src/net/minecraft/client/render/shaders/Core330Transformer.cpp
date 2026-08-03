@@ -70,6 +70,24 @@ void replaceGlMultiTexCoordBounded(std::string& source, int minimum, int maximum
   replaceAllToken(source, "gl_MultiTexCoord" + std::to_string(index), "vec4(0.0, 0.0, 0.0, 1.0)");
 }
 
+// Programs whose geometry comes from the chunk mesher. Iris routes exactly this set
+// through SodiumTransformer, which computes a real per-chunk fade; everything else gets
+// VanillaTransformer's `const float mc_chunkFade = -1.0;`.
+// gbuffers_water belongs here — water and ice are chunk geometry, not a separate model
+// path. Classifying it as "other" gave it the -1.0 const, so RenderPearl's
+//   float16_t alpha = float16_t(mc_chunkFade);  // prog/lit.vsh, IRIS_FEATURE_FADE_VARIABLE
+//   if (fluid) alpha *= float16_t(WATER_OPACITY * 0.01);
+// produced a negative alpha, packed it to 0 through an out-of-range float->uint
+// conversion, and `blend.gbuffers_water=SRC_ALPHA ...` then erased every water and ice
+// fragment. See docs/agent-notes/HANDOFF-visual-symptoms-2026-08-02.md section B.
+// https://github.com/IrisShaders/Iris/blob/26.1/common/src/main/java/net/irisshaders/iris/pipeline/transform/transformer/SodiumTransformer.java
+[[nodiscard]] bool isChunkMesherProgram(std::string_view programName) {
+ return programName.starts_with("gbuffers_terrain") || programName == "gbuffers_water";
+}
+[[nodiscard]] bool isShadowProgramName(std::string_view programName) {
+ return programName == "shadow" || programName.starts_with("shadow_") ||
+        programName.starts_with("clrwl_shadow");
+}
 std::string injectChunkFadeAttribute(const std::string& programName,
                                      const PackDefinition& pack,
                                      std::string source) {
@@ -78,11 +96,16 @@ std::string injectChunkFadeAttribute(const std::string& programName,
  const bool declared = hasStorageDeclaration(source, "in", "mc_chunkFade") ||
                        hasStorageDeclaration(source, "uniform", "mc_chunkFade") ||
                        hasStorageDeclaration(source, "const", "mc_chunkFade");
- if(!enabled || declared || !std::string_view(programName).starts_with("gbuffers_")) return source;
+ const std::string_view name = programName;
+ const bool shadow = isShadowProgramName(name);
+ // Shadow programs previously fell out of this gate entirely and got no declaration at
+ // all, which is a compile failure waiting for any pack that shares a vertex body between
+ // gbuffers_water and shadow_water. Iris always gives the shadow pass the -1.0 const
+ // (SodiumTransformer.java:124, `parameters.shadow` branch).
+ if(!enabled || declared || !(name.starts_with("gbuffers_") || shadow)) return source;
  source.insert(sourceDeclarationOffset(source),
-               std::string_view(programName).starts_with("gbuffers_terrain")
-                   ? GlslSnippets::get("chunk_fade_terrain_in")
-                   : GlslSnippets::get("chunk_fade_other_const"));
+               (!shadow && isChunkMesherProgram(name)) ? GlslSnippets::get("chunk_fade_terrain_in")
+                                                       : GlslSnippets::get("chunk_fade_other_const"));
  return source;
 }
 

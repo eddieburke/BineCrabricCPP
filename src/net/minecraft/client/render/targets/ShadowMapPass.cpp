@@ -253,11 +253,17 @@ ShadowMapResult update(ShadowMapState& state,
    renderDistance = shadowDistance * shadowDistanceRenderMul;
   }
   const bool perspectiveShadow = shadowMapFov > 0.0f;
-  // Entity/terrain offsets use the player camera, not a light-eye translation.
+  // Iris centres the shadow camera on cameraPosition — the same origin the gbuffer
+  // pass uploads against. The pack's sample transforms `pe = gbufferModelViewInverse *
+  // viewPos` (which is `worldPos - cameraPosition`) by shadowModelView, so any offset
+  // between the two origins shows up directly as misplaced shadows. View bobbing
+  // cannot introduce one here: it lives to the left of the camera rotation inside
+  // gbufferModelView and never touches camera.eye*.
   // https://github.com/IrisShaders/Iris/blob/26.1/common/src/main/java/net/irisshaders/iris/shadows/ShadowRenderer.java
-  const double centerX = camera.x;
-  const double centerY = camera.y;
-  const double centerZ = camera.z;
+  // https://github.com/IrisShaders/Iris/blob/26.1/common/src/main/java/net/irisshaders/iris/uniforms/CameraUniforms.java
+  const double centerX = camera.eyeX;
+  const double centerY = camera.eyeY;
+  const double centerZ = camera.eyeZ;
   // https://github.com/IrisShaders/Iris/blob/26.1/common/src/main/java/net/irisshaders/iris/shadows/ShadowMatrices.java
   // Ortho planes come straight from the pack directives; the defaults ARE the
   // Java constants (NEAR = -100.05f; FAR = 156.0f), so no engine-side mapping

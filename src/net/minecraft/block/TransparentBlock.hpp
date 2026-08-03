@@ -15,7 +15,11 @@ class TransparentBlock : public Block {
  }
  [[nodiscard]] bool isSideVisibleForBounds(
      const BlockView* blockView, int x, int y, int z, int side, const net::minecraft::Box& bounds) const override {
-  if(blockView != nullptr && !renderSides && blockView->getBlockId(x, y, z) == id) {
+  // A face shared with the same block type is exactly coincident with the
+  // neighbour's face; emitting it (fancy leaves render every side) makes the two
+  // surfaces Z-fight over the entire plane. Vanilla culls leaf-against-leaf in
+  // both fast and fancy modes — do the same regardless of renderSides.
+  if(blockView != nullptr && blockView->getBlockId(x, y, z) == id) {
    return false;
   }
   return Block::isSideVisibleForBounds(blockView, x, y, z, side, bounds);

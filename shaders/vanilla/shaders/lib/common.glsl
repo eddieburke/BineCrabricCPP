@@ -30,15 +30,41 @@ vec3 applyFog(vec3 surface, float viewDistance) {
 }
 
 // b1.7.3 face orientation shade — pack-owned (Iris oldLighting=false for world).
+//
+// Vanilla keys this off a face *Direction*, never off a normal: the game applies it in
+// CardinalLighting.byFace while baking quads, and Iris gates the whole effect on the
+// oldLighting directive (IrisRenderingPipeline.shouldDisableDirectionalShading returns
+// !oldLighting, and MixinClientLevel forces Direction.UP when that is true). A Direction
+// only exists for axis-aligned quads, so vanilla leaves everything else unshaded — cross
+// and crop plants, torches, rails, ladders, fire and redstone all render at full
+// brightness. Reconstructing that from an interpolated normal therefore needs an explicit
+// "no dominant axis" case, which is what the final return is.
+//
+// Without it, cross-plant quads strobed. Their normal is (±0.7071, 0, ∓0.7071), so |n.x|
+// and |n.z| are mathematically EQUAL and the old `n.z > n.x` test sat exactly on its own
+// tie-break. The normal arrives here via
+//   vaNormal (normalized signed byte) -> mat3(modelViewMatrix) -> normalize
+//     -> interpolate across the primitive -> mat3(gbufferModelViewInverse) -> normalize
+// and every step injects round-off of ~1e-7 whose SIGN depends on the camera matrix.
+// The camera matrix changes each frame (view bobbing), so the branch flipped per frame
+// and per fragment, swinging plants between 0.8 and 0.6.
+//
+// axisEpsilon sits far above that round-off and far below any real margin — an
+// axis-aligned normal wins its axis by 1.0, and even a flowing-water top still wins Y by
+// ~0.9 — so it only ever fires on a genuine tie.
 float faceShade(vec3 worldNormal) {
+ const float axisEpsilon = 1.0 / 64.0;
  vec3 n = abs(normalize(worldNormal));
- if(n.y > n.x && n.y > n.z) {
+ if(n.y >= max(n.x, n.z) + axisEpsilon) {
   return worldNormal.y >= 0.0 ? 1.0 : 0.5;
  }
- if(n.z > n.x) {
+ if(n.z >= n.x + axisEpsilon) {
   return 0.8;
  }
- return 0.6;
+ if(n.x >= n.z + axisEpsilon) {
+  return 0.6;
+ }
+ return 1.0;
 }
 
 // Iris separateAo: AO lives in vaColor.a for terrain; rgb stays tint-only.

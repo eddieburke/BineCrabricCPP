@@ -68,49 +68,32 @@ void CrossBlockRenderer::render(net::minecraft::block::Block& block, int metadat
  double x1 = x + 0.5 + (double)0.45f;
  double z0 = z + 0.5 - (double)0.45f;
  double z1 = z + 0.5 + (double)0.45f;
- // One quad per diagonal. Back faces are not emitted; solid/cutout draws with
- // cull disabled so each plane stays visible from both sides without coplanar Z-fight.
+ // Two diagonal planes, each emitted as a front AND a back quad. The back quad reverses
+ // the winding and SWAPS U, which is what makes the texture read the right way round from
+ // behind; a single quad shown from both sides with culling off is mirrored. The gbuffer
+ // contract needs the two faces separately anyway — Iris hands packs a per-vertex normal
+ // and an at_tangent handedness sign, and both are only meaningful for the face actually
+ // pointing at the viewer (see prog/lit_forward.fsh's w_face_normal / w_tbn / DIR_SHADING).
+ // The coplanar front/back pair never Z-fights because solid/cutout cull back faces.
  emitCrossQuad(tessellator,
-               x0,
-               y + 1.0,
-               z0,
-               uMin,
-               vMin,
-               x0,
-               y + 0.0,
-               z0,
-               uMin,
-               vMax,
-               x1,
-               y + 0.0,
-               z1,
-               uMax,
-               vMax,
-               x1,
-               y + 1.0,
-               z1,
-               uMax,
-               vMin);
+               x0, y + 1.0, z0, uMin, vMin,
+               x0, y + 0.0, z0, uMin, vMax,
+               x1, y + 0.0, z1, uMax, vMax,
+               x1, y + 1.0, z1, uMax, vMin);
  emitCrossQuad(tessellator,
-               x0,
-               y + 1.0,
-               z1,
-               uMin,
-               vMin,
-               x0,
-               y + 0.0,
-               z1,
-               uMin,
-               vMax,
-               x1,
-               y + 0.0,
-               z0,
-               uMax,
-               vMax,
-               x1,
-               y + 1.0,
-               z0,
-               uMax,
-               vMin);
+               x1, y + 1.0, z1, uMin, vMin,
+               x1, y + 0.0, z1, uMin, vMax,
+               x0, y + 0.0, z0, uMax, vMax,
+               x0, y + 1.0, z0, uMax, vMin);
+ emitCrossQuad(tessellator,
+               x0, y + 1.0, z1, uMin, vMin,
+               x0, y + 0.0, z1, uMin, vMax,
+               x1, y + 0.0, z0, uMax, vMax,
+               x1, y + 1.0, z0, uMax, vMin);
+ emitCrossQuad(tessellator,
+               x1, y + 1.0, z0, uMin, vMin,
+               x1, y + 0.0, z0, uMin, vMax,
+               x0, y + 0.0, z1, uMax, vMax,
+               x0, y + 1.0, z1, uMax, vMin);
 }
 } // namespace net::minecraft::client::render::block

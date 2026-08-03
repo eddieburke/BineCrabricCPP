@@ -25,7 +25,9 @@ void Chunk::unlockRenderWrite() const noexcept {
  }
 }
 bool Chunk::setBlock(int localX, int yPos, int localZ, int rawId, int metadataValue) {
- const int topHeight = static_cast<int>(heightmap[static_cast<std::size_t>((localZ << 4) | localX)] & 0xFFU);
+ const int topHeight = static_cast<int>(
+     std::atomic_ref(const_cast<std::uint8_t&>(heightmap[static_cast<std::size_t>((localZ << 4) | localX)]))
+         .load(std::memory_order_relaxed) & 0xFFU);
  const int previousId = getBlockId(localX, yPos, localZ);
  const int previousMeta = meta.get(localX, yPos, localZ);
  if(previousId == rawId && previousMeta == metadataValue) {
@@ -33,9 +35,10 @@ bool Chunk::setBlock(int localX, int yPos, int localZ, int rawId, int metadataVa
  }
  const int blockX = this->x * 16 + localX;
  const int blockZ = this->z * 16 + localZ;
- lockRenderWrite();
- blocks[index(localX, yPos, localZ)] = static_cast<std::uint8_t>(rawId & 0xFF);
- unlockRenderWrite();
+  lockRenderWrite();
+  std::atomic_ref<std::uint8_t>(blocks[index(localX, yPos, localZ)])
+      .store(static_cast<std::uint8_t>(rawId & 0xFF), std::memory_order_relaxed);
+  unlockRenderWrite();
  if(previousId != 0 && world != nullptr && !world->isRemote()) {
   Block* previousBlock = Block::BLOCKS[static_cast<std::size_t>(previousId)];
   if(previousBlock != nullptr) {
@@ -74,16 +77,19 @@ bool Chunk::setBlock(int localX, int yPos, int localZ, int rawId, int metadataVa
  return true;
 }
 bool Chunk::setBlock(int localX, int yPos, int localZ, int rawId) {
- const int topHeight = static_cast<int>(heightmap[static_cast<std::size_t>((localZ << 4) | localX)] & 0xFFU);
+ const int topHeight = static_cast<int>(
+     std::atomic_ref(const_cast<std::uint8_t&>(heightmap[static_cast<std::size_t>((localZ << 4) | localX)]))
+         .load(std::memory_order_relaxed) & 0xFFU);
  const int previousId = getBlockId(localX, yPos, localZ);
  if(previousId == rawId) {
   return false;
  }
  const int blockX = this->x * 16 + localX;
  const int blockZ = this->z * 16 + localZ;
- lockRenderWrite();
- blocks[index(localX, yPos, localZ)] = static_cast<std::uint8_t>(rawId & 0xFF);
- unlockRenderWrite();
+  lockRenderWrite();
+  std::atomic_ref<std::uint8_t>(blocks[index(localX, yPos, localZ)])
+      .store(static_cast<std::uint8_t>(rawId & 0xFF), std::memory_order_relaxed);
+  unlockRenderWrite();
  if(previousId != 0 && world != nullptr) {
   Block* previousBlock = Block::BLOCKS[static_cast<std::size_t>(previousId)];
   if(previousBlock != nullptr) {
@@ -158,12 +164,13 @@ void Chunk::populateHeightMap(bool fixCrossChunkGaps) {
  int minHeight = 127;
  const bool skipSkyLight = world != nullptr && world->dimension != nullptr && world->dimension->hasCeiling;
  for(int localX = 0; localX < 16; ++localX) {
-  for(int localZ = 0; localZ < 16; ++localZ) {
-   const int topY = findTopBlock(localX, localZ);
-   heightmap[static_cast<std::size_t>((localZ << 4) | localX)] = static_cast<std::uint8_t>(topY);
-   if(topY < minHeight) {
-    minHeight = topY;
-   }
+   for(int localZ = 0; localZ < 16; ++localZ) {
+    const int topY = findTopBlock(localX, localZ);
+    std::atomic_ref<std::uint8_t>(heightmap[static_cast<std::size_t>((localZ << 4) | localX)])
+        .store(static_cast<std::uint8_t>(topY), std::memory_order_relaxed);
+    if(topY < minHeight) {
+     minHeight = topY;
+    }
    if(skipSkyLight) {
     continue;
    }
@@ -172,7 +179,8 @@ void Chunk::populateHeightMap(bool fixCrossChunkGaps) {
    int yPos = 127;
    do {
     light -= Block::BLOCKS_LIGHT_OPACITY[static_cast<std::size_t>(
-        blocks[static_cast<std::size_t>(base + yPos)] & 0xFFU)];
+        std::atomic_ref(const_cast<std::uint8_t&>(blocks[static_cast<std::size_t>(base + yPos)]))
+            .load(std::memory_order_relaxed) & 0xFFU)];
     if(light > 0) {
      skyLight.set(localX, yPos, localZ, light);
     }
@@ -217,29 +225,35 @@ void Chunk::updateHeightMap(int localX, int yPos, int localZ) {
   recalculateHeightColumn(localX, localZ);
   return;
  }
- int oldHeight = static_cast<int>(heightmap[static_cast<std::size_t>((localZ << 4) | localX)] & 0xFFU);
+ int oldHeight = static_cast<int>(
+     std::atomic_ref(const_cast<std::uint8_t&>(heightmap[static_cast<std::size_t>((localZ << 4) | localX)]))
+         .load(std::memory_order_relaxed) & 0xFFU);
  int newHeight = oldHeight;
  if(yPos > oldHeight) {
   newHeight = yPos;
  }
  const int base = (localX << 11) | (localZ << 7);
  while(newHeight > 0 && Block::BLOCKS_LIGHT_OPACITY[static_cast<std::size_t>(
-                            blocks[static_cast<std::size_t>(base + newHeight - 1)] & 0xFFU)] == 0) {
+                           std::atomic_ref(const_cast<std::uint8_t&>(
+                                              blocks[static_cast<std::size_t>(base + newHeight - 1)]))
+                              .load(std::memory_order_relaxed) & 0xFFU)] == 0) {
   --newHeight;
  }
  if(newHeight == oldHeight) {
   return;
  }
  world->setBlocksDirtyColumn(this->x * 16 + localX, this->z * 16 + localZ, newHeight, oldHeight);
- heightmap[static_cast<std::size_t>((localZ << 4) | localX)] = static_cast<std::uint8_t>(newHeight);
+ std::atomic_ref<std::uint8_t>(heightmap[static_cast<std::size_t>((localZ << 4) | localX)])
+     .store(static_cast<std::uint8_t>(newHeight), std::memory_order_relaxed);
  if(newHeight < minHeightmapValue) {
   minHeightmapValue = newHeight;
  } else {
   int minHeight = 127;
   for(int localZIndex = 0; localZIndex < 16; ++localZIndex) {
    for(int localXIndex = 0; localXIndex < 16; ++localXIndex) {
-    const int heightValue =
-        static_cast<int>(heightmap[static_cast<std::size_t>((localZIndex << 4) | localXIndex)] & 0xFFU);
+     const int heightValue = static_cast<int>(
+         std::atomic_ref(const_cast<std::uint8_t&>(heightmap[static_cast<std::size_t>((localZIndex << 4) | localXIndex)]))
+             .load(std::memory_order_relaxed) & 0xFFU);
     if(heightValue < minHeight) {
      minHeight = heightValue;
     }

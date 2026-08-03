@@ -71,9 +71,22 @@ TEST(IrisComputeWorkGroups, RelativeScaleAndLocalSize) {
  EXPECT_EQ(groups[2], 1u);
 }
 TEST(IrisComputeOrder, UnsuffixedThenLetters) {
- EXPECT_EQ(ComputeDispatcher::computePassOrder("composite"), -1);
- EXPECT_EQ(ComputeDispatcher::computePassOrder("composite_a"), 0);
- EXPECT_EQ(ComputeDispatcher::computePassOrder("composite_z"), 25);
+ // computePassOrder is a GLOBAL sort key, not a per-group letter index: Loader.cpp feeds
+ // it straight into PackPass::order, which is the primary sort field. It encodes Java
+ // ProgramSet.readComputeArray's "[base, base_a..base_z] per pass index, index ascending"
+ // as index * 27 + letter, so the ordering contract is what matters rather than the
+ // absolute values. (This assertion previously expected -1/0/25 — a letter-only index,
+ // under which `composite` and `composite1` both map to -1 and stop ordering against each
+ // other, and `composite_a` collides with `composite3_a` across parents.)
+ const auto order = [](const char* name) { return ComputeDispatcher::computePassOrder(name); };
+ // Base runs before its own letters, letters run alphabetically.
+ EXPECT_LT(order("composite"), order("composite_a"));
+ EXPECT_LT(order("composite_a"), order("composite_z"));
+ // Pass index dominates the letter suffix: every composite* runs before composite1*.
+ EXPECT_LT(order("composite_z"), order("composite1"));
+ EXPECT_LT(order("composite1_z"), order("composite2"));
+ // Distinct parents never collide.
+ EXPECT_NE(order("composite_a"), order("composite3_a"));
  EXPECT_TRUE(ComputeDispatcher::attachedToPass("composite_a", "composite"));
  EXPECT_FALSE(ComputeDispatcher::attachedToPass("deferred_a", "composite"));
 }

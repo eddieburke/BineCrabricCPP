@@ -128,6 +128,7 @@ class Connection {
   std::thread writer_;
   int timeoutTicks_ = 0;
   bool disconnectedNotified_ = false;
+  std::mutex disconnectMutex_;
   std::string disconnectReason_;
   std::vector<std::string> disconnectReasonArgs_;
 };

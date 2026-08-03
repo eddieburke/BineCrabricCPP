@@ -95,6 +95,9 @@ void blendInverseColor();
 void blendMultiply();
 void blendCustom(int src, int dst);
 void blendFunc(int src, int dst);
+// Separate RGB / alpha factors, dirty-cached on all four. Falls back to blendFunc when
+// glBlendFuncSeparate is unavailable.
+void blendFuncSeparate(int srcRgb, int dstRgb, int srcAlpha, int dstAlpha);
 void enableBlend();
 void disableBlend();
 [[nodiscard]] bool blendEnabled();
@@ -216,6 +219,13 @@ struct PassGlBits {
  bool cull = false;
  int blendSrc = 0x0302; // GL_SRC_ALPHA
  int blendDst = 0x0303; // GL_ONE_MINUS_SRC_ALPHA
+ // The separate ALPHA pair must be saved too. A pack's per-program directive
+ // (`blend.<program>=<srcRGB> <dstRGB> <srcA> <dstA>`, e.g. RenderPearl's
+ // `SRC_ALPHA ONE_MINUS_SRC_ALPHA ZERO ZERO`) is applied through lockBlend ->
+ // glBlendFuncSeparate. Restoring only the RGB pair via the two-argument glBlendFunc
+ // leaves the pack's alpha factors live in the driver for every later pass.
+ int blendSrcAlpha = 0x0302; // GL_SRC_ALPHA
+ int blendDstAlpha = 0x0303; // GL_ONE_MINUS_SRC_ALPHA
  int cullMode = 0x0405;
  bool colorMaskR = true;
  bool colorMaskG = true;
@@ -243,11 +253,16 @@ struct RenderPass {
   ShaderProgram* programOverride = nullptr;
   bool fullscreen = false;
 };
+// sectionLocalModelView: optional 4x4 base for section-local terrain draws, whose
+// geometry arrives as `vaPosition + chunkOffset` (already relative to cameraPosition).
+// This is the port's gbufferModelView. Null falls back to the rotation part of
+// modelView, which is what every non-world producer (GUI ortho, hand pass) wants.
 void setDrawCameraState(const float* modelView,
                        const float* projection,
                        const float* modelViewInverse,
                        const float* projectionInverse,
-                       const float* cameraPosition);
+                       const float* cameraPosition,
+                       const float* sectionLocalModelView = nullptr);
 void setDrawCameraStateFromCamera(const FrameRenderCamera& camera, float farPlane);
 void clearDrawCameraState();
 [[nodiscard]] bool drawCameraStateValid() noexcept;
@@ -280,6 +295,7 @@ class ScopedDrawCameraState {
  math::Matrix4f modelViewInverse_{};
  math::Matrix4f projectionInverse_{};
  float cameraPosition_[3] = {0.0f, 0.0f, 0.0f};
+ math::Matrix4f sectionLocalModelView_{};
  bool valid_ = false;
 };
 // NDC fullscreen triangle. Pack composites and colortex0 present both call this

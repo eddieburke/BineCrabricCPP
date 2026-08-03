@@ -148,15 +148,6 @@ bool Pipeline::hasDeferredPasses(const PackInstance* activePack) const {
  });
 }
 
-bool Pipeline::activeHasPostProcess(const PackDefinition* activeDef,
-                                           const PackInstance* activePack) const {
- if(activeDef == nullptr || activePack == nullptr) return false;
- return !activePack->postPasses.empty() || !activePack->deferredPasses.empty() ||
-        !activePack->computePasses.empty() || !activePack->setupPasses.empty() ||
-        !activePack->beginPasses.empty() || !activePack->shadowCompositePasses.empty() ||
-        !activePack->preparePasses.empty();
-}
-
 void Pipeline::ensurePbrFallbackTextures() {
  if(!normalFallbackTexture_) uploadRgbaStub(normalFallbackTexture_, 127, 127, 255, 255);
  if(!specularFallbackTexture_) uploadRgbaStub(specularFallbackTexture_, 0, 0, 0, 0);
@@ -286,7 +277,22 @@ bool Pipeline::selectDimension(PackInstance& pack, const net::minecraft::World* 
    pack.definition.gbufferColorBuffers =
        std::max(pack.definition.gbufferColorBuffers, selected->gbufferColorBuffers);
    pack.definition.shadowColorBuffers = std::max(pack.definition.shadowColorBuffers, selected->shadowColorBuffers);
-   if(selected->shadowMapResolution > 0) pack.definition.shadowMapResolution = selected->shadowMapResolution;
+   // A dimension folder overriding the root's shadow resolution is legal but almost
+   // always a scanning bug rather than intent: the pack-wide const usually lives in a
+   // shared include (shaders/prelude/), so a dimension that reports a *different* number
+   // is reporting one it failed to see. Shout about it — this silently allocated a 1024
+   // shadow map against GLSL compiled for 2048, which reads as shadow acne.
+   if(selected->shadowMapResolution > 0) {
+    if(pack.definition.shadowMapResolution > 0 &&
+       pack.definition.shadowMapResolution != selected->shadowMapResolution) {
+     logOnce(pack,
+             "dimension shadowMapResolution " + std::to_string(selected->shadowMapResolution) +
+                 " overrides pack-wide " + std::to_string(pack.definition.shadowMapResolution) +
+                 "; the shadow texture and the pack's compiled shadowMapResolution const must agree",
+             LogLevel::Warning);
+    }
+    pack.definition.shadowMapResolution = selected->shadowMapResolution;
+   }
    if(!selected->customUniforms.empty()) {
     pack.definition.customUniforms = selected->customUniforms;
    }
@@ -309,11 +315,10 @@ bool Pipeline::selectDimension(PackInstance& pack, const net::minecraft::World* 
 }
 
 bool Pipeline::preparePackResources(PackInstance& pack, int width, int height) {
- bool targetsReady = true;
- if(activeHasPostProcess(&pack.definition, &pack)) {
-  targetsReady = ensureSceneTargets(&pack, width, height);
- }
- if(!targetsReady) return false;
+ // The pipeline runs unconditionally: every pack renders through the scene targets,
+ // even when it declares no post stages beyond the gbuffer passes (final-only packs
+ // still present via the colortex0 blit).
+ if(!ensureSceneTargets(&pack, width, height)) return false;
  return PackResources::ensure(pack, width, height, lightmapTexture_,
                               [](const PackInstance& candidate, const std::string& path) {
                                return PackCompiler::readText(candidate, path);
@@ -558,10 +563,6 @@ void Pipeline::bindScene(PackInstance* activePack) {
 
 void Pipeline::endScene(PackInstance* activePack) {
  if(activePack != nullptr) activePack->colorTargets.endGbuffers();
-}
-
-void Pipeline::destroyScene(PackInstance* activePack) {
- if(activePack != nullptr) activePack->colorTargets.destroy();
 }
 
 int Pipeline::sceneColorCount(const PackInstance* activePack) const {

@@ -129,6 +129,7 @@ int main(int argc, char** argv) {
 #ifdef _WIN32
   net::minecraft::server::dedicated::gui::DedicatedServerGui::shutdown();
 #endif
+  server.reset();
  net::minecraft::util::concurrent::ThreadCoordinator::instance().shutdown();
  } catch(const std::exception& exception) {
 #ifdef _WIN32

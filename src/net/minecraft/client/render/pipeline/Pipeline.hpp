@@ -55,14 +55,12 @@ class Pipeline {
   void refreshResourcePackState(PackInstance* basePack, const std::vector<std::unique_ptr<PackInstance>>& packs);
   void applyBlockIds(const PackDefinition* definition);
 
-  [[nodiscard]] bool activeHasPostProcess(const PackDefinition* activeDef, const PackInstance* activePack) const;
   [[nodiscard]] bool hasDeferredPasses(const PackInstance* activePack) const;
 
   [[nodiscard]] std::vector<ColorFormat> sceneColorFormats(const PackInstance* activePack) const;
   [[nodiscard]] bool ensureSceneTargets(PackInstance* activePack, int width, int height);
   void bindScene(PackInstance* activePack);
   void endScene(PackInstance* activePack);
-  void destroyScene(PackInstance* activePack);
   void clearScene(PackInstance* activePack, float fogR = 0.0f, float fogG = 0.0f, float fogB = 0.0f);
 
   [[nodiscard]] int sceneColorCount(const PackInstance* activePack) const;

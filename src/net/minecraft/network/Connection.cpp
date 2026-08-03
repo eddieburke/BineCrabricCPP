@@ -168,8 +168,11 @@ void Connection::disconnect() {
  requestDisconnect("disconnect.closed");
 }
 void Connection::disconnect(const std::string& reasonKey, const std::vector<std::string>& args) {
- disconnectReason_ = reasonKey;
- disconnectReasonArgs_ = args;
+ {
+  std::lock_guard lock(disconnectMutex_);
+  disconnectReason_ = reasonKey;
+  disconnectReasonArgs_ = args;
+ }
  requestDisconnect(reasonKey);
 }
 void Connection::setDrainLimit(const DrainLimit& limit) {
@@ -256,8 +259,15 @@ void Connection::tick() {
  }
   if(!isOpen() && readQueueEmpty() && !disconnectedNotified_) {
    disconnectedNotified_ = true;
+   std::string reason;
+   std::vector<std::string> args;
+   {
+    std::lock_guard lock(disconnectMutex_);
+    reason = disconnectReason_;
+    args = disconnectReasonArgs_;
+   }
    if(NetworkHandler* handler = networkHandler()) {
-    handler->onDisconnected(disconnectReason_, disconnectReasonArgs_);
+    handler->onDisconnected(reason, args);
    }
   }
   // Wake the reader if backpressure paused it above the low-water mark.
@@ -404,11 +414,14 @@ void Connection::writeLoop() {
 }
 void Connection::requestDisconnect(std::string reason) {
  bool expected = true;
- if(!open_.compare_exchange_strong(expected, false, std::memory_order_acq_rel)) {
-  return;
- }
- disconnectReason_ = std::move(reason);
- const SOCKET socket = socket_.load(std::memory_order_acquire);
+  if(!open_.compare_exchange_strong(expected, false, std::memory_order_acq_rel)) {
+   return;
+  }
+  {
+   std::lock_guard lock(disconnectMutex_);
+   disconnectReason_ = std::move(reason);
+  }
+  const SOCKET socket = socket_.load(std::memory_order_acquire);
  if(socket != INVALID_SOCKET) {
   ::shutdown(socket, SD_RECEIVE);
  }

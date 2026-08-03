@@ -150,11 +150,11 @@ void ClientNetworkBridge::disconnect(const std::string& reason) {
  if(connection_ != nullptr) {
   connection_->disconnect();
  }
- if(handler_ != nullptr) {
-  handler_->disconnect(reason);
- }
- handler_.reset();
- connection_.reset();
+  if(handler_ != nullptr) {
+   handler_->disconnect(reason);
+  }
+  connection_.reset();
+  handler_.reset();
 }
 void ClientNetworkBridge::tick() {
  if(handler_ != nullptr) {

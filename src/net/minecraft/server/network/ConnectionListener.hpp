@@ -30,10 +30,10 @@ class ConnectionListener {
  [[nodiscard]] std::uint16_t boundPort() const;
 
  private:
- struct ActivePlayConnection {
-  std::unique_ptr<Connection> connection;
-  std::unique_ptr<ServerPlayNetworkHandler> handler;
- };
+  struct ActivePlayConnection {
+   std::unique_ptr<ServerPlayNetworkHandler> handler;
+   std::unique_ptr<Connection> connection;
+  };
  void listenLoop();
  void addPendingConnection(std::unique_ptr<ServerLoginNetworkHandler> handler);
  MinecraftServer* server_ = nullptr;

@@ -59,13 +59,12 @@ class GameRenderer {
                   math::MatrixStack& modelView,
                   math::MatrixStack& projection);
  void renderFrame(float tickDelta);
- void renderToCurrentTarget(float tickDelta,
-                            const FrameRenderCamera& camera,
-                            float fov,
-                            int viewportWidth,
-                            int viewportHeight,
-                            bool renderCameraEntity,
-                            bool captureWorldDepth = false);
+  void renderToCurrentTarget(float tickDelta,
+                             const FrameRenderCamera& camera,
+                             float fov,
+                             int viewportWidth,
+                             int viewportHeight,
+                             bool renderCameraEntity);
  bool renderWorldToFbo(unsigned int fbo,
                        int width,
                        int height,

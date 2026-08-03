@@ -3,6 +3,7 @@
 // setDrawModelView / ScopedDrawCameraState / gui_proj ortho publishing.
 #include <gtest/gtest.h>
 #include <cmath>
+#include <cstring>
 #include "net/minecraft/client/render/camera/FrameRenderCamera.hpp"
 #include "net/minecraft/client/render/camera/GuiProjection.hpp"
 #include "net/minecraft/client/render/RenderCore.hpp"
@@ -102,11 +103,80 @@ TEST(DrawCameraState, FromCameraBuildsFullPerDrawBase) {
  EXPECT_NEAR(projection.m[0], 1.2f, 1e-5f);
  EXPECT_NEAR(projection.m[5], 1.1f, 1e-5f);
  EXPECT_NEAR(projection.m[11], -1.0f, 1e-5f);
- // The camera position published is the eye.
+ // The camera position published is Java's Camera.getPosition().
  const float* cameraPosition = core::drawCameraPosition();
  EXPECT_NEAR(cameraPosition[0], 112.0f, 1e-3f);
  EXPECT_NEAR(cameraPosition[1], 190.0f, 1e-3f);
  EXPECT_NEAR(cameraPosition[2], 315.0f, 1e-3f);
+}
+// Iris moves bobbing/nausea out of the projection matrix and LEFT-multiplies them onto
+// the model view: `modelViewMatrix.mulLocal(bobStack)` — "need `bob * modelView` not
+// `modelView * bob`". The bob therefore acts in view space AFTER the camera and never
+// moves Camera.getPosition(), which stays the single geometry origin.
+// https://github.com/IrisShaders/Iris/blob/26.1/common/src/main/java/net/irisshaders/iris/mixin/MixinModelViewBobbing.java
+TEST(DrawCameraState, BobIsLeftMultipliedAndNeverMovesTheOrigin) {
+ core::clearDrawCameraState();
+ FrameRenderCamera camera;
+ camera.x = 100.0;
+ camera.y = 200.0;
+ camera.z = 300.0;
+ camera.eyeX = 100.0;
+ camera.eyeY = 201.62;
+ camera.eyeZ = 300.0;
+ // A quarter turn about +Y as the camera rotation: R maps world (x,y,z) -> (-z,y,x).
+ camera.viewRightX = 0.0f;
+ camera.viewRightY = 0.0f;
+ camera.viewRightZ = -1.0f;
+ camera.viewUpX = 0.0f;
+ camera.viewUpY = 1.0f;
+ camera.viewUpZ = 0.0f;
+ camera.viewForwardX = -1.0f;
+ camera.viewForwardY = 0.0f;
+ camera.viewForwardZ = 0.0f;
+ // bobStack: a pure view-space translation of (+0.05, -0.03, 0).
+ Matrix4f bob;
+ bob.translate(0.05f, -0.03f, 0.0f);
+ std::memcpy(camera.bobModelView, bob.m, sizeof(camera.bobModelView));
+ camera.hasBobModelView = true;
+ core::setDrawCameraStateFromCamera(camera, 256.0f);
+ ASSERT_TRUE(core::drawCameraStateValid());
+ // The published origin is Camera.getPosition(), bob or no bob.
+ const float* cameraPosition = core::drawCameraPosition();
+ EXPECT_NEAR(cameraPosition[0], 100.0f, 1e-3f);
+ EXPECT_NEAR(cameraPosition[1], 201.62f, 1e-3f);
+ EXPECT_NEAR(cameraPosition[2], 300.0f, 1e-3f);
+ // gbufferModelView = bob * R. Camera-relative (4, 1, -7) rotates to (7, 1, 4) and the
+ // bob then shifts it in VIEW space. Had the bob been right-multiplied (bob applied in
+ // world space before the rotation) the offset would land on different axes — that is
+ // the distinction this test pins.
+ float gbufferModelView[16]{};
+ net::minecraft::client::render::buildCameraModelView(gbufferModelView, camera);
+ Matrix4f modelViewMatrix;
+ modelViewMatrix.set(gbufferModelView);
+ float outX = 0.0f;
+ float outY = 0.0f;
+ float outZ = 0.0f;
+ modelViewMatrix.transformPoint(4.0f, 1.0f, -7.0f, outX, outY, outZ);
+ EXPECT_NEAR(outX, 7.0f + 0.05f, 1e-4f);
+ EXPECT_NEAR(outY, 1.0f - 0.03f, 1e-4f);
+ EXPECT_NEAR(outZ, 4.0f, 1e-4f);
+ // The inverse round-trips, so `gbufferModelViewInverse * viewPos` is exactly
+ // `worldPos - cameraPosition` and packs reconstruct world space without drift.
+ float gbufferModelViewInverse[16]{};
+ net::minecraft::client::render::buildCameraModelViewInverse(gbufferModelViewInverse, camera);
+ Matrix4f inverse;
+ inverse.set(gbufferModelViewInverse);
+ inverse.transformPoint(outX, outY, outZ, outX, outY, outZ);
+ EXPECT_NEAR(outX, 4.0f, 1e-4f);
+ EXPECT_NEAR(outY, 1.0f, 1e-4f);
+ EXPECT_NEAR(outZ, -7.0f, 1e-4f);
+ // Direction uniforms (sunPosition/upPosition) pick up the bob's rotation but not its
+ // translation, matching Java's w=0 transform by gbufferModelView.
+ float up[3] = {0.0f, 0.0f, 0.0f};
+ net::minecraft::client::render::directionToView(0.0f, 1.0f, 0.0f, camera, up);
+ EXPECT_NEAR(up[0], 0.0f, 1e-4f);
+ EXPECT_NEAR(up[1], 1.0f, 1e-4f);
+ EXPECT_NEAR(up[2], 0.0f, 1e-4f);
 }
 TEST(DrawCameraState, SetDrawModelViewComposesPerDrawPose) {
  core::clearDrawCameraState();

@@ -61,12 +61,25 @@ port knowingly deviates.** The deviations that matter to packs are:
 Everything else in the discrepancy table below is LOW/informational (internal slot
 numbers, resource-lifecycle details, or both-sides-absent items like the fog plane).
 
-The port has **no true vanilla-vs-shaderpack dual path**: with shaders "off" it still
-renders through the bundled `shaders/vanilla` pack via the same FBO/uniform
-machinery (`PackManager::activePack()` falls back to the base pack, Manager.cpp:470-487).
-The real forks are (a) world-vs-GUI matrix producers, (b) frame-uniform camera
-reconstruction vs live per-draw MatrixStack tops, (c) world vs shadow cameras, and
-(d) the Lua-mod world-mesh path calling main-thread-only GL state setters from mesh
+The port has **no vanilla-vs-shaderpack dual path**: "shaders off" does not exist as a
+mode — the bundled `shaders/vanilla` pack (a genuine Iris pack: the `gbuffers_*` world
+programs + `final`, no composite/deferred/compute) is always the active pack when no
+user pack is selected (`PackManager::activePack()` falls back to the base pack,
+Manager.cpp:594-606). The pipeline is **unconditional**: `GameRenderer::beginSceneCapture`
+always allocates the scene targets, and every frame runs the full stage sequence
+BEGIN → shadow → shadowComposite → prepare → world → captureOpaqueDepth → hand →
+captureHandDepth → deferred → post through the same shared runners. Which of those
+stages actually draw is decided solely by the pack's own pass lists: empty lists
+early-out *inside* the shared fullscreen-pass runner (CompositeRenderer.cpp:101-104),
+never in an engine fork. The old `activeHasPostProcess()` escape hatch — which dropped
+a pack out of the pipeline entirely when its post stage lists happened to be empty
+(`final` counted as a post pass, so a gbuffer+final pack like vanilla was already
+inside; a gbuffer-only pack was not) — and the `captureWorldDepth` parameter that
+gated the stages from inside the world render have both been deleted; every pack,
+vanilla included, presents through the FBO path (final program or colortex0 blit).
+The real remaining forks are (a) world-vs-GUI matrix producers, (b) frame-uniform
+camera reconstruction vs live per-draw MatrixStack tops, (c) world vs shadow cameras,
+and (d) the Lua-mod world-mesh path calling main-thread-only GL state setters from mesh
 workers.
 
 ---
@@ -88,6 +101,7 @@ or specific packs; LOW = harmless/internal/one-frame.
 | gbufferPrevious* steady state | FrameData.cpp:200-201,284-285,666 | MatrixUniforms.java:66-85 | Order matches (old current → previous, then store new). | — | PARITY |
 | Hemisphere chunk offset (cameraPosition rounding) | FrameRenderCamera.hpp:198-244 (`CameraPositionTracker`, WALK 30000 / TP 1000, shift = −(v−fmod(v,30000))) | CameraUniforms.java:62-143 (same constants/algebra) | 1:1. Guarded by `tests/iris_hemisphere_chunk_offset_test.cpp`. | — | PARITY |
 | cameraPosition / cameraPositionInt/Fract | FrameData.cpp:266-279 (`cameraTracker.current/currentUnshifted`) | CameraUniforms.java:28-34 | Shifted vs unshifted split matches (cameraPosition=shifted, Int/Fract=unshifted). | — | PARITY |
+| View bob: geometry origin vs model view | RenderCore.cpp:234-294 (`setDrawCameraStateFromCamera` publishes `cleanEye*` as the draw origin and hands the bob to the section-local base as a view-space translation), FrameRenderCamera.hpp (`buildCameraModelView` = rotation + `R·(cleanEye − eye)`; `buildCameraModelViewInverse` = `R^T` + `eye − cleanEye`), GameRenderer.cpp:968-992 (`cleanEye*` recovered from `applyCameraTransform` alone) | GameRenderer.renderLevel (bobHurt/bobView pushed onto the pose stack), CapturedRenderingState.java:32-46 (`setGbufferModelView` captures it), CameraUniforms.java:28-34 (`cameraPosition` = `Camera.getPosition()`, never bobbed) | Match in structure: the bob lives in gbufferModelView, the geometry origin is the clean camera position. chunkOffset, `cameraPosition` and the shadow map centre (ShadowMapPass.cpp:271) are all on that one origin, so `gbufferModelViewInverse * viewPos + cameraPosition == worldPos` and `shadowIntervalSize` snapping actually holds the map still. Guarded by `tests/draw_camera_state_test.cpp` (`ViewBobStaysInTheMatrixNotTheOrigin`). Note this port recovers a rigid rotation from the view basis, so a non-rigid pose-stack term (the portal distortion scale) is still lost — see the reconstruction row above. | — | PARITY (structure); reconstruction caveat unchanged |
 | eyePosition / relativeEyePosition | FrameData.cpp:455-458 (raw unshifted eye), 491-494 (unshifted − eye) | IrisExclusiveUniforms.java:79-81,273-277 | Match. | — | PARITY |
 | sunPosition/moonPosition/shadowLightPosition | FrameData.cpp:308-322 (world sun dir + RZ(sunPathRotation), directionToView, scale 100), 350-357 (shadowLightPosition day/night/end-flash) | CelestialUniforms.java:30-48,94-135,164-179 (gbufferModelView·RY(−90)·RZ(sunPathRot)·RX(angle)·(0,100,0)) | The C++ claims the beta celestial frame equals the Java chain minus the RY(−90) renderSky prefix (comment FrameData.cpp:170-174). If the light-registry `sun.direction` already sits in that rotated frame the results match; otherwise a constant frame offset creeps in. Guarded by `tests/shadow_celestial_modelview_test.cpp`. | MEDIUM (verify) | sun/moon angle placement in world+shadow passes. Re-verify when the sun registry or camera model changes. |
 | upPosition | FrameData.cpp:286 (`directionToView(0,1,0, camera)`) | CelestialUniforms.java:50-64 (gbufferModelView·RY(−90)·(0,100,0)) | C++ skips the RY(−90) (uses the beta frame); see celestial row. | MEDIUM (verify) | Pack "up" vector. |
@@ -144,8 +158,11 @@ or specific packs; LOW = harmless/internal/one-frame.
 
 ## 3. Dual-path inventory (every fork the refactor must either unify or keep provably in lockstep)
 
-There is **no** vanilla-vs-shaderpack pipeline fork (the "off" state still uses the
-bundled `shaders/vanilla` pack through the same machinery). The real forks:
+There is **no** vanilla-vs-shaderpack pipeline fork: the "off" state is the bundled
+`shaders/vanilla` pack through the same machinery, and the pipeline runs
+unconditionally for every pack — a pack can no longer be dropped out of the
+FBO/uniform path (`activeHasPostProcess` and the `captureWorldDepth` gate were
+deleted; empty pass lists early-out inside the shared runner). The real forks:
 
 | # | Fork (A) | Fork (B) | file:line (both) | Refactor action |
 |---|---|---|---|---|
@@ -155,7 +172,7 @@ bundled `shaders/vanilla` pack through the same machinery). The real forks:
 | D4 | **Shaderpack program path** via `bindWorldProgram` (Manager.cpp:92-135 → WorldProgramBinder.cpp) — pack frame uniforms + samplers + custom uniforms | **Vanilla per-draw uniform path** `bindAndUploadUniforms` (RenderCore.cpp:387-547) — fog/sun/light/entity uniforms | Manager.cpp:92-135 vs RenderCore.cpp:387-547; both run per draw (WorldProgramBinder.cpp:57-62 calls uploadShaderUniforms + pack custom; RenderCore uploads the vanilla set) | **Keep in lockstep** — two uploaders run in sequence on the main GL thread; `g_programUniformGeneration`/`g_passUniformsUploaded` dirty-tracking (RenderCore.cpp:93-118,503-527) must stay main-thread. |
 | D5 | **Interface/base pack programs** (basePack_ = shaders/vanilla) when `interfaceProgramsActive()` | **Active pack programs** | Manager.cpp:51,96-101 (pack selection in the uniform uploader), PackManager::activePack fallback Manager.cpp:470-487 | **Keep in lockstep** — the selection is per-draw (GUI/interface vs world) and reads `WorldPipelinePhase`; must remain main-thread and per-draw-ordered. |
 | D6 | **Lua-mod world mesh draw** (`drawLuaBlockWorld` → `core::setAlphaTestRef(0.1f)`) runs inside `ChunkBuilder::buildMesh` on **Compute workers** (ModModels.cpp:616-629,626; registered LuaBlockRegistry.cpp:251; invoked from BlockRenderManager.cpp:156) | **Main-thread GL-state path** that consumes `g_alphaTestRef` for uniform upload (RenderCore.cpp:70,479-481,671-677) | ModModels.cpp:626 (worker write) vs RenderCore.cpp:479-481 (main read) | **Unify (mandatory)** — this is the HZ-14 data race the plan's WI-5 already targets: capture alpha ref into the mesh snapshot; never write `g_alphaTestRef` from workers. Not merely "keep in lockstep" — it is UB today. |
-| D7 | **No-pack / "off" state** = bundled vanilla pack fallback (Manager.cpp:336-344,470-487) | **Active pack** (Manager.cpp:351-370) | Manager.cpp:335-373 | **Unify** — both go through the same pipeline; the refactor must not introduce a real "no-shader" code path that bypasses FBO/uniform parity. |
+| D7 | **No-pack / "off" state** = bundled vanilla pack fallback (Manager.cpp:336-344,594-606) | **Active pack** (Manager.cpp:351-370) | Manager.cpp:335-373 | **Unified (done)** — both go through the same pipeline; the no-post-process escape hatch (`activeHasPostProcess` → skip scene capture) and the `captureWorldDepth` gate were deleted, so no "no-shader" code path can bypass FBO/uniform parity. |
 
 The brief's `dualpaths.md`/`lua-iris-dualpaths.md` do not exist; the above table is the
 authoritative current-tree inventory. D6 is the only fork that is an outright bug

@@ -17,9 +17,10 @@ void CropBlockRenderer::render(net::minecraft::block::Block& block, int metadata
  const double uMax = uv.uMax;
  const double vMin = uv.vMin;
  const double vMax = uv.vMax;
- // One quad per plane (same contract as CrossBlockRenderer). Terrain solid/cutout
- // draw with cull off, so a single face stays visible from both sides without
- // coplanar front/back Z-fight.
+ // Four planes, each emitted as a front AND a back quad with the winding reversed and U
+ // swapped. Same reasoning as CrossBlockRenderer: one quad shown from both sides with
+ // culling off renders mirrored on its far side, and the pack's per-face normal /
+ // tangent handedness are only correct for the face pointing at the viewer.
  double x0 = x + 0.5 - 0.25;
  double x1 = x + 0.5 + 0.25;
  double z0 = z + 0.5 - 0.5;
@@ -28,10 +29,18 @@ void CropBlockRenderer::render(net::minecraft::block::Block& block, int metadata
  tessellator.vertex(x0, y + 0.0, z0, uMin, vMax);
  tessellator.vertex(x0, y + 0.0, z1, uMax, vMax);
  tessellator.vertex(x0, y + 1.0, z1, uMax, vMin);
+ tessellator.vertex(x0, y + 1.0, z1, uMin, vMin);
+ tessellator.vertex(x0, y + 0.0, z1, uMin, vMax);
+ tessellator.vertex(x0, y + 0.0, z0, uMax, vMax);
+ tessellator.vertex(x0, y + 1.0, z0, uMax, vMin);
  tessellator.vertex(x1, y + 1.0, z1, uMin, vMin);
  tessellator.vertex(x1, y + 0.0, z1, uMin, vMax);
  tessellator.vertex(x1, y + 0.0, z0, uMax, vMax);
  tessellator.vertex(x1, y + 1.0, z0, uMax, vMin);
+ tessellator.vertex(x1, y + 1.0, z0, uMin, vMin);
+ tessellator.vertex(x1, y + 0.0, z0, uMin, vMax);
+ tessellator.vertex(x1, y + 0.0, z1, uMax, vMax);
+ tessellator.vertex(x1, y + 1.0, z1, uMax, vMin);
  x0 = x + 0.5 - 0.5;
  x1 = x + 0.5 + 0.5;
  z0 = z + 0.5 - 0.25;
@@ -40,9 +49,17 @@ void CropBlockRenderer::render(net::minecraft::block::Block& block, int metadata
  tessellator.vertex(x0, y + 0.0, z0, uMin, vMax);
  tessellator.vertex(x1, y + 0.0, z0, uMax, vMax);
  tessellator.vertex(x1, y + 1.0, z0, uMax, vMin);
+ tessellator.vertex(x1, y + 1.0, z0, uMin, vMin);
+ tessellator.vertex(x1, y + 0.0, z0, uMin, vMax);
+ tessellator.vertex(x0, y + 0.0, z0, uMax, vMax);
+ tessellator.vertex(x0, y + 1.0, z0, uMax, vMin);
  tessellator.vertex(x1, y + 1.0, z1, uMin, vMin);
  tessellator.vertex(x1, y + 0.0, z1, uMin, vMax);
  tessellator.vertex(x0, y + 0.0, z1, uMax, vMax);
  tessellator.vertex(x0, y + 1.0, z1, uMax, vMin);
+ tessellator.vertex(x0, y + 1.0, z1, uMin, vMin);
+ tessellator.vertex(x0, y + 0.0, z1, uMin, vMax);
+ tessellator.vertex(x1, y + 0.0, z1, uMax, vMax);
+ tessellator.vertex(x1, y + 1.0, z1, uMax, vMin);
 }
 } // namespace net::minecraft::client::render::block

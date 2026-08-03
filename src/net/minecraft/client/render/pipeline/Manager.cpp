@@ -643,10 +643,6 @@ const PackDefinition* PackManager::meshDefinition() const noexcept {
  return basePack_ != nullptr && basePack_->summary.valid ? &basePack_->definition : nullptr;
 }
 
-bool PackManager::activeHasPostProcess() const {
- return pipeline_.activeHasPostProcess(activeDefinition(), activePack());
-}
-
 bool PackManager::hasDeferredPasses() const {
  return pipeline_.hasDeferredPasses(activePack());
 }
@@ -756,10 +752,6 @@ void PackManager::bindScene() {
 
 void PackManager::endScene() {
  pipeline_.endScene(activePack());
-}
-
-void PackManager::destroyScene() {
- pipeline_.destroyScene(activePack());
 }
 
 int PackManager::sceneColorCount() const {

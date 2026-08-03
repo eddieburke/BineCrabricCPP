@@ -51,7 +51,7 @@ void shadowModelView(float* m, const render::FrameRenderCamera& shadow, const re
   return;
  }
  const float right[3] = {shadow.viewRightX, shadow.viewRightY, shadow.viewRightZ}, up[3] = {shadow.viewUpX, shadow.viewUpY, shadow.viewUpZ}, forward[3] = {-shadow.viewForwardX, -shadow.viewForwardY, -shadow.viewForwardZ};
-  const float delta[3] = {static_cast<float>(camera.cleanEyeX - shadow.cleanEyeX), static_cast<float>(camera.cleanEyeY - shadow.cleanEyeY), static_cast<float>(camera.cleanEyeZ - shadow.cleanEyeZ)};
+  const float delta[3] = {static_cast<float>(camera.eyeX - shadow.eyeX), static_cast<float>(camera.eyeY - shadow.eyeY), static_cast<float>(camera.eyeZ - shadow.eyeZ)};
  column(m, 0, right[0], up[0], forward[0], 0.0f);
  column(m, 1, right[1], up[1], forward[1], 0.0f);
  column(m, 2, right[2], up[2], forward[2], 0.0f);
@@ -257,7 +257,7 @@ PackUniformValues buildShaderFrameData(int width, int height, float farPlane, fl
   // notifier-driven update.
   // https://github.com/IrisShaders/Iris/blob/26.1/common/src/main/java/net/irisshaders/iris/uniforms/CameraUniforms.java
   static CameraPositionTracker cameraTracker;
-  cameraTracker.update(camera.cleanEyeX, camera.cleanEyeY, camera.cleanEyeZ);
+  cameraTracker.update(camera.eyeX, camera.eyeY, camera.eyeZ);
   for(int axis = 0; axis < 3; ++axis) {
    values.cameraPosition[axis] = static_cast<float>(cameraTracker.current(axis));
   }
@@ -276,7 +276,12 @@ PackUniformValues buildShaderFrameData(int width, int height, float farPlane, fl
  buildCameraModelViewInverse(values.gbufferModelViewInverse, camera);
  std::copy(std::begin(previousFrame.gbufferProjection), std::end(previousFrame.gbufferProjection), values.gbufferPreviousProjection);
  std::copy(std::begin(previousFrame.gbufferModelView), std::end(previousFrame.gbufferModelView), values.gbufferPreviousModelView);
-  render::directionToViewClean(0.0f, 1.0f, 0.0f, camera, values.upPosition);
+  // Java getUpPosition transforms vec4(0, 100, 0, 0) by gbufferModelView. w == 0, so
+  // only the rotation acts — and that rotation is the BOBBED one: Iris captures the
+  // pose stack after bobView()/bobHurt(), so upPosition tilts with the bob exactly
+  // like the view-space normals packs dot it against.
+  // https://github.com/IrisShaders/Iris/blob/26.1/common/src/main/java/net/irisshaders/iris/uniforms/CelestialUniforms.java
+  render::directionToView(0.0f, 1.0f, 0.0f, camera, values.upPosition);
  if(shadowAvailable) {
   shadowModelView(values.shadowModelView, shadowCamera, camera);
   render::FrameRenderCamera shadowProjCamera = shadowCamera;
@@ -299,11 +304,17 @@ PackUniformValues buildShaderFrameData(int width, int height, float farPlane, fl
            ? celestialClient->gameRenderer->shaderPacks()->activeDefinition()
            : nullptr;
    const float sunPathRotation = activeDef != nullptr ? activeDef->sunPathRotation : 0.0f;
+   // Java getCelestialPosition transforms vec4(0, +/-100, 0, 0) through
+   // gbufferModelView * RY(-90) * RZ(sunPathRotation) * RX(skyAngle * 360). w == 0, so
+   // the model view contributes its rotation only — the BOBBED rotation, since Iris
+   // captures the pose stack after bobView()/bobHurt(). Using the clean basis here
+   // would leave sunPosition still while the view-space normals packs light against
+   // (and this engine's own sunDirectionView, GameRenderer.cpp:1102) rock with the bob.
    // https://github.com/IrisShaders/Iris/blob/26.1/common/src/main/java/net/irisshaders/iris/uniforms/CelestialUniforms.java
    float sunDirection[3] = {sun.directionX, sun.directionY, sun.directionZ};
    applySunPathRotation(sunDirection, sunPathRotation, sunDirection);
-    render::directionToViewClean(sunDirection[0], sunDirection[1], sunDirection[2], camera, values.sunPosition);
-    render::directionToViewClean(-sunDirection[0], -sunDirection[1], -sunDirection[2], camera, values.moonPosition);
+    render::directionToView(sunDirection[0], sunDirection[1], sunDirection[2], camera, values.sunPosition);
+    render::directionToView(-sunDirection[0], -sunDirection[1], -sunDirection[2], camera, values.moonPosition);
    auto scaleTo100 = [](float v[3]) {
     const float len = std::sqrt(v[0]*v[0] + v[1]*v[1] + v[2]*v[2]);
     if(len > 1e-6f) {
@@ -380,13 +391,13 @@ PackUniformValues buildShaderFrameData(int width, int height, float farPlane, fl
   }
   // https://github.com/IrisShaders/Iris/blob/26.1/common/src/main/java/net/irisshaders/iris/mixin/MixinLevelRenderer.java
   values.cloudTime = static_cast<float>(static_cast<double>(absoluteTime % 102400ULL) + tickDelta) * 0.03f;
-  biomeData(world->getBiome(static_cast<int>(camera.cleanEyeX), static_cast<int>(camera.cleanEyeZ)), values);
+  biomeData(world->getBiome(static_cast<int>(camera.eyeX), static_cast<int>(camera.eyeZ)), values);
   for(Entity* entity : world->globalEntities) {
    if(dynamic_cast<LightningEntity*>(entity) == nullptr) continue;
    // Java: bolt position relative to the unshifted camera position.
-    values.lightningBoltPosition[0] = static_cast<float>(entity->x - camera.cleanEyeX);
-    values.lightningBoltPosition[1] = static_cast<float>(entity->y - camera.cleanEyeY);
-    values.lightningBoltPosition[2] = static_cast<float>(entity->z - camera.cleanEyeZ);
+    values.lightningBoltPosition[0] = static_cast<float>(entity->x - camera.eyeX);
+    values.lightningBoltPosition[1] = static_cast<float>(entity->y - camera.eyeY);
+    values.lightningBoltPosition[2] = static_cast<float>(entity->z - camera.eyeZ);
    values.lightningBoltPosition[3] = 1.0f;
    break;
   }
@@ -430,9 +441,9 @@ PackUniformValues buildShaderFrameData(int width, int height, float farPlane, fl
    if(selectedName.rfind("tile.", 0) == 0) selectedName.erase(0, 5);
    values.currentSelectedBlockId = render::resolveShaderObjectId(
        "block", PackCatalog::lower(std::move(selectedName)), blockId);
-    values.currentSelectedBlockPos[0] = static_cast<float>(static_cast<double>(hit.blockX) + 0.5 - camera.cleanEyeX);
-    values.currentSelectedBlockPos[1] = static_cast<float>(static_cast<double>(hit.blockY) + 0.5 - camera.cleanEyeY);
-    values.currentSelectedBlockPos[2] = static_cast<float>(static_cast<double>(hit.blockZ) + 0.5 - camera.cleanEyeZ);
+    values.currentSelectedBlockPos[0] = static_cast<float>(static_cast<double>(hit.blockX) + 0.5 - camera.eyeX);
+    values.currentSelectedBlockPos[1] = static_cast<float>(static_cast<double>(hit.blockY) + 0.5 - camera.eyeY);
+    values.currentSelectedBlockPos[2] = static_cast<float>(static_cast<double>(hit.blockZ) + 0.5 - camera.eyeZ);
   }
  }
   if(player != nullptr) {
@@ -509,9 +520,9 @@ PackUniformValues buildShaderFrameData(int width, int height, float farPlane, fl
    values.vehicleLookVector[0] = -std::sin(vehicleYaw) * std::cos(vehiclePitch);
    values.vehicleLookVector[1] = -std::sin(vehiclePitch);
    values.vehicleLookVector[2] = std::cos(vehicleYaw) * std::cos(vehiclePitch);
-    values.relativeVehiclePosition[0] = static_cast<float>(camera.cleanEyeX - vehicle->x);
-    values.relativeVehiclePosition[1] = static_cast<float>(camera.cleanEyeY - vehicle->y);
-    values.relativeVehiclePosition[2] = static_cast<float>(camera.cleanEyeZ - vehicle->z);
+    values.relativeVehiclePosition[0] = static_cast<float>(camera.eyeX - vehicle->x);
+    values.relativeVehiclePosition[1] = static_cast<float>(camera.eyeY - vehicle->y);
+    values.relativeVehiclePosition[2] = static_cast<float>(camera.eyeZ - vehicle->z);
    if(dynamic_cast<::net::minecraft::entity::vehicle::BoatEntity*>(vehicle) != nullptr && world != nullptr) {
     values.vehicleInWater =
         world->isMaterialInBox(vehicle->boundingBox.expand(0.0, -0.001, 0.0),

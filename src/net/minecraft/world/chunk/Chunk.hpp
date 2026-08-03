@@ -69,9 +69,9 @@ class Chunk {
        z(other.z),
        blockEntities(std::move(other.blockEntities)),
        entities(std::move(other.entities)),
-       terrainPopulated(other.terrainPopulated),
-       dirty(other.dirty),
-       empty(other.empty),
+        terrainPopulated(other.terrainPopulated),
+        dirty(other.dirty.load(std::memory_order_relaxed)),
+        empty(other.empty),
        lastSaveHadEntities(other.lastSaveHadEntities),
        lastSaveTime(other.lastSaveTime) {
   other.world = nullptr;
@@ -82,25 +82,29 @@ class Chunk {
  [[nodiscard]] bool chunkPosEquals(int chunkX, int chunkZ) const noexcept {
   return chunkX == x && chunkZ == z;
  }
- [[nodiscard]] int getHeight(int localX, int localZ) const {
-  return static_cast<int>(heightmap[static_cast<std::size_t>((localZ << 4) | localX)] & 0xFFU);
- }
+  [[nodiscard]] int getHeight(int localX, int localZ) const {
+   const std::uint8_t value =
+       std::atomic_ref(const_cast<std::uint8_t&>(heightmap[static_cast<std::size_t>((localZ << 4) | localX)]))
+           .load(std::memory_order_relaxed);
+   return static_cast<int>(value & 0xFFU);
+  }
  void onLoad() {
  }
- void populateHeightMapOnly() {
-  int minHeight = 127;
-  for(int localX = 0; localX < 16; ++localX) {
-   for(int localZ = 0; localZ < 16; ++localZ) {
-    int topY = findTopBlock(localX, localZ);
-    heightmap[static_cast<std::size_t>((localZ << 4) | localX)] = static_cast<std::uint8_t>(topY);
-    if(topY < minHeight) {
-     minHeight = topY;
+  void populateHeightMapOnly() {
+   int minHeight = 127;
+   for(int localX = 0; localX < 16; ++localX) {
+    for(int localZ = 0; localZ < 16; ++localZ) {
+     int topY = findTopBlock(localX, localZ);
+     std::atomic_ref<std::uint8_t>(heightmap[static_cast<std::size_t>((localZ << 4) | localX)])
+         .store(static_cast<std::uint8_t>(topY), std::memory_order_relaxed);
+     if(topY < minHeight) {
+      minHeight = topY;
+     }
     }
    }
+   minHeightmapValue = minHeight;
+   dirty = true;
   }
-  minHeightmapValue = minHeight;
-  dirty = true;
- }
  void populateHeightMap(bool fixCrossChunkGaps = true);
  void recalculateHeightMap() {
   populateHeightMap();
@@ -123,9 +127,12 @@ class Chunk {
    }
   }
  }
- [[nodiscard]] int getBlockId(int localX, int yPos, int localZ) const {
-  return static_cast<int>(blocks[index(localX, yPos, localZ)] & 0xFFU);
- }
+  [[nodiscard]] int getBlockId(int localX, int yPos, int localZ) const {
+   const std::uint8_t value =
+       std::atomic_ref(const_cast<std::uint8_t&>(blocks[index(localX, yPos, localZ)]))
+           .load(std::memory_order_relaxed);
+   return static_cast<int>(value & 0xFFU);
+  }
  bool setBlock(int localX, int yPos, int localZ, int rawId, int metadataValue);
  bool setBlock(int localX, int yPos, int localZ, int rawId);
  [[nodiscard]] int getBlockMeta(int localX, int yPos, int localZ) const {
@@ -423,9 +430,9 @@ class Chunk {
  const int z = 0;
  std::unordered_map<Vec3i, std::unique_ptr<block::entity::BlockEntity>, Vec3iHash> blockEntities{};
  std::array<std::vector<Entity*>, 8> entities{};
- bool terrainPopulated = false;
- bool dirty = false;
- bool empty = false;
+  bool terrainPopulated = false;
+  std::atomic<bool> dirty{false};
+  bool empty = false;
  bool lastSaveHadEntities = false;
  long long lastSaveTime = 0;
 
@@ -436,20 +443,22 @@ class Chunk {
  [[nodiscard]] static constexpr std::size_t index(int localX, int yPos, int localZ) {
   return static_cast<std::size_t>((localX << 11) | (localZ << 7) | yPos);
  }
- [[nodiscard]] int findTopBlock(int localX, int localZ) const {
-  const int base = (localX << 11) | (localZ << 7);
-  int topY = 127;
-  while(topY > 0 && Block::BLOCKS_LIGHT_OPACITY[static_cast<std::size_t>(
-                        blocks[static_cast<std::size_t>(base + topY - 1)] & 0xFFU)] == 0) {
-   --topY;
+  [[nodiscard]] int findTopBlock(int localX, int localZ) const {
+   const int base = (localX << 11) | (localZ << 7);
+   int topY = 127;
+   while(topY > 0 && Block::BLOCKS_LIGHT_OPACITY[static_cast<std::size_t>(
+                         std::atomic_ref(const_cast<std::uint8_t&>(blocks[static_cast<std::size_t>(base + topY - 1)]))
+                             .load(std::memory_order_relaxed) & 0xFFU)] == 0) {
+    --topY;
+   }
+   return topY;
   }
-  return topY;
- }
- void recalculateHeightColumn(int localX, int localZ) {
-  const int topY = findTopBlock(localX, localZ);
-  heightmap[static_cast<std::size_t>((localZ << 4) | localX)] = static_cast<std::uint8_t>(topY);
-  minHeightmapValue = topY;
- }
+  void recalculateHeightColumn(int localX, int localZ) {
+   const int topY = findTopBlock(localX, localZ);
+   std::atomic_ref<std::uint8_t>(heightmap[static_cast<std::size_t>((localZ << 4) | localX)])
+       .store(static_cast<std::uint8_t>(topY), std::memory_order_relaxed);
+   minHeightmapValue = topY;
+  }
  void updateHeightMap(int localX, int yPos, int localZ);
  void lightGaps(int localX, int localZ);
   void lightGap(int blockX, int blockZ, int yPos);

@@ -8,16 +8,31 @@ using net::minecraft::client::render::buildShadowCelestialModelView;
 using net::minecraft::client::render::shadowAngleFromCelestial;
 
 // https://github.com/IrisShaders/Iris/blob/26.1/common/src/main/java/net/irisshaders/iris/shadows/ShadowMatrices.java
+//
+// The rotation columns are Iris' ShadowMatrices.Tests "model view at dawn" fixture
+// verbatim. The TRANSLATION column deliberately differs from that fixture in z:
+// Iris expects -100.4463119506836, we expect -0.4463119506836.
+//
+// Iris' fixture is stale. Their expectation was generated when
+// createBaselineModelViewMatrix still did `translate(0, 0, -100)`; 26.1's version
+// (read it — the else branch is three mulPose rotations and nothing else) no longer
+// does, and NEAR = -100.05f already extends the ortho box 100 blocks behind the
+// shadow camera, so re-adding the translate would double-count it. The stale number
+// survived because ShadowMatrices.Tests is dead code that never runs: it is a private
+// main(), and its test() helper prints "failed" on the equals() TRUE branch, so it
+// could not have reported a mismatch even if something invoked it.
+//
+// Everything else here (R * snapOffset for the x and y rows) matches the fixture
+// exactly, which is what pins the rotation chain and the grid snap.
 TEST(ShadowCelestialModelView, MatchesIrisDawnFixture) {
  float m[16]{};
  buildShadowCelestialModelView(m, 0.03451777f, 0.0f, 2.0f, 0.646045982837677, 82.53274536132812,
                                -514.0264282226562);
- // Column-major expected from Iris ShadowMatrices.Tests (dawn).
  const float expected[16] = {
      0.21545040607452393f,  5.820481518981069e-8f, 0.9765146970748901f,  0.0f,
      -0.9765147466795349f,  1.2841844920785661e-8f, 0.21545039117336273f, 0.0f,
      0.0f,                 -0.9999999403953582f,   5.960464477539063e-8f, 0.0f,
-     0.38002151250839233f,  1.0264281034469604f,   -100.4463119506836f,   1.0f,
+     0.38002151250839233f,  1.0264281034469604f,   -0.4463119506836f,     1.0f,
  };
  for(int i = 0; i < 16; ++i) {
   EXPECT_NEAR(m[i], expected[i], 5e-4f) << "index " << i;

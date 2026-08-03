@@ -9,12 +9,19 @@ class LivingEntity;
 }
 namespace net::minecraft::client::render {
 struct FrameRenderCamera {
+ // Camera ENTITY position (interpolated feet position), not the camera.
  double x = 0.0;
  double y = 0.0;
  double z = 0.0;
+ // Java's Camera.getPosition(): the point the camera transform rotates about, after
+ // eye height / third-person zoom / the beta first-person -0.1 nudge, and WITHOUT any
+ // view bobbing. This is the one geometry origin — every vertex is uploaded as
+ // `worldPos - eye`, the cameraPosition uniform reports it, and the shadow map is
+ // centred on it. Bobbing must never move it; see bobModelView below.
  double eyeX = 0.0;
  double eyeY = 0.0;
  double eyeZ = 0.0;
+ // Clean camera rotation basis (from the camera transform alone, no bobbing).
  float viewRightX = 1.0f;
  float viewRightY = 0.0f;
  float viewRightZ = 0.0f;
@@ -24,18 +31,16 @@ struct FrameRenderCamera {
   float viewForwardX = 0.0f;
   float viewForwardY = 0.0f;
   float viewForwardZ = 1.0f;
-  double cleanEyeX = 0.0;
-  double cleanEyeY = 0.0;
-  double cleanEyeZ = 0.0;
-  float cleanViewRightX = 1.0f;
-  float cleanViewRightY = 0.0f;
-  float cleanViewRightZ = 0.0f;
-  float cleanViewUpX = 0.0f;
-  float cleanViewUpY = 1.0f;
-  float cleanViewUpZ = 0.0f;
-  float cleanViewForwardX = 0.0f;
-  float cleanViewForwardY = 0.0f;
-  float cleanViewForwardZ = 1.0f;
+  // Iris' bobStack: view bobbing, the damage tilt and the nausea distortion, captured
+  // as their own matrix and LEFT-multiplied onto the camera matrix
+  // (`modelViewMatrix.mulLocal(bobStack)` — "need `bob * modelView` not
+  // `modelView * bob`", MixinModelViewBobbing.java:101). Vanilla puts these effects in
+  // the projection matrix; Iris moves them into the model view because that is what
+  // shader packs expect. Being a post-camera transform in view space, it changes what
+  // the camera looks at without touching where the geometry origin is.
+  // https://github.com/IrisShaders/Iris/blob/26.1/common/src/main/java/net/irisshaders/iris/mixin/MixinModelViewBobbing.java
+  bool hasBobModelView = false;
+  float bobModelView[16] = {1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1};
   float projectionX = 1.0f;
  float projectionY = 1.0f;
  float yaw = 0.0f;
@@ -119,21 +124,8 @@ inline float shadowAngleFromCelestial(float celestialAngle) {
  const float moonAngle = celestialAngle < 0.5f ? celestialAngle + 0.5f : celestialAngle - 0.5f;
  return celestialSunAngle(moonAngle);
 }
-inline void directionToView(float x, float y, float z, const FrameRenderCamera& c, float out[3]) {
- out[0] = x * c.viewRightX + y * c.viewRightY + z * c.viewRightZ;
- out[1] = x * c.viewUpX + y * c.viewUpY + z * c.viewUpZ;
- out[2] = -(x * c.viewForwardX + y * c.viewForwardY + z * c.viewForwardZ);
-}
-inline void directionToViewClean(float x, float y, float z, const FrameRenderCamera& c, float out[3]) {
- out[0] = x * c.cleanViewRightX + y * c.cleanViewRightY + z * c.cleanViewRightZ;
- out[1] = x * c.cleanViewUpX + y * c.cleanViewUpY + z * c.cleanViewUpZ;
- out[2] = -(x * c.cleanViewForwardX + y * c.cleanViewForwardY + z * c.cleanViewForwardZ);
-}
-inline void buildCameraModelView(float* m, const FrameRenderCamera& c) {
- if(c.hasExplicitModelView) {
-  std::memcpy(m, c.explicitModelView, sizeof(float) * 16);
-  return;
- }
+// Clean camera rotation, no translation: `MV_camera` on its own.
+inline void buildCameraViewRotation(float* m, const FrameRenderCamera& c) {
  std::fill(m, m + 16, 0.0f);
  m[0] = c.viewRightX;
  m[4] = c.viewRightY;
@@ -146,18 +138,56 @@ inline void buildCameraModelView(float* m, const FrameRenderCamera& c) {
  m[10] = -c.viewForwardZ;
  m[15] = 1.0f;
 }
+// Iris' gbufferModelView: `bobStack * MV_camera`, geometry uploaded as
+// `worldPos - cameraPosition`. Bobbing/tilt/nausea sit to the LEFT of the camera
+// rotation, so they act in view space AFTER the camera — they never move the origin,
+// and gbufferModelViewInverse * viewPos gives back `worldPos - cameraPosition` exactly.
+// https://github.com/IrisShaders/Iris/blob/26.1/common/src/main/java/net/irisshaders/iris/mixin/MixinModelViewBobbing.java
+// https://github.com/IrisShaders/Iris/blob/26.1/common/src/main/java/net/irisshaders/iris/uniforms/CameraUniforms.java
+inline void buildCameraModelView(float* m, const FrameRenderCamera& c) {
+ net::minecraft::util::math::Matrix4f cameraMatrix;
+ if(c.hasExplicitModelView) {
+  cameraMatrix.set(c.explicitModelView);
+ } else {
+  float rotation[16]{};
+  buildCameraViewRotation(rotation, c);
+  cameraMatrix.set(rotation);
+ }
+ if(!c.hasBobModelView) {
+  std::memcpy(m, cameraMatrix.data(), sizeof(float) * 16);
+  return;
+ }
+ net::minecraft::util::math::Matrix4f bobbed;
+ bobbed.set(c.bobModelView);
+ bobbed.multiply(cameraMatrix); // bob * MV_camera (Java mulLocal)
+ std::memcpy(m, bobbed.data(), sizeof(float) * 16);
+}
 inline void buildCameraModelViewInverse(float* m, const FrameRenderCamera& c) {
- std::fill(m, m + 16, 0.0f);
- m[0] = c.viewRightX;
- m[1] = c.viewRightY;
- m[2] = c.viewRightZ;
- m[4] = c.viewUpX;
- m[5] = c.viewUpY;
- m[6] = c.viewUpZ;
- m[8] = -c.viewForwardX;
- m[9] = -c.viewForwardY;
- m[10] = -c.viewForwardZ;
- m[15] = 1.0f;
+ // The bob carries a nausea scale, so this is a full inverse, not a transpose.
+ float modelView[16]{};
+ buildCameraModelView(modelView, c);
+ net::minecraft::util::math::Matrix4f inverse;
+ inverse.set(modelView);
+ inverse.invert();
+ std::memcpy(m, inverse.data(), sizeof(float) * 16);
+}
+// Java's celestial/up uniforms transform w=0 vectors by gbufferModelView
+// (CelestialUniforms.getCelestialPosition/getUpPosition), so a view-space direction
+// picks up the bob's rotation and scale but none of its translation.
+inline void directionToView(float x, float y, float z, const FrameRenderCamera& c, float out[3]) {
+ const float cameraSpaceX = x * c.viewRightX + y * c.viewRightY + z * c.viewRightZ;
+ const float cameraSpaceY = x * c.viewUpX + y * c.viewUpY + z * c.viewUpZ;
+ const float cameraSpaceZ = -(x * c.viewForwardX + y * c.viewForwardY + z * c.viewForwardZ);
+ if(!c.hasBobModelView) {
+  out[0] = cameraSpaceX;
+  out[1] = cameraSpaceY;
+  out[2] = cameraSpaceZ;
+  return;
+ }
+ const float* b = c.bobModelView;
+ out[0] = b[0] * cameraSpaceX + b[4] * cameraSpaceY + b[8] * cameraSpaceZ;
+ out[1] = b[1] * cameraSpaceX + b[5] * cameraSpaceY + b[9] * cameraSpaceZ;
+ out[2] = b[2] * cameraSpaceX + b[6] * cameraSpaceY + b[10] * cameraSpaceZ;
 }
 inline void buildCameraProjection(float* m, const FrameRenderCamera& c, float farPlane) {
  std::fill(m, m + 16, 0.0f);

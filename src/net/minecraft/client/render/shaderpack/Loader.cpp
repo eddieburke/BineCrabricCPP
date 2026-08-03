@@ -1421,6 +1421,18 @@ void loadProgramSet(PackDefinition& out,
   if(!path.ends_with(".fsh")) continue;
   std::string source = resolvedFragmentSource(readText, path);
   scanTargetFormats(out, source);
+  // Scan consts off the INCLUDE-RESOLVED source, the same way scanTargetFormats does.
+  // The raw per-file scans in PackLoader::load only see a definition's own files, so a
+  // dimension folder (shaders/world_default/) never saw the consts that live in the
+  // pack-wide includes (shaders/prelude/, shaders/lib/). RenderPearl declares
+  // `const int shadowMapResolution = 2048;` in prelude/config.glsl, so the dimension
+  // definition came out at 0, fell through to the 1024 default below, and then overrode
+  // the root's correct 2048 in PackManager. The shadow texture was allocated at 1024
+  // while the compiled GLSL const still said 2048 — halving the pack's normal-offset
+  // bias and desynchronising its PCF tap grid, i.e. shadow acne.
+  // See docs/agent-notes/HANDOFF-visual-symptoms-2026-08-02.md section C.
+  scanShadowMapResolution(source, out);
+  scanPackConstants(source, out);
   resolvedFragments.emplace(path, std::move(source));
   const std::string name = std::filesystem::path(path).stem().string();
   if(name.rfind("shadowcomp", 0) == 0) continue;

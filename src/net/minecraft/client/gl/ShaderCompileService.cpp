@@ -302,6 +302,7 @@ void ShaderCompileService::workerMain() {
  ContextSpec* spec = contextSpec_.get();
  WorkerContext context = createWorkerContext(spec->share, spec->pixelFormat, spec->pfd);
  if(context.ctx == nullptr) {
+  std::vector<std::shared_ptr<Job>> stranded;
   {
    std::lock_guard lock(mutex_);
    if(liveWorkers_ > 0) --liveWorkers_;
@@ -310,8 +311,34 @@ void ShaderCompileService::workerMain() {
     // fall back to compiling on their own context.
     started_ = false;
     for(auto& entry : jobs_) entry.second->cv.notify_all();
+    // The async path has no such wakeup: ProgramCache::markPending only checks
+    // started() at SUBMIT time, and start() is deliberately non-blocking, so a key
+    // enqueued before the workers failed their context creation stayed in
+    // ProgramCache::pending_ with nothing left to complete it — hasPending() never
+    // went false and shader compilation hung forever.
+    // Hand those jobs back as "compiled, but no binary": that is what
+    // binaryUnsupported already means, and ProgramCache::poll() answers it by
+    // compiling job->request on the main thread, which is the same fallback
+    // compileBlocking callers get.
+    while(!queue_.empty()) {
+     std::shared_ptr<Job> job = queue_.front();
+     queue_.pop();
+     if(job == nullptr) continue;
+     job->result = ShaderCompileResult{};
+     job->result.contentHash = job->request.contentHash;
+     job->result.ok = false;
+     job->result.binaryUnsupported = true;
+     job->result.error = "no shader compile worker context; compiled on the main thread";
+     job->done = true;
+     jobs_.erase(job->request.contentHash);
+     if(job->waiters > 0) {
+      completed_.push_back(job);
+     }
+     stranded.push_back(std::move(job));
+    }
    }
   }
+  for(const std::shared_ptr<Job>& job : stranded) job->cv.notify_all();
   return;
  }
  GLCore::ensureLoaded();

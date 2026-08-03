@@ -615,6 +615,11 @@ std::vector<std::string> ColorTargets::explicitTrueFlips(const PackDefinition& d
    }
    buffers.push_back(binding.substr(prefix.size()));
   }
+  // definition.flips is unordered, so the raw iteration order is hash-dependent and
+  // varies between runs and between builds. Flipping distinct buffers commutes, so this
+  // cannot change what is rendered — but it made the sweep non-reproducible in logs and
+  // in tests. Sort so the same pack always produces the same flip sequence.
+  std::sort(buffers.begin(), buffers.end());
   return buffers;
 }
 int ColorTargets::renderTargetSamplerStartIndex(bool fullscreenPass) {

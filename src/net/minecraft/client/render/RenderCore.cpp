@@ -206,7 +206,8 @@ void setDrawCameraState(const float* modelView,
                        const float* projection,
                        const float* modelViewInverse,
                        const float* projectionInverse,
-                       const float* cameraPosition) {
+                       const float* cameraPosition,
+                       const float* sectionLocalModelView) {
  if(modelView == nullptr || projection == nullptr || modelViewInverse == nullptr ||
     projectionInverse == nullptr || cameraPosition == nullptr) {
   clearDrawCameraState();
@@ -217,14 +218,19 @@ void setDrawCameraState(const float* modelView,
  std::memcpy(g_drawModelViewInverse.m, modelViewInverse, sizeof(float) * 16);
  std::memcpy(g_drawProjectionInverse.m, projectionInverse, sizeof(float) * 16);
  // Section-local terrain (shader contract: modelViewMatrix * (vaPosition +
- // chunkOffset) with chunkOffset = sectionOrigin - cameraPosition) needs the
- // rotation part of the camera only.
- g_drawSectionLocalModelView.identity();
- for(int column = 0; column < 3; ++column)
-  for(int row = 0; row < 3; ++row)
-   g_drawSectionLocalModelView.m[column * 4 + row] = g_drawModelView.m[column * 4 + row];
+ // chunkOffset) with chunkOffset = sectionOrigin - cameraPosition) takes the full
+ // gbufferModelView — `bob * MV_camera`, translation and nausea scale included. World
+ // producers pass it explicitly; everyone else gets the rotation part of modelView.
+ if(sectionLocalModelView != nullptr) {
+  std::memcpy(g_drawSectionLocalModelView.m, sectionLocalModelView, sizeof(float) * 16);
+ } else {
+  g_drawSectionLocalModelView.identity();
+  for(int column = 0; column < 3; ++column)
+   for(int row = 0; row < 3; ++row)
+    g_drawSectionLocalModelView.m[column * 4 + row] = g_drawModelView.m[column * 4 + row];
+ }
  g_drawSectionLocalModelViewInverse = g_drawSectionLocalModelView;
- g_drawSectionLocalModelViewInverse.transpose();
+ g_drawSectionLocalModelViewInverse.invert();
   g_drawCameraPosition[0] = cameraPosition[0];
   g_drawCameraPosition[1] = cameraPosition[1];
   g_drawCameraPosition[2] = cameraPosition[2];
@@ -232,16 +238,20 @@ void setDrawCameraState(const float* modelView,
   g_matricesUploaded = false;
 }
 void setDrawCameraStateFromCamera(const FrameRenderCamera& camera, float farPlane) {
-  float modelView[16]{};
-  float projection[16]{};
-  buildCameraModelView(modelView, camera);
-  buildCameraProjection(projection, camera, farPlane);
- // Per-draw base: rotation * translate(origin - eye). This equals the full
- // camera model view the matrix stacks carried at draw time (camera-relative
- // poses compose onto it and reproduce the vanilla-captured modelViewMatrix;
- // see docs/agent-notes/matrix.md for the derivation).
- math::Matrix4f fullModelView;
- fullModelView.set(modelView);
+ float projection[16]{};
+ buildCameraProjection(projection, camera, farPlane);
+ // gbufferModelView = bob * MV_camera, consuming geometry already relative to the
+ // camera position. Terrain sections upload exactly that (chunkOffset = sectionOrigin
+ // - cameraPosition), so this is the section-local base verbatim.
+ float gbufferModelView[16]{};
+ buildCameraModelView(gbufferModelView, camera);
+ math::Matrix4f sectionLocalModelView;
+ sectionLocalModelView.set(gbufferModelView);
+ // Per-draw base for geometry uploaded relative to the camera ENTITY position (the
+ // matrix-stack convention entity/block-entity renderers still use): the same
+ // gbufferModelView with that origin difference folded in. Camera-relative poses
+ // compose onto it and reproduce the vanilla-captured modelViewMatrix.
+ math::Matrix4f fullModelView = sectionLocalModelView;
  fullModelView.translate(static_cast<float>(camera.x - camera.eyeX),
                          static_cast<float>(camera.y - camera.eyeY),
                          static_cast<float>(camera.z - camera.eyeZ));
@@ -250,9 +260,15 @@ void setDrawCameraStateFromCamera(const FrameRenderCamera& camera, float farPlan
  math::Matrix4f projectionInverseMatrix;
  projectionInverseMatrix.set(projection);
  projectionInverseMatrix.invert();
+ // The one geometry origin: Java's Camera.getPosition(). Bobbing lives to the left of
+ // the camera rotation in the matrix above and never reaches this, so chunkOffset, the
+ // cameraPosition uniform and the shadow map centre all stay on the same point —
+ // `gbufferModelViewInverse * viewPos + cameraPosition` lands back on worldPos.
+ // https://github.com/IrisShaders/Iris/blob/26.1/common/src/main/java/net/irisshaders/iris/uniforms/CameraUniforms.java
  const float cameraPosition[3] = {static_cast<float>(camera.eyeX), static_cast<float>(camera.eyeY),
                                   static_cast<float>(camera.eyeZ)};
- setDrawCameraState(fullModelView.m, projection, fullModelViewInverse.m, projectionInverseMatrix.m, cameraPosition);
+ setDrawCameraState(fullModelView.m, projection, fullModelViewInverse.m, projectionInverseMatrix.m, cameraPosition,
+                    sectionLocalModelView.m);
 }
 void clearDrawCameraState() {
  g_drawCameraValid = false;
@@ -283,10 +299,12 @@ ScopedDrawCameraState::ScopedDrawCameraState()
  cameraPosition_[0] = g_drawCameraPosition[0];
  cameraPosition_[1] = g_drawCameraPosition[1];
  cameraPosition_[2] = g_drawCameraPosition[2];
+ sectionLocalModelView_ = g_drawSectionLocalModelView;
 }
 ScopedDrawCameraState::~ScopedDrawCameraState() {
  if(valid_) {
-  setDrawCameraState(modelView_.m, projection_.m, modelViewInverse_.m, projectionInverse_.m, cameraPosition_);
+  setDrawCameraState(modelView_.m, projection_.m, modelViewInverse_.m, projectionInverse_.m, cameraPosition_,
+                     sectionLocalModelView_.m);
  } else {
   clearDrawCameraState();
  }
@@ -652,20 +670,25 @@ void fogApplyMode(::net::minecraft::client::Minecraft* client, int mode,
   if(mode >= 0) {
    g_fog.end = density > 0.0f ? 3.0f / density : frame.renderDistanceBlocks;
   }
- } else {
-  g_fog.mode = 1;
-  const float terrainEdge = static_cast<float>(frame.chunkRadius) * 16.0f - 8.0f;
-  const float fogRange = std::min(frame.renderDistanceBlocks, terrainEdge);
-  if(mode < 0) {
-   g_fog.start = 0.0f;
   } else {
-   g_fog.end = fogRange * (g_fog.modEnabled ? g_fog.modEnd : 1.0f);
-   g_fog.start = std::min(fogRange * (g_fog.modEnabled ? g_fog.modStart : 0.65f), g_fog.end * 0.9f);
+   g_fog.mode = 1;
+   // Java Iris 26.1 contract (FogRenderer.setupFog -> FogStorage ->
+   // fogStart/fogEnd, FogUniforms.java): terrain fog runs from
+   // 0.75 * renderDistanceBlocks to renderDistanceBlocks exactly. The previous
+   // chunkRadius*16-8 cap / 0.65 factor ended the fog 8 blocks short of the far
+   // plane and started it ~10% closer than vanilla, so packs' vanilla_fog()
+   // (RenderPearl lib/fog.glsl) blended off-ratio against the real distance.
+   const float fogEnd = frame.renderDistanceBlocks;
+   if(mode < 0) {
+    g_fog.start = 0.0f;
+   } else {
+    g_fog.end = fogEnd * (g_fog.modEnabled ? g_fog.modEnd : 1.0f);
+    g_fog.start = std::min(fogEnd * (g_fog.modEnabled ? g_fog.modStart : 0.75f), g_fog.end * 0.9f);
+   }
+   if(client->world->dimension != nullptr && client->world->dimension->isNether) {
+    g_fog.start = 0.0f;
+   }
   }
-  if(client->world->dimension != nullptr && client->world->dimension->isNether) {
-   g_fog.start = 0.0f;
-  }
- }
  g_fog.enabled = keepEnabled;
 }
 void setSkyUniforms(const SkyUniforms& sky) {
@@ -817,6 +840,12 @@ struct GlCache {
  // with the true GL initial state so the first request always flushes.
  int blendSrc = 0x0001; // GL_ONE
  int blendDst = 0x0000; // GL_ZERO
+ // Tracked separately from the RGB pair so a pack's `blend.<program>` separate-alpha
+ // factors are visible to the dirty-cache. Without these, lockBlend's
+ // glBlendFuncSeparate was invisible to blendFunc(), which then elided its own call
+ // whenever the RGB pair happened to match and left the pack's alpha factors live.
+ int blendSrcAlpha = 0x0001; // GL_ONE
+ int blendDstAlpha = 0x0000; // GL_ZERO
  int depthFunc = 0x0201;
  int cullFaceMode = 0x0405;
  float polygonFactor = 0.0f;
@@ -841,6 +870,8 @@ PassGlBits capturePassGlBits() {
  bits.cull = g_gl.cullFace;
  bits.blendSrc = g_gl.blendSrc;
  bits.blendDst = g_gl.blendDst;
+ bits.blendSrcAlpha = g_gl.blendSrcAlpha;
+ bits.blendDstAlpha = g_gl.blendDstAlpha;
  bits.cullMode = g_gl.cullFaceMode;
  bits.colorMaskR = g_gl.colorMaskR;
  bits.colorMaskG = g_gl.colorMaskG;
@@ -853,7 +884,7 @@ void restorePassGlBits(const PassGlBits& bits) {
   enableBlend();
  else
   disableBlend();
- blendFunc(bits.blendSrc, bits.blendDst);
+ blendFuncSeparate(bits.blendSrc, bits.blendDst, bits.blendSrcAlpha, bits.blendDstAlpha);
  if(bits.depthTest)
   enableDepthTest();
  else
@@ -903,10 +934,31 @@ void enableBlend() {
   }
  }
  void blendFunc(int src, int dst) {
-  if(g_gl.blendSrc != src || g_gl.blendDst != dst) {
+  // glBlendFunc sets BOTH pairs, so the cache must compare all four. Comparing only
+  // the RGB pair let a call be elided while the alpha pair still held a pack's
+  // separate-alpha factors from a previous lockBlend.
+  if(g_gl.blendSrc != src || g_gl.blendDst != dst || g_gl.blendSrcAlpha != src ||
+     g_gl.blendDstAlpha != dst) {
    g_gl.blendSrc = src;
    g_gl.blendDst = dst;
+   g_gl.blendSrcAlpha = src;
+   g_gl.blendDstAlpha = dst;
    ::glBlendFunc(static_cast<unsigned>(src), static_cast<unsigned>(dst));
+  }
+ }
+ void blendFuncSeparate(int srcRgb, int dstRgb, int srcAlpha, int dstAlpha) {
+  if(gl::GLCore::blendFuncSeparate == nullptr) {
+   blendFunc(srcRgb, dstRgb);
+   return;
+  }
+  if(g_gl.blendSrc != srcRgb || g_gl.blendDst != dstRgb || g_gl.blendSrcAlpha != srcAlpha ||
+     g_gl.blendDstAlpha != dstAlpha) {
+   g_gl.blendSrc = srcRgb;
+   g_gl.blendDst = dstRgb;
+   g_gl.blendSrcAlpha = srcAlpha;
+   g_gl.blendDstAlpha = dstAlpha;
+   gl::GLCore::blendFuncSeparate(static_cast<unsigned>(srcRgb), static_cast<unsigned>(dstRgb),
+                                 static_cast<unsigned>(srcAlpha), static_cast<unsigned>(dstAlpha));
   }
  }
  void lockBlend(const BlendMode* mode) {
@@ -915,14 +967,7 @@ void enableBlend() {
    return;
   }
   enableBlend();
-  if(gl::GLCore::blendFuncSeparate != nullptr) {
-   gl::GLCore::blendFuncSeparate(static_cast<unsigned>(mode->srcRgb), static_cast<unsigned>(mode->dstRgb),
-                                 static_cast<unsigned>(mode->srcAlpha), static_cast<unsigned>(mode->dstAlpha));
-   g_gl.blendSrc = mode->srcRgb;
-   g_gl.blendDst = mode->dstRgb;
-  } else {
-   blendFunc(mode->srcRgb, mode->dstRgb);
-  }
+  blendFuncSeparate(mode->srcRgb, mode->dstRgb, mode->srcAlpha, mode->dstAlpha);
  }
  void lockBufferBlend(int drawBufferIndex, const BlendMode* mode) {
   if(drawBufferIndex < 0) {

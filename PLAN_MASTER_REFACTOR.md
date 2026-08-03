@@ -63,10 +63,19 @@ Today three objects describe the same camera every frame:
 `GameRenderer::frameCamera_`, `RenderCameraState::instance().frame()`, and `RenderCore`
 `g_draw*` globals. Plus a `clean*` field mirror.
 
-### A1. Delete the `clean*` mirror set (`FrameRenderCamera.hpp:27-127`)
-15 fields duplicate `view*`/`x,y,z` (`cleanEye*`, `cleanView{Right,Up,Forward}*`) +
-`directionToViewClean` twin. Rename consumers (GameRenderer culler `prepare`, FrameData)
-to the primary fields. **Delete the mirror, keep one.**
+### A1. Delete the `clean*` mirror set — DONE, PARTIALLY REVISED
+The `cleanView{Right,Up,Forward}*` fields and the `directionToViewClean` twin are gone:
+every view-space direction uniform now uses the bobbed basis, which is what Iris does
+(its celestial/up uniforms transform w=0 vectors by `gbufferModelView`, and that carries
+the bob rotation).
+
+`cleanEye*` **stays** — it is not a duplicate. It is Java's `Camera.getPosition()`: the
+geometry origin, the `cameraPosition` uniform, and the shadow map centre. `x,y,z` is the
+camera *entity* position and `eye*` is the bob-contaminated eye back-derived from the
+model view; neither can stand in for it. Collapsing them re-introduces a bob-sized error
+between `pe` and `cameraPosition` and makes the shadow map slide every frame. See the
+"View bob: geometry origin vs model view" row in
+`docs/agent-notes/parity-iris-bindings-matrices.md`.
 
 ### A2. Inline `FrustumCuller` away (`Frustum.hpp`)
 7-line wrapper (`prepare`/`isVisible`). Fold `isVisible(Box)` = offset + `intersects` into
