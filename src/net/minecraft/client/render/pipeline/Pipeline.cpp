@@ -409,6 +409,45 @@ void Pipeline::setFrameUniforms(const PackUniformValues& frame, const PackDefini
                                               activeDef.wetnessHalflife, activeDef.drynessHalflife);
  if(activePack != nullptr) {
   activePack->customUniforms.evaluate(worldUniforms_);
+  // TEMP DIAGNOSTIC — [uniform-probe]. The pack's shadow/fog fades are driven by
+  // chebyshev_dist, reconstructed in-shader from gbufferProjectionInverse +
+  // mvInv0..3 (RenderPearl lib/mv_inv.glsl, lib/fog.glsl vanilla_fog). If any of
+  // these disagree with what the depth pass wrote, every distance-driven fade
+  // lands at the wrong range. Logged once with the shadow map absent and once
+  // with it present — the shadow matrices are identity until the first map
+  // exists, and the first frame's values are not the steady state.
+  static std::string uniformProbePack;
+  static bool uniformProbeLoggedWithShadow = false;
+  const bool haveShadow = worldUniforms_.shadowProjection[0] != 1.0f ||
+                          worldUniforms_.shadowProjection[10] != 1.0f;
+  if(uniformProbePack != activePack->definition.name ||
+     (haveShadow && !uniformProbeLoggedWithShadow)) {
+   uniformProbePack = activePack->definition.name;
+   if(haveShadow) uniformProbeLoggedWithShadow = true;
+   const auto& customs = activePack->customUniforms.values();
+   const auto v3 = [&customs](const std::string& name) {
+    const auto it = customs.find(name);
+    if(it == customs.end()) return std::string("(absent)");
+    return std::string("[") + std::to_string(it->second.f[0]) + "," + std::to_string(it->second.f[1]) + "," +
+           std::to_string(it->second.f[2]) + "]";
+   };
+   const float* invP = worldUniforms_.gbufferProjectionInverse;
+   const float* invM = worldUniforms_.gbufferModelViewInverse;
+   const float* shP = worldUniforms_.shadowProjection;
+   ClientLog::LOGGER.log(LogLevel::Info,
+                         std::string("[uniform-probe] pack=") + uniformProbePack + " far=" +
+                             std::to_string(worldUniforms_.farPlane) + " near=" +
+                             std::to_string(worldUniforms_.nearPlane) + " fogStart=" +
+                             std::to_string(worldUniforms_.fogStart) + " fogEnd=" +
+                             std::to_string(worldUniforms_.fogEnd) +
+                             " gbufProjInv m0=" + std::to_string(invP[0]) + " m5=" + std::to_string(invP[5]) +
+                             " m11=" + std::to_string(invP[11]) + " m15=" + std::to_string(invP[15]) +
+                             " gbufMVInv trans=(" + std::to_string(invM[12]) + "," + std::to_string(invM[13]) +
+                             "," + std::to_string(invM[14]) + ") mvInv0=" + v3("mvInv0") +
+                             " mvInv1=" + v3("mvInv1") + " mvInv2=" + v3("mvInv2") +
+                             " mvInv3=" + v3("mvInv3") + " shadowProj m0=" + std::to_string(shP[0]) +
+                             " m10=" + std::to_string(shP[10]) + " m14=" + std::to_string(shP[14]));
+  }
  }
  core::advanceProgramUniforms();
 }
@@ -587,15 +626,21 @@ void Pipeline::sampleCenterDepth(PackInstance* activePack, const PackDefinition&
  if(activePack == nullptr || !activePack->colorTargets.valid()) return;
  const auto& targets = activePack->colorTargets;
  if(targets.width() <= 0 || targets.height() <= 0 || targets.depthTexture() == 0) return;
- bindScene(activePack);
- float depth = 1.0f;
- ::glReadPixels(targets.width() / 2, targets.height() / 2, 1, 1, 0x1902, 0x1406, &depth);
+  bindScene(activePack);
+  float depth = 1.0f;
+  ::glReadPixels(targets.width() / 2, targets.height() / 2, 1, 1, 0x1902, 0x1406, &depth);
 
- const float nearPlane = worldUniforms_.nearPlane > 0.0f ? worldUniforms_.nearPlane : 0.05f;
- const float farPlane = worldUniforms_.farPlane > nearPlane ? worldUniforms_.farPlane : 256.0f;
- const float halfLife = activeDef.centerDepthHalflife;
- worldUniforms_.centerDepthSmooth =
-     updateCenterDepthSmooth(depth, nearPlane, farPlane, worldUniforms_.frameTime, halfLife);
+   // The depth buffer is written with the camera's own projection (near 0.05, far =
+   // 4x the render distance — GameRenderer.getDepthFar), so the center pixel must be
+   // linearized against THAT far. The `far` uniform (worldUniforms_.farPlane) is the
+   // render distance in blocks, a different quantity; feeding it in here would
+   // mis-scale the smoothed depth as soon as the projection far differs from it.
+   const float nearPlane = worldUniforms_.nearPlane > 0.0f ? worldUniforms_.nearPlane : 0.05f;
+   const float projectionFar = RenderCameraState::instance().frame().perspectiveFar;
+   const float farPlane = projectionFar > nearPlane ? projectionFar : worldUniforms_.farPlane;
+   const float halfLife = activeDef.centerDepthHalflife;
+   worldUniforms_.centerDepthSmooth =
+       updateCenterDepthSmooth(depth, nearPlane, farPlane, worldUniforms_.frameTime, halfLife);
 }
 
 void Pipeline::captureOpaqueDepth(PackInstance* activePack) {

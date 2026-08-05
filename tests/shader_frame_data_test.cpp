@@ -42,11 +42,11 @@ TEST(ShaderUniformDefaults, MatricesAreInvertibleBeforeFirstWorldFrame) {
 TEST(ShaderFrameData, AdvancesOnRenderedFramesInsteadOfWorldTicks) {
  client::render::FrameRenderCamera camera;
  client::render::FrameRenderCamera shadow;
- const auto first = client::render::buildShaderFrameData(
-     1280, 720, 256.0f, 42.25f, 0, false, false, camera, shadow, nullptr);
- camera.projectionX = 1.5f;
- const auto second = client::render::buildShaderFrameData(
-     1280, 720, 256.0f, 42.25f, 0, false, false, camera, shadow, nullptr);
+  const auto first = client::render::buildShaderFrameData(
+      1280, 720, 42.25f, 0, false, false, camera, shadow, nullptr);
+  camera.projectionX = 1.5f;
+  const auto second = client::render::buildShaderFrameData(
+      1280, 720, 42.25f, 0, false, false, camera, shadow, nullptr);
  EXPECT_EQ(second.frameCounter, (first.frameCounter + 1) % 720720);
  EXPECT_GE(second.frameTime, 0.0f);
  EXPECT_GE(second.frameTimeCounter, first.frameTimeCounter);
@@ -60,7 +60,7 @@ TEST(ShaderFrameData, WrapsXzCameraPositionAndKeepsExactSplit) {
   camera.eyeY = -30001.75;
   camera.eyeZ = 60002.5;
   const auto values = client::render::buildShaderFrameData(
-      1280, 720, 256.0f, 0.0f, 0, false, false, camera, shadow, nullptr);
+      1280, 720, 0.0f, 0, false, false, camera, shadow, nullptr);
   // Java CameraPositionTracker shifts X/Z only (CameraUniforms.java:104-126); Y is
   // never shifted, so the shader camera Y stays the raw world coordinate.
   EXPECT_FLOAT_EQ(values.cameraPosition[0], 1.25f);

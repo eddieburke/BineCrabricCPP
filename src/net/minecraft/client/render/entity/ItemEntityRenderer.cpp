@@ -80,7 +80,7 @@ void ItemEntityRenderer::render(
     }
     if(block != nullptr) {
      // MCP RenderItem: renderBlockOnInventory(..., getEntityBrightness(partialTick)).
-     render::core::setDrawModelView(matrices.top());
+     render::core::setDrawPose(matrices.top());
      blockRenderManager_.render(*block, stack.getDamage(), entity.getBrightnessAtEyes(tickDelta));
     }
     matrices.pop();
@@ -131,7 +131,7 @@ void ItemEntityRenderer::render(
     if(dispatcher != nullptr) {
      matrices.rotate(180.0f - dispatcher->yaw_, 0.0f, 1.0f, 0.0f);
     }
-    render::core::setDrawModelView(matrices.top());
+    render::core::setDrawPose(matrices.top());
     tessellator.startQuads();
    tessellator.normal(0.0f, 1.0f, 0.0f);
    tessellator.vertex(0.0f - halfWidth, 0.0f - quarterHeight, 0.0, uMin, vMax);

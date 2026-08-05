@@ -61,7 +61,7 @@ void UndeadEntityRenderer::renderMore(const net::minecraft::LivingEntity& entity
   matrices.rotate(-90.0f, 1.0f, 0.0f, 0.0f);
   matrices.rotate(20.0f, 0.0f, 0.0f, 1.0f);
  }
- render::core::setDrawModelView(matrices.top());
+ render::core::setDrawPose(matrices.top());
  dispatcher->heldItemRenderer()->renderItem(entity, itemStack);
  matrices.pop();
 }

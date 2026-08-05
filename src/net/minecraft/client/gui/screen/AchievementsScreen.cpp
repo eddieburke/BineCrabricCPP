@@ -144,9 +144,9 @@ void AchievementsScreen::renderIcons(int mouseX, int mouseY, float tickDelta) {
   core::depthFunc(net::minecraft::client::gl::compare::Gequal);
  {
   const core::ScopedDrawCameraState mapGuard;
-  net::minecraft::util::math::Matrix4f mapPose = core::drawModelView();
+  net::minecraft::util::math::Matrix4f mapPose = core::drawPose();
   mapPose.translate(0.0f, 0.0f, -200.0f);
-  core::setDrawModelView(mapPose);
+  core::setDrawPose(mapPose);
   minecraft()->textureManager.bindTexture(terrainTexture);
  const int tileColumn = (scrollPixelX + 288) >> 4;
  const int tileRow = (scrollPixelY + 288) >> 4;

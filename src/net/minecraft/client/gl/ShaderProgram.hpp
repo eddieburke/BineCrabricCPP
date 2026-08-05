@@ -53,13 +53,21 @@ namespace net::minecraft::client::gl {
  bool compileComputeToBinary(ProgramBinaryBlob& out,
                              const std::string& computeSource,
                              const std::string& versionPreamble);
+ // `abiSalt` is not shader source — it is mixed in on top so that a change to the
+ // fixed vertex-attribute binding table (render::vertex_abi::Bindings, applied via
+ // glBindAttribLocation before link in compile()) invalidates every disk-cached
+ // binary. glProgramBinary never re-runs glBindAttribLocation, so a binary loaded
+ // from an older table keeps whatever locations were live when it was compiled;
+ // without this the content hash cannot see that and a stale binary matches
+ // forever. See ProgramCache::buildRequest.
  [[nodiscard]] static std::uint64_t contentHash(bool compute,
                                                 const std::string& preamble,
                                                 const std::string& a,
                                                 const std::string& b = {},
                                                 const std::string& c = {},
                                                 const std::string& d = {},
-                                                const std::string& e = {});
+                                                const std::string& e = {},
+                                                const std::string& abiSalt = {});
  void destroy();
  [[nodiscard]] bool valid() const {
   return program_ != 0;

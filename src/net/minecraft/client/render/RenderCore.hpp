@@ -1,4 +1,5 @@
 #pragma once
+#include "net/minecraft/client/render/celestial/CelestialState.hpp"
 #include <cstddef>
 #include <functional>
 #include "net/minecraft/util/math/Matrix4f.hpp"
@@ -92,8 +93,6 @@ void blendAlpha();
 void blendAdditive();
 void blendDstAlpha();
 void blendInverseColor();
-void blendMultiply();
-void blendCustom(int src, int dst);
 void blendFunc(int src, int dst);
 // Separate RGB / alpha factors, dirty-cached on all four. Falls back to blendFunc when
 // glBlendFuncSeparate is unavailable.
@@ -101,8 +100,6 @@ void blendFuncSeparate(int srcRgb, int dstRgb, int srcAlpha, int dstAlpha);
 void enableBlend();
 void disableBlend();
 [[nodiscard]] bool blendEnabled();
-[[nodiscard]] int blendSrcFactor();
-[[nodiscard]] int blendDstFactor();
 // Pack bufferBlend directives — sticky until unlockBlend (fullscreen pass end).
 struct BlendMode {
  int srcRgb = 0x0302;
@@ -144,7 +141,6 @@ unsigned int genTexture();
 void deleteTexture(unsigned int texture);
 void clearAllocatedTextures();
 void colorMask(bool r, bool g, bool b, bool a);
-void hintFogEnabled(bool enabled);
 int getActiveTextureUnit();
 void viewport(int x, int y, int width, int height);
 bool getCachedViewport(int outViewport[4]);
@@ -253,32 +249,51 @@ struct RenderPass {
   ShaderProgram* programOverride = nullptr;
   bool fullscreen = false;
 };
-// sectionLocalModelView: optional 4x4 base for section-local terrain draws, whose
-// geometry arrives as `vaPosition + chunkOffset` (already relative to cameraPosition).
-// This is the port's gbufferModelView. Null falls back to the rotation part of
-// modelView, which is what every non-world producer (GUI ortho, hand pass) wants.
+// ONE convention, Iris'. There are exactly two pieces of per-draw matrix state:
+//
+//   1. The PASS BASE (drawModelView / drawProjection) — the matrices uploaded to
+//      the program. Set once per pass by its owner: setDrawCameraStateFromCamera
+//      for the world (player or shadow), gui_proj::load for the GUI, the hand
+//      pass for its own space. Producers never write it.
+//   2. The POSE (drawPose) — model -> pass-base space, applied to vertices
+//      CPU-side by the Tessellator. Producers compose onto it and publish.
+//
+// There is no third path and no fallback between them. A world producer that
+// forgets to publish a pose draws at the camera, visibly, rather than silently
+// picking up a matrix that happens to contain a translation.
 void setDrawCameraState(const float* modelView,
                        const float* projection,
                        const float* modelViewInverse,
                        const float* projectionInverse,
-                       const float* cameraPosition,
-                       const float* sectionLocalModelView = nullptr);
-void setDrawCameraStateFromCamera(const FrameRenderCamera& camera, float farPlane);
+                       const float* cameraPosition);
+void setDrawCameraStateFromCamera(const FrameRenderCamera& camera);
 void clearDrawCameraState();
 [[nodiscard]] bool drawCameraStateValid() noexcept;
 [[nodiscard]] const float* drawCameraPosition() noexcept;
-// The camera state is the ONE matrix source: gbuffer camera matrices are uploaded
-// per frame by the shaderpack frame uniforms; these carry the per-draw base.
-// drawModelView()/drawProjection() mirror what the beta matrix stacks' tops held:
-// the FULL camera model view (rotation + translation, iris modelViewMatrix
-// semantics — see docs/agent-notes/matrix.md). Consumers compose a per-draw pose
-// onto drawModelView() and publish it with setDrawModelView().
+// The pass base — for the world this is gbufferModelView (bob * MV_camera) and
+// nothing else, so `gbufferModelViewInverse * viewPos + cameraPosition` lands
+// back on worldPos.
 [[nodiscard]] const math::Matrix4f& drawModelView() noexcept;
 [[nodiscard]] const math::Matrix4f& drawProjection() noexcept;
-// Per-draw pose publish: replaces the matrix-stack push/ops/pop pattern. The
-// uploader derives modelViewMatrixInverse from the drawn RenderPass, so only the
-// base matrix (and the upload gate) change here. Restore with ScopedDrawCameraState.
-void setDrawModelView(const math::Matrix4f& modelView) noexcept;
+// Pass owners only. Resets the pose: a pose means nothing once its base changes.
+void setPassModelView(const math::Matrix4f& modelView) noexcept;
+// The per-draw pose. Compose onto drawPose(), publish with setDrawPose; it is
+// STATE, so one published pose feeds any number of Tessellator batches (a model
+// publishes one bone pose and emits every part from it). Cleared at pass
+// boundaries; saved and restored by ScopedDrawCameraState and RenderPassScope.
+// see src/net/minecraft/client/render/Tessellator.cpp vertex
+void setDrawPose(const math::Matrix4f& pose) noexcept;
+[[nodiscard]] const math::Matrix4f& drawPose() noexcept;
+void resetDrawPose() noexcept;
+// TEMP DIAGNOSTIC — what bindAndUploadUniforms last actually sent to the program.
+// Probes must read these, not the RenderPass they handed in.
+[[nodiscard]] const math::Matrix4f& uploadedModelView() noexcept;
+[[nodiscard]] const math::Matrix4f& uploadedProjection() noexcept;
+// Why the pose is baked and never uploaded: packs cut gl_ModelViewMatrix to a mat3
+// (RenderPearl's shadow.vsh does), which silently discards whatever translation is
+// left in it. Any pose parked in the matrix therefore vanishes in the shadow pass
+// while still applying in the gbuffer pass.
+// see src/net/minecraft/client/render/Tessellator.cpp vertex
 // Fills chunkOffset/sectionLocal from the pending terrain draw if one is set
 // (WorldRenderer sets it per section; used by the quad-mesh path).
 void applyPendingTerrain(RenderPass& pass);
@@ -295,7 +310,7 @@ class ScopedDrawCameraState {
  math::Matrix4f modelViewInverse_{};
  math::Matrix4f projectionInverse_{};
  float cameraPosition_[3] = {0.0f, 0.0f, 0.0f};
- math::Matrix4f sectionLocalModelView_{};
+ math::Matrix4f pose_{};
  bool valid_ = false;
 };
 // NDC fullscreen triangle. Pack composites and colortex0 present both call this
@@ -320,6 +335,12 @@ void fogUpdateFromWorld(::net::minecraft::client::Minecraft* client, float tickD
 void fogApplyMode(::net::minecraft::client::Minecraft* client, int mode,
                   const ::net::minecraft::client::option::RenderSettings& frame);
 void setSkyUniforms(const SkyUniforms& sky);
+// The frame's single celestial answer. GameRenderer::updateSunLight publishes it
+// before any consumer runs; SunLight, SkyUniforms, WorldLightUniforms, FrameData's
+// pack uniforms and the shadow camera all read it instead of re-deriving the angle.
+// see src/net/minecraft/client/render/celestial/CelestialState.hpp
+void setCelestialState(const CelestialState& state);
+[[nodiscard]] const CelestialState& celestialState();
 const SkyUniforms& skyUniforms();
 bool ensureReady();
 ShaderProgram* program();

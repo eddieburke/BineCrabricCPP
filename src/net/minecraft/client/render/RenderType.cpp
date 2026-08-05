@@ -102,7 +102,8 @@ RenderPassScope::RenderPassScope(const RenderType& type)
       savedProgram_(core::program()),
       savedDrawEnabled_(core::drawEnabled()),
       savedWorldLight_(core::worldLight()),
-      savedAlphaTestRef_(core::alphaTestRef()) {
+      savedAlphaTestRef_(core::alphaTestRef()),
+      savedPose_(core::drawPose()) {
  const float* color = core::constColor();
  savedConstColor_[0] = color[0];
  savedConstColor_[1] = color[1];
@@ -120,6 +121,10 @@ RenderPassScope::~RenderPassScope() {
  core::setAlphaTestRef(savedAlphaTestRef_);
  core::setConstColor(savedConstColor_[0], savedConstColor_[1], savedConstColor_[2], savedConstColor_[3]);
  core::setDrawEnabled(savedDrawEnabled_);
+ // The pose is state, so it needs a scope. Producers publish theirs inside a
+ // pass (particles, block damage, entity shadows); without this the last one
+ // published would follow the camera into whatever drew next.
+ core::setDrawPose(savedPose_);
 }
 namespace {
 // Chunk-mesh passes cull back faces, which is the state Iris always renders terrain in:
@@ -147,6 +152,18 @@ RenderType::State cutoutState() {
  s.cull = true;
  s.alphaTest = true;
  s.alphaRef = 0.1f;
+ return s;
+}
+// Leaf-blob interiors: cutout with culling off. This is the one terrain layer
+// that wants it, because each leaf<->leaf boundary contributes a single quad
+// (LeafInteriorFaces.hpp) that has to be visible from both sides. Nothing in
+// this layer is coincident with anything, so rasterising both windings cannot
+// Z-fight. Everything above about back faces reaching the pack with an inverted
+// normal and tangent handedness does apply here - it is the price of one quad
+// per boundary instead of a coplanar pair.
+RenderType::State cutoutInteriorState() {
+ RenderType::State s = cutoutState();
+ s.cull = false;
  return s;
 }
 RenderType::State translucentState() {
@@ -249,6 +266,13 @@ RenderType& RenderType::solid() {
 RenderType& RenderType::cutout() {
  static RenderType instance =
      RenderType("cutout", 0x0004, true, true, true, "", cutoutState(), "gbuffers_terrain_cutout");
+ return instance;
+}
+RenderType& RenderType::cutoutInterior() {
+ // Same program key as cutout(): to a pack this is still gbuffers_terrain
+ // cutout geometry, and it must not need a program of its own.
+ static RenderType instance =
+     RenderType("cutout_interior", 0x0004, true, true, true, "", cutoutInteriorState(), "gbuffers_terrain_cutout");
  return instance;
 }
 RenderType& RenderType::translucent() {

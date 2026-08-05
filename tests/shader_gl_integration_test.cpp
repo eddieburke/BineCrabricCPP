@@ -157,32 +157,21 @@ TEST_F(ShaderGlIntegrationTest, LowLevelCompilerRejectsNonCoreDialects) {
  EXPECT_FALSE(program.compileCompute("void main() {}\n", "#version 420 core\n"));
  EXPECT_EQ(program.lastError(), "compute shaders require #version 430 core or newer");
 }
-TEST_F(ShaderGlIntegrationTest, AsyncCacheResolvesEveryKeySharingOneShaderJob) {
- auto& service = client::gl::ShaderCompileService::instance();
- service.start();
- ASSERT_TRUE(service.started());
- {
-  client::gl::ProgramCache cache;
-  const std::string source = R"(layout(local_size_x = 1) in;
+TEST_F(ShaderGlIntegrationTest, CacheSharesOneShaderJobAcrossKeys) {
+ client::gl::ProgramCache cache;
+ const std::string source = R"(layout(local_size_x = 1) in;
 void main() {}
 )";
-  const std::string preamble = "#version 430 core\n";
-  const std::uint64_t first = cache.submitCompute("first", source, preamble);
-  const std::uint64_t second = cache.submitCompute("second", source, preamble);
-  ASSERT_NE(first, 0u);
-  EXPECT_EQ(second, first);
-  const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(5);
-  while(cache.hasPending() && std::chrono::steady_clock::now() < deadline) {
-   cache.poll();
-   std::this_thread::sleep_for(std::chrono::milliseconds(1));
-  }
-  ASSERT_FALSE(cache.hasPending());
-  EXPECT_NE(cache.getFromComputeSource("first", source, preamble), nullptr)
-      << cache.compileError("first");
-  EXPECT_NE(cache.getFromComputeSource("second", source, preamble), nullptr)
-      << cache.compileError("second");
- }
- service.stop();
+ const std::string preamble = "#version 430 core\n";
+ const std::uint64_t first = cache.submitCompute("first", source, preamble);
+ const std::uint64_t second = cache.submitCompute("second", source, preamble);
+ ASSERT_NE(first, 0u);
+ EXPECT_EQ(second, first);
+ ASSERT_FALSE(cache.hasPending());
+ EXPECT_NE(cache.getFromComputeSource("first", source, preamble), nullptr)
+     << cache.compileError("first");
+ EXPECT_NE(cache.getFromComputeSource("second", source, preamble), nullptr)
+     << cache.compileError("second");
 }
 TEST_F(ShaderGlIntegrationTest, PrepareWriteCopiesReadTextureToWriteTexture) {
  client::render::ColorTargets targets;

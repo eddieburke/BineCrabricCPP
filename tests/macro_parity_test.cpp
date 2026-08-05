@@ -119,7 +119,7 @@ TEST(MacroParity, CacheRoundTripUsesCurrentFormat) {
      std::filesystem::temp_directory_path() / "minecraft_shader_cache_parity_test_roundtrip";
  std::error_code ec;
  std::filesystem::remove_all(root, ec);
- const client::gl::ShaderBinaryCache cache(root);
+ client::gl::ShaderBinaryCache cache(root);
  client::gl::ProgramBinaryBlob blob;
  blob.contentHash = 0xDEADBEEFULL;
  blob.binaryFormat = 0x8B92;

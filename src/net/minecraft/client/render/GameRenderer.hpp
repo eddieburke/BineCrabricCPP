@@ -74,15 +74,13 @@ class GameRenderer {
                        int height,
                        float tickDelta,
                        const FrameRenderCamera& camera,
-                       float fov,
-                       FrameRenderCamera* outCamera = nullptr);
+                       float fov);
  bool beginSceneCapture();
  void resolveSceneCapture();
  void renderFirstPersonHand(float tickDelta);
  void renderRain();
   [[nodiscard]] PackUniformValues buildFrameUniforms(float tickDelta,
-                                                                   float farPlane,
-                                                                   bool shadowAvailable) const;
+                                                                    bool shadowAvailable) const;
  Minecraft* client = nullptr;
  atmosphere::CloudRenderer cloudRenderer{};
  atmosphere::PrecipitationRenderer precipitationRenderer{};

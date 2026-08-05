@@ -5,7 +5,7 @@ class World;
 }
 namespace net::minecraft::client::render {
 struct FrameRenderCamera;
-PackUniformValues buildShaderFrameData(int width, int height, float farPlane, float worldTime,
+PackUniformValues buildShaderFrameData(int width, int height, float worldTime,
                                          int shadowMapResolution, bool normalAvailable, bool shadowAvailable,
                                          const FrameRenderCamera& camera,
                                          const FrameRenderCamera& shadowCamera,

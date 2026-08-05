@@ -143,9 +143,9 @@ inline void BufferBuilder<TVertex>::draw() {
  constexpr bool hasTexture = requires(TVertex v) { v.u; };
  constexpr bool hasColor = requires(TVertex v) { v.color; };
  constexpr bool hasNormals = requires(TVertex v) { v.normal; };
- render::core::RenderPass pass;
- pass.modelView = render::core::drawModelView();
- pass.projection = render::core::drawProjection();
+  render::core::RenderPass pass;
+  pass.modelView = render::core::drawModelView();
+  pass.projection = render::core::drawProjection();
  pass.fog = render::core::fog();
  // Apply pending section-local chunkOffset from WorldRenderer.
  render::core::applyPendingTerrain(pass);

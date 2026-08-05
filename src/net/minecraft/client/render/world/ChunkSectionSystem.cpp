@@ -5,6 +5,7 @@
 #include <unordered_set>
 #include <vector>
 #include "net/minecraft/client/Minecraft.hpp"
+#include "net/minecraft/client/ClientLog.hpp"
 #include "net/minecraft/client/option/RenderSettings.hpp"
 #include "net/minecraft/client/render/RenderCore.hpp"
 #include "net/minecraft/client/render/world/WorldRenderer.hpp"
@@ -19,8 +20,24 @@
 #include "net/minecraft/world/chunk/ChunkSource.hpp"
 namespace net::minecraft::client::render {
 namespace {
-constexpr int kChunkSectionSize = 16;
-constexpr int kChunkSectionCountY = 8;
+// Closest-point test: true when any point of the box lies within the sphere
+// (center + squared radius). A section that merely grazes the sphere is kept —
+// center-only tests let a 16-block section whose center sits just past the radius
+// pop even though half of it is inside.
+bool boxTouchesSphere(const net::minecraft::Box& box,
+                      double cx,
+                      double cy,
+                      double cz,
+                      double radiusSq) {
+ double dx = 0.0, dy = 0.0, dz = 0.0;
+ if(cx < box.minX) dx = box.minX - cx;
+ else if(cx > box.maxX) dx = cx - box.maxX;
+ if(cy < box.minY) dy = box.minY - cy;
+ else if(cy > box.maxY) dy = cy - box.maxY;
+ if(cz < box.minZ) dz = box.minZ - cz;
+ else if(cz > box.maxZ) dz = cz - box.maxZ;
+ return dx * dx + dy * dy + dz * dz <= radiusSq;
+}
 } // namespace
 const net::minecraft::entity::LivingEntity* ChunkSectionSystem::frontierCamera() const {
  if(facade_.cameraEntity_ != nullptr) {
@@ -72,15 +89,25 @@ void ChunkSectionSystem::createColumn(int sectionX, int sectionZ) {
   if(sections_.contains(pos)) {
    continue;
   }
-  auto builder = std::make_unique<chunk::ChunkBuilder>(facade_.world,
-                                                       facade_.globalBlockEntities,
-                                                       sectionX * kChunkSectionSize,
-                                                       sectionY * kChunkSectionSize,
-                                                       sectionZ * kChunkSectionSize,
-                                                       kChunkSectionSize,
-                                                       &facade_.compilePipeline_.regionManager());
-   builder->inFrustum = true;
-  builder->invalidate();
+   auto builder = std::make_unique<chunk::ChunkBuilder>(facade_.world,
+                                                        facade_.globalBlockEntities,
+                                                        sectionX * chunk::kSectionBlocks,
+                                                        sectionY * chunk::kSectionBlocks,
+                                                        sectionZ * chunk::kSectionBlocks,
+                                                        chunk::kSectionBlocks,
+                                                        &facade_.compilePipeline_.regionManager());
+    builder->inFrustum = true;
+   builder->regionKeyX_ = sectionX >> 3;
+   builder->regionKeyY_ = sectionY >> 2;
+   builder->regionKeyZ_ = sectionZ >> 3;
+   builder->regionOriginX_ = builder->regionKeyX_ * chunk::kRegionBlocksX;
+   builder->regionOriginY_ = builder->regionKeyY_ * chunk::kRegionBlocksY;
+   builder->regionOriginZ_ = builder->regionKeyZ_ * chunk::kRegionBlocksZ;
+   chunk::ChunkRegion& region =
+       facade_.compilePipeline_.regionManager().regionFor(sectionX, sectionY, sectionZ);
+   ++region.sectionCount;
+   builder->region_ = &region;
+   builder->invalidate();
   chunk::ChunkBuilder* raw = builder.get();
   sections_.emplace(pos, std::move(builder));
   sectionList_.push_back(raw);
@@ -302,74 +329,111 @@ void ChunkSectionSystem::reloadIfViewDistanceChanged() {
  }
 }
 void ChunkSectionSystem::cullChunks(FrustumCuller* culler, float /*tickDelta*/, bool updateFrontier) {
- const FrameRenderCamera& renderCamera = RenderCameraState::instance().frame();
- const double nearFrustumBypassBlocks = std::max(0.0f, renderCamera.frustumBypassDistance);
- const double nearFrustumBypassDistanceSq = nearFrustumBypassBlocks * nearFrustumBypassBlocks;
- const double camX = core::drawCameraStateValid() ? static_cast<double>(core::drawCameraPosition()[0])
-                                                   : renderCamera.eyeX;
- const double camY = core::drawCameraStateValid() ? static_cast<double>(core::drawCameraPosition()[1])
-                                                   : renderCamera.eyeY;
- const double camZ = core::drawCameraStateValid() ? static_cast<double>(core::drawCameraPosition()[2])
-                                                   : renderCamera.eyeZ;
- if(updateFrontier) {
-  reloadIfViewDistanceChanged();
-  updateSectionFrontier();
-  drainPendingColumns();
- }
- // The shadow pass has its own frustum (Java ShadowRenderer.createShadowFrustum): the
- // player's view volume extruded toward the light, so casters outside the player's
- // frustum that still shadow it survive. Nothing about the camera's own frustum, the
- // near bypass or occlusion culling applies here.
- if(renderCamera.shadowPass) {
-  const ShadowCullingFrustum* shadowFrustum = renderCamera.shadowTerrainFrustum;
-  for(chunk::ChunkBuilder* chunk : sectionList_) {
-   chunk->inFrustum = shadowFrustum == nullptr || shadowFrustum->isVisible(chunk->cullingBox);
+  const FrameRenderCamera& renderCamera = RenderCameraState::instance().frame();
+  const double nearFrustumBypassBlocks = std::max(0.0f, renderCamera.frustumBypassDistance);
+  const double nearFrustumBypassDistanceSq = nearFrustumBypassBlocks * nearFrustumBypassBlocks;
+  // Single camera origin for every culling test: the published iris draw camera
+  // position (Camera.getPosition()), the same point chunk geometry is uploaded
+  // relative to. applyOcclusionCulling and the VBO draw list read the same value.
+  double camX = 0.0;
+  double camY = 0.0;
+  double camZ = 0.0;
+  WorldRenderer::sectionOrigin(camX, camY, camZ);
+  if(updateFrontier) {
+   reloadIfViewDistanceChanged();
+   updateSectionFrontier();
+   drainPendingColumns();
   }
-  rebuildVisibleDrawRings();
-  return;
- }
-  if(culler == nullptr || !facade_.frameSettings().frustumCulling) {
-  for(chunk::ChunkBuilder* chunk : sectionList_) {
-   chunk->inFrustum = true;
+  // The shadow pass has its own frustum (Java ShadowRenderer.createShadowFrustum): the
+  // player's view volume extruded toward the light, so casters outside the player's
+  // frustum that still shadow it survive. Nothing about the camera's own frustum, the
+  // near bypass or occlusion culling applies here.
+  if(renderCamera.shadowPass) {
+   const ShadowCullingFrustum* shadowFrustum = renderCamera.shadowTerrainFrustum;
+   // TEMP DIAGNOSTIC — [shadow-probe]. The shadow map's reach is decided here, not by
+   // the ortho matrix: a section that fails this test is simply never rasterised, so
+   // "shadows stop at N blocks" is a statement about which sections survive. Reports
+   // the furthest survivor next to the radius the frustum was built with. DELETE with
+   // the rest of the probe once shadows are correct.
+   double keptMaxDistance = 0.0;
+   double culledMinDistance = std::numeric_limits<double>::max();
+   int kept = 0;
+   for(chunk::ChunkBuilder* chunk : sectionList_) {
+    chunk->inFrustum = shadowFrustum == nullptr || shadowFrustum->isVisible(chunk->cullingBox);
+    const double dx = (chunk->cullingBox.minX + chunk->cullingBox.maxX) * 0.5 - camX;
+    const double dz = (chunk->cullingBox.minZ + chunk->cullingBox.maxZ) * 0.5 - camZ;
+    const double distance = std::sqrt(dx * dx + dz * dz);
+    if(chunk->inFrustum) {
+     ++kept;
+     keptMaxDistance = std::max(keptMaxDistance, distance);
+    } else {
+     culledMinDistance = std::min(culledMinDistance, distance);
+    }
+   }
+   static int shadowCullProbeFrame = 0;
+   if((shadowCullProbeFrame++ % 120) == 0) {
+    const char* modeName = "none";
+    double cullerDistance = -1.0;
+    if(shadowFrustum != nullptr) {
+     switch(shadowFrustum->mode()) {
+      case ShadowCullingFrustum::Mode::NonCulling: modeName = "NonCulling"; break;
+      case ShadowCullingFrustum::Mode::BoxCulling: modeName = "BoxCulling"; break;
+      case ShadowCullingFrustum::Mode::Advanced: modeName = "Advanced"; break;
+      case ShadowCullingFrustum::Mode::SafeZone: modeName = "SafeZone"; break;
+     }
+     cullerDistance = shadowFrustum->boxCullerDistance();
+    }
+    ::net::minecraft::client::ClientLog::LOGGER.log(
+        ::net::minecraft::util::logging::LogLevel::Info,
+        std::string("[shadow-probe] sections kept=") + std::to_string(kept) + "/" +
+            std::to_string(sectionList_.size()) + " furthestKept=" + std::to_string(keptMaxDistance) +
+            "b nearestCulled=" +
+            std::to_string(culledMinDistance == std::numeric_limits<double>::max() ? -1.0
+                                                                                  : culledMinDistance) +
+            "b mode=" + modeName + " boxCuller=" + std::to_string(cullerDistance) + "b planes=" +
+            std::to_string(shadowFrustum != nullptr ? shadowFrustum->planeCount() : 0) +
+            " renderRadius=" + std::to_string(renderRadiusChunks_ * 16) + "b");
+   }
+   rebuildVisibleDrawRings();
+   return;
   }
-  rebuildVisibleDrawRings();
-  return;
- }
- for(chunk::ChunkBuilder* chunkPtr : sectionList_) {
-  chunk::ChunkBuilder& chunk = *chunkPtr;
-  chunk.updateFrustum(*culler);
-  // Sections hugging the camera are kept regardless of the frustum so nothing pops in
-  // at the near plane. The radius is spherical, like the occlusion bypass below: a
-  // horizontal-only test left camY unused and made this an infinite vertical cylinder,
-  // which kept every section directly above and below the player in view.
-  const double dx = camX - static_cast<double>(chunk.centerX);
-  const double dy = camY - static_cast<double>(chunk.centerY);
-  const double dz = camZ - static_cast<double>(chunk.centerZ);
-  if(dx * dx + dy * dy + dz * dz <= nearFrustumBypassDistanceSq) {
-   chunk.inFrustum = true;
+   if(culler == nullptr || !facade_.frameSettings().frustumCulling) {
+   for(chunk::ChunkBuilder* chunk : sectionList_) {
+    chunk->inFrustum = true;
+   }
+   rebuildVisibleDrawRings();
+   return;
   }
+  for(chunk::ChunkBuilder* chunkPtr : sectionList_) {
+   chunk::ChunkBuilder& chunk = *chunkPtr;
+   chunk.updateFrustum(*culler);
+   // Sections touching the bypass sphere are kept regardless of the frustum so
+   // nothing pops in at the near plane. Tested against the culling box (closest
+   // point), not the section center, so a section that merely grazes the sphere is
+   // kept too.
+   if(boxTouchesSphere(chunk.cullingBox, camX, camY, camZ, nearFrustumBypassDistanceSq)) {
+    chunk.inFrustum = true;
+   }
+  }
+   applyOcclusionCulling();
+   rebuildVisibleDrawRings();
  }
-  applyOcclusionCulling();
-  rebuildVisibleDrawRings();
-}
 void ChunkSectionSystem::applyOcclusionCulling() {
  if(!facade_.frameSettings().occlusionCulling) {
   return;
  }
- constexpr double kNearOcclusionBypassSq = 48.0 * 48.0;
- const auto& frameCam = RenderCameraState::instance().frame();
- double camX = frameCam.x;
- double camY = frameCam.y;
- double camZ = frameCam.z;
- if(camX == 0.0 && camY == 0.0 && camZ == 0.0) {
-  if(facade_.cameraEntity_ != nullptr) {
-   camX = facade_.cameraEntity_->x;
-   camY = facade_.cameraEntity_->y;
-   camZ = facade_.cameraEntity_->z;
-  } else {
-   return;
-  }
- }
+ const FrameRenderCamera& renderCamera = RenderCameraState::instance().frame();
+ // Same near-camera bypass the frustum cull uses (FrameRenderCamera.
+ // frustumBypassDistance): a section touching the sphere is never occluded, so a
+ // freshly turned camera or a new column next to the player cannot pop. The old
+ // hardcoded 48.0² agreed with the struct default by luck and drifted when the
+ // camera knob changed.
+ const double bypass = std::max(0.0f, renderCamera.frustumBypassDistance);
+ const double nearOcclusionBypassSq = bypass * bypass;
+ double camX = 0.0;
+ double camY = 0.0;
+ double camZ = 0.0;
+ WorldRenderer::sectionOrigin(camX, camY, camZ);
  const int startX = MathHelper::floor(camX) >> 4;
  int startY = MathHelper::floor(camY) >> 4;
  const int startZ = MathHelper::floor(camZ) >> 4;
@@ -418,10 +482,7 @@ void ChunkSectionSystem::applyOcclusionCulling() {
   if(chunkPtr->occStamp == stamp || !chunkPtr->inFrustum) {
    continue;
   }
-  const double dx = camX - static_cast<double>(chunkPtr->centerX);
-  const double dy = camY - static_cast<double>(chunkPtr->centerY);
-  const double dz = camZ - static_cast<double>(chunkPtr->centerZ);
-  if(dx * dx + dy * dy + dz * dz <= kNearOcclusionBypassSq) {
+  if(boxTouchesSphere(chunkPtr->cullingBox, camX, camY, camZ, nearOcclusionBypassSq)) {
    continue;
   }
   chunkPtr->inFrustum = false;
@@ -435,12 +496,12 @@ std::string ChunkSectionSystem::getChunkDebugInfo() const {
         std::to_string(chunk::ChunkRegionBuffer::frameVisibleRanges);
 }
 void ChunkSectionSystem::markDirty(int minX, int minY, int minZ, int maxX, int maxY, int maxZ) {
- const int startX = MathHelper::floorDiv(minX, kChunkSectionSize);
- const int startY = MathHelper::floorDiv(minY, kChunkSectionSize);
- const int startZ = MathHelper::floorDiv(minZ, kChunkSectionSize);
- const int endX = MathHelper::floorDiv(maxX, kChunkSectionSize);
- const int endY = MathHelper::floorDiv(maxY, kChunkSectionSize);
- const int endZ = MathHelper::floorDiv(maxZ, kChunkSectionSize);
+ const int startX = MathHelper::floorDiv(minX, chunk::kSectionBlocks);
+ const int startY = MathHelper::floorDiv(minY, chunk::kSectionBlocks);
+ const int startZ = MathHelper::floorDiv(minZ, chunk::kSectionBlocks);
+ const int endX = MathHelper::floorDiv(maxX, chunk::kSectionBlocks);
+ const int endY = MathHelper::floorDiv(maxY, chunk::kSectionBlocks);
+ const int endZ = MathHelper::floorDiv(maxZ, chunk::kSectionBlocks);
  for(int chunkX = startX; chunkX <= endX; ++chunkX) {
   for(int chunkZ = startZ; chunkZ <= endZ; ++chunkZ) {
    if(std::abs(chunkX - centerSectionX_) <= renderRadiusChunks_ &&

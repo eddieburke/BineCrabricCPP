@@ -48,10 +48,10 @@ void uploadShaderUniforms(const gl::ShaderProgram& program, const PackUniformVal
  const float viewWidth = viewport != nullptr ? viewport->viewWidth : values.viewWidth;
  const float viewHeight = viewport != nullptr ? viewport->viewHeight : values.viewHeight;
  const float aspectRatio = viewport != nullptr ? viewport->aspectRatio : values.aspectRatio;
- const float farPlane = viewport != nullptr ? viewport->farPlane : values.farPlane;
- const float shadowMapResolution = viewport != nullptr ? viewport->shadowMapResolution : values.shadowMapResolution;
- const int shadowAvailable = viewport != nullptr ? viewport->shadowAvailable : values.shadowAvailable;
- const int normalAvailable = viewport != nullptr ? viewport->normalAvailable : values.normalAvailable;
+ const float farPlane = values.farPlane;
+ const float shadowMapResolution = values.shadowMapResolution;
+ const int shadowAvailable = values.shadowAvailable;
+ const int normalAvailable = values.normalAvailable;
  program.set1f("frameTimeCounter", values.frameTimeCounter);
  program.set1f("frameTime", values.frameTime);
  program.set1i("frameCounter", values.frameCounter);

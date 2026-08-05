@@ -99,7 +99,7 @@ void renderFireOverlay() {
   const float vMin = static_cast<float>(vOrigin) / 256.0f;
   const float vMax = (static_cast<float>(vOrigin) + 15.99f) / 256.0f;
   net::minecraft::util::math::Matrix4f model;
-  model.set(core::drawModelView().data());
+  model.set(core::drawPose().data());
   model.translate(static_cast<float>(-(layer * 2 - 1)) * 0.24f, -0.3f, 0.0f);
   model.rotate(static_cast<float>(layer * 2 - 1) * 10.0f, 0.0f, 1.0f, 0.0f);
   struct Corner {
@@ -137,23 +137,23 @@ void HeldItemRenderer::renderItem(const net::minecraft::entity::LivingEntity& en
   return;
  }
  const render::core::RenderedItemScope itemScope(ItemModelRenderer::shaderId(itemStack));
- if(ItemModelRenderer::hasCustomModel(itemStack)) {
-  minecraft->textureManager.bindTexture(
-      resolveBlockTexture(itemStack.getTextureId(), minecraft->textureManager, ItemModelRenderer::atlasDomain(itemStack))
-          .glId);
-  const core::ScopedDrawCameraState itemGuard;
-  net::minecraft::util::math::MatrixStack pose;
-  pose.load(core::drawModelView());
-  pose.translate(0.0f, -0.3f, 0.0f);
-  pose.scale(1.5f, 1.5f, 1.5f);
-  pose.rotate(50.0f, 0.0f, 1.0f, 0.0f);
-  pose.rotate(335.0f, 0.0f, 0.0f, 1.0f);
-  pose.translate(-0.5f, -0.5f, -0.5f);
-  core::setDrawModelView(pose.top());
-  net::minecraft::mod::model::drawLuaItemModel(
-      Tessellator::INSTANCE, itemStack, entity.getBrightnessAtEyes(1.0f));
-  return;
- }
+  if(ItemModelRenderer::hasCustomModel(itemStack)) {
+   minecraft->textureManager.bindTexture(
+       resolveBlockTexture(itemStack.getTextureId(), minecraft->textureManager, ItemModelRenderer::atlasDomain(itemStack))
+           .glId);
+   const core::ScopedDrawCameraState itemGuard;
+   net::minecraft::util::math::MatrixStack pose;
+   pose.load(core::drawPose());
+   pose.translate(0.0f, -0.3f, 0.0f);
+   pose.scale(1.5f, 1.5f, 1.5f);
+   pose.rotate(50.0f, 0.0f, 1.0f, 0.0f);
+   pose.rotate(335.0f, 0.0f, 0.0f, 1.0f);
+   pose.translate(-0.5f, -0.5f, -0.5f);
+   core::setDrawPose(pose.top());
+   net::minecraft::mod::model::drawLuaItemModel(
+       Tessellator::INSTANCE, itemStack, entity.getBrightnessAtEyes(1.0f));
+   return;
+  }
  if(ItemModelRenderer::rendersAsBlockModel(itemStack)) {
   net::minecraft::block::Block* block = ItemModelRenderer::blockOf(itemStack);
   minecraft->textureManager.bindTexture(minecraft->textureManager.getTextureId("/terrain.png"));
@@ -177,17 +177,17 @@ void HeldItemRenderer::renderItem(const net::minecraft::entity::LivingEntity& en
  const float uMax = static_cast<float>(uv.uMax);
  const float vMin = static_cast<float>(uv.vMin);
  const float vMax = static_cast<float>(uv.vMax);
- const core::ScopedDrawCameraState itemGuard;
- net::minecraft::util::math::MatrixStack pose;
- pose.load(core::drawModelView());
- pose.translate(0.0f, -0.3f, 0.0f);
- constexpr float itemScale = 1.5f;
- pose.scale(itemScale, itemScale, itemScale);
- pose.rotate(50.0f, 0.0f, 1.0f, 0.0f);
- pose.rotate(335.0f, 0.0f, 0.0f, 1.0f);
- pose.translate(-0.9375f, -0.0625f, 0.0f);
- core::setDrawModelView(pose.top());
- net::minecraft::mod::model::drawExtrudedSprite(tessellator, uMin, uMax, vMin, vMax);
+  const core::ScopedDrawCameraState itemGuard;
+  net::minecraft::util::math::MatrixStack pose;
+  pose.load(core::drawPose());
+  pose.translate(0.0f, -0.3f, 0.0f);
+  constexpr float itemScale = 1.5f;
+  pose.scale(itemScale, itemScale, itemScale);
+  pose.rotate(50.0f, 0.0f, 1.0f, 0.0f);
+  pose.rotate(335.0f, 0.0f, 0.0f, 1.0f);
+  pose.translate(-0.9375f, -0.0625f, 0.0f);
+  core::setDrawPose(pose.top());
+  net::minecraft::mod::model::drawExtrudedSprite(tessellator, uMin, uMax, vMin, vMax);
 }
 void HeldItemRenderer::render(float tickDelta) {
  if(minecraft == nullptr || minecraft->player == nullptr || minecraft->world == nullptr) {
@@ -223,7 +223,7 @@ void HeldItemRenderer::render(float tickDelta) {
  if(selectedItem != nullptr && Item::byRawId(102) != nullptr && selectedItem->itemId == Item::byRawId(102)->id) {
   const core::ScopedDrawCameraState mapGuard;
   net::minecraft::util::math::MatrixStack mapPose;
-  mapPose.load(core::drawModelView());
+  mapPose.load(core::drawPose());
   constexpr float scale = 0.8f;
   float swing = handSwingProgress(*clientPlayer, tickDelta);
   float swingSin = MathHelper::sin(swing * static_cast<float>(kPi));
@@ -238,7 +238,7 @@ void HeldItemRenderer::render(float tickDelta) {
       0.0f, 0.0f * scale - (1.0f - equipProgress) * 1.2f - pitchFactor * 0.5f + 0.04f, -0.9f * scale);
   mapPose.rotate(90.0f, 0.0f, 1.0f, 0.0f);
   mapPose.rotate(pitchFactor * -85.0f, 0.0f, 0.0f, 1.0f);
-  core::setDrawModelView(mapPose.top());
+  core::setDrawPose(mapPose.top());
   const std::string& skinUrl = clientPlayer->skinUrl;
   const int skinTexture = minecraft->textureManager.downloadTexture(skinUrl, clientPlayer->getTexture());
   minecraft->textureManager.bindTexture(skinTexture);
@@ -247,13 +247,13 @@ void HeldItemRenderer::render(float tickDelta) {
     const int mirror = side * 2 - 1;
     const core::ScopedDrawCameraState handGuard;
     net::minecraft::util::math::MatrixStack handPose;
-    handPose.load(core::drawModelView());
+    handPose.load(core::drawPose());
     handPose.translate(0.0f, -0.6f, 1.1f * static_cast<float>(mirror));
     handPose.rotate(static_cast<float>(-45 * mirror), 1.0f, 0.0f, 0.0f);
     handPose.rotate(-90.0f, 0.0f, 0.0f, 1.0f);
     handPose.rotate(59.0f, 0.0f, 0.0f, 1.0f);
     handPose.rotate(static_cast<float>(-65 * mirror), 0.0f, 1.0f, 0.0f);
-    core::setDrawModelView(handPose.top());
+    core::setDrawPose(handPose.top());
     playerRenderer->renderHand();
    }
   }
@@ -268,7 +268,7 @@ void HeldItemRenderer::render(float tickDelta) {
   mapPose.rotate(180.0f, 0.0f, 0.0f, 1.0f);
   mapPose.translate(-1.0f, -1.0f, 0.0f);
   mapPose.scale(0.015625f, 0.015625f, 0.015625f);
-  core::setDrawModelView(mapPose.top());
+  core::setDrawPose(mapPose.top());
   minecraft->textureManager.bindTexture(minecraft->textureManager.getTextureId("/misc/mapbg.png"));
   Tessellator& tessellator = Tessellator::INSTANCE;
   tessellator.startQuads();
@@ -289,7 +289,7 @@ void HeldItemRenderer::render(float tickDelta) {
  } else if(selectedItem != nullptr) {
   const core::ScopedDrawCameraState itemGuard;
   net::minecraft::util::math::MatrixStack pose;
-  pose.load(core::drawModelView());
+  pose.load(core::drawPose());
   constexpr float scale = 0.8f;
   float swing = handSwingProgress(*clientPlayer, tickDelta);
   float swingSin = MathHelper::sin(swing * static_cast<float>(kPi));
@@ -309,12 +309,12 @@ void HeldItemRenderer::render(float tickDelta) {
   if(selectedItem->getItem() != nullptr && selectedItem->getItem()->isHandheldRod()) {
    pose.rotate(180.0f, 0.0f, 1.0f, 0.0f);
   }
-  core::setDrawModelView(pose.top());
+  core::setDrawPose(pose.top());
   renderItem(*clientPlayer, *selectedItem);
  } else if(playerRenderer != nullptr) {
   const core::ScopedDrawCameraState handGuard;
   net::minecraft::util::math::MatrixStack pose;
-  pose.load(core::drawModelView());
+  pose.load(core::drawPose());
   constexpr float scale = 0.8f;
   float swing = handSwingProgress(*clientPlayer, tickDelta);
   float swingSin = MathHelper::sin(swing * static_cast<float>(kPi));
@@ -336,7 +336,7 @@ void HeldItemRenderer::render(float tickDelta) {
   pose.rotate(200.0f, 1.0f, 0.0f, 0.0f);
   pose.rotate(-135.0f, 0.0f, 1.0f, 0.0f);
   pose.translate(5.6f, 0.0f, 0.0f);
-  core::setDrawModelView(pose.top());
+  core::setDrawPose(pose.top());
   playerRenderer->renderHand();
  }
 }

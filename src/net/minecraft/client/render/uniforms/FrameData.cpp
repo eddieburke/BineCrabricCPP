@@ -33,30 +33,11 @@ float g_centerDepthSmooth = 0.0f;
 float g_wetnessSmooth = 0.0f;
 namespace {
 const auto g_shaderClockStart = std::chrono::steady_clock::now();
-void column(float* m, int c, float x, float y, float z, float w) {
- m[c * 4] = x;
- m[c * 4 + 1] = y;
- m[c * 4 + 2] = z;
- m[c * 4 + 3] = w;
-}
 void inverse(const float* source, float* destination) {
  net::minecraft::util::math::Matrix4f matrix;
  matrix.set(source);
  matrix.invert();
  std::memcpy(destination, matrix.data(), sizeof(float) * 16);
-}
-void shadowModelView(float* m, const render::FrameRenderCamera& shadow, const render::FrameRenderCamera& camera) {
- // https://github.com/IrisShaders/Iris/blob/26.1/common/src/main/java/net/irisshaders/iris/shadows/ShadowMatrices.java
- if(shadow.hasExplicitModelView) {
-  std::memcpy(m, shadow.explicitModelView, sizeof(float) * 16);
-  return;
- }
- const float right[3] = {shadow.viewRightX, shadow.viewRightY, shadow.viewRightZ}, up[3] = {shadow.viewUpX, shadow.viewUpY, shadow.viewUpZ}, forward[3] = {-shadow.viewForwardX, -shadow.viewForwardY, -shadow.viewForwardZ};
- const float delta[3] = {static_cast<float>(camera.eyeX - shadow.eyeX), static_cast<float>(camera.eyeY - shadow.eyeY), static_cast<float>(camera.eyeZ - shadow.eyeZ)};
- column(m, 0, right[0], up[0], forward[0], 0.0f);
- column(m, 1, right[1], up[1], forward[1], 0.0f);
- column(m, 2, right[2], up[2], forward[2], 0.0f);
- column(m, 3, right[0] * delta[0] + right[1] * delta[1] + right[2] * delta[2], up[0] * delta[0] + up[1] * delta[1] + up[2] * delta[2], forward[0] * delta[0] + forward[1] * delta[1] + forward[2] * delta[2], 1.0f);
 }
 void biomeData(const Biome& biome, PackUniformValues& values) {
  values.biome = static_cast<int>(biome.id);
@@ -166,7 +147,7 @@ float smoothExponential(float target, float& accumulator, bool& initialized, flo
  return accumulator;
 }
 
-PackUniformValues buildShaderFrameData(int width, int height, float farPlane, float worldTime, int shadowMapResolution, bool normalAvailable, bool shadowAvailable, const render::FrameRenderCamera& camera, const render::FrameRenderCamera& shadowCamera, const net::minecraft::World* world, float eyeBrightnessHalflife) {
+PackUniformValues buildShaderFrameData(int width, int height, float worldTime, int shadowMapResolution, bool normalAvailable, bool shadowAvailable, const render::FrameRenderCamera& camera, const render::FrameRenderCamera& shadowCamera, const net::minecraft::World* world, float eyeBrightnessHalflife) {
   static PackUniformValues previousFrame;
   static PackUniformValues currentFrame;
   static bool initialized = false;
@@ -194,8 +175,14 @@ PackUniformValues buildShaderFrameData(int width, int height, float farPlane, fl
   values.viewWidth = static_cast<float>(width);
   values.viewHeight = static_cast<float>(height);
   values.aspectRatio = values.viewWidth / std::max(values.viewHeight, 1.0f);
-  values.nearPlane = camera.perspectiveNear;
-  values.farPlane = farPlane;
+   // Iris: near is the ONCE constant 0.05 and far is the render distance in blocks
+   // (CameraUniforms.java getRenderDistanceInBlocks = effective render distance * 16).
+   // The camera struct is the single source: GameRenderer points the main camera's
+   // perspectiveFar at the render distance, so the `far` uniform and the
+   // gbufferProjection matrices below can never disagree — no separate channel.
+   // https://github.com/IrisShaders/Iris/blob/26.1/common/src/main/java/net/irisshaders/iris/uniforms/CameraUniforms.java
+   values.nearPlane = camera.perspectiveNear;
+   values.farPlane = camera.perspectiveFar;
   const float tickDelta = worldTime - std::floor(worldTime);
   {
    const auto& fog = render::core::fog();
@@ -244,49 +231,40 @@ PackUniformValues buildShaderFrameData(int width, int height, float farPlane, fl
   splitCameraPosition(cameraTracker.previousUnshifted(0), cameraTracker.previousUnshifted(1),
                       cameraTracker.previousUnshifted(2), values.previousCameraPositionInt,
                       values.previousCameraPositionFract);
-  render::buildCameraProjection(values.gbufferProjection, camera, farPlane);
- render::buildCameraProjectionInverse(values.gbufferProjectionInverse, camera, farPlane);
+  render::buildCameraProjection(values.gbufferProjection, camera);
+ render::buildCameraProjectionInverse(values.gbufferProjectionInverse, camera);
  buildCameraModelView(values.gbufferModelView, camera);
  buildCameraModelViewInverse(values.gbufferModelViewInverse, camera);
  std::copy(std::begin(previousFrame.gbufferProjection), std::end(previousFrame.gbufferProjection), values.gbufferPreviousProjection);
  std::copy(std::begin(previousFrame.gbufferModelView), std::end(previousFrame.gbufferModelView), values.gbufferPreviousModelView);
   // https://github.com/IrisShaders/Iris/blob/26.1/common/src/main/java/net/irisshaders/iris/uniforms/CelestialUniforms.java
   render::directionToView(0.0f, 1.0f, 0.0f, camera, values.upPosition);
- if(shadowAvailable) {
-  shadowModelView(values.shadowModelView, shadowCamera, camera);
-  render::FrameRenderCamera shadowProjCamera = shadowCamera;
-  if(!shadowCamera.orthographic) {
-   const float nearZ = std::max(0.05f, shadowCamera.perspectiveNear);
-   const float farZ = shadowCamera.perspectiveFar > nearZ ? shadowCamera.perspectiveFar : nearZ + 1.0f;
-   shadowProjCamera.perspectiveFar = farZ;
+  if(shadowAvailable) {
+   // The shadow camera states its model view outright (shadowmap::makeShadowCamera
+   // built it from the celestial angle and the grid snap), so this is the same
+   // build path the gbuffer camera uses — no shadow-specific matrix assembly.
+   buildCameraModelView(values.shadowModelView, shadowCamera);
+   // The shadow camera carries its own planes (ShadowMapPass sets orthoNear/orthoFar,
+   // or perspectiveNear/perspectiveFar for a perspective shadow map, from
+   // ShadowMatrices.java's distance-scaled values) — buildCameraProjection reads them
+   // directly, exactly like the gbuffer camera above.
+   render::buildCameraProjection(values.shadowProjection, shadowCamera);
+   render::buildCameraProjectionInverse(values.shadowProjectionInverse, shadowCamera);
+   inverse(values.shadowModelView, values.shadowModelViewInverse);
   }
-  render::buildCameraProjection(values.shadowProjection, shadowProjCamera, farPlane);
-  render::buildCameraProjectionInverse(values.shadowProjectionInverse, shadowProjCamera, farPlane);
-  inverse(values.shadowModelView, values.shadowModelViewInverse);
- }
  systemTime(values);
    if(world != nullptr) {
-    const float celestialAngle = world->getTime(tickDelta);
-    const float sunAngle = celestialSunAngle(celestialAngle);
-    values.sunAngle = sunAngle;
-    values.shadowAngle = shadowAngleFromCelestial(celestialAngle);
-
-    const net::minecraft::client::Minecraft* celestialClient = net::minecraft::client::Minecraft::INSTANCE;
-    const PackDefinition& celestialDefinition =
-        celestialClient != nullptr && celestialClient->gameRenderer != nullptr
-            ? celestialClient->gameRenderer->packDefinition()
-            : vanillaPackDefinition();
-    const float sunPathRotation = celestialDefinition.sunPathRotation;
-
-    // https://github.com/IrisShaders/Iris/blob/26.1/common/src/main/java/net/irisshaders/iris/uniforms/CelestialUniforms.java
-    const float skyAngle = sunAngle < 0.25f ? sunAngle + 0.75f : sunAngle - 0.25f;
-    net::minecraft::util::math::Matrix4f celestialMat;
-    celestialMat.rotate(sunPathRotation, 0.0f, 0.0f, 1.0f);
-    celestialMat.rotate(-90.0f, 0.0f, 1.0f, 0.0f);
-    celestialMat.rotate(skyAngle * 360.0f, 1.0f, 0.0f, 0.0f);
-    const float worldSunX = celestialMat.m[8];
-    const float worldSunY = celestialMat.m[9];
-    const float worldSunZ = celestialMat.m[10];
+    // Reader: the frame's celestial answer is published by GameRenderer::updateSunLight
+    // before this runs. Re-deriving it here is what let sunPosition drift off the
+    // shadow map's own light axis.
+    // see src/net/minecraft/client/render/celestial/CelestialState.hpp
+    const render::CelestialState& celestial = render::core::celestialState();
+    const float celestialAngle = celestial.celestialAngle;
+    values.sunAngle = celestial.sunAngle;
+    values.shadowAngle = celestial.shadowAngle;
+    const float worldSunX = celestial.sunDirectionWorld[0];
+    const float worldSunY = celestial.sunDirectionWorld[1];
+    const float worldSunZ = celestial.sunDirectionWorld[2];
 
     render::directionToView(worldSunX, worldSunY, worldSunZ, camera, values.sunPosition);
     render::directionToView(-worldSunX, -worldSunY, -worldSunZ, camera, values.moonPosition);
@@ -319,11 +297,15 @@ PackUniformValues buildShaderFrameData(int width, int height, float farPlane, fl
     }
 
     values.moonPhase = static_cast<int>((absoluteTime / 24000ULL) % 8ULL);
-    const float sunAngleDegrees = values.sunAngle * 360.0f;
+    const net::minecraft::client::Minecraft* celestialClient = net::minecraft::client::Minecraft::INSTANCE;
+    const PackDefinition& celestialDefinition =
+        celestialClient != nullptr && celestialClient->gameRenderer != nullptr
+            ? celestialClient->gameRenderer->packDefinition()
+            : vanillaPackDefinition();
     const bool isEnd = world->dimension != nullptr && world->dimension->id == 1;
     if(isEnd && celestialDefinition.endFlashShadows) {
      std::copy(std::begin(values.endFlashPosition), std::end(values.endFlashPosition), values.shadowLightPosition);
-    } else if(sunAngleDegrees < 180.0f) {
+    } else if(celestial.day) {
      std::copy(std::begin(values.sunPosition), std::end(values.sunPosition), values.shadowLightPosition);
     } else {
      std::copy(std::begin(values.moonPosition), std::end(values.moonPosition), values.shadowLightPosition);

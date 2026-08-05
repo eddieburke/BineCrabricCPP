@@ -231,17 +231,19 @@ void TextRenderer::drawWithShadow(const std::string& text, int x, int y, int col
  }
  render::core::bindTexture(static_cast<int>(boundTexture));
  core::setConstColor(1.0f, 1.0f, 1.0f, 1.0f);
- {
-  const render::core::ScopedDrawCameraState textGuard;
-  net::minecraft::util::math::Matrix4f pose = render::core::drawModelView();
-  pose.translate(static_cast<float>(x), static_cast<float>(y), 0.0f);
-  render::core::setDrawModelView(pose);
-  render::Tessellator& tessellator = render::INSTANCE;
-  tessellator.startQuads();
-  emitGlyphs(tessellator, text, 1.0f, 1.0f, color, true, alpha);
-  emitGlyphs(tessellator, text, 0.0f, 0.0f, color, false, alpha);
-  tessellator.draw();
- }
+  {
+   const render::core::ScopedDrawCameraState textGuard;
+   // Text composes onto the live pose, world or GUI alike; it never touches the
+   // pass base.
+   net::minecraft::util::math::Matrix4f pose = render::core::drawPose();
+   pose.translate(static_cast<float>(x), static_cast<float>(y), 0.0f);
+   render::core::setDrawPose(pose);
+   render::Tessellator& tessellator = render::INSTANCE;
+   tessellator.startQuads();
+   emitGlyphs(tessellator, text, 1.0f, 1.0f, color, true, alpha);
+   emitGlyphs(tessellator, text, 0.0f, 0.0f, color, false, alpha);
+   tessellator.draw();
+  }
 }
 void TextRenderer::drawCenteredWithShadow(const std::string& text, int x, int y, int color) {
  drawWithShadow(text, x - getWidth(text) / 2, y, color);
@@ -301,16 +303,18 @@ void TextRenderer::draw(const std::string& text, int x, int y, int color, bool s
  }
  render::core::bindTexture(static_cast<int>(boundTexture));
  core::setConstColor(1.0f, 1.0f, 1.0f, 1.0f);
- {
-  const render::core::ScopedDrawCameraState textGuard;
-  net::minecraft::util::math::Matrix4f pose = render::core::drawModelView();
-  pose.translate(static_cast<float>(x), static_cast<float>(y), 0.0f);
-  render::core::setDrawModelView(pose);
-  render::Tessellator& tessellator = render::INSTANCE;
-  tessellator.startQuads();
-  emitGlyphs(tessellator, text, 0.0f, 0.0f, color, shadow, alpha);
-  tessellator.draw();
- }
+  {
+   const render::core::ScopedDrawCameraState textGuard;
+   // World text composes onto the live camera-relative pose; GUI text onto the
+   // GUI matrix. see src/net/minecraft/client/font/TextRenderer.cpp drawWithShadow
+   net::minecraft::util::math::Matrix4f pose = render::core::drawPose();
+   pose.translate(static_cast<float>(x), static_cast<float>(y), 0.0f);
+   render::core::setDrawPose(pose);
+   render::Tessellator& tessellator = render::INSTANCE;
+   tessellator.startQuads();
+   emitGlyphs(tessellator, text, 0.0f, 0.0f, color, shadow, alpha);
+   tessellator.draw();
+  }
 }
 std::size_t TextRenderer::fitPrefixLength(const std::string& text, int maxWidth) const {
  int width = 0;

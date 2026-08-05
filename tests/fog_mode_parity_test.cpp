@@ -21,8 +21,8 @@ client::render::PackUniformValues frameForFog(const client::render::core::FogUni
  client::render::core::setFog(fog);
  client::render::FrameRenderCamera camera;
  client::render::FrameRenderCamera shadow;
- return client::render::buildShaderFrameData(
-     1280, 720, 256.0f, 42.25f, 0, false, false, camera, shadow, nullptr);
+  return client::render::buildShaderFrameData(
+      1280, 720, 42.25f, 0, false, false, camera, shadow, nullptr);
 }
 }
 TEST(FogModeParity, FrameDataProducerEmitsGlConstants) {

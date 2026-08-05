@@ -17,29 +17,26 @@ namespace net::minecraft::client::render::chunk {
 struct ModChunkMesh;
 class ChunkBuilder {
  public:
- ChunkBuilder(World* world,
-              std::vector<::net::minecraft::block::entity::BlockEntity*>& blockEntityUpdateList,
-              int x,
-              int y,
-              int z,
-              int size,
-              ChunkRegionManager* regionManager)
-     : world(world), regionManager_(regionManager), x(x), y(y), z(z), currentBlockEntities_(&blockEntityUpdateList) {
-   sizeX = size;
-   sizeY = size;
-   sizeZ = size;
-   centerX = this->x + sizeX / 2;
-  centerY = this->y + sizeY / 2;
-  centerZ = this->z + sizeZ / 2;
-  constexpr float padding = 6.0f;
-  cullingBox = net::minecraft::Box(static_cast<double>(this->x) - padding,
-                                   static_cast<double>(this->y) - padding,
-                                   static_cast<double>(this->z) - padding,
-                                   static_cast<double>(this->x + sizeX) + padding,
-                                   static_cast<double>(this->y + sizeY) + padding,
-                                   static_cast<double>(this->z + sizeZ) + padding);
-  dirty = false;
- }
+  ChunkBuilder(World* world,
+               std::vector<::net::minecraft::block::entity::BlockEntity*>& blockEntityUpdateList,
+               int x,
+               int y,
+               int z,
+               int size,
+               ChunkRegionManager* regionManager)
+      : world(world), regionManager_(regionManager), x(x), y(y), z(z), currentBlockEntities_(&blockEntityUpdateList) {
+   centerX = this->x + size / 2;
+   centerY = this->y + size / 2;
+   centerZ = this->z + size / 2;
+   constexpr float padding = 6.0f;
+   cullingBox = net::minecraft::Box(static_cast<double>(this->x) - padding,
+                                    static_cast<double>(this->y) - padding,
+                                    static_cast<double>(this->z) - padding,
+                                    static_cast<double>(this->x + size) + padding,
+                                    static_cast<double>(this->y + size) + padding,
+                                    static_cast<double>(this->z + size) + padding);
+   dirty = false;
+  }
  [[nodiscard]] float squaredDistanceTo(double entityX, double entityY, double entityZ) const {
   const float dx = static_cast<float>(entityX - static_cast<double>(centerX));
   const float dy = static_cast<float>(entityY - static_cast<double>(centerY));
@@ -48,14 +45,15 @@ class ChunkBuilder {
  }
  static void buildMesh(ChunkMeshJob& job);
  void uploadMesh(ChunkMeshJob& job);
- void freeRegionSlots() noexcept {
-  if(region_ != nullptr) {
-   for(int layer = 0; layer < terrain_layer::Count; ++layer) {
-    region_->layers[static_cast<std::size_t>(layer)].release(regionSlots_[static_cast<std::size_t>(layer)]);
+  void freeRegionSlots() noexcept {
+   if(region_ != nullptr) {
+    for(int layer = 0; layer < terrain_layer::Count; ++layer) {
+     region_->layers[static_cast<std::size_t>(layer)].release(regionSlots_[static_cast<std::size_t>(layer)]);
+    }
+    regionManager_->releaseRegion(RegionKey{regionKeyX_, regionKeyY_, regionKeyZ_});
    }
+   freeModMeshGpuBuffers();
   }
-  freeModMeshGpuBuffers();
- }
  void freeModMeshGpuBuffers() noexcept {
   for(int layer = 0; layer < terrain_layer::Count; ++layer) {
    for(ModChunkMesh& modMesh : modLayerMeshes_[static_cast<std::size_t>(layer)]) {
@@ -81,19 +79,24 @@ class ChunkBuilder {
   dirty = true;
   ++version;
  }
- World* world = nullptr;
- ChunkRegionManager* regionManager_ = nullptr;
- ChunkRegion* region_ = nullptr;
- std::array<ChunkRegionBuffer::Slot, terrain_layer::Count> regionSlots_{};
+  World* world = nullptr;
+  ChunkRegionManager* regionManager_ = nullptr;
+  ChunkRegion* region_ = nullptr;
+  // Region key the section belongs to; regionOrigin* is the region's block-space
+  // corner, the origin terrain positions are stored relative to.
+  int regionKeyX_ = 0;
+  int regionKeyY_ = 0;
+  int regionKeyZ_ = 0;
+  int regionOriginX_ = 0;
+  int regionOriginY_ = 0;
+  int regionOriginZ_ = 0;
+  std::array<ChunkRegionBuffer::Slot, terrain_layer::Count> regionSlots_{};
  inline static int chunkUpdates = 0;
- int x = 0;
- int y = 0;
- int z = 0;
- int sizeX = 0;
- int sizeY = 0;
- int sizeZ = 0;
- bool inFrustum = true;
- std::array<bool, terrain_layer::Count> renderLayerEmpty{true, true, true};
+  int x = 0;
+  int y = 0;
+  int z = 0;
+  bool inFrustum = true;
+ std::array<bool, terrain_layer::Count> renderLayerEmpty{true, true, true, true};
  std::array<std::vector<ModChunkMesh>, terrain_layer::Count> modLayerMeshes_{};
  int centerX = 0;
  int centerY = 0;
@@ -155,8 +158,10 @@ class ChunkMeshScheduler {
 
  private:
   // Mesh jobs run on the shared Compute pool; completed jobs cross back on a
-  // bounded Channel. Lighting and the chunk loader keep their own computeShare(3)
-  // sub-pools so a mesh burst cannot starve them.
+  // bounded Channel. Note that lighting (LightingEngine) and the chunk loader
+  // (ChunkCache::requestChunkAsync) submit to this *same* pool -- computeShare(3)
+  // only caps how many tasks LightingEngine keeps in flight, it does not hand it
+  // private threads. All three compete on one priority queue.
   net::minecraft::util::concurrent::WorkerHandoff<ChunkMeshJob> handoff_{
       net::minecraft::util::concurrent::ThreadCoordinator::instance().pool(
           net::minecraft::util::concurrent::Domain::Compute)};

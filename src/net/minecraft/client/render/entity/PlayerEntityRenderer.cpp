@@ -182,7 +182,7 @@ void PlayerEntityRenderer::renderNameTag(const net::minecraft::LivingEntity& ent
  matrices.scale(-pixelScale, -pixelScale, pixelScale);
  render::RenderPassScope passScope(render::RenderType::guiTextured());
  Tessellator& tessellator = Tessellator::INSTANCE;
- render::core::setDrawModelView(matrices.top());
+ render::core::setDrawPose(matrices.top());
  {
   // Untextured backing quad behind the name, so it uses gbuffers_basic.
   render::RenderPassScope backdropPass(render::RenderType::basic());
@@ -224,7 +224,7 @@ void PlayerEntityRenderer::renderMore(const net::minecraft::LivingEntity& entity
     matrices.rotate(180.0f, 0.0f, 1.0f, 0.0f);
     matrices.scale(scale, -scale, scale);
    }
-   render::core::setDrawModelView(matrices.top());
+   render::core::setDrawPose(matrices.top());
    heldItemRenderer->renderItem(*player, helmetStack);
    matrices.pop();
   }
@@ -242,7 +242,7 @@ void PlayerEntityRenderer::renderMore(const net::minecraft::LivingEntity& entity
    matrices.rotate(-headYaw, 0.0f, 1.0f, 0.0f);
     constexpr float earScale = 1.3333334f;
     matrices.scale(earScale, earScale, earScale);
-    render::core::setDrawModelView(matrices.top());
+    render::core::setDrawPose(matrices.top());
     bipedModel->renderEars(0.0625f);
     matrices.pop();
   }
@@ -286,7 +286,7 @@ void PlayerEntityRenderer::renderMore(const net::minecraft::LivingEntity& entity
    matrices.rotate(capeTwist / 2.0f, 0.0f, 0.0f, 1.0f);
    matrices.rotate(-capeTwist / 2.0f, 0.0f, 1.0f, 0.0f);
    matrices.rotate(180.0f, 0.0f, 1.0f, 0.0f);
-   render::core::setDrawModelView(matrices.top());
+   render::core::setDrawPose(matrices.top());
    bipedModel->renderCape(0.0625f);
    matrices.pop();
  }
@@ -344,7 +344,7 @@ void PlayerEntityRenderer::renderMore(const net::minecraft::LivingEntity& entity
    matrices.rotate(-90.0f, 1.0f, 0.0f, 0.0f);
    matrices.rotate(20.0f, 0.0f, 0.0f, 1.0f);
   }
-  render::core::setDrawModelView(matrices.top());
+  render::core::setDrawPose(matrices.top());
   heldItemRenderer->renderItem(*player, handStack);
   matrices.pop();
  }

@@ -192,7 +192,7 @@ void LivingEntityRenderer::render(
    render::core::setEntityColor(brightness, 0.0f, 0.0f, 0.4f);
   }
   model->animateModel(const_cast<net::minecraft::LivingEntity&>(*living), limbDistance, limbAngle, tickDelta);
-  render::core::setDrawModelView(matrices.top());
+  render::core::setDrawPose(matrices.top());
   model->render(limbDistance, limbAngle, headBob, headYawRel, headPitch, scaleUnit);
   auto syncDecorationPose = [&]() {
    if(decorationModel != nullptr) {
@@ -206,7 +206,7 @@ void LivingEntityRenderer::render(
     }
     if(decorationModel != nullptr) {
      syncDecorationPose();
-     render::core::setDrawModelView(matrices.top());
+     render::core::setDrawPose(matrices.top());
      decorationModel->render(limbDistance, limbAngle, headBob, headYawRel, headPitch, scaleUnit);
     }
     render::core::setRenderedItemId(0);
@@ -223,7 +223,7 @@ void LivingEntityRenderer::render(
     if(living->hurtTime > 0 || living->deathTime > 0) {
      render::core::setConstColor(brightness, 0.0f, 0.0f, 0.4f);
      render::core::setEntityColor(brightness, 0.0f, 0.0f, 0.4f);
-     render::core::setDrawModelView(matrices.top());
+     render::core::setDrawPose(matrices.top());
      model->render(limbDistance, limbAngle, headBob, headYawRel, headPitch, scaleUnit);
      for(int layer = 0; layer < 4; ++layer) {
       if(!bindDecorationTexture(*living, layer, tickDelta)) {
@@ -232,7 +232,7 @@ void LivingEntityRenderer::render(
       render::core::setConstColor(brightness, 0.0f, 0.0f, 0.4f);
       if(decorationModel != nullptr) {
        syncDecorationPose();
-       render::core::setDrawModelView(matrices.top());
+       render::core::setDrawPose(matrices.top());
        decorationModel->render(limbDistance, limbAngle, headBob, headYawRel, headPitch, scaleUnit);
       }
      }
@@ -244,7 +244,7 @@ void LivingEntityRenderer::render(
     const float ca = static_cast<float>(overlayAlpha) / 255.0f;
      render::core::setConstColor(cr, cg, cb, ca);
      render::core::setEntityColor(cr, cg, cb, ca);
-     render::core::setDrawModelView(matrices.top());
+     render::core::setDrawPose(matrices.top());
      model->render(limbDistance, limbAngle, headBob, headYawRel, headPitch, scaleUnit);
      for(int layer = 0; layer < 4; ++layer) {
       if(!bindDecorationTexture(*living, layer, tickDelta)) {
@@ -253,7 +253,7 @@ void LivingEntityRenderer::render(
       render::core::setConstColor(cr, cg, cb, ca);
       if(decorationModel != nullptr) {
        syncDecorationPose();
-       render::core::setDrawModelView(matrices.top());
+       render::core::setDrawPose(matrices.top());
        decorationModel->render(limbDistance, limbAngle, headBob, headYawRel, headPitch, scaleUnit);
       }
      }
@@ -368,7 +368,7 @@ void LivingEntityRenderer::renderNameTag(
    if(name == "deadmau5") {
     yOffset = -10;
    }
-   render::core::setDrawModelView(matrices.top());
+   render::core::setDrawPose(matrices.top());
    {
    render::RenderPassScope backdropPass(render::RenderType::basic());
    tessellator.startQuads();

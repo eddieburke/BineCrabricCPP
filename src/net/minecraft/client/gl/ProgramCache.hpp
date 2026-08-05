@@ -3,12 +3,12 @@
 // fetch through here so a setting change that alters the define set recompiles
 // lazily on the next request.
 //
-// Compilation is asynchronous when the ShaderCompileService is running (the real
-// client): getFromSource submits the request to a worker and returns nullptr until
-// poll() (called once per frame) links the finished binary into this cache on the
-// main thread. That keeps pack switches / setting changes from stalling the render
-// loop. When the service is not started (headless/test runs) the same calls fall
-// back to a synchronous compile so behavior is unchanged.
+// Compilation is synchronous on the calling (render) thread, mirroring Iris: all
+// GL work happens on the render thread at controlled points (pack load, prewarm,
+// first use), and the driver parallelizes internally via
+// glMaxShaderCompilerThreadsKHR. The earlier design compiled on worker threads
+// sharing the primary GL context; it deadlocked the NVIDIA driver at startup and
+// world load, so there is no async path anymore.
 #include <cstdint>
 #include <memory>
 #include <string>
@@ -22,9 +22,9 @@ class ProgramCache {
  ~ProgramCache();
  ProgramCache(const ProgramCache&) = delete;
  ProgramCache& operator=(const ProgramCache&) = delete;
- // Compiles and memoizes from source strings. Returns nullptr if compilation failed
- // (failure is cached so we do not thrash the compiler every frame) or if the
- // compile is still in flight on a worker (call poll() next frame).
+ // Compiles (if not cached) and memoizes from source strings. Returns nullptr only
+ // if compilation failed (failure is cached so we do not thrash the compiler every
+ // frame).
  //
  // `key` alone identifies the entry — the preamble and defines are not folded into
  // it. A caller that changes either must clear() first, which is what a shaderpack
@@ -39,9 +39,8 @@ class ProgramCache {
  ShaderProgram* getFromComputeSource(const std::string& key,
                                      const std::string& computeSource,
                                      const std::string& versionPreamble);
- // Kick off an asynchronous compile without waiting. Used by pack prewarm to start
- // compiling every enabled program the moment a pack loads, so the first frame that
- // needs a program usually finds it cached (or completes within a frame).
+ // Compile now and memoize. Used by pack prewarm so every enabled program is ready
+ // the moment a pack loads. Returns the content hash (callers ignore it).
  std::uint64_t submit(const std::string& key,
                       const std::string& vertexSource,
                       const std::string& fragmentSource,
@@ -52,16 +51,20 @@ class ProgramCache {
  std::uint64_t submitCompute(const std::string& key,
                              const std::string& computeSource,
                              const std::string& versionPreamble);
- // True while `key` has a compile in flight (submitted, binary not linked yet).
- // PackCompiler uses this to suppress "failed to compile" logging for programs that
- // are merely still building.
+ // Always false: compiles are synchronous, so nothing is ever "in flight". Kept so
+ // callers (PackCompiler etc.) that distinguish in-flight from failed do not need
+ // to change.
  [[nodiscard]] bool isPending(const std::string& key) const;
+ // Cached program for `key`, or nullptr when it is unknown or failed. Unlike
+ // getFromSource this never compiles, so a caller that already knows the key can
+ // skip preparing the sources again.
+ [[nodiscard]] ShaderProgram* find(const std::string& key) const;
  [[nodiscard]] bool hasPending() const noexcept {
-  return !pending_.empty();
+  return false;
  }
  void cancelPending();
- // Link every finished worker binary into this cache on the main thread (GL context
- // must be current). Returns true if at least one program became ready.
+ // Always false (no async work). Kept so the per-frame PackManager poll path is a
+ // no-op instead of being deleted in the same change.
  bool poll();
  // Drops every cached program (called on shaderpack reload). Programs are deleted.
  void clear();
@@ -78,17 +81,10 @@ class ProgramCache {
   bool failed = false;
   std::string error; // GL info log, populated only when failed
  };
- // Synchronous fallback used when the compile service is not running (tests /
- // headless). Mirrors the pre-async behavior exactly.
- ShaderProgram* getFromSourceBlocking(const std::string& key,
-                                      ShaderCompileRequest request,
-                                      bool compute);
- // Mark a key as in-flight; returns the content hash (0 means already resolved).
- std::uint64_t markPending(const std::string& key, ShaderCompileRequest request);
- void releasePending();
+ // Compiles `request` on the current (render) thread, GL context must be current,
+ // and caches the resulting program (or the failure) under `key`.
+ ShaderProgram* compileSync(const std::string& key, ShaderCompileRequest request, bool compute);
 
  std::unordered_map<std::string, Entry> cache_;
- // keys with a worker compile in flight -> content hash. poll() resolves these.
- std::unordered_map<std::string, std::uint64_t> pending_;
 };
 } // namespace net::minecraft::client::gl

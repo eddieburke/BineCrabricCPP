@@ -103,7 +103,7 @@ void MapRenderer::render(net::minecraft::PlayerEntity& player,
   if(!mapState.icons.empty()) {
    textureManagerIn.bindTexture(textureManagerIn.getTextureId("misc/mapicons.png"));
    float baseModelView[16]{};
-   std::memcpy(baseModelView, core::drawModelView().data(), sizeof(baseModelView));
+   std::memcpy(baseModelView, core::drawPose().data(), sizeof(baseModelView));
    tessellator.startQuads();
    for(const net::minecraft::map::MapState::MapIcon& mapIcon : mapState.icons) {
     net::minecraft::util::math::Matrix4f model;
@@ -131,9 +131,9 @@ void MapRenderer::render(net::minecraft::PlayerEntity& player,
  }
  if(textRenderer_ != nullptr) {
   const core::ScopedDrawCameraState labelGuard;
-  net::minecraft::util::math::Matrix4f labelPose = core::drawModelView();
+  net::minecraft::util::math::Matrix4f labelPose = core::drawPose();
   labelPose.translate(0.0f, 0.0f, -0.04f);
-  core::setDrawModelView(labelPose);
+  core::setDrawPose(labelPose);
   textRenderer_->draw(mapState.id, originX, originY, static_cast<int>(0xFF000000u));
  }
 }

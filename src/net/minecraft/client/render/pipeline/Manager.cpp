@@ -264,6 +264,7 @@ std::unique_ptr<PackInstance> PackManager::loadPack(const std::filesystem::path&
 }
 
 void PackManager::initializePackRuntime(PackInstance& pack) {
+ diagnostics::WorkSpan span("shaderpack.runtime");
  for(const PackSetting& setting : pack.definition.settings) {
   pack.settings.try_emplace(setting.key, defaultSettingValue(setting));
  }
@@ -537,6 +538,7 @@ bool PackManager::packReady(PackInstance& pack) {
  })) return false;
  const net::minecraft::client::Minecraft* minecraft = net::minecraft::client::Minecraft::INSTANCE;
  if(minecraft == nullptr || !hasGlContext()) return false;
+ diagnostics::WorkSpan span("shaderpack.resources");
  return pipeline_.preparePackResources(pack, std::max(1, minecraft->displayWidth),
                                        std::max(1, minecraft->displayHeight));
 }

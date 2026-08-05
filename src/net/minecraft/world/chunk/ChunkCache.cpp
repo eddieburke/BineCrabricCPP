@@ -136,7 +136,7 @@ std::unique_ptr<Chunk> ChunkCache::produceChunk(int chunkX, int chunkZ) {
   try {
    std::unique_ptr<Chunk> loaded;
    {
-    const std::lock_guard lock(ioMutex_);
+    const std::lock_guard lock(storageMutex_);
     loaded = std::make_unique<Chunk>(std::move(storage_->loadChunk(world_, chunkX, chunkZ)));
    }
    if(!loaded->empty && loaded->chunkPosEquals(chunkX, chunkZ)) {
@@ -332,7 +332,7 @@ void ChunkCache::saveEntities(Chunk& chunk) {
  if(storage_ == nullptr || world_ == nullptr) {
   return;
  }
- const std::lock_guard lock(ioMutex_);
+ const std::lock_guard lock(storageMutex_);
  try {
   storage_->saveEntities(world_, chunk);
  } catch(...) {
@@ -396,7 +396,10 @@ void ChunkCache::drainSerializedWrites() {
    if(write.snapshot != nullptr) {
     AlphaChunkStorage::writeRootChunkFromSnapshot(write.raw, *write.snapshot);
    }
-   const std::lock_guard lock(ioMutex_);
+   // Unlocked: every ChunkStorage implementation serializes its own disk access
+   // (RegionIo holds a per-region lock, AlphaChunkStorage a file lock). Holding
+   // storageMutex_ across the compress-and-write here parked the main thread's
+   // tick() and every compute worker's produceChunk() behind disk I/O.
    storage_->writeSerializedChunk(write.chunkX, write.chunkZ, write.raw);
   } catch(...) {
   }
@@ -429,7 +432,7 @@ void ChunkCache::saveChunk(Chunk& chunk) {
    AlphaChunkStorage::ChunkSnapshot snapshot = AlphaChunkStorage::takeSnapshot(chunk, world_);
    enqueueSerializedWrite(chunk.x, chunk.z, std::move(snapshot));
   } else {
-   const std::lock_guard lock(ioMutex_);
+   const std::lock_guard lock(storageMutex_);
    storage_->saveChunk(world_, chunk);
   }
  } catch(...) {
@@ -442,7 +445,12 @@ void ChunkCache::decorate(ChunkSource* source, int chunkX, int chunkZ) {
  }
  chunk.terrainPopulated = true;
  if(generator_ != nullptr) {
-  const std::lock_guard lock(ioMutex_);
+  // No storage lock here. Decoration is main-thread-only (adoptChunk is the sole
+  // caller) and touches only main-thread state, so it needs no mutual exclusion
+  // of its own. Taking storageMutex_ across it used to stall every compute worker
+  // in produceChunk for the whole decoration pass -- and adoptChunk can decorate
+  // up to four columns per adopted chunk, up to 32 chunks per publish, so terrain
+  // generation was effectively serialized behind main-thread decoration.
   const ChunkRenderWriteScope guard(chunk);
   generator_->decorate(source, chunkX, chunkZ);
   chunk.markDirty();
@@ -476,7 +484,7 @@ bool ChunkCache::save(bool saveEntityData, client::gui::screen::LoadingDisplay* 
  }
  if(storage_ != nullptr && (saveEntityData || saved > 0)) {
   if(saveEntityData) {
-   const std::lock_guard lock(ioMutex_);
+   const std::lock_guard lock(storageMutex_);
    storage_->flush();
   }
  }
@@ -526,14 +534,15 @@ bool ChunkCache::tick() {
  if(world_ != nullptr && !world_->isSavingDisabled()) {
   drainChunksToUnload(100);
   if(storage_ != nullptr) {
-   const std::lock_guard lock(ioMutex_);
+   const std::lock_guard lock(storageMutex_);
    storage_->tick();
   }
  }
  if(generator_ == nullptr) {
   return false;
  }
- const std::lock_guard lock(ioMutex_);
+ // generator_ is the main-thread generator; workers run their own clones from
+ // workerGenerators_, so this needs no storage lock.
  return generator_->tick();
 }
 bool ChunkCache::canSave() const {

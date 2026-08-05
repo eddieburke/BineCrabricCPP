@@ -80,12 +80,12 @@ void MinecartEntityRenderer::render(
   const float brightness = cart->getBrightnessAtEyes(tickDelta);
   if(cart->type == 1) {
    if(net::minecraft::block::Block* chest = net::minecraft::block::Block::BLOCKS[kChestBlockId]) {
-    render::core::setDrawModelView(matrices.top());
+    render::core::setDrawPose(matrices.top());
     blockRenderManager_.render(*chest, 0, brightness);
    }
   } else if(cart->type == 2) {
    if(net::minecraft::block::Block* furnace = net::minecraft::block::Block::BLOCKS[kFurnaceBlockId]) {
-    render::core::setDrawModelView(matrices.top());
+    render::core::setDrawPose(matrices.top());
     blockRenderManager_.render(*furnace, 0, brightness);
    }
   }
@@ -95,7 +95,7 @@ void MinecartEntityRenderer::render(
  }
  bindTexture("/item/cart.png");
  matrices.scale(-1.0f, -1.0f, 1.0f);
- render::core::setDrawModelView(matrices.top());
+ render::core::setDrawPose(matrices.top());
  model_->render(0.0f, 0.0f, -0.1f, 0.0f, 0.0f, 0.0625f);
  matrices.pop();
  endDraw();

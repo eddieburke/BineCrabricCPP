@@ -16,6 +16,11 @@ struct ShadowTargets {
   std::array<std::array<unsigned int, 2>, 8> shadowcolor{};
   int colorCount = 0;
   int resolution = 0;
+  // The depth size the driver ACTUALLY gave us, queried after allocation — a
+  // DEPTH_COMPONENT32 request is commonly satisfied with 24. glPolygonOffset units
+  // are multiples of the smallest resolvable increment of this, so a bias expressed
+  // in blocks is meaningless without it.
+  int shadowDepthBits = 24;
   // https://shaders.properties/current/reference/buffers/shadowtex/
   // https://github.com/IrisShaders/Iris/blob/26.1/common/src/main/java/net/irisshaders/iris/shadows/ShadowRenderer.java
   bool depthCompare = false;
@@ -39,11 +44,22 @@ struct ShadowMapResult {
 
 struct ShadowMapState {
   ShadowTargets targets{};
-  FrameRenderCamera shadowCamera{};
   // https://github.com/IrisShaders/Iris/blob/26.1/common/src/main/java/net/irisshaders/iris/shadows/ShadowRenderer.java
   ShadowCullingFrustum terrainFrustum{};
   ShadowCullingFrustum entityFrustum{};
 };
+
+// The single definition of the shadow camera: a pure function of the pack directives,
+// the celestial angle and THIS frame's player camera. Both the shadow map render and
+// the shadowModelView/shadowProjection uniforms call this, so they cannot disagree.
+// Java derives the uniforms the same way — on demand from the live camera position
+// (MatrixUniforms.addShadowMatrix -> ShadowRenderer.createShadowModelView ->
+// CameraUniforms.getUnshiftedCameraPosition) — rather than reading back a camera the
+// shadow pass left behind, which is what let the matrices lag a frame here.
+// https://github.com/IrisShaders/Iris/blob/26.1/common/src/main/java/net/irisshaders/iris/uniforms/MatrixUniforms.java
+FrameRenderCamera makeShadowCamera(const PackDefinition& definition,
+                                   const FrameRenderCamera& camera,
+                                   const CelestialState& celestial);
 
 void reset(ShadowMapState& state);
 void snapshotOpaqueDepth(ShadowMapState& state);

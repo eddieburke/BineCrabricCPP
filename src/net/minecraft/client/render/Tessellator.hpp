@@ -66,25 +66,30 @@ class Tessellator {
  void translate(float x, float y, float z);
  void vertex(double x, double y, double z, double u, double v);
  void vertex(double x, double y, double z);
- void draw();
- [[nodiscard]] TessellatorMesh takeMesh();
- static void drawMesh(const TessellatorMesh& mesh);
- [[nodiscard]] static int effectiveDrawMode(int mode) noexcept;
- void setCaptureOnly(bool captureOnly) noexcept {
-  captureOnly_ = captureOnly;
- }
- [[nodiscard]] bool drawing() const noexcept {
-  return drawing_;
- }
+  void draw();
+  [[nodiscard]] TessellatorMesh takeMesh();
+  static void drawMesh(const TessellatorMesh& mesh);
+  [[nodiscard]] static int effectiveDrawMode(int mode) noexcept;
+  void setCaptureOnly(bool captureOnly) noexcept {
+   captureOnly_ = captureOnly;
+  }
+  [[nodiscard]] bool drawing() const noexcept {
+   return drawing_;
+  }
 
  private:
- static constexpr int kGlQuads = 7;
- static constexpr bool kTriangleMode = true;
- void expandQuadToTriangles();
- void finishQuad();
- void flush();
- void reset();
- BufferBuilder<TessellatorVertex> builder_;
+  static constexpr int kGlQuads = 7;
+  static constexpr bool kTriangleMode = true;
+  void expandQuadToTriangles();
+  void finishQuad();
+  void flush();
+  void reset();
+  // Pose captured at start() on the drawing thread (world-camera producers
+  // publish via core::setDrawPose) and applied to every vertex at emit time, so
+  // the uploaded modelViewMatrix is the bare camera matrix — Iris' split.
+  net::minecraft::util::math::Matrix4f pose_{};
+  bool poseValid_ = false;
+  BufferBuilder<TessellatorVertex> builder_;
  bool drawing_ = false;
  bool hasTexture_ = false;
  bool hasColor_ = false;

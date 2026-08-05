@@ -45,6 +45,12 @@ class PackInstance {
 std::unordered_map<std::string, std::string> sourceCache;
   std::unordered_map<std::string, std::string> resolvedSourceCache;
   std::unordered_map<std::string, gl::ShaderProgram*> compiledPrograms;
+  // What prewarm already worked out for each program, so the pass that links the
+  // finished binaries does not have to re-run source preparation to rediscover it.
+  // program name -> ProgramCache key.
+  std::unordered_map<std::string, std::string> programCacheKeys;
+  // ProgramCache key -> draw buffer indices parsed out of the prepared fragment.
+  std::unordered_map<std::string, std::vector<int>> programDrawBuffers;
  PackProgramState programState = PackProgramState::Cold;
  std::vector<std::size_t> postPasses;
  std::vector<std::size_t> deferredPasses;

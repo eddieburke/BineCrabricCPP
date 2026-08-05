@@ -8,6 +8,7 @@
 #include "net/minecraft/client/render/RenderCore.hpp"
 #include "net/minecraft/client/render/Tessellator.hpp"
 #include "net/minecraft/client/render/block/BlockRenderManager.hpp"
+#include "net/minecraft/client/render/block/LeafInteriorFaces.hpp"
 #include "net/minecraft/client/render/block/entity/BlockEntityRenderDispatcher.hpp"
 #include "net/minecraft/client/render/chunk/ChunkMeshJob.hpp"
 #include "net/minecraft/client/render/chunk/RegionSnapshot.hpp"
@@ -144,8 +145,8 @@ std::shared_ptr<ChunkMeshJob> ChunkMeshJob::capture(ChunkBuilder& owner,
  }
  const int minBlockX = owner.x - 1;
  const int minBlockZ = owner.z - 1;
- const int maxBlockX = owner.x + owner.sizeX + 1;
- const int maxBlockZ = owner.z + owner.sizeZ + 1;
+ const int maxBlockX = owner.x + kSectionBlocks + 1;
+ const int maxBlockZ = owner.z + kSectionBlocks + 1;
  const int minChunkX = minBlockX >> 4;
  const int minChunkZ = minBlockZ >> 4;
  const int maxChunkX = maxBlockX >> 4;
@@ -208,15 +209,12 @@ ChunkMeshJob::ChunkMeshJob(ChunkBuilder& owner,
                            int ambientDarkness,
                            const std::array<float, 16>& lightLevelToLuminance,
                            std::unique_ptr<net::minecraft::BiomeSource> biomeSource)
-    : builder(&owner),
-      version(owner.version),
-      x(owner.x),
-      y(owner.y),
-      z(owner.z),
-      sizeX(owner.sizeX),
-      sizeY(owner.sizeY),
-      sizeZ(owner.sizeZ),
-      opts(options),
+     : builder(&owner),
+       version(owner.version),
+       x(owner.x),
+       y(owner.y),
+       z(owner.z),
+       opts(options),
       fancyGraphics(fancyGraphicsIn),
       sourceChunks_(std::move(sourceChunks)),
       ambientDarkness_(ambientDarkness),
@@ -243,12 +241,12 @@ void ChunkMeshJob::captureSnapshot() {
                                              ambientDarkness_,
                                              lightLevelToLuminance_,
                                              std::move(biomeSource_),
-                                             x - 1,
-                                             y - 1,
-                                             z - 1,
-                                             x + sizeX + 1,
-                                             y + sizeY,
-                                             z + sizeZ + 1);
+                                              x - 1,
+                                              y - 1,
+                                              z - 1,
+                                              x + kSectionBlocks + 1,
+                                              y + kSectionBlocks,
+                                              z + kSectionBlocks + 1);
  releasePins();
 }
 void ChunkMeshJob::releasePins() noexcept {
@@ -276,9 +274,9 @@ void ChunkBuilder::buildMesh(ChunkMeshJob& job) {
  const int minX = job.x;
  const int minY = job.y;
  const int minZ = job.z;
- const int maxX = job.x + job.sizeX;
- const int maxY = job.y + job.sizeY;
- const int maxZ = job.z + job.sizeZ;
+ const int maxX = job.x + kSectionBlocks;
+ const int maxY = job.y + kSectionBlocks;
+ const int maxZ = job.z + kSectionBlocks;
  RegionSnapshot& snapshot = *job.snapshot;
  if(!snapshot.columnHasBlocks(job.x, job.z, minY, maxY)) {
   job.result.layerEmpty.fill(true);
@@ -306,6 +304,8 @@ void ChunkBuilder::buildMesh(ChunkMeshJob& job) {
   modMeshes.chunkOffY = -static_cast<double>(job.y);
   modMeshes.chunkOffZ = -static_cast<double>(job.z);
   blockRenderManager.ctx.modMeshes = &modMeshes;
+  const bool interiorFacePass = layer == terrain_layer::CutoutInterior;
+  blockRenderManager.ctx.interiorFacePass = interiorFacePass;
   for(int blockX = minX; blockX < maxX; ++blockX) {
    for(int blockZ = minZ; blockZ < maxZ; ++blockZ) {
     for(int blockY = minY; blockY < maxY; ++blockY) {
@@ -322,9 +322,19 @@ void ChunkBuilder::buildMesh(ChunkMeshJob& job) {
       result.blockEntityPositions.push_back(net::minecraft::Vec3i{blockX, blockY, blockZ});
      }
      const int blockLayer = resolveTerrainMeshLayer(*block, blockId, job.blockRenderLayers);
-     if(blockLayer != layer) {
+     if(interiorFacePass) {
+      // The interior layer re-runs the leaf blocks the cutout layer already
+      // drew, this time emitting only their leaf<->leaf boundaries.
+      if(!block::hasLeafInteriorFaces(*block, job.opts.leafInteriorFaces)) {
+       continue;
+      }
+     } else if(blockLayer != layer) {
       hasOtherLayer = true;
+      // A leaf block owns geometry in the interior layer as well as its own,
+      // so the early-out below must not stop before reaching it.
       continue;
+     } else if(block::hasLeafInteriorFaces(*block, job.opts.leafInteriorFaces)) {
+      hasOtherLayer = true;
      }
      if(!beganCompile) {
       beganCompile = true;
@@ -341,6 +351,7 @@ void ChunkBuilder::buildMesh(ChunkMeshJob& job) {
    result.layers[static_cast<std::size_t>(layer)] = tessellator.takeMesh();
   }
   blockRenderManager.ctx.modMeshes = nullptr;
+  blockRenderManager.ctx.interiorFacePass = false;
   for(ModMeshCollector::Entry& modEntry : modMeshes.entries) {
    TessellatorMesh modMesh = modEntry.tess.takeMesh();
    if(!modMesh.empty()) {
@@ -357,9 +368,6 @@ void ChunkBuilder::buildMesh(ChunkMeshJob& job) {
 }
 void ChunkBuilder::uploadMesh(ChunkMeshJob& job) {
  ++chunkUpdates;
- if(region_ == nullptr) {
-  region_ = &regionManager_->pool();
- }
  for(int layer = 0; layer < terrain_layer::Count; ++layer) {
   const TessellatorMesh& mesh = job.result.layers[static_cast<std::size_t>(layer)];
   renderLayerEmpty[static_cast<std::size_t>(layer)] = job.result.layerEmpty[static_cast<std::size_t>(layer)];
@@ -369,12 +377,18 @@ void ChunkBuilder::uploadMesh(ChunkMeshJob& job) {
    buffer.release(slot);
    continue;
   }
+  // Vertices arrive section-local (buildMesh translated by -job.x/y/z); store
+  // them region-local so every section of the region shares one chunkOffset at
+  // draw time (chunkOffset = regionOrigin - cameraPosition).
   buffer.upload(slot,
                 mesh.vertices.data(),
                 static_cast<int>(mesh.vertices.size()),
                 mesh.hasTexture,
                 mesh.hasColor,
-                mesh.hasNormals);
+                mesh.hasNormals,
+                static_cast<float>(x - regionOriginX_),
+                static_cast<float>(y - regionOriginY_),
+                static_cast<float>(z - regionOriginZ_));
  }
  // Resolve block-entity positions against the live world and apply the same
  // joined/removed diff the old synchronous rebuild kept.

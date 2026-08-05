@@ -149,9 +149,29 @@ void EntityRenderDispatcher::render(const net::minecraft::Entity& entity,
  const double y = entity.lastTickY + (entity.y - entity.lastTickY) * static_cast<double>(tickDelta) - offsetY;
  const double z = entity.lastTickZ + (entity.z - entity.lastTickZ) * static_cast<double>(tickDelta) - offsetZ;
  const float yaw = entity.prevYaw + (entity.yaw - entity.prevYaw) * tickDelta;
- const float brightness = entity.getBrightnessAtEyes(tickDelta);
- Tessellator::INSTANCE.light(15, 15);
- render::core::setConstColor(brightness, brightness, brightness, 1.0f);
+ // Entity light rides vaUV2 and the vertex colour stays tint-only, so the light is
+ // applied exactly once — the same convention terrain already uses. Folding
+ // getBrightnessAtEyes into the const colour while pinning the lightmap to (15, 15)
+ // double-darkened every entity under a deferred pack: the albedo arrived
+ // pre-multiplied by the world light and the pack then lit it again, which at night
+ // (no sun term to swamp it) rendered entities pure black.
+ // see src/net/minecraft/client/render/block/CubeBlockRenderer.cpp renderSmooth
+ // see shaders/vanilla/shaders/gbuffers_entities.fsh
+ float blockLight = 15.0f;
+ float skyLight = 15.0f;
+ if(entity.world != nullptr) {
+  const int lightX = MathHelper::floor(entity.x);
+  const double eyeSpan = (entity.boundingBox.maxY - entity.boundingBox.minY) * 0.66;
+  const int lightY =
+      MathHelper::floor(entity.y - static_cast<double>(entity.standingEyeHeight) + eyeSpan);
+  const int lightZ = MathHelper::floor(entity.z);
+  blockLight =
+      static_cast<float>(entity.world->getBrightness(net::minecraft::LightType::Block, lightX, lightY, lightZ));
+  skyLight =
+      static_cast<float>(entity.world->getBrightness(net::minecraft::LightType::Sky, lightX, lightY, lightZ));
+ }
+ Tessellator::INSTANCE.light(blockLight, skyLight);
+ render::core::setConstColor(1.0f, 1.0f, 1.0f, 1.0f);
  render(entity, x, y, z, yaw, tickDelta, matrices, projection);
 }
 void EntityRenderDispatcher::render(const net::minecraft::Entity& entity,
@@ -186,7 +206,7 @@ void EntityRenderDispatcher::render(const net::minecraft::Entity& entity,
   // frame base afterwards (renderers that draw without composing, e.g. the
   // debug hitbox, see the base published here).
   const render::core::ScopedDrawCameraState drawGuard;
-  render::core::setDrawModelView(matrices.top());
+  render::core::setDrawPose(matrices.top());
   renderer->render(entity, x, y, z, yaw, tickDelta, matrices, projection);
   renderer->postRender(entity, x, y, z, yaw, tickDelta, matrices, projection);
  }

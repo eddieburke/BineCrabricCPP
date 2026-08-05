@@ -47,7 +47,9 @@ class PickupParticle : public Particle {
   const float brightness = world->getLightBrightness(blockX, blockY, blockZ);
  render::core::setConstColor(brightness, brightness, brightness, 1.0f);
  net::minecraft::util::math::MatrixStack pose;
- pose.load(render::core::drawModelView());
+ // Identity pose base: the dispatcher offsets are camera-eye relative, so the
+ // renderer's own pushes produce the pure camera-relative pose (see setDrawPose).
+ pose.load(net::minecraft::util::math::Matrix4f::identityMatrix());
  render::entity::EntityRenderDispatcher::instance().render(
      *entity_,
      renderX - xOffset,

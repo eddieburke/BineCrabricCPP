@@ -33,9 +33,9 @@ void DeathScreen::render(int mouseX, int mouseY, float tickDelta) {
  if(textRenderer() != nullptr) {
   {
    const core::ScopedDrawCameraState textGuard;
-   net::minecraft::util::math::Matrix4f pose = core::drawModelView();
+   net::minecraft::util::math::Matrix4f pose = core::drawPose();
    pose.scale(2.0f, 2.0f, 2.0f);
-   core::setDrawModelView(pose);
+   core::setDrawPose(pose);
    textRenderer()->drawCenteredWithShadow("Game over!", width_ / 2 / 2, 30, 0xFFFFFF);
   }
   if(minecraft() != nullptr && minecraft()->player != nullptr) {

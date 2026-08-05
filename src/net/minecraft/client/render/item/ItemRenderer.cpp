@@ -58,7 +58,7 @@ void ItemRenderer::renderCustomModelInGui(client::texture::TextureManager& textu
  render::RenderPassScope scope(render::RenderType::guiItem3D());
  const core::ScopedDrawCameraState itemGuard;
  net::minecraft::util::math::MatrixStack pose;
- pose.load(core::drawModelView());
+ pose.load(core::drawPose());
  pose.translate(static_cast<float>(x - 2), static_cast<float>(y + 3), -3.0f);
  pose.scale(10.0f, 10.0f, 10.0f);
  pose.translate(0.5f, 0.5f, 0.5f);
@@ -68,7 +68,7 @@ void ItemRenderer::renderCustomModelInGui(client::texture::TextureManager& textu
  applyDisplayColor(stack);
  pose.rotate(-90.0f, 0.0f, 1.0f, 0.0f);
  pose.translate(-0.5f, -0.5f, -0.5f);
- core::setDrawModelView(pose.top());
+ core::setDrawPose(pose.top());
  net::minecraft::mod::model::drawLuaItemModel(Tessellator::INSTANCE, stack, 1.0f);
 }
 void ItemRenderer::renderBlockItemInGui(client::texture::TextureManager& textureManager,
@@ -87,7 +87,7 @@ void ItemRenderer::renderBlockItemInGui(client::texture::TextureManager& texture
  render::RenderPassScope scope(render::RenderType::guiItem3D());
  const core::ScopedDrawCameraState itemGuard;
  net::minecraft::util::math::MatrixStack pose;
- pose.load(core::drawModelView());
+ pose.load(core::drawPose());
  pose.translate(static_cast<float>(x - 2), static_cast<float>(y + 3), -3.0f);
  pose.scale(10.0f, 10.0f, 10.0f);
  pose.translate(1.0f, 0.5f, 1.0f);
@@ -96,7 +96,7 @@ void ItemRenderer::renderBlockItemInGui(client::texture::TextureManager& texture
  pose.rotate(45.0f, 0.0f, 1.0f, 0.0f);
  applyDisplayColor(stack);
  pose.rotate(-90.0f, 0.0f, 1.0f, 0.0f);
- core::setDrawModelView(pose.top());
+ core::setDrawPose(pose.top());
  blockRenderManager.ctx.inventoryColorEnabled = useCustomDisplayColor;
  blockRenderManager.ctx.textureManager = &textureManager;
  blockRenderManager.ctx.faceState.useAo = false;

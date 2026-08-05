@@ -2,6 +2,7 @@
 #include <array>
 #include <cstddef>
 #include <cstdint>
+#include <string>
 
 namespace net::minecraft::client::render {
 struct TessellatorVertex {
@@ -106,6 +107,20 @@ inline constexpr std::array<Format, 13> Formats{{
     {Tangent, 4, 0x1402, true, false, TangentOffset, Availability::Always},
     {IrisLightUv, 2, 0x1403, false, true, LightOffset, Availability::Always},
 }};
+
+inline const std::string& abiSaltString() {
+ static const std::string salt = [] {
+  std::string s;
+  for(const auto& binding : Bindings) {
+   s += std::to_string(binding.location);
+   s += ':';
+   s += binding.name;
+   s += ';';
+  }
+  return s;
+ }();
+ return salt;
+}
 }
 
 static_assert(vertex_abi::PositionOffset == 0);

@@ -178,7 +178,7 @@ void TitleScreen::render(int mouseX, int mouseY, float tickDelta) {
  render::INSTANCE.color(0xFFFFFF);
  {
   const render::core::ScopedDrawCameraState splashGuard;
-  net::minecraft::util::math::Matrix4f splashPose = render::core::drawModelView();
+  net::minecraft::util::math::Matrix4f splashPose = render::core::drawPose();
   splashPose.translate(static_cast<float>(width() / 2 + 90), 70.0f, 0.0f);
   splashPose.rotate(-20.0f, 0.0f, 0.0f, 1.0f);
   const std::int64_t nowMillis =
@@ -191,7 +191,7 @@ void TitleScreen::render(int mouseX, int mouseY, float tickDelta) {
   float scale = 1.8f - wave;
   scale = scale * 100.0f / static_cast<float>(textRenderer()->getWidth(splashText_) + 32);
   splashPose.scale(scale, scale, scale);
-  render::core::setDrawModelView(splashPose);
+  render::core::setDrawPose(splashPose);
   textRenderer()->drawCenteredWithShadow(splashText_, 0, -8, 0xFFFF00);
  }
  textRenderer()->drawWithShadow("Minecraft Beta 1.7.3", 2, 2, 0xFF505050);

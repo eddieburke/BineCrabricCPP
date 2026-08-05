@@ -80,6 +80,7 @@ unsigned int whiteTexture() {
 gl::GlTexture g_entityOverlayTexture;
 bool g_entityOverlayDirty = true;
 float g_entityColor[4] = {0.0f, 0.0f, 0.0f, 0.0f};
+CelestialState g_celestialState;
 ShaderProgram* g_activeProgram = nullptr;
 ShaderProgram* g_lastProgram = nullptr;
 bool g_drawEnabled = true;
@@ -94,11 +95,13 @@ math::Matrix4f g_drawModelView{};
 math::Matrix4f g_drawProjection{};
 math::Matrix4f g_drawModelViewInverse{};
 math::Matrix4f g_drawProjectionInverse{};
-// Rotation-only camera base for section-local terrain: the shader applies
-// chunkOffset to camera-relative positions, so the uploaded modelViewMatrix is
-// the camera rotation alone (iris gbuffer convention).
-math::Matrix4f g_drawSectionLocalModelView{};
-math::Matrix4f g_drawSectionLocalModelViewInverse{};
+// The per-draw pose: model -> pass-base space, baked into vertices by the
+// Tessellator. Identity means "already in pass-base space" (terrain, which gets
+// there via chunkOffset). This is STATE — Java's PoseStack top survives any
+// number of VertexConsumer draws, and so must this. Cleared at pass boundaries
+// (setDrawCameraState / setPassModelView), saved and restored by
+// ScopedDrawCameraState and RenderPassScope. See setDrawPose.
+math::Matrix4f g_drawPose{};
 float g_drawCameraPosition[3] = {0.0f, 0.0f, 0.0f};
 bool g_drawCameraValid = false;
 float g_uploadedChunkOffset[3] = {0.0f, 0.0f, 0.0f};
@@ -206,8 +209,7 @@ void setDrawCameraState(const float* modelView,
                        const float* projection,
                        const float* modelViewInverse,
                        const float* projectionInverse,
-                       const float* cameraPosition,
-                       const float* sectionLocalModelView) {
+                       const float* cameraPosition) {
  if(modelView == nullptr || projection == nullptr || modelViewInverse == nullptr ||
     projectionInverse == nullptr || cameraPosition == nullptr) {
   clearDrawCameraState();
@@ -217,46 +219,30 @@ void setDrawCameraState(const float* modelView,
  std::memcpy(g_drawProjection.m, projection, sizeof(float) * 16);
  std::memcpy(g_drawModelViewInverse.m, modelViewInverse, sizeof(float) * 16);
  std::memcpy(g_drawProjectionInverse.m, projectionInverse, sizeof(float) * 16);
- // Section-local terrain (shader contract: modelViewMatrix * (vaPosition +
- // chunkOffset) with chunkOffset = sectionOrigin - cameraPosition) takes the full
- // gbufferModelView — `bob * MV_camera`, translation and nausea scale included. World
- // producers pass it explicitly; everyone else gets the rotation part of modelView.
- if(sectionLocalModelView != nullptr) {
-  std::memcpy(g_drawSectionLocalModelView.m, sectionLocalModelView, sizeof(float) * 16);
- } else {
-  g_drawSectionLocalModelView.identity();
-  for(int column = 0; column < 3; ++column)
-   for(int row = 0; row < 3; ++row)
-    g_drawSectionLocalModelView.m[column * 4 + row] = g_drawModelView.m[column * 4 + row];
- }
- g_drawSectionLocalModelViewInverse = g_drawSectionLocalModelView;
- g_drawSectionLocalModelViewInverse.invert();
   g_drawCameraPosition[0] = cameraPosition[0];
   g_drawCameraPosition[1] = cameraPosition[1];
   g_drawCameraPosition[2] = cameraPosition[2];
   g_drawCameraValid = true;
   g_matricesUploaded = false;
+  // A pass boundary. The pose is model->pass-base space, so it means nothing once
+  // the base changes.
+  g_drawPose.identity();
 }
-void setDrawCameraStateFromCamera(const FrameRenderCamera& camera, float farPlane) {
+void setDrawCameraStateFromCamera(const FrameRenderCamera& camera) {
  float projection[16]{};
- buildCameraProjection(projection, camera, farPlane);
- // gbufferModelView = bob * MV_camera, consuming geometry already relative to the
- // camera position. Terrain sections upload exactly that (chunkOffset = sectionOrigin
- // - cameraPosition), so this is the section-local base verbatim.
+ // The projection is built from the camera's own planes (perspectiveNear/Far set by
+ // GameRenderer from the render distance, or carried by a custom shadow camera).
+ buildCameraProjection(projection, camera);
+ // gbufferModelView = bob * MV_camera. This IS the uploaded modelViewMatrix for the
+ // whole pass — every world producer emits geometry already relative to
+ // cameraPosition, so nothing else is ever folded in. Terrain gets there via
+ // chunkOffset, everything else via the pose the Tessellator bakes into vertices.
  float gbufferModelView[16]{};
  buildCameraModelView(gbufferModelView, camera);
- math::Matrix4f sectionLocalModelView;
- sectionLocalModelView.set(gbufferModelView);
- // Per-draw base for geometry uploaded relative to the camera ENTITY position (the
- // matrix-stack convention entity/block-entity renderers still use): the same
- // gbufferModelView with that origin difference folded in. Camera-relative poses
- // compose onto it and reproduce the vanilla-captured modelViewMatrix.
- math::Matrix4f fullModelView = sectionLocalModelView;
- fullModelView.translate(static_cast<float>(camera.x - camera.eyeX),
-                         static_cast<float>(camera.y - camera.eyeY),
-                         static_cast<float>(camera.z - camera.eyeZ));
- math::Matrix4f fullModelViewInverse = fullModelView;
- fullModelViewInverse.invert();
+ math::Matrix4f modelView;
+ modelView.set(gbufferModelView);
+ math::Matrix4f modelViewInverse = modelView;
+ modelViewInverse.invert();
  math::Matrix4f projectionInverseMatrix;
  projectionInverseMatrix.set(projection);
  projectionInverseMatrix.invert();
@@ -267,8 +253,7 @@ void setDrawCameraStateFromCamera(const FrameRenderCamera& camera, float farPlan
  // https://github.com/IrisShaders/Iris/blob/26.1/common/src/main/java/net/irisshaders/iris/uniforms/CameraUniforms.java
  const float cameraPosition[3] = {static_cast<float>(camera.eyeX), static_cast<float>(camera.eyeY),
                                   static_cast<float>(camera.eyeZ)};
- setDrawCameraState(fullModelView.m, projection, fullModelViewInverse.m, projectionInverseMatrix.m, cameraPosition,
-                    sectionLocalModelView.m);
+ setDrawCameraState(modelView.m, projection, modelViewInverse.m, projectionInverseMatrix.m, cameraPosition);
 }
 void clearDrawCameraState() {
  g_drawCameraValid = false;
@@ -286,25 +271,51 @@ const math::Matrix4f& drawModelView() noexcept {
 const math::Matrix4f& drawProjection() noexcept {
  return g_drawProjection;
 }
-void setDrawModelView(const math::Matrix4f& modelView) noexcept {
-  g_drawModelView = modelView;
-  g_matricesUploaded = false;
+// The pass base. Only a pass owner calls this — the world camera, the GUI ortho,
+// the hand's own space. Producers never do; they compose a pose instead.
+void setPassModelView(const math::Matrix4f& modelView) noexcept {
+   g_drawModelView = modelView;
+   g_matricesUploaded = false;
+   g_drawPose.identity();
+}
+// The one per-draw transform. Producers compose model -> pass-base space here and
+// the Tessellator applies it to positions and normals at emit time, exactly as
+// Java's VertexConsumer.vertex(pose, x, y, z) bakes PoseStack.last() CPU-side.
+// The uploaded modelViewMatrix is then the pass base alone, which is what lets a
+// pack cut gl_ModelViewMatrix to a mat3 and lose nothing.
+// see src/net/minecraft/client/render/Tessellator.cpp vertex
+void setDrawPose(const math::Matrix4f& pose) noexcept {
+   g_drawPose = pose;
+}
+const math::Matrix4f& drawPose() noexcept {
+ return g_drawPose;
+}
+void resetDrawPose() noexcept {
+ g_drawPose.identity();
+}
+const math::Matrix4f& uploadedModelView() noexcept {
+ return g_uploadedModelView;
+}
+const math::Matrix4f& uploadedProjection() noexcept {
+ return g_uploadedProjection;
 }
 ScopedDrawCameraState::ScopedDrawCameraState()
     : modelView_(g_drawModelView),
       projection_(g_drawProjection),
       modelViewInverse_(g_drawModelViewInverse),
       projectionInverse_(g_drawProjectionInverse),
+      pose_(g_drawPose),
       valid_(g_drawCameraValid) {
  cameraPosition_[0] = g_drawCameraPosition[0];
  cameraPosition_[1] = g_drawCameraPosition[1];
  cameraPosition_[2] = g_drawCameraPosition[2];
- sectionLocalModelView_ = g_drawSectionLocalModelView;
 }
 ScopedDrawCameraState::~ScopedDrawCameraState() {
  if(valid_) {
-  setDrawCameraState(modelView_.m, projection_.m, modelViewInverse_.m, projectionInverse_.m, cameraPosition_,
-                     sectionLocalModelView_.m);
+  setDrawCameraState(modelView_.m, projection_.m, modelViewInverse_.m, projectionInverse_.m, cameraPosition_);
+  // setDrawCameraState resets the pose (it is a pass boundary), so put the saved
+  // one back — a nested render must hand its caller the pose it had.
+  g_drawPose = pose_;
  } else {
   clearDrawCameraState();
  }
@@ -338,16 +349,22 @@ void bindAndUploadUniforms(const RenderPass& pass) {
   return;
  }
  const FogUniforms& fog = pass.fog.enabled ? pass.fog : g_fog;
- const bool sectionLocal = pass.sectionLocal && g_drawCameraValid;
- const math::Matrix4f& modelView = sectionLocal ? g_drawSectionLocalModelView : pass.modelView;
- const math::Matrix4f& projection = sectionLocal ? g_drawProjection : pass.projection;
+ // One matrix source. Producers no longer hand per-draw matrices in — the pose
+ // lives in the vertices — so a pass's matrices are the pass base, and its
+ // inverses are the ones already computed at the pass boundary. A draw that does
+ // carry its own matrix (the pack's own fullscreen/composite work) still inverts.
+ const math::Matrix4f& modelView = pass.modelView;
+ const math::Matrix4f& projection = pass.projection;
  const bool matricesChanged = !g_matricesUploaded || programChanged ||
                               std::memcmp(g_uploadedModelView.m, modelView.m, sizeof(modelView.m)) != 0 ||
                               std::memcmp(g_uploadedProjection.m, projection.m, sizeof(projection.m)) != 0;
   if(matricesChanged) {
-   math::Matrix4f modelViewInverse = sectionLocal ? g_drawSectionLocalModelViewInverse : modelView;
-   math::Matrix4f projectionInverse = sectionLocal ? g_drawProjectionInverse : projection;
-   if(!sectionLocal) {
+   const bool isPassBase = g_drawCameraValid &&
+                           std::memcmp(modelView.m, g_drawModelView.m, sizeof(modelView.m)) == 0 &&
+                           std::memcmp(projection.m, g_drawProjection.m, sizeof(projection.m)) == 0;
+   math::Matrix4f modelViewInverse = isPassBase ? g_drawModelViewInverse : modelView;
+   math::Matrix4f projectionInverse = isPassBase ? g_drawProjectionInverse : projection;
+   if(!isPassBase) {
     modelViewInverse.invert();
     projectionInverse.invert();
    }
@@ -678,13 +695,15 @@ void fogApplyMode(::net::minecraft::client::Minecraft* client, int mode,
   if(mode >= 0) {
    g_fog.end = 1.5f;
   }
- } else if(g_fog.modEnabled && g_fog.modExponential) {
-  const float density = g_fog.modDensity / frame.renderScale;
-  g_fog.mode = 2;
-  g_fog.density = density;
-  if(mode >= 0) {
-   g_fog.end = density > 0.0f ? 3.0f / density : frame.renderDistanceBlocks;
-  }
+  } else if(g_fog.modEnabled && g_fog.modExponential) {
+   // The mod-provided density is a plain uniform value (Iris FogUniforms.fogDensity =
+   // max(0, captured density)) — it must not be scaled by the render distance.
+   const float density = g_fog.modDensity;
+   g_fog.mode = 2;
+   g_fog.density = density;
+   if(mode >= 0) {
+    g_fog.end = density > 0.0f ? 3.0f / density : frame.renderDistanceBlocks;
+   }
   } else {
    g_fog.mode = 1;
    // Java Iris 26.1 contract (FogRenderer.setupFog -> FogStorage ->
@@ -709,6 +728,13 @@ void fogApplyMode(::net::minecraft::client::Minecraft* client, int mode,
 void setSkyUniforms(const SkyUniforms& sky) {
  g_skyUniforms = sky;
  ++g_globalsGeneration;
+}
+void setCelestialState(const CelestialState& state) {
+ g_celestialState = state;
+ ++g_globalsGeneration;
+}
+const CelestialState& celestialState() {
+ return g_celestialState;
 }
 const SkyUniforms& skyUniforms() {
  return g_skyUniforms;
@@ -916,12 +942,6 @@ void restorePassGlBits(const PassGlBits& bits) {
 bool blendEnabled() {
  return g_gl.blend;
 }
-int blendSrcFactor() {
- return g_gl.blendSrc;
-}
-int blendDstFactor() {
- return g_gl.blendDst;
-}
 bool depthTestEnabled() {
  return g_gl.depthTest;
 }
@@ -1018,10 +1038,6 @@ void blendAdditive() {
  enableBlend();
  blendFunc(0x0001, 0x0001);
 }
-void blendCustom(int src, int dst) {
- enableBlend();
- blendFunc(src, dst);
-}
 void blendDstAlpha() {
  enableBlend();
  blendFunc(0x0302, 0x0304);
@@ -1029,10 +1045,6 @@ void blendDstAlpha() {
 void blendInverseColor() {
  enableBlend();
  blendFunc(0x0000, 0x0301);
-}
-void blendMultiply() {
- enableBlend();
- blendFunc(0x0307, 0x0301);
 }
 void enableDepthTest() {
   if(!g_gl.depthTest) {
@@ -1214,13 +1226,10 @@ void colorMask(bool r, bool g, bool b, bool a) {
   g_gl.colorMaskG = g;
   g_gl.colorMaskB = b;
   g_gl.colorMaskA = a;
-   ::glColorMask(r ? 1 : 0, g ? 1 : 0, b ? 1 : 0, a ? 1 : 0);
+    ::glColorMask(r ? 1 : 0, g ? 1 : 0, b ? 1 : 0, a ? 1 : 0);
+   }
   }
- }
-void hintFogEnabled(bool enabled) {
- setFogEnabled(enabled);
-}
-void viewport(int x, int y, int width, int height) {
+ void viewport(int x, int y, int width, int height) {
  if(!g_gl.viewportValid || g_gl.viewport[0] != x || g_gl.viewport[1] != y || g_gl.viewport[2] != width ||
     g_gl.viewport[3] != height) {
   g_gl.viewport[0] = x;

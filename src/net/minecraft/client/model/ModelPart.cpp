@@ -143,30 +143,32 @@ void ModelPart::render(float scale, math::MatrixStack& matrices) {
   if(pitch != 0.0f) {
    matrices.rotate(pitch * 57.295776f, 1.0f, 0.0f, 0.0f);
   }
-  // Publish the composed bone matrix so the face draws use it (the draw camera
-  // state is the single matrix source the Tessellator path reads).
-  core::setDrawModelView(matrices.top());
-  renderFaces(scale);
-  renderChildren();
-  matrices.pop();
- } else if(pivotX != 0.0f || pivotY != 0.0f || pivotZ != 0.0f) {
-  matrices.translate(pivotX * scale, pivotY * scale, pivotZ * scale);
-  core::setDrawModelView(matrices.top());
-  renderFaces(scale);
-  renderChildren();
-  matrices.translate(-pivotX * scale, -pivotY * scale, -pivotZ * scale);
- } else {
-  core::setDrawModelView(matrices.top());
-  renderFaces(scale);
-  renderChildren();
- }
+   // Publish the composed bone pose so the face draws use it (the draw camera
+   // state is the single pose source the Tessellator path reads).
+   core::setDrawPose(matrices.top());
+   renderFaces(scale);
+   renderChildren();
+   matrices.pop();
+  } else if(pivotX != 0.0f || pivotY != 0.0f || pivotZ != 0.0f) {
+   matrices.translate(pivotX * scale, pivotY * scale, pivotZ * scale);
+   core::setDrawPose(matrices.top());
+   renderFaces(scale);
+   renderChildren();
+   matrices.translate(-pivotX * scale, -pivotY * scale, -pivotZ * scale);
+  } else {
+   core::setDrawPose(matrices.top());
+   renderFaces(scale);
+   renderChildren();
+  }
 }
 void ModelPart::render(float scale) {
- const math::Matrix4f base = core::drawModelView();
+ // A model calls this once per part against the SAME base, so the base has to
+ // survive the parts already drawn — the pose is state, not a one-shot token.
+ const math::Matrix4f base = core::drawPose();
  math::MatrixStack matrices;
  matrices.load(base);
  render(scale, matrices);
- core::setDrawModelView(base);
+ core::setDrawPose(base);
 }
 void ModelPart::renderForceTransform(float scale, math::MatrixStack& matrices) {
  if(hidden || !visible) {
@@ -180,19 +182,19 @@ void ModelPart::renderForceTransform(float scale, math::MatrixStack& matrices) {
  if(pitch != 0.0f) {
   matrices.rotate(pitch * 57.295776f, 1.0f, 0.0f, 0.0f);
  }
- if(roll != 0.0f) {
-  matrices.rotate(roll * 57.295776f, 0.0f, 0.0f, 1.0f);
+  if(roll != 0.0f) {
+   matrices.rotate(roll * 57.295776f, 0.0f, 0.0f, 1.0f);
+  }
+  core::setDrawPose(matrices.top());
+  renderFaces(scale);
+  matrices.pop();
  }
- core::setDrawModelView(matrices.top());
- renderFaces(scale);
- matrices.pop();
-}
 void ModelPart::renderForceTransform(float scale) {
- const math::Matrix4f base = core::drawModelView();
+ const math::Matrix4f base = core::drawPose();
  math::MatrixStack matrices;
  matrices.load(base);
  renderForceTransform(scale, matrices);
- core::setDrawModelView(base);
+ core::setDrawPose(base);
 }
 void ModelPart::transform(float scale, math::MatrixStack& matrices) {
  if(hidden || !visible) {
@@ -215,11 +217,11 @@ void ModelPart::transform(float scale, math::MatrixStack& matrices) {
 }
 void ModelPart::transform(float scale) {
  // transform() mutates the caller's live matrix (beta stack semantics):
- // compose onto the current per-draw base and publish the result.
+ // compose onto the current pose and publish the result.
  math::MatrixStack matrices;
- matrices.load(core::drawModelView());
+ matrices.load(core::drawPose());
  transform(scale, matrices);
- core::setDrawModelView(matrices.top());
+ core::setDrawPose(matrices.top());
 }
 void ModelPart::addChild(ModelPart& child) {
  children_.push_back(&child);

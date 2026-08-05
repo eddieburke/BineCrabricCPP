@@ -3,12 +3,14 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdint>
+#include <cstdio>
 #include <cstdlib>
 #include <limits>
 #include <vector>
 #include "net/minecraft/block/Block.hpp"
 #include "net/minecraft/block/LeavesBlock.hpp"
 #include "net/minecraft/block/entity/BlockEntity.hpp"
+#include "net/minecraft/client/ClientLog.hpp"
 #include "net/minecraft/client/Minecraft.hpp"
 #include "net/minecraft/client/render/RenderCore.hpp"
 #include "net/minecraft/client/gl/GLCore.hpp"
@@ -41,7 +43,6 @@
 #include "net/minecraft/world/World.hpp"
 namespace net::minecraft::client::render {
 namespace {
-constexpr int kChunkSectionCountY = 8;
 struct ModChunkMeshScope {
  render::RenderPassScope passScope_;
  explicit ModChunkMeshScope(const RenderType& rt) : passScope_(rt) {
@@ -158,57 +159,75 @@ void WorldRenderer::reload() {
  blockRenderManager.snapshotGlobals();
  chunkSections_.setLastViewDistance(opts.viewDistance);
  chunkSections_.setLastRenderScale(resolved.renderScale);
-  gl::GLCore::ensureLoaded();
-  chunkSections_.setRenderRadius(resolved.chunkRadius);
-   // Pre-size the shared terrain VBO so the initial chunk stream does not repeatedly
-   // grow the buffer and re-upload every accumulated range (a per-frame stall on
-   // world load / teleport). Estimate ~384 vertices/section/layer at steady state,
-   // capped so a giant view distance does not reserve gigabytes up front.
-   if(chunkSections_.renderRadiusChunks() > 0) {
-    const std::size_t columns = static_cast<std::size_t>(2 * chunkSections_.renderRadiusChunks() + 1);
-    const std::size_t sections = columns * columns * static_cast<std::size_t>(kChunkSectionCountY);
-    const std::size_t estimate = std::min<std::size_t>(sections * 384u, 16u * 1024u * 1024u);
-    chunk::ChunkRegion& region = compilePipeline_.regionManager().pool();
-    for(auto& layer : region.layers) layer.reserve(estimate);
-    net::minecraft::client::render::quad_index::ensure(estimate);
-   }
+   gl::GLCore::ensureLoaded();
+   chunkSections_.setRenderRadius(resolved.chunkRadius);
+    // Pre-size each terrain region's VBO so the initial chunk stream does not
+    // repeatedly grow the buffers and re-upload every accumulated range (a
+    // per-frame stall on world load / teleport). Estimate ~384
+    // vertices/section/layer at steady state, split across the region grid,
+    // capped so a giant view distance does not reserve gigabytes up front.
+    if(chunkSections_.renderRadiusChunks() > 0) {
+     const std::size_t columns = static_cast<std::size_t>(2 * chunkSections_.renderRadiusChunks() + 1);
+     const std::size_t sections = columns * columns * static_cast<std::size_t>(kChunkSectionCountY);
+     const std::size_t regionColumns = (columns + chunk::kRegionSectionsX - 1) / chunk::kRegionSectionsX;
+     const std::size_t regionRows = (static_cast<std::size_t>(kChunkSectionCountY) + chunk::kRegionSectionsY - 1) /
+                                    chunk::kRegionSectionsY;
+     const std::size_t regionCount =
+         std::max<std::size_t>(1, regionColumns * regionColumns * regionRows);
+     const std::size_t estimate = std::min<std::size_t>(sections * 384u, 16u * 1024u * 1024u);
+     const std::size_t perRegion =
+         std::clamp<std::size_t>(estimate / regionCount, 1u << 16, 1u << 20);
+     compilePipeline_.regionManager().setReserveHint(perRegion);
+    }
   globalBlockEntities.clear();
   entityRenderCooldown = 2;
 }
 void WorldRenderer::reloadIfViewDistanceChanged() {
  chunkSections_.reloadIfViewDistanceChanged();
 }
-int WorldRenderer::render(net::minecraft::LivingEntity& camera, int layer, double tickDelta, bool drawModMeshes) {
+int WorldRenderer::render(net::minecraft::LivingEntity& camera, int layer, bool drawModMeshes) {
  if(chunkSections_.empty()) {
   return 0;
  }
  cameraEntity_ = &camera;
- renderChunks(layer, tickDelta, drawModMeshes);
+ renderChunksVbo(layer, false);
+ if(drawModMeshes) {
+  renderModChunkMeshes(layer);
+ }
  return 0;
 }
-void WorldRenderer::renderLastChunks(int layer, double tickDelta) {
+void WorldRenderer::renderLastChunks(int layer, double /*tickDelta*/) {
  // Java's GameRenderer draws translucent terrain twice when fancyGraphics is
  // on: once with colorMask off (depth-only prepass) via render(), then again
  // here with colorMask restored so blending reads back a depth buffer that
- // already matches, avoiding z-fighting between overlapping translucent
- // faces (water against glass, etc). Re-running the same layer draw covers
- // the VBO region path.
- renderChunks(layer, tickDelta, true, true);
+   // already matches, avoiding z-fighting between overlapping translucent
+   // faces (water against glass, etc). Re-running the same layer draw covers
+   // the VBO region path.
+  renderChunksVbo(layer, true);
+  renderModChunkMeshes(layer);
 }
-int WorldRenderer::renderChunksVbo(
-    int layer, double /*tickDelta*/, double interpX, double interpY, double interpZ, bool skipBuildDrawLists) {
- chunk::ChunkRegion& pool = compilePipeline_.regionManager().pool();
- chunk::ChunkRegionBuffer& buffer = pool.layers[static_cast<std::size_t>(layer)];
- // chunkOffset = sectionOrigin - active draw camera (player or shadow).
- double camX = interpX;
- double camY = interpY;
- double camZ = interpZ;
+void WorldRenderer::sectionOrigin(double& x, double& y, double& z) noexcept {
  if(core::drawCameraStateValid()) {
   const float* eye = core::drawCameraPosition();
-  camX = static_cast<double>(eye[0]);
-  camY = static_cast<double>(eye[1]);
-  camZ = static_cast<double>(eye[2]);
+  x = eye[0];
+  y = eye[1];
+  z = eye[2];
+  return;
  }
+ const FrameRenderCamera& cam = RenderCameraState::instance().frame();
+ x = cam.eyeX;
+ y = cam.eyeY;
+ z = cam.eyeZ;
+}
+int WorldRenderer::renderChunksVbo(int layer, bool skipBuildDrawLists) {
+ // chunkOffset = sectionOrigin - the active draw camera (player or shadow). One
+ // origin for everything: sectionOrigin() is the same point cullChunks culls
+ // against. Each region draws with its own origin, so the offset is uniform per
+ // region (regionOrigin - camera) instead of per section.
+ double camX = 0.0;
+ double camY = 0.0;
+ double camZ = 0.0;
+ sectionOrigin(camX, camY, camZ);
  if(!skipBuildDrawLists) {
   // Reset on the first layer of the player's own pass only. Nested passes
   // (sun shadow) set renderCameraEntity_, and letting
@@ -218,7 +237,13 @@ int WorldRenderer::renderChunksVbo(
    chunk::ChunkRegionBuffer::frameVisibleRanges = 0;
    chunk::ChunkRegionBuffer::frameDrawCalls = 0;
   }
-  buffer.beginFrame();
+  compilePipeline_.regionManager().forEachRegion([layer, camX, camY, camZ](const chunk::RegionKey& key,
+                                                                           chunk::ChunkRegion& region) {
+   chunk::ChunkRegionBuffer& buffer = region.layers[static_cast<std::size_t>(layer)];
+   buffer.beginFrame(static_cast<float>(static_cast<double>(key.x) * chunk::kRegionBlocksX - camX),
+                     static_cast<float>(static_cast<double>(key.y) * chunk::kRegionBlocksY - camY),
+                     static_cast<float>(static_cast<double>(key.z) * chunk::kRegionBlocksZ - camZ));
+  });
   for(const std::vector<chunk::ChunkBuilder*>& ring : chunkSections_.visibleDrawRings()) {
    for(chunk::ChunkBuilder* chunk : ring) {
     if(chunk == nullptr || chunk->region_ == nullptr ||
@@ -229,47 +254,118 @@ int WorldRenderer::renderChunksVbo(
     if(!slot.valid() || slot.count <= 0) {
      continue;
     }
-    const float ox = static_cast<float>(static_cast<double>(chunk->x) - camX);
-    const float oy = static_cast<float>(static_cast<double>(chunk->y) - camY);
-    const float oz = static_cast<float>(static_cast<double>(chunk->z) - camZ);
-    buffer.addVisible(slot, ox, oy, oz);
+    chunk->region_->layers[static_cast<std::size_t>(layer)].addVisible(slot);
    }
   }
  }
- if(!buffer.hasVisible()) {
-  return 0;
+ // TEMP DIAGNOSTIC — [terrain-probe]. Arm on the solid layer of the player's own
+ // pass; see ChunkRegionBuffer.hpp probeArmed.
+ static int terrainProbeFrame = 0;
+ static int terrainProbeShadowFrame = 0;
+ const bool probeThisPass =
+     layer == 0 && ((renderCameraEntity_ ? terrainProbeShadowFrame++ : terrainProbeFrame++) % 120) == 0;
+ const char* const probePass = renderCameraEntity_ ? "shadow" : "player";
+ if(probeThisPass) {
+  chunk::ChunkRegionBuffer::probeArmed = true;
+  chunk::ChunkRegionBuffer::probeRegions = 0;
+  chunk::ChunkRegionBuffer::probeRanges = 0;
+  chunk::ChunkRegionBuffer::probeVertices = 0;
+  chunk::ChunkRegionBuffer::probeAny = false;
  }
- return buffer.flush();
-}
-void WorldRenderer::renderChunks(int layer, double tickDelta, bool drawModMeshes, bool skipBuildDrawLists) {
- double interpX = 0.0;
- double interpY = 0.0;
- double interpZ = 0.0;
- cameraInterpPosition(tickDelta, interpX, interpY, interpZ);
- renderChunksVbo(layer, tickDelta, interpX, interpY, interpZ, skipBuildDrawLists);
- if(drawModMeshes) {
-  renderModChunkMeshes(layer, interpX, interpY, interpZ);
+ int draws = 0;
+ compilePipeline_.regionManager().forEachRegion(
+     [layer, &draws](const chunk::RegionKey&, chunk::ChunkRegion& region) {
+      draws += region.layers[static_cast<std::size_t>(layer)].flush();
+     });
+ if(probeThisPass) {
+  chunk::ChunkRegionBuffer::probeArmed = false;
+  const float* projection = chunk::ChunkRegionBuffer::probeProjection;
+  const float* modelView = chunk::ChunkRegionBuffer::probeModelView;
+  char line[512];
+  std::snprintf(line,
+                sizeof(line),
+                "[terrain-probe] %s pass regions=%d ranges=%d verts=%lld camera=(%.2f,%.2f,%.2f) "
+                "cameraRelativeAabb min=(%.1f,%.1f,%.1f) max=(%.1f,%.1f,%.1f)%s",
+                probePass,
+                chunk::ChunkRegionBuffer::probeRegions,
+                chunk::ChunkRegionBuffer::probeRanges,
+                chunk::ChunkRegionBuffer::probeVertices,
+                camX,
+                camY,
+                camZ,
+                static_cast<double>(chunk::ChunkRegionBuffer::probeMin[0]),
+                static_cast<double>(chunk::ChunkRegionBuffer::probeMin[1]),
+                static_cast<double>(chunk::ChunkRegionBuffer::probeMin[2]),
+                static_cast<double>(chunk::ChunkRegionBuffer::probeMax[0]),
+                static_cast<double>(chunk::ChunkRegionBuffer::probeMax[1]),
+                static_cast<double>(chunk::ChunkRegionBuffer::probeMax[2]),
+                chunk::ChunkRegionBuffer::probeAny ? "" : "  <-- NOTHING DRAWN");
+  ClientLog::LOGGER.log(::net::minecraft::util::logging::LogLevel::Info, std::string(line));
+  // m[11] == -1 is a perspective divide; 0 means an orthographic matrix reached
+  // the player's pass (i.e. the shadow camera leaked). A zero m0 means nothing has
+  // ever been uploaded yet (no draw ran), so the verdict is meaningless.
+  std::snprintf(line,
+                sizeof(line),
+                "[terrain-probe] %s pass uploaded proj m0=%.4f m5=%.4f m10=%.4f m11=%.1f m14=%.4f m15=%.4f (%s)  "
+                "modelView trans=(%.2f,%.2f,%.2f)",
+                probePass,
+                static_cast<double>(projection[0]),
+                static_cast<double>(projection[5]),
+                static_cast<double>(projection[10]),
+                static_cast<double>(projection[11]),
+                static_cast<double>(projection[14]),
+                static_cast<double>(projection[15]),
+                projection[0] == 0.0f
+                    ? "nothing drawn (stale zeros)"
+                    : renderCameraEntity_
+                          ? (projection[11] < -0.5f ? "PERSPECTIVE -- expected ortho" : "ortho ok")
+                          : (projection[11] < -0.5f ? "perspective ok" : "ORTHO -- SHADOW CAMERA LEAKED"),
+                static_cast<double>(modelView[12]),
+                static_cast<double>(modelView[13]),
+                static_cast<double>(modelView[14]));
+  ClientLog::LOGGER.log(::net::minecraft::util::logging::LogLevel::Info, std::string(line));
+  // GPU truth at draw time: the polygon offset the shadow bias relies on, the depth
+  // func, and the viewport, read back from the driver rather than our own cache.
+  int polyFactor = 0;
+  int polyUnits = 0;
+  int depthFunc = 0;
+  int viewport[4] = {0, 0, 0, 0};
+  ::glGetIntegerv(0x8038, &polyFactor);
+  ::glGetIntegerv(0x2A00, &polyUnits);
+  ::glGetIntegerv(static_cast<unsigned>(gl::query::DepthFunc), &depthFunc);
+  ::glGetIntegerv(static_cast<unsigned>(gl::query::Viewport), viewport);
+  std::snprintf(line,
+                sizeof(line),
+                "[terrain-probe] %s pass GPU polyOffset=%s factor=%d units=%d depthFunc=0x%X "
+                "viewport=(%d,%d,%d,%d)",
+                probePass,
+                ::glIsEnabled(0x8037) ? "ENABLED" : "DISABLED",
+                polyFactor,
+                polyUnits,
+                depthFunc,
+                viewport[0],
+                viewport[1],
+                viewport[2],
+                viewport[3]);
+  ClientLog::LOGGER.log(::net::minecraft::util::logging::LogLevel::Info, std::string(line));
  }
+ return draws;
 }
-int WorldRenderer::renderModChunkMeshes(int layer, double interpX, double interpY, double interpZ) {
+int WorldRenderer::renderModChunkMeshes(int layer) {
  if(textureManager == nullptr) {
   return 0;
  }
- const RenderType& renderType = layer == chunk::terrain_layer::Translucent
-                                    ? RenderType::translucent()
-                                    : layer == chunk::terrain_layer::Cutout ? RenderType::cutout()
-                                                                           : RenderType::solid();
+ const RenderType& renderType =
+     layer == chunk::terrain_layer::Translucent      ? RenderType::translucent()
+     : layer == chunk::terrain_layer::Cutout         ? RenderType::cutout()
+     : layer == chunk::terrain_layer::CutoutInterior ? RenderType::cutoutInterior()
+                                                     : RenderType::solid();
  const ModChunkMeshScope meshCaps(renderType);
  int drawn = 0;
- double camX = interpX;
- double camY = interpY;
- double camZ = interpZ;
- if(core::drawCameraStateValid()) {
-  const float* eye = core::drawCameraPosition();
-  camX = static_cast<double>(eye[0]);
-  camY = static_cast<double>(eye[1]);
-  camZ = static_cast<double>(eye[2]);
- }
+ double camX = 0.0;
+ double camY = 0.0;
+ double camZ = 0.0;
+ sectionOrigin(camX, camY, camZ);
  struct ModMeshDraw {
   int textureId;
   chunk::ChunkBuilder* chunk;
@@ -334,11 +430,13 @@ void WorldRenderer::renderEntities(const Vec3d& cameraPos,
   culledEntityCount = 0;
   return;
  }
- // Iris per-draw base: the full camera matrix the draw state publishes
- // (rotation * translate(camera - eye)); entity poses compose onto it. This is the
- // same matrix the old vanilla stack carried at draw time (see matrix.md).
- net::minecraft::util::math::MatrixStack matrices;
- matrices.load(core::drawModelView());
+  // Iris parity pose base: identity, so every pose the entity/block-entity
+  // renderers publish on this stack is the pure model -> camera-relative
+  // transform (they push translate(entity - eye) themselves via the dispatcher
+  // offsets below). The camera matrix is never part of a pose; it is uploaded
+  // per pass and per draw from the camera state alone.
+  net::minecraft::util::math::MatrixStack matrices;
+  matrices.load(net::minecraft::util::math::Matrix4f::identityMatrix());
  const net::minecraft::util::math::Matrix4f& projection = core::drawProjection();
  auto* livingCamera = dynamic_cast<LivingEntity*>(cameraEntity_);
  auto& blockDispatcher = block::entity::BlockEntityRenderDispatcher::instance();
@@ -352,7 +450,7 @@ void WorldRenderer::renderEntities(const Vec3d& cameraPos,
   double offsetX = 0.0;
   double offsetY = 0.0;
   double offsetZ = 0.0;
-  cameraInterpPosition(static_cast<double>(tickDelta), offsetX, offsetY, offsetZ);
+  matrixStackOrigin(offsetX, offsetY, offsetZ);
   entity::EntityRenderDispatcher::offsetX = offsetX;
   entity::EntityRenderDispatcher::offsetY = offsetY;
   entity::EntityRenderDispatcher::offsetZ = offsetZ;
@@ -629,7 +727,7 @@ void WorldRenderer::renderMiningProgress(net::minecraft::PlayerEntity* player,
  }
  const int destroyTexture = 240 + stage;
  double interpX = 0.0, interpY = 0.0, interpZ = 0.0;
- cameraInterpPosition(static_cast<double>(tickDelta), interpX, interpY, interpZ);
+ matrixStackOrigin(interpX, interpY, interpZ);
  const RenderPassScope passScope(RenderType::damagedBlock());
  net::minecraft::client::texture::TextureManager* texMgr =
      textureManager != nullptr ? textureManager : (client != nullptr ? &client->textureManager : nullptr);
@@ -640,10 +738,13 @@ void WorldRenderer::renderMiningProgress(net::minecraft::PlayerEntity* player,
  core::blendAlpha();
  core::setConstColor(1.0f, 1.0f, 1.0f, 1.0f);
  core::depthMask(false);
- core::depthTest();
- core::polygonOffset(-3.0f, -3.0f);
- core::enablePolygonOffset();
- blockRenderManager.snapshotGlobals();
+  core::depthTest();
+  core::polygonOffset(-3.0f, -3.0f);
+  core::enablePolygonOffset();
+  // Damage overlay vertices are emitted camera-eye relative (translate(-eye)
+  // below); an identity pose routes them through the camera matrix.
+  core::setDrawPose(net::minecraft::util::math::Matrix4f::identityMatrix());
+  blockRenderManager.snapshotGlobals();
  blockRenderManager.ctx.blockView = world;
  blockRenderManager.ctx.textureManager = texMgr;
  blockRenderManager.ctx.skipFaceCulling = true;
@@ -669,31 +770,32 @@ void WorldRenderer::renderBlockOutline(net::minecraft::PlayerEntity* player,
  if(i != 0 || hitResult.type != HitResultType::BLOCK || player == nullptr || world == nullptr) {
   return;
  }
- const BlockOutlineScope outlineCaps;
- core::setEntityColor(0.0f, 0.0f, 0.0f, 0.0f);
- Tessellator::INSTANCE.light(15, 15);
- ::glLineWidth(1.0f);
- core::depthMask(false);
+  const BlockOutlineScope outlineCaps;
+  core::setEntityColor(0.0f, 0.0f, 0.0f, 0.0f);
+  Tessellator::INSTANCE.light(15, 15);
+  ::glLineWidth(1.0f);
+  core::depthMask(false);
+  // Outline vertices are emitted camera-eye relative; an identity pose routes
+  // them through the camera matrix like terrain.
+  core::setDrawPose(net::minecraft::util::math::Matrix4f::identityMatrix());
  constexpr float expand = 0.002f;
  const int blockId = world->getBlockId(hitResult.blockX, hitResult.blockY, hitResult.blockZ);
  if(blockId > 0 && blockId < Block::BLOCK_COUNT && Block::BLOCKS[blockId] != nullptr) {
   Block* block = Block::BLOCKS[blockId];
   block->updateBoundingBox(world, hitResult.blockX, hitResult.blockY, hitResult.blockZ);
   double interpX = 0.0, interpY = 0.0, interpZ = 0.0;
-  cameraInterpPosition(static_cast<double>(tickDelta), interpX, interpY, interpZ);
+  matrixStackOrigin(interpX, interpY, interpZ);
   Box outline = block->getBoundingBox(world, hitResult.blockX, hitResult.blockY, hitResult.blockZ);
   outline = outline.expand(expand).offset(-interpX, -interpY, -interpZ);
   renderOutline(outline);
  }
 }
-void WorldRenderer::cameraInterpPosition(double tickDelta, double& x, double& y, double& z) const {
- // The render origin is the iris frame camera position (GameRenderer publishes
- // RenderCameraState before world rendering); the vanilla camera-entity fallback
- // duplicated the same interpolation.
- (void)tickDelta;
- const auto& frameCam = RenderCameraState::instance().frame();
- x = frameCam.x;
- y = frameCam.y;
- z = frameCam.z;
+void WorldRenderer::matrixStackOrigin(double& x, double& y, double& z) const {
+ // One geometry origin: the camera EYE (Camera.getPosition()), the same point
+ // terrain, chunkOffset, the cameraPosition uniform and the shadow map centre
+ // all anchor on. Entity/block-entity producers emit camera-relative poses from
+ // here, so their vertices reach the shader as worldPos - eye and a pack that
+ // cuts gl_ModelViewMatrix to a mat3 loses nothing.
+ sectionOrigin(x, y, z);
 }
 } // namespace net::minecraft::client::render

@@ -18,7 +18,7 @@ class ChunkBuilder;
 struct ChunkMeshResult {
  std::array<TessellatorMesh, terrain_layer::Count> layers{};
  std::array<std::vector<ModChunkMesh>, terrain_layer::Count> modLayers{};
- std::array<bool, terrain_layer::Count> layerEmpty{true, true, true};
+ std::array<bool, terrain_layer::Count> layerEmpty{true, true, true, true};
  bool hasSkyLight = false;
  // 6x6 face-to-face connectivity through non-opaque blocks (bit a*6+b), fed
  // to the per-frame occlusion BFS. All-ones = fully see-through.
@@ -35,15 +35,12 @@ struct ChunkMeshJob {
  // Owning ChunkBuilder; dereferenced only on the main thread, and only
  // after validating version/position (the renderer cancels all jobs before
  // destroying its builders).
- ChunkBuilder* builder = nullptr;
- int version = 0;
- int x = 0;
- int y = 0;
- int z = 0;
- int sizeX = 0;
- int sizeY = 0;
- int sizeZ = 0;
- std::unique_ptr<RegionSnapshot> snapshot;
+  ChunkBuilder* builder = nullptr;
+  int version = 0;
+  int x = 0;
+  int y = 0;
+  int z = 0;
+  std::unique_ptr<RegionSnapshot> snapshot;
  client::option::RenderSettings opts{};
  bool fancyGraphics = true;
  ChunkMeshResult result{};

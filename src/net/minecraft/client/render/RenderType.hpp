@@ -84,6 +84,7 @@ class RenderType {
  }
  static RenderType& solid();
  static RenderType& cutout();
+ static RenderType& cutoutInterior();
  static RenderType& translucent();
  static RenderType& gui();
  static RenderType& guiTextured();
@@ -134,5 +135,6 @@ class RenderPassScope {
  net::minecraft::client::render::core::WorldLightUniforms savedWorldLight_{};
  float savedConstColor_[4] = {1.0f, 1.0f, 1.0f, 1.0f};
  float savedAlphaTestRef_ = 0.1f;
+ net::minecraft::util::math::Matrix4f savedPose_{};
 };
 } // namespace net::minecraft::client::render

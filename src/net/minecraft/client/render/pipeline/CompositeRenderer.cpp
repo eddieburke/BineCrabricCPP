@@ -11,8 +11,10 @@
 #include "net/minecraft/client/render/uniforms/Uniforms.hpp"
 #include "net/minecraft/client/render/targets/RenderTargets.hpp"
 #include "net/minecraft/client/render/targets/ShadowMapPass.hpp"
+#include "net/minecraft/client/ClientLog.hpp"
 #include "net/minecraft/client/gl/GLCore.hpp"
 #include "net/minecraft/client/gl/GlConstants.hpp"
+#include "net/minecraft/client/gl/GlFramebuffer.hpp"
 #include "net/minecraft/client/gl/ShaderProgram.hpp"
 #include "net/minecraft/client/render/GlState.hpp"
 #include "net/minecraft/client/render/RenderCore.hpp"
@@ -20,6 +22,8 @@
 #include <algorithm>
 #include <array>
 #include <cmath>
+#include <cstring>
+#include <iomanip>
 #include <sstream>
 #include <string>
 #include <unordered_map>
@@ -90,9 +94,8 @@ bool CompositeRenderer::render(PackInstance& pack, const std::vector<std::size_t
                                shadowmap::ShadowTargets* shadowTargets, const int* shadowColorAltTextureIds) {
   FinalPassRenderer finalPass(pipeline_);
   render::ColorTargets& targets = pack.colorTargets;
-  const int shadowMapResolution = static_cast<int>(pipeline_->worldUniforms_.shadowMapResolution);
-  const float farPlane = pipeline_->worldUniforms_.farPlane;
-  const int width = stage == "shadowcomp" && shadowMapResolution > 0 ? shadowMapResolution : targets.width();
+   const int shadowMapResolution = static_cast<int>(pipeline_->worldUniforms_.shadowMapResolution);
+   const int width = stage == "shadowcomp" && shadowMapResolution > 0 ? shadowMapResolution : targets.width();
   const int height = stage == "shadowcomp" && shadowMapResolution > 0 ? shadowMapResolution : targets.height();
  if(!pack.summary.valid || pack.programs == nullptr ||
     (passes.empty() && pack.computePasses.empty() && pack.setupPasses.empty())) {
@@ -187,11 +190,7 @@ bool CompositeRenderer::render(PackInstance& pack, const std::vector<std::size_t
  const PackUniformValues& frameUniforms = pipeline_->worldUniforms_;
  const PackViewportValues viewport{static_cast<float>(width),
                                    static_cast<float>(height),
-                                   static_cast<float>(width) / std::max(static_cast<float>(height), 1.0f),
-                                   farPlane,
-                                   static_cast<float>(shadowMapResolution),
-                                   shadowDepthTextureId >= 0 ? 1 : 0,
-                                   targets.colorCount() > 1 ? 1 : 0};
+                                   static_cast<float>(width) / std::max(static_cast<float>(height), 1.0f)};
 
  const bool computeReady = gl::GLCore::computeSupported;
  auto compileFn = [this](PackInstance& p, const std::string& name) {
@@ -287,6 +286,47 @@ bool CompositeRenderer::render(PackInstance& pack, const std::vector<std::size_t
    targets.applyPassFlips(pack.definition, parent, writeBuffers);
    refreshColorMaps(targets, textures, colorImages, true);
    pipeline_->logOnce(pack, "compute parent '" + parent + "' flipped writeBuffers and refreshed samplers");
+   // TEMP DIAGNOSTIC — [stage-probe]. Reads the centre texel of every colortex after
+   // each compute parent, so the stage where the values blow out is visible directly
+   // instead of being inferred from the final image. DELETE once lighting is correct.
+   {
+    static int stageProbeFrame = 0;
+    static std::string firstParent;
+    if(firstParent.empty()) firstParent = parent;
+    if(parent == firstParent) ++stageProbeFrame;
+    if((stageProbeFrame % 120) == 0) {
+     gl::GlFramebuffer probeFbo;
+     std::ostringstream line;
+     line << "[stage-probe] after '" << parent << "'";
+     for(int i = 0; i < targets.colorCount(); ++i) {
+      const unsigned tex = static_cast<unsigned>(targets.readTexture(i));
+      if(tex == 0) continue;
+      probeFbo.addColorAttachment(0, tex);
+      probeFbo.bindAsReadBuffer();
+      // An integer target must be read as GL_RGBA_INTEGER/GL_UNSIGNED_INT — asking for
+      // GL_RGBA/GL_FLOAT is a GL_INVALID_OPERATION that quietly leaves the destination
+      // untouched, which is why colortex2 read as all-zero here regardless of content.
+      // Packs stash bit-cast floats in integer targets (RenderPearl puts s_distortion
+      // in colortex2.r), so print both the raw bits and their float reinterpretation.
+      if(render::isIntegerColorFormat(targets.formatOf("colortex" + std::to_string(i)))) {
+       unsigned int texel[4]{};
+       ::glReadPixels(width / 2, height / 2, 1, 1, 0x8D99, 0x1405, texel); // GL_RGBA_INTEGER, GL_UNSIGNED_INT
+       float asFloat = 0.0f;
+       std::memcpy(&asFloat, &texel[0], sizeof(float));
+       line << " colortex" << i << "=u(" << texel[0] << ',' << texel[1] << ',' << texel[2]
+            << ") r_as_float=" << std::fixed << std::setprecision(4) << asFloat;
+      } else {
+       float texel[4]{};
+       ::glReadPixels(width / 2, height / 2, 1, 1, 0x1908, 0x1406, texel);
+       line << " colortex" << i << "=(" << std::fixed << std::setprecision(4) << texel[0] << ','
+            << texel[1] << ',' << texel[2] << ')';
+      }
+     }
+     gl::GLCore::bindFramebuffer(static_cast<unsigned>(gl::framebuffer::ReadFramebuffer), 0);
+     gl::GLCore::bindFramebuffer(static_cast<unsigned>(gl::framebuffer::Framebuffer), 0);
+     ::net::minecraft::client::ClientLog::LOGGER.log(LogLevel::Info, line.str());
+    }
+   }
   }
   return true;
  };

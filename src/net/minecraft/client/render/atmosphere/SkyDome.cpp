@@ -1,8 +1,11 @@
 #include "net/minecraft/client/render/atmosphere/SkyDome.hpp"
 #include <array>
 #include <cmath>
+#include "net/minecraft/client/Minecraft.hpp"
 #include "net/minecraft/client/gl/GlConstants.hpp"
 #include "net/minecraft/client/option/RenderSettings.hpp"
+#include "net/minecraft/client/render/GameRenderer.hpp"
+#include "net/minecraft/client/render/shaderpack/Pack.hpp"
 #include "net/minecraft/client/render/RenderCore.hpp"
 #include "net/minecraft/client/render/RenderType.hpp"
 #include "net/minecraft/client/render/Tessellator.hpp"
@@ -129,11 +132,11 @@ void drawBackgroundFan(const AtmosphereContext& ctx, float tickDelta, const std:
  const core::RenderStageScope stage(core::RenderStage::Sunset);
  const float timeOfDay = ctx.world->getTime(tickDelta);
  const core::ScopedDrawCameraState fanGuard;
- net::minecraft::util::math::Matrix4f fanPose = core::drawModelView();
+ net::minecraft::util::math::Matrix4f fanPose = core::drawPose();
  fanPose.rotate(-90.0f, 0.0f, 1.0f, 0.0f);
  fanPose.rotate(90.0f, 1.0f, 0.0f, 0.0f);
  fanPose.rotate(timeOfDay > 0.5f ? 180.0f : 0.0f, 0.0f, 0.0f, 1.0f);
- core::setDrawModelView(fanPose);
+ core::setDrawPose(fanPose);
  Tessellator& tessellator = Tessellator::INSTANCE;
  tessellator.start(gl::prim::TriangleFan);
  tessellator.color(bg[0], bg[1], bg[2], bg[3]);
@@ -183,40 +186,16 @@ void renderSkyDome(const AtmosphereContext& ctx, float tickDelta) {
     ctx.world->dimension->isNether) {
   return;
  }
- const float celestialAngle = ctx.world->getTime(tickDelta);
- const float sunAngle = celestialSunAngle(celestialAngle);
- const float skyAngle = sunAngle < 0.25f ? sunAngle + 0.75f : sunAngle - 0.25f;
- net::minecraft::util::math::Matrix4f celestialMat;
- celestialMat.rotate(25.0f, 0.0f, 0.0f, 1.0f);
- celestialMat.rotate(-90.0f, 0.0f, 1.0f, 0.0f);
- celestialMat.rotate(skyAngle * 360.0f, 1.0f, 0.0f, 0.0f);
- float sunX = celestialMat.m[8];
- float sunY = celestialMat.m[9];
- float sunZ = celestialMat.m[10];
- const float length = std::sqrt(sunX * sunX + sunY * sunY + sunZ * sunZ);
- if(length > 0.0001f) {
-  sunX /= length;
-  sunY /= length;
-  sunZ /= length;
+ // Reader only. GameRenderer::updateSunLight owns the sun and publishes it before
+ // this runs; writing SunLight/sunDirection here raced it, and only when the sky was
+ // actually being drawn.
+ // see src/net/minecraft/client/render/celestial/CelestialState.hpp
+ const float celestialAngle = render::core::celestialState().celestialAngle;
+ {
+  render::core::SkyUniforms su = render::core::skyUniforms();
+  su.renderStars = ctx.settings.renderStars;
+  render::core::setSkyUniforms(su);
  }
- const float daylight = std::clamp((sunY + 0.08f) / 0.28f, 0.0f, 1.0f);
- const float horizon = 1.0f - std::clamp(std::abs(sunY) * 5.0f, 0.0f, 1.0f);
- ::net::minecraft::world::light::SunLight sun;
- sun.directionX = sunX;
- sun.directionY = sunY;
- sun.directionZ = sunZ;
- sun.red = 1.0f;
- sun.green = 0.96f - horizon * 0.25f;
- sun.blue = 0.88f - horizon * 0.48f;
- sun.intensity = daylight;
- ctx.world->lightRegistry().setSun(sun);
- render::core::SkyUniforms skyUniforms{};
- skyUniforms.sunDirection[0] = sunX;
- skyUniforms.sunDirection[1] = sunY;
- skyUniforms.sunDirection[2] = sunZ;
- skyUniforms.sunIntensity = daylight;
- skyUniforms.renderStars = ctx.settings.renderStars;
- render::core::setSkyUniforms(skyUniforms);
  const RenderPassScope skyPass(RenderType::sky());
  core::depthMask(false);
  SkyMeshes& meshes = skyMeshes();
@@ -251,10 +230,10 @@ void renderSkyDome(const AtmosphereContext& ctx, float tickDelta) {
  }
  {
   const core::ScopedDrawCameraState sunMoonGuard;
-  net::minecraft::util::math::Matrix4f sunMoonPose = core::drawModelView();
+  net::minecraft::util::math::Matrix4f sunMoonPose = core::drawPose();
   sunMoonPose.rotate(-90.0f, 0.0f, 1.0f, 0.0f);
   sunMoonPose.rotate(celestialAngle * 360.0f, 1.0f, 0.0f, 0.0f);
-  core::setDrawModelView(sunMoonPose);
+  core::setDrawPose(sunMoonPose);
   {
    const RenderPassScope sunMoonPass(RenderType::skyTextured());
    drawSunMoon(ctx, starAlpha);

@@ -3,6 +3,7 @@
 #include "net/minecraft/client/option/RenderSettings.hpp"
 #include "net/minecraft/client/render/Tessellator.hpp"
 #include "net/minecraft/client/render/TextureResolve.hpp"
+#include "net/minecraft/client/render/block/LeafInteriorFaces.hpp"
 #include "net/minecraft/client/texture/TextureManager.hpp"
 #include "net/minecraft/mod/model/ModModels.hpp"
 #include "net/minecraft/registry/TextureRegistry.hpp"
@@ -185,6 +186,9 @@ struct BlockRenderContext {
  // Skip the neighbour-visibility test and always emit faces (item models,
  // extended pistons, ...).
  bool skipFaceCulling = false;
+ // Emit only the leaf-blob interior faces (terrain_layer::CutoutInterior) rather
+ // than the ordinary exterior ones. See LeafInteriorFaces.hpp.
+ bool interiorFacePass = false;
  // Per-face 90-degree texture rotations (0..3), set by directional blocks.
  int eastFaceRotation = 0;
  int westFaceRotation = 0;
@@ -264,6 +268,12 @@ struct BlockRenderContext {
   return texture;
  }
  [[nodiscard]] bool isSideVisible(const net::minecraft::block::Block& block, int x, int y, int z, int side) const {
+  // The two passes partition a leaf block's faces: the exterior pass keeps the
+  // vanilla rule (leaf-against-leaf culled), the interior pass emits nothing
+  // but those culled boundaries, one quad each.
+  if(interiorFacePass) {
+   return leafInteriorFaceVisible(blockView, block, x, y, z, side, opts.leafInteriorFaces);
+  }
   return block.isSideVisibleForBounds(blockView, x, y, z, side, renderBounds);
  }
 };

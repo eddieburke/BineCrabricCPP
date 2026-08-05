@@ -54,6 +54,25 @@ TEST(ShadowCelestialModelView, QuarterShadowAngleIsXp90) {
  EXPECT_NEAR(m[10], 0.0f, 1e-5f);
 }
 
+// Java: `target.mulPose(Axis.XP.rotationDegrees(sunPathRotation))` — the sun path
+// rotation is applied POSITIVE about X, right after the sky angle. Every other test
+// here passes 0, which is exactly why the sign could be inverted unnoticed: a flipped
+// sun path tilts the shadow map away from the sunPosition/shadowLightPosition the pack
+// lights with, and the two only disagree once a pack sets the directive.
+// https://github.com/IrisShaders/Iris/blob/26.1/common/src/main/java/net/irisshaders/iris/shadows/ShadowMatrices.java
+TEST(ShadowCelestialModelView, SunPathRotationIsPositiveAboutX) {
+ constexpr float kSunPath = 30.0f;
+ float m[16]{};
+ // shadowAngle 0.25 → skyAngle 0, so the chain collapses to XP(90) * XP(sunPath).
+ buildShadowCelestialModelView(m, 0.25f, kSunPath, 0.0f, 0.0, 0.0, 0.0);
+ const float rad = (90.0f + kSunPath) * 3.14159265f / 180.0f;
+ EXPECT_NEAR(m[0], 1.0f, 1e-5f);
+ EXPECT_NEAR(m[5], std::cos(rad), 1e-5f);
+ EXPECT_NEAR(m[6], std::sin(rad), 1e-5f);
+ EXPECT_NEAR(m[9], -std::sin(rad), 1e-5f);
+ EXPECT_NEAR(m[10], std::cos(rad), 1e-5f);
+}
+
 // The shadow angle fed to the model view is Java's getShadowAngle():
 // getSunAngle(isDay())/360 where getSunAngle(sun) = (SUN_ANGLE + 90) mod 360 and
 // isDay() = getSunAngle(sun) < 180. The moon angle is 180 degrees from the sun. The
@@ -111,8 +130,8 @@ TEST(ShadowCelestialOrthoScale, HalfPlaneMatchesPearlProjScale) {
  cam.orthoHalfHeight = 160.0f;
  cam.orthoNear = -227.0f;
  cam.orthoFar = 227.0f;
- float proj[16]{};
- buildCameraProjection(proj, cam, 256.0f);
+  float proj[16]{};
+  buildCameraProjection(proj, cam);
  EXPECT_NEAR(proj[0], 1.0f / 160.0f, 1e-6f);
  EXPECT_NEAR(proj[5], 1.0f / 160.0f, 1e-6f);
  EXPECT_NEAR(proj[10], -2.0f / (227.0f - (-227.0f)), 1e-6f);
@@ -151,6 +170,37 @@ TEST(ShadowCelestialModelView, PackFacingLightDirectionMatchesMapOrientation) {
   const float axis[3] = {m[2], m[6], m[10]};
   const float dot = light[0] * axis[0] + light[1] * axis[1] + light[2] * axis[2];
   EXPECT_NEAR(dot, 1.0f, 1e-4f) << "celestial " << celestial;
+ }
+}
+// The same invariant for the pack-facing uniform itself. FrameData publishes
+// sunPosition/moonPosition/shadowLightPosition from celestialDirectionWorld, so that
+// direction must land on the shadow map's toward-light axis for EVERY sunPathRotation,
+// not just zero — a pack that sets one tilts the map and the celestial path together.
+// Reading the celestial matrix' column 2 instead of column 1 put the two exactly
+// perpendicular (dot 0) at every angle.
+// https://github.com/IrisShaders/Iris/blob/26.1/common/src/main/java/net/irisshaders/iris/uniforms/CelestialUniforms.java
+TEST(ShadowCelestialModelView, CelestialStateMatchesMapOrientation) {
+ using net::minecraft::client::render::CelestialState;
+ using net::minecraft::client::render::makeCelestialState;
+ for(const float sunPathRotation : {0.0f, 25.0f, -30.0f, 90.0f}) {
+  for(int i = 0; i <= 24; ++i) {
+   const float celestial = static_cast<float>(i) / 24.0f;
+   const CelestialState state = makeCelestialState(celestial, sunPathRotation);
+   // The shadow camera is built from the SAME struct (ShadowMapPass::makeShadowCamera),
+   // so this pins the two together rather than hoping two derivations agree.
+   float m[16]{};
+   buildShadowCelestialModelView(m, state.shadowAngle, state.sunPathRotation, 0.0f, 0.0, 0.0, 0.0);
+   const float axis[3] = {m[2], m[6], m[10]};
+   const float* light = state.shadowLightDirectionWorld;
+   const float dot = light[0] * axis[0] + light[1] * axis[1] + light[2] * axis[2];
+   EXPECT_NEAR(dot, 1.0f, 1e-4f) << "celestial " << celestial << " sunPathRotation " << sunPathRotation;
+   // moonDirectionWorld is the sun's antipode, and shadowLightDirectionWorld picks
+   // between them on CelestialUniforms.isDay().
+   const float* expected = state.day ? state.sunDirectionWorld : state.moonDirectionWorld;
+   for(int c = 0; c < 3; ++c) {
+    EXPECT_NEAR(light[c], expected[c], 1e-6f) << "component " << c << " celestial " << celestial;
+   }
+  }
  }
 }
 } // namespace

@@ -135,12 +135,12 @@ void InGameHud::renderHotbarItem(int slot, int x, int y, float tickDelta) {
  const float bobTime = static_cast<float>(stack.bobbingAnimationTime) - tickDelta;
  if(bobTime > 0.0f) {
   const core::ScopedDrawCameraState bobGuard;
-  net::minecraft::util::math::Matrix4f bobPose = core::drawModelView();
+  net::minecraft::util::math::Matrix4f bobPose = core::drawPose();
   const float scale = 1.0f + bobTime / 5.0f;
   bobPose.translate(static_cast<float>(x + 8), static_cast<float>(y + 12), 0.0f);
   bobPose.scale(1.0f / scale, (scale + 1.0f) / 2.0f, 1.0f);
   bobPose.translate(static_cast<float>(-(x + 8)), static_cast<float>(-(y + 12)), 0.0f);
-  core::setDrawModelView(bobPose);
+  core::setDrawPose(bobPose);
  }
  itemRenderer.renderGuiItem(*minecraft->textRenderer, minecraft->textureManager, stack, x, y);
  itemRenderer.renderGuiItemDecoration(*minecraft->textRenderer, minecraft->textureManager, stack, x, y);
@@ -194,9 +194,9 @@ void InGameHud::renderDebugHud(font::TextRenderer& textRenderer,
  {
   const core::ScopedDrawCameraState debugGuard;
   if(Minecraft::failedSessionCheckTime().load(std::memory_order_relaxed) > 0) {
-   net::minecraft::util::math::Matrix4f debugPose = core::drawModelView();
+   net::minecraft::util::math::Matrix4f debugPose = core::drawPose();
    debugPose.translate(0.0f, 32.0f, 0.0f);
-   core::setDrawModelView(debugPose);
+   core::setDrawPose(debugPose);
   }
   textRenderer.drawWithShadow("Minecraft Beta 1.7.3 (" + minecraft->debugText + ")", 2, 2, kColorWhite);
   textRenderer.drawWithShadow(minecraft->getRenderChunkDebugInfo(), 2, 12, kColorWhite);
@@ -235,9 +235,9 @@ void InGameHud::renderRecordOverlay(font::TextRenderer& textRenderer,
  }
   {
    const core::ScopedDrawCameraState recordGuard;
-   net::minecraft::util::math::Matrix4f recordPose = core::drawModelView();
+   net::minecraft::util::math::Matrix4f recordPose = core::drawPose();
    recordPose.translate(static_cast<float>(scaledWidth) / 2.0f, static_cast<float>(scaledHeight - 48), 0.0f);
-   core::setDrawModelView(recordPose);
+   core::setDrawPose(recordPose);
    int color = kColorWhite;
   if(overlayTinted) {
    color = hsbToRgb(remaining / 50.0f, 0.7f, 0.6f);
@@ -254,9 +254,9 @@ void InGameHud::renderChat(font::TextRenderer& textRenderer, bool chatOpen, int 
  const core::BlendScope chatCaps(true);
  {
   const core::ScopedDrawCameraState chatGuard;
-  net::minecraft::util::math::Matrix4f chatPose = core::drawModelView();
+  net::minecraft::util::math::Matrix4f chatPose = core::drawPose();
   chatPose.translate(0.0f, static_cast<float>(scaledHeight - 48), 0.0f);
-  core::setDrawModelView(chatPose);
+  core::setDrawPose(chatPose);
   struct VisibleLine {
    int y = 0;
    int alpha = 0;

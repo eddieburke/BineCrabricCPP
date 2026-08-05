@@ -24,11 +24,12 @@ class BoxEntityRenderer : public EntityRenderer {
  void render(const net::minecraft::Entity& entity, double x, double y, double z, float /*yaw*/, float /*tickDelta*/,
              net::minecraft::util::math::MatrixStack& matrices,
              const net::minecraft::util::math::Matrix4f& projection) override {
-  beginDraw(matrices, projection);
-  matrices.push();
-  renderShape(entity.boundingBox, x - entity.lastTickX, y - entity.lastTickY, z - entity.lastTickZ);
-  matrices.pop();
-  endDraw();
+   beginDraw(matrices, projection);
+   matrices.push();
+   render::core::setDrawPose(matrices.top());
+   renderShape(entity.boundingBox, x - entity.lastTickX, y - entity.lastTickY, z - entity.lastTickZ);
+   matrices.pop();
+   endDraw();
  }
 };
 class FireballEntityRenderer : public EntityRenderer {

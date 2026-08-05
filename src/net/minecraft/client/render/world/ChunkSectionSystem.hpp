@@ -20,6 +20,8 @@ class BlockEntity;
 namespace net::minecraft::client::render {
 class FrustumCuller;
 class WorldRenderer;
+// b1.7.3 world height is 128 blocks = 8 section columns of 16.
+inline constexpr int kChunkSectionCountY = 8;
 namespace world {
 struct SectionPos {
  int x = 0;

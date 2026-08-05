@@ -1,4 +1,8 @@
 #include "net/minecraft/client/render/atmosphere/CloudRenderer.hpp"
+#include <cstdint>
+#include <string>
+#include <vector>
+#include "net/minecraft/client/ClientLog.hpp"
 #include "net/minecraft/client/render/RenderCore.hpp"
 #include "net/minecraft/client/option/GameOptions.hpp"
 #include "net/minecraft/client/option/RenderSettings.hpp"
@@ -18,6 +22,61 @@ namespace {
  }
  return world->getCloudColor(tickDelta);
 }
+// Cloud shape must live in the geometry, not in clouds.png's alpha: gbuffers_clouds
+// programs shade the mesh without sampling gtexture at all.
+// see shaders/RenderPearl v2.8.0-beta.4/shaders/world_default/gbuffers_clouds.fsh
+class CloudMask {
+ public:
+ [[nodiscard]] bool opaque(int x, int z) const noexcept {
+  if(size_ <= 0) {
+   return true;
+  }
+  const int mx = ((x % size_) + size_) % size_;
+  const int mz = ((z % size_) + size_) % size_;
+  return mask_[static_cast<std::size_t>(mz) * static_cast<std::size_t>(size_) +
+               static_cast<std::size_t>(mx)] != 0;
+ }
+ [[nodiscard]] static const CloudMask& forTexture(net::minecraft::client::texture::TextureManager& textures, int textureId) {
+  static CloudMask cached;
+  static int cachedId = -1;
+  if(cachedId == textureId) {
+   return cached;
+  }
+  cachedId = textureId;
+  cached = CloudMask();
+  // TextureManager::getTextureId uploads through load(image, id), which does not
+  // retain the pixels, so getRasterImage has nothing for a disk-loaded texture.
+  net::minecraft::client::texture::RasterImage decoded =
+      textures.loadRasterForResource("/environment/clouds.png");
+  const net::minecraft::client::texture::RasterImage* image =
+      decoded.width > 0 ? &decoded : textures.getRasterImage(textureId);
+  if(image == nullptr || image->width <= 0 || image->width != image->height ||
+     image->argb.size() < static_cast<std::size_t>(image->width) * static_cast<std::size_t>(image->height)) {
+   ::net::minecraft::client::ClientLog::LOGGER.log(
+       ::net::minecraft::util::logging::LogLevel::Info,
+       std::string("[cloud-probe] mask UNAVAILABLE (solid-sheet fallback) textureId=") +
+           std::to_string(textureId) +
+           " decoded=" + std::to_string(decoded.width) + "x" + std::to_string(decoded.height));
+   return cached;
+  }
+  cached.size_ = image->width;
+  cached.mask_.resize(image->argb.size());
+  std::size_t opaqueCells = 0;
+  for(std::size_t i = 0; i < image->argb.size(); ++i) {
+   cached.mask_[i] = (image->argb[i] >> 24) >= 128u ? 1 : 0;
+   opaqueCells += cached.mask_[i];
+  }
+  ::net::minecraft::client::ClientLog::LOGGER.log(
+      ::net::minecraft::util::logging::LogLevel::Info,
+      std::string("[cloud-probe] mask decoded ") + std::to_string(image->width) + "x" +
+          std::to_string(image->height) + " opaqueCells=" + std::to_string(opaqueCells) + "/" +
+          std::to_string(image->argb.size()));
+  return cached;
+ }
+ private:
+ int size_ = 0;
+ std::vector<std::uint8_t> mask_;
+};
 } // namespace
 void CloudRenderer::renderFancyClouds(const AtmosphereContext& ctx, float tickDelta) {
  if(ctx.camera == nullptr) {
@@ -41,210 +100,141 @@ void CloudRenderer::renderFancyClouds(const AtmosphereContext& ctx, float tickDe
  const int originZ = MathHelper::floor(cloudZ / 2048.0);
  cloudX -= static_cast<double>(originX * 2048);
  cloudZ -= static_cast<double>(originZ * 2048);
- ctx.textureManager->bindTexture(ctx.textureManager->getTextureId("/environment/clouds.png"));
+ const int cloudTexture = ctx.textureManager->getTextureId("/environment/clouds.png");
+ ctx.textureManager->bindTexture(cloudTexture);
+ const CloudMask& mask = CloudMask::forTexture(*ctx.textureManager, cloudTexture);
  Vec3d cloudColor = cloudColorForWorld(ctx.world, tickDelta);
  float red = static_cast<float>(cloudColor.x);
  float green = static_cast<float>(cloudColor.y);
  float blue = static_cast<float>(cloudColor.z);
- float texOffsetX = static_cast<float>(MathHelper::floor(cloudX) * 0.00390625f);
- float texOffsetZ = static_cast<float>(MathHelper::floor(cloudZ) * 0.00390625f);
- const float fracX = static_cast<float>(cloudX - static_cast<double>(MathHelper::floor(cloudX)));
- const float fracZ = static_cast<float>(cloudZ - static_cast<double>(MathHelper::floor(cloudZ)));
+ const int texelOriginX = MathHelper::floor(cloudX);
+ const int texelOriginZ = MathHelper::floor(cloudZ);
+ float texOffsetX = static_cast<float>(texelOriginX) * 0.00390625f;
+ float texOffsetZ = static_cast<float>(texelOriginZ) * 0.00390625f;
+ const float fracX = static_cast<float>(cloudX - static_cast<double>(texelOriginX));
+ const float fracZ = static_cast<float>(cloudZ - static_cast<double>(texelOriginZ));
  constexpr float texScale = 0.00390625f;
  constexpr float edgeInset = 9.765625E-4f;
  constexpr int tileSize = 8;
  constexpr int tileRadius = 3;
+ constexpr int cellMin = (-tileRadius + 1) * tileSize;
+ constexpr int cellMax = tileRadius * tileSize;
  const core::ScopedDrawCameraState cloudGuard;
- net::minecraft::util::math::Matrix4f cloudPose = core::drawModelView();
+ net::minecraft::util::math::Matrix4f cloudPose = core::drawPose();
  cloudPose.scale(cloudScale, 1.0f, cloudScale);
- core::setDrawModelView(cloudPose);
+ core::setDrawPose(cloudPose);
+ const bool drawBottom = cloudHeight > -cloudThickness - 1.0f;
+ const bool drawTop = cloudHeight <= cloudThickness + 1.0f;
  for(int pass = 0; pass < 2; ++pass) {
   const bool colorWrite = pass != 0;
   core::colorMask(colorWrite, colorWrite, colorWrite, colorWrite);
-  for(int tileX = -tileRadius + 1; tileX <= tileRadius; ++tileX) {
-   for(int tileZ = -tileRadius + 1; tileZ <= tileRadius; ++tileZ) {
-    const float baseX = static_cast<float>(tileX * tileSize);
-    const float baseZ = static_cast<float>(tileZ * tileSize);
+  tessellator.startQuads();
+  for(int cellX = cellMin; cellX < cellMax; ++cellX) {
+   for(int cellZ = cellMin; cellZ < cellMax; ++cellZ) {
+    if(!mask.opaque(texelOriginX + cellX, texelOriginZ + cellZ)) {
+     continue;
+    }
+    const float baseX = static_cast<float>(cellX);
+    const float baseZ = static_cast<float>(cellZ);
     const float drawX = baseX - fracX;
     const float drawZ = baseZ - fracZ;
-    tessellator.startQuads();
-    if(cloudHeight > -cloudThickness - 1.0f) {
+    const float u0 = baseX * texScale + texOffsetX;
+    const float u1 = (baseX + 1.0f) * texScale + texOffsetX;
+    const float uMid = (baseX + 0.5f) * texScale + texOffsetX;
+    const float v0 = baseZ * texScale + texOffsetZ;
+    const float v1 = (baseZ + 1.0f) * texScale + texOffsetZ;
+    const float vMid = (baseZ + 0.5f) * texScale + texOffsetZ;
+    const float top = cloudHeight + cloudThickness;
+    if(drawBottom) {
      tessellator.color(red * 0.7f, green * 0.7f, blue * 0.7f, 0.8f);
      tessellator.normal(0.0f, -1.0f, 0.0f);
-     tessellator.vertex(drawX,
-                        cloudHeight,
-                        drawZ + static_cast<float>(tileSize),
-                        (baseX + 0.0f) * texScale + texOffsetX,
-                        (baseZ + static_cast<float>(tileSize)) * texScale + texOffsetZ);
-     tessellator.vertex(drawX + static_cast<float>(tileSize),
-                        cloudHeight,
-                        drawZ + static_cast<float>(tileSize),
-                        (baseX + static_cast<float>(tileSize)) * texScale + texOffsetX,
-                        (baseZ + static_cast<float>(tileSize)) * texScale + texOffsetZ);
-     tessellator.vertex(drawX + static_cast<float>(tileSize),
-                        cloudHeight,
-                        drawZ,
-                        (baseX + static_cast<float>(tileSize)) * texScale + texOffsetX,
-                        (baseZ + 0.0f) * texScale + texOffsetZ);
-     tessellator.vertex(drawX,
-                        cloudHeight,
-                        drawZ,
-                        (baseX + 0.0f) * texScale + texOffsetX,
-                        (baseZ + 0.0f) * texScale + texOffsetZ);
+     tessellator.vertex(drawX, cloudHeight, drawZ + 1.0f, u0, v1);
+     tessellator.vertex(drawX + 1.0f, cloudHeight, drawZ + 1.0f, u1, v1);
+     tessellator.vertex(drawX + 1.0f, cloudHeight, drawZ, u1, v0);
+     tessellator.vertex(drawX, cloudHeight, drawZ, u0, v0);
     }
-    if(cloudHeight <= cloudThickness + 1.0f) {
+    if(drawTop) {
      tessellator.color(red, green, blue, 0.8f);
      tessellator.normal(0.0f, 1.0f, 0.0f);
-     tessellator.vertex(drawX,
-                        cloudHeight + cloudThickness - edgeInset,
-                        drawZ + static_cast<float>(tileSize),
-                        (baseX + 0.0f) * texScale + texOffsetX,
-                        (baseZ + static_cast<float>(tileSize)) * texScale + texOffsetZ);
-     tessellator.vertex(drawX + static_cast<float>(tileSize),
-                        cloudHeight + cloudThickness - edgeInset,
-                        drawZ + static_cast<float>(tileSize),
-                        (baseX + static_cast<float>(tileSize)) * texScale + texOffsetX,
-                        (baseZ + static_cast<float>(tileSize)) * texScale + texOffsetZ);
-     tessellator.vertex(drawX + static_cast<float>(tileSize),
-                        cloudHeight + cloudThickness - edgeInset,
-                        drawZ,
-                        (baseX + static_cast<float>(tileSize)) * texScale + texOffsetX,
-                        (baseZ + 0.0f) * texScale + texOffsetZ);
-     tessellator.vertex(drawX,
-                        cloudHeight + cloudThickness - edgeInset,
-                        drawZ,
-                        (baseX + 0.0f) * texScale + texOffsetX,
-                        (baseZ + 0.0f) * texScale + texOffsetZ);
+     tessellator.vertex(drawX, top - edgeInset, drawZ + 1.0f, u0, v1);
+     tessellator.vertex(drawX + 1.0f, top - edgeInset, drawZ + 1.0f, u1, v1);
+     tessellator.vertex(drawX + 1.0f, top - edgeInset, drawZ, u1, v0);
+     tessellator.vertex(drawX, top - edgeInset, drawZ, u0, v0);
     }
     tessellator.color(red * 0.9f, green * 0.9f, blue * 0.9f, 0.8f);
-    if(tileX > -1) {
+    if(!mask.opaque(texelOriginX + cellX - 1, texelOriginZ + cellZ)) {
      tessellator.normal(-1.0f, 0.0f, 0.0f);
-     for(int segment = 0; segment < tileSize; ++segment) {
-      tessellator.vertex(drawX + static_cast<float>(segment),
-                         cloudHeight,
-                         drawZ + static_cast<float>(tileSize),
-                         (baseX + static_cast<float>(segment) + 0.5f) * texScale + texOffsetX,
-                         (baseZ + static_cast<float>(tileSize)) * texScale + texOffsetZ);
-      tessellator.vertex(drawX + static_cast<float>(segment),
-                         cloudHeight + cloudThickness,
-                         drawZ + static_cast<float>(tileSize),
-                         (baseX + static_cast<float>(segment) + 0.5f) * texScale + texOffsetX,
-                         (baseZ + static_cast<float>(tileSize)) * texScale + texOffsetZ);
-      tessellator.vertex(drawX + static_cast<float>(segment),
-                         cloudHeight + cloudThickness,
-                         drawZ,
-                         (baseX + static_cast<float>(segment) + 0.5f) * texScale + texOffsetX,
-                         baseZ * texScale + texOffsetZ);
-      tessellator.vertex(drawX + static_cast<float>(segment),
-                         cloudHeight,
-                         drawZ,
-                         (baseX + static_cast<float>(segment) + 0.5f) * texScale + texOffsetX,
-                         baseZ * texScale + texOffsetZ);
-     }
+     tessellator.vertex(drawX, cloudHeight, drawZ + 1.0f, uMid, v1);
+     tessellator.vertex(drawX, top, drawZ + 1.0f, uMid, v1);
+     tessellator.vertex(drawX, top, drawZ, uMid, v0);
+     tessellator.vertex(drawX, cloudHeight, drawZ, uMid, v0);
     }
-    if(tileX <= 1) {
+    if(!mask.opaque(texelOriginX + cellX + 1, texelOriginZ + cellZ)) {
      tessellator.normal(1.0f, 0.0f, 0.0f);
-     for(int segment = 0; segment < tileSize; ++segment) {
-      tessellator.vertex(drawX + static_cast<float>(segment) + 1.0f - edgeInset,
-                         cloudHeight,
-                         drawZ + static_cast<float>(tileSize),
-                         (baseX + static_cast<float>(segment) + 0.5f) * texScale + texOffsetX,
-                         (baseZ + static_cast<float>(tileSize)) * texScale + texOffsetZ);
-      tessellator.vertex(drawX + static_cast<float>(segment) + 1.0f - edgeInset,
-                         cloudHeight + cloudThickness,
-                         drawZ + static_cast<float>(tileSize),
-                         (baseX + static_cast<float>(segment) + 0.5f) * texScale + texOffsetX,
-                         (baseZ + static_cast<float>(tileSize)) * texScale + texOffsetZ);
-      tessellator.vertex(drawX + static_cast<float>(segment) + 1.0f - edgeInset,
-                         cloudHeight + cloudThickness,
-                         drawZ,
-                         (baseX + static_cast<float>(segment) + 0.5f) * texScale + texOffsetX,
-                         baseZ * texScale + texOffsetZ);
-      tessellator.vertex(drawX + static_cast<float>(segment) + 1.0f - edgeInset,
-                         cloudHeight,
-                         drawZ,
-                         (baseX + static_cast<float>(segment) + 0.5f) * texScale + texOffsetX,
-                         baseZ * texScale + texOffsetZ);
-     }
+     tessellator.vertex(drawX + 1.0f - edgeInset, cloudHeight, drawZ + 1.0f, uMid, v1);
+     tessellator.vertex(drawX + 1.0f - edgeInset, top, drawZ + 1.0f, uMid, v1);
+     tessellator.vertex(drawX + 1.0f - edgeInset, top, drawZ, uMid, v0);
+     tessellator.vertex(drawX + 1.0f - edgeInset, cloudHeight, drawZ, uMid, v0);
     }
     tessellator.color(red * 0.8f, green * 0.8f, blue * 0.8f, 0.8f);
-    if(tileZ > -1) {
+    if(!mask.opaque(texelOriginX + cellX, texelOriginZ + cellZ - 1)) {
      tessellator.normal(0.0f, 0.0f, -1.0f);
-     for(int segment = 0; segment < tileSize; ++segment) {
-      tessellator.vertex(drawX,
-                         cloudHeight + cloudThickness,
-                         drawZ + static_cast<float>(segment),
-                         (baseX + 0.0f) * texScale + texOffsetX,
-                         (baseZ + static_cast<float>(segment) + 0.5f) * texScale + texOffsetZ);
-      tessellator.vertex(drawX + static_cast<float>(tileSize),
-                         cloudHeight + cloudThickness,
-                         drawZ + static_cast<float>(segment),
-                         (baseX + static_cast<float>(tileSize)) * texScale + texOffsetX,
-                         (baseZ + static_cast<float>(segment) + 0.5f) * texScale + texOffsetZ);
-      tessellator.vertex(drawX + static_cast<float>(tileSize),
-                         cloudHeight,
-                         drawZ + static_cast<float>(segment),
-                         (baseX + static_cast<float>(tileSize)) * texScale + texOffsetX,
-                         (baseZ + static_cast<float>(segment) + 0.5f) * texScale + texOffsetZ);
-      tessellator.vertex(drawX,
-                         cloudHeight,
-                         drawZ + static_cast<float>(segment),
-                         (baseX + 0.0f) * texScale + texOffsetX,
-                         (baseZ + static_cast<float>(segment) + 0.5f) * texScale + texOffsetZ);
-     }
+     tessellator.vertex(drawX, top, drawZ, u0, vMid);
+     tessellator.vertex(drawX + 1.0f, top, drawZ, u1, vMid);
+     tessellator.vertex(drawX + 1.0f, cloudHeight, drawZ, u1, vMid);
+     tessellator.vertex(drawX, cloudHeight, drawZ, u0, vMid);
     }
-    if(tileZ <= 1) {
+    if(!mask.opaque(texelOriginX + cellX, texelOriginZ + cellZ + 1)) {
      tessellator.normal(0.0f, 0.0f, 1.0f);
-     for(int segment = 0; segment < tileSize; ++segment) {
-      tessellator.vertex(drawX,
-                         cloudHeight + cloudThickness,
-                         drawZ + static_cast<float>(segment) + 1.0f - edgeInset,
-                         (baseX + 0.0f) * texScale + texOffsetX,
-                         (baseZ + static_cast<float>(segment) + 0.5f) * texScale + texOffsetZ);
-      tessellator.vertex(drawX + static_cast<float>(tileSize),
-                         cloudHeight + cloudThickness,
-                         drawZ + static_cast<float>(segment) + 1.0f - edgeInset,
-                         (baseX + static_cast<float>(tileSize)) * texScale + texOffsetX,
-                         (baseZ + static_cast<float>(segment) + 0.5f) * texScale + texOffsetZ);
-      tessellator.vertex(drawX + static_cast<float>(tileSize),
-                         cloudHeight,
-                         drawZ + static_cast<float>(segment) + 1.0f - edgeInset,
-                         (baseX + static_cast<float>(tileSize)) * texScale + texOffsetX,
-                         (baseZ + static_cast<float>(segment) + 0.5f) * texScale + texOffsetZ);
-      tessellator.vertex(drawX,
-                         cloudHeight,
-                         drawZ + static_cast<float>(segment) + 1.0f - edgeInset,
-                         (baseX + 0.0f) * texScale + texOffsetX,
-                         (baseZ + static_cast<float>(segment) + 0.5f) * texScale + texOffsetZ);
-     }
+     tessellator.vertex(drawX, top, drawZ + 1.0f - edgeInset, u0, vMid);
+     tessellator.vertex(drawX + 1.0f, top, drawZ + 1.0f - edgeInset, u1, vMid);
+     tessellator.vertex(drawX + 1.0f, cloudHeight, drawZ + 1.0f - edgeInset, u1, vMid);
+     tessellator.vertex(drawX, cloudHeight, drawZ + 1.0f - edgeInset, u0, vMid);
     }
-    tessellator.draw();
    }
   }
+  tessellator.draw();
  }
  core::disableBlend();
  core::enableCull();
 }
 void CloudRenderer::renderClouds(const AtmosphereContext& ctx, float tickDelta) {
+ static int probeCalls = 0;
+ const bool probe = (probeCalls++ % 300) == 0;
  if(!ctx.settings.renderClouds) {
+  if(probe) {
+   ::net::minecraft::client::ClientLog::LOGGER.log(::net::minecraft::util::logging::LogLevel::Info,
+                                                   "[cloud-probe] renderClouds OFF (settings.renderClouds=false)");
+  }
   return;
  }
  if(ctx.world == nullptr || ctx.world->dimension == nullptr || ctx.textureManager == nullptr ||
     ctx.camera == nullptr || ctx.world->dimension->isNether) {
+  if(probe) {
+   ::net::minecraft::client::ClientLog::LOGGER.log(::net::minecraft::util::logging::LogLevel::Info,
+                                                   "[cloud-probe] renderClouds SKIPPED (null ctx or nether)");
+  }
   return;
  }
  const render::RenderPassScope pass(render::RenderType::clouds());
  const bool fancyClouds = ctx.settings.fancyClouds;
+ if(probe) {
+  ::net::minecraft::client::ClientLog::LOGGER.log(
+      ::net::minecraft::util::logging::LogLevel::Info,
+      std::string("[cloud-probe] renderClouds fancy=") + (fancyClouds ? "1" : "0"));
+ }
  if(fancyClouds) {
   renderFancyClouds(ctx, tickDelta);
  } else {
   core::disableCull();
   const float cameraY = static_cast<float>(ctx.camera->lastTickY + (ctx.camera->y - ctx.camera->lastTickY) *
                                                                        static_cast<double>(tickDelta));
-  constexpr int tile = 32;
+  constexpr int tile = 8;
   constexpr int radius = 256 / tile;
   Tessellator& tessellator = INSTANCE;
-  ctx.textureManager->bindTexture(ctx.textureManager->getTextureId("/environment/clouds.png"));
+  const int cloudTexture = ctx.textureManager->getTextureId("/environment/clouds.png");
+  ctx.textureManager->bindTexture(cloudTexture);
+  const CloudMask& mask = CloudMask::forTexture(*ctx.textureManager, cloudTexture);
   Vec3d cloudColor = cloudColorForWorld(ctx.world, tickDelta);
   float red = static_cast<float>(cloudColor.x);
   float green = static_cast<float>(cloudColor.y);
@@ -257,34 +247,34 @@ void CloudRenderer::renderClouds(const AtmosphereContext& ctx, float tickDelta) 
   const int originZ = MathHelper::floor(cloudZ / 2048.0);
   const float cloudHeight = client::option::cloudHeightOffset(
       ctx.world->dimension->getCloudHeight() - cameraY + 0.33f, ctx.settings);
-  const float texOffsetX =
-      static_cast<float>((cloudX -= static_cast<double>(originX * 2048)) * static_cast<double>(scrollScale));
-  const float texOffsetZ =
-      static_cast<float>((cloudZ -= static_cast<double>(originZ * 2048)) * static_cast<double>(scrollScale));
+  cloudX -= static_cast<double>(originX * 2048);
+  cloudZ -= static_cast<double>(originZ * 2048);
+  // see mcp/src/net/minecraft/client/render/WorldRenderer.java renderClouds
+  const int texelOriginX = MathHelper::floor(cloudX / static_cast<double>(tile));
+  const int texelOriginZ = MathHelper::floor(cloudZ / static_cast<double>(tile));
+  const float texOffsetX = static_cast<float>(texelOriginX * tile) * scrollScale;
+  const float texOffsetZ = static_cast<float>(texelOriginZ * tile) * scrollScale;
+  const float fracX = static_cast<float>(cloudX - static_cast<double>(texelOriginX * tile));
+  const float fracZ = static_cast<float>(cloudZ - static_cast<double>(texelOriginZ * tile));
   tessellator.startQuads();
   tessellator.color(red, green, blue, 0.8f);
-  for(int x = -tile * radius; x < tile * radius; x += tile) {
-   for(int z = -tile * radius; z < tile * radius; z += tile) {
-    tessellator.vertex(x + 0,
-                       cloudHeight,
-                       z + tile,
-                       static_cast<float>(x + 0) * scrollScale + texOffsetX,
-                       static_cast<float>(z + tile) * scrollScale + texOffsetZ);
-    tessellator.vertex(x + tile,
-                       cloudHeight,
-                       z + tile,
-                       static_cast<float>(x + tile) * scrollScale + texOffsetX,
-                       static_cast<float>(z + tile) * scrollScale + texOffsetZ);
-    tessellator.vertex(x + tile,
-                       cloudHeight,
-                       z + 0,
-                       static_cast<float>(x + tile) * scrollScale + texOffsetX,
-                       static_cast<float>(z + 0) * scrollScale + texOffsetZ);
-    tessellator.vertex(x + 0,
-                       cloudHeight,
-                       z + 0,
-                       static_cast<float>(x + 0) * scrollScale + texOffsetX,
-                       static_cast<float>(z + 0) * scrollScale + texOffsetZ);
+  for(int cellX = -radius; cellX < radius; ++cellX) {
+   for(int cellZ = -radius; cellZ < radius; ++cellZ) {
+    if(!mask.opaque(texelOriginX + cellX, texelOriginZ + cellZ)) {
+     continue;
+    }
+    const int baseX = cellX * tile;
+    const int baseZ = cellZ * tile;
+    const float drawX = static_cast<float>(baseX) - fracX;
+    const float drawZ = static_cast<float>(baseZ) - fracZ;
+    const float u0 = static_cast<float>(baseX) * scrollScale + texOffsetX;
+    const float u1 = static_cast<float>(baseX + tile) * scrollScale + texOffsetX;
+    const float v0 = static_cast<float>(baseZ) * scrollScale + texOffsetZ;
+    const float v1 = static_cast<float>(baseZ + tile) * scrollScale + texOffsetZ;
+    tessellator.vertex(drawX, cloudHeight, drawZ + static_cast<float>(tile), u0, v1);
+    tessellator.vertex(drawX + static_cast<float>(tile), cloudHeight, drawZ + static_cast<float>(tile), u1, v1);
+    tessellator.vertex(drawX + static_cast<float>(tile), cloudHeight, drawZ, u1, v0);
+    tessellator.vertex(drawX, cloudHeight, drawZ, u0, v0);
    }
   }
   tessellator.draw();

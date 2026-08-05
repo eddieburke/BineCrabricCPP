@@ -14,7 +14,9 @@ void MobSpawnerBlockEntityRenderer::render(
   return;
  }
  net::minecraft::util::math::MatrixStack matrices;
- matrices.load(render::core::drawModelView());
+ // Identity pose base: x/y/z arrive relative to the camera eye (block-entity
+ // dispatcher offsets), so the composed pose is camera-relative by construction.
+ matrices.load(net::minecraft::util::math::Matrix4f::identityMatrix());
  matrices.translate(static_cast<float>(x) + 0.5f, static_cast<float>(y), static_cast<float>(z) + 0.5f);
  const std::string& entityId = mobSpawner->getSpawnedEntityId();
  auto& cachedEntity = models[entityId];
@@ -38,7 +40,7 @@ void MobSpawnerBlockEntityRenderer::render(
   matrices.translate(0.0f, -0.4f, 0.0f);
   matrices.scale(entityScale, entityScale, entityScale);
   entity->setPositionAndAnglesKeepPrevAngles(x, y, z, 0.0f, 0.0f);
-  render::core::setDrawModelView(matrices.top());
+  render::core::setDrawPose(matrices.top());
   render::entity::EntityRenderDispatcher::instance().render(
       *entity, tickDelta, matrices, render::core::drawProjection());
  }

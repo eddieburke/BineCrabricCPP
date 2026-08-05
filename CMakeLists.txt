@@ -446,7 +446,14 @@ endif()
 target_link_libraries(minecraft_omega_tests PRIVATE GTest::gtest)
 
 include(GoogleTest)
-gtest_discover_tests(minecraft_omega_tests)
+# TIMEOUT bounds each case so a wedged test cannot sit forever. That matters beyond the
+# test run: while it hangs it holds minecraft_omega_tests.exe and the build directory,
+# so the next build-omega.ps1 fails with "Already in use" / "Permission denied" and
+# RESTORES THE PREVIOUS EXECUTABLE — the game then runs code that was never rebuilt.
+# The server-spinning cases are the slow ones (MissingCameraModRejectsClientWithoutModList
+# alone takes ~77s because it generates a world), hence a generous bound rather than a
+# tight one.
+gtest_discover_tests(minecraft_omega_tests PROPERTIES TIMEOUT 300)
 
 add_executable(minecraft_installer src/installer/installer.cpp)
 set_target_properties(minecraft_installer PROPERTIES OUTPUT_NAME "setup")

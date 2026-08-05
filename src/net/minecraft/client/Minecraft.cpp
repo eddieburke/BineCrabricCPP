@@ -269,11 +269,9 @@ void Minecraft::init() {
 void Minecraft::bootstrapAfterDisplay() {
  diagnostics::setStartupPhase("init: directories");
  runDirectory_ = getRunDirectory();
- // Disk-backed shader program cache. The main GL context is current here, so the
- // service's worker contexts can share it and extract driver program binaries.
- // Cache directory must be set before start() (the workers read it).
- gl::ShaderCompileService::instance().setCacheDirectory(runDirectory_ / "shader-cache");
- gl::ShaderCompileService::instance().start();
+  // Disk-backed shader program cache. Compilation is synchronous on the render
+  // thread (Iris model); this just names where extracted driver binaries live.
+  gl::ShaderCompileService::instance().setCacheDirectory(runDirectory_ / "shader-cache");
  options.optionsFile = runDirectory_ / "options.txt";
  options.bindMinecraft(this);
  option::OptionRegistry::registerAll();
@@ -372,12 +370,6 @@ void Minecraft::stop() {
  } catch(...) {
  }
  auto& lifecycle = net::minecraft::util::concurrent::Lifecycle::instance();
- lifecycle.registerOwner(
-     "shader-compile",
-     {{}, {}, [](std::chrono::steady_clock::time_point) {
-       gl::ShaderCompileService::instance().stop();
-       return true;
-      }, std::chrono::seconds(5)});
  lifecycle.registerOwner(
      "render-resources",
      {{}, {}, [](std::chrono::steady_clock::time_point) {

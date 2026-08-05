@@ -5,6 +5,8 @@
 #include <functional>
 #include <set>
 #include <sstream>
+#include <unordered_map>
+#include <utility>
 
 namespace net::minecraft::client::render {
 bool isBufferFormatDirective(const std::string& trimmed) {
@@ -25,12 +27,23 @@ std::string resolveShaderIncludes(const ShaderReadText& readText,
                                   const std::string& path,
                                   bool stripFormatDirectives) {
  std::set<std::string> stack;
- std::function<std::string(const std::string&)> resolve = [&](const std::string& current) -> std::string {
+ // A file's expansion depends only on its own path (readText is a pure function
+ // of the path), so expand each one once. Packs that pull a common header in from
+ // a dozen places used to re-expand the whole subtree per inclusion, which is
+ // exponential in the include depth. Values are node-stable in an unordered_map,
+ // so the returned reference survives the rehashes the recursion causes.
+ std::unordered_map<std::string, std::string> memo;
+ std::function<const std::string&(const std::string&)> resolve =
+     [&](const std::string& current) -> const std::string& {
+  if(const auto cached = memo.find(current); cached != memo.end()) {
+   return cached->second;
+  }
   if(!stack.insert(current).second) {
    throw IncludeResolveError("include cycle: " + current);
   }
   const std::string source = readText(current);
   std::string result;
+  result.reserve(source.size());
   std::istringstream stream(source);
   std::string line;
   while(std::getline(stream, line)) {
@@ -41,7 +54,8 @@ std::string resolveShaderIncludes(const ShaderReadText& readText,
     continue;
    }
    if(trimmed.rfind("#include", 0) != 0) {
-    result += line + '\n';
+    result += line;
+    result += '\n';
     continue;
    }
    std::size_t q1 = trimmed.find('"', 8);
@@ -58,7 +72,7 @@ std::string resolveShaderIncludes(const ShaderReadText& readText,
                                                  ? std::filesystem::path("shaders") / include.substr(1)
                                                  : std::filesystem::path(current).parent_path() / include;
    const std::string includeResolved = includePath.lexically_normal().generic_string();
-   const std::string included = resolve(includeResolved);
+   const std::string& included = resolve(includeResolved);
    if(included.empty()) {
     throw IncludeResolveError("missing or empty #include \"" + include + "\" from " + current +
                               " (resolved " + includeResolved + ")");
@@ -66,7 +80,7 @@ std::string resolveShaderIncludes(const ShaderReadText& readText,
    result += included;
   }
   stack.erase(current);
-  return result;
+  return memo.emplace(current, std::move(result)).first->second;
  };
  return resolve(path);
 }

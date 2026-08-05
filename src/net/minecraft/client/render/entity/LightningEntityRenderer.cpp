@@ -20,7 +20,7 @@ void LightningEntityRenderer::render(
  // entityTranslucent has State.lighting=false — no FF lighting toggles needed.
  render::RenderPassScope passScope(render::RenderType::lightning());
  // Lightning draws in camera-relative world coords on the frame base.
- render::core::setDrawModelView(matrices.top());
+ render::core::setDrawPose(matrices.top());
  double offsets[8]{};
  double offsets2[8]{};
  double offsetX = 0.0;

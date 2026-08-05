@@ -136,7 +136,7 @@ void InventoryScreen::drawBackground(float tickDelta) {
  {
   const core::ScopedDrawCameraState previewGuard;
   net::minecraft::util::math::MatrixStack previewPose;
-  previewPose.load(core::drawModelView());
+  previewPose.load(core::drawPose());
   previewPose.translate(static_cast<float>(originX + 51), static_cast<float>(originY + 75), 50.0f);
   constexpr float scale = 30.0f;
   previewPose.scale(-scale, scale, scale);
@@ -156,7 +156,7 @@ void InventoryScreen::drawBackground(float tickDelta) {
   player.pitch = -static_cast<float>(std::atan(static_cast<double>(deltaY) / 40.0)) * 20.0f;
   player.minBrightness = 1.0f;
   previewPose.translate(0.0f, player.standingEyeHeight, 0.0f);
- core::setDrawModelView(previewPose.top());
+ core::setDrawPose(previewPose.top());
   auto& dispatcher = render::entity::EntityRenderDispatcher::instance();
   dispatcher.init(minecraft()->world,
                   &minecraft()->textureManager,

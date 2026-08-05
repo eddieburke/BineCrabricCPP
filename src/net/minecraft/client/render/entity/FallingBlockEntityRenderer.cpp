@@ -28,7 +28,7 @@ void FallingBlockEntityRenderer::render(
   // Face colours already encode shade; keep the pass unlit.
   render::RenderPassScope passScope(render::RenderType::entityCutout());
   render::core::setLightingEnabled(false);
-  render::core::setDrawModelView(matrices.top());
+  render::core::setDrawPose(matrices.top());
   blockRenderManager_.renderFallingBlockEntity(*block,
                                                falling->world,
                                                MathHelper::floor(falling->x),

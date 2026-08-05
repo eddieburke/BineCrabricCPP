@@ -61,6 +61,14 @@ class ShadowCullingFrustum {
  void clearBoxCuller() noexcept {
   hasBoxCuller_ = false;
  }
+ // TEMP DIAGNOSTIC — [shadow-probe]. Lets the caller report the culling radius the
+ // shadow pass actually ended up with, which is what decides how far casters reach.
+ [[nodiscard]] bool hasBoxCuller() const noexcept {
+  return hasBoxCuller_;
+ }
+ [[nodiscard]] double boxCullerDistance() const noexcept {
+  return hasBoxCuller_ ? boxCuller_.maxDistance() : -1.0;
+ }
  void setDistanceCuller(const BoxCuller& culler) noexcept {
   distanceCuller_ = culler;
   hasDistanceCuller_ = true;

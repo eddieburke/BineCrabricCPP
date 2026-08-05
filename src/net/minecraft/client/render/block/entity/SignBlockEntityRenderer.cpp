@@ -15,7 +15,9 @@ void SignBlockEntityRenderer::render(
  }
  net::minecraft::block::Block* block = sign->getBlock();
  net::minecraft::util::math::MatrixStack matrices;
- matrices.load(render::core::drawModelView());
+ // Identity pose base: x/y/z arrive relative to the camera eye (block-entity
+ // dispatcher offsets), so the composed pose is camera-relative by construction.
+ matrices.load(net::minecraft::util::math::Matrix4f::identityMatrix());
  const float scale = 0.6666667f;
  if(block == net::minecraft::block::Block::SIGN) {
   matrices.translate(
@@ -42,7 +44,7 @@ void SignBlockEntityRenderer::render(
  bindTexture("/item/sign.png");
  matrices.push();
  matrices.scale(scale, -scale, -scale);
- render::core::setDrawModelView(matrices.top());
+ render::core::setDrawPose(matrices.top());
  model.render();
  matrices.pop();
  font::TextRenderer* textRenderer = getTextRenderer();
@@ -56,12 +58,14 @@ void SignBlockEntityRenderer::render(
  render::core::enableDepthTest();
  render::core::depthMask(false);
  const int color = 0;
- render::core::setDrawModelView(matrices.top());
  for(int i = 0; i < 4; ++i) {
   std::string line = sign->texts[static_cast<std::size_t>(i)];
   if(i == sign->currentRow) {
    line = "> " + line + " <";
   }
+  // Republish per line: the Tessellator clears the pose channel when a draw
+  // ends, and each line is its own draw.
+  render::core::setDrawPose(matrices.top());
   textRenderer->draw(
       line, -textRenderer->getWidth(line) / 2, i * 10 - static_cast<int>(sign->texts.size()) * 5, color);
  }

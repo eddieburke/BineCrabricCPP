@@ -69,25 +69,16 @@ void updateSunLight(World* world, float tickDelta, ::net::minecraft::entity::Ent
   return;
  }
  const float celestialAngle = world->getTime(tickDelta);
- const float sunAngle = celestialSunAngle(celestialAngle);
- const float skyAngle = sunAngle < 0.25f ? sunAngle + 0.75f : sunAngle - 0.25f;
  const net::minecraft::client::Minecraft* celestialClient = net::minecraft::client::Minecraft::INSTANCE;
  const float sunPathRotation = celestialClient != nullptr && celestialClient->gameRenderer != nullptr
                                    ? celestialClient->gameRenderer->packDefinition().sunPathRotation
                                    : 25.0f;
- net::minecraft::util::math::Matrix4f celestialMat;
- celestialMat.rotate(sunPathRotation, 0.0f, 0.0f, 1.0f);
- celestialMat.rotate(-90.0f, 0.0f, 1.0f, 0.0f);
- celestialMat.rotate(skyAngle * 360.0f, 1.0f, 0.0f, 0.0f);
- float sunX = celestialMat.m[8];
- float sunY = celestialMat.m[9];
- float sunZ = celestialMat.m[10];
- const float length = std::sqrt(sunX * sunX + sunY * sunY + sunZ * sunZ);
- if(length > 0.0001f) {
-  sunX /= length;
-  sunY /= length;
-  sunZ /= length;
- }
+ // see src/net/minecraft/client/render/celestial/CelestialState.hpp
+ const CelestialState state = makeCelestialState(celestialAngle, sunPathRotation);
+ core::setCelestialState(state);
+ const float sunX = state.sunDirectionWorld[0];
+ const float sunY = state.sunDirectionWorld[1];
+ const float sunZ = state.sunDirectionWorld[2];
  const float daylight = std::clamp((sunY + 0.08f) / 0.28f, 0.0f, 1.0f);
  const float horizon = 1.0f - std::clamp(std::abs(sunY) * 5.0f, 0.0f, 1.0f);
  ::net::minecraft::world::light::SunLight sun;
@@ -99,7 +90,9 @@ void updateSunLight(World* world, float tickDelta, ::net::minecraft::entity::Ent
  sun.blue = 0.88f - horizon * 0.48f;
  sun.intensity = daylight;
  world->lightRegistry().setSun(sun);
- core::SkyUniforms skyUniforms{};
+ // Read-modify-write: the sky-render values (skyColor, starBrightness, renderStars)
+ // belong to SkyDome and must survive this.
+ core::SkyUniforms skyUniforms = core::skyUniforms();
  skyUniforms.sunDirection[0] = sunX;
  skyUniforms.sunDirection[1] = sunY;
  skyUniforms.sunDirection[2] = sunZ;
@@ -178,15 +171,31 @@ const PackDefinition& GameRenderer::meshDefinition() const noexcept {
  return shaderPacks_ != nullptr ? shaderPacks_->meshDefinition() : vanillaPackDefinition();
 }
 PackUniformValues GameRenderer::buildFrameUniforms(float tickDelta,
-                                                             float farPlane,
-                                                             bool shadowAvailable) const {
+                                                              bool shadowAvailable) const {
  const int width = client != nullptr ? std::max(1, client->displayWidth) : 1;
  const int height = client != nullptr ? std::max(1, client->displayHeight) : 1;
  const float worldTime = static_cast<float>(ticks) + tickDelta;
  const float eyeHalf = packDefinition().eyeBrightnessHalflife;
- return buildShaderFrameData(width, height, farPlane, worldTime,
+ // Iris: the `far` uniform is ALWAYS the render distance in blocks
+ // (CameraUniforms.getRenderDistanceInBlocks), never the projection far of a custom
+ // camera, and `near` is the constant 0.05. The projection matrices inside the frame
+ // data come from the camera struct, which GameRenderer has already pointed at the
+ // same render distance.
+ // https://github.com/IrisShaders/Iris/blob/26.1/common/src/main/java/net/irisshaders/iris/uniforms/CameraUniforms.java
+ // The shadow matrices are derived from THIS frame's camera, not read back from the
+ // previous frame's shadow pass. The uniforms are snapshotted before shadowmap::update
+ // runs, so a captured camera was always one frame stale: the shadow map was rendered
+ // with this frame's celestial angle and shadowIntervalSize grid snap while every
+ // program — including shadow.vsh, which distorts with shadowProjection — sampled it
+ // through last frame's. The mismatch moved with the player and showed up as acne.
+ // Java has no such capture; MatrixUniforms rebuilds the shadow matrices on demand from
+ // the live camera position.
+ // https://github.com/IrisShaders/Iris/blob/26.1/common/src/main/java/net/irisshaders/iris/uniforms/MatrixUniforms.java
+ const FrameRenderCamera shadowCamera =
+     shadowmap::makeShadowCamera(packDefinition(), frameCamera_, core::celestialState());
+ return buildShaderFrameData(width, height, worldTime,
                              frameShadow_.resolution, shaderPacks_ != nullptr && shaderPacks_->sceneColorCount() > 1,
-                             shadowAvailable, frameCamera_, shadowState_.shadowCamera,
+                             shadowAvailable, frameCamera_, shadowCamera,
                              client != nullptr ? client->world : nullptr, eyeHalf);
 }
 void GameRenderer::updateCamera() {
@@ -471,13 +480,24 @@ void GameRenderer::renderWorld(float tickDelta,
   core::getIntegerv(gl::query::Viewport, viewport);
  }
  const float aspect = viewport[3] != 0 ? static_cast<float>(viewport[2]) / static_cast<float>(viewport[3]) : 1.0f;
- projection.loadIdentity();
-  // Keeping the far plane at the render distance rather than the old b1.7.3 2x
-  // multiplier stops half the depth range being spent on fully fogged geometry, which
-  // was Z-fighting crossed plants and fancy leaves.
-  const float nearPlane = cameraNearPlane(frameCamera_);
-  const float farPlane = cameraFarPlane(frameCamera_, frameSettings_.renderDistanceBlocks);
- frameCamera_.perspectiveFar = farPlane;
+  projection.loadIdentity();
+   // Near is fixed at 0.05 (CameraUniforms "near" is the ONCE constant); the far plane
+   // is the render distance in blocks, NOT vanilla's renderDistance * 4. Spending half
+   // the depth range on fully fogged geometry Z-fights crossed plants and fancy leaves,
+   // and the lost precision propagates into every depth-based reconstruction the pack
+   // does — including the shadow lookup. Iris' MixinTweakFarPlane, which would restore
+   // vanilla's 4x, is disabled in Iris itself ("I have decided to disable this Mixin"),
+   // so do not cite it to justify widening this again.
+   // see third_party/iris/common/src/main/java/net/irisshaders/iris/mixin/MixinTweakFarPlane.java
+   // A custom camera — the perspective shadow pass — carries its own planes on the
+   // struct, so nothing is overridden here.
+   // https://github.com/IrisShaders/Iris/blob/26.1/common/src/main/java/net/irisshaders/iris/uniforms/CameraUniforms.java
+   if(!frameCamera_.customView && !frameCamera_.shadowPass) {
+    frameCamera_.perspectiveNear = 0.05f;
+    frameCamera_.perspectiveFar = frameSettings_.renderDistanceBlocks;
+   }
+  const float nearPlane = frameCamera_.perspectiveNear;
+  const float farPlane = frameCamera_.perspectiveFar;
  if(frameCamera_.orthographic) {
   math::Matrix4f proj;
   proj.ortho(-frameCamera_.orthoHalfWidth,
@@ -569,7 +589,7 @@ void GameRenderer::renderFirstPersonHand(float tickDelta) {
   if(client->options.bobView) {
    applyViewBobbing(tickDelta, modelView);
   }
-  core::setDrawModelView(modelView.top());
+  core::setPassModelView(modelView.top());
   if(living != nullptr) {
    mod::FirstPersonHandRenderEvent event{living, tickDelta, 0, false};
    mod::runtime::luaHookFirstPersonHand(event);
@@ -765,21 +785,27 @@ struct ProfilerFrame {
 };
 void drawSolidTerrain(WorldRenderer& worldRenderer,
                       LivingEntity& camera,
-                      float tickDelta,
                       int terrainTextureId) {
  bindTerrainTexture(terrainTextureId);
  const RenderPassScope solidScope(RenderType::solid());
  core::setConstColor(1.0f, 1.0f, 1.0f, 1.0f);
- worldRenderer.render(camera, chunk::terrain_layer::Solid, static_cast<double>(tickDelta));
+ worldRenderer.render(camera, chunk::terrain_layer::Solid);
 }
 void drawCutoutTerrain(WorldRenderer& worldRenderer,
                        LivingEntity& camera,
-                       float tickDelta,
                        int terrainTextureId) {
  bindTerrainTexture(terrainTextureId);
- const RenderPassScope cutoutScope(RenderType::cutout());
+ {
+  const RenderPassScope cutoutScope(RenderType::cutout());
+  core::setConstColor(1.0f, 1.0f, 1.0f, 1.0f);
+  worldRenderer.render(camera, chunk::terrain_layer::Cutout);
+ }
+ // Leaf-blob interiors ride along with cutout - same program, same atlas, same
+ // depth state - but with culling off so their single-quad boundaries are
+ // visible from both sides. Empty unless the Leaf Interior option is on.
+ const RenderPassScope interiorScope(RenderType::cutoutInterior());
  core::setConstColor(1.0f, 1.0f, 1.0f, 1.0f);
- worldRenderer.render(camera, chunk::terrain_layer::Cutout, static_cast<double>(tickDelta));
+ worldRenderer.render(camera, chunk::terrain_layer::CutoutInterior);
 }
 void drawTranslucentTerrain(WorldRenderer& worldRenderer,
                             LivingEntity& camera,
@@ -788,17 +814,17 @@ void drawTranslucentTerrain(WorldRenderer& worldRenderer,
                             bool fancyGraphics) {
  bindTerrainTexture(terrainTextureId);
  {
-  const RenderPassScope translucentScope(RenderType::translucent());
-  if(fancyGraphics) {
-   {
-    const core::ColorMaskScope colorMaskPass(false, false, false, false);
-    worldRenderer.render(camera, chunk::terrain_layer::Translucent, static_cast<double>(tickDelta), false);
+   const RenderPassScope translucentScope(RenderType::translucent());
+   if(fancyGraphics) {
+    {
+     const core::ColorMaskScope colorMaskPass(false, false, false, false);
+     worldRenderer.render(camera, chunk::terrain_layer::Translucent, false);
+    }
+    worldRenderer.renderLastChunks(chunk::terrain_layer::Translucent, static_cast<double>(tickDelta));
+   } else {
+    worldRenderer.render(camera, chunk::terrain_layer::Translucent);
    }
-   worldRenderer.renderLastChunks(chunk::terrain_layer::Translucent, static_cast<double>(tickDelta));
-  } else {
-   worldRenderer.render(camera, chunk::terrain_layer::Translucent, static_cast<double>(tickDelta));
   }
- }
  core::depthMask(true);
  core::cullBackFaces();
 }
@@ -852,8 +878,7 @@ bool GameRenderer::renderWorldToFbo(unsigned int fbo,
                                     int height,
                                     float tickDelta,
                                     const FrameRenderCamera& camera,
-                                    float fov,
-                                    FrameRenderCamera* outCamera) {
+                                    float fov) {
  if(client == nullptr || fbo == 0 || width <= 0 || height <= 0 || !std::isfinite(tickDelta) ||
     !std::isfinite(fov)) {
   return false;
@@ -872,17 +897,55 @@ bool GameRenderer::renderWorldToFbo(unsigned int fbo,
  WorldRenderer* worldRenderer = client->worldRenderer.get();
  Entity* prevWorldCam = nullptr;
  bool prevRenderCamEntity = false;
+ std::optional<WorldRenderer::ScopedCullState> chunkCullGuard;
  if(worldRenderer != nullptr) {
   prevWorldCam = worldRenderer->cameraEntity_;
   prevRenderCamEntity = worldRenderer->renderCameraEntity_;
-  worldRenderer->pushCullState();
+  chunkCullGuard.emplace(*worldRenderer);
  }
  gl::GLCore::bindFramebuffer(gl::framebuffer::Framebuffer, fbo);
  core::viewport(0, 0, width, height);
-  const bool hwOffset = camera.shadowPass && (shaderPacks_ == nullptr || shaderPacks_->shadowHardwareOffset);
+  const PackDefinition& packDef = packDefinition();
+  const bool hwOffset = camera.shadowPass && packDef.shadowHardwareOffset;
   if(hwOffset) {
-   const float factor = shaderPacks_ != nullptr ? shaderPacks_->shadowHardwareOffsetFactor : 2.0f;
-   const float units = shaderPacks_ != nullptr ? shaderPacks_->shadowHardwareOffsetUnits : 4.0f;
+   // Slope-scale factor is deliberately ZERO. shadow.vsh writes its own clip position
+   // through the pack's squircle distortion (lib/sm/distort.glsl), so the depth slope
+   // the hardware measures is the slope of an already-warped depth — the distortion
+   // factor runs from ~9.7 at the player to ~0.8 at 300 blocks, so a slope-scaled term
+   // biases wildly unevenly across the map and shifts as the camera moves. That reads
+   // as blotches that boil while walking. The pack computes its own slope AND normal
+   // bias, distortion-aware, in lib/light/shadows.glsl; all the engine should add is a
+   // flat constant offset.
+   const float factor = 0.0f;
+   // glPolygonOffset units are multiples of the smallest RESOLVABLE depth increment,
+   // not a world distance. The shadow map is GL_DEPTH_COMPONENT32, so with this pack's
+   // 454-block ortho range that increment is 454/2^32 blocks — the directive's 4.0
+   // units works out to ~4e-7 blocks, which is why the acne bias has never actually
+   // done anything. State the bias in BLOCKS and convert, so it means the same depth
+   // offset whatever near/far the pack asks for and whatever the render distance is.
+   //
+   // TUNE THIS ONE NUMBER if acne persists (raise) or shadows detach from their
+   // casters / peter-pan (lower).
+   constexpr float kShadowDepthBiasBlocks = 0.02f;
+   // Multiples of the smallest resolvable increment of the depth buffer we ACTUALLY
+   // got, queried at allocation — a DEPTH_COMPONENT32 request is commonly satisfied
+   // with 24 bits, and assuming 32 there overshoots the offset by 256x, which
+   // detaches every shadow from its caster.
+   const float depthUnitsPerRange = std::exp2(static_cast<float>(camera.shadowDepthBits));
+   const float depthRange = std::abs(camera.orthoFar - camera.orthoNear);
+   const float units = (camera.orthographic && depthRange > 1.0e-3f)
+                           ? kShadowDepthBiasBlocks * depthUnitsPerRange / depthRange
+                           : packDef.shadowHardwareOffsetUnits;
+   static bool loggedOffset = false;
+   if(!loggedOffset) {
+    loggedOffset = true;
+    ClientLog::LOGGER.log(::net::minecraft::util::logging::LogLevel::Info,
+                          std::string("[shadow-probe] polygonOffset factor=") + std::to_string(factor) +
+                              " units=" + std::to_string(units) + " (bias=" +
+                              std::to_string(kShadowDepthBiasBlocks) + " blocks over depthRange=" +
+                              std::to_string(depthRange) + " depthBits=" +
+                              std::to_string(camera.shadowDepthBits) + ")");
+   }
    core::enablePolygonOffset();
    core::polygonOffset(factor, units);
   }
@@ -891,13 +954,10 @@ bool GameRenderer::renderWorldToFbo(unsigned int fbo,
   if(hwOffset) {
    core::disablePolygonOffset();
   }
- if(outCamera != nullptr) {
-  *outCamera = frameCamera_;
- }
  if(worldRenderer != nullptr) {
   worldRenderer->cameraEntity_ = prevWorldCam;
   worldRenderer->renderCameraEntity_ = prevRenderCamEntity;
-  worldRenderer->popCullState();
+  chunkCullGuard.reset();
  }
  frameCamera_ = prevFrameCamera;
  RenderCameraState::instance().setFrame(prevPublishedCamera);
@@ -1029,14 +1089,32 @@ void GameRenderer::renderToCurrentTarget(float tickDelta,
   frameCamera_.skipAllRendering = definition.skipAllRendering;
  }
  RenderCameraState::instance().setFrame(frameCamera_);
-  const float farPlane = cameraFarPlane(frameCamera_, frameSettings_.renderDistanceBlocks);
- core::setDrawCameraStateFromCamera(frameCamera_, farPlane);
+  core::setDrawCameraStateFromCamera(frameCamera_);
+  // TEMP DIAGNOSTIC — [origin-probe]. shadow.vsh cuts gl_ModelViewMatrix to a mat3, so
+  // ANY translation in the shadow-pass modelview is silently discarded at write time
+  // while still applying at read time — which displaces whatever it applies to. This
+  // asserts the invariant: during the shadow pass the matrix-stack origin (entities,
+  // block entities) must equal the section origin (terrain), i.e. x == eyeX.
+  if(frameCamera_.shadowPass) {
+   static int originProbeFrame = 0;
+   if((originProbeFrame++ % 120) == 0) {
+    const double dx = frameCamera_.x - frameCamera_.eyeX;
+    const double dy = frameCamera_.y - frameCamera_.eyeY;
+    const double dz = frameCamera_.z - frameCamera_.eyeZ;
+    const bool split = std::abs(dx) + std::abs(dy) + std::abs(dz) > 1.0e-4;
+    ClientLog::LOGGER.log(::net::minecraft::util::logging::LogLevel::Info,
+                          std::string("[origin-probe] shadow pass matrixStackOrigin-sectionOrigin=(") +
+                              std::to_string(dx) + "," + std::to_string(dy) + "," + std::to_string(dz) +
+                              ")" + (split ? "  <-- SPLIT ORIGIN, mat3() in shadow.vsh discards this"
+                                           : "  ok (rotation-only modelview)"));
+   }
+  }
   if(!frameCamera_.shadowPass && client->world != nullptr) {
    updateSunLight(client->world, tickDelta, client->camera);
   }
   if(!frameCamera_.shadowPass && !renderCameraEntity && shaderPacks_ != nullptr) {
    shaderPacks_->prepareFrame(client->world);
-   shaderPacks_->setFrameUniforms(buildFrameUniforms(tickDelta, farPlane, frameShadow_.depthTexture >= 0));
+   shaderPacks_->setFrameUniforms(buildFrameUniforms(tickDelta, frameShadow_.depthTexture >= 0));
    // Java runs the BEGIN stage before the shadow map render (onBeginClear →
    // beginRenderer.renderAll, IrisRenderingPipeline.java:1022; renderShadows runs
    // later), so begin programs sample the shadow targets as they exist at the start
@@ -1055,7 +1133,9 @@ void GameRenderer::renderToCurrentTarget(float tickDelta,
    frameShadow_ = {};
   }
    if(!frameCamera_.shadowPass && client->options.frustumCulling && frameSettings_.frustumCulling) {
-   Frustum::getInstance().compute();
+   if(core::drawCameraStateValid()) {
+    Frustum::getInstance().compute(core::drawProjection(), core::drawModelView());
+   }
   }
   core::setFogEnabled(!frameCamera_.shadowPass);
    if(!frameCamera_.shadowPass && !frameCamera_.skipAllRendering &&
@@ -1125,8 +1205,8 @@ void GameRenderer::renderToCurrentTarget(float tickDelta,
  if(frameCamera_.shadowPass) {
   core::setFogEnabled(false);
   if(frameCamera_.shadowTerrain) {
-   drawSolidTerrain(*worldRenderer, *camera, tickDelta, terrainTextureId);
-   drawCutoutTerrain(*worldRenderer, *camera, tickDelta, terrainTextureId);
+   drawSolidTerrain(*worldRenderer, *camera, terrainTextureId);
+   drawCutoutTerrain(*worldRenderer, *camera, terrainTextureId);
   }
   if(frameCamera_.shadowEntities || frameCamera_.shadowPlayer || frameCamera_.shadowBlockEntities) {
    renderWorldStage(atmosphereCtx, tickDelta, mod::WorldRenderStage::Entities, true, true, [&] {
@@ -1146,8 +1226,8 @@ void GameRenderer::renderToCurrentTarget(float tickDelta,
  core::fogApplyMode(client, 0, frameSettings_);
  renderWorldStage(atmosphereCtx, tickDelta, mod::WorldRenderStage::OpaqueTerrain, !skipGbuffers, false, [&] {
   const debug::RenderProfiler::Scope solidScope(debug::RenderStage::SolidTerrain);
-  drawSolidTerrain(*worldRenderer, *camera, tickDelta, terrainTextureId);
-  drawCutoutTerrain(*worldRenderer, *camera, tickDelta, terrainTextureId);
+  drawSolidTerrain(*worldRenderer, *camera, terrainTextureId);
+  drawCutoutTerrain(*worldRenderer, *camera, terrainTextureId);
  });
  core::setLightingEnabled(true);
  applyEntityLightingRig(frameCamera_, worldLight);

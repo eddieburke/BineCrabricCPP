@@ -2,12 +2,18 @@
 #include <array>
 #include <bit>
 #include <cstdint>
+#include "net/minecraft/util/math/Matrix4f.hpp"
 #include "net/minecraft/util/math/Types.hpp"
 namespace net::minecraft::client::render {
 class Frustum {
  public:
  static Frustum& getInstance();
- void compute();
+ // Explicit inputs, like ShadowCullingFrustum. This used to read core::drawProjection()
+ // / core::drawModelView() itself, so which camera it culled against depended on
+ // whatever draw state happened to be current at the call.
+ // https://github.com/IrisShaders/Iris/blob/26.1/common/src/main/java/net/irisshaders/iris/shadows/ShadowRenderer.java
+ void compute(const net::minecraft::util::math::Matrix4f& projection,
+              const net::minecraft::util::math::Matrix4f& modelView);
  [[nodiscard]] bool intersects(float minX, float minY, float minZ, float maxX, float maxY, float maxZ) const {
   constexpr float kPlaneEpsilon = 1.0e-5f;
   float dist[6];

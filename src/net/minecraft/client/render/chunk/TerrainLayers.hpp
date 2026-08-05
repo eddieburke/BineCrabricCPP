@@ -11,7 +11,15 @@ namespace terrain_layer {
 inline constexpr int Solid = 0;
 inline constexpr int Cutout = 1;
 inline constexpr int Translucent = 2;
-inline constexpr int Count = 3;
+// Leaf-blob interior faces. A leaf<->leaf boundary is two coincident planes, so
+// only one quad is emitted per boundary (see leafInteriorFaceVisible) and it has
+// to be drawn double-sided to stay visible from whichever side you look through.
+// That needs cull off, which no other terrain geometry wants, so it gets its own
+// bucket rather than turning culling off for the whole cutout layer.
+// resolveTerrainMeshLayer never returns this: it is a per-face routing layer,
+// filled by re-running the leaf blocks with BlockRenderContext::interiorFacePass.
+inline constexpr int CutoutInterior = 3;
+inline constexpr int Count = 4;
 } // namespace terrain_layer
 
 // Legacy Block::getRenderLayer() is only opaque(0) / translucent(1). Pack

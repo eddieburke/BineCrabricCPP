@@ -32,6 +32,8 @@ PackInstance::~PackInstance() {
 }
 void PackInstance::resetPrograms() {
  compiledPrograms.clear();
+ programCacheKeys.clear();
+ programDrawBuffers.clear();
  logged.clear();
  programs = std::make_unique<gl::ProgramCache>();
  programState = PackProgramState::Cold;

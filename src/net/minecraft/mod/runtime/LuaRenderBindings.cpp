@@ -74,10 +74,18 @@ int luaRenderDrawQuads(lua_State* state) {
  const float modelScale = luaFloatField(state, specIndex, "scale", 1.0f);
  const bool worldSpace = luaBoolField(state, specIndex, "world_space", false);
  if(worldSpace) {
-  const client::render::FrameRenderCamera& camera = client::render::RenderCameraState::instance().frame();
-  modelX -= camera.x;
-  modelY -= camera.y;
-  modelZ -= camera.z;
+  // Anchor to the camera EYE — the one geometry origin (Camera.getPosition()).
+  if(client::render::core::drawCameraStateValid()) {
+   const float* eye = client::render::core::drawCameraPosition();
+   modelX -= eye[0];
+   modelY -= eye[1];
+   modelZ -= eye[2];
+  } else {
+   const client::render::FrameRenderCamera& camera = client::render::RenderCameraState::instance().frame();
+   modelX -= camera.eyeX;
+   modelY -= camera.eyeY;
+   modelZ -= camera.eyeZ;
+  }
  }
  const bool hasTransform = worldSpace || modelX != 0.0 || modelY != 0.0 || modelZ != 0.0 || modelYaw != 0.0f ||
                            modelPitch != 0.0f || modelRoll != 0.0f || modelScale != 1.0f;
@@ -130,7 +138,7 @@ int luaRenderDrawQuads(lua_State* state) {
  const core::ScopedDrawCameraState modelGuard;
  if(hasTransform) {
   net::minecraft::util::math::MatrixStack pose;
-  pose.load(core::drawModelView());
+  pose.load(net::minecraft::util::math::Matrix4f::identityMatrix());
   pose.translate(static_cast<float>(modelX), static_cast<float>(modelY), static_cast<float>(modelZ));
   if(modelYaw != 0.0f) {
    pose.rotate(modelYaw, 0.0f, 1.0f, 0.0f);
@@ -144,7 +152,7 @@ int luaRenderDrawQuads(lua_State* state) {
   if(modelScale != 1.0f) {
    pose.scale(modelScale, modelScale, modelScale);
   }
-  core::setDrawModelView(pose.top());
+  core::setDrawPose(pose.top());
  }
  client::render::Tessellator& tessellator = client::render::Tessellator::INSTANCE;
  tessellator.startQuads();

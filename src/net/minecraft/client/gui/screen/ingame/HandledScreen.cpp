@@ -35,9 +35,9 @@ void HandledScreen::render(int mouseX, int mouseY, float tickDelta) {
  drawBackground(tickDelta);
  {
   const core::ScopedDrawCameraState slotGuard;
-  net::minecraft::util::math::Matrix4f slotPose = core::drawModelView();
+  net::minecraft::util::math::Matrix4f slotPose = core::drawPose();
   slotPose.translate(static_cast<float>(originX), static_cast<float>(originY), 0.0f);
-  core::setDrawModelView(slotPose);
+  core::setDrawPose(slotPose);
   core::setConstColor(1.0f, 1.0f, 1.0f, 1.0f);
   ::net::minecraft::screen::slot::Slot* hoveredSlot = nullptr;
   PlayerEntity& player = static_cast<PlayerEntity&>(*minecraft_->player);
@@ -57,9 +57,9 @@ void HandledScreen::render(int mouseX, int mouseY, float tickDelta) {
    drawSlot(*slot);
   }
    if(!cursorStack.empty()) {
-    net::minecraft::util::math::Matrix4f cursorPose = core::drawModelView();
+    net::minecraft::util::math::Matrix4f cursorPose = core::drawPose();
     cursorPose.translate(0.0f, 0.0f, 32.0f);
-    core::setDrawModelView(cursorPose);
+    core::setDrawPose(cursorPose);
     itemRenderer.renderGuiItem(
         *textRenderer_, minecraft_->textureManager, cursorStack, mouseX - originX - 8, mouseY - originY - 8);
     itemRenderer.renderGuiItemDecoration(

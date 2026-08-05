@@ -303,10 +303,24 @@ using net::minecraft::client::render::block::BlockRenderManager;
 #ifdef MINECRAFT_NATIVE_EXPORTS
 using runtime::ModLuaDrawScope;
 void applyWorldDrawTransform(net::minecraft::util::math::MatrixStack& pose, const WorldModelDraw& options) {
- const client::render::FrameRenderCamera& camera = client::render::RenderCameraState::instance().frame();
- pose.translate(static_cast<float>(options.x - camera.x),
-                static_cast<float>(options.y - camera.y),
-                static_cast<float>(options.z - camera.z));
+ // Anchor to the camera EYE — the one geometry origin (Camera.getPosition()).
+ double camX = 0.0;
+ double camY = 0.0;
+ double camZ = 0.0;
+ if(client::render::core::drawCameraStateValid()) {
+  const float* eye = client::render::core::drawCameraPosition();
+  camX = eye[0];
+  camY = eye[1];
+  camZ = eye[2];
+ } else {
+  const client::render::FrameRenderCamera& camera = client::render::RenderCameraState::instance().frame();
+  camX = camera.eyeX;
+  camY = camera.eyeY;
+  camZ = camera.eyeZ;
+ }
+ pose.translate(static_cast<float>(options.x - camX),
+                static_cast<float>(options.y - camY),
+                static_cast<float>(options.z - camZ));
  if(options.yaw != 0.0f) {
   pose.rotate(options.yaw, 0.0f, 1.0f, 0.0f);
  }
@@ -583,9 +597,11 @@ void drawLuaBlockInventory(BlockRenderManager& manager, Block& block, int /*meta
  core::setConstColor(1.0f, 1.0f, 1.0f, 1.0f);
  const core::ScopedDrawCameraState drawGuard;
  net::minecraft::util::math::MatrixStack pose;
- pose.load(core::drawModelView());
+ // Inventory block models also render in-world (dropped item entities, a mob's
+ // held item), where the base is the entity pose. see core::drawPose
+ pose.load(core::drawPose());
  pose.translate(-0.5f, -0.5f, -0.5f);
- core::setDrawModelView(pose.top());
+ core::setDrawPose(pose.top());
  const BlockModelDraw draw{&manager, &block, 0, 0, 0, true, brightness};
  drawBakedBlockModel(draw, *baked, BakedQuadTransform{});
 }
@@ -649,10 +665,10 @@ bool drawBakedModelWorld(int handle, const WorldModelDraw& options) {
  }
  const core::ScopedDrawCameraState drawGuard;
  net::minecraft::util::math::MatrixStack pose;
- pose.load(core::drawModelView());
+ pose.load(net::minecraft::util::math::Matrix4f::identityMatrix());
  applyWorldDrawTransform(pose, options);
  pose.translate(-0.5f, -options.pivotY, -0.5f);
- core::setDrawModelView(pose.top());
+ core::setDrawPose(pose.top());
  client::texture::TextureManager& textures = client::Minecraft::INSTANCE->textureManager;
  Tessellator& tess = worldDrawTessellator();
  int blockLight = 15;
@@ -783,13 +799,13 @@ bool drawItemStackWorld(const ItemStack& stack, const WorldModelDraw& options) {
  }
  const core::ScopedDrawCameraState drawGuard;
  net::minecraft::util::math::MatrixStack pose;
- pose.load(core::drawModelView());
+ pose.load(net::minecraft::util::math::Matrix4f::identityMatrix());
  applyWorldDrawTransform(pose, options);
- core::setDrawModelView(pose.top());
+ core::setDrawPose(pose.top());
  client::texture::TextureManager& textures = client::Minecraft::INSTANCE->textureManager;
   if(custom) {
    pose.translate(-0.5f, -options.pivotY, -0.5f);
-   core::setDrawModelView(pose.top());
+   core::setDrawPose(pose.top());
    textures.bindTexture(
        client::render::resolveBlockTexture(stack.getTextureId(), textures, ItemModelRenderer::atlasDomain(stack)).glId);
    return drawLuaItemModel(worldDrawTessellator(), stack, modCaps.usesEntityLighting() ? 1.0f : brightness);
@@ -797,7 +813,7 @@ bool drawItemStackWorld(const ItemStack& stack, const WorldModelDraw& options) {
   if(blockModel) {
    if(options.pivotY != 0.5f) {
    pose.translate(0.0f, 0.5f - options.pivotY, 0.0f);
-   core::setDrawModelView(pose.top());
+   core::setDrawPose(pose.top());
   }
   textures.bindTexture(client::render::resolveBlockTexture(block->textureId, textures,
                                                             client::render::AtlasDomain::Terrain)
@@ -812,9 +828,9 @@ bool drawItemStackWorld(const ItemStack& stack, const WorldModelDraw& options) {
   itemDropBlockManager.ctx.faceState.useAo = previousUseAo;
   return true;
  }
-  const auto uv = ItemModelRenderer::spriteUv(stack);
- pose.translate(-0.5f, -options.pivotY, 0.0625f * 0.5f);
- core::setDrawModelView(pose.top());
+   const auto uv = ItemModelRenderer::spriteUv(stack);
+  pose.translate(-0.5f, -options.pivotY, 0.0625f * 0.5f);
+  core::setDrawPose(pose.top());
  textures.bindTexture(
      client::render::resolveBlockTexture(stack.getTextureId(), textures, ItemModelRenderer::atlasDomain(stack)).glId);
  {

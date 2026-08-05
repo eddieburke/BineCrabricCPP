@@ -51,6 +51,8 @@ class GameOptions {
  int clouds = 0;
  float cloudsHeight = 0.0f;
  int trees = 0;
+ // Interior faces inside a leaf blob: 0 = Off, 1 = Shell, 2 = All.
+ int leafInterior = 1;
  int grass = 0;
  int water = 0;
  int rain = 0;

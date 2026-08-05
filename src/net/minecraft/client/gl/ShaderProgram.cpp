@@ -478,6 +478,21 @@ void* loadGlProc(const char* name) {
  return reinterpret_cast<void*>(proc);
 }
 
+struct BinaryProcs {
+ PFN_GetProgramivLocal getProgramiv;
+ PFN_GetProgramBinary getProgramBinary;
+ PFN_ProgramBinary programBinary;
+};
+
+const BinaryProcs& binaryProcs() {
+ static const BinaryProcs procs = {
+     reinterpret_cast<PFN_GetProgramivLocal>(loadGlProc("glGetProgramiv")),
+     reinterpret_cast<PFN_GetProgramBinary>(loadGlProc("glGetProgramBinary")),
+     reinterpret_cast<PFN_ProgramBinary>(loadGlProc("glProgramBinary")),
+ };
+ return procs;
+}
+
 std::uint64_t mixHash(std::uint64_t h, const std::string& s) {
  // FNV-1a 64-bit over bytes, then avalanche into running hash.
  std::uint64_t x = 14695981039346656037ull;
@@ -496,7 +511,8 @@ std::uint64_t ShaderProgram::contentHash(bool compute,
                                          const std::string& b,
                                          const std::string& c,
                                          const std::string& d,
-                                         const std::string& e) {
+                                         const std::string& e,
+                                         const std::string& abiSalt) {
  std::uint64_t h = compute ? 1ull : 0ull;
  h = mixHash(h, preamble);
  h = mixHash(h, a);
@@ -504,6 +520,7 @@ std::uint64_t ShaderProgram::contentHash(bool compute,
  h = mixHash(h, c);
  h = mixHash(h, d);
  h = mixHash(h, e);
+ h = mixHash(h, abiSalt);
  return h == 0 ? 1ull : h;
 }
 
@@ -512,12 +529,13 @@ bool ShaderProgram::extractProgramBinary(ProgramBinaryBlob& out) {
   lastError_ = "no program";
   return false;
  }
- auto getProgramiv = reinterpret_cast<PFN_GetProgramivLocal>(loadGlProc("glGetProgramiv"));
- auto getProgramBinary = reinterpret_cast<PFN_GetProgramBinary>(loadGlProc("glGetProgramBinary"));
- if(getProgramiv == nullptr || getProgramBinary == nullptr) {
+ const auto& procs = binaryProcs();
+ if(procs.getProgramiv == nullptr || procs.getProgramBinary == nullptr) {
   lastError_ = "glGetProgramBinary unavailable";
   return false;
  }
+ auto getProgramiv = procs.getProgramiv;
+ auto getProgramBinary = procs.getProgramBinary;
  int length = 0;
  getProgramiv(program_, kProgramBinaryLength, &length);
  if(length <= 0) {
@@ -581,7 +599,7 @@ bool ShaderProgram::loadFromBinary(const ProgramBinaryBlob& binary) {
   lastError_ = "empty program binary";
   return false;
  }
- auto programBinary = reinterpret_cast<PFN_ProgramBinary>(loadGlProc("glProgramBinary"));
+ auto programBinary = binaryProcs().programBinary;
  if(programBinary == nullptr) {
   lastError_ = "glProgramBinary unavailable";
   return false;

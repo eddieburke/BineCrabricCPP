@@ -102,9 +102,13 @@ class ChunkCache : public ChunkSource {
  std::atomic<int> pendingLoadTasks_{0};
  std::mutex loadCompleteMutex_;
  std::condition_variable loadCompleteCv_;
- // Serializes storage_ access and decoration (must stay serial for vanilla feature
- // spill order). Terrain generation uses per-worker generators and does not need this.
- std::recursive_mutex ioMutex_;
+ // Serializes calls into storage_ only. Decoration, generator_->tick() and the
+ // background write drain deliberately run outside it: decoration is main-thread
+ // confined, generator_ is main-thread only (workers use workerGenerators_), and
+ // every ChunkStorage implementation already locks its own files. Widening this
+ // lock again re-creates the convoy where one main-thread decoration pass stalls
+ // every compute worker sitting in produceChunk().
+ std::recursive_mutex storageMutex_;
  // Per-thread generator clones, owned here so they never outlive world_.
  std::mutex workerGeneratorMutex_;
  std::unordered_map<std::thread::id, std::unique_ptr<ChunkSource>> workerGenerators_{};

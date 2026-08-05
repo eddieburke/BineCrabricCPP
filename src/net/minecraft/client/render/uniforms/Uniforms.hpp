@@ -5,14 +5,13 @@ class ShaderProgram;
 namespace net::minecraft::client::render {
 // Per-pass viewport overrides applied at upload time; the rest of
 // PackUniformValues rides along by const reference (no per-pass struct copy).
+// Only the resolution triplet differs per pass — the far plane, shadow map
+// resolution and shadow/normal availability are pack-wide and live on
+// PackUniformValues (Pipeline keeps them current per stage).
 struct PackViewportValues {
  float viewWidth = 1.0f;
  float viewHeight = 1.0f;
  float aspectRatio = 1.0f;
- float farPlane = 256.0f;
- float shadowMapResolution = 0.0f;
- int shadowAvailable = 0;
- int normalAvailable = 0;
 };
 struct PackUniformValues {
  float frameTimeCounter = 0.0f;

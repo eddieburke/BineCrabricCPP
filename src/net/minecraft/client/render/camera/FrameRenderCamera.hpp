@@ -3,6 +3,7 @@
 #include <array>
 #include <cmath>
 #include <cstring>
+#include "net/minecraft/client/render/celestial/CelestialState.hpp"
 #include "net/minecraft/util/math/Matrix4f.hpp"
 namespace net::minecraft::entity {
 class LivingEntity;
@@ -52,10 +53,21 @@ struct FrameRenderCamera {
  bool orthographic = false;
  float orthoHalfWidth = 1.0f;
  float orthoHalfHeight = 1.0f;
+ // Depth size the shadow FBO actually got (see ShadowTargets::ensure). glPolygonOffset
+ // units are multiples of the smallest resolvable depth increment, so a bias stated in
+ // blocks cannot be converted without it.
+ int shadowDepthBits = 24;
  float orthoNear = -1.0f;
  float orthoFar = 1.0f;
+ // The camera carries its own near/far. For the main camera GameRenderer sets
+ // these once per frame (near 0.05, far = render distance in blocks, like Iris'
+ // "near" ONCE uniform and CameraUniforms.getRenderDistanceInBlocks = effective
+ // render distance * 16); custom cameras (the perspective shadow pass) set their
+ // own. Nothing ever threads a far plane in as a parameter — buildCameraProjection
+ // reads exactly what the struct says.
+ // https://github.com/IrisShaders/Iris/blob/26.1/common/src/main/java/net/irisshaders/iris/uniforms/CameraUniforms.java
  float perspectiveNear = 0.05f;
- float perspectiveFar = 0.0f;
+ float perspectiveFar = 256.0f;
  bool shadowPass = false;
  bool shadowEntities = true;
  bool shadowPlayer = true;
@@ -92,7 +104,11 @@ inline void buildShadowCelestialModelView(float* out,
  net::minecraft::util::math::Matrix4f pose;
  pose.rotate(90.0f, 1.0f, 0.0f, 0.0f);
  pose.rotate(skyAngle * -360.0f, 0.0f, 0.0f, 1.0f);
- pose.rotate(-sunPathRotation, 1.0f, 0.0f, 0.0f);
+ // Java: Axis.XP.rotationDegrees(sunPathRotation) — POSITIVE. The negation this used
+ // to carry tilted the shadow map the opposite way from the sunPosition/
+ // shadowLightPosition the pack lights with, so every pack with a non-zero
+ // sunPathRotation lit one direction and sampled the shadow map from another.
+ pose.rotate(sunPathRotation, 1.0f, 0.0f, 0.0f);
  if(std::abs(shadowIntervalSize) > 0.0f) {
   float offsetX = std::fmod(static_cast<float>(cameraX), shadowIntervalSize);
   float offsetY = std::fmod(static_cast<float>(cameraY), shadowIntervalSize);
@@ -104,27 +120,6 @@ inline void buildShadowCelestialModelView(float* out,
   pose.translate(offsetX, offsetY, offsetZ);
  }
  std::memcpy(out, pose.data(), sizeof(float) * 16);
-}
-// Java CelestialUniforms.getSunAngle(sun)/360: (angle + 90) mod 360 wrapped with a
-// single `c > 360` check, so an exact 1.0 does NOT wrap (celestial 0.75 stays 1.0).
-// https://github.com/IrisShaders/Iris/blob/26.1/common/src/main/java/net/irisshaders/iris/uniforms/CelestialUniforms.java
-inline float celestialSunAngle(float celestialAngle01) {
- const float wrapped = celestialAngle01 + 0.25f;
- return wrapped > 1.0f ? wrapped - 1.0f : wrapped;
-}
-// Java: shadowAngle uniform = getShadowAngle() = getSunAngle(isDay())/360, where
-// isDay() = getSunAngle(true) < 180 (sunAngle < 0.5). At night the moon angle is
-// used, which is 180 degrees from the sun ((sunAngle + 0.5) mod 1), with the same
-// >-only wrap — so at the celestial 0.75 wrap the shadow angle is 0.5 exactly like
-// Java (360 does not wrap, isDay is false, the moon sits at 180 degrees).
-// https://github.com/IrisShaders/Iris/blob/26.1/common/src/main/java/net/irisshaders/iris/uniforms/CelestialUniforms.java
-inline float shadowAngleFromCelestial(float celestialAngle) {
- const float sunAngle = celestialSunAngle(celestialAngle);
- if(sunAngle < 0.5f) {
-  return sunAngle;
- }
- const float moonAngle = celestialAngle < 0.5f ? celestialAngle + 0.5f : celestialAngle - 0.5f;
- return celestialSunAngle(moonAngle);
 }
 // Clean camera rotation, no translation: `MV_camera` on its own.
 inline void buildCameraViewRotation(float* m, const FrameRenderCamera& c) {
@@ -191,32 +186,13 @@ inline void directionToView(float x, float y, float z, const FrameRenderCamera& 
  out[1] = b[1] * cameraSpaceX + b[5] * cameraSpaceY + b[9] * cameraSpaceZ;
  out[2] = b[2] * cameraSpaceX + b[6] * cameraSpaceY + b[10] * cameraSpaceZ;
 }
-// Iris publishes the celestial positions through the fixed -90 degree renderSky yaw
-// (`celestial.rotate(Axis.YP.rotationDegrees(-90.0F))`, CelestialUniforms.java:154-158)
-// BEFORE the sunPathRotation/angle rotations. The light-registry direction is the beta
-// renderSky direction (0, cos 2pi*c, sin 2pi*c) — that pre-yaw frame — so rotating it by
-// RY(-90) yields (worldX, worldY, worldZ) -> (-worldZ, worldY, worldX), landing on the
-// same axis the shadow map is oriented by (ShadowMatrices.createBaselineModelViewMatrix
-// light axis = R^T * (0,0,1)). Without the yaw, packs' shadowLightDirection /
-// sunPosition disagree with the map by up to 90 degrees of azimuth, and the slope-scaled
-// normal bias + lit gate in sample_shadow smear shadow boundaries into wedges on
-// vertical faces.
-// https://github.com/IrisShaders/Iris/blob/26.1/common/src/main/java/net/irisshaders/iris/uniforms/CelestialUniforms.java
-inline void applyRenderSkyYaw(const float in[3], float out[3]) {
- out[0] = -in[2];
- out[1] = in[1];
- out[2] = in[0];
-}
-// Vanilla/Iris: near is the fixed 0.05, far is the render distance in blocks. A custom
-// camera (the perspective shadow pass) may override either.
-inline float cameraNearPlane(const FrameRenderCamera& c) noexcept {
- return c.perspectiveNear > 0.0f ? c.perspectiveNear : 0.05f;
-}
-inline float cameraFarPlane(const FrameRenderCamera& c, float renderDistanceBlocks) noexcept {
- const float nearPlane = cameraNearPlane(c);
- return (c.customView || c.shadowPass) && c.perspectiveFar > nearPlane ? c.perspectiveFar : renderDistanceBlocks;
-}
-inline void buildCameraProjection(float* m, const FrameRenderCamera& c, float farPlane) {
+// Iris/vanilla: the projection is built straight from the camera's own near/far
+// (Java GameRenderer.getBasicProjectionMatrix: perspective(fov, aspect, 0.05,
+// renderDistance * 16); the perspective shadow camera uses its ShadowMatrices
+// planes). There are no wrapper functions and no far-plane parameter — the one
+// place that knows the render distance (GameRenderer::renderWorld) stores it on
+// the camera, and every consumer builds from that.
+inline void buildCameraProjection(float* m, const FrameRenderCamera& c) {
  std::fill(m, m + 16, 0.0f);
  if(c.orthographic) {
   const float w = std::max(c.orthoHalfWidth, 1e-3f);
@@ -232,19 +208,19 @@ inline void buildCameraProjection(float* m, const FrameRenderCamera& c, float fa
  }
  const float x = c.projectionX != 0.0f ? c.projectionX : 1.0f;
  const float y = c.projectionY != 0.0f ? c.projectionY : 1.0f;
- const float nearZ = cameraNearPlane(c);
- const float farZ = std::max(cameraFarPlane(c, farPlane), nearZ + 1e-3f);
+ const float nearZ = std::max(c.perspectiveNear, 1e-4f);
+ const float farZ = std::max(c.perspectiveFar, nearZ + 1e-3f);
  m[0] = x;
  m[5] = y;
  m[10] = -(farZ + nearZ) / (farZ - nearZ);
  m[11] = -1.0f;
  m[14] = -(2.0f * farZ * nearZ) / (farZ - nearZ);
 }
-inline void buildCameraProjectionInverse(float* m, const FrameRenderCamera& c, float farPlane) {
+inline void buildCameraProjectionInverse(float* m, const FrameRenderCamera& c) {
  const float x = std::abs(c.projectionX) > 1e-6f ? c.projectionX : 1.0f;
  const float y = std::abs(c.projectionY) > 1e-6f ? c.projectionY : 1.0f;
- const float nearZ = cameraNearPlane(c);
- const float farZ = std::max(cameraFarPlane(c, farPlane), nearZ + 1e-3f);
+ const float nearZ = std::max(c.perspectiveNear, 1e-4f);
+ const float farZ = std::max(c.perspectiveFar, nearZ + 1e-3f);
  std::fill(m, m + 16, 0.0f);
  if(c.orthographic) {
   const float w = std::max(c.orthoHalfWidth, 1e-3f);

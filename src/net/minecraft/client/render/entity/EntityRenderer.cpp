@@ -130,7 +130,7 @@ void EntityRenderer::renderOnFire(
   }
    matrices.translate(0.0f, 0.0f, -0.3f + static_cast<float>(static_cast<int>(remaining)) * 0.02f);
    render::core::setConstColor(1.0f, 1.0f, 1.0f, 1.0f);
-   render::core::setDrawModelView(matrices.top());
+   render::core::setDrawPose(matrices.top());
    float layerOffset = 0.0f;
   int layer = 0;
   tessellator.startQuads();
@@ -180,7 +180,7 @@ void EntityRenderer::renderShadow(
      resolveShaderObjectId("entity", "minecraft:entity_shadow", -1));
  render::RenderPassScope passScope(render::RenderType::entityTranslucent());
  // Soft shadow: opacity lives in vaColor.a (see gbuffers_entities.fsh).
- render::core::setDrawModelView(matrices.top());
+ render::core::setDrawPose(matrices.top());
  if(dispatcher != nullptr && dispatcher->textureManager() != nullptr) {
   const int shadowTex = dispatcher->textureManager()->getTextureId("%clamp%/misc/shadow.png");
   dispatcher->textureManager()->bindTexture(shadowTex);

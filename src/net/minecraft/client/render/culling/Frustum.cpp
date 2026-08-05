@@ -39,14 +39,10 @@ void Frustum::normalize(float plane[4]) {
  plane[3] /= length;
 #endif
 }
-void Frustum::compute() {
- if(!net::minecraft::client::render::core::drawCameraStateValid()) {
-  return;
- }
- const net::minecraft::util::math::Matrix4f& projectionMatrixRef = net::minecraft::client::render::core::drawProjection();
- const net::minecraft::util::math::Matrix4f& modelViewMatrixRef = net::minecraft::client::render::core::drawModelView();
- std::memcpy(projectionMatrix.data(), projectionMatrixRef.m, sizeof(float) * 16);
- std::memcpy(modelMatrix.data(), modelViewMatrixRef.m, sizeof(float) * 16);
+void Frustum::compute(const net::minecraft::util::math::Matrix4f& projection,
+                      const net::minecraft::util::math::Matrix4f& modelView) {
+ std::memcpy(projectionMatrix.data(), projection.m, sizeof(float) * 16);
+ std::memcpy(modelMatrix.data(), modelView.m, sizeof(float) * 16);
 #ifdef __SSE2__
  const __m128 p0 = _mm_loadu_ps(&projectionMatrix[0]);
  const __m128 p1 = _mm_loadu_ps(&projectionMatrix[4]);

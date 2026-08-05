@@ -15,6 +15,7 @@ RenderSettings renderSettings(const GameOptions& options) {
  r.brightnessBoost = options.brightness;
  r.mipmapLinearFilter = options.mipmapLinear;
  r.fancyLeaves = options.trees == 0;
+ r.leafInteriorFaces = r.fancyLeaves ? std::clamp(options.leafInterior, 0, 2) : 0;
  r.fancyGrass = (options.grass & 1) == 0;
  r.renderWater = options.water < 2;
  r.fancyWater = options.water == 0 && options.fancyGraphics;
@@ -25,9 +26,12 @@ RenderSettings renderSettings(const GameOptions& options) {
  r.renderDistanceBlocks = static_cast<float>(baseDistance) * r.renderScale;
  const float distanceBlend = 1.0f / static_cast<float>(4 - r.viewDistanceSetting);
  r.fogColorBlend = 1.0f - static_cast<float>(std::pow(static_cast<double>(distanceBlend), 0.25));
- const int visualGridDiameter =
-     std::clamp(static_cast<int>(static_cast<float>(baseDistance * 2) * r.renderScale), 64, 2560);
- r.chunkRadius = (visualGridDiameter / 16 + 1) / 2;
+ // One formula for the section radius, derived from the render distance the camera
+ // and the fog actually use. The old separate chain
+ // (visualGridDiameter = clamp(baseDistance*2*scale, 64, 2560) then
+ // (diameter/16 + 1)/2) was algebraically the same but drifted when one side
+ // changed.
+ r.chunkRadius = std::clamp(static_cast<int>((r.renderDistanceBlocks + 8.0f) / 16.0f), 2, 80);
  const int preloadMargin = options.preloadedChunks <= 0 ? 3 : 3 + options.preloadedChunks / 2;
  r.residentChunkRadius = r.chunkRadius + preloadMargin;
  r.smoothInput = options.smoothInput;

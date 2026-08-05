@@ -1,6 +1,6 @@
 // Draw camera state (the single matrix source after the matrix-stack collapse).
 // Pure CPU: exercises setDrawCameraState / setDrawCameraStateFromCamera /
-// setDrawModelView / ScopedDrawCameraState / gui_proj ortho publishing.
+// setPassModelView / setDrawPose / ScopedDrawCameraState / gui_proj ortho.
 #include <gtest/gtest.h>
 #include <cmath>
 #include <cstring>
@@ -59,7 +59,13 @@ TEST(DrawCameraState, GuiOrthoLoadPublishesCameraState) {
  EXPECT_EQ(cameraPosition[1], 0.0f);
  EXPECT_EQ(cameraPosition[2], 0.0f);
 }
-TEST(DrawCameraState, FromCameraBuildsFullPerDrawBase) {
+// The world pass base is gbufferModelView and NOTHING else. It used to carry an
+// extra T(cameraEntityPos - eye) so that beta-style producers emitting
+// camera-entity-relative geometry landed correctly; that convention is gone, and
+// with it the offset. Packs reconstruct world space as
+// gbufferModelViewInverse * viewPos + cameraPosition, which only holds when the
+// uploaded matrix is anchored on the same point cameraPosition reports.
+TEST(DrawCameraState, FromCameraBuildsGbufferModelViewAlone) {
  core::clearDrawCameraState();
  FrameRenderCamera camera;
  camera.x = 100.0;
@@ -79,14 +85,13 @@ TEST(DrawCameraState, FromCameraBuildsFullPerDrawBase) {
  camera.viewForwardZ = 0.0f;
  camera.projectionX = 1.2f;
  camera.projectionY = 1.1f;
- camera.perspectiveNear = 0.05f;
- camera.perspectiveFar = 512.0f;
- core::setDrawCameraStateFromCamera(camera, 256.0f);
+  camera.perspectiveNear = 0.05f;
+  camera.perspectiveFar = 512.0f;
+  core::setDrawCameraStateFromCamera(camera);
  ASSERT_TRUE(core::drawCameraStateValid());
- // Per-draw base = R * T(origin - eye): a camera-space point p is mapped as
- // R * p + R * (origin - eye) (the old stack top carried the same translation).
- // R here: col0=(0,1,0), col1=(0,0,1), col2=(-1,0,0); origin-eye=(-12,10,-15),
- // so R*p = (-pz, px, py) and R*(origin-eye) = (15, -12, 10).
+ // The base is the pure camera rotation: eye-relative p maps by R alone, with no
+ // translation folded in. R here: col0=(0,1,0), col1=(0,0,1), col2=(-1,0,0),
+ // so R*p = (-pz, px, py).
  const Matrix4f& modelView = core::drawModelView();
  const float px = 4.0f;
  const float py = -2.0f;
@@ -95,9 +100,15 @@ TEST(DrawCameraState, FromCameraBuildsFullPerDrawBase) {
  float outY = 0.0f;
  float outZ = 0.0f;
  modelView.transformPoint(px, py, pz, outX, outY, outZ);
- EXPECT_NEAR(outX, -pz + 15.0f, 1e-4f);
- EXPECT_NEAR(outY, px - 12.0f, 1e-4f);
- EXPECT_NEAR(outZ, py + 10.0f, 1e-4f);
+ EXPECT_NEAR(outX, -pz, 1e-4f);
+ EXPECT_NEAR(outY, px, 1e-4f);
+ EXPECT_NEAR(outZ, py, 1e-4f);
+ // Identical to buildCameraModelView, by construction.
+ float gbufferModelView[16]{};
+ net::minecraft::client::render::buildCameraModelView(gbufferModelView, camera);
+ Matrix4f expected;
+ expected.set(gbufferModelView);
+ EXPECT_TRUE(nearMatrix(modelView, expected));
  // Projection matches the camera projection build.
  const Matrix4f& projection = core::drawProjection();
  EXPECT_NEAR(projection.m[0], 1.2f, 1e-5f);
@@ -137,8 +148,8 @@ TEST(DrawCameraState, BobIsLeftMultipliedAndNeverMovesTheOrigin) {
  Matrix4f bob;
  bob.translate(0.05f, -0.03f, 0.0f);
  std::memcpy(camera.bobModelView, bob.m, sizeof(camera.bobModelView));
- camera.hasBobModelView = true;
- core::setDrawCameraStateFromCamera(camera, 256.0f);
+  camera.hasBobModelView = true;
+  core::setDrawCameraStateFromCamera(camera);
  ASSERT_TRUE(core::drawCameraStateValid());
  // The published origin is Camera.getPosition(), bob or no bob.
  const float* cameraPosition = core::drawCameraPosition();
@@ -178,21 +189,35 @@ TEST(DrawCameraState, BobIsLeftMultipliedAndNeverMovesTheOrigin) {
  EXPECT_NEAR(up[1], 1.0f, 1e-4f);
  EXPECT_NEAR(up[2], 0.0f, 1e-4f);
 }
-TEST(DrawCameraState, SetDrawModelViewComposesPerDrawPose) {
+// A pose is composed and published; it never touches the pass base. The GUI is
+// the same path as the world here — that is the whole point of the collapse.
+TEST(DrawCameraState, PoseComposesWithoutTouchingThePassBase) {
  core::clearDrawCameraState();
  gui_proj::load(854.0f, 480.0f);
  const Matrix4f base = core::drawModelView();
- const float baseZ = base.m[14];
- Matrix4f pose = base;
+ Matrix4f pose;
  pose.translate(10.0f, -20.0f, 0.0f);
- core::setDrawModelView(pose);
- const Matrix4f& published = core::drawModelView();
- EXPECT_NEAR(published.m[12], 10.0f, 1e-5f);
- EXPECT_NEAR(published.m[13], -20.0f, 1e-5f);
- EXPECT_NEAR(published.m[14], baseZ, 1e-5f);
- EXPECT_TRUE(core::drawCameraStateValid());
- // The projection is untouched by a per-draw pose publish.
+ core::setDrawPose(pose);
+ EXPECT_NEAR(core::drawPose().m[12], 10.0f, 1e-5f);
+ EXPECT_NEAR(core::drawPose().m[13], -20.0f, 1e-5f);
+ // The pass base is untouched by any number of pose publishes.
+ EXPECT_TRUE(nearMatrix(core::drawModelView(), base));
  EXPECT_NEAR(core::drawProjection().m[0], 2.0f / 854.0f, 1e-5f);
+ EXPECT_TRUE(core::drawCameraStateValid());
+}
+// setPassModelView is the pass owner's call: it replaces the base and drops the
+// pose, which is meaningless against a base it was not composed against.
+TEST(DrawCameraState, PassModelViewReplacesBaseAndDropsPose) {
+ core::clearDrawCameraState();
+ gui_proj::load(854.0f, 480.0f);
+ Matrix4f pose;
+ pose.translate(3.0f, 4.0f, 5.0f);
+ core::setDrawPose(pose);
+ Matrix4f handBase;
+ handBase.translate(0.0f, 0.0f, -7.0f);
+ core::setPassModelView(handBase);
+ EXPECT_TRUE(nearMatrix(core::drawModelView(), handBase));
+ EXPECT_TRUE(nearMatrix(core::drawPose(), Matrix4f::identityMatrix()));
 }
 TEST(DrawCameraState, ScopedDrawCameraStateRestoresBase) {
  core::clearDrawCameraState();
@@ -206,10 +231,10 @@ TEST(DrawCameraState, ScopedDrawCameraStateRestoresBase) {
   const core::ScopedDrawCameraState guard;
   FrameRenderCamera camera;
   camera.x = camera.y = camera.z = 0.0;
-  camera.eyeX = 1.0;
-  camera.eyeY = 2.0;
-  camera.eyeZ = 3.0;
-  core::setDrawCameraStateFromCamera(camera, 256.0f);
+   camera.eyeX = 1.0;
+   camera.eyeY = 2.0;
+   camera.eyeZ = 3.0;
+   core::setDrawCameraStateFromCamera(camera);
   EXPECT_NEAR(core::drawCameraPosition()[0], 1.0f, 1e-3f);
  }
  ASSERT_TRUE(core::drawCameraStateValid());
@@ -219,6 +244,47 @@ TEST(DrawCameraState, ScopedDrawCameraStateRestoresBase) {
  EXPECT_NEAR(cameraPosition[0], savedCameraPosition[0], 1e-6f);
  EXPECT_NEAR(cameraPosition[1], savedCameraPosition[1], 1e-6f);
  EXPECT_NEAR(cameraPosition[2], savedCameraPosition[2], 1e-6f);
+}
+// The pose is state, not a token consumed by the next draw. A model publishes
+// one bone pose and emits several Tessellator batches from it; when draw()
+// cleared the pose, every part after the first rendered with no pose at all —
+// i.e. at the camera, with the entity translation gone.
+TEST(DrawCameraState, PoseSurvivesRepeatedDraws) {
+ core::clearDrawCameraState();
+ FrameRenderCamera camera;
+ camera.eyeX = 10.0;
+ camera.eyeY = 20.0;
+ camera.eyeZ = 30.0;
+ core::setDrawCameraStateFromCamera(camera);
+ // A fresh pass starts at identity: geometry is already in pass-base space.
+ EXPECT_TRUE(nearMatrix(core::drawPose(), Matrix4f::identityMatrix()));
+ Matrix4f pose;
+ pose.translate(4.0f, 5.0f, 6.0f);
+ core::setDrawPose(pose);
+ // Stand-in for what Tessellator::draw()/reset() does between batches.
+ for(int batch = 0; batch < 3; ++batch) {
+  EXPECT_TRUE(nearMatrix(core::drawPose(), pose)) << "batch " << batch;
+ }
+}
+TEST(DrawCameraState, PoseIsScopedAndClearedAtPassBoundaries) {
+ core::clearDrawCameraState();
+ FrameRenderCamera camera;
+ core::setDrawCameraStateFromCamera(camera);
+ Matrix4f outer;
+ outer.translate(1.0f, 2.0f, 3.0f);
+ core::setDrawPose(outer);
+ {
+  const core::ScopedDrawCameraState guard;
+  Matrix4f inner;
+  inner.translate(-7.0f, 0.0f, 0.0f);
+  core::setDrawPose(inner);
+  EXPECT_TRUE(nearMatrix(core::drawPose(), inner));
+ }
+ // Nested entity/item renders must hand the caller its pose back untouched.
+ EXPECT_TRUE(nearMatrix(core::drawPose(), outer));
+ // A camera publish is a pass boundary (GUI, hand): the world pose is gone.
+ gui_proj::load(854.0f, 480.0f);
+ EXPECT_TRUE(nearMatrix(core::drawPose(), Matrix4f::identityMatrix()));
 }
 TEST(DrawCameraState, ClearDrawCameraStateInvalidates) {
  core::clearDrawCameraState();

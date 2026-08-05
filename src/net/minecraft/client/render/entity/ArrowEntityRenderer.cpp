@@ -40,7 +40,7 @@ void ArrowEntityRenderer::render(
  matrices.rotate(45.0f, 1.0f, 0.0f, 0.0f);
  matrices.scale(scale, scale, scale);
  matrices.translate(-4.0f, 0.0f, 0.0f);
- render::core::setDrawModelView(matrices.top());
+ render::core::setDrawPose(matrices.top());
  tessellator.startQuads();
  tessellator.vertex(-7.0, -2.0, -2.0, headUMin, headVMin);
  tessellator.vertex(-7.0, -2.0, 2.0, headUMax, headVMin);
@@ -55,7 +55,7 @@ void ArrowEntityRenderer::render(
  tessellator.draw();
  for(int i = 0; i < 4; ++i) {
   matrices.rotate(90.0f, 1.0f, 0.0f, 0.0f);
-  render::core::setDrawModelView(matrices.top());
+  render::core::setDrawPose(matrices.top());
   tessellator.startQuads();
   tessellator.vertex(-8.0, -2.0, 0.0, shaftUMin, shaftVMin);
   tessellator.vertex(8.0, -2.0, 0.0, shaftUMax, shaftVMin);

@@ -6,7 +6,7 @@
 namespace net::minecraft::client::render::gui_proj {
 // Sole 2D ortho path (splash / HUD / screen / profiler / toast / loading).
 // Publishes the ortho projection + modelView translate through the draw camera
-// state (the single matrix source); per-draw poses compose onto drawModelView().
+// state as the GUI pass base; per-draw poses compose onto core::drawPose().
 inline void load(float rawW,
                  float rawH,
                  float modelViewZ = -2000.0f,

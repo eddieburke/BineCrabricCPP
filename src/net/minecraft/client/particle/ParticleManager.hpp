@@ -9,6 +9,7 @@
 #include "net/minecraft/client/particle/BlockParticle.hpp"
 #include "net/minecraft/client/particle/Particle.hpp"
 #include "net/minecraft/client/render/camera/FrameRenderCamera.hpp"
+#include "net/minecraft/client/render/RenderCore.hpp"
 #include "net/minecraft/client/render/RenderType.hpp"
 #include "net/minecraft/client/texture/TextureManager.hpp"
 #include "net/minecraft/entity/EntityTypes.hpp"
@@ -57,6 +58,9 @@ class ParticleManager {
   // so billboarding off entity->yaw/pitch here desyncs particle facing from
   // the actual rendered view whenever those rotations differ.
   syncCameraOffset();
+  // Particles emit camera-relative quads, so the pose is identity: they are
+  // already in pass-base space, exactly like terrain.
+  render::core::setDrawPose(net::minecraft::util::math::Matrix4f::identityMatrix());
   const render::FrameRenderCamera& frame = render::RenderCameraState::instance().frame();
   const float billboardYaw = frame.customView ? frame.yaw : entity->yaw;
   const float billboardPitch = frame.customView ? frame.pitch : entity->pitch;
@@ -100,6 +104,7 @@ class ParticleManager {
   // renderLit runs before render(), so establish the shared frame-camera
   // origin here too rather than relying on last frame's stale offsets.
   syncCameraOffset();
+  render::core::setDrawPose(net::minecraft::util::math::Matrix4f::identityMatrix());
   render::Tessellator& tessellator = render::Tessellator::INSTANCE;
   for(const auto& particle : bucket) {
    particle->render(tessellator, partialTicks, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f);
@@ -184,14 +189,23 @@ class ParticleManager {
  }
 
  private:
- // Anchor particle rendering to the active frame camera so its origin matches
- // the terrain/entity render origin (WorldRenderer::cameraInterpPosition).
- static void syncCameraOffset() {
-  const render::FrameRenderCamera& frame = render::RenderCameraState::instance().frame();
-  Particle::xOffset = frame.x;
-  Particle::yOffset = frame.y;
-  Particle::zOffset = frame.z;
- }
+  // Anchor particle rendering to the camera EYE so its origin matches the
+  // terrain/entity render origin (WorldRenderer::sectionOrigin). Particles emit
+  // camera-relative quads with an identity pose; the camera matrix comes from
+  // the draw camera state like every other world draw.
+  static void syncCameraOffset() {
+   if(render::core::drawCameraStateValid()) {
+    const float* eye = render::core::drawCameraPosition();
+    Particle::xOffset = eye[0];
+    Particle::yOffset = eye[1];
+    Particle::zOffset = eye[2];
+    return;
+   }
+   const render::FrameRenderCamera& frame = render::RenderCameraState::instance().frame();
+   Particle::xOffset = frame.eyeX;
+   Particle::yOffset = frame.eyeY;
+   Particle::zOffset = frame.eyeZ;
+  }
  World* world_ = nullptr;
  texture::TextureManager* textureManager_ = nullptr;
  std::array<std::vector<std::unique_ptr<Particle>>, 4> particles_{};

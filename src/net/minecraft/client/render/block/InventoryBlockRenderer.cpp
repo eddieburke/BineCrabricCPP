@@ -49,12 +49,12 @@ void InventoryBlockRenderer::render(net::minecraft::block::Block& block, int met
   }
   block.setupRenderBoundingBox();
   ctx_.renderBounds = block.getCollisionShapeLocal();
-  const net::minecraft::util::math::Matrix4f base = net::minecraft::client::render::core::drawModelView();
+  const net::minecraft::util::math::Matrix4f base = net::minecraft::client::render::core::drawPose();
   net::minecraft::util::math::Matrix4f mv = base;
   mv.translate(-0.5f, -0.5f, -0.5f);
-  net::minecraft::client::render::core::setDrawModelView(mv);
+  net::minecraft::client::render::core::setDrawPose(mv);
   drawInventoryCubeFaces(tessellator, faces_, block, metadata, red, green, blue, brightness);
-  net::minecraft::client::render::core::setDrawModelView(base);
+  net::minecraft::client::render::core::setDrawPose(base);
  } else if(renderType == BlockRenderType::CROSS) {
   applyInventoryColor(red, green, blue, brightness);
   tessellator.startQuads();
@@ -63,10 +63,10 @@ void InventoryBlockRenderer::render(net::minecraft::block::Block& block, int met
  } else if(renderType == BlockRenderType::CACTUS) {
   block.setupRenderBoundingBox();
   ctx_.renderBounds = block.getCollisionShapeLocal();
-  const net::minecraft::util::math::Matrix4f base = net::minecraft::client::render::core::drawModelView();
+  const net::minecraft::util::math::Matrix4f base = net::minecraft::client::render::core::drawPose();
   net::minecraft::util::math::Matrix4f mv = base;
   mv.translate(-0.5f, -0.5f, -0.5f);
-  net::minecraft::client::render::core::setDrawModelView(mv);
+  net::minecraft::client::render::core::setDrawPose(mv);
   const float faceInset = 0.0625f;
   applyInventoryColor(red, green, blue, brightness);
   tessellator.startQuads();
@@ -85,7 +85,7 @@ void InventoryBlockRenderer::render(net::minecraft::block::Block& block, int met
   faces_.renderSouthFace(block, 0.0, 0.0, 0.0, block.getTexture(5));
   tessellator.translate(faceInset, 0.0f, 0.0f);
   tessellator.draw();
-  net::minecraft::client::render::core::setDrawModelView(base);
+  net::minecraft::client::render::core::setDrawPose(base);
  } else if(renderType == BlockRenderType::CROP) {
   applyInventoryColor(red, green, blue, brightness);
   tessellator.startQuads();
@@ -104,12 +104,12 @@ void InventoryBlockRenderer::render(net::minecraft::block::Block& block, int met
    if(i == 1) {
     ctx_.setRenderBounds(0.0f, 0.0f, 0.5f, 1.0f, 0.5f, 1.0f);
    }
-   const net::minecraft::util::math::Matrix4f base = net::minecraft::client::render::core::drawModelView();
+   const net::minecraft::util::math::Matrix4f base = net::minecraft::client::render::core::drawPose();
    net::minecraft::util::math::Matrix4f mv = base;
    mv.translate(-0.5f, -0.5f, -0.5f);
-   net::minecraft::client::render::core::setDrawModelView(mv);
+   net::minecraft::client::render::core::setDrawPose(mv);
    drawInventoryCubeFaces(tessellator, faces_, block, metadata, red, green, blue, brightness);
-   net::minecraft::client::render::core::setDrawModelView(base);
+   net::minecraft::client::render::core::setDrawPose(base);
   }
  } else if(renderType == BlockRenderType::FENCE) {
   for(int i = 0; i < 4; ++i) {
@@ -139,12 +139,12 @@ void InventoryBlockRenderer::render(net::minecraft::block::Block& block, int met
                          0.5f - postHalfWidth,
                          1.0f + postHalfWidth * 2.0f);
    }
-   const net::minecraft::util::math::Matrix4f base = net::minecraft::client::render::core::drawModelView();
+   const net::minecraft::util::math::Matrix4f base = net::minecraft::client::render::core::drawPose();
    net::minecraft::util::math::Matrix4f mv = base;
    mv.translate(-0.5f, -0.5f, -0.5f);
-   net::minecraft::client::render::core::setDrawModelView(mv);
+   net::minecraft::client::render::core::setDrawPose(mv);
    drawInventoryCubeFaces(tessellator, faces_, block, metadata, red, green, blue, brightness);
-   net::minecraft::client::render::core::setDrawModelView(base);
+   net::minecraft::client::render::core::setDrawPose(base);
   }
   ctx_.setRenderBounds(0.0f, 0.0f, 0.0f, 1.0f, 1.0f, 1.0f);
  }

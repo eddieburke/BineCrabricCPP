@@ -41,7 +41,7 @@ void BoatEntityRenderer::render(
  matrices.scale(1.0f / scalePass, 1.0f / scalePass, 1.0f / scalePass);
  bindTexture("/item/boat.png");
  matrices.scale(-1.0f, -1.0f, 1.0f);
- render::core::setDrawModelView(matrices.top());
+ render::core::setDrawPose(matrices.top());
  model_->render(0.0f, 0.0f, -0.1f, 0.0f, 0.0f, 0.0625f);
  matrices.pop();
  endDraw();

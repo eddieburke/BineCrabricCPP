@@ -1,20 +1,14 @@
 #include "net/minecraft/client/gl/ProgramCache.hpp"
 #include "net/minecraft/client/gl/ShaderCompileService.hpp"
+#include "net/minecraft/client/render/VertexAbi.hpp"
 #include <utility>
-#include <vector>
 namespace net::minecraft::client::gl {
 namespace {
-// Where did the disk-backed binary path land for this request?
 enum class CacheBinaryOutcome {
-  Loaded,        // program now holds a usable GL program (fast path or worker compile)
-  Failed,        // genuine compile/link error; result.error is the info log
-  Unsupported,   // binary extraction/load unavailable — callers compile from source
+  Loaded,
+  Failed,
+  Unsupported,
 };
-// Runs the request through the ShaderCompileService (disk-cache hit, or worker
-// compile + disk store on miss) and, when a binary comes back, loads it into
-// `program`. A stale driver binary that the current context rejects is dropped
-// from the disk cache so the next launch recompiles it. Only used on the
-// synchronous fallback path (service not running: tests/headless).
 CacheBinaryOutcome loadBinary(ShaderProgram& program,
                               ShaderCompileRequest request,
                               ShaderCompileResult& resultOut) {
@@ -45,31 +39,13 @@ ShaderCompileRequest buildRequest(bool compute,
  request.tessControl = tessControlSource;
  request.tessEvaluation = tessEvaluationSource;
  request.contentHash = ShaderProgram::contentHash(compute, versionPreamble, vertexSource, fragmentSource,
-                                                  geometrySource, tessControlSource, tessEvaluationSource);
+                                                  geometrySource, tessControlSource, tessEvaluationSource,
+                                                  render::vertex_abi::abiSaltString());
  return request;
 }
 } // namespace
 
-ProgramCache::~ProgramCache() {
- releasePending();
-}
-
-std::uint64_t ProgramCache::markPending(const std::string& key, ShaderCompileRequest request) {
- if(cache_.contains(key)) {
-  return 0;
- }
- if(auto found = pending_.find(key); found != pending_.end()) {
-  return found->second;
- }
- ShaderCompileService& service = ShaderCompileService::instance();
- if(!service.started()) {
-  // Nothing will complete in the background; the synchronous path handles this key.
-  return request.contentHash;
- }
- pending_.emplace(key, request.contentHash);
- service.submit(std::move(request));
- return request.contentHash;
-}
+ProgramCache::~ProgramCache() = default;
 
 ShaderProgram* ProgramCache::getFromSource(const std::string& key,
                                            const std::string& vertexSource,
@@ -84,11 +60,7 @@ ShaderProgram* ProgramCache::getFromSource(const std::string& key,
  ShaderCompileRequest request =
      buildRequest(false, vertexSource, fragmentSource, versionPreamble, geometrySource, tessControlSource,
                   tessEvaluationSource);
- if(ShaderCompileService::instance().started()) {
-  markPending(key, std::move(request));
-  return nullptr; // worker compile in flight; poll() links it next frame
- }
- return getFromSourceBlocking(key, std::move(request), false);
+ return compileSync(key, std::move(request), false);
 }
 
 ShaderProgram* ProgramCache::getFromComputeSource(const std::string& key,
@@ -98,11 +70,7 @@ ShaderProgram* ProgramCache::getFromComputeSource(const std::string& key,
   return found->second.failed ? nullptr : found->second.program.get();
  }
  ShaderCompileRequest request = buildRequest(true, computeSource, {}, versionPreamble, {}, {}, {});
- if(ShaderCompileService::instance().started()) {
-  markPending(key, std::move(request));
-  return nullptr;
- }
- return getFromSourceBlocking(key, std::move(request), true);
+ return compileSync(key, std::move(request), true);
 }
 
 std::uint64_t ProgramCache::submit(const std::string& key,
@@ -115,90 +83,50 @@ std::uint64_t ProgramCache::submit(const std::string& key,
  ShaderCompileRequest request =
      buildRequest(false, vertexSource, fragmentSource, versionPreamble, geometrySource, tessControlSource,
                   tessEvaluationSource);
- return markPending(key, std::move(request));
+ const std::uint64_t hash = request.contentHash;
+ compileSync(key, std::move(request), false);
+ return hash;
 }
 
 std::uint64_t ProgramCache::submitCompute(const std::string& key,
                                           const std::string& computeSource,
                                           const std::string& versionPreamble) {
  ShaderCompileRequest request = buildRequest(true, computeSource, {}, versionPreamble, {}, {}, {});
- return markPending(key, std::move(request));
+ const std::uint64_t hash = request.contentHash;
+ compileSync(key, std::move(request), true);
+ return hash;
 }
 
 bool ProgramCache::isPending(const std::string& key) const {
- return pending_.contains(key);
+ (void)key;
+ return false;
 }
+
+ShaderProgram* ProgramCache::find(const std::string& key) const {
+ const auto found = cache_.find(key);
+ if(found == cache_.end()) return nullptr;
+ return found->second.failed ? nullptr : found->second.program.get();
+}
+
+void ProgramCache::cancelPending() {}
 
 bool ProgramCache::poll() {
- auto& service = ShaderCompileService::instance();
- if(pending_.empty()) {
-  return false;
- }
- std::vector<std::shared_ptr<ShaderCompileService::Job>> jobs = service.peekCompleted();
- if(jobs.empty()) {
-  return false;
- }
- std::unordered_map<std::uint64_t, std::shared_ptr<ShaderCompileService::Job>> byHash;
- for(const std::shared_ptr<ShaderCompileService::Job>& job : jobs) {
-  byHash.emplace(job->request.contentHash, job);
- }
- bool any = false;
- for(auto pending = pending_.begin(); pending != pending_.end();) {
-  const std::uint64_t hash = pending->second;
-  const auto match = byHash.find(hash);
-  if(match == byHash.end()) {
-   ++pending;
-   continue;
-  }
-  const std::string key = pending->first;
-  const std::shared_ptr<ShaderCompileService::Job>& job = match->second;
-  pending = pending_.erase(pending);
-  // Link the worker's binary (or compile from source if the driver rejected it).
-  Entry entry;
-  entry.program = std::make_unique<ShaderProgram>();
-  const ShaderCompileResult& result = job->result;
-  bool compiled = false;
-  if(result.ok) {
-   if(!result.binary.bytes.empty()) {
-    compiled = entry.program->loadFromBinary(result.binary);
-    if(!compiled) {
-     // Stale driver binary rejected by this context — drop it and fall back.
-     service.invalidateDiskEntry(hash);
-    }
-   }
-   if(!compiled) {
-    compiled = job->request.compute
-                   ? entry.program->compileCompute(job->request.vertex, job->request.preamble)
-                   : entry.program->compile(job->request.vertex, job->request.fragment,
-                                            job->request.preamble, job->request.geometry,
-                                            job->request.tessControl, job->request.tessEvaluation);
-   }
-  } else if(result.binaryUnsupported) {
-   // Worker compiled the source fine but the driver cannot extract a binary;
-   // compile on the main thread (the job->request carries the prepared source).
-   compiled = job->request.compute
-                  ? entry.program->compileCompute(job->request.vertex, job->request.preamble)
-                  : entry.program->compile(job->request.vertex, job->request.fragment,
-                                           job->request.preamble, job->request.geometry,
-                                           job->request.tessControl, job->request.tessEvaluation);
-  }
-  if(compiled) {
-   cache_.emplace(std::move(key), std::move(entry));
-  } else {
-   entry.error = result.error.empty() ? entry.program->lastError() : result.error;
-   entry.program.reset();
-   entry.failed = true;
-   cache_.emplace(std::move(key), std::move(entry));
-  }
-  any = true;
-  service.releaseJob(hash);
- }
- return any;
+ return false;
 }
 
-ShaderProgram* ProgramCache::getFromSourceBlocking(const std::string& key,
-                                                   ShaderCompileRequest request,
-                                                   bool compute) {
+void ProgramCache::clear() {
+ cache_.clear();
+}
+
+const std::string& ProgramCache::compileError(const std::string& key) const {
+ static const std::string empty;
+ const auto found = cache_.find(key);
+ return found == cache_.end() ? empty : found->second.error;
+}
+
+ShaderProgram* ProgramCache::compileSync(const std::string& key,
+                                         ShaderCompileRequest request,
+                                         bool compute) {
  Entry entry;
  entry.program = std::make_unique<ShaderProgram>();
  ShaderCompileResult result;
@@ -229,31 +157,5 @@ ShaderProgram* ProgramCache::getFromSourceBlocking(const std::string& key,
  entry.failed = true;
  cache_.emplace(key, std::move(entry));
  return nullptr;
-}
-
-const std::string& ProgramCache::compileError(const std::string& key) const {
- static const std::string empty;
- const auto found = cache_.find(key);
- return found == cache_.end() ? empty : found->second.error;
-}
-
-void ProgramCache::clear() {
- cache_.clear();
- releasePending();
-}
-
-void ProgramCache::cancelPending() {
- releasePending();
-}
-
-void ProgramCache::releasePending() {
- if(pending_.empty()) {
-  return;
- }
- ShaderCompileService& service = ShaderCompileService::instance();
- for(const auto& [key, hash] : pending_) {
-  service.releaseJob(hash);
- }
- pending_.clear();
 }
 } // namespace net::minecraft::client::gl
