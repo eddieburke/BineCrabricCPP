@@ -1,10 +1,9 @@
 #include "net/minecraft/client/render/shaders/IncludeResolver.hpp"
 #include <algorithm>
 #include <cctype>
+#include <charconv>
 #include <filesystem>
-#include <functional>
-#include <set>
-#include <sstream>
+#include <system_error>
 #include <unordered_map>
 #include <utility>
 
@@ -23,66 +22,74 @@ bool isBufferFormatDirective(std::string_view trimmed) {
  return first != std::string_view::npos && (std::isalpha(static_cast<unsigned char>(value[first])) != 0);
 }
 
+const std::string& IncludeGraph::resolve(const std::string& path,
+                                         std::unordered_map<std::string, std::string>& memo) {
+ if(const auto cached = memo.find(path); cached != memo.end()) {
+  return cached->second;
+ }
+ for(const std::string& active : stack_) {
+  if(active == path) {
+   throw IncludeResolveError("include cycle: " + path);
+  }
+ }
+ stack_.push_back(path);
+ const auto fileIt = files_.find(path);
+ if(fileIt == files_.end()) {
+  files_.emplace(path, readText_(path));
+ }
+ const std::string& source = files_.at(path);
+ std::string result;
+ result.reserve(source.size());
+ std::string_view srcView(source);
+ std::size_t lineStart = 0;
+ while(lineStart < srcView.size()) {
+  std::size_t lineEnd = srcView.find('\n', lineStart);
+  std::string_view line = lineEnd == std::string_view::npos ? srcView.substr(lineStart) : srcView.substr(lineStart, lineEnd - lineStart);
+  if(lineEnd != std::string_view::npos) lineStart = lineEnd + 1;
+  else lineStart = srcView.size();
+  if(!line.empty() && line.back() == '\r') line.remove_suffix(1);
+  const std::size_t start = line.find_first_not_of(" \t");
+  const std::string_view trimmed = start == std::string_view::npos ? std::string_view{} : line.substr(start);
+  if(stripFormatDirectives_ && isBufferFormatDirective(trimmed)) {
+   result += '\n';
+   continue;
+  }
+  if(!trimmed.starts_with("#include")) {
+   result.append(line.data(), line.size());
+   result += '\n';
+   continue;
+  }
+  std::size_t q1 = trimmed.find('"', 8);
+  std::size_t q2 = q1 == std::string_view::npos ? std::string_view::npos : trimmed.find('"', q1 + 1);
+  if(q1 == std::string_view::npos) {
+   q1 = trimmed.find('<', 8);
+   q2 = q1 == std::string_view::npos ? std::string_view::npos : trimmed.find('>', q1 + 1);
+  }
+  if(q2 == std::string_view::npos) {
+   throw IncludeResolveError("malformed #include in " + path + ": " + std::string(trimmed));
+  }
+  const std::string_view include = trimmed.substr(q1 + 1, q2 - q1 - 1);
+  const std::filesystem::path includePath = include.starts_with('/')
+                                                ? std::filesystem::path("shaders") / include.substr(1)
+                                                : std::filesystem::path(path).parent_path() / include;
+  const std::string includeResolved = includePath.lexically_normal().generic_string();
+  const std::string& included = resolve(includeResolved, memo);
+  if(included.empty()) {
+   throw IncludeResolveError("missing or empty #include \"" + std::string(include) + "\" from " + path +
+                             " (resolved " + includeResolved + ")");
+  }
+  result += included;
+ }
+ stack_.pop_back();
+ return memo.emplace(path, std::move(result)).first->second;
+}
+
 std::string resolveShaderIncludes(const ShaderReadText& readText,
                                   const std::string& path,
                                   bool stripFormatDirectives,
                                   std::unordered_map<std::string, std::string>& memo) {
- std::set<std::string> stack;
- std::function<const std::string&(const std::string&)> resolve =
-     [&](const std::string& current) -> const std::string& {
-  if(const auto cached = memo.find(current); cached != memo.end()) {
-   return cached->second;
-  }
-  if(!stack.insert(current).second) {
-   throw IncludeResolveError("include cycle: " + current);
-  }
-  const std::string source = readText(current);
-  std::string result;
-  result.reserve(source.size());
-  std::string_view srcView(source);
-  std::size_t lineStart = 0;
-  while(lineStart < srcView.size()) {
-   std::size_t lineEnd = srcView.find('\n', lineStart);
-   std::string_view line = lineEnd == std::string_view::npos ? srcView.substr(lineStart) : srcView.substr(lineStart, lineEnd - lineStart);
-   if(lineEnd != std::string_view::npos) lineStart = lineEnd + 1;
-   else lineStart = srcView.size();
-   if(!line.empty() && line.back() == '\r') line.remove_suffix(1);
-   const std::size_t start = line.find_first_not_of(" \t");
-   const std::string_view trimmed = start == std::string_view::npos ? std::string_view{} : line.substr(start);
-   if(stripFormatDirectives && isBufferFormatDirective(trimmed)) {
-    result += '\n';
-    continue;
-   }
-   if(!trimmed.starts_with("#include")) {
-    result.append(line.data(), line.size());
-    result += '\n';
-    continue;
-   }
-   std::size_t q1 = trimmed.find('"', 8);
-   std::size_t q2 = q1 == std::string_view::npos ? std::string_view::npos : trimmed.find('"', q1 + 1);
-   if(q1 == std::string_view::npos) {
-    q1 = trimmed.find('<', 8);
-    q2 = q1 == std::string_view::npos ? std::string_view::npos : trimmed.find('>', q1 + 1);
-   }
-   if(q2 == std::string_view::npos) {
-    throw IncludeResolveError("malformed #include in " + current + ": " + std::string(trimmed));
-   }
-   const std::string_view include = trimmed.substr(q1 + 1, q2 - q1 - 1);
-   const std::filesystem::path includePath = include.starts_with('/')
-                                                 ? std::filesystem::path("shaders") / include.substr(1)
-                                                 : std::filesystem::path(current).parent_path() / include;
-   const std::string includeResolved = includePath.lexically_normal().generic_string();
-   const std::string& included = resolve(includeResolved);
-   if(included.empty()) {
-    throw IncludeResolveError("missing or empty #include \"" + std::string(include) + "\" from " + current +
-                              " (resolved " + includeResolved + ")");
-   }
-   result += included;
-  }
-  stack.erase(current);
-  return memo.emplace(current, std::move(result)).first->second;
- };
- return resolve(path);
+ IncludeGraph graph(readText, stripFormatDirectives);
+ return graph.resolve(path, memo);
 }
 
 namespace {
@@ -91,15 +98,20 @@ std::vector<int> parseRenderTargetsList(std::string_view list) {
  if(close != std::string::npos) {
   list = list.substr(0, close);
  }
- std::string normalized(list);
- std::replace(normalized.begin(), normalized.end(), ',', ' ');
- std::istringstream values(normalized);
  std::vector<int> indices;
- int index = -1;
- while(values >> index) {
+ std::size_t i = 0;
+ while(i < list.size()) {
+  while(i < list.size() && (list[i] == ',' || std::isspace(static_cast<unsigned char>(list[i])))) ++i;
+  if(i >= list.size()) break;
+  const std::size_t start = i;
+  while(i < list.size() && list[i] != ',' && !std::isspace(static_cast<unsigned char>(list[i]))) ++i;
+  int index = -1;
+  const auto [ptr, error] = std::from_chars(list.data() + start, list.data() + i, index);
+  if(error != std::errc()) break;
   if(index >= 0 && index < 32) {
    indices.push_back(index);
   }
+  if(ptr != list.data() + i) break;
  }
  return indices;
 }

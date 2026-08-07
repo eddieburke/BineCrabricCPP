@@ -1,4 +1,5 @@
 #pragma once
+#include <cstddef>
 #include <string>
 #include <string_view>
 #include <unordered_map>
@@ -10,7 +11,13 @@ struct PPMacro {
  std::vector<std::string> params;
  std::string body;
 };
-using PPMacroTable = std::unordered_map<std::string, PPMacro>;
+struct PPMacroTableHash {
+ using is_transparent = void;
+ std::size_t operator()(std::string_view value) const noexcept {
+  return std::hash<std::string_view>{}(value);
+ }
+};
+using PPMacroTable = std::unordered_map<std::string, PPMacro, PPMacroTableHash, std::equal_to<>>;
 
 bool isIdentStart(char c);
 bool isIdentChar(char c);

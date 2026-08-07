@@ -1,16 +1,16 @@
 #include "net/minecraft/client/render/shaders/PreProcessor.hpp"
 #include <cctype>
-#include <cstdlib>
+#include <charconv>
 #include <cstring>
-#include <sstream>
+#include <system_error>
 #include <utility>
 namespace net::minecraft::client::render {
 namespace {
-std::string trimCopy(std::string_view value) {
+std::string_view trimmedView(std::string_view value) {
  const std::size_t first = value.find_first_not_of(" \t\r\n");
  if(first == std::string_view::npos) return {};
  const std::size_t last = value.find_last_not_of(" \t\r\n");
- return std::string(value.substr(first, last - first + 1));
+ return value.substr(first, last - first + 1);
 }
 } // namespace
 bool isIdentStart(char c) {
@@ -258,18 +258,21 @@ class PPExpressionEval {
     ok_ = false;
    return v;
   }
-  if(std::isdigit(static_cast<unsigned char>(c)) ||
-     (c == '.' && pos_ + 1 < s_.size() && std::isdigit(static_cast<unsigned char>(s_[pos_ + 1])))) {
-   char* end = nullptr;
-   const std::string text(s_.substr(pos_));
-   const double v = std::strtod(text.c_str(), &end);
-   pos_ += static_cast<std::size_t>(end - text.c_str());
-   while(pos_ < s_.size() &&
-         (s_[pos_] == 'u' || s_[pos_] == 'U' || s_[pos_] == 'l' || s_[pos_] == 'L' || s_[pos_] == 'f' ||
-          s_[pos_] == 'F'))
-    ++pos_;
-   return v;
-  }
+   if(std::isdigit(static_cast<unsigned char>(c)) ||
+      (c == '.' && pos_ + 1 < s_.size() && std::isdigit(static_cast<unsigned char>(s_[pos_ + 1])))) {
+    double value = 0.0;
+    const auto [ptr, error] = std::from_chars(s_.data() + pos_, s_.data() + s_.size(), value);
+    if(error != std::errc()) {
+     ok_ = false;
+     return 0.0;
+    }
+    pos_ = static_cast<std::size_t>(ptr - s_.data());
+    while(pos_ < s_.size() &&
+          (s_[pos_] == 'u' || s_[pos_] == 'U' || s_[pos_] == 'l' || s_[pos_] == 'L' || s_[pos_] == 'f' ||
+           s_[pos_] == 'F'))
+     ++pos_;
+    return value;
+   }
   if(isIdentStart(c)) {
    std::size_t end = pos_;
    while(end < s_.size() && isIdentChar(s_[end])) ++end;
@@ -291,7 +294,7 @@ std::string resolveDefinedOperators(const std::string& expr, const PPMacroTable&
   if(isIdentStart(expr[i])) {
    std::size_t end = i;
    while(end < expr.size() && isIdentChar(expr[end])) ++end;
-   const std::string ident = expr.substr(i, end - i);
+   const std::string_view ident(expr.data() + i, end - i);
    if(ident == "defined") {
     std::size_t p = end;
     while(p < expr.size() && std::isspace(static_cast<unsigned char>(expr[p]))) ++p;
@@ -303,7 +306,7 @@ std::string resolveDefinedOperators(const std::string& expr, const PPMacroTable&
     }
     std::size_t nameEnd = p;
     while(nameEnd < expr.size() && isIdentChar(expr[nameEnd])) ++nameEnd;
-    const std::string name = expr.substr(p, nameEnd - p);
+    const std::string_view name(expr.data() + p, nameEnd - p);
     p = nameEnd;
     if(paren) {
      while(p < expr.size() && std::isspace(static_cast<unsigned char>(expr[p]))) ++p;
@@ -335,7 +338,7 @@ std::string expandIfExpression(std::string_view rawExpr, const PPMacroTable& mac
    }
    std::size_t end = i;
    while(end < expr.size() && isIdentChar(expr[end])) ++end;
-   const std::string ident = expr.substr(i, end - i);
+   const std::string_view ident(expr.data() + i, end - i);
    const auto found = macros.find(ident);
    if(found == macros.end()) {
     out += ident;
@@ -370,7 +373,7 @@ std::string expandIfExpression(std::string_view rawExpr, const PPMacroTable& mac
      --depth;
      if(depth == 0) break;
     } else if(c == ',' && depth == 1) {
-     args.push_back(trimCopy(current));
+     args.push_back(std::string(trimmedView(current)));
      current.clear();
      ++p;
      continue;
@@ -378,7 +381,7 @@ std::string expandIfExpression(std::string_view rawExpr, const PPMacroTable& mac
     current += c;
     ++p;
    }
-   args.push_back(trimCopy(current));
+   args.push_back(std::string(trimmedView(current)));
    if(p < expr.size()) ++p;
    std::string substituted;
    const std::string& body = macro.body;
@@ -389,7 +392,7 @@ std::string expandIfExpression(std::string_view rawExpr, const PPMacroTable& mac
     }
     std::size_t be = b;
     while(be < body.size() && isIdentChar(body[be])) ++be;
-    const std::string bodyIdent = body.substr(b, be - b);
+    const std::string_view bodyIdent(body.data() + b, be - b);
     bool replacedParam = false;
     for(std::size_t a = 0; a < macro.params.size() && a < args.size(); ++a) {
      if(macro.params[a] == bodyIdent) {
@@ -433,22 +436,22 @@ void parseDefineDirective(std::string_view afterKeyword, PPMacroTable& macros) {
   while(p < afterKeyword.size() && afterKeyword[p] != ')') {
    const char c = afterKeyword[p];
    if(c == ',') {
-    if(!trimCopy(param).empty()) macro.params.push_back(trimCopy(param));
+    if(!trimmedView(param).empty()) macro.params.push_back(std::string(trimmedView(param)));
     param.clear();
    } else {
     param += c;
    }
    ++p;
   }
-  if(!trimCopy(param).empty()) macro.params.push_back(trimCopy(param));
+  if(!trimmedView(param).empty()) macro.params.push_back(std::string(trimmedView(param)));
   end = p < afterKeyword.size() ? p + 1 : p;
  }
- std::string body = trimCopy(afterKeyword.substr(end));
+ std::string body(trimmedView(afterKeyword.substr(end)));
  // The option comment (`//[128 192 ...]`) must not leak into the macro body:
  // `#if COLORED_LIGHTING > 0` would then evaluate `0 //[128 192 ...]` as a
  // division chain and always come out zero.
  const std::size_t comment = body.find("//");
- if(comment != std::string::npos) body = trimCopy(std::string_view(body).substr(0, comment));
+ if(comment != std::string::npos) body = std::string(trimmedView(std::string_view(body).substr(0, comment)));
  macro.body = std::move(body);
  macros[name] = std::move(macro);
 }
@@ -459,7 +462,7 @@ bool parseDirective(const std::string& trimmed, std::string& keyword, std::strin
  std::size_t end = i;
  while(end < trimmed.size() && std::isalpha(static_cast<unsigned char>(trimmed[end]))) ++end;
  keyword = trimmed.substr(i, end - i);
- rest = trimCopy(trimmed.substr(end));
+ rest = std::string(trimmedView(trimmed.substr(end)));
  return true;
 }
 // PARSING ONLY — this function knows nothing about what the engine defines, and must
@@ -472,30 +475,39 @@ bool parseDirective(const std::string& trimmed, std::string& keyword, std::strin
 // seedEngineMacros() in SourceProcessor.cpp is now the single source; see
 // SourceProcessor.hpp.
 void seedMacrosFromDefines(const std::string& text, PPMacroTable& macros) {
- std::istringstream stream(text);
- std::string line;
- while(std::getline(stream, line)) {
-  const std::string trimmed = trimCopy(lineForDirectiveParse(line));
+ std::size_t lineStart = 0;
+ while(lineStart < text.size()) {
+  const std::size_t lineEnd = text.find('\n', lineStart);
+  const std::size_t lineLen = lineEnd == std::string::npos ? text.size() - lineStart : lineEnd - lineStart;
+  const std::string_view line(text.data() + lineStart, lineLen);
+  lineStart = lineEnd == std::string::npos ? text.size() : lineEnd + 1;
+  const std::string trimmed(trimmedView(lineForDirectiveParse(std::string(line))));
   std::string keyword, rest;
   if(!parseDirective(trimmed, keyword, rest)) continue;
   if(keyword == "define") parseDefineDirective(rest, macros);
   if(keyword == "version") {
-   std::istringstream directive(rest);
+   const std::string_view restView(rest);
+   std::size_t p = 0;
+   while(p < restView.size() && std::isspace(static_cast<unsigned char>(restView[p]))) ++p;
    int version = 0;
-   std::string profile;
-   directive >> version >> profile;
-   if(version > 0) {
+   const auto [ptr, error] = std::from_chars(restView.data() + p, restView.data() + restView.size(), version);
+   if(error == std::errc() && ptr != restView.data() + p) {
     PPMacro macro;
     macro.body = std::to_string(version);
     macros["__VERSION__"] = std::move(macro);
+    p = static_cast<std::size_t>(ptr - restView.data());
+    while(p < restView.size() && std::isspace(static_cast<unsigned char>(restView[p]))) ++p;
+    std::size_t profileEnd = p;
+    while(profileEnd < restView.size() && !std::isspace(static_cast<unsigned char>(restView[profileEnd]))) ++profileEnd;
+    const std::string_view profile = restView.substr(p, profileEnd - p);
+    PPMacro flag;
+    flag.body = "1";
+    if(profile == "core")
+     macros["GL_core_profile"] = flag;
+    else if(profile == "compatibility")
+     macros["GL_compatibility_profile"] = flag;
    }
-   PPMacro flag;
-   flag.body = "1";
-   if(profile == "core")
-    macros["GL_core_profile"] = flag;
-   else if(profile == "compatibility")
-    macros["GL_compatibility_profile"] = flag;
   }
  }
-}
+ }
 } // namespace net::minecraft::client::render

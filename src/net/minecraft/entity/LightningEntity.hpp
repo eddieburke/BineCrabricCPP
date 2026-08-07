@@ -1,8 +1,8 @@
 #pragma once
-#include "net/minecraft/entity/AbstractLightningEntity.hpp"
+#include "net/minecraft/entity/Entity.hpp"
 #include "net/minecraft/entity/EntityClientRendererDecl.hpp"
 namespace net::minecraft::entity {
-class LightningEntity : public AbstractLightningEntity {
+class LightningEntity : public Entity {
  public:
  static constexpr int kEntityId = 99;
  static constexpr const char* kEntityName = "LightningBolt";

@@ -5,7 +5,7 @@
 #include "net/minecraft/util/math/MathHelper.hpp"
 #include "net/minecraft/world/World.hpp"
 namespace net::minecraft::entity {
-LightningEntity::LightningEntity(World* world) : AbstractLightningEntity(world) {
+LightningEntity::LightningEntity(World* world) : Entity(world) {
  ambientTick = 2;
  seed = random.nextLong();
  remainingActions = random.nextInt(3) + 1;
@@ -34,7 +34,7 @@ LightningEntity::LightningEntity(World* world, double xIn, double yIn, double zI
  }
 }
 void LightningEntity::tick() {
- AbstractLightningEntity::tick();
+ Entity::tick();
  if(world == nullptr) {
   return;
  }
