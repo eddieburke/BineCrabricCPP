@@ -79,8 +79,8 @@ void fillFog(PackUniformValues& values) {
  values.fogDensity = fog.density;
  values.fogStart = fog.start;
  values.fogEnd = fog.end;
- values.fogMode = fog.enabled ? render::core::fogModeToGlConstant(fog.mode) : 0;
- values.fogShape = fog.enabled ? 1 : -1;
+  values.fogMode = fog.enabled ? render::core::fogModeToGlConstant(fog.mode) : 0;
+  values.fogShape = fog.enabled ? fog.shape : -1;
  if(fog.enabled) {
   values.irisFogColor[0] = fog.color[0];
   values.irisFogColor[1] = fog.color[1];

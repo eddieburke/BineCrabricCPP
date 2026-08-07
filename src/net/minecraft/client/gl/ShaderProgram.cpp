@@ -183,13 +183,14 @@ bool ShaderProgram::compile(const std::string& vertexSource,
   GLCore::deleteProgram(program);
   return false;
  }
- program_ = program;
- uniformCache_.clear();
- samplerKinds_.clear();
- samplerNames_.clear();
- tessellation_ = !tessControlSource.empty() && !tessEvaluationSource.empty();
- reflectSamplers();
- return true;
+  program_ = program;
+  uniformCache_.clear();
+  samplerKinds_.clear();
+  samplerNames_.clear();
+  uniformSnapshotGeneration_ = 0;
+  tessellation_ = !tessControlSource.empty() && !tessEvaluationSource.empty();
+  reflectSamplers();
+  return true;
 }
 bool ShaderProgram::compileCompute(const std::string& computeSource,
                                    const std::string& versionPreamble) {
@@ -222,13 +223,14 @@ bool ShaderProgram::compileCompute(const std::string& computeSource,
   GLCore::deleteProgram(program);
   return false;
  }
- program_ = program;
- uniformCache_.clear();
- samplerKinds_.clear();
- samplerNames_.clear();
- tessellation_ = false;
- reflectSamplers();
- return true;
+  program_ = program;
+  uniformCache_.clear();
+  samplerKinds_.clear();
+  samplerNames_.clear();
+  uniformSnapshotGeneration_ = 0;
+  tessellation_ = false;
+  reflectSamplers();
+  return true;
 }
 void ShaderProgram::destroy() {
  if(program_ != 0 && program_ == s_lastBoundProgram) s_lastBoundProgram = 0;
@@ -239,6 +241,7 @@ void ShaderProgram::destroy() {
  uniformCache_.clear();
  samplerKinds_.clear();
  samplerNames_.clear();
+ uniformSnapshotGeneration_ = 0;
  drawBuffers_.clear();
  drawBufferColortexIndices_.clear();
  tessellation_ = false;
@@ -619,12 +622,13 @@ bool ShaderProgram::loadFromBinary(const ProgramBinaryBlob& binary) {
   GLCore::deleteProgram(program);
   return false;
  }
- program_ = program;
- uniformCache_.clear();
- samplerKinds_.clear();
- samplerNames_.clear();
- tessellation_ = binary.tessellation;
- reflectSamplers();
- return true;
+  program_ = program;
+  uniformCache_.clear();
+  samplerKinds_.clear();
+  samplerNames_.clear();
+  uniformSnapshotGeneration_ = 0;
+  tessellation_ = binary.tessellation;
+  reflectSamplers();
+  return true;
 }
 } // namespace net::minecraft::client::gl

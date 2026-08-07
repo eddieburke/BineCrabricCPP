@@ -518,14 +518,7 @@ void addProgram(PackDefinition& pack,
  if(resources.contains(path + ".gsh")) source.geometry = path + ".gsh";
  if(resources.contains(path + ".tcs")) source.tessControl = path + ".tcs";
  if(resources.contains(path + ".tes")) source.tessEvaluation = path + ".tes";
- pack.programs.emplace(std::string(key), std::move(source));
-}
-std::string resolvedFragmentSource(const PackLoader::ReadText& readText, const std::string& fragmentPath) {
- if(fragmentPath.empty()) {
-  return {};
- }
- return resolveShaderIncludes(
-     [&](std::string_view path) { return readText(path); }, fragmentPath);
+  pack.programs.emplace(std::string(key), std::move(source));
 }
 void noteRenderTargetOutputs(PackDefinition& pack, const std::string& source, bool shadow) {
  if(parseRenderTargetIndices(source).empty()) {
@@ -738,8 +731,7 @@ void inferColortexFormatsFromLayouts(PackDefinition& pack, const std::string& so
 }
 void addPostPrograms(PackDefinition& pack,
                      const ResourceSet& resources,
-                     const PackLoader::ReadText& readText,
-                     const std::unordered_map<std::string, std::string>& resolvedFragments) {
+                     const std::unordered_map<std::string, std::string>& expanded) {
  const std::array<std::string_view, 6> prefixes = kCompositeStagePrefixes;
  for(const std::string_view prefix : prefixes) {
   const int programCount = prefix == "final" ? 1 : 100;
@@ -759,11 +751,8 @@ void addPostPrograms(PackDefinition& pack,
                                          : prefix == "prepare"      ? "prepare"
                                          : prefix == "deferred"     ? "deferred"
                                                                     : "post";
-   pass.program = key;
-   const auto resolved = resolvedFragments.find(path + ".fsh");
-   const std::string source = resolved != resolvedFragments.end()
-                                  ? resolved->second
-                                  : resolvedFragmentSource(readText, path + ".fsh");
+    pass.program = key;
+    const std::string source = expanded.at(path + ".fsh");
    pass.outputs = key == "final" ? std::vector<std::string>{"screen"} : renderTargetOutputNames(source);
    pass.mipmapBuffers = scanMipmapEnabled(source);
    if(prefix == "shadowcomp")
@@ -1438,26 +1427,22 @@ void loadProgramSet(PackDefinition& out,
                     const PackLoader::ReadText& readText,
                     const std::unordered_map<std::string, PackSourceOption>& options,
                     const std::unordered_map<std::string, std::string>& values) {
- std::unordered_map<std::string, std::string> resolvedFragments;
+ std::unordered_map<std::string, std::string> expanded;
  const ResourceSet resourceSet(resources.begin(), resources.end());
- // Option-rewrite every source before scanning, exactly like the compile path
- // (PackCompiler::resolveIncludes), so constants that follow an option (e.g.
- // `#if SM_DIST == N` shadowDistance ladder) land in the definition
- // with the user's values instead of the pack's defaults.
- const PackLoader::ReadText rewrittenRead = [&readText, &options, &values](std::string_view path) {
-  return PackLoader::rewriteOptions(readText(path), options, values);
- };
  for(const PackProgramId& id : packProgramIds()) addProgram(out, resourceSet, id.name);
  for(const std::string& path : resources) {
   if(!path.ends_with(".fsh")) continue;
-  std::string source = resolvedFragmentSource(rewrittenRead, path);
+  std::string source = resolveShaderIncludes(
+      [&](std::string_view file) { return PackLoader::rewriteOptions(readText(file), options, values); },
+      path,
+      false,
+      expanded);
   scanTargetFormats(out, source);
   scanShadowMapResolution(source, out);
   scanPackConstants(source, out, options, &values);
-  resolvedFragments.emplace(path, std::move(source));
   const std::string name = std::filesystem::path(path).stem().string();
   if(name.rfind("shadowcomp", 0) == 0) continue;
-  noteRenderTargetOutputs(out, resolvedFragments.at(path), name == "shadow" || name.rfind("shadow_", 0) == 0);
+  noteRenderTargetOutputs(out, source, name == "shadow" || name.rfind("shadow_", 0) == 0);
  }
  for(const std::string& path : resources) {
   if(!path.ends_with(".glsl") && !path.ends_with(".vsh") && !path.ends_with(".csh") &&
@@ -1500,7 +1485,7 @@ void loadProgramSet(PackDefinition& out,
  }
  out.shadowColorBuffers = std::clamp(out.shadowColorBuffers, 0, 8);
  if(out.programs.contains("shadow") && out.shadowMapResolution == 0) out.shadowMapResolution = 1024;
- addPostPrograms(out, resourceSet, readText, resolvedFragments);
+ addPostPrograms(out, resourceSet, expanded);
  out.shadowColorBuffers = std::clamp(out.shadowColorBuffers, 0, 8);
  addComputePrograms(out, resources, readText);
 }

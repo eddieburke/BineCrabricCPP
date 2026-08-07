@@ -24,8 +24,9 @@ class ChunkCache : public ChunkSource {
  ChunkCache(World* world, std::unique_ptr<ChunkStorage> storage, ChunkSource* generator);
  ~ChunkCache() override;
  bool forceLoad = false;
- [[nodiscard]] bool isChunkLoaded(int chunkX, int chunkZ) const override;
- [[nodiscard]] bool isChunkDataReady(int chunkX, int chunkZ) const override;
+  [[nodiscard]] bool isChunkLoaded(int chunkX, int chunkZ) const override;
+  [[nodiscard]] bool isChunkDataReady(int chunkX, int chunkZ) const override;
+  [[nodiscard]] Chunk* getChunkIfLoaded(int chunkX, int chunkZ) override;
  void dropChunk(int chunkX, int chunkZ);
  Chunk& getChunk(int chunkX, int chunkZ) override;
  Chunk& loadChunk(int chunkX, int chunkZ) override;

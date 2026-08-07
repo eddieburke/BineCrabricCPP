@@ -25,14 +25,9 @@ bool isBufferFormatDirective(const std::string& trimmed) {
 
 std::string resolveShaderIncludes(const ShaderReadText& readText,
                                   const std::string& path,
-                                  bool stripFormatDirectives) {
+                                  bool stripFormatDirectives,
+                                  std::unordered_map<std::string, std::string>& memo) {
  std::set<std::string> stack;
- // A file's expansion depends only on its own path (readText is a pure function
- // of the path), so expand each one once. Packs that pull a common header in from
- // a dozen places used to re-expand the whole subtree per inclusion, which is
- // exponential in the include depth. Values are node-stable in an unordered_map,
- // so the returned reference survives the rehashes the recursion causes.
- std::unordered_map<std::string, std::string> memo;
  std::function<const std::string&(const std::string&)> resolve =
      [&](const std::string& current) -> const std::string& {
   if(const auto cached = memo.find(current); cached != memo.end()) {

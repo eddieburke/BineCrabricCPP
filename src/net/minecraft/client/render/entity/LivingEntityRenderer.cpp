@@ -193,7 +193,10 @@ void LivingEntityRenderer::render(
   }
   model->animateModel(const_cast<net::minecraft::LivingEntity&>(*living), limbDistance, limbAngle, tickDelta);
   render::core::setDrawPose(matrices.top());
-  model->render(limbDistance, limbAngle, headBob, headYawRel, headPitch, scaleUnit);
+  {
+   const Tessellator::ScopedBatch modelBatch;
+   model->render(limbDistance, limbAngle, headBob, headYawRel, headPitch, scaleUnit);
+  }
   auto syncDecorationPose = [&]() {
    if(decorationModel != nullptr) {
     decorationModel->poseActive = model->poseActive;
@@ -205,11 +208,14 @@ void LivingEntityRenderer::render(
      continue;
     }
     if(decorationModel != nullptr) {
-     syncDecorationPose();
-     render::core::setDrawPose(matrices.top());
-     decorationModel->render(limbDistance, limbAngle, headBob, headYawRel, headPitch, scaleUnit);
-    }
-    render::core::setRenderedItemId(0);
+      syncDecorationPose();
+      render::core::setDrawPose(matrices.top());
+      {
+       const Tessellator::ScopedBatch decorationBatch;
+       decorationModel->render(limbDistance, limbAngle, headBob, headYawRel, headPitch, scaleUnit);
+      }
+     }
+     render::core::setRenderedItemId(0);
     core::disableBlend();
   }
   renderMore(*living, tickDelta, matrices, projection);
@@ -224,16 +230,22 @@ void LivingEntityRenderer::render(
      render::core::setConstColor(brightness, 0.0f, 0.0f, 0.4f);
      render::core::setEntityColor(brightness, 0.0f, 0.0f, 0.4f);
      render::core::setDrawPose(matrices.top());
-     model->render(limbDistance, limbAngle, headBob, headYawRel, headPitch, scaleUnit);
+     {
+      const Tessellator::ScopedBatch modelBatch;
+      model->render(limbDistance, limbAngle, headBob, headYawRel, headPitch, scaleUnit);
+     }
      for(int layer = 0; layer < 4; ++layer) {
       if(!bindDecorationTexture(*living, layer, tickDelta)) {
        continue;
       }
       render::core::setConstColor(brightness, 0.0f, 0.0f, 0.4f);
       if(decorationModel != nullptr) {
-       syncDecorationPose();
-       render::core::setDrawPose(matrices.top());
-       decorationModel->render(limbDistance, limbAngle, headBob, headYawRel, headPitch, scaleUnit);
+        syncDecorationPose();
+        render::core::setDrawPose(matrices.top());
+        {
+         const Tessellator::ScopedBatch decorationBatch;
+         decorationModel->render(limbDistance, limbAngle, headBob, headYawRel, headPitch, scaleUnit);
+        }
       }
      }
     }
@@ -244,17 +256,23 @@ void LivingEntityRenderer::render(
     const float ca = static_cast<float>(overlayAlpha) / 255.0f;
      render::core::setConstColor(cr, cg, cb, ca);
      render::core::setEntityColor(cr, cg, cb, ca);
-     render::core::setDrawPose(matrices.top());
-     model->render(limbDistance, limbAngle, headBob, headYawRel, headPitch, scaleUnit);
-     for(int layer = 0; layer < 4; ++layer) {
-      if(!bindDecorationTexture(*living, layer, tickDelta)) {
-       continue;
+      render::core::setDrawPose(matrices.top());
+      {
+       const Tessellator::ScopedBatch modelBatch;
+       model->render(limbDistance, limbAngle, headBob, headYawRel, headPitch, scaleUnit);
       }
-      render::core::setConstColor(cr, cg, cb, ca);
+      for(int layer = 0; layer < 4; ++layer) {
+       if(!bindDecorationTexture(*living, layer, tickDelta)) {
+        continue;
+       }
+       render::core::setConstColor(cr, cg, cb, ca);
       if(decorationModel != nullptr) {
-       syncDecorationPose();
-       render::core::setDrawPose(matrices.top());
-       decorationModel->render(limbDistance, limbAngle, headBob, headYawRel, headPitch, scaleUnit);
+        syncDecorationPose();
+        render::core::setDrawPose(matrices.top());
+        {
+         const Tessellator::ScopedBatch decorationBatch;
+         decorationModel->render(limbDistance, limbAngle, headBob, headYawRel, headPitch, scaleUnit);
+        }
       }
      }
    }

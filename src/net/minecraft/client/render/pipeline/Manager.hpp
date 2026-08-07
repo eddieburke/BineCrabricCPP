@@ -12,8 +12,11 @@
 #include <vector>
 #include "net/minecraft/client/render/pipeline/Pipeline.hpp"
 #include "net/minecraft/client/render/pipeline/Instance.hpp"
+#include "net/minecraft/client/render/shaders/Compiler.hpp"
+#include "net/minecraft/client/render/shaders/WorldProgramBinder.hpp"
 #include "net/minecraft/client/render/uniforms/Uniforms.hpp"
 namespace net::minecraft::client::gl {
+class ShaderCompileService;
 class ShaderProgram;
 }
 namespace net::minecraft::client::option {
@@ -31,7 +34,7 @@ class World;
 namespace net::minecraft::client::render {
 class PackManager {
  public:
- PackManager(std::filesystem::path gameDirectory, option::GameOptions* options);
+ PackManager(std::filesystem::path gameDirectory, option::GameOptions* options, gl::ShaderCompileService& compiler);
  ~PackManager();
  void reload();
  void poll();
@@ -60,7 +63,7 @@ class PackManager {
  void endScene();
  [[nodiscard]] int sceneColorCount() const;
  void clearScene(float fogR = 0.0f, float fogG = 0.0f, float fogB = 0.0f);
- gl::ShaderProgram* worldProgram(const std::string& key);
+ gl::ShaderProgram* worldProgram(std::string_view key);
  class PipelinePhaseScope {
 public:
   PipelinePhaseScope(PackManager* manager, WorldPipelinePhase phase)
@@ -116,8 +119,10 @@ private:
  void captureOpaqueDepth();
  void captureHandDepth();
 
- private:
- void logOnce(PackInstance& pack, const std::string& message) const;
+  private:
+  [[nodiscard]] WorldProgramBindContext makeWorldBindContext();
+  void logOnce(PackInstance& pack, const std::string& message) const;
+ [[nodiscard]] PackCompiler::LogFnLevel logFn();
  [[nodiscard]] PackInstance* activePack() noexcept;
  [[nodiscard]] const PackInstance* activePack() const noexcept;
  [[nodiscard]] PackInstance* renderPack() noexcept;
@@ -144,6 +149,7 @@ private:
   void directoryWatchLoop(const std::stop_token& stop);
   std::filesystem::path gameDirectory_;
  option::GameOptions* options_ = nullptr;
+ gl::ShaderCompileService& compiler_;
  render::Pipeline pipeline_;
  std::vector<std::unique_ptr<PackInstance>> packs_;
  std::unique_ptr<PackInstance> basePack_;

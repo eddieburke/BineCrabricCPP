@@ -154,7 +154,8 @@ GameRenderer::GameRenderer(Minecraft* clientIn)
       heldItemRenderer(std::make_unique<item::HeldItemRenderer>(clientIn)),
       lastInactiveTime(nowMillis()),
       shaderPacks_(clientIn != nullptr ? std::make_unique<PackManager>(
-                                             Minecraft::getRunDirectory(), &clientIn->options)
+                                             Minecraft::getRunDirectory(), &clientIn->options,
+                                             clientIn->shaderCompiler_)
                                        : nullptr) {}
 GameRenderer::~GameRenderer() {
  shadowState_.targets.destroy();
@@ -1037,9 +1038,8 @@ void GameRenderer::renderToCurrentTarget(float tickDelta,
  worldLight.worldTime = static_cast<float>(ticks) + tickDelta;
  worldLight.brightness = client->options.brightness;
  core::setWorldLight(worldLight);
- if(frameCamera_.shadowPass) {
-  core::setFogEnabled(false);
-  if(frameCamera_.shadowTerrain) {
+  if(frameCamera_.shadowPass) {
+   if(frameCamera_.shadowTerrain) {
    drawSolidTerrain(*worldRenderer, *camera, terrainTextureId);
    drawCutoutTerrain(*worldRenderer, *camera, terrainTextureId);
   }
@@ -1145,10 +1145,9 @@ void GameRenderer::renderToCurrentTarget(float tickDelta,
                   false,
                   [&] {
                    const debug::RenderProfiler::Scope cloudScope(debug::RenderStage::Clouds);
-                   atmosphere::renderClouds(atmosphereCtx, tickDelta);
-                  });
- core::setFogEnabled(false);
- core::cullBackFaces();
+                    atmosphere::renderClouds(atmosphereCtx, tickDelta);
+                   });
+  core::cullBackFaces();
  core::setConstColor(1.0f, 1.0f, 1.0f, 1.0f);
  if(!renderCameraEntity) {
   renderWorldStage(atmosphereCtx, tickDelta, mod::WorldRenderStage::Framebuffer, true, false, [] {});

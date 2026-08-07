@@ -380,77 +380,11 @@ FetchContent_MakeAvailable(googletest)
 
 enable_testing()
 
+file(GLOB MINECRAFT_TEST_GLOB_SOURCES CONFIGURE_DEPENDS tests/*_test.cpp)
 set(MINECRAFT_TEST_SOURCES
     tests/test-main.cpp
-    tests/packet_roundtrip_test.cpp
-    tests/registry_bootstrap_test.cpp
-    tests/lan_host_coordinator_test.cpp
-    tests/world_required_mods_test.cpp
-    tests/multiplayer_client_player_entity_test.cpp
-    tests/mp_parity_updates_test.cpp
-    tests/client_timer_test.cpp
-    tests/render_settings_test.cpp
-    tests/lua_runtime_prelude_test.cpp
-    tests/mod_settings_registry_test.cpp
-    tests/mod_render_scope_test.cpp
-    tests/model_registry_parent_test.cpp
-    tests/unified_light_registry_test.cpp
-    tests/render_profiler_test.cpp
-    tests/chunk_mesh_golden_test.cpp
-    tests/draw_camera_state_test.cpp
-    tests/shader_pack_loader_test.cpp
-    tests/shader_frame_data_test.cpp
-    tests/shader_gl_integration_test.cpp
-    tests/rvox_diag_test.cpp
-    tests/lab_pbr_mipmap_test.cpp
-    tests/glsl_snippets_test.cpp
-    tests/vanilla_pack_embed_test.cpp
-    tests/camera_position_tracker_test.cpp
-    tests/block_face_uv_test.cpp
-    tests/channel_test.cpp
-    tests/color_targets_test.cpp
-    tests/connection_async_teardown_test.cpp
-    tests/custom_uniforms_test.cpp
-    tests/fog_mode_parity_test.cpp
-    tests/frame_pipeline_order_test.cpp
-    tests/handshake_metadata_test.cpp
-    tests/if_engine_unified_test.cpp
-    tests/iris_hemisphere_chunk_offset_test.cpp
-    tests/lifecycle_test.cpp
-    tests/lighting_channel_test.cpp
-    tests/macro_parity_test.cpp
-    tests/mesh_cancel_test.cpp
-    tests/pack_blend_drawbuffer_test.cpp
-    tests/packet_accounting_test.cpp
-    tests/region_snapshot_race_test.cpp
-    tests/shadow_celestial_modelview_test.cpp
-    tests/shadow_culling_frustum_test.cpp
-    tests/thread_budget_test.cpp
-    tests/thread_coordinator_test.cpp
+    ${MINECRAFT_TEST_GLOB_SOURCES}
 )
-
-
-
-
-set(MINECRAFT_SERVER_TEST_SOURCES
-    integrated_server_host_test.cpp
-    mp_chunk_data_test.cpp
-    mp_chunk_delivery_test.cpp
-    server_properties_test.cpp
-    server_command_handler_test.cpp
-    server_chunk_cache_test.cpp
-    server_world_events_test.cpp
-    server_login_handler_test.cpp
-    minecraft_server_tick_test.cpp
-    player_manager_test.cpp
-    chunk_map_test.cpp
-    connection_listener_test.cpp
-    connection_packet_drain_throughput_test.cpp
-    chunk_packet_drain_test.cpp
-)
-
-list(TRANSFORM MINECRAFT_SERVER_TEST_SOURCES PREPEND "tests/")
-list(APPEND MINECRAFT_TEST_SOURCES ${MINECRAFT_SERVER_TEST_SOURCES})
 
 add_executable(minecraft_omega_tests
     ${MINECRAFT_TEST_SOURCES}

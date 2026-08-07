@@ -4,7 +4,7 @@
 namespace net::minecraft::client::render {
 struct WorldProgramBindContext {
  const PackUniformValues* uniforms = nullptr;
- unsigned int* lightmapTexture = nullptr;
+ unsigned int lightmapTexture = 0;
  unsigned int normalTexture = 0;
  unsigned int specularTexture = 0;
  unsigned int noiseTexture = 0;
@@ -20,4 +20,5 @@ struct WorldProgramBindContext {
  class PackInstance* pack = nullptr;
 };
 void bindWorldProgram(gl::ShaderProgram& program, const WorldProgramBindContext& context);
+void bindProgramMaterialTextures(gl::ShaderProgram& program, const WorldProgramBindContext& context);
 } // namespace net::minecraft::client::render

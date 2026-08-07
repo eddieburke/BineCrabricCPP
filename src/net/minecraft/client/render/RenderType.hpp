@@ -13,7 +13,7 @@ namespace net::minecraft::client::render {
 // installed by PackManager. World RenderTypes call it every setupRenderState so the
 // live pack (or the vanilla base pack) owns their shader. nullptr resolver / result means
 // no program is bound. Set to nullptr on manager teardown.
-using WorldProgramResolver = std::function<gl::ShaderProgram*(const std::string& key)>;
+using WorldProgramResolver = std::function<gl::ShaderProgram*(std::string_view key)>;
 using ShaderObjectIdResolver = std::function<int(const std::string& kind, const std::string& name, int fallback)>;
 // Applies the resolved program's blend/alphaTest directives. Key-less by design: the
 // pipeline publishes the RESOLVED program source (shadow mapping + ProgramId fallback
@@ -56,20 +56,20 @@ class RenderType {
   float alphaRef = 0.1f;
   bool lighting = false;
  };
- RenderType(std::string name,
-            int glMode,
-            bool hasTexture,
-            bool hasColor,
-            bool hasNormals,
-            std::string programName,
-            State state,
-            std::string worldProgramKey = "");
- virtual ~RenderType() = default;
- void setupRenderState() const;
- void restoreRenderState(const core::PassGlBits& saved, gl::ShaderProgram* savedProgram) const;
- [[nodiscard]] std::string name() const {
-  return name_;
- }
+  RenderType(std::string_view name,
+             int glMode,
+             bool hasTexture,
+             bool hasColor,
+             bool hasNormals,
+             std::string_view programName,
+             State state,
+             std::string_view worldProgramKey = "");
+  virtual ~RenderType() = default;
+  void setupRenderState() const;
+  void restoreRenderState(const core::PassGlBits& saved, gl::ShaderProgram* savedProgram) const;
+  [[nodiscard]] std::string_view name() const {
+   return name_;
+  }
  [[nodiscard]] int glMode() const {
   return glMode_;
  }
@@ -107,16 +107,16 @@ class RenderType {
  static RenderType& damagedBlock();
 
  protected:
- std::string name_;
- int glMode_;
- bool hasTexture_;
- bool hasColor_;
- bool hasNormals_;
- std::string programName_;
- State state_;
- // When non-empty, the program is resolved through the world program resolver each pass
- // (pack-driven); when empty, no program is bound.
- std::string worldProgramKey_;
+  std::string_view name_;
+  int glMode_;
+  bool hasTexture_;
+  bool hasColor_;
+  bool hasNormals_;
+  std::string_view programName_;
+  State state_;
+  // When non-empty, the program is resolved through the world program resolver each pass
+  // (pack-driven); when empty, no program is bound.
+  std::string_view worldProgramKey_;
 };
 // RAII guard: opens a pass for the lifetime of the scope. This is the ONLY supported way
 // to use a RenderType for immediate-mode drawing. Mandatory restore, zero boilerplate.

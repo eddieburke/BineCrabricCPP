@@ -93,8 +93,8 @@ class ChunkSectionSystem {
  void drainBorderRefresh();
 
  private:
- [[nodiscard]] const net::minecraft::entity::LivingEntity* frontierCamera() const;
- void updateSectionFrontier();
+  [[nodiscard]] const net::minecraft::entity::LivingEntity* frontierCamera() const;
+  bool updateSectionFrontier();
  void drainPendingColumns();
  void createColumn(int sectionX, int sectionZ);
  void removeColumn(int sectionX, int sectionZ);
@@ -123,8 +123,9 @@ class ChunkSectionSystem {
  int invisibleChunkCount = 0;
  int compiledChunkCount = 0;
  int emptyChunkCount = 0;
- int occlusionStamp_ = 0;
- std::vector<chunk::ChunkBuilder*> occlusionQueue_{};
- int meshOrderStamp_ = 0;
+  int occlusionStamp_ = 0;
+  std::vector<chunk::ChunkBuilder*> occlusionQueue_{};
+  int meshOrderStamp_ = 0;
+  bool sectionsChanged_ = true;
 };
 } // namespace net::minecraft::client::render

@@ -3,6 +3,7 @@
 #include <stdexcept>
 #include <string>
 #include <string_view>
+#include <unordered_map>
 #include <vector>
 
 namespace net::minecraft::client::render {
@@ -16,7 +17,8 @@ class IncludeResolveError : public std::runtime_error {
 bool isBufferFormatDirective(const std::string& trimmed);
 [[nodiscard]] std::string resolveShaderIncludes(const ShaderReadText& readText,
                                                 const std::string& path,
-                                                bool stripFormatDirectives = false);
+                                                bool stripFormatDirectives,
+                                                std::unordered_map<std::string, std::string>& memo);
 [[nodiscard]] std::vector<int> defaultRenderTargetIndices();
 [[nodiscard]] std::vector<int> parseRenderTargetIndices(const std::string& source);
 [[nodiscard]] std::vector<std::string> renderTargetOutputNames(const std::string& source);

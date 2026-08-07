@@ -1,6 +1,7 @@
 #include <cmath>
 #include "net/minecraft/block/Block.hpp"
 #include "net/minecraft/client/render/RenderCore.hpp"
+#include "net/minecraft/client/render/Tessellator.hpp"
 #include "net/minecraft/client/render/block/BlockRenderManager.hpp"
 #include "net/minecraft/client/render/entity/EntityRenderers.hpp"
 #include "net/minecraft/client/render/entity/model/MinecartEntityModel.hpp"
@@ -96,7 +97,10 @@ void MinecartEntityRenderer::render(
  bindTexture("/item/cart.png");
  matrices.scale(-1.0f, -1.0f, 1.0f);
  render::core::setDrawPose(matrices.top());
- model_->render(0.0f, 0.0f, -0.1f, 0.0f, 0.0f, 0.0625f);
+ {
+  const Tessellator::ScopedBatch modelBatch;
+  model_->render(0.0f, 0.0f, -0.1f, 0.0f, 0.0f, 0.0625f);
+ }
  matrices.pop();
  endDraw();
 }

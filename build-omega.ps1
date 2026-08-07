@@ -474,21 +474,23 @@ function Test-NeedsConfigure{param([string]$BP,[string]$EC,[string]$ETR,[string]
 $cp="$BP\CMakeCache.txt"
 if(!(Test-Path -Li $cp)){return $true}
 if(!(Test-Path -Li "$BP\build.ninja")){return $true}
-$gn=$null;$co=$null;$tr=$null;$bt=$null;$ip=$null;$cf=$null
+$gn=$null;$co=$null;$tr=$null;$bt=$null;$ip=$null;$cfr=$null;$cfrd=$null
 foreach($ln in gc -Li $cp){
-if($ln -like "CMAKE_GENERATOR:INTERNAL=*"){$gn=$ln.Substring(27)}
-elseif($ln -like "CMAKE_CXX_COMPILER:FILEPATH=*"){$co=$ln.Substring(28)}
-elseif($ln -like "MINECRAFT_TOOLCHAIN_ROOT:PATH=*"){$tr=$ln.Substring(31)}
-elseif($ln -like "CMAKE_BUILD_TYPE:STRING=*"){$bt=$ln.Substring(25)}
-elseif($ln -like "CMAKE_INTERPROCEDURAL_OPTIMIZATION:BOOL=*"){$ip=$ln.Substring(41)}
-elseif($ln -like "CMAKE_CXX_FLAGS_RELEASE:STRING=*"){$cf=$ln.Substring(32).Trim()}
+$v=$ln.Substring($ln.IndexOf("=")+1)
+if($ln -like "CMAKE_GENERATOR:INTERNAL=*"){$gn=$v}
+elseif($ln -like "CMAKE_CXX_COMPILER:FILEPATH=*" -or $ln -like "CMAKE_CXX_COMPILER:UNINITIALIZED=*" -or $ln -like "CMAKE_CXX_COMPILER:STRING=*"){$co=$v}
+elseif($ln -like "MINECRAFT_TOOLCHAIN_ROOT:PATH=*" -or $ln -like "MINECRAFT_TOOLCHAIN_ROOT:UNINITIALIZED=*"){$tr=$v}
+elseif($ln -like "CMAKE_BUILD_TYPE:STRING=*"){$bt=$v}
+elseif($ln -like "CMAKE_INTERPROCEDURAL_OPTIMIZATION:BOOL=*"){$ip=$v}
+elseif($ln -like "CMAKE_CXX_FLAGS_RELEASE:STRING=*"){$cfr=$v.Trim()}
+elseif($ln -like "CMAKE_CXX_FLAGS_RELWITHDEBINFO:STRING=*"){$cfrd=$v.Trim()}
 }
 if($gn -ne "Ninja"){return $true}
 if((Normalize-ToolPath $co) -ne (Normalize-ToolPath $EC)){return $true}
 if($tr -and((Normalize-ToolPath $tr) -ne (Normalize-ToolPath $ETR))){return $true}
 if($bt -ne $EBT){return $true}
 if(($ip -eq "ON") -ne $UL){return $true}
-if($EBT -eq "Release" -and $ECFR -ne ""){$en=($ECFR -replace '\s+',' ').Trim();$cn=if($cf){($cf -replace '\s+',' ').Trim()}else{""};if($cn -ne $en){return $true}}
+if($ECFR -ne ""){$en=($ECFR -replace '\s+',' ').Trim();$cn=if($EBT -eq "Release"){$cfr}else{$cfrd};$cn=if($cn){($cn -replace '\s+',' ').Trim()}else{""};if($cn -ne $en){return $true}}
 return $false
 }
 Ensure-BundledToolchain
@@ -514,18 +516,22 @@ $UseLto=$Lto -and(-not $NoLto)
 if($Lto -and $NoLto){Write-Error "-Lto and -NoLto cannot be used together.";exit 1}
 if($UseLto -and $BuildType -ne "Release"){Write-Error "-Lto is only supported with -BuildType Release.";exit 1}
 if($UseLto){Write-Host "LTO enabled (opt-in; may fail to link on MinGW GCC 15)";$CmakeArgs+="-DCMAKE_INTERPROCEDURAL_OPTIMIZATION=ON";$CmakeArgs+="-DCMAKE_CXX_COMPILER_LAUNCHER=";$env:CCACHE_DISABLE="1"}
-$OmegaCxxRelease=""
+$OmegaCxx=""
 if($BuildType -eq "Release"){
-$OC="-funroll-loops -fomit-frame-pointer -ffunction-sections -fdata-sections -fno-semantic-interposition -fmerge-all-constants"
+$OC="-DNDEBUG -funroll-loops -fomit-frame-pointer -ffunction-sections -fdata-sections -fno-semantic-interposition -fmerge-all-constants"
 if($KeepDebugSymbols){$OC="-g "+$OC}
 $OL="-Wl,--gc-sections"
 if($UseLto){$OL="";$OC=$OC+" -flto-partition=one"}
 if(!$NoNativeCpu){$OC="-march=native -mtune=native -mprefer-vector-width=128 "+$OC}
-$OmegaCxxRelease=$OC
+$OmegaCxx=$OC
 $CmakeArgs+="-DCMAKE_CXX_FLAGS_RELEASE=$OC"
 if($OL -ne ""){$CmakeArgs+="-DCMAKE_EXE_LINKER_FLAGS_RELEASE=$OL"}
+}elseif($BuildType -eq "RelWithDebInfo"){
+$OC="-O2 -g"
+$OmegaCxx=$OC
+$CmakeArgs+="-DCMAKE_CXX_FLAGS_RELWITHDEBINFO=$OC"
 }
-$NeedsConfigure=Test-NeedsConfigure -BP "$ScriptDir\$BuildDir" -EC $GppExe -ETR "$ScriptDir\$($RelToolchainRoot.Replace('/','\'))" -EBT $BuildType -UL $UseLto -ECFR $OmegaCxxRelease
+$NeedsConfigure=Test-NeedsConfigure -BP "$ScriptDir\$BuildDir" -EC $GppExe -ETR $RelToolchainRoot -EBT $BuildType -UL $UseLto -ECFR $OmegaCxx
 if($NeedsConfigure){
     if($BuildType -eq "Debug"){Write-Host "build-omega Debug build started";Write-Host "WARNING: This will take a very long time (1.3h+)"}
     Assert-BuildDirAvailable -BN $BuildDir -SDP $ScriptDir

@@ -10,15 +10,29 @@ void ThreadCoordinator::configure(unsigned hardwareThreads, unsigned reservedThr
  configure(hardwareThreads, reservedThreads, Options{});
 }
 void ThreadCoordinator::configure(unsigned hardwareThreads, unsigned reservedThreads, Options options) {
- std::lock_guard lock(mutex_);
- if(configured_) {
-  return;
+ std::unique_ptr<WorkerPool> oldComputePool;
+ std::unique_ptr<WorkerPool> oldIoPool;
+ std::unique_ptr<WorkerPool> oldGlCompilePool;
+ {
+  std::lock_guard lock(mutex_);
+  if(configured_) {
+   return;
+  }
+  budget_ = ThreadBudget::derive(hardwareThreads, reservedThreads, options.maxComputeThreads);
+  if(computePool_) {
+   oldComputePool = std::move(computePool_);
+   computePool_ = std::make_unique<WorkerPool>(budget_.compute);
+  }
+  if(ioPool_) {
+   oldIoPool = std::move(ioPool_);
+   ioPool_ = std::make_unique<WorkerPool>(budget_.io);
+  }
+  if(glCompilePool_) {
+   oldGlCompilePool = std::move(glCompilePool_);
+   glCompilePool_ = std::make_unique<WorkerPool>(budget_.glCompile);
+  }
+  configured_ = true;
  }
- budget_ = ThreadBudget::derive(hardwareThreads, reservedThreads, options.maxComputeThreads);
- if(computePool_) computePool_ = std::make_unique<WorkerPool>(budget_.compute);
- if(ioPool_) ioPool_ = std::make_unique<WorkerPool>(budget_.io);
- if(glCompilePool_) glCompilePool_ = std::make_unique<WorkerPool>(budget_.glCompile);
- configured_ = true;
 }
 WorkerPool& ThreadCoordinator::pool(Domain domain) {
  std::lock_guard lock(mutex_);

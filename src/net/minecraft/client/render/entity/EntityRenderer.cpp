@@ -57,17 +57,23 @@ void EntityRenderer::postRender(
  if(entity.isOnFire()) {
   renderOnFire(entity, x, y, z, tickDelta, matrices);
  }
- endDraw();
-}
+  endDraw();
+ }
 void EntityRenderer::bindTexture(std::string_view texturePath) {
  if(dispatcher == nullptr || dispatcher->textureManager() == nullptr) {
   return;
  }
- // Diffuse is unit 0 under the shader pipeline (gbuffers_entities samples
- // gtexture there; the lightmap takes unit 1). The legacy beta unit-1 (0x84C0)
- // multitexture bind placed the entity texture where the pipeline puts lightmap.
- const int textureId = dispatcher->textureManager()->getTextureId(std::string(texturePath));
-  dispatcher->textureManager()->bindTexture(textureId);
+ static std::string lastTexturePath;
+ static int lastTextureId = -1;
+ int textureId;
+ if(lastTexturePath == texturePath) {
+  textureId = lastTextureId;
+ } else {
+  textureId = dispatcher->textureManager()->getTextureId(std::string(texturePath));
+  lastTexturePath = std::string(texturePath);
+  lastTextureId = textureId;
+ }
+ dispatcher->textureManager()->bindTexture(textureId);
 }
 bool EntityRenderer::bindDownloadedTexture(std::string_view url, std::string_view backup) {
  if(dispatcher == nullptr || dispatcher->textureManager() == nullptr) {

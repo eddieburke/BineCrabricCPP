@@ -132,8 +132,55 @@ TEST_F(ShaderGlIntegrationTest, PipelineResetInvalidatesTextureBindings) {
  client::render::core::deleteTexture(textures[0]);
  client::render::core::deleteTexture(textures[1]);
 }
+TEST_F(ShaderGlIntegrationTest, ProgramUniformSnapshotUploadsOncePerProgramPerGeneration) {
+  const std::string vertex = "void main() { gl_Position = vec4(0.0); }\n";
+  const std::string fragment = "out vec4 color; void main() { color = vec4(1.0); }\n";
+  client::gl::ShaderProgram first;
+  client::gl::ShaderProgram second;
+  ASSERT_TRUE(first.compile(vertex, fragment, "#version 330 core\n"));
+  ASSERT_TRUE(second.compile(vertex, fragment, "#version 330 core\n"));
+  int snapshotUploads = 0;
+  int materialBinds = 0;
+  client::render::core::setProgramUniformUploader([&snapshotUploads](client::gl::ShaderProgram&) {
+   ++snapshotUploads;
+  });
+  client::render::core::setProgramMaterialBinder([&materialBinds](client::gl::ShaderProgram&) {
+   ++materialBinds;
+  });
+  client::render::core::RenderPass pass;
+  client::render::core::setActiveProgram(&first);
+  client::render::core::bindAndUploadUniforms(pass);
+  client::render::core::setActiveProgram(&second);
+  client::render::core::bindAndUploadUniforms(pass);
+  client::render::core::setActiveProgram(&first);
+  client::render::core::bindAndUploadUniforms(pass);
+  EXPECT_EQ(snapshotUploads, 2) << "bouncing A->B->A must not re-upload A's snapshot";
+  EXPECT_EQ(materialBinds, 1) << "first draw initializes the diffuse-texture cache";
+  client::render::core::advanceProgramUniforms();
+  client::render::core::bindAndUploadUniforms(pass);
+  EXPECT_EQ(snapshotUploads, 3) << "generation advance re-uploads the active program";
+  EXPECT_EQ(materialBinds, 2) << "generation advance also refreshes the diffuse cache";
+  unsigned int textures[2]{};
+  ::glGenTextures(2, textures);
+  client::render::core::activeTexture(0);
+  client::render::core::bindTexture(static_cast<int>(textures[0]));
+  client::render::core::bindAndUploadUniforms(pass);
+  EXPECT_EQ(materialBinds, 3) << "diffuse texture change binds material only";
+  EXPECT_EQ(snapshotUploads, 3) << "texture change must not re-upload the snapshot";
+  client::render::core::bindAndUploadUniforms(pass);
+  EXPECT_EQ(materialBinds, 3) << "same diffuse texture does not re-bind material";
+  client::render::core::bindTexture(static_cast<int>(textures[1]));
+  client::render::core::bindAndUploadUniforms(pass);
+  EXPECT_EQ(materialBinds, 4);
+  EXPECT_EQ(snapshotUploads, 3);
+  client::render::core::deleteTexture(textures[0]);
+  client::render::core::deleteTexture(textures[1]);
+  client::render::core::setProgramUniformUploader(nullptr);
+  client::render::core::setProgramMaterialBinder(nullptr);
+  client::render::core::setActiveProgram(nullptr);
+}
 TEST_F(ShaderGlIntegrationTest, TextureDeletionClearsEveryTrackedUnit) {
- const unsigned int texture = client::render::core::genTexture();
+  const unsigned int texture = client::render::core::genTexture();
  ASSERT_NE(texture, 0u);
  client::render::core::activeTexture(0);
  client::render::core::bindTexture(static_cast<int>(texture));
@@ -158,7 +205,8 @@ TEST_F(ShaderGlIntegrationTest, LowLevelCompilerRejectsNonCoreDialects) {
  EXPECT_EQ(program.lastError(), "compute shaders require #version 430 core or newer");
 }
 TEST_F(ShaderGlIntegrationTest, CacheCompilesComputePerKey) {
- client::gl::ProgramCache cache;
+ client::gl::ShaderCompileService compiler;
+ client::gl::ProgramCache cache(compiler);
  const std::string source = R"(layout(local_size_x = 1) in;
 void main() {}
 )";
@@ -313,6 +361,7 @@ TEST_F(ShaderGlIntegrationTest, RenderPearlCompilesEveryProgramInEveryDimension)
      std::filesystem::path(MINECRAFT_TEST_SOURCE_DIR) / "shaders" / "RenderPearl v2.8.0-beta.4";
  ASSERT_TRUE(std::filesystem::is_directory(root));
  PackInstance pack;
+ client::gl::ShaderCompileService compiler;
  pack.path = root;
  pack.directory = true;
  const auto resources = directoryResources(root);
@@ -338,7 +387,7 @@ TEST_F(ShaderGlIntegrationTest, RenderPearlCompilesEveryProgramInEveryDimension)
  std::vector<std::string> failures;
  for(const auto& [dimension, selected] : dimensions) {
   pack.compiledPrograms.clear();
-  pack.programs = std::make_unique<client::gl::ProgramCache>();
+  pack.programs = std::make_unique<client::gl::ProgramCache>(compiler);
   pack.definition = pack.rootDefinition;
   if(selected != nullptr) {
    mergeDimension(pack.definition, *selected);
@@ -369,6 +418,7 @@ TEST_F(ShaderGlIntegrationTest, RenderPearlDeferredExposesImageUniforms) {
  const std::filesystem::path root =
      std::filesystem::path(MINECRAFT_TEST_SOURCE_DIR) / "shaders" / "RenderPearl v2.8.0-beta.4";
  PackInstance pack;
+ client::gl::ShaderCompileService compiler;
  pack.path = root;
  pack.directory = true;
  const auto resources = directoryResources(root);
@@ -388,7 +438,7 @@ TEST_F(ShaderGlIntegrationTest, RenderPearlDeferredExposesImageUniforms) {
  for(const PackSetting& setting : pack.rootDefinition.settings) {
   pack.settings.emplace(setting.key, setting.defaultValue);
  }
- pack.programs = std::make_unique<client::gl::ProgramCache>();
+ pack.programs = std::make_unique<client::gl::ProgramCache>(compiler);
  const auto log = [](PackInstance&, const std::string&, net::minecraft::util::logging::LogLevel) {};
  client::gl::ShaderProgram* deferred = PackCompiler::compile(pack, "deferred#compute", log);
  ASSERT_NE(deferred, nullptr) << "deferred#compute failed to compile";
@@ -404,6 +454,7 @@ TEST_F(ShaderGlIntegrationTest, RenderPearlGbufferDrawBuffersParse) {
  const std::filesystem::path root =
      std::filesystem::path(MINECRAFT_TEST_SOURCE_DIR) / "shaders" / "RenderPearl v2.8.0-beta.4";
  PackInstance pack;
+ client::gl::ShaderCompileService compiler;
  pack.path = root;
  pack.directory = true;
  const auto resources = directoryResources(root);
@@ -424,7 +475,7 @@ TEST_F(ShaderGlIntegrationTest, RenderPearlGbufferDrawBuffersParse) {
  ASSERT_TRUE(pack.definition.targets.contains("colortex2"));
  EXPECT_EQ(pack.definition.targets.at("colortex1").format, "RGBA16F");
  EXPECT_EQ(pack.definition.targets.at("colortex2").format, "RGBA32UI");
- pack.programs = std::make_unique<client::gl::ProgramCache>();
+ pack.programs = std::make_unique<client::gl::ProgramCache>(compiler);
  const auto log = [](PackInstance&, const std::string&, net::minecraft::util::logging::LogLevel) {};
  client::gl::ShaderProgram* terrain = PackCompiler::compile(pack, "gbuffers_terrain_solid", log);
  ASSERT_NE(terrain, nullptr) << "gbuffers_terrain_solid failed to compile";
@@ -434,6 +485,7 @@ TEST_F(ShaderGlIntegrationTest, RenderPearlDeferredWriteBuffersMatchComposite) {
  const std::filesystem::path root =
      std::filesystem::path(MINECRAFT_TEST_SOURCE_DIR) / "shaders" / "RenderPearl v2.8.0-beta.4";
  PackInstance pack;
+ client::gl::ShaderCompileService compiler;
  pack.path = root;
  pack.directory = true;
  const auto resources = directoryResources(root);
@@ -453,7 +505,7 @@ TEST_F(ShaderGlIntegrationTest, RenderPearlDeferredWriteBuffersMatchComposite) {
  PackDefinition merged = pack.rootDefinition;
  for(const auto& [name, program] : selected.programs) merged.programs[name] = program;
  pack.definition = merged;
- pack.programs = std::make_unique<client::gl::ProgramCache>();
+ pack.programs = std::make_unique<client::gl::ProgramCache>(compiler);
  const auto log = [](PackInstance&, const std::string&, net::minecraft::util::logging::LogLevel) {};
  const auto terrainIt = merged.programs.find("gbuffers_terrain_solid");
  ASSERT_NE(terrainIt, merged.programs.end());

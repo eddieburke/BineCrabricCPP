@@ -47,8 +47,8 @@ std::size_t sourceDeclarationOffset(const std::string& source) {
  return offset;
 }
 
-std::vector<bool> codeMask(const std::string& source) {
- std::vector<bool> mask(source.size(), true);
+CodeMask codeMask(const std::string& source) {
+ CodeMask mask(source.size(), 1);
  bool lineComment = false;
  bool blockComment = false;
  bool quoted = false;
@@ -57,23 +57,23 @@ std::vector<bool> codeMask(const std::string& source) {
   const char ch = source[index];
   const char next = index + 1 < source.size() ? source[index + 1] : '\0';
   if(lineComment) {
-   mask[index] = false;
+   mask[index] = 0;
    if(ch == '\n') lineComment = false;
    continue;
   }
   if(blockComment) {
-   mask[index] = false;
+   mask[index] = 0;
    if(ch == '*' && next == '/') {
-    mask[index + 1] = false;
+    mask[index + 1] = 0;
     blockComment = false;
     ++index;
    }
    continue;
   }
   if(quoted) {
-   mask[index] = false;
+   mask[index] = 0;
    if(ch == '\\' && next != '\0') {
-    mask[index + 1] = false;
+    mask[index + 1] = 0;
     ++index;
    } else if(ch == quote) {
     quoted = false;
@@ -81,17 +81,17 @@ std::vector<bool> codeMask(const std::string& source) {
    continue;
   }
   if(ch == '/' && next == '/') {
-   mask[index] = false;
-   mask[index + 1] = false;
+   mask[index] = 0;
+   mask[index + 1] = 0;
    lineComment = true;
    ++index;
   } else if(ch == '/' && next == '*') {
-   mask[index] = false;
-   mask[index + 1] = false;
+   mask[index] = 0;
+   mask[index + 1] = 0;
    blockComment = true;
    ++index;
   } else if(ch == '"' || ch == '\'') {
-   mask[index] = false;
+   mask[index] = 0;
    quoted = true;
    quote = ch;
   }
@@ -100,7 +100,7 @@ std::vector<bool> codeMask(const std::string& source) {
 }
 
 bool tokenAt(const std::string& source,
-             const std::vector<bool>& mask,
+             const CodeMask& mask,
              std::size_t at,
              std::string_view token) {
  const std::size_t end = at + token.size();
@@ -109,12 +109,12 @@ bool tokenAt(const std::string& source,
  return left && right && end <= mask.size() &&
         std::all_of(mask.begin() + static_cast<std::ptrdiff_t>(at),
                     mask.begin() + static_cast<std::ptrdiff_t>(end),
-                    [](bool value) { return value; });
+                    [](unsigned char value) { return value != 0; });
 }
 
 void replaceAllToken(std::string& source, std::string_view from, std::string_view to) {
  if(from.empty()) return;
- const std::vector<bool> mask = codeMask(source);
+ const CodeMask mask = codeMask(source);
  std::vector<std::size_t> matches;
  std::size_t at = 0;
  while((at = source.find(from, at)) != std::string::npos) {
@@ -128,7 +128,7 @@ void replaceGlobalStorageQualifier(std::string& source,
                                    std::string_view from,
                                    std::string_view to) {
  if(from.empty()) return;
- const std::vector<bool> mask = codeMask(source);
+ const CodeMask mask = codeMask(source);
  std::vector<std::size_t> matches;
  int braceDepth = 0;
  for(std::size_t index = 0; index < source.size(); ++index) {
@@ -154,7 +154,11 @@ void replaceGlobalStorageQualifier(std::string& source,
 
 bool referencesToken(const std::string& source, std::string_view token) {
  if(token.empty()) return false;
- const std::vector<bool> mask = codeMask(source);
+ const CodeMask mask = codeMask(source);
+ return referencesToken(source, mask, token);
+}
+bool referencesToken(const std::string& source, const CodeMask& mask, std::string_view token) {
+ if(token.empty()) return false;
  std::size_t at = 0;
  while((at = source.find(token, at)) != std::string::npos) {
   if(tokenAt(source, mask, at, token)) return true;
@@ -166,7 +170,13 @@ bool referencesToken(const std::string& source, std::string_view token) {
 bool hasStorageDeclaration(const std::string& source,
                            std::string_view storage,
                            std::string_view name) {
- const std::vector<bool> mask = codeMask(source);
+ const CodeMask mask = codeMask(source);
+ return hasStorageDeclaration(source, mask, storage, name);
+}
+bool hasStorageDeclaration(const std::string& source,
+                           const CodeMask& mask,
+                           std::string_view storage,
+                           std::string_view name) {
  int braceDepth = 0;
  int parenDepth = 0;
  bool declaration = false;
@@ -198,7 +208,7 @@ bool hasStorageDeclaration(const std::string& source,
 }
 
 namespace {
-std::size_t mainOpenBrace(const std::string& source, const std::vector<bool>& mask) {
+std::size_t mainOpenBrace(const std::string& source, const CodeMask& mask) {
  std::size_t mainId = 0;
  while((mainId = source.find("main", mainId)) != std::string::npos) {
   if(!tokenAt(source, mask, mainId, "main")) {
@@ -227,7 +237,7 @@ std::size_t mainOpenBrace(const std::string& source, const std::vector<bool>& ma
 }
 
 bool appendBeforeMainClose(std::string& source, const std::string& snippet) {
- const std::vector<bool> mask = codeMask(source);
+ const CodeMask mask = codeMask(source);
  const std::size_t openBrace = mainOpenBrace(source, mask);
  if(openBrace == std::string::npos) return false;
  int depth = 1;
@@ -243,7 +253,7 @@ bool appendBeforeMainClose(std::string& source, const std::string& snippet) {
 }
 
 bool prependToMainBody(std::string& source, const std::string& snippet) {
- const std::vector<bool> mask = codeMask(source);
+ const CodeMask mask = codeMask(source);
  const std::size_t openBrace = mainOpenBrace(source, mask);
  if(openBrace == std::string::npos) return false;
  source.insert(openBrace + 1, snippet);

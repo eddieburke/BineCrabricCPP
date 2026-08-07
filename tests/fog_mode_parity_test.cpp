@@ -30,8 +30,14 @@ TEST(FogModeParity, FrameDataProducerEmitsGlConstants) {
  client::render::core::FogUniforms linear;
  linear.enabled = true;
  linear.mode = 1;
+ linear.shape = 0;
  EXPECT_EQ(frameForFog(linear).fogMode, kGlLinear);
- EXPECT_EQ(frameForFog(linear).fogShape, 1);
+ EXPECT_EQ(frameForFog(linear).fogShape, 0);
+ client::render::core::FogUniforms cylindrical;
+ cylindrical.enabled = true;
+ cylindrical.mode = 1;
+ cylindrical.shape = 1;
+ EXPECT_EQ(frameForFog(cylindrical).fogShape, 1);
  client::render::core::FogUniforms exp2;
  exp2.enabled = true;
  exp2.mode = 3;

@@ -28,6 +28,20 @@ std::string resolved(const PackDefinition& pack, const std::string& key) {
  return resolveProgramKey(pack, {}, key, cache);
 }
 } // namespace
+TEST(PackLoaderTest, ExpandsSharedIncludesOnce) {
+ std::unordered_map<std::string, int> reads;
+ const auto readText = [&reads](std::string_view path) {
+  ++reads[std::string(path)];
+  if(path == "shaders/lib/common.glsl") return std::string("float light;\n");
+  return std::string("#include \"lib/common.glsl\"\nvoid main(){}\n");
+ };
+ std::unordered_map<std::string, std::string> memo;
+ const std::string first = resolveShaderIncludes(readText, "shaders/gbuffers_a.fsh", false, memo);
+ const std::string second = resolveShaderIncludes(readText, "shaders/gbuffers_b.fsh", false, memo);
+ EXPECT_EQ(first, "float light;\nvoid main(){}\n");
+ EXPECT_EQ(second, first);
+ EXPECT_EQ(reads["shaders/lib/common.glsl"], 1);
+}
 TEST(PackLoaderTest, RejectsPacksWithoutPrograms) {
  PackDefinition pack;
  std::unordered_map<std::string, PackSourceOption> options;

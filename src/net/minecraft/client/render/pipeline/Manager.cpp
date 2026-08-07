@@ -40,11 +40,12 @@ std::string defaultSettingValue(const PackSetting& setting) {
  return setting.defaultValue;
 }
 } // namespace
-PackManager::PackManager(std::filesystem::path gameDirectory, option::GameOptions* options)
-    : gameDirectory_(std::move(gameDirectory)), options_(options), pipeline_(options) {
+PackManager::PackManager(std::filesystem::path gameDirectory, option::GameOptions* options,
+                         gl::ShaderCompileService& compiler)
+    : gameDirectory_(std::move(gameDirectory)), options_(options), compiler_(compiler), pipeline_(options) {
   reload();
   startDirectoryWatcher();
- render::setWorldProgramResolver([this](const std::string& key) { return worldProgram(key); });
+ render::setWorldProgramResolver([this](std::string_view key) { return worldProgram(key); });
  render::setWorldPassDirectiveApplier([this]() {
   PackInstance* pack = renderPack();
   if(pack == nullptr) {
@@ -64,10 +65,7 @@ PackManager::PackManager(std::filesystem::path gameDirectory, option::GameOption
   applyBufferBlends(pack->definition, programKey, program->drawBufferColortexIndices());
   applyAlphaTest(pack->definition, programKey);
  });
- render::setShaderObjectIdResolver([this](const std::string& kind, const std::string& name, int fallback) {
-  // The vanilla definition carries empty id maps, so the lookups below miss and the
-  // caller's fallback is returned without a pack-presence branch.
-  const PackDefinition& definition = activeDefinition();
+ render::setShaderObjectIdResolver([this](const std::string& kind, const std::string& name, int fallback) {  const PackDefinition& definition = activeDefinition();
   const auto& ids =
       kind == "entity" ? definition.entityIds : kind == "item" ? definition.itemIds
                                                                : definition.blockIds;
@@ -80,52 +78,59 @@ PackManager::PackManager(std::filesystem::path gameDirectory, option::GameOption
   }
   return fallback;
  });
- core::setProgramUniformUploader([this](gl::ShaderProgram& program) {
-  WorldProgramBindContext ctx{};
-  ctx.uniforms = &pipeline_.worldUniforms();
-  ctx.lightmapTexture = pipeline_.lightmapTexturePtr();
-  ctx.overlayTexture = core::entityOverlayTexture();
-  const bool interfaceProgram = pipeline_.interfaceProgramsActive();
-  PackInstance* pack = renderPack();
-  ctx.noiseTexture = (!interfaceProgram && pack != nullptr) ? pack->noiseTexture.handle() : 0;
-  ctx.shadowDepthTexture = interfaceProgram ? -1 : pipeline_.shadowDepthTexture();
-  ctx.shadowOpaqueDepthTexture = interfaceProgram ? -1 : pipeline_.shadowOpaqueDepthTexture();
-  ctx.shadowColorTextures = interfaceProgram ? nullptr : pipeline_.shadowColorTextures();
-  ctx.shadowColorTextureCount = interfaceProgram ? 0 : pipeline_.shadowColorTextureCount();
-  const bool shadowPass = core::cameraFrame().shadowPass;
-  ctx.bindTextureAtlases = !interfaceProgram && !shadowPass &&
-                           pipeline_.lastWorldProgramKey().rfind("gbuffers_", 0) == 0;
-  ctx.normalTexture = pipeline_.normalFallbackTexture();
-  ctx.specularTexture = pipeline_.specularFallbackTexture();
-  if(ctx.bindTextureAtlases && net::minecraft::client::Minecraft::INSTANCE != nullptr) {
-   auto& textureManager = net::minecraft::client::Minecraft::INSTANCE->textureManager;
-   core::activeTexture(gl::tex::Texture0);
-   const int diffuseTexture = core::boundTexture();
-   // ColorWheel: the holder carries LabPBR-mipmapped companion textures
-   // (IrisRenderingPipeline.java:848).
-   // https://github.com/IrisShaders/Iris/blob/26.1/common/src/main/java/net/irisshaders/iris/pipeline/IrisRenderingPipeline.java
-   const render::PbrTextures::Holder holder =
-       render::PbrTextures::getOrLoad(diffuseTexture, textureManager, pack->definition.labPbr);
-   if(holder.normal > 0) ctx.normalTexture = static_cast<unsigned int>(holder.normal);
-   if(holder.specular > 0) ctx.specularTexture = static_cast<unsigned int>(holder.specular);
-   if(!textureManager.getTextureDimensionsForId(diffuseTexture, ctx.atlasWidth, ctx.atlasHeight)) {
-    // Java CommonUniforms.atlasSize (CommonUniforms.java:81-93) reports (0,0)
-    // for any texture it has not uploaded itself.
-    ctx.atlasWidth = 0;
-    ctx.atlasHeight = 0;
-   }
+  core::setProgramUniformUploader([this](gl::ShaderProgram& program) {
+   bindWorldProgram(program, makeWorldBindContext());
+  });
+  core::setProgramMaterialBinder([this](gl::ShaderProgram& program) {
+   bindProgramMaterialTextures(program, makeWorldBindContext());
+  });
+}
+WorldProgramBindContext PackManager::makeWorldBindContext() {
+ WorldProgramBindContext ctx{};
+ ctx.uniforms = &pipeline_.worldUniforms();
+ ctx.lightmapTexture = pipeline_.lightmapTexture();
+ ctx.overlayTexture = core::entityOverlayTexture();
+ const bool interfaceProgram = pipeline_.interfaceProgramsActive();
+ PackInstance* pack = renderPack();
+ ctx.noiseTexture = (!interfaceProgram && pack != nullptr) ? pack->noiseTexture.handle() : 0;
+ ctx.shadowDepthTexture = interfaceProgram ? -1 : pipeline_.shadowDepthTexture();
+ ctx.shadowOpaqueDepthTexture = interfaceProgram ? -1 : pipeline_.shadowOpaqueDepthTexture();
+ ctx.shadowColorTextures = interfaceProgram ? nullptr : pipeline_.shadowColorTextures();
+ ctx.shadowColorTextureCount = interfaceProgram ? 0 : pipeline_.shadowColorTextureCount();
+ const bool shadowPass = core::cameraFrame().shadowPass;
+ ctx.bindTextureAtlases = !interfaceProgram && !shadowPass &&
+                          pipeline_.lastWorldProgramKey().rfind("gbuffers_", 0) == 0;
+ ctx.normalTexture = pipeline_.normalFallbackTexture();
+ ctx.specularTexture = pipeline_.specularFallbackTexture();
+ if(ctx.bindTextureAtlases && net::minecraft::client::Minecraft::INSTANCE != nullptr) {
+  auto& textureManager = net::minecraft::client::Minecraft::INSTANCE->textureManager;
+  core::activeTexture(gl::tex::Texture0);
+  const int diffuseTexture = core::boundTexture();
+  // ColorWheel: the holder carries LabPBR-mipmapped companion textures
+  // (IrisRenderingPipeline.java:848).
+  // https://github.com/IrisShaders/Iris/blob/26.1/common/src/main/java/net/irisshaders/iris/pipeline/IrisRenderingPipeline.java
+  const render::PbrTextures::Holder holder =
+      render::PbrTextures::getOrLoad(diffuseTexture, textureManager, pack->definition.labPbr);
+  if(holder.normal > 0) ctx.normalTexture = static_cast<unsigned int>(holder.normal);
+  if(holder.specular > 0) ctx.specularTexture = static_cast<unsigned int>(holder.specular);
+  if(!textureManager.getTextureDimensionsForId(diffuseTexture, ctx.atlasWidth, ctx.atlasHeight)) {
+   // Java CommonUniforms.atlasSize (CommonUniforms.java:81-93) reports (0,0)
+   // for any texture it has not uploaded itself.
+   ctx.atlasWidth = 0;
+   ctx.atlasHeight = 0;
   }
-  ctx.clearShadowBindsWhenNoPack = interfaceProgram || pack == nullptr;
-  ctx.pack = interfaceProgram ? nullptr : pack;
-  bindWorldProgram(program, ctx);
- });
+ }
+ ctx.clearShadowBindsWhenNoPack = interfaceProgram || pack == nullptr;
+ ctx.pack = interfaceProgram ? nullptr : pack;
+ return ctx;
 }
 PackManager::~PackManager() {
  stopDirectoryWatcher();
  render::setWorldProgramResolver(nullptr);
  render::setWorldPassDirectiveApplier(nullptr);
- render::setShaderObjectIdResolver(nullptr);
- core::setProgramUniformUploader(nullptr);
+  render::setShaderObjectIdResolver(nullptr);
+  core::setProgramUniformUploader(nullptr);
+  core::setProgramMaterialBinder(nullptr);
 }
 void PackManager::reloadWorldMeshes() {
  if(net::minecraft::client::Minecraft::INSTANCE == nullptr ||
@@ -143,10 +148,7 @@ void PackManager::reload() {
   const std::filesystem::path directory = gameDirectory_ / "shaders";
   std::error_code ec;
   std::filesystem::create_directories(directory, ec);
-  const std::filesystem::path vanillaDirectory = directory / "vanilla";
-  // The vanilla pack ships inside the executable (EmbeddedVanillaPack.cpp); the
-  // on-disk folder is only consulted when present, so it can be tweaked in place.
-  basePack_ = std::filesystem::is_directory(vanillaDirectory, ec) ? loadPack(vanillaDirectory, true)
+  const std::filesystem::path vanillaDirectory = directory / "vanilla";  basePack_ = std::filesystem::is_directory(vanillaDirectory, ec) ? loadPack(vanillaDirectory, true)
                                                                   : loadEmbeddedVanillaPack();
  std::vector<std::filesystem::path> archives;
  std::vector<std::filesystem::path> dirs;
@@ -234,6 +236,7 @@ void PackManager::poll() {
 }
 std::unique_ptr<PackInstance> PackManager::loadEmbeddedVanillaPack() {
  auto pack = std::make_unique<PackInstance>();
+ pack->shaderCompiler = &compiler_;
  pack->embedded = true;
  pack->summary.key = "vanilla";
  pack->summary.name = "vanilla";
@@ -251,6 +254,7 @@ std::unique_ptr<PackInstance> PackManager::loadEmbeddedVanillaPack() {
 std::unique_ptr<PackInstance> PackManager::loadPack(const std::filesystem::path& path, bool directory) {
  diagnostics::WorkSpan span("shaderpack.load");
  auto pack = std::make_unique<PackInstance>();
+ pack->shaderCompiler = &compiler_;
  pack->path = path;
  pack->directory = directory;
  pack->summary.key = path.filename().string();
@@ -361,10 +365,7 @@ void PackManager::prewarmPacks() {
   if(pack == nullptr || !pack->summary.valid || pack->programs == nullptr) {
    return;
   }
-  PackCompiler::prewarm(*pack, [this](PackInstance& p, const std::string& message,
-                                      ::net::minecraft::util::logging::LogLevel) {
-   logOnce(p, message);
-  });
+  PackCompiler::buildPrewarmQueue(*pack);
  };
  warm(basePack_.get());
  PackInstance* current = activePack();
@@ -374,12 +375,20 @@ void PackManager::advancePackActivation() {
  PackInstance* current = activePack();
  if(pendingIndex_.has_value() && *pendingIndex_ < packs_.size()) {
   PackInstance* pending = packs_[*pendingIndex_].get();
-  if(pending != current && packReady(*pending)) {
-   activatePack(*pendingIndex_);
+  if(pending != current) {
+   PackCompiler::buildPrewarmQueue(*pending);
+   PackCompiler::prewarmStep(*pending, logFn());
+   if(packReady(*pending)) {
+    activatePack(*pendingIndex_);
+   }
   }
  }
- if(stagedPack_ != nullptr && packReady(*stagedPack_)) {
-  commitStagedPack();
+ if(stagedPack_ != nullptr) {
+  PackCompiler::buildPrewarmQueue(*stagedPack_);
+  PackCompiler::prewarmStep(*stagedPack_, logFn());
+  if(packReady(*stagedPack_)) {
+   commitStagedPack();
+  }
  }
 }
 bool PackManager::setSetting(const std::string& key, std::string value) {
@@ -393,11 +402,6 @@ bool PackManager::setSettings(const std::vector<std::pair<std::string, std::stri
  if(pack == nullptr || pack->definition.settings.empty()) {
   return false;
  }
- // The selected profile's values become the baseline, then the explicit values in
- // this call win over them — Iris's options screen applies a profile by setting the
- // option values, which the user can then override individually. There is no
- // profile logic anywhere else: the properties preprocessor and the GLSL option
- // rewrite both read the settings map, so one merged map keeps them agreeing.
  std::unordered_map<std::string, std::string> merged = pack->settings;
  const bool hasProfileOption = std::any_of(pack->definition.settings.begin(), pack->definition.settings.end(),
                                            [](const PackSetting& setting) { return setting.key == "profile"; });
@@ -414,9 +418,6 @@ bool PackManager::setSettings(const std::vector<std::pair<std::string, std::stri
    return existing != merged.end() ? existing->second : std::string{};
   }();
   if(profileName.empty()) profileName = currentProfile;
-  // Selecting a profile applies the whole preset (Iris behaviour): reset to the
-  // pack's shipped defaults, then lay the selected profile's values over them.
-  // Individual options changed after the fact win via the explicit values below.
   if(profileName != currentProfile) {
    merged.clear();
    for(const PackSetting& setting : pack->definition.settings) {
@@ -470,16 +471,13 @@ bool PackManager::setSettings(const std::vector<std::pair<std::string, std::stri
    target->settings = merged;
    std::string customError;
    if(!target->rebuildRuntime(customError)) logOnce(*target, customError);
+   target->prewarmQueue.clear();
   }
    preparePendingPack(net::minecraft::client::Minecraft::INSTANCE != nullptr
                           ? net::minecraft::client::Minecraft::INSTANCE->world
                           : nullptr);
    return true;
-  }
-  // Stage a fully re-parsed pack carrying the merged settings, so the
-  // properties-derived flags (shadowEntities and friends) and the GLSL agree on
-  // every option; swap it in when its programs are ready.
-  discardStagedPack();
+  }  discardStagedPack();
   stagedPack_ = clonePack(*pack, &merged);
   stagedIndex_ = activeIndex_;
   pipeline_.selectDimension(
@@ -488,11 +486,8 @@ bool PackManager::setSettings(const std::vector<std::pair<std::string, std::stri
                                                              : nullptr,
       false);
   if(stagedPack_->programState == PackProgramState::Cold) {
-   PackCompiler::prewarm(*stagedPack_,
-                         [this](PackInstance& p, const std::string& message,
-                                ::net::minecraft::util::logging::LogLevel) {
-                          logOnce(p, message);
-                         });
+   PackCompiler::buildPrewarmQueue(*stagedPack_);
+   PackCompiler::prewarmStep(*stagedPack_, logFn());
   }
   if(packReady(*stagedPack_)) commitStagedPack();
   return true;
@@ -543,10 +538,8 @@ void PackManager::preparePendingPack(net::minecraft::World* world) {
  if(world == nullptr && !pack->rootDefinition.dimensionDefinitions.empty()) return;
  pipeline_.selectDimension(*pack, world, false);
  if(pack->programState == PackProgramState::Cold) {
-  PackCompiler::prewarm(*pack, [this](PackInstance& p, const std::string& message,
-                                      ::net::minecraft::util::logging::LogLevel) {
-   logOnce(p, message);
-  });
+  PackCompiler::buildPrewarmQueue(*pack);
+  PackCompiler::prewarmStep(*pack, logFn());
  }
  if(packReady(*pack)) {
   activatePack(*pendingIndex_);
@@ -568,8 +561,9 @@ bool PackManager::packReady(PackInstance& pack) {
 }
 std::unique_ptr<PackInstance> PackManager::clonePack(const PackInstance& source,
                                                      const std::unordered_map<std::string, std::string>* settings) {
-  auto pack = std::make_unique<PackInstance>();
-  pack->summary = source.summary;
+   auto pack = std::make_unique<PackInstance>();
+   pack->shaderCompiler = &compiler_;
+   pack->summary = source.summary;
   pack->path = source.path;
   pack->directory = source.directory;
   pack->embedded = source.embedded;
@@ -581,22 +575,14 @@ std::unique_ptr<PackInstance> PackManager::clonePack(const PackInstance& source,
  pack->definition = pack->rootDefinition;
  pack->sourceOptions = source.sourceOptions;
  pack->settings = settings != nullptr ? *settings : source.settings;
- // Re-run the parse with the CURRENT settings instead of reusing the load-time
- // definition: option changes (including profile selection) must reach the
- // properties-derived state (shadowEntities/shadowPlayer/shadowBlockEntities, the
- // LL_CAPACITY-conditional bufferObject sizes, bufferBlends) and the GLSL alike,
- // or the engine flag and the compiled shaders quietly disagree — which is how
- // "SM_ENTITY on" recompiled the pack and still rendered no entity shadows.
- // A failed re-parse keeps the copied definition above, so the pack degrades to
- // its previous behaviour instead of going dark.
-  std::vector<std::string> resources;
-  if(source.embedded) {
-   resources = VanillaPackEmbed::resources();
-  } else if(source.directory) {
-   resources = directoryResources(source.path);
-  } else {
-   resources = zipResources(*pack->zip);
-  }
+ std::vector<std::string> resources;
+ if(source.embedded) {
+  resources = VanillaPackEmbed::resources();
+ } else if(source.directory) {
+  resources = directoryResources(source.path);
+ } else {
+  resources = zipResources(*pack->zip);
+ }
  PackDefinition reParsed;
  std::unordered_map<std::string, PackSourceOption> reOptions;
  std::string error;
@@ -634,11 +620,8 @@ void PackManager::prepareStagedPack(net::minecraft::World* world) {
   pipeline_.selectDimension(*stagedPack_, world, false);
  }
  if(stagedPack_->programState == PackProgramState::Cold) {
-  PackCompiler::prewarm(*stagedPack_,
-                        [this](PackInstance& p, const std::string& message,
-                               ::net::minecraft::util::logging::LogLevel) {
-                         logOnce(p, message);
-                        });
+  PackCompiler::buildPrewarmQueue(*stagedPack_);
+  PackCompiler::prewarmStep(*stagedPack_, logFn());
  }
  if(packReady(*stagedPack_)) commitStagedPack();
 }
@@ -712,7 +695,7 @@ const PackDefinition& PackManager::meshDefinition() const noexcept {
 bool PackManager::hasDeferredPasses() const {
  return pipeline_.hasDeferredPasses(activePack());
 }
-gl::ShaderProgram* PackManager::worldProgram(const std::string& key) {
+gl::ShaderProgram* PackManager::worldProgram(std::string_view key) {
  return pipeline_.worldProgram(key, renderPack());
 }
 void PackManager::prepareFrame(net::minecraft::World* world) {
@@ -769,6 +752,11 @@ void PackManager::captureOpaqueDepth() {
 }
 void PackManager::captureHandDepth() {
  pipeline_.captureHandDepth(activePack());
+}
+PackCompiler::LogFnLevel PackManager::logFn() {
+ return [this](PackInstance& p, const std::string& message, ::net::minecraft::util::logging::LogLevel) {
+  logOnce(p, message);
+ };
 }
 void PackManager::logOnce(PackInstance& pack, const std::string& message) const {
  if(!pack.logged.insert(message).second) {

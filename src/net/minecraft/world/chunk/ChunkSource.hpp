@@ -7,14 +7,15 @@ namespace net::minecraft {
 class Chunk;
 class ChunkSource {
  public:
- // Progress callback for save operations: receives [0,100] percentage.
- // Default no-op ignores progress.
  using SaveProgressCallback = std::function<void(int percent)>;
  virtual ~ChunkSource() = default;
- [[nodiscard]] virtual bool isChunkLoaded(int chunkX, int chunkZ) const = 0;
- [[nodiscard]] virtual bool isChunkDataReady(int chunkX, int chunkZ) const {
-  return isChunkLoaded(chunkX, chunkZ);
- }
+  [[nodiscard]] virtual bool isChunkLoaded(int chunkX, int chunkZ) const = 0;
+  [[nodiscard]] virtual bool isChunkDataReady(int chunkX, int chunkZ) const {
+   return isChunkLoaded(chunkX, chunkZ);
+  }
+  [[nodiscard]] virtual Chunk* getChunkIfLoaded(int chunkX, int chunkZ) {
+   return isChunkLoaded(chunkX, chunkZ) ? &getChunk(chunkX, chunkZ) : nullptr;
+  }
  virtual void markChunkDataReady(int /*chunkX*/, int /*chunkZ*/) {
  }
  [[nodiscard]] virtual Chunk& getChunk(int chunkX, int chunkZ) = 0;

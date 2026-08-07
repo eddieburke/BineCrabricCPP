@@ -466,7 +466,6 @@ void ChunkBuilder::drawLayer(int layer) const {
  render::core::RenderPass pass;
  pass.modelView = render::core::drawModelView();
  pass.projection = render::core::drawProjection();
- pass.fog = render::core::fog();
  // Section-local vertices: this is what carries the section's world position
  // into the shader. WorldRenderer published it via setPendingTerrainDraw.
  render::core::applyPendingTerrain(pass);

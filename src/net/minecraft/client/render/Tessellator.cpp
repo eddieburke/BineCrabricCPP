@@ -14,17 +14,9 @@ bool poseRotates(const math::Matrix4f& pose) noexcept {
  const float* m = pose.data();
  return m[0] != 1.0f || m[5] != 1.0f || m[10] != 1.0f || m[1] != 0.0f || m[2] != 0.0f ||
         m[4] != 0.0f || m[6] != 0.0f || m[8] != 0.0f || m[9] != 0.0f;
-}
-// An identity pose means the producer already emits pass-base-space positions
-// (terrain via chunkOffset, particles, the block outline). Skipping the transform
-// is worth a branch: it is the hot path for the largest vertex counts.
-bool isIdentity(const math::Matrix4f& pose) noexcept {
+}bool isIdentity(const math::Matrix4f& pose) noexcept {
  return !poseRotates(pose) && pose.data()[12] == 0.0f && pose.data()[13] == 0.0f && pose.data()[14] == 0.0f;
-}
-// Defaults in for vertices that never got their tangent/mid-tex filled: the
-// tangent is rotated by the draw pose when one is active so the fallback
-// direction matches the posed frame (the old end()-time bake did the same).
-void fillUnsetAttribs(TessellatorVertex* vertices, std::size_t count, const math::Matrix4f* pose, bool poseRotates) {
+}void fillUnsetAttribs(TessellatorVertex* vertices, std::size_t count, const math::Matrix4f* pose, bool poseRotates) {
  for(std::size_t i = 0; i < count; ++i) {
   TessellatorVertex& v = vertices[i];
   if(v.tangent[0] | v.tangent[1] | v.tangent[2] | v.tangent[3]) continue;
@@ -124,7 +116,15 @@ void Tessellator::startQuads() {
 }
 void Tessellator::start(int mode) {
  if(drawing_) {
+  if(batchDepth_ > 0) {
+   beginPart(mode);
+   return;
+  }
   draw();
+ }
+ if(batchDepth_ > 0) {
+  beginPart(mode);
+  return;
  }
  drawing_ = true;
  mode_ = mode;
@@ -133,10 +133,6 @@ void Tessellator::start(int mode) {
  hasNormals_ = false;
  addedVertexCount_ = 0;
  reset();
- // Snapshot the pose for this batch AFTER reset(), which clears the previous
- // batch's snapshot. Mesh captures run with captureOnly and never draw; their
- // vertices stay model-local and the consumer supplies the transform, so the
- // flag keeps them out of this branch.
  if(!captureOnly_) {
   pose_ = core::drawPose();
   poseValid_ = !isIdentity(pose_);
@@ -295,16 +291,11 @@ void Tessellator::vertex(double x, double y, double z) {
  if(mode_ == kGlQuads && kTriangleMode && !captureOnly_ && addedVertexCount_ % 4 == 0) {
   expandQuadToTriangles();
  }
- // Add in double, then cast once — avoids float(world) + float(offset) collapse at far coords.
  float vx = static_cast<float>(x + xOffset_);
  float vy = static_cast<float>(y + yOffset_);
  float vz = static_cast<float>(z + zOffset_);
- // Iris parity: the pose lives in the vertices, not in modelViewMatrix (see
- // setDrawPose). Positions take the full transform; the face normal is rotated
- // here so the packed byte normal is already camera-relative. Tangents need no
- // extra work — finishQuad derives them from the (posed) corners.
- float rotatedNormal[3] = {0.0f, 0.0f, 0.0f};
  bool poseRotates = false;
+ float rotatedNormal[3] = {};
  if(poseValid_) {
   const float* m = pose_.data();
   const float px = m[0] * vx + m[4] * vy + m[8] * vz + m[12];
@@ -333,12 +324,7 @@ void Tessellator::vertex(double x, double y, double z) {
  }
  auto vProxy = builder_.vertex(vx, vy, vz);
  TessellatorVertex* vertex = reinterpret_cast<TessellatorVertex*>(
-     builder_.buffer().data() + builder_.buffer().size() - sizeof(TessellatorVertex));
- // vaUV2 is an unnormalized ushort2 of level*16 (0..240). Keeping the fraction
- // here is what lets a smooth-lit corner land between two lightmap texels, so
- // the GL_LINEAR filter reproduces the vanilla averaged-luminance value instead
- // of snapping to a whole level.
- const auto packLevel = [](float level) {
+     builder_.buffer().data() + builder_.buffer().size() - sizeof(TessellatorVertex)); const auto packLevel = [](float level) {
   return static_cast<std::uint32_t>(std::clamp(std::lround(level * 16.0f), 0L, 240L));
  };
  vertex->light = static_cast<std::int32_t>(packLevel(blockLight_) | (packLevel(skyLight_) << 16U));
@@ -351,13 +337,11 @@ void Tessellator::vertex(double x, double y, double z) {
       component(blockCenterX_ - x) | (component(blockCenterY_ - y) << 8U) |
       (component(blockCenterZ_ - z) << 16U) | (static_cast<std::uint32_t>(blockEmission_) << 24U));
   // https://shaders.properties/current/reference/attributes/mc_entity/
-  // x = block id; y = 1.0 fluids, -1.0 other blocks.
   vertex->entity[0] = static_cast<std::int16_t>(blockId_);
   vertex->entity[1] = static_cast<std::int16_t>(blockFluid_ ? 1 : -1);
   vertex->entity[2] = static_cast<std::int16_t>(blockMetadata_);
   vertex->entity[3] = 0;
  } else {
-  // Non-terrain geometry must not look like fluid (SM_ENTITY wave).
   // https://shaders.properties/current/reference/attributes/mc_entity/
   vertex->entity[0] = -1;
   vertex->entity[1] = -1;
@@ -387,7 +371,6 @@ void Tessellator::vertex(double x, double y, double z) {
  if(mode_ == kGlQuads && addedVertexCount_ % 4 == 0) {
   finishQuad();
  } else if((mode_ == 4 && addedVertexCount_ % 3 == 0) || (mode_ == 5 && addedVertexCount_ >= 3)) {
-  // GL_TRIANGLES / GL_TRIANGLE_STRIP — fill last triangle.
   auto& bytes = builder_.buffer();
   const std::size_t count = bytes.size() / sizeof(TessellatorVertex);
   if(count >= 3) {
@@ -401,6 +384,9 @@ void Tessellator::draw() {
  if(!drawing_)
   return;
  drawing_ = false;
+ if(batchDepth_ > 0) {
+  return;
+ }
  if(builder_.vertexCount() > 0 && !captureOnly_) {
   auto& bytes = builder_.buffer();
   fillUnsetAttribs(reinterpret_cast<TessellatorVertex*>(bytes.data()),
@@ -410,8 +396,6 @@ void Tessellator::draw() {
   render::core::RenderPass pass;
   pass.modelView = render::core::drawModelView();
   pass.projection = render::core::drawProjection();
-  pass.fog = render::core::fog();
-  // Apply pending section-local chunkOffset from WorldRenderer.
   render::core::applyPendingTerrain(pass);
   pass.vertexData = builder_.buffer().data();
   pass.vertexCount = builder_.vertexCount();
@@ -436,8 +420,6 @@ TessellatorMesh Tessellator::takeMesh() {
  return mesh;
 }
 namespace {
-// Meshes captured in quad mode keep 4 vertices per quad; draw them through the
-// shared quad index buffer instead of expanding to 6 vertices at capture time.
 bool drawQuadMeshIndexed(const TessellatorMesh& mesh, unsigned vbo, int stride) {
  const std::size_t vertexCount = (mesh.vertices.size() / 4) * 4;
  if(vertexCount == 0 || vbo == 0 || !gl::GLCore::vboSupported) {
@@ -450,17 +432,13 @@ bool drawQuadMeshIndexed(const TessellatorMesh& mesh, unsigned vbo, int stride) 
   render::core::RenderPass pass;
   pass.modelView = render::core::drawModelView();
   pass.projection = render::core::drawProjection();
-  pass.fog = render::core::fog();
   pass.hasTexture = mesh.hasTexture;
   pass.hasColor = mesh.hasColor;
   pass.hasNormals = mesh.hasNormals;
   if(!mesh.hasTexture) {
    render::core::bindWhiteDiffuse();
   }
-  // Apply pending section-local chunkOffset from WorldRenderer.
   render::core::applyPendingTerrain(pass);
-  // Meshes carry their pose in the vertices (applied at capture time), so the
-  // VBO copy is always safe to draw directly.
   render::core::bindAndUploadUniforms(pass);
  }
  if(render::core::program() == nullptr) {
@@ -492,8 +470,6 @@ void drawQuadMeshExpanded(const TessellatorMesh& mesh, int stride) {
  render::core::RenderPass pass;
  pass.modelView = render::core::drawModelView();
  pass.projection = render::core::drawProjection();
- pass.fog = render::core::fog();
- // Apply pending section-local chunkOffset from WorldRenderer.
  render::core::applyPendingTerrain(pass);
  pass.vertexData = scratch.data();
  pass.vertexCount = scratch.size();
@@ -519,8 +495,6 @@ void Tessellator::drawMesh(const TessellatorMesh& mesh) {
  render::core::RenderPass pass;
  pass.modelView = render::core::drawModelView();
  pass.projection = render::core::drawProjection();
- pass.fog = render::core::fog();
- // Apply pending section-local chunkOffset from WorldRenderer.
  render::core::applyPendingTerrain(pass);
  pass.hasTexture = mesh.hasTexture;
  pass.hasColor = mesh.hasColor;
@@ -545,11 +519,35 @@ void Tessellator::reset() {
  yOffset_ = 0.0;
  zOffset_ = 0.0;
  hasBlockData_ = false;
- // Only the local snapshot is dropped; the published pose is the producer's
- // state and outlives this batch, like a PoseStack top feeding repeated
- // VertexConsumer draws.
- // see src/net/minecraft/client/render/RenderCore.cpp setDrawPose
  pose_.identity();
  poseValid_ = false;
+}
+void Tessellator::beginBatch() {
+ ++batchDepth_;
+}
+void Tessellator::beginPart(int mode) {
+ drawing_ = true;
+ mode_ = mode;
+ hasTexture_ = false;
+ hasColor_ = false;
+ hasNormals_ = false;
+ addedVertexCount_ = 0;
+ xOffset_ = 0.0;
+ yOffset_ = 0.0;
+ zOffset_ = 0.0;
+ hasBlockData_ = false;
+ if(!captureOnly_) {
+  pose_ = core::drawPose();
+  poseValid_ = !isIdentity(pose_);
+ }
+}
+void Tessellator::endBatch() {
+ if(batchDepth_ > 0) {
+  --batchDepth_;
+ }
+ if(batchDepth_ == 0) {
+  drawing_ = true;
+  draw();
+ }
 }
 } // namespace net::minecraft::client::render

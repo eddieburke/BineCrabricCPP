@@ -36,7 +36,7 @@ struct ShaderCompileResult {
 // GLCore::init().
 class ShaderCompileService {
  public:
- static ShaderCompileService& instance();
+ explicit ShaderCompileService() = default;
 
  // Names the directory that stores extracted driver program binaries.
  void setCacheDirectory(std::filesystem::path dir);
@@ -46,7 +46,7 @@ class ShaderCompileService {
 
   // Compiles now on the calling thread (a GL context must be current) and returns
   // the result (binary or error).
-  ShaderCompileResult compileBlocking(ShaderCompileRequest request);
+  ShaderCompileResult compileBlocking(const ShaderCompileRequest& request);
   void invalidateDiskEntry(std::uint64_t contentHash);
 
  private:

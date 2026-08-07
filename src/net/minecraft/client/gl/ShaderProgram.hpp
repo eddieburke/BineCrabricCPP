@@ -78,8 +78,14 @@ namespace net::minecraft::client::gl {
  const std::string& lastError() const {
   return lastError_;
  }
- void bind() const;
- static void unbind();
+  void bind() const;
+  static void unbind();
+  [[nodiscard]] bool needsUniformSnapshot(unsigned int generation) const noexcept {
+   return uniformSnapshotGeneration_ != generation;
+  }
+  void markUniformSnapshotPushed(unsigned int generation) const noexcept {
+   uniformSnapshotGeneration_ = generation;
+  }
  // Iris /* RENDERTARGETS: a,b */ → glDrawBuffers(COLOR_ATTACHMENT0+a, ...).
  // Empty = leave DrawBuffers unchanged (composite write FBOs remap attachments).
  void setDrawBufferColortexIndices(const std::vector<int>& colortexIndices);
@@ -101,8 +107,15 @@ namespace net::minecraft::client::gl {
   [[nodiscard]] bool tessellation() const {
   return tessellation_;
  }
- void set1iAt(int location, int value) const;
- void set1fAt(int location, float value) const;
+  void set1iAt(int location, int value) const;
+  void set1fAt(int location, float value) const;
+  // see third_party/mcp/iris/pipeline/programs/ShaderKey.java
+  void setFogClass(bool enabled) const noexcept {
+   fogClass_ = enabled;
+  }
+  [[nodiscard]] bool fogClass() const noexcept {
+   return fogClass_;
+  }
  void set2fAt(int location, const float* values) const;
  void set3fAt(int location, const float* values) const;
  void set4fAt(int location, const float* values) const;
@@ -132,13 +145,15 @@ namespace net::minecraft::client::gl {
  using NameMap = std::unordered_map<std::string, Value, TransparentStringHash, std::equal_to<>>;
  void reflectSamplers();
  bool extractProgramBinary(ProgramBinaryBlob& out);
- unsigned int program_ = 0;
- mutable NameMap<int> uniformCache_;
- NameMap<SamplerKind> samplerKinds_;
-  std::vector<std::string> samplerNames_;
-  bool tessellation_ = false;
+  unsigned int program_ = 0;
+  mutable NameMap<int> uniformCache_;
+  NameMap<SamplerKind> samplerKinds_;
+   std::vector<std::string> samplerNames_;
+   bool tessellation_ = false;
+  mutable bool fogClass_ = true;
  std::vector<unsigned int> drawBuffers_{};
- std::vector<int> drawBufferColortexIndices_{};
- std::string lastError_;
+  std::vector<int> drawBufferColortexIndices_{};
+  std::string lastError_;
+  mutable unsigned int uniformSnapshotGeneration_ = 0;
 };
 } // namespace net::minecraft::client::gl

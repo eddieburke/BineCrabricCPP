@@ -39,22 +39,22 @@ void setDrawPhase(DrawPhase phase) {
 gl::ShaderProgram* resolveWorldProgram(const std::string& key) {
  return g_worldProgramResolver ? g_worldProgramResolver(key) : nullptr;
 }
-RenderType::RenderType(std::string name,
+RenderType::RenderType(std::string_view name,
                        int glMode,
                        bool hasTexture,
                        bool hasColor,
                        bool hasNormals,
-                       std::string programName,
+                       std::string_view programName,
                        State state,
-                       std::string worldProgramKey)
-    : name_(std::move(name)),
+                       std::string_view worldProgramKey)
+    : name_(name),
       glMode_(glMode),
       hasTexture_(hasTexture),
       hasColor_(hasColor),
       hasNormals_(hasNormals),
-      programName_(std::move(programName)),
+      programName_(programName),
       state_(state),
-      worldProgramKey_(std::move(worldProgramKey)) {
+      worldProgramKey_(worldProgramKey) {
 }
 void RenderType::setupRenderState() const {
  // Resolved fresh each pass so a live pack switch / recompile takes effect.

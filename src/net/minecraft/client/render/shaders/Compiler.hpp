@@ -1,4 +1,5 @@
 #pragma once
+#include <cstddef>
 #include <functional>
 #include <string>
 #include "net/minecraft/util/logging/Logging.hpp"
@@ -16,7 +17,8 @@ class PackCompiler {
  static std::string resolveIncludes(PackInstance& pack, const std::string& path);
  static gl::ShaderProgram* compile(PackInstance& pack, const std::string& programName,
                                    const LogFnLevel& logOnce);
- static void prewarm(PackInstance& pack, const LogFnLevel& logOnce);
+ static void buildPrewarmQueue(PackInstance& pack);
+ static bool prewarmStep(PackInstance& pack, const LogFnLevel& logOnce);
  static bool validate(PackInstance& pack, const LogFnLevel& logOnce);
 };
 } // namespace net::minecraft::client::render

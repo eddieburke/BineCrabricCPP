@@ -264,18 +264,13 @@ void Minecraft::init() {
  registry::Registry::bootstrap();
  util::DisplayManager::setupAndCreateDisplay(*this);
  bootstrapAfterDisplay();
- diagnostics::setStartupPhase("init: threads");
- net::minecraft::util::concurrent::ThreadCoordinator::instance().configure(
-     std::thread::hardware_concurrency(),
-     2,
-     net::minecraft::util::concurrent::ThreadCoordinator::Options{.maxComputeThreads = 8});
 }
 void Minecraft::bootstrapAfterDisplay() {
  diagnostics::setStartupPhase("init: directories");
  runDirectory_ = getRunDirectory();
  // Disk-backed shader program cache. Compilation is synchronous on the render
  // thread (Iris model); this just names where extracted driver binaries live.
- gl::ShaderCompileService::instance().setCacheDirectory(runDirectory_ / "shader-cache");
+ shaderCompiler_.setCacheDirectory(runDirectory_ / "shader-cache");
  options.optionsFile = runDirectory_ / "options.txt";
  options.bindMinecraft(this);
  option::OptionRegistry::registerAll();

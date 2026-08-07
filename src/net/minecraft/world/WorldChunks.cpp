@@ -102,9 +102,7 @@ Chunk& World::ensureChunk(int blockX, int blockZ) {
 }
 const Chunk* World::getChunkIfLoaded(int blockX, int blockZ) const {
  if(chunkCache_ != nullptr) {
-  const int chunkX = chunk_coord(blockX);
-  const int chunkZ = chunk_coord(blockZ);
-  return chunkCache_->isChunkLoaded(chunkX, chunkZ) ? &chunkCache_->getChunk(chunkX, chunkZ) : nullptr;
+  return chunkCache_->getChunkIfLoaded(chunk_coord(blockX), chunk_coord(blockZ));
  }
  const ChunkPos pos{chunk_coord(blockX), chunk_coord(blockZ)};
  const auto it = chunks_.find(pos);
@@ -115,9 +113,7 @@ const Chunk* World::getChunkIfLoaded(int blockX, int blockZ) const {
 }
 Chunk* World::getChunkIfLoaded(int blockX, int blockZ) {
  if(chunkCache_ != nullptr) {
-  const int chunkX = chunk_coord(blockX);
-  const int chunkZ = chunk_coord(blockZ);
-  return chunkCache_->isChunkLoaded(chunkX, chunkZ) ? &chunkCache_->getChunk(chunkX, chunkZ) : nullptr;
+  return chunkCache_->getChunkIfLoaded(chunk_coord(blockX), chunk_coord(blockZ));
  }
  const ChunkPos pos{chunk_coord(blockX), chunk_coord(blockZ)};
  const auto it = chunks_.find(pos);
@@ -246,10 +242,11 @@ int World::getBrightness(LightType type, int x, int y, int z) const {
  if(x < -32000000 || z < -32000000 || x >= 32000000 || z > 32000000) {
   return lightValue(type);
  }
- if(getChunkIfLoaded(x, z) == nullptr) {
+ const Chunk* chunk = getChunkIfLoaded(x, z);
+ if(chunk == nullptr) {
   return 0;
  }
- return getChunk(chunk_coord(x), chunk_coord(z)).getLight(type, mod_16(x), y, mod_16(z));
+ return chunk->getLight(type, mod_16(x), y, mod_16(z));
 }
 bool World::hasSkyLight(int x, int y, int z) const {
  return getChunk(chunk_coord(x), chunk_coord(z)).isAboveMaxHeight(mod_16(x), y, mod_16(z));
@@ -277,7 +274,6 @@ std::string World::describe() const {
 }
 double World::getTemperature(int x, int z) const {
  if(BiomeSource* biomeSource = getBiomeSource(); biomeSource != nullptr) {
-  // Java uses the raw sky-color temperature sampler here, not transformed biome climate.
   return biomeSource->getTemperature(x, z);
  }
  return 0.5;

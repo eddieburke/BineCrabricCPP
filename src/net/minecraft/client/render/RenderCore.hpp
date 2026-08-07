@@ -243,10 +243,9 @@ struct RenderPass {
  int stride = 0;
  int glMode = 0x0004;
  bool hasTexture = false;
- bool hasColor = false;
- bool hasNormals = false;
- FogUniforms fog{};
- ShaderProgram* programOverride = nullptr;
+  bool hasColor = false;
+  bool hasNormals = false;
+  ShaderProgram* programOverride = nullptr;
  bool fullscreen = false;
 };
 // ONE convention, Iris'. There are exactly two pieces of per-draw matrix state:
@@ -353,6 +352,8 @@ void setDrawEnabled(bool enabled);
 bool drawEnabled();
 using ProgramUniformUploader = std::function<void(ShaderProgram&)>;
 void setProgramUniformUploader(ProgramUniformUploader uploader);
+using ProgramMaterialBinder = std::function<void(ShaderProgram&)>;
+void setProgramMaterialBinder(ProgramMaterialBinder binder);
 void advanceProgramUniforms();
 void setEntityId(int id);
 void setBlockEntityId(int id);

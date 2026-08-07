@@ -12,9 +12,11 @@
 #include "net/minecraft/client/resource/pack/ZippedTexturePack.hpp"
 #include "net/minecraft/client/ClientLog.hpp"
 #include <algorithm>
+#include <chrono>
 #include <filesystem>
 #include <sstream>
 #include <string>
+#include <unordered_map>
 #include <vector>
 namespace net::minecraft::client::render {
 namespace diagnostics = net::minecraft::client::diagnostics;
@@ -48,9 +50,6 @@ struct PreparedProgram {
  std::string tessControl;
  std::string tessEvaluation;
 };
-// Draw buffer indices live in the prepared fragment source, which is expensive to
-// rebuild. Stash them under the cache key while we have them so a later link can
-// apply them without preparing the program a second time.
 void rememberDrawBuffers(PackInstance& pack, const PreparedProgram& prepared) {
  std::vector<int> targets = parseRenderTargetIndices(prepared.fragment);
  if(targets.empty()) {
@@ -149,9 +148,6 @@ const std::string& PackCompiler::cachedText(PackInstance& pack, const std::strin
 }
 std::string PackCompiler::resolveIncludes(PackInstance& pack, const std::string& path) {
  if(pack.embedded) {
-  // Embedded vanilla sources are baked fully resolved at configure time
-  // (gen-embedded-vanilla-pack.cmake expands #include and strips comments), so
-  // the include machinery never runs for the built-in pack.
   return cachedText(pack, path);
  }
  if(const auto cached = pack.resolvedSourceCache.find(path); cached != pack.resolvedSourceCache.end()) {
@@ -165,21 +161,23 @@ std::string PackCompiler::resolveIncludes(PackInstance& pack, const std::string&
    dimPrefix = path.substr(0, slash + 1);
   }
  }
- std::string resolved = resolveShaderIncludes(
-     [&](std::string_view current) {
-      std::string target(current);
-      if(!dimPrefix.empty() && target.rfind("shaders/", 0) == 0 && target.rfind(dimPrefix, 0) != 0) {
-       const std::string dimTarget = dimPrefix + target.substr(8);
-       std::string source = cachedText(pack, dimTarget);
-       if(!source.empty()) {
-        return PackLoader::rewriteOptions(source, pack.sourceOptions, pack.settings);
+  std::unordered_map<std::string, std::string> memo;
+  std::string resolved = resolveShaderIncludes(
+      [&](std::string_view current) {
+       std::string target(current);
+       if(!dimPrefix.empty() && target.rfind("shaders/", 0) == 0 && target.rfind(dimPrefix, 0) != 0) {
+        const std::string dimTarget = dimPrefix + target.substr(8);
+        std::string source = cachedText(pack, dimTarget);
+        if(!source.empty()) {
+         return PackLoader::rewriteOptions(source, pack.sourceOptions, pack.settings);
+        }
        }
-      }
-      std::string source = cachedText(pack, target);
-      return PackLoader::rewriteOptions(source, pack.sourceOptions, pack.settings);
-     },
-     path,
-     true);
+       std::string source = cachedText(pack, target);
+       return PackLoader::rewriteOptions(source, pack.sourceOptions, pack.settings);
+      },
+      path,
+      true,
+      memo);
  pack.resolvedSourceCache.emplace(path, resolved);
  return resolved;
 }
@@ -203,19 +201,16 @@ gl::ShaderProgram* PackCompiler::compile(PackInstance& pack, const std::string& 
  if(found == pack.definition.programs.end()) {
   return nullptr;
  }
- // Prewarm already prepared this program and recorded its cache key. Preparing the
- // sources again only to rediscover that key costs as much as the original pass —
- // for a big pack that is a multi-second stall on the frame that finishes loading.
-  if(const auto keyed = pack.programCacheKeys.find(programName); keyed != pack.programCacheKeys.end()) {
-   if(gl::ShaderProgram* linked = pack.programs->find(keyed->second)) {
-    if(const auto targets = pack.programDrawBuffers.find(keyed->second);
-       targets != pack.programDrawBuffers.end()) {
-     linked->setDrawBufferColortexIndices(targets->second);
-    }
-    pack.compiledPrograms.emplace(programName, linked);
-    return linked;
+ if(const auto keyed = pack.programCacheKeys.find(programName); keyed != pack.programCacheKeys.end()) {
+  if(gl::ShaderProgram* linked = pack.programs->find(keyed->second)) {
+   if(const auto targets = pack.programDrawBuffers.find(keyed->second);
+      targets != pack.programDrawBuffers.end()) {
+    linked->setDrawBufferColortexIndices(targets->second);
    }
+   pack.compiledPrograms.emplace(programName, linked);
+   return linked;
   }
+ }
  PreparedProgram prepared;
  if(!prepareProgram(pack, programName, found->second, logOnce, prepared)) {
   return nullptr;
@@ -252,42 +247,72 @@ gl::ShaderProgram* PackCompiler::compile(PackInstance& pack, const std::string& 
          ::net::minecraft::util::logging::LogLevel::Info);
  return nullptr;
 }
-void PackCompiler::prewarm(PackInstance& pack, const LogFnLevel& logOnce) {
- if(!pack.summary.valid || pack.programs == nullptr || pack.programState != PackProgramState::Cold) {
+void PackCompiler::buildPrewarmQueue(PackInstance& pack) {
+ if(!pack.prewarmQueue.empty()) {
   return;
  }
- diagnostics::WorkSpan span("shaderpack.prewarm");
- pack.programState = PackProgramState::Submitted;
- for(const std::string& feature : pack.definition.requiredFeatures) {
-  if(!featureSupported(feature)) {
-   pack.programState = PackProgramState::Failed;
-   return;
+ pack.prewarmCursor = 0;
+ for(const auto& [name, spec] : pack.definition.programs) {
+  (void)spec;
+  if(isProgramEnabledCached(pack.definition, pack.settings, name, pack.programEnabledCache)) {
+   pack.prewarmQueue.push_back(name);
   }
  }
- for(const auto& [name, spec] : pack.definition.programs) {
-  if(!isProgramEnabledCached(pack.definition, pack.settings, name, pack.programEnabledCache)) {
+}
+bool PackCompiler::prewarmStep(PackInstance& pack, const LogFnLevel& logOnce) {
+ if(!pack.summary.valid || pack.programs == nullptr || pack.programState == PackProgramState::Ready ||
+    pack.programState == PackProgramState::Failed) {
+  return true;
+ }
+ if(pack.programState == PackProgramState::Cold) {
+  for(const std::string& feature : pack.definition.requiredFeatures) {
+   if(!featureSupported(feature)) {
+    pack.programState = PackProgramState::Failed;
+    return true;
+   }
+  }
+  pack.programState = PackProgramState::Submitted;
+ }
+ if(pack.prewarmQueue.empty()) {
+  buildPrewarmQueue(pack);
+ }
+ constexpr std::int64_t kTimeBudgetMs = 12;
+ const auto deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(kTimeBudgetMs);
+ while(pack.prewarmCursor < pack.prewarmQueue.size()) {
+  const std::string& name = pack.prewarmQueue[pack.prewarmCursor];
+  ++pack.prewarmCursor;
+  const auto spec = pack.definition.programs.find(name);
+  if(spec == pack.definition.programs.end()) {
    continue;
   }
-   PreparedProgram prepared;
-   if(!prepareProgram(pack, name, spec, logOnce, prepared)) {
-    continue;
-   }
-   if(prepared.compute) {
-    pack.programs->getFromComputeSource(prepared.cacheKey, prepared.vertex, prepared.preamble);
-   } else {
-    pack.programs->getFromSource(prepared.cacheKey, prepared.vertex, prepared.fragment, prepared.preamble,
-                                 prepared.geometry, prepared.tessControl, prepared.tessEvaluation);
-    rememberDrawBuffers(pack, prepared);
-   }
-   pack.programCacheKeys.insert_or_assign(name, prepared.cacheKey);
+  PreparedProgram prepared;
+  if(!prepareProgram(pack, name, spec->second, logOnce, prepared)) {
+   continue;
+  }
+  if(prepared.compute) {
+   pack.programs->getFromComputeSource(prepared.cacheKey, prepared.vertex, prepared.preamble);
+  } else {
+   pack.programs->getFromSource(prepared.cacheKey, prepared.vertex, prepared.fragment, prepared.preamble,
+                                prepared.geometry, prepared.tessControl, prepared.tessEvaluation);
+   rememberDrawBuffers(pack, prepared);
+  }
+  pack.programCacheKeys.insert_or_assign(name, prepared.cacheKey);
+  if(pack.prewarmCursor < pack.prewarmQueue.size() &&
+     std::chrono::steady_clock::now() >= deadline) {
+   break;
   }
  }
+ return pack.prewarmCursor >= pack.prewarmQueue.size();
+}
 bool PackCompiler::validate(PackInstance& pack, const LogFnLevel& logOnce) {
  if(!pack.summary.valid || pack.programs == nullptr || pack.programState == PackProgramState::Cold) {
   return false;
  }
  if(pack.programState == PackProgramState::Ready) return true;
  if(pack.programState == PackProgramState::Failed) return false;
+ if(!pack.prewarmQueue.empty() && pack.prewarmCursor < pack.prewarmQueue.size()) {
+  return false;
+ }
  bool ready = true;
  for(const auto& [name, spec] : pack.definition.programs) {
   (void)spec;

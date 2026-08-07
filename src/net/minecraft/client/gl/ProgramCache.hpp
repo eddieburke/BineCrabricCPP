@@ -18,7 +18,7 @@
 namespace net::minecraft::client::gl {
 class ProgramCache {
  public:
- ProgramCache() = default;
+ explicit ProgramCache(ShaderCompileService& compiler);
  ~ProgramCache();
  ProgramCache(const ProgramCache&) = delete;
  ProgramCache& operator=(const ProgramCache&) = delete;
@@ -63,5 +63,6 @@ class ProgramCache {
  ShaderProgram* compileSync(const std::string& key, ShaderCompileRequest request, bool compute);
 
  std::unordered_map<std::string, Entry> cache_;
+ ShaderCompileService& compiler_;
 };
 } // namespace net::minecraft::client::gl

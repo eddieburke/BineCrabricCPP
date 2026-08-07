@@ -5,24 +5,21 @@
 namespace net::minecraft::client::gl {
 namespace diagnostics = net::minecraft::client::diagnostics;
 
-ShaderCompileService& ShaderCompileService::instance() {
- static ShaderCompileService service;
- return service;
-}
-
 void ShaderCompileService::setCacheDirectory(std::filesystem::path dir) {
  disk_.setRoot(std::move(dir));
 }
 
-ShaderCompileResult ShaderCompileService::compileBlocking(ShaderCompileRequest request) {
- if(request.contentHash == 0) {
-  const auto& salt = render::vertex_abi::abiSaltString();
-  request.contentHash = request.compute
-                            ? ShaderProgram::contentHash(true, request.preamble, request.vertex, {}, {}, {}, {}, salt)
-                            : ShaderProgram::contentHash(false, request.preamble, request.vertex, request.fragment,
-                                                         request.geometry, request.tessControl, request.tessEvaluation, salt);
+ShaderCompileResult ShaderCompileService::compileBlocking(const ShaderCompileRequest& request) {
+ if(request.contentHash != 0) {
+  return runJobOnCurrentContext(request);
  }
- return runJobOnCurrentContext(request);
+ ShaderCompileRequest hashed = request;
+ const auto& salt = render::vertex_abi::abiSaltString();
+ hashed.contentHash = request.compute
+                          ? ShaderProgram::contentHash(true, request.preamble, request.vertex, {}, {}, {}, {}, salt)
+                          : ShaderProgram::contentHash(false, request.preamble, request.vertex, request.fragment,
+                                                       request.geometry, request.tessControl, request.tessEvaluation, salt);
+ return runJobOnCurrentContext(hashed);
 }
 
 void ShaderCompileService::invalidateDiskEntry(std::uint64_t contentHash) {

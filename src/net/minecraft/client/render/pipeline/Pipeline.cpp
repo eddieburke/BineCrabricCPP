@@ -41,6 +41,11 @@ namespace net::minecraft::client::render {
 using LogLevel = ::net::minecraft::util::logging::LogLevel;
 namespace {
 using PackCatalog::lower;
+bool fogClassForKey(const std::string& key) {
+ if(key.rfind("shadow", 0) == 0) return false;
+ if(key == "gbuffers_gui" || key == "gbuffers_gui_textured") return false;
+ return true;
+}
 void uploadRgbaStub(gl::GlTexture& texture, unsigned char r, unsigned char g, unsigned char b, unsigned char a) {
  if(!texture) {
   texture = gl::GlTexture(static_cast<unsigned int>(core::genTexture()));
@@ -60,9 +65,6 @@ std::string trim(std::string_view value) {
  const std::size_t last = value.find_last_not_of(" \t\r\n");
  return std::string(value.substr(first, last - first + 1));
 }
-// The ColorWheel texture format (lab-pbr) is declared by texture packs in their
-// texture.properties; the macros and the specular/normal companion pipeline
-// (PbrTextures) follow from it.
 std::pair<bool, bool> pbrFormat(const resource::pack::TexturePack* pack) {
  if(pack == nullptr) return {};
  const std::vector<std::uint8_t> bytes = pack->getResource("texture.properties");
@@ -298,10 +300,11 @@ void Pipeline::prepareFrame(net::minecraft::World* world, PackInstance* activePa
  bindPbrTextures();
  const auto preparePrograms = [this](PackInstance* pack) {
   if(pack == nullptr) return;
-  if(pack->programState != PackProgramState::Cold) return;
-  PackCompiler::prewarm(*pack, [this](PackInstance& p, const std::string& message, LogLevel level) {
-   logOnce(p, message, level);
-  });
+  if(pack->programState != PackProgramState::Cold) return;  PackCompiler::buildPrewarmQueue(*pack);
+  PackCompiler::prewarmStep(*pack,
+                            [this](PackInstance& p, const std::string& message, LogLevel level) {
+                             logOnce(p, message, level);
+                            });
  };
  preparePrograms(activePack);
  if(basePack != activePack) preparePrograms(basePack);
@@ -604,48 +607,51 @@ gl::ShaderProgram* Pipeline::programFromPack(PackInstance& pack, const std::stri
                                     })
             : nullptr;
 }
-gl::ShaderProgram* Pipeline::worldProgram(const std::string& key, PackInstance* pack) {
- lastWorldProgramKey_ = key;
+gl::ShaderProgram* Pipeline::worldProgram(std::string_view key, PackInstance* pack) {
+ const std::string keyString(key);
+ lastWorldProgramKey_ = keyString;
  resolvedWorldProgramKey_.clear();
  if(pack == nullptr) return nullptr;
  core::RenderStage renderStage = core::RenderStage::None;
- if(key == "gbuffers_terrain_solid") {
+ if(keyString == "gbuffers_terrain_solid") {
   renderStage = core::RenderStage::TerrainSolid;
- } else if(key == "gbuffers_terrain_cutout" || key == "gbuffers_damagedblock") {
+ } else if(keyString == "gbuffers_terrain_cutout" || keyString == "gbuffers_damagedblock") {
   renderStage = core::RenderStage::TerrainCutout;
- } else if(key.rfind("gbuffers_entities", 0) == 0 || key == "gbuffers_item" || key == "gbuffers_lightning") {
+ } else if(keyString.rfind("gbuffers_entities", 0) == 0 || keyString == "gbuffers_item" || keyString == "gbuffers_lightning") {
   renderStage = core::RenderStage::Entities;
- } else if(key.rfind("gbuffers_block", 0) == 0) {
+ } else if(keyString.rfind("gbuffers_block", 0) == 0) {
   renderStage = core::RenderStage::BlockEntities;
- } else if(key == "gbuffers_hand") {
+ } else if(keyString == "gbuffers_hand") {
   renderStage = core::RenderStage::HandSolid;
- } else if(key == "gbuffers_hand_water") {
+ } else if(keyString == "gbuffers_hand_water") {
   renderStage = core::RenderStage::HandTranslucent;
- } else if(key == "gbuffers_water") {
+ } else if(keyString == "gbuffers_water") {
   renderStage = core::RenderStage::TerrainTranslucent;
- } else if(key.rfind("gbuffers_particles", 0) == 0) {
+ } else if(keyString.rfind("gbuffers_particles", 0) == 0) {
   renderStage = core::RenderStage::Particles;
- } else if(key == "gbuffers_clouds") {
+ } else if(keyString == "gbuffers_clouds") {
   renderStage = core::RenderStage::Clouds;
- } else if(key == "gbuffers_weather") {
+ } else if(keyString == "gbuffers_weather") {
   renderStage = core::RenderStage::RainSnow;
- } else if(key.rfind("gbuffers_sky", 0) == 0) {
+ } else if(keyString.rfind("gbuffers_sky", 0) == 0) {
   renderStage = core::RenderStage::Sky;
- } else if(key == "gbuffers_line") {
+ } else if(keyString == "gbuffers_line") {
   renderStage = core::renderStage();
  }
  core::setRenderStage(renderStage);
- // ColorWheel material programs are compiled on demand by the pack's own
- // clrwl_ pipeline; they are never selected as a world draw program here.
- if(key.rfind("clrwl_", 0) == 0) return nullptr;
+ if(keyString.rfind("clrwl_", 0) == 0) return nullptr;
  const bool shadowPass = core::cameraFrame().shadowPass;
- std::string programKey = shadowPass ? irisShadowProgramForGbuffers(key) : key;
+ std::string programKey = shadowPass ? irisShadowProgramForGbuffers(keyString) : keyString;
  if(programKey.empty()) return nullptr;
- programKey = resolveProgramKey(pack->definition, pack->settings, programKey, pack->programEnabledCache);
- if(programKey.empty()) return nullptr;
- resolvedWorldProgramKey_ = programKey;
- gl::ShaderProgram* program = programFromPack(*pack, programKey);
- return program;
+  programKey = resolveProgramKey(pack->definition, pack->settings, programKey, pack->programEnabledCache);
+  if(programKey.empty()) return nullptr;
+  resolvedWorldProgramKey_ = programKey;
+  gl::ShaderProgram* program = programFromPack(*pack, programKey);
+  if(program != nullptr) {
+   // see third_party/mcp/iris/pipeline/programs/ShaderKey.java
+   program->setFogClass(fogClassForKey(programKey));
+  }
+  return program;
 }
 bool Pipeline::renderBegin(PackInstance* activePack, int shadowDepthTextureId,
                            int shadowOpaqueDepthTextureId, const int* shadowColorTextureIds,

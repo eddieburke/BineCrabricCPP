@@ -107,7 +107,7 @@ class ModLuaDrawScope {
 
  private:
   struct PassSpec {
-   std::string programKey;
+   std::string_view programKey;
    bool hasTexture = false;
    bool hasColor = true;
    bool hasNormals = false;
@@ -182,13 +182,13 @@ class ModLuaDrawScope {
    return spec;
   }
   [[nodiscard]] static client::render::RenderType buildPass(const PassSpec& spec) {
-   return client::render::RenderType("mod_draw", 0x0004, spec.hasTexture, spec.hasColor, spec.hasNormals, "",
+   return client::render::RenderType("mod_draw", 0x0004, spec.hasTexture, spec.hasColor, spec.hasNormals, {},
                                      spec.state, spec.programKey);
   }
   PassSpec spec_;
   client::render::RenderType type_;
   client::render::RenderPassScope pass_;
-  std::string programKey_ = "";
+  std::string_view programKey_;
 };
 #endif
 } // namespace net::minecraft::mod::runtime

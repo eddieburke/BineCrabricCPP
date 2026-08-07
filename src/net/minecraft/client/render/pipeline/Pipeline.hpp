@@ -3,6 +3,7 @@
 #include <cstdint>
 #include <memory>
 #include <string>
+#include <string_view>
 #include <vector>
 #include "net/minecraft/client/ClientLog.hpp"
 #include "net/minecraft/client/gl/GlFramebuffer.hpp"
@@ -73,7 +74,7 @@ class Pipeline {
  bool renderPostProcess(PackInstance* activePack, PackInstance* basePack, int shadowDepthTextureId,
                         int shadowOpaqueDepthTextureId, const int* shadowColorTextureIds, int shadowColorTextureCount,
                         const int* shadowColorAltTextureIds);
- gl::ShaderProgram* worldProgram(const std::string& key, PackInstance* pack);
+ gl::ShaderProgram* worldProgram(std::string_view key, PackInstance* pack);
  gl::ShaderProgram* programFromPack(PackInstance& pack, const std::string& key);
  void presentFinalToScreen(PackInstance* scenePack, int screenWidth, int screenHeight);
  void setPipelinePhase(WorldPipelinePhase phase) noexcept {
@@ -93,9 +94,6 @@ class Pipeline {
  }
  [[nodiscard]] unsigned int lightmapTexture() const noexcept {
   return lightmapTexture_.handle();
- }
- [[nodiscard]] unsigned int* lightmapTexturePtr() noexcept {
-  return lightmapTexture_.handlePtr();
  }
  [[nodiscard]] unsigned int normalFallbackTexture() const noexcept {
   return normalFallbackTexture_.handle();

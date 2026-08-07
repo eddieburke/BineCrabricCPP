@@ -47,13 +47,9 @@ class PackInstance {
  CustomUniformRuntime customUniforms;
  std::unordered_map<std::string, std::string> sourceCache;
  std::unordered_map<std::string, std::string> resolvedSourceCache;
- std::unordered_map<std::string, gl::ShaderProgram*> compiledPrograms;
- // What prewarm already worked out for each program, so the pass that links the
- // finished binaries does not have to re-run source preparation to rediscover it.
- // program name -> ProgramCache key.
- std::unordered_map<std::string, std::string> programCacheKeys;
- // ProgramCache key -> draw buffer indices parsed out of the prepared fragment.
- std::unordered_map<std::string, std::vector<int>> programDrawBuffers;
+ std::unordered_map<std::string, gl::ShaderProgram*> compiledPrograms; std::unordered_map<std::string, std::string> programCacheKeys;
+ std::vector<std::string> prewarmQueue;
+ std::size_t prewarmCursor = 0; std::unordered_map<std::string, std::vector<int>> programDrawBuffers;
  PackProgramState programState = PackProgramState::Cold;
  std::vector<std::size_t> postPasses;
  std::vector<std::size_t> deferredPasses;
@@ -62,7 +58,7 @@ class PackInstance {
  std::vector<std::size_t> shadowCompositePasses;
  std::vector<std::size_t> preparePasses;
  std::vector<std::size_t> setupPasses;
- std::unique_ptr<gl::ProgramCache> programs;
+ std::unique_ptr<gl::ProgramCache> programs; gl::ShaderCompileService* shaderCompiler = nullptr;
  render::ColorTargets colorTargets;
  std::unordered_map<std::string, int> publishedTextures;
  struct ImageTarget {

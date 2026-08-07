@@ -172,8 +172,8 @@ void EntityRenderDispatcher::render(const net::minecraft::Entity& entity,
  }
  Tessellator::INSTANCE.light(blockLight, skyLight);
  render::core::setConstColor(1.0f, 1.0f, 1.0f, 1.0f);
- render(entity, x, y, z, yaw, tickDelta, matrices, projection);
-}
+    render(entity, x, y, z, yaw, tickDelta, matrices, projection);
+ }
 void EntityRenderDispatcher::render(const net::minecraft::Entity& entity,
                                     double x,
                                     double y,
@@ -182,11 +182,14 @@ void EntityRenderDispatcher::render(const net::minecraft::Entity& entity,
                                     float tickDelta,
                                     net::minecraft::util::math::MatrixStack& matrices,
                                     const net::minecraft::util::math::Matrix4f& projection) {
-  const std::string& entityName = net::minecraft::entity::EntityRegistry::getIdRef(entity);
- // Java resolves the current entity through entity.properties with a -1
- // default (IdMap.parseIdMap defaultReturnValue(-1),
- // MixinEntityRenderDispatcher.iris$beginEntityRender).
- render::core::setEntityId(resolveShaderObjectId("entity", entityName, -1));
+   const std::string& entityName = net::minecraft::entity::EntityRegistry::getIdRef(entity);
+  static std::string lastEntityName;
+  static int lastEntityShaderId = -1;
+  if(lastEntityName != entityName) {
+   lastEntityName = entityName;
+   lastEntityShaderId = resolveShaderObjectId("entity", entityName, -1);
+  }
+  render::core::setEntityId(lastEntityShaderId);
  if(net::minecraft::mod::runtime::hasLuaHook(net::minecraft::mod::runtime::LuaEventId::PreEntityRender)) {
   net::minecraft::mod::PreEntityRenderEvent event;
   event.entity = &entity;

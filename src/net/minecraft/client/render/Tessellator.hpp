@@ -1,5 +1,6 @@
 #pragma once
 #include <cstddef>
+#include <cstdint>
 #include <utility>
 #include <vector>
 #include "net/minecraft/client/render/BufferBuilder.hpp"
@@ -33,10 +34,6 @@ struct TessellatorMesh {
 };
 class Tessellator {
  public:
- // One instance per thread. Chunk mesh workers and the frame renderer never
- // share a vertex buffer: a shared instance let concurrent worker compiles race
- // on the same vector (heap corruption, garbage meshes, frozen GPU uploads).
- // The Tessellator owns no GL state, so worker-thread instances die cleanly.
  static thread_local Tessellator INSTANCE;
  explicit Tessellator(std::size_t bufferSize = 4096);
  void startQuads();
@@ -48,10 +45,6 @@ class Tessellator {
  void color(int r, int g, int b, int a);
  void color(int rgb);
  void color(int rgb, int a);
- // Light levels are fractional: smooth lighting averages four neighbours, and
- // rounding that average to a whole level collapses distinct AO corners onto
- // the same lightmap texel. vaUV2 carries level*16, so quarter-level averages
- // survive the pack exactly.
  void light(float blockLight, float skyLight);
  void normal(float x, float y, float z);
  void blockData(double x,
@@ -68,6 +61,19 @@ class Tessellator {
  void vertex(double x, double y, double z, double u, double v);
  void vertex(double x, double y, double z);
  void draw();
+ void beginBatch();
+ void endBatch();
+ class ScopedBatch {
+  public:
+  ScopedBatch() {
+   Tessellator::INSTANCE.beginBatch();
+  }
+  ~ScopedBatch() {
+   Tessellator::INSTANCE.endBatch();
+  }
+  ScopedBatch(const ScopedBatch&) = delete;
+  ScopedBatch& operator=(const ScopedBatch&) = delete;
+ };
  [[nodiscard]] TessellatorMesh takeMesh();
  static void drawMesh(const TessellatorMesh& mesh);
  [[nodiscard]] static int effectiveDrawMode(int mode) noexcept;
@@ -85,9 +91,8 @@ class Tessellator {
  void finishQuad();
  void flush();
  void reset();
- // Pose captured at start() on the drawing thread (world-camera producers
- // publish via core::setDrawPose) and applied to every vertex at emit time, so
- // the uploaded modelViewMatrix is the bare camera matrix — Iris' split.
+ void beginPart(int mode);
+ int batchDepth_ = 0;
  net::minecraft::util::math::Matrix4f pose_{};
  bool poseValid_ = false;
  BufferBuilder<TessellatorVertex> builder_;
@@ -100,8 +105,6 @@ class Tessellator {
  int mode_ = 7;
  float u_ = 0.0f;
  float v_ = 0.0f;
- // Keep offsets in double so absolute world coords + large camera offsets do not
- // lose sub-block precision before the final float vertex write.
  double xOffset_ = 0.0;
  double yOffset_ = 0.0;
  double zOffset_ = 0.0;

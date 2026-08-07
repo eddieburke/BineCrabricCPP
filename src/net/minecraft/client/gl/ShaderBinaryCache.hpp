@@ -6,7 +6,6 @@
 #include <optional>
 #include <string>
 #include <thread>
-#include <unordered_set>
 #include <vector>
 #include "net/minecraft/client/gl/ShaderProgram.hpp"
 namespace net::minecraft::client::gl {
@@ -24,14 +23,9 @@ class ShaderBinaryCache {
  void remove(std::uint64_t contentHash);
 
  private:
-  void scanDirectory();
   [[nodiscard]] std::wstring nativePath(std::uint64_t contentHash) const;
   void writerLoop();
   std::filesystem::path root_;
-  // Guarded: tryLoad runs on the render thread while the writer thread's
-  // store() and the render thread's storeAsync()/remove() mutate it.
-  mutable std::mutex knownMutex_;
-  std::unordered_set<std::uint64_t> knownHashes_;
   std::thread writer_;
   std::mutex writerMutex_;
   std::condition_variable writerCv_;

@@ -49,6 +49,10 @@ ChunkCache::~ChunkCache() {
 bool ChunkCache::isChunkLoaded(int chunkX, int chunkZ) const {
  return chunksByPos_.find(ChunkPos{chunkX, chunkZ}) != chunksByPos_.end();
 }
+Chunk* ChunkCache::getChunkIfLoaded(int chunkX, int chunkZ) {
+ const auto it = chunksByPos_.find(ChunkPos{chunkX, chunkZ});
+ return it == chunksByPos_.end() ? nullptr : it->second;
+}
 bool ChunkCache::isChunkDataReady(int chunkX, int chunkZ) const {
  const auto it = chunksByPos_.find(ChunkPos{chunkX, chunkZ});
  return it != chunksByPos_.end() && it->second != nullptr && it->second->dataReady;

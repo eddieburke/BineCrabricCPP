@@ -48,9 +48,6 @@ class GlTexture {
  [[nodiscard]] unsigned int handle() const noexcept {
   return handle_;
  }
- [[nodiscard]] unsigned int* handlePtr() noexcept {
-  return &handle_;
- }
  [[nodiscard]] explicit operator bool() const noexcept {
   return handle_ != 0;
  }

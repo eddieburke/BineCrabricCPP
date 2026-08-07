@@ -86,8 +86,8 @@ ShaderProgram* g_activeProgram = nullptr;
 ShaderProgram* g_lastProgram = nullptr;
 bool g_drawEnabled = true;
 ProgramUniformUploader g_programUniformUploader;
+ProgramMaterialBinder g_programUniformMaterialBinder;
 unsigned int g_programUniformGeneration = 1;
-unsigned int g_programUniformPushed = 0;
 int g_programUniformDiffuseTexture = -1;
 math::Matrix4f g_uploadedModelView{};
 math::Matrix4f g_uploadedProjection{};
@@ -108,7 +108,6 @@ bool g_drawCameraValid = false;
 float g_uploadedChunkOffset[3] = {0.0f, 0.0f, 0.0f};
 bool g_chunkOffsetUploaded = false;
 float g_uploadedEntityColor[4] = {0.0f, 0.0f, 0.0f, 0.0f};
-FogUniforms g_uploadedFog{};
 WorldLightUniforms g_uploadedWorldLight{};
 float g_uploadedAlphaTestRef = -1.0f;
 int g_uploadedBlendFunc[4] = {-1, -1, -1, -1};
@@ -125,7 +124,6 @@ int g_uploadedBlockEntityId = -1;
 int g_uploadedRenderedItemId = -1;
 int g_uploadedRenderStage = -1;
 int g_uploadedTextureFilteringMode = -1;
-int g_uploadedFogShape = -1;
 gl::GlVao g_vao;
 gl::GlBuffer g_streamVbo;
 bool g_triedFullscreen = false;
@@ -312,15 +310,13 @@ ScopedDrawCameraState::~ScopedDrawCameraState() {
   clearDrawCameraState();
  }
 }
-// The five fog uniforms every gbuffers program reads. Fog is per-draw state here
-// (pass.fog / g_fog); the pack frame snapshot only mirrors it for the world pass.
-void uploadFogUniforms(ShaderProgram& program, const FogUniforms& fog) {
+void uploadFogUniforms(ShaderProgram& program, const FogUniforms& fog, bool on) {
  program.set3f("fogColor", fog.color[0], fog.color[1], fog.color[2]);
  program.set1f("fogDensity", fog.density);
  program.set1f("fogStart", fog.start);
  program.set1f("fogEnd", fog.end);
- program.set1i("fogMode", fog.enabled ? fogModeToGlConstant(fog.mode) : 0);
- program.set1i("fogShape", fog.shape);
+ program.set1i("fogMode", on ? fogModeToGlConstant(fog.mode) : 0);
+ program.set1i("fogShape", on ? fog.shape : -1);
 }
 void bindAndUploadUniforms(const RenderPass& pass) {
  ShaderProgram* active = pass.programOverride != nullptr ? pass.programOverride : g_activeProgram;
@@ -340,7 +336,6 @@ void bindAndUploadUniforms(const RenderPass& pass) {
   g_matricesUploaded = false;
   return;
  }
- const FogUniforms& fog = pass.fog.enabled ? pass.fog : g_fog;
  // One matrix source. Producers no longer hand per-draw matrices in — the pose
  // lives in the vertices — so a pass's matrices are the pass base, and its
  // inverses are the ones already computed at the pass boundary. A draw that does
@@ -365,12 +360,6 @@ void bindAndUploadUniforms(const RenderPass& pass) {
   g_uploadedProjection = projection;
   g_matricesUploaded = true;
  }
- const bool fogChanged = !g_passUniformsUploaded || programChanged ||
-                         g_uploadedFog.enabled != fog.enabled || g_uploadedFog.mode != fog.mode ||
-                         g_uploadedFog.shape != fog.shape ||
-                         g_uploadedFog.density != fog.density || g_uploadedFog.start != fog.start ||
-                         g_uploadedFog.end != fog.end ||
-                         std::memcmp(g_uploadedFog.color, fog.color, sizeof(fog.color)) != 0;
  const bool lightChanged = !g_passUniformsUploaded || programChanged ||
                            g_uploadedWorldLight.enabled != g_worldLight.enabled ||
                            g_uploadedWorldLight.sunIntensity != g_worldLight.sunIntensity ||
@@ -384,11 +373,6 @@ void bindAndUploadUniforms(const RenderPass& pass) {
  if(entityColorChanged) {
   active->set4f("entityColor", g_entityColor[0], g_entityColor[1], g_entityColor[2], g_entityColor[3]);
   std::memcpy(g_uploadedEntityColor, g_entityColor, sizeof(g_entityColor));
- }
- if(fogChanged) {
-  uploadFogUniforms(*active, fog);
-  g_uploadedFog = fog;
-  g_uploadedFogShape = fog.shape;
  }
  if(lightChanged) {
   active->set3f("sunDirectionView", g_worldLight.sunDirView[0], g_worldLight.sunDirView[1], g_worldLight.sunDirView[2]);
@@ -436,29 +420,21 @@ void bindAndUploadUniforms(const RenderPass& pass) {
   active->set1i("renderStars", g_skyUniforms.renderStars ? 1 : 0);
   g_globalsPushed = g_globalsGeneration;
  }
- const bool packUniformsChanged = programChanged || g_programUniformPushed != g_programUniformGeneration;
- activeTexture(gl::tex::Texture0);
- const int diffuseTexture = boundTexture();
- const bool materialUniformsChanged = packUniformsChanged || diffuseTexture != g_programUniformDiffuseTexture;
- if(g_programUniformUploader && materialUniformsChanged) {
-  g_programUniformUploader(*active);
-  // The uploader pushes the pack's PER-FRAME snapshot, whose fog fields were captured
-  // during the world pass. Interface draws (GUI screens, the inventory player preview)
-  // run with fog off and with view positions in GUI screen space — hundreds of units
-  // from the origin — so leaving the world's fogMode/fogStart/fogEnd in place fogged
-  // those draws out to a flat fogColor silhouette. Re-assert the live per-draw fog,
-  // which the world pass sets to exactly the same values it snapshotted.
-  uploadFogUniforms(*active, fog);
-  g_uploadedFog = fog;
-  g_uploadedFogShape = fog.shape;
- }
- if(packUniformsChanged) {
-  g_programUniformPushed = g_programUniformGeneration;
- }
- if(materialUniformsChanged) {
-  g_programUniformDiffuseTexture = diffuseTexture;
- }
- if(programChanged || g_uploadedEntityId != g_entityId) {
+  const bool snapshotChanged = active->needsUniformSnapshot(g_programUniformGeneration);
+  activeTexture(gl::tex::Texture0);
+  const int diffuseTexture = boundTexture();
+  const bool materialChanged = diffuseTexture != g_programUniformDiffuseTexture;
+  if(snapshotChanged && g_programUniformUploader) {
+   g_programUniformUploader(*active);
+   active->markUniformSnapshotPushed(g_programUniformGeneration);
+  }
+  if(materialChanged && g_programUniformMaterialBinder) {
+   g_programUniformMaterialBinder(*active);
+   g_programUniformDiffuseTexture = diffuseTexture;
+  }
+  // see third_party/mcp/iris/pipeline/programs/ShaderKey.java
+  uploadFogUniforms(*active, g_fog, g_fog.enabled && active->fogClass());
+  if(programChanged || g_uploadedEntityId != g_entityId) {
   active->set1i("entityId", g_entityId);
   g_uploadedEntityId = g_entityId;
  }
@@ -549,6 +525,10 @@ bool drawEnabled() {
 void setProgramUniformUploader(ProgramUniformUploader uploader) {
  g_programUniformUploader = std::move(uploader);
  ++g_programUniformGeneration;
+}
+void setProgramMaterialBinder(ProgramMaterialBinder binder) {
+ g_programUniformMaterialBinder = std::move(binder);
+ g_programUniformDiffuseTexture = -1;
 }
 void advanceProgramUniforms() {
  ++g_programUniformGeneration;
@@ -839,13 +819,15 @@ void invalidateAttribCache() {
  g_programUniformDiffuseTexture = -1;
 }
 void setEntityColor(float red, float green, float blue, float alpha) {
- g_entityColor[0] = red;
- g_entityColor[1] = green;
- g_entityColor[2] = blue;
- g_entityColor[3] = alpha;
- g_entityOverlayDirty = true;
- ++g_globalsGeneration;
- ++g_programUniformGeneration;
+ if(g_entityColor[0] != red || g_entityColor[1] != green || g_entityColor[2] != blue || g_entityColor[3] != alpha) {
+  g_entityColor[0] = red;
+  g_entityColor[1] = green;
+  g_entityColor[2] = blue;
+  g_entityColor[3] = alpha;
+  g_entityOverlayDirty = true;
+  ++g_globalsGeneration;
+  ++g_programUniformGeneration;
+ }
 }
 unsigned int entityOverlayTexture() {
  if(!g_entityOverlayTexture) {

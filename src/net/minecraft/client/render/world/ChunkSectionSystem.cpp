@@ -82,6 +82,7 @@ void ChunkSectionSystem::createColumn(int sectionX, int sectionZ) {
     !scene_.world->getChunkSource()->isChunkLoaded(sectionX, sectionZ)) {
   return;
  }
+ chunk::ChunkBuilder* column[kChunkSectionCountY] = {};
  for(int sectionY = 0; sectionY < kChunkSectionCountY; ++sectionY) {
   const world::SectionPos pos{sectionX, sectionY, sectionZ};
   if(sections_.contains(pos)) {
@@ -96,10 +97,38 @@ void ChunkSectionSystem::createColumn(int sectionX, int sectionZ) {
   builder->inFrustum = true;
   builder->invalidate();
   chunk::ChunkBuilder* raw = builder.get();
+  column[sectionY] = raw;
   sections_.emplace(pos, std::move(builder));
   regions_[world::regionOf(pos)].push_back(raw);
   compilePipeline_->enqueueDirtyChunk(raw);
  }
+ for(int sectionY = 0; sectionY < kChunkSectionCountY; ++sectionY) {
+  chunk::ChunkBuilder* raw = column[sectionY];
+  if(raw == nullptr) {
+   continue;
+  }
+  if(sectionY > 0) {
+   raw->neighbors[2] = column[sectionY - 1];
+  }
+  if(sectionY + 1 < kChunkSectionCountY) {
+   raw->neighbors[3] = column[sectionY + 1];
+  }
+ }
+ for(int face = 0; face < 6; face += 2) {
+  chunk::ChunkBuilder* first = sectionAt(sectionX + kFaceDirX[face], 0, sectionZ + kFaceDirZ[face]);
+  for(int sectionY = 0; sectionY < kChunkSectionCountY && first != nullptr; ++sectionY) {
+   const int otherFace = face ^ 1;
+   chunk::ChunkBuilder* self = column[sectionY];
+   if(self != nullptr && self->neighbors[face] == nullptr) {
+    self->neighbors[face] = first;
+   }
+   if(first->neighbors[otherFace] == nullptr) {
+    first->neighbors[otherFace] = self;
+   }
+   first = first->neighbors[3];
+  }
+ }
+ sectionsChanged_ = true;
 }
 void ChunkSectionSystem::removeColumn(int sectionX, int sectionZ) {
  for(int sectionY = 0; sectionY < kChunkSectionCountY; ++sectionY) {
@@ -109,6 +138,13 @@ void ChunkSectionSystem::removeColumn(int sectionX, int sectionZ) {
    continue;
   }
   std::shared_ptr<chunk::ChunkBuilder> section = std::move(it->second);
+  for(int face = 0; face < 6; ++face) {
+   chunk::ChunkBuilder* neighbor = section->neighbors[face];
+   if(neighbor != nullptr) {
+    neighbor->neighbors[face ^ 1] = nullptr;
+    section->neighbors[face] = nullptr;
+   }
+  }
   sections_.erase(it);
   for(net::minecraft::block::entity::BlockEntity* be : section->blockEntities_) {
    auto jt = std::find(scene_.blockEntities.begin(), scene_.blockEntities.end(), be);
@@ -142,15 +178,8 @@ void ChunkSectionSystem::rebuildSectionOrder(const net::minecraft::Vec3d& camPos
  sectionsByPriority_.push_back(start);
  for(std::size_t head = 0; head < sectionsByPriority_.size(); ++head) {
   chunk::ChunkBuilder* node = sectionsByPriority_[head];
-  const int nodeX = node->x >> 4;
-  const int nodeY = node->y >> 4;
-  const int nodeZ = node->z >> 4;
   for(int face = 0; face < 6; ++face) {
-   const int nextY = nodeY + kFaceDirY[face];
-   if(nextY < 0 || nextY >= kChunkSectionCountY) {
-    continue;
-   }
-   chunk::ChunkBuilder* neighbor = sectionAt(nodeX + kFaceDirX[face], nextY, nodeZ + kFaceDirZ[face]);
+   chunk::ChunkBuilder* neighbor = node->neighbors[face];
    if(neighbor == nullptr || neighbor->meshOrderStamp == meshOrderStamp_) {
     continue;
    }
@@ -218,15 +247,16 @@ void ChunkSectionSystem::clearSections() {
  pendingLit_.clear();
  centerSectionX_ = std::numeric_limits<int>::min();
  centerSectionZ_ = std::numeric_limits<int>::min();
+ sectionsChanged_ = true;
 }
-void ChunkSectionSystem::updateSectionFrontier() {
-  const auto& frameCam = core::cameraFrame();
+bool ChunkSectionSystem::updateSectionFrontier() {
+   const auto& frameCam = core::cameraFrame();
  double camX = frameCam.x;
  double camZ = frameCam.z;
  if(camX == 0.0 && camZ == 0.0) {
   const net::minecraft::entity::LivingEntity* camera = frontierCamera();
   if(camera == nullptr) {
-   return;
+   return false;
   }
   camX = camera->x;
   camZ = camera->z;
@@ -234,7 +264,7 @@ void ChunkSectionSystem::updateSectionFrontier() {
  const int camSectionX = MathHelper::floor(camX) >> 4;
  const int camSectionZ = MathHelper::floor(camZ) >> 4;
  if(camSectionX == centerSectionX_ && camSectionZ == centerSectionZ_) {
-  return;
+  return false;
  }
  const int oldCenterX = centerSectionX_;
  const int oldCenterZ = centerSectionZ_;
@@ -252,7 +282,7 @@ void ChunkSectionSystem::updateSectionFrontier() {
     enqueueColumn(sx, sz);
    }
   }
-  return;
+  return true;
  }
  const int oldMinX = oldCenterX - radius;
  const int oldMaxX = oldCenterX + radius;
@@ -292,6 +322,7 @@ void ChunkSectionSystem::updateSectionFrontier() {
  };
  visitOutside(oldMinX, oldMaxX, oldMinZ, oldMaxZ, newMinX, newMaxX, newMinZ, newMaxZ, remove);
  visitOutside(newMinX, newMaxX, newMinZ, newMaxZ, oldMinX, oldMaxX, oldMinZ, oldMaxZ, enqueue);
+ return true;
 }
 void ChunkSectionSystem::drainPendingColumns() {
  if(scene_.world == nullptr || centerSectionX_ == std::numeric_limits<int>::min()) {
@@ -335,9 +366,12 @@ void ChunkSectionSystem::cullChunks(Frustum* culler, bool updateFrontier) {
  const net::minecraft::Vec3d camPos = WorldRenderer::sectionOrigin();
  if(updateFrontier) {
   reloadIfViewDistanceChanged();
-  updateSectionFrontier();
+  const bool frontierMoved = updateSectionFrontier();
   drainPendingColumns();
-  rebuildSectionOrder(camPos);
+  if(frontierMoved || sectionsChanged_) {
+   sectionsChanged_ = false;
+   rebuildSectionOrder(camPos);
+  }
  }
  if(renderCamera.shadowPass) {
   const ShadowCullingFrustum* shadowFrustum = renderCamera.shadowTerrainFrustum;
@@ -407,21 +441,14 @@ void ChunkSectionSystem::applyOcclusionCulling(Frustum* culler, const net::minec
   if(boxTouchesSphere(node->cullingBox, camPos.x, camPos.y, camPos.z, bypassSq)) {
    node->inFrustum = true;
   }
-  if(node->inFrustum) {
-   visibleSections_.push_back(node);
-  }
-  const int nodeX = node->x >> 4;
-  const int nodeY = node->y >> 4;
-  const int nodeZ = node->z >> 4;
-  for(int face = 0; face < 6; ++face) {
+   if(node->inFrustum) {
+    visibleSections_.push_back(node);
+   }
+   for(int face = 0; face < 6; ++face) {
    if(!node->occlusion.connects(face, node->built)) {
     continue;
    }
-   const int nextY = nodeY + kFaceDirY[face];
-   if(nextY < 0 || nextY >= kChunkSectionCountY) {
-    continue;
-   }
-   chunk::ChunkBuilder* neighbor = sectionAt(nodeX + kFaceDirX[face], nextY, nodeZ + kFaceDirZ[face]);
+   chunk::ChunkBuilder* neighbor = node->neighbors[face];
    if(neighbor == nullptr || neighbor->occlusion.visitedIn(stamp)) {
     continue;
    }

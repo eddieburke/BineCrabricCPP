@@ -23,11 +23,13 @@ struct SourceDeclaration {
 template <std::size_t N>
 void appendMissingDeclarations(std::string& output,
                                const std::string& source,
+                               const CodeMask& mask,
                                const std::array<SourceDeclaration, N>& declarations) {
  for(const SourceDeclaration& declaration : declarations) {
-  if(referencesToken(source, declaration.name) &&
-     !hasStorageDeclaration(source, declaration.storage, declaration.name) &&
-     !hasStorageDeclaration(source, "in", declaration.name) && !hasStorageDeclaration(source, "out", declaration.name)) {
+  if(referencesToken(source, mask, declaration.name) &&
+     !hasStorageDeclaration(source, mask, declaration.storage, declaration.name) &&
+     !hasStorageDeclaration(source, mask, "in", declaration.name) &&
+     !hasStorageDeclaration(source, mask, "out", declaration.name)) {
    output += std::string(declaration.storage) + " " + std::string(declaration.type) + " " +
              std::string(declaration.name) + ";\n";
   }
@@ -54,11 +56,11 @@ bool isGbufferOrShadowProgramName(const std::string& programName) {
  return name.starts_with("gbuffers_") || name.starts_with("clrwl_gbuffers") || name == "shadow" ||
         name.starts_with("shadow_") || name.starts_with("clrwl_shadow");
 }
-bool patchMultiTexCoord3(std::string& source, std::string& declarations) {
- if(!referencesToken(source, "gl_MultiTexCoord3") || referencesToken(source, "mc_midTexCoord") ||
-    hasStorageDeclaration(source, "in", "mc_midTexCoord") ||
-    hasStorageDeclaration(source, "uniform", "mc_midTexCoord") ||
-    hasStorageDeclaration(source, "const", "mc_midTexCoord")) return false;
+bool patchMultiTexCoord3(std::string& source, std::string& declarations, const CodeMask& mask) {
+ if(!referencesToken(source, mask, "gl_MultiTexCoord3") || referencesToken(source, mask, "mc_midTexCoord") ||
+    hasStorageDeclaration(source, mask, "in", "mc_midTexCoord") ||
+    hasStorageDeclaration(source, mask, "uniform", "mc_midTexCoord") ||
+    hasStorageDeclaration(source, mask, "const", "mc_midTexCoord")) return false;
  replaceAllToken(source, "gl_MultiTexCoord3", "mc_midTexCoord");
  declarations += "in vec4 mc_midTexCoord;\n";
  return true;
@@ -123,13 +125,13 @@ std::string lowerVertexSource(const std::string& programName, std::string source
   for(const auto& [legacy, current] : replacements) replaceAllToken(source, legacy, current);
   replaceGlMultiTexCoordBounded(source, 4, 7);
  }
- std::string declarations;
- appendMissingDeclarations(declarations, source, kVertexAttributes);
- appendMissingDeclarations(declarations, source, kCompositeUniforms);
- if(gbufferOrShadow) appendMissingDeclarations(declarations, source, kGbufferUniforms);
- patchMultiTexCoord3(source, declarations);
+ std::string declarations; const CodeMask mask = codeMask(source);
+ appendMissingDeclarations(declarations, source, mask, kVertexAttributes);
+ appendMissingDeclarations(declarations, source, mask, kCompositeUniforms);
+ if(gbufferOrShadow) appendMissingDeclarations(declarations, source, mask, kGbufferUniforms);
+ patchMultiTexCoord3(source, declarations, mask);
  if(referencesToken(source, "iris_lightmapTextureMatrix") &&
-    source.find("const mat4 iris_lightmapTextureMatrix") == std::string::npos) {
+    !hasStorageDeclaration(source, "const", "iris_lightmapTextureMatrix")) {
   declarations += GlslSnippets::get("iris_lightmap_matrix");
  }
  if(referencesToken(source, "gl_FogFragCoord")) {
@@ -156,7 +158,7 @@ bool programGetsCompatAlphaTest(const std::string& programName) {
  return lowerName.find("water") == std::string::npos && lowerName.find("translucent") == std::string::npos;
 }
 bool replaceFunctionCalls(std::string& source, std::string_view from, std::string_view to) {
- const std::vector<bool> mask = codeMask(source);
+ const CodeMask mask = codeMask(source);
  std::vector<std::size_t> matches;
  std::size_t at = 0;
  while((at = source.find(from, at)) != std::string::npos) {
@@ -170,11 +172,6 @@ bool replaceFunctionCalls(std::string& source, std::string_view from, std::strin
  for(auto match = matches.rbegin(); match != matches.rend(); ++match) source.replace(*match, from.size(), to);
  return !matches.empty();
 }
-// gl_FragData[N] writes DRAW BUFFER N, which the program's RENDERTARGETS directive maps
-// to a colortex. If that colortex has an integer format the output must be declared
-// uvec4/ivec4 — `out vec4` against an integer attachment is undefined, and the write is
-// silently dropped rather than failing to link. Packs that declare their own
-// `layout(location = N) out uvec4` were always fine; this is the legacy path only.
 std::string_view fragmentOutputType(const PackDefinition& pack,
                                     const std::vector<int>& drawBuffers,
                                     std::size_t output) {
@@ -184,9 +181,7 @@ std::string_view fragmentOutputType(const PackDefinition& pack,
  const auto target = pack.targets.find("colortex" + std::to_string(drawBuffers[output]));
  if(target == pack.targets.end()) {
   return "vec4";
- }
- // Safe to parse fatally: Pipeline builds the scene targets from these same strings.
- const ColorFormat format = parseFormat(target->second.format);
+ } const ColorFormat format = parseFormat(target->second.format);
  if(isSignedIntegerColorFormat(format)) {
   return "ivec4";
  }
@@ -207,7 +202,7 @@ std::array<bool, 16> rewriteFragmentOutputs(std::string& source, const PackDefin
   std::size_t length;
   int output;
  };
- const std::vector<bool> mask = codeMask(source);
+ const CodeMask mask = codeMask(source);
  std::vector<Match> matches;
  std::size_t at = 0;
  while((at = source.find("gl_FragData", at)) != std::string::npos) {
@@ -277,8 +272,6 @@ void canonicalizeTextureCalls(std::string& source, ShaderStage stage) {
   std::string declarations;
   if(replaceFunctionCalls(source, "shadow2D", "iris_shadow2D")) {
    declarations += "vec4 iris_shadow2D(sampler2DShadow image, vec3 coordinate) { return vec4(texture(image, coordinate)); }\n";
-   // The bias overload of texture() is fragment-stage-only; ANGLE rejects its
-   // mere presence in compute/vertex programs, so the bias is dropped there.
    const std::string biasBody = stage == ShaderStage::Fragment ? "texture(image, coordinate, bias)" : "texture(image, coordinate)";
    declarations += "vec4 iris_shadow2D(sampler2DShadow image, vec3 coordinate, float bias) { return vec4(" + biasBody + "); }\n";
   }
@@ -338,16 +331,10 @@ std::string_view trimmedArgument(std::string_view text) {
  return text.substr(first, last - first + 1);
 }
 } // namespace
-// Strict GLSL compilers reject clamp/min/max calls whose bounds mix integer and
-// float literals (`clamp(x + 1.6, 0.6, 1)`), and packs written for lenient drivers
-// ship them. Rewrite only the unambiguous cases: a bound that is a bare integer
-// literal next to a float-typed sibling, or both bounds integer next to a
-// float-typed first argument. All-integer calls (valid int clamps like
-// `clamp01(int)` / `min(i, 5)`) are left untouched.
 void canonicalizeBuiltinBounds(std::string& source) {
- const std::vector<bool> mask = codeMask(source);
+ const CodeMask mask = codeMask(source);
  constexpr std::array<std::string_view, 3> names = {"clamp", "min", "max"};
- std::vector<std::pair<std::size_t, std::size_t>> rewrites; 
+ std::vector<std::pair<std::size_t, std::size_t>> rewrites;
  for(const std::string_view name : names) {
   std::size_t at = 0;
   while((at = source.find(name, at)) != std::string::npos) {
@@ -384,6 +371,9 @@ void canonicalizeBuiltinBounds(std::string& source) {
          targets.push_back(1);
          targets.push_back(2);
         }
+        std::fprintf(stderr, "[trace] clamp body=<%.*s> f1=%d s2=%d t3=%d sf=%d tf=%d tgt=%zu\n",
+                     static_cast<int>(body.size()), body.data(), firstFloat, secondInt, thirdInt, secondFloat,
+                     thirdFloat, targets.size());
        } else if(name != "clamp" && args.size() >= 2) {
         const bool firstInt = bareIntLiteral(trimmed[0]);
         const bool secondInt = bareIntLiteral(trimmed[1]);
@@ -408,9 +398,6 @@ void canonicalizeBuiltinBounds(std::string& source) {
   source.replace(it->first, it->second - it->first, std::string(arg) + ".0");
  }
 }
-// gl_Fog.start/.end/.scale/.color were fixed-function builtins removed in GLSL 1.40.
-// Packs that still read them (usually for fog blending in compute or post stages)
-// get them backed by the engine's live fog uniforms instead.
 void shimLegacyFogGlobals(std::string& source) {
  std::string declarations;
  bool replaced = false;
@@ -458,9 +445,20 @@ std::string canonicalizeFragment(const std::string& programName, const PackDefin
  }
  if(!declarations.empty()) source.insert(sourceDeclarationOffset(source), declarations);
  const std::array<bool, 16> outputs = rewriteFragmentOutputs(source, pack);
- const bool hasDepthDecl = source.find("gl_FragDepth") != std::string::npos;
- const bool hasDepthWrite = source.find("gl_FragDepth =") != std::string::npos ||
-                            source.find("gl_FragDepth=") != std::string::npos;
+ const CodeMask mask = codeMask(source);
+ const bool hasDepthDecl = referencesToken(source, mask, "gl_FragDepth");
+ const bool hasDepthWrite = [&] {
+  std::size_t at = 0;
+  while((at = source.find("gl_FragDepth", at)) != std::string::npos) {
+   if(tokenAt(source, mask, at, "gl_FragDepth")) {
+    std::size_t cursor = at + 12;
+    while(cursor < source.size() && std::isspace(static_cast<unsigned char>(source[cursor]))) ++cursor;
+    if(cursor < source.size() && mask[cursor] && source[cursor] == '=') return true;
+   }
+   at += 12;
+  }
+  return false;
+ }();
  if(hasDepthDecl && !hasDepthWrite) appendBeforeMainClose(source, GlslSnippets::get("gl_frag_depth_passthrough"));
  if(!programGetsCompatAlphaTest(programName) || !legacyOutput || !outputs[0]) return source;
  if(source.find("alphaTestRef") == std::string::npos)
@@ -470,21 +468,12 @@ std::string canonicalizeFragment(const std::string& programName, const PackDefin
  appendBeforeMainClose(source, snippet);
  return source;
 }
-void sanitizeMismatchedClampOverloads(std::string& source) {
- const std::string target = "clamp(dir.y + 1.6, 0.6, 1)";
- std::size_t pos = 0;
- while((pos = source.find(target, pos)) != std::string::npos) {
-  source.replace(pos, target.length(), "clamp(dir.y + 1.6, 0.6, 1.0)");
-  pos += 27;
- }
-}
 } // namespace
 std::string canonicalizeCoreSource(const std::string& programName,
                                    ShaderStage stage,
                                    const PackDefinition& pack,
                                    std::string source,
                                    const ShaderTransformContext& context) {
- sanitizeMismatchedClampOverloads(source);
  canonicalizeTextureCalls(source, stage);
  shimLegacyFogGlobals(source);
  canonicalizeBuiltinBounds(source);
