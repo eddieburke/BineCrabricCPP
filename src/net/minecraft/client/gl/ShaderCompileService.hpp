@@ -27,16 +27,17 @@ struct ShaderCompileResult {
  ProgramBinaryBlob binary;
 };
 
-// Single-threaded shader compiler, mirroring Iris: every GL call happens on the
-// render thread at controlled points (pack load, prewarm, first use). Iris has no
-// worker threads, no second GL context and no glProgramBinary; the previous
-// cross-context worker design (wglShareLists into the primary context) deadlocked
-// the NVIDIA driver at startup and world load (all threads parked in nvoglv64.dll).
-// Driver-level parallelism comes from glMaxShaderCompilerThreadsKHR, latched in
-// GLCore::init().
+// Plain shader compiler class — no singleton, no global state. Instantiate once
+// per render context and call compileBlocking() on the render thread. Mirrors Iris:
+// every GL call happens on the render thread at controlled points (pack load,
+// prewarm, first use). Driver-level parallelism comes from
+// glMaxShaderCompilerThreadsKHR, latched in GLCore::init().
 class ShaderCompileService {
  public:
- static ShaderCompileService& instance();
+ explicit ShaderCompileService(std::filesystem::path cacheDir = {});
+ ~ShaderCompileService() = default;
+ ShaderCompileService(const ShaderCompileService&) = delete;
+ ShaderCompileService& operator=(const ShaderCompileService&) = delete;
 
  // Names the directory that stores extracted driver program binaries.
  void setCacheDirectory(std::filesystem::path dir);
@@ -52,6 +53,6 @@ class ShaderCompileService {
  private:
  ShaderCompileResult runJobOnCurrentContext(const ShaderCompileRequest& request);
 
- ShaderBinaryCache disk_{{}};
+ ShaderBinaryCache disk_;
 };
 } // namespace net::minecraft::client::gl

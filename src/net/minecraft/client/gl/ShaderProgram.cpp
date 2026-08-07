@@ -44,37 +44,34 @@ bool corePreambleAtLeast(std::string_view source, int minimumVersion) {
  cursor += profile.size();
  return cursor >= source.size() || std::isspace(static_cast<unsigned char>(source[cursor]));
 }
-std::string stripLeadingVersionDirective(const std::string& body) {
- // If the body starts with a #version directive, strip it so the caller-supplied
- // preamble is not duplicated.
- const char* p = body.c_str();
- // skip leading whitespace
- while(*p == ' ' || *p == '\t') {
-  ++p;
- }
- if(body.compare(static_cast<std::size_t>(p - body.c_str()), 9, "#version ", 0, 9) != 0) {
-  return body;
- }
- // find end of the #version line
- const char* eol = p;
- while(*eol != '\0' && *eol != '\n') {
-  ++eol;
- }
- while(*eol == '\n') {
-  ++eol;
- }
- return std::string(eol);
+// Strip leading #version directive and whitespace before it — avoids duplicating
+// the version when prepending the preamble. Returns string_view to avoid allocation
+// when no stripping is needed; the caller assembles into the final string.
+[[nodiscard]] std::string_view stripLeadingVersionDirective(std::string_view body) {
+ std::size_t cursor = 0;
+ while(cursor < body.size() && (body[cursor] == ' ' || body[cursor] == '\t')) ++cursor;
+ constexpr std::string_view directive = "#version";
+ if(cursor + directive.size() > body.size()) return body;
+ if(body.substr(cursor, directive.size()) != directive) return body;
+ cursor += directive.size();
+ if(cursor >= body.size() || (body[cursor] != ' ' && body[cursor] != '\t')) return body;
+ // skip to end of line
+ while(cursor < body.size() && body[cursor] != '\n') ++cursor;
+ // skip trailing newlines
+ while(cursor < body.size() && body[cursor] == '\n') ++cursor;
+ return body.substr(cursor);
 }
-std::string assemble(const std::string& versionPreamble,
-                     const std::string& body) {
- std::string stripped = stripLeadingVersionDirective(body);
+
+[[nodiscard]] std::string assembleShaderSource(std::string_view versionPreamble,
+                                                std::string_view body) {
+ const std::string_view stripped = stripLeadingVersionDirective(body);
  std::string out;
  out.reserve(versionPreamble.size() + stripped.size() + 1);
- out += versionPreamble;
+ out.append(versionPreamble);
  if(!out.empty() && out.back() != '\n') {
   out += '\n';
  }
- out += stripped;
+ out.append(stripped);
  return out;
 }
 unsigned int compileStage(unsigned int type, const std::string& source, std::string& errorOut) {
@@ -148,11 +145,11 @@ bool ShaderProgram::compile(const std::string& vertexSource,
   lastError_ = "shader entry points unavailable";
   return false;
  }
- const std::string vsrc = assemble(versionPreamble, vertexSource);
- const std::string fsrc = assemble(versionPreamble, fragmentSource);
- const std::string gsrc = geometrySource.empty() ? std::string{} : assemble(versionPreamble, geometrySource);
- const std::string tcsrc = tessControlSource.empty() ? std::string{} : assemble(versionPreamble, tessControlSource);
- const std::string tesrc = tessEvaluationSource.empty() ? std::string{} : assemble(versionPreamble, tessEvaluationSource);
+ const std::string vsrc = assembleShaderSource(versionPreamble, vertexSource);
+ const std::string fsrc = assembleShaderSource(versionPreamble, fragmentSource);
+ const std::string gsrc = geometrySource.empty() ? std::string{} : assembleShaderSource(versionPreamble, geometrySource);
+ const std::string tcsrc = tessControlSource.empty() ? std::string{} : assembleShaderSource(versionPreamble, tessControlSource);
+ const std::string tesrc = tessEvaluationSource.empty() ? std::string{} : assembleShaderSource(versionPreamble, tessEvaluationSource);
  std::vector<unsigned int> shaders;
  const auto add = [&](unsigned int type, const std::string& source) {
   if(source.empty()) return true;
@@ -204,7 +201,7 @@ bool ShaderProgram::compileCompute(const std::string& computeSource,
   lastError_ = "compute shader entry points unavailable (needs GL 4.3 core)";
   return false;
  }
- const std::string csrc = assemble(versionPreamble, computeSource);
+ const std::string csrc = assembleShaderSource(versionPreamble, computeSource);
  const unsigned int stage = compileStage(kComputeShader, csrc, lastError_);
  if(stage == 0) {
   return false;
@@ -493,8 +490,9 @@ const BinaryProcs& binaryProcs() {
  return procs;
 }
 
-std::uint64_t mixHash(std::uint64_t h, const std::string& s) {
- // FNV-1a 64-bit over bytes, then avalanche into running hash.
+[[nodiscard]] std::uint64_t mixHash(std::uint64_t h, std::string_view s) {
+ // FNV-1a 64-bit over bytes, then avalanche into running hash. Zero-copy via
+ // string_view so callers can pass substrings or views without allocation.
  std::uint64_t x = 14695981039346656037ull;
  for(unsigned char c : s) {
   x ^= c;

@@ -18,7 +18,7 @@
 namespace net::minecraft::client::gl {
 class ProgramCache {
  public:
- ProgramCache() = default;
+ explicit ProgramCache(ShaderCompileService& compiler);
  ~ProgramCache();
  ProgramCache(const ProgramCache&) = delete;
  ProgramCache& operator=(const ProgramCache&) = delete;

@@ -35,7 +35,7 @@ void PackInstance::resetPrograms() {
  programCacheKeys.clear();
  programDrawBuffers.clear();
  logged.clear();
- programs = std::make_unique<gl::ProgramCache>();
+ programs = std::make_unique<gl::ProgramCache>(*pack_->shaderCompiler);
  programState = PackProgramState::Cold;
 }
 bool PackInstance::rebuildRuntime(std::string& error) {

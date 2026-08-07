@@ -275,7 +275,7 @@ void Minecraft::bootstrapAfterDisplay() {
  runDirectory_ = getRunDirectory();
  // Disk-backed shader program cache. Compilation is synchronous on the render
  // thread (Iris model); this just names where extracted driver binaries live.
- gl::ShaderCompileService::instance().setCacheDirectory(runDirectory_ / "shader-cache");
+ shaderCompiler_.setCacheDirectory(runDirectory_ / "shader-cache");
  options.optionsFile = runDirectory_ / "options.txt";
  options.bindMinecraft(this);
  option::OptionRegistry::registerAll();

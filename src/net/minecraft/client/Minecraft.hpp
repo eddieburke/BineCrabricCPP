@@ -15,6 +15,7 @@
 #include "net/minecraft/client/core/ScreenStack.hpp"
 #include "net/minecraft/client/core/WorldSession.hpp"
 #include "net/minecraft/client/font/TextRenderer.hpp"
+#include "net/minecraft/client/gl/ShaderCompileService.hpp"
 #include "net/minecraft/client/gui/hud/InGameHud.hpp"
 #include "net/minecraft/client/gui/hud/toast/AchievementToast.hpp"
 #include "net/minecraft/client/gui/screen/Screen.hpp"
@@ -235,5 +236,6 @@ class Minecraft {
  int startupServerPort = 0;
  render::texture::WaterSprite waterSprite_{};
  render::texture::LavaSprite lavaSprite_{};
+ gl::ShaderCompileService shaderCompiler_;
 };
 } // namespace net::minecraft::client

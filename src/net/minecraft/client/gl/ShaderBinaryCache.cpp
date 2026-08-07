@@ -25,24 +25,13 @@ struct FileHeader {
 static_assert(sizeof(FileHeader) == 32);
 } // namespace
 
-ShaderBinaryCache::ShaderBinaryCache(std::filesystem::path root) : root_(std::move(root)) {}
-
-ShaderBinaryCache::~ShaderBinaryCache() {
- {
-  std::lock_guard lock(writerMutex_);
-  writerStop_ = true;
- }
- writerCv_.notify_one();
- if(writer_.joinable()) writer_.join();
+ShaderBinaryCache::ShaderBinaryCache(std::filesystem::path root) : root_(std::move(root)) {
+ if(!root_.empty()) scanDirectory();
 }
 
 void ShaderBinaryCache::setRoot(std::filesystem::path root) {
  root_ = std::move(root);
  scanDirectory();
- writerStop_ = false;
- if(!root_.empty() && !writer_.joinable()) {
-  writer_ = std::thread(&ShaderBinaryCache::writerLoop, this);
- }
 }
 
 void ShaderBinaryCache::scanDirectory() {
@@ -145,21 +134,6 @@ bool ShaderBinaryCache::store(const ProgramBinaryBlob& blob) {
   return true;
 }
 
-void ShaderBinaryCache::storeAsync(ProgramBinaryBlob blob) {
- if(root_.empty() || blob.bytes.empty() || blob.contentHash == 0 || blob.binaryFormat == 0) {
-  return;
- }
- {
-  const std::lock_guard lock(knownMutex_);
-  knownHashes_.insert(blob.contentHash);
- }
- {
-  std::lock_guard lock(writerMutex_);
-  writeQueue_.push_back(std::move(blob));
- }
- writerCv_.notify_one();
-}
-
 void ShaderBinaryCache::remove(std::uint64_t contentHash) {
  if(root_.empty()) return;
  {
@@ -168,19 +142,5 @@ void ShaderBinaryCache::remove(std::uint64_t contentHash) {
  }
  const std::wstring path = nativePath(contentHash);
  DeleteFileW(path.c_str());
-}
-
-void ShaderBinaryCache::writerLoop() {
- std::vector<ProgramBinaryBlob> local;
- for(;;) {
-  {
-   std::unique_lock lock(writerMutex_);
-   writerCv_.wait(lock, [this] { return writerStop_ || !writeQueue_.empty(); });
-   if(writerStop_ && writeQueue_.empty()) return;
-   local.swap(writeQueue_);
-  }
-  for(auto& blob : local) store(blob);
-  local.clear();
- }
 }
 } // namespace net::minecraft::client::gl

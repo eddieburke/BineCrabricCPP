@@ -2,13 +2,12 @@
 #include "net/minecraft/client/diagnostics/ClientDiagnostics.hpp"
 #include "net/minecraft/client/gl/GLCore.hpp"
 #include "net/minecraft/client/render/VertexAbi.hpp"
+#include <utility>
 namespace net::minecraft::client::gl {
 namespace diagnostics = net::minecraft::client::diagnostics;
 
-ShaderCompileService& ShaderCompileService::instance() {
- static ShaderCompileService service;
- return service;
-}
+ShaderCompileService::ShaderCompileService(std::filesystem::path cacheDir)
+    : disk_(std::move(cacheDir)) {}
 
 void ShaderCompileService::setCacheDirectory(std::filesystem::path dir) {
  disk_.setRoot(std::move(dir));
@@ -57,8 +56,8 @@ ShaderCompileResult ShaderCompileService::runJobOnCurrentContext(const ShaderCom
  blob.contentHash = request.contentHash;
  result.ok = true;
  result.fromDisk = false;
- result.binary = blob;
- disk_.storeAsync(std::move(blob));
+ result.binary = std::move(blob);
+ disk_.store(result.binary);
  return result;
 }
 } // namespace net::minecraft::client::gl

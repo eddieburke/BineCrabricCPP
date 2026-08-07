@@ -11,8 +11,9 @@ enum class CacheBinaryOutcome {
 };
 CacheBinaryOutcome loadBinary(ShaderProgram& program,
                               ShaderCompileRequest request,
-                              ShaderCompileResult& resultOut) {
- ShaderCompileResult result = ShaderCompileService::instance().compileBlocking(std::move(request));
+                              ShaderCompileResult& resultOut,
+                              ShaderCompileService& compiler) {
+ ShaderCompileResult result = compiler.compileBlocking(std::move(request));
  resultOut = std::move(result);
  if(!resultOut.ok) {
   return resultOut.binaryUnsupported ? CacheBinaryOutcome::Unsupported : CacheBinaryOutcome::Failed;
@@ -20,7 +21,7 @@ CacheBinaryOutcome loadBinary(ShaderProgram& program,
  if(program.loadFromBinary(resultOut.binary)) {
   return CacheBinaryOutcome::Loaded;
  }
- ShaderCompileService::instance().invalidateDiskEntry(resultOut.contentHash);
+ compiler.invalidateDiskEntry(resultOut.contentHash);
  return CacheBinaryOutcome::Unsupported;
 }
 ShaderCompileRequest buildRequest(bool compute,
@@ -44,6 +45,8 @@ ShaderCompileRequest buildRequest(bool compute,
  return request;
 }
 } // namespace
+
+ProgramCache::ProgramCache(ShaderCompileService& compiler) : compiler_(compiler) {}
 
 ProgramCache::~ProgramCache() = default;
 
@@ -95,7 +98,7 @@ ShaderProgram* ProgramCache::compileSync(const std::string& key,
  Entry entry;
  entry.program = std::make_unique<ShaderProgram>();
  ShaderCompileResult result;
- switch(loadBinary(*entry.program, request, result)) {
+ switch(loadBinary(*entry.program, request, result, compiler_)) {
  case CacheBinaryOutcome::Loaded:
   cache_.emplace(key, std::move(entry));
   return cache_.find(key)->second.program.get();

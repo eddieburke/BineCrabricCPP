@@ -1,28 +1,65 @@
-build/
-build-test/
-build-omega/
-build*.log
-client.log
-server.log
-third_party/mcp/
-third_party/iris/
-resources/
-toolchain/
-.claude/
-build-installer/
-**/handoff*.md
+```
+# Compiled and build artifacts
+*.o
+*.obj
+*.exe
+*.dll
+*.so
+*.a
+*.out
 
-# Agent/IDE directories
-.cursor/
-.windsurf/
-.opencode/
+# Dependencies
+node_modules/
+venv/
+.venv/
+__pycache__/
+.mypy_cache/
+.pytest_cache/
+target/
+.gradle/
 
-# Agent-generated instructions
-.github/copilot-instructions.md
-AGENTS.md
-agents.md
+# Logs and temp files
+*.log
+*.tmp
+*.swp
 
-.build-omega.lock
+# Editors
+.vscode/
+.idea/
 
-# Shaderpacks kept local-only; only the embedded vanilla pack is tracked (src/.../glsl/vanilla)
-shaders/*
+# System files
+.DS_Store
+Thumbs.db
+.env
+.env.local
+*.env.*
+
+# Coverage
+coverage/
+htmlcov/
+.coverage
+
+# Compressed files
+*.zip
+*.gz
+*.tar
+*.tgz
+*.bz2
+*.xz
+*.7z
+*.rar
+*.zst
+*.lz4
+*.lzh
+*.cab
+*.arj
+*.rpm
+*.deb
+*.Z
+*.lz
+*.lzo
+*.tar.gz
+*.tar.bz2
+*.tar.xz
+*.tar.zst
+```
