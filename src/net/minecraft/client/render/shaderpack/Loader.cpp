@@ -12,12 +12,14 @@
 #include <algorithm>
 #include <array>
 #include <cctype>
+#include <charconv>
 #include <cmath>
 #include <cstdlib>
 #include <cstring>
 #include <filesystem>
 #include <limits>
 #include <sstream>
+#include <system_error>
 #include <unordered_set>
 #include <utility>
 namespace net::minecraft::client::render {
@@ -43,28 +45,75 @@ bool identifier(std::string_view value) {
  return std::all_of(value.begin() + 1, value.end(), [](unsigned char ch) { return std::isalnum(ch) || ch == '_'; });
 }
 bool number(std::string_view value, double& out, bool& integer) {
- std::string text(value);
- if(!text.empty() && (text.back() == 'f' || text.back() == 'F')) text.pop_back();
- char* end = nullptr;
- out = std::strtod(text.c_str(), &end);
- if(end == text.c_str() || *end != '\0' || !std::isfinite(out)) return false;
- integer = text.find_first_of(".eE") == std::string::npos;
+ std::string_view text = value;
+ if(!text.empty() && (text.back() == 'f' || text.back() == 'F')) text.remove_suffix(1);
+ const auto [ptr, error] = std::from_chars(text.data(), text.data() + text.size(), out);
+ if(error != std::errc() || ptr != text.data() + text.size() || !std::isfinite(out)) return false;
+ integer = text.find_first_of(".eE") == std::string_view::npos;
  return true;
 }
 std::string numberText(double value, bool integer) {
  return integer ? std::to_string(static_cast<int>(std::lround(value))) : std::to_string(value);
 }
+// see third_party/mcp/iris/shaderpack/option/OptionAnnotatedSource.java:58-96
+const std::unordered_set<std::string>& validConstOptionNames() {
+ static const std::unordered_set<std::string> names = [] {
+  std::unordered_set<std::string> set;
+  const char* staticNames[] = {"shadowMapResolution",
+                               "shadowDistance",
+                               "voxelDistance",
+                               "shadowDistanceRenderMul",
+                               "entityShadowDistanceMul",
+                               "shadowIntervalSize",
+                               "generateShadowMipmap",
+                               "generateShadowColorMipmap",
+                               "shadowHardwareFiltering",
+                               "shadowtex0Mipmap",
+                               "shadowtexMipmap",
+                               "shadowtex1Mipmap",
+                               "shadowtex0Nearest",
+                               "shadowtexNearest",
+                               "shadow0MinMagNearest",
+                               "shadowtex1Nearest",
+                               "shadow1MinMagNearest",
+                               "wetnessHalflife",
+                               "drynessHalflife",
+                               "eyeBrightnessHalflife",
+                               "centerDepthHalflife",
+                               "sunPathRotation",
+                               "ambientOcclusionLevel",
+                               "superSamplingLevel",
+                               "noiseTextureResolution"};
+  for(const char* name : staticNames) set.insert(name);
+  for(int i = 0; i < 8; ++i) {
+   const std::string suffix = std::to_string(i);
+   set.insert("shadowcolor" + suffix + "Mipmap");
+   set.insert("shadowColor" + suffix + "Mipmap");
+   set.insert("shadowcolor" + suffix + "Nearest");
+   set.insert("shadowColor" + suffix + "Nearest");
+   set.insert("shadowcolor" + suffix + "MinMagNearest");
+   set.insert("shadowColor" + suffix + "MinMagNearest");
+   set.insert("shadowHardwareFiltering" + suffix);
+  }
+  return set;
+ }();
+ return names;
+}
 void optionRange(std::string_view comment, PackSetting& setting) {
  const std::size_t open = comment.find('[');
  const std::size_t close = comment.find(']', open == std::string_view::npos ? 0 : open + 1);
  if(open == std::string_view::npos || close == std::string_view::npos) return;
- std::istringstream values{std::string(comment.substr(open + 1, close - open - 1))};
- std::string token;
+ const std::string_view content = comment.substr(open + 1, close - open - 1);
  bool found = false;
- while(values >> token) {
+ std::size_t i = 0;
+ while(i < content.size()) {
+  while(i < content.size() && std::isspace(static_cast<unsigned char>(content[i]))) ++i;
+  if(i >= content.size()) break;
+  const std::size_t start = i;
+  while(i < content.size() && !std::isspace(static_cast<unsigned char>(content[i]))) ++i;
   double value = 0.0;
   bool ignored = false;
-  if(!number(token, value, ignored)) continue;
+  if(!number(content.substr(start, i - start), value, ignored)) continue;
   if(!found) {
    setting.minimum = value;
    setting.maximum = value;
@@ -83,8 +132,8 @@ void addOption(std::unordered_map<std::string, PackSourceOption>& options,
                bool enabled,
                std::string_view value,
                std::string_view comment) {
- if(!identifier(key) || rejected.contains(key)) return;
- auto reject = [&options, &rejected](const std::string& name) {
+  if(!identifier(key) || rejected.contains(key)) return;
+  auto reject = [&options, &rejected](const std::string& name) {
   options.erase(name);
   rejected.insert(name);
  };
@@ -181,8 +230,8 @@ void scanOptions(const std::string& source,
   if(separator == std::string::npos) continue;
   const std::string_view type = trimmedView(left.substr(0, separator));
   if(type != "int" && type != "float") continue;
-  std::string key(left.substr(separator + 1));
-  if(key == "shadowMapResolution") continue;
+   std::string key(left.substr(separator + 1));
+   if(key == "shadowMapResolution" || !validConstOptionNames().contains(key)) continue;
   addOption(options,
             rejected,
             std::move(key),
