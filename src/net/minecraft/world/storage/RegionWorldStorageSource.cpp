@@ -135,8 +135,8 @@ void convertDimension(const fs::path& dimDir) {
  return true;
 }
 } // namespace
-bool RegionWorldStorageSource::convert(const std::string& saveName, client::gui::screen::LoadingDisplay* display) {
- (void)display;
+bool RegionWorldStorageSource::convert(const std::string& saveName, ProgressCallback progress) {
+ (void)progress;
  const fs::path saveDir = savesDirectory() / saveName;
  if(!fs::exists(saveDir)) {
   return false;

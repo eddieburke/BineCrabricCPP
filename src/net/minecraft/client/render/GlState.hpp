@@ -4,18 +4,13 @@
 #include <unordered_map>
 #include <vector>
 #include "net/minecraft/client/render/shaderpack/Pack.hpp"
-
 namespace net::minecraft::client::gl {
 class ShaderProgram;
 }
-
 namespace net::minecraft::client::render {
 enum class ColorFormat;
 class ColorTargets;
-
-constexpr unsigned int kTexture2D = 0x0DE1;
 constexpr unsigned int kTexture3D = 0x806F;
-
 // https://shaders.properties/current/reference/buffers/shadowtex/
 // https://shaders.properties/current/guides/your-first-shaderpack/4_shadows/
 unsigned int samplerObject(bool compare, bool linear = true, bool mipmap = false);
@@ -37,12 +32,6 @@ void putShadowTextures(std::unordered_map<std::string, int>& textures,
                        const int* shadowColorTextures,
                        int shadowColorCount,
                        const PackDefinition& definition);
-// Binds only shadow-related samplers declared by the program; returns next free unit.
-[[nodiscard]] int bindShadowSamplers(gl::ShaderProgram& program,
-                                     int startUnit,
-                                     int maxUnits,
-                                     const std::unordered_map<std::string, int>& textures,
-                                     const PackDefinition& definition);
 [[nodiscard]] unsigned int bindColorImages(gl::ShaderProgram& program,
                                            const std::unordered_map<std::string, int>& colorTextures,
                                            const PackDefinition& definition,
@@ -53,7 +42,6 @@ int maxTextureUnits();
 ColorFormat parseFormat(const std::string& format);
 [[nodiscard]] const char* colorFormatName(ColorFormat format);
 // https://shaders.properties/current/reference/constants/buffer_format/
-void texImageFormat(ColorFormat format, int& internal, unsigned& external, unsigned& type);
 unsigned int pixelFormat(std::string value);
 unsigned int pixelType(std::string value);
 unsigned int internalFormat(std::string value);

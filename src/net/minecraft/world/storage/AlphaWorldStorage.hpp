@@ -63,7 +63,6 @@ class AlphaWorldStorage : public WorldStorage, public server::world::PlayerSaveH
  std::string worldName_;
  std::uint64_t startTime_ = 0;
 };
-
 // MCP SaveFormatOld — listed/renamed/deleted worlds for the Alpha per-chunk layout.
 class AlphaWorldStorageSource : public WorldStorageSource {
  public:
@@ -143,7 +142,7 @@ class AlphaWorldStorageSource : public WorldStorageSource {
  [[nodiscard]] bool needsConversion(const std::string&) const override {
   return false;
  }
- bool convert(const std::string&, client::gui::screen::LoadingDisplay*) override {
+ bool convert(const std::string&, ProgressCallback = nullptr) override {
   return false;
  }
 

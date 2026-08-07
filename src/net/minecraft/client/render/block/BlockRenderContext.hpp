@@ -159,10 +159,11 @@ struct BlockFaceRenderState {
 struct BlockRenderContext {
  // World/chunk the blocks are read from while rendering in-place.
  const net::minecraft::BlockView* blockView = nullptr;
- // Tessellator the renderers emit geometry into. Defaults to the shared
- // main-thread instance; chunk-mesh worker jobs point this at a private
- // capture-only tessellator so meshing never touches GL or shared state.
- Tessellator* tess = &Tessellator::INSTANCE;
+ // Tessellator the renderers emit geometry into. Every producer assigns a
+ // concrete instance at construction — chunk-mesh workers pass a private
+ // capture-only tessellator, main-thread draws pass thread_local INSTANCE — so
+ // no code path can silently reach a global from a worker.
+ Tessellator* tess = nullptr;
  // Bounds of the block currently being rendered, in local 0..1 block space.
  // Owned by the context (not the Block singleton) so concurrent mesh jobs
  // and the main-thread tick can't race on Block::minX..maxZ.
@@ -222,19 +223,21 @@ struct BlockRenderContext {
  const chunk::RegionSnapshot* lightSnapshot = nullptr;
  int faceBlockLight = 15;
  int faceSkyLight = 15;
-  // Absolute luminance of the block itself is no longer used to invent relative
-  // AO — packs own lighting; C++ writes vanilla corner-averaged light into the
-  // per-vertex lightmap coords and keeps the vertex colour tint-only.
+ // Absolute luminance of the block itself is no longer used to invent relative
+ // AO — packs own lighting; C++ writes vanilla corner-averaged light into the
+ // per-vertex lightmap coords and keeps the vertex colour tint-only.
  void resolveLightSource();
  void sampleFaceLight(int x, int y, int z);
  // Default for renderers that emit geometry without telling us which face they
  // are on — baked models and mod blocks. A solid block stores no light of its
  // own, so the surfaces take the brightest light reaching them from around it.
  void sampleSurroundingLight(int x, int y, int z);
+ // Renderers that emit geometry without a per-face texture still need a
+ // tessellator. The context always carries one (see the tess member comment).
+ [[nodiscard]] Tessellator& tessellator() const noexcept {
+  return *tess;
+ }
  [[nodiscard]] Tessellator& activeTess(int texture) {
-  if(tess == nullptr) {
-   return Tessellator::INSTANCE;
-  }
   if(modMeshes != nullptr) {
    Tessellator& active = modMeshes->tessFor(texture, *tess);
    active.blockData(blockX, blockY, blockZ, blockEmission, faceBlockLight, faceSkyLight, blockId, blockFluid,

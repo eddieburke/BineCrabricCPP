@@ -53,7 +53,7 @@ class SliderWidget : public ButtonWidget {
   const int knobX = x + static_cast<int>(value * static_cast<float>(width - 8));
   const render::RenderPassScope passScope(render::RenderType::guiTextured());
   const float* c = render::core::constColor();
-  render::Tessellator& tess = render::INSTANCE;
+  render::Tessellator& tess = render::Tessellator::INSTANCE;
   tess.startQuads();
   tess.color(c[0], c[1], c[2], c[3]);
   draw::appendAtlasQuad(tess, knobX, y, 0, 66, 4, 20, 0.0f);

@@ -359,7 +359,7 @@ void drawVanillaButtonBackground(client::Minecraft& minecraft, int x, int y, int
  constexpr int kTile = 4;
  const client::render::RenderPassScope passScope(client::render::RenderType::guiTextured());
  const float* c = client::render::core::constColor();
- client::render::Tessellator& tess = client::render::INSTANCE;
+ client::render::Tessellator& tess = client::render::Tessellator::INSTANCE;
  tess.startQuads();
  tess.color(c[0], c[1], c[2], c[3]);
  if(width <= kCap * 2) {
@@ -421,7 +421,7 @@ void drawVanillaSlider(client::Minecraft& minecraft,
  {
   const client::render::RenderPassScope passScope(client::render::RenderType::guiTextured());
   const float* c = client::render::core::constColor();
-  client::render::Tessellator& tess = client::render::INSTANCE;
+  client::render::Tessellator& tess = client::render::Tessellator::INSTANCE;
   tess.startQuads();
   tess.color(c[0], c[1], c[2], c[3]);
   client::gui::draw::appendAtlasQuad(tess, knobX, y, 0, 66, 4, height, 0.0f);
@@ -759,7 +759,7 @@ int luaScreenOpen(lua_State* state) {
   title = luaStringField(state, 2, "title", "");
   shouldPause = luaBoolField(state, 2, "pause", true);
  }
-  client::gui::screen::ScreenFactory returnFactory = nullptr;
+ client::gui::screen::ScreenFactory returnFactory = nullptr;
  if(auto* current = client::Minecraft::INSTANCE->currentScreen()) {
   returnFactory = current->getReopenFactory();
  }

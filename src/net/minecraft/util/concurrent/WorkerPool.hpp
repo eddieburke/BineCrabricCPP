@@ -9,6 +9,12 @@
 #include <thread>
 #include <vector>
 namespace net::minecraft::util::concurrent {
+// Named priorities for WorkerPool::submit's int slot; lower value runs first.
+enum class TaskPriority { Urgent = 0,
+                          High = 1,
+                          Normal = 2,
+                          Low = 3,
+                          Idle = 4 };
 // Fixed-size pool of std::jthread workers draining a priority task queue.
 // Lower priority value runs first; ties run in submission order.
 // Destruction requests stop, wakes all workers, and joins them; queued tasks
@@ -55,9 +61,9 @@ class WorkerPool {
   const std::lock_guard lock(mutex_);
   return queue_.size() + static_cast<std::size_t>(activeCount_);
  }
-  [[nodiscard]] unsigned threadCount() const noexcept {
-   return static_cast<unsigned>(workers_.size());
-  }
+ [[nodiscard]] unsigned threadCount() const noexcept {
+  return static_cast<unsigned>(workers_.size());
+ }
 
  private:
  struct Task {

@@ -13,7 +13,7 @@ bool LeverBlockRenderer::render(net::minecraft::block::Block& block, int x, int 
  int blockMeta = ctx_.blockView->getBlockMeta(x, y, z);
  int facing = blockMeta & 7;
  bool isPowered = (blockMeta & 8) > 0;
- Tessellator& tessellator = *ctx_.tess;
+ Tessellator& tessellator = ctx_.tessellator();
  const bool hadTextureOverride = ctx_.textureOverride >= 0;
  if(!hadTextureOverride) {
   ctx_.textureOverride = net::minecraft::block::Block::BLOCKS[4]->textureId;

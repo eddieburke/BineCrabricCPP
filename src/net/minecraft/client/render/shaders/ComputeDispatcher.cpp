@@ -28,7 +28,7 @@ bool dispatch(PackInstance& pack,
   refreshTextureAliases(textures);
   bindSamplers(*program, textures, volumeTextures, maxTextureUnits(), pack.definition);
   const unsigned int nextImageUnit = bindColorImages(*program, colorImages, pack.definition, colorTargets);
-  PackResources::bind(pack, *program, nextImageUnit);
+   bindPackResources(pack, *program, nextImageUnit);
   const auto groups = workGroups(pass, width, height);
    const auto indirect = pack.definition.indirectDispatches.find(pass.name);
    const bool useIndirect = indirect != pack.definition.indirectDispatches.end() &&

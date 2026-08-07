@@ -7,7 +7,6 @@
 #include <mutex>
 #include <thread>
 #include "net/minecraft/block/BlockTypes.hpp"
-#include "net/minecraft/client/gui/screen/LoadingDisplay.hpp"
 #include "net/minecraft/mod/runtime/WorldRequiredMods.hpp"
 #include "net/minecraft/network/packet/WorldPackets.hpp"
 #include "net/minecraft/registry/Registry.hpp"
@@ -40,19 +39,6 @@ namespace {
 } // namespace
 namespace {
 using Clock = std::chrono::steady_clock;
-class WorldConversionProgress final : public client::gui::screen::LoadingDisplay {
- public:
- void progressStagePercentage(int percentage) override {
-  const auto now = std::chrono::system_clock::now();
-  if(now - lastLogTime_ >= std::chrono::seconds(1)) {
-   lastLogTime_ = now;
-   ServerLog::LOGGER.info("Converting... " + std::to_string(percentage) + "%");
-  }
- }
-
- private:
- std::chrono::system_clock::time_point lastLogTime_ = std::chrono::system_clock::now();
-};
 void warnIfLowMemory() {
 #ifdef _WIN32
  MEMORYSTATUSEX status{};
@@ -196,7 +182,6 @@ bool MinecraftServer::init() {
  registry::Registry::bootstrap();
  commandHandler_ = std::make_unique<command::ServerCommandHandler>(this);
  if(!launchConfig_.has_value() || launchConfig_->useConsoleThread) {
-  util::concurrent::ThreadCoordinator::instance().reserveDynamic(1);
   commandThread_ = std::jthread([this](const std::stop_token& stopToken) {
    util::concurrent::tl_domain = util::concurrent::Domain::Io;
    util::concurrent::setCurrentThreadName("server-console");
@@ -215,7 +200,6 @@ bool MinecraftServer::init() {
      queueCommands(line, *this);
     }
    }
-   util::concurrent::ThreadCoordinator::instance().releaseDynamic(1);
   });
  }
  ServerLog::init();
@@ -321,8 +305,14 @@ void MinecraftServer::loadWorld(const std::filesystem::path& storageRoot,
  RegionWorldStorageSource storageSource(storageRoot);
  if(storageSource.needsConversion(worldDir)) {
   ServerLog::LOGGER.info("Converting map!");
-  WorldConversionProgress conversionProgress;
-  storageSource.convert(worldDir, &conversionProgress);
+  auto lastLog = std::chrono::system_clock::now();
+  storageSource.convert(worldDir, [&lastLog](int pct) {
+   const auto now = std::chrono::system_clock::now();
+   if(now - lastLog >= std::chrono::seconds(1)) {
+    lastLog = now;
+    ServerLog::LOGGER.info("Converting... " + std::to_string(pct) + "%");
+   }
+  });
  }
  auto regionStorage = std::make_unique<RegionWorldStorage>(storageRoot, worldDir, true);
  worldStorage_ = std::move(regionStorage);
@@ -403,7 +393,7 @@ void MinecraftServer::saveWorlds() {
   if(world == nullptr) {
    continue;
   }
-  world->saveWithLoadingDisplay(true, nullptr);
+  world->saveWithProgress(true);
   world->forceSave();
  }
 }

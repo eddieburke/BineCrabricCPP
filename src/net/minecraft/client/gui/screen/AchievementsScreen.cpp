@@ -95,7 +95,7 @@ void AchievementsScreen::drawHorizontalLine(int x1, int x2, int y, int color) {
  }
  const std::uint32_t c = static_cast<std::uint32_t>(color);
  const render::RenderPassScope passScope(render::RenderType::gui());
- draw::coloredQuad(render::INSTANCE,
+ draw::coloredQuad(render::Tessellator::INSTANCE,
                    x1,
                    y,
                    x2 + 1,
@@ -109,7 +109,7 @@ void AchievementsScreen::drawVerticalLine(int x, int y1, int y2, int color) {
  }
  const std::uint32_t c = static_cast<std::uint32_t>(color);
  const render::RenderPassScope passScope(render::RenderType::gui());
- draw::coloredQuad(render::INSTANCE,
+ draw::coloredQuad(render::Tessellator::INSTANCE,
                    x,
                    y1,
                    x + 1,
@@ -139,104 +139,104 @@ void AchievementsScreen::renderIcons(int mouseX, int mouseY, float tickDelta) {
  const int achievementTexture = minecraft()->textureManager.getTextureId("/achievement/bg.png");
  const int frameX = (width_ - iconWidth_) / 2;
  const int frameY = (height_ - iconHeight_) / 2;
-  const int contentX = frameX + 16;
-  const int contentY = frameY + 17;
-  core::depthFunc(net::minecraft::client::gl::compare::Gequal);
+ const int contentX = frameX + 16;
+ const int contentY = frameY + 17;
+ core::depthFunc(net::minecraft::client::gl::compare::Gequal);
  {
   const core::ScopedDrawCameraState mapGuard;
   net::minecraft::util::math::Matrix4f mapPose = core::drawPose();
   mapPose.translate(0.0f, 0.0f, -200.0f);
   core::setDrawPose(mapPose);
   minecraft()->textureManager.bindTexture(terrainTexture);
- const int tileColumn = (scrollPixelX + 288) >> 4;
- const int tileRow = (scrollPixelY + 288) >> 4;
- const int offsetX = (scrollPixelX + 288) % 16;
- const int offsetY = (scrollPixelY + 288) % 16;
- net::minecraft::JavaRandom random;
- for(int row = 0; row * 16 - offsetY < 155; ++row) {
-  const float shade = std::max(0.1f, 0.6f - static_cast<float>(tileRow + row) / 25.0f * 0.3f);
-  core::setConstColor(shade, shade, shade, 1.0f);
-  const render::RenderPassScope passScope(render::RenderType::guiTextured());
-  const float* cc = core::constColor();
-  render::Tessellator& tess = render::INSTANCE;
-  tess.startQuads();
-  tess.color(cc[0], cc[1], cc[2], cc[3]);
-  for(int column = 0; column * 16 - offsetX < 224; ++column) {
-   const int texture = proceduralTerrainTexture(tileColumn + column, tileRow, row, random);
-   draw::appendAtlasQuad(tess,
-                         contentX + column * 16 - offsetX,
-                         contentY + row * 16 - offsetY,
-                         (texture % 16) << 4,
-                         (texture >> 4) << 4,
-                         16,
-                         16,
-                         kMapZ);
+  const int tileColumn = (scrollPixelX + 288) >> 4;
+  const int tileRow = (scrollPixelY + 288) >> 4;
+  const int offsetX = (scrollPixelX + 288) % 16;
+  const int offsetY = (scrollPixelY + 288) % 16;
+  net::minecraft::JavaRandom random;
+  for(int row = 0; row * 16 - offsetY < 155; ++row) {
+   const float shade = std::max(0.1f, 0.6f - static_cast<float>(tileRow + row) / 25.0f * 0.3f);
+   core::setConstColor(shade, shade, shade, 1.0f);
+   const render::RenderPassScope passScope(render::RenderType::guiTextured());
+   const float* cc = core::constColor();
+   render::Tessellator& tess = render::Tessellator::INSTANCE;
+   tess.startQuads();
+   tess.color(cc[0], cc[1], cc[2], cc[3]);
+   for(int column = 0; column * 16 - offsetX < 224; ++column) {
+    const int texture = proceduralTerrainTexture(tileColumn + column, tileRow, row, random);
+    draw::appendAtlasQuad(tess,
+                          contentX + column * 16 - offsetX,
+                          contentY + row * 16 - offsetY,
+                          (texture % 16) << 4,
+                          (texture >> 4) << 4,
+                          16,
+                          16,
+                          kMapZ);
+   }
+   tess.draw();
   }
-  tess.draw();
- }
   {
    for(const achievement::AchievementDef& achievement : achievement::Achievements::ALL) {
     if(achievement.parentIndex < 0) {
      continue;
     }
-   const int childX = achievement.column * 24 - scrollPixelX + 11 + contentX;
-   const int childY = achievement.row * 24 - scrollPixelY + 11 + contentY;
-   const achievement::AchievementDef* parent =
-       achievement::Achievements::getByStatId(achievement.parentStatId());
-   if(parent == nullptr) {
-    continue;
+    const int childX = achievement.column * 24 - scrollPixelX + 11 + contentX;
+    const int childY = achievement.row * 24 - scrollPixelY + 11 + contentY;
+    const achievement::AchievementDef* parent =
+        achievement::Achievements::getByStatId(achievement.parentStatId());
+    if(parent == nullptr) {
+     continue;
+    }
+    const int parentX = parent->column * 24 - scrollPixelX + 11 + contentX;
+    const int parentY = parent->row * 24 - scrollPixelY + 11 + contentY;
+    const bool unlocked = stats_->hasStat(achievement.statId());
+    const bool parentUnlocked = stats_->hasParentAchievement(achievement.statId());
+    const double pulse = std::sin(static_cast<double>(nowMillis() % 600) / 600.0 * 3.141592653589793 * 2.0);
+    const int pulseAlpha = pulse > 0.6 ? 255 : 130;
+    const int lineColor =
+        unlocked ? 0xFF6F6968 : (parentUnlocked ? (0xFF00FF00 | (pulseAlpha << 24)) : 0xFF000000);
+    drawHorizontalLine(childX, parentX, childY, lineColor);
+    drawVerticalLine(parentX, childY, parentY, lineColor);
    }
-   const int parentX = parent->column * 24 - scrollPixelX + 11 + contentX;
-   const int parentY = parent->row * 24 - scrollPixelY + 11 + contentY;
-   const bool unlocked = stats_->hasStat(achievement.statId());
-   const bool parentUnlocked = stats_->hasParentAchievement(achievement.statId());
-   const double pulse = std::sin(static_cast<double>(nowMillis() % 600) / 600.0 * 3.141592653589793 * 2.0);
-   const int pulseAlpha = pulse > 0.6 ? 255 : 130;
-   const int lineColor =
-       unlocked ? 0xFF6F6968 : (parentUnlocked ? (0xFF00FF00 | (pulseAlpha << 24)) : 0xFF000000);
-   drawHorizontalLine(childX, parentX, childY, lineColor);
-   drawVerticalLine(parentX, childY, parentY, lineColor);
   }
- }
   const achievement::AchievementDef* hovered = nullptr;
   render::item::ItemRenderer itemRenderer;
   {
    for(const achievement::AchievementDef& achievement : achievement::Achievements::ALL) {
-   const int iconX = achievement.column * 24 - scrollPixelX;
-   const int iconY = achievement.row * 24 - scrollPixelY;
-   if(iconX < -24 || iconY < -24 || iconX > 224 || iconY > 155) {
-    continue;
-   }
-   const bool unlocked = stats_->hasStat(achievement.statId());
-   const bool parentUnlocked = stats_->hasParentAchievement(achievement.statId());
-   float shade = 0.3f;
-   if(unlocked) {
-    shade = 1.0f;
-   } else if(parentUnlocked) {
-    const double pulse = std::sin(static_cast<double>(nowMillis() % 600) / 600.0 * 3.141592653589793 * 2.0);
-    shade = pulse < 0.6 ? 0.6f : 0.8f;
-   }
-   core::setConstColor(shade, shade, shade, 1.0f);
-   minecraft()->textureManager.bindTexture(achievementTexture);
-   const int drawX = contentX + iconX;
-   const int drawY = contentY + iconY;
-   {
-    const render::RenderPassScope passScope(render::RenderType::guiTextured());
-    const float* cc = core::constColor();
-    render::Tessellator& tess = render::INSTANCE;
-    tess.startQuads();
-    tess.color(cc[0], cc[1], cc[2], cc[3]);
-    if(achievement.challenge) {
-     draw::appendAtlasQuad(tess, drawX - 2, drawY - 2, 26, 202, 26, 26, kMapZ);
-    } else {
-     draw::appendAtlasQuad(tess, drawX - 2, drawY - 2, 0, 202, 26, 26, kMapZ);
+    const int iconX = achievement.column * 24 - scrollPixelX;
+    const int iconY = achievement.row * 24 - scrollPixelY;
+    if(iconX < -24 || iconY < -24 || iconX > 224 || iconY > 155) {
+     continue;
     }
-    tess.draw();
-   }
-   if(!parentUnlocked) {
-    core::setConstColor(0.1f, 0.1f, 0.1f, 1.0f);
-    itemRenderer.useCustomDisplayColor = false;
-   }
+    const bool unlocked = stats_->hasStat(achievement.statId());
+    const bool parentUnlocked = stats_->hasParentAchievement(achievement.statId());
+    float shade = 0.3f;
+    if(unlocked) {
+     shade = 1.0f;
+    } else if(parentUnlocked) {
+     const double pulse = std::sin(static_cast<double>(nowMillis() % 600) / 600.0 * 3.141592653589793 * 2.0);
+     shade = pulse < 0.6 ? 0.6f : 0.8f;
+    }
+    core::setConstColor(shade, shade, shade, 1.0f);
+    minecraft()->textureManager.bindTexture(achievementTexture);
+    const int drawX = contentX + iconX;
+    const int drawY = contentY + iconY;
+    {
+     const render::RenderPassScope passScope(render::RenderType::guiTextured());
+     const float* cc = core::constColor();
+     render::Tessellator& tess = render::Tessellator::INSTANCE;
+     tess.startQuads();
+     tess.color(cc[0], cc[1], cc[2], cc[3]);
+     if(achievement.challenge) {
+      draw::appendAtlasQuad(tess, drawX - 2, drawY - 2, 26, 202, 26, 26, kMapZ);
+     } else {
+      draw::appendAtlasQuad(tess, drawX - 2, drawY - 2, 0, 202, 26, 26, kMapZ);
+     }
+     tess.draw();
+    }
+    if(!parentUnlocked) {
+     core::setConstColor(0.1f, 0.1f, 0.1f, 1.0f);
+     itemRenderer.useCustomDisplayColor = false;
+    }
     {
      itemRenderer.renderGuiItem(*textRenderer(),
                                 minecraft()->textureManager,
@@ -244,90 +244,90 @@ void AchievementsScreen::renderIcons(int mouseX, int mouseY, float tickDelta) {
                                 drawX + 3,
                                 drawY + 3);
     }
-   if(!parentUnlocked) {
-    itemRenderer.useCustomDisplayColor = true;
-   }
-   core::setConstColor(1.0f, 1.0f, 1.0f, 1.0f);
-   if(mouseX >= contentX && mouseY >= contentY && mouseX < contentX + 224 && mouseY < contentY + 155 &&
-      mouseX >= drawX && mouseX <= drawX + 22 && mouseY >= drawY && mouseY <= drawY + 22) {
-    hovered = &achievement;
+    if(!parentUnlocked) {
+     itemRenderer.useCustomDisplayColor = true;
+    }
+    core::setConstColor(1.0f, 1.0f, 1.0f, 1.0f);
+    if(mouseX >= contentX && mouseY >= contentY && mouseX < contentX + 224 && mouseY < contentY + 155 &&
+       mouseX >= drawX && mouseX <= drawX + 22 && mouseY >= drawY && mouseY <= drawY + 22) {
+     hovered = &achievement;
+    }
    }
   }
- }
   {
    core::setConstColor(1.0f, 1.0f, 1.0f, 1.0f);
    minecraft()->textureManager.bindTexture(achievementTexture);
    {
     const render::RenderPassScope passScope(render::RenderType::guiTextured());
-   const float* cc = core::constColor();
-   render::Tessellator& tess = render::INSTANCE;
-   tess.startQuads();
-   tess.color(cc[0], cc[1], cc[2], cc[3]);
-   draw::appendAtlasQuad(tess, frameX, frameY, 0, 0, iconWidth_, iconHeight_, kMapZ);
-   tess.draw();
+    const float* cc = core::constColor();
+    render::Tessellator& tess = render::Tessellator::INSTANCE;
+    tess.startQuads();
+    tess.color(cc[0], cc[1], cc[2], cc[3]);
+    draw::appendAtlasQuad(tess, frameX, frameY, 0, 0, iconWidth_, iconHeight_, kMapZ);
+    tess.draw();
+   }
   }
- }
   {
    Screen::render(mouseX, mouseY, tickDelta);
    if(hovered != nullptr) {
-   const std::string title = achievement::Achievements::getTranslatedTitle(*hovered);
-   const std::string description = achievement::Achievements::getFormattedDescription(
-       *hovered, static_cast<int>(minecraft()->options.inventoryKey.code));
-   int tooltipX = mouseX + 12;
-   int tooltipY = mouseY - 4;
-   if(stats_->hasParentAchievement(hovered->statId())) {
-    const int width = std::max(textRenderer()->getWidth(title), 120);
-    int bodyHeight = textRenderer()->splitAndGetHeight(description, width);
-    if(stats_->hasStat(hovered->statId())) {
-     bodyHeight += 12;
+    const std::string title = achievement::Achievements::getTranslatedTitle(*hovered);
+    const std::string description = achievement::Achievements::getFormattedDescription(
+        *hovered, static_cast<int>(minecraft()->options.inventoryKey.code));
+    int tooltipX = mouseX + 12;
+    int tooltipY = mouseY - 4;
+    if(stats_->hasParentAchievement(hovered->statId())) {
+     const int width = std::max(textRenderer()->getWidth(title), 120);
+     int bodyHeight = textRenderer()->splitAndGetHeight(description, width);
+     if(stats_->hasStat(hovered->statId())) {
+      bodyHeight += 12;
+     }
+     {
+      const render::RenderPassScope passScope(render::RenderType::gui());
+      draw::verticalGradientQuad(render::Tessellator::INSTANCE,
+                                 tooltipX - 3,
+                                 tooltipY - 3,
+                                 tooltipX + width + 3,
+                                 tooltipY + bodyHeight + 15,
+                                 0,
+                                 0xC0,
+                                 0,
+                                 0xC0);
+     }
+     textRenderer()->drawSplit(description, tooltipX, tooltipY + 12, width, 0xFFA09FA0);
+     if(stats_->hasStat(hovered->statId())) {
+      textRenderer()->drawWithShadow(resource::language::I18n::getTranslation("achievement.taken"),
+                                     tooltipX,
+                                     tooltipY + bodyHeight + 4,
+                                     0xFF90F7DF);
+     }
+    } else {
+     const achievement::AchievementDef* parent =
+         achievement::Achievements::getByStatId(hovered->parentStatId());
+     const std::string parentTitle =
+         parent != nullptr ? achievement::Achievements::getTranslatedTitle(*parent) : "";
+     const std::string requirementText =
+         resource::language::I18n::getTranslation("achievement.requires", parentTitle);
+     const int width = std::max(textRenderer()->getWidth(title), 120);
+     const int bodyHeight = textRenderer()->splitAndGetHeight(requirementText, width);
+     {
+      const render::RenderPassScope passScope(render::RenderType::gui());
+      draw::verticalGradientQuad(render::Tessellator::INSTANCE,
+                                 tooltipX - 3,
+                                 tooltipY - 3,
+                                 tooltipX + width + 3,
+                                 tooltipY + bodyHeight + 15,
+                                 0,
+                                 0xC0,
+                                 0,
+                                 0xC0);
+     }
+     textRenderer()->drawSplit(requirementText, tooltipX, tooltipY + 12, width, 0xFF6F6E90);
     }
-    {
-     const render::RenderPassScope passScope(render::RenderType::gui());
-     draw::verticalGradientQuad(render::INSTANCE,
-                                tooltipX - 3,
-                                tooltipY - 3,
-                                tooltipX + width + 3,
-                                tooltipY + bodyHeight + 15,
-                                0,
-                                0xC0,
-                                0,
-                                0xC0);
-    }
-    textRenderer()->drawSplit(description, tooltipX, tooltipY + 12, width, 0xFFA09FA0);
-    if(stats_->hasStat(hovered->statId())) {
-     textRenderer()->drawWithShadow(resource::language::I18n::getTranslation("achievement.taken"),
-                                    tooltipX,
-                                    tooltipY + bodyHeight + 4,
-                                    0xFF90F7DF);
-    }
-   } else {
-    const achievement::AchievementDef* parent =
-        achievement::Achievements::getByStatId(hovered->parentStatId());
-    const std::string parentTitle =
-        parent != nullptr ? achievement::Achievements::getTranslatedTitle(*parent) : "";
-    const std::string requirementText =
-        resource::language::I18n::getTranslation("achievement.requires", parentTitle);
-    const int width = std::max(textRenderer()->getWidth(title), 120);
-    const int bodyHeight = textRenderer()->splitAndGetHeight(requirementText, width);
-    {
-     const render::RenderPassScope passScope(render::RenderType::gui());
-     draw::verticalGradientQuad(render::INSTANCE,
-                                tooltipX - 3,
-                                tooltipY - 3,
-                                tooltipX + width + 3,
-                                tooltipY + bodyHeight + 15,
-                                0,
-                                0xC0,
-                                0,
-                                0xC0);
-    }
-    textRenderer()->drawSplit(requirementText, tooltipX, tooltipY + 12, width, 0xFF6F6E90);
+    const int titleColor = stats_->hasParentAchievement(hovered->statId())
+                               ? (hovered->challenge ? 0xFFFFFF80 : 0xFFFFFFFF)
+                               : (hovered->challenge ? 0xFF808080 : 0xFF808080);
+    textRenderer()->drawWithShadow(title, tooltipX, tooltipY, titleColor);
    }
-   const int titleColor = stats_->hasParentAchievement(hovered->statId())
-                              ? (hovered->challenge ? 0xFFFFFF80 : 0xFFFFFFFF)
-                              : (hovered->challenge ? 0xFF808080 : 0xFF808080);
-   textRenderer()->drawWithShadow(title, tooltipX, tooltipY, titleColor);
-  }
    core::setLightingEnabled(false);
   }
  }
@@ -356,9 +356,9 @@ void AchievementsScreen::render(int mouseX, int mouseY, float tickDelta) {
  } else {
   scroll_ = 0;
  }
-  renderBackground();
-  renderIcons(mouseX, mouseY, tickDelta);
-  setTitle();
+ renderBackground();
+ renderIcons(mouseX, mouseY, tickDelta);
+ setTitle();
 }
 void AchievementsScreen::keyPressed(char character, int keyCode) {
  (void)character;

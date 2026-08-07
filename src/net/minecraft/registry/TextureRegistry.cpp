@@ -1,17 +1,9 @@
 #include "net/minecraft/registry/TextureRegistry.hpp"
 #include "net/minecraft/registry/TextureRegistryInternal.hpp"
+#include "net/minecraft/util/PathUtil.hpp"
 namespace net::minecraft::registry {
-namespace {
-std::string normalizePath(const std::string& path) {
- std::string out = path;
- while(!out.empty() && (out.front() == '/' || out.front() == '\\')) {
-  out.erase(out.begin());
- }
- return out;
-}
-} // namespace
 int TextureRegistry::getOrRegisterTexture(const std::string& path) {
- const std::string normalized = normalizePath(path);
+ const std::string normalized = util::normalizePath(path);
  if(normalized.empty()) {
   return 0;
  }

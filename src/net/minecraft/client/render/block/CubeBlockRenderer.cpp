@@ -217,130 +217,130 @@ bool CubeBlockRenderer::renderSmooth(
   tintEast = false;
   tintDown = false;
  }
-  if(ctx_.skipFaceCulling || ctx_.isSideVisible(block, x, y - 1, z, 0)) {
-   // Flat baseline: the face-adjacent light the AO slider blends toward.
-   ctx_.sampleFaceLight(x, y - 1, z);
-   const int fBlock = ctx_.faceBlockLight;
-   const int fSky = ctx_.faceSkyLight;
-   averageCornerLight(ctx_, x - 1, y - 1, z + 1, x - 1, y - 1, z, x, y - 1, z + 1, x, y - 1, z,
-                      !(bottomWestEdgeTranslucent || bottomSouthEdgeTranslucent), lb0, ls0);
-   averageCornerLight(ctx_, x - 1, y - 1, z - 1, x - 1, y - 1, z, x, y - 1, z - 1, x, y - 1, z,
-                      !(bottomWestEdgeTranslucent || bottomNorthEdgeTranslucent), lb1, ls1);
-   averageCornerLight(ctx_, x + 1, y - 1, z - 1, x + 1, y - 1, z, x, y - 1, z - 1, x, y - 1, z,
-                      !(bottomEastEdgeTranslucent || bottomNorthEdgeTranslucent), lb2, ls2);
-   averageCornerLight(ctx_, x + 1, y - 1, z + 1, x + 1, y - 1, z, x, y - 1, z + 1, x, y - 1, z,
-                      !(bottomEastEdgeTranslucent || bottomSouthEdgeTranslucent), lb3, ls3);
-   assignAoCorners(ctx_.opts, ctx_.faceState, 0, tintDown, red, green, blue, fBlock, fSky, lb0, ls0, lb1, ls1,
-                   lb2, ls2, lb3, ls3);
-   faces_.renderBottomFace(block, x, y, z, block.getTextureId(ctx_.blockView, x, y, z, 0));
-   drewAnyFace = true;
+ if(ctx_.skipFaceCulling || ctx_.isSideVisible(block, x, y - 1, z, 0)) {
+  // Flat baseline: the face-adjacent light the AO slider blends toward.
+  ctx_.sampleFaceLight(x, y - 1, z);
+  const int fBlock = ctx_.faceBlockLight;
+  const int fSky = ctx_.faceSkyLight;
+  averageCornerLight(ctx_, x - 1, y - 1, z + 1, x - 1, y - 1, z, x, y - 1, z + 1, x, y - 1, z,
+                     !(bottomWestEdgeTranslucent || bottomSouthEdgeTranslucent), lb0, ls0);
+  averageCornerLight(ctx_, x - 1, y - 1, z - 1, x - 1, y - 1, z, x, y - 1, z - 1, x, y - 1, z,
+                     !(bottomWestEdgeTranslucent || bottomNorthEdgeTranslucent), lb1, ls1);
+  averageCornerLight(ctx_, x + 1, y - 1, z - 1, x + 1, y - 1, z, x, y - 1, z - 1, x, y - 1, z,
+                     !(bottomEastEdgeTranslucent || bottomNorthEdgeTranslucent), lb2, ls2);
+  averageCornerLight(ctx_, x + 1, y - 1, z + 1, x + 1, y - 1, z, x, y - 1, z + 1, x, y - 1, z,
+                     !(bottomEastEdgeTranslucent || bottomSouthEdgeTranslucent), lb3, ls3);
+  assignAoCorners(ctx_.opts, ctx_.faceState, 0, tintDown, red, green, blue, fBlock, fSky, lb0, ls0, lb1, ls1,
+                  lb2, ls2, lb3, ls3);
+  faces_.renderBottomFace(block, x, y, z, block.getTextureId(ctx_.blockView, x, y, z, 0));
+  drewAnyFace = true;
+ }
+ if(ctx_.skipFaceCulling || ctx_.isSideVisible(block, x, y + 1, z, 1)) {
+  const bool self = ctx_.renderBounds.maxY != 1.0 && !block.material.isFluid();
+  ctx_.sampleFaceLight(x, self ? y : y + 1, z);
+  const int fBlock = ctx_.faceBlockLight;
+  const int fSky = ctx_.faceSkyLight;
+  averageCornerLight(ctx_, x + 1, y + 1, z + 1, x + 1, y + 1, z, x, y + 1, z + 1, x, y + 1, z,
+                     !(topEastEdgeTranslucent || topSouthEdgeTranslucent), lb0, ls0);
+  averageCornerLight(ctx_, x + 1, y + 1, z - 1, x + 1, y + 1, z, x, y + 1, z - 1, x, y + 1, z,
+                     !(topEastEdgeTranslucent || topNorthEdgeTranslucent), lb1, ls1);
+  averageCornerLight(ctx_, x - 1, y + 1, z - 1, x - 1, y + 1, z, x, y + 1, z - 1, x, y + 1, z,
+                     !(topWestEdgeTranslucent || topNorthEdgeTranslucent), lb2, ls2);
+  averageCornerLight(ctx_, x - 1, y + 1, z + 1, x - 1, y + 1, z, x, y + 1, z + 1, x, y + 1, z,
+                     !(topWestEdgeTranslucent || topSouthEdgeTranslucent), lb3, ls3);
+  assignAoCorners(ctx_.opts, ctx_.faceState, 1, tintUp, red, green, blue, fBlock, fSky, lb0, ls0, lb1, ls1,
+                  lb2, ls2, lb3, ls3);
+  faces_.renderTopFace(block, x, y, z, block.getTextureId(ctx_.blockView, x, y, z, 1));
+  drewAnyFace = true;
+ }
+ if(ctx_.skipFaceCulling || ctx_.isSideVisible(block, x, y, z - 1, 2)) {
+  ctx_.sampleFaceLight(x, y, ctx_.renderBounds.minZ > 0.0 ? z : z - 1);
+  const int fBlock = ctx_.faceBlockLight;
+  const int fSky = ctx_.faceSkyLight;
+  averageCornerLight(ctx_, x - 1, y + 1, z - 1, x - 1, y, z - 1, x, y + 1, z - 1, x, y, z - 1,
+                     !(northWestEdgeTranslucent || topNorthEdgeTranslucent), lb0, ls0);
+  averageCornerLight(ctx_, x + 1, y + 1, z - 1, x + 1, y, z - 1, x, y + 1, z - 1, x, y, z - 1,
+                     !(northEastEdgeTranslucent || topNorthEdgeTranslucent), lb1, ls1);
+  averageCornerLight(ctx_, x + 1, y - 1, z - 1, x + 1, y, z - 1, x, y - 1, z - 1, x, y, z - 1,
+                     !(northEastEdgeTranslucent || bottomNorthEdgeTranslucent), lb2, ls2);
+  averageCornerLight(ctx_, x - 1, y - 1, z - 1, x - 1, y, z - 1, x, y - 1, z - 1, x, y, z - 1,
+                     !(northWestEdgeTranslucent || bottomNorthEdgeTranslucent), lb3, ls3);
+  assignAoCorners(ctx_.opts, ctx_.faceState, 2, tintEast, red, green, blue, fBlock, fSky, lb0, ls0, lb1, ls1,
+                  lb2, ls2, lb3, ls3);
+  textureId = block.getTextureId(ctx_.blockView, x, y, z, 2);
+  faces_.renderEastFace(block, x, y, z, textureId);
+  if(grassSideTintActive(ctx_.opts) && textureId == 3 && ctx_.textureOverride < 0) {
+   multiplyAoVertexColors(ctx_.faceState, red, green, blue);
+   faces_.renderEastFace(block, x, y, z, 38);
   }
-  if(ctx_.skipFaceCulling || ctx_.isSideVisible(block, x, y + 1, z, 1)) {
-   const bool self = ctx_.renderBounds.maxY != 1.0 && !block.material.isFluid();
-   ctx_.sampleFaceLight(x, self ? y : y + 1, z);
-   const int fBlock = ctx_.faceBlockLight;
-   const int fSky = ctx_.faceSkyLight;
-   averageCornerLight(ctx_, x + 1, y + 1, z + 1, x + 1, y + 1, z, x, y + 1, z + 1, x, y + 1, z,
-                      !(topEastEdgeTranslucent || topSouthEdgeTranslucent), lb0, ls0);
-   averageCornerLight(ctx_, x + 1, y + 1, z - 1, x + 1, y + 1, z, x, y + 1, z - 1, x, y + 1, z,
-                      !(topEastEdgeTranslucent || topNorthEdgeTranslucent), lb1, ls1);
-   averageCornerLight(ctx_, x - 1, y + 1, z - 1, x - 1, y + 1, z, x, y + 1, z - 1, x, y + 1, z,
-                      !(topWestEdgeTranslucent || topNorthEdgeTranslucent), lb2, ls2);
-   averageCornerLight(ctx_, x - 1, y + 1, z + 1, x - 1, y + 1, z, x, y + 1, z + 1, x, y + 1, z,
-                      !(topWestEdgeTranslucent || topSouthEdgeTranslucent), lb3, ls3);
-   assignAoCorners(ctx_.opts, ctx_.faceState, 1, tintUp, red, green, blue, fBlock, fSky, lb0, ls0, lb1, ls1,
-                   lb2, ls2, lb3, ls3);
-   faces_.renderTopFace(block, x, y, z, block.getTextureId(ctx_.blockView, x, y, z, 1));
-   drewAnyFace = true;
+  drewAnyFace = true;
+ }
+ if(ctx_.skipFaceCulling || ctx_.isSideVisible(block, x, y, z + 1, 3)) {
+  ctx_.sampleFaceLight(x, y, ctx_.renderBounds.maxZ < 1.0 ? z : z + 1);
+  const int fBlock = ctx_.faceBlockLight;
+  const int fSky = ctx_.faceSkyLight;
+  averageCornerLight(ctx_, x - 1, y + 1, z + 1, x - 1, y, z + 1, x, y + 1, z + 1, x, y, z + 1,
+                     !(southWestEdgeTranslucent || topSouthEdgeTranslucent), lb0, ls0);
+  averageCornerLight(ctx_, x - 1, y - 1, z + 1, x - 1, y, z + 1, x, y - 1, z + 1, x, y, z + 1,
+                     !(southWestEdgeTranslucent || bottomSouthEdgeTranslucent), lb1, ls1);
+  averageCornerLight(ctx_, x + 1, y - 1, z + 1, x + 1, y, z + 1, x, y - 1, z + 1, x, y, z + 1,
+                     !(southEastEdgeTranslucent || bottomSouthEdgeTranslucent), lb2, ls2);
+  averageCornerLight(ctx_, x + 1, y + 1, z + 1, x + 1, y, z + 1, x, y + 1, z + 1, x, y, z + 1,
+                     !(southEastEdgeTranslucent || topSouthEdgeTranslucent), lb3, ls3);
+  assignAoCorners(ctx_.opts, ctx_.faceState, 3, tintWest, red, green, blue, fBlock, fSky, lb0, ls0, lb1, ls1,
+                  lb2, ls2, lb3, ls3);
+  textureId = block.getTextureId(ctx_.blockView, x, y, z, 3);
+  faces_.renderWestFace(block, x, y, z, textureId);
+  if(grassSideTintActive(ctx_.opts) && textureId == 3 && ctx_.textureOverride < 0) {
+   multiplyAoVertexColors(ctx_.faceState, red, green, blue);
+   faces_.renderWestFace(block, x, y, z, 38);
   }
-  if(ctx_.skipFaceCulling || ctx_.isSideVisible(block, x, y, z - 1, 2)) {
-   ctx_.sampleFaceLight(x, y, ctx_.renderBounds.minZ > 0.0 ? z : z - 1);
-   const int fBlock = ctx_.faceBlockLight;
-   const int fSky = ctx_.faceSkyLight;
-   averageCornerLight(ctx_, x - 1, y + 1, z - 1, x - 1, y, z - 1, x, y + 1, z - 1, x, y, z - 1,
-                      !(northWestEdgeTranslucent || topNorthEdgeTranslucent), lb0, ls0);
-   averageCornerLight(ctx_, x + 1, y + 1, z - 1, x + 1, y, z - 1, x, y + 1, z - 1, x, y, z - 1,
-                      !(northEastEdgeTranslucent || topNorthEdgeTranslucent), lb1, ls1);
-   averageCornerLight(ctx_, x + 1, y - 1, z - 1, x + 1, y, z - 1, x, y - 1, z - 1, x, y, z - 1,
-                      !(northEastEdgeTranslucent || bottomNorthEdgeTranslucent), lb2, ls2);
-   averageCornerLight(ctx_, x - 1, y - 1, z - 1, x - 1, y, z - 1, x, y - 1, z - 1, x, y, z - 1,
-                      !(northWestEdgeTranslucent || bottomNorthEdgeTranslucent), lb3, ls3);
-   assignAoCorners(ctx_.opts, ctx_.faceState, 2, tintEast, red, green, blue, fBlock, fSky, lb0, ls0, lb1, ls1,
-                   lb2, ls2, lb3, ls3);
-   textureId = block.getTextureId(ctx_.blockView, x, y, z, 2);
-   faces_.renderEastFace(block, x, y, z, textureId);
-   if(grassSideTintActive(ctx_.opts) && textureId == 3 && ctx_.textureOverride < 0) {
-    multiplyAoVertexColors(ctx_.faceState, red, green, blue);
-    faces_.renderEastFace(block, x, y, z, 38);
-   }
-   drewAnyFace = true;
+  drewAnyFace = true;
+ }
+ if(ctx_.skipFaceCulling || ctx_.isSideVisible(block, x - 1, y, z, 4)) {
+  ctx_.sampleFaceLight(ctx_.renderBounds.minX > 0.0 ? x : x - 1, y, z);
+  const int fBlock = ctx_.faceBlockLight;
+  const int fSky = ctx_.faceSkyLight;
+  averageCornerLight(ctx_, x - 1, y + 1, z + 1, x - 1, y, z + 1, x - 1, y + 1, z, x - 1, y, z,
+                     !(southWestEdgeTranslucent || topWestEdgeTranslucent), lb0, ls0);
+  averageCornerLight(ctx_, x - 1, y + 1, z - 1, x - 1, y, z - 1, x - 1, y + 1, z, x - 1, y, z,
+                     !(northWestEdgeTranslucent || topWestEdgeTranslucent), lb1, ls1);
+  averageCornerLight(ctx_, x - 1, y - 1, z - 1, x - 1, y, z - 1, x - 1, y - 1, z, x - 1, y, z,
+                     !(northWestEdgeTranslucent || bottomWestEdgeTranslucent), lb2, ls2);
+  averageCornerLight(ctx_, x - 1, y - 1, z + 1, x - 1, y, z + 1, x - 1, y - 1, z, x - 1, y, z,
+                     !(southWestEdgeTranslucent || bottomWestEdgeTranslucent), lb3, ls3);
+  assignAoCorners(ctx_.opts, ctx_.faceState, 4, tintNorth, red, green, blue, fBlock, fSky, lb0, ls0, lb1, ls1,
+                  lb2, ls2, lb3, ls3);
+  textureId = block.getTextureId(ctx_.blockView, x, y, z, 4);
+  faces_.renderNorthFace(block, x, y, z, textureId);
+  if(grassSideTintActive(ctx_.opts) && textureId == 3 && ctx_.textureOverride < 0) {
+   multiplyAoVertexColors(ctx_.faceState, red, green, blue);
+   faces_.renderNorthFace(block, x, y, z, 38);
   }
-  if(ctx_.skipFaceCulling || ctx_.isSideVisible(block, x, y, z + 1, 3)) {
-   ctx_.sampleFaceLight(x, y, ctx_.renderBounds.maxZ < 1.0 ? z : z + 1);
-   const int fBlock = ctx_.faceBlockLight;
-   const int fSky = ctx_.faceSkyLight;
-   averageCornerLight(ctx_, x - 1, y + 1, z + 1, x - 1, y, z + 1, x, y + 1, z + 1, x, y, z + 1,
-                      !(southWestEdgeTranslucent || topSouthEdgeTranslucent), lb0, ls0);
-   averageCornerLight(ctx_, x - 1, y - 1, z + 1, x - 1, y, z + 1, x, y - 1, z + 1, x, y, z + 1,
-                      !(southWestEdgeTranslucent || bottomSouthEdgeTranslucent), lb1, ls1);
-   averageCornerLight(ctx_, x + 1, y - 1, z + 1, x + 1, y, z + 1, x, y - 1, z + 1, x, y, z + 1,
-                      !(southEastEdgeTranslucent || bottomSouthEdgeTranslucent), lb2, ls2);
-   averageCornerLight(ctx_, x + 1, y + 1, z + 1, x + 1, y, z + 1, x, y + 1, z + 1, x, y, z + 1,
-                      !(southEastEdgeTranslucent || topSouthEdgeTranslucent), lb3, ls3);
-   assignAoCorners(ctx_.opts, ctx_.faceState, 3, tintWest, red, green, blue, fBlock, fSky, lb0, ls0, lb1, ls1,
-                   lb2, ls2, lb3, ls3);
-   textureId = block.getTextureId(ctx_.blockView, x, y, z, 3);
-   faces_.renderWestFace(block, x, y, z, textureId);
-   if(grassSideTintActive(ctx_.opts) && textureId == 3 && ctx_.textureOverride < 0) {
-    multiplyAoVertexColors(ctx_.faceState, red, green, blue);
-    faces_.renderWestFace(block, x, y, z, 38);
-   }
-   drewAnyFace = true;
+  drewAnyFace = true;
+ }
+ if(ctx_.skipFaceCulling || ctx_.isSideVisible(block, x + 1, y, z, 5)) {
+  ctx_.sampleFaceLight(ctx_.renderBounds.maxX < 1.0 ? x : x + 1, y, z);
+  const int fBlock = ctx_.faceBlockLight;
+  const int fSky = ctx_.faceSkyLight;
+  averageCornerLight(ctx_, x + 1, y - 1, z + 1, x + 1, y, z + 1, x + 1, y - 1, z, x + 1, y, z,
+                     !(bottomEastEdgeTranslucent || southEastEdgeTranslucent), lb0, ls0);
+  averageCornerLight(ctx_, x + 1, y - 1, z - 1, x + 1, y, z - 1, x + 1, y - 1, z, x + 1, y, z,
+                     !(bottomEastEdgeTranslucent || northEastEdgeTranslucent), lb1, ls1);
+  averageCornerLight(ctx_, x + 1, y + 1, z - 1, x + 1, y, z - 1, x + 1, y + 1, z, x + 1, y, z,
+                     !(topEastEdgeTranslucent || northEastEdgeTranslucent), lb2, ls2);
+  averageCornerLight(ctx_, x + 1, y + 1, z + 1, x + 1, y, z + 1, x + 1, y + 1, z, x + 1, y, z,
+                     !(topEastEdgeTranslucent || southEastEdgeTranslucent), lb3, ls3);
+  assignAoCorners(ctx_.opts, ctx_.faceState, 5, tintSouth, red, green, blue, fBlock, fSky, lb0, ls0, lb1, ls1,
+                  lb2, ls2, lb3, ls3);
+  textureId = block.getTextureId(ctx_.blockView, x, y, z, 5);
+  faces_.renderSouthFace(block, x, y, z, textureId);
+  if(grassSideTintActive(ctx_.opts) && textureId == 3 && ctx_.textureOverride < 0) {
+   multiplyAoVertexColors(ctx_.faceState, red, green, blue);
+   faces_.renderSouthFace(block, x, y, z, 38);
   }
-  if(ctx_.skipFaceCulling || ctx_.isSideVisible(block, x - 1, y, z, 4)) {
-   ctx_.sampleFaceLight(ctx_.renderBounds.minX > 0.0 ? x : x - 1, y, z);
-   const int fBlock = ctx_.faceBlockLight;
-   const int fSky = ctx_.faceSkyLight;
-   averageCornerLight(ctx_, x - 1, y + 1, z + 1, x - 1, y, z + 1, x - 1, y + 1, z, x - 1, y, z,
-                      !(southWestEdgeTranslucent || topWestEdgeTranslucent), lb0, ls0);
-   averageCornerLight(ctx_, x - 1, y + 1, z - 1, x - 1, y, z - 1, x - 1, y + 1, z, x - 1, y, z,
-                      !(northWestEdgeTranslucent || topWestEdgeTranslucent), lb1, ls1);
-   averageCornerLight(ctx_, x - 1, y - 1, z - 1, x - 1, y, z - 1, x - 1, y - 1, z, x - 1, y, z,
-                      !(northWestEdgeTranslucent || bottomWestEdgeTranslucent), lb2, ls2);
-   averageCornerLight(ctx_, x - 1, y - 1, z + 1, x - 1, y, z + 1, x - 1, y - 1, z, x - 1, y, z,
-                      !(southWestEdgeTranslucent || bottomWestEdgeTranslucent), lb3, ls3);
-   assignAoCorners(ctx_.opts, ctx_.faceState, 4, tintNorth, red, green, blue, fBlock, fSky, lb0, ls0, lb1, ls1,
-                   lb2, ls2, lb3, ls3);
-   textureId = block.getTextureId(ctx_.blockView, x, y, z, 4);
-   faces_.renderNorthFace(block, x, y, z, textureId);
-   if(grassSideTintActive(ctx_.opts) && textureId == 3 && ctx_.textureOverride < 0) {
-    multiplyAoVertexColors(ctx_.faceState, red, green, blue);
-    faces_.renderNorthFace(block, x, y, z, 38);
-   }
-   drewAnyFace = true;
-  }
-  if(ctx_.skipFaceCulling || ctx_.isSideVisible(block, x + 1, y, z, 5)) {
-   ctx_.sampleFaceLight(ctx_.renderBounds.maxX < 1.0 ? x : x + 1, y, z);
-   const int fBlock = ctx_.faceBlockLight;
-   const int fSky = ctx_.faceSkyLight;
-   averageCornerLight(ctx_, x + 1, y - 1, z + 1, x + 1, y, z + 1, x + 1, y - 1, z, x + 1, y, z,
-                      !(bottomEastEdgeTranslucent || southEastEdgeTranslucent), lb0, ls0);
-   averageCornerLight(ctx_, x + 1, y - 1, z - 1, x + 1, y, z - 1, x + 1, y - 1, z, x + 1, y, z,
-                      !(bottomEastEdgeTranslucent || northEastEdgeTranslucent), lb1, ls1);
-   averageCornerLight(ctx_, x + 1, y + 1, z - 1, x + 1, y, z - 1, x + 1, y + 1, z, x + 1, y, z,
-                      !(topEastEdgeTranslucent || northEastEdgeTranslucent), lb2, ls2);
-   averageCornerLight(ctx_, x + 1, y + 1, z + 1, x + 1, y, z + 1, x + 1, y + 1, z, x + 1, y, z,
-                      !(topEastEdgeTranslucent || southEastEdgeTranslucent), lb3, ls3);
-   assignAoCorners(ctx_.opts, ctx_.faceState, 5, tintSouth, red, green, blue, fBlock, fSky, lb0, ls0, lb1, ls1,
-                   lb2, ls2, lb3, ls3);
-   textureId = block.getTextureId(ctx_.blockView, x, y, z, 5);
-   faces_.renderSouthFace(block, x, y, z, textureId);
-   if(grassSideTintActive(ctx_.opts) && textureId == 3 && ctx_.textureOverride < 0) {
-    multiplyAoVertexColors(ctx_.faceState, red, green, blue);
-    faces_.renderSouthFace(block, x, y, z, 38);
-   }
-   drewAnyFace = true;
-  }
+  drewAnyFace = true;
+ }
  ctx_.faceState.useAo = false;
  return drewAnyFace;
 }
@@ -352,7 +352,7 @@ bool CubeBlockRenderer::renderFlat(
   return false;
  }
  ctx_.faceState.useAo = false;
- Tessellator& tessellator = *ctx_.tess;
+ Tessellator& tessellator = ctx_.tessellator();
  bool drewAnyFace = false;
  int textureId = 0;
  float downRed = red;
@@ -457,7 +457,7 @@ bool CubeBlockRenderer::renderCactus(net::minecraft::block::Block& block, int x,
 bool CubeBlockRenderer::renderCactus(
     net::minecraft::block::Block& block, int x, int y, int z, float red, float green, float blue) {
  ctx_.faceState.useAo = false;
- Tessellator& tessellator = *ctx_.tess;
+ Tessellator& tessellator = ctx_.tessellator();
  bool drewAnyFace = false;
  const float inset = 0.0625f;
  const auto savedBounds = ctx_.renderBounds;

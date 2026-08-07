@@ -7,6 +7,7 @@
 #include <optional>
 #include <string>
 #include <thread>
+#include <unordered_map>
 #include <utility>
 #include <vector>
 #include "net/minecraft/client/render/pipeline/Pipeline.hpp"
@@ -23,7 +24,7 @@ enum class ColorFormat;
 namespace shadowmap {
 struct ShadowTargets;
 }
-}
+} // namespace net::minecraft::client::render
 namespace net::minecraft {
 class World;
 }
@@ -32,47 +33,35 @@ class PackManager {
  public:
  PackManager(std::filesystem::path gameDirectory, option::GameOptions* options);
  ~PackManager();
-  void reload();
-  void poll();
-  void pollPrograms();
-  bool select(const std::string& key);
+ void reload();
+ void poll();
+ void advancePackActivation();
+ bool select(const std::string& key);
  void reloadWorldMeshes();
- [[nodiscard]] bool active() const noexcept {
-  return true;
+ [[nodiscard]] bool usingUserPack() const noexcept {
+  return activeIndex_ < packs_.size();
  }
-  [[nodiscard]] bool usingUserPack() const noexcept {
-   return activeIndex_ < packs_.size();
-  }
-  render::Pipeline& pipeline() noexcept {
-   return pipeline_;
-  }
-   bool setSetting(const std::string& key, std::string value);
-   bool setSettings(const std::vector<std::pair<std::string, std::string>>& values);
+ render::Pipeline& pipeline() noexcept {
+  return pipeline_;
+ }
+ bool setSetting(const std::string& key, std::string value);
+ bool setSettings(const std::vector<std::pair<std::string, std::string>>& values);
  [[nodiscard]] std::string settingValue(const std::string& key) const;
  [[nodiscard]] const std::vector<PackSummary>& available() const noexcept {
   return summaries_;
  }
- // Never null: falls back to vanillaPackDefinition() so callers read the directives the
- // same way with or without a pack, exactly like Iris' pipeline interface.
  [[nodiscard]] const PackDefinition& activeDefinition() const noexcept;
  [[nodiscard]] const PackDefinition& meshDefinition() const noexcept;
- // True only when a valid pack is loaded, for the few decisions that are genuinely
- // about the presence of a pack rather than about a directive's value.
  [[nodiscard]] bool hasActivePack() const noexcept;
- // Nullable on purpose: the pack selection UI distinguishes "nothing selected".
  [[nodiscard]] const PackDefinition* selectedDefinition() const noexcept;
  [[nodiscard]] bool hasDeferredPasses() const;
- [[nodiscard]] int shadowMapResolution() const;
- [[nodiscard]] int shadowColorBuffers() const;
- [[nodiscard]] std::vector<render::ColorFormat> sceneColorFormats() const;
  [[nodiscard]] bool ensureSceneTargets(int width, int height);
-  void bindScene();
-  void endScene();
-  [[nodiscard]] int sceneColorCount() const;
- [[nodiscard]] unsigned int sceneDepthTexture() const;
-  void clearScene(float fogR = 0.0f, float fogG = 0.0f, float fogB = 0.0f);
-  gl::ShaderProgram* worldProgram(const std::string& key);
-  class PipelinePhaseScope {
+ void bindScene();
+ void endScene();
+ [[nodiscard]] int sceneColorCount() const;
+ void clearScene(float fogR = 0.0f, float fogG = 0.0f, float fogB = 0.0f);
+ gl::ShaderProgram* worldProgram(const std::string& key);
+ class PipelinePhaseScope {
 public:
   PipelinePhaseScope(PackManager* manager, WorldPipelinePhase phase)
       : manager_(manager), previous_(manager != nullptr ? manager->pipeline().pipelinePhase()
@@ -93,36 +82,36 @@ private:
   PackManager* manager_ = nullptr;
   WorldPipelinePhase previous_ = WorldPipelinePhase::None;
  };
-  void prepareFrame(net::minecraft::World* world);
-  void setFrameUniforms(const PackUniformValues& frame);
-  bool renderBegin(int shadowDepthTextureId,
-                   int shadowOpaqueDepthTextureId,
-                   const int* shadowColorTextureIds,
-                   int shadowColorTextureCount,
-                   shadowmap::ShadowTargets* shadowTargets,
-                   const int* shadowColorAltTextureIds);
-  bool renderShadowComposite(int shadowDepthTextureId,
-                             int shadowOpaqueDepthTextureId,
-                             const int* shadowColorTextureIds,
-                             int shadowColorTextureCount,
-                             shadowmap::ShadowTargets* shadowTargets,
-                             const int* shadowColorAltTextureIds);
-  bool renderPreWorld(int shadowDepthTextureId,
-                      int shadowOpaqueDepthTextureId,
-                      const int* shadowColorTextureIds,
-                      int shadowColorTextureCount,
-                      shadowmap::ShadowTargets* shadowTargets,
-                      const int* shadowColorAltTextureIds);
-  bool renderDeferred(int shadowDepthTextureId,
-                      int shadowOpaqueDepthTextureId,
-                      const int* shadowColorTextureIds,
-                      int shadowColorTextureCount,
-                      const int* shadowColorAltTextureIds);
-  bool renderPostProcess(int shadowDepthTextureId,
-                         int shadowOpaqueDepthTextureId,
-                         const int* shadowColorTextureIds,
-                         int shadowColorTextureCount,
-                         const int* shadowColorAltTextureIds);
+ void prepareFrame(net::minecraft::World* world);
+ void setFrameUniforms(const PackUniformValues& frame);
+ bool renderBegin(int shadowDepthTextureId,
+                  int shadowOpaqueDepthTextureId,
+                  const int* shadowColorTextureIds,
+                  int shadowColorTextureCount,
+                  shadowmap::ShadowTargets* shadowTargets,
+                  const int* shadowColorAltTextureIds);
+ bool renderShadowComposite(int shadowDepthTextureId,
+                            int shadowOpaqueDepthTextureId,
+                            const int* shadowColorTextureIds,
+                            int shadowColorTextureCount,
+                            shadowmap::ShadowTargets* shadowTargets,
+                            const int* shadowColorAltTextureIds);
+ bool renderPreWorld(int shadowDepthTextureId,
+                     int shadowOpaqueDepthTextureId,
+                     const int* shadowColorTextureIds,
+                     int shadowColorTextureCount,
+                     shadowmap::ShadowTargets* shadowTargets,
+                     const int* shadowColorAltTextureIds);
+ bool renderDeferred(int shadowDepthTextureId,
+                     int shadowOpaqueDepthTextureId,
+                     const int* shadowColorTextureIds,
+                     int shadowColorTextureCount,
+                     const int* shadowColorAltTextureIds);
+ bool renderPostProcess(int shadowDepthTextureId,
+                        int shadowOpaqueDepthTextureId,
+                        const int* shadowColorTextureIds,
+                        int shadowColorTextureCount,
+                        const int* shadowColorAltTextureIds);
  void sampleCenterDepth();
  void captureOpaqueDepth();
  void captureHandDepth();
@@ -134,22 +123,22 @@ private:
  [[nodiscard]] PackInstance* renderPack() noexcept;
  [[nodiscard]] PackInstance* selectedPack() noexcept;
  [[nodiscard]] const PackInstance* selectedPack() const noexcept;
-  void preparePendingPack(net::minecraft::World* world);
-  [[nodiscard]] bool packReady(PackInstance& pack);
-  void prepareStagedPack(net::minecraft::World* world);
-  void commitStagedPack();
-  void discardStagedPack();
-  [[nodiscard]] PackInstance* settingsTarget();
- [[nodiscard]] std::unique_ptr<PackInstance> clonePack(const PackInstance& source);
+ void preparePendingPack(net::minecraft::World* world);
+ [[nodiscard]] bool packReady(PackInstance& pack);
+ void prepareStagedPack(net::minecraft::World* world);
+ void commitStagedPack();
+ void discardStagedPack();
+ [[nodiscard]] std::unique_ptr<PackInstance> clonePack(const PackInstance& source,
+                                                       const std::unordered_map<std::string, std::string>* settings = nullptr);
  void activatePack(std::size_t index);
  void cancelPendingPack();
  [[nodiscard]] std::unique_ptr<PackInstance> loadPack(const std::filesystem::path& path,
                                                       bool directory);
  void initializePackRuntime(PackInstance& pack);
-  void refreshSummaries();
-  void warmBasePrograms();
-  void prewarmPacks();
-  void startDirectoryWatcher();
+ void refreshSummaries();
+ void warmBasePrograms();
+ void prewarmPacks();
+ void startDirectoryWatcher();
  void stopDirectoryWatcher();
  void directoryWatchLoop(const std::stop_token& stop);
  std::filesystem::path gameDirectory_;

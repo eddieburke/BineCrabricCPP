@@ -204,3 +204,14 @@ Applies to **every** agent (main agent and subagents), for both small routine ed
 
 1. **Never commit with compilation errors.** Do not `git commit` or push any change until the build passes cleanly via `build-omega.ps1` — no compile errors, and tests pass when `-RunTests` applies. Code that fails to compile (or is unverified) is a hard block on committing.
 2. **If the build is locked, wait — do not resolve it yourself.** If `.build-omega.lock` exists, `build-omega.ps1` reports another build in progress, or the build directory is held by another process, stop and wait. Do **not** kill processes, delete the lock file, or force-edit the build directory to break the lock. The main agent will eventually address the locked build. Only the main agent (or, in Multitask Mode, the compile fixer stage) may touch a locked build.
+
+---
+
+## 14. Collapse indirection — delete wrappers, don't layer over them
+
+When a type exists only to wrap another — a singleton with `getInstance()` plus a wrapper class whose whole body is a pointer to that singleton, a forwarding method that just calls through, a file holding one struct nobody else uses — **delete the wrapper and inline what it wrapped**. Do **not** add a cleaner layer on top of the mess; no extra abstraction, no facade over the facade.
+
+- **Default bar:** remove the useless file/type entirely.
+- **Escape clause:** if collapsing it would add a shitload more code than keeping it, leave it as-is — keep the wrapper only when the cost of removal clearly exceeds the mess it makes.
+- Applies to: overabstractions (singleton + pass-through wrapper), compatibility shimming (adapters that only forward), leftover immediate-mode or one-off glue, dead intermediate types.
+- Worked pattern: a `Foo::getInstance()` global plus a separate `FooBar` class holding a pointer to that singleton and a few scratch fields, where callers had to `compute()` the global in one place and `prepare()` the wrapper later under a duplicated guard. Collapse to one value type (compute / prepare / exposed operation) owned as a local: one type and one global deleted, scratch state demoted from members to locals.

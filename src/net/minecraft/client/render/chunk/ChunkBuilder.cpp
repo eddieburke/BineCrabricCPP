@@ -1,8 +1,10 @@
 #include "net/minecraft/client/render/chunk/ChunkBuilder.hpp"
 #include <algorithm>
 #include <array>
+#include <cstdio>
 #include <unordered_set>
 #include "net/minecraft/block/Block.hpp"
+#include "net/minecraft/client/ClientLog.hpp"
 #include "net/minecraft/client/Minecraft.hpp"
 #include "net/minecraft/client/render/GameRenderer.hpp"
 #include "net/minecraft/client/render/RenderCore.hpp"
@@ -12,6 +14,7 @@
 #include "net/minecraft/client/render/block/entity/BlockEntityRenderDispatcher.hpp"
 #include "net/minecraft/client/render/chunk/ChunkMeshJob.hpp"
 #include "net/minecraft/client/render/chunk/RegionSnapshot.hpp"
+#include "net/minecraft/client/render/QuadIndexBuffer.hpp"
 #include "net/minecraft/client/render/pipeline/Manager.hpp"
 #include "net/minecraft/util/concurrent/ThreadNames.hpp"
 #include "net/minecraft/world/World.hpp"
@@ -133,15 +136,28 @@ std::uint64_t computeVisibilityBits(const RegionSnapshot& snapshot, int minX, in
 }
 } // namespace
 std::shared_ptr<ChunkMeshJob> ChunkMeshJob::capture(ChunkBuilder& owner,
-                                                    client::option::RenderSettings options,
-                                                    bool fancyGraphics) {
+                                                    client::option::RenderSettings options) {
+ // Every bail-out here is permanent from the scheduler's point of view: the
+ // section stays dirty and is retried forever, so a silent nullptr wedges all
+ // terrain meshing with no symptom but an empty world. Name the reason.
+ const auto refuse = [&owner](const char* reason) -> std::shared_ptr<ChunkMeshJob> {
+  static int reported = 0;
+  if(reported < 8) {
+   ++reported;
+   char line[192];
+   std::snprintf(line, sizeof(line), "[mesh-capture] section (%d,%d,%d) cannot be captured: %s", owner.x,
+                 owner.y, owner.z, reason);
+   ClientLog::LOGGER.log(::net::minecraft::util::logging::LogLevel::Warning, std::string(line));
+  }
+  return nullptr;
+ };
  net::minecraft::World* world = owner.world;
  if(world == nullptr) {
-  return nullptr;
+  return refuse("builder has no world");
  }
  net::minecraft::ChunkSource* source = world->getChunkSource();
  if(source == nullptr) {
-  return nullptr;
+  return refuse("world has no chunk source");
  }
  const int minBlockX = owner.x - 1;
  const int minBlockZ = owner.z - 1;
@@ -157,14 +173,14 @@ std::shared_ptr<ChunkMeshJob> ChunkMeshJob::capture(ChunkBuilder& owner,
  for(int chunkX = minChunkX; chunkX <= maxChunkX; ++chunkX) {
   for(int chunkZ = minChunkZ; chunkZ <= maxChunkZ; ++chunkZ) {
    if(owner.world == nullptr) {
-    return nullptr;
+    return refuse("world went away mid-capture");
    }
    if(!source->isChunkLoaded(chunkX, chunkZ)) {
     continue;
    }
    Chunk& chunk = source->getChunk(chunkX, chunkZ);
    if(!chunk.tryAcquireRenderPin()) {
-    return nullptr;
+    return refuse("neighbour chunk is pinned");
    }
    sourceChunks.push_back(RegionSnapshot::SourceChunk{chunkX, chunkZ, &chunk});
   }
@@ -188,7 +204,6 @@ std::shared_ptr<ChunkMeshJob> ChunkMeshJob::capture(ChunkBuilder& owner,
  }
  auto job = std::shared_ptr<ChunkMeshJob>(new ChunkMeshJob(owner,
                                                            options,
-                                                           fancyGraphics,
                                                            std::move(sourceChunks),
                                                            owner.world->ambientDarkness,
                                                            lightLevelToLuminance,
@@ -196,26 +211,23 @@ std::shared_ptr<ChunkMeshJob> ChunkMeshJob::capture(ChunkBuilder& owner,
  if(auto* minecraft = net::minecraft::client::Minecraft::INSTANCE;
     minecraft != nullptr && minecraft->gameRenderer != nullptr &&
     minecraft->gameRenderer->shaderPacks() != nullptr) {
-   job->blockRenderLayers = minecraft->gameRenderer->packDefinition().blockRenderLayers;
-  }
-   job->alphaTestRef = net::minecraft::client::render::core::alphaTestRef();
-  pinGuard.disarm();
-  return job;
+  job->blockRenderLayers = minecraft->gameRenderer->packDefinition().blockRenderLayers;
+ }
+ pinGuard.disarm();
+ return job;
 }
 ChunkMeshJob::ChunkMeshJob(ChunkBuilder& owner,
                            client::option::RenderSettings options,
-                           bool fancyGraphicsIn,
                            std::vector<RegionSnapshot::SourceChunk> sourceChunks,
                            int ambientDarkness,
                            const std::array<float, 16>& lightLevelToLuminance,
                            std::unique_ptr<net::minecraft::BiomeSource> biomeSource)
-     : builder(&owner),
-       version(owner.version),
-       x(owner.x),
-       y(owner.y),
-       z(owner.z),
-       opts(options),
-      fancyGraphics(fancyGraphicsIn),
+    : builder(owner.weak_from_this()),
+      version(owner.version),
+      x(owner.x),
+      y(owner.y),
+      z(owner.z),
+      opts(options),
       sourceChunks_(std::move(sourceChunks)),
       ambientDarkness_(ambientDarkness),
       lightLevelToLuminance_(lightLevelToLuminance),
@@ -223,14 +235,16 @@ ChunkMeshJob::ChunkMeshJob(ChunkBuilder& owner,
 }
 ChunkMeshJob::~ChunkMeshJob() {
  releasePins();
- if(builder != nullptr) {
+ // An evicted section is already gone; lock() simply fails and there is no
+ // flag left to clear.
+ if(const std::shared_ptr<ChunkBuilder> owner = builder.lock()) {
 #ifndef NDEBUG
-  // R3: the last shared_ptr<ChunkMeshJob> dies on the main GL thread (cancelAll/
-  // drops stay main-thread-only, WI-4); a worker dropping it would strand the
-  // in-flight flag. The marker is latched by GLCore::init() at display setup.
+  // The flag itself is main-thread state, so the last shared_ptr<ChunkMeshJob>
+  // must still die on the main GL thread (cancelAll/drops stay main-thread-only,
+  // WI-4). The marker is latched by GLCore::init() at display setup.
   net::minecraft::util::concurrent::assertOnMainThread();
 #endif
-  builder->meshJobInFlight = false;
+  owner->meshJobInFlight = false;
  }
 }
 void ChunkMeshJob::captureSnapshot() {
@@ -241,12 +255,12 @@ void ChunkMeshJob::captureSnapshot() {
                                              ambientDarkness_,
                                              lightLevelToLuminance_,
                                              std::move(biomeSource_),
-                                              x - 1,
-                                              y - 1,
-                                              z - 1,
-                                              x + kSectionBlocks + 1,
-                                              y + kSectionBlocks,
-                                              z + kSectionBlocks + 1);
+                                             x - 1,
+                                             y - 1,
+                                             z - 1,
+                                             x + kSectionBlocks + 1,
+                                             y + kSectionBlocks,
+                                             z + kSectionBlocks + 1);
  releasePins();
 }
 void ChunkMeshJob::releasePins() noexcept {
@@ -287,9 +301,8 @@ void ChunkBuilder::buildMesh(ChunkMeshJob& job) {
  job.result.visibilityBits = computeVisibilityBits(snapshot, minX, minY, minZ);
  Tessellator tessellator;
  tessellator.setCaptureOnly(true);
- block::BlockRenderManager blockRenderManager(&snapshot, job.opts);
- blockRenderManager.ctx.tess = &tessellator;
- ChunkMeshResult& result = job.result;
+  block::BlockRenderManager blockRenderManager(tessellator, &snapshot, job.opts);
+  ChunkMeshResult& result = job.result;
  for(int layer = 0; layer < terrain_layer::Count; ++layer) {
   bool hasOtherLayer = false;
   bool beganCompile = false;
@@ -339,6 +352,9 @@ void ChunkBuilder::buildMesh(ChunkMeshJob& job) {
      if(!beganCompile) {
       beganCompile = true;
       tessellator.startQuads();
+      // Store vertices section-local: the shader adds chunkOffset
+      // (= chunkX - camera) at draw time to reach camera space. No region
+      // wrapper, no bake loop on the main thread.
       tessellator.translate(static_cast<double>(-job.x),
                             static_cast<double>(-job.y),
                             static_cast<double>(-job.z));
@@ -368,27 +384,32 @@ void ChunkBuilder::buildMesh(ChunkMeshJob& job) {
 }
 void ChunkBuilder::uploadMesh(ChunkMeshJob& job) {
  ++chunkUpdates;
+ constexpr unsigned kArrayBuffer = 0x8892;
+ constexpr unsigned kDynamicDraw = 0x88E8;
+ constexpr int kStride = static_cast<int>(sizeof(TessellatorVertex));
  for(int layer = 0; layer < terrain_layer::Count; ++layer) {
   const TessellatorMesh& mesh = job.result.layers[static_cast<std::size_t>(layer)];
   renderLayerEmpty[static_cast<std::size_t>(layer)] = job.result.layerEmpty[static_cast<std::size_t>(layer)];
-  ChunkRegionBuffer& buffer = region_->layers[static_cast<std::size_t>(layer)];
-  ChunkRegionBuffer::Slot& slot = regionSlots_[static_cast<std::size_t>(layer)];
+  LayerVbo& vbo = layerVbos_[static_cast<std::size_t>(layer)];
   if(renderLayerEmpty[static_cast<std::size_t>(layer)] || mesh.empty()) {
-   buffer.release(slot);
+   if(vbo.valid()) {
+    gl::GLCore::deleteBuffers(1, &vbo.handle);
+    vbo = {};
+   }
    continue;
   }
-  // Vertices arrive section-local (buildMesh translated by -job.x/y/z); store
-  // them region-local so every section of the region shares one chunkOffset at
-  // draw time (chunkOffset = regionOrigin - cameraPosition).
-  buffer.upload(slot,
-                mesh.vertices.data(),
-                static_cast<int>(mesh.vertices.size()),
-                mesh.hasTexture,
-                mesh.hasColor,
-                mesh.hasNormals,
-                static_cast<float>(x - regionOriginX_),
-                static_cast<float>(y - regionOriginY_),
-                static_cast<float>(z - regionOriginZ_));
+  if(!vbo.valid()) {
+   gl::GLCore::genBuffers(1, &vbo.handle);
+  }
+  gl::GLCore::bindBuffer(kArrayBuffer, vbo.handle);
+  const auto byteCount = static_cast<std::ptrdiff_t>(mesh.vertices.size() * static_cast<std::size_t>(kStride));
+  if(vbo.handle != 0 && gl::GLCore::bufferData != nullptr) {
+   // Orphan the old buffer each upload — simpler than sizing and the
+   // section mesh is small enough that re-uploading is cheap.
+   gl::GLCore::bufferData(kArrayBuffer, byteCount, mesh.vertices.data(), kDynamicDraw);
+  }
+  vbo.vertexCount = static_cast<int>(mesh.vertices.size());
+  gl::GLCore::bindBuffer(kArrayBuffer, 0);
  }
  // Resolve block-entity positions against the live world and apply the same
  // joined/removed diff the old synchronous rebuild kept.
@@ -422,7 +443,7 @@ void ChunkBuilder::uploadMesh(ChunkMeshJob& job) {
   }
  }
  hasSkyLight = job.result.hasSkyLight;
- visBits = job.result.visibilityBits;
+ occlusion.visBits = job.result.visibilityBits;
  freeModMeshGpuBuffers();
  modLayerMeshes_ = std::move(job.result.modLayers);
  for(int layer = 0; layer < terrain_layer::Count; ++layer) {
@@ -431,5 +452,42 @@ void ChunkBuilder::uploadMesh(ChunkMeshJob& job) {
   }
  }
  built = true;
+}
+void ChunkBuilder::drawLayer(int layer) const {
+ const LayerVbo& vbo = layerVbos_[static_cast<std::size_t>(layer)];
+ if(!vbo.valid() || renderLayerEmpty[static_cast<std::size_t>(layer)]) {
+  return;
+ }
+ if(!quad_index::ensure(static_cast<std::size_t>(vbo.vertexCount))) {
+  return;
+ }
+ constexpr unsigned kArrayBuffer = 0x8892;
+ constexpr int kStride = static_cast<int>(sizeof(TessellatorVertex));
+ render::core::RenderPass pass;
+ pass.modelView = render::core::drawModelView();
+ pass.projection = render::core::drawProjection();
+ pass.fog = render::core::fog();
+ // Section-local vertices: this is what carries the section's world position
+ // into the shader. WorldRenderer published it via setPendingTerrainDraw.
+ render::core::applyPendingTerrain(pass);
+ pass.buffer = vbo.handle;
+ pass.vertexCount = static_cast<std::size_t>(vbo.vertexCount);
+ pass.stride = kStride;
+ pass.hasTexture = true;
+ pass.hasColor = true;
+ pass.hasNormals = true;
+ const int indexCount = (vbo.vertexCount / 4) * 6;
+ render::core::submitIndexedQuads(pass, quad_index::handle(), indexCount);
+ gl::GLCore::bindBuffer(kArrayBuffer, 0);
+ ++frameDrawCalls;
+}
+void ChunkBuilder::freeGpuBuffers() noexcept {
+ for(int layer = 0; layer < terrain_layer::Count; ++layer) {
+  if(layerVbos_[static_cast<std::size_t>(layer)].valid()) {
+   gl::GLCore::deleteBuffers(1, &layerVbos_[static_cast<std::size_t>(layer)].handle);
+   layerVbos_[static_cast<std::size_t>(layer)] = {};
+  }
+ }
+ freeModMeshGpuBuffers();
 }
 } // namespace net::minecraft::client::render::chunk

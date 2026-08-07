@@ -73,15 +73,7 @@ bool ChunkCache::retireFromLighting(Chunk* chunk) {
  // behind a full completed-job channel the main thread would have to drain), the
  // spin would hang the caller forever. On timeout, cancel the eviction marker so
  // the chunk stays usable and the caller retries the eviction later.
- constexpr auto kEvictionTimeout = std::chrono::milliseconds(10);
- const auto deadline = std::chrono::steady_clock::now() + kEvictionTimeout;
- while(!chunk->beginRenderEviction()) {
-  if(std::chrono::steady_clock::now() >= deadline) {
-   chunk->cancelRenderEviction();
-   return false;
-  }
-  std::this_thread::sleep_for(std::chrono::microseconds(200));
- }
+ // Server has no render pins — nothing to drain before eviction.
  return true;
 }
 void ChunkCache::unloadChunk(int chunkX, int chunkZ) {
@@ -199,10 +191,7 @@ Chunk& ChunkCache::adoptChunk(int chunkX, int chunkZ, std::unique_ptr<Chunk> own
  chunksByPos_[pos] = chunk;
  chunks_.push_back(chunk);
  if(chunk != &empty_) {
-  {
-   const ChunkRenderWriteScope guard(*chunk);
-   chunk->populateBlockLight();
-  }
+  chunk->populateBlockLight();
   chunk->load();
  }
  if(generator_ != nullptr) {
@@ -256,22 +245,23 @@ void ChunkCache::requestChunkAsync(int chunkX, int chunkZ, int priority) {
  pendingLoads_.emplace(pos, pending);
  pendingLoadTasks_.fetch_add(1, std::memory_order_acq_rel);
  net::minecraft::util::concurrent::ThreadCoordinator::instance().pool(
-     net::minecraft::util::concurrent::Domain::Compute).submit(
-     [this, pending] {
-      if(pending->cancelledGeneration.load(std::memory_order_acquire) != pending->generation) {
-       try {
-        pending->chunk = produceChunk(pending->chunkX, pending->chunkZ);
-       } catch(...) {
-        pending->chunk.reset();
-       }
-      }
-      pending->done.store(true, std::memory_order_release);
-      if(pendingLoadTasks_.fetch_sub(1, std::memory_order_acq_rel) == 1) {
-       const std::lock_guard lock(loadCompleteMutex_);
-       loadCompleteCv_.notify_all();
-      }
-     },
-     priority);
+                                                                    net::minecraft::util::concurrent::Domain::Compute)
+     .submit(
+         [this, pending] {
+          if(pending->cancelledGeneration.load(std::memory_order_acquire) != pending->generation) {
+           try {
+            pending->chunk = produceChunk(pending->chunkX, pending->chunkZ);
+           } catch(...) {
+            pending->chunk.reset();
+           }
+          }
+          pending->done.store(true, std::memory_order_release);
+          if(pendingLoadTasks_.fetch_sub(1, std::memory_order_acq_rel) == 1) {
+           const std::lock_guard lock(loadCompleteMutex_);
+           loadCompleteCv_.notify_all();
+          }
+         },
+         priority);
 }
 void ChunkCache::integrateFinishedLoads(int budget, std::int64_t timeBudgetNs) {
  const auto start = std::chrono::steady_clock::now();
@@ -426,7 +416,6 @@ void ChunkCache::saveChunk(Chunk& chunk) {
  }
  try {
   chunk.lastSaveTime = static_cast<long long>(world_->getTime());
-  const ChunkRenderWriteScope guard(chunk);
   if(storage_->supportsAsyncWrites()) {
    world_->checkSessionLock();
    AlphaChunkStorage::ChunkSnapshot snapshot = AlphaChunkStorage::takeSnapshot(chunk, world_);
@@ -451,13 +440,12 @@ void ChunkCache::decorate(ChunkSource* source, int chunkX, int chunkZ) {
   // in produceChunk for the whole decoration pass -- and adoptChunk can decorate
   // up to four columns per adopted chunk, up to 32 chunks per publish, so terrain
   // generation was effectively serialized behind main-thread decoration.
-  const ChunkRenderWriteScope guard(chunk);
   generator_->decorate(source, chunkX, chunkZ);
   chunk.markDirty();
  }
 }
-bool ChunkCache::save(bool saveEntityData, client::gui::screen::LoadingDisplay* display) {
- (void)display;
+bool ChunkCache::save(bool saveEntityData, SaveProgressCallback progress) {
+ (void)progress;
  int saved = 0;
  constexpr int kAutosaveBudget = 8;
  for(Chunk* chunk : chunks_) {
@@ -576,22 +564,22 @@ void ChunkCache::pumpChunkPublish() {
  // publish to a few ms so a backlog of ready chunks cannot turn one frame into
  // a multi-second hitch. The count cap still bounds the burst when adoption is
  // cheap, and tick() keeps streaming server-side chunks at its own rate.
-  const auto& frame = net::minecraft::util::concurrent::FrameBudget::frameDeadline();
-  std::int64_t budget = 16'000'000;
-  if(frame.active()) {
-   if(frame.expired()) {
-    // The shared frame deadline is already in the past (this frame ran over
-    // budget). Clamping to 0 here would throttle adoption to exactly one chunk
-    // per frame while prefetchChunksNear keeps queueing up to 16/tick, so the
-    // world stream crawls and the renderer's section counters climb forever.
-    // Fall back to a fresh local slice so the backlog keeps draining at a sane
-    // rate during overloaded frames.
-    budget = 4'000'000;
-   } else {
-    budget = frame.remaining().count();
-   }
+ const auto& frame = net::minecraft::util::concurrent::FrameBudget::frameDeadline();
+ std::int64_t budget = 16'000'000;
+ if(frame.active()) {
+  if(frame.expired()) {
+   // The shared frame deadline is already in the past (this frame ran over
+   // budget). Clamping to 0 here would throttle adoption to exactly one chunk
+   // per frame while prefetchChunksNear keeps queueing up to 16/tick, so the
+   // world stream crawls and the renderer's section counters climb forever.
+   // Fall back to a fresh local slice so the backlog keeps draining at a sane
+   // rate during overloaded frames.
+   budget = 4'000'000;
+  } else {
+   budget = frame.remaining().count();
   }
-  integrateFinishedLoads(32, budget);
+ }
+ integrateFinishedLoads(32, budget);
  if(world_ != nullptr && !world_->isSavingDisabled()) {
   drainChunksToUnload(100);
  }

@@ -21,7 +21,6 @@ struct AtmosphereContext {
  net::minecraft::World* world;
  net::minecraft::client::texture::TextureManager* textureManager;
  net::minecraft::entity::Entity* camera;
- const net::minecraft::entity::LivingEntity* livingCamera;
  const net::minecraft::client::option::RenderSettings& settings;
  int atmosphereTicks;
 };

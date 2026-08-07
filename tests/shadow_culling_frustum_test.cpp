@@ -35,7 +35,7 @@ ShadowFrustumParams advancedParams() {
  ShadowFrustumParams params;
  params.cullState = ShadowCullState::Advanced;
  params.halfPlaneLength = 160.0f;
- params.renderMultiplier = -1.0f; // falls back to the user shadow distance
+ params.renderMultiplier = 0.85f; // 160 * 0.85 = 136-block box culler
  params.renderDistanceBlocks = 256.0f;
  return params;
 }
@@ -78,6 +78,67 @@ TEST(ShadowCullingFrustum, CullsGeometryOppositeTheLight) {
  const ShadowCullingFrustum frustum = buildLookingNorth(light);
  // Far below the world, away from the light, well outside the view cone.
  EXPECT_FALSE(frustum.isVisible(blockAt(-8.0, -400.0, -600.0)));
+}
+// shadowDistanceRenderMul < 0: the pack leaves the cull distance to the engine, so the
+// cull distance IS the render distance, which means the box culler is never tighter
+// than the ring. The extruded planes alone must still do the culling — this is the
+// default for packs that do not tune the shadow distance (vanilla, most packs).
+TEST(ShadowCullingFrustum, EngineOwnedDistanceCullsWithPlanesAlone) {
+ const float light[3] = {0.0f, 0.7071f, 0.7071f};
+ float projView[16]{};
+ float projection[16]{};
+ float modelView[16]{};
+ perspective(projection, 70.0f, 16.0f / 9.0f, 0.05f, 256.0f);
+ identityModelView(modelView);
+ multiply(projection, modelView, projView);
+ ShadowFrustumParams params = advancedParams();
+ params.renderMultiplier = -1.0f; // pack leaves the cull distance to the engine
+ ShadowCullingFrustum frustum = createShadowFrustum(params, projView, light);
+ frustum.prepare(0.0, 64.0, 0.0);
+ EXPECT_EQ(frustum.mode(), ShadowCullingFrustum::Mode::Advanced);
+ EXPECT_FALSE(frustum.hasBoxCuller());
+ // Planes are still active: a caster behind the camera on the light side survives…
+ EXPECT_TRUE(frustum.isVisible(blockAt(-8.0, 128.0, 16.0)));
+ // …geometry opposite the light does not…
+ EXPECT_FALSE(frustum.isVisible(blockAt(-8.0, -400.0, -600.0)));
+ // …and neither does geometry beyond the far plane.
+ EXPECT_FALSE(frustum.isVisible(blockAt(-8.0, 56.0, -400.0)));
+}
+// A pack distance that reaches the render distance drops the box culler but must NOT
+// stop culling: Iris keeps the AdvancedShadowCullingFrustum with a null box culler,
+// so the extruded planes still drop everything outside the light's shadow volume.
+// This used to return NonCulling and render every loaded section into the shadow map.
+TEST(ShadowCullingFrustum, DistanceAtRenderDistanceKeepsPlaneCulling) {
+ const float light[3] = {0.0f, 0.7071f, 0.7071f};
+ float projView[16]{};
+ float projection[16]{};
+ float modelView[16]{};
+ perspective(projection, 70.0f, 16.0f / 9.0f, 0.05f, 256.0f);
+ identityModelView(modelView);
+ multiply(projection, modelView, projView);
+ ShadowFrustumParams params = advancedParams();
+ params.renderMultiplier = 2.0f; // 160 * 2 = 320 blocks >= 256 render distance
+ ShadowCullingFrustum frustum = createShadowFrustum(params, projView, light);
+ frustum.prepare(0.0, 64.0, 0.0);
+ EXPECT_EQ(frustum.mode(), ShadowCullingFrustum::Mode::Advanced);
+ EXPECT_FALSE(frustum.hasBoxCuller());
+ EXPECT_TRUE(frustum.isVisible(blockAt(-8.0, 56.0, -64.0)));
+ EXPECT_FALSE(frustum.isVisible(blockAt(-8.0, -400.0, -600.0)));
+}
+// The frustum is re-centered on the camera like the view Frustum: prepare() moves the
+// origin the planes are tested against, so the same world box flips culled/visible as
+// the camera walks past it.
+TEST(ShadowCullingFrustum, PrepareRecentersTheFrustumWithTheCamera) {
+ const float light[3] = {0.0f, 0.7071f, 0.7071f};
+ ShadowCullingFrustum frustum = buildLookingNorth(light);
+ // Camera at (0,64,0) looking -Z: the box 64 blocks ahead is inside the cone.
+ EXPECT_TRUE(frustum.isVisible(blockAt(-8.0, 56.0, -64.0)));
+ // Camera walks 400 blocks toward -Z: the same box is now 336 blocks behind it.
+ frustum.prepare(0.0, 64.0, -400.0);
+ EXPECT_FALSE(frustum.isVisible(blockAt(-8.0, 56.0, -64.0)));
+ // Camera walks back to (0,64,64): the box is 128 blocks ahead again.
+ frustum.prepare(0.0, 64.0, 64.0);
+ EXPECT_TRUE(frustum.isVisible(blockAt(-8.0, 56.0, -64.0)));
 }
 // Java: (DEFAULT && packHasVoxelization) or DISTANCE -> distance-only culling, and no
 // culling at all when the distance would reach past the render distance.
@@ -129,5 +190,5 @@ TEST(ShadowCullingFrustum, SafeZoneKeepsTheVoxelBoxAndCutsPastTheHalfPlane) {
  // Past the 160-block half plane: dropped no matter what.
  EXPECT_FALSE(frustum.isVisible(blockAt(-8.0, 56.0, -400.0)));
 }
-} // namespace
+}
 } // namespace net::minecraft::test

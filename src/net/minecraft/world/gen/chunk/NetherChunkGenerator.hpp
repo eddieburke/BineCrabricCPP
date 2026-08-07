@@ -128,7 +128,7 @@ class NetherChunkGenerator : public ChunkSource {
   });
   block::FallingBlock::fallInstantly = false;
  }
- bool save(bool /*saveEntities*/, client::gui::screen::LoadingDisplay* /*display*/) override {
+ bool save(bool /*saveEntities*/, SaveProgressCallback /*progress*/) override {
   return true;
  }
  bool tick() override {

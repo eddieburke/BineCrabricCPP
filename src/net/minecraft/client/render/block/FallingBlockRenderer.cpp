@@ -16,7 +16,7 @@ void FallingBlockRenderer::renderFallingBlockEntity(
  constexpr float shadeTop = 1.0f;
  constexpr float shadeNorthSouth = 0.8f;
  constexpr float shadeEastWest = 0.6f;
- Tessellator& tessellator = *ctx_.tess;
+ Tessellator& tessellator = ctx_.tessellator();
  tessellator.startQuads();
  // The lightmap supplies the absolute light level; the colour keeps the shade.
  const float neighborBrightness = 1.0f;

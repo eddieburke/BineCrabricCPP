@@ -4,13 +4,13 @@
 #include "net/minecraft/world/BlockView.hpp"
 namespace net::minecraft::client::render::block {
 bool CropBlockRenderer::render(net::minecraft::block::Block& block, int x, int y, int z) {
- Tessellator& tessellator = *ctx_.tess;
+ Tessellator& tessellator = ctx_.tessellator();
  tessellator.color(1.0f, 1.0f, 1.0f);
  render(block, ctx_.blockView->getBlockMeta(x, y, z), x, (float)y - 0.0625f, z);
  return true;
 }
 void CropBlockRenderer::render(net::minecraft::block::Block& block, int metadata, double x, double y, double z) {
- Tessellator& tessellator = *ctx_.tess;
+ Tessellator& tessellator = ctx_.tessellator();
  const int tex = ctx_.resolveTexture(0, block.getTexture(0, metadata));
  const net::minecraft::block::TerrainAtlasUv uv = net::minecraft::block::Block::terrainTileUv(tex);
  const double uMin = uv.uMin;

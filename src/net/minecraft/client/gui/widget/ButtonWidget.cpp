@@ -34,7 +34,7 @@ void ButtonWidget::render(client::Minecraft& minecraft, font::TextRenderer& text
  {
   const render::RenderPassScope passScope(render::RenderType::guiTextured());
   const float* c = core::constColor();
-  render::Tessellator& tess = render::INSTANCE;
+  render::Tessellator& tess = render::Tessellator::INSTANCE;
   tess.startQuads();
   tess.color(c[0], c[1], c[2], c[3]);
   draw::appendAtlasQuad(tess, x, y, 0, 46 + imageY * 20, width / 2, height, 0.0f);

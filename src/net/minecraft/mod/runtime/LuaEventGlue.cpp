@@ -47,7 +47,6 @@ void setWorldContextFields(lua_State* state, const World* world) {
  setField(state, "world_name", world != nullptr ? world->name() : std::string());
  setField(state, "is_overworld", luaWorldIsOverworld(world));
  setField(state, "mod_generation", world != nullptr && world->isLuaModGenerationEnabled());
- setField(state, "time_mode", world != nullptr ? world->clientTimeMode() : 0);
 }
 void setLuaExecutionFields(lua_State* state, const World* world) {
  const bool remote = world != nullptr ? world->isRemote() : isClientBuild();
@@ -99,34 +98,36 @@ void setClientTickFields(lua_State* state, const ClientTickEvent& event) {
  setField(state, "paused", event.paused);
  setField(state, "has_player", event.player != nullptr);
  setWorldContextFields(state, event.world);
-  double cameraY = 64.0;
-  double playerY = 64.0;
-  float playerFallDistance = 0.0f;
-  bool playerOnGround = false;
+ double cameraY = 64.0;
+ double playerY = 64.0;
+ float playerFallDistance = 0.0f;
+ bool playerOnGround = false;
 #ifdef MINECRAFT_NATIVE_EXPORTS
-   {
-    const client::render::FrameRenderCamera& frame =
-        client::render::RenderCameraState::instance().frame();
-    if(frame.x != 0.0 || frame.y != 0.0 || frame.z != 0.0) {
-     cameraY = frame.y;
-    }
-   }
-   if(event.player != nullptr) {
-    playerY = event.player->y;
-    playerFallDistance = event.player->fallDistance;
-    playerOnGround = event.player->onGround;
-   }
+ {
+  const client::render::FrameRenderCamera& frame =
+      client::render::core::cameraFrame();
+  if(frame.x != 0.0 || frame.y != 0.0 || frame.z != 0.0) {
+   cameraY = frame.y;
+  }
+ }
+ if(event.player != nullptr) {
+  playerY = event.player->y;
+  playerFallDistance = event.player->fallDistance;
+  playerOnGround = event.player->onGround;
+ }
 #endif
-  setField(state, "camera_y", cameraY);
+ setField(state, "camera_y", cameraY);
  setField(state, "player_y", playerY);
  setField(state, "player_fall_distance", playerFallDistance);
  setField(state, "player_on_ground", playerOnGround);
  if(event.world != nullptr) {
   setField(state, "world_time", static_cast<double>(event.world->getTime() % 24000ULL));
-  setField(state, "is_night", net::minecraft::mod::lua::worldIsNight(event.world));
+  // Same single answer as world_color/world_render: the published celestial state
+  // on the client, the world clock on the server. see celestial/CelestialState.hpp
+  setField(state, "is_day", !net::minecraft::mod::lua::worldIsNight(event.world));
  } else {
   setField(state, "world_time", 0.0);
-  setField(state, "is_night", false);
+  setField(state, "is_day", true);
  }
 }
 bool isClientBuild() {
@@ -147,10 +148,10 @@ bool isLocalPlayer(const entity::player::PlayerEntity* player) {
 }
 bool isLuaModExecutionEnabled() {
 #ifdef MINECRAFT_NATIVE_EXPORTS
-  if(isClientBuild() && !client::Minecraft::INSTANCE->options.modsEnabled) {
-   return false;
-  }
-  World* world = activeModWorld();
+ if(isClientBuild() && !client::Minecraft::INSTANCE->options.modsEnabled) {
+  return false;
+ }
+ World* world = activeModWorld();
  if(world != nullptr && world->isRemote() && !world->isLuaModGenerationEnabled()) {
   return false;
  }

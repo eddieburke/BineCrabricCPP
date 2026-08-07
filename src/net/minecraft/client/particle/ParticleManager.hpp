@@ -61,7 +61,7 @@ class ParticleManager {
   // Particles emit camera-relative quads, so the pose is identity: they are
   // already in pass-base space, exactly like terrain.
   render::core::setDrawPose(net::minecraft::util::math::Matrix4f::identityMatrix());
-  const render::FrameRenderCamera& frame = render::RenderCameraState::instance().frame();
+  const render::FrameRenderCamera& frame = render::core::cameraFrame();
   const float billboardYaw = frame.customView ? frame.yaw : entity->yaw;
   const float billboardPitch = frame.customView ? frame.pitch : entity->pitch;
   const float yawCos = MathHelper::cos(billboardYaw * kPiF / 180.0f);
@@ -201,7 +201,7 @@ class ParticleManager {
     Particle::zOffset = eye[2];
     return;
    }
-   const render::FrameRenderCamera& frame = render::RenderCameraState::instance().frame();
+   const render::FrameRenderCamera& frame = render::core::cameraFrame();
    Particle::xOffset = frame.eyeX;
    Particle::yOffset = frame.eyeY;
    Particle::zOffset = frame.eyeZ;

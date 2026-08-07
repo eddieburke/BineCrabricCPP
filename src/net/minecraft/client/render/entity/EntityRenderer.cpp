@@ -43,7 +43,7 @@ void EntityRenderer::postRender(
      minecraft != nullptr && minecraft->gameRenderer != nullptr &&
      minecraft->gameRenderer->shaderPacks() != nullptr &&
      minecraft->gameRenderer->shaderPacks()->usingUserPack();
- if(!RenderCameraState::instance().frame().shadowPass &&
+  if(!core::cameraFrame().shadowPass &&
     !shaderpackActive &&
     options.fancyGraphics &&
     options.entityShadows &&

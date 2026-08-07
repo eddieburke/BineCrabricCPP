@@ -4,6 +4,12 @@ namespace net::minecraft::client::render {
 namespace {
 // https://github.com/IrisShaders/Iris/blob/26.1/common/src/main/java/net/irisshaders/iris/shadows/frustum/advanced/BaseClippingPlanes.java
 std::array<float, 4> clippingPlane(const float m[16], float cornerX, float cornerY, float cornerZ) {
+ // The engine's clip matrices are stored row-major (row r, column c at m[r*4+c],
+ // the same layout buildCameraProjection writes and the view Frustum reads), so
+ // the plane through the NDC corner (corner, 1) is corner · M per row: the near
+ // plane of the 0.05..256 test projection extracts to z <= -0.05 and the far to
+ // z >= -256. The transposed read (m[c*4+r]) collapsed both onto z ~ -1 and culled
+ // every caster past a block in front of the camera.
  std::array<float, 4> plane{};
  for(int row = 0; row < 4; ++row) {
   plane[static_cast<std::size_t>(row)] = m[row * 4 + 0] * cornerX + m[row * 4 + 1] * cornerY +
@@ -27,11 +33,7 @@ constexpr int kNeighboringPlanes[3][4] = {
 };
 } // namespace
 void ShadowCullingFrustum::addPlane(const std::array<float, 4>& plane) noexcept {
- if(planeCount_ >= kMaxClippingPlanes) {
-  return;
- }
- planes_[planeCount_] = plane;
- ++planeCount_;
+ planes_.add(plane);
 }
 void ShadowCullingFrustum::addEdgePlane(const std::array<float, 4>& backPlane,
                                         const std::array<float, 4>& frontPlane) noexcept {
@@ -44,7 +46,7 @@ void ShadowCullingFrustum::addEdgePlane(const std::array<float, 4>& backPlane,
  if(intersectionLengthSq <= 0.0f) {
   return;
  }
- // https://stackoverflow.com/a/32410473, as used by Java).
+ // https://stackoverflow.com/a/32410473, as used by Java.
  std::array<float, 3> ixb = cross(intersection.data(), backNormal);
  const std::array<float, 3> fxi = cross(frontNormal, intersection.data());
  std::array<float, 3> point{};
@@ -56,14 +58,17 @@ void ShadowCullingFrustum::addEdgePlane(const std::array<float, 4>& backPlane,
 }
 void ShadowCullingFrustum::buildAdvanced(const float modelViewProjection[16],
                                          const float lightVectorFromOrigin[3]) {
- planeCount_ = 0;
+ planes_.clear();
  lightVector_[0] = lightVectorFromOrigin[0];
  lightVector_[1] = lightVectorFromOrigin[1];
  lightVector_[2] = lightVectorFromOrigin[2];
  const std::array<std::array<float, 4>, 6> base = {
-     clippingPlane(modelViewProjection, -1.0f, 0.0f, 0.0f), clippingPlane(modelViewProjection, 1.0f, 0.0f, 0.0f),
-     clippingPlane(modelViewProjection, 0.0f, -1.0f, 0.0f), clippingPlane(modelViewProjection, 0.0f, 1.0f, 0.0f),
-     clippingPlane(modelViewProjection, 0.0f, 0.0f, -1.0f), clippingPlane(modelViewProjection, 0.0f, 0.0f, 1.0f),
+     clippingPlane(modelViewProjection, -1.0f, 0.0f, 0.0f),
+     clippingPlane(modelViewProjection, 1.0f, 0.0f, 0.0f),
+     clippingPlane(modelViewProjection, 0.0f, -1.0f, 0.0f),
+     clippingPlane(modelViewProjection, 0.0f, 1.0f, 0.0f),
+     clippingPlane(modelViewProjection, 0.0f, 0.0f, -1.0f),
+     clippingPlane(modelViewProjection, 0.0f, 0.0f, 1.0f),
  };
  bool isBack[6]{};
  for(std::size_t index = 0; index < base.size(); ++index) {
@@ -96,23 +101,6 @@ void ShadowCullingFrustum::prepare(double cameraX, double cameraY, double camera
  y_ = cameraY;
  z_ = cameraZ;
 }
-bool ShadowCullingFrustum::cornersVisible(float minX,
-                                          float minY,
-                                          float minZ,
-                                          float maxX,
-                                          float maxY,
-                                          float maxZ) const noexcept {
- for(std::size_t i = 0; i < planeCount_; ++i) {
-  const std::array<float, 4>& plane = planes_[i];
-  const float boundX = plane[0] < 0.0f ? minX : maxX;
-  const float boundY = plane[1] < 0.0f ? minY : maxY;
-  const float boundZ = plane[2] < 0.0f ? minZ : maxZ;
-  if(plane[0] * boundX + plane[1] * boundY + plane[2] * boundZ < -plane[3]) {
-   return false;
-  }
- }
- return true;
-}
 bool ShadowCullingFrustum::isVisible(const net::minecraft::Box& box) const noexcept {
  return isVisible(box.minX, box.minY, box.minZ, box.maxX, box.maxY, box.maxZ);
 }
@@ -123,27 +111,27 @@ bool ShadowCullingFrustum::isVisible(double minX,
                                      double maxY,
                                      double maxZ) const noexcept {
  switch(mode_) {
-  case Mode::NonCulling:
+ case Mode::NonCulling:
+  return true;
+ case Mode::BoxCulling:
+  return !hasBoxCuller_ || !boxCuller_.isCulled(minX, minY, minZ, maxX, maxY, maxZ);
+ case Mode::SafeZone:
+  if(hasDistanceCuller_ && distanceCuller_.isCulled(minX, minY, minZ, maxX, maxY, maxZ)) {
+   return false;
+  }
+  if(hasBoxCuller_ && !boxCuller_.isCulled(minX, minY, minZ, maxX, maxY, maxZ)) {
    return true;
-  case Mode::BoxCulling:
-   return !hasBoxCuller_ || !boxCuller_.isCulled(minX, minY, minZ, maxX, maxY, maxZ);
-  case Mode::SafeZone:
-   if(hasDistanceCuller_ && distanceCuller_.isCulled(minX, minY, minZ, maxX, maxY, maxZ)) {
-    return false;
-   }
-   if(hasBoxCuller_ && !boxCuller_.isCulled(minX, minY, minZ, maxX, maxY, maxZ)) {
-    return true;
-   }
-   break;
-  case Mode::Advanced:
-   if(hasBoxCuller_ && boxCuller_.isCulled(minX, minY, minZ, maxX, maxY, maxZ)) {
-    return false;
-   }
-   break;
+  }
+  break;
+ case Mode::Advanced:
+  if(hasBoxCuller_ && boxCuller_.isCulled(minX, minY, minZ, maxX, maxY, maxZ)) {
+   return false;
+  }
+  break;
  }
- return cornersVisible(static_cast<float>(minX - x_), static_cast<float>(minY - y_),
-                       static_cast<float>(minZ - z_), static_cast<float>(maxX - x_),
-                       static_cast<float>(maxY - y_), static_cast<float>(maxZ - z_));
+ return planes_.intersectsAabb(static_cast<float>(minX - x_), static_cast<float>(minY - y_),
+                               static_cast<float>(minZ - z_), static_cast<float>(maxX - x_),
+                               static_cast<float>(maxY - y_), static_cast<float>(maxZ - z_));
 }
 ShadowCullingFrustum createShadowFrustum(const ShadowFrustumParams& params,
                                          const float modelViewProjection[16],
@@ -169,17 +157,38 @@ ShadowCullingFrustum createShadowFrustum(const ShadowFrustumParams& params,
  double distance = static_cast<double>(hasSafeZone ? params.voxelDistance : params.halfPlaneLength) *
                    renderMultiplier;
  if(renderMultiplier < 0.0f) {
-  distance = static_cast<double>(params.userShadowDistanceChunks) * 16.0;
+  // shadowDistanceRenderMul < 0: the pack leaves the cull distance to the engine.
+  // Iris substitutes the user's shadow distance setting here (IrisVideoSettings
+  // .shadowDistance * 16); this engine has no such option, so the cull distance is
+  // the engine's own render distance in blocks — the same value the section ring is
+  // built from, so the ring and the cull distance can never disagree.
+  distance = static_cast<double>(params.renderDistanceBlocks);
+ }
+ if(distance <= 0.0) {
+  frustum.setMode(ShadowCullingFrustum::Mode::NonCulling);
+  return frustum;
+ }
+ if(params.forceBoxCull) {
+  frustum.setMode(ShadowCullingFrustum::Mode::BoxCulling);
+  frustum.setBoxCuller(BoxCuller(distance));
+  return frustum;
  }
  frustum.buildAdvanced(modelViewProjection, lightVectorFromOrigin);
- frustum.setMode(hasSafeZone ? ShadowCullingFrustum::Mode::SafeZone : ShadowCullingFrustum::Mode::Advanced);
- if(distance >= static_cast<double>(renderDistanceBlocks) && !hasSafeZone) {
-  frustum.clearBoxCuller();
- } else {
-  frustum.setBoxCuller(BoxCuller(distance));
- }
  if(hasSafeZone) {
+  frustum.setMode(ShadowCullingFrustum::Mode::SafeZone);
+  frustum.setBoxCuller(BoxCuller(distance));
   frustum.setDistanceCuller(BoxCuller(static_cast<double>(params.halfPlaneLength) * renderMultiplier));
+  return frustum;
+ }
+ frustum.setMode(ShadowCullingFrustum::Mode::Advanced);
+ // The extruded planes always cull; the box culler only narrows them while it is
+ // tighter than the render distance. Iris drops the box culler to null when the cull
+ // distance reaches the render distance — the AdvancedShadowCullingFrustum keeps
+ // culling with its planes alone, it does not stop culling. Returning NonCulling
+ // here instead (as this branch once did) made every section inside the render ring
+ // render into the shadow map.
+ if(distance < static_cast<double>(renderDistanceBlocks)) {
+  frustum.setBoxCuller(BoxCuller(distance));
  }
  return frustum;
 }

@@ -4,7 +4,7 @@
 #include "net/minecraft/world/BlockView.hpp"
 namespace net::minecraft::client::render::block {
 bool DoorBlockRenderer::render(net::minecraft::block::Block& block, int x, int y, int z) {
- Tessellator& tessellator = *ctx_.tess;
+ Tessellator& tessellator = ctx_.tessellator();
  bool drewAnyFace = false;
  const float downShade = 0.5f;
  const float upShade = 1.0f;

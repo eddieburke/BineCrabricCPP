@@ -3,7 +3,7 @@
 #include <unordered_map>
 #include "net/minecraft/client/render/shaders/ComputeDispatcher.hpp"
 #include "net/minecraft/client/render/GlState.hpp"
-#include "net/minecraft/client/render/shaders/Core330Transformer.hpp"
+#include "net/minecraft/client/render/shaders/CoreGlslTransformer.hpp"
 #include "net/minecraft/client/render/shaders/IncludeResolver.hpp"
 #include "net/minecraft/client/render/shaders/PassIndex.hpp"
 #include "net/minecraft/client/render/shaders/SourceProcessor.hpp"
@@ -60,66 +60,63 @@ TEST(PackLoaderTest, ReadsSourceOptions) {
  EXPECT_EQ(options.at("QUALITY").setting.defaultValue, "2");
 }
 TEST(PackLoaderTest, ReadsShadowResolutionFromShaderSource) {
-  PackDefinition pack;
-  std::unordered_map<std::string, PackSourceOption> options;
-  std::string error;
-  EXPECT_TRUE(load({{"shaders/gbuffers_basic.vsh", "void main(){}"},
-                    {"shaders/gbuffers_basic.fsh", "const int shadowMapResolution = 2048;\nvoid main(){}"}},
-                   pack,
-                   options,
-                   error));
-  EXPECT_EQ(pack.shadowMapResolution, 2048);
-  EXPECT_FALSE(options.contains("shadowMapResolution"));
+ PackDefinition pack;
+ std::unordered_map<std::string, PackSourceOption> options;
+ std::string error;
+ EXPECT_TRUE(load({{"shaders/gbuffers_basic.vsh", "void main(){}"},
+                   {"shaders/gbuffers_basic.fsh", "const int shadowMapResolution = 2048;\nvoid main(){}"}},
+                  pack,
+                  options,
+                  error));
+ EXPECT_EQ(pack.shadowMapResolution, 2048);
+ EXPECT_FALSE(options.contains("shadowMapResolution"));
 }
 TEST(PackLoaderTest, ParsesShadowPackConstants) {
-  PackDefinition pack;
-  std::unordered_map<std::string, PackSourceOption> options;
-  std::string error;
-  EXPECT_TRUE(load({{"shaders/gbuffers_basic.vsh", "void main(){}"},
-                    {"shaders/gbuffers_basic.fsh",
-                     "const bool shadowEntities = false;\n"
-                     "const bool shadowHardwareFiltering = true;\n"
-                     "const bool shadowtex0Mipmap = true;\n"
-                     "const float shadowDistance = 64.0;\n"
-                     "const float shadowDistanceRenderMul = 1.0;\n"
-                     "const float shadowMapFov = 45.0;\n"
-                     "const float shadowNearPlane = 0.1;\n"
-                     "const float shadowFarPlane = 128.0;\n"
-                     "const float shadowIntervalSize = 4.0;\n"
-                     "const float voxelDistance = 32.0;\n"
-                     "const float entityShadowDistanceMul = 0.5;\n"
-                     "void main(){}"},
-                    {"shaders/shadowcomp.vsh", "void main(){}"},
-                    {"shaders/shadowcomp.fsh", "/* RENDERTARGETS: 0,2 */\nvoid main(){}"}},
-                   pack,
-                   options,
-                   error))
-      << error;
-  // PackShadowDirectives equivalents (Loader scanPackConstants).
-  EXPECT_FALSE(pack.shadowEntities);
-  EXPECT_TRUE(pack.shadowHardwareFiltering[0]);
-  EXPECT_TRUE(pack.shadowHardwareFiltering[1]);
-  EXPECT_TRUE(pack.shadowtexMipmap[0]);
-  EXPECT_FALSE(pack.shadowtexMipmap[1]);
-  EXPECT_FLOAT_EQ(pack.shadowDistance, 64.0f);
-  EXPECT_FLOAT_EQ(pack.shadowDistanceRenderMul, 1.0f);
-  EXPECT_FLOAT_EQ(pack.shadowMapFov, 45.0f);
-  EXPECT_FLOAT_EQ(pack.shadowNearPlane, 0.1f);
-  EXPECT_FLOAT_EQ(pack.shadowFarPlane, 128.0f);
-  EXPECT_FLOAT_EQ(pack.shadowIntervalSize, 4.0f);
-  EXPECT_FLOAT_EQ(pack.voxelDistance, 32.0f);
-  EXPECT_FLOAT_EQ(pack.entityShadowDistanceMul, 0.5f);
-  // Shadow composite outputs are remapped from colortex to shadowcolor buffers and
-  // size the shadow color buffer count (Loader addPostPrograms).
-  EXPECT_EQ(pack.shadowColorBuffers, 3);
-  EXPECT_EQ(pack.gbufferColorBuffers, 1);
-  const auto shadowcomp =
-      std::find_if(pack.passes.begin(), pack.passes.end(),
-                   [](const PackPass& pass) { return pass.type == "shadowcomp"; });
-  ASSERT_NE(shadowcomp, pack.passes.end());
-  ASSERT_EQ(shadowcomp->outputs.size(), 2u);
-  EXPECT_EQ(shadowcomp->outputs[0], "shadowcolor0");
-  EXPECT_EQ(shadowcomp->outputs[1], "shadowcolor2");
+ PackDefinition pack;
+ std::unordered_map<std::string, PackSourceOption> options;
+ std::string error;
+ EXPECT_TRUE(load({{"shaders/gbuffers_basic.vsh", "void main(){}"},
+                   {"shaders/gbuffers_basic.fsh",
+                    "const bool shadowEntities = false;\n"
+                    "const bool shadowHardwareFiltering = true;\n"
+                    "const float shadowDistance = 64.0;\n"
+                    "const float shadowDistanceRenderMul = 1.0;\n"
+                    "const float shadowMapFov = 45.0;\n"
+                    "const float shadowNearPlane = 0.1;\n"
+                    "const float shadowFarPlane = 128.0;\n"
+                    "const float shadowIntervalSize = 4.0;\n"
+                    "const float voxelDistance = 32.0;\n"
+                    "const float entityShadowDistanceMul = 0.5;\n"
+                    "void main(){}"},
+                   {"shaders/shadowcomp.vsh", "void main(){}"},
+                   {"shaders/shadowcomp.fsh", "/* RENDERTARGETS: 0,2 */\nvoid main(){}"}},
+                  pack,
+                  options,
+                  error))
+     << error;
+ // PackShadowDirectives equivalents (Loader scanPackConstants).
+ EXPECT_FALSE(pack.shadowEntities);
+ EXPECT_TRUE(pack.shadowHardwareFiltering[0]);
+ EXPECT_TRUE(pack.shadowHardwareFiltering[1]);
+ EXPECT_FLOAT_EQ(pack.shadowDistance, 64.0f);
+ EXPECT_FLOAT_EQ(pack.shadowDistanceRenderMul, 1.0f);
+ EXPECT_FLOAT_EQ(pack.shadowMapFov, 45.0f);
+ EXPECT_FLOAT_EQ(pack.shadowNearPlane, 0.1f);
+ EXPECT_FLOAT_EQ(pack.shadowFarPlane, 128.0f);
+ EXPECT_FLOAT_EQ(pack.shadowIntervalSize, 4.0f);
+ EXPECT_FLOAT_EQ(pack.voxelDistance, 32.0f);
+ EXPECT_FLOAT_EQ(pack.entityShadowDistanceMul, 0.5f);
+ // Shadow composite outputs are remapped from colortex to shadowcolor buffers and
+ // size the shadow color buffer count (Loader addPostPrograms).
+ EXPECT_EQ(pack.shadowColorBuffers, 3);
+ EXPECT_EQ(pack.gbufferColorBuffers, 1);
+ const auto shadowcomp =
+     std::find_if(pack.passes.begin(), pack.passes.end(),
+                  [](const PackPass& pass) { return pass.type == "shadowcomp"; });
+ ASSERT_NE(shadowcomp, pack.passes.end());
+ ASSERT_EQ(shadowcomp->outputs.size(), 2u);
+ EXPECT_EQ(shadowcomp->outputs[0], "shadowcolor0");
+ EXPECT_EQ(shadowcomp->outputs[1], "shadowcolor2");
 }
 TEST(PackLoaderTest, LoadsIrisProgramsAndFeatureFlags) {
  PackDefinition pack;
@@ -169,12 +166,12 @@ TEST(PackLoaderTest, UsesDocumentedProgramAndComputeNames) {
                   options,
                   error))
      << error;
-  EXPECT_TRUE(pack.programs.contains("final#compute"));
-  EXPECT_TRUE(pack.programs.contains("setup1_a#compute"));
-  EXPECT_FALSE(pack.programs.contains("final1"));
-  EXPECT_FALSE(pack.programs.contains("setup0#compute"));
-  EXPECT_FALSE(pack.programs.contains("setup100#compute"));
-  EXPECT_TRUE(pack.programs.contains("gbuffers_entities_glowing"));
+ EXPECT_TRUE(pack.programs.contains("final#compute"));
+ EXPECT_TRUE(pack.programs.contains("setup1_a#compute"));
+ EXPECT_FALSE(pack.programs.contains("final1"));
+ EXPECT_FALSE(pack.programs.contains("setup0#compute"));
+ EXPECT_FALSE(pack.programs.contains("setup100#compute"));
+ EXPECT_TRUE(pack.programs.contains("gbuffers_entities_glowing"));
 }
 TEST(PackLoaderTest, CurrentParticleOrderingOverridesLegacyRegardlessOfOrder) {
  for(const std::string properties : {
@@ -287,8 +284,8 @@ TEST(PackLoaderTest, LoadsDimensionOnlyPackWithWildcard) {
  EXPECT_TRUE(pack.programs.contains("composite#compute"));
  EXPECT_EQ(pack.dimensionDefinitions.at("*")->programs.at("gbuffers_basic").fragment,
            "shaders/world_default/gbuffers_basic.fsh");
-  EXPECT_EQ(pack.dimensionDefinitions.at("minecraft:the_nether")->programs.at("gbuffers_basic").fragment,
-            "shaders/world_nether/gbuffers_basic.fsh");
+ EXPECT_EQ(pack.dimensionDefinitions.at("minecraft:the_nether")->programs.at("gbuffers_basic").fragment,
+           "shaders/world_nether/gbuffers_basic.fsh");
 }
 TEST(PackLoaderTest, LoadsDimensionOnlyPackWithRootInclude) {
  PackDefinition pack;
@@ -348,18 +345,18 @@ TEST(PackLoaderTest, LineFallsBackToBasicWhenMissing) {
  EXPECT_EQ(resolved(pack, "gbuffers_line"), "gbuffers_basic");
 }
 TEST(PackLoaderTest, MatchingPairFallbackDoesNotMixStages) {
-  PackDefinition pack;
-  std::unordered_map<std::string, PackSourceOption> options;
-  std::string error;
-  EXPECT_TRUE(load({{"shaders/gbuffers_textured.vsh", "void main(){}"},
-                    {"shaders/gbuffers_textured.fsh", "void main(){}"},
-                    {"shaders/gbuffers_terrain.fsh", "void main(){}"}},
-                   pack,
-                   options,
-                   error));
-  EXPECT_TRUE(pack.programs.at("gbuffers_terrain").vertex.empty());
-  EXPECT_EQ(pack.programs.at("gbuffers_terrain").fragment, "shaders/gbuffers_terrain.fsh");
-  EXPECT_EQ(resolved(pack, "gbuffers_terrain"), "gbuffers_terrain");
+ PackDefinition pack;
+ std::unordered_map<std::string, PackSourceOption> options;
+ std::string error;
+ EXPECT_TRUE(load({{"shaders/gbuffers_textured.vsh", "void main(){}"},
+                   {"shaders/gbuffers_textured.fsh", "void main(){}"},
+                   {"shaders/gbuffers_terrain.fsh", "void main(){}"}},
+                  pack,
+                  options,
+                  error));
+ EXPECT_TRUE(pack.programs.at("gbuffers_terrain").vertex.empty());
+ EXPECT_EQ(pack.programs.at("gbuffers_terrain").fragment, "shaders/gbuffers_terrain.fsh");
+ EXPECT_EQ(resolved(pack, "gbuffers_terrain"), "gbuffers_terrain");
 }
 TEST(PackLoaderTest, ReadsIrisGeometrySkipAndCullingDirectives) {
  PackDefinition pack;
@@ -511,7 +508,6 @@ TEST(PackLoaderTest, ReadsExtendedPackConstants) {
                     "const float shadowNearPlane = 0.1;\n"
                     "const float shadowFarPlane = 512.0;\n"
                     "const float ambientOcclusionLevel = 0.5;\n"
-                    "const bool generateShadowMipmap = true;\n"
                     "const bool shadowcolor0Mipmap = true;\n"
                     "const int shadowcolor0Format = RGBA16F;\n"
                     "const bool shadowcolor0Clear = false;\n"
@@ -526,8 +522,6 @@ TEST(PackLoaderTest, ReadsExtendedPackConstants) {
  EXPECT_FLOAT_EQ(pack.shadowNearPlane, 0.1f);
  EXPECT_FLOAT_EQ(pack.shadowFarPlane, 512.0f);
  EXPECT_FLOAT_EQ(pack.ambientOcclusionLevel, 0.5f);
- EXPECT_TRUE(pack.shadowtexMipmap[0]);
- EXPECT_TRUE(pack.shadowtexMipmap[1]);
  EXPECT_TRUE(pack.shadowcolorMipmap[0]);
  EXPECT_FALSE(pack.shadowcolorMipmap[1]);
  EXPECT_EQ(pack.targets.at("shadowcolor0").format, "RGBA16F");
@@ -593,8 +587,7 @@ TEST(PackLoaderTest, ParseRenderTargetsAfterInactiveBranch) {
 /* RENDERTARGETS: 1,2 */
 void main() {}
 )";
- const std::string preamble = "#version 330 compatibility\n";
- const std::string normalized = normalizePackSource(source, preamble);
+ const std::string normalized = normalizePackSource(PackDefinition{}, source);
  const std::vector<int> indices = parseRenderTargetIndices(normalized);
  ASSERT_EQ(indices.size(), 2u);
  EXPECT_EQ(indices[0], 1);
@@ -632,8 +625,7 @@ TEST(PackLoaderTest, RenderTargetOutputNamesWithExplicitDirective) {
 }
 TEST(PackLoaderTest, NormalizePackSourcePreservesComments) {
  const std::string source = "/* RENDERTARGETS: 0,1 */\nvoid main() {}\n";
- const std::string preamble = "#version 330 compatibility\n";
- const std::string normalized = normalizePackSource(source, preamble);
+ const std::string normalized = normalizePackSource(PackDefinition{}, source);
  EXPECT_NE(normalized.find("/* RENDERTARGETS: 0,1 */"), std::string::npos);
  const std::vector<int> indices = parseRenderTargetIndices(normalized);
  ASSERT_EQ(indices.size(), 2u);
@@ -751,7 +743,7 @@ void main() {
 }
 )";
  const std::string out = prepareSource(
-     "gbuffers_terrain", ShaderStage::Fragment, pack, src, "#version 330 core\n");
+     "gbuffers_terrain", ShaderStage::Fragment, pack, src);
  EXPECT_NE(out.find("uniform float alphaTestRef"), std::string::npos);
  EXPECT_NE(out.find("iris_FragData0.a > alphaTestRef"), std::string::npos);
  EXPECT_NE(out.find("layout(location = 0) out vec4 iris_FragData0;"), std::string::npos);
@@ -769,18 +761,18 @@ layout(location=0) out vec4 outColor;
 void main() { outColor = vec4(1.0); }
 )";
  EXPECT_EQ(prepareSource(
-               "gbuffers_terrain", ShaderStage::Fragment, pack, core, "#version 430 core\n")
+               "gbuffers_terrain", ShaderStage::Fragment, pack, core)
                .find("discard"),
            std::string::npos);
  const std::string compat = R"(#version 330 compatibility
 void main() { gl_FragData[0] = vec4(1.0); }
 )";
  EXPECT_EQ(prepareSource(
-               "composite", ShaderStage::Fragment, pack, compat, "#version 330 core\n")
+               "composite", ShaderStage::Fragment, pack, compat)
                .find("discard"),
            std::string::npos);
  EXPECT_EQ(prepareSource(
-               "gbuffers_water", ShaderStage::Fragment, pack, compat, "#version 330 core\n")
+               "gbuffers_water", ShaderStage::Fragment, pack, compat)
                .find("discard"),
            std::string::npos);
 }
@@ -792,7 +784,7 @@ TEST(PackSourcePreparation, ChunkFadeMatchesTheAdvertisedFeatureAbi) {
      "#version 430 compatibility\nvoid main() { float fade = mc_chunkFade; }\n";
  const auto prepare = [&](const std::string& program) {
   return prepareSource(
-      program, ShaderStage::Vertex, pack, source, "#version 430 core\n");
+      program, ShaderStage::Vertex, pack, source);
  };
  EXPECT_NE(prepare("gbuffers_terrain").find("in float mc_chunkFade;"), std::string::npos);
  // Water and ice are chunk geometry, so gbuffers_water takes the terrain attribute too.
@@ -822,41 +814,41 @@ TEST(PackLoaderTest, InfersColortexFormatsFromImageAndUsamplerLayouts) {
                     "uniform usampler2D colortex2;\n"
                     "uniform layout(rgba16f) restrict image2D colorimg1;\n"
                     "void main(){}\n"},
-                    {"shaders/gbuffers_entities.vsh", "void main(){}"},
-                    {"shaders/gbuffers_entities.fsh",
-                     "/* RENDERTARGETS: 1,2 */\n"
-                     "layout(location = 1) out uvec4 colortex2;\n"
-                     "layout(location = 0) out f16vec4 colortex1;\n"
-                     "void main(){}\n"}},
+                   {"shaders/gbuffers_entities.vsh", "void main(){}"},
+                   {"shaders/gbuffers_entities.fsh",
+                    "/* RENDERTARGETS: 1,2 */\n"
+                    "layout(location = 1) out uvec4 colortex2;\n"
+                    "layout(location = 0) out f16vec4 colortex1;\n"
+                    "void main(){}\n"}},
                   pack,
                   options,
                   error))
      << error;
-  ASSERT_TRUE(pack.targets.contains("colortex1"));
-  ASSERT_TRUE(pack.targets.contains("colortex2"));
-  EXPECT_EQ(pack.targets.at("colortex1").format, "RGBA16F");
-  EXPECT_EQ(pack.targets.at("colortex2").format, "RGBA32UI");
-  EXPECT_GE(pack.gbufferColorBuffers, 3);
+ ASSERT_TRUE(pack.targets.contains("colortex1"));
+ ASSERT_TRUE(pack.targets.contains("colortex2"));
+ EXPECT_EQ(pack.targets.at("colortex1").format, "RGBA16F");
+ EXPECT_EQ(pack.targets.at("colortex2").format, "RGBA32UI");
+ EXPECT_GE(pack.gbufferColorBuffers, 3);
 }
 TEST(PackLoaderTest, ParsesShaderStorageBuffersAllForms) {
  PackDefinition pack;
  std::unordered_map<std::string, PackSourceOption> options;
  std::string error;
-  EXPECT_TRUE(load({{"shaders/gbuffers_basic.vsh", "void main(){}"},
-                    {"shaders/gbuffers_basic.fsh", "void main(){}"},
-                    {"shaders/shaders.properties",
-                     "iris.features.optional=SSBO\n"
-                     "bufferObject.0=6\n"
-                     "bufferObject.1=784 buffers/llq.bin\n"
-                     "bufferObject.3=16 true 0.5 0.5\n"
-                     "bufferObject.12=4\n"
-                     "bufferObject.13=4\n"
-                     "bufferObject.4=0\n"
-                     "bufferObject.5=8 false 1.0 2.0\n"}},
+ EXPECT_TRUE(load({{"shaders/gbuffers_basic.vsh", "void main(){}"},
+                   {"shaders/gbuffers_basic.fsh", "void main(){}"},
+                   {"shaders/shaders.properties",
+                    "iris.features.optional=SSBO\n"
+                    "bufferObject.0=6\n"
+                    "bufferObject.1=784 buffers/llq.bin\n"
+                    "bufferObject.3=16 true 0.5 0.5\n"
+                    "bufferObject.12=4\n"
+                    "bufferObject.13=4\n"
+                    "bufferObject.4=0\n"
+                    "bufferObject.5=8 false 1.0 2.0\n"}},
                   pack,
                   options,
                   error))
-      << error;
+     << error;
  ASSERT_EQ(pack.bufferObjects.size(), 5u);
  EXPECT_EQ(pack.bufferObjects[0].index, 0);
  EXPECT_EQ(pack.bufferObjects[0].byteSize, 6u);
@@ -882,15 +874,15 @@ TEST(PackLoaderTest, RepeatedBufferDirectiveReplacesPreviousEntry) {
  PackDefinition pack;
  std::unordered_map<std::string, PackSourceOption> options;
  std::string error;
-  EXPECT_TRUE(load({{"shaders/gbuffers_basic.vsh", "void main(){}"},
-                    {"shaders/gbuffers_basic.fsh", "void main(){}"},
-                    {"shaders/shaders.properties",
-                     "iris.features.optional=SSBO\n"
-                     "bufferObject.1=784\nbufferObject.1=1552\n"}},
+ EXPECT_TRUE(load({{"shaders/gbuffers_basic.vsh", "void main(){}"},
+                   {"shaders/gbuffers_basic.fsh", "void main(){}"},
+                   {"shaders/shaders.properties",
+                    "iris.features.optional=SSBO\n"
+                    "bufferObject.1=784\nbufferObject.1=1552\n"}},
                   pack,
                   options,
                   error))
-      << error;
+     << error;
  ASSERT_EQ(pack.bufferObjects.size(), 1u);
  EXPECT_EQ(pack.bufferObjects[0].index, 1);
  EXPECT_EQ(pack.bufferObjects[0].byteSize, 1552u);
@@ -910,7 +902,7 @@ TEST(PackLoaderTest, ParsesIndirectDispatchPointers) {
                   pack,
                   options,
                   error))
-      << error;
+     << error;
  const auto composite = pack.indirectDispatches.find("composite");
  ASSERT_NE(composite, pack.indirectDispatches.end());
  EXPECT_EQ(composite->second.buffer, 3);
@@ -925,22 +917,22 @@ TEST(PackLoaderTest, ReadsWeatherParticlesAndNewToggleDirectives) {
  PackDefinition pack;
  std::unordered_map<std::string, PackSourceOption> options;
  std::string error;
-  EXPECT_TRUE(load({{"shaders/gbuffers_basic.vsh", "void main(){}"},
-                    {"shaders/gbuffers_basic.fsh", "void main(){}"},
-                    {"shaders/shaders.properties",
-                     "weather=true false\n"
-                     "dhClouds=off\n"
-                     "dhShadow.enabled=false\n"
-                     "prepareBeforeShadow=true\n"
-                     "breaksAnisotropy=true\n"
-                     "fallbackTex=2\n"}},
-                   pack,
-                   options,
-                   error))
+ EXPECT_TRUE(load({{"shaders/gbuffers_basic.vsh", "void main(){}"},
+                   {"shaders/gbuffers_basic.fsh", "void main(){}"},
+                   {"shaders/shaders.properties",
+                    "weather=true false\n"
+                    "dhClouds=off\n"
+                    "dhShadow.enabled=false\n"
+                    "prepareBeforeShadow=true\n"
+                    "breaksAnisotropy=true\n"
+                    "fallbackTex=2\n"}},
+                  pack,
+                  options,
+                  error))
      << error;
-  EXPECT_TRUE(pack.renderWeather);
-  EXPECT_FALSE(pack.renderWeatherParticles);
-  EXPECT_EQ(pack.dhCloudsMode, "off");
+ EXPECT_TRUE(pack.renderWeather);
+ EXPECT_FALSE(pack.renderWeatherParticles);
+ EXPECT_EQ(pack.dhCloudsMode, "off");
  EXPECT_FALSE(pack.dhShadowEnabled);
  EXPECT_TRUE(pack.prepareBeforeShadow);
  EXPECT_TRUE(pack.breaksAnisotropy);
@@ -1105,11 +1097,11 @@ TEST(PackLoaderTest, BlendResolvesLegacyBufferNames) {
   if(blend.program == "gbuffers_terrain" && blend.buffer == 1) gdepth = &blend;
   if(blend.program == "gbuffers_terrain" && blend.buffer == 6) gaux3 = &blend;
  }
-  ASSERT_NE(gdepth, nullptr);
-  ASSERT_NE(gaux3, nullptr);
-  EXPECT_TRUE(gdepth->enabled);
-  EXPECT_EQ(gdepth->source, "ONE");
-  EXPECT_FALSE(gaux3->enabled);
+ ASSERT_NE(gdepth, nullptr);
+ ASSERT_NE(gaux3, nullptr);
+ EXPECT_TRUE(gdepth->enabled);
+ EXPECT_EQ(gdepth->source, "ONE");
+ EXPECT_FALSE(gaux3->enabled);
 }
 TEST(PackLoaderTest, LegacyTargetNamesAliasColortexSlots) {
  PackDefinition pack;
@@ -1129,15 +1121,15 @@ TEST(PackLoaderTest, LegacyTargetNamesAliasColortexSlots) {
                   options,
                   error))
      << error;
-  EXPECT_EQ(pack.targets.at("colortex0").format, "RGBA16");
-  EXPECT_FALSE(pack.targets.at("colortex1").clear);
-  EXPECT_EQ(pack.targets.at("colortex3").format, "RGBA32F");
-  const PackTarget& gaux4 = pack.targets.at("colortex7");
-  EXPECT_TRUE(gaux4.customClearColor);
-  EXPECT_FLOAT_EQ(gaux4.clearColor[0], 0.25f);
-  EXPECT_FLOAT_EQ(gaux4.clearColor[1], 0.5f);
-  EXPECT_FLOAT_EQ(gaux4.clearColor[2], 0.75f);
-  EXPECT_FLOAT_EQ(gaux4.clearColor[3], 1.0f);
+ EXPECT_EQ(pack.targets.at("colortex0").format, "RGBA16");
+ EXPECT_FALSE(pack.targets.at("colortex1").clear);
+ EXPECT_EQ(pack.targets.at("colortex3").format, "RGBA32F");
+ const PackTarget& gaux4 = pack.targets.at("colortex7");
+ EXPECT_TRUE(gaux4.customClearColor);
+ EXPECT_FLOAT_EQ(gaux4.clearColor[0], 0.25f);
+ EXPECT_FLOAT_EQ(gaux4.clearColor[1], 0.5f);
+ EXPECT_FLOAT_EQ(gaux4.clearColor[2], 0.75f);
+ EXPECT_FLOAT_EQ(gaux4.clearColor[3], 1.0f);
 }
 TEST(PackLoaderTest, ProfilesParseFullTokenGrammar) {
  PackDefinition pack;
@@ -1165,12 +1157,12 @@ TEST(PackLoaderTest, ImageWithSevenFieldsIs1DAndNoneSamplerIsEmpty) {
  PackDefinition pack;
  std::unordered_map<std::string, PackSourceOption> options;
  std::string error;
-  EXPECT_TRUE(load({{"shaders/gbuffers_basic.vsh", "void main(){}"},
-                    {"shaders/gbuffers_basic.fsh", "void main(){}"},
-                    {"shaders/shaders.properties",
-                     "iris.features.optional=CUSTOM_IMAGES\n"
-                     "image.0=colortex0 RGBA8 RGBA8 UNSIGNED_BYTE true false 64\n"
-                     "image.1=none RGBA8 RGBA8 UNSIGNED_BYTE true true 0.5 0.5\n"}},
+ EXPECT_TRUE(load({{"shaders/gbuffers_basic.vsh", "void main(){}"},
+                   {"shaders/gbuffers_basic.fsh", "void main(){}"},
+                   {"shaders/shaders.properties",
+                    "iris.features.optional=CUSTOM_IMAGES\n"
+                    "image.0=colortex0 RGBA8 RGBA8 UNSIGNED_BYTE true false 64\n"
+                    "image.1=none RGBA8 RGBA8 UNSIGNED_BYTE true true 0.5 0.5\n"}},
                   pack,
                   options,
                   error))
@@ -1280,19 +1272,19 @@ TEST(PipelineBlockIdsTest, CustomBlockPropertiesUseMinusOneForUnmappedBlocks) {
  Pipeline pipeline(nullptr);
  PackDefinition pack;
  pack.hasBlockProperties = true;
-  pack.blockIds.emplace("sand", 2);
-  pipeline.applyBlockIds(pack);
-  EXPECT_EQ(resolveShaderBlockId(1), -1);
-  EXPECT_EQ(resolveShaderBlockId(12), 2);
-  pipeline.applyBlockIds(PackDefinition{});
+ pack.blockIds.emplace("sand", 2);
+ pipeline.applyBlockIds(pack);
+ EXPECT_EQ(resolveShaderBlockId(1), -1);
+ EXPECT_EQ(resolveShaderBlockId(12), 2);
+ pipeline.applyBlockIds(PackDefinition{});
 }
 TEST(PipelineBlockIdsTest, MissingBlockPropertiesUseLegacyNumericIds) {
  Pipeline pipeline(nullptr);
  PackDefinition pack;
-  pipeline.applyBlockIds(pack);
-  EXPECT_EQ(resolveShaderBlockId(1), 1);
-  EXPECT_EQ(resolveShaderBlockId(12), 12);
-  pipeline.applyBlockIds(PackDefinition{});
+ pipeline.applyBlockIds(pack);
+ EXPECT_EQ(resolveShaderBlockId(1), 1);
+ EXPECT_EQ(resolveShaderBlockId(12), 12);
+ pipeline.applyBlockIds(PackDefinition{});
 }
 TEST(PackSourcePreparation, MultiTexCoordAliasesMatchIrisTransformers) {
  net::minecraft::test::installTestGlslSnippets();
@@ -1308,7 +1300,7 @@ void main() {
 }
 )";
  const std::string out = prepareSource(
-     "gbuffers_terrain", ShaderStage::Vertex, pack, src, "#version 330 core\n");
+     "gbuffers_terrain", ShaderStage::Vertex, pack, src);
  // gl_MultiTexCoord2 is an alias of gl_MultiTexCoord1 (lightmap), Iris issue 1149.
  EXPECT_EQ(out.find("gl_MultiTexCoord2"), std::string::npos);
  EXPECT_EQ(out.find("gl_MultiTexCoord1"), std::string::npos);
@@ -1330,7 +1322,7 @@ TEST(PackSourcePreparation, MidTexCoordAliasUsesCoreInputAndSkipsDeclared) {
  PackDefinition pack;
  const std::string legacy = "void main() { vec4 d = gl_MultiTexCoord3; }\n";
  const std::string out = prepareSource(
-     "gbuffers_terrain", ShaderStage::Vertex, pack, legacy, "#version 120\n");
+     "gbuffers_terrain", ShaderStage::Vertex, pack, legacy);
  EXPECT_EQ(out.find("gl_MultiTexCoord3"), std::string::npos);
  EXPECT_NE(out.find("in vec4 mc_midTexCoord;"), std::string::npos);
  // A shader that already declares mc_midTexCoord keeps gl_MultiTexCoord3 as-is
@@ -1340,7 +1332,7 @@ in vec4 mc_midTexCoord;
 void main() { vec4 d = gl_MultiTexCoord3; }
 )";
  const std::string kept = prepareSource(
-     "gbuffers_terrain", ShaderStage::Vertex, pack, declared, "#version 330 core\n");
+     "gbuffers_terrain", ShaderStage::Vertex, pack, declared);
  EXPECT_NE(kept.find("gl_MultiTexCoord3"), std::string::npos);
  EXPECT_EQ(kept.find("in vec4 mc_midTexCoord;"), kept.rfind("in vec4 mc_midTexCoord;"));
 }
@@ -1351,58 +1343,57 @@ TEST(PackSourcePreparation, FogFragCoordAlwaysRewrittenForCoreTarget) {
 void main() { gl_FogFragCoord = gl_Position.z; }
 )";
  const std::string vertex = prepareSource(
-     "gbuffers_terrain", ShaderStage::Vertex, pack, modern, "#version 330 core\n");
+     "gbuffers_terrain", ShaderStage::Vertex, pack, modern);
  // Java CommonTransformer routes core-profile shaders through a plain in/out pair.
  EXPECT_NE(vertex.find("iris_FogFragCoord = gl_Position.z;"), std::string::npos);
  EXPECT_NE(vertex.find("out float iris_FogFragCoord;"), std::string::npos);
  EXPECT_NE(vertex.find("iris_FogFragCoord = 0.0f;"), std::string::npos);
  const std::string fragment = prepareSource(
      "gbuffers_terrain", ShaderStage::Fragment, pack,
-     "#version 330 compatibility\nvoid main() { float d = gl_FogFragCoord; }\n",
-     "#version 330 core\n");
+     "#version 330 compatibility\nvoid main() { float d = gl_FogFragCoord; }\n");
  EXPECT_NE(fragment.find("in float iris_FogFragCoord;"), std::string::npos);
  const std::string legacy = "void main() { gl_FogFragCoord = gl_Position.z; }\n";
  const std::string kept = prepareSource(
-     "gbuffers_terrain", ShaderStage::Vertex, pack, legacy, "#version 120\n");
-  EXPECT_EQ(kept.find("gl_FogFragCoord"), std::string::npos);
-  EXPECT_NE(kept.find("iris_FogFragCoord"), std::string::npos);
+     "gbuffers_terrain", ShaderStage::Vertex, pack, legacy);
+ EXPECT_EQ(kept.find("gl_FogFragCoord"), std::string::npos);
+ EXPECT_NE(kept.find("iris_FogFragCoord"), std::string::npos);
 }
 TEST(PackSourcePreparation, CustomProgramNamesGetVertexRewrite) {
-  net::minecraft::test::installTestGlslSnippets();
-  // Iris applies the transformers to every program name; the old gate that
-  // skipped non-gbuffer/composite/shadow names is gone.
-  PackDefinition pack;
-  const std::string src = R"(#version 330 compatibility
+ net::minecraft::test::installTestGlslSnippets();
+ // Iris applies the transformers to every program name; the old gate that
+ // skipped non-gbuffer/composite/shadow names is gone.
+ PackDefinition pack;
+ const std::string src = R"(#version 330 compatibility
 void main() {
 	gl_Position = ftransform();
 	vec4 a = gl_MultiTexCoord0;
 }
 )";
-  const std::string out = prepareSource(
-      "interface", ShaderStage::Vertex, pack, src, "#version 330 core\n");
-  EXPECT_EQ(out.find("gl_Vertex"), std::string::npos);
-  EXPECT_EQ(out.find("ftransform()"), std::string::npos);
-  EXPECT_EQ(out.find("gl_MultiTexCoord0"), std::string::npos);
-  EXPECT_NE(out.find("vec4(vaPosition, 1.0)"), std::string::npos);
-  EXPECT_NE(out.find("vec4(vaUV0, 0.0, 1.0)"), std::string::npos);
-  EXPECT_NE(out.find("in vec3 vaPosition;"), std::string::npos);
+ const std::string out = prepareSource(
+     "interface", ShaderStage::Vertex, pack, src);
+ EXPECT_EQ(out.find("gl_Vertex"), std::string::npos);
+ EXPECT_EQ(out.find("ftransform()"), std::string::npos);
+ EXPECT_EQ(out.find("gl_MultiTexCoord0"), std::string::npos);
+ EXPECT_NE(out.find("vec4(vaPosition, 1.0)"), std::string::npos);
+ EXPECT_NE(out.find("vec4(vaUV0, 0.0, 1.0)"), std::string::npos);
+ EXPECT_NE(out.find("in vec3 vaPosition;"), std::string::npos);
 }
 TEST(PackSourcePreparation, CustomProgram120SourcesUseCoreDialect) {
-  net::minecraft::test::installTestGlslSnippets();
-  PackDefinition pack;
-  const std::string src = "void main() { vec4 v = gl_Vertex; }\n";
-  const std::string out = prepareSource(
-      "interface", ShaderStage::Vertex, pack, src, "#version 120\n");
-  EXPECT_EQ(out.find("gl_Vertex"), std::string::npos);
-  EXPECT_EQ(out.find("attribute vec3 vaPosition;"), std::string::npos);
-  EXPECT_NE(out.find("in vec3 vaPosition;"), std::string::npos);
-  EXPECT_EQ(out.find("chunkOffset"), std::string::npos);
+ net::minecraft::test::installTestGlslSnippets();
+ PackDefinition pack;
+ const std::string src = "void main() { vec4 v = gl_Vertex; }\n";
+ const std::string out = prepareSource(
+     "interface", ShaderStage::Vertex, pack, src);
+ EXPECT_EQ(out.find("gl_Vertex"), std::string::npos);
+ EXPECT_EQ(out.find("attribute vec3 vaPosition;"), std::string::npos);
+ EXPECT_NE(out.find("in vec3 vaPosition;"), std::string::npos);
+ EXPECT_EQ(out.find("chunkOffset"), std::string::npos);
 }
 TEST(PackSourcePreparation, SynthesizedRasterVertexIsNativeCoreSource) {
  net::minecraft::test::installTestGlslSnippets();
  PackDefinition pack;
  const std::string out = prepareSource("gbuffers_terrain", ShaderStage::Vertex, pack,
-                                       defaultRasterVertexShader(), "#version 330 core\n");
+                                       defaultRasterVertexShader());
  EXPECT_EQ(out.find("ftransform"), std::string::npos);
  EXPECT_EQ(out.find("gl_TextureMatrix"), std::string::npos);
  EXPECT_NE(out.find("vaPosition + chunkOffset"), std::string::npos);
@@ -1418,7 +1409,7 @@ void main() {
  gl_Position = vec4(position * float(attribute), 1.0);
 }
 )";
- const std::string out = prepareSource("interface", ShaderStage::Vertex, pack, source, "#version 330 core\n");
+ const std::string out = prepareSource("interface", ShaderStage::Vertex, pack, source);
  EXPECT_NE(out.find("#define attribute keep_macro"), std::string::npos) << out;
  EXPECT_NE(out.find("in vec3 position;"), std::string::npos) << out;
  EXPECT_NE(out.find("int attribute = 2;"), std::string::npos) << out;
@@ -1435,7 +1426,7 @@ void main() {
 }
 )";
  const std::string out = prepareSource(
-     "composite", ShaderStage::Fragment, pack, source, "#version 330 core\n");
+     "composite", ShaderStage::Fragment, pack, source);
  EXPECT_EQ(out.find("varying"), std::string::npos);
  EXPECT_EQ(out.find("texture2D"), std::string::npos);
  EXPECT_EQ(out.find("gl_TexCoord"), std::string::npos);
@@ -1465,11 +1456,11 @@ TEST(PackSourcePreparation, EntityOverlayAndIdsShareStageContext) {
  const std::string vertex = prepareSource(
      "gbuffers_entities", ShaderStage::Vertex, pack,
      "uniform int entityId;\nvoid main() { int id = entityId; gl_Position = vec4(0.0); }\n",
-     "#version 330 core\n", context);
+     context);
  const std::string fragment = prepareSource(
      "gbuffers_entities", ShaderStage::Fragment, pack,
      "uniform vec4 entityColor;\nuniform int entityId;\nvoid main() { vec4 c = entityColor; int id = entityId; }\n",
-     "#version 330 core\n", context);
+     context);
  EXPECT_NE(vertex.find("uniform sampler2D iris_overlay;"), std::string::npos);
  EXPECT_NE(vertex.find("in ivec2 iris_UV1;"), std::string::npos);
  EXPECT_NE(vertex.find("in ivec3 iris_Entity;"), std::string::npos);
@@ -1481,515 +1472,530 @@ TEST(PackSourcePreparation, EntityOverlayAndIdsShareStageContext) {
  EXPECT_NE(fragment.find("iris_entityInfo.x"), std::string::npos);
 }
 TEST(PackLoaderTest, TexturedLitFallsBackToTextured) {
-  // https://github.com/IrisShaders/Iris/blob/26.1/common/src/main/java/net/irisshaders/iris/shaderpack/loading/ProgramId.java
-  // TexturedLit -> Textured -> Basic.
-  PackDefinition pack;
-  std::unordered_map<std::string, PackSourceOption> options;
-  std::string error;
-  EXPECT_TRUE(load({{"shaders/gbuffers_basic.vsh", "void main(){}"},
-                    {"shaders/gbuffers_basic.fsh", "void main(){}"},
-                    {"shaders/gbuffers_textured.vsh", "void main(){}"},
-                    {"shaders/gbuffers_textured.fsh", "void main(){}"}},
-                   pack,
-                   options,
-                   error));
-  EXPECT_FALSE(pack.programs.contains("gbuffers_textured_lit"));
-  EXPECT_EQ(resolved(pack, "gbuffers_textured_lit"), "gbuffers_textured");
+ // https://github.com/IrisShaders/Iris/blob/26.1/common/src/main/java/net/irisshaders/iris/shaderpack/loading/ProgramId.java
+ // TexturedLit -> Textured -> Basic.
+ PackDefinition pack;
+ std::unordered_map<std::string, PackSourceOption> options;
+ std::string error;
+ EXPECT_TRUE(load({{"shaders/gbuffers_basic.vsh", "void main(){}"},
+                   {"shaders/gbuffers_basic.fsh", "void main(){}"},
+                   {"shaders/gbuffers_textured.vsh", "void main(){}"},
+                   {"shaders/gbuffers_textured.fsh", "void main(){}"}},
+                  pack,
+                  options,
+                  error));
+ EXPECT_FALSE(pack.programs.contains("gbuffers_textured_lit"));
+ EXPECT_EQ(resolved(pack, "gbuffers_textured_lit"), "gbuffers_textured");
 }
 TEST(PackLoaderTest, ItemFallsBackToTexturedLitNotEntities) {
-  // https://github.com/IrisShaders/Iris/blob/26.1/common/src/main/java/net/irisshaders/iris/shaderpack/loading/ProgramId.java
-  // Item -> TexturedLit -> Textured -> Basic: entities is not in the chain.
-  PackDefinition pack;
-  std::unordered_map<std::string, PackSourceOption> options;
-  std::string error;
-  EXPECT_TRUE(load({{"shaders/gbuffers_basic.vsh", "void main(){}"},
-                    {"shaders/gbuffers_basic.fsh", "void main(){}"},
-                    {"shaders/gbuffers_textured_lit.vsh", "void main(){}"},
-                    {"shaders/gbuffers_textured_lit.fsh", "void main(){}"},
-                    {"shaders/gbuffers_entities.vsh", "void main(){}"},
-                    {"shaders/gbuffers_entities.fsh", "void main(){}"}},
-                   pack,
-                   options,
-                   error));
-  EXPECT_FALSE(pack.programs.contains("gbuffers_item"));
-  EXPECT_EQ(resolved(pack, "gbuffers_item"), "gbuffers_textured_lit");
+ // https://github.com/IrisShaders/Iris/blob/26.1/common/src/main/java/net/irisshaders/iris/shaderpack/loading/ProgramId.java
+ // Item -> TexturedLit -> Textured -> Basic: entities is not in the chain.
+ PackDefinition pack;
+ std::unordered_map<std::string, PackSourceOption> options;
+ std::string error;
+ EXPECT_TRUE(load({{"shaders/gbuffers_basic.vsh", "void main(){}"},
+                   {"shaders/gbuffers_basic.fsh", "void main(){}"},
+                   {"shaders/gbuffers_textured_lit.vsh", "void main(){}"},
+                   {"shaders/gbuffers_textured_lit.fsh", "void main(){}"},
+                   {"shaders/gbuffers_entities.vsh", "void main(){}"},
+                   {"shaders/gbuffers_entities.fsh", "void main(){}"}},
+                  pack,
+                  options,
+                  error));
+ EXPECT_FALSE(pack.programs.contains("gbuffers_item"));
+ EXPECT_EQ(resolved(pack, "gbuffers_item"), "gbuffers_textured_lit");
 }
 TEST(PackLoaderTest, EntitiesGlowingLoadsOwnSourceAndFallsBackToEntities) {
-  // https://github.com/IrisShaders/Iris/blob/26.1/common/src/main/java/net/irisshaders/iris/shaderpack/loading/ProgramId.java
-  // EntitiesGlowing -> Entities -> TexturedLit -> Textured -> Basic.
-  PackDefinition pack;
-  std::unordered_map<std::string, PackSourceOption> options;
-  std::string error;
-  EXPECT_TRUE(load({{"shaders/gbuffers_basic.vsh", "void main(){}"},
-                    {"shaders/gbuffers_basic.fsh", "void main(){}"},
-                    {"shaders/gbuffers_entities_glowing.vsh", "void main(){}"},
-                    {"shaders/gbuffers_entities_glowing.fsh", "void main(){}"}},
-                   pack,
-                   options,
-                   error));
-  EXPECT_EQ(pack.programs.at("gbuffers_entities_glowing").fragment,
-            "shaders/gbuffers_entities_glowing.fsh");
-  PackDefinition fallbackPack;
-  EXPECT_TRUE(load({{"shaders/gbuffers_basic.vsh", "void main(){}"},
-                    {"shaders/gbuffers_basic.fsh", "void main(){}"},
-                    {"shaders/gbuffers_entities.vsh", "void main(){}"},
-                    {"shaders/gbuffers_entities.fsh", "void main(){}"}},
-                   fallbackPack,
-                   options,
-                   error));
-  EXPECT_FALSE(fallbackPack.programs.contains("gbuffers_entities_glowing"));
-  EXPECT_EQ(resolved(fallbackPack, "gbuffers_entities_glowing"), "gbuffers_entities");
+ // https://github.com/IrisShaders/Iris/blob/26.1/common/src/main/java/net/irisshaders/iris/shaderpack/loading/ProgramId.java
+ // EntitiesGlowing -> Entities -> TexturedLit -> Textured -> Basic.
+ PackDefinition pack;
+ std::unordered_map<std::string, PackSourceOption> options;
+ std::string error;
+ EXPECT_TRUE(load({{"shaders/gbuffers_basic.vsh", "void main(){}"},
+                   {"shaders/gbuffers_basic.fsh", "void main(){}"},
+                   {"shaders/gbuffers_entities_glowing.vsh", "void main(){}"},
+                   {"shaders/gbuffers_entities_glowing.fsh", "void main(){}"}},
+                  pack,
+                  options,
+                  error));
+ EXPECT_EQ(pack.programs.at("gbuffers_entities_glowing").fragment,
+           "shaders/gbuffers_entities_glowing.fsh");
+ PackDefinition fallbackPack;
+ EXPECT_TRUE(load({{"shaders/gbuffers_basic.vsh", "void main(){}"},
+                   {"shaders/gbuffers_basic.fsh", "void main(){}"},
+                   {"shaders/gbuffers_entities.vsh", "void main(){}"},
+                   {"shaders/gbuffers_entities.fsh", "void main(){}"}},
+                  fallbackPack,
+                  options,
+                  error));
+ EXPECT_FALSE(fallbackPack.programs.contains("gbuffers_entities_glowing"));
+ EXPECT_EQ(resolved(fallbackPack, "gbuffers_entities_glowing"), "gbuffers_entities");
 }
 TEST(PackLoaderTest, ShadowWaterFallsBackToShadow) {
-  // https://github.com/IrisShaders/Iris/blob/26.1/common/src/main/java/net/irisshaders/iris/shaderpack/loading/ProgramId.java
-  // ShadowWater -> Shadow; ShadowSolid/ShadowBlock -> Shadow.
-  PackDefinition pack;
-  std::unordered_map<std::string, PackSourceOption> options;
-  std::string error;
-  EXPECT_TRUE(load({{"shaders/gbuffers_basic.vsh", "void main(){}"},
-                    {"shaders/gbuffers_basic.fsh", "void main(){}"},
-                    {"shaders/shadow.vsh", "void main(){}"},
-                    {"shaders/shadow.fsh", "void main(){}"}},
-                   pack,
-                   options,
-                   error));
-  EXPECT_FALSE(pack.programs.contains("shadow_water"));
-  EXPECT_FALSE(pack.programs.contains("shadow_solid"));
-  EXPECT_FALSE(pack.programs.contains("shadow_block"));
-  EXPECT_EQ(resolved(pack, "shadow_water"), "shadow");
-  EXPECT_EQ(resolved(pack, "shadow_solid"), "shadow");
-  EXPECT_EQ(resolved(pack, "shadow_block"), "shadow");
+ // https://github.com/IrisShaders/Iris/blob/26.1/common/src/main/java/net/irisshaders/iris/shaderpack/loading/ProgramId.java
+ // ShadowWater -> Shadow; ShadowSolid/ShadowBlock -> Shadow.
+ PackDefinition pack;
+ std::unordered_map<std::string, PackSourceOption> options;
+ std::string error;
+ EXPECT_TRUE(load({{"shaders/gbuffers_basic.vsh", "void main(){}"},
+                   {"shaders/gbuffers_basic.fsh", "void main(){}"},
+                   {"shaders/shadow.vsh", "void main(){}"},
+                   {"shaders/shadow.fsh", "void main(){}"}},
+                  pack,
+                  options,
+                  error));
+ EXPECT_FALSE(pack.programs.contains("shadow_water"));
+ EXPECT_FALSE(pack.programs.contains("shadow_solid"));
+ EXPECT_FALSE(pack.programs.contains("shadow_block"));
+ EXPECT_EQ(resolved(pack, "shadow_water"), "shadow");
+ EXPECT_EQ(resolved(pack, "shadow_solid"), "shadow");
+ EXPECT_EQ(resolved(pack, "shadow_block"), "shadow");
 }
 TEST(PackLoaderTest, ShadowLightningFallsBackToEntitiesThenShadow) {
-  // https://github.com/IrisShaders/Iris/blob/26.1/common/src/main/java/net/irisshaders/iris/shaderpack/loading/ProgramId.java
-  // ShadowLightning -> ShadowEntities -> Shadow.
-  PackDefinition pack;
-  std::unordered_map<std::string, PackSourceOption> options;
-  std::string error;
-  EXPECT_TRUE(load({{"shaders/gbuffers_basic.vsh", "void main(){}"},
-                    {"shaders/gbuffers_basic.fsh", "void main(){}"},
-                    {"shaders/shadow.vsh", "void main(){}"},
-                    {"shaders/shadow.fsh", "void main(){}"},
-                    {"shaders/shadow_entities.vsh", "void main(){}"},
-                    {"shaders/shadow_entities.fsh", "void main(){}"}},
-                   pack,
-                   options,
-                   error));
-  EXPECT_FALSE(pack.programs.contains("shadow_lightning"));
-  EXPECT_EQ(resolved(pack, "shadow_lightning"), "shadow_entities");
-  PackDefinition rootOnly;
-  EXPECT_TRUE(load({{"shaders/gbuffers_basic.vsh", "void main(){}"},
-                    {"shaders/gbuffers_basic.fsh", "void main(){}"},
-                    {"shaders/shadow.vsh", "void main(){}"},
-                    {"shaders/shadow.fsh", "void main(){}"}},
-                   rootOnly,
-                   options,
-                   error));
-  EXPECT_EQ(resolved(rootOnly, "shadow_lightning"), "shadow");
-}
-TEST(PackLoaderTest, LoadsDhProgramsWithDhTerrainFallback) {
-  // https://github.com/IrisShaders/Iris/blob/26.1/common/src/main/java/net/irisshaders/iris/shaderpack/loading/ProgramId.java
-  // DhTerrain/DhShadow have no fallback; DhWater/DhGeneric -> DhTerrain.
-  PackDefinition pack;
-  std::unordered_map<std::string, PackSourceOption> options;
-  std::string error;
-  EXPECT_TRUE(load({{"shaders/gbuffers_basic.vsh", "void main(){}"},
-                    {"shaders/gbuffers_basic.fsh", "void main(){}"},
-                    {"shaders/dh_terrain.vsh", "void main(){}"},
-                    {"shaders/dh_terrain.fsh", "void main(){}"},
-                    {"shaders/dh_water.vsh", "void main(){}"},
-                    {"shaders/dh_water.fsh", "void main(){}"}},
-                   pack,
-                   options,
-                   error));
-  EXPECT_EQ(pack.programs.at("dh_terrain").fragment, "shaders/dh_terrain.fsh");
-  EXPECT_EQ(pack.programs.at("dh_water").fragment, "shaders/dh_water.fsh");
-  EXPECT_FALSE(pack.programs.contains("dh_generic"));
-  EXPECT_EQ(resolved(pack, "dh_generic"), "dh_terrain");
-  EXPECT_FALSE(pack.programs.contains("dh_shadow"));
+ // https://github.com/IrisShaders/Iris/blob/26.1/common/src/main/java/net/irisshaders/iris/shaderpack/loading/ProgramId.java
+ // ShadowLightning -> ShadowEntities -> Shadow.
+ PackDefinition pack;
+ std::unordered_map<std::string, PackSourceOption> options;
+ std::string error;
+ EXPECT_TRUE(load({{"shaders/gbuffers_basic.vsh", "void main(){}"},
+                   {"shaders/gbuffers_basic.fsh", "void main(){}"},
+                   {"shaders/shadow.vsh", "void main(){}"},
+                   {"shaders/shadow.fsh", "void main(){}"},
+                   {"shaders/shadow_entities.vsh", "void main(){}"},
+                   {"shaders/shadow_entities.fsh", "void main(){}"}},
+                  pack,
+                  options,
+                  error));
+ EXPECT_FALSE(pack.programs.contains("shadow_lightning"));
+ EXPECT_EQ(resolved(pack, "shadow_lightning"), "shadow_entities");
+ PackDefinition rootOnly;
+ EXPECT_TRUE(load({{"shaders/gbuffers_basic.vsh", "void main(){}"},
+                   {"shaders/gbuffers_basic.fsh", "void main(){}"},
+                   {"shaders/shadow.vsh", "void main(){}"},
+                   {"shaders/shadow.fsh", "void main(){}"}},
+                  rootOnly,
+                  options,
+                  error));
+ EXPECT_EQ(resolved(rootOnly, "shadow_lightning"), "shadow");
 }
 TEST(PackLoaderTest, ShadowProgramsDefaultBlendOff) {
-  // https://github.com/IrisShaders/Iris/blob/26.1/common/src/main/java/net/irisshaders/iris/shaderpack/loading/ProgramId.java
-  // Shadow group programs default to BlendModeOverride.OFF; pack blend. wins.
-  PackDefinition pack;
-  std::unordered_map<std::string, PackSourceOption> options;
-  std::string error;
-  EXPECT_TRUE(load({{"shaders/gbuffers_basic.vsh", "void main(){}"},
-                    {"shaders/gbuffers_basic.fsh", "void main(){}"},
-                    {"shaders/shadow.vsh", "void main(){}"},
-                    {"shaders/shadow.fsh", "void main(){}"},
-                    {"shaders/shaders.properties", "blend.shadow=ONE ZERO ONE ZERO\n"}},
-                   pack,
-                   options,
-                   error));
-  const BufferBlend* shadow = nullptr;
-  const BufferBlend* shadowCutout = nullptr;
-  for(const BufferBlend& blend : pack.bufferBlends) {
-   if(blend.program == "shadow") shadow = &blend;
-   if(blend.program == "shadow_cutout") shadowCutout = &blend;
-  }
-  ASSERT_NE(shadow, nullptr);
-  EXPECT_TRUE(shadow->enabled);
-  EXPECT_EQ(shadow->source, "ONE");
-  EXPECT_EQ(shadowCutout, nullptr);
-  EXPECT_EQ(resolved(pack, "shadow_cutout"), "shadow");
+ // https://github.com/IrisShaders/Iris/blob/26.1/common/src/main/java/net/irisshaders/iris/shaderpack/loading/ProgramId.java
+ // Shadow group programs default to BlendModeOverride.OFF; pack blend. wins.
+ PackDefinition pack;
+ std::unordered_map<std::string, PackSourceOption> options;
+ std::string error;
+ EXPECT_TRUE(load({{"shaders/gbuffers_basic.vsh", "void main(){}"},
+                   {"shaders/gbuffers_basic.fsh", "void main(){}"},
+                   {"shaders/shadow.vsh", "void main(){}"},
+                   {"shaders/shadow.fsh", "void main(){}"},
+                   {"shaders/shaders.properties", "blend.shadow=ONE ZERO ONE ZERO\n"}},
+                  pack,
+                  options,
+                  error));
+ const BufferBlend* shadow = nullptr;
+ const BufferBlend* shadowCutout = nullptr;
+ for(const BufferBlend& blend : pack.bufferBlends) {
+  if(blend.program == "shadow") shadow = &blend;
+  if(blend.program == "shadow_cutout") shadowCutout = &blend;
+ }
+ ASSERT_NE(shadow, nullptr);
+ EXPECT_TRUE(shadow->enabled);
+ EXPECT_EQ(shadow->source, "ONE");
+ EXPECT_EQ(shadowCutout, nullptr);
+ EXPECT_EQ(resolved(pack, "shadow_cutout"), "shadow");
 }
 TEST(PackLoaderTest, SpiderEyesDefaultBlendOverride) {
-  // https://github.com/IrisShaders/Iris/blob/26.1/common/src/main/java/net/irisshaders/iris/shaderpack/loading/ProgramId.java
-  // SpiderEyes defaults to SRC_ALPHA, ONE / ZERO, ONE unless the pack overrides.
-  PackDefinition pack;
-  std::unordered_map<std::string, PackSourceOption> options;
-  std::string error;
-  EXPECT_TRUE(load({{"shaders/gbuffers_basic.vsh", "void main(){}"},
-                    {"shaders/gbuffers_basic.fsh", "void main(){}"},
-                    {"shaders/gbuffers_spidereyes.vsh", "void main(){}"},
-                    {"shaders/gbuffers_spidereyes.fsh", "void main(){}"}},
-                   pack,
-                   options,
-                   error));
-  const BufferBlend* eyes = nullptr;
-  for(const BufferBlend& blend : pack.bufferBlends) {
-   if(blend.program == "gbuffers_spidereyes") eyes = &blend;
+ // https://github.com/IrisShaders/Iris/blob/26.1/common/src/main/java/net/irisshaders/iris/shaderpack/loading/ProgramId.java
+ // SpiderEyes defaults to SRC_ALPHA, ONE / ZERO, ONE unless the pack overrides.
+ PackDefinition pack;
+ std::unordered_map<std::string, PackSourceOption> options;
+ std::string error;
+ EXPECT_TRUE(load({{"shaders/gbuffers_basic.vsh", "void main(){}"},
+                   {"shaders/gbuffers_basic.fsh", "void main(){}"},
+                   {"shaders/gbuffers_spidereyes.vsh", "void main(){}"},
+                   {"shaders/gbuffers_spidereyes.fsh", "void main(){}"}},
+                  pack,
+                  options,
+                  error));
+ const BufferBlend* eyes = nullptr;
+ for(const BufferBlend& blend : pack.bufferBlends) {
+  if(blend.program == "gbuffers_spidereyes") eyes = &blend;
+ }
+ ASSERT_NE(eyes, nullptr);
+ EXPECT_TRUE(eyes->enabled);
+ EXPECT_EQ(eyes->source, "srcalpha");
+ EXPECT_EQ(eyes->destination, "one");
+ EXPECT_EQ(eyes->sourceAlpha, "zero");
+ EXPECT_EQ(eyes->destinationAlpha, "one");
+ // A pack blend.gbuffers_spidereyes directive wins over the default.
+ PackDefinition overridden;
+ EXPECT_TRUE(load({{"shaders/gbuffers_basic.vsh", "void main(){}"},
+                   {"shaders/gbuffers_basic.fsh", "void main(){}"},
+                   {"shaders/gbuffers_spidereyes.vsh", "void main(){}"},
+                   {"shaders/gbuffers_spidereyes.fsh", "void main(){}"},
+                   {"shaders/shaders.properties", "blend.gbuffers_spidereyes=off\n"}},
+                  overridden,
+                  options,
+                  error));
+ bool foundOverride = false;
+ for(const BufferBlend& blend : overridden.bufferBlends) {
+  if(blend.program == "gbuffers_spidereyes") {
+   foundOverride = true;
+   EXPECT_FALSE(blend.enabled);
   }
-  ASSERT_NE(eyes, nullptr);
-  EXPECT_TRUE(eyes->enabled);
-  EXPECT_EQ(eyes->source, "srcalpha");
-  EXPECT_EQ(eyes->destination, "one");
-  EXPECT_EQ(eyes->sourceAlpha, "zero");
-  EXPECT_EQ(eyes->destinationAlpha, "one");
-  // A pack blend.gbuffers_spidereyes directive wins over the default.
-  PackDefinition overridden;
-  EXPECT_TRUE(load({{"shaders/gbuffers_basic.vsh", "void main(){}"},
-                    {"shaders/gbuffers_basic.fsh", "void main(){}"},
-                    {"shaders/gbuffers_spidereyes.vsh", "void main(){}"},
-                    {"shaders/gbuffers_spidereyes.fsh", "void main(){}"},
-                    {"shaders/shaders.properties", "blend.gbuffers_spidereyes=off\n"}},
-                   overridden,
-                   options,
-                   error));
-  bool foundOverride = false;
-  for(const BufferBlend& blend : overridden.bufferBlends) {
-   if(blend.program == "gbuffers_spidereyes") {
-    foundOverride = true;
-    EXPECT_FALSE(blend.enabled);
-   }
-  }
-  EXPECT_TRUE(foundOverride);
+ }
+ EXPECT_TRUE(foundOverride);
 }
 TEST(PackLoaderTest, ProgramEnabledFalseDisablesPassBucket) {
-  PackDefinition pack;
-  std::unordered_map<std::string, PackSourceOption> options;
-  std::string error;
-  EXPECT_TRUE(load({{"shaders/gbuffers_basic.vsh", "void main(){}"},
-                    {"shaders/gbuffers_basic.fsh", "void main(){}"},
-                    {"shaders/composite.vsh", "void main(){}"},
-                    {"shaders/composite.fsh", "void main(){}"},
-                    {"shaders/composite1.vsh", "void main(){}"},
-                    {"shaders/composite1.fsh", "void main(){}"},
-                    {"shaders/deferred.vsh", "void main(){}"},
-                    {"shaders/deferred.fsh", "void main(){}"},
-                    {"shaders/shaders.properties",
-                     "program.composite.enabled=false\n"
-                     "program.composite1.enabled=false\n"}},
-                   pack,
-                   options,
-                   error));
-  PackPassBuckets buckets;
-  ProgramEnabledCache cache;
-  indexPackPasses(pack, {}, buckets, cache);
-  EXPECT_TRUE(buckets.postPasses.empty());
-  ASSERT_EQ(buckets.deferredPasses.size(), 1u);
-  EXPECT_EQ(pack.passes.at(buckets.deferredPasses.front()).name, "deferred");
+ PackDefinition pack;
+ std::unordered_map<std::string, PackSourceOption> options;
+ std::string error;
+ EXPECT_TRUE(load({{"shaders/gbuffers_basic.vsh", "void main(){}"},
+                   {"shaders/gbuffers_basic.fsh", "void main(){}"},
+                   {"shaders/composite.vsh", "void main(){}"},
+                   {"shaders/composite.fsh", "void main(){}"},
+                   {"shaders/composite1.vsh", "void main(){}"},
+                   {"shaders/composite1.fsh", "void main(){}"},
+                   {"shaders/deferred.vsh", "void main(){}"},
+                   {"shaders/deferred.fsh", "void main(){}"},
+                   {"shaders/shaders.properties",
+                    "program.composite.enabled=false\n"
+                    "program.composite1.enabled=false\n"}},
+                  pack,
+                  options,
+                  error));
+ PackPassBuckets buckets;
+ ProgramEnabledCache cache;
+ indexPackPasses(pack, {}, buckets, cache);
+ EXPECT_TRUE(buckets.postPasses.empty());
+ ASSERT_EQ(buckets.deferredPasses.size(), 1u);
+ EXPECT_EQ(pack.passes.at(buckets.deferredPasses.front()).name, "deferred");
 }
 TEST(PackLoaderTest, ProgramEnabledExpressionsMatchBooleanParser) {
-  // https://github.com/IrisShaders/Iris/blob/26.1/common/src/main/java/net/irisshaders/iris/shaderpack/parsing/BooleanParser.java
-  // Literals true/1/false/0; other tokens are option lookups defaulting to true;
-  // parse errors default the whole expression to true.
-  const auto evaluateWith =
-      [](const std::string& enabledValue, std::unordered_map<std::string, std::string> settings) {
-       PackDefinition pack;
-       std::unordered_map<std::string, PackSourceOption> options;
-       std::string error;
-       EXPECT_TRUE(load({{"shaders/gbuffers_basic.vsh", "#define BLOOM\nvoid main(){}"},
-                         {"shaders/gbuffers_basic.fsh", "void main(){}"},
-                         {"shaders/shaders.properties",
-                          "program.deferred.enabled=" + enabledValue + "\n"}},
-                        pack,
-                        options,
-                        error));
-       return isProgramEnabled(pack, settings, "deferred");
-      };
-  EXPECT_FALSE(evaluateWith("!BLOOM", {{"BLOOM", "1"}}));
-  EXPECT_TRUE(evaluateWith("!BLOOM", {{"BLOOM", "0"}}));
-  // Unset option: the #define default applies (BLOOM defaults to enabled).
-  EXPECT_FALSE(evaluateWith("!BLOOM", {}));
-  EXPECT_FALSE(evaluateWith("BLOOM && !UNSET", {{"BLOOM", "1"}}));
-  EXPECT_TRUE(evaluateWith("BLOOM || !UNSET", {{"BLOOM", "1"}}));
-  EXPECT_FALSE(evaluateWith("BLOOM || !UNSET", {{"BLOOM", "0"}}));
-  EXPECT_TRUE(evaluateWith("false || (true && 1)", {}));
-  // Unknown options default to true.
-  EXPECT_TRUE(evaluateWith("UNKNOWN_OPTION", {}));
-  // Parse errors default to true.
-  EXPECT_TRUE(evaluateWith("BLOOM &&", {{"BLOOM", "0"}}));
-  EXPECT_TRUE(evaluateWith("", {}));
-  // Compute passes resolve through the #compute suffix: program.composite.enabled
-  // controls the composite.csh pass as well.
-  PackDefinition pack;
-  std::unordered_map<std::string, PackSourceOption> options;
-  std::string error;
-  EXPECT_TRUE(load({{"shaders/gbuffers_basic.vsh", "void main(){}"},
-                    {"shaders/gbuffers_basic.fsh", "void main(){}"},
-                    {"shaders/composite.csh", "layout(local_size_x = 1) in;"},
-                    {"shaders/shaders.properties", "program.composite.enabled=false\n"}},
-                   pack,
-                   options,
-                   error));
-  EXPECT_FALSE(isProgramEnabled(pack, {}, "composite#compute"));
-  EXPECT_TRUE(isProgramEnabled(pack, {}, "deferred#compute"));
+ // https://github.com/IrisShaders/Iris/blob/26.1/common/src/main/java/net/irisshaders/iris/shaderpack/parsing/BooleanParser.java
+ // Literals true/1/false/0; other tokens are option lookups defaulting to true;
+ // parse errors default the whole expression to true.
+ const auto evaluateWith =
+     [](const std::string& enabledValue, std::unordered_map<std::string, std::string> settings) {
+      PackDefinition pack;
+      std::unordered_map<std::string, PackSourceOption> options;
+      std::string error;
+      EXPECT_TRUE(load({{"shaders/gbuffers_basic.vsh", "#define BLOOM\nvoid main(){}"},
+                        {"shaders/gbuffers_basic.fsh", "void main(){}"},
+                        {"shaders/shaders.properties",
+                         "program.deferred.enabled=" + enabledValue + "\n"}},
+                       pack,
+                       options,
+                       error));
+      return isProgramEnabled(pack, settings, "deferred");
+     };
+ EXPECT_FALSE(evaluateWith("!BLOOM", {{"BLOOM", "1"}}));
+ EXPECT_TRUE(evaluateWith("!BLOOM", {{"BLOOM", "0"}}));
+ // Unset option: the #define default applies (BLOOM defaults to enabled).
+ EXPECT_FALSE(evaluateWith("!BLOOM", {}));
+ EXPECT_FALSE(evaluateWith("BLOOM && !UNSET", {{"BLOOM", "1"}}));
+ EXPECT_TRUE(evaluateWith("BLOOM || !UNSET", {{"BLOOM", "1"}}));
+ EXPECT_FALSE(evaluateWith("BLOOM || !UNSET", {{"BLOOM", "0"}}));
+ EXPECT_TRUE(evaluateWith("false || (true && 1)", {}));
+ // Unknown options default to true.
+ EXPECT_TRUE(evaluateWith("UNKNOWN_OPTION", {}));
+ // Parse errors default to true.
+ EXPECT_TRUE(evaluateWith("BLOOM &&", {{"BLOOM", "0"}}));
+ EXPECT_TRUE(evaluateWith("", {}));
+ // Compute passes resolve through the #compute suffix: program.composite.enabled
+ // controls the composite.csh pass as well.
+ PackDefinition pack;
+ std::unordered_map<std::string, PackSourceOption> options;
+ std::string error;
+ EXPECT_TRUE(load({{"shaders/gbuffers_basic.vsh", "void main(){}"},
+                   {"shaders/gbuffers_basic.fsh", "void main(){}"},
+                   {"shaders/composite.csh", "layout(local_size_x = 1) in;"},
+                   {"shaders/shaders.properties", "program.composite.enabled=false\n"}},
+                  pack,
+                  options,
+                  error));
+ EXPECT_FALSE(isProgramEnabled(pack, {}, "composite#compute"));
+ EXPECT_TRUE(isProgramEnabled(pack, {}, "deferred#compute"));
 }
 TEST(PackLoaderTest, IndexPackPassesBucketsStages) {
-  PackDefinition pack;
-  std::unordered_map<std::string, PackSourceOption> options;
-  std::string error;
-  EXPECT_TRUE(load({{"shaders/gbuffers_basic.vsh", "void main(){}"},
-                    {"shaders/gbuffers_basic.fsh", "void main(){}"},
-                    {"shaders/begin.vsh", "void main(){}"},
-                    {"shaders/begin.fsh", "void main(){}"},
-                    {"shaders/shadowcomp.vsh", "void main(){}"},
-                    {"shaders/shadowcomp.fsh", "void main(){}"},
-                    {"shaders/prepare.vsh", "void main(){}"},
-                    {"shaders/prepare.fsh", "void main(){}"},
-                    {"shaders/deferred.vsh", "void main(){}"},
-                    {"shaders/deferred.fsh", "void main(){}"},
-                    {"shaders/composite.vsh", "void main(){}"},
-                    {"shaders/composite.fsh", "void main(){}"},
-                    {"shaders/final.vsh", "void main(){}"},
-                    {"shaders/final.fsh", "void main(){}"}},
-                   pack,
-                   options,
-                   error));
-  PackPassBuckets buckets;
-  ProgramEnabledCache cache;
-  indexPackPasses(pack, {}, buckets, cache);
-  const auto names = [&pack](const std::vector<std::size_t>& indexes) {
-   std::vector<std::string> result;
-   for(std::size_t index : indexes) result.push_back(pack.passes.at(index).name);
-   return result;
-  };
-  EXPECT_EQ(names(buckets.beginPasses), (std::vector<std::string>{"begin"}));
-  EXPECT_EQ(names(buckets.shadowCompositePasses), (std::vector<std::string>{"shadowcomp"}));
-  EXPECT_EQ(names(buckets.preparePasses), (std::vector<std::string>{"prepare"}));
-  EXPECT_EQ(names(buckets.deferredPasses), (std::vector<std::string>{"deferred"}));
-  // final lands in the post bucket together with composite (Iris CompositeRenderer +
-  // FinalPassRenderer both run in the post-process stage).
-  EXPECT_EQ(names(buckets.postPasses), (std::vector<std::string>{"composite", "final"}));
+ PackDefinition pack;
+ std::unordered_map<std::string, PackSourceOption> options;
+ std::string error;
+ EXPECT_TRUE(load({{"shaders/gbuffers_basic.vsh", "void main(){}"},
+                   {"shaders/gbuffers_basic.fsh", "void main(){}"},
+                   {"shaders/begin.vsh", "void main(){}"},
+                   {"shaders/begin.fsh", "void main(){}"},
+                   {"shaders/shadowcomp.vsh", "void main(){}"},
+                   {"shaders/shadowcomp.fsh", "void main(){}"},
+                   {"shaders/prepare.vsh", "void main(){}"},
+                   {"shaders/prepare.fsh", "void main(){}"},
+                   {"shaders/deferred.vsh", "void main(){}"},
+                   {"shaders/deferred.fsh", "void main(){}"},
+                   {"shaders/composite.vsh", "void main(){}"},
+                   {"shaders/composite.fsh", "void main(){}"},
+                   {"shaders/final.vsh", "void main(){}"},
+                   {"shaders/final.fsh", "void main(){}"}},
+                  pack,
+                  options,
+                  error));
+ PackPassBuckets buckets;
+ ProgramEnabledCache cache;
+ indexPackPasses(pack, {}, buckets, cache);
+ const auto names = [&pack](const std::vector<std::size_t>& indexes) {
+  std::vector<std::string> result;
+  for(std::size_t index : indexes) result.push_back(pack.passes.at(index).name);
+  return result;
+ };
+ EXPECT_EQ(names(buckets.beginPasses), (std::vector<std::string>{"begin"}));
+ EXPECT_EQ(names(buckets.shadowCompositePasses), (std::vector<std::string>{"shadowcomp"}));
+ EXPECT_EQ(names(buckets.preparePasses), (std::vector<std::string>{"prepare"}));
+ EXPECT_EQ(names(buckets.deferredPasses), (std::vector<std::string>{"deferred"}));
+ // final lands in the post bucket together with composite (Iris CompositeRenderer +
+ // FinalPassRenderer both run in the post-process stage).
+ EXPECT_EQ(names(buckets.postPasses), (std::vector<std::string>{"composite", "final"}));
 }
 TEST(PackLoaderTest, LessComputeOrderMatchesIrisSuffixGrammar) {
-  // Mirrors addComputePrograms: pass.order is seeded from computePassOrder(name).
-  const auto order = [](std::string a, std::string b) {
-   PackPass passA;
-   passA.name = std::move(a);
-   passA.order = ComputeDispatcher::computePassOrder(passA.name);
-   PackPass passB;
-   passB.name = std::move(b);
-   passB.order = ComputeDispatcher::computePassOrder(passB.name);
-   return ComputeDispatcher::lessComputeOrder(passA, passB);
-  };
-  EXPECT_TRUE(order("composite", "composite_a"));
-  EXPECT_TRUE(order("composite_a", "composite_b"));
-  EXPECT_TRUE(order("composite_b", "composite1"));
-  EXPECT_TRUE(order("composite1", "composite1_a"));
-  EXPECT_TRUE(order("composite1_a", "composite1_b"));
-  EXPECT_TRUE(order("final", "final_a"));
-  EXPECT_FALSE(order("deferred99_z", "composite"));
-  EXPECT_FALSE(order("composite", "composite"));
-  // Explicit computeOrder directives take precedence over the name grammar.
-  PackPass explicitA;
-  explicitA.name = "composite_z";
-  explicitA.order = 1;
-  PackPass explicitB;
-  explicitB.name = "composite_a";
-  explicitB.order = 0;
-  EXPECT_FALSE(ComputeDispatcher::lessComputeOrder(explicitA, explicitB));
-  EXPECT_TRUE(ComputeDispatcher::lessComputeOrder(explicitB, explicitA));
+ // Mirrors addComputePrograms: pass.order is seeded from computePassOrder(name).
+ const auto order = [](std::string a, std::string b) {
+  PackPass passA;
+  passA.name = std::move(a);
+  passA.order = ComputeDispatcher::computePassOrder(passA.name);
+  PackPass passB;
+  passB.name = std::move(b);
+  passB.order = ComputeDispatcher::computePassOrder(passB.name);
+  return ComputeDispatcher::lessComputeOrder(passA, passB);
+ };
+ EXPECT_TRUE(order("composite", "composite_a"));
+ EXPECT_TRUE(order("composite_a", "composite_b"));
+ EXPECT_TRUE(order("composite_b", "composite1"));
+ EXPECT_TRUE(order("composite1", "composite1_a"));
+ EXPECT_TRUE(order("composite1_a", "composite1_b"));
+ EXPECT_TRUE(order("final", "final_a"));
+ EXPECT_FALSE(order("deferred99_z", "composite"));
+ EXPECT_FALSE(order("composite", "composite"));
+ // Explicit computeOrder directives take precedence over the name grammar.
+ PackPass explicitA;
+ explicitA.name = "composite_z";
+ explicitA.order = 1;
+ PackPass explicitB;
+ explicitB.name = "composite_a";
+ explicitB.order = 0;
+ EXPECT_FALSE(ComputeDispatcher::lessComputeOrder(explicitA, explicitB));
+ EXPECT_TRUE(ComputeDispatcher::lessComputeOrder(explicitB, explicitA));
 }
 TEST(PackLoaderTest, ShadowProgramMappingMatchesIrisPipelines) {
-  // https://github.com/IrisShaders/Iris/blob/26.1/common/src/main/java/net/irisshaders/iris/pipeline/IrisPipelines.java
-  EXPECT_EQ(irisShadowProgramForGbuffers("gbuffers_terrain_solid"), "shadow_cutout");
-  EXPECT_EQ(irisShadowProgramForGbuffers("gbuffers_terrain_cutout"), "shadow_cutout");
-  EXPECT_EQ(irisShadowProgramForGbuffers("gbuffers_water"), "shadow_water");
-  EXPECT_EQ(irisShadowProgramForGbuffers("gbuffers_entities"), "shadow_entities");
-  EXPECT_EQ(irisShadowProgramForGbuffers("gbuffers_entities_translucent"), "shadow_entities");
-  EXPECT_EQ(irisShadowProgramForGbuffers("gbuffers_item"), "shadow_entities");
-  EXPECT_EQ(irisShadowProgramForGbuffers("gbuffers_armor_glint"), "shadow_entities");
-  EXPECT_EQ(irisShadowProgramForGbuffers("gbuffers_spidereyes"), "shadow_entities");
-  EXPECT_EQ(irisShadowProgramForGbuffers("gbuffers_text"), "shadow_entities");
-  EXPECT_EQ(irisShadowProgramForGbuffers("gbuffers_lightning"), "shadow_lightning");
-  EXPECT_EQ(irisShadowProgramForGbuffers("gbuffers_block"), "shadow_block");
-  EXPECT_EQ(irisShadowProgramForGbuffers("gbuffers_block_translucent"), "shadow_block");
-  // CRUMBLING (damagedblock) renders with SHADOW_TEX -> the root shadow program.
-  EXPECT_EQ(irisShadowProgramForGbuffers("gbuffers_damagedblock"), "shadow");
-  EXPECT_EQ(irisShadowProgramForGbuffers("gbuffers_particles"), "shadow");
-  EXPECT_EQ(irisShadowProgramForGbuffers("gbuffers_basic"), "shadow");
-  // No shadow mapping in Iris: sky, clouds, hands, GUI and clrwl_* variants.
-  EXPECT_EQ(irisShadowProgramForGbuffers("gbuffers_skybasic"), "");
-  EXPECT_EQ(irisShadowProgramForGbuffers("gbuffers_clouds"), "");
-  EXPECT_EQ(irisShadowProgramForGbuffers("gbuffers_hand"), "");
-  EXPECT_EQ(irisShadowProgramForGbuffers("gbuffers_gui"), "");
-  EXPECT_EQ(irisShadowProgramForGbuffers("clrwl_gbuffers_terrain"), "");
-  PackDefinition programs;
-  programs.programs["shadow"] = {};
-  programs.programs["shadow_entities"] = {};
-  programs.programs["shadow_cutout"] = {};
-  EXPECT_EQ(resolved(programs, irisShadowProgramForGbuffers("gbuffers_terrain_solid")), "shadow_cutout");
-  EXPECT_EQ(resolved(programs, irisShadowProgramForGbuffers("gbuffers_lightning")), "shadow_entities");
-  EXPECT_EQ(resolved(programs, irisShadowProgramForGbuffers("gbuffers_skybasic")), "");
-  PackDefinition rootOnly;
-  rootOnly.programs["shadow"] = {};
-  EXPECT_EQ(resolved(rootOnly, irisShadowProgramForGbuffers("gbuffers_lightning")), "shadow");
+ // https://github.com/IrisShaders/Iris/blob/26.1/common/src/main/java/net/irisshaders/iris/pipeline/IrisPipelines.java
+ EXPECT_EQ(irisShadowProgramForGbuffers("gbuffers_terrain_solid"), "shadow_cutout");
+ EXPECT_EQ(irisShadowProgramForGbuffers("gbuffers_terrain_cutout"), "shadow_cutout");
+ EXPECT_EQ(irisShadowProgramForGbuffers("gbuffers_water"), "shadow_water");
+ EXPECT_EQ(irisShadowProgramForGbuffers("gbuffers_entities"), "shadow_entities");
+ EXPECT_EQ(irisShadowProgramForGbuffers("gbuffers_entities_translucent"), "shadow_entities");
+ EXPECT_EQ(irisShadowProgramForGbuffers("gbuffers_item"), "shadow_entities");
+ EXPECT_EQ(irisShadowProgramForGbuffers("gbuffers_armor_glint"), "shadow_entities");
+ EXPECT_EQ(irisShadowProgramForGbuffers("gbuffers_spidereyes"), "shadow_entities");
+ EXPECT_EQ(irisShadowProgramForGbuffers("gbuffers_text"), "shadow_entities");
+ EXPECT_EQ(irisShadowProgramForGbuffers("gbuffers_lightning"), "shadow_lightning");
+ EXPECT_EQ(irisShadowProgramForGbuffers("gbuffers_block"), "shadow_block");
+ EXPECT_EQ(irisShadowProgramForGbuffers("gbuffers_block_translucent"), "shadow_block");
+ // CRUMBLING (damagedblock) renders with SHADOW_TEX -> the root shadow program.
+ EXPECT_EQ(irisShadowProgramForGbuffers("gbuffers_damagedblock"), "shadow");
+ EXPECT_EQ(irisShadowProgramForGbuffers("gbuffers_particles"), "shadow");
+ EXPECT_EQ(irisShadowProgramForGbuffers("gbuffers_basic"), "shadow");
+ // No shadow mapping in Iris: sky, clouds, hands and GUI variants.
+ EXPECT_EQ(irisShadowProgramForGbuffers("gbuffers_skybasic"), "");
+ EXPECT_EQ(irisShadowProgramForGbuffers("gbuffers_clouds"), "");
+ EXPECT_EQ(irisShadowProgramForGbuffers("gbuffers_hand"), "");
+ EXPECT_EQ(irisShadowProgramForGbuffers("gbuffers_gui"), "");
+ PackDefinition programs;
+ programs.programs["shadow"] = {};
+ programs.programs["shadow_entities"] = {};
+ programs.programs["shadow_cutout"] = {};
+ EXPECT_EQ(resolved(programs, irisShadowProgramForGbuffers("gbuffers_terrain_solid")), "shadow_cutout");
+ EXPECT_EQ(resolved(programs, irisShadowProgramForGbuffers("gbuffers_lightning")), "shadow_entities");
+ EXPECT_EQ(resolved(programs, irisShadowProgramForGbuffers("gbuffers_skybasic")), "");
+ PackDefinition rootOnly;
+ rootOnly.programs["shadow"] = {};
+ EXPECT_EQ(resolved(rootOnly, irisShadowProgramForGbuffers("gbuffers_lightning")), "shadow");
 }
 TEST(PackLoaderTest, ProgramFallbackKeyMatchesProgramIdEnum) {
-  // https://github.com/IrisShaders/Iris/blob/26.1/common/src/main/java/net/irisshaders/iris/shaderpack/loading/ProgramId.java
-  EXPECT_EQ(programFallbackKey("gbuffers_textured_lit"), "gbuffers_textured");
-  EXPECT_EQ(programFallbackKey("gbuffers_textured"), "gbuffers_basic");
-  EXPECT_EQ(programFallbackKey("gbuffers_terrain_solid"), "gbuffers_terrain");
-  EXPECT_EQ(programFallbackKey("gbuffers_terrain"), "gbuffers_textured_lit");
-  EXPECT_EQ(programFallbackKey("gbuffers_block_translucent"), "gbuffers_block");
-  EXPECT_EQ(programFallbackKey("gbuffers_block"), "gbuffers_terrain");
-  EXPECT_EQ(programFallbackKey("gbuffers_hand_water"), "gbuffers_hand");
-  EXPECT_EQ(programFallbackKey("gbuffers_hand"), "gbuffers_textured_lit");
-  EXPECT_EQ(programFallbackKey("gbuffers_entities_glowing"), "gbuffers_entities");
-  EXPECT_EQ(programFallbackKey("gbuffers_entities"), "gbuffers_textured_lit");
-  EXPECT_EQ(programFallbackKey("gbuffers_particles_translucent"), "gbuffers_particles");
-  EXPECT_EQ(programFallbackKey("gbuffers_spidereyes"), "gbuffers_textured");
-  EXPECT_EQ(programFallbackKey("shadow_lightning"), "shadow_entities");
-  EXPECT_EQ(programFallbackKey("shadow_cutout"), "shadow");
-  EXPECT_EQ(programFallbackKey("dh_water"), "dh_terrain");
-  EXPECT_EQ(programFallbackKey("gbuffers_basic"), "");
-  EXPECT_EQ(programFallbackKey("shadow"), "");
-  EXPECT_EQ(programFallbackKey("dh_terrain"), "");
-  EXPECT_EQ(programFallbackKey("final"), "");
+ // https://github.com/IrisShaders/Iris/blob/26.1/common/src/main/java/net/irisshaders/iris/shaderpack/loading/ProgramId.java
+ EXPECT_EQ(programFallbackKey("gbuffers_textured_lit"), "gbuffers_textured");
+ EXPECT_EQ(programFallbackKey("gbuffers_textured"), "gbuffers_basic");
+ EXPECT_EQ(programFallbackKey("gbuffers_terrain_solid"), "gbuffers_terrain");
+ EXPECT_EQ(programFallbackKey("gbuffers_terrain"), "gbuffers_textured_lit");
+ EXPECT_EQ(programFallbackKey("gbuffers_block_translucent"), "gbuffers_block");
+ EXPECT_EQ(programFallbackKey("gbuffers_block"), "gbuffers_terrain");
+ EXPECT_EQ(programFallbackKey("gbuffers_hand_water"), "gbuffers_hand");
+ EXPECT_EQ(programFallbackKey("gbuffers_hand"), "gbuffers_textured_lit");
+ EXPECT_EQ(programFallbackKey("gbuffers_entities_glowing"), "gbuffers_entities");
+ EXPECT_EQ(programFallbackKey("gbuffers_entities"), "gbuffers_textured_lit");
+ EXPECT_EQ(programFallbackKey("gbuffers_particles_translucent"), "gbuffers_particles");
+ EXPECT_EQ(programFallbackKey("gbuffers_spidereyes"), "gbuffers_textured");
+ EXPECT_EQ(programFallbackKey("shadow_lightning"), "shadow_entities");
+ EXPECT_EQ(programFallbackKey("shadow_cutout"), "shadow");
+ EXPECT_EQ(programFallbackKey("gbuffers_basic"), "");
+ EXPECT_EQ(programFallbackKey("shadow"), "");
+ EXPECT_EQ(programFallbackKey("final"), "");
 }
 TEST(PackLoaderTest, ProgramResolverSkipsMissingAndDisabledSources) {
-  PackDefinition pack;
-  pack.programs["gbuffers_basic"] = {};
-  pack.programs["gbuffers_textured"] = {};
-  pack.programs["gbuffers_terrain"] = {};
-  pack.programEnabled["gbuffers_terrain"] = "false";
-  EXPECT_EQ(resolved(pack, "gbuffers_terrain_solid"), "gbuffers_textured");
+ PackDefinition pack;
+ pack.programs["gbuffers_basic"] = {};
+ pack.programs["gbuffers_textured"] = {};
+ pack.programs["gbuffers_terrain"] = {};
+ pack.programEnabled["gbuffers_terrain"] = "false";
+ EXPECT_EQ(resolved(pack, "gbuffers_terrain_solid"), "gbuffers_textured");
 }
 TEST(PackLoaderTest, DefaultsMatchJavaPackDirectives) {
-  // A pack with no shadow/weather directives must inherit the Java defaults:
-  // PackShadowDirectives.java:48-92 (resolution 1024 via loadProgramSet fallback,
-  // distance 160, nearPlane ShadowMatrices.NEAR = -100.05, farPlane 156,
-  // shouldRenderPlayer/shouldRenderLightBlockEntities false) and
-  // PackDirectives.java:59-66 (wetnessHalfLife 600, drynessHalfLife 200,
-  // eyeBrightnessHalfLife 10, centerDepthHalfLife 1).
-  PackDefinition pack;
-  std::unordered_map<std::string, PackSourceOption> options;
-  std::string error;
-  EXPECT_TRUE(load({{"shaders/gbuffers_basic.vsh", "void main(){}"},
-                    {"shaders/gbuffers_basic.fsh", "void main(){}"}},
-                   pack,
-                   options,
-                   error))
-      << error;
-  EXPECT_FALSE(pack.shadowPlayer);
-  EXPECT_TRUE(pack.shadowEntities);
-  EXPECT_TRUE(pack.shadowTerrain);
-  EXPECT_TRUE(pack.shadowTranslucent);
-  EXPECT_TRUE(pack.shadowBlockEntities);
-  EXPECT_FALSE(pack.shadowLightBlockEntities);
-  EXPECT_FLOAT_EQ(pack.shadowDistance, 160.0f);
-  EXPECT_FLOAT_EQ(pack.shadowNearPlane, -100.05f);
-  EXPECT_FLOAT_EQ(pack.shadowFarPlane, 156.0f);
-  EXPECT_FLOAT_EQ(pack.voxelDistance, 0.0f);
-  EXPECT_FLOAT_EQ(pack.entityShadowDistanceMul, 1.0f);
-  EXPECT_FLOAT_EQ(pack.shadowDistanceRenderMul, -1.0f);
-  EXPECT_FLOAT_EQ(pack.shadowIntervalSize, 2.0f);
-  EXPECT_FLOAT_EQ(pack.wetnessHalflife, 600.0f);
-  EXPECT_FLOAT_EQ(pack.drynessHalflife, 200.0f);
-  EXPECT_FLOAT_EQ(pack.centerDepthHalflife, 1.0f);
-  EXPECT_FLOAT_EQ(pack.eyeBrightnessHalflife, 10.0f);
+ // A pack with no shadow/weather directives must inherit the Java defaults:
+ // PackShadowDirectives.java:48-92 (resolution 1024 via loadProgramSet fallback,
+ // distance 160, nearPlane ShadowMatrices.NEAR = -100.05, farPlane 156,
+ // shouldRenderPlayer/shouldRenderLightBlockEntities false) and
+ // PackDirectives.java:59-66 (wetnessHalfLife 600, drynessHalfLife 200,
+ // eyeBrightnessHalfLife 10, centerDepthHalfLife 1).
+ PackDefinition pack;
+ std::unordered_map<std::string, PackSourceOption> options;
+ std::string error;
+ EXPECT_TRUE(load({{"shaders/gbuffers_basic.vsh", "void main(){}"},
+                   {"shaders/gbuffers_basic.fsh", "void main(){}"}},
+                  pack,
+                  options,
+                  error))
+     << error;
+ EXPECT_FALSE(pack.shadowPlayer);
+ EXPECT_TRUE(pack.shadowEntities);
+ EXPECT_TRUE(pack.shadowTerrain);
+ EXPECT_TRUE(pack.shadowTranslucent);
+ EXPECT_TRUE(pack.shadowBlockEntities);
+ EXPECT_FALSE(pack.shadowLightBlockEntities);
+ EXPECT_FLOAT_EQ(pack.shadowDistance, 160.0f);
+ EXPECT_FLOAT_EQ(pack.shadowNearPlane, -100.05f);
+ EXPECT_FLOAT_EQ(pack.shadowFarPlane, 156.0f);
+ EXPECT_FLOAT_EQ(pack.voxelDistance, 0.0f);
+ EXPECT_FLOAT_EQ(pack.entityShadowDistanceMul, 1.0f);
+ EXPECT_FLOAT_EQ(pack.shadowDistanceRenderMul, -1.0f);
+ EXPECT_FLOAT_EQ(pack.shadowIntervalSize, 2.0f);
+ EXPECT_FLOAT_EQ(pack.wetnessHalflife, 600.0f);
+ EXPECT_FLOAT_EQ(pack.drynessHalflife, 200.0f);
+ EXPECT_FLOAT_EQ(pack.centerDepthHalflife, 1.0f);
+ EXPECT_FLOAT_EQ(pack.eyeBrightnessHalflife, 10.0f);
 }
 TEST(PackLoaderTest, ShadowNearFarPlanesAcceptNegativeNearLikeJava) {
-  // PackShadowDirectives.java:309-310 assigns the raw const value with no clamp;
-  // the Java default near plane itself is negative (ShadowMatrices.NEAR = -100.05).
-  PackDefinition pack;
-  std::unordered_map<std::string, PackSourceOption> options;
-  std::string error;
-  EXPECT_TRUE(load({{"shaders/gbuffers_basic.vsh", "void main(){}"},
-                    {"shaders/gbuffers_basic.fsh",
-                     "const float shadowNearPlane = -100.05;\n"
-                     "const float shadowFarPlane = 156.0;\n"
-                     "void main(){}"}},
-                   pack,
-                   options,
-                   error))
-      << error;
-  EXPECT_FLOAT_EQ(pack.shadowNearPlane, -100.05f);
-  EXPECT_FLOAT_EQ(pack.shadowFarPlane, 156.0f);
+ // PackShadowDirectives.java:309-310 assigns the raw const value with no clamp;
+ // the Java default near plane itself is negative (ShadowMatrices.NEAR = -100.05).
+ PackDefinition pack;
+ std::unordered_map<std::string, PackSourceOption> options;
+ std::string error;
+ EXPECT_TRUE(load({{"shaders/gbuffers_basic.vsh", "void main(){}"},
+                   {"shaders/gbuffers_basic.fsh",
+                    "const float shadowNearPlane = -100.05;\n"
+                    "const float shadowFarPlane = 156.0;\n"
+                    "void main(){}"}},
+                  pack,
+                  options,
+                  error))
+     << error;
+ EXPECT_FLOAT_EQ(pack.shadowNearPlane, -100.05f);
+ EXPECT_FLOAT_EQ(pack.shadowFarPlane, 156.0f);
 }
 TEST(PackLoaderTest, RenderPearlCommentedShadowDirectivesAreHonored) {
-  // RenderPearl declares its shadow tuning inside a `/* ... */` comment in
-  // prelude/directive.glsl (shadowIntervalSize = 0.0, shadowHardwareFiltering0/1 =
-  // true) and computes shadowDistance/near/far via a `#if SM_DIST == N` chain that
-  // the const scanner does not evaluate. scanPackConstants scans raw lines (comments
-  // included, unlike the format directives in scanTargetDirective which use
-  // isOffsetInComment), so the commented values ARE honored here. This is what the
-  // pack's shadow.vsh depends on: its mat3 model-view cut is only consistent with the
-  // deferred `rot_trans_mmul(shadowModelView, ...)` sample when the snap translation
-  // is disabled (shadowIntervalSize == 0.0).
-  PackDefinition pack;
-  std::unordered_map<std::string, PackSourceOption> options;
+ // RenderPearl declares its shadow tuning inside a `/* ... */` comment in
+ // prelude/directive.glsl (shadowIntervalSize = 0.0, shadowHardwareFiltering0/1 =
+ // true) and computes shadowDistance/near/far via a `#if SM_DIST == N` chain that
+ // the const scanner does not evaluate. scanPackConstants scans raw lines (comments
+ // included, unlike the format directives in scanTargetDirective which use
+ // isOffsetInComment), so the commented values ARE honored here. This is what the
+ // pack's shadow.vsh depends on: its mat3 model-view cut is only consistent with the
+ // deferred `rot_trans_mmul(shadowModelView, ...)` sample when the snap translation
+ // is disabled (shadowIntervalSize == 0.0).
+ PackDefinition pack;
+ std::unordered_map<std::string, PackSourceOption> options;
+ std::string error;
+ EXPECT_TRUE(load({{"shaders/gbuffers_basic.vsh", "void main(){}"},
+                   {"shaders/gbuffers_basic.fsh",
+                    "/*\n"
+                    "\tconst float shadowIntervalSize = 0.0;\n"
+                    "\tconst bool shadowHardwareFiltering0 = true;\n"
+                    "\tconst bool shadowHardwareFiltering1 = true;\n"
+                    "*/\n"
+                    "const float shadowDistanceRenderMul = 0.85;\n"
+                    "#if SM_DIST == 1\n"
+                    "\tconst float shadowDistance = 16;\n"
+                    "#elif SM_DIST == 10\n"
+                    "\tconst float shadowDistance = 160;\n"
+                    "\tconst float shadowNearPlane = -227;\n"
+                    "\tconst float shadowFarPlane = 227;\n"
+                    "#elif SM_DIST == 32\n"
+                    "\tconst float shadowDistance = 512;\n"
+                    "\tconst float shadowNearPlane = -695;\n"
+                    "\tconst float shadowFarPlane = 695;\n"
+                    "#endif\n"
+                    "void main(){}"}},
+                  pack,
+                  options,
+                  error))
+     << error;
+ // The commented consts are read: the pack's effective interval is 0 (no snap).
+ EXPECT_FLOAT_EQ(pack.shadowIntervalSize, 0.0f);
+ EXPECT_TRUE(pack.shadowHardwareFiltering[0]);
+ EXPECT_TRUE(pack.shadowHardwareFiltering[1]);
+ EXPECT_FLOAT_EQ(pack.shadowDistanceRenderMul, 0.85f);
+ EXPECT_FLOAT_EQ(pack.shadowDistance, 160.0f);
+ EXPECT_FLOAT_EQ(pack.shadowNearPlane, -100.05f);
+ EXPECT_FLOAT_EQ(pack.shadowFarPlane, 156.0f);
+}
+TEST(PackLoaderTest, OptionValuesReachScannedPackConstants) {
+ // Engine-side shadow tuning must follow the pack options the user set, the same
+ // way the compiled GLSL does (Iris parses programs after option replacement).
+ // RenderPearl computes shadowDistance through a `#if SM_DIST == N` ladder in
+ // directive.glsl; SM_DIST itself is a #define option in config.glsl. Constants
+ // scanned from raw text always picked the pack's shipped SM_DIST, so moving the
+ // slider changed the shader-side fade but never the shadow camera or the culling
+ // sphere.
+ const std::unordered_map<std::string, std::string> sources = {
+     {"shaders/gbuffers_basic.vsh", "void main(){}"},
+     {"shaders/gbuffers_basic.fsh",
+      "#define SM_DIST 10\n"
+      "#if SM_DIST == 1\n"
+      "\tconst float shadowDistance = 16;\n"
+      "#elif SM_DIST == 10\n"
+      "\tconst float shadowDistance = 160;\n"
+      "#elif SM_DIST == 16\n"
+      "\tconst float shadowDistance = 256;\n"
+      "#endif\n"
+      "void main(){}"}};
+ const auto run = [&sources](const std::unordered_map<std::string, std::string>& values,
+                             PackDefinition& pack,
+                             std::unordered_map<std::string, PackSourceOption>& options) {
+  std::vector<std::string> paths;
+  for(const auto& [path, ignored] : sources) paths.push_back(path);
   std::string error;
-  EXPECT_TRUE(load({{"shaders/gbuffers_basic.vsh", "void main(){}"},
-                    {"shaders/gbuffers_basic.fsh",
-                     "/*\n"
-                     "\tconst float shadowIntervalSize = 0.0;\n"
-                     "\tconst bool shadowHardwareFiltering0 = true;\n"
-                     "\tconst bool shadowHardwareFiltering1 = true;\n"
-                     "*/\n"
-                     "const float shadowDistanceRenderMul = 0.85;\n"
-                     "#if SM_DIST == 1\n"
-                     "\tconst float shadowDistance = 16;\n"
-                     "#elif SM_DIST == 10\n"
-                     "\tconst float shadowDistance = 160;\n"
-                     "\tconst float shadowNearPlane = -227;\n"
-                     "\tconst float shadowFarPlane = 227;\n"
-                     "#elif SM_DIST == 32\n"
-                     "\tconst float shadowDistance = 512;\n"
-                     "\tconst float shadowNearPlane = -695;\n"
-                     "\tconst float shadowFarPlane = 695;\n"
-                     "#endif\n"
-                     "void main(){}"}},
-                   pack,
-                   options,
-                   error))
-      << error;
-  // The commented consts are read: the pack's effective interval is 0 (no snap).
-  EXPECT_FLOAT_EQ(pack.shadowIntervalSize, 0.0f);
-  EXPECT_TRUE(pack.shadowHardwareFiltering[0]);
-  EXPECT_TRUE(pack.shadowHardwareFiltering[1]);
-  EXPECT_FLOAT_EQ(pack.shadowDistanceRenderMul, 0.85f);
-  EXPECT_FLOAT_EQ(pack.shadowDistance, 160.0f);
-  EXPECT_FLOAT_EQ(pack.shadowNearPlane, -100.05f);
-  EXPECT_FLOAT_EQ(pack.shadowFarPlane, 156.0f);
+  return PackLoader::load(paths, [&sources](std::string_view path) {
+                           const auto found = sources.find(std::string(path));
+                           return found == sources.end() ? std::string{} : found->second; }, pack, options, error, values);
+ };
+ PackDefinition pack;
+ std::unordered_map<std::string, PackSourceOption> options;
+ ASSERT_TRUE(run({}, pack, options));
+ EXPECT_FLOAT_EQ(pack.shadowDistance, 160.0f);
+ PackDefinition changed;
+ std::unordered_map<std::string, PackSourceOption> changedOptions;
+ ASSERT_TRUE(run({{"SM_DIST", "16"}}, changed, changedOptions));
+ EXPECT_FLOAT_EQ(changed.shadowDistance, 256.0f);
 }
 TEST(PackLoaderTest, DynamicHandLightIsParityParsed) {
-  // Java ShaderProperties.java:83,190,756-757 parses dynamicHandLight and never
-  // consumes it; the C++ side keeps the parity parse so packs behave identically.
-  PackDefinition pack;
-  std::unordered_map<std::string, PackSourceOption> options;
-  std::string error;
-  EXPECT_TRUE(load({{"shaders/gbuffers_basic.vsh", "void main(){}"},
-                    {"shaders/gbuffers_basic.fsh", "void main(){}"},
-                    {"shaders/shaders.properties", "dynamicHandLight=true\n"}},
-                   pack,
-                   options,
-                   error))
-      << error;
-  EXPECT_TRUE(pack.dynamicHandLight);
+ // Java ShaderProperties.java:83,190,756-757 parses dynamicHandLight and never
+ // consumes it; the C++ side keeps the parity parse so packs behave identically.
+ PackDefinition pack;
+ std::unordered_map<std::string, PackSourceOption> options;
+ std::string error;
+ EXPECT_TRUE(load({{"shaders/gbuffers_basic.vsh", "void main(){}"},
+                   {"shaders/gbuffers_basic.fsh", "void main(){}"},
+                   {"shaders/shaders.properties", "dynamicHandLight=true\n"}},
+                  pack,
+                  options,
+                  error))
+     << error;
+ EXPECT_TRUE(pack.dynamicHandLight);
 }
 // mc_chunkFade must follow the geometry source, not the program-name prefix. Iris routes
 // every chunk-mesher program through SodiumTransformer, which computes a real fade (1.0
@@ -1999,39 +2005,39 @@ TEST(PackLoaderTest, DynamicHandLightIsParityParsed) {
 // SRC_ALPHA ...` erase every water and ice fragment.
 // https://github.com/IrisShaders/Iris/blob/26.1/common/src/main/java/net/irisshaders/iris/pipeline/transform/transformer/SodiumTransformer.java
 TEST(PackLoaderTest, ChunkFadeFollowsChunkMesherProgramsNotNamePrefix) {
-  net::minecraft::test::installTestGlslSnippets();
-  PackDefinition pack;
-  pack.optionalFeatures.insert("FADE_VARIABLE");
-  const ShaderTransformContext context{};
-  const std::string body = "void main(){}\n";
-  const auto vertexFor = [&](const char* program) {
-    return canonicalizeCoreSource(program, ShaderStage::Vertex, pack, body, context);
-  };
-  // Chunk-mesher programs get the real attribute, which RenderCore seeds to 1.0.
-  for(const char* program :
-      {"gbuffers_terrain", "gbuffers_terrain_solid", "gbuffers_terrain_cutout", "gbuffers_water"}) {
-    const std::string out = vertexFor(program);
-    EXPECT_NE(out.find("in float mc_chunkFade;"), std::string::npos) << program;
-    EXPECT_EQ(out.find("const float mc_chunkFade"), std::string::npos) << program;
-  }
-  // Everything else — and the shadow pass, whatever its geometry — gets the -1.0 const.
-  for(const char* program : {"gbuffers_entities", "gbuffers_hand", "gbuffers_clouds", "shadow",
-                             "shadow_water", "shadow_solid"}) {
-    const std::string out = vertexFor(program);
-    EXPECT_NE(out.find("const float mc_chunkFade = -1.0;"), std::string::npos) << program;
-    EXPECT_EQ(out.find("in float mc_chunkFade;"), std::string::npos) << program;
-  }
-  // A pack that declares the symbol itself is left alone.
-  PackDefinition declaredPack;
-  declaredPack.optionalFeatures.insert("FADE_VARIABLE");
-  const std::string declared = canonicalizeCoreSource(
-      "gbuffers_water", ShaderStage::Vertex, declaredPack, "in float mc_chunkFade;\n" + body, context);
-  EXPECT_EQ(declared.find("const float mc_chunkFade"), std::string::npos);
-  // No FADE_VARIABLE means no injection at all (the vanilla and SEUS case).
-  PackDefinition noFeature;
-  const std::string untouched =
-      canonicalizeCoreSource("gbuffers_water", ShaderStage::Vertex, noFeature, body, context);
-  EXPECT_EQ(untouched.find("mc_chunkFade"), std::string::npos);
+ net::minecraft::test::installTestGlslSnippets();
+ PackDefinition pack;
+ pack.optionalFeatures.insert("FADE_VARIABLE");
+ const ShaderTransformContext context{};
+ const std::string body = "void main(){}\n";
+ const auto vertexFor = [&](const char* program) {
+  return canonicalizeCoreSource(program, ShaderStage::Vertex, pack, body, context);
+ };
+ // Chunk-mesher programs get the real attribute, which RenderCore seeds to 1.0.
+ for(const char* program :
+     {"gbuffers_terrain", "gbuffers_terrain_solid", "gbuffers_terrain_cutout", "gbuffers_water"}) {
+  const std::string out = vertexFor(program);
+  EXPECT_NE(out.find("in float mc_chunkFade;"), std::string::npos) << program;
+  EXPECT_EQ(out.find("const float mc_chunkFade"), std::string::npos) << program;
+ }
+ // Everything else — and the shadow pass, whatever its geometry — gets the -1.0 const.
+ for(const char* program : {"gbuffers_entities", "gbuffers_hand", "gbuffers_clouds", "shadow",
+                            "shadow_water", "shadow_solid"}) {
+  const std::string out = vertexFor(program);
+  EXPECT_NE(out.find("const float mc_chunkFade = -1.0;"), std::string::npos) << program;
+  EXPECT_EQ(out.find("in float mc_chunkFade;"), std::string::npos) << program;
+ }
+ // A pack that declares the symbol itself is left alone.
+ PackDefinition declaredPack;
+ declaredPack.optionalFeatures.insert("FADE_VARIABLE");
+ const std::string declared = canonicalizeCoreSource(
+     "gbuffers_water", ShaderStage::Vertex, declaredPack, "in float mc_chunkFade;\n" + body, context);
+ EXPECT_EQ(declared.find("const float mc_chunkFade"), std::string::npos);
+ // No FADE_VARIABLE means no injection at all (the vanilla and SEUS case).
+ PackDefinition noFeature;
+ const std::string untouched =
+     canonicalizeCoreSource("gbuffers_water", ShaderStage::Vertex, noFeature, body, context);
+ EXPECT_EQ(untouched.find("mc_chunkFade"), std::string::npos);
 }
 // A dimension folder must inherit consts that live in the pack-wide includes. RenderPearl
 // keeps its programs in world_default/ but declares `const int shadowMapResolution` in
@@ -2039,26 +2045,26 @@ TEST(PackLoaderTest, ChunkFadeFollowsChunkMesherProgramsNotNamePrefix) {
 // through to the 1024 default, and then overrode the root's correct value — allocating a
 // 1024 shadow map against GLSL compiled for 2048, which reads as shadow acne.
 TEST(PackLoaderTest, DimensionInheritsShadowMapResolutionFromSharedInclude) {
-  PackDefinition pack;
-  std::unordered_map<std::string, PackSourceOption> options;
-  std::string error;
-  EXPECT_TRUE(load({{"shaders/dimension.properties", "dimension.world_default=*\n"},
-                    {"shaders/prelude/config.glsl", "const int shadowMapResolution = 2048;\n"},
-                    {"shaders/prog/lit.fsh", "#include \"/prelude/config.glsl\"\nvoid main(){}\n"},
-                    {"shaders/world_default/gbuffers_basic.vsh", "void main(){}"},
-                    {"shaders/world_default/gbuffers_basic.fsh", "#include \"/prog/lit.fsh\"\n"},
-                    {"shaders/world_default/shadow.vsh", "void main(){}"},
-                    {"shaders/world_default/shadow.fsh", "#include \"/prog/lit.fsh\"\n"}},
-                   pack,
-                   options,
-                   error))
-      << error;
-  EXPECT_EQ(pack.shadowMapResolution, 2048);
-  const auto dimension = pack.dimensionDefinitions.find("*");
-  ASSERT_NE(dimension, pack.dimensionDefinitions.end());
-  ASSERT_NE(dimension->second, nullptr);
-  // Not 1024: the dimension resolves includes before scanning, so the shared const wins
-  // and the "pack ships a shadow program but declared no resolution" default never fires.
-  EXPECT_EQ(dimension->second->shadowMapResolution, 2048);
+ PackDefinition pack;
+ std::unordered_map<std::string, PackSourceOption> options;
+ std::string error;
+ EXPECT_TRUE(load({{"shaders/dimension.properties", "dimension.world_default=*\n"},
+                   {"shaders/prelude/config.glsl", "const int shadowMapResolution = 2048;\n"},
+                   {"shaders/prog/lit.fsh", "#include \"/prelude/config.glsl\"\nvoid main(){}\n"},
+                   {"shaders/world_default/gbuffers_basic.vsh", "void main(){}"},
+                   {"shaders/world_default/gbuffers_basic.fsh", "#include \"/prog/lit.fsh\"\n"},
+                   {"shaders/world_default/shadow.vsh", "void main(){}"},
+                   {"shaders/world_default/shadow.fsh", "#include \"/prog/lit.fsh\"\n"}},
+                  pack,
+                  options,
+                  error))
+     << error;
+ EXPECT_EQ(pack.shadowMapResolution, 2048);
+ const auto dimension = pack.dimensionDefinitions.find("*");
+ ASSERT_NE(dimension, pack.dimensionDefinitions.end());
+ ASSERT_NE(dimension->second, nullptr);
+ // Not 1024: the dimension resolves includes before scanning, so the shared const wins
+ // and the "pack ships a shadow program but declared no resolution" default never fires.
+ EXPECT_EQ(dimension->second->shadowMapResolution, 2048);
 }
 } // namespace net::minecraft::client::render

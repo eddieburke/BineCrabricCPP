@@ -1,15 +1,18 @@
 #include "net/minecraft/client/render/world/ChunkCompilePipeline.hpp"
 #include <algorithm>
 #include <cmath>
+#include <cstdio>
 #include <memory>
 #include <unordered_set>
 #include <vector>
+#include "net/minecraft/client/ClientLog.hpp"
 #include "net/minecraft/client/Minecraft.hpp"
 #include "net/minecraft/client/option/RenderSettings.hpp"
 #include "net/minecraft/client/render/world/WorldRenderer.hpp"
 #include "net/minecraft/client/render/chunk/ChunkBuilder.hpp"
 #include "net/minecraft/client/render/chunk/ChunkMeshJob.hpp"
 #include "net/minecraft/entity/Entity.hpp"
+#include <limits>
 #include "net/minecraft/util/concurrent/FrameBudget.hpp"
 namespace net::minecraft::client::render {
 namespace {
@@ -20,82 +23,74 @@ void ChunkCompilePipeline::enqueueDirtyChunk(chunk::ChunkBuilder* chunk) {
  if(chunk == nullptr || chunk->meshJobInFlight) {
   return;
  }
- // P-LITGATE: hold the FIRST mesh of a freshly-created column until its column
- // is marked lit (markChunkColumnLit re-enqueues it). Re-meshes of already-built
- // sections are never held — the gate only delays the first build.
- if(!chunk->built && facade_.chunkSections_.columnPendingLit(chunk->x >> 4, chunk->z >> 4)) {
-  return;
- }
- noteNearDirty(chunk);
- dirtyChunks_.insert(chunk);
-}
-void ChunkCompilePipeline::noteNearDirty(chunk::ChunkBuilder* chunk) {
+ // The old P-LITGATE held a fresh column's first mesh until the lighting engine
+ // called back. That made "does terrain render at all" depend on a callback
+ // chain with two release paths and an idle-fallback — if any of them misses,
+ // sections sit dirty forever and the world is simply empty, with no error.
+ // Not worth it: meshing immediately costs at most one dark first build, and
+ // the drained lighting region re-dirties the section anyway
+ // (World::doLightingUpdates -> setBlocksDirty -> markDirty -> invalidate).
  constexpr float kNearDirtyDistSq = 32.0f * 32.0f;
  constexpr std::size_t kNearDirtyCap = 64;
- if(nearDirtyChunks_.size() >= kNearDirtyCap) {
-  return;
- }
- const net::minecraft::Entity* camera =
-     facade_.cameraEntity_ != nullptr ? facade_.cameraEntity_ : (facade_.client != nullptr ? facade_.client->camera : nullptr);
- if(camera == nullptr || chunk->squaredDistanceTo(camera->x, camera->y, camera->z) > kNearDirtyDistSq) {
-  return;
- }
- nearDirtyChunks_.insert(chunk);
-}
-void ChunkCompilePipeline::retireOrFreeSection(std::unique_ptr<chunk::ChunkBuilder> section) {
- if(section == nullptr) {
-  return;
- }
- dirtyChunks_.erase(section.get());
- nearDirtyChunks_.erase(section.get());
- if(section->meshJobInFlight) {
-  section->retired = true;
-  retiring_.push_back(std::move(section));
-  return;
- }
- section->freeRegionSlots();
-}
-void ChunkCompilePipeline::sweepRetiring() {
- for(auto it = retiring_.begin(); it != retiring_.end();) {
-  if((*it)->meshJobInFlight) {
-   ++it;
-   continue;
+ if(nearDirtyChunks_.size() < kNearDirtyCap) {
+  const net::minecraft::Entity* camera =
+      scene_.camera != nullptr ? scene_.camera : (scene_.client != nullptr ? scene_.client->camera : nullptr);
+  if(camera != nullptr && chunk->squaredDistanceTo(camera->x, camera->y, camera->z) <= kNearDirtyDistSq) {
+   nearDirtyChunks_.insert(chunk);
   }
-  (*it)->freeRegionSlots();
-  it = retiring_.erase(it);
  }
+ dirtyChunks_.insert(chunk);
+}
+void ChunkCompilePipeline::releaseSection(chunk::ChunkBuilder& section) {
+ // No deferred-retirement queue: jobs hold a weak_ptr, so the section can be
+ // torn down here and now. Freeing the GL buffers on the main thread at the
+ // moment of eviction is the whole point — it is the only thread that may.
+ dirtyChunks_.erase(&section);
+ nearDirtyChunks_.erase(&section);
+ section.freeGpuBuffers();
 }
 bool ChunkCompilePipeline::startMeshJob(chunk::ChunkBuilder* chunk,
                                         bool nearLane,
                                         int priority,
-                                        const client::option::RenderSettings& resolvedOpts,
-                                        bool fancyGraphics) {
+                                        const client::option::RenderSettings& resolvedOpts) {
  if(chunk == nullptr || chunk->meshJobInFlight || !chunk->dirty) {
   return false;
  }
- auto job = chunk::ChunkMeshJob::capture(*chunk, resolvedOpts, fancyGraphics);
+ auto job = chunk::ChunkMeshJob::capture(*chunk, resolvedOpts);
  if(job == nullptr) {
   return false;
  }
  // Snapshot capture runs on the mesh worker while pins are held.
  chunk->meshJobInFlight = true;
  dirtyChunks_.erase(chunk);
-  if(nearLane) {
-   meshScheduler_.enqueueNear(std::move(job));
-  } else {
-   meshScheduler_.enqueue(std::move(job), priority - kMeshBias);
-  }
+ const auto enqueue = [&](std::shared_ptr<chunk::ChunkMeshJob> job, int jobPriority) {
+  meshHandoff_.enqueue(
+      std::move(job),
+      [](chunk::ChunkMeshJob& meshJob) {
+       try {
+        chunk::ChunkBuilder::buildMesh(meshJob);
+       } catch(...) {
+        meshJob.failed = true;
+       }
+      },
+      jobPriority);
+ };
+ if(nearLane) {
+  job->nearLane = true;
+  enqueue(std::move(job), std::numeric_limits<int>::min());
+ } else {
+  enqueue(std::move(job), priority - kMeshBias);
+ }
  return true;
 }
 bool ChunkCompilePipeline::compileChunks(net::minecraft::entity::LivingEntity& /*camera*/, bool force) {
- facade_.chunkSections_.drainBorderRefresh();
- const client::option::RenderSettings& resolvedOpts = facade_.frameSettings();
- const bool fancyGraphics = facade_.activeOptions().fancyGraphics;
- const float gridAreaScale = static_cast<float>(facade_.chunkSections_.renderRadiusChunks() *
-                                                facade_.chunkSections_.renderRadiusChunks()) /
+ sectionSystem_->drainBorderRefresh();
+ const client::option::RenderSettings& resolvedOpts = *scene_.settings;
+ const float gridAreaScale = static_cast<float>(sectionSystem_->renderRadiusChunks() *
+                                                sectionSystem_->renderRadiusChunks()) /
                              static_cast<float>(kBaselineRadius * kBaselineRadius);
- const std::size_t workerCount = meshScheduler_.workerCount();
- const std::size_t backlog = dirtyChunks_.size() + pendingMeshUploads_.size() + meshScheduler_.pendingJobs();
+ const std::size_t workerCount = meshHandoff_.workerCount();
+ const std::size_t backlog = dirtyChunks_.size() + pendingMeshUploads_.size() + meshHandoff_.pendingJobs();
  const bool loadingBacklog = backlog > 512u;
  const int minUploadsPerFrame = loadingBacklog ? std::clamp(static_cast<int>(workerCount * 2u), 4, 16)
                                                : std::clamp(static_cast<int>(std::ceil(2.0f * gridAreaScale)), 1, 6);
@@ -109,16 +104,15 @@ bool ChunkCompilePipeline::compileChunks(net::minecraft::entity::LivingEntity& /
  int uploadCount = 0;
  int nearUploadCount = 0;
  std::vector<std::shared_ptr<chunk::ChunkMeshJob>> deferredUploads;
- deferredUploads.reserve(pendingMeshUploads_.size() + meshScheduler_.pendingJobs());
+ deferredUploads.reserve(pendingMeshUploads_.size() + meshHandoff_.pendingJobs());
  const auto processUpload = [&](std::shared_ptr<chunk::ChunkMeshJob> job, bool nearLane) {
-  chunk::ChunkBuilder* builder = job->builder;
-  if(builder == nullptr) {
+  // Evicted while the job was in flight: the section and its buffers are
+  // already gone, and this result has nowhere to land.
+  const std::shared_ptr<chunk::ChunkBuilder> owner = job->builder.lock();
+  if(owner == nullptr) {
    return;
   }
-  if(builder->retired) {
-   builder->meshJobInFlight = false;
-   return;
-  }
+  chunk::ChunkBuilder* builder = owner.get();
   const net::minecraft::util::concurrent::FrameBudget& budget = nearLane ? nearBudget : uploadBudget;
   const int budgetCount = nearLane ? nearUploadCount : uploadCount;
   if(!budget.hasRemaining(budgetCount)) {
@@ -152,7 +146,7 @@ bool ChunkCompilePipeline::compileChunks(net::minecraft::entity::LivingEntity& /
   }
  }
  pendingMeshUploads_.clear();
- for(std::shared_ptr<chunk::ChunkMeshJob>& job : meshScheduler_.drainCompleted()) {
+ for(std::shared_ptr<chunk::ChunkMeshJob>& job : meshHandoff_.drainCompleted()) {
   if(job->nearLane) {
    nearUploads.push_back(std::move(job));
   } else {
@@ -166,9 +160,8 @@ bool ChunkCompilePipeline::compileChunks(net::minecraft::entity::LivingEntity& /
   processUpload(std::move(job), false);
  }
  pendingMeshUploads_ = std::move(deferredUploads);
- sweepRetiring();
  const std::size_t targetInFlight = workerCount * (force ? 6u : 3u);
- std::size_t inFlight = meshScheduler_.pendingJobs();
+ std::size_t inFlight = meshHandoff_.pendingJobs();
  if(inFlight < targetInFlight && pendingMeshUploads_.size() < targetInFlight * 2u) {
   const int requestedCaptures =
       client::option::chunkUpdatesPerPass(resolvedOpts, static_cast<int>(dirtyChunks_.size()));
@@ -176,7 +169,7 @@ bool ChunkCompilePipeline::compileChunks(net::minecraft::entity::LivingEntity& /
                                         : std::clamp(requestedCaptures, 1, static_cast<int>(workerCount));
   const net::minecraft::util::concurrent::FrameBudget captureBudget =
       net::minecraft::util::concurrent::FrameBudget::fromSharedMs((force || loadingBacklog) ? 2 : 1,
-                                                                   minCapturesPerFrame);
+                                                                  minCapturesPerFrame);
   int captures = 0;
   const auto canCapture = [&] { return inFlight < targetInFlight && captureBudget.hasRemaining(captures); };
   for(auto it = nearDirtyChunks_.begin(); it != nearDirtyChunks_.end() && canCapture();) {
@@ -185,7 +178,7 @@ bool ChunkCompilePipeline::compileChunks(net::minecraft::entity::LivingEntity& /
     it = nearDirtyChunks_.erase(it);
     continue;
    }
-   if(startMeshJob(section, true, 0, resolvedOpts, fancyGraphics)) {
+   if(startMeshJob(section, true, 0, resolvedOpts)) {
     it = nearDirtyChunks_.erase(it);
     ++inFlight;
     ++captures;
@@ -193,29 +186,32 @@ bool ChunkCompilePipeline::compileChunks(net::minecraft::entity::LivingEntity& /
     ++it;
    }
   }
-  const auto& drawRings = facade_.chunkSections_.drawRings();
-  for(std::size_t ring = 0; ring < drawRings.size() && canCapture(); ++ring) {
-   for(chunk::ChunkBuilder* section : drawRings[ring]) {
-    if(!canCapture()) {
-     break;
-    }
-    if(section == nullptr || !dirtyChunks_.contains(section)) {
-     continue;
-    }
-    if(!section->dirty) {
-     dirtyChunks_.erase(section);
-     continue;
-    }
-    if(section->meshJobInFlight || (force && !section->inFrustum)) {
-     continue;
-    }
-    if(startMeshJob(section, false, facade_.chunkSections_.ringOf(*section), resolvedOpts, fancyGraphics)) {
-     ++inFlight;
-     ++captures;
-    }
+  // Ascending graph-distance order (ChunkSectionSystem::rebuildSectionOrder):
+  // strictly nearest-first, and unlike the old chebyshev ring buckets it
+  // covers sections the occlusion walk can't reach too, so a dirty section
+  // behind solid terrain still gets scheduled instead of being invisible to
+  // this loop until it happens to become visible.
+  const auto& sectionsByPriority = sectionSystem_->sectionsByPriority();
+  for(chunk::ChunkBuilder* section : sectionsByPriority) {
+   if(!canCapture()) {
+    break;
+   }
+   if(section == nullptr || !dirtyChunks_.contains(section)) {
+    continue;
+   }
+   if(!section->dirty) {
+    dirtyChunks_.erase(section);
+    continue;
+   }
+   if(section->meshJobInFlight || (force && !section->inFrustum)) {
+    continue;
+   }
+   if(startMeshJob(section, false, section->meshPriority, resolvedOpts)) {
+    ++inFlight;
+    ++captures;
    }
   }
  }
- return dirtyChunks_.empty() && nearDirtyChunks_.empty() && pendingMeshUploads_.empty() && meshScheduler_.idle();
+ return dirtyChunks_.empty() && nearDirtyChunks_.empty() && pendingMeshUploads_.empty() && meshHandoff_.idle();
 }
 } // namespace net::minecraft::client::render

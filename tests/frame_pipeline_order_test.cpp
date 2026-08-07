@@ -3,11 +3,9 @@
 #include <vector>
 #include "net/minecraft/client/core/TaskMailbox.hpp"
 #include "net/minecraft/client/util/FramePipeline.hpp"
-#include "net/minecraft/client/util/FrameProfiler.hpp"
 namespace {
 using FramePipeline = net::minecraft::client::util::FramePipeline;
-using FrameProfiler = net::minecraft::client::util::FrameProfiler;
-} // namespace
+}
 TEST(FramePipeline, EnumeratesPhasesInDrainToDiagnosticsOrder) {
  const FramePipeline::Phase expected[] = {FramePipeline::Phase::Drain, FramePipeline::Phase::Input,
                                           FramePipeline::Phase::Ticks, FramePipeline::Phase::Render,
@@ -53,35 +51,35 @@ TEST(TaskMailbox, EmptyDrainReturnsZero) {
  EXPECT_EQ(mailbox.drainTick(), std::size_t(0));
  EXPECT_EQ(mailbox.drainRender(), std::size_t(0));
 }
-TEST(FrameProfiler, RecordsPhaseDurationsWhenTraceEnabled) {
+TEST(FramePipeline, RecordsPhaseDurationsWhenTraceEnabled) {
 #ifdef MINECRAFT_FRAME_PROFILE
- FrameProfiler& profiler = FrameProfiler::instance();
- profiler.beginFrame();
- profiler.beginPhase(FramePipeline::Phase::Drain);
- profiler.endPhase();
- profiler.beginPhase(FramePipeline::Phase::Input);
- profiler.endPhase();
- profiler.beginPhase(FramePipeline::Phase::Render);
- profiler.endPhase();
- EXPECT_EQ(profiler.recordCount(), std::size_t(3));
- EXPECT_EQ(profiler.records()[0].phase, FramePipeline::Phase::Drain);
- EXPECT_EQ(profiler.records()[1].phase, FramePipeline::Phase::Input);
- EXPECT_EQ(profiler.records()[2].phase, FramePipeline::Phase::Render);
- EXPECT_GE(profiler.records()[0].duration.count(), 0);
+ FramePipeline pipeline;
+ pipeline.beginFrame();
+ pipeline.beginPhase(FramePipeline::Phase::Drain);
+ pipeline.endPhase();
+ pipeline.beginPhase(FramePipeline::Phase::Input);
+ pipeline.endPhase();
+ pipeline.beginPhase(FramePipeline::Phase::Render);
+ pipeline.endPhase();
+ EXPECT_EQ(pipeline.recordCount(), std::size_t(3));
+ EXPECT_EQ(pipeline.records()[0].phase, FramePipeline::Phase::Drain);
+ EXPECT_EQ(pipeline.records()[1].phase, FramePipeline::Phase::Input);
+ EXPECT_EQ(pipeline.records()[2].phase, FramePipeline::Phase::Render);
+ EXPECT_GE(pipeline.records()[0].duration.count(), 0);
 #else
- SUCCEED() << "MINECRAFT_FRAME_PROFILE off; FrameProfiler is a no-op.";
+ SUCCEED() << "MINECRAFT_FRAME_PROFILE off; FramePipeline tracing is a no-op.";
 #endif
 }
-TEST(FrameProfiler, BeginFrameResetsRecordsWhenTraceEnabled) {
+TEST(FramePipeline, BeginFrameResetsRecordsWhenTraceEnabled) {
 #ifdef MINECRAFT_FRAME_PROFILE
- FrameProfiler& profiler = FrameProfiler::instance();
- profiler.beginFrame();
- profiler.beginPhase(FramePipeline::Phase::Pace);
- profiler.endPhase();
- ASSERT_EQ(profiler.recordCount(), std::size_t(1));
- profiler.beginFrame();
- EXPECT_EQ(profiler.recordCount(), std::size_t(0));
+ FramePipeline pipeline;
+ pipeline.beginFrame();
+ pipeline.beginPhase(FramePipeline::Phase::Pace);
+ pipeline.endPhase();
+ ASSERT_EQ(pipeline.recordCount(), std::size_t(1));
+ pipeline.beginFrame();
+ EXPECT_EQ(pipeline.recordCount(), std::size_t(0));
 #else
- SUCCEED() << "MINECRAFT_FRAME_PROFILE off; FrameProfiler is a no-op.";
+ SUCCEED() << "MINECRAFT_FRAME_PROFILE off; FramePipeline tracing is a no-op.";
 #endif
 }

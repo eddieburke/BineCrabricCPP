@@ -56,6 +56,6 @@ class RegionWorldStorageSource : public AlphaWorldStorageSource {
  }
  // Repacks an alpha save (per-chunk c.x.z.dat) into McRegion (.mcr) and bumps level.dat to
  // version 19132, so the world loads region-native afterward. Defined in the .cpp.
- bool convert(const std::string& saveName, client::gui::screen::LoadingDisplay* display) override;
+ bool convert(const std::string& saveName, ProgressCallback progress = nullptr) override;
 };
 } // namespace net::minecraft

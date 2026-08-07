@@ -41,12 +41,5 @@ TEST(ThreadCoordinatorTest, ComputeShare) {
  configure8CoreBaseline();
  EXPECT_EQ(ThreadCoordinator::instance().computeShare(3), 1U);
 }
-TEST(ThreadCoordinatorTest, ReserveDynamicTracksPending) {
- const std::uint64_t before = ThreadCoordinator::instance().totalPending();
- ThreadCoordinator::instance().reserveDynamic(2);
- EXPECT_EQ(ThreadCoordinator::instance().totalPending(), before + 2U);
- ThreadCoordinator::instance().releaseDynamic(2);
- EXPECT_EQ(ThreadCoordinator::instance().totalPending(), before);
-}
 } // namespace
 } // namespace net::minecraft::test

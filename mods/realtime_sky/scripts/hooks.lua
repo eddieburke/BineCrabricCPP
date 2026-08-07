@@ -326,7 +326,6 @@ local function register()
       return realtime_active()
     end,
   }, function(event)
-    if event.time_mode and event.time_mode ~= 0 then return event end
     local frame = current_solar_frame(event.tick_delta)
     if config.drive_sun then
       event.cancel_vanilla = true
@@ -343,7 +342,6 @@ local function register()
       return realtime_active()
     end,
   }, function(event)
-    if event.time_mode and event.time_mode ~= 0 then return event end
     local frame = current_solar_frame(event.partial_ticks)
     event.r, event.g, event.b = sky_render.sky_rgb(frame)
   end)
@@ -356,7 +354,6 @@ local function register()
       return realtime_active()
     end,
   }, function(event)
-    if event.time_mode and event.time_mode ~= 0 then return event end
     local frame = current_solar_frame(event.partial_ticks)
     event.r, event.g, event.b = sky_render.fog_rgb(frame)
   end)
@@ -532,7 +529,8 @@ local function register()
     end
   end)
 
-  -- time_mode is not pushed on world_tick; rely on render/color hooks for Day/Night yield.
+  -- The engine's published celestial state already reflects any day/night override,
+  -- so the world clock can be synchronized without a time_mode intermediate.
   minecraft.on("world_tick", { before = false }, function(event)
     if not realtime_active() then
       return

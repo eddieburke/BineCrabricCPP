@@ -11,12 +11,16 @@
 #include "net/minecraft/client/texture/TextureManager.hpp"
 #include "net/minecraft/entity/LivingEntity.hpp"
 #include "net/minecraft/util/math/MathHelper.hpp"
+#include "net/minecraft/util/math/Types.hpp"
 #include "net/minecraft/world/World.hpp"
 #include "net/minecraft/world/biome/Biome.hpp"
 #include "net/minecraft/world/biome/source/BiomeSource.hpp"
 #include "net/minecraft/world/light/LightType.hpp"
 namespace net::minecraft::client::render::atmosphere {
-void PrecipitationRenderer::renderPrecipitation(const AtmosphereContext& ctx, float tickDelta) {
+namespace {
+JavaRandom random_{};
+}
+void renderPrecipitation(const AtmosphereContext& ctx, float tickDelta) {
  if(ctx.world == nullptr || ctx.camera == nullptr) {
   return;
  }
@@ -25,7 +29,8 @@ void PrecipitationRenderer::renderPrecipitation(const AtmosphereContext& ctx, fl
  if(rain <= 0.0f) {
   return;
  }
- if(ctx.livingCamera == nullptr) {
+ const auto* livingCamera = dynamic_cast<const net::minecraft::entity::LivingEntity*>(ctx.camera);
+ if(livingCamera == nullptr) {
   return;
  }
  net::minecraft::World* world = ctx.world;
@@ -33,16 +38,16 @@ void PrecipitationRenderer::renderPrecipitation(const AtmosphereContext& ctx, fl
  if(biomeSource == nullptr) {
   return;
  }
- const int centerX = MathHelper::floor(ctx.livingCamera->x);
- const int centerY = MathHelper::floor(ctx.livingCamera->y);
- const int centerZ = MathHelper::floor(ctx.livingCamera->z);
- const double interpX = ctx.livingCamera->lastTickX +
-                        (ctx.livingCamera->x - ctx.livingCamera->lastTickX) * static_cast<double>(tickDelta);
- const double interpY = ctx.livingCamera->lastTickY +
-                        (ctx.livingCamera->y - ctx.livingCamera->lastTickY) * static_cast<double>(tickDelta);
- const double interpZ = ctx.livingCamera->lastTickZ +
-                        (ctx.livingCamera->z - ctx.livingCamera->lastTickZ) * static_cast<double>(tickDelta);
- Tessellator& tessellator = INSTANCE;
+ const int centerX = MathHelper::floor(livingCamera->x);
+ const int centerY = MathHelper::floor(livingCamera->y);
+ const int centerZ = MathHelper::floor(livingCamera->z);
+ const double interpX = livingCamera->lastTickX +
+                        (livingCamera->x - livingCamera->lastTickX) * static_cast<double>(tickDelta);
+ const double interpY = livingCamera->lastTickY +
+                        (livingCamera->y - livingCamera->lastTickY) * static_cast<double>(tickDelta);
+ const double interpZ = livingCamera->lastTickZ +
+                        (livingCamera->z - livingCamera->lastTickZ) * static_cast<double>(tickDelta);
+ Tessellator& tessellator = Tessellator::INSTANCE;
  render::RenderPassScope passScope(render::RenderType::weather());
  core::depthMask(ctx.settings.rainDepth);
  core::setAlphaTestRef(0.01f);
@@ -84,8 +89,8 @@ void PrecipitationRenderer::renderPrecipitation(const AtmosphereContext& ctx, fl
    const float scroll = (static_cast<float>(ctx.atmosphereTicks & 0x1FF) + tickDelta) / 512.0f;
    const float uOff = random_.nextFloat() + phase * 0.01f * static_cast<float>(random_.nextGaussian());
    const float vOff = random_.nextFloat() + phase * static_cast<float>(random_.nextGaussian()) * 0.001f;
-   const double dx = static_cast<double>(static_cast<float>(x) + 0.5f) - ctx.livingCamera->x;
-   const double dz = static_cast<double>(static_cast<float>(z) + 0.5f) - ctx.livingCamera->z;
+   const double dx = static_cast<double>(static_cast<float>(x) + 0.5f) - livingCamera->x;
+   const double dz = static_cast<double>(static_cast<float>(z) + 0.5f) - livingCamera->z;
    const float dist = MathHelper::sqrt(static_cast<float>(dx * dx + dz * dz)) / static_cast<float>(radius);
    const float alpha = ((1.0f - dist * dist) * 0.3f + 0.5f) * rain;
    tessellator.light(world->getBrightness(net::minecraft::LightType::Block, x, low, z),
@@ -167,8 +172,8 @@ void PrecipitationRenderer::renderPrecipitation(const AtmosphereContext& ctx, fl
                            0x1F) +
         tickDelta) /
        32.0f * (3.0f + random_.nextFloat());
-   const double dx = static_cast<double>(static_cast<float>(x) + 0.5f) - ctx.livingCamera->x;
-   const double dz = static_cast<double>(static_cast<float>(z) + 0.5f) - ctx.livingCamera->z;
+   const double dx = static_cast<double>(static_cast<float>(x) + 0.5f) - livingCamera->x;
+   const double dz = static_cast<double>(static_cast<float>(z) + 0.5f) - livingCamera->z;
    const float dist = MathHelper::sqrt(static_cast<float>(dx * dx + dz * dz)) / static_cast<float>(radius);
    const float alpha = ((1.0f - dist * dist) * 0.5f + 0.5f) * rain;
    tessellator.light(world->getBrightness(net::minecraft::LightType::Block, x, low, z),

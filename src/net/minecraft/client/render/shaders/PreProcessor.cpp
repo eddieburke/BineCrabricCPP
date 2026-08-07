@@ -4,7 +4,6 @@
 #include <cstring>
 #include <sstream>
 #include <utility>
-
 namespace net::minecraft::client::render {
 namespace {
 std::string trimCopy(std::string_view value) {
@@ -13,16 +12,13 @@ std::string trimCopy(std::string_view value) {
  const std::size_t last = value.find_last_not_of(" \t\r\n");
  return std::string(value.substr(first, last - first + 1));
 }
-}
-
+} // namespace
 bool isIdentStart(char c) {
  return std::isalpha(static_cast<unsigned char>(c)) || c == '_';
 }
-
 bool isIdentChar(char c) {
  return std::isalnum(static_cast<unsigned char>(c)) || c == '_';
 }
-
 std::string lineForDirectiveParse(const std::string& line) {
  std::string out;
  out.reserve(line.size());
@@ -39,7 +35,6 @@ std::string lineForDirectiveParse(const std::string& line) {
  }
  return out;
 }
-
 class PPExpressionEval {
  public:
  explicit PPExpressionEval(std::string_view s) : s_(s) {}
@@ -288,7 +283,6 @@ class PPExpressionEval {
   return 0.0;
  }
 };
-
 namespace {
 std::string resolveDefinedOperators(const std::string& expr, const PPMacroTable& macros) {
  std::string out;
@@ -327,7 +321,6 @@ std::string resolveDefinedOperators(const std::string& expr, const PPMacroTable&
  }
  return out;
 }
-
 std::string expandIfExpression(std::string expr, const PPMacroTable& macros) {
  expr = resolveDefinedOperators(expr, macros);
  for(int pass = 0; pass < 64; ++pass) {
@@ -416,8 +409,7 @@ std::string expandIfExpression(std::string expr, const PPMacroTable& macros) {
  }
  return expr;
 }
-}
-
+} // namespace
 bool evaluateIfExpression(const std::string& rawExpr, const PPMacroTable& macros) {
  const std::string expanded = expandIfExpression(rawExpr, macros);
  PPExpressionEval eval(expanded);
@@ -425,7 +417,6 @@ bool evaluateIfExpression(const std::string& rawExpr, const PPMacroTable& macros
  if(!eval.eval(value)) return false;
  return value != 0.0;
 }
-
 void parseDefineDirective(const std::string& afterKeyword, PPMacroTable& macros) {
  std::size_t i = 0;
  while(i < afterKeyword.size() && std::isspace(static_cast<unsigned char>(afterKeyword[i]))) ++i;
@@ -454,7 +445,6 @@ void parseDefineDirective(const std::string& afterKeyword, PPMacroTable& macros)
  macro.body = trimCopy(afterKeyword.substr(end));
  macros[name] = std::move(macro);
 }
-
 bool parseDirective(const std::string& trimmed, std::string& keyword, std::string& rest) {
  if(trimmed.empty() || trimmed[0] != '#') return false;
  std::size_t i = 1;
@@ -465,30 +455,19 @@ bool parseDirective(const std::string& trimmed, std::string& keyword, std::strin
  rest = trimCopy(trimmed.substr(end));
  return true;
 }
-
+// PARSING ONLY — this function knows nothing about what the engine defines, and must
+// not learn. It used to open with ~16 hardcoded macros (MC_GL_VERSION 460, every
+// IRIS_FEATURE_* on, GL_ARB_gpu_shader5 and GL_ARB_shader_image_load_store asserted
+// present regardless of the driver) which were a second, hand-maintained copy of what
+// versionPreambleForStages() emits. Callers that had the real preamble silently
+// overwrote them; the one caller that passed an empty string got the literals and
+// scanned pack constants under a different `#if` branch than the GPU compiled.
+// seedEngineMacros() in SourceProcessor.cpp is now the single source; see
+// SourceProcessor.hpp.
 void seedMacrosFromDefines(const std::string& text, PPMacroTable& macros) {
-  PPMacro flagOne;
-  flagOne.body = "1";
-  macros["MC_GL_VERSION"] = PPMacro{false, {}, "460"};
-  macros["MC_GLSL_VERSION"] = PPMacro{false, {}, "460"};
-  macros["IRIS_RESERVED_SLOTS"] = PPMacro{false, {}, "1"};
-  macros["IRIS_FEATURE_SSBO"] = flagOne;
-  macros["IRIS_FEATURE_COMPUTE_SHADERS"] = flagOne;
-  macros["IRIS_FEATURE_PER_BUFFER_BLENDING"] = flagOne;
-  macros["IRIS_FEATURE_DIRECT_IMAGE_ACCESS"] = flagOne;
-  macros["IRIS_REQUIRES_SEPARATE_ENTITY_DRAWS"] = flagOne;
-  macros["IRIS_HAS_TRANSLUCENCY_SORTING"] = flagOne;
-  macros["IRIS_TAG_SUPPORT"] = PPMacro{false, {}, "2"};
-  macros["MC_NORMAL_MAP"] = flagOne;
-  macros["MC_SPECULAR_MAP"] = flagOne;
-  macros["MC_RENDER_QUALITY"] = PPMacro{false, {}, "1.0"};
-  macros["MC_SHADOW_QUALITY"] = PPMacro{false, {}, "1.0"};
-  macros["GL_ARB_gpu_shader5"] = flagOne;
-  macros["GL_ARB_shader_image_load_store"] = flagOne;
-
-  std::istringstream stream(text);
-  std::string line;
-  while(std::getline(stream, line)) {
+ std::istringstream stream(text);
+ std::string line;
+ while(std::getline(stream, line)) {
   const std::string trimmed = trimCopy(lineForDirectiveParse(line));
   std::string keyword, rest;
   if(!parseDirective(trimmed, keyword, rest)) continue;
@@ -512,4 +491,4 @@ void seedMacrosFromDefines(const std::string& text, PPMacroTable& macros) {
   }
  }
 }
-}
+} // namespace net::minecraft::client::render

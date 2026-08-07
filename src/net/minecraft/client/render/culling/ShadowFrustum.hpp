@@ -1,11 +1,15 @@
 #pragma once
 #include <array>
 #include <cstddef>
+#include "net/minecraft/client/render/culling/PlaneSet.hpp"
 #include "net/minecraft/util/math/Types.hpp"
 namespace net::minecraft::client::render {
 // https://github.com/IrisShaders/Iris/blob/26.1/common/src/main/java/net/irisshaders/iris/shaderpack/properties/ShadowCullState.java
 // https://github.com/IrisShaders/Iris/blob/26.1/common/src/main/java/net/irisshaders/iris/shaderpack/properties/ShaderProperties.java
-enum class ShadowCullState { Default, Advanced, SafeZone, Distance };
+enum class ShadowCullState { Default,
+                             Advanced,
+                             SafeZone,
+                             Distance };
 // https://github.com/IrisShaders/Iris/blob/26.1/common/src/main/java/net/irisshaders/iris/shadows/frustum/BoxCuller.java
 class BoxCuller {
  public:
@@ -25,9 +29,6 @@ class BoxCuller {
   if(maxY < minAllowedY_ || minY > maxAllowedY_) return true;
   return maxZ < minAllowedZ_ || minZ > maxAllowedZ_;
  }
- [[nodiscard]] bool isCulled(const net::minecraft::Box& box) const noexcept {
-  return isCulled(box.minX, box.minY, box.minZ, box.maxX, box.maxY, box.maxZ);
- }
  [[nodiscard]] double maxDistance() const noexcept {
   return maxDistance_;
  }
@@ -45,7 +46,10 @@ class BoxCuller {
 // https://github.com/IrisShaders/Iris/blob/26.1/common/src/main/java/net/irisshaders/iris/shadows/frustum/BoxCuller.java
 class ShadowCullingFrustum {
  public:
- enum class Mode { NonCulling, BoxCulling, Advanced, SafeZone };
+ enum class Mode { NonCulling,
+                   BoxCulling,
+                   Advanced,
+                   SafeZone };
  static constexpr std::size_t kMaxClippingPlanes = 13;
  void buildAdvanced(const float modelViewProjection[16], const float lightVectorFromOrigin[3]);
  void setMode(Mode mode) noexcept {
@@ -61,8 +65,6 @@ class ShadowCullingFrustum {
  void clearBoxCuller() noexcept {
   hasBoxCuller_ = false;
  }
- // TEMP DIAGNOSTIC — [shadow-probe]. Lets the caller report the culling radius the
- // shadow pass actually ended up with, which is what decides how far casters reach.
  [[nodiscard]] bool hasBoxCuller() const noexcept {
   return hasBoxCuller_;
  }
@@ -78,19 +80,16 @@ class ShadowCullingFrustum {
  [[nodiscard]] bool isVisible(double minX, double minY, double minZ, double maxX, double maxY, double maxZ)
      const noexcept;
  [[nodiscard]] std::size_t planeCount() const noexcept {
-  return planeCount_;
- }
- [[nodiscard]] const std::array<float, 4>& plane(std::size_t index) const noexcept {
-  return planes_[index];
+  return planes_.count();
  }
 
  private:
- [[nodiscard]] bool cornersVisible(float minX, float minY, float minZ, float maxX, float maxY, float maxZ)
-     const noexcept;
  void addPlane(const std::array<float, 4>& plane) noexcept;
  void addEdgePlane(const std::array<float, 4>& backPlane, const std::array<float, 4>& frontPlane) noexcept;
- std::array<std::array<float, 4>, kMaxClippingPlanes> planes_{};
- std::size_t planeCount_ = 0;
+ // Same plane storage and same AABB test as the view Frustum; only the plane
+ // count and how they are built differ. cornersVisible() used to be a second
+ // hand-written copy of that test.
+ PlaneSet<kMaxClippingPlanes> planes_{};
  float lightVector_[3] = {0.0f, 1.0f, 0.0f};
  Mode mode_ = Mode::NonCulling;
  BoxCuller boxCuller_{};
@@ -104,11 +103,14 @@ class ShadowCullingFrustum {
 struct ShadowFrustumParams {
  ShadowCullState cullState = ShadowCullState::Default;
  bool packHasVoxelization = false;
- float halfPlaneLength = 160.0f;    // shadowDistance
- float voxelDistance = 0.0f;        // voxelDistance
- float renderMultiplier = -1.0f;    // shadowDistanceRenderMul
- float renderDistanceBlocks = 0.0f; // options render distance, in blocks
- int userShadowDistanceChunks = 32;
+ float halfPlaneLength = 160.0f; // shadowDistance
+ float voxelDistance = 0.0f; // voxelDistance
+ float renderMultiplier = -1.0f; // shadowDistanceRenderMul
+ // options render distance, in blocks
+ float renderDistanceBlocks = 0.0f;
+ // When true, force box-only culling and skip the view-dependent "advanced" extrusion
+ // (F6 shadow-acne A/B diagnostic).
+ bool forceBoxCull = false;
 };
 // https://github.com/IrisShaders/Iris/blob/26.1/common/src/main/java/net/irisshaders/iris/shadows/ShadowRenderer.java
 [[nodiscard]] ShadowCullingFrustum createShadowFrustum(const ShadowFrustumParams& params,

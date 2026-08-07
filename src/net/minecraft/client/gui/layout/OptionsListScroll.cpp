@@ -19,7 +19,7 @@ void OptionsListScroll::renderFooterDim(int screenWidth, int screenHeight) const
  }
  constexpr std::uint32_t color = 0xE0101010U;
  const render::RenderPassScope passScope(render::RenderType::gui());
- draw::coloredQuad(render::INSTANCE,
+ draw::coloredQuad(render::Tessellator::INSTANCE,
                    x1,
                    y1,
                    x2,
@@ -37,8 +37,8 @@ void OptionsListScroll::renderScrollbar(int screenWidth) const {
  const int thumbTravel = std::max(0, trackHeight - thumbHeight);
  const int thumbY = listTop_ + (maxScroll_ == 0 ? 0 : scrollOffset_ * thumbTravel / maxScroll_);
  const render::RenderPassScope passScope(render::RenderType::gui());
- draw::coloredQuad(render::INSTANCE, trackX + 2, listBottom_, trackX, listTop_, 0x000000, 0x60);
- draw::coloredQuad(render::INSTANCE, trackX + 2, thumbY + thumbHeight, trackX, thumbY, 0xC0C0C0, 0xFF);
+ draw::coloredQuad(render::Tessellator::INSTANCE, trackX + 2, listBottom_, trackX, listTop_, 0x000000, 0x60);
+ draw::coloredQuad(render::Tessellator::INSTANCE, trackX + 2, thumbY + thumbHeight, trackX, thumbY, 0xC0C0C0, 0xFF);
 }
 void OptionsListScroll::renderHeaders(font::TextRenderer* textRenderer, int screenWidth) const {
  if(textRenderer == nullptr) {

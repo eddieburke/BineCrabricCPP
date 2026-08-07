@@ -5,12 +5,11 @@
 #include "net/minecraft/world/WorldProperties.hpp"
 #include "net/minecraft/world/storage/WorldSaveInfo.hpp"
 #include "net/minecraft/world/storage/WorldStorage.hpp"
-namespace net::minecraft::client::gui::screen {
-class LoadingDisplay;
-}
+#include <functional>
 namespace net::minecraft {
 class WorldStorageSource {
  public:
+ using ProgressCallback = std::function<void(int percent)>;
  virtual ~WorldStorageSource() = default;
  [[nodiscard]] virtual std::string getName() const = 0;
  [[nodiscard]] virtual std::unique_ptr<WorldStorage> getSaveLoader(const std::string& name,
@@ -21,6 +20,6 @@ class WorldStorageSource {
  virtual void deleteSave(const std::string& name) = 0;
  virtual void rename(const std::string& saveName, const std::string& newName) = 0;
  [[nodiscard]] virtual bool needsConversion(const std::string& name) const = 0;
- virtual bool convert(const std::string& name, client::gui::screen::LoadingDisplay* display) = 0;
+ virtual bool convert(const std::string& name, ProgressCallback progress = nullptr) = 0;
 };
 } // namespace net::minecraft

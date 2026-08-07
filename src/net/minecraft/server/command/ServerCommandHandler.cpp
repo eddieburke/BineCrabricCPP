@@ -95,7 +95,7 @@ void ServerCommandHandler::executeCommand(Command& command) {
   for(std::size_t i = 0; i < std::size(server_->worlds); ++i) {
    ServerWorld* serverWorld = server_->worlds[i];
    if(serverWorld != nullptr) {
-    serverWorld->saveWithLoadingDisplay(true, nullptr);
+    serverWorld->saveWithProgress(true);
    }
   }
   logCommand(commandUser, "Save complete.");

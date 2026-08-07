@@ -168,14 +168,14 @@ void TitleScreen::render(int mouseX, int mouseY, float tickDelta) {
  {
   const render::RenderPassScope passScope(render::RenderType::guiTextured());
   const float* c = core::constColor();
-  render::Tessellator& tess = render::INSTANCE;
+  render::Tessellator& tess = render::Tessellator::INSTANCE;
   tess.startQuads();
   tess.color(c[0], c[1], c[2], c[3]);
   draw::appendAtlasQuad(tess, logoX + 0, logoY + 0, 0, 0, 155, 44, 0.0f);
   draw::appendAtlasQuad(tess, logoX + 155, logoY + 0, 0, 45, 155, 44, 0.0f);
   tess.draw();
  }
- render::INSTANCE.color(0xFFFFFF);
+ render::Tessellator::INSTANCE.color(0xFFFFFF);
  {
   const render::core::ScopedDrawCameraState splashGuard;
   net::minecraft::util::math::Matrix4f splashPose = render::core::drawPose();

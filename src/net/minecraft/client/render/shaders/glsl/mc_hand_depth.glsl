@@ -1,1 +1,0 @@
-#define MC_HAND_DEPTH 0.125

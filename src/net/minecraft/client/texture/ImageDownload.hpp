@@ -4,16 +4,13 @@
 #include <memory>
 #include <optional>
 #include <string>
-#include "net/minecraft/client/texture/ImageProcessor.hpp"
+#include "net/minecraft/client/texture/SkinImageProcessor.hpp"
 #include "net/minecraft/client/texture/TextureManager.hpp"
 #include "net/minecraft/util/concurrent/Channel.hpp"
 namespace net::minecraft::client::texture {
 class ImageDownload {
  public:
- ImageDownload(std::string url, ImageProcessor* textureProcessor, bool useBetacraftProxy = true);
- [[nodiscard]] const std::string& url() const noexcept {
-  return url_;
- }
+ ImageDownload(std::string url, SkinImageProcessor* textureProcessor, bool useBetacraftProxy = true);
  void applyCompleted();
  std::optional<RasterImage> image;
  bool slimArms = false;

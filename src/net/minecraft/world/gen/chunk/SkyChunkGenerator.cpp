@@ -92,7 +92,7 @@ void SkyChunkGenerator::decorate(ChunkSource* source, int chunkX, int chunkZ) {
  });
  block::FallingBlock::fallInstantly = false;
 }
-bool SkyChunkGenerator::save(bool /*saveEntities*/, client::gui::screen::LoadingDisplay* /*display*/) {
+bool SkyChunkGenerator::save(bool /*saveEntities*/, SaveProgressCallback /*progress*/) {
  return true;
 }
 bool SkyChunkGenerator::tick() {

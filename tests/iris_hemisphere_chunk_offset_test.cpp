@@ -1,5 +1,4 @@
-// Wave 2 regression: Iris chunkOffset must be sectionOrigin - camera with no
-// 1024-region wrap, so both world hemispheres draw correctly.
+
 #include <gtest/gtest.h>
 #include <cmath>
 #include "net/minecraft/client/render/shaders/ComputeDispatcher.hpp"
@@ -15,7 +14,6 @@ using net::minecraft::client::render::PackPass;
 using net::minecraft::client::render::PackPassBuckets;
 void chunkOffset(int sectionX, int sectionY, int sectionZ, double camX, double camY, double camZ,
                  float& ox, float& oy, float& oz) {
- // Mirrors WorldRenderer::renderChunksVbo Iris path.
  ox = static_cast<float>(static_cast<double>(sectionX) - camX);
  oy = static_cast<float>(static_cast<double>(sectionY) - camY);
  oz = static_cast<float>(static_cast<double>(sectionZ) - camZ);
@@ -23,8 +21,6 @@ void chunkOffset(int sectionX, int sectionY, int sectionZ, double camX, double c
 } // namespace
 TEST(IrisChunkOffsetHemisphere, PositiveAndNegativeCameras) {
  float ox = 0.0f, oy = 0.0f, oz = 0.0f;
- // Camera deep in +X/+Z: nearby section offset stays near zero, far negative
- // section is large negative — never wrapped into 0..1023 region space.
  chunkOffset(1600, 64, 1600, 1600.5, 70.0, 1600.5, ox, oy, oz);
  EXPECT_NEAR(ox, -0.5f, 1e-4f);
  EXPECT_NEAR(oy, -6.0f, 1e-4f);
@@ -32,7 +28,6 @@ TEST(IrisChunkOffsetHemisphere, PositiveAndNegativeCameras) {
  chunkOffset(-1600, 64, -1600, 1600.5, 70.0, 1600.5, ox, oy, oz);
  EXPECT_LT(ox, -3000.0f);
  EXPECT_LT(oz, -3000.0f);
- // Camera deep in −X/−Z.
  chunkOffset(-1600, 64, -1600, -1600.5, 70.0, -1600.5, ox, oy, oz);
  EXPECT_NEAR(ox, 0.5f, 1e-4f);
  EXPECT_NEAR(oz, 0.5f, 1e-4f);
@@ -42,18 +37,14 @@ TEST(IrisChunkOffsetHemisphere, PositiveAndNegativeCameras) {
 }
 TEST(IrisChunkOffsetHemisphere, NoRegionWrapArtifact) {
  float ox = 0.0f, oy = 0.0f, oz = 0.0f;
- // Legacy display-list path used x & 0x3FF; that maps -16 → 1008 and breaks
- // hemisphere draws. Iris offset must stay continuous around the origin.
  chunkOffset(-16, 0, -16, -0.5, 0.0, -0.5, ox, oy, oz);
  EXPECT_NEAR(ox, -15.5f, 1e-4f);
  EXPECT_NEAR(oz, -15.5f, 1e-4f);
- // Not the wrapped legacy local coordinate.
  EXPECT_NE(ox, 1008.5f);
  EXPECT_NE(oz, 1008.5f);
 }
 TEST(IrisComputeWorkGroups, DefaultsMatchSpec) {
  PackPass pass;
- // Defaults: relativeGroups=true, groupScale=1, localSize=1 → ceil(view/1).
  const auto groups = ComputeDispatcher::workGroups(pass, 1920, 1080);
  EXPECT_EQ(groups[0], 1920u);
  EXPECT_EQ(groups[1], 1080u);
@@ -71,24 +62,14 @@ TEST(IrisComputeWorkGroups, RelativeScaleAndLocalSize) {
  EXPECT_EQ(groups[2], 1u);
 }
 TEST(IrisComputeOrder, UnsuffixedThenLetters) {
- // computePassOrder is a GLOBAL sort key, not a per-group letter index: Loader.cpp feeds
- // it straight into PackPass::order, which is the primary sort field. It encodes Java
- // ProgramSet.readComputeArray's "[base, base_a..base_z] per pass index, index ascending"
- // as index * 27 + letter, so the ordering contract is what matters rather than the
- // absolute values. (This assertion previously expected -1/0/25 — a letter-only index,
- // under which `composite` and `composite1` both map to -1 and stop ordering against each
- // other, and `composite_a` collides with `composite3_a` across parents.)
  const auto order = [](const char* name) { return ComputeDispatcher::computePassOrder(name); };
- // Base runs before its own letters, letters run alphabetically.
  EXPECT_LT(order("composite"), order("composite_a"));
  EXPECT_LT(order("composite_a"), order("composite_z"));
- // Pass index dominates the letter suffix: every composite* runs before composite1*.
  EXPECT_LT(order("composite_z"), order("composite1"));
  EXPECT_LT(order("composite1_z"), order("composite2"));
- // Distinct parents never collide.
  EXPECT_NE(order("composite_a"), order("composite3_a"));
- EXPECT_TRUE(ComputeDispatcher::attachedToPass("composite_a", "composite"));
- EXPECT_FALSE(ComputeDispatcher::attachedToPass("deferred_a", "composite"));
+ EXPECT_TRUE(ComputeDispatcher::matchesStage("composite_a", "composite"));
+ EXPECT_FALSE(ComputeDispatcher::matchesStage("deferred_a", "composite"));
 }
 TEST(IrisComputeOrder, ParentNameAndNumericOrder) {
  EXPECT_EQ(ComputeDispatcher::computeParentName("composite"), "composite");
@@ -108,20 +89,17 @@ TEST(IrisProgramEnabled, TrueFalseAndOption) {
  EXPECT_FALSE(isProgramEnabled(definition, settings, "composite#compute"));
  EXPECT_TRUE(isProgramEnabled(definition, settings, "deferred"));
  EXPECT_TRUE(isProgramEnabled(definition, settings, "prepare"));
-  settings["BLOOM"] = "false";
-  EXPECT_FALSE(isProgramEnabled(definition, settings, "prepare"));
-  // Java option values are Boolean only (MutableOptionValues.addAll): "true"/"false"
-  // are honored, any other string falls back to the option default (true).
-  settings["BLOOM"] = "off";
-  EXPECT_TRUE(isProgramEnabled(definition, settings, "prepare"));
-  settings["BLOOM"] = "FALSE";
-  EXPECT_TRUE(isProgramEnabled(definition, settings, "prepare"));
-  // Normalized values ("1"/"0") are the engine's setting vocabulary.
-  settings["BLOOM"] = "1";
-  EXPECT_TRUE(isProgramEnabled(definition, settings, "prepare"));
-  settings["BLOOM"] = "0";
-  EXPECT_FALSE(isProgramEnabled(definition, settings, "prepare"));
-  EXPECT_TRUE(isProgramEnabled(definition, settings, "gbuffers_terrain"));
+ settings["BLOOM"] = "false";
+ EXPECT_FALSE(isProgramEnabled(definition, settings, "prepare"));
+ settings["BLOOM"] = "off";
+ EXPECT_TRUE(isProgramEnabled(definition, settings, "prepare"));
+ settings["BLOOM"] = "FALSE";
+ EXPECT_TRUE(isProgramEnabled(definition, settings, "prepare"));
+ settings["BLOOM"] = "1";
+ EXPECT_TRUE(isProgramEnabled(definition, settings, "prepare"));
+ settings["BLOOM"] = "0";
+ EXPECT_FALSE(isProgramEnabled(definition, settings, "prepare"));
+ EXPECT_TRUE(isProgramEnabled(definition, settings, "gbuffers_terrain"));
 }
 TEST(IrisProgramEnabled, IndexesSkipDisabledPasses) {
  PackDefinition definition;
@@ -136,9 +114,9 @@ TEST(IrisProgramEnabled, IndexesSkipDisabledPasses) {
  definition.passes.push_back(post);
  definition.passes.push_back(deferred);
  definition.programEnabled["composite"] = "false";
-  PackPassBuckets buckets;
-  net::minecraft::client::render::ProgramEnabledCache cache;
-  indexPackPasses(definition, {}, buckets, cache);
+ PackPassBuckets buckets;
+ net::minecraft::client::render::ProgramEnabledCache cache;
+ indexPackPasses(definition, {}, buckets, cache);
  EXPECT_TRUE(buckets.postPasses.empty());
  ASSERT_EQ(buckets.deferredPasses.size(), 1u);
  EXPECT_EQ(buckets.deferredPasses[0], 1u);

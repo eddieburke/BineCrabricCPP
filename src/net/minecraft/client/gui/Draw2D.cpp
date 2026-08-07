@@ -3,7 +3,7 @@
 namespace net::minecraft::client::gui::draw {
 namespace {
 constexpr float kAtlasTexel = 0.00390625f;
-} // namespace
+}
 void appendQuad(render::Tessellator& tessellator, int x1, int y1, int x2, int y2, float z) {
  tessellator.vertex(static_cast<double>(x1), static_cast<double>(y2), static_cast<double>(z));
  tessellator.vertex(static_cast<double>(x2), static_cast<double>(y2), static_cast<double>(z));
@@ -104,21 +104,6 @@ void appendProgressBar(render::Tessellator& tessellator, int x, int y, int width
   appendQuad(tessellator, x, y, x + fillWidth, y + height);
  }
 }
-void texturedAtlasQuads(render::Tessellator& tessellator, std::span<const AtlasRect> rects, float z) {
- if(rects.empty()) {
-  return;
- }
- tessellator.startQuads();
- for(const AtlasRect& rect : rects) {
-  appendAtlasQuad(tessellator, rect.x, rect.y, rect.u, rect.v, rect.w, rect.h, z);
- }
- tessellator.draw();
-}
-void quad(render::Tessellator& tessellator, int x1, int y1, int x2, int y2, float z) {
- tessellator.startQuads();
- appendQuad(tessellator, x1, y1, x2, y2, z);
- tessellator.draw();
-}
 void coloredQuad(render::Tessellator& tessellator, int x1, int y1, int x2, int y2, int rgb, int alpha, float z) {
  tessellator.startQuads();
  appendColoredQuad(tessellator, x1, y1, x2, y2, rgb, alpha, z);
@@ -159,25 +144,6 @@ void coloredTexturedQuad(render::Tessellator& tessellator,
  tessellator.startQuads();
  tessellator.color(rgb, alpha);
  appendTexturedQuad(tessellator, x1, y1, x2, y2, u1, v1, u2, v2, z);
- tessellator.draw();
-}
-void verticalGradientTexturedQuad(render::Tessellator& tessellator,
-                                  int x1,
-                                  int y1,
-                                  int x2,
-                                  int y2,
-                                  float u1,
-                                  float v1,
-                                  float u2,
-                                  float v2,
-                                  int topRgb,
-                                  int topAlpha,
-                                  int bottomRgb,
-                                  int bottomAlpha,
-                                  float z) {
- tessellator.startQuads();
- appendVerticalGradientTexturedQuad(
-     tessellator, x1, y1, x2, y2, u1, v1, u2, v2, topRgb, topAlpha, bottomRgb, bottomAlpha, z);
  tessellator.draw();
 }
 void appendVerticalGradientTexturedQuad(render::Tessellator& tessellator,

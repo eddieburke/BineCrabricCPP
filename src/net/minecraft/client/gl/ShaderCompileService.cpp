@@ -14,10 +14,6 @@ void ShaderCompileService::setCacheDirectory(std::filesystem::path dir) {
  disk_.setRoot(std::move(dir));
 }
 
-std::uint64_t ShaderCompileService::submit(ShaderCompileRequest request) {
- return compileBlocking(std::move(request)).contentHash;
-}
-
 ShaderCompileResult ShaderCompileService::compileBlocking(ShaderCompileRequest request) {
  if(request.contentHash == 0) {
   const auto& salt = render::vertex_abi::abiSaltString();
@@ -31,10 +27,6 @@ ShaderCompileResult ShaderCompileService::compileBlocking(ShaderCompileRequest r
 
 void ShaderCompileService::invalidateDiskEntry(std::uint64_t contentHash) {
  disk_.remove(contentHash);
-}
-
-void ShaderCompileService::storeDiskEntry(const ProgramBinaryBlob& blob) {
- disk_.store(blob);
 }
 
 ShaderCompileResult ShaderCompileService::runJobOnCurrentContext(const ShaderCompileRequest& request) {

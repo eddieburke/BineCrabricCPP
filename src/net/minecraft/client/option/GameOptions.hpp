@@ -81,6 +81,11 @@ class GameOptions {
  bool debugCamera = false;
  bool cinematicMode = false;
  bool discreteScroll = false;
+ // Shadow acne/warp A/B diagnostics. F6 forces box-only shadow culling (bypasses the
+ // view-dependent "advanced" extrusion); F7 zeroes the engine's constant polygon offset
+ // so only the pack's own distortion-aware bias applies. Both off = normal.
+ bool shadowForceBoxCull = false;
+ bool shadowDisablePolyOffset = false;
  float totalDiscreteScroll = 1.0f;
  std::string lastServer;
  bool modsEnabled = true;

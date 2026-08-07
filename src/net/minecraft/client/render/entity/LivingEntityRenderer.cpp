@@ -335,7 +335,7 @@ void LivingEntityRenderer::renderNameTag(const net::minecraft::LivingEntity& ent
                                          net::minecraft::util::math::MatrixStack& matrices,
                                          const net::minecraft::util::math::Matrix4f& projection) {
  if(dispatcher != nullptr && dispatcher->options().debugHud &&
-    !RenderCameraState::instance().frame().shadowPass) {
+    !core::cameraFrame().shadowPass) {
   renderNameTag(entity, std::to_string(entity.id), x, y, z, 64, matrices, projection);
  }
 }

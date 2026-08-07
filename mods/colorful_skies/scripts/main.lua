@@ -57,19 +57,11 @@ local function update_daily_colors()
   refresh_daily_colors(day)
 end
 
-local function celestial_angle(world_time)
-  local raw = world_time / 24000.0 - 0.25
-  raw = raw - math.floor(raw)
-  local curved = 1.0 - (math.cos(raw * PI) + 1.0) / 2.0
-  return raw + (curved - raw) / 3.0
-end
-
-local function sky_color(world_time, celestial)
+local function sky_color(celestial)
   local day_r = config.day_sky_r
   local day_g = config.day_sky_g
   local day_b = config.day_sky_b
   local angle = celestial
-  if type(angle) ~= "number" then angle = celestial_angle(world_time) end
   local transition = config.twilight_strength
   local night_r = config.night_sky_r
   local night_g = config.night_sky_g
@@ -124,13 +116,13 @@ end
 
 local function handle_sky_color(event)
   if not active() then return event end
-  event.r, event.g, event.b = sky_color(event.world_time or 0, event.celestial)
+  event.r, event.g, event.b = sky_color(event.celestial_angle)
   return event
 end
 
 local function handle_fog_color(event)
   if not active() then return event end
-  local r, g, b = sky_color(event.world_time or 0, event.celestial)
+  local r, g, b = sky_color(event.celestial_angle)
   local blend = config.fog_blend
   event.r = lerp(event.r, r, blend)
   event.g = lerp(event.g, g, blend)

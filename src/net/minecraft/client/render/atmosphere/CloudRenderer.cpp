@@ -22,9 +22,6 @@ namespace {
  }
  return world->getCloudColor(tickDelta);
 }
-// Cloud shape must live in the geometry, not in clouds.png's alpha: gbuffers_clouds
-// programs shade the mesh without sampling gtexture at all.
-// see shaders/RenderPearl v2.8.0-beta.4/shaders/world_default/gbuffers_clouds.fsh
 class CloudMask {
  public:
  [[nodiscard]] bool opaque(int x, int z) const noexcept {
@@ -44,19 +41,12 @@ class CloudMask {
   }
   cachedId = textureId;
   cached = CloudMask();
-  // TextureManager::getTextureId uploads through load(image, id), which does not
-  // retain the pixels, so getRasterImage has nothing for a disk-loaded texture.
   net::minecraft::client::texture::RasterImage decoded =
       textures.loadRasterForResource("/environment/clouds.png");
   const net::minecraft::client::texture::RasterImage* image =
       decoded.width > 0 ? &decoded : textures.getRasterImage(textureId);
   if(image == nullptr || image->width <= 0 || image->width != image->height ||
      image->argb.size() < static_cast<std::size_t>(image->width) * static_cast<std::size_t>(image->height)) {
-   ::net::minecraft::client::ClientLog::LOGGER.log(
-       ::net::minecraft::util::logging::LogLevel::Info,
-       std::string("[cloud-probe] mask UNAVAILABLE (solid-sheet fallback) textureId=") +
-           std::to_string(textureId) +
-           " decoded=" + std::to_string(decoded.width) + "x" + std::to_string(decoded.height));
    return cached;
   }
   cached.size_ = image->width;
@@ -66,26 +56,23 @@ class CloudMask {
    cached.mask_[i] = (image->argb[i] >> 24) >= 128u ? 1 : 0;
    opaqueCells += cached.mask_[i];
   }
-  ::net::minecraft::client::ClientLog::LOGGER.log(
-      ::net::minecraft::util::logging::LogLevel::Info,
-      std::string("[cloud-probe] mask decoded ") + std::to_string(image->width) + "x" +
-          std::to_string(image->height) + " opaqueCells=" + std::to_string(opaqueCells) + "/" +
-          std::to_string(image->argb.size()));
   return cached;
  }
+
  private:
  int size_ = 0;
  std::vector<std::uint8_t> mask_;
 };
 } // namespace
-void CloudRenderer::renderFancyClouds(const AtmosphereContext& ctx, float tickDelta) {
+namespace {
+void renderFancyClouds(const AtmosphereContext& ctx, float tickDelta) {
  if(ctx.camera == nullptr) {
   return;
  }
  core::disableCull();
  const float cameraY = static_cast<float>(ctx.camera->lastTickY +
                                           (ctx.camera->y - ctx.camera->lastTickY) * static_cast<double>(tickDelta));
- Tessellator& tessellator = INSTANCE;
+ Tessellator& tessellator = Tessellator::INSTANCE;
  constexpr float cloudScale = 12.0f;
  constexpr float cloudThickness = 4.0f;
  double cloudX = (ctx.camera->prevX + (ctx.camera->x - ctx.camera->prevX) * static_cast<double>(tickDelta) +
@@ -198,31 +185,17 @@ void CloudRenderer::renderFancyClouds(const AtmosphereContext& ctx, float tickDe
  core::disableBlend();
  core::enableCull();
 }
-void CloudRenderer::renderClouds(const AtmosphereContext& ctx, float tickDelta) {
- static int probeCalls = 0;
- const bool probe = (probeCalls++ % 300) == 0;
+} // namespace
+void renderClouds(const AtmosphereContext& ctx, float tickDelta) {
  if(!ctx.settings.renderClouds) {
-  if(probe) {
-   ::net::minecraft::client::ClientLog::LOGGER.log(::net::minecraft::util::logging::LogLevel::Info,
-                                                   "[cloud-probe] renderClouds OFF (settings.renderClouds=false)");
-  }
   return;
  }
  if(ctx.world == nullptr || ctx.world->dimension == nullptr || ctx.textureManager == nullptr ||
     ctx.camera == nullptr || ctx.world->dimension->isNether) {
-  if(probe) {
-   ::net::minecraft::client::ClientLog::LOGGER.log(::net::minecraft::util::logging::LogLevel::Info,
-                                                   "[cloud-probe] renderClouds SKIPPED (null ctx or nether)");
-  }
   return;
  }
  const render::RenderPassScope pass(render::RenderType::clouds());
  const bool fancyClouds = ctx.settings.fancyClouds;
- if(probe) {
-  ::net::minecraft::client::ClientLog::LOGGER.log(
-      ::net::minecraft::util::logging::LogLevel::Info,
-      std::string("[cloud-probe] renderClouds fancy=") + (fancyClouds ? "1" : "0"));
- }
  if(fancyClouds) {
   renderFancyClouds(ctx, tickDelta);
  } else {
@@ -231,7 +204,7 @@ void CloudRenderer::renderClouds(const AtmosphereContext& ctx, float tickDelta) 
                                                                        static_cast<double>(tickDelta));
   constexpr int tile = 8;
   constexpr int radius = 256 / tile;
-  Tessellator& tessellator = INSTANCE;
+  Tessellator& tessellator = Tessellator::INSTANCE;
   const int cloudTexture = ctx.textureManager->getTextureId("/environment/clouds.png");
   ctx.textureManager->bindTexture(cloudTexture);
   const CloudMask& mask = CloudMask::forTexture(*ctx.textureManager, cloudTexture);
@@ -249,7 +222,6 @@ void CloudRenderer::renderClouds(const AtmosphereContext& ctx, float tickDelta) 
       ctx.world->dimension->getCloudHeight() - cameraY + 0.33f, ctx.settings);
   cloudX -= static_cast<double>(originX * 2048);
   cloudZ -= static_cast<double>(originZ * 2048);
-  // see mcp/src/net/minecraft/client/render/WorldRenderer.java renderClouds
   const int texelOriginX = MathHelper::floor(cloudX / static_cast<double>(tile));
   const int texelOriginZ = MathHelper::floor(cloudZ / static_cast<double>(tile));
   const float texOffsetX = static_cast<float>(texelOriginX * tile) * scrollScale;

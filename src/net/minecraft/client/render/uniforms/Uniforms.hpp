@@ -13,7 +13,13 @@ struct PackViewportValues {
  float viewHeight = 1.0f;
  float aspectRatio = 1.0f;
 };
+// Everything the engine can hand a shader pack per frame. Grouped by the Iris
+// uniform category each field belongs to; the scalar `near`/`far` pair and the
+// DH values are the camera's clip planes and the render distance, which are all
+// set from option::RenderDistance (via FrameRenderCamera) — never from the pack's
+// shadowDistance.
 struct PackUniformValues {
+ // --- CommonUniforms: frame time / viewport / camera planes ---
  float frameTimeCounter = 0.0f;
  float frameTime = 0.0f;
  float viewWidth = 1.0f;
@@ -22,12 +28,14 @@ struct PackUniformValues {
  float nearPlane = 0.05f;
  float farPlane = 256.0f;
  float shadowMapResolution = 0.0f;
+ // --- CameraUniforms: camera positions ---
  float cameraPosition[3] = {0.0f, 0.0f, 0.0f};
  float cameraPositionFract[3] = {0.0f, 0.0f, 0.0f};
  int cameraPositionInt[3] = {0, 0, 0};
  float previousCameraPosition[3] = {0.0f, 0.0f, 0.0f};
  float previousCameraPositionFract[3] = {0.0f, 0.0f, 0.0f};
  int previousCameraPositionInt[3] = {0, 0, 0};
+ // --- CelestialUniforms / ShadowMatrices ---
  float sunPosition[3] = {0.0f, 1.0f, 0.0f};
  float moonPosition[3] = {0.0f, -1.0f, 0.0f};
  float shadowLightPosition[3] = {0.0f, 1.0f, 0.0f};
@@ -72,6 +80,7 @@ struct PackUniformValues {
                                       0.0f, 1.0f, 0.0f, 0.0f,
                                       0.0f, 0.0f, 1.0f, 0.0f,
                                       0.0f, 0.0f, 0.0f, 1.0f};
+ // --- FogUniforms ---
  float sunColor[3] = {1.0f, 1.0f, 1.0f};
  float sunIntensity = 0.0f;
  float fogColor[3] = {0.0f, 0.0f, 0.0f};
@@ -83,6 +92,7 @@ struct PackUniformValues {
  float skyColor[3] = {0.0f, 0.0f, 0.0f};
  float lightningBoltPosition[4]{};
  float thunderStrength = 0.0f;
+ // --- EntityUniforms: player state ---
  float currentPlayerHealth = 0.0f;
  float maxPlayerHealth = 20.0f;
  float currentPlayerAir = 0.0f;
@@ -144,76 +154,74 @@ struct PackUniformValues {
  int biome = 0;
  int biomeCategory = 0;
  int biomePrecipitation = 0;
-  int currentDate[3]{};
-  int currentTime[3]{};
-  int currentYearTime[2]{};
-  int currentRenderedItemId = -1;
-  int currentSelectedBlockId = 0;
-  float currentSelectedBlockPos[3] = {-256.0f, -256.0f, -256.0f};
-  int heldItemId = 0;
-  int heldItemId2 = 0;
-  int heldBlockLightValue = 0;
-  int heldBlockLightValue2 = 0;
-  int handLightPackedLR = 0;
-  int vehicleId = 0;
-  int worldTime = 0;
-  int worldDay = 0;
-  int moonPhase = 0;
-  int frameCounter = 0;
-  int isEyeInWater = 0;
-  int shadowAvailable = 0;
-  int normalAvailable = 0;
-  // https://github.com/IrisShaders/Iris/blob/26.1/common/src/main/java/net/irisshaders/iris/uniforms/CommonUniforms.java
-  int entityId = -1;
-  int blockEntityId = -1;
-  int anisotropicFiltering = 0;
-  float pi = 3.14159265358979323846f;
-  float dhFarPlane = 0.01f;
-  float dhNearPlane = 0.01f;
-  int dhRenderDistance = 0;
-  float heldBlockLightColor[3] = {1.0f, 1.0f, 1.0f};
-  float heldBlockLightColor2[3] = {1.0f, 1.0f, 1.0f};
-  float entityColor[4] = {0.0f, 0.0f, 0.0f, 0.0f};
-  float chunkFadeTimeInv = 0.001f;
-  // https://github.com/IrisShaders/Iris/blob/26.1/common/src/main/java/net/irisshaders/iris/uniforms/IrisExclusiveUniforms.java
-  int seaLevel = 0;
-  float cloudTime = 0.0f;
-  int heavyFog = 0;
-  // https://github.com/IrisShaders/Iris/blob/26.1/common/src/main/java/net/irisshaders/iris/uniforms/IrisInternalUniforms.java
-  float irisFogColor[4] = {1.0f, 1.0f, 1.0f, 1.0f};
-  float irisFogStart = 0.0f;
-  float irisFogEnd = 0.0f;
-  float irisFogDensity = 0.0f;
-  float irisCurrentAlphaTest = 0.0f;
-  float irisDefaultNormalMat[9] = {1.0f, 0.0f, 0.0f, 0.0f, 1.0f, 0.0f, 0.0f, 0.0f, 1.0f};
-  // https://github.com/IrisShaders/Iris/blob/26.1/common/src/main/java/net/irisshaders/iris/uniforms/HardcodedCustomUniforms.java
-  float timeAngle = 0.0f;
-  float timeBrightness = 0.0f;
-  float moonBrightness = 0.0f;
-  float shadowFade = 0.0f;
-  float rainStrengthS = 0.0f;
-  float rainStrengthShiningStars = 0.0f;
-  float rainStrengthS2 = 0.0f;
-  float blindFactor = 0.0f;
-  float isDry = 0.0f;
-  float isRainy = 0.0f;
-  float isSnowy = 0.0f;
-  float isEyeInCave = 0.0f;
-  float velocity = 0.0f;
-  float starter = 0.0f;
-  float frameTimeSmooth = 0.0f;
-  float eyeBrightnessM = 0.0f;
-  float rainFactor = 0.0f;
-  float biomeTemp = 0.0f;
-  float day = 0.0f;
-  float night = 0.0f;
-  float dawnDusk = 0.0f;
-  float shdFade = 0.0f;
-  float isPrecipitationRain = 0.0f;
-  float touchmybody = 0.0f;
-  float sneakSmooth = 0.0f;
-  float burningSmooth = 0.0f;
-  float effectStrength = 0.0f;
+ int currentDate[3]{};
+ int currentTime[3]{};
+ int currentYearTime[2]{};
+ int currentRenderedItemId = -1;
+ int currentSelectedBlockId = 0;
+ float currentSelectedBlockPos[3] = {-256.0f, -256.0f, -256.0f};
+ int heldItemId = 0;
+ int heldItemId2 = 0;
+ int heldBlockLightValue = 0;
+ int heldBlockLightValue2 = 0;
+ int handLightPackedLR = 0;
+ int vehicleId = 0;
+ int worldTime = 0;
+ int worldDay = 0;
+ int moonPhase = 0;
+ int frameCounter = 0;
+ int isEyeInWater = 0;
+ int shadowAvailable = 0;
+ int normalAvailable = 0;
+ // https://github.com/IrisShaders/Iris/blob/26.1/common/src/main/java/net/irisshaders/iris/uniforms/CommonUniforms.java
+ int entityId = -1;
+ int blockEntityId = -1;
+ int anisotropicFiltering = 0;
+ float pi = 3.14159265358979323846f;
+ // --- held item / object lookup ---
+ float heldBlockLightColor[3] = {1.0f, 1.0f, 1.0f};
+ float heldBlockLightColor2[3] = {1.0f, 1.0f, 1.0f};
+ float entityColor[4] = {0.0f, 0.0f, 0.0f, 0.0f};
+ float chunkFadeTimeInv = 0.001f;
+ // https://github.com/IrisShaders/Iris/blob/26.1/common/src/main/java/net/irisshaders/iris/uniforms/IrisExclusiveUniforms.java
+ int seaLevel = 0;
+ float cloudTime = 0.0f;
+ int heavyFog = 0;
+ // https://github.com/IrisShaders/Iris/blob/26.1/common/src/main/java/net/irisshaders/iris/uniforms/IrisInternalUniforms.java
+ float irisFogColor[4] = {1.0f, 1.0f, 1.0f, 1.0f};
+ float irisFogStart = 0.0f;
+ float irisFogEnd = 0.0f;
+ float irisFogDensity = 0.0f;
+ float irisCurrentAlphaTest = 0.0f;
+ float irisDefaultNormalMat[9] = {1.0f, 0.0f, 0.0f, 0.0f, 1.0f, 0.0f, 0.0f, 0.0f, 1.0f};
+ // https://github.com/IrisShaders/Iris/blob/26.1/common/src/main/java/net/irisshaders/iris/uniforms/HardcodedCustomUniforms.java
+ float timeAngle = 0.0f;
+ float timeBrightness = 0.0f;
+ float moonBrightness = 0.0f;
+ float shadowFade = 0.0f;
+ float rainStrengthS = 0.0f;
+ float rainStrengthShiningStars = 0.0f;
+ float rainStrengthS2 = 0.0f;
+ float blindFactor = 0.0f;
+ float isDry = 0.0f;
+ float isRainy = 0.0f;
+ float isSnowy = 0.0f;
+ float isEyeInCave = 0.0f;
+ float velocity = 0.0f;
+ float starter = 0.0f;
+ float frameTimeSmooth = 0.0f;
+ float eyeBrightnessM = 0.0f;
+ float rainFactor = 0.0f;
+ float biomeTemp = 0.0f;
+ float day = 0.0f;
+ float night = 0.0f;
+ float dawnDusk = 0.0f;
+ float shdFade = 0.0f;
+ float isPrecipitationRain = 0.0f;
+ float touchmybody = 0.0f;
+ float sneakSmooth = 0.0f;
+ float burningSmooth = 0.0f;
+ float effectStrength = 0.0f;
 };
 void uploadShaderUniforms(const gl::ShaderProgram& program, const PackUniformValues& values,
                           bool uploadGbufferCamera = true,

@@ -10,11 +10,10 @@
 #include "net/minecraft/util/math/Matrix4f.hpp"
 namespace net::minecraft::test {
 namespace {
-using net::minecraft::util::math::Matrix4f;
 using net::minecraft::client::render::FrameRenderCamera;
+using net::minecraft::util::math::Matrix4f;
 namespace core = net::minecraft::client::render::core;
 namespace gui_proj = net::minecraft::client::render::gui_proj;
-
 bool nearMatrix(const Matrix4f& a, const Matrix4f& b, float eps = 1e-5f) {
  for(int i = 0; i < 16; ++i) {
   if(std::abs(a.m[i] - b.m[i]) > eps) {
@@ -85,9 +84,9 @@ TEST(DrawCameraState, FromCameraBuildsGbufferModelViewAlone) {
  camera.viewForwardZ = 0.0f;
  camera.projectionX = 1.2f;
  camera.projectionY = 1.1f;
-  camera.perspectiveNear = 0.05f;
-  camera.perspectiveFar = 512.0f;
-  core::setDrawCameraStateFromCamera(camera);
+ camera.nearPlane = 0.05f;
+ camera.farPlane = 512.0f;
+ core::setDrawCameraStateFromCamera(camera);
  ASSERT_TRUE(core::drawCameraStateValid());
  // The base is the pure camera rotation: eye-relative p maps by R alone, with no
  // translation folded in. R here: col0=(0,1,0), col1=(0,0,1), col2=(-1,0,0),
@@ -148,8 +147,8 @@ TEST(DrawCameraState, BobIsLeftMultipliedAndNeverMovesTheOrigin) {
  Matrix4f bob;
  bob.translate(0.05f, -0.03f, 0.0f);
  std::memcpy(camera.bobModelView, bob.m, sizeof(camera.bobModelView));
-  camera.hasBobModelView = true;
-  core::setDrawCameraStateFromCamera(camera);
+ camera.hasBobModelView = true;
+ core::setDrawCameraStateFromCamera(camera);
  ASSERT_TRUE(core::drawCameraStateValid());
  // The published origin is Camera.getPosition(), bob or no bob.
  const float* cameraPosition = core::drawCameraPosition();
@@ -231,10 +230,10 @@ TEST(DrawCameraState, ScopedDrawCameraStateRestoresBase) {
   const core::ScopedDrawCameraState guard;
   FrameRenderCamera camera;
   camera.x = camera.y = camera.z = 0.0;
-   camera.eyeX = 1.0;
-   camera.eyeY = 2.0;
-   camera.eyeZ = 3.0;
-   core::setDrawCameraStateFromCamera(camera);
+  camera.eyeX = 1.0;
+  camera.eyeY = 2.0;
+  camera.eyeZ = 3.0;
+  core::setDrawCameraStateFromCamera(camera);
   EXPECT_NEAR(core::drawCameraPosition()[0], 1.0f, 1e-3f);
  }
  ASSERT_TRUE(core::drawCameraStateValid());

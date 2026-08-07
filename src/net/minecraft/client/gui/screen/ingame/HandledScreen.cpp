@@ -46,25 +46,25 @@ void HandledScreen::render(int mouseX, int mouseY, float tickDelta) {
    if(slot == nullptr) {
     continue;
    }
-    if(isPointOverSlot(*slot, mouseX, mouseY)) {
-     hoveredSlot = slot;
-     {
-      const render::RenderPassScope passScope(render::RenderType::gui());
-     draw::verticalGradientQuad(render::INSTANCE, slot->x, slot->y, slot->x + 16, slot->y + 16, 0xFFFFFF, 0x80, 0xFFFFFF, 0x80);
+   if(isPointOverSlot(*slot, mouseX, mouseY)) {
+    hoveredSlot = slot;
+    {
+     const render::RenderPassScope passScope(render::RenderType::gui());
+     draw::verticalGradientQuad(render::Tessellator::INSTANCE, slot->x, slot->y, slot->x + 16, slot->y + 16, 0xFFFFFF, 0x80, 0xFFFFFF, 0x80);
     }
     core::setConstColor(1.0f, 1.0f, 1.0f, 1.0f);
    }
    drawSlot(*slot);
   }
-   if(!cursorStack.empty()) {
-    net::minecraft::util::math::Matrix4f cursorPose = core::drawPose();
-    cursorPose.translate(0.0f, 0.0f, 32.0f);
-    core::setDrawPose(cursorPose);
-    itemRenderer.renderGuiItem(
-        *textRenderer_, minecraft_->textureManager, cursorStack, mouseX - originX - 8, mouseY - originY - 8);
-    itemRenderer.renderGuiItemDecoration(
-        *textRenderer_, minecraft_->textureManager, cursorStack, mouseX - originX - 8, mouseY - originY - 8);
-   }
+  if(!cursorStack.empty()) {
+   net::minecraft::util::math::Matrix4f cursorPose = core::drawPose();
+   cursorPose.translate(0.0f, 0.0f, 32.0f);
+   core::setDrawPose(cursorPose);
+   itemRenderer.renderGuiItem(
+       *textRenderer_, minecraft_->textureManager, cursorStack, mouseX - originX - 8, mouseY - originY - 8);
+   itemRenderer.renderGuiItemDecoration(
+       *textRenderer_, minecraft_->textureManager, cursorStack, mouseX - originX - 8, mouseY - originY - 8);
+  }
   {
    const core::DepthScope decorationCaps(false, core::depthWriteEnabled());
    core::setLightingEnabled(false);
@@ -88,7 +88,7 @@ void HandledScreen::render(int mouseX, int mouseY, float tickDelta) {
      const int textWidth = textRenderer_->getWidth(label);
      {
       const render::RenderPassScope passScope(render::RenderType::gui());
-      draw::verticalGradientQuad(render::INSTANCE,
+      draw::verticalGradientQuad(render::Tessellator::INSTANCE,
                                  tooltipX - 3,
                                  tooltipY - 3,
                                  tooltipX + textWidth + 3,
@@ -124,7 +124,7 @@ void HandledScreen::drawContainerTexture(const char* texturePath, int srcU, int 
  {
   const render::RenderPassScope passScope(render::RenderType::guiTextured());
   const float* c = core::constColor();
-  render::Tessellator& tess = render::INSTANCE;
+  render::Tessellator& tess = render::Tessellator::INSTANCE;
   tess.startQuads();
   tess.color(c[0], c[1], c[2], c[3]);
   draw::appendAtlasQuad(tess, containerOriginX(), containerOriginY(), srcU, srcV, drawW, drawH, 0.0f);
@@ -143,7 +143,7 @@ void HandledScreen::drawContainerTextureSplit(const char* texturePath, int topDr
  {
   const render::RenderPassScope passScope(render::RenderType::guiTextured());
   const float* c = core::constColor();
-  render::Tessellator& tess = render::INSTANCE;
+  render::Tessellator& tess = render::Tessellator::INSTANCE;
   tess.startQuads();
   tess.color(c[0], c[1], c[2], c[3]);
   draw::appendAtlasQuad(tess, originX, originY, 0, 0, backgroundWidth, topDrawH, 0.0f);
@@ -154,14 +154,14 @@ void HandledScreen::drawContainerTextureSplit(const char* texturePath, int topDr
 void HandledScreen::drawSlot(const ::net::minecraft::screen::slot::Slot& slot) {
  const ItemStack stack = slot.getStack();
  if(stack.empty()) {
-   const int background = slot.getBackgroundTextureId();
-   if(background >= 0) {
-    const core::TextureBindScope savedTexture;
-    minecraft_->textureManager.bindTexture(minecraft_->textureManager.getTextureId("/gui/items.png"));
+  const int background = slot.getBackgroundTextureId();
+  if(background >= 0) {
+   const core::TextureBindScope savedTexture;
+   minecraft_->textureManager.bindTexture(minecraft_->textureManager.getTextureId("/gui/items.png"));
    {
     const render::RenderPassScope passScope(render::RenderType::guiTextured());
     const float* c = core::constColor();
-    render::Tessellator& tess = render::INSTANCE;
+    render::Tessellator& tess = render::Tessellator::INSTANCE;
     tess.startQuads();
     tess.color(c[0], c[1], c[2], c[3]);
     draw::appendAtlasQuad(tess, slot.x, slot.y, background % 16 * 16, background / 16 * 16, 16, 16, 0.0f);

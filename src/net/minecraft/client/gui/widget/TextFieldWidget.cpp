@@ -68,7 +68,7 @@ void TextFieldWidget::render() {
  }
  {
   const render::RenderPassScope passScope(render::RenderType::gui());
-  render::Tessellator& tess = render::INSTANCE;
+  render::Tessellator& tess = render::Tessellator::INSTANCE;
   tess.startQuads();
   draw::appendColoredQuad(tess, x_ + width_ + 1, y_ + height_ + 1, x_ - 1, y_ - 1, 0x9F9F9F, 0xFF);
   draw::appendColoredQuad(tess, x_ + width_, y_ + height_, x_, y_, 0, 0xFF);

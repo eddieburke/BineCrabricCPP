@@ -28,12 +28,10 @@ ConnectionListener::ConnectionListener(MinecraftServer* server,
     : server_(server), onlineMode_(onlineMode) {
  socket_.bindAndListen(bindAddress, static_cast<std::uint16_t>(port));
  open_.store(true, std::memory_order_release);
- util::concurrent::ThreadCoordinator::instance().reserveDynamic(1);
  thread_ = std::jthread([this]() {
   util::concurrent::tl_domain = util::concurrent::Domain::NetIo;
   util::concurrent::setCurrentThreadName("server-accept");
   listenLoop();
-  util::concurrent::ThreadCoordinator::instance().releaseDynamic(1);
  });
 }
 ConnectionListener::~ConnectionListener() {

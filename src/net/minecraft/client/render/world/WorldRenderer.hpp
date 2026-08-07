@@ -9,6 +9,7 @@
 #include "net/minecraft/client/render/chunk/ChunkBuilder.hpp"
 #include "net/minecraft/client/render/world/ChunkCompilePipeline.hpp"
 #include "net/minecraft/client/render/world/ChunkSectionSystem.hpp"
+#include "net/minecraft/client/render/world/TerrainScene.hpp"
 #include "net/minecraft/item/ItemStack.hpp"
 #include "net/minecraft/util/hit/HitResult.hpp"
 #include "net/minecraft/util/math/Types.hpp"
@@ -28,26 +29,19 @@ namespace net::minecraft::client::texture {
 class TextureManager;
 }
 namespace net::minecraft::client::render {
-class FrustumCuller;
+class Frustum;
 class WorldRenderer : public net::minecraft::GameEventListener {
- friend class GameRenderer;
- friend class ChunkSectionSystem;
- friend class ChunkCompilePipeline;
-
  public:
  WorldRenderer(net::minecraft::client::Minecraft* minecraft = nullptr,
                net::minecraft::client::texture::TextureManager* textureManager = nullptr);
  void setWorld(net::minecraft::World* world);
  void reload();
- void reloadIfViewDistanceChanged();
-  // Entities compose their poses onto the iris per-draw base (core::drawModelView)
-  // instead of a separately-maintained camera stack; the projection is the iris draw
-  // projection. cameraPos is the frame camera position (RenderCameraState).
-  void renderEntities(const Vec3d& cameraPos, FrustumCuller* culler, float tickDelta);
- [[nodiscard]] std::string getChunkDebugInfo() const;
+ // Entities compose their poses onto the iris per-draw base (core::drawModelView)
+ // instead of a separately-maintained camera stack; the projection is the iris draw
+  // projection. cameraPos is the frame camera position (core::cameraFrame).
+ void renderEntities(const Vec3d& cameraPos, Frustum* culler, float tickDelta);
  [[nodiscard]] std::string getEntityDebugInfo() const;
-  int render(net::minecraft::LivingEntity& camera, int layer, bool drawModMeshes = true);
- bool compileChunks(net::minecraft::LivingEntity& camera, bool force);
+ int render(net::minecraft::LivingEntity& camera, int layer, bool drawModMeshes = true);
  void renderLastChunks(int layer, double tickDelta);
  void renderMiningProgress(net::minecraft::PlayerEntity* entity,
                            const net::minecraft::HitResult& hit,
@@ -62,11 +56,10 @@ class WorldRenderer : public net::minecraft::GameEventListener {
  void markDirty(int minX, int minY, int minZ, int maxX, int maxY, int maxZ);
  void blockUpdate(int x, int y, int z) override;
  void setBlocksDirty(int minX, int minY, int minZ, int maxX, int maxY, int maxZ) override;
-    void chunkAvailable(int chunkX, int chunkZ) override;
-    void chunkUnloaded(int chunkX, int chunkZ) override;
-    void markChunkColumnLit(int chunkX, int chunkZ) override;
-    void markAllChunksLit() override;
-  void cullChunks(FrustumCuller* culler, float tickDelta, bool updateFrontier = true);
+ void chunkAvailable(int chunkX, int chunkZ) override;
+ void chunkUnloaded(int chunkX, int chunkZ) override;
+ void markChunkColumnLit(int chunkX, int chunkZ) override;
+ void markAllChunksLit() override;
  void addParticle(const std::string& particle,
                   double x,
                   double y,
@@ -80,70 +73,87 @@ class WorldRenderer : public net::minecraft::GameEventListener {
  void updateBlockEntity(int x, int y, int z, net::minecraft::block::entity::BlockEntity* blockEntity) override;
  void onEntityPickup(net::minecraft::Entity* entity, net::minecraft::PlayerEntity* collector) override;
  void blockBreakParticles(int x, int y, int z, int blockId, int blockMeta) override;
- void releaseSections();
- std::vector<net::minecraft::block::entity::BlockEntity*> globalBlockEntities{};
  float miningProgress = 0.0f;
  net::minecraft::client::Minecraft* client = nullptr;
  net::minecraft::World* world = nullptr;
  net::minecraft::client::texture::TextureManager* textureManager = nullptr;
- net::minecraft::client::render::block::BlockRenderManager blockRenderManager{};
+  net::minecraft::client::render::block::BlockRenderManager blockRenderManager{Tessellator::INSTANCE};
  void setCamera(net::minecraft::Entity* camera) {
   cameraEntity_ = camera;
+  // The section system and compile pipeline read the scene, not this class;
+  // refresh it together with the camera so every pass downstream of
+  // GameRenderer::setCamera sees the current camera, settings and options
+  // (frameSettings_ is captured before rendering in onFrameUpdate).
+  scene_.camera = camera;
+  scene_.settings = &frameSettings();
+  scene_.options = &activeOptions();
+ }
+ [[nodiscard]] net::minecraft::Entity* cameraEntity() const noexcept {
+  return cameraEntity_;
  }
  void setRenderCameraEntity(bool renderCameraEntity) noexcept {
   renderCameraEntity_ = renderCameraEntity;
  }
- // Force section columns to rebuild around the next camera position (e.g. first
- // server teleport after the loading screen tracked a stale position).
- void resetSectionFrontier() noexcept {
-  chunkSections_.resetSectionFrontier();
+ [[nodiscard]] bool renderCameraEntity() const noexcept {
+  return renderCameraEntity_;
  }
-  void setOptions(net::minecraft::client::option::GameOptions* options) {
-   options_ = options;
+ void setOptions(net::minecraft::client::option::GameOptions* options) {
+  options_ = options;
+ }
+ // One accessor instead of a forwarding method per operation. WorldRenderer used
+ // to carry a pass-through for cullChunks / compileChunks / releaseSections /
+ // getChunkDebugInfo / reloadIfViewDistanceChanged / push+popCullState, each
+ // adding a name to grep through and a place for the two sides to disagree.
+ [[nodiscard]] ChunkSectionSystem& sections() noexcept {
+  return chunkSections_;
+ }
+ [[nodiscard]] const ChunkSectionSystem& sections() const noexcept {
+  return chunkSections_;
+ }
+ [[nodiscard]] ChunkCompilePipeline& compiler() noexcept {
+  return compilePipeline_;
+ }
+ // RAII, like core::ScopedDrawCameraState. The nested shadow/portal pass used to
+ // hand-balance pushCullState()/popCullState() around an early-returning body.
+ class ScopedCullState {
+public:
+  explicit ScopedCullState(WorldRenderer& renderer) : renderer_(&renderer) {
+   renderer_->chunkSections_.pushCullState();
   }
-  // RAII, like core::ScopedDrawCameraState. The nested shadow/portal pass used to
-  // hand-balance pushCullState()/popCullState() around an early-returning body.
-  class ScopedCullState {
-   public:
-   explicit ScopedCullState(WorldRenderer& renderer) : renderer_(&renderer) {
-    renderer_->pushCullState();
-   }
-   ~ScopedCullState() {
-    renderer_->popCullState();
-   }
-   ScopedCullState(const ScopedCullState&) = delete;
-   ScopedCullState& operator=(const ScopedCullState&) = delete;
+  ~ScopedCullState() {
+   renderer_->chunkSections_.popCullState();
+  }
+  ScopedCullState(const ScopedCullState&) = delete;
+  ScopedCullState& operator=(const ScopedCullState&) = delete;
 
-   private:
-   WorldRenderer* renderer_;
-  };
-  void pushCullState();
-  void popCullState();
+private:
+  WorldRenderer* renderer_;
+ };
+ // The two render origins, one per published model view. Both are real; which one
+ // a draw uses is decided by which matrix it composes onto, so name the choice at
+ // every call site rather than reaching for "the camera position".
+ //
+ // sectionOrigin  = Camera.getPosition() (eye). Geometry uploaded as `worldPos - eye`
+ //                  composes onto sectionLocalModelView. Chunk sections, chunk
+ //                  culling and the mod mesh draw lists.
+ // matrixStackOrigin = the camera ENTITY position. Geometry uploaded relative to it
+ //                  composes onto fullModelView, which is sectionLocalModelView with
+ //                  translate(pos - eye) folded in. Entity/block-entity dispatch,
+ //                  the block-damage overlay and the block outline.
+ // see src/net/minecraft/client/render/RenderCore.cpp setDrawCameraStateFromCamera
+ // https://github.com/IrisShaders/Iris/blob/26.1/common/src/main/java/net/irisshaders/iris/uniforms/CameraUniforms.java
+ [[nodiscard]] static Vec3d sectionOrigin() noexcept;
 
-  private:
-  void renderOutline(const net::minecraft::Box& box);
-  [[nodiscard]] net::minecraft::client::option::GameOptions& activeOptions() const;
-  // The two render origins, one per published model view. Both are real; which one
-  // a draw uses is decided by which matrix it composes onto, so name the choice at
-  // every call site rather than reaching for "the camera position".
-  //
-  // sectionOrigin  = Camera.getPosition() (eye). Geometry uploaded as `worldPos - eye`
-  //                  composes onto sectionLocalModelView. Chunk sections, chunk
-  //                  culling and the mod mesh draw lists.
-  // matrixStackOrigin = the camera ENTITY position. Geometry uploaded relative to it
-  //                  composes onto fullModelView, which is sectionLocalModelView with
-  //                  translate(pos - eye) folded in. Entity/block-entity dispatch,
-  //                  the block-damage overlay and the block outline.
-  // see src/net/minecraft/client/render/RenderCore.cpp setDrawCameraStateFromCamera
-  // https://github.com/IrisShaders/Iris/blob/26.1/common/src/main/java/net/irisshaders/iris/uniforms/CameraUniforms.java
-  static void sectionOrigin(double& x, double& y, double& z) noexcept;
-  // Authoritative per-frame settings captured by GameRenderer::frameSettings_
-  // (the C++ equivalent of Iris' CapturedRenderingState). All renderers query
-  // this; none re-evaluate settings from raw GameOptions.
-  // see third_party/mcp/iris/common/src/main/java/net/irisshaders/iris/pipeline/CapturedRenderingState.java
-  [[nodiscard]] const option::RenderSettings& frameSettings() const;
-  int renderChunksVbo(int layer, bool skipBuildDrawLists = false);
-  int renderModChunkMeshes(int layer);
+ private:
+ void renderOutline(const net::minecraft::Box& box);
+ [[nodiscard]] net::minecraft::client::option::GameOptions& activeOptions() const;
+ // Authoritative per-frame settings captured by GameRenderer::frameSettings_
+ // (the C++ equivalent of Iris' CapturedRenderingState). All renderers query
+ // this; none re-evaluate settings from raw GameOptions.
+ // see third_party/mcp/iris/common/src/main/java/net/irisshaders/iris/pipeline/CapturedRenderingState.java
+ [[nodiscard]] const option::RenderSettings& frameSettings() const;
+ int renderChunksVbo(int layer, bool skipBuildDrawLists = false);
+ int renderModChunkMeshes(int layer);
  void matrixStackOrigin(double& x, double& y, double& z) const;
  int entityRenderCooldown = 2;
  int entityCount = 0;
@@ -151,8 +161,14 @@ class WorldRenderer : public net::minecraft::GameEventListener {
  int culledEntityCount = 0;
  net::minecraft::Entity* cameraEntity_ = nullptr;
  bool renderCameraEntity_ = false;
-  net::minecraft::client::option::GameOptions* options_ = nullptr;
-  ChunkSectionSystem chunkSections_{*this};
- ChunkCompilePipeline compilePipeline_{*this};
+ net::minecraft::client::option::GameOptions* options_ = nullptr;
+ // The scene both terrain systems read. Declared before them: ChunkBuilder
+ // keeps a pointer to scene_.blockEntities, so the scene must outlive every
+ // section (member destruction runs in reverse declaration order).
+ TerrainScene scene_{};
+ ChunkSectionSystem chunkSections_{scene_};
+ // Construction is mutually circular (each system takes the scene alone and
+ // reaches its peer through the setter); the peers are wired in the constructor.
+ ChunkCompilePipeline compilePipeline_{scene_};
 };
 } // namespace net::minecraft::client::render

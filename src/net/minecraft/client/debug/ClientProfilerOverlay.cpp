@@ -104,7 +104,7 @@ void ClientProfilerOverlay::renderProfilerChart(Minecraft& client, std::int64_t 
  renderProfilerChartInViewport(client.displayWidth, client.displayHeight);
 }
 std::string ClientProfilerOverlay::getRenderChunkDebugInfo(const Minecraft& client) {
- return client.worldRenderer != nullptr ? client.worldRenderer->getChunkDebugInfo() : std::string{};
+ return client.worldRenderer != nullptr ? client.worldRenderer->sections().getChunkDebugInfo() : std::string{};
 }
 std::string ClientProfilerOverlay::getRenderEntityDebugInfo(const Minecraft& client) {
  return client.worldRenderer != nullptr ? client.worldRenderer->getEntityDebugInfo() : std::string{};

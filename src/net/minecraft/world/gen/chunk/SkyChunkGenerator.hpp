@@ -21,7 +21,7 @@ class SkyChunkGenerator : public ChunkSource {
  Chunk& getChunk(int chunkX, int chunkZ) override;
  [[nodiscard]] bool isChunkLoaded(int chunkX, int chunkZ) const override;
  void decorate(ChunkSource* source, int chunkX, int chunkZ) override;
- bool save(bool saveEntities, client::gui::screen::LoadingDisplay* display) override;
+ bool save(bool saveEntities, SaveProgressCallback progress = nullptr) override;
  bool tick() override;
  [[nodiscard]] bool canSave() const override;
  [[nodiscard]] std::string getDebugInfo() const override;

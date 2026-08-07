@@ -32,7 +32,7 @@ void drawInventoryCubeFaces(Tessellator& tessellator,
 } // namespace
 void InventoryBlockRenderer::render(net::minecraft::block::Block& block, int metadata, float brightness) {
  const int renderType = block.getRenderType();
- Tessellator& tessellator = *ctx_.tess;
+ Tessellator& tessellator = ctx_.tessellator();
  float red = 1.0f;
  float green = 1.0f;
  float blue = 1.0f;

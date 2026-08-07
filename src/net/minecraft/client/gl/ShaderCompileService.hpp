@@ -44,14 +44,10 @@ class ShaderCompileService {
   return disk_.root();
  }
 
- // Compiles now on the calling thread (a GL context must be current). Returns the
- // content hash used as the disk-cache key.
- std::uint64_t submit(ShaderCompileRequest request);
- // Compile now and return the result (binary or error). Same as submit but hands
- // back the full result.
- ShaderCompileResult compileBlocking(ShaderCompileRequest request);
- void invalidateDiskEntry(std::uint64_t contentHash);
- void storeDiskEntry(const ProgramBinaryBlob& blob);
+  // Compiles now on the calling thread (a GL context must be current) and returns
+  // the result (binary or error).
+  ShaderCompileResult compileBlocking(ShaderCompileRequest request);
+  void invalidateDiskEntry(std::uint64_t contentHash);
 
  private:
  ShaderCompileResult runJobOnCurrentContext(const ShaderCompileRequest& request);

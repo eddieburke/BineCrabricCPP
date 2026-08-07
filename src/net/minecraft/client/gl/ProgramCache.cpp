@@ -66,52 +66,17 @@ ShaderProgram* ProgramCache::getFromSource(const std::string& key,
 ShaderProgram* ProgramCache::getFromComputeSource(const std::string& key,
                                                   const std::string& computeSource,
                                                   const std::string& versionPreamble) {
- if(const auto found = cache_.find(key); found != cache_.end()) {
-  return found->second.failed ? nullptr : found->second.program.get();
- }
- ShaderCompileRequest request = buildRequest(true, computeSource, {}, versionPreamble, {}, {}, {});
- return compileSync(key, std::move(request), true);
-}
-
-std::uint64_t ProgramCache::submit(const std::string& key,
-                                   const std::string& vertexSource,
-                                   const std::string& fragmentSource,
-                                   const std::string& versionPreamble,
-                                   const std::string& geometrySource,
-                                   const std::string& tessControlSource,
-                                   const std::string& tessEvaluationSource) {
- ShaderCompileRequest request =
-     buildRequest(false, vertexSource, fragmentSource, versionPreamble, geometrySource, tessControlSource,
-                  tessEvaluationSource);
- const std::uint64_t hash = request.contentHash;
- compileSync(key, std::move(request), false);
- return hash;
-}
-
-std::uint64_t ProgramCache::submitCompute(const std::string& key,
-                                          const std::string& computeSource,
-                                          const std::string& versionPreamble) {
- ShaderCompileRequest request = buildRequest(true, computeSource, {}, versionPreamble, {}, {}, {});
- const std::uint64_t hash = request.contentHash;
- compileSync(key, std::move(request), true);
- return hash;
-}
-
-bool ProgramCache::isPending(const std::string& key) const {
- (void)key;
- return false;
+  if(const auto found = cache_.find(key); found != cache_.end()) {
+   return found->second.failed ? nullptr : found->second.program.get();
+  }
+  ShaderCompileRequest request = buildRequest(true, computeSource, {}, versionPreamble, {}, {}, {});
+  return compileSync(key, std::move(request), true);
 }
 
 ShaderProgram* ProgramCache::find(const std::string& key) const {
  const auto found = cache_.find(key);
  if(found == cache_.end()) return nullptr;
  return found->second.failed ? nullptr : found->second.program.get();
-}
-
-void ProgramCache::cancelPending() {}
-
-bool ProgramCache::poll() {
- return false;
 }
 
 void ProgramCache::clear() {

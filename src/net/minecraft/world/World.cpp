@@ -40,7 +40,7 @@ void requireBootstrap() {
   throw std::logic_error("Registry::bootstrap() must run before creating a world");
  }
 }
-}
+} // namespace
 World::World(std::string name, std::uint64_t seed, std::unordered_map<std::string, std::string> creationOptions)
     : events_(*this),
       blockMutationContext_(*this),
@@ -305,7 +305,7 @@ void World::save(bool blocking) {
  if(dimensionData_ != nullptr) {
   checkSessionLock();
   if(blocking) {
-    waitForAsyncSave();
+   waitForAsyncSave();
    try {
     if(auto* regionStorage = dynamic_cast<RegionWorldStorage*>(dimensionData_)) {
      regionStorage->saveUnload(properties_, players);
@@ -316,24 +316,23 @@ void World::save(bool blocking) {
     }
    } catch(const std::exception&) {
    }
-   } else if(!asyncSaveState_->inFlight.exchange(true, std::memory_order_acq_rel)) {
-    WorldProperties snapshot = properties_;
-    if(!players.empty() && players.front() != nullptr) {
-     snapshot.setPlayerNbt(world::storage::buildSafeguardedPlayerNbt(*players.front(), snapshot.getPlayerNbt()));
-    }
-    const auto state = asyncSaveState_;
-    WorldStorage* storage = dimensionData_;
-    util::concurrent::ThreadCoordinator::instance().pool(util::concurrent::Domain::Io).submit(
-        [state, storage, snapshot = std::move(snapshot)]() mutable {
-         try {
-          storage->save(snapshot);
-         } catch(const std::exception&) {
-         }
-         state->inFlight.store(false, std::memory_order_release);
-         const std::lock_guard lock(state->mutex);
-         state->completed.notify_all();
-        });
+  } else if(!asyncSaveState_->inFlight.exchange(true, std::memory_order_acq_rel)) {
+   WorldProperties snapshot = properties_;
+   if(!players.empty() && players.front() != nullptr) {
+    snapshot.setPlayerNbt(world::storage::buildSafeguardedPlayerNbt(*players.front(), snapshot.getPlayerNbt()));
    }
+   const auto state = asyncSaveState_;
+   WorldStorage* storage = dimensionData_;
+   util::concurrent::ThreadCoordinator::instance().pool(util::concurrent::Domain::Io).submit([state, storage, snapshot = std::move(snapshot)]() mutable {
+    try {
+     storage->save(snapshot);
+    } catch(const std::exception&) {
+    }
+    state->inFlight.store(false, std::memory_order_release);
+    const std::lock_guard lock(state->mutex);
+    state->completed.notify_all();
+   });
+  }
  }
  persistentStateManager.save();
  if(dimensionData_ != nullptr && !isRemote_) {
@@ -587,16 +586,7 @@ bool World::attemptSaving(int step) {
  if(step == 0) {
   save();
  }
- return chunkCache_->save(false, nullptr);
-}
-void World::savingProgress(client::gui::screen::LoadingDisplay* display) {
- if(chunkCache_ != nullptr) {
-  chunkCache_->prepareForSave();
- }
- save(true);
- if(chunkCache_ != nullptr) {
-  chunkCache_->save(true, display);
- }
+ return chunkCache_->save(false);
 }
 void World::applyWorldSettings(bool weatherEnabled, int autoSaveTicks, int timeMode) {
  weather_.setEnabled(weatherEnabled);
@@ -952,7 +942,7 @@ void World::tick() {
     nextTime % static_cast<std::uint64_t>(saveInterval_) == 0) {
   save();
   if(chunkCache_ != nullptr) {
-   chunkCache_->save(false, nullptr);
+   chunkCache_->save(false);
   }
  }
  setTime(nextTime);

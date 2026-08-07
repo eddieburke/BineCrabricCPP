@@ -7,10 +7,6 @@
 #include "net/minecraft/client/render/shaderpack/Loader.hpp"
 #include "net/minecraft/client/render/shaderpack/Pack.hpp"
 namespace net::minecraft::client::render {
-std::string preprocessProperties(const std::string& source,
-                                 int mcVersion,
-                                 const std::unordered_map<std::string, PackSourceOption>& options,
-                                 const std::vector<PackProfile>& profiles);
 namespace {
 std::vector<std::string> contentLines(const std::string& output) {
  std::vector<std::string> lines;
@@ -25,7 +21,7 @@ std::vector<std::string> contentLines(const std::string& output) {
  return lines;
 }
 std::vector<std::string> glslContent(const std::string& text) {
- return contentLines(normalizePackSource(text, ""));
+ return contentLines(normalizePackSource(vanillaPackDefinition(), text));
 }
 std::vector<std::string> propertiesContent(const std::string& text) {
  return contentLines(preprocessProperties(text, 10703, {}, {}));
@@ -182,13 +178,9 @@ TEST(ConditionalState, PropertiesSentinelIsNeverPopped) {
  EXPECT_TRUE(s.active());
 }
 TEST(IfEngineUnified, PreservesTopLevelElseDivergenceBetweenEngines) {
- // Well-formed input produces identical results (the battery above); malformed
- // top-level #else is the one construct the two engines historically disagreed
- // on: the GLSL engine ignores it, the .properties engine disables the rest of
- // the file. The unified machine must keep each engine's current output.
  const std::string text = "#else\nline_after_top_else\n";
  EXPECT_EQ(glslContent(text), (std::vector<std::string>{"line_after_top_else"}));
  EXPECT_TRUE(propertiesContent(text).empty());
 }
-} // namespace
+}
 } // namespace net::minecraft::client::render

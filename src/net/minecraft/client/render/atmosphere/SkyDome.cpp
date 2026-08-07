@@ -27,8 +27,8 @@ struct SkyMeshes {
  bool built = false;
 };
 SkyMeshes& skyMeshes() {
- static SkyMeshes* meshes = new SkyMeshes();
- return *meshes;
+ static SkyMeshes meshes;
+ return meshes;
 }
 void buildStarMesh(Tessellator& tessellator) {
  net::minecraft::JavaRandom random(10842ULL);
@@ -191,17 +191,6 @@ void renderSkyDome(const AtmosphereContext& ctx, float tickDelta) {
  // actually being drawn.
  // see src/net/minecraft/client/render/celestial/CelestialState.hpp
  const float celestialAngle = render::core::celestialState().celestialAngle;
- {
-  render::core::SkyUniforms su = render::core::skyUniforms();
-  su.renderStars = ctx.settings.renderStars;
-  render::core::setSkyUniforms(su);
- }
- const RenderPassScope skyPass(RenderType::sky());
- core::depthMask(false);
- SkyMeshes& meshes = skyMeshes();
- if(!meshes.built) {
-  buildSkyDomes(meshes);
- }
  const Vec3d sky = ctx.world->getSkyColor(ctx.camera, tickDelta);
  const float skyR = static_cast<float>(sky.x);
  const float skyG = static_cast<float>(sky.y);
@@ -210,11 +199,18 @@ void renderSkyDome(const AtmosphereContext& ctx, float tickDelta) {
  const float starBrightness = ctx.world->calculateSkyLightIntensity(tickDelta) * starAlpha;
  {
   render::core::SkyUniforms su = render::core::skyUniforms();
+  su.renderStars = ctx.settings.renderStars;
   su.skyColor[0] = skyR;
   su.skyColor[1] = skyG;
   su.skyColor[2] = skyB;
   su.starBrightness = starBrightness;
   render::core::setSkyUniforms(su);
+ }
+ const RenderPassScope skyPass(RenderType::sky());
+ core::depthMask(false);
+ SkyMeshes& meshes = skyMeshes();
+ if(!meshes.built) {
+  buildSkyDomes(meshes);
  }
  if(ctx.settings.renderSky) {
   core::setConstColor(skyR, skyG, skyB, 1.0f);

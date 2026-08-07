@@ -5,7 +5,7 @@
 namespace net::minecraft::client::render::block {
 bool TorchBlockRenderer::render(net::minecraft::block::Block& block, int x, int y, int z) {
  const int blockMeta = ctx_.blockView->getBlockMeta(x, y, z);
- Tessellator& tessellator = *ctx_.tess;
+ Tessellator& tessellator = ctx_.tessellator();
  tessellator.color(1.0f, 1.0f, 1.0f);
  constexpr double tiltAmount = 0.4;
  constexpr double wallInset = 0.1;
@@ -29,7 +29,7 @@ bool TorchBlockRenderer::render(net::minecraft::block::Block& block, int x, int 
 }
 void TorchBlockRenderer::renderTiltedTorch(
     net::minecraft::block::Block& block, double x, double y, double z, double xTilt, double zTilt) {
- Tessellator& tessellator = *ctx_.tess;
+ Tessellator& tessellator = ctx_.tessellator();
  const net::minecraft::block::TerrainAtlasUv atlasUv =
      net::minecraft::block::Block::terrainTileUv(ctx_.resolveTexture(0, block.getTexture(0)));
  const float atlasUMin = static_cast<float>(atlasUv.uMin);

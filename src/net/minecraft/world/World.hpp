@@ -36,9 +36,6 @@
 #include "net/minecraft/world/storage/SavedDataStorage.hpp"
 #include "net/minecraft/world/tick/ScheduledTickQueue.hpp"
 #include "net/minecraft/world/weather/WorldWeather.hpp"
-namespace net::minecraft::client::gui::screen {
-class LoadingDisplay;
-}
 namespace net::minecraft {
 class GameEventListener;
 class WorldStorage;
@@ -190,7 +187,10 @@ class World : public IEntityWorld {
   return chunkCache_.get();
  }
  [[nodiscard]] bool isChunkDataReady(int chunkX, int chunkZ) const;
- void savingProgress(client::gui::screen::LoadingDisplay* display);
+ // Report save progress. The callback receives a [0,100] percentage; the
+ // default no-op ignores it. The client overrides with a UI progress bar
+ // (LoadingDisplay in ClientWorld); the server never calls this.
+ virtual void savingProgress(int percent) {}
  // Pump lighting-thread results: forward finished dirty regions to the
  // renderer. Cheap; call once per frame/tick. Returns true while the
  // lighting thread still has work queued.
@@ -220,8 +220,8 @@ class World : public IEntityWorld {
  virtual bool spawnGlobalEntity(Entity* entity);
  virtual void notifyEntityAdded(Entity* entity);
  virtual void notifyEntityRemoved(Entity* entity);
-  virtual void remove(Entity* entity);
-  virtual void serverRemove(Entity* entity);
+ virtual void remove(Entity* entity);
+ virtual void serverRemove(Entity* entity);
  [[nodiscard]] const std::vector<Entity*>& entities() const noexcept {
   return entities_;
  }
@@ -282,12 +282,12 @@ class World : public IEntityWorld {
  [[nodiscard]] bool canTransferPower(int x, int y, int z);
  [[nodiscard]] bool isEmittingRedstonePower(int x, int y, int z);
  [[nodiscard]] bool isEmittingRedstonePowerInDirection(int x, int y, int z, int direction);
-   void setBlocksDirty(int minX, int minY, int minZ, int maxX, int maxY, int maxZ);
-     void chunkAvailable(int chunkX, int chunkZ);
-     void chunkUnloaded(int chunkX, int chunkZ);
-     void markChunkColumnLit(int chunkX, int chunkZ);
-     void markAllChunksLit();
-   void setBlocksDirtyColumn(int x, int z, int minY, int maxY);
+ void setBlocksDirty(int minX, int minY, int minZ, int maxX, int maxY, int maxZ);
+ void chunkAvailable(int chunkX, int chunkZ);
+ void chunkUnloaded(int chunkX, int chunkZ);
+ void markChunkColumnLit(int chunkX, int chunkZ);
+ void markAllChunksLit();
+ void setBlocksDirtyColumn(int x, int z, int minY, int maxY);
  [[nodiscard]] block::entity::BlockEntity* getBlockEntity(int x, int y, int z) override;
  void setBlockEntity(int x, int y, int z, std::unique_ptr<block::entity::BlockEntity> blockEntity);
  void removeBlockEntity(int x, int y, int z);

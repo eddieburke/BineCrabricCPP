@@ -20,20 +20,16 @@ RenderSettings renderSettings(const GameOptions& options) {
  r.renderWater = options.water < 2;
  r.fancyWater = options.water == 0 && options.fancyGraphics;
  r.clearWater = options.clearWater;
- r.viewDistanceSetting = options.viewDistance & 3;
+ r.renderDistance.setting = options.viewDistance & 3;
  r.renderScale = std::isfinite(options.renderScale) ? std::clamp(options.renderScale, 1.0f, 5.0f) : 1.0f;
- const int baseDistance = 256 >> r.viewDistanceSetting;
- r.renderDistanceBlocks = static_cast<float>(baseDistance) * r.renderScale;
- const float distanceBlend = 1.0f / static_cast<float>(4 - r.viewDistanceSetting);
- r.fogColorBlend = 1.0f - static_cast<float>(std::pow(static_cast<double>(distanceBlend), 0.25));
- // One formula for the section radius, derived from the render distance the camera
- // and the fog actually use. The old separate chain
- // (visualGridDiameter = clamp(baseDistance*2*scale, 64, 2560) then
- // (diameter/16 + 1)/2) was algebraically the same but drifted when one side
- // changed.
- r.chunkRadius = std::clamp(static_cast<int>((r.renderDistanceBlocks + 8.0f) / 16.0f), 2, 80);
+ const int baseDistance = 256 >> r.renderDistance.setting;
+ r.renderDistance.blocks = static_cast<float>(baseDistance) * r.renderScale;
+ // Near/far planes, the fog span and the fog colour blend are all derived from
+ // renderDistance now — see RenderDistance's accessors. Nothing is stored twice.
+ // The section radius is no longer stored: RenderDistance::chunks() derives it from
+ // the same blocks value the camera and fog use, so the two cannot disagree.
  const int preloadMargin = options.preloadedChunks <= 0 ? 3 : 3 + options.preloadedChunks / 2;
- r.residentChunkRadius = r.chunkRadius + preloadMargin;
+ r.residentChunkRadius = r.renderDistance.chunks() + preloadMargin;
  r.smoothInput = options.smoothInput;
  r.smoothFps = options.smoothFps;
  r.chunkUpdatesSlider = std::isfinite(options.chunkUpdates) ? std::clamp(options.chunkUpdates, 0.0f, 1.0f) : 0.5f;

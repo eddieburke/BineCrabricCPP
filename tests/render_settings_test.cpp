@@ -25,7 +25,7 @@ TEST(RenderSettings, RenderScaleExpandsTerrainResidency) {
  options.viewDistance = 0;
  options.renderScale = 5.0f;
  const option::RenderSettings resolved = option::renderSettings(options);
- EXPECT_FLOAT_EQ(resolved.renderDistanceBlocks, 1280.0f);
- EXPECT_EQ(resolved.chunkRadius, 80);
+ EXPECT_FLOAT_EQ(resolved.renderDistance.blocks, 1280.0f);
+ EXPECT_EQ(resolved.renderDistance.chunks(), 80);
  EXPECT_EQ(resolved.residentChunkRadius, 83);
 }

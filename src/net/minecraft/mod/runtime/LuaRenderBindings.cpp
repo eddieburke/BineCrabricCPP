@@ -81,7 +81,7 @@ int luaRenderDrawQuads(lua_State* state) {
    modelY -= eye[1];
    modelZ -= eye[2];
   } else {
-   const client::render::FrameRenderCamera& camera = client::render::RenderCameraState::instance().frame();
+   const client::render::FrameRenderCamera& camera = client::render::core::cameraFrame();
    modelX -= camera.eyeX;
    modelY -= camera.eyeY;
    modelZ -= camera.eyeZ;

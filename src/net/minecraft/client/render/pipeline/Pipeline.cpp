@@ -1,6 +1,4 @@
 #include "net/minecraft/client/render/pipeline/Pipeline.hpp"
-#include "net/minecraft/client/render/pipeline/CompositeRenderer.hpp"
-#include "net/minecraft/client/render/pipeline/FinalPassRenderer.hpp"
 #include "net/minecraft/client/render/pipeline/FullscreenPass.hpp"
 #include "net/minecraft/client/render/ColorSpace.hpp"
 #include "net/minecraft/client/render/shaders/ComputeDispatcher.hpp"
@@ -24,7 +22,6 @@
 #include "net/minecraft/block/Block.hpp"
 #include "net/minecraft/client/ClientLog.hpp"
 #include "net/minecraft/client/Minecraft.hpp"
-#include "net/minecraft/client/render/shaders/ShaderFail.hpp"
 #include "net/minecraft/client/gl/GLCore.hpp"
 #include "net/minecraft/client/gl/GlConstants.hpp"
 #include "net/minecraft/client/gl/GlResource.hpp"
@@ -40,7 +37,6 @@
 #include "net/minecraft/item/ItemStack.hpp"
 #include "net/minecraft/world/World.hpp"
 #include "net/minecraft/world/dimension/Dimension.hpp"
-
 namespace net::minecraft::client::render {
 using LogLevel = ::net::minecraft::util::logging::LogLevel;
 namespace {
@@ -58,14 +54,12 @@ void uploadRgbaStub(gl::GlTexture& texture, unsigned char r, unsigned char g, un
  ::glTexParameteri(0x0DE1, 0x2802, 0x812F);
  ::glTexParameteri(0x0DE1, 0x2803, 0x812F);
 }
-
 std::string trim(std::string_view value) {
  const std::size_t first = value.find_first_not_of(" \t\r\n");
  if(first == std::string_view::npos) return {};
  const std::size_t last = value.find_last_not_of(" \t\r\n");
  return std::string(value.substr(first, last - first + 1));
 }
-
 std::pair<bool, bool> pbrFormat(const resource::pack::TexturePack* pack) {
  if(pack == nullptr) return {};
  const std::vector<std::uint8_t> bytes = pack->getResource("texture.properties");
@@ -80,26 +74,21 @@ std::pair<bool, bool> pbrFormat(const resource::pack::TexturePack* pack) {
  }
  return {};
 }
-
-}
-
+} // namespace
 Pipeline::Pipeline(option::GameOptions* options) : options_(options) {}
-
 Pipeline::~Pipeline() {
  presentReadFbo_.destroy();
  colorSpace_.destroy();
 }
-
 void Pipeline::logOnce(PackInstance& pack, const std::string& message,
                        ::net::minecraft::util::logging::LogLevel level) const {
  if(!pack.logged.insert(message).second) return;
  const std::string& label =
-     !pack.summary.name.empty() ? pack.summary.name
+     !pack.summary.name.empty()      ? pack.summary.name
      : !pack.definition.name.empty() ? pack.definition.name
                                      : std::string("Shader pack");
  ClientLog::LOGGER.log(level, "[shaderpack:" + label + "] " + message);
 }
-
 void Pipeline::reset() {
  pipelinePhase_ = WorldPipelinePhase::None;
  packWroteToScreen_ = false;
@@ -107,7 +96,7 @@ void Pipeline::reset() {
  shadowDepthTexture_ = -1;
  shadowOpaqueDepthTexture_ = -1;
  shadowColorTextureCount_ = 0;
-  std::fill(std::begin(shadowColorTextures_), std::end(shadowColorTextures_), 0);
+ std::fill(std::begin(shadowColorTextures_), std::end(shadowColorTextures_), 0);
  if(!hasGlContext()) return;
  core::setActiveProgram(nullptr);
  gl::ShaderProgram::unbind();
@@ -122,25 +111,20 @@ void Pipeline::reset() {
  core::invalidateAttribCache();
  core::advanceProgramUniforms();
 }
-
 bool Pipeline::engineOwnsColorCorrection(const PackDefinition& def) const {
- // https://shaders.properties/current/reference/shadersproperties/features/
  if(options_ == nullptr || options_->colorSpace == 0) return false;
  return !def.supportsColorCorrection;
 }
-
 unsigned int Pipeline::screenDrawFramebuffer(int width, int height) {
  if(!engineColorCorrect_ || options_ == nullptr) return 0;
  colorSpace_.rebuild(width, height, colorSpaceFromOption(options_->colorSpace));
  return colorSpace_.writeFramebuffer();
 }
-
 void Pipeline::finalizeEngineColorCorrection(int screenWidth, int screenHeight) {
  if(!engineColorCorrect_ || !packWroteToScreen_ || !colorSpace_.ready()) return;
  colorSpace_.process(colorSpace_.presentTexture());
  if(!colorSpace_.blitPresentToScreen(screenWidth, screenHeight)) packWroteToScreen_ = false;
 }
-
 bool Pipeline::hasDeferredPasses(const PackInstance* activePack) const {
  if(activePack == nullptr) return false;
  if(!activePack->deferredPasses.empty()) return true;
@@ -148,25 +132,21 @@ bool Pipeline::hasDeferredPasses(const PackInstance* activePack) const {
   return ComputeDispatcher::matchesStage(activePack->definition.passes[index].name, "deferred");
  });
 }
-
 void Pipeline::ensurePbrFallbackTextures() {
  if(!normalFallbackTexture_) uploadRgbaStub(normalFallbackTexture_, 127, 127, 255, 255);
  if(!specularFallbackTexture_) uploadRgbaStub(specularFallbackTexture_, 0, 0, 0, 0);
 }
-
 void Pipeline::bindPbrTextures() {
- // IrisRenderingPipeline.java:935). Companion textures are resolved and bound
  ensurePbrFallbackTextures();
  PbrTextures::onNewFrame();
 }
-
 void Pipeline::refreshResourcePackState(PackInstance* basePack,
-                                               const std::vector<std::unique_ptr<PackInstance>>& packs) {
+                                        const std::vector<std::unique_ptr<PackInstance>>& packs) {
  const auto* minecraft = net::minecraft::client::Minecraft::INSTANCE;
  const auto* selected =
      minecraft != nullptr && minecraft->texturePacks != nullptr ? minecraft->texturePacks->selected : nullptr;
- const std::string key = selected == nullptr ? std::string{} :
-                         selected->key.empty() ? selected->name : selected->key;
+ const std::string key = selected == nullptr ? std::string{} : selected->key.empty() ? selected->name
+                                                                                     : selected->key;
  if(key != resourcePackKey_) {
   resourcePackKey_ = key;
   const auto [labPbr, labPbr13] = pbrFormat(selected);
@@ -196,10 +176,10 @@ void Pipeline::refreshResourcePackState(PackInstance* basePack,
  apply(basePack);
  for(auto& pack : packs) apply(pack.get());
 }
-
 void Pipeline::applyBlockIds(const PackDefinition& definition) {
  std::array<int, 256> ids{};
- if(definition.hasBlockProperties) ids.fill(-1);
+ if(definition.hasBlockProperties)
+  ids.fill(-1);
  else
   for(int i = 0; i < 256; ++i) ids[static_cast<std::size_t>(i)] = i;
  {
@@ -224,98 +204,95 @@ void Pipeline::applyBlockIds(const PackDefinition& definition) {
  }
  setShaderBlockIds(ids);
 }
-
 std::string Pipeline::dimensionKey(const PackInstance& pack, const net::minecraft::World* world) const {
-  std::string key = "*";
-  if(world != nullptr && world->dimension != nullptr) {
-   if(world->dimension->id == 0) {
-    key = "minecraft:overworld";
-   } else if(world->dimension->id == -1) {
-    key = "minecraft:the_nether";
-   } else if(world->dimension->id == 1) {
-    key = "minecraft:the_end";
-   } else {
-    key = "minecraft:dimension_" + std::to_string(world->dimension->id);
-   }
+ std::string key = "*";
+ if(world != nullptr && world->dimension != nullptr) {
+  if(world->dimension->id == 0) {
+   key = "minecraft:overworld";
+  } else if(world->dimension->id == -1) {
+   key = "minecraft:the_nether";
+  } else if(world->dimension->id == 1) {
+   key = "minecraft:the_end";
+  } else {
+   key = "minecraft:dimension_" + std::to_string(world->dimension->id);
   }
-  if(pack.rootDefinition.dimensionDefinitions.contains(key)) return key;
-  if(pack.rootDefinition.dimensionDefinitions.contains("*")) return "*";
-  return {};
+ }
+ if(pack.rootDefinition.dimensionDefinitions.contains(key)) return key;
+ if(pack.rootDefinition.dimensionDefinitions.contains("*")) return "*";
+ return {};
 }
-
 bool Pipeline::selectDimension(PackInstance& pack, const net::minecraft::World* world, bool applyIds) {
-  const std::string selectedKey = dimensionKey(pack, world);
-  if(pack.dimensionKey == selectedKey) return false;
-  const PackDefinition* selected = selectedKey.empty()
-                                       ? &pack.rootDefinition
-                                       : pack.rootDefinition.dimensionDefinitions.at(selectedKey).get();
-  core::setActiveProgram(nullptr);
-  if(gl::GLCore::useProgram != nullptr) gl::GLCore::useProgram(0);
-  const std::string transition =
-      "clearing programs (dimension '" + pack.dimensionKey + "' -> '" + selectedKey + "')";
-  pack.clearGpuResources();
-  pack.dimensionKey = selectedKey;
-  pack.definition = pack.rootDefinition;
-  if(selected != &pack.rootDefinition) {
-   for(const auto& [name, program] : selected->programs) pack.definition.programs[name] = program;
-   for(const auto& [name, target] : selected->targets) pack.definition.targets[name] = target;
-   for(const auto& [name, scale] : selected->programScales) pack.definition.programScales[name] = scale;
-   for(const auto& [name, flip] : selected->flips) pack.definition.flips[name] = flip;
-   for(const auto& blend : selected->bufferBlends) pack.definition.bufferBlends.push_back(blend);
-   for(const auto& img : selected->images) pack.definition.images.push_back(img);
-   for(const auto& tex : selected->customTextures) pack.definition.customTextures.push_back(tex);
-   for(const auto& buf : selected->bufferObjects) pack.definition.bufferObjects.push_back(buf);
-   for(const auto& [name, id] : selected->blockIds) pack.definition.blockIds[name] = id;
-   if(selected->hasBlockProperties) pack.definition.hasBlockProperties = true;
-   for(const auto& [name, id] : selected->itemIds) pack.definition.itemIds[name] = id;
-   for(const auto& [name, id] : selected->entityIds) pack.definition.entityIds[name] = id;
-   pack.definition.gbufferColorBuffers =
-       std::max(pack.definition.gbufferColorBuffers, selected->gbufferColorBuffers);
-   pack.definition.shadowColorBuffers = std::max(pack.definition.shadowColorBuffers, selected->shadowColorBuffers);
-   if(selected->shadowMapResolution > 0) {
-    if(pack.definition.shadowMapResolution > 0 &&
-       pack.definition.shadowMapResolution != selected->shadowMapResolution) {
-     logOnce(pack,
-             "dimension shadowMapResolution " + std::to_string(selected->shadowMapResolution) +
-                 " overrides pack-wide " + std::to_string(pack.definition.shadowMapResolution) +
-                 "; the shadow texture and the pack's compiled shadowMapResolution const must agree",
-             LogLevel::Warning);
-    }
-    pack.definition.shadowMapResolution = selected->shadowMapResolution;
+ const std::string selectedKey = dimensionKey(pack, world);
+ if(pack.dimensionKey == selectedKey) return false;
+ const PackDefinition* selected = selectedKey.empty()
+                                      ? &pack.rootDefinition
+                                      : pack.rootDefinition.dimensionDefinitions.at(selectedKey).get();
+ core::setActiveProgram(nullptr);
+ if(gl::GLCore::useProgram != nullptr) gl::GLCore::useProgram(0);
+ const std::string transition =
+     "clearing programs (dimension '" + pack.dimensionKey + "' -> '" + selectedKey + "')";
+ pack.clearGpuResources();
+ pack.dimensionKey = selectedKey;
+ pack.definition = pack.rootDefinition;
+ if(selected != &pack.rootDefinition) {
+  for(const auto& [name, program] : selected->programs) pack.definition.programs[name] = program;
+  for(const auto& [name, target] : selected->targets) pack.definition.targets[name] = target;
+  for(const auto& [name, scale] : selected->programScales) pack.definition.programScales[name] = scale;
+  for(const auto& [name, flip] : selected->flips) pack.definition.flips[name] = flip;
+  for(const auto& blend : selected->bufferBlends) pack.definition.bufferBlends.push_back(blend);
+  for(const auto& img : selected->images) pack.definition.images.push_back(img);
+  for(const auto& tex : selected->customTextures) pack.definition.customTextures.push_back(tex);
+  for(const auto& buf : selected->bufferObjects) pack.definition.bufferObjects.push_back(buf);
+  for(const auto& [name, id] : selected->blockIds) pack.definition.blockIds[name] = id;
+  if(selected->hasBlockProperties) pack.definition.hasBlockProperties = true;
+  for(const auto& [name, id] : selected->itemIds) pack.definition.itemIds[name] = id;
+  for(const auto& [name, id] : selected->entityIds) pack.definition.entityIds[name] = id;
+  pack.definition.gbufferColorBuffers =
+      std::max(pack.definition.gbufferColorBuffers, selected->gbufferColorBuffers);
+  pack.definition.shadowColorBuffers = std::max(pack.definition.shadowColorBuffers, selected->shadowColorBuffers);
+  if(selected->shadowMapResolution > 0) {
+   if(pack.definition.shadowMapResolution > 0 &&
+      pack.definition.shadowMapResolution != selected->shadowMapResolution) {
+    logOnce(pack,
+            "dimension shadowMapResolution " + std::to_string(selected->shadowMapResolution) +
+                " overrides pack-wide " + std::to_string(pack.definition.shadowMapResolution) +
+                "; the shadow texture and the pack's compiled shadowMapResolution const must agree",
+            LogLevel::Warning);
    }
-   if(!selected->customUniforms.empty()) {
-    pack.definition.customUniforms = selected->customUniforms;
-   }
-   for(const PackPass& pass : selected->passes) {
-    const auto match = std::find_if(pack.definition.passes.begin(), pack.definition.passes.end(),
-                                    [&pass](const PackPass& root) {
-                                     return root.type == pass.type && root.name == pass.name;
-                                    });
-    if(match == pack.definition.passes.end()) pack.definition.passes.push_back(pass);
-    else *match = pass;
-   }
+   pack.definition.shadowMapResolution = selected->shadowMapResolution;
   }
-  std::string customError;
-  if(!pack.rebuildRuntime(customError)) logOnce(pack, customError, LogLevel::Warning);
-  logOnce(pack, transition, LogLevel::Info);
-  if(applyIds) {
-   applyBlockIds(pack.definition);
+  if(!selected->customUniforms.empty()) {
+   pack.definition.customUniforms = selected->customUniforms;
   }
-  return true;
+  for(const PackPass& pass : selected->passes) {
+   const auto match = std::find_if(pack.definition.passes.begin(), pack.definition.passes.end(),
+                                   [&pass](const PackPass& root) {
+                                    return root.type == pass.type && root.name == pass.name;
+                                   });
+   if(match == pack.definition.passes.end())
+    pack.definition.passes.push_back(pass);
+   else
+    *match = pass;
+  }
+ }
+ std::string customError;
+ if(!pack.rebuildRuntime(customError)) logOnce(pack, customError, LogLevel::Warning);
+ logOnce(pack, transition, LogLevel::Info);
+ if(applyIds) {
+  applyBlockIds(pack.definition);
+ }
+ return true;
 }
-
 bool Pipeline::preparePackResources(PackInstance& pack, int width, int height) {
  if(!ensureSceneTargets(&pack, width, height)) return false;
- return PackResources::ensure(pack, width, height, lightmapTexture_,
+  return ensurePackResources(pack, width, height, lightmapTexture_,
                               [](const PackInstance& candidate, const std::string& path) {
                                return PackCompiler::readText(candidate, path);
                               });
 }
-
 void Pipeline::prepareFrame(net::minecraft::World* world, PackInstance* activePack,
                             PackInstance* basePack) {
  bindPbrTextures();
-
  const auto preparePrograms = [this](PackInstance* pack) {
   if(pack == nullptr) return;
   if(pack->programState != PackProgramState::Cold) return;
@@ -323,10 +300,8 @@ void Pipeline::prepareFrame(net::minecraft::World* world, PackInstance* activePa
    logOnce(p, message, level);
   });
  };
-
  preparePrograms(activePack);
  if(basePack != activePack) preparePrograms(basePack);
-
  const net::minecraft::client::Minecraft* minecraft = net::minecraft::client::Minecraft::INSTANCE;
  const int width = minecraft != nullptr ? std::max(1, minecraft->displayWidth) : 1;
  const int height = minecraft != nullptr ? std::max(1, minecraft->displayHeight) : 1;
@@ -335,21 +310,19 @@ void Pipeline::prepareFrame(net::minecraft::World* world, PackInstance* activePa
   worldUniforms_.viewHeight = static_cast<float>(height);
   worldUniforms_.aspectRatio = static_cast<float>(width) / static_cast<float>(std::max(height, 1));
  }
-  if(minecraft != nullptr && minecraft->player != nullptr) {
-   if(const ItemStack* held = minecraft->player->inventory.getSelectedItem()) {
-    std::string name = lower(held->getTranslationKey());
-    if(name.rfind("item.", 0) == 0 || name.rfind("tile.", 0) == 0) name.erase(0, 5);
-    // https://github.com/IrisShaders/Iris/blob/26.1/common/src/main/java/net/irisshaders/iris/uniforms/IdMapUniforms.java
-    worldUniforms_.heldItemId = render::resolveShaderObjectId("item", name, -1);
-   }
+ if(minecraft != nullptr && minecraft->player != nullptr) {
+  if(const ItemStack* held = minecraft->player->inventory.getSelectedItem()) {
+   std::string name = lower(held->getTranslationKey());
+   if(name.rfind("item.", 0) == 0 || name.rfind("tile.", 0) == 0) name.erase(0, 5);
+   worldUniforms_.heldItemId = render::resolveShaderObjectId("item", name, -1);
   }
+ }
  if(minecraft != nullptr) {
   core::setTextureFilteringMode(minecraft->options.mipmapLinear ? 1 : 0);
   worldUniforms_.textureFilteringMode = minecraft->options.mipmapLinear ? 1 : 0;
  }
  core::advanceProgramUniforms();
  updateLightmap(world);
-
  const bool resourcesReady = activePack != nullptr && preparePackResources(*activePack, width, height);
  if(resourcesReady) {
   for(const CustomImage& declaration : activePack->definition.images) {
@@ -357,37 +330,36 @@ void Pipeline::prepareFrame(net::minecraft::World* world, PackInstance* activePa
    if(!declaration.clearEachFrame || found == activePack->images.end() || !found->second.texture) {
     continue;
    }
-    // https://shaders.properties/current/reference/buffers/custom_images/
-    if(gl::GLCore::clearTexImage != nullptr) {
-     gl::GLCore::clearTexImage(found->second.texture.handle(), 0, pixelFormat(declaration.format),
-                               pixelType(declaration.pixelType), nullptr);
-    } else if(gl::GLCore::bindFramebuffer != nullptr && gl::GLCore::framebufferTexture2D != nullptr) {
-     static gl::GlFramebuffer clearFbo;
-     if(clearFbo.addColorAttachment(0, found->second.texture.handle())) {
-      int prevDraw = 0;
-      ::glGetIntegerv(static_cast<unsigned>(gl::query::FramebufferBinding), &prevDraw);
-      clearFbo.bind();
-      const float zero[4] = {0.0f, 0.0f, 0.0f, 0.0f};
-      if(gl::GLCore::clearBufferfv != nullptr) {
-       gl::GLCore::clearBufferfv(gl::framebuffer::Color, 0, zero);
-      } else {
-       ::glClearColor(0.0f, 0.0f, 0.0f, 0.0f);
-       ::glClear(gl::attrib::ColorBufferBit);
-      }
-      gl::GLCore::bindFramebuffer(static_cast<unsigned>(gl::framebuffer::Framebuffer),
-                                  static_cast<unsigned int>(prevDraw));
+   if(gl::GLCore::clearTexImage != nullptr) {
+    gl::GLCore::clearTexImage(found->second.texture.handle(), 0, pixelFormat(declaration.format),
+                              pixelType(declaration.pixelType), nullptr);
+   } else if(gl::GLCore::bindFramebuffer != nullptr && gl::GLCore::framebufferTexture2D != nullptr) {
+    static gl::GlFramebuffer clearFbo;
+    if(clearFbo.addColorAttachment(0, found->second.texture.handle())) {
+     int prevDraw = 0;
+     ::glGetIntegerv(static_cast<unsigned>(gl::query::FramebufferBinding), &prevDraw);
+     clearFbo.bind();
+     const float zero[4] = {0.0f, 0.0f, 0.0f, 0.0f};
+     if(gl::GLCore::clearBufferfv != nullptr) {
+      gl::GLCore::clearBufferfv(gl::framebuffer::Color, 0, zero);
+     } else {
+      ::glClearColor(0.0f, 0.0f, 0.0f, 0.0f);
+      ::glClear(gl::attrib::ColorBufferBit);
      }
+     gl::GLCore::bindFramebuffer(static_cast<unsigned>(gl::framebuffer::Framebuffer),
+                                 static_cast<unsigned int>(prevDraw));
     }
+   }
   }
   std::unordered_map<std::string, int> textures;
   std::unordered_map<std::string, int> colorImages;
   std::unordered_map<std::string, int> volumes;
-  PackResources::addTextures(*activePack, "setup", textures, volumes);
+   addPackTextures(*activePack, "setup", textures, volumes);
   if(activePack->colorTargets.valid()) {
    activePack->colorTargets.fillImageBindings(colorImages);
   }
-   dispatchSetupIfNeeded(*activePack, worldUniforms_, nullptr, width, height, textures, colorImages, volumes,
-                         &activePack->colorTargets,
+  dispatchSetupIfNeeded(*activePack, worldUniforms_, nullptr, width, height, textures, colorImages, volumes,
+                        &activePack->colorTargets,
                         [this](PackInstance& p, const std::string& name) {
                          return PackCompiler::compile(
                              p, name,
@@ -397,61 +369,19 @@ void Pipeline::prepareFrame(net::minecraft::World* world, PackInstance* activePa
                         });
  }
 }
-
 void Pipeline::refreshLightmap(net::minecraft::World* world) {
  updateLightmap(world);
 }
-
 void Pipeline::setFrameUniforms(const PackUniformValues& frame, const PackDefinition& activeDef,
-                                      PackInstance* activePack) {
+                                PackInstance* activePack) {
  worldUniforms_ = frame;
  worldUniforms_.wetness = updateWetnessSmooth(worldUniforms_.rainStrength, worldUniforms_.frameTime,
                                               activeDef.wetnessHalflife, activeDef.drynessHalflife);
  if(activePack != nullptr) {
   activePack->customUniforms.evaluate(worldUniforms_);
-  // TEMP DIAGNOSTIC — [uniform-probe]. The pack's shadow/fog fades are driven by
-  // chebyshev_dist, reconstructed in-shader from gbufferProjectionInverse +
-  // mvInv0..3 (RenderPearl lib/mv_inv.glsl, lib/fog.glsl vanilla_fog). If any of
-  // these disagree with what the depth pass wrote, every distance-driven fade
-  // lands at the wrong range. Logged once with the shadow map absent and once
-  // with it present — the shadow matrices are identity until the first map
-  // exists, and the first frame's values are not the steady state.
-  static std::string uniformProbePack;
-  static bool uniformProbeLoggedWithShadow = false;
-  const bool haveShadow = worldUniforms_.shadowProjection[0] != 1.0f ||
-                          worldUniforms_.shadowProjection[10] != 1.0f;
-  if(uniformProbePack != activePack->definition.name ||
-     (haveShadow && !uniformProbeLoggedWithShadow)) {
-   uniformProbePack = activePack->definition.name;
-   if(haveShadow) uniformProbeLoggedWithShadow = true;
-   const auto& customs = activePack->customUniforms.values();
-   const auto v3 = [&customs](const std::string& name) {
-    const auto it = customs.find(name);
-    if(it == customs.end()) return std::string("(absent)");
-    return std::string("[") + std::to_string(it->second.f[0]) + "," + std::to_string(it->second.f[1]) + "," +
-           std::to_string(it->second.f[2]) + "]";
-   };
-   const float* invP = worldUniforms_.gbufferProjectionInverse;
-   const float* invM = worldUniforms_.gbufferModelViewInverse;
-   const float* shP = worldUniforms_.shadowProjection;
-   ClientLog::LOGGER.log(LogLevel::Info,
-                         std::string("[uniform-probe] pack=") + uniformProbePack + " far=" +
-                             std::to_string(worldUniforms_.farPlane) + " near=" +
-                             std::to_string(worldUniforms_.nearPlane) + " fogStart=" +
-                             std::to_string(worldUniforms_.fogStart) + " fogEnd=" +
-                             std::to_string(worldUniforms_.fogEnd) +
-                             " gbufProjInv m0=" + std::to_string(invP[0]) + " m5=" + std::to_string(invP[5]) +
-                             " m11=" + std::to_string(invP[11]) + " m15=" + std::to_string(invP[15]) +
-                             " gbufMVInv trans=(" + std::to_string(invM[12]) + "," + std::to_string(invM[13]) +
-                             "," + std::to_string(invM[14]) + ") mvInv0=" + v3("mvInv0") +
-                             " mvInv1=" + v3("mvInv1") + " mvInv2=" + v3("mvInv2") +
-                             " mvInv3=" + v3("mvInv3") + " shadowProj m0=" + std::to_string(shP[0]) +
-                             " m10=" + std::to_string(shP[10]) + " m14=" + std::to_string(shP[14]));
-  }
  }
  core::advanceProgramUniforms();
 }
-
 void Pipeline::updateLightmap(const net::minecraft::World* world) {
  if(!hasGlContext()) return;
  const bool lit = world != nullptr && world->dimension != nullptr;
@@ -461,21 +391,21 @@ void Pipeline::updateLightmap(const net::minecraft::World* world) {
     lightmapAmbient_ == ambient) {
   return;
  }
-  const int previousUnit = std::max(0, core::getActiveTextureUnit());
-  constexpr int kAuxUnit = 1;
-  core::activeTexture(gl::tex::Texture0 + kAuxUnit);
+ const int previousUnit = std::max(0, core::getActiveTextureUnit());
+ constexpr int kAuxUnit = 1;
+ core::activeTexture(gl::tex::Texture0 + kAuxUnit);
+ if(!lightmapTexture_) {
+  lightmapTexture_ = gl::GlTexture(core::genTexture());
   if(!lightmapTexture_) {
-   lightmapTexture_ = gl::GlTexture(core::genTexture());
-   if(!lightmapTexture_) {
-    core::activeTexture(gl::tex::Texture0 + previousUnit);
-    return;
-   }
-   core::bindTexture(static_cast<int>(lightmapTexture_.handle()));
-   ::glTexParameteri(kTexture2D, 0x2801, 0x2601);
-   ::glTexParameteri(kTexture2D, 0x2800, 0x2601);
-   ::glTexParameteri(kTexture2D, 0x2802, 0x812F);
-   ::glTexParameteri(kTexture2D, 0x2803, 0x812F);
+   core::activeTexture(gl::tex::Texture0 + previousUnit);
+   return;
   }
+  core::bindTexture(static_cast<int>(lightmapTexture_.handle()));
+  ::glTexParameteri(gl::cap::Texture2D, 0x2801, 0x2601);
+  ::glTexParameteri(gl::cap::Texture2D, 0x2800, 0x2601);
+  ::glTexParameteri(gl::cap::Texture2D, 0x2802, 0x812F);
+  ::glTexParameteri(gl::cap::Texture2D, 0x2803, 0x812F);
+ }
  std::array<std::uint8_t, 16 * 16 * 4> pixels{};
  for(int sky = 0; sky < 16; ++sky) {
   for(int block = 0; block < 16; ++block) {
@@ -496,13 +426,12 @@ void Pipeline::updateLightmap(const net::minecraft::World* world) {
   }
  }
  core::bindTexture(static_cast<int>(lightmapTexture_.handle()));
- ::glTexImage2D(kTexture2D, 0, 0x8058, 16, 16, 0, 0x1908, 0x1401, pixels.data());
+ ::glTexImage2D(gl::cap::Texture2D, 0, 0x8058, 16, 16, 0, 0x1908, 0x1401, pixels.data());
  core::activeTexture(gl::tex::Texture0 + previousUnit);
  lightmapLit_ = lit;
  lightmapAmbient_ = ambient;
  lightmapBrightness_ = brightness;
 }
-
 std::vector<ColorFormat> Pipeline::sceneColorFormats(const PackInstance* activePack) const {
  int count = activePack != nullptr && activePack->summary.valid
                  ? std::clamp(activePack->definition.gbufferColorBuffers, 1, 32)
@@ -527,7 +456,6 @@ std::vector<ColorFormat> Pipeline::sceneColorFormats(const PackInstance* activeP
  }
  return formats;
 }
-
 bool Pipeline::ensureSceneTargets(PackInstance* activePack, int width, int height) {
  if(activePack == nullptr) return false;
  const std::vector<ColorFormat> formats = sceneColorFormats(activePack);
@@ -574,33 +502,31 @@ bool Pipeline::ensureSceneTargets(PackInstance* activePack, int width, int heigh
  }
  return true;
 }
-
 void Pipeline::bindScene(PackInstance* activePack) {
  pipelinePhase_ = WorldPipelinePhase::World;
  if(activePack != nullptr) activePack->colorTargets.bindGbuffers();
 }
-
 void Pipeline::endScene(PackInstance* activePack) {
  if(activePack != nullptr) activePack->colorTargets.endGbuffers();
 }
-
 int Pipeline::sceneColorCount(const PackInstance* activePack) const {
  return activePack != nullptr ? activePack->colorTargets.colorCount() : 0;
 }
-
 unsigned int Pipeline::sceneDepthTexture(const PackInstance* activePack) const {
  return activePack != nullptr ? activePack->colorTargets.depthTexture() : 0u;
 }
-
 void Pipeline::clearScene(PackInstance* activePack, float fogR, float fogG, float fogB) {
  if(activePack == nullptr || !activePack->colorTargets.valid()) return;
  auto& scene = activePack->colorTargets;
  std::vector<bool> clear(static_cast<std::size_t>(scene.colorCount()), true);
  std::vector<std::array<float, 4>> colors(static_cast<std::size_t>(scene.colorCount()));
  for(int i = 0; i < scene.colorCount(); ++i) {
-  if(i == 0) colors[static_cast<std::size_t>(i)] = {fogR, fogG, fogB, 1.0f};
-  else if(i == 1) colors[static_cast<std::size_t>(i)] = {1.0f, 1.0f, 1.0f, 1.0f};
-  else colors[static_cast<std::size_t>(i)] = {0.0f, 0.0f, 0.0f, 0.0f};
+  if(i == 0)
+   colors[static_cast<std::size_t>(i)] = {fogR, fogG, fogB, 1.0f};
+  else if(i == 1)
+   colors[static_cast<std::size_t>(i)] = {1.0f, 1.0f, 1.0f, 1.0f};
+  else
+   colors[static_cast<std::size_t>(i)] = {0.0f, 0.0f, 0.0f, 0.0f};
   const auto found = activePack->definition.targets.find("colortex" + std::to_string(i));
   if(found == activePack->definition.targets.end()) continue;
   clear[static_cast<std::size_t>(i)] = found->second.clear;
@@ -609,8 +535,8 @@ void Pipeline::clearScene(PackInstance* activePack, float fogR, float fogG, floa
              colors[static_cast<std::size_t>(i)].begin());
   }
  }
-  const bool fullClear = scene.fullClearRequired();
-  scene.clearColors(clear, colors);
+ const bool fullClear = scene.fullClearRequired();
+ scene.clearColors(clear, colors);
  for(const auto& [name, target] : activePack->definition.targets) {
   if(name.rfind("colortex", 0) == 0 || name.rfind("shadowcolor", 0) == 0 || name == "screen") continue;
   if(!fullClear && !target.clear) continue;
@@ -621,40 +547,26 @@ void Pipeline::clearScene(PackInstance* activePack, float fogR, float fogG, floa
   scene.clearNamedColors(name, color);
  }
 }
-
 void Pipeline::sampleCenterDepth(PackInstance* activePack, const PackDefinition& activeDef) {
  if(activePack == nullptr || !activePack->colorTargets.valid()) return;
  const auto& targets = activePack->colorTargets;
  if(targets.width() <= 0 || targets.height() <= 0 || targets.depthTexture() == 0) return;
-  bindScene(activePack);
-  float depth = 1.0f;
-  ::glReadPixels(targets.width() / 2, targets.height() / 2, 1, 1, 0x1902, 0x1406, &depth);
-
-   // The depth buffer is written with the camera's own projection (near 0.05, far =
-   // 4x the render distance — GameRenderer.getDepthFar), so the center pixel must be
-   // linearized against THAT far. The `far` uniform (worldUniforms_.farPlane) is the
-   // render distance in blocks, a different quantity; feeding it in here would
-   // mis-scale the smoothed depth as soon as the projection far differs from it.
-   const float nearPlane = worldUniforms_.nearPlane > 0.0f ? worldUniforms_.nearPlane : 0.05f;
-   const float projectionFar = RenderCameraState::instance().frame().perspectiveFar;
-   const float farPlane = projectionFar > nearPlane ? projectionFar : worldUniforms_.farPlane;
-   const float halfLife = activeDef.centerDepthHalflife;
-   worldUniforms_.centerDepthSmooth =
-       updateCenterDepthSmooth(depth, nearPlane, farPlane, worldUniforms_.frameTime, halfLife);
+ bindScene(activePack);
+ float depth = 1.0f;
+ ::glReadPixels(targets.width() / 2, targets.height() / 2, 1, 1, 0x1902, 0x1406, &depth);
+ const float nearPlane = worldUniforms_.nearPlane > 0.0f ? worldUniforms_.nearPlane : 0.05f;
+  const float projectionFar = core::cameraFrame().farPlane;
+ const float farPlane = projectionFar > nearPlane ? projectionFar : worldUniforms_.farPlane;
+ const float halfLife = activeDef.centerDepthHalflife;
+ worldUniforms_.centerDepthSmooth =
+     updateCenterDepthSmooth(depth, nearPlane, farPlane, worldUniforms_.frameTime, halfLife);
 }
-
 void Pipeline::captureOpaqueDepth(PackInstance* activePack) {
- // https://shaders.properties/current/reference/buffers/depthtex/
- // https://github.com/IrisShaders/Iris/blob/26.1/common/src/main/java/net/irisshaders/iris/pipeline/IrisRenderingPipeline.java
  captureDepth(activePack, 1);
 }
-
 void Pipeline::captureHandDepth(PackInstance* activePack) {
- // https://shaders.properties/current/reference/buffers/depthtex/
- // https://github.com/IrisShaders/Iris/blob/26.1/common/src/main/java/net/irisshaders/iris/pipeline/IrisRenderingPipeline.java
  captureDepth(activePack, 0);
 }
-
 void Pipeline::captureDepth(PackInstance* activePack, std::size_t index) {
  if(activePack == nullptr || !activePack->colorTargets.valid() || index >= 2) return;
  const int width = activePack->colorTargets.width();
@@ -669,17 +581,16 @@ void Pipeline::captureDepth(PackInstance* activePack, std::size_t index) {
  if(!activePack->depthTextures[index]) return;
  core::bindTexture(static_cast<int>(activePack->depthTextures[index].handle()));
  if(activePack->depthTextureW[index] != width || activePack->depthTextureH[index] != height) {
-  ::glTexImage2D(kTexture2D, 0, 0x81A6, width, height, 0, 0x1902, 0x1405, nullptr);
-  ::glTexParameteri(kTexture2D, 0x2801, 0x2600);
-  ::glTexParameteri(kTexture2D, 0x2800, 0x2600);
-  ::glTexParameteri(kTexture2D, 0x2802, 0x812F);
-  ::glTexParameteri(kTexture2D, 0x2803, 0x812F);
+  ::glTexImage2D(gl::cap::Texture2D, 0, 0x81A6, width, height, 0, 0x1902, 0x1405, nullptr);
+  ::glTexParameteri(gl::cap::Texture2D, 0x2801, 0x2600);
+  ::glTexParameteri(gl::cap::Texture2D, 0x2800, 0x2600);
+  ::glTexParameteri(gl::cap::Texture2D, 0x2802, 0x812F);
+  ::glTexParameteri(gl::cap::Texture2D, 0x2803, 0x812F);
   activePack->depthTextureW[index] = width;
   activePack->depthTextureH[index] = height;
  }
- ::glCopyTexSubImage2D(kTexture2D, 0, 0, 0, 0, 0, width, height);
+ ::glCopyTexSubImage2D(gl::cap::Texture2D, 0, 0, 0, 0, 0, width, height);
 }
-
 gl::ShaderProgram* Pipeline::programFromPack(PackInstance& pack, const std::string& key) {
  return pack.summary.valid && pack.definition.programs.contains(key)
             ? PackCompiler::compile(pack, key,
@@ -688,13 +599,10 @@ gl::ShaderProgram* Pipeline::programFromPack(PackInstance& pack, const std::stri
                                     })
             : nullptr;
 }
-
 gl::ShaderProgram* Pipeline::worldProgram(const std::string& key, PackInstance* pack) {
  lastWorldProgramKey_ = key;
- // RESOLVED program source name (Java ProgramDirectives.java:80-83 reads the resolved
  resolvedWorldProgramKey_.clear();
  if(pack == nullptr) return nullptr;
-
  core::RenderStage renderStage = core::RenderStage::None;
  if(key == "gbuffers_terrain_solid") {
   renderStage = core::RenderStage::TerrainSolid;
@@ -722,10 +630,7 @@ gl::ShaderProgram* Pipeline::worldProgram(const std::string& key, PackInstance* 
   renderStage = core::renderStage();
  }
  core::setRenderStage(renderStage);
-
- if(key.rfind("clrwl_", 0) == 0) return nullptr;
-
- const bool shadowPass = RenderCameraState::instance().frame().shadowPass;
+ const bool shadowPass = core::cameraFrame().shadowPass;
  std::string programKey = shadowPass ? irisShadowProgramForGbuffers(key) : key;
  if(programKey.empty()) return nullptr;
  programKey = resolveProgramKey(pack->definition, pack->settings, programKey, pack->programEnabledCache);
@@ -734,11 +639,10 @@ gl::ShaderProgram* Pipeline::worldProgram(const std::string& key, PackInstance* 
  gl::ShaderProgram* program = programFromPack(*pack, programKey);
  return program;
 }
-
 bool Pipeline::renderBegin(PackInstance* activePack, int shadowDepthTextureId,
-                                  int shadowOpaqueDepthTextureId, const int* shadowColorTextureIds,
-                                  int shadowColorTextureCount, shadowmap::ShadowTargets* shadowTargets,
-                                  const int* shadowColorAltTextureIds) {
+                           int shadowOpaqueDepthTextureId, const int* shadowColorTextureIds,
+                           int shadowColorTextureCount, shadowmap::ShadowTargets* shadowTargets,
+                           const int* shadowColorAltTextureIds) {
  if(activePack == nullptr) return false;
  activePack->publishedTextures.clear();
  shadowTargets_ = shadowTargets;
@@ -749,22 +653,19 @@ bool Pipeline::renderBegin(PackInstance* activePack, int shadowDepthTextureId,
   shadowColorTextures_[index] = shadowColorTextureIds == nullptr ? -1 : shadowColorTextureIds[index];
   shadowColorAltTextures_[index] = shadowColorAltTextureIds == nullptr ? -1 : shadowColorAltTextureIds[index];
  }
- // https://github.com/IrisShaders/Iris/blob/26.1/common/src/main/java/net/irisshaders/iris/shadows/ShadowCompositeRenderer.java
  if(shadowTargets_ != nullptr && shadowColorFlipPack_ != activePack) {
   shadowColorFlipPack_ = activePack;
   initShadowColorFlips(*activePack);
  }
-  // beginRenderer.renderAll, IrisRenderingPipeline.java:1022) and samples the shadow
-  return CompositeRenderer(this).render(*activePack, activePack->beginPasses, false, "begin",
-                                        shadowDepthTextureId, shadowOpaqueDepthTextureId,
-                                        shadowColorTextureIds, shadowColorTextureCount,
-                                        shadowTargets_, shadowColorAltTextures_);
+ return renderCompositePasses(*activePack, activePack->beginPasses, false, "begin",
+                              shadowDepthTextureId, shadowOpaqueDepthTextureId,
+                              shadowColorTextureIds, shadowColorTextureCount,
+                              shadowTargets_, shadowColorAltTextures_);
 }
-
 bool Pipeline::renderShadowComposite(PackInstance* activePack, int shadowDepthTextureId,
-                                            int shadowOpaqueDepthTextureId, const int* shadowColorTextureIds,
-                                            int shadowColorTextureCount, shadowmap::ShadowTargets* shadowTargets,
-                                            const int* shadowColorAltTextureIds) {
+                                     int shadowOpaqueDepthTextureId, const int* shadowColorTextureIds,
+                                     int shadowColorTextureCount, shadowmap::ShadowTargets* shadowTargets,
+                                     const int* shadowColorAltTextureIds) {
  if(activePack == nullptr) return false;
  shadowTargets_ = shadowTargets;
  shadowDepthTexture_ = shadowDepthTextureId;
@@ -786,179 +687,166 @@ bool Pipeline::renderShadowComposite(PackInstance* activePack, int shadowDepthTe
  };
  {
   const auto& def = activePack->definition;
-  // https://shaders.properties/current/reference/constants/shadow_mipmaps/
   auto generate = [&def](int textureId, bool nearest) {
    if(textureId <= 0 || gl::GLCore::generateMipmap == nullptr) return;
-   core::bindTexture(kTexture2D, textureId);
+   core::bindTexture(gl::cap::Texture2D, textureId);
    const int minFilter = nearest ? gl::filter::NearestMipmapNearest : gl::filter::LinearMipmapLinear;
    const int magFilter = nearest ? gl::filter::Nearest : gl::filter::Linear;
-   ::glTexParameteri(kTexture2D, gl::tex::MinFilter, minFilter);
-   ::glTexParameteri(kTexture2D, gl::tex::MagFilter, magFilter);
-   gl::GLCore::generateMipmap(kTexture2D);
+   ::glTexParameteri(gl::cap::Texture2D, gl::tex::MinFilter, minFilter);
+   ::glTexParameteri(gl::cap::Texture2D, gl::tex::MagFilter, magFilter);
+   gl::GLCore::generateMipmap(gl::cap::Texture2D);
   };
-  if(def.shadowtexMipmap[0]) generate(shadowDepthTextureId, def.shadowtexNearest[0]);
-  if(def.shadowtexMipmap[1]) generate(shadowOpaqueDepthTextureId, def.shadowtexNearest[1]);
   for(int i = 0; i < 8 && i < shadowColorTextureCount; ++i) {
    if(def.shadowcolorMipmap[i] && shadowColorTextureIds != nullptr) {
     generate(shadowColorTextureIds[i], def.shadowcolorNearest[i]);
    }
   }
  }
- // renderShadows → compositeRenderer.renderAll, ShadowRenderer.java:632) and only when
- // https://github.com/IrisShaders/Iris/blob/26.1/common/src/main/java/net/irisshaders/iris/pipeline/IrisRenderingPipeline.java
- // (IrisRenderingPipeline.java:315), while the C++ frame uniform set is built before
  if(worldUniforms_.shadowMapResolution <= 0.0f && activePack->definition.shadowMapResolution > 0) {
   worldUniforms_.shadowMapResolution = static_cast<float>(activePack->definition.shadowMapResolution);
  }
-  bool rendered = false;
-  if(shadowTargets_ != nullptr && shadowDepthTextureId >= 0 &&
-     (!activePack->shadowCompositePasses.empty() || hasCompute("shadowcomp"))) {
-   rendered = CompositeRenderer(this).render(*activePack, activePack->shadowCompositePasses, false, "shadowcomp",
-                                             shadowDepthTextureId, shadowOpaqueDepthTextureId,
-                                             shadowColorTextureIds, shadowColorTextureCount,
-                                             shadowTargets_, shadowColorAltTextures_) ||
-              rendered;
-  }
-  return rendered;
+ bool rendered = false;
+ if(shadowTargets_ != nullptr && shadowDepthTextureId >= 0 &&
+    (!activePack->shadowCompositePasses.empty() || hasCompute("shadowcomp"))) {
+  rendered = renderCompositePasses(*activePack, activePack->shadowCompositePasses, false, "shadowcomp",
+                                   shadowDepthTextureId, shadowOpaqueDepthTextureId,
+                                   shadowColorTextureIds, shadowColorTextureCount,
+                                   shadowTargets_, shadowColorAltTextures_) ||
+             rendered;
+ }
+ return rendered;
 }
-
 bool Pipeline::renderPreWorld(PackInstance* activePack, int shadowDepthTextureId,
-                                     int shadowOpaqueDepthTextureId, const int* shadowColorTextureIds,
-                                     int shadowColorTextureCount, shadowmap::ShadowTargets* shadowTargets,
-                                     const int* shadowColorAltTextureIds) {
-  if(activePack == nullptr) return false;
-  shadowTargets_ = shadowTargets;
-  shadowColorTextureCount_ = std::clamp(shadowColorTextureCount, 0, 8);
-  for(int index = 0; index < shadowColorTextureCount_; ++index) {
-   shadowColorTextures_[index] = shadowColorTextureIds == nullptr ? -1 : shadowColorTextureIds[index];
-   shadowColorAltTextures_[index] = shadowColorAltTextureIds == nullptr ? -1 : shadowColorAltTextureIds[index];
-  }
-  if(shadowTargets_ != nullptr && shadowColorFlipPack_ != activePack) {
-   shadowColorFlipPack_ = activePack;
-   initShadowColorFlips(*activePack);
-  }
-  const auto hasCompute = [activePack](const std::string& stage) {
+                              int shadowOpaqueDepthTextureId, const int* shadowColorTextureIds,
+                              int shadowColorTextureCount, shadowmap::ShadowTargets* shadowTargets,
+                              const int* shadowColorAltTextureIds) {
+ if(activePack == nullptr) return false;
+ shadowTargets_ = shadowTargets;
+ shadowColorTextureCount_ = std::clamp(shadowColorTextureCount, 0, 8);
+ for(int index = 0; index < shadowColorTextureCount_; ++index) {
+  shadowColorTextures_[index] = shadowColorTextureIds == nullptr ? -1 : shadowColorTextureIds[index];
+  shadowColorAltTextures_[index] = shadowColorAltTextureIds == nullptr ? -1 : shadowColorAltTextureIds[index];
+ }
+ if(shadowTargets_ != nullptr && shadowColorFlipPack_ != activePack) {
+  shadowColorFlipPack_ = activePack;
+  initShadowColorFlips(*activePack);
+ }
+ const auto hasCompute = [activePack](const std::string& stage) {
   return std::any_of(activePack->computePasses.begin(), activePack->computePasses.end(),
                      [activePack, &stage](std::size_t index) {
                       return ComputeDispatcher::matchesStage(activePack->definition.passes[index].name, stage);
                      });
  };
-  bool rendered = false;
-  if(!activePack->preparePasses.empty() || hasCompute("prepare")) {
-   rendered = CompositeRenderer(this).render(*activePack, activePack->preparePasses, false, "prepare",
-                                             shadowDepthTextureId, shadowOpaqueDepthTextureId,
-                                             shadowColorTextureIds, shadowColorTextureCount,
-                                             shadowTargets_, shadowColorAltTextures_) ||
-              rendered;
-  }
-  shadowDepthTexture_ = shadowDepthTextureId;
-  shadowOpaqueDepthTexture_ = shadowOpaqueDepthTextureId;
-  if(shadowColorFlipPack_ == activePack) {
-   for(int index = 0; index < shadowColorTextureCount_; ++index) {
-    if(shadowColorFlipped_[static_cast<std::size_t>(index)] && shadowColorAltTextures_[index] >= 0) {
-     shadowColorTextures_[index] = shadowColorAltTextures_[index];
-    }
+ bool rendered = false;
+ if(!activePack->preparePasses.empty() || hasCompute("prepare")) {
+  rendered = renderCompositePasses(*activePack, activePack->preparePasses, false, "prepare",
+                                   shadowDepthTextureId, shadowOpaqueDepthTextureId,
+                                   shadowColorTextureIds, shadowColorTextureCount,
+                                   shadowTargets_, shadowColorAltTextures_) ||
+             rendered;
+ }
+ shadowDepthTexture_ = shadowDepthTextureId;
+ shadowOpaqueDepthTexture_ = shadowOpaqueDepthTextureId;
+ if(shadowColorFlipPack_ == activePack) {
+  for(int index = 0; index < shadowColorTextureCount_; ++index) {
+   if(shadowColorFlipped_[static_cast<std::size_t>(index)] && shadowColorAltTextures_[index] >= 0) {
+    shadowColorTextures_[index] = shadowColorAltTextures_[index];
    }
   }
-  worldUniforms_.shadowAvailable = shadowDepthTextureId >= 0 ? 1 : 0;
-  worldUniforms_.normalAvailable = activePack->colorTargets.colorCount() > 1 ? 1 : 0;
-  core::advanceProgramUniforms();
-  return rendered;
+ }
+ worldUniforms_.shadowAvailable = shadowDepthTextureId >= 0 ? 1 : 0;
+ worldUniforms_.normalAvailable = activePack->colorTargets.colorCount() > 1 ? 1 : 0;
+ core::advanceProgramUniforms();
+ return rendered;
 }
-
 void Pipeline::initShadowColorFlips(const PackInstance& pack) {
-  // https://github.com/IrisShaders/Iris/blob/26.1/common/src/main/java/net/irisshaders/iris/shadows/ShadowCompositeRenderer.java
-  shadowColorFlipped_.fill(false);
-  shadowCompPassReadFlips_.clear();
-  constexpr std::string_view prePrefix = "shadowcomp_pre.";
-  for(const auto& [binding, shouldFlip] : pack.definition.flips) {
-   if(!shouldFlip || binding.rfind(prePrefix, 0) != 0) continue;
-   const int index = shadowColorIndex(binding.substr(prePrefix.size()));
-   if(index >= 0) shadowColorFlipped_[static_cast<std::size_t>(index)] =
-                         !shadowColorFlipped_[static_cast<std::size_t>(index)];
-  }
-   for(std::size_t passIndex : pack.shadowCompositePasses) {
-    if(passIndex >= pack.definition.passes.size()) continue;
-    const PackPass& pass = pack.definition.passes[passIndex];
-    shadowCompPassReadFlips_.push_back(shadowColorFlipped_);
-    std::vector<std::string> outputs =
-        pass.outputs.empty() ? std::vector<std::string>{"shadowcolor0"} : pass.outputs;
-    for(const std::string& name : outputs) {
-     const int index = shadowColorIndex(name);
-     if(index < 0) continue;
-     bool flip = true;
-     if(const auto declared = pack.definition.flips.find(pass.name + "." + name);
-        declared != pack.definition.flips.end()) {
-      flip = declared->second;
-     }
-     if(flip) {
-      shadowColorFlipped_[static_cast<std::size_t>(index)] =
-          !shadowColorFlipped_[static_cast<std::size_t>(index)];
-     }
-    }
-    for(const std::string& name : ColorTargets::explicitTrueFlips(pack.definition, pass.name)) {
-     const int index = shadowColorIndex(name);
-     if(index < 0) continue;
-     shadowColorFlipped_[static_cast<std::size_t>(index)] =
-         !shadowColorFlipped_[static_cast<std::size_t>(index)];
-    }
+ shadowColorFlipped_.fill(false);
+ shadowCompPassReadFlips_.clear();
+ constexpr std::string_view prePrefix = "shadowcomp_pre.";
+ for(const auto& [binding, shouldFlip] : pack.definition.flips) {
+  if(!shouldFlip || binding.rfind(prePrefix, 0) != 0) continue;
+  const int index = shadowColorIndex(binding.substr(prePrefix.size()));
+  if(index >= 0) shadowColorFlipped_[static_cast<std::size_t>(index)] =
+                     !shadowColorFlipped_[static_cast<std::size_t>(index)];
+ }
+ for(std::size_t passIndex : pack.shadowCompositePasses) {
+  if(passIndex >= pack.definition.passes.size()) continue;
+  const PackPass& pass = pack.definition.passes[passIndex];
+  shadowCompPassReadFlips_.push_back(shadowColorFlipped_);
+  std::vector<std::string> outputs =
+      pass.outputs.empty() ? std::vector<std::string>{"shadowcolor0"} : pass.outputs;
+  for(const std::string& name : outputs) {
+   const int index = shadowColorIndex(name);
+   if(index < 0) continue;
+   bool flip = true;
+   if(const auto declared = pack.definition.flips.find(pass.name + "." + name);
+      declared != pack.definition.flips.end()) {
+    flip = declared->second;
+   }
+   if(flip) {
+    shadowColorFlipped_[static_cast<std::size_t>(index)] =
+        !shadowColorFlipped_[static_cast<std::size_t>(index)];
    }
   }
-
-bool Pipeline::renderDeferred(PackInstance* activePack, int shadowDepthTextureId,
-                                    int shadowOpaqueDepthTextureId, const int* shadowColorTextureIds,
-                                    int shadowColorTextureCount, const int* shadowColorAltTextureIds) {
-  if(activePack == nullptr) return false;
-  const bool hasComputeDeferred =
-      std::any_of(activePack->computePasses.begin(), activePack->computePasses.end(), [activePack](std::size_t index) {
-       return ComputeDispatcher::matchesStage(activePack->definition.passes[index].name, "deferred");
-      });
-  if(activePack->deferredPasses.empty() && !hasComputeDeferred) return false;
-  return CompositeRenderer(this).render(*activePack, activePack->deferredPasses, false, "deferred",
-                                        shadowDepthTextureId, shadowOpaqueDepthTextureId,
-                                        shadowColorTextureIds, shadowColorTextureCount,
-                                        shadowTargets_, shadowColorAltTextureIds);
+  for(const std::string& name : ColorTargets::explicitTrueFlips(pack.definition, pass.name)) {
+   const int index = shadowColorIndex(name);
+   if(index < 0) continue;
+   shadowColorFlipped_[static_cast<std::size_t>(index)] =
+       !shadowColorFlipped_[static_cast<std::size_t>(index)];
+  }
+ }
 }
-
-bool Pipeline::renderPostProcess(PackInstance* activePack, PackInstance* /*basePack*/,
-                                       int shadowDepthTextureId, int shadowOpaqueDepthTextureId,
-                                       const int* shadowColorTextureIds, int shadowColorTextureCount,
-                                       const int* shadowColorAltTextureIds) {
+bool Pipeline::renderDeferred(PackInstance* activePack, int shadowDepthTextureId,
+                              int shadowOpaqueDepthTextureId, const int* shadowColorTextureIds,
+                              int shadowColorTextureCount, const int* shadowColorAltTextureIds) {
+ if(activePack == nullptr) return false;
+ const bool hasComputeDeferred =
+     std::any_of(activePack->computePasses.begin(), activePack->computePasses.end(), [activePack](std::size_t index) {
+      return ComputeDispatcher::matchesStage(activePack->definition.passes[index].name, "deferred");
+     });
+ if(activePack->deferredPasses.empty() && !hasComputeDeferred) return false;
+ return renderCompositePasses(*activePack, activePack->deferredPasses, false, "deferred",
+                              shadowDepthTextureId, shadowOpaqueDepthTextureId,
+                              shadowColorTextureIds, shadowColorTextureCount,
+                              shadowTargets_, shadowColorAltTextureIds);
+}
+bool Pipeline::renderPostProcess(PackInstance* activePack, PackInstance*,
+                                 int shadowDepthTextureId, int shadowOpaqueDepthTextureId,
+                                 const int* shadowColorTextureIds, int shadowColorTextureCount,
+                                 const int* shadowColorAltTextureIds) {
  if(activePack == nullptr) return false;
  engineColorCorrect_ = engineOwnsColorCorrection(activePack->definition);
  const net::minecraft::client::Minecraft* minecraft = net::minecraft::client::Minecraft::INSTANCE;
  const int screenW = minecraft != nullptr ? std::max(1, minecraft->displayWidth) : 1;
  const int screenH = minecraft != nullptr ? std::max(1, minecraft->displayHeight) : 1;
-  if(engineColorCorrect_) {
-   (void)screenDrawFramebuffer(std::max(1, activePack->colorTargets.width()),
-                               std::max(1, activePack->colorTargets.height()));
-  }
+ if(engineColorCorrect_) {
+  (void)screenDrawFramebuffer(std::max(1, activePack->colorTargets.width()),
+                              std::max(1, activePack->colorTargets.height()));
+ }
  const bool hasComputeComposite =
      std::any_of(activePack->computePasses.begin(), activePack->computePasses.end(), [activePack](std::size_t index) {
       const std::string& name = activePack->definition.passes[index].name;
       return ComputeDispatcher::matchesStage(name, "composite") ||
              ComputeDispatcher::matchesStage(name, "final");
      });
-   if(!activePack->postPasses.empty() || hasComputeComposite || !activePack->setupPasses.empty()) {
-    CompositeRenderer(this).render(*activePack, activePack->postPasses, true, "composite",
-                                   shadowDepthTextureId, shadowOpaqueDepthTextureId,
-                                   shadowColorTextureIds, shadowColorTextureCount,
-                                   shadowTargets_, shadowColorAltTextureIds);
-   }
-   if(!packWroteToScreen_) presentFinalToScreen(activePack, screenW, screenH);
+ if(!activePack->postPasses.empty() || hasComputeComposite || !activePack->setupPasses.empty()) {
+  renderCompositePasses(*activePack, activePack->postPasses, true, "composite",
+                        shadowDepthTextureId, shadowOpaqueDepthTextureId,
+                        shadowColorTextureIds, shadowColorTextureCount,
+                        shadowTargets_, shadowColorAltTextureIds);
+ }
+ if(!packWroteToScreen_) presentFinalToScreen(activePack, screenW, screenH);
  finalizeEngineColorCorrection(screenW, screenH);
  return packWroteToScreen_;
 }
-
 bool Pipeline::blitColortex0ToScreen(PackInstance& pack, int screenWidth, int screenHeight) {
-  render::ColorTargets& targets = pack.colorTargets;
-  const unsigned int color0 = targets.readTexture(0);
-  const int width = targets.width();
-  const int height = targets.height();
-  if(color0 == 0 || width <= 0 || height <= 0 || screenWidth <= 0 || screenHeight <= 0) return false;
+ render::ColorTargets& targets = pack.colorTargets;
+ const unsigned int color0 = targets.readTexture(0);
+ const int width = targets.width();
+ const int height = targets.height();
+ if(color0 == 0 || width <= 0 || height <= 0 || screenWidth <= 0 || screenHeight <= 0) return false;
  if(engineColorCorrect_) {
   if(screenDrawFramebuffer(width, height) == 0) return false;
-  // https://github.com/IrisShaders/Iris/blob/26.1/common/src/main/java/net/irisshaders/iris/pipeline/FinalPassRenderer.java
   presentReadFbo_.addColorAttachment(0, color0);
   presentReadFbo_.bindAsReadBuffer();
   gl::GLCore::bindFramebuffer(static_cast<unsigned>(gl::framebuffer::DrawFramebuffer),
@@ -973,19 +861,77 @@ bool Pipeline::blitColortex0ToScreen(PackInstance& pack, int screenWidth, int sc
  if(gl::GLCore::blitFramebuffer == nullptr) {
   return false;
  }
-  presentReadFbo_.addColorAttachment(0, color0);
-  presentReadFbo_.bindAsReadBuffer();
-  gl::GLCore::bindFramebuffer(static_cast<unsigned>(gl::framebuffer::DrawFramebuffer), 0);
-  core::viewport(0, 0, screenWidth, screenHeight);
-  gl::GLCore::blitFramebuffer(0, 0, width, height, 0, 0, screenWidth, screenHeight, gl::attrib::ColorBufferBit,
-                              gl::filter::Nearest);
-  gl::GLCore::bindFramebuffer(static_cast<unsigned>(gl::framebuffer::ReadFramebuffer), 0);
-  gl::GLCore::bindFramebuffer(static_cast<unsigned>(gl::framebuffer::Framebuffer), 0);
-  return true;
+ presentReadFbo_.addColorAttachment(0, color0);
+ presentReadFbo_.bindAsReadBuffer();
+ gl::GLCore::bindFramebuffer(static_cast<unsigned>(gl::framebuffer::DrawFramebuffer), 0);
+ core::viewport(0, 0, screenWidth, screenHeight);
+ gl::GLCore::blitFramebuffer(0, 0, width, height, 0, 0, screenWidth, screenHeight, gl::attrib::ColorBufferBit,
+                             gl::filter::Nearest);
+ gl::GLCore::bindFramebuffer(static_cast<unsigned>(gl::framebuffer::ReadFramebuffer), 0);
+ gl::GLCore::bindFramebuffer(static_cast<unsigned>(gl::framebuffer::Framebuffer), 0);
+ return true;
 }
-
 void Pipeline::presentFinalToScreen(PackInstance* scenePack, int screenWidth, int screenHeight) {
-  FinalPassRenderer(this).presentToScreen(scenePack, screenWidth, screenHeight);
+ if(packWroteToScreen_ || scenePack == nullptr || !scenePack->colorTargets.valid()) return;
+ if(scenePack->colorTargets.readTexture(0) == 0 || !hasGlContext()) return;
+ if(!scenePack->definition.programs.contains("final") ||
+    !isProgramEnabledCached(scenePack->definition, scenePack->settings, "final",
+                            scenePack->programEnabledCache)) {
+  logOnce(*scenePack, "no final program (missing or disabled); presenting via colortex0 blit", LogLevel::Info);
+  (void)blitColortex0ToScreen(*scenePack, screenWidth, screenHeight);
+  packWroteToScreen_ = true;
+  return;
+ }
+ gl::ShaderProgram* program = programFromPack(*scenePack, "final");
+ if(program == nullptr || !program->valid()) {
+  (void)blitColortex0ToScreen(*scenePack, screenWidth, screenHeight);
+  packWroteToScreen_ = true;
+  return;
+ }
+ render::ColorTargets& targets = scenePack->colorTargets;
+ const int width = targets.width();
+ const int height = targets.height();
+ if(width <= 0 || height <= 0) return;
+  if(!ensurePackResources(*scenePack, width, height, lightmapTexture_,
+                           [](const PackInstance& p, const std::string& path) {
+                            return PackCompiler::readText(p, path);
+                           })) {
+  return;
+ }
+ const core::DepthScope depthScope(false, false);
+ const core::CullScope cullScope(false);
+ const core::BlendScope blendScope(false);
+ const core::TextureBindScope textureScope;
+ std::unordered_map<std::string, int> textures;
+ targets.fillReadSamplers(textures, true);
+ textures["depthtex0"] = static_cast<int>(targets.depthTexture());
+ const unsigned int drawFbo = screenDrawFramebuffer(width, height);
+ gl::GLCore::bindFramebuffer(static_cast<unsigned>(gl::framebuffer::Framebuffer), drawFbo);
+ core::viewport(0, 0, engineColorCorrect_ ? width : screenWidth,
+                engineColorCorrect_ ? height : screenHeight);
+ applyBufferBlends(scenePack->definition, "final", {});
+ applyAlphaTest(scenePack->definition, "final");
+ program->bind();
+ std::unordered_map<std::string, int> volumeTextures;
+ putShadowTextures(textures, shadowDepthTexture_, shadowOpaqueDepthTexture_,
+                   shadowColorTextures_,
+                   shadowColorTextureCount_, scenePack->definition);
+  addPackTextures(*scenePack, "composite", textures, volumeTextures);
+  bindSamplers(*program, textures, volumeTextures, maxTextureUnits(),
+               scenePack->definition);
+  bindPackResources(*scenePack, *program, 0);
+ const PackUniformValues& frameUniforms = worldUniforms_;
+ const PackViewportValues viewport{static_cast<float>(width),
+                                   static_cast<float>(height),
+                                   static_cast<float>(width) / std::max(static_cast<float>(height), 1.0f)};
+ uploadShaderUniforms(*program, frameUniforms, true, &viewport);
+ uploadIdentityDrawMatrices(*program);
+ scenePack->customUniforms.upload(*program);
+ program->bind();
+ core::drawFullscreen();
+ core::unlockBlend();
+ packWroteToScreen_ = true;
+ releaseSamplers(maxTextureUnits());
+ core::activeTexture(gl::tex::Texture0);
 }
-
-}
+} // namespace net::minecraft::client::render

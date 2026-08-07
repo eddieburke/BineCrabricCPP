@@ -72,9 +72,7 @@ TEST(GlslSnippetsTest, EngineSnippetsPreserveOriginalText) {
  EXPECT_NE(snippets.at("default_composite.vsh").find("gl_Position = projectionMatrix * modelViewMatrix"),
            std::string::npos)
      << "default composite must keep the engine's own projection order";
- EXPECT_NE(snippets.at("default_raster.vsh").find("vaPosition + chunkOffset"), std::string::npos);
- EXPECT_EQ(snippets.at("colorwheel_macros_prefix"),
-           "#define HAS_COLORWHEEL\n#define COLORWHEEL_VERSION \n");
+  EXPECT_NE(snippets.at("default_raster.vsh").find("vaPosition + chunkOffset"), std::string::npos);
 }
 } // namespace
 } // namespace net::minecraft::test

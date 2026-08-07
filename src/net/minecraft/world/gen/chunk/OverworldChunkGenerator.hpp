@@ -59,7 +59,7 @@ class OverworldChunkGenerator : public ChunkSource {
   scratchChunk_->world = world_;
   return *scratchChunk_;
  }
- bool save(bool /*saveEntities*/, client::gui::screen::LoadingDisplay* /*display*/) override {
+ bool save(bool /*saveEntities*/, SaveProgressCallback /*progress*/) override {
   return true;
  }
  bool tick() override {

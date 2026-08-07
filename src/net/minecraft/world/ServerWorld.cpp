@@ -179,10 +179,10 @@ void ServerWorld::updateWeatherCycles() {
   server_->playerManager.sendToAll(packet);
  }
 }
-void ServerWorld::saveWithLoadingDisplay(bool saveEntities, client::gui::screen::LoadingDisplay* display) {
+void ServerWorld::saveWithProgress(bool saveEntities, ChunkSource::SaveProgressCallback progress) {
  save(true);
  if(getChunkSource() != nullptr) {
-  getChunkSource()->save(saveEntities, display);
+  getChunkSource()->save(saveEntities, std::move(progress));
  }
  forceSave();
 }

@@ -18,6 +18,7 @@
 #include "net/minecraft/client/option/GameOptions.hpp"
 #include "net/minecraft/client/option/RenderSettings.hpp"
 #include "net/minecraft/client/render/item/ItemModelRenderer.hpp"
+#include "net/minecraft/client/render/RenderCore.hpp"
 #include "net/minecraft/entity/Entity.hpp"
 #include "net/minecraft/entity/EntityRegistry.hpp"
 #include "net/minecraft/entity/ItemEntity.hpp"
@@ -201,8 +202,8 @@ void rebuildHookTable() {
         order++});
   }
  }
-  for(std::size_t i = 0; i < kLuaEventCount; ++i) {
-   std::stable_sort(pending[i].begin(), pending[i].end(), [](const PendingEntry& a, const PendingEntry& b) {
+ for(std::size_t i = 0; i < kLuaEventCount; ++i) {
+  std::stable_sort(pending[i].begin(), pending[i].end(), [](const PendingEntry& a, const PendingEntry& b) {
    return a.priority != b.priority ? a.priority > b.priority : a.order < b.order;
   });
   LuaHookEntries entries;
@@ -396,10 +397,10 @@ void luaHookRaycast(RaycastEvent& e) {
                 ev.side,
                 "block_id",
                 ev.blockId,
-                 "block_name",
-                 blockWireNameFromId(ev.blockId),
-                 "item_id",
-                 ev.blockId);
+                "block_name",
+                blockWireNameFromId(ev.blockId),
+                "item_id",
+                ev.blockId);
       if(ev.entity != nullptr) {
        const auto pos = ev.entity->position();
        setEntityIdentityFields(state, *ev.entity);
@@ -813,13 +814,25 @@ void luaHookWorldColor(WorldColorEvent& e) {
       setWorldContextFields(state, ev.world);
 #ifdef MINECRAFT_NATIVE_EXPORTS
       if(ev.world != nullptr) {
+       // The frame's single celestial answer, published by GameRenderer::updateSunLight
+       // before any render-path hook runs. Re-deriving the angle or night flag from the
+       // raw clock here is what let hooks disagree with the sky the engine drew; the
+       // day/night override (World::clientTimeMode) is folded in upstream, so hooks see
+       // exactly what is rendered and no time_mode intermediate is needed.
+       // see src/net/minecraft/client/render/celestial/CelestialState.hpp
+       const net::minecraft::client::render::CelestialState& celestial =
+           net::minecraft::client::render::core::celestialState();
        setFields(state,
                  "celestial_angle",
-                 static_cast<double>(normalizedCelestial(ev.world, ev.partialTicks)),
+                 static_cast<double>(celestial.celestialAngle),
+                 "sun_angle",
+                 static_cast<double>(celestial.sunAngle),
+                 "shadow_angle",
+                 static_cast<double>(celestial.shadowAngle),
+                 "is_day",
+                 celestial.day,
                  "world_time",
-                 static_cast<double>(ev.world->getTime() % 24000ULL),
-                 "is_night",
-                 worldIsNight(ev.world));
+                 static_cast<double>(ev.world->getTime() % 24000ULL));
       }
 #endif
      },
@@ -977,12 +990,12 @@ void luaHookWorldRender(WorldRenderEvent& e) {
  }
  const ModDrawLayer drawLayer =
      e.stage == WorldRenderStage::Clouds ? ModDrawLayer::Clouds : ModDrawLayer::Auto;
-  ScopedModWorldDrawContext worldDrawScope{e.world, e.tickDelta, drawLayer};
-  std::optional<ModContextScope> contextScope;
-  if(e.world != nullptr) {
-   contextScope.emplace(e.world, nullptr);
-  }
-  dispatchLuaHook(
+ ScopedModWorldDrawContext worldDrawScope{e.world, e.tickDelta, drawLayer};
+ std::optional<ModContextScope> contextScope;
+ if(e.world != nullptr) {
+  contextScope.emplace(e.world, nullptr);
+ }
+ dispatchLuaHook(
      static_cast<int>(LuaEventId::WorldRender),
      [&e](lua_State* state) {
       setFields(state,
@@ -998,17 +1011,28 @@ void luaHookWorldRender(WorldRenderEvent& e) {
                 e.vanillaStageRan);
       setWorldContextFields(state, e.world);
       const client::render::FrameRenderCamera& frameCamera =
-          client::render::RenderCameraState::instance().frame();
+          client::render::core::cameraFrame();
       const double cameraX = frameCamera.x;
       const double cameraY = frameCamera.y;
       const double cameraZ = frameCamera.z;
 #ifdef MINECRAFT_NATIVE_EXPORTS
       if(e.world != nullptr) {
+       // is_day comes from the frame's published celestial state, same as world_color
+       // — the raw-clock re-derivation is what let mods see a different phase than
+       // the sky/shadow map rendered. see src/net/minecraft/client/render/celestial/CelestialState.hpp
        setFields(state,
                  "world_time",
                  static_cast<double>(e.world->getTime() % 24000ULL),
-                 "is_night",
-                 worldIsNight(e.world));
+                 "is_day",
+                 net::minecraft::client::render::core::celestialState().day,
+                 // World-space height of the dimension's cloud layer. Cloud mods
+                 // (layered_clouds) draw their sheets at `cloud_base_height +
+                 // (layer.height - 128)`; without this field they fell back to
+                 // `128 - camera_y + 0.33` — eye-relative — and layered the clouds
+                 // around the player, whitewashing everything beyond a chunk.
+                 // see mods/layered_clouds/scripts/main.lua
+                 "cloud_base_height",
+                 e.world->dimension != nullptr ? static_cast<double>(e.world->dimension->getCloudHeight()) : 0.0);
       }
 #endif
       setFields(state,
@@ -1158,8 +1182,8 @@ void luaHookScreenEvent(LuaScreenEvent& e) {
  if(g_activeLuaScreen == nullptr) {
   return;
  }
-  static constexpr const char* kPhaseNames[] = {"init", "render", "tick", "key", "mouse", "scroll", "close"};
-  const std::string screenId = g_activeLuaScreen->id();
+ static constexpr const char* kPhaseNames[] = {"init", "render", "tick", "key", "mouse", "scroll", "close"};
+ const std::string screenId = g_activeLuaScreen->id();
  const int screenWidth = g_activeLuaScreen->width();
  const int screenHeight = g_activeLuaScreen->height();
  dispatchLuaHook(

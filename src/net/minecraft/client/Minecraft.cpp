@@ -16,7 +16,6 @@
 #include "net/minecraft/client/auth/microsoft/SessionRestore.hpp"
 #include "net/minecraft/client/color/world/FoliageColors.hpp"
 #include "net/minecraft/client/color/world/GrassColors.hpp"
-#include "net/minecraft/client/color/world/WaterColors.hpp"
 #include "net/minecraft/client/debug/ClientProfilerOverlay.hpp"
 #include "net/minecraft/client/diagnostics/ClientDiagnostics.hpp"
 #include "net/minecraft/client/gl/ShaderCompileService.hpp"
@@ -269,9 +268,9 @@ void Minecraft::init() {
 void Minecraft::bootstrapAfterDisplay() {
  diagnostics::setStartupPhase("init: directories");
  runDirectory_ = getRunDirectory();
-  // Disk-backed shader program cache. Compilation is synchronous on the render
-  // thread (Iris model); this just names where extracted driver binaries live.
-  gl::ShaderCompileService::instance().setCacheDirectory(runDirectory_ / "shader-cache");
+ // Disk-backed shader program cache. Compilation is synchronous on the render
+ // thread (Iris model); this just names where extracted driver binaries live.
+ gl::ShaderCompileService::instance().setCacheDirectory(runDirectory_ / "shader-cache");
  options.optionsFile = runDirectory_ / "options.txt";
  options.bindMinecraft(this);
  option::OptionRegistry::registerAll();
@@ -286,7 +285,6 @@ void Minecraft::bootstrapAfterDisplay() {
  textureManager.setTexturePacks(texturePacks);
  diagnostics::setStartupPhase("init: text renderer");
  textRenderer = font::TextRenderer::create(options, textureManager, "font/default.png");
- color::world::WaterColors::setColorMap(textureManager.getColors("/misc/watercolor.png"));
  color::world::GrassColors::setColorMap(textureManager.getColors("/misc/grasscolor.png"));
  color::world::FoliageColors::setColorMap(textureManager.getColors("/misc/foliagecolor.png"));
  diagnostics::setStartupPhase("init: game renderer");
@@ -375,39 +373,45 @@ void Minecraft::stop() {
      {{}, {}, [](std::chrono::steady_clock::time_point) {
        render::core::clearAllocatedTextures();
        return true;
-      }, std::chrono::seconds(2)});
+      },
+      std::chrono::seconds(2)});
  lifecycle.registerOwner(
      "server-process",
      {{}, {}, [this](std::chrono::steady_clock::time_point) {
        if(serverProcessCoordinator_ != nullptr) serverProcessCoordinator_->shutdown();
        return true;
-      }, std::chrono::seconds(12)});
+      },
+      std::chrono::seconds(12)});
  lifecycle.registerOwner(
      "mod-runtime",
      {{}, {}, [](std::chrono::steady_clock::time_point) {
        mod::runtime::host().shutdown();
        return true;
-      }, std::chrono::seconds(3)});
+      },
+      std::chrono::seconds(3)});
  lifecycle.registerOwner(
      "audio",
      {{}, {}, [this](std::chrono::steady_clock::time_point) {
        audio.shutdown();
        return true;
-      }, std::chrono::seconds(3)});
+      },
+      std::chrono::seconds(3)});
 #ifdef _WIN32
  lifecycle.registerOwner(
      "input",
      {{}, {}, [](std::chrono::steady_clock::time_point) {
        input::InputSystem::shutdown();
        return true;
-      }, std::chrono::seconds(2)});
+      },
+      std::chrono::seconds(2)});
 #endif
  lifecycle.registerOwner(
      "worker-domains",
      {{}, {}, [](std::chrono::steady_clock::time_point) {
        net::minecraft::util::concurrent::ThreadCoordinator::instance().shutdown();
        return true;
-      }, std::chrono::seconds(5)});
+      },
+      std::chrono::seconds(5)});
  lifecycle.shutdown();
 #ifdef _WIN32
  util::DisplayManager::destroy();
@@ -420,7 +424,7 @@ void Minecraft::cleanHeap() {
  try {
   MEMORY_RESERVED_FOR_CRASH.clear();
   if(worldRenderer != nullptr) {
-   worldRenderer->releaseSections();
+   worldRenderer->sections().clearSections();
   }
  } catch(...) {
  }
@@ -668,12 +672,12 @@ void Minecraft::tick() {
    worldRenderer->miningProgress = interactionManager->getBlockBreakingProgress(timer.partialTick);
   }
  }
-  textureManager.bindTexture(textureManager.getTextureId("/terrain.png"));
+ textureManager.bindTexture(textureManager.getTextureId("/terrain.png"));
  if(!paused.load()) {
   textureManager.tick();
  }
  // INVARIANT: Tick order — do not reorder.
- // InputSystem::beginFrame → screenStack.tickScreens (Screen::tickInput) → pollGame.
+ // InputSystem::beginFrame -> screenStack.tickScreens (Screen::tickInput) -> pollGame.
  // runWorldSimulation runs after input is settled.
  input::InputSystem::instance().beginFrame(*this);
  screenStack_.tickScreens(*this);
@@ -713,10 +717,10 @@ void Minecraft::runRenderPhase() {
   if(interactionManager != nullptr) {
    interactionManager->update(timer.partialTick);
   }
-   if(gameRenderer != nullptr) {
-    gameRenderer->onFrameUpdate(timer.partialTick);
-    }
-   }
+  if(gameRenderer != nullptr) {
+   gameRenderer->onFrameUpdate(timer.partialTick);
+  }
+ }
  if(world != nullptr) {
   world->pumpChunkPublish();
  }
@@ -728,7 +732,7 @@ void Minecraft::runPacePhase() {
    toggleFullscreen();
   }
   std::this_thread::sleep_for(std::chrono::milliseconds(10));
-  }
+ }
 #endif
 }
 void Minecraft::runDiagnosticsPhase(std::int64_t tickDuration, int& frames, std::int64_t& fpsWindowStart) {
@@ -746,8 +750,8 @@ void Minecraft::runDiagnosticsPhase(std::int64_t tickDuration, int& frames, std:
               " chunk updates";
   render::chunk::ChunkBuilder::chunkUpdates = 0;
   fpsWindowStart += 1000;
-   frames = 0;
-  }
+  frames = 0;
+ }
 }
 void Minecraft::run() {
  running = true;

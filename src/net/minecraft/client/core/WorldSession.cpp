@@ -45,7 +45,7 @@ void WorldSession::unloadWorld(Minecraft& client) {
   client.stats->save();
  }
  if(client.world != nullptr) {
-  client.world->savingProgress(nullptr);
+  client.world->savingProgress(0);
   if(client.worldSoundListener != nullptr) {
    client.worldSoundListener->detach(client.world);
   }
@@ -83,7 +83,7 @@ void WorldSession::setWorld(Minecraft& client,
  client.audio.playRecord("", 0.0f, 0.0f, 0.0f, 0.0f);
  if(client.world != nullptr) {
   if(!suppressLocalSave) {
-   client.world->savingProgress(nullptr);
+   client.world->savingProgress(0);
   }
  }
  if(client.worldSoundListener != nullptr && client.world != nullptr) {
@@ -151,7 +151,7 @@ void WorldSession::setWorld(Minecraft& client,
   msauth::refreshPlayerTextures(client);
   client.options.applyToWorld(worldIn);
   if(worldIn->isNewWorld()) {
-   worldIn->savingProgress(nullptr);
+   worldIn->savingProgress(0);
   }
  }
  client.lastTickTime = 0;
@@ -185,9 +185,9 @@ void WorldSession::prepareWorld(Minecraft& client, const std::string& worldName)
  }
  if(ChunkSource* source = client.world->getChunkSource(); source != nullptr) {
   source->prefetchChunksNear(centerChunkX, centerChunkZ);
-   source->pumpChunkPublish();
-  }
-  relightSkylightForPreparedArea(*client.world, center.x, center.z, radius);
+  source->pumpChunkPublish();
+ }
+ relightSkylightForPreparedArea(*client.world, center.x, center.z, radius);
  client.world->finishLightingUpdates();
  client.progressRenderer.progressStage("Simulating world for a bit");
  client.world->tickChunks();
@@ -199,7 +199,7 @@ void WorldSession::convertAndSaveWorld(Minecraft& client, const std::string& wor
  if(client.worldStorageSource != nullptr) {
   client.progressRenderer.progressStart("Converting World to " + client.worldStorageSource->getName());
   client.progressRenderer.progressStage("This may take a while :)");
-  if(!client.worldStorageSource->convert(worldName, &client.progressRenderer)) {
+  if(!client.worldStorageSource->convert(worldName, [&client](int pct) { client.progressRenderer.progressStagePercentage(pct); })) {
    client.progressRenderer.progressStage(
        "Alpha-format worlds cannot be converted yet; use a Region-format save or re-create the world.");
    return;
@@ -221,7 +221,7 @@ bool WorldSession::parkLocalWorldForRemoteHandoff(Minecraft& client) {
     alphaStorage->savePlayerData(*client.player);
    }
   }
-  client.world->savingProgress(nullptr);
+  client.world->savingProgress(0);
   storage->forceSave();
  }
  if(client.worldSoundListener != nullptr) {

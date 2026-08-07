@@ -1,4 +1,5 @@
 #pragma once
+#include <array>
 #include <cstddef>
 #include <span>
 #include <string>
@@ -7,6 +8,9 @@
 #include <vector>
 #include "net/minecraft/client/render/shaderpack/Pack.hpp"
 namespace net::minecraft::client::render {
+inline constexpr std::array<std::string_view, 6> kCompositeStagePrefixes = {
+    "begin", "shadowcomp", "prepare", "deferred", "composite", "final"};
+[[nodiscard]] bool isCompositeStageName(const std::string& name) noexcept;
 struct PackPassBuckets {
  std::vector<std::size_t> postPasses;
  std::vector<std::size_t> deferredPasses;
@@ -33,13 +37,10 @@ void indexPackPasses(const PackDefinition& definition,
                      const std::unordered_map<std::string, std::string>& settings,
                      PackPassBuckets& buckets,
                      ProgramEnabledCache& cache);
-
-// https://shaders.properties/current/reference/programs/shadow/
-// https://github.com/IrisShaders/Iris/blob/26.1/common/src/main/java/net/irisshaders/iris/pipeline/IrisPipelines.java
 [[nodiscard]] std::string irisShadowProgramForGbuffers(const std::string& gbuffersKey);
 [[nodiscard]] std::string programFallbackKey(const std::string& programKey);
 [[nodiscard]] std::string resolveProgramKey(const PackDefinition& definition,
                                             const std::unordered_map<std::string, std::string>& settings,
                                             const std::string& requested,
                                             ProgramEnabledCache& cache);
-}
+} // namespace net::minecraft::client::render

@@ -1,5 +1,6 @@
 #pragma once
 #include <string_view>
+#include "net/minecraft/client/option/RenderDistance.hpp"
 namespace net::minecraft {
 class World;
 struct Vec3d;
@@ -32,11 +33,10 @@ struct RenderSettings {
  bool renderWater = true;
  bool fancyWater = true;
  bool clearWater = false;
- int viewDistanceSetting = 0;
  float renderScale = 1.0f;
- float renderDistanceBlocks = 256.0f;
- float fogColorBlend = 0.0f;
- int chunkRadius = 12;
+ // One value. `renderDistance.blocks` for camera/fog/uniforms,
+ // `renderDistance.chunks()` for the section ring — never a stored copy of either.
+ RenderDistance renderDistance{};
  int residentChunkRadius = 15;
  bool smoothInput = false;
  bool smoothFps = false;

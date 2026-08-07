@@ -59,18 +59,7 @@ namespace ComputeDispatcher {
      1u};
 }
 inline constexpr unsigned int kBarrierBits = 0xFFFFFFFFu;
-[[nodiscard]] inline bool attachedToPass(const std::string& computeName, const std::string& passName) {
- if(computeName == passName) {
-  return true;
- }
- if(computeName.size() != passName.size() + 2 || computeName.rfind(passName + "_", 0) != 0) {
-  return false;
- }
- const char suffix = computeName.back();
- return suffix >= 'a' && suffix <= 'z';
-}
 [[nodiscard]] inline int computePassOrder(const std::string& name) {
- // https://github.com/IrisShaders/Iris/blob/26.1/common/src/main/java/net/irisshaders/iris/shaderpack/programs/ProgramSet.java
  const std::size_t under = name.rfind('_');
  const bool hasLetter = under != std::string::npos && under + 2 == name.size() &&
                         name.back() >= 'a' && name.back() <= 'z';

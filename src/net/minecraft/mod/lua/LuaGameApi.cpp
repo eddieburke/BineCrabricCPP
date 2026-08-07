@@ -4,6 +4,7 @@
 #include "net/minecraft/client/Minecraft.hpp"
 #include "net/minecraft/client/particle/FireSmokeParticle.hpp"
 #include "net/minecraft/client/particle/ParticleManager.hpp"
+#include "net/minecraft/client/render/RenderCore.hpp"
 #include "net/minecraft/entity/player/ClientPlayerEntity.hpp"
 #endif
 #include <algorithm>
@@ -159,15 +160,18 @@ bool worldIsNight(const World* world) {
  if(world == nullptr) {
   return false;
  }
-  const int timeMode = world->clientTimeMode();
- if(timeMode == 1) {
-  return false;
- }
- if(timeMode == 2) {
-  return true;
- }
+#ifdef MINECRAFT_NATIVE_EXPORTS
+ // The client's rendered answer: the frame's published celestial state, which folds
+ // the day/night visual override in at the source (GameRenderer::updateSunLight).
+ // Re-deriving night from the raw clock here is what let mods disagree with the sky;
+ // there is no time_mode intermediate to special-case because it is already applied.
+ // see src/net/minecraft/client/render/celestial/CelestialState.hpp
+ return !net::minecraft::client::render::core::celestialState().day;
+#else
+ // Server builds have no renderer, so the phase comes from the world clock directly.
  const std::uint64_t time = world->getTime() % 24000ULL;
  return time > 13000ULL && time < 23000ULL;
+#endif
 }
 int worldRandomInt(World* world, int bound) {
  if(bound <= 0 || world == nullptr) {
@@ -216,7 +220,7 @@ bool spawnClientParticle(double x,
  if(client == nullptr || client->world == nullptr) {
   return false;
  }
-  const float scaleIn = std::clamp(scale, 0.05f, 4.0f);
+ const float scaleIn = std::clamp(scale, 0.05f, 4.0f);
  auto* particle = new client::particle::FireSmokeParticle(client->world, x, y, z, vx, vy, vz, scaleIn);
  particle->red = std::clamp(red, 0.0f, 1.0f);
  particle->green = std::clamp(green, 0.0f, 1.0f);
@@ -259,16 +263,5 @@ bool readPlayerPosition(double& /*x*/, double& /*y*/, double& /*z*/) {
 #endif
 int getBlockIdAt(World* world, int x, int y, int z) {
  return world != nullptr ? world->getBlockId(x, y, z) : 0;
-}
-float normalizedCelestial(const World* world, float tickDelta) {
- if(world == nullptr) {
-  return 0.0f;
- }
-  float angle = world->getTime(tickDelta);
- angle = angle - std::floor(angle);
- if(angle < 0.0f) {
-  angle += 1.0f;
- }
- return angle;
 }
 } // namespace net::minecraft::mod::lua

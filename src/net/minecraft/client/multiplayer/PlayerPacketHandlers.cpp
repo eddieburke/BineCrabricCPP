@@ -82,7 +82,7 @@ void ClientNetworkHandler::onPlayerMove(const PlayerMovePacket& packet) {
   started = true;
   minecraft->setScreen(nullptr);
   if(minecraft->worldRenderer != nullptr) {
-   minecraft->worldRenderer->resetSectionFrontier();
+   minecraft->worldRenderer->sections().resetSectionFrontier();
   }
   if(world != nullptr) {
    const int px = MathHelper::floor(player->x);

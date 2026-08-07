@@ -21,7 +21,7 @@ void PistonBlockEntityRenderer::render(
  if(block == nullptr || piston->getProgress(tickDelta) >= 1.0f) {
   return;
  }
- Tessellator& tessellator = render::INSTANCE;
+ Tessellator& tessellator = render::Tessellator::INSTANCE;
  bindTexture("/terrain.png");
  // blockTranslucent has State.lighting=false — no FF lighting toggles.
  render::RenderPassScope passScope(render::RenderType::blockTranslucent());

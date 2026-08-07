@@ -6,7 +6,7 @@
 #include "net/minecraft/world/BlockView.hpp"
 namespace net::minecraft::client::render::block {
 bool BedBlockRenderer::render(net::minecraft::block::Block& block, int x, int y, int z) {
- Tessellator& tessellator = *ctx_.tess;
+ Tessellator& tessellator = ctx_.tessellator();
  ctx_.textureOverride = -1;
  ctx_.faceTextureOverride = -1;
  ctx_.flipTextureHorizontally = false;

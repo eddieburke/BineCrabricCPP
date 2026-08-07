@@ -10,6 +10,6 @@ class PistonBlockEntityRenderer : public BlockEntityRenderer {
              double z,
              float tickDelta) override;
  void setWorld(net::minecraft::World* world) override;
- net::minecraft::client::render::block::BlockRenderManager blockRenderManager{};
+  net::minecraft::client::render::block::BlockRenderManager blockRenderManager{Tessellator::INSTANCE};
 };
 } // namespace net::minecraft::client::render::block::entity

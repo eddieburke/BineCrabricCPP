@@ -72,7 +72,7 @@ class FallingBlockEntityRenderer : public EntityRenderer {
              const net::minecraft::util::math::Matrix4f&) override;
 
  private:
- block::BlockRenderManager blockRenderManager_;
+ block::BlockRenderManager blockRenderManager_{Tessellator::INSTANCE};
 };
 class ItemEntityRenderer : public EntityRenderer {
  public:
@@ -82,7 +82,7 @@ class ItemEntityRenderer : public EntityRenderer {
              const net::minecraft::util::math::Matrix4f&) override;
 
  private:
- block::BlockRenderManager blockRenderManager_;
+ block::BlockRenderManager blockRenderManager_{Tessellator::INSTANCE};
  JavaRandom random_{187L};
  bool useCustomDisplayColor_ = true;
 };
@@ -96,7 +96,7 @@ class MinecartEntityRenderer : public EntityRenderer {
 
  private:
  model::EntityModel* model_ = nullptr;
- block::BlockRenderManager blockRenderManager_;
+ block::BlockRenderManager blockRenderManager_{Tessellator::INSTANCE};
 };
 class TntEntityRenderer : public EntityRenderer {
  public:
@@ -106,7 +106,7 @@ class TntEntityRenderer : public EntityRenderer {
              const net::minecraft::util::math::Matrix4f&) override;
 
  private:
- block::BlockRenderManager blockRenderManager_;
+ block::BlockRenderManager blockRenderManager_{Tessellator::INSTANCE};
 };
 class PaintingEntityRenderer : public EntityRenderer {
  public:

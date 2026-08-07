@@ -29,45 +29,22 @@ class ProgramCache {
  // `key` alone identifies the entry — the preamble and defines are not folded into
  // it. A caller that changes either must clear() first, which is what a shaderpack
  // setting change does.
- ShaderProgram* getFromSource(const std::string& key,
-                              const std::string& vertexSource,
-                              const std::string& fragmentSource,
-                              const std::string& versionPreamble,
-                              const std::string& geometrySource = {},
-                              const std::string& tessControlSource = {},
-                              const std::string& tessEvaluationSource = {});
- ShaderProgram* getFromComputeSource(const std::string& key,
-                                     const std::string& computeSource,
-                                     const std::string& versionPreamble);
- // Compile now and memoize. Used by pack prewarm so every enabled program is ready
- // the moment a pack loads. Returns the content hash (callers ignore it).
- std::uint64_t submit(const std::string& key,
-                      const std::string& vertexSource,
-                      const std::string& fragmentSource,
-                      const std::string& versionPreamble,
-                      const std::string& geometrySource = {},
-                      const std::string& tessControlSource = {},
-                      const std::string& tessEvaluationSource = {});
- std::uint64_t submitCompute(const std::string& key,
-                             const std::string& computeSource,
-                             const std::string& versionPreamble);
- // Always false: compiles are synchronous, so nothing is ever "in flight". Kept so
- // callers (PackCompiler etc.) that distinguish in-flight from failed do not need
- // to change.
- [[nodiscard]] bool isPending(const std::string& key) const;
- // Cached program for `key`, or nullptr when it is unknown or failed. Unlike
- // getFromSource this never compiles, so a caller that already knows the key can
- // skip preparing the sources again.
- [[nodiscard]] ShaderProgram* find(const std::string& key) const;
- [[nodiscard]] bool hasPending() const noexcept {
-  return false;
- }
- void cancelPending();
- // Always false (no async work). Kept so the per-frame PackManager poll path is a
- // no-op instead of being deleted in the same change.
- bool poll();
- // Drops every cached program (called on shaderpack reload). Programs are deleted.
- void clear();
+  ShaderProgram* getFromSource(const std::string& key,
+                               const std::string& vertexSource,
+                               const std::string& fragmentSource,
+                               const std::string& versionPreamble,
+                               const std::string& geometrySource = {},
+                               const std::string& tessControlSource = {},
+                               const std::string& tessEvaluationSource = {});
+  ShaderProgram* getFromComputeSource(const std::string& key,
+                                      const std::string& computeSource,
+                                      const std::string& versionPreamble);
+  // Cached program for `key`, or nullptr when it is unknown or failed. Unlike
+  // getFromSource this never compiles, so a caller that already knows the key can
+  // skip preparing the sources again.
+  [[nodiscard]] ShaderProgram* find(const std::string& key) const;
+  // Drops every cached program (called on shaderpack reload). Programs are deleted.
+  void clear();
  [[nodiscard]] std::size_t size() const {
   return cache_.size();
  }

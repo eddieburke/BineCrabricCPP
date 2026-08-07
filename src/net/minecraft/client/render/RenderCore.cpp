@@ -81,6 +81,7 @@ gl::GlTexture g_entityOverlayTexture;
 bool g_entityOverlayDirty = true;
 float g_entityColor[4] = {0.0f, 0.0f, 0.0f, 0.0f};
 CelestialState g_celestialState;
+FrameRenderCamera g_cameraFrame;
 ShaderProgram* g_activeProgram = nullptr;
 ShaderProgram* g_lastProgram = nullptr;
 bool g_drawEnabled = true;
@@ -181,35 +182,35 @@ bool ensureFullscreenResources() {
  return g_fullscreenReady;
 }
 void drawFullscreenTriangle() {
-  gl::GLCore::bindVertexArray(g_fullscreenVao.handle());
-  ::glDrawArrays(static_cast<GLenum>(0x0004), 0, 3);
-  gl::GLCore::bindVertexArray(0);
-  invalidateAttribCache();
+ gl::GLCore::bindVertexArray(g_fullscreenVao.handle());
+ ::glDrawArrays(static_cast<GLenum>(0x0004), 0, 3);
+ gl::GLCore::bindVertexArray(0);
+ invalidateAttribCache();
 }
 } // namespace
 void bindWhiteDiffuse() {
-  const unsigned int white = whiteTexture();
-  if(white != 0) {
-   activeTexture(gl::tex::Texture0);
-   bindTexture(static_cast<int>(white));
-  }
+ const unsigned int white = whiteTexture();
+ if(white != 0) {
+  activeTexture(gl::tex::Texture0);
+  bindTexture(static_cast<int>(white));
+ }
 }
 bool ensureReady() {
  gl::GLCore::ensureLoaded();
  if(!gl::GLCore::shaderSupported || !gl::GLCore::vaoSupported) {
   return false;
  }
-  ensureVao();
-  return g_vao.handle() != 0;
+ ensureVao();
+ return g_vao.handle() != 0;
 }
 ShaderProgram* program() {
  return g_activeProgram;
 }
 void setDrawCameraState(const float* modelView,
-                       const float* projection,
-                       const float* modelViewInverse,
-                       const float* projectionInverse,
-                       const float* cameraPosition) {
+                        const float* projection,
+                        const float* modelViewInverse,
+                        const float* projectionInverse,
+                        const float* cameraPosition) {
  if(modelView == nullptr || projection == nullptr || modelViewInverse == nullptr ||
     projectionInverse == nullptr || cameraPosition == nullptr) {
   clearDrawCameraState();
@@ -219,18 +220,18 @@ void setDrawCameraState(const float* modelView,
  std::memcpy(g_drawProjection.m, projection, sizeof(float) * 16);
  std::memcpy(g_drawModelViewInverse.m, modelViewInverse, sizeof(float) * 16);
  std::memcpy(g_drawProjectionInverse.m, projectionInverse, sizeof(float) * 16);
-  g_drawCameraPosition[0] = cameraPosition[0];
-  g_drawCameraPosition[1] = cameraPosition[1];
-  g_drawCameraPosition[2] = cameraPosition[2];
-  g_drawCameraValid = true;
-  g_matricesUploaded = false;
-  // A pass boundary. The pose is model->pass-base space, so it means nothing once
-  // the base changes.
-  g_drawPose.identity();
+ g_drawCameraPosition[0] = cameraPosition[0];
+ g_drawCameraPosition[1] = cameraPosition[1];
+ g_drawCameraPosition[2] = cameraPosition[2];
+ g_drawCameraValid = true;
+ g_matricesUploaded = false;
+ // A pass boundary. The pose is model->pass-base space, so it means nothing once
+ // the base changes.
+ g_drawPose.identity();
 }
 void setDrawCameraStateFromCamera(const FrameRenderCamera& camera) {
  float projection[16]{};
- // The projection is built from the camera's own planes (perspectiveNear/Far set by
+ // The projection is built from the camera's own planes (nearPlane/farPlane set by
  // GameRenderer from the render distance, or carried by a custom shadow camera).
  buildCameraProjection(projection, camera);
  // gbufferModelView = bob * MV_camera. This IS the uploaded modelViewMatrix for the
@@ -274,9 +275,9 @@ const math::Matrix4f& drawProjection() noexcept {
 // The pass base. Only a pass owner calls this — the world camera, the GUI ortho,
 // the hand's own space. Producers never do; they compose a pose instead.
 void setPassModelView(const math::Matrix4f& modelView) noexcept {
-   g_drawModelView = modelView;
-   g_matricesUploaded = false;
-   g_drawPose.identity();
+ g_drawModelView = modelView;
+ g_matricesUploaded = false;
+ g_drawPose.identity();
 }
 // The one per-draw transform. Producers compose model -> pass-base space here and
 // the Tessellator applies it to positions and normals at emit time, exactly as
@@ -285,19 +286,10 @@ void setPassModelView(const math::Matrix4f& modelView) noexcept {
 // pack cut gl_ModelViewMatrix to a mat3 and lose nothing.
 // see src/net/minecraft/client/render/Tessellator.cpp vertex
 void setDrawPose(const math::Matrix4f& pose) noexcept {
-   g_drawPose = pose;
+ g_drawPose = pose;
 }
 const math::Matrix4f& drawPose() noexcept {
  return g_drawPose;
-}
-void resetDrawPose() noexcept {
- g_drawPose.identity();
-}
-const math::Matrix4f& uploadedModelView() noexcept {
- return g_uploadedModelView;
-}
-const math::Matrix4f& uploadedProjection() noexcept {
- return g_uploadedProjection;
 }
 ScopedDrawCameraState::ScopedDrawCameraState()
     : modelView_(g_drawModelView),
@@ -358,21 +350,21 @@ void bindAndUploadUniforms(const RenderPass& pass) {
  const bool matricesChanged = !g_matricesUploaded || programChanged ||
                               std::memcmp(g_uploadedModelView.m, modelView.m, sizeof(modelView.m)) != 0 ||
                               std::memcmp(g_uploadedProjection.m, projection.m, sizeof(projection.m)) != 0;
-  if(matricesChanged) {
-   const bool isPassBase = g_drawCameraValid &&
-                           std::memcmp(modelView.m, g_drawModelView.m, sizeof(modelView.m)) == 0 &&
-                           std::memcmp(projection.m, g_drawProjection.m, sizeof(projection.m)) == 0;
-   math::Matrix4f modelViewInverse = isPassBase ? g_drawModelViewInverse : modelView;
-   math::Matrix4f projectionInverse = isPassBase ? g_drawProjectionInverse : projection;
-   if(!isPassBase) {
-    modelViewInverse.invert();
-    projectionInverse.invert();
-   }
-   uploadGeometryDrawMatrices(*active, modelView.m, projection.m, modelViewInverse.m, projectionInverse.m);
-   g_uploadedModelView = modelView;
-   g_uploadedProjection = projection;
-   g_matricesUploaded = true;
+ if(matricesChanged) {
+  const bool isPassBase = g_drawCameraValid &&
+                          std::memcmp(modelView.m, g_drawModelView.m, sizeof(modelView.m)) == 0 &&
+                          std::memcmp(projection.m, g_drawProjection.m, sizeof(projection.m)) == 0;
+  math::Matrix4f modelViewInverse = isPassBase ? g_drawModelViewInverse : modelView;
+  math::Matrix4f projectionInverse = isPassBase ? g_drawProjectionInverse : projection;
+  if(!isPassBase) {
+   modelViewInverse.invert();
+   projectionInverse.invert();
   }
+  uploadGeometryDrawMatrices(*active, modelView.m, projection.m, modelViewInverse.m, projectionInverse.m);
+  g_uploadedModelView = modelView;
+  g_uploadedProjection = projection;
+  g_matricesUploaded = true;
+ }
  const bool fogChanged = !g_passUniformsUploaded || programChanged ||
                          g_uploadedFog.enabled != fog.enabled || g_uploadedFog.mode != fog.mode ||
                          g_uploadedFog.shape != fog.shape ||
@@ -498,24 +490,47 @@ void submit(const RenderPass& pass) {
  if(active == nullptr) {
   return;
  }
-  if(pass.buffer != 0) {
-   configureAttribs(pass.buffer,
-                    pass.byteOffset,
-                    pass.stride,
-                    pass.hasTexture,
-                    pass.hasColor,
-                    pass.hasNormals);
-   const int mode = active != nullptr && active->tessellation() ? 0x000E : pass.glMode;
-   if(mode == 0x000E && gl::GLCore::patchParameteri != nullptr) gl::GLCore::patchParameteri(0x8E72, 3);
-   ::glDrawArrays(static_cast<GLenum>(mode), 0, static_cast<GLsizei>(pass.vertexCount));
-  } else {
-    uploadStreaming(pass.vertexData, pass.vertexCount * static_cast<std::size_t>(pass.stride));
-    configureAttribs(
-        g_streamVbo.handle(), 0, pass.stride, pass.hasTexture, pass.hasColor, pass.hasNormals);
-   const int mode = active != nullptr && active->tessellation() ? 0x000E : pass.glMode;
-   if(mode == 0x000E && gl::GLCore::patchParameteri != nullptr) gl::GLCore::patchParameteri(0x8E72, 3);
-   ::glDrawArrays(static_cast<GLenum>(mode), 0, static_cast<GLsizei>(pass.vertexCount));
-  }
+ if(pass.buffer != 0) {
+  configureAttribs(pass.buffer,
+                   pass.byteOffset,
+                   pass.stride,
+                   pass.hasTexture,
+                   pass.hasColor,
+                   pass.hasNormals);
+  const int mode = active != nullptr && active->tessellation() ? 0x000E : pass.glMode;
+  if(mode == 0x000E && gl::GLCore::patchParameteri != nullptr) gl::GLCore::patchParameteri(0x8E72, 3);
+  ::glDrawArrays(static_cast<GLenum>(mode), 0, static_cast<GLsizei>(pass.vertexCount));
+ } else {
+  uploadStreaming(pass.vertexData, pass.vertexCount * static_cast<std::size_t>(pass.stride));
+  configureAttribs(
+      g_streamVbo.handle(), 0, pass.stride, pass.hasTexture, pass.hasColor, pass.hasNormals);
+  const int mode = active != nullptr && active->tessellation() ? 0x000E : pass.glMode;
+  if(mode == 0x000E && gl::GLCore::patchParameteri != nullptr) gl::GLCore::patchParameteri(0x8E72, 3);
+  ::glDrawArrays(static_cast<GLenum>(mode), 0, static_cast<GLsizei>(pass.vertexCount));
+ }
+}
+void submitIndexedQuads(const RenderPass& pass, unsigned indexBuffer, int indexCount) {
+ // Terrain sections own their VBO and draw through the shared quad index
+ // buffer, so they cannot use submit()'s glDrawArrays. They must still take
+ // the same uniform path: a raw glDrawElements skips bindAndUploadUniforms and
+ // silently inherits the previous draw's chunkOffset, which collapses every
+ // section onto whichever one uploaded last.
+ if(!g_drawEnabled || !ensureReady() || pass.vertexCount == 0 || indexCount == 0 || pass.buffer == 0) {
+  return;
+ }
+ if(!pass.hasTexture) {
+  bindWhiteDiffuse();
+ }
+ bindAndUploadUniforms(pass);
+ ShaderProgram* active = pass.programOverride != nullptr ? pass.programOverride : g_activeProgram;
+ if(active == nullptr) {
+  return;
+ }
+ configureAttribs(pass.buffer, pass.byteOffset, pass.stride, pass.hasTexture, pass.hasColor,
+                  pass.hasNormals);
+ constexpr unsigned kElementArrayBuffer = 0x8893;
+ gl::GLCore::bindBuffer(kElementArrayBuffer, indexBuffer);
+ ::glDrawElements(0x0004, indexCount, 0x1405, nullptr); // GL_TRIANGLES, GL_UNSIGNED_INT
 }
 void setActiveProgram(ShaderProgram* program) {
  if(g_activeProgram == program) {
@@ -604,8 +619,8 @@ void setAlphaTestRef(float ref) {
  net::minecraft::util::concurrent::assertOnMainThread();
 #endif
  if(g_alphaTestRef != ref) {
-   g_alphaTestRef = ref;
-  }
+  g_alphaTestRef = ref;
+ }
 }
 float alphaTestRef() {
  return g_alphaTestRef;
@@ -642,9 +657,10 @@ void fogUpdateFromWorld(::net::minecraft::client::Minecraft* client, float tickD
  g_fog.modDensity = settings.density;
  const Vec3d sky = world.getSkyColor(client->camera, tickDelta);
  const Vec3d fogColor = world.getFogColor(tickDelta);
- float r = static_cast<float>(fogColor.x + (sky.x - fogColor.x) * frame.fogColorBlend);
- float g = static_cast<float>(fogColor.y + (sky.y - fogColor.y) * frame.fogColorBlend);
- float b = static_cast<float>(fogColor.z + (sky.z - fogColor.z) * frame.fogColorBlend);
+ const float colorBlend = frame.renderDistance.fogColorBlend();
+ float r = static_cast<float>(fogColor.x + (sky.x - fogColor.x) * colorBlend);
+ float g = static_cast<float>(fogColor.y + (sky.y - fogColor.y) * colorBlend);
+ float b = static_cast<float>(fogColor.z + (sky.z - fogColor.z) * colorBlend);
  const float rain = option::rainGradient(frame, &world, tickDelta);
  if(rain > 0.0f) {
   r *= 1.0f - rain * 0.5f;
@@ -695,34 +711,35 @@ void fogApplyMode(::net::minecraft::client::Minecraft* client, int mode,
   if(mode >= 0) {
    g_fog.end = 1.5f;
   }
-  } else if(g_fog.modEnabled && g_fog.modExponential) {
-   // The mod-provided density is a plain uniform value (Iris FogUniforms.fogDensity =
-   // max(0, captured density)) — it must not be scaled by the render distance.
-   const float density = g_fog.modDensity;
-   g_fog.mode = 2;
-   g_fog.density = density;
-   if(mode >= 0) {
-    g_fog.end = density > 0.0f ? 3.0f / density : frame.renderDistanceBlocks;
-   }
-  } else {
-   g_fog.mode = 1;
-   // Java Iris 26.1 contract (FogRenderer.setupFog -> FogStorage ->
-   // fogStart/fogEnd, FogUniforms.java): terrain fog runs from
-   // 0.75 * renderDistanceBlocks to renderDistanceBlocks exactly. The previous
-   // chunkRadius*16-8 cap / 0.65 factor ended the fog 8 blocks short of the far
-   // plane and started it ~10% closer than vanilla, so packs' vanilla_fog()
-   // (RenderPearl lib/fog.glsl) blended off-ratio against the real distance.
-   const float fogEnd = frame.renderDistanceBlocks;
-   if(mode < 0) {
-    g_fog.start = 0.0f;
-   } else {
-    g_fog.end = fogEnd * (g_fog.modEnabled ? g_fog.modEnd : 1.0f);
-    g_fog.start = std::min(fogEnd * (g_fog.modEnabled ? g_fog.modStart : 0.75f), g_fog.end * 0.9f);
-   }
-   if(client->world->dimension != nullptr && client->world->dimension->isNether) {
-    g_fog.start = 0.0f;
-   }
+ } else if(g_fog.modEnabled && g_fog.modExponential) {
+  // The mod-provided density is a plain uniform value (Iris FogUniforms.fogDensity =
+  // max(0, captured density)) — it must not be scaled by the render distance.
+  const float density = g_fog.modDensity;
+  g_fog.mode = 2;
+  g_fog.density = density;
+  if(mode >= 0) {
+   g_fog.end = density > 0.0f ? 3.0f / density : frame.renderDistance.blocks;
   }
+ } else {
+  g_fog.mode = 1;
+  // Java Iris 26.1 contract (FogRenderer.setupFog -> FogStorage ->
+  // fogStart/fogEnd, FogUniforms.java): terrain fog runs from
+  // 0.75 * renderDistanceBlocks to renderDistanceBlocks exactly. The previous
+  // chunkRadius*16-8 cap / 0.65 factor ended the fog 8 blocks short of the far
+  // plane and started it ~10% closer than vanilla, so packs' vanilla_fog()
+  // (RenderPearl lib/fog.glsl) blended off-ratio against the real distance.
+  const float fogEnd = frame.renderDistance.fogEnd();
+  if(mode < 0) {
+   g_fog.start = 0.0f;
+  } else {
+   g_fog.end = fogEnd * (g_fog.modEnabled ? g_fog.modEnd : 1.0f);
+   const float start = g_fog.modEnabled ? fogEnd * g_fog.modStart : frame.renderDistance.fogStart();
+   g_fog.start = std::min(start, g_fog.end * 0.9f);
+  }
+  if(client->world->dimension != nullptr && client->world->dimension->isNether) {
+   g_fog.start = 0.0f;
+  }
+ }
  g_fog.enabled = keepEnabled;
 }
 void setSkyUniforms(const SkyUniforms& sky) {
@@ -735,6 +752,12 @@ void setCelestialState(const CelestialState& state) {
 }
 const CelestialState& celestialState() {
  return g_celestialState;
+}
+void setCameraFrame(FrameRenderCamera camera) {
+ g_cameraFrame = camera;
+}
+const FrameRenderCamera& cameraFrame() {
+ return g_cameraFrame;
 }
 const SkyUniforms& skyUniforms() {
  return g_skyUniforms;
@@ -749,10 +772,19 @@ void configureAttribs(unsigned buffer,
                      g_attribCache.baseOffset == baseOffset && g_attribCache.stride == stride &&
                      g_attribCache.hasTexture == hasTexture && g_attribCache.hasColor == hasColor &&
                      g_attribCache.hasNormals == hasNormals;
-  if(!cached) {
-   if(g_vao.handle() != 0) {
-    gl::GLCore::bindVertexArray(g_vao.handle());
-   }
+ if(!cached) {
+  if(g_vao.handle() != 0) {
+   gl::GLCore::bindVertexArray(g_vao.handle());
+  }
+  // vertexAttribPointer captures whatever is bound to GL_ARRAY_BUFFER at this
+  // instant; `buffer` names the one the offsets below belong to, so bind it
+  // here rather than trusting every caller to have done it. Forgetting left
+  // the pointers referring to client memory, which the driver dereferences as
+  // a null pointer mid-draw. The cached path needs no bind: the VAO already
+  // recorded the source buffer per attribute when the pointers were set.
+  if(buffer != 0) {
+   gl::GLCore::bindBuffer(kArrayBuffer, buffer);
+  }
   for(const abi::Format& format : abi::Formats) {
    const bool enabled = format.availability == abi::Availability::Always ||
                         (format.availability == abi::Availability::Texture && hasTexture) ||
@@ -958,75 +990,75 @@ int boundTexture() {
  return static_cast<int>(g_gl.boundTextures[g_gl.activeTexture]);
 }
 void enableBlend() {
-  if(!g_gl.blend) {
-   g_gl.blend = true;
-   ::glEnable(0x0BE2);
-  }
+ if(!g_gl.blend) {
+  g_gl.blend = true;
+  ::glEnable(0x0BE2);
  }
- void disableBlend() {
-  if(g_gl.blend) {
-   g_gl.blend = false;
-   ::glDisable(0x0BE2);
-  }
+}
+void disableBlend() {
+ if(g_gl.blend) {
+  g_gl.blend = false;
+  ::glDisable(0x0BE2);
  }
- void blendFunc(int src, int dst) {
-  // glBlendFunc sets BOTH pairs, so the cache must compare all four. Comparing only
-  // the RGB pair let a call be elided while the alpha pair still held a pack's
-  // separate-alpha factors from a previous lockBlend.
-  if(g_gl.blendSrc != src || g_gl.blendDst != dst || g_gl.blendSrcAlpha != src ||
-     g_gl.blendDstAlpha != dst) {
-   g_gl.blendSrc = src;
-   g_gl.blendDst = dst;
-   g_gl.blendSrcAlpha = src;
-   g_gl.blendDstAlpha = dst;
-   ::glBlendFunc(static_cast<unsigned>(src), static_cast<unsigned>(dst));
-  }
+}
+void blendFunc(int src, int dst) {
+ // glBlendFunc sets BOTH pairs, so the cache must compare all four. Comparing only
+ // the RGB pair let a call be elided while the alpha pair still held a pack's
+ // separate-alpha factors from a previous lockBlend.
+ if(g_gl.blendSrc != src || g_gl.blendDst != dst || g_gl.blendSrcAlpha != src ||
+    g_gl.blendDstAlpha != dst) {
+  g_gl.blendSrc = src;
+  g_gl.blendDst = dst;
+  g_gl.blendSrcAlpha = src;
+  g_gl.blendDstAlpha = dst;
+  ::glBlendFunc(static_cast<unsigned>(src), static_cast<unsigned>(dst));
  }
- void blendFuncSeparate(int srcRgb, int dstRgb, int srcAlpha, int dstAlpha) {
-  if(gl::GLCore::blendFuncSeparate == nullptr) {
-   blendFunc(srcRgb, dstRgb);
-   return;
-  }
-  if(g_gl.blendSrc != srcRgb || g_gl.blendDst != dstRgb || g_gl.blendSrcAlpha != srcAlpha ||
-     g_gl.blendDstAlpha != dstAlpha) {
-   g_gl.blendSrc = srcRgb;
-   g_gl.blendDst = dstRgb;
-   g_gl.blendSrcAlpha = srcAlpha;
-   g_gl.blendDstAlpha = dstAlpha;
-   gl::GLCore::blendFuncSeparate(static_cast<unsigned>(srcRgb), static_cast<unsigned>(dstRgb),
-                                 static_cast<unsigned>(srcAlpha), static_cast<unsigned>(dstAlpha));
-  }
+}
+void blendFuncSeparate(int srcRgb, int dstRgb, int srcAlpha, int dstAlpha) {
+ if(gl::GLCore::blendFuncSeparate == nullptr) {
+  blendFunc(srcRgb, dstRgb);
+  return;
  }
- void lockBlend(const BlendMode* mode) {
-  if(mode == nullptr) {
-   disableBlend();
-   return;
-  }
-  enableBlend();
-  blendFuncSeparate(mode->srcRgb, mode->dstRgb, mode->srcAlpha, mode->dstAlpha);
+ if(g_gl.blendSrc != srcRgb || g_gl.blendDst != dstRgb || g_gl.blendSrcAlpha != srcAlpha ||
+    g_gl.blendDstAlpha != dstAlpha) {
+  g_gl.blendSrc = srcRgb;
+  g_gl.blendDst = dstRgb;
+  g_gl.blendSrcAlpha = srcAlpha;
+  g_gl.blendDstAlpha = dstAlpha;
+  gl::GLCore::blendFuncSeparate(static_cast<unsigned>(srcRgb), static_cast<unsigned>(dstRgb),
+                                static_cast<unsigned>(srcAlpha), static_cast<unsigned>(dstAlpha));
  }
- void lockBufferBlend(int drawBufferIndex, const BlendMode* mode) {
-  if(drawBufferIndex < 0) {
-   return;
-  }
-  if(mode == nullptr) {
-   if(gl::GLCore::blendFunci != nullptr) {
-    // GL_FUNC_ADD with ZERO/ZERO effectively disables contribution when supported via separatei.
-    if(gl::GLCore::blendFuncSeparatei != nullptr) {
-     gl::GLCore::blendFuncSeparatei(static_cast<unsigned>(drawBufferIndex), 0, 1, 0, 1);
-    }
+}
+void lockBlend(const BlendMode* mode) {
+ if(mode == nullptr) {
+  disableBlend();
+  return;
+ }
+ enableBlend();
+ blendFuncSeparate(mode->srcRgb, mode->dstRgb, mode->srcAlpha, mode->dstAlpha);
+}
+void lockBufferBlend(int drawBufferIndex, const BlendMode* mode) {
+ if(drawBufferIndex < 0) {
+  return;
+ }
+ if(mode == nullptr) {
+  if(gl::GLCore::blendFunci != nullptr) {
+   // GL_FUNC_ADD with ZERO/ZERO effectively disables contribution when supported via separatei.
+   if(gl::GLCore::blendFuncSeparatei != nullptr) {
+    gl::GLCore::blendFuncSeparatei(static_cast<unsigned>(drawBufferIndex), 0, 1, 0, 1);
    }
-   return;
   }
-  if(gl::GLCore::blendFuncSeparatei != nullptr) {
-   gl::GLCore::blendFuncSeparatei(static_cast<unsigned>(drawBufferIndex),
-                                  static_cast<unsigned>(mode->srcRgb), static_cast<unsigned>(mode->dstRgb),
-                                  static_cast<unsigned>(mode->srcAlpha), static_cast<unsigned>(mode->dstAlpha));
-  } else if(gl::GLCore::blendFunci != nullptr) {
-   gl::GLCore::blendFunci(static_cast<unsigned>(drawBufferIndex), static_cast<unsigned>(mode->srcRgb),
-                          static_cast<unsigned>(mode->dstRgb));
-  }
+  return;
  }
+ if(gl::GLCore::blendFuncSeparatei != nullptr) {
+  gl::GLCore::blendFuncSeparatei(static_cast<unsigned>(drawBufferIndex),
+                                 static_cast<unsigned>(mode->srcRgb), static_cast<unsigned>(mode->dstRgb),
+                                 static_cast<unsigned>(mode->srcAlpha), static_cast<unsigned>(mode->dstAlpha));
+ } else if(gl::GLCore::blendFunci != nullptr) {
+  gl::GLCore::blendFunci(static_cast<unsigned>(drawBufferIndex), static_cast<unsigned>(mode->srcRgb),
+                         static_cast<unsigned>(mode->dstRgb));
+ }
+}
 void unlockBlend() {
  blendAlpha();
 }
@@ -1047,11 +1079,11 @@ void blendInverseColor() {
  blendFunc(0x0000, 0x0301);
 }
 void enableDepthTest() {
-  if(!g_gl.depthTest) {
-   g_gl.depthTest = true;
-   ::glEnable(0x0B71);
-  }
+ if(!g_gl.depthTest) {
+  g_gl.depthTest = true;
+  ::glEnable(0x0B71);
  }
+}
 void depthTest() {
  enableDepthTest();
  depthFunc(0x0203);
@@ -1062,41 +1094,41 @@ void depthTestWrite(bool write) {
  depthMask(write);
 }
 void disableDepthTest() {
-  if(g_gl.depthTest) {
-   g_gl.depthTest = false;
-   ::glDisable(0x0B71);
-  }
+ if(g_gl.depthTest) {
+  g_gl.depthTest = false;
+  ::glDisable(0x0B71);
  }
- void depthFunc(int func) {
-  if(g_gl.depthFunc != func) {
-   g_gl.depthFunc = func;
-   ::glDepthFunc(static_cast<unsigned>(func));
-  }
+}
+void depthFunc(int func) {
+ if(g_gl.depthFunc != func) {
+  g_gl.depthFunc = func;
+  ::glDepthFunc(static_cast<unsigned>(func));
  }
- void depthMask(bool enabled) {
-  if(g_gl.depthWrite != enabled) {
-   g_gl.depthWrite = enabled;
-   ::glDepthMask(enabled ? 1 : 0);
-  }
+}
+void depthMask(bool enabled) {
+ if(g_gl.depthWrite != enabled) {
+  g_gl.depthWrite = enabled;
+  ::glDepthMask(enabled ? 1 : 0);
  }
- void enableCull() {
-  if(!g_gl.cullFace) {
-   g_gl.cullFace = true;
-   ::glEnable(0x0B44);
-  }
+}
+void enableCull() {
+ if(!g_gl.cullFace) {
+  g_gl.cullFace = true;
+  ::glEnable(0x0B44);
  }
- void disableCull() {
-  if(g_gl.cullFace) {
-   g_gl.cullFace = false;
-   ::glDisable(0x0B44);
-  }
+}
+void disableCull() {
+ if(g_gl.cullFace) {
+  g_gl.cullFace = false;
+  ::glDisable(0x0B44);
  }
- void cullFace(int mode) {
-  if(g_gl.cullFaceMode != mode) {
-   g_gl.cullFaceMode = mode;
-   ::glCullFace(static_cast<unsigned>(mode));
-  }
+}
+void cullFace(int mode) {
+ if(g_gl.cullFaceMode != mode) {
+  g_gl.cullFaceMode = mode;
+  ::glCullFace(static_cast<unsigned>(mode));
  }
+}
 void cullBackFaces() {
  enableCull();
  cullFace(0x0405);
@@ -1126,11 +1158,11 @@ void clearColor(float r, float g, float b, float a) {
   g_gl.clearColor[1] = g;
   g_gl.clearColor[2] = b;
   g_gl.clearColor[3] = a;
-   ::glClearColor(r, g, b, a);
-  }
+  ::glClearColor(r, g, b, a);
  }
-  void clear(int mask) {
-   ::glClear(static_cast<unsigned>(mask));
+}
+void clear(int mask) {
+ ::glClear(static_cast<unsigned>(mask));
 }
 void clearDepth(double depth) {
  ::glClearDepth(depth);
@@ -1152,7 +1184,7 @@ void activeTexture(int texture) {
  }
 }
 void bindTexture(int texture) {
-  bindTexture(0x0DE1, texture);
+ bindTexture(0x0DE1, texture);
 }
 void bindTexture(int target, int texture) {
  if(target <= 0) {
@@ -1172,7 +1204,7 @@ void bindTexture(int target, int texture) {
   }
  }
  ::glBindTexture(static_cast<unsigned>(target), uTex);
- }
+}
 void invalidateTextureBindCache() {
  for(unsigned int& bound : g_gl.boundTextures) {
   bound = 0xFFFFFFFFu;
@@ -1226,20 +1258,20 @@ void colorMask(bool r, bool g, bool b, bool a) {
   g_gl.colorMaskG = g;
   g_gl.colorMaskB = b;
   g_gl.colorMaskA = a;
-    ::glColorMask(r ? 1 : 0, g ? 1 : 0, b ? 1 : 0, a ? 1 : 0);
-   }
-  }
- void viewport(int x, int y, int width, int height) {
+  ::glColorMask(r ? 1 : 0, g ? 1 : 0, b ? 1 : 0, a ? 1 : 0);
+ }
+}
+void viewport(int x, int y, int width, int height) {
  if(!g_gl.viewportValid || g_gl.viewport[0] != x || g_gl.viewport[1] != y || g_gl.viewport[2] != width ||
     g_gl.viewport[3] != height) {
   g_gl.viewport[0] = x;
   g_gl.viewport[1] = y;
   g_gl.viewport[2] = width;
   g_gl.viewport[3] = height;
-   g_gl.viewportValid = true;
-   ::glViewport(x, y, width, height);
-  }
+  g_gl.viewportValid = true;
+  ::glViewport(x, y, width, height);
  }
+}
 void setGuiScaleFactor(int factor) {
  g_gl.guiScaleFactor = factor > 0 ? factor : 1;
 }
@@ -1331,13 +1363,13 @@ TextureBindScope::TextureBindScope() : savedUnit_(g_gl.activeTexture), savedTex_
  }
 }
 TextureBindScope::TextureBindScope(int texture) : TextureBindScope() {
-  // Bind on the saved unit so the scope can restore the exact bind later.
-  bindTexture(0x0DE1, texture);
+ // Bind on the saved unit so the scope can restore the exact bind later.
+ bindTexture(0x0DE1, texture);
 }
 TextureBindScope::~TextureBindScope() {
-  // Restore on the saved unit (the saved bind belongs to that unit).
-  activeTexture(0x84C0 + savedUnit_);
-  bindTexture(0x0DE1, static_cast<int>(savedTex_));
+ // Restore on the saved unit (the saved bind belongs to that unit).
+ activeTexture(0x84C0 + savedUnit_);
+ bindTexture(0x0DE1, static_cast<int>(savedTex_));
 }
 } // namespace core
 } // namespace net::minecraft::client::render

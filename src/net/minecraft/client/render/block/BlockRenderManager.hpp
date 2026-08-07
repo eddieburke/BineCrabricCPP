@@ -11,44 +11,34 @@ namespace net::minecraft::block {
 class RailBlock;
 }
 namespace net::minecraft::client::render::block {
-// Faithful port of net.minecraft.client.render.block.BlockRenderManager (beta 1.7.3).
 class BlockRenderManager {
  public:
  static void setVoxelizeLightBlocks(bool enabled) noexcept;
- explicit BlockRenderManager(const net::minecraft::BlockView* view = nullptr) {
-  ctx.blockView = view;
-  ctx.tess = &Tessellator::INSTANCE;
-  snapshotGlobals();
- }
- explicit BlockRenderManager(net::minecraft::World* world) {
-  setBlockView(world);
-  ctx.tess = &Tessellator::INSTANCE;
-  snapshotGlobals();
- }
- // Worker-thread construction: render settings were captured on the main
- // thread at job-enqueue time; never touch Minecraft::INSTANCE here.
- BlockRenderManager(const net::minecraft::BlockView* view, const option::RenderSettings& opts) {
-  ctx.blockView = view;
-  ctx.opts = opts;
- }
-  // Copy the global render settings (resolved GameOptions, fancy flags) into
-  // the context. Mesh jobs overwrite ctx.opts with values captured at enqueue
-  // time instead. When a GameRenderer exists its frameSettings_ (pack-resolved)
-  // is authoritative; renderSettings(options) is only a unit-test fallback.
-  void snapshotGlobals(const option::RenderSettings* overrideSettings = nullptr);
+  BlockRenderManager(Tessellator& tess, const net::minecraft::BlockView* view = nullptr) {
+   ctx.tess = &tess;
+   ctx.blockView = view;
+   snapshotGlobals();
+  }
+  BlockRenderManager(Tessellator& tess, net::minecraft::World* world) {
+   ctx.tess = &tess;
+   setBlockView(world);
+   snapshotGlobals();
+  }
+  BlockRenderManager(Tessellator& tess, const net::minecraft::BlockView* view, const option::RenderSettings& opts) {
+   ctx.tess = &tess;
+   ctx.blockView = view;
+   ctx.opts = opts;
+  }
+ void snapshotGlobals(const option::RenderSettings* overrideSettings = nullptr);
  void setBlockView(const net::minecraft::BlockView* view) {
   ctx.blockView = view;
  }
  void setBlockView(net::minecraft::World* world) {
   ctx.blockView = world;
  }
- void renderWithTexture(int blockId, int x, int y, int z, int textureOverride);
  void renderWithoutCulling(int blockId, int x, int y, int z);
  void renderExtendedPiston(int blockId, int x, int y, int z);
  void renderPistonHeadWithoutCulling(int blockId, int x, int y, int z, bool extendedHalfway);
- bool render(int blockId, int x, int y, int z);
- void render(int blockId, int metadata, float brightness);
- bool renderBlock(int blockId, int x, int y, int z);
  void renderWithTexture(net::minecraft::block::Block& block, int x, int y, int z, int textureOverride);
  void renderWithoutCulling(net::minecraft::block::Block& block, int x, int y, int z);
  void renderExtendedPiston(net::minecraft::block::Block& block, int x, int y, int z);
@@ -58,7 +48,6 @@ class BlockRenderManager {
  [[nodiscard]] static bool isSideLit(int renderType);
  void renderFallingBlockEntity(
      net::minecraft::block::Block& block, net::minecraft::World* world, int x, int y, int z);
- bool renderStandardBlock(net::minecraft::block::Block& block, int x, int y, int z);
  CubeBlockRenderer& cubeRenderer() {
   return cube_;
  }
@@ -71,7 +60,6 @@ class BlockRenderManager {
  BlockFaceRenderer& faceRenderer() {
   return faces_;
  }
- // Shared mutable render state (texture overrides, face rotations, AO, ...).
  BlockRenderContext ctx;
  inline static bool fancyLeaves = true;
 

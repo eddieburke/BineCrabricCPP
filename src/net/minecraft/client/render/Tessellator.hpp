@@ -4,6 +4,7 @@
 #include <vector>
 #include "net/minecraft/client/render/BufferBuilder.hpp"
 #include "net/minecraft/client/render/VertexAbi.hpp"
+#include "net/minecraft/util/math/Matrix4f.hpp"
 namespace net::minecraft::client::render {
 struct TessellatorMesh {
  std::vector<TessellatorVertex> vertices;
@@ -25,9 +26,6 @@ struct TessellatorMesh {
  }
  [[nodiscard]] bool uploadToGpu();
  void freeGpuBuffer();
- void setGpuBuffer(unsigned vbo) noexcept {
-  vbo_ = vbo;
- }
 
  private:
  friend class Tessellator;
@@ -35,8 +33,12 @@ struct TessellatorMesh {
 };
 class Tessellator {
  public:
- static Tessellator INSTANCE;
- explicit Tessellator(std::size_t bufferSize = 2'097'152);
+ // One instance per thread. Chunk mesh workers and the frame renderer never
+ // share a vertex buffer: a shared instance let concurrent worker compiles race
+ // on the same vector (heap corruption, garbage meshes, frozen GPU uploads).
+ // The Tessellator owns no GL state, so worker-thread instances die cleanly.
+ static thread_local Tessellator INSTANCE;
+ explicit Tessellator(std::size_t bufferSize = 4096);
  void startQuads();
  void start(int mode);
  void texture(double u, double v);
@@ -51,7 +53,6 @@ class Tessellator {
  // the same lightmap texel. vaUV2 carries level*16, so quarter-level averages
  // survive the pack exactly.
  void light(float blockLight, float skyLight);
- void disableColor();
  void normal(float x, float y, float z);
  void blockData(double x,
                 double y,
@@ -66,35 +67,34 @@ class Tessellator {
  void translate(float x, float y, float z);
  void vertex(double x, double y, double z, double u, double v);
  void vertex(double x, double y, double z);
-  void draw();
-  [[nodiscard]] TessellatorMesh takeMesh();
-  static void drawMesh(const TessellatorMesh& mesh);
-  [[nodiscard]] static int effectiveDrawMode(int mode) noexcept;
-  void setCaptureOnly(bool captureOnly) noexcept {
-   captureOnly_ = captureOnly;
-  }
-  [[nodiscard]] bool drawing() const noexcept {
-   return drawing_;
-  }
+ void draw();
+ [[nodiscard]] TessellatorMesh takeMesh();
+ static void drawMesh(const TessellatorMesh& mesh);
+ [[nodiscard]] static int effectiveDrawMode(int mode) noexcept;
+ void setCaptureOnly(bool captureOnly) noexcept {
+  captureOnly_ = captureOnly;
+ }
+ [[nodiscard]] bool drawing() const noexcept {
+  return drawing_;
+ }
 
  private:
-  static constexpr int kGlQuads = 7;
-  static constexpr bool kTriangleMode = true;
-  void expandQuadToTriangles();
-  void finishQuad();
-  void flush();
-  void reset();
-  // Pose captured at start() on the drawing thread (world-camera producers
-  // publish via core::setDrawPose) and applied to every vertex at emit time, so
-  // the uploaded modelViewMatrix is the bare camera matrix — Iris' split.
-  net::minecraft::util::math::Matrix4f pose_{};
-  bool poseValid_ = false;
-  BufferBuilder<TessellatorVertex> builder_;
+ static constexpr int kGlQuads = 7;
+ static constexpr bool kTriangleMode = true;
+ void expandQuadToTriangles();
+ void finishQuad();
+ void flush();
+ void reset();
+ // Pose captured at start() on the drawing thread (world-camera producers
+ // publish via core::setDrawPose) and applied to every vertex at emit time, so
+ // the uploaded modelViewMatrix is the bare camera matrix — Iris' split.
+ net::minecraft::util::math::Matrix4f pose_{};
+ bool poseValid_ = false;
+ BufferBuilder<TessellatorVertex> builder_;
  bool drawing_ = false;
  bool hasTexture_ = false;
  bool hasColor_ = false;
  bool hasNormals_ = false;
- bool colorDisabled_ = false;
  bool captureOnly_ = false;
  int addedVertexCount_ = 0;
  int mode_ = 7;
@@ -118,5 +118,4 @@ class Tessellator {
  int blockMetadata_ = 0;
  bool hasBlockData_ = false;
 };
-extern Tessellator& INSTANCE;
 } // namespace net::minecraft::client::render

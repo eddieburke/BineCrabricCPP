@@ -113,8 +113,7 @@ void TessellatorMesh::freeGpuBuffer() {
   vbo_ = 0;
  }
 }
-Tessellator Tessellator::INSTANCE{};
-Tessellator& INSTANCE = Tessellator::INSTANCE;
+thread_local Tessellator Tessellator::INSTANCE{};
 static int clamp255(float v) {
  return static_cast<int>(std::clamp(v, 0.0f, 1.0f) * 255.0f);
 }
@@ -132,7 +131,6 @@ void Tessellator::start(int mode) {
  hasTexture_ = false;
  hasColor_ = false;
  hasNormals_ = false;
- colorDisabled_ = false;
  addedVertexCount_ = 0;
  reset();
  // Snapshot the pose for this batch AFTER reset(), which clears the previous
@@ -239,8 +237,6 @@ void Tessellator::color(int r, int g, int b) {
  color(r, g, b, 255);
 }
 void Tessellator::color(int r, int g, int b, int a) {
- if(colorDisabled_)
-  return;
  hasColor_ = true;
  currentColor_ = (static_cast<std::uint32_t>(a & 0xFF) << 24U) | (static_cast<std::uint32_t>(b & 0xFF) << 16U) |
                  (static_cast<std::uint32_t>(g & 0xFF) << 8U) | static_cast<std::uint32_t>(r & 0xFF);
@@ -257,9 +253,6 @@ void Tessellator::color(int rgb, int a) {
 void Tessellator::light(float blockLight, float skyLight) {
  blockLight_ = std::clamp(blockLight, 0.0f, 15.0f);
  skyLight_ = std::clamp(skyLight, 0.0f, 15.0f);
-}
-void Tessellator::disableColor() {
- colorDisabled_ = true;
 }
 void Tessellator::normal(float x, float y, float z) {
  hasNormals_ = true;
@@ -432,12 +425,12 @@ void Tessellator::draw() {
  reset();
 }
 TessellatorMesh Tessellator::takeMesh() {
-  std::size_t count = builder_.vertexCount();
-  std::vector<TessellatorVertex> verts(count);
-  if(count > 0) {
-   std::memcpy(verts.data(), builder_.buffer().data(), count * sizeof(TessellatorVertex));
-   fillUnsetAttribs(verts.data(), count, &pose_, poseValid_ && poseRotates(pose_));
-  }
+ std::size_t count = builder_.vertexCount();
+ std::vector<TessellatorVertex> verts(count);
+ if(count > 0) {
+  std::memcpy(verts.data(), builder_.buffer().data(), count * sizeof(TessellatorVertex));
+  fillUnsetAttribs(verts.data(), count, &pose_, poseValid_ && poseRotates(pose_));
+ }
  TessellatorMesh mesh(std::move(verts), mode_, hasTexture_, hasColor_, hasNormals_);
  reset();
  return mesh;
@@ -496,21 +489,21 @@ void drawQuadMeshExpanded(const TessellatorMesh& mesh, int stride) {
   scratch.push_back(v[2]);
   scratch.push_back(v[3]);
  }
-  render::core::RenderPass pass;
-  pass.modelView = render::core::drawModelView();
-  pass.projection = render::core::drawProjection();
-  pass.fog = render::core::fog();
-  // Apply pending section-local chunkOffset from WorldRenderer.
-  render::core::applyPendingTerrain(pass);
-  pass.vertexData = scratch.data();
-  pass.vertexCount = scratch.size();
-  pass.stride = stride;
-  pass.glMode = 0x0004;
-  pass.hasTexture = mesh.hasTexture;
-  pass.hasColor = mesh.hasColor;
-  pass.hasNormals = mesh.hasNormals;
-  render::core::submit(pass);
- }
+ render::core::RenderPass pass;
+ pass.modelView = render::core::drawModelView();
+ pass.projection = render::core::drawProjection();
+ pass.fog = render::core::fog();
+ // Apply pending section-local chunkOffset from WorldRenderer.
+ render::core::applyPendingTerrain(pass);
+ pass.vertexData = scratch.data();
+ pass.vertexCount = scratch.size();
+ pass.stride = stride;
+ pass.glMode = 0x0004;
+ pass.hasTexture = mesh.hasTexture;
+ pass.hasColor = mesh.hasColor;
+ pass.hasNormals = mesh.hasNormals;
+ render::core::submit(pass);
+}
 } // namespace
 void Tessellator::drawMesh(const TessellatorMesh& mesh) {
  if(mesh.vertices.empty())

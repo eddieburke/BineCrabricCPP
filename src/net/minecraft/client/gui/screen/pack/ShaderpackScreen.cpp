@@ -49,7 +49,7 @@ class ShaderSliderWidget : public widget::ButtonWidget {
   {
    const render::RenderPassScope passScope(render::RenderType::guiTextured());
    const float* c = render::core::constColor();
-   render::Tessellator& tess = render::INSTANCE;
+   render::Tessellator& tess = render::Tessellator::INSTANCE;
    tess.startQuads();
    tess.color(c[0], c[1], c[2], c[3]);
    draw::appendAtlasQuad(tess, knobX, y, 0, 66, 4, 20, 0.0f);
@@ -118,7 +118,8 @@ std::string settingLabel(const PackSetting& setting, const std::string& value) {
   display = num.str();
  }
  const auto labeled = setting.valueLabels.find(value);
- if(labeled != setting.valueLabels.end()) display = labeled->second;
+ if(labeled != setting.valueLabels.end())
+  display = labeled->second;
  else {
   const auto labeledDisplay = setting.valueLabels.find(display);
   if(labeledDisplay != setting.valueLabels.end()) display = labeledDisplay->second;
@@ -290,7 +291,7 @@ void ShaderpackScreen::rebuildLayout() {
    const int widgetY = optionsBase + row * layout::kRowSpacing;
    const int widgetIndex = static_cast<int>(buttons_.size());
    const int x = layout::optionsGridX(width(), col);
-   const bool useSlider = setting.asSlider || setting.type != SettingType::Bool;
+   const bool useSlider = setting.asSlider || (setting.type != SettingType::Bool && setting.type != SettingType::Enum);
    if(!useSlider) {
     addActionButton(x,
                     listTop + widgetY,
@@ -304,7 +305,17 @@ void ShaderpackScreen::rebuildLayout() {
                      }
                      auto* current = minecraft()->gameRenderer->shaderPacks();
                      const std::string oldValue = current->settingValue(setting.key);
-                     const std::string next = (oldValue == "0") ? "1" : "0";
+                     // Enum options (pack profiles) cycle through valueOrder; booleans flip.
+                     const std::string next = [&] {
+                      if(setting.type != SettingType::Enum || setting.valueOrder.empty()) {
+                       return std::string(oldValue == "0" ? "1" : "0");
+                      }
+                      for(std::size_t i = 0; i < setting.valueOrder.size(); ++i) {
+                       if(setting.valueOrder[i] != oldValue) continue;
+                       return setting.valueOrder[(i + 1) % setting.valueOrder.size()];
+                      }
+                      return setting.valueOrder.front();
+                     }();
                      current->setSetting(setting.key, next);
                      if(widgetIndex >= 0 && widgetIndex < static_cast<int>(buttons_.size()) &&
                         buttons_[static_cast<std::size_t>(widgetIndex)] != nullptr) {

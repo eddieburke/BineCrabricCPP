@@ -28,8 +28,6 @@ void BlockRenderContext::resolveLightSource() {
                      : nullptr;
 }
 void BlockRenderContext::sampleFaceLight(int x, int y, int z) {
- // Chunk::index packs y into seven bits, so y = 128 (the face above a block at
- // the build limit) aliases into the z field and reads a different column.
  y = std::clamp(y, 0, net::minecraft::Chunk::height - 1);
  if(lightRegion != nullptr) {
   faceBlockLight = lightRegion->getBlockLight(x, y, z);
@@ -85,29 +83,9 @@ void BlockRenderManager::snapshotGlobals(const option::RenderSettings* overrideS
   ctx.opts = option::renderSettings(Minecraft::INSTANCE->options);
  }
 }
-void BlockRenderManager::renderWithTexture(int blockId, int x, int y, int z, int textureOverrideIn) {
- if(net::minecraft::block::Block* b = blockAt(blockId)) {
-  renderWithTexture(*b, x, y, z, textureOverrideIn);
- }
-}
 void BlockRenderManager::renderWithoutCulling(int blockId, int x, int y, int z) {
  if(net::minecraft::block::Block* b = blockAt(blockId)) {
   renderWithoutCulling(*b, x, y, z);
- }
-}
-bool BlockRenderManager::render(int blockId, int x, int y, int z) {
- if(ctx.blockView == nullptr) {
-  return false;
- }
- net::minecraft::block::Block* b = blockAt(blockId);
- if(b == nullptr) {
-  return false;
- }
- return render(*b, x, y, z);
-}
-void BlockRenderManager::render(int blockId, int metadata, float brightness) {
- if(net::minecraft::block::Block* b = blockAt(blockId)) {
-  render(*b, metadata, brightness);
  }
 }
 void BlockRenderManager::renderExtendedPiston(int blockId, int x, int y, int z) {
@@ -119,13 +97,6 @@ void BlockRenderManager::renderPistonHeadWithoutCulling(int blockId, int x, int 
  if(net::minecraft::block::Block* b = blockAt(blockId)) {
   renderPistonHeadWithoutCulling(*b, x, y, z, extendedHalfway);
  }
-}
-bool BlockRenderManager::renderBlock(int blockId, int x, int y, int z) {
- if(net::minecraft::block::Block* b = blockAt(blockId)) {
-  ctx.renderBounds = b->getRenderBounds(ctx.blockView, x, y, z);
-  return cube_.renderBlock(*b, x, y, z);
- }
- return false;
 }
 void BlockRenderManager::renderWithTexture(
     net::minecraft::block::Block& block, int x, int y, int z, int textureOverrideIn) {
@@ -145,10 +116,6 @@ bool BlockRenderManager::render(net::minecraft::block::Block& block, int x, int 
  ctx.blockZ = z;
  ctx.blockEmission = block.emission();
  ctx.resolveLightSource();
- // Renderers that know their face override this per face; the ones that don't —
- // baked models, mod blocks, the item path — keep this value, so it has to be
- // the light reaching the block's surfaces rather than the nothing stored inside
- // a solid block.
  ctx.sampleSurroundingLight(x, y, z);
  ctx.blockLight = ctx.faceBlockLight;
  ctx.skyLight = ctx.faceSkyLight;
@@ -158,10 +125,6 @@ bool BlockRenderManager::render(net::minecraft::block::Block& block, int x, int 
  if(ctx.tess != nullptr)
   ctx.tess->blockData(x, y, z, ctx.blockEmission, ctx.blockLight, ctx.skyLight, ctx.blockId, ctx.blockFluid,
                       ctx.blockMetadata);
- // Bounds live on the context, not the Block singleton: mesh workers and
- // the main-thread tick must never race on Block::minX..maxZ. They are set
- // before the mod hook because baked models cull their faces through
- // isSideVisibleForBounds, which reads them.
  ctx.renderBounds = block.getRenderBounds(ctx.blockView, x, y, z);
  if(ctx.textureOverride < 0 && net::minecraft::mod::drawBlockWorld(*this, block, x, y, z)) {
   return true;
@@ -235,11 +198,6 @@ void BlockRenderManager::renderPistonHeadWithoutCulling(
  piston_.renderPistonHeadWithoutCulling(block, x, y, z, extendedHalfway);
 }
 void BlockRenderManager::render(net::minecraft::block::Block& block, int metadata, float brightness) {
- // Inventory/dropped-item draws always run on the main thread with a live
- // texture manager. Adopting it matters beyond the bind below: a baked model
- // with several textures rebinds per batch via ctx.bindTextureFor, which is a
- // no-op while ctx.textureManager is null, so every batch would otherwise be
- // drawn with whatever the caller happened to bind.
  if(ctx.textureManager == nullptr && Minecraft::INSTANCE != nullptr) {
   ctx.textureManager = &Minecraft::INSTANCE->textureManager;
  }
@@ -250,9 +208,6 @@ void BlockRenderManager::render(net::minecraft::block::Block& block, int metadat
   return;
  }
  inventory_.render(block, metadata, brightness);
-}
-bool BlockRenderManager::renderStandardBlock(net::minecraft::block::Block& block, int x, int y, int z) {
- return cube_.renderBlock(block, x, y, z);
 }
 void BlockRenderManager::renderFallingBlockEntity(
     net::minecraft::block::Block& block, net::minecraft::World* world, int x, int y, int z) {

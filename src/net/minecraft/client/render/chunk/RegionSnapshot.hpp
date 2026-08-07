@@ -52,9 +52,6 @@ class RegionSnapshot final : public net::minecraft::BlockView {
  [[nodiscard]] net::minecraft::BiomeSource* getBiomeSource() const override {
   return biomeSource_.get();
  }
- [[nodiscard]] int getRawBrightness(int x, int y, int z) const {
-  return getRawBrightness(x, y, z, true);
- }
  [[nodiscard]] int getRawBrightness(int x, int y, int z, bool useNeighborLight) const;
  [[nodiscard]] int getBlockLight(int x, int y, int z) const;
  [[nodiscard]] int getSkyLight(int x, int y, int z) const;

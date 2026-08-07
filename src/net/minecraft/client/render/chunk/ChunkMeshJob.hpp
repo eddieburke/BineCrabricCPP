@@ -32,39 +32,33 @@ struct ChunkMeshResult {
 // handed back to the main thread for the GL upload.
 struct ChunkMeshJob {
  ~ChunkMeshJob();
- // Owning ChunkBuilder; dereferenced only on the main thread, and only
- // after validating version/position (the renderer cancels all jobs before
- // destroying its builders).
-  ChunkBuilder* builder = nullptr;
-  int version = 0;
-  int x = 0;
-  int y = 0;
-  int z = 0;
-  std::unique_ptr<RegionSnapshot> snapshot;
+ // The section this job was captured from. Weak on purpose: the job must not
+ // keep an evicted section alive (its GL buffers are freed on the main thread
+ // at eviction), and must not be able to dereference a dead one. Workers never
+ // touch it — buildMesh reads only this job's snapshot/opts.
+ std::weak_ptr<ChunkBuilder> builder;
+ int version = 0;
+ int x = 0;
+ int y = 0;
+ int z = 0;
+ std::unique_ptr<RegionSnapshot> snapshot;
  client::option::RenderSettings opts{};
- bool fancyGraphics = true;
  ChunkMeshResult result{};
  // Set when the worker hit an exception; the main thread reschedules.
  bool failed = false;
  // Built on the dedicated near-camera worker; its upload skips the
  // per-frame time budget so block edits next to the player land the
  // frame their mesh finishes.
-  bool nearLane = false;
-  std::unordered_map<int, int> blockRenderLayers;
-  // Snapshot of the GL alpha-test reference captured on the main thread at
-  // job-enqueue time (WI-5); mesh workers no longer write GL state. The mod
-  // draw path (ModChunkMeshScope) applies this 0.1 default itself.
-  float alphaTestRef = 0.1f;
+ bool nearLane = false;
+ std::unordered_map<int, int> blockRenderLayers;
  [[nodiscard]] static std::shared_ptr<ChunkMeshJob> capture(ChunkBuilder& owner,
-                                                            client::option::RenderSettings options,
-                                                            bool fancyGraphics);
+                                                            client::option::RenderSettings options);
  void captureSnapshot();
  void releasePins() noexcept;
 
  private:
  explicit ChunkMeshJob(ChunkBuilder& owner,
                        client::option::RenderSettings options,
-                       bool fancyGraphics,
                        std::vector<RegionSnapshot::SourceChunk> sourceChunks,
                        int ambientDarkness,
                        const std::array<float, 16>& lightLevelToLuminance,

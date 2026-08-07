@@ -15,14 +15,8 @@
 #include "net/minecraft/entity/EntityTypes.hpp"
 #include "net/minecraft/util/math/Types.hpp"
 #include "net/minecraft/world/light/LightType.hpp"
-#include "net/minecraft/world/chunk/BlockSource.hpp"
 #include "net/minecraft/world/chunk/ChunkNibbleArray.hpp"
 namespace net::minecraft {
-namespace detail {
-// Render-write-lock nesting depth for the current thread; backs the Debug
-// lock-order asserts in Chunk::tryAcquireRenderPin / beginRenderEviction.
-inline thread_local int tl_renderWriteLockDepth = 0;
-} // namespace detail
 class World;
 class Chunk {
  public:
@@ -69,9 +63,9 @@ class Chunk {
        z(other.z),
        blockEntities(std::move(other.blockEntities)),
        entities(std::move(other.entities)),
-        terrainPopulated(other.terrainPopulated),
-        dirty(other.dirty.load(std::memory_order_relaxed)),
-        empty(other.empty),
+       terrainPopulated(other.terrainPopulated),
+       dirty(other.dirty),
+       empty(other.empty),
        lastSaveHadEntities(other.lastSaveHadEntities),
        lastSaveTime(other.lastSaveTime) {
   other.world = nullptr;
@@ -82,35 +76,34 @@ class Chunk {
  [[nodiscard]] bool chunkPosEquals(int chunkX, int chunkZ) const noexcept {
   return chunkX == x && chunkZ == z;
  }
-  [[nodiscard]] int getHeight(int localX, int localZ) const {
-   const std::uint8_t value =
-       std::atomic_ref(const_cast<std::uint8_t&>(heightmap[static_cast<std::size_t>((localZ << 4) | localX)]))
-           .load(std::memory_order_relaxed);
-   return static_cast<int>(value & 0xFFU);
-  }
+ [[nodiscard]] int getHeight(int localX, int localZ) const {
+  const std::uint8_t value =
+      std::atomic_ref(const_cast<std::uint8_t&>(heightmap[static_cast<std::size_t>((localZ << 4) | localX)]))
+          .load(std::memory_order_relaxed);
+  return static_cast<int>(value & 0xFFU);
+ }
  void onLoad() {
  }
-  void populateHeightMapOnly() {
-   int minHeight = 127;
-   for(int localX = 0; localX < 16; ++localX) {
-    for(int localZ = 0; localZ < 16; ++localZ) {
-     int topY = findTopBlock(localX, localZ);
-     std::atomic_ref<std::uint8_t>(heightmap[static_cast<std::size_t>((localZ << 4) | localX)])
-         .store(static_cast<std::uint8_t>(topY), std::memory_order_relaxed);
-     if(topY < minHeight) {
-      minHeight = topY;
-     }
+ void populateHeightMapOnly() {
+  int minHeight = 127;
+  for(int localX = 0; localX < 16; ++localX) {
+   for(int localZ = 0; localZ < 16; ++localZ) {
+    int topY = findTopBlock(localX, localZ);
+    std::atomic_ref<std::uint8_t>(heightmap[static_cast<std::size_t>((localZ << 4) | localX)])
+        .store(static_cast<std::uint8_t>(topY), std::memory_order_relaxed);
+    if(topY < minHeight) {
+     minHeight = topY;
     }
    }
-   minHeightmapValue = minHeight;
-   dirty = true;
   }
+  minHeightmapValue = minHeight;
+  dirty = true;
+ }
  void populateHeightMap(bool fixCrossChunkGaps = true);
  void recalculateHeightMap() {
   populateHeightMap();
  }
  void populateBlockLight();
- // Re-queue cross-chunk skylight gap fixes once this chunk and neighbors are loaded.
  void relightSkylightGaps();
  void attachToWorld(World* worldIn) noexcept {
   world = worldIn;
@@ -127,12 +120,12 @@ class Chunk {
    }
   }
  }
-  [[nodiscard]] int getBlockId(int localX, int yPos, int localZ) const {
-   const std::uint8_t value =
-       std::atomic_ref(const_cast<std::uint8_t&>(blocks[index(localX, yPos, localZ)]))
-           .load(std::memory_order_relaxed);
-   return static_cast<int>(value & 0xFFU);
-  }
+ [[nodiscard]] int getBlockId(int localX, int yPos, int localZ) const {
+  const std::uint8_t value =
+      std::atomic_ref(const_cast<std::uint8_t&>(blocks[index(localX, yPos, localZ)]))
+          .load(std::memory_order_relaxed);
+  return static_cast<int>(value & 0xFFU);
+ }
  bool setBlock(int localX, int yPos, int localZ, int rawId, int metadataValue);
  bool setBlock(int localX, int yPos, int localZ, int rawId);
  [[nodiscard]] int getBlockMeta(int localX, int yPos, int localZ) const {
@@ -142,16 +135,14 @@ class Chunk {
  [[nodiscard]] int getLight(LightType lightType, int localX, int yPos, int localZ) const {
   return lightType == LightType::Sky ? skyLight.get(localX, yPos, localZ) : blockLight.get(localX, yPos, localZ);
  }
-  void setLight(LightType lightType, int localX, int yPos, int localZ, int value) {
-   lockRenderWrite();
-   if(lightType == LightType::Sky) {
-    skyLight.set(localX, yPos, localZ, value);
-   } else {
-    blockLight.set(localX, yPos, localZ, value);
-   }
-   dirty = true;
-   unlockRenderWrite();
+ void setLight(LightType lightType, int localX, int yPos, int localZ, int value) {
+  if(lightType == LightType::Sky) {
+   skyLight.set(localX, yPos, localZ, value);
+  } else {
+   blockLight.set(localX, yPos, localZ, value);
   }
+  dirty = true;
+ }
  [[nodiscard]] int getLight(int localX, int yPos, int localZ, int ambientDarkness) const {
   int sky = skyLight.get(localX, yPos, localZ);
   if(sky > 0) {
@@ -216,46 +207,10 @@ class Chunk {
  void removeBlockEntityAt(int localX, int yPos, int localZ);
  void load();
  void unload();
-  [[nodiscard]] bool tryAcquireRenderPin() noexcept {
-#ifndef NDEBUG
-   // WI-3 lock order: the render pin is always acquired BEFORE the chunk
-   // light/block write lock, never the reverse (workers that copy the arrays
-   // must hold a pin, then the lock).
-   assert(detail::tl_renderWriteLockDepth == 0 && "render pin acquired while holding the chunk write lock");
-#endif
-   if(renderEvicting_.load(std::memory_order_acquire)) {
-    return false;
-   }
-   renderPinCount_.fetch_add(1, std::memory_order_acquire);
-   if(!renderEvicting_.load(std::memory_order_acquire)) {
-    return true;
-   }
-   releaseRenderPin();
-   return false;
-  }
-  void releaseRenderPin() noexcept {
-   renderPinCount_.fetch_sub(1, std::memory_order_release);
-  }
-  [[nodiscard]] bool beginRenderEviction() noexcept {
-#ifndef NDEBUG
-   // WI-3 lock order: the chunk write lock is never held across eviction.
-   assert(detail::tl_renderWriteLockDepth == 0 && "chunk eviction while holding the chunk write lock");
-#endif
-   renderEvicting_.store(true, std::memory_order_release);
-   return renderPinCount_.load(std::memory_order_acquire) == 0;
-  }
-  void cancelRenderEviction() noexcept {
-   renderEvicting_.store(false, std::memory_order_release);
-  }
-  // Per-chunk light/block write guard. Held while mutating blocks[]/meta/skyLight/
-  // blockLight so render/lighting workers copying those arrays (RegionSnapshot
-  // copyChunkBand) never see a torn snapshot. Cross-thread exclusive; the same
-  // thread may nest (ChunkCache::decorate holds it while feature setBlock calls
-  // re-enter, Chunk::setBlock scopes it to the raw writes). Lock-order contract:
-  // acquire AFTER tryAcquireRenderPin, release BEFORE beginRenderEviction, never
-  // held while taking LightingEngine::outboxMutex_ or registryMutex_ (WI-3).
-  void lockRenderWrite() const noexcept;
-  void unlockRenderWrite() const noexcept;
+ [[nodiscard]] virtual bool tryAcquireRenderPin() noexcept { return true; }
+ virtual void releaseRenderPin() noexcept {}
+ [[nodiscard]] virtual bool beginRenderEviction() noexcept { return true; }
+ virtual void cancelRenderEviction() noexcept {}
  void markDirty() {
   dirty = true;
  }
@@ -293,7 +248,6 @@ class Chunk {
   if(empty) {
    return false;
   }
-  // Prefetch-only chunks: terrain shell without decoration and no player edits.
   if(!terrainPopulated && !dirty) {
    return false;
   }
@@ -415,7 +369,10 @@ class Chunk {
   return empty;
  }
  void fill() {
-  BlockSource::fill(blocks);
+  for(std::size_t i = 0; i < blocks.size(); ++i) {
+   const std::uint8_t blockId = blocks[i];
+   blocks[i] = Block::BLOCKS[static_cast<std::size_t>(blockId)] == nullptr ? 0 : blockId;
+  }
  }
  World* world = nullptr;
  std::vector<std::uint8_t> blocks;
@@ -430,53 +387,41 @@ class Chunk {
  const int z = 0;
  std::unordered_map<Vec3i, std::unique_ptr<block::entity::BlockEntity>, Vec3iHash> blockEntities{};
  std::array<std::vector<Entity*>, 8> entities{};
-  bool terrainPopulated = false;
-  std::atomic<bool> dirty{false};
-  bool empty = false;
+ bool terrainPopulated = false;
+ bool dirty{false};
+ bool empty = false;
  bool lastSaveHadEntities = false;
  long long lastSaveTime = 0;
+ std::unique_ptr<std::atomic_flag> renderWriteLock_ =
+     std::make_unique<std::atomic_flag>();
+
+ public:
+ void lockRenderWrite() const noexcept;
+ void unlockRenderWrite() const noexcept;
 
  private:
-  std::atomic<int> renderPinCount_{0};
-  std::atomic<bool> renderEvicting_{false};
-  mutable std::atomic_flag renderWriteLock_{};
  [[nodiscard]] static constexpr std::size_t index(int localX, int yPos, int localZ) {
   return static_cast<std::size_t>((localX << 11) | (localZ << 7) | yPos);
  }
-  [[nodiscard]] int findTopBlock(int localX, int localZ) const {
-   const int base = (localX << 11) | (localZ << 7);
-   int topY = 127;
-   while(topY > 0 && Block::BLOCKS_LIGHT_OPACITY[static_cast<std::size_t>(
-                         std::atomic_ref(const_cast<std::uint8_t&>(blocks[static_cast<std::size_t>(base + topY - 1)]))
-                             .load(std::memory_order_relaxed) & 0xFFU)] == 0) {
-    --topY;
-   }
-   return topY;
+ [[nodiscard]] int findTopBlock(int localX, int localZ) const {
+  const int base = (localX << 11) | (localZ << 7);
+  int topY = 127;
+  while(topY > 0 && Block::BLOCKS_LIGHT_OPACITY[static_cast<std::size_t>(
+                        std::atomic_ref(const_cast<std::uint8_t&>(blocks[static_cast<std::size_t>(base + topY - 1)]))
+                            .load(std::memory_order_relaxed) &
+                        0xFFU)] == 0) {
+   --topY;
   }
-  void recalculateHeightColumn(int localX, int localZ) {
-   const int topY = findTopBlock(localX, localZ);
-   std::atomic_ref<std::uint8_t>(heightmap[static_cast<std::size_t>((localZ << 4) | localX)])
-       .store(static_cast<std::uint8_t>(topY), std::memory_order_relaxed);
-   minHeightmapValue = topY;
-  }
+  return topY;
+ }
+ void recalculateHeightColumn(int localX, int localZ) {
+  const int topY = findTopBlock(localX, localZ);
+  std::atomic_ref<std::uint8_t>(heightmap[static_cast<std::size_t>((localZ << 4) | localX)])
+      .store(static_cast<std::uint8_t>(topY), std::memory_order_relaxed);
+  minHeightmapValue = topY;
+ }
  void updateHeightMap(int localX, int yPos, int localZ);
  void lightGaps(int localX, int localZ);
-  void lightGap(int blockX, int blockZ, int yPos);
-};
-// RAII hold of a Chunk's render-write guard; releases on scope exit so an
-// exception (e.g. a decorating feature) cannot leak the spinlock.
-class ChunkRenderWriteScope {
- public:
-  explicit ChunkRenderWriteScope(const Chunk& chunk) : chunk_(chunk) {
-   chunk_.lockRenderWrite();
-  }
-  ~ChunkRenderWriteScope() {
-   chunk_.unlockRenderWrite();
-  }
-  ChunkRenderWriteScope(const ChunkRenderWriteScope&) = delete;
-  ChunkRenderWriteScope& operator=(const ChunkRenderWriteScope&) = delete;
-
- private:
-  const Chunk& chunk_;
+ void lightGap(int blockX, int blockZ, int yPos);
 };
 } // namespace net::minecraft

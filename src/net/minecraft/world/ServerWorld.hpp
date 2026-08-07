@@ -34,7 +34,7 @@ class ServerWorld : public World {
  Explosion createExplosion(Entity* source, double x, double y, double z, float power, bool fire);
  void playNoteBlockActionAt(int x, int y, int z, int soundType, int pitch);
  void forceSave();
- void saveWithLoadingDisplay(bool saveEntities, client::gui::screen::LoadingDisplay* display);
+ void saveWithProgress(bool saveEntities, ChunkSource::SaveProgressCallback progress = nullptr);
  void updateWeatherCycles() override;
  bool savingDisabled = false;
  bool isSavingDisabled() const override { return savingDisabled; }

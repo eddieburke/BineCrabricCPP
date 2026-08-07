@@ -36,7 +36,7 @@ void emitCrossQuad(Tessellator& tessellator,
 }
 } // namespace
 bool CrossBlockRenderer::render(net::minecraft::block::Block& block, int x, int y, int z) {
- Tessellator& tessellator = *ctx_.tess;
+ Tessellator& tessellator = ctx_.tessellator();
  int colorMult = block.getColorMultiplier(ctx_.blockView, x, y, z);
  float red = (float)(colorMult >> 16 & 0xFF) / 255.0f;
  float green = (float)(colorMult >> 8 & 0xFF) / 255.0f;
@@ -57,7 +57,7 @@ bool CrossBlockRenderer::render(net::minecraft::block::Block& block, int x, int 
  return true;
 }
 void CrossBlockRenderer::render(net::minecraft::block::Block& block, int metadata, double x, double y, double z) {
- Tessellator& tessellator = *ctx_.tess;
+ Tessellator& tessellator = ctx_.tessellator();
  const int tex = ctx_.resolveTexture(0, block.getTexture(0, metadata));
  const net::minecraft::block::TerrainAtlasUv uv = net::minecraft::block::Block::terrainTileUv(tex);
  const double uMin = uv.uMin;

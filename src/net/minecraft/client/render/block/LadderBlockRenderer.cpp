@@ -4,7 +4,7 @@
 #include "net/minecraft/world/BlockView.hpp"
 namespace net::minecraft::client::render::block {
 bool LadderBlockRenderer::render(net::minecraft::block::Block& block, int x, int y, int z) {
- Tessellator& tessellator = *ctx_.tess;
+ Tessellator& tessellator = ctx_.tessellator();
  const int tex = ctx_.resolveTexture(0, block.getTexture(0));
  const net::minecraft::block::TerrainAtlasUv uv = net::minecraft::block::Block::terrainTileUv(tex);
  float brightness = 1.0f; // absolute light now comes from the lightmap

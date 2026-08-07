@@ -28,7 +28,7 @@ void DeathScreen::init() {
 void DeathScreen::render(int mouseX, int mouseY, float tickDelta) {
  {
   const render::RenderPassScope passScope(render::RenderType::gui());
-  draw::verticalGradientQuad(render::INSTANCE, 0, 0, width_, height_, 0x500000, 0x60, 0x600000, 0xA0);
+  draw::verticalGradientQuad(render::Tessellator::INSTANCE, 0, 0, width_, height_, 0x500000, 0x60, 0x600000, 0xA0);
  }
  if(textRenderer() != nullptr) {
   {

@@ -30,12 +30,12 @@
 namespace net::minecraft::test {
 namespace {
 using client::gl::GLCore;
-using client::render::PackSetting;
-using client::render::PackCatalog::directoryResources;
 using client::render::PackCompiler;
 using client::render::PackDefinition;
 using client::render::PackInstance;
 using client::render::PackLoader;
+using client::render::PackSetting;
+using client::render::PackCatalog::directoryResources;
 class ShaderGlIntegrationTest : public ::testing::Test {
  protected:
  static void SetUpTestSuite() {
@@ -96,7 +96,7 @@ std::string join(const std::vector<std::string>& lines) {
  }
  return output.str();
 }
-}
+} // namespace
 TEST_F(ShaderGlIntegrationTest, DrawBufferBindingQueryIsValid) {
  ASSERT_NE(GLCore::genFramebuffers, nullptr);
  ASSERT_NE(GLCore::bindFramebuffer, nullptr);
@@ -157,20 +157,15 @@ TEST_F(ShaderGlIntegrationTest, LowLevelCompilerRejectsNonCoreDialects) {
  EXPECT_FALSE(program.compileCompute("void main() {}\n", "#version 420 core\n"));
  EXPECT_EQ(program.lastError(), "compute shaders require #version 430 core or newer");
 }
-TEST_F(ShaderGlIntegrationTest, CacheSharesOneShaderJobAcrossKeys) {
+TEST_F(ShaderGlIntegrationTest, CacheCompilesComputePerKey) {
  client::gl::ProgramCache cache;
  const std::string source = R"(layout(local_size_x = 1) in;
 void main() {}
 )";
  const std::string preamble = "#version 430 core\n";
- const std::uint64_t first = cache.submitCompute("first", source, preamble);
- const std::uint64_t second = cache.submitCompute("second", source, preamble);
- ASSERT_NE(first, 0u);
- EXPECT_EQ(second, first);
- ASSERT_FALSE(cache.hasPending());
- EXPECT_NE(cache.getFromComputeSource("first", source, preamble), nullptr)
+ ASSERT_NE(cache.getFromComputeSource("first", source, preamble), nullptr)
      << cache.compileError("first");
- EXPECT_NE(cache.getFromComputeSource("second", source, preamble), nullptr)
+ ASSERT_NE(cache.getFromComputeSource("second", source, preamble), nullptr)
      << cache.compileError("second");
 }
 TEST_F(ShaderGlIntegrationTest, PrepareWriteCopiesReadTextureToWriteTexture) {
@@ -196,8 +191,7 @@ TEST_F(ShaderGlIntegrationTest, PrepareWriteCopiesReadTextureToWriteTexture) {
 }
 TEST_F(ShaderGlIntegrationTest, RenderPearlRgba16fPrepareWriteAndImageBinding) {
  client::render::ColorTargets targets;
- ASSERT_TRUE(targets.ensure(4, 4, {client::render::ColorFormat::Rgba8,
-                                    client::render::ColorFormat::Rgba16F}));
+ ASSERT_TRUE(targets.ensure(4, 4, {client::render::ColorFormat::Rgba8, client::render::ColorFormat::Rgba16F}));
  targets.bindGbuffers();
  const float source[4] = {0.25f, 0.5f, 0.75f, 1.0f};
  GLCore::clearBufferfv(0x1800, 1, source);
@@ -213,10 +207,11 @@ layout(rgba16f) uniform image2D colorimg1;
 void main() {
  imageStore(colorimg1, ivec2(gl_GlobalInvocationID.xy), vec4(0.125, 0.25, 0.5, 1.0));
 })",
-     "#version 430 core\n")) << program.lastError();
+     "#version 430 core\n"))
+     << program.lastError();
  program.bind();
  std::unordered_map<std::string, int> images{{"colortex1", static_cast<int>(targets.writeTexture(1))}};
-  ASSERT_EQ(client::render::bindColorImages(program, images, PackDefinition{}, &targets), 1u);
+ ASSERT_EQ(client::render::bindColorImages(program, images, PackDefinition{}, &targets), 1u);
  ASSERT_EQ(::glGetError(), 0u);
  GLCore::dispatchCompute(4, 4, 1);
  GLCore::memoryBarrier(0xFFFFFFFFu);
@@ -252,10 +247,11 @@ TEST_F(ShaderGlIntegrationTest, PreamblePublishesEverySupportedExtensionMacro) {
  }
  ASSERT_FALSE(first.empty());
  const std::string normalized = client::render::normalizePackSource(
+     definition,
      "#ifdef " + first + "\nraw_extension_enabled\n#endif\n"
-     "#ifdef MC_" + first + "\n"
-     "iris_extension_enabled\n#endif\n",
-     preamble);
+                         "#ifdef MC_" +
+         first + "\n"
+                 "iris_extension_enabled\n#endif\n");
  EXPECT_NE(normalized.find("raw_extension_enabled"), std::string::npos);
  EXPECT_NE(normalized.find("iris_extension_enabled"), std::string::npos);
 }
@@ -266,12 +262,12 @@ TEST_F(ShaderGlIntegrationTest, PreambleMatchesRenderStageAndLabPbrMacros) {
  const std::string preamble =
      client::render::versionPreamble(definition, "#version 430 core\n");
  static constexpr const char* names[] = {
-     "NONE",          "SKY",                 "SUNSET",         "CUSTOM_SKY",
-     "SUN",           "MOON",                "STARS",          "VOID",
+     "NONE", "SKY", "SUNSET", "CUSTOM_SKY",
+     "SUN", "MOON", "STARS", "VOID",
      "TERRAIN_SOLID", "TERRAIN_CUTOUT_MIPPED", "TERRAIN_CUTOUT", "ENTITIES",
-     "BLOCK_ENTITIES", "DESTROY",             "OUTLINE",        "DEBUG",
-     "HAND_SOLID",    "TERRAIN_TRANSLUCENT", "TRIPWIRE",       "PARTICLES",
-     "CLOUDS",        "RAIN_SNOW",           "WORLD_BORDER",   "HAND_TRANSLUCENT"};
+     "BLOCK_ENTITIES", "DESTROY", "OUTLINE", "DEBUG",
+     "HAND_SOLID", "TERRAIN_TRANSLUCENT", "TRIPWIRE", "PARTICLES",
+     "CLOUDS", "RAIN_SNOW", "WORLD_BORDER", "HAND_TRANSLUCENT"};
  for(std::size_t index = 0; index < std::size(names); ++index) {
   EXPECT_NE(preamble.find("#define MC_RENDER_STAGE_" + std::string(names[index]) + " " +
                           std::to_string(index) + "\n"),
@@ -304,10 +300,10 @@ void main() {
      client::render::versionPreamble(definition, vertexSource);
  const std::string vertex = client::render::prepareSource(
      "gbuffers_terrain", client::render::ShaderStage::Vertex,
-     definition, vertexSource, preamble);
+     definition, vertexSource);
  const std::string fragment = client::render::prepareSource(
      "gbuffers_terrain", client::render::ShaderStage::Fragment,
-     definition, fragmentSource, preamble);
+     definition, fragmentSource);
  client::gl::ShaderProgram program;
  EXPECT_TRUE(program.compile(vertex, fragment, preamble)) << program.lastError();
 }
@@ -354,9 +350,10 @@ TEST_F(ShaderGlIntegrationTest, RenderPearlCompilesEveryProgramInEveryDimension)
   }
   std::sort(names.begin(), names.end());
   for(const std::string& name : names) {
-   const auto log = [&failures, &dimension](PackInstance&, const std::string& message) {
-    failures.push_back(dimension + ": " + message);
-   };
+    const auto log = [&failures, &dimension](PackInstance&, const std::string& message,
+                                             net::minecraft::util::logging::LogLevel) {
+     failures.push_back(dimension + ": " + message);
+    };
    if(PackCompiler::compile(pack, name, log) == nullptr &&
       std::none_of(failures.begin(), failures.end(), [&dimension, &name](const std::string& failure) {
        return failure.starts_with(dimension + ": ") && failure.find("program '" + name + "'") != std::string::npos;
@@ -365,147 +362,147 @@ TEST_F(ShaderGlIntegrationTest, RenderPearlCompilesEveryProgramInEveryDimension)
    }
   }
  }
-  EXPECT_TRUE(failures.empty()) << join(failures);
+ EXPECT_TRUE(failures.empty()) << join(failures);
 }
 TEST_F(ShaderGlIntegrationTest, RenderPearlDeferredExposesImageUniforms) {
-  net::minecraft::test::installTestGlslSnippets();
-  const std::filesystem::path root =
-      std::filesystem::path(MINECRAFT_TEST_SOURCE_DIR) / "shaders" / "RenderPearl v2.8.0-beta.4";
-  PackInstance pack;
-  pack.path = root;
-  pack.directory = true;
-  const auto resources = directoryResources(root);
-  ASSERT_TRUE(PackLoader::load(
-      resources,
-      [&pack](std::string_view path) { return PackCompiler::readText(pack, std::string(path)); },
-      pack.definition, pack.sourceOptions, pack.summary.error))
-      << pack.summary.error;
-  pack.summary.valid = true;
-  pack.rootDefinition = pack.definition;
-  EXPECT_TRUE(pack.rootDefinition.requiredFeatures.contains("SEPARATE_HARDWARE_SAMPLERS"));
-  EXPECT_EQ(pack.rootDefinition.images.size(), 2u);
-  EXPECT_TRUE(std::any_of(pack.rootDefinition.customTextures.begin(), pack.rootDefinition.customTextures.end(),
-                          [](const auto& texture) { return texture.name == "areatex"; }));
-  EXPECT_TRUE(std::any_of(pack.rootDefinition.customTextures.begin(), pack.rootDefinition.customTextures.end(),
-                          [](const auto& texture) { return texture.name == "searchtex"; }));
-  for(const PackSetting& setting : pack.rootDefinition.settings) {
-   pack.settings.emplace(setting.key, setting.defaultValue);
-  }
-  pack.programs = std::make_unique<client::gl::ProgramCache>();
-  const auto log = [](PackInstance&, const std::string&) {};
-  client::gl::ShaderProgram* deferred = PackCompiler::compile(pack, "deferred#compute", log);
-  ASSERT_NE(deferred, nullptr) << "deferred#compute failed to compile";
-  ASSERT_TRUE(deferred->valid());
-  EXPECT_GE(deferred->location("colorimg1"), 0) << "deferred colorimg1 not found";
-  EXPECT_GE(deferred->location("colorimg0"), -1);
-  client::gl::ShaderProgram* composite = PackCompiler::compile(pack, "composite#compute", log);
-  ASSERT_NE(composite, nullptr) << "composite#compute failed to compile";
-  EXPECT_GE(composite->location("colorimg1"), 0) << "composite colorimg1 not found";
+ net::minecraft::test::installTestGlslSnippets();
+ const std::filesystem::path root =
+     std::filesystem::path(MINECRAFT_TEST_SOURCE_DIR) / "shaders" / "RenderPearl v2.8.0-beta.4";
+ PackInstance pack;
+ pack.path = root;
+ pack.directory = true;
+ const auto resources = directoryResources(root);
+ ASSERT_TRUE(PackLoader::load(
+     resources,
+     [&pack](std::string_view path) { return PackCompiler::readText(pack, std::string(path)); },
+     pack.definition, pack.sourceOptions, pack.summary.error))
+     << pack.summary.error;
+ pack.summary.valid = true;
+ pack.rootDefinition = pack.definition;
+ EXPECT_TRUE(pack.rootDefinition.requiredFeatures.contains("SEPARATE_HARDWARE_SAMPLERS"));
+ EXPECT_EQ(pack.rootDefinition.images.size(), 2u);
+ EXPECT_TRUE(std::any_of(pack.rootDefinition.customTextures.begin(), pack.rootDefinition.customTextures.end(),
+                         [](const auto& texture) { return texture.name == "areatex"; }));
+ EXPECT_TRUE(std::any_of(pack.rootDefinition.customTextures.begin(), pack.rootDefinition.customTextures.end(),
+                         [](const auto& texture) { return texture.name == "searchtex"; }));
+ for(const PackSetting& setting : pack.rootDefinition.settings) {
+  pack.settings.emplace(setting.key, setting.defaultValue);
+ }
+ pack.programs = std::make_unique<client::gl::ProgramCache>();
+ const auto log = [](PackInstance&, const std::string&, net::minecraft::util::logging::LogLevel) {};
+ client::gl::ShaderProgram* deferred = PackCompiler::compile(pack, "deferred#compute", log);
+ ASSERT_NE(deferred, nullptr) << "deferred#compute failed to compile";
+ ASSERT_TRUE(deferred->valid());
+ EXPECT_GE(deferred->location("colorimg1"), 0) << "deferred colorimg1 not found";
+ EXPECT_GE(deferred->location("colorimg0"), -1);
+ client::gl::ShaderProgram* composite = PackCompiler::compile(pack, "composite#compute", log);
+ ASSERT_NE(composite, nullptr) << "composite#compute failed to compile";
+ EXPECT_GE(composite->location("colorimg1"), 0) << "composite colorimg1 not found";
 }
 TEST_F(ShaderGlIntegrationTest, RenderPearlGbufferDrawBuffersParse) {
-  net::minecraft::test::installTestGlslSnippets();
-  const std::filesystem::path root =
-      std::filesystem::path(MINECRAFT_TEST_SOURCE_DIR) / "shaders" / "RenderPearl v2.8.0-beta.4";
-  PackInstance pack;
-  pack.path = root;
-  pack.directory = true;
-  const auto resources = directoryResources(root);
-  ASSERT_TRUE(PackLoader::load(
-      resources,
-      [&pack](std::string_view path) { return PackCompiler::readText(pack, std::string(path)); },
-      pack.definition, pack.sourceOptions, pack.summary.error))
-      << pack.summary.error;
-  pack.summary.valid = true;
-  pack.rootDefinition = pack.definition;
-  for(const PackSetting& setting : pack.rootDefinition.settings) {
-   pack.settings.emplace(setting.key, setting.defaultValue);
-  }
-  const auto dimension = pack.rootDefinition.dimensionDefinitions.find("*");
-  ASSERT_NE(dimension, pack.rootDefinition.dimensionDefinitions.end());
-  mergeDimension(pack.definition, *dimension->second);
-  ASSERT_TRUE(pack.definition.targets.contains("colortex1"));
-  ASSERT_TRUE(pack.definition.targets.contains("colortex2"));
-  EXPECT_EQ(pack.definition.targets.at("colortex1").format, "RGBA16F");
-  EXPECT_EQ(pack.definition.targets.at("colortex2").format, "RGBA32UI");
-  pack.programs = std::make_unique<client::gl::ProgramCache>();
-  const auto log = [](PackInstance&, const std::string&) {};
-  client::gl::ShaderProgram* terrain = PackCompiler::compile(pack, "gbuffers_terrain_solid", log);
-  ASSERT_NE(terrain, nullptr) << "gbuffers_terrain_solid failed to compile";
-  EXPECT_EQ(terrain->drawBufferColortexIndices(), (std::vector<int>{1, 2}));
+ net::minecraft::test::installTestGlslSnippets();
+ const std::filesystem::path root =
+     std::filesystem::path(MINECRAFT_TEST_SOURCE_DIR) / "shaders" / "RenderPearl v2.8.0-beta.4";
+ PackInstance pack;
+ pack.path = root;
+ pack.directory = true;
+ const auto resources = directoryResources(root);
+ ASSERT_TRUE(PackLoader::load(
+     resources,
+     [&pack](std::string_view path) { return PackCompiler::readText(pack, std::string(path)); },
+     pack.definition, pack.sourceOptions, pack.summary.error))
+     << pack.summary.error;
+ pack.summary.valid = true;
+ pack.rootDefinition = pack.definition;
+ for(const PackSetting& setting : pack.rootDefinition.settings) {
+  pack.settings.emplace(setting.key, setting.defaultValue);
+ }
+ const auto dimension = pack.rootDefinition.dimensionDefinitions.find("*");
+ ASSERT_NE(dimension, pack.rootDefinition.dimensionDefinitions.end());
+ mergeDimension(pack.definition, *dimension->second);
+ ASSERT_TRUE(pack.definition.targets.contains("colortex1"));
+ ASSERT_TRUE(pack.definition.targets.contains("colortex2"));
+ EXPECT_EQ(pack.definition.targets.at("colortex1").format, "RGBA16F");
+ EXPECT_EQ(pack.definition.targets.at("colortex2").format, "RGBA32UI");
+ pack.programs = std::make_unique<client::gl::ProgramCache>();
+ const auto log = [](PackInstance&, const std::string&, net::minecraft::util::logging::LogLevel) {};
+ client::gl::ShaderProgram* terrain = PackCompiler::compile(pack, "gbuffers_terrain_solid", log);
+ ASSERT_NE(terrain, nullptr) << "gbuffers_terrain_solid failed to compile";
+ EXPECT_EQ(terrain->drawBufferColortexIndices(), (std::vector<int>{1, 2}));
 }
 TEST_F(ShaderGlIntegrationTest, RenderPearlDeferredWriteBuffersMatchComposite) {
-  const std::filesystem::path root =
-      std::filesystem::path(MINECRAFT_TEST_SOURCE_DIR) / "shaders" / "RenderPearl v2.8.0-beta.4";
-  PackInstance pack;
-  pack.path = root;
-  pack.directory = true;
-  const auto resources = directoryResources(root);
-  ASSERT_TRUE(PackLoader::load(
-      resources,
-      [&pack](std::string_view path) { return PackCompiler::readText(pack, std::string(path)); },
-      pack.definition, pack.sourceOptions, pack.summary.error))
-      << pack.summary.error;
-  pack.summary.valid = true;
-  pack.rootDefinition = pack.definition;
-  for(const PackSetting& setting : pack.rootDefinition.settings) {
-   pack.settings.emplace(setting.key, setting.defaultValue);
-  }
-  const auto found = pack.rootDefinition.dimensionDefinitions.find("*");
-  ASSERT_NE(found, pack.rootDefinition.dimensionDefinitions.end());
-  const auto& selected = *found->second;
-  PackDefinition merged = pack.rootDefinition;
-  for(const auto& [name, program] : selected.programs) merged.programs[name] = program;
-  pack.definition = merged;
-  pack.programs = std::make_unique<client::gl::ProgramCache>();
-  const auto log = [](PackInstance&, const std::string&) {};
-  const auto terrainIt = merged.programs.find("gbuffers_terrain_solid");
-  ASSERT_NE(terrainIt, merged.programs.end());
-  const std::string src = terrainIt->second.fragment;
-  const std::string frag = PackCompiler::resolveIncludes(pack, src);
-  const std::string preamble = client::render::versionPreamble(pack.definition, frag);
-  const std::string prepared =
-      client::render::prepareSource("gbuffers_terrain_solid", client::render::ShaderStage::Fragment,
-                                    pack.definition, frag, preamble);
-  const std::vector<int> targets = client::render::parseRenderTargetIndices(prepared);
-  EXPECT_EQ(targets, (std::vector<int>{1, 2}));
-  client::gl::ShaderProgram* deferred = PackCompiler::compile(pack, "deferred#compute", log);
-  ASSERT_NE(deferred, nullptr);
-  int colorCount = 3;
-  std::vector<std::string> writeBuffers;
-  for(int i = 0; i < colorCount; ++i) {
-   if(deferred->location("colorimg" + std::to_string(i)) < 0) continue;
-   writeBuffers.push_back("colortex" + std::to_string(i));
-  }
-  EXPECT_EQ(writeBuffers, (std::vector<std::string>{"colortex1"}));
-  EXPECT_EQ(pack.definition.bufferObjects.size(), 5u);
-  EXPECT_EQ(pack.definition.images.size(), 2u);
+ const std::filesystem::path root =
+     std::filesystem::path(MINECRAFT_TEST_SOURCE_DIR) / "shaders" / "RenderPearl v2.8.0-beta.4";
+ PackInstance pack;
+ pack.path = root;
+ pack.directory = true;
+ const auto resources = directoryResources(root);
+ ASSERT_TRUE(PackLoader::load(
+     resources,
+     [&pack](std::string_view path) { return PackCompiler::readText(pack, std::string(path)); },
+     pack.definition, pack.sourceOptions, pack.summary.error))
+     << pack.summary.error;
+ pack.summary.valid = true;
+ pack.rootDefinition = pack.definition;
+ for(const PackSetting& setting : pack.rootDefinition.settings) {
+  pack.settings.emplace(setting.key, setting.defaultValue);
+ }
+ const auto found = pack.rootDefinition.dimensionDefinitions.find("*");
+ ASSERT_NE(found, pack.rootDefinition.dimensionDefinitions.end());
+ const auto& selected = *found->second;
+ PackDefinition merged = pack.rootDefinition;
+ for(const auto& [name, program] : selected.programs) merged.programs[name] = program;
+ pack.definition = merged;
+ pack.programs = std::make_unique<client::gl::ProgramCache>();
+ const auto log = [](PackInstance&, const std::string&, net::minecraft::util::logging::LogLevel) {};
+ const auto terrainIt = merged.programs.find("gbuffers_terrain_solid");
+ ASSERT_NE(terrainIt, merged.programs.end());
+ const std::string src = terrainIt->second.fragment;
+ const std::string frag = PackCompiler::resolveIncludes(pack, src);
+ const std::string preamble = client::render::versionPreamble(pack.definition, frag);
+ const std::string prepared =
+     client::render::prepareSource("gbuffers_terrain_solid", client::render::ShaderStage::Fragment,
+                                   pack.definition, frag);
+ const std::vector<int> targets = client::render::parseRenderTargetIndices(prepared);
+ EXPECT_EQ(targets, (std::vector<int>{1, 2}));
+ client::gl::ShaderProgram* deferred = PackCompiler::compile(pack, "deferred#compute", log);
+ ASSERT_NE(deferred, nullptr);
+ int colorCount = 3;
+ std::vector<std::string> writeBuffers;
+ for(int i = 0; i < colorCount; ++i) {
+  if(deferred->location("colorimg" + std::to_string(i)) < 0) continue;
+  writeBuffers.push_back("colortex" + std::to_string(i));
+ }
+ EXPECT_EQ(writeBuffers, (std::vector<std::string>{"colortex1"}));
+ EXPECT_EQ(pack.definition.bufferObjects.size(), 5u);
+ EXPECT_EQ(pack.definition.images.size(), 2u);
 }
 TEST_F(ShaderGlIntegrationTest, RenderPearlListsComputePassesAndPrograms) {
-  const std::filesystem::path root =
-      std::filesystem::path(MINECRAFT_TEST_SOURCE_DIR) / "shaders" / "RenderPearl v2.8.0-beta.4";
-  PackInstance pack;
-  pack.path = root;
-  pack.directory = true;
-  const auto resources = directoryResources(root);
-  ASSERT_TRUE(PackLoader::load(
-      resources,
-      [&pack](std::string_view path) { return PackCompiler::readText(pack, std::string(path)); },
-      pack.definition, pack.sourceOptions, pack.summary.error))
-      << pack.summary.error;
-  pack.summary.valid = true;
-  pack.rootDefinition = pack.definition;
-  for(const PackSetting& setting : pack.rootDefinition.settings) {
-   pack.settings.emplace(setting.key, setting.defaultValue);
-  }
-  for(const auto& [name, program] : pack.definition.programs) {
-   if(name.find("#compute") == std::string::npos) continue;
-   const std::string src = program.compute;
-   // Print which pass references it
-   for(const auto& pass : pack.definition.passes) {
-    if(pass.program == name) {
-     printf("[diag] pass=%s program=%s source=%s\n", pass.name.c_str(), name.c_str(), src.c_str());
-    }
+ const std::filesystem::path root =
+     std::filesystem::path(MINECRAFT_TEST_SOURCE_DIR) / "shaders" / "RenderPearl v2.8.0-beta.4";
+ PackInstance pack;
+ pack.path = root;
+ pack.directory = true;
+ const auto resources = directoryResources(root);
+ ASSERT_TRUE(PackLoader::load(
+     resources,
+     [&pack](std::string_view path) { return PackCompiler::readText(pack, std::string(path)); },
+     pack.definition, pack.sourceOptions, pack.summary.error))
+     << pack.summary.error;
+ pack.summary.valid = true;
+ pack.rootDefinition = pack.definition;
+ for(const PackSetting& setting : pack.rootDefinition.settings) {
+  pack.settings.emplace(setting.key, setting.defaultValue);
+ }
+ for(const auto& [name, program] : pack.definition.programs) {
+  if(name.find("#compute") == std::string::npos) continue;
+  const std::string src = program.compute;
+  // Print which pass references it
+  for(const auto& pass : pack.definition.passes) {
+   if(pass.program == name) {
+    printf("[diag] pass=%s program=%s source=%s\n", pass.name.c_str(), name.c_str(), src.c_str());
    }
   }
+ }
 }
-}
+} // namespace net::minecraft::test

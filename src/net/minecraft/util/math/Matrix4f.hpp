@@ -98,22 +98,7 @@ struct Matrix4f {
   m[13] = -(t + b) / (t - b);
   m[14] = -(f + n) / (f - n);
  }
- void perspective(float fovY, float aspect, float zNear, float zFar) {
-  float f = 1.0f / std::tan(fovY * 3.14159265f / 360.0f);
-  identity();
-  m[0] = f / aspect;
-  m[5] = f;
-  m[10] = (zFar + zNear) / (zNear - zFar);
-  m[11] = -1.0f;
-  m[14] = (2.0f * zFar * zNear) / (zNear - zFar);
-  m[15] = 0.0f;
- }
  void invert();
- void transpose() {
-  for(int i = 0; i < 4; ++i)
-   for(int j = i + 1; j < 4; ++j)
-    std::swap(m[i * 4 + j], m[j * 4 + i]);
- }
  static Matrix4f identityMatrix() {
   Matrix4f mat;
   mat.identity();
@@ -123,6 +108,11 @@ struct Matrix4f {
   outX = m[0] * x + m[4] * y + m[8] * z + m[12];
   outY = m[1] * x + m[5] * y + m[9] * z + m[13];
   outZ = m[2] * x + m[6] * y + m[10] * z + m[14];
+ }
+ void transformDirection(float x, float y, float z, float& outX, float& outY, float& outZ) const {
+  outX = m[0] * x + m[4] * y + m[8] * z;
+  outY = m[1] * x + m[5] * y + m[9] * z;
+  outZ = m[2] * x + m[6] * y + m[10] * z;
  }
 };
 } // namespace net::minecraft::util::math

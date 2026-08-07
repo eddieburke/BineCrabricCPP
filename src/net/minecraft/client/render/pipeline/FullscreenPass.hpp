@@ -12,7 +12,6 @@
 namespace net::minecraft::client::render {
 struct PackUniformValues;
 struct PackViewportValues;
-
 inline int shadowColorIndex(const std::string& name) {
  if(name.rfind("shadowcolor", 0) != 0) return -1;
  const std::string number = name.substr(11);
@@ -20,7 +19,6 @@ inline int shadowColorIndex(const std::string& name) {
  const int index = std::atoi(number.c_str());
  return index >= 0 && index < 8 ? index : -1;
 }
-
 inline int flipSideTextureId(int index,
                              const int* mainIds,
                              const int* altIds,
@@ -34,8 +32,8 @@ inline int flipSideTextureId(int index,
  }
  return id;
 }
-
-// IrisRenderingPipeline.java:640). Runs before the first fullscreen stage of a frame.
+// Runs the setup compute stage once per new viewport size, before the first
+// fullscreen pass of a frame (IrisRenderingPipeline.java:640).
 inline bool dispatchSetupIfNeeded(
     PackInstance& pack, const PackUniformValues& uniforms, const PackViewportValues* viewport, int width, int height,
     std::unordered_map<std::string, int>& textures,
@@ -60,5 +58,4 @@ inline bool dispatchSetupIfNeeded(
  pack.setupHeight = height;
  return true;
 }
-
 } // namespace net::minecraft::client::render

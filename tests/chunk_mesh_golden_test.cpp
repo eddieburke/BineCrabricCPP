@@ -120,9 +120,8 @@ MeshStats meshLayer(int layer, bool ambientOcclusion) {
  opts.fancyWater = true;
  Tessellator tessellator;
  tessellator.setCaptureOnly(true);
- client::render::block::BlockRenderManager manager(&snapshot, opts);
- manager.ctx.tess = &tessellator;
- bool began = false;
+  client::render::block::BlockRenderManager manager(tessellator, &snapshot, opts);
+  bool began = false;
  for(int x = 0; x < kSectionSize; ++x) {
   for(int z = 0; z < kSectionSize; ++z) {
    for(int y = 0; y < kSectionSize; ++y) {
@@ -221,9 +220,9 @@ TEST(ChunkMeshGolden, OutOfRangeReadsAreAirAndSkyLit) {
      kSectionSize + 1);
  // Far outside the captured columns.
  EXPECT_EQ(snapshot.getBlockId(500, 8, 500), 0);
- EXPECT_EQ(snapshot.getRawBrightness(500, 8, 500), 15);
- // Below and above the world.
- EXPECT_EQ(snapshot.getBlockId(0, -1, 0), 0);
- EXPECT_EQ(snapshot.getRawBrightness(0, Chunk::height + 4, 0), 15);
+  EXPECT_EQ(snapshot.getRawBrightness(500, 8, 500, true), 15);
+  // Below and above the world.
+  EXPECT_EQ(snapshot.getBlockId(0, -1, 0), 0);
+  EXPECT_EQ(snapshot.getRawBrightness(0, Chunk::height + 4, 0, true), 15);
 }
 } // namespace net::minecraft::test

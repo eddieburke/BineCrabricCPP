@@ -4,7 +4,7 @@
 #include "net/minecraft/world/BlockView.hpp"
 namespace net::minecraft::client::render::block {
 bool RailBlockRenderer::render(net::minecraft::block::RailBlock& rail, int x, int y, int z) {
- Tessellator& tessellator = *ctx_.tess;
+ Tessellator& tessellator = ctx_.tessellator();
  int meta = ctx_.blockView->getBlockMeta(x, y, z);
  const int tex = ctx_.resolveTexture(0, rail.getTexture(0, meta));
  if(rail.alwaysStraight) {

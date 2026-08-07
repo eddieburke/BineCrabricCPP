@@ -106,7 +106,7 @@ int loadBakedModel(const std::string& modId, const std::string& path, std::strin
  if(!detail::loadModelFile(modId, normalizedPath, merged, error)) {
   return 0;
  }
-  std::set<std::string> visited{normalizedPath};
+ std::set<std::string> visited{normalizedPath};
  std::string basePath = detail::directoryOf(normalizedPath);
  std::string parent = merged.parent;
  while(!parent.empty()) {
@@ -313,7 +313,7 @@ void applyWorldDrawTransform(net::minecraft::util::math::MatrixStack& pose, cons
   camY = eye[1];
   camZ = eye[2];
  } else {
-  const client::render::FrameRenderCamera& camera = client::render::RenderCameraState::instance().frame();
+   const client::render::FrameRenderCamera& camera = client::render::core::cameraFrame();
   camX = camera.eyeX;
   camY = camera.eyeY;
   camZ = camera.eyeZ;
@@ -417,9 +417,9 @@ void writeQuad(Tessellator& t,
  } else if(lightMode == QuadLightMode::Entity) {
   t.light(15, 15);
  }
-  t.color(quad.red, quad.green, quad.blue, quad.alpha * alphaScale);
-  for(int i = 0; i < 4; ++i) {
-   client::render::block::emitBlockVertex(t,
+ t.color(quad.red, quad.green, quad.blue, quad.alpha * alphaScale);
+ for(int i = 0; i < 4; ++i) {
+  client::render::block::emitBlockVertex(t,
                                          quad.nx,
                                          quad.ny,
                                          quad.nz,
@@ -437,7 +437,7 @@ bool forEachBakedQuad(const BakedModel& baked,
                       const BlockView* cullView,
                       BeginBatch beginBatch,
                       TakeQuad takeQuad) {
-  const bool placedAsBaked = transform.scale == 1.0f && transform.offsetX == 0.0f && transform.offsetY == 0.0f &&
+ const bool placedAsBaked = transform.scale == 1.0f && transform.offsetX == 0.0f && transform.offsetY == 0.0f &&
                             transform.offsetZ == 0.0f && transform.yaw == 0.0f && transform.pitch == 0.0f &&
                             transform.roll == 0.0f;
  const bool cullFaces = placedAsBaked && cullDraw != nullptr && cullView != nullptr;
@@ -461,8 +461,8 @@ bool forEachBakedQuad(const BakedModel& baked,
      vertices[i].x = quad.vertices[i].x;
      vertices[i].y = quad.vertices[i].y;
      vertices[i].z = quad.vertices[i].z;
-     } else {
-      double point[3] = {quad.vertices[i].x - 0.5, quad.vertices[i].y - 0.5, quad.vertices[i].z - 0.5};
+    } else {
+     double point[3] = {quad.vertices[i].x - 0.5, quad.vertices[i].y - 0.5, quad.vertices[i].z - 0.5};
      if(transform.pitch != 0.0f) {
       detail::rotatePoint(point, zeroOrigin, 'x', transform.pitch);
      }
@@ -513,16 +513,16 @@ bool writeBlockQuad(const BlockModelDraw& draw, const EmittedQuad& quad, int tex
  if(!draw.inventory && manager.ctx.textureOverride >= 0) {
   textureId = manager.ctx.textureOverride;
  }
-  manager.ctx.bindTextureFor(textureId);
-  Tessellator& t = draw.inventory ? *manager.ctx.tess : manager.ctx.activeTess(textureId);
-  const bool capturing = !draw.inventory && manager.ctx.modMeshes != nullptr;
-  const double baseX = draw.inventory ? 0.0 : static_cast<double>(draw.x);
-  const double baseY = draw.inventory ? 0.0 : static_cast<double>(draw.y);
-  const double baseZ = draw.inventory ? 0.0 : static_cast<double>(draw.z);
-  if(!capturing) {
-   t.startQuads();
-  }
-  const QuadLightMode lightMode = draw.inventory ? QuadLightMode::Absolute : QuadLightMode::Preserve;
+ manager.ctx.bindTextureFor(textureId);
+ Tessellator& t = draw.inventory ? *manager.ctx.tess : manager.ctx.activeTess(textureId);
+ const bool capturing = !draw.inventory && manager.ctx.modMeshes != nullptr;
+ const double baseX = draw.inventory ? 0.0 : static_cast<double>(draw.x);
+ const double baseY = draw.inventory ? 0.0 : static_cast<double>(draw.y);
+ const double baseZ = draw.inventory ? 0.0 : static_cast<double>(draw.z);
+ if(!capturing) {
+  t.startQuads();
+ }
+ const QuadLightMode lightMode = draw.inventory ? QuadLightMode::Absolute : QuadLightMode::Preserve;
  writeQuad(t, quad, baseX, baseY, baseZ, draw.brightness, 1.0f, lightMode);
  if(!capturing) {
   t.draw();
@@ -578,8 +578,8 @@ bool drawLuaBlockWorld(BlockRenderManager& manager, Block& block, int x, int y, 
  if(baked == nullptr) {
   return false;
  }
-  const BlockModelDraw draw{&manager, &block, x, y, z, false, 1.0f};
-  const BakedQuadTransform transform =
+ const BlockModelDraw draw{&manager, &block, x, y, z, false, 1.0f};
+ const BakedQuadTransform transform =
      spec->coordinateBounds || spec->coordinateColor ? coordinateQuadTransform(*spec, x, y, z) : BakedQuadTransform{};
  return drawBakedBlockModel(draw, *baked, transform);
 }
@@ -649,10 +649,10 @@ bool drawBakedModelWorld(int handle, const WorldModelDraw& options) {
   return false;
  }
  const float brightness = worldBrightness(options);
-  const bool textured = !baked->batches.empty() && !baked->batches.front().texturePath.empty();
-  if(!textured) {
-   return false;
-  }
+ const bool textured = !baked->batches.empty() && !baked->batches.front().texturePath.empty();
+ if(!textured) {
+  return false;
+ }
  const ModLuaDrawScope modCaps(true, options.blend, options.cull, options.depthTest, options.depthWrite,
                                options.layer);
  const client::render::core::EntityIdScope entityIdScope(resolveDrawEntityId(options));
@@ -709,10 +709,10 @@ bool drawBakedModelWorld(int handle, const WorldModelDraw& options) {
       open = true;
       return true;
      },
-      [&](const BakedTextureBatch& /*batch*/, const EmittedQuad& quad) {
-       if(quad.coplanarBackFace) {
-        return;
-       }
+     [&](const BakedTextureBatch& /*batch*/, const EmittedQuad& quad) {
+      if(quad.coplanarBackFace) {
+       return;
+      }
       writeQuad(tess, quad, 0.0, 0.0, 0.0, brightness, options.alpha, lightMode);
       drew = true;
      });
@@ -727,18 +727,18 @@ bool drawBakedModelWorld(int handle, const WorldModelDraw& options) {
 void drawExtrudedSprite(Tessellator& tess, float uMin, float uMax, float vMin, float vMax) {
  constexpr float itemWidth = 1.0f;
  constexpr float depth = 0.0625f;
-  tess.startQuads();
-  tess.normal(0.0f, 0.0f, 1.0f);
-  tess.vertex(0.0, 0.0, 0.0, uMax, vMax);
-  tess.vertex(itemWidth, 0.0, 0.0, uMin, vMax);
-  tess.vertex(itemWidth, 1.0, 0.0, uMin, vMin);
-  tess.vertex(0.0, 1.0, 0.0, uMax, vMin);
-  tess.normal(0.0f, 0.0f, -1.0f);
-  tess.vertex(0.0, 1.0, 0.0 - depth, uMax, vMin);
-  tess.vertex(itemWidth, 1.0, 0.0 - depth, uMin, vMin);
-  tess.vertex(itemWidth, 0.0, 0.0 - depth, uMin, vMax);
-  tess.vertex(0.0, 0.0, 0.0 - depth, uMax, vMax);
-  tess.normal(-1.0f, 0.0f, 0.0f);
+ tess.startQuads();
+ tess.normal(0.0f, 0.0f, 1.0f);
+ tess.vertex(0.0, 0.0, 0.0, uMax, vMax);
+ tess.vertex(itemWidth, 0.0, 0.0, uMin, vMax);
+ tess.vertex(itemWidth, 1.0, 0.0, uMin, vMin);
+ tess.vertex(0.0, 1.0, 0.0, uMax, vMin);
+ tess.normal(0.0f, 0.0f, -1.0f);
+ tess.vertex(0.0, 1.0, 0.0 - depth, uMax, vMin);
+ tess.vertex(itemWidth, 1.0, 0.0 - depth, uMin, vMin);
+ tess.vertex(itemWidth, 0.0, 0.0 - depth, uMin, vMax);
+ tess.vertex(0.0, 0.0, 0.0 - depth, uMax, vMax);
+ tess.normal(-1.0f, 0.0f, 0.0f);
  for(int slice = 0; slice < 16; ++slice) {
   const float t = static_cast<float>(slice) / 16.0f;
   const float u = uMax + (uMin - uMax) * t - 0.001953125f;
@@ -747,38 +747,38 @@ void drawExtrudedSprite(Tessellator& tess, float uMin, float uMax, float vMin, f
   tess.vertex(x, 0.0, 0.0, u, vMax);
   tess.vertex(x, 1.0, 0.0, u, vMin);
   tess.vertex(x, 1.0, 0.0 - depth, u, vMin);
-  }
-  tess.normal(1.0f, 0.0f, 0.0f);
-  for(int slice = 0; slice < 16; ++slice) {
-   const float t = static_cast<float>(slice) / 16.0f;
-   const float u = uMax + (uMin - uMax) * t - 0.001953125f;
-   const float x = itemWidth * t + 0.0625f;
-   tess.vertex(x, 1.0, 0.0 - depth, u, vMin);
-   tess.vertex(x, 1.0, 0.0, u, vMin);
-   tess.vertex(x, 0.0, 0.0, u, vMax);
-   tess.vertex(x, 0.0, 0.0 - depth, u, vMax);
-  }
-  tess.normal(0.0f, 1.0f, 0.0f);
-  for(int slice = 0; slice < 16; ++slice) {
-   const float t = static_cast<float>(slice) / 16.0f;
-   const float v = vMax + (vMin - vMax) * t - 0.001953125f;
-   const float y = itemWidth * t + 0.0625f;
-   tess.vertex(0.0, y, 0.0, uMax, v);
-   tess.vertex(itemWidth, y, 0.0, uMin, v);
-   tess.vertex(itemWidth, y, 0.0 - depth, uMin, v);
-   tess.vertex(0.0, y, 0.0 - depth, uMax, v);
-  }
-  tess.normal(0.0f, -1.0f, 0.0f);
-  for(int slice = 0; slice < 16; ++slice) {
-   const float t = static_cast<float>(slice) / 16.0f;
-   const float v = vMax + (vMin - vMax) * t - 0.001953125f;
-   const float y = itemWidth * t;
-   tess.vertex(itemWidth, y, 0.0, uMin, v);
-   tess.vertex(0.0, y, 0.0, uMax, v);
-   tess.vertex(0.0, y, 0.0 - depth, uMax, v);
-   tess.vertex(itemWidth, y, 0.0 - depth, uMin, v);
-  }
-  tess.draw();
+ }
+ tess.normal(1.0f, 0.0f, 0.0f);
+ for(int slice = 0; slice < 16; ++slice) {
+  const float t = static_cast<float>(slice) / 16.0f;
+  const float u = uMax + (uMin - uMax) * t - 0.001953125f;
+  const float x = itemWidth * t + 0.0625f;
+  tess.vertex(x, 1.0, 0.0 - depth, u, vMin);
+  tess.vertex(x, 1.0, 0.0, u, vMin);
+  tess.vertex(x, 0.0, 0.0, u, vMax);
+  tess.vertex(x, 0.0, 0.0 - depth, u, vMax);
+ }
+ tess.normal(0.0f, 1.0f, 0.0f);
+ for(int slice = 0; slice < 16; ++slice) {
+  const float t = static_cast<float>(slice) / 16.0f;
+  const float v = vMax + (vMin - vMax) * t - 0.001953125f;
+  const float y = itemWidth * t + 0.0625f;
+  tess.vertex(0.0, y, 0.0, uMax, v);
+  tess.vertex(itemWidth, y, 0.0, uMin, v);
+  tess.vertex(itemWidth, y, 0.0 - depth, uMin, v);
+  tess.vertex(0.0, y, 0.0 - depth, uMax, v);
+ }
+ tess.normal(0.0f, -1.0f, 0.0f);
+ for(int slice = 0; slice < 16; ++slice) {
+  const float t = static_cast<float>(slice) / 16.0f;
+  const float v = vMax + (vMin - vMax) * t - 0.001953125f;
+  const float y = itemWidth * t;
+  tess.vertex(itemWidth, y, 0.0, uMin, v);
+  tess.vertex(0.0, y, 0.0, uMax, v);
+  tess.vertex(0.0, y, 0.0 - depth, uMax, v);
+  tess.vertex(itemWidth, y, 0.0 - depth, uMin, v);
+ }
+ tess.draw();
 }
 bool drawItemStackWorld(const ItemStack& stack, const WorldModelDraw& options) {
  if(!runtime::ModWorldDrawContext::active() || client::Minecraft::INSTANCE == nullptr) {
@@ -803,22 +803,26 @@ bool drawItemStackWorld(const ItemStack& stack, const WorldModelDraw& options) {
  applyWorldDrawTransform(pose, options);
  core::setDrawPose(pose.top());
  client::texture::TextureManager& textures = client::Minecraft::INSTANCE->textureManager;
-  if(custom) {
-   pose.translate(-0.5f, -options.pivotY, -0.5f);
-   core::setDrawPose(pose.top());
-   textures.bindTexture(
-       client::render::resolveBlockTexture(stack.getTextureId(), textures, ItemModelRenderer::atlasDomain(stack)).glId);
-   return drawLuaItemModel(worldDrawTessellator(), stack, modCaps.usesEntityLighting() ? 1.0f : brightness);
-  }
-  if(blockModel) {
-   if(options.pivotY != 0.5f) {
+ if(custom) {
+  pose.translate(-0.5f, -options.pivotY, -0.5f);
+  core::setDrawPose(pose.top());
+  textures.bindTexture(
+      client::render::resolveBlockTexture(stack.getTextureId(), textures, ItemModelRenderer::atlasDomain(stack)).glId);
+  return drawLuaItemModel(worldDrawTessellator(), stack, modCaps.usesEntityLighting() ? 1.0f : brightness);
+ }
+ if(blockModel) {
+  if(options.pivotY != 0.5f) {
    pose.translate(0.0f, 0.5f - options.pivotY, 0.0f);
    core::setDrawPose(pose.top());
   }
   textures.bindTexture(client::render::resolveBlockTexture(block->textureId, textures,
-                                                            client::render::AtlasDomain::Terrain)
+                                                           client::render::AtlasDomain::Terrain)
                            .glId);
-  static BlockRenderManager itemDropBlockManager;
+   static BlockRenderManager itemDropBlockManager(Tessellator::INSTANCE);
+   // Same buffer the custom-model and sprite branches above use. Sharing the
+   // frame's Tessellator::INSTANCE here interleaves this draw with whatever the
+   // world renderer already has open.
+   itemDropBlockManager.ctx.tess = &worldDrawTessellator();
   auto* previousTextureManager = itemDropBlockManager.ctx.textureManager;
   const bool previousUseAo = itemDropBlockManager.ctx.faceState.useAo;
   itemDropBlockManager.ctx.textureManager = &textures;
@@ -828,9 +832,9 @@ bool drawItemStackWorld(const ItemStack& stack, const WorldModelDraw& options) {
   itemDropBlockManager.ctx.faceState.useAo = previousUseAo;
   return true;
  }
-   const auto uv = ItemModelRenderer::spriteUv(stack);
-  pose.translate(-0.5f, -options.pivotY, 0.0625f * 0.5f);
-  core::setDrawPose(pose.top());
+ const auto uv = ItemModelRenderer::spriteUv(stack);
+ pose.translate(-0.5f, -options.pivotY, 0.0625f * 0.5f);
+ core::setDrawPose(pose.top());
  textures.bindTexture(
      client::render::resolveBlockTexture(stack.getTextureId(), textures, ItemModelRenderer::atlasDomain(stack)).glId);
  {
@@ -883,7 +887,7 @@ bool itemStackBounds(const ItemStack& stack, BakedBounds& outBounds) {
   outBounds.empty = false;
   return true;
  }
-  constexpr float depth = 0.0625f;
+ constexpr float depth = 0.0625f;
  outBounds.min[0] = 0.0f;
  outBounds.min[1] = 0.0f;
  outBounds.min[2] = -depth;
@@ -1011,8 +1015,8 @@ model::WorldModelDraw readWorldModelDraw(lua_State* state, int optsIndex) {
   if(options.brightness >= 0.0f) {
    options.brightness = std::clamp(options.brightness, 0.0f, 1.0f);
   }
-   options.alpha = std::clamp(luaFloatField(state, optsIndex, "a", 1.0f), 0.0f, 1.0f);
-   options.blend = luaBoolField(state, optsIndex, "blend", false);
+  options.alpha = std::clamp(luaFloatField(state, optsIndex, "a", 1.0f), 0.0f, 1.0f);
+  options.blend = luaBoolField(state, optsIndex, "blend", false);
   options.cull = luaBoolField(state, optsIndex, "cull", true);
   options.depthTest = luaBoolField(state, optsIndex, "depth_test", true);
   options.depthWrite = luaBoolField(state, optsIndex, "depth_write", true);
@@ -1142,8 +1146,8 @@ int luaModelBuild(lua_State* state) {
   api.pushstring(state, "model.build requires at least one quad");
   return 2;
  }
-  model::computeBakedBounds(*baked);
-  static std::atomic<std::uint64_t> anonCounter{0};
+ model::computeBakedBounds(*baked);
+ static std::atomic<std::uint64_t> anonCounter{0};
  const std::string storeKey = key.empty() ? ("\x01build#" + std::to_string(anonCounter.fetch_add(1))) : key;
  api.pushinteger(state, model::storeBakedModel(storeKey, std::move(baked)));
  return 1;

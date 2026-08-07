@@ -11,7 +11,7 @@ class Minecraft;
 namespace option {
 struct RenderSettings;
 }
-}
+} // namespace net::minecraft::client
 namespace net::minecraft::client::render {
 struct FrameRenderCamera;
 }
@@ -37,12 +37,12 @@ enum class RenderStage : int {
  Debug,
  HandSolid,
  TerrainTranslucent,
-  Tripwire,
-  Particles,
-  Clouds,
-  RainSnow,
-  WorldBorder,
-  HandTranslucent
+ Tripwire,
+ Particles,
+ Clouds,
+ RainSnow,
+ WorldBorder,
+ HandTranslucent
 };
 struct WorldLightUniforms {
  bool enabled = false;
@@ -69,7 +69,7 @@ struct FogUniforms {
  bool modExponential = false;
  float modStart = 0.2f;
  float modEnd = 0.8f;
-  float modDensity = 0.1f;
+ float modDensity = 0.1f;
 };
 // Java Iris uploads the GL fog-mode constants (0 / GL_LINEAR / GL_EXP2); the
 // engine keeps internal 1/2/3 (0 off, 1 linear, 2 exp, 3 exp2) and maps at the
@@ -246,8 +246,8 @@ struct RenderPass {
  bool hasColor = false;
  bool hasNormals = false;
  FogUniforms fog{};
-  ShaderProgram* programOverride = nullptr;
-  bool fullscreen = false;
+ ShaderProgram* programOverride = nullptr;
+ bool fullscreen = false;
 };
 // ONE convention, Iris'. There are exactly two pieces of per-draw matrix state:
 //
@@ -262,10 +262,10 @@ struct RenderPass {
 // forgets to publish a pose draws at the camera, visibly, rather than silently
 // picking up a matrix that happens to contain a translation.
 void setDrawCameraState(const float* modelView,
-                       const float* projection,
-                       const float* modelViewInverse,
-                       const float* projectionInverse,
-                       const float* cameraPosition);
+                        const float* projection,
+                        const float* modelViewInverse,
+                        const float* projectionInverse,
+                        const float* cameraPosition);
 void setDrawCameraStateFromCamera(const FrameRenderCamera& camera);
 void clearDrawCameraState();
 [[nodiscard]] bool drawCameraStateValid() noexcept;
@@ -284,11 +284,6 @@ void setPassModelView(const math::Matrix4f& modelView) noexcept;
 // see src/net/minecraft/client/render/Tessellator.cpp vertex
 void setDrawPose(const math::Matrix4f& pose) noexcept;
 [[nodiscard]] const math::Matrix4f& drawPose() noexcept;
-void resetDrawPose() noexcept;
-// TEMP DIAGNOSTIC — what bindAndUploadUniforms last actually sent to the program.
-// Probes must read these, not the RenderPass they handed in.
-[[nodiscard]] const math::Matrix4f& uploadedModelView() noexcept;
-[[nodiscard]] const math::Matrix4f& uploadedProjection() noexcept;
 // Why the pose is baked and never uploaded: packs cut gl_ModelViewMatrix to a mat3
 // (RenderPearl's shadow.vsh does), which silently discards whatever translation is
 // left in it. Any pose parked in the matrix therefore vanishes in the shadow pass
@@ -339,13 +334,24 @@ void setSkyUniforms(const SkyUniforms& sky);
 // before any consumer runs; SunLight, SkyUniforms, WorldLightUniforms, FrameData's
 // pack uniforms and the shadow camera all read it instead of re-deriving the angle.
 // see src/net/minecraft/client/render/celestial/CelestialState.hpp
-void setCelestialState(const CelestialState& state);
-[[nodiscard]] const CelestialState& celestialState();
+ void setCelestialState(const CelestialState& state);
+ [[nodiscard]] const CelestialState& celestialState();
+ // The frame's single camera. GameRenderer publishes it once per frame; pipeline
+ // stages, entity/particle renderers, world renderers and Lua bindings read the
+ // single iris camera frame instead of re-deriving camera state from the vanilla
+ // camera entity. see src/net/minecraft/client/render/camera/FrameRenderCamera.hpp
+ void setCameraFrame(FrameRenderCamera camera);
+ [[nodiscard]] const FrameRenderCamera& cameraFrame();
 const SkyUniforms& skyUniforms();
 bool ensureReady();
 ShaderProgram* program();
 void bindAndUploadUniforms(const RenderPass& pass);
 void submit(const RenderPass& pass);
+// Indexed draw for geometry that owns its VBO and uses the shared quad index
+// buffer (terrain sections). Same uniform path as submit() — never issue a raw
+// glDrawElements for world geometry, or the draw inherits the previous
+// chunkOffset instead of its own.
+void submitIndexedQuads(const RenderPass& pass, unsigned indexBuffer, int indexCount);
 // Pending section-local terrain params for Tessellator / bound-buffer draws.
 void setPendingTerrainDraw(float chunkOffsetX, float chunkOffsetY, float chunkOffsetZ);
 void clearPendingTerrainDraw();

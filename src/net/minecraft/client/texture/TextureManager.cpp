@@ -18,6 +18,7 @@
 #include "net/minecraft/client/texture/ImageDownload.hpp"
 #include "net/minecraft/client/texture/SkinImageProcessor.hpp"
 #include "net/minecraft/mod/runtime/ModHost.hpp"
+#include "net/minecraft/util/PathUtil.hpp"
 #include "net/minecraft/registry/TextureRegistry.hpp"
 #include "net/minecraft/world/World.hpp"
 #ifdef _WIN32
@@ -115,7 +116,7 @@ int smoothBlend(int color1, int color2) {
 // Cutout/cross models sample high mips when a plane is nearly edge-on. Soft
 // alpha in those mips passes alphaTest (~0.1) as opaque grey/mud and draws as
 // thin vertical strips. Quantize like vanilla/OptiFine cutout mips: majority
-// transparent → fully discarded; majority opaque → solid.
+// transparent -> fully discarded; majority opaque -> solid.
 int mipBlend(int color1, int color2) {
  const int blended = smoothBlend(color1, color2);
  if(((blended >> 24) & 0xFF) < 128) {
@@ -204,7 +205,6 @@ TextureManager::TextureManager(option::GameOptions* options) : gameOptions_(opti
  // OpenGL calls require an active context (created in Minecraft::init).
 }
 void TextureManager::setTexturePacks(resource::pack::TexturePacks* texturePacks) {
- companionTextures_.clear();
  texturePacks_ = texturePacks;
 }
 RasterImage TextureManager::loadRasterForResource(const std::string& resourcePath) {
@@ -231,12 +231,6 @@ void TextureManager::ensureMissingTexture() {
  missingTextureId_ = static_cast<int>(id);
  missingTextureReady_ = true;
 }
-std::string TextureManager::normalizePath(std::string path) {
- while(!path.empty() && (path.front() == '/' || path.front() == '\\')) {
-  path.erase(path.begin());
- }
- return path;
-}
 std::vector<std::uint8_t> TextureManager::rasterToRgba(const RasterImage& image) {
  std::vector<std::uint8_t> rgba(static_cast<std::size_t>(image.width) * image.height * 4);
  for(int y = 0; y < image.height; ++y) {
@@ -252,7 +246,7 @@ std::vector<std::uint8_t> TextureManager::rasterToRgba(const RasterImage& image)
  return rgba;
 }
 std::filesystem::path TextureManager::resolveResourcePath(const std::string& path) {
- const std::string normalized = normalizePath(path);
+ const std::string normalized = net::minecraft::util::normalizePath(path);
  const mod::runtime::ModHost& modHost = mod::runtime::host();
  if(modHost.initialized()) {
   if(const std::optional<std::filesystem::path> modPath = modHost.resolveResourcePath(normalized);
@@ -334,7 +328,6 @@ RasterImage TextureManager::loadRasterFromUrl(const std::string& url, bool useBe
 #endif
 }
 void TextureManager::deleteTexture(int textureId) {
- companionTextures_.clear();
  render::PbrTextures::onDeleteTexture(textureId);
  images_.erase(textureId);
  textureDimensions_.erase(textureId);
@@ -375,7 +368,7 @@ int TextureManager::downloadTexture(const std::string& url, const std::string& b
  return imageDownload->textureId;
 }
 ImageDownload* TextureManager::downloadImage(const std::string& url,
-                                             ImageProcessor* processor,
+                                             SkinImageProcessor* processor,
                                              bool useBetacraftProxy) {
  if(url.empty()) {
   return nullptr;
@@ -468,7 +461,7 @@ int TextureManager::getTextureId(const std::string& path) {
   texturePaths_.try_emplace(missingTextureId_, path);
   return missingTextureId_;
  }
- const std::string normalizedPath = normalizePath(spec.resourcePath);
+ const std::string normalizedPath = net::minecraft::util::normalizePath(spec.resourcePath);
  if(normalizedPath == "mob/char.png") {
   static SkinImageProcessor skinProcessor;
   image = skinProcessor.process(image);
@@ -537,26 +530,7 @@ std::string TextureManager::getCompanionTexturePath(int textureId, std::string_v
  }
  return {};
 }
-int TextureManager::getCompanionTextureId(int textureId, std::string_view suffix) {
- if(textureId <= 0 || suffix.empty()) {
-  return -1;
- }
- const int slot = suffix == "_n" ? 0 : suffix == "_s" ? 1 : -1;
- if(slot >= 0) {
-  const auto cached = companionTextures_.find(textureId);
-  if(cached != companionTextures_.end() && cached->second[slot] != 0) {
-   return cached->second[slot];
-  }
- }
- const std::string companion = getCompanionTexturePath(textureId, suffix);
- const int result = companion.empty() ? -1 : getTextureId(companion);
- if(slot >= 0) {
-  companionTextures_[textureId][slot] = result;
- }
- return result;
-}
 void TextureManager::reload() {
- companionTextures_.clear();
  net::minecraft::registry::TextureRegistry::invalidateGlIds();
  if(texturePacks_ == nullptr) {
   return;
@@ -592,8 +566,6 @@ void TextureManager::reload() {
    colors[i] = static_cast<int>(image.argb[i]);
   }
  }
- // The re-upload loop above clobbered any LabPBR mip levels / sampler
- // parameters applied to companion textures; drop the PBR cache so the next
  // resolution re-applies them (Java: MixinTextureManager ->
  // PBRTextureManager.clear()).
  render::PbrTextures::clear();
@@ -632,8 +604,6 @@ void TextureManager::load(const RasterImage& image, int id) {
  } textureState{previousBoundTexture};
  std::vector<std::uint8_t> rgba = rasterToRgba(image);
  render::core::bindTexture(id);
- // Faithful to TextureManager.load: default GL_NEAREST (pixelated), mipmap or
- // blur override it; wrap is REPEAT unless clamp.
  if(MIPMAP) {
   const int minFilter = MIPMAP_LINEAR ? gl::filter::LinearMipmapLinear : gl::filter::NearestMipmapLinear;
   ::glTexParameteri(gl::cap::Texture2D, gl::tex::MinFilter, minFilter);
@@ -743,7 +713,7 @@ void TextureManager::tick() {
    continue;
   }
   std::copy(texture->pixels.begin(), texture->pixels.end(), imageBuffer.begin());
-   render::core::bindTexture(texture->copyTo);
+  render::core::bindTexture(texture->copyTo);
   ::glTexSubImage2D(
       gl::cap::Texture2D, 0, 0, 0, 16, 16, gl::pixel::Rgba, gl::pixel::UnsignedByte, imageBuffer.data());
   if(MIPMAP) {

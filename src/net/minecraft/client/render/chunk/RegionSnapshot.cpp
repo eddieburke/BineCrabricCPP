@@ -7,6 +7,24 @@
 #include "net/minecraft/world/chunk/Chunk.hpp"
 namespace net::minecraft::client::render::chunk {
 namespace {
+// ChunkRenderWriteScope used to live in its own header for a single call site.
+// Inlined here: spinlock acquire on the chunk so a server-tick block/light
+// mutation never tears a band being copied, cross-thread exclusive, re-entrant
+// on the same thread. RAII because the copy below has early returns.
+class ChunkRenderWriteLock {
+ public:
+ explicit ChunkRenderWriteLock(const Chunk& chunk) : chunk_(chunk) {
+  chunk_.lockRenderWrite();
+ }
+ ~ChunkRenderWriteLock() {
+  chunk_.unlockRenderWrite();
+ }
+ ChunkRenderWriteLock(const ChunkRenderWriteLock&) = delete;
+ ChunkRenderWriteLock& operator=(const ChunkRenderWriteLock&) = delete;
+
+ private:
+ const Chunk& chunk_;
+};
 [[nodiscard]] std::size_t minBlockBytesForBand(int minY, int ySpan) noexcept {
  return static_cast<std::size_t>((15 << 11) | (15 << 7) | minY) + static_cast<std::size_t>(ySpan);
 }
@@ -39,7 +57,7 @@ void copyChunkBand(std::vector<std::uint8_t>& blocks,
                    int halfSpan,
                    std::size_t blockBytes,
                    std::size_t nibbleBytes) {
- const ChunkRenderWriteScope guard(chunk);
+ ChunkRenderWriteLock guard(chunk);
  const std::size_t blockNeed = minBlockBytesForBand(minY, ySpan);
  if(chunk.blocks.size() < blockNeed) {
   blocks.assign(blockBytes, 0);
@@ -172,14 +190,14 @@ int RegionSnapshot::getBlockMeta(int x, int y, int z) const {
  return nibbleAt(chunk->meta, x & 0xF, y, z & 0xF);
 }
 float RegionSnapshot::getNaturalBrightness(int x, int y, int z, int blockLight) const {
- int brightness = getRawBrightness(x, y, z);
+ int brightness = getRawBrightness(x, y, z, true);
  if(brightness < blockLight) {
   brightness = blockLight;
  }
  return lightLevelToLuminance_[static_cast<std::size_t>(brightness)];
 }
 float RegionSnapshot::getLightBrightness(int x, int y, int z) const {
- return lightLevelToLuminance_[static_cast<std::size_t>(getRawBrightness(x, y, z))];
+ return lightLevelToLuminance_[static_cast<std::size_t>(getRawBrightness(x, y, z, true))];
 }
 int RegionSnapshot::getRawBrightness(int x, int y, int z, bool useNeighborLight) const {
  if(x < -32000000 || z < -32000000 || x >= 32000000 || z > 32000000) {

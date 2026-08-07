@@ -25,5 +25,4 @@ bool spawnClientParticle(double x,
                          float gravity);
 bool readPlayerPosition(double& x, double& y, double& z);
 int getBlockIdAt(World* world, int x, int y, int z);
-float normalizedCelestial(const World* world, float tickDelta);
 } // namespace net::minecraft::mod::lua

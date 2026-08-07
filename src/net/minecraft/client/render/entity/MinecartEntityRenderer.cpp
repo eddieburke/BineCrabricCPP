@@ -11,7 +11,7 @@ namespace {
 constexpr int kChestBlockId = 54;
 constexpr int kFurnaceBlockId = 61;
 } // namespace
-MinecartEntityRenderer::MinecartEntityRenderer() : blockRenderManager_() {
+MinecartEntityRenderer::MinecartEntityRenderer() : blockRenderManager_(Tessellator::INSTANCE) {
  shadowRadius = 0.5f;
  model_ = new model::MinecartEntityModel();
 }

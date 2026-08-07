@@ -1,8 +1,6 @@
 #pragma once
 #include <cstdint>
-#include <stdexcept>
 #include <vector>
-#include "net/minecraft/client/gl/GLCore.hpp"
 namespace net::minecraft::client::render {
 template <typename TVertex>
 class BufferBuilder {
@@ -58,7 +56,7 @@ class BufferBuilder {
    builder.nextVertex();
   }
  };
- BufferBuilder(std::size_t initialCapacity = 2097152) {
+ BufferBuilder(std::size_t initialCapacity = 4096) {
   buffer_.reserve(initialCapacity);
  }
  void begin(int drawMode) {
@@ -97,9 +95,6 @@ class BufferBuilder {
  void nextVertex() {
   vertexCount_++;
  }
- void end() {
-  // optional validation/completion
- }
  [[nodiscard]] std::size_t vertexCount() const noexcept {
   return vertexCount_;
  }
@@ -116,46 +111,10 @@ class BufferBuilder {
   vertexCount_ = 0;
   buffer_.clear();
  }
- void draw();
- unsigned uploadToGpu() {
-  if(buffer_.empty())
-   return 0;
-  unsigned vbo = 0;
-  if(gl::GLCore::genBuffers != nullptr) {
-   gl::GLCore::genBuffers(1, &vbo);
-   gl::GLCore::bindBuffer(0x8892, vbo); // GL_ARRAY_BUFFER
-   gl::GLCore::bufferData(0x8892, buffer_.size(), buffer_.data(), 0x88E8); // GL_DYNAMIC_DRAW
-   gl::GLCore::bindBuffer(0x8892, 0);
-  }
-  return vbo;
- }
 
  private:
  std::vector<std::uint8_t> buffer_;
  std::size_t vertexCount_ = 0;
  int drawMode_ = 0;
 };
-} // namespace net::minecraft::client::render
-#include "net/minecraft/client/render/RenderCore.hpp"
-namespace net::minecraft::client::render {
-template <typename TVertex>
-inline void BufferBuilder<TVertex>::draw() {
- constexpr bool hasTexture = requires(TVertex v) { v.u; };
- constexpr bool hasColor = requires(TVertex v) { v.color; };
- constexpr bool hasNormals = requires(TVertex v) { v.normal; };
-  render::core::RenderPass pass;
-  pass.modelView = render::core::drawModelView();
-  pass.projection = render::core::drawProjection();
- pass.fog = render::core::fog();
- // Apply pending section-local chunkOffset from WorldRenderer.
- render::core::applyPendingTerrain(pass);
- pass.vertexData = buffer_.data();
- pass.vertexCount = vertexCount_;
- pass.stride = sizeof(TVertex);
- pass.glMode = drawMode_;
- pass.hasTexture = hasTexture;
- pass.hasColor = hasColor;
- pass.hasNormals = hasNormals;
- render::core::submit(pass);
-}
 } // namespace net::minecraft::client::render

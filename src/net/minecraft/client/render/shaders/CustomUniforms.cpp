@@ -8,6 +8,7 @@
 #include <string_view>
 #include <utility>
 #include "net/minecraft/client/gl/ShaderProgram.hpp"
+#include "net/minecraft/client/render/shaderpack/BiomeTables.hpp"
 namespace net::minecraft::client::render {
 namespace {
 constexpr float kPi = 3.14159265358979323846f;
@@ -188,42 +189,23 @@ struct EvalContext {
  std::mt19937* rng = nullptr;
 };
 bool lookupConstant(const std::string& name, CustomUniformValue& out) {
- static const std::unordered_map<std::string, int> kBiomes = {
-     {"BIOME_RAINFOREST", 0},
-     {"BIOME_SWAMPLAND", 1},
-     {"BIOME_SWAMP", 1},
-     {"BIOME_SEASONAL_FOREST", 2},
-     {"BIOME_FOREST", 3},
-     {"BIOME_DARK_FOREST", 3},
-     {"BIOME_SAVANNA", 4},
-     {"BIOME_SHRUBLAND", 5},
-     {"BIOME_TAIGA", 6},
-     {"BIOME_DESERT", 7},
-     {"BIOME_PLAINS", 8},
-     {"BIOME_ICE_DESERT", 9},
-     {"BIOME_TUNDRA", 10},
-     {"BIOME_HELL", 11},
-     {"BIOME_NETHER", 11},
-     {"BIOME_SKY", 12},
-     {"BIOME_THE_END", 12},
- };
- static const std::unordered_map<std::string, int> kCats = {
-     {"CAT_NONE", 0},
-     {"CAT_TAIGA", 1},
-     {"CAT_FOREST", 10},
-     {"CAT_PLAINS", 5},
-     {"CAT_DESERT", 12},
-     {"CAT_EXTREME_HILLS", 3},
-     {"CAT_SWAMP", 14},
-     {"CAT_RIVER", 0},
-     {"CAT_OCEAN", 0},
-     {"CAT_BEACH", 0},
-     {"CAT_MESA", 12},
-     {"CAT_SAVANNA", 5},
-     {"CAT_JUNGLE", 3},
-     {"CAT_ICY", 7},
-     {"CAT_MUSHROOM", 0},
- };
+ static const std::unordered_map<std::string, int> kBiomes = [] {
+  std::unordered_map<std::string, int> map;
+  for(std::size_t i = 0; i < kBiomeNames.size(); ++i) {
+   map.emplace(kBiomeNames[i], static_cast<int>(i));
+  }
+  for(const BiomeNameAlias& alias : kBiomeNameAliases) {
+   map.emplace(alias.name, static_cast<int>(alias.index));
+  }
+  return map;
+ }();
+ static const std::unordered_map<std::string, int> kCats = [] {
+  std::unordered_map<std::string, int> map;
+  for(std::size_t i = 0; i < kBiomeCategoryNames.size(); ++i) {
+   map.emplace(kBiomeCategoryNames[i], static_cast<int>(i));
+  }
+  return map;
+ }();
  if(const auto it = kBiomes.find(name); it != kBiomes.end()) {
   out = makeInt(it->second);
   return true;
@@ -423,55 +405,52 @@ bool lookupBuiltin(const std::string& name, const PackUniformValues& frame, Cust
  if(name == "isEyeInWater") return i1(frame.isEyeInWater);
  if(name == "shadowAvailable") return i1(frame.shadowAvailable);
  if(name == "normalAvailable") return i1(frame.normalAvailable);
-  if(name == "currentPlayerHealth") return f1(frame.currentPlayerHealth);
-  if(name == "maxPlayerHealth") return f1(frame.maxPlayerHealth);
-  if(name == "currentPlayerAir") return f1(frame.currentPlayerAir);
-  if(name == "maxPlayerAir") return f1(frame.maxPlayerAir);
-  if(name == "currentPlayerHunger") return f1(frame.currentPlayerHunger);
-  if(name == "maxPlayerHunger") return f1(frame.maxPlayerHunger);
-  if(name == "currentPlayerArmor") return f1(frame.currentPlayerArmor);
-  if(name == "maxPlayerArmor") return f1(frame.maxPlayerArmor);
-  if(name == "entityId") return i1(frame.entityId);
-  if(name == "blockEntityId") return i1(frame.blockEntityId);
-  if(name == "anisotropicFiltering") return i1(frame.anisotropicFiltering);
-  if(name == "dhFarPlane") return f1(frame.dhFarPlane);
-  if(name == "dhNearPlane") return f1(frame.dhNearPlane);
-  if(name == "dhRenderDistance") return i1(frame.dhRenderDistance);
-  if(name == "heldBlockLightColor") return v3(frame.heldBlockLightColor);
-  if(name == "heldBlockLightColor2") return v3(frame.heldBlockLightColor2);
-  if(name == "entityColor") return v4(frame.entityColor);
-  if(name == "chunkFadeTimeInv") return f1(frame.chunkFadeTimeInv);
-  if(name == "seaLevel") return i1(frame.seaLevel);
-  if(name == "cloudTime") return f1(frame.cloudTime);
-  if(name == "heavyFog") return i1(frame.heavyFog);
-  if(name == "timeAngle") return f1(frame.timeAngle);
-  if(name == "timeBrightness") return f1(frame.timeBrightness);
-  if(name == "moonBrightness") return f1(frame.moonBrightness);
-  if(name == "shadowFade") return f1(frame.shadowFade);
-  if(name == "rainStrengthS") return f1(frame.rainStrengthS);
-  if(name == "rainStrengthShiningStars") return f1(frame.rainStrengthShiningStars);
-  if(name == "rainStrengthS2") return f1(frame.rainStrengthS2);
-  if(name == "blindFactor") return f1(frame.blindFactor);
-  if(name == "isDry") return f1(frame.isDry);
-  if(name == "isRainy") return f1(frame.isRainy);
-  if(name == "isSnowy") return f1(frame.isSnowy);
-  if(name == "isEyeInCave") return f1(frame.isEyeInCave);
-  if(name == "velocity") return f1(frame.velocity);
-  if(name == "starter") return f1(frame.starter);
-  if(name == "frameTimeSmooth") return f1(frame.frameTimeSmooth);
-  if(name == "eyeBrightnessM") return f1(frame.eyeBrightnessM);
-  if(name == "rainFactor") return f1(frame.rainFactor);
-  if(name == "BiomeTemp") return f1(frame.biomeTemp);
-  if(name == "day") return f1(frame.day);
-  if(name == "night") return f1(frame.night);
-  if(name == "dawnDusk") return f1(frame.dawnDusk);
-  if(name == "shdFade") return f1(frame.shdFade);
-  if(name == "isPrecipitationRain") return f1(frame.isPrecipitationRain);
-  if(name == "touchmybody") return f1(frame.touchmybody);
-  if(name == "sneakSmooth") return f1(frame.sneakSmooth);
-  if(name == "burningSmooth") return f1(frame.burningSmooth);
-  if(name == "effectStrength") return f1(frame.effectStrength);
-  return false;
+ if(name == "currentPlayerHealth") return f1(frame.currentPlayerHealth);
+ if(name == "maxPlayerHealth") return f1(frame.maxPlayerHealth);
+ if(name == "currentPlayerAir") return f1(frame.currentPlayerAir);
+ if(name == "maxPlayerAir") return f1(frame.maxPlayerAir);
+ if(name == "currentPlayerHunger") return f1(frame.currentPlayerHunger);
+ if(name == "maxPlayerHunger") return f1(frame.maxPlayerHunger);
+ if(name == "currentPlayerArmor") return f1(frame.currentPlayerArmor);
+ if(name == "maxPlayerArmor") return f1(frame.maxPlayerArmor);
+ if(name == "entityId") return i1(frame.entityId);
+ if(name == "blockEntityId") return i1(frame.blockEntityId);
+ if(name == "anisotropicFiltering") return i1(frame.anisotropicFiltering);
+ if(name == "heldBlockLightColor") return v3(frame.heldBlockLightColor);
+ if(name == "heldBlockLightColor2") return v3(frame.heldBlockLightColor2);
+ if(name == "entityColor") return v4(frame.entityColor);
+ if(name == "chunkFadeTimeInv") return f1(frame.chunkFadeTimeInv);
+ if(name == "seaLevel") return i1(frame.seaLevel);
+ if(name == "cloudTime") return f1(frame.cloudTime);
+ if(name == "heavyFog") return i1(frame.heavyFog);
+ if(name == "timeAngle") return f1(frame.timeAngle);
+ if(name == "timeBrightness") return f1(frame.timeBrightness);
+ if(name == "moonBrightness") return f1(frame.moonBrightness);
+ if(name == "shadowFade") return f1(frame.shadowFade);
+ if(name == "rainStrengthS") return f1(frame.rainStrengthS);
+ if(name == "rainStrengthShiningStars") return f1(frame.rainStrengthShiningStars);
+ if(name == "rainStrengthS2") return f1(frame.rainStrengthS2);
+ if(name == "blindFactor") return f1(frame.blindFactor);
+ if(name == "isDry") return f1(frame.isDry);
+ if(name == "isRainy") return f1(frame.isRainy);
+ if(name == "isSnowy") return f1(frame.isSnowy);
+ if(name == "isEyeInCave") return f1(frame.isEyeInCave);
+ if(name == "velocity") return f1(frame.velocity);
+ if(name == "starter") return f1(frame.starter);
+ if(name == "frameTimeSmooth") return f1(frame.frameTimeSmooth);
+ if(name == "eyeBrightnessM") return f1(frame.eyeBrightnessM);
+ if(name == "rainFactor") return f1(frame.rainFactor);
+ if(name == "BiomeTemp") return f1(frame.biomeTemp);
+ if(name == "day") return f1(frame.day);
+ if(name == "night") return f1(frame.night);
+ if(name == "dawnDusk") return f1(frame.dawnDusk);
+ if(name == "shdFade") return f1(frame.shdFade);
+ if(name == "isPrecipitationRain") return f1(frame.isPrecipitationRain);
+ if(name == "touchmybody") return f1(frame.touchmybody);
+ if(name == "sneakSmooth") return f1(frame.sneakSmooth);
+ if(name == "burningSmooth") return f1(frame.burningSmooth);
+ if(name == "effectStrength") return f1(frame.effectStrength);
+ return false;
 }
 CustomUniformValue applyBinary(TokenKind op, const CustomUniformValue& a, const CustomUniformValue& b) {
  if(op == TokenKind::AmpAmp) return makeBool(a.asBool() && b.asBool());

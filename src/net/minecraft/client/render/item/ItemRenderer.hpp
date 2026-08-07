@@ -22,7 +22,7 @@ class ItemRenderer {
                               int x,
                               int y);
  bool useCustomDisplayColor = true;
- block::BlockRenderManager blockRenderManager{};
+  block::BlockRenderManager blockRenderManager{Tessellator::INSTANCE};
 
  private:
  void renderCustomModelInGui(::net::minecraft::client::texture::TextureManager& textureManager,

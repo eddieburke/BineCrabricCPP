@@ -40,7 +40,7 @@ void ChatScreen::render(int mouseX, int mouseY, float tickDelta) {
  (void)tickDelta;
  {
   const render::RenderPassScope passScope(render::RenderType::gui());
-  draw::coloredQuad(render::INSTANCE, width_ - 2, height_ - 2, 2, height_ - 14, 0, 0x80);
+  draw::coloredQuad(render::Tessellator::INSTANCE, width_ - 2, height_ - 2, 2, height_ - 14, 0, 0x80);
  }
  if(textRenderer() != nullptr) {
   const std::string cursor = (focusedTicks_ / 6 % 2 == 0) ? "_" : "";

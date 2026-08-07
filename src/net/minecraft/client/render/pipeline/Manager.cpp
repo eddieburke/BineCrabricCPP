@@ -39,25 +39,25 @@ std::string defaultSettingValue(const PackSetting& setting) {
  return setting.defaultValue;
 }
 } // namespace
-
 PackManager::PackManager(std::filesystem::path gameDirectory, option::GameOptions* options)
     : gameDirectory_(std::move(gameDirectory)), options_(options), pipeline_(options) {
  reload();
  startDirectoryWatcher();
  render::setWorldProgramResolver([this](const std::string& key) { return worldProgram(key); });
-  render::setWorldPassDirectiveApplier([this]() {
-   PackInstance* pack = renderPack();
+ render::setWorldPassDirectiveApplier([this]() {
+  PackInstance* pack = renderPack();
   if(pack == nullptr) {
    return;
   }
-  // blend/alphaTest directives by the resolved source name (ProgramDirectives.java:80-83),
+  // Applies blend/alphaTest directives by the resolved source name
+  // (ProgramDirectives.java:80-83).
   const std::string programKey = pipeline_.resolvedWorldProgramKey();
   if(programKey.empty()) {
    return;
   }
   gl::ShaderProgram* program = core::program();
   if(program == nullptr) return;
-  const bool shadowPass = RenderCameraState::instance().frame().shadowPass;
+  const bool shadowPass = core::cameraFrame().shadowPass;
   const int colorCount = shadowPass ? pack->definition.shadowColorBuffers : pack->colorTargets.colorCount();
   if(!shadowPass || colorCount > 0) program->applyDrawBuffers(std::max(1, colorCount));
   applyBufferBlends(pack->definition, programKey, program->drawBufferColortexIndices());
@@ -84,30 +84,31 @@ PackManager::PackManager(std::filesystem::path gameDirectory, option::GameOption
   ctx.uniforms = &pipeline_.worldUniforms();
   ctx.lightmapTexture = pipeline_.lightmapTexturePtr();
   ctx.overlayTexture = core::entityOverlayTexture();
-   const bool interfaceProgram = pipeline_.interfaceProgramsActive();
+  const bool interfaceProgram = pipeline_.interfaceProgramsActive();
   PackInstance* pack = renderPack();
-   ctx.noiseTexture = (!interfaceProgram && pack != nullptr) ? pack->noiseTexture.handle() : 0;
+  ctx.noiseTexture = (!interfaceProgram && pack != nullptr) ? pack->noiseTexture.handle() : 0;
   ctx.shadowDepthTexture = interfaceProgram ? -1 : pipeline_.shadowDepthTexture();
   ctx.shadowOpaqueDepthTexture = interfaceProgram ? -1 : pipeline_.shadowOpaqueDepthTexture();
   ctx.shadowColorTextures = interfaceProgram ? nullptr : pipeline_.shadowColorTextures();
   ctx.shadowColorTextureCount = interfaceProgram ? 0 : pipeline_.shadowColorTextureCount();
-  const bool shadowPass = RenderCameraState::instance().frame().shadowPass;
+  const bool shadowPass = core::cameraFrame().shadowPass;
   ctx.bindTextureAtlases = !interfaceProgram && !shadowPass &&
-                          pipeline_.lastWorldProgramKey().rfind("gbuffers_", 0) == 0;
+                           pipeline_.lastWorldProgramKey().rfind("gbuffers_", 0) == 0;
   ctx.normalTexture = pipeline_.normalFallbackTexture();
   ctx.specularTexture = pipeline_.specularFallbackTexture();
   if(ctx.bindTextureAtlases && net::minecraft::client::Minecraft::INSTANCE != nullptr) {
    auto& textureManager = net::minecraft::client::Minecraft::INSTANCE->textureManager;
    core::activeTexture(gl::tex::Texture0);
    const int diffuseTexture = core::boundTexture();
-   // (IrisRenderingPipeline.java:848): the holder carries LabPBR-mipmapped
+   // IrisRenderingPipeline.java:848: the holder carries LabPBR-mipmapped textures
    // https://github.com/IrisShaders/Iris/blob/26.1/common/src/main/java/net/irisshaders/iris/pipeline/IrisRenderingPipeline.java
    const render::PbrTextures::Holder holder =
        render::PbrTextures::getOrLoad(diffuseTexture, textureManager, pack->definition.labPbr);
    if(holder.normal > 0) ctx.normalTexture = static_cast<unsigned int>(holder.normal);
    if(holder.specular > 0) ctx.specularTexture = static_cast<unsigned int>(holder.specular);
    if(!textureManager.getTextureDimensionsForId(diffuseTexture, ctx.atlasWidth, ctx.atlasHeight)) {
-    // Java CommonUniforms.atlasSize (CommonUniforms.java:81-93) reports (0,0) for any
+    // Java CommonUniforms.atlasSize (CommonUniforms.java:81-93) reports (0,0)
+    // for any texture it has not uploaded itself.
     ctx.atlasWidth = 0;
     ctx.atlasHeight = 0;
    }
@@ -117,7 +118,6 @@ PackManager::PackManager(std::filesystem::path gameDirectory, option::GameOption
   bindWorldProgram(program, ctx);
  });
 }
-
 PackManager::~PackManager() {
  stopDirectoryWatcher();
  render::setWorldProgramResolver(nullptr);
@@ -125,7 +125,6 @@ PackManager::~PackManager() {
  render::setShaderObjectIdResolver(nullptr);
  core::setProgramUniformUploader(nullptr);
 }
-
 void PackManager::reloadWorldMeshes() {
  if(net::minecraft::client::Minecraft::INSTANCE == nullptr ||
     net::minecraft::client::Minecraft::INSTANCE->worldRenderer == nullptr) {
@@ -133,7 +132,6 @@ void PackManager::reloadWorldMeshes() {
  }
  net::minecraft::client::Minecraft::INSTANCE->worldRenderer->reload();
 }
-
 void PackManager::reload() {
  discardStagedPack();
  packs_.clear();
@@ -183,28 +181,25 @@ void PackManager::reload() {
  reloadWorldMeshes();
  packDirectoryStamp_ = packDirectoryStamp(directory);
  watchedStamp_.store(packDirectoryStamp_, std::memory_order_relaxed);
-  directoryChanged_.store(false, std::memory_order_relaxed);
-   pipeline_.reset();
-   pipeline_.refreshResourcePackState(basePack_.get(), packs_);
-  warmBasePrograms();
-  prewarmPacks();
-  preparePendingPack(net::minecraft::client::Minecraft::INSTANCE != nullptr
-                         ? net::minecraft::client::Minecraft::INSTANCE->world
-                         : nullptr);
+ directoryChanged_.store(false, std::memory_order_relaxed);
+ pipeline_.reset();
+ pipeline_.refreshResourcePackState(basePack_.get(), packs_);
+ warmBasePrograms();
+ prewarmPacks();
+ preparePendingPack(net::minecraft::client::Minecraft::INSTANCE != nullptr
+                        ? net::minecraft::client::Minecraft::INSTANCE->world
+                        : nullptr);
 }
-
 void PackManager::startDirectoryWatcher() {
  stopDirectoryWatcher();
  directoryWatcher_ = std::jthread([this](const std::stop_token& stop) { directoryWatchLoop(stop); });
 }
-
 void PackManager::stopDirectoryWatcher() {
  if(directoryWatcher_.joinable()) {
   directoryWatcher_.request_stop();
   directoryWatcher_.join();
  }
 }
-
 void PackManager::directoryWatchLoop(const std::stop_token& stop) {
 #ifdef _WIN32
  SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_BELOW_NORMAL);
@@ -224,7 +219,6 @@ void PackManager::directoryWatchLoop(const std::stop_token& stop) {
   }
  }
 }
-
 void PackManager::poll() {
  if(!directoryChanged_.exchange(false, std::memory_order_acq_rel)) {
   return;
@@ -232,7 +226,6 @@ void PackManager::poll() {
  packDirectoryStamp_ = watchedStamp_.load(std::memory_order_relaxed);
  reload();
 }
-
 std::unique_ptr<PackInstance> PackManager::loadPack(const std::filesystem::path& path, bool directory) {
  diagnostics::WorkSpan span("shaderpack.load");
  auto pack = std::make_unique<PackInstance>();
@@ -247,14 +240,13 @@ std::unique_ptr<PackInstance> PackManager::loadPack(const std::filesystem::path&
   pack->zip->open();
   resources = zipResources(*pack->zip);
  }
-  if(PackLoader::load(
-         resources,
-         [&pack](std::string_view resource) { return PackCompiler::cachedText(*pack, std::string(resource)); },
-         pack->definition, pack->sourceOptions, pack->summary.error)) {
+ if(PackLoader::load(
+        resources,
+        [&pack](std::string_view resource) { return PackCompiler::cachedText(*pack, std::string(resource)); },
+        pack->definition, pack->sourceOptions, pack->summary.error)) {
   pack->summary.valid = true;
   pack->rootDefinition = pack->definition;
   pack->summary.name = path.filename().string();
-  pack->summary.version = pack->definition.version;
   initializePackRuntime(*pack);
  }
  if(pack->summary.name.empty()) {
@@ -262,7 +254,6 @@ std::unique_ptr<PackInstance> PackManager::loadPack(const std::filesystem::path&
  }
  return pack;
 }
-
 void PackManager::initializePackRuntime(PackInstance& pack) {
  diagnostics::WorkSpan span("shaderpack.runtime");
  for(const PackSetting& setting : pack.definition.settings) {
@@ -271,7 +262,6 @@ void PackManager::initializePackRuntime(PackInstance& pack) {
  std::string customError;
  if(!pack.rebuildRuntime(customError)) logOnce(pack, customError);
 }
-
 void PackManager::refreshSummaries() {
  summaries_.clear();
  summaries_.reserve(packs_.size());
@@ -282,7 +272,6 @@ void PackManager::refreshSummaries() {
   summaries_.push_back(std::move(summary));
  }
 }
-
 bool PackManager::select(const std::string& key) {
  discardStagedPack();
  if(key.empty() || lower(key) == "off" || lower(key) == "none") {
@@ -292,9 +281,9 @@ bool PackManager::select(const std::string& key) {
    options_->save();
   }
   activatePack(kNoActivePack);
-   return true;
-  }
-  for(std::size_t i = 0; i < packs_.size(); ++i) {
+  return true;
+ }
+ for(std::size_t i = 0; i < packs_.size(); ++i) {
   if(packs_[i]->summary.key != key && packs_[i]->summary.name != key) {
    continue;
   }
@@ -315,11 +304,10 @@ bool PackManager::select(const std::string& key) {
   preparePendingPack(net::minecraft::client::Minecraft::INSTANCE != nullptr
                          ? net::minecraft::client::Minecraft::INSTANCE->world
                          : nullptr);
-   return true;
-  }
-  return false;
+  return true;
+ }
+ return false;
 }
-
 void PackManager::warmBasePrograms() {
  if(basePack_ == nullptr || !basePack_->summary.valid || !hasGlContext()) {
   return;
@@ -346,7 +334,6 @@ void PackManager::warmBasePrograms() {
                               ? net::minecraft::client::Minecraft::INSTANCE->world
                               : nullptr);
 }
-
 void PackManager::prewarmPacks() {
  const auto warm = [this](PackInstance* pack) {
   if(pack == nullptr || !pack->summary.valid || pack->programs == nullptr) {
@@ -361,109 +348,133 @@ void PackManager::prewarmPacks() {
  PackInstance* current = activePack();
  if(current != basePack_.get()) warm(current);
 }
-
-void PackManager::pollPrograms() {
- const auto poll = [](PackInstance* pack) {
-  if(pack != nullptr && pack->programs != nullptr) {
-   pack->programs->poll();
-  }
- };
- poll(basePack_.get());
+void PackManager::advancePackActivation() {
  PackInstance* current = activePack();
- if(current != basePack_.get()) poll(current);
  if(pendingIndex_.has_value() && *pendingIndex_ < packs_.size()) {
   PackInstance* pending = packs_[*pendingIndex_].get();
-  if(pending != current) poll(pending);
-  if(packReady(*pending)) {
+  if(pending != current && packReady(*pending)) {
    activatePack(*pendingIndex_);
   }
  }
- if(stagedPack_ != nullptr) {
-  poll(stagedPack_.get());
-  if(packReady(*stagedPack_)) commitStagedPack();
+ if(stagedPack_ != nullptr && packReady(*stagedPack_)) {
+  commitStagedPack();
  }
 }
-
-PackInstance* PackManager::settingsTarget() {
-  if(pendingIndex_.has_value() && *pendingIndex_ < packs_.size()) {
-   return packs_[*pendingIndex_].get();
-  }
-  if(stagedPack_ != nullptr && stagedIndex_ == activeIndex_) {
-   return stagedPack_.get();
-  }
-  const PackInstance* source = activePack();
-  if(source == nullptr) {
-   return nullptr;
-  }
-  std::unique_ptr<PackInstance> staged = clonePack(*source);
-  discardStagedPack();
-  stagedPack_ = std::move(staged);
-  stagedIndex_ = activeIndex_;
-  pipeline_.selectDimension(
-      *stagedPack_,
-      net::minecraft::client::Minecraft::INSTANCE != nullptr
-          ? net::minecraft::client::Minecraft::INSTANCE->world
-          : nullptr,
-      false);
-  return stagedPack_.get();
- }
-
 bool PackManager::setSetting(const std::string& key, std::string value) {
-  return setSettings({{key, std::move(value)}});
+ return setSettings({{key, std::move(value)}});
 }
-
 bool PackManager::setSettings(const std::vector<std::pair<std::string, std::string>>& values) {
-  if(values.empty()) {
-   return false;
-  }
-  PackInstance* pack = selectedPack();
-  if(pack == nullptr || pack->definition.settings.empty()) {
-   return false;
-  }
-  bool changed = false;
+ if(values.empty()) {
+  return false;
+ }
+ PackInstance* pack = selectedPack();
+ if(pack == nullptr || pack->definition.settings.empty()) {
+  return false;
+ }
+ // The selected profile's values become the baseline, then the explicit values in
+ // this call win over them — Iris's options screen applies a profile by setting the
+ // option values, which the user can then override individually. There is no
+ // profile logic anywhere else: the properties preprocessor and the GLSL option
+ // rewrite both read the settings map, so one merged map keeps them agreeing.
+ std::unordered_map<std::string, std::string> merged = pack->settings;
+ const bool hasProfileOption = std::any_of(pack->definition.settings.begin(), pack->definition.settings.end(),
+                                           [](const PackSetting& setting) { return setting.key == "profile"; });
+ std::string profileName;
+ if(hasProfileOption) {
   for(const auto& [key, value] : values) {
-   for(const PackSetting& setting : pack->definition.settings) {
-    if(setting.key != key) {
-     continue;
-    }
-    std::string normalized;
-    if(!normalizeSettingValue(setting, value, normalized)) {
-     break;
-    }
-    if(const auto existing = pack->settings.find(key);
-       existing != pack->settings.end() && existing->second == normalized) {
-     break;
-    }
-    PackInstance* target = settingsTarget();
-    if(target == nullptr) {
-     return changed;
-    }
-    target->settings[key] = std::move(normalized);
-    changed = true;
-    pack = target;
+   if(key == "profile") {
+    profileName = value;
     break;
    }
   }
-  if(!changed) {
-   return false;
+  const std::string currentProfile = [&] {
+   const auto existing = merged.find("profile");
+   return existing != merged.end() ? existing->second : std::string{};
+  }();
+  if(profileName.empty()) profileName = currentProfile;
+  // Selecting a profile applies the whole preset (Iris behaviour): reset to the
+  // pack's shipped defaults, then lay the selected profile's values over them.
+  // Individual options changed after the fact win via the explicit values below.
+  if(profileName != currentProfile) {
+   merged.clear();
+   for(const PackSetting& setting : pack->definition.settings) {
+    merged[setting.key] = defaultSettingValue(setting);
+   }
+   if(!profileName.empty() && profileName != "Default") {
+    for(const PackProfile& preset : pack->definition.profiles) {
+     if(preset.name != profileName) continue;
+     for(const auto& [key, value] : preset.values) {
+      for(const PackSetting& setting : pack->definition.settings) {
+       if(setting.key != key) continue;
+       std::string normalized;
+       if(!normalizeSettingValue(setting, value, normalized)) break;
+       merged[key] = std::move(normalized);
+       break;
+      }
+     }
+     break;
+    }
+   }
   }
-  std::string customError;
-  if(!pack->rebuildRuntime(customError)) logOnce(*pack, customError);
-  if(pendingIndex_.has_value()) {
-   preparePendingPack(net::minecraft::client::Minecraft::INSTANCE != nullptr
-                          ? net::minecraft::client::Minecraft::INSTANCE->world
-                          : nullptr);
-  } else if(stagedPack_ != nullptr) {
-   PackCompiler::prewarm(*stagedPack_,
-                         [this](PackInstance& p, const std::string& message,
-                                ::net::minecraft::util::logging::LogLevel) {
-                          logOnce(p, message);
-                         });
-   if(packReady(*stagedPack_)) commitStagedPack();
+ }
+ bool changed = false;
+ for(const auto& [key, value] : values) {
+  if(key == "profile") continue;
+  for(const PackSetting& setting : pack->definition.settings) {
+   if(setting.key != key) continue;
+   std::string normalized;
+   if(!normalizeSettingValue(setting, value, normalized)) break;
+   if(const auto existing = merged.find(key); existing != merged.end() && existing->second == normalized) {
+    break;
+   }
+   merged[key] = std::move(normalized);
+   changed = true;
+   break;
   }
+ }
+ if(hasProfileOption) {
+  if(profileName.empty()) profileName = "Default";
+  if(const auto existing = merged.find("profile"); existing == merged.end() || existing->second != profileName) {
+   merged["profile"] = profileName;
+   changed = true;
+  }
+ }
+ if(!changed) {
+  return false;
+ }
+ if(pendingIndex_.has_value()) {
+  PackInstance* target = packs_[*pendingIndex_].get();
+  if(target != nullptr) {
+   target->settings = merged;
+   std::string customError;
+   if(!target->rebuildRuntime(customError)) logOnce(*target, customError);
+  }
+  preparePendingPack(net::minecraft::client::Minecraft::INSTANCE != nullptr
+                         ? net::minecraft::client::Minecraft::INSTANCE->world
+                         : nullptr);
   return true;
+ }
+ // Stage a fully re-parsed pack carrying the merged settings, so the
+ // properties-derived flags (shadowEntities and friends) and the GLSL agree on
+ // every option; swap it in when its programs are ready.
+ discardStagedPack();
+ stagedPack_ = clonePack(*pack, &merged);
+ stagedIndex_ = activeIndex_;
+ pipeline_.selectDimension(
+     *stagedPack_,
+     net::minecraft::client::Minecraft::INSTANCE != nullptr ? net::minecraft::client::Minecraft::INSTANCE->world
+                                                            : nullptr,
+     false);
+ if(stagedPack_->programState == PackProgramState::Cold) {
+  PackCompiler::prewarm(*stagedPack_,
+                        [this](PackInstance& p, const std::string& message,
+                               ::net::minecraft::util::logging::LogLevel) {
+                         logOnce(p, message);
+                        });
+ }
+ if(packReady(*stagedPack_)) commitStagedPack();
+ return true;
 }
-
 std::string PackManager::settingValue(const std::string& key) const {
  const PackInstance* pack = selectedPack();
  if(pack == nullptr) {
@@ -472,28 +483,21 @@ std::string PackManager::settingValue(const std::string& key) const {
  const auto found = pack->settings.find(key);
  return found == pack->settings.end() ? std::string() : found->second;
 }
-
 void PackManager::cancelPendingPack() {
  if(!pendingIndex_.has_value() || *pendingIndex_ >= packs_.size()) {
   pendingIndex_.reset();
   return;
  }
  PackInstance* pack = packs_[*pendingIndex_].get();
- if(pack != nullptr && pack->programs != nullptr) {
-  pack->programs->cancelPending();
+ if(pack != nullptr) {
   pack->programState = PackProgramState::Cold;
  }
  pendingIndex_.reset();
 }
-
 void PackManager::discardStagedPack() {
- if(stagedPack_ != nullptr && stagedPack_->programs != nullptr) {
-  stagedPack_->programs->cancelPending();
- }
  stagedPack_.reset();
  stagedIndex_ = kNoActivePack;
 }
-
 void PackManager::activatePack(std::size_t index) {
  discardStagedPack();
  const bool changed = activeIndex_ != index;
@@ -510,7 +514,6 @@ void PackManager::activatePack(std::size_t index) {
  pipeline_.applyBlockIds(definition);
  reloadWorldMeshes();
 }
-
 void PackManager::preparePendingPack(net::minecraft::World* world) {
  if(!pendingIndex_.has_value() || *pendingIndex_ >= packs_.size()) return;
  PackInstance* pack = packs_[*pendingIndex_].get();
@@ -527,23 +530,22 @@ void PackManager::preparePendingPack(net::minecraft::World* world) {
   activatePack(*pendingIndex_);
  }
 }
-
 bool PackManager::packReady(PackInstance& pack) {
- if(pack.programState == PackProgramState::Cold || pack.programs == nullptr || pack.programs->hasPending()) {
+ if(pack.programState == PackProgramState::Cold || pack.programs == nullptr) {
   return false;
  }
  if(!PackCompiler::validate(pack, [this](PackInstance& p, const std::string& message,
                                          ::net::minecraft::util::logging::LogLevel) {
-  logOnce(p, message);
- })) return false;
+     logOnce(p, message);
+    })) return false;
  const net::minecraft::client::Minecraft* minecraft = net::minecraft::client::Minecraft::INSTANCE;
  if(minecraft == nullptr || !hasGlContext()) return false;
  diagnostics::WorkSpan span("shaderpack.resources");
  return pipeline_.preparePackResources(pack, std::max(1, minecraft->displayWidth),
                                        std::max(1, minecraft->displayHeight));
 }
-
-std::unique_ptr<PackInstance> PackManager::clonePack(const PackInstance& source) {
+std::unique_ptr<PackInstance> PackManager::clonePack(const PackInstance& source,
+                                                     const std::unordered_map<std::string, std::string>* settings) {
  auto pack = std::make_unique<PackInstance>();
  pack->summary = source.summary;
  pack->path = source.path;
@@ -555,11 +557,32 @@ std::unique_ptr<PackInstance> PackManager::clonePack(const PackInstance& source)
  pack->rootDefinition = source.rootDefinition;
  pack->definition = pack->rootDefinition;
  pack->sourceOptions = source.sourceOptions;
- pack->settings = source.settings;
+ pack->settings = settings != nullptr ? *settings : source.settings;
+ // Re-run the parse with the CURRENT settings instead of reusing the load-time
+ // definition: option changes (including profile selection) must reach the
+ // properties-derived state (shadowEntities/shadowPlayer/shadowBlockEntities, the
+ // LL_CAPACITY-conditional bufferObject sizes, bufferBlends) and the GLSL alike,
+ // or the engine flag and the compiled shaders quietly disagree — which is how
+ // "SM_ENTITY on" recompiled the pack and still rendered no entity shadows.
+ // A failed re-parse keeps the copied definition above, so the pack degrades to
+ // its previous behaviour instead of going dark.
+ std::vector<std::string> resources;
+ if(source.directory) {
+  resources = directoryResources(source.path);
+ } else {
+  resources = zipResources(*pack->zip);
+ }
+ PackDefinition reParsed;
+ std::unordered_map<std::string, PackSourceOption> reOptions;
+ std::string error;
+ if(PackLoader::load(resources, [&pack](std::string_view resource) { return PackCompiler::cachedText(*pack, std::string(resource)); }, reParsed, reOptions, error, pack->settings)) {
+  pack->definition = std::move(reParsed);
+  pack->rootDefinition = pack->definition;
+  pack->sourceOptions = std::move(reOptions);
+ }
  initializePackRuntime(*pack);
  return pack;
 }
-
 void PackManager::prepareStagedPack(net::minecraft::World* world) {
  if(pendingIndex_.has_value()) {
   discardStagedPack();
@@ -594,7 +617,6 @@ void PackManager::prepareStagedPack(net::minecraft::World* world) {
  }
  if(packReady(*stagedPack_)) commitStagedPack();
 }
-
 void PackManager::commitStagedPack() {
  if(stagedPack_ == nullptr || stagedIndex_ != activeIndex_) {
   discardStagedPack();
@@ -614,26 +636,22 @@ void PackManager::commitStagedPack() {
  pipeline_.applyBlockIds(definition);
  reloadWorldMeshes();
 }
-
 PackInstance* PackManager::activePack() noexcept {
  if(activeIndex_ < packs_.size()) {
   return packs_[activeIndex_].get();
  }
  return basePack_ != nullptr && basePack_->summary.valid ? basePack_.get() : nullptr;
 }
-
 const PackInstance* PackManager::activePack() const noexcept {
  if(activeIndex_ < packs_.size()) {
   return packs_[activeIndex_].get();
  }
  return basePack_ != nullptr && basePack_->summary.valid ? basePack_.get() : nullptr;
 }
-
 PackInstance* PackManager::renderPack() noexcept {
  PackInstance* pack = pipeline_.interfaceProgramsActive() ? basePack_.get() : activePack();
  return pack != nullptr ? pack : basePack_.get();
 }
-
 PackInstance* PackManager::selectedPack() noexcept {
  if(pendingIndex_.has_value() && *pendingIndex_ < packs_.size()) {
   return packs_[*pendingIndex_].get();
@@ -641,7 +659,6 @@ PackInstance* PackManager::selectedPack() noexcept {
  if(stagedPack_ != nullptr && stagedIndex_ == activeIndex_) return stagedPack_.get();
  return activePack();
 }
-
 const PackInstance* PackManager::selectedPack() const noexcept {
  if(pendingIndex_.has_value() && *pendingIndex_ < packs_.size()) {
   return packs_[*pendingIndex_].get();
@@ -649,147 +666,108 @@ const PackInstance* PackManager::selectedPack() const noexcept {
  if(stagedPack_ != nullptr && stagedIndex_ == activeIndex_) return stagedPack_.get();
  return activePack();
 }
-
 bool PackManager::hasActivePack() const noexcept {
  const PackInstance* pack = activePack();
  return pack != nullptr && pack->summary.valid;
 }
-
 const PackDefinition& PackManager::activeDefinition() const noexcept {
  const PackInstance* pack = activePack();
  return pack != nullptr && pack->summary.valid ? pack->definition : vanillaPackDefinition();
 }
-
 const PackDefinition* PackManager::selectedDefinition() const noexcept {
  const PackInstance* pack = selectedPack();
  return pack != nullptr && pack->summary.valid ? &pack->definition : nullptr;
 }
-
 const PackDefinition& PackManager::meshDefinition() const noexcept {
  if(hasActivePack()) {
   return activeDefinition();
  }
  return basePack_ != nullptr && basePack_->summary.valid ? basePack_->definition : vanillaPackDefinition();
 }
-
 bool PackManager::hasDeferredPasses() const {
  return pipeline_.hasDeferredPasses(activePack());
 }
-
-int PackManager::shadowMapResolution() const {
- const PackDefinition& definition = activeDefinition();
- return definition.shadowEnabled ? definition.shadowMapResolution : 0;
-}
-
-int PackManager::shadowColorBuffers() const {
- return activeDefinition().shadowColorBuffers;
-}
-
 gl::ShaderProgram* PackManager::worldProgram(const std::string& key) {
  return pipeline_.worldProgram(key, renderPack());
 }
-
 void PackManager::prepareFrame(net::minecraft::World* world) {
  pipeline_.refreshResourcePackState(basePack_.get(), packs_);
  preparePendingPack(world);
  prepareStagedPack(world);
  pipeline_.prepareFrame(world, activePack(), basePack_.get());
 }
-
 void PackManager::setFrameUniforms(const PackUniformValues& frame) {
  pipeline_.setFrameUniforms(frame, activeDefinition(), activePack());
 }
-
 bool PackManager::renderBegin(int shadowDepthTextureId, int shadowOpaqueDepthTextureId,
-                                    const int* shadowColorTextureIds, int shadowColorTextureCount,
-                                    shadowmap::ShadowTargets* shadowTargets,
-                                    const int* shadowColorAltTextureIds) {
+                              const int* shadowColorTextureIds, int shadowColorTextureCount,
+                              shadowmap::ShadowTargets* shadowTargets,
+                              const int* shadowColorAltTextureIds) {
  return pipeline_.renderBegin(activePack(), shadowDepthTextureId, shadowOpaqueDepthTextureId,
                               shadowColorTextureIds, shadowColorTextureCount, shadowTargets,
                               shadowColorAltTextureIds);
 }
-
 bool PackManager::renderShadowComposite(int shadowDepthTextureId, int shadowOpaqueDepthTextureId,
-                                              const int* shadowColorTextureIds, int shadowColorTextureCount,
-                                              shadowmap::ShadowTargets* shadowTargets,
-                                              const int* shadowColorAltTextureIds) {
+                                        const int* shadowColorTextureIds, int shadowColorTextureCount,
+                                        shadowmap::ShadowTargets* shadowTargets,
+                                        const int* shadowColorAltTextureIds) {
  return pipeline_.renderShadowComposite(activePack(), shadowDepthTextureId, shadowOpaqueDepthTextureId,
                                         shadowColorTextureIds, shadowColorTextureCount, shadowTargets,
                                         shadowColorAltTextureIds);
 }
-
 bool PackManager::renderPreWorld(int shadowDepthTextureId, int shadowOpaqueDepthTextureId,
-                                       const int* shadowColorTextureIds, int shadowColorTextureCount,
-                                       shadowmap::ShadowTargets* shadowTargets,
-                                       const int* shadowColorAltTextureIds) {
-  return pipeline_.renderPreWorld(activePack(), shadowDepthTextureId, shadowOpaqueDepthTextureId,
-                                  shadowColorTextureIds, shadowColorTextureCount, shadowTargets,
-                                  shadowColorAltTextureIds);
+                                 const int* shadowColorTextureIds, int shadowColorTextureCount,
+                                 shadowmap::ShadowTargets* shadowTargets,
+                                 const int* shadowColorAltTextureIds) {
+ return pipeline_.renderPreWorld(activePack(), shadowDepthTextureId, shadowOpaqueDepthTextureId,
+                                 shadowColorTextureIds, shadowColorTextureCount, shadowTargets,
+                                 shadowColorAltTextureIds);
 }
-
 bool PackManager::renderDeferred(int shadowDepthTextureId, int shadowOpaqueDepthTextureId,
-                                       const int* shadowColorTextureIds, int shadowColorTextureCount,
-                                       const int* shadowColorAltTextureIds) {
-  return pipeline_.renderDeferred(activePack(), shadowDepthTextureId, shadowOpaqueDepthTextureId,
-                                  shadowColorTextureIds, shadowColorTextureCount, shadowColorAltTextureIds);
+                                 const int* shadowColorTextureIds, int shadowColorTextureCount,
+                                 const int* shadowColorAltTextureIds) {
+ return pipeline_.renderDeferred(activePack(), shadowDepthTextureId, shadowOpaqueDepthTextureId,
+                                 shadowColorTextureIds, shadowColorTextureCount, shadowColorAltTextureIds);
 }
-
 bool PackManager::renderPostProcess(int shadowDepthTextureId, int shadowOpaqueDepthTextureId,
-                                          const int* shadowColorTextureIds, int shadowColorTextureCount,
-                                          const int* shadowColorAltTextureIds) {
-  return pipeline_.renderPostProcess(activePack(), basePack_.get(), shadowDepthTextureId,
-                                     shadowOpaqueDepthTextureId, shadowColorTextureIds,
-                                     shadowColorTextureCount, shadowColorAltTextureIds);
+                                    const int* shadowColorTextureIds, int shadowColorTextureCount,
+                                    const int* shadowColorAltTextureIds) {
+ return pipeline_.renderPostProcess(activePack(), basePack_.get(), shadowDepthTextureId,
+                                    shadowOpaqueDepthTextureId, shadowColorTextureIds,
+                                    shadowColorTextureCount, shadowColorAltTextureIds);
 }
-
 void PackManager::sampleCenterDepth() {
  pipeline_.sampleCenterDepth(activePack(), activeDefinition());
 }
-
 void PackManager::captureOpaqueDepth() {
  pipeline_.captureOpaqueDepth(activePack());
 }
-
 void PackManager::captureHandDepth() {
  pipeline_.captureHandDepth(activePack());
 }
-
 void PackManager::logOnce(PackInstance& pack, const std::string& message) const {
  if(!pack.logged.insert(message).second) {
   return;
  }
  const std::string& label =
-     !pack.summary.name.empty() ? pack.summary.name
+     !pack.summary.name.empty()      ? pack.summary.name
      : !pack.definition.name.empty() ? pack.definition.name
                                      : std::string("Shader pack");
  ClientLog::LOGGER.log(net::minecraft::util::logging::LogLevel::Warning,
                        "[shaderpack:" + label + "] " + message);
 }
-
-std::vector<render::ColorFormat> PackManager::sceneColorFormats() const {
- return pipeline_.sceneColorFormats(activePack());
-}
-
 bool PackManager::ensureSceneTargets(int width, int height) {
  return pipeline_.ensureSceneTargets(activePack(), width, height);
 }
-
 void PackManager::bindScene() {
  pipeline_.bindScene(activePack());
 }
-
 void PackManager::endScene() {
  pipeline_.endScene(activePack());
 }
-
 int PackManager::sceneColorCount() const {
  return pipeline_.sceneColorCount(activePack());
 }
-
-unsigned int PackManager::sceneDepthTexture() const {
- return pipeline_.sceneDepthTexture(activePack());
-}
-
 void PackManager::clearScene(float fogR, float fogG, float fogB) {
  pipeline_.clearScene(activePack(), fogR, fogG, fogB);
 }

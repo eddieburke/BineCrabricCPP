@@ -20,10 +20,10 @@ class TexturePacks;
 }
 namespace net::minecraft::client::render::texture {
 class DynamicTexture;
-} // namespace net::minecraft::client::render::texture
+}
 namespace net::minecraft::client::texture {
 class ImageDownload;
-class ImageProcessor;
+class SkinImageProcessor;
 } // namespace net::minecraft::client::texture
 namespace net::minecraft::client::texture {
 struct RasterImage {
@@ -31,7 +31,6 @@ struct RasterImage {
  int height = 0;
  std::vector<std::uint32_t> argb;
 };
-// Faithful subset of net.minecraft.client.texture.TextureManager (beta 1.7.3).
 class TextureManager {
  public:
  explicit TextureManager(option::GameOptions* options = nullptr);
@@ -41,11 +40,10 @@ class TextureManager {
  [[nodiscard]] int getTextureId(const std::string& path);
  [[nodiscard]] bool getTextureDimensions(const std::string& path, int& outWidth, int& outHeight);
  [[nodiscard]] bool getTextureDimensionsForId(int textureId, int& outWidth, int& outHeight) const;
-  [[nodiscard]] int getCompanionTextureId(int textureId, std::string_view suffix);
-  [[nodiscard]] std::string getCompanionTexturePath(int textureId, std::string_view suffix) const;
-  [[nodiscard]] bool isMissingTextureId(int textureId) const noexcept {
-   return textureId == missingTextureId_;
-  }
+ [[nodiscard]] std::string getCompanionTexturePath(int textureId, std::string_view suffix) const;
+ [[nodiscard]] bool isMissingTextureId(int textureId) const noexcept {
+  return textureId == missingTextureId_;
+ }
  [[nodiscard]] bool resourceExists(const std::string& path) const;
  [[nodiscard]] const std::vector<int>& getColors(const std::string& path);
  void bindTexture(int id);
@@ -56,20 +54,13 @@ class TextureManager {
  void addDynamicTexture(net::minecraft::client::render::texture::DynamicTexture* texture);
  void tick();
  int downloadTexture(const std::string& url, const std::string& backup = "");
- ImageDownload* downloadImage(const std::string& url, ImageProcessor* processor, bool useBetacraftProxy = true);
  void downloadSkinImage(const std::string& url);
  void downloadCapeImage(const std::string& url);
  void releaseImage(const std::string& url);
  [[nodiscard]] std::optional<bool> skinSlimArms(const std::string& url) const;
-  [[nodiscard]] static std::filesystem::path resolveResourcePath(const std::string& path);
-  // Strips leading '/' or '\' — the canonical form every path map in this class
-  // and TextureRegistry keys on.
-  [[nodiscard]] static std::string normalizePath(std::string path);
-  // ARGB u32 (RasterImage.argb) → interleaved RGBA bytes, the layout every
-  // glTexImage2D upload in the engine consumes. Shared by TextureManager::load,
-  // PbrTextures mip uploads and pack custom-texture decode.
-  [[nodiscard]] static std::vector<std::uint8_t> rasterToRgba(const RasterImage& image);
-  [[nodiscard]] static RasterImage loadRasterFromFile(const std::filesystem::path& filePath);
+ [[nodiscard]] static std::filesystem::path resolveResourcePath(const std::string& path);
+ [[nodiscard]] static std::vector<std::uint8_t> rasterToRgba(const RasterImage& image);
+ [[nodiscard]] static RasterImage loadRasterFromFile(const std::filesystem::path& filePath);
  [[nodiscard]] static RasterImage loadRasterFromBytes(const std::vector<std::uint8_t>& bytes);
  [[nodiscard]] static RasterImage loadRasterFromUrl(const std::string& url, bool useBetacraftProxy = true);
  [[nodiscard]] RasterImage loadRasterForResource(const std::string& resourcePath);
@@ -80,29 +71,25 @@ class TextureManager {
   }
   return nullptr;
  }
- // Mirror of TextureManager fields used to select texture filtering/wrap.
  static bool MIPMAP;
  static bool MIPMAP_LINEAR;
- bool clamp = false;
- bool blur = false;
 
  private:
+ ImageDownload* downloadImage(const std::string& url, SkinImageProcessor* processor,
+                              bool useBetacraftProxy = true);
  void ensureMissingTexture();
  option::GameOptions* gameOptions_ = nullptr;
  resource::pack::TexturePacks* texturePacks_ = nullptr;
-  std::unordered_map<std::string, int> textures_;
-  // Reverse of textures_ for O(1) companion lookups (getCompanionTexturePath):
-  // first path registered per id, matching the old forward scan.
-  std::unordered_map<int, std::string> texturePaths_;
-  std::unordered_map<int, std::array<int, 2>> companionTextures_;
-  std::unordered_map<int, std::array<int, 2>> textureDimensions_;
-  std::unordered_map<std::string, std::vector<int>> colors_;
-  // CPU copies for textures loaded without a pack path (font, pack icons, etc.).
-  // Pack-path textures reload from the active texture pack via textures_.
-  std::unordered_map<int, RasterImage> images_;
-  std::unordered_map<std::string, std::unique_ptr<ImageDownload>> downloadedImages_;
-  std::vector<net::minecraft::client::render::texture::DynamicTexture*> dynamicTextures_;
-  int missingTextureId_ = 0;
-  bool missingTextureReady_ = false;
+ std::unordered_map<std::string, int> textures_;
+ std::unordered_map<int, std::string> texturePaths_;
+ std::unordered_map<int, std::array<int, 2>> textureDimensions_;
+ std::unordered_map<std::string, std::vector<int>> colors_;
+ std::unordered_map<int, RasterImage> images_;
+ std::unordered_map<std::string, std::unique_ptr<ImageDownload>> downloadedImages_;
+ std::vector<net::minecraft::client::render::texture::DynamicTexture*> dynamicTextures_;
+ int missingTextureId_ = 0;
+ bool missingTextureReady_ = false;
+ bool clamp = false;
+ bool blur = false;
 };
 } // namespace net::minecraft::client::texture

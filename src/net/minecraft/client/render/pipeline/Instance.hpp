@@ -20,12 +20,14 @@ namespace net::minecraft::client::render {
 struct PackSummary {
  std::string key;
  std::string name;
- std::string version;
  std::string error;
  bool valid = false;
  bool selected = false;
 };
-enum class PackProgramState { Cold, Submitted, Ready, Failed };
+enum class PackProgramState { Cold,
+                              Submitted,
+                              Ready,
+                              Failed };
 class PackInstance {
  public:
  ~PackInstance();
@@ -42,15 +44,15 @@ class PackInstance {
  std::unordered_map<std::string, PackSourceOption> sourceOptions;
  std::unordered_map<std::string, std::string> settings;
  CustomUniformRuntime customUniforms;
-std::unordered_map<std::string, std::string> sourceCache;
-  std::unordered_map<std::string, std::string> resolvedSourceCache;
-  std::unordered_map<std::string, gl::ShaderProgram*> compiledPrograms;
-  // What prewarm already worked out for each program, so the pass that links the
-  // finished binaries does not have to re-run source preparation to rediscover it.
-  // program name -> ProgramCache key.
-  std::unordered_map<std::string, std::string> programCacheKeys;
-  // ProgramCache key -> draw buffer indices parsed out of the prepared fragment.
-  std::unordered_map<std::string, std::vector<int>> programDrawBuffers;
+ std::unordered_map<std::string, std::string> sourceCache;
+ std::unordered_map<std::string, std::string> resolvedSourceCache;
+ std::unordered_map<std::string, gl::ShaderProgram*> compiledPrograms;
+ // What prewarm already worked out for each program, so the pass that links the
+ // finished binaries does not have to re-run source preparation to rediscover it.
+ // program name -> ProgramCache key.
+ std::unordered_map<std::string, std::string> programCacheKeys;
+ // ProgramCache key -> draw buffer indices parsed out of the prepared fragment.
+ std::unordered_map<std::string, std::vector<int>> programDrawBuffers;
  PackProgramState programState = PackProgramState::Cold;
  std::vector<std::size_t> postPasses;
  std::vector<std::size_t> deferredPasses;
@@ -62,22 +64,22 @@ std::unordered_map<std::string, std::string> sourceCache;
  std::unique_ptr<gl::ProgramCache> programs;
  render::ColorTargets colorTargets;
  std::unordered_map<std::string, int> publishedTextures;
-  struct ImageTarget {
-   gl::GlTexture texture;
-   int width = 0;
-   int height = 0;
-   int depth = 0;
-  };
-  std::unordered_map<std::string, ImageTarget> images;
-  std::unordered_map<std::string, unsigned int> customTextures;
-  std::set<unsigned int> ownedCustomTextures;
-  std::array<gl::GlBuffer, kMaxShaderStorageBuffers> bufferObjects;
-  std::size_t bufferBytes[kMaxShaderStorageBuffers]{};
-  int setupWidth = 0;
-  int setupHeight = 0;
-  gl::GlTexture noiseTexture;
-  int noiseResolution = 0;
-  std::array<gl::GlTexture, 2> depthTextures;
+ struct ImageTarget {
+  gl::GlTexture texture;
+  int width = 0;
+  int height = 0;
+  int depth = 0;
+ };
+ std::unordered_map<std::string, ImageTarget> images;
+ std::unordered_map<std::string, unsigned int> customTextures;
+ std::set<unsigned int> ownedCustomTextures;
+ std::array<gl::GlBuffer, kMaxShaderStorageBuffers> bufferObjects;
+ std::size_t bufferBytes[kMaxShaderStorageBuffers]{};
+ int setupWidth = 0;
+ int setupHeight = 0;
+ gl::GlTexture noiseTexture;
+ int noiseResolution = 0;
+ std::array<gl::GlTexture, 2> depthTextures;
  int depthTextureW[2]{};
  int depthTextureH[2]{};
  std::set<std::string> logged;

@@ -34,32 +34,32 @@ std::uint64_t vramBytes() {
  return 4294967296ull;
 }
 } // namespace
-bool PackResources::ensure(PackInstance& pack, int width, int height, const gl::GlTexture& lightmapTexture,
-                                 const std::function<std::string(const PackInstance&, const std::string&)>& readText) {
+bool ensurePackResources(PackInstance& pack, int width, int height, const gl::GlTexture& lightmapTexture,
+                           const std::function<std::string(const PackInstance&, const std::string&)>& readText) {
  if(!hasGlContext()) return false;
  if(!pack.definition.images.empty() && gl::GLCore::bindImageTexture == nullptr) return false;
  const bool customNoise = std::any_of(pack.definition.customTextures.begin(), pack.definition.customTextures.end(),
                                       [](const CustomTexture& texture) { return texture.name == "noisetex"; });
-  if(!customNoise && (!pack.noiseTexture || pack.noiseResolution != pack.definition.noiseTextureResolution)) {
-   pack.noiseTexture = gl::GlTexture(core::genTexture());
-   pack.noiseResolution = pack.definition.noiseTextureResolution;
-   if(!pack.noiseTexture) return false;
-   const std::size_t count = static_cast<std::size_t>(pack.noiseResolution) * pack.noiseResolution * 3;
-   std::vector<std::uint8_t> noise(count);
-   std::uint32_t state = 0x9E3779B9u;
-   for(std::uint8_t& value : noise) {
-    state ^= state << 13;
-    state ^= state >> 17;
-    state ^= state << 5;
-    value = static_cast<std::uint8_t>(state);
-   }
-   core::bindTexture(static_cast<int>(pack.noiseTexture.handle()));
-  ::glTexImage2D(kTexture2D, 0, 0x8051, pack.noiseResolution, pack.noiseResolution, 0, 0x1907, 0x1401,
+ if(!customNoise && (!pack.noiseTexture || pack.noiseResolution != pack.definition.noiseTextureResolution)) {
+  pack.noiseTexture = gl::GlTexture(core::genTexture());
+  pack.noiseResolution = pack.definition.noiseTextureResolution;
+  if(!pack.noiseTexture) return false;
+  const std::size_t count = static_cast<std::size_t>(pack.noiseResolution) * pack.noiseResolution * 3;
+  std::vector<std::uint8_t> noise(count);
+  std::uint32_t state = 0x9E3779B9u;
+  for(std::uint8_t& value : noise) {
+   state ^= state << 13;
+   state ^= state >> 17;
+   state ^= state << 5;
+   value = static_cast<std::uint8_t>(state);
+  }
+  core::bindTexture(static_cast<int>(pack.noiseTexture.handle()));
+  ::glTexImage2D(gl::cap::Texture2D, 0, 0x8051, pack.noiseResolution, pack.noiseResolution, 0, 0x1907, 0x1401,
                  noise.data());
-  ::glTexParameteri(kTexture2D, 0x2801, 0x2601);
-  ::glTexParameteri(kTexture2D, 0x2800, 0x2601);
-  ::glTexParameteri(kTexture2D, 0x2802, 0x2901);
-  ::glTexParameteri(kTexture2D, 0x2803, 0x2901);
+  ::glTexParameteri(gl::cap::Texture2D, 0x2801, 0x2601);
+  ::glTexParameteri(gl::cap::Texture2D, 0x2800, 0x2601);
+  ::glTexParameteri(gl::cap::Texture2D, 0x2802, 0x2901);
+  ::glTexParameteri(gl::cap::Texture2D, 0x2803, 0x2901);
  }
  const std::uint64_t vram = vramBytes();
  for(const BufferObject& declaration : pack.definition.bufferObjects) {
@@ -80,41 +80,41 @@ bool PackResources::ensure(PackInstance& pack, int width, int height, const gl::
    if(scaledHeight != 0 && bytes > std::numeric_limits<std::size_t>::max() / scaledHeight) return false;
    bytes *= scaledHeight;
   }
-   gl::GlBuffer& buffer = pack.bufferObjects[declaration.index];
-   if(!buffer || pack.bufferBytes[declaration.index] != bytes) {
-    std::vector<std::uint8_t> initData;
-    if(!declaration.initPath.empty()) {
-     std::string path = declaration.initPath;
-     while(!path.empty() && path.front() == '/') path.erase(path.begin());
-     // https://github.com/IrisShaders/Iris/blob/26.1/common/src/main/java/net/irisshaders/iris/shaderpack/ShaderPack.java
-     const std::string data = readText(pack, path);
-     if(!data.empty()) {
-      if(data.size() > declaration.byteSize) return false;
-      initData.assign(data.begin(), data.end());
-     }
+  gl::GlBuffer& buffer = pack.bufferObjects[declaration.index];
+  if(!buffer || pack.bufferBytes[declaration.index] != bytes) {
+   std::vector<std::uint8_t> initData;
+   if(!declaration.initPath.empty()) {
+    std::string path = declaration.initPath;
+    while(!path.empty() && path.front() == '/') path.erase(path.begin());
+    // https://github.com/IrisShaders/Iris/blob/26.1/common/src/main/java/net/irisshaders/iris/shaderpack/ShaderPack.java
+    const std::string data = readText(pack, path);
+    if(!data.empty()) {
+     if(data.size() > declaration.byteSize) return false;
+     initData.assign(data.begin(), data.end());
     }
-    unsigned int handle = 0;
-    gl::GLCore::genBuffers(1, &handle);
-    if(handle == 0) return false;
-    buffer = gl::GlBuffer(handle);
-    gl::GLCore::bindBuffer(0x90D2, handle);
-    const int zero = 0;
-    if(declaration.relative) {
-     gl::GLCore::bufferStorage(0x90D2, static_cast<intptr_t>(bytes), nullptr, 0);
-     gl::GLCore::clearBufferSubData(0x90D2, 0x8229, 0, static_cast<intptr_t>(bytes), 0x1903, 0x1400, &zero);
-    } else {
-     gl::GLCore::bufferStorage(0x90D2, static_cast<intptr_t>(bytes), nullptr, initData.empty() ? 0 : 0x0100);
-     if(!initData.empty()) {
-      gl::GLCore::bufferSubData(0x90D2, 0, static_cast<intptr_t>(initData.size()), initData.data());
-     } else {
-      gl::GLCore::clearBufferSubData(0x90D2, 0x8229, 0, static_cast<intptr_t>(bytes), 0x1903, 0x1400, &zero);
-     }
-    }
-     pack.bufferBytes[declaration.index] = bytes;
-    }
-    gl::GLCore::bindBufferBase(0x90D2, static_cast<unsigned int>(declaration.index), buffer.handle());
    }
-  gl::GLCore::bindBuffer(0x90D2, 0);
+   unsigned int handle = 0;
+   gl::GLCore::genBuffers(1, &handle);
+   if(handle == 0) return false;
+   buffer = gl::GlBuffer(handle);
+   gl::GLCore::bindBuffer(0x90D2, handle);
+   const int zero = 0;
+   if(declaration.relative) {
+    gl::GLCore::bufferStorage(0x90D2, static_cast<intptr_t>(bytes), nullptr, 0);
+    gl::GLCore::clearBufferSubData(0x90D2, 0x8229, 0, static_cast<intptr_t>(bytes), 0x1903, 0x1400, &zero);
+   } else {
+    gl::GLCore::bufferStorage(0x90D2, static_cast<intptr_t>(bytes), nullptr, initData.empty() ? 0 : 0x0100);
+    if(!initData.empty()) {
+     gl::GLCore::bufferSubData(0x90D2, 0, static_cast<intptr_t>(initData.size()), initData.data());
+    } else {
+     gl::GLCore::clearBufferSubData(0x90D2, 0x8229, 0, static_cast<intptr_t>(bytes), 0x1903, 0x1400, &zero);
+    }
+   }
+   pack.bufferBytes[declaration.index] = bytes;
+  }
+  gl::GLCore::bindBufferBase(0x90D2, static_cast<unsigned int>(declaration.index), buffer.handle());
+ }
+ gl::GLCore::bindBuffer(0x90D2, 0);
  for(const CustomTexture& declaration : pack.definition.customTextures) {
   const std::string key = textureKey(declaration);
   if(pack.customTextures.contains(key)) continue;
@@ -149,7 +149,7 @@ bool PackResources::ensure(PackInstance& pack, int width, int height, const gl::
    if(texture < 0) return false;
    // https://github.com/IrisShaders/Iris/blob/26.1/common/src/main/java/net/irisshaders/iris/pipeline/CustomTextureManager.java
    if(const std::size_t extension = resource.find_last_of('.'); extension != std::string::npos &&
-      extension > 2) {
+                                                                extension > 2) {
     const std::string base = resource.substr(0, extension);
     const bool normal = base.ends_with("_n");
     const bool specular = base.ends_with("_s");
@@ -197,11 +197,11 @@ bool PackResources::ensure(PackInstance& pack, int width, int height, const gl::
   clamp = metadataFlag("\"clamp\"", clamp);
   const unsigned int target = textureTarget(declaration.type, textureDimensions.size());
   if((target == kTexture3D && textureDimensions.size() < 3) ||
-     (target == kTexture2D && textureDimensions.size() < 2)) return false;
+     (target == gl::cap::Texture2D && textureDimensions.size() < 2)) return false;
   const unsigned int texture = core::genTexture();
   if(texture == 0) return false;
-  if(target == kTexture2D) {
-   core::bindTexture(kTexture2D, static_cast<int>(texture));
+  if(target == gl::cap::Texture2D) {
+   core::bindTexture(gl::cap::Texture2D, static_cast<int>(texture));
   } else {
    ::glBindTexture(target, texture);
    core::invalidateTextureBindCache();
@@ -223,10 +223,10 @@ bool PackResources::ensure(PackInstance& pack, int width, int height, const gl::
   ::glTexParameteri(target, 0x2800, blur ? 0x2601 : 0x2600);
   ::glTexParameteri(target, 0x2802, clamp ? 0x812F : 0x2901);
   if(target != 0x0DE0) ::glTexParameteri(target, 0x2803, clamp ? 0x812F : 0x2901);
-   if(target == kTexture3D) ::glTexParameteri(target, 0x8072, clamp ? 0x812F : 0x2901);
-   pack.customTextures[key] = texture;
-   pack.ownedCustomTextures.insert(texture);
-  }
+  if(target == kTexture3D) ::glTexParameteri(target, 0x8072, clamp ? 0x812F : 0x2901);
+  pack.customTextures[key] = texture;
+  pack.ownedCustomTextures.insert(texture);
+ }
  for(const CustomImage& declaration : pack.definition.images) {
   const int imageWidth = declaration.relative ? std::max(1, static_cast<int>(std::ceil(width * declaration.width)))
                                               : std::max(1, static_cast<int>(declaration.width));
@@ -239,8 +239,8 @@ bool PackResources::ensure(PackInstance& pack, int width, int height, const gl::
   image.height = imageHeight;
   image.depth = declaration.depth;
   if(!image.texture) return false;
-  const unsigned int target = image.depth > 1 ? kTexture3D : kTexture2D;
-  if(target == kTexture2D) {
+  const unsigned int target = image.depth > 1 ? kTexture3D : gl::cap::Texture2D;
+  if(target == gl::cap::Texture2D) {
    core::bindTexture(static_cast<int>(image.texture.handle()));
   } else {
    ::glBindTexture(target, image.texture.handle());
@@ -254,12 +254,12 @@ bool PackResources::ensure(PackInstance& pack, int width, int height, const gl::
    ::glTexImage2D(target, 0, static_cast<int>(internalFormat(declaration.internalFormat)), image.width, image.height,
                   0, pixelFormat(declaration.format), pixelType(declaration.pixelType), nullptr);
   }
-   ::glTexParameteri(target, 0x2801, 0x2601);
-   ::glTexParameteri(target, 0x2800, 0x2601);
-   ::glTexParameteri(target, 0x2802, 0x812F);
-   ::glTexParameteri(target, 0x2803, 0x812F);
-   if(target == kTexture3D) ::glTexParameteri(target, 0x8072, 0x812F);
-  }
+  ::glTexParameteri(target, 0x2801, 0x2601);
+  ::glTexParameteri(target, 0x2800, 0x2601);
+  ::glTexParameteri(target, 0x2802, 0x812F);
+  ::glTexParameteri(target, 0x2803, 0x812F);
+  if(target == kTexture3D) ::glTexParameteri(target, 0x8072, 0x812F);
+ }
  int maxDim = std::max(width, height);
  for(const auto& [name, target] : pack.definition.targets) {
   (void)name;
@@ -277,26 +277,26 @@ bool PackResources::ensure(PackInstance& pack, int width, int height, const gl::
  pack.definition.mcMipmapLevel = std::max(0, level);
  return true;
 }
-void PackResources::bind(PackInstance& pack, gl::ShaderProgram& program, unsigned int imageUnitStart) {
-  for(const BufferObject& declaration : pack.definition.bufferObjects) {
-    if(pack.bufferObjects[declaration.index]) {
-     gl::GLCore::bindBufferBase(0x90D2, static_cast<unsigned int>(declaration.index), pack.bufferObjects[declaration.index].handle());
-    }
-   }
-  unsigned int imageUnit = imageUnitStart;
-  for(const CustomImage& declaration : pack.definition.images) {
-   const auto found = pack.images.find(declaration.name);
-   if(found == pack.images.end() || !found->second.texture || imageUnit >= 16) continue;
-   program.set1i(declaration.name, static_cast<int>(imageUnit));
-    gl::GLCore::bindImageTexture(imageUnit, found->second.texture.handle(), 0, found->second.depth > 1 ? 1 : 0, 0, 0x88BA,
-                                 internalFormat(declaration.internalFormat));
+void bindPackResources(PackInstance& pack, gl::ShaderProgram& program, unsigned int imageUnitStart) {
+ for(const BufferObject& declaration : pack.definition.bufferObjects) {
+  if(pack.bufferObjects[declaration.index]) {
+   gl::GLCore::bindBufferBase(0x90D2, static_cast<unsigned int>(declaration.index), pack.bufferObjects[declaration.index].handle());
+  }
+ }
+ unsigned int imageUnit = imageUnitStart;
+ for(const CustomImage& declaration : pack.definition.images) {
+  const auto found = pack.images.find(declaration.name);
+  if(found == pack.images.end() || !found->second.texture || imageUnit >= 16) continue;
+  program.set1i(declaration.name, static_cast<int>(imageUnit));
+  gl::GLCore::bindImageTexture(imageUnit, found->second.texture.handle(), 0, found->second.depth > 1 ? 1 : 0, 0, 0x88BA,
+                               internalFormat(declaration.internalFormat));
   ++imageUnit;
  }
 }
-void PackResources::addTextures(PackInstance& pack,
-                                      const std::string& stage,
-                                      std::unordered_map<std::string, int>& textures,
-                                      std::unordered_map<std::string, int>& volumes) {
+void addPackTextures(PackInstance& pack,
+                                const std::string& stage,
+                                std::unordered_map<std::string, int>& textures,
+                                std::unordered_map<std::string, int>& volumes) {
  if(pack.noiseTexture) textures["noisetex"] = static_cast<int>(pack.noiseTexture.handle());
  for(const CustomTexture& declaration : pack.definition.customTextures) {
   if(!declaration.stage.empty() && declaration.stage != stage) continue;
@@ -308,8 +308,8 @@ void PackResources::addTextures(PackInstance& pack,
  for(const CustomImage& declaration : pack.definition.images) {
   const auto found = pack.images.find(declaration.name);
   if(found != pack.images.end())
-    (found->second.depth > 1 ? volumes : textures)[declaration.sampler] =
-        static_cast<int>(found->second.texture.handle());
+   (found->second.depth > 1 ? volumes : textures)[declaration.sampler] =
+       static_cast<int>(found->second.texture.handle());
  }
 }
 } // namespace net::minecraft::client::render

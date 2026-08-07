@@ -10,7 +10,7 @@
 namespace net::minecraft::client::render::block {
 namespace option = net::minecraft::client::option;
 bool FluidBlockRenderer::renderFluid(net::minecraft::block::Block& block, int x, int y, int z) {
- Tessellator& tessellator = *ctx_.tess;
+ Tessellator& tessellator = ctx_.tessellator();
  int colorMult = block.getColorMultiplier(ctx_.blockView, x, y, z);
  float red = (float)(colorMult >> 16 & 0xFF) / 255.0f;
  float green = (float)(colorMult >> 8 & 0xFF) / 255.0f;

@@ -126,7 +126,7 @@ void PistonBlockRenderer::renderExtensionRod(int axis,
                                              double textureScrollU) {
  const net::minecraft::block::TerrainAtlasUv uv = net::minecraft::block::Block::terrainStripUv(
      net::minecraft::block::PistonConstants::TEXTURE_EXTENSION, textureScrollU);
- Tessellator& tessellator = *ctx_.tess;
+ Tessellator& tessellator = ctx_.tessellator();
  tessellator.color(brightness, brightness, brightness);
  switch(axis) {
  case 0:

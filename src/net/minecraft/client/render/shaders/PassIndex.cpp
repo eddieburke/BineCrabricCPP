@@ -42,12 +42,7 @@ constexpr std::array kPackProgramIds = {
     PackProgramId{"shadow_water", "shadow"},
     PackProgramId{"shadow_entities", "shadow"},
     PackProgramId{"shadow_block", "shadow"},
-    PackProgramId{"shadow_lightning", "shadow_entities"},
-    PackProgramId{"dh_terrain", ""},
-    PackProgramId{"dh_water", "dh_terrain"},
-    PackProgramId{"dh_generic", "dh_terrain"},
-    PackProgramId{"dh_shadow", ""}};
-
+    PackProgramId{"shadow_lightning", "shadow_entities"}};
 std::string programLookupKey(const std::string& programName) {
  const std::size_t hash = programName.find('#');
  return hash == std::string::npos ? programName : programName.substr(0, hash);
@@ -55,7 +50,6 @@ std::string programLookupKey(const std::string& programName) {
 bool optionEnabled(const std::string& value) {
  return value != "0" && value != "false";
 }
-// https://github.com/IrisShaders/Iris/blob/26.1/common/src/main/java/net/irisshaders/iris/shaderpack/parsing/BooleanParser.java
 class BoolExpression {
  public:
  explicit BoolExpression(std::string expression,
@@ -131,9 +125,19 @@ class BoolExpression {
  std::size_t pos_ = 0;
  bool failed_ = false;
 };
-}
+} // namespace
 std::span<const PackProgramId> packProgramIds() {
  return kPackProgramIds;
+}
+bool isCompositeStageName(const std::string& name) noexcept {
+ const std::string_view programName = name;
+ for(const std::string_view prefix : kCompositeStagePrefixes) {
+  if(!programName.starts_with(prefix)) continue;
+  if(programName.size() == prefix.size()) return true;
+  const char next = programName[prefix.size()];
+  if(next == '_' || (next >= '0' && next <= '9')) return true;
+ }
+ return false;
 }
 bool isProgramEnabled(const PackDefinition& definition,
                       const std::unordered_map<std::string, std::string>& settings,
@@ -160,18 +164,18 @@ void indexPackPasses(const PackDefinition& definition,
                      const std::unordered_map<std::string, std::string>& settings,
                      PackPassBuckets& buckets,
                      ProgramEnabledCache& cache) {
-  buckets.postPasses.clear();
-  buckets.deferredPasses.clear();
-  buckets.computePasses.clear();
-  buckets.beginPasses.clear();
-  buckets.shadowCompositePasses.clear();
-  buckets.preparePasses.clear();
-  buckets.setupPasses.clear();
-  for(std::size_t i = 0; i < definition.passes.size(); ++i) {
-   const PackPass& pass = definition.passes[i];
-   if(pass.program.empty() || !isProgramEnabledCached(definition, settings, pass.program, cache)) {
-    continue;
-   }
+ buckets.postPasses.clear();
+ buckets.deferredPasses.clear();
+ buckets.computePasses.clear();
+ buckets.beginPasses.clear();
+ buckets.shadowCompositePasses.clear();
+ buckets.preparePasses.clear();
+ buckets.setupPasses.clear();
+ for(std::size_t i = 0; i < definition.passes.size(); ++i) {
+  const PackPass& pass = definition.passes[i];
+  if(pass.program.empty() || !isProgramEnabledCached(definition, settings, pass.program, cache)) {
+   continue;
+  }
   if(pass.type == "post") {
    buckets.postPasses.push_back(i);
   } else if(pass.type == "deferred") {
@@ -188,18 +192,14 @@ void indexPackPasses(const PackDefinition& definition,
    buckets.setupPasses.push_back(i);
   }
  }
-  std::stable_sort(buckets.computePasses.begin(), buckets.computePasses.end(), [&definition](std::size_t a, std::size_t b) {
-   return ComputeDispatcher::lessComputeOrder(definition.passes[a], definition.passes[b]);
-  });
-  std::stable_sort(buckets.setupPasses.begin(), buckets.setupPasses.end(), [&definition](std::size_t a, std::size_t b) {
-   return ComputeDispatcher::lessComputeOrder(definition.passes[a], definition.passes[b]);
-  });
+ std::stable_sort(buckets.computePasses.begin(), buckets.computePasses.end(), [&definition](std::size_t a, std::size_t b) {
+  return ComputeDispatcher::lessComputeOrder(definition.passes[a], definition.passes[b]);
+ });
+ std::stable_sort(buckets.setupPasses.begin(), buckets.setupPasses.end(), [&definition](std::size_t a, std::size_t b) {
+  return ComputeDispatcher::lessComputeOrder(definition.passes[a], definition.passes[b]);
+ });
 }
-
-// https://github.com/IrisShaders/Iris/blob/26.1/common/src/main/java/net/irisshaders/iris/pipeline/IrisPipelines.java
-// https://github.com/IrisShaders/Iris/blob/26.1/common/src/main/java/net/irisshaders/iris/shadows/ShadowRenderer.java
 std::string irisShadowProgramForGbuffers(const std::string& gbuffersKey) {
- if(gbuffersKey.rfind("clrwl_", 0) == 0) return {};
  if(gbuffersKey == "gbuffers_terrain_solid" || gbuffersKey == "gbuffers_terrain_cutout") return "shadow_cutout";
  if(gbuffersKey == "gbuffers_water") return "shadow_water";
  if(gbuffersKey.rfind("gbuffers_entities", 0) == 0 || gbuffersKey == "gbuffers_item" ||
@@ -216,14 +216,12 @@ std::string irisShadowProgramForGbuffers(const std::string& gbuffersKey) {
  }
  return "shadow";
 }
-
 std::string programFallbackKey(const std::string& programKey) {
  const auto found = std::find_if(kPackProgramIds.begin(), kPackProgramIds.end(),
                                  [&programKey](const PackProgramId& id) { return id.name == programKey; });
  if(found != kPackProgramIds.end()) return std::string(found->fallback);
  return {};
 }
-
 std::string resolveProgramKey(const PackDefinition& definition,
                               const std::unordered_map<std::string, std::string>& settings,
                               const std::string& requested,
@@ -233,4 +231,4 @@ std::string resolveProgramKey(const PackDefinition& definition,
  }
  return {};
 }
-}
+} // namespace net::minecraft::client::render

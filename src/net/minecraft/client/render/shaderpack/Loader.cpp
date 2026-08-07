@@ -181,8 +181,6 @@ void scanShadowMapResolution(const std::string& source, PackDefinition& pack) {
   }
  }
 }
-// Tracks whether the scan is inside a /* */ block at the END of `line`, so preprocessor
-// directives that only appear inside a comment are not evaluated as real conditionals.
 void advanceBlockComment(const std::string& line, bool& inBlockComment) {
  for(std::size_t i = 0; i < line.size();) {
   if(inBlockComment) {
@@ -208,26 +206,38 @@ std::string firstIdentifier(const std::string& text) {
  while(end < text.size() && isIdentChar(text[end])) ++end;
  return text.substr(begin, end - begin);
 }
-// Iris runs every program source through the GLSL preprocessor with the pack's option
-// defines (ShaderPack's sourceProvider -> JcppProcessor.glslPreprocessSource) BEFORE
-// ConstDirectiveParser walks it, so only the branch the active options select can
-// contribute const directives. RenderPearl declares 32 mutually exclusive
-// shadowDistance/shadowNearPlane/shadowFarPlane triples behind `#if SM_DIST == n`;
-// scanning the text flat let the last branch win (512 / -695 / 695) instead of the
-// SM_DIST-selected one (160 / -227 / 227 at the shipped `#define SM_DIST 10`), which
-// desynchronised every engine-side shadow distance from the values the GLSL is actually
-// compiled with.
-//
-// Comments are deliberately NOT stripped for the const match itself: JCPP keeps them
-// (Feature.KEEPCOMMENTS) and ConstDirectiveParser is a plain per-line scan, so packs
-// hide directives such as `const float shadowIntervalSize = 0.0;` inside block comments
-// to keep the GLSL compiler quiet while Iris still honours them. Directives *inside* a
-// comment are still not evaluated as conditionals, which is what JCPP does.
-void scanPackConstants(const std::string& source, PackDefinition& pack) {
+void scanPackConstants(const std::string& source,
+                       PackDefinition& pack,
+                       const std::unordered_map<std::string, PackSourceOption>& options,
+                       const std::unordered_map<std::string, std::string>* values = nullptr) {
  std::istringstream lines(source);
  std::string line;
  PPMacroTable macros;
- seedMacrosFromDefines(std::string{}, macros);
+ seedEngineMacros(pack, macros);
+ // The GLSL the driver compiles sees the option-rewritten source, so `#if OPTION`
+ // chains must be evaluated with the CURRENT settings, not the shipped defaults,
+ // or the engine's shadow tuning and the shader's disagree whenever an option
+ // moves (Iris parses programs after option replacement).
+ for(const auto& [name, option] : options) {
+  const PackSetting& setting = option.setting;
+  const std::string effective =
+      values != nullptr ? [&] {
+       const auto found = values->find(name);
+       return found != values->end() ? found->second : setting.defaultValue;
+      }()
+                        : setting.defaultValue;
+  PPMacro macro;
+  macro.body = effective;
+  const bool trueValue = effective == "1" || effective == "true";
+  if(setting.type == SettingType::Bool) {
+   if(trueValue) {
+    macro.body.clear();
+    macros[name] = macro;
+   }
+  } else {
+   macros[name] = macro;
+  }
+ }
  ConditionalState conditionals(ConditionalState::Flavor::Glsl);
  bool inBlockComment = false;
  while(std::getline(lines, line)) {
@@ -282,54 +292,39 @@ void scanPackConstants(const std::string& source, PackDefinition& pack) {
    pack.shadowHardwareOffset = on;
    continue;
   }
-  if(left == "const bool generateShadowMipmap" || left == "const bool shadowtexMipmap") {
-   if(on) pack.shadowtexMipmap[0] = pack.shadowtexMipmap[1] = true;
+  if(left == "const bool generateShadowColorMipmap") {
+   if(on) pack.shadowcolorMipmap[0] = pack.shadowcolorMipmap[1] = true;
    continue;
   }
-  if(left == "const bool shadowtex0Mipmap") {
-   pack.shadowtexMipmap[0] = on;
+  for(int index = 0; index < 8; ++index) {
+   const std::string suffix = std::to_string(index);
+   if(left == "const bool shadowcolor" + suffix + "Mipmap" ||
+      left == "const bool shadowColor" + suffix + "Mipmap") {
+    pack.shadowcolorMipmap[index] = on;
+    continue;
+   }
+  }
+  if(left == "const bool shadowtexNearest") {
+   pack.shadowtexNearest[0] = pack.shadowtexNearest[1] = on;
    continue;
   }
-  if(left == "const bool shadowtex1Mipmap") {
-   pack.shadowtexMipmap[1] = on;
+  if(left == "const bool shadowtex0Nearest" || left == "const bool shadow0MinMagNearest") {
+   pack.shadowtexNearest[0] = on;
    continue;
   }
-   if(left == "const bool generateShadowColorMipmap") {
-    if(on) pack.shadowcolorMipmap[0] = pack.shadowcolorMipmap[1] = true;
+  if(left == "const bool shadowtex1Nearest" || left == "const bool shadow1MinMagNearest") {
+   pack.shadowtexNearest[1] = on;
+   continue;
+  }
+  for(int index = 0; index < 8; ++index) {
+   const std::string suffix = std::to_string(index);
+   if(left == "const bool shadowcolor" + suffix + "Nearest" ||
+      left == "const bool shadowColor" + suffix + "Nearest" ||
+      left == "const bool shadowColor" + suffix + "MinMagNearest") {
+    pack.shadowcolorNearest[index] = on;
     continue;
    }
-   // https://github.com/IrisShaders/Iris/blob/26.1/common/src/main/java/net/irisshaders/iris/shaderpack/properties/PackShadowDirectives.java#L170-L182
-   for(int index = 0; index < 8; ++index) {
-    const std::string suffix = std::to_string(index);
-    if(left == "const bool shadowcolor" + suffix + "Mipmap" ||
-       left == "const bool shadowColor" + suffix + "Mipmap") {
-     pack.shadowcolorMipmap[index] = on;
-     continue;
-    }
-   }
-   // https://github.com/IrisShaders/Iris/blob/26.1/common/src/main/java/net/irisshaders/iris/shaderpack/properties/PackShadowDirectives.java#L184-L198
-   if(left == "const bool shadowtexNearest") {
-    pack.shadowtexNearest[0] = pack.shadowtexNearest[1] = on;
-    continue;
-   }
-   if(left == "const bool shadowtex0Nearest" || left == "const bool shadow0MinMagNearest") {
-    pack.shadowtexNearest[0] = on;
-    continue;
-   }
-   if(left == "const bool shadowtex1Nearest" || left == "const bool shadow1MinMagNearest") {
-    pack.shadowtexNearest[1] = on;
-    continue;
-   }
-   // https://github.com/IrisShaders/Iris/blob/26.1/common/src/main/java/net/irisshaders/iris/shaderpack/properties/PackShadowDirectives.java#L200-L214
-   for(int index = 0; index < 8; ++index) {
-    const std::string suffix = std::to_string(index);
-    if(left == "const bool shadowcolor" + suffix + "Nearest" ||
-       left == "const bool shadowColor" + suffix + "Nearest" ||
-       left == "const bool shadowColor" + suffix + "MinMagNearest") {
-     pack.shadowcolorNearest[index] = on;
-     continue;
-    }
-   }
+  }
   double value = 0.0;
   bool integer = false;
   if(!number(right, value, integer)) continue;
@@ -352,17 +347,17 @@ void scanPackConstants(const std::string& source, PackDefinition& pack) {
    pack.shadowDistance = std::max(0.0f, f);
   } else if(left == "const float shadowDistanceRenderMul") {
    pack.shadowDistanceRenderMul = f;
-   } else if(left == "const float shadowMapFov") {
-    pack.shadowMapFov = f;
-   } else if(left == "const float shadowNearPlane") {
-    pack.shadowNearPlane = f;
-   } else if(left == "const float shadowFarPlane") {
-    pack.shadowFarPlane = f;
-   } else if(left == "const float shadowHardwareOffsetFactor") {
-    pack.shadowHardwareOffsetFactor = f;
-   } else if(left == "const float shadowHardwareOffsetUnits") {
-    pack.shadowHardwareOffsetUnits = f;
-   } else if(left == "const float shadowIntervalSize") {
+  } else if(left == "const float shadowMapFov") {
+   pack.shadowMapFov = f;
+  } else if(left == "const float shadowNearPlane") {
+   pack.shadowNearPlane = f;
+  } else if(left == "const float shadowFarPlane") {
+   pack.shadowFarPlane = f;
+  } else if(left == "const float shadowHardwareOffsetFactor") {
+   pack.shadowHardwareOffsetFactor = f;
+  } else if(left == "const float shadowHardwareOffsetUnits") {
+   pack.shadowHardwareOffsetUnits = f;
+  } else if(left == "const float shadowIntervalSize") {
    pack.shadowIntervalSize = std::max(0.0f, f);
   } else if(left == "const float ambientOcclusionLevel") {
    pack.ambientOcclusionLevel = std::clamp(f, 0.0f, 1.0f);
@@ -389,101 +384,89 @@ std::vector<std::string> scanMipmapEnabled(const std::string& source) {
 std::string preprocessProperties(const std::string& source,
                                  int mcVersion,
                                  const std::unordered_map<std::string, PackSourceOption>& options,
-                                 const std::vector<PackProfile>& profiles) {
-  // https://github.com/IrisShaders/Iris/blob/26.1/common/src/main/java/net/irisshaders/iris/shaderpack/preprocessor/PropertiesPreprocessor.java
-  PPMacroTable macros;
-  {
-   PPMacro mc;
-   mc.body = std::to_string(mcVersion);
-   macros["MC_VERSION"] = mc;
-  }
-  for(const auto& [name, option] : options) {
-   const PackSetting& setting = option.setting;
-   PPMacro macro;
-   macro.body = setting.defaultValue;
-   const bool trueValue = setting.defaultValue == "1" || setting.defaultValue == "true";
-   if(setting.type == SettingType::Bool) {
-    if(trueValue) {
-     macro.body.clear();
-     macros[name] = macro;
-    }
-   } else {
+                                 const std::unordered_map<std::string, std::string>& values) {
+ PPMacroTable macros;
+ {
+  PPMacro mc;
+  mc.body = std::to_string(mcVersion);
+  macros["MC_VERSION"] = mc;
+ }
+ for(const auto& [name, option] : options) {
+  const PackSetting& setting = option.setting;
+  const auto current = values.find(name);
+  const std::string& value = current != values.end() ? current->second : setting.defaultValue;
+  PPMacro macro;
+  macro.body = value;
+  const bool trueValue = value == "1" || value == "true";
+  if(setting.type == SettingType::Bool) {
+   if(trueValue) {
+    macro.body.clear();
     macros[name] = macro;
    }
+  } else {
+   macros[name] = macro;
   }
-  if(!profiles.empty()) {
-   for(const auto& [name, value] : profiles.front().values) {
-    const bool trueValue = value == "true";
-    if(value == "false") {
-     macros.erase(name);
-    } else {
-     PPMacro macro;
-     macro.body = trueValue ? std::string{} : value;
-     macros[name] = macro;
-    }
-   }
+ }
+ std::istringstream lines(source);
+ std::string line;
+ std::string logical;
+ std::string result;
+ ConditionalState stack(ConditionalState::Flavor::Properties);
+ auto lineActive = [&]() {
+  return stack.active();
+ };
+ while(std::getline(lines, line)) {
+  logical += line;
+  if(!logical.empty() && logical.back() == '\\') {
+   logical.pop_back();
+   logical.push_back('\n');
+   continue;
   }
-
-  std::istringstream lines(source);
-  std::string line;
-  std::string logical;
-  std::string result;
-  ConditionalState stack(ConditionalState::Flavor::Properties);
-  auto lineActive = [&]() {
-   return stack.active();
-  };
-  while(std::getline(lines, line)) {
-   logical += line;
-   if(!logical.empty() && logical.back() == '\\') {
-    logical.pop_back();
-    logical.push_back('\n');
+  line = std::move(logical);
+  logical.clear();
+  const std::string cleaned = trim(line);
+  std::string keyword;
+  std::string rest;
+  const bool isDirective = parseDirective(cleaned, keyword, rest);
+  if(isDirective) {
+   if(keyword == "ifdef" || keyword == "ifndef") {
+    const bool defined = macros.count(rest) > 0;
+    const bool condition = keyword == "ifdef" ? defined : !defined;
+    stack.push(condition);
     continue;
    }
-   line = std::move(logical);
-   logical.clear();
-   const std::string cleaned = trim(line);
-   std::string keyword;
-   std::string rest;
-   const bool isDirective = parseDirective(cleaned, keyword, rest);
-   if(isDirective) {
-    if(keyword == "ifdef" || keyword == "ifndef") {
-     const bool defined = macros.count(rest) > 0;
-     const bool condition = keyword == "ifdef" ? defined : !defined;
-     stack.push(condition);
-     continue;
-    }
-    if(keyword == "if") {
-     stack.push(evaluateIfExpression(rest, macros));
-     continue;
-    }
-    if(keyword == "elif") {
-     stack.elif(evaluateIfExpression(rest, macros));
-     continue;
-    }
-    if(keyword == "else") {
-     stack.else_();
-     continue;
-    }
-    if(keyword == "endif") {
-     stack.endif();
-     continue;
-    }
-    if(keyword == "define") {
-     if(lineActive()) parseDefineDirective(rest, macros);
-     continue;
-    }
-    if(keyword == "undef") {
-     if(lineActive()) macros.erase(trim(rest));
-     continue;
-    }
+   if(keyword == "if") {
+    stack.push(evaluateIfExpression(rest, macros));
     continue;
    }
-   if(lineActive() && !cleaned.empty() && cleaned.front() != '#' && cleaned.front() != '!') {
-    result += line;
-    result.push_back('\n');
+   if(keyword == "elif") {
+    stack.elif(evaluateIfExpression(rest, macros));
+    continue;
    }
+   if(keyword == "else") {
+    stack.else_();
+    continue;
+   }
+   if(keyword == "endif") {
+    stack.endif();
+    continue;
+   }
+   if(keyword == "define") {
+    if(lineActive()) parseDefineDirective(rest, macros);
+    continue;
+   }
+   if(keyword == "undef") {
+    if(lineActive()) macros.erase(trim(rest));
+    continue;
+   }
+   continue;
   }
-  return result;
+  if(lineActive() && !cleaned.empty() && cleaned.front() != '#' && cleaned.front() != '!') {
+   result += line;
+   result.push_back('\n');
+  }
+ }
+ return result;
 }
 namespace {
 struct TransparentStringHash {
@@ -540,14 +523,14 @@ void noteRenderTargetOutputs(PackDefinition& pack, const std::string& source, bo
 }
 bool isKnownBufferFormat(const std::string& format) {
  static constexpr std::array<std::string_view, 48> formats = {
-     "R8",           "R16",          "R16F",         "R32F",         "RG8",          "RG16",
-     "RG16F",        "RG32F",        "RGB8",         "RGB16",        "RGB16F",       "RGB32F",
-     "R11F_G11F_B10F", "RGB10_A2",   "RGBA8",        "RGBA16",       "RGBA16F",      "RGBA32F",
-     "RGBA",         "R8_SNORM",     "R16_SNORM",    "RG8_SNORM",    "RG16_SNORM",   "RGB8_SNORM",
-     "RGB16_SNORM",  "RGBA8_SNORM",  "RGBA16_SNORM", "R8I",          "R16I",         "R32I",
-     "RG8I",         "RG16I",        "RG32I",        "RGB8I",        "RGB16I",       "RGB32I",
-     "RGBA8I",       "RGBA16I",      "RGBA32I",      "R8UI",         "R16UI",        "R32UI",
-     "RG8UI",        "RG16UI",       "RG32UI",       "RGBA8UI",      "RGBA16UI",     "RGBA32UI"};
+     "R8", "R16", "R16F", "R32F", "RG8", "RG16",
+     "RG16F", "RG32F", "RGB8", "RGB16", "RGB16F", "RGB32F",
+     "R11F_G11F_B10F", "RGB10_A2", "RGBA8", "RGBA16", "RGBA16F", "RGBA32F",
+     "RGBA", "R8_SNORM", "R16_SNORM", "RG8_SNORM", "RG16_SNORM", "RGB8_SNORM",
+     "RGB16_SNORM", "RGBA8_SNORM", "RGBA16_SNORM", "R8I", "R16I", "R32I",
+     "RG8I", "RG16I", "RG32I", "RGB8I", "RGB16I", "RGB32I",
+     "RGBA8I", "RGBA16I", "RGBA32I", "R8UI", "R16UI", "R32UI",
+     "RG8UI", "RG16UI", "RG32UI", "RGBA8UI", "RGBA16UI", "RGBA32UI"};
  return std::find(formats.begin(), formats.end(), format) != formats.end();
 }
 bool isOffsetInComment(std::string_view source, std::size_t pos) {
@@ -626,7 +609,6 @@ void scanTargetDirective(PackDefinition& pack,
 }
 void inferColortexFormatsFromLayouts(PackDefinition& pack, const std::string& source);
 void scanTargetFormats(PackDefinition& pack, const std::string& source) {
- // https://github.com/IrisShaders/Iris/blob/26.1/common/src/main/java/net/irisshaders/iris/shaderpack/properties/PackRenderTargetDirectives.java#L95-L101
  static constexpr std::array<std::string_view, 8> legacyTargets = {
      "gcolor", "gdepth", "gnormal", "composite", "gaux1", "gaux2", "gaux3", "gaux4"};
  for(int index = 0; index < 32; ++index) {
@@ -641,9 +623,6 @@ void scanTargetFormats(PackDefinition& pack, const std::string& source) {
   scanTargetDirective(pack, source, key, key);
  }
  scanTargetDirective(pack, source, "shadowcolor", "shadowcolor");
- // https://shaders.properties/current/reference/buffers/colortex/
- // https://www.khronos.org/opengl/wiki/Image_Load_Store
- // https://github.com/Luracasmus/renderpearl/blob/main/DEV.md
  inferColortexFormatsFromLayouts(pack, source);
 }
 void inferColortexFormatsFromLayouts(PackDefinition& pack, const std::string& source) {
@@ -680,63 +659,70 @@ void inferColortexFormatsFromLayouts(PackDefinition& pack, const std::string& so
    continue;
   }
   const int index = std::atoi(source.c_str() + numStart);
-  if(quals.find("rgba32ui") != std::string::npos) upgrade(index, "RGBA32UI");
-  else if(quals.find("rgba16ui") != std::string::npos) upgrade(index, "RGBA16UI");
-  else if(quals.find("rgba8ui") != std::string::npos) upgrade(index, "RGBA8UI");
-  else if(quals.find("rgba32f") != std::string::npos) upgrade(index, "RGBA32F");
-  else if(quals.find("rgba16f") != std::string::npos) upgrade(index, "RGBA16F");
-  else if(quals.find("rgba8") != std::string::npos) upgrade(index, "RGBA8");
-  else if(quals.find("rg8") != std::string::npos) upgrade(index, "RG8");
+  if(quals.find("rgba32ui") != std::string::npos)
+   upgrade(index, "RGBA32UI");
+  else if(quals.find("rgba16ui") != std::string::npos)
+   upgrade(index, "RGBA16UI");
+  else if(quals.find("rgba8ui") != std::string::npos)
+   upgrade(index, "RGBA8UI");
+  else if(quals.find("rgba32f") != std::string::npos)
+   upgrade(index, "RGBA32F");
+  else if(quals.find("rgba16f") != std::string::npos)
+   upgrade(index, "RGBA16F");
+  else if(quals.find("rgba8") != std::string::npos)
+   upgrade(index, "RGBA8");
+  else if(quals.find("rg8") != std::string::npos)
+   upgrade(index, "RG8");
   search = close + 1;
  }
-  const auto declaredTypeBefore = [&](std::size_t marker) {
-   std::size_t end = marker;
-   while(end > 0 && std::isspace(static_cast<unsigned char>(source[end - 1]))) --end;
-   std::size_t begin = end;
-   while(begin > 0 && (std::isalnum(static_cast<unsigned char>(source[begin - 1])) || source[begin - 1] == '_')) {
-    --begin;
-   }
-   return lowercase(source.substr(begin, end - begin));
-  };
-  for(std::size_t search = 0;;) {
+ const auto declaredTypeBefore = [&](std::size_t marker) {
+  std::size_t end = marker;
+  while(end > 0 && std::isspace(static_cast<unsigned char>(source[end - 1]))) --end;
+  std::size_t begin = end;
+  while(begin > 0 && (std::isalnum(static_cast<unsigned char>(source[begin - 1])) || source[begin - 1] == '_')) {
+   --begin;
+  }
+  return lowercase(source.substr(begin, end - begin));
+ };
+ for(std::size_t search = 0;;) {
   const std::size_t marker = source.find("colortex", search);
   if(marker == std::string::npos) break;
   if(isOffsetInComment(source, marker)) {
    search = marker + 8;
    continue;
   }
-   const std::size_t numStart = marker + 8;
-   if(numStart >= source.size() || !std::isdigit(static_cast<unsigned char>(source[numStart]))) {
-    search = marker + 8;
-    continue;
-   }
-   std::size_t numEnd = numStart;
-   while(numEnd < source.size() && std::isdigit(static_cast<unsigned char>(source[numEnd]))) ++numEnd;
-   if(numEnd < source.size() &&
-      (std::isalnum(static_cast<unsigned char>(source[numEnd])) || source[numEnd] == '_')) {
-    search = numEnd;
-    continue;
-   }
-   const int index = std::atoi(source.c_str() + numStart);
-   const std::string type = declaredTypeBefore(marker);
-   if(type == "uint" || type.starts_with("uvec") || type.starts_with("usampler"))
-    upgrade(index, "RGBA32UI");
-   else if(type == "int" || type.starts_with("ivec") || type.starts_with("isampler"))
-    upgrade(index, "RGBA32I");
-   else if(type == "float16_t" || type.starts_with("f16vec"))
-    upgrade(index, "RGBA16F");
+  const std::size_t numStart = marker + 8;
+  if(numStart >= source.size() || !std::isdigit(static_cast<unsigned char>(source[numStart]))) {
    search = marker + 8;
+   continue;
   }
+  std::size_t numEnd = numStart;
+  while(numEnd < source.size() && std::isdigit(static_cast<unsigned char>(source[numEnd]))) ++numEnd;
+  if(numEnd < source.size() &&
+     (std::isalnum(static_cast<unsigned char>(source[numEnd])) || source[numEnd] == '_')) {
+   search = numEnd;
+   continue;
+  }
+  const int index = std::atoi(source.c_str() + numStart);
+  const std::string type = declaredTypeBefore(marker);
+  if(type == "uint" || type.starts_with("uvec") || type.starts_with("usampler"))
+   upgrade(index, "RGBA32UI");
+  else if(type == "int" || type.starts_with("ivec") || type.starts_with("isampler"))
+   upgrade(index, "RGBA32I");
+  else if(type == "float16_t" || type.starts_with("f16vec"))
+   upgrade(index, "RGBA16F");
+  search = marker + 8;
+ }
 }
 void addPostPrograms(PackDefinition& pack,
                      const ResourceSet& resources,
                      const PackLoader::ReadText& readText,
                      const std::unordered_map<std::string, std::string>& resolvedFragments) {
- const std::array<std::string, 6> prefixes = {"begin", "shadowcomp", "prepare", "deferred", "composite", "final"};
- for(const std::string& prefix : prefixes) {
+ const std::array<std::string_view, 6> prefixes = kCompositeStagePrefixes;
+ for(const std::string_view prefix : prefixes) {
   const int programCount = prefix == "final" ? 1 : 100;
   for(int index = 0; index < programCount; ++index) {
-   const std::string key = prefix + (index == 0 ? std::string{} : std::to_string(index));
+   const std::string key = std::string(prefix) + (index == 0 ? std::string{} : std::to_string(index));
    const std::string path = "shaders/" + key;
    if(!resources.contains(path + ".fsh")) continue;
    const std::string vertex = resources.contains(path + ".vsh") ? path + ".vsh" : std::string{};
@@ -751,11 +737,11 @@ void addPostPrograms(PackDefinition& pack,
                                          : prefix == "prepare"      ? "prepare"
                                          : prefix == "deferred"     ? "deferred"
                                                                     : "post";
-    pass.program = key;
-    const auto resolved = resolvedFragments.find(path + ".fsh");
-    const std::string source = resolved != resolvedFragments.end()
-                                   ? resolved->second
-                                   : resolvedFragmentSource(readText, path + ".fsh");
+   pass.program = key;
+   const auto resolved = resolvedFragments.find(path + ".fsh");
+   const std::string source = resolved != resolvedFragments.end()
+                                  ? resolved->second
+                                  : resolvedFragmentSource(readText, path + ".fsh");
    pass.outputs = key == "final" ? std::vector<std::string>{"screen"} : renderTargetOutputNames(source);
    pass.mipmapBuffers = scanMipmapEnabled(source);
    if(prefix == "shadowcomp")
@@ -790,7 +776,6 @@ bool boolean(std::string_view value, bool& out) {
  }
  return false;
 }
-// https://github.com/IrisShaders/Iris/blob/26.1/common/src/main/java/net/irisshaders/iris/shaderpack/properties/PackRenderTargetDirectives.java#L21-L30
 int legacyRenderTargetIndex(std::string_view name) {
  static constexpr std::array<std::string_view, 8> legacy = {
      "gcolor", "gdepth", "gnormal", "composite", "gaux1", "gaux2", "gaux3", "gaux4"};
@@ -847,39 +832,38 @@ std::vector<int> dimensions(std::string value) {
  return result;
 }
 void seedProfiles(PackDefinition& pack, const std::string& source) {
-  // https://github.com/IrisShaders/Iris/blob/26.1/common/src/main/java/net/irisshaders/iris/shaderpack/option/ProfileSet.java#L57-L83
-  pack.profiles.clear();
-  for(const auto& [key, value] : properties(source)) {
-   if(key.rfind("profile.", 0) != 0) continue;
-   PackProfile profile;
-   profile.name = key.substr(8);
-   for(const std::string& token : words(value)) {
-    if(token.rfind("!program.", 0) == 0) {
-     const std::string program = token.substr(9);
-     if(!program.empty()) profile.disabledPrograms.push_back(program);
-     continue;
-    }
-    if(token.rfind("profile.", 0) == 0) continue;
-    if(!token.empty() && token.front() == '!') {
-     const std::string option = token.substr(1);
-     if(!option.empty()) profile.values[option] = "false";
-     continue;
-    }
-    const std::size_t equals = token.find('=');
-    const std::size_t colon = equals == std::string::npos ? token.find(':') : std::string::npos;
-    if(equals != std::string::npos) {
-     profile.values[token.substr(0, equals)] = token.substr(equals + 1);
-     continue;
-    }
-    if(colon != std::string::npos && colon != 0) {
-     profile.values[token.substr(0, colon)] = token.substr(colon + 1);
-     continue;
-    }
-    if(!token.empty()) profile.values[token] = "true";
+ pack.profiles.clear();
+ for(const auto& [key, value] : properties(source)) {
+  if(key.rfind("profile.", 0) != 0) continue;
+  PackProfile profile;
+  profile.name = key.substr(8);
+  for(const std::string& token : words(value)) {
+   if(token.rfind("!program.", 0) == 0) {
+    const std::string program = token.substr(9);
+    if(!program.empty()) profile.disabledPrograms.push_back(program);
+    continue;
    }
-   if(!profile.name.empty()) pack.profiles.push_back(std::move(profile));
+   if(token.rfind("profile.", 0) == 0) continue;
+   if(!token.empty() && token.front() == '!') {
+    const std::string option = token.substr(1);
+    if(!option.empty()) profile.values[option] = "false";
+    continue;
+   }
+   const std::size_t equals = token.find('=');
+   const std::size_t colon = equals == std::string::npos ? token.find(':') : std::string::npos;
+   if(equals != std::string::npos) {
+    profile.values[token.substr(0, equals)] = token.substr(equals + 1);
+    continue;
+   }
+   if(colon != std::string::npos && colon != 0) {
+    profile.values[token.substr(0, colon)] = token.substr(colon + 1);
+    continue;
+   }
+   if(!token.empty()) profile.values[token] = "true";
   }
+  if(!profile.name.empty()) pack.profiles.push_back(std::move(profile));
  }
+}
 void parsePackProperties(PackDefinition& pack, const std::string& source) {
  for(const auto& [key, value] : properties(source)) {
   bool flag = false;
@@ -913,35 +897,33 @@ void parsePackProperties(PackDefinition& pack, const std::string& source) {
    pack.oldHandLight = flag;
   } else if(key == "voxelizeLightBlocks" && boolean(value, flag)) {
    pack.voxelizeLightBlocks = flag;
-   } else if(key == "separateEntityDraws" && boolean(value, flag)) {
-    pack.separateEntityDraws = flag;
-    // https://github.com/IrisShaders/Iris/blob/26.1/common/src/main/java/net/irisshaders/iris/shaderpack/properties/ShaderProperties.java#L214-L217
-    pack.particleOrdering = "mixed";
-   } else if(key == "oldLighting" && boolean(value, flag)) {
-    pack.oldLighting = flag;
-   } else if(key == "dynamicHandLight" && boolean(value, flag)) {
-    // Java ShaderProperties.java:190 parses this and never consumes it; keep the
-    pack.dynamicHandLight = flag;
-   } else if(key == "prepareBeforeShadow" && boolean(value, flag)) {
-    pack.prepareBeforeShadow = flag;
-   } else if(key == "breaksAnisotropy" && boolean(value, flag)) {
-    pack.breaksAnisotropy = flag;
-   } else if(key == "dhShadow.enabled" && boolean(value, flag)) {
-    pack.dhShadowEnabled = flag;
-   } else if(key == "fallbackTex") {
-    char* end = nullptr;
-    const long tex = std::strtol(value.c_str(), &end, 10);
-    if(end != value.c_str() && *end == '\0') pack.fallbackTex = static_cast<int>(tex);
-   } else if(key == "separateAo" && boolean(value, flag)) {
+  } else if(key == "separateEntityDraws" && boolean(value, flag)) {
+   pack.separateEntityDraws = flag;
+   pack.particleOrdering = "mixed";
+  } else if(key == "oldLighting" && boolean(value, flag)) {
+   pack.oldLighting = flag;
+  } else if(key == "dynamicHandLight" && boolean(value, flag)) {
+   pack.dynamicHandLight = flag;
+  } else if(key == "prepareBeforeShadow" && boolean(value, flag)) {
+   pack.prepareBeforeShadow = flag;
+  } else if(key == "breaksAnisotropy" && boolean(value, flag)) {
+   pack.breaksAnisotropy = flag;
+  } else if(key == "dhShadow.enabled" && boolean(value, flag)) {
+   pack.dhShadowEnabled = flag;
+  } else if(key == "fallbackTex") {
+   char* end = nullptr;
+   const long tex = std::strtol(value.c_str(), &end, 10);
+   if(end != value.c_str() && *end == '\0') pack.fallbackTex = static_cast<int>(tex);
+  } else if(key == "separateAo" && boolean(value, flag)) {
    pack.separateAo = flag;
-   } else if(key == "clouds") {
-    const std::string clouds = lowercase(value);
-    pack.cloudsMode = clouds;
-    pack.renderClouds = clouds != "off" && clouds != "false" && clouds != "0";
-   } else if(key == "dhClouds") {
-    pack.dhCloudsMode = lowercase(value);
-   } else if(key == "particles.before.deferred" && pack.particleOrdering.empty() && boolean(value, flag) && flag) {
-    pack.particleOrdering = "before";
+  } else if(key == "clouds") {
+   const std::string clouds = lowercase(value);
+   pack.cloudsMode = clouds;
+   pack.renderClouds = clouds != "off" && clouds != "false" && clouds != "0";
+  } else if(key == "dhClouds") {
+   pack.dhCloudsMode = lowercase(value);
+  } else if(key == "particles.before.deferred" && pack.particleOrdering.empty() && boolean(value, flag) && flag) {
+   pack.particleOrdering = "before";
   } else if(key == "endFlashShadows" && boolean(value, flag)) {
    pack.endFlashShadows = flag;
   } else if(key == "sun" && boolean(value, flag)) {
@@ -952,14 +934,13 @@ void parsePackProperties(PackDefinition& pack, const std::string& source) {
    pack.renderSky = flag;
   } else if(key == "stars" && boolean(value, flag)) {
    pack.renderStars = flag;
-   } else if(key == "weather") {
-    // https://github.com/IrisShaders/Iris/blob/26.1/common/src/main/java/net/irisshaders/iris/shaderpack/properties/ShaderProperties.java#L259-L267
-    const std::vector<std::string> parts = words(value);
-    if(!parts.empty()) {
-     pack.renderWeather = parts[0] == "true";
-     if(parts.size() > 1) pack.renderWeatherParticles = parts[1] == "true";
-    }
-   } else if(key == "underwaterOverlay" && boolean(value, flag)) {
+  } else if(key == "weather") {
+   const std::vector<std::string> parts = words(value);
+   if(!parts.empty()) {
+    pack.renderWeather = parts[0] == "true";
+    if(parts.size() > 1) pack.renderWeatherParticles = parts[1] == "true";
+   }
+  } else if(key == "underwaterOverlay" && boolean(value, flag)) {
    pack.underwaterOverlay = flag;
   } else if(key == "vignette" && boolean(value, flag)) {
    pack.vignette = flag;
@@ -983,33 +964,31 @@ void parsePackProperties(PackDefinition& pack, const std::string& source) {
    for(const std::string& token : words(value)) {
     if(!token.empty()) pack.sliderKeys.insert(token);
    }
-   } else if(key == "screen.columns") {
-    // https://github.com/IrisShaders/Iris/blob/26.1/common/src/main/java/net/irisshaders/iris/shaderpack/properties/ShaderProperties.java#L613
-    char* end = nullptr;
-    const long columns = std::strtol(value.c_str(), &end, 10);
-    if(end != value.c_str() && *end == '\0') pack.screenColumns = static_cast<int>(columns);
-   } else if(key.rfind("screen.", 0) == 0 && key.size() > 15 && key.compare(key.size() - 8, 8, ".columns") == 0) {
-    // https://github.com/IrisShaders/Iris/blob/26.1/common/src/main/java/net/irisshaders/iris/shaderpack/properties/ShaderProperties.java#L617
-    const std::string page = key.substr(7, key.size() - 15);
-    char* end = nullptr;
-    const long columns = std::strtol(value.c_str(), &end, 10);
-    if(!page.empty() && end != value.c_str() && *end == '\0') pack.screenPageColumns[page] = static_cast<int>(columns);
-   } else if(key == "screen") {
-    pack.screenRoot.clear();
-    for(const std::string& token : words(value)) {
-     if(!token.empty()) pack.screenRoot.push_back(token);
-    }
-   } else if(key.rfind("screen.", 0) == 0) {
-    const std::string page = key.substr(7);
-    std::vector<std::string> tokens;
-    for(const std::string& token : words(value)) {
-     if(!token.empty()) tokens.push_back(token);
-    }
-    if(!page.empty()) pack.screenPages[page] = std::move(tokens);
-   } else if(key.rfind("profile.", 0) == 0) {
-    if(pack.profiles.empty()) seedProfiles(pack, source);
-    continue;
-   } else if(key.rfind("uniform.", 0) == 0 || key.rfind("variable.", 0) == 0) {
+  } else if(key == "screen.columns") {
+   char* end = nullptr;
+   const long columns = std::strtol(value.c_str(), &end, 10);
+   if(end != value.c_str() && *end == '\0') pack.screenColumns = static_cast<int>(columns);
+  } else if(key.rfind("screen.", 0) == 0 && key.size() > 15 && key.compare(key.size() - 8, 8, ".columns") == 0) {
+   const std::string page = key.substr(7, key.size() - 15);
+   char* end = nullptr;
+   const long columns = std::strtol(value.c_str(), &end, 10);
+   if(!page.empty() && end != value.c_str() && *end == '\0') pack.screenPageColumns[page] = static_cast<int>(columns);
+  } else if(key == "screen") {
+   pack.screenRoot.clear();
+   for(const std::string& token : words(value)) {
+    if(!token.empty()) pack.screenRoot.push_back(token);
+   }
+  } else if(key.rfind("screen.", 0) == 0) {
+   const std::string page = key.substr(7);
+   std::vector<std::string> tokens;
+   for(const std::string& token : words(value)) {
+    if(!token.empty()) tokens.push_back(token);
+   }
+   if(!page.empty()) pack.screenPages[page] = std::move(tokens);
+  } else if(key.rfind("profile.", 0) == 0) {
+   if(pack.profiles.empty()) seedProfiles(pack, source);
+   continue;
+  } else if(key.rfind("uniform.", 0) == 0 || key.rfind("variable.", 0) == 0) {
    const bool upload = key.rfind("uniform.", 0) == 0;
    const std::string rest = key.substr(upload ? 8 : 9);
    const std::size_t dot = rest.find('.');
@@ -1022,53 +1001,50 @@ void parsePackProperties(PackDefinition& pack, const std::string& source) {
    decl.upload = upload;
    decl.expression = value;
    if(!decl.name.empty() && !decl.expression.empty()) pack.customUniforms.push_back(std::move(decl));
-   } else if(key == "shadow.culling") {
-    // https://github.com/IrisShaders/Iris/blob/26.1/common/src/main/java/net/irisshaders/iris/shaderpack/properties/ShaderProperties.java#L180-L187
-    if(value == "reversed" || value == "safe_zone") {
-     pack.shadowCulling = ShadowCullState::SafeZone;
-    } else if(boolean(value, flag)) {
-     pack.shadowCulling = flag ? ShadowCullState::Advanced : ShadowCullState::Distance;
-    }
+  } else if(key == "shadow.culling") {
+   if(value == "reversed" || value == "safe_zone") {
+    pack.shadowCulling = ShadowCullState::SafeZone;
+   } else if(boolean(value, flag)) {
+    pack.shadowCulling = flag ? ShadowCullState::Advanced : ShadowCullState::Distance;
+   }
   } else if(key.rfind("program.", 0) == 0 && key.size() > 16 && key.compare(key.size() - 8, 8, ".enabled") == 0) {
    const std::string programName = key.substr(8, key.size() - 16);
    if(!programName.empty()) {
     pack.programEnabled[programName] = value;
    }
-   } else if(key.rfind("size.buffer.", 0) == 0) {
-    const std::string bufferName = key.substr(12);
-    const std::vector<std::string> fields = words(value);
-    if(bufferName.empty() || fields.size() != 2) continue;
-    // https://github.com/IrisShaders/Iris/blob/26.1/common/src/main/java/net/irisshaders/iris/gl/texture/TextureScaleOverride.java#L8-L24
-    PackTarget& target = pack.targets[bufferName];
-    if(fields[0].find('.') == std::string::npos) {
-     const int w = std::atoi(fields[0].c_str());
-     if(w > 0 && w <= 16384) {
-      target.absoluteWidth = w;
-      target.scaleX = 1.0f;
-     }
-    } else {
-     const float sx = std::strtof(fields[0].c_str(), nullptr);
-     if(sx > 0.0f) target.scaleX = sx;
+  } else if(key.rfind("size.buffer.", 0) == 0) {
+   const std::string bufferName = key.substr(12);
+   const std::vector<std::string> fields = words(value);
+   if(bufferName.empty() || fields.size() != 2) continue;
+   PackTarget& target = pack.targets[bufferName];
+   if(fields[0].find('.') == std::string::npos) {
+    const int w = std::atoi(fields[0].c_str());
+    if(w > 0 && w <= 16384) {
+     target.absoluteWidth = w;
+     target.scaleX = 1.0f;
     }
-    if(fields[1].find('.') == std::string::npos) {
-     const int h = std::atoi(fields[1].c_str());
-     if(h > 0 && h <= 16384) {
-      target.absoluteHeight = h;
-      target.scaleY = 1.0f;
-     }
-    } else {
-     const float sy = std::strtof(fields[1].c_str(), nullptr);
-     if(sy > 0.0f) target.scaleY = sy;
+   } else {
+    const float sx = std::strtof(fields[0].c_str(), nullptr);
+    if(sx > 0.0f) target.scaleX = sx;
+   }
+   if(fields[1].find('.') == std::string::npos) {
+    const int h = std::atoi(fields[1].c_str());
+    if(h > 0 && h <= 16384) {
+     target.absoluteHeight = h;
+     target.scaleY = 1.0f;
     }
-    target.scale = target.scaleX;
-   } else if(key.rfind("scale.", 0) == 0) {
+   } else {
+    const float sy = std::strtof(fields[1].c_str(), nullptr);
+    if(sy > 0.0f) target.scaleY = sy;
+   }
+   target.scale = target.scaleX;
+  } else if(key.rfind("scale.", 0) == 0) {
    const std::string programName = key.substr(6);
    const std::vector<std::string> fields = words(value);
    if(programName.empty() || fields.empty() || fields.size() > 3) continue;
-    ProgramScale scale{};
-    scale.scale = std::strtof(fields[0].c_str(), nullptr);
-    // Java accepts any parseable scale (ShaderProperties.java:240-257); only NaN/inf are rejected.
-    if(!std::isfinite(scale.scale)) continue;
+   ProgramScale scale{};
+   scale.scale = std::strtof(fields[0].c_str(), nullptr);
+   if(!std::isfinite(scale.scale)) continue;
    if(fields.size() >= 3) {
     scale.offsetX = std::strtof(fields[1].c_str(), nullptr);
     scale.offsetY = std::strtof(fields[2].c_str(), nullptr);
@@ -1078,14 +1054,13 @@ void parsePackProperties(PackDefinition& pack, const std::string& source) {
    const std::string programName = key.substr(10);
    const std::vector<std::string> fields = words(value);
    if(programName.empty() || fields.empty()) continue;
-    AlphaTestDirective directive;
-    directive.program = programName;
-    // https://github.com/IrisShaders/Iris/blob/26.1/common/src/main/java/net/irisshaders/iris/shaderpack/properties/ShaderProperties.java#L280-L283
-    if(fields.size() == 1 && (lowercase(fields[0]) == "off" || lowercase(fields[0]) == "false")) {
-     directive.enabled = false;
-     directive.func = "ALWAYS";
-     directive.ref = 0.0f;
-    } else if(fields.size() >= 2) {
+   AlphaTestDirective directive;
+   directive.program = programName;
+   if(fields.size() == 1 && (lowercase(fields[0]) == "off" || lowercase(fields[0]) == "false")) {
+    directive.enabled = false;
+    directive.func = "ALWAYS";
+    directive.ref = 0.0f;
+   } else if(fields.size() >= 2) {
     directive.enabled = true;
     directive.func = fields[0];
     directive.ref = std::strtof(fields[1].c_str(), nullptr);
@@ -1123,7 +1098,6 @@ void parsePackProperties(PackDefinition& pack, const std::string& source) {
     if(separator == std::string::npos) continue;
     texture.stage = binding.substr(0, separator);
     texture.name = binding.substr(separator + 1);
-    // https://github.com/IrisShaders/Iris/blob/26.1/common/src/main/java/net/irisshaders/iris/shaderpack/properties/ShaderProperties.java#L448
     const std::size_t samplerDot = texture.name.find('.');
     if(samplerDot != std::string::npos) texture.name = texture.name.substr(0, samplerDot);
     if(texture.stage != "setup" && texture.stage != "begin" && texture.stage != "shadowcomp" &&
@@ -1160,7 +1134,6 @@ void parsePackProperties(PackDefinition& pack, const std::string& source) {
    if(identifier(texture.name) && (texture.encoded || !texture.dimensions.empty()))
     pack.customTextures.push_back(std::move(texture));
   } else if(key.rfind("bufferObject.", 0) == 0) {
-   // https://github.com/IrisShaders/Iris/blob/26.1/common/src/main/java/net/irisshaders/iris/shaderpack/properties/ShaderProperties.java
    const std::string indexText = key.substr(13);
    char* end = nullptr;
    const long index = std::strtol(indexText.c_str(), &end, 10);
@@ -1193,62 +1166,61 @@ void parsePackProperties(PackDefinition& pack, const std::string& source) {
     }
    }
    pack.bufferObjects.push_back(buffer);
-   } else if(key.rfind("image.", 0) == 0) {
-    // https://github.com/IrisShaders/Iris/blob/26.1/common/src/main/java/net/irisshaders/iris/shaderpack/properties/ShaderProperties.java#L514-L571
-    const std::vector<std::string> fields = words(value);
-    if(fields.size() < 7 || fields.size() > 9 || pack.images.size() >= 16) continue;
-    CustomImage image;
-    image.name = key.substr(6);
-    image.sampler = fields[0];
-    image.format = fields[1];
-    image.internalFormat = fields[2];
-    image.pixelType = fields[3];
-    if((image.sampler != "none" && !identifier(image.sampler)) ||
-       !boolean(fields[4], image.clearEachFrame) || !boolean(fields[5], image.relative)) continue;
-    if(image.sampler == "none") image.sampler.clear();
-    if(image.relative) {
-     if(fields.size() < 8) continue;
-     image.width = std::strtof(fields[6].c_str(), nullptr);
-     image.height = std::strtof(fields[7].c_str(), nullptr);
-     image.depth = 1;
-    } else {
-     image.width = std::strtof(fields[6].c_str(), nullptr);
-     image.height = fields.size() >= 8 ? std::strtof(fields[7].c_str(), nullptr) : 1.0f;
-     image.depth = fields.size() == 9 ? std::max(1, std::atoi(fields[8].c_str())) : 1;
-    }
-    if(!(image.width > 0.0f) || !(image.height > 0.0f) || image.depth > 16384) continue;
-    pack.images.push_back(std::move(image));
-   } else if(key.rfind("blend.", 0) == 0) {
+  } else if(key.rfind("image.", 0) == 0) {
+   const std::vector<std::string> fields = words(value);
+   if(fields.size() < 7 || fields.size() > 9 || pack.images.size() >= 16) continue;
+   CustomImage image;
+   image.name = key.substr(6);
+   image.sampler = fields[0];
+   image.format = fields[1];
+   image.internalFormat = fields[2];
+   image.pixelType = fields[3];
+   if((image.sampler != "none" && !identifier(image.sampler)) ||
+      !boolean(fields[4], image.clearEachFrame) || !boolean(fields[5], image.relative)) continue;
+   if(image.sampler == "none") image.sampler.clear();
+   if(image.relative) {
+    if(fields.size() < 8) continue;
+    image.width = std::strtof(fields[6].c_str(), nullptr);
+    image.height = std::strtof(fields[7].c_str(), nullptr);
+    image.depth = 1;
+   } else {
+    image.width = std::strtof(fields[6].c_str(), nullptr);
+    image.height = fields.size() >= 8 ? std::strtof(fields[7].c_str(), nullptr) : 1.0f;
+    image.depth = fields.size() == 9 ? std::max(1, std::atoi(fields[8].c_str())) : 1;
+   }
+   if(!(image.width > 0.0f) || !(image.height > 0.0f) || image.depth > 16384) continue;
+   pack.images.push_back(std::move(image));
+  } else if(key.rfind("blend.", 0) == 0) {
    const std::vector<std::string> fields = words(value);
    if(fields.size() != 4 && !(fields.size() == 1 && lowercase(fields[0]) == "off")) continue;
    const std::string target = key.substr(6);
    const std::size_t separator = target.find_last_of('.');
    BufferBlend blend;
    blend.program = separator == std::string::npos ? target : target.substr(0, separator);
-    if(separator != std::string::npos) {
-     const std::string buffer = target.substr(separator + 1);
-     if(buffer.rfind("colortex", 0) == 0) {
-      blend.buffer = std::atoi(buffer.c_str() + 8);
+   if(separator != std::string::npos) {
+    const std::string buffer = target.substr(separator + 1);
+    if(buffer.rfind("colortex", 0) == 0) {
+     blend.buffer = std::atoi(buffer.c_str() + 8);
+    } else {
+     const int legacy = legacyRenderTargetIndex(buffer);
+     if(legacy >= 0) {
+      blend.buffer = legacy;
      } else {
-      const int legacy = legacyRenderTargetIndex(buffer);
-      if(legacy >= 0) {
-       blend.buffer = legacy;
-      } else {
-       char* end = nullptr;
-       const long parsed = std::strtol(buffer.c_str(), &end, 10);
-       if(end != buffer.c_str() && *end == '\0') blend.buffer = static_cast<int>(parsed);
-      }
+      char* end = nullptr;
+      const long parsed = std::strtol(buffer.c_str(), &end, 10);
+      if(end != buffer.c_str() && *end == '\0') blend.buffer = static_cast<int>(parsed);
      }
     }
-    blend.enabled = fields.size() == 4;
-    if(blend.enabled) {
-     blend.source = fields[0];
-     blend.destination = fields[1];
-     blend.sourceAlpha = fields[2];
-     blend.destinationAlpha = fields[3];
-    }
-    if(separator != std::string::npos && blend.buffer < 0) continue;
-    if(!blend.program.empty() && blend.buffer < 32) pack.bufferBlends.push_back(std::move(blend));
+   }
+   blend.enabled = fields.size() == 4;
+   if(blend.enabled) {
+    blend.source = fields[0];
+    blend.destination = fields[1];
+    blend.sourceAlpha = fields[2];
+    blend.destinationAlpha = fields[3];
+   }
+   if(separator != std::string::npos && blend.buffer < 0) continue;
+   if(!blend.program.empty() && blend.buffer < 32) pack.bufferBlends.push_back(std::move(blend));
   }
  }
 }
@@ -1262,8 +1234,6 @@ void parseDimensionProperties(PackDefinition& pack, const std::string& source) {
 void parseIdProperties(std::unordered_map<std::string, int>& output,
                        const std::string& source,
                        std::string_view prefix) {
- // https://github.com/IrisShaders/Iris/blob/26.1/common/src/main/java/net/irisshaders/iris/shaderpack/IdMap.java
- //   are skipped with a warning in Java (IdMap.parseIdMap line 188)
  for(const auto& [key, value] : properties(source)) {
   if(key.rfind(prefix, 0) != 0) continue;
   const std::string idText = key.substr(prefix.size());
@@ -1318,12 +1288,13 @@ void addComputePrograms(PackDefinition& pack,
                         const std::vector<std::string>& resources,
                         const PackLoader::ReadText& readText) {
  const auto computePassStage = [](const std::string& name) -> const char* {
-  static constexpr const char* kStages[] = {
-      "setup", "begin", "shadowcomp", "prepare", "deferred", "composite", "final"};
-  for(const char* stage : kStages) {
+  for(const std::string_view stage : kCompositeStagePrefixes) {
    if(ComputeDispatcher::matchesStage(name, stage)) {
-    return stage;
+    return stage.data();
    }
+  }
+  if(ComputeDispatcher::matchesStage(name, "setup")) {
+   return "setup";
   }
   return nullptr;
  };
@@ -1340,7 +1311,6 @@ void addComputePrograms(PackDefinition& pack,
   pass.type = std::strcmp(stage, "setup") == 0 ? "setup" : "compute";
   pass.program = pass.name + "#compute";
   pass.order = ComputeDispatcher::computePassOrder(pass.name);
-  bool orderFromSource = false;
   std::istringstream lines(source);
   std::string line;
   while(std::getline(lines, line)) {
@@ -1404,11 +1374,9 @@ void addComputePrograms(PackDefinition& pack,
     const std::size_t equals = cleaned.find('=');
     if(equals != std::string::npos) {
      pass.order = std::atoi(cleaned.c_str() + equals + 1);
-     orderFromSource = true;
     }
    }
   }
-  (void)orderFromSource;
   PackProgramSource program;
   program.compute = sourcePath;
   pack.programs.emplace(pass.program, std::move(program));
@@ -1424,10 +1392,10 @@ void inferVersion(const std::string& source, PackDefinition& pack) {
  if(number < 110) return;
  const int major = number / 100;
  const int minor = (number / 10) % 10;
-  if(major > pack.glslVersionMajor || (major == pack.glslVersionMajor && minor > pack.glslVersionMinor)) {
-   pack.glslVersionMajor = major;
-   pack.glslVersionMinor = minor;
-  }
+ if(major > pack.glslVersionMajor || (major == pack.glslVersionMajor && minor > pack.glslVersionMinor)) {
+  pack.glslVersionMajor = major;
+  pack.glslVersionMinor = minor;
+ }
 }
 void reprefixProgramPaths(PackDefinition& pack, const std::string& prefix) {
  auto rewrite = [&prefix](std::string& path) {
@@ -1445,16 +1413,25 @@ void reprefixProgramPaths(PackDefinition& pack, const std::string& prefix) {
 }
 void loadProgramSet(PackDefinition& out,
                     const std::vector<std::string>& resources,
-                    const PackLoader::ReadText& readText) {
+                    const PackLoader::ReadText& readText,
+                    const std::unordered_map<std::string, PackSourceOption>& options,
+                    const std::unordered_map<std::string, std::string>& values) {
  std::unordered_map<std::string, std::string> resolvedFragments;
  const ResourceSet resourceSet(resources.begin(), resources.end());
+ // Option-rewrite every source before scanning, exactly like the compile path
+ // (PackCompiler::resolveIncludes), so constants that follow an option (e.g.
+ // RenderPearl's `#if SM_DIST == N` shadowDistance ladder) land in the definition
+ // with the user's values instead of the pack's defaults.
+ const PackLoader::ReadText rewrittenRead = [&readText, &options, &values](std::string_view path) {
+  return PackLoader::rewriteOptions(readText(path), options, values);
+ };
  for(const PackProgramId& id : packProgramIds()) addProgram(out, resourceSet, id.name);
  for(const std::string& path : resources) {
   if(!path.ends_with(".fsh")) continue;
-  std::string source = resolvedFragmentSource(readText, path);
+  std::string source = resolvedFragmentSource(rewrittenRead, path);
   scanTargetFormats(out, source);
   scanShadowMapResolution(source, out);
-  scanPackConstants(source, out);
+  scanPackConstants(source, out, options, &values);
   resolvedFragments.emplace(path, std::move(source));
   const std::string name = std::filesystem::path(path).stem().string();
   if(name.rfind("shadowcomp", 0) == 0) continue;
@@ -1465,18 +1442,19 @@ void loadProgramSet(PackDefinition& out,
      !path.ends_with(".gsh") && !path.ends_with(".tcs") && !path.ends_with(".tes")) {
    continue;
   }
-  scanTargetFormats(out, readText(path));
+  const std::string source = PackLoader::rewriteOptions(readText(path), options, values);
+  scanTargetFormats(out, source);
+  scanShadowMapResolution(source, out);
+  scanPackConstants(source, out, options, &values);
  }
  out.gbufferColorBuffers = std::clamp(out.gbufferColorBuffers, 1, 32);
- // https://github.com/IrisShaders/Iris/blob/26.1/common/src/main/java/net/irisshaders/iris/shaderpack/properties/ProgramDirectives.java
  auto hasBlendOverride = [&out](const std::string& program) {
   return std::any_of(out.bufferBlends.begin(), out.bufferBlends.end(),
                      [&program](const BufferBlend& blend) { return blend.program == program; });
  };
- static constexpr const char* kShadowPrograms[] = {
-     "shadow", "shadow_solid", "shadow_cutout", "shadow_water",
-     "shadow_entities", "shadow_block", "shadow_lightning"};
- for(const char* program : kShadowPrograms) {
+ for(const PackProgramId& id : packProgramIds()) {
+  if(!id.name.starts_with("shadow")) continue;
+  const std::string program(id.name);
   if(out.programs.contains(program) && !hasBlendOverride(program)) {
    BufferBlend blend;
    blend.program = program;
@@ -1500,7 +1478,7 @@ void loadProgramSet(PackDefinition& out,
  }
  out.shadowColorBuffers = std::clamp(out.shadowColorBuffers, 0, 8);
  if(out.programs.contains("shadow") && out.shadowMapResolution == 0) out.shadowMapResolution = 1024;
-  addPostPrograms(out, resourceSet, readText, resolvedFragments);
+ addPostPrograms(out, resourceSet, readText, resolvedFragments);
  out.shadowColorBuffers = std::clamp(out.shadowColorBuffers, 0, 8);
  addComputePrograms(out, resources, readText);
 }
@@ -1510,10 +1488,11 @@ bool dimensionSetHasPrograms(const PackDefinition& pack) {
 }
 } // namespace
 bool PackLoader::load(const std::vector<std::string>& resources,
-                            const ReadText& readText,
-                            PackDefinition& out,
-                            std::unordered_map<std::string, PackSourceOption>& options,
-                            std::string& error) {
+                      const ReadText& readText,
+                      PackDefinition& out,
+                      std::unordered_map<std::string, PackSourceOption>& options,
+                      std::string& error,
+                      const std::unordered_map<std::string, std::string>& values) {
  out = PackDefinition{};
  options.clear();
  if(!std::any_of(resources.begin(), resources.end(), [](const std::string& path) { return path.rfind("shaders/", 0) == 0; })) {
@@ -1527,54 +1506,51 @@ bool PackLoader::load(const std::vector<std::string>& resources,
   const std::string source = readText(path);
   inferVersion(source, out);
   scanOptions(source, options, rejectedOptions);
-  scanShadowMapResolution(source, out);
-  scanPackConstants(source, out);
  }
-  const bool customDimensionProperties =
-      has(resources, "shaders/dimension.properties") || has(resources, "dimension.properties");
-  if(has(resources, "shaders/shaders.properties")) {
-   seedProfiles(out, readText("shaders/shaders.properties"));
-  }
-  const auto preprocessProps = [&](const std::string& src) {
-   return preprocessProperties(src, 10703, options, out.profiles);
-  };
-  if(has(resources, "shaders/shaders.properties"))
-   parsePackProperties(out, preprocessProps(readText("shaders/shaders.properties")));
-  if(has(resources, "shaders/dimension.properties"))
-   parseDimensionProperties(out, preprocessProps(readText("shaders/dimension.properties")));
-  else if(has(resources, "dimension.properties"))
-   parseDimensionProperties(out, preprocessProps(readText("dimension.properties")));
-  if(has(resources, "shaders/entity.properties"))
-   parseIdProperties(out.entityIds, preprocessProps(readText("shaders/entity.properties")), "entity.");
-  if(has(resources, "shaders/item.properties"))
-   parseIdProperties(out.itemIds, preprocessProps(readText("shaders/item.properties")), "item.");
-  if(has(resources, "shaders/block.properties")) {
-   const std::string blockProps = preprocessProps(readText("shaders/block.properties"));
-   parseIdProperties(out.blockIds, blockProps, "block.");
-   parseBlockLayerProperties(out, blockProps);
-   out.hasBlockProperties = true;
-  }
-  // https://github.com/IrisShaders/Iris/blob/26.1/common/src/main/java/net/irisshaders/iris/shaderpack/ShaderPack.java#L216-L237
-  if(!out.requiredFeatures.contains("SSBO") && !out.optionalFeatures.contains("SSBO") &&
-     !out.bufferObjects.empty()) {
-   error = "An SSBO is being used, but the feature flag for SSBO's hasn't been set! Please set either a "
-           "requirement or check for the SSBO feature using \"iris.features.required/optional = ssbo\".";
+ const bool customDimensionProperties =
+     has(resources, "shaders/dimension.properties") || has(resources, "dimension.properties");
+ if(has(resources, "shaders/shaders.properties")) {
+  seedProfiles(out, readText("shaders/shaders.properties"));
+ }
+ const auto preprocessProps = [&](const std::string& src) {
+  return preprocessProperties(src, 10703, options, values);
+ };
+ if(has(resources, "shaders/shaders.properties"))
+  parsePackProperties(out, preprocessProps(readText("shaders/shaders.properties")));
+ if(has(resources, "shaders/dimension.properties"))
+  parseDimensionProperties(out, preprocessProps(readText("shaders/dimension.properties")));
+ else if(has(resources, "dimension.properties"))
+  parseDimensionProperties(out, preprocessProps(readText("dimension.properties")));
+ if(has(resources, "shaders/entity.properties"))
+  parseIdProperties(out.entityIds, preprocessProps(readText("shaders/entity.properties")), "entity.");
+ if(has(resources, "shaders/item.properties"))
+  parseIdProperties(out.itemIds, preprocessProps(readText("shaders/item.properties")), "item.");
+ if(has(resources, "shaders/block.properties")) {
+  const std::string blockProps = preprocessProps(readText("shaders/block.properties"));
+  parseIdProperties(out.blockIds, blockProps, "block.");
+  parseBlockLayerProperties(out, blockProps);
+  out.hasBlockProperties = true;
+ }
+ if(!out.requiredFeatures.contains("SSBO") && !out.optionalFeatures.contains("SSBO") &&
+    !out.bufferObjects.empty()) {
+  error = "An SSBO is being used, but the feature flag for SSBO's hasn't been set! Please set either a "
+          "requirement or check for the SSBO feature using \"iris.features.required/optional = ssbo\".";
+  return false;
+ }
+ if(!out.requiredFeatures.contains("CUSTOM_IMAGES") && !out.optionalFeatures.contains("CUSTOM_IMAGES") &&
+    !out.images.empty()) {
+  error = "Custom images are being used, but the feature flag for custom images hasn't been set! Please set "
+          "either a requirement or check for custom images' feature flag using "
+          "\"iris.features.required/optional = CUSTOM_IMAGES\".";
+  return false;
+ }
+ for(const std::string& feature : out.requiredFeatures) {
+  if(!featureSupported(feature)) {
+   error = "required feature '" + feature + "' is unsupported on this system";
    return false;
   }
-  if(!out.requiredFeatures.contains("CUSTOM_IMAGES") && !out.optionalFeatures.contains("CUSTOM_IMAGES") &&
-     !out.images.empty()) {
-   error = "Custom images are being used, but the feature flag for custom images hasn't been set! Please set "
-           "either a requirement or check for custom images' feature flag using "
-           "\"iris.features.required/optional = CUSTOM_IMAGES\".";
-   return false;
-  }
-  for(const std::string& feature : out.requiredFeatures) {
-   if(!featureSupported(feature)) {
-    error = "required feature '" + feature + "' is unsupported on this system";
-    return false;
-   }
-  }
-   loadProgramSet(out, resources, readText);
+ }
+ loadProgramSet(out, resources, readText, options, values);
  if(has(resources, "shaders/lang/en_us.lang") || has(resources, "shaders/lang/en_US.lang")) {
   const std::string langPath =
       has(resources, "shaders/lang/en_us.lang") ? "shaders/lang/en_us.lang" : "shaders/lang/en_US.lang";
@@ -1611,6 +1587,19 @@ bool PackLoader::load(const std::vector<std::string>& resources,
   }
  }
  for(const auto& [key, option] : options) out.settings.push_back(option.setting);
+ if(!out.profiles.empty()) {
+  PackSetting profile;
+  profile.key = "profile";
+  profile.type = SettingType::Enum;
+  profile.label = "Profile";
+  profile.defaultValue = "Default";
+  profile.valueOrder.push_back("Default");
+  for(const PackProfile& preset : out.profiles) {
+   profile.valueOrder.push_back(preset.name);
+   profile.valueLabels[preset.name] = preset.name;
+  }
+  out.settings.push_back(std::move(profile));
+ }
  for(PackSetting& setting : out.settings) {
   if(out.sliderKeys.count(setting.key) != 0) setting.asSlider = true;
  }
@@ -1650,8 +1639,6 @@ bool PackLoader::load(const std::vector<std::string>& resources,
    const std::string source = readText(prefix + path.substr(8));
    inferVersion(source, *definition);
    scanOptions(source, dimensionOptions, dimensionRejected);
-   scanShadowMapResolution(source, *definition);
-   scanPackConstants(source, *definition);
   }
   const PackLoader::ReadText dimensionRead =
       [&readText, &prefix](std::string_view path) {
@@ -1663,7 +1650,7 @@ bool PackLoader::load(const std::vector<std::string>& resources,
        }
        return readText(normalized);
       };
-  loadProgramSet(*definition, mapped, dimensionRead);
+  loadProgramSet(*definition, mapped, dimensionRead, dimensionOptions, values);
   if(definition->programs.empty()) continue;
   reprefixProgramPaths(*definition, prefix);
   definition->dimensionFolders.clear();
@@ -1711,8 +1698,8 @@ bool PackLoader::load(const std::vector<std::string>& resources,
  return true;
 }
 std::string PackLoader::rewriteOptions(const std::string& source,
-                                             const std::unordered_map<std::string, PackSourceOption>& options,
-                                             const std::unordered_map<std::string, std::string>& values) {
+                                       const std::unordered_map<std::string, PackSourceOption>& options,
+                                       const std::unordered_map<std::string, std::string>& values) {
  std::istringstream lines(source);
  std::string result;
  std::string line;

@@ -20,7 +20,7 @@ class HeldItemRenderer {
  ItemStack stack{};
  float height = 0.0f;
  float prevHeight = 0.0f;
- block::BlockRenderManager blockRenderManager{};
+  block::BlockRenderManager blockRenderManager{Tessellator::INSTANCE};
  net::minecraft::client::render::MapRenderer mapRenderer{};
  int slot = -1;
  ItemStack* stackSource_ = nullptr;

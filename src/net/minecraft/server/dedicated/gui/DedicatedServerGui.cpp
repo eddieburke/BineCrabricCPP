@@ -77,7 +77,6 @@ void DedicatedServerGui::create(MinecraftServer& server) {
   return;
  }
  auto ready = std::make_shared<GuiReadyState>();
- util::concurrent::ThreadCoordinator::instance().reserveDynamic(1);
  guiThread = std::jthread([&server, ready]() {
   util::concurrent::setCurrentThreadName("server-gui");
   util::concurrent::tl_domain = util::concurrent::Domain::Io;
@@ -93,7 +92,6 @@ void DedicatedServerGui::create(MinecraftServer& server) {
    static_cast<void>(platform::win32::MessageLoop::run());
   }
   guiFrame.store(nullptr, std::memory_order_release);
-  util::concurrent::ThreadCoordinator::instance().releaseDynamic(1);
  });
  {
   std::unique_lock<std::mutex> lock(ready->mutex);

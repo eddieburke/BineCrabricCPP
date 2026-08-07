@@ -272,7 +272,7 @@ void Screen::renderBackground() {
 void Screen::renderBackground(int vOffset) {
  if(minecraft_ != nullptr && minecraft_->world != nullptr) {
   const render::RenderPassScope passScope(render::RenderType::gui());
-  draw::verticalGradientQuad(render::INSTANCE, 0, 0, width_, height_, 0x101010, 0xC0, 0x101010, 0xD0);
+  draw::verticalGradientQuad(render::Tessellator::INSTANCE, 0, 0, width_, height_, 0x101010, 0xC0, 0x101010, 0xD0);
  } else {
   renderBackgroundTexture(vOffset);
  }
@@ -280,10 +280,10 @@ void Screen::renderBackground(int vOffset) {
 void Screen::renderBackgroundTexture(int vOffset) {
  if(minecraft_ == nullptr) {
   const render::RenderPassScope passScope(render::RenderType::gui());
-  draw::verticalGradientQuad(render::INSTANCE, 0, 0, width_, height_, 0x101020, 0xFF, 0x202040, 0xFF);
+  draw::verticalGradientQuad(render::Tessellator::INSTANCE, 0, 0, width_, height_, 0x101020, 0xFF, 0x202040, 0xFF);
   return;
  }
- render::Tessellator& tessellator = render::INSTANCE;
+ render::Tessellator& tessellator = render::Tessellator::INSTANCE;
  const int textureId = minecraft_->textureManager.getTextureId("/gui/background.png");
  const render::RenderPassScope passScope(render::RenderType::guiTextured());
  minecraft_->textureManager.bindTexture(textureId);

@@ -10,7 +10,6 @@
 #include <unordered_map>
 #include <unordered_set>
 #include <vector>
-#include "net/minecraft/client/gui/screen/LoadingDisplay.hpp"
 #include "net/minecraft/util/math/Types.hpp"
 #include "net/minecraft/world/chunk/ChunkSource.hpp"
 #include "net/minecraft/world/chunk/EmptyChunk.hpp"
@@ -31,7 +30,7 @@ class ChunkCache : public ChunkSource {
  Chunk& getChunk(int chunkX, int chunkZ) override;
  Chunk& loadChunk(int chunkX, int chunkZ) override;
  void decorate(ChunkSource* source, int chunkX, int chunkZ) override;
- bool save(bool saveEntityData, client::gui::screen::LoadingDisplay* display) override;
+ bool save(bool saveEntityData, SaveProgressCallback progress = nullptr) override;
  bool tick() override;
  void prepareForSave() override;
  [[nodiscard]] bool canSave() const override;
@@ -65,15 +64,15 @@ class ChunkCache : public ChunkSource {
  std::unique_ptr<Chunk> produceChunk(int chunkX, int chunkZ);
  // Worker-local terrain generator clone (seed-deterministic, local BiomeSource).
  ChunkSource* workerGenerator();
-  // Main-thread integration: ownership, maps, light population, load, decorate.
-  Chunk& adoptChunk(int chunkX, int chunkZ, std::unique_ptr<Chunk> owned);
-  // Integrate up to `budget` finished async loads. When timeBudgetNs > 0, stop
-  // as soon as that much wall time elapses too, so a backlog of ready chunks
-  // (each of which may run main-thread decoration + block-light population)
-  // cannot turn one caller's frame into a multi-second hitch. At least one
-  // chunk is always integrated when one is ready.
-  void integrateFinishedLoads(int budget, std::int64_t timeBudgetNs = -1);
-  void drainChunksToUnload(int maxChunks);
+ // Main-thread integration: ownership, maps, light population, load, decorate.
+ Chunk& adoptChunk(int chunkX, int chunkZ, std::unique_ptr<Chunk> owned);
+ // Integrate up to `budget` finished async loads. When timeBudgetNs > 0, stop
+ // as soon as that much wall time elapses too, so a backlog of ready chunks
+ // (each of which may run main-thread decoration + block-light population)
+ // cannot turn one caller's frame into a multi-second hitch. At least one
+ // chunk is always integrated when one is ready.
+ void integrateFinishedLoads(int budget, std::int64_t timeBudgetNs = -1);
+ void drainChunksToUnload(int maxChunks);
  void saveEntities(Chunk& chunk);
  void saveChunk(Chunk& chunk);
  void enqueueSerializedWrite(int chunkX, int chunkZ, std::vector<std::uint8_t> raw);
@@ -81,11 +80,11 @@ class ChunkCache : public ChunkSource {
  void waitForPendingWrites();
  void drainSerializedWrites();
  void completeSerializedWrite();
-  void waitForPendingLoads();
-  // Waits (bounded) for in-flight render pins to drain before eviction. Returns
-  // false if the pins did not drain within the timeout; the caller must keep the
-  // chunk loaded and retry later rather than unload a chunk workers may still read.
-  static bool retireFromLighting(Chunk* chunk);
+ void waitForPendingLoads();
+ // Waits (bounded) for in-flight render pins to drain before eviction. Returns
+ // false if the pins did not drain within the timeout; the caller must keep the
+ // chunk loaded and retry later rather than unload a chunk workers may still read.
+ static bool retireFromLighting(Chunk* chunk);
  EmptyChunk empty_;
  World* world_ = nullptr;
  std::unique_ptr<ChunkStorage> storage_{};

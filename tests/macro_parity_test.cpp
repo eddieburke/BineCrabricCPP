@@ -27,7 +27,6 @@ const std::unordered_map<std::string, std::string> kJavaMacroSet = {
     {"MC_SPECULAR_MAP", ""},
     {"MC_RENDER_QUALITY", "1.0"},
     {"MC_SHADOW_QUALITY", "1.0"}};
-
 void expectDefine(const std::string& preamble, const std::string& name, const std::string& value) {
  const std::string needle =
      value.empty() ? "#define " + name + "\n" : "#define " + name + " " + value + "\n";
@@ -54,17 +53,25 @@ TEST(MacroParity, CategoryDefinesReachJavaBiomeCategoriesCount) {
  expectDefine(preamble, "CAT_UNDERGROUND", "18");
  EXPECT_NE(preamble.find("#define CAT_NONE 0\n"), std::string::npos);
 }
+// This used to pass `""` and assert that seedMacrosFromDefines invented the macros out
+// of its own hardcoded literals — pinning the very duplication that let the engine's
+// `#if` evaluation disagree with the compiled preamble. The invariant that actually
+// matters is the one the name always claimed: the seeded table and the preamble are
+// generated from the SAME list, so every engine macro appears in both.
 TEST(MacroParity, PreprocessorSeedMirrorsVersionPreamble) {
+ const client::render::PackDefinition& pack = client::render::vanillaPackDefinition();
  client::render::PPMacroTable macros;
- client::render::seedMacrosFromDefines("", macros);
+ client::render::seedEngineMacros(pack, macros);
+ const std::string preamble = client::render::versionPreamble(pack, "void main(){}");
+ for(const client::render::ShaderMacro& macro : client::render::engineMacros(pack)) {
+  EXPECT_TRUE(macros.contains(macro.name)) << macro.name << " missing from the seeded table";
+  EXPECT_NE(preamble.find("#define " + macro.name), std::string::npos)
+      << macro.name << " missing from the preamble";
+  EXPECT_EQ(macros[macro.name].body, macro.value.empty() ? std::string("1") : macro.value)
+      << macro.name << " seeded with a different value than it is defined with";
+ }
  EXPECT_TRUE(macros.contains("IRIS_REQUIRES_SEPARATE_ENTITY_DRAWS"));
  EXPECT_TRUE(macros.contains("IRIS_HAS_TRANSLUCENCY_SORTING"));
- EXPECT_TRUE(macros.contains("MC_NORMAL_MAP"));
- EXPECT_TRUE(macros.contains("MC_SPECULAR_MAP"));
- EXPECT_EQ(macros["MC_NORMAL_MAP"].body, "1");
- EXPECT_EQ(macros["MC_SPECULAR_MAP"].body, "1");
- EXPECT_EQ(macros["MC_RENDER_QUALITY"].body, "1.0");
- EXPECT_EQ(macros["MC_SHADOW_QUALITY"].body, "1.0");
  EXPECT_EQ(macros["IRIS_TAG_SUPPORT"].body, "2");
  EXPECT_TRUE(client::render::evaluateIfExpression(
      "defined(MC_NORMAL_MAP) && MC_RENDER_QUALITY == 1.0 && IRIS_TAG_SUPPORT == 2", macros));
@@ -102,12 +109,14 @@ TEST(MacroParity, CacheFormatVersionIsBumpedPastLegacy) {
  const std::uint64_t hash = 0x1234ABCDULL;
  writeCacheEntry(root, hash, 2);
  {
-  const client::gl::ShaderBinaryCache cache(root);
+  client::gl::ShaderBinaryCache cache({});
+  cache.setRoot(root);
   EXPECT_FALSE(cache.tryLoad(hash).has_value()) << "legacy format-2 entry must be rejected";
  }
- writeCacheEntry(root, hash, 4);
+ writeCacheEntry(root, hash, 5);
  {
-  const client::gl::ShaderBinaryCache cache(root);
+  client::gl::ShaderBinaryCache cache({});
+  cache.setRoot(root);
   const auto blob = cache.tryLoad(hash);
   ASSERT_TRUE(blob.has_value());
   EXPECT_EQ(blob->contentHash, hash);
@@ -135,5 +144,5 @@ TEST(MacroParity, CacheRoundTripUsesCurrentFormat) {
  EXPECT_EQ(loaded->bytes, blob.bytes);
  std::filesystem::remove_all(root, ec);
 }
-} // namespace
+}
 } // namespace net::minecraft::test

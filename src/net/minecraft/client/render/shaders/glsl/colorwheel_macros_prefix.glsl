@@ -1,2 +1,0 @@
-#define HAS_COLORWHEEL
-#define COLORWHEEL_VERSION 

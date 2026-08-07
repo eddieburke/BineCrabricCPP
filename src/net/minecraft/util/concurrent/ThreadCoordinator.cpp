@@ -36,12 +36,9 @@ WorkerPool& ThreadCoordinator::pool(Domain domain) {
   }
   return *glCompilePool_;
  default:
-  // NetIo/Audio/Log are reserved-count domains: a single placeholder pool here,
-  // real blocking threads tracked via reserveDynamic bookkeeping (never deducted).
-  if(placeholderPool_ == nullptr) {
-   placeholderPool_ = std::make_unique<WorkerPool>(1U);
-  }
-  return *placeholderPool_;
+  // NetIo/Audio/Log are tag-only domains: their blocking threads are started by
+  // the owners (Connection, server listeners) and never go through a pool.
+  std::abort();
  }
 }
 ThreadBudget ThreadCoordinator::budget() const noexcept {
@@ -70,7 +67,6 @@ void ThreadCoordinator::shutdown() {
  std::unique_ptr<WorkerPool> compute;
  std::unique_ptr<WorkerPool> io;
  std::unique_ptr<WorkerPool> glCompile;
- std::unique_ptr<WorkerPool> placeholder;
  {
   std::lock_guard lock(mutex_);
   if(shutdown_) {
@@ -80,7 +76,6 @@ void ThreadCoordinator::shutdown() {
   compute = std::move(computePool_);
   io = std::move(ioPool_);
   glCompile = std::move(glCompilePool_);
-  placeholder = std::move(placeholderPool_);
  }
  // Pool destructors request stop and join their workers; run outside the lock
  // so a draining task can still reach the coordinator if it needs to.

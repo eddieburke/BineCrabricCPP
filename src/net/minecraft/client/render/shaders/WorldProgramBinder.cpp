@@ -10,16 +10,13 @@
 #include "net/minecraft/client/render/pipeline/Instance.hpp"
 #include "net/minecraft/client/render/pipeline/Resources.hpp"
 namespace net::minecraft::client::render {
-namespace {
-constexpr unsigned int kTexture2D = 0x0DE1;
-}
 void bindWorldProgram(gl::ShaderProgram& program, const WorldProgramBindContext& context) {
-  if(context.uniforms != nullptr) {
-   uploadShaderUniforms(program, *context.uniforms, true);
-   if(context.pack != nullptr) {
-    context.pack->customUniforms.upload(program);
-   }
+ if(context.uniforms != nullptr) {
+  uploadShaderUniforms(program, *context.uniforms, true);
+  if(context.pack != nullptr) {
+   context.pack->customUniforms.upload(program);
   }
+ }
  const int maxUnits = maxTextureUnits();
  if(context.lightmapTexture != nullptr && *context.lightmapTexture != 0 && maxUnits > 1 &&
     program.location("lightmap") >= 0) {
@@ -30,7 +27,6 @@ void bindWorldProgram(gl::ShaderProgram& program, const WorldProgramBindContext&
  if(context.bindTextureAtlases) {
   const int atlasSize[2] = {context.atlasWidth, context.atlasHeight};
   program.set2iAt(program.location("atlasSize"), atlasSize);
-
   if(context.normalTexture != 0 && maxUnits > 2) {
    const int locNormals = program.location("normals");
    const int locGtex1 = program.location("gtexture1");
@@ -43,7 +39,6 @@ void bindWorldProgram(gl::ShaderProgram& program, const WorldProgramBindContext&
     if(locNormMap >= 0) program.set1i("normalMap", 2);
    }
   }
-
   if(context.specularTexture != 0 && maxUnits > 3) {
    const int locSpec = program.location("specular");
    const int locGtex2 = program.location("gtexture2");
@@ -71,7 +66,7 @@ void bindWorldProgram(gl::ShaderProgram& program, const WorldProgramBindContext&
  if(context.pack != nullptr) {
   std::unordered_map<std::string, int> customTextures;
   std::unordered_map<std::string, int> volumes;
-  PackResources::addTextures(*context.pack, "gbuffers", customTextures, volumes);
+   addPackTextures(*context.pack, "gbuffers", customTextures, volumes);
   for(const auto& [name, texture] : customTextures) {
    if(texture <= 0 || unit >= maxUnits || program.location(name) < 0) continue;
    core::activeTexture(gl::tex::Texture0 + unit);
@@ -123,7 +118,8 @@ void bindWorldProgram(gl::ShaderProgram& program, const WorldProgramBindContext&
   }
  }
  if(context.pack != nullptr) {
-  PackResources::bind(*context.pack, program);
+   bindPackResources(*context.pack, program);
  }
  core::activeTexture(gl::tex::Texture0);
-}} // namespace net::minecraft::client::render
+}
+} // namespace net::minecraft::client::render

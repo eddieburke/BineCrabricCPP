@@ -11,7 +11,8 @@ namespace net::minecraft::client::render {
 enum class SettingType {
  Int,
  Bool,
- Float
+ Float,
+ Enum
 };
 struct PackSetting {
  std::string key;
@@ -21,6 +22,7 @@ struct PackSetting {
  std::string valuePrefix;
  std::string valueSuffix;
  std::unordered_map<std::string, std::string> valueLabels;
+ std::vector<std::string> valueOrder;
  double minimum = 0.0;
  double maximum = 1.0;
  double step = 0.01;
@@ -32,9 +34,6 @@ struct PackProfile {
  std::unordered_map<std::string, std::string> values;
  std::vector<std::string> disabledPrograms;
 };
-struct ColorWheelInfo {
- bool present = false;
-};
 struct PackProgramSource {
  std::string vertex;
  std::string fragment;
@@ -43,7 +42,7 @@ struct PackProgramSource {
  std::string tessControl;
  std::string tessEvaluation;
 };
- struct PackTarget {
+struct PackTarget {
  std::string format = "RGBA8";
  float scale = 1.0f;
  float scaleX = 1.0f;
@@ -123,38 +122,36 @@ struct PackPass {
  int iterations = 1;
  int order = 0;
 };
+// What the pack declares in shaders.properties / .vsh / .fsh, resolved and stored in
+// one place. Fields are grouped by the shaders.properties section they come from.
 struct PackDefinition {
-  std::string name = "Shader pack";
-  std::string version;
-  int glslVersionMajor = 1;
-  int glslVersionMinor = 2;
+ // --- <profile>/VERSION ---
+ std::string name = "Shader pack";
+ std::string version;
+ int glslVersionMajor = 1;
+ int glslVersionMinor = 2;
  int shadowMapResolution = 0;
  int shadowColorBuffers = 0;
  int gbufferColorBuffers = 1;
  int noiseTextureResolution = 256;
  int mcMipmapLevel = 0;
-  bool shadowEnabled = true;
-  // Java PackShadowDirectives.java:90 - getShadowPlayer().orElse(false).
-  bool shadowPlayer = false;
+ // --- shadow.enabled / shadow* ---
+ bool shadowEnabled = true;
+ bool shadowPlayer = false;
  bool shadowEntities = true;
  bool shadowTerrain = true;
  bool shadowTranslucent = true;
-  bool shadowBlockEntities = true;
-  // Java PackShadowDirectives.java:92 - getShadowLightBlockEntities().orElse(false).
-  bool shadowLightBlockEntities = false;
+ bool shadowBlockEntities = true;
+ bool shadowLightBlockEntities = false;
  bool skipAllRendering = false;
  bool allowConcurrentCompute = false;
  bool supportsColorCorrection = false;
-  // Defaults to true when the pack does not say otherwise (PackDirectives:
-  // getOldHandLight().orElse(true)), which is also the vanilla hand-light behaviour.
-  bool oldHandLight = true;
-  // Java ShaderProperties.java:83,756 - parsed, never consumed (parity parse).
-  bool dynamicHandLight = false;
-  bool dhShadowEnabled = false;
+ bool oldHandLight = true;
+ bool dynamicHandLight = false;
+ bool dhShadowEnabled = false;
  bool prepareBeforeShadow = false;
  bool breaksAnisotropy = false;
  int fallbackTex = 0;
- // https://github.com/IrisShaders/Iris/blob/26.1/common/src/main/java/net/irisshaders/iris/shaderpack/properties/ShaderProperties.java
  ShadowCullState shadowCulling = ShadowCullState::Default;
  bool voxelizeLightBlocks = false;
  bool separateEntityDraws = false;
@@ -163,25 +160,29 @@ struct PackDefinition {
  bool labPbr = false;
  bool labPbr13 = false;
  float ambientOcclusionLevel = 1.0f;
-  float entityShadowDistanceMul = 1.0f;
-  float voxelDistance = 0.0f;
-  // Java PackShadowDirectives.java:63-65 - distance 160.0f, nearPlane
-  float shadowDistance = 160.0f;
-  float shadowDistanceRenderMul = -1.0f;
-  float shadowMapFov = 0.0f;
-  float shadowNearPlane = -100.05f;
-  float shadowFarPlane = 156.0f;
- float shadowIntervalSize = 2.0f; // 0 disables snap
+ // --- SM_DIST / shadowDistance ---
+ // The pack's own shadow tuning, passed verbatim to makeShadowCamera and the shadow
+ // frustum. These describe the SHADOW map only: the camera far plane and the
+ // render-distance uniforms come from option::RenderDistance, never from here.
+ float entityShadowDistanceMul = 1.0f;
+ float voxelDistance = 0.0f;
+ float shadowDistance = 160.0f;
+ float shadowDistanceRenderMul = -1.0f;
+ float shadowMapFov = 0.0f;
+ float shadowNearPlane = -100.05f;
+ float shadowFarPlane = 156.0f;
+ float shadowIntervalSize = 2.0f;
  float sunPathRotation = 0.0f;
-  // Java PackDirectives.java:63-66 - wetness 600.0f, dryness 200.0f, eyeBrightness 10.0f,
-  float wetnessHalflife = 600.0f;
-  float drynessHalflife = 200.0f;
-  float centerDepthHalflife = 1.0f;
-  float eyeBrightnessHalflife = 10.0f; // deciseconds
- bool shadowtexMipmap[2] = {false, false};
+ // --- HALF_LIFE ---
+ float wetnessHalflife = 600.0f;
+ float drynessHalflife = 200.0f;
+ float centerDepthHalflife = 1.0f;
+ float eyeBrightnessHalflife = 10.0f;
+ // --- tex. / filter ---
  bool shadowtexNearest[2] = {false, false};
  bool shadowcolorMipmap[8] = {false, false, false, false, false, false, false, false};
  bool shadowcolorNearest[8] = {false, false, false, false, false, false, false, false};
+ // --- render.* ---
  bool renderClouds = true;
  std::string cloudsMode;
  std::string dhCloudsMode;
@@ -202,21 +203,23 @@ struct PackDefinition {
  bool occlusionCulling = true;
  bool rainDepth = false;
  bool beaconBeamDepth = false;
-  bool shadowHardwareFiltering[2] = {false, false};
-  bool shadowHardwareOffset = true;
-  float shadowHardwareOffsetFactor = 2.0f;
-  float shadowHardwareOffsetUnits = 4.0f;
-  bool usesWaterShadow = false;
+ bool shadowHardwareFiltering[2] = {false, false};
+ bool shadowHardwareOffset = false;
+ float shadowHardwareOffsetFactor = 2.0f;
+ float shadowHardwareOffsetUnits = 4.0f;
+ bool usesWaterShadow = false;
  std::string particleOrdering;
+ // --- iris.features.* ---
  std::set<std::string> requiredFeatures;
  std::set<std::string> optionalFeatures;
+ // --- dimension.* / entity.* / item.* / block.* ---
  std::unordered_map<std::string, std::string> dimensionFolders;
  std::unordered_map<std::string, int> entityIds;
  std::unordered_map<std::string, int> itemIds;
  std::unordered_map<std::string, int> blockIds;
  bool hasBlockProperties = false;
- ColorWheelInfo colorWheel;
  std::unordered_map<int, int> blockRenderLayers;
+ // --- program.* / blend.* / scale.* ---
  std::unordered_map<std::string, std::string> programEnabled;
  std::unordered_map<std::string, ProgramScale> programScales;
  std::vector<AlphaTestDirective> alphaTests;
@@ -228,6 +231,7 @@ struct PackDefinition {
  std::unordered_map<std::string, int> screenPageColumns;
  std::set<std::string> sliderKeys;
  std::vector<PackProfile> profiles;
+ // --- resolved sources ---
  std::unordered_map<std::string, PackProgramSource> programs;
  std::unordered_map<std::string, PackTarget> targets;
  std::unordered_map<std::string, bool> flips;
@@ -236,16 +240,9 @@ struct PackDefinition {
  std::vector<BufferObject> bufferObjects;
  std::vector<CustomImage> images;
  std::vector<BufferBlend> bufferBlends;
-  std::vector<PackPass> passes;
-  std::vector<CustomUniformDecl> customUniforms;
+ std::vector<PackPass> passes;
+ std::vector<CustomUniformDecl> customUniforms;
 };
-// Iris' VanillaRenderingPipeline: with no shader pack loaded the renderer still asks the
-// same questions and gets the vanilla answers from one implementation, so no call site
-// ever branches on "is a pack active". A default-constructed PackDefinition IS that
-// pipeline - every member initialiser above is already the vanilla value, and
-// shadowMapResolution defaulting to 0 makes the shadow pass bail on its own - which
-// keeps vanilla behaviour defined in exactly one place instead of being respelled as a
-// fallback expression at each use.
 [[nodiscard]] inline const PackDefinition& vanillaPackDefinition() noexcept {
  static const PackDefinition vanilla{};
  return vanilla;

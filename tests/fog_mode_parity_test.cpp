@@ -21,10 +21,9 @@ client::render::PackUniformValues frameForFog(const client::render::core::FogUni
  client::render::core::setFog(fog);
  client::render::FrameRenderCamera camera;
  client::render::FrameRenderCamera shadow;
-  return client::render::buildShaderFrameData(
-      1280, 720, 42.25f, 0, false, false, camera, shadow, nullptr);
+ return client::render::buildShaderFrameData(1280, 720, 42.25f, 0, false, false, camera, shadow, nullptr);
 }
-}
+} // namespace
 TEST(FogModeParity, FrameDataProducerEmitsGlConstants) {
  constexpr int kGlLinear = 9729;
  constexpr int kGlExp2 = 2049;
@@ -71,12 +70,12 @@ TEST(FogModeParity, VanillaCommonGlslDecodesGlConstants) {
  const std::filesystem::path shaders =
      std::filesystem::path(MINECRAFT_TEST_SOURCE_DIR) / "shaders" / "vanilla" / "shaders";
  const std::string source = read(shaders / "lib" / "common.glsl");
-  EXPECT_NE(source.find("fogMode == 9729"), std::string::npos);
-  EXPECT_NE(source.find("fogMode == 2049"), std::string::npos);
-  // Substring-safe: "fogMode == 2" would also match "fogMode == 2049".
-  EXPECT_EQ(source.find("fogMode == 1)"), std::string::npos);
-  EXPECT_EQ(source.find("fogMode == 2)"), std::string::npos);
-  EXPECT_EQ(source.find("fogMode == 3)"), std::string::npos);
+ EXPECT_NE(source.find("fogMode == 9729"), std::string::npos);
+ EXPECT_NE(source.find("fogMode == 2049"), std::string::npos);
+ // Substring-safe: "fogMode == 2" would also match "fogMode == 2049".
+ EXPECT_EQ(source.find("fogMode == 1)"), std::string::npos);
+ EXPECT_EQ(source.find("fogMode == 2)"), std::string::npos);
+ EXPECT_EQ(source.find("fogMode == 3)"), std::string::npos);
  EXPECT_EQ(source.find("as Iris reports them"), std::string::npos);
 }
 } // namespace net::minecraft::test

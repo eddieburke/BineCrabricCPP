@@ -9,7 +9,7 @@ bool RepeaterBlockRenderer::render(net::minecraft::block::Block& block, int x, i
  const int direction = blockMeta & 3;
  const int delayIndex = (blockMeta & 0xC) >> 2;
  cube_.renderBlock(block, x, y, z);
- Tessellator& tessellator = *ctx_.tess;
+ Tessellator& tessellator = ctx_.tessellator();
  float brightness = 1.0f; // absolute light now comes from the lightmap
  if(block.emission() > 0) {
   brightness = (brightness + 1.0f) * 0.5f;
