@@ -216,7 +216,7 @@ struct PassGlBits {
  int blendSrc = 0x0302; // GL_SRC_ALPHA
  int blendDst = 0x0303; // GL_ONE_MINUS_SRC_ALPHA
  // The separate ALPHA pair must be saved too. A pack's per-program directive
- // (`blend.<program>=<srcRGB> <dstRGB> <srcA> <dstA>`, e.g. RenderPearl's
+ // (`blend.<program>=<srcRGB> <dstRGB> <srcA> <dstA>`) mappings by program.
  // `SRC_ALPHA ONE_MINUS_SRC_ALPHA ZERO ZERO`) is applied through lockBlend ->
  // glBlendFuncSeparate. Restoring only the RGB pair via the two-argument glBlendFunc
  // leaves the pack's alpha factors live in the driver for every later pass.
@@ -285,7 +285,7 @@ void setPassModelView(const math::Matrix4f& modelView) noexcept;
 void setDrawPose(const math::Matrix4f& pose) noexcept;
 [[nodiscard]] const math::Matrix4f& drawPose() noexcept;
 // Why the pose is baked and never uploaded: packs cut gl_ModelViewMatrix to a mat3
-// (RenderPearl's shadow.vsh does), which silently discards whatever translation is
+// (which silently discards whatever translation is
 // left in it. Any pose parked in the matrix therefore vanishes in the shadow pass
 // while still applying in the gbuffer pass.
 // see src/net/minecraft/client/render/Tessellator.cpp vertex
@@ -331,15 +331,8 @@ void fogApplyMode(::net::minecraft::client::Minecraft* client, int mode,
                   const ::net::minecraft::client::option::RenderSettings& frame);
 void setSkyUniforms(const SkyUniforms& sky);
 // The frame's single celestial answer. GameRenderer::updateSunLight publishes it
-// before any consumer runs; SunLight, SkyUniforms, WorldLightUniforms, FrameData's
-// pack uniforms and the shadow camera all read it instead of re-deriving the angle.
-// see src/net/minecraft/client/render/celestial/CelestialState.hpp
  void setCelestialState(const CelestialState& state);
  [[nodiscard]] const CelestialState& celestialState();
- // The frame's single camera. GameRenderer publishes it once per frame; pipeline
- // stages, entity/particle renderers, world renderers and Lua bindings read the
- // single iris camera frame instead of re-deriving camera state from the vanilla
- // camera entity. see src/net/minecraft/client/render/camera/FrameRenderCamera.hpp
  void setCameraFrame(FrameRenderCamera camera);
  [[nodiscard]] const FrameRenderCamera& cameraFrame();
 const SkyUniforms& skyUniforms();

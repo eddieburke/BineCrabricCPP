@@ -152,7 +152,6 @@ void drawBackgroundFan(const AtmosphereContext& ctx, float tickDelta, const std:
 }
 void drawSunMoon(const AtmosphereContext& ctx, float starAlpha) {
  Tessellator& tessellator = Tessellator::INSTANCE;
- tessellator.color(1.0f, 1.0f, 1.0f, starAlpha);
  if(ctx.settings.renderSun) {
   const core::RenderStageScope stage(core::RenderStage::Sun);
   if(ctx.textureManager != nullptr) {
@@ -160,6 +159,7 @@ void drawSunMoon(const AtmosphereContext& ctx, float starAlpha) {
    ctx.textureManager->bindTexture(ctx.textureManager->getTextureId("/terrain/sun.png"));
   }
   tessellator.startQuads();
+  tessellator.color(1.0f, 1.0f, 1.0f, starAlpha);
   tessellator.vertex(-30.0, 100.0, -30.0, 0.0, 0.0);
   tessellator.vertex(30.0, 100.0, -30.0, 1.0, 0.0);
   tessellator.vertex(30.0, 100.0, 30.0, 1.0, 1.0);
@@ -173,6 +173,7 @@ void drawSunMoon(const AtmosphereContext& ctx, float starAlpha) {
    ctx.textureManager->bindTexture(ctx.textureManager->getTextureId("/terrain/moon.png"));
   }
   tessellator.startQuads();
+  tessellator.color(1.0f, 1.0f, 1.0f, starAlpha);
   tessellator.vertex(-20.0, -100.0, 20.0, 1.0, 1.0);
   tessellator.vertex(20.0, -100.0, 20.0, 0.0, 1.0);
   tessellator.vertex(20.0, -100.0, -20.0, 0.0, 0.0);

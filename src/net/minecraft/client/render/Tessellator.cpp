@@ -357,7 +357,7 @@ void Tessellator::vertex(double x, double y, double z) {
   vertex->entity[2] = static_cast<std::int16_t>(blockMetadata_);
   vertex->entity[3] = 0;
  } else {
-  // Non-terrain geometry must not look like fluid (RenderPearl SM_ENTITY wave).
+  // Non-terrain geometry must not look like fluid (SM_ENTITY wave).
   // https://shaders.properties/current/reference/attributes/mc_entity/
   vertex->entity[0] = -1;
   vertex->entity[1] = -1;

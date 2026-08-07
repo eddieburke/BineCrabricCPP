@@ -9,7 +9,8 @@ namespace net::minecraft::client::render {
 namespace {
 std::vector<std::string> diskResources() {
  const std::filesystem::path root =
-     std::filesystem::path(MINECRAFT_TEST_SOURCE_DIR) / "shaders" / "vanilla";
+     std::filesystem::path(MINECRAFT_TEST_SOURCE_DIR) / "src" / "net" / "minecraft" /
+     "client" / "render" / "shaders" / "glsl" / "vanilla";
  std::vector<std::string> result;
  std::error_code ec;
  for(std::filesystem::recursive_directory_iterator it(root, ec), end;
@@ -28,7 +29,7 @@ bool isShaderStage(const std::string& path) {
         ext == ".tcs" || ext == ".tes" || ext == ".glsl";
 }
 } // namespace
-// Guard against shaders/vanilla losing files: every pack file must be embedded.
+// Guard against glsl/vanilla losing files: every pack file must be embedded.
 // Shader stages are baked minified (no // comments, no #include lines, no blank
 // lines), so only their shape is asserted here rather than byte equality.
 TEST(VanillaPackEmbedTest, EmbedsEveryVanillaPackFile) {
@@ -36,7 +37,7 @@ TEST(VanillaPackEmbedTest, EmbedsEveryVanillaPackFile) {
  ASSERT_FALSE(disk.empty());
  EXPECT_EQ(VanillaPackEmbed::resources(), disk);
  for(const std::string& path : disk) {
-  EXPECT_TRUE(VanillaPackEmbed::has(path)) << "shaders/vanilla/" << path << " is not embedded";
+  EXPECT_TRUE(VanillaPackEmbed::has(path)) << "glsl/vanilla/" << path << " is not embedded";
   EXPECT_FALSE(VanillaPackEmbed::get(path).empty()) << path;
  }
 }

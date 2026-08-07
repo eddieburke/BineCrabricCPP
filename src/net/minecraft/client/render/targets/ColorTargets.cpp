@@ -5,6 +5,7 @@
 #include "net/minecraft/client/gl/GlConstants.hpp"
 #include "net/minecraft/client/gl/GlResource.hpp"
 #include "net/minecraft/client/render/RenderCore.hpp"
+#include "net/minecraft/util/logging/Logging.hpp"
 #include <algorithm>
 #include <array>
 #include <cstdlib>
@@ -59,6 +60,7 @@ bool ColorTargets::allocateSlot(Slot& slot, int width, int height, ColorFormat f
  for(int i = 0; i < 2; ++i) {
   const unsigned int h = core::genTexture();
   if(h == 0) {
+   printf("[diag] genTexture returned 0 in allocateSlot format=%d internal=0x%X\n", (int)format, spec.internal);
    freeSlot(slot);
    return false;
   }
@@ -98,10 +100,14 @@ const ColorTargets::Slot* ColorTargets::findSlot(const std::string& name) const 
  const auto found = named_.find(name);
  return found == named_.end() ? nullptr : &found->second;
 }
-bool ColorTargets::ensure(int width, int height, const std::vector<ColorFormat>& formats) {
+bool ColorTargets::ensure(int width, int height, const std::vector<ColorFormat>& formats,
+                           int gbufferColorCount) {
  if(!gl::GLCore::framebufferSupported || width <= 0 || height <= 0) {
+  printf("[diag] ensure early exit: framebufferSupported=%d width=%d height=%d\n",
+         gl::GLCore::framebufferSupported, width, height);
   return false;
  }
+ gbufferColorCount_ = std::clamp(gbufferColorCount, 1, kMaxColorAttachments);
  std::vector<ColorFormat> normalized = formats;
  if(normalized.empty()) {
   normalized.push_back(ColorFormat::Rgba8);
@@ -176,19 +182,33 @@ void ColorTargets::rebuildGbufferFbo() {
   return;
  }
  gbufferFbo_.addDepthAttachment(depth_.handle());
+ const std::size_t count = std::min(slots_.size(), static_cast<std::size_t>(gbufferColorCount_));
  std::vector<int> drawBuffers;
- drawBuffers.reserve(slots_.size());
- for(std::size_t i = 0; i < slots_.size(); ++i) {
+ drawBuffers.reserve(count);
+ for(std::size_t i = 0; i < count; ++i) {
+  if(slots_[i].width != width_ || slots_[i].height != height_) {
+   continue;
+  }
   gbufferFbo_.addColorAttachment(static_cast<int>(i), slots_[i].readHandle());
   drawBuffers.push_back(static_cast<int>(i));
+ }
+ if(drawBuffers.empty()) {
+  drawBuffers.push_back(0);
  }
  if(!gbufferFbo_.drawBuffers(drawBuffers)) {
   valid_ = false;
   return;
  }
  const unsigned status = gbufferFbo_.checkStatus();
+ printf("[diag] gbufferFbo checkStatus status=0x%X\n", status);
+ fflush(stdout);
  gl::GLCore::bindFramebuffer(static_cast<unsigned>(gl::framebuffer::Framebuffer), 0);
  if(status != static_cast<unsigned>(gl::framebuffer::Complete)) {
+  char hex[32];
+  std::snprintf(hex, sizeof(hex), "0x%X", status);
+  net::minecraft::util::logging::Logger::getLogger("ColorTargets")
+      .log(net::minecraft::util::logging::LogLevel::Severe,
+           "rebuildGbufferFbo status failed: " + std::string(hex) + " count=" + std::to_string(count));
   valid_ = false;
   return;
  }

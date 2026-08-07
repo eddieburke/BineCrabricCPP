@@ -479,7 +479,7 @@ void WorldRenderer::blockBreakParticles(int x, int y, int z, int blockId, int bl
 void WorldRenderer::renderOutline(const Box& box) {
  Tessellator& tessellator = Tessellator::INSTANCE;
  // Modern line rendering (Iris 26.1 line format) carries each line's direction in
- // vaNormal so packs can expand it to a screen-space width (RenderPearl
+ // vaNormal so packs can expand it to a screen-space width
  // gbuffers_line.vsh: start = model, end = model + vaNormal, ±offset by gl_VertexID).
  // Emit every edge as an explicit GL_LINES segment with that direction; a constant
  // (0,0,0) normal degenerates normalize(0) into undefined geometry.

@@ -130,12 +130,18 @@ void scanOptions(const std::string& source,
    const std::string rest = split == std::string::npos ? std::string{} : trim(std::string_view(body).substr(split));
    const std::size_t comment = rest.find("//");
    const std::string value = trim(comment == std::string::npos ? rest : rest.substr(0, comment));
-   // Only defines that carry an option comment or no value at all are user
-   // options. Comment-less defines with a value are pack-internal derived
-   // macros (e.g. `#define WORLD_SPACE_REFLECTIONS_INTERNAL -1`); registering
-   // them makes rewriteOptions clobber every later definition with the option
-   // default, flipping the pack's internal `#if` branches.
-   if(comment == std::string::npos && !value.empty()) continue;
+   auto reject = [&options, &rejected](const std::string& name) {
+    options.erase(name);
+    rejected.insert(name);
+   };
+   if(comment == std::string::npos && !value.empty()) {
+    double parsed = 0.0;
+    bool integer = false;
+    if(!number(value, parsed, integer)) {
+     reject(key);
+     continue;
+    }
+   }
    addOption(options,
              rejected,
              key,
@@ -267,7 +273,10 @@ void scanPackConstants(const std::string& source,
     } else if(keyword == "endif") {
      conditionals.endif();
     } else if(keyword == "define" && conditionals.active()) {
-     parseDefineDirective(rest, macros);
+     const std::string defName = firstIdentifier(rest);
+     if(!options.contains(defName)) {
+      parseDefineDirective(rest, macros);
+     }
     } else if(keyword == "undef" && conditionals.active()) {
      macros.erase(firstIdentifier(rest));
     }
@@ -460,7 +469,12 @@ std::string preprocessProperties(const std::string& source,
     continue;
    }
    if(keyword == "define") {
-    if(lineActive()) parseDefineDirective(rest, macros);
+    if(lineActive()) {
+     const std::string name = firstIdentifier(rest);
+     if(!options.contains(name)) {
+      parseDefineDirective(rest, macros);
+     }
+    }
     continue;
    }
    if(keyword == "undef") {
@@ -1428,7 +1442,7 @@ void loadProgramSet(PackDefinition& out,
  const ResourceSet resourceSet(resources.begin(), resources.end());
  // Option-rewrite every source before scanning, exactly like the compile path
  // (PackCompiler::resolveIncludes), so constants that follow an option (e.g.
- // RenderPearl's `#if SM_DIST == N` shadowDistance ladder) land in the definition
+ // `#if SM_DIST == N` shadowDistance ladder) land in the definition
  // with the user's values instead of the pack's defaults.
  const PackLoader::ReadText rewrittenRead = [&readText, &options, &values](std::string_view path) {
   return PackLoader::rewriteOptions(readText(path), options, values);

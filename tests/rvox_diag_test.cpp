@@ -14,6 +14,7 @@
 #include "net/minecraft/client/render/shaders/PassIndex.hpp"
 #include "net/minecraft/client/resource/pack/ZippedTexturePack.hpp"
 #include "net/minecraft/client/render/pipeline/Instance.hpp"
+#include "net/minecraft/client/render/pipeline/Pipeline.hpp"
 namespace net::minecraft::test {
 namespace {
 using client::render::PackCompiler;
@@ -93,18 +94,31 @@ std::string join(const std::vector<std::string>& lines) {
 TEST_F(RvoxDiag, DumpPreparedSources) {
  const std::filesystem::path zipPath =
      std::filesystem::path(MINECRAFT_TEST_SOURCE_DIR) / "shaders" / "rethinking-voxels_r0.1-beta9.zip";
- ASSERT_TRUE(std::filesystem::exists(zipPath)) << zipPath.string();
+ const std::filesystem::path dirPath =
+     std::filesystem::path(MINECRAFT_TEST_SOURCE_DIR) / "shaders" / "rethinking-voxels_r0.1-beta9";
  PackInstance pack;
- pack.path = zipPath;
- pack.directory = false;
- pack.zip = std::make_unique<client::resource::pack::ZippedTexturePack>(zipPath);
- pack.zip->open();
- const std::vector<std::string> resources = zipResources(*pack.zip);
- ASSERT_TRUE(PackLoader::load(
-     resources,
-     [&pack](std::string_view path) { return PackCompiler::cachedText(pack, std::string(path)); },
-     pack.definition, pack.sourceOptions, pack.summary.error))
-     << pack.summary.error;
+ if(std::filesystem::exists(zipPath)) {
+  pack.path = zipPath;
+  pack.directory = false;
+  pack.zip = std::make_unique<client::resource::pack::ZippedTexturePack>(zipPath);
+  pack.zip->open();
+  const std::vector<std::string> resources = zipResources(*pack.zip);
+  ASSERT_TRUE(PackLoader::load(
+      resources,
+      [&pack](std::string_view path) { return PackCompiler::cachedText(pack, std::string(path)); },
+      pack.definition, pack.sourceOptions, pack.summary.error))
+      << pack.summary.error;
+ } else {
+  ASSERT_TRUE(std::filesystem::is_directory(dirPath)) << dirPath.string();
+  pack.path = dirPath;
+  pack.directory = true;
+  const std::vector<std::string> resources = client::render::PackCatalog::directoryResources(dirPath);
+  ASSERT_TRUE(PackLoader::load(
+      resources,
+      [&pack](std::string_view path) { return PackCompiler::readText(pack, std::string(path)); },
+      pack.definition, pack.sourceOptions, pack.summary.error))
+      << pack.summary.error;
+ }
  pack.summary.valid = true;
  pack.rootDefinition = pack.definition;
  for(const PackSetting& setting : pack.rootDefinition.settings) {
@@ -124,18 +138,31 @@ TEST_F(RvoxDiag, DumpPreparedSources) {
 TEST_F(RvoxDiag, CompileAllPrograms) {
   const std::filesystem::path zipPath =
       std::filesystem::path(MINECRAFT_TEST_SOURCE_DIR) / "shaders" / "rethinking-voxels_r0.1-beta9.zip";
-  ASSERT_TRUE(std::filesystem::exists(zipPath)) << zipPath.string();
+  const std::filesystem::path dirPath =
+      std::filesystem::path(MINECRAFT_TEST_SOURCE_DIR) / "shaders" / "rethinking-voxels_r0.1-beta9";
   PackInstance pack;
-  pack.path = zipPath;
-  pack.directory = false;
-  pack.zip = std::make_unique<client::resource::pack::ZippedTexturePack>(zipPath);
-  pack.zip->open();
-  const std::vector<std::string> resources = zipResources(*pack.zip);
-  ASSERT_TRUE(PackLoader::load(
-      resources,
-      [&pack](std::string_view path) { return PackCompiler::cachedText(pack, std::string(path)); },
-      pack.definition, pack.sourceOptions, pack.summary.error))
-      << pack.summary.error;
+  if(std::filesystem::exists(zipPath)) {
+   pack.path = zipPath;
+   pack.directory = false;
+   pack.zip = std::make_unique<client::resource::pack::ZippedTexturePack>(zipPath);
+   pack.zip->open();
+   const std::vector<std::string> resources = zipResources(*pack.zip);
+   ASSERT_TRUE(PackLoader::load(
+       resources,
+       [&pack](std::string_view path) { return PackCompiler::cachedText(pack, std::string(path)); },
+       pack.definition, pack.sourceOptions, pack.summary.error))
+       << pack.summary.error;
+  } else {
+   ASSERT_TRUE(std::filesystem::is_directory(dirPath)) << dirPath.string();
+   pack.path = dirPath;
+   pack.directory = true;
+   const std::vector<std::string> resources = client::render::PackCatalog::directoryResources(dirPath);
+   ASSERT_TRUE(PackLoader::load(
+       resources,
+       [&pack](std::string_view path) { return PackCompiler::readText(pack, std::string(path)); },
+       pack.definition, pack.sourceOptions, pack.summary.error))
+       << pack.summary.error;
+  }
   pack.summary.valid = true;
   pack.rootDefinition = pack.definition;
   for(const PackSetting& setting : pack.rootDefinition.settings) {
@@ -160,6 +187,31 @@ TEST_F(RvoxDiag, CompileAllPrograms) {
    printf("[diag] %s\n", failure.c_str());
   }
   EXPECT_TRUE(failures.empty()) << join(failures);
+}
+TEST_F(RvoxDiag, EnsureSceneTargetsRthinkingVoxels) {
+  const std::filesystem::path dirPath =
+      std::filesystem::path(MINECRAFT_TEST_SOURCE_DIR) / "shaders" / "rethinking-voxels_r0.1-beta9";
+  ASSERT_TRUE(std::filesystem::is_directory(dirPath)) << dirPath.string();
+  PackInstance pack;
+  pack.path = dirPath;
+  pack.directory = true;
+  const std::vector<std::string> resources = client::render::PackCatalog::directoryResources(dirPath);
+  ASSERT_TRUE(PackLoader::load(
+      resources,
+      [&pack](std::string_view path) { return PackCompiler::readText(pack, std::string(path)); },
+      pack.definition, pack.sourceOptions, pack.summary.error))
+      << pack.summary.error;
+  pack.summary.valid = true;
+  pack.rootDefinition = pack.definition;
+  const auto found = pack.rootDefinition.dimensionDefinitions.find("*");
+  ASSERT_NE(found, pack.rootDefinition.dimensionDefinitions.end());
+  mergeDimension(pack.definition, *found->second);
+  client::render::Pipeline pipeline{nullptr};
+  const std::vector<client::render::ColorFormat> formats = pipeline.sceneColorFormats(&pack);
+  const int gbufferCount = std::clamp(pack.definition.gbufferColorBuffers, 1, client::render::kMaxColorAttachments);
+  const bool okMain = pack.colorTargets.ensure(854, 480, formats, gbufferCount);
+  EXPECT_TRUE(okMain);
+  EXPECT_TRUE(pipeline.ensureSceneTargets(&pack, 854, 480));
 }
 TEST_F(RvoxDiag, DumpComplementaryFailingPrograms) {
  const std::filesystem::path root =
@@ -266,20 +318,34 @@ TEST_F(RvoxDiag, CompileAllComplementaryPrograms) {
  }
  EXPECT_TRUE(failures.empty()) << join(failures);
 }
-TEST_F(RvoxDiag, DumpComputeSources) { const std::filesystem::path zipPath =
+TEST_F(RvoxDiag, DumpComputeSources) {
+ const std::filesystem::path zipPath =
      std::filesystem::path(MINECRAFT_TEST_SOURCE_DIR) / "shaders" / "rethinking-voxels_r0.1-beta9.zip";
- ASSERT_TRUE(std::filesystem::exists(zipPath)) << zipPath.string();
+ const std::filesystem::path dirPath =
+     std::filesystem::path(MINECRAFT_TEST_SOURCE_DIR) / "shaders" / "rethinking-voxels_r0.1-beta9";
  PackInstance pack;
- pack.path = zipPath;
- pack.directory = false;
- pack.zip = std::make_unique<client::resource::pack::ZippedTexturePack>(zipPath);
- pack.zip->open();
- const std::vector<std::string> resources = zipResources(*pack.zip);
- ASSERT_TRUE(PackLoader::load(
-     resources,
-     [&pack](std::string_view path) { return PackCompiler::cachedText(pack, std::string(path)); },
-     pack.definition, pack.sourceOptions, pack.summary.error))
-     << pack.summary.error;
+ if(std::filesystem::exists(zipPath)) {
+  pack.path = zipPath;
+  pack.directory = false;
+  pack.zip = std::make_unique<client::resource::pack::ZippedTexturePack>(zipPath);
+  pack.zip->open();
+  const std::vector<std::string> resources = zipResources(*pack.zip);
+  ASSERT_TRUE(PackLoader::load(
+      resources,
+      [&pack](std::string_view path) { return PackCompiler::cachedText(pack, std::string(path)); },
+      pack.definition, pack.sourceOptions, pack.summary.error))
+      << pack.summary.error;
+ } else {
+  ASSERT_TRUE(std::filesystem::is_directory(dirPath)) << dirPath.string();
+  pack.path = dirPath;
+  pack.directory = true;
+  const std::vector<std::string> resources = client::render::PackCatalog::directoryResources(dirPath);
+  ASSERT_TRUE(PackLoader::load(
+      resources,
+      [&pack](std::string_view path) { return PackCompiler::readText(pack, std::string(path)); },
+      pack.definition, pack.sourceOptions, pack.summary.error))
+      << pack.summary.error;
+ }
  pack.summary.valid = true;
  pack.rootDefinition = pack.definition;
  for(const PackSetting& setting : pack.rootDefinition.settings) {

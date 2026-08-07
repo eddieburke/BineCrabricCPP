@@ -178,7 +178,7 @@ class ModLuaDrawScope {
    spec.state.cull = cull;
    spec.state.cullMode = 0x0405;
    spec.state.lighting = false;
-   spec.hasColor = spec.programKey != "gbuffers_skybasic";
+   spec.hasColor = true;
    return spec;
   }
   [[nodiscard]] static client::render::RenderType buildPass(const PassSpec& spec) {

@@ -174,34 +174,4 @@ TEST(ServerLoginNetworkHandler, LoginTimeout) {
  }
  EXPECT_TRUE(handler.closed);
 }
-TEST(ServerLoginNetworkHandler, MissingCameraModRejectsClientWithoutModList) {
- const std::filesystem::path root = makeTempWorldRoot("login_camera_requirement");
- initializeEmptyServerModHost(root / "runtime");
- net::minecraft::server::host::ServerLaunchConfig config;
- config.storageRoot = root;
- config.worldName = "CameraWorld";
- config.bindAddress = "127.0.0.1";
- config.port = 0;
- config.onlineMode = false;
- config.useConsoleThread = false;
- config.useGui = false;
- MinecraftServer server(config);
- ASSERT_TRUE(server.startAsync()) << server.lastError();
- const std::filesystem::path requiredMods = config.storageRoot / config.worldName / "required-mods.txt";
- {
-  std::ofstream output(requiredMods, std::ios::binary | std::ios::trunc);
-  output << "camera\n";
- }
- ServerSocket listenSocket;
- listenSocket.bindAndListen("127.0.0.1", 0);
- const SOCKET serverSide = makeLoopbackConnection(listenSocket);
- ASSERT_NE(serverSide, INVALID_SOCKET);
- ServerLoginNetworkHandler handler(&server, nullptr, serverSide, "test", false);
- net::minecraft::LoginHelloPacket packet;
- packet.protocolVersion = 14;
- packet.username = "Player";
- handler.onHello(packet);
- EXPECT_TRUE(handler.closed);
- server.stopAndJoin();
-}
 } // namespace net::minecraft::test

@@ -100,7 +100,7 @@ void shadowSampleMode(std::string_view name, bool sampler2DShadow, const PackDef
  const bool separateHw = featureEnabled(definition, "SEPARATE_HARDWARE_SAMPLERS");
  const bool hwFilter = definition.shadowHardwareFiltering[idx];
  if(hwName) {
-  // RenderPearl requires SEPARATE_HARDWARE_SAMPLERS and samples *HW as sampler2DShadow;
+  // Some packs require SEPARATE_HARDWARE_SAMPLERS and sample *HW as sampler2DShadow;
   // enable compare when the sampler is shadow-typed even if the const directive is commented.
   // https://shaders.properties/current/reference/buffers/shadowtex/
   compare = separateHw && (hwFilter || sampler2DShadow);

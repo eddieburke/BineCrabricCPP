@@ -178,7 +178,7 @@ RenderType::State damagedBlockState() {
  // Iris ShaderKey.CRUMBLING (ShaderKey.java:61) declares AlphaTests.ONE_TENTH_ALPHA
  // for the destroyed-block overlay. The destroy tiles carry a ~transparent white
  // background (a=1/255) that must be discarded, or packs with an ALPHA_CHECK +
- // TEX_ALPHA damagedblock program (RenderPearl gbuffers_damagedblock.fsh) blend it
+ // TEX_ALPHA damagedblock program blend it
  // into the scene at ~2x via their DST_COLOR/SRC_COLOR buffer directive.
  RenderType::State s{};
  s.blend = true;

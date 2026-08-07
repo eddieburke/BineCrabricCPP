@@ -39,14 +39,15 @@ class ClientNetworkHandler : public NetworkHandler {
  public:
  ClientNetworkHandler(client::Minecraft* minecraft);
  ~ClientNetworkHandler();
- void tick();
- void bindConnection(Connection* connection) noexcept {
+ void tick() override;
+ void bindConnection(Connection* connection) noexcept override {
   connection_ = connection;
  }
  [[nodiscard]] Connection* connection() const noexcept {
   return connection_;
  }
- void onHello(std::uint64_t worldSeed, int dimensionId, int playerEntityId);
+  using NetworkHandler::onHello;
+  void onHello(std::uint64_t worldSeed, int dimensionId, int playerEntityId, bool remoteLuaModsEnabled);
  void sendPacket(std::unique_ptr<Packet> packet) {
   if(disconnected || connection_ == nullptr || !connection_->isOpen()) {
    return;
@@ -66,20 +67,12 @@ class ClientNetworkHandler : public NetworkHandler {
   disconnected = true;
  }
  void disconnect(const std::string& reason = "Disconnected");
- enum class PendingModDownloadState { Idle, Running, Succeeded, Failed };
- bool startPendingModDownload();
- PendingModDownloadState pollPendingModDownload(std::string& status, std::string& error);
- void continuePendingLogin();
- void cancelPendingModPrompt();
- [[nodiscard]] const std::vector<std::string>& pendingMissingMods() const noexcept {
-  return pendingMissingMods_;
- }
+
  [[nodiscard]] bool isServerSide() const override {
   return false;
  }
  void onDisconnected(const std::string& reason, const std::vector<std::string>& objects) override;
- void onHandshake(const HandshakePacket& packet) override;
- void onHello(const LoginHelloPacket& packet) override;
+
  void onChatMessage(const ChatMessagePacket& packet) override;
  void onDisconnect(const DisconnectPacket& packet) override;
  void onKeepAlive(const KeepAlivePacket& packet) override;
@@ -133,7 +126,6 @@ class ClientNetworkHandler : public NetworkHandler {
 
  private:
  [[nodiscard]] Entity* getEntity(int id);
- void processPendingJoinServer();
  bool pendingRespawn_ = false;
  int pendingRespawnDimension_ = 0;
  std::unique_ptr<PlayerMovePacket> pendingRespawnMove_;
@@ -154,46 +146,6 @@ class ClientNetworkHandler : public NetworkHandler {
  std::unique_ptr<SimpleInventory> openScreenInventory_;
  std::unique_ptr<block::entity::FurnaceBlockEntity> openScreenFurnace_;
  std::unique_ptr<block::entity::DispenserBlockEntity> openScreenDispenser_;
- struct JoinServerWork {
-  std::atomic_bool cancelled{false};
-  std::atomic_bool inFlight{false};
-  ::net::minecraft::util::concurrent::Channel<auth::JoinServerResult> completed{1};
- };
- struct PendingModFile {
-  std::filesystem::path temporary;
-  std::filesystem::path destination;
- };
-struct PendingModEvent {
-   enum class Kind { Progress, Complete, Failed };
-   Kind kind = Kind::Progress;
-   std::string text{};
-   std::vector<PendingModFile> files{};
-  };
- struct PendingModWork {
-  std::atomic_bool cancelled{false};
-  std::atomic_bool running{false};
-  ::net::minecraft::util::concurrent::Channel<PendingModEvent> events{32};
- };
- static void downloadPendingMods(const std::shared_ptr<PendingModWork>& work,
-                                 std::vector<std::string> missing,
-                                 std::unordered_map<std::string, std::string> urls,
-                                 std::filesystem::path temporaryDirectory,
-                                 std::filesystem::path modsDirectory);
- std::shared_ptr<JoinServerWork> joinServerWork_ = std::make_shared<JoinServerWork>();
- std::shared_ptr<PendingModWork> pendingModWork_;
   int keepAliveTicks_ = 0;
- enum class RemoteServerKind {
-  JavaCompatible,
-  NativeCppMods
- };
- void beginPendingLogin(const std::string& serverId);
- [[nodiscard]] std::vector<std::string> activeClientMods() const;
- RemoteServerKind remoteServerKind_ = RemoteServerKind::JavaCompatible;
- bool remoteLuaModsEnabled_ = false;
- bool waitingForModDownloadAcceptance_ = false;
- std::string pendingServerId_;
- std::vector<std::string> pendingMissingMods_;
- std::vector<std::string> pendingRequiredMods_;
- std::unordered_map<std::string, std::string> pendingDownloadUrls_;
 };
 } // namespace net::minecraft::client::multiplayer

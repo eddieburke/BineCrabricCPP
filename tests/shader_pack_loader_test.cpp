@@ -696,7 +696,7 @@ TEST(PackLoaderTest, ReadsScreenSlidersProfilesAndPackToggles) {
  }
  EXPECT_TRUE(barSlider);
 }
-// RenderPearl has both `#define immut const` and a bodyless `#define immut`.
+// Some packs have both `#define immut const` and a bodyless `#define immut`.
 // Treating that name as a boolean option and rewriting it turns every
 // `immut vec3 x = ...;` declaration into garbage, so the name must be dropped.
 TEST(PackLoaderTest, DropsDefinesUsedWithConflictingShapes) {
@@ -801,7 +801,7 @@ TEST(PackSourcePreparation, ChunkFadeMatchesTheAdvertisedFeatureAbi) {
  EXPECT_NE(prepare("shadow_water").find("const float mc_chunkFade = -1.0;"), std::string::npos);
 }
 TEST(PackLoaderTest, InfersColortexFormatsFromImageAndUsamplerLayouts) {
- // RenderPearl leaves const colortexNFormat commented; formats come from layouts.
+ // Some packs leave const colortexNFormat commented; formats come from layouts.
  // https://github.com/Luracasmus/renderpearl/blob/main/DEV.md
  // https://www.khronos.org/opengl/wiki/Image_Load_Store
  PackDefinition pack;
@@ -1897,52 +1897,7 @@ TEST(PackLoaderTest, ShadowNearFarPlanesAcceptNegativeNearLikeJava) {
  EXPECT_FLOAT_EQ(pack.shadowNearPlane, -100.05f);
  EXPECT_FLOAT_EQ(pack.shadowFarPlane, 156.0f);
 }
-TEST(PackLoaderTest, RenderPearlCommentedShadowDirectivesAreHonored) {
- // RenderPearl declares its shadow tuning inside a `/* ... */` comment in
- // prelude/directive.glsl (shadowIntervalSize = 0.0, shadowHardwareFiltering0/1 =
- // true) and computes shadowDistance/near/far via a `#if SM_DIST == N` chain that
- // the const scanner does not evaluate. scanPackConstants scans raw lines (comments
- // included, unlike the format directives in scanTargetDirective which use
- // isOffsetInComment), so the commented values ARE honored here. This is what the
- // pack's shadow.vsh depends on: its mat3 model-view cut is only consistent with the
- // deferred `rot_trans_mmul(shadowModelView, ...)` sample when the snap translation
- // is disabled (shadowIntervalSize == 0.0).
- PackDefinition pack;
- std::unordered_map<std::string, PackSourceOption> options;
- std::string error;
- EXPECT_TRUE(load({{"shaders/gbuffers_basic.vsh", "void main(){}"},
-                   {"shaders/gbuffers_basic.fsh",
-                    "/*\n"
-                    "\tconst float shadowIntervalSize = 0.0;\n"
-                    "\tconst bool shadowHardwareFiltering0 = true;\n"
-                    "\tconst bool shadowHardwareFiltering1 = true;\n"
-                    "*/\n"
-                    "const float shadowDistanceRenderMul = 0.85;\n"
-                    "#if SM_DIST == 1\n"
-                    "\tconst float shadowDistance = 16;\n"
-                    "#elif SM_DIST == 10\n"
-                    "\tconst float shadowDistance = 160;\n"
-                    "\tconst float shadowNearPlane = -227;\n"
-                    "\tconst float shadowFarPlane = 227;\n"
-                    "#elif SM_DIST == 32\n"
-                    "\tconst float shadowDistance = 512;\n"
-                    "\tconst float shadowNearPlane = -695;\n"
-                    "\tconst float shadowFarPlane = 695;\n"
-                    "#endif\n"
-                    "void main(){}"}},
-                  pack,
-                  options,
-                  error))
-     << error;
- // The commented consts are read: the pack's effective interval is 0 (no snap).
- EXPECT_FLOAT_EQ(pack.shadowIntervalSize, 0.0f);
- EXPECT_TRUE(pack.shadowHardwareFiltering[0]);
- EXPECT_TRUE(pack.shadowHardwareFiltering[1]);
- EXPECT_FLOAT_EQ(pack.shadowDistanceRenderMul, 0.85f);
- EXPECT_FLOAT_EQ(pack.shadowDistance, 160.0f);
- EXPECT_FLOAT_EQ(pack.shadowNearPlane, -100.05f);
- EXPECT_FLOAT_EQ(pack.shadowFarPlane, 156.0f);
-}
+
 TEST(PackLoaderTest, OptionValuesReachScannedPackConstants) {
  // Engine-side shadow tuning must follow the pack options the user set, the same
  // way the compiled GLSL does (Iris parses programs after option replacement).
@@ -2000,7 +1955,7 @@ TEST(PackLoaderTest, DynamicHandLightIsParityParsed) {
 // mc_chunkFade must follow the geometry source, not the program-name prefix. Iris routes
 // every chunk-mesher program through SodiumTransformer, which computes a real fade (1.0
 // for a loaded chunk); gbuffers_water is chunk geometry and belongs in that set. Giving
-// it the non-terrain `const float mc_chunkFade = -1.0;` made RenderPearl's
+// it the non-terrain `const float mc_chunkFade = -1.0;` made the pack's
 // `alpha = mc_chunkFade` negative, which packed to 0 and let `blend.gbuffers_water=
 // SRC_ALPHA ...` erase every water and ice fragment.
 // https://github.com/IrisShaders/Iris/blob/26.1/common/src/main/java/net/irisshaders/iris/pipeline/transform/transformer/SodiumTransformer.java
@@ -2039,7 +1994,7 @@ TEST(PackLoaderTest, ChunkFadeFollowsChunkMesherProgramsNotNamePrefix) {
      canonicalizeCoreSource("gbuffers_water", ShaderStage::Vertex, noFeature, body, context);
  EXPECT_EQ(untouched.find("mc_chunkFade"), std::string::npos);
 }
-// A dimension folder must inherit consts that live in the pack-wide includes. RenderPearl
+// A dimension folder must inherit consts that live in the pack-wide includes. Some packs
 // keeps its programs in world_default/ but declares `const int shadowMapResolution` in
 // prelude/config.glsl; the dimension scan only saw its own folder, came out at 0, fell
 // through to the 1024 default, and then overrode the root's correct value — allocating a

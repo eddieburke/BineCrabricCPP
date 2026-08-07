@@ -201,7 +201,7 @@ std::vector<ShaderMacro> engineMacros(const PackDefinition& pack) {
  macros.push_back({"MC_RENDER_QUALITY", "1.0"});
  macros.push_back({"MC_SHADOW_QUALITY", "1.0"});
  if(pack.labPbr || pack.labPbr13) macros.push_back({"MC_TEXTURE_FORMAT_LAB_PBR", {}});
- if(pack.labPbr13) macros.push_back({"MC_TEXTURE_FORMAT_LAB_PBR_13", {}});
+ if(pack.labPbr13) macros.push_back({"MC_TEXTURE_FORMAT_LAB_PBR_1_3", {}});
  constexpr std::array<std::string_view, 3> precipitation = {"NONE", "RAIN", "SNOW"};
  constexpr std::array<std::string_view, 16> dhBlocks = {
      "UNKNOWN", "LEAVES", "STONE", "WOOD", "METAL", "DIRT", "LAVA", "DEEPSLATE", "SNOW", "SAND",

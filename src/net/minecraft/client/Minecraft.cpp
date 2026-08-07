@@ -33,6 +33,7 @@
 #include "net/minecraft/client/input/InputSystem.hpp"
 #include "net/minecraft/client/input/Keys.hpp"
 #include "net/minecraft/client/multiplayer/ClientNetworkBridge.hpp"
+#include "net/minecraft/client/multiplayer/ClientLoginNetworkHandler.hpp"
 #include "net/minecraft/client/multiplayer/ClientNetworkHandler.hpp"
 #include "net/minecraft/client/option/OptionRegistry.hpp"
 #include "net/minecraft/client/option/RenderSettings.hpp"
@@ -788,8 +789,8 @@ void Minecraft::run() {
       screenStack_.flushRetired();
       multiplayerSession_.flushRetired();
       if(multiplayer::ClientNetworkBridge* bridge = multiplayerSession_.bridge()) {
-       multiplayer::ClientNetworkHandler* handler = bridge->handler();
-       if(handler == nullptr || handler->disconnected) {
+       net::minecraft::NetworkHandler* handler = bridge->handler();
+       if(handler == nullptr || (dynamic_cast<multiplayer::ClientNetworkHandler*>(handler) && dynamic_cast<multiplayer::ClientNetworkHandler*>(handler)->disconnected) || (dynamic_cast<multiplayer::ClientLoginNetworkHandler*>(handler) && dynamic_cast<multiplayer::ClientLoginNetworkHandler*>(handler)->disconnected)) {
         multiplayerSession_.retireBridge();
        }
       }

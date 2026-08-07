@@ -171,7 +171,8 @@ class ColorTargets {
  [[nodiscard]] int height() const noexcept { return height_; }
  [[nodiscard]] int colorCount() const noexcept { return static_cast<int>(slots_.size()); }
  [[nodiscard]] unsigned int depthTexture() const noexcept { return depth_.handle(); }
- bool ensure(int width, int height, const std::vector<ColorFormat>& formats);
+ bool ensure(int width, int height, const std::vector<ColorFormat>& formats,
+             int gbufferColorCount = kMaxColorAttachments);
  bool ensureNamed(const std::string& name, int width, int height, ColorFormat format);
  void bindGbuffers();
  void endGbuffers();
@@ -245,6 +246,7 @@ class ColorTargets {
  bool fullClearPending_ = true;
  int savedViewport_[4]{};
  int previousBoundFbo_ = 0;
+ int gbufferColorCount_ = kMaxColorAttachments;
  std::vector<Slot> slots_;
  std::unordered_map<std::string, Slot> named_;
 };

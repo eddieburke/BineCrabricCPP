@@ -193,9 +193,11 @@ bool lookupConstant(const std::string& name, CustomUniformValue& out) {
   std::unordered_map<std::string, int> map;
   for(std::size_t i = 0; i < kBiomeNames.size(); ++i) {
    map.emplace(kBiomeNames[i], static_cast<int>(i));
+   map.emplace("BIOME_" + std::string(kBiomeNames[i]), static_cast<int>(i));
   }
   for(const BiomeNameAlias& alias : kBiomeNameAliases) {
    map.emplace(alias.name, static_cast<int>(alias.index));
+   map.emplace("BIOME_" + std::string(alias.name), static_cast<int>(alias.index));
   }
   return map;
  }();
@@ -203,6 +205,8 @@ bool lookupConstant(const std::string& name, CustomUniformValue& out) {
   std::unordered_map<std::string, int> map;
   for(std::size_t i = 0; i < kBiomeCategoryNames.size(); ++i) {
    map.emplace(kBiomeCategoryNames[i], static_cast<int>(i));
+   map.emplace("CAT_" + std::string(kBiomeCategoryNames[i]), static_cast<int>(i));
+   map.emplace("BIOME_CATEGORY_" + std::string(kBiomeCategoryNames[i]), static_cast<int>(i));
   }
   return map;
  }();

@@ -67,9 +67,9 @@ TEST(FogModeParity, CustomUniformsFogModeMatchesFrameValue) {
  EXPECT_EQ(runtime.values().at("fogModeCopy").asInt(), 0);
 }
 TEST(FogModeParity, VanillaCommonGlslDecodesGlConstants) {
- const std::filesystem::path shaders =
-     std::filesystem::path(MINECRAFT_TEST_SOURCE_DIR) / "shaders" / "vanilla" / "shaders";
- const std::string source = read(shaders / "lib" / "common.glsl");
+  const std::filesystem::path shaders =
+      std::filesystem::path(MINECRAFT_TEST_SOURCE_DIR) / "src" / "net" / "minecraft" / "client" / "render" / "shaders" / "glsl" / "vanilla" / "shaders";
+  const std::string source = read(shaders / "lib" / "common.glsl");
  EXPECT_NE(source.find("fogMode == 9729"), std::string::npos);
  EXPECT_NE(source.find("fogMode == 2049"), std::string::npos);
  // Substring-safe: "fogMode == 2" would also match "fogMode == 2049".

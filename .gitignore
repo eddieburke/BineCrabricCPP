@@ -24,6 +24,5 @@ agents.md
 
 .build-omega.lock
 
-# Shaderpacks kept local-only; only vanilla shaders are tracked
+# Shaderpacks kept local-only; only the embedded vanilla pack is tracked (src/.../glsl/vanilla)
 shaders/*
-!shaders/vanilla/

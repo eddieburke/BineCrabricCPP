@@ -462,7 +462,8 @@ std::vector<ColorFormat> Pipeline::sceneColorFormats(const PackInstance* activeP
 bool Pipeline::ensureSceneTargets(PackInstance* activePack, int width, int height) {
  if(activePack == nullptr) return false;
  const std::vector<ColorFormat> formats = sceneColorFormats(activePack);
- if(!activePack->colorTargets.ensure(width, height, formats)) {
+ const int gbufferCount = std::clamp(activePack->definition.gbufferColorBuffers, 1, kMaxColorAttachments);
+ if(!activePack->colorTargets.ensure(width, height, formats, gbufferCount)) {
   logOnce(*activePack,
           "ensure color targets failed " + std::to_string(width) + "x" + std::to_string(height) +
               " count=" + std::to_string(formats.size()),

@@ -470,12 +470,21 @@ std::string canonicalizeFragment(const std::string& programName, const PackDefin
  appendBeforeMainClose(source, snippet);
  return source;
 }
+void sanitizeMismatchedClampOverloads(std::string& source) {
+ const std::string target = "clamp(dir.y + 1.6, 0.6, 1)";
+ std::size_t pos = 0;
+ while((pos = source.find(target, pos)) != std::string::npos) {
+  source.replace(pos, target.length(), "clamp(dir.y + 1.6, 0.6, 1.0)");
+  pos += 27;
+ }
+}
 } // namespace
 std::string canonicalizeCoreSource(const std::string& programName,
                                    ShaderStage stage,
                                    const PackDefinition& pack,
                                    std::string source,
                                    const ShaderTransformContext& context) {
+ sanitizeMismatchedClampOverloads(source);
  canonicalizeTextureCalls(source, stage);
  shimLegacyFogGlobals(source);
  canonicalizeBuiltinBounds(source);

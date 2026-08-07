@@ -1,6 +1,6 @@
-# Generates EmbeddedVanillaPack.cpp from shaders/vanilla/** (the built-in vanilla
-# shader pack). Each pack-relative path maps to the file text, keyed the same way
-# PackLoader addresses resources ("shaders/gbuffers_terrain.vsh").
+# Generates EmbeddedVanillaPack.cpp from src/.../shaders/glsl/vanilla/** (the built-in
+# vanilla shader pack). Each pack-relative path maps to the file text, keyed the same
+# way PackLoader addresses resources ("shaders/gbuffers_terrain.vsh").
 #
 # Shader stages are baked pre-processed: #include lines are expanded recursively
 # and // comments, trailing whitespace and blank lines are stripped, so the binary

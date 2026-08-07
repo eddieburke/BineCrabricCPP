@@ -17,6 +17,7 @@
 #include "net/minecraft/client/core/WorldSession.hpp"
 #include "net/minecraft/client/multiplayer/ClientNetworkBridge.hpp"
 #include "net/minecraft/client/multiplayer/ClientNetworkHandler.hpp"
+#include "net/minecraft/client/multiplayer/ClientLoginNetworkHandler.hpp"
 #include "net/minecraft/network/Connection.hpp"
 namespace net::minecraft::client::multiplayer {
 namespace {
@@ -133,8 +134,9 @@ bool ClientNetworkBridge::connect(client::Minecraft* minecraft,
  if(socket == INVALID_SOCKET) {
   return false;
  }
- handler_ = std::make_unique<multiplayer::ClientNetworkHandler>(minecraft);
- handler_->message = "Connecting...";
+  auto loginHandler = std::make_unique<multiplayer::ClientLoginNetworkHandler>(minecraft);
+  loginHandler->message = "Connecting...";
+  handler_ = std::move(loginHandler);
  try {
   connection_ = std::make_unique<net::minecraft::Connection>(socket, "Client", *handler_);
  } catch(const std::exception& error) {
@@ -161,10 +163,17 @@ void ClientNetworkBridge::tick() {
   handler_->tick();
  }
 }
-multiplayer::ClientNetworkHandler* ClientNetworkBridge::handler() const noexcept {
+net::minecraft::NetworkHandler* ClientNetworkBridge::handler() const noexcept {
  return handler_.get();
 }
 net::minecraft::Connection* ClientNetworkBridge::connection() const noexcept {
  return connection_.get();
+}
+void ClientNetworkBridge::setHandler(std::unique_ptr<net::minecraft::NetworkHandler> newHandler) {
+ handler_ = std::move(newHandler);
+ if(connection_ != nullptr && handler_ != nullptr) {
+  connection_->setNetworkHandler(*handler_);
+  handler_->bindConnection(connection_.get());
+ }
 }
 } // namespace net::minecraft::client::multiplayer

@@ -179,6 +179,7 @@ struct LuaHookEntry {
 };
 using LuaHookEntries = std::vector<LuaHookEntry>;
 std::array<std::shared_ptr<const LuaHookEntries>, kLuaEventCount> gHookTable{};
+std::array<bool, kLuaEventCount> gHasLuaHookArray{};
 bool gHookTableValid = false;
 void rebuildHookTable() {
  struct PendingEntry {
@@ -211,6 +212,7 @@ void rebuildHookTable() {
   for(auto& entry : pending[i]) {
    entries.push_back(std::move(entry.entry));
   }
+  gHasLuaHookArray[i] = !entries.empty();
   gHookTable[i] = std::make_shared<const LuaHookEntries>(std::move(entries));
  }
  gHookTableValid = true;
@@ -224,6 +226,7 @@ void rebuildHookTable() {
 } // namespace
 void invalidateLuaHookCache() {
  gHookTableValid = false;
+ gHasLuaHookArray.fill(false);
  for(auto& entries : gHookTable) {
   entries.reset();
  }
@@ -232,8 +235,10 @@ bool hasLuaHook(int eventIndex) {
  if(eventIndex < 0 || static_cast<std::size_t>(eventIndex) >= kLuaEventCount) {
   return false;
  }
- const std::shared_ptr<const LuaHookEntries> entries = luaHookEntries(static_cast<std::size_t>(eventIndex));
- return entries != nullptr && !entries->empty();
+ if(!gHookTableValid) {
+  rebuildHookTable();
+ }
+ return gHasLuaHookArray[static_cast<std::size_t>(eventIndex)];
 }
 template <typename Fill, typename Read>
 void dispatchLuaHook(int eventIndex,

@@ -51,24 +51,27 @@ Do **not** use stale copies such as `c:\Users\Eddie\Desktop\mcp43 - Copy - Copy`
 
 ---
 
-## 4. Debugging rendering: trace, don't screenshot
+## 4. General deslop rule (diagnosis, code, & architecture)
 
-When investigating rendering bugs (transparency, blending, alpha, missing/black
-textures, wrong colors):
+When diagnosing bugs, writing code, or refactoring, deslop aggressively across all layers.
 
-- **Do not** rely on screenshot pixel analysis or image captures to diagnose the bug.
-- **Do** trace the C++ draw path end to end: RenderType/RenderPassScope -> RenderCore
-  state (blend/depth/alpha test) -> Tessellator -> bindAndUploadUniforms -> shader
-  selection (worldProgram resolver, program fallback chains) -> the pack's GLSL.
-- Cross-reference the active shaderpack's shaders (e.g. `shaders/RenderPearl .../`,
-  `shaders/SEUS PTGI Iris`) and the Java Iris reference in `third_party/mcp/iris/`
-  for how the pass is *supposed* to behave (blend directives, alphaTestRef, entityColor,
-  RENDERTARGETS, draw buffers).
-- Consult the online shaderpack documentation when a directive or uniform contract is
-  ambiguous: https://shaders.properties/current/reference/ (or the version pinned by
-  the repo comments).
-- Verify what each GLSL uniform/attribute receives by reading the upload sites in
-  RenderCore.cpp / WorldProgramBinder.cpp / Uniforms.cpp before suspecting the shader.
+### 4.1 Diagnosis: trace root causes, don't surface-hack
+- **Trace end-to-end:** Never rely on screenshot pixel analysis, image captures, or superficial guesses to diagnose bugs. Trace execution through state and pipeline end-to-end to find exact root causes.
+- **Rendering example:** When investigating rendering bugs (transparency, blending, alpha, missing/black textures, wrong colors):
+  - Do not rely on screenshot pixel analysis.
+  - Trace the C++ draw path end-to-end: `RenderType`/`RenderPassScope` -> `RenderCore` state (blend/depth/alpha test) -> `Tessellator` -> `bindAndUploadUniforms` -> shader selection (`worldProgram` resolver, program fallback chains) -> active GLSL pack.
+  - Cross-reference active shaderpack shaders (e.g. `shaders/RenderPearl.../`, `shaders/SEUS PTGI Iris`) and Java Iris reference in `third_party/mcp/iris/` for expected pass behavior (blend directives, `alphaTestRef`, `entityColor`, `RENDERTARGETS`, draw buffers). Consult https://shaders.properties/current/reference/ when contracts are ambiguous.
+  - Verify GLSL uniform/attribute upload sites in `RenderCore.cpp` / `WorldProgramBinder.cpp` / `Uniforms.cpp` before suspecting GLSL shaders.
+
+### 4.2 Code & architectural deslop
+- **Zero comments:** Delete narrative comments, conversational explanations, dead code blocks, and redundant docstrings inside source files. Code must be self-documenting. Only single-line Java/Iris cross-reference paths are permitted when mapping ported logic (e.g. `// see mcp/src/net/minecraft/...`).
+- **Nuke overabstractions:** Eliminate speculative interfaces, single-implementation factories, facade-over-facade layers, and multi-tiered indirection. Keep code concrete, linear, and direct.
+- **Delete wrapper shit:** Remove classes, structs, and forwarding methods that exist solely to wrap or delegate calls to another object. Inline wrapped logic directly into caller sites or owned value types.
+- **Eliminate singleton crap:** Eradicate `getInstance()` singletons, static global instance pointers, and classes holding singleton handles. Demote global/scratch state to local stack variables or explicit parameter passing.
+- **No dummy fallbacks or silent error swallowing:** Never patch runtime errors by returning empty/dummy defaults, swallowing exceptions, or ignoring broken contracts. Trace upstream and fix the true cause.
+- **No speculative flexibility:** Do not write unused config knobs, hypothetical extension points, or general-purpose abstractions for one-off tasks. Hardcode the exact concrete requirement.
+- **Zero hot-loop allocations:** Avoid allocating heap objects, dynamic arrays, or temporary wrappers inside frame/tick hot loops. Pass buffers by reference or stack allocate.
+- **No macro or helper clutter:** Do not write custom macros, trivial single-line inline helpers, or redundant getter/setter pairs for public struct fields. Expose fields directly.
 
 ---
 

@@ -4,6 +4,7 @@
 #include "net/minecraft/client/auth/microsoft/SessionRestore.hpp"
 #include "net/minecraft/client/session/OfflineIdentity.hpp"
 #include "net/minecraft/client/multiplayer/ClientNetworkHandler.hpp"
+#include "net/minecraft/client/multiplayer/ClientLoginNetworkHandler.hpp"
 #include "net/minecraft/client/multiplayer/MultiplayerSession.hpp"
 #include "net/minecraft/client/resource/language/I18n.hpp"
 #include "net/minecraft/util/concurrent/ThreadCoordinator.hpp"
@@ -99,7 +100,7 @@ std::string MultiplayerConnector::poll(Minecraft& client) {
    HandshakePacket handshake{::net::minecraft::client::session::resolveJoinUsername(client.session)};
    connection->sendPacket(std::make_unique<HandshakePacket>(std::move(handshake)));
   }
-  if(multiplayer::ClientNetworkHandler* handler = result->bridge->handler()) {
+  if(auto* handler = dynamic_cast<multiplayer::ClientLoginNetworkHandler*>(result->bridge->handler())) {
    handler->message = resource::language::I18n::getTranslation("connect.authorizing");
   }
   client.multiplayerSession().adoptBridge(std::move(result->bridge));

@@ -4,6 +4,7 @@
 #include <string>
 namespace net::minecraft {
 class Connection;
+class NetworkHandler;
 }
 namespace net::minecraft::client {
 class Minecraft;
@@ -28,12 +29,13 @@ class ClientNetworkBridge {
               const std::atomic_bool* canceled = nullptr);
  void disconnect(const std::string& reason = "Disconnected");
  void tick();
- [[nodiscard]] multiplayer::ClientNetworkHandler* handler() const noexcept;
+ [[nodiscard]] net::minecraft::NetworkHandler* handler() const noexcept;
  [[nodiscard]] net::minecraft::Connection* connection() const noexcept;
+ void setHandler(std::unique_ptr<net::minecraft::NetworkHandler> newHandler);
 
  private:
  core::WorldSession* worldSession_ = nullptr;
  std::unique_ptr<net::minecraft::Connection> connection_;
- std::unique_ptr<multiplayer::ClientNetworkHandler> handler_;
+ std::unique_ptr<net::minecraft::NetworkHandler> handler_;
 };
 } // namespace net::minecraft::client::multiplayer

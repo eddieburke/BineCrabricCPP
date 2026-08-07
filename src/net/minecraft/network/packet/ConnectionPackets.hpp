@@ -8,6 +8,7 @@
 #include "net/minecraft/network/PacketIO.hpp"
 namespace net::minecraft {
 inline constexpr int kProtocolVersionBeta173 = 14;
+inline constexpr int kProtocolVersionNativeCppMods = 0x0C000000 | kProtocolVersionBeta173;
 class KeepAlivePacket : public Packet {
  public:
  void read(std::istream&) override {

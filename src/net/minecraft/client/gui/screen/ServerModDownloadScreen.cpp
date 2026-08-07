@@ -2,10 +2,10 @@
 #include "net/minecraft/client/Minecraft.hpp"
 #include "net/minecraft/client/gui/layout/ScreenLayout.hpp"
 #include "net/minecraft/client/gui/screen/DisconnectedScreen.hpp"
-#include "net/minecraft/client/multiplayer/ClientNetworkHandler.hpp"
+#include "net/minecraft/client/multiplayer/ClientLoginNetworkHandler.hpp"
 #include "net/minecraft/client/resource/language/I18n.hpp"
 namespace net::minecraft::client::gui::screen {
-ServerModDownloadScreen::ServerModDownloadScreen(multiplayer::ClientNetworkHandler* handler,
+ServerModDownloadScreen::ServerModDownloadScreen(multiplayer::ClientLoginNetworkHandler* handler,
                                                  std::vector<std::string> missingMods)
     : handler_(handler), missingMods_(std::move(missingMods)) {
 }
@@ -29,14 +29,14 @@ void ServerModDownloadScreen::tick() {
   return;
  }
  std::string error;
- const multiplayer::ClientNetworkHandler::PendingModDownloadState state =
+ const multiplayer::ClientLoginNetworkHandler::PendingModDownloadState state =
      handler_->pollPendingModDownload(status_, error);
- if(state == multiplayer::ClientNetworkHandler::PendingModDownloadState::Failed) {
+ if(state == multiplayer::ClientLoginNetworkHandler::PendingModDownloadState::Failed) {
   minecraft()->setScreen(std::make_unique<DisconnectedScreen>(
       "connect.failed", "disconnect.genericReason", std::vector<std::string>{std::move(error)}));
   return;
  }
- if(state == multiplayer::ClientNetworkHandler::PendingModDownloadState::Succeeded) {
+ if(state == multiplayer::ClientLoginNetworkHandler::PendingModDownloadState::Succeeded) {
   status_ = "Authorizing...";
   handler_->continuePendingLogin();
  }

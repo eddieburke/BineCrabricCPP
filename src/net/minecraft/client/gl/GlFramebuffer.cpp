@@ -1,4 +1,5 @@
 #include "net/minecraft/client/gl/GlFramebuffer.hpp"
+#include <cstdio>
 #include "net/minecraft/client/gl/GLCore.hpp"
 #include "net/minecraft/client/gl/GlConstants.hpp"
 namespace net::minecraft::client::gl {
@@ -35,9 +36,6 @@ bool GlFramebuffer::addDepthAttachment(unsigned texture) {
   if(!ensureCreated()) {
     return false;
   }
-  // Java addDepthAttachment (GlFramebuffer.java:29-40): GL_DEPTH_ATTACHMENT with a
-  // TODO for combined depth-stencil formats; texture 0 detaches (C++ extension for the
-  // shared write FBO, which drops the gbuffer depth between passes).
   GLCore::bindFramebuffer(static_cast<unsigned>(framebuffer::Framebuffer), id_);
   GLCore::framebufferTexture2D(static_cast<unsigned>(framebuffer::Framebuffer),
                                static_cast<unsigned>(framebuffer::DepthAttachment),
@@ -81,15 +79,6 @@ bool GlFramebuffer::noDrawBuffers() {
 bool GlFramebuffer::drawBuffers(const std::vector<int>& buffers) {
   if(!ensureCreated()) {
     return false;
-  }
-  // Java throws IllegalArgumentException on both limit violations; the C++ callers log.
-  if(buffers.size() > static_cast<std::size_t>(maxDrawBuffers_)) {
-    return false;
-  }
-  for(int buffer : buffers) {
-    if(buffer >= maxColorAttachments_) {
-      return false;
-    }
   }
   if(GLCore::drawBuffers == nullptr) {
     return false;

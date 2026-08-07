@@ -156,7 +156,7 @@ void EntityRenderDispatcher::render(const net::minecraft::Entity& entity,
  // pre-multiplied by the world light and the pack then lit it again, which at night
  // (no sun term to swamp it) rendered entities pure black.
  // see src/net/minecraft/client/render/block/CubeBlockRenderer.cpp renderSmooth
- // see shaders/vanilla/shaders/gbuffers_entities.fsh
+ // see src/net/minecraft/client/render/shaders/glsl/vanilla/shaders/gbuffers_entities.fsh
  float blockLight = 15.0f;
  float skyLight = 15.0f;
  if(entity.world != nullptr) {

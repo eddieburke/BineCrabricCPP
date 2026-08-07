@@ -727,7 +727,7 @@ void fogApplyMode(::net::minecraft::client::Minecraft* client, int mode,
   // 0.75 * renderDistanceBlocks to renderDistanceBlocks exactly. The previous
   // chunkRadius*16-8 cap / 0.65 factor ended the fog 8 blocks short of the far
   // plane and started it ~10% closer than vanilla, so packs' vanilla_fog()
-  // (RenderPearl lib/fog.glsl) blended off-ratio against the real distance.
+  // packs' vanilla_fog() blended off-ratio against the real distance.
   const float fogEnd = frame.renderDistance.fogEnd();
   if(mode < 0) {
    g_fog.start = 0.0f;

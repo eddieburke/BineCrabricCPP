@@ -126,11 +126,12 @@ if(MINECRAFT_GLSL_FILES)
 endif()
 
 # The built-in vanilla shader pack is embedded in the executable the same way:
-# bake shaders/vanilla/** into a generated TU (EmbeddedVanillaPack.cpp) at configure
-# time. The pack's sources ship inside the binary; the engine only reads the on-disk
-# shaders/vanilla folder when it exists (so it can still be tweaked in place).
+# bake src/.../shaders/glsl/vanilla/** into a generated TU (EmbeddedVanillaPack.cpp)
+# at configure time. The pack's sources ship inside the binary; the engine only
+# reads the on-disk shaders/vanilla folder when it exists (so it can still be
+# tweaked in place).
 set(MINECRAFT_VANILLA_PACK_EMBED_GENERATOR "${CMAKE_CURRENT_SOURCE_DIR}/tools/gen-embedded-vanilla-pack.cmake")
-set(MINECRAFT_VANILLA_PACK_DIR "${CMAKE_CURRENT_SOURCE_DIR}/shaders/vanilla")
+set(MINECRAFT_VANILLA_PACK_DIR "${CMAKE_CURRENT_SOURCE_DIR}/src/net/minecraft/client/render/shaders/glsl/vanilla")
 set(MINECRAFT_EMBEDDED_VANILLA_SOURCE "${CMAKE_CURRENT_BINARY_DIR}/generated/EmbeddedVanillaPack.cpp")
 if(EXISTS "${MINECRAFT_VANILLA_PACK_DIR}")
     execute_process(

@@ -15,6 +15,9 @@ void ThreadCoordinator::configure(unsigned hardwareThreads, unsigned reservedThr
   return;
  }
  budget_ = ThreadBudget::derive(hardwareThreads, reservedThreads, options.maxComputeThreads);
+ if(computePool_) computePool_ = std::make_unique<WorkerPool>(budget_.compute);
+ if(ioPool_) ioPool_ = std::make_unique<WorkerPool>(budget_.io);
+ if(glCompilePool_) glCompilePool_ = std::make_unique<WorkerPool>(budget_.glCompile);
  configured_ = true;
 }
 WorkerPool& ThreadCoordinator::pool(Domain domain) {

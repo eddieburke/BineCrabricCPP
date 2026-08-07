@@ -7,6 +7,7 @@
 #include "net/minecraft/client/host/LanScreen.hpp"
 #include "net/minecraft/client/host/ServerProcessCoordinator.hpp"
 #include "net/minecraft/client/multiplayer/ClientNetworkBridge.hpp"
+#include "net/minecraft/client/multiplayer/ClientLoginNetworkHandler.hpp"
 #include "net/minecraft/client/multiplayer/ClientNetworkHandler.hpp"
 #include "net/minecraft/client/resource/language/I18n.hpp"
 namespace net::minecraft::client::gui::screen {
@@ -60,7 +61,8 @@ void ConnectScreen::render(int mouseX, int mouseY, float delta) {
   const std::string title = connected ? resource::language::I18n::getTranslation("connect.authorizing")
                                       : resource::language::I18n::getTranslation("connect.connecting");
   textRenderer()->drawCenteredWithShadow(title, width_ / 2, height_ / 2 - 50, 0xFFFFFF);
-  const std::string message = connected && bridge->handler() != nullptr ? bridge->handler()->message : "";
+  const auto* loginHandler = bridge != nullptr ? dynamic_cast<multiplayer::ClientLoginNetworkHandler*>(bridge->handler()) : nullptr;
+  const std::string message = loginHandler != nullptr ? loginHandler->message : "";
   textRenderer()->drawCenteredWithShadow(message, width_ / 2, height_ / 2 - 10, 0xFFFFFF);
  }
  Screen::render(mouseX, mouseY, delta);
