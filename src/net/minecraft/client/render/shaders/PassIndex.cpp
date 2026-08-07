@@ -47,6 +47,27 @@ std::string programLookupKey(const std::string& programName) {
  const std::size_t hash = programName.find('#');
  return hash == std::string::npos ? programName : programName.substr(0, hash);
 }
+// shaders.properties scopes `program.X.enabled` under the dimension folder the
+// shaders live in (`program.world0/shadowcomp.enabled=false`). Derive that key
+// from the program's own source path so the flag actually applies.
+std::string dimensionProgramKey(const PackDefinition& definition,
+                                const std::string& programName,
+                                const std::string& key) {
+ const auto program = definition.programs.find(programName);
+ if(program == definition.programs.end()) return {};
+ const std::array<std::string_view, 6> paths = {program->second.compute, program->second.vertex,
+                                                program->second.fragment, program->second.geometry,
+                                                program->second.tessControl, program->second.tessEvaluation};
+ for(const std::string_view path : paths) {
+  if(path.rfind("shaders/", 0) != 0) continue;
+  const std::size_t slash = path.find('/', 8);
+  if(slash == std::string::npos) continue;
+  const std::string folder(path.substr(8, slash - 8));
+  if(folder == "lib" || folder == "program") continue;
+  return folder + "/" + key;
+ }
+ return {};
+}
 bool optionEnabled(const std::string& value) {
  return value != "0" && value != "false";
 }
@@ -145,7 +166,14 @@ bool isProgramEnabled(const PackDefinition& definition,
  const std::string key = programLookupKey(programName);
  const auto found = definition.programEnabled.find(key);
  if(found == definition.programEnabled.end()) {
-  return true;
+  const std::string prefixed = dimensionProgramKey(definition, programName, key);
+  const auto dimFound = prefixed.empty() ? definition.programEnabled.end()
+                                         : definition.programEnabled.find(prefixed);
+  if(dimFound == definition.programEnabled.end()) {
+   return true;
+  }
+  BoolExpression expression(dimFound->second, definition, settings);
+  return expression.evaluate();
  }
  BoolExpression expression(found->second, definition, settings);
  return expression.evaluate();
@@ -156,7 +184,7 @@ bool isProgramEnabledCached(const PackDefinition& definition,
                             ProgramEnabledCache& cache) {
  const std::string key = programLookupKey(programName);
  if(const auto hit = cache.find(key); hit != cache.end()) return hit->second;
- const bool enabled = isProgramEnabled(definition, settings, key);
+ const bool enabled = isProgramEnabled(definition, settings, programName);
  cache.emplace(key, enabled);
  return enabled;
 }
@@ -200,6 +228,7 @@ void indexPackPasses(const PackDefinition& definition,
  });
 }
 std::string irisShadowProgramForGbuffers(const std::string& gbuffersKey) {
+ if(gbuffersKey.rfind("clrwl_", 0) == 0) return {};
  if(gbuffersKey == "gbuffers_terrain_solid" || gbuffersKey == "gbuffers_terrain_cutout") return "shadow_cutout";
  if(gbuffersKey == "gbuffers_water") return "shadow_water";
  if(gbuffersKey.rfind("gbuffers_entities", 0) == 0 || gbuffersKey == "gbuffers_item" ||

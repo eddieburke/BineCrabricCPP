@@ -213,9 +213,14 @@ Chunk* LightingEngine::chunkAt(int chunkX, int chunkZ, WorkerState& state) {
   if(const auto reg = registry_.find(key); reg != registry_.end()) {
    chunk = reg->second;
   }
- }
- if(chunk != nullptr && !chunk->tryAcquireRenderPin()) {
-  chunk = nullptr;
+  // Lease acquisition must be atomic with eviction's unregisterChunkForLighting
+  // (same mutex): a worker that found the chunk has already counted its lease
+  // before the eviction can proceed, so the graveyard sweep can never free the
+  // chunk while this worker dereferences it. The eviction tombstone inside
+  // tryAcquireRenderPin is the fallback for any non-registry acquisition path.
+  if(chunk != nullptr && !chunk->tryAcquireRenderPin()) {
+   chunk = nullptr;
+  }
  }
  state.pinCache.emplace(key, chunk);
  return chunk;

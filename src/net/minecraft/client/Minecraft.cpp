@@ -85,6 +85,10 @@
 #include "net/minecraft/world/storage/exception/SessionLockException.hpp"
 namespace net::minecraft::client {
 namespace {
+// Per-frame slice for World::doLightingUpdates (drain + section invalidation).
+// Kept small so a lighting backlog cannot consume the whole render frame; the
+// engine keeps streaming the remainder on subsequent frames.
+constexpr std::int64_t kLightingUpdateBudgetNs = 2'000'000;
 std::int64_t currentTimeMillis() {
  return std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch())
      .count();
@@ -702,12 +706,11 @@ void Minecraft::tick() {
 void Minecraft::runRenderPhase() {
  audio.updateListener(player, timer.partialTick);
  if(world != nullptr) {
-  world->doLightingUpdates();
+  world->doLightingUpdates(128, kLightingUpdateBudgetNs);
  }
 #ifdef _WIN32
  util::DisplayManager::setSwapPacing(util::swapPacingFromOptions(options.fpsLimit, options.smoothFps));
 #endif
- util::DisplayManager::pumpAndPresent();
  if(player != nullptr && player->isInsideWall()) {
   options.thirdPerson = false;
  }
@@ -776,10 +779,11 @@ void Minecraft::run() {
      if(!continueFrame) {
       return;
      }
-     switch(phase) {
-     case util::FramePipeline::Phase::Drain:
+      switch(phase) {
+      case util::FramePipeline::Phase::Drain:
 #ifdef _WIN32
-      diagnostics::pingMainLoopHeartbeat();
+       util::DisplayManager::pumpMessages();
+       diagnostics::pingMainLoopHeartbeat();
 #endif
       screenStack_.flushRetired();
       multiplayerSession_.flushRetired();
@@ -826,12 +830,17 @@ void Minecraft::run() {
       }
       tickDuration = nanoTime() - tickStart;
       break;
-     case util::FramePipeline::Phase::Render:
-      runRenderPhase();
-      break;
-     case util::FramePipeline::Phase::Pace:
-      runPacePhase();
-      break;
+      case util::FramePipeline::Phase::Render:
+       runRenderPhase();
+       break;
+      case util::FramePipeline::Phase::Present:
+#ifdef _WIN32
+       util::DisplayManager::present();
+#endif
+       break;
+      case util::FramePipeline::Phase::Pace:
+       runPacePhase();
+       break;
      case util::FramePipeline::Phase::Diagnostics:
       runDiagnosticsPhase(tickDuration, frames, fpsWindowStart);
       break;

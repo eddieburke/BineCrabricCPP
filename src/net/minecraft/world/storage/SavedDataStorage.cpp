@@ -64,6 +64,28 @@ void SavedDataStorage::save() {
    state->setDirty(false);
   }
  }
+ if(impl_->idCountsDirty_) {
+  saveIdCounts();
+  impl_->idCountsDirty_ = false;
+ }
+}
+void SavedDataStorage::saveIdCounts() {
+ if(storage_ == nullptr) {
+  return;
+ }
+ try {
+  const std::filesystem::path file = storage_->getWorldPropertiesFile("idcounts");
+  if(file.empty()) {
+   return;
+  }
+  NbtCompound root;
+  for(const auto& entry : impl_->idCounts_) {
+   root.putShort(entry.first, static_cast<std::int16_t>(entry.second));
+  }
+  // Uncompressed, matching loadIdCounts()'s NbtIo::read.
+  writeFileAtomic(file, [&root](std::ostream& output) { NbtIo::write(root, output); });
+ } catch(const std::exception&) {
+ }
 }
 void SavedDataStorage::save(PersistentState& state) {
  if(storage_ == nullptr) {
@@ -111,22 +133,9 @@ int SavedDataStorage::getIdCount(const std::string& id) {
   value = it->second + 1;
  }
  impl_->idCounts_[id] = value;
- if(storage_ == nullptr) {
-  return value;
- }
- try {
-  const std::filesystem::path file = storage_->getWorldPropertiesFile("idcounts");
-  if(file.empty()) {
-   return value;
-  }
-  NbtCompound root;
-  for(const auto& entry : impl_->idCounts_) {
-   root.putShort(entry.first, static_cast<std::int16_t>(entry.second));
-  }
-  // Uncompressed, matching loadIdCounts()'s NbtIo::read.
-  writeFileAtomic(file, [&root](std::ostream& output) { NbtIo::write(root, output); });
- } catch(const std::exception&) {
- }
+ // Vanilla keeps idcounts in memory and flushes on world save; writing the
+ // file on every allocation was one synchronous disk write per entity/map id.
+ impl_->idCountsDirty_ = true;
  return value;
 }
 } // namespace net::minecraft

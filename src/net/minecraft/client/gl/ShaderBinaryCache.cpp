@@ -46,6 +46,7 @@ void ShaderBinaryCache::setRoot(std::filesystem::path root) {
 }
 
 void ShaderBinaryCache::scanDirectory() {
+ const std::lock_guard lock(knownMutex_);
  knownHashes_.clear();
  if(root_.empty()) return;
  std::error_code ec;
@@ -68,7 +69,10 @@ std::wstring ShaderBinaryCache::nativePath(std::uint64_t contentHash) const {
 std::optional<ProgramBinaryBlob> ShaderBinaryCache::tryLoad(std::uint64_t contentHash) const {
  diagnostics::WorkSpan span("io.shader.disk.read");
  if(root_.empty()) return std::nullopt;
- if(knownHashes_.find(contentHash) == knownHashes_.end()) return std::nullopt;
+ {
+  const std::lock_guard lock(knownMutex_);
+  if(knownHashes_.find(contentHash) == knownHashes_.end()) return std::nullopt;
+ }
  const std::wstring path = nativePath(contentHash);
  HANDLE file = CreateFileW(path.c_str(), GENERIC_READ, FILE_SHARE_READ, nullptr, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
  if(file == INVALID_HANDLE_VALUE) return std::nullopt;
@@ -130,17 +134,25 @@ bool ShaderBinaryCache::store(const ProgramBinaryBlob& blob) {
   DeleteFileW(tmp.c_str());
   return false;
  }
- if(!MoveFileExW(tmp.c_str(), path.c_str(), MOVEFILE_REPLACE_EXISTING)) {
-  DeleteFileW(path.c_str());
-  MoveFileExW(tmp.c_str(), path.c_str(), MOVEFILE_REPLACE_EXISTING);
- }
- knownHashes_.insert(blob.contentHash);
- return true;
+  if(!MoveFileExW(tmp.c_str(), path.c_str(), MOVEFILE_REPLACE_EXISTING)) {
+   DeleteFileW(path.c_str());
+   MoveFileExW(tmp.c_str(), path.c_str(), MOVEFILE_REPLACE_EXISTING);
+  }
+  {
+   const std::lock_guard lock(knownMutex_);
+   knownHashes_.insert(blob.contentHash);
+  }
+  return true;
 }
 
 void ShaderBinaryCache::storeAsync(ProgramBinaryBlob blob) {
- if(root_.empty() || blob.bytes.empty() || blob.contentHash == 0 || blob.binaryFormat == 0) return;
- knownHashes_.insert(blob.contentHash);
+ if(root_.empty() || blob.bytes.empty() || blob.contentHash == 0 || blob.binaryFormat == 0) {
+  return;
+ }
+ {
+  const std::lock_guard lock(knownMutex_);
+  knownHashes_.insert(blob.contentHash);
+ }
  {
   std::lock_guard lock(writerMutex_);
   writeQueue_.push_back(std::move(blob));
@@ -150,7 +162,10 @@ void ShaderBinaryCache::storeAsync(ProgramBinaryBlob blob) {
 
 void ShaderBinaryCache::remove(std::uint64_t contentHash) {
  if(root_.empty()) return;
- knownHashes_.erase(contentHash);
+ {
+  const std::lock_guard lock(knownMutex_);
+  knownHashes_.erase(contentHash);
+ }
  const std::wstring path = nativePath(contentHash);
  DeleteFileW(path.c_str());
 }

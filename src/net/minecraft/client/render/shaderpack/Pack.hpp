@@ -157,6 +157,8 @@ struct PackDefinition {
  bool separateEntityDraws = false;
  bool oldLighting = false;
  bool separateAo = false;
+ // ColorWheel texture format (lab-pbr) flags, driven by the selected texture
+ // pack's texture.properties format line.
  bool labPbr = false;
  bool labPbr13 = false;
  float ambientOcclusionLevel = 1.0f;
@@ -173,10 +175,14 @@ struct PackDefinition {
  float shadowFarPlane = 156.0f;
  float shadowIntervalSize = 2.0f;
  float sunPathRotation = 0.0f;
- // --- HALF_LIFE ---
- float wetnessHalflife = 600.0f;
- float drynessHalflife = 200.0f;
- float centerDepthHalflife = 1.0f;
+  // --- HALF_LIFE ---
+  float wetnessHalflife = 600.0f;
+  float drynessHalflife = 200.0f;
+  float centerDepthHalflife = 1.0f;
+  // True when any program source references centerDepthSmooth (or the pack
+  // declares const float centerDepthHalflife). The per-frame depth readback
+  // that feeds the uniform only runs for packs that actually consume it.
+  bool usesCenterDepthSmooth = false;
  float eyeBrightnessHalflife = 10.0f;
  // --- tex. / filter ---
  bool shadowtexNearest[2] = {false, false};

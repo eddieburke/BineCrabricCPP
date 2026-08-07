@@ -4,6 +4,11 @@
 #include "net/minecraft/world/chunk/Chunk.hpp"
 namespace net::minecraft {
 class World;
+ // Contract: implementations must be internally thread-safe. Loads and saves
+ // may run concurrently on the compute pool, the IO pool and the main thread;
+ // each implementation serializes its own file access (RegionIo holds a
+ // per-region lock, AlphaChunkStorage a per-chunk-file lock). Callers must NOT
+ // add cache-level locks around these calls.
  class ChunkStorage {
  public:
  virtual ~ChunkStorage() = default;

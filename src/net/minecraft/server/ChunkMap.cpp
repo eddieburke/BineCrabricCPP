@@ -140,12 +140,19 @@ class ChunkMap::TrackedChunk : public std::enable_shared_from_this<ChunkMap::Tra
    player->networkHandler->sendPacket(packet);
   }
  }
- void updateChunk() {
-  ServerWorld* serverWorld = owner_->getWorld();
-  if(serverWorld == nullptr || dirtyBlockCount_ == 0) {
-   return;
-  }
-  if(dirtyBlockCount_ == 1) {
+  void updateChunk() {
+   ServerWorld* serverWorld = owner_->getWorld();
+   if(serverWorld == nullptr || dirtyBlockCount_ == 0) {
+    return;
+   }
+   // Never sync-load a missing chunk inside a packet build: dirty blocks imply
+   // the chunk was loaded when they were recorded, so a miss here is a
+   // transient (evicted mid-drain). Skip and retry on the next tick; the
+   // normal async load stream brings the chunk back.
+   if(serverWorld->getChunkIfLoaded(chunkX_ * 16, chunkZ_ * 16) == nullptr) {
+    return;
+   }
+   if(dirtyBlockCount_ == 1) {
    const int blockX = chunkX_ * 16 + minX_;
    const int blockY = minY_;
    const int blockZ = chunkZ_ * 16 + minZ_;

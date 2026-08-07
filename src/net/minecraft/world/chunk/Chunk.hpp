@@ -3,9 +3,11 @@
 #include <array>
 #include <atomic>
 #include <cassert>
+#include <chrono>
 #include <cstddef>
 #include <cstdint>
 #include <memory>
+#include <mutex>
 #include <unordered_map>
 #include <utility>
 #include <vector>
@@ -49,29 +51,29 @@ class Chunk {
  ~Chunk();
  Chunk(const Chunk&) = delete;
  Chunk& operator=(const Chunk&) = delete;
- Chunk(Chunk&& other) noexcept
-     : world(other.world),
-       blocks(std::move(other.blocks)),
-       loaded(other.loaded),
-       dataReady(other.dataReady),
-       meta(std::move(other.meta)),
-       skyLight(std::move(other.skyLight)),
-       blockLight(std::move(other.blockLight)),
-       heightmap(other.heightmap),
-       minHeightmapValue(other.minHeightmapValue),
-       x(other.x),
-       z(other.z),
-       blockEntities(std::move(other.blockEntities)),
-       entities(std::move(other.entities)),
-       terrainPopulated(other.terrainPopulated),
-       dirty(other.dirty),
-       empty(other.empty),
-       lastSaveHadEntities(other.lastSaveHadEntities),
-       lastSaveTime(other.lastSaveTime) {
-  other.world = nullptr;
-  other.loaded = false;
-  other.dataReady = false;
- }
+  Chunk(Chunk&& other) noexcept
+      : world(other.world),
+        blocks(std::move(other.blocks)),
+        loaded(other.loaded),
+        dataReady(other.dataReady),
+        meta(std::move(other.meta)),
+        skyLight(std::move(other.skyLight)),
+        blockLight(std::move(other.blockLight)),
+        heightmap(other.heightmap),
+        minHeightmapValue(other.minHeightmapValue),
+        x(other.x),
+        z(other.z),
+        blockEntities(std::move(other.blockEntities)),
+        entities(std::move(other.entities)),
+        terrainPopulated(other.terrainPopulated),
+        dirty(other.dirty),
+        empty(other.empty),
+        lastSaveHadEntities(other.lastSaveHadEntities.load(std::memory_order_relaxed)),
+        lastSaveTime(other.lastSaveTime) {
+   other.world = nullptr;
+   other.loaded = false;
+   other.dataReady = false;
+  }
  Chunk& operator=(Chunk&&) = delete;
  [[nodiscard]] bool chunkPosEquals(int chunkX, int chunkZ) const noexcept {
   return chunkX == x && chunkZ == z;
@@ -154,42 +156,44 @@ class Chunk {
   }
   return sky < 0 ? 0 : sky;
  }
- void addEntity(Entity* entity) {
-  if(entity == nullptr) {
-   return;
+  void addEntity(Entity* entity) {
+   if(entity == nullptr) {
+    return;
+   }
+   const std::lock_guard lock(*entityMutex_);
+   lastSaveHadEntities = true;
+   int slice = floor_int(entity->y / 16.0);
+   if(slice < 0) {
+    slice = 0;
+   }
+   if(slice >= static_cast<int>(entities.size())) {
+    slice = static_cast<int>(entities.size()) - 1;
+   }
+   entity->isPersistent = true;
+   entity->chunkX = x;
+   entity->chunkSlice = slice;
+   entity->chunkZ = z;
+   auto& entitySlice = entities[static_cast<std::size_t>(slice)];
+   if(std::find(entitySlice.begin(), entitySlice.end(), entity) == entitySlice.end()) {
+    entitySlice.push_back(entity);
+   }
   }
-  lastSaveHadEntities = true;
-  int slice = floor_int(entity->y / 16.0);
-  if(slice < 0) {
-   slice = 0;
+  void removeEntity(Entity* entity) {
+   if(entity != nullptr) {
+    removeEntity(entity, entity->chunkSlice);
+   }
   }
-  if(slice >= static_cast<int>(entities.size())) {
-   slice = static_cast<int>(entities.size()) - 1;
+  void removeEntity(Entity* entity, int chunkSlice) {
+   const std::lock_guard lock(*entityMutex_);
+   if(chunkSlice < 0) {
+    chunkSlice = 0;
+   }
+   if(chunkSlice >= static_cast<int>(entities.size())) {
+    chunkSlice = static_cast<int>(entities.size()) - 1;
+   }
+   auto& slice = entities[static_cast<std::size_t>(chunkSlice)];
+   slice.erase(std::remove(slice.begin(), slice.end(), entity), slice.end());
   }
-  entity->isPersistent = true;
-  entity->chunkX = x;
-  entity->chunkSlice = slice;
-  entity->chunkZ = z;
-  auto& entitySlice = entities[static_cast<std::size_t>(slice)];
-  if(std::find(entitySlice.begin(), entitySlice.end(), entity) == entitySlice.end()) {
-   entitySlice.push_back(entity);
-  }
- }
- void removeEntity(Entity* entity) {
-  if(entity != nullptr) {
-   removeEntity(entity, entity->chunkSlice);
-  }
- }
- void removeEntity(Entity* entity, int chunkSlice) {
-  if(chunkSlice < 0) {
-   chunkSlice = 0;
-  }
-  if(chunkSlice >= static_cast<int>(entities.size())) {
-   chunkSlice = static_cast<int>(entities.size()) - 1;
-  }
-  auto& slice = entities[static_cast<std::size_t>(chunkSlice)];
-  slice.erase(std::remove(slice.begin(), slice.end(), entity), slice.end());
- }
  [[nodiscard]] bool isAboveMaxHeight(int localX, int yPos, int localZ) const {
   return yPos >= getHeight(localX, localZ);
  }
@@ -205,17 +209,38 @@ class Chunk {
  }
  void setBlockEntity(int localX, int yPos, int localZ, std::unique_ptr<block::entity::BlockEntity> blockEntity);
  void removeBlockEntityAt(int localX, int yPos, int localZ);
- void load();
- void unload();
- [[nodiscard]] virtual bool tryAcquireRenderPin() noexcept { return true; }
- virtual void releaseRenderPin() noexcept {}
- [[nodiscard]] virtual bool beginRenderEviction() noexcept { return true; }
- virtual void cancelRenderEviction() noexcept {}
- void markDirty() {
-  dirty = true;
- }
- void collectOtherEntities(Entity* except, const Box& box, std::vector<Entity*>& result) {
-  int minSlice = floor_int((box.minY - 2.0) / 16.0);
+  void load();
+  void unload();
+  // Render/lighting leases. A worker may only dereference a Chunk it holds a
+  // lease on; the cache tombstones evicted chunks into a graveyard and frees
+  // them only once the lease count reaches zero, so the object stays valid for
+  // any worker that acquired a lease before eviction. Acquisition races with
+  // eviction by design: an increment that lands after markEvicted() backs out
+  // (the worker then treats the chunk as absent), and every lease taken before
+  // eviction is counted, so the free-at-zero sweep cannot race an increment.
+  [[nodiscard]] bool tryAcquireRenderPin() noexcept;
+  void releaseRenderPin() noexcept;
+  // Marks the chunk evicted. Once set, new leases fail; existing leases keep
+  // the object alive until they drain. Caller must own the chunk (main thread,
+  // chunk removed from all maps) before or immediately after.
+  void markEvicted() noexcept {
+   evicted_.store(true, std::memory_order_release);
+  }
+  [[nodiscard]] bool isEvicted() const noexcept {
+   return evicted_.load(std::memory_order_acquire);
+  }
+  [[nodiscard]] std::uint32_t renderPinCount() const noexcept {
+   return renderPins_.load(std::memory_order_acquire);
+  }
+  // Blocks (bounded) until every lease on this chunk is released. Teardown
+  // only: the cache uses it before destroying graveyard entries.
+  static void waitForPinDrain(const Chunk& chunk, std::chrono::milliseconds timeout);
+  void markDirty() {
+   dirty = true;
+  }
+  void collectOtherEntities(Entity* except, const Box& box, std::vector<Entity*>& result) {
+   const std::lock_guard lock(*entityMutex_);
+   int minSlice = floor_int((box.minY - 2.0) / 16.0);
   int maxSlice = floor_int((box.maxY + 2.0) / 16.0);
   minSlice = std::max(minSlice, 0);
   maxSlice = std::min(maxSlice, static_cast<int>(entities.size()) - 1);
@@ -227,9 +252,10 @@ class Chunk {
    }
   }
  }
- template <typename T>
- void collectEntitiesByClass(const Box& box, std::vector<T*>& result) {
-  int minSlice = floor_int((box.minY - 2.0) / 16.0);
+  template <typename T>
+  void collectEntitiesByClass(const Box& box, std::vector<T*>& result) {
+   const std::lock_guard lock(*entityMutex_);
+   int minSlice = floor_int((box.minY - 2.0) / 16.0);
   int maxSlice = floor_int((box.maxY + 2.0) / 16.0);
   minSlice = std::max(minSlice, 0);
   maxSlice = std::min(maxSlice, static_cast<int>(entities.size()) - 1);
@@ -385,15 +411,24 @@ class Chunk {
  int minHeightmapValue = 0;
  const int x = 0;
  const int z = 0;
- std::unordered_map<Vec3i, std::unique_ptr<block::entity::BlockEntity>, Vec3iHash> blockEntities{};
- std::array<std::vector<Entity*>, 8> entities{};
- bool terrainPopulated = false;
- bool dirty{false};
- bool empty = false;
- bool lastSaveHadEntities = false;
- long long lastSaveTime = 0;
- std::unique_ptr<std::atomic_flag> renderWriteLock_ =
-     std::make_unique<std::atomic_flag>();
+  std::unordered_map<Vec3i, std::unique_ptr<block::entity::BlockEntity>, Vec3iHash> blockEntities{};
+  std::array<std::vector<Entity*>, 8> entities{};
+  bool terrainPopulated = false;
+  bool dirty{false};
+  bool empty = false;
+  std::atomic<bool> lastSaveHadEntities{false};
+  long long lastSaveTime = 0;
+  std::unique_ptr<std::atomic_flag> renderWriteLock_ =
+      std::make_unique<std::atomic_flag>();
+  // Guards the entity/block-entity containers. The main thread mutates them
+  // (entity ticks, block-entity placement, load/unload); the save drain
+  // serializes them into a snapshot on an IO worker. recursive so a block
+  // entity created from inside getBlockEntity()'s onPlaced callback can
+  // re-enter the chunk while the outer read holds the lock.
+  std::unique_ptr<std::recursive_mutex> entityMutex_ =
+      std::make_unique<std::recursive_mutex>();
+  std::atomic<std::uint32_t> renderPins_{0};
+  std::atomic<bool> evicted_{false};
 
  public:
  void lockRenderWrite() const noexcept;

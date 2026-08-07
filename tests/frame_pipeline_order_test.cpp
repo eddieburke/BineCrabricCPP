@@ -9,8 +9,9 @@ using FramePipeline = net::minecraft::client::util::FramePipeline;
 TEST(FramePipeline, EnumeratesPhasesInDrainToDiagnosticsOrder) {
  const FramePipeline::Phase expected[] = {FramePipeline::Phase::Drain, FramePipeline::Phase::Input,
                                           FramePipeline::Phase::Ticks, FramePipeline::Phase::Render,
-                                          FramePipeline::Phase::Pace, FramePipeline::Phase::Diagnostics};
- ASSERT_EQ(FramePipeline::count(), std::size_t(6));
+                                          FramePipeline::Phase::Present, FramePipeline::Phase::Pace,
+                                          FramePipeline::Phase::Diagnostics};
+ ASSERT_EQ(FramePipeline::count(), std::size_t(7));
  for(std::size_t i = 0; i < FramePipeline::count(); ++i) {
   EXPECT_EQ(FramePipeline::phaseAt(i), expected[i]);
  }

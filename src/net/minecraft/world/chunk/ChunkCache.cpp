@@ -4,7 +4,6 @@
 #include <cstdlib>
 #include <limits>
 #include <thread>
-#include "net/minecraft/util/concurrent/FrameBudget.hpp"
 #include "net/minecraft/util/concurrent/ThreadCoordinator.hpp"
 #include "net/minecraft/world/World.hpp"
 #include "net/minecraft/world/chunk/storage/AlphaChunkStorage.hpp"
@@ -37,6 +36,15 @@ ChunkCache::~ChunkCache() {
   const std::lock_guard lock(workerGeneratorMutex_);
   workerGenerators_.clear();
  }
+ // Graveyard entries may still carry leases from in-flight mesh snapshots on
+ // the compute pool (lighting workers are joined by World::~World before the
+ // cache dies; the compute pool is not). Bound the wait so teardown cannot
+ // hang on a wedged pool; anything still leased leaks rather than dangling.
+ for(const auto& entry : graveyard_) {
+  if(entry != nullptr && entry->renderPinCount() != 0) {
+   Chunk::waitForPinDrain(*entry, std::chrono::milliseconds(5000));
+  }
+ }
 }
 bool ChunkCache::isChunkLoaded(int chunkX, int chunkZ) const {
  return chunksByPos_.find(ChunkPos{chunkX, chunkZ}) != chunksByPos_.end();
@@ -63,19 +71,6 @@ void ChunkCache::dropChunk(int chunkX, int chunkZ) {
   chunksToUnload_.insert(ChunkPos{chunkX, chunkZ});
  }
 }
-bool ChunkCache::retireFromLighting(Chunk* chunk) {
- if(chunk == nullptr || chunk->isEmpty()) {
-  return true;
- }
- // Bounded wait for in-flight render pins (mesh/lighting jobs) to drain instead
- // of an unbounded spin. A chunk whose arrays a worker is still copying cannot be
- // unloaded safely; but if the pins do not drain quickly (e.g. workers blocked
- // behind a full completed-job channel the main thread would have to drain), the
- // spin would hang the caller forever. On timeout, cancel the eviction marker so
- // the chunk stays usable and the caller retries the eviction later.
- // Server has no render pins — nothing to drain before eviction.
- return true;
-}
 void ChunkCache::unloadChunk(int chunkX, int chunkZ) {
  const ChunkPos pos{chunkX, chunkZ};
  if(const auto pending = pendingLoads_.find(pos); pending != pendingLoads_.end()) {
@@ -88,16 +83,17 @@ void ChunkCache::unloadChunk(int chunkX, int chunkZ) {
  }
  Chunk* chunk = it->second;
  if(chunk != nullptr && !chunk->isEmpty()) {
-  if(!retireFromLighting(chunk)) {
-   // Still pinned by an in-flight mesh/lighting job; keep the chunk loaded and
-   // let a later drain retry the eviction.
-   return;
-  }
+  chunk->markEvicted();
   chunk->unload();
  }
  chunks_.erase(std::remove(chunks_.begin(), chunks_.end(), chunk), chunks_.end());
  chunksByPos_.erase(it);
- ownedChunks_.erase(chunk);
+ const auto ownedIt = ownedChunks_.find(chunk);
+ if(ownedIt != ownedChunks_.end()) {
+  // Tombstone: keep the object alive until worker leases drain, then sweep.
+  graveyard_.push_back(std::move(ownedIt->second));
+  ownedChunks_.erase(ownedIt);
+ }
  if(world_ != nullptr) {
   world_->chunkUnloaded(chunkX, chunkZ);
  }
@@ -128,7 +124,6 @@ std::unique_ptr<Chunk> ChunkCache::produceChunk(int chunkX, int chunkZ) {
   try {
    std::unique_ptr<Chunk> loaded;
    {
-    const std::lock_guard lock(storageMutex_);
     loaded = std::make_unique<Chunk>(std::move(storage_->loadChunk(world_, chunkX, chunkZ)));
    }
    if(!loaded->empty && loaded->chunkPosEquals(chunkX, chunkZ)) {
@@ -322,42 +317,20 @@ void ChunkCache::saveEntities(Chunk& chunk) {
  if(storage_ == nullptr || world_ == nullptr) {
   return;
  }
- const std::lock_guard lock(storageMutex_);
  try {
   storage_->saveEntities(world_, chunk);
  } catch(...) {
  }
 }
-void ChunkCache::enqueueSerializedWrite(int chunkX, int chunkZ, std::vector<std::uint8_t> raw) {
- if(storage_ == nullptr) {
+void ChunkCache::enqueueSnapshotWrite(Chunk* chunk, std::uint64_t saveTime) {
+ if(storage_ == nullptr || chunk == nullptr) {
   return;
  }
  pendingSaveWrites_.fetch_add(1, std::memory_order_acq_rel);
  bool schedule = false;
  {
   const std::lock_guard lock(saveQueueMutex_);
-  saveQueue_.push_back(SerializedWrite{chunkX, chunkZ, std::move(raw), nullptr});
-  if(!saveDrainScheduled_) {
-   saveDrainScheduled_ = true;
-   schedule = true;
-  }
- }
- if(schedule) {
-  net::minecraft::util::concurrent::ThreadCoordinator::instance()
-      .pool(net::minecraft::util::concurrent::Domain::Io)
-      .submit([this] { drainSerializedWrites(); });
- }
-}
-void ChunkCache::enqueueSerializedWrite(int chunkX, int chunkZ, AlphaChunkStorage::ChunkSnapshot snapshot) {
- if(storage_ == nullptr) {
-  return;
- }
- pendingSaveWrites_.fetch_add(1, std::memory_order_acq_rel);
- bool schedule = false;
- {
-  const std::lock_guard lock(saveQueueMutex_);
-  saveQueue_.push_back(
-      SerializedWrite{chunkX, chunkZ, {}, std::make_unique<AlphaChunkStorage::ChunkSnapshot>(std::move(snapshot))});
+  saveQueue_.push_back(SerializedWrite{chunk->x, chunk->z, {}, nullptr, chunk, saveTime});
   if(!saveDrainScheduled_) {
    saveDrainScheduled_ = true;
    schedule = true;
@@ -385,13 +358,24 @@ void ChunkCache::drainSerializedWrites() {
   try {
    if(write.snapshot != nullptr) {
     AlphaChunkStorage::writeRootChunkFromSnapshot(write.raw, *write.snapshot);
+   } else if(write.chunk != nullptr) {
+    // The render lease keeps the chunk alive for the whole snapshot even if
+    // the main thread evicts it concurrently; release it once serialized.
+    const AlphaChunkStorage::ChunkSnapshot snapshot =
+        AlphaChunkStorage::takeSnapshot(*write.chunk, write.saveTime);
+    write.chunk->lastSaveHadEntities.store(
+        !snapshot.entities.storage().asList().empty(), std::memory_order_relaxed);
+    write.chunk->releaseRenderPin();
+    write.chunk = nullptr;
+    AlphaChunkStorage::writeRootChunkFromSnapshot(write.raw, snapshot);
    }
    // Unlocked: every ChunkStorage implementation serializes its own disk access
-   // (RegionIo holds a per-region lock, AlphaChunkStorage a file lock). Holding
-   // storageMutex_ across the compress-and-write here parked the main thread's
-   // tick() and every compute worker's produceChunk() behind disk I/O.
+   // (RegionIo holds a per-region lock, AlphaChunkStorage a per-file lock).
    storage_->writeSerializedChunk(write.chunkX, write.chunkZ, write.raw);
   } catch(...) {
+   if(write.chunk != nullptr) {
+    write.chunk->releaseRenderPin();
+   }
   }
   completeSerializedWrite();
  }
@@ -417,12 +401,15 @@ void ChunkCache::saveChunk(Chunk& chunk) {
  try {
   chunk.lastSaveTime = static_cast<long long>(world_->getTime());
   if(storage_->supportsAsyncWrites()) {
-   world_->checkSessionLock();
-   AlphaChunkStorage::ChunkSnapshot snapshot = AlphaChunkStorage::takeSnapshot(chunk, world_);
-   enqueueSerializedWrite(chunk.x, chunk.z, std::move(snapshot));
+   if(!chunk.tryAcquireRenderPin()) {
+    // Chunk is already evicted; nothing to save (its data was saved before the
+    // eviction tombstone was set).
+    return;
+   }
+   chunk.meta.ensureSizeForBlockCount(chunk.blocks.size());
+   enqueueSnapshotWrite(&chunk, chunk.lastSaveTime);
   } else {
-   const std::lock_guard lock(storageMutex_);
-   storage_->saveChunk(world_, chunk);
+    storage_->saveChunk(world_, chunk);
   }
  } catch(...) {
  }
@@ -432,20 +419,25 @@ void ChunkCache::decorate(ChunkSource* source, int chunkX, int chunkZ) {
  if(chunk.terrainPopulated) {
   return;
  }
- chunk.terrainPopulated = true;
- if(generator_ != nullptr) {
-  // No storage lock here. Decoration is main-thread-only (adoptChunk is the sole
-  // caller) and touches only main-thread state, so it needs no mutual exclusion
-  // of its own. Taking storageMutex_ across it used to stall every compute worker
-  // in produceChunk for the whole decoration pass -- and adoptChunk can decorate
-  // up to four columns per adopted chunk, up to 32 chunks per publish, so terrain
-  // generation was effectively serialized behind main-thread decoration.
-  generator_->decorate(source, chunkX, chunkZ);
-  chunk.markDirty();
- }
+  chunk.terrainPopulated = true;
+  if(generator_ != nullptr) {
+   // Decoration is main-thread-only (adoptChunk is the sole caller) and touches
+   // only main-thread state, so it needs no mutual exclusion of its own.
+   generator_->decorate(source, chunkX, chunkZ);
+   chunk.markDirty();
+  }
 }
 bool ChunkCache::save(bool saveEntityData, SaveProgressCallback progress) {
  (void)progress;
+ if(world_ != nullptr) {
+  try {
+   // One session-lock verification per save batch instead of per chunk: the
+   // world-level save paths also verify, and per-chunk checks were one file
+   // open+read on the main thread for every chunk saved.
+   world_->checkSessionLock();
+  } catch(...) {
+  }
+ }
  int saved = 0;
  constexpr int kAutosaveBudget = 8;
  for(Chunk* chunk : chunks_) {
@@ -472,7 +464,6 @@ bool ChunkCache::save(bool saveEntityData, SaveProgressCallback progress) {
  }
  if(storage_ != nullptr && (saveEntityData || saved > 0)) {
   if(saveEntityData) {
-   const std::lock_guard lock(storageMutex_);
    storage_->flush();
   }
  }
@@ -494,21 +485,20 @@ void ChunkCache::drainChunksToUnload(int maxChunks) {
    continue;
   }
   Chunk* chunk = mapIt->second;
-  if(!retireFromLighting(chunk)) {
-   // Pinned by an in-flight mesh/lighting job; leave the chunk loaded and retry
-   // the eviction on a later drain instead of blocking this frame.
-   chunksToUnload_.insert(pos);
-   continue;
-  }
-  chunk->unload();
   if(chunk->shouldSave(true)) {
    saveChunk(*chunk);
    saveEntities(*chunk);
    chunk->dirty = false;
   }
+  chunk->markEvicted();
+  chunk->unload();
   chunksByPos_.erase(mapIt);
   chunks_.erase(std::remove(chunks_.begin(), chunks_.end(), chunk), chunks_.end());
-  ownedChunks_.erase(chunk);
+  const auto ownedIt = ownedChunks_.find(chunk);
+  if(ownedIt != ownedChunks_.end()) {
+   graveyard_.push_back(std::move(ownedIt->second));
+   ownedChunks_.erase(ownedIt);
+  }
   if(world_ != nullptr) {
    world_->chunkUnloaded(pos.x, pos.z);
   }
@@ -522,10 +512,10 @@ bool ChunkCache::tick() {
  if(world_ != nullptr && !world_->isSavingDisabled()) {
   drainChunksToUnload(100);
   if(storage_ != nullptr) {
-   const std::lock_guard lock(storageMutex_);
    storage_->tick();
   }
  }
+ sweepGraveyard();
  if(generator_ == nullptr) {
   return false;
  }
@@ -558,31 +548,32 @@ void ChunkCache::setChunkCacheCenter(int chunkX, int chunkZ) {
   }
  }
 }
+void ChunkCache::sweepGraveyard() {
+ auto it = graveyard_.begin();
+ while(it != graveyard_.end()) {
+  if(*it == nullptr || (*it)->renderPinCount() == 0) {
+   // Leases drained (or never taken): no worker can acquire a new one after
+   // the eviction tombstone was set, so destruction is safe.
+   it = graveyard_.erase(it);
+  } else {
+   ++it;
+  }
+ }
+}
 void ChunkCache::pumpChunkPublish() {
  // Pacing: each adopted chunk can run main-thread decoration + block-light
  // population (tens of ms per chunk in debug builds). Cap this render-frame
- // publish to a few ms so a backlog of ready chunks cannot turn one frame into
- // a multi-second hitch. The count cap still bounds the burst when adoption is
- // cheap, and tick() keeps streaming server-side chunks at its own rate.
- const auto& frame = net::minecraft::util::concurrent::FrameBudget::frameDeadline();
- std::int64_t budget = 16'000'000;
- if(frame.active()) {
-  if(frame.expired()) {
-   // The shared frame deadline is already in the past (this frame ran over
-   // budget). Clamping to 0 here would throttle adoption to exactly one chunk
-   // per frame while prefetchChunksNear keeps queueing up to 16/tick, so the
-   // world stream crawls and the renderer's section counters climb forever.
-   // Fall back to a fresh local slice so the backlog keeps draining at a sane
-   // rate during overloaded frames.
-   budget = 4'000'000;
-  } else {
-   budget = frame.remaining().count();
-  }
- }
- integrateFinishedLoads(32, budget);
+ // publish to a fixed slice instead of the whole remaining frame budget, so a
+ // backlog of ready chunks cannot turn one frame into a multi-second hitch
+ // even when the frame deadline is still fresh. The count cap still bounds the
+ // burst when adoption is cheap, and tick() keeps streaming server-side chunks
+ // at its own rate.
+ constexpr std::int64_t kPublishBudgetNs = 4'000'000;
+ integrateFinishedLoads(32, kPublishBudgetNs);
  if(world_ != nullptr && !world_->isSavingDisabled()) {
   drainChunksToUnload(100);
  }
+ sweepGraveyard();
 }
 void ChunkCache::prefetchChunksNear(int centerChunkX, int centerChunkZ) {
  setChunkCacheCenter(centerChunkX, centerChunkZ);

@@ -190,11 +190,12 @@ class World : public IEntityWorld {
  // Report save progress. The callback receives a [0,100] percentage; the
  // default no-op ignores it. The client overrides with a UI progress bar
  // (LoadingDisplay in ClientWorld); the server never calls this.
- virtual void savingProgress(int percent) {}
- // Pump lighting-thread results: forward finished dirty regions to the
- // renderer. Cheap; call once per frame/tick. Returns true while the
- // lighting thread still has work queued.
- bool doLightingUpdates(std::size_t maxDirtyRegions = 128);
+  virtual void savingProgress(int /*percent*/) {}
+  // Pump lighting-thread results: forward finished dirty regions to the
+  // renderer. Cheap; call once per frame/tick. Returns true while the
+  // lighting thread still has work queued. timeBudgetNs >= 0 bounds the
+  // drain+invalidate work by wall clock (per frame); -1 drains unbounded.
+  bool doLightingUpdates(std::size_t maxDirtyRegions = 128, std::int64_t timeBudgetNs = -1);
  void pumpChunkPublish();
  // Block until the lighting thread has fully converged (world load).
  void finishLightingUpdates();
@@ -419,7 +420,6 @@ class World : public IEntityWorld {
  std::uint64_t worldTimeMask = 0xFFFFFFULL;
  bool allPlayersSleeping = false;
  WorldEvents events_;
- BlockMutationContext blockMutationContext_;
  BlockMutationModule blockMutation_;
  std::string name_;
  WorldStorage* dimensionData_ = nullptr;

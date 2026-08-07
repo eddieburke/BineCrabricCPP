@@ -1,4 +1,7 @@
 #include "net/minecraft/client/core/WorldSession.hpp"
+#include <chrono>
+#include <limits>
+#include <thread>
 #include "net/minecraft/client/Minecraft.hpp"
 #include "net/minecraft/client/auth/microsoft/PlayerTextures.hpp"
 #include "net/minecraft/client/sound/WorldSoundListener.hpp"
@@ -7,6 +10,7 @@
 #include "net/minecraft/util/math/MathHelper.hpp"
 #include "net/minecraft/world/World.hpp"
 #include "net/minecraft/world/chunk/Chunk.hpp"
+#include "net/minecraft/world/chunk/ChunkCache.hpp"
 #include "net/minecraft/world/chunk/ChunkSource.hpp"
 #include "net/minecraft/world/storage/AlphaWorldStorage.hpp"
 #include "net/minecraft/world/storage/WorldStorageSource.hpp"
@@ -171,21 +175,45 @@ void WorldSession::prepareWorld(Minecraft& client, const std::string& worldName)
  client.world->setChunkCacheCenterFromBlockPos(center.x, center.z);
  constexpr int chunkRadius = radius / 16;
  const int totalChunks = (chunkRadius * 2 + 1) * (chunkRadius * 2 + 1);
- int loaded = 0;
  const int centerChunkX = center.x >> 4;
  const int centerChunkZ = center.z >> 4;
- for(int dx = -chunkRadius; dx <= chunkRadius; ++dx) {
-  for(int dz = -chunkRadius; dz <= chunkRadius; ++dz) {
-   (void)client.world->getChunk(centerChunkX + dx, centerChunkZ + dz);
-   ++loaded;
-   if(loaded % 5 == 0) {
-    client.progressRenderer.progressStagePercentage(loaded * 100 / totalChunks);
-   }
-  }
- }
  if(ChunkSource* source = client.world->getChunkSource(); source != nullptr) {
-  source->prefetchChunksNear(centerChunkX, centerChunkZ);
-  source->pumpChunkPublish();
+  if(auto* cache = dynamic_cast<world::chunk::ChunkCache*>(source); cache != nullptr) {
+   // Drive the whole grid through the async loader (workers load/generate in
+   // parallel) and pump integration on this thread, instead of 9k serialized
+   // synchronous disk loads/generations. Requests and adoption both stop at
+   // the render-radius ring, matching the old grid's footprint.
+   for(int ring = 0; ring <= chunkRadius; ++ring) {
+    const int priority = ring <= 1 ? std::numeric_limits<int>::min() : ring;
+    for(int dx = -ring; dx <= ring; ++dx) {
+     for(int dz = -ring; dz <= ring; ++dz) {
+      if(std::max(std::abs(dx), std::abs(dz)) != ring) {
+       continue;
+      }
+      cache->requestChunkAsync(centerChunkX + dx, centerChunkZ + dz, priority);
+     }
+    }
+   }
+   const auto start = std::chrono::steady_clock::now();
+   while(cache->pendingAsyncLoadCount() > 0) {
+    cache->pumpChunkPublish();
+    const std::size_t pending = cache->pendingAsyncLoadCount();
+    const int done = totalChunks > static_cast<int>(pending) ? totalChunks - static_cast<int>(pending) : 0;
+    client.progressRenderer.progressStagePercentage(done * 100 / totalChunks);
+    if(std::chrono::steady_clock::now() - start > std::chrono::seconds(60)) {
+     break;
+    }
+    std::this_thread::sleep_for(std::chrono::milliseconds(1));
+   }
+   cache->pumpChunkPublish();
+  } else {
+   for(int dx = -chunkRadius; dx <= chunkRadius; ++dx) {
+    for(int dz = -chunkRadius; dz <= chunkRadius; ++dz) {
+     (void)client.world->getChunk(centerChunkX + dx, centerChunkZ + dz);
+    }
+   }
+   source->pumpChunkPublish();
+  }
  }
  relightSkylightForPreparedArea(*client.world, center.x, center.z, radius);
  client.world->finishLightingUpdates();

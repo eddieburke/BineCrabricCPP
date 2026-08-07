@@ -442,7 +442,13 @@ void parseDefineDirective(const std::string& afterKeyword, PPMacroTable& macros)
   if(!trimCopy(param).empty()) macro.params.push_back(trimCopy(param));
   end = p < afterKeyword.size() ? p + 1 : p;
  }
- macro.body = trimCopy(afterKeyword.substr(end));
+ std::string body = trimCopy(afterKeyword.substr(end));
+ // The option comment (`//[128 192 ...]`) must not leak into the macro body:
+ // `#if COLORED_LIGHTING > 0` would then evaluate `0 //[128 192 ...]` as a
+ // division chain and always come out zero.
+ const std::size_t comment = body.find("//");
+ if(comment != std::string::npos) body = trimCopy(std::string_view(body).substr(0, comment));
+ macro.body = std::move(body);
  macros[name] = std::move(macro);
 }
 bool parseDirective(const std::string& trimmed, std::string& keyword, std::string& rest) {

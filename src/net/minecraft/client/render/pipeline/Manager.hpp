@@ -125,23 +125,24 @@ private:
  [[nodiscard]] const PackInstance* selectedPack() const noexcept;
  void preparePendingPack(net::minecraft::World* world);
  [[nodiscard]] bool packReady(PackInstance& pack);
- void prepareStagedPack(net::minecraft::World* world);
- void commitStagedPack();
- void discardStagedPack();
- [[nodiscard]] std::unique_ptr<PackInstance> clonePack(const PackInstance& source,
-                                                       const std::unordered_map<std::string, std::string>* settings = nullptr);
- void activatePack(std::size_t index);
- void cancelPendingPack();
- [[nodiscard]] std::unique_ptr<PackInstance> loadPack(const std::filesystem::path& path,
-                                                      bool directory);
- void initializePackRuntime(PackInstance& pack);
- void refreshSummaries();
- void warmBasePrograms();
- void prewarmPacks();
- void startDirectoryWatcher();
- void stopDirectoryWatcher();
- void directoryWatchLoop(const std::stop_token& stop);
- std::filesystem::path gameDirectory_;
+  void prepareStagedPack(net::minecraft::World* world);
+  void commitStagedPack();
+  void discardStagedPack();
+  [[nodiscard]] std::unique_ptr<PackInstance> clonePack(const PackInstance& source,
+                                                        const std::unordered_map<std::string, std::string>* settings = nullptr);
+  void activatePack(std::size_t index);
+  void cancelPendingPack();
+  [[nodiscard]] std::unique_ptr<PackInstance> loadPack(const std::filesystem::path& path,
+                                                       bool directory);
+  [[nodiscard]] std::unique_ptr<PackInstance> loadEmbeddedVanillaPack();
+  void initializePackRuntime(PackInstance& pack);
+  void refreshSummaries();
+  void warmBasePrograms();
+  void prewarmPacks();
+  void startDirectoryWatcher();
+  void stopDirectoryWatcher();
+  void directoryWatchLoop(const std::stop_token& stop);
+  std::filesystem::path gameDirectory_;
  option::GameOptions* options_ = nullptr;
  render::Pipeline pipeline_;
  std::vector<std::unique_ptr<PackInstance>> packs_;

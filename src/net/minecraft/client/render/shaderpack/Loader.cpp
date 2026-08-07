@@ -129,12 +129,19 @@ void scanOptions(const std::string& source,
    const std::string key = body.substr(0, split);
    const std::string rest = split == std::string::npos ? std::string{} : trim(std::string_view(body).substr(split));
    const std::size_t comment = rest.find("//");
+   const std::string value = trim(comment == std::string::npos ? rest : rest.substr(0, comment));
+   // Only defines that carry an option comment or no value at all are user
+   // options. Comment-less defines with a value are pack-internal derived
+   // macros (e.g. `#define WORLD_SPACE_REFLECTIONS_INTERNAL -1`); registering
+   // them makes rewriteOptions clobber every later definition with the option
+   // default, flipping the pack's internal `#if` branches.
+   if(comment == std::string::npos && !value.empty()) continue;
    addOption(options,
              rejected,
              key,
              PackOptionForm::Define,
              enabled,
-             trim(comment == std::string::npos ? rest : rest.substr(0, comment)),
+             value,
              comment == std::string::npos ? std::string_view{} : std::string_view(rest).substr(comment + 2));
    continue;
   }
@@ -335,8 +342,9 @@ void scanPackConstants(const std::string& source,
    pack.wetnessHalflife = std::max(0.0f, f);
   } else if(left == "const float drynessHalflife") {
    pack.drynessHalflife = std::max(0.0f, f);
-  } else if(left == "const float centerDepthHalflife") {
-   pack.centerDepthHalflife = std::max(0.0f, f);
+   } else if(left == "const float centerDepthHalflife") {
+    pack.centerDepthHalflife = std::max(0.0f, f);
+    pack.usesCenterDepthSmooth = true;
   } else if(left == "const float eyeBrightnessHalflife") {
    pack.eyeBrightnessHalflife = std::max(0.0f, f);
   } else if(left == "const float entityShadowDistanceMul") {
@@ -1686,16 +1694,36 @@ bool PackLoader::load(const std::vector<std::string>& resources,
    if(!seed->customUniforms.empty()) out.customUniforms = seed->customUniforms;
   }
  }
- for(const PackPass& pass : out.passes) {
-  if(!pass.mipmapBuffers.empty()) {
-   const int dim = std::max(1024, out.shadowMapResolution > 0 ? out.shadowMapResolution : 2048);
-   int level = 0;
-   for(int d = dim; d > 1; d >>= 1) ++level;
-   out.mcMipmapLevel = std::max(out.mcMipmapLevel, level);
-   break;
+  for(const PackPass& pass : out.passes) {
+   if(!pass.mipmapBuffers.empty()) {
+    const int dim = std::max(1024, out.shadowMapResolution > 0 ? out.shadowMapResolution : 2048);
+    int level = 0;
+    for(int d = dim; d > 1; d >>= 1) ++level;
+    out.mcMipmapLevel = std::max(out.mcMipmapLevel, level);
+    break;
+   }
   }
- }
- return true;
+  auto scanCenterDepth = [](PackDefinition& definition) {
+   if(definition.usesCenterDepthSmooth) return;
+   for(const auto& [name, source] : definition.programs) {
+    (void)name;
+    if(source.vertex.find("centerDepthSmooth") != std::string::npos ||
+       source.fragment.find("centerDepthSmooth") != std::string::npos ||
+       source.compute.find("centerDepthSmooth") != std::string::npos ||
+       source.geometry.find("centerDepthSmooth") != std::string::npos ||
+       source.tessControl.find("centerDepthSmooth") != std::string::npos ||
+       source.tessEvaluation.find("centerDepthSmooth") != std::string::npos) {
+     definition.usesCenterDepthSmooth = true;
+     return;
+    }
+   }
+  };
+  scanCenterDepth(out);
+  for(const auto& [dimension, definition] : out.dimensionDefinitions) {
+   (void)dimension;
+   scanCenterDepth(*definition);
+  }
+  return true;
 }
 std::string PackLoader::rewriteOptions(const std::string& source,
                                        const std::unordered_map<std::string, PackSourceOption>& options,

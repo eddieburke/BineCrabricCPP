@@ -23,6 +23,7 @@ class DisplayManager {
 #ifdef _WIN32
  static void ensureGlContext();
  static void setSwapPacing(gl::SwapPacing pacing);
+ static void pumpMessages();
  static void present();
  static void pumpAndPresent();
  static void destroy();

@@ -147,17 +147,18 @@ bool ensurePackResources(PackInstance& pack, int width, int height, const gl::Gl
    if(!remapped) resource = "/" + resource;
    const int texture = minecraft->textureManager.getTextureId(resource);
    if(texture < 0) return false;
-   // https://github.com/IrisShaders/Iris/blob/26.1/common/src/main/java/net/irisshaders/iris/pipeline/CustomTextureManager.java
-   if(const std::size_t extension = resource.find_last_of('.'); extension != std::string::npos &&
-                                                                extension > 2) {
-    const std::string base = resource.substr(0, extension);
-    const bool normal = base.ends_with("_n");
-    const bool specular = base.ends_with("_s");
-    if(normal || specular) {
-     const std::string basePath = base.substr(0, base.size() - 2) + resource.substr(extension);
-     const int baseId = minecraft->textureManager.getTextureId(basePath);
-     if(baseId > 0) {
-      const render::PbrTextures::Holder holder =
+    // https://github.com/IrisShaders/Iris/blob/26.1/common/src/main/java/net/irisshaders/iris/pipeline/CustomTextureManager.java
+    if(const std::size_t extension = resource.find_last_of('.'); extension != std::string::npos &&
+                                                                 extension > 2) {
+     const std::string base = resource.substr(0, extension);
+     const bool normal = base.ends_with("_n");
+     const bool specular = base.ends_with("_s");
+     if(normal || specular) {
+      const std::string basePath = base.substr(0, base.size() - 2) + resource.substr(extension);
+      const int baseId = minecraft->textureManager.getTextureId(basePath);
+      if(baseId > 0) {
+       // ColorWheel: _n/_s companion textures in the lab-pbr format.
+       const render::PbrTextures::Holder holder =
           render::PbrTextures::getOrLoad(baseId, minecraft->textureManager,
                                          pack.definition.labPbr);
       const int pbrId = normal ? holder.normal : holder.specular;

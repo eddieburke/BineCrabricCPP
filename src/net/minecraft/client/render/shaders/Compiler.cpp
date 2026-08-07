@@ -7,6 +7,7 @@
 #include "net/minecraft/client/render/pipeline/Instance.hpp"
 #include "net/minecraft/client/render/shaderpack/Catalog.hpp"
 #include "net/minecraft/client/render/shaderpack/Loader.hpp"
+#include "net/minecraft/client/render/shaderpack/VanillaPackEmbed.hpp"
 #include "net/minecraft/client/gl/ShaderProgram.hpp"
 #include "net/minecraft/client/resource/pack/ZippedTexturePack.hpp"
 #include "net/minecraft/client/ClientLog.hpp"
@@ -28,6 +29,7 @@ ShaderTransformContext transformContextFor(const std::string& programName,
                                            bool hasGeometry,
                                            bool hasTessellation) {
  std::string_view name = programName;
+ if(name.starts_with("clrwl_")) name.remove_prefix(6);
  const bool overlay = name.starts_with("gbuffers_entities") || name.starts_with("gbuffers_block") ||
                       name.starts_with("gbuffers_hand") || name == "gbuffers_item" ||
                       name == "gbuffers_lightning" || name == "gbuffers_spidereyes" ||
@@ -126,7 +128,10 @@ std::string PackCompiler::readText(const PackInstance& pack, const std::string& 
         normalized.begin(), normalized.end(), [](const std::filesystem::path& part) { return part == ".."; })) {
   return {};
  }
- if(pack.directory) {
+  if(pack.embedded) {
+   return VanillaPackEmbed::get(normalized.generic_string());
+  }
+  if(pack.directory) {
   return PackCatalog::readFile(pack.path / normalized);
  }
  if(pack.zip == nullptr) {
@@ -143,6 +148,12 @@ const std::string& PackCompiler::cachedText(PackInstance& pack, const std::strin
  return pack.sourceCache.emplace(path, readText(pack, path)).first->second;
 }
 std::string PackCompiler::resolveIncludes(PackInstance& pack, const std::string& path) {
+ if(pack.embedded) {
+  // Embedded vanilla sources are baked fully resolved at configure time
+  // (gen-embedded-vanilla-pack.cmake expands #include and strips comments), so
+  // the include machinery never runs for the built-in pack.
+  return cachedText(pack, path);
+ }
  if(const auto cached = pack.resolvedSourceCache.find(path); cached != pack.resolvedSourceCache.end()) {
   return cached->second;
  }

@@ -9,6 +9,7 @@
 #include "net/minecraft/client/render/RenderCore.hpp"
 #include "net/minecraft/client/render/shaderpack/BiomeTables.hpp"
 #include "net/minecraft/client/render/shaderpack/Catalog.hpp"
+#include "net/minecraft/client/render/shaders/ColorWheelMerge.hpp"
 #include "net/minecraft/client/render/shaders/ConditionalState.hpp"
 #include "net/minecraft/client/render/shaders/CoreGlslTransformer.hpp"
 #include "net/minecraft/client/render/shaders/GlslSnippets.hpp"
@@ -360,6 +361,6 @@ std::string prepareSource(const std::string& programName,
                           ShaderTransformContext context) {
  std::string prepared = normalizePackSource(pack, source);
  prepared = canonicalizeCoreSource(programName, stage, pack, std::move(prepared), context);
- return prepared;
+ return mergeColorWheelMaterial(programName, stage, std::move(prepared));
 }
 } // namespace net::minecraft::client::render

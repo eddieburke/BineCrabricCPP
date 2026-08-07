@@ -1,6 +1,9 @@
 #include "net/minecraft/world/chunk/Chunk.hpp"
 #include <algorithm>
 #include <cassert>
+#include <chrono>
+#include <condition_variable>
+#include <mutex>
 #include "net/minecraft/block/Block.hpp"
 #include "net/minecraft/block/BlockWithEntity.hpp"
 #include "net/minecraft/block/entity/BlockEntity.hpp"
@@ -8,6 +11,31 @@
 #include "net/minecraft/registry/Registry.hpp"
 #include "net/minecraft/world/World.hpp"
 namespace net::minecraft {
+namespace {
+// Teardown-only drain coordination: the cache waits (bounded) for leases on
+// graveyard chunks to drop to zero before destroying them. Notified by the
+// worker that releases the last lease.
+std::mutex gPinMutex;
+std::condition_variable gPinCv;
+} // namespace
+bool Chunk::tryAcquireRenderPin() noexcept {
+ renderPins_.fetch_add(1, std::memory_order_acq_rel);
+ if(evicted_.load(std::memory_order_acquire)) {
+  releaseRenderPin();
+  return false;
+ }
+ return true;
+}
+void Chunk::releaseRenderPin() noexcept {
+ const std::uint32_t remaining = renderPins_.fetch_sub(1, std::memory_order_acq_rel);
+ if(remaining == 1) {
+  gPinCv.notify_all();
+ }
+}
+void Chunk::waitForPinDrain(const Chunk& chunk, std::chrono::milliseconds timeout) {
+ std::unique_lock lock(gPinMutex);
+ gPinCv.wait_for(lock, timeout, [&chunk] { return chunk.renderPinCount() == 0; });
+}
 void Chunk::lockRenderWrite() const noexcept {
  while(renderWriteLock_->test_and_set(std::memory_order_acquire)) {
  }
@@ -288,16 +316,17 @@ void Chunk::updateHeightMap(int localX, int yPos, int localZ) {
  dirty = true;
 }
 block::entity::BlockEntity* Chunk::getBlockEntity(int localX, int yPos, int localZ) {
+ const std::lock_guard lock(*entityMutex_);
  const Vec3i pos{localX, yPos, localZ};
  auto it = blockEntities.find(pos);
  if(it == blockEntities.end()) {
   const int blockId = getBlockId(localX, yPos, localZ);
   if(blockId <= 0 || blockId >= block::Block::BLOCK_COUNT ||
-     !block::Block::BLOCKS_WITH_ENTITY[static_cast<std::size_t>(blockId)]) {
+     !Block::BLOCKS_WITH_ENTITY[static_cast<std::size_t>(blockId)]) {
    return nullptr;
   }
   auto* blockWithEntity =
-      dynamic_cast<block::BlockWithEntity*>(block::Block::BLOCKS[static_cast<std::size_t>(blockId)]);
+      dynamic_cast<block::BlockWithEntity*>(Block::BLOCKS[static_cast<std::size_t>(blockId)]);
   if(blockWithEntity == nullptr || world == nullptr) {
    return nullptr;
   }
@@ -318,6 +347,7 @@ void Chunk::setBlockEntity(int localX, int yPos, int localZ, std::unique_ptr<blo
  if(!blockEntity) {
   return;
  }
+ const std::lock_guard lock(*entityMutex_);
  const Vec3i pos{localX, yPos, localZ};
  const auto existing = blockEntities.find(pos);
  if(existing != blockEntities.end()) {
@@ -344,6 +374,7 @@ void Chunk::setBlockEntity(int localX, int yPos, int localZ, std::unique_ptr<blo
  }
 }
 void Chunk::removeBlockEntityAt(int localX, int yPos, int localZ) {
+ const std::lock_guard lock(*entityMutex_);
  const auto it = blockEntities.find(Vec3i{localX, yPos, localZ});
  if(!loaded || it == blockEntities.end()) {
   return;
@@ -362,45 +393,55 @@ void Chunk::load() {
   return;
  }
  world->registerChunkForLighting(this);
- std::vector<block::entity::BlockEntity*> loadedBlockEntities;
- loadedBlockEntities.reserve(blockEntities.size());
- for(auto& entry : blockEntities) {
-  if(entry.second) {
-   loadedBlockEntities.push_back(entry.second.get());
+ {
+  const std::lock_guard lock(*entityMutex_);
+  std::vector<block::entity::BlockEntity*> loadedBlockEntities;
+  loadedBlockEntities.reserve(blockEntities.size());
+  for(auto& entry : blockEntities) {
+   if(entry.second) {
+    loadedBlockEntities.push_back(entry.second.get());
+   }
   }
- }
- world->processBlockUpdates(loadedBlockEntities);
- for(auto& slice : entities) {
-  if(!slice.empty()) {
-   world->addEntities(slice);
+  world->processBlockUpdates(loadedBlockEntities);
+  for(auto& slice : entities) {
+   if(!slice.empty()) {
+    world->addEntities(slice);
+   }
   }
  }
 }
 void Chunk::unload() {
  loaded = false;
  if(world != nullptr) {
-  // Blocks until the lighting thread is no longer touching this chunk,
-  // so callers may free the chunk right after unload() returns.
+  // The lighting thread's leases keep the object alive; eviction tombstones the
+  // chunk and defers destruction until the leases drain, so freeing the chunk
+  // right after unload() returns is safe only for the cache's graveyard sweep.
   world->unregisterChunkForLighting(this);
-  auto& list = world->blockEntities;
-  for(auto& entry : blockEntities) {
-   if(entry.second == nullptr) {
-    continue;
+  {
+   const std::lock_guard lock(*entityMutex_);
+   auto& list = world->blockEntities;
+   for(auto& entry : blockEntities) {
+    if(entry.second == nullptr) {
+     continue;
+    }
+    block::entity::BlockEntity* blockEntity = entry.second.get();
+    list.erase(std::remove(list.begin(), list.end(), blockEntity), list.end());
+    blockEntity->markRemoved();
    }
-   block::entity::BlockEntity* blockEntity = entry.second.get();
-   list.erase(std::remove(list.begin(), list.end(), blockEntity), list.end());
-   blockEntity->markRemoved();
-  }
-  for(auto& slice : entities) {
-   if(!slice.empty()) {
-    world->unloadEntities(slice);
+   for(auto& slice : entities) {
+    if(!slice.empty()) {
+     world->unloadEntities(slice);
+    }
    }
   }
   return;
  }
- for(auto& entry : blockEntities) {
-  if(entry.second) {
-   entry.second->markRemoved();
+ {
+  const std::lock_guard lock(*entityMutex_);
+  for(auto& entry : blockEntities) {
+   if(entry.second) {
+    entry.second->markRemoved();
+   }
   }
  }
 }

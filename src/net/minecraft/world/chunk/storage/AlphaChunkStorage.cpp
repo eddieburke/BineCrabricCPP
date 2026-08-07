@@ -1,8 +1,10 @@
 #include "net/minecraft/world/chunk/storage/AlphaChunkStorage.hpp"
 #include <cassert>
 #include <fstream>
+#include <memory>
 #include <mutex>
 #include <stdexcept>
+#include <unordered_map>
 #include "net/minecraft/block/entity/BlockEntity.hpp"
 #include "net/minecraft/entity/Entity.hpp"
 #include "net/minecraft/entity/EntityRegistry.hpp"
@@ -14,6 +16,7 @@
 #include "net/minecraft/registry/Registry.hpp"
 #include "net/minecraft/world/World.hpp"
 #include "net/minecraft/world/chunk/EmptyChunk.hpp"
+#include <unordered_map>
 namespace net::minecraft {
 AlphaChunkStorage::AlphaChunkStorage(fs::path dir, bool make) : dir_(std::move(dir)), make_(make) {
  if(make_) {
@@ -21,9 +24,32 @@ AlphaChunkStorage::AlphaChunkStorage(fs::path dir, bool make) : dir_(std::move(d
  }
 }
 namespace {
-std::mutex& chunkFileMutex() {
+// Per-chunk-file locks: concurrent loads/saves of different .dat files proceed
+// in parallel while each file's writes stay serialized (vanilla Java held one
+// global lock; a region-formatted world's chunk count made that a convoy).
+std::mutex& chunkFileRegistryMutex() {
  static std::mutex mutex;
  return mutex;
+}
+std::unordered_map<std::string, std::shared_ptr<std::mutex>>& chunkFileLocks() {
+ static std::unordered_map<std::string, std::shared_ptr<std::mutex>> locks;
+ return locks;
+}
+std::shared_ptr<std::mutex> chunkFileLockFor(const fs::path& file) {
+ const std::string key = file.lexically_normal().generic_string();
+ {
+  const std::lock_guard lock(chunkFileRegistryMutex());
+  if(const auto found = chunkFileLocks().find(key); found != chunkFileLocks().end()) {
+   return found->second;
+  }
+ }
+ auto created = std::make_shared<std::mutex>();
+ const std::lock_guard lock(chunkFileRegistryMutex());
+ auto& slot = chunkFileLocks()[key];
+ if(!slot) {
+  slot = std::move(created);
+ }
+ return slot;
 }
 [[nodiscard]] std::string toBase36(int value) {
  if(value == 0) {
@@ -117,24 +143,18 @@ void writeLevelFieldsFromSnapshot(std::vector<std::uint8_t>& out, const AlphaChu
  appendCompoundListElements(out, snap.tileEntities);
 }
 } // namespace
-AlphaChunkStorage::ChunkSnapshot AlphaChunkStorage::takeSnapshot(Chunk& chunk, World* world) {
- if(world != nullptr) {
-  world->checkSessionLock();
- }
- if(!chunk.meta.hasExpectedSizeForBlockCount(chunk.blocks.size())) {
-  chunk.meta.ensureSizeForBlockCount(chunk.blocks.size());
- }
+AlphaChunkStorage::ChunkSnapshot AlphaChunkStorage::takeSnapshot(const Chunk& chunk, std::uint64_t lastUpdate) {
  ChunkSnapshot snap;
  snap.x = chunk.x;
  snap.z = chunk.z;
- snap.lastUpdate = static_cast<std::uint64_t>(world != nullptr ? world->getTime() : 0);
+ snap.lastUpdate = lastUpdate;
  snap.blocks = chunk.blocks;
  snap.meta = chunk.meta;
  snap.skyLight = chunk.skyLight;
  snap.blockLight = chunk.blockLight;
  snap.heightmap.assign(chunk.heightmap.begin(), chunk.heightmap.end());
  snap.terrainPopulated = chunk.terrainPopulated;
- chunk.lastSaveHadEntities = false;
+ const std::lock_guard lock(*chunk.entityMutex_);
  for(const std::vector<Entity*>& slice : chunk.entities) {
   for(Entity* entity : slice) {
    if(entity == nullptr) {
@@ -147,7 +167,6 @@ AlphaChunkStorage::ChunkSnapshot AlphaChunkStorage::takeSnapshot(Chunk& chunk, W
    if(!entity->saveSelfNbt(entityNbt)) {
     continue;
    }
-   chunk.lastSaveHadEntities = true;
    snap.entities.storage().asList().push_back(std::move(entityNbt.storage()));
   }
  }
@@ -173,7 +192,9 @@ void AlphaChunkStorage::writeRootChunkFromSnapshot(std::vector<std::uint8_t>& ou
  binary::appendU8(out, 0);
 }
 void AlphaChunkStorage::writeRootChunk(std::vector<std::uint8_t>& out, Chunk& chunk, World* world) {
- const ChunkSnapshot snapshot = takeSnapshot(chunk, world);
+ chunk.meta.ensureSizeForBlockCount(chunk.blocks.size());
+ const ChunkSnapshot snapshot = takeSnapshot(chunk, world != nullptr ? world->getTime() : 0);
+ chunk.lastSaveHadEntities.store(!snapshot.entities.storage().asList().empty(), std::memory_order_relaxed);
  writeRootChunkFromSnapshot(out, snapshot);
 }
 fs::path AlphaChunkStorage::getChunkFile(int chunkX, int chunkZ) const {
@@ -199,11 +220,11 @@ fs::path AlphaChunkStorage::getChunkFile(int chunkX, int chunkZ) const {
  return file;
 }
 Chunk AlphaChunkStorage::loadChunk(World* world, int chunkX, int chunkZ) {
- const std::lock_guard lock(chunkFileMutex());
  const fs::path file = getChunkFile(chunkX, chunkZ);
  if(file.empty() || !fs::exists(file)) {
   return EmptyChunk(world, chunkX, chunkZ);
  }
+ const std::lock_guard lock(*chunkFileLockFor(file));
  try {
   std::ifstream input(file, std::ios::binary);
   if(!input) {
@@ -235,12 +256,11 @@ void AlphaChunkStorage::saveChunk(World* world, Chunk& chunk) {
  if(world == nullptr) {
   return;
  }
- const std::lock_guard lock(chunkFileMutex());
- world->checkSessionLock();
  const fs::path file = getChunkFile(chunk.x, chunk.z);
  if(file.empty()) {
   return;
  }
+ const std::lock_guard lock(*chunkFileLockFor(file));
  WorldProperties& properties = world->getProperties();
  if(fs::exists(file)) {
   properties.setSizeOnDisk(properties.getSizeOnDisk() - static_cast<std::uint64_t>(fs::file_size(file)));

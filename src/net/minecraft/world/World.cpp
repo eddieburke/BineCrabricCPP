@@ -43,8 +43,7 @@ void requireBootstrap() {
 } // namespace
 World::World(std::string name, std::uint64_t seed, std::unordered_map<std::string, std::string> creationOptions)
     : events_(*this),
-      blockMutationContext_(*this),
-      blockMutation_(blockMutationContext_),
+      blockMutation_(*this),
       name_(std::move(name)),
       dimensionData_(nullptr),
       seed_(seed),
@@ -69,8 +68,7 @@ World::World(WorldStorage* dimensionData,
              bool deferSpawnInit,
              std::unordered_map<std::string, std::string> creationOptions)
     : events_(*this),
-      blockMutationContext_(*this),
-      blockMutation_(blockMutationContext_),
+      blockMutation_(*this),
       name_(name),
       dimensionData_(dimensionData),
       seed_(static_cast<std::uint64_t>(seed)),
@@ -120,8 +118,7 @@ World::World(World* parentWorld, std::unique_ptr<Dimension> dimensionIn)
     : properties_(parentWorld != nullptr ? parentWorld->properties_ : WorldProperties{}),
       hasStorageBackedProperties_(parentWorld != nullptr && parentWorld->hasStorageBackedProperties_),
       events_(*this),
-      blockMutationContext_(*this),
-      blockMutation_(blockMutationContext_),
+      blockMutation_(*this),
       name_(parentWorld != nullptr ? parentWorld->name_ : std::string{}),
       dimensionData_(parentWorld != nullptr ? parentWorld->dimensionData_ : nullptr),
       seed_(parentWorld != nullptr ? parentWorld->seed_ : 0),
@@ -709,18 +706,32 @@ void World::queueLightUpdate(LightType type, int minX, int minY, int minZ, int m
  lighting_.setSkyLightSuppressed(dimension != nullptr && dimension->hasCeiling);
  lighting_.push(type, minX, minY, minZ, maxX, maxY, maxZ, merge);
 }
-bool World::doLightingUpdates(std::size_t maxDirtyRegions) {
- std::vector<LightingEngine::DirtyRegion> drained = lighting_.drainDirtyRegions(maxDirtyRegions);
- for(const LightingEngine::DirtyRegion& region : drained) {
-  events_.setBlocksDirty(region.minX, region.minY, region.minZ, region.maxX, region.maxY, region.maxZ);
-  const int minChunkX = MathHelper::floorDiv(region.minX, 16);
-  const int maxChunkX = MathHelper::floorDiv(region.maxX, 16);
-  const int minChunkZ = MathHelper::floorDiv(region.minZ, 16);
-  const int maxChunkZ = MathHelper::floorDiv(region.maxZ, 16);
-  for(int chunkX = minChunkX; chunkX <= maxChunkX; ++chunkX) {
-   for(int chunkZ = minChunkZ; chunkZ <= maxChunkZ; ++chunkZ) {
-    markChunkColumnLit(chunkX, chunkZ);
+bool World::doLightingUpdates(std::size_t maxDirtyRegions, std::int64_t timeBudgetNs) {
+ const auto start = std::chrono::steady_clock::now();
+ std::size_t drained = 0;
+ while(drained < maxDirtyRegions) {
+  const std::size_t batch = std::min<std::size_t>(maxDirtyRegions - drained, 16);
+  std::vector<LightingEngine::DirtyRegion> regions = lighting_.drainDirtyRegions(batch);
+  if(regions.empty()) {
+   break;
+  }
+  for(const LightingEngine::DirtyRegion& region : regions) {
+   events_.setBlocksDirty(region.minX, region.minY, region.minZ, region.maxX, region.maxY, region.maxZ);
+   const int minChunkX = MathHelper::floorDiv(region.minX, 16);
+   const int maxChunkX = MathHelper::floorDiv(region.maxX, 16);
+   const int minChunkZ = MathHelper::floorDiv(region.minZ, 16);
+   const int maxChunkZ = MathHelper::floorDiv(region.maxZ, 16);
+   for(int chunkX = minChunkX; chunkX <= maxChunkX; ++chunkX) {
+    for(int chunkZ = minChunkZ; chunkZ <= maxChunkZ; ++chunkZ) {
+     markChunkColumnLit(chunkX, chunkZ);
+    }
    }
+  }
+  drained += regions.size();
+  if(timeBudgetNs >= 0 &&
+     std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::steady_clock::now() - start).count() >=
+         timeBudgetNs) {
+   break;
   }
  }
  // Non-optional completion: a column whose lighting never produced a drained

@@ -4,6 +4,7 @@
 #include "net/minecraft/client/render/shaders/Compiler.hpp"
 #include "net/minecraft/client/render/GlState.hpp"
 #include "net/minecraft/client/render/shaderpack/Loader.hpp"
+#include "net/minecraft/client/render/shaderpack/VanillaPackEmbed.hpp"
 #include "net/minecraft/client/render/PbrTextures.hpp"
 #include "net/minecraft/client/render/shaders/WorldProgramBinder.hpp"
 #include <algorithm>
@@ -41,8 +42,8 @@ std::string defaultSettingValue(const PackSetting& setting) {
 } // namespace
 PackManager::PackManager(std::filesystem::path gameDirectory, option::GameOptions* options)
     : gameDirectory_(std::move(gameDirectory)), options_(options), pipeline_(options) {
- reload();
- startDirectoryWatcher();
+  reload();
+  startDirectoryWatcher();
  render::setWorldProgramResolver([this](const std::string& key) { return worldProgram(key); });
  render::setWorldPassDirectiveApplier([this]() {
   PackInstance* pack = renderPack();
@@ -100,7 +101,8 @@ PackManager::PackManager(std::filesystem::path gameDirectory, option::GameOption
    auto& textureManager = net::minecraft::client::Minecraft::INSTANCE->textureManager;
    core::activeTexture(gl::tex::Texture0);
    const int diffuseTexture = core::boundTexture();
-   // IrisRenderingPipeline.java:848: the holder carries LabPBR-mipmapped textures
+   // ColorWheel: the holder carries LabPBR-mipmapped companion textures
+   // (IrisRenderingPipeline.java:848).
    // https://github.com/IrisShaders/Iris/blob/26.1/common/src/main/java/net/irisshaders/iris/pipeline/IrisRenderingPipeline.java
    const render::PbrTextures::Holder holder =
        render::PbrTextures::getOrLoad(diffuseTexture, textureManager, pack->definition.labPbr);
@@ -138,10 +140,14 @@ void PackManager::reload() {
  summaries_.clear();
  activeIndex_ = kNoActivePack;
  pendingIndex_.reset();
- const std::filesystem::path directory = gameDirectory_ / "shaders";
- std::error_code ec;
- std::filesystem::create_directories(directory, ec);
- basePack_ = loadPack(directory / "vanilla", true);
+  const std::filesystem::path directory = gameDirectory_ / "shaders";
+  std::error_code ec;
+  std::filesystem::create_directories(directory, ec);
+  const std::filesystem::path vanillaDirectory = directory / "vanilla";
+  // The vanilla pack ships inside the executable (EmbeddedVanillaPack.cpp); the
+  // on-disk folder is only consulted when present, so it can be tweaked in place.
+  basePack_ = std::filesystem::is_directory(vanillaDirectory, ec) ? loadPack(vanillaDirectory, true)
+                                                                  : loadEmbeddedVanillaPack();
  std::vector<std::filesystem::path> archives;
  std::vector<std::filesystem::path> dirs;
  if(std::filesystem::is_directory(directory)) {
@@ -225,6 +231,22 @@ void PackManager::poll() {
  }
  packDirectoryStamp_ = watchedStamp_.load(std::memory_order_relaxed);
  reload();
+}
+std::unique_ptr<PackInstance> PackManager::loadEmbeddedVanillaPack() {
+ auto pack = std::make_unique<PackInstance>();
+ pack->embedded = true;
+ pack->summary.key = "vanilla";
+ pack->summary.name = "vanilla";
+ const std::vector<std::string> resources = VanillaPackEmbed::resources();
+ if(PackLoader::load(
+        resources,
+        [&pack](std::string_view resource) { return PackCompiler::cachedText(*pack, std::string(resource)); },
+        pack->definition, pack->sourceOptions, pack->summary.error)) {
+  pack->summary.valid = true;
+  pack->rootDefinition = pack->definition;
+  initializePackRuntime(*pack);
+ }
+ return pack;
 }
 std::unique_ptr<PackInstance> PackManager::loadPack(const std::filesystem::path& path, bool directory) {
  diagnostics::WorkSpan span("shaderpack.load");
@@ -449,31 +471,31 @@ bool PackManager::setSettings(const std::vector<std::pair<std::string, std::stri
    std::string customError;
    if(!target->rebuildRuntime(customError)) logOnce(*target, customError);
   }
-  preparePendingPack(net::minecraft::client::Minecraft::INSTANCE != nullptr
-                         ? net::minecraft::client::Minecraft::INSTANCE->world
-                         : nullptr);
+   preparePendingPack(net::minecraft::client::Minecraft::INSTANCE != nullptr
+                          ? net::minecraft::client::Minecraft::INSTANCE->world
+                          : nullptr);
+   return true;
+  }
+  // Stage a fully re-parsed pack carrying the merged settings, so the
+  // properties-derived flags (shadowEntities and friends) and the GLSL agree on
+  // every option; swap it in when its programs are ready.
+  discardStagedPack();
+  stagedPack_ = clonePack(*pack, &merged);
+  stagedIndex_ = activeIndex_;
+  pipeline_.selectDimension(
+      *stagedPack_,
+      net::minecraft::client::Minecraft::INSTANCE != nullptr ? net::minecraft::client::Minecraft::INSTANCE->world
+                                                             : nullptr,
+      false);
+  if(stagedPack_->programState == PackProgramState::Cold) {
+   PackCompiler::prewarm(*stagedPack_,
+                         [this](PackInstance& p, const std::string& message,
+                                ::net::minecraft::util::logging::LogLevel) {
+                          logOnce(p, message);
+                         });
+  }
+  if(packReady(*stagedPack_)) commitStagedPack();
   return true;
- }
- // Stage a fully re-parsed pack carrying the merged settings, so the
- // properties-derived flags (shadowEntities and friends) and the GLSL agree on
- // every option; swap it in when its programs are ready.
- discardStagedPack();
- stagedPack_ = clonePack(*pack, &merged);
- stagedIndex_ = activeIndex_;
- pipeline_.selectDimension(
-     *stagedPack_,
-     net::minecraft::client::Minecraft::INSTANCE != nullptr ? net::minecraft::client::Minecraft::INSTANCE->world
-                                                            : nullptr,
-     false);
- if(stagedPack_->programState == PackProgramState::Cold) {
-  PackCompiler::prewarm(*stagedPack_,
-                        [this](PackInstance& p, const std::string& message,
-                               ::net::minecraft::util::logging::LogLevel) {
-                         logOnce(p, message);
-                        });
- }
- if(packReady(*stagedPack_)) commitStagedPack();
- return true;
 }
 std::string PackManager::settingValue(const std::string& key) const {
  const PackInstance* pack = selectedPack();
@@ -546,14 +568,15 @@ bool PackManager::packReady(PackInstance& pack) {
 }
 std::unique_ptr<PackInstance> PackManager::clonePack(const PackInstance& source,
                                                      const std::unordered_map<std::string, std::string>* settings) {
- auto pack = std::make_unique<PackInstance>();
- pack->summary = source.summary;
- pack->path = source.path;
- pack->directory = source.directory;
- if(!source.directory) {
-  pack->zip = std::make_unique<resource::pack::ZippedTexturePack>(source.path);
-  pack->zip->open();
- }
+  auto pack = std::make_unique<PackInstance>();
+  pack->summary = source.summary;
+  pack->path = source.path;
+  pack->directory = source.directory;
+  pack->embedded = source.embedded;
+  if(!source.directory && !source.embedded) {
+   pack->zip = std::make_unique<resource::pack::ZippedTexturePack>(source.path);
+   pack->zip->open();
+  }
  pack->rootDefinition = source.rootDefinition;
  pack->definition = pack->rootDefinition;
  pack->sourceOptions = source.sourceOptions;
@@ -566,12 +589,14 @@ std::unique_ptr<PackInstance> PackManager::clonePack(const PackInstance& source,
  // "SM_ENTITY on" recompiled the pack and still rendered no entity shadows.
  // A failed re-parse keeps the copied definition above, so the pack degrades to
  // its previous behaviour instead of going dark.
- std::vector<std::string> resources;
- if(source.directory) {
-  resources = directoryResources(source.path);
- } else {
-  resources = zipResources(*pack->zip);
- }
+  std::vector<std::string> resources;
+  if(source.embedded) {
+   resources = VanillaPackEmbed::resources();
+  } else if(source.directory) {
+   resources = directoryResources(source.path);
+  } else {
+   resources = zipResources(*pack->zip);
+  }
  PackDefinition reParsed;
  std::unordered_map<std::string, PackSourceOption> reOptions;
  std::string error;

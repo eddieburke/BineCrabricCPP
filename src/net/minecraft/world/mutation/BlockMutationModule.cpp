@@ -6,10 +6,10 @@
 #include "net/minecraft/world/chunk/Chunk.hpp"
 namespace net::minecraft {
 World& BlockMutationModule::world() noexcept {
- return context_.world;
+ return world_;
 }
 const World& BlockMutationModule::world() const noexcept {
- return context_.world;
+ return world_;
 }
 bool BlockMutationModule::setBlock(int x, int y, int z, int blockId, std::uint8_t meta) {
  if(y < 0 || y >= Chunk::height) {

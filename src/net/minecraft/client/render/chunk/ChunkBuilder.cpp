@@ -178,10 +178,10 @@ std::shared_ptr<ChunkMeshJob> ChunkMeshJob::capture(ChunkBuilder& owner,
    if(!source->isChunkLoaded(chunkX, chunkZ)) {
     continue;
    }
-   Chunk& chunk = source->getChunk(chunkX, chunkZ);
-   if(!chunk.tryAcquireRenderPin()) {
-    return refuse("neighbour chunk is pinned");
-   }
+    Chunk& chunk = source->getChunk(chunkX, chunkZ);
+    if(!chunk.tryAcquireRenderPin()) {
+     return refuse("neighbour chunk is evicted");
+    }
    sourceChunks.push_back(RegionSnapshot::SourceChunk{chunkX, chunkZ, &chunk});
   }
  }

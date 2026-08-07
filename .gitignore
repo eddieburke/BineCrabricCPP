@@ -24,5 +24,6 @@ agents.md
 
 .build-omega.lock
 
-# Licensed shaderpacks kept local-only (path renamed to shaders/)
-shaders/RenderPearl*/
+# Shaderpacks kept local-only; only vanilla shaders are tracked
+shaders/*
+!shaders/vanilla/

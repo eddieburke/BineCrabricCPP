@@ -112,14 +112,18 @@ void ServerPlayerEntity::playerTick(bool shouldSendChunkUpdates) {
   }
   networkHandler->sendPacket(std::move(updatePacket));
  }
- if(shouldSendChunkUpdates && !pendingChunkUpdates.empty()) {
-  if(networkHandler != nullptr && networkHandler->getBlockDataSendQueueSize() < 4) {
-   const ChunkPos chunkPos = pendingChunkUpdates.front();
-   pendingChunkUpdates.pop_front();
-   if(activeChunks.contains(chunkPos)) {
-    ServerWorld* serverWorld = server != nullptr ? server->getWorld(dimensionId) : nullptr;
-    if(serverWorld != nullptr) {
-     ChunkDataS2CPacket packet;
+  if(shouldSendChunkUpdates && !pendingChunkUpdates.empty()) {
+   if(networkHandler != nullptr && networkHandler->getBlockDataSendQueueSize() < 4) {
+    const ChunkPos chunkPos = pendingChunkUpdates.front();
+    if(activeChunks.contains(chunkPos)) {
+     ServerWorld* serverWorld = server != nullptr ? server->getWorld(dimensionId) : nullptr;
+     if(serverWorld != nullptr &&
+        serverWorld->getChunkIfLoaded(chunkPos.x * Chunk::width, chunkPos.z * Chunk::depth) != nullptr) {
+      // The loaded guard replaces a sync load (and possible generation) of a
+      // missing chunk on the tick thread inside a network send path; an
+      // unready chunk stays queued and is retried once the async stream lands.
+      pendingChunkUpdates.pop_front();
+      ChunkDataS2CPacket packet;
      packet.x = chunkPos.x * Chunk::width;
      packet.y = 0;
      packet.z = chunkPos.z * Chunk::depth;

@@ -24,7 +24,6 @@ void RegionChunkStorage::saveChunk(World* world, Chunk& chunk) {
  if(world == nullptr) {
   return;
  }
- world->checkSessionLock();
  try {
   std::vector<std::uint8_t> raw;
   AlphaChunkStorage::writeRootChunk(raw, chunk, world);

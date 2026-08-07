@@ -1,4 +1,5 @@
 #include "net/minecraft/client/render/shaders/CoreGlslTransformer.hpp"
+#include <algorithm>
 #include <array>
 #include <cctype>
 #include <string_view>
@@ -25,7 +26,8 @@ void appendMissingDeclarations(std::string& output,
                                const std::array<SourceDeclaration, N>& declarations) {
  for(const SourceDeclaration& declaration : declarations) {
   if(referencesToken(source, declaration.name) &&
-     !hasStorageDeclaration(source, declaration.storage, declaration.name)) {
+     !hasStorageDeclaration(source, declaration.storage, declaration.name) &&
+     !hasStorageDeclaration(source, "in", declaration.name) && !hasStorageDeclaration(source, "out", declaration.name)) {
    output += std::string(declaration.storage) + " " + std::string(declaration.type) + " " +
              std::string(declaration.name) + ";\n";
   }
@@ -49,7 +51,8 @@ constexpr std::array kVertexAttributes = {
     SourceDeclaration{"in", "vec3", "vaNormal"}};
 bool isGbufferOrShadowProgramName(const std::string& programName) {
  const std::string_view name = programName;
- return name.starts_with("gbuffers_") || name == "shadow" || name.starts_with("shadow_");
+ return name.starts_with("gbuffers_") || name.starts_with("clrwl_gbuffers") || name == "shadow" ||
+        name.starts_with("shadow_") || name.starts_with("clrwl_shadow");
 }
 bool patchMultiTexCoord3(std::string& source, std::string& declarations) {
  if(!referencesToken(source, "gl_MultiTexCoord3") || referencesToken(source, "mc_midTexCoord") ||
@@ -69,7 +72,8 @@ void replaceGlMultiTexCoordBounded(std::string& source, int minimum, int maximum
  return programName.starts_with("gbuffers_terrain") || programName == "gbuffers_water";
 }
 [[nodiscard]] bool isShadowProgramName(std::string_view programName) {
- return programName == "shadow" || programName.starts_with("shadow_");
+ return programName == "shadow" || programName.starts_with("shadow_") ||
+        programName.starts_with("clrwl_shadow");
 }
 std::string injectChunkFadeAttribute(const std::string& programName,
                                      const PackDefinition& pack,
@@ -144,10 +148,10 @@ std::string lowerVertexSource(const std::string& programName, std::string source
 }
 bool programGetsCompatAlphaTest(const std::string& programName) {
  const std::string_view name = programName;
- if(name == "shadow" || name.starts_with("shadow_")) {
+ if(name == "shadow" || name.starts_with("shadow_") || name.starts_with("clrwl_shadow")) {
   return !name.starts_with("shadowcomp");
  }
- if(!name.starts_with("gbuffers_")) return false;
+ if(!name.starts_with("gbuffers_") && !name.starts_with("clrwl_gbuffers")) return false;
  const std::string lowerName = lower(programName);
  return lowerName.find("water") == std::string::npos && lowerName.find("translucent") == std::string::npos;
 }
@@ -249,7 +253,7 @@ std::array<bool, 16> rewriteFragmentOutputs(std::string& source, const PackDefin
  if(!declarations.empty()) source.insert(sourceDeclarationOffset(source), declarations);
  return outputs;
 }
-void canonicalizeTextureCalls(std::string& source) {
+void canonicalizeTextureCalls(std::string& source, ShaderStage stage) {
  constexpr std::array<std::pair<std::string_view, std::string_view>, 18> replacements = {
      std::pair<std::string_view, std::string_view>{"texture2D", "texture"},
      {"texture3D", "texture"},
@@ -269,16 +273,164 @@ void canonicalizeTextureCalls(std::string& source) {
      {"texelFetch3D", "texelFetch"},
      {"textureSize2D", "textureSize"},
      {"textureSize3D", "textureSize"}};
- for(const auto& [legacy, current] : replacements) replaceFunctionCalls(source, legacy, current);
- std::string declarations;
- if(replaceFunctionCalls(source, "shadow2D", "iris_shadow2D")) {
-  declarations += "vec4 iris_shadow2D(sampler2DShadow image, vec3 coordinate) { return vec4(texture(image, coordinate)); }\n";
-  declarations += "vec4 iris_shadow2D(sampler2DShadow image, vec3 coordinate, float bias) { return vec4(texture(image, coordinate, bias)); }\n";
- }
+  for(const auto& [legacy, current] : replacements) replaceFunctionCalls(source, legacy, current);
+  std::string declarations;
+  if(replaceFunctionCalls(source, "shadow2D", "iris_shadow2D")) {
+   declarations += "vec4 iris_shadow2D(sampler2DShadow image, vec3 coordinate) { return vec4(texture(image, coordinate)); }\n";
+   // The bias overload of texture() is fragment-stage-only; ANGLE rejects its
+   // mere presence in compute/vertex programs, so the bias is dropped there.
+   const std::string biasBody = stage == ShaderStage::Fragment ? "texture(image, coordinate, bias)" : "texture(image, coordinate)";
+   declarations += "vec4 iris_shadow2D(sampler2DShadow image, vec3 coordinate, float bias) { return vec4(" + biasBody + "); }\n";
+  }
  if(replaceFunctionCalls(source, "shadow2DLod", "iris_shadow2DLod")) {
   declarations += "vec4 iris_shadow2DLod(sampler2DShadow image, vec3 coordinate, float lod) { return vec4(textureLod(image, coordinate, lod)); }\n";
  }
- if(!declarations.empty()) source.insert(sourceDeclarationOffset(source), declarations);
+  if(!declarations.empty()) source.insert(sourceDeclarationOffset(source), declarations);
+}
+namespace {
+bool bareIntLiteral(std::string_view text) {
+ std::size_t index = 0;
+ if(index < text.size() && (text[index] == '-' || text[index] == '+')) ++index;
+ const std::size_t digits = index;
+ while(index < text.size() && std::isdigit(static_cast<unsigned char>(text[index]))) ++index;
+ if(index == digits) return false;
+ if(index < text.size() && (text[index] == 'u' || text[index] == 'U')) ++index;
+ return index == text.size();
+}
+bool floatTypedExpression(std::string_view text) {
+ for(std::size_t index = 0; index < text.size(); ++index) {
+  const char ch = text[index];
+  if(std::isdigit(static_cast<unsigned char>(ch))) {
+   if(index + 1 < text.size() && (text[index + 1] == '.' || text[index + 1] == 'f' || text[index + 1] == 'F'))
+    return true;
+   if(index + 2 < text.size() && (text[index + 1] == 'e' || text[index + 1] == 'E') &&
+      (std::isdigit(static_cast<unsigned char>(text[index + 2])) ||
+       ((text[index + 2] == '-' || text[index + 2] == '+') && index + 3 < text.size() &&
+        std::isdigit(static_cast<unsigned char>(text[index + 3])))))
+    return true;
+   continue;
+  }
+  if(ch == '.' && index + 1 < text.size() && std::isdigit(static_cast<unsigned char>(text[index + 1])))
+   return true;
+ }
+ return false;
+}
+std::vector<std::string_view> splitTopLevelArguments(std::string_view body) {
+ std::vector<std::string_view> args;
+ std::size_t depth = 0;
+ std::size_t start = 0;
+ for(std::size_t index = 0; index < body.size(); ++index) {
+  const char ch = body[index];
+  if(ch == '(') ++depth;
+  else if(ch == ')') depth = std::max<std::size_t>(0, depth - 1);
+  else if(ch == ',' && depth == 0) {
+   args.push_back(body.substr(start, index - start));
+   start = index + 1;
+  }
+ }
+ args.push_back(body.substr(start));
+ return args;
+}
+std::string_view trimmedArgument(std::string_view text) {
+ std::size_t first = text.find_first_not_of(" \t\r\n");
+ if(first == std::string_view::npos) return {};
+ std::size_t last = text.find_last_not_of(" \t\r\n");
+ return text.substr(first, last - first + 1);
+}
+} // namespace
+// Strict GLSL compilers reject clamp/min/max calls whose bounds mix integer and
+// float literals (`clamp(x + 1.6, 0.6, 1)`), and packs written for lenient drivers
+// ship them. Rewrite only the unambiguous cases: a bound that is a bare integer
+// literal next to a float-typed sibling, or both bounds integer next to a
+// float-typed first argument. All-integer calls (valid int clamps like
+// `clamp01(int)` / `min(i, 5)`) are left untouched.
+void canonicalizeBuiltinBounds(std::string& source) {
+ const std::vector<bool> mask = codeMask(source);
+ constexpr std::array<std::string_view, 3> names = {"clamp", "min", "max"};
+ std::vector<std::pair<std::size_t, std::size_t>> rewrites; 
+ for(const std::string_view name : names) {
+  std::size_t at = 0;
+  while((at = source.find(name, at)) != std::string::npos) {
+   if(tokenAt(source, mask, at, name)) {
+    std::size_t cursor = at + name.size();
+    while(cursor < source.size() && std::isspace(static_cast<unsigned char>(source[cursor]))) ++cursor;
+    if(cursor < source.size() && mask[cursor] && source[cursor] == '(') {
+     std::size_t open = cursor;
+     int depth = 1;
+     for(++cursor; cursor < source.size() && depth > 0; ++cursor) {
+      if(!mask[cursor]) continue;
+      if(source[cursor] == '(') ++depth;
+      else if(source[cursor] == ')') --depth;
+     }
+     if(depth == 0 && cursor <= source.size()) {
+      const std::string_view body(source.data() + open + 1, cursor - open - 1);
+      std::vector<std::string_view> args = splitTopLevelArguments(body);
+       const std::vector<std::string_view> trimmed = [&] {
+        std::vector<std::string_view> result;
+        result.reserve(args.size());
+        for(const std::string_view arg : args) result.push_back(trimmedArgument(arg));
+        return result;
+       }();
+       std::vector<std::size_t> targets;
+       if(name == "clamp" && args.size() >= 3) {
+        const bool firstFloat = floatTypedExpression(trimmed[0]);
+        const bool secondInt = bareIntLiteral(trimmed[1]);
+        const bool thirdInt = bareIntLiteral(trimmed[2]);
+        const bool secondFloat = floatTypedExpression(trimmed[1]);
+        const bool thirdFloat = floatTypedExpression(trimmed[2]);
+        if(secondInt && thirdFloat) targets.push_back(1);
+        if(thirdInt && secondFloat) targets.push_back(2);
+        if(firstFloat && secondInt && thirdInt) {
+         targets.push_back(1);
+         targets.push_back(2);
+        }
+       } else if(name != "clamp" && args.size() >= 2) {
+        const bool firstInt = bareIntLiteral(trimmed[0]);
+        const bool secondInt = bareIntLiteral(trimmed[1]);
+        if(firstInt && floatTypedExpression(trimmed[1])) targets.push_back(0);
+        if(secondInt && floatTypedExpression(trimmed[0])) targets.push_back(1);
+       }
+       for(const std::size_t target : targets) {
+        const std::string_view arg = trimmed[target];
+        const std::size_t argStart = arg.data() - source.data();
+        rewrites.push_back({argStart, argStart + arg.size()});
+       }
+     }
+    }
+   }
+   at += name.size();
+  }
+ }
+ std::sort(rewrites.begin(), rewrites.end());
+ rewrites.erase(std::unique(rewrites.begin(), rewrites.end()), rewrites.end());
+ for(auto it = rewrites.rbegin(); it != rewrites.rend(); ++it) {
+  const std::string_view arg(source.data() + it->first, it->second - it->first);
+  source.replace(it->first, it->second - it->first, std::string(arg) + ".0");
+ }
+}
+// gl_Fog.start/.end/.scale/.color were fixed-function builtins removed in GLSL 1.40.
+// Packs that still read them (usually for fog blending in compute or post stages)
+// get them backed by the engine's live fog uniforms instead.
+void shimLegacyFogGlobals(std::string& source) {
+ std::string declarations;
+ bool replaced = false;
+ constexpr std::array<std::pair<std::string_view, std::string_view>, 4> replacements = {
+     std::pair<std::string_view, std::string_view>{"gl_Fog.color", "vec4(fogColor, 1.0)"},
+     {"gl_Fog.start", "fogStart"},
+     {"gl_Fog.end", "fogEnd"},
+     {"gl_Fog.scale", "iris_fogScale()"}};
+ for(const auto& [legacy, current] : replacements) {
+  if(referencesToken(source, legacy)) {
+   replaceAllToken(source, legacy, current);
+   replaced = true;
+  }
+ }
+ if(!replaced) return;
+ if(!hasStorageDeclaration(source, "uniform", "fogColor")) declarations += "uniform vec3 fogColor;\n";
+ if(!hasStorageDeclaration(source, "uniform", "fogStart")) declarations += "uniform float fogStart;\n";
+ if(!hasStorageDeclaration(source, "uniform", "fogEnd")) declarations += "uniform float fogEnd;\n";
+ declarations += "float iris_fogScale() { return 1.0 / max(fogEnd - fogStart, 0.001); }\n";
+ source.insert(sourceDeclarationOffset(source), declarations);
 }
 std::string canonicalizeVertex(const std::string& programName,
                                const PackDefinition& pack,
@@ -324,7 +476,9 @@ std::string canonicalizeCoreSource(const std::string& programName,
                                    const PackDefinition& pack,
                                    std::string source,
                                    const ShaderTransformContext& context) {
- canonicalizeTextureCalls(source);
+ canonicalizeTextureCalls(source, stage);
+ shimLegacyFogGlobals(source);
+ canonicalizeBuiltinBounds(source);
  if(stage == ShaderStage::Vertex) {
   replaceGlobalStorageQualifier(source, "attribute", "in");
   replaceGlobalStorageQualifier(source, "varying", "out");

@@ -2,11 +2,12 @@
 #include "net/minecraft/mod/lua/LuaHostApi.hpp"
 #include "net/minecraft/mod/runtime/LuaDirectHooks.hpp"
 #include "net/minecraft/mod/runtime/LuaEventGlue.hpp"
-#include "net/minecraft/mod/runtime/LuaGuiArgs.hpp"
 #ifdef MINECRAFT_NATIVE_EXPORTS
 #include <algorithm>
 #include <bit>
+#include <cmath>
 #include <cstdint>
+#include <limits>
 #include <mutex>
 #include <unordered_map>
 #include "net/minecraft/client/Minecraft.hpp"
@@ -30,6 +31,52 @@ using namespace net::minecraft::mod::lua;
 namespace core = net::minecraft::client::render::core;
 namespace {
 client::render::item::ItemRenderer g_luaItemRenderer;
+struct GuiRect {
+ int x = 0;
+ int y = 0;
+ int w = 0;
+ int h = 0;
+ [[nodiscard]] bool contains(int mouseX, int mouseY) const noexcept {
+  return mouseX >= x && mouseY >= y && mouseX < x + w && mouseY < y + h;
+ }
+};
+bool guiRectFromTable(lua_State* state, GuiRect& rect) {
+ if(luaApi().type(state, 1) != kLuaTTable) {
+  return false;
+ }
+ rect.x = static_cast<int>(luaFloatField(state, 1, "x", 0.0f));
+ rect.y = static_cast<int>(luaFloatField(state, 1, "y", 0.0f));
+ rect.w = static_cast<int>(luaFloatField(state, 1, "width", 0.0f));
+ rect.h = static_cast<int>(luaFloatField(state, 1, "height", 0.0f));
+ return rect.w > 0 && rect.h > 0;
+}
+bool guiHovered(lua_State* state, const GuiRect& rect) {
+ LuaApi& api = luaApi();
+ api.getfield(state, 1, "hovered");
+ if(api.type(state, -1) == kLuaTBoolean) {
+  const bool value = api.toboolean(state, -1) != 0;
+  pop(state, 1);
+  return value;
+ }
+ pop(state, 1);
+ const float mouseX = luaFloatField(state, 1, "mouse_x", std::numeric_limits<float>::quiet_NaN());
+ const float mouseY = luaFloatField(state, 1, "mouse_y", std::numeric_limits<float>::quiet_NaN());
+ if(std::isfinite(mouseX) && std::isfinite(mouseY)) {
+  return rect.contains(static_cast<int>(mouseX), static_cast<int>(mouseY));
+ }
+ return false;
+}
+std::uint32_t luaArgb(lua_State* state, int index, std::uint32_t fallback = 0xFFFFFFFFU) {
+ int isNumber = 0;
+ const double value = luaApi().tonumberx(state, index, &isNumber);
+ if(isNumber == 0 || !std::isfinite(value)) {
+  return fallback;
+ }
+ if(value < 0.0) {
+  return static_cast<std::uint32_t>(static_cast<std::int64_t>(value));
+ }
+ return static_cast<std::uint32_t>(static_cast<std::uint64_t>(value));
+}
 } // namespace
 thread_local int g_luaGuiDepth = 0;
 void luaGuiDrawPushScope() {
@@ -469,42 +516,39 @@ void drawGuiFillRect(int x, int y, int width, int height, std::uint32_t color) {
 }
 int luaGuiDrawButton(lua_State* state) {
  client::Minecraft* client = guiDrawClient();
- GuiDrawArgs args;
- if(client == nullptr || !args.init(state)) {
+ GuiRect rect;
+ if(client == nullptr || !guiRectFromTable(state, rect)) {
   return 0;
  }
- const std::string text = args.text("text");
- const bool active = args.boolean("active", true);
- const bool hovered = args.hovered();
- const GuiRect& rect = args.rect();
+ const std::string text = luaStringField(state, 1, "text", "");
+ const bool active = luaBoolField(state, 1, "active", true);
+ const bool hovered = guiHovered(state, rect);
  prepareGuiDrawState();
  drawVanillaButton(*client, *client->textRenderer, rect.x, rect.y, rect.w, rect.h, text, active, hovered);
  return 0;
 }
 int luaGuiDrawSlider(lua_State* state) {
  client::Minecraft* client = guiDrawClient();
- GuiDrawArgs args;
- if(client == nullptr || !args.init(state)) {
+ GuiRect rect;
+ if(client == nullptr || !guiRectFromTable(state, rect)) {
   return 0;
  }
- const float normalized = args.number("value", 0.0f);
- const std::string text = args.text("text");
- const bool hovered = args.hovered();
- const GuiRect& rect = args.rect();
+ const float normalized = luaFloatField(state, 1, "value", 0.0f);
+ const std::string text = luaStringField(state, 1, "text", "");
+ const bool hovered = guiHovered(state, rect);
  prepareGuiDrawState();
  drawVanillaSlider(*client, *client->textRenderer, rect.x, rect.y, rect.w, rect.h, normalized, text, hovered);
  return 0;
 }
 int luaGuiDrawToggle(lua_State* state) {
  client::Minecraft* client = guiDrawClient();
- GuiDrawArgs args;
- if(client == nullptr || !args.init(state)) {
+ GuiRect rect;
+ if(client == nullptr || !guiRectFromTable(state, rect)) {
   return 0;
  }
- const std::string label = args.text("label");
- const bool enabled = args.boolean("value", false);
- const bool hovered = args.hovered();
- const GuiRect& rect = args.rect();
+ const std::string label = luaStringField(state, 1, "label", "");
+ const bool enabled = luaBoolField(state, 1, "value", false);
+ const bool hovered = guiHovered(state, rect);
  prepareGuiDrawState();
  drawVanillaToggle(*client, *client->textRenderer, rect.x, rect.y, rect.w, rect.h, label, enabled, hovered);
  return 0;

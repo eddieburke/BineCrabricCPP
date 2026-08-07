@@ -125,6 +125,26 @@ if(MINECRAFT_GLSL_FILES)
     list(APPEND MINECRAFT_CLIENT_SOURCES "${MINECRAFT_EMBEDDED_GLSL_SOURCE}")
 endif()
 
+# The built-in vanilla shader pack is embedded in the executable the same way:
+# bake shaders/vanilla/** into a generated TU (EmbeddedVanillaPack.cpp) at configure
+# time. The pack's sources ship inside the binary; the engine only reads the on-disk
+# shaders/vanilla folder when it exists (so it can still be tweaked in place).
+set(MINECRAFT_VANILLA_PACK_EMBED_GENERATOR "${CMAKE_CURRENT_SOURCE_DIR}/tools/gen-embedded-vanilla-pack.cmake")
+set(MINECRAFT_VANILLA_PACK_DIR "${CMAKE_CURRENT_SOURCE_DIR}/shaders/vanilla")
+set(MINECRAFT_EMBEDDED_VANILLA_SOURCE "${CMAKE_CURRENT_BINARY_DIR}/generated/EmbeddedVanillaPack.cpp")
+if(EXISTS "${MINECRAFT_VANILLA_PACK_DIR}")
+    execute_process(
+        COMMAND "${CMAKE_COMMAND}" "-DVANILLA_PACK_DIR=${MINECRAFT_VANILLA_PACK_DIR}" "-DOUTPUT=${MINECRAFT_EMBEDDED_VANILLA_SOURCE}" -P "${MINECRAFT_VANILLA_PACK_EMBED_GENERATOR}"
+        WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}"
+        RESULT_VARIABLE MINECRAFT_VANILLA_PACK_EMBED_RESULT
+    )
+    if(NOT MINECRAFT_VANILLA_PACK_EMBED_RESULT EQUAL 0)
+        message(FATAL_ERROR "Failed to generate embedded vanilla pack (gen-embedded-vanilla-pack.cmake)")
+    endif()
+    set_source_files_properties("${MINECRAFT_EMBEDDED_VANILLA_SOURCE}" PROPERTIES GENERATED TRUE)
+    list(APPEND MINECRAFT_CLIENT_SOURCES "${MINECRAFT_EMBEDDED_VANILLA_SOURCE}")
+endif()
+
 set(MINECRAFT_SERVER_MOD_SOURCES ${MINECRAFT_PORT_SOURCES})
 list(FILTER MINECRAFT_SERVER_MOD_SOURCES INCLUDE REGEX "/net/minecraft/mod/")
 list(FILTER MINECRAFT_SERVER_MOD_SOURCES EXCLUDE REGEX
@@ -380,8 +400,10 @@ set(MINECRAFT_TEST_SOURCES
     tests/shader_pack_loader_test.cpp
     tests/shader_frame_data_test.cpp
     tests/shader_gl_integration_test.cpp
+    tests/rvox_diag_test.cpp
     tests/lab_pbr_mipmap_test.cpp
     tests/glsl_snippets_test.cpp
+    tests/vanilla_pack_embed_test.cpp
     tests/camera_position_tracker_test.cpp
     tests/block_face_uv_test.cpp
     tests/channel_test.cpp

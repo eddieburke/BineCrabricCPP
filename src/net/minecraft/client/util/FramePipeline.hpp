@@ -7,14 +7,15 @@
 namespace net::minecraft::client::util {
 class FramePipeline {
  public:
- enum class Phase { Drain,
-                    Input,
-                    Ticks,
-                    Render,
-                    Pace,
-                    Diagnostics };
- static constexpr Phase kPhaseOrder[] = {Phase::Drain, Phase::Input, Phase::Ticks,
-                                         Phase::Render, Phase::Pace, Phase::Diagnostics};
+  enum class Phase { Drain,
+                     Input,
+                     Ticks,
+                     Render,
+                     Present,
+                     Pace,
+                     Diagnostics };
+  static constexpr Phase kPhaseOrder[] = {Phase::Drain, Phase::Input, Phase::Ticks, Phase::Render,
+                                          Phase::Present, Phase::Pace, Phase::Diagnostics};
  static constexpr std::size_t kPhaseCount = sizeof(kPhaseOrder) / sizeof(kPhaseOrder[0]);
  [[nodiscard]] static constexpr Phase phaseAt(std::size_t index) noexcept {
   return kPhaseOrder[index];

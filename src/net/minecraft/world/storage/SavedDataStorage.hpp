@@ -17,13 +17,15 @@ class SavedDataStorage {
  [[nodiscard]] int getIdCount(const std::string& id);
 
  private:
- struct Impl {
-  std::unordered_map<std::string, std::unique_ptr<PersistentState>> loadedStatesById_;
-  std::vector<PersistentState*> loadedStates_;
-  std::unordered_map<std::string, int> idCounts_;
- };
- void save(PersistentState& state);
- void loadIdCounts();
+  struct Impl {
+   std::unordered_map<std::string, std::unique_ptr<PersistentState>> loadedStatesById_;
+   std::vector<PersistentState*> loadedStates_;
+   std::unordered_map<std::string, int> idCounts_;
+   bool idCountsDirty_ = false;
+  };
+  void save(PersistentState& state);
+  void saveIdCounts();
+  void loadIdCounts();
  std::shared_ptr<Impl> impl_ = std::make_shared<Impl>();
  WorldStorage* storage_ = nullptr;
 };

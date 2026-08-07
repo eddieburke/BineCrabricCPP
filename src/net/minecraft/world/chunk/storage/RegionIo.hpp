@@ -78,18 +78,28 @@ class RegionIo {
   RegionFile file;
   std::mutex mutex;
  };
- static std::shared_ptr<LockedRegion> regionHandle(const fs::path& worldDir, int chunkX, int chunkZ) {
-  const fs::path regionDir = worldDir / "region";
-  const fs::path regionPath =
-      regionDir / ("r." + std::to_string(chunkX >> 5) + "." + std::to_string(chunkZ >> 5) + ".mcr");
-  const std::string key = regionPath.lexically_normal().generic_string();
-  const std::lock_guard lock(registryMutex());
-  auto& slot = openFiles()[key];
-  if(!slot) {
-   slot = std::make_shared<LockedRegion>(regionPath);
+  static std::shared_ptr<LockedRegion> regionHandle(const fs::path& worldDir, int chunkX, int chunkZ) {
+   const fs::path regionDir = worldDir / "region";
+   const fs::path regionPath =
+       regionDir / ("r." + std::to_string(chunkX >> 5) + "." + std::to_string(chunkZ >> 5) + ".mcr");
+   const std::string key = regionPath.lexically_normal().generic_string();
+   {
+    const std::lock_guard lock(registryMutex());
+    if(const auto found = openFiles().find(key); found != openFiles().end()) {
+     return found->second;
+    }
+   }
+   // Construct outside the registry lock: openOrCreate + initializeHeader do
+   // file creation and an 8 KiB header read, which used to serialize every
+   // region lookup while a fresh region file was being opened.
+   auto created = std::make_shared<LockedRegion>(regionPath);
+   const std::lock_guard lock(registryMutex());
+   auto& slot = openFiles()[key];
+   if(!slot) {
+    slot = std::move(created);
+   }
+   return slot;
   }
-  return slot;
- }
  static std::unordered_map<std::string, std::shared_ptr<LockedRegion>>& openFiles() {
   static std::unordered_map<std::string, std::shared_ptr<LockedRegion>> files;
   return files;

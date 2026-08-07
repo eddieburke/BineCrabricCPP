@@ -8,11 +8,40 @@ namespace net::minecraft::client::render {
 std::size_t sourceDeclarationOffset(const std::string& source) {
  std::size_t offset = 0;
  std::istringstream stream(source);
+ bool inBlockComment = false;
  for(std::string line; std::getline(stream, line);) {
-  const std::string trimmed = lineForDirectiveParse(line);
-  const std::size_t first = trimmed.find_first_not_of(" \t\r\n");
-  const std::string nonws = first == std::string::npos ? std::string{} : trimmed.substr(first);
-  if(!nonws.empty() && !nonws.starts_with("#")) break;
+  bool hasCode = false;
+  std::size_t index = 0;
+  while(index < line.size()) {
+   if(line[index] == '/' && index + 1 < line.size() && line[index + 1] == '/') {
+    break;
+   }
+   if(line[index] == '/' && index + 1 < line.size() && line[index + 1] == '*') {
+    const std::size_t close = line.find("*/", index + 2);
+    if(close == std::string::npos) {
+     inBlockComment = true;
+     break;
+    }
+    index = close + 2;
+    continue;
+   }
+   if(inBlockComment) {
+    const std::size_t close = line.find("*/", index);
+    if(close == std::string::npos) break;
+    inBlockComment = false;
+    index = close + 2;
+    continue;
+   }
+   if(line[index] != ' ' && line[index] != '\t' && line[index] != '\r') {
+    hasCode = true;
+    break;
+   }
+   ++index;
+  }
+  if(hasCode) {
+   const std::size_t first = line.find_first_not_of(" \t");
+   if(first == std::string::npos || line[first] != '#') break;
+  }
   offset += line.size() + 1;
  }
  return offset;

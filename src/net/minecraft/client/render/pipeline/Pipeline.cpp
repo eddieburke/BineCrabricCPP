@@ -60,6 +60,9 @@ std::string trim(std::string_view value) {
  const std::size_t last = value.find_last_not_of(" \t\r\n");
  return std::string(value.substr(first, last - first + 1));
 }
+// The ColorWheel texture format (lab-pbr) is declared by texture packs in their
+// texture.properties; the macros and the specular/normal companion pipeline
+// (PbrTextures) follow from it.
 std::pair<bool, bool> pbrFormat(const resource::pack::TexturePack* pack) {
  if(pack == nullptr) return {};
  const std::vector<std::uint8_t> bytes = pack->getResource("texture.properties");
@@ -548,6 +551,7 @@ void Pipeline::clearScene(PackInstance* activePack, float fogR, float fogG, floa
  }
 }
 void Pipeline::sampleCenterDepth(PackInstance* activePack, const PackDefinition& activeDef) {
+ if(!activeDef.usesCenterDepthSmooth) return;
  if(activePack == nullptr || !activePack->colorTargets.valid()) return;
  const auto& targets = activePack->colorTargets;
  if(targets.width() <= 0 || targets.height() <= 0 || targets.depthTexture() == 0) return;
@@ -630,6 +634,9 @@ gl::ShaderProgram* Pipeline::worldProgram(const std::string& key, PackInstance* 
   renderStage = core::renderStage();
  }
  core::setRenderStage(renderStage);
+ // ColorWheel material programs are compiled on demand by the pack's own
+ // clrwl_ pipeline; they are never selected as a world draw program here.
+ if(key.rfind("clrwl_", 0) == 0) return nullptr;
  const bool shadowPass = core::cameraFrame().shadowPass;
  std::string programKey = shadowPass ? irisShadowProgramForGbuffers(key) : key;
  if(programKey.empty()) return nullptr;

@@ -21,7 +21,8 @@ class UnifiedLightRegistry;
 // threads (sharded by non-overlapping boxes); the main thread only enqueues via
 // push() (never waits), drains finished regions via drainDirtyRegions(), and
 // registers/unregisters chunks (non-blocking). Chunk lifetime uses the shared
-// render-pin: workers pin each chunk they touch.
+// render lease: workers lease each chunk they touch, and eviction tombstones
+// the chunk and defers destruction until the leases drain (ChunkCache graveyard).
 class LightingEngine {
  public:
  struct DirtyRegion {

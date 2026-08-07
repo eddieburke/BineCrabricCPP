@@ -32,11 +32,15 @@ class AlphaChunkStorage : public ChunkStorage {
  void saveChunk(World* world, Chunk& chunk) override;
  // Shared NBT decode path for on-disk Alpha chunks and Region entries that embed Alpha layout.
  static Chunk loadChunkFromRootNbt(World* world, NbtCompound& root, int chunkX, int chunkZ);
- // Direct binary NBT writer for Alpha/Beta chunk "Level" payloads. Skips the variant tree for
- // bulk byte arrays while keeping wire-format parity with Java NbtIo.
- static void writeRootChunk(std::vector<std::uint8_t>& out, Chunk& chunk, World* world);
- static ChunkSnapshot takeSnapshot(Chunk& chunk, World* world);
- static void writeRootChunkFromSnapshot(std::vector<std::uint8_t>& out, const ChunkSnapshot& snapshot);
+  // Direct binary NBT writer for Alpha/Beta chunk "Level" payloads. Skips the variant tree for
+  // bulk byte arrays while keeping wire-format parity with Java NbtIo.
+  static void writeRootChunk(std::vector<std::uint8_t>& out, Chunk& chunk, World* world);
+  // Read-only capture of a chunk's bulk arrays plus entity/block-entity NBT.
+  // Never mutates the chunk, so an IO worker may run it against a leased chunk
+  // while the main thread keeps mutating world state; entity/block-entity
+  // containers are guarded by Chunk::entityMutex_.
+  static ChunkSnapshot takeSnapshot(const Chunk& chunk, std::uint64_t lastUpdate);
+  static void writeRootChunkFromSnapshot(std::vector<std::uint8_t>& out, const ChunkSnapshot& snapshot);
  // Moves bulk arrays out of parsed NBT when possible to avoid extra copies on load.
  static Chunk loadChunkFromNbt(World* world, NbtCompound& nbt);
  void tick() override {

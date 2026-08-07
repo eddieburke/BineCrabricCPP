@@ -155,6 +155,9 @@ void DisplayManager::setSwapPacing(gl::SwapPacing pacing) {
 void DisplayManager::present() {
  display::Window::present();
 }
+void DisplayManager::pumpMessages() {
+ display::Window::pumpMessages();
+}
 void DisplayManager::pumpAndPresent() {
  display::Window::pumpMessages();
  present();
