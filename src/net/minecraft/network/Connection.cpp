@@ -3,9 +3,7 @@
 #include <algorithm>
 #include <chrono>
 #include <climits>
-#include <cstring>
 #include <mutex>
-#include <sstream>
 #include <stdexcept>
 #include "net/minecraft/network/packet/ChunkPackets.hpp"
 #include "net/minecraft/util/concurrent/ThreadCoordinator.hpp"
@@ -35,103 +33,8 @@ int Connection::getReadThreadCount() noexcept {
 int Connection::getWriteThreadCount() noexcept {
  return writeThreadCounter.load(std::memory_order_acquire);
 }
-SocketInputStreamBuf::SocketInputStreamBuf(SOCKET socket) : socket_(socket) {
- setg(buffer_.data(), buffer_.data(), buffer_.data());
-}
-SocketInputStreamBuf::int_type SocketInputStreamBuf::underflow() {
- if(gptr() < egptr()) {
-  return traits_type::to_int_type(*gptr());
- }
- if(socket_ == INVALID_SOCKET) {
-  return traits_type::eof();
- }
- const int received = ::recv(socket_, buffer_.data(), static_cast<int>(buffer_.size()), 0);
- if(received <= 0) {
-  return traits_type::eof();
- }
- setg(buffer_.data(), buffer_.data(), buffer_.data() + received);
- return traits_type::to_int_type(*gptr());
-}
-std::streamsize SocketInputStreamBuf::xsgetn(char* s, std::streamsize count) {
- std::streamsize total = 0;
- while(count > 0) {
-  if(gptr() == egptr()) {
-   if(underflow() == traits_type::eof()) {
-    break;
-   }
-  }
-  const std::streamsize available = egptr() - gptr();
-  const std::streamsize chunk = std::min(available, count);
-  std::memcpy(s, gptr(), static_cast<std::size_t>(chunk));
-  gbump(static_cast<int>(chunk));
-  s += chunk;
-  count -= chunk;
-  total += chunk;
- }
- return total;
-}
-SocketOutputStreamBuf::SocketOutputStreamBuf(SOCKET socket) : socket_(socket) {
- setp(buffer_.data(), buffer_.data() + buffer_.size());
-}
-SocketOutputStreamBuf::int_type SocketOutputStreamBuf::overflow(int_type ch) {
- if(!flushBuffer()) {
-  return traits_type::eof();
- }
- if(traits_type::eq_int_type(ch, traits_type::eof())) {
-  return traits_type::not_eof(ch);
- }
- *pptr() = traits_type::to_char_type(ch);
- pbump(1);
- return ch;
-}
-std::streamsize SocketOutputStreamBuf::xsputn(const char* s, std::streamsize count) {
- std::streamsize total = 0;
- while(count > 0) {
-  const std::streamsize space = epptr() - pptr();
-  if(space == 0) {
-   if(!flushBuffer()) {
-    break;
-   }
-   continue;
-  }
-  const std::streamsize chunk = std::min(space, count);
-  std::memcpy(pptr(), s, static_cast<std::size_t>(chunk));
-  pbump(static_cast<int>(chunk));
-  s += chunk;
-  count -= chunk;
-  total += chunk;
- }
- return total;
-}
-int SocketOutputStreamBuf::sync() {
- return flushBuffer() ? 0 : -1;
-}
-bool SocketOutputStreamBuf::flushBuffer() {
- const std::ptrdiff_t pending = pptr() - pbase();
- if(pending > 0) {
-  sendAll(buffer_.data(), static_cast<std::size_t>(pending));
- }
- setp(buffer_.data(), buffer_.data() + buffer_.size());
- return true;
-}
-void SocketOutputStreamBuf::sendAll(const char* data, std::size_t length) {
- while(length > 0) {
-  const int chunk = ::send(
-      socket_, data, static_cast<int>(std::min<std::size_t>(length, static_cast<std::size_t>(INT_MAX))), 0);
-  if(chunk == SOCKET_ERROR || chunk == 0) {
-   throw std::runtime_error("Socket write failed");
-  }
-  data += chunk;
-  length -= static_cast<std::size_t>(chunk);
- }
-}
 Connection::Connection(SOCKET socket, std::string name, NetworkHandler& networkHandler)
-    : socket_(socket),
-      name_(std::move(name)),
-      inputBuf_(socket),
-      input_(&inputBuf_),
-      outputBuf_(socket),
-      output_(&outputBuf_) {
+    : socket_(socket), name_(std::move(name)) {
  ensureWinsock();
  setSocketOptions();
  address_ = formatAddress();
@@ -319,28 +222,57 @@ void Connection::readLoop() {
  readThreadCounter.fetch_add(1, std::memory_order_acq_rel);
  try {
   while(isOpen()) {
-   std::unique_ptr<Packet> packet =
-       Packet::read(input_, networkHandler() != nullptr && networkHandler()->isServerSide());
-   if(packet == nullptr) {
+   for(;;) {
+    const std::uint8_t* src = readBuffer_.data() + readPos_;
+    const std::uint8_t* end = readBuffer_.data() + readBuffer_.size();
+    if(src >= end) {
+     break;
+    }
+    std::unique_ptr<Packet> packet;
+    try {
+     packet = Packet::read(src, end, networkHandler() != nullptr && networkHandler()->isServerSide());
+    } catch(const packetio::PacketUnderflow&) {
+     break;
+    }
+    if(packet == nullptr) {
+     requestDisconnect("disconnect.endOfStream");
+     readBuffer_.clear();
+     readPos_ = 0;
+     break;
+    }
+    const int rawId = packet->rawId();
+    const int size = static_cast<int>(packet->size());
+    {
+     // Backpressure: hold a large inbound backlog (e.g. a burst of chunk packets
+     // during a join) at the high-water mark until the game thread drains it below
+     // the low-water mark, rather than buffering without bound or killing the
+     // connection. requestDisconnect() wakes the wait so teardown is not blocked.
+     std::unique_lock lock(readMutex_);
+     readCv_.wait(lock, [this] { return !isOpen() || readQueueSize_.load(std::memory_order_acquire) <= kReadQueueHighWater; });
+     if(!isOpen()) {
+      break;
+     }
+     readQueue_.push_back(std::move(packet));
+     readQueueSize_.fetch_add(static_cast<std::size_t>(size) + 1, std::memory_order_acq_rel);
+     readStats_.emplace_back(rawId, size);
+    }
+    readPos_ = static_cast<std::size_t>(src - readBuffer_.data());
+   }
+   readBuffer_.erase(readBuffer_.begin(), readBuffer_.begin() + readPos_);
+   readPos_ = 0;
+   if(!isOpen()) {
+    break;
+   }
+   std::uint8_t chunk[4096];
+   const int received = ::recv(socket_.load(std::memory_order_acquire),
+                               reinterpret_cast<char*>(chunk),
+                               static_cast<int>(sizeof(chunk)),
+                               0);
+   if(received <= 0) {
     requestDisconnect("disconnect.endOfStream");
     break;
    }
-   const int rawId = packet->rawId();
-   const int size = static_cast<int>(packet->size());
-   {
-    // Backpressure: hold a large inbound backlog (e.g. a burst of chunk packets
-    // during a join) at the high-water mark until the game thread drains it below
-    // the low-water mark, rather than buffering without bound or killing the
-    // connection. requestDisconnect() wakes the wait so teardown is not blocked.
-    std::unique_lock lock(readMutex_);
-    readCv_.wait(lock, [this] { return !isOpen() || readQueueSize_.load(std::memory_order_acquire) <= kReadQueueHighWater; });
-    if(!isOpen()) {
-     break;
-    }
-    readQueue_.push_back(std::move(packet));
-    readQueueSize_.fetch_add(static_cast<std::size_t>(size) + 1, std::memory_order_acq_rel);
-    readStats_.emplace_back(rawId, size);
-   }
+   readBuffer_.insert(readBuffer_.end(), chunk, chunk + received);
   }
  } catch(const std::exception& error) {
   requestDisconnect(std::string("Internal exception: ") + error.what());
@@ -397,8 +329,11 @@ void Connection::writeLoop() {
    if(!batch.empty()) {
     for(auto& packet : batch) {
      if(packet != nullptr) {
-      Packet::write(*packet, output_);
-      output_.flush();
+      writeScratch_.resize(packet->size() + 1);
+      std::uint8_t* dest = writeScratch_.data();
+      std::uint8_t* const end = dest + writeScratch_.size();
+      Packet::write(*packet, dest, end);
+      sendAll(writeScratch_.data(), static_cast<std::size_t>(dest - writeScratch_.data()));
       sendQueueSize_.fetch_sub(packet->size() + 1, std::memory_order_acq_rel);
      }
     }
@@ -409,6 +344,19 @@ void Connection::writeLoop() {
  }
  shutdownSocket();
  writeThreadCounter.fetch_sub(1, std::memory_order_acq_rel);
+}
+void Connection::sendAll(const std::uint8_t* data, std::size_t length) {
+ const SOCKET socket = socket_.load(std::memory_order_acquire);
+ while(length > 0) {
+  const int chunk = ::send(
+      socket, reinterpret_cast<const char*>(data),
+      static_cast<int>(std::min<std::size_t>(length, static_cast<std::size_t>(INT_MAX))), 0);
+  if(chunk == SOCKET_ERROR || chunk == 0) {
+   throw std::runtime_error("Socket write failed");
+  }
+  data += chunk;
+  length -= static_cast<std::size_t>(chunk);
+ }
 }
 void Connection::requestDisconnect(std::string reason) {
  bool expected = true;

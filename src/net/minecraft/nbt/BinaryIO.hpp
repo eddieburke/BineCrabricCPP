@@ -2,60 +2,80 @@
 #include <cstdint>
 #include <cstring>
 #include <istream>
-#include <iterator>
 #include <ostream>
 #include <stdexcept>
 #include <string>
 #include <string_view>
 #include <vector>
 namespace net::minecraft::binary {
+inline std::uint32_t decodeUtf8At(std::string_view value, std::size_t& i) {
+ const std::uint8_t lead = static_cast<std::uint8_t>(value[i]);
+ std::uint32_t codePoint = 0;
+ std::size_t width = 0;
+ if((lead & 0x80U) == 0U) {
+  codePoint = lead;
+  width = 1;
+ } else if((lead & 0xE0U) == 0xC0U) {
+  codePoint = lead & 0x1FU;
+  width = 2;
+ } else if((lead & 0xF0U) == 0xE0U) {
+  codePoint = lead & 0x0FU;
+  width = 3;
+ } else if((lead & 0xF8U) == 0xF0U) {
+  codePoint = lead & 0x07U;
+  width = 4;
+ } else {
+  throw std::runtime_error("Malformed UTF-8 sequence");
+ }
+ if(i + width > value.size()) {
+  throw std::runtime_error("Truncated UTF-8 sequence");
+ }
+ for(std::size_t j = 1; j < width; ++j) {
+  const std::uint8_t tail = static_cast<std::uint8_t>(value[i + j]);
+  if((tail & 0xC0U) != 0x80U) {
+   throw std::runtime_error("Malformed UTF-8 continuation byte");
+  }
+  codePoint = (codePoint << 6U) | (tail & 0x3FU);
+ }
+ if((width == 2 && codePoint < 0x80U) || (width == 3 && codePoint < 0x800U) ||
+    (width == 4 && codePoint < 0x10000U) || codePoint > 0x10FFFFU ||
+    (codePoint >= 0xD800U && codePoint <= 0xDFFFU)) {
+  throw std::runtime_error("Invalid UTF-8 code point");
+ }
+ i += width;
+ return codePoint;
+}
 inline std::u16string utf8ToUtf16(std::string_view value) {
  std::u16string result;
  result.reserve(value.size());
  for(std::size_t i = 0; i < value.size();) {
-  const std::uint8_t lead = static_cast<std::uint8_t>(value[i]);
-  std::uint32_t codePoint = 0;
-  std::size_t width = 0;
-  if((lead & 0x80U) == 0U) {
-   codePoint = lead;
-   width = 1;
-  } else if((lead & 0xE0U) == 0xC0U) {
-   codePoint = lead & 0x1FU;
-   width = 2;
-  } else if((lead & 0xF0U) == 0xE0U) {
-   codePoint = lead & 0x0FU;
-   width = 3;
-  } else if((lead & 0xF8U) == 0xF0U) {
-   codePoint = lead & 0x07U;
-   width = 4;
-  } else {
-   throw std::runtime_error("Malformed UTF-8 sequence");
-  }
-  if(i + width > value.size()) {
-   throw std::runtime_error("Truncated UTF-8 sequence");
-  }
-  for(std::size_t j = 1; j < width; ++j) {
-   const std::uint8_t tail = static_cast<std::uint8_t>(value[i + j]);
-   if((tail & 0xC0U) != 0x80U) {
-    throw std::runtime_error("Malformed UTF-8 continuation byte");
-   }
-   codePoint = (codePoint << 6U) | (tail & 0x3FU);
-  }
-  if((width == 2 && codePoint < 0x80U) || (width == 3 && codePoint < 0x800U) ||
-     (width == 4 && codePoint < 0x10000U) || codePoint > 0x10FFFFU ||
-     (codePoint >= 0xD800U && codePoint <= 0xDFFFU)) {
-   throw std::runtime_error("Invalid UTF-8 code point");
-  }
+  const std::uint32_t codePoint = decodeUtf8At(value, i);
   if(codePoint <= 0xFFFFU) {
    result.push_back(static_cast<char16_t>(codePoint));
   } else {
-   codePoint -= 0x10000U;
-   result.push_back(static_cast<char16_t>(0xD800U + (codePoint >> 10U)));
-   result.push_back(static_cast<char16_t>(0xDC00U + (codePoint & 0x3FFU)));
+   const std::uint32_t offset = codePoint - 0x10000U;
+   result.push_back(static_cast<char16_t>(0xD800U + (offset >> 10U)));
+   result.push_back(static_cast<char16_t>(0xDC00U + (offset & 0x3FFU)));
   }
-  i += width;
  }
  return result;
+}
+inline void appendCodePointToUtf8(std::string& out, std::uint32_t codePoint) {
+ if(codePoint <= 0x7FU) {
+  out.push_back(static_cast<char>(codePoint));
+ } else if(codePoint <= 0x7FFU) {
+  out.push_back(static_cast<char>(0xC0U | (codePoint >> 6U)));
+  out.push_back(static_cast<char>(0x80U | (codePoint & 0x3FU)));
+ } else if(codePoint <= 0xFFFFU) {
+  out.push_back(static_cast<char>(0xE0U | (codePoint >> 12U)));
+  out.push_back(static_cast<char>(0x80U | ((codePoint >> 6U) & 0x3FU)));
+  out.push_back(static_cast<char>(0x80U | (codePoint & 0x3FU)));
+ } else {
+  out.push_back(static_cast<char>(0xF0U | (codePoint >> 18U)));
+  out.push_back(static_cast<char>(0x80U | ((codePoint >> 12U) & 0x3FU)));
+  out.push_back(static_cast<char>(0x80U | ((codePoint >> 6U) & 0x3FU)));
+  out.push_back(static_cast<char>(0x80U | (codePoint & 0x3FU)));
+ }
 }
 inline std::string utf16ToUtf8(std::u16string_view value) {
  std::string result;
@@ -74,21 +94,7 @@ inline std::string utf16ToUtf8(std::u16string_view value) {
   } else if(codePoint >= 0xDC00U && codePoint <= 0xDFFFU) {
    throw std::runtime_error("Unexpected UTF-16 low surrogate");
   }
-  if(codePoint <= 0x7FU) {
-   result.push_back(static_cast<char>(codePoint));
-  } else if(codePoint <= 0x7FFU) {
-   result.push_back(static_cast<char>(0xC0U | (codePoint >> 6U)));
-   result.push_back(static_cast<char>(0x80U | (codePoint & 0x3FU)));
-  } else if(codePoint <= 0xFFFFU) {
-   result.push_back(static_cast<char>(0xE0U | (codePoint >> 12U)));
-   result.push_back(static_cast<char>(0x80U | ((codePoint >> 6U) & 0x3FU)));
-   result.push_back(static_cast<char>(0x80U | (codePoint & 0x3FU)));
-  } else {
-   result.push_back(static_cast<char>(0xF0U | (codePoint >> 18U)));
-   result.push_back(static_cast<char>(0x80U | ((codePoint >> 12U) & 0x3FU)));
-   result.push_back(static_cast<char>(0x80U | ((codePoint >> 6U) & 0x3FU)));
-   result.push_back(static_cast<char>(0x80U | (codePoint & 0x3FU)));
-  }
+  appendCodePointToUtf8(result, codePoint);
  }
  return result;
 }
@@ -273,7 +279,17 @@ inline void readI64BEArray(const std::vector<std::uint8_t>& data,
  pos += byteCount;
 }
 inline std::vector<std::uint8_t> readAllBytes(std::istream& input) {
- return std::vector<std::uint8_t>(std::istreambuf_iterator<char>(input), std::istreambuf_iterator<char>());
+ input.seekg(0, std::ios::end);
+ const std::streamsize size = input.tellg();
+ input.seekg(0, std::ios::beg);
+ std::vector<std::uint8_t> bytes(static_cast<std::size_t>(size));
+ if(size > 0) {
+  input.read(reinterpret_cast<char*>(bytes.data()), size);
+  if(input.gcount() != size) {
+   throw std::runtime_error("Failed to read stream");
+  }
+ }
+ return bytes;
 }
 inline void writeAllBytes(std::ostream& output, const std::vector<std::uint8_t>& bytes) {
  if(!bytes.empty()) {
@@ -305,42 +321,54 @@ inline std::vector<std::uint8_t> encodeModifiedUtf8(std::string_view value) {
  }
  return encoded;
 }
-inline std::string decodeModifiedUtf8(const std::vector<std::uint8_t>& data,
-                                      std::size_t& pos,
-                                      std::uint16_t byteLength) {
- if(pos > data.size() || byteLength > data.size() - pos) {
-  throw std::runtime_error("Unexpected end of buffer while reading UTF string");
- }
+inline std::string decodeModifiedUtf8(const std::uint8_t* data, std::size_t byteLength) {
  if(byteLength == 0U) {
   return {};
  }
- if(isAsciiModifiedUtf8(data.data() + pos, byteLength)) {
-  std::string result(reinterpret_cast<const char*>(data.data() + pos), byteLength);
-  pos += byteLength;
-  return result;
+ if(isAsciiModifiedUtf8(data, byteLength)) {
+  return std::string(reinterpret_cast<const char*>(data), byteLength);
  }
- std::u16string utf16;
- utf16.reserve(byteLength);
- const std::size_t end = pos + byteLength;
- while(pos < end) {
+ std::string result;
+ result.reserve(byteLength);
+ std::size_t pos = 0;
+ std::uint32_t pendingHigh = 0;
+ bool hasPendingHigh = false;
+ const auto appendUnit = [&](std::uint32_t unit) {
+  if(hasPendingHigh) {
+   if(unit >= 0xDC00U && unit <= 0xDFFFU) {
+    appendCodePointToUtf8(result, 0x10000U + (((pendingHigh - 0xD800U) << 10U) | (unit - 0xDC00U)));
+    hasPendingHigh = false;
+   } else {
+    throw std::runtime_error("Malformed UTF-16 surrogate pair");
+   }
+  } else if(unit >= 0xD800U && unit <= 0xDBFFU) {
+   pendingHigh = unit;
+   hasPendingHigh = true;
+  } else if(unit >= 0xDC00U && unit <= 0xDFFFU) {
+   throw std::runtime_error("Unexpected UTF-16 low surrogate");
+  } else {
+   appendCodePointToUtf8(result, unit);
+  }
+ };
+ while(pos < byteLength) {
   const std::uint8_t c = data[pos++];
   if((c & 0x80U) == 0U) {
-   utf16.push_back(static_cast<char16_t>(c));
+   result.push_back(static_cast<char>(c));
    continue;
   }
   if((c & 0xE0U) == 0xC0U) {
-   if(pos >= end) {
+   if(pos >= byteLength) {
     throw std::runtime_error("Malformed modified UTF-8 sequence");
    }
    const std::uint8_t c2 = data[pos++];
    if((c2 & 0xC0U) != 0x80U) {
     throw std::runtime_error("Malformed modified UTF-8 continuation byte");
    }
-   utf16.push_back(static_cast<char16_t>(((c & 0x1FU) << 6U) | (c2 & 0x3FU)));
+   appendUnit(static_cast<std::uint32_t>(((c & 0x1FU) << 6U) | (c2 & 0x3FU)));
    continue;
   }
   if((c & 0xF0U) == 0xE0U) {
-   if(pos + 1 >= end) {
+   if(pos + 1 >= byteLength) {
     throw std::runtime_error("Malformed modified UTF-8 sequence");
    }
    const std::uint8_t c2 = data[pos++];
@@ -348,12 +376,15 @@ inline std::string decodeModifiedUtf8(const std::vector<std::uint8_t>& data,
    if((c2 & 0xC0U) != 0x80U || (c3 & 0xC0U) != 0x80U) {
     throw std::runtime_error("Malformed modified UTF-8 continuation byte");
    }
-   utf16.push_back(static_cast<char16_t>(((c & 0x0FU) << 12U) | ((c2 & 0x3FU) << 6U) | (c3 & 0x3FU)));
+   appendUnit(static_cast<std::uint32_t>(((c & 0x0FU) << 12U) | ((c2 & 0x3FU) << 6U) | (c3 & 0x3FU)));
    continue;
   }
   throw std::runtime_error("Malformed modified UTF-8 sequence");
  }
- return utf16ToUtf8(utf16);
+ if(hasPendingHigh) {
+  throw std::runtime_error("Truncated UTF-16 surrogate pair");
+ }
+ return result;
 }
 inline void writeModifiedUtf8(std::vector<std::uint8_t>& out, std::string_view value) {
  if(value.size() > 0xFFFFU) {
@@ -373,6 +404,11 @@ inline void writeModifiedUtf8(std::vector<std::uint8_t>& out, std::string_view v
 }
 inline std::string readModifiedUtf8(const std::vector<std::uint8_t>& data, std::size_t& pos) {
  const std::uint16_t byteLength = readU16BE(data, pos);
- return decodeModifiedUtf8(data, pos, byteLength);
+ if(pos > data.size() || byteLength > data.size() - pos) {
+  throw std::runtime_error("Unexpected end of buffer while reading UTF string");
+ }
+ std::string result = decodeModifiedUtf8(data.data() + pos, byteLength);
+ pos += byteLength;
+ return result;
 }
 } // namespace net::minecraft::binary

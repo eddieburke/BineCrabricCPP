@@ -3,9 +3,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <functional>
-#include <istream>
 #include <memory>
-#include <ostream>
 #include <stdexcept>
 #include <string>
 #include <string_view>
@@ -64,38 +62,38 @@ class Packet {
   }
   return it->second();
  }
- [[nodiscard]] static std::unique_ptr<Packet> read(std::istream& input, bool serverSide) {
-  ensureRegistered();
-  const int rawId = input.get();
-  if(rawId == std::char_traits<char>::eof()) {
-   return nullptr;
+  [[nodiscard]] static std::unique_ptr<Packet> read(const std::uint8_t*& src, const std::uint8_t* end, bool serverSide) {
+   ensureRegistered();
+   if(src >= end) {
+    return nullptr;
+   }
+   const int rawId = *src++;
+   if((serverSide && !serverBoundIds().contains(rawId)) || (!serverSide && !clientBoundIds().contains(rawId))) {
+    throw std::runtime_error("Bad packet id " + std::to_string(rawId));
+   }
+   std::unique_ptr<Packet> packet = create(rawId);
+   if(packet == nullptr) {
+    throw std::runtime_error("Bad packet id " + std::to_string(rawId));
+   }
+   packet->read(src, end);
+   return packet;
   }
-  if((serverSide && !serverBoundIds().contains(rawId)) || (!serverSide && !clientBoundIds().contains(rawId))) {
-   throw std::runtime_error("Bad packet id " + std::to_string(rawId));
+  static void write(const Packet& packet, std::uint8_t*& dest, std::uint8_t* end) {
+   packetio::writeU8(dest, end, static_cast<std::uint8_t>(packet.rawId()));
+   packet.write(dest, end);
   }
-  std::unique_ptr<Packet> packet = create(rawId);
-  if(packet == nullptr) {
-   throw std::runtime_error("Bad packet id " + std::to_string(rawId));
+  static void writeString(std::string_view value, std::uint8_t*& dest, std::uint8_t* end) {
+   packetio::writeJavaString(dest, end, value);
   }
-  packet->read(input);
-  return packet;
- }
- static void write(const Packet& packet, std::ostream& output) {
-  packetio::writeU8(output, static_cast<std::uint8_t>(packet.rawId()));
-  packet.write(output);
- }
- static void writeString(std::string_view value, std::ostream& output) {
-  packetio::writeJavaString(output, value);
- }
- [[nodiscard]] static std::string readString(std::istream& input, int maxLength) {
-  return packetio::readJavaString(input, static_cast<std::uint16_t>(maxLength));
- }
+  [[nodiscard]] static std::string readString(const std::uint8_t*& src, const std::uint8_t* end, int maxLength) {
+   return packetio::readJavaString(src, end, static_cast<std::uint16_t>(maxLength));
+  }
  const std::uint64_t creationTime = static_cast<std::uint64_t>(
      std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch())
          .count());
- bool worldPacket = false;
- virtual void read(std::istream& input) = 0;
- virtual void write(std::ostream& output) const = 0;
+  bool worldPacket = false;
+  virtual void read(const std::uint8_t*& src, const std::uint8_t* end) = 0;
+  virtual void write(std::uint8_t*& dest, std::uint8_t* end) const = 0;
  virtual void apply(NetworkHandler& networkHandler) const = 0;
   [[nodiscard]] virtual std::size_t size() const = 0;
   static void ensureRegistered();

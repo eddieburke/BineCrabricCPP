@@ -2,8 +2,6 @@
 #include <array>
 #include <cstddef>
 #include <cstdint>
-#include <istream>
-#include <ostream>
 #include <string>
 #include <vector>
 #include "net/minecraft/item/ItemStack.hpp"
@@ -18,33 +16,33 @@ class OpenScreenS2CPacket : public Packet {
  int screenHandlerId = 0;
  std::string name;
  int inventorySize = 0;
- void read(std::istream& input) override {
-  syncId = packetio::readI8(input);
-  screenHandlerId = packetio::readU8(input);
-  name = packetio::readUtfString(input);
-  inventorySize = packetio::readU8(input);
+ void read(const std::uint8_t*& src, const std::uint8_t* end) override {
+  syncId = packetio::readI8(src, end);
+  screenHandlerId = packetio::readU8(src, end);
+  name = packetio::readUtfString(src, end);
+  inventorySize = packetio::readU8(src, end);
  }
- void write(std::ostream& output) const override {
-  packetio::writeU8(output, static_cast<std::uint8_t>(syncId));
-  packetio::writeU8(output, static_cast<std::uint8_t>(screenHandlerId));
-  packetio::writeUtfString(output, name);
-  packetio::writeU8(output, static_cast<std::uint8_t>(inventorySize));
+ void write(std::uint8_t*& dest, std::uint8_t* end) const override {
+  packetio::writeU8(dest, end, static_cast<std::uint8_t>(syncId));
+  packetio::writeU8(dest, end, static_cast<std::uint8_t>(screenHandlerId));
+  packetio::writeUtfString(dest, end, name);
+  packetio::writeU8(dest, end, static_cast<std::uint8_t>(inventorySize));
  }
  void apply(NetworkHandler& networkHandler) const override {
   networkHandler.onOpenScreen(*this);
  }
  [[nodiscard]] std::size_t size() const override {
-  return 3U + name.size();
+  return 3U + packetio::utfStringSize(name);
  }
 };
 class CloseScreenS2CPacket : public Packet {
  public:
  int syncId = 0;
- void read(std::istream& input) override {
-  syncId = packetio::readI8(input);
+ void read(const std::uint8_t*& src, const std::uint8_t* end) override {
+  syncId = packetio::readI8(src, end);
  }
- void write(std::ostream& output) const override {
-  packetio::writeU8(output, static_cast<std::uint8_t>(syncId));
+ void write(std::uint8_t*& dest, std::uint8_t* end) const override {
+  packetio::writeU8(dest, end, static_cast<std::uint8_t>(syncId));
  }
  void apply(NetworkHandler& networkHandler) const override {
   networkHandler.onCloseScreen(*this);
@@ -61,27 +59,27 @@ class ClickSlotC2SPacket : public Packet {
  std::int16_t actionType = 0;
  ItemStack stack;
  bool holdingShift = false;
- void read(std::istream& input) override {
-  syncId = packetio::readI8(input);
-  slot = packetio::readI16BE(input);
-  button = packetio::readU8(input);
-  actionType = packetio::readI16BE(input);
-  holdingShift = packetio::readBoolean(input);
-  stack = packetitems::readOptionalItemStack(input);
+ void read(const std::uint8_t*& src, const std::uint8_t* end) override {
+  syncId = packetio::readI8(src, end);
+  slot = packetio::readI16BE(src, end);
+  button = packetio::readU8(src, end);
+  actionType = packetio::readI16BE(src, end);
+  holdingShift = packetio::readBoolean(src, end);
+  stack = packetitems::readOptionalItemStack(src, end);
  }
- void write(std::ostream& output) const override {
-  packetio::writeU8(output, static_cast<std::uint8_t>(syncId));
-  packetio::writeI16BE(output, static_cast<std::int16_t>(slot));
-  packetio::writeU8(output, static_cast<std::uint8_t>(button));
-  packetio::writeI16BE(output, actionType);
-  packetio::writeBoolean(output, holdingShift);
-  packetitems::writeOptionalItemStack(output, stack);
+ void write(std::uint8_t*& dest, std::uint8_t* end) const override {
+  packetio::writeU8(dest, end, static_cast<std::uint8_t>(syncId));
+  packetio::writeI16BE(dest, end, static_cast<std::int16_t>(slot));
+  packetio::writeU8(dest, end, static_cast<std::uint8_t>(button));
+  packetio::writeI16BE(dest, end, actionType);
+  packetio::writeBoolean(dest, end, holdingShift);
+  packetitems::writeOptionalItemStack(dest, end, stack);
  }
  void apply(NetworkHandler& networkHandler) const override {
   networkHandler.onClickSlot(*this);
  }
  [[nodiscard]] std::size_t size() const override {
-  return 11;
+  return 7U + (stack.itemId <= 0 ? 2U : 5U);
  }
 };
 class ScreenHandlerSlotUpdateS2CPacket : public Packet {
@@ -89,15 +87,15 @@ class ScreenHandlerSlotUpdateS2CPacket : public Packet {
  int syncId = 0;
  int slot = 0;
  ItemStack stack;
- void read(std::istream& input) override {
-  syncId = packetio::readI8(input);
-  slot = packetio::readI16BE(input);
-  stack = packetitems::readOptionalItemStack(input);
+ void read(const std::uint8_t*& src, const std::uint8_t* end) override {
+  syncId = packetio::readI8(src, end);
+  slot = packetio::readI16BE(src, end);
+  stack = packetitems::readOptionalItemStack(src, end);
  }
- void write(std::ostream& output) const override {
-  packetio::writeU8(output, static_cast<std::uint8_t>(syncId));
-  packetio::writeI16BE(output, static_cast<std::int16_t>(slot));
-  packetitems::writeOptionalItemStack(output, stack);
+ void write(std::uint8_t*& dest, std::uint8_t* end) const override {
+  packetio::writeU8(dest, end, static_cast<std::uint8_t>(syncId));
+  packetio::writeI16BE(dest, end, static_cast<std::int16_t>(slot));
+  packetitems::writeOptionalItemStack(dest, end, stack);
  }
  void apply(NetworkHandler& networkHandler) const override {
   networkHandler.onScreenHandlerSlotUpdate(*this);
@@ -110,20 +108,20 @@ class InventoryS2CPacket : public Packet {
  public:
  int syncId = 0;
  std::vector<ItemStack> contents;
- void read(std::istream& input) override {
-  syncId = packetio::readI8(input);
-  const int count = packetio::readI16BE(input);
+ void read(const std::uint8_t*& src, const std::uint8_t* end) override {
+  syncId = packetio::readI8(src, end);
+  const int count = packetio::readI16BE(src, end);
   contents.clear();
   contents.resize(static_cast<std::size_t>(count));
   for(int i = 0; i < count; ++i) {
-   contents[static_cast<std::size_t>(i)] = packetitems::readOptionalItemStack(input);
+   contents[static_cast<std::size_t>(i)] = packetitems::readOptionalItemStack(src, end);
   }
  }
- void write(std::ostream& output) const override {
-  packetio::writeU8(output, static_cast<std::uint8_t>(syncId));
-  packetio::writeI16BE(output, static_cast<std::int16_t>(contents.size()));
+ void write(std::uint8_t*& dest, std::uint8_t* end) const override {
+  packetio::writeU8(dest, end, static_cast<std::uint8_t>(syncId));
+  packetio::writeI16BE(dest, end, static_cast<std::int16_t>(contents.size()));
   for(const ItemStack& s : contents) {
-   packetitems::writeOptionalItemStack(output, s);
+   packetitems::writeOptionalItemStack(dest, end, s);
   }
  }
  void apply(NetworkHandler& networkHandler) const override {
@@ -138,15 +136,15 @@ class ScreenHandlerPropertyUpdateS2CPacket : public Packet {
  int syncId = 0;
  int propertyId = 0;
  int value = 0;
- void read(std::istream& input) override {
-  syncId = packetio::readI8(input);
-  propertyId = packetio::readI16BE(input);
-  value = packetio::readI16BE(input);
+ void read(const std::uint8_t*& src, const std::uint8_t* end) override {
+  syncId = packetio::readI8(src, end);
+  propertyId = packetio::readI16BE(src, end);
+  value = packetio::readI16BE(src, end);
  }
- void write(std::ostream& output) const override {
-  packetio::writeU8(output, static_cast<std::uint8_t>(syncId));
-  packetio::writeI16BE(output, static_cast<std::int16_t>(propertyId));
-  packetio::writeI16BE(output, static_cast<std::int16_t>(value));
+ void write(std::uint8_t*& dest, std::uint8_t* end) const override {
+  packetio::writeU8(dest, end, static_cast<std::uint8_t>(syncId));
+  packetio::writeI16BE(dest, end, static_cast<std::int16_t>(propertyId));
+  packetio::writeI16BE(dest, end, static_cast<std::int16_t>(value));
  }
  void apply(NetworkHandler& networkHandler) const override {
   networkHandler.onScreenHandlerPropertyUpdate(*this);
@@ -164,15 +162,15 @@ class ScreenHandlerAcknowledgementPacket : public Packet {
  ScreenHandlerAcknowledgementPacket(int syncIdIn, std::int16_t actionTypeIn, bool acceptedIn)
      : syncId(syncIdIn), actionType(actionTypeIn), accepted(acceptedIn) {
  }
- void read(std::istream& input) override {
-  syncId = packetio::readI8(input);
-  actionType = packetio::readI16BE(input);
-  accepted = packetio::readU8(input) != 0;
+ void read(const std::uint8_t*& src, const std::uint8_t* end) override {
+  syncId = packetio::readI8(src, end);
+  actionType = packetio::readI16BE(src, end);
+  accepted = packetio::readU8(src, end) != 0;
  }
- void write(std::ostream& output) const override {
-  packetio::writeU8(output, static_cast<std::uint8_t>(syncId));
-  packetio::writeI16BE(output, actionType);
-  packetio::writeU8(output, accepted ? 1U : 0U);
+ void write(std::uint8_t*& dest, std::uint8_t* end) const override {
+  packetio::writeU8(dest, end, static_cast<std::uint8_t>(syncId));
+  packetio::writeI16BE(dest, end, actionType);
+  packetio::writeU8(dest, end, accepted ? 1U : 0U);
  }
  void apply(NetworkHandler& networkHandler) const override {
   networkHandler.onScreenHandlerAcknowledgement(*this);
@@ -190,20 +188,20 @@ class UpdateSignPacket : public Packet {
  UpdateSignPacket() {
   worldPacket = true;
  }
- void read(std::istream& input) override {
-  x = packetio::readI32BE(input);
-  y = packetio::readI16BE(input);
-  z = packetio::readI32BE(input);
+ void read(const std::uint8_t*& src, const std::uint8_t* end) override {
+  x = packetio::readI32BE(src, end);
+  y = packetio::readI16BE(src, end);
+  z = packetio::readI32BE(src, end);
   for(std::size_t i = 0; i < text.size(); ++i) {
-   text[i] = Packet::readString(input, 15);
+   text[i] = Packet::readString(src, end, 15);
   }
  }
- void write(std::ostream& output) const override {
-  packetio::writeI32BE(output, x);
-  packetio::writeI16BE(output, static_cast<std::int16_t>(y));
-  packetio::writeI32BE(output, z);
+ void write(std::uint8_t*& dest, std::uint8_t* end) const override {
+  packetio::writeI32BE(dest, end, x);
+  packetio::writeI16BE(dest, end, static_cast<std::int16_t>(y));
+  packetio::writeI32BE(dest, end, z);
   for(const std::string& line : text) {
-   Packet::writeString(line, output);
+   Packet::writeString(line, dest, end);
   }
  }
  void apply(NetworkHandler& networkHandler) const override {
@@ -225,17 +223,17 @@ class MapUpdateS2CPacket : public Packet {
  MapUpdateS2CPacket() {
   worldPacket = true;
  }
- void read(std::istream& input) override {
-  itemRawId = packetio::readI16BE(input);
-  id = packetio::readI16BE(input);
-  const std::uint8_t length = packetio::readU8(input);
-  updateData = packetio::readBytes(input, length);
+ void read(const std::uint8_t*& src, const std::uint8_t* end) override {
+  itemRawId = packetio::readI16BE(src, end);
+  id = packetio::readI16BE(src, end);
+  const std::uint8_t length = packetio::readU8(src, end);
+  updateData = packetio::readBytes(src, end, length);
  }
- void write(std::ostream& output) const override {
-  packetio::writeI16BE(output, static_cast<std::int16_t>(itemRawId));
-  packetio::writeI16BE(output, static_cast<std::int16_t>(id));
-  packetio::writeU8(output, static_cast<std::uint8_t>(updateData.size()));
-  packetio::writeBytes(output, updateData);
+ void write(std::uint8_t*& dest, std::uint8_t* end) const override {
+  packetio::writeI16BE(dest, end, static_cast<std::int16_t>(itemRawId));
+  packetio::writeI16BE(dest, end, static_cast<std::int16_t>(id));
+  packetio::writeU8(dest, end, static_cast<std::uint8_t>(updateData.size()));
+  packetio::writeBytes(dest, end, updateData);
  }
  void apply(NetworkHandler& networkHandler) const override {
   networkHandler.onMapUpdate(*this);
@@ -248,13 +246,13 @@ class IncreaseStatS2CPacket : public Packet {
  public:
  int statId = 0;
  int amount = 0;
- void read(std::istream& input) override {
-  statId = packetio::readI32BE(input);
-  amount = packetio::readI8(input);
+ void read(const std::uint8_t*& src, const std::uint8_t* end) override {
+  statId = packetio::readI32BE(src, end);
+  amount = packetio::readI8(src, end);
  }
- void write(std::ostream& output) const override {
-  packetio::writeI32BE(output, statId);
-  packetio::writeI8(output, static_cast<std::int8_t>(amount));
+ void write(std::uint8_t*& dest, std::uint8_t* end) const override {
+  packetio::writeI32BE(dest, end, statId);
+  packetio::writeI8(dest, end, static_cast<std::int8_t>(amount));
  }
  void apply(NetworkHandler& networkHandler) const override {
   networkHandler.onIncreaseStat(*this);

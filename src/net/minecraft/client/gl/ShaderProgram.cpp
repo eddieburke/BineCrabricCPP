@@ -2,6 +2,7 @@
 #include <algorithm>
 #include <cctype>
 #include <cstdint>
+#include <iterator>
 #include <string_view>
 #include <utility>
 #include "net/minecraft/client/gl/GLCore.hpp"
@@ -101,8 +102,12 @@ unsigned int compileStage(unsigned int type, const std::string& source, std::str
 ShaderProgram::~ShaderProgram() {
  destroy();
 }
+ShaderProgram::ShaderProgram() {
+ resetUniformLocations();
+}
 ShaderProgram::ShaderProgram(ShaderProgram&& other) noexcept
     : program_(other.program_),
+      uniformLocations_(),
       uniformCache_(std::move(other.uniformCache_)),
       samplerKinds_(std::move(other.samplerKinds_)),
       samplerNames_(std::move(other.samplerNames_)),
@@ -110,12 +115,16 @@ ShaderProgram::ShaderProgram(ShaderProgram&& other) noexcept
       drawBuffers_(std::move(other.drawBuffers_)),
       drawBufferColortexIndices_(std::move(other.drawBufferColortexIndices_)),
       lastError_(std::move(other.lastError_)) {
+ std::copy(other.uniformLocations_, other.uniformLocations_ + static_cast<std::size_t>(IrisUniformSlot::Count),
+           uniformLocations_);
  other.program_ = 0;
 }
 ShaderProgram& ShaderProgram::operator=(ShaderProgram&& other) noexcept {
  if(this != &other) {
   destroy();
   program_ = other.program_;
+  std::copy(other.uniformLocations_, other.uniformLocations_ + static_cast<std::size_t>(IrisUniformSlot::Count),
+            uniformLocations_);
   uniformCache_ = std::move(other.uniformCache_);
   samplerKinds_ = std::move(other.samplerKinds_);
   samplerNames_ = std::move(other.samplerNames_);
@@ -183,16 +192,17 @@ bool ShaderProgram::compile(const std::string& vertexSource,
   GLCore::deleteProgram(program);
   return false;
  }
-  program_ = program;
-  uniformCache_.clear();
-  samplerKinds_.clear();
-  samplerNames_.clear();
-  uniformSnapshotGeneration_ = 0;
-  tessellation_ = !tessControlSource.empty() && !tessEvaluationSource.empty();
-  reflectSamplers();
-  return true;
-}
-bool ShaderProgram::compileCompute(const std::string& computeSource,
+   program_ = program;
+   uniformCache_.clear();
+   samplerKinds_.clear();
+   samplerNames_.clear();
+   uniformSnapshotGeneration_ = 0;
+   tessellation_ = !tessControlSource.empty() && !tessEvaluationSource.empty();
+   reflectSamplers();
+   refreshUniformLocations();
+   return true;
+ }
+ bool ShaderProgram::compileCompute(const std::string& computeSource,
                                    const std::string& versionPreamble) {
  destroy();
  lastError_.clear();
@@ -223,29 +233,43 @@ bool ShaderProgram::compileCompute(const std::string& computeSource,
   GLCore::deleteProgram(program);
   return false;
  }
-  program_ = program;
+   program_ = program;
+   uniformCache_.clear();
+   samplerKinds_.clear();
+   samplerNames_.clear();
+   uniformSnapshotGeneration_ = 0;
+   tessellation_ = false;
+   reflectSamplers();
+   refreshUniformLocations();
+   return true;
+ }
+ void ShaderProgram::destroy() {
+  if(program_ != 0 && program_ == s_lastBoundProgram) s_lastBoundProgram = 0;
+  if(program_ != 0 && GLCore::deleteProgram != nullptr) {
+   GLCore::deleteProgram(program_);
+  }
+  program_ = 0;
+  resetUniformLocations();
   uniformCache_.clear();
   samplerKinds_.clear();
   samplerNames_.clear();
   uniformSnapshotGeneration_ = 0;
+  drawBuffers_.clear();
+  drawBufferColortexIndices_.clear();
   tessellation_ = false;
-  reflectSamplers();
-  return true;
-}
-void ShaderProgram::destroy() {
- if(program_ != 0 && program_ == s_lastBoundProgram) s_lastBoundProgram = 0;
- if(program_ != 0 && GLCore::deleteProgram != nullptr) {
-  GLCore::deleteProgram(program_);
  }
- program_ = 0;
- uniformCache_.clear();
- samplerKinds_.clear();
- samplerNames_.clear();
- uniformSnapshotGeneration_ = 0;
- drawBuffers_.clear();
- drawBufferColortexIndices_.clear();
- tessellation_ = false;
-}
+ void ShaderProgram::resetUniformLocations() {
+  std::fill(std::begin(uniformLocations_), std::end(uniformLocations_), -1);
+ }
+ void ShaderProgram::refreshUniformLocations() {
+  if(program_ == 0 || GLCore::getUniformLocation == nullptr) {
+   resetUniformLocations();
+   return;
+  }
+  for(std::size_t i = 0; i < static_cast<std::size_t>(IrisUniformSlot::Count); ++i) {
+   uniformLocations_[i] = GLCore::getUniformLocation(program_, kIrisUniformSlotNames[i].data());
+  }
+ }
 void ShaderProgram::bind() const {
  if(program_ != 0 && GLCore::useProgram != nullptr) {
   if(program_ == s_lastBoundProgram) return;
@@ -304,7 +328,9 @@ int ShaderProgram::location(std::string_view name) const {
   return found->second;
  }
  const int location = GLCore::getUniformLocation(program_, std::string(name).c_str());
- uniformCache_.emplace(std::string(name), location);
+ if(location >= 0) {
+  uniformCache_.emplace(std::string(name), location);
+ }
  return location;
 }
 void ShaderProgram::reflectSamplers() {
@@ -622,13 +648,14 @@ bool ShaderProgram::loadFromBinary(const ProgramBinaryBlob& binary) {
   GLCore::deleteProgram(program);
   return false;
  }
-  program_ = program;
-  uniformCache_.clear();
-  samplerKinds_.clear();
-  samplerNames_.clear();
-  uniformSnapshotGeneration_ = 0;
-  tessellation_ = binary.tessellation;
-  reflectSamplers();
-  return true;
-}
+   program_ = program;
+   uniformCache_.clear();
+   samplerKinds_.clear();
+   samplerNames_.clear();
+   uniformSnapshotGeneration_ = 0;
+   tessellation_ = binary.tessellation;
+   reflectSamplers();
+   refreshUniformLocations();
+   return true;
+ }
 } // namespace net::minecraft::client::gl

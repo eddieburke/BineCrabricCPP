@@ -1,7 +1,5 @@
 #pragma once
 #include <cstddef>
-#include <istream>
-#include <ostream>
 #include <string>
 #include "net/minecraft/network/NetworkHandler.hpp"
 #include "net/minecraft/network/Packet.hpp"
@@ -10,17 +8,17 @@ namespace net::minecraft {
 class ChatMessagePacket : public Packet {
  public:
  std::string chatMessage;
- void read(std::istream& input) override {
-  chatMessage = Packet::readString(input, 119);
+ void read(const std::uint8_t*& src, const std::uint8_t* end) override {
+  chatMessage = Packet::readString(src, end, 119);
  }
- void write(std::ostream& output) const override {
-  Packet::writeString(chatMessage, output);
+ void write(std::uint8_t*& dest, std::uint8_t* end) const override {
+  Packet::writeString(chatMessage, dest, end);
  }
  void apply(NetworkHandler& networkHandler) const override {
   networkHandler.onChatMessage(*this);
  }
  [[nodiscard]] std::size_t size() const override {
-  return chatMessage.size();
+  return packetio::javaStringSize(chatMessage);
  }
 };
 } // namespace net::minecraft

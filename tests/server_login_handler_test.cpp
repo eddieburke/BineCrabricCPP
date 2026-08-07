@@ -125,14 +125,27 @@ TEST(ServerLoginNetworkHandler, OfflineHandshakeSendsDash) {
   if(client == INVALID_SOCKET) {
    return;
   }
-  net::minecraft::SocketInputStreamBuf inputBuf(client);
-  std::istream input(&inputBuf);
-  Packet::ensureRegistered();
-  if(std::unique_ptr<Packet> packet = Packet::read(input, false); packet != nullptr) {
-   if(const auto* handshake = dynamic_cast<net::minecraft::HandshakePacket*>(packet.get())) {
-    receivedName = handshake->name;
+   net::minecraft::Packet::ensureRegistered();
+   std::vector<std::uint8_t> buffer;
+   std::uint8_t chunk[4096];
+   for(;;) {
+    const int received = ::recv(client, reinterpret_cast<char*>(chunk), static_cast<int>(sizeof(chunk)), 0);
+    if(received <= 0) {
+     break;
+    }
+    buffer.insert(buffer.end(), chunk, chunk + received);
+    const std::uint8_t* src = buffer.data();
+    const std::uint8_t* const end = buffer.data() + buffer.size();
+    try {
+     if(std::unique_ptr<Packet> packet = Packet::read(src, end, false); packet != nullptr) {
+      if(const auto* handshake = dynamic_cast<net::minecraft::HandshakePacket*>(packet.get())) {
+       receivedName = handshake->name;
+      }
+      break;
+     }
+    } catch(const net::minecraft::packetio::PacketUnderflow&) {
+    }
    }
-  }
   ::shutdown(client, SD_BOTH);
   ::closesocket(client);
  });

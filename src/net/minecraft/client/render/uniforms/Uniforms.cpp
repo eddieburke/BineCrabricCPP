@@ -3,12 +3,13 @@
 #include "net/minecraft/util/math/Matrix4f.hpp"
 namespace net::minecraft::client::render {
 namespace {
+using IrisUniformSlot = gl::ShaderProgram::IrisUniformSlot;
 void uploadGbufferCameraMatrices(const gl::ShaderProgram& program, const float* modelView, const float* projection,
                                  const float* modelViewInverse, const float* projectionInverse) {
- program.setMatrix4At(program.location("gbufferModelView"), modelView);
- program.setMatrix4At(program.location("gbufferProjection"), projection);
- program.setMatrix4At(program.location("gbufferModelViewInverse"), modelViewInverse);
- program.setMatrix4At(program.location("gbufferProjectionInverse"), projectionInverse);
+ program.setMatrix4At(program.uniformLocation(IrisUniformSlot::GbufferModelView), modelView);
+ program.setMatrix4At(program.uniformLocation(IrisUniformSlot::GbufferProjection), projection);
+ program.setMatrix4At(program.uniformLocation(IrisUniformSlot::GbufferModelViewInverse), modelViewInverse);
+ program.setMatrix4At(program.uniformLocation(IrisUniformSlot::GbufferProjectionInverse), projectionInverse);
 }
 void uploadDrawMatrixAliases(const gl::ShaderProgram& program, const float* modelView, const float* projection,
                              const float* modelViewInverse, const float* projectionInverse) {
@@ -52,48 +53,48 @@ void uploadShaderUniforms(const gl::ShaderProgram& program, const PackUniformVal
  const float shadowMapResolution = values.shadowMapResolution;
  const int shadowAvailable = values.shadowAvailable;
  const int normalAvailable = values.normalAvailable;
- program.set1f("frameTimeCounter", values.frameTimeCounter);
- program.set1f("frameTime", values.frameTime);
- program.set1i("frameCounter", values.frameCounter);
- program.set1f("viewWidth", viewWidth);
- program.set1f("viewHeight", viewHeight);
- program.set1f("aspectRatio", aspectRatio);
- program.set1f("near", values.nearPlane);
- program.set1f("far", farPlane);
- program.set1f("shadowMapResolution", shadowMapResolution);
- program.set3fAt(program.location("cameraPosition"), values.cameraPosition);
- program.set3fAt(program.location("cameraPositionFract"), values.cameraPositionFract);
- program.set3iAt(program.location("cameraPositionInt"), values.cameraPositionInt);
- program.set3fAt(program.location("previousCameraPosition"), values.previousCameraPosition);
- program.set3fAt(program.location("previousCameraPositionFract"), values.previousCameraPositionFract);
- program.set3iAt(program.location("previousCameraPositionInt"), values.previousCameraPositionInt);
- program.set3fAt(program.location("sunPosition"), values.sunPosition);
- program.set3fAt(program.location("moonPosition"), values.moonPosition);
- program.set3fAt(program.location("shadowLightPosition"), values.shadowLightPosition);
- program.set3fAt(program.location("upPosition"), values.upPosition);
+ program.set1fAt(program.uniformLocation(IrisUniformSlot::FrameTimeCounter), values.frameTimeCounter);
+ program.set1fAt(program.uniformLocation(IrisUniformSlot::FrameTime), values.frameTime);
+ program.set1iAt(program.uniformLocation(IrisUniformSlot::FrameCounter), values.frameCounter);
+ program.set1fAt(program.uniformLocation(IrisUniformSlot::ViewWidth), viewWidth);
+ program.set1fAt(program.uniformLocation(IrisUniformSlot::ViewHeight), viewHeight);
+ program.set1fAt(program.uniformLocation(IrisUniformSlot::AspectRatio), aspectRatio);
+ program.set1fAt(program.uniformLocation(IrisUniformSlot::Near), values.nearPlane);
+ program.set1fAt(program.uniformLocation(IrisUniformSlot::Far), farPlane);
+ program.set1fAt(program.uniformLocation(IrisUniformSlot::ShadowMapResolution), shadowMapResolution);
+ program.set3fAt(program.uniformLocation(IrisUniformSlot::CameraPosition), values.cameraPosition);
+ program.set3fAt(program.uniformLocation(IrisUniformSlot::CameraPositionFract), values.cameraPositionFract);
+ program.set3iAt(program.uniformLocation(IrisUniformSlot::CameraPositionInt), values.cameraPositionInt);
+ program.set3fAt(program.uniformLocation(IrisUniformSlot::PreviousCameraPosition), values.previousCameraPosition);
+ program.set3fAt(program.uniformLocation(IrisUniformSlot::PreviousCameraPositionFract), values.previousCameraPositionFract);
+ program.set3iAt(program.uniformLocation(IrisUniformSlot::PreviousCameraPositionInt), values.previousCameraPositionInt);
+ program.set3fAt(program.uniformLocation(IrisUniformSlot::SunPosition), values.sunPosition);
+ program.set3fAt(program.uniformLocation(IrisUniformSlot::MoonPosition), values.moonPosition);
+ program.set3fAt(program.uniformLocation(IrisUniformSlot::ShadowLightPosition), values.shadowLightPosition);
+ program.set3fAt(program.uniformLocation(IrisUniformSlot::UpPosition), values.upPosition);
  if(uploadGbufferCamera) {
   uploadGbufferCameraMatrices(program, values.gbufferModelView, values.gbufferProjection,
                               values.gbufferModelViewInverse, values.gbufferProjectionInverse);
-  program.setMatrix4At(program.location("gbufferPreviousProjection"), values.gbufferPreviousProjection);
-  program.setMatrix4At(program.location("gbufferPreviousModelView"), values.gbufferPreviousModelView);
+  program.setMatrix4At(program.uniformLocation(IrisUniformSlot::GbufferPreviousProjection), values.gbufferPreviousProjection);
+  program.setMatrix4At(program.uniformLocation(IrisUniformSlot::GbufferPreviousModelView), values.gbufferPreviousModelView);
  }
- program.setMatrix4At(program.location("shadowModelView"), values.shadowModelView);
- program.setMatrix4At(program.location("shadowModelViewInverse"), values.shadowModelViewInverse);
- program.setMatrix4At(program.location("shadowProjection"), values.shadowProjection);
- program.setMatrix4At(program.location("shadowProjectionInverse"), values.shadowProjectionInverse);
- program.set3fAt(program.location("sunColor"), values.sunColor);
- program.set1f("sunIntensity", values.sunIntensity);
- program.set3fAt(program.location("fogColor"), values.fogColor);
- program.set1f("fogDensity", values.fogDensity);
- program.set1f("fogStart", values.fogStart);
- program.set1f("fogEnd", values.fogEnd);
- program.set1i("fogMode", values.fogMode);
- program.set1i("fogShape", values.fogShape);
- program.set3fAt(program.location("skyColor"), values.skyColor);
+ program.setMatrix4At(program.uniformLocation(IrisUniformSlot::ShadowModelView), values.shadowModelView);
+ program.setMatrix4At(program.uniformLocation(IrisUniformSlot::ShadowModelViewInverse), values.shadowModelViewInverse);
+ program.setMatrix4At(program.uniformLocation(IrisUniformSlot::ShadowProjection), values.shadowProjection);
+ program.setMatrix4At(program.uniformLocation(IrisUniformSlot::ShadowProjectionInverse), values.shadowProjectionInverse);
+ program.set3fAt(program.uniformLocation(IrisUniformSlot::SunColor), values.sunColor);
+ program.set1fAt(program.uniformLocation(IrisUniformSlot::SunIntensity), values.sunIntensity);
+ program.set3fAt(program.uniformLocation(IrisUniformSlot::FogColor), values.fogColor);
+ program.set1fAt(program.uniformLocation(IrisUniformSlot::FogDensity), values.fogDensity);
+ program.set1fAt(program.uniformLocation(IrisUniformSlot::FogStart), values.fogStart);
+ program.set1fAt(program.uniformLocation(IrisUniformSlot::FogEnd), values.fogEnd);
+ program.set1iAt(program.uniformLocation(IrisUniformSlot::FogMode), values.fogMode);
+ program.set1iAt(program.uniformLocation(IrisUniformSlot::FogShape), values.fogShape);
+ program.set3fAt(program.uniformLocation(IrisUniformSlot::SkyColor), values.skyColor);
  program.set4fAt(program.location("lightningBoltPosition"), values.lightningBoltPosition);
- program.set1f("thunderStrength", values.thunderStrength);
- program.set1f("currentPlayerHealth", values.currentPlayerHealth);
- program.set1f("maxPlayerHealth", values.maxPlayerHealth);
+ program.set1fAt(program.uniformLocation(IrisUniformSlot::ThunderStrength), values.thunderStrength);
+ program.set1fAt(program.uniformLocation(IrisUniformSlot::CurrentPlayerHealth), values.currentPlayerHealth);
+ program.set1fAt(program.uniformLocation(IrisUniformSlot::MaxPlayerHealth), values.maxPlayerHealth);
  program.set1f("currentPlayerAir", values.currentPlayerAir);
  program.set1f("maxPlayerAir", values.maxPlayerAir);
  program.set1f("currentPlayerHunger", values.currentPlayerHunger);

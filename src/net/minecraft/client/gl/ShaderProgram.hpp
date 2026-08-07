@@ -23,7 +23,7 @@ namespace net::minecraft::client::gl {
   static constexpr std::uint32_t kFlagCompute = 1u << 0;
   static constexpr std::uint32_t kFlagTessellation = 1u << 2;
 
- ShaderProgram() = default;
+ ShaderProgram();
  ~ShaderProgram();
  ShaderProgram(const ShaderProgram&) = delete;
  ShaderProgram& operator=(const ShaderProgram&) = delete;
@@ -88,21 +88,110 @@ namespace net::minecraft::client::gl {
   }
  // Iris /* RENDERTARGETS: a,b */ → glDrawBuffers(COLOR_ATTACHMENT0+a, ...).
  // Empty = leave DrawBuffers unchanged (composite write FBOs remap attachments).
- void setDrawBufferColortexIndices(const std::vector<int>& colortexIndices);
- [[nodiscard]] const std::vector<int>& drawBufferColortexIndices() const {
-  return drawBufferColortexIndices_;
- }
- void applyDrawBuffers(int colorAttachmentCount = 8) const;
- int location(std::string_view name) const;
- enum class SamplerKind {
-  None,
-  Float,
-  Integer,
-  Unsigned,
-  Shadow,
-  Volume
- };
- [[nodiscard]] SamplerKind samplerKind(std::string_view name) const;
+  void setDrawBufferColortexIndices(const std::vector<int>& colortexIndices);
+  [[nodiscard]] const std::vector<int>& drawBufferColortexIndices() const {
+   return drawBufferColortexIndices_;
+  }
+  void applyDrawBuffers(int colorAttachmentCount = 8) const;
+  int location(std::string_view name) const;
+  enum class SamplerKind {
+   None,
+   Float,
+   Integer,
+   Unsigned,
+   Shadow,
+   Volume
+  };
+  enum class IrisUniformSlot : std::uint8_t {
+   FrameTimeCounter,
+   FrameTime,
+   FrameCounter,
+   ViewWidth,
+   ViewHeight,
+   AspectRatio,
+   Near,
+   Far,
+   ShadowMapResolution,
+   CameraPosition,
+   CameraPositionFract,
+   CameraPositionInt,
+   PreviousCameraPosition,
+   PreviousCameraPositionFract,
+   PreviousCameraPositionInt,
+   SunPosition,
+   MoonPosition,
+   ShadowLightPosition,
+   UpPosition,
+   GbufferModelView,
+   GbufferProjection,
+   GbufferModelViewInverse,
+   GbufferProjectionInverse,
+   GbufferPreviousProjection,
+   GbufferPreviousModelView,
+   ShadowModelView,
+   ShadowModelViewInverse,
+   ShadowProjection,
+   ShadowProjectionInverse,
+   SunColor,
+   SunIntensity,
+   FogColor,
+   FogDensity,
+   FogStart,
+   FogEnd,
+   FogMode,
+   FogShape,
+   SkyColor,
+   ThunderStrength,
+   CurrentPlayerHealth,
+   MaxPlayerHealth,
+   Count
+  };
+  static constexpr std::string_view kIrisUniformSlotNames[static_cast<std::size_t>(IrisUniformSlot::Count)] = {
+      "frameTimeCounter",
+      "frameTime",
+      "frameCounter",
+      "viewWidth",
+      "viewHeight",
+      "aspectRatio",
+      "near",
+      "far",
+      "shadowMapResolution",
+      "cameraPosition",
+      "cameraPositionFract",
+      "cameraPositionInt",
+      "previousCameraPosition",
+      "previousCameraPositionFract",
+      "previousCameraPositionInt",
+      "sunPosition",
+      "moonPosition",
+      "shadowLightPosition",
+      "upPosition",
+      "gbufferModelView",
+      "gbufferProjection",
+      "gbufferModelViewInverse",
+      "gbufferProjectionInverse",
+      "gbufferPreviousProjection",
+      "gbufferPreviousModelView",
+      "shadowModelView",
+      "shadowModelViewInverse",
+      "shadowProjection",
+      "shadowProjectionInverse",
+      "sunColor",
+      "sunIntensity",
+      "fogColor",
+      "fogDensity",
+      "fogStart",
+      "fogEnd",
+      "fogMode",
+      "fogShape",
+      "skyColor",
+      "thunderStrength",
+      "currentPlayerHealth",
+      "maxPlayerHealth"};
+  [[nodiscard]] int uniformLocation(IrisUniformSlot slot) const noexcept {
+   return uniformLocations_[static_cast<std::size_t>(slot)];
+  }
+  [[nodiscard]] SamplerKind samplerKind(std::string_view name) const;
   [[nodiscard]] const std::vector<std::string>& declaredSamplers() const;
   [[nodiscard]] bool tessellation() const {
   return tessellation_;
@@ -135,18 +224,21 @@ namespace net::minecraft::client::gl {
  [[nodiscard]] static bool supported();
 
  private:
- struct TransparentStringHash {
-  using is_transparent = void;
-  std::size_t operator()(std::string_view value) const noexcept {
-   return std::hash<std::string_view>{}(value);
-  }
- };
- template <typename Value>
- using NameMap = std::unordered_map<std::string, Value, TransparentStringHash, std::equal_to<>>;
- void reflectSamplers();
- bool extractProgramBinary(ProgramBinaryBlob& out);
-  unsigned int program_ = 0;
-  mutable NameMap<int> uniformCache_;
+  struct TransparentStringHash {
+   using is_transparent = void;
+   std::size_t operator()(std::string_view value) const noexcept {
+    return std::hash<std::string_view>{}(value);
+   }
+  };
+  template <typename Value>
+  using NameMap = std::unordered_map<std::string, Value, TransparentStringHash, std::equal_to<>>;
+  void reflectSamplers();
+  void refreshUniformLocations();
+  void resetUniformLocations();
+  bool extractProgramBinary(ProgramBinaryBlob& out);
+   unsigned int program_ = 0;
+   mutable int uniformLocations_[static_cast<std::size_t>(IrisUniformSlot::Count)];
+   mutable NameMap<int> uniformCache_;
   NameMap<SamplerKind> samplerKinds_;
    std::vector<std::string> samplerNames_;
    bool tessellation_ = false;

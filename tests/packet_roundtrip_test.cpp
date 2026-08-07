@@ -1,19 +1,33 @@
 #include <gtest/gtest.h>
-#include <sstream>
+#include <cstdint>
+#include <vector>
 #include "net/minecraft/entity/data/DataTracker.hpp"
 #include "net/minecraft/network/Packet.hpp"
+#include "net/minecraft/network/PacketIO.hpp"
 #include "net/minecraft/network/packet/ChatPackets.hpp"
 #include "net/minecraft/network/packet/ConnectionPackets.hpp"
 #include "net/minecraft/network/packet/LuaModSyncPacket.hpp"
 #include "net/minecraft/network/packet/PlayerPackets.hpp"
 namespace net::minecraft::test {
+namespace {
+std::vector<std::uint8_t> serialize(const Packet& packet) {
+ std::vector<std::uint8_t> bytes(packet.size() + 1);
+ std::uint8_t* dest = bytes.data();
+ std::uint8_t* const end = bytes.data() + bytes.size();
+ Packet::write(packet, dest, end);
+ bytes.resize(static_cast<std::size_t>(dest - bytes.data()));
+ return bytes;
+}
+std::unique_ptr<Packet> deserialize(const std::vector<std::uint8_t>& bytes, bool serverSide) {
+ const std::uint8_t* src = bytes.data();
+ const std::uint8_t* const end = bytes.data() + bytes.size();
+ return Packet::read(src, end, serverSide);
+}
+} // namespace
 TEST(PacketRegistry, KeepAliveRoundTrip) {
  Packet::ensureRegistered();
  KeepAlivePacket original;
- std::ostringstream out;
- Packet::write(original, out);
- std::istringstream in(out.str());
- const std::unique_ptr<Packet> decoded = Packet::read(in, true);
+ const std::unique_ptr<Packet> decoded = deserialize(serialize(original), true);
  ASSERT_NE(decoded, nullptr);
  EXPECT_EQ(decoded->rawId(), 0);
 }
@@ -22,10 +36,7 @@ TEST(PacketRegistry, LoginHelloRoundTrip) {
  LoginHelloPacket original("Steve", 14);
  original.worldSeed = 12345ULL;
  original.dimensionId = 0;
- std::ostringstream out;
- Packet::write(original, out);
- std::istringstream in(out.str());
- const std::unique_ptr<Packet> decoded = Packet::read(in, true);
+ const std::unique_ptr<Packet> decoded = deserialize(serialize(original), true);
  ASSERT_NE(decoded, nullptr);
  const auto* hello = dynamic_cast<const LoginHelloPacket*>(decoded.get());
  ASSERT_NE(hello, nullptr);
@@ -39,10 +50,7 @@ TEST(PacketRegistry, ChatMessageRoundTripInBothDirections) {
  ChatMessagePacket original;
  original.chatMessage = "LAN chat parity";
  for(const bool serverSide : {false, true}) {
-  std::ostringstream out;
-  Packet::write(original, out);
-  std::istringstream in(out.str());
-  const std::unique_ptr<Packet> decoded = Packet::read(in, serverSide);
+  const std::unique_ptr<Packet> decoded = deserialize(serialize(original), serverSide);
   ASSERT_NE(decoded, nullptr);
   const auto* chat = dynamic_cast<const ChatMessagePacket*>(decoded.get());
   ASSERT_NE(chat, nullptr);
@@ -55,10 +63,7 @@ TEST(PacketRegistry, LuaModSyncRoundTrip) {
  LuaModSyncPacket original;
  original.kind = LuaModSyncKind::Entity;
  original.payload = {1, 3, 3, 7};
- std::ostringstream out;
- Packet::write(original, out);
- std::istringstream in(out.str());
- const std::unique_ptr<Packet> decoded = Packet::read(in, true);
+ const std::unique_ptr<Packet> decoded = deserialize(serialize(original), true);
  ASSERT_NE(decoded, nullptr);
  const auto* sync = dynamic_cast<const LuaModSyncPacket*>(decoded.get());
  ASSERT_NE(sync, nullptr);
@@ -89,10 +94,13 @@ TEST(PacketRegistry, LuaModSnapshotsRoundTrip) {
 TEST(PacketRegistry, DataTrackerByteArrayRoundTrip) {
  entity::data::DataTracker source;
  source.startTracking(1, entity::data::DataTrackerByteArray{1, 2, 3, 5, 8});
- std::ostringstream out;
- entity::data::DataTracker::writeEntries(source.snapshotEntries(), out);
- std::istringstream in(out.str());
- const std::vector<entity::data::DataTrackerEntry> entries = entity::data::DataTracker::readEntries(in);
+ const std::vector<entity::data::DataTrackerEntry> snapshot = source.snapshotEntries();
+ std::vector<std::uint8_t> bytes(entity::data::DataTracker::sizeOfEntries(snapshot));
+ std::uint8_t* dest = bytes.data();
+ std::uint8_t* const end = bytes.data() + bytes.size();
+ entity::data::DataTracker::writeEntries(snapshot, dest, end);
+ const std::uint8_t* src = bytes.data();
+ const std::vector<entity::data::DataTrackerEntry> entries = entity::data::DataTracker::readEntries(src, end);
  entity::data::DataTracker target;
  target.startTracking(1, entity::data::DataTrackerByteArray{});
  EXPECT_EQ(target.writeUpdatedEntries(entries), std::vector<int>{1});
@@ -102,10 +110,7 @@ TEST(PacketRegistry, ClientboundPlayerMoveKeepsFeetAndStanceDistinct) {
  Packet::ensureRegistered();
  PlayerMoveFullPacket original;
  original.setMove(12.5, 70.62, 69.0, -4.25, 90.0f, 12.0f, false);
- std::ostringstream out;
- Packet::write(original, out);
- std::istringstream in(out.str());
- const std::unique_ptr<Packet> decoded = Packet::read(in, true);
+ const std::unique_ptr<Packet> decoded = deserialize(serialize(original), true);
  ASSERT_NE(decoded, nullptr);
  const auto* move = dynamic_cast<const PlayerMoveFullPacket*>(decoded.get());
  ASSERT_NE(move, nullptr);
@@ -122,10 +127,7 @@ TEST(PacketRegistry, ServerboundPlayerMoveKeepsFeetAndStanceDistinct) {
  Packet::ensureRegistered();
  PlayerMoveFullPacket original;
  original.setMove(12.5, 69.0, 70.62, -4.25, 180.0f, -5.0f, true);
- std::ostringstream out;
- Packet::write(original, out);
- std::istringstream in(out.str());
- const std::unique_ptr<Packet> decoded = Packet::read(in, true);
+ const std::unique_ptr<Packet> decoded = deserialize(serialize(original), true);
  ASSERT_NE(decoded, nullptr);
  const auto* move = dynamic_cast<const PlayerMoveFullPacket*>(decoded.get());
  ASSERT_NE(move, nullptr);

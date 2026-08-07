@@ -1,8 +1,6 @@
 #pragma once
 #include <cstddef>
 #include <cstdint>
-#include <istream>
-#include <ostream>
 #include <vector>
 #include "net/minecraft/network/NetworkHandler.hpp"
 #include "net/minecraft/network/Packet.hpp"
@@ -19,19 +17,19 @@ class BlockUpdateS2CPacket : public Packet {
  BlockUpdateS2CPacket() {
   worldPacket = true;
  }
- void read(std::istream& input) override {
-  x = packetio::readI32BE(input);
-  y = packetio::readU8(input);
-  z = packetio::readI32BE(input);
-  blockRawId = packetio::readU8(input);
-  blockMetadata = packetio::readU8(input);
+ void read(const std::uint8_t*& src, const std::uint8_t* end) override {
+  x = packetio::readI32BE(src, end);
+  y = packetio::readU8(src, end);
+  z = packetio::readI32BE(src, end);
+  blockRawId = packetio::readU8(src, end);
+  blockMetadata = packetio::readU8(src, end);
  }
- void write(std::ostream& output) const override {
-  packetio::writeI32BE(output, x);
-  packetio::writeU8(output, static_cast<std::uint8_t>(y));
-  packetio::writeI32BE(output, z);
-  packetio::writeU8(output, static_cast<std::uint8_t>(blockRawId));
-  packetio::writeU8(output, static_cast<std::uint8_t>(blockMetadata));
+ void write(std::uint8_t*& dest, std::uint8_t* end) const override {
+  packetio::writeI32BE(dest, end, x);
+  packetio::writeU8(dest, end, static_cast<std::uint8_t>(y));
+  packetio::writeI32BE(dest, end, z);
+  packetio::writeU8(dest, end, static_cast<std::uint8_t>(blockRawId));
+  packetio::writeU8(dest, end, static_cast<std::uint8_t>(blockMetadata));
  }
  void apply(NetworkHandler& networkHandler) const override {
   networkHandler.onBlockUpdate(*this);
@@ -47,19 +45,19 @@ class PlayNoteSoundS2CPacket : public Packet {
  int z = 0;
  int instrument = 0;
  int pitch = 0;
- void read(std::istream& input) override {
-  x = packetio::readI32BE(input);
-  y = packetio::readI16BE(input);
-  z = packetio::readI32BE(input);
-  instrument = packetio::readU8(input);
-  pitch = packetio::readU8(input);
+ void read(const std::uint8_t*& src, const std::uint8_t* end) override {
+  x = packetio::readI32BE(src, end);
+  y = packetio::readI16BE(src, end);
+  z = packetio::readI32BE(src, end);
+  instrument = packetio::readU8(src, end);
+  pitch = packetio::readU8(src, end);
  }
- void write(std::ostream& output) const override {
-  packetio::writeI32BE(output, x);
-  packetio::writeI16BE(output, static_cast<std::int16_t>(y));
-  packetio::writeI32BE(output, z);
-  packetio::writeU8(output, static_cast<std::uint8_t>(instrument));
-  packetio::writeU8(output, static_cast<std::uint8_t>(pitch));
+ void write(std::uint8_t*& dest, std::uint8_t* end) const override {
+  packetio::writeI32BE(dest, end, x);
+  packetio::writeI16BE(dest, end, static_cast<std::int16_t>(y));
+  packetio::writeI32BE(dest, end, z);
+  packetio::writeU8(dest, end, static_cast<std::uint8_t>(instrument));
+  packetio::writeU8(dest, end, static_cast<std::uint8_t>(pitch));
  }
  void apply(NetworkHandler& networkHandler) const override {
   networkHandler.onPlayNoteSound(*this);
@@ -75,36 +73,36 @@ class ExplosionS2CPacket : public Packet {
  double z = 0.0;
  float radius = 0.0f;
  std::vector<Vec3i> affectedBlocks;
- void read(std::istream& input) override {
-  x = packetio::readDoubleBE(input);
-  y = packetio::readDoubleBE(input);
-  z = packetio::readDoubleBE(input);
-  radius = packetio::readFloatBE(input);
-  const int count = packetio::readI32BE(input);
+ void read(const std::uint8_t*& src, const std::uint8_t* end) override {
+  x = packetio::readDoubleBE(src, end);
+  y = packetio::readDoubleBE(src, end);
+  z = packetio::readDoubleBE(src, end);
+  radius = packetio::readFloatBE(src, end);
+  const int count = packetio::readI32BE(src, end);
   const int originX = static_cast<int>(x);
   const int originY = static_cast<int>(y);
   const int originZ = static_cast<int>(z);
   affectedBlocks.clear();
   affectedBlocks.reserve(static_cast<std::size_t>(count));
   for(int i = 0; i < count; ++i) {
-   affectedBlocks.emplace_back(originX + packetio::readI8(input),
-                               originY + packetio::readI8(input),
-                               originZ + packetio::readI8(input));
+   affectedBlocks.emplace_back(originX + packetio::readI8(src, end),
+                               originY + packetio::readI8(src, end),
+                               originZ + packetio::readI8(src, end));
   }
  }
- void write(std::ostream& output) const override {
-  packetio::writeDoubleBE(output, x);
-  packetio::writeDoubleBE(output, y);
-  packetio::writeDoubleBE(output, z);
-  packetio::writeFloatBE(output, radius);
-  packetio::writeI32BE(output, static_cast<std::int32_t>(affectedBlocks.size()));
+ void write(std::uint8_t*& dest, std::uint8_t* end) const override {
+  packetio::writeDoubleBE(dest, end, x);
+  packetio::writeDoubleBE(dest, end, y);
+  packetio::writeDoubleBE(dest, end, z);
+  packetio::writeFloatBE(dest, end, radius);
+  packetio::writeI32BE(dest, end, static_cast<std::int32_t>(affectedBlocks.size()));
   const int originX = static_cast<int>(x);
   const int originY = static_cast<int>(y);
   const int originZ = static_cast<int>(z);
   for(const Vec3i& blockPos : affectedBlocks) {
-   packetio::writeI8(output, static_cast<std::int8_t>(blockPos.x - originX));
-   packetio::writeI8(output, static_cast<std::int8_t>(blockPos.y - originY));
-   packetio::writeI8(output, static_cast<std::int8_t>(blockPos.z - originZ));
+   packetio::writeI8(dest, end, static_cast<std::int8_t>(blockPos.x - originX));
+   packetio::writeI8(dest, end, static_cast<std::int8_t>(blockPos.y - originY));
+   packetio::writeI8(dest, end, static_cast<std::int8_t>(blockPos.z - originZ));
   }
  }
  void apply(NetworkHandler& networkHandler) const override {
