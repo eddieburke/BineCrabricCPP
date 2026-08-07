@@ -21,6 +21,7 @@ build-installer/
 .github/copilot-instructions.md
 AGENTS.md
 agents.md
+RULES FOR AGENTS.md
 
 .build-omega.lock
 
