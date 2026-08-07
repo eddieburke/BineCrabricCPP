@@ -2,7 +2,6 @@
 #include <algorithm>
 #include <cctype>
 #include <fstream>
-#include <sstream>
 #include "net/minecraft/client/resource/pack/ZippedTexturePack.hpp"
 namespace net::minecraft::client::render {
 namespace PackCatalog {
@@ -17,9 +16,17 @@ std::string readFile(const std::filesystem::path& path) {
  if(!input) {
   return {};
  }
- std::ostringstream content;
- content << input.rdbuf();
- return content.str();
+ input.seekg(0, std::ios::end);
+ const std::streamsize size = input.tellg();
+ if(size <= 0) {
+  return {};
+ }
+ input.seekg(0, std::ios::beg);
+ std::string content(static_cast<std::size_t>(size), '\0');
+ if(!input.read(content.data(), size)) {
+  return {};
+ }
+ return content;
 }
 std::vector<std::string> directoryResources(const std::filesystem::path& root) {
  std::vector<std::string> resources;

@@ -1,3 +1,3 @@
-	if (!(ALPHA_TEST_ACCESSOR > alphaTestRef)) {
-		discard;
-	}
+ if (!(ALPHA_TEST_ACCESSOR > alphaTestRef)) {
+  discard;
+ }

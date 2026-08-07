@@ -11,7 +11,6 @@
 #include "net/minecraft/network/NetworkHandler.hpp"
 #include "net/minecraft/network/packet/ConnectionPackets.hpp"
 #include "net/minecraft/server/network/ServerSocket.hpp"
-#include "net/minecraft/server/network/Socket.hpp"
 #include "net/minecraft/util/concurrent/ThreadCoordinator.hpp"
 
 namespace {
@@ -64,7 +63,7 @@ namespace net::minecraft::test {
 TEST(ClientLoginHandlerTest, ParityHandshakeSequence) {
   TestMinecraft client(nullptr, nullptr, nullptr, 854, 480, false);
   client::multiplayer::ClientLoginNetworkHandler clientHandler(&client);
-  client.session = client::util::Session{"Player", "", "token", ""};
+  client.session = client::util::Session{"Player", ""};
   client.options.modsEnabled = false;
 
   server::network::ServerSocket listenSocket;

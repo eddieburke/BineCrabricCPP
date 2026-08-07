@@ -324,8 +324,43 @@ TEST_F(ShaderGlIntegrationTest, PreambleMatchesRenderStageAndLabPbrMacros) {
  EXPECT_NE(preamble.find("#define MC_TEXTURE_FORMAT_LAB_PBR\n"), std::string::npos);
  EXPECT_NE(preamble.find("#define MC_TEXTURE_FORMAT_LAB_PBR_1_3\n"), std::string::npos);
 }
-TEST_F(ShaderGlIntegrationTest, CompatibilityGbuffersCompileThroughTheDefaultSourcePath) {
+TEST_F(ShaderGlIntegrationTest, ColorWheelMaterialProgramsCompileThroughTheMergePath) {
  net::minecraft::test::installTestGlslSnippets();
+ PackDefinition definition;
+ definition.optionalFeatures.insert("FADE_VARIABLE");
+ const std::string vertexSource = R"(#version 130
+attribute vec4 mc_Entity;
+out vec2 texCoord;
+void main() {
+ texCoord = gl_MultiTexCoord0.xy;
+ gl_Position = gl_ProjectionMatrix * gl_ModelViewMatrix * gl_Vertex;
+}
+)";
+ const std::string fragmentSource = R"(#version 130
+uniform sampler2D gtexture;
+in vec2 texCoord;
+out vec4 color;
+void main() {
+ vec4 sample = texture(gtexture, texCoord);
+ vec2 lm;
+ float ao;
+ vec4 overlay;
+ clrwl_computeFragment(sample, sample, lm, ao, overlay);
+ color = sample;
+}
+)";
+ const std::string vertex = client::render::prepareSource(
+     "clrwl_gbuffers", client::render::ShaderStage::Vertex,
+     definition, vertexSource);
+ const std::string fragment = client::render::prepareSource(
+     "clrwl_gbuffers", client::render::ShaderStage::Fragment,
+     definition, fragmentSource);
+ const std::string preamble =
+     client::render::versionPreamble(definition, vertexSource);
+ client::gl::ShaderProgram program;
+ EXPECT_TRUE(program.compile(vertex, fragment, preamble)) << program.lastError();
+}
+TEST_F(ShaderGlIntegrationTest, CompatibilityGbuffersCompileThroughTheDefaultSourcePath) { net::minecraft::test::installTestGlslSnippets();
  PackDefinition definition;
  const std::string vertexSource = R"(#version 430 compatibility
 void main() {

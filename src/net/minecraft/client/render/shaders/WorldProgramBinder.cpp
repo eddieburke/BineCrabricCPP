@@ -58,10 +58,13 @@ void bindWorldProgram(gl::ShaderProgram& program, const WorldProgramBindContext&
   program.set1i("lightmap", 1);
  }
  int unit = 4;
- if(context.overlayTexture != 0 && unit < maxUnits && program.location("iris_overlay") >= 0) {
+ if(context.overlayTexture != 0 && unit < maxUnits &&
+    (program.location("iris_overlay") >= 0 || program.location("flw_overlayTex") >= 0)) {
   core::activeTexture(gl::tex::Texture0 + unit);
   core::bindTexture(static_cast<int>(context.overlayTexture));
-  program.set1i("iris_overlay", unit++);
+  if(program.location("iris_overlay") >= 0) program.set1i("iris_overlay", unit);
+  if(program.location("flw_overlayTex") >= 0) program.set1i("flw_overlayTex", unit);
+  ++unit;
  }
  if(context.noiseTexture != 0 && unit < maxUnits && program.location("noisetex") >= 0) {
   core::activeTexture(gl::tex::Texture0 + unit);

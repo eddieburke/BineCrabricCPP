@@ -15,8 +15,8 @@ using PPMacroTable = std::unordered_map<std::string, PPMacro>;
 bool isIdentStart(char c);
 bool isIdentChar(char c);
 std::string lineForDirectiveParse(const std::string& line);
-bool evaluateIfExpression(const std::string& rawExpr, const PPMacroTable& macros);
-void parseDefineDirective(const std::string& afterKeyword, PPMacroTable& macros);
+bool evaluateIfExpression(std::string_view rawExpr, const PPMacroTable& macros);
+void parseDefineDirective(std::string_view afterKeyword, PPMacroTable& macros);
 bool parseDirective(const std::string& trimmed, std::string& keyword, std::string& rest);
 void seedMacrosFromDefines(const std::string& text, PPMacroTable& macros);
 }

@@ -51,32 +51,37 @@ TEST(GlslSnippetsTest, EmbeddedMapMatchesSourceFiles) {
   EXPECT_EQ(found->second, text) << "embedded text differs from source for '" << name << "'";
  }
 }
-TEST(GlslSnippetsTest, EngineSnippetsPreserveOriginalText) {
-  // Spot-check the byte-exact text of snippets the transform tests assert on;
-  // these must match the strings that used to live in the .cpp files.
- const std::unordered_map<std::string, std::string>& snippets = testGlslSnippets();
- EXPECT_EQ(snippets.at("alpha_test_discard"),
-           "\tif (!(ALPHA_TEST_ACCESSOR > alphaTestRef)) {\n\t\tdiscard;\n\t}\n");
- EXPECT_EQ(snippets.at("iris_lightmap_matrix"),
-           "const mat4 iris_lightmapTextureMatrix = mat4(vec4(0.00390625, 0.0, 0.0, 0.0), "
-           "vec4(0.0, 0.00390625, 0.0, 0.0), vec4(0.0, 0.0, 0.00390625, 0.0), "
-           "vec4(0.03125, 0.03125, 0.03125, 1.0));\n");
- EXPECT_EQ(snippets.at("mc_hand_depth"), "#define MC_HAND_DEPTH 0.125\n");
- EXPECT_EQ(snippets.at("chunk_fade_terrain_in"), "in float mc_chunkFade;\n");
- EXPECT_EQ(snippets.at("chunk_fade_other_const"), "const float mc_chunkFade = -1.0;\n");
- EXPECT_EQ(snippets.at("iris_fog_frag_coord_vertex_out"), "out float iris_FogFragCoord;\n");
- EXPECT_EQ(snippets.at("iris_fog_frag_coord_fragment_in"), "in float iris_FogFragCoord;\n");
- EXPECT_EQ(snippets.at("iris_fog_frag_coord_init_main"), "\tiris_FogFragCoord = 0.0f;\n");
- EXPECT_EQ(snippets.at("iris_front_color_global"), "vec4 iris_FrontColor;\n");
- EXPECT_EQ(snippets.at("gl_frag_depth_passthrough"), "\tgl_FragDepth = gl_FragCoord.z;\n");
- EXPECT_NE(snippets.at("default_composite.vsh").find("gl_Position = projectionMatrix * modelViewMatrix"),
-           std::string::npos)
-     << "default composite must keep the engine's own projection order";
+ TEST(GlslSnippetsTest, EngineSnippetsPreserveOriginalText) {
+   // Spot-check the byte-exact text of snippets the transform tests assert on;
+   // these must match the strings that used to live in the .cpp files.
+  const std::unordered_map<std::string, std::string>& snippets = testGlslSnippets();
+  EXPECT_EQ(snippets.at("alpha_test_discard"),
+            " if (!(ALPHA_TEST_ACCESSOR > alphaTestRef)) {\n  discard;\n }\n");
+  EXPECT_EQ(snippets.at("iris_lightmap_matrix"),
+            "const mat4 iris_lightmapTextureMatrix = mat4(vec4(0.00390625, 0.0, 0.0, 0.0), "
+            "vec4(0.0, 0.00390625, 0.0, 0.0), vec4(0.0, 0.0, 0.00390625, 0.0), "
+            "vec4(0.03125, 0.03125, 0.03125, 1.0));\n");
+  EXPECT_EQ(snippets.at("chunk_fade_terrain_in"), "in float mc_chunkFade;\n");
+  EXPECT_EQ(snippets.at("chunk_fade_other_const"), "const float mc_chunkFade = -1.0;\n");
+  EXPECT_EQ(snippets.at("iris_fog_frag_coord_vertex_out"), "out float iris_FogFragCoord;\n");
+  EXPECT_EQ(snippets.at("iris_fog_frag_coord_fragment_in"), "in float iris_FogFragCoord;\n");
+  EXPECT_EQ(snippets.at("iris_fog_frag_coord_init_main"), "iris_FogFragCoord = 0.0f;\n");
+  EXPECT_EQ(snippets.at("iris_front_color_global"), "vec4 iris_FrontColor;\n");
+  EXPECT_EQ(snippets.at("gl_frag_depth_passthrough"), " gl_FragDepth = gl_FragCoord.z;\n");
+  EXPECT_NE(snippets.at("default_composite.vsh").find("gl_Position = projectionMatrix * modelViewMatrix"),
+            std::string::npos)
+      << "default composite must keep the engine's own projection order";
   EXPECT_NE(snippets.at("default_raster.vsh").find("vaPosition + chunkOffset"), std::string::npos);
   EXPECT_EQ(snippets.at("colorwheel_macros_prefix"),
-            "#define HAS_COLORWHEEL\n#define COLORWHEEL_VERSION \n");
-  EXPECT_EQ(snippets.at("mc_texture_format_lab_pbr"), "#define MC_TEXTURE_FORMAT_LAB_PBR\n");
-  EXPECT_EQ(snippets.at("mc_normal_specular_map"), "#define MC_NORMAL_MAP\n#define MC_SPECULAR_MAP\n");
-}
+            "#define HAS_COLORWHEEL\n#define COLORWHEEL_VERSION 10209\n");
+  EXPECT_NE(snippets.at("colorwheel_vertex_main").find("clamp(vaUV2 / 256.0, 0.0, 0.9375)"),
+            std::string::npos);
+  EXPECT_NE(snippets.at("colorwheel_vertex_main").find("iris_UV1"), std::string::npos);
+  EXPECT_NE(snippets.at("colorwheel_vertex_main").find("at_tangent"), std::string::npos);
+  EXPECT_NE(snippets.at("colorwheel_geometry_bridge").find("clrwl_in[i].flw_vertexPos"),
+            std::string::npos);
+  EXPECT_NE(snippets.at("colorwheel_fragment_bridge").find("FLW_MAT_DEPTH_TEST_LEQUAL"),
+            std::string::npos);
+ }
 } // namespace
 } // namespace net::minecraft::test

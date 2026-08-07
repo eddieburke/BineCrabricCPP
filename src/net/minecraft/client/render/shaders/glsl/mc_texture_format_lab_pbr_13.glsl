@@ -1,1 +1,0 @@
-#define MC_TEXTURE_FORMAT_LAB_PBR_1_3

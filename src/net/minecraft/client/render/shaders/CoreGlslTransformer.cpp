@@ -71,7 +71,8 @@ void replaceGlMultiTexCoordBounded(std::string& source, int minimum, int maximum
 }
 // https://github.com/IrisShaders/Iris/blob/26.1/common/src/main/java/net/irisshaders/iris/pipeline/transform/transformer/SodiumTransformer.java
 [[nodiscard]] bool isChunkMesherProgram(std::string_view programName) {
- return programName.starts_with("gbuffers_terrain") || programName == "gbuffers_water";
+ return programName.starts_with("gbuffers_terrain") || programName == "gbuffers_water" ||
+        programName.starts_with("clrwl_gbuffers");
 }
 [[nodiscard]] bool isShadowProgramName(std::string_view programName) {
  return programName == "shadow" || programName.starts_with("shadow_") ||
@@ -88,7 +89,8 @@ std::string injectChunkFadeAttribute(const std::string& programName,
  const std::string_view name = programName;
  const bool shadow = isShadowProgramName(name);
  // SodiumTransformer.java:124 (`parameters.shadow` branch).
- if(!enabled || declared || !(name.starts_with("gbuffers_") || shadow)) return source;
+ if(!enabled || declared || !(name.starts_with("gbuffers_") || name.starts_with("clrwl_gbuffers") || shadow))
+  return source;
  source.insert(sourceDeclarationOffset(source),
                (!shadow && isChunkMesherProgram(name)) ? GlslSnippets::get("chunk_fade_terrain_in")
                                                        : GlslSnippets::get("chunk_fade_other_const"));
@@ -287,8 +289,18 @@ bool bareIntLiteral(std::string_view text) {
  const std::size_t digits = index;
  while(index < text.size() && std::isdigit(static_cast<unsigned char>(text[index]))) ++index;
  if(index == digits) return false;
- if(index < text.size() && (text[index] == 'u' || text[index] == 'U')) ++index;
+ if(index < text.size() && (text[index] == 'u' || text[index] == 'U')) return false;
  return index == text.size();
+}
+bool bareIdentifier(std::string_view text) {
+ if(text.empty()) return false;
+ const char first = text[0];
+ if(!(std::isalpha(static_cast<unsigned char>(first)) || first == '_')) return false;
+ for(std::size_t index = 1; index < text.size(); ++index) {
+  const char ch = text[index];
+  if(!(std::isalnum(static_cast<unsigned char>(ch)) || ch == '_')) return false;
+ }
+ return true;
 }
 bool floatTypedExpression(std::string_view text) {
  for(std::size_t index = 0; index < text.size(); ++index) {
@@ -306,6 +318,20 @@ bool floatTypedExpression(std::string_view text) {
   if(ch == '.' && index + 1 < text.size() && std::isdigit(static_cast<unsigned char>(text[index + 1])))
    return true;
  }
+ return false;
+}
+bool floatLikeExpression(std::string_view text) {
+ if(bareIntLiteral(text) || bareIdentifier(text)) return false;
+ const auto contains = [&](std::string_view token) {
+  return text.find(token) != std::string_view::npos;
+ };
+ if(contains("ivec") || contains("uvec") || contains("bvec") || contains("int(") || contains("uint("))
+  return false;
+ if(floatTypedExpression(text)) return true;
+ if(!text.empty() && (std::isdigit(static_cast<unsigned char>(text[0])) || text[0] == '.')) return true;
+ if(contains("min(") || contains("max(") || contains("clamp(") || contains("pow(") || contains("texture") ||
+    contains("vec") || contains("mat") || contains("float"))
+  return true;
  return false;
 }
 std::vector<std::string_view> splitTopLevelArguments(std::string_view body) {
@@ -328,12 +354,17 @@ std::string_view trimmedArgument(std::string_view text) {
  std::size_t first = text.find_first_not_of(" \t\r\n");
  if(first == std::string_view::npos) return {};
  std::size_t last = text.find_last_not_of(" \t\r\n");
+ text = text.substr(first, last - first + 1);
+ while(text.size() > 1 && text.back() == ')') text.remove_suffix(1);
+ first = text.find_first_not_of(" \t\r\n");
+ if(first == std::string_view::npos) return {};
+ last = text.find_last_not_of(" \t\r\n");
  return text.substr(first, last - first + 1);
 }
 } // namespace
 void canonicalizeBuiltinBounds(std::string& source) {
  const CodeMask mask = codeMask(source);
- constexpr std::array<std::string_view, 3> names = {"clamp", "min", "max"};
+ constexpr std::array<std::string_view, 4> names = {"clamp", "min", "max", "pow"};
  std::vector<std::pair<std::size_t, std::size_t>> rewrites;
  for(const std::string_view name : names) {
   std::size_t at = 0;
@@ -349,8 +380,8 @@ void canonicalizeBuiltinBounds(std::string& source) {
       if(source[cursor] == '(') ++depth;
       else if(source[cursor] == ')') --depth;
      }
-     if(depth == 0 && cursor <= source.size()) {
-      const std::string_view body(source.data() + open + 1, cursor - open - 1);
+     if(depth == 0 && cursor <= source.size() && cursor - open >= 2) {
+      const std::string_view body(source.data() + open + 1, cursor - open - 2);
       std::vector<std::string_view> args = splitTopLevelArguments(body);
        const std::vector<std::string_view> trimmed = [&] {
         std::vector<std::string_view> result;
@@ -371,21 +402,20 @@ void canonicalizeBuiltinBounds(std::string& source) {
          targets.push_back(1);
          targets.push_back(2);
         }
-        std::fprintf(stderr, "[trace] clamp body=<%.*s> f1=%d s2=%d t3=%d sf=%d tf=%d tgt=%zu\n",
-                     static_cast<int>(body.size()), body.data(), firstFloat, secondInt, thirdInt, secondFloat,
-                     thirdFloat, targets.size());
+        if(secondInt && floatLikeExpression(trimmed[0]) && floatLikeExpression(trimmed[2])) targets.push_back(1);
+        if(thirdInt && floatLikeExpression(trimmed[0]) && floatLikeExpression(trimmed[1])) targets.push_back(2);
        } else if(name != "clamp" && args.size() >= 2) {
         const bool firstInt = bareIntLiteral(trimmed[0]);
         const bool secondInt = bareIntLiteral(trimmed[1]);
-        if(firstInt && floatTypedExpression(trimmed[1])) targets.push_back(0);
-        if(secondInt && floatTypedExpression(trimmed[0])) targets.push_back(1);
+        if(firstInt && floatLikeExpression(trimmed[1])) targets.push_back(0);
+        if(secondInt && floatLikeExpression(trimmed[0])) targets.push_back(1);
        }
        for(const std::size_t target : targets) {
         const std::string_view arg = trimmed[target];
         const std::size_t argStart = arg.data() - source.data();
         rewrites.push_back({argStart, argStart + arg.size()});
        }
-     }
+      }
     }
    }
    at += name.size();

@@ -1,5 +1,4 @@
 #include "net/minecraft/client/render/pipeline/Manager.hpp"
-#include "net/minecraft/client/diagnostics/ClientDiagnostics.hpp"
 #include "net/minecraft/client/render/shaderpack/Catalog.hpp"
 #include "net/minecraft/client/render/shaders/Compiler.hpp"
 #include "net/minecraft/client/render/GlState.hpp"
@@ -30,7 +29,6 @@
 #include <windows.h>
 #endif
 namespace net::minecraft::client::render {
-namespace diagnostics = net::minecraft::client::diagnostics;
 namespace {
 using PackCatalog::directoryResources;
 using PackCatalog::lower;
@@ -252,7 +250,6 @@ std::unique_ptr<PackInstance> PackManager::loadEmbeddedVanillaPack() {
  return pack;
 }
 std::unique_ptr<PackInstance> PackManager::loadPack(const std::filesystem::path& path, bool directory) {
- diagnostics::WorkSpan span("shaderpack.load");
  auto pack = std::make_unique<PackInstance>();
  pack->shaderCompiler = &compiler_;
  pack->path = path;
@@ -281,7 +278,6 @@ std::unique_ptr<PackInstance> PackManager::loadPack(const std::filesystem::path&
  return pack;
 }
 void PackManager::initializePackRuntime(PackInstance& pack) {
- diagnostics::WorkSpan span("shaderpack.runtime");
  for(const PackSetting& setting : pack.definition.settings) {
   pack.settings.try_emplace(setting.key, defaultSettingValue(setting));
  }
@@ -555,9 +551,8 @@ bool PackManager::packReady(PackInstance& pack) {
     })) return false;
  const net::minecraft::client::Minecraft* minecraft = net::minecraft::client::Minecraft::INSTANCE;
  if(minecraft == nullptr || !hasGlContext()) return false;
- diagnostics::WorkSpan span("shaderpack.resources");
  return pipeline_.preparePackResources(pack, std::max(1, minecraft->displayWidth),
-                                       std::max(1, minecraft->displayHeight));
+                                        std::max(1, minecraft->displayHeight));
 }
 std::unique_ptr<PackInstance> PackManager::clonePack(const PackInstance& source,
                                                      const std::unordered_map<std::string, std::string>* settings) {

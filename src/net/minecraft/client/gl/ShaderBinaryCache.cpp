@@ -2,13 +2,11 @@
 #include <cstdio>
 #include <cstring>
 #include <system_error>
-#include "net/minecraft/client/diagnostics/ClientDiagnostics.hpp"
 #ifndef WIN32_LEAN_AND_MEAN
 #define WIN32_LEAN_AND_MEAN
 #endif
 #include <windows.h>
 namespace net::minecraft::client::gl {
-namespace diagnostics = net::minecraft::client::diagnostics;
 namespace {
 constexpr char kMagic[8] = {'M', 'C', 'S', 'P', 'B', 'I', 'N', '1'};
 constexpr std::uint32_t kFileVersion = 5;
@@ -51,7 +49,6 @@ std::wstring ShaderBinaryCache::nativePath(std::uint64_t contentHash) const {
 }
 
 std::optional<ProgramBinaryBlob> ShaderBinaryCache::tryLoad(std::uint64_t contentHash) const {
- diagnostics::WorkSpan span("io.shader.disk.read");
  if(root_.empty()) return std::nullopt;
  const std::wstring path = nativePath(contentHash);
  HANDLE file = CreateFileW(path.c_str(), GENERIC_READ, FILE_SHARE_READ, nullptr, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
@@ -89,7 +86,6 @@ std::optional<ProgramBinaryBlob> ShaderBinaryCache::tryLoad(std::uint64_t conten
 }
 
 bool ShaderBinaryCache::store(const ProgramBinaryBlob& blob) {
- diagnostics::WorkSpan span("io.shader.disk.write");
  if(root_.empty() || blob.bytes.empty() || blob.contentHash == 0 || blob.binaryFormat == 0) return false;
  std::error_code ec;
  std::filesystem::create_directories(root_, ec);

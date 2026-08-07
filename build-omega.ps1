@@ -1,4 +1,4 @@
-param([string]$BuildDir="build-omega",[ValidateSet("Release","RelWithDebInfo","Debug")][string]$BuildType="Release",[int]$Jobs=0,[switch]$Clean,[switch]$Lto,[switch]$NoLto,[switch]$NoNativeCpu,[switch]$StartupProfile,[switch]$RunTests,[switch]$SkipModPackaging,[switch]$SkipResourceSync,[switch]$KeepDebugSymbols,[switch]$StripSymbols,[switch]$Log,[switch]$Gui,[switch]$Run,[switch]$NoGui,[switch]$CleanOnly,[switch]$Format,[string]$ModId="",[switch]$NoModDeploy,[ValidateSet("All","Client","Server")][string]$Target="All",[Parameter(ValueFromRemainingArguments=$true)][string[]]$RunArgs)
+param([string]$BuildDir="build-omega",[ValidateSet("Release","RelWithDebInfo","Debug")][string]$BuildType="Release",[int]$Jobs=0,[switch]$Clean,[switch]$Lto,[switch]$NoLto,[switch]$NoNativeCpu,[switch]$RunTests,[switch]$SkipModPackaging,[switch]$SkipResourceSync,[switch]$KeepDebugSymbols,[switch]$StripSymbols,[switch]$Log,[switch]$Gui,[switch]$Run,[switch]$NoGui,[switch]$CleanOnly,[switch]$Format,[string]$ModId="",[switch]$NoModDeploy,[ValidateSet("All","Client","Server")][string]$Target="All",[Parameter(ValueFromRemainingArguments=$true)][string[]]$RunArgs)
 $ErrorActionPreference="Stop"
 $ScriptDir=Split-Path -Parent $MyInvocation.MyCommand.Path
 sl $ScriptDir
@@ -127,8 +127,7 @@ if ($Gui) {
         Write-Host "  [12] Format C++ source (clang-format)"
         Write-Host "  [13] Explain all this again"
         Write-Host "  [14] Advanced options (build flags: LTO, symbols, mods, ...)"
-        Write-Host "  [15] Build AND launch with startup hang/profiling logging (writes startup-profile.log)"
-        Write-Host "  [16] Exit"
+        Write-Host "  [15] Exit"
         Write-Host ""
         return Read-Host "Type a number and press Enter"
     }
@@ -207,7 +206,6 @@ if ($Gui) {
         }
     }
     $AdvancedOptions = @{
-        StartupProfile   = $false
         Lto              = $false
         NoNativeCpu      = $false
         KeepDebugSymbols = $false
@@ -218,7 +216,6 @@ if ($Gui) {
     }
     function Get-GuiAdvancedLabels {
         return @{
-            StartupProfile   = "Launch the game with startup profiling (MINECRAFT_STARTUP_PROFILE=1)"
             Lto              = "Link-time optimization (opt-in; Release only, may fail on MinGW GCC 15)"
             NoNativeCpu      = "Portable build (do not use -march=native)"
             KeepDebugSymbols = "Keep debug symbols in Release builds"
@@ -229,12 +226,12 @@ if ($Gui) {
         }
     }
     function Show-GuiAdvancedOptions {
-        $order = @("StartupProfile", "Lto", "NoNativeCpu", "KeepDebugSymbols", "Log", "RunTests", "SkipResourceSync", "SkipModPackaging")
+        $order = @("Lto", "NoNativeCpu", "KeepDebugSymbols", "Log", "RunTests", "SkipResourceSync", "SkipModPackaging")
         $labels = Get-GuiAdvancedLabels
         $open = $true
         while ($open) {
             Write-GuiHeading "Advanced options (build flags)"
-            Write-GuiExplain @("These settings apply to the build/run options in the main menu for this session.", "Startup profiling makes the game write startup-profile.log (startup phase timing +", "a breakdown of shader compile and IO work) next to its exe.")
+            Write-GuiExplain @("These settings apply to the build/run options in the main menu for this session.")
             Write-Host ""
             for ($i = 0; $i -lt $order.Count; $i++) {
                 $state = if ($AdvancedOptions[$order[$i]]) { "On " } else { "Off" }
@@ -338,36 +335,11 @@ if ($Gui) {
                 Show-GuiAdvancedOptions
             }
             "15" {
-                Write-GuiHeading "Build and launch with startup hang/profiling logging"
-                Write-GuiExplain @(
-                    "Builds the client and launches it with MINECRAFT_STARTUP_PROFILE=1.",
-                    "This writes startup-profile.log next to the exe: per-phase startup timing",
-                    "plus a breakdown of shader compile, disk cache hits/misses, and IO work.",
-                    "If the main loop stalls (e.g. during shader load) the hang watchdog also",
-                    "writes hang-report.txt + hang.dmp next to the exe.",
-                    "",
-                    "You will need to close the game window for the script to finish."
-                )
-                if (Confirm-GuiAction "Start the build and launch now?") {
-                    Invoke-GuiBuild -Arguments @{"Target"="Client"; "Run"=$true; "StartupProfile"=$true} -FriendlyName "Client build with startup logging"
-                    $sp = Join-Path $ScriptDir (Join-Path $BuildDir "startup-profile.log")
-                    if (Test-Path -LiteralPath $sp) {
-                        Write-Host ""
-                        Write-Host "  Startup profile written to:" -ForegroundColor Green
-                        Write-Host "  $sp" -ForegroundColor Green
-                    } else {
-                        Write-Host ""
-                        Write-Host "  No startup-profile.log found yet." -ForegroundColor Yellow
-                        Write-Host "  Launch the game and close it, then check: $sp" -ForegroundColor Yellow
-                    }
-                }
-            }
-            "16" {
                 $running = $false
             }
             default {
                 Write-Host ""
-                Write-Host "  Please type a number from 1 to 16." -ForegroundColor Yellow
+                Write-Host "  Please type a number from 1 to 15." -ForegroundColor Yellow
             }
         }
     }
@@ -495,10 +467,6 @@ return $false
 }
 Ensure-BundledToolchain
 Set-BundledToolchainEnvironment -MBD $MingwBin
-if($StartupProfile){
-$env:MINECRAFT_STARTUP_PROFILE="1"
-Write-Host "Startup profiling enabled (MINECRAFT_STARTUP_PROFILE=1) - the game will write startup-profile.log next to its exe." -ForegroundColor Cyan
-}
 if(!(Test-Path -Li $CmakeExe)){Write-Error "Bundled cmake not found at $CmakeExe";exit 1}
 if(!(Test-Path -Li $NinjaExe)){Write-Error "Bundled ninja not found at $NinjaExe";exit 1}
 Remove-StaleBuildOmegaLockFile -LPa $BuildOmegaLockPath

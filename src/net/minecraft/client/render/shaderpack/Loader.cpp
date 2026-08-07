@@ -28,6 +28,12 @@ std::string trim(std::string_view value) {
  const std::size_t last = value.find_last_not_of(" \t\r\n");
  return std::string(value.substr(first, last - first + 1));
 }
+std::string_view trimmedView(std::string_view value) {
+ const std::size_t first = value.find_first_not_of(" \t\r\n");
+ if(first == std::string_view::npos) return {};
+ const std::size_t last = value.find_last_not_of(" \t\r\n");
+ return value.substr(first, last - first + 1);
+}
 std::string lowercase(std::string value) {
  for(char& ch : value) ch = static_cast<char>(std::tolower(static_cast<unsigned char>(ch)));
  return value;
@@ -116,89 +122,83 @@ void addOption(std::unordered_map<std::string, PackSourceOption>& options,
 void scanOptions(const std::string& source,
                  std::unordered_map<std::string, PackSourceOption>& options,
                  std::unordered_set<std::string>& rejected) {
- std::istringstream lines(source);
- std::string line;
  int braceDepth = 0;
- while(std::getline(lines, line)) {
-  const std::string cleaned = trim(line);
+ std::size_t lineStart = 0;
+ while(lineStart < source.size()) {
+  const std::size_t lineEnd = source.find('\n', lineStart);
+  const std::size_t lineSize = lineEnd == std::string::npos ? source.size() - lineStart : lineEnd - lineStart;
+  const std::string_view rawLine = std::string_view(source).substr(lineStart, lineSize);
+  lineStart = lineEnd == std::string::npos ? source.size() + 1 : lineEnd + 1;
+  const std::string_view cleaned = trimmedView(rawLine);
   const bool disabled = cleaned.rfind("//#define", 0) == 0;
   const bool enabled = cleaned.rfind("#define", 0) == 0;
   if(enabled || disabled) {
-   const std::string body = trim(std::string_view(cleaned).substr(disabled ? 9 : 7));
+   const std::string_view body = trimmedView(cleaned.substr(disabled ? 9 : 7));
    const std::size_t split = body.find_first_of(" \t/");
-   const std::string key = body.substr(0, split);
-   const std::string rest = split == std::string::npos ? std::string{} : trim(std::string_view(body).substr(split));
+   std::string key(body.substr(0, split));
+   const std::string_view rest = split == std::string::npos ? std::string_view{} : trimmedView(body.substr(split));
    const std::size_t comment = rest.find("//");
-   const std::string value = trim(comment == std::string::npos ? rest : rest.substr(0, comment));
+   const std::string_view value = trimmedView(comment == std::string::npos ? rest : rest.substr(0, comment));
    auto reject = [&options, &rejected](const std::string& name) {
     options.erase(name);
     rejected.insert(name);
    };
-   if(comment == std::string::npos && !value.empty()) {
-    double parsed = 0.0;
-    bool integer = false;
-    if(!number(value, parsed, integer)) {
-     reject(key);
-     continue;
+    if(comment == std::string::npos && !value.empty()) {
+     double parsed = 0.0;
+     bool integer = false;
+     if(!number(value, parsed, integer)) {
+      reject(key);
+      continue;
+     }
     }
-   }
-   addOption(options,
+    // see third_party/mcp/iris/shaderpack/option/OptionAnnotatedSource.java:384
+    if(!value.empty()) {
+     if(comment == std::string::npos) continue;
+     const std::string_view commentText = rest.substr(comment + 2);
+     if(commentText.find('[') == std::string_view::npos || commentText.find(']') == std::string_view::npos)
+      continue;
+    }
+    addOption(options,
              rejected,
-             key,
+             std::move(key),
              PackOptionForm::Define,
              enabled,
              value,
-             comment == std::string::npos ? std::string_view{} : std::string_view(rest).substr(comment + 2));
+             comment == std::string::npos ? std::string_view{} : rest.substr(comment + 2));
    continue;
   }
   if(braceDepth != 0 || cleaned.rfind("const ", 0) != 0) {
-   braceDepth += static_cast<int>(std::count(line.begin(), line.end(), '{'));
-   braceDepth -= static_cast<int>(std::count(line.begin(), line.end(), '}'));
+   braceDepth += static_cast<int>(std::count(rawLine.begin(), rawLine.end(), '{'));
+   braceDepth -= static_cast<int>(std::count(rawLine.begin(), rawLine.end(), '}'));
    braceDepth = std::max(0, braceDepth);
    continue;
   }
   const std::size_t equals = cleaned.find('=');
   const std::size_t semicolon = cleaned.find(';', equals == std::string::npos ? 0 : equals + 1);
   if(equals == std::string::npos || semicolon == std::string::npos) continue;
-  const std::string left = trim(std::string_view(cleaned).substr(6, equals - 6));
+  const std::string_view left = trimmedView(cleaned.substr(0, equals));
   const std::size_t separator = left.find_last_of(" \t");
   if(separator == std::string::npos) continue;
-  const std::string type = trim(std::string_view(left).substr(0, separator));
+  const std::string_view type = trimmedView(left.substr(0, separator));
   if(type != "int" && type != "float") continue;
-  const std::string key = trim(std::string_view(left).substr(separator + 1));
+  std::string key(left.substr(separator + 1));
   if(key == "shadowMapResolution") continue;
   addOption(options,
             rejected,
-            key,
+            std::move(key),
             PackOptionForm::Constant,
             true,
-            trim(std::string_view(cleaned).substr(equals + 1, semicolon - equals - 1)),
-            std::string_view(cleaned).substr(semicolon + 1));
-  braceDepth += static_cast<int>(std::count(line.begin(), line.end(), '{'));
-  braceDepth -= static_cast<int>(std::count(line.begin(), line.end(), '}'));
+            trimmedView(cleaned.substr(equals + 1, semicolon - equals - 1)),
+            cleaned.substr(semicolon + 1));
+  braceDepth += static_cast<int>(std::count(rawLine.begin(), rawLine.end(), '{'));
+  braceDepth -= static_cast<int>(std::count(rawLine.begin(), rawLine.end(), '}'));
  }
 }
-void scanShadowMapResolution(const std::string& source, PackDefinition& pack) {
- std::istringstream lines(source);
- std::string line;
- while(std::getline(lines, line)) {
-  const std::string cleaned = trim(line);
-  if(cleaned.rfind("const int shadowMapResolution", 0) != 0) continue;
-  const std::size_t equals = cleaned.find('=');
-  const std::size_t semicolon = cleaned.find(';', equals == std::string::npos ? 0 : equals + 1);
-  if(equals == std::string::npos || semicolon == std::string::npos) continue;
-  double value = 0.0;
-  bool integer = false;
-  if(number(trim(std::string_view(cleaned).substr(equals + 1, semicolon - equals - 1)), value, integer) && integer) {
-   pack.shadowMapResolution = std::clamp(static_cast<int>(std::lround(value)), 0, 16384);
-  }
- }
-}
-void advanceBlockComment(const std::string& line, bool& inBlockComment) {
+void advanceBlockComment(std::string_view line, bool& inBlockComment) {
  for(std::size_t i = 0; i < line.size();) {
   if(inBlockComment) {
    const std::size_t close = line.find("*/", i);
-   if(close == std::string::npos) return;
+   if(close == std::string_view::npos) return;
    i = close + 2;
    inBlockComment = false;
    continue;
@@ -212,85 +212,117 @@ void advanceBlockComment(const std::string& line, bool& inBlockComment) {
   ++i;
  }
 }
-std::string firstIdentifier(const std::string& text) {
+std::string_view stripLineComments(std::string_view line, std::string& scratch) {
+ std::size_t at = 0;
+ while(at + 1 < line.size()) {
+  if(line[at] == '/' && line[at + 1] == '/') return line.substr(0, at);
+  if(line[at] == '/' && line[at + 1] == '*') break;
+  ++at;
+ }
+ if(at + 1 >= line.size()) return line;
+ scratch.clear();
+ scratch.append(line.substr(0, at));
+ while(at < line.size()) {
+  if(at + 1 < line.size() && line[at] == '/' && line[at + 1] == '/') break;
+  if(at + 1 < line.size() && line[at] == '/' && line[at + 1] == '*') {
+   const std::size_t close = line.find("*/", at + 2);
+   if(close == std::string_view::npos) break;
+   scratch += ' ';
+   at = close + 2;
+   continue;
+  }
+  scratch += line[at];
+  ++at;
+ }
+ return scratch;
+}
+std::string_view firstIdentView(std::string_view text) {
  std::size_t begin = 0;
  while(begin < text.size() && !isIdentStart(text[begin])) ++begin;
  std::size_t end = begin;
  while(end < text.size() && isIdentChar(text[end])) ++end;
  return text.substr(begin, end - begin);
 }
+std::string firstIdentifier(const std::string& text) {
+ return std::string(firstIdentView(text));
+}
 void scanPackConstants(const std::string& source,
                        PackDefinition& pack,
                        const std::unordered_map<std::string, PackSourceOption>& options,
-                       const std::unordered_map<std::string, std::string>* values = nullptr) {
- std::istringstream lines(source);
- std::string line;
- PPMacroTable macros;
- seedEngineMacros(pack, macros);
- // The GLSL the driver compiles sees the option-rewritten source, so `#if OPTION`
- // chains must be evaluated with the CURRENT settings, not the shipped defaults,
- // or the engine's shadow tuning and the shader's disagree whenever an option
- // moves (Iris parses programs after option replacement).
- for(const auto& [name, option] : options) {
-  const PackSetting& setting = option.setting;
-  const std::string effective =
-      values != nullptr ? [&] {
-       const auto found = values->find(name);
-       return found != values->end() ? found->second : setting.defaultValue;
-      }()
-                        : setting.defaultValue;
-  PPMacro macro;
-  macro.body = effective;
-  const bool trueValue = effective == "1" || effective == "true";
-  if(setting.type == SettingType::Bool) {
-   if(trueValue) {
-    macro.body.clear();
-    macros[name] = macro;
-   }
-  } else {
-   macros[name] = macro;
-  }
- }
- ConditionalState conditionals(ConditionalState::Flavor::Glsl);
- bool inBlockComment = false;
- while(std::getline(lines, line)) {
-  const bool startedInsideComment = inBlockComment;
-  advanceBlockComment(line, inBlockComment);
-  if(!startedInsideComment) {
-   std::string keyword;
-   std::string rest;
-   if(parseDirective(trim(lineForDirectiveParse(line)), keyword, rest)) {
-    if(keyword == "if") {
-     conditionals.push(evaluateIfExpression(rest, macros));
-    } else if(keyword == "ifdef") {
-     conditionals.push(macros.count(firstIdentifier(rest)) != 0);
-    } else if(keyword == "ifndef") {
-     conditionals.push(macros.count(firstIdentifier(rest)) == 0);
-    } else if(keyword == "elif") {
-     conditionals.elif(evaluateIfExpression(rest, macros));
-    } else if(keyword == "else") {
-     conditionals.else_();
-    } else if(keyword == "endif") {
-     conditionals.endif();
-    } else if(keyword == "define" && conditionals.active()) {
-     const std::string defName = firstIdentifier(rest);
-     if(!options.contains(defName)) {
-      parseDefineDirective(rest, macros);
+                       const PPMacroTable& seed) {
+  PPMacroTable macros = seed;
+  ConditionalState conditionals(ConditionalState::Flavor::Glsl);
+  bool inBlockComment = false;
+  std::string scratch;
+  std::string keyScratch;
+ std::size_t lineStart = 0;
+ while(lineStart <= source.size()) {
+  const std::size_t lineEnd = source.find('\n', lineStart);
+  const std::size_t lineSize = lineEnd == std::string::npos ? source.size() - lineStart : lineEnd - lineStart;
+   const std::string_view line = std::string_view(source).substr(lineStart, lineSize);
+   lineStart = lineEnd == std::string::npos ? source.size() + 1 : lineEnd + 1;
+   const std::string_view rawTrimmed = trimmedView(line);
+   if(rawTrimmed.rfind("const int shadowMapResolution", 0) == 0) {
+    const std::size_t eq = rawTrimmed.find('=');
+    const std::size_t semi = rawTrimmed.find(';', eq == std::string_view::npos ? 0 : eq + 1);
+    if(eq != std::string_view::npos && semi != std::string_view::npos) {
+     double value = 0.0;
+     bool integer = false;
+     if(number(trimmedView(rawTrimmed.substr(eq + 1, semi - eq - 1)), value, integer) && integer) {
+      pack.shadowMapResolution = std::clamp(static_cast<int>(std::lround(value)), 0, 16384);
      }
-    } else if(keyword == "undef" && conditionals.active()) {
-     macros.erase(firstIdentifier(rest));
     }
+   }
+   const bool startedInsideComment = inBlockComment;
+   advanceBlockComment(line, inBlockComment);
+   if(!startedInsideComment) {
+   const std::string_view stripped = trimmedView(stripLineComments(line, scratch));
+   if(!stripped.empty() && stripped.front() == '#') {
+    std::size_t cursor = 1;
+    while(cursor < stripped.size() && (stripped[cursor] == ' ' || stripped[cursor] == '\t')) ++cursor;
+    std::size_t keywordEnd = cursor;
+    while(keywordEnd < stripped.size() && std::isalpha(static_cast<unsigned char>(stripped[keywordEnd]))) ++keywordEnd;
+    const std::string_view keyword = stripped.substr(cursor, keywordEnd - cursor);
+    const std::string_view rest = trimmedView(stripped.substr(keywordEnd));
+     if(keyword == "if") {
+      conditionals.push(evaluateIfExpression(rest, macros));
+     } else if(keyword == "ifdef") {
+      conditionals.push(macros.count(std::string(firstIdentView(rest))) != 0);
+     } else if(keyword == "ifndef") {
+      conditionals.push(macros.count(std::string(firstIdentView(rest))) == 0);
+     } else if(keyword == "elif") {
+      conditionals.elif(evaluateIfExpression(rest, macros));
+     } else if(keyword == "else") {
+      conditionals.else_();
+     } else if(keyword == "endif") {
+      conditionals.endif();
+     } else if(keyword == "define" && conditionals.active()) {
+      const std::string defName(firstIdentView(rest));
+      if(!options.contains(defName)) {
+       parseDefineDirective(rest, macros);
+      }
+     } else if(keyword == "undef" && conditionals.active()) {
+      macros.erase(std::string(firstIdentView(rest)));
+     }
     continue;
    }
   }
   if(!conditionals.active()) continue;
-  const std::string cleaned = trim(line);
+  const std::string_view cleaned = trimmedView(line);
   const std::size_t equals = cleaned.find('=');
   const std::size_t semicolon = cleaned.find(';', equals == std::string::npos ? 0 : equals + 1);
   if(equals == std::string::npos || semicolon == std::string::npos) continue;
-  const std::string left = trim(std::string_view(cleaned).substr(0, equals));
-  const std::string right = trim(std::string_view(cleaned).substr(equals + 1, semicolon - equals - 1));
+  const std::string_view left = trimmedView(cleaned.substr(0, equals));
+  const std::string_view right = trimmedView(cleaned.substr(equals + 1, semicolon - equals - 1));
   const bool on = right == "true";
+  auto shadowDigitSuffix = [](std::string_view value, std::string_view prefix, std::string_view suffix) -> int {
+   if(value.size() != prefix.size() + 1 + suffix.size()) return -1;
+   if(value.compare(0, prefix.size(), prefix) != 0) return -1;
+   const char digit = value[prefix.size()];
+   if(digit < '0' || digit > '7') return -1;
+   if(value.compare(prefix.size() + 1, suffix.size(), suffix) != 0) return -1;
+   return digit - '0';
+  };
   if(left == "const bool shadowEntities") {
    pack.shadowEntities = right != "false";
    continue;
@@ -312,35 +344,38 @@ void scanPackConstants(const std::string& source,
    if(on) pack.shadowcolorMipmap[0] = pack.shadowcolorMipmap[1] = true;
    continue;
   }
-  for(int index = 0; index < 8; ++index) {
-   const std::string suffix = std::to_string(index);
-   if(left == "const bool shadowcolor" + suffix + "Mipmap" ||
-      left == "const bool shadowColor" + suffix + "Mipmap") {
+   if(const int index = shadowDigitSuffix(left, "const bool shadowcolor", "Mipmap"); index >= 0) {
     pack.shadowcolorMipmap[index] = on;
     continue;
    }
-  }
-  if(left == "const bool shadowtexNearest") {
-   pack.shadowtexNearest[0] = pack.shadowtexNearest[1] = on;
-   continue;
-  }
-  if(left == "const bool shadowtex0Nearest" || left == "const bool shadow0MinMagNearest") {
-   pack.shadowtexNearest[0] = on;
-   continue;
-  }
-  if(left == "const bool shadowtex1Nearest" || left == "const bool shadow1MinMagNearest") {
-   pack.shadowtexNearest[1] = on;
-   continue;
-  }
-  for(int index = 0; index < 8; ++index) {
-   const std::string suffix = std::to_string(index);
-   if(left == "const bool shadowcolor" + suffix + "Nearest" ||
-      left == "const bool shadowColor" + suffix + "Nearest" ||
-      left == "const bool shadowColor" + suffix + "MinMagNearest") {
+   if(const int index = shadowDigitSuffix(left, "const bool shadowColor", "Mipmap"); index >= 0) {
+    pack.shadowcolorMipmap[index] = on;
+    continue;
+   }
+   if(left == "const bool shadowtexNearest") {
+    pack.shadowtexNearest[0] = pack.shadowtexNearest[1] = on;
+    continue;
+   }
+   if(left == "const bool shadowtex0Nearest" || left == "const bool shadow0MinMagNearest") {
+    pack.shadowtexNearest[0] = on;
+    continue;
+   }
+   if(left == "const bool shadowtex1Nearest" || left == "const bool shadow1MinMagNearest") {
+    pack.shadowtexNearest[1] = on;
+    continue;
+   }
+   if(const int index = shadowDigitSuffix(left, "const bool shadowcolor", "Nearest"); index >= 0) {
     pack.shadowcolorNearest[index] = on;
     continue;
    }
-  }
+   if(const int index = shadowDigitSuffix(left, "const bool shadowColor", "Nearest"); index >= 0) {
+    pack.shadowcolorNearest[index] = on;
+    continue;
+   }
+   if(const int index = shadowDigitSuffix(left, "const bool shadowColor", "MinMagNearest"); index >= 0) {
+    pack.shadowcolorNearest[index] = on;
+    continue;
+   }
   double value = 0.0;
   bool integer = false;
   if(!number(right, value, integer)) continue;
@@ -548,99 +583,161 @@ bool isKnownBufferFormat(const std::string& format) {
      "RG8UI", "RG16UI", "RG32UI", "RGBA8UI", "RGBA16UI", "RGBA32UI"};
  return std::find(formats.begin(), formats.end(), format) != formats.end();
 }
-bool isOffsetInComment(std::string_view source, std::size_t pos) {
- bool inBlock = false;
- for(std::size_t i = 0; i < pos && i < source.size();) {
-  if(!inBlock && i + 1 < source.size() && source[i] == '/' && source[i + 1] == '/') {
-   const std::size_t lineEnd = source.find('\n', i + 2);
-   if(pos < (lineEnd == std::string_view::npos ? source.size() : lineEnd)) {
-    return true;
-   }
-   i = lineEnd == std::string_view::npos ? source.size() : lineEnd + 1;
-   continue;
-  }
-  if(!inBlock && i + 1 < source.size() && source[i] == '/' && source[i + 1] == '*') {
-   inBlock = true;
-   i += 2;
-   continue;
-  }
-  if(inBlock && i + 1 < source.size() && source[i] == '*' && source[i + 1] == '/') {
-   inBlock = false;
-   i += 2;
-   continue;
-  }
-  ++i;
+struct CommentMask {
+ std::vector<unsigned char> mark;
+ bool in(std::size_t pos) const {
+  return pos < mark.size() && mark[pos] != 0;
  }
- return inBlock;
+};
+CommentMask buildCommentMask(std::string_view source) {
+ CommentMask mask;
+ mask.mark.assign(source.size(), 0);
+ bool lineComment = false;
+ bool blockComment = false;
+ for(std::size_t i = 0; i < source.size(); ++i) {
+  const char next = i + 1 < source.size() ? source[i + 1] : '\0';
+  if(lineComment) {
+   mask.mark[i] = 1;
+   if(source[i] == '\n') lineComment = false;
+   continue;
+  }
+  if(blockComment) {
+   mask.mark[i] = 1;
+   if(source[i] == '*' && next == '/') {
+    mask.mark[i + 1] = 1;
+    blockComment = false;
+    ++i;
+   }
+   continue;
+  }
+  if(source[i] == '/' && next == '/') {
+   mask.mark[i] = 1;
+   mask.mark[i + 1] = 1;
+   lineComment = true;
+   ++i;
+  } else if(source[i] == '/' && next == '*') {
+   mask.mark[i] = 1;
+   mask.mark[i + 1] = 1;
+   blockComment = true;
+   ++i;
+  }
+ }
+ return mask;
 }
-void scanTargetDirective(PackDefinition& pack,
-                         const std::string& source,
-                         const std::string& name,
-                         const std::string& targetKey) {
+// see third_party/mcp/iris/shaderpack/properties/PackRenderTargetDirectives.java
+constexpr std::array<std::string_view, 8> kLegacyTargetNames = {
+    "gcolor", "gdepth", "gnormal", "composite", "gaux1", "gaux2", "gaux3", "gaux4"};
+int legacyRenderTargetIndex(std::string_view name);
+void inferColortexFormatsFromLayouts(PackDefinition& pack, const std::string& source, const CommentMask& mask);
+void scanTargetFormats(PackDefinition& pack, const std::string& source) {
+ const CommentMask mask = buildCommentMask(source);
  constexpr std::size_t npos = std::string::npos;
- auto findAssign = [&](const std::string& key) -> std::pair<std::size_t, std::size_t> {
-  for(std::size_t search = 0;;) {
-   const std::size_t marker = source.find(key, search);
-   if(marker == npos) return {npos, npos};
-   if(isOffsetInComment(source, marker)) {
-    search = marker + 1;
-    continue;
-   }
-   const std::size_t after = marker + key.size();
-   if(after < source.size() && (std::isalnum(static_cast<unsigned char>(source[after])) || source[after] == '_')) {
-    search = after;
-    continue;
-   }
-   const std::size_t equals = source.find('=', after);
-   const std::size_t semicolon = source.find(';', equals == npos ? after : equals + 1);
-   if(equals == npos || semicolon == npos) return {npos, npos};
-   return {equals, semicolon};
-  }
+ struct Seen {
+  bool format = false;
+  bool clear = false;
+  bool clearColor = false;
  };
- if(const auto [eq, sc] = findAssign(name + "Format"); eq != npos) {
-  const std::string format = trim(std::string_view(source).substr(eq + 1, sc - eq - 1));
-  if(isKnownBufferFormat(format)) pack.targets[targetKey].format = format == "RGBA" ? "RGBA8" : format;
- }
- if(const auto [eq, sc] = findAssign(name + "Clear"); eq != npos) {
-  const std::string value = trim(std::string_view(source).substr(eq + 1, sc - eq - 1));
-  if(value == "true" || value == "false") pack.targets[targetKey].clear = value == "true";
- }
- if(const std::size_t marker = source.find(name + "ClearColor"); marker != npos) {
-  if(!isOffsetInComment(source, marker)) {
-   const std::size_t open = source.find('(', marker);
-   const std::size_t close = source.find(')', open == npos ? marker : open + 1);
-   if(open != npos && close != npos) {
-    std::string values = source.substr(open + 1, close - open - 1);
-    std::replace(values.begin(), values.end(), ',', ' ');
-    std::istringstream stream(values);
-    float parsed[4]{};
-    if(stream >> parsed[0] >> parsed[1] >> parsed[2] >> parsed[3]) {
-     std::copy(std::begin(parsed), std::end(parsed), pack.targets[targetKey].clearColor);
-     pack.targets[targetKey].customClearColor = true;
+ Seen seen[49]{};
+ auto apply = [&](std::size_t suffixStart, std::string_view targetKey, Seen& slot) {
+  const std::string key(targetKey);
+  auto assign = [&](std::string_view suffix, bool boundary) -> std::pair<std::size_t, std::size_t> {
+   if(source.compare(suffixStart, suffix.size(), suffix) != 0) return {npos, npos};
+   const std::size_t after = suffixStart + suffix.size();
+   if(boundary && after < source.size() &&
+      (std::isalnum(static_cast<unsigned char>(source[after])) || source[after] == '_'))
+    return {npos, npos};
+   const std::size_t equals = source.find('=', after);
+   if(equals == npos) return {npos, npos};
+   const std::size_t semicolon = source.find(';', equals + 1);
+   if(semicolon == npos) return {npos, npos};
+   return {equals, semicolon};
+  };
+  if(!slot.format) {
+   if(const auto [eq, sc] = assign("Format", true); eq != npos) {
+    slot.format = true;
+    const std::string format = trim(std::string_view(source).substr(eq + 1, sc - eq - 1));
+    if(isKnownBufferFormat(format)) pack.targets[key].format = format == "RGBA" ? "RGBA8" : format;
+   }
+  }
+  if(!slot.clear) {
+   if(const auto [eq, sc] = assign("Clear", true); eq != npos) {
+    slot.clear = true;
+    const std::string value = trim(std::string_view(source).substr(eq + 1, sc - eq - 1));
+    if(value == "true" || value == "false") pack.targets[key].clear = value == "true";
+   }
+  }
+  if(!slot.clearColor) {
+   constexpr std::string_view clearColorSuffix = "ClearColor";
+   if(source.compare(suffixStart, clearColorSuffix.size(), clearColorSuffix) == 0) {
+    slot.clearColor = true;
+    const std::size_t open = source.find('(', suffixStart);
+    const std::size_t close = source.find(')', open == npos ? suffixStart : open + 1);
+    if(open != npos && close != npos) {
+     std::string values = source.substr(open + 1, close - open - 1);
+     std::replace(values.begin(), values.end(), ',', ' ');
+     std::istringstream stream(values);
+     float parsed[4]{};
+     if(stream >> parsed[0] >> parsed[1] >> parsed[2] >> parsed[3]) {
+      std::copy(std::begin(parsed), std::end(parsed), pack.targets[key].clearColor);
+      pack.targets[key].customClearColor = true;
+     }
     }
    }
   }
+ };
+ for(std::size_t search = 0;;) {
+  const std::size_t marker = source.find("colortex", search);
+  if(marker == npos) break;
+  if(!mask.in(marker)) {
+   std::size_t numEnd = marker + 8;
+   while(numEnd < source.size() && std::isdigit(static_cast<unsigned char>(source[numEnd]))) ++numEnd;
+   if(numEnd > marker + 8) {
+    const int index = std::atoi(source.c_str() + marker + 8);
+    if(index >= 0 && index < 32) {
+     const std::string key = "colortex" + std::to_string(index);
+     apply(numEnd, key, seen[index]);
+    }
+   }
+   search = numEnd;
+   continue;
+  }
+  search = marker + 8;
  }
-}
-void inferColortexFormatsFromLayouts(PackDefinition& pack, const std::string& source);
-void scanTargetFormats(PackDefinition& pack, const std::string& source) {
- static constexpr std::array<std::string_view, 8> legacyTargets = {
-     "gcolor", "gdepth", "gnormal", "composite", "gaux1", "gaux2", "gaux3", "gaux4"};
- for(int index = 0; index < 32; ++index) {
-  const std::string key = "colortex" + std::to_string(index);
-  scanTargetDirective(pack, source, key, key);
-  if(index < static_cast<int>(legacyTargets.size())) {
-   scanTargetDirective(pack, source, std::string(legacyTargets[static_cast<std::size_t>(index)]), key);
+ for(const std::string_view legacy : kLegacyTargetNames) {
+  const int index = legacyRenderTargetIndex(legacy);
+  for(std::size_t search = 0;;) {
+   const std::size_t marker = source.find(legacy, search);
+   if(marker == npos) break;
+   if(!mask.in(marker)) {
+    const std::string key = "colortex" + std::to_string(index);
+    apply(marker + legacy.size(), key, seen[32 + index]);
+   }
+   search = marker + legacy.size();
   }
  }
- for(int index = 0; index < 8; ++index) {
-  const std::string key = "shadowcolor" + std::to_string(index);
-  scanTargetDirective(pack, source, key, key);
+ for(std::size_t search = 0;;) {
+  const std::size_t marker = source.find("shadowcolor", search);
+  if(marker == npos) break;
+  if(!mask.in(marker)) {
+   std::size_t numEnd = marker + 11;
+   while(numEnd < source.size() && std::isdigit(static_cast<unsigned char>(source[numEnd]))) ++numEnd;
+   if(numEnd > marker + 11) {
+    const int index = std::atoi(source.c_str() + marker + 11);
+    if(index >= 0 && index < 8) {
+     const std::string key = "shadowcolor" + std::to_string(index);
+     apply(numEnd, key, seen[40 + index]);
+    }
+   } else {
+    apply(numEnd, "shadowcolor", seen[48]);
+   }
+   search = numEnd;
+   continue;
+  }
+  search = marker + 11;
  }
- scanTargetDirective(pack, source, "shadowcolor", "shadowcolor");
- inferColortexFormatsFromLayouts(pack, source);
+ inferColortexFormatsFromLayouts(pack, source, mask);
 }
-void inferColortexFormatsFromLayouts(PackDefinition& pack, const std::string& source) {
+void inferColortexFormatsFromLayouts(PackDefinition& pack, const std::string& source, const CommentMask& mask) {
  auto upgrade = [&](int index, const std::string& format) {
   if(index < 0 || index >= 32 || !isKnownBufferFormat(format)) return;
   PackTarget& target = pack.targets["colortex" + std::to_string(index)];
@@ -649,25 +746,25 @@ void inferColortexFormatsFromLayouts(PackDefinition& pack, const std::string& so
   }
   pack.gbufferColorBuffers = std::max(pack.gbufferColorBuffers, index + 1);
  };
- for(std::size_t search = 0;;) {
-  const std::size_t layout = source.find("layout(", search);
-  if(layout == std::string::npos) break;
-  if(isOffsetInComment(source, layout)) {
-   search = layout + 7;
-   continue;
-  }
-  const std::size_t close = source.find(')', layout + 7);
-  if(close == std::string::npos) break;
-  const std::string quals = lowercase(source.substr(layout + 7, close - layout - 7));
-  const std::size_t img = source.find("colorimg", close);
-  if(img == std::string::npos || img > close + 160) {
-   search = close + 1;
-   continue;
-  }
-  if(isOffsetInComment(source, img)) {
-   search = close + 1;
-   continue;
-  }
+  for(std::size_t search = 0;;) {
+   const std::size_t layout = source.find("layout(", search);
+   if(layout == std::string::npos) break;
+   if(mask.in(layout)) {
+    search = layout + 7;
+    continue;
+   }
+   const std::size_t close = source.find(')', layout + 7);
+   if(close == std::string::npos) break;
+   const std::string quals = lowercase(source.substr(layout + 7, close - layout - 7));
+   const std::size_t img = source.find("colorimg", close);
+   if(img == std::string::npos || img > close + 160) {
+    search = close + 1;
+    continue;
+   }
+   if(mask.in(img)) {
+    search = close + 1;
+    continue;
+   }
   const std::size_t numStart = img + 8;
   if(numStart >= source.size() || !std::isdigit(static_cast<unsigned char>(source[numStart]))) {
    search = close + 1;
@@ -699,13 +796,13 @@ void inferColortexFormatsFromLayouts(PackDefinition& pack, const std::string& so
   }
   return lowercase(source.substr(begin, end - begin));
  };
- for(std::size_t search = 0;;) {
-  const std::size_t marker = source.find("colortex", search);
-  if(marker == std::string::npos) break;
-  if(isOffsetInComment(source, marker)) {
-   search = marker + 8;
-   continue;
-  }
+  for(std::size_t search = 0;;) {
+   const std::size_t marker = source.find("colortex", search);
+   if(marker == std::string::npos) break;
+   if(mask.in(marker)) {
+    search = marker + 8;
+    continue;
+   }
   const std::size_t numStart = marker + 8;
   if(numStart >= source.size() || !std::isdigit(static_cast<unsigned char>(source[numStart]))) {
    search = marker + 8;
@@ -788,10 +885,8 @@ bool boolean(std::string_view value, bool& out) {
  return false;
 }
 int legacyRenderTargetIndex(std::string_view name) {
- static constexpr std::array<std::string_view, 8> legacy = {
-     "gcolor", "gdepth", "gnormal", "composite", "gaux1", "gaux2", "gaux3", "gaux4"};
- const auto found = std::find(legacy.begin(), legacy.end(), name);
- return found == legacy.end() ? -1 : static_cast<int>(std::distance(legacy.begin(), found));
+ const auto found = std::find(kLegacyTargetNames.begin(), kLegacyTargetNames.end(), name);
+ return found == kLegacyTargetNames.end() ? -1 : static_cast<int>(std::distance(kLegacyTargetNames.begin(), found));
 }
 std::vector<std::pair<std::string, std::string>> properties(const std::string& source) {
  std::vector<std::pair<std::string, std::string>> result;
@@ -1429,6 +1524,28 @@ void loadProgramSet(PackDefinition& out,
                     const std::unordered_map<std::string, std::string>& values) {
  std::unordered_map<std::string, std::string> expanded;
  const ResourceSet resourceSet(resources.begin(), resources.end());
+ PPMacroTable constantSeed;
+ seedEngineMacros(out, constantSeed);
+ // The GLSL the driver compiles sees the option-rewritten source, so `#if OPTION`
+ // chains must be evaluated with the CURRENT settings, not the shipped defaults,
+ // or the engine's shadow tuning and the shader's disagree whenever an option
+ // moves (Iris parses programs after option replacement).
+ for(const auto& [name, option] : options) {
+  const PackSetting& setting = option.setting;
+  const auto found = values.find(name);
+  const std::string& effective = found != values.end() ? found->second : setting.defaultValue;
+  PPMacro macro;
+  macro.body = effective;
+  const bool trueValue = effective == "1" || effective == "true";
+  if(setting.type == SettingType::Bool) {
+   if(trueValue) {
+    macro.body.clear();
+    constantSeed[name] = macro;
+   }
+  } else {
+   constantSeed[name] = macro;
+  }
+ }
  for(const PackProgramId& id : packProgramIds()) addProgram(out, resourceSet, id.name);
  for(const std::string& path : resources) {
   if(!path.ends_with(".fsh")) continue;
@@ -1437,10 +1554,9 @@ void loadProgramSet(PackDefinition& out,
       path,
       false,
       expanded);
-  scanTargetFormats(out, source);
-  scanShadowMapResolution(source, out);
-  scanPackConstants(source, out, options, &values);
-  const std::string name = std::filesystem::path(path).stem().string();
+   scanTargetFormats(out, source);
+   scanPackConstants(source, out, options, constantSeed);
+   const std::string name = std::filesystem::path(path).stem().string();
   if(name.rfind("shadowcomp", 0) == 0) continue;
   noteRenderTargetOutputs(out, source, name == "shadow" || name.rfind("shadow_", 0) == 0);
  }
@@ -1449,11 +1565,10 @@ void loadProgramSet(PackDefinition& out,
      !path.ends_with(".gsh") && !path.ends_with(".tcs") && !path.ends_with(".tes")) {
    continue;
   }
-  const std::string source = PackLoader::rewriteOptions(readText(path), options, values);
-  scanTargetFormats(out, source);
-  scanShadowMapResolution(source, out);
-  scanPackConstants(source, out, options, &values);
- }
+   const std::string source = PackLoader::rewriteOptions(readText(path), options, values);
+   scanTargetFormats(out, source);
+   scanPackConstants(source, out, options, constantSeed);
+  }
  out.gbufferColorBuffers = std::clamp(out.gbufferColorBuffers, 1, 32);
  auto hasBlendOverride = [&out](const std::string& program) {
   return std::any_of(out.bufferBlends.begin(), out.bufferBlends.end(),
@@ -1727,30 +1842,46 @@ bool PackLoader::load(const std::vector<std::string>& resources,
 std::string PackLoader::rewriteOptions(const std::string& source,
                                        const std::unordered_map<std::string, PackSourceOption>& options,
                                        const std::unordered_map<std::string, std::string>& values) {
- std::istringstream lines(source);
  std::string result;
- std::string line;
- while(std::getline(lines, line)) {
-  const std::string cleaned = trim(line);
+ result.reserve(source.size() + 16);
+ std::size_t lineStart = 0;
+ while(lineStart < source.size()) {
+  const std::size_t lineEnd = source.find('\n', lineStart);
+  const std::size_t lineSize = lineEnd == std::string::npos ? source.size() - lineStart : lineEnd - lineStart;
+  const std::string_view line = std::string_view(source).substr(lineStart, lineSize);
+  lineStart = lineEnd == std::string::npos ? source.size() + 1 : lineEnd + 1;
+  const std::string_view cleaned = trimmedView(line);
   const bool disabled = cleaned.rfind("//#define", 0) == 0;
   const bool enabled = cleaned.rfind("#define", 0) == 0;
   bool replaced = false;
   if(enabled || disabled) {
-   const std::string body = trim(std::string_view(cleaned).substr(disabled ? 9 : 7));
+   const std::string_view body = trimmedView(cleaned.substr(disabled ? 9 : 7));
    const std::size_t split = body.find_first_of(" \t/");
-   const std::string key = body.substr(0, split);
-   const std::string tail = split == std::string::npos ? std::string{} : trim(std::string_view(body).substr(split));
+   const std::string_view key = body.substr(0, split);
+   const std::string_view tail = split == std::string::npos ? std::string_view{} : trimmedView(body.substr(split));
    const std::size_t comment = tail.find("//");
-   const std::string macroBody =
-       trim(comment == std::string::npos ? std::string_view(tail) : std::string_view(tail).substr(0, comment));
-   const auto option = options.find(key);
-   const auto value = values.find(key);
+   const std::string_view macroBody =
+       trimmedView(comment == std::string::npos ? tail : tail.substr(0, comment));
+   const auto option = options.find(std::string(key));
+   const auto value = values.find(std::string(key));
    if(option != options.end() && value != values.end() && option->second.form == PackOptionForm::Define) {
     const bool boolean = option->second.setting.type == SettingType::Bool;
     if(boolean == macroBody.empty()) {
-     const std::string suffix = comment == std::string::npos ? std::string{} : " " + tail.substr(comment);
-     line = boolean ? (value->second == "0" ? "//#define " : "#define ") + key + suffix
-                    : "#define " + key + " " + value->second + suffix;
+     const std::string suffix = comment == std::string::npos ? std::string{} : " " + std::string(tail.substr(comment));
+     std::string rebuilt;
+     rebuilt.reserve(key.size() + suffix.size() + 24);
+     if(boolean) {
+      rebuilt += value->second == "0" ? "//#define " : "#define ";
+      rebuilt.append(key);
+     } else {
+      rebuilt += "#define ";
+      rebuilt.append(key);
+      rebuilt += ' ';
+      rebuilt += value->second;
+     }
+     rebuilt += suffix;
+     result += rebuilt;
+     result += '\n';
      replaced = true;
     }
    }
@@ -1759,18 +1890,24 @@ std::string PackLoader::rewriteOptions(const std::string& source,
    const std::size_t equals = line.find('=');
    const std::size_t semicolon = line.find(';', equals == std::string::npos ? 0 : equals + 1);
    if(equals != std::string::npos && semicolon != std::string::npos) {
-    const std::string left = trim(std::string_view(line).substr(0, equals));
+    const std::string_view left = trimmedView(line.substr(0, equals));
     const std::size_t separator = left.find_last_of(" \t");
-    const std::string key = separator == std::string::npos ? std::string{} : trim(std::string_view(left).substr(separator + 1));
-    const auto option = options.find(key);
-    const auto value = values.find(key);
+    const std::string_view key = separator == std::string::npos ? std::string_view{} : trimmedView(left.substr(separator + 1));
+    const auto option = options.find(std::string(key));
+    const auto value = values.find(std::string(key));
     if(option != options.end() && value != values.end() && option->second.form == PackOptionForm::Constant) {
-     line.replace(equals + 1, semicolon - equals - 1, " " + value->second);
+     std::string rebuilt(line);
+     rebuilt.replace(equals + 1, semicolon - equals - 1, " " + value->second);
+     result += rebuilt;
+     result += '\n';
+     replaced = true;
     }
    }
   }
-  result += line;
-  result += '\n';
+  if(!replaced) {
+   result.append(line);
+   result += '\n';
+  }
  }
  return result;
 }

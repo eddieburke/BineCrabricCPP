@@ -254,18 +254,31 @@ std::string normalizePackSource(const PackDefinition& pack, const std::string& s
  ConditionalState stack(ConditionalState::Flavor::Glsl);
  std::string extensions;
  std::string body;
- std::istringstream stream(source);
- std::string physical;
- while(std::getline(stream, physical)) {
-  if(!physical.empty() && physical.back() == '\r') physical.pop_back();
-  std::string logical = physical;
+ body.reserve(source.size());
+ std::string_view srcView(source);
+ std::size_t lineStart = 0;
+ auto getNextLine = [&](std::string_view& outLine) -> bool {
+  if(lineStart >= srcView.size()) return false;
+  std::size_t lineEnd = srcView.find('\n', lineStart);
+  if(lineEnd != std::string_view::npos) {
+   outLine = srcView.substr(lineStart, lineEnd - lineStart);
+   lineStart = lineEnd + 1;
+  } else {
+   outLine = srcView.substr(lineStart);
+   lineStart = srcView.size();
+  }
+  if(!outLine.empty() && outLine.back() == '\r') outLine.remove_suffix(1);
+  return true;
+ };
+ std::string_view physicalView;
+ while(getNextLine(physicalView)) {
+  std::string logical(physicalView);
   int continuations = 0;
   while(!logical.empty() && logical.back() == '\\') {
    logical.pop_back();
-   std::string next;
-   if(!std::getline(stream, next)) break;
-   if(!next.empty() && next.back() == '\r') next.pop_back();
-   logical += next;
+   std::string_view nextView;
+   if(!getNextLine(nextView)) break;
+   logical += nextView;
    ++continuations;
   }
   const auto emit = [&](std::string_view text = {}) {

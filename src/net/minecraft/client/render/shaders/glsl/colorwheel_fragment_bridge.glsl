@@ -13,6 +13,27 @@ struct FlwMaterial {
  uint cardinalLightingMode;
  bool ambientOcclusion;
 };
+const uint FLW_MAT_DEPTH_TEST_OFF = 0u;
+const uint FLW_MAT_DEPTH_TEST_NEVER = 1u;
+const uint FLW_MAT_DEPTH_TEST_LESS = 2u;
+const uint FLW_MAT_DEPTH_TEST_EQUAL = 3u;
+const uint FLW_MAT_DEPTH_TEST_LEQUAL = 4u;
+const uint FLW_MAT_DEPTH_TEST_GREATER = 5u;
+const uint FLW_MAT_DEPTH_TEST_NOTEQUAL = 6u;
+const uint FLW_MAT_DEPTH_TEST_GEQUAL = 7u;
+const uint FLW_MAT_DEPTH_TEST_ALWAYS = 8u;
+const uint FLW_MAT_TRANSPARENCY_OPAQUE = 0u;
+const uint FLW_MAT_TRANSPARENCY_ADDITIVE = 1u;
+const uint FLW_MAT_TRANSPARENCY_LIGHTNING = 2u;
+const uint FLW_MAT_TRANSPARENCY_GLINT = 3u;
+const uint FLW_MAT_TRANSPARENCY_CRUMBLING = 4u;
+const uint FLW_MAT_TRANSPARENCY_TRANSLUCENT = 5u;
+const uint FLW_MAT_WRITE_MASK_COLOR_DEPTH = 0u;
+const uint FLW_MAT_WRITE_MASK_COLOR = 1u;
+const uint FLW_MAT_WRITE_MASK_DEPTH = 2u;
+const uint FLW_MAT_CARDINAL_LIGHTING_MODE_OFF = 0u;
+const uint FLW_MAT_CARDINAL_LIGHTING_MODE_CHUNK = 1u;
+const uint FLW_MAT_CARDINAL_LIGHTING_MODE_ENTITY = 2u;
 in ClrwlVertexData {
  vec4 flw_vertexPos;
  vec4 flw_vertexColor;
@@ -29,6 +50,8 @@ in ClrwlVertexData {
 #define clrwl_vertexLight flw_vertexLight
 #define clrwl_vertexNormal flw_vertexNormal
 vec4 flw_sampleColor;
+float flw_distance;
+bool flw_fragDiffuse;
 vec4 flw_fragColor;
 ivec2 flw_fragOverlay;
 vec2 flw_fragLight;

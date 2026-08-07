@@ -321,7 +321,8 @@ std::string resolveDefinedOperators(const std::string& expr, const PPMacroTable&
  }
  return out;
 }
-std::string expandIfExpression(std::string expr, const PPMacroTable& macros) {
+std::string expandIfExpression(std::string_view rawExpr, const PPMacroTable& macros) {
+ std::string expr(rawExpr);
  expr = resolveDefinedOperators(expr, macros);
  for(int pass = 0; pass < 64; ++pass) {
   bool changed = false;
@@ -410,20 +411,20 @@ std::string expandIfExpression(std::string expr, const PPMacroTable& macros) {
  return expr;
 }
 } // namespace
-bool evaluateIfExpression(const std::string& rawExpr, const PPMacroTable& macros) {
+bool evaluateIfExpression(std::string_view rawExpr, const PPMacroTable& macros) {
  const std::string expanded = expandIfExpression(rawExpr, macros);
  PPExpressionEval eval(expanded);
  double value = 0.0;
  if(!eval.eval(value)) return false;
  return value != 0.0;
 }
-void parseDefineDirective(const std::string& afterKeyword, PPMacroTable& macros) {
+void parseDefineDirective(std::string_view afterKeyword, PPMacroTable& macros) {
  std::size_t i = 0;
  while(i < afterKeyword.size() && std::isspace(static_cast<unsigned char>(afterKeyword[i]))) ++i;
  std::size_t end = i;
  while(end < afterKeyword.size() && isIdentChar(afterKeyword[end])) ++end;
  if(end == i) return;
- const std::string name = afterKeyword.substr(i, end - i);
+ const std::string name(afterKeyword.substr(i, end - i));
  PPMacro macro;
  if(end < afterKeyword.size() && afterKeyword[end] == '(') {
   macro.functionLike = true;

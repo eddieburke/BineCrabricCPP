@@ -328,6 +328,7 @@ void bindAndUploadUniforms(const RenderPass& pass) {
  const PassGlBits glBits = capturePassGlBits();
  if(programChanged && !pass.fullscreen) {
   active->set1i("gtexture", 0);
+  active->set1i("flw_diffuseTex", 0);
   active->set1i("texture", 0);
  }
  if(pass.fullscreen) {

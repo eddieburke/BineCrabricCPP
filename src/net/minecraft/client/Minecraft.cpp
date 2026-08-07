@@ -297,11 +297,10 @@ void Minecraft::bootstrapAfterDisplay() {
  diagnostics::setStartupPhase("init: loading screen");
  util::DisplayManager::logGlError(*this, "Pre startup");
  render::core::clearDepth(1.0);
- {
-  util::DisplayManager::logGlError(*this, "Startup");
-  diagnostics::StartupStep loadingScreen("init: loading screen render");
-  renderBootstrapLoadingScreen(*this);
- }
+  {
+   util::DisplayManager::logGlError(*this, "Startup");
+   renderBootstrapLoadingScreen(*this);
+  }
 #ifdef _WIN32
  input::InputSystem::init(util::DisplayManager::hwnd());
 #endif
@@ -760,10 +759,9 @@ void Minecraft::run() {
   gameCrashed(net::minecraft::util::crash::CrashReport("Failed to start game", exception.what()));
   return;
  }
- try {
-  diagnostics::setStartupPhase("main: running");
-  diagnostics::dumpStartupWork();
-  std::int64_t fpsWindowStart = currentTimeMillis();
+  try {
+   diagnostics::setStartupPhase("main: running");
+   std::int64_t fpsWindowStart = currentTimeMillis();
   int frames = 0;
   util::FramePipeline framePipeline;
   while(running.load()) {
@@ -861,7 +859,6 @@ void Minecraft::run() {
   cleanHeap();
   gameCrashed(net::minecraft::util::crash::CrashReport("Unexpected error", exception.what()));
  }
- diagnostics::dumpStartupWork();
  stop();
 }
 void Minecraft::forceResourceReload() {

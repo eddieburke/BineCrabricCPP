@@ -1,2 +1,0 @@
-#define MC_NORMAL_MAP
-#define MC_SPECULAR_MAP

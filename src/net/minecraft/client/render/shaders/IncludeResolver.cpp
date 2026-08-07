@@ -9,18 +9,18 @@
 #include <utility>
 
 namespace net::minecraft::client::render {
-bool isBufferFormatDirective(const std::string& trimmed) {
- if(trimmed.rfind("const ", 0) != 0) return false;
+bool isBufferFormatDirective(std::string_view trimmed) {
+ if(!trimmed.starts_with("const ")) return false;
  const std::size_t equals = trimmed.find('=');
  const std::size_t marker = trimmed.find("Format");
- if(equals == std::string::npos || marker == std::string::npos || marker > equals) return false;
- const std::string name = trimmed.substr(0, marker);
- if(name.find("colortex") == std::string::npos && name.find("shadowcolor") == std::string::npos) return false;
+ if(equals == std::string_view::npos || marker == std::string_view::npos || marker > equals) return false;
+ const std::string_view name = trimmed.substr(0, marker);
+ if(name.find("colortex") == std::string_view::npos && name.find("shadowcolor") == std::string_view::npos) return false;
  const std::size_t semicolon = trimmed.find(';', equals + 1);
- const std::string value =
-     trimmed.substr(equals + 1, (semicolon == std::string::npos ? trimmed.size() : semicolon) - equals - 1);
+ const std::string_view value =
+     trimmed.substr(equals + 1, (semicolon == std::string_view::npos ? trimmed.size() : semicolon) - equals - 1);
  const std::size_t first = value.find_first_not_of(" \t");
- return first != std::string::npos && (std::isalpha(static_cast<unsigned char>(value[first])) != 0);
+ return first != std::string_view::npos && (std::isalpha(static_cast<unsigned char>(value[first])) != 0);
 }
 
 std::string resolveShaderIncludes(const ShaderReadText& readText,
@@ -39,37 +39,42 @@ std::string resolveShaderIncludes(const ShaderReadText& readText,
   const std::string source = readText(current);
   std::string result;
   result.reserve(source.size());
-  std::istringstream stream(source);
-  std::string line;
-  while(std::getline(stream, line)) {
+  std::string_view srcView(source);
+  std::size_t lineStart = 0;
+  while(lineStart < srcView.size()) {
+   std::size_t lineEnd = srcView.find('\n', lineStart);
+   std::string_view line = lineEnd == std::string_view::npos ? srcView.substr(lineStart) : srcView.substr(lineStart, lineEnd - lineStart);
+   if(lineEnd != std::string_view::npos) lineStart = lineEnd + 1;
+   else lineStart = srcView.size();
+   if(!line.empty() && line.back() == '\r') line.remove_suffix(1);
    const std::size_t start = line.find_first_not_of(" \t");
-   const std::string trimmed = start == std::string::npos ? std::string{} : line.substr(start);
+   const std::string_view trimmed = start == std::string_view::npos ? std::string_view{} : line.substr(start);
    if(stripFormatDirectives && isBufferFormatDirective(trimmed)) {
     result += '\n';
     continue;
    }
-   if(trimmed.rfind("#include", 0) != 0) {
-    result += line;
+   if(!trimmed.starts_with("#include")) {
+    result.append(line.data(), line.size());
     result += '\n';
     continue;
    }
    std::size_t q1 = trimmed.find('"', 8);
-   std::size_t q2 = q1 == std::string::npos ? std::string::npos : trimmed.find('"', q1 + 1);
-   if(q1 == std::string::npos) {
+   std::size_t q2 = q1 == std::string_view::npos ? std::string_view::npos : trimmed.find('"', q1 + 1);
+   if(q1 == std::string_view::npos) {
     q1 = trimmed.find('<', 8);
-    q2 = q1 == std::string::npos ? std::string::npos : trimmed.find('>', q1 + 1);
+    q2 = q1 == std::string_view::npos ? std::string_view::npos : trimmed.find('>', q1 + 1);
    }
-   if(q2 == std::string::npos) {
-    throw IncludeResolveError("malformed #include in " + current + ": " + trimmed);
+   if(q2 == std::string_view::npos) {
+    throw IncludeResolveError("malformed #include in " + current + ": " + std::string(trimmed));
    }
-   const std::string include = trimmed.substr(q1 + 1, q2 - q1 - 1);
+   const std::string_view include = trimmed.substr(q1 + 1, q2 - q1 - 1);
    const std::filesystem::path includePath = include.starts_with('/')
                                                  ? std::filesystem::path("shaders") / include.substr(1)
                                                  : std::filesystem::path(current).parent_path() / include;
    const std::string includeResolved = includePath.lexically_normal().generic_string();
    const std::string& included = resolve(includeResolved);
    if(included.empty()) {
-    throw IncludeResolveError("missing or empty #include \"" + include + "\" from " + current +
+    throw IncludeResolveError("missing or empty #include \"" + std::string(include) + "\" from " + current +
                               " (resolved " + includeResolved + ")");
    }
    result += included;
@@ -142,22 +147,20 @@ std::vector<int> defaultRenderTargetIndices() {
 std::vector<int> parseRenderTargetIndices(const std::string& source) {
  std::vector<int> lastRenderTargets;
  std::vector<int> lastDrawBuffers;
- std::istringstream stream(source);
- std::string line;
- while(std::getline(stream, line)) {
-  const std::size_t lineComment = line.find("//");
-  if(lineComment != std::string::npos) {
-   scanDirectiveComment(std::string_view(line).substr(lineComment), lastRenderTargets, lastDrawBuffers);
-  }
+ for(std::size_t i = 0;;) {
+  i = source.find("//", i);
+  if(i == std::string::npos) break;
+  const std::size_t eol = source.find('\n', i);
+  scanDirectiveComment(
+      std::string_view(source).substr(i, eol == std::string::npos ? std::string::npos : eol - i),
+      lastRenderTargets, lastDrawBuffers);
+  i = eol == std::string::npos ? source.size() : eol + 1;
  }
- for(std::size_t i = 0; i + 1 < source.size(); ++i) {
-  if(source[i] != '/' || source[i + 1] != '*') {
-   continue;
-  }
+ for(std::size_t i = 0;;) {
+  i = source.find("/*", i);
+  if(i == std::string::npos) break;
   const std::size_t close = source.find("*/", i + 2);
-  if(close == std::string::npos) {
-   break;
-  }
+  if(close == std::string::npos) break;
   scanDirectiveComment(std::string_view(source).substr(i, close + 2 - i), lastRenderTargets, lastDrawBuffers);
   i = close + 1;
  }

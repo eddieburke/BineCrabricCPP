@@ -800,9 +800,14 @@ TEST(PackSourcePreparation, ChunkFadeMatchesTheAdvertisedFeatureAbi) {
   return prepareSource(
       program, ShaderStage::Vertex, pack, source);
  };
- EXPECT_NE(prepare("gbuffers_terrain").find("in float mc_chunkFade;"), std::string::npos);
- // Water and ice are chunk geometry, so gbuffers_water takes the terrain attribute too.
- EXPECT_NE(prepare("gbuffers_water").find("in float mc_chunkFade;"), std::string::npos);
+  EXPECT_NE(prepare("gbuffers_terrain").find("in float mc_chunkFade;"), std::string::npos);
+  // Water and ice are chunk geometry, so gbuffers_water takes the terrain attribute too.
+  EXPECT_NE(prepare("gbuffers_water").find("in float mc_chunkFade;"), std::string::npos);
+  // ColorWheel material programs reuse the pack's terrain/water vertex bodies, so they
+  // take the same attribute form (the engine binds location 12 to a constant 1.0).
+  EXPECT_NE(prepare("clrwl_gbuffers").find("in float mc_chunkFade;"), std::string::npos);
+  EXPECT_NE(prepare("clrwl_gbuffers_translucent").find("in float mc_chunkFade;"), std::string::npos);
+  EXPECT_NE(prepare("clrwl_gbuffers_damagedblock").find("in float mc_chunkFade;"), std::string::npos);
  EXPECT_NE(prepare("gbuffers_entities").find("const float mc_chunkFade = -1.0;"),
            std::string::npos);
  // Shadow programs get the -1.0 const, not nothing. This assertion used to require the
@@ -810,9 +815,10 @@ TEST(PackSourcePreparation, ChunkFadeMatchesTheAdvertisedFeatureAbi) {
  // declares `const float mc_chunkFade = -1.0;` on its `parameters.shadow` branch, and
  // leaving the symbol undeclared is a compile failure for any pack that shares a vertex
  // body between gbuffers_water and shadow_water.
- // https://github.com/IrisShaders/Iris/blob/26.1/common/src/main/java/net/irisshaders/iris/pipeline/transform/transformer/SodiumTransformer.java
- EXPECT_NE(prepare("shadow").find("const float mc_chunkFade = -1.0;"), std::string::npos);
- EXPECT_NE(prepare("shadow_water").find("const float mc_chunkFade = -1.0;"), std::string::npos);
+  // https://github.com/IrisShaders/Iris/blob/26.1/common/src/main/java/net/irisshaders/iris/pipeline/transform/transformer/SodiumTransformer.java
+  EXPECT_NE(prepare("shadow").find("const float mc_chunkFade = -1.0;"), std::string::npos);
+  EXPECT_NE(prepare("shadow_water").find("const float mc_chunkFade = -1.0;"), std::string::npos);
+  EXPECT_NE(prepare("clrwl_shadow").find("const float mc_chunkFade = -1.0;"), std::string::npos);
 }
 TEST(PackLoaderTest, InfersColortexFormatsFromImageAndUsamplerLayouts) {
  // Some packs leave const colortexNFormat commented; formats come from layouts.
@@ -1920,18 +1926,18 @@ TEST(PackLoaderTest, OptionValuesReachScannedPackConstants) {
  // scanned from raw text always picked the pack's shipped SM_DIST, so moving the
  // slider changed the shader-side fade but never the shadow camera or the culling
  // sphere.
- const std::unordered_map<std::string, std::string> sources = {
-     {"shaders/gbuffers_basic.vsh", "void main(){}"},
-     {"shaders/gbuffers_basic.fsh",
-      "#define SM_DIST 10\n"
-      "#if SM_DIST == 1\n"
-      "\tconst float shadowDistance = 16;\n"
-      "#elif SM_DIST == 10\n"
-      "\tconst float shadowDistance = 160;\n"
-      "#elif SM_DIST == 16\n"
-      "\tconst float shadowDistance = 256;\n"
-      "#endif\n"
-      "void main(){}"}};
+  const std::unordered_map<std::string, std::string> sources = {
+      {"shaders/gbuffers_basic.vsh", "void main(){}"},
+      {"shaders/gbuffers_basic.fsh",
+       "#define SM_DIST 10 // [0 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 21 22 23 24 25 26 27 28 29 30 31 32]\n"
+       "#if SM_DIST == 1\n"
+       "\tconst float shadowDistance = 16;\n"
+       "#elif SM_DIST == 10\n"
+       "\tconst float shadowDistance = 160;\n"
+       "#elif SM_DIST == 16\n"
+       "\tconst float shadowDistance = 256;\n"
+       "#endif\n"
+       "void main(){}"}};
  const auto run = [&sources](const std::unordered_map<std::string, std::string>& values,
                              PackDefinition& pack,
                              std::unordered_map<std::string, PackSourceOption>& options) {

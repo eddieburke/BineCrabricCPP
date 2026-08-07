@@ -16,6 +16,8 @@ constexpr std::array kVertexAttrDecls = {
     AttrDecl{"in", "vec2", "vaUV2"},
     AttrDecl{"in", "vec4", "vaColor"},
     AttrDecl{"in", "vec3", "vaNormal"},
+    AttrDecl{"in", "vec4", "at_tangent"},
+    AttrDecl{"in", "ivec2", "iris_UV1"},
     AttrDecl{"uniform", "vec3", "chunkOffset"},
 };
 void ensureVertexAttrs(std::string& source) {

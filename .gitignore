@@ -28,3 +28,5 @@ RULES FOR AGENTS.md
 # Shaderpacks kept local-only; only the embedded vanilla pack is tracked (src/.../glsl/vanilla)
 shaders/*
 tools/
+
+build-dbg/

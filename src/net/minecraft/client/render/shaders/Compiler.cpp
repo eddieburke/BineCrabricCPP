@@ -1,5 +1,4 @@
 #include "net/minecraft/client/render/shaders/Compiler.hpp"
-#include "net/minecraft/client/diagnostics/ClientDiagnostics.hpp"
 #include "net/minecraft/client/render/GlState.hpp"
 #include "net/minecraft/client/render/shaders/IncludeResolver.hpp"
 #include "net/minecraft/client/render/shaders/PassIndex.hpp"
@@ -19,7 +18,6 @@
 #include <unordered_map>
 #include <vector>
 namespace net::minecraft::client::render {
-namespace diagnostics = net::minecraft::client::diagnostics;
 namespace {
 std::string makeCacheKey(const std::string& programName, const std::string& vertex, const std::string& fragment) {
  return programName + "|" + vertex + "|" + fragment;
@@ -59,7 +57,6 @@ void rememberDrawBuffers(PackInstance& pack, const PreparedProgram& prepared) {
 }
 bool prepareProgram(PackInstance& pack, const std::string& programName, const PackProgramSource& spec,
                     const PackCompiler::LogFnLevel& logOnce, PreparedProgram& out) {
- diagnostics::WorkSpan span("shaderpack.prepare");
  const auto log = [&](const std::string& message) {
   logOnce(pack, message, ::net::minecraft::util::logging::LogLevel::Info);
  };
@@ -120,7 +117,6 @@ bool prepareProgram(PackInstance& pack, const std::string& programName, const Pa
 }
 } // namespace
 std::string PackCompiler::readText(const PackInstance& pack, const std::string& path) {
- diagnostics::WorkSpan span("shaderpack.read");
  const std::filesystem::path normalized = std::filesystem::path(path).lexically_normal();
  if(normalized.empty() || normalized.is_absolute() ||
     std::any_of(
@@ -147,38 +143,42 @@ const std::string& PackCompiler::cachedText(PackInstance& pack, const std::strin
  return pack.sourceCache.emplace(path, readText(pack, path)).first->second;
 }
 std::string PackCompiler::resolveIncludes(PackInstance& pack, const std::string& path) {
- if(pack.embedded) {
-  return cachedText(pack, path);
- }
- if(const auto cached = pack.resolvedSourceCache.find(path); cached != pack.resolvedSourceCache.end()) {
-  return cached->second;
- }
- diagnostics::WorkSpan span("shaderpack.includes");
- std::string dimPrefix;
+  if(pack.embedded) {
+   return cachedText(pack, path);
+  }
+  std::string dimPrefix;
  if(path.rfind("shaders/", 0) == 0) {
   const std::size_t slash = path.find('/', 8);
   if(slash != std::string::npos) {
    dimPrefix = path.substr(0, slash + 1);
   }
  }
-  std::unordered_map<std::string, std::string> memo;
-  std::string resolved = resolveShaderIncludes(
-      [&](std::string_view current) {
-       std::string target(current);
-       if(!dimPrefix.empty() && target.rfind("shaders/", 0) == 0 && target.rfind(dimPrefix, 0) != 0) {
-        const std::string dimTarget = dimPrefix + target.substr(8);
-        std::string source = cachedText(pack, dimTarget);
-        if(!source.empty()) {
-         return PackLoader::rewriteOptions(source, pack.sourceOptions, pack.settings);
-        }
+ const std::string cacheKey = dimPrefix + path;
+ if(const auto cached = pack.resolvedSourceCache.find(cacheKey); cached != pack.resolvedSourceCache.end()) {
+  return cached->second;
+ }
+ std::unordered_map<std::string, std::string> memo;
+ std::string resolved = resolveShaderIncludes(
+     [&](std::string_view current) {
+      std::string target(current);
+      if(!dimPrefix.empty() && target.rfind("shaders/", 0) == 0 && target.rfind(dimPrefix, 0) != 0) {
+       const std::string dimTarget = dimPrefix + target.substr(8);
+       std::string source = cachedText(pack, dimTarget);
+       if(!source.empty()) {
+        return PackLoader::rewriteOptions(source, pack.sourceOptions, pack.settings);
        }
-       std::string source = cachedText(pack, target);
-       return PackLoader::rewriteOptions(source, pack.sourceOptions, pack.settings);
-      },
-      path,
-      true,
-      memo);
- pack.resolvedSourceCache.emplace(path, resolved);
+      }
+      std::string source = cachedText(pack, target);
+      return PackLoader::rewriteOptions(source, pack.sourceOptions, pack.settings);
+     },
+     path,
+     true,
+     memo);
+ pack.resolvedSourceCache.emplace(cacheKey, resolved);
+ for(auto& [key, value] : memo) {
+  if(key == path) continue;
+  pack.resolvedSourceCache.emplace(dimPrefix + key, std::move(value));
+ }
  return resolved;
 }
 gl::ShaderProgram* PackCompiler::compile(PackInstance& pack, const std::string& programName,
