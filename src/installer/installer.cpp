@@ -109,6 +109,103 @@ static bool DownloadZip(const wchar_t* asset, const std::wstring& dest) {
  CreateDirectoryW(dest.c_str(), 0);
  return Download(u, z) && Run(L"tar.exe -xf \"" + z + L"\" -C \"" + dest + L"\"");
 }
+static void EnsureDir(const std::wstring& p) {
+ if(p.empty() || Exists(p)) return;
+ EnsureDir(Parent(p));
+ CreateDirectoryW(p.c_str(), 0);
+}
+// Mirrors build-omega.ps1's toolchain/manifest.json: keep URLs/versions in sync with that file.
+static const wchar_t* kWinlibsUrl = L"https://github.com/brechtsanders/winlibs_mingw/releases/download/15.2.0posix-14.0.0-ucrt-r7/winlibs-x86_64-posix-seh-gcc-15.2.0-mingw-w64ucrt-14.0.0-r7.zip";
+static const wchar_t* kZstdUrl = L"https://github.com/facebook/zstd/releases/download/v1.5.7/zstd-v1.5.7-win64.zip";
+static const wchar_t* kZstdExeSubpath = L"zstd-v1.5.7-win64\\zstd.exe";
+struct UcrtPkg { const wchar_t* name; const wchar_t* url; };
+static const UcrtPkg kUcrtPackages[] = {
+ {L"zlib", L"https://mirror.msys2.org/mingw/ucrt64/mingw-w64-ucrt-x86_64-zlib-1.3.2-2-any.pkg.tar.zst"},
+ {L"libogg", L"https://mirror.msys2.org/mingw/ucrt64/mingw-w64-ucrt-x86_64-libogg-1.3.6-1-any.pkg.tar.zst"},
+ {L"libvorbis", L"https://mirror.msys2.org/mingw/ucrt64/mingw-w64-ucrt-x86_64-libvorbis-1.3.7-2-any.pkg.tar.zst"},
+};
+static std::wstring FindMingwRoot(const std::wstring& staging) {
+ auto direct = Join(staging, L"mingw64");
+ if(Exists(Join(direct, L"bin\\g++.exe"))) return direct;
+ WIN32_FIND_DATAW fd;
+ HANDLE h = FindFirstFileW((staging + L"\\*").c_str(), &fd);
+ if(h == INVALID_HANDLE_VALUE) return {};
+ std::wstring found;
+ do {
+  if((fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) && wcscmp(fd.cFileName, L".") && wcscmp(fd.cFileName, L"..")) {
+   auto cand = Join(staging, fd.cFileName);
+   if(Exists(Join(cand, L"bin\\g++.exe"))) { found = cand; break; }
+  }
+ } while(FindNextFileW(h, &fd));
+ FindClose(h);
+ return found;
+}
+static bool EnsureWinlibsToolchain(const std::wstring& mingwRoot, const std::wstring& downloadsDir, const std::wstring& toolchainRoot) {
+ EnsureDir(downloadsDir);
+ auto ar = Join(downloadsDir, L"winlibs-gcc.zip");
+ Status(L"Downloading GCC toolchain (this can take a few minutes)...");
+ if(!Download(kWinlibsUrl, ar)) { Status(L"WinLibs GCC toolchain download failed."); return false; }
+ auto staging = Join(toolchainRoot, L"_staging");
+ EnsureDir(staging);
+ Status(L"Extracting GCC toolchain...");
+ if(!Run(L"tar.exe -xf \"" + ar + L"\" -C \"" + staging + L"\"")) { Status(L"Failed to extract WinLibs archive."); return false; }
+ auto found = FindMingwRoot(staging);
+ if(found.empty()) { Status(L"WinLibs archive did not contain mingw64/bin/g++.exe"); return false; }
+ if(Exists(mingwRoot)) {
+  SHFILEOPSTRUCTW op{};
+  std::wstring f = mingwRoot + L'\0' + L'\0';
+  op.wFunc = FO_DELETE;
+  op.pFrom = f.c_str();
+  op.fFlags = FOF_NOCONFIRMATION | FOF_NOERRORUI | FOF_SILENT;
+  SHFileOperationW(&op);
+ }
+ if(!MoveFileW(found.c_str(), mingwRoot.c_str())) { Status(L"Could not move extracted toolchain into place."); return false; }
+ return true;
+}
+static std::wstring EnsureZstdTool(const std::wstring& toolsDir, const std::wstring& downloadsDir) {
+ auto ze = Join(toolsDir, L"zstd.exe");
+ if(Exists(ze)) return ze;
+ EnsureDir(toolsDir);
+ EnsureDir(downloadsDir);
+ auto ar = Join(downloadsDir, L"zstd-win64.zip");
+ if(!Download(kZstdUrl, ar)) return {};
+ auto extractDir = Join(toolsDir, L"zstd-extract");
+ EnsureDir(extractDir);
+ if(!Run(L"tar.exe -xf \"" + ar + L"\" -C \"" + extractDir + L"\"")) return {};
+ auto se = Join(extractDir, kZstdExeSubpath);
+ if(!Exists(se)) return {};
+ CopyFileW(se.c_str(), ze.c_str(), FALSE);
+ return Exists(ze) ? ze : std::wstring();
+}
+static bool MergeUcrt64(const std::wstring& stageDir, const std::wstring& mingwRoot) {
+ auto ucrt = Join(stageDir, L"ucrt64");
+ if(!Exists(ucrt)) return false;
+ for(auto sub : {L"bin", L"include", L"lib", L"share"}) {
+  auto from = Join(ucrt, sub);
+  if(!Exists(from)) continue;
+  auto to = Join(mingwRoot, sub);
+  EnsureDir(to);
+  CopyTree(from, to);
+ }
+ return true;
+}
+static bool EnsureUcrtDeps(const std::wstring& mingwRoot, const std::wstring& zstdExe, const std::wstring& downloadsDir) {
+ for(auto& pkg : kUcrtPackages) {
+  Status(L"Installing dependency: " + std::wstring(pkg.name));
+  std::wstring url = pkg.url;
+  auto fn = url.substr(url.find_last_of(L'/') + 1);
+  auto archivePath = Join(downloadsDir, fn);
+  if(!Download(url, archivePath)) { Status(L"Download failed for " + std::wstring(pkg.name)); return false; }
+  auto tarPath = archivePath + L".tar";
+  DeleteFileW(tarPath.c_str());
+  if(!Run(L"\"" + zstdExe + L"\" -d \"" + archivePath + L"\" -o \"" + tarPath + L"\" -f")) { Status(L"zstd extraction failed for " + std::wstring(pkg.name)); return false; }
+  auto stage = Join(downloadsDir, L"stage-" + std::wstring(pkg.name));
+  EnsureDir(stage);
+  if(!Run(L"tar.exe -xf \"" + tarPath + L"\" -C \"" + stage + L"\"")) { Status(L"tar extraction failed for " + std::wstring(pkg.name)); return false; }
+  if(!MergeUcrt64(stage, mingwRoot)) { Status(L"MSYS2 package did not contain ucrt64/: " + std::wstring(pkg.name)); return false; }
+ }
+ return true;
+}
 static bool EnsureToolkit() {
  toolkitDir = DetectToolkit();
  if(!toolkitDir.empty()) {
@@ -119,23 +216,23 @@ static bool EnsureToolkit() {
  Status(compiler.empty() ? L"No compatible compiler found. Downloading complete toolkit..." : L"Compiler found, but required zlib/Ogg libraries are missing. Downloading complete toolkit...");
  wchar_t local[MAX_PATH];
  SHGetFolderPathW(0, CSIDL_LOCAL_APPDATA, 0, 0, local);
- auto base = Join(local, L"BineCrabricCPP\\toolchain");
- CreateDirectoryW(Join(local, L"BineCrabricCPP").c_str(), 0);
- CreateDirectoryW(base.c_str(), 0);
- if(!DownloadZip(L"toolkit", base)) {
-  Status(L"Toolkit download failed. Expected release asset: toolkit.zip");
+ auto toolchainRoot = Join(local, L"BineCrabricCPP\\toolchain");
+ auto mingwRoot = Join(toolchainRoot, L"mingw64");
+ auto downloadsDir = Join(toolchainRoot, L"_downloads");
+ auto toolsDir = Join(toolchainRoot, L"tools");
+ EnsureDir(toolchainRoot);
+ if(!Exists(Join(mingwRoot, L"bin\\g++.exe")) && !EnsureWinlibsToolchain(mingwRoot, downloadsDir, toolchainRoot)) return false;
+ auto zstdExe = EnsureZstdTool(toolsDir, downloadsDir);
+ if(zstdExe.empty()) { Status(L"Could not obtain zstd tool for dependency extraction."); return false; }
+ if(!EnsureUcrtDeps(mingwRoot, zstdExe, downloadsDir)) return false;
+ if(!FullToolkit(mingwRoot)) {
+  Status(L"Downloaded toolkit is incomplete: cmake, ninja, GCC, zlib and Ogg are required.");
   return false;
  }
- std::vector<std::wstring> candidates = {Join(base, L"mingw64"), base};
- for(auto& r : candidates)
-  if(FullToolkit(r)) {
-   toolkitDir = r;
-   RegWrite(L"ToolkitPath", r);
-   Status(L"Toolkit installed:\r\n" + r);
-   return true;
-  }
- Status(L"Downloaded toolkit is incomplete: cmake, ninja, GCC, zlib and Ogg are required.");
- return false;
+ toolkitDir = mingwRoot;
+ RegWrite(L"ToolkitPath", mingwRoot);
+ Status(L"Toolkit installed:\r\n" + mingwRoot);
+ return true;
 }
 static void LoadInstallPath() {
  installDir = RegRead(L"InstallPath");
