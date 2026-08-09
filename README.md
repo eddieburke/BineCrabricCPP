@@ -19,7 +19,7 @@ For textures to load:
 | **Windowing**    | AWT/Swing Canvas      | **GLFW 3**                                         |
 | **Audio**        | paulscode (LWJGL)     | **XAudio2** backend + **Ogg Vorbis** decoder       |
 | **Build**        | Manual MCP pipeline   | **CMake + Ninja**, self-bootstrapping build script |
-| **Toolchain**    | JDK required          | **Bundled MinGW GCC 15.2** — no system deps needed |
+| **Toolchain**    | JDK required          | **Bundled MinGW GCC 15.2**, no system deps needed  |
 | **Auth**         | Offline only          | **Microsoft account authentication**               |
 
 ### Lua Modding Engine
@@ -35,10 +35,11 @@ A full **Lua 5.4 scripting runtime** embedded into the game, letting mods regist
 
 ### GLSL Shaderpack System
 
-Replaces the original fixed-function OpenGL 1.x pipeline with a **deferred-style FBO renderer** and configurable shaderpacks:
-- **Vanilla** — faithful vanilla-like gbuffer pipeline
-- **Vibrant** — bloom, volumetric lighting, shadows, color grading
-- **PSX** — retro PlayStation 1 aesthetic
+Replaces the original fixed-function OpenGL 1.x pipeline with a **deferred-style FBO renderer** driven entirely by shaderpacks. There is no separate legacy path: the vanilla look is itself a shipped pack (embedded in the binary), so vanilla and modded rendering go through the same code.
+
+The loader targets **Iris/OptiFine shaderpack conventions**: `gbuffers_*`/`deferred*`/`composite*` program stages, `#include` resolution, GLSL preprocessing and core-profile transformation, custom uniforms, compute passes, colortex format declarations, and pack option menus.
+
+Third-party shaderpacks are **not** distributed with this repo (`shaders/` is gitignored). Drop an unzipped pack into `shaders/<packname>/` yourself and it will be picked up. Packs written for Iris are the target, so most should load without modification.
 
 ### Content Registration System
 
@@ -46,14 +47,14 @@ Typed registries with lifecycle phases for blocks, items, entities, and block en
 
 ### Testing Infrastructure
 - **GoogleTest** unit tests for C++ engine components
-- **Java parity integration tests** — test protocol compatibility between the native server and the original Java client
+- **Java parity integration tests** that check protocol compatibility between the native server and the original Java client
 
 ### Summary
 
 | Feature              | Vanilla Beta 1.7.3          | BineCrabicCPP                          |
 |----------------------|-----------------------------|----------------------------------------|
-| Rendering            | Fixed-function OpenGL 1.x   | GLSL shader pipeline, FBOs, shaderpacks|
-| Modding              | None                        | Lua 5.4 scripting engine + 23 mods     |
+| Rendering            | Fixed-function OpenGL 1.x   | GLSL deferred pipeline, Iris-style packs|
+| Modding              | None                        | Lua 5.4 scripting engine + 20 mods     |
 | Audio                | paulscode LWJGL             | XAudio2 + Ogg Vorbis                   |
 | Auth                 | Offline                     | MultiMC Microsoft login/auth           |
 | Build                | Java/MCP                    | CMake + Ninja + bundled MinGW          |
