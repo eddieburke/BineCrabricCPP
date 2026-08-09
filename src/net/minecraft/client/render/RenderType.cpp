@@ -2,28 +2,26 @@
 #include <atomic>
 #include <cstdio>
 #include "net/minecraft/client/ClientLog.hpp"
+#include "net/minecraft/client/Minecraft.hpp"
 #include "net/minecraft/client/gl/GLCore.hpp"
+#include "net/minecraft/client/render/GameRenderer.hpp"
+#include "net/minecraft/client/render/pipeline/Pipeline.hpp"
 #include "net/minecraft/client/render/RenderCore.hpp"
 #include "net/minecraft/util/logging/Logging.hpp"
 namespace net::minecraft::client::render {
 namespace {
-WorldProgramResolver g_worldProgramResolver;
-WorldPassDirectiveApplier g_worldPassDirectiveApplier;
-ShaderObjectIdResolver g_shaderObjectIdResolver;
 std::array<std::atomic_int, 256> g_shaderBlockIds{};
 DrawPhase g_drawPhase = DrawPhase::All;
+Pipeline* shaderPipeline() {
+ net::minecraft::client::Minecraft* minecraft = net::minecraft::client::Minecraft::INSTANCE;
+ return minecraft != nullptr && minecraft->gameRenderer != nullptr
+            ? minecraft->gameRenderer->shaderPipeline()
+            : nullptr;
+}
 } // namespace
-void setWorldProgramResolver(WorldProgramResolver resolver) {
- g_worldProgramResolver = std::move(resolver);
-}
-void setWorldPassDirectiveApplier(WorldPassDirectiveApplier applier) {
- g_worldPassDirectiveApplier = std::move(applier);
-}
-void setShaderObjectIdResolver(ShaderObjectIdResolver resolver) {
- g_shaderObjectIdResolver = std::move(resolver);
-}
 int resolveShaderObjectId(const std::string& kind, const std::string& name, int fallback) {
- return g_shaderObjectIdResolver ? g_shaderObjectIdResolver(kind, name, fallback) : fallback;
+ Pipeline* pipeline = shaderPipeline();
+ return pipeline != nullptr ? pipeline->resolveObjectId(kind, name, fallback) : fallback;
 }
 void setShaderBlockIds(const std::array<int, 256>& ids) {
  for(std::size_t i = 0; i < ids.size(); ++i) g_shaderBlockIds[i].store(ids[i], std::memory_order_relaxed);
@@ -36,30 +34,25 @@ int resolveShaderBlockId(int id) {
 void setDrawPhase(DrawPhase phase) {
  g_drawPhase = phase;
 }
-gl::ShaderProgram* resolveWorldProgram(const std::string& key) {
- return g_worldProgramResolver ? g_worldProgramResolver(key) : nullptr;
-}
 RenderType::RenderType(std::string_view name,
                        int glMode,
                        bool hasTexture,
-                       bool hasColor,
-                       bool hasNormals,
                        std::string_view programName,
                        State state,
-                       std::string_view worldProgramKey)
+                       std::optional<WorldProgramId> worldProgram)
     : name_(name),
       glMode_(glMode),
       hasTexture_(hasTexture),
-      hasColor_(hasColor),
-      hasNormals_(hasNormals),
       programName_(programName),
       state_(state),
-      worldProgramKey_(worldProgramKey) {
+      worldProgram_(worldProgram) {
 }
 void RenderType::setupRenderState() const {
  // Resolved fresh each pass so a live pack switch / recompile takes effect.
- gl::ShaderProgram* active =
-     !worldProgramKey_.empty() && g_worldProgramResolver ? g_worldProgramResolver(worldProgramKey_) : nullptr;
+ Pipeline* pipeline = shaderPipeline();
+ gl::ShaderProgram* active = pipeline != nullptr && worldProgram_.has_value()
+                                 ? pipeline->worldProgram(*worldProgram_)
+                                 : nullptr;
  core::setActiveProgram(active);
  // Diffuse sampler is always unit 0. Untextured passes own a white texel there;
  // textured passes leave unit 0 for the caller to bind.
@@ -86,9 +79,7 @@ void RenderType::setupRenderState() const {
  }
    core::setAlphaTestRef(state_.alphaTest ? state_.alphaRef : 0.0f);
    core::setLightingEnabled(state_.lighting);
-    if(!worldProgramKey_.empty() && g_worldPassDirectiveApplier) {
-     g_worldPassDirectiveApplier();
-    }
+    if(pipeline != nullptr && worldProgram_.has_value()) pipeline->applyWorldPassDirectives();
   }
 void RenderType::restoreRenderState(const core::PassGlBits& saved, gl::ShaderProgram* savedProgram) const {
  core::restorePassGlBits(saved);
@@ -172,6 +163,18 @@ RenderType::State translucentState() {
  s.depthTest = true;
  s.depthWrite = true;
  s.cull = false;
+ return s;
+}
+// Terrain translucent is a chunk-mesh pass, so everything the comment above
+// solidState() says applies to it: it culls back faces. Sharing translucentState()
+// left culling off, which rasterises every water quad twice — the back face
+// arriving with an inverted normal and at_tangent.w handedness computed for the
+// opposite winding, so the pack's TBN basis and face normal are wrong on it — and
+// then blends the two coincident faces on top of each other. Clouds/weather/lines
+// keep translucentState(); they are not chunk meshes and do want both windings.
+RenderType::State terrainTranslucentState() {
+ RenderType::State s = translucentState();
+ s.cull = true;
  return s;
 }
 RenderType::State damagedBlockState() {
@@ -260,121 +263,119 @@ RenderType::State entityCutoutState() {
 } // namespace
 RenderType& RenderType::solid() {
  static RenderType instance =
-     RenderType("solid", 0x0004, true, true, true, "", solidState(), "gbuffers_terrain_solid");
+      RenderType("solid", 0x0004, true, "", solidState(), WorldProgramId::TerrainSolid);
  return instance;
 }
 RenderType& RenderType::cutout() {
  static RenderType instance =
-     RenderType("cutout", 0x0004, true, true, true, "", cutoutState(), "gbuffers_terrain_cutout");
+      RenderType("cutout", 0x0004, true, "", cutoutState(), WorldProgramId::TerrainCutout);
  return instance;
 }
 RenderType& RenderType::cutoutInterior() {
  // Same program key as cutout(): to a pack this is still gbuffers_terrain
  // cutout geometry, and it must not need a program of its own.
  static RenderType instance =
-     RenderType("cutout_interior", 0x0004, true, true, true, "", cutoutInteriorState(), "gbuffers_terrain_cutout");
+      RenderType("cutout_interior", 0x0004, true, "", cutoutInteriorState(), WorldProgramId::TerrainCutout);
  return instance;
 }
 RenderType& RenderType::translucent() {
  static RenderType instance =
-     RenderType("translucent", 0x0004, true, true, true, "", translucentState(), "gbuffers_water");
+      RenderType("translucent", 0x0004, true, "", terrainTranslucentState(), WorldProgramId::TerrainTranslucent);
  return instance;
 }
 RenderType& RenderType::gui() {
  static RenderType instance =
-     RenderType("gui", 0x0004, false, true, false, "", guiState(), "gbuffers_gui");
+      RenderType("gui", 0x0004, false, "", guiState(), WorldProgramId::Gui);
  return instance;
 }
 RenderType& RenderType::guiTextured() {
  static RenderType instance =
-     RenderType("gui_textured", 0x0004, true, true, false, "", guiState(), "gbuffers_gui_textured");
+      RenderType("gui_textured", 0x0004, true, "", guiState(), WorldProgramId::GuiTextured);
  return instance;
 }
 RenderType& RenderType::guiItem3D() {
  static RenderType instance =
-     RenderType("gui_item_3d", 0x0004, true, true, true, "", guiItem3DState(), "gbuffers_item");
+      RenderType("gui_item_3d", 0x0004, true, "", guiItem3DState(), WorldProgramId::Item);
  return instance;
 }
 RenderType& RenderType::text() {
  static RenderType instance =
-     RenderType("text", 0x0004, true, true, false, "", textState(), "gbuffers_text");
+      RenderType("text", 0x0004, true, "", textState(), WorldProgramId::Text);
  return instance;
 }
 RenderType& RenderType::sky() {
  static RenderType instance =
-     RenderType("sky", 0x0004, false, false, false, "", skyState(), "gbuffers_skybasic");
+      RenderType("sky", 0x0004, false, "", skyState(), WorldProgramId::SkyBasic);
  return instance;
 }
 RenderType& RenderType::skyTextured() {
  static RenderType instance =
-     RenderType("sky_textured", 0x0004, true, true, false, "", skyTexturedState(), "gbuffers_skytextured");
+      RenderType("sky_textured", 0x0004, true, "", skyTexturedState(), WorldProgramId::SkyTextured);
  return instance;
 }
 RenderType& RenderType::basic() {
  static RenderType instance =
-     RenderType("basic", 0x0004, false, true, false, "", translucentState(), "gbuffers_basic");
+      RenderType("basic", 0x0004, false, "", translucentState(), WorldProgramId::Basic);
  return instance;
 }
 RenderType& RenderType::lines() {
  static RenderType instance =
-     RenderType("lines", 0x0004, false, true, false, "", translucentState(), "gbuffers_line");
+      RenderType("lines", 0x0004, false, "", translucentState(), WorldProgramId::Line);
  return instance;
 }
 RenderType& RenderType::entityCutout() {
  static RenderType instance =
-     RenderType("entity_cutout", 0x0004, true, true, true, "", entityCutoutState(), "gbuffers_entities");
+      RenderType("entity_cutout", 0x0004, true, "", entityCutoutState(), WorldProgramId::Entities);
  return instance;
 }
 RenderType& RenderType::entityTranslucent() {
  static RenderType instance =
-     RenderType("entity_translucent", 0x0004, true, true, true, "", translucentState(), "gbuffers_entities_translucent");
+      RenderType("entity_translucent", 0x0004, true, "", translucentState(), WorldProgramId::EntitiesTranslucent);
  return instance;
 }
 RenderType& RenderType::lightning() {
  static RenderType instance =
-     RenderType("lightning", 0x0004, true, true, true, "", translucentState(), "gbuffers_lightning");
+      RenderType("lightning", 0x0004, true, "", translucentState(), WorldProgramId::Lightning);
  return instance;
 }
 RenderType& RenderType::block() {
  static RenderType instance =
-     RenderType("block", 0x0004, true, true, true, "", entityCutoutState(), "gbuffers_block");
+      RenderType("block", 0x0004, true, "", entityCutoutState(), WorldProgramId::Block);
  return instance;
 }
 RenderType& RenderType::blockTranslucent() {
  static RenderType instance =
-     RenderType("block_translucent", 0x0004, true, true, true, "", translucentState(), "gbuffers_block_translucent");
+      RenderType("block_translucent", 0x0004, true, "", translucentState(), WorldProgramId::BlockTranslucent);
  return instance;
 }
 RenderType& RenderType::particles() {
  static RenderType instance =
-     RenderType("particles", 0x0004, true, true, false, "", entityCutoutState(), "gbuffers_particles");
+      RenderType("particles", 0x0004, true, "", entityCutoutState(), WorldProgramId::Particles);
  return instance;
 }
 RenderType& RenderType::particlesTranslucent() {
  static RenderType instance =
-     RenderType("particles_translucent", 0x0004, true, true, false, "", particlesTranslucentState(), "gbuffers_particles_translucent");
+      RenderType("particles_translucent", 0x0004, true, "", particlesTranslucentState(), WorldProgramId::ParticlesTranslucent);
  return instance;
 }
-RenderType& RenderType::clouds() {
- static RenderType instance =
-     // hasNormals: CloudRenderer emits a per-face normal (top vs bottom sheet), so the
-     // attribute must be sourced rather than replaced with a constant.
-     RenderType("clouds", 0x0004, true, true, true, "", translucentState(), "gbuffers_clouds");
- return instance;
-}
+ RenderType& RenderType::clouds() {
+  static RenderType instance =
+      RenderType("clouds", 0x0004, true, "", translucentState(), WorldProgramId::Clouds);
+  return instance;
+ }
 RenderType& RenderType::weather() {
  static RenderType instance =
-     RenderType("weather", 0x0004, true, true, false, "", translucentState(), "gbuffers_weather");
+      RenderType("weather", 0x0004, true, "", translucentState(), WorldProgramId::Weather);
  return instance;
 }
 RenderType& RenderType::hand() {
  static RenderType instance =
-     RenderType("hand", 0x0004, true, true, true, "", entityCutoutState(), "gbuffers_hand");
+      RenderType("hand", 0x0004, true, "", entityCutoutState(), WorldProgramId::Hand);
  return instance;
 }
 RenderType& RenderType::damagedBlock() {
  static RenderType instance =
-     RenderType("damaged_block", 0x0004, true, true, true, "", damagedBlockState(), "gbuffers_damagedblock");
+      RenderType("damaged_block", 0x0004, true, "", damagedBlockState(), WorldProgramId::DamagedBlock);
  return instance;
 }
 } // namespace net::minecraft::client::render

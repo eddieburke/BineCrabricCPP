@@ -106,84 +106,73 @@ class ModLuaDrawScope {
   }
 
  private:
-  struct PassSpec {
-   std::string_view programKey;
-   bool hasTexture = false;
-   bool hasColor = true;
-   bool hasNormals = false;
-   client::render::RenderType::State state;
-  };
+   struct PassSpec {
+    std::string_view programKey;
+    bool hasTexture = false;
+    client::render::RenderType::State state;
+   };
    [[nodiscard]] static PassSpec composePass(bool textured, bool blend, bool cull, bool depthTest,
                                             bool depthWrite, ModDrawLayer layer, int blendSrc, int blendDst) {
    const bool sky = !depthTest || layer == ModDrawLayer::Sky;
    const bool basic = !sky && (layer == ModDrawLayer::Basic || !textured);
    PassSpec spec;
    spec.programKey = modDrawProgramKey(textured, blend, depthTest, depthWrite, layer);
-   if(layer == ModDrawLayer::Clouds) {
-    spec.hasTexture = true;
-    spec.hasNormals = false;
-    spec.state.depthTest = depthTest;
-    spec.state.depthWrite = depthWrite;
-   } else if(sky) {
-    spec.hasTexture = textured;
-    spec.hasNormals = false;
-    spec.state.depthTest = true;
-    spec.state.depthWrite = depthTest && depthWrite;
-   } else if(basic) {
-    spec.hasTexture = false;
-    spec.hasNormals = false;
-    spec.state.depthTest = depthTest;
-    spec.state.depthWrite = depthWrite;
-   } else if(layer == ModDrawLayer::Terrain) {
-    spec.hasTexture = true;
-    spec.hasNormals = true;
-    spec.state.depthTest = depthTest;
-    spec.state.depthWrite = depthWrite;
-    if(!blend) {
+    if(layer == ModDrawLayer::Clouds) {
+     spec.hasTexture = true;
+     spec.state.depthTest = depthTest;
+     spec.state.depthWrite = depthWrite;
+    } else if(sky) {
+     spec.hasTexture = textured;
+     spec.state.depthTest = true;
+     spec.state.depthWrite = depthTest && depthWrite;
+    } else if(basic) {
+     spec.hasTexture = false;
+     spec.state.depthTest = depthTest;
+     spec.state.depthWrite = depthWrite;
+    } else if(layer == ModDrawLayer::Terrain) {
+     spec.hasTexture = true;
+     spec.state.depthTest = depthTest;
+     spec.state.depthWrite = depthWrite;
+     if(!blend) {
+      spec.state.alphaTest = true;
+      spec.state.alphaRef = 0.1f;
+     }
+    } else if(layer == ModDrawLayer::Block) {
+     spec.hasTexture = true;
+     spec.state.depthTest = depthTest;
+     spec.state.depthWrite = depthWrite;
+     if(!blend) {
+      spec.state.alphaTest = true;
+      spec.state.alphaRef = 0.1f;
+     }
+    } else if(blend && !depthWrite) {
+     spec.hasTexture = true;
+     spec.state.depthTest = depthTest;
+     spec.state.depthWrite = false;
+     spec.state.alphaTest = true;
+     spec.state.alphaRef = 0.1f;
+    } else if(blend) {
+     spec.hasTexture = true;
+     spec.state.depthTest = depthTest;
+     spec.state.depthWrite = depthWrite;
+    } else {
+     spec.hasTexture = true;
+     spec.state.depthTest = depthTest;
+     spec.state.depthWrite = depthWrite;
      spec.state.alphaTest = true;
      spec.state.alphaRef = 0.1f;
     }
-   } else if(layer == ModDrawLayer::Block) {
-    spec.hasTexture = true;
-    spec.hasNormals = true;
-    spec.state.depthTest = depthTest;
-    spec.state.depthWrite = depthWrite;
-    if(!blend) {
-     spec.state.alphaTest = true;
-     spec.state.alphaRef = 0.1f;
-    }
-   } else if(blend && !depthWrite) {
-    spec.hasTexture = true;
-    spec.hasNormals = false;
-    spec.state.depthTest = depthTest;
-    spec.state.depthWrite = false;
-    spec.state.alphaTest = true;
-    spec.state.alphaRef = 0.1f;
-   } else if(blend) {
-    spec.hasTexture = true;
-    spec.hasNormals = true;
-    spec.state.depthTest = depthTest;
-    spec.state.depthWrite = depthWrite;
-   } else {
-    spec.hasTexture = true;
-    spec.hasNormals = true;
-    spec.state.depthTest = depthTest;
-    spec.state.depthWrite = depthWrite;
-    spec.state.alphaTest = true;
-    spec.state.alphaRef = 0.1f;
-   }
    spec.state.blend = blend;
    spec.state.blendSrc = blendSrc;
    spec.state.blendDst = blendDst;
    spec.state.cull = cull;
    spec.state.cullMode = 0x0405;
    spec.state.lighting = false;
-   spec.hasColor = true;
    return spec;
   }
   [[nodiscard]] static client::render::RenderType buildPass(const PassSpec& spec) {
-   return client::render::RenderType("mod_draw", 0x0004, spec.hasTexture, spec.hasColor, spec.hasNormals, {},
-                                     spec.state, spec.programKey);
+   return client::render::RenderType("mod_draw", 0x0004, spec.hasTexture, {},
+                                     spec.state, client::render::worldProgramId(spec.programKey));
   }
   PassSpec spec_;
   client::render::RenderType type_;
