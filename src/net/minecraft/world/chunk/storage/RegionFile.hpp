@@ -8,6 +8,7 @@
 #include <windows.h>
 #include <array>
 #include <cstdint>
+#include <cstring>
 #include <ctime>
 #include <filesystem>
 #include <optional>
@@ -53,17 +54,24 @@ class RegionFile {
    if(sectorOffset + sectorCount > sectorFree_.size()) {
     return std::nullopt;
    }
-   const std::uint64_t base = static_cast<std::uint64_t>(sectorOffset) * sectorSize;
-   const std::uint32_t length = readU32At(base);
-   if(length == 0 || length > sectorCount * sectorSize) {
+   // One read for the whole record. The 4-byte length, the compression byte and
+   // the payload are contiguous inside the chunk's own sectors, so fetching them
+   // separately cost three seek+read round trips per chunk load — two of which
+   // were for five bytes.
+   std::vector<std::uint8_t> record(static_cast<std::size_t>(sectorCount) * sectorSize);
+   if(!readAt(static_cast<std::uint64_t>(sectorOffset) * sectorSize, record.data(), record.size())) {
     return std::nullopt;
    }
-   const std::uint8_t compression = readU8At(base + 4U);
-   std::vector<std::uint8_t> compressed(length - 1U);
-   if(!compressed.empty() && !readAt(base + 5U, compressed.data(), compressed.size())) {
+   const std::uint32_t length = readU32(record.data());
+   // writeChunk sizes the run as ceil((payload + 5) / sectorSize), so a record
+   // whose declared length does not fit its own sectors is malformed.
+   if(length == 0 || length + 4U > record.size()) {
     return std::nullopt;
    }
-   return CompressedChunk{compression, std::move(compressed)};
+   const std::uint8_t compression = record[4];
+   record.erase(record.begin(), record.begin() + 5);
+   record.resize(length - 1U);
+   return CompressedChunk{compression, std::move(record)};
   }
   void writeChunk(int chunkX, int chunkZ, const std::vector<std::uint8_t>& rawChunk) {
    if(isOutsideRegion(chunkX, chunkZ)) {
@@ -148,9 +156,11 @@ class RegionFile {
    if(size < sectorSize * 2U) {
     appendSectors(2U);
    } else if(size % sectorSize != 0U) {
-    const std::uint64_t padding = sectorSize - size % sectorSize;
-    const std::vector<std::uint8_t> zeros(static_cast<std::size_t>(padding), 0U);
-    writeAtEnd(zeros.data(), zeros.size());
+    LARGE_INTEGER aligned{};
+    aligned.QuadPart = static_cast<LONGLONG>(size + (sectorSize - size % sectorSize));
+    if(handle_ != INVALID_HANDLE_VALUE && ::SetFilePointerEx(handle_, aligned, nullptr, FILE_BEGIN) != 0) {
+     ::SetEndOfFile(handle_);
+    }
    }
    const std::uint64_t alignedSize = fileSize();
    const std::size_t sectorCount = static_cast<std::size_t>(alignedSize / sectorSize);
@@ -190,11 +200,18 @@ class RegionFile {
    }
   }
   void appendSectors(std::uint32_t count) {
-   const std::vector<std::uint8_t> zeros(sectorSize, 0U);
-   for(std::uint32_t i = 0; i < count; ++i) {
-    writeAtEnd(zeros.data(), zeros.size());
-    sectorFree_.push_back(0U);
+   if(count == 0U || handle_ == INVALID_HANDLE_VALUE) {
+    return;
    }
+   // Extend by moving the end of file, not by writing zeros: Windows reads the
+   // gap back as zeros, so growing a region by N sectors is one syscall instead
+   // of N writes of a freshly allocated 4 KiB zero buffer each.
+   LARGE_INTEGER end{};
+   end.QuadPart = static_cast<LONGLONG>(fileSize() + static_cast<std::uint64_t>(count) * sectorSize);
+   if(::SetFilePointerEx(handle_, end, nullptr, FILE_BEGIN) == 0 || ::SetEndOfFile(handle_) == 0) {
+    return;
+   }
+   sectorFree_.insert(sectorFree_.end(), static_cast<std::size_t>(count), 0U);
    bytesWritten_ += static_cast<int>(sectorSize * count);
   }
   [[nodiscard]] std::uint32_t findFreeRun(std::uint32_t sectorsNeeded) const {
@@ -221,12 +238,15 @@ class RegionFile {
   void writeChunkData(std::uint32_t sectorOffset,
                       const std::vector<std::uint8_t>& compressed,
                       std::uint8_t compressionType) {
-   const std::uint64_t base = static_cast<std::uint64_t>(sectorOffset) * sectorSize;
-   writeU32At(base, static_cast<std::uint32_t>(compressed.size() + 1U));
-   writeU8At(base + 4U, compressionType);
+   // Header and payload go out in one write — they are contiguous, and issuing
+   // them as three separate seek+write pairs tripled the syscalls per save.
+   std::vector<std::uint8_t> record(compressed.size() + 5U);
+   writeU32(record.data(), static_cast<std::uint32_t>(compressed.size() + 1U));
+   record[4] = compressionType;
    if(!compressed.empty()) {
-    writeAt(base + 5U, compressed.data(), compressed.size());
+    std::memcpy(record.data() + 5, compressed.data(), compressed.size());
    }
+   writeAt(static_cast<std::uint64_t>(sectorOffset) * sectorSize, record.data(), record.size());
   }
   void writeChunkBlockInfo(int indexValue, std::uint32_t blockInfo) {
    chunkBlockInfo_[static_cast<std::size_t>(indexValue)] = blockInfo;
@@ -236,67 +256,48 @@ class RegionFile {
    chunkSaveTimes_[static_cast<std::size_t>(indexValue)] = saveTime;
    writeU32At(sectorSize + static_cast<std::uint64_t>(indexValue * 4), saveTime);
   }
-  [[nodiscard]] bool setPosition(std::uint64_t offset) const {
+  // Positional I/O. An OVERLAPPED carrying the offset works on a synchronous
+  // handle and completes before the call returns, so every read/write is one
+  // syscall instead of a SetFilePointerEx paired with a ReadFile/WriteFile.
+  // It also leaves no shared file pointer to race on.
+  [[nodiscard]] static OVERLAPPED positionAt(std::uint64_t offset) noexcept {
+   OVERLAPPED overlapped{};
+   overlapped.Offset = static_cast<DWORD>(offset & 0xFFFFFFFFULL);
+   overlapped.OffsetHigh = static_cast<DWORD>(offset >> 32U);
+   return overlapped;
+  }
+  [[nodiscard]] bool readAt(std::uint64_t offset, void* buffer, std::size_t size) const {
    if(handle_ == INVALID_HANDLE_VALUE) {
     return false;
    }
-   LARGE_INTEGER position{};
-   position.QuadPart = static_cast<LONGLONG>(offset);
-   return ::SetFilePointerEx(handle_, position, nullptr, FILE_BEGIN) != 0;
-  }
-  [[nodiscard]] bool readAt(std::uint64_t offset, void* buffer, std::size_t size) const {
-   if(!setPosition(offset)) {
-    return false;
-   }
+   OVERLAPPED overlapped = positionAt(offset);
    DWORD read = 0;
-   return ::ReadFile(handle_, buffer, static_cast<DWORD>(size), &read, nullptr) != 0 &&
+   return ::ReadFile(handle_, buffer, static_cast<DWORD>(size), &read, &overlapped) != 0 &&
           read == static_cast<DWORD>(size);
   }
   bool writeAt(std::uint64_t offset, const void* buffer, std::size_t size) {
-   if(!setPosition(offset)) {
-    return false;
-   }
-   DWORD written = 0;
-   return ::WriteFile(handle_, buffer, static_cast<DWORD>(size), &written, nullptr) != 0 &&
-          written == static_cast<DWORD>(size);
-  }
-  bool writeAtEnd(const void* buffer, std::size_t size) {
    if(handle_ == INVALID_HANDLE_VALUE) {
     return false;
    }
-   LARGE_INTEGER end{};
-   end.QuadPart = 0;
-   if(!::SetFilePointerEx(handle_, end, nullptr, FILE_END)) {
-    return false;
-   }
+   OVERLAPPED overlapped = positionAt(offset);
    DWORD written = 0;
-   return ::WriteFile(handle_, buffer, static_cast<DWORD>(size), &written, nullptr) != 0 &&
+   return ::WriteFile(handle_, buffer, static_cast<DWORD>(size), &written, &overlapped) != 0 &&
           written == static_cast<DWORD>(size);
   }
-  [[nodiscard]] std::uint32_t readU32At(std::uint64_t offset) const {
-   std::array<std::uint8_t, 4> bytes{};
-   if(!readAt(offset, bytes.data(), bytes.size())) {
-    return 0U;
-   }
+  [[nodiscard]] static std::uint32_t readU32(const std::uint8_t* bytes) noexcept {
    return (static_cast<std::uint32_t>(bytes[0]) << 24U) | (static_cast<std::uint32_t>(bytes[1]) << 16U) |
           (static_cast<std::uint32_t>(bytes[2]) << 8U) | static_cast<std::uint32_t>(bytes[3]);
   }
+  static void writeU32(std::uint8_t* bytes, std::uint32_t value) noexcept {
+   bytes[0] = static_cast<std::uint8_t>((value >> 24U) & 0xFFU);
+   bytes[1] = static_cast<std::uint8_t>((value >> 16U) & 0xFFU);
+   bytes[2] = static_cast<std::uint8_t>((value >> 8U) & 0xFFU);
+   bytes[3] = static_cast<std::uint8_t>(value & 0xFFU);
+  }
   void writeU32At(std::uint64_t offset, std::uint32_t value) {
-   const std::array<std::uint8_t, 4> bytes = {static_cast<std::uint8_t>((value >> 24U) & 0xFFU),
-                                              static_cast<std::uint8_t>((value >> 16U) & 0xFFU),
-                                              static_cast<std::uint8_t>((value >> 8U) & 0xFFU),
-                                              static_cast<std::uint8_t>(value & 0xFFU)};
+   std::array<std::uint8_t, 4> bytes{};
+   writeU32(bytes.data(), value);
    writeAt(offset, bytes.data(), bytes.size());
-  }
-  [[nodiscard]] std::uint8_t readU8At(std::uint64_t offset) const {
-   std::uint8_t value = 0;
-   if(!readAt(offset, &value, 1)) {
-    return 0U;
-   }
-   return value;
-  }
-  void writeU8At(std::uint64_t offset, std::uint8_t value) {
-   writeAt(offset, &value, 1);
   }
   fs::path file_;
   HANDLE handle_ = INVALID_HANDLE_VALUE;

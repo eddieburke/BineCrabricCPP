@@ -1,6 +1,7 @@
 #pragma once
 #include <array>
 #include <cstdint>
+#include <limits>
 #include <memory>
 #include <span>
 #include <vector>
@@ -70,11 +71,22 @@ class RegionSnapshot final : public net::minecraft::BlockView {
  [[nodiscard]] const ChunkCopy* chunkAt(int x, int z) const {
   const int localX = (x >> 4) - chunkX_;
   const int localZ = (z >> 4) - chunkZ_;
-  if(localX < 0 || localZ < 0 || localX >= chunkWidth_ || localZ >= chunkDepth_) {
-   return nullptr;
+  // Every block, meta and light query resolves its chunk this way, and a single
+  // getRawBrightness with neighbour sampling asks eleven times — almost always
+  // for the same chunk, since the five neighbours of a block share its column
+  // except at a 16-block boundary. Memoise the last answer.
+  if(localX == memoX_ && localZ == memoZ_) {
+   return memo_;
   }
-  const ChunkCopy& copy = chunks_[static_cast<std::size_t>(localX + localZ * chunkWidth_)];
-  return copy.present ? &copy : nullptr;
+  const ChunkCopy* result = nullptr;
+  if(localX >= 0 && localZ >= 0 && localX < chunkWidth_ && localZ < chunkDepth_) {
+   const ChunkCopy& copy = chunks_[static_cast<std::size_t>(localX + localZ * chunkWidth_)];
+   result = copy.present ? &copy : nullptr;
+  }
+  memoX_ = localX;
+  memoZ_ = localZ;
+  memo_ = result;
+  return result;
  }
  [[nodiscard]] bool containsY(int y) const noexcept {
   return y >= minY_ && y < minY_ + ySpan_;
@@ -99,6 +111,12 @@ class RegionSnapshot final : public net::minecraft::BlockView {
  std::array<float, 16> lightLevelToLuminance_{};
  std::unique_ptr<net::minecraft::BiomeSource> biomeSource_;
  mutable bool sawSkyLight_ = false;
+ // chunkAt memo. Seeded out of range so the first lookup always misses. Not
+ // synchronised — a snapshot belongs to the one mesh job that built it, same
+ // assumption sawSkyLight_ already makes.
+ mutable int memoX_ = std::numeric_limits<int>::min();
+ mutable int memoZ_ = std::numeric_limits<int>::min();
+ mutable const ChunkCopy* memo_ = nullptr;
 };
 
 } // namespace net::minecraft::client::render::chunk

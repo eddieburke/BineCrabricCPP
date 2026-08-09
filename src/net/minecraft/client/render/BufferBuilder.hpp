@@ -68,34 +68,14 @@ class BufferBuilder {
   std::size_t offset = buffer_.size();
   buffer_.resize(offset + sizeof(TVertex));
   TVertex* ptr = reinterpret_cast<TVertex*>(&buffer_[offset]);
+  // One copy of a prototype built at compile time, instead of a scattered store
+  // per defaulted field on every vertex. Tessellator::vertex is the immediate
+  // mode entry point for entities, particles and the GUI, so this runs tens of
+  // thousands of times a frame.
+  *ptr = kPrototype;
   ptr->x = x;
   ptr->y = y;
   ptr->z = z;
-  if constexpr(requires { ptr->color; }) {
-   ptr->color = 0xFFFFFFFFU;
-  }
-  if constexpr(requires { ptr->normal; }) {
-   // Packed (0, 1, 0) — up. resize() would zero-fill this, and a zero normal is
-   // NaN after the normalize() every Iris gbuffer vertex stage applies to it.
-   // See kDefaultNormal in RenderCore.cpp for the generic-attribute twin.
-   ptr->normal = 0x00007F00;
-  }
-  if constexpr(requires { ptr->midBlock; }) {
-   ptr->midBlock = 0;
-  }
-  if constexpr(requires { ptr->light; }) {
-   ptr->light = 0x00F000F0;
-  }
-  if constexpr(requires { ptr->entity; }) {
-   for(auto& value : ptr->entity) value = 0;
-  }
-  if constexpr(requires { ptr->midU; }) {
-   ptr->midU = 0.0f;
-   ptr->midV = 0.0f;
-  }
-  if constexpr(requires { ptr->tangent; }) {
-   for(auto& value : ptr->tangent) value = 0;
-  }
   return VertexProxy{*this, ptr};
  }
  void nextVertex() {
@@ -119,6 +99,37 @@ class BufferBuilder {
  }
 
  private:
+ // The state every fresh vertex starts in. Folded to a constant at compile time,
+ // so the defaults cost one store of the vertex rather than one per field.
+ static constexpr TVertex kPrototype = [] {
+  TVertex vertex{};
+  if constexpr(requires { vertex.color; }) {
+   vertex.color = 0xFFFFFFFFU;
+  }
+  if constexpr(requires { vertex.normal; }) {
+   // Packed (0, 1, 0) — up. A zero normal is NaN after the normalize() every
+   // Iris gbuffer vertex stage applies to it. See kDefaultNormal in
+   // RenderCore.cpp for the generic-attribute twin.
+   vertex.normal = 0x00007F00;
+  }
+  if constexpr(requires { vertex.midBlock; }) {
+   vertex.midBlock = 0;
+  }
+  if constexpr(requires { vertex.light; }) {
+   vertex.light = 0x00F000F0;
+  }
+  if constexpr(requires { vertex.entity; }) {
+   for(auto& value : vertex.entity) value = 0;
+  }
+  if constexpr(requires { vertex.midU; }) {
+   vertex.midU = 0.0f;
+   vertex.midV = 0.0f;
+  }
+  if constexpr(requires { vertex.tangent; }) {
+   for(auto& value : vertex.tangent) value = 0;
+  }
+  return vertex;
+ }();
  std::vector<std::uint8_t> buffer_;
  std::size_t vertexCount_ = 0;
  int drawMode_ = 0;

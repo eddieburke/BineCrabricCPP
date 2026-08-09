@@ -131,19 +131,27 @@ void TerrainRegion::releaseRange(LayerArena& arena, TerrainAllocation& allocatio
   allocation = {};
   return;
  }
- arena.freeRanges.push_back(Range{allocation.firstVertex, allocation.capacityVertices});
- std::sort(arena.freeRanges.begin(), arena.freeRanges.end(), [](const Range& a, const Range& b) {
-  return a.first < b.first;
- });
- std::size_t write = 0;
- for(const Range& range : arena.freeRanges) {
-  if(write != 0 && arena.freeRanges[write - 1].first + arena.freeRanges[write - 1].capacity == range.first) {
-   arena.freeRanges[write - 1].capacity += range.capacity;
-  } else {
-   arena.freeRanges[write++] = range;
+ // The list is kept sorted by offset, so a free is an insert at its own position
+ // plus a merge against the two neighbours it can possibly touch. It used to
+ // re-sort the whole list and rebuild every range on each free, which runs on
+ // every block edit and every section unload.
+ const auto at = std::lower_bound(arena.freeRanges.begin(),
+                                  arena.freeRanges.end(),
+                                  allocation.firstVertex,
+                                  [](const Range& range, std::size_t first) { return range.first < first; });
+ auto inserted = arena.freeRanges.insert(at, Range{allocation.firstVertex, allocation.capacityVertices});
+ const auto next = inserted + 1;
+ if(next != arena.freeRanges.end() && inserted->first + inserted->capacity == next->first) {
+  inserted->capacity += next->capacity;
+  inserted = arena.freeRanges.erase(next) - 1;
+ }
+ if(inserted != arena.freeRanges.begin()) {
+  const auto previous = inserted - 1;
+  if(previous->first + previous->capacity == inserted->first) {
+   previous->capacity += inserted->capacity;
+   arena.freeRanges.erase(inserted);
   }
  }
- arena.freeRanges.resize(write);
  while(!arena.freeRanges.empty()) {
   const Range& last = arena.freeRanges.back();
   if(last.first + last.capacity != arena.tailVertex) {

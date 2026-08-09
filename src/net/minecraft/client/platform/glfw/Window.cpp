@@ -198,7 +198,9 @@ const GLFWvidmode* primaryVideoMode() {
  return glfwGetVideoMode(primaryMonitor());
 }
 void resetSwapPacing() {
- glfwSwapInterval(0);
+ // Only drop the cache. GLCore owns the swap interval and re-applies it from
+ // options on the next frame; calling glfwSwapInterval here too made two writers
+ // for one piece of driver state, and the GLFW one was always overwritten.
  gl::GLCore::resetSwapPacingCache();
 }
 void resolveFullscreenSize() {
