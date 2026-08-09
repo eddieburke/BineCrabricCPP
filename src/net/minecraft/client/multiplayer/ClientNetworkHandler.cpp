@@ -25,27 +25,16 @@
 #include "net/minecraft/mod/lua/LuaModEntity.hpp"
 #include "net/minecraft/mod/runtime/ModHost.hpp"
 #include "net/minecraft/mod/runtime/ModPackageIo.hpp"
-#include "net/minecraft/mod/runtime/WorldRequiredMods.hpp"
 #include "net/minecraft/network/Connection.hpp"
 #include "net/minecraft/network/HandshakeMetadata.hpp"
 #include "net/minecraft/network/packet/Packets.hpp"
 #include "net/minecraft/stat/PlayerStats.hpp"
 #include "net/minecraft/stat/Stats.hpp"
 #include "net/minecraft/util/concurrent/ThreadCoordinator.hpp"
-#include "net/minecraft/util/http/HttpClient.hpp"
 #include "net/minecraft/world/ClientWorld.hpp"
 #include "net/minecraft/world/World.hpp"
 namespace net::minecraft::client::multiplayer {
 using namespace detail;
-namespace http = ::net::minecraft::util::http;
-namespace {
-LuaModSyncPacket makeLuaModListPacket(const std::string& csv) {
- LuaModSyncPacket packet;
- packet.kind = LuaModSyncKind::ClientModList;
- packet.payload.assign(csv.begin(), csv.end());
- return packet;
-}
-} // namespace
 ClientNetworkHandler::ClientNetworkHandler(client::Minecraft* minecraft) : minecraft(minecraft) {
 }
 ClientNetworkHandler::~ClientNetworkHandler() {
@@ -54,9 +43,6 @@ ClientNetworkHandler::~ClientNetworkHandler() {
   retiredWorlds_.clear();
  if(disconnected || connection_ == nullptr) {
   return;
- }
- if(++keepAliveTicks_ % 20 == 0) {
-  sendPacket(KeepAlivePacket{});
  }
  // A remote (Java-MP) server streams chunk data in bursts; cap the per-tick
  // drain so a large join backlog cannot freeze the frame loop.

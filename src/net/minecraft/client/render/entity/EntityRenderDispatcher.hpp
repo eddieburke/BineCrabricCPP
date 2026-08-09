@@ -1,4 +1,5 @@
 #pragma once
+#include <cstdint>
 #include <functional>
 #include <memory>
 #include <typeindex>
@@ -105,7 +106,9 @@ class EntityRenderDispatcher {
   net::minecraft::LivingEntity* cameraEntity_ = nullptr;
   // Non-owning: refreshed by init() each frame from the caller's live GameOptions
   // (no per-frame duplicate copy).
-  net::minecraft::client::option::GameOptions* options_ = nullptr;
+ net::minecraft::client::option::GameOptions* options_ = nullptr;
  std::unique_ptr<net::minecraft::client::render::item::HeldItemRenderer> heldItemRenderer_;
+ std::unordered_map<std::type_index, int> shaderIds_;
+ std::uint64_t shaderIdRevision_ = 0;
 };
 } // namespace net::minecraft::client::render::entity

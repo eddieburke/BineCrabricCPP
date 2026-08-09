@@ -1,4 +1,5 @@
 #include "net/minecraft/client/gl/ShaderBinaryCache.hpp"
+#include <algorithm>
 #include <cstdio>
 #include <cstring>
 #include <system_error>
@@ -23,7 +24,9 @@ struct FileHeader {
 static_assert(sizeof(FileHeader) == 32);
 } // namespace
 
-ShaderBinaryCache::ShaderBinaryCache(std::filesystem::path root) : root_(std::move(root)) {}
+ShaderBinaryCache::ShaderBinaryCache(std::filesystem::path root) : root_(std::move(root)) {
+ if(!root_.empty()) writer_ = std::thread(&ShaderBinaryCache::writerLoop, this);
+}
 
 ShaderBinaryCache::~ShaderBinaryCache() {
  {
@@ -34,22 +37,23 @@ ShaderBinaryCache::~ShaderBinaryCache() {
  if(writer_.joinable()) writer_.join();
 }
 
-void ShaderBinaryCache::setRoot(std::filesystem::path root) {
- root_ = std::move(root);
- writerStop_ = false;
- if(!root_.empty() && !writer_.joinable()) {
-  writer_ = std::thread(&ShaderBinaryCache::writerLoop, this);
- }
-}
-
 std::wstring ShaderBinaryCache::nativePath(std::uint64_t contentHash) const {
  wchar_t name[32]{};
  std::swprintf(name, sizeof(name) / sizeof(wchar_t), L"%016llx.bin", static_cast<unsigned long long>(contentHash));
  return root_.native() + L"\\" + name;
 }
 
-std::optional<ProgramBinaryBlob> ShaderBinaryCache::tryLoad(std::uint64_t contentHash) const {
+std::optional<ProgramBinaryBlob> ShaderBinaryCache::tryLoad(std::uint64_t contentHash) {
  if(root_.empty()) return std::nullopt;
+ {
+  // A blob queued by storeAsync is not on disk yet. A pack reload drops the
+  // linked programs and re-resolves every hash, so without this the reload
+  // would race the writer thread and fall back to a source recompile.
+  const std::lock_guard lock(writerMutex_);
+  if(const auto pending = pendingWrites_.find(contentHash); pending != pendingWrites_.end()) {
+   return *pending->second;
+  }
+ }
  const std::wstring path = nativePath(contentHash);
  HANDLE file = CreateFileW(path.c_str(), GENERIC_READ, FILE_SHARE_READ, nullptr, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
  if(file == INVALID_HANDLE_VALUE) return std::nullopt;
@@ -123,19 +127,29 @@ void ShaderBinaryCache::storeAsync(ProgramBinaryBlob blob) {
  }
  {
   std::lock_guard lock(writerMutex_);
-  writeQueue_.push_back(std::move(blob));
+  if(pendingWrites_.contains(blob.contentHash)) return;
+  auto pending = std::make_shared<const ProgramBinaryBlob>(std::move(blob));
+  pendingWrites_.emplace(pending->contentHash, pending);
+  writeQueue_.push_back(std::move(pending));
  }
  writerCv_.notify_one();
 }
 
 void ShaderBinaryCache::remove(std::uint64_t contentHash) {
  if(root_.empty()) return;
+ {
+  const std::lock_guard lock(writerMutex_);
+  pendingWrites_.erase(contentHash);
+  std::erase_if(writeQueue_, [contentHash](const auto& blob) {
+   return blob->contentHash == contentHash;
+  });
+ }
  const std::wstring path = nativePath(contentHash);
  DeleteFileW(path.c_str());
 }
 
 void ShaderBinaryCache::writerLoop() {
- std::vector<ProgramBinaryBlob> local;
+ std::vector<std::shared_ptr<const ProgramBinaryBlob>> local;
  for(;;) {
   {
    std::unique_lock lock(writerMutex_);
@@ -143,7 +157,13 @@ void ShaderBinaryCache::writerLoop() {
    if(writerStop_ && writeQueue_.empty()) return;
    local.swap(writeQueue_);
   }
-  for(auto& blob : local) store(blob);
+  for(const auto& blob : local) {
+   const std::uint64_t contentHash = blob->contentHash;
+   store(*blob);
+   const std::lock_guard lock(writerMutex_);
+   const auto pending = pendingWrites_.find(contentHash);
+   if(pending != pendingWrites_.end() && pending->second == blob) pendingWrites_.erase(pending);
+  }
   local.clear();
  }
 }

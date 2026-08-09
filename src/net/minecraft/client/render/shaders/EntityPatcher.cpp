@@ -1,4 +1,5 @@
 #include "net/minecraft/client/render/shaders/EntityPatcher.hpp"
+#include <algorithm>
 #include <sstream>
 #include <string_view>
 #include "net/minecraft/client/render/shaders/GlslSource.hpp"
@@ -6,7 +7,8 @@
 
 namespace net::minecraft::client::render {
 namespace {
-void eraseSimpleUniform(std::string& source, std::string_view type, std::string_view name) {
+void eraseSimpleUniforms(std::string& source,
+                         const std::vector<std::pair<std::string_view, std::string_view>>& uniforms) {
  std::istringstream input(source);
  std::string output;
  for(std::string line; std::getline(input, line);) {
@@ -17,7 +19,11 @@ void eraseSimpleUniform(std::string& source, std::string_view type, std::string_
   std::string declaredName;
   std::string extra;
   tokens >> storage >> declaredType >> declaredName >> extra;
-  if(storage == "uniform" && declaredType == type && declaredName == std::string(name) + ";" && extra.empty()) {
+  const bool erase = storage == "uniform" && extra.empty() &&
+                     std::any_of(uniforms.begin(), uniforms.end(), [&](const auto& uniform) {
+                      return declaredType == uniform.first && declaredName == std::string(uniform.second) + ";";
+                     });
+  if(erase) {
    output += '\n';
   } else {
    output += line;
@@ -29,29 +35,33 @@ void eraseSimpleUniform(std::string& source, std::string_view type, std::string_
 
 void appendDeclaration(std::string& declarations,
                        const std::string& source,
+                       const CodeMask& mask,
                        std::string_view storage,
                        std::string_view name,
                        std::string_view declaration) {
- if(!hasStorageDeclaration(source, storage, name)) declarations += declaration;
+ if(!hasStorageDeclaration(source, mask, storage, name)) declarations += declaration;
 }
 }
 
 void patchEntityInputs(std::string& source, ShaderStage stage, const ShaderTransformContext& context) {
  if(!context.entityOverlay && !context.entityId) return;
- if(context.entityOverlay) eraseSimpleUniform(source, "vec4", "entityColor");
+ std::vector<std::pair<std::string_view, std::string_view>> erasedUniforms;
+ if(context.entityOverlay) erasedUniforms.emplace_back("vec4", "entityColor");
  if(context.entityId) {
-  eraseSimpleUniform(source, "int", "entityId");
-  eraseSimpleUniform(source, "int", "blockEntityId");
-  eraseSimpleUniform(source, "int", "currentRenderedItemId");
+  erasedUniforms.emplace_back("int", "entityId");
+  erasedUniforms.emplace_back("int", "blockEntityId");
+  erasedUniforms.emplace_back("int", "currentRenderedItemId");
  }
+ eraseSimpleUniforms(source, erasedUniforms);
+ const CodeMask declarationsMask = codeMask(source);
  std::string declarations;
  std::string mainBody;
  if(context.entityOverlay) {
   if(stage == ShaderStage::Vertex) {
-   appendDeclaration(declarations, source, "uniform", "iris_overlay", "uniform sampler2D iris_overlay;\n");
-   appendDeclaration(declarations, source, "out", "entityColor", "out vec4 entityColor;\n");
-   appendDeclaration(declarations, source, "out", "iris_vertexColor", "out vec4 iris_vertexColor;\n");
-   appendDeclaration(declarations, source, "in", "iris_UV1", "in ivec2 iris_UV1;\n");
+   appendDeclaration(declarations, source, declarationsMask, "uniform", "iris_overlay", "uniform sampler2D iris_overlay;\n");
+   appendDeclaration(declarations, source, declarationsMask, "out", "entityColor", "out vec4 entityColor;\n");
+   appendDeclaration(declarations, source, declarationsMask, "out", "iris_vertexColor", "out vec4 iris_vertexColor;\n");
+   appendDeclaration(declarations, source, declarationsMask, "in", "iris_UV1", "in ivec2 iris_UV1;\n");
    mainBody += "vec4 iris_overlayColor = texelFetch(iris_overlay, iris_UV1, 0);\n";
    mainBody += "entityColor = vec4(iris_overlayColor.rgb, 1.0 - iris_overlayColor.a);\n";
    mainBody += "iris_vertexColor = vaColor;\n";
@@ -114,9 +124,9 @@ void patchEntityInputs(std::string& source, ShaderStage stage, const ShaderTrans
    declarations += "flat in ivec3 " + entityInfo + ";\n";
   }
   if(!entityInfo.empty()) {
-   replaceAllToken(source, "entityId", entityInfo + ".x");
-   replaceAllToken(source, "blockEntityId", entityInfo + ".y");
-   replaceAllToken(source, "currentRenderedItemId", entityInfo + ".z");
+   replaceAllTokens(source, {{"entityId", entityInfo + ".x"},
+                             {"blockEntityId", entityInfo + ".y"},
+                             {"currentRenderedItemId", entityInfo + ".z"}});
   }
  }
  if(!declarations.empty()) source.insert(sourceDeclarationOffset(source), declarations);

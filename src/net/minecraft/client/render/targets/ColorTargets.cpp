@@ -29,6 +29,7 @@ void ColorTargets::destroy() {
  writeFbo_.destroy();
  copyReadFbo_.destroy();
  copyDrawFbo_.destroy();
+ writeFboCache_.clear();
  depth_.reset();
  for(Slot& slot : slots_) {
   freeSlot(slot);
@@ -60,7 +61,6 @@ bool ColorTargets::allocateSlot(Slot& slot, int width, int height, ColorFormat f
  for(int i = 0; i < 2; ++i) {
   const unsigned int h = core::genTexture();
   if(h == 0) {
-   printf("[diag] genTexture returned 0 in allocateSlot format=%d internal=0x%X\n", (int)format, spec.internal);
    freeSlot(slot);
    return false;
   }
@@ -73,6 +73,7 @@ bool ColorTargets::allocateSlot(Slot& slot, int width, int height, ColorFormat f
  slot.width = width;
  slot.height = height;
  slot.main = 0;
+ ++writeFboGeneration_;
  return true;
 }
 int ColorTargets::colortexIndex(const std::string& name) {
@@ -103,8 +104,6 @@ const ColorTargets::Slot* ColorTargets::findSlot(const std::string& name) const 
 bool ColorTargets::ensure(int width, int height, const std::vector<ColorFormat>& formats,
                            int gbufferColorCount) {
  if(!gl::GLCore::framebufferSupported || width <= 0 || height <= 0) {
-  printf("[diag] ensure early exit: framebufferSupported=%d width=%d height=%d\n",
-         gl::GLCore::framebufferSupported, width, height);
   return false;
  }
  gbufferColorCount_ = std::clamp(gbufferColorCount, 1, kMaxColorAttachments);
@@ -181,6 +180,7 @@ void ColorTargets::rebuildGbufferFbo() {
  if(!valid_ || slots_.empty()) {
   return;
  }
+ gbufferFbo_.destroy();
  gbufferFbo_.addDepthAttachment(depth_.handle());
  const std::size_t count = std::min(slots_.size(), static_cast<std::size_t>(gbufferColorCount_));
  std::vector<int> drawBuffers;
@@ -200,8 +200,6 @@ void ColorTargets::rebuildGbufferFbo() {
   return;
  }
  const unsigned status = gbufferFbo_.checkStatus();
- printf("[diag] gbufferFbo checkStatus status=0x%X\n", status);
- fflush(stdout);
  gl::GLCore::bindFramebuffer(static_cast<unsigned>(gl::framebuffer::Framebuffer), 0);
  if(status != static_cast<unsigned>(gl::framebuffer::Complete)) {
   char hex[32];
@@ -242,30 +240,63 @@ bool ColorTargets::bindWrite(const std::vector<std::string>& outputs) {
  if(!valid_ || outputs.empty()) {
   return false;
  }
- std::vector<int> drawBuffers;
- drawBuffers.reserve(outputs.size());
+ std::vector<unsigned int> handles;
+ handles.reserve(outputs.size());
  int attachW = 0;
  int attachH = 0;
- for(std::size_t i = 0; i < outputs.size(); ++i) {
-  Slot* slot = findSlot(outputs[i]);
+ for(const std::string& name : outputs) {
+  Slot* slot = findSlot(name);
   // allocated(), not just tex[0]: this hands back the WRITE buffer below, so
   // validating only the read one left the caller attaching a null texture.
   if(slot == nullptr || !slot->allocated()) {
    return false;
   }
-  const unsigned int tex = slot->writeHandle();
-  writeFbo_.addColorAttachment(static_cast<int>(i), tex);
-  drawBuffers.push_back(static_cast<int>(i));
+  handles.push_back(slot->writeHandle());
   attachW = slot->width;
   attachH = slot->height;
  }
- if(!writeFbo_.drawBuffers(drawBuffers)) {
-  return false;
+ auto found = writeFboCache_.find(outputs);
+ // A generation bump means some slot was reallocated since this entry was built —
+ // do not trust handle-number comparison to catch it (a freed GL id can be reissued
+ // to an unrelated texture), rebuild and revalidate from scratch instead.
+ if(found != writeFboCache_.end() && found->second.generation != writeFboGeneration_) {
+  writeFboCache_.erase(found);
+  found = writeFboCache_.end();
  }
- writeFbo_.removeDepthAttachment();
- const unsigned status = writeFbo_.checkStatus();
- if(status != static_cast<unsigned>(gl::framebuffer::Complete)) {
-  return false;
+ if(found == writeFboCache_.end()) {
+  const auto it = writeFboCache_.try_emplace(outputs).first;
+  WriteFboCacheEntry& entry = it->second;
+  std::vector<int> drawBuffers;
+  drawBuffers.reserve(handles.size());
+  for(std::size_t i = 0; i < handles.size(); ++i) {
+   entry.fbo.addColorAttachment(static_cast<int>(i), handles[i]);
+   drawBuffers.push_back(static_cast<int>(i));
+  }
+  if(!entry.fbo.drawBuffers(drawBuffers)) {
+   writeFboCache_.erase(it);
+   return false;
+  }
+  entry.fbo.removeDepthAttachment();
+  const unsigned status = entry.fbo.checkStatus();
+  if(status != static_cast<unsigned>(gl::framebuffer::Complete)) {
+   writeFboCache_.erase(it);
+   return false;
+  }
+  entry.handles = handles;
+  entry.generation = writeFboGeneration_;
+  entry.fbo.bind();
+ } else {
+  // Same generation: the only way a write handle changes is Slot::flipBuffers,
+  // which swaps between two textures allocated together and never deletes either
+  // one, so a per-attachment handle diff is safe without re-running checkStatus.
+  WriteFboCacheEntry& entry = found->second;
+  for(std::size_t i = 0; i < handles.size(); ++i) {
+   if(entry.handles[i] != handles[i]) {
+    entry.fbo.addColorAttachment(static_cast<int>(i), handles[i]);
+    entry.handles[i] = handles[i];
+   }
+  }
+  entry.fbo.bind();
  }
  core::viewport(0, 0, attachW > 0 ? attachW : width_, attachH > 0 ? attachH : height_);
  return true;
@@ -293,6 +324,7 @@ void ColorTargets::clearAttachmentSet(const std::vector<unsigned int>& textures,
   }
   std::vector<int> drawBuffers;
   drawBuffers.reserve(count);
+  writeFbo_.destroy();
   for(std::size_t i = 0; i < count; ++i) {
    writeFbo_.addColorAttachment(static_cast<int>(i), textures[start + i]);
    drawBuffers.push_back(static_cast<int>(i));
@@ -376,6 +408,7 @@ void ColorTargets::clearNamedColors(const std::string& name, const std::array<fl
  int previousFbo = 0;
  ::glGetIntegerv(static_cast<unsigned>(gl::query::FramebufferBinding), &previousFbo);
  for(const gl::GlTexture& tex : slot->tex) {
+  writeFbo_.destroy();
   writeFbo_.addColorAttachment(0, tex.handle());
   if(!writeFbo_.drawBuffers(std::vector<int>{0})) {
    continue;

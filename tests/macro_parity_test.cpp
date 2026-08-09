@@ -41,6 +41,8 @@ TEST(MacroParity, VersionPreambleMatchesJavaTextualMacroSet) {
  }
  EXPECT_NE(preamble.find("#define MAX_COLOR_BUFFERS "), std::string::npos);
  EXPECT_NE(preamble.find("#define IS_IRIS\n"), std::string::npos);
+ EXPECT_NE(preamble.find("#define IRIS_FEATURE_ENTITY_TRANSLUCENT\n"), std::string::npos);
+ EXPECT_NE(preamble.find("#define IRIS_FEATURE_FADE_VARIABLE\n"), std::string::npos);
 }
 TEST(MacroParity, CategoryDefinesReachJavaBiomeCategoriesCount) {
  installTestGlslSnippets();
@@ -109,14 +111,12 @@ TEST(MacroParity, CacheFormatVersionIsBumpedPastLegacy) {
  const std::uint64_t hash = 0x1234ABCDULL;
  writeCacheEntry(root, hash, 2);
  {
-  client::gl::ShaderBinaryCache cache({});
-  cache.setRoot(root);
+  client::gl::ShaderBinaryCache cache(root);
   EXPECT_FALSE(cache.tryLoad(hash).has_value()) << "legacy format-2 entry must be rejected";
  }
  writeCacheEntry(root, hash, 5);
  {
-  client::gl::ShaderBinaryCache cache({});
-  cache.setRoot(root);
+  client::gl::ShaderBinaryCache cache(root);
   const auto blob = cache.tryLoad(hash);
   ASSERT_TRUE(blob.has_value());
   EXPECT_EQ(blob->contentHash, hash);

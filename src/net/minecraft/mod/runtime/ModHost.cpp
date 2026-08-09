@@ -440,17 +440,28 @@ void ModHost::rescan() {
       const std::string cacheName = sanitizeName(path.stem().string()) + "_" +
                                     std::to_string(archiveSize) + "_" + std::to_string(stamp);
       modInfo.rootPath = cacheDirectory_ / cacheName;
-      std::filesystem::remove_all(modInfo.rootPath, ec);
-      std::filesystem::create_directories(modInfo.rootPath);
-      for(const ZipEntry& zipEntry : zipEntries) {
-       const std::string relativePath = normalizeRelativePath(zipEntry.name);
-       if(relativePath.empty() || isDirectoryZipPath(relativePath) ||
-          !isSafeRelativePath(relativePath)) {
-        continue;
+      const std::filesystem::path completePath = modInfo.rootPath / ".complete";
+      if(!std::filesystem::is_regular_file(completePath, ec)) {
+       std::filesystem::remove_all(modInfo.rootPath, ec);
+       std::filesystem::create_directories(modInfo.rootPath);
+       bool complete = true;
+       for(const ZipEntry& zipEntry : zipEntries) {
+        const std::string relativePath = normalizeRelativePath(zipEntry.name);
+        if(relativePath.empty() || isDirectoryZipPath(relativePath) ||
+           !isSafeRelativePath(relativePath)) {
+         continue;
+        }
+        const std::filesystem::path outPath =
+            modInfo.rootPath / std::filesystem::path(relativePath);
+        complete = writeFileBytes(outPath, readZipEntryData(archive, zipEntry)) && complete;
        }
-       const std::filesystem::path outPath =
-           modInfo.rootPath / std::filesystem::path(relativePath);
-       (void)writeFileBytes(outPath, readZipEntryData(archive, zipEntry));
+       if(complete) {
+        complete = writeFileText(completePath, cacheName);
+       }
+       if(!complete) {
+        std::filesystem::remove_all(modInfo.rootPath, ec);
+        modInfo.error = "Unable to extract mod archive";
+       }
       }
       modInfo.resourceOverlay = std::filesystem::is_directory(modInfo.rootPath / "resources");
      }

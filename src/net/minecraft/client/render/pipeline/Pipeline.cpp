@@ -82,6 +82,7 @@ std::pair<bool, bool> pbrFormat(const resource::pack::TexturePack* pack) {
 } // namespace
 Pipeline::Pipeline(option::GameOptions* options) : options_(options) {}
 Pipeline::~Pipeline() {
+ stopDirectoryWatcher();
  presentReadFbo_.destroy();
  colorSpace_.destroy();
 }
@@ -132,10 +133,7 @@ void Pipeline::finalizeEngineColorCorrection(int screenWidth, int screenHeight) 
 }
 bool Pipeline::hasDeferredPasses(const PackInstance* activePack) const {
  if(activePack == nullptr) return false;
- if(!activePack->deferredPasses.empty()) return true;
- return std::any_of(activePack->computePasses.begin(), activePack->computePasses.end(), [activePack](std::size_t index) {
-  return ComputeDispatcher::matchesStage(activePack->definition.passes[index].name, "deferred");
- });
+ return !activePack->stagePlan(CompositeStage::Deferred).empty();
 }
 void Pipeline::ensurePbrFallbackTextures() {
  if(!normalFallbackTexture_) uploadRgbaStub(normalFallbackTexture_, 127, 127, 255, 255);
@@ -182,6 +180,7 @@ void Pipeline::refreshResourcePackState(PackInstance* basePack,
  for(auto& pack : packs) apply(pack.get());
 }
 void Pipeline::applyBlockIds(const PackDefinition& definition) {
+ ++objectIdRevision_;
  std::array<int, 256> ids{};
  if(definition.hasBlockProperties)
   ids.fill(-1);
@@ -241,7 +240,23 @@ bool Pipeline::selectDimension(PackInstance& pack, const net::minecraft::World* 
  pack.definition = pack.rootDefinition;
  if(selected != &pack.rootDefinition) {
   for(const auto& [name, program] : selected->programs) pack.definition.programs[name] = program;
-  for(const auto& [name, target] : selected->targets) pack.definition.targets[name] = target;
+  // A dimension folder's own scan can under-report a target's format (e.g. via a
+  // default RENDERTARGETS output) even when the root scan already saw the real
+  // const colortexNFormat declaration; never let that downgrade root's value.
+  const auto realFormat = [](const std::string& format) {
+   return !format.empty() && format != "RGBA" && format != "RGBA8";
+  };
+  for(const auto& [name, target] : selected->targets) {
+   const auto existingTarget = pack.definition.targets.find(name);
+   if(existingTarget == pack.definition.targets.end()) {
+    pack.definition.targets[name] = target;
+    continue;
+   }
+   const bool keepRootFormat = realFormat(existingTarget->second.format) && !realFormat(target.format);
+   const std::string rootFormat = existingTarget->second.format;
+   existingTarget->second = target;
+   if(keepRootFormat) existingTarget->second.format = rootFormat;
+  }
   for(const auto& [name, scale] : selected->programScales) pack.definition.programScales[name] = scale;
   for(const auto& [name, flip] : selected->flips) pack.definition.flips[name] = flip;
   for(const auto& blend : selected->bufferBlends) pack.definition.bufferBlends.push_back(blend);
@@ -297,17 +312,8 @@ bool Pipeline::preparePackResources(PackInstance& pack, int width, int height) {
 }
 void Pipeline::prepareFrame(net::minecraft::World* world, PackInstance* activePack,
                             PackInstance* basePack) {
+ (void)basePack;
  bindPbrTextures();
- const auto preparePrograms = [this](PackInstance* pack) {
-  if(pack == nullptr) return;
-  if(pack->programState != PackProgramState::Cold) return;  PackCompiler::buildPrewarmQueue(*pack);
-  PackCompiler::prewarmStep(*pack,
-                            [this](PackInstance& p, const std::string& message, LogLevel level) {
-                             logOnce(p, message, level);
-                            });
- };
- preparePrograms(activePack);
- if(basePack != activePack) preparePrograms(basePack);
  const net::minecraft::client::Minecraft* minecraft = net::minecraft::client::Minecraft::INSTANCE;
  const int width = minecraft != nullptr ? std::max(1, minecraft->displayWidth) : 1;
  const int height = minecraft != nullptr ? std::max(1, minecraft->displayHeight) : 1;
@@ -364,15 +370,8 @@ void Pipeline::prepareFrame(net::minecraft::World* world, PackInstance* activePa
   if(activePack->colorTargets.valid()) {
    activePack->colorTargets.fillImageBindings(colorImages);
   }
-  dispatchSetupIfNeeded(*activePack, worldUniforms_, nullptr, width, height, textures, colorImages, volumes,
-                        &activePack->colorTargets,
-                        [this](PackInstance& p, const std::string& name) {
-                         return PackCompiler::compile(
-                             p, name,
-                             [this](PackInstance& p2, const std::string& m, LogLevel level) {
-                              logOnce(p2, m, level);
-                             });
-                        });
+  dispatchSetupIfNeeded(*activePack, worldUniforms_, nullptr, width, height, textures, colorImages,
+                        volumes, &activePack->colorTargets);
  }
 }
 void Pipeline::refreshLightmap(net::minecraft::World* world) {
@@ -560,14 +559,14 @@ void Pipeline::sampleCenterDepth(PackInstance* activePack, const PackDefinition&
  const auto& targets = activePack->colorTargets;
  if(targets.width() <= 0 || targets.height() <= 0 || targets.depthTexture() == 0) return;
  bindScene(activePack);
- float depth = 1.0f;
- ::glReadPixels(targets.width() / 2, targets.height() / 2, 1, 1, 0x1902, 0x1406, &depth);
+ const std::optional<float> depth = centerDepthSampler_.pollAndIssue(targets.width() / 2, targets.height() / 2);
+ if(!depth.has_value()) return;
  const float nearPlane = worldUniforms_.nearPlane > 0.0f ? worldUniforms_.nearPlane : 0.05f;
   const float projectionFar = core::cameraFrame().farPlane;
  const float farPlane = projectionFar > nearPlane ? projectionFar : worldUniforms_.farPlane;
  const float halfLife = activeDef.centerDepthHalflife;
  worldUniforms_.centerDepthSmooth =
-     updateCenterDepthSmooth(depth, nearPlane, farPlane, worldUniforms_.frameTime, halfLife);
+     updateCenterDepthSmooth(*depth, nearPlane, farPlane, worldUniforms_.frameTime, halfLife);
 }
 void Pipeline::captureOpaqueDepth(PackInstance* activePack) {
  captureDepth(activePack, 1);
@@ -599,59 +598,40 @@ void Pipeline::captureDepth(PackInstance* activePack, std::size_t index) {
  }
  ::glCopyTexSubImage2D(gl::cap::Texture2D, 0, 0, 0, 0, 0, width, height);
 }
-gl::ShaderProgram* Pipeline::programFromPack(PackInstance& pack, const std::string& key) {
- return pack.summary.valid && pack.definition.programs.contains(key)
-            ? PackCompiler::compile(pack, key,
-                                    [this](PackInstance& p, const std::string& m, LogLevel level) {
-                                     logOnce(p, m, level);
-                                    })
-            : nullptr;
-}
-gl::ShaderProgram* Pipeline::worldProgram(std::string_view key, PackInstance* pack) {
- const std::string keyString(key);
- lastWorldProgramKey_ = keyString;
- resolvedWorldProgramKey_.clear();
+gl::ShaderProgram* Pipeline::worldProgram(WorldProgramId id, PackInstance* pack) {
  if(pack == nullptr) return nullptr;
  core::RenderStage renderStage = core::RenderStage::None;
- if(keyString == "gbuffers_terrain_solid") {
+ if(id == WorldProgramId::TerrainSolid) {
   renderStage = core::RenderStage::TerrainSolid;
- } else if(keyString == "gbuffers_terrain_cutout" || keyString == "gbuffers_damagedblock") {
+ } else if(id == WorldProgramId::TerrainCutout || id == WorldProgramId::DamagedBlock) {
   renderStage = core::RenderStage::TerrainCutout;
- } else if(keyString.rfind("gbuffers_entities", 0) == 0 || keyString == "gbuffers_item" || keyString == "gbuffers_lightning") {
+ } else if(id == WorldProgramId::Entities || id == WorldProgramId::EntitiesTranslucent ||
+           id == WorldProgramId::Item || id == WorldProgramId::Lightning) {
   renderStage = core::RenderStage::Entities;
- } else if(keyString.rfind("gbuffers_block", 0) == 0) {
+ } else if(id == WorldProgramId::Block || id == WorldProgramId::BlockTranslucent) {
   renderStage = core::RenderStage::BlockEntities;
- } else if(keyString == "gbuffers_hand") {
+ } else if(id == WorldProgramId::Hand) {
   renderStage = core::RenderStage::HandSolid;
- } else if(keyString == "gbuffers_hand_water") {
-  renderStage = core::RenderStage::HandTranslucent;
- } else if(keyString == "gbuffers_water") {
+ } else if(id == WorldProgramId::TerrainTranslucent) {
   renderStage = core::RenderStage::TerrainTranslucent;
- } else if(keyString.rfind("gbuffers_particles", 0) == 0) {
+ } else if(id == WorldProgramId::Particles || id == WorldProgramId::ParticlesTranslucent) {
   renderStage = core::RenderStage::Particles;
- } else if(keyString == "gbuffers_clouds") {
+ } else if(id == WorldProgramId::Clouds) {
   renderStage = core::RenderStage::Clouds;
- } else if(keyString == "gbuffers_weather") {
+ } else if(id == WorldProgramId::Weather) {
   renderStage = core::RenderStage::RainSnow;
- } else if(keyString.rfind("gbuffers_sky", 0) == 0) {
+ } else if(id == WorldProgramId::SkyBasic || id == WorldProgramId::SkyTextured) {
   renderStage = core::RenderStage::Sky;
- } else if(keyString == "gbuffers_line") {
+ } else if(id == WorldProgramId::Line) {
   renderStage = core::renderStage();
  }
  core::setRenderStage(renderStage);
- if(keyString.rfind("clrwl_", 0) == 0) return nullptr;
  const bool shadowPass = core::cameraFrame().shadowPass;
- std::string programKey = shadowPass ? irisShadowProgramForGbuffers(keyString) : keyString;
- if(programKey.empty()) return nullptr;
-  programKey = resolveProgramKey(pack->definition, pack->settings, programKey, pack->programEnabledCache);
-  if(programKey.empty()) return nullptr;
-  resolvedWorldProgramKey_ = programKey;
-  gl::ShaderProgram* program = programFromPack(*pack, programKey);
-  if(program != nullptr) {
-   // see third_party/mcp/iris/pipeline/programs/ShaderKey.java
-   program->setFogClass(fogClassForKey(programKey));
-  }
-  return program;
+ const PackInstance::WorldProgramRuntime& runtime =
+     pack->worldPrograms[static_cast<std::size_t>(id)][shadowPass ? 1u : 0u];
+ gl::ShaderProgram* program = runtime.program;
+ if(program != nullptr) program->setFogClass(fogClassForKey(runtime.resolvedKey));
+ return program;
 }
 bool Pipeline::renderBegin(PackInstance* activePack, int shadowDepthTextureId,
                            int shadowOpaqueDepthTextureId, const int* shadowColorTextureIds,
@@ -671,7 +651,7 @@ bool Pipeline::renderBegin(PackInstance* activePack, int shadowDepthTextureId,
   shadowColorFlipPack_ = activePack;
   initShadowColorFlips(*activePack);
  }
- return renderCompositePasses(*activePack, activePack->beginPasses, false, "begin",
+ return renderCompositePasses(*activePack, CompositeStage::Begin, false,
                               shadowDepthTextureId, shadowOpaqueDepthTextureId,
                               shadowColorTextureIds, shadowColorTextureCount,
                               shadowTargets_, shadowColorAltTextures_);
@@ -693,12 +673,6 @@ bool Pipeline::renderShadowComposite(PackInstance* activePack, int shadowDepthTe
   shadowColorFlipPack_ = activePack;
   initShadowColorFlips(*activePack);
  }
- const auto hasCompute = [activePack](const std::string& stage) {
-  return std::any_of(activePack->computePasses.begin(), activePack->computePasses.end(),
-                     [activePack, &stage](std::size_t index) {
-                      return ComputeDispatcher::matchesStage(activePack->definition.passes[index].name, stage);
-                     });
- };
  {
   const auto& def = activePack->definition;
   auto generate = [&def](int textureId, bool nearest) {
@@ -721,8 +695,8 @@ bool Pipeline::renderShadowComposite(PackInstance* activePack, int shadowDepthTe
  }
  bool rendered = false;
  if(shadowTargets_ != nullptr && shadowDepthTextureId >= 0 &&
-    (!activePack->shadowCompositePasses.empty() || hasCompute("shadowcomp"))) {
-  rendered = renderCompositePasses(*activePack, activePack->shadowCompositePasses, false, "shadowcomp",
+    !activePack->stagePlan(CompositeStage::ShadowComposite).empty()) {
+  rendered = renderCompositePasses(*activePack, CompositeStage::ShadowComposite, false,
                                    shadowDepthTextureId, shadowOpaqueDepthTextureId,
                                    shadowColorTextureIds, shadowColorTextureCount,
                                    shadowTargets_, shadowColorAltTextures_) ||
@@ -745,15 +719,9 @@ bool Pipeline::renderPreWorld(PackInstance* activePack, int shadowDepthTextureId
   shadowColorFlipPack_ = activePack;
   initShadowColorFlips(*activePack);
  }
- const auto hasCompute = [activePack](const std::string& stage) {
-  return std::any_of(activePack->computePasses.begin(), activePack->computePasses.end(),
-                     [activePack, &stage](std::size_t index) {
-                      return ComputeDispatcher::matchesStage(activePack->definition.passes[index].name, stage);
-                     });
- };
  bool rendered = false;
- if(!activePack->preparePasses.empty() || hasCompute("prepare")) {
-  rendered = renderCompositePasses(*activePack, activePack->preparePasses, false, "prepare",
+ if(!activePack->stagePlan(CompositeStage::Prepare).empty()) {
+  rendered = renderCompositePasses(*activePack, CompositeStage::Prepare, false,
                                    shadowDepthTextureId, shadowOpaqueDepthTextureId,
                                    shadowColorTextureIds, shadowColorTextureCount,
                                    shadowTargets_, shadowColorAltTextures_) ||
@@ -814,12 +782,8 @@ bool Pipeline::renderDeferred(PackInstance* activePack, int shadowDepthTextureId
                               int shadowOpaqueDepthTextureId, const int* shadowColorTextureIds,
                               int shadowColorTextureCount, const int* shadowColorAltTextureIds) {
  if(activePack == nullptr) return false;
- const bool hasComputeDeferred =
-     std::any_of(activePack->computePasses.begin(), activePack->computePasses.end(), [activePack](std::size_t index) {
-      return ComputeDispatcher::matchesStage(activePack->definition.passes[index].name, "deferred");
-     });
- if(activePack->deferredPasses.empty() && !hasComputeDeferred) return false;
- return renderCompositePasses(*activePack, activePack->deferredPasses, false, "deferred",
+ if(activePack->stagePlan(CompositeStage::Deferred).empty()) return false;
+ return renderCompositePasses(*activePack, CompositeStage::Deferred, false,
                               shadowDepthTextureId, shadowOpaqueDepthTextureId,
                               shadowColorTextureIds, shadowColorTextureCount,
                               shadowTargets_, shadowColorAltTextureIds);
@@ -837,14 +801,8 @@ bool Pipeline::renderPostProcess(PackInstance* activePack, PackInstance*,
   (void)screenDrawFramebuffer(std::max(1, activePack->colorTargets.width()),
                               std::max(1, activePack->colorTargets.height()));
  }
- const bool hasComputeComposite =
-     std::any_of(activePack->computePasses.begin(), activePack->computePasses.end(), [activePack](std::size_t index) {
-      const std::string& name = activePack->definition.passes[index].name;
-      return ComputeDispatcher::matchesStage(name, "composite") ||
-             ComputeDispatcher::matchesStage(name, "final");
-     });
- if(!activePack->postPasses.empty() || hasComputeComposite || !activePack->setupPasses.empty()) {
-  renderCompositePasses(*activePack, activePack->postPasses, true, "composite",
+ if(!activePack->stagePlan(CompositeStage::Composite).empty() || !activePack->setupPlan.empty()) {
+  renderCompositePasses(*activePack, CompositeStage::Composite, true,
                         shadowDepthTextureId, shadowOpaqueDepthTextureId,
                         shadowColorTextureIds, shadowColorTextureCount,
                         shadowTargets_, shadowColorAltTextureIds);
@@ -896,7 +854,11 @@ void Pipeline::presentFinalToScreen(PackInstance* scenePack, int screenWidth, in
   packWroteToScreen_ = true;
   return;
  }
- gl::ShaderProgram* program = programFromPack(*scenePack, "final");
+ gl::ShaderProgram* program = nullptr;
+ const auto compiled = scenePack->compiledPrograms.find("final");
+ if(compiled != scenePack->compiledPrograms.end() && !compiled->second.failed) {
+  program = compiled->second.program;
+ }
  if(program == nullptr || !program->valid()) {
   (void)blitColortex0ToScreen(*scenePack, screenWidth, screenHeight);
   packWroteToScreen_ = true;

@@ -146,6 +146,5 @@ class ClientNetworkHandler : public NetworkHandler {
  std::unique_ptr<SimpleInventory> openScreenInventory_;
  std::unique_ptr<block::entity::FurnaceBlockEntity> openScreenFurnace_;
  std::unique_ptr<block::entity::DispenserBlockEntity> openScreenDispenser_;
-  int keepAliveTicks_ = 0;
 };
 } // namespace net::minecraft::client::multiplayer

@@ -17,8 +17,8 @@
 #include "net/minecraft/client/color/world/FoliageColors.hpp"
 #include "net/minecraft/client/color/world/GrassColors.hpp"
 #include "net/minecraft/client/debug/ClientProfilerOverlay.hpp"
+#include "net/minecraft/client/debug/RenderProfiler.hpp"
 #include "net/minecraft/client/diagnostics/ClientDiagnostics.hpp"
-#include "net/minecraft/client/gl/ShaderCompileService.hpp"
 #include "net/minecraft/client/gui/Draw2D.hpp"
 #include "net/minecraft/client/gui/screen/ConfirmScreen.hpp"
 #include "net/minecraft/client/gui/screen/ConnectScreen.hpp"
@@ -268,9 +268,6 @@ void Minecraft::init() {
 void Minecraft::bootstrapAfterDisplay() {
  diagnostics::setStartupPhase("init: directories");
  runDirectory_ = getRunDirectory();
- // Disk-backed shader program cache. Compilation is synchronous on the render
- // thread (Iris model); this just names where extracted driver binaries live.
- shaderCompiler_.setCacheDirectory(runDirectory_ / "shader-cache");
  options.optionsFile = runDirectory_ / "options.txt";
  options.bindMinecraft(this);
  option::OptionRegistry::registerAll();
@@ -370,7 +367,7 @@ void Minecraft::stop() {
  lifecycle.registerOwner(
      "render-resources",
      {{}, {}, [](std::chrono::steady_clock::time_point) {
-       render::core::clearAllocatedTextures();
+       render::core::releaseGlResources();
        return true;
       },
       std::chrono::seconds(2)});
@@ -769,6 +766,10 @@ void Minecraft::run() {
     bool continueFrame = true;
     std::int64_t tickStart = 0;
     std::int64_t tickDuration = 0;
+    debug::RenderProfiler::instance().setEnabled(options.debugHud);
+    if(debug::RenderProfiler::instance().enabled()) {
+     debug::RenderProfiler::instance().beginFrame();
+    }
     framePipeline.run([&](util::FramePipeline::Phase phase) {
      if(!continueFrame) {
       return;
@@ -840,6 +841,9 @@ void Minecraft::run() {
       break;
      }
     });
+    if(debug::RenderProfiler::instance().enabled()) {
+     debug::RenderProfiler::instance().endFrame();
+    }
     if(!continueFrame) {
      break;
     }
@@ -1087,7 +1091,9 @@ void Minecraft::respawnPlayer(bool worldSpawn, int dimension) {
   useBedSpawn = false;
  }
  world->setChunkCacheCenterFromBlockPos(respawnPos->x, respawnPos->z);
- world->updateSpawnPosition();
+ if(!world->isRemote()) {
+  world->updateSpawnPosition();
+ }
  world->updateEntityLists();
  int playerId = 0;
  if(player != nullptr) {

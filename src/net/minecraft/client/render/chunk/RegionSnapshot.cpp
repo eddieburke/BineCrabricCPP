@@ -47,10 +47,7 @@ void copyNibbleColumn(std::uint8_t* dst,
   }
  }
 }
-void copyChunkBand(std::vector<std::uint8_t>& blocks,
-                   std::vector<std::uint8_t>& meta,
-                   std::vector<std::uint8_t>& skyLight,
-                   std::vector<std::uint8_t>& blockLight,
+void copyChunkBand(RegionSnapshot::ChunkCopy& copy,
                    const Chunk& chunk,
                    int minY,
                    int ySpan,
@@ -58,30 +55,32 @@ void copyChunkBand(std::vector<std::uint8_t>& blocks,
                    std::size_t blockBytes,
                    std::size_t nibbleBytes) {
  ChunkRenderWriteLock guard(chunk);
+ copy.blockBytes = blockBytes;
+ copy.nibbleBytes = nibbleBytes;
+ const std::size_t totalBytes = blockBytes + 3 * nibbleBytes;
+ copy.storage.resize(totalBytes);
+ std::uint8_t* blocks = copy.storage.data();
+ std::uint8_t* meta = blocks + blockBytes;
+ std::uint8_t* skyLight = meta + nibbleBytes;
+ std::uint8_t* blockLight = skyLight + nibbleBytes;
+
  const std::size_t blockNeed = minBlockBytesForBand(minY, ySpan);
  if(chunk.blocks.size() < blockNeed) {
-  blocks.assign(blockBytes, 0);
-  meta.assign(nibbleBytes, 0);
-  skyLight.assign(nibbleBytes, 0);
-  blockLight.assign(nibbleBytes, 0);
+  std::memset(copy.storage.data(), 0, totalBytes);
   return;
  }
- blocks.resize(blockBytes);
- meta.resize(nibbleBytes);
- skyLight.resize(nibbleBytes);
- blockLight.resize(nibbleBytes);
  for(int column = 0; column < 16 * 16; ++column) {
   const int localX = column >> 4;
   const int localZ = column & 0xF;
   const std::size_t srcBlockBase = static_cast<std::size_t>((localX << 11) | (localZ << 7) | minY);
   const std::size_t srcNibbleBase = srcBlockBase >> 1;
   const std::size_t dstColumn = static_cast<std::size_t>((localX << 4) | localZ);
-  std::memcpy(blocks.data() + dstColumn * static_cast<std::size_t>(ySpan),
+  std::memcpy(blocks + dstColumn * static_cast<std::size_t>(ySpan),
               chunk.blocks.data() + srcBlockBase,
               static_cast<std::size_t>(ySpan));
-  copyNibbleColumn(meta.data(), dstColumn, halfSpan, chunk.meta.bytes, srcNibbleBase);
-  copyNibbleColumn(skyLight.data(), dstColumn, halfSpan, chunk.skyLight.bytes, srcNibbleBase);
-  copyNibbleColumn(blockLight.data(), dstColumn, halfSpan, chunk.blockLight.bytes, srcNibbleBase);
+  copyNibbleColumn(meta, dstColumn, halfSpan, chunk.meta.bytes, srcNibbleBase);
+  copyNibbleColumn(skyLight, dstColumn, halfSpan, chunk.skyLight.bytes, srcNibbleBase);
+  copyNibbleColumn(blockLight, dstColumn, halfSpan, chunk.blockLight.bytes, srcNibbleBase);
  }
 }
 } // namespace
@@ -119,10 +118,7 @@ RegionSnapshot::RegionSnapshot(std::span<const SourceChunk> sourceChunks,
   ChunkCopy& copy =
       chunks_[static_cast<std::size_t>((source.chunkX - chunkX_) + (source.chunkZ - chunkZ_) * chunkWidth_)];
   copy.present = true;
-  copyChunkBand(copy.blocks,
-                copy.meta,
-                copy.skyLight,
-                copy.blockLight,
+  copyChunkBand(copy,
                 chunk,
                 minY_,
                 ySpan_,
@@ -130,7 +126,7 @@ RegionSnapshot::RegionSnapshot(std::span<const SourceChunk> sourceChunks,
                 blockBytes,
                 nibbleBytes);
   copy.anyNonAir =
-      std::any_of(copy.blocks.begin(), copy.blocks.end(), [](std::uint8_t block) { return block != 0; });
+      std::any_of(copy.storage.begin(), copy.storage.begin() + static_cast<std::ptrdiff_t>(blockBytes), [](std::uint8_t block) { return block != 0; });
  }
  ambientDarkness_ = ambientDarkness;
  lightLevelToLuminance_ = lightLevelToLuminance;
@@ -152,7 +148,7 @@ bool RegionSnapshot::columnHasBlocks(int blockX, int blockZ, int minY, int maxY)
  // instead of byte loops (this early-out runs for every section on every rebuild).
  for(int column = 0; column < 16 * 16; ++column) {
   const std::uint8_t* base =
-      chunk->blocks.data() + static_cast<std::size_t>(column * ySpan_ + (clampedMinY - minY_));
+      chunk->blocksData() + static_cast<std::size_t>(column * ySpan_ + (clampedMinY - minY_));
   std::size_t i = 0;
   for(; i + kWordBytes <= spanBytes; i += kWordBytes) {
    std::uint64_t word = 0;
@@ -177,7 +173,7 @@ int RegionSnapshot::getBlockId(int x, int y, int z) const {
  if(chunk == nullptr || !containsY(y)) {
   return 0;
  }
- return static_cast<int>(chunk->blocks[snapshotIndex(x & 0xF, y, z & 0xF)] & 0xFFU);
+ return static_cast<int>(chunk->blocksData()[snapshotIndex(x & 0xF, y, z & 0xF)] & 0xFFU);
 }
 int RegionSnapshot::getBlockMeta(int x, int y, int z) const {
  if(y < 0 || y >= Chunk::height) {
@@ -187,7 +183,7 @@ int RegionSnapshot::getBlockMeta(int x, int y, int z) const {
  if(chunk == nullptr || !containsY(y)) {
   return 0;
  }
- return nibbleAt(chunk->meta, x & 0xF, y, z & 0xF);
+ return nibbleAt(chunk->metaData(), x & 0xF, y, z & 0xF);
 }
 float RegionSnapshot::getNaturalBrightness(int x, int y, int z, int blockLight) const {
  int brightness = getRawBrightness(x, y, z, true);
@@ -228,11 +224,11 @@ int RegionSnapshot::getRawBrightness(int x, int y, int z, bool useNeighborLight)
  }
  // Mirrors Chunk::getLight(localX, y, localZ, ambientDarkness), with the
  // skylight detection recorded per-snapshot instead of a global static.
- int sky = nibbleAt(chunk->skyLight, x & 0xF, y, z & 0xF);
+ int sky = nibbleAt(chunk->skyLightData(), x & 0xF, y, z & 0xF);
  if(sky > 0) {
   sawSkyLight_ = true;
  }
- const int block = nibbleAt(chunk->blockLight, x & 0xF, y, z & 0xF);
+ const int block = nibbleAt(chunk->blockLightData(), x & 0xF, y, z & 0xF);
  if(block > (sky -= ambientDarkness_)) {
   sky = block;
  }
@@ -246,7 +242,7 @@ int RegionSnapshot::getBlockLight(const int x, const int y, const int z) const {
  if(chunk == nullptr || !containsY(y)) {
   return 0;
  }
- return nibbleAt(chunk->blockLight, x & 0xF, y, z & 0xF);
+ return nibbleAt(chunk->blockLightData(), x & 0xF, y, z & 0xF);
 }
 int RegionSnapshot::getSkyLight(const int x, const int y, const int z) const {
  if(y < 0) {
@@ -258,9 +254,9 @@ int RegionSnapshot::getSkyLight(const int x, const int y, const int z) const {
  }
  const ChunkCopy* chunk = chunkAt(x, z);
  if(chunk == nullptr || !containsY(y)) {
-  return 0;
+  return 15;
  }
- int sky = nibbleAt(chunk->skyLight, x & 0xF, y, z & 0xF);
+ int sky = nibbleAt(chunk->skyLightData(), x & 0xF, y, z & 0xF);
  if(sky > 0) {
   sawSkyLight_ = true;
  }

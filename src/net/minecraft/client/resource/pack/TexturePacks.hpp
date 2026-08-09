@@ -30,10 +30,6 @@ class TexturePacks {
   }
   std::filesystem::create_directories(dir_);
   reload();
-  if(selected == nullptr) {
-   selected = defaultPack_.get();
-  }
-  selected->open();
  }
  bool select(TexturePack* pack) {
   if(pack == nullptr || pack == selected) {
@@ -49,7 +45,8 @@ class TexturePacks {
   selected->open();
   return true;
  }
- void reload() {
+ bool reload() {
+  TexturePack* previousSelected = selected;
   selected = nullptr;
   std::vector<TexturePack*> nextPacks;
   nextPacks.push_back(defaultPack_.get());
@@ -103,6 +100,9 @@ class TexturePacks {
   if(selected == nullptr) {
    selected = defaultPack_.get();
   }
+  const bool changed = selected != previousSelected;
+  if(changed) selected->open();
+  return changed;
  }
  [[nodiscard]] std::vector<TexturePack*> getAvailable() const {
   return packs_;

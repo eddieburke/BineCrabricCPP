@@ -53,20 +53,10 @@ struct ChunkMeshJob {
  std::unordered_map<int, int> blockRenderLayers;
  [[nodiscard]] static std::shared_ptr<ChunkMeshJob> capture(ChunkBuilder& owner,
                                                             client::option::RenderSettings options);
- void captureSnapshot();
- void releasePins() noexcept;
 
  private:
  explicit ChunkMeshJob(ChunkBuilder& owner,
                        client::option::RenderSettings options,
-                       std::vector<RegionSnapshot::SourceChunk> sourceChunks,
-                       int ambientDarkness,
-                       const std::array<float, 16>& lightLevelToLuminance,
-                       std::unique_ptr<net::minecraft::BiomeSource> biomeSource);
- std::vector<RegionSnapshot::SourceChunk> sourceChunks_;
- int ambientDarkness_ = 0;
- std::array<float, 16> lightLevelToLuminance_{};
- std::unique_ptr<net::minecraft::BiomeSource> biomeSource_;
- bool pinsReleased_ = false;
+                       std::unique_ptr<RegionSnapshot> snapshot);
 };
 } // namespace net::minecraft::client::render::chunk

@@ -559,20 +559,20 @@ TerrainAtlasUv Block::terrainTileUv(int textureId) {
  const int texU = (textureId & 0xF) << 4;
  const int texV = textureId & 0xF0;
  return {
-     static_cast<double>(texU) / 256.0,
-     static_cast<double>(texU + 16) / 256.0,
-     static_cast<double>(texV) / 256.0,
-     static_cast<double>(texV + 16) / 256.0,
+     static_cast<double>(texU + TerrainAtlasUv::EDGE_INSET) / 256.0,
+     static_cast<double>(texU + 16 - TerrainAtlasUv::EDGE_INSET) / 256.0,
+     static_cast<double>(texV + TerrainAtlasUv::EDGE_INSET) / 256.0,
+     static_cast<double>(texV + 16 - TerrainAtlasUv::EDGE_INSET) / 256.0,
  };
 }
 TerrainAtlasUv Block::terrainStripUv(int textureId, double scrollU, double stripHeight) {
  const int texU = (textureId & 0xF) << 4;
  const int texV = textureId & 0xF0;
  return {
-     static_cast<double>(texU) / 256.0,
-     (static_cast<double>(texU) + scrollU) / 256.0,
-     static_cast<double>(texV) / 256.0,
-     (static_cast<double>(texV) + stripHeight) / 256.0,
+     static_cast<double>(texU + TerrainAtlasUv::EDGE_INSET) / 256.0,
+     (static_cast<double>(texU) + scrollU - TerrainAtlasUv::EDGE_INSET) / 256.0,
+     static_cast<double>(texV + TerrainAtlasUv::EDGE_INSET) / 256.0,
+     (static_cast<double>(texV) + stripHeight - TerrainAtlasUv::EDGE_INSET) / 256.0,
  };
 }
 } // namespace net::minecraft::block

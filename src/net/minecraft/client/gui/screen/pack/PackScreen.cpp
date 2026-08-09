@@ -81,9 +81,9 @@ PackScreen::PackScreen(screen::ScreenFactory parentFactory) : parentFactory_(std
 }
 PackScreen::~PackScreen() = default;
 void PackScreen::init() {
- buttons_.clear();
- if(minecraft() != nullptr && minecraft()->texturePacks != nullptr) {
-  minecraft()->texturePacks->reload();
+  buttons_.clear();
+  if(minecraft() != nullptr && minecraft()->texturePacks != nullptr) {
+   if(minecraft()->texturePacks->reload()) minecraft()->textureManager.reload();
   texturePacksDir_ = Minecraft::getRunDirectory() / "texturepacks";
  }
  addActionButton(layout::listFooterLeftX(width()),
@@ -112,7 +112,7 @@ void PackScreen::render(int mouseX, int mouseY, float tickDelta) {
   packList_->render(mouseX, mouseY, tickDelta);
  }
  if(reloadCooldown_ <= 0 && minecraft() != nullptr && minecraft()->texturePacks != nullptr) {
-  minecraft()->texturePacks->reload();
+  if(minecraft()->texturePacks->reload()) minecraft()->textureManager.reload();
   reloadCooldown_ += 20;
  }
  if(textRenderer() != nullptr) {

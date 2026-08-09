@@ -8,7 +8,7 @@
 #include "net/minecraft/client/gl/GLCore.hpp"
 #include "net/minecraft/client/render/GameRenderer.hpp"
 #include "net/minecraft/client/render/RenderCore.hpp"
-#include "net/minecraft/client/render/pipeline/Manager.hpp"
+#include "net/minecraft/client/render/pipeline/Pipeline.hpp"
 #include "net/minecraft/client/render/RenderType.hpp"
 #include "net/minecraft/client/render/TextureResolve.hpp"
 #include "net/minecraft/client/render/Tessellator.hpp"
@@ -29,6 +29,7 @@
 #include "net/minecraft/util/math/Matrix4f.hpp"
 #include "net/minecraft/util/math/MatrixStack.hpp"
 #include "net/minecraft/world/World.hpp"
+#include "net/minecraft/world/light/LightType.hpp"
 namespace net::minecraft::client::render::item {
 namespace {
 constexpr float kPi = 3.14159265358979323846f;
@@ -132,6 +133,9 @@ HeldItemRenderer::HeldItemRenderer(net::minecraft::client::Minecraft* minecraftI
       mapRenderer(minecraftIn != nullptr ? minecraftIn->textRenderer.get() : nullptr,
                   minecraftIn != nullptr ? &minecraftIn->textureManager : nullptr) {
 }
+int HeldItemRenderer::skinTexture(const net::minecraft::entity::player::ClientPlayerEntity& player) {
+ return minecraft->textureManager.downloadTexture(player.skinUrl, player.getTexture());
+}
 void HeldItemRenderer::renderItem(const net::minecraft::entity::LivingEntity& entity, const ItemStack& itemStack) {
  if(minecraft == nullptr || itemStack.empty()) {
   return;
@@ -200,14 +204,17 @@ void HeldItemRenderer::render(float tickDelta) {
  const float equipProgress = prevHeight + (height - prevHeight) * tickDelta;
  const float pitch = clientPlayer->prevPitch + (clientPlayer->pitch - clientPlayer->prevPitch) * tickDelta;
  const ItemStack* selectedItem = stack.empty() ? nullptr : &stack;
- const float rawHandLight = minecraft->world->getLightBrightness(MathHelper::floor(clientPlayer->x),
-                                                              MathHelper::floor(clientPlayer->y),
-                                                              MathHelper::floor(clientPlayer->z));
+ const int handX = MathHelper::floor(clientPlayer->x);
+ const int handY = MathHelper::floor(clientPlayer->y + static_cast<double>(clientPlayer->getEyeHeight()));
+ const int handZ = MathHelper::floor(clientPlayer->z);
+ const float rawHandLight = minecraft->world->getLightBrightness(handX, handY, handZ);
+ const int handBlockLight = minecraft->world->getBrightness(net::minecraft::LightType::Block, handX, handY, handZ);
+ const int handSkyLight = minecraft->world->getBrightness(net::minecraft::LightType::Sky, handX, handY, handZ);
  const bool useOldHandLight = minecraft->gameRenderer == nullptr
                                   ? vanillaPackDefinition().oldHandLight
                                   : minecraft->gameRenderer->packDefinition().oldHandLight;
   const float colorMult = useOldHandLight ? rawHandLight : 1.0f;
-  Tessellator::INSTANCE.light(15, 15);
+  Tessellator::INSTANCE.light(static_cast<float>(handBlockLight), static_cast<float>(handSkyLight));
   entity::EntityRenderer* entityRenderer = entity::EntityRenderDispatcher::instance().get(*clientPlayer);
   auto* playerRenderer = dynamic_cast<entity::PlayerEntityRenderer*>(entityRenderer);
   render::RenderPassScope firstPersonScope(render::RenderType::hand());
@@ -239,9 +246,7 @@ void HeldItemRenderer::render(float tickDelta) {
   mapPose.rotate(90.0f, 0.0f, 1.0f, 0.0f);
   mapPose.rotate(pitchFactor * -85.0f, 0.0f, 0.0f, 1.0f);
   core::setDrawPose(mapPose.top());
-  const std::string& skinUrl = clientPlayer->skinUrl;
-  const int skinTexture = minecraft->textureManager.downloadTexture(skinUrl, clientPlayer->getTexture());
-  minecraft->textureManager.bindTexture(skinTexture);
+  minecraft->textureManager.bindTexture(skinTexture(*clientPlayer));
   if(playerRenderer != nullptr) {
    for(int side = 0; side < 2; ++side) {
     const int mirror = side * 2 - 1;
@@ -329,8 +334,7 @@ void HeldItemRenderer::render(float tickDelta) {
   swingSqrt = MathHelper::sin(MathHelper::sqrt(swing) * static_cast<float>(kPi));
   pose.rotate(swingSqrt * 70.0f, 0.0f, 1.0f, 0.0f);
   pose.rotate(-swingSin * 20.0f, 0.0f, 0.0f, 1.0f);
-  const int skinTexture = minecraft->textureManager.downloadTexture(clientPlayer->skinUrl, clientPlayer->getTexture());
-  minecraft->textureManager.bindTexture(skinTexture);
+  minecraft->textureManager.bindTexture(skinTexture(*clientPlayer));
   pose.translate(-1.0f, 3.6f, 3.5f);
   pose.rotate(120.0f, 0.0f, 0.0f, 1.0f);
   pose.rotate(200.0f, 1.0f, 0.0f, 0.0f);

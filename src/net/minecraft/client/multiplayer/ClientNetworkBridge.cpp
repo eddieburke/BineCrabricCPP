@@ -14,7 +14,6 @@
 #include <stdexcept>
 #include <utility>
 #include "net/minecraft/client/Minecraft.hpp"
-#include "net/minecraft/client/core/WorldSession.hpp"
 #include "net/minecraft/client/multiplayer/ClientNetworkBridge.hpp"
 #include "net/minecraft/client/multiplayer/ClientNetworkHandler.hpp"
 #include "net/minecraft/client/multiplayer/ClientLoginNetworkHandler.hpp"
@@ -117,9 +116,11 @@ SOCKET openClientSocket(const std::string& host, int port, std::string& errorOut
  return socket;
 }
 } // namespace
-ClientNetworkBridge::ClientNetworkBridge(core::WorldSession* worldSession) noexcept : worldSession_(worldSession) {
+ClientNetworkBridge::ClientNetworkBridge() noexcept {
 }
-ClientNetworkBridge::~ClientNetworkBridge() = default;
+ClientNetworkBridge::~ClientNetworkBridge() {
+ disconnect();
+}
 bool ClientNetworkBridge::connect(client::Minecraft* minecraft,
                                   const std::string& host,
                                   int port,
@@ -134,7 +135,7 @@ bool ClientNetworkBridge::connect(client::Minecraft* minecraft,
  if(socket == INVALID_SOCKET) {
   return false;
  }
-  auto loginHandler = std::make_unique<multiplayer::ClientLoginNetworkHandler>(minecraft);
+  auto loginHandler = std::make_unique<multiplayer::ClientLoginNetworkHandler>(minecraft, this);
   loginHandler->message = "Connecting...";
   handler_ = std::move(loginHandler);
  try {
@@ -157,11 +158,14 @@ void ClientNetworkBridge::disconnect(const std::string& reason) {
   }
   connection_.reset();
   handler_.reset();
+  retiredHandler_.reset();
 }
 void ClientNetworkBridge::tick() {
+ retiredHandler_.reset();
  if(handler_ != nullptr) {
   handler_->tick();
  }
+ retiredHandler_.reset();
 }
 net::minecraft::NetworkHandler* ClientNetworkBridge::handler() const noexcept {
  return handler_.get();
@@ -170,8 +174,12 @@ net::minecraft::Connection* ClientNetworkBridge::connection() const noexcept {
  return connection_.get();
 }
 void ClientNetworkBridge::setHandler(std::unique_ptr<net::minecraft::NetworkHandler> newHandler) {
+ if(newHandler == nullptr) {
+  throw std::invalid_argument("Client network handler cannot be null");
+ }
+ retiredHandler_ = std::move(handler_);
  handler_ = std::move(newHandler);
- if(connection_ != nullptr && handler_ != nullptr) {
+ if(connection_ != nullptr) {
   connection_->setNetworkHandler(*handler_);
   handler_->bindConnection(connection_.get());
  }

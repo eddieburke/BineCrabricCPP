@@ -183,9 +183,6 @@ int PbrTextures::resolveCompanion(int diffuseTextureId, Type type,
  if(path.empty()) {
   return -1;
  }
- if(!manager.resourceExists(path)) {
-  return -1;
- }
  net::minecraft::client::texture::RasterImage image = manager.loadRasterForResource(path);
  if(image.width <= 0 || image.height <= 0) {
   return -1;
@@ -206,7 +203,7 @@ int PbrTextures::resolveCompanion(int diffuseTextureId, Type type,
    }
   }
  }
- const int textureId = manager.getTextureId(path);
+ const int textureId = manager.getTextureId(path, image);
  if(textureId <= 0 || manager.isMissingTextureId(textureId)) {
   return -1;
  }

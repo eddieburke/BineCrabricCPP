@@ -107,7 +107,6 @@ void LightingEngine::unregisterChunk(Chunk* chunk) {
  }
 }
 std::vector<LightingEngine::DirtyRegion> LightingEngine::drainDirtyRegions(std::size_t maxRegions) {
- const std::lock_guard lock(outboxMutex_);
  std::vector<DirtyRegion> regions;
  regions.reserve(std::min(maxRegions, outbox_.size()));
  DirtyRegion region{};
@@ -117,7 +116,6 @@ std::vector<LightingEngine::DirtyRegion> LightingEngine::drainDirtyRegions(std::
  return regions;
 }
 bool LightingEngine::hasDirtyRegions() const {
- const std::lock_guard lock(outboxMutex_);
  return outbox_.size() != 0;
 }
 void LightingEngine::stop() {
@@ -425,7 +423,6 @@ void LightingEngine::runUpdate(const Box& update, WorkerState& state) {
  publishDirtyRegion(DirtyRegion{update.minX, minY, update.minZ, update.maxX, maxY, update.maxZ});
 }
 void LightingEngine::publishDirtyRegion(DirtyRegion region) {
- const std::lock_guard lock(outboxMutex_);
  if(outbox_.tryPush(region)) {
   return;
  }

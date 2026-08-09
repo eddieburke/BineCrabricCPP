@@ -229,7 +229,8 @@ void indexPackPasses(const PackDefinition& definition,
 }
 std::string irisShadowProgramForGbuffers(const std::string& gbuffersKey) {
  if(gbuffersKey.rfind("clrwl_", 0) == 0) return {};
- if(gbuffersKey == "gbuffers_terrain_solid" || gbuffersKey == "gbuffers_terrain_cutout") return "shadow_cutout";
+ if(gbuffersKey == "gbuffers_terrain_solid") return "shadow_solid";
+ if(gbuffersKey == "gbuffers_terrain_cutout") return "shadow_cutout";
  if(gbuffersKey == "gbuffers_water") return "shadow_water";
  if(gbuffersKey.rfind("gbuffers_entities", 0) == 0 || gbuffersKey == "gbuffers_item" ||
     gbuffersKey == "gbuffers_beaconbeam" || gbuffersKey == "gbuffers_armor_glint" ||

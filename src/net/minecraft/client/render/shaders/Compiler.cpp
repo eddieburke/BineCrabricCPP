@@ -4,15 +4,17 @@
 #include "net/minecraft/client/render/shaders/PassIndex.hpp"
 #include "net/minecraft/client/render/shaders/SourceProcessor.hpp"
 #include "net/minecraft/client/render/pipeline/Instance.hpp"
+#include "net/minecraft/client/util/MinecraftDirectories.hpp"
 #include "net/minecraft/client/render/shaderpack/Catalog.hpp"
 #include "net/minecraft/client/render/shaderpack/Loader.hpp"
 #include "net/minecraft/client/render/shaderpack/VanillaPackEmbed.hpp"
+#include "net/minecraft/client/render/VertexAbi.hpp"
 #include "net/minecraft/client/gl/ShaderProgram.hpp"
 #include "net/minecraft/client/resource/pack/ZippedTexturePack.hpp"
 #include "net/minecraft/client/ClientLog.hpp"
 #include <algorithm>
-#include <chrono>
 #include <filesystem>
+#include <fstream>
 #include <sstream>
 #include <string>
 #include <unordered_map>
@@ -47,7 +49,43 @@ struct PreparedProgram {
  std::string geometry;
  std::string tessControl;
  std::string tessEvaluation;
+ ShaderTransformContext context;
 };
+// A driver reports "0(3872) : error ..." against the source it was handed, which
+// is the preamble plus the fully-included, fully-patched stage body -- a string
+// that exists nowhere on disk. Without it, a compile failure can only be guessed
+// at by re-deriving the pack's macro state by hand. Dump the exact bytes, through
+// the same assembleStageSource the compile path uses, so the reported line number
+// indexes the dump directly.
+void dumpFailedProgram(const std::string& programName, const PreparedProgram& prepared,
+                       const std::string& error) {
+ std::error_code ec;
+ const std::filesystem::path dir = util::MinecraftDirectories::getRunDirectory() / "shader-dumps";
+ std::filesystem::create_directories(dir, ec);
+ if(ec) return;
+ std::string safeName = programName;
+ for(char& c : safeName)
+  if(c == '/' || c == '\\' || c == ':') c = '_';
+ const auto writeStage = [&](const char* suffix, const std::string& body) {
+  if(body.empty()) return;
+  std::ofstream out(dir / (safeName + suffix), std::ios::binary | std::ios::trunc);
+  if(!out) return;
+  // Source first and nothing before it: file line N is driver line N. The driver
+  // log goes at the end, where it cannot shift the numbering it refers to.
+  const std::string assembled = gl::ShaderProgram::assembleStageSource(prepared.preamble, body);
+  out << assembled;
+  if(!assembled.empty() && assembled.back() != '\n') out << '\n';
+  out << "\n// === " << programName << suffix << " -- driver log ===\n";
+  std::istringstream errorLines(error);
+  for(std::string line; std::getline(errorLines, line);) out << "//   " << line << '\n';
+ };
+ writeStage(".vsh", prepared.compute ? std::string{} : prepared.vertex);
+ writeStage(".fsh", prepared.fragment);
+ writeStage(".csh", prepared.compute ? prepared.vertex : std::string{});
+ writeStage(".gsh", prepared.geometry);
+ writeStage(".tcs", prepared.tessControl);
+ writeStage(".tes", prepared.tessEvaluation);
+}
 void rememberDrawBuffers(PackInstance& pack, const PreparedProgram& prepared) {
  std::vector<int> targets = parseRenderTargetIndices(prepared.fragment);
  if(targets.empty()) {
@@ -69,7 +107,7 @@ bool prepareProgram(PackInstance& pack, const std::string& programName, const Pa
   out.compute = true;
   out.cacheKey = makeComputeCacheKey(programName, spec.compute);
   out.preamble = versionPreamble(pack.definition, computeIncluded, true);
-  out.vertex = prepareSource(programName, ShaderStage::Compute, pack.definition, computeIncluded);
+  out.vertex = computeIncluded;
   return true;
  }
  if(PackCompiler::cachedText(pack, spec.fragment).empty()) {
@@ -100,20 +138,58 @@ bool prepareProgram(PackInstance& pack, const std::string& programName, const Pa
      hasTessellation ? 400 : 330);
  const ShaderTransformContext transformContext =
      transformContextFor(programName, !geometryIncluded.empty(), hasTessellation);
- const auto prepare = [&](ShaderStage stage, const std::string& source) {
-  return source.empty()
-             ? std::string{}
-             : prepareSource(programName, stage, pack.definition, source, transformContext);
- };
- out.vertex = prepare(ShaderStage::Vertex, vertexIncluded);
- out.fragment = prepare(ShaderStage::Fragment, fragmentIncluded);
- out.geometry = prepare(ShaderStage::Geometry, geometryIncluded);
- out.tessControl = prepare(ShaderStage::TessControl, tessControlIncluded);
- out.tessEvaluation = prepare(ShaderStage::TessEvaluation, tessEvaluationIncluded);
+ out.vertex = vertexIncluded;
+ out.fragment = fragmentIncluded;
+ out.geometry = geometryIncluded;
+ out.tessControl = tessControlIncluded;
+ out.tessEvaluation = tessEvaluationIncluded;
+ out.context = transformContext;
  out.cacheKey = makeCacheKey(programName,
                              spec.vertex + "|" + spec.geometry + "|" + spec.tessControl + "|" + spec.tessEvaluation,
                              spec.fragment);
  return true;
+}
+std::string transformationSalt(const PackDefinition& definition,
+                               const std::string& programName,
+                               const ShaderTransformContext& context) {
+ std::string salt = render::vertex_abi::abiSaltString() + "|shader-transform-5|" + programName;
+ salt += context.entityOverlay ? "|overlay" : "|no-overlay";
+ salt += context.entityId ? "|entity-id" : "|no-entity-id";
+ salt += context.hasGeometry ? "|geometry" : "|no-geometry";
+ salt += context.hasTessellation ? "|tessellation" : "|no-tessellation";
+ std::vector<std::pair<std::string, std::string>> formats;
+ formats.reserve(definition.targets.size());
+ for(const auto& [name, target] : definition.targets) formats.emplace_back(name, target.format);
+ std::sort(formats.begin(), formats.end());
+ for(const auto& [name, format] : formats) salt += '|' + name + '=' + format;
+ return salt;
+}
+std::uint64_t preparedContentHash(const PackDefinition& definition,
+                                  const std::string& programName,
+                                  const PreparedProgram& program) {
+ return gl::ShaderProgram::contentHash(
+     program.compute, program.preamble, program.vertex, program.fragment, program.geometry,
+     program.tessControl, program.tessEvaluation,
+     transformationSalt(definition, programName, program.context));
+}
+void transformProgram(PackInstance& pack, const std::string& programName, PreparedProgram& program) {
+ const auto prepare = [&](ShaderStage stage, const std::string& source) {
+  if(source.empty()) return std::string{};
+  const std::string key = programName + ":" + std::to_string(static_cast<int>(stage));
+  if(auto it = pack.preparedSourceCache.find(key); it != pack.preparedSourceCache.end()) return it->second;
+  std::string result = prepareSource(programName, stage, pack.definition, source, program.context);
+  pack.preparedSourceCache.emplace(key, result);
+  return result;
+ };
+ if(program.compute) {
+  program.vertex = prepare(ShaderStage::Compute, program.vertex);
+  return;
+ }
+ program.vertex = prepare(ShaderStage::Vertex, program.vertex);
+ program.fragment = prepare(ShaderStage::Fragment, program.fragment);
+ program.geometry = prepare(ShaderStage::Geometry, program.geometry);
+ program.tessControl = prepare(ShaderStage::TessControl, program.tessControl);
+ program.tessEvaluation = prepare(ShaderStage::TessEvaluation, program.tessEvaluation);
 }
 } // namespace
 std::string PackCompiler::readText(const PackInstance& pack, const std::string& path) {
@@ -153,11 +229,10 @@ std::string PackCompiler::resolveIncludes(PackInstance& pack, const std::string&
    dimPrefix = path.substr(0, slash + 1);
   }
  }
- const std::string cacheKey = dimPrefix + path;
- if(const auto cached = pack.resolvedSourceCache.find(cacheKey); cached != pack.resolvedSourceCache.end()) {
+ std::unordered_map<std::string, std::string>& memo = pack.includedSourceCache[dimPrefix];
+ if(const auto cached = memo.find(path); cached != memo.end()) {
   return cached->second;
  }
- std::unordered_map<std::string, std::string> memo;
  std::string resolved = resolveShaderIncludes(
      [&](std::string_view current) {
       std::string target(current);
@@ -174,11 +249,6 @@ std::string PackCompiler::resolveIncludes(PackInstance& pack, const std::string&
      path,
      true,
      memo);
- pack.resolvedSourceCache.emplace(cacheKey, resolved);
- for(auto& [key, value] : memo) {
-  if(key == path) continue;
-  pack.resolvedSourceCache.emplace(dimPrefix + key, std::move(value));
- }
  return resolved;
 }
 gl::ShaderProgram* PackCompiler::compile(PackInstance& pack, const std::string& programName,
@@ -190,136 +260,70 @@ gl::ShaderProgram* PackCompiler::compile(PackInstance& pack, const std::string& 
   if(!featureSupported(feature)) {
    logOnce(pack, "required feature '" + feature + "' is unavailable",
            ::net::minecraft::util::logging::LogLevel::Info);
+   pack.compiledPrograms.insert_or_assign(programName, PackInstance::CompiledEntry{nullptr, true});
    return nullptr;
   }
  }
  const auto compiled = pack.compiledPrograms.find(programName);
  if(compiled != pack.compiledPrograms.end()) {
-  return compiled->second;
+  return compiled->second.failed ? nullptr : compiled->second.program;
  }
  const auto found = pack.definition.programs.find(programName);
  if(found == pack.definition.programs.end()) {
+  pack.compiledPrograms.emplace(programName, PackInstance::CompiledEntry{nullptr, true});
   return nullptr;
- }
- if(const auto keyed = pack.programCacheKeys.find(programName); keyed != pack.programCacheKeys.end()) {
-  if(gl::ShaderProgram* linked = pack.programs->find(keyed->second)) {
-   if(const auto targets = pack.programDrawBuffers.find(keyed->second);
-      targets != pack.programDrawBuffers.end()) {
-    linked->setDrawBufferColortexIndices(targets->second);
-   }
-   pack.compiledPrograms.emplace(programName, linked);
-   return linked;
-  }
  }
  PreparedProgram prepared;
  if(!prepareProgram(pack, programName, found->second, logOnce, prepared)) {
+  pack.compiledPrograms.emplace(programName, PackInstance::CompiledEntry{nullptr, true});
   return nullptr;
  }
- pack.programCacheKeys.insert_or_assign(programName, prepared.cacheKey);
-  if(prepared.compute) {
-   gl::ShaderProgram* program =
-       pack.programs->getFromComputeSource(prepared.cacheKey, prepared.vertex, prepared.preamble);
-   if(program != nullptr) {
-    pack.compiledPrograms.emplace(programName, program);
-    return program;
-   }
-   const std::string& error = pack.programs->compileError(prepared.cacheKey);
+ const std::uint64_t contentHash = preparedContentHash(pack.definition, programName, prepared);
+ if(gl::ShaderProgram* program = pack.programs->loadBinary(prepared.cacheKey, contentHash)) {
+  if(!prepared.compute) {
+   rememberDrawBuffers(pack, prepared);
+   program->setDrawBufferColortexIndices(pack.programDrawBuffers.at(prepared.cacheKey));
+  }
+  pack.compiledPrograms.emplace(programName, PackInstance::CompiledEntry{program, false});
+  return program;
+ }
+ transformProgram(pack, programName, prepared);
+ if(prepared.compute) {
+  gl::ShaderProgram* program =
+      pack.programs->compileFromComputeSource(prepared.cacheKey, contentHash, prepared.vertex, prepared.preamble);
+  if(program != nullptr) {
+   pack.compiledPrograms.emplace(programName, PackInstance::CompiledEntry{program, false});
+   return program;
+  }
+  const std::string& error = pack.programs->compileError(prepared.cacheKey);
+  dumpFailedProgram(programName, prepared, error);
   logOnce(pack,
           "program '" + programName + "' (" + found->second.compute + ") failed to compile: " +
-              (error.empty() ? "no driver info log" : error),
+              (error.empty() ? "no driver info log" : error) + " [patched source dumped to shader-dumps/" +
+              programName + ".csh]",
           ::net::minecraft::util::logging::LogLevel::Info);
+  pack.compiledPrograms.emplace(programName, PackInstance::CompiledEntry{nullptr, true});
   return nullptr;
  }
  gl::ShaderProgram* program =
-     pack.programs->getFromSource(prepared.cacheKey, prepared.vertex, prepared.fragment, prepared.preamble,
-                                  prepared.geometry, prepared.tessControl, prepared.tessEvaluation);
+     pack.programs->compileFromSource(prepared.cacheKey, contentHash, prepared.vertex, prepared.fragment,
+                                      prepared.preamble, prepared.geometry, prepared.tessControl,
+                                      prepared.tessEvaluation);
  if(program != nullptr) {
   rememberDrawBuffers(pack, prepared);
   program->setDrawBufferColortexIndices(pack.programDrawBuffers.at(prepared.cacheKey));
-  pack.compiledPrograms.emplace(programName, program);
+  pack.compiledPrograms.emplace(programName, PackInstance::CompiledEntry{program, false});
   return program;
  }
-  rememberDrawBuffers(pack, prepared);
-  const std::string& error = pack.programs->compileError(prepared.cacheKey);
+ rememberDrawBuffers(pack, prepared);
+ const std::string& error = pack.programs->compileError(prepared.cacheKey);
+ dumpFailedProgram(programName, prepared, error);
  logOnce(pack,
          "program '" + programName + "' (" + found->second.vertex + " + " + found->second.fragment +
-             ") failed to compile: " + (error.empty() ? "no driver info log" : error),
+             ") failed to compile: " + (error.empty() ? "no driver info log" : error) +
+             " [patched source dumped to shader-dumps/" + programName + ".vsh/.fsh]",
          ::net::minecraft::util::logging::LogLevel::Info);
+ pack.compiledPrograms.emplace(programName, PackInstance::CompiledEntry{nullptr, true});
  return nullptr;
-}
-void PackCompiler::buildPrewarmQueue(PackInstance& pack) {
- if(!pack.prewarmQueue.empty()) {
-  return;
- }
- pack.prewarmCursor = 0;
- for(const auto& [name, spec] : pack.definition.programs) {
-  (void)spec;
-  if(isProgramEnabledCached(pack.definition, pack.settings, name, pack.programEnabledCache)) {
-   pack.prewarmQueue.push_back(name);
-  }
- }
-}
-bool PackCompiler::prewarmStep(PackInstance& pack, const LogFnLevel& logOnce) {
- if(!pack.summary.valid || pack.programs == nullptr || pack.programState == PackProgramState::Ready ||
-    pack.programState == PackProgramState::Failed) {
-  return true;
- }
- if(pack.programState == PackProgramState::Cold) {
-  for(const std::string& feature : pack.definition.requiredFeatures) {
-   if(!featureSupported(feature)) {
-    pack.programState = PackProgramState::Failed;
-    return true;
-   }
-  }
-  pack.programState = PackProgramState::Submitted;
- }
- if(pack.prewarmQueue.empty()) {
-  buildPrewarmQueue(pack);
- }
- constexpr std::int64_t kTimeBudgetMs = 12;
- const auto deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(kTimeBudgetMs);
- while(pack.prewarmCursor < pack.prewarmQueue.size()) {
-  const std::string& name = pack.prewarmQueue[pack.prewarmCursor];
-  ++pack.prewarmCursor;
-  const auto spec = pack.definition.programs.find(name);
-  if(spec == pack.definition.programs.end()) {
-   continue;
-  }
-  PreparedProgram prepared;
-  if(!prepareProgram(pack, name, spec->second, logOnce, prepared)) {
-   continue;
-  }
-  if(prepared.compute) {
-   pack.programs->getFromComputeSource(prepared.cacheKey, prepared.vertex, prepared.preamble);
-  } else {
-   pack.programs->getFromSource(prepared.cacheKey, prepared.vertex, prepared.fragment, prepared.preamble,
-                                prepared.geometry, prepared.tessControl, prepared.tessEvaluation);
-   rememberDrawBuffers(pack, prepared);
-  }
-  pack.programCacheKeys.insert_or_assign(name, prepared.cacheKey);
-  if(pack.prewarmCursor < pack.prewarmQueue.size() &&
-     std::chrono::steady_clock::now() >= deadline) {
-   break;
-  }
- }
- return pack.prewarmCursor >= pack.prewarmQueue.size();
-}
-bool PackCompiler::validate(PackInstance& pack, const LogFnLevel& logOnce) {
- if(!pack.summary.valid || pack.programs == nullptr || pack.programState == PackProgramState::Cold) {
-  return false;
- }
- if(pack.programState == PackProgramState::Ready) return true;
- if(pack.programState == PackProgramState::Failed) return false;
- if(!pack.prewarmQueue.empty() && pack.prewarmCursor < pack.prewarmQueue.size()) {
-  return false;
- }
- bool ready = true;
- for(const auto& [name, spec] : pack.definition.programs) {
-  (void)spec;
-  if(!isProgramEnabledCached(pack.definition, pack.settings, name, pack.programEnabledCache)) continue;
-  if(compile(pack, name, logOnce) == nullptr) ready = false;
- }
- pack.programState = ready ? PackProgramState::Ready : PackProgramState::Failed;
- return ready;
 }
 } // namespace net::minecraft::client::render

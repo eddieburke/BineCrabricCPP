@@ -23,6 +23,10 @@ int resolveShaderObjectId(const std::string& kind, const std::string& name, int 
  Pipeline* pipeline = shaderPipeline();
  return pipeline != nullptr ? pipeline->resolveObjectId(kind, name, fallback) : fallback;
 }
+std::uint64_t shaderObjectIdRevision() {
+ Pipeline* pipeline = shaderPipeline();
+ return pipeline != nullptr ? pipeline->objectIdRevision() : 0;
+}
 void setShaderBlockIds(const std::array<int, 256>& ids) {
  for(std::size_t i = 0; i < ids.size(); ++i) g_shaderBlockIds[i].store(ids[i], std::memory_order_relaxed);
 }
@@ -53,7 +57,7 @@ void RenderType::setupRenderState() const {
  gl::ShaderProgram* active = pipeline != nullptr && worldProgram_.has_value()
                                  ? pipeline->worldProgram(*worldProgram_)
                                  : nullptr;
- core::setActiveProgram(active);
+ core::setActiveProgram(active, active != nullptr ? worldProgram_ : std::nullopt);
  // Diffuse sampler is always unit 0. Untextured passes own a white texel there;
  // textured passes leave unit 0 for the caller to bind.
  if(!hasTexture_) {
@@ -77,21 +81,29 @@ void RenderType::setupRenderState() const {
  } else {
   core::disableCull();
  }
-   core::setAlphaTestRef(state_.alphaTest ? state_.alphaRef : 0.0f);
+   core::setAlphaTestRef(state_.alphaTest ? state_.alphaRef : -1.0f);
    core::setLightingEnabled(state_.lighting);
-    if(pipeline != nullptr && worldProgram_.has_value()) pipeline->applyWorldPassDirectives();
+    if(pipeline != nullptr && active != nullptr && worldProgram_.has_value())
+     pipeline->applyWorldPassDirectives(*worldProgram_, *active);
   }
-void RenderType::restoreRenderState(const core::PassGlBits& saved, gl::ShaderProgram* savedProgram) const {
+void RenderType::restoreRenderState(const core::PassGlBits& saved,
+                                    gl::ShaderProgram* savedProgram,
+                                    std::optional<WorldProgramId> savedWorldProgram) const {
  core::restorePassGlBits(saved);
  // Fog is owned by the frame stage (GameRenderer), not by pass enter/exit.
  // Lighting / alpha / const color are restored from core snapshots on RenderPassScope.
- core::setActiveProgram(savedProgram);
+ core::setActiveProgram(savedProgram, savedWorldProgram);
+ Pipeline* pipeline = shaderPipeline();
+ if(pipeline != nullptr && savedProgram != nullptr && savedWorldProgram.has_value())
+  pipeline->applyWorldPassDirectives(*savedWorldProgram, *savedProgram);
 }
 RenderPassScope::RenderPassScope(const RenderType& type)
     : type_(&type),
       saved_(core::capturePassGlBits()),
       savedProgram_(core::program()),
+      savedWorldProgram_(core::activeWorldProgram()),
       savedDrawEnabled_(core::drawEnabled()),
+      savedRenderStage_(core::renderStage()),
       savedWorldLight_(core::worldLight()),
       savedAlphaTestRef_(core::alphaTestRef()),
       savedPose_(core::drawPose()) {
@@ -101,12 +113,14 @@ RenderPassScope::RenderPassScope(const RenderType& type)
  savedConstColor_[2] = color[2];
  savedConstColor_[3] = color[3];
  const bool translucent = type.state_.blend;
- core::setDrawEnabled(
-     g_drawPhase == DrawPhase::All || (g_drawPhase == DrawPhase::Translucent) == translucent);
+ const bool phaseEnabled =
+     g_drawPhase == DrawPhase::All || (g_drawPhase == DrawPhase::Translucent) == translucent;
+ core::setDrawEnabled(savedDrawEnabled_ && phaseEnabled);
  type_->setupRenderState();
 }
 RenderPassScope::~RenderPassScope() {
- type_->restoreRenderState(saved_, savedProgram_);
+ type_->restoreRenderState(saved_, savedProgram_, savedWorldProgram_);
+ core::setRenderStage(savedRenderStage_);
  core::setWorldLight(savedWorldLight_);
  core::setLightingEnabled(savedWorldLight_.enabled);
  core::setAlphaTestRef(savedAlphaTestRef_);
@@ -132,8 +146,6 @@ RenderType::State solidState() {
  s.depthTest = true;
  s.depthWrite = true;
  s.cull = true;
- s.alphaTest = true;
- s.alphaRef = 0.1f;
  return s;
 }
 RenderType::State cutoutState() {
@@ -142,7 +154,7 @@ RenderType::State cutoutState() {
  s.depthWrite = true;
  s.cull = true;
  s.alphaTest = true;
- s.alphaRef = 0.1f;
+ s.alphaRef = 0.5f;
  return s;
 }
 // Leaf-blob interiors: cutout with culling off. This is the one terrain layer
@@ -175,6 +187,14 @@ RenderType::State translucentState() {
 RenderType::State terrainTranslucentState() {
  RenderType::State s = translucentState();
  s.cull = true;
+ s.alphaTest = true;
+ s.alphaRef = 0.0001f;
+ return s;
+}
+RenderType::State alphaTranslucentState() {
+ RenderType::State s = translucentState();
+ s.alphaTest = true;
+ s.alphaRef = 0.1f;
  return s;
 }
 RenderType::State damagedBlockState() {
@@ -330,7 +350,7 @@ RenderType& RenderType::entityCutout() {
 }
 RenderType& RenderType::entityTranslucent() {
  static RenderType instance =
-      RenderType("entity_translucent", 0x0004, true, "", translucentState(), WorldProgramId::EntitiesTranslucent);
+      RenderType("entity_translucent", 0x0004, true, "", alphaTranslucentState(), WorldProgramId::EntitiesTranslucent);
  return instance;
 }
 RenderType& RenderType::lightning() {
@@ -345,7 +365,7 @@ RenderType& RenderType::block() {
 }
 RenderType& RenderType::blockTranslucent() {
  static RenderType instance =
-      RenderType("block_translucent", 0x0004, true, "", translucentState(), WorldProgramId::BlockTranslucent);
+      RenderType("block_translucent", 0x0004, true, "", alphaTranslucentState(), WorldProgramId::BlockTranslucent);
  return instance;
 }
 RenderType& RenderType::particles() {
@@ -360,12 +380,12 @@ RenderType& RenderType::particlesTranslucent() {
 }
  RenderType& RenderType::clouds() {
   static RenderType instance =
-      RenderType("clouds", 0x0004, true, "", translucentState(), WorldProgramId::Clouds);
+      RenderType("clouds", 0x0004, true, "", alphaTranslucentState(), WorldProgramId::Clouds);
   return instance;
  }
 RenderType& RenderType::weather() {
  static RenderType instance =
-      RenderType("weather", 0x0004, true, "", translucentState(), WorldProgramId::Weather);
+      RenderType("weather", 0x0004, true, "", alphaTranslucentState(), WorldProgramId::Weather);
  return instance;
 }
 RenderType& RenderType::hand() {

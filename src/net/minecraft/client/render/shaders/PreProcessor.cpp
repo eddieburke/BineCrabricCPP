@@ -5,14 +5,6 @@
 #include <system_error>
 #include <utility>
 namespace net::minecraft::client::render {
-namespace {
-std::string_view trimmedView(std::string_view value) {
- const std::size_t first = value.find_first_not_of(" \t\r\n");
- if(first == std::string_view::npos) return {};
- const std::size_t last = value.find_last_not_of(" \t\r\n");
- return value.substr(first, last - first + 1);
-}
-} // namespace
 bool isIdentStart(char c) {
  return std::isalpha(static_cast<unsigned char>(c)) || c == '_';
 }
@@ -281,179 +273,14 @@ class PPExpressionEval {
    if(ident == "true") return 1.0;
    return 0.0;
   }
-  ok_ = false;
-  ++pos_;
-  return 0.0;
- }
+   ok_ = false;
+   ++pos_;
+   return 0.0;
+  }
 };
-namespace {
-std::string resolveDefinedOperators(const std::string& expr, const PPMacroTable& macros) {
- std::string out;
- out.reserve(expr.size());
- for(std::size_t i = 0; i < expr.size();) {
-  if(isIdentStart(expr[i])) {
-   std::size_t end = i;
-   while(end < expr.size() && isIdentChar(expr[end])) ++end;
-   const std::string_view ident(expr.data() + i, end - i);
-   if(ident == "defined") {
-    std::size_t p = end;
-    while(p < expr.size() && std::isspace(static_cast<unsigned char>(expr[p]))) ++p;
-    bool paren = false;
-    if(p < expr.size() && expr[p] == '(') {
-     paren = true;
-     ++p;
-     while(p < expr.size() && std::isspace(static_cast<unsigned char>(expr[p]))) ++p;
-    }
-    std::size_t nameEnd = p;
-    while(nameEnd < expr.size() && isIdentChar(expr[nameEnd])) ++nameEnd;
-    const std::string_view name(expr.data() + p, nameEnd - p);
-    p = nameEnd;
-    if(paren) {
-     while(p < expr.size() && std::isspace(static_cast<unsigned char>(expr[p]))) ++p;
-     if(p < expr.size() && expr[p] == ')') ++p;
-    }
-    out += macros.count(name) > 0 ? '1' : '0';
-    i = p;
-    continue;
-   }
-   out += ident;
-   i = end;
-   continue;
-  }
-  out += expr[i++];
- }
- return out;
-}
-std::string expandIfExpression(std::string_view rawExpr, const PPMacroTable& macros) {
- std::string expr(rawExpr);
- expr = resolveDefinedOperators(expr, macros);
- for(int pass = 0; pass < 64; ++pass) {
-  bool changed = false;
-  std::string out;
-  out.reserve(expr.size());
-  for(std::size_t i = 0; i < expr.size();) {
-   if(!isIdentStart(expr[i])) {
-    out += expr[i++];
-    continue;
-   }
-   std::size_t end = i;
-   while(end < expr.size() && isIdentChar(expr[end])) ++end;
-   const std::string_view ident(expr.data() + i, end - i);
-   const auto found = macros.find(ident);
-   if(found == macros.end()) {
-    out += ident;
-    i = end;
-    continue;
-   }
-   const PPMacro& macro = found->second;
-   if(!macro.functionLike) {
-    out += '(';
-    out += macro.body.empty() ? "1" : macro.body;
-    out += ')';
-    i = end;
-    changed = true;
-    continue;
-   }
-   std::size_t p = end;
-   while(p < expr.size() && std::isspace(static_cast<unsigned char>(expr[p]))) ++p;
-   if(p >= expr.size() || expr[p] != '(') {
-    out += ident;
-    i = end;
-    continue;
-   }
-   ++p;
-   std::vector<std::string> args;
-   std::string current;
-   int depth = 1;
-   while(p < expr.size() && depth > 0) {
-    const char c = expr[p];
-    if(c == '(')
-     ++depth;
-    else if(c == ')') {
-     --depth;
-     if(depth == 0) break;
-    } else if(c == ',' && depth == 1) {
-     args.push_back(std::string(trimmedView(current)));
-     current.clear();
-     ++p;
-     continue;
-    }
-    current += c;
-    ++p;
-   }
-   args.push_back(std::string(trimmedView(current)));
-   if(p < expr.size()) ++p;
-   std::string substituted;
-   const std::string& body = macro.body;
-   for(std::size_t b = 0; b < body.size();) {
-    if(!isIdentStart(body[b])) {
-     substituted += body[b++];
-     continue;
-    }
-    std::size_t be = b;
-    while(be < body.size() && isIdentChar(body[be])) ++be;
-    const std::string_view bodyIdent(body.data() + b, be - b);
-    bool replacedParam = false;
-    for(std::size_t a = 0; a < macro.params.size() && a < args.size(); ++a) {
-     if(macro.params[a] == bodyIdent) {
-      substituted += '(' + args[a] + ')';
-      replacedParam = true;
-      break;
-     }
-    }
-    if(!replacedParam) substituted += bodyIdent;
-    b = be;
-   }
-   out += '(' + substituted + ')';
-   i = p;
-   changed = true;
-  }
-  expr = std::move(out);
-  if(!changed) break;
- }
- return expr;
-}
-} // namespace
-bool evaluateIfExpression(std::string_view rawExpr, const PPMacroTable& macros) {
- const std::string expanded = expandIfExpression(rawExpr, macros);
- PPExpressionEval eval(expanded);
- double value = 0.0;
- if(!eval.eval(value)) return false;
- return value != 0.0;
-}
-void parseDefineDirective(std::string_view afterKeyword, PPMacroTable& macros) {
- std::size_t i = 0;
- while(i < afterKeyword.size() && std::isspace(static_cast<unsigned char>(afterKeyword[i]))) ++i;
- std::size_t end = i;
- while(end < afterKeyword.size() && isIdentChar(afterKeyword[end])) ++end;
- if(end == i) return;
- const std::string name(afterKeyword.substr(i, end - i));
- PPMacro macro;
- if(end < afterKeyword.size() && afterKeyword[end] == '(') {
-  macro.functionLike = true;
-  std::size_t p = end + 1;
-  std::string param;
-  while(p < afterKeyword.size() && afterKeyword[p] != ')') {
-   const char c = afterKeyword[p];
-   if(c == ',') {
-    if(!trimmedView(param).empty()) macro.params.push_back(std::string(trimmedView(param)));
-    param.clear();
-   } else {
-    param += c;
-   }
-   ++p;
-  }
-  if(!trimmedView(param).empty()) macro.params.push_back(std::string(trimmedView(param)));
-  end = p < afterKeyword.size() ? p + 1 : p;
- }
- std::string body(trimmedView(afterKeyword.substr(end)));
- // The option comment (`//[128 192 ...]`) must not leak into the macro body:
- // `#if COLORED_LIGHTING > 0` would then evaluate `0 //[128 192 ...]` as a
- // division chain and always come out zero.
- const std::size_t comment = body.find("//");
- if(comment != std::string::npos) body = std::string(trimmedView(std::string_view(body).substr(0, comment)));
- macro.body = std::move(body);
- macros[name] = std::move(macro);
+bool evalExpressionText(std::string_view text, double& out) {
+ PPExpressionEval eval(text);
+ return eval.eval(out);
 }
 bool parseDirective(const std::string& trimmed, std::string& keyword, std::string& rest) {
  if(trimmed.empty() || trimmed[0] != '#') return false;
@@ -465,15 +292,6 @@ bool parseDirective(const std::string& trimmed, std::string& keyword, std::strin
  rest = std::string(trimmedView(trimmed.substr(end)));
  return true;
 }
-// PARSING ONLY — this function knows nothing about what the engine defines, and must
-// not learn. It used to open with ~16 hardcoded macros (MC_GL_VERSION 460, every
-// IRIS_FEATURE_* on, GL_ARB_gpu_shader5 and GL_ARB_shader_image_load_store asserted
-// present regardless of the driver) which were a second, hand-maintained copy of what
-// versionPreambleForStages() emits. Callers that had the real preamble silently
-// overwrote them; the one caller that passed an empty string got the literals and
-// scanned pack constants under a different `#if` branch than the GPU compiled.
-// seedEngineMacros() in SourceProcessor.cpp is now the single source; see
-// SourceProcessor.hpp.
 void seedMacrosFromDefines(const std::string& text, PPMacroTable& macros) {
  std::size_t lineStart = 0;
  while(lineStart < text.size()) {
@@ -508,6 +326,8 @@ void seedMacrosFromDefines(const std::string& text, PPMacroTable& macros) {
      macros["GL_compatibility_profile"] = flag;
    }
   }
- }
- }
+  }
+  }
+template bool evaluateIfExpression(std::string_view, const PPMacroTable&);
+template void parseDefineDirective(std::string_view, PPMacroTable&);
 } // namespace net::minecraft::client::render

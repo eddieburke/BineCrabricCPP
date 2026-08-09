@@ -38,23 +38,23 @@ inline SideFaceUv sideFaceUvFor(const net::minecraft::client::render::ResolvedTe
  const double minHorizontal = xAxis ? bounds.minX : bounds.minZ;
  const double maxHorizontal = xAxis ? bounds.maxX : bounds.maxZ;
  const double minU = texture.uFromStart(minHorizontal);
- const double maxU = texture.uFromStart(maxHorizontal) - net::minecraft::client::render::kTextureEdgeInset * texture.uScale;
+ const double maxU = texture.uFromStart(maxHorizontal);
  double uMin = minU;
  double uMax = maxU;
  double vMin = texture.vFromEnd(bounds.maxY);
- double vMax = texture.vFromEnd(bounds.minY) - net::minecraft::client::render::kTextureEdgeInset * texture.vScale;
+ double vMax = texture.vFromEnd(bounds.minY);
  if(flipTextureHorizontally) {
   const double flippedMin = uMin;
   uMin = uMax;
   uMax = flippedMin;
  }
  if(minHorizontal < 0.0 || maxHorizontal > 1.0) {
-  uMin = texture.uMin;
-  uMax = texture.uMax - net::minecraft::client::render::kTextureEdgeInset * texture.uScale;
+  uMin = texture.safeUMin();
+  uMax = texture.safeUMax();
  }
  if(bounds.minY < 0.0 || bounds.maxY > 1.0) {
-  vMin = texture.vMin;
-  vMax = texture.vMax - net::minecraft::client::render::kTextureEdgeInset * texture.vScale;
+  vMin = texture.safeVMin();
+  vMax = texture.safeVMax();
  }
  const bool patternA = (face == SideFaceDirection::east || face == SideFaceDirection::south)
                            ? rotation == 2
@@ -87,9 +87,9 @@ inline SideFaceUv sideFaceUvFor(const net::minecraft::client::render::ResolvedTe
   cornerB = {rotatedUMin, rotatedVMin};
  } else if(rotation == 3) {
   const double rotatedUMin = texture.uFromEnd(minHorizontal);
-  const double rotatedUMax = texture.uFromEnd(maxHorizontal) - net::minecraft::client::render::kTextureEdgeInset * texture.uScale;
+  const double rotatedUMax = texture.uFromEnd(maxHorizontal);
   const double rotatedVMin = texture.vFromStart(bounds.maxY);
-  const double rotatedVMax = texture.vFromStart(bounds.minY) - net::minecraft::client::render::kTextureEdgeInset * texture.vScale;
+  const double rotatedVMax = texture.vFromStart(bounds.minY);
   minCorner = {rotatedUMin, rotatedVMin};
   maxCorner = {rotatedUMax, rotatedVMax};
   cornerA = {rotatedUMax, rotatedVMin};

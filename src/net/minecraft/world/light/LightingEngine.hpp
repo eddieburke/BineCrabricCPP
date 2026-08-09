@@ -95,7 +95,6 @@ class LightingEngine {
  std::atomic<bool> skyLightSuppressed_{false};
  std::mutex registryMutex_;
  std::unordered_map<std::uint64_t, Chunk*> registry_;
- mutable std::mutex outboxMutex_;
  util::concurrent::Channel<DirtyRegion> outbox_{4096};
  world::light::UnifiedLightRegistry& lightRegistry_;
  util::concurrent::WorkerPool& computePool_;

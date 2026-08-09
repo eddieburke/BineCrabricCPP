@@ -16,7 +16,7 @@
 #include "net/minecraft/client/render/RenderCore.hpp"
 #include "net/minecraft/client/render/RenderType.hpp"
 #include "net/minecraft/client/render/Tessellator.hpp"
-#include "net/minecraft/client/render/pipeline/Manager.hpp"
+#include "net/minecraft/client/render/pipeline/Pipeline.hpp"
 namespace net::minecraft::client::gui::screen::pack {
 namespace render = net::minecraft::client::render;
 namespace {
@@ -90,9 +90,9 @@ float sliderPosition(const PackSetting& setting, const std::string& rawValue) {
  const double current = std::strtod(rawValue.c_str(), nullptr);
  return static_cast<float>(std::clamp((current - setting.minimum) / range, 0.0, 1.0));
 }
-float applySliderPosition(render::PackManager* manager, const PackSetting& setting, float position) {
+float applySliderPosition(render::Pipeline* pipeline, const PackSetting& setting, float position) {
  const double range = setting.maximum - setting.minimum;
- if(range <= 0.0 || manager == nullptr) {
+ if(range <= 0.0 || pipeline == nullptr) {
   return 0.0f;
  }
  double val = setting.minimum + static_cast<double>(std::clamp(position, 0.0f, 1.0f)) * range;
@@ -101,7 +101,7 @@ float applySliderPosition(render::PackManager* manager, const PackSetting& setti
  }
  val = std::clamp(val, setting.minimum, setting.maximum);
  std::string next = (setting.type == SettingType::Int) ? std::to_string(static_cast<int>(val)) : std::to_string(val);
- manager->setSetting(setting.key, next);
+ pipeline->setSetting(setting.key, next);
  return sliderPosition(setting, next);
 }
 std::string settingLabel(const PackSetting& setting, const std::string& value) {
@@ -138,10 +138,10 @@ void ShaderpackScreen::rebuildLayout() {
  scroll_.clear();
  title_ = "Shaderpack Settings";
  if(minecraft() == nullptr || minecraft()->gameRenderer == nullptr ||
-    minecraft()->gameRenderer->shaderPacks() == nullptr) {
+    minecraft()->gameRenderer->shaderPipeline() == nullptr) {
   return;
  }
- auto* manager = minecraft()->gameRenderer->shaderPacks();
+ auto* manager = minecraft()->gameRenderer->shaderPipeline();
  manager->poll();
  const auto packs = manager->available();
  const bool userPackSelected = std::any_of(packs.begin(), packs.end(), [](const auto& pack) {
@@ -158,8 +158,8 @@ void ShaderpackScreen::rebuildLayout() {
                  std::string("None") + (userPackSelected ? "" : " (selected)"),
                  [this] {
                   if(minecraft() != nullptr && minecraft()->gameRenderer != nullptr &&
-                     minecraft()->gameRenderer->shaderPacks() != nullptr) {
-                   minecraft()->gameRenderer->shaderPacks()->select("");
+                     minecraft()->gameRenderer->shaderPipeline() != nullptr) {
+                   minecraft()->gameRenderer->shaderPipeline()->select("");
                    rebuildLayout();
                   }
                  });
@@ -176,8 +176,8 @@ void ShaderpackScreen::rebuildLayout() {
                   pack.name + (pack.valid ? "" : " (invalid)") + (pack.selected ? " (selected)" : ""),
                   [this, key = pack.key] {
                    if(minecraft() != nullptr && minecraft()->gameRenderer != nullptr &&
-                      minecraft()->gameRenderer->shaderPacks() != nullptr) {
-                    minecraft()->gameRenderer->shaderPacks()->select(key);
+                      minecraft()->gameRenderer->shaderPipeline() != nullptr) {
+                    minecraft()->gameRenderer->shaderPipeline()->select(key);
                     rebuildLayout();
                    }
                   });
@@ -232,7 +232,7 @@ void ShaderpackScreen::rebuildLayout() {
                      "Profile: " + profile.name,
                      [this, profile] {
                       if(minecraft() == nullptr || minecraft()->gameRenderer == nullptr ||
-                         minecraft()->gameRenderer->shaderPacks() == nullptr) {
+                         minecraft()->gameRenderer->shaderPipeline() == nullptr) {
                        return;
                       }
                       std::vector<std::pair<std::string, std::string>> values;
@@ -243,7 +243,7 @@ void ShaderpackScreen::rebuildLayout() {
                       // One atomic rebuild: per-option setSetting calls made a
                       // profile click restart the whole pack compile once per
                       // option and freeze the game.
-                      minecraft()->gameRenderer->shaderPacks()->setSettings(values);
+                      minecraft()->gameRenderer->shaderPipeline()->setSettings(values);
                       rebuildLayout();
                      });
      scroll_.addEntry(static_cast<int>(buttons_.size() - 1), widgetY);
@@ -300,10 +300,10 @@ void ShaderpackScreen::rebuildLayout() {
                     settingLabel(setting, manager->settingValue(setting.key)),
                     [this, setting, widgetIndex] {
                      if(minecraft() == nullptr || minecraft()->gameRenderer == nullptr ||
-                        minecraft()->gameRenderer->shaderPacks() == nullptr) {
+                        minecraft()->gameRenderer->shaderPipeline() == nullptr) {
                       return;
                      }
-                     auto* current = minecraft()->gameRenderer->shaderPacks();
+                     auto* current = minecraft()->gameRenderer->shaderPipeline();
                      const std::string oldValue = current->settingValue(setting.key);
                      // Enum options (pack profiles) cycle through valueOrder; booleans flip.
                      const std::string next = [&] {
@@ -335,14 +335,14 @@ void ShaderpackScreen::rebuildLayout() {
          if(minecraft() == nullptr || minecraft()->gameRenderer == nullptr) {
           return pos;
          }
-         return applySliderPosition(minecraft()->gameRenderer->shaderPacks(), setting, pos);
+         return applySliderPosition(minecraft()->gameRenderer->shaderPipeline(), setting, pos);
         },
         [this, setting] {
          if(minecraft() == nullptr || minecraft()->gameRenderer == nullptr ||
-            minecraft()->gameRenderer->shaderPacks() == nullptr) {
+            minecraft()->gameRenderer->shaderPipeline() == nullptr) {
           return std::string();
          }
-         return settingLabel(setting, minecraft()->gameRenderer->shaderPacks()->settingValue(setting.key));
+         return settingLabel(setting, minecraft()->gameRenderer->shaderPipeline()->settingValue(setting.key));
         });
    }
    scroll_.addEntry(widgetIndex, widgetY);

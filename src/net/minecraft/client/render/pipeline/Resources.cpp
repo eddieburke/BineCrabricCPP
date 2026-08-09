@@ -24,9 +24,11 @@ std::string textureKey(const CustomTexture& texture) {
  return texture.stage.empty() ? texture.name : texture.stage + "." + texture.name;
 }
 std::uint64_t vramBytes() {
- // https://github.com/IrisShaders/Iris/blob/26.1/common/src/main/java/net/irisshaders/iris/gl/IrisRenderSystem.java
- const char* extensions = reinterpret_cast<const char*>(::glGetString(0x1F03));
- if(extensions != nullptr && std::strstr(extensions, "GL_NVX_gpu_memory_info") != nullptr) {
+ static const bool hasNvxMemoryInfo = []() {
+  const std::vector<std::string> extensions = supportedGlExtensions();
+  return std::find(extensions.begin(), extensions.end(), "GL_NVX_gpu_memory_info") != extensions.end();
+ }();
+ if(hasNvxMemoryInfo) {
   int available = 0;
   ::glGetIntegerv(0x9049, &available);
   if(available > 0) return static_cast<std::uint64_t>(available) * 1024ull;
@@ -35,12 +37,14 @@ std::uint64_t vramBytes() {
 }
 } // namespace
 bool ensurePackResources(PackInstance& pack, int width, int height, const gl::GlTexture& lightmapTexture,
-                           const std::function<std::string(const PackInstance&, const std::string&)>& readText) {
- if(!hasGlContext()) return false;
- if(!pack.definition.images.empty() && gl::GLCore::bindImageTexture == nullptr) return false;
+                            const std::function<std::string(const PackInstance&, const std::string&)>& readText) {
+  if(!hasGlContext()) return false;
+  if(!pack.definition.images.empty() && gl::GLCore::bindImageTexture == nullptr) return false;
+  bool samplerBindingsChanged = pack.worldTextures.empty() && pack.worldVolumeTextures.empty();
  const bool customNoise = std::any_of(pack.definition.customTextures.begin(), pack.definition.customTextures.end(),
                                       [](const CustomTexture& texture) { return texture.name == "noisetex"; });
- if(!customNoise && (!pack.noiseTexture || pack.noiseResolution != pack.definition.noiseTextureResolution)) {
+  if(!customNoise && (!pack.noiseTexture || pack.noiseResolution != pack.definition.noiseTextureResolution)) {
+   samplerBindingsChanged = true;
   pack.noiseTexture = gl::GlTexture(core::genTexture());
   pack.noiseResolution = pack.definition.noiseTextureResolution;
   if(!pack.noiseTexture) return false;
@@ -115,9 +119,10 @@ bool ensurePackResources(PackInstance& pack, int width, int height, const gl::Gl
   gl::GLCore::bindBufferBase(0x90D2, static_cast<unsigned int>(declaration.index), buffer.handle());
  }
  gl::GLCore::bindBuffer(0x90D2, 0);
- for(const CustomTexture& declaration : pack.definition.customTextures) {
-  const std::string key = textureKey(declaration);
-  if(pack.customTextures.contains(key)) continue;
+  for(const CustomTexture& declaration : pack.definition.customTextures) {
+   const std::string key = textureKey(declaration);
+   if(pack.customTextures.contains(key)) continue;
+   samplerBindingsChanged = true;
   std::string path = declaration.path;
   if(path.rfind("minecraft:", 0) == 0) {
    if(path == "minecraft:dynamic/lightmap_1" || path == "minecraft:dynamic/light_map_1") {
@@ -228,13 +233,14 @@ bool ensurePackResources(PackInstance& pack, int width, int height, const gl::Gl
   pack.customTextures[key] = texture;
   pack.ownedCustomTextures.insert(texture);
  }
- for(const CustomImage& declaration : pack.definition.images) {
+  for(const CustomImage& declaration : pack.definition.images) {
   const int imageWidth = declaration.relative ? std::max(1, static_cast<int>(std::ceil(width * declaration.width)))
                                               : std::max(1, static_cast<int>(declaration.width));
   const int imageHeight = declaration.relative ? std::max(1, static_cast<int>(std::ceil(height * declaration.height)))
                                                : std::max(1, static_cast<int>(declaration.height));
-  PackInstance::ImageTarget& image = pack.images[declaration.name];
-  if(image.texture && image.width == imageWidth && image.height == imageHeight && image.depth == declaration.depth) continue;
+   PackInstance::ImageTarget& image = pack.images[declaration.name];
+   if(image.texture && image.width == imageWidth && image.height == imageHeight && image.depth == declaration.depth) continue;
+   samplerBindingsChanged = true;
   image.texture = gl::GlTexture(core::genTexture());
   image.width = imageWidth;
   image.height = imageHeight;
@@ -273,10 +279,15 @@ bool ensurePackResources(PackInstance& pack, int width, int height, const gl::Gl
                      std::max(1, static_cast<int>(std::ceil(height * target.scaleY))));
   }
  }
- int level = 0;
- for(int d = std::max(1, maxDim); d > 1; d >>= 1) ++level;
- pack.definition.mcMipmapLevel = std::max(0, level);
- return true;
+  int level = 0;
+  for(int d = std::max(1, maxDim); d > 1; d >>= 1) ++level;
+  pack.definition.mcMipmapLevel = std::max(0, level);
+  if(samplerBindingsChanged) {
+   pack.worldTextures.clear();
+   pack.worldVolumeTextures.clear();
+   addPackTextures(pack, "gbuffers", pack.worldTextures, pack.worldVolumeTextures);
+  }
+  return true;
 }
 void bindPackResources(PackInstance& pack, gl::ShaderProgram& program, unsigned int imageUnitStart) {
  for(const BufferObject& declaration : pack.definition.bufferObjects) {

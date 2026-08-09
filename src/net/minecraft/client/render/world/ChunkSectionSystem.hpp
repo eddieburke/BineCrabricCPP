@@ -106,7 +106,7 @@ class ChunkSectionSystem {
  TerrainScene& scene_;
  ChunkCompilePipeline* compilePipeline_ = nullptr;
  std::unordered_map<world::SectionPos, std::shared_ptr<chunk::ChunkBuilder>, world::SectionPosHash> sections_{};
- std::unordered_map<world::SectionPos, std::vector<chunk::ChunkBuilder*>, world::SectionPosHash> regions_{};
+ std::unordered_map<world::SectionPos, std::unique_ptr<chunk::TerrainRegion>, world::SectionPosHash> regions_{};
  std::vector<chunk::ChunkBuilder*> visibleSections_{};
  std::vector<chunk::ChunkBuilder*> sectionsByPriority_{};
  std::vector<chunk::ChunkBuilder*> savedVisibleSections_{};

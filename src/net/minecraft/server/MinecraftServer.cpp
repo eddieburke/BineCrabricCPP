@@ -289,9 +289,23 @@ bool MinecraftServer::init() {
  ServerLog::LOGGER.info("Preparing level \"" + worldName + "\"");
  loadWorld(storageRoot, worldName, seed);
  if(launchConfig_.has_value() && !launchConfig_->readyFile.empty()) {
-  std::ofstream ready(launchConfig_->readyFile, std::ios::binary | std::ios::trunc);
+  std::filesystem::path pendingReadyFile = launchConfig_->readyFile;
+  pendingReadyFile += ".tmp";
+  std::ofstream ready(pendingReadyFile, std::ios::binary | std::ios::trunc);
+  ready << boundPort() << '\n';
+  ready.close();
   if(!ready) {
+   std::error_code removeError;
+   std::filesystem::remove(pendingReadyFile, removeError);
    lastError_ = "Could not write server ready file.";
+   return false;
+  }
+  std::error_code renameError;
+  std::filesystem::rename(pendingReadyFile, launchConfig_->readyFile, renameError);
+  if(renameError) {
+   std::error_code removeError;
+   std::filesystem::remove(pendingReadyFile, removeError);
+   lastError_ = "Could not publish server ready file.";
    return false;
   }
  }

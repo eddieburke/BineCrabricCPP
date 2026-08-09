@@ -4,6 +4,7 @@
 #include <optional>
 #include <string>
 #include <string_view>
+#include <unordered_map>
 #include <vector>
 #include "net/minecraft/client/resource/pack/TexturePack.hpp"
 #include "net/minecraft/client/texture/TextureManager.hpp"
@@ -37,6 +38,7 @@ class ZippedTexturePack : public TexturePack {
  const TexturePack* fallbackResources_ = nullptr;
  std::vector<std::uint8_t> archive_;
  std::vector<ZipEntry> entries_;
+ std::unordered_map<std::string, std::size_t> entryIndex_;
  std::optional<texture::RasterImage> icon_;
  int iconId_ = -1;
 };

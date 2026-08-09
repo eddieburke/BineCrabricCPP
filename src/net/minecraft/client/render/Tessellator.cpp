@@ -3,6 +3,7 @@
 #include <cmath>
 #include <cstring>
 #include "net/minecraft/client/render/RenderCore.hpp"
+#include "net/minecraft/client/debug/RenderProfiler.hpp"
 #include "net/minecraft/client/gl/ShaderProgram.hpp"
 #include "net/minecraft/client/gl/GLCore.hpp"
 #include "net/minecraft/client/render/QuadIndexBuffer.hpp"
@@ -17,25 +18,30 @@ bool poseRotates(const math::Matrix4f& pose) noexcept {
 }bool isIdentity(const math::Matrix4f& pose) noexcept {
  return !poseRotates(pose) && pose.data()[12] == 0.0f && pose.data()[13] == 0.0f && pose.data()[14] == 0.0f;
 }void fillUnsetAttribs(TessellatorVertex* vertices, std::size_t count, const math::Matrix4f* pose, bool poseRotates) {
+ // The tangent is the pose's first basis vector — the same for every vertex in
+ // the draw. It used to be rebuilt per vertex, sqrt and divides included, and
+ // the writes below alias the matrix's floats so the compiler could not hoist
+ // it out of the loop itself.
+ std::int16_t tangent[3] = {32767, 0, 0};
+ if(poseRotates) {
+  const float* m = pose->data();
+  const float length = std::sqrt(m[0] * m[0] + m[1] * m[1] + m[2] * m[2]);
+  if(length > 1.0e-6f) {
+   const float inverse = 32767.0f / length;
+   tangent[0] = static_cast<std::int16_t>(m[0] * inverse);
+   tangent[1] = static_cast<std::int16_t>(m[1] * inverse);
+   tangent[2] = static_cast<std::int16_t>(m[2] * inverse);
+  }
+ }
  for(std::size_t i = 0; i < count; ++i) {
   TessellatorVertex& v = vertices[i];
   if(v.tangent[0] | v.tangent[1] | v.tangent[2] | v.tangent[3]) continue;
   v.midU = v.u;
   v.midV = v.v;
-  v.tangent[0] = 32767;
+  v.tangent[0] = tangent[0];
+  v.tangent[1] = tangent[1];
+  v.tangent[2] = tangent[2];
   v.tangent[3] = 32767;
-  if(poseRotates) {
-   const float* m = pose->data();
-   const float tx = m[0] * 1.0f + m[4] * 0.0f + m[8] * 0.0f;
-   const float ty = m[1] * 1.0f + m[5] * 0.0f + m[9] * 0.0f;
-   const float tz = m[2] * 1.0f + m[6] * 0.0f + m[10] * 0.0f;
-   const float length = std::sqrt(tx * tx + ty * ty + tz * tz);
-   if(length > 1.0e-6f) {
-    v.tangent[0] = static_cast<std::int16_t>(tx / length * 32767.0f);
-    v.tangent[1] = static_cast<std::int16_t>(ty / length * 32767.0f);
-    v.tangent[2] = static_cast<std::int16_t>(tz / length * 32767.0f);
-   }
-  }
  }
 }
 } // namespace
@@ -43,9 +49,9 @@ TessellatorMesh::TessellatorMesh(const TessellatorMesh& other)
     : vertices(other.vertices),
       mode(other.mode),
       hasTexture(other.hasTexture),
-      hasColor(other.hasColor),
       hasNormals(other.hasNormals),
-      vbo_(0) {
+      vbo_(0),
+      vertexCount_(other.vertices.size()) {
 }
 TessellatorMesh& TessellatorMesh::operator=(const TessellatorMesh& other) {
  if(this != &other) {
@@ -53,9 +59,9 @@ TessellatorMesh& TessellatorMesh::operator=(const TessellatorMesh& other) {
   vertices = other.vertices;
   mode = other.mode;
   hasTexture = other.hasTexture;
-  hasColor = other.hasColor;
   hasNormals = other.hasNormals;
   vbo_ = 0;
+  vertexCount_ = vertices.size();
  }
  return *this;
 }
@@ -63,10 +69,11 @@ TessellatorMesh::TessellatorMesh(TessellatorMesh&& other) noexcept
     : vertices(std::move(other.vertices)),
       mode(other.mode),
       hasTexture(other.hasTexture),
-      hasColor(other.hasColor),
       hasNormals(other.hasNormals),
-      vbo_(other.vbo_) {
+      vbo_(other.vbo_),
+      vertexCount_(other.vertexCount_) {
  other.vbo_ = 0;
+ other.vertexCount_ = 0;
 }
 TessellatorMesh& TessellatorMesh::operator=(TessellatorMesh&& other) noexcept {
  if(this != &other) {
@@ -74,10 +81,11 @@ TessellatorMesh& TessellatorMesh::operator=(TessellatorMesh&& other) noexcept {
   vertices = std::move(other.vertices);
   mode = other.mode;
   hasTexture = other.hasTexture;
-  hasColor = other.hasColor;
   hasNormals = other.hasNormals;
   vbo_ = other.vbo_;
+  vertexCount_ = other.vertexCount_;
   other.vbo_ = 0;
+  other.vertexCount_ = 0;
  }
  return *this;
 }
@@ -93,9 +101,13 @@ bool TessellatorMesh::uploadToGpu() {
   gl::GLCore::bindBuffer(0x8892, vbo_);
   gl::GLCore::bufferData(0x8892, vertices.size() * sizeof(TessellatorVertex), vertices.data(), 0x88E8);
   gl::GLCore::bindBuffer(0x8892, 0);
+  vertexCount_ = vertices.size();
   return true;
  }
  return false;
+}
+void TessellatorMesh::releaseCpuVertices() {
+ std::vector<TessellatorVertex>().swap(vertices);
 }
 void TessellatorMesh::freeGpuBuffer() {
  if(vbo_ != 0) {
@@ -128,14 +140,19 @@ void Tessellator::start(int mode) {
  }
  drawing_ = true;
  mode_ = mode;
+ discardedVertexCount_ = 0;
  hasTexture_ = false;
- hasColor_ = false;
+ colorExplicit_ = false;
+ constColorPacked_ = core::constColorPacked();
  hasNormals_ = false;
+ discarding_ = !captureOnly_ && !core::drawEnabled();
  addedVertexCount_ = 0;
  reset();
  if(!captureOnly_) {
   pose_ = core::drawPose();
   poseValid_ = !isIdentity(pose_);
+  poseRotates_ = poseValid_ && poseRotates(pose_);
+  normalDirty_ = true;
  }
  builder_.begin(effectiveDrawMode(mode));
 }
@@ -233,7 +250,7 @@ void Tessellator::color(int r, int g, int b) {
  color(r, g, b, 255);
 }
 void Tessellator::color(int r, int g, int b, int a) {
- hasColor_ = true;
+ colorExplicit_ = true;
  currentColor_ = (static_cast<std::uint32_t>(a & 0xFF) << 24U) | (static_cast<std::uint32_t>(b & 0xFF) << 16U) |
                  (static_cast<std::uint32_t>(g & 0xFF) << 8U) | static_cast<std::uint32_t>(r & 0xFF);
 }
@@ -249,6 +266,9 @@ void Tessellator::color(int rgb, int a) {
 void Tessellator::light(float blockLight, float skyLight) {
  blockLight_ = std::clamp(blockLight, 0.0f, 15.0f);
  skyLight_ = std::clamp(skyLight, 0.0f, 15.0f);
+ const std::uint32_t block = static_cast<std::uint32_t>(std::clamp(std::lround(blockLight_ * 16.0f), 0L, 240L));
+ const std::uint32_t sky = static_cast<std::uint32_t>(std::clamp(std::lround(skyLight_ * 16.0f), 0L, 240L));
+ currentLight_ = static_cast<std::int32_t>(block | (sky << 16U));
 }
 void Tessellator::normal(float x, float y, float z) {
  hasNormals_ = true;
@@ -256,6 +276,35 @@ void Tessellator::normal(float x, float y, float z) {
      static_cast<std::int32_t>(static_cast<std::uint8_t>(static_cast<std::int8_t>(x * 127.0f))) |
      (static_cast<std::int32_t>(static_cast<std::uint8_t>(static_cast<std::int8_t>(y * 127.0f))) << 8U) |
      (static_cast<std::int32_t>(static_cast<std::uint8_t>(static_cast<std::int8_t>(z * 127.0f))) << 16U);
+ normalDirty_ = true;
+}
+void Tessellator::refreshNormal() {
+ // normal() packs signed int8s, so every unpack must sign-extend. The
+ // non-rotating path used to read the bytes unsigned, which turned any
+ // negative component into ~2.0 instead of -1.0.
+ const float nx = static_cast<float>(static_cast<std::int8_t>(currentNormal_ & 0xFF)) / 127.0f;
+ const float ny = static_cast<float>(static_cast<std::int8_t>((currentNormal_ >> 8) & 0xFF)) / 127.0f;
+ const float nz = static_cast<float>(static_cast<std::int8_t>((currentNormal_ >> 16) & 0xFF)) / 127.0f;
+ normalDirty_ = false;
+ if(!poseRotates_) {
+  drawNormal_[0] = nx;
+  drawNormal_[1] = ny;
+  drawNormal_[2] = nz;
+  return;
+ }
+ const float* m = pose_.data();
+ float rx = m[0] * nx + m[4] * ny + m[8] * nz;
+ float ry = m[1] * nx + m[5] * ny + m[9] * nz;
+ float rz = m[2] * nx + m[6] * ny + m[10] * nz;
+ const float length = std::sqrt(rx * rx + ry * ry + rz * rz);
+ if(length > 1.0e-6f) {
+  rx /= length;
+  ry /= length;
+  rz /= length;
+ }
+ drawNormal_[0] = rx;
+ drawNormal_[1] = ry;
+ drawNormal_[2] = rz;
 }
 void Tessellator::blockData(
     double x, double y, double z, int emission, int blockLight, int skyLight, int blockId, bool fluid, int metadata) {
@@ -265,6 +314,9 @@ void Tessellator::blockData(
  blockEmission_ = std::clamp(emission, 0, 15);
  blockLight_ = static_cast<float>(std::clamp(blockLight, 0, 15));
  skyLight_ = static_cast<float>(std::clamp(skyLight, 0, 15));
+ currentLight_ = static_cast<std::int32_t>(
+     (static_cast<std::uint32_t>(std::clamp(blockLight, 0, 15) * 16) & 0xFFFFU) |
+     (static_cast<std::uint32_t>(std::clamp(skyLight, 0, 15) * 16) << 16U));
  blockId_ = blockId;
  blockFluid_ = fluid;
  blockMetadata_ = metadata;
@@ -287,6 +339,10 @@ void Tessellator::vertex(double x, double y, double z, double u, double v) {
 void Tessellator::vertex(double x, double y, double z) {
  if(!drawing_)
   return;
+ if(discarding_) {
+  ++discardedVertexCount_;
+  return;
+ }
  ++addedVertexCount_;
  if(mode_ == kGlQuads && kTriangleMode && !captureOnly_ && addedVertexCount_ % 4 == 0) {
   expandQuadToTriangles();
@@ -294,8 +350,6 @@ void Tessellator::vertex(double x, double y, double z) {
  float vx = static_cast<float>(x + xOffset_);
  float vy = static_cast<float>(y + yOffset_);
  float vz = static_cast<float>(z + zOffset_);
- bool poseRotates = false;
- float rotatedNormal[3] = {};
  if(poseValid_) {
   const float* m = pose_.data();
   const float px = m[0] * vx + m[4] * vy + m[8] * vz + m[12];
@@ -304,30 +358,10 @@ void Tessellator::vertex(double x, double y, double z) {
   vx = px;
   vy = py;
   vz = pz;
-  poseRotates = m[0] != 1.0f || m[5] != 1.0f || m[10] != 1.0f || m[1] != 0.0f || m[2] != 0.0f ||
-                m[4] != 0.0f || m[6] != 0.0f || m[8] != 0.0f || m[9] != 0.0f;
-  if(poseRotates) {
-   const float nx = static_cast<float>(static_cast<std::int8_t>(currentNormal_ & 0xFF)) / 127.0f;
-   const float ny = static_cast<float>(static_cast<std::int8_t>((currentNormal_ >> 8) & 0xFF)) / 127.0f;
-   const float nz = static_cast<float>(static_cast<std::int8_t>((currentNormal_ >> 16) & 0xFF)) / 127.0f;
-   rotatedNormal[0] = m[0] * nx + m[4] * ny + m[8] * nz;
-   rotatedNormal[1] = m[1] * nx + m[5] * ny + m[9] * nz;
-   rotatedNormal[2] = m[2] * nx + m[6] * ny + m[10] * nz;
-   const float length = std::sqrt(rotatedNormal[0] * rotatedNormal[0] + rotatedNormal[1] * rotatedNormal[1] +
-                                  rotatedNormal[2] * rotatedNormal[2]);
-   if(length > 1.0e-6f) {
-    rotatedNormal[0] /= length;
-    rotatedNormal[1] /= length;
-    rotatedNormal[2] /= length;
-   }
-  }
  }
  auto vProxy = builder_.vertex(vx, vy, vz);
- TessellatorVertex* vertex = reinterpret_cast<TessellatorVertex*>(
-     builder_.buffer().data() + builder_.buffer().size() - sizeof(TessellatorVertex)); const auto packLevel = [](float level) {
-  return static_cast<std::uint32_t>(std::clamp(std::lround(level * 16.0f), 0L, 240L));
- };
- vertex->light = static_cast<std::int32_t>(packLevel(blockLight_) | (packLevel(skyLight_) << 16U));
+ TessellatorVertex* vertex = vProxy.ptr;
+ vertex->light = currentLight_;
  if(hasBlockData_) {
   const auto component = [](double value) {
    return static_cast<std::uint32_t>(static_cast<std::uint8_t>(
@@ -359,13 +393,19 @@ void Tessellator::vertex(double x, double y, double z) {
  }
  if(hasTexture_)
   vProxy.tex(u_, v_);
- if(hasColor_)
-  vProxy.color(currentColor_);
+ // Colour is unconditional. A producer that called color() owns the value; one
+ // that did not inherits the const colour, sampled here rather than left to a
+ // generic attribute at submit time. That side channel is what let a batched
+ // entity reach the pack with vaColor = (0,0,0,1) — and a pack that folds
+ // vaColor.a into its AO term (rethinking-voxels: `vanillaAO = glColor.a`, then
+ // `pow2(directionShade * vanillaAO)` gates ALL lighting) renders that as a
+ // pure-black silhouette, cave minimum light and emission included.
+ vProxy.color(colorExplicit_ ? currentColor_ : constColorPacked_);
  if(hasNormals_) {
-  const float nx = poseRotates ? rotatedNormal[0] : static_cast<float>(currentNormal_ & 0xFF) / 127.0f;
-  const float ny = poseRotates ? rotatedNormal[1] : static_cast<float>((currentNormal_ >> 8) & 0xFF) / 127.0f;
-  const float nz = poseRotates ? rotatedNormal[2] : static_cast<float>((currentNormal_ >> 16) & 0xFF) / 127.0f;
-  vProxy.normal(nx, ny, nz);
+  if(normalDirty_) {
+   refreshNormal();
+  }
+  vProxy.normal(drawNormal_[0], drawNormal_[1], drawNormal_[2]);
  }
  vProxy.next();
  if(mode_ == kGlQuads && addedVertexCount_ % 4 == 0) {
@@ -387,12 +427,28 @@ void Tessellator::draw() {
  if(batchDepth_ > 0) {
   return;
  }
+ const std::size_t vertexCount = builder_.vertexCount();
+ if(discarding_) {
+  ::net::minecraft::client::debug::RenderProfiler::instance().record(
+      ::net::minecraft::client::debug::RenderMetric::FilteredGeometryBatches);
+  ::net::minecraft::client::debug::RenderProfiler::instance().record(
+      ::net::minecraft::client::debug::RenderMetric::FilteredVertices,
+      static_cast<std::uint64_t>(discardedVertexCount_));
+  reset();
+  return;
+ }
+ if(vertexCount > 0) {
+  ::net::minecraft::client::debug::RenderProfiler::instance().record(
+      ::net::minecraft::client::debug::RenderMetric::GeneratedGeometryBatches);
+  ::net::minecraft::client::debug::RenderProfiler::instance().record(
+      ::net::minecraft::client::debug::RenderMetric::GeneratedVertices, vertexCount);
+ }
  if(builder_.vertexCount() > 0 && !captureOnly_) {
   auto& bytes = builder_.buffer();
   fillUnsetAttribs(reinterpret_cast<TessellatorVertex*>(bytes.data()),
                    bytes.size() / sizeof(TessellatorVertex),
                    &pose_,
-                   poseValid_ && poseRotates(pose_));
+                   poseRotates_);
   render::core::RenderPass pass;
   pass.modelView = render::core::drawModelView();
   pass.projection = render::core::drawProjection();
@@ -402,7 +458,6 @@ void Tessellator::draw() {
   pass.stride = static_cast<int>(sizeof(TessellatorVertex));
   pass.glMode = builder_.drawMode();
   pass.hasTexture = hasTexture_;
-  pass.hasColor = hasColor_;
   pass.hasNormals = hasNormals_;
   render::core::submit(pass);
  }
@@ -413,82 +468,29 @@ TessellatorMesh Tessellator::takeMesh() {
  std::vector<TessellatorVertex> verts(count);
  if(count > 0) {
   std::memcpy(verts.data(), builder_.buffer().data(), count * sizeof(TessellatorVertex));
-  fillUnsetAttribs(verts.data(), count, &pose_, poseValid_ && poseRotates(pose_));
+  fillUnsetAttribs(verts.data(), count, &pose_, poseRotates_);
  }
- TessellatorMesh mesh(std::move(verts), mode_, hasTexture_, hasColor_, hasNormals_);
+ TessellatorMesh mesh(std::move(verts), mode_, hasTexture_, hasNormals_);
  reset();
  return mesh;
 }
-namespace {
-bool drawQuadMeshIndexed(const TessellatorMesh& mesh, unsigned vbo, int stride) {
- const std::size_t vertexCount = (mesh.vertices.size() / 4) * 4;
- if(vertexCount == 0 || vbo == 0 || !gl::GLCore::vboSupported) {
-  return false;
- }
- if(!quad_index::ensure(vertexCount) || !render::core::ensureReady()) {
-  return false;
- }
- {
-  render::core::RenderPass pass;
-  pass.modelView = render::core::drawModelView();
-  pass.projection = render::core::drawProjection();
-  pass.hasTexture = mesh.hasTexture;
-  pass.hasColor = mesh.hasColor;
-  pass.hasNormals = mesh.hasNormals;
-  if(!mesh.hasTexture) {
-   render::core::bindWhiteDiffuse();
-  }
-  render::core::applyPendingTerrain(pass);
-  render::core::bindAndUploadUniforms(pass);
- }
- if(render::core::program() == nullptr) {
-  return false;
- }
- gl::GLCore::bindBuffer(0x8892, vbo);
- render::core::configureAttribs(vbo, 0, stride, mesh.hasTexture, mesh.hasColor, mesh.hasNormals);
- gl::GLCore::bindBuffer(0x8893, quad_index::handle());
- const int mode = render::core::program()->tessellation() ? 0x000E : 0x0004;
- if(mode == 0x000E && gl::GLCore::patchParameteri != nullptr) gl::GLCore::patchParameteri(0x8E72, 3);
- ::glDrawElements(mode, static_cast<int>((vertexCount / 4) * 6), 0x1405, nullptr);
- gl::GLCore::bindBuffer(0x8892, 0);
- return true;
-}
-void drawQuadMeshExpanded(const TessellatorMesh& mesh, int stride) {
- static thread_local std::vector<TessellatorVertex> scratch;
- const std::size_t quadCount = mesh.vertices.size() / 4;
- scratch.clear();
- scratch.reserve(quadCount * 6);
- for(std::size_t quad = 0; quad < quadCount; ++quad) {
-  const TessellatorVertex* v = mesh.vertices.data() + quad * 4;
-  scratch.push_back(v[0]);
-  scratch.push_back(v[1]);
-  scratch.push_back(v[2]);
-  scratch.push_back(v[0]);
-  scratch.push_back(v[2]);
-  scratch.push_back(v[3]);
- }
- render::core::RenderPass pass;
- pass.modelView = render::core::drawModelView();
- pass.projection = render::core::drawProjection();
- render::core::applyPendingTerrain(pass);
- pass.vertexData = scratch.data();
- pass.vertexCount = scratch.size();
- pass.stride = stride;
- pass.glMode = 0x0004;
- pass.hasTexture = mesh.hasTexture;
- pass.hasColor = mesh.hasColor;
- pass.hasNormals = mesh.hasNormals;
- render::core::submit(pass);
-}
-} // namespace
 void Tessellator::drawMesh(const TessellatorMesh& mesh) {
- if(mesh.vertices.empty())
+ if(mesh.empty() || mesh.vbo_ == 0 || !gl::GLCore::vboSupported)
   return;
  int stride = static_cast<int>(sizeof(TessellatorVertex));
  if(mesh.mode == kGlQuads) {
-  if(!drawQuadMeshIndexed(mesh, mesh.vbo_, stride)) {
-   drawQuadMeshExpanded(mesh, stride);
-  }
+  const std::size_t vertexCount = (mesh.vertexCount() / 4) * 4;
+  if(!quad_index::ensure(vertexCount)) return;
+  render::core::RenderPass pass;
+  pass.modelView = render::core::drawModelView();
+  pass.projection = render::core::drawProjection();
+  render::core::applyPendingTerrain(pass);
+  pass.buffer = mesh.vbo_;
+  pass.vertexCount = vertexCount;
+  pass.stride = stride;
+  pass.hasTexture = mesh.hasTexture;
+  pass.hasNormals = mesh.hasNormals;
+  render::core::submitIndexedQuads(pass, quad_index::handle(), static_cast<int>((vertexCount / 4) * 6));
   return;
  }
  int mode = effectiveDrawMode(mesh.mode);
@@ -497,19 +499,12 @@ void Tessellator::drawMesh(const TessellatorMesh& mesh) {
  pass.projection = render::core::drawProjection();
  render::core::applyPendingTerrain(pass);
  pass.hasTexture = mesh.hasTexture;
- pass.hasColor = mesh.hasColor;
  pass.hasNormals = mesh.hasNormals;
  pass.stride = stride;
  pass.glMode = mode;
- if(mesh.vbo_ != 0 && gl::GLCore::vboSupported) {
-  gl::GLCore::bindBuffer(0x8892, mesh.vbo_);
-  pass.buffer = mesh.vbo_;
-  pass.byteOffset = 0;
-  pass.vertexCount = mesh.vertices.size();
- } else {
-  pass.vertexData = mesh.vertices.data();
-  pass.vertexCount = mesh.vertices.size();
- }
+ pass.buffer = mesh.vbo_;
+ pass.byteOffset = 0;
+ pass.vertexCount = mesh.vertexCount();
  render::core::submit(pass);
  gl::GLCore::bindBuffer(0x8892, 0);
 }
@@ -519,18 +514,31 @@ void Tessellator::reset() {
  yOffset_ = 0.0;
  zOffset_ = 0.0;
  hasBlockData_ = false;
- pose_.identity();
  poseValid_ = false;
+ poseRotates_ = false;
+ normalDirty_ = true;
 }
 void Tessellator::beginBatch() {
+ if(batchDepth_ == 0) {
+  if(drawing_) {
+   draw();
+  }
+  discardedVertexCount_ = 0;
+  builder_.reset();
+ }
  ++batchDepth_;
 }
 void Tessellator::beginPart(int mode) {
+ if(builder_.vertexCount() == 0) {
+  builder_.begin(effectiveDrawMode(mode));
+ }
  drawing_ = true;
  mode_ = mode;
  hasTexture_ = false;
- hasColor_ = false;
+ colorExplicit_ = false;
+ constColorPacked_ = core::constColorPacked();
  hasNormals_ = false;
+ discarding_ = !captureOnly_ && !core::drawEnabled();
  addedVertexCount_ = 0;
  xOffset_ = 0.0;
  yOffset_ = 0.0;
@@ -539,7 +547,9 @@ void Tessellator::beginPart(int mode) {
  if(!captureOnly_) {
   pose_ = core::drawPose();
   poseValid_ = !isIdentity(pose_);
- }
+  poseRotates_ = poseValid_ && poseRotates(pose_);
+  normalDirty_ = true;
+}
 }
 void Tessellator::endBatch() {
  if(batchDepth_ > 0) {

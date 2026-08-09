@@ -1,6 +1,8 @@
 #include "net/minecraft/client/render/entity/LivingEntityRenderer.hpp"
 #include "net/minecraft/client/render/RenderCore.hpp"
+#include "net/minecraft/client/debug/RenderProfiler.hpp"
 #include <cmath>
+#include <utility>
 #include "net/minecraft/client/font/TextRenderer.hpp"
 #include "net/minecraft/client/gl/GlConstants.hpp"
 #include "net/minecraft/client/render/camera/FrameRenderCamera.hpp"
@@ -8,6 +10,7 @@
 #include "net/minecraft/client/render/Tessellator.hpp"
 #include "net/minecraft/client/render/entity/EntityRenderDispatcher.hpp"
 #include "net/minecraft/entity/Entity.hpp"
+#include "net/minecraft/entity/EntityTypes.hpp"
 #include "net/minecraft/entity/LivingEntity.hpp"
 #include "net/minecraft/entity/mob/CreeperEntity.hpp"
 #include "net/minecraft/entity/mob/GhastEntity.hpp"
@@ -31,50 +34,28 @@ namespace net::minecraft::client::render::entity {
 namespace {
 std::string_view entityTypeName(const net::minecraft::entity::LivingEntity& entity) {
  using namespace net::minecraft::entity;
- if(dynamic_cast<const player::PlayerEntity*>(&entity)) {
-  return "player";
- }
- if(dynamic_cast<const mob::ZombieEntity*>(&entity)) {
-  return "zombie";
- }
- if(dynamic_cast<const mob::SkeletonEntity*>(&entity)) {
-  return "skeleton";
- }
- if(dynamic_cast<const mob::CreeperEntity*>(&entity)) {
-  return "creeper";
- }
- if(dynamic_cast<const mob::PigZombieEntity*>(&entity)) {
-  return "pigzombie";
- }
- if(dynamic_cast<const mob::SpiderEntity*>(&entity)) {
-  return "spider";
- }
- if(dynamic_cast<const mob::SlimeEntity*>(&entity)) {
-  return "slime";
- }
- if(dynamic_cast<const mob::GhastEntity*>(&entity)) {
-  return "ghast";
- }
- if(dynamic_cast<const mob::GiantEntity*>(&entity)) {
-  return "giant";
- }
- if(dynamic_cast<const passive::PigEntity*>(&entity)) {
-  return "pig";
- }
- if(dynamic_cast<const passive::CowEntity*>(&entity)) {
-  return "cow";
- }
- if(dynamic_cast<const passive::ChickenEntity*>(&entity)) {
-  return "chicken";
- }
- if(dynamic_cast<const passive::SheepEntity*>(&entity)) {
-  return "sheep";
- }
- if(dynamic_cast<const passive::WolfEntity*>(&entity)) {
-  return "wolf";
- }
- if(dynamic_cast<const passive::SquidEntity*>(&entity)) {
-  return "squid";
+ static const std::pair<std::type_index, std::string_view> kNames[] = {
+     {std::type_index(typeid(player::PlayerEntity)), "player"},
+     {std::type_index(typeid(mob::ZombieEntity)), "zombie"},
+     {std::type_index(typeid(mob::SkeletonEntity)), "skeleton"},
+     {std::type_index(typeid(mob::CreeperEntity)), "creeper"},
+     {std::type_index(typeid(mob::SpiderEntity)), "spider"},
+     {std::type_index(typeid(mob::SlimeEntity)), "slime"},
+     {std::type_index(typeid(mob::GhastEntity)), "ghast"},
+     {std::type_index(typeid(mob::GiantEntity)), "giant"},
+     {std::type_index(typeid(passive::PigEntity)), "pig"},
+     {std::type_index(typeid(passive::CowEntity)), "cow"},
+     {std::type_index(typeid(passive::ChickenEntity)), "chicken"},
+     {std::type_index(typeid(passive::SheepEntity)), "sheep"},
+     {std::type_index(typeid(passive::WolfEntity)), "wolf"},
+     {std::type_index(typeid(passive::SquidEntity)), "squid"},
+ };
+ for(std::optional<std::type_index> type = entity.runtimeType(); type.has_value(); type = entitySupertype(*type)) {
+  for(const auto& [candidateType, name] : kNames) {
+   if(candidateType == *type) {
+    return name;
+   }
+  }
  }
  return "living";
 }
@@ -88,8 +69,8 @@ void LivingEntityRenderer::setDecorationModel(model::EntityModel* modelIn) {
 void LivingEntityRenderer::render(
     const net::minecraft::Entity& entity, double x, double y, double z, float /*yaw*/, float tickDelta,
     net::minecraft::util::math::MatrixStack& matrices, const net::minecraft::util::math::Matrix4f& projection) {
- const auto* living = dynamic_cast<const net::minecraft::LivingEntity*>(&entity);
- if(living == nullptr || model == nullptr) {
+ const auto* living = static_cast<const net::minecraft::LivingEntity*>(&entity);
+ if(model == nullptr) {
   return;
  }
  beginDraw(matrices, projection);
@@ -121,11 +102,15 @@ void LivingEntityRenderer::render(
   float offsetX = 0.0f;
   float offsetY = 0.0f;
   float offsetZ = 0.0f;
-  model->poseActive = false;
-  model->partOverrides.clear();
+  if(model->poseActive || !model->partOverrides.empty()) {
+   model->poseActive = false;
+   model->partOverrides.clear();
+  }
   if(decorationModel != nullptr) {
-   decorationModel->poseActive = false;
-   decorationModel->partOverrides.clear();
+   if(decorationModel->poseActive || !decorationModel->partOverrides.empty()) {
+    decorationModel->poseActive = false;
+    decorationModel->partOverrides.clear();
+   }
   }
   net::minecraft::mod::EntityRenderPose pose{};
   pose.bodyYaw = bodyYaw;
@@ -138,8 +123,8 @@ void LivingEntityRenderer::render(
    net::minecraft::mod::EntityRenderEvent event;
    event.entity = living;
    event.entityId = living->id;
-   event.entityType = std::string(entityTypeName(*living));
-   event.isPlayer = dynamic_cast<const net::minecraft::entity::player::PlayerEntity*>(living) != nullptr;
+   event.entityType = entityTypeName(*living);
+   event.isPlayer = event.entityType == "player";
    event.tickDelta = tickDelta;
    event.pose = pose;
    net::minecraft::mod::runtime::luaHookEntityRender(event);
@@ -199,11 +184,14 @@ void LivingEntityRenderer::render(
   }
   auto syncDecorationPose = [&]() {
    if(decorationModel != nullptr) {
-    decorationModel->poseActive = model->poseActive;
-    decorationModel->partOverrides = model->partOverrides;
+    if(model->poseActive) {
+     decorationModel->poseActive = true;
+     decorationModel->partOverrides = model->partOverrides;
+    }
    }
   };
    for(int layer = 0; layer < 4; ++layer) {
+    const render::core::RenderedItemScope itemScope(-1);
     if(!bindTexture(*living, layer, tickDelta)) {
      continue;
     }
@@ -215,7 +203,6 @@ void LivingEntityRenderer::render(
        decorationModel->render(limbDistance, limbAngle, headBob, headYawRel, headPitch, scaleUnit);
       }
      }
-     render::core::setRenderedItemId(0);
     core::disableBlend();
   }
   renderMore(*living, tickDelta, matrices, projection);
@@ -235,6 +222,7 @@ void LivingEntityRenderer::render(
       model->render(limbDistance, limbAngle, headBob, headYawRel, headPitch, scaleUnit);
      }
      for(int layer = 0; layer < 4; ++layer) {
+      const render::core::RenderedItemScope itemScope(-1);
       if(!bindDecorationTexture(*living, layer, tickDelta)) {
        continue;
       }
@@ -262,6 +250,7 @@ void LivingEntityRenderer::render(
        model->render(limbDistance, limbAngle, headBob, headYawRel, headPitch, scaleUnit);
       }
       for(int layer = 0; layer < 4; ++layer) {
+       const render::core::RenderedItemScope itemScope(-1);
        if(!bindDecorationTexture(*living, layer, tickDelta)) {
         continue;
        }
@@ -352,8 +341,9 @@ void LivingEntityRenderer::applyScale(const net::minecraft::LivingEntity& entity
 void LivingEntityRenderer::renderNameTag(const net::minecraft::LivingEntity& entity, double x, double y, double z,
                                          net::minecraft::util::math::MatrixStack& matrices,
                                          const net::minecraft::util::math::Matrix4f& projection) {
- if(dispatcher != nullptr && dispatcher->options().debugHud &&
+ if(dispatcher != nullptr && dispatcher->options().entityIdLabels &&
     !core::cameraFrame().shadowPass) {
+  const debug::RenderProfiler::Scope labelScope(debug::RenderStage::EntityDebugLabels);
   renderNameTag(entity, std::to_string(entity.id), x, y, z, 64, matrices, projection);
  }
 }

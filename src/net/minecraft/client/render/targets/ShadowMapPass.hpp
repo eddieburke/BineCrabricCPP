@@ -24,6 +24,11 @@ struct ShadowTargets {
   // https://shaders.properties/current/reference/buffers/shadowtex/
   // https://github.com/IrisShaders/Iris/blob/26.1/common/src/main/java/net/irisshaders/iris/shadows/ShadowRenderer.java
   bool depthCompare = false;
+  // see docs/agent-notes/shader-system-rebuild.md:106 Stage F: skip the redundant
+  // addColorAttachment/drawBuffers pair in attachCompositeColors when flip parity
+  // did not change since the last call for this fbo.
+  std::array<unsigned int, 8> compositeAttach{};
+  int compositeDrawBufferCount = -1;
 
   bool ensure(int resolutionIn, int colorBuffers);
   void destroy();

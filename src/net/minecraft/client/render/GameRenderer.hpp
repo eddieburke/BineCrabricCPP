@@ -21,7 +21,7 @@ class Minecraft;
 }
 namespace net::minecraft::client::render {
 namespace math = net::minecraft::util::math;
-class PackManager;
+class Pipeline;
 struct PackDefinition;
 class GameRenderer {
  friend shadowmap::ShadowMapResult shadowmap::update(shadowmap::ShadowMapState&,
@@ -42,8 +42,8 @@ class GameRenderer {
  [[nodiscard]] const item::HeldItemRenderer* heldItemRendererPtr() const {
   return heldItemRenderer.get();
  }
- [[nodiscard]] PackManager* shaderPacks() {
-  return shaderPacks_.get();
+ [[nodiscard]] Pipeline* shaderPipeline() {
+  return shaderPipeline_.get();
  }
  [[nodiscard]] const PackDefinition& packDefinition() const noexcept;
  [[nodiscard]] const PackDefinition& meshDefinition() const noexcept;
@@ -108,6 +108,6 @@ class GameRenderer {
  FrameRenderCamera frameCamera_{};
  shadowmap::ShadowMapState shadowState_{};
  shadowmap::ShadowMapResult frameShadow_{};
- std::unique_ptr<PackManager> shaderPacks_;
+ std::unique_ptr<Pipeline> shaderPipeline_;
 };
 } // namespace net::minecraft::client::render

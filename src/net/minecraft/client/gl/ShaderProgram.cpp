@@ -7,6 +7,7 @@
 #include <utility>
 #include "net/minecraft/client/gl/GLCore.hpp"
 #include "net/minecraft/client/gl/GlConstants.hpp"
+#include "net/minecraft/client/debug/RenderProfiler.hpp"
 #include "net/minecraft/client/render/VertexAbi.hpp"
 #include "net/minecraft/util/math/Matrix4f.hpp"
 namespace net::minecraft::client::gl {
@@ -24,6 +25,7 @@ constexpr unsigned int kTessEvaluationShader = 0x8E87;
 constexpr unsigned int kComputeShader = 0x91B9;
 constexpr unsigned int kCompileStatus = 0x8B81;
 constexpr unsigned int kLinkStatus = 0x8B82;
+void prepareProgramBinary(unsigned int program);
 bool corePreambleAtLeast(std::string_view source, int minimumVersion) {
  std::size_t cursor = 0;
  while(cursor < source.size() && std::isspace(static_cast<unsigned char>(source[cursor]))) ++cursor;
@@ -66,18 +68,6 @@ std::string stripLeadingVersionDirective(const std::string& body) {
  }
  return std::string(eol);
 }
-std::string assemble(const std::string& versionPreamble,
-                     const std::string& body) {
- std::string stripped = stripLeadingVersionDirective(body);
- std::string out;
- out.reserve(versionPreamble.size() + stripped.size() + 1);
- out += versionPreamble;
- if(!out.empty() && out.back() != '\n') {
-  out += '\n';
- }
- out += stripped;
- return out;
-}
 unsigned int compileStage(unsigned int type, const std::string& source, std::string& errorOut) {
  const unsigned int shader = GLCore::createShader(type);
  if(shader == 0) {
@@ -99,6 +89,17 @@ unsigned int compileStage(unsigned int type, const std::string& source, std::str
  return shader;
 }
 } // namespace
+std::string ShaderProgram::assembleStageSource(const std::string& versionPreamble, const std::string& body) {
+ std::string stripped = stripLeadingVersionDirective(body);
+ std::string out;
+ out.reserve(versionPreamble.size() + stripped.size() + 1);
+ out += versionPreamble;
+ if(!out.empty() && out.back() != '\n') {
+  out += '\n';
+ }
+ out += stripped;
+ return out;
+}
 ShaderProgram::~ShaderProgram() {
  destroy();
 }
@@ -157,11 +158,11 @@ bool ShaderProgram::compile(const std::string& vertexSource,
   lastError_ = "shader entry points unavailable";
   return false;
  }
- const std::string vsrc = assemble(versionPreamble, vertexSource);
- const std::string fsrc = assemble(versionPreamble, fragmentSource);
- const std::string gsrc = geometrySource.empty() ? std::string{} : assemble(versionPreamble, geometrySource);
- const std::string tcsrc = tessControlSource.empty() ? std::string{} : assemble(versionPreamble, tessControlSource);
- const std::string tesrc = tessEvaluationSource.empty() ? std::string{} : assemble(versionPreamble, tessEvaluationSource);
+ const std::string vsrc = ShaderProgram::assembleStageSource(versionPreamble, vertexSource);
+ const std::string fsrc = ShaderProgram::assembleStageSource(versionPreamble, fragmentSource);
+ const std::string gsrc = geometrySource.empty() ? std::string{} : ShaderProgram::assembleStageSource(versionPreamble, geometrySource);
+ const std::string tcsrc = tessControlSource.empty() ? std::string{} : ShaderProgram::assembleStageSource(versionPreamble, tessControlSource);
+ const std::string tesrc = tessEvaluationSource.empty() ? std::string{} : ShaderProgram::assembleStageSource(versionPreamble, tessEvaluationSource);
  std::vector<unsigned int> shaders;
  const auto add = [&](unsigned int type, const std::string& source) {
   if(source.empty()) return true;
@@ -176,6 +177,12 @@ bool ShaderProgram::compile(const std::string& vertexSource,
   return false;
  }
  const unsigned int program = GLCore::createProgram();
+ if(program == 0) {
+  lastError_ = "glCreateProgram returned 0";
+  for(unsigned int shader : shaders) GLCore::deleteShader(shader);
+  return false;
+ }
+ prepareProgramBinary(program);
  for(unsigned int shader : shaders) GLCore::attachShader(program, shader);
  if(GLCore::bindAttribLocation != nullptr) {
   for(const auto& binding : render::vertex_abi::Bindings)
@@ -192,17 +199,17 @@ bool ShaderProgram::compile(const std::string& vertexSource,
   GLCore::deleteProgram(program);
   return false;
  }
-   program_ = program;
-   uniformCache_.clear();
-   samplerKinds_.clear();
-   samplerNames_.clear();
-   uniformSnapshotGeneration_ = 0;
-   tessellation_ = !tessControlSource.empty() && !tessEvaluationSource.empty();
-   reflectSamplers();
-   refreshUniformLocations();
-   return true;
- }
- bool ShaderProgram::compileCompute(const std::string& computeSource,
+ program_ = program;
+ uniformCache_.clear();
+ samplerKinds_.clear();
+ samplerNames_.clear();
+ uniformSnapshotGeneration_ = 0;
+ tessellation_ = !tessControlSource.empty() && !tessEvaluationSource.empty();
+ reflectSamplers();
+ refreshUniformLocations();
+ return true;
+}
+bool ShaderProgram::compileCompute(const std::string& computeSource,
                                    const std::string& versionPreamble) {
  destroy();
  lastError_.clear();
@@ -215,12 +222,18 @@ bool ShaderProgram::compile(const std::string& vertexSource,
   lastError_ = "compute shader entry points unavailable (needs GL 4.3 core)";
   return false;
  }
- const std::string csrc = assemble(versionPreamble, computeSource);
+ const std::string csrc = ShaderProgram::assembleStageSource(versionPreamble, computeSource);
  const unsigned int stage = compileStage(kComputeShader, csrc, lastError_);
  if(stage == 0) {
   return false;
  }
  const unsigned int program = GLCore::createProgram();
+ if(program == 0) {
+  lastError_ = "glCreateProgram returned 0";
+  GLCore::deleteShader(stage);
+  return false;
+ }
+ prepareProgramBinary(program);
  GLCore::attachShader(program, stage);
  GLCore::linkProgram(program);
  GLCore::deleteShader(stage);
@@ -233,17 +246,17 @@ bool ShaderProgram::compile(const std::string& vertexSource,
   GLCore::deleteProgram(program);
   return false;
  }
-   program_ = program;
-   uniformCache_.clear();
-   samplerKinds_.clear();
-   samplerNames_.clear();
-   uniformSnapshotGeneration_ = 0;
-   tessellation_ = false;
-   reflectSamplers();
-   refreshUniformLocations();
-   return true;
- }
- void ShaderProgram::destroy() {
+ program_ = program;
+ uniformCache_.clear();
+ samplerKinds_.clear();
+ samplerNames_.clear();
+ uniformSnapshotGeneration_ = 0;
+ tessellation_ = false;
+ reflectSamplers();
+ refreshUniformLocations();
+ return true;
+}
+void ShaderProgram::destroy() {
   if(program_ != 0 && program_ == s_lastBoundProgram) s_lastBoundProgram = 0;
   if(program_ != 0 && GLCore::deleteProgram != nullptr) {
    GLCore::deleteProgram(program_);
@@ -275,6 +288,8 @@ void ShaderProgram::bind() const {
   if(program_ == s_lastBoundProgram) return;
   s_lastBoundProgram = program_;
   GLCore::useProgram(program_);
+  ::net::minecraft::client::debug::RenderProfiler::instance().record(
+      ::net::minecraft::client::debug::RenderMetric::ProgramBinds);
  }
 }
 void ShaderProgram::unbind() {
@@ -327,10 +342,11 @@ int ShaderProgram::location(std::string_view name) const {
  if(found != uniformCache_.end()) {
   return found->second;
  }
+ // Cache misses too: an undeclared (or optimized-out) uniform is queried on every
+ // draw otherwise, and uploadFogUniforms alone asks for six per chunk section per
+ // layer per frame. Locations only move on relink, which clears this cache.
  const int location = GLCore::getUniformLocation(program_, std::string(name).c_str());
- if(location >= 0) {
-  uniformCache_.emplace(std::string(name), location);
- }
+ uniformCache_.emplace(std::string(name), location);
  return location;
 }
 void ShaderProgram::reflectSamplers() {
@@ -397,45 +413,71 @@ void ShaderProgram::reflectSamplers() {
 void ShaderProgram::set1iAt(int loc, int value) const {
  if(loc >= 0 && GLCore::uniform1i != nullptr) {
   GLCore::uniform1i(loc, value);
+  ::net::minecraft::client::debug::RenderProfiler::instance().record(
+      ::net::minecraft::client::debug::RenderMetric::UniformUploads);
  }
 }
 void ShaderProgram::set1fAt(int loc, float value) const {
  if(loc >= 0 && GLCore::uniform1f != nullptr) {
   GLCore::uniform1f(loc, value);
+  ::net::minecraft::client::debug::RenderProfiler::instance().record(
+      ::net::minecraft::client::debug::RenderMetric::UniformUploads);
  }
 }
 void ShaderProgram::set2fAt(int loc, const float* values) const {
  if(loc >= 0 && GLCore::uniform2f != nullptr) {
   GLCore::uniform2f(loc, values[0], values[1]);
+  ::net::minecraft::client::debug::RenderProfiler::instance().record(
+      ::net::minecraft::client::debug::RenderMetric::UniformUploads);
  }
 }
 void ShaderProgram::set3fAt(int loc, const float* values) const {
  if(loc >= 0 && GLCore::uniform3f != nullptr) {
   GLCore::uniform3f(loc, values[0], values[1], values[2]);
+  ::net::minecraft::client::debug::RenderProfiler::instance().record(
+      ::net::minecraft::client::debug::RenderMetric::UniformUploads);
  }
 }
 void ShaderProgram::set4fAt(int loc, const float* values) const {
  if(loc >= 0 && GLCore::uniform4f != nullptr) {
   GLCore::uniform4f(loc, values[0], values[1], values[2], values[3]);
+  ::net::minecraft::client::debug::RenderProfiler::instance().record(
+      ::net::minecraft::client::debug::RenderMetric::UniformUploads);
  }
 }
 void ShaderProgram::set2iAt(int loc, const int* values) const {
- if(loc >= 0 && GLCore::uniform2i != nullptr) GLCore::uniform2i(loc, values[0], values[1]);
+ if(loc >= 0 && GLCore::uniform2i != nullptr) {
+  GLCore::uniform2i(loc, values[0], values[1]);
+  ::net::minecraft::client::debug::RenderProfiler::instance().record(
+      ::net::minecraft::client::debug::RenderMetric::UniformUploads);
+ }
 }
 void ShaderProgram::set3iAt(int loc, const int* values) const {
- if(loc >= 0 && GLCore::uniform3i != nullptr) GLCore::uniform3i(loc, values[0], values[1], values[2]);
+ if(loc >= 0 && GLCore::uniform3i != nullptr) {
+  GLCore::uniform3i(loc, values[0], values[1], values[2]);
+  ::net::minecraft::client::debug::RenderProfiler::instance().record(
+      ::net::minecraft::client::debug::RenderMetric::UniformUploads);
+ }
 }
 void ShaderProgram::set4iAt(int loc, const int* values) const {
- if(loc >= 0 && GLCore::uniform4i != nullptr) GLCore::uniform4i(loc, values[0], values[1], values[2], values[3]);
+ if(loc >= 0 && GLCore::uniform4i != nullptr) {
+  GLCore::uniform4i(loc, values[0], values[1], values[2], values[3]);
+  ::net::minecraft::client::debug::RenderProfiler::instance().record(
+      ::net::minecraft::client::debug::RenderMetric::UniformUploads);
+ }
 }
 void ShaderProgram::setMatrix3At(int loc, const float* values) const {
  if(loc >= 0 && GLCore::uniformMatrix3fv != nullptr) {
   GLCore::uniformMatrix3fv(loc, 1, 0, values);
+  ::net::minecraft::client::debug::RenderProfiler::instance().record(
+      ::net::minecraft::client::debug::RenderMetric::UniformUploads);
  }
 }
 void ShaderProgram::setMatrix4At(int loc, const float* values) const {
  if(loc >= 0 && GLCore::uniformMatrix4fv != nullptr) {
   GLCore::uniformMatrix4fv(loc, 1, 0, values);
+  ::net::minecraft::client::debug::RenderProfiler::instance().record(
+      ::net::minecraft::client::debug::RenderMetric::UniformUploads);
  }
 }
 ShaderProgram::SamplerKind ShaderProgram::samplerKind(std::string_view name) const {
@@ -449,42 +491,56 @@ void ShaderProgram::set1i(std::string_view name, int value) const {
  const int loc = location(name);
  if(loc >= 0 && GLCore::uniform1i != nullptr) {
   GLCore::uniform1i(loc, value);
+  ::net::minecraft::client::debug::RenderProfiler::instance().record(
+      ::net::minecraft::client::debug::RenderMetric::UniformUploads);
  }
 }
 void ShaderProgram::set1f(std::string_view name, float value) const {
  const int loc = location(name);
  if(loc >= 0 && GLCore::uniform1f != nullptr) {
   GLCore::uniform1f(loc, value);
+  ::net::minecraft::client::debug::RenderProfiler::instance().record(
+      ::net::minecraft::client::debug::RenderMetric::UniformUploads);
  }
 }
 void ShaderProgram::set2f(std::string_view name, float x, float y) const {
  const int loc = location(name);
  if(loc >= 0 && GLCore::uniform2f != nullptr) {
   GLCore::uniform2f(loc, x, y);
+  ::net::minecraft::client::debug::RenderProfiler::instance().record(
+      ::net::minecraft::client::debug::RenderMetric::UniformUploads);
  }
 }
 void ShaderProgram::set3f(std::string_view name, float x, float y, float z) const {
  const int loc = location(name);
  if(loc >= 0 && GLCore::uniform3f != nullptr) {
   GLCore::uniform3f(loc, x, y, z);
+  ::net::minecraft::client::debug::RenderProfiler::instance().record(
+      ::net::minecraft::client::debug::RenderMetric::UniformUploads);
  }
 }
 void ShaderProgram::set4f(std::string_view name, float x, float y, float z, float w) const {
  const int loc = location(name);
  if(loc >= 0 && GLCore::uniform4f != nullptr) {
   GLCore::uniform4f(loc, x, y, z, w);
+  ::net::minecraft::client::debug::RenderProfiler::instance().record(
+      ::net::minecraft::client::debug::RenderMetric::UniformUploads);
  }
 }
 void ShaderProgram::setMatrix3(std::string_view name, const float* value, bool transpose) const {
  const int loc = location(name);
  if(loc >= 0 && GLCore::uniformMatrix3fv != nullptr) {
   GLCore::uniformMatrix3fv(loc, 1, transpose ? 1 : 0, value);
+  ::net::minecraft::client::debug::RenderProfiler::instance().record(
+      ::net::minecraft::client::debug::RenderMetric::UniformUploads);
  }
 }
 void ShaderProgram::setMatrix4(std::string_view name, const float* value, bool transpose) const {
  const int loc = location(name);
  if(loc >= 0 && GLCore::uniformMatrix4fv != nullptr) {
   GLCore::uniformMatrix4fv(loc, 1, transpose ? 1 : 0, value);
+  ::net::minecraft::client::debug::RenderProfiler::instance().record(
+      ::net::minecraft::client::debug::RenderMetric::UniformUploads);
  }
 }
 void ShaderProgram::setMatrix4(std::string_view name, const net::minecraft::util::math::Matrix4f& value) const {
@@ -494,8 +550,10 @@ void ShaderProgram::setMatrix4(std::string_view name, const net::minecraft::util
 namespace {
 using PFN_GetProgramBinary = void(APIENTRY*)(unsigned int, int, int*, unsigned int*, void*);
 using PFN_ProgramBinary = void(APIENTRY*)(unsigned int, unsigned int, const void*, int);
+using PFN_ProgramParameteri = void(APIENTRY*)(unsigned int, unsigned int, int);
 using PFN_GetProgramivLocal = void(APIENTRY*)(unsigned int, unsigned int, int*);
 constexpr unsigned int kProgramBinaryLength = 0x8741;
+constexpr unsigned int kProgramBinaryRetrievableHint = 0x8257;
 
 void* loadGlProc(const char* name) {
  PROC proc = wglGetProcAddress(name);
@@ -511,15 +569,22 @@ struct BinaryProcs {
  PFN_GetProgramivLocal getProgramiv;
  PFN_GetProgramBinary getProgramBinary;
  PFN_ProgramBinary programBinary;
+ PFN_ProgramParameteri programParameteri;
 };
 
 const BinaryProcs& binaryProcs() {
- static const BinaryProcs procs = {
+ static const BinaryProcs procs{
      reinterpret_cast<PFN_GetProgramivLocal>(loadGlProc("glGetProgramiv")),
      reinterpret_cast<PFN_GetProgramBinary>(loadGlProc("glGetProgramBinary")),
      reinterpret_cast<PFN_ProgramBinary>(loadGlProc("glProgramBinary")),
+     reinterpret_cast<PFN_ProgramParameteri>(loadGlProc("glProgramParameteri")),
  };
  return procs;
+}
+
+void prepareProgramBinary(unsigned int program) {
+ if(const auto function = binaryProcs().programParameteri; function != nullptr)
+  function(program, kProgramBinaryRetrievableHint, 1);
 }
 
 std::uint64_t mixHash(std::uint64_t h, const std::string& s) {
@@ -628,6 +693,18 @@ bool ShaderProgram::loadFromBinary(const ProgramBinaryBlob& binary) {
   lastError_ = "empty program binary";
   return false;
  }
+ int formatCount = 0;
+ ::glGetIntegerv(0x87FE, &formatCount);
+ if(formatCount <= 0 || formatCount > 256) {
+  lastError_ = "program binary formats unavailable";
+  return false;
+ }
+ std::vector<int> formats(static_cast<std::size_t>(formatCount));
+ ::glGetIntegerv(0x87FF, formats.data());
+ if(std::find(formats.begin(), formats.end(), static_cast<int>(binary.binaryFormat)) == formats.end()) {
+  lastError_ = "unsupported program binary format";
+  return false;
+ }
  auto programBinary = binaryProcs().programBinary;
  if(programBinary == nullptr) {
   lastError_ = "glProgramBinary unavailable";
@@ -639,6 +716,12 @@ bool ShaderProgram::loadFromBinary(const ProgramBinaryBlob& binary) {
   return false;
  }
  programBinary(program, binary.binaryFormat, binary.bytes.data(), static_cast<int>(binary.bytes.size()));
+ const unsigned int binaryError = ::glGetError();
+ if(binaryError != 0) {
+  lastError_ = "glProgramBinary error " + std::to_string(binaryError);
+  GLCore::deleteProgram(program);
+  return false;
+ }
  int success = 0;
  GLCore::getProgramiv(program, kLinkStatus, &success);
  if(success == 0) {

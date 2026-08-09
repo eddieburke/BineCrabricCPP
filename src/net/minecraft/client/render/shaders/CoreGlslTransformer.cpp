@@ -2,6 +2,7 @@
 #include <algorithm>
 #include <array>
 #include <cctype>
+#include <sstream>
 #include <string_view>
 #include <utility>
 #include <vector>
@@ -65,10 +66,6 @@ bool patchMultiTexCoord3(std::string& source, std::string& declarations, const C
  declarations += "in vec4 mc_midTexCoord;\n";
  return true;
 }
-void replaceGlMultiTexCoordBounded(std::string& source, int minimum, int maximum) {
- for(int index = minimum; index <= maximum; ++index)
-  replaceAllToken(source, "gl_MultiTexCoord" + std::to_string(index), "vec4(0.0, 0.0, 0.0, 1.0)");
-}
 // https://github.com/IrisShaders/Iris/blob/26.1/common/src/main/java/net/irisshaders/iris/pipeline/transform/transformer/SodiumTransformer.java
 [[nodiscard]] bool isChunkMesherProgram(std::string_view programName) {
  return programName.starts_with("gbuffers_terrain") || programName == "gbuffers_water" ||
@@ -108,24 +105,31 @@ std::string lowerVertexSource(const std::string& programName, std::string source
                         source.find("gl_TextureMatrix") != std::string::npos;
  if(hasLegacy) {
   const std::string position = gbufferOrShadow ? "vaPosition + chunkOffset" : "vaPosition";
-  replaceAllToken(source, "ftransform()", "(projectionMatrix * modelViewMatrix * vec4(" + position + ", 1.0))");
-  replaceAllToken(source, "gl_Vertex", "vec4(" + position + ", 1.0)");
-  replaceAllToken(source, "gl_MultiTexCoord2", "gl_MultiTexCoord1");
-  constexpr std::array replacements = {
-      std::pair{"gl_ModelViewProjectionMatrix", "modelViewProjectionMatrix"},
-      std::pair{"gl_ModelViewMatrixInverse", "modelViewMatrixInverse"},
-      std::pair{"gl_ProjectionMatrixInverse", "projectionMatrixInverse"},
-      std::pair{"gl_ModelViewMatrix", "modelViewMatrix"},
-      std::pair{"gl_ProjectionMatrix", "projectionMatrix"},
-      std::pair{"gl_NormalMatrix", "normalMatrix"},
-      std::pair{"gl_TextureMatrix[1]", "iris_lightmapTextureMatrix"},
-      std::pair{"gl_TextureMatrix[0]", "textureMatrix"},
-      std::pair{"gl_MultiTexCoord1", "vec4(vaUV2, 0.0, 1.0)"},
-      std::pair{"gl_MultiTexCoord0", "vec4(vaUV0, 0.0, 1.0)"},
-      std::pair{"gl_Color", "vaColor"},
-      std::pair{"gl_Normal", "vaNormal"}};
-  for(const auto& [legacy, current] : replacements) replaceAllToken(source, legacy, current);
-  replaceGlMultiTexCoordBounded(source, 4, 7);
+  const std::vector<TokenReplacement> replacements = {
+      {"ftransform()", "(projectionMatrix * modelViewMatrix * vec4(" + position + ", 1.0))"},
+      {"gl_Vertex", "vec4(" + position + ", 1.0)"},
+      {"gl_ModelViewProjectionMatrix", "modelViewProjectionMatrix"},
+      {"gl_ModelViewMatrixInverse", "modelViewMatrixInverse"},
+      {"gl_ProjectionMatrixInverse", "projectionMatrixInverse"},
+      {"gl_ModelViewMatrix", "modelViewMatrix"},
+      {"gl_ProjectionMatrix", "projectionMatrix"},
+      {"gl_NormalMatrix", "normalMatrix"},
+      {"gl_TextureMatrix[1]", "iris_lightmapTextureMatrix"},
+      {"gl_TextureMatrix[0]", "textureMatrix"},
+      {"gl_MultiTexCoord2", "vec4(vaUV2, 0.0, 1.0)"},
+      {"gl_MultiTexCoord1", "vec4(vaUV2, 0.0, 1.0)"},
+      {"gl_MultiTexCoord0", "vec4(vaUV0, 0.0, 1.0)"},
+      {"gl_MultiTexCoord4", "vec4(0.0, 0.0, 0.0, 1.0)"},
+      {"gl_MultiTexCoord5", "vec4(0.0, 0.0, 0.0, 1.0)"},
+      {"gl_MultiTexCoord6", "vec4(0.0, 0.0, 0.0, 1.0)"},
+      {"gl_MultiTexCoord7", "vec4(0.0, 0.0, 0.0, 1.0)"},
+      {"gl_Color", "vaColor"},
+      {"gl_Normal", "vaNormal"}};
+  replaceAllTokens(source, replacements);
+ }
+ constexpr std::string_view immutableProjection = "immut vec4 clip = proj_mmul";
+ for(std::size_t at = 0; (at = source.find(immutableProjection, at)) != std::string::npos;) {
+  source.erase(at, 6);
  }
  std::string declarations; const CodeMask mask = codeMask(source);
  appendMissingDeclarations(declarations, source, mask, kVertexAttributes);
@@ -155,24 +159,44 @@ bool programGetsCompatAlphaTest(const std::string& programName) {
  if(name == "shadow" || name.starts_with("shadow_") || name.starts_with("clrwl_shadow")) {
   return !name.starts_with("shadowcomp");
  }
- if(!name.starts_with("gbuffers_") && !name.starts_with("clrwl_gbuffers")) return false;
- const std::string lowerName = lower(programName);
- return lowerName.find("water") == std::string::npos && lowerName.find("translucent") == std::string::npos;
+ return name.starts_with("gbuffers_") || name.starts_with("clrwl_gbuffers");
+}
+std::vector<bool> replaceFunctionCalls(
+    std::string& source,
+    const std::vector<std::pair<std::string_view, std::string_view>>& replacements) {
+ const CodeMask mask = codeMask(source);
+ struct Match {
+  std::size_t at;
+  std::size_t length;
+  std::size_t replacement;
+ };
+ std::vector<Match> matches;
+ std::vector<bool> changed(replacements.size(), false);
+ for(std::size_t replacement = 0; replacement < replacements.size(); ++replacement) {
+  const auto [from, to] = replacements[replacement];
+  (void)to;
+  std::size_t at = 0;
+  while((at = source.find(from, at)) != std::string::npos) {
+   if(tokenAt(source, mask, at, from)) {
+    std::size_t next = at + from.size();
+    while(next < source.size() && std::isspace(static_cast<unsigned char>(source[next]))) ++next;
+    if(next < source.size() && mask[next] && source[next] == '(') {
+     matches.push_back({at, from.size(), replacement});
+     changed[replacement] = true;
+    }
+   }
+   at += from.size();
+  }
+ }
+ std::sort(matches.begin(), matches.end(), [](const Match& a, const Match& b) { return a.at < b.at; });
+ for(auto match = matches.rbegin(); match != matches.rend(); ++match) {
+  source.replace(match->at, match->length, replacements[match->replacement].second);
+ }
+ return changed;
 }
 bool replaceFunctionCalls(std::string& source, std::string_view from, std::string_view to) {
- const CodeMask mask = codeMask(source);
- std::vector<std::size_t> matches;
- std::size_t at = 0;
- while((at = source.find(from, at)) != std::string::npos) {
-  if(tokenAt(source, mask, at, from)) {
-   std::size_t next = at + from.size();
-   while(next < source.size() && std::isspace(static_cast<unsigned char>(source[next]))) ++next;
-   if(next < source.size() && mask[next] && source[next] == '(') matches.push_back(at);
-  }
-  at += from.size();
- }
- for(auto match = matches.rbegin(); match != matches.rend(); ++match) source.replace(*match, from.size(), to);
- return !matches.empty();
+ const std::vector<std::pair<std::string_view, std::string_view>> replacements = {{from, to}};
+ return replaceFunctionCalls(source, replacements)[0];
 }
 std::string_view fragmentOutputType(const PackDefinition& pack,
                                     const std::vector<int>& drawBuffers,
@@ -251,8 +275,8 @@ std::array<bool, 16> rewriteFragmentOutputs(std::string& source, const PackDefin
  return outputs;
 }
 void canonicalizeTextureCalls(std::string& source, ShaderStage stage) {
- constexpr std::array<std::pair<std::string_view, std::string_view>, 18> replacements = {
-     std::pair<std::string_view, std::string_view>{"texture2D", "texture"},
+ static const std::vector<std::pair<std::string_view, std::string_view>> replacements = {
+     {"texture2D", "texture"},
      {"texture3D", "texture"},
      {"textureCube", "texture"},
      {"texture2DLod", "textureLod"},
@@ -270,7 +294,7 @@ void canonicalizeTextureCalls(std::string& source, ShaderStage stage) {
      {"texelFetch3D", "texelFetch"},
      {"textureSize2D", "textureSize"},
      {"textureSize3D", "textureSize"}};
-  for(const auto& [legacy, current] : replacements) replaceFunctionCalls(source, legacy, current);
+  replaceFunctionCalls(source, replacements);
   std::string declarations;
   if(replaceFunctionCalls(source, "shadow2D", "iris_shadow2D")) {
    declarations += "vec4 iris_shadow2D(sampler2DShadow image, vec3 coordinate) { return vec4(texture(image, coordinate)); }\n";
@@ -457,8 +481,6 @@ std::string canonicalizeVertex(const std::string& programName,
 std::string canonicalizeFragment(const std::string& programName, const PackDefinition& pack, std::string source) {
  const bool legacyOutput = referencesToken(source, "gl_FragData") || referencesToken(source, "gl_FragColor");
  replaceAllToken(source, "subgroupAll(will_discard)", "will_discard");
- static const std::string targetNoAlpha = "f16vec3 color = f16vec3(texture(gtexture, v.coord).rgb);";
- replaceAllToken(source, targetNoAlpha, GlslSnippets::get("compat_alpha_check"));
  if(referencesToken(source, "gl_FogFragCoord")) {
   replaceAllToken(source, "gl_FogFragCoord", "iris_FogFragCoord");
   if(!hasStorageDeclaration(source, "in", "iris_FogFragCoord"))
@@ -490,11 +512,17 @@ std::string canonicalizeFragment(const std::string& programName, const PackDefin
   return false;
  }();
  if(hasDepthDecl && !hasDepthWrite) appendBeforeMainClose(source, GlslSnippets::get("gl_frag_depth_passthrough"));
- if(!programGetsCompatAlphaTest(programName) || !legacyOutput || !outputs[0]) return source;
+ if(!programGetsCompatAlphaTest(programName)) return source;
+ std::string accessor;
+ if(legacyOutput && outputs[0]) {
+  accessor = "iris_FragData0.a";
+ } else {
+  return source;
+ }
  if(source.find("alphaTestRef") == std::string::npos)
   source.insert(sourceDeclarationOffset(source), "uniform float alphaTestRef;\n");
  std::string snippet = GlslSnippets::get("alpha_test_discard");
- replaceAllToken(snippet, "ALPHA_TEST_ACCESSOR", "iris_FragData0.a");
+ replaceAllToken(snippet, "ALPHA_TEST_ACCESSOR", accessor);
  appendBeforeMainClose(source, snippet);
  return source;
 }

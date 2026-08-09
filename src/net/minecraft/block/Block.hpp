@@ -26,6 +26,7 @@ class ItemStack;
 namespace net::minecraft::block {
 // UV bounds for a 16x16 tile in /terrain.png (beta atlas index).
 struct TerrainAtlasUv {
+ static constexpr double EDGE_INSET = 0.01;
  double uMin = 0.0;
  double uMax = 0.0;
  double vMin = 0.0;

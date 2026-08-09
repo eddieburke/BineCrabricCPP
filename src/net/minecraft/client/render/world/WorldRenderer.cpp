@@ -2,6 +2,7 @@
 #include "net/minecraft/client/render/shaderpack/Pack.hpp"
 #include <algorithm>
 #include <cmath>
+#include <cstddef>
 #include <cstdint>
 #include <cstdlib>
 #include <limits>
@@ -10,6 +11,7 @@
 #include "net/minecraft/block/LeavesBlock.hpp"
 #include "net/minecraft/block/entity/BlockEntity.hpp"
 #include "net/minecraft/client/Minecraft.hpp"
+#include "net/minecraft/client/debug/RenderProfiler.hpp"
 #include "net/minecraft/client/render/RenderCore.hpp"
 #include "net/minecraft/client/gl/GLCore.hpp"
 #include "net/minecraft/client/gl/GlConstants.hpp"
@@ -17,8 +19,7 @@
 #include "net/minecraft/client/particle/ParticleRegistry.hpp"
 #include "net/minecraft/client/particle/PickupParticle.hpp"
 #include "net/minecraft/client/render/GameRenderer.hpp"
-#include "net/minecraft/client/render/QuadIndexBuffer.hpp"
-#include "net/minecraft/client/render/pipeline/Manager.hpp"
+#include "net/minecraft/client/render/pipeline/Pipeline.hpp"
 #include "net/minecraft/client/render/camera/FrameRenderCamera.hpp"
 #include "net/minecraft/client/render/RenderType.hpp"
 #include "net/minecraft/client/render/Tessellator.hpp"
@@ -40,13 +41,6 @@
 #include "net/minecraft/world/World.hpp"
 namespace net::minecraft::client::render {
 namespace {
-struct ModChunkMeshScope {
- render::RenderPassScope passScope_;
- explicit ModChunkMeshScope(const RenderType& rt) : passScope_(rt) {
- }
- ModChunkMeshScope(const ModChunkMeshScope&) = delete;
- ModChunkMeshScope& operator=(const ModChunkMeshScope&) = delete;
-};
 struct BlockOutlineScope {
  RenderPassScope pass;
  core::RenderStageScope stage;
@@ -113,11 +107,15 @@ void WorldRenderer::setWorld(net::minecraft::World* worldIn) {
   reload();
  } else {
   chunkSections_.clearSections();
+  terrainRegionDrawCount_ = 0;
+  terrainRegionDrawLayer_ = -1;
   setCamera(nullptr);
  }
 }
 void WorldRenderer::reload() {
  chunkSections_.clearSections();
+ terrainRegionDrawCount_ = 0;
+ terrainRegionDrawLayer_ = -1;
  if(world == nullptr) {
   return;
  }
@@ -142,21 +140,20 @@ int WorldRenderer::render(net::minecraft::LivingEntity& camera, int layer, bool 
   return 0;
  }
  setCamera(&camera);
- renderChunksVbo(layer, false);
- if(drawModMeshes) {
-  renderModChunkMeshes(layer);
- }
- return 0;
+ return renderChunkLayer(layer, false, drawModMeshes);
 }
 void WorldRenderer::renderLastChunks(int layer, double /*tickDelta*/) {
  // Java's GameRenderer draws translucent terrain twice when fancyGraphics is
  // on: once with colorMask off (depth-only prepass) via render(), then again
  // here with colorMask restored so blending reads back a depth buffer that
  // already matches, avoiding z-fighting between overlapping translucent
- // faces (water against glass, etc). Re-running the same layer draw covers
- // the VBO region path.
- renderChunksVbo(layer, true);
- renderModChunkMeshes(layer);
+ // faces (water against glass, etc). The visible set and the per-region
+ // batches are identical across the two passes, so this replays the batches
+ // the prepass already built rather than walking every section a second time.
+ if(chunkSections_.empty()) {
+  return;
+ }
+ renderChunkLayer(layer, true, true);
 }
 Vec3d WorldRenderer::sectionOrigin() noexcept {
  if(core::drawCameraStateValid()) {
@@ -166,89 +163,117 @@ Vec3d WorldRenderer::sectionOrigin() noexcept {
  const FrameRenderCamera& cam = core::cameraFrame();
  return {cam.eyeX, cam.eyeY, cam.eyeZ};
 }
-int WorldRenderer::renderChunksVbo(int layer, bool skipBuildDrawLists) {
+int WorldRenderer::renderChunkLayer(int layer, bool replay, bool drawModMeshes) {
+ // Replaying batches that were built for a different layer would draw one
+ // layer's allocations out of another layer's arena, and batches built before
+ // a reload point at freed regions. Both are caught here.
+ if(replay && terrainRegionDrawLayer_ != layer) {
+  return 0;
+ }
  const Vec3d camPos = sectionOrigin();
- if(!skipBuildDrawLists && layer == 0 && !renderCameraEntity_) {
-  chunk::ChunkBuilder::frameDrawCalls = 0;
+ const bool translucent = layer == chunk::terrain_layer::Translucent;
+ if(!replay) {
+  if(layer == 0 && !renderCameraEntity_) {
+   chunk::ChunkBuilder::frameDrawCalls = 0;
+  }
+  modMeshDraws_.clear();
+  terrainRegionDrawCount_ = 0;
+  terrainRegionDrawLayer_ = layer;
+  const auto& visible = chunkSections_.visibleSections();
+  const auto visit = [&](chunk::ChunkBuilder* chunk) {
+   if(chunk == nullptr || !chunk->inFrustum) {
+    return;
+   }
+   const chunk::TerrainAllocation& allocation = chunk->terrainAllocation(layer);
+   if(allocation.valid() && chunk->terrainRegion() != nullptr) {
+    chunk::TerrainRegion* region = chunk->terrainRegion();
+    // One batch per region on every layer. Translucent ordering is recovered
+    // by sorting the batches back-to-front below. Opening a fresh batch on
+    // each region change in visit order cost one draw call per section: the
+    // occlusion BFS fills visibleSections in shells, so consecutive sections
+    // almost never share a region.
+    std::size_t index = 0;
+    while(index < terrainRegionDrawCount_ && terrainRegionDraws_[index].region != region) ++index;
+    if(index == terrainRegionDrawCount_) {
+     ++terrainRegionDrawCount_;
+     if(index == terrainRegionDraws_.size()) terrainRegionDraws_.push_back({});
+     terrainRegionDraws_[index].region = region;
+     terrainRegionDraws_[index].allocations.clear();
+    }
+    terrainRegionDraws_[index].allocations.push_back(&allocation);
+   }
+   if(textureManager != nullptr) {
+    for(const chunk::ModChunkMesh& modMesh : chunk->modLayerMeshes_[static_cast<std::size_t>(layer)]) {
+     if(!modMesh.mesh.empty()) {
+      modMeshDraws_.push_back(
+          ModMeshDraw{&modMesh,
+                      static_cast<float>(static_cast<double>(chunk->x) - camPos.x),
+                      static_cast<float>(static_cast<double>(chunk->y) - camPos.y),
+                      static_cast<float>(static_cast<double>(chunk->z) - camPos.z)});
+     }
+    }
+   }
+  };
+  if(translucent) {
+   for(auto it = visible.rbegin(); it != visible.rend(); ++it) visit(*it);
+  } else {
+   for(chunk::ChunkBuilder* chunk : visible) visit(chunk);
+  }
+  if(translucent) {
+   // Region-granular back-to-front; within a region the sections keep the
+   // reverse visit order established above.
+   constexpr double halfX = world::kRegionSectionsX * chunk::kSectionBlocks * 0.5;
+   constexpr double halfY = world::kRegionSectionsY * chunk::kSectionBlocks * 0.5;
+   constexpr double halfZ = world::kRegionSectionsZ * chunk::kSectionBlocks * 0.5;
+   const auto depthSq = [&](const TerrainRegionDraw& draw) {
+    const double dx = static_cast<double>(draw.region->originX()) + halfX - camPos.x;
+    const double dy = static_cast<double>(draw.region->originY()) + halfY - camPos.y;
+    const double dz = static_cast<double>(draw.region->originZ()) + halfZ - camPos.z;
+    return dx * dx + dy * dy + dz * dz;
+   };
+   std::sort(terrainRegionDraws_.begin(),
+             terrainRegionDraws_.begin() + static_cast<std::ptrdiff_t>(terrainRegionDrawCount_),
+             [&](const TerrainRegionDraw& a, const TerrainRegionDraw& b) {
+              return depthSq(a) > depthSq(b);
+             });
+  } else {
+   std::sort(modMeshDraws_.begin(), modMeshDraws_.end(), [](const ModMeshDraw& a, const ModMeshDraw& b) {
+    return a.mesh->texture < b.mesh->texture;
+   });
+  }
  }
  int draws = 0;
- for(chunk::ChunkBuilder* chunk : chunkSections_.visibleSections()) {
-  if(chunk == nullptr || !chunk->inFrustum || chunk->renderLayerEmpty[static_cast<std::size_t>(layer)]) {
-   continue;
-  }
-  const float ox = static_cast<float>(static_cast<double>(chunk->x) - camPos.x);
-  const float oy = static_cast<float>(static_cast<double>(chunk->y) - camPos.y);
-  const float oz = static_cast<float>(static_cast<double>(chunk->z) - camPos.z);
+ for(std::size_t i = 0; i < terrainRegionDrawCount_; ++i) {
+  TerrainRegionDraw& draw = terrainRegionDraws_[i];
+  if(draw.region == nullptr || draw.allocations.empty()) continue;
+  const float ox = static_cast<float>(static_cast<double>(draw.region->originX()) - camPos.x);
+  const float oy = static_cast<float>(static_cast<double>(draw.region->originY()) - camPos.y);
+  const float oz = static_cast<float>(static_cast<double>(draw.region->originZ()) - camPos.z);
   core::setPendingTerrainDraw(ox, oy, oz);
-  chunk->drawLayer(layer);
+  const int submitted = draw.region->drawLayer(layer, draw.allocations);
+  core::clearPendingTerrainDraw();
+  draws += submitted;
+  chunk::ChunkBuilder::frameDrawCalls += submitted;
+ }
+ if(!drawModMeshes) {
+  return draws;
+ }
+ const debug::RenderProfiler::Scope modMeshScope(debug::RenderStage::ModMeshes);
+ int boundTextureId = -1;
+ int boundGlId = -1;
+ for(const ModMeshDraw& draw : modMeshDraws_) {
+  if(draw.mesh->texture != boundTextureId) {
+   boundTextureId = draw.mesh->texture;
+    boundGlId = net::minecraft::registry::TextureRegistry::resolveGlId(boundTextureId, *textureManager);
+    if(boundGlId >= 0) textureManager->bindTexture(boundGlId);
+  }
+  if(boundGlId < 0) continue;
+  core::setPendingTerrainDraw(draw.x, draw.y, draw.z);
+  Tessellator::drawMesh(draw.mesh->mesh);
   core::clearPendingTerrainDraw();
   ++draws;
  }
  return draws;
-}
-int WorldRenderer::renderModChunkMeshes(int layer) {
- if(textureManager == nullptr) {
-  return 0;
- }
- const RenderType& renderType =
-     layer == chunk::terrain_layer::Translucent      ? RenderType::translucent()
-     : layer == chunk::terrain_layer::Cutout         ? RenderType::cutout()
-     : layer == chunk::terrain_layer::CutoutInterior ? RenderType::cutoutInterior()
-                                                     : RenderType::solid();
- const ModChunkMeshScope meshCaps(renderType);
- int drawn = 0;
- const Vec3d camPos = sectionOrigin();
- struct ModMeshDraw {
-  int textureId;
-  chunk::ChunkBuilder* chunk;
-  const TessellatorMesh* mesh;
- };
- // One flat pass and one sort, not one per ring: the old per-ring grouping
- // gave up nothing by going away (mod meshes are a thin layer over terrain,
- // not a distance-sensitive budget loop) and a single sort minimizes texture
- // rebinds over the whole visible set instead of just within each bucket.
- std::vector<ModMeshDraw> meshDraws;
- for(chunk::ChunkBuilder* chunk : chunkSections_.visibleSections()) {
-  if(chunk == nullptr || !chunk->inFrustum) {
-   continue;
-  }
-  for(const chunk::ModChunkMesh& modMesh : chunk->modLayerMeshes_[static_cast<std::size_t>(layer)]) {
-   if(modMesh.mesh.empty()) {
-    continue;
-   }
-   meshDraws.push_back({modMesh.texture, chunk, &modMesh.mesh});
-  }
- }
- if(meshDraws.empty()) {
-  return 0;
- }
- std::stable_sort(meshDraws.begin(), meshDraws.end(), [](const ModMeshDraw& a, const ModMeshDraw& b) {
-  return a.textureId < b.textureId;
- });
- int boundTextureId = -1;
- int boundGlId = -1;
- bool boundValid = false;
- for(const ModMeshDraw& entry : meshDraws) {
-  if(!boundValid || entry.textureId != boundTextureId) {
-   boundTextureId = entry.textureId;
-   boundGlId = net::minecraft::registry::TextureRegistry::resolveGlId(entry.textureId, *textureManager);
-   boundValid = true;
-   if(boundGlId >= 0) {
-    textureManager->bindTexture(boundGlId);
-   }
-  }
-  if(boundGlId < 0) {
-   continue;
-  }
-  const float ox = static_cast<float>(static_cast<double>(entry.chunk->x) - camPos.x);
-  const float oy = static_cast<float>(static_cast<double>(entry.chunk->y) - camPos.y);
-  const float oz = static_cast<float>(static_cast<double>(entry.chunk->z) - camPos.z);
-  core::setPendingTerrainDraw(ox, oy, oz);
-  Tessellator::drawMesh(*entry.mesh);
-  core::clearPendingTerrainDraw();
-  ++drawn;
- }
- return drawn;
 }
 void WorldRenderer::renderEntities(const Vec3d& cameraPos,
                                    Frustum* culler,
@@ -263,6 +288,10 @@ void WorldRenderer::renderEntities(const Vec3d& cameraPos,
   culledEntityCount = 0;
   return;
  }
+ const debug::RenderStage preparationStage = core::cameraFrame().shadowPass
+                                                 ? debug::RenderStage::ShadowEntityPreparation
+                                                 : debug::RenderStage::EntityPreparation;
+ debug::RenderProfiler::Scope preparationScope(preparationStage);
  // Iris parity pose base: identity, so every pose the entity/block-entity
  // renderers publish on this stack is the pure model -> camera-relative
  // transform (they push translate(entity - eye) themselves via the dispatcher
@@ -291,6 +320,8 @@ void WorldRenderer::renderEntities(const Vec3d& cameraPos,
   block::entity::BlockEntityRenderDispatcher::offsetY = entity::EntityRenderDispatcher::offsetY;
   block::entity::BlockEntityRenderDispatcher::offsetZ = entity::EntityRenderDispatcher::offsetZ;
  }
+ preparationScope.end();
+ debug::RenderProfiler::Scope collectScope(debug::RenderStage::EntityCollectCull);
  const std::vector<Entity*>& entities = world->entities();
  entityCount = static_cast<int>(entities.size()) + static_cast<int>(world->globalEntities.size());
  const client::option::RenderSettings& resolved = frameSettings();
@@ -311,28 +342,34 @@ void WorldRenderer::renderEntities(const Vec3d& cameraPos,
          !shadowEntityFrustum->isVisible(entity->boundingBox);
  };
  for(Entity* entity : world->globalEntities) {
+  debug::RenderProfiler::instance().record(debug::RenderMetric::EntityTraversals);
   if(entity == nullptr) {
    continue;
   }
   if(excludedFromShadow(entity)) continue;
   if(!client::option::shouldRenderEntity(resolved, *entity, cameraPos)) {
    ++culledEntityCount;
+   debug::RenderProfiler::instance().record(debug::RenderMetric::EntityCulled);
    continue;
   }
   ++renderedEntityCount;
+  debug::RenderProfiler::instance().record(debug::RenderMetric::EntityVisible);
   entityDispatcher.render(*entity, tickDelta, matrices, projection);
  }
  for(Entity* entity : entities) {
+  debug::RenderProfiler::instance().record(debug::RenderMetric::EntityTraversals);
   if(entity == nullptr) {
    continue;
   }
   if(excludedFromShadow(entity)) continue;
   if(!client::option::shouldRenderEntity(resolved, *entity, cameraPos)) {
    ++culledEntityCount;
+   debug::RenderProfiler::instance().record(debug::RenderMetric::EntityCulled);
    continue;
   }
   if(!entity->ignoreFrustumCull && culler != nullptr && !culler->isVisible(entity->boundingBox)) {
    ++culledEntityCount;
+   debug::RenderProfiler::instance().record(debug::RenderMetric::EntityCulled);
    continue;
   }
   if(entity == cameraEntity_ && !renderCameraEntity_) {
@@ -352,8 +389,11 @@ void WorldRenderer::renderEntities(const Vec3d& cameraPos,
    continue;
   }
   ++renderedEntityCount;
+  debug::RenderProfiler::instance().record(debug::RenderMetric::EntityVisible);
   entityDispatcher.render(*entity, tickDelta, matrices, projection);
  }
+ collectScope.end();
+ const debug::RenderProfiler::Scope blockEntityScope(debug::RenderStage::BlockEntities);
  for(::net::minecraft::block::entity::BlockEntity* blockEntity : scene_.blockEntities) {
   if(blockEntity == nullptr) continue;
   if(renderCamera.shadowPass) {

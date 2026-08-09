@@ -11,7 +11,7 @@ class Minecraft;
 }
 namespace net::minecraft::client::host {
 struct ServerProcessSettings {
- std::uint16_t port = 25565;
+ std::uint16_t port = 0;
  bool spawnAnimals = true;
  bool pvpEnabled = true;
  bool flightEnabled = false;

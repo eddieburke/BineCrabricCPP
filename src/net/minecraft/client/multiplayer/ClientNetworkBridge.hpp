@@ -9,16 +9,13 @@ class NetworkHandler;
 namespace net::minecraft::client {
 class Minecraft;
 }
-namespace net::minecraft::client::core {
-class WorldSession;
-}
 namespace net::minecraft::client::multiplayer {
 class ClientNetworkHandler;
 }
 namespace net::minecraft::client::multiplayer {
 class ClientNetworkBridge {
  public:
- explicit ClientNetworkBridge(core::WorldSession* worldSession) noexcept;
+ ClientNetworkBridge() noexcept;
  // Out-of-line: handler_/connection_ are unique_ptrs to forward-declared types, so the
  // destructor must be emitted in the .cpp where those types are complete.
  ~ClientNetworkBridge();
@@ -34,8 +31,8 @@ class ClientNetworkBridge {
  void setHandler(std::unique_ptr<net::minecraft::NetworkHandler> newHandler);
 
  private:
- core::WorldSession* worldSession_ = nullptr;
  std::unique_ptr<net::minecraft::Connection> connection_;
  std::unique_ptr<net::minecraft::NetworkHandler> handler_;
+ std::unique_ptr<net::minecraft::NetworkHandler> retiredHandler_;
 };
 } // namespace net::minecraft::client::multiplayer

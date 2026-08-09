@@ -179,7 +179,7 @@ class PlayerInteractBlockC2SPacket : public Packet {
   networkHandler.onPlayerInteractBlock(*this);
  }
  [[nodiscard]] std::size_t size() const override {
-  return 15;
+  return 10U + (stack.itemId <= 0 ? 2U : 5U);
  }
 };
 class PlayerInteractEntityC2SPacket : public Packet {

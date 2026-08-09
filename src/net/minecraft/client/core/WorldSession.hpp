@@ -65,12 +65,6 @@ class WorldSession {
  [[nodiscard]] bool hasParkedLocalHandoff() const noexcept {
   return parkedHandoffWorld_ != nullptr;
  }
- void suppressNextRemoteHandoffSave() noexcept {
-  suppressNextRemoteHandoffSave_ = true;
- }
- void clearRemoteHandoffSaveSuppression() noexcept {
-  suppressNextRemoteHandoffSave_ = false;
- }
 
  private:
  std::unique_ptr<WorldStorage> ownedWorldStorage_;
@@ -79,6 +73,5 @@ class WorldSession {
  std::unique_ptr<WorldStorage> parkedHandoffWorldStorage_;
  std::unique_ptr<World> parkedHandoffWorld_;
  std::unique_ptr<entity::player::ClientPlayerEntity> ownedPlayer_;
- bool suppressNextRemoteHandoffSave_ = false;
 };
 } // namespace net::minecraft::client::core

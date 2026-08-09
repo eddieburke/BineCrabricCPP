@@ -2,7 +2,6 @@
 #include <array>
 #include <cstddef>
 #include <cstdlib>
-#include <functional>
 #include <string>
 #include <unordered_map>
 #include "net/minecraft/client/render/pipeline/Instance.hpp"
@@ -39,19 +38,19 @@ inline bool dispatchSetupIfNeeded(
     std::unordered_map<std::string, int>& textures,
     std::unordered_map<std::string, int>& colorImages,
     std::unordered_map<std::string, int>& volumes,
-    const ColorTargets* colorTargets,
-    const std::function<gl::ShaderProgram*(PackInstance&, const std::string&)>& compileFn) {
+    const ColorTargets* colorTargets) {
  if(!gl::GLCore::computeSupported || (pack.setupWidth == width && pack.setupHeight == height)) {
   return true;
  }
- for(std::size_t passIndex : pack.setupPasses) {
-  if(!ComputeDispatcher::dispatch(pack, pack.definition.passes[passIndex], uniforms, viewport, textures, colorImages,
-                                  volumes, colorTargets, width, height, !pack.definition.allowConcurrentCompute,
-                                  compileFn)) {
+ for(const PackInstance::RuntimePass& runtime : pack.setupPlan) {
+  if(runtime.program == nullptr ||
+     !ComputeDispatcher::dispatch(pack, pack.definition.passes[runtime.passIndex], *runtime.program,
+                                  uniforms, viewport, textures, colorImages, volumes, colorTargets,
+                                  width, height, !pack.definition.allowConcurrentCompute)) {
    return false;
   }
  }
- if(pack.definition.allowConcurrentCompute && !pack.setupPasses.empty()) {
+ if(pack.definition.allowConcurrentCompute && !pack.setupPlan.empty()) {
   gl::GLCore::memoryBarrier(ComputeDispatcher::kBarrierBits);
  }
  pack.setupWidth = width;

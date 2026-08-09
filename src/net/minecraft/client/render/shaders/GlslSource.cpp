@@ -41,6 +41,13 @@ std::size_t sourceDeclarationOffset(const std::string& source) {
   if(hasCode) {
    const std::size_t first = line.find_first_not_of(" \t");
    if(first == std::string::npos || line[first] != '#') break;
+   const std::size_t dirStart = line.find_first_not_of(" \t", first + 1);
+   if(dirStart != std::string::npos) {
+    std::size_t dirEnd = dirStart;
+    while(dirEnd < line.size() && std::isalpha(static_cast<unsigned char>(line[dirEnd]))) ++dirEnd;
+    const std::string_view dir(line.data() + dirStart, dirEnd - dirStart);
+    if(dir == "if" || dir == "ifdef" || dir == "ifndef" || dir == "elif" || dir == "else" || dir == "endif") break;
+   }
   }
   offset += line.size() + 1;
  }
@@ -113,7 +120,7 @@ bool tokenAt(const std::string& source,
 }
 
 void replaceAllToken(std::string& source, std::string_view from, std::string_view to) {
- if(from.empty()) return;
+ if(from.empty() || source.find(from) == std::string::npos) return;
  const CodeMask mask = codeMask(source);
  std::vector<std::size_t> matches;
  std::size_t at = 0;
@@ -124,10 +131,50 @@ void replaceAllToken(std::string& source, std::string_view from, std::string_vie
  for(auto it = matches.rbegin(); it != matches.rend(); ++it) source.replace(*it, from.size(), to);
 }
 
+void replaceAllTokens(std::string& source, const std::vector<TokenReplacement>& replacements) {
+ struct Match {
+  std::size_t at;
+  std::size_t length;
+  const std::string* replacement;
+ };
+ bool possible = false;
+ for(const TokenReplacement& replacement : replacements) {
+  if(!replacement.from.empty() && source.find(replacement.from) != std::string::npos) {
+   possible = true;
+   break;
+  }
+ }
+ if(!possible) return;
+ const CodeMask mask = codeMask(source);
+ std::vector<Match> matches;
+ for(const TokenReplacement& replacement : replacements) {
+  if(replacement.from.empty()) continue;
+  std::size_t at = 0;
+  while((at = source.find(replacement.from, at)) != std::string::npos) {
+   if(tokenAt(source, mask, at, replacement.from)) {
+    matches.push_back({at, replacement.from.size(), &replacement.to});
+   }
+   at += replacement.from.size();
+  }
+ }
+ std::sort(matches.begin(), matches.end(), [](const Match& a, const Match& b) {
+  return a.at < b.at || (a.at == b.at && a.length > b.length);
+ });
+ std::size_t lastEnd = 0;
+ std::erase_if(matches, [&](const Match& match) {
+  if(match.at < lastEnd) return true;
+  lastEnd = match.at + match.length;
+  return false;
+ });
+ for(auto it = matches.rbegin(); it != matches.rend(); ++it) {
+  source.replace(it->at, it->length, *it->replacement);
+ }
+}
+
 void replaceGlobalStorageQualifier(std::string& source,
                                    std::string_view from,
                                    std::string_view to) {
- if(from.empty()) return;
+ if(from.empty() || source.find(from) == std::string::npos) return;
  const CodeMask mask = codeMask(source);
  std::vector<std::size_t> matches;
  int braceDepth = 0;
@@ -153,7 +200,7 @@ void replaceGlobalStorageQualifier(std::string& source,
 }
 
 bool referencesToken(const std::string& source, std::string_view token) {
- if(token.empty()) return false;
+ if(token.empty() || source.find(token) == std::string::npos) return false;
  const CodeMask mask = codeMask(source);
  return referencesToken(source, mask, token);
 }
@@ -170,6 +217,8 @@ bool referencesToken(const std::string& source, const CodeMask& mask, std::strin
 bool hasStorageDeclaration(const std::string& source,
                            std::string_view storage,
                            std::string_view name) {
+ if(storage.empty() || name.empty() || source.find(storage) == std::string::npos ||
+    source.find(name) == std::string::npos) return false;
  const CodeMask mask = codeMask(source);
  return hasStorageDeclaration(source, mask, storage, name);
 }

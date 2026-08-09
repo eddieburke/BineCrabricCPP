@@ -1,9 +1,10 @@
 #pragma once
+#include <algorithm>
 #include "net/minecraft/block/Block.hpp"
 #include "net/minecraft/client/texture/TextureManager.hpp"
 #include "net/minecraft/registry/TextureRegistry.hpp"
 namespace net::minecraft::client::render {
-inline constexpr double kTextureEdgeInset = 0.01;
+inline constexpr double kTextureEdgeInset = net::minecraft::block::TerrainAtlasUv::EDGE_INSET;
 enum class AtlasDomain {
  Terrain,
  Items
@@ -36,17 +37,35 @@ struct ResolvedTexture {
  // rather than a tile of the shared atlas. Callers branch on this instead of
  // re-querying TextureRegistry.
  bool isModTexture = false;
+ [[nodiscard]] double safeUMin() const noexcept {
+  return uMin + kTextureEdgeInset * uScale;
+ }
+ [[nodiscard]] double safeUMax() const noexcept {
+  return uMax - kTextureEdgeInset * uScale;
+ }
+ [[nodiscard]] double safeVMin() const noexcept {
+  return vMin + kTextureEdgeInset * vScale;
+ }
+ [[nodiscard]] double safeVMax() const noexcept {
+  return vMax - kTextureEdgeInset * vScale;
+ }
+ [[nodiscard]] double clampU(double value) const noexcept {
+  return std::clamp(value, safeUMin(), safeUMax());
+ }
+ [[nodiscard]] double clampV(double value) const noexcept {
+  return std::clamp(value, safeVMin(), safeVMax());
+ }
  [[nodiscard]] double uFromStart(double blockCoordinate) const noexcept {
-  return uMin + blockCoordinate * 16.0 * uScale;
+  return clampU(uMin + blockCoordinate * 16.0 * uScale);
  }
  [[nodiscard]] double uFromEnd(double blockCoordinate) const noexcept {
-  return uMax - blockCoordinate * 16.0 * uScale;
+  return clampU(uMax - blockCoordinate * 16.0 * uScale);
  }
  [[nodiscard]] double vFromStart(double blockCoordinate) const noexcept {
-  return vMin + blockCoordinate * 16.0 * vScale;
+  return clampV(vMin + blockCoordinate * 16.0 * vScale);
  }
  [[nodiscard]] double vFromEnd(double blockCoordinate) const noexcept {
-  return vMax - blockCoordinate * 16.0 * vScale;
+  return clampV(vMax - blockCoordinate * 16.0 * vScale);
  }
 };
 [[nodiscard]] inline const char* atlasPathFor(AtlasDomain domain) noexcept {

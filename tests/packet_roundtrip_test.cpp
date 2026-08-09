@@ -4,10 +4,7 @@
 #include "net/minecraft/entity/data/DataTracker.hpp"
 #include "net/minecraft/network/Packet.hpp"
 #include "net/minecraft/network/PacketIO.hpp"
-#include "net/minecraft/network/packet/ChatPackets.hpp"
-#include "net/minecraft/network/packet/ConnectionPackets.hpp"
-#include "net/minecraft/network/packet/LuaModSyncPacket.hpp"
-#include "net/minecraft/network/packet/PlayerPackets.hpp"
+#include "net/minecraft/network/packet/Packets.hpp"
 namespace net::minecraft::test {
 namespace {
 std::vector<std::uint8_t> serialize(const Packet& packet) {
@@ -23,7 +20,43 @@ std::unique_ptr<Packet> deserialize(const std::vector<std::uint8_t>& bytes, bool
  const std::uint8_t* const end = bytes.data() + bytes.size();
  return Packet::read(src, end, serverSide);
 }
+std::size_t serializedPayloadSize(const Packet& packet) {
+ std::vector<std::uint8_t> bytes(packet.size() + 65537U);
+ std::uint8_t* dest = bytes.data();
+ Packet::write(packet, dest, bytes.data() + bytes.size());
+ return static_cast<std::size_t>(dest - bytes.data()) - 1U;
+}
 } // namespace
+TEST(PacketRegistry, EveryRegisteredPacketReportsItsExactWireSize) {
+ Packet::ensureRegistered();
+ for(int rawId = 0; rawId <= 255; ++rawId) {
+  const std::unique_ptr<Packet> packet = Packet::create(rawId);
+  if(packet == nullptr) {
+   continue;
+  }
+  EXPECT_EQ(serializedPayloadSize(*packet), packet->size()) << "packet id " << rawId;
+ }
+}
+TEST(PacketRegistry, VariablePayloadSizesMatchTheirWireEncoding) {
+ PlayerSpawnS2CPacket playerSpawn;
+ playerSpawn.name = "Steve";
+ EXPECT_EQ(serializedPayloadSize(playerSpawn), playerSpawn.size());
+ ScreenHandlerSlotUpdateS2CPacket slotUpdate;
+ slotUpdate.stack = ItemStack(1, 2, 3);
+ EXPECT_EQ(serializedPayloadSize(slotUpdate), slotUpdate.size());
+ InventoryS2CPacket inventory;
+ inventory.contents = {ItemStack{}, ItemStack(1, 2, 3)};
+ EXPECT_EQ(serializedPayloadSize(inventory), inventory.size());
+ PlayerInteractBlockC2SPacket interactBlock;
+ interactBlock.stack = ItemStack(1, 2, 3);
+ EXPECT_EQ(serializedPayloadSize(interactBlock), interactBlock.size());
+ UpdateSignPacket sign;
+ sign.text = {"North", "South", "East", "West"};
+ EXPECT_EQ(serializedPayloadSize(sign), sign.size());
+ MapUpdateS2CPacket map;
+ map.updateData = {1, 2, 3, 4, 5};
+ EXPECT_EQ(serializedPayloadSize(map), map.size());
+}
 TEST(PacketRegistry, KeepAliveRoundTrip) {
  Packet::ensureRegistered();
  KeepAlivePacket original;

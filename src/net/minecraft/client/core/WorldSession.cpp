@@ -76,19 +76,12 @@ void WorldSession::setWorld(Minecraft& client,
   client.stats->syncStats();
   client.stats->save();
  }
- const bool suppressLocalSave = suppressNextRemoteHandoffSave_ && client.world != nullptr &&
-                                !client.world->isRemote() && worldIn != nullptr && worldIn->isRemote();
- if(suppressLocalSave) {
-  suppressNextRemoteHandoffSave_ = false;
- }
  client.camera = nullptr;
  client.progressRenderer.progressStart(message);
  client.progressRenderer.progressStage("");
  client.audio.playRecord("", 0.0f, 0.0f, 0.0f, 0.0f);
  if(client.world != nullptr) {
-  if(!suppressLocalSave) {
-   client.world->savingProgress(0);
-  }
+  client.world->savingProgress(0);
  }
  if(client.worldSoundListener != nullptr && client.world != nullptr) {
   client.worldSoundListener->detach(client.world);
@@ -161,11 +154,11 @@ void WorldSession::setWorld(Minecraft& client,
  client.lastTickTime = 0;
 }
 void WorldSession::prepareWorld(Minecraft& client, const std::string& worldName) {
- client.progressRenderer.progressStart(worldName);
- client.progressRenderer.progressStage("Building terrain");
- if(client.world == nullptr) {
+ if(client.world == nullptr || client.world->isRemote()) {
   return;
  }
+ client.progressRenderer.progressStart(worldName);
+ client.progressRenderer.progressStage("Building terrain");
  constexpr int radius = 48;
  Vec3i center = client.world->getSpawnPos();
  if(client.player != nullptr) {
@@ -195,12 +188,12 @@ void WorldSession::prepareWorld(Minecraft& client, const std::string& worldName)
     }
    }
    const auto start = std::chrono::steady_clock::now();
-   while(cache->pendingAsyncLoadCount() > 0) {
+   while(!cache->isChunkDataReady(centerChunkX, centerChunkZ)) {
     cache->pumpChunkPublish();
     const std::size_t pending = cache->pendingAsyncLoadCount();
     const int done = totalChunks > static_cast<int>(pending) ? totalChunks - static_cast<int>(pending) : 0;
     client.progressRenderer.progressStagePercentage(done * 100 / totalChunks);
-    if(std::chrono::steady_clock::now() - start > std::chrono::seconds(60)) {
+    if(pending == 0 || std::chrono::steady_clock::now() - start > std::chrono::seconds(10)) {
      break;
     }
     std::this_thread::sleep_for(std::chrono::milliseconds(1));

@@ -61,7 +61,7 @@ class PlayerSpawnS2CPacket : public Packet {
   networkHandler.onPlayerSpawn(*this);
  }
  [[nodiscard]] std::size_t size() const override {
-  return 18U + packetio::javaStringSize(name);
+  return 20U + packetio::javaStringSize(name);
  }
 };
 class ItemEntitySpawnS2CPacket : public Packet {
@@ -204,7 +204,7 @@ class LivingEntitySpawnS2CPacket : public Packet {
   networkHandler.onLivingEntitySpawn(*this);
  }
  [[nodiscard]] std::size_t size() const override {
-  return 18U + entity::data::DataTracker::sizeOfEntries(trackedValues);
+  return 19U + entity::data::DataTracker::sizeOfEntries(trackedValues);
  }
 };
 class PaintingEntitySpawnS2CPacket : public Packet {
@@ -392,7 +392,7 @@ class EntityPositionS2CPacket : public Packet {
   networkHandler.onEntityPosition(*this);
  }
  [[nodiscard]] std::size_t size() const override {
-  return 34;
+  return 18;
  }
 };
 class EntityStatusS2CPacket : public Packet {
@@ -474,7 +474,7 @@ class EntityEquipmentUpdateS2CPacket : public Packet {
   networkHandler.onEntityEquipmentUpdate(*this);
  }
  [[nodiscard]] std::size_t size() const override {
-  return 8;
+  return 10;
  }
 };
 } // namespace net::minecraft

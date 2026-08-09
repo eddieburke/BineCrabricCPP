@@ -7,18 +7,13 @@
 #include "net/minecraft/util/math/Types.hpp"
 #include "net/minecraft/world/BlockView.hpp"
 #include "net/minecraft/world/biome/source/BiomeSource.hpp"
+
 namespace net::minecraft {
 class Chunk;
 } // namespace net::minecraft
+
 namespace net::minecraft::client::render::chunk {
-// Immutable copy of every chunk a mesh rebuild can touch, taken on the main
-// thread at job-enqueue time. Worker threads tessellate against this view, so
-// they never read live Chunk arrays the tick/lighting code is mutating.
-//
-// Coverage is whole chunks in X/Z (the 3x3 neighborhood of a 16^3 section),
-// plus the Y band that AO/neighbor-light sampling can touch. That keeps the
-// worker detached from live chunk arrays without copying all 128 vertical
-// levels for every 16-high section.
+
 class RegionSnapshot final : public net::minecraft::BlockView {
  public:
  struct SourceChunk {
@@ -26,6 +21,19 @@ class RegionSnapshot final : public net::minecraft::BlockView {
   int chunkZ = 0;
   const net::minecraft::Chunk* chunk = nullptr;
  };
+
+ struct ChunkCopy {
+  std::vector<std::uint8_t> storage;
+  std::size_t blockBytes = 0;
+  std::size_t nibbleBytes = 0;
+  bool present = false;
+  bool anyNonAir = false;
+  [[nodiscard]] const std::uint8_t* blocksData() const noexcept { return storage.data(); }
+  [[nodiscard]] const std::uint8_t* metaData() const noexcept { return storage.data() + blockBytes; }
+  [[nodiscard]] const std::uint8_t* skyLightData() const noexcept { return storage.data() + blockBytes + nibbleBytes; }
+  [[nodiscard]] const std::uint8_t* blockLightData() const noexcept { return storage.data() + blockBytes + 2 * nibbleBytes; }
+ };
+
  RegionSnapshot(std::span<const SourceChunk> sourceChunks,
                 int ambientDarkness,
                 const std::array<float, 16>& lightLevelToLuminance,
@@ -36,11 +44,9 @@ class RegionSnapshot final : public net::minecraft::BlockView {
                 int maxBlockX,
                 int maxBlockY,
                 int maxBlockZ);
- // --- BlockView ---
+
  [[nodiscard]] int getBlockId(int x, int y, int z) const override;
  [[nodiscard]] net::minecraft::block::entity::BlockEntity* getBlockEntity(int, int, int) override {
-  // Block entities are live objects; the mesh job records positions and
-  // the main thread resolves pointers at upload time instead.
   return nullptr;
  }
  [[nodiscard]] float getNaturalBrightness(int x, int y, int z, int blockLight) const override;
@@ -55,29 +61,12 @@ class RegionSnapshot final : public net::minecraft::BlockView {
  [[nodiscard]] int getRawBrightness(int x, int y, int z, bool useNeighborLight) const;
  [[nodiscard]] int getBlockLight(int x, int y, int z) const;
  [[nodiscard]] int getSkyLight(int x, int y, int z) const;
- // True if any brightness query so far touched a lit skylight value
- // (per-snapshot replacement for the old Chunk::hasSkyLight static).
  [[nodiscard]] bool sawSkyLight() const noexcept {
   return sawSkyLight_;
  }
- // True if the chunk column containing (blockX, blockZ) has any non-air block
- // in world-Y range [minY, maxY). Used to skip meshing all-air sections.
  [[nodiscard]] bool columnHasBlocks(int blockX, int blockZ, int minY, int maxY) const;
 
  private:
- // Per-chunk copy of the snapshot's Y band. Blocks are one byte per cell,
- // column-major (Y contiguous) so the ctor can memcpy column slices out of
- // the live chunk. The nibble arrays keep the chunk's packed 2-per-byte
- // layout for the same reason; minY_ is forced even so packing parity in
- // the copy matches the source.
- struct ChunkCopy {
-  std::vector<std::uint8_t> blocks; // ySpan_ bytes per column
-  std::vector<std::uint8_t> meta; // ySpan_/2 bytes per column, packed nibbles
-  std::vector<std::uint8_t> skyLight; // packed nibbles
-  std::vector<std::uint8_t> blockLight; // packed nibbles
-  bool present = false;
-  bool anyNonAir = false;
- };
  [[nodiscard]] const ChunkCopy* chunkAt(int x, int z) const {
   const int localX = (x >> 4) - chunkX_;
   const int localZ = (z >> 4) - chunkZ_;
@@ -93,9 +82,7 @@ class RegionSnapshot final : public net::minecraft::BlockView {
  [[nodiscard]] std::size_t snapshotIndex(int localX, int y, int localZ) const noexcept {
   return static_cast<std::size_t>(((localX << 4) | localZ) * ySpan_ + (y - minY_));
  }
- // Decode one nibble from a packed copy array. minY_ is even, so the
- // packing parity of (y - minY_) equals the source chunk's y parity.
- [[nodiscard]] int nibbleAt(const std::vector<std::uint8_t>& bytes, int localX, int y, int localZ) const noexcept {
+ [[nodiscard]] int nibbleAt(const std::uint8_t* bytes, int localX, int y, int localZ) const noexcept {
   const std::size_t byteIndex =
       static_cast<std::size_t>(((localX << 4) | localZ) * (ySpan_ >> 1) + ((y - minY_) >> 1));
   const std::uint8_t byte = bytes[byteIndex];
@@ -113,4 +100,5 @@ class RegionSnapshot final : public net::minecraft::BlockView {
  std::unique_ptr<net::minecraft::BiomeSource> biomeSource_;
  mutable bool sawSkyLight_ = false;
 };
+
 } // namespace net::minecraft::client::render::chunk

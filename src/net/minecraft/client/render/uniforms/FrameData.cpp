@@ -11,7 +11,7 @@
 #include "net/minecraft/client/render/RenderCore.hpp"
 #include "net/minecraft/client/render/RenderType.hpp"
 #include "net/minecraft/client/render/camera/FrameRenderCamera.hpp"
-#include "net/minecraft/client/render/pipeline/Manager.hpp"
+#include "net/minecraft/client/render/pipeline/Pipeline.hpp"
 #include "net/minecraft/client/render/shaderpack/BiomeTables.hpp"
 #include "net/minecraft/client/render/shaderpack/Catalog.hpp"
 #include "net/minecraft/entity/LightningEntity.hpp"

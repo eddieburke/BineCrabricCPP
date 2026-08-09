@@ -16,18 +16,43 @@ namespace {
 bool load(const std::unordered_map<std::string, std::string>& sources,
           PackDefinition& pack,
           std::unordered_map<std::string, PackSourceOption>& options,
-          std::string& error) {
+          std::string& error,
+          const std::unordered_map<std::string, std::string>& values = {}) {
  std::vector<std::string> paths;
  for(const auto& [path, ignored] : sources) paths.push_back(path);
  return PackLoader::load(paths, [&sources](std::string_view path) {
                               const auto found = sources.find(std::string(path));
-                              return found == sources.end() ? std::string{} : found->second; }, pack, options, error);
+                              return found == sources.end() ? std::string{} : found->second; }, pack, options, error,
+                         values);
 }
 std::string resolved(const PackDefinition& pack, const std::string& key) {
  ProgramEnabledCache cache;
  return resolveProgramKey(pack, {}, key, cache);
 }
 } // namespace
+TEST(PackLoaderTest, CoreGlslTransformerInjectsBeforeNormalizedMain) {
+ PackDefinition pack;
+ ShaderTransformContext ctx{false, false, false, false};
+ std::string source =
+     "#version 430 compatibility\n"
+     "#define VERTEX_SHADER\n"
+     "//////Fragment Shader//////Fragment Shader//////\n"
+     "#ifdef FRAGMENT_SHADER\n"
+     "void main() { gl_FragData[0] = vec4(1.0); }\n"
+     "#endif\n"
+     "//////Vertex Shader//////Vertex Shader//////\n"
+     "#ifdef VERTEX_SHADER\n"
+     "void main() { gl_Position = ftransform(); }\n"
+     "#endif\n";
+ std::string result = prepareSource("prepare", ShaderStage::Vertex, pack, source, ctx);
+ const std::size_t declPos = result.find("uniform mat4 projectionMatrix;");
+ const std::size_t mainPos = result.find("void main()");
+ EXPECT_NE(declPos, std::string::npos);
+ EXPECT_NE(mainPos, std::string::npos);
+ EXPECT_LT(declPos, mainPos);
+ EXPECT_EQ(result.find("#ifdef FRAGMENT_SHADER"), std::string::npos);
+ EXPECT_EQ(result.find("gl_FragData"), std::string::npos);
+}
 TEST(PackLoaderTest, ExpandsSharedIncludesOnce) {
  std::unordered_map<std::string, int> reads;
  const auto readText = [&reads](std::string_view path) {
@@ -187,6 +212,71 @@ TEST(PackLoaderTest, UsesDocumentedProgramAndComputeNames) {
  EXPECT_FALSE(pack.programs.contains("setup100#compute"));
  EXPECT_TRUE(pack.programs.contains("gbuffers_entities_glowing"));
 }
+TEST(PackLoaderTest, ReadsMetadataFromResolvedActiveComputeBranch) {
+ PackDefinition pack;
+ std::unordered_map<std::string, PackSourceOption> options;
+ std::string error;
+ EXPECT_TRUE(load({{"shaders/gbuffers_basic.vsh",
+                    "#if 0\nconst int shadowMapResolution = 8192;\n#else\n"
+                    "const int shadowMapResolution = 1024;\n#endif\nvoid main(){}"},
+                   {"shaders/gbuffers_basic.fsh",
+                    "#if 0\nconst int colortex0Format = RGBA32F;\n#else\n"
+                    "const int colortex0Format = RGBA16F;\n#endif\nvoid main(){}"},
+                   {"shaders/composite.csh", "#define SELECT 1\n#include \"lib/compute.glsl\"\n"},
+                   {"shaders/lib/compute.glsl",
+                    "#if SELECT == 1\n"
+                    "layout(local_size_x = 8, local_size_y = 4, local_size_z = 2) in;\n"
+                    "const ivec3 workGroups = ivec3(2, 3, 4);\n"
+                    "const int compositeIterations = 3;\n"
+                    "#else\n"
+                    "layout(local_size_x = 64, local_size_y = 64, local_size_z = 64) in;\n"
+                    "const ivec3 workGroups = ivec3(999, 999, 999);\n"
+                    "const int compositeIterations = 99;\n"
+                    "#endif\n"}},
+                  pack,
+                  options,
+                  error))
+     << error;
+ const auto pass = std::find_if(pack.passes.begin(), pack.passes.end(),
+                                [](const PackPass& value) { return value.program == "composite#compute"; });
+ ASSERT_NE(pass, pack.passes.end());
+ EXPECT_EQ(pass->localSize[0], 8);
+ EXPECT_EQ(pass->localSize[1], 4);
+ EXPECT_EQ(pass->localSize[2], 2);
+ EXPECT_EQ(pass->groups[0], 2);
+ EXPECT_EQ(pass->groups[1], 3);
+ EXPECT_EQ(pass->groups[2], 4);
+ EXPECT_FALSE(pass->relativeGroups);
+ EXPECT_EQ(pass->iterations, 3);
+ EXPECT_EQ(pack.shadowMapResolution, 1024);
+ EXPECT_EQ(pack.targets.at("colortex0").format, "RGBA16F");
+}
+TEST(PackLoaderTest, AppliesCurrentSettingsToDimensionComputeMetadata) {
+ PackDefinition pack;
+ std::unordered_map<std::string, PackSourceOption> options;
+ std::string error;
+ EXPECT_TRUE(load({{"shaders/dimension.properties", "dimension.world0=*\n"},
+                   {"shaders/lib/common.glsl", "#define SIZE 1 //[1 2]\n"},
+                   {"shaders/program/compute.glsl",
+                    "#include \"/lib/common.glsl\"\n"
+                    "#if SIZE == 1\nlayout(local_size_x = 64) in;\n"
+                    "#else\nlayout(local_size_x = 8) in;\n#endif\n"
+                    "const vec2 workGroupsRender = vec2(1.0, 1.0);\n"},
+                   {"shaders/world0/gbuffers_basic.vsh", "void main(){}"},
+                   {"shaders/world0/gbuffers_basic.fsh", "void main(){}"},
+                   {"shaders/world0/composite.csh", "#include \"/program/compute.glsl\"\n"}},
+                  pack,
+                  options,
+                  error,
+                  {{"SIZE", "2"}}))
+     << error;
+ const auto definition = pack.dimensionDefinitions.find("*");
+ ASSERT_NE(definition, pack.dimensionDefinitions.end());
+ const auto pass = std::find_if(definition->second->passes.begin(), definition->second->passes.end(),
+                                [](const PackPass& value) { return value.program == "composite#compute"; });
+ ASSERT_NE(pass, definition->second->passes.end());
+ EXPECT_EQ(pass->localSize[0], 8);
+}
 TEST(PackLoaderTest, CurrentParticleOrderingOverridesLegacyRegardlessOfOrder) {
  for(const std::string properties : {
          "particles.ordering=mixed\nparticles.before.deferred=false\n",
@@ -245,8 +335,8 @@ TEST(PackLoaderTest, ReadsDocumentedNoiseTextureConfiguration) {
  PackDefinition pack;
  std::unordered_map<std::string, PackSourceOption> options;
  std::string error;
- EXPECT_TRUE(load({{"shaders/gbuffers_basic.vsh", "const int noiseTextureResolution = 512;\nvoid main(){}"},
-                   {"shaders/gbuffers_basic.fsh", "void main(){}"},
+ EXPECT_TRUE(load({{"shaders/gbuffers_basic.vsh", "void main(){}"},
+                   {"shaders/gbuffers_basic.fsh", "const int noiseTextureResolution = 512;\nvoid main(){}"},
                    {"shaders/shaders.properties", "texture.noise=textures/noise.png\n"}},
                   pack,
                   options,
@@ -314,6 +404,53 @@ TEST(PackLoaderTest, LoadsDimensionOnlyPackWithRootInclude) {
                   error))
      << error;
 }
+TEST(PackLoaderTest, IgnoresMetadataFromUnsupportedIntegrationSources) {
+ PackDefinition pack;
+ std::unordered_map<std::string, PackSourceOption> options;
+ std::string error;
+ EXPECT_TRUE(load({{"shaders/gbuffers_basic.vsh", "void main(){}"},
+                   {"shaders/gbuffers_basic.fsh", "void main(){gl_FragData[0]=vec4(1.0);}"},
+                   {"shaders/dh_terrain.fsh",
+                    "const int noiseTextureResolution=8192; const int colortex15Format=R32UI; "
+                    "/* RENDERTARGETS: 15 */ void main(){}"},
+                   {"shaders/clrwl_gbuffers.fsh",
+                    "const int shadowMapResolution=16384; /* RENDERTARGETS: 14 */ void main(){}"},
+                   {"shaders/voxy_opaque.glsl",
+                    "const int colortex13Format=RGBA32I; /* RENDERTARGETS: 13 */"}},
+                  pack,
+                  options,
+                  error))
+     << error;
+ EXPECT_EQ(pack.noiseTextureResolution, 256);
+ EXPECT_EQ(pack.shadowMapResolution, 0);
+ EXPECT_EQ(pack.gbufferColorBuffers, 1);
+ EXPECT_FALSE(pack.programs.contains("dh_terrain"));
+ EXPECT_FALSE(pack.programs.contains("clrwl_gbuffers"));
+ EXPECT_FALSE(pack.programs.contains("voxy_opaque"));
+ EXPECT_FALSE(pack.targets.contains("colortex13"));
+ EXPECT_FALSE(pack.targets.contains("colortex14"));
+ EXPECT_FALSE(pack.targets.contains("colortex15"));
+}
+TEST(PackLoaderTest, PropertiesUseIrisEnvironmentAndNormalizeLegacyFeatureSpelling) {
+ PackDefinition pack;
+ std::unordered_map<std::string, PackSourceOption> options;
+ std::string error;
+ EXPECT_TRUE(load({{"shaders/gbuffers_basic.vsh", "void main(){}"},
+                   {"shaders/gbuffers_basic.fsh", "void main(){}"},
+                   {"shaders/shaders.properties",
+                    "#if defined(IS_IRIS) && defined(IRIS_FEATURE_ENTITY_TRANSLUCENT)\n"
+                    "separateEntityDraws=true\n"
+                    "#endif\n"
+                    "iris.features.optional=TESSELATION_SHADERS NOT_A_REAL_FEATURE\n"}},
+                  pack,
+                  options,
+                  error))
+     << error;
+ EXPECT_TRUE(pack.separateEntityDraws);
+ EXPECT_TRUE(pack.optionalFeatures.contains("TESSELLATION_SHADERS"));
+ EXPECT_FALSE(pack.optionalFeatures.contains("TESSELATION_SHADERS"));
+ EXPECT_TRUE(pack.optionalFeatures.contains("NOT_A_REAL_FEATURE"));
+}
 TEST(PackLoaderTest, DimensionPropertiesMultiIdMapsEachKey) {
  PackDefinition pack;
  std::unordered_map<std::string, PackSourceOption> options;
@@ -330,6 +467,29 @@ TEST(PackLoaderTest, DimensionPropertiesMultiIdMapsEachKey) {
  EXPECT_TRUE(pack.dimensionDefinitions.contains("minecraft:the_end"));
  EXPECT_EQ(pack.dimensionDefinitions.at("minecraft:overworld").get(),
            pack.dimensionDefinitions.at("minecraft:the_end").get());
+}
+TEST(PackLoaderTest, DimensionFolderPackKeepsRootFormats) {
+ // rethinking-voxels-shaped: colortexNFormat only in shaders/lib/, programs only under world0/.
+ PackDefinition pack;
+ std::unordered_map<std::string, PackSourceOption> options;
+ std::string error;
+ EXPECT_TRUE(load({{"shaders/lib/pipelineSettings.glsl",
+                    "const int colortex0Format = R11F_G11F_B10F;\n"
+                    "const int colortex9Format = R32UI;\n"},
+                   {"shaders/world0/composite.vsh", "void main(){}"},
+                   {"shaders/world0/composite.fsh", "void main(){}"}},
+                  pack,
+                  options,
+                  error))
+     << error;
+ ASSERT_TRUE(pack.dimensionDefinitions.contains("minecraft:overworld"));
+ // dimension scan never sees lib/pipelineSettings.glsl; colortex0 here is the implicit default.
+ ASSERT_TRUE(pack.dimensionDefinitions.at("minecraft:overworld")->targets.contains("colortex0"));
+ EXPECT_EQ(pack.dimensionDefinitions.at("minecraft:overworld")->targets.at("colortex0").format, "RGBA8");
+ ASSERT_TRUE(pack.targets.contains("colortex0"));
+ ASSERT_TRUE(pack.targets.contains("colortex9"));
+ EXPECT_EQ(pack.targets.at("colortex0").format, "R11F_G11F_B10F");
+ EXPECT_EQ(pack.targets.at("colortex9").format, "R32UI");
 }
 TEST(PackLoaderTest, ResolvesLineToDedicatedProgramThenBasic) {
  PackDefinition pack;
@@ -646,6 +806,58 @@ TEST(PackLoaderTest, NormalizePackSourcePreservesComments) {
  EXPECT_EQ(indices[0], 0);
  EXPECT_EQ(indices[1], 1);
 }
+TEST(PackLoaderTest, HoistsOnlyExtensionsFromActiveBranches) {
+ const std::string source =
+     "#define NVIDIA_PATH\n"
+     "#ifdef NVIDIA_PATH\n"
+     "#extension GL_NV_gpu_shader5 : require\n"
+     "#endif\n"
+     "#ifdef AMD_PATH\n"
+     "#extension GL_AMD_gpu_shader_half_float : require\n"
+     "#endif\n"
+     "#if 0\n"
+     "#define INTEL_PATH\n"
+     "#endif\n"
+     "#ifdef INTEL_PATH\n"
+     "#extension GL_INTEL_shader_integer_functions2 : require\n"
+     "#endif\n"
+     "void main() {}\n";
+ const std::string normalized = normalizePackSource(PackDefinition{}, source);
+ EXPECT_TRUE(normalized.starts_with("#extension GL_NV_gpu_shader5 : require\n"));
+ EXPECT_EQ(normalized.find("GL_AMD_gpu_shader_half_float"), std::string::npos);
+ EXPECT_EQ(normalized.find("GL_INTEL_shader_integer_functions2"), std::string::npos);
+ EXPECT_NE(normalized.find("void main() {}"), std::string::npos);
+}
+TEST(PackLoaderTest, HoistsExtensionsFromSelectedElifAndNestedBranches) {
+ const std::string source =
+     "#define MODE 2\n"
+     "#if MODE == 1\n"
+     "#extension GL_TEST_mode_one : require\n"
+     "#elif MODE == 2\n"
+     "#if defined(MODE)\n"
+     "#extension GL_TEST_mode_two : enable\n"
+     "#endif\n"
+     "#else\n"
+     "#extension GL_TEST_mode_other : require\n"
+     "#endif\n";
+ const std::string normalized = normalizePackSource(PackDefinition{}, source);
+ EXPECT_TRUE(normalized.starts_with("#extension GL_TEST_mode_two : enable\n"));
+ EXPECT_EQ(normalized.find("GL_TEST_mode_one"), std::string::npos);
+ EXPECT_EQ(normalized.find("GL_TEST_mode_other"), std::string::npos);
+}
+TEST(PackLoaderTest, ResolvesFloatingPointPackOptionConditionsBeforeDriverCompilation) {
+ const std::string source =
+     "#define AUTO_EXP 1.000000\n"
+     "#if AUTO_EXP\n"
+     "float exposure = 1.0;\n"
+     "#else\n"
+     "float exposure = 0.0;\n"
+     "#endif\n";
+ const std::string normalized = normalizePackSource(PackDefinition{}, source);
+ EXPECT_EQ(normalized.find("#if AUTO_EXP"), std::string::npos);
+ EXPECT_NE(normalized.find("float exposure = 1.0;"), std::string::npos);
+ EXPECT_EQ(normalized.find("float exposure = 0.0;"), std::string::npos);
+}
 TEST(PackLoaderTest, IgnoresFormatDirectivesInsideBlockComments) {
  PackDefinition pack;
  std::unordered_map<std::string, PackSourceOption> options;
@@ -785,10 +997,44 @@ void main() { gl_FragData[0] = vec4(1.0); }
                "composite", ShaderStage::Fragment, pack, compat)
                .find("discard"),
            std::string::npos);
- EXPECT_EQ(prepareSource(
+ EXPECT_NE(prepareSource(
                "gbuffers_water", ShaderStage::Fragment, pack, compat)
                .find("discard"),
            std::string::npos);
+ EXPECT_NE(prepareSource(
+               "gbuffers_entities_translucent", ShaderStage::Fragment, pack, compat)
+               .find("discard"),
+           std::string::npos);
+ const std::string modernWater = R"(#version 430 core
+layout(location=0) out f16vec4 colortex1;
+void main() { colortex1 = f16vec4(1.0); }
+)";
+ const std::string preparedWater = prepareSource(
+     "gbuffers_water", ShaderStage::Fragment, pack, modernWater);
+ EXPECT_EQ(preparedWater.find("uniform float alphaTestRef"), std::string::npos);
+ EXPECT_EQ(preparedWater.find("discard"), std::string::npos);
+}
+TEST(PackSourcePreparation, ImmutableProjectionHelperResultsAreRuntimeValues) {
+ net::minecraft::test::installTestGlslSnippets();
+ PackDefinition pack;
+ const std::string source = R"(#version 430 core
+#define immut const
+uniform mat4 projectionMatrix;
+in vec3 vaPosition;
+vec4 proj_mmul(mat4 projection, vec3 view) { return projection * vec4(view, 1.0); }
+vec3 proj(mat4 projection, vec3 view) {
+ immut vec4 clip = proj_mmul(projection, view);
+ return clip.xyz / clip.w;
+}
+void main() {
+ vec3 view = vaPosition;
+ immut vec4 clip = proj_mmul(mat4(projectionMatrix), view);
+ gl_Position = clip;
+}
+)";
+ const std::string prepared = prepareSource("gbuffers_water", ShaderStage::Vertex, pack, source);
+ EXPECT_EQ(prepared.find("immut vec4 clip = proj_mmul"), std::string::npos);
+ EXPECT_NE(prepared.find("vec4 clip = proj_mmul"), std::string::npos);
 }
 TEST(PackSourcePreparation, ChunkFadeMatchesTheAdvertisedFeatureAbi) {
  net::minecraft::test::installTestGlslSnippets();
@@ -1293,8 +1539,13 @@ TEST(PipelineBlockIdsTest, CustomBlockPropertiesUseMinusOneForUnmappedBlocks) {
  PackDefinition pack;
  pack.hasBlockProperties = true;
  pack.blockIds.emplace("sand", 2);
+ pack.blockIds.emplace("water", 32000);
+ const std::uint64_t revision = pipeline.objectIdRevision();
  pipeline.applyBlockIds(pack);
+ EXPECT_GT(pipeline.objectIdRevision(), revision);
  EXPECT_EQ(resolveShaderBlockId(1), -1);
+ EXPECT_EQ(resolveShaderBlockId(8), 32000);
+ EXPECT_EQ(resolveShaderBlockId(9), 32000);
  EXPECT_EQ(resolveShaderBlockId(12), 2);
  pipeline.applyBlockIds(PackDefinition{});
 }
@@ -1805,7 +2056,7 @@ TEST(PackLoaderTest, LessComputeOrderMatchesIrisSuffixGrammar) {
 }
 TEST(PackLoaderTest, ShadowProgramMappingMatchesIrisPipelines) {
  // https://github.com/IrisShaders/Iris/blob/26.1/common/src/main/java/net/irisshaders/iris/pipeline/IrisPipelines.java
- EXPECT_EQ(irisShadowProgramForGbuffers("gbuffers_terrain_solid"), "shadow_cutout");
+ EXPECT_EQ(irisShadowProgramForGbuffers("gbuffers_terrain_solid"), "shadow_solid");
  EXPECT_EQ(irisShadowProgramForGbuffers("gbuffers_terrain_cutout"), "shadow_cutout");
  EXPECT_EQ(irisShadowProgramForGbuffers("gbuffers_water"), "shadow_water");
  EXPECT_EQ(irisShadowProgramForGbuffers("gbuffers_entities"), "shadow_entities");
@@ -1830,7 +2081,8 @@ TEST(PackLoaderTest, ShadowProgramMappingMatchesIrisPipelines) {
  programs.programs["shadow"] = {};
  programs.programs["shadow_entities"] = {};
  programs.programs["shadow_cutout"] = {};
- EXPECT_EQ(resolved(programs, irisShadowProgramForGbuffers("gbuffers_terrain_solid")), "shadow_cutout");
+ programs.programs["shadow_solid"] = {};
+ EXPECT_EQ(resolved(programs, irisShadowProgramForGbuffers("gbuffers_terrain_solid")), "shadow_solid");
  EXPECT_EQ(resolved(programs, irisShadowProgramForGbuffers("gbuffers_lightning")), "shadow_entities");
  EXPECT_EQ(resolved(programs, irisShadowProgramForGbuffers("gbuffers_skybasic")), "");
  PackDefinition rootOnly;
@@ -2041,5 +2293,27 @@ TEST(PackLoaderTest, DimensionInheritsShadowMapResolutionFromSharedInclude) {
  // Not 1024: the dimension resolves includes before scanning, so the shared const wins
  // and the "pack ships a shadow program but declared no resolution" default never fires.
  EXPECT_EQ(dimension->second->shadowMapResolution, 2048);
+ }
+TEST(PackLoaderTest, RethinkingVoxelsPrepareProgramTransformsCleanly) {
+ PackDefinition pack;
+ ShaderTransformContext ctx{false, false, false, false};
+ std::string prepareGlsl =
+     "layout(r32ui) uniform writeonly uimage2D colorimg9;\n"
+     "void main() {\n"
+     "    imageStore(colorimg9, ivec2(gl_FragCoord.xy), uvec4(1<<31));\n"
+     "    gl_FragData[0] = vec4(2);\n"
+     "}\n"
+     "#ifdef VERTEX_SHADER\n"
+     "void main() {\n"
+     "    gl_Position = ftransform();\n"
+     "}\n"
+     "#endif\n";
+ std::string prepareVsh =
+     "#version 430 compatibility\n"
+     "#define VERTEX_SHADER\n" + prepareGlsl;
+ std::string transformed = prepareSource("prepare", ShaderStage::Vertex, pack, prepareVsh, ctx);
+ EXPECT_NE(transformed.find("uniform mat4 projectionMatrix;"), std::string::npos);
+ EXPECT_NE(transformed.find("uniform mat4 modelViewMatrix;"), std::string::npos);
+ EXPECT_NE(transformed.find("in vec3 vaPosition;"), std::string::npos);
 }
 } // namespace net::minecraft::client::render

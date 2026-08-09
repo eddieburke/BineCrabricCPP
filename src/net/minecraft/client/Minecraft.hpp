@@ -18,7 +18,6 @@
 #include "net/minecraft/client/gui/hud/InGameHud.hpp"
 #include "net/minecraft/client/gui/hud/toast/AchievementToast.hpp"
 #include "net/minecraft/client/gui/screen/Screen.hpp"
-#include "net/minecraft/client/gl/ShaderCompileService.hpp"
 #include "net/minecraft/client/multiplayer/MultiplayerSession.hpp"
 #include "net/minecraft/client/option/GameOptions.hpp"
 #include "net/minecraft/client/particle/ParticleManager.hpp"
@@ -180,7 +179,6 @@ class Minecraft {
  std::atomic<bool> paused{false};
  option::GameOptions options{};
  texture::TextureManager textureManager{&options};
- gl::ShaderCompileService shaderCompiler_{};
  std::unique_ptr<font::TextRenderer> textRenderer;
  render::ProgressRenderer progressRenderer{this};
  std::unique_ptr<render::GameRenderer> gameRenderer;

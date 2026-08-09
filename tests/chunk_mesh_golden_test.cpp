@@ -15,7 +15,9 @@
 // without confirming the new output is correct in-game.
 #include <gtest/gtest.h>
 #include <cstdint>
+#include <cmath>
 #include <memory>
+#include <unordered_set>
 #include <vector>
 #include "net/minecraft/block/Block.hpp"
 #include "net/minecraft/client/option/RenderSettings.hpp"
@@ -56,6 +58,7 @@ void paintScene(Chunk& chunk) {
    chunk.blocks[static_cast<std::size_t>((x << 11) | (z << 7) | 5)] = static_cast<std::uint8_t>(water);
   }
  }
+ chunk.blocks[static_cast<std::size_t>((7 << 11) | (7 << 7) | 9)] = static_cast<std::uint8_t>(water);
  // A glass block and a floating stone cube, both fully surrounded by air so
  // every face is visible and every AO corner is exercised.
  chunk.blocks[static_cast<std::size_t>((9 << 11) | (9 << 7) | 8)] = static_cast<std::uint8_t>(glass);
@@ -83,6 +86,12 @@ struct MeshStats {
  std::size_t vertexCount = 0;
  std::uint64_t hash = 0;
  bool sawSkyLight = false;
+ std::size_t fluidVertexCount = 0;
+ std::size_t fluidColorCount = 0;
+ std::size_t fluidSurfaceColorCount = 0;
+ bool sawSampledFluidLight = false;
+ std::size_t fluidTopQuadCount = 0;
+ bool fluidTopUvCentered = true;
 };
 // FNV-1a over the raw vertex bytes. TessellatorVertex is a packed POD
 // (static_assert'd at 28 bytes), so this covers position, UV, colour and
@@ -97,7 +106,7 @@ std::uint64_t hashMesh(const TessellatorMesh& mesh) {
  }
  return hash;
 }
-MeshStats meshLayer(int layer, bool ambientOcclusion) {
+MeshStats meshLayer(int layer, bool ambientOcclusion, bool oldLighting = false) {
  auto chunk = std::make_unique<Chunk>(nullptr, 0, 0);
  paintScene(*chunk);
  std::vector<RegionSnapshot::SourceChunk> sources{RegionSnapshot::SourceChunk{0, 0, chunk.get()}};
@@ -118,6 +127,7 @@ MeshStats meshLayer(int layer, bool ambientOcclusion) {
  opts.fancyGrass = true;
  opts.renderWater = true;
  opts.fancyWater = true;
+ opts.oldLighting = oldLighting;
  Tessellator tessellator;
  tessellator.setCaptureOnly(true);
   client::render::block::BlockRenderManager manager(tessellator, &snapshot, opts);
@@ -145,7 +155,33 @@ MeshStats meshLayer(int layer, bool ambientOcclusion) {
  if(began) {
   const TessellatorMesh mesh = tessellator.takeMesh();
   stats.vertexCount = mesh.vertices.size();
-  stats.hash = hashMesh(mesh);
+   stats.hash = hashMesh(mesh);
+   std::unordered_set<std::uint32_t> fluidColors;
+   std::unordered_set<std::uint32_t> fluidSurfaceColors;
+   for(const auto& vertex : mesh.vertices) {
+    if(vertex.entity[1] != 1) continue;
+    ++stats.fluidVertexCount;
+    fluidColors.insert(vertex.color);
+    if(static_cast<std::int8_t>((vertex.normal >> 8) & 0xFF) >= 0) fluidSurfaceColors.insert(vertex.color);
+    if(vertex.light != 0x00F000F0) stats.sawSampledFluidLight = true;
+   }
+   stats.fluidColorCount = fluidColors.size();
+   stats.fluidSurfaceColorCount = fluidSurfaceColors.size();
+   for(std::size_t i = 0; i + 3 < mesh.vertices.size(); i += 4) {
+    const auto& first = mesh.vertices[i];
+    if(first.entity[1] != 1 || static_cast<std::int8_t>((first.normal >> 8) & 0xFF) <= 0) continue;
+    ++stats.fluidTopQuadCount;
+    double midU = 0.0;
+    double midV = 0.0;
+    for(std::size_t j = 0; j < 4; ++j) {
+     midU += mesh.vertices[i + j].u;
+     midV += mesh.vertices[i + j].v;
+    }
+    const double tileU = std::fmod(midU * 64.0, 16.0);
+    const double tileV = std::fmod(midV * 64.0, 16.0);
+    stats.fluidTopUvCentered = stats.fluidTopUvCentered && std::abs(tileU - 8.0) < 0.01 &&
+                               std::abs(tileV - 8.0) < 0.01;
+   }
  }
  stats.sawSkyLight = snapshot.sawSkyLight();
  return stats;
@@ -183,6 +219,18 @@ TEST(ChunkMeshGolden, TranslucentLayerEmitsWaterGeometry) {
  const MeshStats stats = meshLayer(/*layer=*/2, /*ambientOcclusion=*/true);
  EXPECT_GT(stats.vertexCount, 0u) << "the water pool should produce translucent-layer geometry";
  EXPECT_EQ(stats.vertexCount % 4, 0u);
+ EXPECT_GT(stats.fluidVertexCount, 0u);
+ EXPECT_TRUE(stats.sawSampledFluidLight);
+ EXPECT_GE(stats.fluidColorCount, 1u);
+ EXPECT_EQ(stats.fluidSurfaceColorCount, 1u);
+ EXPECT_GT(stats.fluidTopQuadCount, 0u);
+ EXPECT_TRUE(stats.fluidTopUvCentered);
+}
+TEST(ChunkMeshGolden, LegacyWaterLightingIsExplicitlyBakedOnlyWhenRequested) {
+ const MeshStats modern = meshLayer(2, true, false);
+ const MeshStats legacy = meshLayer(2, true, true);
+ EXPECT_EQ(modern.fluidSurfaceColorCount, 1u);
+ EXPECT_GT(legacy.fluidSurfaceColorCount, modern.fluidSurfaceColorCount);
 }
 TEST(ChunkMeshGolden, CutoutLayerEmitsNonOpaqueGeometry) {
  const MeshStats stats = meshLayer(/*layer=*/1, /*ambientOcclusion=*/true);
@@ -207,6 +255,10 @@ TEST(TessellatorVertexAbi, EncodesOnlyFluidGeometryAsFluid) {
  ASSERT_EQ(fluid.vertices.size(), 4u);
  for(const auto& vertex : solid.vertices) EXPECT_EQ(vertex.entity[1], -1);
  for(const auto& vertex : fluid.vertices) EXPECT_EQ(vertex.entity[1], 1);
+ EXPECT_EQ(static_cast<std::int8_t>(solid.vertices[0].midBlock & 0xFF), 32);
+ EXPECT_EQ(static_cast<std::int8_t>((solid.vertices[0].midBlock >> 8) & 0xFF), 32);
+ EXPECT_EQ(static_cast<std::int8_t>((solid.vertices[0].midBlock >> 16) & 0xFF), 32);
+ EXPECT_EQ(static_cast<std::int8_t>(solid.vertices[1].midBlock & 0xFF), -32);
 }
 // RegionSnapshot deliberately reports out-of-range cells as fully sky-lit air
 // rather than dark, so neighbour-light sampling does not bake a dark fringe at

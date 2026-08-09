@@ -1,10 +1,14 @@
 #pragma once
+#include <string>
 #include "net/minecraft/client/render/MapRenderer.hpp"
 #include "net/minecraft/client/render/block/BlockRenderManager.hpp"
 #include "net/minecraft/entity/LivingEntity.hpp"
 #include "net/minecraft/item/ItemStack.hpp"
 namespace net::minecraft::client {
 class Minecraft;
+}
+namespace net::minecraft::entity::player {
+class ClientPlayerEntity;
 }
 namespace net::minecraft::client::render::item {
 class HeldItemRenderer {
@@ -24,5 +28,8 @@ class HeldItemRenderer {
  net::minecraft::client::render::MapRenderer mapRenderer{};
  int slot = -1;
  ItemStack* stackSource_ = nullptr;
+
+ private:
+ int skinTexture(const net::minecraft::entity::player::ClientPlayerEntity& player);
 };
 } // namespace net::minecraft::client::render::item

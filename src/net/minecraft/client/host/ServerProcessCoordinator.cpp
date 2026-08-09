@@ -9,6 +9,7 @@
 #include <winsock2.h>
 #include <ws2tcpip.h>
 #endif
+#include <fstream>
 #include <sstream>
 #include "net/minecraft/client/Minecraft.hpp"
 #include "net/minecraft/client/core/WorldSession.hpp"
@@ -164,9 +165,6 @@ bool ServerProcessCoordinator::start(const ServerProcessSettings& settings, std:
  if(!canStartServer()) {
   return fail("A local saved world is required and no managed server may already be running.", errorOut);
  }
- if(settings.port == 0) {
-  return fail("External server port must be from 1 to 65535.", errorOut);
- }
  if(!captureWorld(*minecraft_->world, errorOut)) {
   return false;
  }
@@ -181,7 +179,7 @@ bool ServerProcessCoordinator::start(const ServerProcessSettings& settings, std:
   minecraft_->worldSession().restoreParkedLocalWorld(*minecraft_);
   return false;
  }
- connectionInfo_ = ServerAddressResolver::resolve(settings_.port);
+ connectionInfo_ = {};
  state_ = State::Starting;
  return true;
 }
@@ -205,6 +203,16 @@ bool ServerProcessCoordinator::pollStart(std::string& errorOut) {
  if(!std::filesystem::is_regular_file(readyFile_)) {
   return false;
  }
+ std::ifstream ready(readyFile_);
+ unsigned int boundPort = 0;
+ ready >> boundPort;
+ if(!ready || boundPort == 0 || boundPort > 65535) {
+  fail("Dedicated server published an invalid ready file.", errorOut);
+  requestStop(true);
+  return true;
+ }
+ settings_.port = static_cast<std::uint16_t>(boundPort);
+ connectionInfo_ = ServerAddressResolver::resolve(settings_.port);
  state_ = State::AwaitingLoopback;
  return true;
 }

@@ -1,9 +1,11 @@
 #include <gtest/gtest.h>
 #include <filesystem>
 #include <string>
+#include <thread>
 #include <vector>
 #include "net/minecraft/client/Minecraft.hpp"
 #include "net/minecraft/client/debug/RenderProfiler.hpp"
+#include "net/minecraft/client/util/FramePipeline.hpp"
 #include "net/minecraft/world/World.hpp"
 #include "net/minecraft/world/storage/AlphaWorldStorage.hpp"
 namespace {
@@ -62,7 +64,10 @@ TEST(RenderProfilerTest, GrabProfilerMetricsInSingleplayerWorld) {
   }
   {
    const client::debug::RenderProfiler::Scope handScope(client::debug::RenderStage::Hand);
-  }
+   }
+   {
+    const client::debug::RenderProfiler::Scope presentScope(client::debug::RenderStage::Present);
+   }
   profiler.endFrame();
  }
  const std::vector<std::string> lines = profiler.lines();
@@ -77,6 +82,7 @@ TEST(RenderProfilerTest, GrabProfilerMetricsInSingleplayerWorld) {
  bool foundChunks = false;
  bool foundHand = false;
  bool foundClouds = false;
+ bool foundPresent = false;
  bool foundMeasured = false;
  bool foundUnmeasured = false;
   for(const std::string& line : lines) {
@@ -110,6 +116,9 @@ TEST(RenderProfilerTest, GrabProfilerMetricsInSingleplayerWorld) {
    if(line.rfind("Clouds", 0) == 0) {
     foundClouds = true;
    }
+   if(line.rfind("Present", 0) == 0) {
+    foundPresent = true;
+   }
    if(line.rfind("Total measured", 0) == 0) {
     foundMeasured = true;
    }
@@ -127,6 +136,7 @@ TEST(RenderProfilerTest, GrabProfilerMetricsInSingleplayerWorld) {
  EXPECT_TRUE(foundChunks);
  EXPECT_TRUE(foundHand);
  EXPECT_TRUE(foundClouds);
+ EXPECT_TRUE(foundPresent);
  EXPECT_TRUE(foundMeasured);
  EXPECT_TRUE(foundUnmeasured);
  client.setWorld(nullptr);
@@ -151,6 +161,63 @@ TEST(RenderProfilerTest, SingleplayerStartGameAndGrabProfilerMetrics) {
  const std::vector<std::string> lines = profiler.lines();
  ASSERT_FALSE(lines.empty());
  client.setWorld(nullptr);
+ profiler.setEnabled(false);
+}
+TEST(RenderProfilerTest, NestedScopesAccountSelfTimeOnce) {
+ client::debug::RenderProfiler& profiler = client::debug::RenderProfiler::instance();
+ profiler.setEnabled(true);
+ for(int frame = 0; frame < 20; ++frame) {
+  profiler.beginFrame();
+  {
+   const client::debug::RenderProfiler::Scope setup(client::debug::RenderStage::FrameSetup);
+   std::this_thread::sleep_for(std::chrono::milliseconds(1));
+   {
+    const client::debug::RenderProfiler::Scope hand(client::debug::RenderStage::Hand);
+    std::this_thread::sleep_for(std::chrono::milliseconds(1));
+   }
+  }
+  profiler.endFrame();
+ }
+ EXPECT_GT(profiler.cpuAverageNs(client::debug::RenderStage::FrameSetup), 0.0);
+ EXPECT_GT(profiler.cpuAverageNs(client::debug::RenderStage::Hand), 0.0);
+ EXPECT_LE(profiler.cpuAverageNs(client::debug::RenderStage::FrameSetup) +
+               profiler.cpuAverageNs(client::debug::RenderStage::Hand),
+           profiler.frameAverageNs() * 1.1);
+ profiler.setEnabled(false);
+}
+TEST(RenderProfilerTest, FramePipelineAccountsEveryOuterPhase) {
+ client::debug::RenderProfiler& profiler = client::debug::RenderProfiler::instance();
+ client::util::FramePipeline pipeline;
+ profiler.setEnabled(true);
+ for(int frame = 0; frame < 5; ++frame) {
+  profiler.beginFrame();
+  pipeline.run([](client::util::FramePipeline::Phase) {
+   std::this_thread::sleep_for(std::chrono::microseconds(100));
+  });
+  profiler.endFrame();
+ }
+ EXPECT_GT(profiler.cpuAverageNs(client::debug::RenderStage::FrameDrain), 0.0);
+ EXPECT_GT(profiler.cpuAverageNs(client::debug::RenderStage::Input), 0.0);
+ EXPECT_GT(profiler.cpuAverageNs(client::debug::RenderStage::Ticks), 0.0);
+ EXPECT_GT(profiler.cpuAverageNs(client::debug::RenderStage::RenderOverhead), 0.0);
+ EXPECT_GT(profiler.cpuAverageNs(client::debug::RenderStage::Present), 0.0);
+ EXPECT_GT(profiler.cpuAverageNs(client::debug::RenderStage::Pace), 0.0);
+ EXPECT_GT(profiler.cpuAverageNs(client::debug::RenderStage::Diagnostics), 0.0);
+ profiler.setEnabled(false);
+}
+TEST(RenderProfilerTest, FrameMetricsResetAndAccumulateWithoutAllocation) {
+ client::debug::RenderProfiler& profiler = client::debug::RenderProfiler::instance();
+ profiler.setEnabled(true);
+ profiler.beginFrame();
+ profiler.record(client::debug::RenderMetric::EntityTraversals, 7);
+ profiler.record(client::debug::RenderMetric::DrawCalls, 3);
+ profiler.endFrame();
+ EXPECT_EQ(profiler.frameMetric(client::debug::RenderMetric::EntityTraversals), 7U);
+ EXPECT_EQ(profiler.frameMetric(client::debug::RenderMetric::DrawCalls), 3U);
+ profiler.beginFrame();
+ EXPECT_EQ(profiler.frameMetric(client::debug::RenderMetric::EntityTraversals), 0U);
+ EXPECT_EQ(profiler.frameMetric(client::debug::RenderMetric::DrawCalls), 0U);
+ profiler.endFrame();
  profiler.setEnabled(false);
 }
 } // namespace net::minecraft::test

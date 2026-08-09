@@ -101,7 +101,7 @@ class WorldEventS2CPacket : public Packet {
   networkHandler.onWorldEvent(*this);
  }
  [[nodiscard]] std::size_t size() const override {
-  return 20;
+  return 17;
  }
 };
 class GlobalEntitySpawnS2CPacket : public Packet {

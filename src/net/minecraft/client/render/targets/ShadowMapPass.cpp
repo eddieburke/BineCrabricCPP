@@ -10,7 +10,7 @@
 #include "net/minecraft/client/gl/GlConstants.hpp"
 #include "net/minecraft/client/render/GameRenderer.hpp"
 #include "net/minecraft/client/ClientLog.hpp"
-#include "net/minecraft/client/render/pipeline/Manager.hpp"
+#include "net/minecraft/client/render/pipeline/Pipeline.hpp"
 #include "net/minecraft/client/render/world/WorldRenderer.hpp"
 #include "net/minecraft/client/render/shaderpack/Pack.hpp"
 #include "net/minecraft/client/render/GlState.hpp"
@@ -56,6 +56,8 @@ void ShadowTargets::destroy() {
  fbo.destroy();
  colorCount = 0;
  resolution = 0;
+ compositeAttach = {};
+ compositeDrawBufferCount = -1;
 }
 bool ShadowTargets::ensure(int resolutionIn, int colorBuffers) {
  colorBuffers = std::clamp(colorBuffers, 0, 8);
@@ -129,16 +131,29 @@ void ShadowTargets::attachCompositeColors(const std::array<bool, 8>& flipped, in
   return;
  }
  colorBuffers = std::min(colorBuffers, colorCount);
+ std::array<unsigned int, 8> want{};
+ bool changed = compositeDrawBufferCount != colorBuffers;
+ for(int i = 0; i < colorBuffers; ++i) {
+  want[static_cast<std::size_t>(i)] =
+      shadowcolor[static_cast<std::size_t>(i)][flipped[static_cast<std::size_t>(i)] ? 0 : 1];
+  if(want[static_cast<std::size_t>(i)] != compositeAttach[static_cast<std::size_t>(i)]) {
+   changed = true;
+  }
+ }
+ if(!changed) {
+  return;
+ }
  std::vector<int> drawBuffers;
  drawBuffers.reserve(static_cast<std::size_t>(colorBuffers));
  for(int i = 0; i < colorBuffers; ++i) {
-  const unsigned int tex = shadowcolor[static_cast<std::size_t>(i)][flipped[static_cast<std::size_t>(i)] ? 0 : 1];
-  fbo.addColorAttachment(i, tex);
+  fbo.addColorAttachment(i, want[static_cast<std::size_t>(i)]);
   drawBuffers.push_back(i);
  }
  if(!fbo.drawBuffers(drawBuffers)) {
   return;
  }
+ compositeAttach = want;
+ compositeDrawBufferCount = colorBuffers;
 }
 void ShadowTargets::prepareForShadowRender() {
  if(!valid()) {
@@ -147,6 +162,8 @@ void ShadowTargets::prepareForShadowRender() {
  for(int i = 0; i < colorCount; ++i) {
   fbo.addColorAttachment(i, shadowcolor[static_cast<std::size_t>(i)][0]);
  }
+ // attachCompositeColors' cache no longer reflects the fbo's real attachments.
+ compositeDrawBufferCount = -1;
 }
 void ShadowTargets::snapshotOpaqueDepth() {
  if(!valid()) {

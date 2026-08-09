@@ -27,7 +27,9 @@
 #include "net/minecraft/entity/passive/SheepEntity.hpp"
 #include "net/minecraft/entity/passive/SquidEntity.hpp"
 #include "net/minecraft/entity/passive/WolfEntity.hpp"
+#include "net/minecraft/entity/player/ClientPlayerEntity.hpp"
 #include "net/minecraft/entity/player/PlayerEntity.hpp"
+#include "net/minecraft/entity/player/ServerPlayerEntity.hpp"
 #include "net/minecraft/entity/projectile/ArrowEntity.hpp"
 #include "net/minecraft/entity/projectile/FireballEntity.hpp"
 #include "net/minecraft/entity/projectile/FishingBobberEntity.hpp"
@@ -64,7 +66,9 @@ using entity::passive::PigEntity;
 using entity::passive::SheepEntity;
 using entity::passive::SquidEntity;
 using entity::passive::WolfEntity;
+using entity::player::ClientPlayerEntity;
 using entity::player::PlayerEntity;
+using entity::player::ServerPlayerEntity;
 using entity::projectile::ArrowEntity;
 using entity::projectile::FireballEntity;
 using entity::projectile::FishingBobberEntity;
@@ -79,8 +83,10 @@ void linkParent(std::unordered_map<std::type_index, std::type_index>& map) {
 const std::unordered_map<std::type_index, std::type_index>& parentMap() {
  static const std::unordered_map<std::type_index, std::type_index> map = [] {
   std::unordered_map<std::type_index, std::type_index> parents;
-  linkParent<PlayerEntity, LivingEntity>(parents);
-  linkParent<OtherPlayerEntity, PlayerEntity>(parents);
+   linkParent<PlayerEntity, LivingEntity>(parents);
+   linkParent<ClientPlayerEntity, PlayerEntity>(parents);
+   linkParent<ServerPlayerEntity, PlayerEntity>(parents);
+   linkParent<OtherPlayerEntity, PlayerEntity>(parents);
   // The MP local player is a MultiplayerClientPlayerEntity (subclass of
   // ClientPlayerEntity). Without this link the renderer dispatcher finds no renderer
   // for its exact type, so the player model never draws in MP (the inventory preview

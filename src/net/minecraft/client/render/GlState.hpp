@@ -1,4 +1,5 @@
 #pragma once
+#include <array>
 #include <string>
 #include <string_view>
 #include <unordered_map>
@@ -8,6 +9,10 @@ namespace net::minecraft::client::gl {
 class ShaderProgram;
 }
 namespace net::minecraft::client::render {
+inline constexpr std::array<std::string_view, 13> kIrisFeatureNames = {
+    "SEPARATE_HARDWARE_SAMPLERS", "HIGHER_SHADOWCOLOR", "CUSTOM_IMAGES", "PER_BUFFER_BLENDING",
+    "COMPUTE_SHADERS", "TESSELLATION_SHADERS", "ENTITY_TRANSLUCENT", "REVERSED_CULLING",
+    "BLOCK_EMISSION_ATTRIBUTE", "CAN_DISABLE_WEATHER", "SSBO", "FADE_VARIABLE", "TEXTURE_FILTERING"};
 enum class ColorFormat;
 class ColorTargets;
 constexpr unsigned int kTexture3D = 0x806F;
@@ -21,6 +26,12 @@ void bindSamplers(gl::ShaderProgram& program,
                   const std::unordered_map<std::string, int>& volumeTextures,
                   int maxUnits,
                   const PackDefinition& definition);
+int bindAvailableSamplers(gl::ShaderProgram& program,
+                          const std::unordered_map<std::string, int>& textures,
+                          const std::unordered_map<std::string, int>& volumeTextures,
+                          int firstUnit,
+                          int maxUnits,
+                          const PackDefinition& definition);
 void releaseSamplers(int maxUnits);
 // https://shaders.properties/current/reference/buffers/shadowtex/
 void refreshTextureAliases(std::unordered_map<std::string, int>& textures,
@@ -36,8 +47,8 @@ void putShadowTextures(std::unordered_map<std::string, int>& textures,
                                            const std::unordered_map<std::string, int>& colorTextures,
                                            const PackDefinition& definition,
                                            const ColorTargets* colorTargets = nullptr);
-bool featureSupported(const std::string& feature);
-[[nodiscard]] bool featureEnabled(const PackDefinition& pack, const std::string& feature);
+bool featureSupported(std::string_view feature);
+[[nodiscard]] bool featureEnabled(const PackDefinition& pack, std::string_view feature);
 int maxTextureUnits();
 ColorFormat parseFormat(const std::string& format);
 [[nodiscard]] const char* colorFormatName(ColorFormat format);

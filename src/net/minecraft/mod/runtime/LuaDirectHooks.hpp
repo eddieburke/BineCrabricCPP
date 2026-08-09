@@ -123,14 +123,14 @@ struct PreEntityRenderEvent {
  const entity::Entity* entity = nullptr;
  int entityId = 0;
  int entityRawId = 0;
- std::string entityType = "unknown";
+ std::string_view entityType = "unknown";
  float tickDelta = 0.0f;
  bool canceled = false;
 };
 struct EntityRenderEvent {
  const entity::LivingEntity* entity = nullptr;
  int entityId = 0;
- std::string entityType = "unknown";
+ std::string_view entityType = "unknown";
  bool isPlayer = false;
  float tickDelta = 0.0f;
  EntityRenderPose pose;

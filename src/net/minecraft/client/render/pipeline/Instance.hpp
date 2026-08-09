@@ -13,10 +13,19 @@
 #include "net/minecraft/client/render/shaderpack/Pack.hpp"
 #include "net/minecraft/client/render/shaderpack/Loader.hpp"
 #include "net/minecraft/client/render/pipeline/Resources.hpp"
+#include "net/minecraft/client/render/shaders/WorldProgramId.hpp"
 namespace net::minecraft::client::resource::pack {
 class ZippedTexturePack;
 }
 namespace net::minecraft::client::render {
+enum class CompositeStage : std::uint8_t {
+ Begin,
+ ShadowComposite,
+ Prepare,
+ Deferred,
+ Composite,
+ Count
+};
 struct PackSummary {
  std::string key;
  std::string name;
@@ -24,21 +33,36 @@ struct PackSummary {
  bool valid = false;
  bool selected = false;
 };
-enum class PackProgramState { Cold,
-                              Submitted,
-                              Ready,
-                              Failed };
-class PackInstance {
+struct PackInstance {
  public:
+ struct RuntimePass {
+  std::size_t passIndex = 0;
+  gl::ShaderProgram* program = nullptr;
+ };
+ struct RuntimeOperation {
+  RuntimePass pass;
+  bool compute = false;
+  bool groupBegin = false;
+  bool groupEnd = false;
+  std::string parent;
+  std::vector<std::string> writeBuffers;
+ };
+ struct WorldProgramRuntime {
+  gl::ShaderProgram* program = nullptr;
+  std::string resolvedKey;
+ };
  ~PackInstance();
  void clearGpuResources();
  bool rebuildRuntime(std::string& error);
+ bool buildExecutionPlan(std::string& error);
  void resetPrograms();
+ [[nodiscard]] const std::vector<RuntimeOperation>& stagePlan(CompositeStage stage) const noexcept;
   PackSummary summary;
    std::filesystem::path path;
    bool directory = false;
    bool embedded = false;
   std::unique_ptr<net::minecraft::client::resource::pack::ZippedTexturePack> zip;
+  std::vector<std::string> resources;
   PackDefinition definition;
   PackDefinition rootDefinition;
   std::string dimensionKey;
@@ -46,11 +70,11 @@ class PackInstance {
  std::unordered_map<std::string, std::string> settings;
  CustomUniformRuntime customUniforms;
  std::unordered_map<std::string, std::string> sourceCache;
- std::unordered_map<std::string, std::string> resolvedSourceCache;
- std::unordered_map<std::string, gl::ShaderProgram*> compiledPrograms; std::unordered_map<std::string, std::string> programCacheKeys;
- std::vector<std::string> prewarmQueue;
- std::size_t prewarmCursor = 0; std::unordered_map<std::string, std::vector<int>> programDrawBuffers;
- PackProgramState programState = PackProgramState::Cold;
+ std::unordered_map<std::string, std::unordered_map<std::string, std::string>> includedSourceCache;
+ std::unordered_map<std::string, std::string> preparedSourceCache;
+ struct CompiledEntry { gl::ShaderProgram* program = nullptr; bool failed = false; };
+ std::unordered_map<std::string, CompiledEntry> compiledPrograms; 
+ std::unordered_map<std::string, std::vector<int>> programDrawBuffers;
  std::vector<std::size_t> postPasses;
  std::vector<std::size_t> deferredPasses;
  std::vector<std::size_t> computePasses;
@@ -58,7 +82,16 @@ class PackInstance {
  std::vector<std::size_t> shadowCompositePasses;
  std::vector<std::size_t> preparePasses;
  std::vector<std::size_t> setupPasses;
- std::unique_ptr<gl::ProgramCache> programs; gl::ShaderCompileService* shaderCompiler = nullptr;
+ std::array<std::vector<RuntimeOperation>, static_cast<std::size_t>(CompositeStage::Count)> stagePlans;
+ std::vector<RuntimePass> setupPlan;
+ std::array<std::array<WorldProgramRuntime, 2>, static_cast<std::size_t>(WorldProgramId::Count)> worldPrograms;
+ bool executionPlanReady = false;
+ // A pass whose program failed to compile disables only the stage it belongs to.
+ // One bad .csh must not take the rest of the pack's stages down with it.
+ std::array<bool, static_cast<std::size_t>(CompositeStage::Count)> stagePlanValid{};
+ std::unique_ptr<gl::ProgramCache> programs;
+ std::shared_ptr<gl::ShaderBinaryCache> shaderBinaryCache;
+ std::filesystem::path shaderCacheDirectory;
  render::ColorTargets colorTargets;
  std::unordered_map<std::string, int> publishedTextures;
  struct ImageTarget {
@@ -69,6 +102,8 @@ class PackInstance {
  };
  std::unordered_map<std::string, ImageTarget> images;
  std::unordered_map<std::string, unsigned int> customTextures;
+ std::unordered_map<std::string, int> worldTextures;
+ std::unordered_map<std::string, int> worldVolumeTextures;
  std::set<unsigned int> ownedCustomTextures;
  std::array<gl::GlBuffer, kMaxShaderStorageBuffers> bufferObjects;
  std::size_t bufferBytes[kMaxShaderStorageBuffers]{};

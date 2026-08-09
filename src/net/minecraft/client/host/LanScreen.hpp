@@ -8,7 +8,7 @@
 namespace net::minecraft::client::host {
 class LanScreen : public gui::screen::Screen {
  public:
- LanScreen(std::string errorMessage = {}, std::string portText = "25565");
+ LanScreen(std::string errorMessage = {}, std::string portText = "0");
  void init() override;
  void tick() override;
  void removed() override;

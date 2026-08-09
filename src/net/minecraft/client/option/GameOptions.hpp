@@ -78,6 +78,7 @@ class GameOptions {
  bool hideHud = false;
  bool thirdPerson = false;
  bool debugHud = false;
+ bool entityIdLabels = false;
  bool debugCamera = false;
  bool cinematicMode = false;
  bool discreteScroll = false;

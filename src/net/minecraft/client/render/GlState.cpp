@@ -55,12 +55,6 @@ bool isShadowDepthSampler(std::string_view name) {
  return name == "shadowtex0" || name == "shadowtex1" || name == "shadowtex0HW" || name == "shadowtex1HW" ||
         name == "shadow" || name == "waterShadow" || name == "watershadow";
 }
-bool isShadowColorSampler(std::string_view name) {
- return name == "shadowcolor" || name.rfind("shadowcolor", 0) == 0;
-}
-bool isShadowRelatedSampler(std::string_view name) {
- return isShadowDepthSampler(name) || isShadowColorSampler(name);
-}
 void bindOneSamplerUnit(gl::ShaderProgram& program, const std::string& name, unsigned int tex, bool volume,
                         int unit, const PackDefinition& definition) {
  core::activeTexture(gl::tex::Texture0 + unit);
@@ -130,6 +124,26 @@ void bindSamplers(gl::ShaderProgram& program,
   bindOneSamplerUnit(program, name, tex, volume, unit, definition);
   ++unit;
  }
+}
+int bindAvailableSamplers(gl::ShaderProgram& program,
+                          const std::unordered_map<std::string, int>& textures,
+                          const std::unordered_map<std::string, int>& volumeTextures,
+                          int firstUnit,
+                          int maxUnits,
+                          const PackDefinition& definition) {
+ int unit = firstUnit;
+ for(const std::string& name : program.declaredSamplers()) {
+  if(unit >= maxUnits) break;
+  if(program.location(name) < 0) continue;
+  const auto kind = program.samplerKind(name);
+  const bool volume = kind == gl::ShaderProgram::SamplerKind::Volume;
+  const auto& source = volume ? volumeTextures : textures;
+  const auto found = source.find(name);
+  if(found == source.end() || found->second <= 0) continue;
+  bindOneSamplerUnit(program, name, static_cast<unsigned int>(found->second), volume, unit, definition);
+  ++unit;
+ }
+ return unit;
 }
 void putShadowTextures(std::unordered_map<std::string, int>& textures,
                        int shadowtex0,
@@ -472,12 +486,12 @@ void applyAlphaTest(const PackDefinition& pack, const std::string& program) {
  for(const AlphaTestDirective& directive : pack.alphaTests) {
   if(directive.program != program) continue;
   if(!directive.enabled) {
-   core::setAlphaTestRef(0.0f);
+   core::setAlphaTestRef(-1.0f);
    return;
   }
   const std::string func = lower(directive.func);
   if(func == "always" || func == "gl_always") {
-   core::setAlphaTestRef(0.0f);
+   core::setAlphaTestRef(-1.0f);
   } else {
    core::setAlphaTestRef(directive.ref);
   }
@@ -511,6 +525,23 @@ bool normalizeSettingValue(const PackSetting& setting, const std::string& input,
  if(end == input.c_str() || *end != '\0' || !std::isfinite(parsed)) {
   return false;
  }
+ // The `//[a b c]` comment is a discrete value list, not a range. A pack's own
+ // default and its profile values are routinely outside the list's extremes —
+ // Complementary declares `#define COLORED_LIGHTING 0 //[128 192 ...]` and
+ // profile.POTATO sets it back to 0 — so clamping to min/max rewrote 0 to 128,
+ // silently switching colored lighting ON in the lowest-quality profile and
+ // enabling a shadowcomp pass the pack then cannot compile. Take any value the
+ // pack itself named verbatim; only sliders are true ranges.
+ for(const std::string& candidate : setting.valueOrder) {
+  if(candidate == input) {
+   output = candidate;
+   return true;
+  }
+ }
+ if(!setting.asSlider && input == setting.defaultValue) {
+  output = input;
+  return true;
+ }
  double value = std::clamp(parsed, setting.minimum, setting.maximum);
  value = setting.minimum + std::round((value - setting.minimum) / setting.step) * setting.step;
  value = std::clamp(value, setting.minimum, setting.maximum);
@@ -528,7 +559,7 @@ bool hasGlContext() {
  return gl::GLCore::activeTexture != nullptr;
 #endif
 }
-bool featureSupported(const std::string& feature) {
+bool featureSupported(std::string_view feature) {
  // https://shaders.properties/current/reference/shadersproperties/flags/
  if(feature == "COMPUTE_SHADERS") return gl::GLCore::computeSupported;
  if(feature == "SSBO") return gl::GLCore::ssboSupported;
@@ -543,7 +574,7 @@ bool featureSupported(const std::string& feature) {
   return true;
  return false;
 }
-bool featureEnabled(const PackDefinition& pack, const std::string& feature) {
+bool featureEnabled(const PackDefinition& pack, std::string_view feature) {
  return (pack.requiredFeatures.contains(feature) || pack.optionalFeatures.contains(feature)) &&
         featureSupported(feature);
 }

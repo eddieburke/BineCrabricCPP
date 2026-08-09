@@ -8,7 +8,6 @@
 #include "net/minecraft/client/gui/screen/ServerModDownloadScreen.hpp"
 #include "net/minecraft/client/multiplayer/ClientNetworkHandler.hpp"
 #include "net/minecraft/client/multiplayer/ClientNetworkBridge.hpp"
-#include "net/minecraft/client/multiplayer/MultiplayerSession.hpp"
 #include "net/minecraft/client/session/OfflineIdentity.hpp"
 #include "net/minecraft/mod/runtime/ModHost.hpp"
 #include "net/minecraft/mod/runtime/ModPackageIo.hpp"
@@ -31,7 +30,8 @@ LuaModSyncPacket makeLuaModListPacket(const std::string& csv) {
 }
 } // namespace
 
-ClientLoginNetworkHandler::ClientLoginNetworkHandler(client::Minecraft* minecraft) : minecraft(minecraft) {
+ClientLoginNetworkHandler::ClientLoginNetworkHandler(client::Minecraft* minecraft, ClientNetworkBridge* bridge)
+    : minecraft(minecraft), bridge_(bridge) {
 }
 
 ClientLoginNetworkHandler::~ClientLoginNetworkHandler() {
@@ -162,15 +162,14 @@ void ClientLoginNetworkHandler::onHandshake(const HandshakePacket& packet) {
 }
 
 void ClientLoginNetworkHandler::onHello(const LoginHelloPacket& packet) {
-  if (disconnected || minecraft == nullptr) {
+  if(disconnected || minecraft == nullptr || bridge_ == nullptr) {
     return;
   }
-  // Transition to play phase
   const bool remoteLuaModsEnabled = packet.protocolVersion == kProtocolVersionNativeCppMods;
 
   auto playHandler = std::make_unique<ClientNetworkHandler>(minecraft);
   playHandler->onHello(packet.worldSeed, packet.dimensionId, packet.protocolVersion, remoteLuaModsEnabled);
-  minecraft->multiplayerSession().bridge()->setHandler(std::move(playHandler));
+  bridge_->setHandler(std::move(playHandler));
 }
 
 void ClientLoginNetworkHandler::onDisconnect(const DisconnectPacket& packet) {

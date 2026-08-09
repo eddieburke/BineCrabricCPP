@@ -216,8 +216,10 @@ struct PackDefinition {
  bool usesWaterShadow = false;
  std::string particleOrdering;
  // --- iris.features.* ---
- std::set<std::string> requiredFeatures;
- std::set<std::string> optionalFeatures;
+ // std::less<> so featureEnabled() can look up a string_view without building a
+ // std::string, and without degrading to a linear scan to do it.
+ std::set<std::string, std::less<>> requiredFeatures;
+ std::set<std::string, std::less<>> optionalFeatures;
  // --- dimension.* / entity.* / item.* / block.* ---
  std::unordered_map<std::string, std::string> dimensionFolders;
  std::unordered_map<std::string, int> entityIds;

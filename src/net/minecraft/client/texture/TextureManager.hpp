@@ -38,6 +38,7 @@ class TextureManager {
  void setTexturePacks(resource::pack::TexturePacks* texturePacks);
  void reload();
  [[nodiscard]] int getTextureId(const std::string& path);
+ [[nodiscard]] int getTextureId(const std::string& path, const RasterImage& image);
  [[nodiscard]] bool getTextureDimensions(const std::string& path, int& outWidth, int& outHeight);
  [[nodiscard]] bool getTextureDimensionsForId(int textureId, int& outWidth, int& outHeight) const;
  [[nodiscard]] std::string getCompanionTexturePath(int textureId, std::string_view suffix) const;

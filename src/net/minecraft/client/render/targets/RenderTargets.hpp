@@ -1,5 +1,6 @@
 #pragma once
 #include <array>
+#include <map>
 #include <string>
 #include <unordered_map>
 #include <vector>
@@ -222,6 +223,13 @@ class ColorTargets {
   [[nodiscard]] bool allocated() const noexcept { return tex[0] && tex[1]; }
   void flipBuffers() noexcept { main = 1 - main; }
  };
+ // see docs/agent-notes/shader-system-rebuild.md:106 Stage F: one FBO per output-set,
+ // status-checked once; per-frame bindWrite is a handle lookup plus attachment patch.
+ struct WriteFboCacheEntry {
+  gl::GlFramebuffer fbo;
+  std::vector<unsigned int> handles;
+  int generation = -1;
+ };
  bool allocateSlot(Slot& slot, int width, int height, ColorFormat format);
  void freeSlot(Slot& slot);
  void rebuildGbufferFbo();
@@ -249,5 +257,7 @@ class ColorTargets {
  int gbufferColorCount_ = kMaxColorAttachments;
  std::vector<Slot> slots_;
  std::unordered_map<std::string, Slot> named_;
+ std::map<std::vector<std::string>, WriteFboCacheEntry> writeFboCache_;
+ int writeFboGeneration_ = 0;
 };
 } // namespace net::minecraft::client::render

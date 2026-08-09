@@ -60,8 +60,7 @@ bool ChunkCompilePipeline::startMeshJob(chunk::ChunkBuilder* chunk,
  if(job == nullptr) {
   return false;
  }
- // Snapshot capture runs on the mesh worker while pins are held.
- chunk->meshJobInFlight = true;
+  chunk->meshJobInFlight = true;
  dirtyChunks_.erase(chunk);
  const auto enqueue = [&](std::shared_ptr<chunk::ChunkMeshJob> job, int jobPriority) {
   meshHandoff_.enqueue(

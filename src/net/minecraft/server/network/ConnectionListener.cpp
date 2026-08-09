@@ -18,7 +18,8 @@ namespace {
  return address.substr(0, colon);
 }
 [[nodiscard]] bool isLoopbackHost(const std::string& host) {
- return host == "127.0.0.1" || host == "::1" || host == "0:0:0:0:0:0:0:1";
+ return host == "127.0.0.1" || host == "::1" || host == "0:0:0:0:0:0:0:1" ||
+        host == "::ffff:127.0.0.1";
 }
 } // namespace
 ConnectionListener::ConnectionListener(MinecraftServer* server,

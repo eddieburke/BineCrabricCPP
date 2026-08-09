@@ -36,16 +36,16 @@ void BlockFaceRenderer::renderBottomFace(
  const net::minecraft::client::render::ResolvedTexture textureUv =
      net::minecraft::client::render::resolveBlockTextureUv(texture);
  double uMin = textureUv.uFromStart(ctx_.renderBounds.minX);
- double uMax = textureUv.uFromStart(ctx_.renderBounds.maxX) - net::minecraft::client::render::kTextureEdgeInset * textureUv.uScale;
+ double uMax = textureUv.uFromStart(ctx_.renderBounds.maxX);
  double vMin = textureUv.vFromStart(ctx_.renderBounds.minZ);
- double vMax = textureUv.vFromStart(ctx_.renderBounds.maxZ) - net::minecraft::client::render::kTextureEdgeInset * textureUv.vScale;
+ double vMax = textureUv.vFromStart(ctx_.renderBounds.maxZ);
  if(ctx_.renderBounds.minX < 0.0 || ctx_.renderBounds.maxX > 1.0) {
-  uMin = textureUv.uMin;
-  uMax = textureUv.uMax - net::minecraft::client::render::kTextureEdgeInset * textureUv.uScale;
+  uMin = textureUv.safeUMin();
+  uMax = textureUv.safeUMax();
  }
  if(ctx_.renderBounds.minZ < 0.0 || ctx_.renderBounds.maxZ > 1.0) {
-  vMin = textureUv.vMin;
-  vMax = textureUv.vMax - net::minecraft::client::render::kTextureEdgeInset * textureUv.vScale;
+  vMin = textureUv.safeVMin();
+  vMax = textureUv.safeVMax();
  }
  double uCornerA = uMax;
  double uCornerB = uMin;
@@ -111,16 +111,16 @@ void BlockFaceRenderer::renderTopFace(
  const net::minecraft::client::render::ResolvedTexture textureUv =
      net::minecraft::client::render::resolveBlockTextureUv(texture);
  double uMin = textureUv.uFromStart(ctx_.renderBounds.minX);
- double uMax = textureUv.uFromStart(ctx_.renderBounds.maxX) - net::minecraft::client::render::kTextureEdgeInset * textureUv.uScale;
+ double uMax = textureUv.uFromStart(ctx_.renderBounds.maxX);
  double vMin = textureUv.vFromStart(ctx_.renderBounds.minZ);
- double vMax = textureUv.vFromStart(ctx_.renderBounds.maxZ) - net::minecraft::client::render::kTextureEdgeInset * textureUv.vScale;
+ double vMax = textureUv.vFromStart(ctx_.renderBounds.maxZ);
  if(ctx_.renderBounds.minX < 0.0 || ctx_.renderBounds.maxX > 1.0) {
-  uMin = textureUv.uMin;
-  uMax = textureUv.uMax - net::minecraft::client::render::kTextureEdgeInset * textureUv.uScale;
+  uMin = textureUv.safeUMin();
+  uMax = textureUv.safeUMax();
  }
  if(ctx_.renderBounds.minZ < 0.0 || ctx_.renderBounds.maxZ > 1.0) {
-  vMin = textureUv.vMin;
-  vMax = textureUv.vMax - net::minecraft::client::render::kTextureEdgeInset * textureUv.vScale;
+  vMin = textureUv.safeVMin();
+  vMax = textureUv.safeVMax();
  }
  double uCornerA = uMax;
  double uCornerB = uMin;

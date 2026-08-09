@@ -64,13 +64,16 @@ class Channel {
   std::lock_guard lock(mutex_);
   return capacity_;
  }
- [[nodiscard]] std::stop_token get_stop_token() const noexcept {
+ [[nodiscard]] std::stop_token get_stop_token() const {
+  std::lock_guard lock(mutex_);
   return stopSource_.get_token();
  }
- [[nodiscard]] bool stop_requested() const noexcept {
+ [[nodiscard]] bool stop_requested() const {
+  std::lock_guard lock(mutex_);
   return stopSource_.stop_requested();
  }
  void request_stop() {
+  std::lock_guard lock(mutex_);
   stopSource_.request_stop();
   notEmpty_.notify_all();
   notFull_.notify_all();

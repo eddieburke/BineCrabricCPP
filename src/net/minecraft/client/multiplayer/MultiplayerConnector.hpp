@@ -10,9 +10,6 @@
 namespace net::minecraft::client {
 class Minecraft;
 }
-namespace net::minecraft::client::core {
-class WorldSession;
-}
 namespace net::minecraft::client::multiplayer {
 struct ConnectOptions {
  bool bypassAuthentication = false;
@@ -27,7 +24,6 @@ class MultiplayerConnector {
  void disconnectActive(Minecraft& client);
  /// Poll connect progress on the main thread. Returns a non-empty error when connect failed.
  [[nodiscard]] std::string poll(Minecraft& client);
- void tickBridge(Minecraft& client);
  [[nodiscard]] ClientNetworkBridge* activeBridge(Minecraft* client) const;
 
  private:

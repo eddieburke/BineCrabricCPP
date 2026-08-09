@@ -74,6 +74,12 @@ class BufferBuilder {
   if constexpr(requires { ptr->color; }) {
    ptr->color = 0xFFFFFFFFU;
   }
+  if constexpr(requires { ptr->normal; }) {
+   // Packed (0, 1, 0) — up. resize() would zero-fill this, and a zero normal is
+   // NaN after the normalize() every Iris gbuffer vertex stage applies to it.
+   // See kDefaultNormal in RenderCore.cpp for the generic-attribute twin.
+   ptr->normal = 0x00007F00;
+  }
   if constexpr(requires { ptr->midBlock; }) {
    ptr->midBlock = 0;
   }

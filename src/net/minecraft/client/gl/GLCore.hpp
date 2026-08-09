@@ -10,9 +10,15 @@ using PFN_GenBuffers = void(APIENTRY*)(int, unsigned*);
 using PFN_BindBuffer = void(APIENTRY*)(unsigned, unsigned);
 using PFN_BufferData = void(APIENTRY*)(unsigned, intptr_t, const void*, unsigned);
 using PFN_BufferSubData = void(APIENTRY*)(unsigned, intptr_t, intptr_t, const void*);
+using PFN_CopyBufferSubData = void(APIENTRY*)(unsigned, unsigned, intptr_t, intptr_t, intptr_t);
 using PFN_BufferStorage = void(APIENTRY*)(unsigned, intptr_t, const void*, unsigned);
 using PFN_ClearBufferSubData = void(APIENTRY*)(unsigned, unsigned, intptr_t, intptr_t, unsigned, unsigned, const void*);
+using PFN_MapBufferRange = void*(APIENTRY*)(unsigned, intptr_t, intptr_t, unsigned);
+using PFN_UnmapBuffer = unsigned char(APIENTRY*)(unsigned);
 using PFN_DeleteBuffers = void(APIENTRY*)(int, const unsigned*);
+using PFN_FenceSync = void*(APIENTRY*)(unsigned, unsigned);
+using PFN_ClientWaitSync = unsigned(APIENTRY*)(void*, unsigned, std::uint64_t);
+using PFN_DeleteSync = void(APIENTRY*)(void*);
 using PFN_SwapInterval = void(APIENTRY*)(int);
 using PFN_GenFramebuffers = void(APIENTRY*)(int, unsigned*);
 using PFN_BindFramebuffer = void(APIENTRY*)(unsigned, unsigned);
@@ -30,6 +36,9 @@ using PFN_ClearBufferuiv = void(APIENTRY*)(unsigned, int, const unsigned*);
 using PFN_ClearBufferiv = void(APIENTRY*)(unsigned, int, const int*);
 using PFN_PatchParameteri = void(APIENTRY*)(unsigned, int);
 using PFN_MultiDrawArrays = void(APIENTRY*)(unsigned, const int*, const int*, int);
+using PFN_DrawElementsBaseVertex = void(APIENTRY*)(unsigned, int, unsigned, const void*, int);
+using PFN_MultiDrawElementsBaseVertex =
+    void(APIENTRY*)(unsigned, const int*, unsigned, const void* const*, int, const int*);
 // Per-instance terrain chunkOffset: one region's offset is constant across all its
 // vertices, so it rides an instanced attribute (divisor 1) rather than 12 bytes on
 // every vertex. GL 3.3 core; null on the 2.1-era contexts this engine still runs on,
@@ -106,9 +115,15 @@ struct GLCore {
  static PFN_BindBuffer bindBuffer;
  static PFN_BufferData bufferData;
  static PFN_BufferSubData bufferSubData;
+ static PFN_CopyBufferSubData copyBufferSubData;
  static PFN_BufferStorage bufferStorage;
  static PFN_ClearBufferSubData clearBufferSubData;
+ static PFN_MapBufferRange mapBufferRange;
+ static PFN_UnmapBuffer unmapBuffer;
  static PFN_DeleteBuffers deleteBuffers;
+ static PFN_FenceSync fenceSync;
+ static PFN_ClientWaitSync clientWaitSync;
+ static PFN_DeleteSync deleteSync;
  static PFN_SwapInterval swapInterval;
  static PFN_GenFramebuffers genFramebuffers;
  static PFN_BindFramebuffer bindFramebuffer;
@@ -126,6 +141,8 @@ struct GLCore {
  static PFN_ClearBufferiv clearBufferiv;
  static PFN_PatchParameteri patchParameteri;
  static PFN_MultiDrawArrays multiDrawArrays;
+ static PFN_DrawElementsBaseVertex drawElementsBaseVertex;
+ static PFN_MultiDrawElementsBaseVertex multiDrawElementsBaseVertex;
  static PFN_DrawArraysInstanced drawArraysInstanced;
  static PFN_VertexAttribDivisor vertexAttribDivisor;
  static PFN_CreateShader createShader;
@@ -196,6 +213,7 @@ struct GLCore {
   static bool computeSupported;
   static bool instancedDrawSupported;
   static bool ssboSupported;
+  static bool asyncReadbackSupported;
   static int maxShaderStorageUnits;
   static bool samplerObjectsSupported;
   static bool perBufferBlendingSupported;

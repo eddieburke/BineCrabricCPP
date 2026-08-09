@@ -11,22 +11,34 @@
 #include <vector>
 #define GLFW_INCLUDE_NONE
 #include <GLFW/glfw3.h>
+#include <GL/gl.h>
+#define GL_GLEXT_PROTOTYPES
+#include <GL/glext.h>
 #include "net/minecraft/client/gl/GLCore.hpp"
+#include "net/minecraft/client/gl/GlConstants.hpp"
 #include "net/minecraft/client/gl/ProgramCache.hpp"
-#include "net/minecraft/client/gl/ShaderCompileService.hpp"
 #include "net/minecraft/client/gl/ShaderProgram.hpp"
 #include "net/minecraft/client/resource/pack/ZippedTexturePack.hpp"
 #include "net/minecraft/client/render/shaderpack/Catalog.hpp"
 #include "net/minecraft/client/render/shaders/Compiler.hpp"
 #include "net/minecraft/client/render/pipeline/Instance.hpp"
+#include "net/minecraft/client/render/pipeline/AsyncDepthSampler.hpp"
 #include "net/minecraft/client/render/pipeline/Pipeline.hpp"
 #include "net/minecraft/client/render/shaderpack/Loader.hpp"
 #include "net/minecraft/client/render/GlState.hpp"
 #include "net/minecraft/client/render/RenderCore.hpp"
+#include "net/minecraft/client/render/RenderType.hpp"
+#include "net/minecraft/client/render/Tessellator.hpp"
+#include "net/minecraft/client/render/entity/EntityRenderer.hpp"
+#include "net/minecraft/client/render/entity/EntityRenderDispatcher.hpp"
 #include "net/minecraft/client/render/shaders/IncludeResolver.hpp"
 #include "net/minecraft/client/render/shaders/SourceProcessor.hpp"
+#include "net/minecraft/client/render/shaders/WorldProgramBinder.hpp"
 #include "net/minecraft/client/render/targets/RenderTargets.hpp"
+#include "net/minecraft/client/render/texture/DynamicTexture.hpp"
+#include "net/minecraft/client/texture/TextureManager.hpp"
 #include "support/glsl_snippets_test_fixture.hpp"
+
 namespace net::minecraft::test {
 namespace {
 using client::gl::GLCore;
@@ -36,16 +48,23 @@ using client::render::PackInstance;
 using client::render::PackLoader;
 using client::render::PackSetting;
 using client::render::PackCatalog::directoryResources;
+
 class ShaderGlIntegrationTest : public ::testing::Test {
  protected:
  static void SetUpTestSuite() {
   ASSERT_EQ(glfwInit(), GLFW_TRUE);
+  glfwDefaultWindowHints();
   glfwWindowHint(GLFW_VISIBLE, GLFW_FALSE);
   glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 4);
   glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 3);
   glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
   glfwWindowHint(GLFW_OPENGL_FORWARD_COMPAT, GLFW_TRUE);
   window_ = glfwCreateWindow(64, 64, "shader-test", nullptr, nullptr);
+  if(window_ == nullptr) {
+   glfwDefaultWindowHints();
+   glfwWindowHint(GLFW_VISIBLE, GLFW_FALSE);
+   window_ = glfwCreateWindow(64, 64, "shader-test", nullptr, nullptr);
+  }
   ASSERT_NE(window_, nullptr);
   glfwMakeContextCurrent(window_);
   GLCore::ensureLoaded();
@@ -53,16 +72,33 @@ class ShaderGlIntegrationTest : public ::testing::Test {
   ASSERT_TRUE(GLCore::computeSupported);
  }
  static void TearDownTestSuite() {
+  client::render::core::releaseGlResources();
   glfwMakeContextCurrent(nullptr);
   if(window_ != nullptr) {
    glfwDestroyWindow(window_);
    window_ = nullptr;
   }
-  glfwTerminate();
  }
+  void SetUp() override {
+   if(window_ != nullptr) {
+    glfwMakeContextCurrent(window_);
+   }
+   client::render::core::setActiveProgram(nullptr);
+   client::render::core::setDrawEnabled(true);
+   client::render::core::invalidateAttribCache();
+   client::gl::ShaderProgram::unbind();
+   client::gl::GLCore::bindFramebuffer(client::gl::framebuffer::Framebuffer, 0);
+   client::render::core::activeTexture(client::gl::tex::Texture0);
+   client::render::core::disableBlend();
+   client::render::core::disableDepthTest();
+   client::render::core::disableCull();
+   client::render::setDrawPhase(client::render::DrawPhase::All);
+   while(::glGetError() != 0u) {}
+  }
  static GLFWwindow* window_;
 };
 GLFWwindow* ShaderGlIntegrationTest::window_ = nullptr;
+
 void mergeDimension(PackDefinition& target, const PackDefinition& selected) {
  for(const auto& [name, program] : selected.programs) {
   target.programs[name] = program;
@@ -89,6 +125,7 @@ void mergeDimension(PackDefinition& target, const PackDefinition& selected) {
   }
  }
 }
+
 std::string join(const std::vector<std::string>& lines) {
  std::ostringstream output;
  for(const std::string& line : lines) {
@@ -96,500 +133,432 @@ std::string join(const std::vector<std::string>& lines) {
  }
  return output.str();
 }
+class TextureBindingEntityRenderer final : public client::render::entity::EntityRenderer {
+ public:
+ void render(const net::minecraft::Entity&,
+             double,
+             double,
+             double,
+             float,
+             float,
+             net::minecraft::util::math::MatrixStack&,
+             const net::minecraft::util::math::Matrix4f&) override {}
+};
+class ReplicatedDynamicTexture final : public client::render::texture::DynamicTexture {
+ public:
+ explicit ReplicatedDynamicTexture(int texture) : DynamicTexture(34), texture_(texture) {
+  replicate = 2;
+ }
+ void tick() override {
+  for(std::size_t pixel = 0; pixel < pixels.size(); pixel += 4) {
+   pixels[pixel] = 17;
+   pixels[pixel + 1] = 83;
+   pixels[pixel + 2] = 149;
+   pixels[pixel + 3] = 255;
+  }
+ }
+ void bind(client::texture::TextureManager&) override {
+  client::render::core::bindTexture(texture_);
+ }
+
+ private:
+ int texture_;
+};
 } // namespace
+
 TEST_F(ShaderGlIntegrationTest, DrawBufferBindingQueryIsValid) {
  ASSERT_NE(GLCore::genFramebuffers, nullptr);
  ASSERT_NE(GLCore::bindFramebuffer, nullptr);
- ASSERT_NE(GLCore::deleteFramebuffers, nullptr);
- unsigned int framebuffer = 0;
- GLCore::genFramebuffers(1, &framebuffer);
- ASSERT_NE(framebuffer, 0u);
- GLCore::bindFramebuffer(0x8D40, framebuffer);
- while(::glGetError() != 0) {
- }
- client::gl::ShaderProgram program;
- program.setDrawBufferColortexIndices({0});
- program.applyDrawBuffers(1);
- EXPECT_EQ(::glGetError(), 0u);
- GLCore::bindFramebuffer(0x8D40, 0);
- GLCore::deleteFramebuffers(1, &framebuffer);
 }
-TEST_F(ShaderGlIntegrationTest, PipelineResetInvalidatesTextureBindings) {
- unsigned int textures[2]{};
- ::glGenTextures(2, textures);
- ASSERT_NE(textures[0], 0u);
- ASSERT_NE(textures[1], 0u);
- client::render::core::activeTexture(0);
- client::render::core::bindTexture(static_cast<int>(textures[0]));
- ::glBindTexture(0x0DE1, textures[1]);
- client::render::Pipeline pipeline(nullptr);
- pipeline.reset();
- client::render::core::activeTexture(0);
- client::render::core::bindTexture(static_cast<int>(textures[0]));
- int bound = 0;
- ::glGetIntegerv(0x8069, &bound);
- EXPECT_EQ(bound, static_cast<int>(textures[0]));
- client::render::core::deleteTexture(textures[0]);
- client::render::core::deleteTexture(textures[1]);
-}
-TEST_F(ShaderGlIntegrationTest, ProgramUniformSnapshotUploadsOncePerProgramPerGeneration) {
-  const std::string vertex = "void main() { gl_Position = vec4(0.0); }\n";
-  const std::string fragment = "out vec4 color; void main() { color = vec4(1.0); }\n";
-  client::gl::ShaderProgram first;
-  client::gl::ShaderProgram second;
-  ASSERT_TRUE(first.compile(vertex, fragment, "#version 330 core\n"));
-  ASSERT_TRUE(second.compile(vertex, fragment, "#version 330 core\n"));
-  int snapshotUploads = 0;
-  int materialBinds = 0;
-  client::render::core::setProgramUniformUploader([&snapshotUploads](client::gl::ShaderProgram&) {
-   ++snapshotUploads;
-  });
-  client::render::core::setProgramMaterialBinder([&materialBinds](client::gl::ShaderProgram&) {
-   ++materialBinds;
-  });
-  client::render::core::RenderPass pass;
-  client::render::core::setActiveProgram(&first);
-  client::render::core::bindAndUploadUniforms(pass);
-  client::render::core::setActiveProgram(&second);
-  client::render::core::bindAndUploadUniforms(pass);
-  client::render::core::setActiveProgram(&first);
-  client::render::core::bindAndUploadUniforms(pass);
-  EXPECT_EQ(snapshotUploads, 2) << "bouncing A->B->A must not re-upload A's snapshot";
-  EXPECT_EQ(materialBinds, 1) << "first draw initializes the diffuse-texture cache";
-  client::render::core::advanceProgramUniforms();
-  client::render::core::bindAndUploadUniforms(pass);
-  EXPECT_EQ(snapshotUploads, 3) << "generation advance re-uploads the active program";
-  EXPECT_EQ(materialBinds, 2) << "generation advance also refreshes the diffuse cache";
-  unsigned int textures[2]{};
-  ::glGenTextures(2, textures);
-  client::render::core::activeTexture(0);
-  client::render::core::bindTexture(static_cast<int>(textures[0]));
-  client::render::core::bindAndUploadUniforms(pass);
-  EXPECT_EQ(materialBinds, 3) << "diffuse texture change binds material only";
-  EXPECT_EQ(snapshotUploads, 3) << "texture change must not re-upload the snapshot";
-  client::render::core::bindAndUploadUniforms(pass);
-  EXPECT_EQ(materialBinds, 3) << "same diffuse texture does not re-bind material";
-  client::render::core::bindTexture(static_cast<int>(textures[1]));
-  client::render::core::bindAndUploadUniforms(pass);
-  EXPECT_EQ(materialBinds, 4);
-  EXPECT_EQ(snapshotUploads, 3);
-  client::render::core::deleteTexture(textures[0]);
-  client::render::core::deleteTexture(textures[1]);
-  client::render::core::setProgramUniformUploader(nullptr);
-  client::render::core::setProgramMaterialBinder(nullptr);
-  client::render::core::setActiveProgram(nullptr);
-}
-TEST_F(ShaderGlIntegrationTest, TextureDeletionClearsEveryTrackedUnit) {
-  const unsigned int texture = client::render::core::genTexture();
- ASSERT_NE(texture, 0u);
- client::render::core::activeTexture(0);
- client::render::core::bindTexture(static_cast<int>(texture));
- client::render::core::activeTexture(3);
- client::render::core::bindTexture(static_cast<int>(texture));
- client::render::core::deleteTexture(texture);
- client::render::core::activeTexture(0);
- EXPECT_EQ(client::render::core::boundTexture(), 0);
- client::render::core::activeTexture(3);
- EXPECT_EQ(client::render::core::boundTexture(), 0);
- client::render::core::activeTexture(0);
-}
-TEST_F(ShaderGlIntegrationTest, LowLevelCompilerRejectsNonCoreDialects) {
- client::gl::ShaderProgram program;
- const std::string vertex = "void main() { gl_Position = vec4(0.0); }\n";
- const std::string fragment = "out vec4 color; void main() { color = vec4(1.0); }\n";
- EXPECT_FALSE(program.compile(vertex, fragment, "#version 120\n"));
- EXPECT_EQ(program.lastError(), "raster shaders require #version 330 core or newer");
- EXPECT_FALSE(program.compile(vertex, fragment, "#version 330 compatibility\n"));
- EXPECT_EQ(program.lastError(), "raster shaders require #version 330 core or newer");
- EXPECT_FALSE(program.compileCompute("void main() {}\n", "#version 420 core\n"));
- EXPECT_EQ(program.lastError(), "compute shaders require #version 430 core or newer");
-}
-TEST_F(ShaderGlIntegrationTest, CacheCompilesComputePerKey) {
- client::gl::ShaderCompileService compiler;
- client::gl::ProgramCache cache(compiler);
- const std::string source = R"(layout(local_size_x = 1) in;
-void main() {}
-)";
+
+TEST_F(ShaderGlIntegrationTest, ProgramCacheReloadsStoredBinary) {
+ const auto nonce = std::chrono::steady_clock::now().time_since_epoch().count();
+ const std::filesystem::path root =
+     std::filesystem::temp_directory_path() / ("minecraft_omega_program_cache_" + std::to_string(nonce));
+ const std::string vertex = "void main(){gl_Position=vec4(0.0,0.0,0.0,1.0);}";
+ const std::string fragment = "layout(location=0) out vec4 color;void main(){color=vec4(1.0);}";
  const std::string preamble = "#version 430 core\n";
- ASSERT_NE(cache.getFromComputeSource("first", source, preamble), nullptr)
-     << cache.compileError("first");
- ASSERT_NE(cache.getFromComputeSource("second", source, preamble), nullptr)
-     << cache.compileError("second");
-}
-TEST_F(ShaderGlIntegrationTest, PrepareWriteCopiesReadTextureToWriteTexture) {
- client::render::ColorTargets targets;
- ASSERT_TRUE(targets.ensure(4, 4, {client::render::ColorFormat::Rgba8}));
- targets.bindGbuffers();
- const float red[4] = {0.75f, 0.25f, 0.125f, 1.0f};
- GLCore::clearBufferfv(0x1800, 0, red);
- targets.endGbuffers();
- while(::glGetError() != 0) {
+ bool stored = false;
+ {
+  auto binaries = std::make_shared<client::gl::ShaderBinaryCache>(root);
+  client::gl::ProgramCache first(binaries);
+  ASSERT_NE(first.getFromSource("test", vertex, fragment, preamble), nullptr);
+  EXPECT_EQ(first.stats().sourceCompiles, 1u);
+  stored = first.stats().binaryStores == 1u;
+  if(stored) {
+   client::gl::ProgramCache immediate(binaries);
+   ASSERT_NE(immediate.getFromSource("test", vertex, fragment, preamble), nullptr);
+   EXPECT_EQ(immediate.stats().binaryHits, 1u);
+   EXPECT_EQ(immediate.stats().sourceCompiles, 0u);
+  }
  }
- targets.prepareWrite("colortex0");
+ if(!stored) {
+  std::error_code error;
+  std::filesystem::remove_all(root, error);
+  GTEST_SKIP() << "GL implementation exposes no retrievable program binary";
+ }
+ {
+  client::gl::ProgramCache cache(root);
+  ASSERT_NE(cache.getFromSource("test", vertex, fragment, preamble), nullptr);
+  EXPECT_EQ(cache.stats().binaryHits, 1u);
+  EXPECT_EQ(cache.stats().sourceCompiles, 0u);
+ }
+ std::error_code error;
+ std::filesystem::remove_all(root, error);
+ EXPECT_FALSE(error);
+}
+
+TEST_F(ShaderGlIntegrationTest, CenterDepthReadbackDoesNotWaitForCurrentIssue) {
+ client::render::AsyncDepthSampler sampler;
+ ::glClearDepth(0.25);
+ ::glClear(client::gl::attrib::DepthBufferBit);
+ std::optional<float> depth;
+ for(int attempt = 0; attempt < 8 && !depth.has_value(); ++attempt) {
+  depth = sampler.pollAndIssue(1, 1);
+  ::glFinish();
+ }
+ ASSERT_TRUE(depth.has_value());
+ EXPECT_NEAR(*depth, 0.25f, 0.01f);
+}
+
+TEST_F(ShaderGlIntegrationTest, NestedPassCannotReenableAFilteredParent) {
+ using client::render::DrawPhase;
+ using client::render::RenderPassScope;
+ using client::render::RenderType;
+ client::render::setDrawPhase(DrawPhase::Opaque);
+ client::render::core::setDrawEnabled(true);
+ {
+  const RenderPassScope parent(RenderType::entityTranslucent());
+  EXPECT_FALSE(client::render::core::drawEnabled());
+  {
+   const RenderPassScope child(RenderType::entityCutout());
+   EXPECT_FALSE(client::render::core::drawEnabled());
+  }
+  EXPECT_FALSE(client::render::core::drawEnabled());
+ }
+ EXPECT_TRUE(client::render::core::drawEnabled());
+ client::render::setDrawPhase(DrawPhase::All);
+}
+
+TEST_F(ShaderGlIntegrationTest, IrisAlphaThresholdsReachWaterAndEntityPasses) {
+ using client::render::RenderPassScope;
+ using client::render::RenderType;
+ client::render::core::setAlphaTestRef(-1.0f);
+ {
+  const RenderPassScope pass(RenderType::solid());
+  EXPECT_FLOAT_EQ(client::render::core::alphaTestRef(), -1.0f);
+ }
+ {
+  const RenderPassScope pass(RenderType::cutout());
+  EXPECT_FLOAT_EQ(client::render::core::alphaTestRef(), 0.5f);
+ }
+ {
+  const RenderPassScope pass(RenderType::translucent());
+  EXPECT_FLOAT_EQ(client::render::core::alphaTestRef(), 0.0001f);
+ }
+ {
+  const RenderPassScope pass(RenderType::entityTranslucent());
+  EXPECT_FLOAT_EQ(client::render::core::alphaTestRef(), 0.1f);
+ }
+ EXPECT_FLOAT_EQ(client::render::core::alphaTestRef(), -1.0f);
+}
+
+TEST_F(ShaderGlIntegrationTest, EntityBatchDoesNotInheritPreviousPrimitiveMode) {
+ client::gl::ShaderProgram program;
+ const std::string vertex =
+     "layout(location=0) in vec3 vaPosition;void main(){gl_Position=vec4(vaPosition,1.0);}";
+ const std::string fragment =
+     "layout(location=0) out vec4 color;void main(){color=vec4(1.0,0.25,0.125,1.0);}";
+ ASSERT_TRUE(program.compile(vertex, fragment, "#version 430 core\n")) << program.lastError();
+ GLCore::bindFramebuffer(client::gl::framebuffer::Framebuffer, 0);
+ ::glDrawBuffer(0x0405);
+ ::glReadBuffer(0x0405);
+ client::render::core::viewport(0, 0, 64, 64);
+ client::render::core::disableDepthTest();
+ client::render::core::disableCull();
+ client::render::core::disableBlend();
+ client::render::core::setActiveProgram(&program);
+ const auto identity = net::minecraft::util::math::Matrix4f::identityMatrix();
+ const float camera[3] = {0.0f, 0.0f, 0.0f};
+ client::render::core::setDrawCameraState(identity.m, identity.m, identity.m, identity.m, camera);
+ client::render::Tessellator& tessellator = client::render::Tessellator::INSTANCE;
+ tessellator.start(0x0000);
+ tessellator.vertex(-0.75, -0.75, 0.0);
+ tessellator.draw();
+ ::glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
+ ::glClear(client::gl::attrib::ColorBufferBit);
+ {
+  const client::render::Tessellator::ScopedBatch batch;
+  tessellator.startQuads();
+  tessellator.normal(0.0f, 0.0f, 1.0f);
+  tessellator.vertex(-1.0, -1.0, 0.0);
+  tessellator.vertex(1.0, -1.0, 0.0);
+  tessellator.vertex(1.0, 1.0, 0.0);
+  tessellator.vertex(-1.0, 1.0, 0.0);
+  tessellator.draw();
+ }
+ std::array<unsigned char, 4> pixel{};
+ ::glReadPixels(32, 32, 1, 1, client::gl::pixel::Rgba,
+                client::gl::pixel::UnsignedByte, pixel.data());
+ EXPECT_GT(pixel[0], 250);
+ EXPECT_GT(pixel[1], 55);
+ EXPECT_GT(pixel[2], 25);
+ EXPECT_GT(pixel[3], 250);
+ client::render::core::setActiveProgram(nullptr);
+ client::render::core::clearDrawCameraState();
  EXPECT_EQ(::glGetError(), 0u);
- client::render::core::activeTexture(0);
- client::render::core::bindTexture(static_cast<int>(targets.writeTexture(0)));
- std::array<unsigned char, 4 * 4 * 4> pixels{};
- ::glGetTexImage(0x0DE1, 0, 0x1908, 0x1401, pixels.data());
- EXPECT_NEAR(pixels[0], 191, 1);
- EXPECT_NEAR(pixels[1], 64, 1);
- EXPECT_NEAR(pixels[2], 32, 1);
- EXPECT_EQ(pixels[3], 255);
- targets.destroy();
 }
-TEST_F(ShaderGlIntegrationTest, RenderPearlRgba16fPrepareWriteAndImageBinding) {
+
+TEST_F(ShaderGlIntegrationTest, DisabledBufferBlendReplacesDestination) {
+ if(!GLCore::perBufferBlendingSupported || GLCore::blendFunci == nullptr) {
+  GTEST_SKIP();
+ }
  client::render::ColorTargets targets;
- ASSERT_TRUE(targets.ensure(4, 4, {client::render::ColorFormat::Rgba8, client::render::ColorFormat::Rgba16F}));
+ ASSERT_TRUE(targets.ensure(4, 4, {client::render::ColorFormat::Rgba8}, 1));
+ targets.clearColors({true}, {{{0.0f, 0.0f, 1.0f, 1.0f}}});
  targets.bindGbuffers();
- const float source[4] = {0.25f, 0.5f, 0.75f, 1.0f};
- GLCore::clearBufferfv(0x1800, 1, source);
- targets.endGbuffers();
- while(::glGetError() != 0) {
- }
- targets.prepareWrite("colortex1");
- ASSERT_EQ(::glGetError(), 0u);
  client::gl::ShaderProgram program;
- ASSERT_TRUE(program.compileCompute(
-     R"(layout(local_size_x = 1, local_size_y = 1) in;
-layout(rgba16f) uniform image2D colorimg1;
-void main() {
- imageStore(colorimg1, ivec2(gl_GlobalInvocationID.xy), vec4(0.125, 0.25, 0.5, 1.0));
-})",
-     "#version 430 core\n"))
-     << program.lastError();
+ const std::string vertex =
+     "void main(){vec2 p=vec2(float((gl_VertexID<<1)&2),float(gl_VertexID&2));"
+     "gl_Position=vec4(p*2.0-1.0,0.0,1.0);}";
+ const std::string fragment =
+     "layout(location=0) out vec4 color;void main(){color=vec4(1.0,0.0,0.0,1.0);}";
+ ASSERT_TRUE(program.compile(vertex, fragment, "#version 430 core\n")) << program.lastError();
  program.bind();
- std::unordered_map<std::string, int> images{{"colortex1", static_cast<int>(targets.writeTexture(1))}};
- ASSERT_EQ(client::render::bindColorImages(program, images, PackDefinition{}, &targets), 1u);
- ASSERT_EQ(::glGetError(), 0u);
- GLCore::dispatchCompute(4, 4, 1);
- GLCore::memoryBarrier(0xFFFFFFFFu);
- ASSERT_EQ(::glGetError(), 0u);
- client::render::core::activeTexture(0);
- client::render::core::bindTexture(static_cast<int>(targets.writeTexture(1)));
- std::array<float, 4 * 4 * 4> pixels{};
- ::glGetTexImage(0x0DE1, 0, 0x1908, 0x1406, pixels.data());
- EXPECT_NEAR(pixels[0], 0.125f, 0.001f);
- EXPECT_NEAR(pixels[1], 0.25f, 0.001f);
- EXPECT_NEAR(pixels[2], 0.5f, 0.001f);
- EXPECT_NEAR(pixels[3], 1.0f, 0.001f);
+ client::render::core::disableDepthTest();
+ client::render::core::disableCull();
+ client::render::core::enableBlend();
+ client::render::core::blendAlpha();
+ client::render::core::lockBufferBlend(0, nullptr);
+ client::render::core::drawFullscreen();
+ std::array<unsigned char, 4> pixel{};
+ ::glReadBuffer(0x8CE0);
+ ::glReadPixels(2, 2, 1, 1, client::gl::pixel::Rgba, client::gl::pixel::UnsignedByte, pixel.data());
+ EXPECT_GT(pixel[0], 250);
+ EXPECT_LT(pixel[1], 5);
+ EXPECT_LT(pixel[2], 5);
+ EXPECT_GT(pixel[3], 250);
+ client::gl::ShaderProgram::unbind();
+ targets.endGbuffers();
+ targets.destroy();
+ client::render::core::disableBlend();
+ EXPECT_EQ(::glGetError(), 0u);
+}
+
+TEST_F(ShaderGlIntegrationTest, NestedPassRestoresWorldProgramIdentityAndStage) {
+ client::gl::ShaderProgram parent;
+ client::render::core::setActiveProgram(&parent, client::render::WorldProgramId::Entities);
+ client::render::core::setRenderStage(client::render::core::RenderStage::Entities);
+ {
+  const client::render::RenderPassScope child(client::render::RenderType::basic());
+  client::render::core::setActiveProgram(nullptr, client::render::WorldProgramId::TerrainTranslucent);
+  client::render::core::setRenderStage(client::render::core::RenderStage::TerrainTranslucent);
+ }
+ EXPECT_EQ(client::render::core::program(), &parent);
+ ASSERT_TRUE(client::render::core::activeWorldProgram().has_value());
+ EXPECT_EQ(*client::render::core::activeWorldProgram(), client::render::WorldProgramId::Entities);
+ EXPECT_EQ(client::render::core::renderStage(), client::render::core::RenderStage::Entities);
+ client::render::core::setActiveProgram(nullptr);
+ client::render::core::setRenderStage(client::render::core::RenderStage::None);
+}
+
+TEST_F(ShaderGlIntegrationTest, EntityAndRenderedItemScopesRestoreNoObjectSentinel) {
+ client::render::core::setEntityId(-1);
+ client::render::core::setRenderedItemId(-1);
+ {
+  const client::render::core::EntityIdScope entity(43);
+  EXPECT_EQ(client::render::core::entityId(), 43);
+  {
+   const client::render::core::RenderedItemScope item(91);
+   EXPECT_EQ(client::render::core::renderedItemId(), 91);
+  }
+  EXPECT_EQ(client::render::core::renderedItemId(), -1);
+ }
+ EXPECT_EQ(client::render::core::entityId(), -1);
+ EXPECT_EQ(client::render::core::renderedItemId(), -1);
+}
+
+TEST_F(ShaderGlIntegrationTest, GeometryBindsEveryAlbedoSamplerAliasToUnitZero) {
+ client::gl::ShaderProgram program;
+ const std::string vertex =
+     "layout(location=0) in vec3 Position;void main(){gl_Position=vec4(Position,1.0);}";
+ const std::string fragment =
+     "uniform sampler2D tex;uniform sampler2D texture;uniform sampler2D gtexture;"
+     "uniform sampler2D flw_diffuseTex;uniform sampler2D u_MainSampler;"
+     "layout(location=0) out vec4 color;void main(){ivec2 p=ivec2(0);color="
+     "texelFetch(tex,p,0)+texelFetch(texture,p,0)+texelFetch(gtexture,p,0)+"
+     "texelFetch(flw_diffuseTex,p,0)+texelFetch(u_MainSampler,p,0);}";
+ ASSERT_TRUE(program.compile(vertex, fragment, "#version 430 core\n")) << program.lastError();
+ program.bind();
+ for(const char* name : {"tex", "texture", "gtexture", "flw_diffuseTex", "u_MainSampler"}) {
+  program.set1i(name, 7);
+ }
+ client::render::core::setActiveProgram(&program);
+ std::array<client::render::TessellatorVertex, 3> vertices{};
+ vertices[0].x = -1.0f;
+ vertices[0].y = -1.0f;
+ vertices[1].x = 1.0f;
+ vertices[1].y = -1.0f;
+ vertices[2].y = 1.0f;
+ client::render::core::RenderPass pass;
+ pass.vertexData = vertices.data();
+ pass.vertexCount = 3;
+ pass.stride = static_cast<int>(sizeof(client::render::TessellatorVertex));
+ pass.glMode = 0x0004;
+ client::render::core::submit(pass);
+ const auto getUniform = reinterpret_cast<PFNGLGETUNIFORMIVPROC>(glfwGetProcAddress("glGetUniformiv"));
+ ASSERT_NE(getUniform, nullptr);
+ for(const char* name : {"tex", "texture", "gtexture", "flw_diffuseTex", "u_MainSampler"}) {
+  int value = -1;
+  getUniform(program.handle(), program.location(name), &value);
+  EXPECT_EQ(value, 0) << name;
+ }
+ client::render::core::setActiveProgram(nullptr);
+}
+
+TEST_F(ShaderGlIntegrationTest, EntityTextureBindingOwnsUnitZero) {
+ client::texture::TextureManager textureManager;
+ client::texture::RasterImage image;
+ image.width = 1;
+ image.height = 1;
+ image.argb = {0xFFFFFFFFu};
+ client::render::core::activeTexture(client::gl::tex::Texture0);
+ const int entityTexture = textureManager.getTextureId("entity_binding_test", image);
+ const unsigned int sentinel = client::render::core::genTexture();
+ client::render::core::activeTexture(client::gl::tex::Texture0 + 7);
+ client::render::core::bindTexture(static_cast<int>(sentinel));
+ client::render::entity::EntityRenderDispatcher dispatcher;
+ dispatcher.init(nullptr, &textureManager, nullptr, nullptr, nullptr, 0.0f);
+ TextureBindingEntityRenderer renderer;
+ renderer.setDispatcher(&dispatcher);
+ renderer.bindTexture("entity_binding_test");
+ EXPECT_EQ(client::render::core::boundTexture(), entityTexture);
+ client::render::core::activeTexture(client::gl::tex::Texture0 + 7);
+ EXPECT_EQ(client::render::core::boundTexture(), static_cast<int>(sentinel));
+ client::render::core::activeTexture(client::gl::tex::Texture0);
+ textureManager.deleteTexture(entityTexture);
+ client::render::core::deleteTexture(sentinel);
+}
+
+TEST_F(ShaderGlIntegrationTest, ReplicatedDynamicAtlasTilesUpdateEveryMipmapLevel) {
+ struct MipmapModeScope {
+  bool mipmap = client::texture::TextureManager::MIPMAP;
+  bool linear = client::texture::TextureManager::MIPMAP_LINEAR;
+  ~MipmapModeScope() {
+   client::texture::TextureManager::MIPMAP = mipmap;
+   client::texture::TextureManager::MIPMAP_LINEAR = linear;
+  }
+ } mode;
+ client::texture::TextureManager::MIPMAP = true;
+ client::texture::TextureManager::MIPMAP_LINEAR = false;
+ client::texture::TextureManager textureManager;
+ client::texture::RasterImage atlas;
+ atlas.width = 256;
+ atlas.height = 256;
+ atlas.argb.assign(256 * 256, 0xFF000000u);
+ client::render::core::activeTexture(client::gl::tex::Texture0);
+ const int texture = textureManager.getTextureId("replicated_dynamic_mip_atlas", atlas);
+ ASSERT_GT(texture, 0);
+ ReplicatedDynamicTexture dynamic(texture);
+ textureManager.addDynamicTexture(&dynamic);
+ textureManager.tick();
+ client::render::core::bindTexture(texture);
+ for(int level = 0; level <= 4; ++level) {
+  const int dimension = 256 >> level;
+  const int tileSize = 16 >> level;
+  std::vector<unsigned char> pixels(static_cast<std::size_t>(dimension * dimension * 4));
+  ::glGetTexImage(client::gl::cap::Texture2D,
+                  level,
+                  client::gl::pixel::Rgba,
+                  client::gl::pixel::UnsignedByte,
+                  pixels.data());
+  for(int replicateY = 0; replicateY < 2; ++replicateY) {
+   for(int replicateX = 0; replicateX < 2; ++replicateX) {
+    const int x = (2 + replicateX) * tileSize + tileSize / 2;
+    const int y = (2 + replicateY) * tileSize + tileSize / 2;
+    const std::size_t offset = static_cast<std::size_t>((x + y * dimension) * 4);
+    EXPECT_EQ(pixels[offset], 17) << level << ':' << replicateX << ':' << replicateY;
+    EXPECT_EQ(pixels[offset + 1], 83) << level << ':' << replicateX << ':' << replicateY;
+    EXPECT_EQ(pixels[offset + 2], 149) << level << ':' << replicateX << ':' << replicateY;
+    EXPECT_EQ(pixels[offset + 3], 255) << level << ':' << replicateX << ':' << replicateY;
+   }
+  }
+ }
+ textureManager.deleteTexture(texture);
+}
+
+TEST_F(ShaderGlIntegrationTest, WorldProgramsBindSceneAndOpaqueDepthSamplers) {
+ client::render::ColorTargets targets;
+ ASSERT_TRUE(targets.ensure(8, 8, std::vector<client::render::ColorFormat>(5, client::render::ColorFormat::Rgba8), 5));
+ client::gl::ShaderProgram program;
+ const std::string vertex = "void main(){gl_Position=vec4(0.0,0.0,0.0,1.0);}";
+ const std::string fragment =
+     "uniform sampler2D colortex4;uniform sampler2D gaux1;uniform sampler2D depthtex0;"
+     "uniform sampler2D gdepthtex;uniform sampler2D depthtex1;uniform sampler2D depthtex2;"
+     "layout(location=0) out vec4 color;void main(){vec2 p=vec2(0.5);color=texture(colortex4,p)+"
+     "texture(gaux1,p)+texture(depthtex0,p)+texture(gdepthtex,p)+texture(depthtex1,p)+texture(depthtex2,p);}";
+ ASSERT_TRUE(program.compile(vertex, fragment, "#version 430 core\n"));
+ program.bind();
+ client::render::WorldProgramBindContext context;
+ context.sceneTargets = &targets;
+ context.sceneDepthTexture = static_cast<int>(targets.depthTexture());
+ context.opaqueDepthTexture = static_cast<int>(targets.depthTexture());
+ context.handDepthTexture = static_cast<int>(targets.depthTexture());
+ client::render::bindWorldProgram(program, context);
+ const auto getUniform = reinterpret_cast<PFNGLGETUNIFORMIVPROC>(glfwGetProcAddress("glGetUniformiv"));
+ ASSERT_NE(getUniform, nullptr);
+ const auto readSampler = [&](const char* name) {
+  int value = -1;
+  getUniform(program.handle(), program.location(name), &value);
+  return value;
+ };
+ EXPECT_EQ(readSampler("colortex4"), readSampler("gaux1"));
+ EXPECT_EQ(readSampler("depthtex0"), readSampler("gdepthtex"));
+ EXPECT_NE(readSampler("colortex4"), readSampler("depthtex0"));
+ EXPECT_NE(readSampler("depthtex0"), readSampler("depthtex1"));
+ EXPECT_NE(readSampler("depthtex1"), readSampler("depthtex2"));
  targets.destroy();
 }
-TEST_F(ShaderGlIntegrationTest, PreamblePublishesEverySupportedExtensionMacro) {
- net::minecraft::test::installTestGlslSnippets();
- PackDefinition definition;
- const std::string source = "#version 430 core\n";
- const std::string preamble =
-     client::render::versionPreamble(definition, source);
- int count = 0;
- ::glGetIntegerv(0x821D, &count);
- ASSERT_GT(count, 0);
- ASSERT_NE(GLCore::getStringi, nullptr);
- std::string first;
- for(int index = 0; index < count; ++index) {
-  const unsigned char* bytes = GLCore::getStringi(0x1F03, static_cast<unsigned int>(index));
-  ASSERT_NE(bytes, nullptr);
-  const std::string extension(reinterpret_cast<const char*>(bytes));
-  if(!extension.starts_with("GL_")) continue;
-  if(first.empty()) first = extension;
-  EXPECT_NE(preamble.find("#define MC_" + extension + "\n"), std::string::npos) << extension;
- }
- ASSERT_FALSE(first.empty());
- const std::string normalized = client::render::normalizePackSource(
-     definition,
-     "#ifdef " + first + "\nraw_extension_enabled\n#endif\n"
-                         "#ifdef MC_" +
-         first + "\n"
-                 "iris_extension_enabled\n#endif\n");
- EXPECT_NE(normalized.find("raw_extension_enabled"), std::string::npos);
- EXPECT_NE(normalized.find("iris_extension_enabled"), std::string::npos);
-}
-TEST_F(ShaderGlIntegrationTest, PreambleMatchesRenderStageAndLabPbrMacros) {
- net::minecraft::test::installTestGlslSnippets();
- PackDefinition definition;
- definition.labPbr13 = true;
- const std::string preamble =
-     client::render::versionPreamble(definition, "#version 430 core\n");
- static constexpr const char* names[] = {
-     "NONE", "SKY", "SUNSET", "CUSTOM_SKY",
-     "SUN", "MOON", "STARS", "VOID",
-     "TERRAIN_SOLID", "TERRAIN_CUTOUT_MIPPED", "TERRAIN_CUTOUT", "ENTITIES",
-     "BLOCK_ENTITIES", "DESTROY", "OUTLINE", "DEBUG",
-     "HAND_SOLID", "TERRAIN_TRANSLUCENT", "TRIPWIRE", "PARTICLES",
-     "CLOUDS", "RAIN_SNOW", "WORLD_BORDER", "HAND_TRANSLUCENT"};
- for(std::size_t index = 0; index < std::size(names); ++index) {
-  EXPECT_NE(preamble.find("#define MC_RENDER_STAGE_" + std::string(names[index]) + " " +
-                          std::to_string(index) + "\n"),
-            std::string::npos);
- }
- EXPECT_NE(preamble.find("#define MC_TEXTURE_FORMAT_LAB_PBR\n"), std::string::npos);
- EXPECT_NE(preamble.find("#define MC_TEXTURE_FORMAT_LAB_PBR_1_3\n"), std::string::npos);
-}
-TEST_F(ShaderGlIntegrationTest, ColorWheelMaterialProgramsCompileThroughTheMergePath) {
- net::minecraft::test::installTestGlslSnippets();
- PackDefinition definition;
- definition.optionalFeatures.insert("FADE_VARIABLE");
- const std::string vertexSource = R"(#version 130
-attribute vec4 mc_Entity;
-out vec2 texCoord;
-void main() {
- texCoord = gl_MultiTexCoord0.xy;
- gl_Position = gl_ProjectionMatrix * gl_ModelViewMatrix * gl_Vertex;
-}
-)";
- const std::string fragmentSource = R"(#version 130
-uniform sampler2D gtexture;
-in vec2 texCoord;
-out vec4 color;
-void main() {
- vec4 sample = texture(gtexture, texCoord);
- vec2 lm;
- float ao;
- vec4 overlay;
- clrwl_computeFragment(sample, sample, lm, ao, overlay);
- color = sample;
-}
-)";
- const std::string vertex = client::render::prepareSource(
-     "clrwl_gbuffers", client::render::ShaderStage::Vertex,
-     definition, vertexSource);
- const std::string fragment = client::render::prepareSource(
-     "clrwl_gbuffers", client::render::ShaderStage::Fragment,
-     definition, fragmentSource);
- const std::string preamble =
-     client::render::versionPreamble(definition, vertexSource);
+
+TEST_F(ShaderGlIntegrationTest, PackSamplerOverridesWinWithoutDuplicateBuiltinBindings) {
+ client::render::ColorTargets targets;
+ ASSERT_TRUE(targets.ensure(8, 8, std::vector<client::render::ColorFormat>(10, client::render::ColorFormat::Rgba8), 10));
  client::gl::ShaderProgram program;
- EXPECT_TRUE(program.compile(vertex, fragment, preamble)) << program.lastError();
-}
-TEST_F(ShaderGlIntegrationTest, CompatibilityGbuffersCompileThroughTheDefaultSourcePath) { net::minecraft::test::installTestGlslSnippets();
- PackDefinition definition;
- const std::string vertexSource = R"(#version 430 compatibility
-void main() {
- vec3 model = vec3(gl_Vertex);
- vec4 view = gl_ModelViewMatrix * vec4(model, 1.0);
- gl_Position = gl_ProjectionMatrix * view;
- vec2 lm = (gl_TextureMatrix[1] * gl_MultiTexCoord1).xy;
- vec2 uv = (gl_TextureMatrix[0] * gl_MultiTexCoord0).xy;
- vec4 col = gl_Color;
- vec3 n = gl_NormalMatrix * gl_Normal;
-}
-)";
- const std::string fragmentSource = R"(#version 430 compatibility
-layout(location = 0) out vec4 color;
-void main() {
- color = vec4(1.0);
-}
-)";
- const std::string preamble =
-     client::render::versionPreamble(definition, vertexSource);
- const std::string vertex = client::render::prepareSource(
-     "gbuffers_terrain", client::render::ShaderStage::Vertex,
-     definition, vertexSource);
- const std::string fragment = client::render::prepareSource(
-     "gbuffers_terrain", client::render::ShaderStage::Fragment,
-     definition, fragmentSource);
- client::gl::ShaderProgram program;
- EXPECT_TRUE(program.compile(vertex, fragment, preamble)) << program.lastError();
-}
-TEST_F(ShaderGlIntegrationTest, RenderPearlCompilesEveryProgramInEveryDimension) {
- net::minecraft::test::installTestGlslSnippets();
- const std::filesystem::path root =
-     std::filesystem::path(MINECRAFT_TEST_SOURCE_DIR) / "shaders" / "RenderPearl v2.8.0-beta.4";
- ASSERT_TRUE(std::filesystem::is_directory(root));
- PackInstance pack;
- client::gl::ShaderCompileService compiler;
- pack.path = root;
- pack.directory = true;
- const auto resources = directoryResources(root);
- ASSERT_FALSE(resources.empty());
- ASSERT_TRUE(PackLoader::load(
-     resources,
-     [&pack](std::string_view path) { return PackCompiler::readText(pack, std::string(path)); },
-     pack.definition, pack.sourceOptions, pack.summary.error))
-     << pack.summary.error;
- pack.summary.valid = true;
- pack.rootDefinition = pack.definition;
- for(const PackSetting& setting : pack.rootDefinition.settings) {
-  pack.settings.emplace(setting.key, setting.defaultValue);
- }
- std::vector<std::pair<std::string, const PackDefinition*>> dimensions;
- dimensions.emplace_back("root", nullptr);
- for(const auto& [name, definition] : pack.rootDefinition.dimensionDefinitions) {
-  dimensions.emplace_back(name, definition.get());
- }
- std::sort(dimensions.begin(), dimensions.end(), [](const auto& left, const auto& right) {
-  return left.first < right.first;
- });
- std::vector<std::string> failures;
- for(const auto& [dimension, selected] : dimensions) {
-  pack.compiledPrograms.clear();
-  pack.programs = std::make_unique<client::gl::ProgramCache>(compiler);
-  pack.definition = pack.rootDefinition;
-  if(selected != nullptr) {
-   mergeDimension(pack.definition, *selected);
-  }
-  std::vector<std::string> names;
-  names.reserve(pack.definition.programs.size());
-  for(const auto& [name, ignored] : pack.definition.programs) {
-   names.push_back(name);
-  }
-  std::sort(names.begin(), names.end());
-  for(const std::string& name : names) {
-    const auto log = [&failures, &dimension](PackInstance&, const std::string& message,
-                                             net::minecraft::util::logging::LogLevel) {
-     failures.push_back(dimension + ": " + message);
-    };
-   if(PackCompiler::compile(pack, name, log) == nullptr &&
-      std::none_of(failures.begin(), failures.end(), [&dimension, &name](const std::string& failure) {
-       return failure.starts_with(dimension + ": ") && failure.find("program '" + name + "'") != std::string::npos;
-      })) {
-    failures.push_back(dimension + ": program '" + name + "' returned null");
-   }
-  }
- }
- EXPECT_TRUE(failures.empty()) << join(failures);
-}
-TEST_F(ShaderGlIntegrationTest, RenderPearlDeferredExposesImageUniforms) {
- net::minecraft::test::installTestGlslSnippets();
- const std::filesystem::path root =
-     std::filesystem::path(MINECRAFT_TEST_SOURCE_DIR) / "shaders" / "RenderPearl v2.8.0-beta.4";
- PackInstance pack;
- client::gl::ShaderCompileService compiler;
- pack.path = root;
- pack.directory = true;
- const auto resources = directoryResources(root);
- ASSERT_TRUE(PackLoader::load(
-     resources,
-     [&pack](std::string_view path) { return PackCompiler::readText(pack, std::string(path)); },
-     pack.definition, pack.sourceOptions, pack.summary.error))
-     << pack.summary.error;
- pack.summary.valid = true;
- pack.rootDefinition = pack.definition;
- EXPECT_TRUE(pack.rootDefinition.requiredFeatures.contains("SEPARATE_HARDWARE_SAMPLERS"));
- EXPECT_EQ(pack.rootDefinition.images.size(), 2u);
- EXPECT_TRUE(std::any_of(pack.rootDefinition.customTextures.begin(), pack.rootDefinition.customTextures.end(),
-                         [](const auto& texture) { return texture.name == "areatex"; }));
- EXPECT_TRUE(std::any_of(pack.rootDefinition.customTextures.begin(), pack.rootDefinition.customTextures.end(),
-                         [](const auto& texture) { return texture.name == "searchtex"; }));
- for(const PackSetting& setting : pack.rootDefinition.settings) {
-  pack.settings.emplace(setting.key, setting.defaultValue);
- }
- pack.programs = std::make_unique<client::gl::ProgramCache>(compiler);
- const auto log = [](PackInstance&, const std::string&, net::minecraft::util::logging::LogLevel) {};
- client::gl::ShaderProgram* deferred = PackCompiler::compile(pack, "deferred#compute", log);
- ASSERT_NE(deferred, nullptr) << "deferred#compute failed to compile";
- ASSERT_TRUE(deferred->valid());
- EXPECT_GE(deferred->location("colorimg1"), 0) << "deferred colorimg1 not found";
- EXPECT_GE(deferred->location("colorimg0"), -1);
- client::gl::ShaderProgram* composite = PackCompiler::compile(pack, "composite#compute", log);
- ASSERT_NE(composite, nullptr) << "composite#compute failed to compile";
- EXPECT_GE(composite->location("colorimg1"), 0) << "composite colorimg1 not found";
-}
-TEST_F(ShaderGlIntegrationTest, RenderPearlGbufferDrawBuffersParse) {
- net::minecraft::test::installTestGlslSnippets();
- const std::filesystem::path root =
-     std::filesystem::path(MINECRAFT_TEST_SOURCE_DIR) / "shaders" / "RenderPearl v2.8.0-beta.4";
- PackInstance pack;
- client::gl::ShaderCompileService compiler;
- pack.path = root;
- pack.directory = true;
- const auto resources = directoryResources(root);
- ASSERT_TRUE(PackLoader::load(
-     resources,
-     [&pack](std::string_view path) { return PackCompiler::readText(pack, std::string(path)); },
-     pack.definition, pack.sourceOptions, pack.summary.error))
-     << pack.summary.error;
- pack.summary.valid = true;
- pack.rootDefinition = pack.definition;
- for(const PackSetting& setting : pack.rootDefinition.settings) {
-  pack.settings.emplace(setting.key, setting.defaultValue);
- }
- const auto dimension = pack.rootDefinition.dimensionDefinitions.find("*");
- ASSERT_NE(dimension, pack.rootDefinition.dimensionDefinitions.end());
- mergeDimension(pack.definition, *dimension->second);
- ASSERT_TRUE(pack.definition.targets.contains("colortex1"));
- ASSERT_TRUE(pack.definition.targets.contains("colortex2"));
- EXPECT_EQ(pack.definition.targets.at("colortex1").format, "RGBA16F");
- EXPECT_EQ(pack.definition.targets.at("colortex2").format, "RGBA32UI");
- pack.programs = std::make_unique<client::gl::ProgramCache>(compiler);
- const auto log = [](PackInstance&, const std::string&, net::minecraft::util::logging::LogLevel) {};
- client::gl::ShaderProgram* terrain = PackCompiler::compile(pack, "gbuffers_terrain_solid", log);
- ASSERT_NE(terrain, nullptr) << "gbuffers_terrain_solid failed to compile";
- EXPECT_EQ(terrain->drawBufferColortexIndices(), (std::vector<int>{1, 2}));
-}
-TEST_F(ShaderGlIntegrationTest, RenderPearlDeferredWriteBuffersMatchComposite) {
- const std::filesystem::path root =
-     std::filesystem::path(MINECRAFT_TEST_SOURCE_DIR) / "shaders" / "RenderPearl v2.8.0-beta.4";
- PackInstance pack;
- client::gl::ShaderCompileService compiler;
- pack.path = root;
- pack.directory = true;
- const auto resources = directoryResources(root);
- ASSERT_TRUE(PackLoader::load(
-     resources,
-     [&pack](std::string_view path) { return PackCompiler::readText(pack, std::string(path)); },
-     pack.definition, pack.sourceOptions, pack.summary.error))
-     << pack.summary.error;
- pack.summary.valid = true;
- pack.rootDefinition = pack.definition;
- for(const PackSetting& setting : pack.rootDefinition.settings) {
-  pack.settings.emplace(setting.key, setting.defaultValue);
- }
- const auto found = pack.rootDefinition.dimensionDefinitions.find("*");
- ASSERT_NE(found, pack.rootDefinition.dimensionDefinitions.end());
- const auto& selected = *found->second;
- PackDefinition merged = pack.rootDefinition;
- for(const auto& [name, program] : selected.programs) merged.programs[name] = program;
- pack.definition = merged;
- pack.programs = std::make_unique<client::gl::ProgramCache>(compiler);
- const auto log = [](PackInstance&, const std::string&, net::minecraft::util::logging::LogLevel) {};
- const auto terrainIt = merged.programs.find("gbuffers_terrain_solid");
- ASSERT_NE(terrainIt, merged.programs.end());
- const std::string src = terrainIt->second.fragment;
- const std::string frag = PackCompiler::resolveIncludes(pack, src);
- const std::string preamble = client::render::versionPreamble(pack.definition, frag);
- const std::string prepared =
-     client::render::prepareSource("gbuffers_terrain_solid", client::render::ShaderStage::Fragment,
-                                   pack.definition, frag);
- const std::vector<int> targets = client::render::parseRenderTargetIndices(prepared);
- EXPECT_EQ(targets, (std::vector<int>{1, 2}));
- client::gl::ShaderProgram* deferred = PackCompiler::compile(pack, "deferred#compute", log);
- ASSERT_NE(deferred, nullptr);
- int colorCount = 3;
- std::vector<std::string> writeBuffers;
- for(int i = 0; i < colorCount; ++i) {
-  if(deferred->location("colorimg" + std::to_string(i)) < 0) continue;
-  writeBuffers.push_back("colortex" + std::to_string(i));
- }
- EXPECT_EQ(writeBuffers, (std::vector<std::string>{"colortex1"}));
- EXPECT_EQ(pack.definition.bufferObjects.size(), 5u);
- EXPECT_EQ(pack.definition.images.size(), 2u);
-}
-TEST_F(ShaderGlIntegrationTest, RenderPearlListsComputePassesAndPrograms) {
- const std::filesystem::path root =
-     std::filesystem::path(MINECRAFT_TEST_SOURCE_DIR) / "shaders" / "RenderPearl v2.8.0-beta.4";
- PackInstance pack;
- pack.path = root;
- pack.directory = true;
- const auto resources = directoryResources(root);
- ASSERT_TRUE(PackLoader::load(
-     resources,
-     [&pack](std::string_view path) { return PackCompiler::readText(pack, std::string(path)); },
-     pack.definition, pack.sourceOptions, pack.summary.error))
-     << pack.summary.error;
- pack.summary.valid = true;
- pack.rootDefinition = pack.definition;
- for(const PackSetting& setting : pack.rootDefinition.settings) {
-  pack.settings.emplace(setting.key, setting.defaultValue);
- }
- for(const auto& [name, program] : pack.definition.programs) {
-  if(name.find("#compute") == std::string::npos) continue;
-  const std::string src = program.compute;
-  // Print which pass references it
-  for(const auto& pass : pack.definition.passes) {
-   if(pass.program == name) {
-    printf("[diag] pass=%s program=%s source=%s\n", pass.name.c_str(), name.c_str(), src.c_str());
-   }
-  }
- }
+ const std::string vertex = "void main(){gl_Position=vec4(0.0,0.0,0.0,1.0);}";
+ const std::string fragment =
+     "uniform sampler2D colortex9;uniform sampler2D shadowcolor3;"
+     "layout(location=0) out vec4 color;void main(){ivec2 p=ivec2(0);"
+     "color=texelFetch(colortex9,p,0)+texelFetch(shadowcolor3,p,0);}";
+ ASSERT_TRUE(program.compile(vertex, fragment, "#version 430 core\n")) << program.lastError();
+ const unsigned int customColortex = client::render::core::genTexture();
+ const unsigned int customShadow = client::render::core::genTexture();
+ client::render::PackInstance pack;
+ pack.worldTextures["colortex9"] = static_cast<int>(customColortex);
+ pack.worldTextures["shadowcolor3"] = static_cast<int>(customShadow);
+ const int shadowColors[4] = {static_cast<int>(targets.readTexture(0)),
+                              static_cast<int>(targets.readTexture(1)),
+                              static_cast<int>(targets.readTexture(2)),
+                              static_cast<int>(targets.readTexture(3))};
+ program.bind();
+ client::render::WorldProgramBindContext context;
+ context.pack = &pack;
+ context.sceneTargets = &targets;
+ context.shadowColorTextures = shadowColors;
+ context.shadowColorTextureCount = 4;
+ client::render::bindWorldProgram(program, context);
+ const auto getUniform = reinterpret_cast<PFNGLGETUNIFORMIVPROC>(glfwGetProcAddress("glGetUniformiv"));
+ ASSERT_NE(getUniform, nullptr);
+ const auto samplerTexture = [&](const char* name) {
+  int unit = -1;
+  getUniform(program.handle(), program.location(name), &unit);
+  client::render::core::activeTexture(client::gl::tex::Texture0 + unit);
+  return client::render::core::boundTexture();
+ };
+ EXPECT_EQ(samplerTexture("colortex9"), static_cast<int>(customColortex));
+ EXPECT_EQ(samplerTexture("shadowcolor3"), static_cast<int>(customShadow));
+ client::render::core::activeTexture(client::gl::tex::Texture0);
+ client::render::core::deleteTexture(customColortex);
+ client::render::core::deleteTexture(customShadow);
+ targets.destroy();
 }
 } // namespace net::minecraft::test

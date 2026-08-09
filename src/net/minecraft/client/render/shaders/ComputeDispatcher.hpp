@@ -4,7 +4,6 @@
 #include <cctype>
 #include <cmath>
 #include <cstddef>
-#include <functional>
 #include <string>
 #include <string_view>
 #include <unordered_map>
@@ -58,7 +57,8 @@ namespace ComputeDispatcher {
          std::max(1, static_cast<int>(std::ceil(static_cast<float>(height) * pass.groupScale[1] / ly)))),
      1u};
 }
-inline constexpr unsigned int kBarrierBits = 0xFFFFFFFFu;
+inline constexpr unsigned int kBarrierBits = 0x2028u;
+inline constexpr unsigned int kCommandBarrierBit = 0x0040u;
 [[nodiscard]] inline int computePassOrder(const std::string& name) {
  const std::size_t under = name.rfind('_');
  const bool hasLetter = under != std::string::npos && under + 2 == name.size() &&
@@ -111,6 +111,7 @@ inline constexpr unsigned int kBarrierBits = 0xFFFFFFFFu;
 }
 bool dispatch(PackInstance& pack,
               const PackPass& pass,
+              gl::ShaderProgram& program,
               const PackUniformValues& uniforms,
               const PackViewportValues* viewport,
               std::unordered_map<std::string, int>& textures,
@@ -119,7 +120,6 @@ bool dispatch(PackInstance& pack,
               const ColorTargets* colorTargets,
               int width,
               int height,
-              bool barrier,
-              const std::function<gl::ShaderProgram*(PackInstance&, const std::string&)>& compile);
+              bool barrier);
 } // namespace ComputeDispatcher
 } // namespace net::minecraft::client::render

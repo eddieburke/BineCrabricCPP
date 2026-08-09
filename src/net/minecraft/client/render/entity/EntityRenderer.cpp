@@ -6,7 +6,7 @@
 #include "net/minecraft/client/render/camera/FrameRenderCamera.hpp"
 #include "net/minecraft/client/render/GameRenderer.hpp"
 #include "net/minecraft/client/render/RenderCore.hpp"
-#include "net/minecraft/client/render/pipeline/Manager.hpp"
+#include "net/minecraft/client/render/pipeline/Pipeline.hpp"
 #include "net/minecraft/client/option/GameOptions.hpp"
 #include "net/minecraft/client/render/RenderType.hpp"
 #include "net/minecraft/client/render/Tessellator.hpp"
@@ -41,8 +41,8 @@ void EntityRenderer::postRender(
  auto* minecraft = net::minecraft::client::Minecraft::INSTANCE;
  const bool shaderpackActive =
      minecraft != nullptr && minecraft->gameRenderer != nullptr &&
-     minecraft->gameRenderer->shaderPacks() != nullptr &&
-     minecraft->gameRenderer->shaderPacks()->usingUserPack();
+     minecraft->gameRenderer->shaderPipeline() != nullptr &&
+     minecraft->gameRenderer->shaderPipeline()->usingUserPack();
   if(!core::cameraFrame().shadowPass &&
     !shaderpackActive &&
     options.fancyGraphics &&
@@ -63,16 +63,8 @@ void EntityRenderer::bindTexture(std::string_view texturePath) {
  if(dispatcher == nullptr || dispatcher->textureManager() == nullptr) {
   return;
  }
- static std::string lastTexturePath;
- static int lastTextureId = -1;
- int textureId;
- if(lastTexturePath == texturePath) {
-  textureId = lastTextureId;
- } else {
-  textureId = dispatcher->textureManager()->getTextureId(std::string(texturePath));
-  lastTexturePath = std::string(texturePath);
-  lastTextureId = textureId;
- }
+ core::activeTexture(gl::tex::Texture0);
+ const int textureId = dispatcher->textureManager()->getTextureId(std::string(texturePath));
  dispatcher->textureManager()->bindTexture(textureId);
 }
 bool EntityRenderer::bindDownloadedTexture(std::string_view url, std::string_view backup) {
@@ -95,6 +87,7 @@ bool EntityRenderer::bindDownloadedTexture(std::string_view url, std::string_vie
  if(textureId < 0) {
   return false;
  }
+ core::activeTexture(gl::tex::Texture0);
  dispatcher->textureManager()->bindTexture(textureId);
  return true;
 }

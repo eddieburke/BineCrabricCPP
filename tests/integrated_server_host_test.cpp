@@ -71,7 +71,7 @@ TEST(IntegratedServerHost, PreservesCustomPort) {
  EXPECT_EQ(server.properties->getProperty("server-port", -1), config.port);
  server.stopAndJoin();
 }
-TEST(IntegratedServerHost, WritesReadyFileOnlyAfterWorldInitialization) {
+TEST(IntegratedServerHost, PublishesBoundPortOnlyAfterWorldInitialization) {
  const std::filesystem::path root = makeTempWorldRoot("integrated_host_ready");
  initializeEmptyServerModHost(root / "runtime");
  net::minecraft::server::host::ServerLaunchConfig config;
@@ -87,6 +87,12 @@ TEST(IntegratedServerHost, WritesReadyFileOnlyAfterWorldInitialization) {
  ASSERT_TRUE(server.startAsync()) << server.lastError();
  EXPECT_NE(server.getWorld(0), nullptr);
  EXPECT_TRUE(std::filesystem::is_regular_file(config.readyFile));
+ std::ifstream ready(config.readyFile);
+ unsigned int publishedPort = 0;
+ ready >> publishedPort;
+ EXPECT_TRUE(ready.good() || ready.eof());
+ EXPECT_EQ(publishedPort, server.boundPort());
+ EXPECT_NE(publishedPort, 0U);
  server.stopAndJoin();
 }
 TEST(IntegratedServerHost, MissingRequiredModDoesNotWriteReadyFile) {

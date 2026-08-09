@@ -11,11 +11,11 @@ struct TessellatorMesh {
  std::vector<TessellatorVertex> vertices;
  int mode = 7;
  bool hasTexture = false;
- bool hasColor = false;
  bool hasNormals = false;
  TessellatorMesh() = default;
- TessellatorMesh(std::vector<TessellatorVertex> v, int m, bool ht, bool hc, bool hn)
-     : vertices(std::move(v)), mode(m), hasTexture(ht), hasColor(hc), hasNormals(hn) {
+ TessellatorMesh(std::vector<TessellatorVertex> v, int m, bool ht, bool hn)
+     : vertices(std::move(v)), mode(m), hasTexture(ht), hasNormals(hn),
+       vertexCount_(vertices.size()) {
  }
  TessellatorMesh(const TessellatorMesh& other);
  TessellatorMesh& operator=(const TessellatorMesh& other);
@@ -23,14 +23,17 @@ struct TessellatorMesh {
  TessellatorMesh& operator=(TessellatorMesh&& other) noexcept;
  ~TessellatorMesh();
  [[nodiscard]] bool empty() const noexcept {
-  return vertices.empty();
+  return vertexCount_ == 0;
  }
+ [[nodiscard]] std::size_t vertexCount() const noexcept { return vertexCount_; }
  [[nodiscard]] bool uploadToGpu();
+ void releaseCpuVertices();
  void freeGpuBuffer();
 
  private:
  friend class Tessellator;
  unsigned vbo_ = 0;
+ std::size_t vertexCount_ = 0;
 };
 class Tessellator {
  public:
@@ -95,12 +98,26 @@ class Tessellator {
  int batchDepth_ = 0;
  net::minecraft::util::math::Matrix4f pose_{};
  bool poseValid_ = false;
+ // Derived from pose_ / currentNormal_ only, so they are recomputed when those
+ // change rather than once per vertex. refreshNormal() rebuilds drawNormal_.
+ void refreshNormal();
+ bool poseRotates_ = false;
+ bool normalDirty_ = true;
+ float drawNormal_[3] = {0.0f, 0.0f, 0.0f};
  BufferBuilder<TessellatorVertex> builder_;
  bool drawing_ = false;
  bool hasTexture_ = false;
- bool hasColor_ = false;
+ // Whether a producer called color() for the part in flight. When false every
+ // vertex takes constColorPacked_ instead — vaColor is always array-backed.
+ bool colorExplicit_ = false;
+ // Snapshot of core::constColorPacked() taken when the part opened. Captured
+ // rather than read per vertex: this path runs on mesh workers, and the const
+ // colour is main-GL-thread-write-only (same WI-5 rule as alphaTestRef).
+ std::uint32_t constColorPacked_ = 0xFFFFFFFFU;
  bool hasNormals_ = false;
  bool captureOnly_ = false;
+ bool discarding_ = false;
+ std::size_t discardedVertexCount_ = 0;
  int addedVertexCount_ = 0;
  int mode_ = 7;
  float u_ = 0.0f;
@@ -116,6 +133,7 @@ class Tessellator {
  int blockEmission_ = 0;
  float blockLight_ = 15.0f;
  float skyLight_ = 15.0f;
+ std::int32_t currentLight_ = 0x00F000F0;
  int blockId_ = 0;
  bool blockFluid_ = false;
  int blockMetadata_ = 0;

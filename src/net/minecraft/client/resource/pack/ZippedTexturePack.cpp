@@ -6,6 +6,7 @@
 #include <fstream>
 #include <sstream>
 #include <string>
+#include <unordered_map>
 #include "net/minecraft/client/gl/GlConstants.hpp"
 #include "net/minecraft/client/render/RenderCore.hpp"
 #include "net/minecraft/client/texture/TextureManager.hpp"
@@ -82,14 +83,23 @@ bool buildZipIndex(const std::vector<std::uint8_t>& archive, std::vector<ZipEntr
  }
  return true;
 }
-const ZipEntry* findEntry(const std::vector<ZipEntry>& entries, std::string_view path) {
+const ZipEntry* findEntry(const std::vector<ZipEntry>& entries,
+                          const std::unordered_map<std::string, std::size_t>& index,
+                          std::string_view path) {
  const std::string normalized = normalizeZipPath(path);
- for(const ZipEntry& entry : entries) {
-  if(entry.name == normalized) {
-   return &entry;
-  }
+ const auto found = index.find(normalized);
+ if(found == index.end() || found->second >= entries.size()) {
+  return nullptr;
  }
- return nullptr;
+ return &entries[found->second];
+}
+std::unordered_map<std::string, std::size_t> buildEntryIndex(const std::vector<ZipEntry>& entries) {
+ std::unordered_map<std::string, std::size_t> index;
+ index.reserve(entries.size());
+ for(std::size_t i = 0; i < entries.size(); ++i) {
+  index.emplace(entries[i].name, i);
+ }
+ return index;
 }
 std::vector<std::uint8_t> readZipEntryData(const std::vector<std::uint8_t>& archive, const ZipEntry& entry) {
  const std::size_t offset = entry.localHeaderOffset;
@@ -135,6 +145,7 @@ ZippedTexturePack::~ZippedTexturePack() {
 void ZippedTexturePack::open() {
  archive_.clear();
  entries_.clear();
+ entryIndex_.clear();
  std::ifstream input(file_, std::ios::binary);
  if(!input) {
   return;
@@ -155,10 +166,12 @@ void ZippedTexturePack::open() {
   entries_.clear();
   return;
  }
+ entryIndex_ = buildEntryIndex(entries_);
 }
 void ZippedTexturePack::close() {
  archive_.clear();
  entries_.clear();
+ entryIndex_.clear();
 }
 void ZippedTexturePack::load() {
  descriptionLine1 = name;
@@ -179,17 +192,18 @@ void ZippedTexturePack::load() {
  if(!input.read(reinterpret_cast<char*>(tempArchive.data()), size)) {
   return;
  }
- std::vector<ZipEntry> tempEntries;
- if(!buildZipIndex(tempArchive, tempEntries)) {
-  return;
- }
- const auto readEntry = [&](std::string_view path) -> std::vector<std::uint8_t> {
-  const ZipEntry* entry = findEntry(tempEntries, path);
-  if(entry == nullptr) {
-   return {};
+  std::vector<ZipEntry> tempEntries;
+  if(!buildZipIndex(tempArchive, tempEntries)) {
+   return;
   }
-  return readZipEntryData(tempArchive, *entry);
- };
+  const std::unordered_map<std::string, std::size_t> tempIndex = buildEntryIndex(tempEntries);
+  const auto readEntry = [&](std::string_view path) -> std::vector<std::uint8_t> {
+   const ZipEntry* entry = findEntry(tempEntries, tempIndex, path);
+   if(entry == nullptr) {
+    return {};
+   }
+   return readZipEntryData(tempArchive, *entry);
+  };
  if(const std::vector<std::uint8_t> packText = readEntry("pack.txt"); !packText.empty()) {
   std::string content(packText.begin(), packText.end());
   std::istringstream stream(content);
@@ -228,7 +242,7 @@ void ZippedTexturePack::bindIcon(texture::TextureManager& textureManager) {
 }
 std::vector<std::uint8_t> ZippedTexturePack::getResource(std::string_view path) const {
  if(!archive_.empty()) {
-  const ZipEntry* entry = findEntry(entries_, path);
+  const ZipEntry* entry = findEntry(entries_, entryIndex_, path);
   if(entry != nullptr) {
    return readZipEntryData(archive_, *entry);
   }

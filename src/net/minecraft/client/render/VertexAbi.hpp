@@ -47,7 +47,6 @@ struct Binding {
 enum class Availability {
  Always,
  Texture,
- Color,
  Normal
 };
 
@@ -95,7 +94,11 @@ inline constexpr std::size_t Stride = sizeof(TessellatorVertex);
 inline constexpr std::array<Format, 13> Formats{{
     {Position, 3, 0x1406, false, false, PositionOffset, Availability::Always},
     {Texture, 2, 0x1406, false, false, TextureOffset, Availability::Texture},
-    {Color, 4, 0x1401, true, false, ColorOffset, Availability::Color},
+    // Always sourced from the buffer. Every vertex carries a colour (the const
+    // colour when no producer set one), so vaColor never rides a generic
+    // attribute — that side channel is what let entity draws reach a pack with
+    // vaColor = (0,0,0,1) while array-backed geometry stayed white.
+    {Color, 4, 0x1401, true, false, ColorOffset, Availability::Always},
     {Normal, 3, 0x1400, true, false, NormalOffset, Availability::Normal},
     {MidBlock, 4, 0x1400, false, false, MidBlockOffset, Availability::Always},
     {Light, 2, 0x1403, false, false, LightOffset, Availability::Always},

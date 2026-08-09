@@ -51,6 +51,11 @@ TexturePathSpec parseTexturePath(const std::string& path) {
  }
  return spec;
 }
+bool isGridAtlasPath(const std::string& path) {
+ const std::string normalized = net::minecraft::util::normalizePath(parseTexturePath(path).resourcePath);
+ return normalized == "terrain.png" || normalized == "terrain_n.png" || normalized == "terrain_s.png" ||
+        normalized == "gui/items.png" || normalized == "gui/items_n.png" || normalized == "gui/items_s.png";
+}
 #ifdef _WIN32
 void ensureGdiplusStarted() {
  static bool started = false;
@@ -458,7 +463,6 @@ int TextureManager::getTextureId(const std::string& path) {
  RasterImage image = loadRasterForResource(spec.resourcePath);
  if(image.width <= 0 || image.height <= 0) {
   textures_[path] = missingTextureId_;
-  texturePaths_.try_emplace(missingTextureId_, path);
   return missingTextureId_;
  }
  const std::string normalizedPath = net::minecraft::util::normalizePath(spec.resourcePath);
@@ -466,19 +470,29 @@ int TextureManager::getTextureId(const std::string& path) {
   static SkinImageProcessor skinProcessor;
   image = skinProcessor.process(image);
  }
+ return getTextureId(path, image);
+}
+int TextureManager::getTextureId(const std::string& path, const RasterImage& image) {
+ ensureMissingTexture();
+ if(image.width <= 0 || image.height <= 0) return missingTextureId_;
+ if(const auto found = textures_.find(path);
+    found != textures_.end() && found->second != missingTextureId_) {
+  return found->second;
+ }
 #ifdef _WIN32
  util::DisplayManager::ensureGlContext();
 #endif
- unsigned int id = render::core::genTexture();
+ const unsigned int id = render::core::genTexture();
+ const TexturePathSpec spec = parseTexturePath(path);
  const bool previousBlur = blur;
  const bool previousClamp = clamp;
  blur = spec.blur;
  clamp = spec.clamp;
+ texturePaths_[static_cast<int>(id)] = path;
  load(image, static_cast<int>(id));
  blur = previousBlur;
  clamp = previousClamp;
  textures_[path] = static_cast<int>(id);
- texturePaths_.try_emplace(static_cast<int>(id), path);
  return static_cast<int>(id);
 }
 bool TextureManager::getTextureDimensions(const std::string& path, int& outWidth, int& outHeight) {
@@ -525,10 +539,7 @@ std::string TextureManager::getCompanionTexturePath(int textureId, std::string_v
  }
  std::string candidate = path;
  candidate.insert(extension, suffix);
- if(resourceExists(candidate)) {
-  return candidate;
- }
- return {};
+ return candidate;
 }
 void TextureManager::reload() {
  net::minecraft::registry::TextureRegistry::invalidateGlIds();
@@ -541,11 +552,21 @@ void TextureManager::reload() {
  for(auto& entry : downloadedImages_) {
   entry.second->uploaded = false;
  }
- for(const auto& [path, textureId] : textures_) {
+ for(auto& [path, textureId] : textures_) {
   const TexturePathSpec spec = parseTexturePath(path);
   RasterImage image = loadRasterForResource(spec.resourcePath);
   if(image.width <= 0 || image.height <= 0) {
+   if(textureId != missingTextureId_) {
+    const int staleTexture = textureId;
+    deleteTexture(staleTexture);
+    texturePaths_.erase(staleTexture);
+    textureId = missingTextureId_;
+   }
    continue;
+  }
+  if(textureId == missingTextureId_) {
+   textureId = static_cast<int>(render::core::genTexture());
+   texturePaths_[textureId] = path;
   }
   const bool previousBlur = blur;
   const bool previousClamp = clamp;
@@ -566,9 +587,7 @@ void TextureManager::reload() {
    colors[i] = static_cast<int>(image.argb[i]);
   }
  }
- // resolution re-applies them (Java: MixinTextureManager ->
- // PBRTextureManager.clear()).
- render::PbrTextures::clear();
+  render::PbrTextures::clear();
 }
 void TextureManager::bindTexture(int id) {
  if(id < 0) {
@@ -604,8 +623,11 @@ void TextureManager::load(const RasterImage& image, int id) {
  } textureState{previousBoundTexture};
  std::vector<std::uint8_t> rgba = rasterToRgba(image);
  render::core::bindTexture(id);
+ const auto pathIt = texturePaths_.find(id);
+ const bool gridAtlas = pathIt != texturePaths_.end() && isGridAtlasPath(pathIt->second);
  if(MIPMAP) {
-  const int minFilter = MIPMAP_LINEAR ? gl::filter::LinearMipmapLinear : gl::filter::NearestMipmapLinear;
+  const int minFilter = MIPMAP_LINEAR && !gridAtlas ? gl::filter::LinearMipmapLinear
+                                                    : gl::filter::NearestMipmapLinear;
   ::glTexParameteri(gl::cap::Texture2D, gl::tex::MinFilter, minFilter);
   ::glTexParameteri(gl::cap::Texture2D, gl::tex::MagFilter, gl::filter::Nearest);
  } else {
@@ -702,9 +724,7 @@ void TextureManager::tick() {
                       gl::pixel::Rgba,
                       gl::pixel::UnsignedByte,
                       imageBuffer.data());
-    if(MIPMAP) {
-     uploadDynamicMipmapLevels(texture->sprite, imageBuffer);
-    }
+    if(MIPMAP) uploadDynamicMipmapLevels(texture->sprite + replicateX + replicateY * 16, imageBuffer);
    }
   }
  }

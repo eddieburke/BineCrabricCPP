@@ -33,6 +33,22 @@ RenderProfiler& RenderProfiler::instance() {
 }
 const char* RenderProfiler::stageName(RenderStage stage) {
  switch(stage) {
+ case RenderStage::FrameSetup:
+  return "Frame setup";
+ case RenderStage::FrameDrain:
+  return "Frame drain";
+ case RenderStage::Input:
+  return "Input";
+ case RenderStage::Ticks:
+  return "Ticks";
+ case RenderStage::RenderOverhead:
+  return "Render overhead";
+ case RenderStage::PackPrepare:
+  return "Pack prepare";
+ case RenderStage::Shadow:
+  return "Shadow";
+ case RenderStage::ShadowComposite:
+  return "Shadow composite";
  case RenderStage::Sky:
   return "Sky";
  case RenderStage::Cull:
@@ -45,12 +61,104 @@ const char* RenderProfiler::stageName(RenderStage stage) {
   return "Entities";
  case RenderStage::Particles:
   return "Particles";
+ case RenderStage::OpaqueDepth:
+  return "Opaque depth";
  case RenderStage::TranslucentTerrain:
   return "Translucent terrain";
  case RenderStage::Clouds:
   return "Clouds";
  case RenderStage::Hand:
   return "Hand";
+ case RenderStage::HandDepth:
+  return "Hand depth";
+ case RenderStage::Deferred:
+  return "Deferred";
+ case RenderStage::CenterDepth:
+  return "Center depth";
+ case RenderStage::PostProcess:
+  return "Post process";
+ case RenderStage::HudGui:
+  return "HUD / GUI";
+ case RenderStage::Present:
+  return "Present";
+ case RenderStage::Pace:
+  return "Pace";
+ case RenderStage::Diagnostics:
+  return "Diagnostics";
+ case RenderStage::EntityCollectCull:
+  return "Entity collect/cull";
+ case RenderStage::EntityPreparation:
+  return "Entity preparation";
+ case RenderStage::EntityOpaque:
+  return "Entity opaque";
+ case RenderStage::EntityTranslucent:
+  return "Entity translucent";
+ case RenderStage::BlockEntities:
+  return "Block entities";
+ case RenderStage::EntityDebugLabels:
+  return "Entity debug labels";
+ case RenderStage::ShadowEntityPreparation:
+  return "Shadow entity prep";
+ case RenderStage::ShadowEntityDraw:
+  return "Shadow entity draw";
+ case RenderStage::TargetClear:
+  return "Target clear";
+ case RenderStage::DepthCaptureCopy:
+  return "Depth capture/copy";
+ case RenderStage::CenterDepthSampling:
+  return "Center-depth sampling";
+ case RenderStage::DeferredScheduling:
+  return "Deferred scheduling";
+ case RenderStage::FramebufferTransitions:
+  return "Framebuffer transitions";
+ case RenderStage::ModMeshes:
+  return "Mod meshes";
+ case RenderStage::RenderOrchestration:
+  return "Render orchestration";
+ default:
+  return "?";
+ }
+}
+const char* RenderProfiler::metricName(RenderMetric metric) {
+ switch(metric) {
+ case RenderMetric::EntityTraversals:
+  return "Entity traversals";
+ case RenderMetric::EntityVisible:
+  return "Entity visible";
+ case RenderMetric::EntityCulled:
+  return "Entity culled";
+ case RenderMetric::EntityRendererInvocations:
+  return "Renderer invocations";
+ case RenderMetric::GeneratedGeometryBatches:
+  return "Generated geometry";
+ case RenderMetric::GeneratedVertices:
+  return "Generated vertices";
+ case RenderMetric::FilteredGeometryBatches:
+  return "Filtered geometry";
+ case RenderMetric::FilteredVertices:
+  return "Filtered vertices";
+ case RenderMetric::DrawCalls:
+  return "Draw calls";
+ case RenderMetric::DrawVertices:
+  return "Draw vertices";
+ case RenderMetric::ProgramBinds:
+  return "Program binds";
+ case RenderMetric::TextureBinds:
+  return "Texture binds";
+ case RenderMetric::FramebufferBinds:
+  return "Framebuffer binds";
+ case RenderMetric::UniformUploads:
+  return "Uniform uploads";
+ case RenderMetric::Allocations:
+  return "Allocations";
+ case RenderMetric::RawGlQueries:
+  return "Raw GL queries";
+ case RenderMetric::AsyncReadbacks:
+  return "Async readbacks";
+ case RenderMetric::SynchronousReadbacks:
+  return "Sync readbacks";
+ case RenderMetric::Copies:
+  return "Copies";
  default:
   return "?";
  }
@@ -92,12 +200,11 @@ void RenderProfiler::ensureQueries() {
   gpuReady_ = false;
  }
 }
-void RenderProfiler::collectQueries() {
+void RenderProfiler::collectQueries(int slot) {
  if(!gpuReady_) {
   return;
  }
  try {
-  const int slot = (ringSlot_ + 1) % kRingDepth;
   double gpuMeasured = 0.0;
   for(int stage = 0; stage < kRenderStageCount; ++stage) {
    const auto index = static_cast<std::size_t>(stage);
@@ -132,11 +239,12 @@ void RenderProfiler::beginFrame() {
  ++frameCounter_;
  gpuActiveThisFrame_ = (frameCounter_ % kGpuQueryInterval == 0);
  if(gpuActiveThisFrame_) {
-  collectQueries();
+  ringSlot_ = (ringSlot_ + 1) % kRingDepth;
+  collectQueries(ringSlot_);
  }
- ringSlot_ = (ringSlot_ + 1) % kRingDepth;
  cpuNs_.fill(0);
- activeStage_ = -1;
+ metrics_.fill(0);
+ activeStageDepth_ = 0;
  frameStartNs_ = nanoTime();
  inFrame_ = true;
 }
@@ -144,8 +252,8 @@ void RenderProfiler::endFrame() {
  if(!inFrame_) {
   return;
  }
- if(activeStage_ >= 0) {
-  endStage(static_cast<RenderStage>(activeStage_));
+ while(activeStageDepth_ > 0) {
+  endStage(static_cast<RenderStage>(activeStages_[static_cast<std::size_t>(activeStageDepth_ - 1)].stage));
  }
  inFrame_ = false;
  frameNs_ = nanoTime() - frameStartNs_;
@@ -156,33 +264,61 @@ void RenderProfiler::endFrame() {
  }
 }
 void RenderProfiler::beginStage(RenderStage stage) {
- if(!inFrame_ || activeStage_ >= 0) {
+ if(!inFrame_ || activeStageDepth_ >= kMaxStageDepth) {
   return;
  }
- activeStage_ = static_cast<int>(stage);
- activeQueryBegun_ = false;
- stageStartNs_ = nanoTime();
- if(gpuReady_ && gpuActiveThisFrame_) {
+ ActiveStage& active = activeStages_[static_cast<std::size_t>(activeStageDepth_)];
+ active.stage = static_cast<int>(stage);
+ active.startNs = nanoTime();
+ active.childNs = 0;
+ active.queryBegun = false;
+ const bool cpuOnly = stage == RenderStage::FrameDrain || stage == RenderStage::Input ||
+                      stage == RenderStage::Ticks || stage == RenderStage::RenderOverhead ||
+                      stage == RenderStage::Present || stage == RenderStage::Pace ||
+                      stage == RenderStage::Diagnostics;
+ bool ancestorQuery = false;
+ for(int depth = 0; depth < activeStageDepth_; ++depth) {
+  ancestorQuery = ancestorQuery || activeStages_[static_cast<std::size_t>(depth)].queryBegun;
+ }
+ if(gpuReady_ && gpuActiveThisFrame_ && !cpuOnly && !ancestorQuery) {
   const auto slot = static_cast<std::size_t>(ringSlot_);
-  const auto index = static_cast<std::size_t>(activeStage_);
+  const auto index = static_cast<std::size_t>(active.stage);
   if(!queryPending_[slot][index]) {
    gl::GLCore::beginQuery(kTimeElapsed, queries_[slot][index]);
    queryPending_[slot][index] = true;
-   activeQueryBegun_ = true;
+   active.queryBegun = true;
   }
  }
+ ++activeStageDepth_;
 }
 void RenderProfiler::endStage(RenderStage stage) {
- if(!inFrame_ || activeStage_ != static_cast<int>(stage)) {
+ if(!inFrame_ || activeStageDepth_ <= 0) {
   return;
  }
- const auto index = static_cast<std::size_t>(activeStage_);
- cpuNs_[index] += nanoTime() - stageStartNs_;
- if(gpuReady_ && activeQueryBegun_) {
+ ActiveStage& active = activeStages_[static_cast<std::size_t>(activeStageDepth_ - 1)];
+ if(active.stage != static_cast<int>(stage)) {
+  return;
+ }
+ const std::int64_t elapsed = nanoTime() - active.startNs;
+ const auto index = static_cast<std::size_t>(active.stage);
+ cpuNs_[index] += std::max<std::int64_t>(0, elapsed - active.childNs);
+ if(gpuReady_ && active.queryBegun) {
   gl::GLCore::endQuery(kTimeElapsed);
  }
- activeQueryBegun_ = false;
- activeStage_ = -1;
+ --activeStageDepth_;
+ if(activeStageDepth_ > 0) {
+  activeStages_[static_cast<std::size_t>(activeStageDepth_ - 1)].childNs += elapsed;
+ }
+ for(int metric = 0; metric < kRenderMetricCount; ++metric) {
+  const auto index = static_cast<std::size_t>(metric);
+  metricAvg_[index] += (static_cast<double>(metrics_[index]) - metricAvg_[index]) * kSmoothing;
+ }
+}
+void RenderProfiler::record(RenderMetric metric, std::uint64_t count) noexcept {
+ if(!inFrame_) {
+  return;
+ }
+ metrics_[static_cast<std::size_t>(metric)] += count;
 }
 void RenderProfiler::destroy() {
  if(gpuReady_) {
@@ -196,10 +332,13 @@ void RenderProfiler::destroy() {
  gpuAttempted_ = false;
  gpuActiveThisFrame_ = false;
  frameCounter_ = 0;
+ ringSlot_ = kRingDepth - 1;
  inFrame_ = false;
- activeStage_ = -1;
+ activeStageDepth_ = 0;
  cpuAvgNs_.fill(0.0);
  gpuAvgNs_.fill(0.0);
+ metrics_.fill(0);
+ metricAvg_.fill(0.0);
  frameAvgNs_ = 0.0;
  gpuMeasuredAvgNs_ = 0.0;
  linesCache_.clear();
@@ -214,7 +353,7 @@ std::vector<std::string> RenderProfiler::lines() const {
  if(!linesCache_.empty() && now - lastLinesAt_ < std::chrono::milliseconds(250)) {
   return linesCache_;
  }
- out.reserve(static_cast<std::size_t>(kRenderStageCount) + 3);
+ out.reserve(static_cast<std::size_t>(kRenderStageCount + kRenderMetricCount) + 3);
  std::string header = paddedColumn("Stage", kStageColumnWidth) + paddedColumn("CPU", kCpuColumnWidth);
  if(gpuReady_) {
   header += "GPU";
@@ -248,6 +387,14 @@ std::vector<std::string> RenderProfiler::lines() const {
  std::string other = paddedColumn("Unmeasured", kStageColumnWidth);
  other += paddedColumn(formatMs(std::max(0.0, frameAvgNs_ - cpuAccounted)), kCpuColumnWidth);
  out.push_back(other);
+ for(int metric = 0; metric < kRenderMetricCount; ++metric) {
+  const auto index = static_cast<std::size_t>(metric);
+  if(metricAvg_[index] <= 0.0) {
+   continue;
+  }
+  out.push_back(std::string(metricName(static_cast<RenderMetric>(metric))) + ": " +
+                std::to_string(static_cast<std::uint64_t>(metricAvg_[index] + 0.5)));
+ }
   linesCache_ = out;
   lastLinesAt_ = now;
   return out;

@@ -6,6 +6,7 @@
 #include <vector>
 #include "net/minecraft/block/entity/BlockEntity.hpp"
 #include "net/minecraft/client/render/chunk/ChunkMeshJob.hpp"
+#include "net/minecraft/client/render/chunk/TerrainRegion.hpp"
 #include "net/minecraft/client/render/chunk/TerrainLayers.hpp"
 #include "net/minecraft/client/render/culling/Frustum.hpp"
 #include "net/minecraft/util/math/Types.hpp"
@@ -13,11 +14,6 @@
 namespace net::minecraft::client::render::chunk {
 inline constexpr int kSectionBlocks = 16;
 struct ModChunkMesh;
-struct LayerVbo {
- unsigned handle = 0;
- int vertexCount = 0;
- [[nodiscard]] bool valid() const noexcept { return handle != 0; }
-};
 class ChunkBuilder : public std::enable_shared_from_this<ChunkBuilder> {
  public:
  ChunkBuilder(World* world,
@@ -47,8 +43,12 @@ class ChunkBuilder : public std::enable_shared_from_this<ChunkBuilder> {
  }
  static void buildMesh(ChunkMeshJob& job);
  void uploadMesh(ChunkMeshJob& job);
- void drawLayer(int layer) const;
  void freeGpuBuffers() noexcept;
+ void setTerrainRegion(TerrainRegion& region) noexcept { terrainRegion_ = &region; }
+ [[nodiscard]] TerrainRegion* terrainRegion() const noexcept { return terrainRegion_; }
+ [[nodiscard]] const TerrainAllocation& terrainAllocation(int layer) const noexcept {
+  return terrainAllocations_[static_cast<std::size_t>(layer)];
+ }
  void freeModMeshGpuBuffers() noexcept {
   for(int layer = 0; layer < terrain_layer::Count; ++layer) {
    for(ModChunkMesh& modMesh : modLayerMeshes_[static_cast<std::size_t>(layer)]) {
@@ -75,7 +75,7 @@ class ChunkBuilder : public std::enable_shared_from_this<ChunkBuilder> {
   ++version;
  }
  World* world = nullptr;
- std::array<LayerVbo, terrain_layer::Count> layerVbos_{};
+ std::array<TerrainAllocation, terrain_layer::Count> terrainAllocations_{};
  inline static int frameDrawCalls = 0;
  inline static int chunkUpdates = 0;
  int x = 0;
@@ -117,5 +117,6 @@ class ChunkBuilder : public std::enable_shared_from_this<ChunkBuilder> {
   ChunkBuilder* neighbors[6] = {};
   std::vector<::net::minecraft::block::entity::BlockEntity*> blockEntities_{};
  std::vector<::net::minecraft::block::entity::BlockEntity*>* currentBlockEntities_ = nullptr;
+ TerrainRegion* terrainRegion_ = nullptr;
 };
 } // namespace net::minecraft::client::render::chunk

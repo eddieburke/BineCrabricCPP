@@ -21,8 +21,6 @@
 #include <array>
 #include <cmath>
 #include <cstring>
-#include <iomanip>
-#include <sstream>
 #include <string>
 #include <unordered_map>
 #include <utility>
@@ -78,17 +76,25 @@ void bindPassTargets(shadowmap::ShadowTargets* shadowTargets, const PackPass& pa
  shadowTargets->fbo.bind();
  core::viewport(0, 0, width, height);
 }
+const std::string& stageName(CompositeStage stage) {
+ static const std::array<std::string, static_cast<std::size_t>(CompositeStage::Count)> names = {
+     "begin", "shadowcomp", "prepare", "deferred", "composite"};
+ return names[static_cast<std::size_t>(stage)];
+}
 } // namespace
-bool Pipeline::renderCompositePasses(PackInstance& pack, const std::vector<std::size_t>& passes, bool present,
-                                     const std::string& stage, int shadowDepthTextureId, int shadowOpaqueDepthTextureId,
+bool Pipeline::renderCompositePasses(PackInstance& pack, CompositeStage stageId, bool present,
+                                     int shadowDepthTextureId, int shadowOpaqueDepthTextureId,
                                      const int* shadowColorTextureIds, int shadowColorTextureCount,
                                      shadowmap::ShadowTargets* shadowTargets, const int* shadowColorAltTextureIds) {
+ const std::string& stage = stageName(stageId);
+ const std::vector<PackInstance::RuntimeOperation>& operations = pack.stagePlan(stageId);
  render::ColorTargets& targets = pack.colorTargets;
  const int shadowMapResolution = static_cast<int>(worldUniforms_.shadowMapResolution);
  const int width = stage == "shadowcomp" && shadowMapResolution > 0 ? shadowMapResolution : targets.width();
  const int height = stage == "shadowcomp" && shadowMapResolution > 0 ? shadowMapResolution : targets.height();
  if(!pack.summary.valid || pack.programs == nullptr ||
-    (passes.empty() && pack.computePasses.empty() && pack.setupPasses.empty())) {
+    !pack.stagePlanValid[static_cast<std::size_t>(stageId)] ||
+    (operations.empty() && pack.setupPlan.empty())) {
   return false;
  }
  if(!targets.valid() || targets.depthTexture() == 0 || !hasGlContext() || width <= 0 || height <= 0) {
@@ -103,26 +109,6 @@ bool Pipeline::renderCompositePasses(PackInstance& pack, const std::vector<std::
  }
  int destinationFramebuffer = 0;
  ::glGetIntegerv(static_cast<unsigned>(gl::query::FramebufferBinding), &destinationFramebuffer);
- std::vector<std::pair<std::size_t, gl::ShaderProgram*>> programChain;
- programChain.reserve(passes.size());
- for(std::size_t passIndex : passes) {
-  if(passIndex >= pack.definition.passes.size()) continue;
-  const PackPass& pass = pack.definition.passes[passIndex];
-  if(pack.definition.programs.count(pass.program) == 0) {
-   logOnce(pack, "pass '" + pass.name + "' references unknown program '" + pass.program + "'",
-           LogLevel::Severe);
-   return false;
-  }
-  gl::ShaderProgram* program = PackCompiler::compile(
-      pack, pass.program, [this](PackInstance& p, const std::string& m, LogLevel level) {
-       logOnce(p, m, level);
-      });
-  if(program == nullptr) {
-   logOnce(pack, "pass '" + pass.name + "' program '" + pass.program + "' is unusable", LogLevel::Severe);
-   return false;
-  }
-  programChain.push_back({passIndex, program});
- }
  struct ViewportGuard {
   int saved[4]{};
   bool valid = false;
@@ -177,39 +163,15 @@ bool Pipeline::renderCompositePasses(PackInstance& pack, const std::vector<std::
                                    static_cast<float>(height),
                                    static_cast<float>(width) / std::max(static_cast<float>(height), 1.0f)};
  const bool computeReady = gl::GLCore::computeSupported;
- auto compileFn = [this](PackInstance& p, const std::string& name) {
-  return PackCompiler::compile(p, name, [this](PackInstance& p2, const std::string& m, LogLevel level) {
-   logOnce(p2, m, level);
-  });
- };
  if(computeReady &&
-    !dispatchSetupIfNeeded(pack, frameUniforms, &viewport, width, height, textures, colorImages, volumeTextures, &targets,
-                           compileFn)) {
+    !dispatchSetupIfNeeded(pack, frameUniforms, &viewport, width, height, textures, colorImages,
+                           volumeTextures, &targets)) {
   releaseSamplers(maxTextureUnits());
   return false;
  }
  const bool concurrent = pack.definition.allowConcurrentCompute;
- std::vector<std::size_t> stageComputes;
- if(computeReady) {
-  for(std::size_t passIndex : pack.computePasses) {
-   const PackPass& compute = pack.definition.passes[passIndex];
-   if(!ComputeDispatcher::matchesStage(compute.name, stage) &&
-      !(stage == "composite" && ComputeDispatcher::matchesStage(compute.name, "final"))) {
-    continue;
-   }
-   stageComputes.push_back(passIndex);
-  }
-  std::stable_sort(stageComputes.begin(), stageComputes.end(), [&pack](std::size_t a, std::size_t b) {
-   const std::string& na = pack.definition.passes[a].name;
-   const std::string& nb = pack.definition.passes[b].name;
-   const std::string pa = ComputeDispatcher::computeParentName(na);
-   const std::string pb = ComputeDispatcher::computeParentName(nb);
-   if(pa != pb) return ComputeDispatcher::lessComputeParent(pa, pb);
-   return ComputeDispatcher::lessComputeOrder(pack.definition.passes[a], pack.definition.passes[b]);
-  });
- }
- std::vector<bool> computeDispatched(pack.definition.passes.size(), false);
  bool ranCompute = false;
+ const std::vector<std::string>* activeComputeWrites = nullptr;
  const auto prepareComputeBinds = [&]() {
   if(gl::GLCore::bindFramebuffer != nullptr) gl::GLCore::bindFramebuffer(static_cast<unsigned>(gl::framebuffer::Framebuffer), 0);
   if(gl::GLCore::memoryBarrier != nullptr) {
@@ -218,75 +180,6 @@ bool Pipeline::renderCompositePasses(PackInstance& pack, const std::vector<std::
   refreshColorMaps(targets, textures, colorImages, true);
   refreshTextureAliases(textures, pack.definition.usesWaterShadow);
  };
- const auto dispatchParentComputes = [&](const std::string& parent) -> bool {
-  std::vector<std::string> writeBuffers;
-  writeBuffers.reserve(8);
-  for(std::size_t passIndex : stageComputes) {
-   if(ComputeDispatcher::computeParentName(pack.definition.passes[passIndex].name) != parent) continue;
-   gl::ShaderProgram* program = compileFn(pack, pack.definition.passes[passIndex].program);
-   if(program == nullptr) continue;
-   for(int i = 0; i < targets.colorCount(); ++i) {
-    if(program->location("colorimg" + std::to_string(i)) < 0) continue;
-    const std::string name = "colortex" + std::to_string(i);
-    if(std::find(writeBuffers.begin(), writeBuffers.end(), name) == writeBuffers.end()) {
-     writeBuffers.push_back(name);
-    }
-   }
-  }
-  {
-   std::ostringstream wb;
-   for(std::size_t i = 0; i < writeBuffers.size(); ++i) {
-    if(i) wb << ',';
-    wb << writeBuffers[i] << '=' << colorFormatName(targets.formatOf(writeBuffers[i]));
-   }
-   logOnce(pack, "compute parent '" + parent + "' writeBuffers=[" + wb.str() + "] concurrent=" +
-                     (concurrent ? "true" : "false"));
-  }
-  for(const std::string& name : writeBuffers) {
-   targets.prepareWrite(name);
-  }
-  prepareComputeBinds();
-  bool any = false;
-  for(std::size_t passIndex : stageComputes) {
-   if(computeDispatched[passIndex]) continue;
-   if(ComputeDispatcher::computeParentName(pack.definition.passes[passIndex].name) != parent) continue;
-   if(!ComputeDispatcher::dispatch(pack, pack.definition.passes[passIndex], frameUniforms, &viewport, textures,
-                                   colorImages, volumeTextures, &targets, width, height, !concurrent, compileFn)) {
-    return false;
-   }
-   computeDispatched[passIndex] = true;
-   any = true;
-   ranCompute = true;
-  }
-  if(any && concurrent && gl::GLCore::memoryBarrier != nullptr) {
-   gl::GLCore::memoryBarrier(ComputeDispatcher::kBarrierBits);
-  }
-  if(any) {
-   targets.applyPassFlips(pack.definition, parent, writeBuffers);
-   refreshColorMaps(targets, textures, colorImages, true);
-   logOnce(pack, "compute parent '" + parent + "' flipped writeBuffers and refreshed samplers");
-  }
-  return true;
- };
- const auto dispatchOrphansBefore = [&](const std::string* nextRasterPass) -> bool {
-  for(std::size_t passIndex : stageComputes) {
-   if(computeDispatched[passIndex]) continue;
-   const std::string parent = ComputeDispatcher::computeParentName(pack.definition.passes[passIndex].name);
-   const bool hasRaster = std::any_of(programChain.begin(), programChain.end(), [&](const auto& entry) {
-    return pack.definition.passes[entry.first].name == parent;
-   });
-   if(hasRaster) continue;
-   if(nextRasterPass != nullptr && !ComputeDispatcher::lessComputeParent(parent, *nextRasterPass)) break;
-   if(!dispatchParentComputes(parent)) return false;
-  }
-  return true;
- };
- if(computeReady && programChain.empty()) {
-  if(!dispatchOrphansBefore(nullptr)) {
-   releaseSamplers(maxTextureUnits());
-   return false;
-  }
- }
  const auto publishShadowColorReadSide = [&]() {
   shadowDepthTexture_ = shadowDepthTextureId;
   shadowColorTextureCount_ = std::clamp(shadowColorTextureCount, 0, 8);
@@ -296,7 +189,7 @@ bool Pipeline::renderCompositePasses(PackInstance& pack, const std::vector<std::
                          shadowColorFlipped_, shadowColorFlipPack_);
   }
  };
- if(programChain.empty()) {
+ if(operations.empty()) {
   if(present) {
    finishFinalPass(targets, false);
   } else if(gl::GLCore::bindFramebuffer != nullptr) {
@@ -311,7 +204,38 @@ bool Pipeline::renderCompositePasses(PackInstance& pack, const std::vector<std::
  bool wroteToScreen = false;
  bool executed = false;
  std::size_t passPosition = 0;
- for(const auto& [passIndex, program] : programChain) {
+ for(const PackInstance::RuntimeOperation& operation : operations) {
+  const PackInstance::RuntimePass& runtime = operation.pass;
+  if(operation.compute) {
+   if(!computeReady) continue;
+   if(operation.groupBegin) {
+    activeComputeWrites = &operation.writeBuffers;
+    for(const std::string& name : *activeComputeWrites) targets.prepareWrite(name);
+    prepareComputeBinds();
+   }
+   if(runtime.program == nullptr ||
+      !ComputeDispatcher::dispatch(pack, pack.definition.passes[runtime.passIndex], *runtime.program,
+                                   frameUniforms, &viewport, textures, colorImages, volumeTextures,
+                                   &targets, width, height, !concurrent)) {
+    releaseSamplers(maxTextureUnits());
+    return false;
+   }
+   ranCompute = true;
+   if(operation.groupEnd) {
+    if(concurrent && gl::GLCore::memoryBarrier != nullptr) {
+     gl::GLCore::memoryBarrier(ComputeDispatcher::kBarrierBits);
+    }
+    if(activeComputeWrites != nullptr) {
+     targets.applyPassFlips(pack.definition, operation.parent, *activeComputeWrites);
+     refreshColorMaps(targets, textures, colorImages, true);
+    }
+    activeComputeWrites = nullptr;
+   }
+   continue;
+  }
+  const std::size_t passIndex = runtime.passIndex;
+  gl::ShaderProgram* program = runtime.program;
+  if(program == nullptr) return false;
   const PackPass& pass = pack.definition.passes[passIndex];
   const bool shadowCompPass = stage == "shadowcomp" && shadowFlipsKnown &&
                               passPosition < shadowCompPassReadFlips_.size();
@@ -320,16 +244,6 @@ bool Pipeline::renderCompositePasses(PackInstance& pack, const std::vector<std::
                    shadowCompPassReadFlips_[passPosition],
                    shadowColorTextureIds, shadowColorAltTextureIds,
                    shadowColorTextureCount, pack);
-  }
-  if(computeReady && !dispatchOrphansBefore(&pass.name)) {
-   releaseSamplers(maxTextureUnits());
-   return false;
-  }
-  if(computeReady) {
-   if(!dispatchParentComputes(pass.name)) {
-    releaseSamplers(maxTextureUnits());
-    return false;
-   }
   }
   const std::string output =
       pass.outputs.empty() ? (stage == "shadowcomp" ? std::string("shadowcolor0") : std::string("screen"))
@@ -434,10 +348,6 @@ bool Pipeline::renderCompositePasses(PackInstance& pack, const std::vector<std::
   core::activeTexture(gl::tex::Texture0);
   ++passPosition;
  }
- if(computeReady && !dispatchOrphansBefore(nullptr)) {
-  releaseSamplers(maxTextureUnits());
-  return false;
- }
  if(present) {
   finishFinalPass(targets, wroteToScreen);
  }
@@ -448,7 +358,7 @@ bool Pipeline::renderCompositePasses(PackInstance& pack, const std::vector<std::
  releaseSamplers(maxTextureUnits());
  core::activeTexture(gl::tex::Texture0);
  publishShadowColorReadSide();
- return present ? wroteToScreen : executed;
+ return present ? wroteToScreen : executed || ranCompute;
 }
 void Pipeline::finishFinalPass(ColorTargets& targets, bool wroteToScreen) {
  targets.resetMipmaps();

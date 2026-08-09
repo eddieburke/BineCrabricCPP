@@ -101,7 +101,7 @@ class ScreenHandlerSlotUpdateS2CPacket : public Packet {
   networkHandler.onScreenHandlerSlotUpdate(*this);
  }
  [[nodiscard]] std::size_t size() const override {
-  return 8;
+  return 3U + (stack.itemId <= 0 ? 2U : 5U);
  }
 };
 class InventoryS2CPacket : public Packet {
@@ -128,7 +128,11 @@ class InventoryS2CPacket : public Packet {
   networkHandler.onInventory(*this);
  }
  [[nodiscard]] std::size_t size() const override {
-  return 3U + contents.size() * 5U;
+  std::size_t total = 3U;
+  for(const ItemStack& stack : contents) {
+   total += stack.itemId <= 0 ? 2U : 5U;
+  }
+  return total;
  }
 };
 class ScreenHandlerPropertyUpdateS2CPacket : public Packet {
@@ -208,9 +212,9 @@ class UpdateSignPacket : public Packet {
   networkHandler.handleUpdateSign(*this);
  }
  [[nodiscard]] std::size_t size() const override {
-  std::size_t total = 0;
+  std::size_t total = 10U;
   for(const std::string& line : text) {
-   total += line.size();
+   total += packetio::javaStringSize(line);
   }
   return total;
  }
@@ -239,7 +243,7 @@ class MapUpdateS2CPacket : public Packet {
   networkHandler.onMapUpdate(*this);
  }
  [[nodiscard]] std::size_t size() const override {
-  return 4U + updateData.size();
+  return 5U + updateData.size();
  }
 };
 class IncreaseStatS2CPacket : public Packet {
@@ -258,7 +262,7 @@ class IncreaseStatS2CPacket : public Packet {
   networkHandler.onIncreaseStat(*this);
  }
  [[nodiscard]] std::size_t size() const override {
-  return 6;
+  return 5;
  }
 };
 } // namespace net::minecraft

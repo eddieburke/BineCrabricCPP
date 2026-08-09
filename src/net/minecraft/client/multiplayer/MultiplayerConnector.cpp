@@ -40,7 +40,7 @@ MultiplayerConnector::MultiplayerConnector(Minecraft* minecraft, std::string hos
    return;
   }
   std::string connectError;
-  auto bridge = std::make_unique<ClientNetworkBridge>(&minecraft->worldSession());
+  auto bridge = std::make_unique<ClientNetworkBridge>();
   if(!bridge->connect(minecraft, host, port, connectError, &state->cancelled)) {
    if(state->cancelled.load(std::memory_order_acquire)) {
     return;
@@ -106,14 +106,6 @@ std::string MultiplayerConnector::poll(Minecraft& client) {
   client.multiplayerSession().adoptBridge(std::move(result->bridge));
  }
  return {};
-}
-void MultiplayerConnector::tickBridge(Minecraft& client) {
- if(state_->cancelled.load(std::memory_order_acquire)) {
-  return;
- }
- if(ClientNetworkBridge* bridge = client.multiplayerSession().bridge()) {
-  bridge->tick();
- }
 }
 ClientNetworkBridge* MultiplayerConnector::activeBridge(Minecraft* client) const {
  if(client == nullptr) {

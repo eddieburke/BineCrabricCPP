@@ -18,7 +18,7 @@ void LanScreen::init() {
  addActionButton(gui::layout::centerBtnX(width()), baseY + 152, "Cancel", [this] { backToGameMenu(); });
  if(textRenderer() != nullptr) {
   portField_ = std::make_unique<gui::widget::TextFieldWidget>(
-      this, textRenderer(), width() / 2 - 100, baseY + 28, 200, 20, portText_.empty() ? "25565" : portText_);
+      this, textRenderer(), width() / 2 - 100, baseY + 28, 200, 20, portText_.empty() ? "0" : portText_);
   portField_->focused = true;
   portField_->setMaxLength(5);
  }
@@ -105,11 +105,11 @@ void LanScreen::openLan() {
  try {
   parsedPort = std::stoi(portField_->getText());
  } catch(...) {
-  errorMessage_ = "Port must be a number from 1 to 65535.";
+  errorMessage_ = "Port must be a number from 0 to 65535.";
   return;
  }
- if(parsedPort < 1 || parsedPort > 65535) {
-  errorMessage_ = "Port must be a number from 1 to 65535.";
+ if(parsedPort < 0 || parsedPort > 65535) {
+  errorMessage_ = "Port must be a number from 0 to 65535.";
   return;
  }
  errorMessage_.clear();
@@ -154,7 +154,7 @@ void LanScreen::render(int mouseX, int mouseY, float tickDelta) {
    textRenderer()->drawCenteredWithShadow(
        "Runs this world in minecraft_server.exe", width() / 2, baseY + 2, 0xA0A0A0);
   }
-  textRenderer()->drawWithShadow("Port", width() / 2 - 100, baseY + 16, 0xA0A0A0);
+  textRenderer()->drawWithShadow("Port (0 = automatic)", width() / 2 - 100, baseY + 16, 0xA0A0A0);
  }
  if(portField_ != nullptr) {
   portField_->render();

@@ -6,7 +6,7 @@
 #include "net/minecraft/client/gui/layout/ContainerLayout.hpp"
 #include "net/minecraft/client/input/InputSystem.hpp"
 #include "net/minecraft/client/render/GameRenderer.hpp"
-#include "net/minecraft/client/render/pipeline/Manager.hpp"
+#include "net/minecraft/client/render/pipeline/Pipeline.hpp"
 #include "net/minecraft/client/render/RenderCore.hpp"
 #include "net/minecraft/client/render/Tessellator.hpp"
 #include "net/minecraft/client/render/entity/EntityRenderDispatcher.hpp"
@@ -128,9 +128,9 @@ void InventoryScreen::drawBackground(float tickDelta) {
  core::setEntityColor(0.0f, 0.0f, 0.0f, 0.0f);
  core::setConstColor(1.0f, 1.0f, 1.0f, 1.0f);
  if(minecraft()->gameRenderer != nullptr) {
-  if(render::PackManager* shaderPacks = minecraft()->gameRenderer->shaderPacks();
-     shaderPacks != nullptr) {
-    shaderPacks->pipeline().refreshLightmap(minecraft()->world);
+  if(render::Pipeline* shaderPipeline = minecraft()->gameRenderer->shaderPipeline();
+     shaderPipeline != nullptr) {
+    shaderPipeline->refreshLightmap(minecraft()->world);
   }
  }
  {

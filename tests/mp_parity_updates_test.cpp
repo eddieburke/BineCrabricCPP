@@ -32,6 +32,7 @@
 #include "net/minecraft/server/network/ServerPlayerInteractionManager.hpp"
 #include "net/minecraft/server/network/ServerSocket.hpp"
 #include "net/minecraft/world/ClientWorld.hpp"
+#include "net/minecraft/world/chunk/ChunkCache.hpp"
 #include "support/server_event_fixture.hpp"
 namespace {
 void ensureWinsock() {
@@ -225,6 +226,9 @@ TEST(MultiplayerParityUpdates, RespawnTeleportAppliesToReplacementPlayer) {
  CapturingServerMoveHandler serverHandler;
  Connection serverConnection(serverSocket, "RespawnServer", serverHandler);
  ClientWorld world(&handler, 12345ULL, 0);
+ auto* remoteCache = dynamic_cast<world::chunk::ChunkCache*>(world.getChunkSource());
+ ASSERT_NE(remoteCache, nullptr);
+ ASSERT_FALSE(remoteCache->isChunkLoaded(1, -2));
  handler.world = &world;
  client.world = &world;
  client.interactionManager = std::make_unique<client::MultiplayerInteractionManager>(&client, &handler);
@@ -243,6 +247,8 @@ TEST(MultiplayerParityUpdates, RespawnTeleportAppliesToReplacementPlayer) {
  handler.onPlayerMove(teleport);
  EXPECT_DOUBLE_EQ(oldPlayer->x, 0.5);
  handler.applyDeferredRespawn();
+ EXPECT_FALSE(remoteCache->isChunkLoaded(1, -2));
+ EXPECT_EQ(remoteCache->pendingAsyncLoadCount(), 0U);
  ASSERT_NE(client.player, oldPlayer);
  EXPECT_DOUBLE_EQ(client.player->x, 25.5);
  EXPECT_DOUBLE_EQ(client.player->y, 70.62);

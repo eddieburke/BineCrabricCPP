@@ -1,5 +1,6 @@
 #pragma once
 #include <array>
+#include <cstdint>
 #include <memory>
 #include <optional>
 #include <string>
@@ -11,6 +12,7 @@ class ShaderProgram;
 }
 namespace net::minecraft::client::render {
 int resolveShaderObjectId(const std::string& kind, const std::string& name, int fallback = 0);
+std::uint64_t shaderObjectIdRevision();
 void setShaderBlockIds(const std::array<int, 256>& ids);
 int resolveShaderBlockId(int id);
 enum class DrawPhase {
@@ -49,7 +51,9 @@ class RenderType {
              std::optional<WorldProgramId> worldProgram = std::nullopt);
   virtual ~RenderType() = default;
   void setupRenderState() const;
-  void restoreRenderState(const core::PassGlBits& saved, gl::ShaderProgram* savedProgram) const;
+  void restoreRenderState(const core::PassGlBits& saved,
+                          gl::ShaderProgram* savedProgram,
+                          std::optional<WorldProgramId> savedWorldProgram) const;
   [[nodiscard]] std::string_view name() const {
    return name_;
   }
@@ -106,7 +110,9 @@ class RenderPassScope {
  const RenderType* type_;
  core::PassGlBits saved_;
  gl::ShaderProgram* savedProgram_ = nullptr;
+ std::optional<WorldProgramId> savedWorldProgram_;
  bool savedDrawEnabled_ = true;
+ core::RenderStage savedRenderStage_ = core::RenderStage::None;
  net::minecraft::client::render::core::WorldLightUniforms savedWorldLight_{};
  float savedConstColor_[4] = {1.0f, 1.0f, 1.0f, 1.0f};
  float savedAlphaTestRef_ = 0.1f;

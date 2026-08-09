@@ -42,7 +42,8 @@ namespace net::minecraft::client::gl {
  // cache), so no shader source is recompiled. Falls back to compile() in the caller
  // when the driver rejects the binary.
  bool loadFromBinary(const ProgramBinaryBlob& binary);
- // Async compile service helpers — extract GL program binary after link.
+ // Compile-and-extract combo — one glLinkProgram, then reads the binary back for
+ // ProgramCache to store on disk. See ProgramCache::compileSync.
  bool compileToBinary(ProgramBinaryBlob& out,
                       const std::string& vertexSource,
                       const std::string& fragmentSource,
@@ -59,7 +60,7 @@ namespace net::minecraft::client::gl {
  // binary. glProgramBinary never re-runs glBindAttribLocation, so a binary loaded
  // from an older table keeps whatever locations were live when it was compiled;
  // without this the content hash cannot see that and a stale binary matches
- // forever. See ProgramCache::buildRequest.
+ // forever. See ProgramCache::compileSync.
  [[nodiscard]] static std::uint64_t contentHash(bool compute,
                                                 const std::string& preamble,
                                                 const std::string& a,
@@ -68,6 +69,11 @@ namespace net::minecraft::client::gl {
                                                 const std::string& d = {},
                                                 const std::string& e = {},
                                                 const std::string& abiSalt = {});
+ // Exactly what one stage hands the driver: preamble, then the body with its own
+ // leading #version stripped. Compile failures dump through this too, so a
+ // driver's "0(3872)" points at the same line in the dump.
+ [[nodiscard]] static std::string assembleStageSource(const std::string& versionPreamble,
+                                                      const std::string& body);
  void destroy();
  [[nodiscard]] bool valid() const {
   return program_ != 0;

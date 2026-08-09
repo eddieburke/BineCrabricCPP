@@ -6,6 +6,7 @@
 #include <string>
 #include <unordered_map>
 #include <vector>
+#include "net/minecraft/client/gl/GlConstants.hpp"
 #include "net/minecraft/client/render/GlState.hpp"
 #include "net/minecraft/client/render/shaderpack/Loader.hpp"
 #include "net/minecraft/client/render/targets/RenderTargets.hpp"
@@ -69,6 +70,7 @@ TEST(ColorTargetsTest, RoundTripsFormatNames) {
  }
 }
 TEST(ColorTargetsTest, ClassifiesIntegerFormats) {
+ EXPECT_EQ(client::gl::pixel::RgbaInteger, 0x8D99);
  constexpr std::array<const char*, 25> integerNames = {
      "R8UI",   "R16UI",  "R32UI",  "RG8UI",   "RG16UI",  "RG32UI",
      "RGB8UI", "RGB16UI", "RGB32UI", "RGBA8UI", "RGBA16UI", "RGBA32UI",

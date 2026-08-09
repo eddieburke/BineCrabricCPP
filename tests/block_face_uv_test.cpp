@@ -59,3 +59,25 @@ TEST(BlockFaceUv, ModTextureScaleRemainsNormalizedWhenRotated) {
   }
  }
 }
+TEST(BlockFaceUv, AtlasBoundariesAreInsetSymmetricallyForEveryRotation) {
+ const ResolvedTexture texture{32.0 / 256.0,
+                               48.0 / 256.0,
+                               64.0 / 256.0,
+                               80.0 / 256.0,
+                               1.0 / 256.0,
+                               1.0 / 256.0,
+                               -1,
+                               false};
+ const Box bounds{0.0, 0.0, 0.0, 1.0, 1.0, 1.0};
+ for(const SideFaceDirection face : {SideFaceDirection::east, SideFaceDirection::west,
+                                     SideFaceDirection::north, SideFaceDirection::south}) {
+  for(int rotation = 0; rotation < 4; ++rotation) {
+   for(const auto& corner : corners(sideFaceUvFor(texture, bounds, false, face, rotation))) {
+    EXPECT_GE(corner[0], texture.safeUMin());
+    EXPECT_LE(corner[0], texture.safeUMax());
+    EXPECT_GE(corner[1], texture.safeVMin());
+    EXPECT_LE(corner[1], texture.safeVMax());
+   }
+  }
+ }
+}

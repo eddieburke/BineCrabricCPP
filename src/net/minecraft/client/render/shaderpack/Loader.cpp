@@ -30,12 +30,7 @@ std::string trim(std::string_view value) {
  const std::size_t last = value.find_last_not_of(" \t\r\n");
  return std::string(value.substr(first, last - first + 1));
 }
-std::string_view trimmedView(std::string_view value) {
- const std::size_t first = value.find_first_not_of(" \t\r\n");
- if(first == std::string_view::npos) return {};
- const std::size_t last = value.find_last_not_of(" \t\r\n");
- return value.substr(first, last - first + 1);
-}
+
 std::string lowercase(std::string value) {
  for(char& ch : value) ch = static_cast<char>(std::tolower(static_cast<unsigned char>(ch)));
  return value;
@@ -111,9 +106,14 @@ void optionRange(std::string_view comment, PackSetting& setting) {
   if(i >= content.size()) break;
   const std::size_t start = i;
   while(i < content.size() && !std::isspace(static_cast<unsigned char>(content[i]))) ++i;
+  const std::string_view token = content.substr(start, i - start);
   double value = 0.0;
   bool ignored = false;
-  if(!number(content.substr(start, i - start), value, ignored)) continue;
+  if(!number(token, value, ignored)) continue;
+  // Keep the tokens, not just their extremes: this is the set of values the
+  // pack offers, and normalizeSettingValue needs it to accept one verbatim
+  // instead of clamping it into a range the pack never declared.
+  setting.valueOrder.emplace_back(token);
   if(!found) {
    setting.minimum = value;
    setting.maximum = value;
@@ -171,6 +171,7 @@ void addOption(std::unordered_map<std::string, PackSourceOption>& options,
 void scanOptions(const std::string& source,
                  std::unordered_map<std::string, PackSourceOption>& options,
                  std::unordered_set<std::string>& rejected) {
+ if(source.find("#define") == std::string::npos && source.find("const ") == std::string::npos) return;
  int braceDepth = 0;
  std::size_t lineStart = 0;
  while(lineStart < source.size()) {
@@ -243,41 +244,20 @@ void scanOptions(const std::string& source,
   braceDepth -= static_cast<int>(std::count(rawLine.begin(), rawLine.end(), '}'));
  }
 }
-void advanceBlockComment(std::string_view line, bool& inBlockComment) {
- for(std::size_t i = 0; i < line.size();) {
+std::string_view stripComments(std::string_view line, bool& inBlockComment, std::string& scratch) {
+ scratch.clear();
+ for(std::size_t at = 0; at < line.size();) {
   if(inBlockComment) {
-   const std::size_t close = line.find("*/", i);
-   if(close == std::string_view::npos) return;
-   i = close + 2;
+   const std::size_t close = line.find("*/", at);
+   if(close == std::string_view::npos) break;
+   at = close + 2;
    inBlockComment = false;
    continue;
   }
-  if(line[i] == '/' && i + 1 < line.size() && line[i + 1] == '/') return;
-  if(line[i] == '/' && i + 1 < line.size() && line[i + 1] == '*') {
-   inBlockComment = true;
-   i += 2;
-   continue;
-  }
-  ++i;
- }
-}
-std::string_view stripLineComments(std::string_view line, std::string& scratch) {
- std::size_t at = 0;
- while(at + 1 < line.size()) {
-  if(line[at] == '/' && line[at + 1] == '/') return line.substr(0, at);
-  if(line[at] == '/' && line[at + 1] == '*') break;
-  ++at;
- }
- if(at + 1 >= line.size()) return line;
- scratch.clear();
- scratch.append(line.substr(0, at));
- while(at < line.size()) {
   if(at + 1 < line.size() && line[at] == '/' && line[at + 1] == '/') break;
   if(at + 1 < line.size() && line[at] == '/' && line[at + 1] == '*') {
-   const std::size_t close = line.find("*/", at + 2);
-   if(close == std::string_view::npos) break;
-   scratch += ' ';
-   at = close + 2;
+   inBlockComment = true;
+   at += 2;
    continue;
   }
   scratch += line[at];
@@ -295,74 +275,126 @@ std::string_view firstIdentView(std::string_view text) {
 std::string firstIdentifier(const std::string& text) {
  return std::string(firstIdentView(text));
 }
-void scanPackConstants(const std::string& source,
-                       PackDefinition& pack,
-                       const std::unordered_map<std::string, PackSourceOption>& options,
-                       const PPMacroTable& seed) {
-  PPMacroTable macros = seed;
-  ConditionalState conditionals(ConditionalState::Flavor::Glsl);
-  bool inBlockComment = false;
-  std::string scratch;
-  std::string keyScratch;
+bool metadataLine(std::string_view line) {
+ const bool constant = line.rfind("const ", 0) == 0;
+ const bool layout = line.find("layout") != std::string_view::npos;
+ const bool targetDeclaration =
+     (line.find("colortex") != std::string_view::npos ||
+      line.find("shadowcolor") != std::string_view::npos ||
+      line.find("colorimg") != std::string_view::npos) &&
+     (line.find("uniform") != std::string_view::npos ||
+      line.find("sampler") != std::string_view::npos ||
+      line.find("image") != std::string_view::npos);
+ return constant || layout || targetDeclaration;
+}
+std::string metadataPreprocessorInput(const std::string& source) {
+ std::string result;
+ result.reserve(source.size() / 16);
+ bool statement = false;
+ bool directive = false;
  std::size_t lineStart = 0;
  while(lineStart <= source.size()) {
   const std::size_t lineEnd = source.find('\n', lineStart);
   const std::size_t lineSize = lineEnd == std::string::npos ? source.size() - lineStart : lineEnd - lineStart;
-   const std::string_view line = std::string_view(source).substr(lineStart, lineSize);
-   lineStart = lineEnd == std::string::npos ? source.size() + 1 : lineEnd + 1;
-   const std::string_view rawTrimmed = trimmedView(line);
-   if(rawTrimmed.rfind("const int shadowMapResolution", 0) == 0) {
-    const std::size_t eq = rawTrimmed.find('=');
-    const std::size_t semi = rawTrimmed.find(';', eq == std::string_view::npos ? 0 : eq + 1);
-    if(eq != std::string_view::npos && semi != std::string_view::npos) {
-     double value = 0.0;
-     bool integer = false;
-     if(number(trimmedView(rawTrimmed.substr(eq + 1, semi - eq - 1)), value, integer) && integer) {
-      pack.shadowMapResolution = std::clamp(static_cast<int>(std::lround(value)), 0, 16384);
-     }
-    }
-   }
-   const bool startedInsideComment = inBlockComment;
-   advanceBlockComment(line, inBlockComment);
-   if(!startedInsideComment) {
-   const std::string_view stripped = trimmedView(stripLineComments(line, scratch));
-   if(!stripped.empty() && stripped.front() == '#') {
-    std::size_t cursor = 1;
-    while(cursor < stripped.size() && (stripped[cursor] == ' ' || stripped[cursor] == '\t')) ++cursor;
-    std::size_t keywordEnd = cursor;
-    while(keywordEnd < stripped.size() && std::isalpha(static_cast<unsigned char>(stripped[keywordEnd]))) ++keywordEnd;
-    const std::string_view keyword = stripped.substr(cursor, keywordEnd - cursor);
-    const std::string_view rest = trimmedView(stripped.substr(keywordEnd));
-     if(keyword == "if") {
-      conditionals.push(evaluateIfExpression(rest, macros));
-     } else if(keyword == "ifdef") {
-      conditionals.push(macros.count(std::string(firstIdentView(rest))) != 0);
-     } else if(keyword == "ifndef") {
-      conditionals.push(macros.count(std::string(firstIdentView(rest))) == 0);
-     } else if(keyword == "elif") {
-      conditionals.elif(evaluateIfExpression(rest, macros));
-     } else if(keyword == "else") {
-      conditionals.else_();
-     } else if(keyword == "endif") {
-      conditionals.endif();
-     } else if(keyword == "define" && conditionals.active()) {
-      const std::string defName(firstIdentView(rest));
-      if(!options.contains(defName)) {
-       parseDefineDirective(rest, macros);
-      }
-     } else if(keyword == "undef" && conditionals.active()) {
-      macros.erase(std::string(firstIdentView(rest)));
-     }
-    continue;
-   }
-  }
-  if(!conditionals.active()) continue;
+  const std::string_view line = std::string_view(source).substr(lineStart, lineSize);
+  lineStart = lineEnd == std::string::npos ? source.size() + 1 : lineEnd + 1;
   const std::string_view cleaned = trimmedView(line);
+  const bool outputDirective = line.find("RENDERTARGETS:") != std::string_view::npos ||
+                               line.find("DRAWBUFFERS:") != std::string_view::npos;
+  const bool keep = statement || directive || (!cleaned.empty() && cleaned.front() == '#') ||
+                    metadataLine(cleaned) || outputDirective;
+  if(!keep) continue;
+  result.append(line);
+  result.push_back('\n');
+  if(!cleaned.empty() && cleaned.front() == '#') {
+   directive = cleaned.back() == '\\';
+  } else {
+   directive = false;
+   if(statement) statement = line.find(';') == std::string_view::npos;
+   else if(metadataLine(cleaned)) statement = line.find(';') == std::string_view::npos;
+  }
+ }
+ if(result.empty()) result.push_back('\n');
+ return result;
+}
+std::string activeMetadataSource(const std::string& source,
+                                  const PPMacroTable& seed,
+                                  bool preserveComments = false) {
+ PPMacroTable macros = seed;
+ ConditionalState conditionals(ConditionalState::Flavor::Glsl);
+ bool inBlockComment = false;
+ std::string scratch;
+ std::string result;
+ result.reserve(source.size());
+ std::size_t lineStart = 0;
+ while(lineStart <= source.size()) {
+  const std::size_t lineEnd = source.find('\n', lineStart);
+  const std::size_t lineSize = lineEnd == std::string::npos ? source.size() - lineStart : lineEnd - lineStart;
+  const std::string_view line = std::string_view(source).substr(lineStart, lineSize);
+  lineStart = lineEnd == std::string::npos ? source.size() + 1 : lineEnd + 1;
+  const std::string_view cleaned = trimmedView(stripComments(line, inBlockComment, scratch));
+  if(cleaned.empty()) {
+    if(preserveComments && conditionals.active() &&
+       (line.find("RENDERTARGETS:") != std::string_view::npos ||
+        line.find("DRAWBUFFERS:") != std::string_view::npos)) {
+     result.append(line);
+     result.push_back('\n');
+    }
+   continue;
+  }
+  if(cleaned.front() != '#') {
+   if(conditionals.active()) {
+    result.append(preserveComments ? line : cleaned);
+    result.push_back('\n');
+   }
+   continue;
+  }
+  std::size_t cursor = 1;
+  while(cursor < cleaned.size() && (cleaned[cursor] == ' ' || cleaned[cursor] == '\t')) ++cursor;
+  std::size_t keywordEnd = cursor;
+  while(keywordEnd < cleaned.size() && std::isalpha(static_cast<unsigned char>(cleaned[keywordEnd]))) ++keywordEnd;
+  const std::string_view keyword = cleaned.substr(cursor, keywordEnd - cursor);
+  const std::string_view rest = trimmedView(cleaned.substr(keywordEnd));
+  if(keyword == "if") {
+   conditionals.push(evaluateIfExpression(rest, macros));
+  } else if(keyword == "ifdef") {
+   conditionals.push(macros.contains(std::string(firstIdentView(rest))));
+  } else if(keyword == "ifndef") {
+   conditionals.push(!macros.contains(std::string(firstIdentView(rest))));
+  } else if(keyword == "elif") {
+   conditionals.elif(evaluateIfExpression(rest, macros));
+  } else if(keyword == "else") {
+   conditionals.else_();
+  } else if(keyword == "endif") {
+   conditionals.endif();
+  } else if(keyword == "define" && conditionals.active()) {
+   parseDefineDirective(rest, macros);
+  } else if(keyword == "undef" && conditionals.active()) {
+   macros.erase(std::string(firstIdentView(rest)));
+  }
+ }
+ return result;
+}
+void scanPackConstants(const std::string& activeSource, PackDefinition& pack) {
+ std::size_t lineStart = 0;
+ while(lineStart <= activeSource.size()) {
+  const std::size_t lineEnd = activeSource.find('\n', lineStart);
+  const std::size_t lineSize = lineEnd == std::string::npos ? activeSource.size() - lineStart : lineEnd - lineStart;
+  const std::string_view cleaned = std::string_view(activeSource).substr(lineStart, lineSize);
+  lineStart = lineEnd == std::string::npos ? activeSource.size() + 1 : lineEnd + 1;
   const std::size_t equals = cleaned.find('=');
   const std::size_t semicolon = cleaned.find(';', equals == std::string::npos ? 0 : equals + 1);
   if(equals == std::string::npos || semicolon == std::string::npos) continue;
   const std::string_view left = trimmedView(cleaned.substr(0, equals));
   const std::string_view right = trimmedView(cleaned.substr(equals + 1, semicolon - equals - 1));
+  if(left == "const int shadowMapResolution") {
+   double value = 0.0;
+   bool integer = false;
+   if(number(right, value, integer) && integer) {
+    pack.shadowMapResolution = std::clamp(static_cast<int>(std::lround(value)), 0, 16384);
+   }
+   continue;
+  }
   const bool on = right == "true";
   auto shadowDigitSuffix = [](std::string_view value, std::string_view prefix, std::string_view suffix) -> int {
    if(value.size() != prefix.size() + 1 + suffix.size()) return -1;
@@ -429,41 +461,38 @@ void scanPackConstants(const std::string& source,
   bool integer = false;
   if(!number(right, value, integer)) continue;
   const float f = static_cast<float>(value);
-  if(left == "const float sunPathRotation") {
-   pack.sunPathRotation = f;
-  } else if(left == "const float wetnessHalflife") {
-   pack.wetnessHalflife = std::max(0.0f, f);
-  } else if(left == "const float drynessHalflife") {
-   pack.drynessHalflife = std::max(0.0f, f);
-   } else if(left == "const float centerDepthHalflife") {
-    pack.centerDepthHalflife = std::max(0.0f, f);
-    pack.usesCenterDepthSmooth = true;
-  } else if(left == "const float eyeBrightnessHalflife") {
-   pack.eyeBrightnessHalflife = std::max(0.0f, f);
-  } else if(left == "const float entityShadowDistanceMul") {
-   pack.entityShadowDistanceMul = value >= 0.01 ? f : 0.0f;
-  } else if(left == "const float voxelDistance") {
-   pack.voxelDistance = std::max(0.0f, f);
-  } else if(left == "const float shadowDistance") {
-   pack.shadowDistance = std::max(0.0f, f);
-  } else if(left == "const float shadowDistanceRenderMul") {
-   pack.shadowDistanceRenderMul = f;
-  } else if(left == "const float shadowMapFov") {
-   pack.shadowMapFov = f;
-  } else if(left == "const float shadowNearPlane") {
-   pack.shadowNearPlane = f;
-  } else if(left == "const float shadowFarPlane") {
-   pack.shadowFarPlane = f;
-  } else if(left == "const float shadowHardwareOffsetFactor") {
-   pack.shadowHardwareOffsetFactor = f;
-  } else if(left == "const float shadowHardwareOffsetUnits") {
-   pack.shadowHardwareOffsetUnits = f;
-  } else if(left == "const float shadowIntervalSize") {
-   pack.shadowIntervalSize = std::max(0.0f, f);
-  } else if(left == "const float ambientOcclusionLevel") {
-   pack.ambientOcclusionLevel = std::clamp(f, 0.0f, 1.0f);
-  } else if(left == "const int noiseTextureResolution") {
+  enum class CAction : uint8_t { Direct, ClampMin0, ClampAO, ClampNoise, EntityShadow, CenterDepth };
+  struct CEntry { float PackDefinition::*field; CAction action; };
+  static const std::unordered_map<std::string_view, CEntry> constantTable = {
+   {"const float sunPathRotation", {&PackDefinition::sunPathRotation, CAction::Direct}},
+   {"const float wetnessHalflife", {&PackDefinition::wetnessHalflife, CAction::ClampMin0}},
+   {"const float drynessHalflife", {&PackDefinition::drynessHalflife, CAction::ClampMin0}},
+   {"const float centerDepthHalflife", {&PackDefinition::centerDepthHalflife, CAction::CenterDepth}},
+   {"const float eyeBrightnessHalflife", {&PackDefinition::eyeBrightnessHalflife, CAction::ClampMin0}},
+   {"const float entityShadowDistanceMul", {&PackDefinition::entityShadowDistanceMul, CAction::EntityShadow}},
+   {"const float voxelDistance", {&PackDefinition::voxelDistance, CAction::ClampMin0}},
+   {"const float shadowDistance", {&PackDefinition::shadowDistance, CAction::ClampMin0}},
+   {"const float shadowDistanceRenderMul", {&PackDefinition::shadowDistanceRenderMul, CAction::Direct}},
+   {"const float shadowMapFov", {&PackDefinition::shadowMapFov, CAction::Direct}},
+   {"const float shadowNearPlane", {&PackDefinition::shadowNearPlane, CAction::Direct}},
+   {"const float shadowFarPlane", {&PackDefinition::shadowFarPlane, CAction::Direct}},
+   {"const float shadowHardwareOffsetFactor", {&PackDefinition::shadowHardwareOffsetFactor, CAction::Direct}},
+   {"const float shadowHardwareOffsetUnits", {&PackDefinition::shadowHardwareOffsetUnits, CAction::Direct}},
+   {"const float shadowIntervalSize", {&PackDefinition::shadowIntervalSize, CAction::ClampMin0}},
+   {"const float ambientOcclusionLevel", {&PackDefinition::ambientOcclusionLevel, CAction::ClampAO}},
+  };
+  if(left == "const int noiseTextureResolution") {
    pack.noiseTextureResolution = std::clamp(static_cast<int>(value), 1, 4096);
+  } else if(const auto cit = constantTable.find(left); cit != constantTable.end()) {
+   const auto& [field, action] = cit->second;
+   switch(action) {
+   case CAction::Direct: pack.*field = f; break;
+   case CAction::ClampMin0: pack.*field = std::max(0.0f, f); break;
+   case CAction::ClampAO: pack.*field = std::clamp(f, 0.0f, 1.0f); break;
+   case CAction::EntityShadow: pack.*field = value >= 0.01 ? f : 0.0f; break;
+   case CAction::CenterDepth: pack.*field = std::max(0.0f, f); pack.usesCenterDepthSmooth = true; break;
+   default: break;
+   }
   }
  }
 }
@@ -487,6 +516,7 @@ std::string preprocessProperties(const std::string& source,
                                  const std::unordered_map<std::string, PackSourceOption>& options,
                                  const std::unordered_map<std::string, std::string>& values) {
  PPMacroTable macros;
+ seedEngineMacros(PackDefinition{}, macros);
  {
   PPMacro mc;
   mc.body = std::to_string(mcVersion);
@@ -591,9 +621,10 @@ bool has(const Container& resources, std::string_view path) {
  }
 }
 void addProgram(PackDefinition& pack,
-                const ResourceSet& resources,
-                std::string_view key) {
- const std::string path = "shaders/" + std::string(key);
+                 const ResourceSet& resources,
+                 std::string_view prefix,
+                 std::string_view key) {
+  const std::string path = std::string(prefix) + std::string(key);
  const std::string fragmentPath = path + ".fsh";
  if(!resources.contains(fragmentPath)) return;
  PackProgramSource source;
@@ -620,7 +651,9 @@ void noteRenderTargetOutputs(PackDefinition& pack, const std::string& source, bo
   }
  }
 }
-bool isKnownBufferFormat(const std::string& format) {
+// Packs spell these inconsistently (RGBA16f alongside RGBA16F), so match without
+// case and hand back the canonical spelling the rest of the loader compares against.
+std::string canonicalBufferFormat(std::string_view format) {
  static constexpr std::array<std::string_view, 48> formats = {
      "R8", "R16", "R16F", "R32F", "RG8", "RG16",
      "RG16F", "RG32F", "RGB8", "RGB16", "RGB16F", "RGB32F",
@@ -630,7 +663,18 @@ bool isKnownBufferFormat(const std::string& format) {
      "RG8I", "RG16I", "RG32I", "RGB8I", "RGB16I", "RGB32I",
      "RGBA8I", "RGBA16I", "RGBA32I", "R8UI", "R16UI", "R32UI",
      "RG8UI", "RG16UI", "RG32UI", "RGBA8UI", "RGBA16UI", "RGBA32UI"};
- return std::find(formats.begin(), formats.end(), format) != formats.end();
+ for(const std::string_view known : formats) {
+  if(known.size() != format.size()) continue;
+  bool same = true;
+  for(std::size_t i = 0; i < known.size(); ++i) {
+   if(std::toupper(static_cast<unsigned char>(format[i])) != known[i]) {
+    same = false;
+    break;
+   }
+  }
+  if(same) return std::string(known);
+ }
+ return {};
 }
 struct CommentMask {
  std::vector<unsigned char> mark;
@@ -651,9 +695,9 @@ CommentMask buildCommentMask(std::string_view source) {
    continue;
   }
   if(blockComment) {
-   mask.mark[i] = 1;
+   mask.mark[i] = 2;
    if(source[i] == '*' && next == '/') {
-    mask.mark[i + 1] = 1;
+    mask.mark[i + 1] = 2;
     blockComment = false;
     ++i;
    }
@@ -665,8 +709,8 @@ CommentMask buildCommentMask(std::string_view source) {
    lineComment = true;
    ++i;
   } else if(source[i] == '/' && next == '*') {
-   mask.mark[i] = 1;
-   mask.mark[i + 1] = 1;
+   mask.mark[i] = 2;
+   mask.mark[i + 1] = 2;
    blockComment = true;
    ++i;
   }
@@ -679,6 +723,8 @@ constexpr std::array<std::string_view, 8> kLegacyTargetNames = {
 int legacyRenderTargetIndex(std::string_view name);
 void inferColortexFormatsFromLayouts(PackDefinition& pack, const std::string& source, const CommentMask& mask);
 void scanTargetFormats(PackDefinition& pack, const std::string& source) {
+ if(source.find("colortex") == std::string::npos && source.find("shadow") == std::string::npos &&
+    source.find("layout") == std::string::npos && source.find("gcolor") == std::string::npos) return;
  const CommentMask mask = buildCommentMask(source);
  constexpr std::size_t npos = std::string::npos;
  struct Seen {
@@ -704,8 +750,9 @@ void scanTargetFormats(PackDefinition& pack, const std::string& source) {
   if(!slot.format) {
    if(const auto [eq, sc] = assign("Format", true); eq != npos) {
     slot.format = true;
-    const std::string format = trim(std::string_view(source).substr(eq + 1, sc - eq - 1));
-    if(isKnownBufferFormat(format)) pack.targets[key].format = format == "RGBA" ? "RGBA8" : format;
+    const std::string canonical =
+        canonicalBufferFormat(trim(std::string_view(source).substr(eq + 1, sc - eq - 1)));
+    if(!canonical.empty()) pack.targets[key].format = canonical == "RGBA" ? "RGBA8" : canonical;
    }
   }
   if(!slot.clear) {
@@ -788,10 +835,12 @@ void scanTargetFormats(PackDefinition& pack, const std::string& source) {
 }
 void inferColortexFormatsFromLayouts(PackDefinition& pack, const std::string& source, const CommentMask& mask) {
  auto upgrade = [&](int index, const std::string& format) {
-  if(index < 0 || index >= 32 || !isKnownBufferFormat(format)) return;
+  if(index < 0 || index >= 32) return;
+  const std::string canonical = canonicalBufferFormat(format);
+  if(canonical.empty()) return;
   PackTarget& target = pack.targets["colortex" + std::to_string(index)];
   if(target.format.empty() || target.format == "RGBA" || target.format == "RGBA8") {
-   target.format = format;
+   target.format = canonical;
   }
   pack.gbufferColorBuffers = std::max(pack.gbufferColorBuffers, index + 1);
  };
@@ -876,14 +925,16 @@ void inferColortexFormatsFromLayouts(PackDefinition& pack, const std::string& so
  }
 }
 void addPostPrograms(PackDefinition& pack,
-                     const ResourceSet& resources,
-                     const std::unordered_map<std::string, std::string>& expanded) {
- const std::array<std::string_view, 6> prefixes = kCompositeStagePrefixes;
- for(const std::string_view prefix : prefixes) {
-  const int programCount = prefix == "final" ? 1 : 100;
-  for(int index = 0; index < programCount; ++index) {
-   const std::string key = std::string(prefix) + (index == 0 ? std::string{} : std::to_string(index));
-   const std::string path = "shaders/" + key;
+                      const ResourceSet& resources,
+                      const std::unordered_map<std::string, std::string>& activeFragments,
+                      std::string_view basePrefix,
+                      const PPMacroTable&) {
+  const std::array<std::string_view, 6> prefixes = kCompositeStagePrefixes;
+  for(const std::string_view stagePrefix : prefixes) {
+   const int programCount = stagePrefix == "final" ? 1 : 100;
+   for(int index = 0; index < programCount; ++index) {
+    const std::string key = std::string(stagePrefix) + (index == 0 ? std::string{} : std::to_string(index));
+     const std::string path = std::string(basePrefix) + key;
    if(!resources.contains(path + ".fsh")) continue;
    const std::string vertex = resources.contains(path + ".vsh") ? path + ".vsh" : std::string{};
    PackProgramSource program;
@@ -893,15 +944,15 @@ void addPostPrograms(PackDefinition& pack,
    pack.programs.emplace(key, std::move(program));
    PackPass pass;
    pass.name = key;
-   pass.type = prefix == "begin" ? "begin" : prefix == "shadowcomp" ? "shadowcomp"
-                                         : prefix == "prepare"      ? "prepare"
-                                         : prefix == "deferred"     ? "deferred"
+    pass.type = stagePrefix == "begin" ? "begin" : stagePrefix == "shadowcomp" ? "shadowcomp"
+                                          : stagePrefix == "prepare"      ? "prepare"
+                                          : stagePrefix == "deferred"     ? "deferred"
                                                                     : "post";
     pass.program = key;
-    const std::string source = expanded.at(path + ".fsh");
+     const std::string& source = activeFragments.at(path + ".fsh");
    pass.outputs = key == "final" ? std::vector<std::string>{"screen"} : renderTargetOutputNames(source);
    pass.mipmapBuffers = scanMipmapEnabled(source);
-   if(prefix == "shadowcomp")
+    if(stagePrefix == "shadowcomp")
     for(std::string& output : pass.outputs) {
      if(output.rfind("colortex", 0) == 0) output.replace(0, 8, "shadowcolor");
      if(output.rfind("shadowcolor", 0) == 0)
@@ -966,10 +1017,11 @@ std::vector<std::pair<std::string, std::string>> properties(const std::string& s
  }
  return result;
 }
-void readFeatureList(std::set<std::string>& output, std::string_view value) {
+void readFeatureList(std::set<std::string, std::less<>>& output, std::string_view value) {
  for(std::string feature : words(value)) {
   if(identifier(feature)) {
    for(char& ch : feature) ch = static_cast<char>(std::toupper(static_cast<unsigned char>(ch)));
+   if(feature == "TESSELATION_SHADERS") feature = "TESSELLATION_SHADERS";
    output.insert(std::move(feature));
   }
  }
@@ -1426,9 +1478,12 @@ void parseBlockLayerProperties(PackDefinition& pack, const std::string& source) 
    }
    std::string resolved = name;
    if(resolved.rfind("minecraft:", 0) == 0) resolved.erase(0, 10);
-   for(const auto& [mappedName, id] : pack.blockIds) {
-    if(mappedName == resolved) pack.blockRenderLayers[id] = layer;
-   }
+   // blockRenderLayers is keyed by the raw vanilla block id -- that is what
+   // resolveTerrainMeshLayer looks up, from the chunk snapshot. Mapping through
+   // pack.blockIds keyed it by the pack's OWN id namespace instead: those entries
+   // are dead when the pack numbers blocks above 255, and when it happens to pick
+   // a number under 256 they re-route an unrelated vanilla block to the wrong
+   // terrain layer. The translation-key scan below is the correct mapping.
    for(int id = 1; id < Block::BLOCK_COUNT; ++id) {
     Block* block = Block::BLOCKS[static_cast<std::size_t>(id)];
     if(block == nullptr) continue;
@@ -1440,8 +1495,9 @@ void parseBlockLayerProperties(PackDefinition& pack, const std::string& source) 
  }
 }
 void addComputePrograms(PackDefinition& pack,
-                        const std::vector<std::string>& resources,
-                        const PackLoader::ReadText& readText) {
+                         const std::vector<std::string>& resources,
+                         std::string_view prefix,
+                         const PackLoader::ReadText& metadataText) {
  const auto computePassStage = [](const std::string& name) -> const char* {
   for(const std::string_view stage : kCompositeStagePrefixes) {
    if(ComputeDispatcher::matchesStage(name, stage)) {
@@ -1454,9 +1510,9 @@ void addComputePrograms(PackDefinition& pack,
   return nullptr;
  };
  for(const std::string& sourcePath : resources) {
-  if(!sourcePath.ends_with(".csh") || sourcePath.rfind("shaders/", 0) != 0 ||
-     sourcePath.find('/', 8) != std::string::npos) continue;
-  const std::string source = readText(sourcePath);
+   if(!sourcePath.ends_with(".csh") || sourcePath.rfind(prefix, 0) != 0 ||
+      sourcePath.find('/', prefix.size()) != std::string::npos) continue;
+  const std::string source = metadataText(sourcePath);
   PackPass pass;
   pass.name = std::filesystem::path(sourcePath).stem().string();
   const char* stage = computePassStage(pass.name);
@@ -1552,73 +1608,85 @@ void inferVersion(const std::string& source, PackDefinition& pack) {
   pack.glslVersionMinor = minor;
  }
 }
-void reprefixProgramPaths(PackDefinition& pack, const std::string& prefix) {
- auto rewrite = [&prefix](std::string& path) {
-  if(!path.empty() && path.rfind("shaders/", 0) == 0) path = prefix + path.substr(8);
- };
- for(auto& [name, program] : pack.programs) {
-  (void)name;
-  rewrite(program.vertex);
-  rewrite(program.fragment);
-  rewrite(program.compute);
-  rewrite(program.geometry);
-  rewrite(program.tessControl);
-  rewrite(program.tessEvaluation);
- }
-}
 void loadProgramSet(PackDefinition& out,
-                    const std::vector<std::string>& resources,
-                    const PackLoader::ReadText& readText,
-                    const std::unordered_map<std::string, PackSourceOption>& options,
-                    const std::unordered_map<std::string, std::string>& values) {
- std::unordered_map<std::string, std::string> expanded;
- const ResourceSet resourceSet(resources.begin(), resources.end());
+                     const std::vector<std::string>& resources,
+                     const PackLoader::ReadText& readText,
+                     const std::unordered_map<std::string, PackSourceOption>& options,
+                     const std::unordered_map<std::string, std::string>& values,
+                     std::string_view prefix,
+                     std::unordered_map<std::string, std::string>& expanded) {
+  const ResourceSet resourceSet(resources.begin(), resources.end());
  PPMacroTable constantSeed;
  seedEngineMacros(out, constantSeed);
- // The GLSL the driver compiles sees the option-rewritten source, so `#if OPTION`
- // chains must be evaluated with the CURRENT settings, not the shipped defaults,
- // or the engine's shadow tuning and the shader's disagree whenever an option
- // moves (Iris parses programs after option replacement).
- for(const auto& [name, option] : options) {
-  const PackSetting& setting = option.setting;
-  const auto found = values.find(name);
-  const std::string& effective = found != values.end() ? found->second : setting.defaultValue;
-  PPMacro macro;
-  macro.body = effective;
-  const bool trueValue = effective == "1" || effective == "true";
-  if(setting.type == SettingType::Bool) {
-   if(trueValue) {
-    macro.body.clear();
-    constantSeed[name] = macro;
+ for(const PackProgramId& id : packProgramIds()) addProgram(out, resourceSet, prefix, id.name);
+  ResourceSet acceptedFragments;
+  ResourceSet acceptedMetadataResources;
+  const auto acceptProgramSources = [&](const PackProgramSource& program) {
+   for(const std::string* path : {&program.vertex, &program.fragment, &program.compute, &program.geometry,
+                                  &program.tessControl, &program.tessEvaluation}) {
+    if(path->rfind(prefix, 0) == 0) acceptedMetadataResources.insert(*path);
    }
-  } else {
-   constantSeed[name] = macro;
+  };
+  for(const auto& [name, program] : out.programs) {
+   (void)name;
+   acceptProgramSources(program);
+   if(program.fragment.rfind(prefix, 0) == 0) acceptedFragments.insert(program.fragment);
   }
- }
- for(const PackProgramId& id : packProgramIds()) addProgram(out, resourceSet, id.name);
- for(const std::string& path : resources) {
-  if(!path.ends_with(".fsh")) continue;
-  std::string source = resolveShaderIncludes(
-      [&](std::string_view file) { return PackLoader::rewriteOptions(readText(file), options, values); },
+  for(const std::string& path : resources) {
+   if(!path.ends_with(".fsh") || path.rfind(prefix, 0) != 0 ||
+      path.find('/', prefix.size()) != std::string::npos) continue;
+   const std::string stem = std::filesystem::path(path).stem().string();
+   bool accepted = false;
+   for(const std::string_view stage : kCompositeStagePrefixes) {
+    if(!stem.starts_with(stage)) continue;
+    const std::string_view suffix(stem.data() + stage.size(), stem.size() - stage.size());
+    accepted = suffix.empty() || (stage != "final" &&
+               std::all_of(suffix.begin(), suffix.end(), [](unsigned char ch) { return std::isdigit(ch) != 0; }));
+    if(accepted) break;
+   }
+   if(accepted) {
+    acceptedFragments.insert(path);
+    acceptedMetadataResources.insert(path);
+   }
+  }
+  const std::string libraryPrefix = std::string(prefix) + "lib/";
+  for(const std::string& path : resources) {
+   if(path.rfind(libraryPrefix, 0) != 0) continue;
+   if(path.ends_with(".vsh") || path.ends_with(".fsh") || path.ends_with(".glsl") ||
+      path.ends_with(".csh") || path.ends_with(".gsh") || path.ends_with(".tcs") ||
+      path.ends_with(".tes")) {
+    acceptedMetadataResources.insert(path);
+   }
+  }
+  std::unordered_map<std::string, std::string> activeFragments;
+  std::unordered_set<std::size_t> scannedHashes;
+  auto scanOnce = [&](const std::string& activeSource) {
+   const std::size_t h = std::hash<std::string>{}(activeSource);
+   if(!scannedHashes.insert(h).second) return;
+   scanTargetFormats(out, activeSource);
+   scanPackConstants(activeSource, out);
+  };
+  for(const std::string& path : resources) {
+   if(!acceptedMetadataResources.contains(path)) continue;
+   std::string source = resolveShaderIncludes(
+       [&](std::string_view file) {
+        return metadataPreprocessorInput(PackLoader::rewriteOptions(readText(file), options, values));
+       },
       path,
-      false,
-      expanded);
-   scanTargetFormats(out, source);
-   scanPackConstants(source, out, options, constantSeed);
-   const std::string name = std::filesystem::path(path).stem().string();
-  if(name.rfind("shadowcomp", 0) == 0) continue;
-  noteRenderTargetOutputs(out, source, name == "shadow" || name.rfind("shadow_", 0) == 0);
- }
- for(const std::string& path : resources) {
-  if(!path.ends_with(".glsl") && !path.ends_with(".vsh") && !path.ends_with(".csh") &&
-     !path.ends_with(".gsh") && !path.ends_with(".tcs") && !path.ends_with(".tes")) {
-   continue;
+       false,
+       expanded);
+   std::string activeSource = activeMetadataSource(source, constantSeed, true);
+   scanOnce(activeSource);
+    if(acceptedFragments.contains(path)) {
+     const std::string name = std::filesystem::path(path).stem().string();
+     if(name.rfind("shadowcomp", 0) != 0) {
+      noteRenderTargetOutputs(out, activeSource,
+                              name == "shadow" || name.rfind("shadow_", 0) == 0);
+     }
+     activeFragments.emplace(path, activeSource);
+    }
   }
-   const std::string source = PackLoader::rewriteOptions(readText(path), options, values);
-   scanTargetFormats(out, source);
-   scanPackConstants(source, out, options, constantSeed);
-  }
- out.gbufferColorBuffers = std::clamp(out.gbufferColorBuffers, 1, 32);
+  out.gbufferColorBuffers = std::clamp(out.gbufferColorBuffers, 1, 32);
  auto hasBlendOverride = [&out](const std::string& program) {
   return std::any_of(out.bufferBlends.begin(), out.bufferBlends.end(),
                      [&program](const BufferBlend& blend) { return blend.program == program; });
@@ -1649,9 +1717,20 @@ void loadProgramSet(PackDefinition& out,
  }
  out.shadowColorBuffers = std::clamp(out.shadowColorBuffers, 0, 8);
  if(out.programs.contains("shadow") && out.shadowMapResolution == 0) out.shadowMapResolution = 1024;
- addPostPrograms(out, resourceSet, expanded);
+ addPostPrograms(out, resourceSet, activeFragments, prefix, constantSeed);
  out.shadowColorBuffers = std::clamp(out.shadowColorBuffers, 0, 8);
- addComputePrograms(out, resources, readText);
+ addComputePrograms(out, resources, prefix, [&](std::string_view path) {
+   const std::string source = resolveShaderIncludes(
+       [&](std::string_view file) {
+        return metadataPreprocessorInput(PackLoader::rewriteOptions(readText(file), options, values));
+       },
+      std::string(path),
+      false,
+      expanded);
+  std::string activeSource = activeMetadataSource(source, constantSeed);
+  scanOnce(activeSource);
+  return activeSource;
+ });
 }
 bool dimensionSetHasPrograms(const PackDefinition& pack) {
  return std::any_of(pack.dimensionDefinitions.begin(), pack.dimensionDefinitions.end(),
@@ -1659,11 +1738,18 @@ bool dimensionSetHasPrograms(const PackDefinition& pack) {
 }
 } // namespace
 bool PackLoader::load(const std::vector<std::string>& resources,
-                      const ReadText& readText,
-                      PackDefinition& out,
-                      std::unordered_map<std::string, PackSourceOption>& options,
-                      std::string& error,
-                      const std::unordered_map<std::string, std::string>& values) {
+                       const ReadText& readText,
+                       PackDefinition& out,
+                       std::unordered_map<std::string, PackSourceOption>& options,
+                       std::string& error,
+                       const std::unordered_map<std::string, std::string>& values) {
+  std::unordered_map<std::string, std::string> loadReadCache;
+  std::unordered_map<std::string, std::string> expandedSources;
+ auto cachedRead = [&](std::string_view path) -> const std::string& {
+  const std::string key(path);
+  if(auto it = loadReadCache.find(key); it != loadReadCache.end()) return it->second;
+  return loadReadCache.emplace(key, readText(key)).first->second;
+ };
  out = PackDefinition{};
  options.clear();
  if(!std::any_of(resources.begin(), resources.end(), [](const std::string& path) { return path.rfind("shaders/", 0) == 0; })) {
@@ -1674,30 +1760,30 @@ bool PackLoader::load(const std::vector<std::string>& resources,
  for(const std::string& path : resources) {
   if(!path.ends_with(".vsh") && !path.ends_with(".fsh") && !path.ends_with(".glsl") && !path.ends_with(".csh") &&
      !path.ends_with(".gsh") && !path.ends_with(".tcs") && !path.ends_with(".tes")) continue;
-  const std::string source = readText(path);
+  const std::string& source = cachedRead(path);
   inferVersion(source, out);
   scanOptions(source, options, rejectedOptions);
  }
  const bool customDimensionProperties =
      has(resources, "shaders/dimension.properties") || has(resources, "dimension.properties");
  if(has(resources, "shaders/shaders.properties")) {
-  seedProfiles(out, readText("shaders/shaders.properties"));
+  seedProfiles(out, cachedRead("shaders/shaders.properties"));
  }
  const auto preprocessProps = [&](const std::string& src) {
   return preprocessProperties(src, 10703, options, values);
  };
  if(has(resources, "shaders/shaders.properties"))
-  parsePackProperties(out, preprocessProps(readText("shaders/shaders.properties")));
+  parsePackProperties(out, preprocessProps(cachedRead("shaders/shaders.properties")));
  if(has(resources, "shaders/dimension.properties"))
-  parseDimensionProperties(out, preprocessProps(readText("shaders/dimension.properties")));
+  parseDimensionProperties(out, preprocessProps(cachedRead("shaders/dimension.properties")));
  else if(has(resources, "dimension.properties"))
-  parseDimensionProperties(out, preprocessProps(readText("dimension.properties")));
+  parseDimensionProperties(out, preprocessProps(cachedRead("dimension.properties")));
  if(has(resources, "shaders/entity.properties"))
-  parseIdProperties(out.entityIds, preprocessProps(readText("shaders/entity.properties")), "entity.");
+  parseIdProperties(out.entityIds, preprocessProps(cachedRead("shaders/entity.properties")), "entity.");
  if(has(resources, "shaders/item.properties"))
-  parseIdProperties(out.itemIds, preprocessProps(readText("shaders/item.properties")), "item.");
+  parseIdProperties(out.itemIds, preprocessProps(cachedRead("shaders/item.properties")), "item.");
  if(has(resources, "shaders/block.properties")) {
-  const std::string blockProps = preprocessProps(readText("shaders/block.properties"));
+  const std::string blockProps = preprocessProps(cachedRead("shaders/block.properties"));
   parseIdProperties(out.blockIds, blockProps, "block.");
   parseBlockLayerProperties(out, blockProps);
   out.hasBlockProperties = true;
@@ -1721,11 +1807,36 @@ bool PackLoader::load(const std::vector<std::string>& resources,
    return false;
   }
  }
- loadProgramSet(out, resources, readText, options, values);
+ std::vector<std::string> rootResources;
+ rootResources.reserve(resources.size());
+ for(const std::string& resource : resources) {
+  bool dimensionResource = resource.rfind("shaders/world-1/", 0) == 0 ||
+                           resource.rfind("shaders/world0/", 0) == 0 ||
+                           resource.rfind("shaders/world1/", 0) == 0;
+  for(const auto& [folder, ignored] : out.dimensionFolders) {
+   (void)ignored;
+   if(resource.rfind("shaders/" + folder + "/", 0) == 0) {
+    dimensionResource = true;
+    break;
+   }
+  }
+  if(!dimensionResource) rootResources.push_back(resource);
+ }
+  const bool hasRootShaderSet = std::any_of(rootResources.begin(), rootResources.end(), [](const std::string& path) {
+   const bool shaderSource = path.ends_with(".vsh") || path.ends_with(".fsh") || path.ends_with(".glsl") ||
+                             path.ends_with(".csh") || path.ends_with(".gsh") || path.ends_with(".tcs") ||
+                             path.ends_with(".tes");
+   return shaderSource &&
+          ((path.rfind("shaders/", 0) == 0 && path.find('/', 8) == std::string::npos) ||
+           path.rfind("shaders/lib/", 0) == 0);
+  });
+  if(hasRootShaderSet) {
+   loadProgramSet(out, rootResources, cachedRead, options, values, "shaders/", expandedSources);
+  }
  if(has(resources, "shaders/lang/en_us.lang") || has(resources, "shaders/lang/en_US.lang")) {
   const std::string langPath =
       has(resources, "shaders/lang/en_us.lang") ? "shaders/lang/en_us.lang" : "shaders/lang/en_US.lang";
-  for(const auto& [key, value] : properties(readText(langPath))) {
+  for(const auto& [key, value] : properties(cachedRead(langPath))) {
    if(key.rfind("option.", 0) == 0) {
     const std::string rest = key.substr(7);
     if(rest.ends_with(".comment")) {
@@ -1795,41 +1906,25 @@ bool PackLoader::load(const std::vector<std::string>& resources,
  }
  for(const auto& [folder, dimensionValue] : out.dimensionFolders) {
   const std::string prefix = "shaders/" + folder + "/";
-  std::vector<std::string> mapped;
-  for(const std::string& resource : resources) {
-   if(resource.rfind(prefix, 0) == 0) mapped.push_back("shaders/" + resource.substr(prefix.size()));
-  }
-  if(mapped.empty()) continue;
-  auto definition = std::make_shared<PackDefinition>();
-  std::unordered_map<std::string, PackSourceOption> dimensionOptions;
-  std::unordered_set<std::string> dimensionRejected;
-  for(const std::string& path : mapped) {
-   if(!path.ends_with(".vsh") && !path.ends_with(".fsh") && !path.ends_with(".glsl") && !path.ends_with(".csh") &&
-      !path.ends_with(".gsh") && !path.ends_with(".tcs") && !path.ends_with(".tes"))
-    continue;
-   const std::string source = readText(prefix + path.substr(8));
-   inferVersion(source, *definition);
-   scanOptions(source, dimensionOptions, dimensionRejected);
-  }
-  const PackLoader::ReadText dimensionRead =
-      [&readText, &prefix](std::string_view path) {
-       const std::string normalized(path);
-       if(normalized.rfind("shaders/", 0) == 0) {
-        const std::string dimPath = prefix + normalized.substr(8);
-        const std::string content = readText(dimPath);
-        if(!content.empty()) return content;
-       }
-       return readText(normalized);
-      };
-  loadProgramSet(*definition, mapped, dimensionRead, dimensionOptions, values);
+   std::vector<std::string> dimensionResources;
+   for(const std::string& resource : resources) {
+    if(resource.rfind(prefix, 0) == 0) dimensionResources.push_back(resource);
+   }
+   if(dimensionResources.empty()) continue;
+   auto definition = std::make_shared<PackDefinition>();
+   for(const std::string& path : dimensionResources) {
+    if(path.ends_with(".vsh") || path.ends_with(".fsh") || path.ends_with(".glsl") || path.ends_with(".csh") ||
+       path.ends_with(".gsh") || path.ends_with(".tcs") || path.ends_with(".tes")) {
+     inferVersion(cachedRead(path), *definition);
+    }
+   }
+    loadProgramSet(*definition, dimensionResources, cachedRead, options, values, prefix, expandedSources);
   if(definition->programs.empty()) continue;
-  reprefixProgramPaths(*definition, prefix);
   definition->dimensionFolders.clear();
   definition->dimensionDefinitions.clear();
   for(const std::string& dimension : words(dimensionValue)) {
    if(!dimension.empty()) out.dimensionDefinitions[dimension] = definition;
   }
-  for(auto& [name, option] : dimensionOptions) options.try_emplace(name, std::move(option));
  }
  if(worldNLegacy) {
   out.programs.clear();
@@ -1850,7 +1945,16 @@ bool PackLoader::load(const std::vector<std::string>& resources,
   if(seed != nullptr) {
    out.programs = seed->programs;
    out.passes = seed->passes;
-   out.targets = seed->targets;
+   // see docs/agent-notes/shader-system-rebuild.md:74-91 — fill gaps only, never downgrade
+   for(const auto& [key, target] : seed->targets) {
+    const auto existing = out.targets.find(key);
+    if(existing == out.targets.end()) {
+     out.targets[key] = target;
+    } else if(existing->second.format.empty() || existing->second.format == "RGBA" ||
+              existing->second.format == "RGBA8") {
+     existing->second.format = target.format;
+    }
+   }
    out.gbufferColorBuffers = std::max(out.gbufferColorBuffers, seed->gbufferColorBuffers);
    out.shadowColorBuffers = std::max(out.shadowColorBuffers, seed->shadowColorBuffers);
    if(seed->shadowMapResolution > 0) out.shadowMapResolution = seed->shadowMapResolution;
@@ -1891,6 +1995,9 @@ bool PackLoader::load(const std::vector<std::string>& resources,
 std::string PackLoader::rewriteOptions(const std::string& source,
                                        const std::unordered_map<std::string, PackSourceOption>& options,
                                        const std::unordered_map<std::string, std::string>& values) {
+ if(options.empty() || (source.find("#define") == std::string::npos && source.find("const ") == std::string::npos)) {
+  return source;
+ }
  std::string result;
  result.reserve(source.size() + 16);
  std::size_t lineStart = 0;

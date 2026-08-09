@@ -174,9 +174,9 @@ bool BlockRenderManager::render(net::minecraft::block::Block& block, int x, int 
   if(g_voxelizeLightBlocks.load(std::memory_order_relaxed) && renderType < 0 && block.emission() > 0 &&
      !block.isOpaque()) {
    Tessellator& tessellator = ctx.activeTess(block.textureId);
-   tessellator.blockData(x + 0.5,
-                         y + 0.5,
-                         z + 0.5,
+   tessellator.blockData(x,
+                         y,
+                         z,
                          block.emission(),
                          block.emission(),
                          block.emission(),

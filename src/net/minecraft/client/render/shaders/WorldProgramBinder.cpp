@@ -2,14 +2,45 @@
 #include <algorithm>
 #include <array>
 #include <cstdint>
-#include <unordered_map>
+#include <initializer_list>
+#include <string>
+#include <string_view>
 #include "net/minecraft/client/gl/GLCore.hpp"
 #include "net/minecraft/client/gl/GlConstants.hpp"
 #include "net/minecraft/client/render/RenderCore.hpp"
 #include "net/minecraft/client/render/GlState.hpp"
 #include "net/minecraft/client/render/pipeline/Instance.hpp"
 #include "net/minecraft/client/render/pipeline/Resources.hpp"
+#include "net/minecraft/client/render/targets/RenderTargets.hpp"
 namespace net::minecraft::client::render {
+namespace {
+bool customSampler(const PackInstance* pack, std::string_view name) {
+ if(pack == nullptr) return false;
+ const auto texture = pack->worldTextures.find(std::string(name));
+ if(texture != pack->worldTextures.end() && texture->second > 0) return true;
+ const auto volume = pack->worldVolumeTextures.find(std::string(name));
+ return volume != pack->worldVolumeTextures.end() && volume->second > 0;
+}
+bool bindSceneSampler(gl::ShaderProgram& program,
+                      int texture,
+                      int unit,
+                      const PackInstance* pack,
+                      std::initializer_list<std::string_view> names) {
+ if(texture <= 0) return false;
+ bool declared = false;
+ for(const std::string_view name : names) {
+  declared = declared || (program.location(name) >= 0 && !customSampler(pack, name));
+ }
+ if(!declared) return false;
+ core::activeTexture(gl::tex::Texture0 + unit);
+ core::bindTexture(texture);
+ if(gl::GLCore::bindSampler != nullptr) gl::GLCore::bindSampler(static_cast<unsigned int>(unit), 0);
+ for(const std::string_view name : names) {
+  if(program.location(name) >= 0 && !customSampler(pack, name)) program.set1i(name, unit);
+ }
+ return true;
+}
+}
 void bindProgramMaterialTextures(gl::ShaderProgram& program, const WorldProgramBindContext& context) {
  if(!context.bindTextureAtlases) {
   return;
@@ -18,28 +49,12 @@ void bindProgramMaterialTextures(gl::ShaderProgram& program, const WorldProgramB
  const int atlasSize[2] = {context.atlasWidth, context.atlasHeight};
  program.set2iAt(program.location("atlasSize"), atlasSize);
  if(context.normalTexture != 0 && maxUnits > 2) {
-  const int locNormals = program.location("normals");
-  const int locGtex1 = program.location("gtexture1");
-  const int locNormMap = program.location("normalMap");
-  if(locNormals >= 0 || locGtex1 >= 0 || locNormMap >= 0) {
-   core::activeTexture(gl::tex::Texture0 + 2);
-   core::bindTexture(static_cast<int>(context.normalTexture));
-   if(locNormals >= 0) program.set1i("normals", 2);
-   if(locGtex1 >= 0) program.set1i("gtexture1", 2);
-   if(locNormMap >= 0) program.set1i("normalMap", 2);
-  }
+  bindSceneSampler(program, static_cast<int>(context.normalTexture), 2, context.pack,
+                   {"normals", "gtexture1", "normalMap"});
  }
  if(context.specularTexture != 0 && maxUnits > 3) {
-  const int locSpec = program.location("specular");
-  const int locGtex2 = program.location("gtexture2");
-  const int locSpecMap = program.location("specularMap");
-  if(locSpec >= 0 || locGtex2 >= 0 || locSpecMap >= 0) {
-   core::activeTexture(gl::tex::Texture0 + 3);
-   core::bindTexture(static_cast<int>(context.specularTexture));
-   if(locSpec >= 0) program.set1i("specular", 3);
-   if(locGtex2 >= 0) program.set1i("gtexture2", 3);
-   if(locSpecMap >= 0) program.set1i("specularMap", 3);
-  }
+  bindSceneSampler(program, static_cast<int>(context.specularTexture), 3, context.pack,
+                   {"specular", "gtexture2", "specularMap"});
  }
  core::activeTexture(gl::tex::Texture0);
 }
@@ -66,27 +81,40 @@ void bindWorldProgram(gl::ShaderProgram& program, const WorldProgramBindContext&
   if(program.location("flw_overlayTex") >= 0) program.set1i("flw_overlayTex", unit);
   ++unit;
  }
- if(context.noiseTexture != 0 && unit < maxUnits && program.location("noisetex") >= 0) {
-  core::activeTexture(gl::tex::Texture0 + unit);
-  core::bindTexture(static_cast<int>(context.noiseTexture));
-  program.set1i("noisetex", unit++);
+ if(context.sceneTargets != nullptr) {
+  static constexpr std::array<std::string_view, 4> aliases = {"gaux1", "gaux2", "gaux3", "gaux4"};
+  for(int index = ColorTargets::renderTargetSamplerStartIndex(false);
+      index < context.sceneTargets->colorCount() && unit < maxUnits;
+      ++index) {
+   const std::string name = "colortex" + std::to_string(index);
+   const bool bound = index < 8
+                          ? bindSceneSampler(program, static_cast<int>(context.sceneTargets->readTexture(index)), unit,
+                                             context.pack,
+                                             {name, aliases[static_cast<std::size_t>(index - 4)]})
+                          : bindSceneSampler(program, static_cast<int>(context.sceneTargets->readTexture(index)), unit,
+                                             context.pack,
+                                             {name});
+   if(bound) ++unit;
+  }
+  if(unit < maxUnits &&
+     bindSceneSampler(program, context.sceneDepthTexture, unit, context.pack,
+                      {"depthtex0", "depthtex", "gdepthtex"}))
+   ++unit;
+  if(unit < maxUnits && bindSceneSampler(program, context.opaqueDepthTexture, unit, context.pack, {"depthtex1"}))
+   ++unit;
+  if(unit < maxUnits && bindSceneSampler(program, context.handDepthTexture, unit, context.pack, {"depthtex2"}))
+   ++unit;
  }
  if(context.pack != nullptr) {
-  std::unordered_map<std::string, int> customTextures;
-  std::unordered_map<std::string, int> volumes;
-  addPackTextures(*context.pack, "gbuffers", customTextures, volumes);
-  for(const auto& [name, texture] : customTextures) {
-   if(texture <= 0 || unit >= maxUnits || program.location(name) < 0) continue;
-   core::activeTexture(gl::tex::Texture0 + unit);
-   core::bindTexture(texture);
-   program.set1i(name, unit++);
-  }
+  unit = bindAvailableSamplers(program, context.pack->worldTextures,
+                               context.pack->worldVolumeTextures, unit, maxUnits,
+                               context.pack->definition);
  }
  if(!context.clearShadowBindsWhenNoPack) {
   const bool hw0 = context.pack != nullptr && context.pack->definition.shadowHardwareFiltering[0];
   const bool hw1 = context.pack != nullptr && context.pack->definition.shadowHardwareFiltering[1];
   const auto bindShadow = [&](const std::string& name, int texture, bool compare) {
-   if(texture < 0 || unit >= maxUnits || program.location(name) < 0) {
+   if(texture < 0 || unit >= maxUnits || program.location(name) < 0 || customSampler(context.pack, name)) {
     return;
    }
    core::activeTexture(gl::tex::Texture0 + unit);

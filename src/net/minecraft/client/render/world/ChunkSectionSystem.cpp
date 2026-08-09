@@ -41,10 +41,11 @@ bool boxTouchesSphere(const net::minecraft::Box& box,
  return dx * dx + dy * dy + dz * dz <= radiusSq;
 }
 template <class Fn>
-void forEachSection(std::unordered_map<world::SectionPos, std::vector<chunk::ChunkBuilder*>, world::SectionPosHash>& regions,
-                    Fn&& fn) {
+void forEachSection(
+    std::unordered_map<world::SectionPos, std::unique_ptr<chunk::TerrainRegion>, world::SectionPosHash>& regions,
+                     Fn&& fn) {
  for(auto& entry : regions) {
-  for(chunk::ChunkBuilder* chunk : entry.second) {
+  for(chunk::ChunkBuilder* chunk : entry.second->sections()) {
    fn(chunk);
   }
  }
@@ -96,11 +97,20 @@ void ChunkSectionSystem::createColumn(int sectionX, int sectionZ) {
                                                        chunk::kSectionBlocks);
   builder->inFrustum = true;
   builder->invalidate();
-  chunk::ChunkBuilder* raw = builder.get();
-  column[sectionY] = raw;
-  sections_.emplace(pos, std::move(builder));
-  regions_[world::regionOf(pos)].push_back(raw);
-  compilePipeline_->enqueueDirtyChunk(raw);
+   chunk::ChunkBuilder* raw = builder.get();
+   const world::SectionPos regionPos = world::regionOf(pos);
+   auto& region = regions_[regionPos];
+   if(region == nullptr) {
+    region = std::make_unique<chunk::TerrainRegion>(
+        regionPos.x * world::kRegionSectionsX * chunk::kSectionBlocks,
+        regionPos.y * world::kRegionSectionsY * chunk::kSectionBlocks,
+        regionPos.z * world::kRegionSectionsZ * chunk::kSectionBlocks);
+   }
+   builder->setTerrainRegion(*region);
+   region->addSection(raw);
+   column[sectionY] = raw;
+   sections_.emplace(pos, std::move(builder));
+   compilePipeline_->enqueueDirtyChunk(raw);
  }
  for(int sectionY = 0; sectionY < kChunkSectionCountY; ++sectionY) {
   chunk::ChunkBuilder* raw = column[sectionY];
@@ -152,15 +162,14 @@ void ChunkSectionSystem::removeColumn(int sectionX, int sectionZ) {
     scene_.blockEntities.erase(jt);
    }
   }
-  const auto regionIt = regions_.find(world::regionOf(pos));
-  if(regionIt != regions_.end()) {
-   std::vector<chunk::ChunkBuilder*>& bucket = regionIt->second;
-   bucket.erase(std::remove(bucket.begin(), bucket.end(), section.get()), bucket.end());
-   if(bucket.empty()) {
-    regions_.erase(regionIt);
+   const auto regionIt = regions_.find(world::regionOf(pos));
+   compilePipeline_->releaseSection(*section);
+   if(regionIt != regions_.end()) {
+    regionIt->second->removeSection(section.get());
+    if(regionIt->second->sections().empty()) {
+     regions_.erase(regionIt);
+    }
    }
-  }
-  compilePipeline_->releaseSection(*section);
  }
 }
 void ChunkSectionSystem::rebuildSectionOrder(const net::minecraft::Vec3d& camPos) {

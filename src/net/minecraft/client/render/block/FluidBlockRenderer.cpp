@@ -4,13 +4,26 @@
 #include "net/minecraft/block/material/Material.hpp"
 #include "net/minecraft/client/option/RenderSettings.hpp"
 #include "net/minecraft/client/render/Tessellator.hpp"
+#include "net/minecraft/client/render/TextureResolve.hpp"
 #include "net/minecraft/client/render/block/BlockRenderers.hpp"
 #include "net/minecraft/util/math/MathHelper.hpp"
 #include "net/minecraft/world/BlockView.hpp"
 namespace net::minecraft::client::render::block {
 namespace option = net::minecraft::client::option;
 bool FluidBlockRenderer::renderFluid(net::minecraft::block::Block& block, int x, int y, int z) {
- Tessellator& tessellator = ctx_.tessellator();
+ // Every other block renderer reaches its geometry through BlockFaceRenderer's
+ // beginFace, which resolves the tile, binds it when it is a mod texture, and
+ // picks the tessellator that owns that texture's mesh. This one used to take
+ // ctx_.tessellator() once and hardcode /256.0 atlas math, so fluid faces landed
+ // in whatever mesh the previous block left current and were textured with
+ // whatever that mesh binds. resolveBlockTextureUv returns the full 0..1 range
+ // for a standalone mod texture and a /256 tile for the shared atlas, so the
+ // hardcoded math also smeared a whole-atlas UV range across the surface.
+ const auto faceTess = [this](int side, int texture) -> Tessellator& {
+  const int resolved = ctx_.resolveTexture(side, texture);
+  ctx_.bindTextureFor(resolved);
+  return ctx_.activeTess(resolved);
+ };
  int colorMult = block.getColorMultiplier(ctx_.blockView, x, y, z);
  float red = (float)(colorMult >> 16 & 0xFF) / 255.0f;
  float green = (float)(colorMult >> 8 & 0xFF) / 255.0f;
@@ -31,6 +44,9 @@ bool FluidBlockRenderer::renderFluid(net::minecraft::block::Block& block, int x,
  const float upShade = 1.0f;
  const float horizShade = 0.8f;
  const float nsShade = 0.6f;
+ const auto faceShade = [this](float legacyShade) {
+  return ctx_.opts.oldLighting ? legacyShade : 1.0f;
+ };
  const double minY = 0.0;
  const double maxY = 1.0;
  net::minecraft::block::material::Material& material = block.material;
@@ -42,7 +58,11 @@ bool FluidBlockRenderer::renderFluid(net::minecraft::block::Block& block, int x,
  if(ctx_.skipFaceCulling || topVisible) {
   drewAnyFace = true;
   int topTex = block.getTexture(1, meta);
-  float flowAngle = 0.0f;
+  // getFlowingAngle reports -1000 for still fluid, and the two tests below are
+  // vanilla's: > -999 picks the flowing tile, < -999 zeroes the rotation. Seeding
+  // this with 0 instead made both tests read "flowing", so with fancy water off
+  // every surface — including still water — drew the flowing tile unrotated.
+  float flowAngle = -1000.0f;
   if(ctx_.opts.fancyWater) {
    flowAngle = static_cast<float>(
        net::minecraft::block::LiquidBlock::getFlowingAngle(ctx_.blockView, x, y, z, material));
@@ -50,36 +70,48 @@ bool FluidBlockRenderer::renderFluid(net::minecraft::block::Block& block, int x,
   if(flowAngle > -999.0f) {
    topTex = block.getTexture(2, meta);
   }
-  const int topTexU = (topTex & 0xF) << 4;
-  const int topTexV = topTex & 0xF0;
-  double uvBaseU = (static_cast<double>(topTexU) + 8.0) / 256.0;
-  double uvBaseV = (static_cast<double>(topTexV) + 8.0) / 256.0;
+  Tessellator& tessellator = faceTess(1, topTex);
+  // Centre of the tile plus a half-tile rotation radius. On the shared atlas
+  // uScale is 1/256 and this is vanilla's ((u + 8) / 256, +-8/256) exactly; on a
+  // standalone mod texture uScale is 1/16, giving centre 0.5 and radius 0.5, i.e.
+  // the whole image. The rotation shares one scale on both axes so it stays a
+  // rotation -- resolveBlockTextureUv never returns uScale != vScale.
+  const net::minecraft::client::render::ResolvedTexture topUv =
+      net::minecraft::client::render::resolveBlockTextureUv(ctx_.resolveTexture(1, topTex));
+  const double uvBaseU = (topUv.uMin + topUv.uMax) * 0.5;
+  const double uvBaseV = (topUv.vMin + topUv.vMax) * 0.5;
   if(flowAngle < -999.0f) {
    flowAngle = 0.0f;
-  } else {
-   uvBaseU = static_cast<float>(topTexU + 16) / 256.0f;
-   uvBaseV = static_cast<float>(topTexV + 16) / 256.0f;
-  }
-  const float flowSin = net::minecraft::util::math::MathHelper::sin(flowAngle) * 8.0f / 256.0f;
-  const float flowCos = net::minecraft::util::math::MathHelper::cos(flowAngle) * 8.0f / 256.0f;
-  ctx_.sampleFaceLight(x, y, z);
-  tessellator.color(upShade * red, upShade * green, upShade * blue);
-  const double topU0 = uvBaseU - static_cast<double>(flowCos) - static_cast<double>(flowSin);
-  const double topV0 = uvBaseV - static_cast<double>(flowCos) + static_cast<double>(flowSin);
-  const double topU1 = uvBaseU - static_cast<double>(flowCos) + static_cast<double>(flowSin);
-  const double topV1 = uvBaseV + static_cast<double>(flowCos) + static_cast<double>(flowSin);
-  const double topU2 = uvBaseU + static_cast<double>(flowCos) + static_cast<double>(flowSin);
-  const double topV2 = uvBaseV + static_cast<double>(flowCos) - static_cast<double>(flowSin);
-  const double topU3 = uvBaseU + static_cast<double>(flowCos) - static_cast<double>(flowSin);
-  const double topV3 = uvBaseV - static_cast<double>(flowCos) - static_cast<double>(flowSin);
+   }
+  const float flowRadius = 8.0f * static_cast<float>(topUv.uScale);
+  const float flowSin = net::minecraft::util::math::MathHelper::sin(flowAngle) * flowRadius;
+  const float flowCos = net::minecraft::util::math::MathHelper::cos(flowAngle) * flowRadius;
+   ctx_.sampleFaceLight(x, y + 1, z);
+   tessellator.light(static_cast<float>(ctx_.faceBlockLight), static_cast<float>(ctx_.faceSkyLight));
+   const float topShade = faceShade(upShade);
+   tessellator.color(topShade * red, topShade * green, topShade * blue);
+  const double topU0 = topUv.clampU(uvBaseU - static_cast<double>(flowCos) - static_cast<double>(flowSin));
+  const double topV0 = topUv.clampV(uvBaseV - static_cast<double>(flowCos) + static_cast<double>(flowSin));
+  const double topU1 = topUv.clampU(uvBaseU - static_cast<double>(flowCos) + static_cast<double>(flowSin));
+  const double topV1 = topUv.clampV(uvBaseV + static_cast<double>(flowCos) + static_cast<double>(flowSin));
+  const double topU2 = topUv.clampU(uvBaseU + static_cast<double>(flowCos) + static_cast<double>(flowSin));
+  const double topV2 = topUv.clampV(uvBaseV + static_cast<double>(flowCos) - static_cast<double>(flowSin));
+  const double topU3 = topUv.clampU(uvBaseU + static_cast<double>(flowCos) - static_cast<double>(flowSin));
+  const double topV3 = topUv.clampV(uvBaseV - static_cast<double>(flowCos) - static_cast<double>(flowSin));
   emitBlockVertex(tessellator, 0.0f, 1.0f, 0.0f, x + 0, static_cast<float>(y) + h00, z + 0, topU0, topV0);
   emitBlockVertex(tessellator, 0.0f, 1.0f, 0.0f, x + 0, static_cast<float>(y) + h01, z + 1, topU1, topV1);
   emitBlockVertex(tessellator, 0.0f, 1.0f, 0.0f, x + 1, static_cast<float>(y) + h11, z + 1, topU2, topV2);
   emitBlockVertex(tessellator, 0.0f, 1.0f, 0.0f, x + 1, static_cast<float>(y) + h10, z + 0, topU3, topV3);
  }
  if(ctx_.skipFaceCulling || bottomVisible) {
-  ctx_.sampleFaceLight(x, y - 1, z);
-  tessellator.color(downShade, downShade, downShade);
+  // renderBottomFace resolves and binds the tile itself through beginFace, so the
+  // light and colour have to be published on that same tessellator -- setting them
+  // on a different one leaves this face reading whatever state its own mesh held.
+  Tessellator& tessellator = faceTess(0, block.getTexture(0));
+   ctx_.sampleFaceLight(x, y - 1, z);
+   tessellator.light(static_cast<float>(ctx_.faceBlockLight), static_cast<float>(ctx_.faceSkyLight));
+   const float bottomShade = faceShade(downShade);
+   tessellator.color(bottomShade, bottomShade, bottomShade);
   faces_.renderBottomFace(block, x, y, z, block.getTexture(0));
   drewAnyFace = true;
  }
@@ -106,8 +138,9 @@ bool FluidBlockRenderer::renderFluid(net::minecraft::block::Block& block, int x,
    ++nx;
   }
   const int sideTex = ctx_.resolveTexture(i + 2, block.getTexture(i + 2, meta));
-  const net::minecraft::block::TerrainAtlasUv baseUv = net::minecraft::block::Block::terrainTileUv(sideTex);
-  const double tileHeight = baseUv.vMax - baseUv.vMin;
+  const net::minecraft::client::render::ResolvedTexture sideUv =
+      net::minecraft::client::render::resolveBlockTextureUv(sideTex);
+  const double tileHeight = sideUv.vMax - sideUv.vMin;
   if(!ctx_.skipFaceCulling && !sideVisible[i])
    continue;
   if(i == 0) {
@@ -140,11 +173,11 @@ bool FluidBlockRenderer::renderFluid(net::minecraft::block::Block& block, int x,
    sideZ1 = z + 1;
   }
   drewAnyFace = true;
-  const double uMin = baseUv.uMin;
-  const double uMax = baseUv.uMax - 0.01 / 256.0;
-  const double vTop0 = baseUv.vMin + static_cast<double>(1.0f - sideH0) * tileHeight;
-  const double vTop1 = baseUv.vMin + static_cast<double>(1.0f - sideH1) * tileHeight;
-  const double vBottom = baseUv.vMax - 0.01 / 256.0;
+  const double uMin = sideUv.safeUMin();
+  const double uMax = sideUv.safeUMax();
+  const double vTop0 = sideUv.clampV(sideUv.vMin + static_cast<double>(1.0f - sideH0) * tileHeight);
+  const double vTop1 = sideUv.clampV(sideUv.vMin + static_cast<double>(1.0f - sideH1) * tileHeight);
+  const double vBottom = sideUv.safeVMax();
   float sideNx = 0.0f;
   float sideNy = 0.0f;
   float sideNz = 0.0f;
@@ -157,8 +190,10 @@ bool FluidBlockRenderer::renderFluid(net::minecraft::block::Block& block, int x,
   } else {
    sideNx = 1.0f;
   }
-  ctx_.sampleFaceLight(nx, ny, nz);
-  const float sideShade = upShade * (i < 2 ? horizShade : nsShade);
+   Tessellator& tessellator = faceTess(i + 2, block.getTexture(i + 2, meta));
+   ctx_.sampleFaceLight(nx, ny, nz);
+   tessellator.light(static_cast<float>(ctx_.faceBlockLight), static_cast<float>(ctx_.faceSkyLight));
+   const float sideShade = faceShade(upShade * (i < 2 ? horizShade : nsShade));
   tessellator.color(sideShade * red, sideShade * green, sideShade * blue);
   emitBlockVertex(tessellator, sideNx, sideNy, sideNz, sideX0, (float)y + sideH0, sideZ0, uMin, vTop0);
   emitBlockVertex(tessellator, sideNx, sideNy, sideNz, sideX1, (float)y + sideH1, sideZ1, uMax, vTop1);

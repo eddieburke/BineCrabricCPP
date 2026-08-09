@@ -14,9 +14,9 @@
 #include "net/minecraft/client/render/block/entity/BlockEntityRenderDispatcher.hpp"
 #include "net/minecraft/client/render/chunk/ChunkMeshJob.hpp"
 #include "net/minecraft/client/render/chunk/RegionSnapshot.hpp"
-#include "net/minecraft/client/render/QuadIndexBuffer.hpp"
-#include "net/minecraft/client/render/pipeline/Manager.hpp"
+#include "net/minecraft/client/render/pipeline/Pipeline.hpp"
 #include "net/minecraft/util/concurrent/ThreadNames.hpp"
+#include "net/minecraft/util/math/MathHelper.hpp"
 #include "net/minecraft/world/World.hpp"
 #include "net/minecraft/world/chunk/Chunk.hpp"
 #include "net/minecraft/world/chunk/ChunkSource.hpp"
@@ -27,28 +27,21 @@ class RenderPinGuard {
  public:
  explicit RenderPinGuard(std::vector<RegionSnapshot::SourceChunk>& pinned) noexcept : pinned_(pinned) {
  }
- ~RenderPinGuard() {
-  release();
- }
- void disarm() noexcept {
-  armed_ = false;
- }
+  ~RenderPinGuard() {
+   release();
+  }
 
  private:
- void release() noexcept {
-  if(!armed_) {
-   return;
-  }
-  for(const RegionSnapshot::SourceChunk& sourceChunk : pinned_) {
+  void release() noexcept {
+   for(const RegionSnapshot::SourceChunk& sourceChunk : pinned_) {
    if(sourceChunk.chunk != nullptr) {
     const_cast<Chunk*>(sourceChunk.chunk)->releaseRenderPin();
    }
   }
   pinned_.clear();
- }
- std::vector<RegionSnapshot::SourceChunk>& pinned_;
- bool armed_ = true;
-};
+  }
+  std::vector<RegionSnapshot::SourceChunk>& pinned_;
+ };
 // Flood-fills the section's non-opaque cells and records which face pairs a
 // component connects (bit a*6+b). Faces: 0:-X 1:+X 2:-Y 3:+Y 4:-Z 5:+Z.
 std::uint64_t computeVisibilityBits(const RegionSnapshot& snapshot, int minX, int minY, int minZ) {
@@ -185,12 +178,7 @@ std::shared_ptr<ChunkMeshJob> ChunkMeshJob::capture(ChunkBuilder& owner,
    sourceChunks.push_back(RegionSnapshot::SourceChunk{chunkX, chunkZ, &chunk});
   }
  }
- // Keep the guard armed until the job fully owns the pins: an exception during
- // job construction (allocation, options copy) or the post-construction shader
- // setup would otherwise leak every acquired pin, which would wedge the chunk
- // eviction path forever. The guard releases them on unwind; once we disarm, the
- // job (whose ~ChunkMeshJob/releasePins releases exactly once) owns them.
- std::array<float, 16> lightLevelToLuminance{};
+  std::array<float, 16> lightLevelToLuminance{};
  std::unique_ptr<net::minecraft::BiomeSource> biomeSource;
  if(owner.world->dimension != nullptr) {
   lightLevelToLuminance = owner.world->dimension->lightLevelToLuminance;
@@ -202,39 +190,36 @@ std::shared_ptr<ChunkMeshJob> ChunkMeshJob::capture(ChunkBuilder& owner,
    lightLevelToLuminance[static_cast<std::size_t>(level)] = Dimension::luminanceForLightLevel(level);
   }
  }
- auto job = std::shared_ptr<ChunkMeshJob>(new ChunkMeshJob(owner,
-                                                           options,
-                                                           std::move(sourceChunks),
-                                                           owner.world->ambientDarkness,
-                                                           lightLevelToLuminance,
-                                                           std::move(biomeSource)));
+  auto snapshot = std::make_unique<RegionSnapshot>(sourceChunks,
+                                                   owner.world->ambientDarkness,
+                                                   lightLevelToLuminance,
+                                                   std::move(biomeSource),
+                                                   owner.x - 1,
+                                                   owner.y - 1,
+                                                   owner.z - 1,
+                                                   owner.x + kSectionBlocks + 1,
+                                                   owner.y + kSectionBlocks,
+                                                   owner.z + kSectionBlocks + 1);
+  auto job = std::shared_ptr<ChunkMeshJob>(new ChunkMeshJob(owner, options, std::move(snapshot)));
  if(auto* minecraft = net::minecraft::client::Minecraft::INSTANCE;
     minecraft != nullptr && minecraft->gameRenderer != nullptr &&
-    minecraft->gameRenderer->shaderPacks() != nullptr) {
+    minecraft->gameRenderer->shaderPipeline() != nullptr) {
   job->blockRenderLayers = minecraft->gameRenderer->packDefinition().blockRenderLayers;
  }
- pinGuard.disarm();
- return job;
+  return job;
 }
 ChunkMeshJob::ChunkMeshJob(ChunkBuilder& owner,
                            client::option::RenderSettings options,
-                           std::vector<RegionSnapshot::SourceChunk> sourceChunks,
-                           int ambientDarkness,
-                           const std::array<float, 16>& lightLevelToLuminance,
-                           std::unique_ptr<net::minecraft::BiomeSource> biomeSource)
-    : builder(owner.weak_from_this()),
-      version(owner.version),
-      x(owner.x),
-      y(owner.y),
-      z(owner.z),
-      opts(options),
-      sourceChunks_(std::move(sourceChunks)),
-      ambientDarkness_(ambientDarkness),
-      lightLevelToLuminance_(lightLevelToLuminance),
-      biomeSource_(std::move(biomeSource)) {
+                           std::unique_ptr<RegionSnapshot> capturedSnapshot)
+     : builder(owner.weak_from_this()),
+       version(owner.version),
+       x(owner.x),
+       y(owner.y),
+       z(owner.z),
+       snapshot(std::move(capturedSnapshot)),
+       opts(options) {
 }
 ChunkMeshJob::~ChunkMeshJob() {
- releasePins();
  // An evicted section is already gone; lock() simply fails and there is no
  // flag left to clear.
  if(const std::shared_ptr<ChunkBuilder> owner = builder.lock()) {
@@ -247,40 +232,7 @@ ChunkMeshJob::~ChunkMeshJob() {
   owner->meshJobInFlight = false;
  }
 }
-void ChunkMeshJob::captureSnapshot() {
- if(snapshot != nullptr) {
-  return;
- }
- snapshot = std::make_unique<RegionSnapshot>(sourceChunks_,
-                                             ambientDarkness_,
-                                             lightLevelToLuminance_,
-                                             std::move(biomeSource_),
-                                             x - 1,
-                                             y - 1,
-                                             z - 1,
-                                             x + kSectionBlocks + 1,
-                                             y + kSectionBlocks,
-                                             z + kSectionBlocks + 1);
- releasePins();
-}
-void ChunkMeshJob::releasePins() noexcept {
- if(pinsReleased_) {
-  return;
- }
- for(const RegionSnapshot::SourceChunk& sourceChunk : sourceChunks_) {
-  if(sourceChunk.chunk != nullptr) {
-   const_cast<Chunk*>(sourceChunk.chunk)->releaseRenderPin();
-  }
- }
- pinsReleased_ = true;
-}
 void ChunkBuilder::buildMesh(ChunkMeshJob& job) {
- // Pins hold the live chunks against eviction. Capture the RegionSnapshot on the
- // worker so the main thread only pays for pin acquisition; memcpy of block/light
- // bands is the expensive part and no longer eats the capture budget.
- if(job.snapshot == nullptr) {
-  job.captureSnapshot();
- }
  if(job.snapshot == nullptr) {
   job.failed = true;
   return;
@@ -307,12 +259,7 @@ void ChunkBuilder::buildMesh(ChunkMeshJob& job) {
   bool hasOtherLayer = false;
   bool beganCompile = false;
   bool drewGeometry = false;
-  // Mod blocks (texture id >= kModTextureBase) live on their own GL textures,
-  // not the terrain atlas, so their faces are captured into a per-texture
-  // tessellator here and drawn separately (WorldRenderer::renderModChunkMeshes)
-  // with that texture bound. Without this the faces leak into the terrain mesh
-  // and sample the atlas with mod UVs -> scrambled/garbled blocks.
-  ModMeshCollector modMeshes;
+   ModMeshCollector modMeshes;
   modMeshes.chunkOffX = -static_cast<double>(job.x);
   modMeshes.chunkOffY = -static_cast<double>(job.y);
   modMeshes.chunkOffZ = -static_cast<double>(job.z);
@@ -352,12 +299,16 @@ void ChunkBuilder::buildMesh(ChunkMeshJob& job) {
      if(!beganCompile) {
       beganCompile = true;
       tessellator.startQuads();
-      // Store vertices section-local: the shader adds chunkOffset
-      // (= chunkX - camera) at draw time to reach camera space. No region
-      // wrapper, no bake loop on the main thread.
-      tessellator.translate(static_cast<double>(-job.x),
-                            static_cast<double>(-job.y),
-                            static_cast<double>(-job.z));
+      constexpr int kRegionBlocksX = 8 * kSectionBlocks;
+      constexpr int kRegionBlocksY = 4 * kSectionBlocks;
+      constexpr int kRegionBlocksZ = 8 * kSectionBlocks;
+      tessellator.translate(
+          static_cast<double>(-net::minecraft::util::math::MathHelper::floorDiv(job.x, kRegionBlocksX) *
+                              kRegionBlocksX),
+          static_cast<double>(-net::minecraft::util::math::MathHelper::floorDiv(job.y, kRegionBlocksY) *
+                              kRegionBlocksY),
+          static_cast<double>(-net::minecraft::util::math::MathHelper::floorDiv(job.z, kRegionBlocksZ) *
+                              kRegionBlocksZ));
      }
      drewGeometry |= blockRenderManager.render(*block, blockX, blockY, blockZ);
     }
@@ -384,33 +335,18 @@ void ChunkBuilder::buildMesh(ChunkMeshJob& job) {
 }
 void ChunkBuilder::uploadMesh(ChunkMeshJob& job) {
  ++chunkUpdates;
- constexpr unsigned kArrayBuffer = 0x8892;
- constexpr unsigned kDynamicDraw = 0x88E8;
- constexpr int kStride = static_cast<int>(sizeof(TessellatorVertex));
  for(int layer = 0; layer < terrain_layer::Count; ++layer) {
-  const TessellatorMesh& mesh = job.result.layers[static_cast<std::size_t>(layer)];
-  renderLayerEmpty[static_cast<std::size_t>(layer)] = job.result.layerEmpty[static_cast<std::size_t>(layer)];
-  LayerVbo& vbo = layerVbos_[static_cast<std::size_t>(layer)];
-  if(renderLayerEmpty[static_cast<std::size_t>(layer)] || mesh.empty()) {
-   if(vbo.valid()) {
-    gl::GLCore::deleteBuffers(1, &vbo.handle);
-    vbo = {};
+   const TessellatorMesh& mesh = job.result.layers[static_cast<std::size_t>(layer)];
+   renderLayerEmpty[static_cast<std::size_t>(layer)] = job.result.layerEmpty[static_cast<std::size_t>(layer)];
+   TerrainAllocation& allocation = terrainAllocations_[static_cast<std::size_t>(layer)];
+   if(mesh.empty() || terrainRegion_ == nullptr) {
+    if(terrainRegion_ != nullptr) terrainRegion_->release(layer, allocation);
+   } else if(!terrainRegion_->upload(layer, allocation, mesh.vertices)) {
+    terrainRegion_->release(layer, allocation);
+    renderLayerEmpty[static_cast<std::size_t>(layer)] =
+        job.result.modLayers[static_cast<std::size_t>(layer)].empty();
    }
-   continue;
   }
-  if(!vbo.valid()) {
-   gl::GLCore::genBuffers(1, &vbo.handle);
-  }
-  gl::GLCore::bindBuffer(kArrayBuffer, vbo.handle);
-  const auto byteCount = static_cast<std::ptrdiff_t>(mesh.vertices.size() * static_cast<std::size_t>(kStride));
-  if(vbo.handle != 0 && gl::GLCore::bufferData != nullptr) {
-   // Orphan the old buffer each upload — simpler than sizing and the
-   // section mesh is small enough that re-uploading is cheap.
-   gl::GLCore::bufferData(kArrayBuffer, byteCount, mesh.vertices.data(), kDynamicDraw);
-  }
-  vbo.vertexCount = static_cast<int>(mesh.vertices.size());
-  gl::GLCore::bindBuffer(kArrayBuffer, 0);
- }
  // Resolve block-entity positions against the live world and apply the same
  // joined/removed diff the old synchronous rebuild kept.
  std::unordered_set<::net::minecraft::block::entity::BlockEntity*> previousBlockEntities;
@@ -447,44 +383,22 @@ void ChunkBuilder::uploadMesh(ChunkMeshJob& job) {
  freeModMeshGpuBuffers();
  modLayerMeshes_ = std::move(job.result.modLayers);
  for(int layer = 0; layer < terrain_layer::Count; ++layer) {
-  for(ModChunkMesh& modMesh : modLayerMeshes_[static_cast<std::size_t>(layer)]) {
-   (void)modMesh.mesh.uploadToGpu();
+  auto& meshes = modLayerMeshes_[static_cast<std::size_t>(layer)];
+  std::sort(meshes.begin(), meshes.end(), [](const ModChunkMesh& a, const ModChunkMesh& b) {
+   return a.texture < b.texture;
+  });
+  for(ModChunkMesh& modMesh : meshes) {
+   if(modMesh.mesh.uploadToGpu()) modMesh.mesh.releaseCpuVertices();
   }
  }
  built = true;
 }
-void ChunkBuilder::drawLayer(int layer) const {
- const LayerVbo& vbo = layerVbos_[static_cast<std::size_t>(layer)];
- if(!vbo.valid() || renderLayerEmpty[static_cast<std::size_t>(layer)]) {
-  return;
- }
- if(!quad_index::ensure(static_cast<std::size_t>(vbo.vertexCount))) {
-  return;
- }
- constexpr unsigned kArrayBuffer = 0x8892;
- constexpr int kStride = static_cast<int>(sizeof(TessellatorVertex));
- render::core::RenderPass pass;
- pass.modelView = render::core::drawModelView();
- pass.projection = render::core::drawProjection();
- // Section-local vertices: this is what carries the section's world position
- // into the shader. WorldRenderer published it via setPendingTerrainDraw.
- render::core::applyPendingTerrain(pass);
- pass.buffer = vbo.handle;
- pass.vertexCount = static_cast<std::size_t>(vbo.vertexCount);
- pass.stride = kStride;
- pass.hasTexture = true;
- pass.hasColor = true;
- pass.hasNormals = true;
- const int indexCount = (vbo.vertexCount / 4) * 6;
- render::core::submitIndexedQuads(pass, quad_index::handle(), indexCount);
- gl::GLCore::bindBuffer(kArrayBuffer, 0);
- ++frameDrawCalls;
-}
 void ChunkBuilder::freeGpuBuffers() noexcept {
  for(int layer = 0; layer < terrain_layer::Count; ++layer) {
-  if(layerVbos_[static_cast<std::size_t>(layer)].valid()) {
-   gl::GLCore::deleteBuffers(1, &layerVbos_[static_cast<std::size_t>(layer)].handle);
-   layerVbos_[static_cast<std::size_t>(layer)] = {};
+  if(terrainRegion_ != nullptr) {
+   terrainRegion_->release(layer, terrainAllocations_[static_cast<std::size_t>(layer)]);
+  } else {
+   terrainAllocations_[static_cast<std::size_t>(layer)] = {};
   }
  }
  freeModMeshGpuBuffers();

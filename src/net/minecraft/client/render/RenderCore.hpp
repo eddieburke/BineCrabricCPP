@@ -1,7 +1,9 @@
 #pragma once
 #include "net/minecraft/client/render/celestial/CelestialState.hpp"
 #include <cstddef>
-#include <functional>
+#include <cstdint>
+#include <optional>
+#include <span>
 #include "net/minecraft/util/math/Matrix4f.hpp"
 namespace net::minecraft::client::gl {
 class ShaderProgram;
@@ -14,6 +16,7 @@ struct RenderSettings;
 } // namespace net::minecraft::client
 namespace net::minecraft::client::render {
 struct FrameRenderCamera;
+enum class WorldProgramId : std::uint8_t;
 }
 namespace net::minecraft::client::render::core {
 namespace math = net::minecraft::util::math;
@@ -140,6 +143,7 @@ void unbindTexture(int texture);
 unsigned int genTexture();
 void deleteTexture(unsigned int texture);
 void clearAllocatedTextures();
+void releaseGlResources();
 void colorMask(bool r, bool g, bool b, bool a);
 int getActiveTextureUnit();
 void viewport(int x, int y, int width, int height);
@@ -243,7 +247,6 @@ struct RenderPass {
  int stride = 0;
  int glMode = 0x0004;
  bool hasTexture = false;
-  bool hasColor = false;
   bool hasNormals = false;
   ShaderProgram* programOverride = nullptr;
  bool fullscreen = false;
@@ -314,9 +317,12 @@ void setWorldLight(const WorldLightUniforms& light);
 [[nodiscard]] const WorldLightUniforms& worldLight();
 void setLightingEnabled(bool enabled);
 [[nodiscard]] bool lightingEnabled();
-// Constant vaColor fallback for meshes without a colour array (replaces FF glColor).
+// Colour a vertex inherits when its producer set none (replaces FF glColor).
+// The Tessellator writes the packed form into every vertex, so vaColor is always
+// array-backed — there is no generic-attribute path for it to fall through.
 void setConstColor(float r, float g, float b, float a);
 [[nodiscard]] const float* constColor();
+[[nodiscard]] std::uint32_t constColorPacked();
 // Shader alpha test reference. Disabled / ALWAYS semantics are expressed as ref 0.
 // Main-GL-thread write only (WI-5); mesh workers capture it into the job snapshot.
 void setAlphaTestRef(float ref);
@@ -344,16 +350,25 @@ void submit(const RenderPass& pass);
 // glDrawElements for world geometry, or the draw inherits the previous
 // chunkOffset instead of its own.
 void submitIndexedQuads(const RenderPass& pass, unsigned indexBuffer, int indexCount);
+bool configureIndexedVao(unsigned vao,
+                         unsigned vertexBuffer,
+                         unsigned indexBuffer,
+                         std::size_t baseOffset,
+                         int stride,
+                         bool hasTexture,
+                         bool hasNormals);
+int submitIndexedQuadsBatch(const RenderPass& pass,
+                            unsigned vao,
+                            std::span<const int> indexCounts,
+                            std::span<const int> baseVertices);
 // Pending section-local terrain params for Tessellator / bound-buffer draws.
 void setPendingTerrainDraw(float chunkOffsetX, float chunkOffsetY, float chunkOffsetZ);
 void clearPendingTerrainDraw();
-void setActiveProgram(ShaderProgram* program);
+void setActiveProgram(ShaderProgram* program,
+                      std::optional<WorldProgramId> worldProgram = std::nullopt);
+[[nodiscard]] std::optional<WorldProgramId> activeWorldProgram();
 void setDrawEnabled(bool enabled);
 bool drawEnabled();
-using ProgramUniformUploader = std::function<void(ShaderProgram&)>;
-void setProgramUniformUploader(ProgramUniformUploader uploader);
-using ProgramMaterialBinder = std::function<void(ShaderProgram&)>;
-void setProgramMaterialBinder(ProgramMaterialBinder binder);
 void advanceProgramUniforms();
 void setEntityId(int id);
 void setBlockEntityId(int id);
@@ -396,7 +411,6 @@ void configureAttribs(unsigned buffer,
                       std::size_t baseOffset,
                       int stride,
                       bool hasTexture,
-                      bool hasColor,
                       bool hasNormals);
 void invalidateAttribCache();
 } // namespace net::minecraft::client::render::core

@@ -21,15 +21,12 @@
 namespace net::minecraft::client::render {
 namespace {
 using PackCatalog::lower;
-// GL driver facts captured once (they cannot change mid-session): version numbers,
-// color-buffer limit, vendor/renderer macros and extensions. Feeds the engine macro
-// table (engineMacros) and the pack `#if` evaluation (seedEngineMacros).
 struct GlShaderSnapshot {
  int glVersion = 330;
  int glslVersion = 330;
  int colorBuffers = 1;
- std::string vendorMacro;
- std::string rendererMacro;
+ std::string vendorMacro = "MC_GL_VENDOR_OTHER";
+ std::string rendererMacro = "MC_GL_RENDERER_OTHER";
  std::vector<std::string> extensions;
  bool captured = false;
 };
@@ -110,7 +107,7 @@ void captureGlShaderSnapshot() {
   int major = 0;
   int minor = 0;
   if(text != nullptr) std::sscanf(text, "%d.%d", &major, &minor);
-  return major > 0 ? major * 100 + minor * 10 : 330;
+  return major > 0 ? major * 100 + (minor >= 10 ? minor : minor * 10) : 330;
  };
  gSnapshot.glVersion = version(0x1F02);
  gSnapshot.glslVersion = version(0x8B8C);
@@ -217,10 +214,8 @@ std::vector<ShaderMacro> engineMacros(const PackDefinition& pack) {
      "WORLD_BORDER", "HAND_TRANSLUCENT"};
  static_assert(static_cast<int>(core::RenderStage::HandTranslucent) + 1 == static_cast<int>(renderStages.size()));
  appendIndexedMacros(macros, "MC_RENDER_STAGE_", renderStages);
- for(const std::string& feature : pack.requiredFeatures)
-  if(featureSupported(feature)) macros.push_back({"IRIS_FEATURE_" + feature, {}});
- for(const std::string& feature : pack.optionalFeatures)
-  if(featureSupported(feature)) macros.push_back({"IRIS_FEATURE_" + feature, {}});
+ for(const std::string_view feature : kIrisFeatureNames)
+  if(featureSupported(feature)) macros.push_back({"IRIS_FEATURE_" + std::string(feature), {}});
  for(const std::string& extension : glShaderExtensions()) macros.push_back({"MC_" + extension, {}});
  return macros;
 }
@@ -249,9 +244,36 @@ void seedEngineMacros(const PackDefinition& pack, PPMacroTable& macros) {
  }
 }
 std::string normalizePackSource(const PackDefinition& pack, const std::string& source) {
- PPMacroTable macros;
- seedEngineMacros(pack, macros);
- ConditionalState stack(ConditionalState::Flavor::Glsl);
+ if(source.find('#') == std::string::npos) return source;
+ const auto snapshotCaptured = [] {
+  captureGlShaderSnapshot();
+  std::lock_guard lock(gSnapshotMutex);
+  return gSnapshot.captured;
+ };
+ const auto engineSeed = [&]() -> const PPMacroTable& {
+  static const PPMacroTable offline = [] {
+   PPMacroTable macros;
+   seedEngineMacros(PackDefinition{}, macros);
+   return macros;
+  }();
+  if(!snapshotCaptured()) return offline;
+  static const PPMacroTable live = [] {
+   PPMacroTable macros;
+   seedEngineMacros(PackDefinition{}, macros);
+   return macros;
+  }();
+  return live;
+ };
+ PPMacroOverlay macros(engineSeed());
+ ppAssign(macros, "MC_MIPMAP_LEVEL",
+          PPMacro{false, {}, std::to_string(std::max(0, pack.mcMipmapLevel))});
+ if(pack.labPbr || pack.labPbr13) ppAssign(macros, "MC_TEXTURE_FORMAT_LAB_PBR", PPMacro{});
+ if(pack.labPbr13) ppAssign(macros, "MC_TEXTURE_FORMAT_LAB_PBR_1_3", PPMacro{});
+ for(const std::string& feature : pack.requiredFeatures)
+  if(featureSupported(feature)) ppAssign(macros, "IRIS_FEATURE_" + feature, PPMacro{});
+ for(const std::string& feature : pack.optionalFeatures)
+  if(featureSupported(feature)) ppAssign(macros, "IRIS_FEATURE_" + feature, PPMacro{});
+ ConditionalState conditionals(ConditionalState::Flavor::Glsl);
  std::string extensions;
  std::string body;
  body.reserve(source.size());
@@ -271,6 +293,7 @@ std::string normalizePackSource(const PackDefinition& pack, const std::string& s
   return true;
  };
  std::string_view physicalView;
+ bool inBlockComment = false;
  while(getNextLine(physicalView)) {
   std::string logical(physicalView);
   int continuations = 0;
@@ -285,57 +308,76 @@ std::string normalizePackSource(const PackDefinition& pack, const std::string& s
    body += text;
    body.append(static_cast<std::size_t>(continuations + 1), '\n');
   };
-  const std::string parsedLine = lineForDirectiveParse(logical);
+  std::string parsedLine;
+  parsedLine.reserve(logical.size());
+  for(std::size_t i = 0; i < logical.size();) {
+   if(inBlockComment) {
+    const std::size_t close = logical.find("*/", i);
+    if(close == std::string::npos) break;
+    i = close + 2;
+    inBlockComment = false;
+    parsedLine.push_back(' ');
+    continue;
+   }
+   if(logical.compare(i, 2, "//") == 0) break;
+   if(logical.compare(i, 2, "/*") == 0) {
+    inBlockComment = true;
+    i += 2;
+    continue;
+   }
+   parsedLine.push_back(logical[i++]);
+  }
   const std::size_t first = parsedLine.find_first_not_of(" \t\r\n");
   const std::string cleaned = first == std::string::npos ? std::string{} : parsedLine.substr(first);
   std::string keyword;
   std::string rest;
   if(parseDirective(cleaned, keyword, rest)) {
-   if(keyword == "if" || keyword == "ifdef" || keyword == "ifndef") {
-    bool condition = false;
-    if(stack.active()) {
-     if(keyword == "if")
-      condition = evaluateIfExpression(rest, macros);
-     else {
-      std::size_t end = 0;
-      while(end < rest.size() && isIdentChar(rest[end])) ++end;
-      const bool defined = macros.contains(rest.substr(0, end));
-      condition = keyword == "ifdef" ? defined : !defined;
-     }
-    }
-    stack.push(condition);
+   if(keyword == "if") {
+    conditionals.push(evaluateIfExpression(rest, macros));
+    emit();
+    continue;
+   }
+   if(keyword == "ifdef") {
+    conditionals.push(ppContains(macros, trimmedView(rest)));
+    emit();
+    continue;
+   }
+   if(keyword == "ifndef") {
+    conditionals.push(!ppContains(macros, trimmedView(rest)));
     emit();
     continue;
    }
    if(keyword == "elif") {
-    stack.elif(evaluateIfExpression(rest, macros));
+    conditionals.elif(evaluateIfExpression(rest, macros));
     emit();
     continue;
    }
    if(keyword == "else") {
-    stack.else_();
+    conditionals.else_();
     emit();
     continue;
    }
    if(keyword == "endif") {
-    stack.endif();
-    emit();
-    continue;
-   }
-   if(!stack.active()) {
+    conditionals.endif();
     emit();
     continue;
    }
    if(keyword == "define") {
-    parseDefineDirective(rest, macros);
-    emit(logical);
+    if(conditionals.active()) {
+     parseDefineDirective(rest, macros);
+     emit(logical);
+    } else {
+     emit();
+    }
     continue;
    }
    if(keyword == "undef") {
-    std::size_t end = 0;
-    while(end < rest.size() && isIdentChar(rest[end])) ++end;
-    macros.erase(rest.substr(0, end));
-    emit(logical);
+    if(conditionals.active()) {
+     ppErase(macros, trimmedView(rest));
+     emit(logical);
+    } else {
+     emit();
+    }
     continue;
    }
    if(keyword == "version") {
@@ -343,7 +385,7 @@ std::string normalizePackSource(const PackDefinition& pack, const std::string& s
     continue;
    }
    if(keyword == "extension") {
-    extensions += "#extension " + rest + '\n';
+    if(conditionals.active()) extensions += "#extension " + rest + '\n';
     emit();
     continue;
    }
@@ -351,10 +393,8 @@ std::string normalizePackSource(const PackDefinition& pack, const std::string& s
     emit();
     continue;
    }
-   emit(logical);
-   continue;
   }
-  if(stack.active())
+  if(conditionals.active())
    emit(logical);
   else
    emit();

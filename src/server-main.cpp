@@ -95,8 +95,8 @@ namespace {
  if(config.storageRoot.empty() || config.worldName.empty()) {
   throw std::invalid_argument("--storage-root and --level-name are required for configured launches");
  }
- if(config.port < 1 || config.port > 65535) {
-  throw std::invalid_argument("--server-port must be from 1 to 65535");
+ if(config.port < 0 || config.port > 65535) {
+  throw std::invalid_argument("--server-port must be from 0 to 65535");
  }
  config.useConsoleThread = true;
  config.useGui = false;

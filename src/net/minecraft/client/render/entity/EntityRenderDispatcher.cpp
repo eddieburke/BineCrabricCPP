@@ -3,9 +3,11 @@
 #include <cassert>
 #include <cmath>
 #include <functional>
+#include <string_view>
 #include <unordered_map>
 #include <vector>
 #include "net/minecraft/client/gl/GlConstants.hpp"
+#include "net/minecraft/client/debug/RenderProfiler.hpp"
 #include "net/minecraft/client/render/camera/FrameRenderCamera.hpp"
 #include "net/minecraft/client/render/RenderCore.hpp"
 #include "net/minecraft/client/render/RenderType.hpp"
@@ -182,14 +184,21 @@ void EntityRenderDispatcher::render(const net::minecraft::Entity& entity,
                                     float tickDelta,
                                     net::minecraft::util::math::MatrixStack& matrices,
                                     const net::minecraft::util::math::Matrix4f& projection) {
-   const std::string& entityName = net::minecraft::entity::EntityRegistry::getIdRef(entity);
-  static std::string lastEntityName;
-  static int lastEntityShaderId = -1;
-  if(lastEntityName != entityName) {
-   lastEntityName = entityName;
-   lastEntityShaderId = resolveShaderObjectId("entity", entityName, -1);
-  }
-  render::core::setEntityId(lastEntityShaderId);
+ const std::type_index entityType = entity.runtimeType();
+ const std::uint64_t revision = shaderObjectIdRevision();
+ if(shaderIdRevision_ != revision) {
+  shaderIds_.clear();
+  shaderIdRevision_ = revision;
+ }
+ const auto [shaderIt, inserted] = shaderIds_.try_emplace(entityType, -1);
+ if(inserted) {
+  const std::string_view shaderName = dynamic_cast<const net::minecraft::PlayerEntity*>(&entity) != nullptr
+                                          ? std::string_view("player")
+                                          : std::string_view(net::minecraft::entity::EntityRegistry::getIdRef(entity));
+  shaderIt->second = resolveShaderObjectId("entity", std::string(shaderName), -1);
+ }
+ const int entityShaderId = shaderIt->second;
+ const render::core::EntityIdScope entityScope(entityShaderId);
  if(net::minecraft::mod::runtime::hasLuaHook(net::minecraft::mod::runtime::LuaEventId::PreEntityRender)) {
   net::minecraft::mod::PreEntityRenderEvent event;
   event.entity = &entity;
@@ -199,11 +208,12 @@ void EntityRenderDispatcher::render(const net::minecraft::Entity& entity,
   event.tickDelta = tickDelta;
   net::minecraft::mod::runtime::luaHookPreEntityRender(event);
   if(event.canceled) {
-   render::core::setEntityId(0);
    return;
   }
  }
- if(EntityRenderer* renderer = get(entity); renderer != nullptr) {
+ if(EntityRenderer* renderer = get(entityType); renderer != nullptr) {
+  ::net::minecraft::client::debug::RenderProfiler::instance().record(
+      ::net::minecraft::client::debug::RenderMetric::EntityRendererInvocations);
   // The renderer composes entity poses onto `matrices` and publishes the
   // composed matrix to the draw camera state before its draws; restore the
   // frame base afterwards (renderers that draw without composing, e.g. the
@@ -213,7 +223,6 @@ void EntityRenderDispatcher::render(const net::minecraft::Entity& entity,
   renderer->render(entity, x, y, z, yaw, tickDelta, matrices, projection);
   renderer->postRender(entity, x, y, z, yaw, tickDelta, matrices, projection);
  }
- render::core::setEntityId(0);
 }
 double EntityRenderDispatcher::squaredDistanceTo(double x, double y, double z) const {
  const double dx = x - x_;

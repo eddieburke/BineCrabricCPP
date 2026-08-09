@@ -24,7 +24,7 @@
 #include "net/minecraft/client/render/entity/EntityRenderDispatcher.hpp"
 #include "net/minecraft/client/render/uniforms/FrameData.hpp"
 #include "net/minecraft/client/render/shaderpack/Pack.hpp"
-#include "net/minecraft/client/render/pipeline/Manager.hpp"
+#include "net/minecraft/client/render/pipeline/Pipeline.hpp"
 #include "net/minecraft/client/render/world/WorldRenderer.hpp"
 #include "net/minecraft/client/util/UiScale.hpp"
 #include "net/minecraft/entity/Entity.hpp"
@@ -153,18 +153,18 @@ GameRenderer::GameRenderer(Minecraft* clientIn)
     : client(clientIn),
       heldItemRenderer(std::make_unique<item::HeldItemRenderer>(clientIn)),
       lastInactiveTime(nowMillis()),
-      shaderPacks_(clientIn != nullptr ? std::make_unique<PackManager>(
+      shaderPipeline_(clientIn != nullptr ? std::make_unique<Pipeline>(
                                              Minecraft::getRunDirectory(), &clientIn->options,
-                                             clientIn->shaderCompiler_)
+                                             Minecraft::getRunDirectory() / "shader-cache")
                                        : nullptr) {}
 GameRenderer::~GameRenderer() {
  shadowState_.targets.destroy();
 }
 const PackDefinition& GameRenderer::packDefinition() const noexcept {
- return shaderPacks_ != nullptr ? shaderPacks_->activeDefinition() : vanillaPackDefinition();
+ return shaderPipeline_ != nullptr ? shaderPipeline_->activeDefinition() : vanillaPackDefinition();
 }
 const PackDefinition& GameRenderer::meshDefinition() const noexcept {
- return shaderPacks_ != nullptr ? shaderPacks_->meshDefinition() : vanillaPackDefinition();
+ return shaderPipeline_ != nullptr ? shaderPipeline_->meshDefinition() : vanillaPackDefinition();
 }
 PackUniformValues GameRenderer::buildFrameUniforms(float tickDelta, bool shadowAvailable) const {
  const int width = client != nullptr ? std::max(1, client->displayWidth) : 1;
@@ -174,7 +174,7 @@ PackUniformValues GameRenderer::buildFrameUniforms(float tickDelta, bool shadowA
  const FrameRenderCamera shadowCamera =
      shadowmap::makeShadowCamera(packDefinition(), frameCamera_, core::celestialState());
  return buildShaderFrameData(width, height, worldTime,
-                             frameShadow_.resolution, shaderPacks_->sceneColorCount() > 1,
+                             frameShadow_.resolution, shaderPipeline_->sceneColorCount() > 1,
                              shadowAvailable, frameCamera_, shadowCamera,
                              client != nullptr ? client->world : nullptr,
                              eyeHalf);
@@ -563,7 +563,6 @@ void GameRenderer::onFrameUpdate(float tickDelta) {
  if(client == nullptr) {
   return;
  }
- shaderPacks_->advancePackActivation();
  frameSettings_ = option::renderSettings(client->options, meshDefinition());
 #ifdef _WIN32
  if(!util::DisplayManager::isActive()) {
@@ -598,72 +597,78 @@ void GameRenderer::onFrameUpdate(float tickDelta) {
  if(client->skipGameRender) {
   return;
  }
+ shaderPipeline_->poll();
  if(client->world != nullptr) {
   renderFrame(tickDelta);
-  if(!client->options.hideHud || client->currentScreen() != nullptr) {
-   shaderPacks_->pipeline().setPipelinePhase(WorldPipelinePhase::None);
-   const bool chatOpen = dynamic_cast<gui::screen::ChatScreen*>(client->currentScreen()) != nullptr;
+ }
+ {
+  const debug::RenderProfiler::Scope hudScope(debug::RenderStage::HudGui);
+  if(client->world != nullptr) {
+   if(!client->options.hideHud || client->currentScreen() != nullptr) {
+    shaderPipeline_->setPipelinePhase(WorldPipelinePhase::None);
+    const bool chatOpen = dynamic_cast<gui::screen::ChatScreen*>(client->currentScreen()) != nullptr;
+    {
+     const int width = std::max(1, client->displayWidth);
+     const int height = std::max(1, client->displayHeight);
+     gui_proj::begin(util::uiScale(client->options, width, height), width, height, false);
+    }
+    client->inGameHud.render(tickDelta, chatOpen, 0, 0);
+   }
+  } else {
+   core::viewport(0, 0, client->displayWidth, client->displayHeight);
+   core::clear(gl::attrib::ColorBufferBit | gl::attrib::DepthBufferBit);
    {
     const int width = std::max(1, client->displayWidth);
     const int height = std::max(1, client->displayHeight);
     gui_proj::begin(util::uiScale(client->options, width, height), width, height, false);
    }
-   client->inGameHud.render(tickDelta, chatOpen, 0, 0);
   }
- } else {
-  core::viewport(0, 0, client->displayWidth, client->displayHeight);
-  core::clear(gl::attrib::ColorBufferBit | gl::attrib::DepthBufferBit);
-  {
-   const int width = std::max(1, client->displayWidth);
-   const int height = std::max(1, client->displayHeight);
-   gui_proj::begin(util::uiScale(client->options, width, height), width, height, false);
-  }
- }
- if(client->currentScreen() != nullptr) {
-  shaderPacks_->pipeline().setPipelinePhase(WorldPipelinePhase::None);
-  input::InputSystem& input = input::InputSystem::instance();
+  if(client->currentScreen() != nullptr) {
+   shaderPipeline_->setPipelinePhase(WorldPipelinePhase::None);
+   input::InputSystem& input = input::InputSystem::instance();
 #ifdef _WIN32
-  input.syncCursorFromOs();
+   input.syncCursorFromOs();
 #endif
-  const util::UiScale scale = util::uiScale(client->options, client->displayWidth, client->displayHeight);
-  const auto [mouseX, mouseY] = util::mapScreenMouse(client->displayWidth,
-                                                     client->displayHeight,
-                                                     scale.scaledWidth,
-                                                     scale.scaledHeight,
-                                                     input.mouseX(),
-                                                     input.mouseY());
-  gui_proj::begin(scale, client->displayWidth, client->displayHeight, true);
-  client->currentScreen()->render(mouseX, mouseY, tickDelta);
+   const util::UiScale scale = util::uiScale(client->options, client->displayWidth, client->displayHeight);
+   const auto [mouseX, mouseY] = util::mapScreenMouse(client->displayWidth,
+                                                      client->displayHeight,
+                                                      scale.scaledWidth,
+                                                      scale.scaledHeight,
+                                                      input.mouseX(),
+                                                      input.mouseY());
+   gui_proj::begin(scale, client->displayWidth, client->displayHeight, true);
+   client->currentScreen()->render(mouseX, mouseY, tickDelta);
+  }
  }
 }
 bool GameRenderer::beginSceneCapture() {
- if(client == nullptr || shaderPacks_ == nullptr) {
+ if(client == nullptr || shaderPipeline_ == nullptr) {
   return false;
  }
- shaderPacks_->poll();
  const int width = std::max(1, client->displayWidth);
  const int height = std::max(1, client->displayHeight);
- if(!shaderPacks_->ensureSceneTargets(width, height)) {
+ if(!shaderPipeline_->ensureSceneTargets(width, height)) {
   return false;
  }
- shaderPacks_->clearScene(core::fog().color[0], core::fog().color[1], core::fog().color[2]);
+ shaderPipeline_->clearScene(core::fog().color[0], core::fog().color[1], core::fog().color[2]);
  core::clear(gl::attrib::DepthBufferBit);
  return true;
 }
 void GameRenderer::resolveSceneCapture() {
- if(client == nullptr || shaderPacks_ == nullptr) {
+ if(client == nullptr || shaderPipeline_ == nullptr) {
   return;
  }
- shaderPacks_->endScene();
+ const debug::RenderProfiler::Scope postProcessScope(debug::RenderStage::PostProcess);
+ shaderPipeline_->endScene();
  const int width = std::max(1, client->displayWidth);
  const int height = std::max(1, client->displayHeight);
  gl::GLCore::bindFramebuffer(static_cast<unsigned>(gl::framebuffer::Framebuffer), 0);
  core::viewport(0, 0, width, height);
  core::clear(gl::attrib::ColorBufferBit | gl::attrib::DepthBufferBit);
- shaderPacks_->renderPostProcess(frameShadow_.depthTexture, frameShadow_.opaqueDepthTexture,
-                                 frameShadow_.colorTextures.data(), frameShadow_.colorCount,
-                                 frameShadow_.colorAltTextures.data());
- shaderPacks_->pipeline().reset();
+ shaderPipeline_->renderPostProcess(frameShadow_.depthTexture, frameShadow_.opaqueDepthTexture,
+                                    frameShadow_.colorTextures.data(), frameShadow_.colorCount,
+                                    frameShadow_.colorAltTextures.data());
+ shaderPipeline_->reset();
  core::viewport(0, 0, width, height);
 }
 namespace {
@@ -707,21 +712,6 @@ void bindTerrainTexture(int terrainTextureId) {
  core::activeTexture(gl::tex::Texture0);
  core::bindTexture(terrainTextureId);
 }
-struct ProfilerFrame {
- bool active;
- explicit ProfilerFrame(bool enabled) : active(enabled) {
-  if(active) {
-   debug::RenderProfiler::instance().beginFrame();
-  }
- }
- ProfilerFrame(const ProfilerFrame&) = delete;
- ProfilerFrame& operator=(const ProfilerFrame&) = delete;
- ~ProfilerFrame() {
-  if(active) {
-   debug::RenderProfiler::instance().endFrame();
-  }
- }
-};
 void drawSolidTerrain(WorldRenderer& worldRenderer,
                       LivingEntity& camera,
                       int terrainTextureId) {
@@ -739,6 +729,7 @@ void drawCutoutTerrain(WorldRenderer& worldRenderer,
   core::setConstColor(1.0f, 1.0f, 1.0f, 1.0f);
   worldRenderer.render(camera, chunk::terrain_layer::Cutout);
  }
+ bindTerrainTexture(terrainTextureId);
  const RenderPassScope interiorScope(RenderType::cutoutInterior());
  core::setConstColor(1.0f, 1.0f, 1.0f, 1.0f);
  worldRenderer.render(camera, chunk::terrain_layer::CutoutInterior);
@@ -768,6 +759,9 @@ void renderBlockOverlay(WorldRenderer& worldRenderer,
                         Minecraft* client,
                         PlayerEntity& player,
                         float tickDelta) {
+ if(client == nullptr || !client->crosshairTarget.has_value()) {
+  return;
+ }
  const ItemStack hand = selectedItemOrEmpty(&player);
  worldRenderer.renderMiningProgress(&player, *client->crosshairTarget, 0, hand, tickDelta);
  worldRenderer.renderBlockOutline(&player, *client->crosshairTarget, 0, hand, tickDelta);
@@ -801,7 +795,11 @@ void GameRenderer::renderFrame(float tickDelta) {
  if(client == nullptr) {
   return;
  }
- const bool captured = beginSceneCapture();
+ bool captured = false;
+ {
+  const debug::RenderProfiler::Scope setupScope(debug::RenderStage::FrameSetup);
+  captured = beginSceneCapture();
+ }
  const int width = std::max(1, client->displayWidth);
  const int height = std::max(1, client->displayHeight);
  renderToCurrentTarget(tickDelta, FrameRenderCamera{}, getFov(tickDelta), width, height, false);
@@ -821,7 +819,7 @@ bool GameRenderer::renderWorldToFbo(unsigned int fbo,
  }
  int prevFbo = 0;
  int prevViewport[4] = {0, 0, 0, 0};
- ::glGetIntegerv(0x8CA6, &prevFbo);
+ core::getIntegerv(0x8CA6, &prevFbo);
  core::getIntegerv(0x0BA2, prevViewport);
  const core::BlendScope blendGuard(core::blendEnabled());
  const core::DepthScope depthGuard(core::depthTestEnabled(), core::depthWriteEnabled());
@@ -839,8 +837,12 @@ bool GameRenderer::renderWorldToFbo(unsigned int fbo,
   prevRenderCamEntity = worldRenderer->renderCameraEntity();
   chunkCullGuard.emplace(*worldRenderer);
  }
- gl::GLCore::bindFramebuffer(gl::framebuffer::Framebuffer, fbo);
- core::viewport(0, 0, width, height);
+ {
+  const debug::RenderProfiler::Scope framebufferScope(debug::RenderStage::FramebufferTransitions);
+  gl::GLCore::bindFramebuffer(gl::framebuffer::Framebuffer, fbo);
+  debug::RenderProfiler::instance().record(debug::RenderMetric::FramebufferBinds);
+  core::viewport(0, 0, width, height);
+ }
  const PackDefinition& packDef = packDefinition();
  const bool hwOffset = camera.shadowPass && packDef.shadowHardwareOffset;
  if(hwOffset) {
@@ -865,8 +867,12 @@ bool GameRenderer::renderWorldToFbo(unsigned int fbo,
  }
   frameCamera_ = prevFrameCamera;
   core::setCameraFrame(prevPublishedCamera);
- gl::GLCore::bindFramebuffer(gl::framebuffer::Framebuffer, static_cast<unsigned>(prevFbo));
- core::viewport(prevViewport[0], prevViewport[1], prevViewport[2], prevViewport[3]);
+ {
+  const debug::RenderProfiler::Scope framebufferScope(debug::RenderStage::FramebufferTransitions);
+  gl::GLCore::bindFramebuffer(gl::framebuffer::Framebuffer, static_cast<unsigned>(prevFbo));
+  debug::RenderProfiler::instance().record(debug::RenderMetric::FramebufferBinds);
+  core::viewport(prevViewport[0], prevViewport[1], prevViewport[2], prevViewport[3]);
+ }
  return true;
 }
 void GameRenderer::renderToCurrentTarget(float tickDelta,
@@ -878,8 +884,9 @@ void GameRenderer::renderToCurrentTarget(float tickDelta,
  if(client == nullptr) {
   return;
  }
- const PackManager::PipelinePhaseScope pipelinePhase(
-     shaderPacks_.get(),
+ debug::RenderProfiler::Scope frameSetupScope(debug::RenderStage::FrameSetup);
+ const Pipeline::PhaseScope pipelinePhase(
+     shaderPipeline_.get(),
      cameraFrame.shadowPass ? WorldPipelinePhase::Shadow
                             : WorldPipelinePhase::World);
  core::viewport(0, 0, viewportWidth, viewportHeight);
@@ -929,9 +936,10 @@ void GameRenderer::renderToCurrentTarget(float tickDelta,
   core::setFogEnabled(true);
   core::fogApplyMode(client, 1, frameSettings_);
  }
- debug::RenderProfiler::instance().setEnabled(client->options.debugHud);
- const ProfilerFrame profilerFrame(client->options.debugHud && !frameCamera_.shadowPass && !renderCameraEntity);
- core::clear(gl::attrib::ColorBufferBit | gl::attrib::DepthBufferBit);
+ {
+  const debug::RenderProfiler::Scope clearScope(debug::RenderStage::TargetClear);
+  core::clear(gl::attrib::ColorBufferBit | gl::attrib::DepthBufferBit);
+ }
  renderWorld(tickDelta, fov, modelView, projection);
  {
   math::Matrix4f cameraOnly;
@@ -973,10 +981,12 @@ void GameRenderer::renderToCurrentTarget(float tickDelta,
  if(!frameCamera_.shadowPass && client->world != nullptr) {
   updateSunLight(client->world, tickDelta, client->camera);
  }
+ frameSetupScope.end();
  if(!frameCamera_.shadowPass && !renderCameraEntity) {
-  shaderPacks_->prepareFrame(client->world);
-  shaderPacks_->setFrameUniforms(buildFrameUniforms(tickDelta, frameShadow_.depthTexture >= 0));
-  shaderPacks_->renderBegin(frameShadow_.depthTexture,
+  const debug::RenderProfiler::Scope prepareScope(debug::RenderStage::PackPrepare);
+  shaderPipeline_->prepareFrame(client->world);
+  shaderPipeline_->setFrameUniforms(buildFrameUniforms(tickDelta, frameShadow_.depthTexture >= 0));
+  shaderPipeline_->renderBegin(frameShadow_.depthTexture,
                             frameShadow_.opaqueDepthTexture,
                             frameShadow_.colorTextures.data(),
                             frameShadow_.colorCount,
@@ -984,6 +994,7 @@ void GameRenderer::renderToCurrentTarget(float tickDelta,
                             frameShadow_.colorAltTextures.data());
  }
  if(!frameCamera_.shadowPass && !renderCameraEntity) {
+  const debug::RenderProfiler::Scope shadowScope(debug::RenderStage::Shadow);
   frameShadow_ = shadowmap::update(shadowState_, *this, tickDelta, frameCamera_, definition);
  }
  Frustum viewFrustum;
@@ -997,23 +1008,29 @@ void GameRenderer::renderToCurrentTarget(float tickDelta,
   const debug::RenderProfiler::Scope skyScope(debug::RenderStage::Sky);
   if(client->world->dimension != nullptr && !client->world->dimension->isNether) {
    atmosphere::renderSkyDome(atmosphereCtx, tickDelta);
-   shaderPacks_->pipeline().refreshLightmap(client->world);
+   shaderPipeline_->refreshLightmap(client->world);
   }
  }
  if(!frameCamera_.shadowPass && !renderCameraEntity) {
-  shaderPacks_->renderShadowComposite(frameShadow_.depthTexture,
-                                      frameShadow_.opaqueDepthTexture,
-                                      frameShadow_.colorTextures.data(),
-                                      frameShadow_.colorCount,
-                                      &shadowState_.targets,
-                                      frameShadow_.colorAltTextures.data());
-  shaderPacks_->bindScene();
-  shaderPacks_->renderPreWorld(frameShadow_.depthTexture,
-                               frameShadow_.opaqueDepthTexture,
-                               frameShadow_.colorTextures.data(),
-                               frameShadow_.colorCount,
-                               &shadowState_.targets,
-                               frameShadow_.colorAltTextures.data());
+  {
+   const debug::RenderProfiler::Scope shadowCompositeScope(debug::RenderStage::ShadowComposite);
+   shaderPipeline_->renderShadowComposite(frameShadow_.depthTexture,
+                                       frameShadow_.opaqueDepthTexture,
+                                       frameShadow_.colorTextures.data(),
+                                       frameShadow_.colorCount,
+                                       &shadowState_.targets,
+                                       frameShadow_.colorAltTextures.data());
+  }
+  shaderPipeline_->bindScene();
+  {
+   const debug::RenderProfiler::Scope prepareScope(debug::RenderStage::PackPrepare);
+   shaderPipeline_->renderPreWorld(frameShadow_.depthTexture,
+                                frameShadow_.opaqueDepthTexture,
+                                frameShadow_.colorTextures.data(),
+                                frameShadow_.colorCount,
+                                &shadowState_.targets,
+                                frameShadow_.colorAltTextures.data());
+  }
  }
  {
   const debug::RenderProfiler::Scope cullScope(debug::RenderStage::Cull);
@@ -1044,6 +1061,7 @@ void GameRenderer::renderToCurrentTarget(float tickDelta,
    drawCutoutTerrain(*worldRenderer, *camera, terrainTextureId);
   }
   if(frameCamera_.shadowEntities || frameCamera_.shadowPlayer || frameCamera_.shadowBlockEntities) {
+   const debug::RenderProfiler::Scope shadowEntityScope(debug::RenderStage::ShadowEntityDraw);
    renderWorldStage(atmosphereCtx, tickDelta, mod::WorldRenderStage::Entities, true, true, [&] {
     core::setLightingEnabled(true);
     const Vec3d shadowCameraPos{frameCamera_.x, frameCamera_.y, frameCamera_.z};
@@ -1053,7 +1071,7 @@ void GameRenderer::renderToCurrentTarget(float tickDelta,
   }
   shadowState_.targets.snapshotOpaqueDepth();
   if(frameCamera_.shadowTranslucent) {
-   drawTranslucentTerrain(*worldRenderer, *camera, tickDelta, terrainTextureId, fancyGraphics);
+   drawTranslucentTerrain(*worldRenderer, *camera, tickDelta, terrainTextureId, false);
   }
   return;
  }
@@ -1066,12 +1084,12 @@ void GameRenderer::renderToCurrentTarget(float tickDelta,
  core::setLightingEnabled(true);
  applyEntityLightingRig(frameCamera_, worldLight);
  const Vec3d frameCameraPos{frameCamera_.x, frameCamera_.y, frameCamera_.z};
- const bool hasDeferred = shaderPacks_->hasDeferredPasses();
+ const bool hasDeferred = shaderPipeline_->hasDeferredPasses();
  const bool splitEntities = hasDeferred && definition.separateEntityDraws;
  std::string particleOrder = definition.particleOrdering;
  if(particleOrder.empty()) particleOrder = hasDeferred ? "after" : "mixed";
  renderWorldStage(atmosphereCtx, tickDelta, mod::WorldRenderStage::Entities, !skipGbuffers, false, [&] {
-  const debug::RenderProfiler::Scope entityScope(debug::RenderStage::Entities);
+  const debug::RenderProfiler::Scope entityScope(debug::RenderStage::EntityOpaque);
   if(splitEntities) render::setDrawPhase(render::DrawPhase::Opaque);
   worldRenderer->renderEntities(frameCameraPos, activeCuller, tickDelta);
   render::setDrawPhase(render::DrawPhase::All);
@@ -1090,22 +1108,35 @@ void GameRenderer::renderToCurrentTarget(float tickDelta,
   client->particleManager.render(camera, tickDelta);
  };
  if(!skipGbuffers && (particleOrder == "before" || particleOrder == "mixed")) renderLitParticles();
- shaderPacks_->captureOpaqueDepth();
+ {
+  const debug::RenderProfiler::Scope depthScope(debug::RenderStage::DepthCaptureCopy);
+  shaderPipeline_->captureOpaqueDepth();
+ }
  if(zoom == 1.0 && !renderCameraEntity) {
   const debug::RenderProfiler::Scope handScope(debug::RenderStage::Hand);
   renderFirstPersonHand(tickDelta);
  }
- shaderPacks_->captureHandDepth();
+ {
+  const debug::RenderProfiler::Scope depthScope(debug::RenderStage::DepthCaptureCopy);
+  shaderPipeline_->captureHandDepth();
+ }
  if(!skipGbuffers && particleOrder == "before") renderTranslucentParticles();
  if(hasDeferred) {
-  shaderPacks_->renderDeferred(frameShadow_.depthTexture,
-                               frameShadow_.opaqueDepthTexture,
-                               frameShadow_.colorTextures.data(),
-                               frameShadow_.colorCount,
-                               frameShadow_.colorAltTextures.data());
-  shaderPacks_->bindScene();
+  {
+   const debug::RenderProfiler::Scope deferredScope(debug::RenderStage::DeferredScheduling);
+   shaderPipeline_->renderDeferred(frameShadow_.depthTexture,
+                                frameShadow_.opaqueDepthTexture,
+                                frameShadow_.colorTextures.data(),
+                                frameShadow_.colorCount,
+                                frameShadow_.colorAltTextures.data());
+  }
+  shaderPipeline_->bindScene();
  }
  if(splitEntities && !skipGbuffers) {
+  // Second full walk of the entity list: DrawPhase filters at submission, so
+  // culling, dispatch and model building are paid twice. It belongs to the
+  // Entities stage, not to the unattributed remainder of the render phase.
+  const debug::RenderProfiler::Scope entityScope(debug::RenderStage::EntityTranslucent);
   core::setLightingEnabled(true);
   applyEntityLightingRig(frameCamera_, worldLight);
   render::setDrawPhase(render::DrawPhase::Translucent);
@@ -1126,7 +1157,8 @@ void GameRenderer::renderToCurrentTarget(float tickDelta,
   drawTranslucentTerrain(*worldRenderer, *camera, tickDelta, terrainTextureId, fancyGraphics);
  });
  if(!skipGbuffers) {
-  shaderPacks_->sampleCenterDepth();
+  const debug::RenderProfiler::Scope centerDepthScope(debug::RenderStage::CenterDepthSampling);
+  shaderPipeline_->sampleCenterDepth();
  }
  if(client->crosshairTarget.has_value() && zoom == 1.0 && !camera->isInFluid(material::Material::WATER)) {
   if(auto* player = dynamic_cast<PlayerEntity*>(camera)) {

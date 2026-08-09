@@ -25,9 +25,11 @@ class Minecraft;
 
 namespace net::minecraft::client::multiplayer {
 
+class ClientNetworkBridge;
+
 class ClientLoginNetworkHandler : public NetworkHandler {
  public:
-  ClientLoginNetworkHandler(client::Minecraft* minecraft);
+  ClientLoginNetworkHandler(client::Minecraft* minecraft, ClientNetworkBridge* bridge);
   ~ClientLoginNetworkHandler();
 
   void tick() override;
@@ -87,6 +89,7 @@ class ClientLoginNetworkHandler : public NetworkHandler {
   [[nodiscard]] std::vector<std::string> activeClientMods() const;
 
   Connection* connection_ = nullptr;
+  ClientNetworkBridge* bridge_ = nullptr;
 
   struct JoinServerWork {
     std::atomic_bool cancelled{false};

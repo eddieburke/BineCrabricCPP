@@ -9,6 +9,7 @@
 #include <vector>
 #include "net/minecraft/block/material/Material.hpp"
 #include "net/minecraft/client/Minecraft.hpp"
+#include "net/minecraft/client/debug/RenderProfiler.hpp"
 #include "net/minecraft/client/gl/GLCore.hpp"
 #include "net/minecraft/client/gl/GlConstants.hpp"
 #include "net/minecraft/client/gl/GlResource.hpp"
@@ -16,7 +17,9 @@
 #include "net/minecraft/client/gl/ShaderProgram.hpp"
 #include "net/minecraft/client/option/RenderSettings.hpp"
 #include "net/minecraft/client/render/camera/FrameRenderCamera.hpp"
+#include "net/minecraft/client/render/GameRenderer.hpp"
 #include "net/minecraft/client/render/RenderType.hpp"
+#include "net/minecraft/client/render/pipeline/Pipeline.hpp"
 #include "net/minecraft/client/render/VertexAbi.hpp"
 #include "net/minecraft/client/render/uniforms/Uniforms.hpp"
 #include "net/minecraft/entity/LivingEntity.hpp"
@@ -37,7 +40,16 @@ FogUniforms g_fog{};
 SkyUniforms g_skyUniforms{};
 unsigned int g_globalsGeneration = 1;
 unsigned int g_globalsPushed = 0;
-const float kDefaultNormal[3] = {0.0f, 0.0f, 0.0f};
+// Must be a UNIT vector, never (0,0,0). Every Iris pack computes
+// `normalize(gl_NormalMatrix * gl_Normal)` in its gbuffer vertex stage, and
+// normalize() of a zero vector is NaN — which then poisons every lighting term
+// downstream. Packs that guard for it paint the fragment pure black
+// (rethinking-voxels: `if (any(isnan(finalDiffuse))) finalDiffuse = vec3(0.0)`,
+// lib/lighting/mainLighting.glsl), and packs that do not get NaN garbage.
+// Up is the value Iris itself substitutes when directional shading is off
+// (MixinClientLevel forces Direction.UP), so it is also the parity-correct
+// choice for geometry that declares no normals — particles, sky, GUI, text.
+const float kDefaultNormal[3] = {0.0f, 1.0f, 0.0f};
 constexpr unsigned int kArrayBuffer = 0x8892; // GL_ARRAY_BUFFER
 constexpr unsigned int kStreamDraw = 0x88E0; // GL_STREAM_DRAW
 constexpr unsigned int kFloat = 0x1406; // GL_FLOAT
@@ -46,18 +58,16 @@ struct AttribCache {
  std::size_t baseOffset = 0;
  int stride = 0;
  bool hasTexture = false;
- bool hasColor = false;
  bool hasNormals = false;
  bool valid = false;
 };
 AttribCache g_attribCache;
 float g_constNormal[3] = {0.0f, 0.0f, 0.0f};
 bool g_constNormalSet = false;
-// Source of truth for constant vertex colour.
+// Source of truth for the colour a vertex gets when its producer set none.
+// The Tessellator reads the packed form per vertex, so it never needs uploading.
 float g_constColor[4] = {1.0f, 1.0f, 1.0f, 1.0f};
-// Last colour pushed to vaColor — compared against g_constColor to skip redundant uploads.
-float g_uploadedConstColor[4] = {1.0f, 1.0f, 1.0f, 1.0f};
-bool g_constColorUploaded = false;
+std::uint32_t g_constColorPacked = 0xFFFFFFFFU;
 float g_alphaTestRef = 0.1f;
 gl::GlTexture g_whiteTexture;
 unsigned int whiteTexture() {
@@ -83,11 +93,12 @@ float g_entityColor[4] = {0.0f, 0.0f, 0.0f, 0.0f};
 CelestialState g_celestialState;
 FrameRenderCamera g_cameraFrame;
 ShaderProgram* g_activeProgram = nullptr;
+std::optional<WorldProgramId> g_activeWorldProgram;
 ShaderProgram* g_lastProgram = nullptr;
 bool g_drawEnabled = true;
-ProgramUniformUploader g_programUniformUploader;
-ProgramMaterialBinder g_programUniformMaterialBinder;
 unsigned int g_programUniformGeneration = 1;
+ShaderProgram* g_programUniformMaterialProgram = nullptr;
+std::optional<WorldProgramId> g_programUniformMaterialWorldProgram;
 int g_programUniformDiffuseTexture = -1;
 math::Matrix4f g_uploadedModelView{};
 math::Matrix4f g_uploadedProjection{};
@@ -111,9 +122,18 @@ float g_uploadedEntityColor[4] = {0.0f, 0.0f, 0.0f, 0.0f};
 WorldLightUniforms g_uploadedWorldLight{};
 float g_uploadedAlphaTestRef = -1.0f;
 int g_uploadedBlendFunc[4] = {-1, -1, -1, -1};
+FogUniforms g_uploadedFog{};
+bool g_uploadedFogOn = false;
+bool g_fogUploaded = false;
 bool g_passUniformsUploaded = false;
 float g_pendingChunkOffset[3] = {0.0f, 0.0f, 0.0f};
 bool g_pendingTerrainDraw = false;
+Pipeline* shaderPipeline() {
+ net::minecraft::client::Minecraft* minecraft = net::minecraft::client::Minecraft::INSTANCE;
+ return minecraft != nullptr && minecraft->gameRenderer != nullptr
+            ? minecraft->gameRenderer->shaderPipeline()
+            : nullptr;
+}
 int g_entityId = -1;
 int g_blockEntityId = -1;
 int g_renderedItemId = -1;
@@ -182,6 +202,10 @@ bool ensureFullscreenResources() {
 void drawFullscreenTriangle() {
  gl::GLCore::bindVertexArray(g_fullscreenVao.handle());
  ::glDrawArrays(static_cast<GLenum>(0x0004), 0, 3);
+ ::net::minecraft::client::debug::RenderProfiler::instance().record(
+     ::net::minecraft::client::debug::RenderMetric::DrawCalls);
+ ::net::minecraft::client::debug::RenderProfiler::instance().record(
+     ::net::minecraft::client::debug::RenderMetric::DrawVertices, 3);
  gl::GLCore::bindVertexArray(0);
  invalidateAttribCache();
 }
@@ -327,9 +351,11 @@ void bindAndUploadUniforms(const RenderPass& pass) {
  const bool programChanged = (active != g_lastProgram);
  const PassGlBits glBits = capturePassGlBits();
  if(programChanged && !pass.fullscreen) {
+  active->set1i("tex", 0);
   active->set1i("gtexture", 0);
   active->set1i("flw_diffuseTex", 0);
   active->set1i("texture", 0);
+  active->set1i("u_MainSampler", 0);
  }
  if(pass.fullscreen) {
   activeTexture(gl::tex::Texture0);
@@ -399,7 +425,7 @@ void bindAndUploadUniforms(const RenderPass& pass) {
   g_uploadedChunkOffset[2] = pass.chunkOffset[2];
   g_chunkOffsetUploaded = true;
  }
- const int blendFunc[4] = {glBits.blendSrc, glBits.blendDst, glBits.blendSrc, glBits.blendDst};
+ const int blendFunc[4] = {glBits.blendSrc, glBits.blendDst, glBits.blendSrcAlpha, glBits.blendDstAlpha};
  if(programChanged || g_uploadedTextureFilteringMode != g_textureFilteringMode) {
   active->set1i("textureFilteringMode", g_textureFilteringMode);
   g_uploadedTextureFilteringMode = g_textureFilteringMode;
@@ -424,17 +450,37 @@ void bindAndUploadUniforms(const RenderPass& pass) {
   const bool snapshotChanged = active->needsUniformSnapshot(g_programUniformGeneration);
   activeTexture(gl::tex::Texture0);
   const int diffuseTexture = boundTexture();
-  const bool materialChanged = diffuseTexture != g_programUniformDiffuseTexture;
-  if(snapshotChanged && g_programUniformUploader) {
-   g_programUniformUploader(*active);
-   active->markUniformSnapshotPushed(g_programUniformGeneration);
+  const std::optional<WorldProgramId> worldProgram =
+      pass.programOverride == nullptr ? g_activeWorldProgram : std::nullopt;
+  const bool materialChanged = active != g_programUniformMaterialProgram ||
+                               worldProgram != g_programUniformMaterialWorldProgram ||
+                               diffuseTexture != g_programUniformDiffuseTexture;
+  Pipeline* pipeline = shaderPipeline();
+  if((snapshotChanged || programChanged) && pipeline != nullptr && worldProgram.has_value()) {
+   pipeline->uploadWorldProgramUniforms(*active, *worldProgram);
+   if(snapshotChanged) active->markUniformSnapshotPushed(g_programUniformGeneration);
   }
-  if(materialChanged && g_programUniformMaterialBinder) {
-   g_programUniformMaterialBinder(*active);
+  if(materialChanged && pipeline != nullptr && worldProgram.has_value()) {
+   pipeline->bindWorldProgramMaterial(*active, *worldProgram);
+   g_programUniformMaterialProgram = active;
+   g_programUniformMaterialWorldProgram = worldProgram;
    g_programUniformDiffuseTexture = diffuseTexture;
   }
   // see third_party/mcp/iris/pipeline/programs/ShaderKey.java
-  uploadFogUniforms(*active, g_fog, g_fog.enabled && active->fogClass());
+  // Gated like every other uniform group here: this runs once per section per
+  // layer per frame, and a pack that declares no fog uniforms still paid six
+  // name lookups on each one.
+  const bool fogOn = g_fog.enabled && active->fogClass();
+  if(!g_fogUploaded || programChanged || fogOn != g_uploadedFogOn ||
+     g_uploadedFog.mode != g_fog.mode || g_uploadedFog.shape != g_fog.shape ||
+     g_uploadedFog.density != g_fog.density || g_uploadedFog.start != g_fog.start ||
+     g_uploadedFog.end != g_fog.end ||
+     std::memcmp(g_uploadedFog.color, g_fog.color, sizeof(float) * 3) != 0) {
+   uploadFogUniforms(*active, g_fog, fogOn);
+   g_uploadedFog = g_fog;
+   g_uploadedFogOn = fogOn;
+   g_fogUploaded = true;
+  }
   if(programChanged || g_uploadedEntityId != g_entityId) {
   active->set1i("entityId", g_entityId);
   g_uploadedEntityId = g_entityId;
@@ -451,8 +497,8 @@ void bindAndUploadUniforms(const RenderPass& pass) {
   active->set1i("renderStage", static_cast<int>(g_renderStage));
   g_uploadedRenderStage = static_cast<int>(g_renderStage);
  }
- // Uploader may have switched units for lightmap — diffuse stays on 0.
  activeTexture(gl::tex::Texture0);
+ bindTexture(diffuseTexture);
  g_lastProgram = active;
 }
 void submit(const RenderPass& pass) {
@@ -468,23 +514,21 @@ void submit(const RenderPass& pass) {
   return;
  }
  if(pass.buffer != 0) {
-  configureAttribs(pass.buffer,
-                   pass.byteOffset,
-                   pass.stride,
-                   pass.hasTexture,
-                   pass.hasColor,
-                   pass.hasNormals);
+  configureAttribs(pass.buffer, pass.byteOffset, pass.stride, pass.hasTexture, pass.hasNormals);
   const int mode = active != nullptr && active->tessellation() ? 0x000E : pass.glMode;
   if(mode == 0x000E && gl::GLCore::patchParameteri != nullptr) gl::GLCore::patchParameteri(0x8E72, 3);
   ::glDrawArrays(static_cast<GLenum>(mode), 0, static_cast<GLsizei>(pass.vertexCount));
  } else {
   uploadStreaming(pass.vertexData, pass.vertexCount * static_cast<std::size_t>(pass.stride));
-  configureAttribs(
-      g_streamVbo.handle(), 0, pass.stride, pass.hasTexture, pass.hasColor, pass.hasNormals);
+  configureAttribs(g_streamVbo.handle(), 0, pass.stride, pass.hasTexture, pass.hasNormals);
   const int mode = active != nullptr && active->tessellation() ? 0x000E : pass.glMode;
   if(mode == 0x000E && gl::GLCore::patchParameteri != nullptr) gl::GLCore::patchParameteri(0x8E72, 3);
   ::glDrawArrays(static_cast<GLenum>(mode), 0, static_cast<GLsizei>(pass.vertexCount));
  }
+ ::net::minecraft::client::debug::RenderProfiler::instance().record(
+     ::net::minecraft::client::debug::RenderMetric::DrawCalls);
+ ::net::minecraft::client::debug::RenderProfiler::instance().record(
+     ::net::minecraft::client::debug::RenderMetric::DrawVertices, pass.vertexCount);
 }
 void submitIndexedQuads(const RenderPass& pass, unsigned indexBuffer, int indexCount) {
  // Terrain sections own their VBO and draw through the shared quad index
@@ -503,19 +547,124 @@ void submitIndexedQuads(const RenderPass& pass, unsigned indexBuffer, int indexC
  if(active == nullptr) {
   return;
  }
- configureAttribs(pass.buffer, pass.byteOffset, pass.stride, pass.hasTexture, pass.hasColor,
-                  pass.hasNormals);
+ configureAttribs(pass.buffer, pass.byteOffset, pass.stride, pass.hasTexture, pass.hasNormals);
  constexpr unsigned kElementArrayBuffer = 0x8893;
  gl::GLCore::bindBuffer(kElementArrayBuffer, indexBuffer);
  ::glDrawElements(0x0004, indexCount, 0x1405, nullptr); // GL_TRIANGLES, GL_UNSIGNED_INT
+ ::net::minecraft::client::debug::RenderProfiler::instance().record(
+     ::net::minecraft::client::debug::RenderMetric::DrawCalls);
+ ::net::minecraft::client::debug::RenderProfiler::instance().record(
+     ::net::minecraft::client::debug::RenderMetric::DrawVertices, static_cast<std::uint64_t>(indexCount));
 }
-void setActiveProgram(ShaderProgram* program) {
- if(g_activeProgram == program) {
+bool configureIndexedVao(unsigned vao,
+                         unsigned vertexBuffer,
+                         unsigned indexBuffer,
+                         std::size_t baseOffset,
+                         int stride,
+                         bool hasTexture,
+                         bool hasNormals) {
+ if(vao == 0 || vertexBuffer == 0 || indexBuffer == 0 || !gl::GLCore::vaoSupported ||
+    gl::GLCore::bindVertexArray == nullptr) {
+  return false;
+ }
+ gl::GLCore::bindVertexArray(vao);
+ gl::GLCore::bindBuffer(kArrayBuffer, vertexBuffer);
+ for(const abi::Format& format : abi::Formats) {
+  const bool enabled = format.availability == abi::Availability::Always ||
+                       (format.availability == abi::Availability::Texture && hasTexture) ||
+                       (format.availability == abi::Availability::Normal && hasNormals);
+  if(!enabled) {
+   gl::GLCore::disableVertexAttribArray(format.location);
+   continue;
+  }
+  gl::GLCore::enableVertexAttribArray(format.location);
+  if(format.integer) {
+   if(gl::GLCore::vertexAttribIPointer != nullptr) {
+    gl::GLCore::vertexAttribIPointer(format.location, format.components, format.type, stride,
+                                     bufOffset(baseOffset + format.offset));
+   }
+  } else {
+   gl::GLCore::vertexAttribPointer(format.location, format.components, format.type,
+                                   format.normalized ? 1 : 0, stride,
+                                   bufOffset(baseOffset + format.offset));
+  }
+ }
+ if(!hasTexture) {
+  gl::GLCore::vertexAttrib4f(abi::Texture, 0.0f, 0.0f, 0.0f, 1.0f);
+ }
+ gl::GLCore::disableVertexAttribArray(abi::ChunkFade);
+ if(gl::GLCore::vertexAttrib4f != nullptr) {
+  gl::GLCore::vertexAttrib4f(abi::ChunkFade, 1.0f, 0.0f, 0.0f, 0.0f);
+ }
+ constexpr unsigned kElementArrayBuffer = 0x8893;
+ gl::GLCore::bindBuffer(kElementArrayBuffer, indexBuffer);
+ gl::GLCore::bindVertexArray(0);
+ g_attribCache = AttribCache{};
+ return true;
+}
+int submitIndexedQuadsBatch(const RenderPass& pass,
+                            unsigned vao,
+                            std::span<const int> indexCounts,
+                            std::span<const int> baseVertices) {
+ if(!g_drawEnabled || !ensureReady() || pass.vertexCount == 0 || vao == 0 || indexCounts.empty() ||
+    indexCounts.size() != baseVertices.size() || gl::GLCore::drawElementsBaseVertex == nullptr) {
+  return 0;
+ }
+ if(!pass.hasTexture) {
+  bindWhiteDiffuse();
+ }
+ bindAndUploadUniforms(pass);
+ ShaderProgram* active = pass.programOverride != nullptr ? pass.programOverride : g_activeProgram;
+ if(active == nullptr) {
+  return 0;
+ }
+ gl::GLCore::bindVertexArray(vao);
+ g_attribCache = AttribCache{};
+ const unsigned mode = active->tessellation() ? 0x000E : 0x0004;
+ if(mode == 0x000E && gl::GLCore::patchParameteri != nullptr) {
+  gl::GLCore::patchParameteri(0x8E72, 3);
+ }
+ int submitted = 0;
+ if(gl::GLCore::multiDrawElementsBaseVertex != nullptr && indexCounts.size() > 1) {
+  static std::vector<const void*> offsets;
+  offsets.resize(indexCounts.size(), nullptr);
+  gl::GLCore::multiDrawElementsBaseVertex(mode,
+                                          indexCounts.data(),
+                                          0x1405,
+                                          offsets.data(),
+                                          static_cast<int>(indexCounts.size()),
+                                          baseVertices.data());
+  submitted = 1;
+ } else {
+  for(std::size_t i = 0; i < indexCounts.size(); ++i) {
+   gl::GLCore::drawElementsBaseVertex(mode, indexCounts[i], 0x1405, nullptr, baseVertices[i]);
+  }
+  submitted = static_cast<int>(indexCounts.size());
+ }
+ gl::GLCore::bindVertexArray(0);
+ if(submitted > 0) {
+  std::uint64_t vertices = 0;
+  for(const int count : indexCounts) {
+   vertices += static_cast<std::uint64_t>(std::max(0, count));
+  }
+  ::net::minecraft::client::debug::RenderProfiler::instance().record(
+      ::net::minecraft::client::debug::RenderMetric::DrawCalls, static_cast<std::uint64_t>(submitted));
+  ::net::minecraft::client::debug::RenderProfiler::instance().record(
+      ::net::minecraft::client::debug::RenderMetric::DrawVertices, vertices);
+ }
+ return submitted;
+}
+void setActiveProgram(ShaderProgram* program, std::optional<WorldProgramId> worldProgram) {
+ if(g_activeProgram == program && g_activeWorldProgram == worldProgram) {
   return;
  }
  g_activeProgram = program;
+ g_activeWorldProgram = worldProgram;
  g_lastProgram = nullptr;
  g_chunkOffsetUploaded = false;
+}
+std::optional<WorldProgramId> activeWorldProgram() {
+ return g_activeWorldProgram;
 }
 void setDrawEnabled(bool enabled) {
  g_drawEnabled = enabled;
@@ -523,16 +672,10 @@ void setDrawEnabled(bool enabled) {
 bool drawEnabled() {
  return g_drawEnabled;
 }
-void setProgramUniformUploader(ProgramUniformUploader uploader) {
- g_programUniformUploader = std::move(uploader);
- ++g_programUniformGeneration;
-}
-void setProgramMaterialBinder(ProgramMaterialBinder binder) {
- g_programUniformMaterialBinder = std::move(binder);
- g_programUniformDiffuseTexture = -1;
-}
 void advanceProgramUniforms() {
  ++g_programUniformGeneration;
+ g_programUniformMaterialProgram = nullptr;
+ g_programUniformMaterialWorldProgram.reset();
  g_programUniformDiffuseTexture = -1;
 }
 void setEntityId(int id) {
@@ -589,9 +732,16 @@ void setConstColor(float r, float g, float b, float a) {
  g_constColor[1] = g;
  g_constColor[2] = b;
  g_constColor[3] = a;
+ const auto channel = [](float value) {
+  return static_cast<std::uint32_t>(std::lround(std::clamp(value, 0.0f, 1.0f) * 255.0f)) & 0xFFU;
+ };
+ g_constColorPacked = channel(r) | (channel(g) << 8U) | (channel(b) << 16U) | (channel(a) << 24U);
 }
 const float* constColor() {
  return g_constColor;
+}
+std::uint32_t constColorPacked() {
+ return g_constColorPacked;
 }
 void setAlphaTestRef(float ref) {
 #ifndef NDEBUG
@@ -747,11 +897,10 @@ void configureAttribs(unsigned buffer,
                       std::size_t baseOffset,
                       int stride,
                       bool hasTexture,
-                      bool hasColor,
                       bool hasNormals) {
  const bool cached = g_attribCache.valid && buffer != 0 && g_attribCache.buffer == buffer &&
                      g_attribCache.baseOffset == baseOffset && g_attribCache.stride == stride &&
-                     g_attribCache.hasTexture == hasTexture && g_attribCache.hasColor == hasColor &&
+                     g_attribCache.hasTexture == hasTexture &&
                      g_attribCache.hasNormals == hasNormals;
  if(!cached) {
   if(g_vao.handle() != 0) {
@@ -769,7 +918,6 @@ void configureAttribs(unsigned buffer,
   for(const abi::Format& format : abi::Formats) {
    const bool enabled = format.availability == abi::Availability::Always ||
                         (format.availability == abi::Availability::Texture && hasTexture) ||
-                        (format.availability == abi::Availability::Color && hasColor) ||
                         (format.availability == abi::Availability::Normal && hasNormals);
    if(!enabled) {
     gl::GLCore::disableVertexAttribArray(format.location);
@@ -791,7 +939,7 @@ void configureAttribs(unsigned buffer,
   gl::GLCore::disableVertexAttribArray(abi::ChunkFade);
   if(gl::GLCore::vertexAttrib4f != nullptr)
    gl::GLCore::vertexAttrib4f(abi::ChunkFade, 1.0f, 0.0f, 0.0f, 0.0f);
-  g_attribCache = AttribCache{buffer, baseOffset, stride, hasTexture, hasColor, hasNormals, buffer != 0};
+  g_attribCache = AttribCache{buffer, baseOffset, stride, hasTexture, hasNormals, buffer != 0};
  }
  if(!hasNormals) {
   const float* n = kDefaultNormal;
@@ -801,22 +949,16 @@ void configureAttribs(unsigned buffer,
    g_constNormalSet = true;
   }
  }
- if(!hasColor) {
-  if(!g_constColorUploaded || std::memcmp(g_uploadedConstColor, g_constColor, sizeof(float) * 4) != 0) {
-   gl::GLCore::vertexAttrib4f(abi::Color, g_constColor[0], g_constColor[1], g_constColor[2],
-                              g_constColor[3]);
-   std::memcpy(g_uploadedConstColor, g_constColor, sizeof(float) * 4);
-   g_constColorUploaded = true;
-  }
- }
 }
 void invalidateAttribCache() {
  g_attribCache = AttribCache{};
  g_constNormalSet = false;
- g_constColorUploaded = false;
  g_lastProgram = nullptr;
  g_matricesUploaded = false;
  g_passUniformsUploaded = false;
+ g_fogUploaded = false;
+ g_programUniformMaterialProgram = nullptr;
+ g_programUniformMaterialWorldProgram.reset();
  g_programUniformDiffuseTexture = -1;
 }
 void setEntityColor(float red, float green, float blue, float alpha) {
@@ -903,6 +1045,7 @@ struct GlCache {
  // whenever the RGB pair happened to match and left the pack's alpha factors live.
  int blendSrcAlpha = 0x0001; // GL_ONE
  int blendDstAlpha = 0x0000; // GL_ZERO
+ bool indexedBlendDirty = false;
  int depthFunc = 0x0201;
  int cullFaceMode = 0x0405;
  float polygonFactor = 0.0f;
@@ -988,12 +1131,13 @@ void blendFunc(int src, int dst) {
  // glBlendFunc sets BOTH pairs, so the cache must compare all four. Comparing only
  // the RGB pair let a call be elided while the alpha pair still held a pack's
  // separate-alpha factors from a previous lockBlend.
- if(g_gl.blendSrc != src || g_gl.blendDst != dst || g_gl.blendSrcAlpha != src ||
+ if(g_gl.indexedBlendDirty || g_gl.blendSrc != src || g_gl.blendDst != dst || g_gl.blendSrcAlpha != src ||
     g_gl.blendDstAlpha != dst) {
   g_gl.blendSrc = src;
   g_gl.blendDst = dst;
   g_gl.blendSrcAlpha = src;
   g_gl.blendDstAlpha = dst;
+  g_gl.indexedBlendDirty = false;
   ::glBlendFunc(static_cast<unsigned>(src), static_cast<unsigned>(dst));
  }
 }
@@ -1002,12 +1146,13 @@ void blendFuncSeparate(int srcRgb, int dstRgb, int srcAlpha, int dstAlpha) {
   blendFunc(srcRgb, dstRgb);
   return;
  }
- if(g_gl.blendSrc != srcRgb || g_gl.blendDst != dstRgb || g_gl.blendSrcAlpha != srcAlpha ||
+ if(g_gl.indexedBlendDirty || g_gl.blendSrc != srcRgb || g_gl.blendDst != dstRgb || g_gl.blendSrcAlpha != srcAlpha ||
     g_gl.blendDstAlpha != dstAlpha) {
   g_gl.blendSrc = srcRgb;
   g_gl.blendDst = dstRgb;
   g_gl.blendSrcAlpha = srcAlpha;
   g_gl.blendDstAlpha = dstAlpha;
+  g_gl.indexedBlendDirty = false;
   gl::GLCore::blendFuncSeparate(static_cast<unsigned>(srcRgb), static_cast<unsigned>(dstRgb),
                                 static_cast<unsigned>(srcAlpha), static_cast<unsigned>(dstAlpha));
  }
@@ -1026,9 +1171,12 @@ void lockBufferBlend(int drawBufferIndex, const BlendMode* mode) {
  }
  if(mode == nullptr) {
   if(gl::GLCore::blendFunci != nullptr) {
-   // GL_FUNC_ADD with ZERO/ZERO effectively disables contribution when supported via separatei.
    if(gl::GLCore::blendFuncSeparatei != nullptr) {
-    gl::GLCore::blendFuncSeparatei(static_cast<unsigned>(drawBufferIndex), 0, 1, 0, 1);
+    gl::GLCore::blendFuncSeparatei(static_cast<unsigned>(drawBufferIndex), 1, 0, 1, 0);
+    g_gl.indexedBlendDirty = true;
+   } else {
+    gl::GLCore::blendFunci(static_cast<unsigned>(drawBufferIndex), 1, 0);
+    g_gl.indexedBlendDirty = true;
    }
   }
   return;
@@ -1037,9 +1185,11 @@ void lockBufferBlend(int drawBufferIndex, const BlendMode* mode) {
   gl::GLCore::blendFuncSeparatei(static_cast<unsigned>(drawBufferIndex),
                                  static_cast<unsigned>(mode->srcRgb), static_cast<unsigned>(mode->dstRgb),
                                  static_cast<unsigned>(mode->srcAlpha), static_cast<unsigned>(mode->dstAlpha));
+  g_gl.indexedBlendDirty = true;
  } else if(gl::GLCore::blendFunci != nullptr) {
   gl::GLCore::blendFunci(static_cast<unsigned>(drawBufferIndex), static_cast<unsigned>(mode->srcRgb),
                          static_cast<unsigned>(mode->dstRgb));
+  g_gl.indexedBlendDirty = true;
  }
 }
 void unlockBlend() {
@@ -1187,6 +1337,8 @@ void bindTexture(int target, int texture) {
   }
  }
  ::glBindTexture(static_cast<unsigned>(target), uTex);
+ ::net::minecraft::client::debug::RenderProfiler::instance().record(
+     ::net::minecraft::client::debug::RenderMetric::TextureBinds);
 }
 void invalidateTextureBindCache() {
  for(unsigned int& bound : g_gl.boundTextures) {
@@ -1235,6 +1387,23 @@ void clearAllocatedTextures() {
   g_allocatedTextures.clear();
  }
 }
+void releaseGlResources() {
+ setActiveProgram(nullptr);
+ gl::ShaderProgram::unbind();
+ if(gl::GLCore::vaoSupported) gl::GLCore::bindVertexArray(0);
+ if(gl::GLCore::bindBuffer != nullptr) {
+  gl::GLCore::bindBuffer(kArrayBuffer, 0);
+  gl::GLCore::bindBuffer(0x8893, 0);
+ }
+ g_fullscreenVao.reset();
+ g_fullscreenVbo.reset();
+ g_vao.reset();
+ g_streamVbo.reset();
+ g_fullscreenReady = false;
+ g_triedFullscreen = false;
+ invalidateAttribCache();
+ clearAllocatedTextures();
+}
 void colorMask(bool r, bool g, bool b, bool a) {
  if(g_gl.colorMaskR != r || g_gl.colorMaskG != g || g_gl.colorMaskB != b || g_gl.colorMaskA != a) {
   g_gl.colorMaskR = r;
@@ -1274,13 +1443,17 @@ bool getCachedViewport(int outViewport[4]) {
 void getIntegerv(int pname, int* params) {
  switch(pname) {
  case 0x0BA2:
-  if(g_gl.viewportValid) {
+ if(g_gl.viewportValid) {
    std::memcpy(params, g_gl.viewport, sizeof(int) * 4);
   } else {
+   ::net::minecraft::client::debug::RenderProfiler::instance().record(
+       ::net::minecraft::client::debug::RenderMetric::RawGlQueries);
    ::glGetIntegerv(static_cast<unsigned>(pname), params);
   }
   return;
  default:
+  ::net::minecraft::client::debug::RenderProfiler::instance().record(
+      ::net::minecraft::client::debug::RenderMetric::RawGlQueries);
   ::glGetIntegerv(static_cast<unsigned>(pname), params);
  }
 }
