@@ -35,10 +35,14 @@ A full **Lua 5.4 scripting runtime** embedded into the game, letting mods regist
 
 ### GLSL Shaderpack System
 
-Replaces the original fixed-function OpenGL 1.x pipeline with a **deferred-style FBO renderer** and configurable shaderpacks:
-- **Vanilla** — faithful vanilla-like gbuffer pipeline
-- **Vibrant** — bloom, volumetric lighting, shadows, color grading
-- **PSX** — retro PlayStation 1 aesthetic
+Replaces the original fixed-function OpenGL 1.x pipeline with a **deferred-style FBO renderer** driven entirely by shaderpacks. There is no separate legacy path: the vanilla look is itself a shipped pack (embedded in the binary), so vanilla and modded rendering go through the same code.
+
+The loader targets **Iris/OptiFine shaderpack conventions** — `gbuffers_*`/`deferred*`/`composite*` program stages, `#include` resolution, GLSL preprocessing and core-profile transformation, custom uniforms, compute passes, colortex format declarations, and pack option menus.
+
+Shaderpacks under `shaders/` are loaded as-is; the repo currently ships:
+- **ComplementaryReimagined** r5.8.1
+- **RenderPearl** v2.8.0-beta.4
+- **rethinking-voxels** r0.1-beta9
 
 ### Content Registration System
 
@@ -52,8 +56,8 @@ Typed registries with lifecycle phases for blocks, items, entities, and block en
 
 | Feature              | Vanilla Beta 1.7.3          | BineCrabicCPP                          |
 |----------------------|-----------------------------|----------------------------------------|
-| Rendering            | Fixed-function OpenGL 1.x   | GLSL shader pipeline, FBOs, shaderpacks|
-| Modding              | None                        | Lua 5.4 scripting engine + 23 mods     |
+| Rendering            | Fixed-function OpenGL 1.x   | GLSL deferred pipeline, Iris-style packs|
+| Modding              | None                        | Lua 5.4 scripting engine + 20 mods     |
 | Audio                | paulscode LWJGL             | XAudio2 + Ogg Vorbis                   |
 | Auth                 | Offline                     | MultiMC Microsoft login/auth           |
 | Build                | Java/MCP                    | CMake + Ninja + bundled MinGW          |
