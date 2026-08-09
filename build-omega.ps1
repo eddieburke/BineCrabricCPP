@@ -19,6 +19,7 @@ $RelToolchainRoot="toolchain/mingw64"
 $RelGpp="$RelToolchainRoot/bin/g++.exe"
 $RelNinja="$RelToolchainRoot/bin/ninja.exe"
 $BuildOmegaLockPath="$ScriptDir\.build-omega.lock"
+function Fail{param([string]$Msg)Write-Host $Msg -ForegroundColor Red;exit 1}
 if($CleanOnly){
 $ct="$ScriptDir\$BuildDir"
 Write-Host "Cleaning $BuildDir ..."
@@ -31,14 +32,14 @@ Write-Host "Clean complete.";exit 0
 if($Format){
 $cf=$null
 foreach($c in @("C:\Program Files\LLVM\bin\clang-format.exe","C:\Program Files\Microsoft Visual Studio\2022\Community\VC\Tools\Llvm\bin\clang-format.exe")){if(Test-Path -Li $c){$cf=$c;break}}
-if(!$cf){Write-Error "clang-format not found. Install LLVM or Visual Studio LLVM tools.";exit 1}
+if(!$cf){Fail "clang-format not found. Install LLVM or Visual Studio LLVM tools."}
 $fl=@()
 foreach($r in @("src","tests")){$rp="$ScriptDir\$r";if(!(Test-Path -Li $rp)){continue};foreach($e in @("*.cpp","*.hpp","*.h")){$fl+=gci -Path $rp -R -Fi $e -File}}
 if($fl.Count -eq 0){Write-Host "No C++ files found to format.";exit 0}
 Write-Host ("Formatting {0} files with {1}" -f $fl.Count,$cf)
 $fa=0
 foreach($f2 in $fl){&$cf -i $f2.FullName 2>&1|Out-Null;if($LASTEXITCODE -ne 0){$fa++;Write-Host ("clang-format failed: {0}" -f $f2.FullName)}}
-if($fa -gt 0){Write-Error ("clang-format failed on {0} file(s)." -f $fa);exit 1}
+if($fa -gt 0){Fail ("clang-format failed on {0} file(s)." -f $fa)}
 Write-Host "clang-format complete.";exit 0
 }
 # ===== CLGUI =====
@@ -348,10 +349,10 @@ if ($Gui) {
     exit 0
 }
 # ===== end CLGUI =====
-function GM{if(!(Test-Path -Li $ManifestPath)){Write-Error "Missing toolchain manifest: $ManifestPath";exit 1};return gc -Li $ManifestPath -Raw|ConvertFrom-Json}
+function Get-ToolchainManifest{if(!(Test-Path -Li $ManifestPath)){Fail "Missing toolchain manifest: $ManifestPath"};return gc -Li $ManifestPath -Raw|ConvertFrom-Json}
 function ED{param([string]$Pa)if(!(Test-Path -Li $Pa)){ni -ItemType Directory -Fo -Path $Pa|Out-Null}}
 function Sync-Shaders{param([string]$BN)
-if(!(Test-Path -Li $ShadersSource)){Write-Error "Shaders source directory not found: $ShadersSource";return}
+if(!(Test-Path -Li $ShadersSource)){Write-Host "Shaders source directory not found: $ShadersSource" -ForegroundColor Red;return}
 $bs="$ScriptDir\$BN\shaders";ED $bs;$pk=gci -Li $ShadersSource -Fo
 foreach($p in $pk){cp -Li $p.FullName -De $bs -R -Fo}
 Write-Host "Shaders: $bs"
@@ -359,10 +360,10 @@ if($env:APPDATA){$rr="$env:APPDATA\.minecraft\shaders";if(Test-Path -Li $rr){ri 
 }
 function Sync-Resources{
 if(!(Test-Path -Li $ResourcesSource)){Write-Host "Resources source directory not found: $ResourcesSource (skipping)";return}
-if(!$env:APPDATA){Write-Error "APPDATA is not set; cannot locate %APPDATA%\.minecraft\resources";return}
+if(!$env:APPDATA){Write-Host "APPDATA is not set; cannot locate %APPDATA%\.minecraft\resources" -ForegroundColor Red;return}
 $rr="$env:APPDATA\.minecraft\resources"
 $rb=gcm robocopy.exe -EA SilentlyContinue
-if($rb){&robocopy.exe $ResourcesSource $rr /MIR /MT:8 /NFL /NDL /NJH /NJS /NP|Out-Null;if($LASTEXITCODE -ge 8){Write-Error "robocopy failed ($LASTEXITCODE) mirroring resources to $rr";return}}
+if($rb){&robocopy.exe $ResourcesSource $rr /MIR /MT:8 /NFL /NDL /NJH /NJS /NP|Out-Null;if($LASTEXITCODE -ge 8){Write-Host "robocopy failed ($LASTEXITCODE) mirroring resources to $rr" -ForegroundColor Red;return}}
 else{ED $rr;cp -Path "$ResourcesSource\*" -De $rr -R -Fo}
 Write-Host "Resources: $rr"
 }
@@ -393,22 +394,22 @@ ED(Split-Path -Parent $D)
 if(Test-Path -Li $D){$ex=gi -Li $D;if($ex.Length -gt 0){return};ri -Li $D -Fo}
 Write-Host "Downloading $(Split-Path -Leaf $D) ..."
 $cu=gcm curl.exe -EA SilentlyContinue
-if($cu){&curl.exe -L --fail --retry 3 --retry-delay 2 -o $D $U;if($LASTEXITCODE -ne 0){Write-Error "curl failed ($LASTEXITCODE) for $U";exit 1};return}
+if($cu){&curl.exe -L --fail --retry 3 --retry-delay 2 -o $D $U;if($LASTEXITCODE -ne 0){Fail "curl failed ($LASTEXITCODE) for $U"};return}
 iwr -Uri $U -OutFile $D -UseBasicParsing
 }
-function Ensure-ZstdTool{$m=GM;$ze="$ToolsDir\zstd.exe";if(Test-Path -Li $ze){return $ze};ED $ToolsDir;$ar="$DownloadsDir\$($m.zstd.archive)";Download-File -U $m.zstd.url -D $ar;$er="$ToolsDir\zstd-extract";if(Test-Path -Li $er){ri -Li $er -R -Fo};Expand-Archive -Li $ar -DP $er -Fo;$se="$er\$($m.zstd.exe_subpath)";if(!(Test-Path -Li $se)){Write-Error "zstd.exe not found in $($m.zstd.archive)";exit 1};cp -Li $se -De $ze -Fo;return $ze}
-function Merge-Ucrt64IntoMingw64{param([string]$SD2,[string]$DR);$ur="$SD2\ucrt64";if(!(Test-Path -Li $ur)){Write-Error "MSYS2 package did not contain ucrt64/: $SD2";exit 1};foreach($s in @("bin","include","lib","share")){$fr="$ur\$s";if(!(Test-Path -Li $fr)){continue};$to="$DR\$s";ED $to;cp -Path "$fr\*" -De $to -R -Fo}}
-function Install-MsysUcrtPackage{param([string]$U,[string]$PN,[string]$MD2,[string]$ZT);$fn=Split-Path -Leaf $U;$ap="$DownloadsDir\$fn";Download-File -U $U -D $ap;$tp="$DownloadsDir\$fn.tar";if(Test-Path -Li $tp){ri -Li $tp -Fo};&$ZT -d $ap -o $tp -f;if($LASTEXITCODE -ne 0){Write-Error "zstd failed extracting $PN";exit 1};$sg="$DownloadsDir\stage-$PN";if(Test-Path -Li $sg){ri -Li $sg -R -Fo};ED $sg;tar -xf $tp -C $sg;if($LASTEXITCODE -ne 0){Write-Error "tar failed extracting $PN";exit 1};Merge-Ucrt64IntoMingw64 -SD2 $sg -DR $MD2;ri -Li $sg -R -Fo}
+function Ensure-ZstdTool{$m=Get-ToolchainManifest;$ze="$ToolsDir\zstd.exe";if(Test-Path -Li $ze){return $ze};ED $ToolsDir;$ar="$DownloadsDir\$($m.zstd.archive)";Download-File -U $m.zstd.url -D $ar;$er="$ToolsDir\zstd-extract";if(Test-Path -Li $er){ri -Li $er -R -Fo};Expand-Archive -Li $ar -DestinationPath $er -Fo;$se="$er\$($m.zstd.exe_subpath)";if(!(Test-Path -Li $se)){Fail "zstd.exe not found in $($m.zstd.archive)"};cp -Li $se -De $ze -Fo;return $ze}
+function Merge-Ucrt64IntoMingw64{param([string]$SD2,[string]$DR);$ur="$SD2\ucrt64";if(!(Test-Path -Li $ur)){Fail "MSYS2 package did not contain ucrt64/: $SD2"};foreach($s in @("bin","include","lib","share")){$fr="$ur\$s";if(!(Test-Path -Li $fr)){continue};$to="$DR\$s";ED $to;cp -Path "$fr\*" -De $to -R -Fo}}
+function Install-MsysUcrtPackage{param([string]$U,[string]$PN,[string]$MD2,[string]$ZT);$fn=Split-Path -Leaf $U;$ap="$DownloadsDir\$fn";Download-File -U $U -D $ap;$tp="$DownloadsDir\$fn.tar";if(Test-Path -Li $tp){ri -Li $tp -Fo};&$ZT -d $ap -o $tp -f;if($LASTEXITCODE -ne 0){Fail "zstd failed extracting $PN"};$sg="$DownloadsDir\stage-$PN";if(Test-Path -Li $sg){ri -Li $sg -R -Fo};ED $sg;tar -xf $tp -C $sg;if($LASTEXITCODE -ne 0){Fail "tar failed extracting $PN"};Merge-Ucrt64IntoMingw64 -SD2 $sg -DR $MD2;ri -Li $sg -R -Fo}
 function Test-ToolchainDepsPresent{param([string]$MD2);foreach($l in @("libz.a","libogg.a","libvorbis.a","libvorbisfile.a")){if(!(Test-Path -Li "$MD2\lib\$l")){return $false}};return $true}
-function Ensure-ToolchainDeps{param([string]$MD2);if((Test-Path -Li $DepsMarker)-and(Test-ToolchainDepsPresent -MD2 $MD2)){return};Write-Host "Installing bundled zlib/Ogg/Vorbis dependencies into toolchain/mingw64 ...";$m=GM;$zt=Ensure-ZstdTool;ED $MD2;foreach($p in $m.msys2_ucrt_packages){Write-Host "  -> $($p.name)";Install-MsysUcrtPackage -U $p.url -PN $p.name -MD2 $MD2 -ZT $zt};sc -Li $DepsMarker -Value ("installed "+(Get-Date -Format "o")) -En ASCII}
+function Ensure-ToolchainDeps{param([string]$MD2);if((Test-Path -Li $DepsMarker)-and(Test-ToolchainDepsPresent -MD2 $MD2)){return};Write-Host "Installing bundled zlib/Ogg/Vorbis dependencies into toolchain/mingw64 ...";$m=Get-ToolchainManifest;$zt=Ensure-ZstdTool;ED $MD2;foreach($p in $m.msys2_ucrt_packages){Write-Host "  -> $($p.name)";Install-MsysUcrtPackage -U $p.url -PN $p.name -MD2 $MD2 -ZT $zt};Set-Content -LiteralPath $DepsMarker -Value ("installed "+(Get-Date -Format "o")) -Encoding ASCII}
 function Test-LocalToolchainPresent{return(Test-Path -Li $GppExe)-and(Test-Path -Li $CmakeExe)-and(Test-Path -Li $NinjaExe)}
-function Ensure-BundledToolchain{if(Test-LocalToolchainPresent){Ensure-ToolchainDeps -MD2 $MingwRoot;Write-Host "Using downloaded toolchain: $RelToolchainRoot";return};$m=GM;ED $DownloadsDir;$ap="$DownloadsDir\$($m.winlibs.archive)";Download-File -U $m.winlibs.url -D $ap;$sg="$ToolchainDir\_staging";if(Test-Path -Li $sg){ri -Li $sg -R -Fo};ED $sg;Write-Host "Extracting bundled GCC toolchain ...";Expand-Archive -Li $ap -DP $sg -Fo;$em="$sg\mingw64";if(!(Test-Path -Li $em)){$cd=gci -Li $sg -Directory|?{Test-Path "$($_.FullName)\bin\g++.exe"}|select -First 1;if($null -eq $cd){Write-Error "WinLibs archive did not contain mingw64/bin/g++.exe";exit 1};$em=$cd.FullName};if(Test-Path -Li $MingwRoot){ri -Li $MingwRoot -R -Fo};mi -Li $em -De $MingwRoot;ri -Li $sg -R -Fo -EA SilentlyContinue;if(!(Test-Path -Li $GppExe)){Write-Error "Bundled toolchain install failed: $GppExe";exit 1};Ensure-ToolchainDeps -MD2 $MingwRoot;Write-Host "Bundled toolchain ready: $MingwRoot"}
+function Ensure-BundledToolchain{if(Test-LocalToolchainPresent){Ensure-ToolchainDeps -MD2 $MingwRoot;Write-Host "Using downloaded toolchain: $RelToolchainRoot";return};$m=Get-ToolchainManifest;ED $DownloadsDir;$ap="$DownloadsDir\$($m.winlibs.archive)";Download-File -U $m.winlibs.url -D $ap;$sg="$ToolchainDir\_staging";if(Test-Path -Li $sg){ri -Li $sg -R -Fo};ED $sg;Write-Host "Extracting bundled GCC toolchain ...";Expand-Archive -Li $ap -DestinationPath $sg -Fo;$em="$sg\mingw64";if(!(Test-Path -Li $em)){$cd=gci -Li $sg -Directory|?{Test-Path "$($_.FullName)\bin\g++.exe"}|select -First 1;if($null -eq $cd){Fail "WinLibs archive did not contain mingw64/bin/g++.exe"};$em=$cd.FullName};if(Test-Path -Li $MingwRoot){ri -Li $MingwRoot -R -Fo};mi -Li $em -De $MingwRoot;ri -Li $sg -R -Fo -EA SilentlyContinue;if(!(Test-Path -Li $GppExe)){Fail "Bundled toolchain install failed: $GppExe"};Ensure-ToolchainDeps -MD2 $MingwRoot;Write-Host "Bundled toolchain ready: $MingwRoot"}
 function Set-BundledToolchainEnvironment{param([string]$MBD);$fl=@();if($env:PATH){$fl=$env:PATH -split ';'|?{$_ -ne "" -and $_ -notmatch '(?i)msys64' -and $_ -notmatch '(?i)\\mingw64\\bin' -and $_ -notmatch '(?i)Microsoft Visual Studio'}};$env:PATH=($MBD+';'+($fl -join ';'));$env:CXX="$MBD\g++.exe";ri Env:\CC -EA SilentlyContinue}
 $BuildOmegaLockStream=$null
 function Remove-StaleBuildOmegaLockFile{param([string]$LPa)if(Test-Path -Li $LPa){ri -Li $LPa -Fo -EA SilentlyContinue}}
 function Release-BuildOmegaLock{if($null -ne $script:BuildOmegaLockStream){try{$script:BuildOmegaLockStream.Close()}catch{};try{$script:BuildOmegaLockStream.Dispose()}catch{};$script:BuildOmegaLockStream=$null};if(Test-Path -Li $script:BuildOmegaLockPath){ri -Li $script:BuildOmegaLockPath -Fo -EA SilentlyContinue}}
 function Get-ExternalBuildProcesses{param([string]$BN,[string]$SDP);$ba=("$SDP\$BN").Replace("\","/");$bl=$BN.Replace("\","/");$mt=@();gcim Win32_Process -EA SilentlyContinue|?{$_.Name -eq "cmake.exe" -or $_.Name -eq "ninja.exe"}|%{$cm=$_.CommandLine;if(!$cm){return};$cn=$cm.Replace("\","/");if($cn -like "*$ba*" -or $cn -like "*--build*$bl*"){$mt+=$_}};return $mt}
-function Assert-BuildDirAvailable{param([string]$BN,[string]$SDP);$pr=Get-ExternalBuildProcesses -BN $BN -SDP $SDP;if($pr.Count -eq 0){return};$dt=($pr|%{"  PID $($_.ProcessId): $($_.Name)"}) -join [Environment]::NewLine;Write-Error "Another cmake/ninja build is already using '$BN'.`nWait for it to finish, or stop those processes, then retry.`n$dt";exit 1}
+function Assert-BuildDirAvailable{param([string]$BN,[string]$SDP);$pr=Get-ExternalBuildProcesses -BN $BN -SDP $SDP;if($pr.Count -eq 0){return};$dt=($pr|%{"  PID $($_.ProcessId): $($_.Name)"}) -join [Environment]::NewLine;Fail "Another cmake/ninja build is already using '$BN'.`nWait for it to finish, or stop those processes, then retry.`n$dt"}
 function Remove-StaleNinjaRestatFile{param([string]$BP);$rs="$BP\.ninja_log.restat";if(Test-Path -Li $rs){ri -Li $rs -Fo -EA SilentlyContinue}}
 function Stop-BuiltExecutable{param([string]$Pth)
 $fp=[System.IO.Path]::GetFullPath($Pth)
@@ -467,12 +468,12 @@ return $false
 }
 Ensure-BundledToolchain
 Set-BundledToolchainEnvironment -MBD $MingwBin
-if(!(Test-Path -Li $CmakeExe)){Write-Error "Bundled cmake not found at $CmakeExe";exit 1}
-if(!(Test-Path -Li $NinjaExe)){Write-Error "Bundled ninja not found at $NinjaExe";exit 1}
+if(!(Test-Path -Li $CmakeExe)){Fail "Bundled cmake not found at $CmakeExe"}
+if(!(Test-Path -Li $NinjaExe)){Fail "Bundled ninja not found at $NinjaExe"}
 Remove-StaleBuildOmegaLockFile -LPa $BuildOmegaLockPath
 try {
 if(Test-Path -Li $BuildOmegaLockPath){Remove-StaleBuildOmegaLockFile -LPa $BuildOmegaLockPath}
-try{$BuildOmegaLockStream=[System.IO.File]::Open($BuildOmegaLockPath,[System.IO.FileMode]::Create,[System.IO.FileAccess]::ReadWrite,[System.IO.FileShare]::None);$pb=[System.Text.Encoding]::ASCII.GetBytes("$PID`n");$BuildOmegaLockStream.Write($pb,0,$pb.Length);$BuildOmegaLockStream.Flush()}catch{Write-Error "Already in use";exit 1}
+try{$BuildOmegaLockStream=[System.IO.File]::Open($BuildOmegaLockPath,[System.IO.FileMode]::Create,[System.IO.FileAccess]::ReadWrite,[System.IO.FileShare]::None);$pb=[System.Text.Encoding]::ASCII.GetBytes("$PID`n");$BuildOmegaLockStream.Write($pb,0,$pb.Length);$BuildOmegaLockStream.Flush()}catch{Fail "Already in use"}
 if($Jobs -le 0){$Jobs=[Math]::Min(4,[Math]::Max(1,[Environment]::ProcessorCount-2))}
 if($Jobs -gt 4){Write-Host "Limiting parallel jobs to 4 to avoid MinGW compiler out-of-memory failures." -ForegroundColor Yellow;$Jobs=4}
 if($Clean -and(Test-Path $BuildDir)){Assert-BuildDirAvailable -BN $BuildDir -SDP $ScriptDir;Write-Host "Removing $BuildDir ...";ri -R -Fo $BuildDir;$cc="$MingwBin\ccache.exe";if(Test-Path -Li $cc){Write-Host "Clearing ccache (stale LTO objects) ...";&$cc -C}}
@@ -481,8 +482,8 @@ Write-Host "Toolchain: $RelToolchainRoot"
 Write-Host "Compiler:  $RelGpp"
 $CmakeArgs=@("-S",".","-B",$BuildDir,"-G","Ninja","-DCMAKE_MAKE_PROGRAM=$NinjaExe","-DCMAKE_CXX_COMPILER=$GppExe","-DCMAKE_BUILD_TYPE=$BuildType","-DMINECRAFT_TOOLCHAIN_ROOT=$RelToolchainRoot")
 $UseLto=$Lto -and(-not $NoLto)
-if($Lto -and $NoLto){Write-Error "-Lto and -NoLto cannot be used together.";exit 1}
-if($UseLto -and $BuildType -ne "Release"){Write-Error "-Lto is only supported with -BuildType Release.";exit 1}
+if($Lto -and $NoLto){Fail "-Lto and -NoLto cannot be used together."}
+if($UseLto -and $BuildType -ne "Release"){Fail "-Lto is only supported with -BuildType Release."}
 if($UseLto){Write-Host "LTO enabled (opt-in; may fail to link on MinGW GCC 15)";$CmakeArgs+="-DCMAKE_INTERPROCEDURAL_OPTIMIZATION=ON";$CmakeArgs+="-DCMAKE_CXX_COMPILER_LAUNCHER=";$env:CCACHE_DISABLE="1"}
 $OmegaCxx=""
 if($BuildType -eq "Release"){
@@ -548,14 +549,14 @@ $ba="$ScriptDir\$BuildDir"
 Write-Host "Running ctest in $BuildDir ..."
 Push-Location $ba
 try{
-if(!(Test-Path -Li $CtestExe)){Write-Error "Bundled ctest not found at $CtestExe";$exitCode=1}
+if(!(Test-Path -Li $CtestExe)){Write-Host "Bundled ctest not found at $CtestExe" -ForegroundColor Red;$exitCode=1}
 else{&$CtestExe --output-on-failure;if($LASTEXITCODE -ne 0){$exitCode=$LASTEXITCODE}}
 }finally{Pop-Location}
 }
 }
 }
 if(!$SkipModPackaging){
-    try{Invoke-PackageMods -BN $BuildDir -MID $ModId -DP:$(-not $NoModDeploy)}catch{Write-Error $_;$exitCode=1}
+    try{Invoke-PackageMods -BN $BuildDir -MID $ModId -DP:$(-not $NoModDeploy)}catch{Write-Host $_ -ForegroundColor Red;$exitCode=1}
 }
 if($Gui -and $BuildType -eq "Release" -and !$Run){
 $se=@()
@@ -582,7 +583,7 @@ if($Run -and $exitCode -eq 0){
 $la=@()
 if($Target -eq "Server"){$ex="$ScriptDir\$BuildDir\minecraft_server.exe";if($NoGui){$la+="nogui"}}
 else{$ex="$ScriptDir\$BuildDir\minecraft_native.exe"}
-if(!(Test-Path -Li $ex)){Write-Error "Executable not found: $ex";exit 1}
+if(!(Test-Path -Li $ex)){Fail "Executable not found: $ex"}
 if($RunArgs -and $RunArgs.Count -gt 0){$la+=$RunArgs}
 Write-Host "Launching $ex ..."
 if($la.Count -gt 0){&$ex @la}else{&$ex}
