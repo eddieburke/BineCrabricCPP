@@ -149,17 +149,14 @@ void writeMinidump(EXCEPTION_POINTERS* info, const char* fileName = "crash.dmp")
  exceptionInfo.ClientPointers = FALSE;
  const auto dumpType = static_cast<MINIDUMP_TYPE>(MiniDumpWithDataSegs | MiniDumpWithIndirectlyReferencedMemory |
                                                   MiniDumpWithThreadInfo);
- const BOOL ok = MiniDumpWriteDump(GetCurrentProcess(),
-                                   GetCurrentProcessId(),
-                                   file,
-                                   dumpType,
-                                   info != nullptr ? &exceptionInfo : nullptr,
-                                   nullptr,
-                                   nullptr);
+ MiniDumpWriteDump(GetCurrentProcess(),
+                   GetCurrentProcessId(),
+                   file,
+                   dumpType,
+                   info != nullptr ? &exceptionInfo : nullptr,
+                   nullptr,
+                   nullptr);
  CloseHandle(file);
- if(ok) {
- } else {
- }
 }
 std::string formatUnhandledException(EXCEPTION_POINTERS* info) {
  std::ostringstream stream;

@@ -4,7 +4,7 @@
 #include "net/minecraft/client/render/shaders/PassIndex.hpp"
 #include "net/minecraft/client/render/shaders/SourceProcessor.hpp"
 #include "net/minecraft/client/render/pipeline/Instance.hpp"
-#include "net/minecraft/client/util/MinecraftDirectories.hpp"
+#include "net/minecraft/client/render/shaders/ShaderDump.hpp"
 #include "net/minecraft/client/render/shaderpack/Catalog.hpp"
 #include "net/minecraft/client/render/shaderpack/Loader.hpp"
 #include "net/minecraft/client/render/shaderpack/VanillaPackEmbed.hpp"
@@ -14,8 +14,6 @@
 #include "net/minecraft/client/ClientLog.hpp"
 #include <algorithm>
 #include <filesystem>
-#include <fstream>
-#include <sstream>
 #include <string>
 #include <unordered_map>
 #include <vector>
@@ -51,41 +49,6 @@ struct PreparedProgram {
  std::string tessEvaluation;
  ShaderTransformContext context;
 };
-// A driver reports "0(3872) : error ..." against the source it was handed, which
-// is the preamble plus the fully-included, fully-patched stage body -- a string
-// that exists nowhere on disk. Without it, a compile failure can only be guessed
-// at by re-deriving the pack's macro state by hand. Dump the exact bytes, through
-// the same assembleStageSource the compile path uses, so the reported line number
-// indexes the dump directly.
-void dumpFailedProgram(const std::string& programName, const PreparedProgram& prepared,
-                       const std::string& error) {
- std::error_code ec;
- const std::filesystem::path dir = util::MinecraftDirectories::getRunDirectory() / "shader-dumps";
- std::filesystem::create_directories(dir, ec);
- if(ec) return;
- std::string safeName = programName;
- for(char& c : safeName)
-  if(c == '/' || c == '\\' || c == ':') c = '_';
- const auto writeStage = [&](const char* suffix, const std::string& body) {
-  if(body.empty()) return;
-  std::ofstream out(dir / (safeName + suffix), std::ios::binary | std::ios::trunc);
-  if(!out) return;
-  // Source first and nothing before it: file line N is driver line N. The driver
-  // log goes at the end, where it cannot shift the numbering it refers to.
-  const std::string assembled = gl::ShaderProgram::assembleStageSource(prepared.preamble, body);
-  out << assembled;
-  if(!assembled.empty() && assembled.back() != '\n') out << '\n';
-  out << "\n// === " << programName << suffix << " -- driver log ===\n";
-  std::istringstream errorLines(error);
-  for(std::string line; std::getline(errorLines, line);) out << "//   " << line << '\n';
- };
- writeStage(".vsh", prepared.compute ? std::string{} : prepared.vertex);
- writeStage(".fsh", prepared.fragment);
- writeStage(".csh", prepared.compute ? prepared.vertex : std::string{});
- writeStage(".gsh", prepared.geometry);
- writeStage(".tcs", prepared.tessControl);
- writeStage(".tes", prepared.tessEvaluation);
-}
 void rememberDrawBuffers(PackInstance& pack, const PreparedProgram& prepared) {
  std::vector<int> targets = parseRenderTargetIndices(prepared.fragment);
  if(targets.empty()) {
@@ -296,11 +259,10 @@ gl::ShaderProgram* PackCompiler::compile(PackInstance& pack, const std::string& 
    return program;
   }
   const std::string& error = pack.programs->compileError(prepared.cacheKey);
-  dumpFailedProgram(programName, prepared, error);
   logOnce(pack,
           "program '" + programName + "' (" + found->second.compute + ") failed to compile: " +
-              (error.empty() ? "no driver info log" : error) + " [patched source dumped to shader-dumps/" +
-              programName + ".csh]",
+              (error.empty() ? "no driver info log" : error) +
+              dumpFailedProgram(programName, prepared.preamble, {{".csh", &prepared.vertex}}, error),
           ::net::minecraft::util::logging::LogLevel::Info);
   pack.compiledPrograms.emplace(programName, PackInstance::CompiledEntry{nullptr, true});
   return nullptr;
@@ -317,11 +279,16 @@ gl::ShaderProgram* PackCompiler::compile(PackInstance& pack, const std::string& 
  }
  rememberDrawBuffers(pack, prepared);
  const std::string& error = pack.programs->compileError(prepared.cacheKey);
- dumpFailedProgram(programName, prepared, error);
  logOnce(pack,
          "program '" + programName + "' (" + found->second.vertex + " + " + found->second.fragment +
              ") failed to compile: " + (error.empty() ? "no driver info log" : error) +
-             " [patched source dumped to shader-dumps/" + programName + ".vsh/.fsh]",
+             dumpFailedProgram(programName, prepared.preamble,
+                               {{".vsh", &prepared.vertex},
+                                {".fsh", &prepared.fragment},
+                                {".gsh", &prepared.geometry},
+                                {".tcs", &prepared.tessControl},
+                                {".tes", &prepared.tessEvaluation}},
+                               error),
          ::net::minecraft::util::logging::LogLevel::Info);
  pack.compiledPrograms.emplace(programName, PackInstance::CompiledEntry{nullptr, true});
  return nullptr;

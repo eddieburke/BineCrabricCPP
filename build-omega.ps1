@@ -487,10 +487,17 @@ if($UseLto -and $BuildType -ne "Release"){Fail "-Lto is only supported with -Bui
 if($UseLto){Write-Host "LTO enabled (opt-in; may fail to link on MinGW GCC 15)";$CmakeArgs+="-DCMAKE_INTERPROCEDURAL_OPTIMIZATION=ON";$CmakeArgs+="-DCMAKE_CXX_COMPILER_LAUNCHER=";$env:CCACHE_DISABLE="1"}
 $OmegaCxx=""
 if($BuildType -eq "Release"){
-$OC="-DNDEBUG -funroll-loops -fomit-frame-pointer -ffunction-sections -fdata-sections -fno-semantic-interposition -fmerge-all-constants"
-if($KeepDebugSymbols){$OC="-g "+$OC}
-$OL="-Wl,--gc-sections"
-if($UseLto){$OL="";$OC=$OC+" -flto-partition=one"}
+# Setting CMAKE_CXX_FLAGS_RELEASE replaces CMake's default "-O3 -DNDEBUG" wholesale.
+# Omitting an -O level here does not fall back to CMake's -O3, it falls back to the
+# compiler default of -O0, so the level has to be spelled out.
+$OC="-O3 -DNDEBUG -funroll-loops -fomit-frame-pointer -ffunction-sections -fdata-sections -fno-semantic-interposition -fmerge-all-constants -fno-ident"
+# No -g, and -s discards the symbol table and every debug section at link time. The
+# crash reporter only ever prints raw addresses and module-relative offsets, so it
+# reads the same either way. -KeepDebugSymbols puts both back.
+$OL="-Wl,--gc-sections -s"
+if($KeepDebugSymbols){$OC="-g "+$OC;$OL="-Wl,--gc-sections"}
+# --gc-sections is what fails to link under LTO on MinGW GCC 15, not the strip.
+if($UseLto){$OC=$OC+" -flto-partition=one";if($KeepDebugSymbols){$OL=""}else{$OL="-s"}}
 if(!$NoNativeCpu){$OC="-march=native -mtune=native -mprefer-vector-width=128 "+$OC}
 $OmegaCxx=$OC
 $CmakeArgs+="-DCMAKE_CXX_FLAGS_RELEASE=$OC"
