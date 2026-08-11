@@ -44,8 +44,6 @@ struct PackInstance {
   bool compute = false;
   bool groupBegin = false;
   bool groupEnd = false;
-  std::string parent;
-  std::vector<std::string> writeBuffers;
  };
  struct WorldProgramRuntime {
   gl::ShaderProgram* program = nullptr;
@@ -57,23 +55,26 @@ struct PackInstance {
  bool buildExecutionPlan(std::string& error);
  void resetPrograms();
  [[nodiscard]] const std::vector<RuntimeOperation>& stagePlan(CompositeStage stage) const noexcept;
-  PackSummary summary;
-   std::filesystem::path path;
-   bool directory = false;
-   bool embedded = false;
-  std::unique_ptr<net::minecraft::client::resource::pack::ZippedTexturePack> zip;
-  std::vector<std::string> resources;
-  PackDefinition definition;
-  PackDefinition rootDefinition;
-  std::string dimensionKey;
+ PackSummary summary;
+ std::filesystem::path path;
+ bool directory = false;
+ bool embedded = false;
+ std::unique_ptr<net::minecraft::client::resource::pack::ZippedTexturePack> zip;
+ std::vector<std::string> resources;
+ PackDefinition definition;
+ PackDefinition rootDefinition;
+ std::string dimensionKey;
  std::unordered_map<std::string, PackSourceOption> sourceOptions;
  std::unordered_map<std::string, std::string> settings;
  CustomUniformRuntime customUniforms;
  std::unordered_map<std::string, std::string> sourceCache;
  std::unordered_map<std::string, std::unordered_map<std::string, std::string>> includedSourceCache;
  std::unordered_map<std::string, std::string> preparedSourceCache;
- struct CompiledEntry { gl::ShaderProgram* program = nullptr; bool failed = false; };
- std::unordered_map<std::string, CompiledEntry> compiledPrograms; 
+ struct CompiledEntry {
+  gl::ShaderProgram* program = nullptr;
+  bool failed = false;
+ };
+ std::unordered_map<std::string, CompiledEntry> compiledPrograms;
  std::unordered_map<std::string, std::vector<int>> programDrawBuffers;
  std::vector<std::size_t> postPasses;
  std::vector<std::size_t> deferredPasses;

@@ -8,5 +8,6 @@ class ClientLog {
  public:
  static Logger& LOGGER;
  static void init();
+ static void shutdown();
 };
 } // namespace net::minecraft::client

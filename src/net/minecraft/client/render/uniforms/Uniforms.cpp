@@ -49,7 +49,6 @@ void uploadShaderUniforms(const gl::ShaderProgram& program, const PackUniformVal
  const float viewWidth = viewport != nullptr ? viewport->viewWidth : values.viewWidth;
  const float viewHeight = viewport != nullptr ? viewport->viewHeight : values.viewHeight;
  const float aspectRatio = viewport != nullptr ? viewport->aspectRatio : values.aspectRatio;
- const float farPlane = values.farPlane;
  const float shadowMapResolution = values.shadowMapResolution;
  const int shadowAvailable = values.shadowAvailable;
  const int normalAvailable = values.normalAvailable;
@@ -60,7 +59,7 @@ void uploadShaderUniforms(const gl::ShaderProgram& program, const PackUniformVal
  program.set1fAt(program.uniformLocation(IrisUniformSlot::ViewHeight), viewHeight);
  program.set1fAt(program.uniformLocation(IrisUniformSlot::AspectRatio), aspectRatio);
  program.set1fAt(program.uniformLocation(IrisUniformSlot::Near), values.nearPlane);
- program.set1fAt(program.uniformLocation(IrisUniformSlot::Far), farPlane);
+ program.set1fAt(program.uniformLocation(IrisUniformSlot::Far), values.renderDistanceBlocks);
  program.set1fAt(program.uniformLocation(IrisUniformSlot::ShadowMapResolution), shadowMapResolution);
  program.set3fAt(program.uniformLocation(IrisUniformSlot::CameraPosition), values.cameraPosition);
  program.set3fAt(program.uniformLocation(IrisUniformSlot::CameraPositionFract), values.cameraPositionFract);

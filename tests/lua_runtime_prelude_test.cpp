@@ -1,6 +1,7 @@
 #include <gtest/gtest.h>
 #include "net/minecraft/mod/lua/LuaHostApi.hpp"
 #include "net/minecraft/mod/lua/LuaRuntimePrelude.hpp"
+#include "net/minecraft/mod/runtime/LuaEventId.hpp"
 namespace {
 int luaNoop(lua_State*) {
  return 0;
@@ -20,6 +21,12 @@ TEST(LuaRuntimePrelude, Parses) {
  EXPECT_EQ(api.loadbufferx(state, source.data(), source.size(), "@minecraft/runtime.lua", "t"),
            net::minecraft::mod::lua::kLuaOk);
  api.close(state);
+}
+TEST(LuaRuntimePrelude, CelestialStateEventIsPublic) {
+ const int index = net::minecraft::mod::runtime::luaEventIndexOf("celestial_state");
+ ASSERT_GE(index, 0);
+ EXPECT_EQ(static_cast<std::size_t>(index),
+           static_cast<std::size_t>(net::minecraft::mod::runtime::LuaEventId::CelestialState));
 }
 TEST(LuaRuntimePrelude, ExecutesWithoutClientRenderApi) {
  net::minecraft::mod::lua::LuaApi& api = net::minecraft::mod::lua::luaApi();

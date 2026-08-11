@@ -39,6 +39,7 @@
 #include "net/minecraft/util/math/MathHelper.hpp"
 #include "net/minecraft/util/math/Types.hpp"
 #include "net/minecraft/world/World.hpp"
+#include "net/minecraft/world/chunk/ChunkSource.hpp"
 namespace net::minecraft::client::render {
 namespace {
 struct BlockOutlineScope {
@@ -134,6 +135,11 @@ void WorldRenderer::reload() {
  gl::GLCore::ensureLoaded();
  scene_.blockEntities.clear();
  entityRenderCooldown = 2;
+ if(ChunkSource* source = world->getChunkSource(); source != nullptr) {
+  source->forEachLoadedChunk([this](int chunkX, int chunkZ, Chunk&) {
+   chunkSections_.chunkAvailable(chunkX, chunkZ);
+  });
+ }
 }
 int WorldRenderer::render(net::minecraft::LivingEntity& camera, int layer, bool drawModMeshes) {
  if(chunkSections_.empty()) {
@@ -143,13 +149,6 @@ int WorldRenderer::render(net::minecraft::LivingEntity& camera, int layer, bool 
  return renderChunkLayer(layer, false, drawModMeshes);
 }
 void WorldRenderer::renderLastChunks(int layer, double /*tickDelta*/) {
- // Java's GameRenderer draws translucent terrain twice when fancyGraphics is
- // on: once with colorMask off (depth-only prepass) via render(), then again
- // here with colorMask restored so blending reads back a depth buffer that
- // already matches, avoiding z-fighting between overlapping translucent
- // faces (water against glass, etc). The visible set and the per-region
- // batches are identical across the two passes, so this replays the batches
- // the prepass already built rather than walking every section a second time.
  if(chunkSections_.empty()) {
   return;
  }
@@ -187,11 +186,6 @@ int WorldRenderer::renderChunkLayer(int layer, bool replay, bool drawModMeshes) 
    const chunk::TerrainAllocation& allocation = chunk->terrainAllocation(layer);
    if(allocation.valid() && chunk->terrainRegion() != nullptr) {
     chunk::TerrainRegion* region = chunk->terrainRegion();
-    // One batch per region on every layer. Translucent ordering is recovered
-    // by sorting the batches back-to-front below. Opening a fresh batch on
-    // each region change in visit order cost one draw call per section: the
-    // occlusion BFS fills visibleSections in shells, so consecutive sections
-    // almost never share a region.
     std::size_t index = 0;
     while(index < terrainRegionDrawCount_ && terrainRegionDraws_[index].region != region) ++index;
     if(index == terrainRegionDrawCount_) {
@@ -258,14 +252,13 @@ int WorldRenderer::renderChunkLayer(int layer, bool replay, bool drawModMeshes) 
  if(!drawModMeshes) {
   return draws;
  }
- const debug::RenderProfiler::Scope modMeshScope(debug::RenderStage::ModMeshes);
  int boundTextureId = -1;
  int boundGlId = -1;
  for(const ModMeshDraw& draw : modMeshDraws_) {
   if(draw.mesh->texture != boundTextureId) {
    boundTextureId = draw.mesh->texture;
-    boundGlId = net::minecraft::registry::TextureRegistry::resolveGlId(boundTextureId, *textureManager);
-    if(boundGlId >= 0) textureManager->bindTexture(boundGlId);
+   boundGlId = net::minecraft::registry::TextureRegistry::resolveGlId(boundTextureId, *textureManager);
+   if(boundGlId >= 0) textureManager->bindTexture(boundGlId);
   }
   if(boundGlId < 0) continue;
   core::setPendingTerrainDraw(draw.x, draw.y, draw.z);
@@ -288,15 +281,6 @@ void WorldRenderer::renderEntities(const Vec3d& cameraPos,
   culledEntityCount = 0;
   return;
  }
- const debug::RenderStage preparationStage = core::cameraFrame().shadowPass
-                                                 ? debug::RenderStage::ShadowEntityPreparation
-                                                 : debug::RenderStage::EntityPreparation;
- debug::RenderProfiler::Scope preparationScope(preparationStage);
- // Iris parity pose base: identity, so every pose the entity/block-entity
- // renderers publish on this stack is the pure model -> camera-relative
- // transform (they push translate(entity - eye) themselves via the dispatcher
- // offsets below). The camera matrix is never part of a pose; it is uploaded
- // per pass and per draw from the camera state alone.
  net::minecraft::util::math::MatrixStack matrices;
  matrices.load(net::minecraft::util::math::Matrix4f::identityMatrix());
  const net::minecraft::util::math::Matrix4f& projection = core::drawProjection();
@@ -320,15 +304,10 @@ void WorldRenderer::renderEntities(const Vec3d& cameraPos,
   block::entity::BlockEntityRenderDispatcher::offsetY = entity::EntityRenderDispatcher::offsetY;
   block::entity::BlockEntityRenderDispatcher::offsetZ = entity::EntityRenderDispatcher::offsetZ;
  }
- preparationScope.end();
- debug::RenderProfiler::Scope collectScope(debug::RenderStage::EntityCollectCull);
  const std::vector<Entity*>& entities = world->entities();
  entityCount = static_cast<int>(entities.size()) + static_cast<int>(world->globalEntities.size());
  const client::option::RenderSettings& resolved = frameSettings();
  const FrameRenderCamera& renderCamera = core::cameraFrame();
- // Java culls shadow entities with the entity shadow frustum
- // (ShadowRenderer.renderEntities → entityShadowFrustum), the same extruded-player
- // volume as the terrain, optionally narrowed by entityShadowDistanceMul.
  // https://github.com/IrisShaders/Iris/blob/26.1/common/src/main/java/net/irisshaders/iris/shadows/ShadowRenderer.java
  const ShadowCullingFrustum* shadowEntityFrustum =
      renderCamera.shadowPass ? renderCamera.shadowEntityFrustum : nullptr;
@@ -392,8 +371,6 @@ void WorldRenderer::renderEntities(const Vec3d& cameraPos,
   debug::RenderProfiler::instance().record(debug::RenderMetric::EntityVisible);
   entityDispatcher.render(*entity, tickDelta, matrices, projection);
  }
- collectScope.end();
- const debug::RenderProfiler::Scope blockEntityScope(debug::RenderStage::BlockEntities);
  for(::net::minecraft::block::entity::BlockEntity* blockEntity : scene_.blockEntities) {
   if(blockEntity == nullptr) continue;
   if(renderCamera.shadowPass) {
@@ -518,11 +495,7 @@ void WorldRenderer::blockBreakParticles(int x, int y, int z, int blockId, int bl
 }
 void WorldRenderer::renderOutline(const Box& box) {
  Tessellator& tessellator = Tessellator::INSTANCE;
- // Modern line rendering (Iris 26.1 line format) carries each line's direction in
- // vaNormal so packs can expand it to a screen-space width
- // gbuffers_line.vsh: start = model, end = model + vaNormal, ±offset by gl_VertexID).
- // Emit every edge as an explicit GL_LINES segment with that direction; a constant
- // (0,0,0) normal degenerates normalize(0) into undefined geometry.
+ // see shaders/ComplementaryReimagined_r5.8.1/shaders/program/gbuffers_line.vsh
  tessellator.start(gl::prim::Lines);
  tessellator.color(0.0f, 0.0f, 0.0f, 0.4f);
  auto emitEdge = [&tessellator](double ax, double ay, double az, double bx, double by, double bz) {
@@ -646,11 +619,6 @@ void WorldRenderer::renderBlockOutline(net::minecraft::PlayerEntity* player,
  }
 }
 void WorldRenderer::matrixStackOrigin(double& x, double& y, double& z) const {
- // One geometry origin: the camera EYE (Camera.getPosition()), the same point
- // terrain, chunkOffset, the cameraPosition uniform and the shadow map centre
- // all anchor on. Entity/block-entity producers emit camera-relative poses from
- // here, so their vertices reach the shader as worldPos - eye and a pack that
- // cuts gl_ModelViewMatrix to a mat3 loses nothing.
  const Vec3d origin = sectionOrigin();
  x = origin.x;
  y = origin.y;

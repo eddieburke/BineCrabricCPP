@@ -707,6 +707,7 @@ void World::queueLightUpdate(LightType type, int minX, int minY, int minZ, int m
  lighting_.push(type, minX, minY, minZ, maxX, maxY, maxZ, merge);
 }
 bool World::doLightingUpdates(std::size_t maxDirtyRegions, std::int64_t timeBudgetNs) {
+ lighting_.flushStaging();
  const auto start = std::chrono::steady_clock::now();
  std::size_t drained = 0;
  while(drained < maxDirtyRegions) {

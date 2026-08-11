@@ -317,21 +317,23 @@ local function register()
     return event
   end)
 
-  minecraft.on("world_render", {
-    stage = "sky",
-    moment = "before",
+  minecraft.on("celestial_state", {
     is_overworld = true,
-    priority = SKY_PROVIDER_PRIORITY + 1000,
+    priority = SKY_PROVIDER_PRIORITY,
     when = function()
-      return realtime_active()
+      return realtime_active() and config.drive_sun
     end,
   }, function(event)
     local frame = current_solar_frame(event.tick_delta)
-    if config.drive_sun then
-      event.cancel_vanilla = true
-      sky_render.draw_dome(event, frame)
-      sky_render.draw_stars(event, frame)
-    end
+    event.sun_x = frame.sun_direction_x
+    event.sun_y = frame.sun_direction_y
+    event.sun_z = frame.sun_direction_z
+    event.moon_x = frame.moon_direction_x
+    event.moon_y = frame.moon_direction_y
+    event.moon_z = frame.moon_direction_z
+    event.moon_phase = math.floor(((frame.moon_phase + 0.5) % 1.0) * 8.0 + 0.5) % 8
+    event.is_day = frame.is_daylight
+    event.override_directions = true
   end)
 
   minecraft.on("world_color", {
@@ -484,55 +486,27 @@ local function register()
     end
   end)
 
-  -- Stars stage is skipped when cancel_vanilla is set on sky; draw_stars handles that.
-  -- Keep a stars hook for builds that still publish the stage (e.g. northern_stars consumers).
   minecraft.on("world_render", {
     stage = "stars",
     moment = "before",
     is_overworld = true,
-    priority = 30,
+    priority = 1000,
     when = function()
       return realtime_active()
     end,
   }, function(event)
     local frame = current_solar_frame(event.tick_delta)
     event.star_brightness = sky_render.star_brightness(frame)
-  end)
-
-  minecraft.on("world_render", {
-    stage = "terrain_opaque",
-    moment = "before",
-    is_overworld = true,
-    priority = -1000,
-    when = function()
-      return realtime_active()
-    end,
-  }, function(event)
-    local frame = current_solar_frame(event.tick_delta)
-    local rain_alpha = 1.0 - clamp(event.rain_strength or 0.0, 0.0, 1.0) * 0.80
-
-    local sun_altitude = frame.sun_altitude_deg or -90.0
-    local sun_alpha = (function()
-      local t = clamp((sun_altitude - (-1.15)) / (0.35 - (-1.15)), 0.0, 1.0)
-      return t * t * (3.0 - 2.0 * t)
-    end)() * rain_alpha
-    sky_render.draw_sun(event, frame, sun_alpha)
-
-    local moon_altitude = frame.moon_altitude_deg or -90.0
-    local moon_t = clamp((moon_altitude - (-0.35)) / (1.25 - (-0.35)), 0.0, 1.0)
-    local moon_alpha = moon_t * moon_t * (3.0 - 2.0 * moon_t) * rain_alpha
-    if moon_alpha > 0.001 then
-      local distance_scale = clamp(60.27 /
-        math.max(frame.moon_distance_earth_radii or 60.27, 1.0), 0.90, 1.12)
-      sky_render.draw_moon(event, frame, moon_alpha,
-        sky_render.MOON_MEAN_HALF_SIZE * distance_scale)
-    end
+    event.astronomy_enabled = true
+    event.astronomy_utc_millis = frame.utc_millis
+    event.observer_latitude_deg = config.latitude
+    event.observer_longitude_deg = config.longitude
   end)
 
   -- The engine's published celestial state already reflects any day/night override,
   -- so the world clock can be synchronized without a time_mode intermediate.
   minecraft.on("world_tick", { before = false }, function(event)
-    if not realtime_active() then
+    if not realtime_active() or not config.drive_sun then
       return
     end
 

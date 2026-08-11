@@ -9,20 +9,18 @@ namespace net::minecraft::util::math {
 struct Matrix4f;
 }
 namespace net::minecraft::client::gl {
- struct ProgramBinaryBlob {
-  std::uint64_t contentHash = 0;
-  unsigned int binaryFormat = 0;
-  std::uint32_t flags = 0;
-  bool compute = false;
-  bool tessellation = false;
-  std::vector<unsigned char> bytes;
- };
-
- class ShaderProgram {
-  public:
-  static constexpr std::uint32_t kFlagCompute = 1u << 0;
-  static constexpr std::uint32_t kFlagTessellation = 1u << 2;
-
+struct ProgramBinaryBlob {
+ std::uint64_t contentHash = 0;
+ unsigned int binaryFormat = 0;
+ std::uint32_t flags = 0;
+ bool compute = false;
+ bool tessellation = false;
+ std::vector<unsigned char> bytes;
+};
+class ShaderProgram {
+ public:
+ static constexpr std::uint32_t kFlagCompute = 1u << 0;
+ static constexpr std::uint32_t kFlagTessellation = 1u << 2;
  ShaderProgram();
  ~ShaderProgram();
  ShaderProgram(const ShaderProgram&) = delete;
@@ -37,10 +35,6 @@ namespace net::minecraft::client::gl {
               const std::string& tessEvaluationSource = {});
  bool compileCompute(const std::string& computeSource,
                      const std::string& versionPreamble);
- // Restores a program from a GL program binary (driver cache hit). The binary was
- // produced by compileToBinary/compileComputeToBinary (or a previous session's disk
- // cache), so no shader source is recompiled. Falls back to compile() in the caller
- // when the driver rejects the binary.
  bool loadFromBinary(const ProgramBinaryBlob& binary);
  // Compile-and-extract combo — one glLinkProgram, then reads the binary back for
  // ProgramCache to store on disk. See ProgramCache::compileSync.
@@ -54,13 +48,6 @@ namespace net::minecraft::client::gl {
  bool compileComputeToBinary(ProgramBinaryBlob& out,
                              const std::string& computeSource,
                              const std::string& versionPreamble);
- // `abiSalt` is not shader source — it is mixed in on top so that a change to the
- // fixed vertex-attribute binding table (render::vertex_abi::Bindings, applied via
- // glBindAttribLocation before link in compile()) invalidates every disk-cached
- // binary. glProgramBinary never re-runs glBindAttribLocation, so a binary loaded
- // from an older table keeps whatever locations were live when it was compiled;
- // without this the content hash cannot see that and a stale binary matches
- // forever. See ProgramCache::compileSync.
  [[nodiscard]] static std::uint64_t contentHash(bool compute,
                                                 const std::string& preamble,
                                                 const std::string& a,
@@ -84,133 +71,137 @@ namespace net::minecraft::client::gl {
  const std::string& lastError() const {
   return lastError_;
  }
-  void bind() const;
-  static void unbind();
-  [[nodiscard]] bool needsUniformSnapshot(unsigned int generation) const noexcept {
-   return uniformSnapshotGeneration_ != generation;
-  }
-  void markUniformSnapshotPushed(unsigned int generation) const noexcept {
-   uniformSnapshotGeneration_ = generation;
-  }
+ void bind() const;
+ static void unbind();
+ [[nodiscard]] bool needsUniformSnapshot(unsigned int generation) const noexcept {
+  return uniformSnapshotGeneration_ != generation;
+ }
+ void markUniformSnapshotPushed(unsigned int generation) const noexcept {
+  uniformSnapshotGeneration_ = generation;
+ }
  // Iris /* RENDERTARGETS: a,b */ → glDrawBuffers(COLOR_ATTACHMENT0+a, ...).
  // Empty = leave DrawBuffers unchanged (composite write FBOs remap attachments).
-  void setDrawBufferColortexIndices(const std::vector<int>& colortexIndices);
-  [[nodiscard]] const std::vector<int>& drawBufferColortexIndices() const {
-   return drawBufferColortexIndices_;
-  }
-  void applyDrawBuffers(int colorAttachmentCount = 8) const;
-  int location(std::string_view name) const;
-  enum class SamplerKind {
-   None,
-   Float,
-   Integer,
-   Unsigned,
-   Shadow,
-   Volume
-  };
-  enum class IrisUniformSlot : std::uint8_t {
-   FrameTimeCounter,
-   FrameTime,
-   FrameCounter,
-   ViewWidth,
-   ViewHeight,
-   AspectRatio,
-   Near,
-   Far,
-   ShadowMapResolution,
-   CameraPosition,
-   CameraPositionFract,
-   CameraPositionInt,
-   PreviousCameraPosition,
-   PreviousCameraPositionFract,
-   PreviousCameraPositionInt,
-   SunPosition,
-   MoonPosition,
-   ShadowLightPosition,
-   UpPosition,
-   GbufferModelView,
-   GbufferProjection,
-   GbufferModelViewInverse,
-   GbufferProjectionInverse,
-   GbufferPreviousProjection,
-   GbufferPreviousModelView,
-   ShadowModelView,
-   ShadowModelViewInverse,
-   ShadowProjection,
-   ShadowProjectionInverse,
-   SunColor,
-   SunIntensity,
-   FogColor,
-   FogDensity,
-   FogStart,
-   FogEnd,
-   FogMode,
-   FogShape,
-   SkyColor,
-   ThunderStrength,
-   CurrentPlayerHealth,
-   MaxPlayerHealth,
-   Count
-  };
-  static constexpr std::string_view kIrisUniformSlotNames[static_cast<std::size_t>(IrisUniformSlot::Count)] = {
-      "frameTimeCounter",
-      "frameTime",
-      "frameCounter",
-      "viewWidth",
-      "viewHeight",
-      "aspectRatio",
-      "near",
-      "far",
-      "shadowMapResolution",
-      "cameraPosition",
-      "cameraPositionFract",
-      "cameraPositionInt",
-      "previousCameraPosition",
-      "previousCameraPositionFract",
-      "previousCameraPositionInt",
-      "sunPosition",
-      "moonPosition",
-      "shadowLightPosition",
-      "upPosition",
-      "gbufferModelView",
-      "gbufferProjection",
-      "gbufferModelViewInverse",
-      "gbufferProjectionInverse",
-      "gbufferPreviousProjection",
-      "gbufferPreviousModelView",
-      "shadowModelView",
-      "shadowModelViewInverse",
-      "shadowProjection",
-      "shadowProjectionInverse",
-      "sunColor",
-      "sunIntensity",
-      "fogColor",
-      "fogDensity",
-      "fogStart",
-      "fogEnd",
-      "fogMode",
-      "fogShape",
-      "skyColor",
-      "thunderStrength",
-      "currentPlayerHealth",
-      "maxPlayerHealth"};
-  [[nodiscard]] int uniformLocation(IrisUniformSlot slot) const noexcept {
-   return uniformLocations_[static_cast<std::size_t>(slot)];
-  }
-  [[nodiscard]] SamplerKind samplerKind(std::string_view name) const;
-  [[nodiscard]] const std::vector<std::string>& declaredSamplers() const;
-  [[nodiscard]] bool tessellation() const {
+ void setDrawBufferColortexIndices(const std::vector<int>& colortexIndices);
+ [[nodiscard]] const std::vector<int>& drawBufferColortexIndices() const {
+  return drawBufferColortexIndices_;
+ }
+ void applyDrawBuffers(int colorAttachmentCount = 8) const;
+ int location(std::string_view name) const;
+ enum class SamplerKind {
+  None,
+  Float,
+  Integer,
+  Unsigned,
+  Shadow,
+  Volume
+ };
+ enum class IrisUniformSlot : std::uint8_t {
+  FrameTimeCounter,
+  FrameTime,
+  FrameCounter,
+  ViewWidth,
+  ViewHeight,
+  AspectRatio,
+  Near,
+  Far,
+  ShadowMapResolution,
+  CameraPosition,
+  CameraPositionFract,
+  CameraPositionInt,
+  PreviousCameraPosition,
+  PreviousCameraPositionFract,
+  PreviousCameraPositionInt,
+  SunPosition,
+  MoonPosition,
+  ShadowLightPosition,
+  UpPosition,
+  GbufferModelView,
+  GbufferProjection,
+  GbufferModelViewInverse,
+  GbufferProjectionInverse,
+  GbufferPreviousProjection,
+  GbufferPreviousModelView,
+  ShadowModelView,
+  ShadowModelViewInverse,
+  ShadowProjection,
+  ShadowProjectionInverse,
+  SunColor,
+  SunIntensity,
+  FogColor,
+  FogDensity,
+  FogStart,
+  FogEnd,
+  FogMode,
+  FogShape,
+  SkyColor,
+  ThunderStrength,
+  CurrentPlayerHealth,
+  MaxPlayerHealth,
+  Count
+ };
+ static constexpr std::string_view kIrisUniformSlotNames[static_cast<std::size_t>(IrisUniformSlot::Count)] = {
+     "frameTimeCounter",
+     "frameTime",
+     "frameCounter",
+     "viewWidth",
+     "viewHeight",
+     "aspectRatio",
+     "near",
+     "far",
+     "shadowMapResolution",
+     "cameraPosition",
+     "cameraPositionFract",
+     "cameraPositionInt",
+     "previousCameraPosition",
+     "previousCameraPositionFract",
+     "previousCameraPositionInt",
+     "sunPosition",
+     "moonPosition",
+     "shadowLightPosition",
+     "upPosition",
+     "gbufferModelView",
+     "gbufferProjection",
+     "gbufferModelViewInverse",
+     "gbufferProjectionInverse",
+     "gbufferPreviousProjection",
+     "gbufferPreviousModelView",
+     "shadowModelView",
+     "shadowModelViewInverse",
+     "shadowProjection",
+     "shadowProjectionInverse",
+     "sunColor",
+     "sunIntensity",
+     "fogColor",
+     "fogDensity",
+     "fogStart",
+     "fogEnd",
+     "fogMode",
+     "fogShape",
+     "skyColor",
+     "thunderStrength",
+     "currentPlayerHealth",
+     "maxPlayerHealth"};
+ [[nodiscard]] int uniformLocation(IrisUniformSlot slot) const noexcept {
+  return uniformLocations_[static_cast<std::size_t>(slot)];
+ }
+ [[nodiscard]] SamplerKind samplerKind(std::string_view name) const;
+ [[nodiscard]] const std::vector<std::string>& declaredSamplers() const;
+ [[nodiscard]] bool tessellation() const {
   return tessellation_;
  }
-  void set1iAt(int location, int value) const;
-  void set1fAt(int location, float value) const;
-  // see third_party/mcp/iris/pipeline/programs/ShaderKey.java
-  void setFogClass(bool enabled) const noexcept {
-   fogClass_ = enabled;
-  }
-  [[nodiscard]] bool fogClass() const noexcept {
-   return fogClass_;
-  }
+ // https://github.com/IrisShaders/Iris/blob/26.1/common/src/main/java/net/irisshaders/iris/gl/program/ComputeProgram.java
+ [[nodiscard]] const int (&computeLocalSize() const)[3] {
+  return computeLocalSize_;
+ }
+ void set1iAt(int location, int value) const;
+ void set1fAt(int location, float value) const;
+ // see third_party/mcp/iris/pipeline/programs/ShaderKey.java
+ void setFogClass(bool enabled) const noexcept {
+  fogClass_ = enabled;
+ }
+ [[nodiscard]] bool fogClass() const noexcept {
+  return fogClass_;
+ }
  void set2fAt(int location, const float* values) const;
  void set3fAt(int location, const float* values) const;
  void set4fAt(int location, const float* values) const;
@@ -230,28 +221,29 @@ namespace net::minecraft::client::gl {
  [[nodiscard]] static bool supported();
 
  private:
-  struct TransparentStringHash {
-   using is_transparent = void;
-   std::size_t operator()(std::string_view value) const noexcept {
-    return std::hash<std::string_view>{}(value);
-   }
-  };
-  template <typename Value>
-  using NameMap = std::unordered_map<std::string, Value, TransparentStringHash, std::equal_to<>>;
-  void reflectSamplers();
-  void refreshUniformLocations();
-  void resetUniformLocations();
-  bool extractProgramBinary(ProgramBinaryBlob& out);
-   unsigned int program_ = 0;
-   mutable int uniformLocations_[static_cast<std::size_t>(IrisUniformSlot::Count)];
-   mutable NameMap<int> uniformCache_;
-  NameMap<SamplerKind> samplerKinds_;
-   std::vector<std::string> samplerNames_;
-   bool tessellation_ = false;
-  mutable bool fogClass_ = true;
+ struct TransparentStringHash {
+  using is_transparent = void;
+  std::size_t operator()(std::string_view value) const noexcept {
+   return std::hash<std::string_view>{}(value);
+  }
+ };
+ template <typename Value>
+ using NameMap = std::unordered_map<std::string, Value, TransparentStringHash, std::equal_to<>>;
+ void reflectSamplers();
+ void refreshUniformLocations();
+ void resetUniformLocations();
+ bool extractProgramBinary(ProgramBinaryBlob& out);
+ unsigned int program_ = 0;
+ mutable int uniformLocations_[static_cast<std::size_t>(IrisUniformSlot::Count)];
+ mutable NameMap<int> uniformCache_;
+ NameMap<SamplerKind> samplerKinds_;
+ std::vector<std::string> samplerNames_;
+ bool tessellation_ = false;
+ int computeLocalSize_[3] = {1, 1, 1};
+ mutable bool fogClass_ = true;
  std::vector<unsigned int> drawBuffers_{};
-  std::vector<int> drawBufferColortexIndices_{};
-  std::string lastError_;
-  mutable unsigned int uniformSnapshotGeneration_ = 0;
+ std::vector<int> drawBufferColortexIndices_{};
+ std::string lastError_;
+ mutable unsigned int uniformSnapshotGeneration_ = 0;
 };
 } // namespace net::minecraft::client::gl

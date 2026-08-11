@@ -237,8 +237,19 @@ bool Pipeline::selectDimension(PackInstance& pack, const net::minecraft::World* 
      "clearing programs (dimension '" + pack.dimensionKey + "' -> '" + selectedKey + "')";
  pack.clearGpuResources();
  pack.dimensionKey = selectedKey;
- pack.definition = pack.rootDefinition;
+ pack.definition = selected != &pack.rootDefinition ? *selected : pack.rootDefinition;
  if(selected != &pack.rootDefinition) {
+  // Collections are rebuilt per folder, so re-base them on the root and overlay
+  // the dimension's own entries.
+  pack.definition.programs = pack.rootDefinition.programs;
+  pack.definition.passes = pack.rootDefinition.passes;
+  pack.definition.targets = pack.rootDefinition.targets;
+  pack.definition.bufferBlends = pack.rootDefinition.bufferBlends;
+  pack.definition.images = pack.rootDefinition.images;
+  pack.definition.customTextures = pack.rootDefinition.customTextures;
+  pack.definition.bufferObjects = pack.rootDefinition.bufferObjects;
+  pack.definition.dimensionFolders = pack.rootDefinition.dimensionFolders;
+  pack.definition.dimensionDefinitions = pack.rootDefinition.dimensionDefinitions;
   for(const auto& [name, program] : selected->programs) pack.definition.programs[name] = program;
   // A dimension folder's own scan can under-report a target's format (e.g. via a
   // default RENDERTARGETS output) even when the root scan already saw the real
@@ -305,10 +316,10 @@ bool Pipeline::selectDimension(PackInstance& pack, const net::minecraft::World* 
 }
 bool Pipeline::preparePackResources(PackInstance& pack, int width, int height) {
  if(!ensureSceneTargets(&pack, width, height)) return false;
-  return ensurePackResources(pack, width, height, lightmapTexture_,
-                              [](const PackInstance& candidate, const std::string& path) {
-                               return PackCompiler::readText(candidate, path);
-                              });
+ return ensurePackResources(pack, width, height, lightmapTexture_,
+                            [](const PackInstance& candidate, const std::string& path) {
+                             return PackCompiler::readText(candidate, path);
+                            });
 }
 void Pipeline::prepareFrame(net::minecraft::World* world, PackInstance* activePack,
                             PackInstance* basePack) {
@@ -366,7 +377,7 @@ void Pipeline::prepareFrame(net::minecraft::World* world, PackInstance* activePa
   std::unordered_map<std::string, int> textures;
   std::unordered_map<std::string, int> colorImages;
   std::unordered_map<std::string, int> volumes;
-   addPackTextures(*activePack, "setup", textures, volumes);
+  addPackTextures(*activePack, "setup", textures, volumes);
   if(activePack->colorTargets.valid()) {
    activePack->colorTargets.fillImageBindings(colorImages);
   }
@@ -390,10 +401,8 @@ void Pipeline::setFrameUniforms(const PackUniformValues& frame, const PackDefini
 void Pipeline::updateLightmap(const net::minecraft::World* world) {
  if(!hasGlContext()) return;
  const bool lit = world != nullptr && world->dimension != nullptr;
- const float brightness = options_ != nullptr ? std::clamp(options_->brightness, 0.0f, 1.0f) : 0.0f;
  const int ambient = world != nullptr ? world->ambientDarkness : 0;
- if(lightmapTexture_ && lightmapLit_ == lit && lightmapBrightness_ == brightness &&
-    lightmapAmbient_ == ambient) {
+ if(lightmapTexture_ && lightmapLit_ == lit && lightmapAmbient_ == ambient) {
   return;
  }
  const int previousUnit = std::max(0, core::getActiveTextureUnit());
@@ -419,8 +428,6 @@ void Pipeline::updateLightmap(const net::minecraft::World* world) {
     const int effectiveSky = std::max(0, sky - ambient);
     const int level = std::clamp(std::max(block, effectiveSky), 0, 15);
     value = world->dimension->lightLevelToLuminance[static_cast<std::size_t>(level)];
-    const float gamma = 1.0f - std::pow(1.0f - value, 4.0f);
-    value = std::clamp(value + (gamma - value) * brightness, 0.0f, 1.0f);
    }
    const std::uint8_t channel = static_cast<std::uint8_t>(std::lround(value * 255.0f));
    const std::size_t offset = static_cast<std::size_t>((sky * 16 + block) * 4);
@@ -435,7 +442,6 @@ void Pipeline::updateLightmap(const net::minecraft::World* world) {
  core::activeTexture(gl::tex::Texture0 + previousUnit);
  lightmapLit_ = lit;
  lightmapAmbient_ = ambient;
- lightmapBrightness_ = brightness;
 }
 std::vector<ColorFormat> Pipeline::sceneColorFormats(const PackInstance* activePack) const {
  int count = activePack != nullptr && activePack->summary.valid
@@ -562,7 +568,7 @@ void Pipeline::sampleCenterDepth(PackInstance* activePack, const PackDefinition&
  const std::optional<float> depth = centerDepthSampler_.pollAndIssue(targets.width() / 2, targets.height() / 2);
  if(!depth.has_value()) return;
  const float nearPlane = worldUniforms_.nearPlane > 0.0f ? worldUniforms_.nearPlane : 0.05f;
-  const float projectionFar = core::cameraFrame().farPlane;
+ const float projectionFar = core::cameraFrame().farPlane;
  const float farPlane = projectionFar > nearPlane ? projectionFar : worldUniforms_.farPlane;
  const float halfLife = activeDef.centerDepthHalflife;
  worldUniforms_.centerDepthSmooth =
@@ -868,10 +874,10 @@ void Pipeline::presentFinalToScreen(PackInstance* scenePack, int screenWidth, in
  const int width = targets.width();
  const int height = targets.height();
  if(width <= 0 || height <= 0) return;
-  if(!ensurePackResources(*scenePack, width, height, lightmapTexture_,
-                           [](const PackInstance& p, const std::string& path) {
-                            return PackCompiler::readText(p, path);
-                           })) {
+ if(!ensurePackResources(*scenePack, width, height, lightmapTexture_,
+                         [](const PackInstance& p, const std::string& path) {
+                          return PackCompiler::readText(p, path);
+                         })) {
   return;
  }
  const core::DepthScope depthScope(false, false);
@@ -892,10 +898,10 @@ void Pipeline::presentFinalToScreen(PackInstance* scenePack, int screenWidth, in
  putShadowTextures(textures, shadowDepthTexture_, shadowOpaqueDepthTexture_,
                    shadowColorTextures_,
                    shadowColorTextureCount_, scenePack->definition);
-  addPackTextures(*scenePack, "composite", textures, volumeTextures);
-  bindSamplers(*program, textures, volumeTextures, maxTextureUnits(),
-               scenePack->definition);
-  bindPackResources(*scenePack, *program, 0);
+ addPackTextures(*scenePack, "composite", textures, volumeTextures);
+ bindSamplers(*program, textures, volumeTextures, maxTextureUnits(),
+              scenePack->definition);
+ bindPackResources(*scenePack, *program, 0);
  const PackUniformValues& frameUniforms = worldUniforms_;
  const PackViewportValues viewport{static_cast<float>(width),
                                    static_cast<float>(height),

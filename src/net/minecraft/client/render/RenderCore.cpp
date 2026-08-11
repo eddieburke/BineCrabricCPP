@@ -40,15 +40,6 @@ FogUniforms g_fog{};
 SkyUniforms g_skyUniforms{};
 unsigned int g_globalsGeneration = 1;
 unsigned int g_globalsPushed = 0;
-// Must be a UNIT vector, never (0,0,0). Every Iris pack computes
-// `normalize(gl_NormalMatrix * gl_Normal)` in its gbuffer vertex stage, and
-// normalize() of a zero vector is NaN — which then poisons every lighting term
-// downstream. Packs that guard for it paint the fragment pure black
-// (rethinking-voxels: `if (any(isnan(finalDiffuse))) finalDiffuse = vec3(0.0)`,
-// lib/lighting/mainLighting.glsl), and packs that do not get NaN garbage.
-// Up is the value Iris itself substitutes when directional shading is off
-// (MixinClientLevel forces Direction.UP), so it is also the parity-correct
-// choice for geometry that declares no normals — particles, sky, GUI, text.
 const float kDefaultNormal[3] = {0.0f, 1.0f, 0.0f};
 constexpr unsigned int kArrayBuffer = 0x8892; // GL_ARRAY_BUFFER
 constexpr unsigned int kStreamDraw = 0x88E0; // GL_STREAM_DRAW
@@ -59,6 +50,8 @@ struct AttribCache {
  int stride = 0;
  bool hasTexture = false;
  bool hasNormals = false;
+ bool overrideColor = false;
+ std::uint32_t colorOverride = 0xFFFFFFFFU;
  bool valid = false;
 };
 AttribCache g_attribCache;
@@ -107,12 +100,6 @@ math::Matrix4f g_drawModelView{};
 math::Matrix4f g_drawProjection{};
 math::Matrix4f g_drawModelViewInverse{};
 math::Matrix4f g_drawProjectionInverse{};
-// The per-draw pose: model -> pass-base space, baked into vertices by the
-// Tessellator. Identity means "already in pass-base space" (terrain, which gets
-// there via chunkOffset). This is STATE — Java's PoseStack top survives any
-// number of VertexConsumer draws, and so must this. Cleared at pass boundaries
-// (setDrawCameraState / setPassModelView), saved and restored by
-// ScopedDrawCameraState and RenderPassScope. See setDrawPose.
 math::Matrix4f g_drawPose{};
 float g_drawCameraPosition[3] = {0.0f, 0.0f, 0.0f};
 bool g_drawCameraValid = false;
@@ -256,10 +243,6 @@ void setDrawCameraStateFromCamera(const FrameRenderCamera& camera) {
  // The projection is built from the camera's own planes (nearPlane/farPlane set by
  // GameRenderer from the render distance, or carried by a custom shadow camera).
  buildCameraProjection(projection, camera);
- // gbufferModelView = bob * MV_camera. This IS the uploaded modelViewMatrix for the
- // whole pass — every world producer emits geometry already relative to
- // cameraPosition, so nothing else is ever folded in. Terrain gets there via
- // chunkOffset, everything else via the pose the Tessellator bakes into vertices.
  float gbufferModelView[16]{};
  buildCameraModelView(gbufferModelView, camera);
  math::Matrix4f modelView;
@@ -269,10 +252,6 @@ void setDrawCameraStateFromCamera(const FrameRenderCamera& camera) {
  math::Matrix4f projectionInverseMatrix;
  projectionInverseMatrix.set(projection);
  projectionInverseMatrix.invert();
- // The one geometry origin: Java's Camera.getPosition(). Bobbing lives to the left of
- // the camera rotation in the matrix above and never reaches this, so chunkOffset, the
- // cameraPosition uniform and the shadow map centre all stay on the same point —
- // `gbufferModelViewInverse * viewPos + cameraPosition` lands back on worldPos.
  // https://github.com/IrisShaders/Iris/blob/26.1/common/src/main/java/net/irisshaders/iris/uniforms/CameraUniforms.java
  const float cameraPosition[3] = {static_cast<float>(camera.eyeX), static_cast<float>(camera.eyeY),
                                   static_cast<float>(camera.eyeZ)};
@@ -301,12 +280,6 @@ void setPassModelView(const math::Matrix4f& modelView) noexcept {
  g_matricesUploaded = false;
  g_drawPose.identity();
 }
-// The one per-draw transform. Producers compose model -> pass-base space here and
-// the Tessellator applies it to positions and normals at emit time, exactly as
-// Java's VertexConsumer.vertex(pose, x, y, z) bakes PoseStack.last() CPU-side.
-// The uploaded modelViewMatrix is then the pass base alone, which is what lets a
-// pack cut gl_ModelViewMatrix to a mat3 and lose nothing.
-// see src/net/minecraft/client/render/Tessellator.cpp vertex
 void setDrawPose(const math::Matrix4f& pose) noexcept {
  g_drawPose = pose;
 }
@@ -363,10 +336,6 @@ void bindAndUploadUniforms(const RenderPass& pass) {
   g_matricesUploaded = false;
   return;
  }
- // One matrix source. Producers no longer hand per-draw matrices in — the pose
- // lives in the vertices — so a pass's matrices are the pass base, and its
- // inverses are the ones already computed at the pass boundary. A draw that does
- // carry its own matrix (the pack's own fullscreen/composite work) still inverts.
  const math::Matrix4f& modelView = pass.modelView;
  const math::Matrix4f& projection = pass.projection;
  const bool matricesChanged = !g_matricesUploaded || programChanged ||
@@ -447,41 +416,38 @@ void bindAndUploadUniforms(const RenderPass& pass) {
   active->set1i("renderStars", g_skyUniforms.renderStars ? 1 : 0);
   g_globalsPushed = g_globalsGeneration;
  }
-  const bool snapshotChanged = active->needsUniformSnapshot(g_programUniformGeneration);
-  activeTexture(gl::tex::Texture0);
-  const int diffuseTexture = boundTexture();
-  const std::optional<WorldProgramId> worldProgram =
-      pass.programOverride == nullptr ? g_activeWorldProgram : std::nullopt;
-  const bool materialChanged = active != g_programUniformMaterialProgram ||
-                               worldProgram != g_programUniformMaterialWorldProgram ||
-                               diffuseTexture != g_programUniformDiffuseTexture;
-  Pipeline* pipeline = shaderPipeline();
-  if((snapshotChanged || programChanged) && pipeline != nullptr && worldProgram.has_value()) {
-   pipeline->uploadWorldProgramUniforms(*active, *worldProgram);
-   if(snapshotChanged) active->markUniformSnapshotPushed(g_programUniformGeneration);
-  }
-  if(materialChanged && pipeline != nullptr && worldProgram.has_value()) {
-   pipeline->bindWorldProgramMaterial(*active, *worldProgram);
-   g_programUniformMaterialProgram = active;
-   g_programUniformMaterialWorldProgram = worldProgram;
-   g_programUniformDiffuseTexture = diffuseTexture;
-  }
-  // see third_party/mcp/iris/pipeline/programs/ShaderKey.java
-  // Gated like every other uniform group here: this runs once per section per
-  // layer per frame, and a pack that declares no fog uniforms still paid six
-  // name lookups on each one.
-  const bool fogOn = g_fog.enabled && active->fogClass();
-  if(!g_fogUploaded || programChanged || fogOn != g_uploadedFogOn ||
-     g_uploadedFog.mode != g_fog.mode || g_uploadedFog.shape != g_fog.shape ||
-     g_uploadedFog.density != g_fog.density || g_uploadedFog.start != g_fog.start ||
-     g_uploadedFog.end != g_fog.end ||
-     std::memcmp(g_uploadedFog.color, g_fog.color, sizeof(float) * 3) != 0) {
-   uploadFogUniforms(*active, g_fog, fogOn);
-   g_uploadedFog = g_fog;
-   g_uploadedFogOn = fogOn;
-   g_fogUploaded = true;
-  }
-  if(programChanged || g_uploadedEntityId != g_entityId) {
+ const bool snapshotChanged = active->needsUniformSnapshot(g_programUniformGeneration);
+ activeTexture(gl::tex::Texture0);
+ const int diffuseTexture = boundTexture();
+ const std::optional<WorldProgramId> worldProgram =
+     pass.programOverride == nullptr ? g_activeWorldProgram : std::nullopt;
+ const bool materialChanged = active != g_programUniformMaterialProgram ||
+                              worldProgram != g_programUniformMaterialWorldProgram ||
+                              diffuseTexture != g_programUniformDiffuseTexture;
+ Pipeline* pipeline = shaderPipeline();
+ if((snapshotChanged || programChanged) && pipeline != nullptr && worldProgram.has_value()) {
+  pipeline->uploadWorldProgramUniforms(*active, *worldProgram);
+  if(snapshotChanged) active->markUniformSnapshotPushed(g_programUniformGeneration);
+ }
+ if(materialChanged && pipeline != nullptr && worldProgram.has_value()) {
+  pipeline->bindWorldProgramMaterial(*active, *worldProgram);
+  g_programUniformMaterialProgram = active;
+  g_programUniformMaterialWorldProgram = worldProgram;
+  g_programUniformDiffuseTexture = diffuseTexture;
+ }
+ // see third_party/mcp/iris/pipeline/programs/ShaderKey.java
+ const bool fogOn = g_fog.enabled && active->fogClass();
+ if(!g_fogUploaded || programChanged || fogOn != g_uploadedFogOn ||
+    g_uploadedFog.mode != g_fog.mode || g_uploadedFog.shape != g_fog.shape ||
+    g_uploadedFog.density != g_fog.density || g_uploadedFog.start != g_fog.start ||
+    g_uploadedFog.end != g_fog.end ||
+    std::memcmp(g_uploadedFog.color, g_fog.color, sizeof(float) * 3) != 0) {
+  uploadFogUniforms(*active, g_fog, fogOn);
+  g_uploadedFog = g_fog;
+  g_uploadedFogOn = fogOn;
+  g_fogUploaded = true;
+ }
+ if(programChanged || g_uploadedEntityId != g_entityId) {
   active->set1i("entityId", g_entityId);
   g_uploadedEntityId = g_entityId;
  }
@@ -514,13 +480,15 @@ void submit(const RenderPass& pass) {
   return;
  }
  if(pass.buffer != 0) {
-  configureAttribs(pass.buffer, pass.byteOffset, pass.stride, pass.hasTexture, pass.hasNormals);
+  configureAttribs(pass.buffer, pass.byteOffset, pass.stride, pass.hasTexture, pass.hasNormals,
+                   pass.overrideColor, pass.colorOverride);
   const int mode = active != nullptr && active->tessellation() ? 0x000E : pass.glMode;
   if(mode == 0x000E && gl::GLCore::patchParameteri != nullptr) gl::GLCore::patchParameteri(0x8E72, 3);
   ::glDrawArrays(static_cast<GLenum>(mode), 0, static_cast<GLsizei>(pass.vertexCount));
  } else {
   uploadStreaming(pass.vertexData, pass.vertexCount * static_cast<std::size_t>(pass.stride));
-  configureAttribs(g_streamVbo.handle(), 0, pass.stride, pass.hasTexture, pass.hasNormals);
+  configureAttribs(g_streamVbo.handle(), 0, pass.stride, pass.hasTexture, pass.hasNormals,
+                   pass.overrideColor, pass.colorOverride);
   const int mode = active != nullptr && active->tessellation() ? 0x000E : pass.glMode;
   if(mode == 0x000E && gl::GLCore::patchParameteri != nullptr) gl::GLCore::patchParameteri(0x8E72, 3);
   ::glDrawArrays(static_cast<GLenum>(mode), 0, static_cast<GLsizei>(pass.vertexCount));
@@ -531,11 +499,6 @@ void submit(const RenderPass& pass) {
      ::net::minecraft::client::debug::RenderMetric::DrawVertices, pass.vertexCount);
 }
 void submitIndexedQuads(const RenderPass& pass, unsigned indexBuffer, int indexCount) {
- // Terrain sections own their VBO and draw through the shared quad index
- // buffer, so they cannot use submit()'s glDrawArrays. They must still take
- // the same uniform path: a raw glDrawElements skips bindAndUploadUniforms and
- // silently inherits the previous draw's chunkOffset, which collapses every
- // section onto whichever one uploaded last.
  if(!g_drawEnabled || !ensureReady() || pass.vertexCount == 0 || indexCount == 0 || pass.buffer == 0) {
   return;
  }
@@ -547,7 +510,8 @@ void submitIndexedQuads(const RenderPass& pass, unsigned indexBuffer, int indexC
  if(active == nullptr) {
   return;
  }
- configureAttribs(pass.buffer, pass.byteOffset, pass.stride, pass.hasTexture, pass.hasNormals);
+ configureAttribs(pass.buffer, pass.byteOffset, pass.stride, pass.hasTexture, pass.hasNormals,
+                  pass.overrideColor, pass.colorOverride);
  constexpr unsigned kElementArrayBuffer = 0x8893;
  gl::GLCore::bindBuffer(kElementArrayBuffer, indexBuffer);
  ::glDrawElements(0x0004, indexCount, 0x1405, nullptr); // GL_TRIANGLES, GL_UNSIGNED_INT
@@ -624,22 +588,29 @@ int submitIndexedQuadsBatch(const RenderPass& pass,
  if(mode == 0x000E && gl::GLCore::patchParameteri != nullptr) {
   gl::GLCore::patchParameteri(0x8E72, 3);
  }
+ // Sub-batches vs draw calls says which path ran: the multi-draw collapses a
+ // whole region into one call, the fallback issues one per section.
+ ::net::minecraft::client::debug::RenderProfiler::instance().record(
+     ::net::minecraft::client::debug::RenderMetric::DrawSubBatches,
+     static_cast<std::uint64_t>(indexCounts.size()));
  int submitted = 0;
- if(gl::GLCore::multiDrawElementsBaseVertex != nullptr && indexCounts.size() > 1) {
-  static std::vector<const void*> offsets;
-  offsets.resize(indexCounts.size(), nullptr);
-  gl::GLCore::multiDrawElementsBaseVertex(mode,
-                                          indexCounts.data(),
-                                          0x1405,
-                                          offsets.data(),
-                                          static_cast<int>(indexCounts.size()),
-                                          baseVertices.data());
-  submitted = 1;
- } else {
-  for(std::size_t i = 0; i < indexCounts.size(); ++i) {
-   gl::GLCore::drawElementsBaseVertex(mode, indexCounts[i], 0x1405, nullptr, baseVertices[i]);
+ {
+  if(gl::GLCore::multiDrawElementsBaseVertex != nullptr && indexCounts.size() > 1) {
+   static std::vector<const void*> offsets;
+   offsets.resize(indexCounts.size(), nullptr);
+   gl::GLCore::multiDrawElementsBaseVertex(mode,
+                                           indexCounts.data(),
+                                           0x1405,
+                                           offsets.data(),
+                                           static_cast<int>(indexCounts.size()),
+                                           baseVertices.data());
+   submitted = 1;
+  } else {
+   for(std::size_t i = 0; i < indexCounts.size(); ++i) {
+    gl::GLCore::drawElementsBaseVertex(mode, indexCounts[i], 0x1405, nullptr, baseVertices[i]);
+   }
+   submitted = static_cast<int>(indexCounts.size());
   }
-  submitted = static_cast<int>(indexCounts.size());
  }
  gl::GLCore::bindVertexArray(0);
  if(submitted > 0) {
@@ -853,12 +824,7 @@ void fogApplyMode(::net::minecraft::client::Minecraft* client, int mode,
   }
  } else {
   g_fog.mode = 1;
-  // Java Iris 26.1 contract (FogRenderer.setupFog -> FogStorage ->
-  // fogStart/fogEnd, FogUniforms.java): terrain fog runs from
-  // 0.75 * renderDistanceBlocks to renderDistanceBlocks exactly. The previous
-  // chunkRadius*16-8 cap / 0.65 factor ended the fog 8 blocks short of the far
-  // plane and started it ~10% closer than vanilla, so packs' vanilla_fog()
-  // packs' vanilla_fog() blended off-ratio against the real distance.
+  // see third_party/mcp/iris/uniforms/FogUniforms.java
   const float fogEnd = frame.renderDistance.fogEnd();
   if(mode < 0) {
    g_fog.start = 0.0f;
@@ -897,29 +863,28 @@ void configureAttribs(unsigned buffer,
                       std::size_t baseOffset,
                       int stride,
                       bool hasTexture,
-                      bool hasNormals) {
+                      bool hasNormals,
+                      bool overrideColor,
+                      std::uint32_t colorOverride) {
  const bool cached = g_attribCache.valid && buffer != 0 && g_attribCache.buffer == buffer &&
                      g_attribCache.baseOffset == baseOffset && g_attribCache.stride == stride &&
                      g_attribCache.hasTexture == hasTexture &&
-                     g_attribCache.hasNormals == hasNormals;
+                     g_attribCache.hasNormals == hasNormals &&
+                     g_attribCache.overrideColor == overrideColor &&
+                     g_attribCache.colorOverride == colorOverride;
  if(!cached) {
   if(g_vao.handle() != 0) {
    gl::GLCore::bindVertexArray(g_vao.handle());
   }
-  // vertexAttribPointer captures whatever is bound to GL_ARRAY_BUFFER at this
-  // instant; `buffer` names the one the offsets below belong to, so bind it
-  // here rather than trusting every caller to have done it. Forgetting left
-  // the pointers referring to client memory, which the driver dereferences as
-  // a null pointer mid-draw. The cached path needs no bind: the VAO already
-  // recorded the source buffer per attribute when the pointers were set.
   if(buffer != 0) {
    gl::GLCore::bindBuffer(kArrayBuffer, buffer);
   }
   for(const abi::Format& format : abi::Formats) {
-   const bool enabled = format.availability == abi::Availability::Always ||
-                        (format.availability == abi::Availability::Texture && hasTexture) ||
-                        (format.availability == abi::Availability::Normal && hasNormals);
-   if(!enabled) {
+   const bool enabled = format.location != abi::Color || !overrideColor;
+   const bool available = format.availability == abi::Availability::Always ||
+                          (format.availability == abi::Availability::Texture && hasTexture) ||
+                          (format.availability == abi::Availability::Normal && hasNormals);
+   if(!enabled || !available) {
     gl::GLCore::disableVertexAttribArray(format.location);
     continue;
    }
@@ -936,10 +901,19 @@ void configureAttribs(unsigned buffer,
   }
   if(!hasTexture)
    gl::GLCore::vertexAttrib4f(abi::Texture, 0.0f, 0.0f, 0.0f, 1.0f);
+  if(overrideColor) {
+   constexpr float scale = 1.0f / 255.0f;
+   gl::GLCore::vertexAttrib4f(abi::Color,
+                              static_cast<float>(colorOverride & 0xFFU) * scale,
+                              static_cast<float>((colorOverride >> 8U) & 0xFFU) * scale,
+                              static_cast<float>((colorOverride >> 16U) & 0xFFU) * scale,
+                              static_cast<float>((colorOverride >> 24U) & 0xFFU) * scale);
+  }
   gl::GLCore::disableVertexAttribArray(abi::ChunkFade);
   if(gl::GLCore::vertexAttrib4f != nullptr)
    gl::GLCore::vertexAttrib4f(abi::ChunkFade, 1.0f, 0.0f, 0.0f, 0.0f);
-  g_attribCache = AttribCache{buffer, baseOffset, stride, hasTexture, hasNormals, buffer != 0};
+  g_attribCache =
+      AttribCache{buffer, baseOffset, stride, hasTexture, hasNormals, overrideColor, colorOverride, buffer != 0};
  }
  if(!hasNormals) {
   const float* n = kDefaultNormal;
@@ -1032,17 +1006,8 @@ struct GlCache {
  bool colorMaskG = true;
  bool colorMaskB = true;
  bool colorMaskA = true;
- // OpenGL's INITIAL blend function is GL_ONE/GL_ZERO, not SRC_ALPHA/ONE_MINUS_SRC_ALPHA.
- // The dirty-cache elides glBlendFunc when cached == requested, so seeding these with the
- // engine default would let the first blendFunc(0x0302,0x0303) pass be elided and leave the
- // driver on ONE/ZERO (source replaces destination -> GUI renders opaque). Seed the cache
- // with the true GL initial state so the first request always flushes.
  int blendSrc = 0x0001; // GL_ONE
  int blendDst = 0x0000; // GL_ZERO
- // Tracked separately from the RGB pair so a pack's `blend.<program>` separate-alpha
- // factors are visible to the dirty-cache. Without these, lockBlend's
- // glBlendFuncSeparate was invisible to blendFunc(), which then elided its own call
- // whenever the RGB pair happened to match and left the pack's alpha factors live.
  int blendSrcAlpha = 0x0001; // GL_ONE
  int blendDstAlpha = 0x0000; // GL_ZERO
  bool indexedBlendDirty = false;
@@ -1443,7 +1408,7 @@ bool getCachedViewport(int outViewport[4]) {
 void getIntegerv(int pname, int* params) {
  switch(pname) {
  case 0x0BA2:
- if(g_gl.viewportValid) {
+  if(g_gl.viewportValid) {
    std::memcpy(params, g_gl.viewport, sizeof(int) * 4);
   } else {
    ::net::minecraft::client::debug::RenderProfiler::instance().record(

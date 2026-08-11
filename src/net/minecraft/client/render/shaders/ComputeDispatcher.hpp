@@ -42,20 +42,23 @@ namespace ComputeDispatcher {
  return offset + 2 == name.size() && name[offset] == '_' &&
         name[offset + 1] >= 'a' && name[offset + 1] <= 'z';
 }
-[[nodiscard]] inline std::array<unsigned int, 3> workGroups(const PackPass& pass, int width, int height) {
+// https://github.com/IrisShaders/Iris/blob/26.1/common/src/main/java/net/irisshaders/iris/gl/program/ComputeProgram.java
+[[nodiscard]] inline std::array<unsigned int, 3> workGroups(const PackPass& pass,
+                                                            const int (&localSize)[3],
+                                                            int width,
+                                                            int height) {
  if(!pass.relativeGroups) {
   return {static_cast<unsigned int>(std::max(1, pass.groups[0])),
           static_cast<unsigned int>(std::max(1, pass.groups[1])),
           static_cast<unsigned int>(std::max(1, pass.groups[2]))};
  }
- const float lx = static_cast<float>(std::max(1, pass.localSize[0]));
- const float ly = static_cast<float>(std::max(1, pass.localSize[1]));
- return {
-     static_cast<unsigned int>(
-         std::max(1, static_cast<int>(std::ceil(static_cast<float>(width) * pass.groupScale[0] / lx)))),
-     static_cast<unsigned int>(
-         std::max(1, static_cast<int>(std::ceil(static_cast<float>(height) * pass.groupScale[1] / ly)))),
-     1u};
+ const float lx = static_cast<float>(std::max(1, localSize[0]));
+ const float ly = static_cast<float>(std::max(1, localSize[1]));
+ const float scaledWidth = std::ceil(static_cast<float>(width) * pass.groupScale[0]);
+ const float scaledHeight = std::ceil(static_cast<float>(height) * pass.groupScale[1]);
+ return {static_cast<unsigned int>(std::max(1, static_cast<int>(std::ceil(scaledWidth / lx)))),
+         static_cast<unsigned int>(std::max(1, static_cast<int>(std::ceil(scaledHeight / ly)))),
+         1u};
 }
 inline constexpr unsigned int kBarrierBits = 0x2028u;
 inline constexpr unsigned int kCommandBarrierBit = 0x0040u;

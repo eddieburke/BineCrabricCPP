@@ -4,6 +4,7 @@
 #include "net/minecraft/client/gl/GLCore.hpp"
 #include "net/minecraft/client/gl/GlConstants.hpp"
 #include "net/minecraft/client/gl/GlResource.hpp"
+#include "net/minecraft/client/debug/RenderProfiler.hpp"
 #include "net/minecraft/client/render/RenderCore.hpp"
 #include "net/minecraft/util/logging/Logging.hpp"
 #include <algorithm>
@@ -12,6 +13,16 @@
 #include <string_view>
 namespace net::minecraft::client::render {
 namespace {
+const std::string& colortexName(int index) {
+ static const std::array<std::string, ColorTargets::kMaxColortex> names = [] {
+  std::array<std::string, ColorTargets::kMaxColortex> built;
+  for(int i = 0; i < ColorTargets::kMaxColortex; ++i) {
+   built[static_cast<std::size_t>(i)] = "colortex" + std::to_string(i);
+  }
+  return built;
+ }();
+ return names[static_cast<std::size_t>(index)];
+}
 void setTexParams(bool filterLinear) {
  ::glTexParameteri(gl::cap::Texture2D, gl::tex::MinFilter,
                    filterLinear ? gl::filter::Linear : gl::filter::Nearest);
@@ -27,8 +38,6 @@ void ColorTargets::destroy() {
  }
  gbufferFbo_.destroy();
  writeFbo_.destroy();
- copyReadFbo_.destroy();
- copyDrawFbo_.destroy();
  writeFboCache_.clear();
  depth_.reset();
  for(Slot& slot : slots_) {
@@ -65,6 +74,7 @@ bool ColorTargets::allocateSlot(Slot& slot, int width, int height, ColorFormat f
    return false;
   }
   slot.tex[i] = gl::GlTexture(h);
+  debug::RenderProfiler::instance().record(debug::RenderMetric::RenderTargetAllocations);
   core::bindTexture(gl::cap::Texture2D, static_cast<int>(h));
   ::glTexImage2D(gl::cap::Texture2D, 0, spec.internal, width, height, 0, spec.format, spec.type, nullptr);
   setTexParams(linear);
@@ -102,7 +112,7 @@ const ColorTargets::Slot* ColorTargets::findSlot(const std::string& name) const 
  return found == named_.end() ? nullptr : &found->second;
 }
 bool ColorTargets::ensure(int width, int height, const std::vector<ColorFormat>& formats,
-                           int gbufferColorCount) {
+                          int gbufferColorCount) {
  if(!gl::GLCore::framebufferSupported || width <= 0 || height <= 0) {
   return false;
  }
@@ -144,6 +154,7 @@ bool ColorTargets::ensure(int width, int height, const std::vector<ColorFormat>&
   destroy();
   return false;
  }
+ debug::RenderProfiler::instance().record(debug::RenderMetric::RenderTargetAllocations);
  core::bindTexture(gl::cap::Texture2D, static_cast<int>(depth_.handle()));
  ::glTexImage2D(gl::cap::Texture2D, 0, gl::framebuffer::Depth24Stencil8, width, height, 0,
                 gl::pixel::DepthStencil, gl::pixel::UnsignedInt248, nullptr);
@@ -167,11 +178,12 @@ bool ColorTargets::ensureNamed(const std::string& name, int width, int height,
    return false;
   }
   Slot& slot = slots_[static_cast<std::size_t>(index)];
+  const bool changed = !targetMatches(name, width, height, format);
   slot.scaled = width != width_ || height != height_;
   if(!allocateSlot(slot, width, height, format)) {
    return false;
   }
-  gbufferFboDirty_ = true;
+  gbufferFboDirty_ = gbufferFboDirty_ || changed;
   return true;
  }
  return allocateSlot(named_[name], width, height, format);
@@ -467,10 +479,16 @@ ColorFormat ColorTargets::formatOf(const std::string& name) const {
  const Slot* slot = findSlot(name);
  return slot == nullptr ? ColorFormat::Rgba8 : slot->format;
 }
+bool ColorTargets::targetMatches(const std::string& name, int width, int height,
+                                 ColorFormat format) const {
+ const Slot* slot = findSlot(name);
+ return slot != nullptr && slot->allocated() && slot->width == width && slot->height == height &&
+        slot->format == format;
+}
 void ColorTargets::fillReadSamplers(std::unordered_map<std::string, int>& textures, bool fullscreenPass) const {
  // https://github.com/IrisShaders/Iris/blob/26.1/common/src/main/java/net/irisshaders/iris/samplers/IrisSamplers.java
  for(int i = renderTargetSamplerStartIndex(fullscreenPass); i < colorCount(); ++i) {
-  textures["colortex" + std::to_string(i)] = static_cast<int>(readTexture(i));
+  textures[colortexName(i)] = static_cast<int>(readTexture(i));
  }
  for(const auto& [name, slot] : named_) {
   textures[name] = static_cast<int>(slot.readHandle());
@@ -478,40 +496,43 @@ void ColorTargets::fillReadSamplers(std::unordered_map<std::string, int>& textur
 }
 void ColorTargets::fillImageBindings(std::unordered_map<std::string, int>& images) const {
  for(int i = 0; i < colorCount(); ++i) {
-  images["colortex" + std::to_string(i)] = static_cast<int>(writeTexture(i));
+  images[colortexName(i)] = static_cast<int>(readTexture(i));
  }
  for(const auto& [name, slot] : named_) {
   images[name] = static_cast<int>(slot.readHandle());
  }
 }
-void ColorTargets::prepareWrite(const std::string& name) {
- Slot* slot = findSlot(name);
- if(slot == nullptr || !slot->allocated() || gl::GLCore::blitFramebuffer == nullptr) {
+void ColorTargets::applySlotFilter(Slot& slot, int side) {
+ const gl::GlTexture& tex = slot.tex[side];
+ if(!tex) {
   return;
  }
- const unsigned int src = slot->readHandle();
- const unsigned int dst = slot->writeHandle();
- copyReadFbo_.addColorAttachment(0, src);
- copyReadFbo_.readBuffer(0);
- copyDrawFbo_.addColorAttachment(0, dst);
- copyDrawFbo_.drawBuffers(std::vector<int>{0});
- copyReadFbo_.bindAsReadBuffer();
- copyDrawFbo_.bindAsDrawBuffer();
- gl::GLCore::blitFramebuffer(0, 0, slot->width, slot->height, 0, 0, slot->width, slot->height,
-                             gl::attrib::ColorBufferBit, gl::filter::Nearest);
- gl::GLCore::bindFramebuffer(static_cast<unsigned>(gl::framebuffer::ReadFramebuffer), 0);
- gl::GLCore::bindFramebuffer(static_cast<unsigned>(gl::framebuffer::DrawFramebuffer), 0);
+ const bool linear = !render::isIntegerColorFormat(slot.format);
+ const int mag = linear ? gl::filter::Linear : gl::filter::Nearest;
+ const int min = slot.mipmapsOn[side]
+                     ? (linear ? gl::filter::LinearMipmapLinear : gl::filter::NearestMipmapLinear)
+                     : mag;
+ core::bindTexture(gl::cap::Texture2D, static_cast<int>(tex.handle()));
+ ::glTexParameteri(gl::cap::Texture2D, gl::tex::MinFilter, min);
+ ::glTexParameteri(gl::cap::Texture2D, gl::tex::MagFilter, mag);
 }
 void ColorTargets::resetSlotFilters(Slot& slot) {
- const int filter = render::isIntegerColorFormat(slot.format) ? gl::filter::Nearest : gl::filter::Linear;
- for(const gl::GlTexture& tex : slot.tex) {
-  if(!tex) {
-   continue;
+ for(int side = 0; side < 2; ++side) {
+  if(slot.mipmapsOn[side]) {
+   slot.mipmapsOn[side] = false;
+   applySlotFilter(slot, side);
   }
-  core::bindTexture(gl::cap::Texture2D, static_cast<int>(tex.handle()));
-  ::glTexParameteri(gl::cap::Texture2D, gl::tex::MinFilter, filter);
-  ::glTexParameteri(gl::cap::Texture2D, gl::tex::MagFilter, filter);
  }
+}
+void ColorTargets::enableMipmaps(const std::string& name) {
+ Slot* slot = findSlot(name);
+ if(slot == nullptr || !slot->allocated() || gl::GLCore::generateMipmap == nullptr) {
+  return;
+ }
+ slot->mipmapsOn[slot->main] = true;
+ applySlotFilter(*slot, slot->main);
+ gl::GLCore::generateMipmap(gl::cap::Texture2D);
+ debug::RenderProfiler::instance().record(debug::RenderMetric::MipmapGenerations);
 }
 void ColorTargets::resetMipmaps() {
  // https://github.com/IrisShaders/Iris/blob/26.1/common/src/main/java/net/irisshaders/iris/pipeline/FinalPassRenderer.java

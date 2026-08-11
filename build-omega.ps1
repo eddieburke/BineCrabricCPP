@@ -1,4 +1,4 @@
-param([string]$BuildDir="build-omega",[ValidateSet("Release","RelWithDebInfo","Debug")][string]$BuildType="Release",[int]$Jobs=0,[switch]$Clean,[switch]$Lto,[switch]$NoLto,[switch]$NoNativeCpu,[switch]$RunTests,[switch]$SkipModPackaging,[switch]$SkipResourceSync,[switch]$KeepDebugSymbols,[switch]$StripSymbols,[switch]$Log,[switch]$Gui,[switch]$Run,[switch]$NoGui,[switch]$CleanOnly,[switch]$Format,[string]$ModId="",[switch]$NoModDeploy,[ValidateSet("All","Client","Server")][string]$Target="All",[Parameter(ValueFromRemainingArguments=$true)][string[]]$RunArgs)
+param([string]$BuildDir="build-omega",[ValidateSet("Release","RelWithDebInfo","Debug")][string]$BuildType="Release",[int]$Jobs=0,[switch]$Clean,[switch]$Lto,[switch]$NoLto,[switch]$NoNativeCpu,[switch]$RunTests,[string]$TestFilter="",[switch]$SkipModPackaging,[switch]$SkipResourceSync,[switch]$KeepDebugSymbols,[switch]$StripSymbols,[switch]$Log,[switch]$Gui,[switch]$Run,[switch]$NoGui,[switch]$CleanOnly,[switch]$Format,[string]$ModId="",[switch]$NoModDeploy,[ValidateSet("All","Client","Server")][string]$Target="All",[Parameter(ValueFromRemainingArguments=$true)][string[]]$RunArgs)
 $ErrorActionPreference="Stop"
 $ScriptDir=Split-Path -Parent $MyInvocation.MyCommand.Path
 sl $ScriptDir
@@ -221,7 +221,7 @@ if ($Gui) {
             NoNativeCpu      = "Portable build (do not use -march=native)"
             KeepDebugSymbols = "Keep debug symbols in Release builds"
             Log              = "Save the full build log to build-omega-last.log"
-            RunTests         = "Run the test suite after building"
+            RunTests         = "Build the tests (add -TestFilter to run a subset instead of the whole suite)"
             SkipResourceSync = "Skip copying resources to %APPDATA%\\.minecraft"
             SkipModPackaging = "Skip packaging and deploying mods"
         }
@@ -553,12 +553,25 @@ Write-Host "Building $($tt -join ', ') (-j $Jobs) ..."
 if($LASTEXITCODE -ne 0){$exitCode=$LASTEXITCODE}
 else{
 $ba="$ScriptDir\$BuildDir"
+if($TestFilter -ne ""){
+# Targeted run: drive the gtest binary directly. ctest re-launches one process per
+# test case and holds the build lock for the whole suite, so a full pass blocks the
+# next rebuild for 10+ minutes and restores the previous binary on the way out.
+$te="$ScriptDir\$BuildDir\minecraft_omega_tests.exe"
+if(!(Test-Path -Li $te)){Write-Host "Test binary not found at $te" -ForegroundColor Red;$exitCode=1}
+else{
+Write-Host "Running tests matching '$TestFilter' ..."
+&$te --gtest_filter=$TestFilter --gtest_brief=1
+if($LASTEXITCODE -ne 0){$exitCode=$LASTEXITCODE}
+}
+}else{
 Write-Host "Running ctest in $BuildDir ..."
 Push-Location $ba
 try{
 if(!(Test-Path -Li $CtestExe)){Write-Host "Bundled ctest not found at $CtestExe" -ForegroundColor Red;$exitCode=1}
 else{&$CtestExe --output-on-failure;if($LASTEXITCODE -ne 0){$exitCode=$LASTEXITCODE}}
 }finally{Pop-Location}
+}
 }
 }
 }

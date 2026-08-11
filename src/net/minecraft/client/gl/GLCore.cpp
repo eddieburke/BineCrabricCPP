@@ -90,6 +90,8 @@ GLFN(PFN_BeginQuery, beginQuery);
 GLFN(PFN_EndQuery, endQuery);
 GLFN(PFN_GetQueryObjectiv, getQueryObjectiv);
 GLFN(PFN_GetQueryObjectui64v, getQueryObjectui64v);
+GLFN(PFN_QueryCounter, queryCounter);
+GLFN(PFN_CopyImageSubData, copyImageSubData);
 GLFN(PFN_DispatchCompute, dispatchCompute);
 GLFN(PFN_DispatchComputeIndirect, dispatchComputeIndirect);
 GLFN(PFN_MemoryBarrier, memoryBarrier);
@@ -142,12 +144,6 @@ void GLCore::init() {
  if(wglGetCurrentContext() == nullptr) {
   return;
  }
- // ensureLoaded() sits on hot paths — Window::present() every frame, RenderCore's
- // ensureReady()/ensureFullscreenResources() per batch — so the whole entry-point
- // load has to run exactly once. Without this latch every frame re-ran ~120
- // wglGetProcAddress lookups, re-parsed the extension string and re-issued
- // glMaxShaderCompilerThreadsKHR, which the driver serialises against.
- // Main-thread-only (it latches the main-thread marker below), so a plain bool.
  static bool loaded = false;
  if(loaded) {
   return;
@@ -254,6 +250,10 @@ void GLCore::init() {
  LOAD_TRY(endQuery, "glEndQuery", "glEndQueryARB");
  LOAD_TRY(getQueryObjectiv, "glGetQueryObjectiv", "glGetQueryObjectivARB");
  LOAD_TRY(getQueryObjectui64v, "glGetQueryObjectui64v", "glGetQueryObjectui64vEXT");
+ LOAD_TRY(queryCounter, "glQueryCounter", "glQueryCounterARB");
+ // DepthCopyStrategy.fastest probes the FUNCTION, not the version: a 3.2
+ // forward-compatible context reports OpenGL43 false while still exporting this.
+ LOAD_TRY(copyImageSubData, "glCopyImageSubData", "glCopyImageSubDataARB", "glCopyImageSubDataEXT", "glCopyImageSubDataNV");
  LOAD_TRY(dispatchCompute, "glDispatchCompute");
  LOAD_TRY(dispatchComputeIndirect, "glDispatchComputeIndirect");
  LOAD_TRY(memoryBarrier, "glMemoryBarrier");
@@ -276,26 +276,26 @@ void GLCore::init() {
  vaoSupported = genVertexArrays && bindVertexArray && deleteVertexArrays;
  timerQuerySupported =
      genQueries && deleteQueries && beginQuery && endQuery && getQueryObjectiv && getQueryObjectui64v;
-  shaderSupported = createShader && shaderSource && compileShader && createProgram && linkProgram && useProgram &&
-                    getUniformLocation && vertexAttribPointer && vertexAttribIPointer && enableVertexAttribArray;
-  computeSupported = shaderSupported && dispatchCompute && memoryBarrier;
-  instancedDrawSupported = shaderSupported && drawArraysInstanced && vertexAttribDivisor;
-  // Java: IrisRenderSystem.supportsSSBO() = OpenGL44 || (ARB_SSBO && ARB_buffer_storage).
-  // clearBufferSubData is required because the SSBO holder always zero-fills with it.
-  ssboSupported = shaderSupported && bindBufferBase && bufferStorage && clearBufferSubData;
-  asyncReadbackSupported = vboSupported && mapBufferRange && unmapBuffer && fenceSync && clientWaitSync && deleteSync;
-  // Java: SamplerLimits queries GL_MAX_SHADER_STORAGE_BUFFER_BINDINGS when SSBO is supported.
-  int maxStorageUnits = 0;
-  if(ssboSupported) {
-   ::glGetIntegerv(0x90DD, &maxStorageUnits);
-  }
-  maxShaderStorageUnits = maxStorageUnits;
+ shaderSupported = createShader && shaderSource && compileShader && createProgram && linkProgram && useProgram &&
+                   getUniformLocation && vertexAttribPointer && vertexAttribIPointer && enableVertexAttribArray;
+ computeSupported = shaderSupported && dispatchCompute && memoryBarrier;
+ instancedDrawSupported = shaderSupported && drawArraysInstanced && vertexAttribDivisor;
+ // Java: IrisRenderSystem.supportsSSBO() = OpenGL44 || (ARB_SSBO && ARB_buffer_storage).
+ // clearBufferSubData is required because the SSBO holder always zero-fills with it.
+ ssboSupported = shaderSupported && bindBufferBase && bufferStorage && clearBufferSubData;
+ asyncReadbackSupported = vboSupported && mapBufferRange && unmapBuffer && fenceSync && clientWaitSync && deleteSync;
+ // Java: SamplerLimits queries GL_MAX_SHADER_STORAGE_BUFFER_BINDINGS when SSBO is supported.
+ int maxStorageUnits = 0;
+ if(ssboSupported) {
+  ::glGetIntegerv(0x90DD, &maxStorageUnits);
+ }
+ maxShaderStorageUnits = maxStorageUnits;
  samplerObjectsSupported = genSamplers && deleteSamplers && bindSampler && samplerParameteri;
  perBufferBlendingSupported = blendFunci != nullptr;
-  if(maxShaderCompilerThreadsKHR != nullptr) {
-   const unsigned threads = net::minecraft::util::concurrent::ThreadCoordinator::instance().budget().glDriverThreads();
-   maxShaderCompilerThreadsKHR(threads);
-  }
+ if(maxShaderCompilerThreadsKHR != nullptr) {
+  const unsigned threads = net::minecraft::util::concurrent::ThreadCoordinator::instance().budget().glDriverThreads();
+  maxShaderCompilerThreadsKHR(threads);
+ }
 }
 #undef LOAD_TRY
 void GLCore::ensureLoaded() {

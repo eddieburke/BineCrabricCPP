@@ -12,8 +12,10 @@
 #include <unordered_map>
 #include <vector>
 #include "net/minecraft/client/InteractionManager.hpp"
+#include "net/minecraft/client/ClientLaunchOptions.hpp"
 #include "net/minecraft/client/core/ScreenStack.hpp"
 #include "net/minecraft/client/core/WorldSession.hpp"
+#include "net/minecraft/client/debug/PerformanceCapture.hpp"
 #include "net/minecraft/client/font/TextRenderer.hpp"
 #include "net/minecraft/client/gui/hud/InGameHud.hpp"
 #include "net/minecraft/client/gui/hud/toast/AchievementToast.hpp"
@@ -90,6 +92,11 @@ class Minecraft {
  void gameCrashed(const net::minecraft::util::crash::CrashReport& crashReport);
  virtual void handleCrash(const net::minecraft::util::crash::CrashReport& crashReport) = 0;
  void setStartupServer(const std::string& address, int port);
+ void setStartupWorld(const std::string& save, std::int64_t seed);
+ void configureStartup(const StartupOptions& options);
+ [[nodiscard]] bool headlessMode() const noexcept {
+  return headlessMode_;
+ }
  void init();
  [[nodiscard]] static std::filesystem::path getRunDirectory();
  [[nodiscard]] static std::filesystem::path getApplicationDirectory(const std::string& name);
@@ -128,7 +135,10 @@ class Minecraft {
  [[nodiscard]] std::string getWorldDebugInfo() const;
  void respawnPlayer(bool worldSpawn, int dimension);
  static void start(const std::string& username, const std::string& sessionId);
- static void startAndConnect(const std::string& username, const std::string& sessionId, const std::string* server);
+ static void startAndConnect(const std::string& username,
+                             const std::string& sessionId,
+                             const std::string* server,
+                             const StartupOptions& startupOptions = {});
  static int main(int argc, char** argv);
  [[nodiscard]] static bool isDisplayGui();
  [[nodiscard]] static bool isFancyGraphicsEnabled();
@@ -233,6 +243,13 @@ class Minecraft {
  std::unique_ptr<host::ServerProcessCoordinator> serverProcessCoordinator_;
  std::string startupServerAddress_;
  int startupServerPort = 0;
+ void openStartupWorld();
+ std::string startupWorldSave_;
+ std::int64_t startupWorldSeed_ = 0;
+ bool forceDebugHud_ = false;
+ bool headlessMode_ = false;
+ StartupOptions startupOptions_{};
+ debug::PerformanceCapture performanceCapture_{};
  render::texture::WaterSprite waterSprite_{};
  render::texture::LavaSprite lavaSprite_{};
 };

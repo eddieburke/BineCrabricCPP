@@ -57,7 +57,7 @@ class ChunkSectionSystem {
  }
  void clearSections();
  void reloadIfViewDistanceChanged();
- void resetSectionFrontier() noexcept {
+ void resetCameraSection() noexcept {
   centerSectionX_ = std::numeric_limits<int>::min();
   centerSectionZ_ = std::numeric_limits<int>::min();
  }
@@ -69,7 +69,7 @@ class ChunkSectionSystem {
  }
  void pushCullState();
  void popCullState();
- void cullChunks(Frustum* culler, bool updateFrontier = true);
+ void cullChunks(Frustum* culler, bool updateGraph = true);
  void markDirty(int minX, int minY, int minZ, int maxX, int maxY, int maxZ);
  void blockUpdate(int x, int y, int z);
  void setBlocksDirty(int minX, int minY, int minZ, int maxX, int maxY, int maxZ);
@@ -83,9 +83,8 @@ class ChunkSectionSystem {
  [[nodiscard]] bool empty() const noexcept {
   return sections_.empty();
  }
- [[nodiscard]] int renderRadiusChunks() const noexcept;
  [[nodiscard]] const std::vector<chunk::ChunkBuilder*>& visibleSections() const noexcept {
-  return visibleSections_;
+  return cullStateSaved_ ? scopedVisibleSections_ : regularVisibleSections_;
  }
  [[nodiscard]] const std::vector<chunk::ChunkBuilder*>& sectionsByPriority() const noexcept {
   return sectionsByPriority_;
@@ -93,23 +92,27 @@ class ChunkSectionSystem {
  void drainBorderRefresh();
 
  private:
-  [[nodiscard]] const net::minecraft::entity::LivingEntity* frontierCamera() const;
-  bool updateSectionFrontier();
+ [[nodiscard]] const net::minecraft::entity::LivingEntity* frontierCamera() const;
+ bool updateCameraSection();
  void drainPendingColumns();
  void createColumn(int sectionX, int sectionZ);
  void removeColumn(int sectionX, int sectionZ);
  void enqueueColumn(int sectionX, int sectionZ);
  void rebuildSectionOrder(const net::minecraft::Vec3d& camPos);
  void updateDebugCounts();
+ void updateProfileMetrics(bool shadowPass);
  void applyOcclusionCulling(Frustum* culler, const net::minecraft::Vec3d& camPos, double bypassSq);
+ [[nodiscard]] std::vector<chunk::ChunkBuilder*>& currentVisibleSections() noexcept {
+  return cullStateSaved_ ? scopedVisibleSections_ : regularVisibleSections_;
+ }
  [[nodiscard]] chunk::ChunkBuilder* sectionAt(int sectionX, int sectionY, int sectionZ);
  TerrainScene& scene_;
  ChunkCompilePipeline* compilePipeline_ = nullptr;
  std::unordered_map<world::SectionPos, std::shared_ptr<chunk::ChunkBuilder>, world::SectionPosHash> sections_{};
  std::unordered_map<world::SectionPos, std::unique_ptr<chunk::TerrainRegion>, world::SectionPosHash> regions_{};
- std::vector<chunk::ChunkBuilder*> visibleSections_{};
+ std::vector<chunk::ChunkBuilder*> regularVisibleSections_{};
+ std::vector<chunk::ChunkBuilder*> scopedVisibleSections_{};
  std::vector<chunk::ChunkBuilder*> sectionsByPriority_{};
- std::vector<chunk::ChunkBuilder*> savedVisibleSections_{};
  bool cullStateSaved_ = false;
  std::deque<world::SectionPos> pendingColumns_{};
  std::unordered_set<world::SectionPos, world::SectionPosHash> pendingSet_{};
@@ -123,9 +126,9 @@ class ChunkSectionSystem {
  int invisibleChunkCount = 0;
  int compiledChunkCount = 0;
  int emptyChunkCount = 0;
-  int occlusionStamp_ = 0;
-  std::vector<chunk::ChunkBuilder*> occlusionQueue_{};
-  int meshOrderStamp_ = 0;
-  bool sectionsChanged_ = true;
+ int occlusionStamp_ = 0;
+ std::vector<chunk::ChunkBuilder*> occlusionQueue_{};
+ int meshOrderStamp_ = 0;
+ bool sectionsChanged_ = true;
 };
 } // namespace net::minecraft::client::render

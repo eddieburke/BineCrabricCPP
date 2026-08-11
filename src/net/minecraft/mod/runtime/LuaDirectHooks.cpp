@@ -800,6 +800,62 @@ void luaHookEntityTeleport(EntityTeleportEvent& e) {
  (void)e;
 #endif
 }
+void luaHookCelestialState(CelestialStateEvent& e) {
+ runLuaHook(
+     LuaEventId::CelestialState,
+     e,
+     [](lua_State* state, CelestialStateEvent& ev) {
+      setFields(state,
+                "tick_delta",
+                ev.tickDelta,
+                "celestial_angle",
+                ev.celestialAngle,
+                "sun_angle",
+                ev.sunAngle,
+                "shadow_angle",
+                ev.shadowAngle,
+                "moon_phase",
+                ev.moonPhase,
+                "sun_x",
+                ev.sunX,
+                "sun_y",
+                ev.sunY,
+                "sun_z",
+                ev.sunZ,
+                "moon_x",
+                ev.moonX,
+                "moon_y",
+                ev.moonY,
+                "moon_z",
+                ev.moonZ,
+                "is_day",
+                ev.day,
+                "override_directions",
+                ev.overrideDirections);
+      setWorldContextFields(state, ev.world);
+     },
+     [](lua_State* state, CelestialStateEvent& ev) {
+      readFields(state,
+                 "moon_phase",
+                 ev.moonPhase,
+                 "sun_x",
+                 ev.sunX,
+                 "sun_y",
+                 ev.sunY,
+                 "sun_z",
+                 ev.sunZ,
+                 "moon_x",
+                 ev.moonX,
+                 "moon_y",
+                 ev.moonY,
+                 "moon_z",
+                 ev.moonZ,
+                 "is_day",
+                 ev.day,
+                 "override_directions",
+                 ev.overrideDirections);
+     });
+}
 void luaHookWorldColor(WorldColorEvent& e) {
  runLuaHook(
      LuaEventId::WorldColor,
@@ -993,9 +1049,46 @@ void luaHookWorldRender(WorldRenderEvent& e) {
     })) {
   return;
  }
- const ModDrawLayer drawLayer =
-     e.stage == WorldRenderStage::Clouds ? ModDrawLayer::Clouds : ModDrawLayer::Auto;
+ const ModDrawLayer drawLayer = e.stage == WorldRenderStage::Clouds
+                                    ? ModDrawLayer::Clouds
+                                    : e.stage == WorldRenderStage::Sky || e.stage == WorldRenderStage::Stars
+                                          ? ModDrawLayer::Sky
+                                          : ModDrawLayer::Auto;
  ScopedModWorldDrawContext worldDrawScope{e.world, e.tickDelta, drawLayer};
+ client::render::core::RenderStage renderStage = client::render::core::RenderStage::None;
+ switch(e.stage) {
+ case WorldRenderStage::Sky:
+  renderStage = client::render::core::RenderStage::Sky;
+  break;
+ case WorldRenderStage::Stars:
+  renderStage = client::render::core::RenderStage::Stars;
+  break;
+ case WorldRenderStage::OpaqueTerrain:
+  renderStage = client::render::core::RenderStage::TerrainSolid;
+  break;
+ case WorldRenderStage::Entities:
+  renderStage = client::render::core::RenderStage::Entities;
+  break;
+ case WorldRenderStage::LitParticles:
+ case WorldRenderStage::Particles:
+  renderStage = client::render::core::RenderStage::Particles;
+  break;
+ case WorldRenderStage::TranslucentTerrain:
+  renderStage = client::render::core::RenderStage::TerrainTranslucent;
+  break;
+ case WorldRenderStage::Weather:
+  renderStage = client::render::core::RenderStage::RainSnow;
+  break;
+ case WorldRenderStage::Clouds:
+  renderStage = client::render::core::RenderStage::Clouds;
+  break;
+ case WorldRenderStage::Hand:
+  renderStage = client::render::core::RenderStage::HandSolid;
+  break;
+ case WorldRenderStage::Framebuffer:
+  break;
+ }
+ const client::render::core::RenderStageScope renderStageScope(renderStage);
  std::optional<ModContextScope> contextScope;
  if(e.world != nullptr) {
   contextScope.emplace(e.world, nullptr);
@@ -1013,7 +1106,19 @@ void luaHookWorldRender(WorldRenderEvent& e) {
                 "cancel_vanilla",
                 e.cancelVanilla,
                 "vanilla_stage_ran",
-                e.vanillaStageRan);
+                e.vanillaStageRan,
+                "star_brightness",
+                e.starBrightness,
+                "rain_strength",
+                e.rainStrength,
+                "astronomy_enabled",
+                e.astronomyEnabled,
+                "astronomy_utc_millis",
+                e.astronomyUtcMillis,
+                "observer_latitude_deg",
+                e.observerLatitudeDeg,
+                "observer_longitude_deg",
+                e.observerLongitudeDeg);
       setWorldContextFields(state, e.world);
       const client::render::FrameRenderCamera& frameCamera =
           client::render::core::cameraFrame();
@@ -1039,6 +1144,29 @@ void luaHookWorldRender(WorldRenderEvent& e) {
                  "cloud_base_height",
                  e.world->dimension != nullptr ? static_cast<double>(e.world->dimension->getCloudHeight()) : 0.0);
       }
+      const client::render::CelestialState& celestial = client::render::core::celestialState();
+      setFields(state,
+                "sun_x",
+                celestial.sunDirectionWorld[0],
+                "sun_y",
+                celestial.sunDirectionWorld[1],
+                "sun_z",
+                celestial.sunDirectionWorld[2],
+                "moon_x",
+                celestial.moonDirectionWorld[0],
+                "moon_y",
+                celestial.moonDirectionWorld[1],
+                "moon_z",
+                celestial.moonDirectionWorld[2]);
+      if(client::Minecraft::INSTANCE != nullptr) {
+       const std::string& selectedPack = client::Minecraft::INSTANCE->options.shaderPack;
+       const bool shaderPackActive = !selectedPack.empty() && selectedPack != "vanilla" && selectedPack != "off";
+       setFields(state,
+                 "shader_pack_active",
+                 shaderPackActive,
+                 "shader_pack_name",
+                 shaderPackActive ? selectedPack : std::string("vanilla"));
+      }
 #endif
       setFields(state,
                 "camera_x",
@@ -1063,7 +1191,23 @@ void luaHookWorldRender(WorldRenderEvent& e) {
                 frameCamera.customView);
      },
      [&e](lua_State* state) {
-      readField(state, "cancel_vanilla", e.cancelVanilla);
+      readFields(state,
+                 "cancel_vanilla",
+                 e.cancelVanilla,
+                 "star_brightness",
+                 e.starBrightness,
+                 "rain_strength",
+                 e.rainStrength,
+                 "astronomy_enabled",
+                 e.astronomyEnabled,
+                 "astronomy_utc_millis",
+                 e.astronomyUtcMillis,
+                 "observer_latitude_deg",
+                 e.observerLatitudeDeg,
+                 "observer_longitude_deg",
+                 e.observerLongitudeDeg);
+      e.starBrightness = std::isfinite(e.starBrightness) ? std::clamp(e.starBrightness, 0.0f, 1.0f) : 0.0f;
+      e.rainStrength = std::isfinite(e.rainStrength) ? std::clamp(e.rainStrength, 0.0f, 1.0f) : 0.0f;
      },
      stageBit,
      momentBit);

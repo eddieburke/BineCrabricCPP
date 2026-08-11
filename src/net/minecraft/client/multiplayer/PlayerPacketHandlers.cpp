@@ -1,7 +1,3 @@
-// ClientNetworkHandler packet handlers for the local player: server position
-// corrections, respawn (deferred out of the world tick), spawn position, health,
-// sleep and stat increments. Split out of ClientNetworkHandler.cpp for separation of
-// concerns; see ClientNetworkHandlerInternal.hpp.
 #include <memory>
 #include "net/minecraft/client/Minecraft.hpp"
 #include "net/minecraft/client/gui/screen/DownloadingTerrainScreen.hpp"
@@ -20,11 +16,6 @@ namespace net::minecraft::client::multiplayer {
 using namespace detail;
 std::unique_ptr<Packet> makePlayerMoveResponsePacket(const PlayerMovePacket& packet,
                                                      const entity::player::ClientPlayerEntity& player) {
- // Java ClientNetworkHandler.onPlayerMove echoes packet.y = boundingBox.minY (feet) and
- // packet.eyeHeight = player.y (eye). Since the entity refactor player.y IS the eye, so the
- // feet value must come off the bounding box. The server's teleport confirmation compares
- // this field against teleportTargetY; a 1.62 mismatch leaves it stuck un-teleported and it
- // never runs playerTick(true), which is the only thing that streams chunk data.
  const double feetY = player.boundingBox.minY;
  const double stance = player.getEyeY();
  if(packet.changePosition && packet.changeLook) {
@@ -82,7 +73,7 @@ void ClientNetworkHandler::onPlayerMove(const PlayerMovePacket& packet) {
   started = true;
   minecraft->setScreen(nullptr);
   if(minecraft->worldRenderer != nullptr) {
-   minecraft->worldRenderer->sections().resetSectionFrontier();
+   minecraft->worldRenderer->sections().resetCameraSection();
   }
   if(world != nullptr) {
    const int px = MathHelper::floor(player->x);

@@ -228,11 +228,6 @@ void World::addPlayer(PlayerEntity* player) {
  }
  try {
   if(const NbtCompound* playerNbt = properties_.getPlayerNbt(); playerNbt != nullptr) {
-   // Terrain was prepared around wherever the entity was constructed, not around the
-   // position about to be restored, so make the saved position's chunk resident first.
-   // readNbt wakes a sleeping player, and that has to see the real bed and the real
-   // blocks around it: an unloaded chunk reads as air, so it fell back to "one above
-   // the bed" and every collision check below silently found nothing to collide with.
    if(const Nbt* pos = playerNbt->storage().get("Pos");
       pos != nullptr && pos->isList() && pos->asList().size() >= 3) {
     const auto& posList = pos->asList();
@@ -507,24 +502,6 @@ void World::loadChunksNearEntity(Entity* entity) {
  if(chunkCache_ != nullptr) {
   chunkCache_->setActiveRadius(chunkResidentRadiusChunks_);
   chunkCache_->prefetchChunksNear(chunkX, chunkZ);
- } else {
-  const int radius = chunkResidentRadiusChunks_;
-  constexpr int kMaxPreloadsPerCall = 8;
-  int preloaded = 0;
-  for(int ring = 0; ring <= radius && preloaded < kMaxPreloadsPerCall; ++ring) {
-   for(int dx = -ring; dx <= ring && preloaded < kMaxPreloadsPerCall; ++dx) {
-    for(int dz = -ring; dz <= ring && preloaded < kMaxPreloadsPerCall; ++dz) {
-     if(std::max(std::abs(dx), std::abs(dz)) != ring) {
-      continue;
-     }
-     if(hasChunk(chunkX + dx, chunkZ + dz)) {
-      continue;
-     }
-     [[maybe_unused]] Chunk& chunk = getChunk(chunkX + dx, chunkZ + dz);
-     ++preloaded;
-    }
-   }
-  }
  }
  if(std::find(entities_.begin(), entities_.end(), entity) == entities_.end()) {
   spawnEntity(entity);

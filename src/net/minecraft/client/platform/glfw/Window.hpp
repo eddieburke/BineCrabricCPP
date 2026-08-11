@@ -27,6 +27,7 @@ class Window {
  static void setFullscreen(bool value);
  static void setDisplayMode(const DisplayMode& mode);
  static void setTitle(const char* title);
+ static void setVisible(bool visible);
  static void setResizeCallback(ResizeCallback callback);
  static void setDeactivateCallback(DeactivateCallback callback);
  static void create();

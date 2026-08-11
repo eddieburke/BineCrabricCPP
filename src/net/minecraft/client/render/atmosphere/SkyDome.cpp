@@ -150,7 +150,35 @@ void drawBackgroundFan(const AtmosphereContext& ctx, float tickDelta, const std:
  }
  tessellator.draw();
 }
-void drawSunMoon(const AtmosphereContext& ctx, float starAlpha) {
+void drawCelestialQuad(Tessellator& tessellator, const float direction[3], double halfSize, bool moon) {
+ const double center[3] = {static_cast<double>(direction[0]) * 100.0,
+                           static_cast<double>(direction[1]) * 100.0,
+                           static_cast<double>(direction[2]) * 100.0};
+ const double view[3] = {-direction[0], -direction[1], -direction[2]};
+ const double reference[3] = {0.0, std::abs(view[1]) < 0.99 ? 1.0 : 0.0,
+                              std::abs(view[1]) < 0.99 ? 0.0 : 1.0};
+ double right[3] = {view[1] * reference[2] - view[2] * reference[1],
+                    view[2] * reference[0] - view[0] * reference[2],
+                    view[0] * reference[1] - view[1] * reference[0]};
+ const double rightLength = std::sqrt(right[0] * right[0] + right[1] * right[1] + right[2] * right[2]);
+ for(double& value : right) {
+  value = value / rightLength * halfSize;
+ }
+ const double up[3] = {right[1] * view[2] - right[2] * view[1],
+                       right[2] * view[0] - right[0] * view[2],
+                       right[0] * view[1] - right[1] * view[0]};
+ const double u0 = moon ? 1.0 : 0.0;
+ const double u1 = moon ? 0.0 : 1.0;
+ tessellator.vertex(center[0] - right[0] + up[0], center[1] - right[1] + up[1],
+                    center[2] - right[2] + up[2], u0, 0.0);
+ tessellator.vertex(center[0] + right[0] + up[0], center[1] + right[1] + up[1],
+                    center[2] + right[2] + up[2], u1, 0.0);
+ tessellator.vertex(center[0] + right[0] - up[0], center[1] + right[1] - up[1],
+                    center[2] + right[2] - up[2], u1, 1.0);
+ tessellator.vertex(center[0] - right[0] - up[0], center[1] - right[1] - up[1],
+                    center[2] - right[2] - up[2], u0, 1.0);
+}
+void drawSunMoon(const AtmosphereContext& ctx, float starAlpha, const render::CelestialState& celestial) {
  Tessellator& tessellator = Tessellator::INSTANCE;
  if(ctx.settings.renderSun) {
   const core::RenderStageScope stage(core::RenderStage::Sun);
@@ -160,10 +188,7 @@ void drawSunMoon(const AtmosphereContext& ctx, float starAlpha) {
   }
   tessellator.startQuads();
   tessellator.color(1.0f, 1.0f, 1.0f, starAlpha);
-  tessellator.vertex(-30.0, 100.0, -30.0, 0.0, 0.0);
-  tessellator.vertex(30.0, 100.0, -30.0, 1.0, 0.0);
-  tessellator.vertex(30.0, 100.0, 30.0, 1.0, 1.0);
-  tessellator.vertex(-30.0, 100.0, 30.0, 0.0, 1.0);
+  drawCelestialQuad(tessellator, celestial.sunDirectionWorld, 30.0, false);
   tessellator.draw();
  }
  if(ctx.settings.renderMoon) {
@@ -174,10 +199,7 @@ void drawSunMoon(const AtmosphereContext& ctx, float starAlpha) {
   }
   tessellator.startQuads();
   tessellator.color(1.0f, 1.0f, 1.0f, starAlpha);
-  tessellator.vertex(-20.0, -100.0, 20.0, 1.0, 1.0);
-  tessellator.vertex(20.0, -100.0, 20.0, 0.0, 1.0);
-  tessellator.vertex(20.0, -100.0, -20.0, 0.0, 0.0);
-  tessellator.vertex(-20.0, -100.0, -20.0, 1.0, 0.0);
+  drawCelestialQuad(tessellator, celestial.moonDirectionWorld, 20.0, true);
   tessellator.draw();
  }
 }
@@ -187,10 +209,6 @@ void renderSkyDome(const AtmosphereContext& ctx, float tickDelta) {
     ctx.world->dimension->isNether) {
   return;
  }
- // Reader only. GameRenderer::updateSunLight owns the sun and publishes it before
- // this runs; writing SunLight/sunDirection here raced it, and only when the sky was
- // actually being drawn.
- // see src/net/minecraft/client/render/celestial/CelestialState.hpp
  const float celestialAngle = render::core::celestialState().celestialAngle;
  const Vec3d sky = ctx.world->getSkyColor(ctx.camera, tickDelta);
  const float skyR = static_cast<float>(sky.x);
@@ -215,7 +233,7 @@ void renderSkyDome(const AtmosphereContext& ctx, float tickDelta) {
  }
  if(ctx.settings.renderSky) {
   core::setConstColor(skyR, skyG, skyB, 1.0f);
-  Tessellator::drawMesh(meshes.lightSky);
+  Tessellator::drawMesh(meshes.lightSky, core::constColorPacked());
   {
    core::enableBlend();
    core::blendAlpha();
@@ -226,22 +244,43 @@ void renderSkyDome(const AtmosphereContext& ctx, float tickDelta) {
   }
  }
  {
-  const core::ScopedDrawCameraState sunMoonGuard;
-  net::minecraft::util::math::Matrix4f sunMoonPose = core::drawPose();
-  sunMoonPose.rotate(-90.0f, 0.0f, 1.0f, 0.0f);
-  sunMoonPose.rotate(celestialAngle * 360.0f, 1.0f, 0.0f, 0.0f);
-  core::setDrawPose(sunMoonPose);
-  {
-   const RenderPassScope sunMoonPass(RenderType::skyTextured());
-   drawSunMoon(ctx, starAlpha);
-  }
- }
- if(starBrightness > 0.0f && ctx.settings.renderStars) {
-  const core::RenderStageScope stage(core::RenderStage::Stars);
-  core::setConstColor(starBrightness, starBrightness, starBrightness, starBrightness);
-  Tessellator::drawMesh(meshes.stars);
+  const RenderPassScope sunMoonPass(RenderType::skyTextured());
+  drawSunMoon(ctx, starAlpha, render::core::celestialState());
  }
  core::disableBlend();
+ core::depthMask(true);
+}
+void renderSkyStars(const AtmosphereContext& ctx, float, float starBrightness) {
+ if(ctx.world == nullptr || ctx.world->dimension == nullptr || ctx.camera == nullptr ||
+    ctx.world->dimension->isNether || starBrightness <= 0.0f) {
+  return;
+ }
+ const RenderPassScope skyPass(RenderType::sky());
+ core::depthMask(false);
+ SkyMeshes& meshes = skyMeshes();
+ if(!meshes.built) {
+  buildSkyDomes(meshes);
+ }
+ const core::RenderStageScope stage(core::RenderStage::Stars);
+ core::setConstColor(starBrightness, starBrightness, starBrightness, starBrightness);
+ Tessellator::drawMesh(meshes.stars, core::constColorPacked());
+ core::depthMask(true);
+}
+void renderSkyVoid(const AtmosphereContext& ctx, float tickDelta) {
+ if(ctx.world == nullptr || ctx.world->dimension == nullptr || ctx.camera == nullptr ||
+    ctx.world->dimension->isNether || !ctx.settings.renderSky) {
+  return;
+ }
+ const Vec3d sky = ctx.world->getSkyColor(ctx.camera, tickDelta);
+ const float skyR = static_cast<float>(sky.x);
+ const float skyG = static_cast<float>(sky.y);
+ const float skyB = static_cast<float>(sky.z);
+ const RenderPassScope skyPass(RenderType::sky());
+ core::depthMask(false);
+ SkyMeshes& meshes = skyMeshes();
+ if(!meshes.built) {
+  buildSkyDomes(meshes);
+ }
  if(ctx.settings.renderSky) {
   const bool darkVoid = ctx.world->dimension->hasGround();
   const float voidR = darkVoid ? skyR * 0.2f + 0.04f : skyR;
@@ -250,7 +289,7 @@ void renderSkyDome(const AtmosphereContext& ctx, float tickDelta) {
   core::setConstColor(voidR, voidG, voidB, 1.0f);
   {
    const core::RenderStageScope stage(core::RenderStage::Void);
-   Tessellator::drawMesh(meshes.darkSky);
+   Tessellator::drawMesh(meshes.darkSky, core::constColorPacked());
   }
  }
  core::depthMask(true);

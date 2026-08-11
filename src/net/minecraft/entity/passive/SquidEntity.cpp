@@ -12,6 +12,7 @@ SquidEntity::SquidEntity(World* world) : WaterCreatureEntity(world) {
  setBoundingBoxSpacing(0.95f, 0.95f);
  thrustTimerSpeed = 1.0f / (random.nextFloat() + 1.0f) * 0.2f;
 }
+// see third_party/mcp/net/minecraft/src/EntitySquid.java isInWater()
 bool SquidEntity::isSubmergedInWater() const {
  if(world == nullptr) {
   return false;

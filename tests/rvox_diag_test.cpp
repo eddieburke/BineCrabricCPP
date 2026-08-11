@@ -79,7 +79,8 @@ void mergeDimension(PackDefinition& target, const PackDefinition& selected) {
   }
  }
 }
-void dumpProgram(PackInstance& pack, const std::string& name, const std::filesystem::path& outDir) { const auto found = pack.definition.programs.find(name);
+void dumpProgram(PackInstance& pack, const std::string& name, const std::filesystem::path& outDir) {
+ const auto found = pack.definition.programs.find(name);
  if(found == pack.definition.programs.end()) {
   printf("[diag] program not found: %s\n", name.c_str());
   return;
@@ -91,12 +92,12 @@ void dumpProgram(PackInstance& pack, const std::string& name, const std::filesys
      client::render::prepareSource(name, client::render::ShaderStage::Vertex, pack.definition, vertexIncluded);
  const std::string fragmentPrepared =
      client::render::prepareSource(name, client::render::ShaderStage::Fragment, pack.definition, fragmentIncluded);
- std::ofstream( outDir / (name + ".vsh.expanded")) << vertexIncluded;
- std::ofstream( outDir / (name + ".vsh.prepared")) << vertexPrepared;
- std::ofstream( outDir / (name + ".fsh.expanded")) << fragmentIncluded;
- std::ofstream( outDir / (name + ".fsh.prepared")) << fragmentPrepared;
-  printf("[diag] dumped %s (vertex %zu -> %zu, fragment %zu -> %zu)\n", name.c_str(), vertexIncluded.size(),
-         vertexPrepared.size(), fragmentIncluded.size(), fragmentPrepared.size());
+ std::ofstream(outDir / (name + ".vsh.expanded")) << vertexIncluded;
+ std::ofstream(outDir / (name + ".vsh.prepared")) << vertexPrepared;
+ std::ofstream(outDir / (name + ".fsh.expanded")) << fragmentIncluded;
+ std::ofstream(outDir / (name + ".fsh.prepared")) << fragmentPrepared;
+ printf("[diag] dumped %s (vertex %zu -> %zu, fragment %zu -> %zu)\n", name.c_str(), vertexIncluded.size(),
+        vertexPrepared.size(), fragmentIncluded.size(), fragmentPrepared.size());
 }
 std::string join(const std::vector<std::string>& lines) {
  std::ostringstream output;
@@ -179,175 +180,175 @@ TEST_F(RvoxDiag, DumpPreparedSources) {
  printf("[diag] output dir: %s\n", outDir.string().c_str());
 }
 TEST_F(RvoxDiag, CompileAllPrograms) {
-  const std::filesystem::path zipPath =
-      std::filesystem::path(MINECRAFT_TEST_SOURCE_DIR) / "shaders" / "rethinking-voxels_r0.1-beta9.zip";
-  const std::filesystem::path dirPath =
-      shaderTestPack("rethinking-voxels_r0.1-beta9");
-  PackInstance pack;
-  if(std::filesystem::exists(zipPath)) {
-   pack.path = zipPath;
-   pack.directory = false;
-   pack.zip = std::make_unique<client::resource::pack::ZippedTexturePack>(zipPath);
-   pack.zip->open();
-   const std::vector<std::string> resources = zipResources(*pack.zip);
-   ASSERT_TRUE(PackLoader::load(
-       resources,
-       [&pack](std::string_view path) { return PackCompiler::cachedText(pack, std::string(path)); },
-       pack.definition, pack.sourceOptions, pack.summary.error))
-       << pack.summary.error;
-  } else {
-   ASSERT_TRUE(std::filesystem::is_directory(dirPath)) << dirPath.string();
-   pack.path = dirPath;
-   pack.directory = true;
-   const std::vector<std::string> resources = client::render::PackCatalog::directoryResources(dirPath);
-   ASSERT_TRUE(PackLoader::load(
-       resources,
-       [&pack](std::string_view path) { return PackCompiler::readText(pack, std::string(path)); },
-       pack.definition, pack.sourceOptions, pack.summary.error))
-       << pack.summary.error;
-  }
-  pack.summary.valid = true;
-  pack.rootDefinition = pack.definition;
-  for(const PackSetting& setting : pack.rootDefinition.settings) {
-   pack.settings.emplace(setting.key, setting.defaultValue);
-  }
-  const auto found = pack.rootDefinition.dimensionDefinitions.find("*");
-  ASSERT_NE(found, pack.rootDefinition.dimensionDefinitions.end());
-  mergeDimension(pack.definition, *found->second);
-  EXPECT_EQ(std::count_if(pack.definition.bufferBlends.begin(), pack.definition.bufferBlends.end(),
-                          [](const auto& blend) { return blend.program == "gbuffers_water"; }),
-            0);
-  std::string runtimeError;
-  ASSERT_TRUE(pack.rebuildRuntime(runtimeError)) << runtimeError;
-  std::vector<std::string> failures;
-  for(const auto& [name, ignored] : pack.definition.programs) {
-   (void)ignored;
-   std::cout << "[PROGRAM KEY]: " << name << std::endl;
-   const auto log = [&failures, &name](PackInstance&, const std::string& message,
-                                       net::minecraft::util::logging::LogLevel) {
-    failures.push_back(name + ": " + message);
-   };
-   if(PackCompiler::compile(pack, name, log) == nullptr) {
-    failures.push_back(name + ": returned null");
-   }
-  }
-  printf("[diag] compiled %zu programs, %zu failures\n", pack.definition.programs.size(), failures.size());
-  for(const std::string& failure : failures) {
-   printf("[diag] %s\n", failure.c_str());
-  }
-  EXPECT_TRUE(failures.empty()) << join(failures);
-  ASSERT_TRUE(pack.buildExecutionPlan(runtimeError)) << runtimeError;
-  EXPECT_FALSE(pack.stagePlan(client::render::CompositeStage::Prepare).empty());
-  EXPECT_FALSE(pack.stagePlan(client::render::CompositeStage::Composite).empty());
-  for(const client::render::WorldProgramId id : {client::render::WorldProgramId::TerrainSolid,
-                                                 client::render::WorldProgramId::TerrainCutout,
-                                                 client::render::WorldProgramId::TerrainTranslucent,
-                                                 client::render::WorldProgramId::Entities,
-                                                 client::render::WorldProgramId::EntitiesTranslucent,
-                                                 client::render::WorldProgramId::Hand}) {
-   EXPECT_NE(pack.worldPrograms[static_cast<std::size_t>(id)][0].program, nullptr)
-       << client::render::worldProgramKey(id);
-  }
-}
-TEST_F(RvoxDiag, DumpFailingProgramSources) {
+ const std::filesystem::path zipPath =
+     std::filesystem::path(MINECRAFT_TEST_SOURCE_DIR) / "shaders" / "rethinking-voxels_r0.1-beta9.zip";
  const std::filesystem::path dirPath =
-     std::filesystem::path(MINECRAFT_TEST_SOURCE_DIR) / "shaders" / "rethinking-voxels_r0.1-beta9";
+     shaderTestPack("rethinking-voxels_r0.1-beta9");
+ PackInstance pack;
+ if(std::filesystem::exists(zipPath)) {
+  pack.path = zipPath;
+  pack.directory = false;
+  pack.zip = std::make_unique<client::resource::pack::ZippedTexturePack>(zipPath);
+  pack.zip->open();
+  const std::vector<std::string> resources = zipResources(*pack.zip);
+  ASSERT_TRUE(PackLoader::load(
+      resources,
+      [&pack](std::string_view path) { return PackCompiler::cachedText(pack, std::string(path)); },
+      pack.definition, pack.sourceOptions, pack.summary.error))
+      << pack.summary.error;
+ } else {
   ASSERT_TRUE(std::filesystem::is_directory(dirPath)) << dirPath.string();
-  PackInstance pack;
   pack.path = dirPath;
   pack.directory = true;
   const std::vector<std::string> resources = client::render::PackCatalog::directoryResources(dirPath);
-  ASSERT_FALSE(resources.empty());
   ASSERT_TRUE(PackLoader::load(
       resources,
       [&pack](std::string_view path) { return PackCompiler::readText(pack, std::string(path)); },
       pack.definition, pack.sourceOptions, pack.summary.error))
       << pack.summary.error;
-  pack.summary.valid = true;
-  pack.rootDefinition = pack.definition;
-  for(const PackSetting& setting : pack.rootDefinition.settings) {
-   pack.settings.emplace(setting.key, setting.defaultValue);
+ }
+ pack.summary.valid = true;
+ pack.rootDefinition = pack.definition;
+ for(const PackSetting& setting : pack.rootDefinition.settings) {
+  pack.settings.emplace(setting.key, setting.defaultValue);
+ }
+ const auto found = pack.rootDefinition.dimensionDefinitions.find("*");
+ ASSERT_NE(found, pack.rootDefinition.dimensionDefinitions.end());
+ mergeDimension(pack.definition, *found->second);
+ EXPECT_EQ(std::count_if(pack.definition.bufferBlends.begin(), pack.definition.bufferBlends.end(),
+                         [](const auto& blend) { return blend.program == "gbuffers_water"; }),
+           0);
+ std::string runtimeError;
+ ASSERT_TRUE(pack.rebuildRuntime(runtimeError)) << runtimeError;
+ std::vector<std::string> failures;
+ for(const auto& [name, ignored] : pack.definition.programs) {
+  (void)ignored;
+  std::cout << "[PROGRAM KEY]: " << name << std::endl;
+  const auto log = [&failures, &name](PackInstance&, const std::string& message,
+                                      net::minecraft::util::logging::LogLevel) {
+   failures.push_back(name + ": " + message);
+  };
+  if(PackCompiler::compile(pack, name, log) == nullptr) {
+   failures.push_back(name + ": returned null");
   }
-  const auto found = pack.rootDefinition.dimensionDefinitions.find("*");
-  ASSERT_NE(found, pack.rootDefinition.dimensionDefinitions.end());
-  mergeDimension(pack.definition, *found->second);
-  const std::filesystem::path outDir = std::filesystem::temp_directory_path() / "rvox_failing";
-  std::filesystem::create_directories(outDir);
-  const char* vendor = reinterpret_cast<const char*>(::glGetString(0x1F00));
-  const char* renderer = reinterpret_cast<const char*>(::glGetString(0x1F01));
-  const char* version = reinterpret_cast<const char*>(::glGetString(0x1F02));
-  printf("[diag] GL_VENDOR=%s GL_RENDERER=%s GL_VERSION=%s\n", vendor ? vendor : "?", renderer ? renderer : "?",
-         version ? version : "?");
-  int failed = 0;
-  for(const auto& [name, spec] : pack.definition.programs) {
-   std::string preamble;
-   std::string compute;
-   std::string vertex;
-   std::string fragment;
-   std::string geometry;
-   std::string tessControl;
-   std::string tessEvaluation;
-   if(!spec.compute.empty()) {
-    const std::string included = PackCompiler::resolveIncludes(pack, spec.compute);
-    if(included.empty()) continue;
-    preamble = client::render::versionPreamble(pack.definition, included, true);
-    compute = client::render::prepareSource(name, client::render::ShaderStage::Compute, pack.definition, included);
-   } else {
-    if(PackCompiler::resolveIncludes(pack, spec.fragment).empty()) continue;
-    const std::string vertexIncluded =
-        spec.vertex.empty() ? client::render::defaultRasterVertexShader()
-                            : PackCompiler::resolveIncludes(pack, spec.vertex);
-    const std::string fragmentIncluded = PackCompiler::resolveIncludes(pack, spec.fragment);
-    const std::string geometryIncluded =
-        spec.geometry.empty() ? std::string{} : PackCompiler::resolveIncludes(pack, spec.geometry);
-    const std::string tessControlIncluded =
-        spec.tessControl.empty() ? std::string{} : PackCompiler::resolveIncludes(pack, spec.tessControl);
-    const std::string tessEvaluationIncluded =
-        spec.tessEvaluation.empty() ? std::string{} : PackCompiler::resolveIncludes(pack, spec.tessEvaluation);
-    const bool hasTessellation = !tessControlIncluded.empty() || !tessEvaluationIncluded.empty();
-    preamble = client::render::versionPreambleForStages(
-        pack.definition,
-        {vertexIncluded, fragmentIncluded, geometryIncluded, tessControlIncluded, tessEvaluationIncluded},
-        hasTessellation ? 400 : 330);
-    const client::render::ShaderTransformContext context = {};
-    vertex = client::render::prepareSource(name, client::render::ShaderStage::Vertex, pack.definition,
-                                           vertexIncluded, context);
-    fragment = client::render::prepareSource(name, client::render::ShaderStage::Fragment, pack.definition,
-                                             fragmentIncluded, context);
-    geometry = geometryIncluded.empty() ? std::string{}
-                                        : client::render::prepareSource(name, client::render::ShaderStage::Geometry,
-                                                                        pack.definition, geometryIncluded, context);
-    tessControl = tessControlIncluded.empty()
-                      ? std::string{}
-                      : client::render::prepareSource(name, client::render::ShaderStage::TessControl,
+ }
+ printf("[diag] compiled %zu programs, %zu failures\n", pack.definition.programs.size(), failures.size());
+ for(const std::string& failure : failures) {
+  printf("[diag] %s\n", failure.c_str());
+ }
+ EXPECT_TRUE(failures.empty()) << join(failures);
+ ASSERT_TRUE(pack.buildExecutionPlan(runtimeError)) << runtimeError;
+ EXPECT_FALSE(pack.stagePlan(client::render::CompositeStage::Prepare).empty());
+ EXPECT_FALSE(pack.stagePlan(client::render::CompositeStage::Composite).empty());
+ for(const client::render::WorldProgramId id : {client::render::WorldProgramId::TerrainSolid,
+                                                client::render::WorldProgramId::TerrainCutout,
+                                                client::render::WorldProgramId::TerrainTranslucent,
+                                                client::render::WorldProgramId::Entities,
+                                                client::render::WorldProgramId::EntitiesTranslucent,
+                                                client::render::WorldProgramId::Hand}) {
+  EXPECT_NE(pack.worldPrograms[static_cast<std::size_t>(id)][0].program, nullptr)
+      << client::render::worldProgramKey(id);
+ }
+}
+TEST_F(RvoxDiag, DumpFailingProgramSources) {
+ const std::filesystem::path dirPath =
+     std::filesystem::path(MINECRAFT_TEST_SOURCE_DIR) / "shaders" / "rethinking-voxels_r0.1-beta9";
+ ASSERT_TRUE(std::filesystem::is_directory(dirPath)) << dirPath.string();
+ PackInstance pack;
+ pack.path = dirPath;
+ pack.directory = true;
+ const std::vector<std::string> resources = client::render::PackCatalog::directoryResources(dirPath);
+ ASSERT_FALSE(resources.empty());
+ ASSERT_TRUE(PackLoader::load(
+     resources,
+     [&pack](std::string_view path) { return PackCompiler::readText(pack, std::string(path)); },
+     pack.definition, pack.sourceOptions, pack.summary.error))
+     << pack.summary.error;
+ pack.summary.valid = true;
+ pack.rootDefinition = pack.definition;
+ for(const PackSetting& setting : pack.rootDefinition.settings) {
+  pack.settings.emplace(setting.key, setting.defaultValue);
+ }
+ const auto found = pack.rootDefinition.dimensionDefinitions.find("*");
+ ASSERT_NE(found, pack.rootDefinition.dimensionDefinitions.end());
+ mergeDimension(pack.definition, *found->second);
+ const std::filesystem::path outDir = std::filesystem::temp_directory_path() / "rvox_failing";
+ std::filesystem::create_directories(outDir);
+ const char* vendor = reinterpret_cast<const char*>(::glGetString(0x1F00));
+ const char* renderer = reinterpret_cast<const char*>(::glGetString(0x1F01));
+ const char* version = reinterpret_cast<const char*>(::glGetString(0x1F02));
+ printf("[diag] GL_VENDOR=%s GL_RENDERER=%s GL_VERSION=%s\n", vendor ? vendor : "?", renderer ? renderer : "?",
+        version ? version : "?");
+ int failed = 0;
+ for(const auto& [name, spec] : pack.definition.programs) {
+  std::string preamble;
+  std::string compute;
+  std::string vertex;
+  std::string fragment;
+  std::string geometry;
+  std::string tessControl;
+  std::string tessEvaluation;
+  if(!spec.compute.empty()) {
+   const std::string included = PackCompiler::resolveIncludes(pack, spec.compute);
+   if(included.empty()) continue;
+   preamble = client::render::versionPreamble(pack.definition, included, true);
+   compute = client::render::prepareSource(name, client::render::ShaderStage::Compute, pack.definition, included);
+  } else {
+   if(PackCompiler::resolveIncludes(pack, spec.fragment).empty()) continue;
+   const std::string vertexIncluded =
+       spec.vertex.empty() ? client::render::defaultRasterVertexShader()
+                           : PackCompiler::resolveIncludes(pack, spec.vertex);
+   const std::string fragmentIncluded = PackCompiler::resolveIncludes(pack, spec.fragment);
+   const std::string geometryIncluded =
+       spec.geometry.empty() ? std::string{} : PackCompiler::resolveIncludes(pack, spec.geometry);
+   const std::string tessControlIncluded =
+       spec.tessControl.empty() ? std::string{} : PackCompiler::resolveIncludes(pack, spec.tessControl);
+   const std::string tessEvaluationIncluded =
+       spec.tessEvaluation.empty() ? std::string{} : PackCompiler::resolveIncludes(pack, spec.tessEvaluation);
+   const bool hasTessellation = !tessControlIncluded.empty() || !tessEvaluationIncluded.empty();
+   preamble = client::render::versionPreambleForStages(
+       pack.definition,
+       {vertexIncluded, fragmentIncluded, geometryIncluded, tessControlIncluded, tessEvaluationIncluded},
+       hasTessellation ? 400 : 330);
+   const client::render::ShaderTransformContext context = {};
+   vertex = client::render::prepareSource(name, client::render::ShaderStage::Vertex, pack.definition,
+                                          vertexIncluded, context);
+   fragment = client::render::prepareSource(name, client::render::ShaderStage::Fragment, pack.definition,
+                                            fragmentIncluded, context);
+   geometry = geometryIncluded.empty() ? std::string{}
+                                       : client::render::prepareSource(name, client::render::ShaderStage::Geometry,
+                                                                       pack.definition, geometryIncluded, context);
+   tessControl = tessControlIncluded.empty()
+                     ? std::string{}
+                     : client::render::prepareSource(name, client::render::ShaderStage::TessControl,
                                                      pack.definition, tessControlIncluded, context);
-    tessEvaluation = tessEvaluationIncluded.empty()
-                         ? std::string{}
-                         : client::render::prepareSource(name, client::render::ShaderStage::TessEvaluation,
+   tessEvaluation = tessEvaluationIncluded.empty()
+                        ? std::string{}
+                        : client::render::prepareSource(name, client::render::ShaderStage::TessEvaluation,
                                                         pack.definition, tessEvaluationIncluded, context);
-   }
-   client::gl::ShaderProgram program;
-   const bool ok = !spec.compute.empty()
-                       ? program.compileCompute(compute, preamble)
-                       : program.compile(vertex, fragment, preamble, geometry, tessControl, tessEvaluation);
-   if(ok) continue;
-   ++failed;
-   std::string stem = name;
-   std::replace(stem.begin(), stem.end(), '#', '_');
-   const std::string body = !spec.compute.empty() ? compute : vertex;
-   std::ofstream(outDir / (stem + ".assembled")) << preamble << body;
-   if(!spec.compute.empty()) {
-    std::ofstream(outDir / (stem + ".csh")) << compute;
-   } else {
-    std::ofstream(outDir / (stem + ".vsh")) << vertex;
-    std::ofstream(outDir / (stem + ".fsh")) << fragment;
-    if(!geometry.empty()) std::ofstream(outDir / (stem + ".gsh")) << geometry;
-   }
-   std::ofstream(outDir / (stem + ".error")) << program.lastError();
-   printf("[diag] %s failed: %s\n", name.c_str(), program.lastError().c_str());
   }
-  printf("[diag] failed %d\n", failed);
-  printf("[diag] output dir: %s\n", outDir.string().c_str());
+  client::gl::ShaderProgram program;
+  const bool ok = !spec.compute.empty()
+                      ? program.compileCompute(compute, preamble)
+                      : program.compile(vertex, fragment, preamble, geometry, tessControl, tessEvaluation);
+  if(ok) continue;
+  ++failed;
+  std::string stem = name;
+  std::replace(stem.begin(), stem.end(), '#', '_');
+  const std::string body = !spec.compute.empty() ? compute : vertex;
+  std::ofstream(outDir / (stem + ".assembled")) << preamble << body;
+  if(!spec.compute.empty()) {
+   std::ofstream(outDir / (stem + ".csh")) << compute;
+  } else {
+   std::ofstream(outDir / (stem + ".vsh")) << vertex;
+   std::ofstream(outDir / (stem + ".fsh")) << fragment;
+   if(!geometry.empty()) std::ofstream(outDir / (stem + ".gsh")) << geometry;
+  }
+  std::ofstream(outDir / (stem + ".error")) << program.lastError();
+  printf("[diag] %s failed: %s\n", name.c_str(), program.lastError().c_str());
+ }
+ printf("[diag] failed %d\n", failed);
+ printf("[diag] output dir: %s\n", outDir.string().c_str());
 }
 TEST_F(RvoxDiag, BuiltinBoundsRewrite) {
  PackDefinition definition;
@@ -365,51 +366,46 @@ TEST_F(RvoxDiag, BuiltinBoundsRewrite) {
         out.find("clamp(b, 0.0, 1.0)") != std::string::npos);
 }
 TEST_F(RvoxDiag, EnsureSceneTargetsRthinkingVoxels) {
-  while(::glGetError() != 0) {}
-  const std::filesystem::path dirPath =
-      shaderTestPack("rethinking-voxels_r0.1-beta9");
-  ASSERT_TRUE(std::filesystem::is_directory(dirPath)) << dirPath.string();
-  PackInstance pack;
-  pack.path = dirPath;
-  pack.directory = true;
-  const std::vector<std::string> resources = client::render::PackCatalog::directoryResources(dirPath);
-  ASSERT_TRUE(PackLoader::load(
-      resources,
-      [&pack](std::string_view path) { return PackCompiler::readText(pack, std::string(path)); },
-      pack.definition, pack.sourceOptions, pack.summary.error))
-      << pack.summary.error;
-  pack.summary.valid = true;
-  pack.rootDefinition = pack.definition;
-  const auto found = pack.rootDefinition.dimensionDefinitions.find("*");
-  ASSERT_NE(found, pack.rootDefinition.dimensionDefinitions.end());
-  mergeDimension(pack.definition, *found->second);
-  const auto computePass = [&pack](std::string_view name) {
-   return std::find_if(pack.definition.passes.begin(), pack.definition.passes.end(),
-                       [name](const auto& pass) { return pass.name == name && pass.type == "compute"; });
-  };
-  const auto shadowcomp = computePass("shadowcomp");
-  ASSERT_NE(shadowcomp, pack.definition.passes.end());
-  EXPECT_EQ(shadowcomp->localSize[0], 8);
-  EXPECT_EQ(shadowcomp->localSize[1], 8);
-  EXPECT_EQ(shadowcomp->localSize[2], 8);
-  EXPECT_EQ(shadowcomp->groups[0], 16);
-  EXPECT_EQ(shadowcomp->groups[1], 12);
-  EXPECT_EQ(shadowcomp->groups[2], 16);
-  EXPECT_FALSE(shadowcomp->relativeGroups);
-  const auto deferred = computePass("deferred1");
-  ASSERT_NE(deferred, pack.definition.passes.end());
-  EXPECT_EQ(deferred->localSize[0], 16);
-  EXPECT_EQ(deferred->localSize[1], 16);
-  EXPECT_FLOAT_EQ(deferred->groupScale[0], 0.5f);
-  EXPECT_FLOAT_EQ(deferred->groupScale[1], 0.5f);
-  EXPECT_TRUE(deferred->relativeGroups);
-  client::render::Pipeline pipeline{nullptr};
-  const std::vector<client::render::ColorFormat> formats = pipeline.sceneColorFormats(&pack);
-  const int gbufferCount = std::clamp(pack.definition.gbufferColorBuffers, 1, client::render::kMaxColorAttachments);
-  const bool okMain = pack.colorTargets.ensure(854, 480, formats, gbufferCount);
-  EXPECT_TRUE(okMain);
-  EXPECT_TRUE(pipeline.ensureSceneTargets(&pack, 854, 480));
-  EXPECT_EQ(::glGetError(), 0u);
+ while(::glGetError() != 0) {}
+ const std::filesystem::path dirPath =
+     shaderTestPack("rethinking-voxels_r0.1-beta9");
+ ASSERT_TRUE(std::filesystem::is_directory(dirPath)) << dirPath.string();
+ PackInstance pack;
+ pack.path = dirPath;
+ pack.directory = true;
+ const std::vector<std::string> resources = client::render::PackCatalog::directoryResources(dirPath);
+ ASSERT_TRUE(PackLoader::load(
+     resources,
+     [&pack](std::string_view path) { return PackCompiler::readText(pack, std::string(path)); },
+     pack.definition, pack.sourceOptions, pack.summary.error))
+     << pack.summary.error;
+ pack.summary.valid = true;
+ pack.rootDefinition = pack.definition;
+ const auto found = pack.rootDefinition.dimensionDefinitions.find("*");
+ ASSERT_NE(found, pack.rootDefinition.dimensionDefinitions.end());
+ mergeDimension(pack.definition, *found->second);
+ const auto computePass = [&pack](std::string_view name) {
+  return std::find_if(pack.definition.passes.begin(), pack.definition.passes.end(),
+                      [name](const auto& pass) { return pass.name == name && pass.type == "compute"; });
+ };
+ const auto shadowcomp = computePass("shadowcomp");
+ ASSERT_NE(shadowcomp, pack.definition.passes.end());
+ EXPECT_EQ(shadowcomp->groups[0], 16);
+ EXPECT_EQ(shadowcomp->groups[1], 12);
+ EXPECT_EQ(shadowcomp->groups[2], 16);
+ EXPECT_FALSE(shadowcomp->relativeGroups);
+ const auto deferred = computePass("deferred1");
+ ASSERT_NE(deferred, pack.definition.passes.end());
+ EXPECT_FLOAT_EQ(deferred->groupScale[0], 0.5f);
+ EXPECT_FLOAT_EQ(deferred->groupScale[1], 0.5f);
+ EXPECT_TRUE(deferred->relativeGroups);
+ client::render::Pipeline pipeline{nullptr};
+ const std::vector<client::render::ColorFormat> formats = pipeline.sceneColorFormats(&pack);
+ const int gbufferCount = std::clamp(pack.definition.gbufferColorBuffers, 1, client::render::kMaxColorAttachments);
+ const bool okMain = pack.colorTargets.ensure(854, 480, formats, gbufferCount);
+ EXPECT_TRUE(okMain);
+ EXPECT_TRUE(pipeline.ensureSceneTargets(&pack, 854, 480));
+ EXPECT_EQ(::glGetError(), 0u);
 }
 TEST_F(RvoxDiag, DumpComplementaryFailingPrograms) {
  const std::filesystem::path root =
@@ -532,11 +528,14 @@ TEST_F(RvoxDiag, CompileAllRenderPearlPrograms) {
      << pack.summary.error;
  pack.summary.valid = true;
  pack.rootDefinition = pack.definition;
- const std::set<std::string> required = {"BLOCK_EMISSION_ATTRIBUTE", "COMPUTE_SHADERS", "CUSTOM_IMAGES",
-                                         "ENTITY_TRANSLUCENT", "PER_BUFFER_BLENDING",
-                                         "SEPARATE_HARDWARE_SAMPLERS", "SSBO"};
+ // Must match PackDefinition's comparator (std::less<>), not std::less<std::string>:
+ // a differently-ordered set is a different type and has no operator==.
+ const std::set<std::string, std::less<>> required = {
+     "BLOCK_EMISSION_ATTRIBUTE", "COMPUTE_SHADERS", "CUSTOM_IMAGES",
+     "ENTITY_TRANSLUCENT", "PER_BUFFER_BLENDING",
+     "SEPARATE_HARDWARE_SAMPLERS", "SSBO"};
  EXPECT_EQ(pack.rootDefinition.requiredFeatures, required);
- EXPECT_EQ(pack.rootDefinition.optionalFeatures, (std::set<std::string>{"FADE_VARIABLE"}));
+ EXPECT_EQ(pack.rootDefinition.optionalFeatures, (std::set<std::string, std::less<>>{"FADE_VARIABLE"}));
  EXPECT_FALSE(pack.rootDefinition.oldHandLight);
  EXPECT_TRUE(pack.rootDefinition.allowConcurrentCompute);
  EXPECT_TRUE(pack.rootDefinition.separateEntityDraws);
@@ -795,8 +794,7 @@ TEST_F(RvoxDiag, CompileAllRenderPearlPrograms) {
  waterPass.hasNormals = true;
  waterPass.programOverride = waterProgram;
  waterPass.projection = waterProjection;
- EXPECT_EQ(pack.preparedSourceCache.at("gbuffers_water:0").find(
-               "immut vec4 clip = proj_mmul(mat4(projectionMatrix), view);"),
+ EXPECT_EQ(pack.preparedSourceCache.at("gbuffers_water:0").find("immut vec4 clip = proj_mmul(mat4(projectionMatrix), view);"),
            std::string::npos);
  unsigned int samplesQuery = 0;
  client::gl::GLCore::genQueries(1, &samplesQuery);

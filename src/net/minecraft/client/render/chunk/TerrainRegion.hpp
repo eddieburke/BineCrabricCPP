@@ -2,6 +2,7 @@
 #include <array>
 #include <cstddef>
 #include <span>
+#include <unordered_set>
 #include <vector>
 #include "net/minecraft/client/render/VertexAbi.hpp"
 #include "net/minecraft/client/render/chunk/TerrainLayers.hpp"
@@ -32,19 +33,23 @@ class TerrainRegion {
  int drawLayer(int layer, std::span<const TerrainAllocation* const> allocations);
 
  private:
- struct Range {
-  std::size_t first = 0;
-  std::size_t capacity = 0;
- };
+ static constexpr int kMinSizeClass = 8;
+ static constexpr int kMaxSizeClass = 31;
+ static constexpr int kSizeClasses = kMaxSizeClass - kMinSizeClass + 1;
  struct LayerArena {
   unsigned handle = 0;
   unsigned vao = 0;
+  unsigned staging = 0;
   std::size_t capacityVertices = 0;
   std::size_t tailVertex = 0;
-  std::vector<Range> freeRanges{};
+  std::array<std::unordered_set<std::size_t>, kSizeClasses> freeByClass{};
   std::vector<int> indexCounts{};
   std::vector<int> baseVertices{};
  };
+ [[nodiscard]] static std::unordered_set<std::size_t>& freeList(LayerArena& arena, int sizeClass) noexcept {
+  return arena.freeByClass[static_cast<std::size_t>(sizeClass - kMinSizeClass)];
+ }
+ static void trimTail(LayerArena& arena) noexcept;
  bool ensureCapacity(LayerArena& arena, std::size_t requiredVertices);
  bool acquire(LayerArena& arena, std::size_t requiredVertices, TerrainAllocation& allocation);
  static void releaseRange(LayerArena& arena, TerrainAllocation& allocation) noexcept;
@@ -54,4 +59,4 @@ class TerrainRegion {
  std::array<LayerArena, terrain_layer::Count> layers_{};
  std::vector<ChunkBuilder*> sections_{};
 };
-}
+} // namespace net::minecraft::client::render::chunk

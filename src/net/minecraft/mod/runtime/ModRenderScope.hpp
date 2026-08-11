@@ -67,10 +67,13 @@ class ScopedModWorldDrawContext {
  if(layer == ModDrawLayer::Clouds) {
   return "gbuffers_clouds";
  }
- if(!depthTest || layer == ModDrawLayer::Sky) {
+ if(layer == ModDrawLayer::Basic) {
+  return "gbuffers_basic";
+ }
+ if(layer == ModDrawLayer::Sky || !depthTest) {
   return textured ? "gbuffers_skytextured" : "gbuffers_skybasic";
  }
- if(layer == ModDrawLayer::Basic || !textured) {
+ if(!textured) {
   return "gbuffers_basic";
  }
  if(layer == ModDrawLayer::Terrain) {
@@ -113,8 +116,8 @@ class ModLuaDrawScope {
    };
    [[nodiscard]] static PassSpec composePass(bool textured, bool blend, bool cull, bool depthTest,
                                             bool depthWrite, ModDrawLayer layer, int blendSrc, int blendDst) {
-   const bool sky = !depthTest || layer == ModDrawLayer::Sky;
-   const bool basic = !sky && (layer == ModDrawLayer::Basic || !textured);
+   const bool basic = layer == ModDrawLayer::Basic;
+   const bool sky = !basic && (!depthTest || layer == ModDrawLayer::Sky);
    PassSpec spec;
    spec.programKey = modDrawProgramKey(textured, blend, depthTest, depthWrite, layer);
     if(layer == ModDrawLayer::Clouds) {
@@ -125,7 +128,7 @@ class ModLuaDrawScope {
      spec.hasTexture = textured;
      spec.state.depthTest = true;
      spec.state.depthWrite = depthTest && depthWrite;
-    } else if(basic) {
+    } else if(basic || !textured) {
      spec.hasTexture = false;
      spec.state.depthTest = depthTest;
      spec.state.depthWrite = depthWrite;

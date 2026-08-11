@@ -17,7 +17,7 @@ struct RenderSettings;
 namespace net::minecraft::client::render {
 struct FrameRenderCamera;
 enum class WorldProgramId : std::uint8_t;
-}
+} // namespace net::minecraft::client::render
 namespace net::minecraft::client::render::core {
 namespace math = net::minecraft::util::math;
 using gl::ShaderProgram;
@@ -57,7 +57,6 @@ struct WorldLightUniforms {
  float fillIntensity = 0.0f;
  float ambient[3] = {1.0f, 1.0f, 1.0f};
  float worldTime = 0.0f;
- float brightness = 0.0f;
 };
 struct FogUniforms {
  bool enabled = false;
@@ -219,11 +218,6 @@ struct PassGlBits {
  bool cull = false;
  int blendSrc = 0x0302; // GL_SRC_ALPHA
  int blendDst = 0x0303; // GL_ONE_MINUS_SRC_ALPHA
- // The separate ALPHA pair must be saved too. A pack's per-program directive
- // (`blend.<program>=<srcRGB> <dstRGB> <srcA> <dstA>`) mappings by program.
- // `SRC_ALPHA ONE_MINUS_SRC_ALPHA ZERO ZERO`) is applied through lockBlend ->
- // glBlendFuncSeparate. Restoring only the RGB pair via the two-argument glBlendFunc
- // leaves the pack's alpha factors live in the driver for every later pass.
  int blendSrcAlpha = 0x0302; // GL_SRC_ALPHA
  int blendDstAlpha = 0x0303; // GL_ONE_MINUS_SRC_ALPHA
  int cullMode = 0x0405;
@@ -247,22 +241,12 @@ struct RenderPass {
  int stride = 0;
  int glMode = 0x0004;
  bool hasTexture = false;
-  bool hasNormals = false;
-  ShaderProgram* programOverride = nullptr;
+ bool hasNormals = false;
+ ShaderProgram* programOverride = nullptr;
+ bool overrideColor = false;
+ std::uint32_t colorOverride = 0xFFFFFFFFU;
  bool fullscreen = false;
 };
-// ONE convention, Iris'. There are exactly two pieces of per-draw matrix state:
-//
-//   1. The PASS BASE (drawModelView / drawProjection) — the matrices uploaded to
-//      the program. Set once per pass by its owner: setDrawCameraStateFromCamera
-//      for the world (player or shadow), gui_proj::load for the GUI, the hand
-//      pass for its own space. Producers never write it.
-//   2. The POSE (drawPose) — model -> pass-base space, applied to vertices
-//      CPU-side by the Tessellator. Producers compose onto it and publish.
-//
-// There is no third path and no fallback between them. A world producer that
-// forgets to publish a pose draws at the camera, visibly, rather than silently
-// picking up a matrix that happens to contain a translation.
 void setDrawCameraState(const float* modelView,
                         const float* projection,
                         const float* modelViewInverse,
@@ -279,20 +263,8 @@ void clearDrawCameraState();
 [[nodiscard]] const math::Matrix4f& drawProjection() noexcept;
 // Pass owners only. Resets the pose: a pose means nothing once its base changes.
 void setPassModelView(const math::Matrix4f& modelView) noexcept;
-// The per-draw pose. Compose onto drawPose(), publish with setDrawPose; it is
-// STATE, so one published pose feeds any number of Tessellator batches (a model
-// publishes one bone pose and emits every part from it). Cleared at pass
-// boundaries; saved and restored by ScopedDrawCameraState and RenderPassScope.
-// see src/net/minecraft/client/render/Tessellator.cpp vertex
 void setDrawPose(const math::Matrix4f& pose) noexcept;
 [[nodiscard]] const math::Matrix4f& drawPose() noexcept;
-// Why the pose is baked and never uploaded: packs cut gl_ModelViewMatrix to a mat3
-// (which silently discards whatever translation is
-// left in it. Any pose parked in the matrix therefore vanishes in the shadow pass
-// while still applying in the gbuffer pass.
-// see src/net/minecraft/client/render/Tessellator.cpp vertex
-// Fills chunkOffset/sectionLocal from the pending terrain draw if one is set
-// (WorldRenderer sets it per section; used by the quad-mesh path).
 void applyPendingTerrain(RenderPass& pass);
 class ScopedDrawCameraState {
  public:
@@ -336,19 +308,15 @@ void fogApplyMode(::net::minecraft::client::Minecraft* client, int mode,
                   const ::net::minecraft::client::option::RenderSettings& frame);
 void setSkyUniforms(const SkyUniforms& sky);
 // The frame's single celestial answer. GameRenderer::updateSunLight publishes it
- void setCelestialState(const CelestialState& state);
- [[nodiscard]] const CelestialState& celestialState();
- void setCameraFrame(FrameRenderCamera camera);
- [[nodiscard]] const FrameRenderCamera& cameraFrame();
+void setCelestialState(const CelestialState& state);
+[[nodiscard]] const CelestialState& celestialState();
+void setCameraFrame(FrameRenderCamera camera);
+[[nodiscard]] const FrameRenderCamera& cameraFrame();
 const SkyUniforms& skyUniforms();
 bool ensureReady();
 ShaderProgram* program();
 void bindAndUploadUniforms(const RenderPass& pass);
 void submit(const RenderPass& pass);
-// Indexed draw for geometry that owns its VBO and uses the shared quad index
-// buffer (terrain sections). Same uniform path as submit() — never issue a raw
-// glDrawElements for world geometry, or the draw inherits the previous
-// chunkOffset instead of its own.
 void submitIndexedQuads(const RenderPass& pass, unsigned indexBuffer, int indexCount);
 bool configureIndexedVao(unsigned vao,
                          unsigned vertexBuffer,
@@ -384,12 +352,6 @@ void setTextureFilteringMode(int mode);
 // Untextured passes bind a 1x1 white texel on unit 0 so gtexture * colour still
 // works without an enableTexture flag.
 void bindWhiteDiffuse();
-// Generic save/set/restore for one tracked draw-state value. The four uniform
-// scopes below differ only in which core global they touch. Java Iris leaves
-// these values to be overwritten by the next draw
-// (CapturedRenderingState.currentRenderedEntity/currentRenderedBlockEntity/
-// currentRenderedItem and the pipeline phase in GbufferPrograms.setPhase); the
-// port restores them for engine-internal safety.
 template <typename T, T (*Getter)(), void (*Setter)(T)>
 class StateValueScope {
  public:
@@ -411,6 +373,8 @@ void configureAttribs(unsigned buffer,
                       std::size_t baseOffset,
                       int stride,
                       bool hasTexture,
-                      bool hasNormals);
+                      bool hasNormals,
+                      bool overrideColor = false,
+                      std::uint32_t colorOverride = 0xFFFFFFFFU);
 void invalidateAttribCache();
 } // namespace net::minecraft::client::render::core

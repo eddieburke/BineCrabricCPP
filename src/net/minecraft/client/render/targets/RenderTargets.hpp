@@ -68,11 +68,6 @@ enum class ColorFormat {
  Rgba16I,
  Rgba32I
 };
-// The GL triple a ColorFormat maps to. This is the ONE description of a format.
-// isIntegerColorFormat/isSignedIntegerColorFormat used to be hand-written `||` chains
-// over 25 enumerators living here, while the table below lived in ColorTargets.cpp —
-// two independently maintained answers to the same question, and a format added to one
-// and not the other produces a target that samples as garbage rather than failing.
 struct GlFormat {
  int internal;
  unsigned format;
@@ -181,16 +176,21 @@ class ColorTargets {
  void clearColors(const std::vector<bool>& enabled, const std::vector<std::array<float, 4>>& colors);
  void clearNamedColors(const std::string& name, const std::array<float, 4>& color);
  [[nodiscard]] bool fullClearRequired() const noexcept { return fullClearPending_; }
+ // RenderTarget.java:146 turnOnMips. Generates the chain on the buffer's *read*
+ // side and records it there, so the write side keeps its base filter instead of
+ // sampling a chain that was never generated for it.
+ void enableMipmaps(const std::string& name);
  void resetMipmaps();
  [[nodiscard]] unsigned int readTexture(int index) const noexcept;
  [[nodiscard]] unsigned int writeTexture(int index) const noexcept;
  [[nodiscard]] unsigned int readTexture(const std::string& name) const;
  [[nodiscard]] unsigned int writeTexture(const std::string& name) const;
  [[nodiscard]] ColorFormat formatOf(const std::string& name) const;
+ [[nodiscard]] bool targetMatches(const std::string& name, int width, int height,
+                                  ColorFormat format) const;
  // https://github.com/IrisShaders/Iris/blob/26.1/common/src/main/java/net/irisshaders/iris/samplers/IrisSamplers.java
  void fillReadSamplers(std::unordered_map<std::string, int>& textures, bool fullscreenPass) const;
  void fillImageBindings(std::unordered_map<std::string, int>& images) const;
- void prepareWrite(const std::string& name);
  void flip(const std::string& name);
  void flipIfEnabled(const PackDefinition& definition, const std::string& passName,
                     const std::string& bufferName);
@@ -214,10 +214,8 @@ class ColorTargets {
   int width = 0;
   int height = 0;
   bool scaled = false;
-  // The ping-pong convention lives here and nowhere else. It used to be spelled
-  // out as `tex[main]` / `tex[1 - main]` at a dozen call sites; a single one of
-  // them written the wrong way round silently samples the buffer being written,
-  // which reads as one frame of lag rather than as a bug.
+  // RenderTarget.java:29 mipmapsOnMain/mipmapsOnAlt. Iris picks a sampler object
+  std::array<bool, 2> mipmapsOn{false, false};
   [[nodiscard]] unsigned int readHandle() const noexcept { return tex[main].handle(); }
   [[nodiscard]] unsigned int writeHandle() const noexcept { return tex[1 - main].handle(); }
   [[nodiscard]] bool allocated() const noexcept { return tex[0] && tex[1]; }
@@ -238,13 +236,14 @@ class ColorTargets {
                          const std::vector<bool>& enabled,
                          const std::vector<std::array<float, 4>>& colors);
  void resetSlotFilters(Slot& slot);
+ // GlSampler.java:15-18: mipped or not, the linear-vs-nearest choice still comes
+ // from the format. Forcing LINEAR here would blur integer targets sideways.
+ static void applySlotFilter(Slot& slot, int side);
  [[nodiscard]] Slot* findSlot(const std::string& name);
  [[nodiscard]] const Slot* findSlot(const std::string& name) const;
  [[nodiscard]] static int colortexIndex(const std::string& name);
  gl::GlFramebuffer gbufferFbo_;
  gl::GlFramebuffer writeFbo_;
- gl::GlFramebuffer copyReadFbo_;
- gl::GlFramebuffer copyDrawFbo_;
  gl::GlTexture depth_;
  int width_ = 0;
  int height_ = 0;

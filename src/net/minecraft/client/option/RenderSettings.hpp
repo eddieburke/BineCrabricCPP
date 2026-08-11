@@ -20,14 +20,8 @@ struct RenderSettings {
  // Iris shaders.properties: separateAo / oldLighting (defaults match Iris).
  bool separateAo = false;
  bool oldLighting = false;
- float brightnessBoost = 0.0f;
  bool mipmapLinearFilter = false;
  bool fancyLeaves = true;
- // Which leaf<->leaf boundaries emit an interior face. 0 = none (the boundary is
- // invisible from both sides), 1 = only where one of the two blocks touches a
- // see-through neighbour, so the face can actually be reached through the leaf
- // texture's holes, 2 = every boundary. Fast leaves are opaque, so nothing is
- // emitted regardless.
  int leafInteriorFaces = 1;
  bool fancyGrass = true;
  bool renderWater = true;

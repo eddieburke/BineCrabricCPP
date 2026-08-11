@@ -247,6 +247,14 @@ bool ShaderProgram::compileCompute(const std::string& computeSource,
   return false;
  }
  program_ = program;
+ // Iris ComputeProgram's constructor does exactly this, and nothing else knows
+ // the local size: the dispatch divides by it.
+ constexpr unsigned int kComputeWorkGroupSize = 0x8267;
+ computeLocalSize_[0] = computeLocalSize_[1] = computeLocalSize_[2] = 1;
+ GLCore::getProgramiv(program, kComputeWorkGroupSize, computeLocalSize_);
+ for(int& axis : computeLocalSize_) {
+  if(axis <= 0) axis = 1;
+ }
  uniformCache_.clear();
  samplerKinds_.clear();
  samplerNames_.clear();
@@ -257,32 +265,32 @@ bool ShaderProgram::compileCompute(const std::string& computeSource,
  return true;
 }
 void ShaderProgram::destroy() {
-  if(program_ != 0 && program_ == s_lastBoundProgram) s_lastBoundProgram = 0;
-  if(program_ != 0 && GLCore::deleteProgram != nullptr) {
-   GLCore::deleteProgram(program_);
-  }
-  program_ = 0;
+ if(program_ != 0 && program_ == s_lastBoundProgram) s_lastBoundProgram = 0;
+ if(program_ != 0 && GLCore::deleteProgram != nullptr) {
+  GLCore::deleteProgram(program_);
+ }
+ program_ = 0;
+ resetUniformLocations();
+ uniformCache_.clear();
+ samplerKinds_.clear();
+ samplerNames_.clear();
+ uniformSnapshotGeneration_ = 0;
+ drawBuffers_.clear();
+ drawBufferColortexIndices_.clear();
+ tessellation_ = false;
+}
+void ShaderProgram::resetUniformLocations() {
+ std::fill(std::begin(uniformLocations_), std::end(uniformLocations_), -1);
+}
+void ShaderProgram::refreshUniformLocations() {
+ if(program_ == 0 || GLCore::getUniformLocation == nullptr) {
   resetUniformLocations();
-  uniformCache_.clear();
-  samplerKinds_.clear();
-  samplerNames_.clear();
-  uniformSnapshotGeneration_ = 0;
-  drawBuffers_.clear();
-  drawBufferColortexIndices_.clear();
-  tessellation_ = false;
+  return;
  }
- void ShaderProgram::resetUniformLocations() {
-  std::fill(std::begin(uniformLocations_), std::end(uniformLocations_), -1);
+ for(std::size_t i = 0; i < static_cast<std::size_t>(IrisUniformSlot::Count); ++i) {
+  uniformLocations_[i] = GLCore::getUniformLocation(program_, kIrisUniformSlotNames[i].data());
  }
- void ShaderProgram::refreshUniformLocations() {
-  if(program_ == 0 || GLCore::getUniformLocation == nullptr) {
-   resetUniformLocations();
-   return;
-  }
-  for(std::size_t i = 0; i < static_cast<std::size_t>(IrisUniformSlot::Count); ++i) {
-   uniformLocations_[i] = GLCore::getUniformLocation(program_, kIrisUniformSlotNames[i].data());
-  }
- }
+}
 void ShaderProgram::bind() const {
  if(program_ != 0 && GLCore::useProgram != nullptr) {
   if(program_ == s_lastBoundProgram) return;
@@ -546,7 +554,6 @@ void ShaderProgram::setMatrix4(std::string_view name, const float* value, bool t
 void ShaderProgram::setMatrix4(std::string_view name, const net::minecraft::util::math::Matrix4f& value) const {
  setMatrix4(name, value.data(), false);
 }
-
 namespace {
 using PFN_GetProgramBinary = void(APIENTRY*)(unsigned int, int, int*, unsigned int*, void*);
 using PFN_ProgramBinary = void(APIENTRY*)(unsigned int, unsigned int, const void*, int);
@@ -554,7 +561,6 @@ using PFN_ProgramParameteri = void(APIENTRY*)(unsigned int, unsigned int, int);
 using PFN_GetProgramivLocal = void(APIENTRY*)(unsigned int, unsigned int, int*);
 constexpr unsigned int kProgramBinaryLength = 0x8741;
 constexpr unsigned int kProgramBinaryRetrievableHint = 0x8257;
-
 void* loadGlProc(const char* name) {
  PROC proc = wglGetProcAddress(name);
  if(proc == nullptr || proc == reinterpret_cast<PROC>(1) || proc == reinterpret_cast<PROC>(2) ||
@@ -564,14 +570,12 @@ void* loadGlProc(const char* name) {
  }
  return reinterpret_cast<void*>(proc);
 }
-
 struct BinaryProcs {
  PFN_GetProgramivLocal getProgramiv;
  PFN_GetProgramBinary getProgramBinary;
  PFN_ProgramBinary programBinary;
  PFN_ProgramParameteri programParameteri;
 };
-
 const BinaryProcs& binaryProcs() {
  static const BinaryProcs procs{
      reinterpret_cast<PFN_GetProgramivLocal>(loadGlProc("glGetProgramiv")),
@@ -581,12 +585,10 @@ const BinaryProcs& binaryProcs() {
  };
  return procs;
 }
-
 void prepareProgramBinary(unsigned int program) {
  if(const auto function = binaryProcs().programParameteri; function != nullptr)
   function(program, kProgramBinaryRetrievableHint, 1);
 }
-
 std::uint64_t mixHash(std::uint64_t h, const std::string& s) {
  // FNV-1a 64-bit over bytes, then avalanche into running hash.
  std::uint64_t x = 14695981039346656037ull;
@@ -598,7 +600,6 @@ std::uint64_t mixHash(std::uint64_t h, const std::string& s) {
  return h;
 }
 } // namespace
-
 std::uint64_t ShaderProgram::contentHash(bool compute,
                                          const std::string& preamble,
                                          const std::string& a,
@@ -617,7 +618,6 @@ std::uint64_t ShaderProgram::contentHash(bool compute,
  h = mixHash(h, abiSalt);
  return h == 0 ? 1ull : h;
 }
-
 bool ShaderProgram::extractProgramBinary(ProgramBinaryBlob& out) {
  if(program_ == 0) {
   lastError_ = "no program";
@@ -653,7 +653,6 @@ bool ShaderProgram::extractProgramBinary(ProgramBinaryBlob& out) {
  if(tessellation_) out.flags |= kFlagTessellation;
  return true;
 }
-
 bool ShaderProgram::compileToBinary(ProgramBinaryBlob& out,
                                     const std::string& vertexSource,
                                     const std::string& fragmentSource,
@@ -669,7 +668,6 @@ bool ShaderProgram::compileToBinary(ProgramBinaryBlob& out,
  }
  return extractProgramBinary(out);
 }
-
 bool ShaderProgram::compileComputeToBinary(ProgramBinaryBlob& out,
                                            const std::string& computeSource,
                                            const std::string& versionPreamble) {
@@ -680,7 +678,6 @@ bool ShaderProgram::compileComputeToBinary(ProgramBinaryBlob& out,
  }
  return extractProgramBinary(out);
 }
-
 bool ShaderProgram::loadFromBinary(const ProgramBinaryBlob& binary) {
  GLCore::ensureLoaded();
  destroy();
@@ -731,14 +728,14 @@ bool ShaderProgram::loadFromBinary(const ProgramBinaryBlob& binary) {
   GLCore::deleteProgram(program);
   return false;
  }
-   program_ = program;
-   uniformCache_.clear();
-   samplerKinds_.clear();
-   samplerNames_.clear();
-   uniformSnapshotGeneration_ = 0;
-   tessellation_ = binary.tessellation;
-   reflectSamplers();
-   refreshUniformLocations();
-   return true;
- }
+ program_ = program;
+ uniformCache_.clear();
+ samplerKinds_.clear();
+ samplerNames_.clear();
+ uniformSnapshotGeneration_ = 0;
+ tessellation_ = binary.tessellation;
+ reflectSamplers();
+ refreshUniformLocations();
+ return true;
+}
 } // namespace net::minecraft::client::gl

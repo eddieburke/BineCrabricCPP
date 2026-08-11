@@ -2,6 +2,7 @@
 #include <algorithm>
 #include <bit>
 #include <limits>
+#include "net/minecraft/client/debug/RenderProfiler.hpp"
 #include "net/minecraft/client/gl/GLCore.hpp"
 #include "net/minecraft/client/render/QuadIndexBuffer.hpp"
 #include "net/minecraft/client/render/RenderCore.hpp"
@@ -11,15 +12,13 @@ constexpr unsigned kArrayBuffer = 0x8892;
 constexpr unsigned kCopyReadBuffer = 0x8F36;
 constexpr unsigned kCopyWriteBuffer = 0x8F37;
 constexpr unsigned kDynamicDraw = 0x88E8;
+constexpr unsigned kStreamDraw = 0x88E0;
 constexpr std::size_t kInitialVertices = 4096;
 constexpr std::size_t kAllocationQuantum = 256;
-}
+} // namespace
 TerrainRegion::TerrainRegion(int originX, int originY, int originZ)
     : originX_(originX), originY_(originY), originZ_(originZ) {
  sections_.reserve(256);
- for(LayerArena& arena : layers_) {
-  arena.freeRanges.reserve(256);
- }
 }
 TerrainRegion::~TerrainRegion() {
  for(LayerArena& arena : layers_) {
@@ -28,6 +27,9 @@ TerrainRegion::~TerrainRegion() {
   }
   if(arena.handle != 0 && gl::GLCore::deleteBuffers != nullptr) {
    gl::GLCore::deleteBuffers(1, &arena.handle);
+  }
+  if(arena.staging != 0 && gl::GLCore::deleteBuffers != nullptr) {
+   gl::GLCore::deleteBuffers(1, &arena.staging);
   }
  }
 }
@@ -56,6 +58,12 @@ bool TerrainRegion::ensureCapacity(LayerArena& arena, std::size_t requiredVertic
  if(!quad_index::ensure(kInitialVertices)) {
   return false;
  }
+ debug::RenderProfiler::instance().record(debug::RenderMetric::Copies);
+ // Separated from Copies so the HUD says how often arenas regrow per frame and
+ // how much they copy, rather than folding both into one shared counter.
+ debug::RenderProfiler::instance().record(debug::RenderMetric::ArenaGrows);
+ debug::RenderProfiler::instance().record(debug::RenderMetric::ArenaGrowVertices,
+                                          static_cast<std::uint64_t>(arena.tailVertex));
  unsigned newHandle = 0;
  unsigned newVao = 0;
  gl::GLCore::genBuffers(1, &newHandle);
@@ -99,31 +107,58 @@ bool TerrainRegion::acquire(LayerArena& arena,
                             std::size_t requiredVertices,
                             TerrainAllocation& allocation) {
  const std::size_t capacity = std::bit_ceil(std::max(requiredVertices, kAllocationQuantum));
- auto best = arena.freeRanges.end();
- for(auto it = arena.freeRanges.begin(); it != arena.freeRanges.end(); ++it) {
-  if(it->capacity >= capacity &&
-     (best == arena.freeRanges.end() || it->capacity < best->capacity)) {
-   best = it;
-  }
- }
- if(best != arena.freeRanges.end()) {
-  allocation.firstVertex = best->first;
-  allocation.capacityVertices = capacity;
-  if(best->capacity == capacity) {
-   arena.freeRanges.erase(best);
-  } else {
-   best->first += capacity;
-   best->capacity -= capacity;
-  }
-  return true;
- }
- if(arena.tailVertex > std::numeric_limits<std::size_t>::max() - capacity ||
-    !ensureCapacity(arena, arena.tailVertex + capacity)) {
+ const int sizeClass = std::countr_zero(capacity);
+ if(sizeClass < kMinSizeClass || sizeClass > kMaxSizeClass) {
   return false;
  }
- allocation.firstVertex = arena.tailVertex;
+ std::unordered_set<std::size_t>& exact = freeList(arena, sizeClass);
+ if(const auto it = exact.begin(); it != exact.end()) {
+  allocation.firstVertex = *it;
+  allocation.capacityVertices = capacity;
+  exact.erase(it);
+  return true;
+ }
+ // Split the smallest larger block; each half is aligned because its parent was,
+ // which is what keeps the buddy identity in releaseRange valid.
+ for(int larger = sizeClass + 1; larger <= kMaxSizeClass; ++larger) {
+  std::unordered_set<std::size_t>& donor = freeList(arena, larger);
+  const auto it = donor.begin();
+  if(it == donor.end()) {
+   continue;
+  }
+  const std::size_t first = *it;
+  donor.erase(it);
+  for(int split = larger; split > sizeClass; --split) {
+   freeList(arena, split - 1).insert(first + (std::size_t{1} << (split - 1)));
+  }
+  allocation.firstVertex = first;
+  allocation.capacityVertices = capacity;
+  return true;
+ }
+ // Cutting the tail has to land on a multiple of `capacity` or the buddy address
+ // stops being `first ^ capacity`. The skipped gap is donated back as aligned
+ // power-of-two blocks rather than stranded.
+ const std::size_t mask = capacity - 1;
+ if(arena.tailVertex > std::numeric_limits<std::size_t>::max() - mask) {
+  return false;
+ }
+ const std::size_t aligned = (arena.tailVertex + mask) & ~mask;
+ if(aligned > std::numeric_limits<std::size_t>::max() - capacity ||
+    !ensureCapacity(arena, aligned + capacity)) {
+  return false;
+ }
+ for(std::size_t gap = arena.tailVertex; gap < aligned;) {
+  const std::size_t block = std::bit_floor(std::min(gap & (~gap + 1), aligned - gap));
+  const int blockClass = std::countr_zero(block);
+  if(blockClass < kMinSizeClass || blockClass > kMaxSizeClass) {
+   break;
+  }
+  freeList(arena, blockClass).insert(gap);
+  gap += block;
+ }
+ allocation.firstVertex = aligned;
  allocation.capacityVertices = capacity;
- arena.tailVertex += capacity;
+ arena.tailVertex = aligned + capacity;
  return true;
 }
 void TerrainRegion::releaseRange(LayerArena& arena, TerrainAllocation& allocation) noexcept {
@@ -131,59 +166,82 @@ void TerrainRegion::releaseRange(LayerArena& arena, TerrainAllocation& allocatio
   allocation = {};
   return;
  }
- // The list is kept sorted by offset, so a free is an insert at its own position
- // plus a merge against the two neighbours it can possibly touch. It used to
- // re-sort the whole list and rebuild every range on each free, which runs on
- // every block edit and every section unload.
- const auto at = std::lower_bound(arena.freeRanges.begin(),
-                                  arena.freeRanges.end(),
-                                  allocation.firstVertex,
-                                  [](const Range& range, std::size_t first) { return range.first < first; });
- auto inserted = arena.freeRanges.insert(at, Range{allocation.firstVertex, allocation.capacityVertices});
- const auto next = inserted + 1;
- if(next != arena.freeRanges.end() && inserted->first + inserted->capacity == next->first) {
-  inserted->capacity += next->capacity;
-  inserted = arena.freeRanges.erase(next) - 1;
+ std::size_t first = allocation.firstVertex;
+ int sizeClass = std::countr_zero(allocation.capacityVertices);
+ allocation = {};
+ if(sizeClass < kMinSizeClass || sizeClass > kMaxSizeClass) {
+  return;
  }
- if(inserted != arena.freeRanges.begin()) {
-  const auto previous = inserted - 1;
-  if(previous->first + previous->capacity == inserted->first) {
-   previous->capacity += inserted->capacity;
-   arena.freeRanges.erase(inserted);
-  }
- }
- while(!arena.freeRanges.empty()) {
-  const Range& last = arena.freeRanges.back();
-  if(last.first + last.capacity != arena.tailVertex) {
+ while(sizeClass < kMaxSizeClass) {
+  const std::size_t buddy = first ^ (std::size_t{1} << sizeClass);
+  if(freeList(arena, sizeClass).erase(buddy) == 0) {
    break;
   }
-  arena.tailVertex = last.first;
-  arena.freeRanges.pop_back();
+  first = std::min(first, buddy);
+  ++sizeClass;
  }
- allocation = {};
+ freeList(arena, sizeClass).insert(first);
+ trimTail(arena);
+}
+// Merging leaves at most one free block touching the tail per pass, so hand the
+// space back to the allocator's high-water mark instead of letting ensureCapacity
+// grow past it on the next large request.
+void TerrainRegion::trimTail(LayerArena& arena) noexcept {
+ for(bool shrank = true; shrank;) {
+  shrank = false;
+  for(int sizeClass = kMaxSizeClass; sizeClass >= kMinSizeClass; --sizeClass) {
+   const std::size_t span = std::size_t{1} << sizeClass;
+   if(arena.tailVertex < span || (arena.tailVertex & (span - 1)) != 0) {
+    continue;
+   }
+   if(freeList(arena, sizeClass).erase(arena.tailVertex - span) == 0) {
+    continue;
+   }
+   arena.tailVertex -= span;
+   shrank = true;
+   break;
+  }
+ }
 }
 bool TerrainRegion::upload(int layer,
                            TerrainAllocation& allocation,
                            std::span<const TessellatorVertex> vertices) {
  if(layer < 0 || layer >= terrain_layer::Count || vertices.empty() ||
-    gl::GLCore::bufferSubData == nullptr) {
+    gl::GLCore::bufferSubData == nullptr || gl::GLCore::bufferData == nullptr ||
+    gl::GLCore::genBuffers == nullptr || gl::GLCore::copyBufferSubData == nullptr) {
   return false;
  }
  LayerArena& arena = layers_[static_cast<std::size_t>(layer)];
- if(allocation.capacityVertices < vertices.size()) {
+ const std::size_t wantedCapacity = std::bit_ceil(std::max(vertices.size(), kAllocationQuantum));
+ if(allocation.capacityVertices < vertices.size() || allocation.capacityVertices >= wantedCapacity * 4) {
   releaseRange(arena, allocation);
   if(!acquire(arena, vertices.size(), allocation)) {
    return false;
   }
- } else if(arena.handle == 0 && !ensureCapacity(arena, allocation.firstVertex + allocation.capacityVertices)) {
+ }
+ if(arena.handle == 0 && !ensureCapacity(arena, allocation.firstVertex + allocation.capacityVertices)) {
   return false;
  }
- gl::GLCore::bindBuffer(kArrayBuffer, arena.handle);
- gl::GLCore::bufferSubData(kArrayBuffer,
-                           static_cast<intptr_t>(allocation.firstVertex * sizeof(TessellatorVertex)),
-                           static_cast<intptr_t>(vertices.size_bytes()),
-                           vertices.data());
- gl::GLCore::bindBuffer(kArrayBuffer, 0);
+ if(arena.staging == 0) {
+  gl::GLCore::genBuffers(1, &arena.staging);
+  if(arena.staging == 0) {
+   return false;
+  }
+ }
+ gl::GLCore::bindBuffer(kCopyReadBuffer, arena.staging);
+ gl::GLCore::bufferData(kCopyReadBuffer,
+                        static_cast<intptr_t>(std::bit_ceil(vertices.size()) * sizeof(TessellatorVertex)),
+                        nullptr,
+                        kStreamDraw);
+ gl::GLCore::bufferSubData(kCopyReadBuffer, 0, static_cast<intptr_t>(vertices.size_bytes()), vertices.data());
+ gl::GLCore::bindBuffer(kCopyWriteBuffer, arena.handle);
+ gl::GLCore::copyBufferSubData(kCopyReadBuffer,
+                               kCopyWriteBuffer,
+                               0,
+                               static_cast<intptr_t>(allocation.firstVertex * sizeof(TessellatorVertex)),
+                               static_cast<intptr_t>(vertices.size_bytes()));
+ gl::GLCore::bindBuffer(kCopyReadBuffer, 0);
+ gl::GLCore::bindBuffer(kCopyWriteBuffer, 0);
  allocation.vertexCount = static_cast<int>(vertices.size());
  return true;
 }
@@ -202,10 +260,10 @@ int TerrainRegion::drawLayer(int layer, std::span<const TerrainAllocation* const
  if(arena.handle == 0 || arena.vao == 0) {
   return 0;
  }
+ std::size_t totalVertices = 0;
+ std::size_t maxVertices = 0;
  arena.indexCounts.clear();
  arena.baseVertices.clear();
- std::size_t maxVertices = 0;
- std::size_t totalVertices = 0;
  arena.indexCounts.reserve(allocations.size());
  arena.baseVertices.reserve(allocations.size());
  for(const TerrainAllocation* allocation : allocations) {
@@ -232,4 +290,4 @@ int TerrainRegion::drawLayer(int layer, std::span<const TerrainAllocation* const
  pass.hasNormals = true;
  return core::submitIndexedQuadsBatch(pass, arena.vao, arena.indexCounts, arena.baseVertices);
 }
-}
+} // namespace net::minecraft::client::render::chunk

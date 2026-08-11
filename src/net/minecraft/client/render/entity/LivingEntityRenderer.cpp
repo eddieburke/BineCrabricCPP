@@ -190,20 +190,20 @@ void LivingEntityRenderer::render(
     }
    }
   };
-   for(int layer = 0; layer < 4; ++layer) {
-    const render::core::RenderedItemScope itemScope(-1);
-    if(!bindTexture(*living, layer, tickDelta)) {
-     continue;
+  for(int layer = 0; layer < 4; ++layer) {
+   const render::core::RenderedItemScope itemScope(-1);
+   if(!bindTexture(*living, layer, tickDelta)) {
+    continue;
+   }
+   if(decorationModel != nullptr) {
+    syncDecorationPose();
+    render::core::setDrawPose(matrices.top());
+    {
+     const Tessellator::ScopedBatch decorationBatch;
+     decorationModel->render(limbDistance, limbAngle, headBob, headYawRel, headPitch, scaleUnit);
     }
-    if(decorationModel != nullptr) {
-      syncDecorationPose();
-      render::core::setDrawPose(matrices.top());
-      {
-       const Tessellator::ScopedBatch decorationBatch;
-       decorationModel->render(limbDistance, limbAngle, headBob, headYawRel, headPitch, scaleUnit);
-      }
-     }
-    core::disableBlend();
+   }
+   core::disableBlend();
   }
   renderMore(*living, tickDelta, matrices, projection);
   render::core::setEntityColor(0.0f, 0.0f, 0.0f, 0.0f);
@@ -213,57 +213,57 @@ void LivingEntityRenderer::render(
    core::enableBlend();
    core::blendFunc(0x0302, 0x0303); // GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA
    core::depthFunc(0x0202); // GL_EQUAL
-    if(living->hurtTime > 0 || living->deathTime > 0) {
-     render::core::setConstColor(brightness, 0.0f, 0.0f, 0.4f);
-     render::core::setEntityColor(brightness, 0.0f, 0.0f, 0.4f);
-     render::core::setDrawPose(matrices.top());
-     {
-      const Tessellator::ScopedBatch modelBatch;
-      model->render(limbDistance, limbAngle, headBob, headYawRel, headPitch, scaleUnit);
+   if(living->hurtTime > 0 || living->deathTime > 0) {
+    render::core::setConstColor(brightness, 0.0f, 0.0f, 0.4f);
+    render::core::setEntityColor(brightness, 0.0f, 0.0f, 0.4f);
+    render::core::setDrawPose(matrices.top());
+    {
+     const Tessellator::ScopedBatch modelBatch;
+     model->render(limbDistance, limbAngle, headBob, headYawRel, headPitch, scaleUnit);
+    }
+    for(int layer = 0; layer < 4; ++layer) {
+     const render::core::RenderedItemScope itemScope(-1);
+     if(!bindDecorationTexture(*living, layer, tickDelta)) {
+      continue;
      }
-     for(int layer = 0; layer < 4; ++layer) {
-      const render::core::RenderedItemScope itemScope(-1);
-      if(!bindDecorationTexture(*living, layer, tickDelta)) {
-       continue;
-      }
-      render::core::setConstColor(brightness, 0.0f, 0.0f, 0.4f);
-      if(decorationModel != nullptr) {
-        syncDecorationPose();
-        render::core::setDrawPose(matrices.top());
-        {
-         const Tessellator::ScopedBatch decorationBatch;
-         decorationModel->render(limbDistance, limbAngle, headBob, headYawRel, headPitch, scaleUnit);
-        }
+     render::core::setConstColor(brightness, 0.0f, 0.0f, 0.4f);
+     if(decorationModel != nullptr) {
+      syncDecorationPose();
+      render::core::setDrawPose(matrices.top());
+      {
+       const Tessellator::ScopedBatch decorationBatch;
+       decorationModel->render(limbDistance, limbAngle, headBob, headYawRel, headPitch, scaleUnit);
       }
      }
     }
+   }
    if(overlayAlpha > 0) {
     const float cr = static_cast<float>((overlay >> 16) & 0xFF) / 255.0f;
     const float cg = static_cast<float>((overlay >> 8) & 0xFF) / 255.0f;
     const float cb = static_cast<float>(overlay & 0xFF) / 255.0f;
     const float ca = static_cast<float>(overlayAlpha) / 255.0f;
+    render::core::setConstColor(cr, cg, cb, ca);
+    render::core::setEntityColor(cr, cg, cb, ca);
+    render::core::setDrawPose(matrices.top());
+    {
+     const Tessellator::ScopedBatch modelBatch;
+     model->render(limbDistance, limbAngle, headBob, headYawRel, headPitch, scaleUnit);
+    }
+    for(int layer = 0; layer < 4; ++layer) {
+     const render::core::RenderedItemScope itemScope(-1);
+     if(!bindDecorationTexture(*living, layer, tickDelta)) {
+      continue;
+     }
      render::core::setConstColor(cr, cg, cb, ca);
-     render::core::setEntityColor(cr, cg, cb, ca);
+     if(decorationModel != nullptr) {
+      syncDecorationPose();
       render::core::setDrawPose(matrices.top());
       {
-       const Tessellator::ScopedBatch modelBatch;
-       model->render(limbDistance, limbAngle, headBob, headYawRel, headPitch, scaleUnit);
-      }
-      for(int layer = 0; layer < 4; ++layer) {
-       const render::core::RenderedItemScope itemScope(-1);
-       if(!bindDecorationTexture(*living, layer, tickDelta)) {
-        continue;
-       }
-       render::core::setConstColor(cr, cg, cb, ca);
-      if(decorationModel != nullptr) {
-        syncDecorationPose();
-        render::core::setDrawPose(matrices.top());
-        {
-         const Tessellator::ScopedBatch decorationBatch;
-         decorationModel->render(limbDistance, limbAngle, headBob, headYawRel, headPitch, scaleUnit);
-        }
+       const Tessellator::ScopedBatch decorationBatch;
+       decorationModel->render(limbDistance, limbAngle, headBob, headYawRel, headPitch, scaleUnit);
       }
      }
+    }
    }
    render::core::setEntityColor(0.0f, 0.0f, 0.0f, 0.0f);
    core::depthTest();
@@ -343,7 +343,6 @@ void LivingEntityRenderer::renderNameTag(const net::minecraft::LivingEntity& ent
                                          const net::minecraft::util::math::Matrix4f& projection) {
  if(dispatcher != nullptr && dispatcher->options().entityIdLabels &&
     !core::cameraFrame().shadowPass) {
-  const debug::RenderProfiler::Scope labelScope(debug::RenderStage::EntityDebugLabels);
   renderNameTag(entity, std::to_string(entity.id), x, y, z, 64, matrices, projection);
  }
 }
@@ -364,20 +363,20 @@ void LivingEntityRenderer::renderNameTag(
  }
  constexpr float nameScale = 1.6f;
  const float pixelScale = 0.016666668f * nameScale;
+ {
+  matrices.push();
+  matrices.translate(static_cast<float>(x), static_cast<float>(y) + 2.3f, static_cast<float>(z));
+  matrices.rotate(-dispatcher->yaw_, 0.0f, 1.0f, 0.0f);
+  matrices.rotate(dispatcher->pitch_, 1.0f, 0.0f, 0.0f);
+  matrices.scale(-pixelScale, -pixelScale, pixelScale);
+  render::RenderPassScope passScope(render::RenderType::guiTextured());
+  Tessellator& tessellator = Tessellator::INSTANCE;
+  int yOffset = 0;
+  if(name == "deadmau5") {
+   yOffset = -10;
+  }
+  render::core::setDrawPose(matrices.top());
   {
-   matrices.push();
-   matrices.translate(static_cast<float>(x), static_cast<float>(y) + 2.3f, static_cast<float>(z));
-   matrices.rotate(-dispatcher->yaw_, 0.0f, 1.0f, 0.0f);
-   matrices.rotate(dispatcher->pitch_, 1.0f, 0.0f, 0.0f);
-   matrices.scale(-pixelScale, -pixelScale, pixelScale);
-   render::RenderPassScope passScope(render::RenderType::guiTextured());
-   Tessellator& tessellator = Tessellator::INSTANCE;
-   int yOffset = 0;
-   if(name == "deadmau5") {
-    yOffset = -10;
-   }
-   render::core::setDrawPose(matrices.top());
-   {
    render::RenderPassScope backdropPass(render::RenderType::basic());
    tessellator.startQuads();
    const int halfWidth = textRenderer->getWidth(name) / 2;

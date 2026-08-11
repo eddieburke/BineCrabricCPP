@@ -34,11 +34,11 @@ TEST(PbrMipmap, SpecularChannelClassifiers) {
 }
 TEST(PbrMipmap, NormalBlendIsLinearOnAllChannels) {
  // Java: NORMAL uses LINEAR_MIPMAP_GENERATOR (all four channels linear).
-  const std::uint32_t blended =
-      PbrTextures::pbrBlendMip4(argb(255, 0, 200, 100), argb(255, 255, 200, 100),
-                                argb(255, 255, 240, 100), argb(255, 0, 240, 0), Type::Normal,
-                                true);
-  EXPECT_EQ(blended, argb(255, 127, 220, 75));
+ const std::uint32_t blended =
+     PbrTextures::pbrBlendMip4(argb(255, 0, 200, 100), argb(255, 255, 200, 100),
+                               argb(255, 255, 240, 100), argb(255, 0, 240, 0), Type::Normal,
+                               true);
+ EXPECT_EQ(blended, argb(255, 127, 220, 75));
 }
 TEST(PbrMipmap, SpecularLabPbrBlendIsChannelDiscrete) {
  // Java: labPBR SPECULAR_MIPMAP_GENERATOR — R linear, G/B/A discrete.
@@ -53,11 +53,11 @@ TEST(PbrMipmap, SpecularLabPbrBlendIsChannelDiscrete) {
 TEST(PbrMipmap, SpecularWithoutLabPbrFormatBlendsLinearly) {
  // Java: no texture format -> PBRSpriteContents falls back to the linear
  // generator even for specular maps.
-  const std::uint32_t blended =
-      PbrTextures::pbrBlendMip4(argb(255, 0, 200, 100), argb(255, 255, 200, 100),
-                                argb(255, 255, 240, 100), argb(255, 0, 240, 0), Type::Specular,
-                                false);
-  EXPECT_EQ(blended, argb(255, 127, 220, 75));
+ const std::uint32_t blended =
+     PbrTextures::pbrBlendMip4(argb(255, 0, 200, 100), argb(255, 255, 200, 100),
+                               argb(255, 255, 240, 100), argb(255, 0, 240, 0), Type::Specular,
+                               false);
+ EXPECT_EQ(blended, argb(255, 127, 220, 75));
 }
 TEST(PbrMipmap, DiscreteBlendAveragesOnlyTargetTypeMembers) {
  // R stays linear: (230+230+240+240)/4=235.
@@ -89,7 +89,7 @@ TEST(PbrMipmap, DownsampleHalvesLinearImage) {
   }
  }
  std::array<std::uint8_t, 2 * 2 * 4> dst{};
- PbrTextures::pbrDownsampleMip(src.data(), 4, dst.data(), 2, 2, Type::Normal, true);
+ PbrTextures::pbrDownsampleMip(src.data(), 4, 4, dst.data(), 2, 2, Type::Normal, true);
  const auto pixel = [&dst](int x, int y) {
   const std::size_t offset = (static_cast<std::size_t>(y) * 2 + x) * 4;
   return std::array<std::uint8_t, 4>{dst[offset + 0], dst[offset + 1], dst[offset + 2],
@@ -115,7 +115,7 @@ TEST(PbrMipmap, DownsampleAppliesSpecularDiscreteRules) {
   }
  }
  std::array<std::uint8_t, 2 * 2 * 4> dst{};
- PbrTextures::pbrDownsampleMip(src.data(), 4, dst.data(), 2, 2, Type::Specular, true);
+ PbrTextures::pbrDownsampleMip(src.data(), 4, 4, dst.data(), 2, 2, Type::Specular, true);
  const auto pixel = [&dst](int x, int y) {
   const std::size_t offset = (static_cast<std::size_t>(y) * 2 + x) * 4;
   return std::array<std::uint8_t, 4>{dst[offset + 0], dst[offset + 1], dst[offset + 2],
@@ -136,14 +136,30 @@ TEST(PbrMipmap, DownsampleInPlaceMatchesOutOfPlace) {
   src[i * 4 + 3] = 255;
  }
  std::array<std::uint8_t, 2 * 2 * 4> outOfPlace{};
- PbrTextures::pbrDownsampleMip(src.data(), 4, outOfPlace.data(), 2, 2, Type::Specular,
+ PbrTextures::pbrDownsampleMip(src.data(), 4, 4, outOfPlace.data(), 2, 2, Type::Specular,
                                true);
  std::array<std::uint8_t, 4 * 4 * 4> inPlace = src;
- PbrTextures::pbrDownsampleMip(inPlace.data(), 4, inPlace.data(), 2, 2, Type::Specular,
+ PbrTextures::pbrDownsampleMip(inPlace.data(), 4, 4, inPlace.data(), 2, 2, Type::Specular,
                                true);
  for(std::size_t i = 0; i < outOfPlace.size(); ++i) {
   EXPECT_EQ(inPlace[i], outOfPlace[i]);
  }
+}
+TEST(PbrMipmap, AtlasDownsampleKeepsNormalTilesIndependent) {
+ std::array<std::uint8_t, 4 * 2 * 4> source{};
+ for(int y = 0; y < 2; ++y) {
+  for(int x = 0; x < 4; ++x) {
+   const std::size_t offset = static_cast<std::size_t>(x + y * 4) * 4;
+   source[offset + 0] = x < 2 ? 255 : 0;
+   source[offset + 1] = 128;
+   source[offset + 2] = x < 2 ? 0 : 255;
+   source[offset + 3] = 255;
+  }
+ }
+ std::array<std::uint8_t, 2 * 1 * 4> destination{};
+ PbrTextures::pbrDownsampleMip(source.data(), 4, 2, destination.data(), 2, 1,
+                               Type::Normal, true, 2, 1);
+ EXPECT_EQ(destination, (std::array<std::uint8_t, 8>{255, 128, 0, 255, 0, 128, 255, 255}));
 }
 TEST(PbrMipmap, ScaleNearestUsesIntegerMultipleBlocks) {
  net::minecraft::client::texture::RasterImage source;

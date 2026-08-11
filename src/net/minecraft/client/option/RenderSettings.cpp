@@ -12,7 +12,6 @@ RenderSettings renderSettings(const GameOptions& options) {
  r.fovOffset = options.fieldOfView * 40.0f;
  r.ambientOcclusionActive = options.ao;
  r.ambientOcclusionStrength = options.ao ? std::clamp(options.aoLevel, 0.0f, 1.0f) : 0.0f;
- r.brightnessBoost = options.brightness;
  r.mipmapLinearFilter = options.mipmapLinear;
  r.fancyLeaves = options.trees == 0;
  r.leafInteriorFaces = r.fancyLeaves ? std::clamp(options.leafInterior, 0, 2) : 0;
@@ -24,10 +23,6 @@ RenderSettings renderSettings(const GameOptions& options) {
  r.renderScale = std::isfinite(options.renderScale) ? std::clamp(options.renderScale, 1.0f, 5.0f) : 1.0f;
  const int baseDistance = 256 >> r.renderDistance.setting;
  r.renderDistance.blocks = static_cast<float>(baseDistance) * r.renderScale;
- // Near/far planes, the fog span and the fog colour blend are all derived from
- // renderDistance now — see RenderDistance's accessors. Nothing is stored twice.
- // The section radius is no longer stored: RenderDistance::chunks() derives it from
- // the same blocks value the camera and fog use, so the two cannot disagree.
  const int preloadMargin = options.preloadedChunks <= 0 ? 3 : 3 + options.preloadedChunks / 2;
  r.residentChunkRadius = r.renderDistance.chunks() + preloadMargin;
  r.smoothInput = options.smoothInput;

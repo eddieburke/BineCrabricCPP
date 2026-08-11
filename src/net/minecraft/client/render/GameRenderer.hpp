@@ -77,8 +77,7 @@ class GameRenderer {
  void resolveSceneCapture();
  void renderFirstPersonHand(float tickDelta);
  void renderRain();
- [[nodiscard]] PackUniformValues buildFrameUniforms(float tickDelta,
-                                                    bool shadowAvailable) const;
+ [[nodiscard]] PackUniformValues buildFrameUniforms(float tickDelta) const;
  Minecraft* client = nullptr;
  std::unique_ptr<item::HeldItemRenderer> heldItemRenderer;
  int ticks = 0;

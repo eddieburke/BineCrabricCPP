@@ -17,6 +17,7 @@
 #include <cstdint>
 #include <cmath>
 #include <memory>
+#include <span>
 #include <unordered_set>
 #include <vector>
 #include "net/minecraft/block/Block.hpp"
@@ -130,8 +131,8 @@ MeshStats meshLayer(int layer, bool ambientOcclusion, bool oldLighting = false) 
  opts.oldLighting = oldLighting;
  Tessellator tessellator;
  tessellator.setCaptureOnly(true);
-  client::render::block::BlockRenderManager manager(tessellator, &snapshot, opts);
-  bool began = false;
+ client::render::block::BlockRenderManager manager(tessellator, &snapshot, opts);
+ bool began = false;
  for(int x = 0; x < kSectionSize; ++x) {
   for(int z = 0; z < kSectionSize; ++z) {
    for(int y = 0; y < kSectionSize; ++y) {
@@ -155,33 +156,33 @@ MeshStats meshLayer(int layer, bool ambientOcclusion, bool oldLighting = false) 
  if(began) {
   const TessellatorMesh mesh = tessellator.takeMesh();
   stats.vertexCount = mesh.vertices.size();
-   stats.hash = hashMesh(mesh);
-   std::unordered_set<std::uint32_t> fluidColors;
-   std::unordered_set<std::uint32_t> fluidSurfaceColors;
-   for(const auto& vertex : mesh.vertices) {
-    if(vertex.entity[1] != 1) continue;
-    ++stats.fluidVertexCount;
-    fluidColors.insert(vertex.color);
-    if(static_cast<std::int8_t>((vertex.normal >> 8) & 0xFF) >= 0) fluidSurfaceColors.insert(vertex.color);
-    if(vertex.light != 0x00F000F0) stats.sawSampledFluidLight = true;
+  stats.hash = hashMesh(mesh);
+  std::unordered_set<std::uint32_t> fluidColors;
+  std::unordered_set<std::uint32_t> fluidSurfaceColors;
+  for(const auto& vertex : mesh.vertices) {
+   if(vertex.entity[1] != 1) continue;
+   ++stats.fluidVertexCount;
+   fluidColors.insert(vertex.color);
+   if(static_cast<std::int8_t>((vertex.normal >> 8) & 0xFF) >= 0) fluidSurfaceColors.insert(vertex.color);
+   if(vertex.light != 0x00F000F0) stats.sawSampledFluidLight = true;
+  }
+  stats.fluidColorCount = fluidColors.size();
+  stats.fluidSurfaceColorCount = fluidSurfaceColors.size();
+  for(std::size_t i = 0; i + 3 < mesh.vertices.size(); i += 4) {
+   const auto& first = mesh.vertices[i];
+   if(first.entity[1] != 1 || static_cast<std::int8_t>((first.normal >> 8) & 0xFF) <= 0) continue;
+   ++stats.fluidTopQuadCount;
+   double midU = 0.0;
+   double midV = 0.0;
+   for(std::size_t j = 0; j < 4; ++j) {
+    midU += mesh.vertices[i + j].u;
+    midV += mesh.vertices[i + j].v;
    }
-   stats.fluidColorCount = fluidColors.size();
-   stats.fluidSurfaceColorCount = fluidSurfaceColors.size();
-   for(std::size_t i = 0; i + 3 < mesh.vertices.size(); i += 4) {
-    const auto& first = mesh.vertices[i];
-    if(first.entity[1] != 1 || static_cast<std::int8_t>((first.normal >> 8) & 0xFF) <= 0) continue;
-    ++stats.fluidTopQuadCount;
-    double midU = 0.0;
-    double midV = 0.0;
-    for(std::size_t j = 0; j < 4; ++j) {
-     midU += mesh.vertices[i + j].u;
-     midV += mesh.vertices[i + j].v;
-    }
-    const double tileU = std::fmod(midU * 64.0, 16.0);
-    const double tileV = std::fmod(midV * 64.0, 16.0);
-    stats.fluidTopUvCentered = stats.fluidTopUvCentered && std::abs(tileU - 8.0) < 0.01 &&
-                               std::abs(tileV - 8.0) < 0.01;
-   }
+   const double tileU = std::fmod(midU * 64.0, 16.0);
+   const double tileV = std::fmod(midV * 64.0, 16.0);
+   stats.fluidTopUvCentered = stats.fluidTopUvCentered && std::abs(tileU - 8.0) < 0.01 &&
+                              std::abs(tileV - 8.0) < 0.01;
+  }
  }
  stats.sawSkyLight = snapshot.sawSkyLight();
  return stats;
@@ -272,9 +273,46 @@ TEST(ChunkMeshGolden, OutOfRangeReadsAreAirAndSkyLit) {
      kSectionSize + 1);
  // Far outside the captured columns.
  EXPECT_EQ(snapshot.getBlockId(500, 8, 500), 0);
-  EXPECT_EQ(snapshot.getRawBrightness(500, 8, 500, true), 15);
-  // Below and above the world.
-  EXPECT_EQ(snapshot.getBlockId(0, -1, 0), 0);
-  EXPECT_EQ(snapshot.getRawBrightness(0, Chunk::height + 4, 0, true), 15);
+ EXPECT_EQ(snapshot.getRawBrightness(500, 8, 500, true), 15);
+ // Below and above the world.
+ EXPECT_EQ(snapshot.getBlockId(0, -1, 0), 0);
+ EXPECT_EQ(snapshot.getRawBrightness(0, Chunk::height + 4, 0, true), 15);
+}
+// BLOCK light has no such optimistic default — an absent column reads 0, which
+// is vanilla's EnumSkyBlock.Block.defaultLightValue. That is correct parity, and
+// it is exactly why a section meshed while a neighbour column was missing bakes
+// a dark fringe that only a re-mesh can remove.
+//
+// The columns a mesh job depends on are the full 3x3, DIAGONALS INCLUDED:
+// ChunkBuilder captures `owner.x - 1 .. owner.x + kSectionBlocks + 1`, and
+// averageCornerLight samples the diagonal cell of every corner, so a block in a
+// section's corner reads the diagonal chunk. ChunkSectionSystem::drainBorderRefresh
+// must therefore invalidate all eight surrounding columns when a chunk loads;
+// refreshing only the four orthogonal ones leaves the corners dark forever,
+// because nothing else ever invalidates them.
+TEST(ChunkMeshGolden, CornerBlockLightComesFromTheDiagonalColumn) {
+ auto centre = std::make_unique<Chunk>(nullptr, 0, 0);
+ paintScene(*centre);
+ auto diagonal = std::make_unique<Chunk>(nullptr, -1, -1);
+ for(int x = 0; x < 16; ++x) {
+  for(int z = 0; z < 16; ++z) {
+   for(int y = 0; y < 16; ++y) {
+    diagonal->blockLight.set(x, y, z, 15);
+   }
+  }
+ }
+ diagonal->populateHeightMapOnly();
+ const auto cornerBlockLight = [](std::span<const RegionSnapshot::SourceChunk> sources) {
+  RegionSnapshot snapshot(sources, /*ambientDarkness=*/0, linearLuminance(), nullptr, -1, -1, -1,
+                          kSectionSize + 1, kSectionSize, kSectionSize + 1);
+  // The diagonal probe averageCornerLight reads for the corner block (0, y, 0).
+  return snapshot.getBlockLight(-1, 4, -1);
+ };
+ const RegionSnapshot::SourceChunk centreOnly[] = {{0, 0, centre.get()}};
+ const RegionSnapshot::SourceChunk withDiagonal[] = {{0, 0, centre.get()}, {-1, -1, diagonal.get()}};
+ EXPECT_EQ(cornerBlockLight(centreOnly), 0)
+     << "an absent column must read as unlit, matching vanilla's block-light default";
+ EXPECT_EQ(cornerBlockLight(withDiagonal), 15)
+     << "the diagonal column feeds this section's corner light, so it is a real mesh dependency";
 }
 } // namespace net::minecraft::test

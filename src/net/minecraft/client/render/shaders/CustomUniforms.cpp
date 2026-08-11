@@ -293,7 +293,7 @@ bool lookupBuiltin(const std::string& name, const PackUniformValues& frame, Cust
  if(name == "viewHeight") return f1(frame.viewHeight);
  if(name == "aspectRatio") return f1(frame.aspectRatio);
  if(name == "near") return f1(frame.nearPlane);
- if(name == "far") return f1(frame.farPlane);
+ if(name == "far") return f1(frame.renderDistanceBlocks);
  if(name == "shadowMapResolution") return f1(frame.shadowMapResolution);
  if(name == "cameraPosition") return v3(frame.cameraPosition);
  if(name == "cameraPositionFract") return v3(frame.cameraPositionFract);

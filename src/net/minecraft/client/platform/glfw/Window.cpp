@@ -17,6 +17,7 @@ namespace {
 bool fullscreen_ = false;
 bool closeRequested_ = false;
 bool active_ = true;
+bool visible_ = true;
 bool initialized_ = false;
 int pendingWidth_ = 854;
 int pendingHeight_ = 480;
@@ -284,6 +285,16 @@ void Window::setTitle(const char* title) {
   glfwSetWindowTitle(window_, title_.c_str());
  }
 }
+void Window::setVisible(bool visible) {
+ visible_ = visible;
+ if(window_ != nullptr) {
+  if(visible_) {
+   glfwShowWindow(window_);
+  } else {
+   glfwHideWindow(window_);
+  }
+ }
+}
 void Window::notifyResize() {
  if(window_ == nullptr || !resizeCallback_) {
   return;
@@ -324,13 +335,7 @@ void Window::create() {
  glfwWindowHint(GLFW_DEPTH_BITS, 24);
  glfwWindowHint(GLFW_STENCIL_BITS, 8);
  glfwWindowHint(GLFW_DOUBLEBUFFER, GLFW_TRUE);
- // No alpha in the default framebuffer. World draws clear/write alpha values
- // other than 1 (e.g. clearColor(...,0.0f) for fog), and on Windows an alpha
- // channel on the window's own pixel format lets DWM composite the desktop
- // through those pixels — visible as flicker wherever content behind the
- // window changes, worst over large flat-color regions (sky) and in menus
- // (translucent overlay compounds it). Requesting zero alpha bits makes the
- // window opaque at the OS level regardless of what the app clears/writes.
+ glfwWindowHint(GLFW_VISIBLE, visible_ ? GLFW_TRUE : GLFW_FALSE);
  glfwWindowHint(GLFW_ALPHA_BITS, 0);
  // Core profile OpenGL 4.3 (forward-compatible): compute shaders and image
  // load/store are available to shader packs.
@@ -353,7 +358,9 @@ void Window::create() {
  applyCallbacks(window_);
  glfwMakeContextCurrent(window_);
  resetSwapPacing();
- glfwShowWindow(window_);
+ if(visible_) {
+  glfwShowWindow(window_);
+ }
  notifyResize();
 }
 void Window::ensureGlContext() {

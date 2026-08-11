@@ -116,10 +116,8 @@ struct PackPass {
  std::vector<std::string> outputs;
  std::vector<std::string> mipmapBuffers;
  int groups[3] = {1, 1, 1};
- int localSize[3] = {1, 1, 1};
  float groupScale[2] = {1.0f, 1.0f};
  bool relativeGroups = true;
- int iterations = 1;
  int order = 0;
 };
 // What the pack declares in shaders.properties / .vsh / .fsh, resolved and stored in
@@ -162,10 +160,6 @@ struct PackDefinition {
  bool labPbr = false;
  bool labPbr13 = false;
  float ambientOcclusionLevel = 1.0f;
- // --- SM_DIST / shadowDistance ---
- // The pack's own shadow tuning, passed verbatim to makeShadowCamera and the shadow
- // frustum. These describe the SHADOW map only: the camera far plane and the
- // render-distance uniforms come from option::RenderDistance, never from here.
  float entityShadowDistanceMul = 1.0f;
  float voxelDistance = 0.0f;
  float shadowDistance = 160.0f;
@@ -175,14 +169,14 @@ struct PackDefinition {
  float shadowFarPlane = 156.0f;
  float shadowIntervalSize = 2.0f;
  float sunPathRotation = 0.0f;
-  // --- HALF_LIFE ---
-  float wetnessHalflife = 600.0f;
-  float drynessHalflife = 200.0f;
-  float centerDepthHalflife = 1.0f;
-  // True when any program source references centerDepthSmooth (or the pack
-  // declares const float centerDepthHalflife). The per-frame depth readback
-  // that feeds the uniform only runs for packs that actually consume it.
-  bool usesCenterDepthSmooth = false;
+ // --- HALF_LIFE ---
+ float wetnessHalflife = 600.0f;
+ float drynessHalflife = 200.0f;
+ float centerDepthHalflife = 1.0f;
+ // True when any program source references centerDepthSmooth (or the pack
+ // declares const float centerDepthHalflife). The per-frame depth readback
+ // that feeds the uniform only runs for packs that actually consume it.
+ bool usesCenterDepthSmooth = false;
  float eyeBrightnessHalflife = 10.0f;
  // --- tex. / filter ---
  bool shadowtexNearest[2] = {false, false};

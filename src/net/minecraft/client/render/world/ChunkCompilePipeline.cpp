@@ -1,11 +1,13 @@
 #include "net/minecraft/client/render/world/ChunkCompilePipeline.hpp"
 #include <algorithm>
+#include <chrono>
 #include <cmath>
 #include <cstdio>
 #include <memory>
 #include <unordered_set>
 #include <vector>
 #include "net/minecraft/client/ClientLog.hpp"
+#include "net/minecraft/client/debug/RenderProfiler.hpp"
 #include "net/minecraft/client/Minecraft.hpp"
 #include "net/minecraft/client/option/RenderSettings.hpp"
 #include "net/minecraft/client/render/world/WorldRenderer.hpp"
@@ -16,20 +18,12 @@
 #include "net/minecraft/util/concurrent/FrameBudget.hpp"
 namespace net::minecraft::client::render {
 namespace {
-constexpr int kBaselineRadius = 13;
 constexpr int kMeshBias = 4;
 } // namespace
 void ChunkCompilePipeline::enqueueDirtyChunk(chunk::ChunkBuilder* chunk) {
  if(chunk == nullptr || chunk->meshJobInFlight) {
   return;
  }
- // The old P-LITGATE held a fresh column's first mesh until the lighting engine
- // called back. That made "does terrain render at all" depend on a callback
- // chain with two release paths and an idle-fallback — if any of them misses,
- // sections sit dirty forever and the world is simply empty, with no error.
- // Not worth it: meshing immediately costs at most one dark first build, and
- // the drained lighting region re-dirties the section anyway
- // (World::doLightingUpdates -> setBlocksDirty -> markDirty -> invalidate).
  constexpr float kNearDirtyDistSq = 32.0f * 32.0f;
  constexpr std::size_t kNearDirtyCap = 64;
  if(nearDirtyChunks_.size() < kNearDirtyCap) {
@@ -56,21 +50,29 @@ bool ChunkCompilePipeline::startMeshJob(chunk::ChunkBuilder* chunk,
  if(chunk == nullptr || chunk->meshJobInFlight || !chunk->dirty) {
   return false;
  }
+ const auto captureStart = std::chrono::steady_clock::now();
  auto job = chunk::ChunkMeshJob::capture(*chunk, resolvedOpts);
  if(job == nullptr) {
   return false;
  }
-  chunk->meshJobInFlight = true;
+ job->captureNs = static_cast<std::uint64_t>(std::chrono::duration_cast<std::chrono::nanoseconds>(
+                                                 std::chrono::steady_clock::now() - captureStart)
+                                                 .count());
+ chunk->meshJobInFlight = true;
  dirtyChunks_.erase(chunk);
  const auto enqueue = [&](std::shared_ptr<chunk::ChunkMeshJob> job, int jobPriority) {
   meshHandoff_.enqueue(
       std::move(job),
       [](chunk::ChunkMeshJob& meshJob) {
+       const auto buildStart = std::chrono::steady_clock::now();
        try {
         chunk::ChunkBuilder::buildMesh(meshJob);
        } catch(...) {
         meshJob.failed = true;
        }
+       meshJob.buildNs = static_cast<std::uint64_t>(std::chrono::duration_cast<std::chrono::nanoseconds>(
+                                                        std::chrono::steady_clock::now() - buildStart)
+                                                        .count());
       },
       jobPriority);
  };
@@ -83,21 +85,25 @@ bool ChunkCompilePipeline::startMeshJob(chunk::ChunkBuilder* chunk,
  return true;
 }
 bool ChunkCompilePipeline::compileChunks(net::minecraft::entity::LivingEntity& /*camera*/, bool force) {
- sectionSystem_->drainBorderRefresh();
+ debug::RenderProfileScope compileProfile("terrain", "compile");
+ {
+  debug::RenderProfileScope borderProfile("terrain", "border_refresh");
+  sectionSystem_->drainBorderRefresh();
+ }
  const client::option::RenderSettings& resolvedOpts = *scene_.settings;
- const float gridAreaScale = static_cast<float>(sectionSystem_->renderRadiusChunks() *
-                                                sectionSystem_->renderRadiusChunks()) /
-                             static_cast<float>(kBaselineRadius * kBaselineRadius);
  const std::size_t workerCount = meshHandoff_.workerCount();
  const std::size_t backlog = dirtyChunks_.size() + pendingMeshUploads_.size() + meshHandoff_.pendingJobs();
+ debug::RenderProfiler& profiler = debug::RenderProfiler::instance();
+ profiler.record(debug::RenderMetric::MeshJobsQueued, dirtyChunks_.size());
+ profiler.record(debug::RenderMetric::MeshJobsInFlight, meshHandoff_.pendingJobs());
+ profiler.record(debug::RenderMetric::MeshUploadsPending, pendingMeshUploads_.size());
  const bool loadingBacklog = backlog > 512u;
- const int minUploadsPerFrame = loadingBacklog ? std::clamp(static_cast<int>(workerCount * 2u), 4, 16)
-                                               : std::clamp(static_cast<int>(std::ceil(2.0f * gridAreaScale)), 1, 6);
+ const int minUploadsPerFrame = loadingBacklog ? std::clamp(static_cast<int>(workerCount * 2u), 4, 16) : 1;
  const net::minecraft::util::concurrent::FrameBudget uploadBudget =
      net::minecraft::util::concurrent::FrameBudget::fromSharedMs(loadingBacklog ? 6 : 3, minUploadsPerFrame);
  // Near-camera edits get a dedicated slice (QD-21): they are uploaded before
- // the ring backlog so a block edit next to the player lands the frame its
- // mesh finishes, not when the distant ring's budget allows (HZ-31).
+ // the loading backlog so a block edit next to the player lands the frame its
+ // mesh finishes, not when background work's budget allows (HZ-31).
  const net::minecraft::util::concurrent::FrameBudget nearBudget =
      net::minecraft::util::concurrent::FrameBudget::fromSharedMs(2, minUploadsPerFrame);
  int uploadCount = 0;
@@ -112,6 +118,11 @@ bool ChunkCompilePipeline::compileChunks(net::minecraft::entity::LivingEntity& /
    return;
   }
   chunk::ChunkBuilder* builder = owner.get();
+  if(!job->profileRecorded) {
+   profiler.recordSpanDuration("terrain", "mesh_capture", job->captureNs);
+   profiler.recordSpanDuration("terrain", "mesh_build_worker", job->buildNs);
+   job->profileRecorded = true;
+  }
   const net::minecraft::util::concurrent::FrameBudget& budget = nearLane ? nearBudget : uploadBudget;
   const int budgetCount = nearLane ? nearUploadCount : uploadCount;
   if(!budget.hasRemaining(budgetCount)) {
@@ -124,7 +135,15 @@ bool ChunkCompilePipeline::compileChunks(net::minecraft::entity::LivingEntity& /
    enqueueDirtyChunk(builder);
    return;
   }
-  builder->uploadMesh(*job);
+  std::uint64_t uploadBytes = 0;
+  for(const TessellatorMesh& layer : job->result.layers) {
+   uploadBytes += layer.vertexCount() * sizeof(TessellatorVertex);
+  }
+  profiler.record(debug::RenderMetric::MeshUploadBytes, uploadBytes);
+  {
+   debug::RenderProfileScope uploadProfile("terrain", "mesh_upload");
+   builder->uploadMesh(*job);
+  }
   builder->dirty = false;
   dirtyChunks_.erase(builder);
   if(nearLane) {
@@ -134,14 +153,14 @@ bool ChunkCompilePipeline::compileChunks(net::minecraft::entity::LivingEntity& /
   }
  };
  std::vector<std::shared_ptr<chunk::ChunkMeshJob>> nearUploads;
- std::vector<std::shared_ptr<chunk::ChunkMeshJob>> ringUploads;
+ std::vector<std::shared_ptr<chunk::ChunkMeshJob>> backgroundUploads;
  nearUploads.reserve(pendingMeshUploads_.size());
- ringUploads.reserve(pendingMeshUploads_.size());
+ backgroundUploads.reserve(pendingMeshUploads_.size());
  for(std::shared_ptr<chunk::ChunkMeshJob>& job : pendingMeshUploads_) {
   if(job->nearLane) {
    nearUploads.push_back(std::move(job));
   } else {
-   ringUploads.push_back(std::move(job));
+   backgroundUploads.push_back(std::move(job));
   }
  }
  pendingMeshUploads_.clear();
@@ -149,14 +168,16 @@ bool ChunkCompilePipeline::compileChunks(net::minecraft::entity::LivingEntity& /
   if(job->nearLane) {
    nearUploads.push_back(std::move(job));
   } else {
-   ringUploads.push_back(std::move(job));
+   backgroundUploads.push_back(std::move(job));
   }
  }
- for(std::shared_ptr<chunk::ChunkMeshJob>& job : nearUploads) {
-  processUpload(std::move(job), true);
- }
- for(std::shared_ptr<chunk::ChunkMeshJob>& job : ringUploads) {
-  processUpload(std::move(job), false);
+ {
+  for(std::shared_ptr<chunk::ChunkMeshJob>& job : nearUploads) {
+   processUpload(std::move(job), true);
+  }
+  for(std::shared_ptr<chunk::ChunkMeshJob>& job : backgroundUploads) {
+   processUpload(std::move(job), false);
+  }
  }
  pendingMeshUploads_ = std::move(deferredUploads);
  const std::size_t targetInFlight = workerCount * (force ? 6u : 3u);
@@ -185,11 +206,6 @@ bool ChunkCompilePipeline::compileChunks(net::minecraft::entity::LivingEntity& /
     ++it;
    }
   }
-  // Ascending graph-distance order (ChunkSectionSystem::rebuildSectionOrder):
-  // strictly nearest-first, and unlike the old chebyshev ring buckets it
-  // covers sections the occlusion walk can't reach too, so a dirty section
-  // behind solid terrain still gets scheduled instead of being invisible to
-  // this loop until it happens to become visible.
   const auto& sectionsByPriority = sectionSystem_->sectionsByPriority();
   for(chunk::ChunkBuilder* section : sectionsByPriority) {
    if(!canCapture()) {

@@ -1,28 +1,6 @@
 #include "net/minecraft/client/util/FramePipeline.hpp"
-#include "net/minecraft/client/debug/RenderProfiler.hpp"
 #include "net/minecraft/util/concurrent/FrameBudget.hpp"
 namespace net::minecraft::client::util {
-namespace {
-debug::RenderStage profilerStage(FramePipeline::Phase phase) {
- switch(phase) {
- case FramePipeline::Phase::Drain:
-  return debug::RenderStage::FrameDrain;
- case FramePipeline::Phase::Input:
-  return debug::RenderStage::Input;
- case FramePipeline::Phase::Ticks:
-  return debug::RenderStage::Ticks;
- case FramePipeline::Phase::Render:
-  return debug::RenderStage::RenderOverhead;
- case FramePipeline::Phase::Present:
-  return debug::RenderStage::Present;
- case FramePipeline::Phase::Pace:
-  return debug::RenderStage::Pace;
- case FramePipeline::Phase::Diagnostics:
-  return debug::RenderStage::Diagnostics;
- }
- return debug::RenderStage::Diagnostics;
-}
-}
 void FramePipeline::beginFrame() {
 #ifdef MINECRAFT_FRAME_PROFILE
  records_.clear();
@@ -57,13 +35,10 @@ void FramePipeline::run(const PhaseTask& task) {
  beginFrame();
  for(const Phase phase : kPhaseOrder) {
   beginPhase(phase);
-  {
-   const debug::RenderProfiler::Scope scope(profilerStage(phase));
-   if(phase == Phase::Drain) (void)mailbox_.drainUrgent();
-   if(phase == Phase::Ticks) (void)mailbox_.drainTick();
-   if(phase == Phase::Render) (void)mailbox_.drainRender();
-   if(task) task(phase);
-  }
+  if(phase == Phase::Drain) (void)mailbox_.drainUrgent();
+  if(phase == Phase::Ticks) (void)mailbox_.drainTick();
+  if(phase == Phase::Render) (void)mailbox_.drainRender();
+  if(task) task(phase);
   endPhase();
  }
 }

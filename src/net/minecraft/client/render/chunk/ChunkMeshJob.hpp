@@ -32,10 +32,6 @@ struct ChunkMeshResult {
 // handed back to the main thread for the GL upload.
 struct ChunkMeshJob {
  ~ChunkMeshJob();
- // The section this job was captured from. Weak on purpose: the job must not
- // keep an evicted section alive (its GL buffers are freed on the main thread
- // at eviction), and must not be able to dereference a dead one. Workers never
- // touch it — buildMesh reads only this job's snapshot/opts.
  std::weak_ptr<ChunkBuilder> builder;
  int version = 0;
  int x = 0;
@@ -50,6 +46,9 @@ struct ChunkMeshJob {
  // per-frame time budget so block edits next to the player land the
  // frame their mesh finishes.
  bool nearLane = false;
+ std::uint64_t captureNs = 0;
+ std::uint64_t buildNs = 0;
+ bool profileRecorded = false;
  std::unordered_map<int, int> blockRenderLayers;
  [[nodiscard]] static std::shared_ptr<ChunkMeshJob> capture(ChunkBuilder& owner,
                                                             client::option::RenderSettings options);

@@ -10,6 +10,7 @@
 #include "net/minecraft/client/render/targets/RenderTargets.hpp"
 #include "net/minecraft/client/render/targets/ShadowMapPass.hpp"
 #include "net/minecraft/client/ClientLog.hpp"
+#include "net/minecraft/client/debug/RenderProfiler.hpp"
 #include "net/minecraft/client/gl/GLCore.hpp"
 #include "net/minecraft/client/gl/GlConstants.hpp"
 #include "net/minecraft/client/gl/GlFramebuffer.hpp"
@@ -27,22 +28,8 @@
 namespace net::minecraft::client::render {
 using LogLevel = ::net::minecraft::util::logging::LogLevel;
 namespace {
-void eraseColortexKeys(std::unordered_map<std::string, int>& map) {
- for(auto it = map.begin(); it != map.end();) {
-  const std::string& key = it->first;
-  if(key.rfind("colortex", 0) == 0 || key.rfind("colorimg", 0) == 0 || key == "gcolor" || key == "gdepth" ||
-     key == "gnormal" || key == "composite" || key == "gaux1" || key == "gaux2" || key == "gaux3" ||
-     key == "gaux4") {
-   it = map.erase(it);
-  } else {
-   ++it;
-  }
- }
-}
 void refreshColorMaps(render::ColorTargets& targets, std::unordered_map<std::string, int>& textures,
                       std::unordered_map<std::string, int>& colorImages, bool fullscreenPass) {
- eraseColortexKeys(textures);
- eraseColortexKeys(colorImages);
  targets.fillReadSamplers(textures, fullscreenPass);
  targets.fillImageBindings(colorImages);
 }
@@ -87,6 +74,7 @@ bool Pipeline::renderCompositePasses(PackInstance& pack, CompositeStage stageId,
                                      const int* shadowColorTextureIds, int shadowColorTextureCount,
                                      shadowmap::ShadowTargets* shadowTargets, const int* shadowColorAltTextureIds) {
  const std::string& stage = stageName(stageId);
+ debug::RenderProfileScope stageProfile("shader", stage);
  const std::vector<PackInstance::RuntimeOperation>& operations = pack.stagePlan(stageId);
  render::ColorTargets& targets = pack.colorTargets;
  const int shadowMapResolution = static_cast<int>(worldUniforms_.shadowMapResolution);
@@ -100,10 +88,10 @@ bool Pipeline::renderCompositePasses(PackInstance& pack, CompositeStage stageId,
  if(!targets.valid() || targets.depthTexture() == 0 || !hasGlContext() || width <= 0 || height <= 0) {
   return false;
  }
-  if(!ensurePackResources(pack, width, height, lightmapTexture_,
-                           [](const PackInstance& p, const std::string& path) {
-                            return PackCompiler::readText(p, path);
-                           })) {
+ if(!ensurePackResources(pack, width, height, lightmapTexture_,
+                         [](const PackInstance& p, const std::string& path) {
+                          return PackCompiler::readText(p, path);
+                         })) {
   logOnce(pack, "pack GPU resources could not be allocated", LogLevel::Severe);
   return false;
  }
@@ -128,6 +116,8 @@ bool Pipeline::renderCompositePasses(PackInstance& pack, CompositeStage stageId,
  const core::TextureBindScope textureScope;
  std::unordered_map<std::string, int> textures;
  std::unordered_map<std::string, int> colorImages;
+ textures.reserve(96);
+ colorImages.reserve(48);
  refreshColorMaps(targets, textures, colorImages, true);
  textures["depthtex0"] = static_cast<int>(targets.depthTexture());
  if(pack.depthTextures[0]) textures["depthtex1"] = static_cast<int>(pack.depthTextures[0].handle());
@@ -157,7 +147,8 @@ bool Pipeline::renderCompositePasses(PackInstance& pack, CompositeStage stageId,
                   shadowColorTextureCount, pack);
  }
  std::unordered_map<std::string, int> volumeTextures;
-  addPackTextures(pack, stage, textures, volumeTextures);
+ volumeTextures.reserve(16);
+ addPackTextures(pack, stage, textures, volumeTextures);
  const PackUniformValues& frameUniforms = worldUniforms_;
  const PackViewportValues viewport{static_cast<float>(width),
                                    static_cast<float>(height),
@@ -171,12 +162,8 @@ bool Pipeline::renderCompositePasses(PackInstance& pack, CompositeStage stageId,
  }
  const bool concurrent = pack.definition.allowConcurrentCompute;
  bool ranCompute = false;
- const std::vector<std::string>* activeComputeWrites = nullptr;
  const auto prepareComputeBinds = [&]() {
   if(gl::GLCore::bindFramebuffer != nullptr) gl::GLCore::bindFramebuffer(static_cast<unsigned>(gl::framebuffer::Framebuffer), 0);
-  if(gl::GLCore::memoryBarrier != nullptr) {
-   gl::GLCore::memoryBarrier(ComputeDispatcher::kBarrierBits);
-  }
   refreshColorMaps(targets, textures, colorImages, true);
   refreshTextureAliases(textures, pack.definition.usesWaterShadow);
  };
@@ -206,13 +193,11 @@ bool Pipeline::renderCompositePasses(PackInstance& pack, CompositeStage stageId,
  std::size_t passPosition = 0;
  for(const PackInstance::RuntimeOperation& operation : operations) {
   const PackInstance::RuntimePass& runtime = operation.pass;
+  debug::RenderProfileScope passProfile(stage, pack.definition.passes[runtime.passIndex].name);
+  debug::RenderProfiler::instance().record(debug::RenderMetric::ShaderPasses);
   if(operation.compute) {
    if(!computeReady) continue;
-   if(operation.groupBegin) {
-    activeComputeWrites = &operation.writeBuffers;
-    for(const std::string& name : *activeComputeWrites) targets.prepareWrite(name);
-    prepareComputeBinds();
-   }
+   if(operation.groupBegin) prepareComputeBinds();
    if(runtime.program == nullptr ||
       !ComputeDispatcher::dispatch(pack, pack.definition.passes[runtime.passIndex], *runtime.program,
                                    frameUniforms, &viewport, textures, colorImages, volumeTextures,
@@ -221,15 +206,9 @@ bool Pipeline::renderCompositePasses(PackInstance& pack, CompositeStage stageId,
     return false;
    }
    ranCompute = true;
-   if(operation.groupEnd) {
-    if(concurrent && gl::GLCore::memoryBarrier != nullptr) {
-     gl::GLCore::memoryBarrier(ComputeDispatcher::kBarrierBits);
-    }
-    if(activeComputeWrites != nullptr) {
-     targets.applyPassFlips(pack.definition, operation.parent, *activeComputeWrites);
-     refreshColorMaps(targets, textures, colorImages, true);
-    }
-    activeComputeWrites = nullptr;
+   if(operation.groupEnd && concurrent && gl::GLCore::memoryBarrier != nullptr) {
+    gl::GLCore::memoryBarrier(ComputeDispatcher::kBarrierBits);
+    debug::RenderProfiler::instance().record(debug::RenderMetric::MemoryBarriers);
    }
    continue;
   }
@@ -251,14 +230,10 @@ bool Pipeline::renderCompositePasses(PackInstance& pack, CompositeStage stageId,
   const bool toScreen =
       PackCatalog::lower(output) == "screen" || pass.name == "final" ||
       pass.program.rfind("final", 0) == 0;
+  // CompositeRenderer.java:307-312 setupMipmapping.
   for(const std::string& buffer : pass.mipmapBuffers) {
-   const auto tex = textures.find(buffer);
-   if(tex == textures.end() || tex->second <= 0 || gl::GLCore::generateMipmap == nullptr) continue;
    core::activeTexture(gl::tex::Texture0);
-   core::bindTexture(tex->second);
-   ::glTexParameteri(gl::cap::Texture2D, 0x2801, 0x2703);
-   ::glTexParameteri(gl::cap::Texture2D, 0x2800, 0x2601);
-   gl::GLCore::generateMipmap(gl::cap::Texture2D);
+   targets.enableMipmaps(buffer);
   }
   if(!toScreen) {
    if(shadowCompPass && shadowTargets != nullptr) {
@@ -284,13 +259,10 @@ bool Pipeline::renderCompositePasses(PackInstance& pack, CompositeStage stageId,
        th = std::max(1, static_cast<int>(std::lround(static_cast<float>(height) * sy)));
       }
      }
-     if(tw != targets.width() || th != targets.height() || targets.readTexture(name) == 0) {
-      if(!targets.ensureNamed(name, tw, th, format)) {
-       logOnce(pack, "pass '" + pass.name + "' could not allocate target '" + name + "'", LogLevel::Severe);
-       return false;
-      }
+     if(!targets.targetMatches(name, tw, th, format) && !targets.ensureNamed(name, tw, th, format)) {
+      logOnce(pack, "pass '" + pass.name + "' could not allocate target '" + name + "'", LogLevel::Severe);
+      return false;
      }
-     targets.prepareWrite(name);
     }
     refreshColorMaps(targets, textures, colorImages, true);
     if(!targets.bindWrite(outputs)) {

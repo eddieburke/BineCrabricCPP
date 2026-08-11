@@ -71,6 +71,12 @@ struct WorldRenderEvent {
  RenderHookMoment moment = RenderHookMoment::Before;
  bool cancelVanilla = false;
  bool vanillaStageRan = false;
+ float starBrightness = 0.0f;
+ float rainStrength = 0.0f;
+ bool astronomyEnabled = false;
+ double astronomyUtcMillis = 0.0;
+ double observerLatitudeDeg = 0.0;
+ double observerLongitudeDeg = 0.0;
 };
 struct FirstPersonHandRenderEvent {
  entity::LivingEntity* camera = nullptr;
@@ -135,6 +141,23 @@ struct EntityRenderEvent {
  float tickDelta = 0.0f;
  EntityRenderPose pose;
 };
+struct CelestialStateEvent {
+ World* world = nullptr;
+ entity::Entity* camera = nullptr;
+ float tickDelta = 0.0f;
+ float celestialAngle = 0.0f;
+ float sunAngle = 0.25f;
+ float shadowAngle = 0.25f;
+ int moonPhase = 0;
+ float sunX = 0.0f;
+ float sunY = 1.0f;
+ float sunZ = 0.0f;
+ float moonX = 0.0f;
+ float moonY = -1.0f;
+ float moonZ = 0.0f;
+ bool day = true;
+ bool overrideDirections = false;
+};
 enum class LifecyclePhase {
  NotStarted,
  Init,
@@ -187,6 +210,7 @@ void luaHookBlockInteract(BlockInteractEvent& event);
 void luaHookEntityInteract(EntityInteractEvent& event);
 void luaHookAttackDamage(AttackDamageEvent& event);
 void luaHookEntityTeleport(EntityTeleportEvent& event);
+void luaHookCelestialState(CelestialStateEvent& event);
 void luaHookWorldColor(WorldColorEvent& event);
 void luaHookFogSettings(FogSettingsEvent& event);
 void luaHookEntityRender(EntityRenderEvent& event);

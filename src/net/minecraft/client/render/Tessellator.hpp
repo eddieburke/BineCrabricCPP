@@ -1,6 +1,7 @@
 #pragma once
 #include <cstddef>
 #include <cstdint>
+#include <optional>
 #include <utility>
 #include <vector>
 #include "net/minecraft/client/render/BufferBuilder.hpp"
@@ -67,7 +68,7 @@ class Tessellator {
  void beginBatch();
  void endBatch();
  class ScopedBatch {
-  public:
+public:
   ScopedBatch() {
    Tessellator::INSTANCE.beginBatch();
   }
@@ -78,7 +79,10 @@ class Tessellator {
   ScopedBatch& operator=(const ScopedBatch&) = delete;
  };
  [[nodiscard]] TessellatorMesh takeMesh();
- static void drawMesh(const TessellatorMesh& mesh);
+ // Engaged means "replace every vertex colour with this", including a packed 0.
+ // A bare uint32 with 0 meaning "no override" silently dropped the override for
+ // transparent black, which is a colour the sky path really does produce.
+ static void drawMesh(const TessellatorMesh& mesh, std::optional<std::uint32_t> colorOverride = std::nullopt);
  [[nodiscard]] static int effectiveDrawMode(int mode) noexcept;
  void setCaptureOnly(bool captureOnly) noexcept {
   captureOnly_ = captureOnly;
@@ -115,6 +119,7 @@ class Tessellator {
  // colour is main-GL-thread-write-only (same WI-5 rule as alphaTestRef).
  std::uint32_t constColorPacked_ = 0xFFFFFFFFU;
  bool hasNormals_ = false;
+ bool recalculateNormals_ = false;
  bool captureOnly_ = false;
  bool discarding_ = false;
  std::size_t discardedVertexCount_ = 0;

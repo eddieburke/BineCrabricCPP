@@ -78,21 +78,21 @@ class Pipeline {
   return objectIdRevision_;
  }
  class PhaseScope {
-  public:
-   PhaseScope(Pipeline* pipeline, WorldPipelinePhase phase)
-       : pipeline_(pipeline), previous_(pipeline != nullptr ? pipeline->pipelinePhase()
+public:
+  PhaseScope(Pipeline* pipeline, WorldPipelinePhase phase)
+      : pipeline_(pipeline), previous_(pipeline != nullptr ? pipeline->pipelinePhase()
                                                            : WorldPipelinePhase::None) {
-    if(pipeline_ != nullptr) pipeline_->setPipelinePhase(phase);
-   }
-   ~PhaseScope() {
-    if(pipeline_ != nullptr) pipeline_->setPipelinePhase(previous_);
-   }
-   PhaseScope(const PhaseScope&) = delete;
-   PhaseScope& operator=(const PhaseScope&) = delete;
+   if(pipeline_ != nullptr) pipeline_->setPipelinePhase(phase);
+  }
+  ~PhaseScope() {
+   if(pipeline_ != nullptr) pipeline_->setPipelinePhase(previous_);
+  }
+  PhaseScope(const PhaseScope&) = delete;
+  PhaseScope& operator=(const PhaseScope&) = delete;
 
-  private:
-   Pipeline* pipeline_ = nullptr;
-   WorldPipelinePhase previous_ = WorldPipelinePhase::None;
+private:
+  Pipeline* pipeline_ = nullptr;
+  WorldPipelinePhase previous_ = WorldPipelinePhase::None;
  };
  void prepareFrame(net::minecraft::World* world);
  void setFrameUniforms(const PackUniformValues& frame);
@@ -195,6 +195,7 @@ class Pipeline {
  [[nodiscard]] int shadowColorTextureCount() const noexcept {
   return shadowColorTextureCount_;
  }
+
  private:
  [[nodiscard]] WorldProgramBindContext makeWorldBindContext(WorldProgramId id);
  [[nodiscard]] PackCompiler::LogFnLevel logFn();
@@ -251,7 +252,6 @@ class Pipeline {
  bool labPbr13_ = false;
  bool lightmapLit_ = false;
  int lightmapAmbient_ = -1;
- float lightmapBrightness_ = -1.0f;
  WorldPipelinePhase pipelinePhase_ = WorldPipelinePhase::None;
  bool packWroteToScreen_ = false;
  gl::GlFramebuffer presentReadFbo_;

@@ -6,7 +6,18 @@
 #include "net/minecraft/world/chunk/ChunkCache.hpp"
 #include "net/minecraft/world/ClientWorld.hpp"
 #include "net/minecraft/world/chunk/Chunk.hpp"
+#include "net/minecraft/world/events/GameEventListener.hpp"
 namespace {
+struct ChunkAvailabilityListener : net::minecraft::GameEventListener {
+ int count = 0;
+ int lastX = 0;
+ int lastZ = 0;
+ void chunkAvailable(int chunkX, int chunkZ) override {
+  ++count;
+  lastX = chunkX;
+  lastZ = chunkZ;
+ }
+};
 std::vector<std::uint8_t> makeFullChunkPacketData(int stoneLocalX, int stoneY, int stoneLocalZ, int stoneBlockId) {
  constexpr int sizeX = 16;
  constexpr int sizeY = 128;
@@ -43,6 +54,8 @@ TEST(MultiplayerChunkData, MapChunkWithoutPreChunkStoresBlocks) {
  constexpr int stoneLocalX = 8;
  constexpr int stoneY = 63;
  constexpr int stoneLocalZ = 8;
+ ChunkAvailabilityListener listener;
+ world.addEventListener(&listener);
  ASSERT_NE(chunkCache, nullptr);
  ASSERT_FALSE(chunkCache->isChunkLoaded(chunkX, chunkZ));
  const std::vector<std::uint8_t> chunkData =
@@ -50,5 +63,15 @@ TEST(MultiplayerChunkData, MapChunkWithoutPreChunkStoresBlocks) {
  world.handleChunkDataUpdate(chunkX * 16, 0, chunkZ * 16, 16, 128, 16, chunkData);
  ASSERT_TRUE(chunkCache->isChunkLoaded(chunkX, chunkZ));
  EXPECT_EQ(world.getBlockId(stoneLocalX, stoneY, stoneLocalZ), Block::STONE->id);
+ EXPECT_EQ(listener.count, 1);
+ EXPECT_EQ(listener.lastX, chunkX);
+ EXPECT_EQ(listener.lastZ, chunkZ);
+ int visited = 0;
+ chunkCache->forEachLoadedChunk([&](int visitedX, int visitedZ, Chunk&) {
+  ++visited;
+  EXPECT_EQ(visitedX, chunkX);
+  EXPECT_EQ(visitedZ, chunkZ);
+ });
+ EXPECT_EQ(visited, 1);
 }
 } // namespace net::minecraft::test

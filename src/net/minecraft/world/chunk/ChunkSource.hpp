@@ -8,14 +8,15 @@ class Chunk;
 class ChunkSource {
  public:
  using SaveProgressCallback = std::function<void(int percent)>;
+ using LoadedChunkVisitor = std::function<void(int chunkX, int chunkZ, Chunk& chunk)>;
  virtual ~ChunkSource() = default;
-  [[nodiscard]] virtual bool isChunkLoaded(int chunkX, int chunkZ) const = 0;
-  [[nodiscard]] virtual bool isChunkDataReady(int chunkX, int chunkZ) const {
-   return isChunkLoaded(chunkX, chunkZ);
-  }
-  [[nodiscard]] virtual Chunk* getChunkIfLoaded(int chunkX, int chunkZ) {
-   return isChunkLoaded(chunkX, chunkZ) ? &getChunk(chunkX, chunkZ) : nullptr;
-  }
+ [[nodiscard]] virtual bool isChunkLoaded(int chunkX, int chunkZ) const = 0;
+ [[nodiscard]] virtual bool isChunkDataReady(int chunkX, int chunkZ) const {
+  return isChunkLoaded(chunkX, chunkZ);
+ }
+ [[nodiscard]] virtual Chunk* getChunkIfLoaded(int chunkX, int chunkZ) {
+  return isChunkLoaded(chunkX, chunkZ) ? &getChunk(chunkX, chunkZ) : nullptr;
+ }
  virtual void markChunkDataReady(int /*chunkX*/, int /*chunkZ*/) {
  }
  [[nodiscard]] virtual Chunk& getChunk(int chunkX, int chunkZ) = 0;
@@ -34,6 +35,9 @@ class ChunkSource {
  virtual void prefetchChunksNear(int /*centerChunkX*/, int /*centerChunkZ*/) {
  }
  virtual void prepareForSave() {
+ }
+ virtual void forEachLoadedChunk(const LoadedChunkVisitor& visitor) {
+  (void)visitor;
  }
 };
 } // namespace net::minecraft

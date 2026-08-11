@@ -15,13 +15,11 @@ bool poseRotates(const math::Matrix4f& pose) noexcept {
  const float* m = pose.data();
  return m[0] != 1.0f || m[5] != 1.0f || m[10] != 1.0f || m[1] != 0.0f || m[2] != 0.0f ||
         m[4] != 0.0f || m[6] != 0.0f || m[8] != 0.0f || m[9] != 0.0f;
-}bool isIdentity(const math::Matrix4f& pose) noexcept {
+}
+bool isIdentity(const math::Matrix4f& pose) noexcept {
  return !poseRotates(pose) && pose.data()[12] == 0.0f && pose.data()[13] == 0.0f && pose.data()[14] == 0.0f;
-}void fillUnsetAttribs(TessellatorVertex* vertices, std::size_t count, const math::Matrix4f* pose, bool poseRotates) {
- // The tangent is the pose's first basis vector — the same for every vertex in
- // the draw. It used to be rebuilt per vertex, sqrt and divides included, and
- // the writes below alias the matrix's floats so the compiler could not hoist
- // it out of the loop itself.
+}
+void fillUnsetAttribs(TessellatorVertex* vertices, std::size_t count, const math::Matrix4f* pose, bool poseRotates) {
  std::int16_t tangent[3] = {32767, 0, 0};
  if(poseRotates) {
   const float* m = pose->data();
@@ -145,6 +143,7 @@ void Tessellator::start(int mode) {
  colorExplicit_ = false;
  constColorPacked_ = core::constColorPacked();
  hasNormals_ = false;
+ recalculateNormals_ = captureOnly_ || core::renderStage() != core::RenderStage::None;
  discarding_ = !captureOnly_ && !core::drawEnabled();
  addedVertexCount_ = 0;
  reset();
@@ -179,10 +178,29 @@ void Tessellator::expandQuadToTriangles() {
  append(v2);
 }
 namespace {
+// https://github.com/IrisShaders/Iris/blob/26.1/common/src/main/java/net/irisshaders/iris/vertices/NormalHelper.java
+bool faceNormal(const TessellatorVertex& v0,
+                const TessellatorVertex& v1,
+                const TessellatorVertex& v2,
+                const TessellatorVertex& v3,
+                float (&out)[3]) {
+ const float d0[3] = {v2.x - v0.x, v2.y - v0.y, v2.z - v0.z};
+ const float d1[3] = {v3.x - v1.x, v3.y - v1.y, v3.z - v1.z};
+ out[0] = d0[1] * d1[2] - d0[2] * d1[1];
+ out[1] = d0[2] * d1[0] - d0[0] * d1[2];
+ out[2] = d0[0] * d1[1] - d0[1] * d1[0];
+ const float length = std::sqrt(out[0] * out[0] + out[1] * out[1] + out[2] * out[2]);
+ if(length <= 1.0e-8f) {
+  return false;
+ }
+ for(float& component : out) component /= length;
+ return true;
+}
 void fillMidTexAndTangent(TessellatorVertex* const* corners,
                           std::size_t cornerCount,
                           TessellatorVertex* write,
-                          std::size_t writeCount) {
+                          std::size_t writeCount,
+                          bool deriveNormal) {
  float midU = 0.0f, midV = 0.0f;
  for(std::size_t i = 0; i < cornerCount; ++i) {
   midU += corners[i]->u;
@@ -192,6 +210,18 @@ void fillMidTexAndTangent(TessellatorVertex* const* corners,
  midV /= static_cast<float>(cornerCount);
  const float e1[3] = {corners[1]->x - corners[0]->x, corners[1]->y - corners[0]->y, corners[1]->z - corners[0]->z};
  const float e2[3] = {corners[2]->x - corners[0]->x, corners[2]->y - corners[0]->y, corners[2]->z - corners[0]->z};
+ if(deriveNormal && cornerCount == 4) {
+  float derived[3]{};
+  if(faceNormal(*corners[0], *corners[1], *corners[2], *corners[3], derived)) {
+   const std::int32_t packed =
+       static_cast<std::int32_t>(static_cast<std::uint8_t>(static_cast<std::int8_t>(derived[0] * 127.0f))) |
+       (static_cast<std::int32_t>(static_cast<std::uint8_t>(static_cast<std::int8_t>(derived[1] * 127.0f)))
+        << 8U) |
+       (static_cast<std::int32_t>(static_cast<std::uint8_t>(static_cast<std::int8_t>(derived[2] * 127.0f)))
+        << 16U);
+   for(std::size_t i = 0; i < writeCount; ++i) write[i].normal = packed;
+  }
+ }
  const float du1 = corners[1]->u - corners[0]->u, dv1 = corners[1]->v - corners[0]->v;
  const float du2 = corners[2]->u - corners[0]->u, dv2 = corners[2]->v - corners[0]->v;
  const float det = du1 * dv2 - du2 * dv1;
@@ -209,9 +239,15 @@ void fillMidTexAndTangent(TessellatorVertex* const* corners,
   const float ny = static_cast<std::int8_t>((corners[0]->normal >> 8) & 0xFF) / 127.0f;
   const float nz = static_cast<std::int8_t>((corners[0]->normal >> 16) & 0xFF) / 127.0f;
   if(nx * nx + ny * ny + nz * nz > 1.0e-8f) {
-   const float cross[3] = {ny * tangent[2] - nz * tangent[1], nz * tangent[0] - nx * tangent[2],
-                           nx * tangent[1] - ny * tangent[0]};
-   if(cross[0] * bitangent[0] + cross[1] * bitangent[1] + cross[2] * bitangent[2] < 0.0f) handedness = -1.0f;
+   // (RenderPearl, prog/lit_deferred.fsh), so a flipped w mirrors the
+   const float predictedBitangent[3] = {tangent[1] * nz - tangent[2] * ny,
+                                        tangent[2] * nx - tangent[0] * nz,
+                                        tangent[0] * ny - tangent[1] * nx};
+   if(predictedBitangent[0] * bitangent[0] + predictedBitangent[1] * bitangent[1] +
+          predictedBitangent[2] * bitangent[2] <
+      0.0f) {
+    handedness = -1.0f;
+   }
   }
  }
  const std::int16_t packed[4] = {
@@ -233,7 +269,10 @@ void Tessellator::finishQuad() {
  if(count < quadSize) return;
  TessellatorVertex* vertices = reinterpret_cast<TessellatorVertex*>(bytes.data()) + count - quadSize;
  TessellatorVertex* corners[4] = {vertices, vertices + 1, vertices + 2, vertices + (captureOnly_ ? 3 : 5)};
- fillMidTexAndTangent(corners, 4, vertices, quadSize);
+ fillMidTexAndTangent(corners, 4, vertices, quadSize, recalculateNormals_);
+ if(recalculateNormals_) {
+  hasNormals_ = true;
+ }
 }
 void Tessellator::texture(double u, double v) {
  hasTexture_ = true;
@@ -393,13 +432,6 @@ void Tessellator::vertex(double x, double y, double z) {
  }
  if(hasTexture_)
   vProxy.tex(u_, v_);
- // Colour is unconditional. A producer that called color() owns the value; one
- // that did not inherits the const colour, sampled here rather than left to a
- // generic attribute at submit time. That side channel is what let a batched
- // entity reach the pack with vaColor = (0,0,0,1) — and a pack that folds
- // vaColor.a into its AO term (rethinking-voxels: `vanillaAO = glColor.a`, then
- // `pow2(directionShade * vanillaAO)` gates ALL lighting) renders that as a
- // pure-black silhouette, cave minimum light and emission included.
  vProxy.color(colorExplicit_ ? currentColor_ : constColorPacked_);
  if(hasNormals_) {
   if(normalDirty_) {
@@ -416,7 +448,7 @@ void Tessellator::vertex(double x, double y, double z) {
   if(count >= 3) {
    TessellatorVertex* v = reinterpret_cast<TessellatorVertex*>(bytes.data()) + count - 3;
    TessellatorVertex* corners[3] = {v, v + 1, v + 2};
-   fillMidTexAndTangent(corners, 3, v, 3);
+   fillMidTexAndTangent(corners, 3, v, 3, false);
   }
  }
 }
@@ -474,7 +506,7 @@ TessellatorMesh Tessellator::takeMesh() {
  reset();
  return mesh;
 }
-void Tessellator::drawMesh(const TessellatorMesh& mesh) {
+void Tessellator::drawMesh(const TessellatorMesh& mesh, std::optional<std::uint32_t> colorOverride) {
  if(mesh.empty() || mesh.vbo_ == 0 || !gl::GLCore::vboSupported)
   return;
  int stride = static_cast<int>(sizeof(TessellatorVertex));
@@ -490,6 +522,8 @@ void Tessellator::drawMesh(const TessellatorMesh& mesh) {
   pass.stride = stride;
   pass.hasTexture = mesh.hasTexture;
   pass.hasNormals = mesh.hasNormals;
+  pass.overrideColor = colorOverride.has_value();
+  pass.colorOverride = colorOverride.value_or(0u);
   render::core::submitIndexedQuads(pass, quad_index::handle(), static_cast<int>((vertexCount / 4) * 6));
   return;
  }
@@ -503,6 +537,8 @@ void Tessellator::drawMesh(const TessellatorMesh& mesh) {
  pass.stride = stride;
  pass.glMode = mode;
  pass.buffer = mesh.vbo_;
+ pass.overrideColor = colorOverride.has_value();
+ pass.colorOverride = colorOverride.value_or(0u);
  pass.byteOffset = 0;
  pass.vertexCount = mesh.vertexCount();
  render::core::submit(pass);
@@ -538,6 +574,7 @@ void Tessellator::beginPart(int mode) {
  colorExplicit_ = false;
  constColorPacked_ = core::constColorPacked();
  hasNormals_ = false;
+ recalculateNormals_ = captureOnly_ || core::renderStage() != core::RenderStage::None;
  discarding_ = !captureOnly_ && !core::drawEnabled();
  addedVertexCount_ = 0;
  xOffset_ = 0.0;
@@ -549,7 +586,7 @@ void Tessellator::beginPart(int mode) {
   poseValid_ = !isIdentity(pose_);
   poseRotates_ = poseValid_ && poseRotates(pose_);
   normalDirty_ = true;
-}
+ }
 }
 void Tessellator::endBatch() {
  if(batchDepth_ > 0) {

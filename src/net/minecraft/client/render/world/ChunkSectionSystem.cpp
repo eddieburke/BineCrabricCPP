@@ -7,6 +7,7 @@
 #include "net/minecraft/client/Minecraft.hpp"
 #include "net/minecraft/client/ClientLog.hpp"
 #include "net/minecraft/client/option/RenderSettings.hpp"
+#include "net/minecraft/client/debug/RenderProfiler.hpp"
 #include "net/minecraft/client/render/RenderCore.hpp"
 #include "net/minecraft/client/render/world/WorldRenderer.hpp"
 #include "net/minecraft/client/render/camera/FrameRenderCamera.hpp"
@@ -43,7 +44,7 @@ bool boxTouchesSphere(const net::minecraft::Box& box,
 template <class Fn>
 void forEachSection(
     std::unordered_map<world::SectionPos, std::unique_ptr<chunk::TerrainRegion>, world::SectionPosHash>& regions,
-                     Fn&& fn) {
+    Fn&& fn) {
  for(auto& entry : regions) {
   for(chunk::ChunkBuilder* chunk : entry.second->sections()) {
    fn(chunk);
@@ -65,9 +66,6 @@ const net::minecraft::entity::LivingEntity* ChunkSectionSystem::frontierCamera()
 chunk::ChunkBuilder* ChunkSectionSystem::sectionAt(int sectionX, int sectionY, int sectionZ) {
  const auto it = sections_.find(world::SectionPos{sectionX, sectionY, sectionZ});
  return it == sections_.end() ? nullptr : it->second.get();
-}
-int ChunkSectionSystem::renderRadiusChunks() const noexcept {
- return scene_.settings->renderDistance.chunks();
 }
 void ChunkSectionSystem::enqueueColumn(int sectionX, int sectionZ) {
  if(sectionAt(sectionX, 0, sectionZ) != nullptr) {
@@ -97,20 +95,20 @@ void ChunkSectionSystem::createColumn(int sectionX, int sectionZ) {
                                                        chunk::kSectionBlocks);
   builder->inFrustum = true;
   builder->invalidate();
-   chunk::ChunkBuilder* raw = builder.get();
-   const world::SectionPos regionPos = world::regionOf(pos);
-   auto& region = regions_[regionPos];
-   if(region == nullptr) {
-    region = std::make_unique<chunk::TerrainRegion>(
-        regionPos.x * world::kRegionSectionsX * chunk::kSectionBlocks,
-        regionPos.y * world::kRegionSectionsY * chunk::kSectionBlocks,
-        regionPos.z * world::kRegionSectionsZ * chunk::kSectionBlocks);
-   }
-   builder->setTerrainRegion(*region);
-   region->addSection(raw);
-   column[sectionY] = raw;
-   sections_.emplace(pos, std::move(builder));
-   compilePipeline_->enqueueDirtyChunk(raw);
+  chunk::ChunkBuilder* raw = builder.get();
+  const world::SectionPos regionPos = world::regionOf(pos);
+  auto& region = regions_[regionPos];
+  if(region == nullptr) {
+   region = std::make_unique<chunk::TerrainRegion>(
+       regionPos.x * world::kRegionSectionsX * chunk::kSectionBlocks,
+       regionPos.y * world::kRegionSectionsY * chunk::kSectionBlocks,
+       regionPos.z * world::kRegionSectionsZ * chunk::kSectionBlocks);
+  }
+  builder->setTerrainRegion(*region);
+  region->addSection(raw);
+  column[sectionY] = raw;
+  sections_.emplace(pos, std::move(builder));
+  compilePipeline_->enqueueDirtyChunk(raw);
  }
  for(int sectionY = 0; sectionY < kChunkSectionCountY; ++sectionY) {
   chunk::ChunkBuilder* raw = column[sectionY];
@@ -124,18 +122,19 @@ void ChunkSectionSystem::createColumn(int sectionX, int sectionZ) {
    raw->neighbors[3] = column[sectionY + 1];
   }
  }
- for(int face = 0; face < 6; face += 2) {
-  chunk::ChunkBuilder* first = sectionAt(sectionX + kFaceDirX[face], 0, sectionZ + kFaceDirZ[face]);
-  for(int sectionY = 0; sectionY < kChunkSectionCountY && first != nullptr; ++sectionY) {
-   const int otherFace = face ^ 1;
+ constexpr int horizontalFaces[] = {0, 1, 4, 5};
+ for(int face : horizontalFaces) {
+  const int otherFace = face ^ 1;
+  const int neighborX = sectionX + kFaceDirX[face];
+  const int neighborZ = sectionZ + kFaceDirZ[face];
+  for(int sectionY = 0; sectionY < kChunkSectionCountY; ++sectionY) {
    chunk::ChunkBuilder* self = column[sectionY];
-   if(self != nullptr && self->neighbors[face] == nullptr) {
-    self->neighbors[face] = first;
+   chunk::ChunkBuilder* neighbor = sectionAt(neighborX, sectionY, neighborZ);
+   if(self == nullptr || neighbor == nullptr) {
+    continue;
    }
-   if(first->neighbors[otherFace] == nullptr) {
-    first->neighbors[otherFace] = self;
-   }
-   first = first->neighbors[3];
+   self->neighbors[face] = neighbor;
+   neighbor->neighbors[otherFace] = self;
   }
  }
  sectionsChanged_ = true;
@@ -162,14 +161,14 @@ void ChunkSectionSystem::removeColumn(int sectionX, int sectionZ) {
     scene_.blockEntities.erase(jt);
    }
   }
-   const auto regionIt = regions_.find(world::regionOf(pos));
-   compilePipeline_->releaseSection(*section);
-   if(regionIt != regions_.end()) {
-    regionIt->second->removeSection(section.get());
-    if(regionIt->second->sections().empty()) {
-     regions_.erase(regionIt);
-    }
+  const auto regionIt = regions_.find(world::regionOf(pos));
+  compilePipeline_->releaseSection(*section);
+  if(regionIt != regions_.end()) {
+   regionIt->second->removeSection(section.get());
+   if(regionIt->second->sections().empty()) {
+    regions_.erase(regionIt);
    }
+  }
  }
 }
 void ChunkSectionSystem::rebuildSectionOrder(const net::minecraft::Vec3d& camPos) {
@@ -225,15 +224,14 @@ void ChunkSectionSystem::updateDebugCounts() {
  });
 }
 void ChunkSectionSystem::pushCullState() {
- savedVisibleSections_.swap(visibleSections_);
  cullStateSaved_ = true;
+ scopedVisibleSections_.clear();
 }
 void ChunkSectionSystem::popCullState() {
  if(!cullStateSaved_) {
   return;
  }
  cullStateSaved_ = false;
- savedVisibleSections_.swap(visibleSections_);
 }
 void ChunkSectionSystem::clearSections() {
  compilePipeline_->cancelAll();
@@ -246,8 +244,8 @@ void ChunkSectionSystem::clearSections() {
  regions_.clear();
  compilePipeline_->clearDirtyTracking();
  sectionsByPriority_.clear();
- visibleSections_.clear();
- savedVisibleSections_.clear();
+ regularVisibleSections_.clear();
+ scopedVisibleSections_.clear();
  cullStateSaved_ = false;
  scene_.blockEntities.clear();
  pendingColumns_.clear();
@@ -258,8 +256,8 @@ void ChunkSectionSystem::clearSections() {
  centerSectionZ_ = std::numeric_limits<int>::min();
  sectionsChanged_ = true;
 }
-bool ChunkSectionSystem::updateSectionFrontier() {
-   const auto& frameCam = core::cameraFrame();
+bool ChunkSectionSystem::updateCameraSection() {
+ const auto& frameCam = core::cameraFrame();
  double camX = frameCam.x;
  double camZ = frameCam.z;
  if(camX == 0.0 && camZ == 0.0) {
@@ -275,69 +273,24 @@ bool ChunkSectionSystem::updateSectionFrontier() {
  if(camSectionX == centerSectionX_ && camSectionZ == centerSectionZ_) {
   return false;
  }
- const int oldCenterX = centerSectionX_;
- const int oldCenterZ = centerSectionZ_;
  centerSectionX_ = camSectionX;
  centerSectionZ_ = camSectionZ;
- const int radius = renderRadiusChunks();
- const bool teleported = oldCenterX == std::numeric_limits<int>::min() ||
-                         std::abs(camSectionX - oldCenterX) > radius || std::abs(camSectionZ - oldCenterZ) > radius;
- if(teleported) {
-  clearSections();
-  centerSectionX_ = camSectionX;
-  centerSectionZ_ = camSectionZ;
-  for(int sx = camSectionX - radius; sx <= camSectionX + radius; ++sx) {
-   for(int sz = camSectionZ - radius; sz <= camSectionZ + radius; ++sz) {
-    enqueueColumn(sx, sz);
-   }
-  }
-  return true;
- }
- const int oldMinX = oldCenterX - radius;
- const int oldMaxX = oldCenterX + radius;
- const int oldMinZ = oldCenterZ - radius;
- const int oldMaxZ = oldCenterZ + radius;
- const int newMinX = camSectionX - radius;
- const int newMaxX = camSectionX + radius;
- const int newMinZ = camSectionZ - radius;
- const int newMaxZ = camSectionZ + radius;
- const auto visitRect = [](int minX, int maxX, int minZ, int maxZ, const auto& visit) {
-  if(minX > maxX || minZ > maxZ) {
-   return;
-  }
-  for(int sx = minX; sx <= maxX; ++sx) {
-   for(int sz = minZ; sz <= maxZ; ++sz) {
-    visit(sx, sz);
-   }
-  }
- };
- const auto remove = [this](int sx, int sz) { removeColumn(sx, sz); };
- const auto enqueue = [this](int sx, int sz) { enqueueColumn(sx, sz); };
- const auto visitOutside = [&visitRect](int baseMinX,
-                                        int baseMaxX,
-                                        int baseMinZ,
-                                        int baseMaxZ,
-                                        int innerMinX,
-                                        int innerMaxX,
-                                        int innerMinZ,
-                                        int innerMaxZ,
-                                        const auto& visit) {
-  visitRect(baseMinX, std::min(baseMaxX, innerMinX - 1), baseMinZ, baseMaxZ, visit);
-  visitRect(std::max(baseMinX, innerMaxX + 1), baseMaxX, baseMinZ, baseMaxZ, visit);
-  const int overlapMinX = std::max(baseMinX, innerMinX);
-  const int overlapMaxX = std::min(baseMaxX, innerMaxX);
-  visitRect(overlapMinX, overlapMaxX, baseMinZ, std::min(baseMaxZ, innerMinZ - 1), visit);
-  visitRect(overlapMinX, overlapMaxX, std::max(baseMinZ, innerMaxZ + 1), baseMaxZ, visit);
- };
- visitOutside(oldMinX, oldMaxX, oldMinZ, oldMaxZ, newMinX, newMaxX, newMinZ, newMaxZ, remove);
- visitOutside(newMinX, newMaxX, newMinZ, newMaxZ, oldMinX, oldMaxX, oldMinZ, oldMaxZ, enqueue);
  return true;
 }
-void ChunkSectionSystem::drainPendingColumns() {
- if(scene_.world == nullptr || centerSectionX_ == std::numeric_limits<int>::min()) {
+void ChunkSectionSystem::updateProfileMetrics(bool shadowPass) {
+ debug::RenderProfiler& profiler = debug::RenderProfiler::instance();
+ if(shadowPass) {
+  profiler.record(debug::RenderMetric::ShadowSectionsVisible, visibleSections().size());
   return;
  }
- const int radius = renderRadiusChunks();
+ profiler.record(debug::RenderMetric::ChunkColumnsPending, pendingColumns_.size());
+ profiler.record(debug::RenderMetric::ChunkSectionsResident, sections_.size());
+ profiler.record(debug::RenderMetric::ChunkSectionsVisible, visibleSections().size());
+}
+void ChunkSectionSystem::drainPendingColumns() {
+ if(scene_.world == nullptr) {
+  return;
+ }
  const net::minecraft::util::concurrent::FrameBudget budget =
      net::minecraft::util::concurrent::FrameBudget::fromSharedMs(2, 1);
  std::size_t inspected = 0;
@@ -346,16 +299,12 @@ void ChunkSectionSystem::drainPendingColumns() {
   pendingColumns_.pop_front();
   pendingSet_.erase(col);
   ++inspected;
-  if(std::abs(col.x - centerSectionX_) > radius || std::abs(col.z - centerSectionZ_) > radius) {
-   continue;
-  }
   if(sectionAt(col.x, 0, col.z) != nullptr) {
    continue;
   }
+  // Drop, never requeue: every dataReady transition re-enqueues via chunkAvailable.
   if(scene_.world->getChunkSource() != nullptr && scene_.world->getChunkSource()->isChunkDataReady(col.x, col.z)) {
    createColumn(col.x, col.z);
-  } else {
-   enqueueColumn(col.x, col.z);
   }
  }
 }
@@ -368,62 +317,70 @@ void ChunkSectionSystem::reloadIfViewDistanceChanged() {
   }
  }
 }
-void ChunkSectionSystem::cullChunks(Frustum* culler, bool updateFrontier) {
-  const FrameRenderCamera& renderCamera = core::cameraFrame();
+void ChunkSectionSystem::cullChunks(Frustum* culler, bool updateGraph) {
+ const FrameRenderCamera& renderCamera = core::cameraFrame();
+ debug::RenderProfileScope cullProfile("terrain", renderCamera.shadowPass ? "shadow_cull" : "view_cull");
  const double bypassBlocks = std::max(0.0f, renderCamera.frustumBypassDistance);
  const double bypassSq = bypassBlocks * bypassBlocks;
  const net::minecraft::Vec3d camPos = WorldRenderer::sectionOrigin();
- if(updateFrontier) {
+ if(updateGraph) {
   reloadIfViewDistanceChanged();
-  const bool frontierMoved = updateSectionFrontier();
+  const bool cameraSectionChanged = updateCameraSection();
   drainPendingColumns();
-  if(frontierMoved || sectionsChanged_) {
+  if(cameraSectionChanged || sectionsChanged_) {
    sectionsChanged_ = false;
    rebuildSectionOrder(camPos);
   }
  }
  if(renderCamera.shadowPass) {
   const ShadowCullingFrustum* shadowFrustum = renderCamera.shadowTerrainFrustum;
-  visibleSections_.clear();
+  std::vector<chunk::ChunkBuilder*>& visibleSections = currentVisibleSections();
+  visibleSections.clear();
   forEachSection(regions_, [&](chunk::ChunkBuilder* chunk) {
-   chunk->inFrustum =
+   const bool visible =
        boxTouchesSphere(chunk->cullingBox, camPos.x, camPos.y, camPos.z, bypassSq) ||
        (shadowFrustum != nullptr && shadowFrustum->isVisible(chunk->cullingBox));
-   if(chunk->inFrustum) {
-    visibleSections_.push_back(chunk);
+   if(visible) {
+    visibleSections.push_back(chunk);
    }
   });
-  updateDebugCounts();
+  updateProfileMetrics(true);
   return;
  }
  if(culler == nullptr || !scene_.settings->frustumCulling) {
-  visibleSections_.clear();
-  forEachSection(regions_, [this](chunk::ChunkBuilder* chunk) {
+  std::vector<chunk::ChunkBuilder*>& visibleSections = currentVisibleSections();
+  visibleSections.clear();
+  forEachSection(regions_, [&visibleSections](chunk::ChunkBuilder* chunk) {
    chunk->inFrustum = true;
-   visibleSections_.push_back(chunk);
+   visibleSections.push_back(chunk);
   });
   updateDebugCounts();
+  updateProfileMetrics(false);
   return;
  }
  if(!scene_.settings->occlusionCulling) {
-  visibleSections_.clear();
+  std::vector<chunk::ChunkBuilder*>& visibleSections = currentVisibleSections();
+  visibleSections.clear();
   forEachSection(regions_, [&](chunk::ChunkBuilder* chunk) {
    chunk->updateFrustum(*culler);
    if(boxTouchesSphere(chunk->cullingBox, camPos.x, camPos.y, camPos.z, bypassSq)) {
     chunk->inFrustum = true;
    }
    if(chunk->inFrustum) {
-    visibleSections_.push_back(chunk);
+    visibleSections.push_back(chunk);
    }
   });
   updateDebugCounts();
+  updateProfileMetrics(false);
   return;
  }
  applyOcclusionCulling(culler, camPos, bypassSq);
  updateDebugCounts();
+ updateProfileMetrics(false);
 }
 void ChunkSectionSystem::applyOcclusionCulling(Frustum* culler, const net::minecraft::Vec3d& camPos, double bypassSq) {
- visibleSections_.clear();
+ std::vector<chunk::ChunkBuilder*>& visibleSections = currentVisibleSections();
+ visibleSections.clear();
  const int startX = MathHelper::floor(camPos.x) >> 4;
  const int startY = std::clamp(MathHelper::floor(camPos.y) >> 4, 0, kChunkSectionCountY - 1);
  const int startZ = MathHelper::floor(camPos.z) >> 4;
@@ -435,7 +392,7 @@ void ChunkSectionSystem::applyOcclusionCulling(Frustum* culler, const net::minec
     chunk->inFrustum = true;
    }
    if(chunk->inFrustum) {
-    visibleSections_.push_back(chunk);
+    visibleSections.push_back(chunk);
    }
   });
   return;
@@ -450,10 +407,10 @@ void ChunkSectionSystem::applyOcclusionCulling(Frustum* culler, const net::minec
   if(boxTouchesSphere(node->cullingBox, camPos.x, camPos.y, camPos.z, bypassSq)) {
    node->inFrustum = true;
   }
-   if(node->inFrustum) {
-    visibleSections_.push_back(node);
-   }
-   for(int face = 0; face < 6; ++face) {
+  if(node->inFrustum) {
+   visibleSections.push_back(node);
+  }
+  for(int face = 0; face < 6; ++face) {
    if(!node->occlusion.connects(face, node->built)) {
     continue;
    }
@@ -471,7 +428,7 @@ void ChunkSectionSystem::applyOcclusionCulling(Frustum* culler, const net::minec
   }
   if(boxTouchesSphere(chunk->cullingBox, camPos.x, camPos.y, camPos.z, bypassSq)) {
    chunk->inFrustum = true;
-   visibleSections_.push_back(chunk);
+   visibleSections.push_back(chunk);
   } else {
    chunk->inFrustum = false;
   }
@@ -492,10 +449,6 @@ void ChunkSectionSystem::markDirty(int minX, int minY, int minZ, int maxX, int m
  const int endZ = MathHelper::floorDiv(maxZ, chunk::kSectionBlocks);
  for(int chunkX = startX; chunkX <= endX; ++chunkX) {
   for(int chunkZ = startZ; chunkZ <= endZ; ++chunkZ) {
-   if(std::abs(chunkX - centerSectionX_) <= renderRadiusChunks() &&
-      std::abs(chunkZ - centerSectionZ_) <= renderRadiusChunks()) {
-    enqueueColumn(chunkX, chunkZ);
-   }
    for(int chunkY = startY; chunkY <= endY; ++chunkY) {
     chunk::ChunkBuilder* builder = sectionAt(chunkX, chunkY, chunkZ);
     if(builder == nullptr) {
@@ -511,15 +464,8 @@ void ChunkSectionSystem::blockUpdate(int x, int y, int z) {
  markDirty(x - 1, y - 1, z - 1, x + 1, y + 1, z + 1);
 }
 void ChunkSectionSystem::chunkAvailable(int chunkX, int chunkZ) {
- if(centerSectionX_ == std::numeric_limits<int>::min()) {
-  return;
- }
  if(scene_.world == nullptr || scene_.world->getChunkSource() == nullptr ||
-    !scene_.world->getChunkSource()->isChunkLoaded(chunkX, chunkZ)) {
-  return;
- }
- if(std::abs(chunkX - centerSectionX_) > renderRadiusChunks() + 1 ||
-    std::abs(chunkZ - centerSectionZ_) > renderRadiusChunks() + 1) {
+    !scene_.world->getChunkSource()->isChunkDataReady(chunkX, chunkZ)) {
   return;
  }
  enqueueColumn(chunkX, chunkZ);
@@ -527,6 +473,8 @@ void ChunkSectionSystem::chunkAvailable(int chunkX, int chunkZ) {
  pendingBorderRefresh_.insert(world::SectionPos{chunkX, 0, chunkZ});
 }
 void ChunkSectionSystem::chunkUnloaded(int chunkX, int chunkZ) {
+ // Must erase: a stale key makes enqueueColumn a no-op when the chunk reloads.
+ pendingSet_.erase(world::SectionPos{chunkX, 0, chunkZ});
  pendingLit_.erase(world::SectionPos{chunkX, 0, chunkZ});
  pendingBorderRefresh_.erase(world::SectionPos{chunkX, 0, chunkZ});
  removeColumn(chunkX, chunkZ);
@@ -563,10 +511,10 @@ void ChunkSectionSystem::drainBorderRefresh() {
  if(pendingBorderRefresh_.empty()) {
   return;
  }
- static constexpr int kNeighborX[4] = {-1, 1, 0, 0};
- static constexpr int kNeighborZ[4] = {0, 0, -1, 1};
+ static constexpr int kNeighborX[8] = {-1, 1, 0, 0, -1, -1, 1, 1};
+ static constexpr int kNeighborZ[8] = {0, 0, -1, 1, -1, 1, -1, 1};
  for(const world::SectionPos& column : pendingBorderRefresh_) {
-  for(int dir = 0; dir < 4; ++dir) {
+  for(int dir = 0; dir < 8; ++dir) {
    const int neighborX = column.x + kNeighborX[dir];
    const int neighborZ = column.z + kNeighborZ[dir];
    for(int sectionY = 0; sectionY < kChunkSectionCountY; ++sectionY) {

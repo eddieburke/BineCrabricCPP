@@ -1,6 +1,7 @@
 #pragma once
 #include <chrono>
 #include <condition_variable>
+#include <cstdint>
 #include <deque>
 #include <exception>
 #include <fstream>
@@ -73,21 +74,37 @@ class Logger {
  mutable std::mutex mutex_;
  std::vector<std::unique_ptr<LogHandler>> handlers_;
 };
+struct LogDispatcherStats {
+ std::size_t queued = 0;
+ std::size_t maxQueueDepth = 0;
+ std::uint64_t enqueued = 0;
+ std::uint64_t written = 0;
+ std::uint64_t dropped = 0;
+ std::uint64_t enqueueCpuNanos = 0;
+ std::uint64_t writerCpuNanos = 0;
+};
 class LogDispatcher {
  public:
  static LogDispatcher& instance();
  void start();
  void shutdown();
  void enqueue(Logger* logger, LogRecord record);
+ [[nodiscard]] LogDispatcherStats stats() const;
 
  private:
  static constexpr std::size_t kMaxQueued = 16384;
  void writerMain();
- std::mutex mutex_;
+ mutable std::mutex mutex_;
  std::condition_variable cv_;
  std::deque<LogRecord> queue_;
  std::thread thread_;
  bool running_ = false;
+ std::size_t maxQueueDepth_ = 0;
+ std::uint64_t enqueued_ = 0;
+ std::uint64_t written_ = 0;
+ std::uint64_t dropped_ = 0;
+ std::uint64_t enqueueCpuNanos_ = 0;
+ std::uint64_t writerCpuNanos_ = 0;
 };
 class ConsoleFormatter final : public LogFormatter {
  public:

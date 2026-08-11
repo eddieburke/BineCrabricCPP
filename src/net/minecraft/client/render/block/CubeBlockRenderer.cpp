@@ -27,17 +27,21 @@ void readCornerLight(BlockRenderContext& ctx, int x, int y, int z, int& blockLig
  blockLight = ctx.faceBlockLight;
  skyLight = ctx.faceSkyLight;
 }
-// Vanilla b1.7.3 corner average: four light samples (diagonal, x-edge, z-edge,
-// centre) with the diagonal dropped for a closed inner corner (both edges
-// opaque) so concave geometry keeps the classic AO crevice darkening. The
-// lightmap carries this per-corner light; the vertex AO colour term stays
-// neutral so the lightmap is not multiplied a second time (that double-dark
-// shading is what made smooth lighting look pitch black).
-//
-// The average stays fractional. Rounding it to a whole level used to fold
-// {15,15,15,14}, {15,15,14,14} and {15,14,14,14} all onto level 14, and the
-// luminance curve drops 21% between 15 and 14 — so a face had nothing between
-// "fully lit" and one hard step down, which read as banding rather than AO.
+float cornerOcclusion(const net::minecraft::BlockView* blockView, int x, int y, int z) {
+ if(blockView == nullptr) {
+  return 1.0f;
+ }
+ const int blockId = blockView->getBlockId(x, y, z);
+ if(blockId <= 0 || blockId >= net::minecraft::block::Block::BLOCK_COUNT) {
+  return 1.0f;
+ }
+ return net::minecraft::block::Block::BLOCKS_OPAQUE[static_cast<std::size_t>(blockId)] ? 0.2f : 1.0f;
+}
+struct CornerSample {
+ float blockLight = 15.0f;
+ float skyLight = 15.0f;
+ float occlusion = 1.0f;
+};
 void averageCornerLight(BlockRenderContext& ctx,
                         int dx,
                         int dy,
@@ -52,8 +56,7 @@ void averageCornerLight(BlockRenderContext& ctx,
                         int cy,
                         int cz,
                         bool closed,
-                        float& blockLight,
-                        float& skyLight) {
+                        CornerSample& corner) {
  int bd = 0;
  int sd = 0;
  int bs = 0;
@@ -66,12 +69,20 @@ void averageCornerLight(BlockRenderContext& ctx,
  readCornerLight(ctx, sx, sy, sz, bs, ss);
  readCornerLight(ctx, ox, oy, oz, bo, so);
  readCornerLight(ctx, cx, cy, cz, bc, sc);
+ float od = cornerOcclusion(ctx.blockView, dx, dy, dz);
+ const float os = cornerOcclusion(ctx.blockView, sx, sy, sz);
+ const float oo = cornerOcclusion(ctx.blockView, ox, oy, oz);
+ const float oc = cornerOcclusion(ctx.blockView, cx, cy, cz);
  if(closed) {
   bd = bs;
   sd = ss;
+  // The diagonal is unreachable behind a closed inner corner, so vanilla reads
+  // the edge in its place — for the occlusion average exactly as for the light.
+  od = os;
  }
- blockLight = static_cast<float>(bd + bs + bo + bc) / 4.0f;
- skyLight = static_cast<float>(sd + ss + so + sc) / 4.0f;
+ corner.blockLight = static_cast<float>(bd + bs + bo + bc) / 4.0f;
+ corner.skyLight = static_cast<float>(sd + ss + so + sc) / 4.0f;
+ corner.occlusion = (od + os + oo + oc) / 4.0f;
 }
 float oldLightingFaceShade(int face) {
  switch(face) {
@@ -86,25 +97,9 @@ float oldLightingFaceShade(int face) {
   return 0.6f;
  }
 }
-void applyOldLightingIfEnabled(const option::RenderSettings& resolved, BlockFaceRenderState& state, int face) {
- if(!resolved.oldLighting) {
-  return;
- }
- const float shade = oldLightingFaceShade(face);
- for(int i = 0; i < 4; ++i) {
-  state.colors.red[i] *= shade;
-  state.colors.green[i] *= shade;
-  state.colors.blue[i] *= shade;
- }
-}
 float flatFaceColor(const option::RenderSettings& resolved, int face, float channel) {
  return resolved.oldLighting ? channel * oldLightingFaceShade(face) : channel;
 }
-// Smooth-lighting corner assignment: the vertex colour carries only the tint
-// (neutral AO — the lightmap is the single light source), and each vertex's
-// lightmap coordinate blends the flat face-adjacent light toward the vanilla
-// corner-averaged light by the AO strength slider. separateAo/oldLighting stay
-// honoured for packs that expect them.
 void assignAoCorners(const option::RenderSettings& resolved,
                      BlockFaceRenderState& state,
                      int face,
@@ -114,35 +109,26 @@ void assignAoCorners(const option::RenderSettings& resolved,
                      float blue,
                      int fBlock,
                      int fSky,
-                     float b0,
-                     float s0,
-                     float b1,
-                     float s1,
-                     float b2,
-                     float s2,
-                     float b3,
-                     float s3) {
+                     const CornerSample (&corners)[4]) {
  const float tintRed = applyTint ? red : 1.0f;
  const float tintGreen = applyTint ? green : 1.0f;
  const float tintBlue = applyTint ? blue : 1.0f;
- for(int i = 0; i < 4; ++i) {
-  state.colors.red[i] = tintRed;
-  state.colors.green[i] = tintGreen;
-  state.colors.blue[i] = tintBlue;
-  state.colors.alpha[i] = 1.0f;
- }
- const float cornerBlock[4] = {b0, b1, b2, b3};
- const float cornerSky[4] = {s0, s1, s2, s3};
+ const float shade = resolved.oldLighting ? oldLightingFaceShade(face) : 1.0f;
  const float strength = resolved.ambientOcclusionStrength;
- // No rounding: the slider has to fade continuously, not snap a whole level at
- // a time, and the corner itself carries quarter-level detail.
  for(int i = 0; i < 4; ++i) {
-  state.blockLight[i] = static_cast<float>(fBlock) + (cornerBlock[i] - static_cast<float>(fBlock)) * strength;
-  state.skyLight[i] = static_cast<float>(fSky) + (cornerSky[i] - static_cast<float>(fSky)) * strength;
+  const float ao = 1.0f - (1.0f - corners[i].occlusion) * strength;
+  const float coefficient = ao * shade;
+  const float rgbCoefficient = resolved.separateAo ? 1.0f : coefficient;
+  state.colors.red[i] = tintRed * rgbCoefficient;
+  state.colors.green[i] = tintGreen * rgbCoefficient;
+  state.colors.blue[i] = tintBlue * rgbCoefficient;
+  state.colors.alpha[i] = resolved.separateAo ? coefficient : 1.0f;
+  state.blockLight[i] =
+      static_cast<float>(fBlock) + (corners[i].blockLight - static_cast<float>(fBlock)) * strength;
+  state.skyLight[i] = static_cast<float>(fSky) + (corners[i].skyLight - static_cast<float>(fSky)) * strength;
  }
- applyOldLightingIfEnabled(resolved, state, face);
 }
-void multiplyAoVertexColors(BlockFaceRenderState& state, float red, float green, float blue) {
+void multiplyVertexColors(BlockFaceRenderState& state, float red, float green, float blue) {
  for(int i = 0; i < 4; ++i) {
   state.colors.red[i] *= red;
   state.colors.green[i] *= green;
@@ -165,10 +151,6 @@ bool CubeBlockRenderer::renderBlock(net::minecraft::block::Block& block, int x, 
  }
  return renderFlat(block, x, y, z, red, green, blue);
 }
-// Smooth lighting: C++ writes vanilla corner-averaged light into per-vertex
-// lightmap coordinates (vaUV2); the vertex colour stays tint-only so the light
-// is applied exactly once. Packs own face shading (faceShade) and the lightmap
-// sample; the AO strength slider blends the corners toward the flat face light.
 bool CubeBlockRenderer::renderSmooth(
     net::minecraft::block::Block& block, int x, int y, int z, float red, float green, float blue) {
  if(ctx_.blockView == nullptr) {
@@ -177,14 +159,7 @@ bool CubeBlockRenderer::renderSmooth(
  int textureId = 0;
  ctx_.faceState.useAo = true;
  bool drewAnyFace = false;
- float lb0 = 15.0f;
- float ls0 = 15.0f;
- float lb1 = 15.0f;
- float ls1 = 15.0f;
- float lb2 = 15.0f;
- float ls2 = 15.0f;
- float lb3 = 15.0f;
- float ls3 = 15.0f;
+ CornerSample corners[4]{};
  bool tintDown = true;
  bool tintUp = true;
  bool tintEast = true;
@@ -223,15 +198,14 @@ bool CubeBlockRenderer::renderSmooth(
   const int fBlock = ctx_.faceBlockLight;
   const int fSky = ctx_.faceSkyLight;
   averageCornerLight(ctx_, x - 1, y - 1, z + 1, x - 1, y - 1, z, x, y - 1, z + 1, x, y - 1, z,
-                     !(bottomWestEdgeTranslucent || bottomSouthEdgeTranslucent), lb0, ls0);
+                     !(bottomWestEdgeTranslucent || bottomSouthEdgeTranslucent), corners[0]);
   averageCornerLight(ctx_, x - 1, y - 1, z - 1, x - 1, y - 1, z, x, y - 1, z - 1, x, y - 1, z,
-                     !(bottomWestEdgeTranslucent || bottomNorthEdgeTranslucent), lb1, ls1);
+                     !(bottomWestEdgeTranslucent || bottomNorthEdgeTranslucent), corners[1]);
   averageCornerLight(ctx_, x + 1, y - 1, z - 1, x + 1, y - 1, z, x, y - 1, z - 1, x, y - 1, z,
-                     !(bottomEastEdgeTranslucent || bottomNorthEdgeTranslucent), lb2, ls2);
+                     !(bottomEastEdgeTranslucent || bottomNorthEdgeTranslucent), corners[2]);
   averageCornerLight(ctx_, x + 1, y - 1, z + 1, x + 1, y - 1, z, x, y - 1, z + 1, x, y - 1, z,
-                     !(bottomEastEdgeTranslucent || bottomSouthEdgeTranslucent), lb3, ls3);
-  assignAoCorners(ctx_.opts, ctx_.faceState, 0, tintDown, red, green, blue, fBlock, fSky, lb0, ls0, lb1, ls1,
-                  lb2, ls2, lb3, ls3);
+                     !(bottomEastEdgeTranslucent || bottomSouthEdgeTranslucent), corners[3]);
+  assignAoCorners(ctx_.opts, ctx_.faceState, 0, tintDown, red, green, blue, fBlock, fSky, corners);
   faces_.renderBottomFace(block, x, y, z, block.getTextureId(ctx_.blockView, x, y, z, 0));
   drewAnyFace = true;
  }
@@ -241,15 +215,14 @@ bool CubeBlockRenderer::renderSmooth(
   const int fBlock = ctx_.faceBlockLight;
   const int fSky = ctx_.faceSkyLight;
   averageCornerLight(ctx_, x + 1, y + 1, z + 1, x + 1, y + 1, z, x, y + 1, z + 1, x, y + 1, z,
-                     !(topEastEdgeTranslucent || topSouthEdgeTranslucent), lb0, ls0);
+                     !(topEastEdgeTranslucent || topSouthEdgeTranslucent), corners[0]);
   averageCornerLight(ctx_, x + 1, y + 1, z - 1, x + 1, y + 1, z, x, y + 1, z - 1, x, y + 1, z,
-                     !(topEastEdgeTranslucent || topNorthEdgeTranslucent), lb1, ls1);
+                     !(topEastEdgeTranslucent || topNorthEdgeTranslucent), corners[1]);
   averageCornerLight(ctx_, x - 1, y + 1, z - 1, x - 1, y + 1, z, x, y + 1, z - 1, x, y + 1, z,
-                     !(topWestEdgeTranslucent || topNorthEdgeTranslucent), lb2, ls2);
+                     !(topWestEdgeTranslucent || topNorthEdgeTranslucent), corners[2]);
   averageCornerLight(ctx_, x - 1, y + 1, z + 1, x - 1, y + 1, z, x, y + 1, z + 1, x, y + 1, z,
-                     !(topWestEdgeTranslucent || topSouthEdgeTranslucent), lb3, ls3);
-  assignAoCorners(ctx_.opts, ctx_.faceState, 1, tintUp, red, green, blue, fBlock, fSky, lb0, ls0, lb1, ls1,
-                  lb2, ls2, lb3, ls3);
+                     !(topWestEdgeTranslucent || topSouthEdgeTranslucent), corners[3]);
+  assignAoCorners(ctx_.opts, ctx_.faceState, 1, tintUp, red, green, blue, fBlock, fSky, corners);
   faces_.renderTopFace(block, x, y, z, block.getTextureId(ctx_.blockView, x, y, z, 1));
   drewAnyFace = true;
  }
@@ -258,19 +231,18 @@ bool CubeBlockRenderer::renderSmooth(
   const int fBlock = ctx_.faceBlockLight;
   const int fSky = ctx_.faceSkyLight;
   averageCornerLight(ctx_, x - 1, y + 1, z - 1, x - 1, y, z - 1, x, y + 1, z - 1, x, y, z - 1,
-                     !(northWestEdgeTranslucent || topNorthEdgeTranslucent), lb0, ls0);
+                     !(northWestEdgeTranslucent || topNorthEdgeTranslucent), corners[0]);
   averageCornerLight(ctx_, x + 1, y + 1, z - 1, x + 1, y, z - 1, x, y + 1, z - 1, x, y, z - 1,
-                     !(northEastEdgeTranslucent || topNorthEdgeTranslucent), lb1, ls1);
+                     !(northEastEdgeTranslucent || topNorthEdgeTranslucent), corners[1]);
   averageCornerLight(ctx_, x + 1, y - 1, z - 1, x + 1, y, z - 1, x, y - 1, z - 1, x, y, z - 1,
-                     !(northEastEdgeTranslucent || bottomNorthEdgeTranslucent), lb2, ls2);
+                     !(northEastEdgeTranslucent || bottomNorthEdgeTranslucent), corners[2]);
   averageCornerLight(ctx_, x - 1, y - 1, z - 1, x - 1, y, z - 1, x, y - 1, z - 1, x, y, z - 1,
-                     !(northWestEdgeTranslucent || bottomNorthEdgeTranslucent), lb3, ls3);
-  assignAoCorners(ctx_.opts, ctx_.faceState, 2, tintEast, red, green, blue, fBlock, fSky, lb0, ls0, lb1, ls1,
-                  lb2, ls2, lb3, ls3);
+                     !(northWestEdgeTranslucent || bottomNorthEdgeTranslucent), corners[3]);
+  assignAoCorners(ctx_.opts, ctx_.faceState, 2, tintEast, red, green, blue, fBlock, fSky, corners);
   textureId = block.getTextureId(ctx_.blockView, x, y, z, 2);
   faces_.renderEastFace(block, x, y, z, textureId);
   if(grassSideTintActive(ctx_.opts) && textureId == 3 && ctx_.textureOverride < 0) {
-   multiplyAoVertexColors(ctx_.faceState, red, green, blue);
+   multiplyVertexColors(ctx_.faceState, red, green, blue);
    faces_.renderEastFace(block, x, y, z, 38);
   }
   drewAnyFace = true;
@@ -280,19 +252,18 @@ bool CubeBlockRenderer::renderSmooth(
   const int fBlock = ctx_.faceBlockLight;
   const int fSky = ctx_.faceSkyLight;
   averageCornerLight(ctx_, x - 1, y + 1, z + 1, x - 1, y, z + 1, x, y + 1, z + 1, x, y, z + 1,
-                     !(southWestEdgeTranslucent || topSouthEdgeTranslucent), lb0, ls0);
+                     !(southWestEdgeTranslucent || topSouthEdgeTranslucent), corners[0]);
   averageCornerLight(ctx_, x - 1, y - 1, z + 1, x - 1, y, z + 1, x, y - 1, z + 1, x, y, z + 1,
-                     !(southWestEdgeTranslucent || bottomSouthEdgeTranslucent), lb1, ls1);
+                     !(southWestEdgeTranslucent || bottomSouthEdgeTranslucent), corners[1]);
   averageCornerLight(ctx_, x + 1, y - 1, z + 1, x + 1, y, z + 1, x, y - 1, z + 1, x, y, z + 1,
-                     !(southEastEdgeTranslucent || bottomSouthEdgeTranslucent), lb2, ls2);
+                     !(southEastEdgeTranslucent || bottomSouthEdgeTranslucent), corners[2]);
   averageCornerLight(ctx_, x + 1, y + 1, z + 1, x + 1, y, z + 1, x, y + 1, z + 1, x, y, z + 1,
-                     !(southEastEdgeTranslucent || topSouthEdgeTranslucent), lb3, ls3);
-  assignAoCorners(ctx_.opts, ctx_.faceState, 3, tintWest, red, green, blue, fBlock, fSky, lb0, ls0, lb1, ls1,
-                  lb2, ls2, lb3, ls3);
+                     !(southEastEdgeTranslucent || topSouthEdgeTranslucent), corners[3]);
+  assignAoCorners(ctx_.opts, ctx_.faceState, 3, tintWest, red, green, blue, fBlock, fSky, corners);
   textureId = block.getTextureId(ctx_.blockView, x, y, z, 3);
   faces_.renderWestFace(block, x, y, z, textureId);
   if(grassSideTintActive(ctx_.opts) && textureId == 3 && ctx_.textureOverride < 0) {
-   multiplyAoVertexColors(ctx_.faceState, red, green, blue);
+   multiplyVertexColors(ctx_.faceState, red, green, blue);
    faces_.renderWestFace(block, x, y, z, 38);
   }
   drewAnyFace = true;
@@ -302,19 +273,18 @@ bool CubeBlockRenderer::renderSmooth(
   const int fBlock = ctx_.faceBlockLight;
   const int fSky = ctx_.faceSkyLight;
   averageCornerLight(ctx_, x - 1, y + 1, z + 1, x - 1, y, z + 1, x - 1, y + 1, z, x - 1, y, z,
-                     !(southWestEdgeTranslucent || topWestEdgeTranslucent), lb0, ls0);
+                     !(southWestEdgeTranslucent || topWestEdgeTranslucent), corners[0]);
   averageCornerLight(ctx_, x - 1, y + 1, z - 1, x - 1, y, z - 1, x - 1, y + 1, z, x - 1, y, z,
-                     !(northWestEdgeTranslucent || topWestEdgeTranslucent), lb1, ls1);
+                     !(northWestEdgeTranslucent || topWestEdgeTranslucent), corners[1]);
   averageCornerLight(ctx_, x - 1, y - 1, z - 1, x - 1, y, z - 1, x - 1, y - 1, z, x - 1, y, z,
-                     !(northWestEdgeTranslucent || bottomWestEdgeTranslucent), lb2, ls2);
+                     !(northWestEdgeTranslucent || bottomWestEdgeTranslucent), corners[2]);
   averageCornerLight(ctx_, x - 1, y - 1, z + 1, x - 1, y, z + 1, x - 1, y - 1, z, x - 1, y, z,
-                     !(southWestEdgeTranslucent || bottomWestEdgeTranslucent), lb3, ls3);
-  assignAoCorners(ctx_.opts, ctx_.faceState, 4, tintNorth, red, green, blue, fBlock, fSky, lb0, ls0, lb1, ls1,
-                  lb2, ls2, lb3, ls3);
+                     !(southWestEdgeTranslucent || bottomWestEdgeTranslucent), corners[3]);
+  assignAoCorners(ctx_.opts, ctx_.faceState, 4, tintNorth, red, green, blue, fBlock, fSky, corners);
   textureId = block.getTextureId(ctx_.blockView, x, y, z, 4);
   faces_.renderNorthFace(block, x, y, z, textureId);
   if(grassSideTintActive(ctx_.opts) && textureId == 3 && ctx_.textureOverride < 0) {
-   multiplyAoVertexColors(ctx_.faceState, red, green, blue);
+   multiplyVertexColors(ctx_.faceState, red, green, blue);
    faces_.renderNorthFace(block, x, y, z, 38);
   }
   drewAnyFace = true;
@@ -324,19 +294,18 @@ bool CubeBlockRenderer::renderSmooth(
   const int fBlock = ctx_.faceBlockLight;
   const int fSky = ctx_.faceSkyLight;
   averageCornerLight(ctx_, x + 1, y - 1, z + 1, x + 1, y, z + 1, x + 1, y - 1, z, x + 1, y, z,
-                     !(bottomEastEdgeTranslucent || southEastEdgeTranslucent), lb0, ls0);
+                     !(bottomEastEdgeTranslucent || southEastEdgeTranslucent), corners[0]);
   averageCornerLight(ctx_, x + 1, y - 1, z - 1, x + 1, y, z - 1, x + 1, y - 1, z, x + 1, y, z,
-                     !(bottomEastEdgeTranslucent || northEastEdgeTranslucent), lb1, ls1);
+                     !(bottomEastEdgeTranslucent || northEastEdgeTranslucent), corners[1]);
   averageCornerLight(ctx_, x + 1, y + 1, z - 1, x + 1, y, z - 1, x + 1, y + 1, z, x + 1, y, z,
-                     !(topEastEdgeTranslucent || northEastEdgeTranslucent), lb2, ls2);
+                     !(topEastEdgeTranslucent || northEastEdgeTranslucent), corners[2]);
   averageCornerLight(ctx_, x + 1, y + 1, z + 1, x + 1, y, z + 1, x + 1, y + 1, z, x + 1, y, z,
-                     !(topEastEdgeTranslucent || southEastEdgeTranslucent), lb3, ls3);
-  assignAoCorners(ctx_.opts, ctx_.faceState, 5, tintSouth, red, green, blue, fBlock, fSky, lb0, ls0, lb1, ls1,
-                  lb2, ls2, lb3, ls3);
+                     !(topEastEdgeTranslucent || southEastEdgeTranslucent), corners[3]);
+  assignAoCorners(ctx_.opts, ctx_.faceState, 5, tintSouth, red, green, blue, fBlock, fSky, corners);
   textureId = block.getTextureId(ctx_.blockView, x, y, z, 5);
   faces_.renderSouthFace(block, x, y, z, textureId);
   if(grassSideTintActive(ctx_.opts) && textureId == 3 && ctx_.textureOverride < 0) {
-   multiplyAoVertexColors(ctx_.faceState, red, green, blue);
+   multiplyVertexColors(ctx_.faceState, red, green, blue);
    faces_.renderSouthFace(block, x, y, z, 38);
   }
   drewAnyFace = true;

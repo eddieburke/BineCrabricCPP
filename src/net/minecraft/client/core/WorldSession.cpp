@@ -167,28 +167,23 @@ void WorldSession::prepareWorld(Minecraft& client, const std::string& worldName)
  }
  client.world->setChunkCacheCenterFromBlockPos(center.x, center.z);
  constexpr int chunkRadius = radius / 16;
- const int totalChunks = (chunkRadius * 2 + 1) * (chunkRadius * 2 + 1);
+ int totalChunks = 0;
+ for(int dx = -chunkRadius; dx <= chunkRadius; ++dx) {
+  for(int dz = -chunkRadius; dz <= chunkRadius; ++dz) {
+   if(dx * dx + dz * dz <= chunkRadius * chunkRadius) {
+    ++totalChunks;
+   }
+  }
+ }
  const int centerChunkX = center.x >> 4;
  const int centerChunkZ = center.z >> 4;
  if(ChunkSource* source = client.world->getChunkSource(); source != nullptr) {
   if(auto* cache = dynamic_cast<world::chunk::ChunkCache*>(source); cache != nullptr) {
-   // Drive the whole grid through the async loader (workers load/generate in
-   // parallel) and pump integration on this thread, instead of 9k serialized
-   // synchronous disk loads/generations. Requests and adoption both stop at
-   // the render-radius ring, matching the old grid's footprint.
-   for(int ring = 0; ring <= chunkRadius; ++ring) {
-    const int priority = ring <= 1 ? std::numeric_limits<int>::min() : ring;
-    for(int dx = -ring; dx <= ring; ++dx) {
-     for(int dz = -ring; dz <= ring; ++dz) {
-      if(std::max(std::abs(dx), std::abs(dz)) != ring) {
-       continue;
-      }
-      cache->requestChunkAsync(centerChunkX + dx, centerChunkZ + dz, priority);
-     }
-    }
-   }
+   cache->setActiveRadius(chunkRadius);
+   cache->prefetchChunksNear(centerChunkX, centerChunkZ);
    const auto start = std::chrono::steady_clock::now();
    while(!cache->isChunkDataReady(centerChunkX, centerChunkZ)) {
+    cache->prefetchChunksNear(centerChunkX, centerChunkZ);
     cache->pumpChunkPublish();
     const std::size_t pending = cache->pendingAsyncLoadCount();
     const int done = totalChunks > static_cast<int>(pending) ? totalChunks - static_cast<int>(pending) : 0;

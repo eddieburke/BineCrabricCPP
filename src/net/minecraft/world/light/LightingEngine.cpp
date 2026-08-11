@@ -47,43 +47,64 @@ LightingEngine::LightingEngine(world::light::UnifiedLightRegistry& registry)
       workerLimit_(util::concurrent::ThreadCoordinator::instance().computeShare(3)) {
 }
 void LightingEngine::push(LightType type, int minX, int minY, int minZ, int maxX, int maxY, int maxZ, bool merge) {
+ if(stopping_.load(std::memory_order_relaxed)) {
+  return;
+ }
  {
-  const std::lock_guard lock(queueMutex_);
-  if(stopping_) {
+  const std::lock_guard lock(stagingMutex_);
+  if(merge) {
+   const std::size_t n = std::min(staging_.size(), kStagingMergeScan);
+   for(std::size_t i = 0; i < n; ++i) {
+    Box& existing = staging_[staging_.size() - i - 1];
+    if(existing.type == type && existing.expand(minX, minY, minZ, maxX, maxY, maxZ)) {
+     return;
+    }
+   }
+  }
+  staging_.push_back(Box{type, minX, minY, minZ, maxX, maxY, maxZ});
+  stagedCount_.store(staging_.size(), std::memory_order_relaxed);
+  if(staging_.size() < kStagingFlushBoxes) {
    return;
   }
-  if(merge) {
-   const std::size_t n = std::min<std::size_t>(queue_.size(), 5);
-   for(std::size_t i = 0; i < n; ++i) {
-    Box& existing = queue_[queue_.size() - i - 1];
-    if(existing.type == type && existing.expand(minX, minY, minZ, maxX, maxY, maxZ)) {
-     scheduleWorkersLocked();
-     return;
-    }
-   }
-  }
-  constexpr std::size_t kMaxQueue = 200000;
-  if(queue_.size() >= kMaxQueue) {
-   for(auto it = queue_.rbegin(); it != queue_.rend(); ++it) {
-    if(it->type == type) {
-     it->cover(minX, minY, minZ, maxX, maxY, maxZ);
-     pendingCount_.store(queue_.size() + activeBoxes_.size(), std::memory_order_relaxed);
-     scheduleWorkersLocked();
-     return;
-    }
-   }
-  }
-  const std::int64_t volume = static_cast<std::int64_t>(maxX - minX + 1) *
-                              static_cast<std::int64_t>(maxY - minY + 1) *
-                              static_cast<std::int64_t>(maxZ - minZ + 1);
-  if(volume <= 64) {
-   queue_.push_front(Box{type, minX, minY, minZ, maxX, maxY, maxZ});
-  } else {
-   queue_.push_back(Box{type, minX, minY, minZ, maxX, maxY, maxZ});
-  }
-  pendingCount_.store(queue_.size() + activeBoxes_.size(), std::memory_order_relaxed);
-  scheduleWorkersLocked();
  }
+ flushStaging();
+}
+void LightingEngine::flushStaging() {
+ std::deque<Box> batch;
+ {
+  const std::lock_guard lock(stagingMutex_);
+  if(staging_.empty()) {
+   return;
+  }
+  batch.swap(staging_);
+  stagedCount_.store(0, std::memory_order_relaxed);
+ }
+ const std::lock_guard lock(queueMutex_);
+ if(stopping_.load(std::memory_order_relaxed)) {
+  return;
+ }
+ constexpr std::size_t kMaxQueue = 200000;
+ for(const Box& box : batch) {
+  if(queue_.size() >= kMaxQueue) {
+   const auto it = std::find_if(queue_.rbegin(), queue_.rend(), [&box](const Box& queued) {
+    return queued.type == box.type;
+   });
+   if(it != queue_.rend()) {
+    it->cover(box.minX, box.minY, box.minZ, box.maxX, box.maxY, box.maxZ);
+    continue;
+   }
+  }
+  const std::int64_t volume = static_cast<std::int64_t>(box.maxX - box.minX + 1) *
+                              static_cast<std::int64_t>(box.maxY - box.minY + 1) *
+                              static_cast<std::int64_t>(box.maxZ - box.minZ + 1);
+  if(volume <= 64) {
+   queue_.push_front(box);
+  } else {
+   queue_.push_back(box);
+  }
+ }
+ pendingCount_.store(queue_.size() + activeBoxes_.size(), std::memory_order_relaxed);
+ scheduleWorkersLocked();
 }
 void LightingEngine::registerChunk(Chunk* chunk) {
  if(chunk == nullptr || chunk->isEmpty()) {
@@ -107,6 +128,7 @@ void LightingEngine::unregisterChunk(Chunk* chunk) {
  }
 }
 std::vector<LightingEngine::DirtyRegion> LightingEngine::drainDirtyRegions(std::size_t maxRegions) {
+ flushStaging();
  std::vector<DirtyRegion> regions;
  regions.reserve(std::min(maxRegions, outbox_.size()));
  DirtyRegion region{};
@@ -119,11 +141,16 @@ bool LightingEngine::hasDirtyRegions() const {
  return outbox_.size() != 0;
 }
 void LightingEngine::stop() {
+ {
+  const std::lock_guard stagingLock(stagingMutex_);
+  staging_.clear();
+  stagedCount_.store(0, std::memory_order_relaxed);
+ }
  std::unique_lock lock(queueMutex_);
- if(stopping_ && scheduledWorkers_ == 0) {
+ if(stopping_.load(std::memory_order_relaxed) && scheduledWorkers_ == 0) {
   return;
  }
- stopping_ = true;
+ stopping_.store(true, std::memory_order_relaxed);
  outbox_.request_stop();
  idleCv_.wait(lock, [this] { return scheduledWorkers_ == 0; });
  queue_.clear();
@@ -211,11 +238,6 @@ Chunk* LightingEngine::chunkAt(int chunkX, int chunkZ, WorkerState& state) {
   if(const auto reg = registry_.find(key); reg != registry_.end()) {
    chunk = reg->second;
   }
-  // Lease acquisition must be atomic with eviction's unregisterChunkForLighting
-  // (same mutex): a worker that found the chunk has already counted its lease
-  // before the eviction can proceed, so the graveyard sweep can never free the
-  // chunk while this worker dereferences it. The eviction tombstone inside
-  // tryAcquireRenderPin is the fallback for any non-registry acquisition path.
   if(chunk != nullptr && !chunk->tryAcquireRenderPin()) {
    chunk = nullptr;
   }
@@ -333,27 +355,37 @@ void LightingEngine::runUpdate(const Box& update, WorkerState& state) {
  bool changed = true;
  while(changed) {
   changed = false;
-  int lastCx = 0;
-  int lastCz = 0;
+  int lastMinCx = 0;
+  int lastMaxCx = 0;
+  int lastMinCz = 0;
+  int lastMaxCz = 0;
   bool lastLoaded = false;
+  bool hasLast = false;
   for(int x = update.minX; x <= update.maxX; ++x) {
    for(int z = update.minZ; z <= update.maxZ; ++z) {
+    const int minCx = (x - 1) >> 4;
+    const int maxCx = (x + 1) >> 4;
+    const int minCz = (z - 1) >> 4;
+    const int maxCz = (z + 1) >> 4;
     bool loaded = false;
-    if(lastLoaded && (x >> 4) == lastCx && (z >> 4) == lastCz) {
-     loaded = true;
+    if(hasLast && minCx == lastMinCx && maxCx == lastMaxCx && minCz == lastMinCz && maxCz == lastMaxCz) {
+     loaded = lastLoaded;
     } else {
      loaded = true;
-     for(int cx = (x - 1) >> 4; cx <= (x + 1) >> 4 && loaded; ++cx) {
-      for(int cz = (z - 1) >> 4; cz <= (z + 1) >> 4; ++cz) {
+     for(int cx = minCx; cx <= maxCx && loaded; ++cx) {
+      for(int cz = minCz; cz <= maxCz; ++cz) {
        if(chunkAt(cx, cz, state) == nullptr) {
         loaded = false;
         break;
        }
       }
      }
-     lastCx = x >> 4;
-     lastCz = z >> 4;
+     lastMinCx = minCx;
+     lastMaxCx = maxCx;
+     lastMinCz = minCz;
+     lastMaxCz = maxCz;
      lastLoaded = loaded;
+     hasLast = true;
     }
     if(!loaded) {
      continue;

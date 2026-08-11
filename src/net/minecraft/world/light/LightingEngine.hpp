@@ -17,12 +17,6 @@ class WorkerPool;
 namespace world::light {
 class UnifiedLightRegistry;
 }
-// Fully asynchronous lighting engine: propagation runs on background worker
-// threads (sharded by non-overlapping boxes); the main thread only enqueues via
-// push() (never waits), drains finished regions via drainDirtyRegions(), and
-// registers/unregisters chunks (non-blocking). Chunk lifetime uses the shared
-// render lease: workers lease each chunk they touch, and eviction tombstones
-// the chunk and defers destruction until the leases drain (ChunkCache graveyard).
 class LightingEngine {
  public:
  struct DirtyRegion {
@@ -35,6 +29,7 @@ class LightingEngine {
  LightingEngine(const LightingEngine&) = delete;
  LightingEngine& operator=(const LightingEngine&) = delete;
  void push(LightType type, int minX, int minY, int minZ, int maxX, int maxY, int maxZ, bool merge);
+ void flushStaging();
  void setSkyLightSuppressed(bool suppressed) noexcept {
   skyLightSuppressed_.store(suppressed, std::memory_order_relaxed);
  }
@@ -43,7 +38,7 @@ class LightingEngine {
  [[nodiscard]] std::vector<DirtyRegion> drainDirtyRegions(std::size_t maxRegions);
  [[nodiscard]] bool hasDirtyRegions() const;
  [[nodiscard]] bool busy() const noexcept {
-  return pendingCount_.load(std::memory_order_relaxed) != 0;
+  return pendingCount_.load(std::memory_order_relaxed) + stagedCount_.load(std::memory_order_relaxed) != 0;
  }
  void stop();
 
@@ -53,10 +48,6 @@ class LightingEngine {
   int minX, minY, minZ, maxX, maxY, maxZ;
   bool expand(int x0, int y0, int z0, int x1, int y1, int z1);
   void cover(int x0, int y0, int z0, int x1, int y1, int z1);
-  // Conflict test for concurrent claiming. Different light types write
-  // disjoint nibble arrays and never conflict. Same-type boxes need a
-  // 1-block margin: light nibbles pack two Y-adjacent cells per byte, so
-  // merely adjacent boxes would race read-modify-writes on shared bytes.
   [[nodiscard]] bool conflictsWith(const Box& other) const noexcept {
    if(type != other.type) {
     return false;
@@ -85,13 +76,21 @@ class LightingEngine {
   return (static_cast<std::uint64_t>(static_cast<std::uint32_t>(chunkX)) << 32) |
          static_cast<std::uint64_t>(static_cast<std::uint32_t>(chunkZ));
  }
+ // Producers (tick / worldgen) only ever take stagingMutex_, which no worker
+ // holds, so a per-block setBlock never waits behind a propagation pass on
+ // queueMutex_. flushStaging() is the only place the two meet.
+ static constexpr std::size_t kStagingFlushBoxes = 1024;
+ static constexpr std::size_t kStagingMergeScan = 32;
+ std::mutex stagingMutex_;
+ std::deque<Box> staging_;
  mutable std::mutex queueMutex_;
  std::condition_variable idleCv_;
  std::deque<Box> queue_;
  std::vector<Box> activeBoxes_;
  std::size_t scheduledWorkers_ = 0;
- bool stopping_ = false;
+ std::atomic<bool> stopping_{false};
  std::atomic<std::size_t> pendingCount_{0};
+ std::atomic<std::size_t> stagedCount_{0};
  std::atomic<bool> skyLightSuppressed_{false};
  std::mutex registryMutex_;
  std::unordered_map<std::uint64_t, Chunk*> registry_;

@@ -38,7 +38,6 @@
 #include "net/minecraft/client/render/texture/DynamicTexture.hpp"
 #include "net/minecraft/client/texture/TextureManager.hpp"
 #include "support/glsl_snippets_test_fixture.hpp"
-
 namespace net::minecraft::test {
 namespace {
 using client::gl::GLCore;
@@ -48,7 +47,6 @@ using client::render::PackInstance;
 using client::render::PackLoader;
 using client::render::PackSetting;
 using client::render::PackCatalog::directoryResources;
-
 class ShaderGlIntegrationTest : public ::testing::Test {
  protected:
  static void SetUpTestSuite() {
@@ -79,26 +77,25 @@ class ShaderGlIntegrationTest : public ::testing::Test {
    window_ = nullptr;
   }
  }
-  void SetUp() override {
-   if(window_ != nullptr) {
-    glfwMakeContextCurrent(window_);
-   }
-   client::render::core::setActiveProgram(nullptr);
-   client::render::core::setDrawEnabled(true);
-   client::render::core::invalidateAttribCache();
-   client::gl::ShaderProgram::unbind();
-   client::gl::GLCore::bindFramebuffer(client::gl::framebuffer::Framebuffer, 0);
-   client::render::core::activeTexture(client::gl::tex::Texture0);
-   client::render::core::disableBlend();
-   client::render::core::disableDepthTest();
-   client::render::core::disableCull();
-   client::render::setDrawPhase(client::render::DrawPhase::All);
-   while(::glGetError() != 0u) {}
+ void SetUp() override {
+  if(window_ != nullptr) {
+   glfwMakeContextCurrent(window_);
   }
+  client::render::core::setActiveProgram(nullptr);
+  client::render::core::setDrawEnabled(true);
+  client::render::core::invalidateAttribCache();
+  client::gl::ShaderProgram::unbind();
+  client::gl::GLCore::bindFramebuffer(client::gl::framebuffer::Framebuffer, 0);
+  client::render::core::activeTexture(client::gl::tex::Texture0);
+  client::render::core::disableBlend();
+  client::render::core::disableDepthTest();
+  client::render::core::disableCull();
+  client::render::setDrawPhase(client::render::DrawPhase::All);
+  while(::glGetError() != 0u) {}
+ }
  static GLFWwindow* window_;
 };
 GLFWwindow* ShaderGlIntegrationTest::window_ = nullptr;
-
 void mergeDimension(PackDefinition& target, const PackDefinition& selected) {
  for(const auto& [name, program] : selected.programs) {
   target.programs[name] = program;
@@ -125,7 +122,6 @@ void mergeDimension(PackDefinition& target, const PackDefinition& selected) {
   }
  }
 }
-
 std::string join(const std::vector<std::string>& lines) {
  std::ostringstream output;
  for(const std::string& line : lines) {
@@ -165,12 +161,10 @@ class ReplicatedDynamicTexture final : public client::render::texture::DynamicTe
  int texture_;
 };
 } // namespace
-
 TEST_F(ShaderGlIntegrationTest, DrawBufferBindingQueryIsValid) {
  ASSERT_NE(GLCore::genFramebuffers, nullptr);
  ASSERT_NE(GLCore::bindFramebuffer, nullptr);
 }
-
 TEST_F(ShaderGlIntegrationTest, ProgramCacheReloadsStoredBinary) {
  const auto nonce = std::chrono::steady_clock::now().time_since_epoch().count();
  const std::filesystem::path root =
@@ -207,7 +201,6 @@ TEST_F(ShaderGlIntegrationTest, ProgramCacheReloadsStoredBinary) {
  std::filesystem::remove_all(root, error);
  EXPECT_FALSE(error);
 }
-
 TEST_F(ShaderGlIntegrationTest, CenterDepthReadbackDoesNotWaitForCurrentIssue) {
  client::render::AsyncDepthSampler sampler;
  ::glClearDepth(0.25);
@@ -220,7 +213,6 @@ TEST_F(ShaderGlIntegrationTest, CenterDepthReadbackDoesNotWaitForCurrentIssue) {
  ASSERT_TRUE(depth.has_value());
  EXPECT_NEAR(*depth, 0.25f, 0.01f);
 }
-
 TEST_F(ShaderGlIntegrationTest, NestedPassCannotReenableAFilteredParent) {
  using client::render::DrawPhase;
  using client::render::RenderPassScope;
@@ -239,7 +231,6 @@ TEST_F(ShaderGlIntegrationTest, NestedPassCannotReenableAFilteredParent) {
  EXPECT_TRUE(client::render::core::drawEnabled());
  client::render::setDrawPhase(DrawPhase::All);
 }
-
 TEST_F(ShaderGlIntegrationTest, IrisAlphaThresholdsReachWaterAndEntityPasses) {
  using client::render::RenderPassScope;
  using client::render::RenderType;
@@ -262,7 +253,6 @@ TEST_F(ShaderGlIntegrationTest, IrisAlphaThresholdsReachWaterAndEntityPasses) {
  }
  EXPECT_FLOAT_EQ(client::render::core::alphaTestRef(), -1.0f);
 }
-
 TEST_F(ShaderGlIntegrationTest, EntityBatchDoesNotInheritPreviousPrimitiveMode) {
  client::gl::ShaderProgram program;
  const std::string vertex =
@@ -308,7 +298,37 @@ TEST_F(ShaderGlIntegrationTest, EntityBatchDoesNotInheritPreviousPrimitiveMode) 
  client::render::core::clearDrawCameraState();
  EXPECT_EQ(::glGetError(), 0u);
 }
-
+TEST_F(ShaderGlIntegrationTest, CachedMeshColorOverrideReplacesStoredVertexColor) {
+ client::gl::ShaderProgram program;
+ const std::string vertex =
+     "layout(location=0)in vec3 vaPosition;layout(location=2)in vec4 vaColor;"
+     "out vec4 color;void main(){gl_Position=vec4(vaPosition,1.0);color=vaColor;}";
+ const std::string fragment =
+     "in vec4 color;layout(location=0)out vec4 outColor;void main(){outColor=color;}";
+ ASSERT_TRUE(program.compile(vertex, fragment, "#version 430 core\n")) << program.lastError();
+ client::render::Tessellator tessellator;
+ tessellator.setCaptureOnly(true);
+ tessellator.start(0x0004);
+ tessellator.color(1.0f, 0.0f, 0.0f, 1.0f);
+ tessellator.vertex(-1.0, -1.0, 0.0);
+ tessellator.vertex(1.0, -1.0, 0.0);
+ tessellator.vertex(0.0, 1.0, 0.0);
+ client::render::TessellatorMesh mesh = tessellator.takeMesh();
+ ASSERT_TRUE(mesh.uploadToGpu());
+ client::render::core::setActiveProgram(&program);
+ client::render::core::viewport(0, 0, 64, 64);
+ ::glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
+ ::glClear(client::gl::attrib::ColorBufferBit);
+ client::render::Tessellator::drawMesh(mesh, 0xFF00FF00U);
+ std::array<unsigned char, 4> pixel{};
+ ::glReadPixels(32, 32, 1, 1, client::gl::pixel::Rgba,
+                client::gl::pixel::UnsignedByte, pixel.data());
+ EXPECT_LT(pixel[0], 5);
+ EXPECT_GT(pixel[1], 250);
+ EXPECT_LT(pixel[2], 5);
+ EXPECT_GT(pixel[3], 250);
+ client::render::core::setActiveProgram(nullptr);
+}
 TEST_F(ShaderGlIntegrationTest, DisabledBufferBlendReplacesDestination) {
  if(!GLCore::perBufferBlendingSupported || GLCore::blendFunci == nullptr) {
   GTEST_SKIP();
@@ -344,7 +364,59 @@ TEST_F(ShaderGlIntegrationTest, DisabledBufferBlendReplacesDestination) {
  client::render::core::disableBlend();
  EXPECT_EQ(::glGetError(), 0u);
 }
-
+TEST_F(ShaderGlIntegrationTest, ComputeImageBindingsUseCurrentReadSide) {
+ client::render::ColorTargets targets;
+ ASSERT_TRUE(targets.ensure(4, 4, {client::render::ColorFormat::Rgba8}, 1));
+ std::unordered_map<std::string, int> images;
+ targets.fillImageBindings(images);
+ ASSERT_TRUE(images.contains("colortex0"));
+ EXPECT_EQ(images.at("colortex0"), static_cast<int>(targets.readTexture(0)));
+ EXPECT_NE(images.at("colortex0"), static_cast<int>(targets.writeTexture(0)));
+ const unsigned int first = targets.readTexture(0);
+ targets.flip("colortex0");
+ images.clear();
+ targets.fillImageBindings(images);
+ EXPECT_EQ(images.at("colortex0"), static_cast<int>(targets.readTexture(0)));
+ EXPECT_NE(images.at("colortex0"), static_cast<int>(targets.writeTexture(0)));
+ EXPECT_NE(targets.readTexture(0), first);
+ targets.destroy();
+}
+TEST_F(ShaderGlIntegrationTest, ComputeWritesRenderTargetInPlaceWithoutPingPongCopy) {
+ client::render::ColorTargets targets;
+ ASSERT_TRUE(targets.ensure(4, 4, {client::render::ColorFormat::Rgba8}, 1));
+ targets.clearColors({true}, {{{0.0f, 0.0f, 0.0f, 1.0f}}});
+ client::gl::ShaderProgram program;
+ const std::string compute =
+     "layout(local_size_x=1,local_size_y=1)in;"
+     "layout(rgba8)writeonly uniform image2D colorimg0;"
+     "void main(){imageStore(colorimg0,ivec2(gl_GlobalInvocationID.xy),vec4(0.25,0.5,0.75,1.0));}";
+ ASSERT_TRUE(program.compileCompute(compute, "#version 430 core\n")) << program.lastError();
+ program.bind();
+ std::unordered_map<std::string, int> images;
+ targets.fillImageBindings(images);
+ client::render::PackDefinition definition;
+ ASSERT_EQ(client::render::bindColorImages(program, images, definition, &targets), 1u);
+ GLCore::dispatchCompute(4, 4, 1);
+ GLCore::memoryBarrier(0x2028u);
+ const auto readPixel = [](unsigned int texture) {
+  std::array<unsigned char, 4 * 4 * 4> pixels{};
+  client::render::core::bindTexture(static_cast<int>(texture));
+  ::glGetTexImage(client::gl::cap::Texture2D, 0, client::gl::pixel::Rgba,
+                  client::gl::pixel::UnsignedByte, pixels.data());
+  return std::array<unsigned char, 4>{pixels[0], pixels[1], pixels[2], pixels[3]};
+ };
+ const std::array<unsigned char, 4> current = readPixel(targets.readTexture(0));
+ const std::array<unsigned char, 4> alternate = readPixel(targets.writeTexture(0));
+ EXPECT_NEAR(current[0], 64, 1);
+ EXPECT_NEAR(current[1], 128, 1);
+ EXPECT_NEAR(current[2], 191, 1);
+ EXPECT_EQ(current[3], 255);
+ EXPECT_EQ(alternate[0], 0);
+ EXPECT_EQ(alternate[1], 0);
+ EXPECT_EQ(alternate[2], 0);
+ EXPECT_EQ(alternate[3], 255);
+ targets.destroy();
+}
 TEST_F(ShaderGlIntegrationTest, NestedPassRestoresWorldProgramIdentityAndStage) {
  client::gl::ShaderProgram parent;
  client::render::core::setActiveProgram(&parent, client::render::WorldProgramId::Entities);
@@ -361,7 +433,6 @@ TEST_F(ShaderGlIntegrationTest, NestedPassRestoresWorldProgramIdentityAndStage) 
  client::render::core::setActiveProgram(nullptr);
  client::render::core::setRenderStage(client::render::core::RenderStage::None);
 }
-
 TEST_F(ShaderGlIntegrationTest, EntityAndRenderedItemScopesRestoreNoObjectSentinel) {
  client::render::core::setEntityId(-1);
  client::render::core::setRenderedItemId(-1);
@@ -377,7 +448,6 @@ TEST_F(ShaderGlIntegrationTest, EntityAndRenderedItemScopesRestoreNoObjectSentin
  EXPECT_EQ(client::render::core::entityId(), -1);
  EXPECT_EQ(client::render::core::renderedItemId(), -1);
 }
-
 TEST_F(ShaderGlIntegrationTest, GeometryBindsEveryAlbedoSamplerAliasToUnitZero) {
  client::gl::ShaderProgram program;
  const std::string vertex =
@@ -415,7 +485,6 @@ TEST_F(ShaderGlIntegrationTest, GeometryBindsEveryAlbedoSamplerAliasToUnitZero) 
  }
  client::render::core::setActiveProgram(nullptr);
 }
-
 TEST_F(ShaderGlIntegrationTest, EntityTextureBindingOwnsUnitZero) {
  client::texture::TextureManager textureManager;
  client::texture::RasterImage image;
@@ -439,7 +508,6 @@ TEST_F(ShaderGlIntegrationTest, EntityTextureBindingOwnsUnitZero) {
  textureManager.deleteTexture(entityTexture);
  client::render::core::deleteTexture(sentinel);
 }
-
 TEST_F(ShaderGlIntegrationTest, ReplicatedDynamicAtlasTilesUpdateEveryMipmapLevel) {
  struct MipmapModeScope {
   bool mipmap = client::texture::TextureManager::MIPMAP;
@@ -486,7 +554,6 @@ TEST_F(ShaderGlIntegrationTest, ReplicatedDynamicAtlasTilesUpdateEveryMipmapLeve
  }
  textureManager.deleteTexture(texture);
 }
-
 TEST_F(ShaderGlIntegrationTest, WorldProgramsBindSceneAndOpaqueDepthSamplers) {
  client::render::ColorTargets targets;
  ASSERT_TRUE(targets.ensure(8, 8, std::vector<client::render::ColorFormat>(5, client::render::ColorFormat::Rgba8), 5));
@@ -519,7 +586,6 @@ TEST_F(ShaderGlIntegrationTest, WorldProgramsBindSceneAndOpaqueDepthSamplers) {
  EXPECT_NE(readSampler("depthtex1"), readSampler("depthtex2"));
  targets.destroy();
 }
-
 TEST_F(ShaderGlIntegrationTest, PackSamplerOverridesWinWithoutDuplicateBuiltinBindings) {
  client::render::ColorTargets targets;
  ASSERT_TRUE(targets.ensure(8, 8, std::vector<client::render::ColorFormat>(10, client::render::ColorFormat::Rgba8), 10));

@@ -1,4 +1,5 @@
 #include "net/minecraft/util/logging/Logging.hpp"
+#include <algorithm>
 #include <cstdlib>
 #include <ctime>
 #include <iostream>
@@ -148,16 +149,27 @@ void LogDispatcher::shutdown() {
  }
 }
 void LogDispatcher::enqueue(Logger* logger, LogRecord record) {
+ const auto enqueueStart = std::chrono::steady_clock::now();
  record.logger = logger;
  std::lock_guard<std::mutex> lock(mutex_);
+ ++enqueued_;
  if(queue_.size() >= kMaxQueued) {
   queue_.pop_front();
+  ++dropped_;
  }
  const bool wakeWriter = queue_.empty();
  queue_.push_back(std::move(record));
+ maxQueueDepth_ = std::max(maxQueueDepth_, queue_.size());
  if(wakeWriter && running_) {
   cv_.notify_one();
  }
+ enqueueCpuNanos_ += static_cast<std::uint64_t>(std::chrono::duration_cast<std::chrono::nanoseconds>(
+                                                    std::chrono::steady_clock::now() - enqueueStart)
+                                                    .count());
+}
+LogDispatcherStats LogDispatcher::stats() const {
+ std::lock_guard<std::mutex> lock(mutex_);
+ return {queue_.size(), maxQueueDepth_, enqueued_, written_, dropped_, enqueueCpuNanos_, writerCpuNanos_};
 }
 void LogDispatcher::writerMain() {
  std::unique_lock<std::mutex> lock(mutex_);
@@ -167,8 +179,14 @@ void LogDispatcher::writerMain() {
    LogRecord record = std::move(queue_.front());
    queue_.pop_front();
    lock.unlock();
+   const auto writeStart = std::chrono::steady_clock::now();
    record.logger->publish(record);
+   const auto writeNanos = static_cast<std::uint64_t>(std::chrono::duration_cast<std::chrono::nanoseconds>(
+                                                          std::chrono::steady_clock::now() - writeStart)
+                                                          .count());
    lock.lock();
+   writerCpuNanos_ += writeNanos;
+   ++written_;
   }
   if(!running_) {
    break;

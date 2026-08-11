@@ -3,7 +3,6 @@
 #include <vector>
 #include "net/minecraft/client/gl/GlConstants.hpp"
 #include "net/minecraft/client/render/RenderCore.hpp"
-#include "net/minecraft/registry/TextureRegistry.hpp"
 namespace net::minecraft::client::render {
 namespace {
 std::uint32_t packArgb(int alpha, int red, int green, int blue) {
@@ -22,31 +21,47 @@ std::uint32_t blendChannels4(int c0, int c1, int c2, int c3, float w0, float w1,
  return packArgb(channel(24), channel(16), channel(8), channel(0));
 }
 } // namespace
-void PbrTextures::pbrDownsampleMip(const std::uint8_t* src, int srcWidth,
+void PbrTextures::pbrDownsampleMip(const std::uint8_t* src, int srcWidth, int srcHeight,
                                    std::uint8_t* dst, int dstWidth, int dstHeight,
-                                   Type type, bool labPbr) noexcept {
- for(int y = 0; y < dstHeight; ++y) {
-  for(int x = 0; x < dstWidth; ++x) {
-   const auto pixelAt = [src, srcWidth](int px, int py) {
-    const std::size_t offset = (static_cast<std::size_t>(py) * srcWidth + px) * 4;
-    return (static_cast<std::uint32_t>(src[offset + 0]) << 16) |
-           (static_cast<std::uint32_t>(src[offset + 1]) << 8) |
-           static_cast<std::uint32_t>(src[offset + 2]) |
-           (static_cast<std::uint32_t>(src[offset + 3]) << 24);
-   };
-   const std::uint32_t blended =
-       pbrBlendMip4(pixelAt(x * 2, y * 2), pixelAt(x * 2 + 1, y * 2), pixelAt(x * 2, y * 2 + 1),
-                    pixelAt(x * 2 + 1, y * 2 + 1), type, labPbr);
-   const std::size_t offset = (static_cast<std::size_t>(y) * dstWidth + x) * 4;
-   dst[offset + 0] = static_cast<std::uint8_t>((blended >> 16) & 0xFF);
-   dst[offset + 1] = static_cast<std::uint8_t>((blended >> 8) & 0xFF);
-   dst[offset + 2] = static_cast<std::uint8_t>(blended & 0xFF);
-   dst[offset + 3] = static_cast<std::uint8_t>((blended >> 24) & 0xFF);
+                                   Type type, bool labPbr, int tileColumns, int tileRows) noexcept {
+ if(src == nullptr || dst == nullptr || srcWidth != dstWidth * 2 || srcHeight != dstHeight * 2 ||
+    tileColumns < 1 || tileRows < 1 || srcWidth % tileColumns != 0 || srcHeight % tileRows != 0) {
+  return;
+ }
+ const int srcTileWidth = srcWidth / tileColumns;
+ const int srcTileHeight = srcHeight / tileRows;
+ const int dstTileWidth = dstWidth / tileColumns;
+ const int dstTileHeight = dstHeight / tileRows;
+ for(int tileY = 0; tileY < tileRows; ++tileY) {
+  for(int tileX = 0; tileX < tileColumns; ++tileX) {
+   for(int localY = 0; localY < dstTileHeight; ++localY) {
+    for(int localX = 0; localX < dstTileWidth; ++localX) {
+     const int x = tileX * dstTileWidth + localX;
+     const int y = tileY * dstTileHeight + localY;
+     const int sourceX = tileX * srcTileWidth + localX * 2;
+     const int sourceY = tileY * srcTileHeight + localY * 2;
+     const auto pixelAt = [src, srcWidth](int px, int py) {
+      const std::size_t offset = (static_cast<std::size_t>(py) * srcWidth + px) * 4;
+      return (static_cast<std::uint32_t>(src[offset + 0]) << 16) |
+             (static_cast<std::uint32_t>(src[offset + 1]) << 8) |
+             static_cast<std::uint32_t>(src[offset + 2]) |
+             (static_cast<std::uint32_t>(src[offset + 3]) << 24);
+     };
+     const std::uint32_t blended =
+         pbrBlendMip4(pixelAt(sourceX, sourceY), pixelAt(sourceX + 1, sourceY),
+                      pixelAt(sourceX, sourceY + 1), pixelAt(sourceX + 1, sourceY + 1), type, labPbr);
+     const std::size_t offset = (static_cast<std::size_t>(y) * dstWidth + x) * 4;
+     dst[offset + 0] = static_cast<std::uint8_t>((blended >> 16) & 0xFF);
+     dst[offset + 1] = static_cast<std::uint8_t>((blended >> 8) & 0xFF);
+     dst[offset + 2] = static_cast<std::uint8_t>(blended & 0xFF);
+     dst[offset + 3] = static_cast<std::uint8_t>((blended >> 24) & 0xFF);
+    }
+   }
   }
  }
 }
 net::minecraft::client::texture::RasterImage PbrTextures::pbrScaleNearest(const net::minecraft::client::texture::RasterImage& source,
-                                                  int newWidth, int newHeight) {
+                                                                          int newWidth, int newHeight) {
  // https://github.com/IrisShaders/Iris/blob/26.1/common/src/main/java/net/irisshaders/iris/pbr/util/ImageManipulationUtil.java
  net::minecraft::client::texture::RasterImage out;
  if(source.width <= 0 || source.height <= 0 || newWidth <= 0 || newHeight <= 0) {
@@ -68,7 +83,7 @@ net::minecraft::client::texture::RasterImage PbrTextures::pbrScaleNearest(const 
  return out;
 }
 net::minecraft::client::texture::RasterImage PbrTextures::pbrScaleBilinear(const net::minecraft::client::texture::RasterImage& source,
-                                                   int newWidth, int newHeight) {
+                                                                           int newWidth, int newHeight) {
  net::minecraft::client::texture::RasterImage out;
  if(source.width <= 0 || source.height <= 0 || newWidth <= 0 || newHeight <= 0) {
   return out;
@@ -143,7 +158,7 @@ void PbrTextures::onDeleteTexture(int textureId) noexcept {
  }
 }
 void PbrTextures::uploadMipLevels(int textureId, const net::minecraft::client::texture::RasterImage& image, Type type,
-                                  bool labPbr) {
+                                  bool labPbr, bool gridAtlas) {
  std::vector<std::uint8_t> rgba = net::minecraft::client::texture::TextureManager::rasterToRgba(image);
  core::TextureBindScope bindScope(textureId);
  // PBRAtlasTexture.upload(): clamp-to-edge + NEAREST; minification samples the
@@ -154,8 +169,8 @@ void PbrTextures::uploadMipLevels(int textureId, const net::minecraft::client::t
  ::glTexParameteri(gl::cap::Texture2D, gl::tex::MagFilter, gl::filter::Nearest);
  int maxLevel = 0;
  if(net::minecraft::client::texture::TextureManager::MIPMAP) {
-  int mipWidth = image.width;
-  int mipHeight = image.height;
+  int mipWidth = gridAtlas ? image.width / 16 : image.width;
+  int mipHeight = gridAtlas ? image.height / 16 : image.height;
   while(mipWidth > 1 && mipHeight > 1 && maxLevel < 4) {
    mipWidth >>= 1;
    mipHeight >>= 1;
@@ -163,18 +178,24 @@ void PbrTextures::uploadMipLevels(int textureId, const net::minecraft::client::t
   }
  }
  ::glTexParameteri(gl::cap::Texture2D, gl::tex::MinFilter,
-                   maxLevel > 0 ? gl::filter::NearestMipmapNearest : gl::filter::Nearest);
+                   maxLevel == 0          ? gl::filter::Nearest
+                   : type == Type::Normal ? gl::filter::NearestMipmapLinear
+                                          : gl::filter::NearestMipmapNearest);
  ::glTexParameteri(gl::cap::Texture2D, gl::tex::MaxLevel, maxLevel);
  ::glTexImage2D(gl::cap::Texture2D, 0, gl::pixel::Rgba8, image.width, image.height, 0,
                 gl::pixel::Rgba, gl::pixel::UnsignedByte, rgba.data());
+ std::vector<std::uint8_t> source = std::move(rgba);
  for(int level = 1; level <= maxLevel; ++level) {
   const int sourceWidth = image.width >> (level - 1);
+  const int sourceHeight = image.height >> (level - 1);
   const int targetWidth = image.width >> level;
   const int targetHeight = image.height >> level;
-  pbrDownsampleMip(rgba.data(), sourceWidth, rgba.data(), targetWidth,
-                   targetHeight, type, labPbr);
+  std::vector<std::uint8_t> target(static_cast<std::size_t>(targetWidth) * targetHeight * 4);
+  pbrDownsampleMip(source.data(), sourceWidth, sourceHeight, target.data(), targetWidth,
+                   targetHeight, type, labPbr, gridAtlas ? 16 : 1, gridAtlas ? 16 : 1);
   ::glTexImage2D(gl::cap::Texture2D, level, gl::pixel::Rgba8, targetWidth, targetHeight, 0,
-                 gl::pixel::Rgba, gl::pixel::UnsignedByte, rgba.data());
+                 gl::pixel::Rgba, gl::pixel::UnsignedByte, target.data());
+  source = std::move(target);
  }
 }
 int PbrTextures::resolveCompanion(int diffuseTextureId, Type type,
@@ -187,7 +208,8 @@ int PbrTextures::resolveCompanion(int diffuseTextureId, Type type,
  if(image.width <= 0 || image.height <= 0) {
   return -1;
  }
- if(!registry::TextureRegistry::isCustomTexture(diffuseTextureId)) {
+ const bool gridAtlas = manager.isGridAtlasTexture(diffuseTextureId);
+ if(gridAtlas) {
   // Grid atlases must line up with the diffuse atlas UV grid; scale the
   // companion when the pack ships a different resolution (nearest for
   // integer multiples, bilinear otherwise — AtlasPBRLoader sprite scaling).
@@ -213,7 +235,7 @@ int PbrTextures::resolveCompanion(int diffuseTextureId, Type type,
     existingWidth != image.width || existingHeight != image.height) {
   return -1;
  }
- uploadMipLevels(textureId, image, type, labPbr);
+ uploadMipLevels(textureId, image, type, labPbr, gridAtlas);
  return textureId;
 }
 PbrTextures::Holder PbrTextures::getOrLoad(int diffuseTextureId, net::minecraft::client::texture::TextureManager& manager,

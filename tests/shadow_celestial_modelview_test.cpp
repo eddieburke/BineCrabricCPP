@@ -4,6 +4,7 @@
 namespace net::minecraft::test {
 namespace {
 using net::minecraft::client::render::buildShadowCelestialModelView;
+using net::minecraft::client::render::buildShadowDirectionalModelView;
 using net::minecraft::client::render::shadowAngleFromCelestial;
 // https://github.com/IrisShaders/Iris/blob/26.1/common/src/main/java/net/irisshaders/iris/shadows/ShadowMatrices.java
 //
@@ -205,6 +206,18 @@ TEST(ShadowCelestialModelView, CelestialStateMatchesMapOrientation) {
     EXPECT_NEAR(light[c], expected[c], 1e-6f) << "component " << c << " celestial " << celestial;
    }
   }
+ }
+}
+TEST(ShadowCelestialModelView, DirectionOverrideAlignsShadowAxis) {
+ const float directions[][3] = {{0.2f, 0.9f, -0.3f}, {-0.8f, 0.1f, 0.5f}, {0.0f, 1.0f, 0.0f}};
+ for(const auto& direction : directions) {
+  float m[16]{};
+  buildShadowDirectionalModelView(m, direction, 2.0f, 101.25, 64.0, -29.5);
+  const float length = std::sqrt(direction[0] * direction[0] + direction[1] * direction[1] +
+                                 direction[2] * direction[2]);
+  EXPECT_NEAR(m[2], direction[0] / length, 1e-6f);
+  EXPECT_NEAR(m[6], direction[1] / length, 1e-6f);
+  EXPECT_NEAR(m[10], direction[2] / length, 1e-6f);
  }
 }
 }

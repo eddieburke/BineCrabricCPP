@@ -61,6 +61,7 @@ struct CelestialState {
  // Iris sunAngle / shadowAngle uniforms, both 0..1.
  float sunAngle = 0.25f;
  float shadowAngle = 0.25f;
+ int moonPhase = -1;
  bool day = true;
  float sunDirectionWorld[3] = {0.0f, 1.0f, 0.0f};
  float moonDirectionWorld[3] = {0.0f, -1.0f, 0.0f};
@@ -68,6 +69,7 @@ struct CelestialState {
  // This must stay parallel to the shadow map's own toward-light axis
  // (buildShadowCelestialModelView row 2) — see tests/shadow_celestial_modelview_test.cpp.
  float shadowLightDirectionWorld[3] = {0.0f, 1.0f, 0.0f};
+ bool directionOverride = false;
 };
 inline CelestialState makeCelestialState(float celestialAngle, float sunPathRotation) {
  CelestialState state;

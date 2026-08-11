@@ -3,21 +3,11 @@ namespace net::minecraft::client::gl {
 class ShaderProgram;
 }
 namespace net::minecraft::client::render {
-// Per-pass viewport overrides applied at upload time; the rest of
-// PackUniformValues rides along by const reference (no per-pass struct copy).
-// Only the resolution triplet differs per pass — the far plane, shadow map
-// resolution and shadow/normal availability are pack-wide and live on
-// PackUniformValues (Pipeline keeps them current per stage).
 struct PackViewportValues {
  float viewWidth = 1.0f;
  float viewHeight = 1.0f;
  float aspectRatio = 1.0f;
 };
-// Everything the engine can hand a shader pack per frame. Grouped by the Iris
-// uniform category each field belongs to; the scalar `near`/`far` pair and the
-// DH values are the camera's clip planes and the render distance, which are all
-// set from option::RenderDistance (via FrameRenderCamera) — never from the pack's
-// shadowDistance.
 struct PackUniformValues {
  // --- CommonUniforms: frame time / viewport / camera planes ---
  float frameTimeCounter = 0.0f;
@@ -26,7 +16,10 @@ struct PackUniformValues {
  float viewHeight = 1.0f;
  float aspectRatio = 1.0f;
  float nearPlane = 0.05f;
+ // Projection far plane. The pack's `far` uniform is renderDistanceBlocks;
+ // see FrameRenderCamera for why the two are not the same number.
  float farPlane = 256.0f;
+ float renderDistanceBlocks = 256.0f;
  float shadowMapResolution = 0.0f;
  // --- CameraUniforms: camera positions ---
  float cameraPosition[3] = {0.0f, 0.0f, 0.0f};

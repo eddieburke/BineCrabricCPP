@@ -6,7 +6,7 @@ local config = settings.define("realtime_sky", {
     enabled = {
       type = "bool",
       label = "Enabled",
-      default = false,
+      default = true,
     },
     drive_sun = {
       type = "bool",

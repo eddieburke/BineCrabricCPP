@@ -60,6 +60,7 @@ void DisplayManager::setupAndCreateDisplay(Minecraft& client) {
   display::Window::setDisplayMode(mode);
  }
  display::Window::setTitle("Minecraft Beta 1.7.3");
+ display::Window::setVisible(!client.headlessMode());
  try {
   display::Window::create();
  } catch(...) {

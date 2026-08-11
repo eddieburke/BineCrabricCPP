@@ -41,6 +41,7 @@ class TextureManager {
  [[nodiscard]] int getTextureId(const std::string& path, const RasterImage& image);
  [[nodiscard]] bool getTextureDimensions(const std::string& path, int& outWidth, int& outHeight);
  [[nodiscard]] bool getTextureDimensionsForId(int textureId, int& outWidth, int& outHeight) const;
+ [[nodiscard]] bool isGridAtlasTexture(int textureId) const;
  [[nodiscard]] std::string getCompanionTexturePath(int textureId, std::string_view suffix) const;
  [[nodiscard]] bool isMissingTextureId(int textureId) const noexcept {
   return textureId == missingTextureId_;

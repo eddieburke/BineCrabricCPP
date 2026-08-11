@@ -43,24 +43,10 @@ TEST(IrisChunkOffsetHemisphere, NoRegionWrapArtifact) {
  EXPECT_NE(ox, 1008.5f);
  EXPECT_NE(oz, 1008.5f);
 }
-TEST(IrisComputeWorkGroups, DefaultsMatchSpec) {
- PackPass pass;
- const auto groups = ComputeDispatcher::workGroups(pass, 1920, 1080);
- EXPECT_EQ(groups[0], 1920u);
- EXPECT_EQ(groups[1], 1080u);
- EXPECT_EQ(groups[2], 1u);
-}
-TEST(IrisComputeWorkGroups, RelativeScaleAndLocalSize) {
- PackPass pass;
- pass.groupScale[0] = 0.5f;
- pass.groupScale[1] = 0.5f;
- pass.localSize[0] = 8;
- pass.localSize[1] = 8;
- const auto groups = ComputeDispatcher::workGroups(pass, 100, 50);
- EXPECT_EQ(groups[0], static_cast<unsigned>(std::ceil(100.0f * 0.5f / 8.0f)));
- EXPECT_EQ(groups[1], static_cast<unsigned>(std::ceil(50.0f * 0.5f / 8.0f)));
- EXPECT_EQ(groups[2], 1u);
-}
+// The workGroups dispatch rules moved to tests/compute_dispatch_parity_test.cpp,
+// which checks each of Java ComputeProgram.getWorkGroups's three branches against a
+// transcription of the Java expression rather than two hand-picked cases, and takes
+// the local size from the linked program the way Java does.
 TEST(IrisComputeOrder, UnsuffixedThenLetters) {
  const auto order = [](const char* name) { return ComputeDispatcher::computePassOrder(name); };
  EXPECT_LT(order("composite"), order("composite_a"));

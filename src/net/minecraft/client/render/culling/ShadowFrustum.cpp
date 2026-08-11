@@ -4,12 +4,6 @@ namespace net::minecraft::client::render {
 namespace {
 // https://github.com/IrisShaders/Iris/blob/26.1/common/src/main/java/net/irisshaders/iris/shadows/frustum/advanced/BaseClippingPlanes.java
 std::array<float, 4> clippingPlane(const float m[16], float cornerX, float cornerY, float cornerZ) {
- // The engine's clip matrices are stored row-major (row r, column c at m[r*4+c],
- // the same layout buildCameraProjection writes and the view Frustum reads), so
- // the plane through the NDC corner (corner, 1) is corner · M per row: the near
- // plane of the 0.05..256 test projection extracts to z <= -0.05 and the far to
- // z >= -256. The transposed read (m[c*4+r]) collapsed both onto z ~ -1 and culled
- // every caster past a block in front of the camera.
  std::array<float, 4> plane{};
  for(int row = 0; row < 4; ++row) {
   plane[static_cast<std::size_t>(row)] = m[row * 4 + 0] * cornerX + m[row * 4 + 1] * cornerY +
@@ -157,11 +151,6 @@ ShadowCullingFrustum createShadowFrustum(const ShadowFrustumParams& params,
  double distance = static_cast<double>(hasSafeZone ? params.voxelDistance : params.halfPlaneLength) *
                    renderMultiplier;
  if(renderMultiplier < 0.0f) {
-  // shadowDistanceRenderMul < 0: the pack leaves the cull distance to the engine.
-  // Iris substitutes the user's shadow distance setting here (IrisVideoSettings
-  // .shadowDistance * 16); this engine has no such option, so the cull distance is
-  // the engine's own render distance in blocks — the same value the section ring is
-  // built from, so the ring and the cull distance can never disagree.
   distance = static_cast<double>(params.renderDistanceBlocks);
  }
  if(distance <= 0.0) {
@@ -181,12 +170,6 @@ ShadowCullingFrustum createShadowFrustum(const ShadowFrustumParams& params,
   return frustum;
  }
  frustum.setMode(ShadowCullingFrustum::Mode::Advanced);
- // The extruded planes always cull; the box culler only narrows them while it is
- // tighter than the render distance. Iris drops the box culler to null when the cull
- // distance reaches the render distance — the AdvancedShadowCullingFrustum keeps
- // culling with its planes alone, it does not stop culling. Returning NonCulling
- // here instead (as this branch once did) made every section inside the render ring
- // render into the shadow map.
  if(distance < static_cast<double>(renderDistanceBlocks)) {
   frustum.setBoxCuller(BoxCuller(distance));
  }

@@ -300,6 +300,10 @@ int luaRenderDrawBillboards(lua_State* state) {
  const std::string blendMode = luaStringField(state, tableIndex, "blend", "alpha");
  const bool depthTest = luaBoolField(state, tableIndex, "depth_test", false);
  const bool depthWrite = luaBoolField(state, tableIndex, "depth_write", false);
+ ModDrawLayer layer = parseModDrawLayer(luaStringField(state, tableIndex, "layer", ""));
+ if(layer == ModDrawLayer::Auto) {
+  layer = ModWorldDrawContext::layer();
+ }
  if(brightness <= 0.0f) {
   api.pushinteger(state, 0);
   return 1;
@@ -324,7 +328,7 @@ int luaRenderDrawBillboards(lua_State* state) {
   sourceIndex = api.gettop(state);
   billboardCount = kMaxBillboardsPerBatch;
  }
-  const ModLuaDrawScope modCaps(false, true, false, depthTest, depthWrite, ModDrawLayer::Auto,
+  const ModLuaDrawScope modCaps(false, true, false, depthTest, depthWrite, layer,
                                 client::gl::blend::SrcAlpha,
                                 blendMode == "additive" ? client::gl::blend::One
                                                         : client::gl::blend::OneMinusSrcAlpha);

@@ -22,8 +22,7 @@ bool load(const std::unordered_map<std::string, std::string>& sources,
  for(const auto& [path, ignored] : sources) paths.push_back(path);
  return PackLoader::load(paths, [&sources](std::string_view path) {
                               const auto found = sources.find(std::string(path));
-                              return found == sources.end() ? std::string{} : found->second; }, pack, options, error,
-                         values);
+                              return found == sources.end() ? std::string{} : found->second; }, pack, options, error, values);
 }
 std::string resolved(const PackDefinition& pack, const std::string& key) {
  ProgramEnabledCache cache;
@@ -227,11 +226,9 @@ TEST(PackLoaderTest, ReadsMetadataFromResolvedActiveComputeBranch) {
                     "#if SELECT == 1\n"
                     "layout(local_size_x = 8, local_size_y = 4, local_size_z = 2) in;\n"
                     "const ivec3 workGroups = ivec3(2, 3, 4);\n"
-                    "const int compositeIterations = 3;\n"
                     "#else\n"
                     "layout(local_size_x = 64, local_size_y = 64, local_size_z = 64) in;\n"
                     "const ivec3 workGroups = ivec3(999, 999, 999);\n"
-                    "const int compositeIterations = 99;\n"
                     "#endif\n"}},
                   pack,
                   options,
@@ -240,14 +237,13 @@ TEST(PackLoaderTest, ReadsMetadataFromResolvedActiveComputeBranch) {
  const auto pass = std::find_if(pack.passes.begin(), pack.passes.end(),
                                 [](const PackPass& value) { return value.program == "composite#compute"; });
  ASSERT_NE(pass, pack.passes.end());
- EXPECT_EQ(pass->localSize[0], 8);
- EXPECT_EQ(pass->localSize[1], 4);
- EXPECT_EQ(pass->localSize[2], 2);
+ // No local-size assertion: Java takes the local size from the linked program
+ // (GL_COMPUTE_WORK_GROUP_SIZE), not from the source text, so the loader has no
+ // business parsing `layout(local_size_...)` at all.
  EXPECT_EQ(pass->groups[0], 2);
  EXPECT_EQ(pass->groups[1], 3);
  EXPECT_EQ(pass->groups[2], 4);
  EXPECT_FALSE(pass->relativeGroups);
- EXPECT_EQ(pass->iterations, 3);
  EXPECT_EQ(pack.shadowMapResolution, 1024);
  EXPECT_EQ(pack.targets.at("colortex0").format, "RGBA16F");
 }
@@ -259,9 +255,8 @@ TEST(PackLoaderTest, AppliesCurrentSettingsToDimensionComputeMetadata) {
                    {"shaders/lib/common.glsl", "#define SIZE 1 //[1 2]\n"},
                    {"shaders/program/compute.glsl",
                     "#include \"/lib/common.glsl\"\n"
-                    "#if SIZE == 1\nlayout(local_size_x = 64) in;\n"
-                    "#else\nlayout(local_size_x = 8) in;\n#endif\n"
-                    "const vec2 workGroupsRender = vec2(1.0, 1.0);\n"},
+                    "#if SIZE == 1\nconst ivec3 workGroups = ivec3(64, 64, 64);\n"
+                    "#else\nconst ivec3 workGroups = ivec3(8, 8, 8);\n#endif\n"},
                    {"shaders/world0/gbuffers_basic.vsh", "void main(){}"},
                    {"shaders/world0/gbuffers_basic.fsh", "void main(){}"},
                    {"shaders/world0/composite.csh", "#include \"/program/compute.glsl\"\n"}},
@@ -275,7 +270,12 @@ TEST(PackLoaderTest, AppliesCurrentSettingsToDimensionComputeMetadata) {
  const auto pass = std::find_if(definition->second->passes.begin(), definition->second->passes.end(),
                                 [](const PackPass& value) { return value.program == "composite#compute"; });
  ASSERT_NE(pass, definition->second->passes.end());
- EXPECT_EQ(pass->localSize[0], 8);
+ // SIZE=2 selects the #else branch, so the option value reached the compute
+ // metadata preprocessor before the workGroups directive was read.
+ EXPECT_FALSE(pass->relativeGroups);
+ EXPECT_EQ(pass->groups[0], 8);
+ EXPECT_EQ(pass->groups[1], 8);
+ EXPECT_EQ(pass->groups[2], 8);
 }
 TEST(PackLoaderTest, CurrentParticleOrderingOverridesLegacyRegardlessOfOrder) {
  for(const std::string properties : {
@@ -1046,14 +1046,14 @@ TEST(PackSourcePreparation, ChunkFadeMatchesTheAdvertisedFeatureAbi) {
   return prepareSource(
       program, ShaderStage::Vertex, pack, source);
  };
-  EXPECT_NE(prepare("gbuffers_terrain").find("in float mc_chunkFade;"), std::string::npos);
-  // Water and ice are chunk geometry, so gbuffers_water takes the terrain attribute too.
-  EXPECT_NE(prepare("gbuffers_water").find("in float mc_chunkFade;"), std::string::npos);
-  // ColorWheel material programs reuse the pack's terrain/water vertex bodies, so they
-  // take the same attribute form (the engine binds location 12 to a constant 1.0).
-  EXPECT_NE(prepare("clrwl_gbuffers").find("in float mc_chunkFade;"), std::string::npos);
-  EXPECT_NE(prepare("clrwl_gbuffers_translucent").find("in float mc_chunkFade;"), std::string::npos);
-  EXPECT_NE(prepare("clrwl_gbuffers_damagedblock").find("in float mc_chunkFade;"), std::string::npos);
+ EXPECT_NE(prepare("gbuffers_terrain").find("in float mc_chunkFade;"), std::string::npos);
+ // Water and ice are chunk geometry, so gbuffers_water takes the terrain attribute too.
+ EXPECT_NE(prepare("gbuffers_water").find("in float mc_chunkFade;"), std::string::npos);
+ // ColorWheel material programs reuse the pack's terrain/water vertex bodies, so they
+ // take the same attribute form (the engine binds location 12 to a constant 1.0).
+ EXPECT_NE(prepare("clrwl_gbuffers").find("in float mc_chunkFade;"), std::string::npos);
+ EXPECT_NE(prepare("clrwl_gbuffers_translucent").find("in float mc_chunkFade;"), std::string::npos);
+ EXPECT_NE(prepare("clrwl_gbuffers_damagedblock").find("in float mc_chunkFade;"), std::string::npos);
  EXPECT_NE(prepare("gbuffers_entities").find("const float mc_chunkFade = -1.0;"),
            std::string::npos);
  // Shadow programs get the -1.0 const, not nothing. This assertion used to require the
@@ -1061,10 +1061,10 @@ TEST(PackSourcePreparation, ChunkFadeMatchesTheAdvertisedFeatureAbi) {
  // declares `const float mc_chunkFade = -1.0;` on its `parameters.shadow` branch, and
  // leaving the symbol undeclared is a compile failure for any pack that shares a vertex
  // body between gbuffers_water and shadow_water.
-  // https://github.com/IrisShaders/Iris/blob/26.1/common/src/main/java/net/irisshaders/iris/pipeline/transform/transformer/SodiumTransformer.java
-  EXPECT_NE(prepare("shadow").find("const float mc_chunkFade = -1.0;"), std::string::npos);
-  EXPECT_NE(prepare("shadow_water").find("const float mc_chunkFade = -1.0;"), std::string::npos);
-  EXPECT_NE(prepare("clrwl_shadow").find("const float mc_chunkFade = -1.0;"), std::string::npos);
+ // https://github.com/IrisShaders/Iris/blob/26.1/common/src/main/java/net/irisshaders/iris/pipeline/transform/transformer/SodiumTransformer.java
+ EXPECT_NE(prepare("shadow").find("const float mc_chunkFade = -1.0;"), std::string::npos);
+ EXPECT_NE(prepare("shadow_water").find("const float mc_chunkFade = -1.0;"), std::string::npos);
+ EXPECT_NE(prepare("clrwl_shadow").find("const float mc_chunkFade = -1.0;"), std::string::npos);
 }
 TEST(PackLoaderTest, InfersColortexFormatsFromImageAndUsamplerLayouts) {
  // Some packs leave const colortexNFormat commented; formats come from layouts.
@@ -2169,7 +2169,6 @@ TEST(PackLoaderTest, ShadowNearFarPlanesAcceptNegativeNearLikeJava) {
  EXPECT_FLOAT_EQ(pack.shadowNearPlane, -100.05f);
  EXPECT_FLOAT_EQ(pack.shadowFarPlane, 156.0f);
 }
-
 TEST(PackLoaderTest, OptionValuesReachScannedPackConstants) {
  // Engine-side shadow tuning must follow the pack options the user set, the same
  // way the compiled GLSL does (Iris parses programs after option replacement).
@@ -2178,18 +2177,18 @@ TEST(PackLoaderTest, OptionValuesReachScannedPackConstants) {
  // scanned from raw text always picked the pack's shipped SM_DIST, so moving the
  // slider changed the shader-side fade but never the shadow camera or the culling
  // sphere.
-  const std::unordered_map<std::string, std::string> sources = {
-      {"shaders/gbuffers_basic.vsh", "void main(){}"},
-      {"shaders/gbuffers_basic.fsh",
-       "#define SM_DIST 10 // [0 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 21 22 23 24 25 26 27 28 29 30 31 32]\n"
-       "#if SM_DIST == 1\n"
-       "\tconst float shadowDistance = 16;\n"
-       "#elif SM_DIST == 10\n"
-       "\tconst float shadowDistance = 160;\n"
-       "#elif SM_DIST == 16\n"
-       "\tconst float shadowDistance = 256;\n"
-       "#endif\n"
-       "void main(){}"}};
+ const std::unordered_map<std::string, std::string> sources = {
+     {"shaders/gbuffers_basic.vsh", "void main(){}"},
+     {"shaders/gbuffers_basic.fsh",
+      "#define SM_DIST 10 // [0 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 21 22 23 24 25 26 27 28 29 30 31 32]\n"
+      "#if SM_DIST == 1\n"
+      "\tconst float shadowDistance = 16;\n"
+      "#elif SM_DIST == 10\n"
+      "\tconst float shadowDistance = 160;\n"
+      "#elif SM_DIST == 16\n"
+      "\tconst float shadowDistance = 256;\n"
+      "#endif\n"
+      "void main(){}"}};
  const auto run = [&sources](const std::unordered_map<std::string, std::string>& values,
                              PackDefinition& pack,
                              std::unordered_map<std::string, PackSourceOption>& options) {
@@ -2293,7 +2292,7 @@ TEST(PackLoaderTest, DimensionInheritsShadowMapResolutionFromSharedInclude) {
  // Not 1024: the dimension resolves includes before scanning, so the shared const wins
  // and the "pack ships a shadow program but declared no resolution" default never fires.
  EXPECT_EQ(dimension->second->shadowMapResolution, 2048);
- }
+}
 TEST(PackLoaderTest, RethinkingVoxelsPrepareProgramTransformsCleanly) {
  PackDefinition pack;
  ShaderTransformContext ctx{false, false, false, false};
@@ -2310,7 +2309,8 @@ TEST(PackLoaderTest, RethinkingVoxelsPrepareProgramTransformsCleanly) {
      "#endif\n";
  std::string prepareVsh =
      "#version 430 compatibility\n"
-     "#define VERTEX_SHADER\n" + prepareGlsl;
+     "#define VERTEX_SHADER\n" +
+     prepareGlsl;
  std::string transformed = prepareSource("prepare", ShaderStage::Vertex, pack, prepareVsh, ctx);
  EXPECT_NE(transformed.find("uniform mat4 projectionMatrix;"), std::string::npos);
  EXPECT_NE(transformed.find("uniform mat4 modelViewMatrix;"), std::string::npos);

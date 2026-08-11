@@ -76,4 +76,16 @@ TEST(ServerChunkCache, TickUnloadsMarkedChunks) {
  fixture.cache->tick();
  EXPECT_FALSE(fixture.cache->isChunkLoaded(20, 20));
 }
+TEST(ServerChunkCache, ResidencyPlanIsCircularAndStableUntilInputsChange) {
+ ServerChunkCacheFixture fixture;
+ ASSERT_NE(fixture.cache, nullptr);
+ fixture.cache->setActiveRadius(3);
+ fixture.cache->setChunkCacheCenter(-10, 7);
+ EXPECT_EQ(fixture.cache->desiredChunkCount(), 29U);
+ const std::size_t queued = fixture.cache->queuedResidencyCount();
+ fixture.cache->setChunkCacheCenter(-10, 7);
+ EXPECT_EQ(fixture.cache->queuedResidencyCount(), queued);
+ fixture.cache->setChunkCacheCenter(-9, 7);
+ EXPECT_EQ(fixture.cache->desiredChunkCount(), 29U);
+}
 } // namespace net::minecraft::test

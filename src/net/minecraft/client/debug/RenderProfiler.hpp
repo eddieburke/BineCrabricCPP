@@ -4,53 +4,9 @@
 #include <cstddef>
 #include <cstdint>
 #include <string>
+#include <string_view>
 #include <vector>
 namespace net::minecraft::client::debug {
-enum class RenderStage : int {
- FrameSetup = 0,
- FrameDrain,
- Input,
- Ticks,
- RenderOverhead,
- PackPrepare,
- Shadow,
- ShadowComposite,
- Sky,
- Cull,
- Compile,
- SolidTerrain,
- Entities,
- Particles,
- OpaqueDepth,
- TranslucentTerrain,
- Clouds,
- Hand,
- HandDepth,
- Deferred,
- CenterDepth,
- PostProcess,
- HudGui,
- Present,
- Pace,
- Diagnostics,
- EntityCollectCull,
- EntityPreparation,
- EntityOpaque,
- EntityTranslucent,
- BlockEntities,
- EntityDebugLabels,
- ShadowEntityPreparation,
- ShadowEntityDraw,
- TargetClear,
- DepthCaptureCopy,
- CenterDepthSampling,
- DeferredScheduling,
- FramebufferTransitions,
- ModMeshes,
- RenderOrchestration,
- Count
-};
-constexpr int kRenderStageCount = static_cast<int>(RenderStage::Count);
 enum class RenderMetric : int {
  EntityTraversals = 0,
  EntityVisible,
@@ -71,9 +27,57 @@ enum class RenderMetric : int {
  AsyncReadbacks,
  SynchronousReadbacks,
  Copies,
+ ArenaGrows,
+ ArenaGrowVertices,
+ QuadIndexGrows,
+ DrawSubBatches,
+ ChunkColumnsPending,
+ ChunkSectionsResident,
+ ChunkSectionsVisible,
+ MeshJobsQueued,
+ MeshJobsInFlight,
+ MeshUploadsPending,
+ MeshUploadBytes,
+ ShadowSectionsVisible,
+ ShaderPasses,
+ ComputeDispatches,
+ ComputeWorkgroups,
+ MemoryBarriers,
+ MipmapGenerations,
+ ShadowDepthCopies,
+ RenderTargetAllocations,
  Count
 };
 constexpr int kRenderMetricCount = static_cast<int>(RenderMetric::Count);
+struct RenderSpanSnapshot {
+ std::string name;
+ double cpuAverageNs = 0.0;
+ double gpuAverageNs = 0.0;
+ std::uint64_t cpuSamples = 0;
+ std::uint64_t gpuSamples = 0;
+};
+struct RenderProfileSnapshot {
+ std::uint64_t frames = 0;
+ std::uint64_t gpuFrames = 0;
+ std::size_t frameHistorySamples = 0;
+ std::uint64_t cpuSpanProbes = 0;
+ std::uint64_t metricWrites = 0;
+ std::uint64_t gpuTimestampWrites = 0;
+ double frameAverageNs = 0.0;
+ double frameMinNs = 0.0;
+ double frameMaxNs = 0.0;
+ double frameP50Ns = 0.0;
+ double frameP95Ns = 0.0;
+ double frameP99Ns = 0.0;
+ double gpuFrameAverageNs = 0.0;
+ std::array<double, kRenderMetricCount> metricAverages{};
+ std::vector<RenderSpanSnapshot> spans;
+};
+struct RenderProfileToken {
+ int aggregate = -1;
+ int gpuQuery = -1;
+ std::int64_t cpuStartNs = 0;
+};
 class RenderProfiler {
  public:
  static RenderProfiler& instance();
@@ -83,16 +87,24 @@ class RenderProfiler {
  }
  void beginFrame();
  void endFrame();
- void beginStage(RenderStage stage);
- void endStage(RenderStage stage);
+ [[nodiscard]] RenderProfileToken beginSpan(std::string_view category,
+                                            std::string_view name = {}) noexcept;
+ void endSpan(RenderProfileToken token) noexcept;
+ void recordSpanDuration(std::string_view category, std::string_view name, std::uint64_t nanos) noexcept;
  void record(RenderMetric metric, std::uint64_t count = 1) noexcept;
+ void resetSamples();
  void destroy();
  [[nodiscard]] std::vector<std::string> lines() const;
- [[nodiscard]] double cpuAverageNs(RenderStage stage) const noexcept {
-  return cpuAvgNs_[static_cast<std::size_t>(stage)];
+ [[nodiscard]] RenderProfileSnapshot snapshot() const;
+ [[nodiscard]] static const char* metricName(RenderMetric metric);
+ [[nodiscard]] static constexpr std::uint32_t gpuQueryInterval() noexcept {
+  return kGpuQueryInterval;
  }
  [[nodiscard]] double frameAverageNs() const noexcept {
   return frameAvgNs_;
+ }
+ [[nodiscard]] double gpuFrameSpanAverageNs() const noexcept {
+  return gpuFrameSpanAvgNs_;
  }
  [[nodiscard]] double metricAverage(RenderMetric metric) const noexcept {
   return metricAvg_[static_cast<std::size_t>(metric)];
@@ -100,63 +112,80 @@ class RenderProfiler {
  [[nodiscard]] std::uint64_t frameMetric(RenderMetric metric) const noexcept {
   return metrics_[static_cast<std::size_t>(metric)];
  }
- class Scope {
-public:
-  explicit Scope(RenderStage stage) : stage_(stage) {
-   RenderProfiler::instance().beginStage(stage_);
-  }
-  Scope(const Scope&) = delete;
-  Scope& operator=(const Scope&) = delete;
-  ~Scope() {
-   end();
-  }
-  void end() {
-   if(active_) {
-    RenderProfiler::instance().endStage(stage_);
-    active_ = false;
-   }
-  }
-
-private:
-  RenderStage stage_;
-  bool active_ = true;
- };
+ [[nodiscard]] double cpuSpanAverageNs(std::string_view name) const noexcept;
+ [[nodiscard]] double gpuSpanAverageNs(std::string_view name) const noexcept;
 
  private:
  static constexpr int kRingDepth = 4;
- static constexpr std::uint32_t kGpuQueryInterval = 3;
- [[nodiscard]] static const char* stageName(RenderStage stage);
- [[nodiscard]] static const char* metricName(RenderMetric metric);
+ static constexpr int kMaxSpans = 64;
+ static constexpr int kSpanNameBytes = 72;
+ static constexpr std::uint32_t kGpuQueryInterval = 8;
+ struct SpanAggregate {
+  std::array<char, kSpanNameBytes> name{};
+  double cpuAvgNs = 0.0;
+  double gpuAvgNs = 0.0;
+  std::uint64_t cpuFrameNs = 0;
+  std::uint64_t cpuTotalNs = 0;
+  std::uint64_t gpuTotalNs = 0;
+  std::uint64_t cpuSamples = 0;
+  std::uint64_t gpuSamples = 0;
+  bool cpuSeeded = false;
+  bool gpuSeeded = false;
+ };
+ [[nodiscard]] int findOrCreateSpan(std::string_view category, std::string_view name) noexcept;
+ [[nodiscard]] int findSpan(std::string_view name) const noexcept;
  void ensureQueries();
- void collectQueries(int slot);
+ [[nodiscard]] bool collectFrameSpan(int slot);
+ void releaseQueries() noexcept;
  bool enabled_ = false;
  bool inFrame_ = false;
  bool gpuReady_ = false;
  bool gpuAttempted_ = false;
- bool gpuActiveThisFrame_ = false;
- struct ActiveStage {
-  int stage = -1;
-  std::int64_t startNs = 0;
-  std::int64_t childNs = 0;
-  bool queryBegun = false;
- };
- static constexpr int kMaxStageDepth = 32;
- std::array<ActiveStage, kMaxStageDepth> activeStages_{};
- int activeStageDepth_ = 0;
+ bool frameQueryOpen_ = false;
+ bool frameSeeded_ = false;
  int ringSlot_ = kRingDepth - 1;
+ int aggregateCount_ = 0;
+ int gpuSpanCount_ = 0;
  std::uint32_t frameCounter_ = 0;
+ std::uint64_t frameSampleCount_ = 0;
+ std::uint64_t frameTotalNs_ = 0;
+ std::uint64_t gpuFrameSampleCount_ = 0;
+ std::uint64_t gpuFrameTotalNs_ = 0;
+ std::uint64_t cpuSpanProbes_ = 0;
+ std::uint64_t metricWrites_ = 0;
+ std::uint64_t gpuTimestampWrites_ = 0;
  std::int64_t frameStartNs_ = 0;
- std::array<std::int64_t, kRenderStageCount> cpuNs_{};
- std::array<double, kRenderStageCount> cpuAvgNs_{};
- std::array<double, kRenderStageCount> gpuAvgNs_{};
- std::array<std::uint64_t, kRenderMetricCount> metrics_{};
- std::array<double, kRenderMetricCount> metricAvg_{};
  std::int64_t frameNs_ = 0;
  double frameAvgNs_ = 0.0;
- double gpuMeasuredAvgNs_ = 0.0;
- std::array<std::array<unsigned, kRenderStageCount>, kRingDepth> queries_{};
- std::array<std::array<bool, kRenderStageCount>, kRingDepth> queryPending_{};
+ double gpuFrameSpanAvgNs_ = 0.0;
+ std::array<std::uint64_t, kRenderMetricCount> metrics_{};
+ std::array<std::uint64_t, kRenderMetricCount> metricTotals_{};
+ std::array<double, kRenderMetricCount> metricAvg_{};
+ std::array<bool, kRenderMetricCount> metricSeeded_{};
+ std::array<SpanAggregate, kMaxSpans> spans_{};
+ std::array<std::array<unsigned, 2>, kRingDepth> frameQueries_{};
+ std::array<std::array<unsigned, kMaxSpans * 2>, kRingDepth> spanQueries_{};
+ std::array<std::array<int, kMaxSpans>, kRingDepth> spanQueryAggregates_{};
+ std::array<int, kRingDepth> pendingSpanCounts_{};
+ std::array<bool, kRingDepth> frameQueryPending_{};
+ static constexpr int kFrameHistory = 4096;
+ std::array<double, kFrameHistory> frameHistoryNs_{};
+ std::size_t frameHistoryCount_ = 0;
+ std::size_t frameHistoryCursor_ = 0;
+ double frameMinNs_ = 0.0;
+ double frameMaxNs_ = 0.0;
  mutable std::chrono::steady_clock::time_point lastLinesAt_{};
  mutable std::vector<std::string> linesCache_;
+};
+class RenderProfileScope {
+ public:
+ explicit RenderProfileScope(std::string_view category) noexcept;
+ RenderProfileScope(std::string_view category, std::string_view name) noexcept;
+ ~RenderProfileScope();
+ RenderProfileScope(const RenderProfileScope&) = delete;
+ RenderProfileScope& operator=(const RenderProfileScope&) = delete;
+
+ private:
+ RenderProfileToken token_{};
 };
 } // namespace net::minecraft::client::debug

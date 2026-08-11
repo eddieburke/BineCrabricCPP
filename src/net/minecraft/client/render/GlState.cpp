@@ -251,11 +251,6 @@ struct FormatInfo {
  ColorFormat format;
 };
 static constexpr std::array kFormats = {
-    // colorFormatName() reverse-looks-up by returning the FIRST entry matching the enum,
-    // so the canonical (sized) name must come before its aliases. "RGBA" is the legacy
-    // unsized spelling of GL_RGBA8; both parse to Rgba8, but the name reported back — in
-    // logs and in the format round-trip — should be rgba8, which is what this function's
-    // own fallback already returns.
     FormatInfo{"rgba8", ColorFormat::Rgba8},
     FormatInfo{"rgba", ColorFormat::Rgba8},
     FormatInfo{"r8", ColorFormat::R8},
@@ -332,6 +327,10 @@ T lookup(std::string value,
  return found == entries.end() ? fallback : found->second;
 }
 } // namespace
+std::string_view canonicalFormatName(std::string_view format) {
+ const FormatInfo* info = findFormat(std::string(format));
+ return info == nullptr ? std::string_view{} : info->name;
+}
 ColorFormat parseFormat(const std::string& format) {
  const FormatInfo* info = findFormat(format);
  if(info == nullptr) {
@@ -525,13 +524,6 @@ bool normalizeSettingValue(const PackSetting& setting, const std::string& input,
  if(end == input.c_str() || *end != '\0' || !std::isfinite(parsed)) {
   return false;
  }
- // The `//[a b c]` comment is a discrete value list, not a range. A pack's own
- // default and its profile values are routinely outside the list's extremes —
- // Complementary declares `#define COLORED_LIGHTING 0 //[128 192 ...]` and
- // profile.POTATO sets it back to 0 — so clamping to min/max rewrote 0 to 128,
- // silently switching colored lighting ON in the lowest-quality profile and
- // enabling a shadowcomp pass the pack then cannot compile. Take any value the
- // pack itself named verbatim; only sliders are true ranges.
  for(const std::string& candidate : setting.valueOrder) {
   if(candidate == input) {
    output = candidate;

@@ -7,10 +7,6 @@
 #include "net/minecraft/world/chunk/Chunk.hpp"
 namespace net::minecraft::client::render::chunk {
 namespace {
-// ChunkRenderWriteScope used to live in its own header for a single call site.
-// Inlined here: spinlock acquire on the chunk so a server-tick block/light
-// mutation never tears a band being copied, cross-thread exclusive, re-entrant
-// on the same thread. RAII because the copy below has early returns.
 class ChunkRenderWriteLock {
  public:
  explicit ChunkRenderWriteLock(const Chunk& chunk) : chunk_(chunk) {
@@ -25,9 +21,6 @@ class ChunkRenderWriteLock {
  private:
  const Chunk& chunk_;
 };
-[[nodiscard]] std::size_t minBlockBytesForBand(int minY, int ySpan) noexcept {
- return static_cast<std::size_t>((15 << 11) | (15 << 7) | minY) + static_cast<std::size_t>(ySpan);
-}
 void copyNibbleColumn(std::uint8_t* dst,
                       std::size_t dstColumn,
                       int halfSpan,
@@ -47,26 +40,23 @@ void copyNibbleColumn(std::uint8_t* dst,
   }
  }
 }
-void copyChunkBand(RegionSnapshot::ChunkCopy& copy,
+void copyChunkBand(std::uint8_t* dst,
                    const Chunk& chunk,
                    int minY,
                    int ySpan,
                    int halfSpan,
-                   std::size_t blockBytes,
-                   std::size_t nibbleBytes) {
+                   bool& anyNonAir) {
  ChunkRenderWriteLock guard(chunk);
- copy.blockBytes = blockBytes;
- copy.nibbleBytes = nibbleBytes;
- const std::size_t totalBytes = blockBytes + 3 * nibbleBytes;
- copy.storage.resize(totalBytes);
- std::uint8_t* blocks = copy.storage.data();
+ anyNonAir = false;
+ const std::size_t blockBytes = static_cast<std::size_t>(16 * 16 * ySpan);
+ const std::size_t nibbleBytes = static_cast<std::size_t>(16 * 16 * halfSpan);
+ std::uint8_t* blocks = dst;
  std::uint8_t* meta = blocks + blockBytes;
  std::uint8_t* skyLight = meta + nibbleBytes;
  std::uint8_t* blockLight = skyLight + nibbleBytes;
-
- const std::size_t blockNeed = minBlockBytesForBand(minY, ySpan);
+ const std::size_t blockNeed = static_cast<std::size_t>((15 << 11) | (15 << 7) | minY) + static_cast<std::size_t>(ySpan);
  if(chunk.blocks.size() < blockNeed) {
-  std::memset(copy.storage.data(), 0, totalBytes);
+  std::memset(dst, 0, blockBytes + 3 * nibbleBytes);
   return;
  }
  for(int column = 0; column < 16 * 16; ++column) {
@@ -78,6 +68,14 @@ void copyChunkBand(RegionSnapshot::ChunkCopy& copy,
   std::memcpy(blocks + dstColumn * static_cast<std::size_t>(ySpan),
               chunk.blocks.data() + srcBlockBase,
               static_cast<std::size_t>(ySpan));
+  if(!anyNonAir) {
+   for(int i = 0; i < ySpan; ++i) {
+    if(blocks[dstColumn * static_cast<std::size_t>(ySpan) + static_cast<std::size_t>(i)] != 0) {
+     anyNonAir = true;
+     break;
+    }
+   }
+  }
   copyNibbleColumn(meta, dstColumn, halfSpan, chunk.meta.bytes, srcNibbleBase);
   copyNibbleColumn(skyLight, dstColumn, halfSpan, chunk.skyLight.bytes, srcNibbleBase);
   copyNibbleColumn(blockLight, dstColumn, halfSpan, chunk.blockLight.bytes, srcNibbleBase);
@@ -107,34 +105,32 @@ RegionSnapshot::RegionSnapshot(std::span<const SourceChunk> sourceChunks,
  span += span & 1;
  ySpan_ = std::min(span, Chunk::height - minY_);
  const int halfSpan = ySpan_ >> 1;
- const std::size_t blockBytes = static_cast<std::size_t>(16 * 16 * ySpan_);
- const std::size_t nibbleBytes = static_cast<std::size_t>(16 * 16 * halfSpan);
+ blockBytesPerChunk_ = static_cast<std::size_t>(16 * 16 * ySpan_);
+ nibbleBytesPerChunk_ = static_cast<std::size_t>(16 * 16 * halfSpan);
+ const std::size_t perChunkBytes = blockBytesPerChunk_ + 3 * nibbleBytesPerChunk_;
+ const std::size_t totalBytes = perChunkBytes * sourceChunks.size();
+ buffer_.resize(totalBytes);
+ std::size_t offset = 0;
  for(const SourceChunk& source : sourceChunks) {
   if(source.chunk == nullptr || source.chunkX < chunkX_ || source.chunkZ < chunkZ_ ||
      source.chunkX > maxChunkX || source.chunkZ > maxChunkZ) {
+   offset += perChunkBytes;
    continue;
   }
   const Chunk& chunk = *source.chunk;
-  ChunkCopy& copy =
-      chunks_[static_cast<std::size_t>((source.chunkX - chunkX_) + (source.chunkZ - chunkZ_) * chunkWidth_)];
-  copy.present = true;
-  copyChunkBand(copy,
-                chunk,
-                minY_,
-                ySpan_,
-                halfSpan,
-                blockBytes,
-                nibbleBytes);
-  copy.anyNonAir =
-      std::any_of(copy.storage.begin(), copy.storage.begin() + static_cast<std::ptrdiff_t>(blockBytes), [](std::uint8_t block) { return block != 0; });
+  ChunkInfo& info = chunks_[static_cast<std::size_t>((source.chunkX - chunkX_) + (source.chunkZ - chunkZ_) * chunkWidth_)];
+  info.offset = static_cast<std::uint32_t>(offset);
+  info.present = true;
+  copyChunkBand(buffer_.data() + offset, chunk, minY_, ySpan_, halfSpan, info.anyNonAir);
+  offset += perChunkBytes;
  }
  ambientDarkness_ = ambientDarkness;
  lightLevelToLuminance_ = lightLevelToLuminance;
  biomeSource_ = std::move(biomeSource);
 }
 bool RegionSnapshot::columnHasBlocks(int blockX, int blockZ, int minY, int maxY) const {
- const ChunkCopy* chunk = chunkAt(blockX, blockZ);
- if(chunk == nullptr || !chunk->anyNonAir) {
+ const ChunkInfo* info = chunkInfo(blockX, blockZ);
+ if(info == nullptr || !info->anyNonAir) {
   return false;
  }
  const int clampedMinY = std::max(minY, minY_);
@@ -144,11 +140,10 @@ bool RegionSnapshot::columnHasBlocks(int blockX, int blockZ, int minY, int maxY)
  }
  const std::size_t spanBytes = static_cast<std::size_t>(clampedMaxY - clampedMinY);
  constexpr std::size_t kWordBytes = sizeof(std::uint64_t);
- // Scan each column's span in 64-bit words so the compiler issues wide loads
- // instead of byte loops (this early-out runs for every section on every rebuild).
+ const std::uint8_t* blocks = chunkBlocks(*info);
  for(int column = 0; column < 16 * 16; ++column) {
   const std::uint8_t* base =
-      chunk->blocksData() + static_cast<std::size_t>(column * ySpan_ + (clampedMinY - minY_));
+      blocks + static_cast<std::size_t>(column * ySpan_ + (clampedMinY - minY_));
   std::size_t i = 0;
   for(; i + kWordBytes <= spanBytes; i += kWordBytes) {
    std::uint64_t word = 0;
@@ -169,21 +164,21 @@ int RegionSnapshot::getBlockId(int x, int y, int z) const {
  if(y < 0 || y >= Chunk::height) {
   return 0;
  }
- const ChunkCopy* chunk = chunkAt(x, z);
- if(chunk == nullptr || !containsY(y)) {
+ const ChunkInfo* info = chunkInfo(x, z);
+ if(info == nullptr || !containsY(y)) {
   return 0;
  }
- return static_cast<int>(chunk->blocksData()[snapshotIndex(x & 0xF, y, z & 0xF)] & 0xFFU);
+ return static_cast<int>(chunkBlocks(*info)[snapshotIndex(x & 0xF, y, z & 0xF)] & 0xFFU);
 }
 int RegionSnapshot::getBlockMeta(int x, int y, int z) const {
  if(y < 0 || y >= Chunk::height) {
   return 0;
  }
- const ChunkCopy* chunk = chunkAt(x, z);
- if(chunk == nullptr || !containsY(y)) {
+ const ChunkInfo* info = chunkInfo(x, z);
+ if(info == nullptr || !containsY(y)) {
   return 0;
  }
- return nibbleAt(chunk->metaData(), x & 0xF, y, z & 0xF);
+ return nibbleAt(chunkMeta(*info), x & 0xF, y, z & 0xF);
 }
 float RegionSnapshot::getNaturalBrightness(int x, int y, int z, int blockLight) const {
  int brightness = getRawBrightness(x, y, z, true);
@@ -196,8 +191,17 @@ float RegionSnapshot::getLightBrightness(int x, int y, int z) const {
  return lightLevelToLuminance_[static_cast<std::size_t>(getRawBrightness(x, y, z, true))];
 }
 int RegionSnapshot::getRawBrightness(int x, int y, int z, bool useNeighborLight) const {
- if(x < -32000000 || z < -32000000 || x >= 32000000 || z > 32000000) {
-  return 15;
+ if(y < 0) {
+  return 0;
+ }
+ if(y >= Chunk::height) {
+  const int brightness = 15 - ambientDarkness_;
+  return brightness < 0 ? 0 : brightness;
+ }
+ const ChunkInfo* info = chunkInfo(x, z);
+ if(info == nullptr || !containsY(y)) {
+  const int brightness = 15 - ambientDarkness_;
+  return brightness < 0 ? 0 : brightness;
  }
  if(useNeighborLight && block::Block::usesNeighborLightSampling(getBlockId(x, y, z))) {
   int brightness = getRawBrightness(x, y + 1, z, false);
@@ -207,28 +211,11 @@ int RegionSnapshot::getRawBrightness(int x, int y, int z, bool useNeighborLight)
   brightness = std::max(brightness, getRawBrightness(x, y, z - 1, false));
   return brightness;
  }
- if(y < 0) {
-  return 0;
- }
- if(y >= Chunk::height) {
-  const int brightness = 15 - ambientDarkness_;
-  return brightness < 0 ? 0 : brightness;
- }
- const ChunkCopy* chunk = chunkAt(x, z);
- if(chunk == nullptr || !containsY(y)) {
-  // Outside the captured region (but valid world Y): treat as fully sky-lit
-  // rather than dark, so neighbor-light sampling at chunk borders does not
-  // bake a dark fringe/seam at chunk edges.
-  const int brightness = 15 - ambientDarkness_;
-  return brightness < 0 ? 0 : brightness;
- }
- // Mirrors Chunk::getLight(localX, y, localZ, ambientDarkness), with the
- // skylight detection recorded per-snapshot instead of a global static.
- int sky = nibbleAt(chunk->skyLightData(), x & 0xF, y, z & 0xF);
+ int sky = nibbleAt(chunkSkyLight(*info), x & 0xF, y, z & 0xF);
  if(sky > 0) {
   sawSkyLight_ = true;
  }
- const int block = nibbleAt(chunk->blockLightData(), x & 0xF, y, z & 0xF);
+ const int block = nibbleAt(chunkBlockLight(*info), x & 0xF, y, z & 0xF);
  if(block > (sky -= ambientDarkness_)) {
   sky = block;
  }
@@ -238,29 +225,27 @@ int RegionSnapshot::getBlockLight(const int x, const int y, const int z) const {
  if(y < 0 || y >= Chunk::height) {
   return 0;
  }
- const ChunkCopy* chunk = chunkAt(x, z);
- if(chunk == nullptr || !containsY(y)) {
+ const ChunkInfo* info = chunkInfo(x, z);
+ if(info == nullptr || !containsY(y)) {
   return 0;
  }
- return nibbleAt(chunk->blockLightData(), x & 0xF, y, z & 0xF);
+ return nibbleAt(chunkBlockLight(*info), x & 0xF, y, z & 0xF);
 }
 int RegionSnapshot::getSkyLight(const int x, const int y, const int z) const {
  if(y < 0) {
   return 0;
  }
  if(y >= Chunk::height) {
-  // Raw sky for UV2 — ambientDarkness applied only in the lightmap texture.
   return 15;
  }
- const ChunkCopy* chunk = chunkAt(x, z);
- if(chunk == nullptr || !containsY(y)) {
+ const ChunkInfo* info = chunkInfo(x, z);
+ if(info == nullptr || !containsY(y)) {
   return 15;
  }
- int sky = nibbleAt(chunk->skyLightData(), x & 0xF, y, z & 0xF);
+ int sky = nibbleAt(chunkSkyLight(*info), x & 0xF, y, z & 0xF);
  if(sky > 0) {
   sawSkyLight_ = true;
  }
- // Do not subtract ambientDarkness here: packs sample lightmap with raw lmcoord.
  return sky < 0 ? 0 : sky;
 }
 net::minecraft::block::material::Material& RegionSnapshot::getMaterial(int x, int y, int z) const {

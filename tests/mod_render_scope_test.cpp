@@ -8,6 +8,12 @@ TEST(ModRenderScope, CloudStageOwnsCloudShaderProgram) {
  EXPECT_EQ(runtime::modDrawProgramKey(true, true, true, false, runtime::ModDrawLayer::Auto),
            "gbuffers_particles_translucent");
 }
+TEST(ModRenderScope, ExplicitBasicLayerSurvivesDepthDisabledDraws) {
+ EXPECT_EQ(runtime::modDrawProgramKey(false, true, false, false, runtime::ModDrawLayer::Basic),
+           "gbuffers_basic");
+ EXPECT_EQ(runtime::modDrawProgramKey(false, true, false, false, runtime::ModDrawLayer::Sky),
+           "gbuffers_skybasic");
+}
 TEST(ModRenderScope, NestedStageLayerRestoresOuterLayer) {
  unsigned char worldStorage = 0;
  auto* world = reinterpret_cast<net::minecraft::World*>(&worldStorage);

@@ -17,6 +17,7 @@
 #include "net/minecraft/client/resource/pack/TexturePacks.hpp"
 #include "net/minecraft/client/texture/ImageDownload.hpp"
 #include "net/minecraft/client/texture/SkinImageProcessor.hpp"
+#include "net/minecraft/client/texture/TextureMipmap.hpp"
 #include "net/minecraft/mod/runtime/ModHost.hpp"
 #include "net/minecraft/util/PathUtil.hpp"
 #include "net/minecraft/registry/TextureRegistry.hpp"
@@ -101,90 +102,38 @@ RasterImage rasterFromGdiplusBitmap(Gdiplus::Bitmap& bitmap) {
  return out;
 }
 #endif
-int smoothBlend(int color1, int color2) {
- const int alpha1 = (color1 >> 24) & 0xFF;
- const int alpha2 = (color2 >> 24) & 0xFF;
- const int alphaSum = alpha1 + alpha2;
- const int avgAlpha = alphaSum >> 1;
- if(alphaSum == 0) {
-  return (((color1 & 0xFEFEFE) + (color2 & 0xFEFEFE)) >> 1);
- }
- int blended = avgAlpha << 24;
- for(int shift = 0; shift <= 16; shift += 8) {
-  const int channel1 = (color1 >> shift) & 0xFF;
-  const int channel2 = (color2 >> shift) & 0xFF;
-  const int channel = (channel1 * alpha1 + channel2 * alpha2) / alphaSum;
-  blended |= (channel & 0xFF) << shift;
- }
- return blended;
-}
-// Cutout/cross models sample high mips when a plane is nearly edge-on. Soft
-// alpha in those mips passes alphaTest (~0.1) as opaque grey/mud and draws as
-// thin vertical strips. Quantize like vanilla/OptiFine cutout mips: majority
-// transparent -> fully discarded; majority opaque -> solid.
-int mipBlend(int color1, int color2) {
- const int blended = smoothBlend(color1, color2);
- if(((blended >> 24) & 0xFF) < 128) {
-  return 0;
- }
- return (blended & 0x00FFFFFF) | static_cast<int>(0xFF000000U);
-}
-int getPixelInt(const std::uint8_t* data, int index) {
- const std::size_t offset = static_cast<std::size_t>(index) * 4U;
- return static_cast<int>(data[offset + 0]) | (static_cast<int>(data[offset + 1]) << 8) |
-        (static_cast<int>(data[offset + 2]) << 16) | (static_cast<int>(data[offset + 3]) << 24);
-}
-void putPixelInt(std::uint8_t* data, int index, int color) {
- const std::size_t offset = static_cast<std::size_t>(index) * 4U;
- data[offset + 0] = static_cast<std::uint8_t>(color & 0xFF);
- data[offset + 1] = static_cast<std::uint8_t>((color >> 8) & 0xFF);
- data[offset + 2] = static_cast<std::uint8_t>((color >> 16) & 0xFF);
- data[offset + 3] = static_cast<std::uint8_t>((color >> 24) & 0xFF);
-}
-void uploadStaticMipmapLevels(int width, int height, std::vector<std::uint8_t>& rgba) {
- for(int level = 1; level <= 4; ++level) {
-  const int sourceWidth = width >> (level - 1);
-  const int targetWidth = width >> level;
-  const int targetHeight = height >> level;
-  (void)sourceWidth;
-  if(targetWidth <= 0 || targetHeight <= 0) {
-   break;
-  }
-  for(int y = 0; y < targetHeight; ++y) {
-   for(int x = 0; x < targetWidth; ++x) {
-    const int topLeft = getPixelInt(rgba.data(), x * 2 + 0 + (y * 2 + 0) * sourceWidth);
-    const int topRight = getPixelInt(rgba.data(), x * 2 + 1 + (y * 2 + 0) * sourceWidth);
-    const int bottomRight = getPixelInt(rgba.data(), x * 2 + 1 + (y * 2 + 1) * sourceWidth);
-    const int bottomLeft = getPixelInt(rgba.data(), x * 2 + 0 + (y * 2 + 1) * sourceWidth);
-    const int blended = mipBlend(mipBlend(topLeft, topRight), mipBlend(bottomRight, bottomLeft));
-    putPixelInt(rgba.data(), x + y * targetWidth, blended);
-   }
-  }
+void uploadStaticMipmapLevels(int width,
+                              int height,
+                              const std::vector<std::uint8_t>& rgba,
+                              bool gridAtlas,
+                              int maxLevels) {
+ const int tileColumns = gridAtlas ? 16 : 1;
+ const int tileRows = gridAtlas ? 16 : 1;
+ const std::vector<RgbaMipmapLevel> levels =
+     buildRgbaMipmaps(rgba, width, height, maxLevels, tileColumns, tileRows);
+ for(std::size_t index = 0; index < levels.size(); ++index) {
+  const RgbaMipmapLevel& level = levels[index];
   ::glTexImage2D(gl::cap::Texture2D,
-                 level,
+                 static_cast<int>(index + 1),
                  gl::pixel::Rgba8,
-                 targetWidth,
-                 targetHeight,
+                 level.width,
+                 level.height,
                  0,
                  gl::pixel::Rgba,
                  gl::pixel::UnsignedByte,
-                 rgba.data());
+                 level.pixels.data());
  }
 }
 void uploadDynamicMipmapLevels(int sprite, std::vector<std::uint8_t>& imageBuffer) {
  for(int level = 1; level <= 4; ++level) {
   const int sourceSize = 16 >> (level - 1);
   const int targetSize = 16 >> level;
-  for(int y = 0; y < targetSize; ++y) {
-   for(int x = 0; x < targetSize; ++x) {
-    const int topLeft = getPixelInt(imageBuffer.data(), x * 2 + 0 + (y * 2 + 0) * sourceSize);
-    const int topRight = getPixelInt(imageBuffer.data(), x * 2 + 1 + (y * 2 + 0) * sourceSize);
-    const int bottomRight = getPixelInt(imageBuffer.data(), x * 2 + 1 + (y * 2 + 1) * sourceSize);
-    const int bottomLeft = getPixelInt(imageBuffer.data(), x * 2 + 0 + (y * 2 + 1) * sourceSize);
-    const int blended = mipBlend(mipBlend(topLeft, topRight), mipBlend(bottomRight, bottomLeft));
-    putPixelInt(imageBuffer.data(), x + y * targetSize, blended);
-   }
-  }
+  downsampleRgbaMipmap(std::span<const std::uint8_t>(imageBuffer.data(),
+                                                     static_cast<std::size_t>(sourceSize * sourceSize * 4)),
+                       sourceSize,
+                       sourceSize,
+                       std::span<std::uint8_t>(imageBuffer.data(),
+                                               static_cast<std::size_t>(targetSize * targetSize * 4)));
   ::glTexSubImage2D(gl::cap::Texture2D,
                     level,
                     (sprite % 16) * targetSize,
@@ -523,6 +472,10 @@ bool TextureManager::getTextureDimensionsForId(int textureId, int& outWidth, int
  outHeight = found->second[1];
  return outWidth > 0 && outHeight > 0;
 }
+bool TextureManager::isGridAtlasTexture(int textureId) const {
+ const auto found = texturePaths_.find(textureId);
+ return found != texturePaths_.end() && isGridAtlasPath(found->second);
+}
 std::string TextureManager::getCompanionTexturePath(int textureId, std::string_view suffix) const {
  if(textureId <= 0 || suffix.empty()) {
   return {};
@@ -587,7 +540,7 @@ void TextureManager::reload() {
    colors[i] = static_cast<int>(image.argb[i]);
   }
  }
-  render::PbrTextures::clear();
+ render::PbrTextures::clear();
 }
 void TextureManager::bindTexture(int id) {
  if(id < 0) {
@@ -647,8 +600,8 @@ void TextureManager::load(const RasterImage& image, int id) {
  }
  int maxMipmapLevel = 0;
  if(MIPMAP) {
-  int mipWidth = image.width;
-  int mipHeight = image.height;
+  int mipWidth = gridAtlas ? image.width / 16 : image.width;
+  int mipHeight = gridAtlas ? image.height / 16 : image.height;
   while(mipWidth > 1 && mipHeight > 1 && maxMipmapLevel < 4) {
    mipWidth >>= 1;
    mipHeight >>= 1;
@@ -666,7 +619,7 @@ void TextureManager::load(const RasterImage& image, int id) {
                 gl::pixel::UnsignedByte,
                 rgba.data());
  if(MIPMAP) {
-  uploadStaticMipmapLevels(image.width, image.height, rgba);
+  uploadStaticMipmapLevels(image.width, image.height, rgba, gridAtlas, maxMipmapLevel);
  }
 }
 namespace {

@@ -39,10 +39,6 @@ using PFN_MultiDrawArrays = void(APIENTRY*)(unsigned, const int*, const int*, in
 using PFN_DrawElementsBaseVertex = void(APIENTRY*)(unsigned, int, unsigned, const void*, int);
 using PFN_MultiDrawElementsBaseVertex =
     void(APIENTRY*)(unsigned, const int*, unsigned, const void* const*, int, const int*);
-// Per-instance terrain chunkOffset: one region's offset is constant across all its
-// vertices, so it rides an instanced attribute (divisor 1) rather than 12 bytes on
-// every vertex. GL 3.3 core; null on the 2.1-era contexts this engine still runs on,
-// which is what instancedDrawSupported gates.
 using PFN_DrawArraysInstanced = void(APIENTRY*)(unsigned, int, int, int);
 using PFN_VertexAttribDivisor = void(APIENTRY*)(unsigned, unsigned);
 using PFN_CreateShader = unsigned int(APIENTRY*)(unsigned int);
@@ -91,6 +87,11 @@ using PFN_BeginQuery = void(APIENTRY*)(unsigned, unsigned);
 using PFN_EndQuery = void(APIENTRY*)(unsigned);
 using PFN_GetQueryObjectiv = void(APIENTRY*)(unsigned, unsigned, int*);
 using PFN_GetQueryObjectui64v = void(APIENTRY*)(unsigned, unsigned, std::uint64_t*);
+using PFN_QueryCounter = void(APIENTRY*)(unsigned, unsigned);
+// see third_party/mcp/iris/gl/texture/DepthCopyStrategy.java Gl43CopyImage
+using PFN_CopyImageSubData = void(APIENTRY*)(unsigned, unsigned, int, int, int, int,
+                                             unsigned, unsigned, int, int, int, int,
+                                             int, int, int);
 using PFN_DispatchCompute = void(APIENTRY*)(unsigned, unsigned, unsigned);
 using PFN_DispatchComputeIndirect = void(APIENTRY*)(intptr_t);
 using PFN_MemoryBarrier = void(APIENTRY*)(unsigned);
@@ -180,44 +181,46 @@ struct GLCore {
  static PFN_VertexAttribIPointer vertexAttribIPointer;
  static PFN_EnableVertexAttribArray enableVertexAttribArray;
  static PFN_DisableVertexAttribArray disableVertexAttribArray;
-  static PFN_VertexAttrib4f vertexAttrib4f;
-  static PFN_GenerateMipmap generateMipmap;
-  static PFN_GetStringi getStringi;
-  static PFN_BlitFramebuffer blitFramebuffer;
-  static PFN_TexImage3D texImage3D;
-  static PFN_GenQueries genQueries;
-  static PFN_DeleteQueries deleteQueries;
-  static PFN_BeginQuery beginQuery;
-  static PFN_EndQuery endQuery;
-  static PFN_GetQueryObjectiv getQueryObjectiv;
-  static PFN_GetQueryObjectui64v getQueryObjectui64v;
-  static PFN_DispatchCompute dispatchCompute;
-  static PFN_DispatchComputeIndirect dispatchComputeIndirect;
-  static PFN_MemoryBarrier memoryBarrier;
-  static PFN_BindImageTexture bindImageTexture;
-  static PFN_ClearTexImage clearTexImage;
-  static PFN_BindBufferBase bindBufferBase;
-  static PFN_GenSamplers genSamplers;
-  static PFN_DeleteSamplers deleteSamplers;
-  static PFN_BindSampler bindSampler;
-  static PFN_SamplerParameteri samplerParameteri;
-  static PFN_BlendFunci blendFunci;
-  static PFN_BlendFuncSeparate blendFuncSeparate;
-  static PFN_BlendFuncSeparatei blendFuncSeparatei;
-  static void* activeTexture;
-  static bool vboSupported;
-  static bool framebufferSupported;
-  static bool vaoSupported;
-  static bool shaderSupported;
-  static bool timerQuerySupported;
-  static bool computeSupported;
-  static bool instancedDrawSupported;
-  static bool ssboSupported;
-  static bool asyncReadbackSupported;
-  static int maxShaderStorageUnits;
-  static bool samplerObjectsSupported;
-  static bool perBufferBlendingSupported;
-  static bool swapControlTearSupported;
+ static PFN_VertexAttrib4f vertexAttrib4f;
+ static PFN_GenerateMipmap generateMipmap;
+ static PFN_GetStringi getStringi;
+ static PFN_BlitFramebuffer blitFramebuffer;
+ static PFN_TexImage3D texImage3D;
+ static PFN_GenQueries genQueries;
+ static PFN_DeleteQueries deleteQueries;
+ static PFN_BeginQuery beginQuery;
+ static PFN_EndQuery endQuery;
+ static PFN_GetQueryObjectiv getQueryObjectiv;
+ static PFN_GetQueryObjectui64v getQueryObjectui64v;
+ static PFN_QueryCounter queryCounter;
+ static PFN_CopyImageSubData copyImageSubData;
+ static PFN_DispatchCompute dispatchCompute;
+ static PFN_DispatchComputeIndirect dispatchComputeIndirect;
+ static PFN_MemoryBarrier memoryBarrier;
+ static PFN_BindImageTexture bindImageTexture;
+ static PFN_ClearTexImage clearTexImage;
+ static PFN_BindBufferBase bindBufferBase;
+ static PFN_GenSamplers genSamplers;
+ static PFN_DeleteSamplers deleteSamplers;
+ static PFN_BindSampler bindSampler;
+ static PFN_SamplerParameteri samplerParameteri;
+ static PFN_BlendFunci blendFunci;
+ static PFN_BlendFuncSeparate blendFuncSeparate;
+ static PFN_BlendFuncSeparatei blendFuncSeparatei;
+ static void* activeTexture;
+ static bool vboSupported;
+ static bool framebufferSupported;
+ static bool vaoSupported;
+ static bool shaderSupported;
+ static bool timerQuerySupported;
+ static bool computeSupported;
+ static bool instancedDrawSupported;
+ static bool ssboSupported;
+ static bool asyncReadbackSupported;
+ static int maxShaderStorageUnits;
+ static bool samplerObjectsSupported;
+ static bool perBufferBlendingSupported;
+ static bool swapControlTearSupported;
  static void init();
  static void ensureLoaded();
  // Driver swap-interval (0 / 1 / -1). Never applies interval >= 2.

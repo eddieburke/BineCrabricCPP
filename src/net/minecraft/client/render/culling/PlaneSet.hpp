@@ -4,15 +4,6 @@
 #include <cstddef>
 #include <cstdint>
 namespace net::minecraft::client::render {
-// A set of clipping planes and the AABB test against them. ONE implementation.
-//
-// The view frustum (6 planes, extracted from a clip matrix) and the advanced
-// shadow frustum (up to 13, built by extruding the view frustum along the light)
-// differ only in how their planes are produced and how many there are. The test
-// itself — for each plane, take the box corner furthest along the plane normal
-// and check which side it falls on — was written twice, once branchless with an
-// epsilon and once with ternaries and none, which is how two culling paths end
-// up disagreeing about the same box.
 template <std::size_t MaxPlanes>
 class PlaneSet {
  public:
@@ -56,7 +47,7 @@ class PlaneSet {
    const float px = pickBound(p[0], maxX, minX);
    const float py = pickBound(p[1], maxY, minY);
    const float pz = pickBound(p[2], maxZ, minZ);
-   if(((p[0] * px + p[1] * py) + p[2] * pz) + p[3] <= -epsilon) {
+   if(((p[0] * px + p[1] * py) + p[2] * pz) + p[3] < -epsilon) {
     return false;
    }
   }

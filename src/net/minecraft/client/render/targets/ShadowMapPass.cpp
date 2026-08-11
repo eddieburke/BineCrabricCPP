@@ -14,6 +14,7 @@
 #include "net/minecraft/client/render/world/WorldRenderer.hpp"
 #include "net/minecraft/client/render/shaderpack/Pack.hpp"
 #include "net/minecraft/client/render/GlState.hpp"
+#include "net/minecraft/client/debug/RenderProfiler.hpp"
 #include "net/minecraft/world/World.hpp"
 #include "net/minecraft/world/light/UnifiedLightRegistry.hpp"
 namespace net::minecraft::client::render::shadowmap {
@@ -162,35 +163,46 @@ void ShadowTargets::prepareForShadowRender() {
  for(int i = 0; i < colorCount; ++i) {
   fbo.addColorAttachment(i, shadowcolor[static_cast<std::size_t>(i)][0]);
  }
- // attachCompositeColors' cache no longer reflects the fbo's real attachments.
+ // Invalidates attachCompositeColors' cache; the fbo's attachments just changed.
  compositeDrawBufferCount = -1;
 }
+// see third_party/mcp/iris/gl/texture/DepthCopyStrategy.java
+// Both textures are DEPTH_COMPONENT32 at `resolution`, so the GL43 image copy is
+// legal between them: texture to texture, no framebuffer read and no binding.
+// glCopyTexSubImage2D is the Gl20CopyTexture fallback, and like Java's it has to
+// put the previous binding back - the copy is not allowed to disturb texture state.
 void ShadowTargets::snapshotOpaqueDepth() {
  if(!valid()) {
   return;
  }
+ const int previousTexture = core::boundTexture();
  if(shadowtex1 == 0) {
   shadowtex1 = static_cast<unsigned int>(core::genTexture());
   shadowtex1Resolution = 0;
  }
- core::bindTexture(static_cast<int>(shadowtex1));
  if(shadowtex1Resolution != resolution) {
-  ::glTexImage2D(0x0DE1, 0, kDepthComponent32, resolution, resolution, 0, 0x1902, 0x1405, nullptr);
-  ::glTexParameteri(0x0DE1, 0x2801, 0x2600);
-  ::glTexParameteri(0x0DE1, 0x2800, 0x2600);
-  ::glTexParameteri(0x0DE1, 0x2802, 0x812F);
-  ::glTexParameteri(0x0DE1, 0x2803, 0x812F);
+  core::bindTexture(static_cast<int>(shadowtex1));
+  ::glTexImage2D(gl::cap::Texture2D, 0, kDepthComponent32, resolution, resolution, 0,
+                 gl::pixel::DepthComponent, gl::pixel::UnsignedInt, nullptr);
+  ::glTexParameteri(gl::cap::Texture2D, gl::tex::MinFilter, gl::filter::Nearest);
+  ::glTexParameteri(gl::cap::Texture2D, gl::tex::MagFilter, gl::filter::Nearest);
+  ::glTexParameteri(gl::cap::Texture2D, gl::tex::WrapS, gl::wrap::ClampToEdge);
+  ::glTexParameteri(gl::cap::Texture2D, gl::tex::WrapT, gl::wrap::ClampToEdge);
   applyDepthSwizzle(shadowtex1);
   shadowtex1Resolution = resolution;
  }
- ::glCopyTexSubImage2D(0x0DE1, 0, 0, 0, 0, 0, resolution, resolution);
+ if(gl::GLCore::copyImageSubData != nullptr) {
+  gl::GLCore::copyImageSubData(shadowtex0, gl::cap::Texture2D, 0, 0, 0, 0,
+                               shadowtex1, gl::cap::Texture2D, 0, 0, 0, 0,
+                               resolution, resolution, 1);
+ } else {
+  core::bindTexture(static_cast<int>(shadowtex1));
+  ::glCopyTexSubImage2D(gl::cap::Texture2D, 0, 0, 0, 0, 0, resolution, resolution);
+ }
+ core::bindTexture(previousTexture);
+ debug::RenderProfiler::instance().record(debug::RenderMetric::Copies);
+ debug::RenderProfiler::instance().record(debug::RenderMetric::ShadowDepthCopies);
 }
-// The shadow camera is the pack's shadowDistance/planes turned into the one camera
-// shape the renderer knows: an orthographic box centred on the player's eye whose
-// half-extent is shadowDistance, clipped by shadowNearPlane/shadowFarPlane. A pack
-// with shadowMapFov > 0 gets a perspective shadow camera instead, with the pack's
-// fov as its focal terms. This is the only place the pack's shadow tuning becomes a
-// camera; nothing downstream re-derives it.
 FrameRenderCamera makeShadowCamera(const PackDefinition& definition,
                                    const FrameRenderCamera& camera,
                                    const CelestialState& celestial) {
@@ -217,9 +229,18 @@ FrameRenderCamera makeShadowCamera(const PackDefinition& definition,
  shadowCam.shadowBlockEntities = definition.shadowBlockEntities;
  shadowCam.shadowLightBlockEntities = definition.shadowLightBlockEntities;
  shadowCam.hasExplicitModelView = true;
- buildShadowCelestialModelView(shadowCam.explicitModelView, celestial.shadowAngle,
-                               celestial.sunPathRotation, definition.shadowIntervalSize, camera.eyeX,
-                               camera.eyeY, camera.eyeZ);
+ if(celestial.directionOverride) {
+  buildShadowDirectionalModelView(shadowCam.explicitModelView,
+                                  celestial.shadowLightDirectionWorld,
+                                  definition.shadowIntervalSize,
+                                  camera.eyeX,
+                                  camera.eyeY,
+                                  camera.eyeZ);
+ } else {
+  buildShadowCelestialModelView(shadowCam.explicitModelView, celestial.shadowAngle,
+                                celestial.sunPathRotation, definition.shadowIntervalSize, camera.eyeX,
+                                camera.eyeY, camera.eyeZ);
+ }
  if(perspectiveShadow) {
   shadowCam.nearPlane = std::max(0.05f, definition.shadowNearPlane);
   shadowCam.farPlane = 156.0f;
@@ -285,10 +306,7 @@ ShadowMapResult update(ShadowMapState& state,
  frustumParams.halfPlaneLength = shadowDistance;
  frustumParams.voxelDistance = voxelDistance;
  frustumParams.renderMultiplier = shadowDistanceRenderMul;
- frustumParams.renderDistanceBlocks = renderer.frameSettings().renderDistance.ringBlocks();
- // shadowDistanceRenderMul < 0 means "cull to the user's render distance" (Iris
- // ShadowRenderer.createShadowFrustum); createShadowFrustum reads it back off
- // renderDistanceBlocks, so the ring and the cull distance share one source.
+ frustumParams.renderDistanceBlocks = renderer.frameSettings().renderDistance.sectionCoverageBlocks();
  frustumParams.forceBoxCull = renderer.client != nullptr && renderer.client->options.shadowForceBoxCull;
  state.terrainFrustum = createShadowFrustum(frustumParams, playerModelViewProjection, lightVector);
  state.terrainFrustum.prepare(centerX, centerY, centerZ);

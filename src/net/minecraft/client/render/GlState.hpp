@@ -52,6 +52,7 @@ bool featureSupported(std::string_view feature);
 int maxTextureUnits();
 ColorFormat parseFormat(const std::string& format);
 [[nodiscard]] const char* colorFormatName(ColorFormat format);
+[[nodiscard]] std::string_view canonicalFormatName(std::string_view format);
 // https://shaders.properties/current/reference/constants/buffer_format/
 unsigned int pixelFormat(std::string value);
 unsigned int pixelType(std::string value);

@@ -1,4 +1,5 @@
 #include "net/minecraft/client/Minecraft.hpp"
+#include <algorithm>
 #include <cctype>
 #include <chrono>
 #include <cstdlib>
@@ -7,8 +8,10 @@
 #include <functional>
 #include <sstream>
 #include <thread>
+#include <utility>
 #include "net/minecraft/achievement/Achievements.hpp"
 #include "net/minecraft/block/Block.hpp"
+#include "net/minecraft/client/ClientLog.hpp"
 #include "net/minecraft/client/MinecraftApplet.hpp"
 #include "net/minecraft/client/Screenshot.hpp"
 #include "net/minecraft/client/SingleplayerInteractionManager.hpp"
@@ -82,6 +85,8 @@
 #include "net/minecraft/world/dimension/PortalForcer.hpp"
 #include "net/minecraft/world/storage/RegionWorldStorageSource.hpp"
 #include "net/minecraft/world/storage/WorldStorage.hpp"
+#include "net/minecraft/util/logging/Logging.hpp"
+#include "net/minecraft/world/storage/WorldSaveInfo.hpp"
 #include "net/minecraft/world/storage/WorldStorageSource.hpp"
 #include "net/minecraft/world/storage/exception/SessionLockException.hpp"
 namespace net::minecraft::client {
@@ -255,6 +260,46 @@ void Minecraft::gameCrashed(const net::minecraft::util::crash::CrashReport& cras
  running = false;
  handleCrash(crashReport);
 }
+void Minecraft::setStartupWorld(const std::string& save, std::int64_t seed) {
+ startupWorldSave_ = save;
+ startupWorldSeed_ = seed;
+}
+void Minecraft::configureStartup(const StartupOptions& startup) {
+ startupOptions_ = startup;
+ forceDebugHud_ = startup.debugHud;
+ headlessMode_ = startup.headless;
+}
+void Minecraft::openStartupWorld() {
+ std::string saveName = startupWorldSave_;
+ std::string displayName = startupWorldSave_;
+ if(worldStorageSource != nullptr) {
+  std::vector<net::minecraft::WorldSaveInfo> saves = worldStorageSource->getAll();
+  std::sort(saves.begin(), saves.end(), [](const net::minecraft::WorldSaveInfo& a, const net::minecraft::WorldSaveInfo& b) {
+   return a.compareTo(b) < 0;
+  });
+  const net::minecraft::WorldSaveInfo* match = nullptr;
+  int index = 0;
+  if(!saveName.empty() && saveName.size() < 4 && saveName.find_first_not_of("0123456789") == std::string::npos) {
+   index = std::stoi(saveName);
+  }
+  if(index >= 1 && index <= static_cast<int>(saves.size())) {
+   match = &saves[static_cast<std::size_t>(index - 1)];
+  } else {
+   for(const net::minecraft::WorldSaveInfo& save : saves) {
+    if(save.getSaveName() == saveName || save.getName() == saveName) {
+     match = &save;
+     break;
+    }
+   }
+  }
+  if(match != nullptr) {
+   saveName = match->getSaveName();
+   displayName = match->getName().empty() ? saveName : match->getName();
+  }
+ }
+ startGame(saveName, displayName, startupWorldSeed_, {}, true);
+ setScreen(nullptr);
+}
 void Minecraft::setStartupServer(const std::string& address, int port) {
  startupServerAddress_ = address;
  startupServerPort = port;
@@ -272,6 +317,20 @@ void Minecraft::bootstrapAfterDisplay() {
  options.bindMinecraft(this);
  option::OptionRegistry::registerAll();
  options.load();
+ debug::PerformanceCaptureConfig capture;
+ capture.enabled = startupOptions_.perfTraceSeconds > 0 || startupOptions_.benchmarkFrames > 0;
+ capture.autoStop = capture.enabled;
+ capture.warmupFrames = startupOptions_.perfWarmupFrames;
+ capture.captureFrames = startupOptions_.benchmarkFrames;
+ capture.captureSeconds = startupOptions_.benchmarkFrames > 0 ? 0 : startupOptions_.perfTraceSeconds;
+ capture.width = displayWidth;
+ capture.height = displayHeight;
+ capture.shaderPack = options.shaderPack;
+ capture.world = startupOptions_.world;
+ capture.output = startupOptions_.perfOutput.empty()
+                      ? runDirectory_ / "perf" / ("render-trace-" + std::to_string(currentTimeMillis()) + ".json")
+                      : startupOptions_.perfOutput;
+ performanceCapture_.configure(std::move(capture));
  worldStorageSource = std::make_unique<net::minecraft::RegionWorldStorageSource>(runDirectory_ / "saves");
  const net::minecraft::ResourcePack resources(resource::resourceRoot());
  translationStorage_ = std::make_unique<resource::language::TranslationStorage>(resources);
@@ -294,15 +353,17 @@ void Minecraft::bootstrapAfterDisplay() {
  diagnostics::setStartupPhase("init: loading screen");
  util::DisplayManager::logGlError(*this, "Pre startup");
  render::core::clearDepth(1.0);
-  {
-   util::DisplayManager::logGlError(*this, "Startup");
-   renderBootstrapLoadingScreen(*this);
-  }
+ {
+  util::DisplayManager::logGlError(*this, "Startup");
+  renderBootstrapLoadingScreen(*this);
+ }
 #ifdef _WIN32
  input::InputSystem::init(util::DisplayManager::hwnd());
 #endif
  util::DisplayManager::logGlError(*this, "Post startup");
- audio.start(&options);
+ if(!headlessMode_) {
+  audio.start(&options);
+ }
  textureManager.addDynamicTexture(&lavaSprite_);
  textureManager.addDynamicTexture(&waterSprite_);
  textureManager.addDynamicTexture(new render::texture::NetherPortalSprite());
@@ -316,14 +377,22 @@ void Minecraft::bootstrapAfterDisplay() {
  worldRenderer = std::make_unique<render::WorldRenderer>(this, &textureManager);
  worldSoundListener = std::make_unique<sound::WorldSoundListener>(this);
  render::core::viewport(0, 0, displayWidth, displayHeight);
- resourceDownloadThread = std::make_unique<resource::ResourceDownloadThread>(resource::resourceRoot(), this);
- resourceDownloadThread->start();
+ if(!headlessMode_) {
+  resourceDownloadThread = std::make_unique<resource::ResourceDownloadThread>(resource::resourceRoot(), this);
+  resourceDownloadThread->start();
+ }
  interactionManager = std::make_unique<SingleplayerInteractionManager>(this);
  inGameHud.setClient(this);
  toast.setClient(this);
  diagnostics::setStartupPhase("init: title screen");
  msauth::beginRestoreSavedAccount(*this);
- if(!startupServerAddress_.empty()) {
+ if(forceDebugHud_) {
+  options.debugHud = true;
+ }
+ if(!startupWorldSave_.empty()) {
+  diagnostics::setStartupPhase("init: startup world");
+  openStartupWorld();
+ } else if(!startupServerAddress_.empty()) {
   setScreen(std::make_unique<gui::screen::ConnectScreen>(this, startupServerAddress_, startupServerPort));
  } else {
   setScreen(std::make_unique<gui::screen::TitleScreen>());
@@ -412,6 +481,7 @@ void Minecraft::stop() {
 #ifdef _WIN32
  util::DisplayManager::destroy();
 #endif
+ ClientLog::shutdown();
  if(!crashed) {
   std::_Exit(0);
  }
@@ -696,12 +766,15 @@ void Minecraft::tick() {
  net::minecraft::mod::runtime::luaHookClientTick(afterClientTick);
 }
 void Minecraft::runRenderPhase() {
- audio.updateListener(player, timer.partialTick);
+ if(!headlessMode_) {
+  audio.updateListener(player, timer.partialTick);
+ }
  if(world != nullptr) {
   world->doLightingUpdates(128, kLightingUpdateBudgetNs);
  }
 #ifdef _WIN32
- util::DisplayManager::setSwapPacing(util::swapPacingFromOptions(options.fpsLimit, options.smoothFps));
+ util::DisplayManager::setSwapPacing(
+     headlessMode_ ? gl::SwapPacing::Unlimited : util::swapPacingFromOptions(options.fpsLimit, options.smoothFps));
 #endif
  if(player != nullptr && player->isInsideWall()) {
   options.thirdPerson = false;
@@ -721,6 +794,9 @@ void Minecraft::runRenderPhase() {
  }
 }
 void Minecraft::runPacePhase() {
+ if(headlessMode_) {
+  return;
+ }
 #ifdef _WIN32
  if(!util::DisplayManager::isActive()) {
   if(fullscreen) {
@@ -756,9 +832,9 @@ void Minecraft::run() {
   gameCrashed(net::minecraft::util::crash::CrashReport("Failed to start game", exception.what()));
   return;
  }
-  try {
-   diagnostics::setStartupPhase("main: running");
-   std::int64_t fpsWindowStart = currentTimeMillis();
+ try {
+  diagnostics::setStartupPhase("main: running");
+  std::int64_t fpsWindowStart = currentTimeMillis();
   int frames = 0;
   util::FramePipeline framePipeline;
   while(running.load()) {
@@ -766,19 +842,23 @@ void Minecraft::run() {
     bool continueFrame = true;
     std::int64_t tickStart = 0;
     std::int64_t tickDuration = 0;
-    debug::RenderProfiler::instance().setEnabled(options.debugHud);
-    if(debug::RenderProfiler::instance().enabled()) {
-     debug::RenderProfiler::instance().beginFrame();
+    debug::RenderProfiler& profiler = debug::RenderProfiler::instance();
+    const bool captureFrame = performanceCapture_.beginFrame(
+        world != nullptr && player != nullptr && gameRenderer != nullptr && !skipGameRender, profiler);
+    profiler.setEnabled(options.debugHud || captureFrame);
+    if(profiler.enabled()) {
+     profiler.beginFrame();
     }
     framePipeline.run([&](util::FramePipeline::Phase phase) {
      if(!continueFrame) {
       return;
      }
-      switch(phase) {
-      case util::FramePipeline::Phase::Drain:
+     debug::RenderProfileScope phaseProfile("frame", util::FramePipeline::phaseName(phase));
+     switch(phase) {
+     case util::FramePipeline::Phase::Drain:
 #ifdef _WIN32
-       util::DisplayManager::pumpMessages();
-       diagnostics::pingMainLoopHeartbeat();
+      util::DisplayManager::pumpMessages();
+      diagnostics::pingMainLoopHeartbeat();
 #endif
       screenStack_.flushRetired();
       multiplayerSession_.flushRetired();
@@ -825,24 +905,30 @@ void Minecraft::run() {
       }
       tickDuration = nanoTime() - tickStart;
       break;
-      case util::FramePipeline::Phase::Render:
-       runRenderPhase();
-       break;
-      case util::FramePipeline::Phase::Present:
+     case util::FramePipeline::Phase::Render:
+      runRenderPhase();
+      break;
+     case util::FramePipeline::Phase::Present:
 #ifdef _WIN32
-       util::DisplayManager::present();
+      util::DisplayManager::present();
 #endif
-       break;
-      case util::FramePipeline::Phase::Pace:
-       runPacePhase();
-       break;
+      break;
+     case util::FramePipeline::Phase::Pace:
+      runPacePhase();
+      break;
      case util::FramePipeline::Phase::Diagnostics:
       runDiagnosticsPhase(tickDuration, frames, fpsWindowStart);
       break;
      }
     });
-    if(debug::RenderProfiler::instance().enabled()) {
-     debug::RenderProfiler::instance().endFrame();
+    if(profiler.enabled()) {
+     profiler.endFrame();
+    }
+    if(captureFrame) {
+     performanceCapture_.endFrame(profiler);
+     if(performanceCapture_.shouldStop()) {
+      scheduleStop();
+     }
     }
     if(!continueFrame) {
      break;
@@ -989,10 +1075,6 @@ void Minecraft::changeDimension() {
  travelToDimension(player->dimensionId == -1 ? 0 : -1);
 }
 void Minecraft::travelToDimension(int dimensionId) {
- // Generic multi-dimension travel: move the player into ANY registered
- // dimension (vanilla or mod-registered). Coordinate scaling follows the
- // ratio of the two dimensions' movementFactor (overworld 1 : Nether 8 keeps
- // the classic 8:1 compression); other dimensions scale by their own factor.
  if(player == nullptr || world == nullptr || player->dimensionId == dimensionId) {
   return;
  }
@@ -1134,8 +1216,12 @@ void Minecraft::respawnPlayer(bool worldSpawn, int dimension) {
 void Minecraft::start(const std::string& username, const std::string& sessionId) {
  startAndConnect(username, sessionId, nullptr);
 }
-void Minecraft::startAndConnect(const std::string& username, const std::string& sessionId, const std::string* server) {
- auto client = std::make_unique<RunnableMinecraft>(nullptr, nullptr, nullptr, 854, 480, false);
+void Minecraft::startAndConnect(const std::string& username,
+                                const std::string& sessionId,
+                                const std::string* server,
+                                const StartupOptions& startupOptions) {
+ auto client = std::make_unique<RunnableMinecraft>(
+     nullptr, nullptr, nullptr, startupOptions.width, startupOptions.height, false);
  client->hostAddress = "www.minecraft.net";
  if(!username.empty() && !sessionId.empty()) {
   client->session = util::Session(username, sessionId);
@@ -1143,39 +1229,30 @@ void Minecraft::startAndConnect(const std::string& username, const std::string& 
   client->session = util::Session("Player" + std::to_string(currentTimeMillis() % 1000LL), "");
  }
  if(server != nullptr) {
-  const std::size_t colon = server->find(':');
-  if(colon != std::string::npos) {
-   client->setStartupServer(server->substr(0, colon), std::stoi(server->substr(colon + 1)));
+  std::string address = *server;
+  int port = 25565;
+  const std::size_t colon = server->rfind(':');
+  if(colon != std::string::npos && server->find(':') == colon) {
+   address = server->substr(0, colon);
+   port = std::stoi(server->substr(colon + 1));
   }
+  if(address.empty() || port < 1 || port > 65535) {
+   throw std::runtime_error("Invalid server endpoint '" + *server + "'");
+  }
+  client->setStartupServer(address, port);
  }
+ if(!startupOptions.world.empty()) {
+  client->setStartupWorld(startupOptions.world, startupOptions.seed);
+ }
+ client->configureStartup(startupOptions);
  client->run();
 }
 int Minecraft::main(int argc, char** argv) {
- std::string username = "Player" + std::to_string(currentTimeMillis() % 1000LL);
- std::string sessionId = "-";
- std::string serverArg;
- const std::string* serverPtr = nullptr;
- std::vector<std::string> positional;
- for(int i = 1; i < argc; ++i) {
-  if(argv[i] == nullptr) {
-   continue;
-  }
-  positional.push_back(argv[i]);
- }
- if(!positional.empty()) {
-  username = positional[0];
- }
- if(positional.size() > 1) {
-  sessionId = positional[1];
- }
- if(positional.size() > 2) {
-  serverArg = positional[2];
-  if(!serverArg.empty()) {
-   serverPtr = &serverArg;
-  }
- }
  try {
-  startAndConnect(username, sessionId, serverPtr);
+  ClientLaunchOptions launch = parseClientLaunchOptions(
+      argc, argv, "Player" + std::to_string(currentTimeMillis() % 1000LL));
+  const std::string* server = launch.server.has_value() ? &*launch.server : nullptr;
+  startAndConnect(launch.username, launch.sessionId, server, launch.startup);
  } catch(const std::exception& exception) {
 #ifdef _WIN32
   diagnostics::reportFatalError("Minecraft Native - failed to start", std::string(exception.what()));

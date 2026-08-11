@@ -2,26 +2,39 @@
 #include <chrono>
 #include <cstddef>
 #include <functional>
+#include <string_view>
 #include <vector>
 #include "net/minecraft/client/core/TaskMailbox.hpp"
 namespace net::minecraft::client::util {
 class FramePipeline {
  public:
-  enum class Phase { Drain,
-                     Input,
-                     Ticks,
-                     Render,
-                     Present,
-                     Pace,
-                     Diagnostics };
-  static constexpr Phase kPhaseOrder[] = {Phase::Drain, Phase::Input, Phase::Ticks, Phase::Render,
-                                          Phase::Present, Phase::Pace, Phase::Diagnostics};
+ enum class Phase { Drain,
+                    Input,
+                    Ticks,
+                    Render,
+                    Present,
+                    Pace,
+                    Diagnostics };
+ static constexpr Phase kPhaseOrder[] = {Phase::Drain, Phase::Input, Phase::Ticks, Phase::Render,
+                                         Phase::Present, Phase::Pace, Phase::Diagnostics};
  static constexpr std::size_t kPhaseCount = sizeof(kPhaseOrder) / sizeof(kPhaseOrder[0]);
  [[nodiscard]] static constexpr Phase phaseAt(std::size_t index) noexcept {
   return kPhaseOrder[index];
  }
  [[nodiscard]] static constexpr std::size_t count() noexcept {
   return kPhaseCount;
+ }
+ [[nodiscard]] static constexpr std::string_view phaseName(Phase phase) noexcept {
+  switch(phase) {
+  case Phase::Drain: return "drain";
+  case Phase::Input: return "input";
+  case Phase::Ticks: return "ticks";
+  case Phase::Render: return "render";
+  case Phase::Present: return "present";
+  case Phase::Pace: return "pace";
+  case Phase::Diagnostics: return "diagnostics";
+  }
+  return "unknown";
  }
  struct Record {
   Phase phase;

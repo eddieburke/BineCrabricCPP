@@ -67,9 +67,9 @@ void fillViewport(PackUniformValues& values, int width, int height) {
  values.aspectRatio = values.viewWidth / std::max(values.viewHeight, 1.0f);
 }
 void fillCameraPlanes(PackUniformValues& values, const FrameRenderCamera& camera) {
- // The pack-facing near/far pair is the main camera's planes.
  values.nearPlane = camera.nearPlane;
  values.farPlane = camera.farPlane;
+ values.renderDistanceBlocks = camera.renderDistanceBlocks;
 }
 void fillFog(PackUniformValues& values) {
  const auto& fog = render::core::fog();
@@ -79,8 +79,8 @@ void fillFog(PackUniformValues& values) {
  values.fogDensity = fog.density;
  values.fogStart = fog.start;
  values.fogEnd = fog.end;
-  values.fogMode = fog.enabled ? render::core::fogModeToGlConstant(fog.mode) : 0;
-  values.fogShape = fog.enabled ? fog.shape : -1;
+ values.fogMode = fog.enabled ? render::core::fogModeToGlConstant(fog.mode) : 0;
+ values.fogShape = fog.enabled ? fog.shape : -1;
  if(fog.enabled) {
   values.irisFogColor[0] = fog.color[0];
   values.irisFogColor[1] = fog.color[1];
@@ -186,7 +186,11 @@ void fillWorldState(PackUniformValues& values,
  const float worldSunY = celestial.sunDirectionWorld[1];
  const float worldSunZ = celestial.sunDirectionWorld[2];
  render::directionToView(worldSunX, worldSunY, worldSunZ, camera, values.sunPosition);
- render::directionToView(-worldSunX, -worldSunY, -worldSunZ, camera, values.moonPosition);
+ render::directionToView(celestial.moonDirectionWorld[0],
+                         celestial.moonDirectionWorld[1],
+                         celestial.moonDirectionWorld[2],
+                         camera,
+                         values.moonPosition);
  const auto scaleTo100 = [](float v[3]) {
   const float len = std::sqrt(v[0] * v[0] + v[1] * v[1] + v[2] * v[2]);
   if(len > 1e-6f) {
@@ -214,7 +218,9 @@ void fillWorldState(PackUniformValues& values,
   values.worldTime = static_cast<int>(absoluteTime % 24000ULL);
   values.worldDay = static_cast<int>(absoluteTime / 24000ULL);
  }
- values.moonPhase = static_cast<int>((absoluteTime / 24000ULL) % 8ULL);
+ values.moonPhase = celestial.moonPhase >= 0
+                        ? celestial.moonPhase
+                        : static_cast<int>((absoluteTime / 24000ULL) % 8ULL);
  const net::minecraft::client::Minecraft* celestialClient = net::minecraft::client::Minecraft::INSTANCE;
  const PackDefinition& celestialDefinition =
      celestialClient != nullptr && celestialClient->gameRenderer != nullptr

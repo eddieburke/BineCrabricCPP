@@ -56,6 +56,12 @@ TEST(VanillaPackEmbedTest, BakedShadersAreMinifiedAndResolved) {
  EXPECT_NE(VanillaPackEmbed::get("shaders/gbuffers_terrain.fsh").find("faceShade"),
            std::string::npos);
 }
+TEST(VanillaPackEmbedTest, FinalAppliesScreenBrightness) {
+ const std::string source = VanillaPackEmbed::get("shaders/final.fsh");
+ EXPECT_NE(source.find("screenBrightness"), std::string::npos);
+ EXPECT_NE(source.find("pow"), std::string::npos);
+ EXPECT_NE(source.find("mix"), std::string::npos);
+}
 // The embedded sources must be a self-sufficient pack: loading it without any
 // on-disk shaders/vanilla directory has to produce a valid vanilla definition,
 // and the /* RENDERTARGETS */ directives must have survived the bake.
@@ -65,12 +71,7 @@ TEST(VanillaPackEmbedTest, LoadsVanillaPackFromEmbeddedSources) {
  PackDefinition pack;
  std::unordered_map<std::string, PackSourceOption> options;
  std::string error;
- ASSERT_TRUE(PackLoader::load(resources,
-                              [](std::string_view path) { return VanillaPackEmbed::get(path); },
-                              pack,
-                              options,
-                              error))
-     << error;
+ ASSERT_TRUE(PackLoader::load(resources, [](std::string_view path) { return VanillaPackEmbed::get(path); }, pack, options, error)) << error;
  EXPECT_TRUE(pack.programs.contains("gbuffers_terrain"));
  EXPECT_TRUE(pack.programs.contains("final"));
  EXPECT_EQ(pack.gbufferColorBuffers, 1);

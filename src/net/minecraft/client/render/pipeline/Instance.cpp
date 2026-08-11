@@ -22,10 +22,10 @@ void PackInstance::clearGpuResources() {
    core::deleteTexture(texture);
   }
  }
-  customTextures.clear();
-  worldTextures.clear();
-  worldVolumeTextures.clear();
-  ownedCustomTextures.clear();
+ customTextures.clear();
+ worldTextures.clear();
+ worldVolumeTextures.clear();
+ ownedCustomTextures.clear();
  std::fill(std::begin(bufferBytes), std::end(bufferBytes), 0);
  setupWidth = 0;
  setupHeight = 0;
@@ -98,10 +98,14 @@ bool PackInstance::buildExecutionPlan(std::string& error) {
   if(passIndex >= definition.passes.size()) continue;
   const std::string& name = definition.passes[passIndex].name;
   CompositeStage stage;
-  if(ComputeDispatcher::matchesStage(name, "begin")) stage = CompositeStage::Begin;
-  else if(ComputeDispatcher::matchesStage(name, "shadowcomp")) stage = CompositeStage::ShadowComposite;
-  else if(ComputeDispatcher::matchesStage(name, "prepare")) stage = CompositeStage::Prepare;
-  else if(ComputeDispatcher::matchesStage(name, "deferred")) stage = CompositeStage::Deferred;
+  if(ComputeDispatcher::matchesStage(name, "begin"))
+   stage = CompositeStage::Begin;
+  else if(ComputeDispatcher::matchesStage(name, "shadowcomp"))
+   stage = CompositeStage::ShadowComposite;
+  else if(ComputeDispatcher::matchesStage(name, "prepare"))
+   stage = CompositeStage::Prepare;
+  else if(ComputeDispatcher::matchesStage(name, "deferred"))
+   stage = CompositeStage::Deferred;
   else if(ComputeDispatcher::matchesStage(name, "composite") || ComputeDispatcher::matchesStage(name, "final")) {
    stage = CompositeStage::Composite;
   } else {
@@ -124,10 +128,8 @@ bool PackInstance::buildExecutionPlan(std::string& error) {
  struct ComputeGroup {
   std::string parent;
   std::vector<RuntimePass> passes;
-  std::vector<std::string> writeBuffers;
   bool emitted = false;
  };
- const int colorCount = ColorTargets::kMaxColortex;
  for(std::size_t stageIndex = 0; stageIndex < stagePlans.size(); ++stageIndex) {
   std::vector<ComputeGroup> groups;
   for(const RuntimePass& runtime : computes[stageIndex]) {
@@ -138,17 +140,6 @@ bool PackInstance::buildExecutionPlan(std::string& error) {
    }
    groups.back().passes.push_back(runtime);
   }
-  for(ComputeGroup& group : groups) {
-   for(const RuntimePass& runtime : group.passes) {
-    for(int color = 0; color < colorCount; ++color) {
-     if(runtime.program->location("colorimg" + std::to_string(color)) < 0) continue;
-     const std::string name = "colortex" + std::to_string(color);
-     if(std::find(group.writeBuffers.begin(), group.writeBuffers.end(), name) == group.writeBuffers.end()) {
-      group.writeBuffers.push_back(name);
-     }
-    }
-   }
-  }
   auto& operations = stagePlans[stageIndex];
   const auto emit = [&](ComputeGroup& group) {
    for(std::size_t index = 0; index < group.passes.size(); ++index) {
@@ -157,8 +148,6 @@ bool PackInstance::buildExecutionPlan(std::string& error) {
     operation.compute = true;
     operation.groupBegin = index == 0;
     operation.groupEnd = index + 1 == group.passes.size();
-    if(operation.groupBegin) operation.writeBuffers = group.writeBuffers;
-    if(operation.groupBegin || operation.groupEnd) operation.parent = group.parent;
     operations.push_back(std::move(operation));
    }
    group.emitted = true;

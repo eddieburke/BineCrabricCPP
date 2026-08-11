@@ -36,10 +36,6 @@ ChunkCache::~ChunkCache() {
   const std::lock_guard lock(workerGeneratorMutex_);
   workerGenerators_.clear();
  }
- // Graveyard entries may still carry leases from in-flight mesh snapshots on
- // the compute pool (lighting workers are joined by World::~World before the
- // cache dies; the compute pool is not). Bound the wait so teardown cannot
- // hang on a wedged pool; anything still leased leaks rather than dangling.
  for(const auto& entry : graveyard_) {
   if(entry != nullptr && entry->renderPinCount() != 0) {
    Chunk::waitForPinDrain(*entry, std::chrono::milliseconds(5000));
@@ -60,7 +56,11 @@ bool ChunkCache::isChunkDataReady(int chunkX, int chunkZ) const {
 void ChunkCache::markChunkDataReady(int chunkX, int chunkZ) {
  const auto it = chunksByPos_.find(ChunkPos{chunkX, chunkZ});
  if(it != chunksByPos_.end() && it->second != nullptr) {
+  const bool becameReady = !it->second->dataReady;
   it->second->dataReady = true;
+  if(becameReady && world_ != nullptr && it->second != &empty_) {
+   world_->chunkAvailable(chunkX, chunkZ);
+  }
  }
 }
 void ChunkCache::dropChunk(int chunkX, int chunkZ) {
@@ -264,10 +264,6 @@ void ChunkCache::requestChunkAsync(int chunkX, int chunkZ, int priority) {
 }
 void ChunkCache::integrateFinishedLoads(int budget, std::int64_t timeBudgetNs) {
  const auto start = std::chrono::steady_clock::now();
- // Single O(n) sweep instead of one full scan per adopted chunk: drop finished
- // dead (cancelled) and out-of-radius entries, and collect the ready in-radius
- // candidates ordered by distance. Adoption then walks the collected list with
- // the per-call budget and wall-clock budget.
  struct Candidate {
   std::shared_ptr<PendingLoad> load;
   int distance = 0;
@@ -283,12 +279,14 @@ void ChunkCache::integrateFinishedLoads(int budget, std::int64_t timeBudgetNs) {
    it = pendingLoads_.erase(it);
    continue;
   }
-  const int distance =
-      std::max(std::abs(pending->chunkX - centerChunkX_), std::abs(pending->chunkZ - centerChunkZ_));
-  if(distance > activeRadius_) {
+  const ChunkPos position{pending->chunkX, pending->chunkZ};
+  if(!isDesired(position)) {
    it = pendingLoads_.erase(it);
    continue;
   }
+  const int dx = pending->chunkX - centerChunkX_;
+  const int dz = pending->chunkZ - centerChunkZ_;
+  const int distance = dx * dx + dz * dz;
   ready.push_back({pending, distance});
   ++it;
  }
@@ -308,6 +306,9 @@ void ChunkCache::integrateFinishedLoads(int budget, std::int64_t timeBudgetNs) {
   const ChunkPos pos{chunkX, chunkZ};
   if(pending.chunk == nullptr || chunksByPos_.contains(pos)) {
    pendingLoads_.erase(pos);
+   if(pending.chunk == nullptr && isDesired(pos)) {
+    residencyQueue_.push_back(pos);
+   }
    continue;
   }
   pendingLoads_.erase(pos);
@@ -413,7 +414,7 @@ void ChunkCache::saveChunk(Chunk& chunk) {
    chunk.meta.ensureSizeForBlockCount(chunk.blocks.size());
    enqueueSnapshotWrite(&chunk, chunk.lastSaveTime);
   } else {
-    storage_->saveChunk(world_, chunk);
+   storage_->saveChunk(world_, chunk);
   }
  } catch(...) {
  }
@@ -423,13 +424,13 @@ void ChunkCache::decorate(ChunkSource* source, int chunkX, int chunkZ) {
  if(chunk.terrainPopulated) {
   return;
  }
-  chunk.terrainPopulated = true;
-  if(generator_ != nullptr) {
-   // Decoration is main-thread-only (adoptChunk is the sole caller) and touches
-   // only main-thread state, so it needs no mutual exclusion of its own.
-   generator_->decorate(source, chunkX, chunkZ);
-   chunk.markDirty();
-  }
+ chunk.terrainPopulated = true;
+ if(generator_ != nullptr) {
+  // Decoration is main-thread-only (adoptChunk is the sole caller) and touches
+  // only main-thread state, so it needs no mutual exclusion of its own.
+  generator_->decorate(source, chunkX, chunkZ);
+  chunk.markDirty();
+ }
 }
 bool ChunkCache::save(bool saveEntityData, SaveProgressCallback progress) {
  (void)progress;
@@ -531,14 +532,76 @@ bool ChunkCache::canSave() const {
  return world_ == nullptr || !world_->isSavingDisabled();
 }
 void ChunkCache::setActiveRadius(int radius) {
- activeRadius_ = std::max(0, radius);
+ const int resolved = std::max(0, radius);
+ if(activeRadius_ == resolved) {
+  return;
+ }
+ activeRadius_ = resolved;
+ rebuildResidencyPlan();
 }
 void ChunkCache::setChunkCacheCenter(int chunkX, int chunkZ) {
+ if(centerChunkX_ == chunkX && centerChunkZ_ == chunkZ && plannedRadius_ == activeRadius_) {
+  return;
+ }
  centerChunkX_ = chunkX;
  centerChunkZ_ = chunkZ;
+ rebuildResidencyPlan();
+}
+bool ChunkCache::isDesired(const ChunkPos& position) const noexcept {
+ if(plannedRadius_ == activeRadius_ && plannedCenterChunkX_ == centerChunkX_ &&
+    plannedCenterChunkZ_ == centerChunkZ_) {
+  return desiredChunks_.contains(position);
+ }
+ const std::int64_t dx = static_cast<std::int64_t>(position.x) - centerChunkX_;
+ const std::int64_t dz = static_cast<std::int64_t>(position.z) - centerChunkZ_;
+ const std::int64_t radius = activeRadius_;
+ return dx * dx + dz * dz <= radius * radius;
+}
+void ChunkCache::rebuildResidencyPlan() {
+ if(plannedCenterChunkX_ == centerChunkX_ && plannedCenterChunkZ_ == centerChunkZ_ &&
+    plannedRadius_ == activeRadius_) {
+  return;
+ }
+ plannedCenterChunkX_ = centerChunkX_;
+ plannedCenterChunkZ_ = centerChunkZ_;
+ plannedRadius_ = activeRadius_;
+ struct Candidate {
+  ChunkPos position{};
+  std::int64_t distanceSq = 0;
+ };
+ std::vector<Candidate> order;
+ const int diameter = activeRadius_ * 2 + 1;
+ order.reserve(static_cast<std::size_t>(diameter * diameter));
+ desiredChunks_.clear();
+ residencyQueue_.clear();
+ const std::int64_t radiusSq = static_cast<std::int64_t>(activeRadius_) * activeRadius_;
+ for(int dx = -activeRadius_; dx <= activeRadius_; ++dx) {
+  for(int dz = -activeRadius_; dz <= activeRadius_; ++dz) {
+   const std::int64_t distanceSq = static_cast<std::int64_t>(dx) * dx + static_cast<std::int64_t>(dz) * dz;
+   if(distanceSq > radiusSq) {
+    continue;
+   }
+   order.push_back({ChunkPos{centerChunkX_ + dx, centerChunkZ_ + dz}, distanceSq});
+  }
+ }
+ std::sort(order.begin(), order.end(), [](const Candidate& a, const Candidate& b) {
+  if(a.distanceSq != b.distanceSq) {
+   return a.distanceSq < b.distanceSq;
+  }
+  if(a.position.x != b.position.x) {
+   return a.position.x < b.position.x;
+  }
+  return a.position.z < b.position.z;
+ });
+ for(const Candidate& candidate : order) {
+  desiredChunks_.insert(candidate.position);
+  if(!chunksByPos_.contains(candidate.position) && !pendingLoads_.contains(candidate.position)) {
+   residencyQueue_.push_back(candidate.position);
+  }
+ }
  for(auto it = pendingLoads_.begin(); it != pendingLoads_.end();) {
   const ChunkPos position = it->first;
-  if(std::max(std::abs(position.x - centerChunkX_), std::abs(position.z - centerChunkZ_)) <= activeRadius_) {
+  if(desiredChunks_.contains(position)) {
    ++it;
    continue;
   }
@@ -547,8 +610,10 @@ void ChunkCache::setChunkCacheCenter(int chunkX, int chunkZ) {
  }
  for(const auto& [pos, chunk] : chunksByPos_) {
   (void)chunk;
-  if(std::max(std::abs(pos.x - centerChunkX_), std::abs(pos.z - centerChunkZ_)) > activeRadius_) {
+  if(!desiredChunks_.contains(pos)) {
    chunksToUnload_.insert(pos);
+  } else {
+   chunksToUnload_.erase(pos);
   }
  }
 }
@@ -565,13 +630,6 @@ void ChunkCache::sweepGraveyard() {
  }
 }
 void ChunkCache::pumpChunkPublish() {
- // Pacing: each adopted chunk can run main-thread decoration + block-light
- // population (tens of ms per chunk in debug builds). Cap this render-frame
- // publish to a fixed slice instead of the whole remaining frame budget, so a
- // backlog of ready chunks cannot turn one frame into a multi-second hitch
- // even when the frame deadline is still fresh. The count cap still bounds the
- // burst when adoption is cheap, and tick() keeps streaming server-side chunks
- // at its own rate.
  constexpr std::int64_t kPublishBudgetNs = 4'000'000;
  integrateFinishedLoads(32, kPublishBudgetNs);
  if(world_ != nullptr && !world_->isSavingDisabled()) {
@@ -581,36 +639,33 @@ void ChunkCache::pumpChunkPublish() {
 }
 void ChunkCache::prefetchChunksNear(int centerChunkX, int centerChunkZ) {
  setChunkCacheCenter(centerChunkX, centerChunkZ);
- for(const auto& [pos, chunk] : chunksByPos_) {
-  (void)chunk;
-  if(std::max(std::abs(pos.x - centerChunkX), std::abs(pos.z - centerChunkZ)) > activeRadius_) {
-   chunksToUnload_.insert(pos);
-  }
- }
  if(world_ == nullptr || (storage_ == nullptr && generator_ == nullptr)) {
   return;
  }
  const int maxLoadsPerCall = 16;
  int loaded = 0;
  integrateFinishedLoads(4);
- for(int ring = 0; ring <= activeRadius_ && loaded < maxLoadsPerCall; ++ring) {
-  for(int dx = -ring; dx <= ring && loaded < maxLoadsPerCall; ++dx) {
-   for(int dz = -ring; dz <= ring && loaded < maxLoadsPerCall; ++dz) {
-    if(std::max(std::abs(dx), std::abs(dz)) != ring) {
-     continue;
-    }
-    const int cx = centerChunkX + dx;
-    const int cz = centerChunkZ + dz;
-    if(isChunkLoaded(cx, cz)) {
-     continue;
-    }
-    if(pendingLoads_.contains(ChunkPos{cx, cz})) {
-     continue;
-    }
-    const int priority = ring <= 1 ? std::numeric_limits<int>::min() : ring;
-    requestChunkAsync(cx, cz, priority);
-    ++loaded;
-   }
+ while(!residencyQueue_.empty() && loaded < maxLoadsPerCall) {
+  const ChunkPos position = residencyQueue_.front();
+  residencyQueue_.pop_front();
+  if(!isDesired(position) || chunksByPos_.contains(position) || pendingLoads_.contains(position)) {
+   continue;
+  }
+  const int dx = position.x - centerChunkX_;
+  const int dz = position.z - centerChunkZ_;
+  const int distanceSq = dx * dx + dz * dz;
+  const int priority = distanceSq <= 2 ? std::numeric_limits<int>::min() : distanceSq;
+  requestChunkAsync(position.x, position.z, priority);
+  ++loaded;
+ }
+}
+void ChunkCache::forEachLoadedChunk(const LoadedChunkVisitor& visitor) {
+ if(!visitor) {
+  return;
+ }
+ for(const auto& [position, chunk] : chunksByPos_) {
+  if(chunk != nullptr && chunk != &empty_ && chunk->dataReady) {
+   visitor(position.x, position.z, *chunk);
   }
  }
 }
