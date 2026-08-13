@@ -1,4 +1,5 @@
 #pragma once
+#include <optional>
 #include <string>
 namespace net::minecraft::client::texture {
 class TextureManager;
@@ -15,9 +16,10 @@ class TextureRegistry {
  };
  static int getOrRegisterTexture(const std::string& path);
  static bool isCustomTexture(int textureId) noexcept;
- static const Entry* getEntry(int textureId);
+ static std::optional<Entry> getEntry(int textureId);
  static int resolveGlId(int textureId, net::minecraft::client::texture::TextureManager& textureManager);
  static void seedResolvedTexture(int textureId, int glId, int width, int height);
+ static int releaseTexture(int textureId);
  static void invalidateGlIds();
 };
 } // namespace net::minecraft::registry

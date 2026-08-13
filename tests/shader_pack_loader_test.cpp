@@ -133,7 +133,8 @@ TEST(PackLoaderTest, ParsesShadowPackConstants) {
                   error))
      << error;
  // PackShadowDirectives equivalents (Loader scanPackConstants).
- EXPECT_FALSE(pack.shadowEntities);
+ // ShaderProperties.java:194 - shadowEntities is a shaders.properties key, never a GLSL const
+ EXPECT_TRUE(pack.shadowEntities);
  EXPECT_TRUE(pack.shadowHardwareFiltering[0]);
  EXPECT_TRUE(pack.shadowHardwareFiltering[1]);
  EXPECT_FLOAT_EQ(pack.shadowDistance, 64.0f);
@@ -2122,8 +2123,9 @@ TEST(PackLoaderTest, DefaultsMatchJavaPackDirectives) {
  // PackShadowDirectives.java:48-92 (resolution 1024 via loadProgramSet fallback,
  // distance 160, nearPlane ShadowMatrices.NEAR = -100.05, farPlane 156,
  // shouldRenderPlayer/shouldRenderLightBlockEntities false) and
- // PackDirectives.java:59-66 (wetnessHalfLife 600, drynessHalfLife 200,
- // eyeBrightnessHalfLife 10, centerDepthHalfLife 1).
+ // PackDirectives.java:59-66 (wetnessHalfLife 600, eyeBrightnessHalfLife 10,
+ // centerDepthHalfLife 1). drynessHalfLife is final at 200 and has no PackDefinition
+ // field because no pack can reach it.
  PackDefinition pack;
  std::unordered_map<std::string, PackSourceOption> options;
  std::string error;
@@ -2147,9 +2149,131 @@ TEST(PackLoaderTest, DefaultsMatchJavaPackDirectives) {
  EXPECT_FLOAT_EQ(pack.shadowDistanceRenderMul, -1.0f);
  EXPECT_FLOAT_EQ(pack.shadowIntervalSize, 2.0f);
  EXPECT_FLOAT_EQ(pack.wetnessHalflife, 600.0f);
- EXPECT_FLOAT_EQ(pack.drynessHalflife, 200.0f);
  EXPECT_FLOAT_EQ(pack.centerDepthHalflife, 1.0f);
  EXPECT_FLOAT_EQ(pack.eyeBrightnessHalflife, 10.0f);
+}
+TEST(PackLoaderTest, DrynessHalflifeDirectiveAssignsWetnessLikeJava) {
+ // PackDirectives.java:283-284 - the drynessHalflife lambda assigns this.wetnessHalfLife,
+ // so the later of the two directives wins and dryness stays pinned at its final 200.
+ PackDefinition pack;
+ std::unordered_map<std::string, PackSourceOption> options;
+ std::string error;
+ EXPECT_TRUE(load({{"shaders/gbuffers_basic.vsh", "void main(){}"},
+                   {"shaders/gbuffers_basic.fsh",
+                    "const float wetnessHalflife = 600.0;\n"
+                    "const float drynessHalflife = 300.0;\n"
+                    "void main(){}"}},
+                  pack,
+                  options,
+                  error))
+     << error;
+ EXPECT_FLOAT_EQ(pack.wetnessHalflife, 300.0f);
+}
+TEST(PackLoaderTest, ConstDirectivesAreStoredRawLikeJava) {
+ // PackShadowDirectives.java:302-321 and PackDirectives.java:270-289 assign every one of
+ // these straight through. ambientOcclusionLevel is the ONLY clamped directive (:277), so
+ // nothing else may be clamped at parse time - sizes are clamped where they allocate.
+ PackDefinition pack;
+ std::unordered_map<std::string, PackSourceOption> options;
+ std::string error;
+ EXPECT_TRUE(load({{"shaders/gbuffers_basic.vsh", "void main(){}"},
+                   {"shaders/gbuffers_basic.fsh",
+                    "const float shadowDistance = -16.0;\n"
+                    "const float voxelDistance = -1.0;\n"
+                    "const float shadowIntervalSize = -2.0;\n"
+                    "const float entityShadowDistanceMul = 0.005;\n"
+                    "const float wetnessHalflife = -5.0;\n"
+                    "const float eyeBrightnessHalflife = -3.0;\n"
+                    "const float centerDepthHalflife = -1.0;\n"
+                    "const float ambientOcclusionLevel = 4.0;\n"
+                    "const int noiseTextureResolution = 8192;\n"
+                    "const int shadowMapResolution = 99999;\n"
+                    "void main(){}"}},
+                  pack,
+                  options,
+                  error))
+     << error;
+ EXPECT_FLOAT_EQ(pack.shadowDistance, -16.0f);
+ EXPECT_FLOAT_EQ(pack.voxelDistance, -1.0f);
+ EXPECT_FLOAT_EQ(pack.shadowIntervalSize, -2.0f);
+ EXPECT_FLOAT_EQ(pack.entityShadowDistanceMul, 0.005f);
+ EXPECT_FLOAT_EQ(pack.wetnessHalflife, -5.0f);
+ EXPECT_FLOAT_EQ(pack.eyeBrightnessHalflife, -3.0f);
+ EXPECT_FLOAT_EQ(pack.centerDepthHalflife, -1.0f);
+ EXPECT_TRUE(pack.usesCenterDepthSmooth);
+ EXPECT_EQ(pack.noiseTextureResolution, 8192);
+ EXPECT_EQ(pack.shadowMapResolution, 99999);
+ EXPECT_FLOAT_EQ(pack.ambientOcclusionLevel, 1.0f);
+}
+TEST(PackLoaderTest, RawCustomTextureWithUnreadableFormatFailsTheLoad) {
+ // ShaderProperties.java:467 - InternalTextureFormat/PixelFormat/PixelType .fromString()
+ // .orElseThrow() sits in no try/catch, so a malformed raw texture takes the pack down
+ // rather than being silently dropped.
+ PackDefinition pack;
+ std::unordered_map<std::string, PackSourceOption> options;
+ std::string error;
+ EXPECT_FALSE(load({{"shaders/gbuffers_basic.vsh", "void main(){}"},
+                    {"shaders/gbuffers_basic.fsh", "void main(){}"},
+                    {"shaders/shaders.properties",
+                     "texture.composite.noisetex=noise.png TEXTURE_2D NOT_A_FORMAT 32 32 RGBA "
+                     "UNSIGNED_BYTE\n"}},
+                   pack,
+                   options,
+                   error));
+ EXPECT_NE(error.find("unreadable"), std::string::npos);
+}
+TEST(PackLoaderTest, ImageBooleanFieldsUseJavaParseBooleanNotShaderPropertiesBoolean) {
+ // ShaderProperties.java:537-539 reads image.N's clear/relative fields with
+ // Boolean.parseBoolean directly, NOT the handleBooleanValue helper the rest of
+ // shaders.properties uses - "1" is true for a shaders.properties boolean key but
+ // false here, since Boolean.parseBoolean only recognizes case-insensitive "true".
+ PackDefinition pack;
+ std::unordered_map<std::string, PackSourceOption> options;
+ std::string error;
+ EXPECT_TRUE(load({{"shaders/gbuffers_basic.vsh", "void main(){}"},
+                   {"shaders/gbuffers_basic.fsh", "void main(){}"},
+                   {"shaders/shaders.properties",
+                    "iris.features.optional=CUSTOM_IMAGES\n"
+                    "image.0=colortex0 RGBA8 RGBA8 UNSIGNED_BYTE 1 1 64\n"
+                    "image.1=colortex0 RGBA8 RGBA8 UNSIGNED_BYTE TRUE FALSE 64\n"}},
+                  pack,
+                  options,
+                  error))
+     << error;
+ ASSERT_EQ(pack.images.size(), 2u);
+ EXPECT_FALSE(pack.images[0].clearEachFrame);
+ EXPECT_FALSE(pack.images[0].relative);
+ EXPECT_TRUE(pack.images[1].clearEachFrame);
+ EXPECT_FALSE(pack.images[1].relative);
+}
+TEST(PackLoaderTest, BufferObjectRelativeFieldUsesJavaParseBoolean) {
+ PackDefinition pack;
+ std::unordered_map<std::string, PackSourceOption> options;
+ std::string error;
+ EXPECT_TRUE(load({{"shaders/gbuffers_basic.vsh", "void main(){}"},
+                   {"shaders/gbuffers_basic.fsh", "void main(){}"},
+                   {"shaders/shaders.properties",
+                    "iris.features.optional=SSBO\nbufferObject.0=16 1 0.5 0.5\n"}},
+                  pack,
+                  options,
+                  error))
+     << error;
+ ASSERT_EQ(pack.bufferObjects.size(), 1u);
+ EXPECT_FALSE(pack.bufferObjects.front().relative);
+}
+TEST(PackLoaderTest, EncodedCustomTextureNeedsNoFormatFields) {
+ PackDefinition pack;
+ std::unordered_map<std::string, PackSourceOption> options;
+ std::string error;
+ EXPECT_TRUE(load({{"shaders/gbuffers_basic.vsh", "void main(){}"},
+                   {"shaders/gbuffers_basic.fsh", "void main(){}"},
+                   {"shaders/shaders.properties", "texture.composite.noisetex=noise.png\n"}},
+                  pack,
+                  options,
+                  error))
+     << error;
+ ASSERT_EQ(pack.customTextures.size(), 1u);
+ EXPECT_TRUE(pack.customTextures.front().encoded);
 }
 TEST(PackLoaderTest, ShadowNearFarPlanesAcceptNegativeNearLikeJava) {
  // PackShadowDirectives.java:309-310 assigns the raw const value with no clamp;

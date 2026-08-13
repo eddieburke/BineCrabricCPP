@@ -487,6 +487,25 @@ local function register()
   end)
 
   minecraft.on("world_render", {
+    stage = "sky",
+    moment = "before",
+    is_overworld = true,
+    priority = 1000,
+    when = function()
+      return realtime_active() and config.drive_sun
+    end,
+  }, function(event)
+    if event.shader_pack_active then return event end
+    local frame = current_solar_frame(event.tick_delta)
+    local alpha = 1.0 - (event.rain_strength or 0.0)
+    event.cancel_vanilla = true
+    sky_render.draw_dome(event, frame)
+    sky_render.draw_sun(event, frame, alpha)
+    sky_render.draw_moon(event, frame, alpha, sky_render.MOON_MEAN_HALF_SIZE)
+    return event
+  end)
+
+  minecraft.on("world_render", {
     stage = "stars",
     moment = "before",
     is_overworld = true,
@@ -501,12 +520,15 @@ local function register()
     event.astronomy_utc_millis = frame.utc_millis
     event.observer_latitude_deg = config.latitude
     event.observer_longitude_deg = config.longitude
+    if not event.shader_pack_active then
+      event.cancel_vanilla = true
+      sky_render.draw_stars(event, frame)
+    end
+    return event
   end)
 
-  -- The engine's published celestial state already reflects any day/night override,
-  -- so the world clock can be synchronized without a time_mode intermediate.
   minecraft.on("world_tick", { before = false }, function(event)
-    if not realtime_active() or not config.drive_sun then
+    if event.remote or not realtime_active() or not config.drive_sun then
       return
     end
 

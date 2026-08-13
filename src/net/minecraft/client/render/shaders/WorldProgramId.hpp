@@ -16,6 +16,7 @@ enum class WorldProgramId : std::uint8_t {
  SkyBasic,
  SkyTextured,
  Basic,
+ Textured,
  Line,
  Entities,
  EntitiesTranslucent,
@@ -33,7 +34,7 @@ enum class WorldProgramId : std::uint8_t {
 inline constexpr std::array<std::string_view, static_cast<std::size_t>(WorldProgramId::Count)> kWorldProgramKeys = {
     "gbuffers_terrain_solid", "gbuffers_terrain_cutout", "gbuffers_water", "gbuffers_gui",
     "gbuffers_gui_textured", "gbuffers_item", "gbuffers_text", "gbuffers_skybasic",
-    "gbuffers_skytextured", "gbuffers_basic", "gbuffers_line", "gbuffers_entities",
+    "gbuffers_skytextured", "gbuffers_basic", "gbuffers_textured", "gbuffers_line", "gbuffers_entities",
     "gbuffers_entities_translucent", "gbuffers_lightning", "gbuffers_block",
     "gbuffers_block_translucent", "gbuffers_particles", "gbuffers_particles_translucent",
     "gbuffers_clouds", "gbuffers_weather", "gbuffers_hand", "gbuffers_damagedblock"};

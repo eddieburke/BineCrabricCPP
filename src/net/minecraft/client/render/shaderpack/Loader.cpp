@@ -7,6 +7,7 @@
 #include "net/minecraft/client/render/shaders/PassIndex.hpp"
 #include "net/minecraft/client/render/chunk/TerrainLayers.hpp"
 #include "net/minecraft/client/render/pipeline/Resources.hpp"
+#include "net/minecraft/client/render/targets/RenderTargets.hpp"
 #include "net/minecraft/client/render/shaders/SourceProcessor.hpp"
 #include "net/minecraft/block/Block.hpp"
 #include <algorithm>
@@ -392,7 +393,7 @@ void scanPackConstants(const std::string& activeSource, PackDefinition& pack) {
    double value = 0.0;
    bool integer = false;
    if(number(right, value, integer) && integer) {
-    pack.shadowMapResolution = std::clamp(static_cast<int>(std::lround(value)), 0, 16384);
+    pack.shadowMapResolution = static_cast<int>(std::lround(value));
    }
    continue;
   }
@@ -405,10 +406,6 @@ void scanPackConstants(const std::string& activeSource, PackDefinition& pack) {
    if(value.compare(prefix.size() + 1, suffix.size(), suffix) != 0) return -1;
    return digit - '0';
   };
-  if(left == "const bool shadowEntities") {
-   pack.shadowEntities = right != "false";
-   continue;
-  }
   if(left == "const bool shadowHardwareFiltering" || left == "const bool shadowHardwareFiltering0") {
    pack.shadowHardwareFiltering[0] = on;
    if(left == "const bool shadowHardwareFiltering") pack.shadowHardwareFiltering[1] = on;
@@ -462,11 +459,11 @@ void scanPackConstants(const std::string& activeSource, PackDefinition& pack) {
   bool integer = false;
   if(!number(right, value, integer)) continue;
   const float f = static_cast<float>(value);
+  // Java assigns every one of these raw; ambientOcclusionLevel is the only clamped
+  // directive (PackDirectives.java:277) and centerDepthHalflife additionally flags the
+  // readback our pipeline skips for packs that never sample centerDepthSmooth.
   enum class CAction : uint8_t { Direct,
-                                 ClampMin0,
                                  ClampAO,
-                                 ClampNoise,
-                                 EntityShadow,
                                  CenterDepth };
   struct CEntry {
    float PackDefinition::* field;
@@ -474,36 +471,34 @@ void scanPackConstants(const std::string& activeSource, PackDefinition& pack) {
   };
   static const std::unordered_map<std::string_view, CEntry> constantTable = {
       {"const float sunPathRotation", {&PackDefinition::sunPathRotation, CAction::Direct}},
-      {"const float wetnessHalflife", {&PackDefinition::wetnessHalflife, CAction::ClampMin0}},
-      {"const float drynessHalflife", {&PackDefinition::drynessHalflife, CAction::ClampMin0}},
+      {"const float wetnessHalflife", {&PackDefinition::wetnessHalflife, CAction::Direct}},
+      // see third_party/iris/common/src/main/java/net/irisshaders/iris/shaderpack/properties/PackDirectives.java:283
+      {"const float drynessHalflife", {&PackDefinition::wetnessHalflife, CAction::Direct}},
       {"const float centerDepthHalflife", {&PackDefinition::centerDepthHalflife, CAction::CenterDepth}},
-      {"const float eyeBrightnessHalflife", {&PackDefinition::eyeBrightnessHalflife, CAction::ClampMin0}},
-      {"const float entityShadowDistanceMul", {&PackDefinition::entityShadowDistanceMul, CAction::EntityShadow}},
-      {"const float voxelDistance", {&PackDefinition::voxelDistance, CAction::ClampMin0}},
-      {"const float shadowDistance", {&PackDefinition::shadowDistance, CAction::ClampMin0}},
+      {"const float eyeBrightnessHalflife", {&PackDefinition::eyeBrightnessHalflife, CAction::Direct}},
+      {"const float entityShadowDistanceMul", {&PackDefinition::entityShadowDistanceMul, CAction::Direct}},
+      {"const float voxelDistance", {&PackDefinition::voxelDistance, CAction::Direct}},
+      {"const float shadowDistance", {&PackDefinition::shadowDistance, CAction::Direct}},
       {"const float shadowDistanceRenderMul", {&PackDefinition::shadowDistanceRenderMul, CAction::Direct}},
       {"const float shadowMapFov", {&PackDefinition::shadowMapFov, CAction::Direct}},
       {"const float shadowNearPlane", {&PackDefinition::shadowNearPlane, CAction::Direct}},
       {"const float shadowFarPlane", {&PackDefinition::shadowFarPlane, CAction::Direct}},
       {"const float shadowHardwareOffsetFactor", {&PackDefinition::shadowHardwareOffsetFactor, CAction::Direct}},
       {"const float shadowHardwareOffsetUnits", {&PackDefinition::shadowHardwareOffsetUnits, CAction::Direct}},
-      {"const float shadowIntervalSize", {&PackDefinition::shadowIntervalSize, CAction::ClampMin0}},
+      {"const float shadowIntervalSize", {&PackDefinition::shadowIntervalSize, CAction::Direct}},
       {"const float ambientOcclusionLevel", {&PackDefinition::ambientOcclusionLevel, CAction::ClampAO}},
   };
   if(left == "const int noiseTextureResolution") {
-   pack.noiseTextureResolution = std::clamp(static_cast<int>(value), 1, 4096);
+   pack.noiseTextureResolution = static_cast<int>(value);
   } else if(const auto cit = constantTable.find(left); cit != constantTable.end()) {
    const auto& [field, action] = cit->second;
    switch(action) {
    case CAction::Direct: pack.*field = f; break;
-   case CAction::ClampMin0: pack.*field = std::max(0.0f, f); break;
    case CAction::ClampAO: pack.*field = std::clamp(f, 0.0f, 1.0f); break;
-   case CAction::EntityShadow: pack.*field = value >= 0.01 ? f : 0.0f; break;
    case CAction::CenterDepth:
-    pack.*field = std::max(0.0f, f);
+    pack.*field = f;
     pack.usesCenterDepthSmooth = true;
     break;
-   default: break;
    }
   }
  }
@@ -995,6 +990,8 @@ std::vector<std::string> words(std::string_view value) {
  while(input >> word) result.push_back(std::move(word));
  return result;
 }
+// shaders.properties boolean keys go through Java's handleBooleanValue/handleBooleanDirective
+// (ShaderProperties.java:626-643), which both accept "1"/"0" alongside "true"/"false".
 bool boolean(std::string_view value, bool& out) {
  const std::string normalized = trim(value);
  if(normalized == "true" || normalized == "1") {
@@ -1006,6 +1003,12 @@ bool boolean(std::string_view value, bool& out) {
   return true;
  }
  return false;
+}
+// image.N's clearEachFrame/relative fields and bufferObject.N's long-form relative field go
+// through Java's Boolean.parseBoolean directly (ShaderProperties.java:537-539) instead of
+// handleBooleanValue - case-insensitive "true" is the only truthy spelling, "1" is false.
+bool javaBoolean(std::string_view value) {
+ return lowercase(trim(value)) == "true";
 }
 int legacyRenderTargetIndex(std::string_view name) {
  const auto found = std::find(kLegacyTargetNames.begin(), kLegacyTargetNames.end(), name);
@@ -1143,10 +1146,15 @@ void parsePackProperties(PackDefinition& pack, const std::string& source) {
   } else if(key == "fallbackTex") {
    char* end = nullptr;
    const long tex = std::strtol(value.c_str(), &end, 10);
-   if(end != value.c_str() && *end == '\0') pack.fallbackTex = static_cast<int>(tex);
-  } else if(key == "separateAo" && boolean(value, flag)) {
-   pack.separateAo = flag;
-  } else if(key == "clouds") {
+   if(end != value.c_str() && *end == '\0' && tex >= 0 && tex < kMaxColorAttachments) {
+    pack.fallbackTex = static_cast<int>(tex);
+    pack.gbufferColorBuffers = std::max(pack.gbufferColorBuffers, pack.fallbackTex + 1);
+   }
+ } else if(key == "separateAo" && boolean(value, flag)) {
+  pack.separateAo = flag;
+ } else if(key == "native.vanillaAo" && boolean(value, flag)) {
+  pack.vanillaShaderAo = flag;
+ } else if(key == "clouds") {
    const std::string clouds = lowercase(value);
    pack.cloudsMode = clouds;
    pack.renderClouds = clouds != "off" && clouds != "false" && clouds != "0";
@@ -1381,7 +1389,7 @@ void parsePackProperties(PackDefinition& pack, const std::string& source) {
     if(fields.size() == 2) buffer.initPath = fields[1];
    } else {
     if(fields.size() < 4) continue;
-    buffer.relative = lowercase(fields[1]) == "true";
+    buffer.relative = javaBoolean(fields[1]);
     char* xEnd = nullptr;
     buffer.scaleX = std::strtof(fields[2].c_str(), &xEnd);
     char* yEnd = nullptr;
@@ -1405,8 +1413,9 @@ void parsePackProperties(PackDefinition& pack, const std::string& source) {
    image.format = fields[1];
    image.internalFormat = fields[2];
    image.pixelType = fields[3];
-   if((image.sampler != "none" && !identifier(image.sampler)) ||
-      !boolean(fields[4], image.clearEachFrame) || !boolean(fields[5], image.relative)) continue;
+   // see third_party/iris/common/src/main/java/net/irisshaders/iris/shaderpack/properties/ShaderProperties.java:537
+   image.clearEachFrame = javaBoolean(fields[4]);
+   image.relative = javaBoolean(fields[5]);
    if(image.sampler == "none") image.sampler.clear();
    if(image.relative) {
     if(fields.size() < 8) continue;
@@ -1791,6 +1800,16 @@ bool PackLoader::load(const std::vector<std::string>& resources,
           "\"iris.features.required/optional = CUSTOM_IMAGES\".";
   return false;
  }
+ // see third_party/iris/common/src/main/java/net/irisshaders/iris/shaderpack/properties/ShaderProperties.java:467
+ for(const CustomTexture& texture : out.customTextures) {
+  if(texture.encoded) continue;
+  if(canonicalFormatName(texture.internalFormat).empty() || pixelFormat(texture.pixelFormat) == 0 ||
+     pixelType(texture.pixelType) == 0) {
+   error = "raw custom texture '" + texture.name +
+           "' declares an unreadable internal format, pixel format or pixel type";
+   return false;
+  }
+ }
  for(const std::string& feature : out.requiredFeatures) {
   if(!featureSupported(feature)) {
    error = "required feature '" + feature + "' is unsupported on this system";
@@ -1958,15 +1977,6 @@ bool PackLoader::load(const std::vector<std::string>& resources,
    out.shadowColorBuffers = std::max(out.shadowColorBuffers, seed->shadowColorBuffers);
    if(seed->shadowMapResolution > 0) out.shadowMapResolution = seed->shadowMapResolution;
    if(!seed->customUniforms.empty()) out.customUniforms = seed->customUniforms;
-  }
- }
- for(const PackPass& pass : out.passes) {
-  if(!pass.mipmapBuffers.empty()) {
-   const int dim = std::max(1024, out.shadowMapResolution > 0 ? out.shadowMapResolution : 2048);
-   int level = 0;
-   for(int d = dim; d > 1; d >>= 1) ++level;
-   out.mcMipmapLevel = std::max(out.mcMipmapLevel, level);
-   break;
   }
  }
  auto scanCenterDepth = [](PackDefinition& definition) {

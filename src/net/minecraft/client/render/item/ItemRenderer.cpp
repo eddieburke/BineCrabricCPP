@@ -15,12 +15,12 @@ namespace net::minecraft::client::render::item {
 namespace {
 void enableGuiItemLighting() {
  core::WorldLightUniforms light = core::worldLight();
- light.sunDirView[0] = -0.23791005f;
- light.sunDirView[1] = -0.63443479f;
- light.sunDirView[2] = 0.73545313f;
- light.fillDirView[0] = 0.02866725f;
- light.fillDirView[1] = -0.92737470f;
- light.fillDirView[2] = -0.37303398f;
+ light.sunDirView[0] = 0.16169042f;
+ light.sunDirView[1] = 0.80845209f;
+ light.sunDirView[2] = -0.56591646f;
+ light.fillDirView[0] = -0.16169042f;
+ light.fillDirView[1] = 0.80845209f;
+ light.fillDirView[2] = 0.56591646f;
  light.sunColor[0] = light.sunColor[1] = light.sunColor[2] = 1.0f;
  light.sunIntensity = 0.6f;
  light.fillIntensity = 0.6f;

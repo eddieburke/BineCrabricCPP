@@ -223,6 +223,15 @@ void ModHost::closeLoadedLuaMod(const std::shared_ptr<LoadedLuaMod>& mod) {
   LuaApi* api = &luaApi();
   const std::lock_guard<std::recursive_mutex> lock(mod->stateMutex);
   mod->active = false;
+#ifdef MINECRAFT_NATIVE_EXPORTS
+  for(const int textureId : mod->ownedTextureIds) {
+   const int glId = net::minecraft::registry::TextureRegistry::releaseTexture(textureId);
+   if(client::Minecraft::INSTANCE != nullptr && glId >= 0) {
+    client::Minecraft::INSTANCE->textureManager.deleteTexture(glId);
+   }
+  }
+#endif
+  mod->ownedTextureIds.clear();
   if(api->ready() && mod->state != nullptr) {
    auto* state = static_cast<lua_State*>(mod->state);
    for(const LoadedLuaMod::Callback& callback : mod->callbacks) {
@@ -236,20 +245,6 @@ void ModHost::closeLoadedLuaMod(const std::shared_ptr<LoadedLuaMod>& mod) {
     }
    }
    mod->buttonCallbackRefs.clear();
-#ifdef MINECRAFT_NATIVE_EXPORTS
-   if(client::Minecraft::INSTANCE != nullptr) {
-    for(const int textureId : mod->ownedTextureIds) {
-     const int glId = net::minecraft::registry::TextureRegistry::resolveGlId(
-         textureId, client::Minecraft::INSTANCE->textureManager);
-     if(glId >= 0) {
-      client::Minecraft::INSTANCE->textureManager.deleteTexture(glId);
-     } else {
-      client::Minecraft::INSTANCE->textureManager.deleteTexture(textureId);
-     }
-    }
-   }
-#endif
-   mod->ownedTextureIds.clear();
    api->close(state);
    mod->state = nullptr;
   }

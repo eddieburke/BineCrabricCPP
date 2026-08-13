@@ -245,9 +245,9 @@ local function add_billboard_quad(packed, cursor, dx, dy, dz, radius, half_size,
   return cursor
 end
 
-local function draw_pixel_vertices(event, dx, dy, dz, packed, count)
-  if count < 4 then return 0 end
-  for index = #packed, count * 9 + 1, -1 do
+local function draw_pixel_vertices(event, dx, dy, dz, packed, cursor)
+  if cursor < 36 then return 0 end
+  for index = #packed, cursor + 1, -1 do
     packed[index] = nil
   end
   return minecraft.render.quads({

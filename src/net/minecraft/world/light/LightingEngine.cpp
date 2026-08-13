@@ -160,9 +160,16 @@ void LightingEngine::stop() {
 void LightingEngine::scheduleWorkersLocked() {
  const std::size_t desired = std::min<std::size_t>(workerLimit_, queue_.size() + activeBoxes_.size());
  while(!stopping_ && scheduledWorkers_ < desired) {
-  ++scheduledWorkers_;
-  try {
-   computePool_.submit([this] { runScheduledWork(); }, static_cast<int>(util::concurrent::TaskPriority::High));
+ ++scheduledWorkers_;
+ try {
+   if(!computePool_.submit([this] { runScheduledWork(); },
+                           static_cast<int>(util::concurrent::TaskPriority::High))) {
+    --scheduledWorkers_;
+    if(scheduledWorkers_ == 0) {
+     idleCv_.notify_all();
+    }
+    break;
+   }
   } catch(...) {
    --scheduledWorkers_;
    throw;

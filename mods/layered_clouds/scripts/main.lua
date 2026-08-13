@@ -246,8 +246,7 @@ minecraft.on("world_render", {
 
   local camera_x = event.camera_x or 0
   local camera_z = event.camera_z or 0
-  local cloud_base_height = event.cloud_base_height or (128 - (event.camera_y or 0) + 0.33)
-  local cloud_scale = config.cloud_scale or 1.0
+  local cloud_base_height = (event.cloud_base_height or 128) + 0.33
   local cloud_offset_float = cloud_ticks * MOVEMENT_SCALE
 
   for i, layer in ipairs(layers) do
@@ -255,7 +254,7 @@ minecraft.on("world_render", {
       goto continue
     end
 
-    local y = cloud_base_height + (layer.height - 128)
+    local y = layer.height - 128
     local alpha = layer.opacity
     local layer_scale = layer.scale or 1.0
     local dir_x = layer.dir_x
@@ -265,7 +264,7 @@ minecraft.on("world_render", {
     local offset_x = cloud_offset_float * layer_speed * dir_x
     local offset_z = cloud_offset_float * layer_speed * dir_z
 
-    local radius = BASE_RADIUS * cloud_scale * layer_scale
+    local radius = BASE_RADIUS * layer_scale
     local vertex_count = 0
 
     local grid_step = 32
@@ -281,12 +280,16 @@ minecraft.on("world_render", {
         local x1 = x0 + grid_step
         local z0 = z + offset_z
         local z1 = z0 + grid_step
+        local u0 = (camera_x + x0) / 2048
+        local u1 = (camera_x + x1) / 2048
+        local v0 = (camera_z + z0) / 2048
+        local v1 = (camera_z + z1) / 2048
 
         cloud_vertices[vertex_count + 1] = x0
         cloud_vertices[vertex_count + 2] = y
         cloud_vertices[vertex_count + 3] = z1
-        cloud_vertices[vertex_count + 4] = 0
-        cloud_vertices[vertex_count + 5] = 0
+        cloud_vertices[vertex_count + 4] = u0
+        cloud_vertices[vertex_count + 5] = v1
         cloud_vertices[vertex_count + 6] = 1
         cloud_vertices[vertex_count + 7] = 1
         cloud_vertices[vertex_count + 8] = 1
@@ -295,8 +298,8 @@ minecraft.on("world_render", {
         cloud_vertices[vertex_count + 10] = x1
         cloud_vertices[vertex_count + 11] = y
         cloud_vertices[vertex_count + 12] = z1
-        cloud_vertices[vertex_count + 13] = 0
-        cloud_vertices[vertex_count + 14] = 0
+        cloud_vertices[vertex_count + 13] = u1
+        cloud_vertices[vertex_count + 14] = v1
         cloud_vertices[vertex_count + 15] = 1
         cloud_vertices[vertex_count + 16] = 1
         cloud_vertices[vertex_count + 17] = 1
@@ -305,8 +308,8 @@ minecraft.on("world_render", {
         cloud_vertices[vertex_count + 19] = x1
         cloud_vertices[vertex_count + 20] = y
         cloud_vertices[vertex_count + 21] = z0
-        cloud_vertices[vertex_count + 22] = 0
-        cloud_vertices[vertex_count + 23] = 0
+        cloud_vertices[vertex_count + 22] = u1
+        cloud_vertices[vertex_count + 23] = v0
         cloud_vertices[vertex_count + 24] = 1
         cloud_vertices[vertex_count + 25] = 1
         cloud_vertices[vertex_count + 26] = 1
@@ -315,8 +318,8 @@ minecraft.on("world_render", {
         cloud_vertices[vertex_count + 28] = x0
         cloud_vertices[vertex_count + 29] = y
         cloud_vertices[vertex_count + 30] = z0
-        cloud_vertices[vertex_count + 31] = 0
-        cloud_vertices[vertex_count + 32] = 0
+        cloud_vertices[vertex_count + 31] = u0
+        cloud_vertices[vertex_count + 32] = v0
         cloud_vertices[vertex_count + 33] = 1
         cloud_vertices[vertex_count + 34] = 1
         cloud_vertices[vertex_count + 35] = 1
@@ -332,6 +335,11 @@ minecraft.on("world_render", {
 
     minecraft.render.quads({
       texture = "/environment/clouds.png",
+      layer = "textured",
+      x = camera_x,
+      y = cloud_base_height,
+      z = camera_z,
+      world_space = true,
       blend = true,
       cull = false,
       depth_test = true,

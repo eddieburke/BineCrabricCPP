@@ -26,6 +26,26 @@ void relightSkylightForPreparedArea(World& world, int centerX, int centerZ, int 
   }
  }
 }
+void saveLocalWorld(Minecraft& client, bool saveDedicatedPlayerData) {
+ World* world = client.world;
+ if(world == nullptr || world->isRemote()) {
+  return;
+ }
+ WorldStorage* storage = world->getDimensionData();
+ if(saveDedicatedPlayerData) {
+  auto* alphaStorage = dynamic_cast<AlphaWorldStorage*>(storage);
+  if(alphaStorage != nullptr && client.player != nullptr) {
+   alphaStorage->savePlayerData(*client.player);
+  }
+ }
+ world->save(true);
+ if(ChunkSource* source = world->getChunkSource(); source != nullptr) {
+  source->save(true);
+ }
+ if(storage != nullptr) {
+  storage->forceSave();
+ }
+}
 } // namespace
 void WorldSession::clearWorld(Minecraft& client) {
  // Detach render listeners before ownedWorld_ is destroyed. WorldRenderer keeps
@@ -48,6 +68,7 @@ void WorldSession::unloadWorld(Minecraft& client) {
   client.stats->syncStats();
   client.stats->save();
  }
+ saveLocalWorld(client, false);
  if(client.world != nullptr) {
   client.world->savingProgress(0);
   if(client.worldSoundListener != nullptr) {
@@ -231,15 +252,7 @@ bool WorldSession::parkLocalWorldForRemoteHandoff(Minecraft& client) {
   client.stats->syncStats();
   client.stats->save();
  }
- if(WorldStorage* storage = client.world->getDimensionData()) {
-  if(auto* alphaStorage = dynamic_cast<AlphaWorldStorage*>(storage)) {
-   if(client.player != nullptr) {
-    alphaStorage->savePlayerData(*client.player);
-   }
-  }
-  client.world->savingProgress(0);
-  storage->forceSave();
- }
+ saveLocalWorld(client, true);
  if(client.worldSoundListener != nullptr) {
   client.worldSoundListener->detach(client.world);
  }

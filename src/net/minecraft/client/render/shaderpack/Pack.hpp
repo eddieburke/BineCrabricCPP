@@ -132,7 +132,6 @@ struct PackDefinition {
  int shadowColorBuffers = 0;
  int gbufferColorBuffers = 1;
  int noiseTextureResolution = 256;
- int mcMipmapLevel = 0;
  // --- shadow.enabled / shadow* ---
  bool shadowEnabled = true;
  bool shadowPlayer = false;
@@ -155,6 +154,7 @@ struct PackDefinition {
  bool separateEntityDraws = false;
  bool oldLighting = false;
  bool separateAo = false;
+ bool vanillaShaderAo = false;
  // ColorWheel texture format (lab-pbr) flags, driven by the selected texture
  // pack's texture.properties format line.
  bool labPbr = false;
@@ -171,7 +171,6 @@ struct PackDefinition {
  float sunPathRotation = 0.0f;
  // --- HALF_LIFE ---
  float wetnessHalflife = 600.0f;
- float drynessHalflife = 200.0f;
  float centerDepthHalflife = 1.0f;
  // True when any program source references centerDepthSmooth (or the pack
  // declares const float centerDepthHalflife). The per-frame depth readback
@@ -245,8 +244,33 @@ struct PackDefinition {
  std::vector<PackPass> passes;
  std::vector<CustomUniformDecl> customUniforms;
 };
+struct MeshDefinitionState {
+ bool voxelizeLightBlocks = false;
+ bool oldLighting = false;
+ bool separateAo = false;
+ bool vanillaShaderAo = false;
+ bool hasBlockProperties = false;
+ float ambientOcclusionLevel = 1.0f;
+ std::unordered_map<std::string, int> blockIds;
+ std::unordered_map<int, int> blockRenderLayers;
+ bool operator==(const MeshDefinitionState&) const = default;
+};
+[[nodiscard]] inline MeshDefinitionState meshDefinitionState(const PackDefinition& definition) {
+ return {definition.voxelizeLightBlocks,
+         definition.oldLighting,
+         definition.separateAo,
+         definition.vanillaShaderAo,
+         definition.hasBlockProperties,
+         definition.ambientOcclusionLevel,
+         definition.blockIds,
+         definition.blockRenderLayers};
+}
 [[nodiscard]] inline const PackDefinition& vanillaPackDefinition() noexcept {
- static const PackDefinition vanilla{};
+ static const PackDefinition vanilla = [] {
+  PackDefinition definition;
+  definition.vanillaShaderAo = true;
+  return definition;
+ }();
  return vanilla;
 }
 } // namespace net::minecraft::client::render

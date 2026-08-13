@@ -15,6 +15,8 @@ struct WorldProgramBindContext {
  int handDepthTexture = -1;
  int atlasWidth = 1;
  int atlasHeight = 1;
+ int pbrTextureFlags = 0;
+ int pbrAtlasGrid = 1;
  int shadowDepthTexture = -1;
  int shadowOpaqueDepthTexture = -1;
  const int* shadowColorTextures = nullptr;

@@ -1,6 +1,7 @@
 #pragma once
 #include <string_view>
 #ifdef MINECRAFT_NATIVE_EXPORTS
+#include "net/minecraft/client/gl/GlConstants.hpp"
 #include "net/minecraft/client/render/RenderCore.hpp"
 #include "net/minecraft/client/render/RenderType.hpp"
 #endif
@@ -16,6 +17,7 @@ enum class ModDrawLayer {
  Sky,
  Clouds,
  Basic,
+ Textured,
 };
 class ModWorldDrawContext {
  public:
@@ -57,6 +59,9 @@ class ScopedModWorldDrawContext {
  if(name == "basic") {
   return ModDrawLayer::Basic;
  }
+ if(name == "textured") {
+  return ModDrawLayer::Textured;
+ }
  return ModDrawLayer::Auto;
 }
 [[nodiscard]] inline std::string_view modDrawProgramKey(bool textured,
@@ -69,6 +74,9 @@ class ScopedModWorldDrawContext {
  }
  if(layer == ModDrawLayer::Basic) {
   return "gbuffers_basic";
+ }
+ if(layer == ModDrawLayer::Textured) {
+  return textured ? "gbuffers_textured" : "gbuffers_basic";
  }
  if(layer == ModDrawLayer::Sky || !depthTest) {
   return textured ? "gbuffers_skytextured" : "gbuffers_skybasic";
@@ -96,6 +104,7 @@ class ModLuaDrawScope {
         type_(buildPass(spec_)),
         pass_(type_),
         programKey_(spec_.programKey) {
+   client::render::core::activeTexture(client::gl::tex::Texture0);
    client::render::core::setConstColor(1.0f, 1.0f, 1.0f, 1.0f);
   }
   ModLuaDrawScope(const ModLuaDrawScope&) = delete;
@@ -117,10 +126,19 @@ class ModLuaDrawScope {
    [[nodiscard]] static PassSpec composePass(bool textured, bool blend, bool cull, bool depthTest,
                                             bool depthWrite, ModDrawLayer layer, int blendSrc, int blendDst) {
    const bool basic = layer == ModDrawLayer::Basic;
+   const bool texturedLayer = layer == ModDrawLayer::Textured && textured;
    const bool sky = !basic && (!depthTest || layer == ModDrawLayer::Sky);
    PassSpec spec;
    spec.programKey = modDrawProgramKey(textured, blend, depthTest, depthWrite, layer);
-    if(layer == ModDrawLayer::Clouds) {
+    if(texturedLayer) {
+     spec.hasTexture = true;
+     spec.state.depthTest = depthTest;
+     spec.state.depthWrite = depthWrite;
+     if(!blend) {
+      spec.state.alphaTest = true;
+      spec.state.alphaRef = 0.1f;
+     }
+    } else if(layer == ModDrawLayer::Clouds) {
      spec.hasTexture = true;
      spec.state.depthTest = depthTest;
      spec.state.depthWrite = depthWrite;

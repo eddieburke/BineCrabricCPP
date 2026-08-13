@@ -148,12 +148,15 @@ AlphaChunkStorage::ChunkSnapshot AlphaChunkStorage::takeSnapshot(const Chunk& ch
  snap.x = chunk.x;
  snap.z = chunk.z;
  snap.lastUpdate = lastUpdate;
- snap.blocks = chunk.blocks;
- snap.meta = chunk.meta;
- snap.skyLight = chunk.skyLight;
- snap.blockLight = chunk.blockLight;
- snap.heightmap.assign(chunk.heightmap.begin(), chunk.heightmap.end());
- snap.terrainPopulated = chunk.terrainPopulated;
+ {
+  const Chunk::RenderWriteGuard guard(chunk);
+  snap.blocks = chunk.blocks;
+  snap.meta = chunk.meta;
+  snap.skyLight = chunk.skyLight;
+  snap.blockLight = chunk.blockLight;
+  snap.heightmap.assign(chunk.heightmap.begin(), chunk.heightmap.end());
+  snap.terrainPopulated = chunk.terrainPopulated;
+ }
  const std::lock_guard lock(*chunk.entityMutex_);
  for(const std::vector<Entity*>& slice : chunk.entities) {
   for(Entity* entity : slice) {
@@ -192,7 +195,10 @@ void AlphaChunkStorage::writeRootChunkFromSnapshot(std::vector<std::uint8_t>& ou
  binary::appendU8(out, 0);
 }
 void AlphaChunkStorage::writeRootChunk(std::vector<std::uint8_t>& out, Chunk& chunk, World* world) {
- chunk.meta.ensureSizeForBlockCount(chunk.blocks.size());
+ {
+  const Chunk::RenderWriteGuard guard(chunk);
+  chunk.meta.ensureSizeForBlockCount(chunk.blocks.size());
+ }
  const ChunkSnapshot snapshot = takeSnapshot(chunk, world != nullptr ? world->getTime() : 0);
  chunk.lastSaveHadEntities.store(!snapshot.entities.storage().asList().empty(), std::memory_order_relaxed);
  writeRootChunkFromSnapshot(out, snapshot);

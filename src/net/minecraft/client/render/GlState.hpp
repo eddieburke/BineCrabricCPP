@@ -50,6 +50,7 @@ void putShadowTextures(std::unordered_map<std::string, int>& textures,
 bool featureSupported(std::string_view feature);
 [[nodiscard]] bool featureEnabled(const PackDefinition& pack, std::string_view feature);
 int maxTextureUnits();
+unsigned int maxImageUnits();
 ColorFormat parseFormat(const std::string& format);
 [[nodiscard]] const char* colorFormatName(ColorFormat format);
 [[nodiscard]] std::string_view canonicalFormatName(std::string_view format);
@@ -58,6 +59,7 @@ unsigned int pixelFormat(std::string value);
 unsigned int pixelType(std::string value);
 unsigned int internalFormat(std::string value);
 unsigned int internalFormat(ColorFormat format);
+[[nodiscard]] bool integerInternalFormat(std::string value);
 unsigned int textureTarget(std::string value, std::size_t dimensions);
 unsigned int blendFactor(std::string value);
 void applyBufferBlends(const PackDefinition& pack, const std::string& program,

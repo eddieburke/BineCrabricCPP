@@ -19,6 +19,15 @@ class BiomeSource {
        downfallSampler_(downfallRandom_, 4),
        weirdnessSampler_(weirdnessRandom_, 2) {
  }
+ BiomeSource(const BiomeSource& other)
+     : seed_(other.seed_),
+       temperatureRandom_(other.temperatureRandom_),
+       downfallRandom_(other.downfallRandom_),
+       weirdnessRandom_(other.weirdnessRandom_),
+       temperatureSampler_(other.temperatureSampler_),
+       downfallSampler_(other.downfallSampler_),
+       weirdnessSampler_(other.weirdnessSampler_) {
+ }
  void setSeed(std::uint64_t seed) {
   seed_ = seed;
   temperatureRandom_.setSeed(seed * 9871ULL);
@@ -36,7 +45,7 @@ class BiomeSource {
  // Fresh source with identical sampling state. Mesh-snapshot jobs clone the
  // dimension's source so worker threads never touch its mutable scratch maps.
  [[nodiscard]] virtual std::unique_ptr<BiomeSource> clone() const {
-  return std::make_unique<BiomeSource>(seed_);
+  return std::make_unique<BiomeSource>(*this);
  }
  [[nodiscard]] const std::vector<double>& temperatureMap() const noexcept {
   return temperatureMap_;
@@ -51,7 +60,7 @@ class BiomeSource {
   double temperature = 0.5;
   double downfall = 0.5;
  };
- [[nodiscard]] ClimateSample sampleClimate(int x, int z) const;
+ [[nodiscard]] virtual ClimateSample sampleClimate(int x, int z) const;
  [[nodiscard]] virtual Biome& getBiome(int x, int z);
  [[nodiscard]] virtual double getTemperature(int x, int z) {
   temperatureSampler_.sample(temperatureMap_, x, z, 1, 1, 0.025, 0.025, 0.5);

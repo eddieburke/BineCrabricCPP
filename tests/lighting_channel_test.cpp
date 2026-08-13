@@ -24,7 +24,7 @@ TEST(LightingChannel, ComputeTaskPublishesAndBoundedDrainConsumesDirtyRegion) {
  lighting.push(LightType::Block, 8, 64, 8, 8, 64, 8, false);
  const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(2);
  while(lighting.busy() && std::chrono::steady_clock::now() < deadline) {
-  std::this_thread::yield();
+  lighting.drainDirtyRegions(0);
  }
  ASSERT_FALSE(lighting.busy());
  EXPECT_TRUE(lighting.hasDirtyRegions());

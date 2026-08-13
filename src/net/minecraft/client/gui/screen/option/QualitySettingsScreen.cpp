@@ -63,7 +63,7 @@ std::array<OptionSpec, 9> kSpecs{{
     d::makeSlider("brightness",
                   15,
                   ApplyFlags::None,
-                  ApplyFlags::ReloadWorld,
+                  ApplyFlags::None,
                   d::getFloatMember<&GameOptions::brightness>,
                   d::setFloatMember<&GameOptions::brightness>,
                   d::loadFloatMember<&GameOptions::brightness>,

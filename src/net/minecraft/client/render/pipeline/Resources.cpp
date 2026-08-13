@@ -43,10 +43,13 @@ bool ensurePackResources(PackInstance& pack, int width, int height, const gl::Gl
   bool samplerBindingsChanged = pack.worldTextures.empty() && pack.worldVolumeTextures.empty();
  const bool customNoise = std::any_of(pack.definition.customTextures.begin(), pack.definition.customTextures.end(),
                                       [](const CustomTexture& texture) { return texture.name == "noisetex"; });
-  if(!customNoise && (!pack.noiseTexture || pack.noiseResolution != pack.definition.noiseTextureResolution)) {
+  // The pack's value is stored verbatim like Java's; the allocation is what has to be sane,
+  // the same way GameRenderer.cpp clamps shadowMapResolution at the shadow texture.
+  const int noiseResolution = std::clamp(pack.definition.noiseTextureResolution, 1, 4096);
+  if(!customNoise && (!pack.noiseTexture || pack.noiseResolution != noiseResolution)) {
    samplerBindingsChanged = true;
   pack.noiseTexture = gl::GlTexture(core::genTexture());
-  pack.noiseResolution = pack.definition.noiseTextureResolution;
+  pack.noiseResolution = noiseResolution;
   if(!pack.noiseTexture) return false;
   const std::size_t count = static_cast<std::size_t>(pack.noiseResolution) * pack.noiseResolution * 3;
   std::vector<std::uint8_t> noise(count);
@@ -267,21 +270,6 @@ bool ensurePackResources(PackInstance& pack, int width, int height, const gl::Gl
   ::glTexParameteri(target, 0x2803, 0x812F);
   if(target == kTexture3D) ::glTexParameteri(target, 0x8072, 0x812F);
  }
- int maxDim = std::max(width, height);
- for(const auto& [name, target] : pack.definition.targets) {
-  (void)name;
-  if(target.absoluteWidth > 0 && target.absoluteHeight > 0) {
-   maxDim = std::max(maxDim, std::max(target.absoluteWidth, target.absoluteHeight));
-  } else {
-   maxDim = std::max(maxDim,
-                     std::max(1, static_cast<int>(std::ceil(width * target.scaleX))));
-   maxDim = std::max(maxDim,
-                     std::max(1, static_cast<int>(std::ceil(height * target.scaleY))));
-  }
- }
-  int level = 0;
-  for(int d = std::max(1, maxDim); d > 1; d >>= 1) ++level;
-  pack.definition.mcMipmapLevel = std::max(0, level);
   if(samplerBindingsChanged) {
    pack.worldTextures.clear();
    pack.worldVolumeTextures.clear();

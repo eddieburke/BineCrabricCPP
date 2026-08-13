@@ -32,8 +32,6 @@ inline int flipSideTextureId(int index,
  }
  return id;
 }
-// Runs the setup compute stage once per new viewport size, before the first
-// fullscreen pass of a frame (IrisRenderingPipeline.java:640).
 inline bool dispatchSetupIfNeeded(
     PackInstance& pack, const PackUniformValues& uniforms, const PackViewportValues* viewport, int width, int height,
     std::unordered_map<std::string, int>& textures,
@@ -49,11 +47,11 @@ inline bool dispatchSetupIfNeeded(
   if(runtime.program == nullptr ||
      !ComputeDispatcher::dispatch(pack, pack.definition.passes[runtime.passIndex], *runtime.program,
                                   uniforms, viewport, textures, colorImages, volumes, colorTargets,
-                                  width, height, !pack.definition.allowConcurrentCompute)) {
+                                  1, 1, !pack.definition.allowConcurrentCompute)) {
    return false;
   }
  }
- if(pack.definition.allowConcurrentCompute && !pack.setupPlan.empty()) {
+ if(!pack.setupPlan.empty()) {
   gl::GLCore::memoryBarrier(ComputeDispatcher::kBarrierBits);
   debug::RenderProfiler::instance().record(debug::RenderMetric::MemoryBarriers);
  }

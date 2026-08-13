@@ -199,10 +199,10 @@ class World : public IEntityWorld {
  void pumpChunkPublish();
  // Block until the lighting thread has fully converged (world load).
  void finishLightingUpdates();
- [[nodiscard]] bool hasPendingLightingUpdates() const noexcept {
-  return lighting_.busy();
- }
- void registerChunkForLighting(Chunk* chunk) {
+  [[nodiscard]] bool hasPendingLightingUpdates() const noexcept {
+   return lighting_.busy();
+  }
+  void registerChunkForLighting(Chunk* chunk) {
   lighting_.registerChunk(chunk);
  }
  void unregisterChunkForLighting(Chunk* chunk) {

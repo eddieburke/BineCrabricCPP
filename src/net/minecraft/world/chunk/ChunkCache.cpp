@@ -406,12 +406,15 @@ void ChunkCache::saveChunk(Chunk& chunk) {
  try {
   chunk.lastSaveTime = static_cast<long long>(world_->getTime());
   if(storage_->supportsAsyncWrites()) {
+   {
+    const Chunk::RenderWriteGuard guard(chunk);
+    chunk.meta.ensureSizeForBlockCount(chunk.blocks.size());
+   }
    if(!chunk.tryAcquireRenderPin()) {
     // Chunk is already evicted; nothing to save (its data was saved before the
     // eviction tombstone was set).
     return;
    }
-   chunk.meta.ensureSizeForBlockCount(chunk.blocks.size());
    enqueueSnapshotWrite(&chunk, chunk.lastSaveTime);
   } else {
    storage_->saveChunk(world_, chunk);
@@ -424,7 +427,10 @@ void ChunkCache::decorate(ChunkSource* source, int chunkX, int chunkZ) {
  if(chunk.terrainPopulated) {
   return;
  }
- chunk.terrainPopulated = true;
+ {
+  const Chunk::RenderWriteGuard guard(chunk);
+  chunk.terrainPopulated = true;
+ }
  if(generator_ != nullptr) {
   // Decoration is main-thread-only (adoptChunk is the sole caller) and touches
   // only main-thread state, so it needs no mutual exclusion of its own.

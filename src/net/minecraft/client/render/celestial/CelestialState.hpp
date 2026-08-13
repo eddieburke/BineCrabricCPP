@@ -38,13 +38,18 @@ inline void applyRenderSkyYaw(const float in[3], float out[3]) {
 // getCelestialPositionInWorldSpace: RY(-90) * RZ(sunPathRotation) * RX(angle) applied to
 // (0, 100, 0). The body rides the matrix' +Y axis — column 1, not column 2.
 // https://github.com/IrisShaders/Iris/blob/26.1/common/src/main/java/net/irisshaders/iris/uniforms/CelestialUniforms.java
-inline void celestialDirectionWorld(float celestialAngle, float sunPathRotation, float out[3]) {
+inline void celestialSkyMatrix(float celestialAngle, float sunPathRotation,
+                               net::minecraft::util::math::Matrix4f& out) {
  const float sunAngle = celestialSunAngle(celestialAngle);
  const float skyAngle = sunAngle < 0.25f ? sunAngle + 0.75f : sunAngle - 0.25f;
+ out.identity();
+ out.rotate(-90.0f, 0.0f, 1.0f, 0.0f);
+ out.rotate(sunPathRotation, 0.0f, 0.0f, 1.0f);
+ out.rotate(skyAngle * 360.0f, 1.0f, 0.0f, 0.0f);
+}
+inline void celestialDirectionWorld(float celestialAngle, float sunPathRotation, float out[3]) {
  net::minecraft::util::math::Matrix4f celestialMat;
- celestialMat.rotate(-90.0f, 0.0f, 1.0f, 0.0f);
- celestialMat.rotate(sunPathRotation, 0.0f, 0.0f, 1.0f);
- celestialMat.rotate(skyAngle * 360.0f, 1.0f, 0.0f, 0.0f);
+ celestialSkyMatrix(celestialAngle, sunPathRotation, celestialMat);
  out[0] = celestialMat.m[4];
  out[1] = celestialMat.m[5];
  out[2] = celestialMat.m[6];

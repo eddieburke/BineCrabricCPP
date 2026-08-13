@@ -15,6 +15,5 @@ float smoothExponential(float target, float& accumulator, bool& initialized, flo
                         float halfLifeSeconds);
 [[nodiscard]] float updateCenterDepthSmooth(float windowDepth01, float nearPlane, float farPlane, float frameTime,
                                             float halfLife);
-[[nodiscard]] float updateWetnessSmooth(float rainStrength, float frameTime, float wetnessHalflife,
-                                        float drynessHalflife);
+[[nodiscard]] float updateWetnessSmooth(float rainStrength, float frameTime, float wetnessHalflife);
 } // namespace net::minecraft::client::render

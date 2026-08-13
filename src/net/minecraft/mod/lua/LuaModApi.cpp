@@ -432,14 +432,15 @@ int luaTextureRelease(lua_State* state) {
   return 1;
  }
  const auto it = std::find(mod->ownedTextureIds.begin(), mod->ownedTextureIds.end(), textureId);
- if(it == mod->ownedTextureIds.end() || client::Minecraft::INSTANCE == nullptr) {
+ if(it == mod->ownedTextureIds.end()) {
   api.pushboolean(state, 0);
   return 1;
  }
- const int glId = net::minecraft::registry::TextureRegistry::resolveGlId(
-     textureId, client::Minecraft::INSTANCE->textureManager);
- if(glId >= 0) {
-  client::Minecraft::INSTANCE->textureManager.deleteTexture(glId);
+ const int glId = net::minecraft::registry::TextureRegistry::releaseTexture(textureId);
+ if(client::Minecraft::INSTANCE != nullptr) {
+  if(glId >= 0) {
+   client::Minecraft::INSTANCE->textureManager.deleteTexture(glId);
+  }
  }
  mod->ownedTextureIds.erase(it);
  api.pushboolean(state, 1);
@@ -499,6 +500,7 @@ int luaTextureUpdate(lua_State* state) {
  }
  api.settop(state, 2);
  client::Minecraft::INSTANCE->textureManager.update(glId, image);
+ net::minecraft::registry::TextureRegistry::seedResolvedTexture(textureId, glId, width, height);
  api.pushboolean(state, 1);
  return 1;
 }
@@ -520,8 +522,8 @@ int luaTextureGetPixels(lua_State* state) {
   const int textureId = static_cast<int>(api.tointegerx(state, 1, nullptr));
   const int glId = net::minecraft::registry::TextureRegistry::resolveGlId(
       textureId, client::Minecraft::INSTANCE->textureManager);
-  const auto* entry = ::net::minecraft::registry::TextureRegistry::getEntry(textureId);
-  if(entry != nullptr && !entry->path.empty() && entry->path.rfind("mod://", 0) != 0) {
+  const auto entry = ::net::minecraft::registry::TextureRegistry::getEntry(textureId);
+  if(entry.has_value() && !entry->path.empty() && entry->path.rfind("mod://", 0) != 0) {
    image = client::Minecraft::INSTANCE->textureManager.loadRasterForResource(entry->path);
    loaded = (image.width > 0 && image.height > 0);
   }

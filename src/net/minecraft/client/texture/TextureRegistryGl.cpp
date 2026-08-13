@@ -11,8 +11,9 @@ int TextureRegistry::resolveGlId(int textureId, net::minecraft::client::texture:
   std::lock_guard<std::mutex> lock(detail::registryMutex());
   const int index = textureId - kCustomTextureBase;
   auto& entries = detail::registryEntries();
-  if(index < 0 || index >= static_cast<int>(entries.size())) {
-   return textureManager.getTextureId(std::string());
+  if(index < 0 || index >= static_cast<int>(entries.size()) ||
+     entries[static_cast<std::size_t>(index)].path.empty()) {
+   return -1;
   }
   Entry& entry = entries[static_cast<std::size_t>(index)];
   if(entry.glId >= 0) {
@@ -28,11 +29,14 @@ int TextureRegistry::resolveGlId(int textureId, net::minecraft::client::texture:
   std::lock_guard<std::mutex> lock(detail::registryMutex());
   const int index = textureId - kCustomTextureBase;
   auto& entries = detail::registryEntries();
-  if(index >= 0 && index < static_cast<int>(entries.size())) {
+  if(index >= 0 && index < static_cast<int>(entries.size()) &&
+     entries[static_cast<std::size_t>(index)].path == path) {
    Entry& entry = entries[static_cast<std::size_t>(index)];
    entry.glId = glId;
    entry.width = width;
    entry.height = height;
+  } else {
+   return -1;
   }
  }
  return glId;

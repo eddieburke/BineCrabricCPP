@@ -260,6 +260,9 @@ void clearDrawCameraState();
 // nothing else, so `gbufferModelViewInverse * viewPos + cameraPosition` lands
 // back on worldPos.
 [[nodiscard]] const math::Matrix4f& drawModelView() noexcept;
+// Always the inverse of drawModelView(). bindAndUploadUniforms trusts that on any
+// draw sitting on the pass base, so the two must never be settable apart.
+[[nodiscard]] const math::Matrix4f& drawModelViewInverse() noexcept;
 [[nodiscard]] const math::Matrix4f& drawProjection() noexcept;
 // Pass owners only. Resets the pose: a pose means nothing once its base changes.
 void setPassModelView(const math::Matrix4f& modelView) noexcept;

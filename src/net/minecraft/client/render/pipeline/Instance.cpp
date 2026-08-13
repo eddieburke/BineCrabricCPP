@@ -44,6 +44,8 @@ void PackInstance::resetPrograms() {
  compiledPrograms.clear();
  programDrawBuffers.clear();
  logged.clear();
+ setupWidth = 0;
+ setupHeight = 0;
  programs = shaderBinaryCache != nullptr
                 ? std::make_unique<gl::ProgramCache>(shaderBinaryCache)
                 : std::make_unique<gl::ProgramCache>(shaderCacheDirectory);

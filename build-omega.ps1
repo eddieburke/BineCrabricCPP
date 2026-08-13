@@ -356,7 +356,9 @@ if(!(Test-Path -Li $ShadersSource)){Write-Host "Shaders source directory not fou
 $bs="$ScriptDir\$BN\shaders";ED $bs;$pk=gci -Li $ShadersSource -Fo
 foreach($p in $pk){cp -Li $p.FullName -De $bs -R -Fo}
 Write-Host "Shaders: $bs"
-if($env:APPDATA){$rr="$env:APPDATA\.minecraft\shaders";if(Test-Path -Li $rr){ri -Li $rr -R -Fo -EA SilentlyContinue};ED $rr;foreach($p in $pk){cp -Li $p.FullName -De $rr -R -Fo};Write-Host "Shaders deployed: $rr"}
+# Replace the deployed packs but keep the per-pack "<pack>.txt" option files the
+# client writes there; wiping the whole directory reverted every shader setting.
+if($env:APPDATA){$rr="$env:APPDATA\.minecraft\shaders";if(Test-Path -Li $rr){gci -Li $rr -Fo|?{$_.Extension -ne ".txt"}|%{ri -Li $_.FullName -R -Fo -EA SilentlyContinue}};ED $rr;foreach($p in $pk){cp -Li $p.FullName -De $rr -R -Fo};Write-Host "Shaders deployed: $rr"}
 }
 function Sync-Resources{
 if(!(Test-Path -Li $ResourcesSource)){Write-Host "Resources source directory not found: $ResourcesSource (skipping)";return}

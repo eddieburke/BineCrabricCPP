@@ -4,6 +4,7 @@
 #include <chrono>
 #include <condition_variable>
 #include <mutex>
+#include <thread>
 #include "net/minecraft/block/Block.hpp"
 #include "net/minecraft/block/BlockWithEntity.hpp"
 #include "net/minecraft/block/entity/BlockEntity.hpp"
@@ -37,7 +38,12 @@ void Chunk::waitForPinDrain(const Chunk& chunk, std::chrono::milliseconds timeou
  gPinCv.wait_for(lock, timeout, [&chunk] { return chunk.renderPinCount() == 0; });
 }
 void Chunk::lockRenderWrite() const noexcept {
+ unsigned spins = 0;
  while(renderWriteLock_->test_and_set(std::memory_order_acquire)) {
+  if(++spins >= 64) {
+   spins = 0;
+   std::this_thread::yield();
+  }
  }
 }
 void Chunk::unlockRenderWrite() const noexcept {
@@ -60,15 +66,18 @@ bool Chunk::setBlock(int localX, int yPos, int localZ, int rawId, int metadataVa
  }
  const int blockX = this->x * 16 + localX;
  const int blockZ = this->z * 16 + localZ;
- std::atomic_ref<std::uint8_t>(blocks[index(localX, yPos, localZ)])
-     .store(static_cast<std::uint8_t>(rawId & 0xFF), std::memory_order_relaxed);
+ {
+  const RenderWriteGuard guard(*this);
+  std::atomic_ref<std::uint8_t>(blocks[index(localX, yPos, localZ)])
+      .store(static_cast<std::uint8_t>(rawId & 0xFF), std::memory_order_relaxed);
+  meta.set(localX, yPos, localZ, metadataValue);
+ }
  if(previousId != 0 && world != nullptr && !world->isRemote()) {
   Block* previousBlock = Block::BLOCKS[static_cast<std::size_t>(previousId)];
   if(previousBlock != nullptr) {
    previousBlock->onBreak(world, blockX, yPos, blockZ);
   }
  }
- meta.set(localX, yPos, localZ, metadataValue);
  if(world != nullptr) {
   const bool hasSkyLight = world->dimension == nullptr || !world->dimension->hasCeiling;
   if(hasSkyLight) {
@@ -108,15 +117,18 @@ bool Chunk::setBlock(int localX, int yPos, int localZ, int rawId) {
  }
  const int blockX = this->x * 16 + localX;
  const int blockZ = this->z * 16 + localZ;
- std::atomic_ref<std::uint8_t>(blocks[index(localX, yPos, localZ)])
-     .store(static_cast<std::uint8_t>(rawId & 0xFF), std::memory_order_relaxed);
+ {
+  const RenderWriteGuard guard(*this);
+  std::atomic_ref<std::uint8_t>(blocks[index(localX, yPos, localZ)])
+      .store(static_cast<std::uint8_t>(rawId & 0xFF), std::memory_order_relaxed);
+  meta.set(localX, yPos, localZ, 0);
+ }
  if(previousId != 0 && world != nullptr) {
   Block* previousBlock = Block::BLOCKS[static_cast<std::size_t>(previousId)];
   if(previousBlock != nullptr) {
    previousBlock->onBreak(world, blockX, yPos, blockZ);
   }
  }
- meta.set(localX, yPos, localZ, 0);
  if(world != nullptr) {
   if(Block::BLOCKS_LIGHT_OPACITY[static_cast<std::size_t>(rawId & 0xFF)] != 0) {
    if(yPos >= topHeight) {
@@ -147,7 +159,10 @@ void Chunk::setBlockMeta(int localX, int yPos, int localZ, int metadataValue) {
  if(previousMeta == metadataValue) {
   return;
  }
- meta.set(localX, yPos, localZ, metadataValue);
+ {
+  const RenderWriteGuard guard(*this);
+  meta.set(localX, yPos, localZ, metadataValue);
+ }
  dirty = true;
  if(world != nullptr) {
   world->setBlockDirty(x * 16 + localX, yPos, z * 16 + localZ);
@@ -179,32 +194,35 @@ void Chunk::populateHeightMap(bool fixCrossChunkGaps) {
  assert(registry::Registry::isBootstrapped() && "Chunk: call Registry::bootstrap() before populateHeightMap");
  int minHeight = 127;
  const bool skipSkyLight = world != nullptr && world->dimension != nullptr && world->dimension->hasCeiling;
- for(int localX = 0; localX < 16; ++localX) {
-  for(int localZ = 0; localZ < 16; ++localZ) {
+ {
+  const RenderWriteGuard guard(*this);
+  for(int localX = 0; localX < 16; ++localX) {
+   for(int localZ = 0; localZ < 16; ++localZ) {
    const int topY = findTopBlock(localX, localZ);
    std::atomic_ref<std::uint8_t>(heightmap[static_cast<std::size_t>((localZ << 4) | localX)])
        .store(static_cast<std::uint8_t>(topY), std::memory_order_relaxed);
    if(topY < minHeight) {
     minHeight = topY;
    }
-   if(skipSkyLight) {
-    continue;
-   }
-   int light = 15;
-   const int base = (localX << 11) | (localZ << 7);
-   int yPos = 127;
-   do {
-    light -= Block::BLOCKS_LIGHT_OPACITY[static_cast<std::size_t>(
-        std::atomic_ref(const_cast<std::uint8_t&>(blocks[static_cast<std::size_t>(base + yPos)]))
-            .load(std::memory_order_relaxed) &
-        0xFFU)];
-    if(light > 0) {
-     skyLight.set(localX, yPos, localZ, light);
+    if(skipSkyLight) {
+     continue;
     }
-   } while(--yPos > 0 && light > 0);
+    int light = 15;
+    const int base = (localX << 11) | (localZ << 7);
+    int yPos = 127;
+    do {
+     light -= Block::BLOCKS_LIGHT_OPACITY[static_cast<std::size_t>(
+         std::atomic_ref(const_cast<std::uint8_t&>(blocks[static_cast<std::size_t>(base + yPos)]))
+             .load(std::memory_order_relaxed) &
+         0xFFU)];
+     if(light > 0) {
+      skyLight.set(localX, yPos, localZ, light);
+     }
+    } while(--yPos > 0 && light > 0);
+   }
   }
+  minHeightmapValue = minHeight;
  }
- minHeightmapValue = minHeight;
  dirty = true;
  if(!fixCrossChunkGaps) {
   return;
@@ -262,56 +280,66 @@ void Chunk::updateHeightMap(int localX, int yPos, int localZ) {
   return;
  }
  world->setBlocksDirtyColumn(this->x * 16 + localX, this->z * 16 + localZ, newHeight, oldHeight);
- std::atomic_ref<std::uint8_t>(heightmap[static_cast<std::size_t>((localZ << 4) | localX)])
-     .store(static_cast<std::uint8_t>(newHeight), std::memory_order_relaxed);
- if(newHeight < minHeightmapValue) {
-  minHeightmapValue = newHeight;
- } else {
-  int minHeight = 127;
-  for(int localZIndex = 0; localZIndex < 16; ++localZIndex) {
-   for(int localXIndex = 0; localXIndex < 16; ++localXIndex) {
-    const int heightValue = static_cast<int>(
-        std::atomic_ref(const_cast<std::uint8_t&>(heightmap[static_cast<std::size_t>((localZIndex << 4) | localXIndex)]))
-            .load(std::memory_order_relaxed) &
-        0xFFU);
-    if(heightValue < minHeight) {
-     minHeight = heightValue;
-    }
-   }
-  }
-  minHeightmapValue = minHeight;
- }
  const int blockX = this->x * 16 + localX;
  const int blockZ = this->z * 16 + localZ;
- if(newHeight < oldHeight) {
-  for(int y = newHeight; y < oldHeight; ++y) {
-   skyLight.set(localX, y, localZ, 15);
-  }
- } else {
+ if(newHeight >= oldHeight) {
   world->queueLightUpdate(LightType::Sky, blockX, oldHeight, blockZ, blockX, newHeight, blockZ);
-  for(int y = oldHeight; y < newHeight; ++y) {
-   skyLight.set(localX, y, localZ, 0);
-  }
  }
- int light = 15;
  const int previousTop = newHeight;
- while(newHeight > 0 && light > 0) {
-  int opacity = Block::BLOCKS_LIGHT_OPACITY[static_cast<std::size_t>(getBlockId(localX, --newHeight, localZ))];
-  if(opacity == 0) {
-   opacity = 1;
+ int propagationBottom = newHeight;
+ {
+  const RenderWriteGuard guard(*this);
+  std::atomic_ref<std::uint8_t>(heightmap[static_cast<std::size_t>((localZ << 4) | localX)])
+      .store(static_cast<std::uint8_t>(newHeight), std::memory_order_relaxed);
+  if(newHeight < minHeightmapValue) {
+   minHeightmapValue = newHeight;
+  } else {
+   int minHeight = 127;
+   for(int localZIndex = 0; localZIndex < 16; ++localZIndex) {
+    for(int localXIndex = 0; localXIndex < 16; ++localXIndex) {
+     const int heightValue = static_cast<int>(
+         std::atomic_ref(const_cast<std::uint8_t&>(
+                             heightmap[static_cast<std::size_t>((localZIndex << 4) | localXIndex)]))
+             .load(std::memory_order_relaxed) &
+         0xFFU);
+     if(heightValue < minHeight) {
+      minHeight = heightValue;
+     }
+    }
+   }
+   minHeightmapValue = minHeight;
   }
-  light -= opacity;
-  if(light < 0) {
-   light = 0;
+  if(newHeight < oldHeight) {
+   for(int y = newHeight; y < oldHeight; ++y) {
+    skyLight.set(localX, y, localZ, 15);
+   }
+  } else {
+   for(int y = oldHeight; y < newHeight; ++y) {
+    skyLight.set(localX, y, localZ, 0);
+   }
   }
-  skyLight.set(localX, newHeight, localZ, light);
+  int light = 15;
+  while(propagationBottom > 0 && light > 0) {
+   int opacity = Block::BLOCKS_LIGHT_OPACITY[
+       static_cast<std::size_t>(getBlockId(localX, --propagationBottom, localZ))];
+   if(opacity == 0) {
+    opacity = 1;
+   }
+   light -= opacity;
+   if(light < 0) {
+    light = 0;
+   }
+   skyLight.set(localX, propagationBottom, localZ, light);
+  }
  }
- while(newHeight > 0 &&
-       Block::BLOCKS_LIGHT_OPACITY[static_cast<std::size_t>(getBlockId(localX, newHeight - 1, localZ))] == 0) {
-  --newHeight;
+ while(propagationBottom > 0 &&
+       Block::BLOCKS_LIGHT_OPACITY[
+           static_cast<std::size_t>(getBlockId(localX, propagationBottom - 1, localZ))] == 0) {
+  --propagationBottom;
  }
- if(newHeight != previousTop) {
-  world->queueLightUpdate(LightType::Sky, blockX - 1, newHeight, blockZ - 1, blockX + 1, previousTop, blockZ + 1);
+ if(propagationBottom != previousTop) {
+  world->queueLightUpdate(LightType::Sky, blockX - 1, propagationBottom, blockZ - 1,
+                          blockX + 1, previousTop, blockZ + 1);
  }
  dirty = true;
 }

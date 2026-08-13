@@ -88,7 +88,7 @@ bool Pipeline::renderCompositePasses(PackInstance& pack, CompositeStage stageId,
  if(!targets.valid() || targets.depthTexture() == 0 || !hasGlContext() || width <= 0 || height <= 0) {
   return false;
  }
- if(!ensurePackResources(pack, width, height, lightmapTexture_,
+ if(!ensurePackResources(pack, targets.width(), targets.height(), lightmapTexture_,
                          [](const PackInstance& p, const std::string& path) {
                           return PackCompiler::readText(p, path);
                          })) {
@@ -154,12 +154,6 @@ bool Pipeline::renderCompositePasses(PackInstance& pack, CompositeStage stageId,
                                    static_cast<float>(height),
                                    static_cast<float>(width) / std::max(static_cast<float>(height), 1.0f)};
  const bool computeReady = gl::GLCore::computeSupported;
- if(computeReady &&
-    !dispatchSetupIfNeeded(pack, frameUniforms, &viewport, width, height, textures, colorImages,
-                           volumeTextures, &targets)) {
-  releaseSamplers(maxTextureUnits());
-  return false;
- }
  const bool concurrent = pack.definition.allowConcurrentCompute;
  bool ranCompute = false;
  const auto prepareComputeBinds = [&]() {
@@ -206,7 +200,7 @@ bool Pipeline::renderCompositePasses(PackInstance& pack, CompositeStage stageId,
     return false;
    }
    ranCompute = true;
-   if(operation.groupEnd && concurrent && gl::GLCore::memoryBarrier != nullptr) {
+   if(operation.groupEnd && gl::GLCore::memoryBarrier != nullptr) {
     gl::GLCore::memoryBarrier(ComputeDispatcher::kBarrierBits);
     debug::RenderProfiler::instance().record(debug::RenderMetric::MemoryBarriers);
    }

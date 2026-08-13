@@ -3,6 +3,7 @@
 #include <condition_variable>
 #include <cstdint>
 #include <functional>
+#include <memory>
 #include <mutex>
 #include <queue>
 #include <stop_token>
@@ -32,25 +33,64 @@ class WorkerPool {
   }
  }
  ~WorkerPool() {
-  for(auto& worker : workers_) {
-   worker.request_stop();
+  {
+   const std::lock_guard lock(mutex_);
+   stopping_ = true;
   }
+  for(auto& worker : workers_) worker.request_stop();
   wake_.notify_all();
-  // jthread joins on destruction.
+  cancelPending();
+  workers_.clear();
+  lifetime_.reset();
  }
  WorkerPool(const WorkerPool&) = delete;
  WorkerPool& operator=(const WorkerPool&) = delete;
- void submit(std::function<void()> task, int priority = 0) {
+ bool submit(std::function<void()> task,
+             int priority = 0,
+             const void* owner = nullptr,
+             std::function<void()> onCancel = {}) {
+  Task queued{priority, 0, owner, std::move(task), std::move(onCancel)};
+  bool rejected = false;
   {
    const std::lock_guard lock(mutex_);
-   queue_.push(Task{priority, nextSequence_++, std::move(task)});
+   if(stopping_) {
+    rejected = true;
+   } else {
+    queued.sequence = nextSequence_++;
+    queue_.push(std::move(queued));
+   }
+  }
+  if(rejected) {
+   if(queued.onCancel) queued.onCancel();
+   return false;
   }
   wake_.notify_one();
+  return true;
  }
  // Drop all tasks that have not started yet. In-flight tasks finish normally.
- void cancelPending() {
-  const std::lock_guard lock(mutex_);
-  queue_ = {};
+ void cancelPending(const void* owner = nullptr) {
+  std::vector<Task> canceled;
+  {
+   const std::lock_guard lock(mutex_);
+   std::priority_queue<Task> retained;
+   while(!queue_.empty()) {
+    Task task = std::move(const_cast<Task&>(queue_.top()));
+    queue_.pop();
+    if(owner == nullptr || task.owner == owner) {
+     canceled.push_back(std::move(task));
+    } else {
+     retained.push(std::move(task));
+    }
+   }
+   queue_ = std::move(retained);
+   if(queue_.empty() && activeCount_ == 0) idle_.notify_all();
+  }
+  for(Task& task : canceled) {
+   try {
+    if(task.onCancel) task.onCancel();
+   } catch(...) {
+   }
+  }
  }
  // Block until the queue is empty and every worker is idle.
  void drain() {
@@ -64,12 +104,17 @@ class WorkerPool {
  [[nodiscard]] unsigned threadCount() const noexcept {
   return static_cast<unsigned>(workers_.size());
  }
+ [[nodiscard]] std::weak_ptr<void> lifetimeToken() const noexcept {
+  return lifetime_;
+ }
 
  private:
  struct Task {
   int priority = 0;
   std::uint64_t sequence = 0;
+  const void* owner = nullptr;
   std::function<void()> run;
+  std::function<void()> onCancel;
   bool operator<(const Task& other) const noexcept {
    // std::priority_queue is a max-heap; invert so lower priority value pops first.
    if(priority != other.priority) {
@@ -110,6 +155,8 @@ class WorkerPool {
  std::priority_queue<Task> queue_;
  std::uint64_t nextSequence_ = 0;
  int activeCount_ = 0;
+ bool stopping_ = false;
+ std::shared_ptr<void> lifetime_ = std::make_shared<int>(0);
  std::vector<std::jthread> workers_;
 };
 } // namespace net::minecraft::util::concurrent

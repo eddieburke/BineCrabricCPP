@@ -72,9 +72,16 @@ class SliderWidget : public ButtonWidget {
   updateValue(mouseX);
  }
  void mouseReleased(int mouseX, int mouseY) override {
-  (void)mouseX;
   (void)mouseY;
+  if(!dragging || minecraft_ == nullptr) {
+   dragging = false;
+   return;
+  }
+  updateValue(mouseX);
   dragging = false;
+  const option::OptionSpec& spec = option::OptionRegistry::at(registryIndex_);
+  minecraft_->options.setFloat(spec.persistKey, value);
+  refreshText(minecraft_->options);
  }
 
  private:
@@ -83,9 +90,6 @@ class SliderWidget : public ButtonWidget {
    return;
   }
   value = std::clamp(static_cast<float>(mouseX - (x + 4)) / static_cast<float>(width - 8), 0.0f, 1.0f);
-  const option::OptionSpec& spec = option::OptionRegistry::at(registryIndex_);
-  minecraft_->options.setFloat(spec.persistKey, value);
-  refreshText(minecraft_->options);
  }
  std::size_t registryIndex_ = 0;
  client::Minecraft* minecraft_ = nullptr;

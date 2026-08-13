@@ -55,6 +55,7 @@ RenderSettings renderSettings(const GameOptions& options) {
 void applyShaderPack(RenderSettings& settings, const render::PackDefinition& pack) {
  settings.ambientOcclusionStrength *= std::clamp(pack.ambientOcclusionLevel, 0.0f, 1.0f);
  settings.separateAo = pack.separateAo;
+ settings.vanillaShaderAo = pack.vanillaShaderAo;
  settings.oldLighting = pack.oldLighting;
  if(!pack.renderClouds) {
   settings.renderClouds = false;
@@ -68,10 +69,10 @@ void applyShaderPack(RenderSettings& settings, const render::PackDefinition& pac
  if(!pack.renderWeather) {
   settings.weatherEnabled = false;
  }
- settings.renderSky = pack.renderSky;
- settings.renderStars = pack.renderStars;
- settings.renderSun = pack.renderSun;
- settings.renderMoon = pack.renderMoon;
+ settings.renderSky = settings.renderSky && pack.renderSky;
+ settings.renderStars = settings.renderStars && pack.renderStars;
+ settings.renderSun = settings.renderSun && pack.renderSun;
+ settings.renderMoon = settings.renderMoon && pack.renderMoon;
  settings.underwaterOverlay = settings.underwaterOverlay && pack.underwaterOverlay;
  settings.vignette = settings.vignette && pack.vignette;
  settings.rainDepth = pack.rainDepth;

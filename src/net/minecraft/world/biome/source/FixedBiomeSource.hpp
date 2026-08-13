@@ -11,7 +11,12 @@ class FixedBiomeSource : public BiomeSource {
      : BiomeSource(0ULL), biome_(biome), temperature_(temperature), downfall_(downfall) {
  }
  [[nodiscard]] std::unique_ptr<BiomeSource> clone() const override {
-  return std::make_unique<FixedBiomeSource>(biome_, temperature_, downfall_);
+  return std::make_unique<FixedBiomeSource>(*this);
+ }
+ [[nodiscard]] ClimateSample sampleClimate(int x, int z) const override {
+  (void)x;
+  (void)z;
+  return {temperature_, downfall_};
  }
  [[nodiscard]] Biome& getBiome(int x, int z) override {
   (void)x;

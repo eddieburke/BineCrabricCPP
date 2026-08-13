@@ -184,15 +184,19 @@ inline void buildCameraModelViewInverse(float* m, const FrameRenderCamera& c) {
  inverse.invert();
  std::memcpy(m, inverse.data(), sizeof(float) * 16);
 }
-// Java's celestial/up uniforms transform w=0 vectors by gbufferModelView
-// (CelestialUniforms.getCelestialPosition/getUpPosition), so a view-space direction
-// picks up the bob's rotation and scale but none of its translation.
 inline void directionToView(float x, float y, float z, const FrameRenderCamera& c, float out[3]) {
  float modelView[16]{};
  buildCameraModelView(modelView, c);
  net::minecraft::util::math::Matrix4f mv;
  mv.set(modelView);
  mv.transformDirection(x, y, z, out[0], out[1], out[2]);
+}
+inline void celestialPositionToView(float x, float y, float z, const FrameRenderCamera& c, float out[3]) {
+ float modelView[16]{};
+ buildCameraModelView(modelView, c);
+ net::minecraft::util::math::Matrix4f mv;
+ mv.set(modelView);
+ mv.transformPoint(x * 100.0f, y * 100.0f, z * 100.0f, out[0], out[1], out[2]);
 }
 inline void buildCameraProjection(float* m, const FrameRenderCamera& c) {
  net::minecraft::util::math::Matrix4f proj;

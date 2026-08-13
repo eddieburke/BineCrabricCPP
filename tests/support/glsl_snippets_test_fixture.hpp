@@ -1,4 +1,5 @@
 #pragma once
+#include <algorithm>
 #include <filesystem>
 #include <fstream>
 #include <iterator>
@@ -52,7 +53,9 @@ std::string readSnippetFile(const std::string& name) {
  if(!input) {
   return {};
  }
- return std::string(std::istreambuf_iterator<char>(input), std::istreambuf_iterator<char>());
+ auto text = std::string(std::istreambuf_iterator<char>(input), std::istreambuf_iterator<char>());
+ text.erase(std::remove(text.begin(), text.end(), '\r'), text.end());
+ return text;
 }
 } // namespace
 inline const std::unordered_map<std::string, std::string>& testGlslSnippets() {

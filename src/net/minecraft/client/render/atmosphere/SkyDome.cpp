@@ -26,8 +26,12 @@ struct SkyMeshes {
  TessellatorMesh stars;
  bool built = false;
 };
+void buildSkyDomes(SkyMeshes& meshes);
 SkyMeshes& skyMeshes() {
  static SkyMeshes meshes;
+ if(!meshes.built) {
+  buildSkyDomes(meshes);
+ }
  return meshes;
 }
 void buildStarMesh(Tessellator& tessellator) {
@@ -228,9 +232,6 @@ void renderSkyDome(const AtmosphereContext& ctx, float tickDelta) {
  const RenderPassScope skyPass(RenderType::sky());
  core::depthMask(false);
  SkyMeshes& meshes = skyMeshes();
- if(!meshes.built) {
-  buildSkyDomes(meshes);
- }
  if(ctx.settings.renderSky) {
   core::setConstColor(skyR, skyG, skyB, 1.0f);
   Tessellator::drawMesh(meshes.lightSky, core::constColorPacked());
@@ -258,10 +259,16 @@ void renderSkyStars(const AtmosphereContext& ctx, float, float starBrightness) {
  const RenderPassScope skyPass(RenderType::sky());
  core::depthMask(false);
  SkyMeshes& meshes = skyMeshes();
- if(!meshes.built) {
-  buildSkyDomes(meshes);
- }
  const core::RenderStageScope stage(core::RenderStage::Stars);
+ // The star sphere rides the same celestial frame as the sun and moon.
+ // https://github.com/IrisShaders/Iris/blob/26.1/common/src/main/java/net/irisshaders/iris/uniforms/CelestialUniforms.java
+ const render::CelestialState& celestial = render::core::celestialState();
+ const core::ScopedDrawCameraState starGuard;
+ net::minecraft::util::math::Matrix4f starPose = core::drawPose();
+ net::minecraft::util::math::Matrix4f celestialFrame;
+ celestialSkyMatrix(celestial.celestialAngle, celestial.sunPathRotation, celestialFrame);
+ starPose.multiply(celestialFrame);
+ core::setDrawPose(starPose);
  core::setConstColor(starBrightness, starBrightness, starBrightness, starBrightness);
  Tessellator::drawMesh(meshes.stars, core::constColorPacked());
  core::depthMask(true);
@@ -278,19 +285,14 @@ void renderSkyVoid(const AtmosphereContext& ctx, float tickDelta) {
  const RenderPassScope skyPass(RenderType::sky());
  core::depthMask(false);
  SkyMeshes& meshes = skyMeshes();
- if(!meshes.built) {
-  buildSkyDomes(meshes);
- }
- if(ctx.settings.renderSky) {
-  const bool darkVoid = ctx.world->dimension->hasGround();
-  const float voidR = darkVoid ? skyR * 0.2f + 0.04f : skyR;
-  const float voidG = darkVoid ? skyG * 0.2f + 0.04f : skyG;
-  const float voidB = darkVoid ? skyB * 0.6f + 0.1f : skyB;
-  core::setConstColor(voidR, voidG, voidB, 1.0f);
-  {
-   const core::RenderStageScope stage(core::RenderStage::Void);
-   Tessellator::drawMesh(meshes.darkSky, core::constColorPacked());
-  }
+ const bool darkVoid = ctx.world->dimension->hasGround();
+ const float voidR = darkVoid ? skyR * 0.2f + 0.04f : skyR;
+ const float voidG = darkVoid ? skyG * 0.2f + 0.04f : skyG;
+ const float voidB = darkVoid ? skyB * 0.6f + 0.1f : skyB;
+ core::setConstColor(voidR, voidG, voidB, 1.0f);
+ {
+  const core::RenderStageScope stage(core::RenderStage::Void);
+  Tessellator::drawMesh(meshes.darkSky, core::constColorPacked());
  }
  core::depthMask(true);
 }

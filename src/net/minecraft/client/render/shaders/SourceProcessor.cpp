@@ -16,6 +16,7 @@
 #include "net/minecraft/client/render/shaders/PassIndex.hpp"
 #include "net/minecraft/client/render/shaders/PreProcessor.hpp"
 #include "net/minecraft/client/render/targets/RenderTargets.hpp"
+#include "net/minecraft/client/texture/TextureManager.hpp"
 #include <algorithm>
 #include <array>
 namespace net::minecraft::client::render {
@@ -190,7 +191,8 @@ std::vector<ShaderMacro> engineMacros(const PackDefinition& pack) {
  macros.push_back({"IRIS_TAG_SUPPORT", "2"});
  macros.push_back({std::string(hostOsMacro()), {}});
  macros.push_back({"MC_HAND_DEPTH", "0.125"});
- macros.push_back({"MC_MIPMAP_LEVEL", std::to_string(std::max(0, pack.mcMipmapLevel))});
+ macros.push_back({"MC_MIPMAP_LEVEL",
+                   std::to_string(std::max(0, net::minecraft::client::texture::TextureManager::MIPMAP_LEVEL))});
  macros.push_back({vendorMacroName(), {}});
  macros.push_back({rendererMacroName(), {}});
  macros.push_back({"MC_NORMAL_MAP", {}});
@@ -266,7 +268,8 @@ std::string normalizePackSource(const PackDefinition& pack, const std::string& s
  };
  PPMacroOverlay macros(engineSeed());
  ppAssign(macros, "MC_MIPMAP_LEVEL",
-          PPMacro{false, {}, std::to_string(std::max(0, pack.mcMipmapLevel))});
+          PPMacro{false, {},
+                  std::to_string(std::max(0, net::minecraft::client::texture::TextureManager::MIPMAP_LEVEL))});
  if(pack.labPbr || pack.labPbr13) ppAssign(macros, "MC_TEXTURE_FORMAT_LAB_PBR", PPMacro{});
  if(pack.labPbr13) ppAssign(macros, "MC_TEXTURE_FORMAT_LAB_PBR_1_3", PPMacro{});
  for(const std::string& feature : pack.requiredFeatures)

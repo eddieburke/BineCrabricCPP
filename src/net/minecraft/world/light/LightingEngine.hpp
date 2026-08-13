@@ -33,6 +33,7 @@ class LightingEngine {
  void setSkyLightSuppressed(bool suppressed) noexcept {
   skyLightSuppressed_.store(suppressed, std::memory_order_relaxed);
  }
+
  void registerChunk(Chunk* chunk);
  void unregisterChunk(Chunk* chunk);
  [[nodiscard]] std::vector<DirtyRegion> drainDirtyRegions(std::size_t maxRegions);
@@ -76,9 +77,8 @@ class LightingEngine {
   return (static_cast<std::uint64_t>(static_cast<std::uint32_t>(chunkX)) << 32) |
          static_cast<std::uint64_t>(static_cast<std::uint32_t>(chunkZ));
  }
- // Producers (tick / worldgen) only ever take stagingMutex_, which no worker
- // holds, so a per-block setBlock never waits behind a propagation pass on
- // queueMutex_. flushStaging() is the only place the two meet.
+
+
  static constexpr std::size_t kStagingFlushBoxes = 1024;
  static constexpr std::size_t kStagingMergeScan = 32;
  std::mutex stagingMutex_;

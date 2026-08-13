@@ -245,6 +245,16 @@ int maxTextureUnits() {
  }
  return units;
 }
+// https://github.com/IrisShaders/Iris/blob/26.1/common/src/main/java/net/irisshaders/iris/gl/image/ImageLimits.java
+unsigned int maxImageUnits() {
+ static int units = 0;
+ if(units == 0) {
+  int queried = 0;
+  ::glGetIntegerv(0x8F38, &queried);
+  units = queried > 0 ? queried : 8;
+ }
+ return static_cast<unsigned int>(units);
+}
 namespace {
 struct FormatInfo {
  std::string_view name;
@@ -335,6 +345,7 @@ ColorFormat parseFormat(const std::string& format) {
  const FormatInfo* info = findFormat(format);
  if(info == nullptr) {
   shaderFatal("Unknown buffer format", "unrecognized format '" + format + "'");
+  return ColorFormat::Rgba8;
  }
  return info->format;
 }
@@ -344,36 +355,53 @@ const char* colorFormatName(ColorFormat format) {
  }
  return "rgba8";
 }
+// https://github.com/IrisShaders/Iris/blob/26.1/common/src/main/java/net/irisshaders/iris/gl/texture/PixelFormat.java
+// Java matches PixelFormat.valueOf(name.toUpperCase()), so the whole enum is legal
+// and nothing else is — the no-underscore spellings this used to accept were
+// invented, and the missing BGR/RGB_INTEGER rows fell through to GL_RGBA, which is
+// a glTexImage error against an integer internal format rather than a wrong colour.
 unsigned int pixelFormat(std::string value) {
- static constexpr std::array<std::pair<std::string_view, unsigned int>, 11> entries = {
+ static constexpr std::array<std::pair<std::string_view, unsigned int>, 12> entries = {
      std::pair<std::string_view, unsigned int>{"red", 0x1903},
-     {"r", 0x1903},
      {"rg", 0x8227},
      {"rgb", 0x1907},
+     {"bgr", 0x80E0},
      {"rgba", 0x1908},
+     {"bgra", 0x80E1},
      {"red_integer", 0x8D94},
-     {"redinteger", 0x8D94},
      {"rg_integer", 0x8228},
-     {"rginteger", 0x8228},
+     {"rgb_integer", 0x8D98},
+     {"bgr_integer", 0x8D9A},
      {"rgba_integer", 0x8D99},
-     {"rgbainteger", 0x8D99}};
- return lookup(std::move(value), entries, 0x1908u);
+     {"bgra_integer", 0x8D9B}};
+ return lookup(std::move(value), entries, 0u);
 }
+// https://github.com/IrisShaders/Iris/blob/26.1/common/src/main/java/net/irisshaders/iris/gl/texture/PixelType.java
 unsigned int pixelType(std::string value) {
- static constexpr std::array<std::pair<std::string_view, unsigned int>, 12> entries = {
+ static constexpr std::array<std::pair<std::string_view, unsigned int>, 22> entries = {
      std::pair<std::string_view, unsigned int>{"byte", 0x1400},
-     {"unsigned_byte", 0x1401},
-     {"unsignedbyte", 0x1401},
      {"short", 0x1402},
-     {"unsigned_short", 0x1403},
-     {"unsignedshort", 0x1403},
      {"int", 0x1404},
-     {"unsigned_int", 0x1405},
-     {"unsignedint", 0x1405},
-     {"float", 0x1406},
      {"half_float", 0x140B},
-     {"halffloat", 0x140B}};
- return lookup(std::move(value), entries, 0x1401u);
+     {"float", 0x1406},
+     {"unsigned_byte", 0x1401},
+     {"unsigned_byte_3_3_2", 0x8032},
+     {"unsigned_byte_2_3_3_rev", 0x8362},
+     {"unsigned_short", 0x1403},
+     {"unsigned_short_5_6_5", 0x8363},
+     {"unsigned_short_5_6_5_rev", 0x8364},
+     {"unsigned_short_4_4_4_4", 0x8033},
+     {"unsigned_short_4_4_4_4_rev", 0x8365},
+     {"unsigned_short_5_5_5_1", 0x8034},
+     {"unsigned_short_1_5_5_5_rev", 0x8366},
+     {"unsigned_int", 0x1405},
+     {"unsigned_int_8_8_8_8", 0x8035},
+     {"unsigned_int_8_8_8_8_rev", 0x8367},
+     {"unsigned_int_10_10_10_2", 0x8036},
+     {"unsigned_int_2_10_10_10_rev", 0x8368},
+     {"unsigned_int_10f_11f_11f_rev", 0x8C3B},
+     {"unsigned_int_5_9_9_9_rev", 0x8C3E}};
+ return lookup(std::move(value), entries, 0u);
 }
 // The sized GL enum comes from glFormat() in RenderTargets.hpp, which is the one
 // description of a ColorFormat. kFormats carried its own copy of all 60 of them, so a
@@ -385,14 +413,19 @@ unsigned int internalFormat(std::string value) {
  const FormatInfo* info = findFormat(std::move(value));
  return info == nullptr ? 0x8058 : internalFormat(info->format);
 }
+bool integerInternalFormat(std::string value) {
+ const FormatInfo* info = findFormat(std::move(value));
+ return info != nullptr && isIntegerColorFormat(info->format);
+}
 unsigned int bindColorImages(gl::ShaderProgram& program,
                              const std::unordered_map<std::string, int>& colorTextures,
                              const PackDefinition& definition,
                              const ColorTargets* colorTargets) {
  if(gl::GLCore::bindImageTexture == nullptr) return 0;
+ const unsigned int imageUnits = maxImageUnits();
  unsigned int unit = 0;
  const auto bindPrefix = [&](const char* imagePrefix, const char* bufferPrefix, int count, bool sceneColor) {
-  for(int index = 0; index < count && unit < 16; ++index) {
+  for(int index = 0; index < count && unit < imageUnits; ++index) {
    const std::string imageName = std::string(imagePrefix) + std::to_string(index);
    if(program.location(imageName) < 0) continue;
    const std::string bufferName = std::string(bufferPrefix) + std::to_string(index);

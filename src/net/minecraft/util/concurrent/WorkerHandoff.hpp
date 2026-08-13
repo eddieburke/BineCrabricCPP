@@ -14,7 +14,7 @@ template <typename Job>
 class WorkerHandoff {
  public:
   explicit WorkerHandoff(WorkerPool& pool)
-      : pool_(pool) {
+      : pool_(&pool), poolLifetime_(pool.lifetimeToken()) {
   }
   ~WorkerHandoff() {
    cancelAll();
@@ -32,18 +32,21 @@ class WorkerHandoff {
   void enqueue(std::shared_ptr<Job> job, Fn&& work, int priority = 0) {
    const std::uint64_t epoch = epoch_.load(std::memory_order::acquire);
    inFlight_.fetch_add(1, std::memory_order::release);
-   pool_.submit(
+   if(poolLifetime_.expired()) {
+    finish(std::move(job), false);
+    return;
+   }
+   auto canceledJob = job;
+   pool_->submit(
        [this, job = std::move(job), work = std::forward<Fn>(work), epoch]() mutable {
         if(epoch_.load(std::memory_order::acquire) == epoch) {
          work(*job);
         }
-        {
-         const std::lock_guard lock(completedMutex_);
-         completed_.push_back(std::move(job));
-        }
-        inFlight_.fetch_sub(1, std::memory_order::release);
+        finish(std::move(job), true);
        },
-       priority);
+       priority,
+       this,
+       [this, job = std::move(canceledJob)]() mutable { finish(std::move(job), true); });
   }
   [[nodiscard]] std::vector<std::shared_ptr<Job>> drainCompleted() {
    const std::lock_guard lock(completedMutex_);
@@ -53,6 +56,7 @@ class WorkerHandoff {
   }
   void cancelAll() {
    epoch_.fetch_add(1, std::memory_order::acq_rel);
+   if(!poolLifetime_.expired()) pool_->cancelPending(this);
    std::vector<std::shared_ptr<Job>> dropped = drainCompleted();
    dropped.clear();
   }
@@ -64,11 +68,19 @@ class WorkerHandoff {
    return inFlight_.load(std::memory_order::acquire);
   }
   [[nodiscard]] unsigned workerCount() const noexcept {
-   return pool_.threadCount();
+   return poolLifetime_.expired() ? 0 : pool_->threadCount();
   }
 
  private:
-  WorkerPool& pool_;
+  void finish(std::shared_ptr<Job> job, bool counted) {
+   {
+    const std::lock_guard lock(completedMutex_);
+    completed_.push_back(std::move(job));
+   }
+   if(counted) inFlight_.fetch_sub(1, std::memory_order::release);
+  }
+  WorkerPool* pool_ = nullptr;
+  std::weak_ptr<void> poolLifetime_;
   mutable std::mutex completedMutex_;
   std::vector<std::shared_ptr<Job>> completed_;
   std::atomic<std::uint64_t> epoch_{0};

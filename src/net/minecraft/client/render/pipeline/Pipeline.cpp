@@ -392,7 +392,7 @@ void Pipeline::setFrameUniforms(const PackUniformValues& frame, const PackDefini
                                 PackInstance* activePack) {
  worldUniforms_ = frame;
  worldUniforms_.wetness = updateWetnessSmooth(worldUniforms_.rainStrength, worldUniforms_.frameTime,
-                                              activeDef.wetnessHalflife, activeDef.drynessHalflife);
+                                              activeDef.wetnessHalflife);
  if(activePack != nullptr) {
   activePack->customUniforms.evaluate(worldUniforms_);
  }

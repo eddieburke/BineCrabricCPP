@@ -767,11 +767,13 @@ void Minecraft::tick() {
 }
 void Minecraft::runRenderPhase() {
  if(!headlessMode_) {
+  debug::RenderProfileScope audioScope("frame", "audio");
   audio.updateListener(player, timer.partialTick);
  }
- if(world != nullptr) {
-  world->doLightingUpdates(128, kLightingUpdateBudgetNs);
- }
+  if(world != nullptr) {
+   debug::RenderProfileScope lightingScope("frame", "lighting");
+   world->doLightingUpdates(128, kLightingUpdateBudgetNs);
+  }
 #ifdef _WIN32
  util::DisplayManager::setSwapPacing(
      headlessMode_ ? gl::SwapPacing::Unlimited : util::swapPacingFromOptions(options.fpsLimit, options.smoothFps));
@@ -780,16 +782,21 @@ void Minecraft::runRenderPhase() {
   options.thirdPerson = false;
  }
  if(!skipGameRender) {
-  mod::RenderFrameEvent rfEvent{timer.partialTick, world};
-  net::minecraft::mod::runtime::luaHookRenderFrame(rfEvent);
-  if(interactionManager != nullptr) {
-   interactionManager->update(timer.partialTick);
+  {
+   debug::RenderProfileScope modScope("frame", "mod_hooks");
+   mod::RenderFrameEvent rfEvent{timer.partialTick, world};
+   net::minecraft::mod::runtime::luaHookRenderFrame(rfEvent);
+   if(interactionManager != nullptr) {
+    interactionManager->update(timer.partialTick);
+   }
   }
   if(gameRenderer != nullptr) {
+   debug::RenderProfileScope worldScope("frame", "world_render");
    gameRenderer->onFrameUpdate(timer.partialTick);
   }
  }
  if(world != nullptr) {
+  debug::RenderProfileScope publishScope("frame", "chunk_publish");
   world->pumpChunkPublish();
  }
 }

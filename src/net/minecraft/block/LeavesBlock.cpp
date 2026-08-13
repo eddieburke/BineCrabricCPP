@@ -117,14 +117,8 @@ int LeavesBlock::getColorMultiplier(const BlockView* blockView, int x, int y, in
  if(biomeSource == nullptr) {
   return net::minecraft::client::color::world::FoliageColors::getDefaultColor();
  }
- std::vector<net::minecraft::Biome*> scratch;
- biomeSource->getBiomesInArea(scratch, x, z, 1, 1);
- const auto& temperatureMap = biomeSource->temperatureMap();
- const auto& downfallMap = biomeSource->downfallMap();
- if(temperatureMap.empty() || downfallMap.empty()) {
-  return net::minecraft::client::color::world::FoliageColors::getDefaultColor();
- }
- return net::minecraft::client::color::world::FoliageColors::getColor(temperatureMap[0], downfallMap[0]);
+ const auto climate = biomeSource->sampleClimate(x, z);
+ return net::minecraft::client::color::world::FoliageColors::getColor(climate.temperature, climate.downfall);
 }
 void LeavesBlock::setFancyGraphics(bool fancy) {
  renderSides = fancy;

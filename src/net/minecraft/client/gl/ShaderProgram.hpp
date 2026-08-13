@@ -21,6 +21,9 @@ class ShaderProgram {
  public:
  static constexpr std::uint32_t kFlagCompute = 1u << 0;
  static constexpr std::uint32_t kFlagTessellation = 1u << 2;
+ // GL_SHADER_IMAGE_ACCESS | GL_TEXTURE_FETCH | GL_SHADER_STORAGE, the set
+ // Program.use() issues before every bind in Iris.
+ static constexpr unsigned int kProgramBindBarrierBits = 0x2028u;
  ShaderProgram();
  ~ShaderProgram();
  ShaderProgram(const ShaderProgram&) = delete;

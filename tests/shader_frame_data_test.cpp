@@ -102,12 +102,13 @@ TEST(ShaderFrameData, SmoothExponentialSeedsInstantlyForZeroHalflife) {
  EXPECT_FLOAT_EQ(client::render::smoothExponential(0.25f, accumulator, initialized, 1.0f, 0.0f),
                  0.25f);
 }
-// Java CommonUniforms: wetness = SmoothedFloat(wetnessHalflife, drynessHalflife, rainStrength)
-// with half lives in deciseconds; the first frame seeds the raw rain strength.
+// Java CommonUniforms.java:182 wetness = SmoothedFloat(wetnessHalfLife, drynessHalfLife,
+// rainStrength) with half lives in deciseconds; the first frame seeds the raw rain strength.
+// Falling uses drynessHalfLife, which PackDirectives.java:64 pins at 200 for every pack.
 TEST(ShaderFrameData, WetnessSmoothSeedsAndUsesDirectiveHalflife) {
- EXPECT_FLOAT_EQ(client::render::updateWetnessSmooth(1.0f, 0.0f, 600.0f, 200.0f), 1.0f);
+ EXPECT_FLOAT_EQ(client::render::updateWetnessSmooth(1.0f, 0.0f, 600.0f), 1.0f);
  const float alpha = 1.0f - std::exp(-std::log(2.0f) / (200.0f * 0.1f));
- EXPECT_NEAR(client::render::updateWetnessSmooth(0.5f, 1.0f, 600.0f, 200.0f),
+ EXPECT_NEAR(client::render::updateWetnessSmooth(0.5f, 1.0f, 600.0f),
              1.0f + (0.5f - 1.0f) * alpha, 1e-4f);
 }
 // Java CenterDepthSampler: linearizes the window depth and smooths with decay

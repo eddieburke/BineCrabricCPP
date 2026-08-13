@@ -118,7 +118,9 @@ ShaderProgram::ShaderProgram(ShaderProgram&& other) noexcept
       lastError_(std::move(other.lastError_)) {
  std::copy(other.uniformLocations_, other.uniformLocations_ + static_cast<std::size_t>(IrisUniformSlot::Count),
            uniformLocations_);
+ std::copy(std::begin(other.computeLocalSize_), std::end(other.computeLocalSize_), std::begin(computeLocalSize_));
  other.program_ = 0;
+ other.computeLocalSize_[0] = other.computeLocalSize_[1] = other.computeLocalSize_[2] = 1;
 }
 ShaderProgram& ShaderProgram::operator=(ShaderProgram&& other) noexcept {
  if(this != &other) {
@@ -130,10 +132,12 @@ ShaderProgram& ShaderProgram::operator=(ShaderProgram&& other) noexcept {
   samplerKinds_ = std::move(other.samplerKinds_);
   samplerNames_ = std::move(other.samplerNames_);
   tessellation_ = other.tessellation_;
+  std::copy(std::begin(other.computeLocalSize_), std::end(other.computeLocalSize_), std::begin(computeLocalSize_));
   drawBuffers_ = std::move(other.drawBuffers_);
   drawBufferColortexIndices_ = std::move(other.drawBufferColortexIndices_);
   lastError_ = std::move(other.lastError_);
   other.program_ = 0;
+  other.computeLocalSize_[0] = other.computeLocalSize_[1] = other.computeLocalSize_[2] = 1;
  }
  return *this;
 }
@@ -247,8 +251,6 @@ bool ShaderProgram::compileCompute(const std::string& computeSource,
   return false;
  }
  program_ = program;
- // Iris ComputeProgram's constructor does exactly this, and nothing else knows
- // the local size: the dispatch divides by it.
  constexpr unsigned int kComputeWorkGroupSize = 0x8267;
  computeLocalSize_[0] = computeLocalSize_[1] = computeLocalSize_[2] = 1;
  GLCore::getProgramiv(program, kComputeWorkGroupSize, computeLocalSize_);
@@ -278,6 +280,7 @@ void ShaderProgram::destroy() {
  drawBuffers_.clear();
  drawBufferColortexIndices_.clear();
  tessellation_ = false;
+ computeLocalSize_[0] = computeLocalSize_[1] = computeLocalSize_[2] = 1;
 }
 void ShaderProgram::resetUniformLocations() {
  std::fill(std::begin(uniformLocations_), std::end(uniformLocations_), -1);
@@ -294,6 +297,14 @@ void ShaderProgram::refreshUniformLocations() {
 void ShaderProgram::bind() const {
  if(program_ != 0 && GLCore::useProgram != nullptr) {
   if(program_ == s_lastBoundProgram) return;
+  // see third_party/iris/common/src/main/java/net/irisshaders/iris/gl/program/Program.java:28
+  // Java barriers on every Program.use(); the switch guard above is the only
+  // divergence, and a producer/consumer pair always straddles a program switch.
+  if(GLCore::memoryBarrier != nullptr) {
+   GLCore::memoryBarrier(kProgramBindBarrierBits);
+   ::net::minecraft::client::debug::RenderProfiler::instance().record(
+       ::net::minecraft::client::debug::RenderMetric::MemoryBarriers);
+  }
   s_lastBoundProgram = program_;
   GLCore::useProgram(program_);
   ::net::minecraft::client::debug::RenderProfiler::instance().record(
@@ -734,6 +745,13 @@ bool ShaderProgram::loadFromBinary(const ProgramBinaryBlob& binary) {
  samplerNames_.clear();
  uniformSnapshotGeneration_ = 0;
  tessellation_ = binary.tessellation;
+ if(binary.compute) {
+  constexpr unsigned int kComputeWorkGroupSize = 0x8267;
+  GLCore::getProgramiv(program, kComputeWorkGroupSize, computeLocalSize_);
+  for(int& axis : computeLocalSize_) {
+   if(axis <= 0) axis = 1;
+  }
+ }
  reflectSamplers();
  refreshUniformLocations();
  return true;

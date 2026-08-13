@@ -10,6 +10,7 @@
 #include <algorithm>
 #include <array>
 #include <filesystem>
+#include <fstream>
 #include <string>
 #include <string_view>
 #include "net/minecraft/client/ClientLog.hpp"
@@ -38,6 +39,61 @@ using PackCatalog::packDirectoryStamp;
 using PackCatalog::zipResources;
 std::string defaultSettingValue(const PackSetting& setting) {
  return setting.defaultValue;
+}
+std::filesystem::path settingsFilePath(const PackInstance& pack) {
+ return pack.path.parent_path() / (pack.summary.key + ".txt");
+}
+std::unordered_map<std::string, std::string> readSettingsFile(const PackInstance& pack) {
+ std::unordered_map<std::string, std::string> result;
+ if(pack.embedded) return result;
+ const std::filesystem::path path = settingsFilePath(pack);
+ std::ifstream in(path);
+ if(!in) return result;
+ std::string line;
+ while(std::getline(in, line)) {
+  if(line.empty() || line[0] == '#') continue;
+  const auto eq = line.find('=');
+  if(eq == std::string::npos) continue;
+  const std::string key = line.substr(0, eq);
+  const std::string val = line.substr(eq + 1);
+  bool valid = false;
+  for(const PackSetting& setting : pack.definition.settings) {
+   if(setting.key != key) continue;
+   std::string normalized;
+   if(normalizeSettingValue(setting, val, normalized)) {
+    result[key] = std::move(normalized);
+   }
+   valid = true;
+   break;
+  }
+  if(!valid) continue;
+ }
+ return result;
+}
+void writeSettingsFile(const PackInstance& pack) {
+ if(pack.embedded) return;
+ const std::filesystem::path path = settingsFilePath(pack);
+ bool anyChanged = false;
+ for(const PackSetting& setting : pack.definition.settings) {
+  const auto it = pack.settings.find(setting.key);
+  if(it != pack.settings.end() && it->second != defaultSettingValue(setting)) {
+   anyChanged = true;
+   break;
+  }
+ }
+ if(!anyChanged) {
+  std::error_code ec;
+  std::filesystem::remove(path, ec);
+  return;
+ }
+ std::ofstream out(path, std::ios::trunc);
+ if(!out) return;
+ for(const PackSetting& setting : pack.definition.settings) {
+  const auto it = pack.settings.find(setting.key);
+  if(it == pack.settings.end()) continue;
+  if(it->second == defaultSettingValue(setting)) continue;
+  out << it->first << "=" << it->second << "\n";
+ }
 }
 } // namespace
 Pipeline::Pipeline(std::filesystem::path gameDirectory, option::GameOptions* options,
@@ -303,6 +359,18 @@ std::unique_ptr<PackInstance> Pipeline::loadPack(const std::filesystem::path& pa
   pack->rootDefinition = pack->definition;
   pack->summary.name = path.filename().string();
   initializePackRuntime(*pack);
+  const auto savedSettings = readSettingsFile(*pack);
+  if(!savedSettings.empty()) {
+   for(const auto& [key, value] : savedSettings) {
+    pack->settings[key] = value;
+   }
+   if(PackLoader::load(
+          pack->resources,
+          [&pack](std::string_view resource) { return PackCompiler::cachedText(*pack, std::string(resource)); },
+          pack->definition, pack->sourceOptions, pack->summary.error, savedSettings)) {
+    pack->rootDefinition = pack->definition;
+   }
+  }
  }
  if(pack->summary.name.empty()) {
   pack->summary.name = path.filename().string();
@@ -441,6 +509,7 @@ bool Pipeline::setSettings(const std::vector<std::pair<std::string, std::string>
   return false;
  }
  pack->settings = std::move(merged);
+ writeSettingsFile(*pack);
  pack->sourceOptions = std::move(sourceOptions);
  pack->rootDefinition = std::move(definition);
  pack->definition = pack->rootDefinition;

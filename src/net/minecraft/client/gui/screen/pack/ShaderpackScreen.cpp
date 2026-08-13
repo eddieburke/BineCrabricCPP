@@ -27,11 +27,14 @@ constexpr int kButtonHeight = 20;
 class ShaderSliderWidget : public widget::ButtonWidget {
  public:
  using Change = std::function<float(float)>;
- using Format = std::function<std::string()>;
- ShaderSliderWidget(int x, int y, int width, int height, std::string text, float value, Change change, Format format)
+ using Commit = std::function<void(float)>;
+ using Format = std::function<std::string(float)>;
+ ShaderSliderWidget(int x, int y, int width, int height, std::string text, float value, Change change,
+                    Commit commit, Format format)
      : ButtonWidget(-1, x, y, width, height, std::move(text)),
        value_(std::clamp(value, 0.0f, 1.0f)),
        change_(std::move(change)),
+       commit_(std::move(commit)),
        format_(std::move(format)) {
  }
  [[nodiscard]] int getYImage(bool) const override {
@@ -64,8 +67,18 @@ class ShaderSliderWidget : public widget::ButtonWidget {
   dragging_ = true;
   updateValue(mouseX);
  }
- void mouseReleased(int, int) override {
+ void mouseReleased(int mouseX, int) override {
+  if(!dragging_) {
+   return;
+  }
+  updateValue(mouseX);
   dragging_ = false;
+  if(commit_) {
+   commit_(value_);
+  }
+  if(format_) {
+   text = format_(value_);
+  }
  }
 
  private:
@@ -74,12 +87,13 @@ class ShaderSliderWidget : public widget::ButtonWidget {
       std::clamp(static_cast<float>(mouseX - (x + 4)) / static_cast<float>(std::max(1, width - 8)), 0.0f, 1.0f);
   value_ = change_ ? std::clamp(change_(position), 0.0f, 1.0f) : position;
   if(format_) {
-   text = format_();
+   text = format_(value_);
   }
  }
  float value_ = 0.0f;
  bool dragging_ = false;
  Change change_;
+ Commit commit_;
  Format format_;
 };
 float sliderPosition(const PackSetting& setting, const std::string& rawValue) {
@@ -90,19 +104,20 @@ float sliderPosition(const PackSetting& setting, const std::string& rawValue) {
  const double current = std::strtod(rawValue.c_str(), nullptr);
  return static_cast<float>(std::clamp((current - setting.minimum) / range, 0.0, 1.0));
 }
-float applySliderPosition(render::Pipeline* pipeline, const PackSetting& setting, float position) {
+std::string sliderValue(const PackSetting& setting, float position) {
  const double range = setting.maximum - setting.minimum;
- if(range <= 0.0 || pipeline == nullptr) {
-  return 0.0f;
+ if(range <= 0.0) {
+  return setting.defaultValue;
  }
  double val = setting.minimum + static_cast<double>(std::clamp(position, 0.0f, 1.0f)) * range;
  if(setting.step > 0.0) {
   val = setting.minimum + std::round((val - setting.minimum) / setting.step) * setting.step;
  }
  val = std::clamp(val, setting.minimum, setting.maximum);
- std::string next = (setting.type == SettingType::Int) ? std::to_string(static_cast<int>(val)) : std::to_string(val);
- pipeline->setSetting(setting.key, next);
- return sliderPosition(setting, next);
+ return (setting.type == SettingType::Int) ? std::to_string(static_cast<int>(val)) : std::to_string(val);
+}
+float snappedSliderPosition(const PackSetting& setting, float position) {
+ return sliderPosition(setting, sliderValue(setting, position));
 }
 std::string settingLabel(const PackSetting& setting, const std::string& value) {
  std::ostringstream text;
@@ -331,18 +346,18 @@ void ShaderpackScreen::rebuildLayout() {
         kButtonHeight,
         settingLabel(setting, val),
         sliderPosition(setting, val),
-        [this, setting](float pos) {
-         if(minecraft() == nullptr || minecraft()->gameRenderer == nullptr) {
-          return pos;
-         }
-         return applySliderPosition(minecraft()->gameRenderer->shaderPipeline(), setting, pos);
+        [setting](float pos) {
+         return snappedSliderPosition(setting, pos);
         },
-        [this, setting] {
+        [this, setting](float pos) {
          if(minecraft() == nullptr || minecraft()->gameRenderer == nullptr ||
             minecraft()->gameRenderer->shaderPipeline() == nullptr) {
-          return std::string();
+          return;
          }
-         return settingLabel(setting, minecraft()->gameRenderer->shaderPipeline()->settingValue(setting.key));
+         minecraft()->gameRenderer->shaderPipeline()->setSetting(setting.key, sliderValue(setting, pos));
+        },
+        [setting](float pos) {
+         return settingLabel(setting, sliderValue(setting, pos));
         });
    }
    scroll_.addEntry(widgetIndex, widgetY);

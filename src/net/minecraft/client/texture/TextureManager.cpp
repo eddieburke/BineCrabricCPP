@@ -155,6 +155,7 @@ RasterImage makeMissingImage() {
 } // namespace
 bool TextureManager::MIPMAP = false;
 bool TextureManager::MIPMAP_LINEAR = false;
+int TextureManager::MIPMAP_LEVEL = 0;
 TextureManager::TextureManager(option::GameOptions* options) : gameOptions_(options) {
  // OpenGL calls require an active context (created in Minecraft::init).
 }

@@ -122,6 +122,7 @@ void GameOptions::applyDerivedSettings() {
  const RenderSettings resolved = renderSettings(*this);
  texture::TextureManager::MIPMAP = mipmapLevel > 0;
  texture::TextureManager::MIPMAP_LINEAR = resolved.mipmapLinearFilter;
+ texture::TextureManager::MIPMAP_LEVEL = mipmapLevel;
  ao = aoLevel > 0.0f;
 }
 void GameOptions::applySideEffects(ApplyFlags flags) {
@@ -208,8 +209,12 @@ void GameOptions::setFloat(std::string_view persistKey, float value) {
   return;
  }
  value = std::clamp(value, 0.0f, 1.0f);
+ const float previous = (*spec)->getFloat != nullptr ? (*spec)->getFloat(*this) : value;
  if((*spec)->setFloat != nullptr) {
   (*spec)->setFloat(*this, value);
+ }
+ if((*spec)->getFloat != nullptr && (*spec)->getFloat(*this) == previous) {
+  return;
  }
  applySideEffects((*spec)->onFloatChange);
  save();

@@ -67,7 +67,9 @@ class ChunkNibbleArray {
   return bytes.size() == blockCount / 2;
  }
  [[nodiscard]] bool isAllZero() const noexcept {
-  for(std::uint8_t value : bytes) {
+  for(const std::uint8_t& stored : bytes) {
+   const std::uint8_t value =
+       std::atomic_ref(const_cast<std::uint8_t&>(stored)).load(std::memory_order_relaxed);
    if(value != 0) {
     return false;
    }

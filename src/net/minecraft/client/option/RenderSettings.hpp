@@ -19,6 +19,7 @@ struct RenderSettings {
  float ambientOcclusionStrength = 0.0f;
  // Iris shaders.properties: separateAo / oldLighting (defaults match Iris).
  bool separateAo = false;
+ bool vanillaShaderAo = false;
  bool oldLighting = false;
  bool mipmapLinearFilter = false;
  bool fancyLeaves = true;

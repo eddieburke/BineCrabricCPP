@@ -75,6 +75,8 @@ class TextureManager {
  }
  static bool MIPMAP;
  static bool MIPMAP_LINEAR;
+ // https://github.com/IrisShaders/Iris/blob/26.1/common/src/main/java/net/irisshaders/iris/gl/shader/StandardMacros.java:50
+ static int MIPMAP_LEVEL;
 
  private:
  ImageDownload* downloadImage(const std::string& url, SkinImageProcessor* processor,

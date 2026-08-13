@@ -39,14 +39,8 @@ int GrassBlock::getColorMultiplier(const BlockView* blockView, int x, int /*y*/,
  if(biomeSource == nullptr) {
   return 0xFFFFFF;
  }
- std::vector<net::minecraft::Biome*> scratch;
- biomeSource->getBiomesInArea(scratch, x, z, 1, 1);
- const auto& temperatureMap = biomeSource->temperatureMap();
- const auto& downfallMap = biomeSource->downfallMap();
- if(temperatureMap.empty() || downfallMap.empty()) {
-  return 0xFFFFFF;
- }
- return net::minecraft::client::color::world::GrassColors::getColor(temperatureMap[0], downfallMap[0]);
+ const auto climate = biomeSource->sampleClimate(x, z);
+ return net::minecraft::client::color::world::GrassColors::getColor(climate.temperature, climate.downfall);
 }
 void GrassBlock::onTick(World* world, int x, int y, int z, JavaRandom& random) {
  if(world == nullptr || world->isRemote() || Block::DIRT == nullptr || Block::GRASS_BLOCK == nullptr) {

@@ -11,6 +11,8 @@ namespace net::minecraft::client::gl {
 namespace {
 constexpr char kMagic[8] = {'M', 'C', 'S', 'P', 'B', 'I', 'N', '1'};
 constexpr std::uint32_t kFileVersion = 5;
+constexpr std::uintmax_t kMaxCacheBytes = 512ULL * 1024ULL * 1024ULL;
+constexpr std::size_t kMaxCacheEntries = 2048;
 #pragma pack(push, 1)
 struct FileHeader {
  char magic[8];
@@ -54,6 +56,7 @@ std::optional<ProgramBinaryBlob> ShaderBinaryCache::tryLoad(std::uint64_t conten
    return *pending->second;
   }
  }
+ const std::lock_guard diskLock(diskMutex_);
  const std::wstring path = nativePath(contentHash);
  HANDLE file = CreateFileW(path.c_str(), GENERIC_READ, FILE_SHARE_READ, nullptr, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
  if(file == INVALID_HANDLE_VALUE) return std::nullopt;
@@ -91,6 +94,11 @@ std::optional<ProgramBinaryBlob> ShaderBinaryCache::tryLoad(std::uint64_t conten
 
 bool ShaderBinaryCache::store(const ProgramBinaryBlob& blob) {
  if(root_.empty() || blob.bytes.empty() || blob.contentHash == 0 || blob.binaryFormat == 0) return false;
+ const std::lock_guard diskLock(diskMutex_);
+ return storeOnDisk(blob);
+}
+
+bool ShaderBinaryCache::storeOnDisk(const ProgramBinaryBlob& blob) {
  std::error_code ec;
  std::filesystem::create_directories(root_, ec);
  const std::wstring path = nativePath(blob.contentHash);
@@ -144,8 +152,49 @@ void ShaderBinaryCache::remove(std::uint64_t contentHash) {
    return blob->contentHash == contentHash;
   });
  }
+ const std::lock_guard diskLock(diskMutex_);
  const std::wstring path = nativePath(contentHash);
  DeleteFileW(path.c_str());
+}
+
+void ShaderBinaryCache::pruneDiskCache() {
+ struct Entry {
+  std::filesystem::path path;
+  std::filesystem::file_time_type modified;
+  std::uintmax_t size = 0;
+ };
+ std::error_code ec;
+ std::vector<Entry> entries;
+ std::uintmax_t total = 0;
+ for(const auto& item : std::filesystem::directory_iterator(root_, ec)) {
+  if(ec) break;
+  if(!item.is_regular_file(ec) || item.path().extension() != ".bin") continue;
+  const std::uintmax_t size = item.file_size(ec);
+  if(ec) {
+   ec.clear();
+   continue;
+  }
+  entries.push_back({item.path(), item.last_write_time(ec), size});
+  if(ec) {
+   ec.clear();
+   entries.back().modified = {};
+  }
+  total += size;
+ }
+ if(entries.size() <= kMaxCacheEntries && total <= kMaxCacheBytes) return;
+ std::sort(entries.begin(), entries.end(), [](const Entry& first, const Entry& second) {
+  return first.modified < second.modified;
+ });
+ std::size_t remaining = entries.size();
+ for(const Entry& entry : entries) {
+  if(remaining <= kMaxCacheEntries && total <= kMaxCacheBytes) break;
+  const std::lock_guard diskLock(diskMutex_);
+  if(std::filesystem::remove(entry.path, ec)) {
+   total -= std::min(total, entry.size);
+   --remaining;
+  }
+  ec.clear();
+ }
 }
 
 void ShaderBinaryCache::writerLoop() {
@@ -159,10 +208,24 @@ void ShaderBinaryCache::writerLoop() {
   }
   for(const auto& blob : local) {
    const std::uint64_t contentHash = blob->contentHash;
-   store(*blob);
-   const std::lock_guard lock(writerMutex_);
+   std::unique_lock writerLock(writerMutex_);
    const auto pending = pendingWrites_.find(contentHash);
-   if(pending != pendingWrites_.end() && pending->second == blob) pendingWrites_.erase(pending);
+   const bool current = pending != pendingWrites_.end() && pending->second == blob;
+   if(current) {
+    std::unique_lock diskLock(diskMutex_);
+    writerLock.unlock();
+    if(storeOnDisk(*blob) && (++writesSincePrune_ == 1 || writesSincePrune_ % 32 == 0)) {
+     diskLock.unlock();
+     pruneDiskCache();
+    }
+   } else {
+    writerLock.unlock();
+   }
+   {
+    const std::lock_guard lock(writerMutex_);
+    const auto landed = pendingWrites_.find(contentHash);
+    if(landed != pendingWrites_.end() && landed->second == blob) pendingWrites_.erase(landed);
+   }
   }
   local.clear();
  }

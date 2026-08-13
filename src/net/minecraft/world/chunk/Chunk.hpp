@@ -26,7 +26,21 @@ class Chunk {
  static constexpr int height = 128;
  static constexpr int depth = 16;
  static constexpr std::size_t volume = static_cast<std::size_t>(width * height * depth);
- static inline bool hasSkyLight = false;
+ class RenderWriteGuard {
+  public:
+  explicit RenderWriteGuard(const Chunk& chunk) : chunk_(chunk) {
+   chunk_.lockRenderWrite();
+  }
+  ~RenderWriteGuard() {
+   chunk_.unlockRenderWrite();
+  }
+  RenderWriteGuard(const RenderWriteGuard&) = delete;
+  RenderWriteGuard& operator=(const RenderWriteGuard&) = delete;
+
+  private:
+  const Chunk& chunk_;
+ };
+ static inline bool hasSkyLight{false};
  Chunk() : Chunk(nullptr, 0, 0) {
  }
  Chunk(int x, int z) : Chunk(nullptr, x, z) {
@@ -66,7 +80,7 @@ class Chunk {
         blockEntities(std::move(other.blockEntities)),
         entities(std::move(other.entities)),
         terrainPopulated(other.terrainPopulated),
-        dirty(other.dirty),
+        dirty(other.dirty.load(std::memory_order_relaxed)),
         empty(other.empty),
         lastSaveHadEntities(other.lastSaveHadEntities.load(std::memory_order_relaxed)),
         lastSaveTime(other.lastSaveTime) {
@@ -87,6 +101,10 @@ class Chunk {
  void onLoad() {
  }
  void populateHeightMapOnly() {
+  const RenderWriteGuard guard(*this);
+  populateHeightMapOnlyUnlocked();
+ }
+ void populateHeightMapOnlyUnlocked() {
   int minHeight = 127;
   for(int localX = 0; localX < 16; ++localX) {
    for(int localZ = 0; localZ < 16; ++localZ) {
@@ -138,6 +156,7 @@ class Chunk {
   return lightType == LightType::Sky ? skyLight.get(localX, yPos, localZ) : blockLight.get(localX, yPos, localZ);
  }
  void setLight(LightType lightType, int localX, int yPos, int localZ, int value) {
+  const RenderWriteGuard guard(*this);
   if(lightType == LightType::Sky) {
    skyLight.set(localX, yPos, localZ, value);
   } else {
@@ -148,7 +167,7 @@ class Chunk {
  [[nodiscard]] int getLight(int localX, int yPos, int localZ, int ambientDarkness) const {
   int sky = skyLight.get(localX, yPos, localZ);
   if(sky > 0) {
-   hasSkyLight = true;
+    hasSkyLight = true;
   }
   const int block = blockLight.get(localX, yPos, localZ);
   if(block > (sky -= ambientDarkness)) {
@@ -287,40 +306,40 @@ class Chunk {
                     int maxY,
                     int maxZ,
                     int offset) {
-  for(int localX = minX; localX < maxX; ++localX) {
-   for(int localZ = minZ; localZ < maxZ; ++localZ) {
-    const std::size_t dest = index(localX, minY, localZ);
-    const int count = maxY - minY;
-    std::copy_n(bytes.begin() + offset, count, blocks.begin() + static_cast<std::ptrdiff_t>(dest));
-    offset += count;
+  const RenderWriteGuard guard(*this);
+   for(int localX = minX; localX < maxX; ++localX) {
+    for(int localZ = minZ; localZ < maxZ; ++localZ) {
+     const std::size_t dest = index(localX, minY, localZ);
+     const int count = maxY - minY;
+     std::copy_n(bytes.begin() + offset, count, blocks.begin() + static_cast<std::ptrdiff_t>(dest));
+     offset += count;
+    }
    }
-  }
-  populateHeightMapOnly();
-  for(int localX = minX; localX < maxX; ++localX) {
-   for(int localZ = minZ; localZ < maxZ; ++localZ) {
-    const std::size_t dest = index(localX, minY, localZ) >> 1U;
-    const int count = (maxY - minY) / 2;
-    std::copy_n(bytes.begin() + offset, count, meta.bytes.begin() + static_cast<std::ptrdiff_t>(dest));
-    offset += count;
+  populateHeightMapOnlyUnlocked();
+   for(int localX = minX; localX < maxX; ++localX) {
+    for(int localZ = minZ; localZ < maxZ; ++localZ) {
+     const std::size_t dest = index(localX, minY, localZ) >> 1U;
+     const int count = (maxY - minY) / 2;
+     std::copy_n(bytes.begin() + offset, count, meta.bytes.begin() + static_cast<std::ptrdiff_t>(dest));
+     offset += count;
+    }
    }
-  }
-  for(int localX = minX; localX < maxX; ++localX) {
-   for(int localZ = minZ; localZ < maxZ; ++localZ) {
-    const std::size_t dest = index(localX, minY, localZ) >> 1U;
-    const int count = (maxY - minY) / 2;
-    std::copy_n(
-        bytes.begin() + offset, count, blockLight.bytes.begin() + static_cast<std::ptrdiff_t>(dest));
-    offset += count;
+   for(int localX = minX; localX < maxX; ++localX) {
+    for(int localZ = minZ; localZ < maxZ; ++localZ) {
+     const std::size_t dest = index(localX, minY, localZ) >> 1U;
+     const int count = (maxY - minY) / 2;
+     std::copy_n(bytes.begin() + offset, count, blockLight.bytes.begin() + static_cast<std::ptrdiff_t>(dest));
+     offset += count;
+    }
    }
-  }
-  for(int localX = minX; localX < maxX; ++localX) {
-   for(int localZ = minZ; localZ < maxZ; ++localZ) {
-    const std::size_t dest = index(localX, minY, localZ) >> 1U;
-    const int count = (maxY - minY) / 2;
-    std::copy_n(bytes.begin() + offset, count, skyLight.bytes.begin() + static_cast<std::ptrdiff_t>(dest));
-    offset += count;
+   for(int localX = minX; localX < maxX; ++localX) {
+    for(int localZ = minZ; localZ < maxZ; ++localZ) {
+     const std::size_t dest = index(localX, minY, localZ) >> 1U;
+     const int count = (maxY - minY) / 2;
+     std::copy_n(bytes.begin() + offset, count, skyLight.bytes.begin() + static_cast<std::ptrdiff_t>(dest));
+     offset += count;
+    }
    }
-  }
   dirty = true;
   return offset;
  }
@@ -332,6 +351,7 @@ class Chunk {
                             int maxY,
                             int maxZ,
                             int offset) const {
+  const RenderWriteGuard guard(*this);
   const int sizeX = maxX - minX;
   const int sizeY = maxY - minY;
   const int sizeZ = maxZ - minZ;
@@ -394,12 +414,13 @@ class Chunk {
  [[nodiscard]] bool isEmpty() const {
   return empty;
  }
- void fill() {
-  for(std::size_t i = 0; i < blocks.size(); ++i) {
-   const std::uint8_t blockId = blocks[i];
-   blocks[i] = Block::BLOCKS[static_cast<std::size_t>(blockId)] == nullptr ? 0 : blockId;
+  void fill() {
+   const RenderWriteGuard guard(*this);
+   for(std::size_t i = 0; i < blocks.size(); ++i) {
+    const std::uint8_t blockId = blocks[i];
+    blocks[i] = Block::BLOCKS[static_cast<std::size_t>(blockId)] == nullptr ? 0 : blockId;
+   }
   }
- }
  World* world = nullptr;
  std::vector<std::uint8_t> blocks;
  bool loaded = false;
@@ -414,7 +435,7 @@ class Chunk {
   std::unordered_map<Vec3i, std::unique_ptr<block::entity::BlockEntity>, Vec3iHash> blockEntities{};
   std::array<std::vector<Entity*>, 8> entities{};
   bool terrainPopulated = false;
-  bool dirty{false};
+  std::atomic<bool> dirty{false};
   bool empty = false;
   std::atomic<bool> lastSaveHadEntities{false};
   long long lastSaveTime = 0;
@@ -450,6 +471,7 @@ class Chunk {
   return topY;
  }
  void recalculateHeightColumn(int localX, int localZ) {
+  const RenderWriteGuard guard(*this);
   const int topY = findTopBlock(localX, localZ);
   std::atomic_ref<std::uint8_t>(heightmap[static_cast<std::size_t>((localZ << 4) | localX)])
       .store(static_cast<std::uint8_t>(topY), std::memory_order_relaxed);

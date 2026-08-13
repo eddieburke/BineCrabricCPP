@@ -48,6 +48,11 @@ void bindProgramMaterialTextures(gl::ShaderProgram& program, const WorldProgramB
  const int maxUnits = maxTextureUnits();
  const int atlasSize[2] = {context.atlasWidth, context.atlasHeight};
  program.set2iAt(program.location("atlasSize"), atlasSize);
+ int pbrTextureFlags = context.pbrTextureFlags;
+ if(maxUnits <= 2) pbrTextureFlags &= ~1;
+ if(maxUnits <= 3) pbrTextureFlags &= ~2;
+ program.set1i("pbrTextureFlags", pbrTextureFlags);
+ program.set1i("pbrAtlasGrid", std::max(1, context.pbrAtlasGrid));
  if(context.normalTexture != 0 && maxUnits > 2) {
   bindSceneSampler(program, static_cast<int>(context.normalTexture), 2, context.pack,
                    {"normals", "gtexture1", "normalMap"});

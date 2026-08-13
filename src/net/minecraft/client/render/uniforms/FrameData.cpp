@@ -576,12 +576,14 @@ float updateCenterDepthSmooth(float windowDepth01, float nearPlane, float farPla
  g_centerDepthSmooth += (linear - g_centerDepthSmooth) * std::clamp(alpha, 0.0f, 1.0f);
  return g_centerDepthSmooth;
 }
-float updateWetnessSmooth(float rainStrength, float frameTime, float wetnessHalflife, float drynessHalflife) {
+float updateWetnessSmooth(float rainStrength, float frameTime, float wetnessHalflife) {
+ // see third_party/iris/common/src/main/java/net/irisshaders/iris/shaderpack/properties/PackDirectives.java:64
+ static constexpr float kDrynessHalflife = 200.0f;
  static float accumulator = 0.0f;
  static bool initialized = false;
  const float target = std::clamp(rainStrength, 0.0f, 1.0f);
  smoothExponential(target, accumulator, initialized, frameTime,
-                   (target > accumulator ? wetnessHalflife : drynessHalflife) * 0.1f);
+                   (target > accumulator ? wetnessHalflife : kDrynessHalflife) * 0.1f);
  g_wetnessSmooth = accumulator;
  return g_wetnessSmooth;
 }

@@ -270,6 +270,9 @@ const float* drawCameraPosition() noexcept {
 const math::Matrix4f& drawModelView() noexcept {
  return g_drawModelView;
 }
+const math::Matrix4f& drawModelViewInverse() noexcept {
+ return g_drawModelViewInverse;
+}
 const math::Matrix4f& drawProjection() noexcept {
  return g_drawProjection;
 }
@@ -277,6 +280,12 @@ const math::Matrix4f& drawProjection() noexcept {
 // the hand's own space. Producers never do; they compose a pose instead.
 void setPassModelView(const math::Matrix4f& modelView) noexcept {
  g_drawModelView = modelView;
+ // The inverse is the same fact as the matrix. bindAndUploadUniforms trusts it
+ // whenever a draw sits on the pass base, so leaving the old one behind uploads a
+ // modelViewMatrixInverse belonging to the previous base — the hand pass carried
+ // the identity inverse through the damage tilt and the view bob.
+ g_drawModelViewInverse = modelView;
+ g_drawModelViewInverse.invert();
  g_matricesUploaded = false;
  g_drawPose.identity();
 }

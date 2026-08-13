@@ -2,9 +2,9 @@
 #include "net/minecraft/world/biome/Biome.hpp"
 namespace net::minecraft {
 BiomeSource::ClimateSample BiomeSource::sampleClimate(int x, int z) const {
- std::vector<double> t(1);
- std::vector<double> d(1);
- std::vector<double> w(1);
+ thread_local std::vector<double> t(1);
+ thread_local std::vector<double> d(1);
+ thread_local std::vector<double> w(1);
  temperatureSampler_.sample(t, x, z, 1, 1, 0.025, 0.025, 0.25);
  downfallSampler_.sample(d, x, z, 1, 1, 0.05, 0.05, 0.3333333333333333);
  weirdnessSampler_.sample(w, x, z, 1, 1, 0.25, 0.25, 0.5882352941176471);
