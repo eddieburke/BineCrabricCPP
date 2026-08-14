@@ -1,4 +1,5 @@
 #include "net/minecraft/entity/passive/SquidEntity.hpp"
+#include <algorithm>
 #include <cmath>
 #include "net/minecraft/block/material/Material.hpp"
 #include "net/minecraft/item/Item.hpp"
@@ -49,6 +50,26 @@ void SquidEntity::tickMovement() {
    turningSpeed *= 0.99f;
   }
   if(!interpolateOnly) {
+   const auto canSwimAlong = [&](float directionX, float directionY, float directionZ) {
+    if(world == nullptr) {
+     return false;
+    }
+    const Box swimProbe = boundingBox.contract(0.1, 0.0, 0.1)
+                              .offset(static_cast<double>(directionX) * 4.0,
+                                      static_cast<double>(directionY) * 4.0,
+                                      static_cast<double>(directionZ) * 4.0);
+    return world->isFluidInBox(swimProbe, block::material::Material::WATER) &&
+           world->getBlockCollisions(swimProbe).empty();
+   };
+   if(!canSwimAlong(swimX, swimY, swimZ)) {
+    swimX = -swimX;
+    swimY = std::min(swimY, 0.0f);
+    swimZ = -swimZ;
+    if(!canSwimAlong(swimX, swimY, swimZ)) {
+     swimX = 0.0f;
+     swimZ = 0.0f;
+    }
+   }
    velocityX = static_cast<double>(swimX) * static_cast<double>(swimVelocityScale);
    velocityY = static_cast<double>(swimY) * static_cast<double>(swimVelocityScale);
    velocityZ = static_cast<double>(swimZ) * static_cast<double>(swimVelocityScale);

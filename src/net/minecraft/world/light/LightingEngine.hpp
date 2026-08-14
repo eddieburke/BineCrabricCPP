@@ -1,5 +1,6 @@
 #pragma once
 #include <atomic>
+#include <chrono>
 #include <condition_variable>
 #include <cstddef>
 #include <cstdint>
@@ -22,6 +23,12 @@ class LightingEngine {
  struct DirtyRegion {
   int minX, minY, minZ, maxX, maxY, maxZ;
  };
+ struct TraceStats {
+  std::size_t stagedWork = 0;
+  std::size_t pendingWork = 0;
+  std::size_t pendingRegions = 0;
+  std::size_t publishedRegions = 0;
+ };
  explicit LightingEngine(world::light::UnifiedLightRegistry& registry);
  ~LightingEngine() {
   stop();
@@ -33,11 +40,18 @@ class LightingEngine {
  void setSkyLightSuppressed(bool suppressed) noexcept {
   skyLightSuppressed_.store(suppressed, std::memory_order_relaxed);
  }
+ void setCameraPosition(double x, double y, double z) noexcept {
+  cameraX_.store(x, std::memory_order_relaxed);
+  cameraY_.store(y, std::memory_order_relaxed);
+  cameraZ_.store(z, std::memory_order_relaxed);
+  cameraKnown_.store(true, std::memory_order_relaxed);
+ }
 
  void registerChunk(Chunk* chunk);
  void unregisterChunk(Chunk* chunk);
  [[nodiscard]] std::vector<DirtyRegion> drainDirtyRegions(std::size_t maxRegions);
  [[nodiscard]] bool hasDirtyRegions() const;
+ [[nodiscard]] TraceStats traceStats() const;
  [[nodiscard]] bool busy() const noexcept {
   return pendingCount_.load(std::memory_order_relaxed) + stagedCount_.load(std::memory_order_relaxed) != 0;
  }
@@ -59,12 +73,28 @@ class LightingEngine {
  };
  struct WorkerState {
   std::unordered_map<std::uint64_t, Chunk*> pinCache;
+  // Flood-fill propagation visits blocks in near-spatial order, so almost
+  // every chunkAt() call in a run repeats the previous chunk (confirmed via
+  // VTune: chunkAt/chunkKey were ~10% of a viewDistance-20 streaming trace).
+  // Two slots, not one: runUpdate samples the 6 cardinal neighbors of every
+  // voxel, and at an x/z chunk edge those alternate between exactly two
+  // chunks (…A, B, A, A, A, A, A…) — a single-entry cache would miss on
+  // every other lookup there. Slot 0 is the most-recently-used.
+  static constexpr int kCacheSlots = 2;
+  std::uint64_t lastKeys[kCacheSlots] = {};
+  Chunk* lastChunks[kCacheSlots] = {};
+  int lastValidCount = 0;
  };
  void scheduleWorkersLocked();
  void runScheduledWork();
  [[nodiscard]] bool tryClaimBox(Box& out);
  void releaseClaimedBoxLocked(const Box& box);
  void publishDirtyRegion(DirtyRegion region);
+ void mergeIntoPending(DirtyRegion region);
+ [[nodiscard]] bool settledOrOverdue() const;
+ void flushPendingLocked(bool includeFar);
+ [[nodiscard]] double distanceSqToCamera(const DirtyRegion& region) const noexcept;
+ [[nodiscard]] bool isNearCamera(const DirtyRegion& region) const noexcept;
  void runUpdate(const Box& box, WorkerState& state);
  Chunk* chunkAt(int chunkX, int chunkZ, WorkerState& state);
  void releasePins(WorkerState& state);
@@ -81,6 +111,9 @@ class LightingEngine {
 
  static constexpr std::size_t kStagingFlushBoxes = 1024;
  static constexpr std::size_t kStagingMergeScan = 32;
+ static constexpr std::size_t kMaxPendingRegions = 64;
+ static constexpr std::chrono::milliseconds kPendingDeadline{250};
+ static constexpr double kNearPublishDistance = 64.0;
  std::mutex stagingMutex_;
  std::deque<Box> staging_;
  mutable std::mutex queueMutex_;
@@ -92,6 +125,13 @@ class LightingEngine {
  std::atomic<std::size_t> pendingCount_{0};
  std::atomic<std::size_t> stagedCount_{0};
  std::atomic<bool> skyLightSuppressed_{false};
+ std::atomic<double> cameraX_{0.0};
+ std::atomic<double> cameraY_{0.0};
+ std::atomic<double> cameraZ_{0.0};
+ std::atomic<bool> cameraKnown_{false};
+ mutable std::mutex pendingMutex_;
+ std::vector<DirtyRegion> pending_;
+ std::chrono::steady_clock::time_point pendingSince_{};
  std::mutex registryMutex_;
  std::unordered_map<std::uint64_t, Chunk*> registry_;
  util::concurrent::Channel<DirtyRegion> outbox_{4096};

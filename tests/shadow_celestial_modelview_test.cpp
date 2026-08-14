@@ -1,5 +1,6 @@
 #include <gtest/gtest.h>
 #include <cmath>
+#include <limits>
 #include "net/minecraft/client/render/camera/FrameRenderCamera.hpp"
 namespace net::minecraft::test {
 namespace {
@@ -219,6 +220,12 @@ TEST(ShadowCelestialModelView, DirectionOverrideAlignsShadowAxis) {
   EXPECT_NEAR(m[6], direction[1] / length, 1e-6f);
   EXPECT_NEAR(m[10], direction[2] / length, 1e-6f);
  }
+}
+TEST(ShadowCelestialModelView, CelestialOverrideAnglesNormalizeAndRejectNonFiniteValues) {
+ using net::minecraft::client::render::normalizeCelestialAngle;
+ EXPECT_FLOAT_EQ(normalizeCelestialAngle(1.25f, 0.0f), 0.25f);
+ EXPECT_FLOAT_EQ(normalizeCelestialAngle(-0.25f, 0.0f), 0.75f);
+ EXPECT_FLOAT_EQ(normalizeCelestialAngle(std::numeric_limits<float>::infinity(), 0.4f), 0.4f);
 }
 }
 } // namespace net::minecraft::test

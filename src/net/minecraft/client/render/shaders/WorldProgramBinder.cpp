@@ -27,16 +27,25 @@ bool bindSceneSampler(gl::ShaderProgram& program,
                       const PackInstance* pack,
                       std::initializer_list<std::string_view> names) {
  if(texture <= 0) return false;
- bool declared = false;
- for(const std::string_view name : names) {
-  declared = declared || (program.location(name) >= 0 && !customSampler(pack, name));
+ auto first = names.end();
+ int firstLocation = -1;
+ for(auto it = names.begin(); it != names.end(); ++it) {
+  if(customSampler(pack, *it)) continue;
+  const int location = program.location(*it);
+  if(location >= 0) {
+   first = it;
+   firstLocation = location;
+   break;
+  }
  }
- if(!declared) return false;
+ if(first == names.end()) return false;
  core::activeTexture(gl::tex::Texture0 + unit);
  core::bindTexture(texture);
  if(gl::GLCore::bindSampler != nullptr) gl::GLCore::bindSampler(static_cast<unsigned int>(unit), 0);
- for(const std::string_view name : names) {
-  if(program.location(name) >= 0 && !customSampler(pack, name)) program.set1i(name, unit);
+ program.set1iAt(firstLocation, unit);
+ for(auto it = first + 1; it != names.end(); ++it) {
+  if(customSampler(pack, *it)) continue;
+  program.set1iAt(program.location(*it), unit);
  }
  return true;
 }
@@ -71,20 +80,25 @@ void bindWorldProgram(gl::ShaderProgram& program, const WorldProgramBindContext&
   }
  }
  const int maxUnits = maxTextureUnits();
- if(context.lightmapTexture != 0 && maxUnits > 1 &&
-    program.location("lightmap") >= 0) {
-  core::activeTexture(gl::tex::Texture0 + 1);
-  core::bindTexture(static_cast<int>(context.lightmapTexture));
-  program.set1i("lightmap", 1);
+ if(context.lightmapTexture != 0 && maxUnits > 1) {
+  const int location = program.location("lightmap");
+  if(location >= 0) {
+   core::activeTexture(gl::tex::Texture0 + 1);
+   core::bindTexture(static_cast<int>(context.lightmapTexture));
+   program.set1iAt(location, 1);
+  }
  }
  int unit = 4;
- if(context.overlayTexture != 0 && unit < maxUnits &&
-    (program.location("iris_overlay") >= 0 || program.location("flw_overlayTex") >= 0)) {
-  core::activeTexture(gl::tex::Texture0 + unit);
-  core::bindTexture(static_cast<int>(context.overlayTexture));
-  if(program.location("iris_overlay") >= 0) program.set1i("iris_overlay", unit);
-  if(program.location("flw_overlayTex") >= 0) program.set1i("flw_overlayTex", unit);
-  ++unit;
+ if(context.overlayTexture != 0 && unit < maxUnits) {
+  const int irisLocation = program.location("iris_overlay");
+  const int flywheelLocation = program.location("flw_overlayTex");
+  if(irisLocation >= 0 || flywheelLocation >= 0) {
+   core::activeTexture(gl::tex::Texture0 + unit);
+   core::bindTexture(static_cast<int>(context.overlayTexture));
+   program.set1iAt(irisLocation, unit);
+   program.set1iAt(flywheelLocation, unit);
+   ++unit;
+  }
  }
  if(context.sceneTargets != nullptr) {
   static constexpr std::array<std::string_view, 4> aliases = {"gaux1", "gaux2", "gaux3", "gaux4"};
@@ -119,7 +133,9 @@ void bindWorldProgram(gl::ShaderProgram& program, const WorldProgramBindContext&
   const bool hw0 = context.pack != nullptr && context.pack->definition.shadowHardwareFiltering[0];
   const bool hw1 = context.pack != nullptr && context.pack->definition.shadowHardwareFiltering[1];
   const auto bindShadow = [&](const std::string& name, int texture, bool compare) {
-   if(texture < 0 || unit >= maxUnits || program.location(name) < 0 || customSampler(context.pack, name)) {
+   if(texture < 0 || unit >= maxUnits) return;
+   const int location = program.location(name);
+   if(location < 0 || customSampler(context.pack, name)) {
     return;
    }
    core::activeTexture(gl::tex::Texture0 + unit);
@@ -127,7 +143,7 @@ void bindWorldProgram(gl::ShaderProgram& program, const WorldProgramBindContext&
    if(gl::GLCore::bindSampler != nullptr) {
     gl::GLCore::bindSampler(static_cast<unsigned int>(unit), samplerObject(compare));
    }
-   program.set1i(name, unit++);
+   program.set1iAt(location, unit++);
   };
   const bool separateHw =
       context.pack != nullptr &&

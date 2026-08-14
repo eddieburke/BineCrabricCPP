@@ -14,7 +14,7 @@
 #include "net/minecraft/client/render/world/WorldRenderer.hpp"
 #include "net/minecraft/client/render/shaderpack/Pack.hpp"
 #include "net/minecraft/client/render/GlState.hpp"
-#include "net/minecraft/client/debug/RenderProfiler.hpp"
+#include "net/minecraft/client/debug/VTuneTrace.hpp"
 #include "net/minecraft/world/World.hpp"
 #include "net/minecraft/world/light/UnifiedLightRegistry.hpp"
 namespace net::minecraft::client::render::shadowmap {
@@ -59,10 +59,18 @@ void ShadowTargets::destroy() {
  resolution = 0;
  compositeAttach = {};
  compositeDrawBufferCount = -1;
+ colorFormats = {};
+ fullClearPending = false;
 }
-bool ShadowTargets::ensure(int resolutionIn, int colorBuffers) {
+bool ShadowTargets::ensure(int resolutionIn, int colorBuffers, const PackDefinition& definition) {
  colorBuffers = std::clamp(colorBuffers, 0, 8);
- if(valid() && resolution == resolutionIn && colorCount == colorBuffers) {
+ std::array<ColorFormat, 8> wantedFormats{};
+ for(int i = 0; i < colorBuffers; ++i) {
+  const auto target = definition.targets.find("shadowcolor" + std::to_string(i));
+  wantedFormats[static_cast<std::size_t>(i)] =
+      target == definition.targets.end() ? ColorFormat::Rgba8 : parseFormat(target->second.format);
+ }
+ if(valid() && resolution == resolutionIn && colorCount == colorBuffers && colorFormats == wantedFormats) {
   return true;
  }
  destroy();
@@ -72,15 +80,18 @@ bool ShadowTargets::ensure(int resolutionIn, int colorBuffers) {
  }
  resolution = resolutionIn;
  colorCount = colorBuffers;
+ colorFormats = wantedFormats;
+ fullClearPending = true;
  const core::TextureBindScope textureScope;
  std::vector<int> drawBuffers;
  drawBuffers.reserve(static_cast<std::size_t>(colorBuffers));
  for(int i = 0; i < colorBuffers; ++i) {
+  const GlFormat format = glFormat(colorFormats[static_cast<std::size_t>(i)]);
   for(unsigned int& tex : shadowcolor[static_cast<std::size_t>(i)]) {
    tex = core::genTexture();
    core::bindTexture(gl::cap::Texture2D, static_cast<int>(tex));
-   ::glTexImage2D(gl::cap::Texture2D, 0, gl::pixel::Rgba8, resolution, resolution, 0, gl::pixel::Rgba,
-                  gl::pixel::UnsignedByte, nullptr);
+   ::glTexImage2D(gl::cap::Texture2D, 0, format.internal, resolution, resolution, 0, format.format,
+                  format.type, nullptr);
    ::glTexParameteri(gl::cap::Texture2D, gl::tex::MinFilter, gl::filter::Linear);
    ::glTexParameteri(gl::cap::Texture2D, gl::tex::MagFilter, gl::filter::Linear);
    ::glTexParameteri(gl::cap::Texture2D, gl::tex::WrapS, gl::wrap::ClampToEdge);
@@ -156,14 +167,55 @@ void ShadowTargets::attachCompositeColors(const std::array<bool, 8>& flipped, in
  compositeAttach = want;
  compositeDrawBufferCount = colorBuffers;
 }
-void ShadowTargets::prepareForShadowRender() {
+void ShadowTargets::prepareForShadowRender(const PackDefinition& definition) {
  if(!valid()) {
   return;
  }
+ gl::GLCore::bindFramebuffer(gl::framebuffer::Framebuffer, fbo.id());
+ std::vector<int> drawBuffers;
+ drawBuffers.reserve(static_cast<std::size_t>(colorCount));
+ for(int i = 0; i < colorCount; ++i) {
+  drawBuffers.push_back(i);
+ }
+ for(int side = 0; side < 2; ++side) {
+  for(int i = 0; i < colorCount; ++i) {
+   fbo.addColorAttachment(i, shadowcolor[static_cast<std::size_t>(i)][static_cast<std::size_t>(side)]);
+  }
+  if(colorCount > 0) {
+   fbo.drawBuffers(drawBuffers);
+  }
+  for(int i = 0; i < colorCount; ++i) {
+   const auto target = definition.targets.find("shadowcolor" + std::to_string(i));
+   if(!fullClearPending && target != definition.targets.end() && !target->second.clear) {
+    continue;
+   }
+   std::array<float, 4> color{1.0f, 1.0f, 1.0f, 1.0f};
+   if(target != definition.targets.end() && target->second.customClearColor) {
+    std::copy(std::begin(target->second.clearColor), std::end(target->second.clearColor), color.begin());
+   }
+   const ColorFormat format = colorFormats[static_cast<std::size_t>(i)];
+   if(isIntegerColorFormat(format)) {
+    if(isSignedIntegerColorFormat(format) && gl::GLCore::clearBufferiv != nullptr) {
+     const int value[4] = {static_cast<int>(color[0]), static_cast<int>(color[1]),
+                           static_cast<int>(color[2]), static_cast<int>(color[3])};
+     gl::GLCore::clearBufferiv(gl::framebuffer::Color, i, value);
+    } else if(gl::GLCore::clearBufferuiv != nullptr) {
+     const unsigned value[4] = {static_cast<unsigned>(color[0]), static_cast<unsigned>(color[1]),
+                                static_cast<unsigned>(color[2]), static_cast<unsigned>(color[3])};
+     gl::GLCore::clearBufferuiv(gl::framebuffer::Color, i, value);
+    }
+   } else if(gl::GLCore::clearBufferfv != nullptr) {
+    gl::GLCore::clearBufferfv(gl::framebuffer::Color, i, color.data());
+   }
+  }
+ }
+ fullClearPending = false;
  for(int i = 0; i < colorCount; ++i) {
   fbo.addColorAttachment(i, shadowcolor[static_cast<std::size_t>(i)][0]);
  }
- // Invalidates attachCompositeColors' cache; the fbo's attachments just changed.
+ if(colorCount > 0) {
+  fbo.drawBuffers(drawBuffers);
+ }
  compositeDrawBufferCount = -1;
 }
 // see third_party/mcp/iris/gl/texture/DepthCopyStrategy.java
@@ -200,8 +252,8 @@ void ShadowTargets::snapshotOpaqueDepth() {
   ::glCopyTexSubImage2D(gl::cap::Texture2D, 0, 0, 0, 0, 0, resolution, resolution);
  }
  core::bindTexture(previousTexture);
- debug::RenderProfiler::instance().record(debug::RenderMetric::Copies);
- debug::RenderProfiler::instance().record(debug::RenderMetric::ShadowDepthCopies);
+ VT_TRACE_COUNTER("Copies", 1);
+ VT_TRACE_COUNTER("ShadowDepthCopies", 1);
 }
 FrameRenderCamera makeShadowCamera(const PackDefinition& definition,
                                    const FrameRenderCamera& camera,
@@ -258,7 +310,9 @@ ShadowMapResult update(ShadowMapState& state,
  const int requestedResolution = definition.shadowMapResolution;
  const int colorBuffers = std::clamp(definition.shadowColorBuffers, 0, 8);
  const ShadowCullState cullState = definition.shadowCulling;
- const float voxelDistance = definition.voxelDistance;
+ const float voxelDistance = definition.effectiveVoxelDistance();
+ VT_TRACE_COUNTER("ShadowVoxelDeclaredDistance", definition.voxelDistance);
+ VT_TRACE_COUNTER("ShadowVoxelSafeZoneDistance", voxelDistance);
  const float shadowDistance = definition.shadowDistance;
  const float shadowDistanceRenderMul = definition.shadowDistanceRenderMul;
  const float entityDistanceMultiplier = definition.entityShadowDistanceMul;
@@ -273,7 +327,7 @@ ShadowMapResult update(ShadowMapState& state,
  const int resolution = std::clamp(requestedResolution, 256, 16384);
  state.targets.depthCompare = definition.shadowHardwareFiltering[0] &&
                               !featureEnabled(definition, "SEPARATE_HARDWARE_SAMPLERS");
- if(!state.targets.ensure(resolution, colorBuffers)) {
+ if(!state.targets.ensure(resolution, colorBuffers, definition)) {
   return {};
  }
  const CelestialState& celestial = core::celestialState();
@@ -321,7 +375,7 @@ ShadowMapResult update(ShadowMapState& state,
  shadowCam.shadowTerrainFrustum = &state.terrainFrustum;
  shadowCam.shadowEntityFrustum = &state.entityFrustum;
  const float fov = shadowCam.orthographic ? 70.0f : definition.shadowMapFov;
- state.targets.prepareForShadowRender();
+ state.targets.prepareForShadowRender(definition);
  if(!renderer.renderWorldToFbo(state.targets.fbo.id(), resolution, resolution, tickDelta, shadowCam, fov)) {
   return {};
  }

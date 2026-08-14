@@ -1,6 +1,7 @@
 #include <gtest/gtest.h>
 #include <algorithm>
 #include <unordered_map>
+#include "net/minecraft/block/Block.hpp"
 #include "net/minecraft/client/render/shaders/ComputeDispatcher.hpp"
 #include "net/minecraft/client/render/GlState.hpp"
 #include "net/minecraft/client/render/shaders/CoreGlslTransformer.hpp"
@@ -96,6 +97,42 @@ TEST(PackLoaderTest, ReadsSourceOptions) {
                   error));
  EXPECT_EQ(options.at("BLOOM").setting.type, SettingType::Bool);
  EXPECT_EQ(options.at("QUALITY").setting.defaultValue, "2");
+}
+TEST(PackLoaderTest, ScreenDeclarationsExcludeProgramLocalDefines) {
+ PackDefinition pack;
+ std::unordered_map<std::string, PackSourceOption> options;
+ std::string error;
+ EXPECT_TRUE(load({{"shaders/gbuffers_basic.vsh",
+                    "#define HAND\n"
+                    "#define NO_NORMAL\n"
+                    "void main(){}"},
+                   {"shaders/gbuffers_basic.fsh",
+                    "#define BLOOM\n"
+                    "#define QUALITY 2 // [1 2 3]\n"
+                    "#define PROFILE_ONLY 1 // [0 1]\n"
+                    "#define SLIDER_ONLY 0.5 // [0.0 1.0]\n"
+                    "void main(){}"},
+                   {"shaders/world_end/gbuffers_basic.fsh",
+                    "#define END\n"
+                    "void main(){}"},
+                   {"shaders/shaders.properties",
+                    "screen=BLOOM [DETAILS]\n"
+                    "screen.DETAILS=QUALITY\n"
+                    "sliders=SLIDER_ONLY\n"
+                    "profile.High=PROFILE_ONLY:1\n"}},
+                  pack,
+                  options,
+                  error,
+                  {{"HAND", "0"}, {"NO_NORMAL", "0"}, {"END", "0"}}))
+     << error;
+ EXPECT_TRUE(options.contains("BLOOM"));
+ EXPECT_TRUE(options.contains("QUALITY"));
+ EXPECT_TRUE(options.contains("PROFILE_ONLY"));
+ EXPECT_TRUE(options.contains("SLIDER_ONLY"));
+ EXPECT_FALSE(options.contains("HAND"));
+ EXPECT_FALSE(options.contains("NO_NORMAL"));
+ EXPECT_FALSE(options.contains("END"));
+ EXPECT_EQ(pack.settings.size(), 5u);
 }
 TEST(PackLoaderTest, ReadsShadowResolutionFromShaderSource) {
  PackDefinition pack;
@@ -917,11 +954,27 @@ TEST(PackLoaderTest, ReadsScreenSlidersProfilesAndPackToggles) {
  ASSERT_EQ(pack.profiles.size(), 1u);
  EXPECT_EQ(pack.profiles[0].name, "Low");
  EXPECT_EQ(pack.profiles[0].values.at("FOO"), "0");
+ bool fooEnum = false;
+ bool fooSlider = false;
+ std::vector<std::string> fooValues;
  bool barSlider = false;
+ SettingType barType = SettingType::Bool;
  for(const PackSetting& setting : pack.settings) {
-  if(setting.key == "BAR") barSlider = setting.asSlider;
+  if(setting.key == "FOO") {
+   fooEnum = setting.type == SettingType::Enum;
+   fooSlider = setting.asSlider;
+   fooValues = setting.valueOrder;
+  }
+  if(setting.key == "BAR") {
+   barSlider = setting.asSlider;
+   barType = setting.type;
+  }
  }
+ EXPECT_TRUE(fooEnum);
+ EXPECT_FALSE(fooSlider);
+ EXPECT_EQ(fooValues, (std::vector<std::string>{"0", "1"}));
  EXPECT_TRUE(barSlider);
+ EXPECT_EQ(barType, SettingType::Float);
 }
 // Some packs have both `#define immut const` and a bodyless `#define immut`.
 // Treating that name as a boolean option and rewriting it turns every
@@ -1508,10 +1561,8 @@ TEST(PackLoaderTest, ParsesBlockIdPropertiesAndRenderLayers) {
  EXPECT_EQ(pack.blockIds.at("water"), 9);
  EXPECT_EQ(pack.blockIds.at("flowing_water"), 9);
  EXPECT_EQ(pack.blockIds.at("emerald_block"), -123);
- // Predicate'd entries cannot match beta block states; Java's addBlockStates
- // finds no such property on beta blocks and adds nothing.
  EXPECT_FALSE(pack.blockIds.contains("grass"));
- EXPECT_FALSE(pack.blockIds.contains("grass:waterlogged=true"));
+ EXPECT_EQ(pack.blockIds.at("grass:waterlogged=true"), 2);
  // layer.* resolves through the id map AND the vanilla registry ("tile.*" keys,
  // "minecraft:" prefix tolerated, exactly like Java's parseRenderTypeMap).
  EXPECT_EQ(pack.blockRenderLayers.at(1), 0);
@@ -1556,6 +1607,19 @@ TEST(PipelineBlockIdsTest, MissingBlockPropertiesUseLegacyNumericIds) {
  pipeline.applyBlockIds(pack);
  EXPECT_EQ(resolveShaderBlockId(1), 1);
  EXPECT_EQ(resolveShaderBlockId(12), 12);
+ pipeline.applyBlockIds(PackDefinition{});
+}
+TEST(PipelineBlockIdsTest, RedstoneTorchPredicatesMapLitAndUnlitBlocksSeparately) {
+ Pipeline pipeline(nullptr);
+ PackDefinition pack;
+ pack.hasBlockProperties = true;
+ pack.blockIds.emplace("redstone_torch:lit=true", 10604);
+ pack.blockIds.emplace("redstone_torch:lit=false", 10605);
+ pipeline.applyBlockIds(pack);
+ ASSERT_NE(net::minecraft::block::Block::LIT_REDSTONE_TORCH, nullptr);
+ ASSERT_NE(net::minecraft::block::Block::REDSTONE_TORCH, nullptr);
+ EXPECT_EQ(resolveShaderBlockId(net::minecraft::block::Block::LIT_REDSTONE_TORCH->id), 10604);
+ EXPECT_EQ(resolveShaderBlockId(net::minecraft::block::Block::REDSTONE_TORCH->id), 10605);
  pipeline.applyBlockIds(PackDefinition{});
 }
 TEST(PackSourcePreparation, MultiTexCoordAliasesMatchIrisTransformers) {

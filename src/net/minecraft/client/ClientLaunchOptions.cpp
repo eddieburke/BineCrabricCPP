@@ -50,22 +50,6 @@ ClientLaunchOptions parseClientLaunchOptions(int argc,
    launch.server = nextValue();
   } else if(argument == "--debug-hud") {
    launch.startup.debugHud = true;
-  } else if(argument == "--perf-trace") {
-   launch.startup.perfTraceSeconds = parseInteger<int>(nextValue(), argument, 1);
-  } else if(argument == "--shader-benchmark") {
-   launch.startup.perfTraceSeconds = parseInteger<int>(nextValue(), argument, 1);
-   launch.startup.headless = true;
-  } else if(argument == "--benchmark-frames") {
-   launch.startup.benchmarkFrames = parseInteger<int>(nextValue(), argument, 1);
-   launch.startup.headless = true;
-  } else if(argument == "--perf-warmup") {
-   launch.startup.perfWarmupFrames = parseInteger<int>(nextValue(), argument, 0);
-  } else if(argument == "--perf-output") {
-   const std::string output = nextValue();
-   if(output.empty()) {
-    throw std::runtime_error("--perf-output expects a file path");
-   }
-   launch.startup.perfOutput = output;
   } else if(argument == "--headless") {
    launch.startup.headless = true;
   } else if(argument == "--width") {
@@ -89,14 +73,6 @@ ClientLaunchOptions parseClientLaunchOptions(int argc,
  }
  if(positional.size() > 3) {
   throw std::runtime_error("Too many positional arguments");
- }
- if(!launch.startup.perfOutput.empty() && launch.startup.perfOutput.filename().empty()) {
-  throw std::runtime_error("--perf-output expects a file path");
- }
- const bool automaticBenchmark = launch.startup.headless &&
-                                 (launch.startup.perfTraceSeconds > 0 || launch.startup.benchmarkFrames > 0);
- if(automaticBenchmark && launch.startup.world.empty() && !launch.server.has_value()) {
-  throw std::runtime_error("A headless benchmark requires --world or --server");
  }
  return launch;
 }

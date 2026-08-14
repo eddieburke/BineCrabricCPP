@@ -5,7 +5,6 @@
 #include "net/minecraft/block/Block.hpp"
 #include "net/minecraft/block/material/Material.hpp"
 #include "net/minecraft/client/Minecraft.hpp"
-#include "net/minecraft/client/debug/RenderProfiler.hpp"
 #include "net/minecraft/client/gl/GlConstants.hpp"
 #include "net/minecraft/client/gui/Draw2D.hpp"
 #include "net/minecraft/client/option/GameOptions.hpp"
@@ -189,7 +188,6 @@ void InGameHud::renderPortalOverlay(float strength, int width, int height) {
  core::setConstColor(1.0f, 1.0f, 1.0f, 1.0f);
 }
 void InGameHud::renderDebugHud(font::TextRenderer& textRenderer,
-                               int scaledWidth,
                                const entity::player::PlayerEntity& player) {
  {
   const core::ScopedDrawCameraState debugGuard;
@@ -211,13 +209,6 @@ void InGameHud::renderDebugHud(font::TextRenderer& textRenderer,
    textRenderer.drawWithShadow(
        "Facing: " + std::string(kFacingNames[facing]) + " (" + std::to_string(facing) + ")", 2, 88,
        kColorLightGray);
-  const std::vector<std::string> profilerLines = debug::RenderProfiler::instance().lines();
-  int profilerY = 2;
-  for(const std::string& line : profilerLines) {
-   textRenderer.drawWithShadow(
-       line, scaledWidth - textRenderer.getWidth(line) - 2, profilerY, kColorLightGray);
-   profilerY += 10;
-  }
  }
  core::setConstColor(1.0f, 1.0f, 1.0f, 1.0f);
 }
@@ -456,7 +447,7 @@ void InGameHud::render(float tickDelta, bool screenOpen, int mouseX, int mouseY)
   }
  }
  if(minecraft->options.debugHud) {
-  renderDebugHud(textRenderer, scaledWidth, player);
+  renderDebugHud(textRenderer, player);
  }
  if(overlayRemaining > 0 && !overlayMessage.empty()) {
   renderRecordOverlay(textRenderer, tickDelta, scaledWidth, scaledHeight);

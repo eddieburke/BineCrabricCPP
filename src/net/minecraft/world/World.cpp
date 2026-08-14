@@ -6,6 +6,7 @@
 #include <limits>
 #include <stdexcept>
 #include <utility>
+#include "net/minecraft/client/debug/VTuneTrace.hpp"
 #include "net/minecraft/block/Block.hpp"
 #include "net/minecraft/block/LiquidBlock.hpp"
 #include "net/minecraft/block/entity/BlockEntity.hpp"
@@ -710,6 +711,7 @@ bool World::doLightingUpdates(std::size_t maxDirtyRegions, std::int64_t timeBudg
  lighting_.flushStaging();
  const auto start = std::chrono::steady_clock::now();
  std::size_t drained = 0;
+ std::size_t readyColumns = 0;
  while(drained < maxDirtyRegions) {
   const std::size_t batch = std::min<std::size_t>(maxDirtyRegions - drained, 16);
   std::vector<LightingEngine::DirtyRegion> regions = lighting_.drainDirtyRegions(batch);
@@ -725,6 +727,7 @@ bool World::doLightingUpdates(std::size_t maxDirtyRegions, std::int64_t timeBudg
    for(int chunkX = minChunkX; chunkX <= maxChunkX; ++chunkX) {
     for(int chunkZ = minChunkZ; chunkZ <= maxChunkZ; ++chunkZ) {
      markChunkColumnLit(chunkX, chunkZ);
+     ++readyColumns;
     }
    }
   }
@@ -741,6 +744,17 @@ bool World::doLightingUpdates(std::size_t maxDirtyRegions, std::int64_t timeBudg
  if(!lighting_.busy() && !lighting_.hasDirtyRegions()) {
   markAllChunksLit();
  }
+#ifdef VTUNE_ENABLED
+ const LightingEngine::TraceStats traceStats = lighting_.traceStats();
+ VT_TRACE_COUNTER("LightingWorkStaged", traceStats.stagedWork);
+ VT_TRACE_COUNTER("LightingWorkPending", traceStats.pendingWork);
+ VT_TRACE_COUNTER("LightingRegionsPending", traceStats.pendingRegions);
+ VT_TRACE_COUNTER("LightingRegionsPublished", traceStats.publishedRegions);
+ VT_TRACE_COUNTER("LightingRegionsDrainedFrame", drained);
+ VT_TRACE_COUNTER("LightingColumnsReleasedFrame", readyColumns);
+#else
+ (void)readyColumns;
+#endif
  return lighting_.busy() || lighting_.hasDirtyRegions();
 }
 void World::finishLightingUpdates() {

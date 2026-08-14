@@ -412,9 +412,9 @@ std::string defaultRasterVertexShader() {
 }
 std::string prepareSource(const std::string& programName,
                           ShaderStage stage,
-                          const PackDefinition& pack,
-                          const std::string& source,
-                          ShaderTransformContext context) {
+                           const PackDefinition& pack,
+                           const std::string& source,
+                           ShaderTransformContext context) {
  std::string prepared = normalizePackSource(pack, source);
  prepared = canonicalizeCoreSource(programName, stage, pack, std::move(prepared), context);
  return mergeColorWheelMaterial(programName, stage, std::move(prepared));

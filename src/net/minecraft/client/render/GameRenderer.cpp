@@ -7,7 +7,7 @@
 #include "net/minecraft/block/material/Material.hpp"
 #include "net/minecraft/client/Minecraft.hpp"
 #include "net/minecraft/client/ClientLog.hpp"
-#include "net/minecraft/client/debug/RenderProfiler.hpp"
+#include "net/minecraft/client/debug/VTuneTrace.hpp"
 #include "net/minecraft/client/render/RenderCore.hpp"
 #include "net/minecraft/client/gl/GLCore.hpp"
 #include "net/minecraft/client/gl/GlConstants.hpp"
@@ -98,6 +98,9 @@ void updateSunLight(World* world, float tickDelta, ::net::minecraft::entity::Ent
   }
  };
  if(celestialEvent.overrideDirections) {
+  state.celestialAngle = normalizeCelestialAngle(celestialEvent.celestialAngle, state.celestialAngle);
+  state.sunAngle = normalizeCelestialAngle(celestialEvent.sunAngle, state.sunAngle);
+  state.shadowAngle = normalizeCelestialAngle(celestialEvent.shadowAngle, state.shadowAngle);
   applyDirection(celestialEvent.sunX, celestialEvent.sunY, celestialEvent.sunZ, state.sunDirectionWorld);
   applyDirection(celestialEvent.moonX, celestialEvent.moonY, celestialEvent.moonZ, state.moonDirectionWorld);
   state.day = celestialEvent.day;
@@ -108,6 +111,10 @@ void updateSunLight(World* world, float tickDelta, ::net::minecraft::entity::Ent
   state.directionOverride = true;
  }
  state.moonPhase = std::clamp(celestialEvent.moonPhase, 0, 7);
+ VT_TRACE_COUNTER("CelestialDirectionOverride", state.directionOverride ? 1 : 0);
+ VT_TRACE_COUNTER("CelestialSunAngle", state.sunAngle);
+ VT_TRACE_COUNTER("CelestialShadowAngle", state.shadowAngle);
+ VT_TRACE_COUNTER("CelestialShadowLightY", state.shadowLightDirectionWorld[1]);
  core::setCelestialState(state);
  const float sunX = state.sunDirectionWorld[0];
  const float sunY = state.sunDirectionWorld[1];
@@ -848,7 +855,7 @@ void GameRenderer::renderFrame(float tickDelta) {
  }
  const int width = std::max(1, client->displayWidth);
  const int height = std::max(1, client->displayHeight);
- renderToCurrentTarget(tickDelta, FrameRenderCamera{}, getFov(tickDelta), width, height, false);
+ renderToCurrentTarget(tickDelta, FrameRenderCamera{}, getFov(tickDelta), width, height, false, captured);
  if(captured) {
   resolveSceneCapture();
  }
@@ -885,7 +892,7 @@ bool GameRenderer::renderWorldToFbo(unsigned int fbo,
  }
  {
   gl::GLCore::bindFramebuffer(gl::framebuffer::Framebuffer, fbo);
-  debug::RenderProfiler::instance().record(debug::RenderMetric::FramebufferBinds);
+  VT_TRACE_COUNTER("FramebufferBinds", 1);
   core::viewport(0, 0, width, height);
  }
  const PackDefinition& packDef = packDefinition();
@@ -901,7 +908,7 @@ bool GameRenderer::renderWorldToFbo(unsigned int fbo,
   core::polygonOffset(factor, units);
  }
  renderToCurrentTarget(std::clamp(tickDelta, 0.0f, 1.0f), camera, std::clamp(fov, 1.0f, 179.0f), width,
-                       height, true);
+                       height, true, false);
  if(hwOffset) {
   core::disablePolygonOffset();
  }
@@ -914,7 +921,7 @@ bool GameRenderer::renderWorldToFbo(unsigned int fbo,
  core::setCameraFrame(prevPublishedCamera);
  {
   gl::GLCore::bindFramebuffer(gl::framebuffer::Framebuffer, static_cast<unsigned>(prevFbo));
-  debug::RenderProfiler::instance().record(debug::RenderMetric::FramebufferBinds);
+  VT_TRACE_COUNTER("FramebufferBinds", 1);
   core::viewport(prevViewport[0], prevViewport[1], prevViewport[2], prevViewport[3]);
  }
  return true;
@@ -924,7 +931,8 @@ void GameRenderer::renderToCurrentTarget(float tickDelta,
                                          float fov,
                                          int viewportWidth,
                                          int viewportHeight,
-                                         bool renderCameraEntity) {
+                                         bool renderCameraEntity,
+                                         bool colorAlreadyCleared) {
  if(client == nullptr) {
   return;
  }
@@ -980,7 +988,8 @@ void GameRenderer::renderToCurrentTarget(float tickDelta,
   core::fogApplyMode(client, 1, frameSettings_);
  }
  {
-  core::clear(gl::attrib::ColorBufferBit | gl::attrib::DepthBufferBit);
+  core::clear(gl::attrib::DepthBufferBit |
+              (frameCamera_.shadowPass || colorAlreadyCleared ? 0u : gl::attrib::ColorBufferBit));
  }
  renderWorld(tickDelta, fov, modelView, projection);
  {

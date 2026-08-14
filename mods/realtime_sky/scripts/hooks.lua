@@ -325,6 +325,14 @@ local function register()
     end,
   }, function(event)
     local frame = current_solar_frame(event.tick_delta)
+    local sun_angle = (frame.celestial + 0.25) % 1.0
+    local shadow_angle = sun_angle
+    if not frame.is_daylight then
+      shadow_angle = (sun_angle + 0.5) % 1.0
+    end
+    event.celestial_angle = frame.celestial
+    event.sun_angle = sun_angle
+    event.shadow_angle = shadow_angle
     event.sun_x = frame.sun_direction_x
     event.sun_y = frame.sun_direction_y
     event.sun_z = frame.sun_direction_z

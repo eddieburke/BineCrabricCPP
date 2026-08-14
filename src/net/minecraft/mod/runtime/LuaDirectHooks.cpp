@@ -836,6 +836,12 @@ void luaHookCelestialState(CelestialStateEvent& e) {
      },
      [](lua_State* state, CelestialStateEvent& ev) {
       readFields(state,
+                 "celestial_angle",
+                 ev.celestialAngle,
+                 "sun_angle",
+                 ev.sunAngle,
+                 "shadow_angle",
+                 ev.shadowAngle,
                  "moon_phase",
                  ev.moonPhase,
                  "sun_x",

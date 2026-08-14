@@ -20,7 +20,7 @@
 #include "net/minecraft/client/color/world/FoliageColors.hpp"
 #include "net/minecraft/client/color/world/GrassColors.hpp"
 #include "net/minecraft/client/debug/ClientProfilerOverlay.hpp"
-#include "net/minecraft/client/debug/RenderProfiler.hpp"
+#include "net/minecraft/client/debug/VTuneTrace.hpp"
 #include "net/minecraft/client/diagnostics/ClientDiagnostics.hpp"
 #include "net/minecraft/client/gui/Draw2D.hpp"
 #include "net/minecraft/client/gui/screen/ConfirmScreen.hpp"
@@ -317,20 +317,6 @@ void Minecraft::bootstrapAfterDisplay() {
  options.bindMinecraft(this);
  option::OptionRegistry::registerAll();
  options.load();
- debug::PerformanceCaptureConfig capture;
- capture.enabled = startupOptions_.perfTraceSeconds > 0 || startupOptions_.benchmarkFrames > 0;
- capture.autoStop = capture.enabled;
- capture.warmupFrames = startupOptions_.perfWarmupFrames;
- capture.captureFrames = startupOptions_.benchmarkFrames;
- capture.captureSeconds = startupOptions_.benchmarkFrames > 0 ? 0 : startupOptions_.perfTraceSeconds;
- capture.width = displayWidth;
- capture.height = displayHeight;
- capture.shaderPack = options.shaderPack;
- capture.world = startupOptions_.world;
- capture.output = startupOptions_.perfOutput.empty()
-                      ? runDirectory_ / "perf" / ("render-trace-" + std::to_string(currentTimeMillis()) + ".json")
-                      : startupOptions_.perfOutput;
- performanceCapture_.configure(std::move(capture));
  worldStorageSource = std::make_unique<net::minecraft::RegionWorldStorageSource>(runDirectory_ / "saves");
  const net::minecraft::ResourcePack resources(resource::resourceRoot());
  translationStorage_ = std::make_unique<resource::language::TranslationStorage>(resources);
@@ -767,11 +753,14 @@ void Minecraft::tick() {
 }
 void Minecraft::runRenderPhase() {
  if(!headlessMode_) {
-  debug::RenderProfileScope audioScope("frame", "audio");
+  VT_TRACE_EVENT("frame/audio");
   audio.updateListener(player, timer.partialTick);
  }
   if(world != nullptr) {
-   debug::RenderProfileScope lightingScope("frame", "lighting");
+   VT_TRACE_EVENT("frame/lighting");
+   if(camera != nullptr) {
+    world->setLightingCamera(camera->x, camera->y, camera->z);
+   }
    world->doLightingUpdates(128, kLightingUpdateBudgetNs);
   }
 #ifdef _WIN32
@@ -783,7 +772,7 @@ void Minecraft::runRenderPhase() {
  }
  if(!skipGameRender) {
   {
-   debug::RenderProfileScope modScope("frame", "mod_hooks");
+   VT_TRACE_EVENT("frame/mod_hooks");
    mod::RenderFrameEvent rfEvent{timer.partialTick, world};
    net::minecraft::mod::runtime::luaHookRenderFrame(rfEvent);
    if(interactionManager != nullptr) {
@@ -791,12 +780,12 @@ void Minecraft::runRenderPhase() {
    }
   }
   if(gameRenderer != nullptr) {
-   debug::RenderProfileScope worldScope("frame", "world_render");
+   VT_TRACE_EVENT("frame/world_render");
    gameRenderer->onFrameUpdate(timer.partialTick);
   }
  }
  if(world != nullptr) {
-  debug::RenderProfileScope publishScope("frame", "chunk_publish");
+  VT_TRACE_EVENT("frame/chunk_publish");
   world->pumpChunkPublish();
  }
 }
@@ -849,18 +838,12 @@ void Minecraft::run() {
     bool continueFrame = true;
     std::int64_t tickStart = 0;
     std::int64_t tickDuration = 0;
-    debug::RenderProfiler& profiler = debug::RenderProfiler::instance();
-    const bool captureFrame = performanceCapture_.beginFrame(
-        world != nullptr && player != nullptr && gameRenderer != nullptr && !skipGameRender, profiler);
-    profiler.setEnabled(options.debugHud || captureFrame);
-    if(profiler.enabled()) {
-     profiler.beginFrame();
-    }
+    VT_TRACE_FRAME();
     framePipeline.run([&](util::FramePipeline::Phase phase) {
      if(!continueFrame) {
       return;
      }
-     debug::RenderProfileScope phaseProfile("frame", util::FramePipeline::phaseName(phase));
+     VT_TRACE_EVENT(util::FramePipeline::phaseName(phase));
      switch(phase) {
      case util::FramePipeline::Phase::Drain:
 #ifdef _WIN32
@@ -928,15 +911,6 @@ void Minecraft::run() {
       break;
      }
     });
-    if(profiler.enabled()) {
-     profiler.endFrame();
-    }
-    if(captureFrame) {
-     performanceCapture_.endFrame(profiler);
-     if(performanceCapture_.shouldStop()) {
-      scheduleStop();
-     }
-    }
     if(!continueFrame) {
      break;
     }

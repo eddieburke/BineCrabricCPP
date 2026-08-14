@@ -12,7 +12,6 @@
 #include <string>
 #include <thread>
 #include <vector>
-#include "net/minecraft/client/debug/RenderProfiler.hpp"
 #include "net/minecraft/client/render/chunk/RegionSnapshot.hpp"
 #include "net/minecraft/client/render/culling/Frustum.hpp"
 #include "net/minecraft/util/math/Matrix4f.hpp"
@@ -208,29 +207,5 @@ TEST(PerfTrace, LightingEnginePhaseBreakdown) {
   engine.unregisterChunk(chunk.get());
  }
  EXPECT_LT(trace.totalMs(), 30000.0);
-}
-// The in-game breakdown is only trustworthy if the profiler charges each stage
-// its own self time. This pins that: three stages with known, different
-// durations must come back in the right proportion, so a real capture can be
-// read as "Deferred is 60% of the frame" rather than just "the frame is slow".
-TEST(PerfTrace, MetricAveragesConvergeToWholeFrameTotals) {
- client::debug::RenderProfiler& profiler = client::debug::RenderProfiler::instance();
- profiler.setEnabled(true);
- constexpr int kStagesPerFrame = 20;
- constexpr int kDrawsPerStage = 5;
- for(int frame = 0; frame < 400; ++frame) {
-  profiler.beginFrame();
-  for(int stage = 0; stage < kStagesPerFrame; ++stage) {
-   profiler.record(client::debug::RenderMetric::DrawCalls, kDrawsPerStage);
-  }
-  profiler.endFrame();
- }
- const double average = profiler.metricAverage(client::debug::RenderMetric::DrawCalls);
- const double expected = kStagesPerFrame * kDrawsPerStage;
- std::printf("\n[PERF_TRACE] draw-call metric average %.2f (expected %.2f)\n", average, expected);
- std::fflush(stdout);
- EXPECT_GT(average, expected * 0.95);
- EXPECT_LE(average, expected);
- profiler.setEnabled(false);
 }
 } // namespace net::minecraft::test

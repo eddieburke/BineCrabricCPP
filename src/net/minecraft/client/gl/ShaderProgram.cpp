@@ -7,7 +7,7 @@
 #include <utility>
 #include "net/minecraft/client/gl/GLCore.hpp"
 #include "net/minecraft/client/gl/GlConstants.hpp"
-#include "net/minecraft/client/debug/RenderProfiler.hpp"
+#include "net/minecraft/client/debug/VTuneTrace.hpp"
 #include "net/minecraft/client/render/VertexAbi.hpp"
 #include "net/minecraft/util/math/Matrix4f.hpp"
 namespace net::minecraft::client::gl {
@@ -119,6 +119,8 @@ ShaderProgram::ShaderProgram(ShaderProgram&& other) noexcept
  std::copy(other.uniformLocations_, other.uniformLocations_ + static_cast<std::size_t>(IrisUniformSlot::Count),
            uniformLocations_);
  std::copy(std::begin(other.computeLocalSize_), std::end(other.computeLocalSize_), std::begin(computeLocalSize_));
+ resetUniformLookupCache();
+ other.resetUniformLookupCache();
  other.program_ = 0;
  other.computeLocalSize_[0] = other.computeLocalSize_[1] = other.computeLocalSize_[2] = 1;
 }
@@ -129,6 +131,8 @@ ShaderProgram& ShaderProgram::operator=(ShaderProgram&& other) noexcept {
   std::copy(other.uniformLocations_, other.uniformLocations_ + static_cast<std::size_t>(IrisUniformSlot::Count),
             uniformLocations_);
   uniformCache_ = std::move(other.uniformCache_);
+  resetUniformLookupCache();
+  other.resetUniformLookupCache();
   samplerKinds_ = std::move(other.samplerKinds_);
   samplerNames_ = std::move(other.samplerNames_);
   tessellation_ = other.tessellation_;
@@ -204,7 +208,7 @@ bool ShaderProgram::compile(const std::string& vertexSource,
   return false;
  }
  program_ = program;
- uniformCache_.clear();
+ clearUniformCache();
  samplerKinds_.clear();
  samplerNames_.clear();
  uniformSnapshotGeneration_ = 0;
@@ -257,7 +261,7 @@ bool ShaderProgram::compileCompute(const std::string& computeSource,
  for(int& axis : computeLocalSize_) {
   if(axis <= 0) axis = 1;
  }
- uniformCache_.clear();
+ clearUniformCache();
  samplerKinds_.clear();
  samplerNames_.clear();
  uniformSnapshotGeneration_ = 0;
@@ -273,7 +277,7 @@ void ShaderProgram::destroy() {
  }
  program_ = 0;
  resetUniformLocations();
- uniformCache_.clear();
+ clearUniformCache();
  samplerKinds_.clear();
  samplerNames_.clear();
  uniformSnapshotGeneration_ = 0;
@@ -284,6 +288,15 @@ void ShaderProgram::destroy() {
 }
 void ShaderProgram::resetUniformLocations() {
  std::fill(std::begin(uniformLocations_), std::end(uniformLocations_), -1);
+}
+void ShaderProgram::resetUniformLookupCache() noexcept {
+ for(auto& entry : uniformLookupCache_) {
+  entry = {};
+ }
+}
+void ShaderProgram::clearUniformCache() {
+ resetUniformLookupCache();
+ uniformCache_.clear();
 }
 void ShaderProgram::refreshUniformLocations() {
  if(program_ == 0 || GLCore::getUniformLocation == nullptr) {
@@ -302,13 +315,11 @@ void ShaderProgram::bind() const {
   // divergence, and a producer/consumer pair always straddles a program switch.
   if(GLCore::memoryBarrier != nullptr) {
    GLCore::memoryBarrier(kProgramBindBarrierBits);
-   ::net::minecraft::client::debug::RenderProfiler::instance().record(
-       ::net::minecraft::client::debug::RenderMetric::MemoryBarriers);
+   VT_TRACE_COUNTER("MemoryBarriers", 1);
   }
   s_lastBoundProgram = program_;
   GLCore::useProgram(program_);
-  ::net::minecraft::client::debug::RenderProfiler::instance().record(
-      ::net::minecraft::client::debug::RenderMetric::ProgramBinds);
+  VT_TRACE_COUNTER("ProgramBinds", 1);
  }
 }
 void ShaderProgram::unbind() {
@@ -357,15 +368,23 @@ int ShaderProgram::location(std::string_view name) const {
  if(program_ == 0 || GLCore::getUniformLocation == nullptr) {
   return -1;
  }
- const auto found = uniformCache_.find(name);
+ auto& cached = uniformLookupCache_[uniformLookupIndex(name)];
+ if(cached.name != nullptr && *cached.name == name) {
+  return cached.location;
+ }
+ auto found = uniformCache_.find(name);
  if(found != uniformCache_.end()) {
-  return found->second;
+  cached.name = &found->first;
+  cached.location = found->second;
+  return cached.location;
  }
  // Cache misses too: an undeclared (or optimized-out) uniform is queried on every
  // draw otherwise, and uploadFogUniforms alone asks for six per chunk section per
  // layer per frame. Locations only move on relink, which clears this cache.
  const int location = GLCore::getUniformLocation(program_, std::string(name).c_str());
- uniformCache_.emplace(std::string(name), location);
+ found = uniformCache_.emplace(std::string(name), location).first;
+ cached.name = &found->first;
+ cached.location = location;
  return location;
 }
 void ShaderProgram::reflectSamplers() {
@@ -432,71 +451,61 @@ void ShaderProgram::reflectSamplers() {
 void ShaderProgram::set1iAt(int loc, int value) const {
  if(loc >= 0 && GLCore::uniform1i != nullptr) {
   GLCore::uniform1i(loc, value);
-  ::net::minecraft::client::debug::RenderProfiler::instance().record(
-      ::net::minecraft::client::debug::RenderMetric::UniformUploads);
+  VT_TRACE_COUNTER("UniformUploads", 1);
  }
 }
 void ShaderProgram::set1fAt(int loc, float value) const {
  if(loc >= 0 && GLCore::uniform1f != nullptr) {
   GLCore::uniform1f(loc, value);
-  ::net::minecraft::client::debug::RenderProfiler::instance().record(
-      ::net::minecraft::client::debug::RenderMetric::UniformUploads);
+  VT_TRACE_COUNTER("UniformUploads", 1);
  }
 }
 void ShaderProgram::set2fAt(int loc, const float* values) const {
  if(loc >= 0 && GLCore::uniform2f != nullptr) {
   GLCore::uniform2f(loc, values[0], values[1]);
-  ::net::minecraft::client::debug::RenderProfiler::instance().record(
-      ::net::minecraft::client::debug::RenderMetric::UniformUploads);
+  VT_TRACE_COUNTER("UniformUploads", 1);
  }
 }
 void ShaderProgram::set3fAt(int loc, const float* values) const {
  if(loc >= 0 && GLCore::uniform3f != nullptr) {
   GLCore::uniform3f(loc, values[0], values[1], values[2]);
-  ::net::minecraft::client::debug::RenderProfiler::instance().record(
-      ::net::minecraft::client::debug::RenderMetric::UniformUploads);
+  VT_TRACE_COUNTER("UniformUploads", 1);
  }
 }
 void ShaderProgram::set4fAt(int loc, const float* values) const {
  if(loc >= 0 && GLCore::uniform4f != nullptr) {
   GLCore::uniform4f(loc, values[0], values[1], values[2], values[3]);
-  ::net::minecraft::client::debug::RenderProfiler::instance().record(
-      ::net::minecraft::client::debug::RenderMetric::UniformUploads);
+  VT_TRACE_COUNTER("UniformUploads", 1);
  }
 }
 void ShaderProgram::set2iAt(int loc, const int* values) const {
  if(loc >= 0 && GLCore::uniform2i != nullptr) {
   GLCore::uniform2i(loc, values[0], values[1]);
-  ::net::minecraft::client::debug::RenderProfiler::instance().record(
-      ::net::minecraft::client::debug::RenderMetric::UniformUploads);
+  VT_TRACE_COUNTER("UniformUploads", 1);
  }
 }
 void ShaderProgram::set3iAt(int loc, const int* values) const {
  if(loc >= 0 && GLCore::uniform3i != nullptr) {
   GLCore::uniform3i(loc, values[0], values[1], values[2]);
-  ::net::minecraft::client::debug::RenderProfiler::instance().record(
-      ::net::minecraft::client::debug::RenderMetric::UniformUploads);
+  VT_TRACE_COUNTER("UniformUploads", 1);
  }
 }
 void ShaderProgram::set4iAt(int loc, const int* values) const {
  if(loc >= 0 && GLCore::uniform4i != nullptr) {
   GLCore::uniform4i(loc, values[0], values[1], values[2], values[3]);
-  ::net::minecraft::client::debug::RenderProfiler::instance().record(
-      ::net::minecraft::client::debug::RenderMetric::UniformUploads);
+  VT_TRACE_COUNTER("UniformUploads", 1);
  }
 }
 void ShaderProgram::setMatrix3At(int loc, const float* values) const {
  if(loc >= 0 && GLCore::uniformMatrix3fv != nullptr) {
   GLCore::uniformMatrix3fv(loc, 1, 0, values);
-  ::net::minecraft::client::debug::RenderProfiler::instance().record(
-      ::net::minecraft::client::debug::RenderMetric::UniformUploads);
+  VT_TRACE_COUNTER("UniformUploads", 1);
  }
 }
 void ShaderProgram::setMatrix4At(int loc, const float* values) const {
  if(loc >= 0 && GLCore::uniformMatrix4fv != nullptr) {
   GLCore::uniformMatrix4fv(loc, 1, 0, values);
-  ::net::minecraft::client::debug::RenderProfiler::instance().record(
-      ::net::minecraft::client::debug::RenderMetric::UniformUploads);
+  VT_TRACE_COUNTER("UniformUploads", 1);
  }
 }
 ShaderProgram::SamplerKind ShaderProgram::samplerKind(std::string_view name) const {
@@ -510,56 +519,49 @@ void ShaderProgram::set1i(std::string_view name, int value) const {
  const int loc = location(name);
  if(loc >= 0 && GLCore::uniform1i != nullptr) {
   GLCore::uniform1i(loc, value);
-  ::net::minecraft::client::debug::RenderProfiler::instance().record(
-      ::net::minecraft::client::debug::RenderMetric::UniformUploads);
+  VT_TRACE_COUNTER("UniformUploads", 1);
  }
 }
 void ShaderProgram::set1f(std::string_view name, float value) const {
  const int loc = location(name);
  if(loc >= 0 && GLCore::uniform1f != nullptr) {
   GLCore::uniform1f(loc, value);
-  ::net::minecraft::client::debug::RenderProfiler::instance().record(
-      ::net::minecraft::client::debug::RenderMetric::UniformUploads);
+  VT_TRACE_COUNTER("UniformUploads", 1);
  }
 }
 void ShaderProgram::set2f(std::string_view name, float x, float y) const {
  const int loc = location(name);
  if(loc >= 0 && GLCore::uniform2f != nullptr) {
   GLCore::uniform2f(loc, x, y);
-  ::net::minecraft::client::debug::RenderProfiler::instance().record(
-      ::net::minecraft::client::debug::RenderMetric::UniformUploads);
+  VT_TRACE_COUNTER("UniformUploads", 1);
  }
 }
 void ShaderProgram::set3f(std::string_view name, float x, float y, float z) const {
  const int loc = location(name);
  if(loc >= 0 && GLCore::uniform3f != nullptr) {
   GLCore::uniform3f(loc, x, y, z);
-  ::net::minecraft::client::debug::RenderProfiler::instance().record(
-      ::net::minecraft::client::debug::RenderMetric::UniformUploads);
+  VT_TRACE_COUNTER("UniformUploads", 1);
  }
 }
 void ShaderProgram::set4f(std::string_view name, float x, float y, float z, float w) const {
  const int loc = location(name);
  if(loc >= 0 && GLCore::uniform4f != nullptr) {
   GLCore::uniform4f(loc, x, y, z, w);
-  ::net::minecraft::client::debug::RenderProfiler::instance().record(
-      ::net::minecraft::client::debug::RenderMetric::UniformUploads);
+  VT_TRACE_COUNTER("UniformUploads", 1);
  }
 }
 void ShaderProgram::setMatrix3(std::string_view name, const float* value, bool transpose) const {
  const int loc = location(name);
  if(loc >= 0 && GLCore::uniformMatrix3fv != nullptr) {
   GLCore::uniformMatrix3fv(loc, 1, transpose ? 1 : 0, value);
-  ::net::minecraft::client::debug::RenderProfiler::instance().record(
-      ::net::minecraft::client::debug::RenderMetric::UniformUploads);
+  VT_TRACE_COUNTER("UniformUploads", 1);
  }
 }
 void ShaderProgram::setMatrix4(std::string_view name, const float* value, bool transpose) const {
  const int loc = location(name);
  if(loc >= 0 && GLCore::uniformMatrix4fv != nullptr) {
   GLCore::uniformMatrix4fv(loc, 1, transpose ? 1 : 0, value);
-  ::net::minecraft::client::debug::RenderProfiler::instance().record(
-      ::net::minecraft::client::debug::RenderMetric::UniformUploads);
+  VT_TRACE_COUNTER("UniformUploads", 1);
  }
 }
 void ShaderProgram::setMatrix4(std::string_view name, const net::minecraft::util::math::Matrix4f& value) const {
@@ -740,7 +742,7 @@ bool ShaderProgram::loadFromBinary(const ProgramBinaryBlob& binary) {
   return false;
  }
  program_ = program;
- uniformCache_.clear();
+ clearUniformCache();
  samplerKinds_.clear();
  samplerNames_.clear();
  uniformSnapshotGeneration_ = 0;

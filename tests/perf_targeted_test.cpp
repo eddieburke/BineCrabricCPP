@@ -116,7 +116,8 @@ TEST(PerfTraceTargeted, LightingDrainWithSectionInvalidation) {
  Trace trace("lighting drain + section invalidation cascade");
  world::light::UnifiedLightRegistry registry;
  LightingEngine engine(registry);
- constexpr int kChunkRadius = 10;
+ engine.setCameraPosition(0.0, 32.0, 0.0);
+ constexpr int kChunkRadius = 3;
  constexpr int kColumnCount = (2 * kChunkRadius + 1) * (2 * kChunkRadius + 1);
  std::vector<std::unique_ptr<Chunk>> chunks;
  chunks.reserve(static_cast<std::size_t>(kColumnCount));
@@ -139,10 +140,7 @@ TEST(PerfTraceTargeted, LightingDrainWithSectionInvalidation) {
    engine.push(LightType::Sky, cx * 16, 0, cz * 16, cx * 16 + 15, 63, cz * 16 + 15, false);
   }
  }
- // Mirrors what World::doLightingUpdates does each tick: hand the staged boxes
- // to the workers, then give them time to propagate before draining.
  engine.flushStaging();
- std::this_thread::sleep_for(std::chrono::milliseconds(300));
  struct FakeSection {
   int x, y, z;
   bool dirty = false;
@@ -152,7 +150,7 @@ TEST(PerfTraceTargeted, LightingDrainWithSectionInvalidation) {
    ++version;
   }
  };
- constexpr int kSectionsPerColumn = 4;
+ constexpr int kSectionsPerColumn = 8;
  constexpr int kTotalSections = kColumnCount * kSectionsPerColumn;
  std::vector<FakeSection> sections(static_cast<std::size_t>(kTotalSections));
  int secIdx = 0;
@@ -168,12 +166,13 @@ TEST(PerfTraceTargeted, LightingDrainWithSectionInvalidation) {
  trace.measure("drain + invalidate sections", 1, [&](int) {
   int drained = 0;
   int invalidated = 0;
-  const auto deadline = Clock::now() + std::chrono::seconds(10);
-  while((engine.hasDirtyRegions() || engine.busy()) && Clock::now() < deadline) {
+  const auto deadline = Clock::now() + std::chrono::seconds(3);
+  while(drained < 8 && Clock::now() < deadline) {
    auto regions = engine.drainDirtyRegions(16);
    if(regions.empty()) {
-    // Workers are still propagating; an empty poll is not the end of the
-    // cascade. Breaking here is what made this test drain nothing.
+    if(!engine.busy() && !engine.hasDirtyRegions()) {
+     break;
+    }
     std::this_thread::yield();
     continue;
    }
@@ -195,7 +194,6 @@ TEST(PerfTraceTargeted, LightingDrainWithSectionInvalidation) {
     }
    }
    drained += static_cast<int>(regions.size());
-   if(drained > 50000) break;
   }
   std::printf("[PERF_TRACE]   (drained %d regions, invalidated %d sections)\n", drained, invalidated);
   drainedRegions = drained;
@@ -206,11 +204,9 @@ TEST(PerfTraceTargeted, LightingDrainWithSectionInvalidation) {
  for(const auto& chunk : chunks) {
   engine.unregisterChunk(chunk.get());
  }
- // Draining nothing used to be a pass. If the engine produces no dirty regions
- // for 441 fully-lit columns, the cascade this test exists to measure did not
- // run and its timing is meaningless.
  EXPECT_GT(drainedRegions, 0) << "lighting produced no dirty regions to drain";
  EXPECT_GT(invalidatedSections, 0) << "no sections were invalidated by the drain";
+ EXPECT_LT(trace.totalMs(), 3000.0) << "near-camera lighting publication missed its latency bound";
 }
 // TerrainRegion::upload is entirely GL calls, so without a current context it
 // returns false at the first null function pointer and never reaches

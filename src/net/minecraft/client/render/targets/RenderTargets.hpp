@@ -192,6 +192,7 @@ class ColorTargets {
  void fillReadSamplers(std::unordered_map<std::string, int>& textures, bool fullscreenPass) const;
  void fillImageBindings(std::unordered_map<std::string, int>& images) const;
  void flip(const std::string& name);
+ void resetFlips();
  void flipIfEnabled(const PackDefinition& definition, const std::string& passName,
                     const std::string& bufferName);
  // CompositeRenderer.java:165-187: buffers the pass writes flip unless the pack

@@ -3,7 +3,7 @@
 #include <cmath>
 #include <cstring>
 #include "net/minecraft/client/render/RenderCore.hpp"
-#include "net/minecraft/client/debug/RenderProfiler.hpp"
+#include "net/minecraft/client/debug/VTuneTrace.hpp"
 #include "net/minecraft/client/gl/ShaderProgram.hpp"
 #include "net/minecraft/client/gl/GLCore.hpp"
 #include "net/minecraft/client/render/QuadIndexBuffer.hpp"
@@ -119,7 +119,8 @@ thread_local Tessellator Tessellator::INSTANCE{};
 static int clamp255(float v) {
  return static_cast<int>(std::clamp(v, 0.0f, 1.0f) * 255.0f);
 }
-Tessellator::Tessellator(std::size_t bufferSize) : builder_(bufferSize) {
+Tessellator::Tessellator(std::size_t bufferSize)
+    : builder_(bufferSize), isMainThread_(util::concurrent::tl_is_main_thread) {
 }
 void Tessellator::startQuads() {
  start(kGlQuads);
@@ -167,15 +168,12 @@ void Tessellator::expandQuadToTriangles() {
  std::size_t count = size / sizeof(TessellatorVertex);
  TessellatorVertex v0 = ptr[count - 3];
  TessellatorVertex v2 = ptr[count - 1];
- const auto append = [&](const TessellatorVertex& vertex) {
-  auto& bytes = builder_.buffer();
-  const std::size_t offset = bytes.size();
-  bytes.resize(offset + sizeof(vertex));
-  std::memcpy(bytes.data() + offset, &vertex, sizeof(vertex));
-  builder_.nextVertex();
- };
- append(v0);
- append(v2);
+ const std::size_t offset = buf.size();
+ buf.resize(offset + 2 * sizeof(TessellatorVertex));
+ std::memcpy(buf.data() + offset, &v0, sizeof(v0));
+ std::memcpy(buf.data() + offset + sizeof(v0), &v2, sizeof(v2));
+ builder_.nextVertex();
+ builder_.nextVertex();
 }
 namespace {
 // https://github.com/IrisShaders/Iris/blob/26.1/common/src/main/java/net/irisshaders/iris/vertices/NormalHelper.java
@@ -210,9 +208,11 @@ void fillMidTexAndTangent(TessellatorVertex* const* corners,
  midV /= static_cast<float>(cornerCount);
  const float e1[3] = {corners[1]->x - corners[0]->x, corners[1]->y - corners[0]->y, corners[1]->z - corners[0]->z};
  const float e2[3] = {corners[2]->x - corners[0]->x, corners[2]->y - corners[0]->y, corners[2]->z - corners[0]->z};
+ float derived[3]{};
+ bool derivedValid = false;
  if(deriveNormal && cornerCount == 4) {
-  float derived[3]{};
   if(faceNormal(*corners[0], *corners[1], *corners[2], *corners[3], derived)) {
+   derivedValid = true;
    const std::int32_t packed =
        static_cast<std::int32_t>(static_cast<std::uint8_t>(static_cast<std::int8_t>(derived[0] * 127.0f))) |
        (static_cast<std::int32_t>(static_cast<std::uint8_t>(static_cast<std::int8_t>(derived[1] * 127.0f)))
@@ -235,9 +235,9 @@ void fillMidTexAndTangent(TessellatorVertex* const* corners,
    for(float& t : tangent) t /= len;
   const float bitangent[3] = {(e2[0] * du1 - e1[0] * du2) * inv, (e2[1] * du1 - e1[1] * du2) * inv,
                               (e2[2] * du1 - e1[2] * du2) * inv};
-  const float nx = static_cast<std::int8_t>(corners[0]->normal & 0xFF) / 127.0f;
-  const float ny = static_cast<std::int8_t>((corners[0]->normal >> 8) & 0xFF) / 127.0f;
-  const float nz = static_cast<std::int8_t>((corners[0]->normal >> 16) & 0xFF) / 127.0f;
+  const float nx = derivedValid ? derived[0] : static_cast<std::int8_t>(corners[0]->normal & 0xFF) / 127.0f;
+  const float ny = derivedValid ? derived[1] : static_cast<std::int8_t>((corners[0]->normal >> 8) & 0xFF) / 127.0f;
+  const float nz = derivedValid ? derived[2] : static_cast<std::int8_t>((corners[0]->normal >> 16) & 0xFF) / 127.0f;
   if(nx * nx + ny * ny + nz * nz > 1.0e-8f) {
    // (RenderPearl, prog/lit_deferred.fsh), so a flipped w mirrors the
    const float predictedBitangent[3] = {tangent[1] * nz - tangent[2] * ny,
@@ -250,10 +250,14 @@ void fillMidTexAndTangent(TessellatorVertex* const* corners,
    }
   }
  }
+ const auto packTangent = [](float value) {
+  const float scaled = std::clamp(value, -1.0f, 1.0f) * 32767.0f;
+  return static_cast<std::int16_t>(scaled >= 0.0f ? scaled + 0.5f : scaled - 0.5f);
+ };
  const std::int16_t packed[4] = {
-     static_cast<std::int16_t>(std::lround(std::clamp(tangent[0], -1.0f, 1.0f) * 32767.0f)),
-     static_cast<std::int16_t>(std::lround(std::clamp(tangent[1], -1.0f, 1.0f) * 32767.0f)),
-     static_cast<std::int16_t>(std::lround(std::clamp(tangent[2], -1.0f, 1.0f) * 32767.0f)),
+     packTangent(tangent[0]),
+     packTangent(tangent[1]),
+     packTangent(tangent[2]),
      static_cast<std::int16_t>(handedness * 32767.0f)};
  for(std::size_t i = 0; i < writeCount; ++i) {
   write[i].midU = midU;
@@ -421,7 +425,7 @@ void Tessellator::vertex(double x, double y, double z) {
   vertex->entity[2] = 0;
   vertex->entity[3] = 0;
  }
- if(util::concurrent::tl_is_main_thread) {
+ if(isMainThread_) {
   vertex->irisEntity[0] = core::entityId();
   vertex->irisEntity[1] = core::blockEntityId();
   vertex->irisEntity[2] = core::renderedItemId();
@@ -461,19 +465,14 @@ void Tessellator::draw() {
  }
  const std::size_t vertexCount = builder_.vertexCount();
  if(discarding_) {
-  ::net::minecraft::client::debug::RenderProfiler::instance().record(
-      ::net::minecraft::client::debug::RenderMetric::FilteredGeometryBatches);
-  ::net::minecraft::client::debug::RenderProfiler::instance().record(
-      ::net::minecraft::client::debug::RenderMetric::FilteredVertices,
-      static_cast<std::uint64_t>(discardedVertexCount_));
+  VT_TRACE_COUNTER("FilteredGeometryBatches", 1);
+  VT_TRACE_COUNTER("FilteredVertices", static_cast<std::uint64_t>(discardedVertexCount_));
   reset();
   return;
  }
  if(vertexCount > 0) {
-  ::net::minecraft::client::debug::RenderProfiler::instance().record(
-      ::net::minecraft::client::debug::RenderMetric::GeneratedGeometryBatches);
-  ::net::minecraft::client::debug::RenderProfiler::instance().record(
-      ::net::minecraft::client::debug::RenderMetric::GeneratedVertices, vertexCount);
+  VT_TRACE_COUNTER("GeneratedGeometryBatches", 1);
+  VT_TRACE_COUNTER("GeneratedVertices", vertexCount);
  }
  if(builder_.vertexCount() > 0 && !captureOnly_) {
   auto& bytes = builder_.buffer();

@@ -1,4 +1,4 @@
-param([string]$BuildDir="build-omega",[ValidateSet("Release","RelWithDebInfo","Debug")][string]$BuildType="Release",[int]$Jobs=0,[switch]$Clean,[switch]$Lto,[switch]$NoLto,[switch]$NoNativeCpu,[switch]$RunTests,[string]$TestFilter="",[switch]$SkipModPackaging,[switch]$SkipResourceSync,[switch]$KeepDebugSymbols,[switch]$StripSymbols,[switch]$Log,[switch]$Gui,[switch]$Run,[switch]$NoGui,[switch]$CleanOnly,[switch]$Format,[string]$ModId="",[switch]$NoModDeploy,[ValidateSet("All","Client","Server")][string]$Target="All",[Parameter(ValueFromRemainingArguments=$true)][string[]]$RunArgs)
+param([string]$BuildDir="build-omega",[ValidateSet("Release","RelWithDebInfo","Debug")][string]$BuildType="Release",[int]$Jobs=0,[switch]$Clean,[switch]$Lto,[switch]$NoLto,[switch]$NoCcache,[switch]$NoNativeCpu,[switch]$RunTests,[string]$TestFilter="",[switch]$SkipModPackaging,[switch]$SkipResourceSync,[switch]$KeepDebugSymbols,[switch]$StripSymbols,[switch]$Log,[switch]$Gui,[switch]$Run,[switch]$NoGui,[switch]$CleanOnly,[switch]$Format,[string]$ModId="",[switch]$NoModDeploy,[ValidateSet("All","Client","Server")][string]$Target="All",[Parameter(ValueFromRemainingArguments=$true)][string[]]$RunArgs)
 $ErrorActionPreference="Stop"
 $ScriptDir=Split-Path -Parent $MyInvocation.MyCommand.Path
 sl $ScriptDir
@@ -208,6 +208,7 @@ if ($Gui) {
     }
     $AdvancedOptions = @{
         Lto              = $false
+        NoCcache         = $false
         NoNativeCpu      = $false
         KeepDebugSymbols = $false
         Log              = $false
@@ -218,6 +219,7 @@ if ($Gui) {
     function Get-GuiAdvancedLabels {
         return @{
             Lto              = "Link-time optimization (opt-in; Release only, may fail on MinGW GCC 15)"
+            NoCcache         = "Disable ccache for this build directory"
             NoNativeCpu      = "Portable build (do not use -march=native)"
             KeepDebugSymbols = "Keep debug symbols in Release builds"
             Log              = "Save the full build log to build-omega-last.log"
@@ -227,7 +229,7 @@ if ($Gui) {
         }
     }
     function Show-GuiAdvancedOptions {
-        $order = @("Lto", "NoNativeCpu", "KeepDebugSymbols", "Log", "RunTests", "SkipResourceSync", "SkipModPackaging")
+        $order = @("Lto", "NoCcache", "NoNativeCpu", "KeepDebugSymbols", "Log", "RunTests", "SkipResourceSync", "SkipModPackaging")
         $labels = Get-GuiAdvancedLabels
         $open = $true
         while ($open) {
@@ -445,11 +447,11 @@ Write-Host "Full build log: $LogPath" -ForegroundColor Yellow
 }
 }
 function Normalize-ToolPath{param([string]$Pa)if(!$Pa){return ""};return $Pa.Replace("\","/").ToLowerInvariant()}
-function Test-NeedsConfigure{param([string]$BP,[string]$EC,[string]$ETR,[string]$EBT,[bool]$UL,[string]$ECFR="")
+function Test-NeedsConfigure{param([string]$BP,[string]$EC,[string]$ETR,[string]$EBT,[bool]$UL,[bool]$UCC,[string]$ECFR="")
 $cp="$BP\CMakeCache.txt"
 if(!(Test-Path -Li $cp)){return $true}
 if(!(Test-Path -Li "$BP\build.ninja")){return $true}
-$gn=$null;$co=$null;$tr=$null;$bt=$null;$ip=$null;$cfr=$null;$cfrd=$null
+$gn=$null;$co=$null;$tr=$null;$bt=$null;$ip=$null;$ucc=$null;$cfr=$null;$cfrd=$null
 foreach($ln in gc -Li $cp){
 $v=$ln.Substring($ln.IndexOf("=")+1)
 if($ln -like "CMAKE_GENERATOR:INTERNAL=*"){$gn=$v}
@@ -457,6 +459,7 @@ elseif($ln -like "CMAKE_CXX_COMPILER:FILEPATH=*" -or $ln -like "CMAKE_CXX_COMPIL
 elseif($ln -like "MINECRAFT_TOOLCHAIN_ROOT:PATH=*" -or $ln -like "MINECRAFT_TOOLCHAIN_ROOT:UNINITIALIZED=*"){$tr=$v}
 elseif($ln -like "CMAKE_BUILD_TYPE:STRING=*"){$bt=$v}
 elseif($ln -like "CMAKE_INTERPROCEDURAL_OPTIMIZATION:BOOL=*"){$ip=$v}
+elseif($ln -like "MINECRAFT_USE_CCACHE:BOOL=*"){$ucc=$v}
 elseif($ln -like "CMAKE_CXX_FLAGS_RELEASE:STRING=*"){$cfr=$v.Trim()}
 elseif($ln -like "CMAKE_CXX_FLAGS_RELWITHDEBINFO:STRING=*"){$cfrd=$v.Trim()}
 }
@@ -465,6 +468,8 @@ if((Normalize-ToolPath $co) -ne (Normalize-ToolPath $EC)){return $true}
 if($tr -and((Normalize-ToolPath $tr) -ne (Normalize-ToolPath $ETR))){return $true}
 if($bt -ne $EBT){return $true}
 if(($ip -eq "ON") -ne $UL){return $true}
+$expectedCcache=if($UCC){"ON"}else{"OFF"}
+if($ucc -ne $expectedCcache){return $true}
 if($ECFR -ne ""){$en=($ECFR -replace '\s+',' ').Trim();$cn=if($EBT -eq "Release"){$cfr}else{$cfrd};$cn=if($cn){($cn -replace '\s+',' ').Trim()}else{""};if($cn -ne $en){return $true}}
 return $false
 }
@@ -484,6 +489,9 @@ Write-Host "Toolchain: $RelToolchainRoot"
 Write-Host "Compiler:  $RelGpp"
 $CmakeArgs=@("-S",".","-B",$BuildDir,"-G","Ninja","-DCMAKE_MAKE_PROGRAM=$NinjaExe","-DCMAKE_CXX_COMPILER=$GppExe","-DCMAKE_BUILD_TYPE=$BuildType","-DMINECRAFT_TOOLCHAIN_ROOT=$RelToolchainRoot")
 $UseLto=$Lto -and(-not $NoLto)
+$UseCcache=-not $NoCcache
+$CmakeArgs+="-DMINECRAFT_USE_CCACHE=$(if($UseCcache){'ON'}else{'OFF'})"
+if($NoCcache){$CmakeArgs+="-DCMAKE_CXX_COMPILER_LAUNCHER=";$env:CCACHE_DISABLE="1"}
 if($Lto -and $NoLto){Fail "-Lto and -NoLto cannot be used together."}
 if($UseLto -and $BuildType -ne "Release"){Fail "-Lto is only supported with -BuildType Release."}
 if($UseLto){Write-Host "LTO enabled (opt-in; may fail to link on MinGW GCC 15)";$CmakeArgs+="-DCMAKE_INTERPROCEDURAL_OPTIMIZATION=ON";$CmakeArgs+="-DCMAKE_CXX_COMPILER_LAUNCHER=";$env:CCACHE_DISABLE="1"}
@@ -509,7 +517,7 @@ $OC="-O2 -g"
 $OmegaCxx=$OC
 $CmakeArgs+="-DCMAKE_CXX_FLAGS_RELWITHDEBINFO=$OC"
 }
-$NeedsConfigure=Test-NeedsConfigure -BP "$ScriptDir\$BuildDir" -EC $GppExe -ETR $RelToolchainRoot -EBT $BuildType -UL $UseLto -ECFR $OmegaCxx
+$NeedsConfigure=Test-NeedsConfigure -BP "$ScriptDir\$BuildDir" -EC $GppExe -ETR $RelToolchainRoot -EBT $BuildType -UL $UseLto -UCC $UseCcache -ECFR $OmegaCxx
 if($NeedsConfigure){
     if($BuildType -eq "Debug"){Write-Host "build-omega Debug build started";Write-Host "WARNING: This will take a very long time (1.3h+)"}
     Assert-BuildDirAvailable -BN $BuildDir -SDP $ScriptDir

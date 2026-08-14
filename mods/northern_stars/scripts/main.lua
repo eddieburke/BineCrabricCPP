@@ -192,7 +192,7 @@ minecraft.on("world_render", {
     rotation_x_rad = rotation_x,
     rotation_y_rad = rotation_y,
     blend = "additive",
-    layer = "basic",
+    layer = "sky",
     depth_test = false,
     depth_write = false,
     packed = compiled_billboards,

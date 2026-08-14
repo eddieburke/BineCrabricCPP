@@ -1,4 +1,5 @@
 #pragma once
+#include <cmath>
 #include "net/minecraft/util/math/Matrix4f.hpp"
 namespace net::minecraft::client::render {
 // Java CelestialUniforms.getSunAngle(sun)/360: (angle + 90) mod 360 wrapped with a
@@ -76,6 +77,11 @@ struct CelestialState {
  float shadowLightDirectionWorld[3] = {0.0f, 1.0f, 0.0f};
  bool directionOverride = false;
 };
+inline float normalizeCelestialAngle(float value, float fallback) {
+ if(!std::isfinite(value)) return fallback;
+ value = std::fmod(value, 1.0f);
+ return value < 0.0f ? value + 1.0f : value;
+}
 inline CelestialState makeCelestialState(float celestialAngle, float sunPathRotation) {
  CelestialState state;
  state.celestialAngle = celestialAngle;

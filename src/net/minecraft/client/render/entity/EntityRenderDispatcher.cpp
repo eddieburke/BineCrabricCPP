@@ -7,7 +7,7 @@
 #include <unordered_map>
 #include <vector>
 #include "net/minecraft/client/gl/GlConstants.hpp"
-#include "net/minecraft/client/debug/RenderProfiler.hpp"
+#include "net/minecraft/client/debug/VTuneTrace.hpp"
 #include "net/minecraft/client/render/camera/FrameRenderCamera.hpp"
 #include "net/minecraft/client/render/RenderCore.hpp"
 #include "net/minecraft/client/render/RenderType.hpp"
@@ -76,6 +76,7 @@ void EntityRenderDispatcher::registerRenderer(std::type_index key, std::unique_p
  }
  renderer->setDispatcher(this);
  renderers_[key] = std::move(renderer);
+ rendererAliases().clear();
 }
 EntityRenderer* EntityRenderDispatcher::get(std::type_index key) {
  const auto owned = renderers_.find(key);
@@ -94,12 +95,11 @@ EntityRenderer* EntityRenderDispatcher::get(std::type_index key) {
  }
  const std::optional<std::type_index> parent = net::minecraft::entitySupertype(key);
  if(!parent.has_value()) {
+  rendererAliases()[key] = nullptr;
   return nullptr;
  }
  EntityRenderer* resolved = get(*parent);
- if(resolved != nullptr) {
-  rendererAliases()[key] = resolved;
- }
+ rendererAliases()[key] = resolved;
  return resolved;
 }
 EntityRenderer* EntityRenderDispatcher::get(const net::minecraft::Entity& entity) {
@@ -212,8 +212,7 @@ void EntityRenderDispatcher::render(const net::minecraft::Entity& entity,
   }
  }
  if(EntityRenderer* renderer = get(entityType); renderer != nullptr) {
-  ::net::minecraft::client::debug::RenderProfiler::instance().record(
-      ::net::minecraft::client::debug::RenderMetric::EntityRendererInvocations);
+  VT_TRACE_COUNTER("EntityRendererInvocations", 1);
   // The renderer composes entity poses onto `matrices` and publishes the
   // composed matrix to the draw camera state before its draws; restore the
   // frame base afterwards (renderers that draw without composing, e.g. the

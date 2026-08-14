@@ -7,7 +7,7 @@
 #include <unordered_set>
 #include <vector>
 #include "net/minecraft/client/ClientLog.hpp"
-#include "net/minecraft/client/debug/RenderProfiler.hpp"
+#include "net/minecraft/client/debug/VTuneTrace.hpp"
 #include "net/minecraft/client/Minecraft.hpp"
 #include "net/minecraft/client/option/RenderSettings.hpp"
 #include "net/minecraft/client/render/world/WorldRenderer.hpp"
@@ -47,7 +47,7 @@ bool ChunkCompilePipeline::startMeshJob(chunk::ChunkBuilder* chunk,
                                         bool nearLane,
                                         int priority,
                                         const client::option::RenderSettings& resolvedOpts) {
- if(chunk == nullptr || chunk->meshJobInFlight || !chunk->dirty) {
+ if(chunk == nullptr || !chunk->readyForMeshCapture()) {
   return false;
  }
  const auto captureStart = std::chrono::steady_clock::now();
@@ -85,18 +85,26 @@ bool ChunkCompilePipeline::startMeshJob(chunk::ChunkBuilder* chunk,
  return true;
 }
 bool ChunkCompilePipeline::compileChunks(net::minecraft::entity::LivingEntity& /*camera*/, bool force) {
- debug::RenderProfileScope compileProfile("terrain", "compile");
+ VT_TRACE_EVENT("terrain/compile");
  {
-  debug::RenderProfileScope borderProfile("terrain", "border_refresh");
+  VT_TRACE_EVENT("terrain/border_refresh");
   sectionSystem_->drainBorderRefresh();
  }
  const client::option::RenderSettings& resolvedOpts = *scene_.settings;
  const std::size_t workerCount = meshHandoff_.workerCount();
  const std::size_t backlog = dirtyChunks_.size() + pendingMeshUploads_.size() + meshHandoff_.pendingJobs();
- debug::RenderProfiler& profiler = debug::RenderProfiler::instance();
- profiler.record(debug::RenderMetric::MeshJobsQueued, dirtyChunks_.size());
- profiler.record(debug::RenderMetric::MeshJobsInFlight, meshHandoff_.pendingJobs());
- profiler.record(debug::RenderMetric::MeshUploadsPending, pendingMeshUploads_.size());
+ VT_TRACE_COUNTER("MeshJobsQueued", dirtyChunks_.size());
+ VT_TRACE_COUNTER("MeshJobsInFlight", meshHandoff_.pendingJobs());
+ VT_TRACE_COUNTER("MeshUploadsPending", pendingMeshUploads_.size());
+#ifdef VTUNE_ENABLED
+ const std::size_t lightingHeldSections = static_cast<std::size_t>(std::count_if(
+     dirtyChunks_.begin(), dirtyChunks_.end(), [](const chunk::ChunkBuilder* section) {
+      return section != nullptr && section->dirty && !section->lightingReady;
+     }));
+ VT_TRACE_COUNTER("LightingMeshSectionsHeld", lightingHeldSections);
+ VT_TRACE_COUNTER("MeshJobsStaleTotal", staleMeshJobs_);
+ VT_TRACE_COUNTER("MeshUploadsDeferredTotal", deferredMeshUploads_);
+#endif
  const bool loadingBacklog = backlog > 512u;
  const int minUploadsPerFrame = loadingBacklog ? std::clamp(static_cast<int>(workerCount * 2u), 4, 16) : 1;
  const net::minecraft::util::concurrent::FrameBudget uploadBudget =
@@ -119,18 +127,20 @@ bool ChunkCompilePipeline::compileChunks(net::minecraft::entity::LivingEntity& /
   }
   chunk::ChunkBuilder* builder = owner.get();
   if(!job->profileRecorded) {
-   profiler.recordSpanDuration("terrain", "mesh_capture", job->captureNs);
-   profiler.recordSpanDuration("terrain", "mesh_build_worker", job->buildNs);
+   VT_TRACE_COUNTER("mesh_capture_ns", job->captureNs);
+   VT_TRACE_COUNTER("mesh_build_worker_ns", job->buildNs);
    job->profileRecorded = true;
   }
   const net::minecraft::util::concurrent::FrameBudget& budget = nearLane ? nearBudget : uploadBudget;
   const int budgetCount = nearLane ? nearUploadCount : uploadCount;
   if(!budget.hasRemaining(budgetCount)) {
+   ++deferredMeshUploads_;
    deferredUploads.push_back(std::move(job));
    return;
   }
   builder->meshJobInFlight = false;
   if(job->failed || job->version != builder->version) {
+   ++staleMeshJobs_;
    builder->dirty = true;
    enqueueDirtyChunk(builder);
    return;
@@ -139,9 +149,9 @@ bool ChunkCompilePipeline::compileChunks(net::minecraft::entity::LivingEntity& /
   for(const TessellatorMesh& layer : job->result.layers) {
    uploadBytes += layer.vertexCount() * sizeof(TessellatorVertex);
   }
-  profiler.record(debug::RenderMetric::MeshUploadBytes, uploadBytes);
+  VT_TRACE_COUNTER("MeshUploadBytes", uploadBytes);
   {
-   debug::RenderProfileScope uploadProfile("terrain", "mesh_upload");
+   VT_TRACE_EVENT("terrain/mesh_upload");
    builder->uploadMesh(*job);
   }
   builder->dirty = false;

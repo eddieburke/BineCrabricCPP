@@ -12,7 +12,7 @@
 namespace net::minecraft::client::render::block {
 namespace option = net::minecraft::client::option;
 namespace {
-bool edgeAllowsVision(const net::minecraft::BlockView* blockView, int x, int y, int z) {
+bool edgeTransmitsLight(const net::minecraft::BlockView* blockView, int x, int y, int z) {
  if(blockView == nullptr) {
   return true;
  }
@@ -20,7 +20,7 @@ bool edgeAllowsVision(const net::minecraft::BlockView* blockView, int x, int y, 
  if(blockId <= 0 || blockId >= net::minecraft::block::Block::BLOCK_COUNT) {
   return true;
  }
- return net::minecraft::block::Block::BLOCKS_ALLOW_VISION[static_cast<std::size_t>(blockId)];
+ return net::minecraft::block::Block::BLOCKS_LIGHT_OPACITY[static_cast<std::size_t>(blockId)] == 0;
 }
 void readCornerLight(BlockRenderContext& ctx, int x, int y, int z, int& blockLight, int& skyLight) {
  ctx.sampleFaceLight(x, y, z);
@@ -166,18 +166,18 @@ bool CubeBlockRenderer::renderSmooth(
  bool tintWest = true;
  bool tintNorth = true;
  bool tintSouth = true;
- const bool topEastEdgeTranslucent = edgeAllowsVision(ctx_.blockView, x + 1, y + 1, z);
- const bool bottomEastEdgeTranslucent = edgeAllowsVision(ctx_.blockView, x + 1, y - 1, z);
- const bool southEastEdgeTranslucent = edgeAllowsVision(ctx_.blockView, x + 1, y, z + 1);
- const bool northEastEdgeTranslucent = edgeAllowsVision(ctx_.blockView, x + 1, y, z - 1);
- const bool topWestEdgeTranslucent = edgeAllowsVision(ctx_.blockView, x - 1, y + 1, z);
- const bool bottomWestEdgeTranslucent = edgeAllowsVision(ctx_.blockView, x - 1, y - 1, z);
- const bool northWestEdgeTranslucent = edgeAllowsVision(ctx_.blockView, x - 1, y, z - 1);
- const bool southWestEdgeTranslucent = edgeAllowsVision(ctx_.blockView, x - 1, y, z + 1);
- const bool topSouthEdgeTranslucent = edgeAllowsVision(ctx_.blockView, x, y + 1, z + 1);
- const bool topNorthEdgeTranslucent = edgeAllowsVision(ctx_.blockView, x, y + 1, z - 1);
- const bool bottomSouthEdgeTranslucent = edgeAllowsVision(ctx_.blockView, x, y - 1, z + 1);
- const bool bottomNorthEdgeTranslucent = edgeAllowsVision(ctx_.blockView, x, y - 1, z - 1);
+ const bool topEastEdgeTranslucent = edgeTransmitsLight(ctx_.blockView, x + 1, y + 1, z);
+ const bool bottomEastEdgeTranslucent = edgeTransmitsLight(ctx_.blockView, x + 1, y - 1, z);
+ const bool southEastEdgeTranslucent = edgeTransmitsLight(ctx_.blockView, x + 1, y, z + 1);
+ const bool northEastEdgeTranslucent = edgeTransmitsLight(ctx_.blockView, x + 1, y, z - 1);
+ const bool topWestEdgeTranslucent = edgeTransmitsLight(ctx_.blockView, x - 1, y + 1, z);
+ const bool bottomWestEdgeTranslucent = edgeTransmitsLight(ctx_.blockView, x - 1, y - 1, z);
+ const bool northWestEdgeTranslucent = edgeTransmitsLight(ctx_.blockView, x - 1, y, z - 1);
+ const bool southWestEdgeTranslucent = edgeTransmitsLight(ctx_.blockView, x - 1, y, z + 1);
+ const bool topSouthEdgeTranslucent = edgeTransmitsLight(ctx_.blockView, x, y + 1, z + 1);
+ const bool topNorthEdgeTranslucent = edgeTransmitsLight(ctx_.blockView, x, y + 1, z - 1);
+ const bool bottomSouthEdgeTranslucent = edgeTransmitsLight(ctx_.blockView, x, y - 1, z + 1);
+ const bool bottomNorthEdgeTranslucent = edgeTransmitsLight(ctx_.blockView, x, y - 1, z - 1);
  if(block.textureId == 3) {
   tintSouth = false;
   tintNorth = false;

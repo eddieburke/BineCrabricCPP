@@ -22,6 +22,7 @@
 #include "net/minecraft/block/Block.hpp"
 #include "net/minecraft/client/ClientLog.hpp"
 #include "net/minecraft/client/Minecraft.hpp"
+#include "net/minecraft/client/debug/VTuneTrace.hpp"
 #include "net/minecraft/client/gl/GLCore.hpp"
 #include "net/minecraft/client/gl/GlConstants.hpp"
 #include "net/minecraft/client/gl/GlResource.hpp"
@@ -196,14 +197,24 @@ void Pipeline::applyBlockIds(const PackDefinition& definition) {
    if(name.rfind("tile.", 0) == 0) {
     name.erase(0, 5);
    }
-   if(const auto found = definition.blockIds.find(name); found != definition.blockIds.end()) {
-    ids[static_cast<std::size_t>(id)] = found->second;
-    continue;
+   const auto apply = [&](std::string_view candidate) {
+    if(const auto found = definition.blockIds.find(std::string(candidate)); found != definition.blockIds.end()) {
+     ids[static_cast<std::size_t>(id)] = found->second;
+     return true;
+    }
+    if(const auto found = definition.blockIds.find("minecraft:" + std::string(candidate));
+       found != definition.blockIds.end()) {
+     ids[static_cast<std::size_t>(id)] = found->second;
+     return true;
+    }
+    return false;
+   };
+   if(block == net::minecraft::block::Block::LIT_REDSTONE_TORCH) {
+    if(apply("redstone_torch:lit=true") || apply("redstone_wall_torch:lit=true")) continue;
+   } else if(block == net::minecraft::block::Block::REDSTONE_TORCH) {
+    if(apply("redstone_torch:lit=false") || apply("redstone_wall_torch:lit=false")) continue;
    }
-   if(const auto found = definition.blockIds.find("minecraft:" + name);
-      found != definition.blockIds.end()) {
-    ids[static_cast<std::size_t>(id)] = found->second;
-   }
+   apply(name);
   }
  }
  setShaderBlockIds(ids);
@@ -323,7 +334,6 @@ bool Pipeline::preparePackResources(PackInstance& pack, int width, int height) {
 }
 void Pipeline::prepareFrame(net::minecraft::World* world, PackInstance* activePack,
                             PackInstance* basePack) {
- (void)basePack;
  bindPbrTextures();
  const net::minecraft::client::Minecraft* minecraft = net::minecraft::client::Minecraft::INSTANCE;
  const int width = minecraft != nullptr ? std::max(1, minecraft->displayWidth) : 1;
@@ -348,6 +358,10 @@ void Pipeline::prepareFrame(net::minecraft::World* world, PackInstance* activePa
  updateLightmap(world);
  const bool resourcesReady = activePack != nullptr && preparePackResources(*activePack, width, height);
  if(resourcesReady) {
+  activePack->colorTargets.resetFlips();
+  if(basePack != nullptr && basePack != activePack) {
+   basePack->colorTargets.resetFlips();
+  }
   for(const CustomImage& declaration : activePack->definition.images) {
    const auto found = activePack->images.find(declaration.name);
    if(!declaration.clearEachFrame || found == activePack->images.end() || !found->second.texture) {
@@ -581,10 +595,16 @@ void Pipeline::captureHandDepth(PackInstance* activePack) {
  captureDepth(activePack, 0);
 }
 void Pipeline::captureDepth(PackInstance* activePack, std::size_t index) {
+ VT_TRACE_EVENT(index == 1 ? "depth/capture_opaque" : "depth/capture_hand");
  if(activePack == nullptr || !activePack->colorTargets.valid() || index >= 2) return;
  const int width = activePack->colorTargets.width();
  const int height = activePack->colorTargets.height();
  if(width <= 0 || height <= 0 || activePack->colorTargets.depthTexture() == 0) return;
+ if(index == 1) {
+  VT_TRACE_COUNTER("OpaqueDepthSnapshotPixels", width * height);
+ } else {
+  VT_TRACE_COUNTER("HandDepthSnapshotPixels", width * height);
+ }
  bindScene(activePack);
  if(!activePack->depthTextures[index]) {
   activePack->depthTextures[index] = gl::GlTexture(core::genTexture());
@@ -732,6 +752,7 @@ bool Pipeline::renderPreWorld(PackInstance* activePack, int shadowDepthTextureId
                                    shadowColorTextureIds, shadowColorTextureCount,
                                    shadowTargets_, shadowColorAltTextures_) ||
              rendered;
+  activePack->colorTargets.bindGbuffers();
  }
  shadowDepthTexture_ = shadowDepthTextureId;
  shadowOpaqueDepthTexture_ = shadowOpaqueDepthTextureId;

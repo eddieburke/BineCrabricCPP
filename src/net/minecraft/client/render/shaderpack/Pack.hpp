@@ -243,6 +243,19 @@ struct PackDefinition {
  std::vector<BufferBlend> bufferBlends;
  std::vector<PackPass> passes;
  std::vector<CustomUniformDecl> customUniforms;
+ [[nodiscard]] float effectiveVoxelDistance() const noexcept {
+  float distance = voxelDistance;
+  if(!voxelizeLightBlocks) return distance;
+  for(const CustomImage& image : images) {
+   if(image.relative || image.width <= 1.0f || image.depth <= 1) continue;
+   const float horizontalExtent = image.width < static_cast<float>(image.depth)
+                                      ? image.width
+                                      : static_cast<float>(image.depth);
+   const float radius = horizontalExtent * 0.5f;
+   if(radius > distance) distance = radius;
+  }
+  return distance;
+ }
 };
 struct MeshDefinitionState {
  bool voxelizeLightBlocks = false;

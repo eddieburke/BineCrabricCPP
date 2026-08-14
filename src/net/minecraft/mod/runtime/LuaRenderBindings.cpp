@@ -154,6 +154,13 @@ int luaRenderDrawQuads(lua_State* state) {
   }
   core::setDrawPose(pose.top());
  }
+ if(usePacked) {
+  if(api.checkstack(state, static_cast<int>(kPackedStride)) == 0) {
+   pop(state, 1);
+   api.pushinteger(state, 0);
+   return 1;
+  }
+ }
  client::render::Tessellator& tessellator = client::render::Tessellator::INSTANCE;
  tessellator.startQuads();
  std::size_t emitted = 0;
@@ -168,8 +175,8 @@ int luaRenderDrawQuads(lua_State* state) {
     if(isNumber == 0) {
      values[component] = 0.0;
     }
-    api.settop(state, -2);
    }
+   api.settop(state, sourceIndex);
    tessellator.color(std::clamp(static_cast<float>(values[5]), 0.0f, 1.0f),
                      std::clamp(static_cast<float>(values[6]), 0.0f, 1.0f),
                      std::clamp(static_cast<float>(values[7]), 0.0f, 1.0f),

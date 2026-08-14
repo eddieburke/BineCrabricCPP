@@ -66,7 +66,8 @@ class GameRenderer {
                             float fov,
                             int viewportWidth,
                             int viewportHeight,
-                            bool renderCameraEntity);
+                            bool renderCameraEntity,
+                            bool colorAlreadyCleared);
  bool renderWorldToFbo(unsigned int fbo,
                        int width,
                        int height,

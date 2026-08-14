@@ -7,7 +7,7 @@
 #include "net/minecraft/client/Minecraft.hpp"
 #include "net/minecraft/client/ClientLog.hpp"
 #include "net/minecraft/client/option/RenderSettings.hpp"
-#include "net/minecraft/client/debug/RenderProfiler.hpp"
+#include "net/minecraft/client/debug/VTuneTrace.hpp"
 #include "net/minecraft/client/render/RenderCore.hpp"
 #include "net/minecraft/client/render/world/WorldRenderer.hpp"
 #include "net/minecraft/client/render/camera/FrameRenderCamera.hpp"
@@ -81,6 +81,7 @@ void ChunkSectionSystem::createColumn(int sectionX, int sectionZ) {
     !scene_.world->getChunkSource()->isChunkLoaded(sectionX, sectionZ)) {
   return;
  }
+ const bool lightingReady = !pendingLit_.contains(world::SectionPos{sectionX, 0, sectionZ});
  chunk::ChunkBuilder* column[kChunkSectionCountY] = {};
  for(int sectionY = 0; sectionY < kChunkSectionCountY; ++sectionY) {
   const world::SectionPos pos{sectionX, sectionY, sectionZ};
@@ -94,6 +95,7 @@ void ChunkSectionSystem::createColumn(int sectionX, int sectionZ) {
                                                        sectionZ * chunk::kSectionBlocks,
                                                        chunk::kSectionBlocks);
   builder->inFrustum = true;
+  builder->lightingReady = lightingReady;
   builder->invalidate();
   chunk::ChunkBuilder* raw = builder.get();
   const world::SectionPos regionPos = world::regionOf(pos);
@@ -206,8 +208,14 @@ void ChunkSectionSystem::rebuildSectionOrder(const net::minecraft::Vec3d& camPos
 }
 void ChunkSectionSystem::updateDebugCounts() {
  if(!scene_.options->debugHud) {
+  debugCountCooldown_ = 0;
   return;
  }
+ if(debugCountCooldown_ > 0) {
+  --debugCountCooldown_;
+  return;
+ }
+ debugCountCooldown_ = 9;
  chunkCount = 0;
  invisibleChunkCount = 0;
  compiledChunkCount = 0;
@@ -278,14 +286,15 @@ bool ChunkSectionSystem::updateCameraSection() {
  return true;
 }
 void ChunkSectionSystem::updateProfileMetrics(bool shadowPass) {
- debug::RenderProfiler& profiler = debug::RenderProfiler::instance();
  if(shadowPass) {
-  profiler.record(debug::RenderMetric::ShadowSectionsVisible, visibleSections().size());
+  VT_TRACE_COUNTER("ShadowSectionsVisible", visibleSections().size());
   return;
  }
- profiler.record(debug::RenderMetric::ChunkColumnsPending, pendingColumns_.size());
- profiler.record(debug::RenderMetric::ChunkSectionsResident, sections_.size());
- profiler.record(debug::RenderMetric::ChunkSectionsVisible, visibleSections().size());
+ VT_TRACE_COUNTER("ChunkColumnsPending", pendingColumns_.size());
+ VT_TRACE_COUNTER("LightingColumnsPending", pendingLit_.size());
+ VT_TRACE_COUNTER("BorderRefreshColumnsPending", pendingBorderRefresh_.size());
+ VT_TRACE_COUNTER("ChunkSectionsResident", sections_.size());
+ VT_TRACE_COUNTER("ChunkSectionsVisible", visibleSections().size());
 }
 void ChunkSectionSystem::drainPendingColumns() {
  if(scene_.world == nullptr) {
@@ -319,7 +328,7 @@ void ChunkSectionSystem::reloadIfViewDistanceChanged() {
 }
 void ChunkSectionSystem::cullChunks(Frustum* culler, bool updateGraph) {
  const FrameRenderCamera& renderCamera = core::cameraFrame();
- debug::RenderProfileScope cullProfile("terrain", renderCamera.shadowPass ? "shadow_cull" : "view_cull");
+ VT_TRACE_EVENT(renderCamera.shadowPass ? "terrain/shadow_cull" : "terrain/view_cull");
  const double bypassBlocks = std::max(0.0f, renderCamera.frustumBypassDistance);
  const double bypassSq = bypassBlocks * bypassBlocks;
  const net::minecraft::Vec3d camPos = WorldRenderer::sectionOrigin();
@@ -334,12 +343,10 @@ void ChunkSectionSystem::cullChunks(Frustum* culler, bool updateGraph) {
  }
  if(renderCamera.shadowPass) {
   const ShadowCullingFrustum* shadowFrustum = renderCamera.shadowTerrainFrustum;
-  std::vector<chunk::ChunkBuilder*>& visibleSections = currentVisibleSections();
-  visibleSections.clear();
-  forEachSection(regions_, [&](chunk::ChunkBuilder* chunk) {
-   const bool visible =
-       boxTouchesSphere(chunk->cullingBox, camPos.x, camPos.y, camPos.z, bypassSq) ||
-       (shadowFrustum != nullptr && shadowFrustum->isVisible(chunk->cullingBox));
+ std::vector<chunk::ChunkBuilder*>& visibleSections = currentVisibleSections();
+ visibleSections.clear();
+ forEachSection(regions_, [&](chunk::ChunkBuilder* chunk) {
+   const bool visible = shadowFrustum == nullptr || shadowFrustum->isVisible(chunk->cullingBox);
    if(visible) {
     visibleSections.push_back(chunk);
    }
@@ -483,7 +490,10 @@ void ChunkSectionSystem::markChunkColumnLit(int chunkX, int chunkZ) {
  pendingLit_.erase(world::SectionPos{chunkX, 0, chunkZ});
  for(int sectionY = 0; sectionY < kChunkSectionCountY; ++sectionY) {
   chunk::ChunkBuilder* section = sectionAt(chunkX, sectionY, chunkZ);
-  if(section != nullptr && section->dirty && !section->built) {
+  if(section != nullptr) {
+   section->lightingReady = true;
+  }
+  if(section != nullptr && section->dirty && !section->meshJobInFlight) {
    compilePipeline_->enqueueDirtyChunk(section);
   }
  }
@@ -501,7 +511,10 @@ void ChunkSectionSystem::markAllChunksLit() {
  for(const world::SectionPos& column : columns) {
   for(int sectionY = 0; sectionY < kChunkSectionCountY; ++sectionY) {
    chunk::ChunkBuilder* section = sectionAt(column.x, sectionY, column.z);
-   if(section != nullptr && section->dirty && !section->built) {
+   if(section != nullptr) {
+    section->lightingReady = true;
+   }
+   if(section != nullptr && section->dirty && !section->meshJobInFlight) {
     compilePipeline_->enqueueDirtyChunk(section);
    }
   }
@@ -513,7 +526,12 @@ void ChunkSectionSystem::drainBorderRefresh() {
  }
  static constexpr int kNeighborX[8] = {-1, 1, 0, 0, -1, -1, 1, 1};
  static constexpr int kNeighborZ[8] = {0, 0, -1, 1, -1, 1, -1, 1};
- for(const world::SectionPos& column : pendingBorderRefresh_) {
+ for(auto columnIt = pendingBorderRefresh_.begin(); columnIt != pendingBorderRefresh_.end();) {
+  const world::SectionPos column = *columnIt;
+  if(pendingLit_.contains(column)) {
+   ++columnIt;
+   continue;
+  }
   for(int dir = 0; dir < 8; ++dir) {
    const int neighborX = column.x + kNeighborX[dir];
    const int neighborZ = column.z + kNeighborZ[dir];
@@ -526,8 +544,8 @@ void ChunkSectionSystem::drainBorderRefresh() {
     compilePipeline_->enqueueDirtyChunk(section);
    }
   }
+  columnIt = pendingBorderRefresh_.erase(columnIt);
  }
- pendingBorderRefresh_.clear();
 }
 void ChunkSectionSystem::setBlocksDirty(int minX, int minY, int minZ, int maxX, int maxY, int maxZ) {
  markDirty(minX - 1, minY - 1, minZ - 1, maxX + 1, maxY + 1, maxZ + 1);

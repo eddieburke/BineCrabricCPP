@@ -381,6 +381,58 @@ TEST_F(ShaderGlIntegrationTest, ComputeImageBindingsUseCurrentReadSide) {
  EXPECT_NE(targets.readTexture(0), first);
  targets.destroy();
 }
+TEST_F(ShaderGlIntegrationTest, GbufferRebindUsesPostPrepareReadSides) {
+ client::render::ColorTargets targets;
+ ASSERT_TRUE(targets.ensure(4, 4,
+                            {client::render::ColorFormat::Rgba8,
+                             client::render::ColorFormat::Rgba8},
+                            2));
+ targets.bindGbuffers();
+ const float red[4] = {1.0f, 0.0f, 0.0f, 1.0f};
+ GLCore::clearBufferfv(client::gl::framebuffer::Color, 1, red);
+ const unsigned int before = targets.readTexture(1);
+ targets.flip("colortex1");
+ EXPECT_NE(targets.readTexture(1), before);
+ targets.bindGbuffers();
+ const float green[4] = {0.0f, 1.0f, 0.0f, 1.0f};
+ GLCore::clearBufferfv(client::gl::framebuffer::Color, 1, green);
+ const auto readPixel = [](unsigned int texture) {
+  std::array<unsigned char, 4 * 4 * 4> pixels{};
+  client::render::core::bindTexture(static_cast<int>(texture));
+  ::glGetTexImage(client::gl::cap::Texture2D, 0, client::gl::pixel::Rgba,
+                  client::gl::pixel::UnsignedByte, pixels.data());
+  return std::array<unsigned char, 4>{pixels[0], pixels[1], pixels[2], pixels[3]};
+ };
+ const auto current = readPixel(targets.readTexture(1));
+ const auto previous = readPixel(before);
+ EXPECT_LT(current[0], 5);
+ EXPECT_GT(current[1], 250);
+ EXPECT_GT(previous[0], 250);
+ EXPECT_LT(previous[1], 5);
+ targets.endGbuffers();
+ targets.destroy();
+}
+TEST_F(ShaderGlIntegrationTest, ResetFlipsCopiesFinalReadSideToMain) {
+ client::render::ColorTargets targets;
+ ASSERT_TRUE(targets.ensure(4, 4, {client::render::ColorFormat::Rgba16I}, 1));
+ const unsigned int mainTexture = targets.readTexture(0);
+ ASSERT_TRUE(targets.bindWrite({"colortex0"}));
+ const int value[4] = {1234, -2345, 3456, -4567};
+ GLCore::clearBufferiv(client::gl::framebuffer::Color, 0, value);
+ targets.flip("colortex0");
+ ASSERT_NE(targets.readTexture(0), mainTexture);
+ targets.resetFlips();
+ ASSERT_EQ(targets.readTexture(0), mainTexture);
+ std::array<short, 4 * 4 * 4> pixels{};
+ client::render::core::bindTexture(static_cast<int>(mainTexture));
+ ::glGetTexImage(client::gl::cap::Texture2D, 0, client::gl::pixel::RgbaInteger,
+                 0x1402, pixels.data());
+ EXPECT_EQ(pixels[0], value[0]);
+ EXPECT_EQ(pixels[1], value[1]);
+ EXPECT_EQ(pixels[2], value[2]);
+ EXPECT_EQ(pixels[3], value[3]);
+ targets.destroy();
+}
 TEST_F(ShaderGlIntegrationTest, ComputeWritesRenderTargetInPlaceWithoutPingPongCopy) {
  client::render::ColorTargets targets;
  ASSERT_TRUE(targets.ensure(4, 4, {client::render::ColorFormat::Rgba8}, 1));
@@ -585,6 +637,20 @@ TEST_F(ShaderGlIntegrationTest, WorldProgramsBindSceneAndOpaqueDepthSamplers) {
  EXPECT_NE(readSampler("depthtex0"), readSampler("depthtex1"));
  EXPECT_NE(readSampler("depthtex1"), readSampler("depthtex2"));
  targets.destroy();
+}
+TEST_F(ShaderGlIntegrationTest, PackDepthSnapshotsKeepOpaqueAndHandSemantics) {
+ client::render::PackInstance pack;
+ const int fallback = static_cast<int>(client::render::core::genTexture());
+ pack.depthTextures[0] = client::gl::GlTexture(client::render::core::genTexture());
+ pack.depthTextures[1] = client::gl::GlTexture(client::render::core::genTexture());
+ EXPECT_EQ(pack.opaqueDepthTexture(fallback), static_cast<int>(pack.depthTextures[1].handle()));
+ EXPECT_EQ(pack.handDepthTexture(fallback), static_cast<int>(pack.depthTextures[0].handle()));
+ pack.depthTextures[0].reset();
+ EXPECT_EQ(pack.handDepthTexture(fallback), static_cast<int>(pack.depthTextures[1].handle()));
+ pack.depthTextures[1].reset();
+ EXPECT_EQ(pack.opaqueDepthTexture(fallback), fallback);
+ EXPECT_EQ(pack.handDepthTexture(fallback), fallback);
+ client::render::core::deleteTexture(static_cast<unsigned int>(fallback));
 }
 TEST_F(ShaderGlIntegrationTest, PackSamplerOverridesWinWithoutDuplicateBuiltinBindings) {
  client::render::ColorTargets targets;

@@ -8,7 +8,7 @@
 #include "net/minecraft/client/render/shaders/ComputeDispatcher.hpp"
 #include "net/minecraft/client/gl/GLCore.hpp"
 #include "net/minecraft/client/gl/ShaderProgram.hpp"
-#include "net/minecraft/client/debug/RenderProfiler.hpp"
+#include "net/minecraft/client/debug/VTuneTrace.hpp"
 namespace net::minecraft::client::render {
 struct PackUniformValues;
 struct PackViewportValues;
@@ -42,8 +42,9 @@ inline bool dispatchSetupIfNeeded(
   return true;
  }
  for(const PackInstance::RuntimePass& runtime : pack.setupPlan) {
-  debug::RenderProfileScope passProfile("shader/setup", pack.definition.passes[runtime.passIndex].name);
-  debug::RenderProfiler::instance().record(debug::RenderMetric::ShaderPasses);
+  const std::string passSpanName = "shader/setup/" + pack.definition.passes[runtime.passIndex].name;
+  VT_TRACE_EVENT(passSpanName.c_str());
+  VT_TRACE_COUNTER("ShaderPasses", 1);
   if(runtime.program == nullptr ||
      !ComputeDispatcher::dispatch(pack, pack.definition.passes[runtime.passIndex], *runtime.program,
                                   uniforms, viewport, textures, colorImages, volumes, colorTargets,
@@ -53,7 +54,7 @@ inline bool dispatchSetupIfNeeded(
  }
  if(!pack.setupPlan.empty()) {
   gl::GLCore::memoryBarrier(ComputeDispatcher::kBarrierBits);
-  debug::RenderProfiler::instance().record(debug::RenderMetric::MemoryBarriers);
+  VT_TRACE_COUNTER("MemoryBarriers", 1);
  }
  pack.setupWidth = width;
  pack.setupHeight = height;

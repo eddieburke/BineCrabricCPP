@@ -4,7 +4,7 @@
 #include "net/minecraft/client/gl/GLCore.hpp"
 #include "net/minecraft/client/gl/GlConstants.hpp"
 #include "net/minecraft/client/gl/GlResource.hpp"
-#include "net/minecraft/client/debug/RenderProfiler.hpp"
+#include "net/minecraft/client/debug/VTuneTrace.hpp"
 #include "net/minecraft/client/render/RenderCore.hpp"
 #include "net/minecraft/util/logging/Logging.hpp"
 #include <algorithm>
@@ -74,7 +74,7 @@ bool ColorTargets::allocateSlot(Slot& slot, int width, int height, ColorFormat f
    return false;
   }
   slot.tex[i] = gl::GlTexture(h);
-  debug::RenderProfiler::instance().record(debug::RenderMetric::RenderTargetAllocations);
+  VT_TRACE_COUNTER("RenderTargetAllocations", 1);
   core::bindTexture(gl::cap::Texture2D, static_cast<int>(h));
   ::glTexImage2D(gl::cap::Texture2D, 0, spec.internal, width, height, 0, spec.format, spec.type, nullptr);
   setTexParams(linear);
@@ -154,7 +154,7 @@ bool ColorTargets::ensure(int width, int height, const std::vector<ColorFormat>&
   destroy();
   return false;
  }
- debug::RenderProfiler::instance().record(debug::RenderMetric::RenderTargetAllocations);
+ VT_TRACE_COUNTER("RenderTargetAllocations", 1);
  core::bindTexture(gl::cap::Texture2D, static_cast<int>(depth_.handle()));
  ::glTexImage2D(gl::cap::Texture2D, 0, gl::framebuffer::Depth24Stencil8, width, height, 0,
                 gl::pixel::DepthStencil, gl::pixel::UnsignedInt248, nullptr);
@@ -532,7 +532,7 @@ void ColorTargets::enableMipmaps(const std::string& name) {
  slot->mipmapsOn[slot->main] = true;
  applySlotFilter(*slot, slot->main);
  gl::GLCore::generateMipmap(gl::cap::Texture2D);
- debug::RenderProfiler::instance().record(debug::RenderMetric::MipmapGenerations);
+ VT_TRACE_COUNTER("MipmapGenerations", 1);
 }
 void ColorTargets::resetMipmaps() {
  // https://github.com/IrisShaders/Iris/blob/26.1/common/src/main/java/net/irisshaders/iris/pipeline/FinalPassRenderer.java
@@ -553,6 +553,40 @@ void ColorTargets::flip(const std::string& name) {
  if(colortexIndex(name) >= 0) {
   gbufferFboDirty_ = true;
  }
+}
+void ColorTargets::resetFlips() {
+ int previousFbo = 0;
+ ::glGetIntegerv(static_cast<unsigned>(gl::query::FramebufferBinding), &previousFbo);
+ const core::TextureBindScope textureScope;
+ const auto reset = [this](Slot& slot) {
+  if(slot.main == 0 || !slot.allocated()) return;
+  writeFbo_.destroy();
+  if(writeFbo_.addColorAttachment(0, slot.readHandle()) &&
+     writeFbo_.drawBuffers(std::vector<int>{0}) &&
+     writeFbo_.checkStatus() == static_cast<unsigned>(gl::framebuffer::Complete)) {
+   writeFbo_.readBuffer(0);
+   core::bindTexture(gl::cap::Texture2D, static_cast<int>(slot.tex[0].handle()));
+   ::glCopyTexSubImage2D(gl::cap::Texture2D, 0, 0, 0, 0, 0, slot.width, slot.height);
+  }
+  slot.main = 0;
+ };
+ for(Slot& slot : slots_) {
+  if(slot.main != 0) {
+   reset(slot);
+   gbufferFboDirty_ = true;
+  }
+ }
+ for(auto& [name, slot] : named_) {
+  if(slot.main == 0) {
+   continue;
+  }
+  reset(slot);
+  if(colortexIndex(name) >= 0) {
+   gbufferFboDirty_ = true;
+  }
+ }
+ gl::GLCore::bindFramebuffer(static_cast<unsigned>(gl::framebuffer::Framebuffer),
+                             static_cast<unsigned>(previousFbo));
 }
 void ColorTargets::flipIfEnabled(const PackDefinition& definition, const std::string& passName,
                                  const std::string& bufferName) {

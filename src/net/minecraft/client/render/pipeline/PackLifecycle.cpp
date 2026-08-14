@@ -119,12 +119,8 @@ WorldProgramBindContext Pipeline::makeWorldBindContext(WorldProgramId id) {
  if(!interfaceProgram && !shadowPass && pack != nullptr && pack->colorTargets.valid()) {
   ctx.sceneTargets = &pack->colorTargets;
   ctx.sceneDepthTexture = static_cast<int>(pack->colorTargets.depthTexture());
-  ctx.opaqueDepthTexture = pack->depthTextures[1]
-                               ? static_cast<int>(pack->depthTextures[1].handle())
-                               : ctx.sceneDepthTexture;
-  ctx.handDepthTexture = pack->depthTextures[0]
-                             ? static_cast<int>(pack->depthTextures[0].handle())
-                             : ctx.opaqueDepthTexture;
+  ctx.opaqueDepthTexture = pack->opaqueDepthTexture(ctx.sceneDepthTexture);
+  ctx.handDepthTexture = pack->handDepthTexture(ctx.sceneDepthTexture);
  }
  ctx.bindTextureAtlases = !interfaceProgram && !shadowPass && pack != nullptr &&
                           bindsTextureAtlases(id);

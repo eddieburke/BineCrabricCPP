@@ -1,4 +1,5 @@
 #pragma once
+#include <array>
 #include <cstdint>
 #include <functional>
 #include <string>
@@ -232,13 +233,34 @@ class ShaderProgram {
  };
  template <typename Value>
  using NameMap = std::unordered_map<std::string, Value, TransparentStringHash, std::equal_to<>>;
+ struct UniformLookupEntry {
+  const std::string* name = nullptr;
+  int location = -1;
+ };
+ static constexpr std::size_t kUniformLookupCacheSize = 512;
+ [[nodiscard]] static std::size_t uniformLookupIndex(std::string_view name) noexcept {
+  const std::size_t size = name.size();
+  std::uint64_t hash = static_cast<std::uint64_t>(size) * 0x9E3779B185EBCA87ULL;
+  if(size != 0) {
+   hash = (hash ^ static_cast<unsigned char>(name.front())) * 0xC2B2AE3D27D4EB4FULL;
+   hash = (hash ^ static_cast<unsigned char>(name.back())) * 0x165667B19E3779F9ULL;
+   hash = (hash ^ static_cast<unsigned char>(name[size / 2])) * 0x85EBCA77C2B2AE63ULL;
+   hash = (hash ^ static_cast<unsigned char>(name[size / 3])) * 0x27D4EB2F165667C5ULL;
+   hash ^= static_cast<unsigned char>(name[size - 1 - size / 3]);
+  }
+  hash ^= hash >> 32U;
+  return static_cast<std::size_t>(hash) & (kUniformLookupCacheSize - 1);
+ }
  void reflectSamplers();
  void refreshUniformLocations();
  void resetUniformLocations();
+ void clearUniformCache();
+ void resetUniformLookupCache() noexcept;
  bool extractProgramBinary(ProgramBinaryBlob& out);
  unsigned int program_ = 0;
  mutable int uniformLocations_[static_cast<std::size_t>(IrisUniformSlot::Count)];
  mutable NameMap<int> uniformCache_;
+ mutable std::array<UniformLookupEntry, kUniformLookupCacheSize> uniformLookupCache_{};
  NameMap<SamplerKind> samplerKinds_;
  std::vector<std::string> samplerNames_;
  bool tessellation_ = false;

@@ -15,7 +15,6 @@
 #include "net/minecraft/client/ClientLaunchOptions.hpp"
 #include "net/minecraft/client/core/ScreenStack.hpp"
 #include "net/minecraft/client/core/WorldSession.hpp"
-#include "net/minecraft/client/debug/PerformanceCapture.hpp"
 #include "net/minecraft/client/font/TextRenderer.hpp"
 #include "net/minecraft/client/gui/hud/InGameHud.hpp"
 #include "net/minecraft/client/gui/hud/toast/AchievementToast.hpp"
@@ -249,7 +248,6 @@ class Minecraft {
  bool forceDebugHud_ = false;
  bool headlessMode_ = false;
  StartupOptions startupOptions_{};
- debug::PerformanceCapture performanceCapture_{};
  render::texture::WaterSprite waterSprite_{};
  render::texture::LavaSprite lavaSprite_{};
 };

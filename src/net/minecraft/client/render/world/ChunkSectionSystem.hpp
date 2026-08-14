@@ -126,6 +126,7 @@ class ChunkSectionSystem {
  int invisibleChunkCount = 0;
  int compiledChunkCount = 0;
  int emptyChunkCount = 0;
+ int debugCountCooldown_ = 0;
  int occlusionStamp_ = 0;
  std::vector<chunk::ChunkBuilder*> occlusionQueue_{};
  int meshOrderStamp_ = 0;

@@ -1,6 +1,7 @@
 #pragma once
 #include <array>
 #include "net/minecraft/client/gl/GlFramebuffer.hpp"
+#include "net/minecraft/client/render/targets/RenderTargets.hpp"
 #include "net/minecraft/client/render/camera/FrameRenderCamera.hpp"
 #include "net/minecraft/client/render/culling/ShadowFrustum.hpp"
 namespace net::minecraft::client::render {
@@ -29,12 +30,14 @@ struct ShadowTargets {
   // did not change since the last call for this fbo.
   std::array<unsigned int, 8> compositeAttach{};
   int compositeDrawBufferCount = -1;
+  std::array<ColorFormat, 8> colorFormats{};
+  bool fullClearPending = false;
 
-  bool ensure(int resolutionIn, int colorBuffers);
+  bool ensure(int resolutionIn, int colorBuffers, const PackDefinition& definition);
   void destroy();
   void snapshotOpaqueDepth(); // copy shadowtex0 → shadowtex1 after opaque draws
   void attachCompositeColors(const std::array<bool, 8>& flipped, int colorBuffers);
-  void prepareForShadowRender();
+  void prepareForShadowRender(const PackDefinition& definition);
   [[nodiscard]] bool valid() const noexcept { return fbo.valid() && shadowtex0 != 0 && resolution > 0; }
 };
 

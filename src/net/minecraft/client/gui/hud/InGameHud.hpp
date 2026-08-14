@@ -49,7 +49,7 @@ class InGameHud {
  void renderVignette(float brightness, int width, int height);
  void renderPumpkinOverlay(int width, int height);
  void renderPortalOverlay(float strength, int width, int height);
- void renderDebugHud(font::TextRenderer& textRenderer, int scaledWidth, const entity::player::PlayerEntity& player);
+ void renderDebugHud(font::TextRenderer& textRenderer, const entity::player::PlayerEntity& player);
  void renderRecordOverlay(font::TextRenderer& textRenderer, float tickDelta, int scaledWidth, int scaledHeight);
  void renderChat(font::TextRenderer& textRenderer, bool chatOpen, int scaledWidth, int scaledHeight);
  Minecraft* minecraft = nullptr;

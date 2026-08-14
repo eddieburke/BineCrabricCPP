@@ -109,6 +109,13 @@ public:
  bool normalDirty_ = true;
  float drawNormal_[3] = {0.0f, 0.0f, 0.0f};
  BufferBuilder<TessellatorVertex> builder_;
+ // Snapshot of the thread_local main-thread flag, taken once at construction
+ // instead of every vertex(): Tessellator::INSTANCE is itself thread_local, so
+ // this never changes for the life of an instance, but MinGW's emulated TLS
+ // makes a per-vertex thread_local read measurably expensive (confirmed via
+ // VTune: _emutls_get_address was ~4.9% of a gameplay trace, driven entirely
+ // by this check).
+ const bool isMainThread_;
  bool drawing_ = false;
  bool hasTexture_ = false;
  // Whether a producer called color() for the part in flight. When false every

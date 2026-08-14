@@ -260,12 +260,17 @@ bool ensurePackResources(PackInstance& pack, int width, int height, const gl::Gl
    gl::GLCore::texImage3D(target, 0, static_cast<int>(internalFormat(declaration.internalFormat)), image.width,
                           image.height, image.depth, 0, pixelFormat(declaration.format),
                           pixelType(declaration.pixelType), nullptr);
-  } else {
-   ::glTexImage2D(target, 0, static_cast<int>(internalFormat(declaration.internalFormat)), image.width, image.height,
-                  0, pixelFormat(declaration.format), pixelType(declaration.pixelType), nullptr);
-  }
-  ::glTexParameteri(target, 0x2801, 0x2601);
-  ::glTexParameteri(target, 0x2800, 0x2601);
+   } else {
+    ::glTexImage2D(target, 0, static_cast<int>(internalFormat(declaration.internalFormat)), image.width, image.height,
+                   0, pixelFormat(declaration.format), pixelType(declaration.pixelType), nullptr);
+   }
+   if(gl::GLCore::clearTexImage != nullptr) {
+    gl::GLCore::clearTexImage(image.texture.handle(), 0, pixelFormat(declaration.format),
+                              pixelType(declaration.pixelType), nullptr);
+   }
+   const int filter = integerInternalFormat(declaration.internalFormat) ? 0x2600 : 0x2601;
+   ::glTexParameteri(target, 0x2801, filter);
+   ::glTexParameteri(target, 0x2800, filter);
   ::glTexParameteri(target, 0x2802, 0x812F);
   ::glTexParameteri(target, 0x2803, 0x812F);
   if(target == kTexture3D) ::glTexParameteri(target, 0x8072, 0x812F);
@@ -282,11 +287,13 @@ void bindPackResources(PackInstance& pack, gl::ShaderProgram& program, unsigned 
   if(pack.bufferObjects[declaration.index]) {
    gl::GLCore::bindBufferBase(0x90D2, static_cast<unsigned int>(declaration.index), pack.bufferObjects[declaration.index].handle());
   }
- }
- unsigned int imageUnit = imageUnitStart;
- for(const CustomImage& declaration : pack.definition.images) {
-  const auto found = pack.images.find(declaration.name);
-  if(found == pack.images.end() || !found->second.texture || imageUnit >= 16) continue;
+  }
+  unsigned int imageUnit = imageUnitStart;
+  const unsigned int imageUnitLimit = maxImageUnits();
+  for(const CustomImage& declaration : pack.definition.images) {
+   if(program.location(declaration.name) < 0) continue;
+   const auto found = pack.images.find(declaration.name);
+   if(found == pack.images.end() || !found->second.texture || imageUnit >= imageUnitLimit) continue;
   program.set1i(declaration.name, static_cast<int>(imageUnit));
   gl::GLCore::bindImageTexture(imageUnit, found->second.texture.handle(), 0, found->second.depth > 1 ? 1 : 0, 0, 0x88BA,
                                internalFormat(declaration.internalFormat));

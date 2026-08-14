@@ -11,7 +11,7 @@
 #include "net/minecraft/block/LeavesBlock.hpp"
 #include "net/minecraft/block/entity/BlockEntity.hpp"
 #include "net/minecraft/client/Minecraft.hpp"
-#include "net/minecraft/client/debug/RenderProfiler.hpp"
+#include "net/minecraft/client/debug/VTuneTrace.hpp"
 #include "net/minecraft/client/render/RenderCore.hpp"
 #include "net/minecraft/client/gl/GLCore.hpp"
 #include "net/minecraft/client/gl/GlConstants.hpp"
@@ -180,7 +180,7 @@ int WorldRenderer::renderChunkLayer(int layer, bool replay, bool drawModMeshes) 
   terrainRegionDrawLayer_ = layer;
   const auto& visible = chunkSections_.visibleSections();
   const auto visit = [&](chunk::ChunkBuilder* chunk) {
-   if(chunk == nullptr || !chunk->inFrustum) {
+   if(chunk == nullptr || (!core::cameraFrame().shadowPass && !chunk->inFrustum)) {
     return;
    }
    const chunk::TerrainAllocation& allocation = chunk->terrainAllocation(layer);
@@ -321,34 +321,34 @@ void WorldRenderer::renderEntities(const Vec3d& cameraPos,
          !shadowEntityFrustum->isVisible(entity->boundingBox);
  };
  for(Entity* entity : world->globalEntities) {
-  debug::RenderProfiler::instance().record(debug::RenderMetric::EntityTraversals);
+  VT_TRACE_COUNTER("EntityTraversals", 1);
   if(entity == nullptr) {
    continue;
   }
   if(excludedFromShadow(entity)) continue;
   if(!client::option::shouldRenderEntity(resolved, *entity, cameraPos)) {
    ++culledEntityCount;
-   debug::RenderProfiler::instance().record(debug::RenderMetric::EntityCulled);
+   VT_TRACE_COUNTER("EntityCulled", 1);
    continue;
   }
   ++renderedEntityCount;
-  debug::RenderProfiler::instance().record(debug::RenderMetric::EntityVisible);
+  VT_TRACE_COUNTER("EntityVisible", 1);
   entityDispatcher.render(*entity, tickDelta, matrices, projection);
  }
  for(Entity* entity : entities) {
-  debug::RenderProfiler::instance().record(debug::RenderMetric::EntityTraversals);
+  VT_TRACE_COUNTER("EntityTraversals", 1);
   if(entity == nullptr) {
    continue;
   }
   if(excludedFromShadow(entity)) continue;
   if(!client::option::shouldRenderEntity(resolved, *entity, cameraPos)) {
    ++culledEntityCount;
-   debug::RenderProfiler::instance().record(debug::RenderMetric::EntityCulled);
+   VT_TRACE_COUNTER("EntityCulled", 1);
    continue;
   }
   if(!entity->ignoreFrustumCull && culler != nullptr && !culler->isVisible(entity->boundingBox)) {
    ++culledEntityCount;
-   debug::RenderProfiler::instance().record(debug::RenderMetric::EntityCulled);
+   VT_TRACE_COUNTER("EntityCulled", 1);
    continue;
   }
   if(entity == cameraEntity_ && !renderCameraEntity_) {
@@ -368,7 +368,7 @@ void WorldRenderer::renderEntities(const Vec3d& cameraPos,
    continue;
   }
   ++renderedEntityCount;
-  debug::RenderProfiler::instance().record(debug::RenderMetric::EntityVisible);
+  VT_TRACE_COUNTER("EntityVisible", 1);
   entityDispatcher.render(*entity, tickDelta, matrices, projection);
  }
  for(::net::minecraft::block::entity::BlockEntity* blockEntity : scene_.blockEntities) {

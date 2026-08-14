@@ -10,7 +10,7 @@
 #include "net/minecraft/client/render/targets/RenderTargets.hpp"
 #include "net/minecraft/client/render/targets/ShadowMapPass.hpp"
 #include "net/minecraft/client/ClientLog.hpp"
-#include "net/minecraft/client/debug/RenderProfiler.hpp"
+#include "net/minecraft/client/debug/VTuneTrace.hpp"
 #include "net/minecraft/client/gl/GLCore.hpp"
 #include "net/minecraft/client/gl/GlConstants.hpp"
 #include "net/minecraft/client/gl/GlFramebuffer.hpp"
@@ -74,7 +74,8 @@ bool Pipeline::renderCompositePasses(PackInstance& pack, CompositeStage stageId,
                                      const int* shadowColorTextureIds, int shadowColorTextureCount,
                                      shadowmap::ShadowTargets* shadowTargets, const int* shadowColorAltTextureIds) {
  const std::string& stage = stageName(stageId);
- debug::RenderProfileScope stageProfile("shader", stage);
+ const std::string stageSpanName = "shader/" + stage;
+ VT_TRACE_EVENT(stageSpanName.c_str());
  const std::vector<PackInstance::RuntimeOperation>& operations = pack.stagePlan(stageId);
  render::ColorTargets& targets = pack.colorTargets;
  const int shadowMapResolution = static_cast<int>(worldUniforms_.shadowMapResolution);
@@ -120,12 +121,10 @@ bool Pipeline::renderCompositePasses(PackInstance& pack, CompositeStage stageId,
  colorImages.reserve(48);
  refreshColorMaps(targets, textures, colorImages, true);
  textures["depthtex0"] = static_cast<int>(targets.depthTexture());
- if(pack.depthTextures[0]) textures["depthtex1"] = static_cast<int>(pack.depthTextures[0].handle());
- if(pack.depthTextures[1]) {
-  textures["depthtex2"] = static_cast<int>(pack.depthTextures[1].handle());
- } else if(pack.depthTextures[0]) {
-  textures["depthtex2"] = static_cast<int>(pack.depthTextures[0].handle());
- }
+ textures["depthtex1"] = pack.opaqueDepthTexture(textures["depthtex0"]);
+ textures["depthtex2"] = pack.handDepthTexture(textures["depthtex0"]);
+ VT_TRACE_COUNTER("CompositeOpaqueDepthReady", pack.depthTextures[1] ? 1 : 0);
+ VT_TRACE_COUNTER("CompositeHandDepthReady", pack.depthTextures[0] ? 1 : 0);
  targets.applyPreFlips(pack.definition, stage);
  refreshColorMaps(targets, textures, colorImages, true);
  for(const auto& [name, texture] : pack.publishedTextures) {
@@ -187,8 +186,9 @@ bool Pipeline::renderCompositePasses(PackInstance& pack, CompositeStage stageId,
  std::size_t passPosition = 0;
  for(const PackInstance::RuntimeOperation& operation : operations) {
   const PackInstance::RuntimePass& runtime = operation.pass;
-  debug::RenderProfileScope passProfile(stage, pack.definition.passes[runtime.passIndex].name);
-  debug::RenderProfiler::instance().record(debug::RenderMetric::ShaderPasses);
+  const std::string passSpanName = stage + "/" + pack.definition.passes[runtime.passIndex].name;
+  VT_TRACE_EVENT(passSpanName.c_str());
+  VT_TRACE_COUNTER("ShaderPasses", 1);
   if(operation.compute) {
    if(!computeReady) continue;
    if(operation.groupBegin) prepareComputeBinds();
@@ -202,7 +202,7 @@ bool Pipeline::renderCompositePasses(PackInstance& pack, CompositeStage stageId,
    ranCompute = true;
    if(operation.groupEnd && gl::GLCore::memoryBarrier != nullptr) {
     gl::GLCore::memoryBarrier(ComputeDispatcher::kBarrierBits);
-    debug::RenderProfiler::instance().record(debug::RenderMetric::MemoryBarriers);
+    VT_TRACE_COUNTER("MemoryBarriers", 1);
    }
    continue;
   }

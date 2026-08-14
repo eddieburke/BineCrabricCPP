@@ -1097,6 +1097,41 @@ void seedProfiles(PackDefinition& pack, const std::string& source) {
   if(!profile.name.empty()) pack.profiles.push_back(std::move(profile));
  }
 }
+void filterDeclaredOptions(std::unordered_map<std::string, PackSourceOption>& options,
+                           const PackDefinition& pack,
+                           const std::string& source) {
+ std::unordered_set<std::string> declared;
+ bool hasScreen = false;
+ bool wildcard = false;
+ const auto include = [&](std::string token) {
+  if(token == "*") {
+   wildcard = true;
+   return;
+  }
+  if(!token.empty() && token.front() == '!') token.erase(token.begin());
+  if(identifier(token)) declared.insert(std::move(token));
+ };
+ for(const auto& [key, value] : properties(source)) {
+  const bool screen = key == "screen" ||
+                      (key.rfind("screen.", 0) == 0 && !key.ends_with(".columns"));
+  if(screen) hasScreen = true;
+  if(!screen && key != "sliders") continue;
+  for(std::string token : words(value)) include(std::move(token));
+ }
+ if(!hasScreen || wildcard) return;
+ for(const PackProfile& profile : pack.profiles)
+  for(const auto& [key, ignored] : profile.values) {
+   (void)ignored;
+   include(key);
+  }
+ for(auto it = options.begin(); it != options.end();) {
+  if(declared.contains(it->first)) {
+   ++it;
+  } else {
+   it = options.erase(it);
+  }
+ }
+}
 void parsePackProperties(PackDefinition& pack, const std::string& source) {
  for(const auto& [key, value] : properties(source)) {
   bool flag = false;
@@ -1471,8 +1506,9 @@ void parseDimensionProperties(PackDefinition& pack, const std::string& source) {
  }
 }
 void parseIdProperties(std::unordered_map<std::string, int>& output,
-                       const std::string& source,
-                       std::string_view prefix) {
+                        const std::string& source,
+                        std::string_view prefix,
+                        bool preservePredicates = false) {
  for(const auto& [key, value] : properties(source)) {
   if(key.rfind(prefix, 0) != 0) continue;
   const std::string idText = key.substr(prefix.size());
@@ -1481,7 +1517,7 @@ void parseIdProperties(std::unordered_map<std::string, int>& output,
   if(end == idText.c_str() || *end != '\0' || id < std::numeric_limits<int>::min() ||
      id > std::numeric_limits<int>::max()) continue;
   for(std::string name : words(value)) {
-   if(name.find('=') != std::string::npos) continue;
+   if(!preservePredicates && name.find('=') != std::string::npos) continue;
    output[lowercase(std::move(name))] = static_cast<int>(id);
   }
  }
@@ -1766,7 +1802,9 @@ bool PackLoader::load(const std::vector<std::string>& resources,
  const bool customDimensionProperties =
      has(resources, "shaders/dimension.properties") || has(resources, "dimension.properties");
  if(has(resources, "shaders/shaders.properties")) {
-  seedProfiles(out, cachedRead("shaders/shaders.properties"));
+  const std::string& shaderProperties = cachedRead("shaders/shaders.properties");
+  seedProfiles(out, shaderProperties);
+  filterDeclaredOptions(options, out, shaderProperties);
  }
  const auto preprocessProps = [&](const std::string& src) {
   return preprocessProperties(src, 10703, options, values);
@@ -1783,7 +1821,7 @@ bool PackLoader::load(const std::vector<std::string>& resources,
   parseIdProperties(out.itemIds, preprocessProps(cachedRead("shaders/item.properties")), "item.");
  if(has(resources, "shaders/block.properties")) {
   const std::string blockProps = preprocessProps(cachedRead("shaders/block.properties"));
-  parseIdProperties(out.blockIds, blockProps, "block.");
+  parseIdProperties(out.blockIds, blockProps, "block.", true);
   parseBlockLayerProperties(out, blockProps);
   out.hasBlockProperties = true;
  }
@@ -1889,10 +1927,19 @@ bool PackLoader::load(const std::vector<std::string>& resources,
    profile.valueOrder.push_back(preset.name);
    profile.valueLabels[preset.name] = preset.name;
   }
-  out.settings.push_back(std::move(profile));
+ out.settings.push_back(std::move(profile));
  }
  for(PackSetting& setting : out.settings) {
-  if(out.sliderKeys.count(setting.key) != 0) setting.asSlider = true;
+  if(out.sliderKeys.count(setting.key) != 0) {
+   setting.asSlider = true;
+  } else if((setting.type == SettingType::Int || setting.type == SettingType::Float) &&
+            !setting.valueOrder.empty()) {
+   if(std::find(setting.valueOrder.begin(), setting.valueOrder.end(), setting.defaultValue) ==
+      setting.valueOrder.end()) {
+    setting.valueOrder.insert(setting.valueOrder.begin(), setting.defaultValue);
+   }
+   setting.type = SettingType::Enum;
+  }
  }
  std::sort(out.settings.begin(), out.settings.end(), [](const PackSetting& a, const PackSetting& b) { return a.key < b.key; });
  const bool hasWorldN =

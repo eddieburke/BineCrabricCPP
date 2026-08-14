@@ -6,6 +6,7 @@
 #include <memory>
 #include <sstream>
 #include <string>
+#include <thread>
 #include <unordered_map>
 #include <vector>
 #define GLFW_INCLUDE_NONE
@@ -131,18 +132,67 @@ TEST(PerfTimingTest, LightingEnginePushAndDrainBenchmark) {
 
  const auto end = std::chrono::high_resolution_clock::now();
  const double elapsedMs = std::chrono::duration<double, std::milli>(end - start).count();
+ engine.flushStaging();
+ const auto settleStart = std::chrono::high_resolution_clock::now();
+ const auto deadline = settleStart + std::chrono::seconds(2);
+ std::size_t drainedRegions = 0;
+ while((engine.busy() || engine.hasDirtyRegions()) && std::chrono::high_resolution_clock::now() < deadline) {
+  drainedRegions += engine.drainDirtyRegions(16).size();
+  std::this_thread::yield();
+ }
+ const double settleMs =
+     std::chrono::duration<double, std::milli>(std::chrono::high_resolution_clock::now() - settleStart).count();
 
- std::printf("[PERF_TIMING] LightingEngine Push Batch: %d pushes in %.3f ms (%.3f us/push)\n",
+ std::printf("[PERF_TIMING] LightingEngine Push+Settle: %d pushes in %.3f ms (%.3f us/push), settle %.3f ms, %zu regions\n",
              iterations,
              elapsedMs,
-             (elapsedMs * 1000.0) / iterations);
+             (elapsedMs * 1000.0) / iterations,
+             settleMs,
+             drainedRegions);
  std::fflush(stdout);
+ const bool settled = !engine.busy() && !engine.hasDirtyRegions();
 
  engine.stop();
  for(const auto& chunk : chunks) {
   engine.unregisterChunk(chunk.get());
  }
  EXPECT_LT(elapsedMs, 2000.0);
+ EXPECT_LT(settleMs, 2000.0);
+ EXPECT_TRUE(settled);
+}
+
+TEST(PerfTimingTest, MeshLightingReadinessGateBenchmark) {
+ std::vector<block::entity::BlockEntity*> blockEntities;
+ client::render::chunk::ChunkBuilder builder(nullptr, blockEntities, 0, 0, 0, 16);
+ constexpr int iterations = 2000000;
+ volatile int legacyReadyCount = 0;
+ const auto legacyStart = std::chrono::high_resolution_clock::now();
+ for(int i = 0; i < iterations; ++i) {
+  builder.dirty = (i & 3) != 0;
+  builder.meshJobInFlight = (i & 7) == 0;
+  legacyReadyCount += builder.dirty && !builder.meshJobInFlight ? 1 : 0;
+ }
+ const double legacyMs =
+     std::chrono::duration<double, std::milli>(std::chrono::high_resolution_clock::now() - legacyStart).count();
+ volatile int gatedReadyCount = 0;
+ const auto gatedStart = std::chrono::high_resolution_clock::now();
+ for(int i = 0; i < iterations; ++i) {
+  builder.dirty = (i & 3) != 0;
+  builder.meshJobInFlight = (i & 7) == 0;
+  builder.lightingReady = (i & 1) != 0;
+  gatedReadyCount += builder.readyForMeshCapture() ? 1 : 0;
+ }
+ const double gatedMs =
+     std::chrono::duration<double, std::milli>(std::chrono::high_resolution_clock::now() - gatedStart).count();
+ std::printf("[PERF_AB] Mesh Lighting Gate: %d checks, legacy %.3f ms, gated %.3f ms, overhead %.3f ms\n",
+             iterations,
+             legacyMs,
+             gatedMs,
+             gatedMs - legacyMs);
+ std::fflush(stdout);
+ EXPECT_GT(legacyReadyCount, gatedReadyCount);
+ EXPECT_GT(gatedReadyCount, 0);
+ EXPECT_LT(gatedMs, 1000.0);
 }
 
 TEST(PerfTimingTest, ChunkPacketSerializationBenchmark) {

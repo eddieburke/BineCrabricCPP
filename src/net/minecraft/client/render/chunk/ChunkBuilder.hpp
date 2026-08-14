@@ -74,6 +74,9 @@ class ChunkBuilder : public std::enable_shared_from_this<ChunkBuilder> {
   dirty = true;
   ++version;
  }
+ [[nodiscard]] bool readyForMeshCapture() const noexcept {
+  return lightingReady && dirty && !meshJobInFlight;
+ }
  World* world = nullptr;
  std::array<TerrainAllocation, terrain_layer::Count> terrainAllocations_{};
  inline static int frameDrawCalls = 0;
@@ -92,6 +95,7 @@ class ChunkBuilder : public std::enable_shared_from_this<ChunkBuilder> {
  int meshPriority = 0;
  int meshOrderStamp = -1;
  bool hasSkyLight = false;
+ bool lightingReady = true;
  bool built = false;
  int version = 0;
  bool meshJobInFlight = false;

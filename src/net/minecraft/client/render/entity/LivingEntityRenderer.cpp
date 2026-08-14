@@ -1,6 +1,5 @@
 #include "net/minecraft/client/render/entity/LivingEntityRenderer.hpp"
 #include "net/minecraft/client/render/RenderCore.hpp"
-#include "net/minecraft/client/debug/RenderProfiler.hpp"
 #include <cmath>
 #include <utility>
 #include "net/minecraft/client/font/TextRenderer.hpp"

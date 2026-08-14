@@ -165,6 +165,12 @@ TEST_F(RvoxDiag, DumpPreparedSources) {
  }
  pack.summary.valid = true;
  pack.rootDefinition = pack.definition;
+ EXPECT_TRUE(pack.sourceOptions.contains("RP_MODE"));
+ EXPECT_TRUE(pack.sourceOptions.contains("PER_PIXEL_LIGHT"));
+ EXPECT_TRUE(pack.sourceOptions.contains("BLOCK_REFLECT_QUALITY"));
+ for(const char* key : {"OVERWORLD", "NETHER", "END", "HAND", "GBUFFERS_TERRAIN", "NO_NORMAL"}) {
+  EXPECT_FALSE(pack.sourceOptions.contains(key)) << key;
+ }
  for(const PackSetting& setting : pack.rootDefinition.settings) {
   pack.settings.emplace(setting.key, setting.defaultValue);
  }
@@ -526,6 +532,11 @@ TEST_F(RvoxDiag, CompileAllRenderPearlPrograms) {
      [&pack](std::string_view path) { return PackCompiler::readText(pack, std::string(path)); },
      pack.definition, pack.sourceOptions, pack.summary.error))
      << pack.summary.error;
+ EXPECT_TRUE(pack.sourceOptions.contains("LL_RATE"));
+ EXPECT_TRUE(pack.sourceOptions.contains("LL_DIST"));
+ for(const char* key : {"END", "NETHER", "HAND", "NO_NORMAL", "TERRAIN", "TRANSLUCENT"}) {
+  EXPECT_FALSE(pack.sourceOptions.contains(key)) << key;
+ }
  pack.summary.valid = true;
  pack.rootDefinition = pack.definition;
  // Must match PackDefinition's comparator (std::less<>), not std::less<std::string>:

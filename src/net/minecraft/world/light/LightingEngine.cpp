@@ -1,5 +1,6 @@
 #include "net/minecraft/world/light/LightingEngine.hpp"
 #include <algorithm>
+#include <utility>
 #include "net/minecraft/block/Block.hpp"
 #include "net/minecraft/util/concurrent/ThreadCoordinator.hpp"
 #include "net/minecraft/world/chunk/Chunk.hpp"
@@ -129,6 +130,7 @@ void LightingEngine::unregisterChunk(Chunk* chunk) {
 }
 std::vector<LightingEngine::DirtyRegion> LightingEngine::drainDirtyRegions(std::size_t maxRegions) {
  flushStaging();
+ flushPendingLocked(settledOrOverdue());
  std::vector<DirtyRegion> regions;
  regions.reserve(std::min(maxRegions, outbox_.size()));
  DirtyRegion region{};
@@ -138,13 +140,30 @@ std::vector<LightingEngine::DirtyRegion> LightingEngine::drainDirtyRegions(std::
  return regions;
 }
 bool LightingEngine::hasDirtyRegions() const {
- return outbox_.size() != 0;
+ if(outbox_.size() != 0) {
+  return true;
+ }
+ const std::lock_guard lock(pendingMutex_);
+ return !pending_.empty();
+}
+LightingEngine::TraceStats LightingEngine::traceStats() const {
+ TraceStats stats;
+ stats.stagedWork = stagedCount_.load(std::memory_order_relaxed);
+ stats.pendingWork = pendingCount_.load(std::memory_order_relaxed);
+ stats.publishedRegions = outbox_.size();
+ const std::lock_guard lock(pendingMutex_);
+ stats.pendingRegions = pending_.size();
+ return stats;
 }
 void LightingEngine::stop() {
  {
   const std::lock_guard stagingLock(stagingMutex_);
   staging_.clear();
   stagedCount_.store(0, std::memory_order_relaxed);
+ }
+ {
+  const std::lock_guard pendingLock(pendingMutex_);
+  pending_.clear();
  }
  std::unique_lock lock(queueMutex_);
  if(stopping_.load(std::memory_order_relaxed) && scheduledWorkers_ == 0) {
@@ -223,10 +242,11 @@ void LightingEngine::runScheduledWork() {
  WorkerState state;
  try {
   runUpdate(box, state);
- } catch(...) {
- }
- releasePins(state);
- const std::lock_guard lock(queueMutex_);
+  } catch(...) {
+  }
+  releasePins(state);
+  flushStaging();
+  const std::lock_guard lock(queueMutex_);
  releaseClaimedBoxLocked(box);
  --scheduledWorkers_;
  scheduleWorkersLocked();
@@ -236,11 +256,19 @@ void LightingEngine::runScheduledWork() {
 }
 Chunk* LightingEngine::chunkAt(int chunkX, int chunkZ, WorkerState& state) {
  const std::uint64_t key = chunkKey(chunkX, chunkZ);
- if(const auto it = state.pinCache.find(key); it != state.pinCache.end()) {
-  return it->second;
+ for(int slot = 0; slot < state.lastValidCount; ++slot) {
+  if(state.lastKeys[slot] == key) {
+   Chunk* chunk = state.lastChunks[slot];
+   if(slot != 0) {
+    // Promote to MRU so a repeating A,B,A,B... pattern stays a hit.
+    std::swap(state.lastKeys[0], state.lastKeys[slot]);
+    std::swap(state.lastChunks[0], state.lastChunks[slot]);
+   }
+   return chunk;
+  }
  }
  Chunk* chunk = nullptr;
- {
+ if(const auto it = state.pinCache.find(key); it == state.pinCache.end()) {
   const std::lock_guard lock(registryMutex_);
   if(const auto reg = registry_.find(key); reg != registry_.end()) {
    chunk = reg->second;
@@ -248,8 +276,19 @@ Chunk* LightingEngine::chunkAt(int chunkX, int chunkZ, WorkerState& state) {
   if(chunk != nullptr && !chunk->tryAcquireRenderPin()) {
    chunk = nullptr;
   }
+  state.pinCache.emplace(key, chunk);
+ } else {
+  chunk = it->second;
  }
- state.pinCache.emplace(key, chunk);
+ for(int slot = WorkerState::kCacheSlots - 1; slot > 0; --slot) {
+  state.lastKeys[slot] = state.lastKeys[slot - 1];
+  state.lastChunks[slot] = state.lastChunks[slot - 1];
+ }
+ state.lastKeys[0] = key;
+ state.lastChunks[0] = chunk;
+ if(state.lastValidCount < WorkerState::kCacheSlots) {
+  ++state.lastValidCount;
+ }
  return chunk;
 }
 void LightingEngine::releasePins(WorkerState& state) {
@@ -462,19 +501,91 @@ void LightingEngine::runUpdate(const Box& update, WorkerState& state) {
  publishDirtyRegion(DirtyRegion{update.minX, minY, update.minZ, update.maxX, maxY, update.maxZ});
 }
 void LightingEngine::publishDirtyRegion(DirtyRegion region) {
- if(outbox_.tryPush(region)) {
+ mergeIntoPending(region);
+}
+double LightingEngine::distanceSqToCamera(const DirtyRegion& region) const noexcept {
+ if(!cameraKnown_.load(std::memory_order_relaxed)) {
+  return 0.0;
+ }
+ const double cameraX = cameraX_.load(std::memory_order_relaxed);
+ const double cameraY = cameraY_.load(std::memory_order_relaxed);
+ const double cameraZ = cameraZ_.load(std::memory_order_relaxed);
+ const double dx = cameraX < region.minX ? region.minX - cameraX
+                   : cameraX > region.maxX ? cameraX - region.maxX
+                                          : 0.0;
+ const double dy = cameraY < region.minY ? region.minY - cameraY
+                   : cameraY > region.maxY ? cameraY - region.maxY
+                                          : 0.0;
+ const double dz = cameraZ < region.minZ ? region.minZ - cameraZ
+                   : cameraZ > region.maxZ ? cameraZ - region.maxZ
+                                          : 0.0;
+ return dx * dx + dy * dy + dz * dz;
+}
+bool LightingEngine::isNearCamera(const DirtyRegion& region) const noexcept {
+ if(!cameraKnown_.load(std::memory_order_relaxed)) {
+  return false;
+ }
+ return distanceSqToCamera(region) <= kNearPublishDistance * kNearPublishDistance;
+}
+void LightingEngine::mergeIntoPending(DirtyRegion region) {
+ const std::lock_guard lock(pendingMutex_);
+ if(pending_.empty()) {
+  pendingSince_ = std::chrono::steady_clock::now();
+ }
+ for(std::size_t i = 0; i < pending_.size();) {
+  const DirtyRegion& existing = pending_[i];
+  const bool touches = !(existing.maxX + 1 < region.minX || existing.minX > region.maxX + 1 ||
+                         existing.maxY + 1 < region.minY || existing.minY > region.maxY + 1 ||
+                         existing.maxZ + 1 < region.minZ || existing.minZ > region.maxZ + 1);
+  if(!touches) {
+   ++i;
+   continue;
+  }
+  region.minX = std::min(region.minX, existing.minX);
+  region.minY = std::min(region.minY, existing.minY);
+  region.minZ = std::min(region.minZ, existing.minZ);
+  region.maxX = std::max(region.maxX, existing.maxX);
+  region.maxY = std::max(region.maxY, existing.maxY);
+  region.maxZ = std::max(region.maxZ, existing.maxZ);
+  pending_.erase(pending_.begin() + static_cast<std::ptrdiff_t>(i));
+ }
+ if(pending_.size() < kMaxPendingRegions) {
+  pending_.push_back(region);
   return;
  }
- DirtyRegion merged{};
- if(!outbox_.tryPop(merged)) {
+ auto farthest = std::max_element(pending_.begin(), pending_.end(), [this](const DirtyRegion& a, const DirtyRegion& b) {
+  return distanceSqToCamera(a) < distanceSqToCamera(b);
+ });
+ farthest->minX = std::min(farthest->minX, region.minX);
+ farthest->minY = std::min(farthest->minY, region.minY);
+ farthest->minZ = std::min(farthest->minZ, region.minZ);
+ farthest->maxX = std::max(farthest->maxX, region.maxX);
+ farthest->maxY = std::max(farthest->maxY, region.maxY);
+ farthest->maxZ = std::max(farthest->maxZ, region.maxZ);
+}
+bool LightingEngine::settledOrOverdue() const {
+ if(!busy()) {
+  return true;
+ }
+ const std::lock_guard lock(pendingMutex_);
+ return !pending_.empty() && std::chrono::steady_clock::now() - pendingSince_ >= kPendingDeadline;
+}
+void LightingEngine::flushPendingLocked(bool includeFar) {
+ const std::lock_guard lock(pendingMutex_);
+ if(pending_.empty()) {
   return;
  }
- merged.minX = std::min(merged.minX, region.minX);
- merged.minY = std::min(merged.minY, region.minY);
- merged.minZ = std::min(merged.minZ, region.minZ);
- merged.maxX = std::max(merged.maxX, region.maxX);
- merged.maxY = std::max(merged.maxY, region.maxY);
- merged.maxZ = std::max(merged.maxZ, region.maxZ);
- outbox_.tryPush(merged);
+ std::stable_sort(pending_.begin(), pending_.end(), [this](const DirtyRegion& a, const DirtyRegion& b) {
+  return isNearCamera(a) && !isNearCamera(b);
+ });
+ std::vector<DirtyRegion> held;
+ held.reserve(pending_.size());
+ for(const DirtyRegion& region : pending_) {
+  if((includeFar || isNearCamera(region)) && outbox_.tryPush(region)) {
+   continue;
+  }
+  held.push_back(region);
+ }
+ pending_.swap(held);
 }
 } // namespace net::minecraft

@@ -115,6 +115,12 @@ struct PackInstance {
  std::array<gl::GlTexture, 2> depthTextures;
  int depthTextureW[2]{};
  int depthTextureH[2]{};
+ [[nodiscard]] int opaqueDepthTexture(int fallback) const noexcept {
+  return depthTextures[1] ? static_cast<int>(depthTextures[1].handle()) : fallback;
+ }
+ [[nodiscard]] int handDepthTexture(int fallback) const noexcept {
+  return depthTextures[0] ? static_cast<int>(depthTextures[0].handle()) : opaqueDepthTexture(fallback);
+ }
  std::set<std::string> logged;
  std::unordered_map<std::string, bool> programEnabledCache;
 };

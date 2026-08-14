@@ -1,4 +1,5 @@
 #pragma once
+#include <cstdint>
 #include <memory>
 #include <unordered_set>
 #include <vector>
@@ -56,5 +57,7 @@ class ChunkCompilePipeline {
  std::unordered_set<chunk::ChunkBuilder*> dirtyChunks_{};
  std::unordered_set<chunk::ChunkBuilder*> nearDirtyChunks_{};
  std::vector<std::shared_ptr<chunk::ChunkMeshJob>> pendingMeshUploads_{};
+ std::uint64_t staleMeshJobs_ = 0;
+ std::uint64_t deferredMeshUploads_ = 0;
 };
 } // namespace net::minecraft::client::render

@@ -15,13 +15,10 @@
 // they depend on stop being parsed — a voxelDistance that silently reads back
 // as 0, or a shadow.culling that stops resolving to SafeZone.
 //
-// NOTE: these all PASS as of 2026-08-10, so the shadow frustum is NOT the cause
-// of the "lights pop in when I look around" report. Beyond voxelDistance the
-// frustum is view-dependent by the pack's own declaration, exactly as Iris' is.
-// Do not re-open this as a culling bug without new measurements.
 #include <gtest/gtest.h>
 #define GLFW_INCLUDE_NONE
 #include <GLFW/glfw3.h>
+#include <algorithm>
 #include <cmath>
 #include <cstring>
 #include <filesystem>
@@ -83,6 +80,16 @@ const PackDefinition& overworldDefinition(const PackInstance& pack) {
  }
  return pack.rootDefinition;
 }
+PackDefinition activeOverworldDefinition(const PackInstance& pack) {
+ PackDefinition definition = overworldDefinition(pack);
+ for(const client::render::CustomImage& image : pack.rootDefinition.images) {
+  const auto found = std::find_if(definition.images.begin(), definition.images.end(), [&](const client::render::CustomImage& entry) {
+   return entry.name == image.name;
+  });
+  if(found == definition.images.end()) definition.images.push_back(image);
+ }
+ return definition;
+}
 // A player camera looking along `yaw` (radians, 0 = +Z), level pitch.
 FrameRenderCamera cameraLookingAt(float yaw) {
  FrameRenderCamera camera;
@@ -126,7 +133,7 @@ ShadowFrustumParams paramsFor(const PackDefinition& definition) {
   return found != definition.programs.end() && !found->second.geometry.empty();
  }();
  params.halfPlaneLength = definition.shadowDistance;
- params.voxelDistance = definition.voxelDistance;
+ params.voxelDistance = definition.effectiveVoxelDistance();
  params.renderMultiplier = definition.shadowDistanceRenderMul;
  params.renderDistanceBlocks = kRenderDistanceBlocks;
  params.forceBoxCull = false;
@@ -181,13 +188,14 @@ GLFWwindow* RvoxShadowCullingTest::window_ = nullptr;
 TEST_F(RvoxShadowCullingTest, SectionsInsideTheVoxelRadiusAreVisibleAtEveryYaw) {
  PackInstance pack;
  ASSERT_TRUE(loadPack("rethinking-voxels_r0.1-beta9", pack)) << pack.summary.error;
- const PackDefinition& definition = overworldDefinition(pack);
+ const PackDefinition definition = activeOverworldDefinition(pack);
  const ShadowFrustumParams params = paramsFor(definition);
  ASSERT_GT(params.voxelDistance, 0.0f)
      << "voxelDistance did not parse; the always-render zone collapsed to nothing";
  // Comfortably inside the voxel radius, and inside a section that straddles it
  // on neither side.
- const double insideDistance = static_cast<double>(params.voxelDistance) * 0.5;
+ ASSERT_GT(params.voxelDistance, definition.voxelDistance);
+ const double insideDistance = static_cast<double>(params.voxelDistance) * 0.75;
  for(int step = 0; step < 16; ++step) {
   const float yaw = static_cast<float>(step) * (2.0f * kPi / 16.0f);
   float mvp[16]{};
@@ -208,7 +216,7 @@ TEST_F(RvoxShadowCullingTest, SectionsInsideTheVoxelRadiusAreVisibleAtEveryYaw) 
 TEST_F(RvoxShadowCullingTest, VisibilityInsideTheVoxelRadiusIsIndependentOfTheViewMatrix) {
  PackInstance pack;
  ASSERT_TRUE(loadPack("rethinking-voxels_r0.1-beta9", pack)) << pack.summary.error;
- const ShadowFrustumParams params = paramsFor(overworldDefinition(pack));
+ const ShadowFrustumParams params = paramsFor(activeOverworldDefinition(pack));
  const double insideDistance = static_cast<double>(params.voxelDistance) * 0.5;
  float northMvp[16]{};
  float southMvp[16]{};
@@ -232,7 +240,7 @@ TEST_F(RvoxShadowCullingTest, VisibilityInsideTheVoxelRadiusIsIndependentOfTheVi
 TEST_F(RvoxShadowCullingTest, PackResolvesToSafeZoneCullingWithAVoxelRadius) {
  PackInstance pack;
  ASSERT_TRUE(loadPack("rethinking-voxels_r0.1-beta9", pack)) << pack.summary.error;
- const PackDefinition& definition = overworldDefinition(pack);
+ const PackDefinition definition = activeOverworldDefinition(pack);
  EXPECT_EQ(definition.shadowCulling, ShadowCullState::SafeZone)
      << "shaders.properties says shadow.culling=reversed";
  EXPECT_GT(definition.voxelDistance, 0.0f) << "lib/common.glsl declares const float voxelDistance = 32";
@@ -245,7 +253,7 @@ TEST_F(RvoxShadowCullingTest, PackResolvesToSafeZoneCullingWithAVoxelRadius) {
              frustum.mode() == ShadowCullingFrustum::Mode::NonCulling)
      << "a voxelizing pack must not end up on the view-derived Advanced frustum";
  if(frustum.mode() == ShadowCullingFrustum::Mode::SafeZone) {
-  EXPECT_NEAR(frustum.boxCullerDistance(), static_cast<double>(params.voxelDistance), 1.0e-3)
+ EXPECT_NEAR(frustum.boxCullerDistance(), static_cast<double>(definition.effectiveVoxelDistance()), 1.0e-3)
       << "the always-render zone must be the pack's voxelDistance, not its shadowDistance";
  }
 }

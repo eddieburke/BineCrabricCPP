@@ -2,7 +2,7 @@
 #include <algorithm>
 #include <bit>
 #include <limits>
-#include "net/minecraft/client/debug/RenderProfiler.hpp"
+#include "net/minecraft/client/debug/VTuneTrace.hpp"
 #include "net/minecraft/client/gl/GLCore.hpp"
 #include "net/minecraft/client/render/QuadIndexBuffer.hpp"
 #include "net/minecraft/client/render/RenderCore.hpp"
@@ -58,12 +58,11 @@ bool TerrainRegion::ensureCapacity(LayerArena& arena, std::size_t requiredVertic
  if(!quad_index::ensure(kInitialVertices)) {
   return false;
  }
- debug::RenderProfiler::instance().record(debug::RenderMetric::Copies);
+ VT_TRACE_COUNTER("Copies", 1);
  // Separated from Copies so the HUD says how often arenas regrow per frame and
  // how much they copy, rather than folding both into one shared counter.
- debug::RenderProfiler::instance().record(debug::RenderMetric::ArenaGrows);
- debug::RenderProfiler::instance().record(debug::RenderMetric::ArenaGrowVertices,
-                                          static_cast<std::uint64_t>(arena.tailVertex));
+ VT_TRACE_COUNTER("ArenaGrows", 1);
+ VT_TRACE_COUNTER("ArenaGrowVertices", static_cast<std::uint64_t>(arena.tailVertex));
  unsigned newHandle = 0;
  unsigned newVao = 0;
  gl::GLCore::genBuffers(1, &newHandle);

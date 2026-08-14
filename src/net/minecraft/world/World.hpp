@@ -205,6 +205,9 @@ class World : public IEntityWorld {
   void registerChunkForLighting(Chunk* chunk) {
   lighting_.registerChunk(chunk);
  }
+ void setLightingCamera(double x, double y, double z) noexcept {
+  lighting_.setCameraPosition(x, y, z);
+ }
  void unregisterChunkForLighting(Chunk* chunk) {
   lighting_.unregisterChunk(chunk);
  }
