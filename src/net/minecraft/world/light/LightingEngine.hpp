@@ -1,6 +1,5 @@
 #pragma once
 #include <atomic>
-#include <chrono>
 #include <condition_variable>
 #include <cstddef>
 #include <cstdint>
@@ -18,6 +17,7 @@ class WorkerPool;
 namespace world::light {
 class UnifiedLightRegistry;
 }
+class LightingEngineTestAccess;
 class LightingEngine {
  public:
  struct DirtyRegion {
@@ -58,6 +58,7 @@ class LightingEngine {
  void stop();
 
  private:
+  friend class LightingEngineTestAccess;
  struct Box {
   LightType type;
   int minX, minY, minZ, maxX, maxY, maxZ;
@@ -91,8 +92,7 @@ class LightingEngine {
  void releaseClaimedBoxLocked(const Box& box);
  void publishDirtyRegion(DirtyRegion region);
  void mergeIntoPending(DirtyRegion region);
- [[nodiscard]] bool settledOrOverdue() const;
- void flushPendingLocked(bool includeFar);
+  void flushPending(bool includeFar);
  [[nodiscard]] double distanceSqToCamera(const DirtyRegion& region) const noexcept;
  [[nodiscard]] bool isNearCamera(const DirtyRegion& region) const noexcept;
  void runUpdate(const Box& box, WorkerState& state);
@@ -112,8 +112,7 @@ class LightingEngine {
  static constexpr std::size_t kStagingFlushBoxes = 1024;
  static constexpr std::size_t kStagingMergeScan = 32;
  static constexpr std::size_t kMaxPendingRegions = 64;
- static constexpr std::chrono::milliseconds kPendingDeadline{250};
- static constexpr double kNearPublishDistance = 64.0;
+  static constexpr double kNearPublishDistance = 64.0;
  std::mutex stagingMutex_;
  std::deque<Box> staging_;
  mutable std::mutex queueMutex_;
@@ -131,8 +130,7 @@ class LightingEngine {
  std::atomic<bool> cameraKnown_{false};
  mutable std::mutex pendingMutex_;
  std::vector<DirtyRegion> pending_;
- std::chrono::steady_clock::time_point pendingSince_{};
- std::mutex registryMutex_;
+  std::mutex registryMutex_;
  std::unordered_map<std::uint64_t, Chunk*> registry_;
  util::concurrent::Channel<DirtyRegion> outbox_{4096};
  world::light::UnifiedLightRegistry& lightRegistry_;

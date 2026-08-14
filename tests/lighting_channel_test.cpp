@@ -6,7 +6,17 @@
 #include "net/minecraft/world/chunk/Chunk.hpp"
 #include "net/minecraft/world/light/LightingEngine.hpp"
 #include "net/minecraft/world/light/UnifiedLightRegistry.hpp"
-namespace net::minecraft::test {
+namespace net::minecraft {
+class LightingEngineTestAccess {
+ public:
+  static void stageFarRegion(LightingEngine& lighting, LightingEngine::DirtyRegion region) {
+   lighting.pending_.push_back(region);
+  }
+  static void setPendingWork(LightingEngine& lighting, std::size_t count) {
+   lighting.pendingCount_.store(count, std::memory_order_relaxed);
+  }
+};
+namespace test {
 TEST(LightingChannel, ComputeTaskPublishesAndBoundedDrainConsumesDirtyRegion) {
  util::concurrent::ThreadCoordinator::instance().configure(8, 2, {.maxComputeThreads = 8});
  world::light::UnifiedLightRegistry registry;
@@ -39,5 +49,20 @@ TEST(LightingChannel, ComputeTaskPublishesAndBoundedDrainConsumesDirtyRegion) {
  EXPECT_GE(drained.front().maxZ, 8);
  EXPECT_FALSE(lighting.hasDirtyRegions());
  lighting.stop();
+}
+TEST(LightingChannel, FarRegionsWaitUntilAllLightingWorkSettles) {
+ world::light::UnifiedLightRegistry registry;
+ LightingEngine lighting(registry);
+ LightingEngineTestAccess::stageFarRegion(lighting, LightingEngine::DirtyRegion{128, 64, 128, 128, 64, 128});
+ LightingEngineTestAccess::setPendingWork(lighting, 1);
+ EXPECT_TRUE(lighting.drainDirtyRegions(1).empty());
+ EXPECT_TRUE(lighting.hasDirtyRegions());
+ LightingEngineTestAccess::setPendingWork(lighting, 0);
+ const std::vector<LightingEngine::DirtyRegion> drained = lighting.drainDirtyRegions(1);
+ ASSERT_EQ(drained.size(), 1U);
+ EXPECT_EQ(drained.front().minX, 128);
+ EXPECT_FALSE(lighting.hasDirtyRegions());
+ lighting.stop();
+}
 }
 }

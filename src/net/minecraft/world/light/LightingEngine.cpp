@@ -130,7 +130,7 @@ void LightingEngine::unregisterChunk(Chunk* chunk) {
 }
 std::vector<LightingEngine::DirtyRegion> LightingEngine::drainDirtyRegions(std::size_t maxRegions) {
  flushStaging();
- flushPendingLocked(settledOrOverdue());
+ flushPending(!busy());
  std::vector<DirtyRegion> regions;
  regions.reserve(std::min(maxRegions, outbox_.size()));
  DirtyRegion region{};
@@ -529,9 +529,6 @@ bool LightingEngine::isNearCamera(const DirtyRegion& region) const noexcept {
 }
 void LightingEngine::mergeIntoPending(DirtyRegion region) {
  const std::lock_guard lock(pendingMutex_);
- if(pending_.empty()) {
-  pendingSince_ = std::chrono::steady_clock::now();
- }
  for(std::size_t i = 0; i < pending_.size();) {
   const DirtyRegion& existing = pending_[i];
   const bool touches = !(existing.maxX + 1 < region.minX || existing.minX > region.maxX + 1 ||
@@ -563,14 +560,7 @@ void LightingEngine::mergeIntoPending(DirtyRegion region) {
  farthest->maxY = std::max(farthest->maxY, region.maxY);
  farthest->maxZ = std::max(farthest->maxZ, region.maxZ);
 }
-bool LightingEngine::settledOrOverdue() const {
- if(!busy()) {
-  return true;
- }
- const std::lock_guard lock(pendingMutex_);
- return !pending_.empty() && std::chrono::steady_clock::now() - pendingSince_ >= kPendingDeadline;
-}
-void LightingEngine::flushPendingLocked(bool includeFar) {
+void LightingEngine::flushPending(bool includeFar) {
  const std::lock_guard lock(pendingMutex_);
  if(pending_.empty()) {
   return;
