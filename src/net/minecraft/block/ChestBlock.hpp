@@ -19,6 +19,7 @@ class ChestBlock : public BlockWithEntity {
  public:
  static void registerClass();
  using Block::canPlaceAt;
+ using BlockWithEntity::onPlaced;
  explicit ChestBlock(int id) : BlockWithEntity(id, material::Material::WOOD) {
   textureId = 26;
  }
@@ -29,6 +30,7 @@ class ChestBlock : public BlockWithEntity {
  [[nodiscard]] bool canPlaceAt(World* world, int x, int y, int z) const;
  [[nodiscard]] bool canPlaceAt(World* world, int x, int y, int z, int side) const override;
  bool onUse(World* world, int x, int y, int z, ::net::minecraft::PlayerEntity* player) override;
+ void onPlaced(World* world, int x, int y, int z, ::net::minecraft::PlayerEntity* placer) override;
  void onBreak(World* world, int x, int y, int z) override;
 
  protected:

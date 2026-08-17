@@ -7,10 +7,33 @@
 #include "net/minecraft/item/ItemStack.hpp"
 #include "net/minecraft/recipe/CraftingRecipeManager.hpp"
 #include "net/minecraft/registry/Registry.hpp"
+#include "net/minecraft/util/math/MathHelper.hpp"
 #include "net/minecraft/world/World.hpp"
 namespace {
 net::minecraft::BlockSoundGroup kWoodSound("wood", 1.0f, 1.0f);
+// The side the front faces, in Beta side ids: 2 = -Z, 3 = +Z, 4 = -X, 5 = +X. Stored in
+// metadata the way FurnaceBlock and DispenserBlock store theirs. Meta 0 means no stored
+// facing, which is what world generation and pre-facing saves leave behind, and those fall
+// back to Beta's "front points away from the nearest wall" guess.
+constexpr int kFrontNegZ = 2;
+constexpr int kFrontPosZ = 3;
+constexpr int kFrontNegX = 4;
+constexpr int kFrontPosX = 5;
+// Quadrant of the placer's yaw -> the side the front turns to meet them.
+constexpr int kFrontForYawQuadrant[4] = {kFrontNegZ, kFrontPosX, kFrontPosZ, kFrontNegX};
+bool isStoredFront(int meta) {
+ return meta >= kFrontNegZ && meta <= kFrontPosX;
 }
+bool frontFacesAlongX(int front) {
+ return front == kFrontNegX || front == kFrontPosX;
+}
+// A double chest's front has to sit on its long side, so a stored facing pointing down the run
+// belongs to neither half and is ignored.
+int storedFront(const net::minecraft::BlockView* blockView, int x, int y, int z, bool alongX) {
+ const int meta = blockView->getBlockMeta(x, y, z);
+ return isStoredFront(meta) && frontFacesAlongX(meta) == alongX ? meta : -1;
+}
+} // namespace
 namespace net::minecraft::block {
 using net::minecraft::entity::ItemEntity;
 int ChestBlock::getTextureId(const BlockView* blockView, int x, int y, int z, int side) const {
@@ -34,20 +57,27 @@ int ChestBlock::getTextureId(const BlockView* blockView, int x, int y, int z, in
   } else if(side == 5) {
    offset = northId == id ? 0 : 1;
   }
-  const int cornerWestId = blockView->getBlockId(x - 1, y, northId == id ? z - 1 : z + 1);
-  const int cornerEastId = blockView->getBlockId(x + 1, y, northId == id ? z - 1 : z + 1);
-  int frontSide = 5;
-  if((Block::BLOCKS_OPAQUE[static_cast<std::size_t>(westId)] ||
-      Block::BLOCKS_OPAQUE[static_cast<std::size_t>(cornerWestId)]) &&
-     !Block::BLOCKS_OPAQUE[static_cast<std::size_t>(eastId)] &&
-     !Block::BLOCKS_OPAQUE[static_cast<std::size_t>(cornerEastId)]) {
-   frontSide = 5;
+  const int partnerZ = northId == id ? z - 1 : z + 1;
+  int frontSide = storedFront(blockView, x, y, z, true);
+  if(frontSide < 0) {
+   frontSide = storedFront(blockView, x, y, partnerZ, true);
   }
-  if((Block::BLOCKS_OPAQUE[static_cast<std::size_t>(eastId)] ||
-      Block::BLOCKS_OPAQUE[static_cast<std::size_t>(cornerEastId)]) &&
-     !Block::BLOCKS_OPAQUE[static_cast<std::size_t>(westId)] &&
-     !Block::BLOCKS_OPAQUE[static_cast<std::size_t>(cornerWestId)]) {
-   frontSide = 4;
+  if(frontSide < 0) {
+   const int cornerWestId = blockView->getBlockId(x - 1, y, partnerZ);
+   const int cornerEastId = blockView->getBlockId(x + 1, y, partnerZ);
+   frontSide = 5;
+   if((Block::BLOCKS_OPAQUE[static_cast<std::size_t>(westId)] ||
+       Block::BLOCKS_OPAQUE[static_cast<std::size_t>(cornerWestId)]) &&
+      !Block::BLOCKS_OPAQUE[static_cast<std::size_t>(eastId)] &&
+      !Block::BLOCKS_OPAQUE[static_cast<std::size_t>(cornerEastId)]) {
+    frontSide = 5;
+   }
+   if((Block::BLOCKS_OPAQUE[static_cast<std::size_t>(eastId)] ||
+       Block::BLOCKS_OPAQUE[static_cast<std::size_t>(cornerEastId)]) &&
+      !Block::BLOCKS_OPAQUE[static_cast<std::size_t>(westId)] &&
+      !Block::BLOCKS_OPAQUE[static_cast<std::size_t>(cornerWestId)]) {
+    frontSide = 4;
+   }
   }
   return (side == frontSide ? textureId + 15 : textureId + 31) + offset;
  }
@@ -61,22 +91,33 @@ int ChestBlock::getTextureId(const BlockView* blockView, int x, int y, int z, in
   } else if(side == 2) {
    offset = westId == id ? 0 : 1;
   }
-  const int cornerNorthId = blockView->getBlockId(westId == id ? x - 1 : x + 1, y, z - 1);
-  const int cornerSouthId = blockView->getBlockId(westId == id ? x - 1 : x + 1, y, z + 1);
-  int frontSide = 3;
-  if((Block::BLOCKS_OPAQUE[static_cast<std::size_t>(northId)] ||
-      Block::BLOCKS_OPAQUE[static_cast<std::size_t>(cornerNorthId)]) &&
-     !Block::BLOCKS_OPAQUE[static_cast<std::size_t>(southId)] &&
-     !Block::BLOCKS_OPAQUE[static_cast<std::size_t>(cornerSouthId)]) {
-   frontSide = 3;
+  const int partnerX = westId == id ? x - 1 : x + 1;
+  int frontSide = storedFront(blockView, x, y, z, false);
+  if(frontSide < 0) {
+   frontSide = storedFront(blockView, partnerX, y, z, false);
   }
-  if((Block::BLOCKS_OPAQUE[static_cast<std::size_t>(southId)] ||
-      Block::BLOCKS_OPAQUE[static_cast<std::size_t>(cornerSouthId)]) &&
-     !Block::BLOCKS_OPAQUE[static_cast<std::size_t>(northId)] &&
-     !Block::BLOCKS_OPAQUE[static_cast<std::size_t>(cornerNorthId)]) {
-   frontSide = 2;
+  if(frontSide < 0) {
+   const int cornerNorthId = blockView->getBlockId(partnerX, y, z - 1);
+   const int cornerSouthId = blockView->getBlockId(partnerX, y, z + 1);
+   frontSide = 3;
+   if((Block::BLOCKS_OPAQUE[static_cast<std::size_t>(northId)] ||
+       Block::BLOCKS_OPAQUE[static_cast<std::size_t>(cornerNorthId)]) &&
+      !Block::BLOCKS_OPAQUE[static_cast<std::size_t>(southId)] &&
+      !Block::BLOCKS_OPAQUE[static_cast<std::size_t>(cornerSouthId)]) {
+    frontSide = 3;
+   }
+   if((Block::BLOCKS_OPAQUE[static_cast<std::size_t>(southId)] ||
+       Block::BLOCKS_OPAQUE[static_cast<std::size_t>(cornerSouthId)]) &&
+      !Block::BLOCKS_OPAQUE[static_cast<std::size_t>(northId)] &&
+      !Block::BLOCKS_OPAQUE[static_cast<std::size_t>(cornerNorthId)]) {
+    frontSide = 2;
+   }
   }
   return (side == frontSide ? textureId + 15 : textureId + 31) + offset;
+ }
+ const int meta = blockView->getBlockMeta(x, y, z);
+ if(isStoredFront(meta)) {
+  return side == meta ? textureId + 1 : textureId;
  }
  int frontSide = 3;
  if(Block::BLOCKS_OPAQUE[static_cast<std::size_t>(northId)] &&
@@ -174,6 +215,41 @@ bool ChestBlock::onUse(World* world, int x, int y, int z, ::net::minecraft::Play
  }
  player->openChestScreen(x, y, z);
  return true;
+}
+void ChestBlock::onPlaced(World* world, int x, int y, int z, ::net::minecraft::PlayerEntity* placer) {
+ if(world == nullptr || placer == nullptr) {
+  return;
+ }
+ int partnerX = x;
+ int partnerZ = z;
+ if(world->getBlockId(x - 1, y, z) == id) {
+  partnerX = x - 1;
+ } else if(world->getBlockId(x + 1, y, z) == id) {
+  partnerX = x + 1;
+ } else if(world->getBlockId(x, y, z - 1) == id) {
+  partnerZ = z - 1;
+ } else if(world->getBlockId(x, y, z + 1) == id) {
+  partnerZ = z + 1;
+ }
+ int front = kFrontForYawQuadrant[MathHelper::floor(static_cast<double>(placer->yaw * 4.0f / 360.0f) + 0.5) & 3];
+ const bool paired = partnerX != x || partnerZ != z;
+ if(paired) {
+  // canPlaceAt has already ruled out a third chest, so the run is exactly these two blocks.
+  const bool alongX = partnerZ != z;
+  const int partnerFront = storedFront(world, partnerX, y, partnerZ, alongX);
+  if(partnerFront >= 0) {
+   front = partnerFront;
+  } else if(frontFacesAlongX(front) != alongX) {
+   // The placer is looking down the run, so the front cannot meet them head on. Turn it to
+   // whichever long side they are standing on instead.
+   front = alongX ? (placer->x < static_cast<double>(x) + 0.5 ? kFrontNegX : kFrontPosX)
+                  : (placer->z < static_cast<double>(z) + 0.5 ? kFrontNegZ : kFrontPosZ);
+  }
+ }
+ world->setBlockMeta(x, y, z, front);
+ if(paired) {
+  world->setBlockMeta(partnerX, y, partnerZ, front);
+ }
 }
 void ChestBlock::onBreak(World* world, int x, int y, int z) {
  if(world == nullptr) {
