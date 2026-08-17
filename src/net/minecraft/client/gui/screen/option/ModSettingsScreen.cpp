@@ -9,7 +9,7 @@
 #include "net/minecraft/client/gui/layout/ScreenLayout.hpp"
 #include "net/minecraft/client/gui/widget/ActionButtonWidget.hpp"
 #include "net/minecraft/client/gui/widget/ButtonWidget.hpp"
-#include "net/minecraft/client/input/KeyCodes.hpp"
+#include "net/minecraft/client/input/Keys.hpp"
 #include "net/minecraft/client/resource/language/I18n.hpp"
 #include "net/minecraft/client/gui/Draw2D.hpp"
 #include "net/minecraft/client/render/RenderCore.hpp"

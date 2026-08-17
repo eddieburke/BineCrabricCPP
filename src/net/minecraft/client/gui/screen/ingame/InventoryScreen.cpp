@@ -58,19 +58,17 @@ void InventoryScreen::render(int mouseX, int mouseY, float tickDelta) {
  sidePanel.mouseY = mouseY;
  publishSidePanelEvent(sidePanel);
 }
-void InventoryScreen::onMouseEvent() {
+void InventoryScreen::onMouseEvent(const input::MouseEvent& event) {
  if(minecraft() == nullptr) {
   return;
  }
- input::InputSystem& input = input::InputSystem::instance();
  const int dw = minecraft()->displayWidth;
  const int dh = minecraft()->displayHeight;
  if(dw <= 0 || dh <= 0) {
   return;
  }
- const auto [mouseX, mouseY] =
-     util::mapScreenMouse(dw, dh, width(), height(), input.eventMouseX(), input.eventMouseY());
- const int wheel = input.eventMouseWheel();
+ const auto [mouseX, mouseY] = util::mapScreenMouse(dw, dh, width(), height(), event.x, event.y);
+ const int wheel = event.wheel;
  if(wheel != 0) {
   mod::ScreenRegionEvent sidePanel;
   sidePanel.screen = this;
@@ -86,11 +84,11 @@ void InventoryScreen::onMouseEvent() {
  if(wheel != 0) {
   return;
  }
- const int button = input.eventMouseButton();
+ const int button = event.button;
  if(button < 0) {
   return;
  }
- if(input.eventMouseButtonDown()) {
+ if(event.down) {
   mouseClicked(mouseX, mouseY, button);
  } else {
   mouseReleased(mouseX, mouseY, button);
@@ -165,7 +163,6 @@ void InventoryScreen::drawBackground(float tickDelta) {
                   &minecraft()->options,
                   tickDelta);
   dispatcher.yaw_ = 180.0f;
-  // Fullbright lightmap: 8-arg render skips the world-path light(15,15) setup.
   render::Tessellator::INSTANCE.light(15, 15);
   dispatcher.render(player, 0.0, 0.0, 0.0, 0.0f, 1.0f, previewPose, core::drawProjection());
   player.minBrightness = 0.0f;

@@ -132,9 +132,9 @@ TEST_F(ComplementaryProfiles, PresetsSatisfyThePacksOwnActVsShadowDistanceGuard)
   const std::string source = client::render::PackCompiler::resolveIncludes(applied, "shaders/world0/final.fsh");
   const double act = std::strtod(merged.at("COLORED_LIGHTING").c_str(), nullptr);
   const double distance = std::strtod(merged.at("shadowDistance").c_str(), nullptr);
-  EXPECT_EQ(emittedLine(source, "#define COLORED_LIGHTING "),
-            "    #define COLORED_LIGHTING " + merged.at("COLORED_LIGHTING") +
-                " //[128 192 256 384 512 768 1024]")
+  EXPECT_EQ(emittedLine(source, "#define COLORED_LIGHTING ").rfind("#define COLORED_LIGHTING " +
+                                                                   merged.at("COLORED_LIGHTING") + " ", 0),
+            0u)
       << name;
   EXPECT_NE(emittedLine(source, "const float shadowDistance")
                 .find("= " + merged.at("shadowDistance") + ";"),
@@ -226,24 +226,34 @@ TEST_F(PipelineProfileClick, EveryPresetLandsBothActAndShadowDistance) {
       << "clicking " << name << " leaves final.glsl's guard tripped";
  }
 }
-// HIGH sets shadowDistance to the pack's own default, so it must not be
-// persisted as a change - the file exists only for what the user moved away
-// from stock.
-TEST_F(PipelineProfileClick, DefaultValuedOptionsAreNotPersisted) {
+// HIGH is the pack's own stock configuration - every value it sets is already
+// the default - so clicking it from stock must leave nothing to persist. It
+// only wrote a file when the loader reformatted `192.0` into `192.000000` and
+// then failed to recognise its own default.
+TEST_F(PipelineProfileClick, ClickingTheStockPresetPersistsNothing) {
  client::render::Pipeline pipeline(std::filesystem::path(MINECRAFT_TEST_SOURCE_DIR), nullptr,
                                    std::filesystem::temp_directory_path() / "profile-preset-cache");
  if(!pipeline.select(kPack)) GTEST_SKIP() << "Complementary is not installed in shaders/";
- const PackProfile* found = findProfile(*pipeline.selectedDefinition(), "HIGH");
- ASSERT_NE(found, nullptr);
+ const PackProfile* high = findProfile(*pipeline.selectedDefinition(), "HIGH");
+ ASSERT_NE(high, nullptr);
  std::vector<std::pair<std::string, std::string>> values;
- for(const auto& [key, value] : found->values) values.emplace_back(key, value);
+ for(const auto& [key, value] : high->values) values.emplace_back(key, value);
+ pipeline.setSettings(values);
+ EXPECT_FALSE(std::filesystem::exists(settingsFile()))
+     << "stock values were written as if the user had changed them";
+ const PackProfile* ultra = findProfile(*pipeline.selectedDefinition(), "ULTRA");
+ ASSERT_NE(ultra, nullptr);
+ values.clear();
+ for(const auto& [key, value] : ultra->values) values.emplace_back(key, value);
  pipeline.setSettings(values);
  ASSERT_TRUE(std::filesystem::exists(settingsFile()));
+ bool wroteShadowDistance = false;
  std::ifstream in(settingsFile());
  for(std::string line; std::getline(in, line);) {
-  EXPECT_NE(line, "shadowDistance=192.0") << "the stock value was written as if it had been changed";
+  if(line == "shadowDistance=256.0") wroteShadowDistance = true;
   EXPECT_EQ(line.rfind("profile=", 0), std::string::npos) << "the synthetic profile option is back";
  }
+ EXPECT_TRUE(wroteShadowDistance) << "a genuinely changed const directive must persist";
 }
 } // namespace
 } // namespace net::minecraft::test

@@ -20,4 +20,4 @@ class PackScreen : public screen::Screen {
  int reloadCooldown_ = -1;
  std::filesystem::path texturePacksDir_;
 };
-} // namespace net::minecraft::client::gui::screen::pack
+}

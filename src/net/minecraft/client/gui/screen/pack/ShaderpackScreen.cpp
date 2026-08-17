@@ -12,7 +12,6 @@
 #include "net/minecraft/client/gui/layout/OptionsLayout.hpp"
 #include "net/minecraft/client/gui/layout/ScreenLayout.hpp"
 #include "net/minecraft/client/gui/widget/ButtonWidget.hpp"
-#include "net/minecraft/client/input/KeyCodes.hpp"
 #include "net/minecraft/client/render/GameRenderer.hpp"
 #include "net/minecraft/client/render/RenderCore.hpp"
 #include "net/minecraft/client/render/RenderType.hpp"

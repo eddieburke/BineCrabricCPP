@@ -2,7 +2,6 @@
 #include "net/minecraft/client/gl/GlConstants.hpp"
 #include <algorithm>
 #include <cstddef>
-#include <cstring>
 #include <limits>
 #include <mutex>
 #include <thread>
@@ -23,7 +22,6 @@ GLFN(PFN_DeleteBuffers, deleteBuffers);
 GLFN(PFN_FenceSync, fenceSync);
 GLFN(PFN_ClientWaitSync, clientWaitSync);
 GLFN(PFN_DeleteSync, deleteSync);
-GLFN(PFN_SwapInterval, swapInterval);
 GLFN(PFN_GenFramebuffers, genFramebuffers);
 GLFN(PFN_BindFramebuffer, bindFramebuffer);
 GLFN(PFN_DeleteFramebuffers, deleteFramebuffers);
@@ -123,13 +121,7 @@ bool GLCore::swapControlTearSupported = false;
 static std::once_flag g_initOnce;
 static int g_appliedSwapInterval = std::numeric_limits<int>::min();
 static void* loadProc(const char* name) {
- PROC proc = wglGetProcAddress(name);
- const auto value = reinterpret_cast<std::uintptr_t>(proc);
- if(proc == nullptr || value <= 3 || value == static_cast<std::uintptr_t>(-1)) {
-  static HMODULE opengl = GetModuleHandleW(L"opengl32.dll");
-  proc = opengl != nullptr ? GetProcAddress(opengl, name) : nullptr;
- }
- return reinterpret_cast<void*>(proc);
+ return reinterpret_cast<void*>(glfwGetProcAddress(name));
 }
 #define LOAD_TRY(dst, ...)                                               \
  do {                                                                    \
@@ -141,7 +133,7 @@ static void* loadProc(const char* name) {
   }                                                                      \
  } while(0)
 void GLCore::init() {
- if(wglGetCurrentContext() == nullptr) {
+ if(glfwGetCurrentContext() == nullptr) {
   return;
  }
  static bool loaded = false;
@@ -164,25 +156,8 @@ void GLCore::init() {
  LOAD_TRY(fenceSync, "glFenceSync");
  LOAD_TRY(clientWaitSync, "glClientWaitSync");
  LOAD_TRY(deleteSync, "glDeleteSync");
- LOAD_TRY(swapInterval, "wglSwapIntervalEXT");
- {
-  using PFN_GetExtensionsStringEXT = const char*(APIENTRY*)();
-  using PFN_GetExtensionsStringARB = const char*(APIENTRY*)(HDC);
-  const char* extensions = nullptr;
-  auto getExt = reinterpret_cast<PFN_GetExtensionsStringEXT>(loadProc("wglGetExtensionsStringEXT"));
-  if(getExt != nullptr) {
-   extensions = getExt();
-  }
-  if(extensions == nullptr) {
-   auto getArb = reinterpret_cast<PFN_GetExtensionsStringARB>(loadProc("wglGetExtensionsStringARB"));
-   if(getArb != nullptr) {
-    const HDC dc = wglGetCurrentDC();
-    extensions = dc != nullptr ? getArb(dc) : nullptr;
-   }
-  }
-  swapControlTearSupported =
-      extensions != nullptr && std::strstr(extensions, "WGL_EXT_swap_control_tear") != nullptr;
- }
+ swapControlTearSupported = glfwExtensionSupported("WGL_EXT_swap_control_tear") == GLFW_TRUE ||
+                            glfwExtensionSupported("GLX_EXT_swap_control_tear") == GLFW_TRUE;
  LOAD_TRY(genFramebuffers, "glGenFramebuffers", "glGenFramebuffersEXT");
  LOAD_TRY(bindFramebuffer, "glBindFramebuffer", "glBindFramebufferEXT");
  LOAD_TRY(deleteFramebuffers, "glDeleteFramebuffers", "glDeleteFramebuffersEXT");
@@ -267,8 +242,7 @@ void GLCore::init() {
  LOAD_TRY(blendFunci, "glBlendFunci", "glBlendFunciARB");
  LOAD_TRY(blendFuncSeparate, "glBlendFuncSeparate", "glBlendFuncSeparateEXT");
  LOAD_TRY(blendFuncSeparatei, "glBlendFuncSeparatei", "glBlendFuncSeparateiARB");
- GLCore::activeTexture =
-     reinterpret_cast<void*>(reinterpret_cast<std::size_t>(wglGetProcAddress("glActiveTexture")));
+ GLCore::activeTexture = loadProc("glActiveTexture");
  vboSupported = genBuffers && bindBuffer && bufferData;
  framebufferSupported = genFramebuffers && bindFramebuffer && deleteFramebuffers && checkFramebufferStatus &&
                         framebufferTexture2D && genRenderbuffers && bindRenderbuffer && deleteRenderbuffers &&
@@ -319,19 +293,10 @@ void GLCore::setSwapPacing(SwapPacing pacing) {
  if(interval == g_appliedSwapInterval) {
   return;
  }
- if(swapInterval != nullptr) {
-  swapInterval(interval);
-  g_appliedSwapInterval = interval;
- }
+ glfwSwapInterval(interval);
+ g_appliedSwapInterval = interval;
 }
 void GLCore::resetSwapPacingCache() {
  g_appliedSwapInterval = std::numeric_limits<int>::min();
-}
-bool GLCore::present() {
- const HDC dc = wglGetCurrentDC();
- if(dc == nullptr) {
-  return false;
- }
- return SwapBuffers(dc) != FALSE;
 }
 } // namespace net::minecraft::client::gl

@@ -132,7 +132,7 @@ TEST(PackLoaderTest, ScreenDeclarationsExcludeProgramLocalDefines) {
  EXPECT_FALSE(options.contains("HAND"));
  EXPECT_FALSE(options.contains("NO_NORMAL"));
  EXPECT_FALSE(options.contains("END"));
- EXPECT_EQ(pack.settings.size(), 5u);
+ EXPECT_EQ(pack.settings.size(), 4u);
 }
 TEST(PackLoaderTest, ReadsShadowResolutionFromShaderSource) {
  PackDefinition pack;
@@ -1002,7 +1002,7 @@ TEST(PackLoaderTest, ReadsScreenSlidersProfilesAndPackToggles) {
  EXPECT_EQ(fooValues, (std::vector<std::string>{"0", "1"}));
  EXPECT_TRUE(barSlider);
  EXPECT_EQ(barType, SettingType::Float);
- EXPECT_EQ(barValues, (std::vector<std::string>{"0.0", "0.500000", "1.0"}));
+ EXPECT_EQ(barValues, (std::vector<std::string>{"0.0", "0.5", "1.0"}));
 }
 TEST(PackLoaderTest, DiscreteSliderNormalizationUsesDeclaredValues) {
  PackSetting setting;

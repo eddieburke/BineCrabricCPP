@@ -575,13 +575,7 @@ using PFN_GetProgramivLocal = void(APIENTRY*)(unsigned int, unsigned int, int*);
 constexpr unsigned int kProgramBinaryLength = 0x8741;
 constexpr unsigned int kProgramBinaryRetrievableHint = 0x8257;
 void* loadGlProc(const char* name) {
- PROC proc = wglGetProcAddress(name);
- if(proc == nullptr || proc == reinterpret_cast<PROC>(1) || proc == reinterpret_cast<PROC>(2) ||
-    proc == reinterpret_cast<PROC>(3) || proc == reinterpret_cast<PROC>(-1)) {
-  HMODULE module = GetModuleHandleA("opengl32.dll");
-  return module != nullptr ? reinterpret_cast<void*>(GetProcAddress(module, name)) : nullptr;
- }
- return reinterpret_cast<void*>(proc);
+ return reinterpret_cast<void*>(glfwGetProcAddress(name));
 }
 struct BinaryProcs {
  PFN_GetProgramivLocal getProgramiv;

@@ -3,14 +3,12 @@
 #include "net/minecraft/client/gui/Draw2D.hpp"
 #include "net/minecraft/client/gui/layout/ScreenLayout.hpp"
 #include "net/minecraft/client/gui/screen/TitleScreen.hpp"
+#include "net/minecraft/client/platform/Browser.hpp"
+#include "net/minecraft/client/render/RenderCore.hpp"
 #include "net/minecraft/client/render/Tessellator.hpp"
 #include "net/minecraft/client/resource/language/I18n.hpp"
 #include "net/minecraft/client/resource/pack/TexturePack.hpp"
 #include "net/minecraft/client/resource/pack/TexturePacks.hpp"
-#ifdef _WIN32
-#include <shellapi.h>
-#include "net/minecraft/client/render/RenderCore.hpp"
-#endif
 namespace net::minecraft::client::gui::screen::pack {
 class PackScreen::PackListWidget : public widget::EntryListWidget {
  public:
@@ -23,7 +21,7 @@ class PackScreen::PackListWidget : public widget::EntryListWidget {
   return minecraft_.texturePacks != nullptr ? static_cast<int>(minecraft_.texturePacks->getAvailable().size())
                                             : 0;
  }
- void entryClicked(int index, bool /*doubleClick*/) override {
+ void entryClicked(int index, bool) override {
   if(minecraft_.texturePacks == nullptr) {
    return;
   }
@@ -130,10 +128,6 @@ void PackScreen::tick() {
  --reloadCooldown_;
 }
 void PackScreen::openTexturePacksFolder() {
-#ifdef _WIN32
- if(!texturePacksDir_.empty()) {
-  ShellExecuteW(nullptr, L"open", texturePacksDir_.wstring().c_str(), nullptr, nullptr, SW_SHOWNORMAL);
- }
-#endif
+ (void)platform::openPath(texturePacksDir_);
 }
-} // namespace net::minecraft::client::gui::screen::pack
+}

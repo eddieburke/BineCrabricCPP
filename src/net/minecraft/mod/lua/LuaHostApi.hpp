@@ -29,9 +29,7 @@ using LuaKContext = std::intptr_t;
 using LuaKFunction = int (*)(lua_State*, int, LuaKContext);
 [[nodiscard]] int luaUpvalueIndex(int i);
 struct LuaApi {
-#ifdef _WIN32
  void* module = nullptr;
-#endif
  lua_State* (*newstate)() = nullptr;
  void (*openlibs)(lua_State*) = nullptr;
  void (*close)(lua_State*) = nullptr;

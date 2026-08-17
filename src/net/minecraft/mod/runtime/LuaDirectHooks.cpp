@@ -351,26 +351,38 @@ void luaHookFirstPersonHand(FirstPersonHandRenderEvent& e) {
      },
      [](lua_State* state, FirstPersonHandRenderEvent& ev) { readField(state, "canceled", ev.canceled); });
 }
-void luaHookKeyPress(KeyPressEvent& e) {
- if(e.pressed && !e.repeat) {
-  net::minecraft::mod::ModSettingsRegistry::instance().markKeyPressed(e.key);
+bool luaHookKeyPress(int key, bool pressed, bool repeat) {
+ if(pressed && !repeat) {
+  net::minecraft::mod::ModSettingsRegistry::instance().markKeyPressed(key);
  }
- runLuaHook(
-     LuaEventId::KeyPress,
-     e,
-     [](lua_State* state, KeyPressEvent& ev) {
-      setFields(state, "key", ev.key, "pressed", ev.pressed, "repeat", ev.repeat, "handled", ev.handled);
+ if(!hasLuaHook(LuaEventId::KeyPress)) {
+  return false;
+ }
+ bool handled = false;
+ ModContextScope scope(nullptr, nullptr);
+ dispatchLuaHook(
+     static_cast<int>(LuaEventId::KeyPress),
+     [key, pressed, repeat, &handled](lua_State* state) {
+      setFields(state, "key", key, "pressed", pressed, "repeat", repeat, "handled", handled);
+      setLuaExecutionFields(state, nullptr);
      },
-     [](lua_State* state, KeyPressEvent& ev) { readField(state, "handled", ev.handled); });
+     [&handled](lua_State* state) { readField(state, "handled", handled); });
+ return handled;
 }
-void luaHookMouseButton(MouseButtonEvent& e) {
- runLuaHook(
-     LuaEventId::MouseButton,
-     e,
-     [](lua_State* state, MouseButtonEvent& ev) {
-      setFields(state, "button", ev.button, "pressed", ev.pressed, "handled", ev.handled);
+bool luaHookMouseButton(int button, bool pressed) {
+ if(!hasLuaHook(LuaEventId::MouseButton)) {
+  return false;
+ }
+ bool handled = false;
+ ModContextScope scope(nullptr, nullptr);
+ dispatchLuaHook(
+     static_cast<int>(LuaEventId::MouseButton),
+     [button, pressed, &handled](lua_State* state) {
+      setFields(state, "button", button, "pressed", pressed, "handled", handled);
+      setLuaExecutionFields(state, nullptr);
      },
-     [](lua_State* state, MouseButtonEvent& ev) { readField(state, "handled", ev.handled); });
+     [&handled](lua_State* state) { readField(state, "handled", handled); });
+ return handled;
 }
 void luaHookRaycast(RaycastEvent& e) {
  runLuaHook(

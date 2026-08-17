@@ -7,7 +7,6 @@
 #include "net/minecraft/mod/events/EntityEvents.hpp"
 #include "net/minecraft/mod/events/WorldEvents.hpp"
 #include "net/minecraft/mod/runtime/ModHost.hpp"
-#include "net/minecraft/mod/runtime/LuaEventId.hpp"
 namespace net::minecraft {
 class World;
 namespace entity {
@@ -194,8 +193,8 @@ void fireChunkGeneration(world::gen::ChunkGenerationEvent& event);
 void luaHookClientTick(ClientTickEvent& event);
 void luaHookRenderFrame(RenderFrameEvent& event);
 void luaHookFirstPersonHand(FirstPersonHandRenderEvent& event);
-void luaHookKeyPress(KeyPressEvent& event);
-void luaHookMouseButton(MouseButtonEvent& event);
+[[nodiscard]] bool luaHookKeyPress(int key, bool pressed, bool repeat);
+[[nodiscard]] bool luaHookMouseButton(int button, bool pressed);
 void luaHookRaycast(RaycastEvent& event);
 void luaHookFov(FovEvent& event);
 void luaHookCameraSetup(CameraSetupEvent& event);

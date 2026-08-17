@@ -3,11 +3,11 @@
 #include "net/minecraft/client/Minecraft.hpp"
 #include "net/minecraft/client/diagnostics/ClientDiagnostics.hpp"
 #ifdef _WIN32
-#include <timeapi.h>
 #ifndef NOMINMAX
 #define NOMINMAX
 #endif
 #include <windows.h>
+#include <timeapi.h>
 struct WindowsTimerResolutionReserver {
  WindowsTimerResolutionReserver() {
   timeBeginPeriod(1);

@@ -2,6 +2,7 @@
 #include "net/minecraft/client/Minecraft.hpp"
 #include "net/minecraft/client/gl/GlConstants.hpp"
 #include "net/minecraft/client/input/InputSystem.hpp"
+#include "net/minecraft/client/input/Keys.hpp"
 #include "net/minecraft/client/option/GameOptions.hpp"
 #include "net/minecraft/client/gui/Draw2D.hpp"
 #include "net/minecraft/client/render/RenderCore.hpp"
@@ -56,15 +57,6 @@ void HandledScreen::render(int mouseX, int mouseY, float tickDelta) {
    }
    drawSlot(*slot);
   }
-  if(!cursorStack.empty()) {
-   net::minecraft::util::math::Matrix4f cursorPose = core::drawPose();
-   cursorPose.translate(0.0f, 0.0f, 32.0f);
-   core::setDrawPose(cursorPose);
-   itemRenderer.renderGuiItem(
-       *textRenderer_, minecraft_->textureManager, cursorStack, mouseX - originX - 8, mouseY - originY - 8);
-   itemRenderer.renderGuiItemDecoration(
-       *textRenderer_, minecraft_->textureManager, cursorStack, mouseX - originX - 8, mouseY - originY - 8);
-  }
   {
    const core::DepthScope decorationCaps(false, core::depthWriteEnabled());
    core::setLightingEnabled(false);
@@ -102,6 +94,15 @@ void HandledScreen::render(int mouseX, int mouseY, float tickDelta) {
      core::setConstColor(1.0f, 1.0f, 1.0f, 1.0f);
     }
    }
+  }
+  if(!cursorStack.empty()) {
+   net::minecraft::util::math::Matrix4f cursorPose = core::drawPose();
+   cursorPose.translate(0.0f, 0.0f, 200.0f);
+   core::setDrawPose(cursorPose);
+   itemRenderer.renderGuiItem(
+       *textRenderer_, minecraft_->textureManager, cursorStack, mouseX - originX - 8, mouseY - originY - 8);
+   itemRenderer.renderGuiItemDecoration(
+       *textRenderer_, minecraft_->textureManager, cursorStack, mouseX - originX - 8, mouseY - originY - 8);
   }
  }
  Screen::render(mouseX, mouseY, tickDelta);
@@ -215,7 +216,8 @@ void HandledScreen::mouseClicked(int mouseX, int mouseY, int button) {
  if(slotId == -1) {
   return;
  }
- const bool shift = input::InputSystem::instance().slotClickModifier() == input::SlotClickModifier::Shift;
+ const input::InputSystem& inputSystem = input::InputSystem::instance();
+ const bool shift = inputSystem.isKeyDown(input::keys::kLShift) || inputSystem.isKeyDown(input::keys::kRShift);
  minecraft_->interactionManager->clickSlot(container_->syncId, slotId, button, shift, minecraft_->player);
 }
 void HandledScreen::keyPressed(char character, int keyCode) {
@@ -223,15 +225,9 @@ void HandledScreen::keyPressed(char character, int keyCode) {
  if(minecraft_ == nullptr || minecraft_->player == nullptr) {
   return;
  }
-#ifdef _WIN32
  if(escapePressed(keyCode) || keyCode == static_cast<int>(minecraft_->options.inventoryKey.code)) {
   minecraft_->player->closeHandledScreen();
  }
-#else
- if(escapePressed(keyCode)) {
-  minecraft_->player->closeHandledScreen();
- }
-#endif
 }
 void HandledScreen::removed() {
  if(minecraft_ != nullptr && minecraft_->interactionManager != nullptr && minecraft_->player != nullptr &&

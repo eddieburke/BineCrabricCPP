@@ -44,13 +44,8 @@
 #include "net/minecraft/world/biome/Biome.hpp"
 #include "net/minecraft/world/biome/source/BiomeSource.hpp"
 #include "net/minecraft/world/dimension/Dimension.hpp"
-#ifdef _WIN32
-#include "net/minecraft/client/util/DisplayManager.hpp"
-#endif
-#ifdef MINECRAFT_GL_REAL
-#include <GL/glu.h>
 #include <algorithm>
-#endif
+#include "net/minecraft/client/platform/glfw/Window.hpp"
 #include <optional>
 #include <thread>
 #include <vector>
@@ -612,11 +607,7 @@ void GameRenderer::onFrameUpdate(float tickDelta) {
   return;
  }
  frameSettings_ = option::renderSettings(client->options, meshDefinition());
-#ifdef _WIN32
- if(!util::DisplayManager::isActive()) {
-#else
- if(!client->focused.load()) {
-#endif
+ if(!platform::glfw::Window::isActive()) {
   if(nowMillis() - lastInactiveTime > 500) {
    client->pauseGame();
   }
@@ -673,9 +664,6 @@ void GameRenderer::onFrameUpdate(float tickDelta) {
   if(client->currentScreen() != nullptr) {
    shaderPipeline_->setPipelinePhase(WorldPipelinePhase::None);
    input::InputSystem& input = input::InputSystem::instance();
-#ifdef _WIN32
-   input.syncCursorFromOs();
-#endif
    const util::UiScale scale = util::uiScale(client->options, client->displayWidth, client->displayHeight);
    const auto [mouseX, mouseY] = util::mapScreenMouse(client->displayWidth,
                                                       client->displayHeight,

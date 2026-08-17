@@ -2,17 +2,16 @@
 #include <iostream>
 #include <thread>
 #include "net/minecraft/client/Minecraft.hpp"
+#include "net/minecraft/client/diagnostics/ClientDiagnostics.hpp"
 #include "net/minecraft/client/gl/GLCore.hpp"
 #include "net/minecraft/client/gl/GlConstants.hpp"
 #include "net/minecraft/client/input/InputSystem.hpp"
+#include "net/minecraft/client/platform/glfw/Window.hpp"
 #include "net/minecraft/client/render/RenderCore.hpp"
 #include "net/minecraft/client/util/UiScale.hpp"
-#ifdef _WIN32
-#include "net/minecraft/client/diagnostics/ClientDiagnostics.hpp"
-#include "net/minecraft/client/platform/glfw/Window.hpp"
-#endif
 namespace net::minecraft::client::util {
 namespace diagnostics = net::minecraft::client::diagnostics;
+namespace display = net::minecraft::client::platform::glfw;
 namespace {
 void clampPositive(int& width, int& height) {
  if(width <= 0) {
@@ -22,14 +21,10 @@ void clampPositive(int& width, int& height) {
   height = 1;
  }
 }
-} // namespace
-#ifdef _WIN32
-namespace display = net::minecraft::client::platform::glfw;
-namespace {
 void syncClientSizeFromWindow(Minecraft& client) {
  const display::DisplayMode mode = display::Window::getDisplayMode();
- client.displayWidth = mode.getWidth();
- client.displayHeight = mode.getHeight();
+ client.displayWidth = mode.width;
+ client.displayHeight = mode.height;
  clampPositive(client.displayWidth, client.displayHeight);
 }
 void relockCursorIfFocused(Minecraft& client) {
@@ -38,18 +33,14 @@ void relockCursorIfFocused(Minecraft& client) {
  }
 }
 } // namespace
-#endif
 void DisplayManager::setupAndCreateDisplay(Minecraft& client) {
-#ifdef _WIN32
  diagnostics::setStartupPhase("init: display");
  display::Window::setResizeCallback([&client](int width, int height) { resize(client, width, height); });
  display::Window::setDeactivateCallback([&client]() { client.unlockMouse(); });
- if(client.canvas != nullptr) {
-  display::Window::setParent(client.canvas);
- } else if(client.fullscreen) {
+ if(client.fullscreen) {
   const display::DisplayMode mode = display::Window::getDesktopDisplayMode();
-  client.displayWidth = mode.getWidth();
-  client.displayHeight = mode.getHeight();
+  client.displayWidth = mode.width;
+  client.displayHeight = mode.height;
   clampPositive(client.displayWidth, client.displayHeight);
   display::Window::setDisplayMode(mode);
   display::Window::setFullscreen(true);
@@ -67,13 +58,11 @@ void DisplayManager::setupAndCreateDisplay(Minecraft& client) {
   std::this_thread::sleep_for(std::chrono::seconds(1));
   display::Window::create();
  }
- ensureGlContext();
+ display::Window::ensureGlContext();
  gl::GLCore::ensureLoaded();
  syncClientSizeFromWindow(client);
-#endif
 }
-void DisplayManager::logGlError(Minecraft& client, const std::string& phase) {
- (void)client;
+void DisplayManager::logGlError(const std::string& phase) {
  auto errorName = [](int error) -> const char* {
   switch(error) {
   case 0x0500:
@@ -103,35 +92,23 @@ void DisplayManager::logGlError(Minecraft& client, const std::string& phase) {
             << error << " (" << errorName(error) << ")\n";
  }
 }
-void DisplayManager::scheduleScreenResize(Minecraft& client) {
- client.pendingScreenResize_ = true;
-}
 void DisplayManager::toggleFullscreen(Minecraft& client) {
- try {
-  client.fullscreen = !client.fullscreen;
-#ifdef _WIN32
-  display::DisplayMode targetMode;
-  if(client.fullscreen) {
-   targetMode = display::Window::getDesktopDisplayMode();
-  } else {
-   targetMode.width = client.initWidth;
-   targetMode.height = client.initHeight;
-  }
+ client.fullscreen = !client.fullscreen;
+ if(client.fullscreen) {
+  display::DisplayMode targetMode = display::Window::getDesktopDisplayMode();
   clampPositive(targetMode.width, targetMode.height);
-  client.displayWidth = targetMode.width;
-  client.displayHeight = targetMode.height;
+  display::Window::setFullscreen(true);
   display::Window::setDisplayMode(targetMode);
-  display::Window::setFullscreen(client.fullscreen);
-  pumpAndPresent();
-  syncClientSizeFromWindow(client);
-  if(client.currentScreen() != nullptr) {
-   resize(client, client.displayWidth, client.displayHeight);
-  }
-  relockCursorIfFocused(client);
-#endif
- } catch(const std::exception& exception) {
-  (void)exception;
+ } else {
+  display::Window::setFullscreen(false);
  }
+ display::Window::pumpMessages();
+ display::Window::present();
+ syncClientSizeFromWindow(client);
+ if(client.currentScreen() != nullptr) {
+  resize(client, client.displayWidth, client.displayHeight);
+ }
+ relockCursorIfFocused(client);
 }
 void DisplayManager::resize(Minecraft& client, int width, int height) {
  clampPositive(width, height);
@@ -142,38 +119,6 @@ void DisplayManager::resize(Minecraft& client, int width, int height) {
   const UiScale scale = uiScale(client.options, width, height);
   client.currentScreen()->init(&client, scale.scaledWidth, scale.scaledHeight);
  }
-#ifdef _WIN32
  relockCursorIfFocused(client);
-#endif
 }
-#ifdef _WIN32
-void DisplayManager::ensureGlContext() {
- display::Window::ensureGlContext();
-}
-void DisplayManager::setSwapPacing(gl::SwapPacing pacing) {
- gl::GLCore::setSwapPacing(pacing);
-}
-void DisplayManager::present() {
- display::Window::present();
-}
-void DisplayManager::pumpMessages() {
- display::Window::pumpMessages();
-}
-void DisplayManager::pumpAndPresent() {
- display::Window::pumpMessages();
- present();
-}
-HWND DisplayManager::hwnd() {
- return display::Window::hwnd();
-}
-bool DisplayManager::isActive() {
- return display::Window::isActive();
-}
-bool DisplayManager::isCloseRequested() {
- return display::Window::isCloseRequested();
-}
-void DisplayManager::destroy() {
- display::Window::destroy();
-}
-#endif
 } // namespace net::minecraft::client::util

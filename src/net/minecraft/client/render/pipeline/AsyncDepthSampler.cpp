@@ -1,8 +1,7 @@
 #include "net/minecraft/client/render/pipeline/AsyncDepthSampler.hpp"
 #include <cstring>
-#include <windows.h>
-#include <GL/gl.h>
 #include "net/minecraft/client/gl/GLCore.hpp"
+#include "net/minecraft/client/gl/GlConstants.hpp"
 #include "net/minecraft/client/debug/VTuneTrace.hpp"
 namespace net::minecraft::client::render {
 namespace {
@@ -79,7 +78,7 @@ std::optional<float> AsyncDepthSampler::pollAndIssue(int x, int y) {
  return result;
 }
 void AsyncDepthSampler::destroy() {
- if(wglGetCurrentContext() == nullptr) {
+ if(glfwGetCurrentContext() == nullptr) {
   slots_ = {};
   return;
  }

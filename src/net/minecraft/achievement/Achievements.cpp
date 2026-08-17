@@ -1,6 +1,6 @@
 #include "net/minecraft/achievement/Achievements.hpp"
 #include "net/minecraft/block/Block.hpp"
-#include "net/minecraft/client/input/KeyCodes.hpp"
+#include "net/minecraft/client/input/Keys.hpp"
 #include "net/minecraft/client/resource/language/I18n.hpp"
 #include "net/minecraft/item/Item.hpp"
 namespace net::minecraft::achievement {
@@ -60,8 +60,8 @@ std::string Achievements::getFormattedDescription(const AchievementDef& achievem
   return getTranslatedDescription(achievement);
  }
  return getTranslatedDescription(achievement, [inventoryKeyCode](const std::string& text) {
-  const char* keyName = client::input::keyDisplayName(inventoryKeyCode);
-  return client::resource::language::I18n::formatJava(text, {keyName != nullptr ? keyName : "?"});
+  const std::string keyName = client::input::keyDisplayName(inventoryKeyCode);
+  return client::resource::language::I18n::formatJava(text, {keyName});
  });
 }
 } // namespace net::minecraft::achievement

@@ -1,9 +1,4 @@
 #include "net/minecraft/client/debug/ClientProfilerOverlay.hpp"
-#ifndef NOMINMAX
-#define NOMINMAX
-#endif
-#include <windows.h>
-#include <GL/gl.h>
 #include <chrono>
 #include "net/minecraft/client/Minecraft.hpp"
 #include "net/minecraft/client/gl/GlConstants.hpp"

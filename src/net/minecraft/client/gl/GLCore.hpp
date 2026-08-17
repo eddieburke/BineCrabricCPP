@@ -1,9 +1,5 @@
 #pragma once
-#ifndef NOMINMAX
-#define NOMINMAX
-#endif
-#include <windows.h>
-#include <GL/gl.h>
+#include <GLFW/glfw3.h>
 #include <cstdint>
 namespace net::minecraft::client::gl {
 using PFN_GenBuffers = void(APIENTRY*)(int, unsigned*);
@@ -19,7 +15,6 @@ using PFN_DeleteBuffers = void(APIENTRY*)(int, const unsigned*);
 using PFN_FenceSync = void*(APIENTRY*)(unsigned, unsigned);
 using PFN_ClientWaitSync = unsigned(APIENTRY*)(void*, unsigned, std::uint64_t);
 using PFN_DeleteSync = void(APIENTRY*)(void*);
-using PFN_SwapInterval = void(APIENTRY*)(int);
 using PFN_GenFramebuffers = void(APIENTRY*)(int, unsigned*);
 using PFN_BindFramebuffer = void(APIENTRY*)(unsigned, unsigned);
 using PFN_DeleteFramebuffers = void(APIENTRY*)(int, const unsigned*);
@@ -125,7 +120,6 @@ struct GLCore {
  static PFN_FenceSync fenceSync;
  static PFN_ClientWaitSync clientWaitSync;
  static PFN_DeleteSync deleteSync;
- static PFN_SwapInterval swapInterval;
  static PFN_GenFramebuffers genFramebuffers;
  static PFN_BindFramebuffer bindFramebuffer;
  static PFN_DeleteFramebuffers deleteFramebuffers;
@@ -223,9 +217,7 @@ struct GLCore {
  static bool swapControlTearSupported;
  static void init();
  static void ensureLoaded();
- // Driver swap-interval (0 / 1 / -1). Never applies interval >= 2.
  static void setSwapPacing(SwapPacing pacing);
  static void resetSwapPacingCache();
- static bool present();
 };
 } // namespace net::minecraft::client::gl

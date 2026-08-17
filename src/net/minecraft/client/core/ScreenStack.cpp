@@ -6,6 +6,7 @@
 #include "net/minecraft/client/gui/screen/SleepingChatScreen.hpp"
 #include "net/minecraft/client/gui/screen/TitleScreen.hpp"
 #include "net/minecraft/client/input/InputSystem.hpp"
+#include "net/minecraft/client/platform/glfw/Window.hpp"
 #include "net/minecraft/client/util/UiScale.hpp"
 #include "net/minecraft/entity/player/ClientPlayerEntity.hpp"
 #include "net/minecraft/mod/runtime/LuaDirectHooks.hpp"
@@ -14,7 +15,7 @@ namespace net::minecraft::client::core {
 ScreenStack::ScreenStack(Minecraft& client) noexcept : client_(client) {
 }
 void ScreenStack::lockMouseWithoutClosingScreen() {
- if(!input::InputSystem::instance().acceptsInput()) {
+ if(!platform::glfw::Window::isActive()) {
   return;
  }
  if(client_.focused.load()) {

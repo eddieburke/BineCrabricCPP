@@ -19,9 +19,6 @@
 #include <mutex>
 #include <sstream>
 #include <utility>
-#ifdef _WIN32
-#include <windows.h>
-#endif
 namespace net::minecraft::client::render {
 using PackCatalog::lower;
 unsigned int samplerObject(bool compare, bool linear, bool mipmap) {
@@ -591,11 +588,7 @@ bool normalizeSettingValue(const PackSetting& setting, const std::string& input,
  return true;
 }
 bool hasGlContext() {
-#ifdef _WIN32
- return wglGetCurrentContext() != nullptr;
-#else
- return gl::GLCore::activeTexture != nullptr;
-#endif
+ return glfwGetCurrentContext() != nullptr;
 }
 bool featureSupported(std::string_view feature) {
  // https://shaders.properties/current/reference/shadersproperties/flags/

@@ -23,14 +23,14 @@
 #include "net/minecraft/registry/TextureRegistry.hpp"
 #include "net/minecraft/world/World.hpp"
 #ifdef _WIN32
-#include <gdiplus.h>
 #ifndef NOMINMAX
 #define NOMINMAX
 #endif
 #include <windows.h>
+#include <gdiplus.h>
 #include "net/minecraft/client/resource/ResourceDownloadThread.hpp"
-#include "net/minecraft/client/util/DisplayManager.hpp"
 #endif
+#include "net/minecraft/client/platform/glfw/Window.hpp"
 namespace net::minecraft::client::texture {
 namespace {
 struct TexturePathSpec {
@@ -176,9 +176,7 @@ void TextureManager::ensureMissingTexture() {
  if(missingTextureReady_) {
   return;
  }
-#ifdef _WIN32
- util::DisplayManager::ensureGlContext();
-#endif
+ platform::glfw::Window::ensureGlContext();
  unsigned int id = render::core::genTexture();
  const RasterImage missing = makeMissingImage();
  load(missing, static_cast<int>(id));
@@ -429,9 +427,7 @@ int TextureManager::getTextureId(const std::string& path, const RasterImage& ima
     found != textures_.end() && found->second != missingTextureId_) {
   return found->second;
  }
-#ifdef _WIN32
- util::DisplayManager::ensureGlContext();
-#endif
+ platform::glfw::Window::ensureGlContext();
  const unsigned int id = render::core::genTexture();
  const TexturePathSpec spec = parseTexturePath(path);
  const bool previousBlur = blur;
@@ -550,9 +546,7 @@ void TextureManager::bindTexture(int id) {
  render::core::bindTexture(id);
 }
 int TextureManager::load(const RasterImage& image) {
-#ifdef _WIN32
- util::DisplayManager::ensureGlContext();
-#endif
+ platform::glfw::Window::ensureGlContext();
  unsigned int id = render::core::genTexture();
  load(image, static_cast<int>(id));
  images_[static_cast<int>(id)] = image;

@@ -19,6 +19,10 @@ class TextRenderer;
 namespace net::minecraft::client::gui::widget {
 class TextFieldWidget;
 }
+namespace net::minecraft::client::input {
+struct KeyboardEvent;
+struct MouseEvent;
+}
 namespace net::minecraft::client::gui::screen {
 class Screen;
 using ScreenFactory = std::function<std::unique_ptr<Screen>()>;
@@ -31,10 +35,6 @@ class Screen {
  [[nodiscard]] virtual std::string_view getScreenUiId() const {
   return {};
  }
- /// Factory that rebuilds an equivalent copy of this screen, or null when the screen
- /// cannot be reconstructed from scratch. Screens that a mod can be launched *from*
- /// override this so the mod screen knows where "back" goes, without the mod runtime
- /// having to know any concrete screen type.
  [[nodiscard]] virtual ScreenFactory getReopenFactory() const {
   return nullptr;
  }
@@ -45,8 +45,8 @@ class Screen {
  }
  virtual void render(int mouseX, int mouseY, float tickDelta);
  virtual void tickInput();
- virtual void onMouseEvent();
- virtual void onKeyboardEvent();
+ virtual void onMouseEvent(const input::MouseEvent& event);
+ virtual void onKeyboardEvent(const input::KeyboardEvent& event);
  virtual void keyPressed(char character, int keyCode);
  [[nodiscard]] static bool escapePressed(int keyCode) noexcept {
   return keyCode == input::keys::kEscape;
@@ -64,12 +64,10 @@ class Screen {
   return keyCode == input::keys::kDown;
  }
  [[nodiscard]] static bool pasteChordPressed(int keyCode) noexcept;
- /// Default Escape behavior — closes this screen. Returns true if handled.
  bool closeOnEscape(int keyCode);
  [[nodiscard]] static std::string getClipboard();
  virtual void mouseClicked(int mouseX, int mouseY, int button);
  virtual void mouseReleased(int mouseX, int mouseY, int button);
- /// Mouse wheel notification. delta is the raw wheel value (sign = direction).
  virtual void mouseScrolled(int mouseX, int mouseY, int delta) {
   (void)mouseX;
   (void)mouseY;
@@ -77,7 +75,6 @@ class Screen {
  }
  virtual void removed() {
  }
- /// Named text fields exposed to Lua mods on host (vanilla) screens.
  [[nodiscard]] virtual std::string hostFieldText(std::string_view name) const {
   (void)name;
   return {};

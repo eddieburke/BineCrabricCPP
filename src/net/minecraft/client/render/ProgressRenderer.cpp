@@ -8,10 +8,8 @@
 #include "net/minecraft/client/render/RenderCore.hpp"
 #include "net/minecraft/client/render/RenderType.hpp"
 #include "net/minecraft/client/render/Tessellator.hpp"
+#include "net/minecraft/client/platform/glfw/Window.hpp"
 #include "net/minecraft/client/util/UiScale.hpp"
-#ifdef _WIN32
-#include "net/minecraft/client/util/DisplayManager.hpp"
-#endif
 #include <chrono>
 namespace net::minecraft::client::render {
 namespace {
@@ -92,9 +90,7 @@ void ProgressRenderer::renderLoadingFrame(int percentage) {
   textRenderer.drawWithShadow(
       stage, (scaledWidth - textRenderer.getWidth(stage)) / 2, scaledHeight / 2 - 4 + 8, 0xFFFFFF);
  }
-#ifdef _WIN32
- util::DisplayManager::present();
-#endif
+ platform::glfw::Window::present();
 }
 void ProgressRenderer::progressStagePercentage(int percentage) {
  if(!checkRunningOrAbort()) {

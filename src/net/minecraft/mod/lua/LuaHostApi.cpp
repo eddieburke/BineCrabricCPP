@@ -18,18 +18,22 @@
 #define NOMINMAX
 #endif
 #include <windows.h>
+#else
+#include <dlfcn.h>
 #endif
 namespace net::minecraft::mod::lua {
 namespace {
-#ifdef _WIN32
 template <typename T>
 void bindLuaSymbol(void* module, const char* name, T& out) {
+#ifdef _WIN32
  FARPROC raw = GetProcAddress(static_cast<HMODULE>(module), name);
+#else
+ void* raw = dlsym(module, name);
+#endif
  static_assert(sizeof(raw) == sizeof(out));
  std::memcpy(&out, &raw, sizeof(out));
 }
-#endif
-} // namespace
+}
 int luaUpvalueIndex(int i) {
  return kLuaRegistryIndex - i;
 }
@@ -59,8 +63,21 @@ void loadLuaApi() {
       std::filesystem::path(MINECRAFT_NATIVE_SOURCE_DIR) / "toolchain" / "mingw64" / "bin" / "lua54.dll";
   api.module = LoadLibraryW(bundled.wstring().c_str());
  }
+#else
+#if defined(__APPLE__)
+ static constexpr const char* kLuaLibraries[] = {"liblua.5.4.dylib", "liblua5.4.dylib", "liblua.dylib"};
+#else
+ static constexpr const char* kLuaLibraries[] = {"liblua5.4.so.0", "liblua5.4.so", "liblua-5.4.so"};
+#endif
+ for(const char* library : kLuaLibraries) {
+  api.module = dlopen(library, RTLD_NOW | RTLD_LOCAL);
+  if(api.module != nullptr) {
+   break;
+  }
+ }
+#endif
  if(api.module == nullptr) {
-  runtimeLog("", "error", "lua54.dll not found; Lua mods cannot load");
+  runtimeLog("", "error", "Lua 5.4 shared library not found; Lua mods cannot load");
   return;
  }
  bindLuaSymbol(api.module, "luaL_newstate", api.newstate);
@@ -100,11 +117,8 @@ void loadLuaApi() {
  bindLuaSymbol(api.module, "lua_settable", api.settable);
  bindLuaSymbol(api.module, "lua_rawlen", api.rawlen);
  if(!api.ready()) {
-  runtimeLog("", "error", "lua54.dll is missing required Lua C API symbols");
+  runtimeLog("", "error", "Lua 5.4 shared library is missing required C API symbols");
  }
-#else
- runtimeLog("", "error", "Lua mod loading is not wired for this platform yet");
-#endif
 }
 void runtimeLog(const std::string& modId, const char* level, const std::string& message) {
  std::printf("[lua-mod:%s:%s] %s\n", modId.c_str(), level ? level : "", message.c_str());

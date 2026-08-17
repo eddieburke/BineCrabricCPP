@@ -4,7 +4,7 @@
 #include <string>
 #include <vector>
 #include "net/minecraft/client/Minecraft.hpp"
-#include "net/minecraft/client/input/KeyCodes.hpp"
+#include "net/minecraft/client/input/Keys.hpp"
 #include "net/minecraft/client/option/OptionRegistry.hpp"
 #include "net/minecraft/client/option/RenderSettings.hpp"
 #include "net/minecraft/client/render/world/WorldRenderer.hpp"
@@ -180,12 +180,7 @@ std::string GameOptions::getKeybindKey(int index) const {
  if(index < 0 || index >= kKeybindCount) {
   return "?";
  }
-#ifdef _WIN32
  return client::input::keyDisplayName(allKeys[index]->code);
-#else
- (void)index;
- return "?";
-#endif
 }
 void GameOptions::setKeybindKey(int index, int keyCode) {
  if(index < 0 || index >= kKeybindCount) {

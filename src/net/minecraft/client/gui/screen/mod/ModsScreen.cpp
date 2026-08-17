@@ -3,11 +3,9 @@
 #include "net/minecraft/client/gui/layout/ScreenLayout.hpp"
 #include "net/minecraft/client/gui/screen/TitleScreen.hpp"
 #include "net/minecraft/client/gui/screen/pack/PackScreen.hpp"
+#include "net/minecraft/client/platform/Browser.hpp"
 #include "net/minecraft/client/render/Tessellator.hpp"
 #include "net/minecraft/client/resource/language/I18n.hpp"
-#ifdef _WIN32
-#include <shellapi.h>
-#endif
 namespace net::minecraft::client::gui::screen::mod {
 namespace {
 std::string sourceLabel(const net::minecraft::mod::runtime::ModPackage& mod) {
@@ -43,7 +41,7 @@ std::string detailLine(const net::minecraft::mod::runtime::ModPackage& mod) {
  }
  return text;
 }
-} // namespace
+}
 class ModsScreen::ModListWidget : public widget::EntryListWidget {
  public:
  ModListWidget(ModsScreen& owner, Minecraft& minecraft, int width, int height)
@@ -54,7 +52,7 @@ class ModsScreen::ModListWidget : public widget::EntryListWidget {
  [[nodiscard]] int getEntryCount() const override {
   return static_cast<int>(owner_.mods_.size());
  }
- void entryClicked(int index, bool /*doubleClick*/) override {
+ void entryClicked(int index, bool) override {
   if(index < 0 || index >= static_cast<int>(owner_.mods_.size())) {
    return;
   }
@@ -167,9 +165,6 @@ void ModsScreen::toggleSelected() {
   net::minecraft::mod::runtime::ModPackage& mod = mods_[static_cast<std::size_t>(selectedIndex_)];
   const bool nowEnabled = !mod.configuredEnabled;
   mod.configuredEnabled = nowEnabled;
-  // setEnabled applies immediately: the Lua script is loaded or torn down live,
-  // no restart required. Content the mod registered earlier persists by design
-  // (the world is never mutated by a toggle).
   net::minecraft::mod::runtime::host().setEnabled(mod.id, nowEnabled);
   mods_ = net::minecraft::mod::runtime::host().packageMods();
   footerText_ = nowEnabled ? "Enabled now." : "Disabled now.";
@@ -189,11 +184,7 @@ void ModsScreen::updateToggleButton() {
  toggleButton_->text = mod.configuredEnabled ? "Disable" : "Enable";
 }
 void ModsScreen::openModsFolder() {
-#ifdef _WIN32
- if(!modsDir_.empty()) {
-  ShellExecuteW(nullptr, L"open", modsDir_.wstring().c_str(), nullptr, nullptr, SW_SHOWNORMAL);
- }
-#endif
+ (void)platform::openPath(modsDir_);
 }
 void ModsScreen::openTexturePacks() {
  screen::ScreenFactory returnToMods = [parentFactory = parentFactory_] {
@@ -201,4 +192,4 @@ void ModsScreen::openTexturePacks() {
  };
  navigateTo(std::make_unique<pack::PackScreen>(returnToMods));
 }
-} // namespace net::minecraft::client::gui::screen::mod
+}

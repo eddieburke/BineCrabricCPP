@@ -41,17 +41,6 @@ struct ClientTickEvent {
  bool before = true;
  bool afterWorld = false;
 };
-struct KeyPressEvent {
- int key = 0;
- bool pressed = false;
- bool repeat = false;
- bool handled = false;
-};
-struct MouseButtonEvent {
- int button = 0;
- bool pressed = false;
- bool handled = false;
-};
 struct ScreenGuiEvent {
  client::gui::screen::Screen* screen = nullptr;
  bool tickPhase = true;

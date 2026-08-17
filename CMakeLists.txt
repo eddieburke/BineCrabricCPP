@@ -12,21 +12,24 @@ include(FetchContent)
 
 if (WIN32)
     enable_language(RC)
-    set(GLFW_BUILD_DOCS OFF CACHE BOOL "" FORCE)
-    set(GLFW_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
-    set(GLFW_BUILD_TESTS OFF CACHE BOOL "" FORCE)
-    set(GLFW_INSTALL OFF CACHE BOOL "" FORCE)
-    find_package(glfw3 CONFIG QUIET)
-    if (NOT glfw3_FOUND)
-        FetchContent_Declare(
-            glfw
-            URL https://github.com/glfw/glfw/archive/refs/tags/3.4.zip
-            URL_HASH SHA256=a133ddc3d3c66143eba9035621db8e0bcf34dba1ee9514a9e23e96afd39fd57a
-            TLS_VERIFY OFF
-            DOWNLOAD_EXTRACT_TIMESTAMP TRUE
-        )
-        FetchContent_MakeAvailable(glfw)
-    endif()
+endif()
+set(GLFW_BUILD_DOCS OFF CACHE BOOL "" FORCE)
+set(GLFW_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
+set(GLFW_BUILD_TESTS OFF CACHE BOOL "" FORCE)
+set(GLFW_INSTALL OFF CACHE BOOL "" FORCE)
+find_package(glfw3 CONFIG QUIET)
+if (NOT glfw3_FOUND)
+    FetchContent_Declare(
+        glfw
+        URL https://github.com/glfw/glfw/archive/refs/tags/3.4.zip
+        URL_HASH SHA256=a133ddc3d3c66143eba9035621db8e0bcf34dba1ee9514a9e23e96afd39fd57a
+        TLS_VERIFY OFF
+        DOWNLOAD_EXTRACT_TIMESTAMP TRUE
+    )
+    FetchContent_MakeAvailable(glfw)
+endif()
+if (NOT WIN32)
+    find_package(OpenGL REQUIRED)
 endif()
 
 if (NOT DEFINED MINECRAFT_TOOLCHAIN_ROOT)
@@ -218,10 +221,6 @@ function(minecraft_link_zlib target)
     endif()
 endfunction()
 
-function(minecraft_copy_lua_runtime target)
-    # Static runtime linking enabled
-endfunction()
-
 set(MINECRAFT_MINGW_SYSROOT_LIB "${MINECRAFT_TOOLCHAIN_ROOT}/x86_64-w64-mingw32/lib")
 find_library(MINECRAFT_OGG NAMES libogg.a ogg PATHS "${MINECRAFT_TOOLCHAIN_ROOT}/lib" NO_DEFAULT_PATH)
 find_library(MINECRAFT_VORBIS NAMES libvorbis.a vorbis PATHS "${MINECRAFT_TOOLCHAIN_ROOT}/lib" NO_DEFAULT_PATH)
@@ -253,16 +252,9 @@ function(minecraft_link_audio target)
 endfunction()
 
 function(minecraft_link_display target)
-    if (WIN32)
-        target_compile_definitions(${target} PRIVATE MINECRAFT_USE_GLFW=1)
-        target_link_libraries(${target} PRIVATE glfw)
-    endif()
-endfunction()
-
-function(minecraft_enable_glfw_compile target)
-    if (WIN32)
-        target_compile_definitions(${target} PRIVATE MINECRAFT_USE_GLFW=1)
-        target_link_libraries(${target} PRIVATE glfw)
+    target_link_libraries(${target} PRIVATE glfw)
+    if (NOT WIN32)
+        target_link_libraries(${target} PRIVATE OpenGL::GL)
     endif()
 endfunction()
 
@@ -270,6 +262,8 @@ function(minecraft_link_platform target)
     if (WIN32)
         target_link_libraries(${target} PRIVATE ws2_32 winhttp crypt32 shell32 dbghelp)
         target_link_options(${target} PRIVATE -static -static-libgcc -static-libstdc++)
+    else()
+        target_link_libraries(${target} PRIVATE ${CMAKE_DL_LIBS})
     endif()
 endfunction()
 
@@ -289,17 +283,6 @@ function(minecraft_link_core_whole target)
     endif()
 endfunction()
 
-function(minecraft_link_core_client target)
-    minecraft_link_core(${target})
-    minecraft_link_zlib(${target})
-    minecraft_link_audio(${target})
-    minecraft_link_display(${target})
-    minecraft_link_platform(${target})
-    if (WIN32)
-        target_link_libraries(${target} PRIVATE opengl32 glu32)
-    endif()
-endfunction()
-
 function(minecraft_link_server target)
     minecraft_link_core_whole(${target})
     if (CMAKE_CXX_COMPILER_ID STREQUAL "GNU" OR CMAKE_CXX_COMPILER_ID MATCHES "Clang")
@@ -309,7 +292,6 @@ function(minecraft_link_server target)
     endif()
     minecraft_link_zlib(${target})
     minecraft_link_platform(${target})
-    minecraft_copy_lua_runtime(${target})
     if (WIN32)
         target_link_libraries(${target} PRIVATE comctl32 gdi32 user32 gdiplus)
     endif()
@@ -334,10 +316,8 @@ if(MINECRAFT_HAS_VORBIS)
     target_compile_definitions(minecraft_client PRIVATE MINECRAFT_HAS_VORBIS=1)
 endif()
 
-if (WIN32)
-    target_compile_definitions(minecraft_client PRIVATE MINECRAFT_NATIVE_EXPORTS=1)
-    minecraft_enable_glfw_compile(minecraft_client)
-endif()
+target_compile_definitions(minecraft_client PRIVATE MINECRAFT_NATIVE_EXPORTS=1)
+minecraft_link_display(minecraft_client)
 
 add_library(minecraft_server_mod OBJECT ${MINECRAFT_SERVER_MOD_SOURCES})
 minecraft_configure_target(minecraft_server_mod)
@@ -360,17 +340,16 @@ minecraft_configure_target(minecraft_native)
 minecraft_link_zlib(minecraft_native)
 minecraft_link_audio(minecraft_native)
 minecraft_link_display(minecraft_native)
+target_compile_definitions(minecraft_native PRIVATE MINECRAFT_NATIVE_EXPORTS=1)
+minecraft_link_platform(minecraft_native)
 if (WIN32)
-    target_compile_definitions(minecraft_native PRIVATE MINECRAFT_NATIVE_EXPORTS=1)
-    target_link_libraries(minecraft_native PRIVATE comdlg32 gdiplus gdi32 user32 opengl32 glu32 winmm)
-    minecraft_link_platform(minecraft_native)
+    target_link_libraries(minecraft_native PRIVATE comdlg32 gdiplus gdi32 user32 opengl32 winmm)
     # Debug builds keep the console subsystem so stdout/stderr logging and
     # ClientDiagnostics::ensureConsole() are visible. Release/RelWithDebInfo link as a
     # Windows-subsystem app (no console window on launch) to match ensureConsole()'s
     # #ifndef NDEBUG guard in ClientDiagnostics.cpp.
     target_link_options(minecraft_native PRIVATE $<$<NOT:$<CONFIG:Debug>>:-mwindows>)
 endif()
-minecraft_copy_lua_runtime(minecraft_native)
 
 add_executable(minecraft_server
     src/server-main.cpp
@@ -418,7 +397,7 @@ minecraft_link_server(minecraft_omega_tests)
 minecraft_link_audio(minecraft_omega_tests)
 minecraft_link_display(minecraft_omega_tests)
 if (WIN32)
-    target_link_libraries(minecraft_omega_tests PRIVATE opengl32 glu32)
+    target_link_libraries(minecraft_omega_tests PRIVATE opengl32)
 endif()
 target_link_libraries(minecraft_omega_tests PRIVATE GTest::gtest)
 
@@ -432,15 +411,15 @@ include(GoogleTest)
 # tight one.
 gtest_discover_tests(minecraft_omega_tests PROPERTIES TIMEOUT 300)
 
-add_executable(minecraft_installer src/installer/installer.cpp)
-set_target_properties(minecraft_installer PROPERTIES OUTPUT_NAME "setup")
-minecraft_configure_target(minecraft_installer)
-minecraft_link_platform(minecraft_installer)
-target_link_libraries(minecraft_installer PRIVATE comctl32 comdlg32 urlmon ws2_32)
 if (WIN32)
+    add_executable(minecraft_installer src/installer/installer.cpp)
+    set_target_properties(minecraft_installer PROPERTIES OUTPUT_NAME "setup")
+    minecraft_configure_target(minecraft_installer)
+    minecraft_link_platform(minecraft_installer)
+    target_link_libraries(minecraft_installer PRIVATE comctl32 comdlg32 urlmon ws2_32)
     target_link_options(minecraft_installer PRIVATE -mwindows)
+    add_custom_command(TARGET minecraft_installer POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy_directory
+            "${CMAKE_CURRENT_SOURCE_DIR}/resources"
+            "$<TARGET_FILE_DIR:minecraft_installer>/resources")
 endif()
-add_custom_command(TARGET minecraft_installer POST_BUILD
-    COMMAND ${CMAKE_COMMAND} -E copy_directory
-        "${CMAKE_CURRENT_SOURCE_DIR}/resources"
-        "$<TARGET_FILE_DIR:minecraft_installer>/resources")

@@ -125,13 +125,7 @@ void submitQuad(ShaderProgram* program) {
   core::submit(pass);
 }
 void* loadGlProc(const char* name) {
- PROC proc = wglGetProcAddress(name);
- if(proc == nullptr || proc == reinterpret_cast<PROC>(1) || proc == reinterpret_cast<PROC>(2) ||
-    proc == reinterpret_cast<PROC>(3) || proc == reinterpret_cast<PROC>(-1)) {
-  HMODULE module = GetModuleHandleA("opengl32.dll");
-  return module != nullptr ? reinterpret_cast<void*>(GetProcAddress(module, name)) : nullptr;
- }
- return reinterpret_cast<void*>(proc);
+ return reinterpret_cast<void*>(glfwGetProcAddress(name));
 }
 using PFN_GetUniformiv = void(APIENTRY*)(GLuint, GLint, GLint*);
 using PFN_GetUniformfv = void(APIENTRY*)(GLuint, GLint, GLfloat*);

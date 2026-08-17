@@ -1,14 +1,6 @@
 #pragma once
 #include <cstdint>
-#if !defined(_WIN32)
-#error "OpenGL rendering requires Windows"
-#endif
-#define MINECRAFT_GL_REAL 1
-#ifndef NOMINMAX
-#define NOMINMAX
-#endif
-#include <windows.h>
-#include <GL/gl.h>
+#include <GLFW/glfw3.h>
 #undef GL_QUADS
 #undef GL_TRIANGLES
 #undef GL_LINES

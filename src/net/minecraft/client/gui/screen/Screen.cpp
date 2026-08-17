@@ -13,6 +13,7 @@
 #include "net/minecraft/client/gui/widget/TextFieldWidget.hpp"
 #include "net/minecraft/client/input/InputSystem.hpp"
 #include "net/minecraft/client/input/Keys.hpp"
+#include "net/minecraft/client/platform/glfw/Window.hpp"
 #include "net/minecraft/client/render/RenderCore.hpp"
 #include "net/minecraft/client/render/RenderType.hpp"
 #include "net/minecraft/client/render/Tessellator.hpp"
@@ -20,12 +21,6 @@
 #include "net/minecraft/client/util/UiScale.hpp"
 #include "net/minecraft/mod/ScreenUi.hpp"
 #include "net/minecraft/mod/runtime/LuaDirectHooks.hpp"
-#ifdef _WIN32
-#ifndef NOMINMAX
-#define NOMINMAX
-#endif
-#include <windows.h>
-#endif
 namespace net::minecraft::client::gui::screen {
 namespace core = net::minecraft::client::render::core;
 void Screen::init(client::Minecraft* minecraft, int width, int height) {
@@ -36,9 +31,6 @@ void Screen::init(client::Minecraft* minecraft, int width, int height) {
  selectedButton_ = nullptr;
  buttons_.clear();
  init();
- // Generic seam: every screen offers mods a slot once its own widgets exist.
- // Buttons stack from just below the title; screen-specific regions (e.g. the
- // create-world footer) are published separately by those screens.
  int genericButtonY = 6;
  publishScreenUi(mod::screen_regions::kScreen, &genericButtonY);
 }
@@ -46,8 +38,6 @@ void Screen::publishScreenUi(std::string_view region,
                              int* stackedButtonY,
                              std::vector<widget::ActionButtonWidget*>* stackedButtons) {
  std::string_view screenId = getScreenUiId();
- // Screens that don't declare a friendly id still get one (their typeid name),
- // so mods can address any GUI; friendly ids stay stable for first-party hooks.
  if(screenId.empty()) {
   screenId = typeid(*this).name();
  }
@@ -73,53 +63,46 @@ void Screen::render(int mouseX, int mouseY, float tickDelta) {
 void Screen::tickInput() {
  input::InputSystem::instance().drainScreenEvents(*this);
 }
-void Screen::onMouseEvent() {
+void Screen::onMouseEvent(const input::MouseEvent& event) {
  if(minecraft_ == nullptr) {
   return;
  }
- input::InputSystem& input = input::InputSystem::instance();
  const int dw = minecraft_->displayWidth;
  const int dh = minecraft_->displayHeight;
  if(dw <= 0 || dh <= 0) {
   return;
  }
- const int wheel = input.eventMouseWheel();
+ const int wheel = event.wheel;
  if(wheel != 0) {
   const auto [wheelX, wheelY] =
-      util::mapScreenMouse(dw, dh, width_, height_, input.eventMouseX(), input.eventMouseY());
+      util::mapScreenMouse(dw, dh, width_, height_, event.x, event.y);
   mouseScrolled(wheelX, wheelY, wheel);
   return;
  }
- const int button = input.eventMouseButton();
+ const int button = event.button;
  if(button < 0) {
   return;
  }
  const auto [mouseX, mouseY] =
-     util::mapScreenMouse(dw, dh, width_, height_, input.eventMouseX(), input.eventMouseY());
- if(input.eventMouseButtonDown()) {
+     util::mapScreenMouse(dw, dh, width_, height_, event.x, event.y);
+ if(event.down) {
   mouseClicked(mouseX, mouseY, button);
  } else {
   mouseReleased(mouseX, mouseY, button);
  }
 }
-void Screen::onKeyboardEvent() {
- input::InputSystem& input = input::InputSystem::instance();
- if(!input.eventKeyDown()) {
+void Screen::onKeyboardEvent(const input::KeyboardEvent& event) {
+ if(!event.down) {
   return;
  }
- if(input.eventKey() == input::keys::kF11 && minecraft_ != nullptr) {
+ if(event.key == input::keys::kF11 && minecraft_ != nullptr) {
   minecraft_->toggleFullscreen();
   return;
  }
- keyPressed(input.eventChar(), input.eventKey());
+ keyPressed(event.character, event.key);
 }
 bool Screen::pasteChordPressed(int keyCode) noexcept {
-#ifdef _WIN32
  return keyCode == input::keys::kV && input::InputSystem::instance().modifiers().ctrl;
-#else
- (void)keyCode;
- return false;
-#endif
 }
 bool Screen::closeOnEscape(int keyCode) {
  if(!escapePressed(keyCode) || minecraft_ == nullptr) {
@@ -297,32 +280,6 @@ void Screen::confirmed(bool confirmed, int id) {
 void Screen::handleTab() {
 }
 std::string Screen::getClipboard() {
-#ifdef _WIN32
- if(!OpenClipboard(nullptr)) {
-  return {};
- }
- HANDLE data = GetClipboardData(CF_UNICODETEXT);
- if(data == nullptr) {
-  CloseClipboard();
-  return {};
- }
- const auto* wide = static_cast<const wchar_t*>(GlobalLock(data));
- if(wide == nullptr) {
-  CloseClipboard();
-  return {};
- }
- std::string result;
- for(const wchar_t* p = wide; *p != L'\0'; ++p) {
-  const wchar_t ch = *p;
-  if(ch <= 0x7F) {
-   result.push_back(static_cast<char>(ch));
-  }
- }
- GlobalUnlock(data);
- CloseClipboard();
- return result;
-#else
- return {};
-#endif
+ return platform::glfw::Window::clipboardString();
 }
 } // namespace net::minecraft::client::gui::screen

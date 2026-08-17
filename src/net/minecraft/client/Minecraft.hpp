@@ -1,5 +1,4 @@
 #pragma once
-#include "net/minecraft/client/gl/GlConstants.hpp"
 // Faithful port of net.minecraft.client.Minecraft (beta 1.7.3 MCP).
 #include <array>
 #include <atomic>
@@ -44,7 +43,6 @@ namespace net::minecraft {
 class World;
 class WorldStorage;
 class WorldStorageSource;
-class MinecraftApplet;
 } // namespace net::minecraft
 namespace net::minecraft::entity::player {
 class ClientPlayerEntity;
@@ -73,9 +71,6 @@ class WorldSoundListener;
 namespace net::minecraft::client::session {
 class SessionValidator;
 }
-namespace net::minecraft::client::util {
-class DisplayManager;
-} // namespace net::minecraft::client::util
 namespace net::minecraft::client::input {
 class InputSystem;
 }
@@ -85,8 +80,7 @@ class Minecraft {
  inline static std::vector<std::byte> MEMORY_RESERVED_FOR_CRASH = std::vector<std::byte>(0xA00000);
  inline static Minecraft* INSTANCE = nullptr;
  [[nodiscard]] static std::atomic<std::int64_t>& failedSessionCheckTime() noexcept;
- Minecraft(
-     void* component, void* canvas, net::minecraft::MinecraftApplet* applet, int width, int height, bool fullscreen);
+ Minecraft(int width, int height, bool fullscreen);
  virtual ~Minecraft();
  void gameCrashed(const net::minecraft::util::crash::CrashReport& crashReport);
  virtual void handleCrash(const net::minecraft::util::crash::CrashReport& crashReport) = 0;
@@ -183,8 +177,6 @@ class Minecraft {
  particle::ParticleManager particleManager{};
  util::Session session{};
  std::string hostAddress;
- void* canvas = nullptr;
- bool isApplet = true;
  std::atomic<bool> paused{false};
  option::GameOptions options{};
  texture::TextureManager textureManager{&options};
@@ -197,7 +189,6 @@ class Minecraft {
  bool skipGameRender = false;
  render::entity::model::BipedEntityModel bipedModel{0.0f};
  std::optional<HitResult> crosshairTarget;
- net::minecraft::MinecraftApplet* applet = nullptr;
  platform::audio::AudioEngine audio{};
  resource::pack::TexturePacks* texturePacks = nullptr;
  std::string debugText;
@@ -228,7 +219,6 @@ class Minecraft {
  friend class core::WorldSession;
  friend class core::ScreenStack;
  friend class input::InputSystem;
- friend class util::DisplayManager;
  int attackCooldown = 0;
  int initWidth = 0;
  int initHeight = 0;

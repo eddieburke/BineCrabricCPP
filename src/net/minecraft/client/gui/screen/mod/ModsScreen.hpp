@@ -32,4 +32,4 @@ class ModsScreen : public screen::Screen {
  int selectedIndex_ = -1;
  std::string footerText_;
 };
-} // namespace net::minecraft::client::gui::screen::mod
+}

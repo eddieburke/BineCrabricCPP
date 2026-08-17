@@ -12,7 +12,6 @@
 #include "net/minecraft/achievement/Achievements.hpp"
 #include "net/minecraft/block/Block.hpp"
 #include "net/minecraft/client/ClientLog.hpp"
-#include "net/minecraft/client/MinecraftApplet.hpp"
 #include "net/minecraft/client/Screenshot.hpp"
 #include "net/minecraft/client/SingleplayerInteractionManager.hpp"
 #include "net/minecraft/client/auth/microsoft/PlayerTextures.hpp"
@@ -33,6 +32,8 @@
 #include "net/minecraft/client/gui/screen/TitleScreen.hpp"
 #include "net/minecraft/client/gui/screen/world/WorldSaveConflictScreen.hpp"
 #include "net/minecraft/client/host/ServerProcessCoordinator.hpp"
+#include "net/minecraft/client/gl/GLCore.hpp"
+#include "net/minecraft/client/gl/GlConstants.hpp"
 #include "net/minecraft/client/input/InputSystem.hpp"
 #include "net/minecraft/client/input/Keys.hpp"
 #include "net/minecraft/client/multiplayer/ClientNetworkBridge.hpp"
@@ -40,6 +41,7 @@
 #include "net/minecraft/client/multiplayer/ClientNetworkHandler.hpp"
 #include "net/minecraft/client/option/OptionRegistry.hpp"
 #include "net/minecraft/client/option/RenderSettings.hpp"
+#include "net/minecraft/client/platform/glfw/Window.hpp"
 #include "net/minecraft/client/render/GameRenderer.hpp"
 #include "net/minecraft/client/render/camera/GuiProjection.hpp"
 #include "net/minecraft/client/render/ProgressRenderer.hpp"
@@ -189,12 +191,12 @@ void renderBootstrapLoadingScreen(Minecraft& client) {
  // Color clear — depth-only left the default FB undefined/black when draws failed.
  render::core::clearColor(0.0f, 0.0f, 0.0f, 1.0f);
  render::core::clear(gl::attrib::ColorBufferBit);
- util::DisplayManager::logGlError(client, "Startup clear");
+ util::DisplayManager::logGlError("Startup clear");
  {
   render::RenderPassScope scope(render::RenderType::guiTextured());
-  util::DisplayManager::logGlError(client, "Startup gui program");
+  util::DisplayManager::logGlError("Startup gui program");
   client.textureManager.bindTexture(client.textureManager.getTextureId("/title/mojang.png"));
-  util::DisplayManager::logGlError(client, "Startup gui texture");
+  util::DisplayManager::logGlError("Startup gui texture");
   render::core::setConstColor(1.0f, 1.0f, 1.0f, 1.0f);
   render::Tessellator& tessellator = render::Tessellator::INSTANCE;
   tessellator.startQuads();
@@ -208,18 +210,14 @@ void renderBootstrapLoadingScreen(Minecraft& client) {
   gui::draw::appendAtlasQuad(
       tessellator, (scale.scaledWidth - logoW) / 2, (scale.scaledHeight - logoH) / 2, 0, 0, logoW, logoH, 0.0f);
   tessellator.draw();
-  util::DisplayManager::logGlError(client, "Startup gui draw");
+  util::DisplayManager::logGlError("Startup gui draw");
  }
-#ifdef _WIN32
- util::DisplayManager::present();
- util::DisplayManager::logGlError(client, "Startup present");
-#endif
+ platform::glfw::Window::present();
+ util::DisplayManager::logGlError("Startup present");
 }
 class RunnableMinecraft final : public Minecraft {
  public:
- RunnableMinecraft(
-     void* component, void* canvas, net::minecraft::MinecraftApplet* applet, int width, int height, bool fullscreen)
-     : Minecraft(component, canvas, applet, width, height, fullscreen) {
+ RunnableMinecraft(int width, int height, bool fullscreen) : Minecraft(width, height, fullscreen) {
  }
  void handleCrash(const net::minecraft::util::crash::CrashReport& crashReport) override {
   const std::string reportText = formatCrashReport(crashReport);
@@ -230,23 +228,8 @@ class RunnableMinecraft final : public Minecraft {
  }
 };
 } // namespace
-Minecraft::Minecraft(void* component,
-                     void* canvasIn,
-                     net::minecraft::MinecraftApplet* appletIn,
-                     int width,
-                     int height,
-                     bool fullscreenIn)
-    : fullscreen(fullscreenIn),
-      displayWidth(width),
-      displayHeight(height),
-      canvas(canvasIn),
-      applet(appletIn),
-      initWidth(width),
-      initHeight(height) {
- (void)component;
- if(applet == nullptr) {
-  isApplet = false;
- }
+Minecraft::Minecraft(int width, int height, bool fullscreenIn)
+    : fullscreen(fullscreenIn), displayWidth(width), displayHeight(height), initWidth(width), initHeight(height) {
  INSTANCE = this;
  serverProcessCoordinator_ = std::make_unique<host::ServerProcessCoordinator>(this);
 }
@@ -337,16 +320,13 @@ void Minecraft::bootstrapAfterDisplay() {
  statsStorage_ = std::make_unique<stat::PlayerStats>(session, runDirectory_);
  stats = statsStorage_.get();
  diagnostics::setStartupPhase("init: loading screen");
- util::DisplayManager::logGlError(*this, "Pre startup");
+ util::DisplayManager::logGlError("Pre startup");
  render::core::clearDepth(1.0);
  {
-  util::DisplayManager::logGlError(*this, "Startup");
+  util::DisplayManager::logGlError("Startup");
   renderBootstrapLoadingScreen(*this);
  }
-#ifdef _WIN32
- input::InputSystem::init(util::DisplayManager::hwnd());
-#endif
- util::DisplayManager::logGlError(*this, "Post startup");
+ util::DisplayManager::logGlError("Post startup");
  if(!headlessMode_) {
   audio.start(&options);
  }
@@ -404,9 +384,6 @@ void Minecraft::stop() {
 #ifdef _WIN32
  diagnostics::disarmHangWatchdog();
 #endif
- if(applet != nullptr) {
-  applet->clearMemory();
- }
  if(resourceDownloadThread != nullptr) {
   resourceDownloadThread->cancel();
  }
@@ -447,15 +424,13 @@ void Minecraft::stop() {
        return true;
       },
       std::chrono::seconds(3)});
-#ifdef _WIN32
  lifecycle.registerOwner(
      "input",
      {{}, {}, [](std::chrono::steady_clock::time_point) {
-       input::InputSystem::shutdown();
+       input::InputSystem::instance().clearOnDeactivate();
        return true;
       },
       std::chrono::seconds(2)});
-#endif
  lifecycle.registerOwner(
      "worker-domains",
      {{}, {}, [](std::chrono::steady_clock::time_point) {
@@ -464,9 +439,7 @@ void Minecraft::stop() {
       },
       std::chrono::seconds(5)});
  lifecycle.shutdown();
-#ifdef _WIN32
- util::DisplayManager::destroy();
-#endif
+ platform::glfw::Window::destroy();
  ClientLog::shutdown();
  if(!crashed) {
   std::_Exit(0);
@@ -499,7 +472,7 @@ void Minecraft::scheduleStop() {
  running = false;
 }
 void Minecraft::lockMouse() {
- if(!input::InputSystem::instance().acceptsInput()) {
+ if(!platform::glfw::Window::isActive()) {
   return;
  }
  if(focused.load()) {
@@ -609,7 +582,7 @@ void Minecraft::toggleFullscreen() {
  util::DisplayManager::toggleFullscreen(*this);
 }
 void Minecraft::scheduleScreenResize() {
- util::DisplayManager::scheduleScreenResize(*this);
+ pendingScreenResize_ = true;
 }
 void Minecraft::resize(int width, int height) {
  util::DisplayManager::resize(*this, width, height);
@@ -763,10 +736,8 @@ void Minecraft::runRenderPhase() {
    }
    world->doLightingUpdates(128, kLightingUpdateBudgetNs);
   }
-#ifdef _WIN32
- util::DisplayManager::setSwapPacing(
+ gl::GLCore::setSwapPacing(
      headlessMode_ ? gl::SwapPacing::Unlimited : util::swapPacingFromOptions(options.fpsLimit, options.smoothFps));
-#endif
  if(player != nullptr && player->isInsideWall()) {
   options.thirdPerson = false;
  }
@@ -793,14 +764,12 @@ void Minecraft::runPacePhase() {
  if(headlessMode_) {
   return;
  }
-#ifdef _WIN32
- if(!util::DisplayManager::isActive()) {
+ if(!platform::glfw::Window::isActive()) {
   if(fullscreen) {
    toggleFullscreen();
   }
   std::this_thread::sleep_for(std::chrono::milliseconds(10));
  }
-#endif
 }
 void Minecraft::runDiagnosticsPhase(std::int64_t tickDuration, int& frames, std::int64_t& fpsWindowStart) {
  if(options.debugHud) {
@@ -846,8 +815,8 @@ void Minecraft::run() {
      VT_TRACE_EVENT(util::FramePipeline::phaseName(phase));
      switch(phase) {
      case util::FramePipeline::Phase::Drain:
+      platform::glfw::Window::pumpMessages();
 #ifdef _WIN32
-      util::DisplayManager::pumpMessages();
       diagnostics::pingMainLoopHeartbeat();
 #endif
       screenStack_.flushRetired();
@@ -858,14 +827,9 @@ void Minecraft::run() {
         multiplayerSession_.retireBridge();
        }
       }
-      if(applet != nullptr && !applet->isActive()) {
-       continueFrame = false;
-      }
-#ifdef _WIN32
-      if(canvas == nullptr && util::DisplayManager::isCloseRequested()) {
+      if(platform::glfw::Window::isCloseRequested()) {
        scheduleStop();
       }
-#endif
       break;
      case util::FramePipeline::Phase::Input: {
       mod::TickRateEvent tickRateEvent{timer.tps, timer.tpsScale};
@@ -899,9 +863,7 @@ void Minecraft::run() {
       runRenderPhase();
       break;
      case util::FramePipeline::Phase::Present:
-#ifdef _WIN32
-      util::DisplayManager::present();
-#endif
+      platform::glfw::Window::present();
       break;
      case util::FramePipeline::Phase::Pace:
       runPacePhase();
@@ -1201,8 +1163,7 @@ void Minecraft::startAndConnect(const std::string& username,
                                 const std::string& sessionId,
                                 const std::string* server,
                                 const StartupOptions& startupOptions) {
- auto client = std::make_unique<RunnableMinecraft>(
-     nullptr, nullptr, nullptr, startupOptions.width, startupOptions.height, false);
+ auto client = std::make_unique<RunnableMinecraft>(startupOptions.width, startupOptions.height, false);
  client->hostAddress = "www.minecraft.net";
  if(!username.empty() && !sessionId.empty()) {
   client->session = util::Session(username, sessionId);
