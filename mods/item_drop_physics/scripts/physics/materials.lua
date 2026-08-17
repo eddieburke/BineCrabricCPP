@@ -12,16 +12,16 @@ local M = {}
 -- restitution: bounciness, 0..1.
 -- drag:        per-tick velocity retention in air.
 local CLASSES = {
-  stone   = { density = 2.60, friction = 0.72, restitution = 0.18, drag = 0.985 },
-  metal   = { density = 4.50, friction = 0.55, restitution = 0.30, drag = 0.990 },
-  glass   = { density = 2.40, friction = 0.40, restitution = 0.35, drag = 0.985 },
+  stone   = { density = 2.60, friction = 0.72, restitution = 0.26, drag = 0.988 },
+  metal   = { density = 4.50, friction = 0.50, restitution = 0.42, drag = 0.992 },
+  glass   = { density = 2.40, friction = 0.36, restitution = 0.48, drag = 0.988 },
   sand    = { density = 1.60, friction = 0.85, restitution = 0.05, drag = 0.975 },
   soil    = { density = 1.45, friction = 0.78, restitution = 0.10, drag = 0.980 },
-  food    = { density = 1.00, friction = 0.70, restitution = 0.12, drag = 0.975 },
-  wood    = { density = 0.65, friction = 0.62, restitution = 0.28, drag = 0.980 },
+  food    = { density = 1.00, friction = 0.66, restitution = 0.18, drag = 0.978 },
+  wood    = { density = 0.65, friction = 0.58, restitution = 0.34, drag = 0.985 },
   plant   = { density = 0.55, friction = 0.70, restitution = 0.08, drag = 0.960 },
   cloth   = { density = 0.30, friction = 0.80, restitution = 0.05, drag = 0.955 },
-  generic = { density = 1.10, friction = 0.60, restitution = 0.25, drag = 0.980 },
+  generic = { density = 1.10, friction = 0.56, restitution = 0.32, drag = 0.985 },
 }
 
 M.CLASSES = CLASSES
