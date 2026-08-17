@@ -180,7 +180,7 @@ int WorldRenderer::renderChunkLayer(int layer, bool replay, bool drawModMeshes) 
   terrainRegionDrawLayer_ = layer;
   const auto& visible = chunkSections_.visibleSections();
   const auto visit = [&](chunk::ChunkBuilder* chunk) {
-   if(chunk == nullptr) {
+   if(chunk == nullptr || (!core::cameraFrame().shadowPass && !chunk->inFrustum)) {
     return;
    }
    const chunk::TerrainAllocation& allocation = chunk->terrainAllocation(layer);
