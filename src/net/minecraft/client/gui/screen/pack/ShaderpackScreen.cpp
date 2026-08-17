@@ -4,6 +4,7 @@
 #include <cstdlib>
 #include <functional>
 #include <iomanip>
+#include <limits>
 #include <sstream>
 #include <utility>
 #include "net/minecraft/client/Minecraft.hpp"
@@ -97,6 +98,23 @@ class ShaderSliderWidget : public widget::ButtonWidget {
  Format format_;
 };
 float sliderPosition(const PackSetting& setting, const std::string& rawValue) {
+ if(!setting.valueOrder.empty()) {
+  const auto exact = std::find(setting.valueOrder.begin(), setting.valueOrder.end(), rawValue);
+  std::size_t index = exact == setting.valueOrder.end() ? 0u : static_cast<std::size_t>(exact - setting.valueOrder.begin());
+  if(exact == setting.valueOrder.end()) {
+   const double current = std::strtod(rawValue.c_str(), nullptr);
+   double closest = std::numeric_limits<double>::max();
+   for(std::size_t i = 0; i < setting.valueOrder.size(); ++i) {
+    const double distance = std::abs(std::strtod(setting.valueOrder[i].c_str(), nullptr) - current);
+    if(distance < closest) {
+     closest = distance;
+     index = i;
+    }
+   }
+  }
+  if(setting.valueOrder.size() == 1) return 0.0f;
+  return static_cast<float>(index) / static_cast<float>(setting.valueOrder.size() - 1);
+ }
  const double range = setting.maximum - setting.minimum;
  if(range <= 0.0) {
   return 0.0f;
@@ -105,6 +123,12 @@ float sliderPosition(const PackSetting& setting, const std::string& rawValue) {
  return static_cast<float>(std::clamp((current - setting.minimum) / range, 0.0, 1.0));
 }
 std::string sliderValue(const PackSetting& setting, float position) {
+ if(!setting.valueOrder.empty()) {
+  const std::size_t last = setting.valueOrder.size() - 1;
+  const std::size_t index = static_cast<std::size_t>(
+      std::lround(static_cast<double>(std::clamp(position, 0.0f, 1.0f)) * static_cast<double>(last)));
+  return setting.valueOrder[std::min(index, last)];
+ }
  const double range = setting.maximum - setting.minimum;
  if(range <= 0.0) {
   return setting.defaultValue;

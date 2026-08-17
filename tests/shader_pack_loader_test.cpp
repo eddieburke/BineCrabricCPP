@@ -146,6 +146,31 @@ TEST(PackLoaderTest, ReadsShadowResolutionFromShaderSource) {
  EXPECT_EQ(pack.shadowMapResolution, 2048);
  EXPECT_FALSE(options.contains("shadowMapResolution"));
 }
+TEST(PackLoaderTest, DiscoversAndAppliesAnnotatedPackConstants) {
+ PackDefinition pack;
+ std::unordered_map<std::string, PackSourceOption> options;
+ std::string error;
+ const std::unordered_map<std::string, std::string> sources = {
+     {"shaders/gbuffers_basic.vsh", "void main(){}"},
+     {"shaders/gbuffers_basic.fsh",
+      "const float shadowDistance = 192.0; //[128.0 192.0 256.0]\nvoid main(){}"}};
+ const auto read = [&sources](std::string_view path) {
+  const auto found = sources.find(std::string(path));
+  return found == sources.end() ? std::string{} : found->second;
+ };
+ EXPECT_TRUE(PackLoader::load({"shaders/gbuffers_basic.vsh", "shaders/gbuffers_basic.fsh"},
+                              read, pack, options, error))
+     << error;
+ EXPECT_TRUE(options.contains("shadowDistance"));
+ ASSERT_EQ(pack.settings.size(), 1u);
+ EXPECT_EQ(pack.settings.front().key, "shadowDistance");
+ PackDefinition changed;
+ std::unordered_map<std::string, PackSourceOption> changedOptions;
+ EXPECT_TRUE(PackLoader::load({"shaders/gbuffers_basic.vsh", "shaders/gbuffers_basic.fsh"},
+                              read, changed, changedOptions, error, {{"shadowDistance", "256.0"}}))
+     << error;
+ EXPECT_FLOAT_EQ(changed.shadowDistance, 256.0f);
+}
 TEST(PackLoaderTest, ParsesShadowPackConstants) {
  PackDefinition pack;
  std::unordered_map<std::string, PackSourceOption> options;
@@ -959,6 +984,7 @@ TEST(PackLoaderTest, ReadsScreenSlidersProfilesAndPackToggles) {
  std::vector<std::string> fooValues;
  bool barSlider = false;
  SettingType barType = SettingType::Bool;
+ std::vector<std::string> barValues;
  for(const PackSetting& setting : pack.settings) {
   if(setting.key == "FOO") {
    fooEnum = setting.type == SettingType::Enum;
@@ -968,6 +994,7 @@ TEST(PackLoaderTest, ReadsScreenSlidersProfilesAndPackToggles) {
   if(setting.key == "BAR") {
    barSlider = setting.asSlider;
    barType = setting.type;
+   barValues = setting.valueOrder;
   }
  }
  EXPECT_TRUE(fooEnum);
@@ -975,6 +1002,21 @@ TEST(PackLoaderTest, ReadsScreenSlidersProfilesAndPackToggles) {
  EXPECT_EQ(fooValues, (std::vector<std::string>{"0", "1"}));
  EXPECT_TRUE(barSlider);
  EXPECT_EQ(barType, SettingType::Float);
+ EXPECT_EQ(barValues, (std::vector<std::string>{"0.0", "0.500000", "1.0"}));
+}
+TEST(PackLoaderTest, DiscreteSliderNormalizationUsesDeclaredValues) {
+ PackSetting setting;
+ setting.type = SettingType::Int;
+ setting.asSlider = true;
+ setting.minimum = 0.0;
+ setting.maximum = 100.0;
+ setting.step = 1.0;
+ setting.valueOrder = {"0", "10", "100"};
+ std::string output;
+ EXPECT_TRUE(normalizeSettingValue(setting, "56", output));
+ EXPECT_EQ(output, "100");
+ EXPECT_TRUE(normalizeSettingValue(setting, "42", output));
+ EXPECT_EQ(output, "10");
 }
 // Some packs have both `#define immut const` and a bodyless `#define immut`.
 // Treating that name as a boolean option and rewriting it turns every

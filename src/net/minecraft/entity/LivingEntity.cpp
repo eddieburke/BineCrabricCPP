@@ -524,6 +524,7 @@ void LivingEntity::tickLiving() {
  }
  const bool inWater = isSubmergedInWater();
  const bool inLava = isTouchingLava();
+ jumping = false;
  if(inWater || inLava) {
   jumping = random.nextFloat() < 0.8f;
  }

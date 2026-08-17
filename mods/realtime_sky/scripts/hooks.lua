@@ -324,6 +324,7 @@ local function register()
       return realtime_active() and config.drive_sun
     end,
   }, function(event)
+    if event.shader_pack_active then return event end
     local frame = current_solar_frame(event.tick_delta)
     local sun_angle = (frame.celestial + 0.25) % 1.0
     local shadow_angle = sun_angle
@@ -352,6 +353,7 @@ local function register()
       return realtime_active()
     end,
   }, function(event)
+    if event.shader_pack_active then return event end
     local frame = current_solar_frame(event.partial_ticks)
     event.r, event.g, event.b = sky_render.sky_rgb(frame)
   end)
@@ -364,6 +366,7 @@ local function register()
       return realtime_active()
     end,
   }, function(event)
+    if event.shader_pack_active then return event end
     local frame = current_solar_frame(event.partial_ticks)
     event.r, event.g, event.b = sky_render.fog_rgb(frame)
   end)
@@ -522,21 +525,20 @@ local function register()
       return realtime_active()
     end,
   }, function(event)
+    if event.shader_pack_active then return event end
     local frame = current_solar_frame(event.tick_delta)
     event.star_brightness = sky_render.star_brightness(frame)
     event.astronomy_enabled = true
     event.astronomy_utc_millis = frame.utc_millis
     event.observer_latitude_deg = config.latitude
     event.observer_longitude_deg = config.longitude
-    if not event.shader_pack_active then
-      event.cancel_vanilla = true
-      sky_render.draw_stars(event, frame)
-    end
+    event.cancel_vanilla = true
+    sky_render.draw_stars(event, frame)
     return event
   end)
 
   minecraft.on("world_tick", { before = false }, function(event)
-    if event.remote or not realtime_active() or not config.drive_sun then
+    if event.remote or event.shader_pack_active or not realtime_active() or not config.drive_sun then
       return
     end
 

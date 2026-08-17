@@ -239,7 +239,7 @@ minecraft.on("world_render", {
   moment = "before",
   priority = 100,
 }, function(event)
-  if not config.enabled then
+  if not config.enabled or event.shader_pack_active then
     return event
   end
   event.cancel_vanilla = true

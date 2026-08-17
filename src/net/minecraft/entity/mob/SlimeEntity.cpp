@@ -93,7 +93,7 @@ void SlimeEntity::tickLiving() {
 }
 void SlimeEntity::markDead() {
  const int size = getSize();
- if(world != nullptr && !world->isRemote() && size > 1 && health == 0) {
+ if(world != nullptr && !world->isRemote() && size > 1 && health <= 0) {
   for(int i = 0; i < 4; ++i) {
    const float offsetX = (static_cast<float>(i % 2) - 0.5f) * static_cast<float>(size) / 4.0f;
    const float offsetZ = (static_cast<float>(i / 2) - 0.5f) * static_cast<float>(size) / 4.0f;

@@ -226,7 +226,7 @@ void scanOptions(const std::string& source,
   const std::size_t equals = cleaned.find('=');
   const std::size_t semicolon = cleaned.find(';', equals == std::string::npos ? 0 : equals + 1);
   if(equals == std::string::npos || semicolon == std::string::npos) continue;
-  const std::string_view left = trimmedView(cleaned.substr(0, equals));
+  const std::string_view left = trimmedView(cleaned.substr(6, equals - 6));
   const std::size_t separator = left.find_last_of(" \t");
   if(separator == std::string::npos) continue;
   const std::string_view type = trimmedView(left.substr(0, separator));
@@ -1930,14 +1930,20 @@ bool PackLoader::load(const std::vector<std::string>& resources,
  out.settings.push_back(std::move(profile));
  }
  for(PackSetting& setting : out.settings) {
+  if((setting.type == SettingType::Int || setting.type == SettingType::Float) &&
+     !setting.valueOrder.empty()) {
+   if(std::find(setting.valueOrder.begin(), setting.valueOrder.end(), setting.defaultValue) ==
+      setting.valueOrder.end()) {
+    setting.valueOrder.push_back(setting.defaultValue);
+   }
+   std::sort(setting.valueOrder.begin(), setting.valueOrder.end(), [](const std::string& a, const std::string& b) {
+    return std::strtod(a.c_str(), nullptr) < std::strtod(b.c_str(), nullptr);
+   });
+  }
   if(out.sliderKeys.count(setting.key) != 0) {
    setting.asSlider = true;
   } else if((setting.type == SettingType::Int || setting.type == SettingType::Float) &&
             !setting.valueOrder.empty()) {
-   if(std::find(setting.valueOrder.begin(), setting.valueOrder.end(), setting.defaultValue) ==
-      setting.valueOrder.end()) {
-    setting.valueOrder.insert(setting.valueOrder.begin(), setting.defaultValue);
-   }
    setting.type = SettingType::Enum;
   }
  }

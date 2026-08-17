@@ -52,6 +52,16 @@ void setLuaExecutionFields(lua_State* state, const World* world) {
  const bool remote = world != nullptr ? world->isRemote() : isClientBuild();
  setField(state, "remote", remote);
  setField(state, "side", remote ? "client" : "server");
+#ifdef MINECRAFT_NATIVE_EXPORTS
+ const net::minecraft::client::Minecraft* minecraft = net::minecraft::client::Minecraft::INSTANCE;
+ const std::string selectedPack = minecraft != nullptr ? minecraft->options.shaderPack : std::string();
+ const bool shaderPackActive = !selectedPack.empty() && selectedPack != "vanilla" && selectedPack != "off";
+ setField(state, "shader_pack_active", shaderPackActive);
+ setField(state, "shader_pack_name", shaderPackActive ? selectedPack : std::string("vanilla"));
+#else
+ setField(state, "shader_pack_active", false);
+ setField(state, "shader_pack_name", std::string("vanilla"));
+#endif
 }
 void setEntityIdentityFields(lua_State* state, const net::minecraft::entity::Entity& entity) {
  setField(state, "entity_id", entity.id);

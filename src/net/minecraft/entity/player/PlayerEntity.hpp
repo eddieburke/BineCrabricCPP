@@ -91,7 +91,7 @@ class PlayerEntity : public LivingEntity {
  void applyDamage(int amount) override;
  [[nodiscard]] ItemStack getHand() const;
  void clearStackInHand();
- [[nodiscard]] double getStandingEyeHeight() const;
+ [[nodiscard]] double getStandingEyeHeight() const override;
  virtual void swingHand();
  void attack(Entity* target);
  void interact(Entity* entity);

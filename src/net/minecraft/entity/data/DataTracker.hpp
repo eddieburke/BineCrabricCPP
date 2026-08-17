@@ -16,7 +16,7 @@ class DataTracker {
  template <typename T>
  void startTracking(int key, T value) {
   const int dataTypeId = dataTypeIdFor<T>();
-  if(key > 31) {
+  if(key < 0 || key > 31) {
    throw std::invalid_argument("Data value id is too big");
   }
   if(entries_.contains(key)) {
@@ -51,6 +51,9 @@ class DataTracker {
  template <typename T>
  void set(int id, T value) {
   DataTrackerEntry& entry = entries_.at(id);
+  if(entry.getDataTypeId() != dataTypeIdFor<T>()) {
+   throw std::invalid_argument("Data tracker value type does not match tracked type");
+  }
   const DataTrackerValue normalized = DataTrackerValue(normalizeValue(std::move(value)));
   if(entry.get() != normalized) {
    entry.set(normalized);

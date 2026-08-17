@@ -202,7 +202,7 @@ class Entity {
  virtual bool interact(player::PlayerEntity* player);
  virtual void tickRiding();
  virtual void updatePassengerPosition();
- [[nodiscard]] double getStandingEyeHeight() const {
+ [[nodiscard]] virtual double getStandingEyeHeight() const {
   return standingEyeHeight;
  }
  [[nodiscard]] virtual double getPassengerRidingHeight() const {

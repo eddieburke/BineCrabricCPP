@@ -19,7 +19,7 @@ bool Entity::isInFluid(block::material::Material& material) const {
  const int blockY = MathHelper::floor(static_cast<double>(MathHelper::floor(eyeY)));
  const int blockZ = MathHelper::floor(z);
  const int blockId = world->getBlockId(blockX, blockY, blockZ);
- if(blockId == 0) {
+ if(blockId <= 0 || blockId >= Block::BLOCK_COUNT) {
   return false;
  }
  Block* block = Block::BLOCKS[static_cast<std::size_t>(blockId)];

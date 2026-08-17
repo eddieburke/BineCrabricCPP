@@ -139,6 +139,17 @@ TEST(PacketRegistry, DataTrackerByteArrayRoundTrip) {
  EXPECT_EQ(target.writeUpdatedEntries(entries), std::vector<int>{1});
  EXPECT_EQ(target.getByteArray(1), (entity::data::DataTrackerByteArray{1, 2, 3, 5, 8}));
 }
+TEST(PacketRegistry, DataTrackerRejectsOutOfRangeKeys) {
+ entity::data::DataTracker tracker;
+ EXPECT_THROW(tracker.startTracking(-1, std::int32_t{1}), std::invalid_argument);
+ EXPECT_THROW(tracker.startTracking(32, std::int32_t{1}), std::invalid_argument);
+}
+TEST(PacketRegistry, DataTrackerRejectsTypeChanges) {
+ entity::data::DataTracker tracker;
+ tracker.startTracking(1, std::int32_t{7});
+ EXPECT_THROW(tracker.set(1, 7.0f), std::invalid_argument);
+ EXPECT_EQ(tracker.getInt(1), 7);
+}
 TEST(PacketRegistry, ClientboundPlayerMoveKeepsFeetAndStanceDistinct) {
  Packet::ensureRegistered();
  PlayerMoveFullPacket original;

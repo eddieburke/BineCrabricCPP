@@ -487,9 +487,23 @@ TEST_F(RvoxDiag, CompileAllComplementaryPrograms) {
  for(const PackSetting& setting : pack.rootDefinition.settings) {
   pack.settings.emplace(setting.key, setting.defaultValue);
  }
+ pack.settings["COLORED_LIGHTING"] = "512";
+ pack.settings["ANISOTROPIC_FILTER"] = "8";
+ pack.settings["CLOUD_QUALITY"] = "3";
+ pack.settings["DETAIL_QUALITY"] = "3";
+ pack.settings["LIGHTSHAFT_QUALI_DEFINE"] = "3";
+ pack.settings["SHADOW_QUALITY"] = "3";
+ pack.settings["WORLD_SPACE_REFLECTIONS"] = "1";
+ pack.settings["shadowDistance"] = "256.0";
+ ASSERT_TRUE(PackLoader::load(
+     resources,
+     [&pack](std::string_view path) { return PackCompiler::readText(pack, std::string(path)); },
+     pack.definition, pack.sourceOptions, pack.summary.error, pack.settings))
+     << pack.summary.error;
  const auto found = pack.rootDefinition.dimensionDefinitions.find("*");
  ASSERT_NE(found, pack.rootDefinition.dimensionDefinitions.end());
  mergeDimension(pack.definition, *found->second);
+ EXPECT_FLOAT_EQ(pack.definition.shadowDistance, 256.0f);
  pack.programs = std::make_unique<client::gl::ProgramCache>(std::filesystem::path{});
  std::vector<std::string> failures;
  std::vector<std::string> names;

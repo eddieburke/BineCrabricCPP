@@ -15,6 +15,7 @@
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
+#include <limits>
 #include <mutex>
 #include <sstream>
 #include <utility>
@@ -562,6 +563,18 @@ bool normalizeSettingValue(const PackSetting& setting, const std::string& input,
    output = candidate;
    return true;
   }
+ }
+ if(setting.asSlider && !setting.valueOrder.empty()) {
+  double closest = std::numeric_limits<double>::max();
+  for(const std::string& candidate : setting.valueOrder) {
+   const double value = std::strtod(candidate.c_str(), nullptr);
+   const double distance = std::abs(value - parsed);
+   if(distance < closest) {
+    closest = distance;
+    output = candidate;
+   }
+  }
+  return !output.empty();
  }
  if(!setting.asSlider && input == setting.defaultValue) {
   output = input;

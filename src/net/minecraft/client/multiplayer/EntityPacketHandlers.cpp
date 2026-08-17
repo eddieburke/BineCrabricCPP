@@ -108,17 +108,9 @@ void ClientNetworkHandler::onEntitySpawn(const EntitySpawnS2CPacket& packet) {
       new entity::FallingBlockEntity(clientWorld, x, y, z, Block::GRAVEL != nullptr ? Block::GRAVEL->id : 13);
   break;
  case 99: {
-  auto* modEntity = new mod::lua::LuaModEntity(clientWorld);
-  modEntity->trackedPosX = packet.x;
-  modEntity->trackedPosY = packet.y;
-  modEntity->trackedPosZ = packet.z;
-  modEntity->yaw = 0.0f;
-  modEntity->pitch = 0.0f;
-  modEntity->id = packet.id;
-  clientWorld->forceEntity(packet.id, modEntity);
-  entity = modEntity;
-  break;
- }
+   entity = new mod::lua::LuaModEntity(clientWorld);
+   break;
+  }
  default:
   break;
  }

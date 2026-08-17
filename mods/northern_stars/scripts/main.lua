@@ -165,6 +165,9 @@ minecraft.on("world_render", {
   is_overworld = true,
   priority = 150,
 }, function(event)
+  if event.shader_pack_active then
+    return event
+  end
   local frame_key = "static"
   if event.astronomy_enabled then
     frame_key = table.concat({
@@ -181,18 +184,11 @@ minecraft.on("world_render", {
     return
   end
   event.cancel_vanilla = true
-  -- Astronomy-enabled stars were already converted from RA/declination to
-  -- local azimuth/altitude in compile_starfield(). Rotating them again by the
-  -- sun/skydome angles moves them away from those coordinates and can push
-  -- otherwise-visible billboards through the horizon clip.
-  local rotation_x = 0.0
-  local rotation_y = 0.0
   minecraft.render.billboards({
     brightness = event.star_brightness or 0.0,
-    rotation_x_rad = rotation_x,
-    rotation_y_rad = rotation_y,
+    rotation_x_rad = 0.0,
+    rotation_y_rad = 0.0,
     blend = "additive",
-    layer = "sky",
     depth_test = false,
     depth_write = false,
     packed = compiled_billboards,
