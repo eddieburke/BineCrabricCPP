@@ -62,6 +62,9 @@ std::uint64_t packDirectoryStamp(const std::filesystem::path& root) {
    continue;
   }
   const std::string path = std::filesystem::relative(it->path(), root, error).generic_string();
+  if(path.find('/') == std::string::npos && path.ends_with(".txt")) {
+   continue;
+  }
   for(const unsigned char ch : path) {
    stamp = (stamp ^ ch) * 1099511628211ull;
   }

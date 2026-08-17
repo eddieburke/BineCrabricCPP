@@ -57,9 +57,9 @@ int ChestBlock::getTextureId(const BlockView* blockView, int x, int y, int z, in
   }
   int offset = 0;
   if(side == 3) {
-   offset = westId == id ? 0 : 1;
-  } else if(side == 2) {
    offset = westId == id ? 1 : 0;
+  } else if(side == 2) {
+   offset = westId == id ? 0 : 1;
   }
   const int cornerNorthId = blockView->getBlockId(westId == id ? x - 1 : x + 1, y, z - 1);
   const int cornerSouthId = blockView->getBlockId(westId == id ? x - 1 : x + 1, y, z + 1);

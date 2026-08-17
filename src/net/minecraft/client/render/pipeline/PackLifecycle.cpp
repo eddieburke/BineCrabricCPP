@@ -236,7 +236,7 @@ void Pipeline::directoryWatchLoop(const std::stop_token& stop) {
  if(directory != INVALID_HANDLE_VALUE) {
   const HANDLE event = CreateEventW(nullptr, TRUE, FALSE, nullptr);
   if(event != nullptr) {
-   std::array<unsigned char, 65536> buffer{};
+   alignas(DWORD) std::array<unsigned char, 65536> buffer{};
    OVERLAPPED overlapped{};
    overlapped.hEvent = event;
    bool failed = false;
@@ -277,7 +277,21 @@ void Pipeline::directoryWatchLoop(const std::stop_token& stop) {
      failed = true;
      break;
     }
-    directoryChanged_.store(true, std::memory_order_release);
+    bool packContentChanged = bytes == 0;
+    for(DWORD offset = 0; !packContentChanged && offset < bytes;) {
+     const auto* record = reinterpret_cast<const FILE_NOTIFY_INFORMATION*>(buffer.data() + offset);
+     const std::wstring_view name(record->FileName, record->FileNameLength / sizeof(WCHAR));
+     if(name.find(L'\\') != std::wstring_view::npos || !name.ends_with(L".txt")) {
+      packContentChanged = true;
+     }
+     if(record->NextEntryOffset == 0) {
+      break;
+     }
+     offset += record->NextEntryOffset;
+    }
+    if(packContentChanged) {
+     directoryChanged_.store(true, std::memory_order_release);
+    }
    }
    CloseHandle(event);
    CloseHandle(directory);
@@ -428,47 +442,10 @@ bool Pipeline::setSettings(const std::vector<std::pair<std::string, std::string>
  if(pack == nullptr || pack->definition.settings.empty()) {
   return false;
  }
+ // see third_party/iris/common/src/main/java/net/irisshaders/iris/Iris.java:520
  std::unordered_map<std::string, std::string> merged = pack->settings;
- const bool hasProfileOption = std::any_of(pack->definition.settings.begin(), pack->definition.settings.end(),
-                                           [](const PackSetting& setting) { return setting.key == "profile"; });
- std::string profileName;
- if(hasProfileOption) {
-  for(const auto& [key, value] : values) {
-   if(key == "profile") {
-    profileName = value;
-    break;
-   }
-  }
-  const std::string currentProfile = [&] {
-   const auto existing = merged.find("profile");
-   return existing != merged.end() ? existing->second : std::string{};
-  }();
-  if(profileName.empty()) profileName = currentProfile;
-  if(profileName != currentProfile) {
-   merged.clear();
-   for(const PackSetting& setting : pack->definition.settings) {
-    merged[setting.key] = defaultSettingValue(setting);
-   }
-   if(!profileName.empty() && profileName != "Default") {
-    for(const PackProfile& preset : pack->definition.profiles) {
-     if(preset.name != profileName) continue;
-     for(const auto& [key, value] : preset.values) {
-      for(const PackSetting& setting : pack->definition.settings) {
-       if(setting.key != key) continue;
-       std::string normalized;
-       if(!normalizeSettingValue(setting, value, normalized)) break;
-       merged[key] = std::move(normalized);
-       break;
-      }
-     }
-     break;
-    }
-   }
-  }
- }
  bool changed = false;
  for(const auto& [key, value] : values) {
-  if(key == "profile") continue;
   for(const PackSetting& setting : pack->definition.settings) {
    if(setting.key != key) continue;
    std::string normalized;
@@ -479,13 +456,6 @@ bool Pipeline::setSettings(const std::vector<std::pair<std::string, std::string>
    merged[key] = std::move(normalized);
    changed = true;
    break;
-  }
- }
- if(hasProfileOption) {
-  if(profileName.empty()) profileName = "Default";
-  if(const auto existing = merged.find("profile"); existing == merged.end() || existing->second != profileName) {
-   merged["profile"] = profileName;
-   changed = true;
   }
  }
  if(!changed) {
@@ -510,6 +480,7 @@ bool Pipeline::setSettings(const std::vector<std::pair<std::string, std::string>
  pack->rootDefinition = std::move(definition);
  pack->definition = pack->rootDefinition;
  pack->dimensionKey.clear();
+ initializePackRuntime(*pack);
  refreshResourcePackState(basePack_.get(), packs_);
  activatePack(activeIndex_);
  return true;

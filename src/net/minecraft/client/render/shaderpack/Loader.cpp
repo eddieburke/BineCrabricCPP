@@ -47,9 +47,6 @@ bool number(std::string_view value, double& out, bool& integer) {
  integer = text.find_first_of(".eE") == std::string_view::npos;
  return true;
 }
-std::string numberText(double value, bool integer) {
- return integer ? std::to_string(static_cast<int>(std::lround(value))) : std::to_string(value);
-}
 // see third_party/mcp/iris/shaderpack/option/OptionAnnotatedSource.java:58-96
 const std::unordered_set<std::string>& validConstOptionNames() {
  static const std::unordered_set<std::string> names = [] {
@@ -153,7 +150,7 @@ void addOption(std::unordered_map<std::string, PackSourceOption>& options,
    return;
   }
   option.setting.type = integer ? SettingType::Int : SettingType::Float;
-  option.setting.defaultValue = numberText(parsed, integer);
+  option.setting.defaultValue = std::string(value);
   option.setting.minimum = parsed;
   option.setting.maximum = parsed;
   option.setting.step = integer ? 1.0 : 0.01;
@@ -1916,19 +1913,6 @@ bool PackLoader::load(const std::vector<std::string>& resources,
   }
  }
  for(const auto& [key, option] : options) out.settings.push_back(option.setting);
- if(!out.profiles.empty()) {
-  PackSetting profile;
-  profile.key = "profile";
-  profile.type = SettingType::Enum;
-  profile.label = "Profile";
-  profile.defaultValue = "Default";
-  profile.valueOrder.push_back("Default");
-  for(const PackProfile& preset : out.profiles) {
-   profile.valueOrder.push_back(preset.name);
-   profile.valueLabels[preset.name] = preset.name;
-  }
- out.settings.push_back(std::move(profile));
- }
  for(PackSetting& setting : out.settings) {
   if((setting.type == SettingType::Int || setting.type == SettingType::Float) &&
      !setting.valueOrder.empty()) {
