@@ -28,19 +28,32 @@ void BlockRenderContext::resolveLightSource() {
                      : nullptr;
 }
 void BlockRenderContext::sampleFaceLight(int x, int y, int z) {
- y = std::clamp(y, 0, net::minecraft::Chunk::height - 1);
- if(lightRegion != nullptr) {
-  faceBlockLight = lightRegion->getBlockLight(x, y, z);
-  faceSkyLight = lightRegion->getSkyLight(x, y, z);
- } else if(lightSnapshot != nullptr) {
-  faceBlockLight = lightSnapshot->getBlockLight(x, y, z);
-  faceSkyLight = lightSnapshot->getSkyLight(x, y, z);
- } else if(lightWorld != nullptr) {
-  faceBlockLight = lightWorld->getBrightness(net::minecraft::LightType::Block, x, y, z);
-  faceSkyLight = lightWorld->getBrightness(net::minecraft::LightType::Sky, x, y, z);
- } else {
-  faceBlockLight = 15;
-  faceSkyLight = 15;
+ const auto sample = [this](int sampleX, int sampleY, int sampleZ, int& blockLight, int& skyLight) {
+  sampleY = std::clamp(sampleY, 0, net::minecraft::Chunk::height - 1);
+  if(lightRegion != nullptr) {
+   blockLight = lightRegion->getBlockLight(sampleX, sampleY, sampleZ);
+   skyLight = lightRegion->getSkyLight(sampleX, sampleY, sampleZ);
+  } else if(lightSnapshot != nullptr) {
+   blockLight = lightSnapshot->getBlockLight(sampleX, sampleY, sampleZ);
+   skyLight = lightSnapshot->getSkyLight(sampleX, sampleY, sampleZ);
+  } else if(lightWorld != nullptr) {
+   blockLight = lightWorld->getBrightness(net::minecraft::LightType::Block, sampleX, sampleY, sampleZ);
+   skyLight = lightWorld->getBrightness(net::minecraft::LightType::Sky, sampleX, sampleY, sampleZ);
+  } else {
+   blockLight = 15;
+   skyLight = 15;
+  }
+ };
+ sample(x, y, z, faceBlockLight, faceSkyLight);
+ if(blockView != nullptr && net::minecraft::block::Block::usesNeighborLightSampling(blockView->getBlockId(x, y, z))) {
+  static constexpr int kOffsets[5][3] = {{0, 1, 0}, {1, 0, 0}, {-1, 0, 0}, {0, 0, 1}, {0, 0, -1}};
+  for(const auto& offset : kOffsets) {
+   int blockLight = 0;
+   int skyLight = 0;
+   sample(x + offset[0], y + offset[1], z + offset[2], blockLight, skyLight);
+   faceBlockLight = std::max(faceBlockLight, blockLight);
+   faceSkyLight = std::max(faceSkyLight, skyLight);
+  }
  }
  faceBlockLight = std::max(faceBlockLight, blockEmission);
 }
