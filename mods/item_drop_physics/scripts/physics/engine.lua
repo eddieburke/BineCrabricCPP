@@ -81,6 +81,35 @@ function M.quat_to_euler_degrees(qx, qy, qz, qw)
   return yaw * k, pitch * k, roll * k
 end
 
+local function settle_box_face(s, dt, horizontal_speed)
+  local qx, qy, qz, qw = s.qx, s.qy, s.qz, s.qw
+  local xx, yy, zz = qx * qx, qy * qy, qz * qz
+  local xy, xz, yz = qx * qy, qx * qz, qy * qz
+  local xw, yw, zw = qx * qw, qy * qw, qz * qw
+
+  local x1, y1, z1 = 1.0 - 2.0 * (yy + zz), 2.0 * (xy + zw), 2.0 * (xz - yw)
+  local x2, y2, z2 = 2.0 * (xy - zw), 1.0 - 2.0 * (xx + zz), 2.0 * (yz + xw)
+  local x3, y3, z3 = 2.0 * (xz + yw), 2.0 * (yz - xw), 1.0 - 2.0 * (xx + yy)
+
+  local nx, ny, nz = x1, y1, z1
+  if abs(y2) > abs(ny) then nx, ny, nz = x2, y2, z2 end
+  if abs(y3) > abs(ny) then nx, ny, nz = x3, y3, z3 end
+  if ny < 0.0 then nx, ny, nz = -nx, -ny, -nz end
+
+  local cx, cz, cw = -nz, nx, 1.0 + ny
+  local length = sqrt(cx * cx + cz * cz + cw * cw)
+  if length < 1e-9 then return end
+  cx, cz, cw = cx / length, cz / length, cw / length
+
+  local tx = cw * qx + cx * qw - cz * qy
+  local ty = cw * qy - cx * qz + cz * qx
+  local tz = cw * qz + cx * qy + cz * qw
+  local tw = cw * qw - cx * qx - cz * qz
+  local rate = horizontal_speed < 0.8 and 18.0 or 5.0
+  local alpha = 1.0 - exp(-rate * dt)
+  s.qx, s.qy, s.qz, s.qw = M.quat_slerp(qx, qy, qz, qw, tx, ty, tz, tw, alpha)
+end
+
 local function water_surface(x, y, z)
   local id = minecraft.world.get_block(x, y, z)
   if id ~= WATER_STILL and id ~= WATER_FLOWING then return nil end
@@ -200,6 +229,8 @@ function M.create(item, half_x, half_y, half_z)
   local vy = (item.vy or 0.0) * SERVER_VELOCITY_SCALE
   local vz = (item.vz or 0.0) * SERVER_VELOCITY_SCALE
   local kick = min(config.max_spin, 2.0 + sqrt(vx * vx + vy * vy + vz * vz) * 3.0)
+  local largest_extent = max(half_x, half_y, half_z)
+  local smallest_extent = min(half_x, half_y, half_z)
 
   return {
     id = item.id,
@@ -211,6 +242,7 @@ function M.create(item, half_x, half_y, half_z)
     -- ratio matters for the impulse response, so mass cancels out.
     inv_inertia = 3.0 / (half_x * half_x + half_y * half_y + half_z * half_z),
     hx = half_x, hy = half_y, hz = half_z,
+    blocky = smallest_extent / largest_extent > 0.72,
     x = item.x, y = item.y, z = item.z,
     px = item.x, py = item.y, pz = item.z,
     tx = item.x, ty = item.y, tz = item.z,
@@ -368,10 +400,17 @@ local function step_body(s, dt)
   if hit_z then contact(s, 3, s.vz < 0.0 and 1.0 or -1.0) end
 
   -- Rolling resistance and angular damping once the item is supported.
+  local horizontal_speed = sqrt(s.vx * s.vx + s.vz * s.vz)
   if s.grounded then
-    local roll = 1.0 - min(0.25, mat.friction * dt * 1.5)
+    local resistance = s.blocky and 4.0 or 1.5
+    local roll = 1.0 - min(0.35, mat.friction * dt * resistance)
     s.wx, s.wy, s.wz = s.wx * roll, s.wy * roll, s.wz * roll
     s.vx, s.vz = s.vx * roll, s.vz * roll
+    if s.blocky and horizontal_speed < 1.25 then
+      local edge = 1.0 - min(0.65, (1.25 - horizontal_speed) * dt * 8.0)
+      s.vx, s.vz = s.vx * edge, s.vz * edge
+      s.wx, s.wy, s.wz = s.wx * edge, s.wy * edge, s.wz * edge
+    end
   end
 
   local spin = sqrt(s.wx * s.wx + s.wy * s.wy + s.wz * s.wz)
@@ -381,6 +420,7 @@ local function step_body(s, dt)
   end
 
   s.qx, s.qy, s.qz, s.qw = integrate_quat(s.qx, s.qy, s.qz, s.qw, s.wx, s.wy, s.wz, dt)
+  if s.grounded and s.blocky then settle_box_face(s, dt, horizontal_speed) end
 end
 
 local function update_sleep(s)
