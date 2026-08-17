@@ -13,7 +13,7 @@ local config = require("config")
 
 local M = {}
 
-local sqrt, min, max, abs = math.sqrt, math.min, math.max, math.abs
+local sqrt, min, max, abs, exp = math.sqrt, math.min, math.max, math.abs, math.exp
 local floor, asin, random, pi = math.floor, math.asin, math.random, math.pi
 local atan2 = math.atan2 or math.atan
 
@@ -21,6 +21,7 @@ local WATER_STILL, WATER_FLOWING = 9, 8
 local SKIN = 1.0e-3
 local MAX_SWEEP = 0.25
 local SLEEP_RECHECK = 10
+local SERVER_VELOCITY_SCALE = 20.0
 
 -- Beta flowing-water metadata -> horizontal flow direction, flattened as
 -- (dx, dz) pairs indexed by (meta % 4) * 2.
@@ -195,7 +196,9 @@ function M.create(item, half_x, half_y, half_z)
   local mat = materials.get(item.item_id)
   local volume = 8.0 * half_x * half_y * half_z
   local qx, qy, qz, qw = random_quat()
-  local vx, vy, vz = item.vx or 0.0, item.vy or 0.0, item.vz or 0.0
+  local vx = (item.vx or 0.0) * SERVER_VELOCITY_SCALE
+  local vy = (item.vy or 0.0) * SERVER_VELOCITY_SCALE
+  local vz = (item.vz or 0.0) * SERVER_VELOCITY_SCALE
   local kick = min(config.max_spin, 2.0 + sqrt(vx * vx + vy * vy + vz * vz) * 3.0)
 
   return {
@@ -210,7 +213,9 @@ function M.create(item, half_x, half_y, half_z)
     hx = half_x, hy = half_y, hz = half_z,
     x = item.x, y = item.y, z = item.z,
     px = item.x, py = item.y, pz = item.z,
+    tx = item.x, ty = item.y, tz = item.z,
     vx = vx, vy = vy, vz = vz,
+    tvx = vx, tvy = vy, tvz = vz,
     qx = qx, qy = qy, qz = qz, qw = qw,
     pqx = qx, pqy = qy, pqz = qz, pqw = qw,
     wx = (random() - 0.5) * kick,
@@ -221,7 +226,56 @@ function M.create(item, half_x, half_y, half_z)
     sleeping = false,
     sleep_ticks = 0,
     recheck = 0,
+    item_count = item.item_count or 1,
+    last_seen = 0,
+    render_frame = -1,
   }
+end
+
+function M.sync(s, item)
+  local old_tx, old_ty, old_tz = s.tx, s.ty, s.tz
+  s.tx, s.ty, s.tz = item.x, item.y, item.z
+  s.tvx = (item.vx or 0.0) * SERVER_VELOCITY_SCALE
+  s.tvy = (item.vy or 0.0) * SERVER_VELOCITY_SCALE
+  s.tvz = (item.vz or 0.0) * SERVER_VELOCITY_SCALE
+  s.item_count = item.item_count or 1
+  local dx, dy, dz = s.tx - old_tx, s.ty - old_ty, s.tz - old_tz
+  if s.sleeping and dx * dx + dy * dy + dz * dz > 0.01 then
+    s.sleeping = false
+    s.sleep_ticks = 0
+  end
+end
+
+local function reconcile(s, dt)
+  local dx, dy, dz = s.tx - s.x, s.ty - s.y, s.tz - s.z
+  local distance_sq = dx * dx + dy * dy + dz * dz
+  local teleport_distance = config.teleport_distance
+  if distance_sq > teleport_distance * teleport_distance then
+    s.x, s.y, s.z = s.tx, s.ty, s.tz
+    s.vx, s.vy, s.vz = s.tvx, s.tvy, s.tvz
+    s.sleeping, s.sleep_ticks = false, 0
+    return true
+  end
+
+  local distance = sqrt(distance_sq)
+  if distance <= config.leash_distance or distance < 1e-6 then return false end
+
+  local gain = 1.0 - exp(-config.follow_rate * dt)
+  local amount = (distance - config.leash_distance) * gain
+  local scale = amount / distance
+  s.x = s.x + dx * scale
+  s.y = s.y + dy * scale
+  s.z = s.z + dz * scale
+
+  if distance > config.leash_distance * 2.0 then
+    local velocity_gain = gain * 0.2
+    s.vx = s.vx + (s.tvx - s.vx) * velocity_gain
+    s.vy = s.vy + (s.tvy - s.vy) * velocity_gain
+    s.vz = s.vz + (s.tvz - s.vz) * velocity_gain
+  end
+
+  s.sleeping, s.sleep_ticks = false, 0
+  return true
 end
 
 --- Resolve a contact on one axis: reflect with restitution, apply Coulomb
@@ -248,7 +302,7 @@ local function contact(s, axis, normal)
   -- Coulomb friction against the tangential slip.
   local slip = sqrt(t1 * t1 + t2 * t2)
   if slip > 1e-6 then
-    local drop = min(slip, mat.friction * max(impact, 1.0))
+    local drop = min(slip, mat.friction * impact * 0.35)
     local scale = (slip - drop) / slip
     t1, t2 = t1 * scale, t2 * scale
     -- Slip that friction removed becomes spin about the contact tangents.
@@ -295,7 +349,8 @@ local function step_body(s, dt)
   else
     local f = mat.drag ^ (dt * 20.0)
     s.vx, s.vy, s.vz = s.vx * f, s.vy * f, s.vz * f
-    s.wx, s.wy, s.wz = s.wx * 0.995, s.wy * 0.995, s.wz * 0.995
+    local angular_drag = 0.995 ^ (dt * 20.0)
+    s.wx, s.wy, s.wz = s.wx * angular_drag, s.wy * angular_drag, s.wz * angular_drag
   end
 
   local speed = sqrt(s.vx * s.vx + s.vy * s.vy + s.vz * s.vz)
@@ -314,7 +369,7 @@ local function step_body(s, dt)
 
   -- Rolling resistance and angular damping once the item is supported.
   if s.grounded then
-    local roll = 1.0 - min(0.5, mat.friction * dt * 4.0)
+    local roll = 1.0 - min(0.25, mat.friction * dt * 1.5)
     s.wx, s.wy, s.wz = s.wx * roll, s.wy * roll, s.wz * roll
     s.vx, s.vz = s.vx * roll, s.vz * roll
   end
@@ -357,6 +412,7 @@ function M.step(sims, dt)
   for _, s in pairs(sims) do
     s.px, s.py, s.pz = s.x, s.y, s.z
     s.pqx, s.pqy, s.pqz, s.pqw = s.qx, s.qy, s.qz, s.qw
+    reconcile(s, dt)
 
     if s.sleeping then
       s.recheck = s.recheck + 1
