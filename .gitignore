@@ -1,7 +1,5 @@
 build*/
-build*.log
-client.log
-server.log
+*.log
 third_party/mcp/
 third_party/iris/
 resources/
@@ -14,6 +12,9 @@ toolchain/*
 .cursor/
 .windsurf/
 .opencode/
+
+# Agent run output: loop/debug scratch, VTune collections, handoff state
+autoresearch/
 
 # Agent-generated instructions
 .github/copilot-instructions.md

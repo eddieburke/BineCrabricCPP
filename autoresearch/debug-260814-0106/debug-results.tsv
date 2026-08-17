@@ -1,2 +1,0 @@
-candidate	status	focused_tests	lighting_tests	full_suite
-remove_far_publish_deadline	kept	14/14 pass	14/14 pass	unrelated GL perf failure

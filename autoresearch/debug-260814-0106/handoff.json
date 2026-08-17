@@ -1,8 +1,0 @@
-{
-  "mode": "debug",
-  "outcome": "progressed",
-  "candidate": "remove_far_publish_deadline",
-  "affected_verification": "passed",
-  "full_verification": "unrelated_gl_perf_failure",
-  "remaining_units": 0
-}
