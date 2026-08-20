@@ -29,6 +29,11 @@ class RegionSnapshot final : public net::minecraft::BlockView {
                 int maxBlockX,
                 int maxBlockY,
                 int maxBlockZ);
+ // Hands buffer_ back to the reuse pool instead of freeing it; see the pool in
+ // RegionSnapshot.cpp for why the malloc/free pair was worth removing.
+ ~RegionSnapshot() override;
+ RegionSnapshot(const RegionSnapshot&) = delete;
+ RegionSnapshot& operator=(const RegionSnapshot&) = delete;
  [[nodiscard]] int getBlockId(int x, int y, int z) const override;
  [[nodiscard]] net::minecraft::block::entity::BlockEntity* getBlockEntity(int, int, int) override {
   return nullptr;
@@ -71,16 +76,16 @@ class RegionSnapshot final : public net::minecraft::BlockView {
   return result;
  }
  [[nodiscard]] const std::uint8_t* chunkBlocks(const ChunkInfo& info) const noexcept {
-  return buffer_.data() + info.offset;
+  return buffer_.get() + info.offset;
  }
  [[nodiscard]] const std::uint8_t* chunkMeta(const ChunkInfo& info) const noexcept {
-  return buffer_.data() + info.offset + blockBytesPerChunk_;
+  return buffer_.get() + info.offset + blockBytesPerChunk_;
  }
  [[nodiscard]] const std::uint8_t* chunkSkyLight(const ChunkInfo& info) const noexcept {
-  return buffer_.data() + info.offset + blockBytesPerChunk_ + nibbleBytesPerChunk_;
+  return buffer_.get() + info.offset + blockBytesPerChunk_ + nibbleBytesPerChunk_;
  }
  [[nodiscard]] const std::uint8_t* chunkBlockLight(const ChunkInfo& info) const noexcept {
-  return buffer_.data() + info.offset + blockBytesPerChunk_ + 2 * nibbleBytesPerChunk_;
+  return buffer_.get() + info.offset + blockBytesPerChunk_ + 2 * nibbleBytesPerChunk_;
  }
  [[nodiscard]] bool containsY(int y) const noexcept {
   return y >= minY_ && y < minY_ + ySpan_;
@@ -94,7 +99,8 @@ class RegionSnapshot final : public net::minecraft::BlockView {
   const std::uint8_t byte = bytes[byteIndex];
   return ((y - minY_) & 1) != 0 ? (byte >> 4U) & 0xF : byte & 0xF;
  }
- std::vector<std::uint8_t> buffer_;
+ std::unique_ptr<std::uint8_t[]> buffer_;
+ std::size_t bufferCapacity_ = 0;
  std::vector<ChunkInfo> chunks_;
  std::size_t blockBytesPerChunk_ = 0;
  std::size_t nibbleBytesPerChunk_ = 0;

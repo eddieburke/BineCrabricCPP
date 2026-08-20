@@ -19,16 +19,6 @@ class RegionWorldStorage : public AlphaWorldStorage {
   fs::create_directories(chunkDir);
   return std::make_unique<RegionChunkStorage>(chunkDir);
  }
- void save(const WorldProperties& properties, const std::vector<entity::player::PlayerEntity*>& players) override {
-  WorldProperties copy = properties;
-  copy.setVersion(19132);
-  AlphaWorldStorage::save(copy, players);
- }
- void saveUnload(const WorldProperties& properties, const std::vector<entity::player::PlayerEntity*>& players) {
-  WorldProperties copy = properties;
-  copy.setVersion(19132);
-  AlphaWorldStorage::saveUnload(copy, players);
- }
  void save(const WorldProperties& properties) override {
   WorldProperties copy = properties;
   copy.setVersion(19132);

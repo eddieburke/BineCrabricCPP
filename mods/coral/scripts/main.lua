@@ -8,7 +8,6 @@ local coral_model = assert(minecraft.model.load("models/coral/coral.json"))
 
 minecraft.register_block({
   id = CORAL_ID,
-  texture = "mods/coral/coral.png",
   hardness = 1.5,
   resistance = 10.0,
   translation_key = "coral",

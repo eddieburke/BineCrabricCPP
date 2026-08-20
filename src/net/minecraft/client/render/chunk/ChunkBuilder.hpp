@@ -56,8 +56,18 @@ class ChunkBuilder : public std::enable_shared_from_this<ChunkBuilder> {
    }
   }
  }
- void updateFrustum(const Frustum& culler) {
-  inFrustum = culler.isVisible(cullingBox);
+ // Visibility is the stamp, not a flag beside one. cullChunks no longer sweeps
+ // every resident section to clear a bool, so a section the walk never reached
+ // simply keeps an older stamp -- there is no stale "true" to read.
+ [[nodiscard]] bool updateFrustum(const Frustum& culler, int stamp) {
+  if(!culler.isVisible(cullingBox)) {
+   return false;
+  }
+  visibleStamp = stamp;
+  return true;
+ }
+ [[nodiscard]] bool visibleIn(int stamp) const noexcept {
+  return visibleStamp == stamp;
  }
  [[nodiscard]] bool hasNoGeometry() const noexcept {
   if(!built) {
@@ -84,7 +94,7 @@ class ChunkBuilder : public std::enable_shared_from_this<ChunkBuilder> {
  int x = 0;
  int y = 0;
  int z = 0;
- bool inFrustum = true;
+ int visibleStamp = -1;
  std::array<bool, terrain_layer::Count> renderLayerEmpty{true, true, true, true};
  std::array<std::vector<ModChunkMesh>, terrain_layer::Count> modLayerMeshes_{};
  int centerX = 0;

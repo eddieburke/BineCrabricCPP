@@ -66,12 +66,6 @@ struct FogUniforms {
  float density = 0.0f;
  float start = 0.0f;
  float end = 0.0f;
- // Lua fog_settings: shape / start / end / density (color via world_color only).
- bool modEnabled = false;
- bool modExponential = false;
- float modStart = 0.2f;
- float modEnd = 0.8f;
- float modDensity = 0.1f;
 };
 // Java Iris uploads the GL fog-mode constants (0 / GL_LINEAR / GL_EXP2); the
 // engine keeps internal 1/2/3 (0 off, 1 linear, 2 exp, 3 exp2) and maps at the
@@ -260,9 +254,6 @@ void clearDrawCameraState();
 // nothing else, so `gbufferModelViewInverse * viewPos + cameraPosition` lands
 // back on worldPos.
 [[nodiscard]] const math::Matrix4f& drawModelView() noexcept;
-// Always the inverse of drawModelView(). bindAndUploadUniforms trusts that on any
-// draw sitting on the pass base, so the two must never be settable apart.
-[[nodiscard]] const math::Matrix4f& drawModelViewInverse() noexcept;
 [[nodiscard]] const math::Matrix4f& drawProjection() noexcept;
 // Pass owners only. Resets the pose: a pose means nothing once its base changes.
 void setPassModelView(const math::Matrix4f& modelView) noexcept;
@@ -307,7 +298,8 @@ const FogUniforms& fog();
 void setFogEnabled(bool enabled);
 void fogUpdateFromWorld(::net::minecraft::client::Minecraft* client, float tickDelta,
                         const ::net::minecraft::client::option::RenderSettings& frame);
-void fogApplyMode(::net::minecraft::client::Minecraft* client, int mode,
+// Beta EntityRenderer.setupFog(-1) is the sky pass; every other call is setupFog(0).
+void fogApplyMode(::net::minecraft::client::Minecraft* client, bool skyPass,
                   const ::net::minecraft::client::option::RenderSettings& frame);
 void setSkyUniforms(const SkyUniforms& sky);
 // The frame's single celestial answer. GameRenderer::updateSunLight publishes it

@@ -1,4 +1,4 @@
-param([string]$BuildDir="build-omega",[ValidateSet("Release","RelWithDebInfo","Debug")][string]$BuildType="Release",[int]$Jobs=0,[switch]$Clean,[switch]$Lto,[switch]$NoLto,[switch]$NoCcache,[switch]$NoNativeCpu,[switch]$RunTests,[string]$TestFilter="",[switch]$SkipModPackaging,[switch]$SkipResourceSync,[switch]$KeepDebugSymbols,[switch]$StripSymbols,[switch]$Log,[switch]$Gui,[switch]$Run,[switch]$NoGui,[switch]$CleanOnly,[switch]$Format,[string]$ModId="",[switch]$NoModDeploy,[ValidateSet("All","Client","Server")][string]$Target="All",[Parameter(ValueFromRemainingArguments=$true)][string[]]$RunArgs)
+param([string]$BuildDir="build-omega",[ValidateSet("Release","RelWithDebInfo","Debug")][string]$BuildType="Release",[int]$Jobs=0,[switch]$Clean,[switch]$Lto,[switch]$NoLto,[switch]$NoCcache,[switch]$Vtune,[switch]$NoNativeCpu,[switch]$RunTests,[string]$TestFilter="",[switch]$SkipModPackaging,[switch]$SkipResourceSync,[switch]$KeepDebugSymbols,[switch]$StripSymbols,[switch]$Log,[switch]$Gui,[switch]$Run,[switch]$NoGui,[switch]$CleanOnly,[switch]$Format,[string]$ModId="",[switch]$NoModDeploy,[ValidateSet("All","Client","Server")][string]$Target="All",[Parameter(ValueFromRemainingArguments=$true)][string[]]$RunArgs)
 $ErrorActionPreference="Stop"
 $ScriptDir=Split-Path -Parent $MyInvocation.MyCommand.Path
 sl $ScriptDir
@@ -490,6 +490,7 @@ Write-Host "Compiler:  $RelGpp"
 $CmakeArgs=@("-S",".","-B",$BuildDir,"-G","Ninja","-DCMAKE_MAKE_PROGRAM=$NinjaExe","-DCMAKE_CXX_COMPILER=$GppExe","-DCMAKE_BUILD_TYPE=$BuildType","-DMINECRAFT_TOOLCHAIN_ROOT=$RelToolchainRoot")
 $UseLto=$Lto -and(-not $NoLto)
 $UseCcache=-not $NoCcache
+if($Vtune){$CmakeArgs+="-DVTUNE_ENABLED=ON"}
 $CmakeArgs+="-DMINECRAFT_USE_CCACHE=$(if($UseCcache){'ON'}else{'OFF'})"
 if($NoCcache){$CmakeArgs+="-DCMAKE_CXX_COMPILER_LAUNCHER=";$env:CCACHE_DISABLE="1"}
 if($Lto -and $NoLto){Fail "-Lto and -NoLto cannot be used together."}

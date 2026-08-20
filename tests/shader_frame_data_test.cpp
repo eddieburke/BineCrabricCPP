@@ -203,4 +203,14 @@ TEST(VanillaShaderAbi, GeometryUsesPerDrawCoreMatrices) {
   EXPECT_EQ(source.find("gbufferProjection"), std::string::npos) << name;
  }
 }
+TEST(VanillaShaderAbi, EntityProgramsUseEntityLightingRig) {
+ const std::filesystem::path shaders =
+     std::filesystem::path(MINECRAFT_TEST_SOURCE_DIR) / "src" / "net" / "minecraft" / "client" / "render" / "shaders" / "glsl" / "vanilla" / "shaders";
+ for(const char* name : {"gbuffers_entities.fsh", "gbuffers_hand.fsh"}) {
+  const std::string source = read(shaders / name);
+  EXPECT_NE(source.find("entityDiffuse"), std::string::npos) << name;
+  EXPECT_NE(source.find("lightingEnabled"), std::string::npos) << name;
+  EXPECT_EQ(source.find("faceShade("), std::string::npos) << name;
+ }
+}
 } // namespace net::minecraft::test

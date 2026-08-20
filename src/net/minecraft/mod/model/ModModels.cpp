@@ -14,6 +14,7 @@
 #include "net/minecraft/client/render/RenderCore.hpp"
 #include "net/minecraft/client/render/Tessellator.hpp"
 #include "net/minecraft/client/render/TextureResolve.hpp"
+#include "net/minecraft/client/render/block/BlockFaceLighting.hpp"
 #include "net/minecraft/client/render/block/BlockRenderManager.hpp"
 #include "net/minecraft/client/render/item/ItemModelRenderer.hpp"
 #include "net/minecraft/item/ItemStack.hpp"
@@ -139,6 +140,18 @@ const BakedModel* bakedModelForHandle(int handle) noexcept {
   return nullptr;
  }
  return models.models[static_cast<std::size_t>(handle) - 1].get();
+}
+int bakedModelTextureId(int handle) noexcept {
+ const BakedModel* baked = bakedModelForHandle(handle);
+ if(baked == nullptr) {
+  return -1;
+ }
+ for(const BakedTextureBatch& batch : baked->batches) {
+  if(batch.textureId >= 0) {
+   return batch.textureId;
+  }
+ }
+ return -1;
 }
 namespace {
 struct WorldBox {
@@ -376,6 +389,10 @@ struct TransformedVertex {
 struct EmittedQuad {
  const TransformedVertex* vertices = nullptr;
  bool coplanarBackFace = false;
+ // Cube face this quad lies on, or -1 when it is interior geometry or the model
+ // was rotated/scaled out of the grid. Only a grid-aligned face can be sampled
+ // against the neighbour columns the AO corners come from.
+ int cullFace = -1;
  float nx = 0.0f;
  float ny = 1.0f;
  float nz = 0.0f;
@@ -410,15 +427,37 @@ void writeQuad(Tessellator& t,
                double baseZ,
                float light,
                float alphaScale,
-               QuadLightMode lightMode = QuadLightMode::Absolute) {
+               QuadLightMode lightMode = QuadLightMode::Absolute,
+               const client::render::block::FaceCornerSamples* ao = nullptr,
+               const client::option::RenderSettings* opts = nullptr) {
  if(lightMode == QuadLightMode::Absolute) {
   const int level = std::clamp(static_cast<int>(std::lround(light * 15.0f)), 0, 15);
   t.light(level, level);
  } else if(lightMode == QuadLightMode::Entity) {
   t.light(15, 15);
  }
- t.color(quad.red, quad.green, quad.blue, quad.alpha * alphaScale);
+ if(ao == nullptr) {
+  t.color(quad.red, quad.green, quad.blue, quad.alpha * alphaScale);
+ }
  for(int i = 0; i < 4; ++i) {
+  if(ao != nullptr) {
+   // Per-vertex AO, the same corner samples CubeBlockRenderer gives a vanilla
+   // block. Blended rather than indexed because a baked quad's vertex order
+   // comes from the model JSON, not from a face renderer's winding.
+   const client::render::block::CornerSample corner =
+       ao->blend(quad.vertices[i].x, quad.vertices[i].y, quad.vertices[i].z);
+   const float strength = opts->ambientOcclusionStrength;
+   const float occlusion = 1.0f - (1.0f - corner.occlusion) * strength;
+   const float faceBlock = static_cast<float>(ao->faceBlockLight);
+   const float faceSky = static_cast<float>(ao->faceSkyLight);
+   t.light(faceBlock + (corner.blockLight - faceBlock) * strength,
+           faceSky + (corner.skyLight - faceSky) * strength);
+   // separateAo carries the occlusion in alpha and leaves rgb alone; the
+   // directional face shade is already folded into rgb by forEachBakedQuad.
+   const float rgb = opts->separateAo ? 1.0f : occlusion;
+   t.color(quad.red * rgb, quad.green * rgb, quad.blue * rgb,
+           (opts->separateAo ? occlusion : quad.alpha) * alphaScale);
+  }
   client::render::block::emitBlockVertex(t,
                                          quad.nx,
                                          quad.ny,
@@ -482,6 +521,7 @@ bool forEachBakedQuad(const BakedModel& baked,
    EmittedQuad out;
    out.vertices = vertices;
    out.coplanarBackFace = quad.coplanarBackFace;
+   out.cullFace = placedAsBaked ? quad.cullFace : -1;
    out.red = quad.red * quad.shade * transform.colorR;
    out.green = quad.green * quad.shade * transform.colorG;
    out.blue = quad.blue * quad.shade * transform.colorB;
@@ -522,8 +562,20 @@ bool writeBlockQuad(const BlockModelDraw& draw, const EmittedQuad& quad, int tex
  if(!capturing) {
   t.startQuads();
  }
+ // Without this a mod block is flat-lit: one colour and one light for all four
+ // vertices, while CubeBlockRenderer gives a vanilla block per-corner AO.
+ client::render::block::FaceCornerSamples aoSamples;
+ const bool ao = !draw.inventory && quad.cullFace >= 0 && manager.ctx.opts.ambientOcclusionActive &&
+                 manager.ctx.blockView != nullptr;
+ if(ao) {
+  aoSamples = client::render::block::sampleCubeFaceCorners(manager.ctx, quad.cullFace,
+                                                           draw.x + kFaceOffsets[quad.cullFace][0],
+                                                           draw.y + kFaceOffsets[quad.cullFace][1],
+                                                           draw.z + kFaceOffsets[quad.cullFace][2]);
+ }
  const QuadLightMode lightMode = draw.inventory ? QuadLightMode::Absolute : QuadLightMode::Preserve;
- writeQuad(t, quad, baseX, baseY, baseZ, draw.brightness, 1.0f, lightMode);
+ writeQuad(t, quad, baseX, baseY, baseZ, draw.brightness, 1.0f, lightMode, ao ? &aoSamples : nullptr,
+           ao ? &manager.ctx.opts : nullptr);
  if(!capturing) {
   t.draw();
  }

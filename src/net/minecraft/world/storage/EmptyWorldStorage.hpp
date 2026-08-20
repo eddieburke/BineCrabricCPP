@@ -37,10 +37,6 @@ class EmptyWorldStorage : public WorldStorage {
   (void)dimension;
   return std::make_unique<NullChunkStorage>();
  }
- void save(const WorldProperties& properties, const std::vector<entity::player::PlayerEntity*>& players) override {
-  (void)properties;
-  (void)players;
- }
  void save(const WorldProperties& properties) override {
   (void)properties;
  }

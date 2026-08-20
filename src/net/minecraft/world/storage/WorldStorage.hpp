@@ -2,7 +2,6 @@
 #include <filesystem>
 #include <memory>
 #include <optional>
-#include <vector>
 #include "net/minecraft/server/world/PlayerSaveHandler.hpp"
 #include "net/minecraft/world/WorldProperties.hpp"
 #include "net/minecraft/world/chunk/storage/ChunkStorage.hpp"
@@ -18,7 +17,8 @@ class WorldStorage {
  [[nodiscard]] virtual std::optional<WorldProperties> loadProperties() = 0;
  virtual void checkSessionLock() = 0;
  [[nodiscard]] virtual std::unique_ptr<ChunkStorage> getChunkStorage(const Dimension* dimension) = 0;
- virtual void save(const WorldProperties& properties, const std::vector<entity::player::PlayerEntity*>& players) = 0;
+ // One save entry point. The player travels inside `properties`; callers fold the live
+ // player in with World::propertiesWithPlayer() before calling.
  virtual void save(const WorldProperties& properties) = 0;
  [[nodiscard]] virtual server::world::PlayerSaveHandler* getPlayerSaveHandler() = 0;
  virtual void forceSave() = 0;

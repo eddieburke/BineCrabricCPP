@@ -165,10 +165,9 @@ void ClientLoginNetworkHandler::onHello(const LoginHelloPacket& packet) {
   if(disconnected || minecraft == nullptr || bridge_ == nullptr) {
     return;
   }
-  const bool remoteLuaModsEnabled = packet.protocolVersion == kProtocolVersionNativeCppMods;
-
   auto playHandler = std::make_unique<ClientNetworkHandler>(minecraft);
-  playHandler->onHello(packet.worldSeed, packet.dimensionId, packet.protocolVersion, remoteLuaModsEnabled);
+  playHandler->setModProtocolEnabled(remoteServerKind_ == RemoteServerKind::NativeCppMods);
+  playHandler->onHello(packet.worldSeed, packet.dimensionId, packet.protocolVersion, remoteLuaModsEnabled_);
   bridge_->setHandler(std::move(playHandler));
 }
 

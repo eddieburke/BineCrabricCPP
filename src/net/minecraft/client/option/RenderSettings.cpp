@@ -41,7 +41,6 @@ RenderSettings renderSettings(const GameOptions& options) {
  r.weatherEnabled = options.weather;
  r.rainMode = options.rain;
  r.frustumCulling = options.frustumCulling;
- r.occlusionCulling = true;
  r.animatedWater = options.animatedWater == 0;
  r.animatedLava = options.animatedLava == 0;
  r.animatedFire = options.animatedFire;

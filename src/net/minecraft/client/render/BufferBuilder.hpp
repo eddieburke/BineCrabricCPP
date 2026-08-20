@@ -65,14 +65,18 @@ class BufferBuilder {
   buffer_.clear();
  }
  VertexProxy vertex(float x, float y, float z) {
-  std::size_t offset = buffer_.size();
-  buffer_.resize(offset + sizeof(TVertex));
-  TVertex* ptr = reinterpret_cast<TVertex*>(&buffer_[offset]);
+  const std::size_t offset = buffer_.size();
   // One copy of a prototype built at compile time, instead of a scattered store
   // per defaulted field on every vertex. Tessellator::vertex is the immediate
   // mode entry point for entities, particles and the GUI, so this runs tens of
   // thousands of times a frame.
-  *ptr = kPrototype;
+  //
+  // Appending the prototype's bytes rather than resize()-then-assign matters at
+  // that rate: resize() value-initializes, so every vertex was memset to zero and
+  // then overwritten in full. This writes each vertex exactly once.
+  const auto* prototypeBytes = reinterpret_cast<const std::uint8_t*>(&kPrototype);
+  buffer_.insert(buffer_.end(), prototypeBytes, prototypeBytes + sizeof(TVertex));
+  TVertex* ptr = reinterpret_cast<TVertex*>(&buffer_[offset]);
   ptr->x = x;
   ptr->y = y;
   ptr->z = z;

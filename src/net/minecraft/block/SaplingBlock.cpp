@@ -1,9 +1,7 @@
 #include "net/minecraft/block/SaplingBlock.hpp"
+#include "net/minecraft/block/BlockSounds.hpp"
 #include "net/minecraft/item/SaplingBlockItem.hpp"
 #include "net/minecraft/registry/Registry.hpp"
-namespace {
-net::minecraft::BlockSoundGroup kDirtSound("grass", 1.0f, 1.0f);
-}
 namespace net::minecraft::block {
 void SaplingBlock::registerClass() {
  Block::SAPLING = (new SaplingBlock(kBlockId, 15))

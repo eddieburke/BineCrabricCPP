@@ -5,7 +5,6 @@ local iron_bars_model = assert(minecraft.model.load("models/iron_bars/iron_bars.
 
 minecraft.register_block({
   id = 101,
-  texture = "mods/iron_bars/iron_bars.png",
   hardness = 5.0,
   resistance = 10.0,
   translation_key = "fenceIron",
@@ -15,9 +14,6 @@ minecraft.register_block({
   full_cube = false,
   stack_on_same = true,
   model = iron_bars_model,
-  item = {
-    texture = "mods/iron_bars/iron_bars.png",
-  },
 })
 
 minecraft.register_shaped_recipe({

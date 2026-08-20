@@ -326,7 +326,6 @@ void InputSystem::dispatchGameKey(Minecraft& client, int key) {
      {keys::kF3, &GameOptions::debugHud},
      {keys::kF5, &GameOptions::thirdPerson},
      {keys::kF8, &GameOptions::cinematicMode},
-     {keys::kF6, &GameOptions::shadowForceBoxCull},
      {keys::kF7, &GameOptions::shadowDisablePolyOffset},
  };
  if(key == keys::kEscape) {

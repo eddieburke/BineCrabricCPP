@@ -5,12 +5,8 @@
 #include <string>
 #include <unordered_map>
 #include <utility>
-#include <vector>
 #include "net/minecraft/nbt/NbtCompound.hpp"
 namespace net::minecraft {
-namespace entity::player {
-class PlayerEntity;
-}
 class WorldProperties {
  public:
  WorldProperties() = default;
@@ -43,15 +39,38 @@ class WorldProperties {
    dimensionId_ = playerNbt_->getInt("Dimension");
   }
  }
+ // playerNbt_ is the only source of the Player compound. There used to be a second overload
+ // taking the live player list, and the periodic autosave reached it with an empty list --
+ // which resolved to "no player" and wrote a level.dat with no Player compound at all,
+ // erasing whatever the previous save had put there.
  [[nodiscard]] NbtCompound asNbt() const {
-  return asNbt(getPlayerNbt());
- }
- [[nodiscard]] NbtCompound asNbt(const NbtCompound* playerNbt) const {
+  static_cast<void>(const_cast<WorldProperties*>(this)->touchLastPlayed());
   NbtCompound nbt;
-  updateNbt(nbt, playerNbt);
+  nbt.putLong("RandomSeed", static_cast<std::int64_t>(seed_));
+  nbt.putInt("SpawnX", spawnX_);
+  nbt.putInt("SpawnY", spawnY_);
+  nbt.putInt("SpawnZ", spawnZ_);
+  nbt.putLong("Time", static_cast<std::int64_t>(time_));
+  nbt.putLong("SizeOnDisk", static_cast<std::int64_t>(sizeOnDisk_));
+  nbt.putLong("LastPlayed", static_cast<std::int64_t>(lastPlayed_));
+  nbt.putString("LevelName", name_);
+  nbt.putInt("version", version_);
+  nbt.putInt("rainTime", rainTime_);
+  nbt.putBoolean("raining", raining_);
+  nbt.putInt("thunderTime", thunderTime_);
+  nbt.putBoolean("thundering", thundering_);
+  if(!modOptions_.empty()) {
+   NbtCompound options;
+   for(const auto& [key, value] : modOptions_) {
+    options.putString(key, value);
+   }
+   nbt.put("ModOptions", options);
+  }
+  if(playerNbt_.has_value()) {
+   nbt.put("Player", *playerNbt_);
+  }
   return nbt;
  }
- [[nodiscard]] NbtCompound asNbt(const std::vector<entity::player::PlayerEntity*>& players) const;
  [[nodiscard]] std::uint64_t getSeed() const noexcept {
   return seed_;
  }
@@ -154,32 +173,6 @@ class WorldProperties {
  static std::uint64_t nowMillis() {
   using namespace std::chrono;
   return static_cast<std::uint64_t>(duration_cast<milliseconds>(system_clock::now().time_since_epoch()).count());
- }
- void updateNbt(NbtCompound& nbt, const NbtCompound* playerNbt) const {
-  static_cast<void>(const_cast<WorldProperties*>(this)->touchLastPlayed());
-  nbt.putLong("RandomSeed", static_cast<std::int64_t>(seed_));
-  nbt.putInt("SpawnX", spawnX_);
-  nbt.putInt("SpawnY", spawnY_);
-  nbt.putInt("SpawnZ", spawnZ_);
-  nbt.putLong("Time", static_cast<std::int64_t>(time_));
-  nbt.putLong("SizeOnDisk", static_cast<std::int64_t>(sizeOnDisk_));
-  nbt.putLong("LastPlayed", static_cast<std::int64_t>(lastPlayed_));
-  nbt.putString("LevelName", name_);
-  nbt.putInt("version", version_);
-  nbt.putInt("rainTime", rainTime_);
-  nbt.putBoolean("raining", raining_);
-  nbt.putInt("thunderTime", thunderTime_);
-  nbt.putBoolean("thundering", thundering_);
-  if(!modOptions_.empty()) {
-   NbtCompound options;
-   for(const auto& [key, value] : modOptions_) {
-    options.putString(key, value);
-   }
-   nbt.put("ModOptions", options);
-  }
-  if(playerNbt != nullptr) {
-   nbt.put("Player", *playerNbt);
-  }
  }
  std::uint64_t seed_ = 0;
  int spawnX_ = 0;

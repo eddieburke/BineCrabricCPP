@@ -38,9 +38,8 @@ void TntEntityRenderer::render(
  const float flash = (1.0f - (static_cast<float>(tnt->fuse) - tickDelta + 1.0f) / 100.0f) * 0.8f;
  bindTexture("/terrain.png");
  if(net::minecraft::block::Block* block = net::minecraft::block::Block::BLOCKS[kTntBlockId]) {
-  // MCP RenderTNTPrimed: renderBlockOnInventory(..., getEntityBrightness(partialTick)).
   render::core::setDrawPose(matrices.top());
-  blockRenderManager_.render(*block, 0, entity.getBrightnessAtEyes(tickDelta));
+  blockRenderManager_.render(*block, 0, 1.0f);
   if(tnt->fuse / 5 % 2 == 0) {
    render::RenderPassScope passScope(render::RenderType::entityCutout());
    render::core::setLightingEnabled(false);

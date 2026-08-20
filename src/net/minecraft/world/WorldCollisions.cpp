@@ -33,7 +33,7 @@ struct BlockScanBounds {
  return BlockScanBounds{
      .minX = MathHelper::floor(box.minX),
      .maxX = MathHelper::floor(box.maxX + 1.0),
-     .minY = MathHelper::floor(box.minY) - 1,
+     .minY = MathHelper::floor(box.minY),
      .maxY = MathHelper::floor(box.maxY + 1.0),
      .minZ = MathHelper::floor(box.minZ),
      .maxZ = MathHelper::floor(box.maxZ + 1.0),

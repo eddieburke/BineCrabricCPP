@@ -815,9 +815,19 @@ bool renderWorldStage(const AtmosphereContext& context,
      stage,
      mod::RenderHookMoment::Before,
  };
+ event.stageEnabled = enabled;
+ event.renderDistance = context.settings.renderDistance.blocks;
  if(context.world != nullptr) {
   event.rainStrength = context.world->getRainGradient(tickDelta);
   event.starBrightness = context.world->calculateSkyLightIntensity(tickDelta) * (1.0f - event.rainStrength);
+  const Vec3d cloudColor = context.world->getCloudColor(tickDelta);
+  event.cloudRed = static_cast<float>(cloudColor.x);
+  event.cloudGreen = static_cast<float>(cloudColor.y);
+  event.cloudBlue = static_cast<float>(cloudColor.z);
+  if(context.world->dimension != nullptr) {
+   event.cloudBaseHeight = option::cloudHeightOffset(
+       context.world->dimension->getCloudHeight(), context.settings);
+  }
  }
  mod::runtime::luaHookWorldRender(event);
  if(enabled && !event.cancelVanilla) {
@@ -973,7 +983,7 @@ void GameRenderer::renderToCurrentTarget(float tickDelta,
  core::fogUpdateFromWorld(client, tickDelta, frameSettings_);
  if(!frameCamera_.shadowPass) {
   core::setFogEnabled(true);
-  core::fogApplyMode(client, 1, frameSettings_);
+  core::fogApplyMode(client, false, frameSettings_);
  }
  {
   core::clear(gl::attrib::DepthBufferBit |
@@ -1038,12 +1048,16 @@ void GameRenderer::renderToCurrentTarget(float tickDelta,
  Frustum viewFrustum;
  Frustum* activeCuller = nullptr;
  if(!frameCamera_.shadowPass && frameSettings_.frustumCulling && core::drawCameraStateValid()) {
-  viewFrustum.compute(core::drawProjection(), core::drawModelView());
-  viewFrustum.prepare(frameCamera_.eyeX, frameCamera_.eyeY, frameCamera_.eyeZ);
+  viewFrustum.compute(core::drawProjection(), core::drawModelView(), frameCamera_.eyeX,
+                      frameCamera_.eyeY, frameCamera_.eyeZ);
   activeCuller = &viewFrustum;
  }
  if(!frameCamera_.shadowPass && !frameCamera_.skipAllRendering && client->world->dimension != nullptr &&
     !client->world->dimension->isNether) {
+  // Beta renderWorld draws the sky under setupFog(-1) and switches back to setupFog(0)
+  // for terrain. Without this the sky was drawn with the terrain's fog range, so it
+  // never blended toward the fog colour and the fogged horizon met it as a hard band.
+  core::fogApplyMode(client, true, frameSettings_);
   const bool skyRendered = renderWorldStage(atmosphereCtx,
                                             tickDelta,
                                             mod::WorldRenderStage::Sky,
@@ -1061,6 +1075,7 @@ void GameRenderer::renderToCurrentTarget(float tickDelta,
   if(skyRendered) {
    atmosphere::renderSkyVoid(atmosphereCtx, tickDelta);
   }
+  core::fogApplyMode(client, false, frameSettings_);
   shaderPipeline_->refreshLightmap(client->world);
  }
  if(!frameCamera_.shadowPass && !renderCameraEntity) {

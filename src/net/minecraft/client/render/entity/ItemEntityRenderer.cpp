@@ -59,9 +59,9 @@ void ItemEntityRenderer::render(
   if(block != nullptr && dispatcher != nullptr && dispatcher->textureManager() != nullptr) {
    const client::render::ResolvedTexture resolved = client::render::resolveBlockTexture(
        block->textureId, *dispatcher->textureManager(), client::render::AtlasDomain::Terrain);
-    if(resolved.glId >= 0) {
-     dispatcher->textureManager()->bindTexture(resolved.glId);
-    }
+   if(resolved.glId >= 0) {
+    dispatcher->textureManager()->bindTexture(resolved.glId);
+   }
   } else {
    bindTexture("/terrain.png");
   }
@@ -70,21 +70,20 @@ void ItemEntityRenderer::render(
    scale = 0.5f;
   }
   matrices.scale(scale, scale, scale);
-   for(int i = 0; i < duplicateCount; ++i) {
-    matrices.push();
-    if(i > 0) {
-     const float offsetX = (random_.nextFloat() * 2.0f - 1.0f) * 0.2f / scale;
-     const float offsetY = (random_.nextFloat() * 2.0f - 1.0f) * 0.2f / scale;
-     const float offsetZ = (random_.nextFloat() * 2.0f - 1.0f) * 0.2f / scale;
-     matrices.translate(offsetX, offsetY, offsetZ);
-    }
-    if(block != nullptr) {
-     // MCP RenderItem: renderBlockOnInventory(..., getEntityBrightness(partialTick)).
-     render::core::setDrawPose(matrices.top());
-     blockRenderManager_.render(*block, stack.getDamage(), entity.getBrightnessAtEyes(tickDelta));
-    }
-    matrices.pop();
+  for(int i = 0; i < duplicateCount; ++i) {
+   matrices.push();
+   if(i > 0) {
+    const float offsetX = (random_.nextFloat() * 2.0f - 1.0f) * 0.2f / scale;
+    const float offsetY = (random_.nextFloat() * 2.0f - 1.0f) * 0.2f / scale;
+    const float offsetZ = (random_.nextFloat() * 2.0f - 1.0f) * 0.2f / scale;
+    matrices.translate(offsetX, offsetY, offsetZ);
    }
+   if(block != nullptr) {
+    render::core::setDrawPose(matrices.top());
+    blockRenderManager_.render(*block, stack.getDamage(), 1.0f);
+   }
+   matrices.pop();
+  }
  } else {
   matrices.scale(0.5f, 0.5f, 0.5f);
   const int textureId = stack.getTextureId();
@@ -112,27 +111,25 @@ void ItemEntityRenderer::render(
   constexpr float width = 1.0f;
   constexpr float halfWidth = 0.5f;
   constexpr float quarterHeight = 0.25f;
-  // MCP RenderItem sprite path: glColor4f(tint * getEntityBrightness(partialTick)).
-  const float brightness = entity.getBrightnessAtEyes(tickDelta);
   if(useCustomDisplayColor_ && stack.getItem() != nullptr) {
    const item::ItemTint tint = item::ItemModelRenderer::tintColor(stack);
-   render::core::setConstColor(tint.red * brightness, tint.green * brightness, tint.blue * brightness, 1.0f);
+   render::core::setConstColor(tint.red, tint.green, tint.blue, 1.0f);
   } else {
-   render::core::setConstColor(brightness, brightness, brightness, 1.0f);
+   render::core::setConstColor(1.0f, 1.0f, 1.0f, 1.0f);
   }
-   for(int i = 0; i < duplicateCount; ++i) {
-    matrices.push();
-    if(i > 0) {
-     const float offsetX = (random_.nextFloat() * 2.0f - 1.0f) * 0.3f;
-     const float offsetY = (random_.nextFloat() * 2.0f - 1.0f) * 0.3f;
-     const float offsetZ = (random_.nextFloat() * 2.0f - 1.0f) * 0.3f;
-     matrices.translate(offsetX, offsetY, offsetZ);
-    }
-    if(dispatcher != nullptr) {
-     matrices.rotate(180.0f - dispatcher->yaw_, 0.0f, 1.0f, 0.0f);
-    }
-    render::core::setDrawPose(matrices.top());
-    tessellator.startQuads();
+  for(int i = 0; i < duplicateCount; ++i) {
+   matrices.push();
+   if(i > 0) {
+    const float offsetX = (random_.nextFloat() * 2.0f - 1.0f) * 0.3f;
+    const float offsetY = (random_.nextFloat() * 2.0f - 1.0f) * 0.3f;
+    const float offsetZ = (random_.nextFloat() * 2.0f - 1.0f) * 0.3f;
+    matrices.translate(offsetX, offsetY, offsetZ);
+   }
+   if(dispatcher != nullptr) {
+    matrices.rotate(180.0f - dispatcher->yaw_, 0.0f, 1.0f, 0.0f);
+   }
+   render::core::setDrawPose(matrices.top());
+   tessellator.startQuads();
    tessellator.normal(0.0f, 1.0f, 0.0f);
    tessellator.vertex(0.0f - halfWidth, 0.0f - quarterHeight, 0.0, uMin, vMax);
    tessellator.vertex(width - halfWidth, 0.0f - quarterHeight, 0.0, uMax, vMax);

@@ -255,6 +255,9 @@ class ShaderProgram {
  void refreshUniformLocations();
  void resetUniformLocations();
  void clearUniformCache();
+ // Shared by every link path (link, single-stage attach, program-binary load):
+ // on failure it captures the info log into lastError_ and deletes the program.
+ bool linkSucceeded(unsigned int program);
  void resetUniformLookupCache() noexcept;
  bool extractProgramBinary(ProgramBinaryBlob& out);
  unsigned int program_ = 0;

@@ -56,6 +56,8 @@ class ChunkCompilePipeline {
  ChunkSectionSystem* sectionSystem_ = nullptr;
  std::unordered_set<chunk::ChunkBuilder*> dirtyChunks_{};
  std::unordered_set<chunk::ChunkBuilder*> nearDirtyChunks_{};
+ // Reused so the per-frame capture pass allocates nothing.
+ std::vector<chunk::ChunkBuilder*> captureCandidates_{};
  std::vector<std::shared_ptr<chunk::ChunkMeshJob>> pendingMeshUploads_{};
  std::uint64_t staleMeshJobs_ = 0;
  std::uint64_t deferredMeshUploads_ = 0;

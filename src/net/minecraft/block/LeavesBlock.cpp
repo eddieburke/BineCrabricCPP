@@ -1,4 +1,5 @@
 #include "net/minecraft/block/LeavesBlock.hpp"
+#include "net/minecraft/block/BlockSounds.hpp"
 #include <array>
 #include <cstdint>
 #include "net/minecraft/block/Block.hpp"
@@ -10,9 +11,6 @@
 #include "net/minecraft/registry/Registry.hpp"
 #include "net/minecraft/stat/Stats.hpp"
 #include "net/minecraft/world/World.hpp"
-namespace {
-net::minecraft::BlockSoundGroup kDirtSound("grass", 1.0f, 1.0f);
-}
 namespace net::minecraft::block {
 namespace {
 constexpr int kDecayRadius = 4;

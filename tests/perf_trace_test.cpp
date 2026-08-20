@@ -149,10 +149,9 @@ TEST(PerfTrace, FrustumCullPhaseBreakdown) {
  client::render::Frustum frustum;
  Trace trace("frustum cull");
  trace.measure("Frustum::compute (plane extract)", 20000, [&](int) {
-  frustum.compute(projection, modelView);
+  frustum.compute(projection, modelView, 0.0, 64.0, 0.0);
  });
- frustum.compute(projection, modelView);
- frustum.prepare(0.0, 64.0, 0.0);
+ frustum.compute(projection, modelView, 0.0, 64.0, 0.0);
  // A realistic ring: 16-block sections out to ~16 chunks in every direction.
  std::vector<net::minecraft::Box> boxes;
  for(int x = -16; x < 16; ++x) {

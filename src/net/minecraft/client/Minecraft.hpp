@@ -137,7 +137,6 @@ class Minecraft {
  [[nodiscard]] static bool isFancyGraphicsEnabled();
  [[nodiscard]] static bool isAmbientOcclusionEnabled();
  [[nodiscard]] static bool isDebugProfilerEnabled();
- [[nodiscard]] bool isCommand(const std::string& message) const;
  [[nodiscard]] gui::screen::Screen* currentScreen() {
   return screenStack_.current();
  }

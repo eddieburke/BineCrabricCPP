@@ -17,8 +17,8 @@ local function valid_item(item)
 end
 
 local function create_sim(item)
-  local hx, hy, hz = renderer.half_extents(item)
-  local s = engine.create(item, hx, hy, hz)
+  local shape = renderer.physics_shape(item)
+  local s = engine.create(item, shape)
   sims[item.id] = s
   return s
 end
@@ -75,16 +75,65 @@ minecraft.on("pre_entity_render", { entity_type = "Item" }, function(event)
   return event
 end)
 
+-- Every dropped item in the loaded world used to get a full engine draw each frame
+-- (and again for the shadow pass): one geometry rebuild, one program bind, one
+-- uniform upload and one GL draw call apiece, with no regard for whether it was
+-- 200 blocks away or directly behind the camera.
+local DRAW_RADIUS = 64.0
+local DRAW_RADIUS_SQ = DRAW_RADIUS * DRAW_RADIUS
+-- cos(100 degrees). Deliberately wider than any real FOV so an item never pops out
+-- at the screen edge; it only rejects what is clearly behind the camera.
+local BEHIND_COS = -0.17
+local RAD = math.pi / 180.0
+
 local function render_items(event, frame)
   local delta = math.max(0.0, math.min(1.0, event.tick_delta or 1.0))
   local items = minecraft.entities.list("Item")
   if not items then return end
+
+  local cam_x, cam_y, cam_z = event.eye_x, event.eye_y, event.eye_z
+  local have_camera = cam_x ~= nil and cam_y ~= nil and cam_z ~= nil
+  -- Shadow casters legitimately sit outside the view frustum, so only the visible
+  -- pass gets the facing test. Distance still applies to both.
+  local fwd_x, fwd_y, fwd_z
+  if have_camera and not event.shadow_pass and event.camera_yaw and event.camera_pitch then
+    local yaw = event.camera_yaw * RAD
+    local pitch = event.camera_pitch * RAD
+    local cos_pitch = math.cos(pitch)
+    fwd_x = -math.sin(yaw) * cos_pitch
+    fwd_y = -math.sin(pitch)
+    fwd_z = math.cos(yaw) * cos_pitch
+  end
+
+  local radius_sq = DRAW_RADIUS_SQ
+  local render_distance = event.render_distance
+  if render_distance and render_distance > 0 and render_distance < DRAW_RADIUS then
+    radius_sq = render_distance * render_distance
+  end
+
   for i = 1, #items do
     local item = items[i]
-    local s = get_sim(item)
-    if s then
-      local ok, drawn = pcall(renderer.draw, item, s, delta)
-      if ok and drawn then s.render_frame = frame end
+    local visible = true
+    if have_camera and item.x then
+      local dx, dy, dz = item.x - cam_x, item.y - cam_y, item.z - cam_z
+      local dist_sq = dx * dx + dy * dy + dz * dz
+      if dist_sq > radius_sq then
+        visible = false
+      elseif fwd_x and dist_sq > 4.0 then
+        -- Items within 2 blocks stay drawn regardless: they can be under the
+        -- crosshair while the eye sits inside their bounding box.
+        local inv = 1.0 / math.sqrt(dist_sq)
+        if (dx * fwd_x + dy * fwd_y + dz * fwd_z) * inv < BEHIND_COS then
+          visible = false
+        end
+      end
+    end
+    if visible then
+      local s = get_sim(item)
+      if s then
+        local ok, drawn = pcall(renderer.draw, item, s, delta)
+        if ok and drawn then s.render_frame = frame end
+      end
     end
   end
 end

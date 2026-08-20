@@ -18,6 +18,11 @@ void FishingBobberEntityRenderer::render(
   return;
  }
  beginDraw(matrices, projection);
+ // Nothing binds a shader program for the entity stage; a draw submitted with
+ // none bound is dropped silently (RenderCore submit). Every entity renderer
+ // opens its own pass -- LivingEntityRenderer does, and its scope restores the
+ // previous (unbound) program on exit, so inheriting one is never an option.
+ const render::RenderPassScope spritePass(render::RenderType::entityCutout());
  matrices.push();
  matrices.translate(static_cast<float>(x), static_cast<float>(y), static_cast<float>(z));
  matrices.scale(0.5f, 0.5f, 0.5f);

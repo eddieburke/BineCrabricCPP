@@ -1,4 +1,5 @@
 #include "net/minecraft/block/Block.hpp"
+#include "net/minecraft/block/BlockSounds.hpp"
 #include <algorithm>
 #include <cmath>
 #include "net/minecraft/block/CactusBlock.hpp"
@@ -35,10 +36,6 @@
 // Out-of-line bodies for Block. Anything that dereferences World / ItemStack /
 // Entity lives here so Block.hpp stays free of the cycle-forming includes.
 namespace {
-net::minecraft::BlockSoundGroup kGravelSound("gravel", 1.0f, 1.0f);
-net::minecraft::BlockSoundGroup kMetalSound("stone", 1.0f, 1.5f);
-net::minecraft::BlockSoundGroup kDirtSound("grass", 1.0f, 1.0f);
-net::minecraft::BlockSoundGroup kClothSound("cloth", 1.0f, 1.0f);
 } // namespace
 namespace net::minecraft::block {
 net::minecraft::BlockSoundGroup Block::DEFAULT_SOUND_GROUP("stone", 1.0f, 1.0f);

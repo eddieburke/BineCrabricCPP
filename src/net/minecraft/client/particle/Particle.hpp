@@ -81,6 +81,7 @@ class Particle : public Entity {
   const float py = static_cast<float>(prevY + (y - prevY) * partialTicks - yOffset);
   const float pz = static_cast<float>(prevZ + (z - prevZ) * partialTicks - zOffset);
   const float brightness = getBrightnessAtEyes(partialTicks);
+  tessellator.light(15.0f, 15.0f);
   tessellator.color(red * brightness, green * brightness, blue * brightness);
   tessellator.vertex(px - horizontalSize * size - widthOffset * size,
                      py - verticalSize * size,

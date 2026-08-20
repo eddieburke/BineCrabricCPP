@@ -94,8 +94,15 @@ void InGameHud::clearChat() {
  messages.clear();
 }
 void InGameHud::addChatMessage(const std::string& message) {
+ net::minecraft::mod::ChatEvent event;
+ event.world = minecraft != nullptr ? minecraft->world : nullptr;
+ event.message = message;
+ net::minecraft::mod::runtime::luaHookChatReceive(event);
+ if(event.canceled) {
+  return;
+ }
+ std::string remaining = std::move(event.message);
  if(minecraft != nullptr && minecraft->textRenderer != nullptr) {
-  std::string remaining = message;
   while(minecraft->textRenderer->getWidth(remaining) > 320) {
    int splitAt = 1;
    for(; splitAt < static_cast<int>(remaining.size()); ++splitAt) {
@@ -103,13 +110,11 @@ void InGameHud::addChatMessage(const std::string& message) {
      break;
     }
    }
-   addChatMessage(remaining.substr(0, splitAt));
+   messages.insert(messages.begin(), ChatHudLine(remaining.substr(0, splitAt)));
    remaining = remaining.substr(static_cast<std::size_t>(splitAt));
   }
-  messages.insert(messages.begin(), ChatHudLine(remaining));
- } else {
-  messages.insert(messages.begin(), ChatHudLine(message));
  }
+ messages.insert(messages.begin(), ChatHudLine(remaining));
  if(messages.size() > 50) {
   messages.resize(50);
  }

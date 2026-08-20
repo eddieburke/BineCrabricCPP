@@ -152,6 +152,9 @@ class World : public IEntityWorld {
  void updateSkyBrightness();
  void prepareWeather();
  void saveLevelProperties();
+ // The level properties with the live player folded in -- the one place that happens, shared
+ // by every save path so none of them can write a level.dat without a Player compound.
+ [[nodiscard]] WorldProperties propertiesWithPlayer() const;
  // blocking=true finishes the level.dat write before returning (shutdown/world-unload);
  // blocking=false (periodic autosave) launches it on a background future.
  void save(bool blocking = false);

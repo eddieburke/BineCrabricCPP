@@ -136,7 +136,6 @@ ShadowFrustumParams paramsFor(const PackDefinition& definition) {
  params.voxelDistance = definition.effectiveVoxelDistance();
  params.renderMultiplier = definition.shadowDistanceRenderMul;
  params.renderDistanceBlocks = kRenderDistanceBlocks;
- params.forceBoxCull = false;
  return params;
 }
 // A 16-block section whose centre sits `distance` blocks from the camera along

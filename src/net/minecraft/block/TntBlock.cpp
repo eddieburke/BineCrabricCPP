@@ -1,4 +1,5 @@
 #include "net/minecraft/block/TntBlock.hpp"
+#include "net/minecraft/block/BlockSounds.hpp"
 #include "net/minecraft/block/Block.hpp"
 #include "net/minecraft/entity/TntEntity.hpp"
 #include "net/minecraft/entity/player/PlayerEntity.hpp"
@@ -8,9 +9,6 @@
 #include "net/minecraft/recipe/CraftingRecipeManager.hpp"
 #include "net/minecraft/registry/Registry.hpp"
 #include "net/minecraft/world/World.hpp"
-namespace {
-net::minecraft::BlockSoundGroup kDirtSound("grass", 1.0f, 1.0f);
-}
 namespace net::minecraft::block {
 TntBlock::TntBlock(int id, int textureId) : Block(id, textureId, material::Material::TNT) {
 }

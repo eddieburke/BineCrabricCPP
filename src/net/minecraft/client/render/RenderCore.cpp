@@ -37,6 +37,13 @@ namespace core {
 namespace {
 WorldLightUniforms g_worldLight{};
 FogUniforms g_fog{};
+// Lua fog_settings inputs. They are what the hook last answered, not uniform values,
+// so they stay out of FogUniforms — setFog() must not be able to clobber them.
+bool g_modFogEnabled = false;
+bool g_modFogExponential = false;
+float g_modFogStart = 0.2f;
+float g_modFogEnd = 0.8f;
+float g_modFogDensity = 0.1f;
 SkyUniforms g_skyUniforms{};
 unsigned int g_globalsGeneration = 1;
 unsigned int g_globalsPushed = 0;
@@ -268,9 +275,6 @@ const float* drawCameraPosition() noexcept {
 const math::Matrix4f& drawModelView() noexcept {
  return g_drawModelView;
 }
-const math::Matrix4f& drawModelViewInverse() noexcept {
- return g_drawModelViewInverse;
-}
 const math::Matrix4f& drawProjection() noexcept {
  return g_drawProjection;
 }
@@ -434,7 +438,10 @@ void bindAndUploadUniforms(const RenderPass& pass) {
                               diffuseTexture != g_programUniformDiffuseTexture;
  Pipeline* pipeline = shaderPipeline();
  if((snapshotChanged || programChanged) && pipeline != nullptr && worldProgram.has_value()) {
-  pipeline->uploadWorldProgramUniforms(*active, *worldProgram);
+  // Rebinding still has to re-point the samplers -- texture units are global -- but
+  // re-uploading a snapshot the program already holds was the bulk of this call, and
+  // mod item draws that ping-pong between programs paid it on every single draw.
+  pipeline->bindWorldProgramState(*active, *worldProgram, snapshotChanged);
   if(snapshotChanged) active->markUniformSnapshotPushed(g_programUniformGeneration);
  }
  if(materialChanged && pipeline != nullptr && worldProgram.has_value()) {
@@ -744,19 +751,19 @@ void fogUpdateFromWorld(::net::minecraft::client::Minecraft* client, float tickD
  namespace option = ::net::minecraft::client::option;
  World& world = *client->world;
  mod::FogSettingsEvent settings{&world, client->camera};
- settings.enabled = g_fog.modEnabled;
+ settings.enabled = g_modFogEnabled;
  settings.spherical = g_fog.shape == 0;
- settings.exponential = g_fog.modExponential;
- settings.start = g_fog.modStart;
- settings.end = g_fog.modEnd;
- settings.density = g_fog.modDensity;
+ settings.exponential = g_modFogExponential;
+ settings.start = g_modFogStart;
+ settings.end = g_modFogEnd;
+ settings.density = g_modFogDensity;
  net::minecraft::mod::runtime::luaHookFogSettings(settings);
- g_fog.modEnabled = settings.enabled;
+ g_modFogEnabled = settings.enabled;
  g_fog.shape = settings.spherical ? 0 : 1;
- g_fog.modExponential = settings.exponential;
- g_fog.modStart = settings.start;
- g_fog.modEnd = settings.end;
- g_fog.modDensity = settings.density;
+ g_modFogExponential = settings.exponential;
+ g_modFogStart = settings.start;
+ g_modFogEnd = settings.end;
+ g_modFogDensity = settings.density;
  const Vec3d sky = world.getSkyColor(client->camera, tickDelta);
  const Vec3d fogColor = world.getFogColor(tickDelta);
  const float colorBlend = frame.renderDistance.fogColorBlend();
@@ -792,52 +799,49 @@ void fogUpdateFromWorld(::net::minecraft::client::Minecraft* client, float tickD
  g_fog.color[3] = 1.0f;
  clearColor(r, g, b, 0.0f);
 }
-void fogApplyMode(::net::minecraft::client::Minecraft* client, int mode,
+void fogApplyMode(::net::minecraft::client::Minecraft* client, bool skyPass,
                   const ::net::minecraft::client::option::RenderSettings& frame) {
  if(client == nullptr || client->world == nullptr || client->camera == nullptr) {
   return;
  }
  setConstColor(1.0f, 1.0f, 1.0f, 1.0f);
- const bool keepEnabled = g_fog.enabled;
  const auto* living = dynamic_cast<const LivingEntity*>(client->camera);
+ // The exponential branches derive `end` from density alone, so the sky pass writes
+ // the same value the terrain pass did; it used to be skipped, which left `end` at
+ // whatever the previous pass had (0 on the first frame).
  if(living != nullptr && living->isInFluid(::net::minecraft::block::material::Material::WATER)) {
   const float density = frame.clearWater ? 0.02f : 0.1f;
   g_fog.mode = 2;
   g_fog.density = density;
-  if(mode >= 0) {
-   g_fog.end = 3.0f / density;
-  }
+  g_fog.end = 3.0f / density;
  } else if(living != nullptr && living->isInFluid(::net::minecraft::block::material::Material::LAVA)) {
   g_fog.mode = 2;
   g_fog.density = 2.0f;
-  if(mode >= 0) {
-   g_fog.end = 1.5f;
-  }
- } else if(g_fog.modEnabled && g_fog.modExponential) {
+  g_fog.end = 1.5f;
+ } else if(g_modFogEnabled && g_modFogExponential) {
   // The mod-provided density is a plain uniform value (Iris FogUniforms.fogDensity =
   // max(0, captured density)) — it must not be scaled by the render distance.
-  const float density = g_fog.modDensity;
   g_fog.mode = 2;
-  g_fog.density = density;
-  if(mode >= 0) {
-   g_fog.end = density > 0.0f ? 3.0f / density : frame.renderDistance.blocks;
-  }
+  g_fog.density = g_modFogDensity;
+  g_fog.end = g_modFogDensity > 0.0f ? 3.0f / g_modFogDensity : frame.renderDistance.blocks;
  } else {
   g_fog.mode = 1;
   // see third_party/mcp/iris/uniforms/FogUniforms.java
   const float fogEnd = frame.renderDistance.fogEnd();
-  if(mode < 0) {
+  if(skyPass) {
+   // Beta setupFog(-1): start 0, end farPlaneDistance * 0.8, so the sky blends toward
+   // the fog colour instead of meeting fogged terrain unblended.
    g_fog.start = 0.0f;
+   g_fog.end = frame.renderDistance.skyFogEnd();
   } else {
-   g_fog.end = fogEnd * (g_fog.modEnabled ? g_fog.modEnd : 1.0f);
-   const float start = g_fog.modEnabled ? fogEnd * g_fog.modStart : frame.renderDistance.fogStart();
+   g_fog.end = fogEnd * (g_modFogEnabled ? g_modFogEnd : 1.0f);
+   const float start = g_modFogEnabled ? fogEnd * g_modFogStart : frame.renderDistance.fogStart();
    g_fog.start = std::min(start, g_fog.end * 0.9f);
   }
   if(client->world->dimension != nullptr && client->world->dimension->isNether) {
    g_fog.start = 0.0f;
   }
  }
- g_fog.enabled = keepEnabled;
 }
 void setSkyUniforms(const SkyUniforms& sky) {
  g_skyUniforms = sky;

@@ -1,12 +1,11 @@
 #include "net/minecraft/block/TorchBlock.hpp"
+#include "net/minecraft/block/BlockSounds.hpp"
+#include "net/minecraft/block/BlockNeighbors.hpp"
 #include "net/minecraft/block/Block.hpp"
 #include "net/minecraft/item/Item.hpp"
 #include "net/minecraft/recipe/CraftingRecipeManager.hpp"
 #include "net/minecraft/registry/Registry.hpp"
 #include "net/minecraft/world/World.hpp"
-namespace {
-net::minecraft::BlockSoundGroup kWoodSound("wood", 1.0f, 1.0f);
-}
 namespace net::minecraft::block {
 TorchBlock::TorchBlock(int id, int textureId) : Block(id, textureId, material::Material::PISTON_BREAKABLE) {
  setTickRandomly(true);
@@ -19,19 +18,7 @@ bool TorchBlock::canPlaceAt(World* world, int x, int y, int z) const {
  if(world == nullptr) {
   return false;
  }
- if(world->shouldSuffocate(x - 1, y, z)) {
-  return true;
- }
- if(world->shouldSuffocate(x + 1, y, z)) {
-  return true;
- }
- if(world->shouldSuffocate(x, y, z - 1)) {
-  return true;
- }
- if(world->shouldSuffocate(x, y, z + 1)) {
-  return true;
- }
- return canPlaceOn(world, x, y - 1, z);
+ return anyHorizontalNeighborSuffocates(world, x, y, z) || canPlaceOn(world, x, y - 1, z);
 }
 void TorchBlock::onPlaced(World* world, int x, int y, int z, int direction) {
  if(world == nullptr) {

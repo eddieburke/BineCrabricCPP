@@ -270,6 +270,9 @@ void readField(lua_State* state, const char* key, float& value) {
 void readField(lua_State* state, const char* key, double& value) {
  value = luaDoubleField(state, -1, key, value);
 }
+void readField(lua_State* state, const char* key, std::string& value) {
+ value = luaStringField(state, -1, key, value);
+}
 void bindFunctions(lua_State* state, std::initializer_list<LuaBinding> bindings) {
  LuaApi& api = luaApi();
  for(const LuaBinding& binding : bindings) {

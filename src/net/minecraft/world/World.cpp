@@ -30,9 +30,6 @@
 #include "net/minecraft/world/dimension/Dimension.hpp"
 #include "net/minecraft/world/events/GameEventListener.hpp"
 #include "net/minecraft/world/explosion/Explosion.hpp"
-#include "net/minecraft/world/storage/AlphaWorldStorage.hpp"
-#include "net/minecraft/world/storage/PlayerSaveSafeguards.hpp"
-#include "net/minecraft/world/storage/RegionWorldStorage.hpp"
 #include "net/minecraft/world/storage/WorldStorage.hpp"
 namespace net::minecraft {
 namespace {
@@ -293,8 +290,20 @@ void World::prepareWeather() {
 void World::saveLevelProperties() {
  if(dimensionData_ != nullptr && hasStorageBackedProperties_) {
   checkSessionLock();
-  dimensionData_->save(properties_, players);
+  dimensionData_->save(propertiesWithPlayer());
  }
+}
+WorldProperties World::propertiesWithPlayer() const {
+ WorldProperties snapshot = properties_;
+ // A non-null playerNbt_ is a load payload addPlayer() has not consumed yet: the live entity
+ // has not read it, so the stored compound is the newer of the two and writing the blank
+ // pre-load player over it would lose the save.
+ if(snapshot.getPlayerNbt() == nullptr && !players.empty() && players.front() != nullptr) {
+  NbtCompound playerNbt;
+  players.front()->writeNbt(playerNbt);
+  snapshot.setPlayerNbt(std::move(playerNbt));
+ }
+ return snapshot;
 }
 void World::save(bool blocking) {
  if(!hasStorageBackedProperties_) {
@@ -302,23 +311,18 @@ void World::save(bool blocking) {
  }
  if(dimensionData_ != nullptr) {
   checkSessionLock();
+  // Both branches write the same thing. The periodic autosave used to hand storage a bare
+  // WorldProperties with no player attached, so every autosave erased the Player compound the
+  // last blocking save had written -- and a kill (end task, crash) before the next graceful
+  // save reloaded the world with the player at world spawn holding an empty inventory.
+  WorldProperties snapshot = propertiesWithPlayer();
   if(blocking) {
    waitForAsyncSave();
    try {
-    if(auto* regionStorage = dynamic_cast<RegionWorldStorage*>(dimensionData_)) {
-     regionStorage->saveUnload(properties_, players);
-    } else if(auto* alphaStorage = dynamic_cast<AlphaWorldStorage*>(dimensionData_)) {
-     alphaStorage->saveUnload(properties_, players);
-    } else {
-     dimensionData_->save(properties_, players);
-    }
+    dimensionData_->save(snapshot);
    } catch(const std::exception&) {
    }
   } else if(!asyncSaveState_->inFlight.exchange(true, std::memory_order_acq_rel)) {
-   WorldProperties snapshot = properties_;
-   if(!players.empty() && players.front() != nullptr) {
-    snapshot.setPlayerNbt(world::storage::buildSafeguardedPlayerNbt(*players.front(), snapshot.getPlayerNbt()));
-   }
    const auto state = asyncSaveState_;
    WorldStorage* storage = dimensionData_;
    util::concurrent::ThreadCoordinator::instance().pool(util::concurrent::Domain::Io).submit([state, storage, snapshot = std::move(snapshot)]() mutable {

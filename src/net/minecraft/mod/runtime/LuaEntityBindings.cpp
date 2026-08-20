@@ -305,55 +305,6 @@ int luaEntitiesRemove(lua_State* state) {
  api.pushboolean(state, 1);
  return 1;
 }
-void pushEntityHandle(lua_State* state, net::minecraft::entity::Entity* e) {
- LuaApi& api = luaApi();
- if(e == nullptr) {
-  api.pushnil(state);
-  return;
- }
- const std::string type = net::minecraft::entity::EntityRegistry::getId(*e);
- const auto* modEntity = dynamic_cast<net::minecraft::mod::lua::LuaModEntity*>(e);
- const std::string registryId = modEntity != nullptr ? modEntity->registryId() : std::string();
- api.createtable(state, 0, 22);
- setField(state, "id", e->id);
- setField(state, "type", type);
- setField(state, "fire_ticks", e->fireTicks);
- setField(state, "is_on_fire", e->isOnFire());
- if(type == "Player") {
-  auto* player = static_cast<net::minecraft::entity::player::PlayerEntity*>(e);
-  const ItemStack* held = player->inventory.getSelectedItem();
-  if(held != nullptr && !held->empty()) {
-   setField(state, "held_item_id", held->itemId);
-  } else {
-   setField(state, "held_item_id", 0);
-  }
- }
- if(modEntity != nullptr) {
-  setField(state, "registry_id", registryId);
-  setField(state, "client_local", modEntity->isClientLocal());
-  pushNbtValue(state, modEntity->data().storage());
-  api.setfield(state, -2, "data");
- }
- setField(state, "x", e->x);
- setField(state, "y", e->y);
- setField(state, "z", e->z);
- setField(state, "vx", e->velocityX);
- setField(state, "vy", e->velocityY);
- setField(state, "vz", e->velocityZ);
- setField(state, "yaw", e->yaw);
- setField(state, "pitch", e->pitch);
- setField(state, "on_ground", e->onGround);
- if(type == "Item") {
-  auto* item = static_cast<net::minecraft::entity::ItemEntity*>(e);
-  pushItemStackFields(state, item->stack);
- }
- bindFunctions(state,
-               {
-                   {"teleport", luaEntitiesTeleport},
-                   {"apply_state", luaEntitiesApplyState},
-                   {"remove", luaEntitiesRemove},
-               });
-}
 int luaEntitiesList(lua_State* state) {
  LuaApi& api = luaApi();
  api.createtable(state, 0, 16);
@@ -435,6 +386,55 @@ int luaEntitiesSpawnMod(lua_State* state) {
  return 1;
 }
 } // namespace
+void pushEntityHandle(lua_State* state, net::minecraft::entity::Entity* e) {
+ LuaApi& api = luaApi();
+ if(e == nullptr) {
+  api.pushnil(state);
+  return;
+ }
+ const std::string type = net::minecraft::entity::EntityRegistry::getId(*e);
+ const auto* modEntity = dynamic_cast<net::minecraft::mod::lua::LuaModEntity*>(e);
+ const std::string registryId = modEntity != nullptr ? modEntity->registryId() : std::string();
+ api.createtable(state, 0, 22);
+ setField(state, "id", e->id);
+ setField(state, "type", type);
+ setField(state, "fire_ticks", e->fireTicks);
+ setField(state, "is_on_fire", e->isOnFire());
+ if(type == "Player") {
+  auto* player = static_cast<net::minecraft::entity::player::PlayerEntity*>(e);
+  const ItemStack* held = player->inventory.getSelectedItem();
+  if(held != nullptr && !held->empty()) {
+   setField(state, "held_item_id", held->itemId);
+  } else {
+   setField(state, "held_item_id", 0);
+  }
+ }
+ if(modEntity != nullptr) {
+  setField(state, "registry_id", registryId);
+  setField(state, "client_local", modEntity->isClientLocal());
+  pushNbtValue(state, modEntity->data().storage());
+  api.setfield(state, -2, "data");
+ }
+ setField(state, "x", e->x);
+ setField(state, "y", e->y);
+ setField(state, "z", e->z);
+ setField(state, "vx", e->velocityX);
+ setField(state, "vy", e->velocityY);
+ setField(state, "vz", e->velocityZ);
+ setField(state, "yaw", e->yaw);
+ setField(state, "pitch", e->pitch);
+ setField(state, "on_ground", e->onGround);
+ if(type == "Item") {
+  auto* item = static_cast<net::minecraft::entity::ItemEntity*>(e);
+  pushItemStackFields(state, item->stack);
+ }
+ bindFunctions(state,
+               {
+                   {"teleport", luaEntitiesTeleport},
+                   {"apply_state", luaEntitiesApplyState},
+                   {"remove", luaEntitiesRemove},
+               });
+}
 void clearLocalPoseHook(int entityId) {
  localPoseHooks().erase(entityId);
 }

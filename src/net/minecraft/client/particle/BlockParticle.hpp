@@ -16,9 +16,8 @@ class BlockParticle : public Particle {
                double velocityY,
                double velocityZ,
                Block* block,
-               int side,
                int meta)
-     : Particle(world, x, y, z, velocityX, velocityY, velocityZ), block_(block), side_(side) {
+     : Particle(world, x, y, z, velocityX, velocityY, velocityZ), block_(block) {
   if(block_ != nullptr) {
    textureId = block_->getTexture(0, meta);
    gravityStrength = block_->particleFallSpeedModifier;
@@ -90,6 +89,5 @@ class BlockParticle : public Particle {
 
  private:
  Block* block_ = nullptr;
- int side_ = 0;
 };
 } // namespace net::minecraft::client::particle

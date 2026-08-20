@@ -4,8 +4,11 @@
 #include <unordered_map>
 namespace net::minecraft::client::gl {
 class ShaderProgram;
-class GlTexture;
-}
+template <class Deleter>
+class GlHandle;
+struct GlTextureDeleter;
+using GlTexture = GlHandle<GlTextureDeleter>;
+} // namespace net::minecraft::client::gl
 namespace net::minecraft::client::render {
 class PackInstance;
 // https://github.com/IrisShaders/Iris/blob/26.1/common/src/main/java/net/irisshaders/iris/shaderpack/properties/ShaderProperties.java

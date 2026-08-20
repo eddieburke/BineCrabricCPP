@@ -43,8 +43,6 @@ local function save_fields(settings, save_fn)
   ui.saved_ticks = 40
 end
 
--- Must close() (not open globe again). open() would reparent globe under settings
--- and trap Done/Escape in a settings ↔ globe loop.
 local function leave_settings(settings, save_fn)
   save_fields(settings, save_fn)
   minecraft.screen.close()

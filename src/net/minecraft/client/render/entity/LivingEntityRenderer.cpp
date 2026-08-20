@@ -173,7 +173,7 @@ void LivingEntityRenderer::render(
                                 static_cast<float>(overlay & 0xFF) / 255.0f,
                                 static_cast<float>(overlayAlpha) / 255.0f);
   } else if(living->hurtTime > 0 || living->deathTime > 0) {
-   render::core::setEntityColor(brightness, 0.0f, 0.0f, 0.4f);
+   render::core::setEntityColor(1.0f, 0.0f, 0.0f, 0.4f);
   }
   model->animateModel(const_cast<net::minecraft::LivingEntity&>(*living), limbDistance, limbAngle, tickDelta);
   render::core::setDrawPose(matrices.top());
@@ -213,8 +213,8 @@ void LivingEntityRenderer::render(
    core::blendFunc(0x0302, 0x0303); // GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA
    core::depthFunc(0x0202); // GL_EQUAL
    if(living->hurtTime > 0 || living->deathTime > 0) {
-    render::core::setConstColor(brightness, 0.0f, 0.0f, 0.4f);
-    render::core::setEntityColor(brightness, 0.0f, 0.0f, 0.4f);
+    render::core::setConstColor(1.0f, 0.0f, 0.0f, 0.4f);
+    render::core::setEntityColor(1.0f, 0.0f, 0.0f, 0.4f);
     render::core::setDrawPose(matrices.top());
     {
      const Tessellator::ScopedBatch modelBatch;
@@ -225,7 +225,7 @@ void LivingEntityRenderer::render(
      if(!bindDecorationTexture(*living, layer, tickDelta)) {
       continue;
      }
-     render::core::setConstColor(brightness, 0.0f, 0.0f, 0.4f);
+     render::core::setConstColor(1.0f, 0.0f, 0.0f, 0.4f);
      if(decorationModel != nullptr) {
       syncDecorationPose();
       render::core::setDrawPose(matrices.top());

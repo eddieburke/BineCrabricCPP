@@ -110,6 +110,19 @@ local function settle_box_face(s, dt, horizontal_speed)
   s.qx, s.qy, s.qz, s.qw = M.quat_slerp(qx, qy, qz, qw, tx, ty, tz, tw, alpha)
 end
 
+local function update_world_extents(s)
+  local qx, qy, qz, qw = s.qx, s.qy, s.qz, s.qw
+  local xx, yy, zz = qx * qx, qy * qy, qz * qz
+  local xy, xz, yz = qx * qy, qx * qz, qy * qz
+  local xw, yw, zw = qx * qw, qy * qw, qz * qw
+  local m00, m01, m02 = 1.0 - 2.0 * (yy + zz), 2.0 * (xy - zw), 2.0 * (xz + yw)
+  local m10, m11, m12 = 2.0 * (xy + zw), 1.0 - 2.0 * (xx + zz), 2.0 * (yz - xw)
+  local m20, m21, m22 = 2.0 * (xz - yw), 2.0 * (yz + xw), 1.0 - 2.0 * (xx + yy)
+  s.bx = abs(m00) * s.hx + abs(m01) * s.hy + abs(m02) * s.hz
+  s.by = abs(m10) * s.hx + abs(m11) * s.hy + abs(m12) * s.hz
+  s.bz = abs(m20) * s.hx + abs(m21) * s.hy + abs(m22) * s.hz
+end
+
 local function water_surface(x, y, z)
   local id = minecraft.world.get_block(x, y, z)
   if id ~= WATER_STILL and id ~= WATER_FLOWING then return nil end
@@ -123,7 +136,7 @@ end
 -- both exact enough and O(1).
 local function sample_water(s)
   local cx, cz = floor(s.x), floor(s.z)
-  local bottom, top = s.y - s.hy, s.y + s.hy
+  local bottom, top = s.y - s.by, s.y + s.by
   local surface = water_surface(cx, floor(top), cz) or water_surface(cx, floor(bottom), cz)
   if not surface then return 0.0, 0.0, 0.0 end
 
@@ -149,7 +162,7 @@ local query = { min_x = 0, min_y = 0, min_z = 0, max_x = 0, max_y = 0, max_z = 0
 --- Block AABBs overlapping the body's swept volume. `query` is reused so the
 -- only allocation per call is the result table the host hands back.
 local function sweep_boxes(s, dx, dy, dz)
-  local hx, hy, hz = s.hx, s.hy, s.hz
+  local hx, hy, hz = s.bx, s.by, s.bz
   query.min_x = s.x - hx + min(dx, 0) - SKIN
   query.min_y = s.y - hy + min(dy, 0) - SKIN
   query.min_z = s.z - hz + min(dz, 0) - SKIN
@@ -183,7 +196,7 @@ local function move(s, dx, dy, dz)
     return false, false, false
   end
 
-  local hx, hy, hz = s.hx, s.hy, s.hz
+  local hx, hy, hz = s.bx, s.by, s.bz
   local x, y, z = s.x, s.y, s.z
   local hit_x, hit_y, hit_z = false, false, false
   local count = #boxes
@@ -221,28 +234,49 @@ local function move(s, dx, dy, dz)
   return hit_x, hit_y, hit_z
 end
 
-function M.create(item, half_x, half_y, half_z)
+function M.create(item, shape, half_y, half_z)
+  if type(shape) ~= "table" then
+    local half_x = shape
+    shape = {
+      hx = half_x,
+      hy = half_y,
+      hz = half_z,
+      inv_ix = 3.0 / max(half_y * half_y + half_z * half_z, 1e-5),
+      inv_iy = 3.0 / max(half_x * half_x + half_z * half_z, 1e-5),
+      inv_iz = 3.0 / max(half_x * half_x + half_y * half_y, 1e-5),
+      volume = 8.0 * half_x * half_y * half_z,
+    }
+  end
+  local half_x, half_y_value, half_z_value = shape.hx, shape.hy, shape.hz
   local mat = materials.get(item.item_id)
-  local volume = 8.0 * half_x * half_y * half_z
+  local volume = shape.volume or 8.0 * half_x * half_y_value * half_z_value
   local qx, qy, qz, qw = random_quat()
   local vx = (item.vx or 0.0) * SERVER_VELOCITY_SCALE
   local vy = (item.vy or 0.0) * SERVER_VELOCITY_SCALE
   local vz = (item.vz or 0.0) * SERVER_VELOCITY_SCALE
   local kick = min(config.max_spin, 2.0 + sqrt(vx * vx + vy * vy + vz * vz) * 3.0)
-  local largest_extent = max(half_x, half_y, half_z)
-  local smallest_extent = min(half_x, half_y, half_z)
+  local largest_extent = max(half_x, half_y_value, half_z_value)
+  local smallest_extent = min(half_x, half_y_value, half_z_value)
+  local mean_inverse_inertia = (shape.inv_ix + shape.inv_iy + shape.inv_iz) / 3.0
+  local spin_x = min(2.0, max(0.45, sqrt(shape.inv_ix / mean_inverse_inertia)))
+  local spin_y = min(2.0, max(0.45, sqrt(shape.inv_iy / mean_inverse_inertia)))
+  local spin_z = min(2.0, max(0.45, sqrt(shape.inv_iz / mean_inverse_inertia)))
 
-  return {
+  local body = {
     id = item.id,
     item_id = item.item_id,
     item_damage = item.item_damage or 0,
     mat = mat,
     mass = max(0.02, mat.density * volume * 1000.0),
-    -- Inverse inertia of a solid box about its centre, per unit mass. Only the
-    -- ratio matters for the impulse response, so mass cancels out.
-    inv_inertia = 3.0 / (half_x * half_x + half_y * half_y + half_z * half_z),
-    hx = half_x, hy = half_y, hz = half_z,
-    blocky = smallest_extent / largest_extent > 0.72,
+    inv_ix = shape.inv_ix,
+    inv_iy = shape.inv_iy,
+    inv_iz = shape.inv_iz,
+    hx = half_x, hy = half_y_value, hz = half_z_value,
+    bx = half_x, by = half_y_value, bz = half_z_value,
+    center_x = shape.center_x or 0.0,
+    center_y = shape.center_y or 0.0,
+    center_z = shape.center_z or 0.0,
+    blocky = shape.blocky == true or smallest_extent / largest_extent > 0.72,
     x = item.x, y = item.y, z = item.z,
     px = item.x, py = item.y, pz = item.z,
     tx = item.x, ty = item.y, tz = item.z,
@@ -250,9 +284,9 @@ function M.create(item, half_x, half_y, half_z)
     tvx = vx, tvy = vy, tvz = vz,
     qx = qx, qy = qy, qz = qz, qw = qw,
     pqx = qx, pqy = qy, pqz = qz, pqw = qw,
-    wx = (random() - 0.5) * kick,
-    wy = (random() - 0.5) * kick,
-    wz = (random() - 0.5) * kick,
+    wx = (random() - 0.5) * kick * spin_x,
+    wy = (random() - 0.5) * kick * spin_y,
+    wz = (random() - 0.5) * kick * spin_z,
     grounded = false,
     submersion = 0.0,
     sleeping = false,
@@ -262,6 +296,8 @@ function M.create(item, half_x, half_y, half_z)
     last_seen = 0,
     render_frame = -1,
   }
+  update_world_extents(body)
+  return body
 end
 
 function M.sync(s, item)
@@ -336,14 +372,19 @@ local function contact(s, axis, normal)
   if slip > 1e-6 then
     local drop = min(slip, mat.friction * impact * 0.35)
     local scale = (slip - drop) / slip
+    local before_t1, before_t2 = t1, t2
     t1, t2 = t1 * scale, t2 * scale
-    -- Slip that friction removed becomes spin about the contact tangents.
-    local spin = drop * s.inv_inertia * 0.02
+    local removed1, removed2 = before_t1 - t1, before_t2 - t2
+    local coupling = 0.10
     if axis == 2 then
-      s.wx = s.wx + t2 * spin * normal
-      s.wz = s.wz - t1 * spin * normal
+      s.wx = s.wx + removed2 * s.by * s.inv_ix * normal * coupling
+      s.wz = s.wz - removed1 * s.by * s.inv_iz * normal * coupling
+    elseif axis == 1 then
+      s.wy = s.wy - removed2 * s.bx * s.inv_iy * normal * coupling
+      s.wz = s.wz + removed1 * s.bx * s.inv_iz * normal * coupling
     else
-      s.wy = s.wy + (t1 + t2) * spin * normal * 0.5
+      s.wx = s.wx - removed2 * s.bz * s.inv_ix * normal * coupling
+      s.wy = s.wy + removed1 * s.bz * s.inv_iy * normal * coupling
     end
   end
 
@@ -359,6 +400,7 @@ end
 --- Advance one body by `dt` seconds.
 local function step_body(s, dt)
   local mat = s.mat
+  update_world_extents(s)
 
   local submersion, flow_x, flow_z = sample_water(s)
   s.submersion = submersion
@@ -419,8 +461,11 @@ local function step_body(s, dt)
     s.wx, s.wy, s.wz = s.wx * k, s.wy * k, s.wz * k
   end
 
+  local contact_y = s.grounded and (s.y - s.by) or nil
   s.qx, s.qy, s.qz, s.qw = integrate_quat(s.qx, s.qy, s.qz, s.qw, s.wx, s.wy, s.wz, dt)
   if s.grounded and s.blocky then settle_box_face(s, dt, horizontal_speed) end
+  update_world_extents(s)
+  if contact_y then s.y = contact_y + s.by end
 end
 
 local function update_sleep(s)

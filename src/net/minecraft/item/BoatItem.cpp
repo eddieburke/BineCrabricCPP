@@ -31,10 +31,10 @@ ItemStack* BoatItem::use(ItemStack* stack, World* world, PlayerEntity* user) {
   --y;
  }
  if(!world->isRemote()) {
-  auto* boat = new entity::vehicle::BoatEntity(world);
-  boat->setPosition(static_cast<double>(hit->blockX) + 0.5,
-                    static_cast<double>(y) + 1.0,
-                    static_cast<double>(hit->blockZ) + 0.5);
+  auto* boat = new entity::vehicle::BoatEntity(world,
+                                              static_cast<double>(hit->blockX) + 0.5,
+                                              static_cast<double>(y) + 1.0,
+                                              static_cast<double>(hit->blockZ) + 0.5);
   world->spawnEntity(boat);
  }
  if(stack != nullptr) {

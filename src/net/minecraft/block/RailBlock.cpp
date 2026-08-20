@@ -1,4 +1,5 @@
 #include "net/minecraft/block/RailBlock.hpp"
+#include "net/minecraft/block/BlockSounds.hpp"
 #include <memory>
 #include <vector>
 #include "net/minecraft/block/Block.hpp"
@@ -6,9 +7,6 @@
 #include "net/minecraft/recipe/CraftingRecipeManager.hpp"
 #include "net/minecraft/registry/Registry.hpp"
 #include "net/minecraft/world/World.hpp"
-namespace {
-net::minecraft::BlockSoundGroup kMetalSound("stone", 1.0f, 1.5f);
-}
 namespace net::minecraft::block {
 namespace {
 struct ConnectionPos {

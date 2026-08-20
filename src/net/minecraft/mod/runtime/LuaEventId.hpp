@@ -20,6 +20,7 @@ enum class LuaEventId : std::uint8_t {
  EntityTick,
  CreateWorld,
  BlockInteract,
+ BlockBreak,
  EntityInteract,
  AttackDamage,
  EntityTeleport,
@@ -37,6 +38,8 @@ enum class LuaEventId : std::uint8_t {
  EntitySpawn,
  EntityRemove,
  SnowIcePlacement,
+ ChatSend,
+ ChatReceive,
  Count
 };
 inline constexpr std::size_t kLuaEventCount = static_cast<std::size_t>(LuaEventId::Count);
@@ -57,6 +60,7 @@ inline constexpr std::string_view kLuaEventNames[kLuaEventCount] = {
     "entity_tick",
     "create_world",
     "block_interact",
+    "block_break",
     "entity_interact",
     "attack_damage",
     "entity_teleport",
@@ -74,6 +78,8 @@ inline constexpr std::string_view kLuaEventNames[kLuaEventCount] = {
     "entity_spawn",
     "entity_remove",
     "snow_ice_placement",
+    "chat_send",
+    "chat_receive",
 };
 [[nodiscard]] constexpr int luaEventIndexOf(std::string_view name) {
  for(std::size_t i = 0; i < kLuaEventCount; ++i) {

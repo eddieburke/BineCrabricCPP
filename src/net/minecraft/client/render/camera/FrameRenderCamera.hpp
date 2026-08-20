@@ -67,7 +67,6 @@ struct FrameRenderCamera {
  bool shadowBlockEntities = true;
  bool shadowLightBlockEntities = true;
  bool skipAllRendering = false;
- float frustumBypassDistance = 48.0f;
  // https://github.com/IrisShaders/Iris/blob/26.1/common/src/main/java/net/irisshaders/iris/shadows/ShadowRenderer.java
  const ShadowCullingFrustum* shadowTerrainFrustum = nullptr;
  const ShadowCullingFrustum* shadowEntityFrustum = nullptr;
@@ -190,13 +189,6 @@ inline void directionToView(float x, float y, float z, const FrameRenderCamera& 
  net::minecraft::util::math::Matrix4f mv;
  mv.set(modelView);
  mv.transformDirection(x, y, z, out[0], out[1], out[2]);
-}
-inline void celestialPositionToView(float x, float y, float z, const FrameRenderCamera& c, float out[3]) {
- float modelView[16]{};
- buildCameraModelView(modelView, c);
- net::minecraft::util::math::Matrix4f mv;
- mv.set(modelView);
- mv.transformPoint(x * 100.0f, y * 100.0f, z * 100.0f, out[0], out[1], out[2]);
 }
 inline void buildCameraProjection(float* m, const FrameRenderCamera& c) {
  net::minecraft::util::math::Matrix4f proj;

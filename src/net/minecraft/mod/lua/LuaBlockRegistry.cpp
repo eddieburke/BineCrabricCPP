@@ -208,7 +208,11 @@ class LuaModBlock : public Block {
  int itemOverrideTextureId_ = -1;
 };
 void registerBlockClass(const BlockRegistrationSpec& spec) {
- const int textureId = registry::TextureRegistry::getOrRegisterTexture(spec.texturePath);
+#ifdef MINECRAFT_NATIVE_EXPORTS
+ const int textureId = model::bakedModelTextureId(spec.bakedModel);
+#else
+ const int textureId = -1;
+#endif
  Material* material = materialFromName(spec.material);
  std::string translationKey = spec.translationKey;
  if(translationKey.empty()) {
@@ -256,10 +260,6 @@ bool registerBlockSpec(const BlockRegistrationSpec& spec, std::string& error) {
   error = "register_block id must be between 1 and " + std::to_string(Block::BLOCK_COUNT - 1);
   return false;
  }
-  if(spec.texturePath.empty()) {
-   error = "register_block requires texture (a mod resource path)";
-   return false;
-  }
    if(BlockRegistry::instance().contains(spec.blockId)) {
     if(const BlockRegistrationSpec* existing = BlockRegistry::instance().specForId(spec.blockId);
       existing != nullptr && !spec.ownerModId.empty() && existing->ownerModId == spec.ownerModId) {

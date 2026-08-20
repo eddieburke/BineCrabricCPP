@@ -191,7 +191,7 @@ void FishingBobberEntity::tick() {
       (boundingBox.maxY - boundingBox.minY) * static_cast<double>(i + 1) / static_cast<double>(samples) - 0.125 +
       0.125;
   const Box probe{boundingBox.minX, sampleMinY, boundingBox.minZ, boundingBox.maxX, sampleMaxY, boundingBox.maxZ};
-  if(world->isMaterialInBox(probe, block::material::Material::WATER)) {
+  if(world->isFluidInBox(probe, block::material::Material::WATER)) {
    waterFraction += 1.0 / static_cast<double>(samples);
   }
  }

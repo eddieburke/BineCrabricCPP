@@ -4,9 +4,11 @@
 #include "net/minecraft/mod/lua/LuaGameApi.hpp"
 #include "net/minecraft/mod/lua/LuaHostApi.hpp"
 #include "net/minecraft/mod/runtime/LuaBindings.hpp"
+#include "net/minecraft/mod/runtime/LuaEntityBindings.hpp"
 #include "net/minecraft/mod/runtime/LuaEventGlue.hpp"
 #include "net/minecraft/util/math/MathHelper.hpp"
 #ifdef MINECRAFT_NATIVE_EXPORTS
+#include "net/minecraft/block/BlockSounds.hpp"
 #include "net/minecraft/client/Minecraft.hpp"
 #endif
 #include <algorithm>
@@ -230,22 +232,15 @@ int luaWorldGetHeightmap(lua_State* state) {
  return 1;
 }
 int luaWorldPlayer(lua_State* state) {
- LuaApi& api = luaApi();
- double x = 0.0;
- double y = 0.0;
- double z = 0.0;
- if(entity::player::PlayerEntity* player = activeModPlayer(); player != nullptr) {
-  x = player->x;
-  y = player->y;
-  z = player->z;
- } else if(!readPlayerPosition(x, y, z)) {
-  api.pushnil(state);
-  return 1;
+ entity::player::PlayerEntity* player = activeModPlayer();
+ if(player == nullptr) {
+  player = localPlayer();
  }
- api.createtable(state, 0, 3);
- setField(state, "x", x);
- setField(state, "y", y);
- setField(state, "z", z);
+ pushEntityHandle(state, player);
+ if(player != nullptr) {
+  setField(state, "name", player->name);
+  setField(state, "health", player->health);
+ }
  return 1;
 }
 int luaWorldSpawnEntity(lua_State* state) {
@@ -310,6 +305,72 @@ int luaWorldGetBlockMeta(lua_State* state) {
  }
  World* world = luaActiveWorld();
  api.pushinteger(state, world != nullptr ? world->getBlockMeta(x, y, z) : 0);
+ return 1;
+}
+int luaWorldHarvestBlock(lua_State* state) {
+ LuaApi& api = luaApi();
+ LuaArgs args(state);
+ int x = 0;
+ int y = 0;
+ int z = 0;
+ int requiredItemId = 0;
+ if(!args.integer(1, x) || !args.integer(2, y) || !args.integer(3, z) ||
+    (args.count() >= 4 && !args.integer(4, requiredItemId))) {
+  api.pushboolean(state, 0);
+  return 1;
+ }
+ World* world = luaActiveWorld();
+ entity::player::PlayerEntity* player = activeModPlayer();
+ if(world == nullptr || world->isRemote() || player == nullptr) {
+  api.pushboolean(state, 0);
+  return 1;
+ }
+ ItemStack* handStack = player->inventory.getSelectedItem();
+ if(requiredItemId > 0 && (handStack == nullptr || handStack->itemId != requiredItemId)) {
+  api.pushboolean(state, 0);
+  return 1;
+ }
+ const int blockId = world->getBlockId(x, y, z);
+ if(blockId <= 0 || blockId >= Block::BLOCK_COUNT) {
+  api.pushboolean(state, 0);
+  return 1;
+ }
+ Block* block = Block::BLOCKS[static_cast<std::size_t>(blockId)];
+ if(block == nullptr) {
+  api.pushboolean(state, 0);
+  return 1;
+ }
+ const int meta = world->getBlockMeta(x, y, z);
+ const bool canHarvest = player->canHarvest(blockId);
+#ifdef MINECRAFT_NATIVE_EXPORTS
+ if(client::Minecraft::INSTANCE != nullptr && client::Minecraft::INSTANCE->world == world) {
+  block::sounds::playBreak(
+      world, static_cast<double>(x) + 0.5, static_cast<double>(y) + 0.5, static_cast<double>(z) + 0.5, block);
+  world->spawnBlockBreakParticles(x, y, z, blockId, meta);
+ } else {
+  world->worldEvent(2001, x, y, z, blockId + meta * 256);
+ }
+#else
+ world->worldEvent(2001, x, y, z, blockId + meta * 256);
+#endif
+ const bool removed = world->setBlock(x, y, z, 0);
+ if(!removed) {
+  api.pushboolean(state, 0);
+  return 1;
+ }
+ block->onMetadataChange(world, x, y, z, meta);
+ if(handStack != nullptr && !handStack->empty()) {
+  handStack->postMine(blockId, x, y, z, player);
+  if(handStack->count <= 0) {
+   handStack->onRemoved(player);
+   player->clearStackInHand();
+  }
+  player->inventory.markDirty();
+ }
+ if(canHarvest) {
+  block->afterBreak(world, player, x, y, z, meta);
+ }
+ api.pushboolean(state, 1);
  return 1;
 }
 int luaWorldSetTime(lua_State* state) {
@@ -390,6 +451,7 @@ void installWorldApi(lua_State* state, ModHost::LoadedLuaMod& mod) {
                        {"block_id", luaWorldBlockId},
                        {"get_block", luaWorldGetBlock},
                        {"get_block_meta", luaWorldGetBlockMeta},
+                       {"harvest_block", luaWorldHarvestBlock},
                        {"random", luaWorldRandom},
                        {"is_night", luaWorldIsNight},
                        {"get_time", luaWorldGetTime},

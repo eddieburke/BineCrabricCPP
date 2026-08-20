@@ -1,4 +1,5 @@
 #include "net/minecraft/block/RedstoneWireBlock.hpp"
+#include "net/minecraft/block/BlockNeighbors.hpp"
 #include "net/minecraft/block/Block.hpp"
 #include "net/minecraft/item/Item.hpp"
 #include "net/minecraft/item/RedstoneItem.hpp"
@@ -73,15 +74,8 @@ void RedstoneWireBlock::doUpdatePower(World* world, int x, int y, int z, int sou
   for(int direction = 0; direction < 4; ++direction) {
    int nx = x;
    int nz = z;
-   if(direction == 0) {
-    --nx;
-   } else if(direction == 1) {
-    ++nx;
-   } else if(direction == 2) {
-    --nz;
-   } else {
-    ++nz;
-   }
+   nx += kHorizontalOffsetX[direction];
+   nz += kHorizontalOffsetZ[direction];
    if(nx != sourceX || y != sourceY || nz != sourceZ) {
     nextPower = getHighestPowerWire(world, nx, y, nz, nextPower);
    }
@@ -107,15 +101,8 @@ void RedstoneWireBlock::doUpdatePower(World* world, int x, int y, int z, int sou
   int nx = x;
   int nz = z;
   int checkY = y - 1;
-  if(direction == 0) {
-   --nx;
-  } else if(direction == 1) {
-   ++nx;
-  } else if(direction == 2) {
-   --nz;
-  } else {
-   ++nz;
-  }
+  nx += kHorizontalOffsetX[direction];
+  nz += kHorizontalOffsetZ[direction];
   if(world->shouldSuffocate(nx, y, nz)) {
    checkY += 2;
   }

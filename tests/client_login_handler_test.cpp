@@ -57,7 +57,7 @@ class TestMinecraft final : public net::minecraft::client::Minecraft {
 
 namespace net::minecraft::test {
 TEST(ClientLoginHandlerTest, ParityHandshakeSequence) {
-  TestMinecraft client(nullptr, nullptr, nullptr, 854, 480, false);
+  TestMinecraft client(854, 480, false);
   client.session = client::util::Session{"Player", ""};
   client.options.modsEnabled = false;
 

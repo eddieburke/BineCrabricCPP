@@ -1,12 +1,10 @@
 #include "net/minecraft/block/WoolBlock.hpp"
+#include "net/minecraft/block/BlockSounds.hpp"
 #include "net/minecraft/block/Block.hpp"
 #include "net/minecraft/item/Item.hpp"
 #include "net/minecraft/item/WoolBlockItem.hpp"
 #include "net/minecraft/recipe/CraftingRecipeManager.hpp"
 #include "net/minecraft/registry/Registry.hpp"
-namespace {
-net::minecraft::BlockSoundGroup kClothSound("cloth", 1.0f, 1.0f);
-}
 namespace net::minecraft::block {
 void WoolBlock::registerClass() {
  Block::WOOL = (new WoolBlock())

@@ -62,26 +62,21 @@ class ShadowCullingFrustum {
   boxCuller_ = culler;
   hasBoxCuller_ = true;
  }
- void clearBoxCuller() noexcept {
-  hasBoxCuller_ = false;
- }
  [[nodiscard]] bool hasBoxCuller() const noexcept {
   return hasBoxCuller_;
  }
  [[nodiscard]] double boxCullerDistance() const noexcept {
   return hasBoxCuller_ ? boxCuller_.maxDistance() : -1.0;
  }
+ // Only Mode::SafeZone reads this, and createShadowFrustum always sets it for that
+ // mode, so there is no "has a distance culler" flag to check.
  void setDistanceCuller(const BoxCuller& culler) noexcept {
   distanceCuller_ = culler;
-  hasDistanceCuller_ = true;
  }
  void prepare(double cameraX, double cameraY, double cameraZ) noexcept;
  [[nodiscard]] bool isVisible(const net::minecraft::Box& box) const noexcept;
  [[nodiscard]] bool isVisible(double minX, double minY, double minZ, double maxX, double maxY, double maxZ)
      const noexcept;
- [[nodiscard]] std::size_t planeCount() const noexcept {
-  return planes_.count();
- }
 
  private:
  void addPlane(const std::array<float, 4>& plane) noexcept;
@@ -94,8 +89,9 @@ class ShadowCullingFrustum {
  Mode mode_ = Mode::NonCulling;
  BoxCuller boxCuller_{};
  BoxCuller distanceCuller_{};
+ // Mode::Advanced is the only mode where the box culler is optional; the other two
+ // that consult one are always given one.
  bool hasBoxCuller_ = false;
- bool hasDistanceCuller_ = false;
  double x_ = 0.0;
  double y_ = 0.0;
  double z_ = 0.0;
@@ -108,9 +104,6 @@ struct ShadowFrustumParams {
  float renderMultiplier = -1.0f; // shadowDistanceRenderMul
  // options render distance, in blocks
  float renderDistanceBlocks = 0.0f;
- // When true, force box-only culling and skip the view-dependent "advanced" extrusion
- // (F6 shadow-acne A/B diagnostic).
- bool forceBoxCull = false;
 };
 // https://github.com/IrisShaders/Iris/blob/26.1/common/src/main/java/net/irisshaders/iris/shadows/ShadowRenderer.java
 [[nodiscard]] ShadowCullingFrustum createShadowFrustum(const ShadowFrustumParams& params,

@@ -612,8 +612,16 @@ void Pipeline::applyWorldPassDirectives(WorldProgramId id, gl::ShaderProgram& pr
  applyBufferBlends(pack->definition, programKey, program.drawBufferColortexIndices());
  applyAlphaTest(pack->definition, programKey);
 }
-void Pipeline::uploadWorldProgramUniforms(gl::ShaderProgram& program, WorldProgramId id) {
- bindWorldProgram(program, makeWorldBindContext(id));
+void Pipeline::bindWorldProgramState(gl::ShaderProgram& program, WorldProgramId id, bool withUniforms) {
+ WorldProgramBindContext context = makeWorldBindContext(id);
+ // Uniform values are per-program GL state and survive rebinding, so a program
+ // that already holds this generation's snapshot only needs its samplers pointed
+ // at the current texture units again. Null uniforms is bindWorldProgram's own
+ // "samplers only" switch.
+ if(!withUniforms) {
+  context.uniforms = nullptr;
+ }
+ bindWorldProgram(program, context);
 }
 void Pipeline::bindWorldProgramMaterial(gl::ShaderProgram& program, WorldProgramId id) {
  bindProgramMaterialTextures(program, makeWorldBindContext(id));

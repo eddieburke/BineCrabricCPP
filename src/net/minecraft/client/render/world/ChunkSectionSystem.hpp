@@ -86,8 +86,11 @@ class ChunkSectionSystem {
  [[nodiscard]] const std::vector<chunk::ChunkBuilder*>& visibleSections() const noexcept {
   return cullStateSaved_ ? scopedVisibleSections_ : regularVisibleSections_;
  }
- [[nodiscard]] const std::vector<chunk::ChunkBuilder*>& sectionsByPriority() const noexcept {
-  return sectionsByPriority_;
+ // Bumped once per cull. ChunkBuilder::visibleIn compares against it, which is what
+ // lets cullChunks skip the old full-world sweep that cleared a visibility flag on
+ // every resident section every frame.
+ [[nodiscard]] int frustumStamp() const noexcept {
+  return frustumStamp_;
  }
  void drainBorderRefresh();
 
@@ -101,7 +104,9 @@ class ChunkSectionSystem {
  void rebuildSectionOrder(const net::minecraft::Vec3d& camPos);
  void updateDebugCounts();
  void updateProfileMetrics(bool shadowPass);
- void applyOcclusionCulling(Frustum* culler, const net::minecraft::Vec3d& camPos, double bypassSq);
+ // False when the camera section is absent, so the caller falls back to the plain
+ // frustum sweep; nothing has been pushed to the visible list in that case.
+ bool applyOcclusionCulling(const Frustum& culler, const net::minecraft::Vec3d& camPos, int stamp);
  [[nodiscard]] std::vector<chunk::ChunkBuilder*>& currentVisibleSections() noexcept {
   return cullStateSaved_ ? scopedVisibleSections_ : regularVisibleSections_;
  }
@@ -127,7 +132,10 @@ class ChunkSectionSystem {
  int compiledChunkCount = 0;
  int emptyChunkCount = 0;
  int debugCountCooldown_ = 0;
- int occlusionStamp_ = 0;
+ // One stamp for the whole cull: the occlusion walk and the frustum answer are
+ // recorded on the same pass over the same sections, so two counters could only
+ // ever disagree.
+ int frustumStamp_ = 0;
  std::vector<chunk::ChunkBuilder*> occlusionQueue_{};
  int meshOrderStamp_ = 0;
  bool sectionsChanged_ = true;

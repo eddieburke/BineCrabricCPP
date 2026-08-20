@@ -5,7 +5,6 @@ local repair_table_model = assert(minecraft.model.load("models/repair_table/repa
 
 minecraft.register_block({
   id = 150,
-  texture = "mods/repair_table/repair_table.png",
   hardness = 2.5,
   resistance = 10.0,
   translation_key = "repairTable",

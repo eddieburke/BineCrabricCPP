@@ -353,8 +353,6 @@ class Block {
  virtual void onBlockAction(
      net::minecraft::World* /*world*/, int /*x*/, int /*y*/, int /*z*/, int /*data1*/, int /*data2*/) {
  }
- virtual void onLightChanged(net::minecraft::World* /*world*/, int /*x*/, int /*y*/, int /*z*/) {
- }
  [[nodiscard]] virtual bool canGrow(net::minecraft::World* /*world*/, int /*x*/, int /*y*/, int /*z*/) const {
   return true;
  }

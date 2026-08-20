@@ -5,6 +5,7 @@
 #include "net/minecraft/client/render/RenderType.hpp"
 #include "net/minecraft/client/render/Tessellator.hpp"
 #include "net/minecraft/entity/player/ClientPlayerEntity.hpp"
+#include "net/minecraft/mod/runtime/LuaDirectHooks.hpp"
 #include "net/minecraft/util/CharacterUtils.hpp"
 namespace net::minecraft::client::gui::screen {
 void ChatScreen::init() {
@@ -29,10 +30,17 @@ void ChatScreen::sendCurrentText() {
  if(minecraft() == nullptr || minecraft()->player == nullptr) {
   return;
  }
- const std::string message = trimmedText();
- if(!message.empty() && !minecraft()->isCommand(message)) {
-  minecraft()->player->sendChatMessage(message);
+ net::minecraft::mod::ChatEvent event;
+ event.world = minecraft()->world;
+ event.message = trimmedText();
+ if(event.message.empty()) {
+  return;
  }
+ net::minecraft::mod::runtime::luaHookChatSend(event);
+ if(event.canceled || event.message.empty()) {
+  return;
+ }
+ minecraft()->player->sendChatMessage(event.message);
 }
 void ChatScreen::render(int mouseX, int mouseY, float tickDelta) {
  (void)mouseX;

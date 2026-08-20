@@ -1075,6 +1075,35 @@ void main() {
  ASSERT_NE(discard, std::string::npos);
  EXPECT_LT(write, discard);
 }
+TEST(PackSourcePreparation, CompatibilitySkyBasicGetsFixedFunctionFog) {
+ net::minecraft::test::installTestGlslSnippets();
+ PackDefinition pack;
+ const std::string src = R"(#version 330 compatibility
+void main() {
+	gl_FragData[0] = vec4(0.25, 0.5, 1.0, 1.0);
+}
+)";
+ const std::string out = prepareSource("gbuffers_skybasic", ShaderStage::Fragment, pack, src);
+ EXPECT_NE(out.find("uniform mat4 projectionMatrixInverse"), std::string::npos);
+ EXPECT_NE(out.find("uniform int fogMode"), std::string::npos);
+ EXPECT_NE(out.find("iris_skyDistance"), std::string::npos);
+ EXPECT_NE(out.find("iris_FragData0.rgb = mix(fogColor"), std::string::npos);
+ EXPECT_EQ(prepareSource("gbuffers_terrain", ShaderStage::Fragment, pack, src).find("iris_skyDistance"),
+           std::string::npos);
+}
+TEST(PackSourcePreparation, CompatibilitySkyBasicKeepsPackFog) {
+ net::minecraft::test::installTestGlslSnippets();
+ PackDefinition pack;
+ const std::string src = R"(#version 330 compatibility
+uniform int fogMode;
+void main() {
+	gl_FragData[0] = vec4(float(fogMode));
+}
+)";
+ const std::string out = prepareSource("gbuffers_skybasic", ShaderStage::Fragment, pack, src);
+ EXPECT_EQ(out.find("iris_skyDistance"), std::string::npos);
+ EXPECT_EQ(out.find("iris_FragData0.rgb = mix(fogColor"), std::string::npos);
+}
 TEST(PackSourcePreparation, ModernOutputsAndPostPassesDoNotGainAlphaTest) {
  net::minecraft::test::installTestGlslSnippets();
  PackDefinition pack;

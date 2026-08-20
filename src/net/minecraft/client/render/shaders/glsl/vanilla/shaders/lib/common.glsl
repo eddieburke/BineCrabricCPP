@@ -15,6 +15,15 @@ uniform int fogMode;
 // against it — Iris has no "is the test enabled" uniform.
 uniform float alphaTestRef;
 
+// Beta's fog coordinate is fixed-function GL_FRAGMENT_DEPTH: the eye-PLANE distance,
+// not the radial one. Radial made the wall 1.74x closer at the screen corners than at
+// the centre (70 deg FOV, 16:9), which reads as a wall curving in rather than as haze.
+// Not modern Minecraft's fogShape sphere/cylinder either — b1.7.3 predates both, and
+// cylinder still inflates the corner by 1.59x.
+float fogCoord(vec3 viewPosition) {
+ return abs(viewPosition.z);
+}
+
 // GL_LINEAR / GL_EXP2 as the GL fog-mode constants. fogMode 0 disables fog.
 float fogFactor(float viewDistance) {
  if(fogMode == 9729) return clamp((fogEnd - viewDistance) / max(fogEnd - fogStart, 0.0001), 0.0, 1.0);

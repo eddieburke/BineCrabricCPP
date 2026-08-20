@@ -12,5 +12,5 @@ void main() {
  gl_Position = projectionMatrix * viewPosition;
  texcoord = vaUV0;
  color = vaColor;
- viewDistance = length(viewPosition.xyz);
+ viewDistance = fogCoord(viewPosition.xyz);
 }

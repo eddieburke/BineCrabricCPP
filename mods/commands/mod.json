@@ -1,0 +1,9 @@
+{
+  "id": "commands",
+  "name": "Commands",
+  "version": "1.0.0",
+  "description": "Chat commands for single player: time, give, tp, spawn, seed, list, me, say.",
+  "enabled": true,
+  "side": "client",
+  "entry": "scripts/main.lua"
+}

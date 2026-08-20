@@ -1,5 +1,6 @@
 #include "net/minecraft/client/render/Tessellator.hpp"
 #include "net/minecraft/client/render/RenderCore.hpp"
+#include "net/minecraft/client/render/RenderType.hpp"
 #include "net/minecraft/client/render/entity/EntityRenderers.hpp"
 #include "net/minecraft/entity/Entity.hpp"
 #include "net/minecraft/entity/projectile/ArrowEntity.hpp"
@@ -16,6 +17,11 @@ void ArrowEntityRenderer::render(
   return;
  }
  beginDraw(matrices, projection);
+ // Nothing binds a shader program for the entity stage; a draw submitted with
+ // none bound is dropped silently (RenderCore submit). Every entity renderer
+ // opens its own pass -- LivingEntityRenderer does, and its scope restores the
+ // previous (unbound) program on exit, so inheriting one is never an option.
+ const RenderPassScope passScope(RenderType::entityCutout());
  bindTexture("/item/arrows.png");
  matrices.push();
  matrices.translate(static_cast<float>(x), static_cast<float>(y), static_cast<float>(z));

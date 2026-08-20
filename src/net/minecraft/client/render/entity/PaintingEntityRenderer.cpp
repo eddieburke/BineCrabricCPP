@@ -106,13 +106,14 @@ void PaintingEntityRenderer::applyBrightness(
  if(painting.facing == 3) {
   bz = MathHelper::floor(painting.z + static_cast<double>(u / 16.0f));
  }
- // MCP RenderPainting.func_159_a: glColor3f(world.getLightBrightness(i,j,k)).
- float brightness = 0.0f;
+ float blockLight = 15.0f;
+ float skyLight = 15.0f;
  if(dispatcher != nullptr && dispatcher->world() != nullptr) {
-  brightness = dispatcher->world()->getLightBrightness(bx, by, bz);
+  blockLight = static_cast<float>(dispatcher->world()->getBrightness(LightType::Block, bx, by, bz));
+  skyLight = static_cast<float>(dispatcher->world()->getBrightness(LightType::Sky, bx, by, bz));
  }
- Tessellator::INSTANCE.light(15, 15);
- render::core::setConstColor(brightness, brightness, brightness, 1.0f);
+ Tessellator::INSTANCE.light(blockLight, skyLight);
+ render::core::setConstColor(1.0f, 1.0f, 1.0f, 1.0f);
 }
 } // namespace net::minecraft::client::render::entity
 #include "net/minecraft/client/entity/EntityClientRendererRegistration.hpp"

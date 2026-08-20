@@ -36,7 +36,13 @@ void Frustum::normalize(float plane[4]) {
 #endif
 }
 void Frustum::compute(const net::minecraft::util::math::Matrix4f& projection,
-                      const net::minecraft::util::math::Matrix4f& modelView) {
+                      const net::minecraft::util::math::Matrix4f& modelView,
+                      double x,
+                      double y,
+                      double z) {
+ x_ = x;
+ y_ = y;
+ z_ = z;
  const net::minecraft::util::math::Matrix4f clip = projection * modelView;
  struct Extraction {
   int row;

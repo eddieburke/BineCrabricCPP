@@ -70,7 +70,10 @@ class Pipeline {
  void clearScene(float fogR = 0.0f, float fogG = 0.0f, float fogB = 0.0f);
  gl::ShaderProgram* worldProgram(WorldProgramId id);
  void applyWorldPassDirectives(WorldProgramId id, gl::ShaderProgram& program);
- void uploadWorldProgramUniforms(gl::ShaderProgram& program, WorldProgramId id);
+ // Points the program's samplers at the current texture units, and pushes the
+ // frame's uniform snapshot only when asked -- see the definition for why the
+ // uniform half is skippable when the program already holds that snapshot.
+ void bindWorldProgramState(gl::ShaderProgram& program, WorldProgramId id, bool withUniforms);
  void bindWorldProgramMaterial(gl::ShaderProgram& program, WorldProgramId id);
  [[nodiscard]] int resolveObjectId(const std::string& kind, const std::string& name,
                                    int fallback) const;

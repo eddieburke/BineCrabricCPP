@@ -126,13 +126,11 @@ class ParticleManager {
                        (static_cast<double>(j) + random_.nextDouble()) / static_cast<double>(grid);
      const double pz = static_cast<double>(z) +
                        (static_cast<double>(k) + random_.nextDouble()) / static_cast<double>(grid);
-     const int side = random_.nextInt(6);
      // scale outward velocity so particles burst away from the block
      const double vx = (px - static_cast<double>(x) - 0.5) * 3.0;
      const double vy = (py - static_cast<double>(y) - 0.5) * 3.0;
      const double vz = (pz - static_cast<double>(z) - 0.5) * 3.0;
-     auto particle =
-         std::make_unique<BlockParticle>(world_, px, py, pz, vx, vy, vz, block, side, blockMeta);
+     auto particle = std::make_unique<BlockParticle>(world_, px, py, pz, vx, vy, vz, block, blockMeta);
      particle->color(x, y, z);
      addParticle(std::move(particle));
     }
@@ -170,7 +168,7 @@ class ParticleManager {
    px = static_cast<double>(x) + block->maxX + static_cast<double>(inset);
   }
   auto particle = std::make_unique<BlockParticle>(
-      world_, px, py, pz, 0.0, 0.0, 0.0, block, side, world_->getBlockMeta(x, y, z));
+      world_, px, py, pz, 0.0, 0.0, 0.0, block, world_->getBlockMeta(x, y, z));
   particle->color(x, y, z)->multiplyVelocity(0.2f)->setScale(0.6f);
   addParticle(std::move(particle));
  }

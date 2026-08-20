@@ -15,9 +15,6 @@ class RailBlock : public Block {
  static void registerClass();
  bool alwaysStraight = false;
  RailBlock(int id, int textureId, bool alwaysStraight);
- [[nodiscard]] bool isAlwaysStraight() const {
-  return alwaysStraight;
- }
  [[nodiscard]] static bool isRail(World* world, int x, int y, int z);
  [[nodiscard]] static bool isRail(int blockId);
  [[nodiscard]] bool isOpaque() const override {

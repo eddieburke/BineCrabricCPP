@@ -145,6 +145,19 @@ ShaderProgram& ShaderProgram::operator=(ShaderProgram&& other) noexcept {
  }
  return *this;
 }
+bool ShaderProgram::linkSucceeded(unsigned int program) {
+ int success = 0;
+ GLCore::getProgramiv(program, kLinkStatus, &success);
+ if(success != 0) {
+  return true;
+ }
+ char log[2048]{};
+ GLCore::getProgramInfoLog(program, sizeof(log), nullptr, log);
+ lastError_ = log;
+ GLCore::deleteProgram(program);
+ return false;
+}
+
 bool ShaderProgram::supported() {
  GLCore::ensureLoaded();
  return GLCore::shaderSupported;
@@ -198,13 +211,7 @@ bool ShaderProgram::compile(const std::string& vertexSource,
  }
  GLCore::linkProgram(program);
  for(unsigned int shader : shaders) GLCore::deleteShader(shader);
- int success = 0;
- GLCore::getProgramiv(program, kLinkStatus, &success);
- if(success == 0) {
-  char log[2048]{};
-  GLCore::getProgramInfoLog(program, sizeof(log), nullptr, log);
-  lastError_ = log;
-  GLCore::deleteProgram(program);
+ if(!linkSucceeded(program)) {
   return false;
  }
  program_ = program;
@@ -245,13 +252,7 @@ bool ShaderProgram::compileCompute(const std::string& computeSource,
  GLCore::attachShader(program, stage);
  GLCore::linkProgram(program);
  GLCore::deleteShader(stage);
- int success = 0;
- GLCore::getProgramiv(program, kLinkStatus, &success);
- if(success == 0) {
-  char log[2048]{};
-  GLCore::getProgramInfoLog(program, sizeof(log), nullptr, log);
-  lastError_ = log;
-  GLCore::deleteProgram(program);
+ if(!linkSucceeded(program)) {
   return false;
  }
  program_ = program;
@@ -726,13 +727,7 @@ bool ShaderProgram::loadFromBinary(const ProgramBinaryBlob& binary) {
   GLCore::deleteProgram(program);
   return false;
  }
- int success = 0;
- GLCore::getProgramiv(program, kLinkStatus, &success);
- if(success == 0) {
-  char log[2048]{};
-  GLCore::getProgramInfoLog(program, sizeof(log), nullptr, log);
-  lastError_ = log;
-  GLCore::deleteProgram(program);
+ if(!linkSucceeded(program)) {
   return false;
  }
  program_ = program;

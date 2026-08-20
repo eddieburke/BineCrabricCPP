@@ -12,6 +12,7 @@
 #include <vector>
 #define GLFW_INCLUDE_NONE
 #include <GLFW/glfw3.h>
+#include <GL/gl.h>
 #include "net/minecraft/client/gl/GLCore.hpp"
 #include "net/minecraft/client/gl/GlConstants.hpp"
 #include "net/minecraft/client/gl/GlResource.hpp"

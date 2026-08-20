@@ -1,6 +1,7 @@
 #include <cmath>
 #include "net/minecraft/block/Block.hpp"
 #include "net/minecraft/client/render/RenderCore.hpp"
+#include "net/minecraft/client/render/RenderType.hpp"
 #include "net/minecraft/client/render/Tessellator.hpp"
 #include "net/minecraft/client/render/block/BlockRenderManager.hpp"
 #include "net/minecraft/client/render/entity/EntityRenderers.hpp"
@@ -28,6 +29,11 @@ void MinecartEntityRenderer::render(
   return;
  }
  beginDraw(matrices, projection);
+ // Nothing binds a shader program for the entity stage; a draw submitted with
+ // none bound is dropped silently (RenderCore submit). Every entity renderer
+ // opens its own pass -- LivingEntityRenderer does, and its scope restores the
+ // previous (unbound) program on exit, so inheriting one is never an option.
+ const RenderPassScope passScope(RenderType::entityCutout());
  matrices.push();
  const double interpX = cart->lastTickX + (cart->x - cart->lastTickX) * static_cast<double>(tickDelta);
  const double interpY = cart->lastTickY + (cart->y - cart->lastTickY) * static_cast<double>(tickDelta);
@@ -77,17 +83,15 @@ void MinecartEntityRenderer::render(
   matrices.scale(cargoScale, cargoScale, cargoScale);
   matrices.translate(0.0f, 0.3125f, 0.0f);
   matrices.rotate(90.0f, 0.0f, 1.0f, 0.0f);
-  // MCP RenderMinecart: renderBlockOnInventory(..., getEntityBrightness(partialTick)).
-  const float brightness = cart->getBrightnessAtEyes(tickDelta);
   if(cart->type == 1) {
    if(net::minecraft::block::Block* chest = net::minecraft::block::Block::BLOCKS[kChestBlockId]) {
     render::core::setDrawPose(matrices.top());
-    blockRenderManager_.render(*chest, 0, brightness);
+    blockRenderManager_.render(*chest, 0, 1.0f);
    }
   } else if(cart->type == 2) {
    if(net::minecraft::block::Block* furnace = net::minecraft::block::Block::BLOCKS[kFurnaceBlockId]) {
     render::core::setDrawPose(matrices.top());
-    blockRenderManager_.render(*furnace, 0, brightness);
+    blockRenderManager_.render(*furnace, 0, 1.0f);
    }
   }
   matrices.rotate(-90.0f, 0.0f, 1.0f, 0.0f);

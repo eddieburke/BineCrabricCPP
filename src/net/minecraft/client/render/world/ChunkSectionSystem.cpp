@@ -21,26 +21,6 @@
 #include "net/minecraft/world/chunk/ChunkSource.hpp"
 namespace net::minecraft::client::render {
 namespace {
-bool boxTouchesSphere(const net::minecraft::Box& box,
-                      double cx,
-                      double cy,
-                      double cz,
-                      double radiusSq) {
- double dx = 0.0, dy = 0.0, dz = 0.0;
- if(cx < box.minX)
-  dx = box.minX - cx;
- else if(cx > box.maxX)
-  dx = cx - box.maxX;
- if(cy < box.minY)
-  dy = box.minY - cy;
- else if(cy > box.maxY)
-  dy = cy - box.maxY;
- if(cz < box.minZ)
-  dz = box.minZ - cz;
- else if(cz > box.maxZ)
-  dz = cz - box.maxZ;
- return dx * dx + dy * dy + dz * dz <= radiusSq;
-}
 template <class Fn>
 void forEachSection(
     std::unordered_map<world::SectionPos, std::unique_ptr<chunk::TerrainRegion>, world::SectionPosHash>& regions,
@@ -50,6 +30,21 @@ void forEachSection(
    fn(chunk);
   }
  }
+}
+// One plane test per region rejects up to kRegionSectionsX*Y*Z sections at once.
+// The padding matches ChunkBuilder's cullingBox padding so this box conservatively
+// contains every section box inside the region -- reject here and no section in it
+// could have passed.
+[[nodiscard]] net::minecraft::Box regionCullingBox(const chunk::TerrainRegion& region) {
+ constexpr double padding = 6.0;
+ const double minX = static_cast<double>(region.originX()) - padding;
+ const double minY = static_cast<double>(region.originY()) - padding;
+ const double minZ = static_cast<double>(region.originZ()) - padding;
+ return net::minecraft::Box(
+     minX, minY, minZ,
+     minX + static_cast<double>(world::kRegionSectionsX * chunk::kSectionBlocks) + 2.0 * padding,
+     minY + static_cast<double>(world::kRegionSectionsY * chunk::kSectionBlocks) + 2.0 * padding,
+     minZ + static_cast<double>(world::kRegionSectionsZ * chunk::kSectionBlocks) + 2.0 * padding);
 }
 constexpr int kFaceDirX[6] = {-1, 1, 0, 0, 0, 0};
 constexpr int kFaceDirY[6] = {0, 0, -1, 1, 0, 0};
@@ -94,7 +89,6 @@ void ChunkSectionSystem::createColumn(int sectionX, int sectionZ) {
                                                        sectionY * chunk::kSectionBlocks,
                                                        sectionZ * chunk::kSectionBlocks,
                                                        chunk::kSectionBlocks);
-  builder->inFrustum = true;
   builder->lightingReady = lightingReady;
   builder->invalidate();
   chunk::ChunkBuilder* raw = builder.get();
@@ -224,7 +218,7 @@ void ChunkSectionSystem::updateDebugCounts() {
   ++chunkCount;
   if(chunk->hasNoGeometry()) {
    ++emptyChunkCount;
-  } else if(!chunk->inFrustum) {
+  } else if(!chunk->visibleIn(frustumStamp_)) {
    ++invisibleChunkCount;
   } else {
    ++compiledChunkCount;
@@ -329,8 +323,6 @@ void ChunkSectionSystem::reloadIfViewDistanceChanged() {
 void ChunkSectionSystem::cullChunks(Frustum* culler, bool updateGraph) {
  const FrameRenderCamera& renderCamera = core::cameraFrame();
  VT_TRACE_EVENT(renderCamera.shadowPass ? "terrain/shadow_cull" : "terrain/view_cull");
- const double bypassBlocks = std::max(0.0f, renderCamera.frustumBypassDistance);
- const double bypassSq = bypassBlocks * bypassBlocks;
  const net::minecraft::Vec3d camPos = WorldRenderer::sectionOrigin();
  if(updateGraph) {
   reloadIfViewDistanceChanged();
@@ -341,80 +333,73 @@ void ChunkSectionSystem::cullChunks(Frustum* culler, bool updateGraph) {
    rebuildSectionOrder(camPos);
   }
  }
- if(renderCamera.shadowPass) {
-  const ShadowCullingFrustum* shadowFrustum = renderCamera.shadowTerrainFrustum;
  std::vector<chunk::ChunkBuilder*>& visibleSections = currentVisibleSections();
  visibleSections.clear();
- forEachSection(regions_, [&](chunk::ChunkBuilder* chunk) {
-   const bool visible = shadowFrustum == nullptr || shadowFrustum->isVisible(chunk->cullingBox);
-   if(visible) {
-    visibleSections.push_back(chunk);
+ const int stamp = ++frustumStamp_;
+ if(renderCamera.shadowPass) {
+  const ShadowCullingFrustum* shadowFrustum = renderCamera.shadowTerrainFrustum;
+  for(auto& entry : regions_) {
+   chunk::TerrainRegion& region = *entry.second;
+   if(shadowFrustum != nullptr && !shadowFrustum->isVisible(regionCullingBox(region))) {
+    continue;
    }
-  });
+   for(chunk::ChunkBuilder* chunk : region.sections()) {
+    // A built-but-empty section has nothing to raster and this pass never reads
+    // back its visibility, so it can skip the plane test outright.
+    if(chunk->hasNoGeometry()) {
+     continue;
+    }
+    if(shadowFrustum == nullptr || shadowFrustum->isVisible(chunk->cullingBox)) {
+     visibleSections.push_back(chunk);
+    }
+   }
+  }
   updateProfileMetrics(true);
   return;
  }
  if(culler == nullptr || !scene_.settings->frustumCulling) {
-  std::vector<chunk::ChunkBuilder*>& visibleSections = currentVisibleSections();
-  visibleSections.clear();
-  forEachSection(regions_, [&visibleSections](chunk::ChunkBuilder* chunk) {
-   chunk->inFrustum = true;
-   visibleSections.push_back(chunk);
-  });
-  updateDebugCounts();
-  updateProfileMetrics(false);
-  return;
- }
- if(!scene_.settings->occlusionCulling) {
-  std::vector<chunk::ChunkBuilder*>& visibleSections = currentVisibleSections();
-  visibleSections.clear();
-  forEachSection(regions_, [&](chunk::ChunkBuilder* chunk) {
-   chunk->updateFrustum(*culler);
-   if(boxTouchesSphere(chunk->cullingBox, camPos.x, camPos.y, camPos.z, bypassSq)) {
-    chunk->inFrustum = true;
-   }
-   if(chunk->inFrustum) {
+  forEachSection(regions_, [&visibleSections, stamp](chunk::ChunkBuilder* chunk) {
+   chunk->visibleStamp = stamp;
+   if(!chunk->hasNoGeometry()) {
     visibleSections.push_back(chunk);
    }
   });
-  updateDebugCounts();
-  updateProfileMetrics(false);
-  return;
+ } else if(!scene_.settings->occlusionCulling || !applyOcclusionCulling(*culler, camPos, stamp)) {
+  for(auto& entry : regions_) {
+   chunk::TerrainRegion& region = *entry.second;
+   if(!culler->isVisible(regionCullingBox(region))) {
+    continue;
+   }
+   for(chunk::ChunkBuilder* chunk : region.sections()) {
+    if(chunk->updateFrustum(*culler, stamp) && !chunk->hasNoGeometry()) {
+     visibleSections.push_back(chunk);
+    }
+   }
+  }
  }
- applyOcclusionCulling(culler, camPos, bypassSq);
  updateDebugCounts();
  updateProfileMetrics(false);
 }
-void ChunkSectionSystem::applyOcclusionCulling(Frustum* culler, const net::minecraft::Vec3d& camPos, double bypassSq) {
- std::vector<chunk::ChunkBuilder*>& visibleSections = currentVisibleSections();
- visibleSections.clear();
+bool ChunkSectionSystem::applyOcclusionCulling(const Frustum& culler,
+                                              const net::minecraft::Vec3d& camPos,
+                                              int stamp) {
  const int startX = MathHelper::floor(camPos.x) >> 4;
  const int startY = std::clamp(MathHelper::floor(camPos.y) >> 4, 0, kChunkSectionCountY - 1);
  const int startZ = MathHelper::floor(camPos.z) >> 4;
  chunk::ChunkBuilder* start = sectionAt(startX, startY, startZ);
  if(start == nullptr) {
-  forEachSection(regions_, [&](chunk::ChunkBuilder* chunk) {
-   chunk->updateFrustum(*culler);
-   if(boxTouchesSphere(chunk->cullingBox, camPos.x, camPos.y, camPos.z, bypassSq)) {
-    chunk->inFrustum = true;
-   }
-   if(chunk->inFrustum) {
-    visibleSections.push_back(chunk);
-   }
-  });
-  return;
+  return false;
  }
- const int stamp = ++occlusionStamp_;
+ std::vector<chunk::ChunkBuilder*>& visibleSections = currentVisibleSections();
  occlusionQueue_.clear();
+ // The camera's own section seeds the walk unconditionally: the eye is inside it,
+ // so a plane test on it decides nothing and failing it would cull the world.
  start->occlusion.enter(stamp, -1);
+ start->visibleStamp = stamp;
  occlusionQueue_.push_back(start);
  for(std::size_t head = 0; head < occlusionQueue_.size(); ++head) {
   chunk::ChunkBuilder* node = occlusionQueue_[head];
-  node->updateFrustum(*culler);
-  if(boxTouchesSphere(node->cullingBox, camPos.x, camPos.y, camPos.z, bypassSq)) {
-   node->inFrustum = true;
-  }
-  if(node->inFrustum) {
+  if(!node->hasNoGeometry()) {
    visibleSections.push_back(node);
   }
   for(int face = 0; face < 6; ++face) {
@@ -425,21 +410,16 @@ void ChunkSectionSystem::applyOcclusionCulling(Frustum* culler, const net::minec
    if(neighbor == nullptr || neighbor->occlusion.visitedIn(stamp)) {
     continue;
    }
+   // Mark visited even when culled: the plane test does not depend on which face
+   // we arrived through, so reaching it again from another face cannot change the
+   // answer and would only re-test it.
    neighbor->occlusion.enter(stamp, face ^ 1);
-   occlusionQueue_.push_back(neighbor);
+   if(neighbor->updateFrustum(culler, stamp)) {
+    occlusionQueue_.push_back(neighbor);
+   }
   }
  }
- forEachSection(regions_, [&](chunk::ChunkBuilder* chunk) {
-  if(chunk->occlusion.visitedIn(stamp)) {
-   return;
-  }
-  if(boxTouchesSphere(chunk->cullingBox, camPos.x, camPos.y, camPos.z, bypassSq)) {
-   chunk->inFrustum = true;
-   visibleSections.push_back(chunk);
-  } else {
-   chunk->inFrustum = false;
-  }
- });
+ return true;
 }
 std::string ChunkSectionSystem::getChunkDebugInfo() const {
  return "Chunks drawn: " + std::to_string(compiledChunkCount) + " of " + std::to_string(chunkCount) +

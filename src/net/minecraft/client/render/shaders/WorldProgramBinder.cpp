@@ -14,12 +14,29 @@
 #include "net/minecraft/client/render/targets/RenderTargets.hpp"
 namespace net::minecraft::client::render {
 namespace {
+// RenderTargets::kMaxColortex entries; shadowColorBuffers is clamped to [0,8]
+// at load. Built once so a program bind does not allocate a name per sampler.
+constexpr std::array<std::string_view, 32> kColortexNames = {
+    "colortex0",  "colortex1",  "colortex2",  "colortex3",  "colortex4",  "colortex5",  "colortex6",  "colortex7",
+    "colortex8",  "colortex9",  "colortex10", "colortex11", "colortex12", "colortex13", "colortex14", "colortex15",
+    "colortex16", "colortex17", "colortex18", "colortex19", "colortex20", "colortex21", "colortex22", "colortex23",
+    "colortex24", "colortex25", "colortex26", "colortex27", "colortex28", "colortex29", "colortex30", "colortex31"};
+constexpr std::array<std::string_view, 8> kShadowColorNames = {
+    "shadowcolor0", "shadowcolor1", "shadowcolor2", "shadowcolor3",
+    "shadowcolor4", "shadowcolor5", "shadowcolor6", "shadowcolor7"};
 bool customSampler(const PackInstance* pack, std::string_view name) {
  if(pack == nullptr) return false;
- const auto texture = pack->worldTextures.find(std::string(name));
- if(texture != pack->worldTextures.end() && texture->second > 0) return true;
- const auto volume = pack->worldVolumeTextures.find(std::string(name));
- return volume != pack->worldVolumeTextures.end() && volume->second > 0;
+ // Probed once per candidate sampler name per program bind. find() on these
+ // std::string-keyed maps would materialise a std::string per probe; both maps
+ // hold only the pack's custom textures, so scanning them is allocation-free
+ // and skips entirely for the common empty case.
+ for(const auto& [key, texture] : pack->worldTextures) {
+  if(texture > 0 && key == name) return true;
+ }
+ for(const auto& [volume, texture] : pack->worldVolumeTextures) {
+  if(texture > 0 && volume == name) return true;
+ }
+ return false;
 }
 bool bindSceneSampler(gl::ShaderProgram& program,
                       int texture,
@@ -105,7 +122,7 @@ void bindWorldProgram(gl::ShaderProgram& program, const WorldProgramBindContext&
   for(int index = ColorTargets::renderTargetSamplerStartIndex(false);
       index < context.sceneTargets->colorCount() && unit < maxUnits;
       ++index) {
-   const std::string name = "colortex" + std::to_string(index);
+   const std::string_view name = kColortexNames[static_cast<std::size_t>(index)];
    const bool bound = index < 8
                           ? bindSceneSampler(program, static_cast<int>(context.sceneTargets->readTexture(index)), unit,
                                              context.pack,
@@ -132,7 +149,7 @@ void bindWorldProgram(gl::ShaderProgram& program, const WorldProgramBindContext&
  if(!context.clearShadowBindsWhenNoPack) {
   const bool hw0 = context.pack != nullptr && context.pack->definition.shadowHardwareFiltering[0];
   const bool hw1 = context.pack != nullptr && context.pack->definition.shadowHardwareFiltering[1];
-  const auto bindShadow = [&](const std::string& name, int texture, bool compare) {
+  const auto bindShadow = [&](std::string_view name, int texture, bool compare) {
    if(texture < 0 || unit >= maxUnits) return;
    const int location = program.location(name);
    if(location < 0 || customSampler(context.pack, name)) {
@@ -171,7 +188,7 @@ void bindWorldProgram(gl::ShaderProgram& program, const WorldProgramBindContext&
    if(context.shadowColorTextures == nullptr) {
     break;
    }
-   bindShadow("shadowcolor" + std::to_string(index), context.shadowColorTextures[index], false);
+   bindShadow(kShadowColorNames[static_cast<std::size_t>(index)], context.shadowColorTextures[index], false);
   }
  }
  if(context.pack != nullptr) {

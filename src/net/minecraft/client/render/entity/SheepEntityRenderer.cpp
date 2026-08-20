@@ -8,16 +8,15 @@ SheepEntityRenderer::SheepEntityRenderer(model::EntityModel* model, model::Entit
  setDecorationModel(furModel);
 }
 bool SheepEntityRenderer::bindTexture(const net::minecraft::LivingEntity& entity, int layer, float tickDelta) {
+ (void)tickDelta;
  const auto* sheep = dynamic_cast<const net::minecraft::entity::passive::SheepEntity*>(&entity);
  if(sheep == nullptr || layer != 0 || sheep->isSheared()) {
   return false;
  }
  EntityRenderer::bindTexture("/mob/sheep_fur.png");
  const int colorIndex = sheep->getColor() & 0xF;
- // MCP RenderSheep.setWoolColorAndRender: glColor3f(brightness * fleeceTint).
- const float brightness = sheep->getBrightnessAtEyes(tickDelta);
  const float* tint = net::minecraft::entity::passive::SheepEntity::COLORS[colorIndex];
- render::core::setConstColor(tint[0] * brightness, tint[1] * brightness, tint[2] * brightness, 1.0f);
+ render::core::setConstColor(tint[0], tint[1], tint[2], 1.0f);
  return true;
 }
 } // namespace net::minecraft::client::render::entity

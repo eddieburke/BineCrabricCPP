@@ -19,5 +19,5 @@ void main() {
  color = vaColor;
  vec3 viewNormal = mat3(modelViewMatrix) * vaNormal;
  normal = length(viewNormal) > 0.001 ? normalize(viewNormal) : vec3(0.0, 1.0, 0.0);
- viewDistance = length(viewPosition.xyz);
+ viewDistance = fogCoord(viewPosition.xyz);
 }

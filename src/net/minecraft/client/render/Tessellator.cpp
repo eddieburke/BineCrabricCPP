@@ -166,12 +166,15 @@ void Tessellator::expandQuadToTriangles() {
  std::size_t size = buf.size();
  TessellatorVertex* ptr = reinterpret_cast<TessellatorVertex*>(buf.data());
  std::size_t count = size / sizeof(TessellatorVertex);
- TessellatorVertex v0 = ptr[count - 3];
- TessellatorVertex v2 = ptr[count - 1];
- const std::size_t offset = buf.size();
- buf.resize(offset + 2 * sizeof(TessellatorVertex));
- std::memcpy(buf.data() + offset, &v0, sizeof(v0));
- std::memcpy(buf.data() + offset + sizeof(v0), &v2, sizeof(v2));
+ // Copies, not pointers: appending below can reallocate and invalidate ptr.
+ const TessellatorVertex v0 = ptr[count - 3];
+ const TessellatorVertex v2 = ptr[count - 1];
+ // Appended rather than resize()-then-memcpy so the two vertices are not first
+ // zero-filled by resize() and then overwritten in full.
+ const auto* v0Bytes = reinterpret_cast<const std::uint8_t*>(&v0);
+ buf.insert(buf.end(), v0Bytes, v0Bytes + sizeof(v0));
+ const auto* v2Bytes = reinterpret_cast<const std::uint8_t*>(&v2);
+ buf.insert(buf.end(), v2Bytes, v2Bytes + sizeof(v2));
  builder_.nextVertex();
  builder_.nextVertex();
 }

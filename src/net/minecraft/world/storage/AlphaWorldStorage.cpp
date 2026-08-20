@@ -8,7 +8,6 @@
 #include "net/minecraft/nbt/NbtFileIo.hpp"
 #include "net/minecraft/nbt/NbtIo.hpp"
 #include "net/minecraft/world/dimension/Dimension.hpp"
-#include "net/minecraft/world/storage/PlayerSaveSafeguards.hpp"
 #include "net/minecraft/world/storage/exception/SessionLockException.hpp"
 namespace net::minecraft {
 namespace {
@@ -87,63 +86,30 @@ std::optional<WorldProperties> AlphaWorldStorage::loadPropertiesFrom(const fs::p
   return std::nullopt;
  }
 }
-void AlphaWorldStorage::writeLevelDat(const WorldProperties& properties,
-                                      const std::vector<entity::player::PlayerEntity*>& players,
-                                      AtomicWriteOptions options) {
- NbtCompound data = properties.asNbt(players);
- if(!players.empty() && players.front() != nullptr) {
-  const NbtCompound* previous = properties.getPlayerNbt();
-  if(previous == nullptr && fs::exists(dir_ / "level.dat")) {
-   NbtCompound proposed;
-   players.front()->writeNbt(proposed);
-   const bool needsDiskBaseline =
-       world::storage::countInventoryStacks(proposed) == 0 || !world::storage::hasSavedPosition(proposed);
-   if(needsDiskBaseline) {
-    if(const std::optional<WorldProperties> loaded = loadPropertiesFrom(dir_ / "level.dat");
-       loaded.has_value()) {
-     previous = loaded->getPlayerNbt();
-    }
-   }
-  }
-  NbtCompound playerNbt = world::storage::buildSafeguardedPlayerNbt(*players.front(), previous);
-  data.put("Player", playerNbt);
- }
- NbtCompound root;
- root.put("Data", data);
- options.keepBackup = true;
- writeFileAtomic(
-     dir_ / "level.dat", [&root](std::ostream& output) { NbtIo::writeCompressed(root, output); }, options);
-}
-void AlphaWorldStorage::save(const WorldProperties& properties,
-                             const std::vector<entity::player::PlayerEntity*>& players) {
- try {
-  writeLevelDat(properties, players);
- } catch(const std::exception&) {
- }
-}
-void AlphaWorldStorage::saveUnload(const WorldProperties& properties,
-                                   const std::vector<entity::player::PlayerEntity*>& players) {
- try {
-  AtomicWriteOptions options;
-  options.keepBackup = true;
-  options.fsync = false;
-  writeLevelDat(properties, players, options);
- } catch(const std::exception&) {
- }
-}
 void AlphaWorldStorage::save(const WorldProperties& properties) {
- save(properties, {});
+ // level.dat is small and written at most once per autosave interval, so it always goes to
+ // stable storage before the swap. The old saveUnload() overload turned fsync OFF for the
+ // shutdown write -- the one write that most needs to land -- while leaving it on for the
+ // periodic one.
+ NbtCompound root;
+ root.put("Data", properties.asNbt());
+ AtomicWriteOptions options;
+ options.keepBackup = true;
+ try {
+  writeFileAtomic(
+      dir_ / "level.dat", [&root](std::ostream& output) { NbtIo::writeCompressed(root, output); }, options);
+ } catch(const std::exception&) {
+ }
 }
 void AlphaWorldStorage::savePlayerData(entity::player::PlayerEntity& player) {
  fs::create_directories(playerDataDir_);
  const fs::path file = playerDataDir_ / (player.name + ".dat");
  try {
-  std::optional<NbtCompound> previousNbt;
-  if(const Nbt existing = loadPlayerData(player.name); existing.type() == Nbt::Type::Compound) {
-   previousNbt = NbtCompound(existing);
-  }
-  const NbtCompound* previous = previousNbt.has_value() ? &*previousNbt : nullptr;
-  NbtCompound nbt = world::storage::buildSafeguardedPlayerNbt(player, previous);
+  // The player is written as-is. This used to re-read the file it was about to overwrite and
+  // splice the old inventory back in whenever the live one looked empty -- which resurrected
+  // a stack every time a player legitimately emptied their inventory.
+  NbtCompound nbt;
+  player.writeNbt(nbt);
   AtomicWriteOptions options;
   options.keepBackup = true;
   writeFileAtomic(file, [&nbt](std::ostream& output) { NbtIo::writeCompressed(nbt, output); }, options);
@@ -156,19 +122,24 @@ void AlphaWorldStorage::loadPlayerData(entity::player::PlayerEntity& player) {
  }
 }
 Nbt AlphaWorldStorage::loadPlayerData(const std::string& playerName) {
- const fs::path file = playerDataDir_ / (playerName + ".dat");
- if(!fs::exists(file)) {
-  return {};
- }
- try {
-  std::ifstream input(file, std::ios::binary);
-  if(!input) {
-   return {};
+ // savePlayerData writes with keepBackup, so "<name>.dat_old" holds the previous copy across
+ // the swap. Read it when the live file is missing or unreadable — same fallback level.dat
+ // has always had. Without it a kill mid-swap left the loader with nothing, the player
+ // spawned empty, and the next save overwrote the good backup with that empty inventory.
+ for(const fs::path& file : {playerDataDir_ / (playerName + ".dat"), playerDataDir_ / (playerName + ".dat_old")}) {
+  if(!fs::exists(file)) {
+   continue;
   }
-  return NbtIo::readCompressed(input).storage();
- } catch(...) {
-  return {};
+  try {
+   std::ifstream input(file, std::ios::binary);
+   if(!input) {
+    continue;
+   }
+   return NbtIo::readCompressed(input).storage();
+  } catch(...) {
+  }
  }
+ return {};
 }
 fs::path AlphaWorldStorage::getWorldPropertiesFile(const std::string& name) const {
  return dataDir_ / (name + ".dat");

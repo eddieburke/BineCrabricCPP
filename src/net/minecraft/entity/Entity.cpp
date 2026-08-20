@@ -533,7 +533,8 @@ bool Entity::isTouchingLava() const {
  if(world == nullptr) {
   return false;
  }
- return world->isMaterialInBox(boundingBox.expand(-0.1f), block::material::Material::LAVA);
+ return world->isMaterialInBox(boundingBox.expand(-0.10000000149011612, -0.40000000596046448, -0.10000000149011612),
+                               block::material::Material::LAVA);
 }
 bool Entity::isInsideWall() const {
  if(world == nullptr) {

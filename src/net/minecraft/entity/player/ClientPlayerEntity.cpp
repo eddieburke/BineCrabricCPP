@@ -172,7 +172,15 @@ void ClientPlayerEntity::openCraftingScreen(int xIn, int yIn, int zIn) {
  minecraft_->setScreen(std::make_unique<client::gui::screen::ingame::CraftingScreen>(&inventory, xIn, yIn, zIn));
 }
 void ClientPlayerEntity::sendChatMessage(const std::string& message) {
- (void)message;
+ if(minecraft_ == nullptr || message.empty()) {
+  return;
+ }
+ if(message.front() == '/') {
+  minecraft_->inGameHud.addChatMessage("\xC2\xA7"
+                                       "cUnknown command.");
+  return;
+ }
+ minecraft_->inGameHud.addChatMessage("<" + name + "> " + message);
 }
 bool ClientPlayerEntity::isSneaking() const {
  return client::input::InputSystem::instance().movement().sneaking && !sleeping;

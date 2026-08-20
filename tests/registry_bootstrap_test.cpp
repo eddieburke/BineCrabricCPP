@@ -40,7 +40,6 @@ TEST(RegistryBootstrap, RunsCallbacksEnqueuedDuringCurrentPhase) {
 TEST(RegistryBootstrap, AcceptsContentRegistrationAfterInit) {
  mod::lua::BlockRegistrationSpec blockSpec;
  blockSpec.blockId = 250;
- blockSpec.texturePath = "mods/test/block.png";
  mod::lua::ItemRegistrationSpec itemSpec;
  itemSpec.itemId = 31000;
  itemSpec.texturePath = "mods/test/item.png";
@@ -54,13 +53,7 @@ TEST(RegistryBootstrap, RejectsMalformedContentRegistration) {
  std::string error;
  mod::lua::BlockRegistrationSpec outOfRangeBlock;
  outOfRangeBlock.blockId = 0;
- outOfRangeBlock.texturePath = "mods/test/block.png";
  EXPECT_FALSE(mod::lua::registerBlockSpec(outOfRangeBlock, error));
- EXPECT_FALSE(error.empty());
- error.clear();
- mod::lua::BlockRegistrationSpec texturelessBlock;
- texturelessBlock.blockId = 251;
- EXPECT_FALSE(mod::lua::registerBlockSpec(texturelessBlock, error));
  EXPECT_FALSE(error.empty());
  error.clear();
  // Item ids below 256 belong to blocks.

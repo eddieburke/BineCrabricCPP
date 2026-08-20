@@ -1,4 +1,5 @@
 #include "net/minecraft/block/FurnaceBlock.hpp"
+#include "net/minecraft/block/BlockNeighbors.hpp"
 #include "net/minecraft/block/Block.hpp"
 #include "net/minecraft/block/entity/BlockEntity.hpp"
 #include "net/minecraft/block/entity/FurnaceBlockEntity.hpp"
@@ -58,15 +59,7 @@ void FurnaceBlock::onPlaced(World* world, int x, int y, int z, net::minecraft::P
   return;
  }
  const int direction = MathHelper::floor(static_cast<double>(placer->yaw * 4.0f / 360.0f) + 0.5) & 3;
- if(direction == 0) {
-  world->setBlockMeta(x, y, z, 2);
- } else if(direction == 1) {
-  world->setBlockMeta(x, y, z, 5);
- } else if(direction == 2) {
-  world->setBlockMeta(x, y, z, 3);
- } else if(direction == 3) {
-  world->setBlockMeta(x, y, z, 4);
- }
+ world->setBlockMeta(x, y, z, kYawQuadrantFacing[direction]);
 }
 void FurnaceBlock::updateLitState(bool lit, World* world, int x, int y, int z) {
  if(world == nullptr) {

@@ -26,7 +26,7 @@ std::filesystem::path makeTempWorldRoot(const std::string& name) {
 namespace net::minecraft::test {
 TEST(ServerProcessCoordinator, LocalWorldCanTransferAndRemoteWorldCannot) {
  const std::filesystem::path root = makeTempWorldRoot("server_process_coordinator");
- TestMinecraft client(nullptr, nullptr, nullptr, 854, 480, false);
+ TestMinecraft client(854, 480, false);
  client.worldSession().ownedWorldStorageMut() =
      std::make_unique<net::minecraft::AlphaWorldStorage>(root, "ServerWorld", true);
  client.worldSession().ownedWorldMut() =

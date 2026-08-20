@@ -15,6 +15,7 @@
 #include "net/minecraft/entity/player/ClientPlayerEntity.hpp"
 #endif
 #include <algorithm>
+#include <cstdint>
 #include "net/minecraft/world/World.hpp"
 namespace net::minecraft::mod::runtime {
 using namespace net::minecraft::mod::lua;
@@ -46,6 +47,10 @@ void setWorldContextFields(lua_State* state, const World* world) {
  setField(state, "has_world", world != nullptr);
  setField(state, "world_name", world != nullptr ? world->name() : std::string());
  setField(state, "is_overworld", luaWorldIsOverworld(world));
+ setField(state, "is_nether", world != nullptr && world->dimension != nullptr && world->dimension->isNether);
+ setField(state,
+          "world_seed",
+          world != nullptr ? static_cast<std::int64_t>(world->getSeed()) : static_cast<std::int64_t>(0));
  setField(state, "mod_generation", world != nullptr && world->isLuaModGenerationEnabled());
 }
 void setLuaExecutionFields(lua_State* state, const World* world) {

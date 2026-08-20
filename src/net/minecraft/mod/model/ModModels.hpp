@@ -68,6 +68,7 @@ int loadBakedModel(const std::string& modId, const std::string& path, std::strin
 [[nodiscard]] int bakedModelHandleForKey(const std::string& key) noexcept;
 int storeBakedModel(const std::string& key, std::unique_ptr<BakedModel> baked);
 [[nodiscard]] const BakedModel* bakedModelForHandle(int handle) noexcept;
+[[nodiscard]] int bakedModelTextureId(int handle) noexcept;
 struct ModelTransform {
  double x = 0.0;
  double y = 0.0;

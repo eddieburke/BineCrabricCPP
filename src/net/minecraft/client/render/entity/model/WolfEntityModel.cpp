@@ -72,9 +72,7 @@ void WolfEntityModel::animateModel(::net::minecraft::entity::LivingEntity& entit
  torso.roll = wolfEntity->getShakeAnimationProgress(tickDelta, -0.16f);
  tail.roll = wolfEntity->getShakeAnimationProgress(tickDelta, -0.2f);
  if(wolfEntity->isFurWet()) {
-  // MCP ModelWolf: getEntityBrightness(partial) * getShadingWhileShaking(partial).
-  const float furBrightness =
-      wolfEntity->getBrightnessAtEyes(tickDelta) * wolfEntity->getFurBrightnessMultiplier(tickDelta);
+  const float furBrightness = wolfEntity->getFurBrightnessMultiplier(tickDelta);
   net::minecraft::client::render::core::setConstColor(furBrightness, furBrightness, furBrightness, 1.0f);
  }
 }

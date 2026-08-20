@@ -257,27 +257,6 @@ struct PackDefinition {
   return distance;
  }
 };
-struct MeshDefinitionState {
- bool voxelizeLightBlocks = false;
- bool oldLighting = false;
- bool separateAo = false;
- bool vanillaShaderAo = false;
- bool hasBlockProperties = false;
- float ambientOcclusionLevel = 1.0f;
- std::unordered_map<std::string, int> blockIds;
- std::unordered_map<int, int> blockRenderLayers;
- bool operator==(const MeshDefinitionState&) const = default;
-};
-[[nodiscard]] inline MeshDefinitionState meshDefinitionState(const PackDefinition& definition) {
- return {definition.voxelizeLightBlocks,
-         definition.oldLighting,
-         definition.separateAo,
-         definition.vanillaShaderAo,
-         definition.hasBlockProperties,
-         definition.ambientOcclusionLevel,
-         definition.blockIds,
-         definition.blockRenderLayers};
-}
 [[nodiscard]] inline const PackDefinition& vanillaPackDefinition() noexcept {
  static const PackDefinition vanilla = [] {
   PackDefinition definition;

@@ -7,7 +7,6 @@ local model = assert(minecraft.model.load("models/stone_bricks/stone_bricks.json
 
 minecraft.register_block({
   id = 98,
-  texture = "mods/stone_bricks/stone_bricks.png",
   hardness = 2.0,
   resistance = 10.0,
   translation_key = "stoneBrick",

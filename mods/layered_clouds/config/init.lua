@@ -15,7 +15,7 @@ local config = settings.define("layered_clouds", {
       max = 12,
       step = 1,
       integer = true,
-      default = 7,
+      default = 6,
     },
     base_opacity = {
       type = "slider",

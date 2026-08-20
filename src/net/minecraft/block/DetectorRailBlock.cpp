@@ -1,4 +1,5 @@
 #include "net/minecraft/block/DetectorRailBlock.hpp"
+#include "net/minecraft/block/BlockSounds.hpp"
 #include "net/minecraft/block/Block.hpp"
 #include "net/minecraft/entity/Entity.hpp"
 #include "net/minecraft/entity/vehicle/MinecartEntity.hpp"
@@ -6,9 +7,6 @@
 #include "net/minecraft/recipe/CraftingRecipeManager.hpp"
 #include "net/minecraft/registry/Registry.hpp"
 #include "net/minecraft/world/World.hpp"
-namespace {
-net::minecraft::BlockSoundGroup kMetalSound("stone", 1.0f, 1.5f);
-}
 namespace net::minecraft::block {
 DetectorRailBlock::DetectorRailBlock(int id, int textureId) : RailBlock(id, textureId, true) {
  setTickRandomly(true);

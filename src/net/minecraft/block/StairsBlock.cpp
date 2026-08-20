@@ -133,6 +133,9 @@ void StairsBlock::onPlaced(World* world, int x, int y, int z, net::minecraft::Pl
   return;
  }
  const int direction = MathHelper::floor(static_cast<double>(placer->yaw * 4.0f / 360.0f) + 0.5) & 3;
+ // {2, 1, 3, 0} — a stair orientation, NOT the block face that furnaces and pistons
+ // write. Same shape as block::kYawQuadrantFacing, different meaning; do not merge.
+ // see third_party/mcp/net/minecraft/src/BlockStairs.java:180
  if(direction == 0) {
   world->setBlockMeta(x, y, z, 2);
  }

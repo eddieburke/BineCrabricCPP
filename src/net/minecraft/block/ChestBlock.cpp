@@ -1,4 +1,5 @@
 #include "net/minecraft/block/ChestBlock.hpp"
+#include "net/minecraft/block/BlockSounds.hpp"
 #include "net/minecraft/block/Block.hpp"
 #include "net/minecraft/block/entity/ChestBlockEntity.hpp"
 #include "net/minecraft/entity/ItemEntity.hpp"
@@ -10,7 +11,6 @@
 #include "net/minecraft/util/math/MathHelper.hpp"
 #include "net/minecraft/world/World.hpp"
 namespace {
-net::minecraft::BlockSoundGroup kWoodSound("wood", 1.0f, 1.0f);
 // The side the front faces, in Beta side ids: 2 = -Z, 3 = +Z, 4 = -X, 5 = +X. Stored in
 // metadata the way FurnaceBlock and DispenserBlock store theirs. Meta 0 means no stored
 // facing, which is what world generation and pre-facing saves leave behind, and those fall

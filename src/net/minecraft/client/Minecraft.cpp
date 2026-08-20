@@ -1223,10 +1223,4 @@ bool Minecraft::isAmbientOcclusionEnabled() {
 bool Minecraft::isDebugProfilerEnabled() {
  return INSTANCE != nullptr && INSTANCE->options.debugHud;
 }
-bool Minecraft::isCommand(const std::string& /*message*/) const {
- // Vanilla b1.7.3 has no client-side commands; slash-prefixed input is sent
- // to the server as a normal chat message. Java Minecraft.isCommand always
- // returns false, so don't suppress the send here.
- return false;
-}
 } // namespace net::minecraft::client

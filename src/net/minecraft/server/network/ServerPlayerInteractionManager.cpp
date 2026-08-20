@@ -99,10 +99,11 @@ bool ServerPlayerInteractionManager::tryBreakBlock(int x, int y, int z) {
  }
  const int blockId = world->getBlockId(x, y, z);
  const int meta = world->getBlockMeta(x, y, z);
+ const bool canHarvest = blockId > 0 && player->canHarvest(blockId);
  world->worldEvent(player, 2001, x, y, z, blockId + meta * 256);
  const bool removed = finishMining(x, y, z);
  ItemStack* handStack = player->inventory.getSelectedItem();
- if(handStack != nullptr && !handStack->empty()) {
+ if(removed && handStack != nullptr && !handStack->empty()) {
   handStack->postMine(blockId, x, y, z, player);
   if(handStack->count == 0) {
    handStack->onRemoved(player);
@@ -110,7 +111,7 @@ bool ServerPlayerInteractionManager::tryBreakBlock(int x, int y, int z) {
   }
  }
  Block* brokenBlock = blockId > 0 ? Block::BLOCKS[static_cast<std::size_t>(blockId)] : nullptr;
- if(removed && brokenBlock != nullptr && player->canHarvest(blockId)) {
+ if(removed && brokenBlock != nullptr && canHarvest) {
   brokenBlock->afterBreak(world, player, x, y, z, meta);
   if(auto* serverPlayer = dynamic_cast<::net::minecraft::entity::player::ServerPlayerEntity*>(player);
      serverPlayer != nullptr && serverPlayer->networkHandler != nullptr) {
@@ -122,6 +123,10 @@ bool ServerPlayerInteractionManager::tryBreakBlock(int x, int y, int z) {
    blockPacket.blockMetadata = world->getBlockMeta(x, y, z);
    serverPlayer->networkHandler->sendPacket(blockPacket);
   }
+ }
+ if(removed) {
+  mod::BlockBreakEvent event{player, world, player->inventory.getSelectedItem(), x, y, z, blockId, meta};
+  mod::runtime::luaHookBlockBreak(event);
  }
  return removed;
 }

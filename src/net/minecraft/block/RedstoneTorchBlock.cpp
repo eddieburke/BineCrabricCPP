@@ -1,4 +1,5 @@
 #include "net/minecraft/block/RedstoneTorchBlock.hpp"
+#include "net/minecraft/block/BlockSounds.hpp"
 #include <vector>
 #include "net/minecraft/block/Block.hpp"
 #include "net/minecraft/item/Item.hpp"
@@ -6,9 +7,6 @@
 #include "net/minecraft/registry/Registry.hpp"
 #include "net/minecraft/world/BlockView.hpp"
 #include "net/minecraft/world/World.hpp"
-namespace {
-net::minecraft::BlockSoundGroup kWoodSound("wood", 1.0f, 1.0f);
-}
 namespace net::minecraft::block {
 namespace {
 struct RedstoneTorchBurnoutEntry {

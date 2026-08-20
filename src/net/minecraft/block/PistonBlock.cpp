@@ -1,4 +1,5 @@
 #include "net/minecraft/block/PistonBlock.hpp"
+#include "net/minecraft/block/BlockNeighbors.hpp"
 #include "net/minecraft/block/Block.hpp"
 #include "net/minecraft/block/PistonConstants.hpp"
 #include "net/minecraft/block/PistonExtensionBlock.hpp"
@@ -36,7 +37,6 @@ int PistonBlock::getFacingForPlacement(World* /*world*/, int x, int y, int z, ne
  if(player == nullptr) {
   return 0;
  }
- int facing = 0;
  if(MathHelper::abs(player->x - static_cast<float>(x)) < 2.0f &&
     MathHelper::abs(player->z - static_cast<float>(z)) < 2.0f) {
   const double eyeY = player->y + 1.82 - static_cast<double>(player->standingEyeHeight);
@@ -48,16 +48,7 @@ int PistonBlock::getFacingForPlacement(World* /*world*/, int x, int y, int z, ne
   }
  }
  const int direction = MathHelper::floor(static_cast<double>(player->yaw * 4.0f / 360.0f) + 0.5) & 3;
- if(direction == 0) {
-  facing = 2;
- } else if(direction == 1) {
-  facing = 5;
- } else if(direction == 2) {
-  facing = 3;
- } else if(direction == 3) {
-  facing = 4;
- }
- return facing;
+ return kYawQuadrantFacing[direction];
 }
 bool PistonBlock::canMoveBlock(int blockId, World* world, int x, int y, int z, bool allowBreaking) {
  if(world == nullptr || blockId <= 0 || blockId >= Block::BLOCK_COUNT) {

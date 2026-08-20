@@ -1,4 +1,5 @@
 #include "net/minecraft/block/SnowyBlock.hpp"
+#include "net/minecraft/block/BlockSounds.hpp"
 #include "net/minecraft/entity/ItemEntity.hpp"
 #include "net/minecraft/entity/player/PlayerEntity.hpp"
 #include "net/minecraft/item/Item.hpp"
@@ -8,9 +9,6 @@
 #include "net/minecraft/stat/Stats.hpp"
 #include "net/minecraft/world/World.hpp"
 #include "net/minecraft/world/light/LightType.hpp"
-namespace {
-net::minecraft::BlockSoundGroup kClothSound("cloth", 1.0f, 1.0f);
-}
 namespace net::minecraft::block {
 SnowyBlock::SnowyBlock(int id, int textureId) : Block(id, textureId, material::Material::SNOW_LAYER) {
  setBoundingBox(0.0f, 0.0f, 0.0f, 1.0f, 0.125f, 1.0f);

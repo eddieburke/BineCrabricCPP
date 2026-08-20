@@ -436,16 +436,31 @@ void LightingEngine::runUpdate(const Box& update, WorkerState& state) {
     if(!loaded) {
      continue;
     }
+    // The `loaded` test above proved every chunk in [minCx,maxCx]x[minCz,maxCz]
+    // resolves non-null, and x/z are invariant across the whole y loop, so the
+    // six neighbour samples per voxel need five chunk lookups per column rather
+    // than nine per voxel.
+    Chunk* const selfChunk = chunkAt(x >> 4, z >> 4, state);
+    Chunk* const negXChunk = chunkAt((x - 1) >> 4, z >> 4, state);
+    Chunk* const posXChunk = chunkAt((x + 1) >> 4, z >> 4, state);
+    Chunk* const negZChunk = chunkAt(x >> 4, (z - 1) >> 4, state);
+    Chunk* const posZChunk = chunkAt(x >> 4, (z + 1) >> 4, state);
+    const int lx = x & 15;
+    const int lz = z & 15;
+    const int negLx = (x - 1) & 15;
+    const int posLx = (x + 1) & 15;
+    const int negLz = (z - 1) & 15;
+    const int posLz = (z + 1) & 15;
     for(int y = minY; y <= maxY; ++y) {
-     const int current = brightness(lightType, x, y, z, state);
-     const int block = blockId(x, y, z, state);
+     const int current = selfChunk->getLight(lightType, lx, y, lz);
+     const int block = selfChunk->getBlockId(lx, y, lz);
      int opacity = Block::BLOCKS_LIGHT_OPACITY[static_cast<std::size_t>(block)];
      if(opacity == 0) {
       opacity = 1;
      }
      int emission = 0;
      if(lightType == LightType::Sky) {
-      if(topY(x, y, z, state)) {
+      if(selfChunk->isAboveMaxHeight(lx, y, lz)) {
        emission = 15;
       }
      } else {
@@ -453,19 +468,19 @@ void LightingEngine::runUpdate(const Box& update, WorkerState& state) {
      }
      int newLight = 0;
      if(opacity < 15 || emission != 0) {
-      int best = brightness(lightType, x - 1, y, z, state);
-      best = std::max(best, brightness(lightType, x + 1, y, z, state));
-      best = std::max(best, brightness(lightType, x, y - 1, z, state));
-      best = std::max(best, brightness(lightType, x, y + 1, z, state));
-      best = std::max(best, brightness(lightType, x, y, z - 1, state));
-      best = std::max(best, brightness(lightType, x, y, z + 1, state));
+      int best = negXChunk->getLight(lightType, negLx, y, lz);
+      best = std::max(best, posXChunk->getLight(lightType, posLx, y, lz));
+      best = std::max(best, selfChunk->getLight(lightType, lx, std::max(y - 1, 0), lz));
+      best = std::max(best, selfChunk->getLight(lightType, lx, std::min(y + 1, Chunk::height - 1), lz));
+      best = std::max(best, negZChunk->getLight(lightType, lx, y, negLz));
+      best = std::max(best, posZChunk->getLight(lightType, lx, y, posLz));
       best = std::max(0, best - opacity);
       newLight = std::max(best, emission);
      }
      if(current == newLight) {
       continue;
      }
-     setBrightness(lightType, x, y, z, newLight, state);
+     selfChunk->setLight(lightType, lx, y, lz, newLight);
      changed = true;
      anyChanged = true;
      if(x <= update.minX) {

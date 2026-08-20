@@ -1,12 +1,10 @@
 #include "net/minecraft/block/SignBlock.hpp"
+#include "net/minecraft/block/BlockSounds.hpp"
 #include "net/minecraft/block/material/Material.hpp"
 #include "net/minecraft/item/Item.hpp"
 #include "net/minecraft/item/SignItem.hpp"
 #include "net/minecraft/registry/Registry.hpp"
 #include "net/minecraft/world/World.hpp"
-namespace {
-net::minecraft::BlockSoundGroup kWoodSound("wood", 1.0f, 1.0f);
-}
 namespace net::minecraft::block {
 SignBlock::SignBlock(int id, bool standingIn) : BlockWithEntity(id, material::Material::WOOD) {
  standing = standingIn;

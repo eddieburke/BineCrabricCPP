@@ -1,13 +1,12 @@
 #include "net/minecraft/block/LeverBlock.hpp"
+#include "net/minecraft/block/BlockSounds.hpp"
+#include "net/minecraft/block/BlockNeighbors.hpp"
 #include "net/minecraft/block/Block.hpp"
 #include "net/minecraft/entity/player/PlayerEntity.hpp"
 #include "net/minecraft/item/Item.hpp"
 #include "net/minecraft/recipe/CraftingRecipeManager.hpp"
 #include "net/minecraft/registry/Registry.hpp"
 #include "net/minecraft/world/World.hpp"
-namespace {
-net::minecraft::BlockSoundGroup kWoodSound("wood", 1.0f, 1.0f);
-}
 namespace net::minecraft::block {
 LeverBlock::LeverBlock(int blockId, int textureId) : Block(blockId, textureId, material::Material::PISTON_BREAKABLE) {
 }
@@ -15,37 +14,13 @@ bool LeverBlock::canPlaceAt(World* world, int x, int y, int z, int side) const {
  if(world == nullptr) {
   return false;
  }
- if(side == 1 && world->shouldSuffocate(x, y - 1, z)) {
-  return true;
- }
- if(side == 2 && world->shouldSuffocate(x, y, z + 1)) {
-  return true;
- }
- if(side == 3 && world->shouldSuffocate(x, y, z - 1)) {
-  return true;
- }
- if(side == 4 && world->shouldSuffocate(x + 1, y, z)) {
-  return true;
- }
- return side == 5 && world->shouldSuffocate(x - 1, y, z);
+ return sideSuffocates(world, x, y, z, side);
 }
 bool LeverBlock::canPlaceAt(World* world, int x, int y, int z) const {
  if(world == nullptr) {
   return false;
  }
- if(world->shouldSuffocate(x - 1, y, z)) {
-  return true;
- }
- if(world->shouldSuffocate(x + 1, y, z)) {
-  return true;
- }
- if(world->shouldSuffocate(x, y, z - 1)) {
-  return true;
- }
- if(world->shouldSuffocate(x, y, z + 1)) {
-  return true;
- }
- return world->shouldSuffocate(x, y - 1, z);
+ return anyHorizontalNeighborSuffocates(world, x, y, z) || world->shouldSuffocate(x, y - 1, z);
 }
 void LeverBlock::updateBoundingBox(const BlockView* blockView, int x, int y, int z) {
  setBoundingBox(getRenderBounds(blockView, x, y, z));

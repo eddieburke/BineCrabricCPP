@@ -48,18 +48,6 @@ class BlockRenderManager {
  [[nodiscard]] static bool isSideLit(int renderType);
  void renderFallingBlockEntity(
      net::minecraft::block::Block& block, net::minecraft::World* world, int x, int y, int z);
- CubeBlockRenderer& cubeRenderer() {
-  return cube_;
- }
- CrossBlockRenderer& crossRenderer() {
-  return cross_;
- }
- TorchBlockRenderer& torchRenderer() {
-  return torch_;
- }
- BlockFaceRenderer& faceRenderer() {
-  return faces_;
- }
  BlockRenderContext ctx;
  inline static bool fancyLeaves = true;
 

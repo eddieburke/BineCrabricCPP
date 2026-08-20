@@ -145,6 +145,7 @@ void readField(lua_State* state, const char* key, bool& value);
 void readField(lua_State* state, const char* key, int& value);
 void readField(lua_State* state, const char* key, float& value);
 void readField(lua_State* state, const char* key, double& value);
+void readField(lua_State* state, const char* key, std::string& value);
 inline void setFields(lua_State*) {
 }
 template <typename T, typename... Rest>

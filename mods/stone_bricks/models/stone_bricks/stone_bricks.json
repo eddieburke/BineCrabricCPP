@@ -2,7 +2,7 @@
   "format_version": "1.21.11",
   "texture_size": [16, 16],
   "textures": {
-    "all": "mods/stone_bricks/stone_bricks.png"
+    "all": "stone_bricks"
   },
   "elements": [
     {

@@ -203,7 +203,7 @@ TEST(MultiplayerParityUpdates, MovementAckUsesActualPlayerY) {
  EXPECT_NE(move->feetY, player.y);
 }
 TEST(MultiplayerParityUpdates, RespawnTeleportAppliesToReplacementPlayer) {
- TestMinecraft client(nullptr, nullptr, nullptr, 854, 480, false);
+ TestMinecraft client(854, 480, false);
  client::multiplayer::ClientNetworkHandler handler(&client);
  server::network::ServerSocket listenSocket;
  listenSocket.bindAndListen("127.0.0.1", 0);

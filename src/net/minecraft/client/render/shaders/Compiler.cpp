@@ -115,7 +115,7 @@ bool prepareProgram(PackInstance& pack, const std::string& programName, const Pa
 std::string transformationSalt(const PackDefinition& definition,
                                const std::string& programName,
                                const ShaderTransformContext& context) {
- std::string salt = render::vertex_abi::abiSaltString() + "|shader-transform-5|" + programName;
+ std::string salt = render::vertex_abi::abiSaltString() + "|shader-transform-6|" + programName;
  salt += context.entityOverlay ? "|overlay" : "|no-overlay";
  salt += context.entityId ? "|entity-id" : "|no-entity-id";
  salt += context.hasGeometry ? "|geometry" : "|no-geometry";

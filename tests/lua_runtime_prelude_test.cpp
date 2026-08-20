@@ -1,4 +1,7 @@
 #include <gtest/gtest.h>
+#include <filesystem>
+#include <fstream>
+#include <iterator>
 #include "net/minecraft/mod/lua/LuaHostApi.hpp"
 #include "net/minecraft/mod/lua/LuaRuntimePrelude.hpp"
 #include "net/minecraft/mod/runtime/LuaEventId.hpp"
@@ -27,6 +30,12 @@ TEST(LuaRuntimePrelude, CelestialStateEventIsPublic) {
  ASSERT_GE(index, 0);
  EXPECT_EQ(static_cast<std::size_t>(index),
            static_cast<std::size_t>(net::minecraft::mod::runtime::LuaEventId::CelestialState));
+}
+TEST(LuaRuntimePrelude, BlockBreakEventIsPublic) {
+ const int index = net::minecraft::mod::runtime::luaEventIndexOf("block_break");
+ ASSERT_GE(index, 0);
+ EXPECT_EQ(static_cast<std::size_t>(index),
+           static_cast<std::size_t>(net::minecraft::mod::runtime::LuaEventId::BlockBreak));
 }
 TEST(LuaRuntimePrelude, ExecutesWithoutClientRenderApi) {
  net::minecraft::mod::lua::LuaApi& api = net::minecraft::mod::lua::luaApi();
@@ -118,6 +127,24 @@ TEST(LuaRuntimePrelude, RequireModuleResolution) {
  EXPECT_NE(api.pcallk(state, 1, 1, 0, 0, nullptr), net::minecraft::mod::lua::kLuaOk);
  std::string err = api.tolstring(state, -1, nullptr);
  EXPECT_TRUE(err.find("internal failure") != std::string::npos) << err;
+ api.close(state);
+}
+TEST(LayeredCloudsMod, ScriptParses) {
+ net::minecraft::mod::lua::LuaApi& api = net::minecraft::mod::lua::luaApi();
+ if(!api.ready()) {
+  GTEST_SKIP() << "Lua runtime unavailable";
+ }
+ const std::filesystem::path path =
+     std::filesystem::path(MINECRAFT_TEST_SOURCE_DIR) / "mods" / "layered_clouds" / "scripts" / "main.lua";
+ std::ifstream input(path, std::ios::binary);
+ ASSERT_TRUE(input.is_open());
+ const std::string source{std::istreambuf_iterator<char>(input), std::istreambuf_iterator<char>()};
+ lua_State* state = api.newstate();
+ ASSERT_NE(state, nullptr);
+ const int status = api.loadbufferx(state, source.data(), source.size(), "@layered_clouds/main.lua", "t");
+ if(status != net::minecraft::mod::lua::kLuaOk) {
+  ADD_FAILURE() << net::minecraft::mod::lua::luaString(state, -1, "unknown Lua error");
+ }
  api.close(state);
 }
 } // namespace

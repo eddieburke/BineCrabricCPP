@@ -46,9 +46,6 @@ class LuaModEntity : public entity::Entity {
  [[nodiscard]] std::optional<Box> getBoundingBox() const override {
   return boundingBox;
  }
- [[nodiscard]] virtual bool isModEntity() const {
-  return true;
- }
  [[nodiscard]] bool takeDirty();
  [[nodiscard]] std::unique_ptr<net::minecraft::Packet> createUpdatePacket() const;
  struct ClientRenderer {

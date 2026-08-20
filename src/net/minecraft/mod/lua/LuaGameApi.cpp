@@ -232,15 +232,9 @@ bool spawnClientParticle(double x,
  client->particleManager.addParticle(particle);
  return true;
 }
-bool readPlayerPosition(double& x, double& y, double& z) {
+entity::player::PlayerEntity* localPlayer() {
  client::Minecraft* client = client::Minecraft::INSTANCE;
- if(client == nullptr || client->player == nullptr) {
-  return false;
- }
- x = client->player->x;
- y = client->player->y;
- z = client->player->z;
- return true;
+ return client != nullptr ? client->player : nullptr;
 }
 #else
 bool spawnClientParticle(double /*x*/,
@@ -257,8 +251,8 @@ bool spawnClientParticle(double /*x*/,
                          float /*gravity*/) {
  return false;
 }
-bool readPlayerPosition(double& /*x*/, double& /*y*/, double& /*z*/) {
- return false;
+entity::player::PlayerEntity* localPlayer() {
+ return nullptr;
 }
 #endif
 int getBlockIdAt(World* world, int x, int y, int z) {

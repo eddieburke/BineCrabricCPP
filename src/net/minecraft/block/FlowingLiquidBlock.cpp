@@ -1,4 +1,5 @@
 #include "net/minecraft/block/FlowingLiquidBlock.hpp"
+#include "net/minecraft/block/BlockNeighbors.hpp"
 #include "net/minecraft/block/Block.hpp"
 #include "net/minecraft/block/material/Material.hpp"
 #include "net/minecraft/registry/Registry.hpp"
@@ -37,15 +38,8 @@ int FlowingLiquidBlock::getDistanceToGap(World* world, int x, int y, int z, int 
   int nx = x;
   int ny = y;
   int nz = z;
-  if(direction == 0) {
-   --nx;
-  } else if(direction == 1) {
-   ++nx;
-  } else if(direction == 2) {
-   --nz;
-  } else {
-   ++nz;
-  }
+  nx += kHorizontalOffsetX[direction];
+  nz += kHorizontalOffsetZ[direction];
   if(isLiquidBreaking(world, nx, ny, nz) ||
      (&world->getMaterial(nx, ny, nz) == &material && world->getBlockMeta(nx, ny, nz) == 0)) {
    continue;
@@ -70,15 +64,8 @@ bool* FlowingLiquidBlock::getSpread(World* world, int x, int y, int z) {
   int nx = x;
   int ny = y;
   int nz = z;
-  if(direction == 0) {
-   --nx;
-  } else if(direction == 1) {
-   ++nx;
-  } else if(direction == 2) {
-   --nz;
-  } else {
-   ++nz;
-  }
+  nx += kHorizontalOffsetX[direction];
+  nz += kHorizontalOffsetZ[direction];
   if(isLiquidBreaking(world, nx, ny, nz) ||
      (&world->getMaterial(nx, ny, nz) == &material && world->getBlockMeta(nx, ny, nz) == 0)) {
    continue;

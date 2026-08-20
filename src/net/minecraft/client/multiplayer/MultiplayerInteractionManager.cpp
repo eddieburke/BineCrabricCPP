@@ -28,7 +28,7 @@ bool MultiplayerInteractionManager::breakBlock(int x, int y, int z, int directio
  const int blockId = minecraft->world->getBlockId(x, y, z);
  const bool removed = InteractionManager::breakBlock(x, y, z, direction);
  ItemStack* handStack = minecraft->player->inventory.getSelectedItem();
- if(handStack != nullptr) {
+ if(removed && handStack != nullptr) {
   handStack->postMine(blockId, x, y, z, minecraft->player);
   if(handStack->count == 0) {
    handStack->onRemoved(minecraft->player);

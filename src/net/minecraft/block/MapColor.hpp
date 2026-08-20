@@ -37,20 +37,4 @@ inline const MapColor MapColor::ORANGE{10, 12020271};
 inline const MapColor MapColor::GRAY{11, 0x707070};
 inline const MapColor MapColor::BLUE{12, 0x4040FF};
 inline const MapColor MapColor::BROWN{13, 6837042};
-inline void initializeMapColors() {
- MapColor::COLORS[0] = &MapColor::CLEAR;
- MapColor::COLORS[1] = &MapColor::PALE_GREEN;
- MapColor::COLORS[2] = &MapColor::PALE_YELLOW;
- MapColor::COLORS[3] = &MapColor::LIGHT_GRAY;
- MapColor::COLORS[4] = &MapColor::RED;
- MapColor::COLORS[5] = &MapColor::LIGHT_BLUE;
- MapColor::COLORS[6] = &MapColor::LIGHT_GRAY2;
- MapColor::COLORS[7] = &MapColor::GREEN;
- MapColor::COLORS[8] = &MapColor::WHITE;
- MapColor::COLORS[9] = &MapColor::SILVER;
- MapColor::COLORS[10] = &MapColor::ORANGE;
- MapColor::COLORS[11] = &MapColor::GRAY;
- MapColor::COLORS[12] = &MapColor::BLUE;
- MapColor::COLORS[13] = &MapColor::BROWN;
-}
 } // namespace net::minecraft::block

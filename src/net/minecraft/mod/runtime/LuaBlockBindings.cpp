@@ -22,7 +22,6 @@ int luaRegisterBlock(lua_State* state) {
  const int tableIndex = 1;
  BlockRegistrationSpec spec;
  spec.blockId = luaIntField(state, tableIndex, "id", 0);
- spec.texturePath = luaStringField(state, tableIndex, "texture", "");
  spec.hardness = luaFloatField(state, tableIndex, "hardness", 1.0f);
  spec.resistance = luaFloatField(state, tableIndex, "resistance", 1.0f);
  spec.luminance = luaFloatField(state, tableIndex, "luminance", 0.0f);

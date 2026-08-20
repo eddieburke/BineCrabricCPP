@@ -5,7 +5,6 @@
 namespace net::minecraft::mod::lua {
 struct BlockRegistrationSpec {
  int blockId = 0;
- std::string texturePath;
  float hardness = 1.0f;
  float resistance = 1.0f;
  float luminance = 0.0f;

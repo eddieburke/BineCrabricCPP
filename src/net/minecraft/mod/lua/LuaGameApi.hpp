@@ -3,7 +3,10 @@
 struct lua_State;
 namespace net::minecraft {
 class World;
+namespace entity::player {
+class PlayerEntity;
 }
+} // namespace net::minecraft
 namespace net::minecraft::mod::lua {
 int blockIdFromName(const char* name);
 std::string blockWireNameFromId(int blockId);
@@ -23,6 +26,6 @@ bool spawnClientParticle(double x,
                          float blue,
                          int maxAge,
                          float gravity);
-bool readPlayerPosition(double& x, double& y, double& z);
+entity::player::PlayerEntity* localPlayer();
 int getBlockIdAt(World* world, int x, int y, int z);
 } // namespace net::minecraft::mod::lua

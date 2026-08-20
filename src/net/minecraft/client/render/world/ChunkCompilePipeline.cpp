@@ -216,24 +216,51 @@ bool ChunkCompilePipeline::compileChunks(net::minecraft::entity::LivingEntity& /
     ++it;
    }
   }
-  const auto& sectionsByPriority = sectionSystem_->sectionsByPriority();
-  for(chunk::ChunkBuilder* section : sectionsByPriority) {
-   if(!canCapture()) {
-    break;
+  // Walk the dirty set, not every resident section. The old loop scanned all of
+  // sectionsByPriority() and hashed each one against dirtyChunks_ every frame --
+  // order-of-view-distance lookups even with nothing dirty at all.
+  if(!dirtyChunks_.empty() && canCapture()) {
+   const int frustumStamp = sectionSystem_->frustumStamp();
+   captureCandidates_.clear();
+   captureCandidates_.reserve(dirtyChunks_.size());
+   for(auto it = dirtyChunks_.begin(); it != dirtyChunks_.end();) {
+    chunk::ChunkBuilder* section = *it;
+    if(section == nullptr) {
+     it = dirtyChunks_.erase(it);
+     continue;
+    }
+    if(!section->dirty) {
+     it = dirtyChunks_.erase(it);
+     continue;
+    }
+    ++it;
+    if(section->meshJobInFlight || (force && !section->visibleIn(frustumStamp))) {
+     continue;
+    }
+    captureCandidates_.push_back(section);
    }
-   if(section == nullptr || !dirtyChunks_.contains(section)) {
-    continue;
-   }
-   if(!section->dirty) {
-    dirtyChunks_.erase(section);
-    continue;
-   }
-   if(section->meshJobInFlight || (force && !section->inFrustum)) {
-    continue;
-   }
-   if(startMeshJob(section, false, section->meshPriority, resolvedOpts)) {
-    ++inFlight;
-    ++captures;
+   // Only the few we can actually start this frame need to be in priority order,
+   // so the nearest dirty sections are tried first.
+   const std::size_t wanted =
+       std::min(captureCandidates_.size(), inFlight < targetInFlight ? targetInFlight - inFlight : 0u);
+   std::partial_sort(captureCandidates_.begin(),
+                     captureCandidates_.begin() + static_cast<std::ptrdiff_t>(wanted),
+                     captureCandidates_.end(),
+                     [](const chunk::ChunkBuilder* a, const chunk::ChunkBuilder* b) {
+                      return a->meshPriority < b->meshPriority;
+                     });
+   // Walk past `wanted`: startMeshJob refuses a section whose neighbours are
+   // evicted, and a refusal costs no budget. Stopping at `wanted` would let a run
+   // of refusals end the frame's capture early and leave dirty sections showing
+   // stale lighting until some later frame happened to reach them.
+   for(chunk::ChunkBuilder* section : captureCandidates_) {
+    if(!canCapture()) {
+     break;
+    }
+    if(startMeshJob(section, false, section->meshPriority, resolvedOpts)) {
+     ++inFlight;
+     ++captures;
+    }
    }
   }
  }

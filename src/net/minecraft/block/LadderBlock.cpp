@@ -1,12 +1,11 @@
 #include "net/minecraft/block/LadderBlock.hpp"
+#include "net/minecraft/block/BlockSounds.hpp"
+#include "net/minecraft/block/BlockNeighbors.hpp"
 #include "net/minecraft/block/Block.hpp"
 #include "net/minecraft/item/Item.hpp"
 #include "net/minecraft/recipe/CraftingRecipeManager.hpp"
 #include "net/minecraft/registry/Registry.hpp"
 #include "net/minecraft/world/World.hpp"
-namespace {
-net::minecraft::BlockSoundGroup kWoodSound("wood", 1.0f, 1.0f);
-}
 namespace net::minecraft::block {
 LadderBlock::LadderBlock(int blockId, int textureId) : Block(blockId, textureId, material::Material::PISTON_BREAKABLE) {
 }
@@ -82,16 +81,7 @@ bool LadderBlock::canPlaceAt(World* world, int x, int y, int z) const {
  if(world == nullptr) {
   return false;
  }
- if(world->shouldSuffocate(x - 1, y, z)) {
-  return true;
- }
- if(world->shouldSuffocate(x + 1, y, z)) {
-  return true;
- }
- if(world->shouldSuffocate(x, y, z - 1)) {
-  return true;
- }
- return world->shouldSuffocate(x, y, z + 1);
+ return anyHorizontalNeighborSuffocates(world, x, y, z);
 }
 void LadderBlock::onPlaced(World* world, int x, int y, int z, int direction) {
  if(world == nullptr) {

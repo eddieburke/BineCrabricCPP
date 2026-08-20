@@ -7,7 +7,6 @@ local config = require("config")
 
 local SCREEN_ID = "realtime_sky:globe"
 local SEARCH_FIELD = "place_search"
--- world_color must run AFTER colorful_skies (priority 20): lower number = later.
 local SKY_COLOR_PRIORITY = 10
 local SKY_PROVIDER_PRIORITY = 50
 
@@ -32,6 +31,25 @@ local ui = {
 }
 
 local solar_frame_cache
+local expected_world_time
+local synchronized_world_time
+
+local function restore_expected_world_time()
+  if expected_world_time ~= nil then
+    minecraft.world.set_time(expected_world_time)
+  end
+  expected_world_time = nil
+  synchronized_world_time = nil
+end
+
+local function track_expected_world_time(world_time)
+  if expected_world_time == nil or synchronized_world_time == nil or
+      world_time ~= synchronized_world_time + 1 then
+    expected_world_time = world_time
+  else
+    expected_world_time = expected_world_time + 1
+  end
+end
 
 local function normalize_time_zone_id(value)
   if type(value) ~= "string" then return "GMT+0" end
@@ -60,6 +78,9 @@ end
 local function save_settings()
   solar_frame_cache = nil
   config.time_zone_id = normalize_time_zone_id(config.time_zone_id)
+  if config.enabled ~= true or config.drive_sun ~= true then
+    restore_expected_world_time()
+  end
 end
 
 local function realtime_active()
@@ -300,14 +321,14 @@ end
 local function register()
   minecraft.on("screen_ui", {
     screen_id = minecraft.screen.ids.world_settings,
-    region = minecraft.screen.regions.screen,
+    region = minecraft.screen.regions.footer,
     priority = 100,
   }, function(event)
     if event.ui == nil then return event end
     local function realtime_label()
       return config.enabled and "Realtime: ON" or "Realtime: OFF"
     end
-    event.ui:add_centered_button(143,
+    event.ui:add_stacked_centered_button(
       realtime_label(),
       function()
         config.enabled = not config.enabled
@@ -537,24 +558,25 @@ local function register()
     return event
   end)
 
-  minecraft.on("world_tick", { before = false }, function(event)
-    if event.remote or event.shader_pack_active or not realtime_active() or not config.drive_sun then
+  minecraft.on("world_tick", { before = false }, function()
+    if not realtime_active() or not config.drive_sun then
+      restore_expected_world_time()
       return
     end
 
     local frame = current_solar_frame(0.0)
     local target_tick = math.floor(frame.day_tick + 0.5) % 24000
     local world_time = minecraft.world.get_time()
+    track_expected_world_time(world_time)
     local synchronized_time = nearest_world_time_with_phase(world_time, target_tick)
 
     if synchronized_time ~= world_time then
       minecraft.world.set_time(synchronized_time)
     end
+    synchronized_world_time = synchronized_time
   end)
 
-  settings_ui.register(config, function()
-    save_settings()
-  end)
+  settings_ui.register(config, save_settings)
 end
 
 return {

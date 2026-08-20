@@ -37,6 +37,7 @@
 #include <vector>
 #include "net/minecraft/entity/EntityRegistry.hpp"
 #include "net/minecraft/entity/player/PlayerEntity.hpp"
+#include "net/minecraft/item/AxeItem.hpp"
 #include "net/minecraft/item/ItemStack.hpp"
 #include "net/minecraft/world/World.hpp"
 namespace net::minecraft::mod::runtime {
@@ -575,6 +576,26 @@ void luaHookSnowIcePlacement(SnowIcePlacementEvent& e) {
       readFields(state, "place_snow", ev.placeSnow, "place_ice", ev.placeIce);
      });
 }
+void luaHookChatSend(ChatEvent& e) {
+ runLuaHook(
+     LuaEventId::ChatSend,
+     e,
+     [](lua_State* state, ChatEvent& ev) {
+      setFields(state, "message", ev.message, "canceled", ev.canceled);
+      setWorldContextFields(state, ev.world);
+     },
+     [](lua_State* state, ChatEvent& ev) { readFields(state, "message", ev.message, "canceled", ev.canceled); });
+}
+void luaHookChatReceive(ChatEvent& e) {
+ runLuaHook(
+     LuaEventId::ChatReceive,
+     e,
+     [](lua_State* state, ChatEvent& ev) {
+      setFields(state, "message", ev.message, "canceled", ev.canceled);
+      setWorldContextFields(state, ev.world);
+     },
+     [](lua_State* state, ChatEvent& ev) { readFields(state, "message", ev.message, "canceled", ev.canceled); });
+}
 void luaHookEntityTick(EntityTickEvent& e) {
  runLuaHook(
      LuaEventId::EntityTick,
@@ -685,6 +706,48 @@ void luaHookBlockInteract(BlockInteractEvent& e) {
        }
       }
      });
+}
+void luaHookBlockBreak(BlockBreakEvent& e) {
+ runLuaHook(
+     LuaEventId::BlockBreak,
+     e,
+     [](lua_State* state, BlockBreakEvent& ev) {
+      setFields(state,
+                "x",
+                ev.x,
+                "y",
+                ev.y,
+                "z",
+                ev.z,
+                "block_id",
+                ev.blockId,
+                "block_meta",
+                ev.blockMeta,
+                "remote",
+                ev.world != nullptr && ev.world->isRemote(),
+                "has_player",
+                ev.player != nullptr,
+                "local_player",
+                isLocalPlayer(ev.player),
+                "has_item",
+                ev.stack != nullptr && !ev.stack->empty());
+      if(ev.stack != nullptr && !ev.stack->empty()) {
+       setFields(state,
+                 "item_id",
+                 ev.stack->itemId,
+                 "item_count",
+                 ev.stack->count,
+                 "item_damage",
+                 ev.stack->damage,
+                 "item_max_damage",
+                 ev.stack->getMaxDamage(),
+                 "item_damageable",
+                 ev.stack->isDamageable(),
+                 "item_is_axe",
+                 dynamic_cast<item::AxeItem*>(ev.stack->getItem()) != nullptr);
+      }
+     },
+     kNoRead);
 }
 void luaHookEntityInteract(EntityInteractEvent& e) {
  runLuaHook(
@@ -1121,6 +1184,8 @@ void luaHookWorldRender(WorldRenderEvent& e) {
                 renderStageName(e.stage),
                 "moment",
                 renderMomentName(e.moment),
+                "stage_enabled",
+                e.stageEnabled,
                 "cancel_vanilla",
                 e.cancelVanilla,
                 "vanilla_stage_ran",
@@ -1129,6 +1194,16 @@ void luaHookWorldRender(WorldRenderEvent& e) {
                 e.starBrightness,
                 "rain_strength",
                 e.rainStrength,
+                "cloud_base_height",
+                e.cloudBaseHeight,
+                "render_distance",
+                e.renderDistance,
+                "cloud_r",
+                e.cloudRed,
+                "cloud_g",
+                e.cloudGreen,
+                "cloud_b",
+                e.cloudBlue,
                 "astronomy_enabled",
                 e.astronomyEnabled,
                 "astronomy_utc_millis",
@@ -1145,25 +1220,16 @@ void luaHookWorldRender(WorldRenderEvent& e) {
       const double cameraZ = frameCamera.z;
 #ifdef MINECRAFT_NATIVE_EXPORTS
       if(e.world != nullptr) {
-       // is_day comes from the frame's published celestial state, same as world_color
-       // — the raw-clock re-derivation is what let mods see a different phase than
-       // the sky/shadow map rendered. see src/net/minecraft/client/render/celestial/CelestialState.hpp
        setFields(state,
                  "world_time",
                  static_cast<double>(e.world->getTime() % 24000ULL),
                  "is_day",
-                 net::minecraft::client::render::core::celestialState().day,
-                 // World-space height of the dimension's cloud layer. Cloud mods
-                 // (layered_clouds) draw their sheets at `cloud_base_height +
-                 // (layer.height - 128)`; without this field they fell back to
-                 // `128 - camera_y + 0.33` — eye-relative — and layered the clouds
-                 // around the player, whitewashing everything beyond a chunk.
-                 // see mods/layered_clouds/scripts/main.lua
-                 "cloud_base_height",
-                 e.world->dimension != nullptr ? static_cast<double>(e.world->dimension->getCloudHeight()) : 0.0);
+                 net::minecraft::client::render::core::celestialState().day);
       }
       const client::render::CelestialState& celestial = client::render::core::celestialState();
       setFields(state,
+                "celestial_angle",
+                celestial.celestialAngle,
                 "sun_x",
                 celestial.sunDirectionWorld[0],
                 "sun_y",

@@ -85,12 +85,8 @@ void ShadowCullingFrustum::buildAdvanced(const float modelViewProjection[16],
  }
 }
 void ShadowCullingFrustum::prepare(double cameraX, double cameraY, double cameraZ) noexcept {
- if(hasBoxCuller_) {
-  boxCuller_.setPosition(cameraX, cameraY, cameraZ);
- }
- if(hasDistanceCuller_) {
-  distanceCuller_.setPosition(cameraX, cameraY, cameraZ);
- }
+ boxCuller_.setPosition(cameraX, cameraY, cameraZ);
+ distanceCuller_.setPosition(cameraX, cameraY, cameraZ);
  x_ = cameraX;
  y_ = cameraY;
  z_ = cameraZ;
@@ -108,12 +104,12 @@ bool ShadowCullingFrustum::isVisible(double minX,
  case Mode::NonCulling:
   return true;
  case Mode::BoxCulling:
-  return !hasBoxCuller_ || !boxCuller_.isCulled(minX, minY, minZ, maxX, maxY, maxZ);
+  return !boxCuller_.isCulled(minX, minY, minZ, maxX, maxY, maxZ);
  case Mode::SafeZone:
-  if(hasDistanceCuller_ && distanceCuller_.isCulled(minX, minY, minZ, maxX, maxY, maxZ)) {
+  if(distanceCuller_.isCulled(minX, minY, minZ, maxX, maxY, maxZ)) {
    return false;
   }
-  if(hasBoxCuller_ && !boxCuller_.isCulled(minX, minY, minZ, maxX, maxY, maxZ)) {
+  if(!boxCuller_.isCulled(minX, minY, minZ, maxX, maxY, maxZ)) {
    return true;
   }
   break;
@@ -131,11 +127,10 @@ ShadowCullingFrustum createShadowFrustum(const ShadowFrustumParams& params,
                                          const float modelViewProjection[16],
                                          const float lightVectorFromOrigin[3]) {
  ShadowCullingFrustum frustum;
- const float renderDistanceBlocks = params.renderDistanceBlocks;
  if((params.cullState == ShadowCullState::Default && params.packHasVoxelization) ||
     params.cullState == ShadowCullState::Distance) {
   const double distance = static_cast<double>(params.halfPlaneLength) * params.renderMultiplier;
-  if(distance <= 0.0 || distance > static_cast<double>(renderDistanceBlocks)) {
+  if(distance <= 0.0 || distance > static_cast<double>(params.renderDistanceBlocks)) {
    frustum.setMode(ShadowCullingFrustum::Mode::NonCulling);
    return frustum;
   }
@@ -157,11 +152,6 @@ ShadowCullingFrustum createShadowFrustum(const ShadowFrustumParams& params,
   frustum.setMode(ShadowCullingFrustum::Mode::NonCulling);
   return frustum;
  }
- if(params.forceBoxCull) {
-  frustum.setMode(ShadowCullingFrustum::Mode::BoxCulling);
-  frustum.setBoxCuller(BoxCuller(distance));
-  return frustum;
- }
  frustum.buildAdvanced(modelViewProjection, lightVectorFromOrigin);
  if(hasSafeZone) {
   frustum.setMode(ShadowCullingFrustum::Mode::SafeZone);
@@ -170,7 +160,7 @@ ShadowCullingFrustum createShadowFrustum(const ShadowFrustumParams& params,
   return frustum;
  }
  frustum.setMode(ShadowCullingFrustum::Mode::Advanced);
- if(distance < static_cast<double>(renderDistanceBlocks)) {
+ if(distance < static_cast<double>(params.renderDistanceBlocks)) {
   frustum.setBoxCuller(BoxCuller(distance));
  }
  return frustum;

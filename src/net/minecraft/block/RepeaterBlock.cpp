@@ -1,4 +1,5 @@
 #include "net/minecraft/block/RepeaterBlock.hpp"
+#include "net/minecraft/block/BlockSounds.hpp"
 #include "net/minecraft/block/Block.hpp"
 #include "net/minecraft/entity/player/PlayerEntity.hpp"
 #include "net/minecraft/item/Item.hpp"
@@ -6,9 +7,6 @@
 #include "net/minecraft/util/math/MathHelper.hpp"
 #include "net/minecraft/world/BlockView.hpp"
 #include "net/minecraft/world/World.hpp"
-namespace {
-net::minecraft::BlockSoundGroup kWoodSound("wood", 1.0f, 1.0f);
-}
 namespace net::minecraft::block {
 namespace {
 constexpr int kDelay[4] = {1, 2, 3, 4};

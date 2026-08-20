@@ -4,7 +4,6 @@ local model = assert(minecraft.model.load("models/simple_lantern/lantern.json"))
 
 minecraft.register_block({
   id = 151,
-  texture = "mods/simple_lantern/lantern.png",
   hardness = 0.5,
   resistance = 1.0,
   luminance = 0.9375,

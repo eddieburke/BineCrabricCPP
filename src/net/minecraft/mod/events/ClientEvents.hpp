@@ -1,4 +1,5 @@
 #pragma once
+#include <string>
 #include "net/minecraft/util/hit/HitResultType.hpp"
 namespace net::minecraft {
 class World;
@@ -40,6 +41,11 @@ struct ClientTickEvent {
  bool paused = false;
  bool before = true;
  bool afterWorld = false;
+};
+struct ChatEvent {
+ World* world = nullptr;
+ std::string message;
+ bool canceled = false;
 };
 struct ScreenGuiEvent {
  client::gui::screen::Screen* screen = nullptr;

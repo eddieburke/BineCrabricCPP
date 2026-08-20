@@ -1,4 +1,5 @@
 #include "net/minecraft/block/SnowBlock.hpp"
+#include "net/minecraft/block/BlockSounds.hpp"
 #include "net/minecraft/block/Block.hpp"
 #include "net/minecraft/item/Item.hpp"
 #include "net/minecraft/item/SnowballItem.hpp"
@@ -6,9 +7,6 @@
 #include "net/minecraft/registry/Registry.hpp"
 #include "net/minecraft/world/World.hpp"
 #include "net/minecraft/world/light/LightType.hpp"
-namespace {
-net::minecraft::BlockSoundGroup kClothSound("cloth", 1.0f, 1.0f);
-}
 namespace net::minecraft::block {
 SnowBlock::SnowBlock(int id, int textureId) : Block(id, textureId, material::Material::SNOW_BLOCK) {
  setTickRandomly(true);

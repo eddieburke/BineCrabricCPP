@@ -1,13 +1,11 @@
 #include "net/minecraft/block/FireBlock.hpp"
+#include "net/minecraft/block/BlockSounds.hpp"
 #include "net/minecraft/block/Block.hpp"
 #include "net/minecraft/block/NetherPortalBlock.hpp"
 #include "net/minecraft/block/TntBlock.hpp"
 #include "net/minecraft/registry/Registry.hpp"
 #include "net/minecraft/world/BlockView.hpp"
 #include "net/minecraft/world/World.hpp"
-namespace {
-net::minecraft::BlockSoundGroup kWoodSound("wood", 1.0f, 1.0f);
-}
 namespace net::minecraft::block {
 FireBlock::FireBlock(int id, int textureId) : Block(id, textureId, material::Material::FIRE) {
  setTickRandomly(true);

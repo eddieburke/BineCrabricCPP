@@ -1,4 +1,5 @@
 #include <gtest/gtest.h>
+#include <cstring>
 #include <filesystem>
 #include <fstream>
 #include <iterator>
@@ -83,5 +84,31 @@ TEST(FogModeParity, VanillaCommonGlslDecodesGlConstants) {
  EXPECT_EQ(source.find("fogMode == 2)"), std::string::npos);
  EXPECT_EQ(source.find("fogMode == 3)"), std::string::npos);
  EXPECT_EQ(source.find("as Iris reports them"), std::string::npos);
+}
+// Beta's fog coordinate is fixed-function GL_FRAGMENT_DEPTH — the eye-plane distance.
+// Radial made the wall 1.74x closer at the screen corners than at the centre, so every
+// program has to take its fog coordinate from fogCoord(), never from length().
+TEST(FogModeParity, VanillaProgramsUsePlanarFogCoordinate) {
+ const std::filesystem::path shaders = std::filesystem::path(MINECRAFT_TEST_SOURCE_DIR) / "src" / "net" /
+                                       "minecraft" / "client" / "render" / "shaders" / "glsl" / "vanilla" /
+                                       "shaders";
+ const std::string common = read(shaders / "lib" / "common.glsl");
+ EXPECT_NE(common.find("float fogCoord(vec3 viewPosition)"), std::string::npos);
+ EXPECT_NE(common.find("return abs(viewPosition.z);"), std::string::npos);
+ int programsWithFog = 0;
+ for(const auto& entry : std::filesystem::directory_iterator(shaders)) {
+  if(entry.path().extension() != ".vsh") {
+   continue;
+  }
+  const std::string source = read(entry.path());
+  const std::size_t assignment = source.find("viewDistance = ");
+  if(assignment == std::string::npos) {
+   continue;
+  }
+  ++programsWithFog;
+  EXPECT_EQ(source.compare(assignment, std::strlen("viewDistance = fogCoord("), "viewDistance = fogCoord("), 0)
+      << entry.path().filename().string() << " must take its fog coordinate from fogCoord()";
+ }
+ EXPECT_EQ(programsWithFog, 9);
 }
 } // namespace net::minecraft::test

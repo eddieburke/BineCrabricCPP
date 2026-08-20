@@ -8,6 +8,7 @@
 #include "net/minecraft/client/option/RenderSettings.hpp"
 #include "net/minecraft/client/render/RenderType.hpp"
 #include "net/minecraft/client/render/Tessellator.hpp"
+#include "net/minecraft/client/render/culling/Frustum.hpp"
 #include "net/minecraft/client/render/atmosphere/AtmosphereContext.hpp"
 #include "net/minecraft/client/texture/TextureManager.hpp"
 #include "net/minecraft/entity/Entity.hpp"
@@ -112,6 +113,17 @@ void renderFancyClouds(const AtmosphereContext& ctx, float tickDelta) {
  core::setDrawPose(cloudPose);
  const bool drawBottom = cloudHeight > -cloudThickness - 1.0f;
  const bool drawTop = cloudHeight <= cloudThickness + 1.0f;
+ // 40x40 cells, two passes, up to six quads each -- the heaviest immediate-mode
+ // geometry vanilla builds. cloudPose (a 12x horizontal scale) is baked into each
+ // vertex by the Tessellator, so it has to be folded in here for the cell
+ // coordinates below to be in the frustum's space.
+ Frustum cellFrustum;
+ const bool cullCells = core::drawCameraStateValid();
+ if(cullCells) {
+  net::minecraft::util::math::Matrix4f posedModelView = core::drawModelView();
+  posedModelView.multiply(cloudPose);
+  cellFrustum.compute(core::drawProjection(), posedModelView, 0.0, 0.0, 0.0);
+ }
  for(int pass = 0; pass < 2; ++pass) {
   const bool colorWrite = pass != 0;
   core::colorMask(colorWrite, colorWrite, colorWrite, colorWrite);
@@ -125,6 +137,15 @@ void renderFancyClouds(const AtmosphereContext& ctx, float tickDelta) {
     const float baseZ = static_cast<float>(cellZ);
     const float drawX = baseX - fracX;
     const float drawZ = baseZ - fracZ;
+    // The cell spans [drawX, drawX+1] x [cloudHeight, cloudHeight+thickness].
+    if(cullCells && !cellFrustum.isVisible(static_cast<double>(drawX) - 1.0,
+                                           static_cast<double>(cloudHeight) - 1.0,
+                                           static_cast<double>(drawZ) - 1.0,
+                                           static_cast<double>(drawX) + 2.0,
+                                           static_cast<double>(cloudHeight + cloudThickness) + 1.0,
+                                           static_cast<double>(drawZ) + 2.0)) {
+     continue;
+    }
     const float u0 = baseX * texScale + texOffsetX;
     const float u1 = (baseX + 1.0f) * texScale + texOffsetX;
     const float uMid = (baseX + 0.5f) * texScale + texOffsetX;
@@ -228,6 +249,22 @@ void renderClouds(const AtmosphereContext& ctx, float tickDelta) {
   const float texOffsetZ = static_cast<float>(texelOriginZ * tile) * scrollScale;
   const float fracX = static_cast<float>(cloudX - static_cast<double>(texelOriginX * tile));
   const float fracZ = static_cast<float>(cloudZ - static_cast<double>(texelOriginZ * tile));
+  // The grid is 64x64 cells and was rebuilt whole every frame -- up to 16k
+  // vertices, three quarters of them behind the camera.
+  //
+  // Tessellator bakes core::drawPose() into each vertex on the CPU and the pass
+  // then draws with drawModelView()/drawProjection(). Folding the pose into the
+  // frustum puts its planes in the same pre-pose space as the cell coordinates
+  // below, so the test is right whether or not a pose is active (it is identity
+  // here, but renderFancyClouds sets a scale and this must not depend on that).
+  Frustum cellFrustum;
+  const bool cullCells = core::drawCameraStateValid();
+  if(cullCells) {
+   net::minecraft::util::math::Matrix4f posedModelView = core::drawModelView();
+   posedModelView.multiply(core::drawPose());
+   cellFrustum.compute(core::drawProjection(), posedModelView, 0.0, 0.0, 0.0);
+  }
+  constexpr float cellMargin = 1.0f;
   tessellator.startQuads();
   tessellator.color(red, green, blue, 0.8f);
   for(int cellX = -radius; cellX < radius; ++cellX) {
@@ -239,6 +276,14 @@ void renderClouds(const AtmosphereContext& ctx, float tickDelta) {
     const int baseZ = cellZ * tile;
     const float drawX = static_cast<float>(baseX) - fracX;
     const float drawZ = static_cast<float>(baseZ) - fracZ;
+    if(cullCells && !cellFrustum.isVisible(static_cast<double>(drawX - cellMargin),
+                                           static_cast<double>(cloudHeight - cellMargin),
+                                           static_cast<double>(drawZ - cellMargin),
+                                           static_cast<double>(drawX + static_cast<float>(tile) + cellMargin),
+                                           static_cast<double>(cloudHeight + cellMargin),
+                                           static_cast<double>(drawZ + static_cast<float>(tile) + cellMargin))) {
+     continue;
+    }
     const float u0 = static_cast<float>(baseX) * scrollScale + texOffsetX;
     const float u1 = static_cast<float>(baseX + tile) * scrollScale + texOffsetX;
     const float v0 = static_cast<float>(baseZ) * scrollScale + texOffsetZ;

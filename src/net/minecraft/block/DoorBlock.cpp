@@ -1,12 +1,11 @@
 #include "net/minecraft/block/DoorBlock.hpp"
+#include "net/minecraft/block/BlockSounds.hpp"
 #include "net/minecraft/block/Block.hpp"
 #include "net/minecraft/block/material/Material.hpp"
 #include "net/minecraft/item/Item.hpp"
 #include "net/minecraft/registry/Registry.hpp"
 #include "net/minecraft/world/World.hpp"
 namespace {
-net::minecraft::BlockSoundGroup kMetalSound("stone", 1.0f, 1.5f);
-net::minecraft::BlockSoundGroup kWoodSound("wood", 1.0f, 1.0f);
 } // namespace
 namespace net::minecraft::block {
 namespace {

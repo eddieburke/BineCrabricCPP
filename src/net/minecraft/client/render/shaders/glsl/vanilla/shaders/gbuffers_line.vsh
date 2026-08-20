@@ -11,5 +11,5 @@ void main() {
  vec4 viewPosition = modelViewMatrix * vec4(vaPosition + chunkOffset, 1.0);
  gl_Position = projectionMatrix * viewPosition;
  color = vaColor;
- viewDistance = length(viewPosition.xyz);
+ viewDistance = fogCoord(viewPosition.xyz);
 }

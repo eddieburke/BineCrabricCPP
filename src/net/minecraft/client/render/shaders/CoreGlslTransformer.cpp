@@ -161,6 +161,11 @@ bool programGetsCompatAlphaTest(const std::string& programName) {
  }
  return name.starts_with("gbuffers_") || name.starts_with("clrwl_gbuffers");
 }
+bool programGetsCompatSkyFog(const std::string& programName) {
+ std::string_view name = programName;
+ if(name.starts_with("clrwl_")) name.remove_prefix(6);
+ return name == "gbuffers_skybasic";
+}
 std::vector<bool> replaceFunctionCalls(
     std::string& source,
     const std::vector<std::pair<std::string_view, std::string_view>>& replacements) {
@@ -512,6 +517,32 @@ std::string canonicalizeFragment(const std::string& programName, const PackDefin
   return false;
  }();
  if(hasDepthDecl && !hasDepthWrite) appendBeforeMainClose(source, GlslSnippets::get("gl_frag_depth_passthrough"));
+ if(programGetsCompatSkyFog(programName) && outputs[0] && !referencesToken(source, "fogMode")) {
+  appendBeforeMainClose(source,
+                        " vec2 iris_skyNdc = gl_FragCoord.xy / vec2(viewWidth, viewHeight) * 2.0 - 1.0;\n"
+                        " vec4 iris_skyView = projectionMatrixInverse * vec4(iris_skyNdc, gl_FragCoord.z * 2.0 - 1.0, 1.0);\n"
+                        " float iris_skyDistance = length(iris_skyView.xyz / iris_skyView.w);\n"
+                        " float iris_skyFogVisibility = 1.0;\n"
+                        " if(fogMode == 9729) iris_skyFogVisibility = clamp((fogEnd - iris_skyDistance) / max(fogEnd - fogStart, 0.0001), 0.0, 1.0);\n"
+                        " if(fogMode == 2049) {\n"
+                        "  float iris_skyFogScaled = fogDensity * iris_skyDistance;\n"
+                        "  iris_skyFogVisibility = clamp(exp(-iris_skyFogScaled * iris_skyFogScaled), 0.0, 1.0);\n"
+                        " }\n"
+                        " iris_FragData0.rgb = mix(fogColor, iris_FragData0.rgb, iris_skyFogVisibility);\n");
+  std::string fogDeclarations;
+  const CodeMask fogMask = codeMask(source);
+  constexpr std::array fogUniforms = {
+      SourceDeclaration{"uniform", "mat4", "projectionMatrixInverse"},
+      SourceDeclaration{"uniform", "float", "viewWidth"},
+      SourceDeclaration{"uniform", "float", "viewHeight"},
+      SourceDeclaration{"uniform", "vec3", "fogColor"},
+      SourceDeclaration{"uniform", "float", "fogDensity"},
+      SourceDeclaration{"uniform", "float", "fogStart"},
+      SourceDeclaration{"uniform", "float", "fogEnd"},
+      SourceDeclaration{"uniform", "int", "fogMode"}};
+  appendMissingDeclarations(fogDeclarations, source, fogMask, fogUniforms);
+  if(!fogDeclarations.empty()) source.insert(sourceDeclarationOffset(source), fogDeclarations);
+ }
  if(!programGetsCompatAlphaTest(programName)) return source;
  std::string accessor;
  if(legacyOutput && outputs[0]) {

@@ -27,6 +27,16 @@ struct BlockInteractEvent {
  bool handled = false;
  client::Minecraft* client = nullptr;
 };
+struct BlockBreakEvent {
+ entity::player::PlayerEntity* player = nullptr;
+ World* world = nullptr;
+ ItemStack* stack = nullptr;
+ int x = 0;
+ int y = 0;
+ int z = 0;
+ int blockId = 0;
+ int blockMeta = 0;
+};
 struct EntityInteractEvent {
  entity::player::PlayerEntity* player = nullptr;
  entity::Entity* target = nullptr;

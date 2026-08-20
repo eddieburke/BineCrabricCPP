@@ -6,6 +6,7 @@
 #include "net/minecraft/entity/player/ClientPlayerEntity.hpp"
 #include "net/minecraft/entity/player/PlayerEntity.hpp"
 #include "net/minecraft/item/ItemStack.hpp"
+#include "net/minecraft/mod/runtime/LuaDirectHooks.hpp"
 #include "net/minecraft/world/World.hpp"
 namespace net::minecraft::client {
 SingleplayerInteractionManager::SingleplayerInteractionManager(Minecraft* minecraft) : InteractionManager(minecraft) {
@@ -25,7 +26,7 @@ bool SingleplayerInteractionManager::breakBlock(int x, int y, int z, int directi
  PlayerEntity* player = minecraft->player;
  ItemStack* handStack = player->inventory.getSelectedItem();
  const bool canHarvest = blockId > 0 && player->canHarvest(blockId);
- if(handStack != nullptr) {
+ if(removed && handStack != nullptr) {
   handStack->postMine(blockId, x, y, z, player);
   if(handStack->count == 0) {
    handStack->onRemoved(player);
@@ -34,6 +35,11 @@ bool SingleplayerInteractionManager::breakBlock(int x, int y, int z, int directi
  }
  if(removed && canHarvest && blockId > 0 && Block::BLOCKS[static_cast<std::size_t>(blockId)] != nullptr) {
   Block::BLOCKS[static_cast<std::size_t>(blockId)]->afterBreak(minecraft->world, player, x, y, z, blockMeta);
+ }
+ if(removed) {
+  mod::BlockBreakEvent event{
+      player, minecraft->world, player->inventory.getSelectedItem(), x, y, z, blockId, blockMeta};
+  mod::runtime::luaHookBlockBreak(event);
  }
  return removed;
 }

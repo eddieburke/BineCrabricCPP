@@ -80,11 +80,6 @@ class CropBlock : public PlantBlock {
  [[nodiscard]] int getDroppedItemCount(JavaRandom& /*random*/) const override {
   return 1;
  }
- void applyFullGrowth(World* world, int x, int y, int z) {
-  if(world != nullptr) {
-   world->setBlockMeta(x, y, z, 7);
-  }
- }
 
  private:
  [[nodiscard]] float getAvailableMoisture(World* world, int x, int y, int z) const {

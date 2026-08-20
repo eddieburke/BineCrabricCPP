@@ -23,13 +23,24 @@ struct RenderDistance {
  [[nodiscard]] float farPlane() const noexcept {
   return blocks * 2.0f;
  }
- // Iris 26.1 (FogRenderer.setupFog -> FogStorage, FogUniforms.java): terrain fog
- static constexpr float kFogStartRatio = 0.75f;
+ // Beta EntityRenderer.setupFog: GL_FOG_START = farPlaneDistance * 0.25, GL_FOG_END
+ // = farPlaneDistance. NOT modern Java's 0.75 — Iris only captures whatever the game
+ // set (FogUniforms.java reads sodium$getFogParameters()), it defines no ratio, and
+ // every other term here (farPlane * 2, the 1/(4 - setting) colour blend, the four
+ // distance steps) is Beta's. At 0.75 the whole fade is crushed into the last quarter
+ // of the view distance, which reads as a wall rather than a haze.
+ static constexpr float kFogStartRatio = 0.25f;
  [[nodiscard]] float fogEnd() const noexcept {
   return blocks;
  }
  [[nodiscard]] float fogStart() const noexcept {
   return blocks * kFogStartRatio;
+ }
+ // The sky pass (Beta setupFog(-1)): start 0, end farPlaneDistance * 0.8, so the sky
+ // itself blends toward the fog colour instead of meeting fogged terrain unblended.
+ static constexpr float kSkyFogEndRatio = 0.8f;
+ [[nodiscard]] float skyFogEnd() const noexcept {
+  return blocks * kSkyFogEndRatio;
  }
  // How far the horizon fog pulls toward the sky colour. A function of the
  // options step, not the block distance: shorter view distances wash out more.

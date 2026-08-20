@@ -1,11 +1,9 @@
 #include "net/minecraft/block/ClayBlock.hpp"
+#include "net/minecraft/block/BlockSounds.hpp"
 #include "net/minecraft/block/Block.hpp"
 #include "net/minecraft/item/Item.hpp"
 #include "net/minecraft/recipe/CraftingRecipeManager.hpp"
 #include "net/minecraft/registry/Registry.hpp"
-namespace {
-net::minecraft::BlockSoundGroup kGravelSound("gravel", 1.0f, 1.0f);
-}
 namespace net::minecraft::block {
 void ClayBlock::registerClass() {
  Block::CLAY =

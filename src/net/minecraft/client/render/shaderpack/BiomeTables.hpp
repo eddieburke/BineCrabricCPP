@@ -72,22 +72,7 @@ struct BiomeNameAlias {
 inline constexpr std::array<BiomeNameAlias, 5> kBiomeNameAliases = {
     {{"SWAMPLAND", 1}, {"DARK_FOREST", 3}, {"HELL", 11}, {"NETHER", 11}, {"SKY", 12}}};
 
-[[nodiscard]] inline std::optional<std::size_t> biomeIndexForName(std::string_view name) noexcept {
- for(std::size_t i = 0; i < kBiomeNames.size(); ++i) {
-  if(kBiomeNames[i] == name) return i;
- }
- for(const BiomeNameAlias& alias : kBiomeNameAliases) {
-  if(alias.name == name) return alias.index;
- }
- return std::nullopt;
-}
 
-[[nodiscard]] inline std::optional<std::size_t> biomeCategoryIndexForName(std::string_view name) noexcept {
- for(std::size_t i = 0; i < kBiomeCategoryNames.size(); ++i) {
-  if(kBiomeCategoryNames[i] == name) return i;
- }
- return std::nullopt;
-}
 
 
 

@@ -179,20 +179,31 @@ int WorldRenderer::renderChunkLayer(int layer, bool replay, bool drawModMeshes) 
   terrainRegionDrawCount_ = 0;
   terrainRegionDrawLayer_ = layer;
   const auto& visible = chunkSections_.visibleSections();
+  // cullChunks already filtered by frustum on the way into `visible`; re-testing
+  // visibility here only re-read an answer it had just written.
+  chunk::TerrainRegion* lastRegion = nullptr;
+  std::size_t lastRegionIndex = 0;
   const auto visit = [&](chunk::ChunkBuilder* chunk) {
-   if(chunk == nullptr || (!core::cameraFrame().shadowPass && !chunk->inFrustum)) {
+   if(chunk == nullptr) {
     return;
    }
    const chunk::TerrainAllocation& allocation = chunk->terrainAllocation(layer);
    if(allocation.valid() && chunk->terrainRegion() != nullptr) {
     chunk::TerrainRegion* region = chunk->terrainRegion();
-    std::size_t index = 0;
-    while(index < terrainRegionDrawCount_ && terrainRegionDraws_[index].region != region) ++index;
-    if(index == terrainRegionDrawCount_) {
-     ++terrainRegionDrawCount_;
-     if(index == terrainRegionDraws_.size()) terrainRegionDraws_.push_back({});
-     terrainRegionDraws_[index].region = region;
-     terrainRegionDraws_[index].allocations.clear();
+    // Sections arrive grouped by region, so the previous hit is almost always the
+    // right one; without this memo every section rescanned the whole draw list.
+    std::size_t index = lastRegionIndex;
+    if(region != lastRegion) {
+     index = 0;
+     while(index < terrainRegionDrawCount_ && terrainRegionDraws_[index].region != region) ++index;
+     if(index == terrainRegionDrawCount_) {
+      ++terrainRegionDrawCount_;
+      if(index == terrainRegionDraws_.size()) terrainRegionDraws_.push_back({});
+      terrainRegionDraws_[index].region = region;
+      terrainRegionDraws_[index].allocations.clear();
+     }
+     lastRegion = region;
+     lastRegionIndex = index;
     }
     terrainRegionDraws_[index].allocations.push_back(&allocation);
    }

@@ -6,12 +6,10 @@ namespace net::minecraft::client::render {
 class Frustum {
  public:
  void compute(const net::minecraft::util::math::Matrix4f& projection,
-              const net::minecraft::util::math::Matrix4f& modelView);
- void prepare(double x, double y, double z) noexcept {
-  x_ = x;
-  y_ = y;
-  z_ = z;
- }
+              const net::minecraft::util::math::Matrix4f& modelView,
+              double x,
+              double y,
+              double z);
  [[nodiscard]] bool isVisible(const net::minecraft::Box& box) const noexcept {
   return isVisible(box.minX, box.minY, box.minZ, box.maxX, box.maxY, box.maxZ);
  }
