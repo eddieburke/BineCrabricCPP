@@ -50,7 +50,7 @@ static std::wstring Parent(std::wstring p) {
  auto x = p.find_last_of(L"\\/");
  return x == std::wstring::npos ? std::wstring() : p.substr(0, x);
 }
-static bool FullToolkit(const std::wstring& r) { return Exists(Join(r, L"bin\\cmake.exe")) && Exists(Join(r, L"bin\\ninja.exe")) && Exists(Join(r, L"bin\\g++.exe")) && Exists(Join(r, L"lib\\libz.a")) && Exists(Join(r, L"lib\\libogg.a")) && Exists(Join(r, L"lib\\libvorbis.a")) && Exists(Join(r, L"lib\\libvorbisfile.a")); }
+static bool FullToolkit(const std::wstring& r) { return Exists(Join(r, L"bin\\cmake.exe")) && Exists(Join(r, L"bin\\ninja.exe")) && Exists(Join(r, L"bin\\g++.exe")) && Exists(Join(r, L"lib\\libz.a")); }
 static std::wstring DetectToolkit() {
  std::vector<std::wstring> roots = {RegRead(L"ToolkitPath"), Env(L"BINECRABRIC_TOOLCHAIN"), Env(L"MINECRAFT_TOOLCHAIN_ROOT"), Join(sourceDir, L"toolchain\\mingw64")};
  auto cxx = Env(L"CXX");
@@ -121,8 +121,6 @@ static const wchar_t* kZstdExeSubpath = L"zstd-v1.5.7-win64\\zstd.exe";
 struct UcrtPkg { const wchar_t* name; const wchar_t* url; };
 static const UcrtPkg kUcrtPackages[] = {
  {L"zlib", L"https://mirror.msys2.org/mingw/ucrt64/mingw-w64-ucrt-x86_64-zlib-1.3.2-2-any.pkg.tar.zst"},
- {L"libogg", L"https://mirror.msys2.org/mingw/ucrt64/mingw-w64-ucrt-x86_64-libogg-1.3.6-1-any.pkg.tar.zst"},
- {L"libvorbis", L"https://mirror.msys2.org/mingw/ucrt64/mingw-w64-ucrt-x86_64-libvorbis-1.3.7-2-any.pkg.tar.zst"},
 };
 static std::wstring FindMingwRoot(const std::wstring& staging) {
  auto direct = Join(staging, L"mingw64");

@@ -13,14 +13,6 @@
     {
       "name": "zlib",
       "url": "https://mirror.msys2.org/mingw/ucrt64/mingw-w64-ucrt-x86_64-zlib-1.3.2-2-any.pkg.tar.zst"
-    },
-    {
-      "name": "libogg",
-      "url": "https://mirror.msys2.org/mingw/ucrt64/mingw-w64-ucrt-x86_64-libogg-1.3.6-1-any.pkg.tar.zst"
-    },
-    {
-      "name": "libvorbis",
-      "url": "https://mirror.msys2.org/mingw/ucrt64/mingw-w64-ucrt-x86_64-libvorbis-1.3.7-2-any.pkg.tar.zst"
     }
   ]
 }

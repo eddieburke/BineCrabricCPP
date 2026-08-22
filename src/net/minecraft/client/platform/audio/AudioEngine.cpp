@@ -1,6 +1,12 @@
 #include "net/minecraft/client/platform/audio/AudioEngine.hpp"
+#define MINA_IMPLEMENTATION
+#include "mina.h"
 #include <algorithm>
 #include <cctype>
+#include <cstdint>
+#include <cstdio>
+#include <cstdlib>
+#include <cstring>
 #include <filesystem>
 #include <memory>
 #include <mutex>
@@ -8,7 +14,6 @@
 #include <unordered_map>
 #include <vector>
 #include "net/minecraft/client/option/GameOptions.hpp"
-#include "net/minecraft/client/platform/audio/backend/AudioBackend.hpp"
 #include "net/minecraft/entity/LivingEntity.hpp"
 #include "net/minecraft/util/math/MathConstants.hpp"
 #include "net/minecraft/util/math/MathHelper.hpp"
@@ -21,6 +26,10 @@ constexpr float kUiSoundScale = 0.25f;
 constexpr float kWorldAttenuationDistance = 16.0f;
 constexpr float kRecordAttenuationDistance = 64.0f;
 constexpr float kRecordVolumeScale = 0.5f;
+constexpr mina_u32 kOutputSampleRate = 44100;
+constexpr mina_u32 kOutputChannels = 2;
+constexpr mina_u32 kMixFrames = 1024;
+constexpr mina_u32 kMaxVoices = 64;
 struct RegisteredSound {
  std::string id;
  std::string path;
@@ -35,6 +44,52 @@ struct SoundLookup {
  const RegisteredSound* sound = nullptr;
  const SoundRegistry* registry = nullptr;
 };
+[[nodiscard]] bool isMusFile(const std::string& path) {
+ std::string extension = std::filesystem::path(path).extension().string();
+ std::transform(extension.begin(), extension.end(), extension.begin(), [](unsigned char c) {
+  return static_cast<char>(std::tolower(c));
+ });
+ return extension == ".mus";
+}
+// mina's loader hook: read the file, and undo the .mus stream cipher in place.
+// Runs on mina's loader thread, so it touches nothing but its arguments.
+mina_u8* loadSoundFile(const char* path, std::size_t* size, void* /*user*/) {
+ std::FILE* file = std::fopen(path, "rb");
+ if(file == nullptr) {
+  return nullptr;
+ }
+ long length = 0;
+ if(std::fseek(file, 0, SEEK_END) != 0 || (length = std::ftell(file)) <= 0 ||
+    std::fseek(file, 0, SEEK_SET) != 0) {
+  std::fclose(file);
+  return nullptr;
+ }
+ auto* data = static_cast<mina_u8*>(std::malloc(static_cast<std::size_t>(length)));
+ if(data == nullptr) {
+  std::fclose(file);
+  return nullptr;
+ }
+ const std::size_t read = std::fread(data, 1, static_cast<std::size_t>(length), file);
+ std::fclose(file);
+ if(read != static_cast<std::size_t>(length)) {
+  std::free(data);
+  return nullptr;
+ }
+ if(isMusFile(path)) {
+  std::uint32_t hash = 0;
+  const std::string name = std::filesystem::path(path).filename().string();
+  for(unsigned char c : name) {
+   hash = hash * 31u + c;
+  }
+  for(std::size_t i = 0; i < read; ++i) {
+   const auto decrypted = static_cast<mina_u8>(data[i] ^ static_cast<mina_u8>(hash >> 8u));
+   data[i] = decrypted;
+   hash = hash * 498729871u + 85731u * static_cast<std::uint32_t>(static_cast<std::int8_t>(decrypted));
+  }
+ }
+ *size = read;
+ return data;
+}
 [[nodiscard]] std::string normalizeSoundBaseId(const std::string& soundName, bool stripVariantSuffix) {
  std::string baseId = soundName;
  if(stripVariantSuffix) {
@@ -96,9 +151,20 @@ void registerSound(SoundRegistry& registry, const std::string& soundName, const 
  }
  return {};
 }
+[[nodiscard]] mina_source_params worldParams(float x, float y, float z, float maxDistance, bool loop) {
+ mina_source_params params;
+ mina_source_params_init(&params);
+ params.loop = loop ? 1 : 0;
+ params.spatial = 1;
+ params.x = x;
+ params.y = y;
+ params.z = z;
+ params.max_distance = maxDistance;
+ return params;
+}
 } // namespace
 struct AudioEngine::Impl {
- std::unique_ptr<backend::XAudio2Backend> backend;
+ mina_engine* engine = nullptr;
  option::GameOptions* options = nullptr;
  bool started = false;
  SoundRegistry effects;
@@ -111,19 +177,28 @@ struct AudioEngine::Impl {
  std::mutex mutex;
  Impl() : ticksUntilMusic(random.nextInt(12000)) {
  }
- void ensureBackend() {
-  if(backend) {
+ void ensureEngine() {
+  if(engine != nullptr) {
    return;
   }
-  backend = std::make_unique<backend::XAudio2Backend>();
-  if(!backend->ready()) {
-   backend.reset();
+  engine = mina_engine_create(nullptr, kOutputSampleRate, kOutputChannels, kMixFrames, kMaxVoices);
+  if(engine == nullptr || !mina_engine_is_real(engine)) {
+   mina_engine_destroy(engine);
+   engine = nullptr;
+   return;
+  }
+  mina_engine_set_loader(engine, loadSoundFile, nullptr);
+  // Without a threading layer the mixer stays caller-driven; there is no
+  // pump loop here, so an engine that cannot start its threads is useless.
+  if(!mina_engine_start(engine)) {
+   mina_engine_destroy(engine);
+   engine = nullptr;
    return;
   }
   started = true;
  }
  [[nodiscard]] bool ready() const {
-  return started && backend != nullptr && options != nullptr;
+  return started && engine != nullptr && options != nullptr && !mina_engine_device_failed(engine);
  }
  std::string nextEffectSlotName() {
   effectSlotSuffix = (effectSlotSuffix + 1) % 256;
@@ -136,7 +211,9 @@ struct AudioEngine::Impl {
 };
 AudioEngine::AudioEngine() : impl_(std::make_unique<Impl>()) {
 }
-AudioEngine::~AudioEngine() = default;
+AudioEngine::~AudioEngine() {
+ shutdown();
+}
 bool AudioEngine::isReady() const {
  return impl_->ready();
 }
@@ -144,13 +221,14 @@ void AudioEngine::start(option::GameOptions* options) {
  impl_->options = options;
  impl_->streaming.pickRandomVariant = false;
  if(!impl_->started && options != nullptr && (options->soundVolume != 0.0f || options->musicVolume != 0.0f)) {
-  impl_->ensureBackend();
+  impl_->ensureEngine();
  }
 }
 void AudioEngine::shutdown() {
- if(impl_->backend) {
-  impl_->backend->stopAll();
-  impl_->backend.reset();
+ if(impl_->engine != nullptr) {
+  mina_engine_stop_all(impl_->engine);
+  mina_engine_destroy(impl_->engine);
+  impl_->engine = nullptr;
  }
  impl_->started = false;
 }
@@ -184,15 +262,15 @@ void AudioEngine::refreshMusicVolume() {
   return;
  }
  if(!impl_->started && (impl_->options->soundVolume != 0.0f || impl_->options->musicVolume != 0.0f)) {
-  impl_->ensureBackend();
+  impl_->ensureEngine();
  }
- if(!impl_->backend) {
+ if(impl_->engine == nullptr) {
   return;
  }
  if(impl_->options->musicVolume == 0.0f) {
-  impl_->backend->stop(kMusicSlot);
+  mina_engine_stop(impl_->engine, kMusicSlot);
  } else {
-  impl_->backend->setVolume(kMusicSlot, impl_->options->musicVolume);
+  mina_engine_set_volume(impl_->engine, kMusicSlot, impl_->options->musicVolume);
  }
 }
 void AudioEngine::updateListener(entity::LivingEntity* player, float partialTick) {
@@ -206,14 +284,22 @@ void AudioEngine::updateListener(entity::LivingEntity* player, float partialTick
  const float yawRad = -yaw * (util::math::kPiF / 180.0f) - util::math::kPiF;
  const float lookX = MathHelper::sin(yawRad);
  const float lookZ = MathHelper::cos(yawRad);
- impl_->backend->setListener(
-     static_cast<float>(x), static_cast<float>(y), static_cast<float>(z), -lookX, 0.0f, -lookZ, 0.0f, 1.0f, 0.0f);
+ mina_engine_listener(impl_->engine,
+                      static_cast<float>(x),
+                      static_cast<float>(y),
+                      static_cast<float>(z),
+                      -lookX,
+                      0.0f,
+                      -lookZ,
+                      0.0f,
+                      1.0f,
+                      0.0f);
 }
 void AudioEngine::tick() {
  if(!impl_->ready() || impl_->options->musicVolume == 0.0f) {
   return;
  }
- if(impl_->backend->playing(kMusicSlot) || impl_->backend->playing(kRecordSlot)) {
+ if(mina_engine_playing(impl_->engine, kMusicSlot) || mina_engine_playing(impl_->engine, kRecordSlot)) {
   return;
  }
  std::string path;
@@ -230,7 +316,10 @@ void AudioEngine::tick() {
   impl_->ticksUntilMusic = impl_->random.nextInt(12000) + 12000;
   path = track->path;
  }
- impl_->backend->playSourceFile(kMusicSlot, path, {}, impl_->options->musicVolume, 1.0f);
+ mina_source_params params;
+ mina_source_params_init(&params);
+ params.stream = 1; // a whole track decoded up front would cost ~60 MB
+ mina_engine_play_file(impl_->engine, kMusicSlot, path.c_str(), &params, impl_->options->musicVolume, 1.0f);
 }
 bool AudioEngine::playAt(const std::string& id, float x, float y, float z, float volume, float pitch) {
  if(!impl_->ready() || impl_->options->soundVolume == 0.0f || volume <= 0.0f) {
@@ -248,11 +337,13 @@ bool AudioEngine::playAt(const std::string& id, float x, float y, float z, float
   slot = impl_->nextEffectSlotName();
  }
  const float maxDistance = volume > 1.0f ? kWorldAttenuationDistance * volume : kWorldAttenuationDistance;
- return impl_->backend->playSourceFile(slot,
-                                      path,
-                                      {false, true, x, y, z, maxDistance},
-                                      std::clamp(volume, 0.0f, 1.0f) * impl_->options->soundVolume,
-                                      pitch);
+ const mina_source_params params = worldParams(x, y, z, maxDistance, false);
+ return mina_engine_play_file(impl_->engine,
+                              slot.c_str(),
+                              path.c_str(),
+                              &params,
+                              std::clamp(volume, 0.0f, 1.0f) * impl_->options->soundVolume,
+                              pitch) != 0;
 }
 bool AudioEngine::play(const std::string& id, float volume, float pitch) {
  if(!impl_->ready() || impl_->options->soundVolume == 0.0f) {
@@ -269,19 +360,20 @@ bool AudioEngine::play(const std::string& id, float volume, float pitch) {
   path = lookup.sound->path;
   slot = impl_->nextEffectSlotName();
  }
- return impl_->backend->playSourceFile(slot,
-                                      path,
-                                      {},
-                                      std::clamp(volume, 0.0f, 1.0f) * kUiSoundScale * impl_->options->soundVolume,
-                                      pitch);
+ mina_source_params params;
+ mina_source_params_init(&params);
+ return mina_engine_play_file(impl_->engine,
+                              slot.c_str(),
+                              path.c_str(),
+                              &params,
+                              std::clamp(volume, 0.0f, 1.0f) * kUiSoundScale * impl_->options->soundVolume,
+                              pitch) != 0;
 }
 bool AudioEngine::playRecord(const std::string& id, float x, float y, float z, float volume) {
  if(!impl_->ready() || impl_->options->soundVolume == 0.0f) {
   return false;
  }
- if(impl_->backend->playing(kRecordSlot)) {
-  impl_->backend->stop(kRecordSlot);
- }
+ mina_engine_stop(impl_->engine, kRecordSlot);
  if(id.empty()) {
   return false;
  }
@@ -294,14 +386,15 @@ bool AudioEngine::playRecord(const std::string& id, float x, float y, float z, f
   }
   path = sound->path;
  }
- if(impl_->backend->playing(kMusicSlot)) {
-  impl_->backend->stop(kMusicSlot);
- }
- return impl_->backend->playSourceFile(kRecordSlot,
-                                       path,
-                                       {false, true, x, y, z, kRecordAttenuationDistance},
-                                       kRecordVolumeScale * impl_->options->soundVolume,
-                                       1.0f);
+ mina_engine_stop(impl_->engine, kMusicSlot);
+ mina_source_params params = worldParams(x, y, z, kRecordAttenuationDistance, false);
+ params.stream = 1;
+ return mina_engine_play_file(impl_->engine,
+                              kRecordSlot,
+                              path.c_str(),
+                              &params,
+                              kRecordVolumeScale * impl_->options->soundVolume,
+                              1.0f) != 0;
 }
 std::string AudioEngine::playLoopAt(const std::string& id, float x, float y, float z, float volume, float pitch) {
  if(!impl_->ready() || impl_->options->soundVolume == 0.0f || volume <= 0.0f) {
@@ -319,11 +412,13 @@ std::string AudioEngine::playLoopAt(const std::string& id, float x, float y, flo
   slot = impl_->nextLoopSlotName();
  }
  const float maxDistance = volume > 1.0f ? kWorldAttenuationDistance * volume : kWorldAttenuationDistance;
- if(!impl_->backend->playSourceFile(slot,
-                                    path,
-                                    {true, true, x, y, z, maxDistance},
-                                    std::clamp(volume, 0.0f, 1.0f) * impl_->options->soundVolume,
-                                    pitch)) {
+ const mina_source_params params = worldParams(x, y, z, maxDistance, true);
+ if(mina_engine_play_file(impl_->engine,
+                          slot.c_str(),
+                          path.c_str(),
+                          &params,
+                          std::clamp(volume, 0.0f, 1.0f) * impl_->options->soundVolume,
+                          pitch) == 0) {
   return {};
  }
  return slot;
@@ -332,12 +427,12 @@ void AudioEngine::stop(const std::string& handle) {
  if(!impl_->ready() || handle.empty()) {
   return;
  }
- impl_->backend->stop(handle);
+ mina_engine_stop(impl_->engine, handle.c_str());
 }
 bool AudioEngine::isPlaying(const std::string& handle) const {
  if(!impl_->ready() || handle.empty()) {
   return false;
  }
- return impl_->backend->playing(handle);
+ return mina_engine_playing(impl_->engine, handle.c_str()) != 0;
 }
 } // namespace net::minecraft::client::platform::audio

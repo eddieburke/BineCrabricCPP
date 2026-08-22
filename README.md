@@ -17,7 +17,7 @@ For textures to load:
 |------------------|-----------------------|----------------------------------------------------|
 | **Language**     | Java 6 (JVM)          | **C++20** native executable                        |
 | **Windowing**    | AWT/Swing Canvas      | **GLFW 3**                                         |
-| **Audio**        | paulscode (LWJGL)     | **XAudio2** backend + **Ogg Vorbis** decoder       |
+| **Audio**        | paulscode (LWJGL)     | **MINA 2.0** portable audio engine                 |
 | **Build**        | Manual MCP pipeline   | **CMake + Ninja**, self-bootstrapping build script |
 | **Toolchain**    | JDK required          | **Bundled MinGW GCC 15.2**, no system deps needed  |
 | **Auth**         | Offline only          | **Microsoft account authentication**               |
@@ -55,7 +55,7 @@ Typed registries with lifecycle phases for blocks, items, entities, and block en
 |----------------------|-----------------------------|----------------------------------------|
 | Rendering            | Fixed-function OpenGL 1.x   | GLSL deferred pipeline, Iris-style packs|
 | Modding              | None                        | Lua 5.4 scripting engine + 20 mods     |
-| Audio                | paulscode LWJGL             | XAudio2 + Ogg Vorbis                   |
+| Audio                | paulscode LWJGL             | MINA 2.0                               |
 | Auth                 | Offline                     | MultiMC Microsoft login/auth           |
 | Build                | Java/MCP                    | CMake + Ninja + bundled MinGW          |
 | Tests                | None                        | GoogleTest + Java parity tests         |
