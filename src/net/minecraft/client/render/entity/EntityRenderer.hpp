@@ -39,7 +39,6 @@ class EntityRenderer {
  void bindTexture(std::string_view texturePath);
  [[nodiscard]] bool bindDownloadedTexture(std::string_view url, std::string_view backup = "");
  static void renderShape(const Box& box, double x, double y, double z);
- static void renderShapeFlat(const Box& box);
  [[nodiscard]] font::TextRenderer* getTextRenderer() const noexcept;
 
  protected:

@@ -1223,7 +1223,12 @@ void GameRenderer::renderToCurrentTarget(float tickDelta,
  renderWorldStage(atmosphereCtx,
                   tickDelta,
                   mod::WorldRenderStage::Clouds,
-                  !skipGbuffers && frameSettings_.renderClouds && definition.renderClouds,
+                  // frameSettings_.renderClouds is already resolved against the pack
+                  // (option::applyShaderPack clears it when pack.renderClouds is off),
+                  // so re-ANDing definition.renderClouds here only gave the policy a
+                  // second home to disagree from. Every sibling stage trusts the
+                  // resolved flag alone.
+                  !skipGbuffers && frameSettings_.renderClouds,
                   false,
                   [&] {
                    atmosphere::renderClouds(atmosphereCtx, tickDelta);

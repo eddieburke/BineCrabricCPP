@@ -11,7 +11,6 @@ class ProgressRenderer : public gui::screen::LoadingDisplay {
  public:
  explicit ProgressRenderer(Minecraft* minecraft = nullptr);
  void progressStart(const std::string& title) override;
- void progressStartNoAbort(std::string title);
  void start(const std::string& title);
  void progressStage(const std::string& stage) override;
  void progressStagePercentage(int percentage) override;

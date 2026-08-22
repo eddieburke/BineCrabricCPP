@@ -319,24 +319,6 @@ float Block::getBlastResistance(net::minecraft::Entity* /*entity*/) const {
  return resistance_ / 5.0f;
 }
 // --- raycast (faithful plane-intersection) ---
-bool Block::containsInYZPlane(const std::optional<Vec3d>& v) const {
- if(!v) {
-  return false;
- }
- return v->y >= minY && v->y <= maxY && v->z >= minZ && v->z <= maxZ;
-}
-bool Block::containsInXZPlane(const std::optional<Vec3d>& v) const {
- if(!v) {
-  return false;
- }
- return v->x >= minX && v->x <= maxX && v->z >= minZ && v->z <= maxZ;
-}
-bool Block::containsInXYPlane(const std::optional<Vec3d>& v) const {
- if(!v) {
-  return false;
- }
- return v->x >= minX && v->x <= maxX && v->y >= minY && v->y <= maxY;
-}
 namespace {
 // Linear interpolation of a segment to a target plane, faithful to Vec3d's
 // interpolateByX/Y/Z (returns nullopt when the segment does not cross the plane).

@@ -225,16 +225,6 @@ void ChunkSectionSystem::updateDebugCounts() {
   }
  });
 }
-void ChunkSectionSystem::pushCullState() {
- cullStateSaved_ = true;
- scopedVisibleSections_.clear();
-}
-void ChunkSectionSystem::popCullState() {
- if(!cullStateSaved_) {
-  return;
- }
- cullStateSaved_ = false;
-}
 void ChunkSectionSystem::clearSections() {
  compilePipeline_->cancelAll();
  for(auto& entry : sections_) {
@@ -248,7 +238,7 @@ void ChunkSectionSystem::clearSections() {
  sectionsByPriority_.clear();
  regularVisibleSections_.clear();
  scopedVisibleSections_.clear();
- cullStateSaved_ = false;
+ scopedCull_ = false;
  scene_.blockEntities.clear();
  pendingColumns_.clear();
  pendingSet_.clear();

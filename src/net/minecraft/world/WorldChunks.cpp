@@ -251,13 +251,6 @@ int World::getBrightness(LightType type, int x, int y, int z) const {
 bool World::hasSkyLight(int x, int y, int z) const {
  return getChunk(chunk_coord(x), chunk_coord(z)).isAboveMaxHeight(mod_16(x), y, mod_16(z));
 }
-void World::loadSpawnChunks(int chunkRadius) {
- for(int cx = -chunkRadius; cx <= chunkRadius; ++cx) {
-  for(int cz = -chunkRadius; cz <= chunkRadius; ++cz) {
-   [[maybe_unused]] Chunk& chunk = getChunk(cx, cz);
-  }
- }
-}
 std::size_t World::chunkCount() const noexcept {
  return chunks_.size();
 }
@@ -275,12 +268,6 @@ std::string World::describe() const {
 double World::getTemperature(int x, int z) const {
  if(BiomeSource* biomeSource = getBiomeSource(); biomeSource != nullptr) {
   return biomeSource->getTemperature(x, z);
- }
- return 0.5;
-}
-double World::getDownfall(int x, int z) const {
- if(BiomeSource* biomeSource = getBiomeSource(); biomeSource != nullptr) {
-  return biomeSource->sampleClimate(x, z).downfall;
  }
  return 0.5;
 }
@@ -430,22 +417,6 @@ int World::getTopSolidBlockY(int x, int z) const {
 void World::tickChunks() {
  while(chunkCache_ != nullptr && chunkCache_->tick()) {
  }
-}
-bool World::isTopY(int x, int y, int z) const {
- if(x < -32000000 || z < -32000000 || x >= 32000000 || z > 32000000) {
-  return false;
- }
- if(y < 0) {
-  return false;
- }
- if(y >= Chunk::height) {
-  return true;
- }
- if(!hasChunk(x >> 4, z >> 4)) {
-  return false;
- }
- const Chunk& chunk = getChunk(x >> 4, z >> 4);
- return chunk.isAboveMaxHeight(mod_16(x), y, mod_16(z));
 }
 void World::manageChunkUpdatesAndEvents() {
  activeChunks_.clear();

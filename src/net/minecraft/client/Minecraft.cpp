@@ -1217,10 +1217,4 @@ bool Minecraft::isDisplayGui() {
 bool Minecraft::isFancyGraphicsEnabled() {
  return INSTANCE != nullptr && INSTANCE->options.fancyGraphics;
 }
-bool Minecraft::isAmbientOcclusionEnabled() {
- return INSTANCE != nullptr && INSTANCE->options.ao;
-}
-bool Minecraft::isDebugProfilerEnabled() {
- return INSTANCE != nullptr && INSTANCE->options.debugHud;
-}
 } // namespace net::minecraft::client

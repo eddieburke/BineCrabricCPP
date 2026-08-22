@@ -123,12 +123,6 @@ block::material::Material& World::getMaterial(int x, int y, int z) const {
  }
  return block::material::Material::AIR;
 }
-bool World::isSolidBlock(int x, int y, int z) const {
- if(Block* block = resolveBlock(*this, x, y, z); block != nullptr) {
-  return block->material.blocksMovement();
- }
- return false;
-}
 bool World::isBlockOpaqueCube(int x, int y, int z) const {
  if(Block* block = resolveBlock(*this, x, y, z); block != nullptr) {
   return block->isOpaque();

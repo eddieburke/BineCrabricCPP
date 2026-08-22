@@ -176,21 +176,6 @@ void World::remove(Entity* entity) {
 void World::notifyEntityPickup(Entity* entity, PlayerEntity* collector) {
  events_.notifyEntityPickup(entity, collector);
 }
-int World::countEntities(const std::string& entityType) const {
- int count = 0;
- for(Entity* entity : entities_) {
-  if(entity == nullptr || entity->dead) {
-   continue;
-  }
-  if(*reinterpret_cast<const void* const*>(entity) == nullptr) {
-   continue;
-  }
-  if(EntityRegistry::getId(*entity) == entityType) {
-   ++count;
-  }
- }
- return count;
-}
 bool World::spawnMob(entity::LivingEntity* mob) {
  if(mob == nullptr) {
   return false;

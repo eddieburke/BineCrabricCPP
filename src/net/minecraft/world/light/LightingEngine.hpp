@@ -100,7 +100,6 @@ class LightingEngine {
  void releasePins(WorkerState& state);
  [[nodiscard]] int blockId(int x, int y, int z, WorkerState& state);
  [[nodiscard]] int brightness(LightType type, int x, int y, int z, WorkerState& state);
- void setBrightness(LightType type, int x, int y, int z, int value, WorkerState& state);
  [[nodiscard]] bool topY(int x, int y, int z, WorkerState& state);
  void queuePropagationBox(LightType type, int minX, int minY, int minZ, int maxX, int maxY, int maxZ);
  [[nodiscard]] static constexpr std::uint64_t chunkKey(int chunkX, int chunkZ) noexcept {

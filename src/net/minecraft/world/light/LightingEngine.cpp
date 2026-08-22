@@ -315,16 +315,6 @@ int LightingEngine::brightness(LightType type, int x, int y, int z, WorkerState&
  Chunk* chunk = chunkAt(x >> 4, z >> 4, state);
  return chunk != nullptr ? chunk->getLight(type, x & 15, y, z & 15) : 0;
 }
-void LightingEngine::setBrightness(LightType type, int x, int y, int z, int value, WorkerState& state) {
- if(x < -32000000 || z < -32000000 || x >= 32000000 || z > 32000000 || y < 0 || y >= Chunk::height) {
-  return;
- }
- Chunk* chunk = chunkAt(x >> 4, z >> 4, state);
- if(chunk == nullptr || chunk->getLight(type, x & 15, y, z & 15) == value) {
-  return;
- }
- chunk->setLight(type, x & 15, y, z & 15, value);
-}
 bool LightingEngine::topY(int x, int y, int z, WorkerState& state) {
  if(x < -32000000 || z < -32000000 || x >= 32000000 || z > 32000000 || y < 0) {
   return false;

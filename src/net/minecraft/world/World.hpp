@@ -163,7 +163,6 @@ class World : public IEntityWorld {
   spawnHostileMobs = allowHostile;
   spawnPeacefulMobs = allowPeaceful;
  }
- [[nodiscard]] int countEntities(const std::string& entityType) const;
  [[nodiscard]] entity::LivingEntity* spawnMob(const std::string& entityType,
                                               const std::function<bool(entity::LivingEntity&)>& setup = {});
  [[nodiscard]] entity::LivingEntity* spawnMob(
@@ -216,7 +215,6 @@ class World : public IEntityWorld {
  }
  void queueLightUpdate(LightType type, int minX, int minY, int minZ, int maxX, int maxY, int maxZ);
  void queueLightUpdate(LightType type, int minX, int minY, int minZ, int maxX, int maxY, int maxZ, bool merge);
- [[nodiscard]] bool isTopY(int x, int y, int z) const;
  void addPlayer(PlayerEntity* player);
  virtual void updateWeatherCycles();
  void tickChunks();
@@ -332,7 +330,6 @@ class World : public IEntityWorld {
  [[nodiscard]] int getSpawnBlockId(int x, int z) const;
  void updateSpawnPosition();
  void updateEntityLists();
- [[nodiscard]] bool isSolidBlock(int x, int y, int z) const;
  [[nodiscard]] bool isBlockOpaqueCube(int x, int y, int z) const override;
  [[nodiscard]] int getTopY(int x, int z) const;
  [[nodiscard]] int getSpawnPositionValidityY(int x, int z);
@@ -369,7 +366,6 @@ class World : public IEntityWorld {
  [[nodiscard]] const WorldProperties& getProperties() const noexcept {
   return properties_;
  }
- void loadSpawnChunks(int chunkRadius = 8);
  [[nodiscard]] std::size_t chunkCount() const noexcept;
  [[nodiscard]] const std::unordered_map<ChunkPos, Chunk, ChunkPosHash>& chunks() const noexcept;
  [[nodiscard]] std::unordered_map<ChunkPos, Chunk, ChunkPosHash>& chunks() noexcept;
@@ -378,10 +374,8 @@ class World : public IEntityWorld {
  [[nodiscard]] world::light::UnifiedLightRegistry& lightRegistry() noexcept { return lightRegistry_; }
  [[nodiscard]] const world::light::UnifiedLightRegistry& lightRegistry() const noexcept { return lightRegistry_; }
  [[nodiscard]] double getTemperature(int x, int z) const;
- [[nodiscard]] double getDownfall(int x, int z) const;
  void initializeSpawnPoint();
  // Rebinds seed-dependent state for repeated generation probes without reconstructing the world.
- void resetForProbeSeed(std::int64_t seed);
  std::vector<Entity*> globalEntities{};
  std::vector<block::entity::BlockEntity*> blockEntities{};
  std::vector<PlayerEntity*> players{};

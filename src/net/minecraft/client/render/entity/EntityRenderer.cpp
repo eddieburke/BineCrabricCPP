@@ -322,33 +322,4 @@ void EntityRenderer::renderShape(const Box& box, double x, double y, double z) {
  tessellator.translate(0.0, 0.0, 0.0);
  tessellator.draw();
 }
-void EntityRenderer::renderShapeFlat(const Box& box) {
- Tessellator& tessellator = Tessellator::INSTANCE;
- tessellator.startQuads();
- tessellator.vertex(box.minX, box.maxY, box.minZ);
- tessellator.vertex(box.maxX, box.maxY, box.minZ);
- tessellator.vertex(box.maxX, box.minY, box.minZ);
- tessellator.vertex(box.minX, box.minY, box.minZ);
- tessellator.vertex(box.minX, box.minY, box.maxZ);
- tessellator.vertex(box.maxX, box.minY, box.maxZ);
- tessellator.vertex(box.maxX, box.maxY, box.maxZ);
- tessellator.vertex(box.minX, box.maxY, box.maxZ);
- tessellator.vertex(box.minX, box.minY, box.minZ);
- tessellator.vertex(box.maxX, box.minY, box.minZ);
- tessellator.vertex(box.maxX, box.minY, box.maxZ);
- tessellator.vertex(box.minX, box.minY, box.maxZ);
- tessellator.vertex(box.minX, box.maxY, box.maxZ);
- tessellator.vertex(box.maxX, box.maxY, box.maxZ);
- tessellator.vertex(box.maxX, box.maxY, box.minZ);
- tessellator.vertex(box.minX, box.maxY, box.minZ);
- tessellator.vertex(box.minX, box.minY, box.maxZ);
- tessellator.vertex(box.minX, box.maxY, box.maxZ);
- tessellator.vertex(box.minX, box.maxY, box.minZ);
- tessellator.vertex(box.minX, box.minY, box.minZ);
- tessellator.vertex(box.maxX, box.minY, box.minZ);
- tessellator.vertex(box.maxX, box.maxY, box.minZ);
- tessellator.vertex(box.maxX, box.maxY, box.maxZ);
- tessellator.vertex(box.maxX, box.minY, box.maxZ);
- tessellator.draw();
-}
 } // namespace net::minecraft::client::render::entity

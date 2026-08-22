@@ -44,6 +44,5 @@ class ItemRenderer {
  void drawDurabilityBar(const ItemStack& stack, int x, int y);
  void applyDisplayColor(const ItemStack& stack);
  void fillRect(int x, int y, int width, int height, int color);
- void drawTexture(int x, int y, int u, int v, int width, int height);
 };
 } // namespace net::minecraft::client::render::item

@@ -551,13 +551,6 @@ void ShaderProgram::set4f(std::string_view name, float x, float y, float z, floa
   VT_TRACE_COUNTER("UniformUploads", 1);
  }
 }
-void ShaderProgram::setMatrix3(std::string_view name, const float* value, bool transpose) const {
- const int loc = location(name);
- if(loc >= 0 && GLCore::uniformMatrix3fv != nullptr) {
-  GLCore::uniformMatrix3fv(loc, 1, transpose ? 1 : 0, value);
-  VT_TRACE_COUNTER("UniformUploads", 1);
- }
-}
 void ShaderProgram::setMatrix4(std::string_view name, const float* value, bool transpose) const {
  const int loc = location(name);
  if(loc >= 0 && GLCore::uniformMatrix4fv != nullptr) {

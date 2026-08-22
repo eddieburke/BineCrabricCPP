@@ -135,8 +135,6 @@ class Minecraft {
  static int main(int argc, char** argv);
  [[nodiscard]] static bool isDisplayGui();
  [[nodiscard]] static bool isFancyGraphicsEnabled();
- [[nodiscard]] static bool isAmbientOcclusionEnabled();
- [[nodiscard]] static bool isDebugProfilerEnabled();
  [[nodiscard]] gui::screen::Screen* currentScreen() {
   return screenStack_.current();
  }

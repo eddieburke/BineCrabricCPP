@@ -67,8 +67,17 @@ class ChunkSectionSystem {
  void setLastRenderScale(float renderScale) noexcept {
   lastRenderScale = renderScale;
  }
- void pushCullState();
- void popCullState();
+ // The nested shadow/portal pass culls into its own list so it cannot clobber the
+ // one the outer pass still has to draw from. There is exactly one nesting level
+ // (shadowmap::update only runs off the shadow pass), so this is a flag -- not the
+ // stack push/pop implied. Nothing was ever saved, and pop's "already popped" guard
+ // only skipped re-clearing a flag that was already clear.
+ void useScopedVisibleSections(bool scoped) noexcept {
+  scopedCull_ = scoped;
+  if(scoped) {
+   scopedVisibleSections_.clear();
+  }
+ }
  void cullChunks(Frustum* culler, bool updateGraph = true);
  void markDirty(int minX, int minY, int minZ, int maxX, int maxY, int maxZ);
  void blockUpdate(int x, int y, int z);
@@ -84,7 +93,7 @@ class ChunkSectionSystem {
   return sections_.empty();
  }
  [[nodiscard]] const std::vector<chunk::ChunkBuilder*>& visibleSections() const noexcept {
-  return cullStateSaved_ ? scopedVisibleSections_ : regularVisibleSections_;
+  return scopedCull_ ? scopedVisibleSections_ : regularVisibleSections_;
  }
  // Bumped once per cull. ChunkBuilder::visibleIn compares against it, which is what
  // lets cullChunks skip the old full-world sweep that cleared a visibility flag on
@@ -108,7 +117,7 @@ class ChunkSectionSystem {
  // frustum sweep; nothing has been pushed to the visible list in that case.
  bool applyOcclusionCulling(const Frustum& culler, const net::minecraft::Vec3d& camPos, int stamp);
  [[nodiscard]] std::vector<chunk::ChunkBuilder*>& currentVisibleSections() noexcept {
-  return cullStateSaved_ ? scopedVisibleSections_ : regularVisibleSections_;
+  return scopedCull_ ? scopedVisibleSections_ : regularVisibleSections_;
  }
  [[nodiscard]] chunk::ChunkBuilder* sectionAt(int sectionX, int sectionY, int sectionZ);
  TerrainScene& scene_;
@@ -118,7 +127,7 @@ class ChunkSectionSystem {
  std::vector<chunk::ChunkBuilder*> regularVisibleSections_{};
  std::vector<chunk::ChunkBuilder*> scopedVisibleSections_{};
  std::vector<chunk::ChunkBuilder*> sectionsByPriority_{};
- bool cullStateSaved_ = false;
+ bool scopedCull_ = false;
  std::deque<world::SectionPos> pendingColumns_{};
  std::unordered_set<world::SectionPos, world::SectionPosHash> pendingSet_{};
  std::unordered_set<world::SectionPos, world::SectionPosHash> pendingBorderRefresh_{};

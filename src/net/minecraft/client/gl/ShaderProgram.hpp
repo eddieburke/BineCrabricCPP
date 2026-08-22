@@ -219,7 +219,6 @@ class ShaderProgram {
  void set2f(std::string_view name, float x, float y) const;
  void set3f(std::string_view name, float x, float y, float z) const;
  void set4f(std::string_view name, float x, float y, float z, float w) const;
- void setMatrix3(std::string_view name, const float* value, bool transpose = false) const;
  void setMatrix4(std::string_view name, const float* value, bool transpose = false) const;
  void setMatrix4(std::string_view name, const net::minecraft::util::math::Matrix4f& value) const;
  [[nodiscard]] static bool supported();

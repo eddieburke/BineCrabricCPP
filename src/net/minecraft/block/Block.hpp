@@ -424,9 +424,6 @@ class Block {
  std::string translationKey_;
 
  private:
- [[nodiscard]] bool containsInYZPlane(const std::optional<Vec3d>& v) const;
- [[nodiscard]] bool containsInXZPlane(const std::optional<Vec3d>& v) const;
- [[nodiscard]] bool containsInXYPlane(const std::optional<Vec3d>& v) const;
 };
 // Recomputes registry fields that Java initializes through virtual dispatch
 // from the Block constructor. C++ cannot dispatch to derived overrides during

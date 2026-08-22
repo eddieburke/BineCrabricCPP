@@ -171,18 +171,4 @@ void ItemRenderer::fillRect(int x, int y, int width, int height, int color) {
  tessellator.vertex(x + width, y + 0, 0.0);
  tessellator.draw();
 }
-void ItemRenderer::drawTexture(int x, int y, int u, int v, int width, int height) {
- constexpr float depth = 0.0f;
- constexpr float texel = 0.00390625f;
- Tessellator& tessellator = Tessellator::INSTANCE;
- tessellator.startQuads();
- tessellator.vertex(
-     x + 0, y + height, depth, static_cast<float>(u + 0) * texel, static_cast<float>(v + height) * texel);
- tessellator.vertex(
-     x + width, y + height, depth, static_cast<float>(u + width) * texel, static_cast<float>(v + height) * texel);
- tessellator.vertex(
-     x + width, y + 0, depth, static_cast<float>(u + width) * texel, static_cast<float>(v + 0) * texel);
- tessellator.vertex(x + 0, y + 0, depth, static_cast<float>(u + 0) * texel, static_cast<float>(v + 0) * texel);
- tessellator.draw();
-}
 } // namespace net::minecraft::client::render::item

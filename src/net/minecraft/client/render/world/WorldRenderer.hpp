@@ -102,7 +102,7 @@ class WorldRenderer : public net::minecraft::GameEventListener {
  }
  // One accessor instead of a forwarding method per operation. WorldRenderer used
  // to carry a pass-through for cullChunks / compileChunks / releaseSections /
- // getChunkDebugInfo / reloadIfViewDistanceChanged / push+popCullState, each
+ // getChunkDebugInfo / reloadIfViewDistanceChanged / the scoped-cull flag, each
  // adding a name to grep through and a place for the two sides to disagree.
  [[nodiscard]] ChunkSectionSystem& sections() noexcept {
   return chunkSections_;
@@ -114,14 +114,14 @@ class WorldRenderer : public net::minecraft::GameEventListener {
   return compilePipeline_;
  }
  // RAII, like core::ScopedDrawCameraState. The nested shadow/portal pass used to
- // hand-balance pushCullState()/popCullState() around an early-returning body.
+ // hand-balance the flag around an early-returning body.
  class ScopedCullState {
 public:
   explicit ScopedCullState(WorldRenderer& renderer) : renderer_(&renderer) {
-   renderer_->chunkSections_.pushCullState();
+   renderer_->chunkSections_.useScopedVisibleSections(true);
   }
   ~ScopedCullState() {
-   renderer_->chunkSections_.popCullState();
+   renderer_->chunkSections_.useScopedVisibleSections(false);
   }
   ScopedCullState(const ScopedCullState&) = delete;
   ScopedCullState& operator=(const ScopedCullState&) = delete;

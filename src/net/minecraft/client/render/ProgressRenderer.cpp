@@ -37,10 +37,6 @@ void ProgressRenderer::progressStart(const std::string& titleIn) {
  noAbort = false;
  start(titleIn);
 }
-void ProgressRenderer::progressStartNoAbort(std::string titleIn) {
- noAbort = true;
- start(titleIn);
-}
 void ProgressRenderer::start(const std::string& titleIn) {
  if(!checkRunningOrAbort()) {
   return;

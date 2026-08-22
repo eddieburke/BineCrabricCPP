@@ -378,27 +378,6 @@ void World::initializeSpawnPoint() {
  setSpawnPos(Vec3i{x, y, z});
  eventProcessingEnabled = false;
 }
-void World::resetForProbeSeed(std::int64_t seed) {
- seed_ = static_cast<std::uint64_t>(seed);
- properties_ = WorldProperties(seed_, name_);
- hasStorageBackedProperties_ = true;
- newWorld = true;
- random_.setSeed(seed_);
- spawnPos_ = Vec3i{8, 64, 8};
- properties_.setSpawn(8, 64, 8);
- time_ = 0;
- eventProcessingEnabled = false;
- chunks_.clear();
- lcgBlockSeed_ = random_.nextInt();
- ambientSoundCounter_ = random_.nextInt(12000);
- if(dimension != nullptr) {
-  dimension->initBiomeSource();
-  chunkGeneratorSource_ = dimension->createChunkGenerator();
-  if(dimensionData_ != nullptr) {
-   createChunkCache();
-  }
- }
-}
 void World::updateSpawnPosition() {
  if(properties_.getSpawnY() <= 0) {
   properties_.setSpawn(properties_.getSpawnX(), 64, properties_.getSpawnZ());
