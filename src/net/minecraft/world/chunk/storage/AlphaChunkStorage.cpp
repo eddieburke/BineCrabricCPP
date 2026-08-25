@@ -195,10 +195,9 @@ void AlphaChunkStorage::writeRootChunkFromSnapshot(std::vector<std::uint8_t>& ou
  binary::appendU8(out, 0);
 }
 void AlphaChunkStorage::writeRootChunk(std::vector<std::uint8_t>& out, Chunk& chunk, World* world) {
- {
-  const Chunk::RenderWriteGuard guard(chunk);
-  chunk.meta.ensureSizeForBlockCount(chunk.blocks.size());
- }
+ // No meta normalisation here: readChunkFromNbt already sizes it before the chunk
+ // is reachable, and a reallocation on a live chunk would pull the array out from
+ // under the lock-free mesh capture in RegionSnapshot.
  const ChunkSnapshot snapshot = takeSnapshot(chunk, world != nullptr ? world->getTime() : 0);
  chunk.lastSaveHadEntities.store(!snapshot.entities.storage().asList().empty(), std::memory_order_relaxed);
  writeRootChunkFromSnapshot(out, snapshot);
@@ -342,6 +341,7 @@ Chunk AlphaChunkStorage::loadChunkFromNbt(World* world, NbtCompound& nbt) {
   chunk.blockLight = ChunkNibbleArray(static_cast<int>(chunk.blocks.size()));
   chunk.onLoad();
  }
+ chunk.refreshBlockLightCounts();
  if(nbt.contains("Entities")) {
   const NbtList entities = nbt.getList("Entities");
   for(const Nbt& entry : entities.entries()) {

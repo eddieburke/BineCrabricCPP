@@ -1,7 +1,6 @@
 #include "net/minecraft/client/render/QuadIndexBuffer.hpp"
 #include <cstdint>
 #include <vector>
-#include "net/minecraft/client/debug/VTuneTrace.hpp"
 #include "net/minecraft/client/gl/GLCore.hpp"
 namespace net::minecraft::client::render::quad_index {
 namespace {
@@ -17,9 +16,6 @@ bool ensure(std::size_t vertexCount) {
  if(sHandle != 0 && vertexCount <= sVertexCapacity) {
   return true;
  }
- // Respecifying this buffer mid-frame stalls every terrain draw behind it, so
- // the HUD reports whether it is still growing or has settled.
- VT_TRACE_COUNTER("QuadIndexGrows", 1);
  std::size_t newCapacity = sVertexCapacity < 16384 ? 16384 : sVertexCapacity;
  while(newCapacity < vertexCount) {
   newCapacity *= 2;

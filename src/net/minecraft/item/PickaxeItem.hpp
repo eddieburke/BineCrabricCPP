@@ -17,6 +17,10 @@ class PickaxeItem : public ToolItem {
      block == Block::LAPIS_ORE || block == Block::LAPIS_BLOCK) {
    return miningSpeed_;
   }
+  if(&block->material == &block::material::Material::STONE ||
+     &block->material == &block::material::Material::METAL) {
+   return miningSpeed_;
+  }
   return ToolItem::getMiningSpeedMultiplier(stack, block);
  }
  [[nodiscard]] bool isSuitableFor(Block* block) const override {

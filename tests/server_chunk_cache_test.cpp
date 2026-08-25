@@ -88,4 +88,10 @@ TEST(ServerChunkCache, ResidencyPlanIsCircularAndStableUntilInputsChange) {
  fixture.cache->setChunkCacheCenter(-9, 7);
  EXPECT_EQ(fixture.cache->desiredChunkCount(), 29U);
 }
+TEST(ServerChunkCache, AsyncLoadWindowScalesWithComputeWorkers) {
+ EXPECT_EQ(world::chunk::ChunkCache::asyncLoadWindow(1), 64U);
+ EXPECT_EQ(world::chunk::ChunkCache::asyncLoadWindow(3), 96U);
+ EXPECT_EQ(world::chunk::ChunkCache::asyncLoadWindow(8), 256U);
+ EXPECT_EQ(world::chunk::ChunkCache::asyncLoadWindow(64), 256U);
+}
 } // namespace net::minecraft::test

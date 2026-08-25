@@ -2,7 +2,6 @@
 #include <cstring>
 #include "net/minecraft/client/gl/GLCore.hpp"
 #include "net/minecraft/client/gl/GlConstants.hpp"
-#include "net/minecraft/client/debug/VTuneTrace.hpp"
 namespace net::minecraft::client::render {
 namespace {
 constexpr unsigned kPixelPackBuffer = 0x88EB;
@@ -70,7 +69,6 @@ std::optional<float> AsyncDepthSampler::pollAndIssue(int x, int y) {
  if(issue != nullptr) {
   gl::GLCore::bindBuffer(kPixelPackBuffer, issue->buffer);
   ::glReadPixels(x, y, 1, 1, 0x1902, 0x1406, nullptr);
-  VT_TRACE_COUNTER("AsyncReadbacks", 1);
   issue->fence = gl::GLCore::fenceSync(kSyncGpuCommandsComplete, 0);
   issue->pending = issue->fence != nullptr;
  }

@@ -22,7 +22,6 @@
 #include "net/minecraft/block/Block.hpp"
 #include "net/minecraft/client/ClientLog.hpp"
 #include "net/minecraft/client/Minecraft.hpp"
-#include "net/minecraft/client/debug/VTuneTrace.hpp"
 #include "net/minecraft/client/gl/GLCore.hpp"
 #include "net/minecraft/client/gl/GlConstants.hpp"
 #include "net/minecraft/client/gl/GlResource.hpp"
@@ -42,11 +41,6 @@ namespace net::minecraft::client::render {
 using LogLevel = ::net::minecraft::util::logging::LogLevel;
 namespace {
 using PackCatalog::lower;
-bool fogClassForKey(const std::string& key) {
- if(key.rfind("shadow", 0) == 0) return false;
- if(key == "gbuffers_gui" || key == "gbuffers_gui_textured") return false;
- return true;
-}
 void uploadRgbaStub(gl::GlTexture& texture, unsigned char r, unsigned char g, unsigned char b, unsigned char a) {
  if(!texture) {
   texture = gl::GlTexture(static_cast<unsigned int>(core::genTexture()));
@@ -595,16 +589,10 @@ void Pipeline::captureHandDepth(PackInstance* activePack) {
  captureDepth(activePack, 0);
 }
 void Pipeline::captureDepth(PackInstance* activePack, std::size_t index) {
- VT_TRACE_EVENT(index == 1 ? "depth/capture_opaque" : "depth/capture_hand");
  if(activePack == nullptr || !activePack->colorTargets.valid() || index >= 2) return;
  const int width = activePack->colorTargets.width();
  const int height = activePack->colorTargets.height();
  if(width <= 0 || height <= 0 || activePack->colorTargets.depthTexture() == 0) return;
- if(index == 1) {
-  VT_TRACE_COUNTER("OpaqueDepthSnapshotPixels", width * height);
- } else {
-  VT_TRACE_COUNTER("HandDepthSnapshotPixels", width * height);
- }
  bindScene(activePack);
  if(!activePack->depthTextures[index]) {
   activePack->depthTextures[index] = gl::GlTexture(core::genTexture());
@@ -656,7 +644,7 @@ gl::ShaderProgram* Pipeline::worldProgram(WorldProgramId id, PackInstance* pack)
  const PackInstance::WorldProgramRuntime& runtime =
      pack->worldPrograms[static_cast<std::size_t>(id)][shadowPass ? 1u : 0u];
  gl::ShaderProgram* program = runtime.program;
- if(program != nullptr) program->setFogClass(fogClassForKey(runtime.resolvedKey));
+ if(program != nullptr) program->setFogClass(!shadowPass && fogEnabled(id));
  return program;
 }
 bool Pipeline::renderBegin(PackInstance* activePack, int shadowDepthTextureId,

@@ -1,4 +1,5 @@
 #pragma once
+#include <array>
 #include <limits>
 #include <memory>
 #include <string>
@@ -157,14 +158,20 @@ private:
   float x = 0.0f;
   float y = 0.0f;
   float z = 0.0f;
+  std::size_t visibleIndex = 0;
  };
  struct TerrainRegionDraw {
   chunk::TerrainRegion* region = nullptr;
   std::vector<const chunk::TerrainAllocation*> allocations{};
  };
+ struct TerrainDrawList {
+  std::vector<TerrainRegionDraw> regions{};
+  std::size_t regionCount = 0;
+ };
  // replay submits the batches a previous call already built for this layer,
  // for the fancyGraphics translucent prepass/blend pair.
- int renderChunkLayer(int layer, bool replay, bool drawModMeshes);
+ void buildTerrainDrawLists(const Vec3d& camPos);
+ int renderChunkLayer(int layer, bool drawModMeshes);
  void matrixStackOrigin(double& x, double& y, double& z) const;
  int entityRenderCooldown = 2;
  int entityCount = 0;
@@ -181,11 +188,8 @@ private:
  // Construction is mutually circular (each system takes the scene alone and
  // reaches its peer through the setter); the peers are wired in the constructor.
  ChunkCompilePipeline compilePipeline_{scene_};
- std::vector<ModMeshDraw> modMeshDraws_{};
- std::vector<TerrainRegionDraw> terrainRegionDraws_{};
- std::size_t terrainRegionDrawCount_ = 0;
- // Layer the cached batches belong to, or -1 when they hold nothing safe to
- // replay (no build yet, or the regions behind them were freed).
- int terrainRegionDrawLayer_ = -1;
+ std::array<std::vector<ModMeshDraw>, chunk::terrain_layer::Count> modMeshDraws_{};
+ std::array<TerrainDrawList, chunk::terrain_layer::Count> terrainDrawLists_{};
+ int terrainDrawListStamp_ = -1;
 };
 } // namespace net::minecraft::client::render

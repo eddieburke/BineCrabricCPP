@@ -315,21 +315,6 @@ list(FILTER MINECRAFT_SERVER_MOD_SOURCES EXCLUDE REGEX
 
 add_subdirectory(mods)
 
-option(MINECRAFT_FRAME_PROFILE "Enable frame-phase profiling" OFF)
-
-option(VTUNE_ENABLED "Emit Intel VTune ITT trace markers (VT_TRACE_EVENT/COUNTER/FRAME)" OFF)
-if (VTUNE_ENABLED)
-    if (NOT DEFINED VTUNE_SDK_ROOT)
-        set(VTUNE_SDK_ROOT "C:/Program Files (x86)/Intel/oneAPI/vtune/latest/sdk")
-    endif()
-    find_path(VTUNE_INCLUDE_DIR ittnotify.h PATHS "${VTUNE_SDK_ROOT}/include" NO_DEFAULT_PATH)
-    find_library(VTUNE_LIBRARY NAMES libittnotify ittnotify PATHS "${VTUNE_SDK_ROOT}/lib64" NO_DEFAULT_PATH)
-    if (NOT VTUNE_INCLUDE_DIR OR NOT VTUNE_LIBRARY)
-        message(FATAL_ERROR "VTUNE_ENABLED=ON but VTune SDK not found under VTUNE_SDK_ROOT='${VTUNE_SDK_ROOT}' (set -DVTUNE_SDK_ROOT=... to override)")
-    endif()
-    message(STATUS "VTune ITT tracing enabled: ${VTUNE_INCLUDE_DIR}, ${VTUNE_LIBRARY}")
-endif()
-
 function(minecraft_configure_target target)
     target_include_directories(${target} PRIVATE
         "${CMAKE_CURRENT_SOURCE_DIR}/src"
@@ -339,13 +324,7 @@ function(minecraft_configure_target target)
     )
     target_compile_definitions(${target} PRIVATE
         "$<$<COMPILE_LANGUAGE:CXX>:MINECRAFT_NATIVE_SOURCE_DIR=\"${MINECRAFT_NATIVE_SOURCE_DIR}\">"
-        "$<$<AND:$<BOOL:${MINECRAFT_FRAME_PROFILE}>,$<COMPILE_LANGUAGE:CXX>>:MINECRAFT_FRAME_PROFILE=1>"
     )
-    if (VTUNE_ENABLED)
-        target_include_directories(${target} PRIVATE "${VTUNE_INCLUDE_DIR}")
-        target_compile_definitions(${target} PRIVATE "$<$<COMPILE_LANGUAGE:CXX>:VTUNE_ENABLED=1>")
-        target_link_libraries(${target} PRIVATE "${VTUNE_LIBRARY}")
-    endif()
     if (MSVC)
         target_compile_options(${target} PRIVATE /W4 /wd4996)
     else()

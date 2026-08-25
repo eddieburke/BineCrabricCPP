@@ -7,7 +7,6 @@
 #include "net/minecraft/block/material/Material.hpp"
 #include "net/minecraft/client/Minecraft.hpp"
 #include "net/minecraft/client/ClientLog.hpp"
-#include "net/minecraft/client/debug/VTuneTrace.hpp"
 #include "net/minecraft/client/render/RenderCore.hpp"
 #include "net/minecraft/client/gl/GLCore.hpp"
 #include "net/minecraft/client/gl/GlConstants.hpp"
@@ -106,10 +105,6 @@ void updateSunLight(World* world, float tickDelta, ::net::minecraft::entity::Ent
   state.directionOverride = true;
  }
  state.moonPhase = std::clamp(celestialEvent.moonPhase, 0, 7);
- VT_TRACE_COUNTER("CelestialDirectionOverride", state.directionOverride ? 1 : 0);
- VT_TRACE_COUNTER("CelestialSunAngle", state.sunAngle);
- VT_TRACE_COUNTER("CelestialShadowAngle", state.shadowAngle);
- VT_TRACE_COUNTER("CelestialShadowLightY", state.shadowLightDirectionWorld[1]);
  core::setCelestialState(state);
  const float sunX = state.sunDirectionWorld[0];
  const float sunY = state.sunDirectionWorld[1];
@@ -890,7 +885,6 @@ bool GameRenderer::renderWorldToFbo(unsigned int fbo,
  }
  {
   gl::GLCore::bindFramebuffer(gl::framebuffer::Framebuffer, fbo);
-  VT_TRACE_COUNTER("FramebufferBinds", 1);
   core::viewport(0, 0, width, height);
  }
  const PackDefinition& packDef = packDefinition();
@@ -919,7 +913,6 @@ bool GameRenderer::renderWorldToFbo(unsigned int fbo,
  core::setCameraFrame(prevPublishedCamera);
  {
   gl::GLCore::bindFramebuffer(gl::framebuffer::Framebuffer, static_cast<unsigned>(prevFbo));
-  VT_TRACE_COUNTER("FramebufferBinds", 1);
   core::viewport(prevViewport[0], prevViewport[1], prevViewport[2], prevViewport[3]);
  }
  return true;
@@ -1052,6 +1045,34 @@ void GameRenderer::renderToCurrentTarget(float tickDelta,
                       frameCamera_.eyeY, frameCamera_.eyeZ);
   activeCuller = &viewFrustum;
  }
+ if(!frameCamera_.shadowPass && !renderCameraEntity) {
+  {
+   shaderPipeline_->renderShadowComposite(frameShadow_.depthTexture,
+                                          frameShadow_.opaqueDepthTexture,
+                                          frameShadow_.colorTextures.data(),
+                                          frameShadow_.colorCount,
+                                          &shadowState_.targets,
+                                          frameShadow_.colorAltTextures.data());
+  }
+  shaderPipeline_->bindScene();
+  {
+   shaderPipeline_->renderPreWorld(frameShadow_.depthTexture,
+                                   frameShadow_.opaqueDepthTexture,
+                                   frameShadow_.colorTextures.data(),
+                                   frameShadow_.colorCount,
+                                   &shadowState_.targets,
+                                   frameShadow_.colorAltTextures.data());
+  }
+ }
+ // The sky is a gbuffer pass, so it has to be drawn into the pack's colour targets:
+ // Iris rebinds the program's own framebuffer on every gbuffer program bind
+ // (ExtendedShader.apply -> writingToBeforeTranslucent.bind()), and here bindScene()
+ // is the one place that does it. Drawn before that bind, gbuffers_skybasic and
+ // gbuffers_skytextured wrote into whatever the begin passes left bound, so the sun,
+ // moon and stars were thrown away under every external pack while vanilla -- which
+ // has no scene framebuffer to miss -- looked right. Shadow, shadowcomp and prepare
+ // all run ahead of the sky in Iris too (IrisRenderingPipeline.renderShadows ends with
+ // prepareRenderer.renderAll(), and WorldRenderingPhase.SKY comes after it).
  if(!frameCamera_.shadowPass && !frameCamera_.skipAllRendering && client->world->dimension != nullptr &&
     !client->world->dimension->isNether) {
   // Beta renderWorld draws the sky under setupFog(-1) and switches back to setupFog(0)
@@ -1077,25 +1098,6 @@ void GameRenderer::renderToCurrentTarget(float tickDelta,
   }
   core::fogApplyMode(client, false, frameSettings_);
   shaderPipeline_->refreshLightmap(client->world);
- }
- if(!frameCamera_.shadowPass && !renderCameraEntity) {
-  {
-   shaderPipeline_->renderShadowComposite(frameShadow_.depthTexture,
-                                          frameShadow_.opaqueDepthTexture,
-                                          frameShadow_.colorTextures.data(),
-                                          frameShadow_.colorCount,
-                                          &shadowState_.targets,
-                                          frameShadow_.colorAltTextures.data());
-  }
-  shaderPipeline_->bindScene();
-  {
-   shaderPipeline_->renderPreWorld(frameShadow_.depthTexture,
-                                   frameShadow_.opaqueDepthTexture,
-                                   frameShadow_.colorTextures.data(),
-                                   frameShadow_.colorCount,
-                                   &shadowState_.targets,
-                                   frameShadow_.colorAltTextures.data());
-  }
  }
  {
   worldRenderer->sections().cullChunks(activeCuller, !renderCameraEntity);
@@ -1164,17 +1166,21 @@ void GameRenderer::renderToCurrentTarget(float tickDelta,
   core::blendAlpha();
   client->particleManager.render(camera, tickDelta);
  };
- if(!skipGbuffers && (particleOrder == "before" || particleOrder == "mixed")) renderLitParticles();
+ if(!skipGbuffers && (particleOrder == "before" || particleOrder == "mixed")) {
+  renderLitParticles();
+ }
  {
-  shaderPipeline_->captureOpaqueDepth();
+  shaderPipeline_->captureHandDepth();
  }
  if(zoom == 1.0 && !renderCameraEntity) {
   renderFirstPersonHand(tickDelta);
  }
  {
-  shaderPipeline_->captureHandDepth();
+  shaderPipeline_->captureOpaqueDepth();
  }
- if(!skipGbuffers && particleOrder == "before") renderTranslucentParticles();
+ if(!skipGbuffers && particleOrder == "before") {
+  renderTranslucentParticles();
+ }
  if(hasDeferred) {
   {
    shaderPipeline_->renderDeferred(frameShadow_.depthTexture,
@@ -1195,8 +1201,10 @@ void GameRenderer::renderToCurrentTarget(float tickDelta,
   worldRenderer->renderEntities(frameCameraPos, activeCuller, tickDelta);
   render::setDrawPhase(render::DrawPhase::All);
  }
- if(!skipGbuffers && particleOrder == "after") renderLitParticles();
- if(!skipGbuffers && particleOrder != "before") renderTranslucentParticles();
+ {
+  if(!skipGbuffers && particleOrder == "after") renderLitParticles();
+  if(!skipGbuffers && particleOrder != "before") renderTranslucentParticles();
+ }
  if(client->crosshairTarget.has_value()) {
   if(auto* player = dynamic_cast<PlayerEntity*>(camera)) {
    if(camera->isInFluid(material::Material::WATER)) {

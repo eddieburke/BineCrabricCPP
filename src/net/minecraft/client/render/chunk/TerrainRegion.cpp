@@ -2,7 +2,6 @@
 #include <algorithm>
 #include <bit>
 #include <limits>
-#include "net/minecraft/client/debug/VTuneTrace.hpp"
 #include "net/minecraft/client/gl/GLCore.hpp"
 #include "net/minecraft/client/render/QuadIndexBuffer.hpp"
 #include "net/minecraft/client/render/RenderCore.hpp"
@@ -58,11 +57,6 @@ bool TerrainRegion::ensureCapacity(LayerArena& arena, std::size_t requiredVertic
  if(!quad_index::ensure(kInitialVertices)) {
   return false;
  }
- VT_TRACE_COUNTER("Copies", 1);
- // Separated from Copies so the HUD says how often arenas regrow per frame and
- // how much they copy, rather than folding both into one shared counter.
- VT_TRACE_COUNTER("ArenaGrows", 1);
- VT_TRACE_COUNTER("ArenaGrowVertices", static_cast<std::uint64_t>(arena.tailVertex));
  unsigned newHandle = 0;
  unsigned newVao = 0;
  gl::GLCore::genBuffers(1, &newHandle);
@@ -228,8 +222,15 @@ bool TerrainRegion::upload(int layer,
   }
  }
  gl::GLCore::bindBuffer(kCopyReadBuffer, arena.staging);
+ // Re-specifying at the same size is the orphan idiom: the driver hands back fresh
+ // storage instead of waiting for the previous copy to drain. Re-specifying at a
+ // *different* size is a reallocation, and sizing to this mesh made the staging
+ // buffer oscillate between sizes across the ~740 uploads a second this path runs.
+ // So the size only ever grows.
+ const std::size_t wantedStaging = std::bit_ceil(vertices.size());
+ arena.stagingVertices = std::max(arena.stagingVertices, wantedStaging);
  gl::GLCore::bufferData(kCopyReadBuffer,
-                        static_cast<intptr_t>(std::bit_ceil(vertices.size()) * sizeof(TessellatorVertex)),
+                        static_cast<intptr_t>(arena.stagingVertices * sizeof(TessellatorVertex)),
                         nullptr,
                         kStreamDraw);
  gl::GLCore::bufferSubData(kCopyReadBuffer, 0, static_cast<intptr_t>(vertices.size_bytes()), vertices.data());
@@ -239,8 +240,9 @@ bool TerrainRegion::upload(int layer,
                                0,
                                static_cast<intptr_t>(allocation.firstVertex * sizeof(TessellatorVertex)),
                                static_cast<intptr_t>(vertices.size_bytes()));
- gl::GLCore::bindBuffer(kCopyReadBuffer, 0);
- gl::GLCore::bindBuffer(kCopyWriteBuffer, 0);
+ // No unbind: this file is the only user of the two copy targets in the engine, GL defines
+ // them as affecting nothing else, and the next upload rebinds both. Dropping the pair took
+ // seven GL calls per upload down to five on a path that runs ~740 times a second.
  allocation.vertexCount = static_cast<int>(vertices.size());
  return true;
 }

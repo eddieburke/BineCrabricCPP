@@ -39,7 +39,12 @@ void Chunk::waitForPinDrain(const Chunk& chunk, std::chrono::milliseconds timeou
 }
 void Chunk::lockRenderWrite() const noexcept {
  unsigned spins = 0;
- while(renderWriteLock_->test_and_set(std::memory_order_acquire)) {
+ for(;;) {
+  std::uint32_t seq = renderSeq_->load(std::memory_order_relaxed);
+  if((seq & 1U) == 0 &&
+     renderSeq_->compare_exchange_weak(seq, seq + 1, std::memory_order_acquire, std::memory_order_relaxed)) {
+   return;
+  }
   if(++spins >= 64) {
    spins = 0;
    std::this_thread::yield();
@@ -47,7 +52,9 @@ void Chunk::lockRenderWrite() const noexcept {
  }
 }
 void Chunk::unlockRenderWrite() const noexcept {
- renderWriteLock_->clear(std::memory_order_release);
+ // Leaves the version even again and, crucially, *changed* -- a reader that
+ // copied across this section fails its stamp check and retries.
+ renderSeq_->fetch_add(1, std::memory_order_release);
 }
 Chunk::~Chunk() {
  if(loaded) {
@@ -66,12 +73,13 @@ bool Chunk::setBlock(int localX, int yPos, int localZ, int rawId, int metadataVa
  }
  const int blockX = this->x * 16 + localX;
  const int blockZ = this->z * 16 + localZ;
- {
-  const RenderWriteGuard guard(*this);
-  std::atomic_ref<std::uint8_t>(blocks[index(localX, yPos, localZ)])
-      .store(static_cast<std::uint8_t>(rawId & 0xFF), std::memory_order_relaxed);
-  meta.set(localX, yPos, localZ, metadataValue);
- }
+ // Both stores are byte-atomic and world->setBlockDirty below forces the remesh,
+ // so a mesh capture racing this sees one stale value, never a torn one, and is
+ // corrected on the next frame. Not worth making the capture wait for.
+ std::atomic_ref<std::uint8_t>(blocks[index(localX, yPos, localZ)])
+     .store(static_cast<std::uint8_t>(rawId & 0xFF), std::memory_order_relaxed);
+ updateSectionBlockCount(yPos, previousId, rawId);
+ meta.set(localX, yPos, localZ, metadataValue);
  if(previousId != 0 && world != nullptr && !world->isRemote()) {
   Block* previousBlock = Block::BLOCKS[static_cast<std::size_t>(previousId)];
   if(previousBlock != nullptr) {
@@ -117,12 +125,10 @@ bool Chunk::setBlock(int localX, int yPos, int localZ, int rawId) {
  }
  const int blockX = this->x * 16 + localX;
  const int blockZ = this->z * 16 + localZ;
- {
-  const RenderWriteGuard guard(*this);
-  std::atomic_ref<std::uint8_t>(blocks[index(localX, yPos, localZ)])
-      .store(static_cast<std::uint8_t>(rawId & 0xFF), std::memory_order_relaxed);
-  meta.set(localX, yPos, localZ, 0);
- }
+ std::atomic_ref<std::uint8_t>(blocks[index(localX, yPos, localZ)])
+     .store(static_cast<std::uint8_t>(rawId & 0xFF), std::memory_order_relaxed);
+ updateSectionBlockCount(yPos, previousId, rawId);
+ meta.set(localX, yPos, localZ, 0);
  if(previousId != 0 && world != nullptr) {
   Block* previousBlock = Block::BLOCKS[static_cast<std::size_t>(previousId)];
   if(previousBlock != nullptr) {
@@ -159,13 +165,68 @@ void Chunk::setBlockMeta(int localX, int yPos, int localZ, int metadataValue) {
  if(previousMeta == metadataValue) {
   return;
  }
- {
-  const RenderWriteGuard guard(*this);
-  meta.set(localX, yPos, localZ, metadataValue);
- }
+ meta.set(localX, yPos, localZ, metadataValue);
  dirty = true;
  if(world != nullptr) {
   world->setBlockDirty(x * 16 + localX, yPos, z * 16 + localZ);
+ }
+}
+void Chunk::updateSectionBlockCount(int yPos, int previousId, int rawId) noexcept {
+ const bool previousPresent = (previousId & 0xFF) != 0;
+ const bool currentPresent = (rawId & 0xFF) != 0;
+ if(previousPresent == currentPresent || yPos < 0 || yPos >= height) {
+  return;
+ }
+ auto& count = sectionBlockCounts_[static_cast<std::size_t>(yPos >> 4)];
+ if(currentPresent) {
+  count.fetch_add(1, std::memory_order_relaxed);
+ } else {
+  count.fetch_sub(1, std::memory_order_relaxed);
+ }
+}
+void Chunk::refreshSectionBlockCounts() {
+ const RenderWriteGuard guard(*this);
+ refreshSectionBlockCountsUnlocked();
+}
+void Chunk::refreshSectionBlockCountsUnlocked() noexcept {
+ std::array<std::uint16_t, 8> counts{};
+ for(std::size_t i = 0; i < blocks.size(); ++i) {
+  const std::uint8_t blockId =
+      std::atomic_ref(const_cast<std::uint8_t&>(blocks[i])).load(std::memory_order_relaxed);
+  if(blockId != 0) {
+   ++counts[(i & 127U) >> 4U];
+  }
+ }
+ for(std::size_t section = 0; section < counts.size(); ++section) {
+  sectionBlockCounts_[section].store(counts[section], std::memory_order_relaxed);
+ }
+}
+void Chunk::updateBlockLightCount(int yPos, int previous, int value) noexcept {
+ const bool previousPresent = (previous & 15) != 0;
+ const bool currentPresent = (value & 15) != 0;
+ if(previousPresent == currentPresent || yPos < 0 || yPos >= height) {
+  return;
+ }
+ auto& count = blockLightCounts_[static_cast<std::size_t>(yPos >> 4)];
+ if(currentPresent) {
+  count.fetch_add(1, std::memory_order_relaxed);
+ } else {
+  count.fetch_sub(1, std::memory_order_relaxed);
+ }
+}
+void Chunk::refreshBlockLightCountsUnlocked() noexcept {
+ std::array<std::uint16_t, 8> counts{};
+ for(int localX = 0; localX < width; ++localX) {
+  for(int localZ = 0; localZ < depth; ++localZ) {
+   for(int yPos = 0; yPos < height; ++yPos) {
+    if(blockLight.get(localX, yPos, localZ) != 0) {
+     ++counts[static_cast<std::size_t>(yPos >> 4)];
+    }
+   }
+  }
+ }
+ for(std::size_t section = 0; section < counts.size(); ++section) {
+  blockLightCounts_[section].store(counts[section], std::memory_order_relaxed);
  }
 }
 void Chunk::relightSkylightGaps() {
@@ -182,13 +243,35 @@ void Chunk::populateBlockLight() {
  if(world == nullptr || world->isRemote()) {
   return;
  }
- if(!blockLight.isAllZero()) {
+ if(blockLightSectionMask() != 0) {
   return;
  }
  const int blockX = this->x * 16;
  const int blockZ = this->z * 16;
- world->queueLightUpdate(LightType::Block, blockX, 0, blockZ, blockX + 15, height - 1, blockZ + 15);
- dirty = true;
+ std::uint8_t activeSections = 0;
+ for(int sectionY = 0; sectionY < 8; ++sectionY) {
+  if(sectionHasBlocks(sectionY)) {
+   activeSections = static_cast<std::uint8_t>(activeSections | (1U << sectionY));
+  }
+ }
+ constexpr int neighborX[4] = {-1, 16, 8, 8};
+ constexpr int neighborZ[4] = {8, 8, -1, 16};
+ for(int direction = 0; direction < 4; ++direction) {
+  const Chunk* neighbor = world->getChunkIfLoaded(blockX + neighborX[direction], blockZ + neighborZ[direction]);
+  if(neighbor != nullptr && neighbor != this) {
+   activeSections = static_cast<std::uint8_t>(activeSections | neighbor->blockLightSectionMask());
+  }
+ }
+ for(int sectionY = 0; sectionY < 8; ++sectionY) {
+  if((activeSections & static_cast<std::uint8_t>(1U << sectionY)) == 0) {
+   continue;
+  }
+  const int minY = sectionY * 16;
+  world->queueLightUpdate(LightType::Block, blockX, minY, blockZ, blockX + 15, minY + 15, blockZ + 15);
+ }
+ if(activeSections != 0) {
+  dirty = true;
+ }
 }
 void Chunk::populateHeightMap(bool fixCrossChunkGaps) {
  assert(registry::Registry::isBootstrapped() && "Chunk: call Registry::bootstrap() before populateHeightMap");
@@ -222,6 +305,7 @@ void Chunk::populateHeightMap(bool fixCrossChunkGaps) {
    }
   }
   minHeightmapValue = minHeight;
+  refreshSectionBlockCountsUnlocked();
  }
  dirty = true;
  if(!fixCrossChunkGaps) {

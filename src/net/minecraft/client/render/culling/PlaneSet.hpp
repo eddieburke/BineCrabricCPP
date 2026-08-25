@@ -53,6 +53,28 @@ class PlaneSet {
   }
   return true;
  }
+ [[nodiscard]] bool intersectsAabbIgnoringPlane(float minX,
+                                                float minY,
+                                                float minZ,
+                                                float maxX,
+                                                float maxY,
+                                                float maxZ,
+                                                std::size_t ignoredPlane,
+                                                float epsilon = 0.0f) const noexcept {
+  for(std::size_t i = 0; i < count_; ++i) {
+   if(i == ignoredPlane) {
+    continue;
+   }
+   const std::array<float, 4>& p = planes_[i];
+   const float px = pickBound(p[0], maxX, minX);
+   const float py = pickBound(p[1], maxY, minY);
+   const float pz = pickBound(p[2], maxZ, minZ);
+   if(((p[0] * px + p[1] * py) + p[2] * pz) + p[3] < -epsilon) {
+    return false;
+   }
+  }
+  return true;
+ }
 
  private:
  // Branchless select of the corner furthest along the normal: hi when the

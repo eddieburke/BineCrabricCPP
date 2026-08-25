@@ -2,9 +2,12 @@
 #include "net/minecraft/client/render/RenderCore.hpp"
 #include <cmath>
 #include <utility>
+#include "net/minecraft/client/Minecraft.hpp"
 #include "net/minecraft/client/font/TextRenderer.hpp"
 #include "net/minecraft/client/gl/GlConstants.hpp"
+#include "net/minecraft/client/render/GameRenderer.hpp"
 #include "net/minecraft/client/render/camera/FrameRenderCamera.hpp"
+#include "net/minecraft/client/render/pipeline/Pipeline.hpp"
 #include "net/minecraft/client/render/RenderType.hpp"
 #include "net/minecraft/client/render/Tessellator.hpp"
 #include "net/minecraft/client/render/entity/EntityRenderDispatcher.hpp"
@@ -57,6 +60,12 @@ std::string_view entityTypeName(const net::minecraft::entity::LivingEntity& enti
   }
  }
  return "living";
+}
+[[nodiscard]] bool usingUserShaderPack() {
+ auto* minecraft = net::minecraft::client::Minecraft::INSTANCE;
+ auto* gameRenderer = minecraft != nullptr ? minecraft->gameRenderer.get() : nullptr;
+ auto* pipeline = gameRenderer != nullptr ? gameRenderer->shaderPipeline() : nullptr;
+ return pipeline != nullptr && pipeline->usingUserPack();
 }
 } // namespace
 LivingEntityRenderer::LivingEntityRenderer(model::EntityModel* modelIn, float shadowRadiusIn) : model(modelIn) {
@@ -167,13 +176,17 @@ void LivingEntityRenderer::render(
   const float brightness = living->getBrightnessAtEyes(tickDelta);
   const int overlay = getOverlayColor(*living, brightness, tickDelta);
   const int overlayAlpha = (overlay >> 24) & 0xFF;
-  if(overlayAlpha > 0) {
+  const bool hasDamageOverlay = overlayAlpha > 0 || living->hurtTime > 0 || living->deathTime > 0;
+  const bool usePackEntityColor = usingUserShaderPack();
+  if(usePackEntityColor && overlayAlpha > 0) {
    render::core::setEntityColor(static_cast<float>((overlay >> 16) & 0xFF) / 255.0f,
                                 static_cast<float>((overlay >> 8) & 0xFF) / 255.0f,
                                 static_cast<float>(overlay & 0xFF) / 255.0f,
                                 static_cast<float>(overlayAlpha) / 255.0f);
-  } else if(living->hurtTime > 0 || living->deathTime > 0) {
+  } else if(usePackEntityColor && (living->hurtTime > 0 || living->deathTime > 0)) {
    render::core::setEntityColor(1.0f, 0.0f, 0.0f, 0.4f);
+  } else {
+   render::core::setEntityColor(0.0f, 0.0f, 0.0f, 0.0f);
   }
   model->animateModel(const_cast<net::minecraft::LivingEntity&>(*living), limbDistance, limbAngle, tickDelta);
   render::core::setDrawPose(matrices.top());
@@ -206,7 +219,7 @@ void LivingEntityRenderer::render(
   }
   renderMore(*living, tickDelta, matrices, projection);
   render::core::setEntityColor(0.0f, 0.0f, 0.0f, 0.0f);
-  if(overlayAlpha > 0 || living->hurtTime > 0 || living->deathTime > 0) {
+  if(hasDamageOverlay && !usePackEntityColor) {
    render::RenderPassScope overlayScope(render::RenderType::basic());
    core::disableCull();
    core::enableBlend();
@@ -214,7 +227,6 @@ void LivingEntityRenderer::render(
    core::depthFunc(0x0202); // GL_EQUAL
    if(living->hurtTime > 0 || living->deathTime > 0) {
     render::core::setConstColor(1.0f, 0.0f, 0.0f, 0.4f);
-    render::core::setEntityColor(1.0f, 0.0f, 0.0f, 0.4f);
     render::core::setDrawPose(matrices.top());
     {
      const Tessellator::ScopedBatch modelBatch;
@@ -237,12 +249,11 @@ void LivingEntityRenderer::render(
     }
    }
    if(overlayAlpha > 0) {
-    const float cr = static_cast<float>((overlay >> 16) & 0xFF) / 255.0f;
-    const float cg = static_cast<float>((overlay >> 8) & 0xFF) / 255.0f;
-    const float cb = static_cast<float>(overlay & 0xFF) / 255.0f;
+   const float cr = static_cast<float>((overlay >> 16) & 0xFF) / 255.0f;
+   const float cg = static_cast<float>((overlay >> 8) & 0xFF) / 255.0f;
+   const float cb = static_cast<float>(overlay & 0xFF) / 255.0f;
     const float ca = static_cast<float>(overlayAlpha) / 255.0f;
     render::core::setConstColor(cr, cg, cb, ca);
-    render::core::setEntityColor(cr, cg, cb, ca);
     render::core::setDrawPose(matrices.top());
     {
      const Tessellator::ScopedBatch modelBatch;

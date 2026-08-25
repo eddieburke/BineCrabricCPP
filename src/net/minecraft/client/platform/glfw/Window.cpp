@@ -211,15 +211,19 @@ void applyCallbacks(GLFWwindow* window) {
   if(button < GLFW_MOUSE_BUTTON_LEFT || button > GLFW_MOUSE_BUTTON_MIDDLE) {
    return;
   }
-  int x = 0;
-  int y = 0;
-  Window::cursorPosition(x, y);
+  double cursorX = 0.0;
+  double cursorY = 0.0;
+  Window::cursorPosition(cursorX, cursorY);
+  const int x = static_cast<int>(std::floor(cursorX));
+  const int y = static_cast<int>(std::floor(cursorY));
   input::InputSystem::instance().pushMouseButtonEvent(button, action == GLFW_PRESS, x, y);
  });
  glfwSetScrollCallback(window, [](GLFWwindow*, double, double yoffset) {
-  int x = 0;
-  int y = 0;
-  Window::cursorPosition(x, y);
+  double cursorX = 0.0;
+  double cursorY = 0.0;
+  Window::cursorPosition(cursorX, cursorY);
+  const int x = static_cast<int>(std::floor(cursorX));
+  const int y = static_cast<int>(std::floor(cursorY));
   const int delta = static_cast<int>(std::round(yoffset * 120.0));
   input::InputSystem::instance().pushMouseWheelEvent(delta, x, y);
  });
@@ -271,9 +275,12 @@ void rememberWindowedPlacement() {
  glfwGetWindowSize(window_, &windowedWidth_, &windowedHeight_);
 }
 } // namespace
-void Window::cursorPosition(int& x, int& y) {
- x = 0;
- y = 0;
+// Reported as doubles: under GLFW_CURSOR_DISABLED the position is a virtual,
+// unbounded accumulator and sub-unit motion is real movement. Truncating here
+// quantized mouse look to whole units, dropping any frame that moved less.
+void Window::cursorPosition(double& x, double& y) {
+ x = 0.0;
+ y = 0.0;
  if(window_ == nullptr) {
   return;
  }
@@ -283,14 +290,19 @@ void Window::cursorPosition(int& x, int& y) {
  int height = 0;
  glfwGetCursorPos(window_, &cursorX, &cursorY);
  glfwGetWindowSize(window_, &width, &height);
- x = static_cast<int>(std::floor(cursorX));
- y = height - static_cast<int>(std::floor(cursorY));
+ x = cursorX;
+ y = static_cast<double>(height) - cursorY;
 }
 void Window::setCursorLocked(bool locked) {
  if(window_ == nullptr) {
   return;
  }
  glfwSetInputMode(window_, GLFW_CURSOR, locked ? GLFW_CURSOR_DISABLED : GLFW_CURSOR_NORMAL);
+ // Without this the OS pointer ballistics curve is applied to mouse look,
+ // so the same physical movement turns the camera by different amounts.
+ if(glfwRawMouseMotionSupported() == GLFW_TRUE) {
+  glfwSetInputMode(window_, GLFW_RAW_MOUSE_MOTION, locked ? GLFW_TRUE : GLFW_FALSE);
+ }
 }
 std::string Window::clipboardString() {
  if(window_ == nullptr) {
@@ -298,6 +310,11 @@ std::string Window::clipboardString() {
  }
  const char* text = glfwGetClipboardString(window_);
  return text != nullptr ? text : "";
+}
+void Window::setClipboardString(const std::string& text) {
+ if(window_ != nullptr) {
+  glfwSetClipboardString(window_, text.c_str());
+ }
 }
 void Window::setResizeCallback(ResizeCallback callback) {
  resizeCallback_ = std::move(callback);

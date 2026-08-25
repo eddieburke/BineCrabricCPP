@@ -193,6 +193,15 @@ net::minecraft::entity::Entity* findEntity(World* world, int id) {
  }
  return nullptr;
 }
+World* luaEntityWorld() {
+ World* world = activeModWorld();
+#ifdef MINECRAFT_NATIVE_EXPORTS
+ if(world == nullptr && client::Minecraft::INSTANCE != nullptr) {
+  world = client::Minecraft::INSTANCE->world;
+ }
+#endif
+ return world;
+}
 net::minecraft::mod::lua::LuaModEntity* ownedModEntity(lua_State* state, World* world, int id) {
  auto* entity = dynamic_cast<net::minecraft::mod::lua::LuaModEntity*>(findEntity(world, id));
  if(entity == nullptr || (world->isRemote() && !entity->isClientLocal())) {
@@ -233,7 +242,7 @@ void applySingleEntityState(lua_State* state, net::minecraft::mod::lua::LuaModEn
 }
 int luaEntitiesApplyState(lua_State* state) {
  LuaApi& api = luaApi();
- World* world = activeModWorld();
+ World* world = luaEntityWorld();
  if(world == nullptr || api.gettop(state) < 2 || api.type(state, 1) != kLuaTTable ||
     api.type(state, 2) != kLuaTTable) {
   api.pushboolean(state, 0);
@@ -248,9 +257,45 @@ int luaEntitiesApplyState(lua_State* state) {
  api.pushboolean(state, 1);
  return 1;
 }
+int luaEntitiesSetState(lua_State* state) {
+ LuaApi& api = luaApi();
+ World* world = luaEntityWorld();
+ if(world == nullptr || api.gettop(state) < 2 || api.type(state, 1) != kLuaTTable ||
+    api.type(state, 2) != kLuaTTable) {
+  api.pushboolean(state, 0);
+  return 1;
+ }
+ const int id = luaIntField(state, 1, "id", -1);
+ net::minecraft::entity::Entity* entity =
+     world->isRemote() ? ownedModEntity(state, world, id) : findEntity(world, id);
+ if(entity == nullptr) {
+  api.pushboolean(state, 0);
+  return 1;
+ }
+ const int values = 2;
+ if(api.getfield(state, values, "x") == kLuaTNumber) {
+  entity->setPosition(luaDoubleField(state, values, "x", entity->x),
+                      luaDoubleField(state, values, "y", entity->y),
+                      luaDoubleField(state, values, "z", entity->z));
+ }
+ pop(state, 1);
+ entity->velocityX = luaDoubleField(state, values, "vx", entity->velocityX);
+ entity->velocityY = luaDoubleField(state, values, "vy", entity->velocityY);
+ entity->velocityZ = luaDoubleField(state, values, "vz", entity->velocityZ);
+ entity->yaw = luaFloatField(state, values, "yaw", entity->yaw);
+ entity->pitch = luaFloatField(state, values, "pitch", entity->pitch);
+ entity->fireTicks = std::max(0, luaIntField(state, values, "fire_ticks", entity->fireTicks));
+ entity->fallDistance = std::max(0.0f, luaFloatField(state, values, "fall_distance", entity->fallDistance));
+ entity->noClip = luaBoolField(state, values, "no_clip", entity->noClip);
+ if(auto* living = dynamic_cast<net::minecraft::LivingEntity*>(entity); living != nullptr) {
+  living->health = std::clamp(luaIntField(state, values, "health", living->health), 0, 20);
+ }
+ api.pushboolean(state, 1);
+ return 1;
+}
 int luaEntitiesTeleport(lua_State* state) {
  LuaApi& api = luaApi();
- World* world = activeModWorld();
+ World* world = luaEntityWorld();
  if(world == nullptr || api.gettop(state) < 2 || api.type(state, 1) != kLuaTTable) {
   api.pushboolean(state, 0);
   return 1;
@@ -291,13 +336,15 @@ int luaEntitiesTeleport(lua_State* state) {
 }
 int luaEntitiesRemove(lua_State* state) {
  LuaApi& api = luaApi();
- World* world = activeModWorld();
+ World* world = luaEntityWorld();
  if(world == nullptr || api.gettop(state) < 1 || api.type(state, 1) != kLuaTTable) {
   api.pushboolean(state, 0);
   return 1;
  }
- auto* e = ownedModEntity(state, world, luaIntField(state, 1, "id", -1));
- if(e == nullptr) {
+ const int id = luaIntField(state, 1, "id", -1);
+ net::minecraft::entity::Entity* e =
+     world->isRemote() ? ownedModEntity(state, world, id) : findEntity(world, id);
+ if(e == nullptr || dynamic_cast<net::minecraft::entity::player::PlayerEntity*>(e) != nullptr) {
   api.pushboolean(state, 0);
   return 1;
  }
@@ -308,7 +355,7 @@ int luaEntitiesRemove(lua_State* state) {
 int luaEntitiesList(lua_State* state) {
  LuaApi& api = luaApi();
  api.createtable(state, 0, 16);
- World* world = activeModWorld();
+ World* world = luaEntityWorld();
  if(world == nullptr) {
   return 1;
  }
@@ -334,7 +381,7 @@ int luaEntitiesList(lua_State* state) {
 }
 int luaEntitiesGet(lua_State* state) {
  LuaApi& api = luaApi();
- World* world = activeModWorld();
+ World* world = luaEntityWorld();
  if(world == nullptr || api.gettop(state) < 1) {
   api.pushnil(state);
   return 1;
@@ -344,7 +391,7 @@ int luaEntitiesGet(lua_State* state) {
 }
 int luaEntitiesSpawnMod(lua_State* state) {
  LuaApi& api = luaApi();
- World* world = activeModWorld();
+ World* world = luaEntityWorld();
  if(world == nullptr || api.gettop(state) < 2 || api.type(state, 1) != kLuaTString ||
     api.type(state, 2) != kLuaTTable) {
   api.pushnil(state);
@@ -432,6 +479,7 @@ void pushEntityHandle(lua_State* state, net::minecraft::entity::Entity* e) {
                {
                    {"teleport", luaEntitiesTeleport},
                    {"apply_state", luaEntitiesApplyState},
+                   {"set_state", luaEntitiesSetState},
                    {"remove", luaEntitiesRemove},
                });
 }
@@ -463,6 +511,7 @@ void installEntityApi(lua_State* state, ModHost::LoadedLuaMod& mod) {
                        {"list", luaEntitiesList},
                        {"get", luaEntitiesGet},
                        {"apply_state", luaEntitiesApplyState},
+                       {"set_state", luaEntitiesSetState},
                        {"teleport", luaEntitiesTeleport},
                        {"remove", luaEntitiesRemove},
                        {"unregister_local_pose_hook", luaUnregisterLocalPoseHook},

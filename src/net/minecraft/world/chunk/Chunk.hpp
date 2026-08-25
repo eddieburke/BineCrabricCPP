@@ -26,6 +26,9 @@ class Chunk {
  static constexpr int height = 128;
  static constexpr int depth = 16;
  static constexpr std::size_t volume = static_cast<std::size_t>(width * height * depth);
+ // Excludes other *bulk* sections only -- the whole-chunk copies (packet load,
+ // save serialise, meta resize) whose vectors are read and written wholesale.
+ // Per-cell writers do not take it; see noteRenderWrite().
  class RenderWriteGuard {
   public:
   explicit RenderWriteGuard(const Chunk& chunk) : chunk_(chunk) {
@@ -57,10 +60,12 @@ class Chunk {
  }
  Chunk(World* world, const std::array<std::uint8_t, volume>& sourceBlocks, int x, int z) : Chunk(world, x, z) {
   blocks.assign(sourceBlocks.begin(), sourceBlocks.end());
+  refreshSectionBlockCounts();
  }
  Chunk(World* world, const std::vector<std::uint8_t>& sourceBlocks, int x, int z) : Chunk(world, x, z) {
   const std::size_t count = std::min(blocks.size(), sourceBlocks.size());
   std::copy_n(sourceBlocks.begin(), count, blocks.begin());
+  refreshSectionBlockCounts();
  }
  ~Chunk();
  Chunk(const Chunk&) = delete;
@@ -84,6 +89,12 @@ class Chunk {
         empty(other.empty),
         lastSaveHadEntities(other.lastSaveHadEntities.load(std::memory_order_relaxed)),
         lastSaveTime(other.lastSaveTime) {
+   for(std::size_t section = 0; section < sectionBlockCounts_.size(); ++section) {
+    sectionBlockCounts_[section].store(
+        other.sectionBlockCounts_[section].load(std::memory_order_relaxed), std::memory_order_relaxed);
+    blockLightCounts_[section].store(
+        other.blockLightCounts_[section].load(std::memory_order_relaxed), std::memory_order_relaxed);
+   }
    other.world = nullptr;
    other.loaded = false;
    other.dataReady = false;
@@ -117,6 +128,7 @@ class Chunk {
    }
   }
   minHeightmapValue = minHeight;
+  refreshSectionBlockCountsUnlocked();
   dirty = true;
  }
  void populateHeightMap(bool fixCrossChunkGaps = true);
@@ -124,6 +136,30 @@ class Chunk {
   populateHeightMap();
  }
  void populateBlockLight();
+ [[nodiscard]] bool sectionHasBlocks(int sectionY) const noexcept {
+  return sectionY >= 0 && sectionY < static_cast<int>(sectionBlockCounts_.size()) &&
+         sectionBlockCounts_[static_cast<std::size_t>(sectionY)].load(std::memory_order_relaxed) != 0;
+ }
+ [[nodiscard]] int nonEmptySectionCount() const noexcept {
+  int count = 0;
+  for(const auto& section : sectionBlockCounts_) {
+   count += section.load(std::memory_order_relaxed) != 0 ? 1 : 0;
+  }
+  return count;
+ }
+ [[nodiscard]] std::uint8_t blockLightSectionMask() const noexcept {
+  std::uint8_t mask = 0;
+  for(std::size_t section = 0; section < blockLightCounts_.size(); ++section) {
+   if(blockLightCounts_[section].load(std::memory_order_relaxed) != 0) {
+    mask = static_cast<std::uint8_t>(mask | (1U << section));
+   }
+  }
+  return mask;
+ }
+ void refreshBlockLightCounts() {
+  const RenderWriteGuard guard(*this);
+  refreshBlockLightCountsUnlocked();
+ }
  void relightSkylightGaps();
  void attachToWorld(World* worldIn) noexcept {
   world = worldIn;
@@ -156,11 +192,17 @@ class Chunk {
   return lightType == LightType::Sky ? skyLight.get(localX, yPos, localZ) : blockLight.get(localX, yPos, localZ);
  }
  void setLight(LightType lightType, int localX, int yPos, int localZ, int value) {
-  const RenderWriteGuard guard(*this);
+  // ChunkNibbleArray::set is a byte-wise CAS, so two light workers sharing a
+  // byte cannot drop each other's nibble, and the mesh capture reads without
+  // locking. This is the innermost write of the light relaxation -- it took and
+  // released the chunk's write flag once per cell, and every one of those
+  // acquisitions could land behind a whole-chunk mesh capture.
   if(lightType == LightType::Sky) {
    skyLight.set(localX, yPos, localZ, value);
   } else {
+   const int previous = blockLight.get(localX, yPos, localZ);
    blockLight.set(localX, yPos, localZ, value);
+   updateBlockLightCount(yPos, previous, value);
   }
   dirty = true;
  }
@@ -332,6 +374,7 @@ class Chunk {
      offset += count;
     }
    }
+  refreshBlockLightCountsUnlocked();
    for(int localX = minX; localX < maxX; ++localX) {
     for(int localZ = minZ; localZ < maxZ; ++localZ) {
      const std::size_t dest = index(localX, minY, localZ) >> 1U;
@@ -420,6 +463,7 @@ class Chunk {
     const std::uint8_t blockId = blocks[i];
     blocks[i] = Block::BLOCKS[static_cast<std::size_t>(blockId)] == nullptr ? 0 : blockId;
    }
+   refreshSectionBlockCountsUnlocked();
   }
  World* world = nullptr;
  std::vector<std::uint8_t> blocks;
@@ -439,8 +483,13 @@ class Chunk {
   bool empty = false;
   std::atomic<bool> lastSaveHadEntities{false};
   long long lastSaveTime = 0;
-  std::unique_ptr<std::atomic_flag> renderWriteLock_ =
-      std::make_unique<std::atomic_flag>();
+  std::array<std::atomic<std::uint16_t>, 8> sectionBlockCounts_{};
+  std::array<std::atomic<std::uint16_t>, 8> blockLightCounts_{};
+  // Seqlock version for bulk sections only. Even means none is in flight; a bulk
+  // writer makes it odd for the length of its section and leaves it changed, so a
+  // reader that copied across one can tell.
+  std::unique_ptr<std::atomic<std::uint32_t>> renderSeq_ =
+      std::make_unique<std::atomic<std::uint32_t>>(0);
   // Guards the entity/block-entity containers. The main thread mutates them
   // (entity ticks, block-entity placement, load/unload); the save drain
   // serializes them into a snapshot on an IO worker. recursive so a block
@@ -454,6 +503,18 @@ class Chunk {
  public:
  void lockRenderWrite() const noexcept;
  void unlockRenderWrite() const noexcept;
+ // Optimistic-read stamp. An odd value means a bulk section holds the chunk;
+ // the caller retries rather than blocking. Per-cell writers are not part of
+ // this protocol at all -- every one of their stores is already byte-atomic
+ // (atomic_ref on blocks/heightmap, a CAS on the nibble arrays), so a reader
+ // that races one gets a value that is stale, never torn, and the write is
+ // followed by a dirty-region publish that remeshes it anyway.
+ [[nodiscard]] std::uint32_t renderVersion() const noexcept {
+  return renderSeq_->load(std::memory_order_acquire);
+ }
+ [[nodiscard]] bool renderReadValid(std::uint32_t stamp) const noexcept {
+  return (stamp & 1U) == 0 && renderSeq_->load(std::memory_order_acquire) == stamp;
+ }
 
  private:
  [[nodiscard]] static constexpr std::size_t index(int localX, int yPos, int localZ) {
@@ -478,6 +539,11 @@ class Chunk {
   minHeightmapValue = topY;
  }
  void updateHeightMap(int localX, int yPos, int localZ);
+ void updateSectionBlockCount(int yPos, int previousId, int rawId) noexcept;
+ void updateBlockLightCount(int yPos, int previous, int value) noexcept;
+ void refreshSectionBlockCounts();
+ void refreshSectionBlockCountsUnlocked() noexcept;
+ void refreshBlockLightCountsUnlocked() noexcept;
  void lightGaps(int localX, int localZ);
  void lightGap(int blockX, int blockZ, int yPos);
 };

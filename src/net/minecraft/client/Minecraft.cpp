@@ -19,7 +19,6 @@
 #include "net/minecraft/client/color/world/FoliageColors.hpp"
 #include "net/minecraft/client/color/world/GrassColors.hpp"
 #include "net/minecraft/client/debug/ClientProfilerOverlay.hpp"
-#include "net/minecraft/client/debug/VTuneTrace.hpp"
 #include "net/minecraft/client/diagnostics/ClientDiagnostics.hpp"
 #include "net/minecraft/client/gui/Draw2D.hpp"
 #include "net/minecraft/client/gui/screen/ConfirmScreen.hpp"
@@ -726,11 +725,9 @@ void Minecraft::tick() {
 }
 void Minecraft::runRenderPhase() {
  if(!headlessMode_) {
-  VT_TRACE_EVENT("frame/audio");
   audio.updateListener(player, timer.partialTick);
  }
   if(world != nullptr) {
-   VT_TRACE_EVENT("frame/lighting");
    if(camera != nullptr) {
     world->setLightingCamera(camera->x, camera->y, camera->z);
    }
@@ -743,7 +740,6 @@ void Minecraft::runRenderPhase() {
  }
  if(!skipGameRender) {
   {
-   VT_TRACE_EVENT("frame/mod_hooks");
    mod::RenderFrameEvent rfEvent{timer.partialTick, world};
    net::minecraft::mod::runtime::luaHookRenderFrame(rfEvent);
    if(interactionManager != nullptr) {
@@ -751,12 +747,10 @@ void Minecraft::runRenderPhase() {
    }
   }
   if(gameRenderer != nullptr) {
-   VT_TRACE_EVENT("frame/world_render");
    gameRenderer->onFrameUpdate(timer.partialTick);
   }
  }
  if(world != nullptr) {
-  VT_TRACE_EVENT("frame/chunk_publish");
   world->pumpChunkPublish();
  }
 }
@@ -807,12 +801,10 @@ void Minecraft::run() {
     bool continueFrame = true;
     std::int64_t tickStart = 0;
     std::int64_t tickDuration = 0;
-    VT_TRACE_FRAME();
     framePipeline.run([&](util::FramePipeline::Phase phase) {
      if(!continueFrame) {
       return;
      }
-     VT_TRACE_EVENT(util::FramePipeline::phaseName(phase));
      switch(phase) {
      case util::FramePipeline::Phase::Drain:
       platform::glfw::Window::pumpMessages();

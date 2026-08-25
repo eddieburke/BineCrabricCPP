@@ -1,4 +1,5 @@
 #pragma once
+#include <optional>
 #include <random>
 #include <string>
 #include <vector>
@@ -22,10 +23,18 @@ class InGameHud {
  void clearChat();
  void addChatMessage(const std::string& message);
  void addTranslatedChatMessage(const std::string& text);
+ void addSentChatMessage(std::string message);
+ void scrollChat(int lines);
+ void resetChatScroll();
  void setRecordPlayingOverlay(const std::string& record);
  [[nodiscard]] const std::vector<ChatHudLine>& chatLines() const {
   return messages;
  }
+ [[nodiscard]] const std::vector<std::string>& sentChatMessages() const {
+  return sentMessages_;
+ }
+ [[nodiscard]] std::string chatLineAt(int mouseX, int mouseY, int scaledHeight) const;
+ [[nodiscard]] std::string chatLinkAt(int mouseX, int mouseY, int scaledHeight) const;
  [[nodiscard]] const std::string& overlay() const {
   return overlayMessage;
  }
@@ -52,8 +61,11 @@ class InGameHud {
  void renderDebugHud(font::TextRenderer& textRenderer, const entity::player::PlayerEntity& player);
  void renderRecordOverlay(font::TextRenderer& textRenderer, float tickDelta, int scaledWidth, int scaledHeight);
  void renderChat(font::TextRenderer& textRenderer, bool chatOpen, int scaledWidth, int scaledHeight);
+ [[nodiscard]] std::optional<std::size_t> chatLineIndexAt(int mouseX, int mouseY, int scaledHeight) const;
  Minecraft* minecraft = nullptr;
  std::vector<ChatHudLine> messages{};
+ std::vector<std::string> sentMessages_{};
+ int chatScroll_ = 0;
  std::mt19937 random{0xB17A1U};
 };
 } // namespace net::minecraft::client::gui::hud

@@ -16,7 +16,7 @@ class BlockRenderManager {
  static void setVoxelizeLightBlocks(bool enabled) noexcept;
   BlockRenderManager(Tessellator& tess, const net::minecraft::BlockView* view = nullptr) {
    ctx.tess = &tess;
-   ctx.blockView = view;
+   setBlockView(view);
    snapshotGlobals();
   }
   BlockRenderManager(Tessellator& tess, net::minecraft::World* world) {
@@ -26,15 +26,19 @@ class BlockRenderManager {
   }
   BlockRenderManager(Tessellator& tess, const net::minecraft::BlockView* view, const option::RenderSettings& opts) {
    ctx.tess = &tess;
-   ctx.blockView = view;
+   setBlockView(view);
    ctx.opts = opts;
   }
  void snapshotGlobals(const option::RenderSettings* overrideSettings = nullptr);
+ // The only place ctx.blockView is assigned. resolveLightSource() is three
+ // dynamic_casts, and the answer depends on nothing but the view -- it used to run
+ // once per block rendered, which on the mesher is millions of times a rebuild.
  void setBlockView(const net::minecraft::BlockView* view) {
   ctx.blockView = view;
+  ctx.resolveLightSource();
  }
  void setBlockView(net::minecraft::World* world) {
-  ctx.blockView = world;
+  setBlockView(static_cast<const net::minecraft::BlockView*>(world));
  }
  void renderWithoutCulling(int blockId, int x, int y, int z);
  void renderExtendedPiston(int blockId, int x, int y, int z);

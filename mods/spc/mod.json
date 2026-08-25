@@ -1,0 +1,9 @@
+{
+  "id": "spc",
+  "name": "Single Player Commands",
+  "version": "2.10.2",
+  "description": "Classic Beta 1.7.3 Single Player Commands compatibility layer.",
+  "enabled": true,
+  "side": "client",
+  "entry": "scripts/main.lua"
+}

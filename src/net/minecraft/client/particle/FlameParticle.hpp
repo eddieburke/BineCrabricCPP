@@ -17,13 +17,8 @@ class FlameParticle : public Particle {
   noClip = true;
   textureId = 48;
  }
- float getBrightnessAtEyes(float tickDelta) const override {
-  float f = maxParticleAge > 0
-                ? (static_cast<float>(particleAge) + tickDelta) / static_cast<float>(maxParticleAge)
-                : 1.0f;
-  f = std::clamp(f, 0.0f, 1.0f);
-  const float base = Particle::getBrightnessAtEyes(tickDelta);
-  return base * f + (1.0f - f);
+ float getBrightnessAtEyes(float) const override {
+  return 1.0f;
  }
  void render(render::Tessellator& tessellator,
              float partialTicks,

@@ -20,20 +20,22 @@ class ChunkBuilder : public std::enable_shared_from_this<ChunkBuilder> {
               std::vector<::net::minecraft::block::entity::BlockEntity*>& blockEntityUpdateList,
               int x,
               int y,
-              int z,
-              int size)
+              int z)
      : world(world), x(x), y(y), z(z), currentBlockEntities_(&blockEntityUpdateList) {
-  centerX = this->x + size / 2;
-  centerY = this->y + size / 2;
-  centerZ = this->z + size / 2;
-  constexpr float padding = 6.0f;
-  cullingBox = net::minecraft::Box(static_cast<double>(this->x) - padding,
-                                   static_cast<double>(this->y) - padding,
-                                   static_cast<double>(this->z) - padding,
-                                   static_cast<double>(this->x + size) + padding,
-                                   static_cast<double>(this->y + size) + padding,
-                                   static_cast<double>(this->z + size) + padding);
+  centerX = this->x + kSectionBlocks / 2;
+  centerY = this->y + kSectionBlocks / 2;
+  centerZ = this->z + kSectionBlocks / 2;
   dirty = false;
+ }
+ // Derived, not stored: a fixed offset from x/y/z. kCullPadding matches the region
+ // box in ChunkSectionSystem, which has to contain every section box inside it.
+ static constexpr double kCullPadding = 6.0;
+ [[nodiscard]] net::minecraft::Box cullingBounds() const noexcept {
+  return net::minecraft::Box(static_cast<double>(x) - kCullPadding, static_cast<double>(y) - kCullPadding,
+                             static_cast<double>(z) - kCullPadding,
+                             static_cast<double>(x + kSectionBlocks) + kCullPadding,
+                             static_cast<double>(y + kSectionBlocks) + kCullPadding,
+                             static_cast<double>(z + kSectionBlocks) + kCullPadding);
  }
  [[nodiscard]] float squaredDistanceTo(double entityX, double entityY, double entityZ) const {
   const float dx = static_cast<float>(entityX - static_cast<double>(centerX));
@@ -60,7 +62,10 @@ class ChunkBuilder : public std::enable_shared_from_this<ChunkBuilder> {
  // every resident section to clear a bool, so a section the walk never reached
  // simply keeps an older stamp -- there is no stale "true" to read.
  [[nodiscard]] bool updateFrustum(const Frustum& culler, int stamp) {
-  if(!culler.isVisible(cullingBox)) {
+  if(!culler.isVisible(static_cast<double>(x) - kCullPadding, static_cast<double>(y) - kCullPadding,
+                       static_cast<double>(z) - kCullPadding, static_cast<double>(x + kSectionBlocks) + kCullPadding,
+                       static_cast<double>(y + kSectionBlocks) + kCullPadding,
+                       static_cast<double>(z + kSectionBlocks) + kCullPadding)) {
    return false;
   }
   visibleStamp = stamp;
@@ -101,9 +106,6 @@ class ChunkBuilder : public std::enable_shared_from_this<ChunkBuilder> {
  int centerY = 0;
  int centerZ = 0;
  bool dirty = false;
- net::minecraft::Box cullingBox{0, 0, 0, 0, 0, 0};
- int meshPriority = 0;
- int meshOrderStamp = -1;
  bool hasSkyLight = false;
  bool lightingReady = true;
  bool built = false;
@@ -112,19 +114,37 @@ class ChunkBuilder : public std::enable_shared_from_this<ChunkBuilder> {
  struct OcclusionState {
   std::uint64_t visBits = ~0ULL;
   int stamp = -1;
-  int entryFace = -1;
-  [[nodiscard]] bool visitedIn(int walkStamp) const noexcept {
-   return stamp == walkStamp;
+  std::uint8_t entryFaces = 0;
+  std::uint8_t expandedFaces = 0;
+  [[nodiscard]] bool enter(int walkStamp, int face) noexcept {
+   if(stamp != walkStamp) {
+    stamp = walkStamp;
+    entryFaces = 0;
+    expandedFaces = 0;
+   }
+   const std::uint8_t bit = static_cast<std::uint8_t>(1U << (face < 0 ? 6 : face));
+   if((entryFaces & bit) != 0) {
+    return false;
+   }
+   entryFaces = static_cast<std::uint8_t>(entryFaces | bit);
+   return true;
   }
-  void enter(int walkStamp, int face) noexcept {
-   stamp = walkStamp;
-   entryFace = face;
-  }
-  [[nodiscard]] bool connects(int face, bool built) const noexcept {
+  [[nodiscard]] bool connects(int entryFace, int exitFace, bool built) const noexcept {
    if(entryFace < 0 || !built) {
     return true;
    }
-   return (visBits & (1ULL << (entryFace * 6 + face))) != 0;
+   return (visBits & (1ULL << (entryFace * 6 + exitFace))) != 0;
+  }
+  [[nodiscard]] bool claimExit(int walkStamp, int entryFace, int exitFace, bool built) noexcept {
+   if(stamp != walkStamp || !connects(entryFace, exitFace, built)) {
+    return false;
+   }
+   const std::uint8_t bit = static_cast<std::uint8_t>(1U << exitFace);
+   if((expandedFaces & bit) != 0) {
+    return false;
+   }
+   expandedFaces = static_cast<std::uint8_t>(expandedFaces | bit);
+   return true;
   }
  };
   OcclusionState occlusion{};

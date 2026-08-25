@@ -12,9 +12,11 @@
 #include "net/minecraft/client/Minecraft.hpp"
 #endif
 #include <algorithm>
+#include <cctype>
 #include <cmath>
 #include <string>
 #include "net/minecraft/world/World.hpp"
+#include "net/minecraft/world/biome/Biome.hpp"
 namespace net::minecraft::mod::runtime {
 using namespace net::minecraft::mod::lua;
 namespace {
@@ -307,6 +309,28 @@ int luaWorldGetBlockMeta(lua_State* state) {
  api.pushinteger(state, world != nullptr ? world->getBlockMeta(x, y, z) : 0);
  return 1;
 }
+int luaWorldSetBlock(lua_State* state) {
+ LuaApi& api = luaApi();
+ LuaArgs args(state);
+ int x = 0;
+ int y = 0;
+ int z = 0;
+ int blockId = 0;
+ int blockMeta = 0;
+ if(!args.integer(1, x) || !args.integer(2, y) || !args.integer(3, z) || !args.integer(4, blockId) ||
+    (args.count() >= 5 && !args.integer(5, blockMeta))) {
+  api.pushboolean(state, 0);
+  return 1;
+ }
+ World* world = luaActiveWorld();
+ if(world == nullptr || world->isRemote() || y < 0 || y >= Chunk::height || blockId < 0 ||
+    blockId >= Block::BLOCK_COUNT) {
+  api.pushboolean(state, 0);
+  return 1;
+ }
+ api.pushboolean(state, world->setBlock(x, y, z, blockId, static_cast<std::uint8_t>(blockMeta & 15)) ? 1 : 0);
+ return 1;
+}
 int luaWorldHarvestBlock(lua_State* state) {
  LuaApi& api = luaApi();
  LuaArgs args(state);
@@ -395,6 +419,117 @@ int luaWorldSetTime(lua_State* state) {
  api.pushboolean(state, 1);
  return 1;
 }
+int luaWorldGetDifficulty(lua_State* state) {
+ LuaApi& api = luaApi();
+ World* world = luaActiveWorld();
+ api.pushinteger(state, world != nullptr ? world->difficulty : 0);
+ return 1;
+}
+int luaWorldSetDifficulty(lua_State* state) {
+ LuaApi& api = luaApi();
+ LuaArgs args(state);
+ int difficulty = 0;
+ World* world = luaActiveWorld();
+ if(world == nullptr || world->isRemote() || !args.integer(1, difficulty) || difficulty < 0 || difficulty > 3) {
+  api.pushboolean(state, 0);
+  return 1;
+ }
+ world->difficulty = difficulty;
+ api.pushboolean(state, 1);
+ return 1;
+}
+int luaWorldGetWeather(lua_State* state) {
+ LuaApi& api = luaApi();
+ World* world = luaActiveWorld();
+ if(world == nullptr) {
+  api.pushstring(state, "clear");
+ } else if(world->getProperties().getThundering()) {
+  api.pushstring(state, "thunder");
+ } else if(world->getProperties().getRaining()) {
+  api.pushstring(state, "rain");
+ } else {
+  api.pushstring(state, "clear");
+ }
+ return 1;
+}
+int luaWorldSetWeather(lua_State* state) {
+ LuaApi& api = luaApi();
+ LuaArgs args(state);
+ std::string mode;
+ World* world = luaActiveWorld();
+ if(world == nullptr || world->isRemote() || !args.string(1, mode)) {
+  api.pushboolean(state, 0);
+  return 1;
+ }
+ std::transform(mode.begin(), mode.end(), mode.begin(), [](unsigned char value) { return static_cast<char>(std::tolower(value)); });
+ WorldProperties& properties = world->getProperties();
+ if(mode == "clear" || mode == "sun" || mode == "sunny") {
+  properties.setRaining(false);
+  properties.setRainTime(0);
+  properties.setThundering(false);
+  properties.setThunderTime(0);
+  world->weather().resetGradients();
+ } else if(mode == "rain" || mode == "storm") {
+  properties.setRaining(true);
+  properties.setRainTime(12000);
+  properties.setThundering(false);
+  properties.setThunderTime(0);
+  world->weather().beginActiveWeather(false);
+ } else if(mode == "thunder" || mode == "thunderstorm") {
+  properties.setRaining(true);
+  properties.setRainTime(12000);
+  properties.setThundering(true);
+  properties.setThunderTime(12000);
+  world->weather().beginActiveWeather(true);
+ } else {
+  api.pushboolean(state, 0);
+  return 1;
+ }
+ api.pushboolean(state, 1);
+ return 1;
+}
+int luaWorldGetBiome(lua_State* state) {
+ LuaApi& api = luaApi();
+ LuaArgs args(state);
+ int x = 0;
+ int z = 0;
+ World* world = luaActiveWorld();
+ if(world == nullptr || !args.integer(1, x) || !args.integer(2, z)) {
+  api.pushnil(state);
+  return 1;
+ }
+ api.pushstring(state, std::string(world->getBiome(x, z).wireName()).c_str());
+ return 1;
+}
+int luaWorldSetSpawn(lua_State* state) {
+ LuaApi& api = luaApi();
+ LuaArgs args(state);
+ int x = 0;
+ int y = 0;
+ int z = 0;
+ World* world = luaActiveWorld();
+ if(world == nullptr || world->isRemote() || !args.integer(1, x) || !args.integer(2, y) || !args.integer(3, z)) {
+  api.pushboolean(state, 0);
+  return 1;
+ }
+ world->setSpawnPos(Vec3i{x, std::clamp(y, 0, Chunk::height - 1), z});
+ api.pushboolean(state, 1);
+ return 1;
+}
+int luaWorldGetSpawn(lua_State* state) {
+ LuaApi& api = luaApi();
+ World* world = luaActiveWorld();
+ if(world == nullptr) {
+  api.pushnil(state);
+  return 1;
+ }
+ const Vec3i spawn = world->getSpawnPos();
+ api.createtable(state, 0, 3);
+ setField(state, "x", spawn.x);
+ setField(state, "y", spawn.y);
+ setField(state, "z", spawn.z);
+ return 1;
+}
 int luaParticlesSpawn(lua_State* state) {
  LuaApi& api = luaApi();
  LuaArgs args(state);
@@ -451,6 +586,7 @@ void installWorldApi(lua_State* state, ModHost::LoadedLuaMod& mod) {
                        {"block_id", luaWorldBlockId},
                        {"get_block", luaWorldGetBlock},
                        {"get_block_meta", luaWorldGetBlockMeta},
+                       {"set_block", luaWorldSetBlock},
                        {"harvest_block", luaWorldHarvestBlock},
                        {"random", luaWorldRandom},
                        {"is_night", luaWorldIsNight},
@@ -461,6 +597,13 @@ void installWorldApi(lua_State* state, ModHost::LoadedLuaMod& mod) {
                        {"spawn_entity", luaWorldSpawnEntity},
                        {"count_entities", luaWorldCountEntities},
                        {"set_time", luaWorldSetTime},
+                       {"get_difficulty", luaWorldGetDifficulty},
+                       {"set_difficulty", luaWorldSetDifficulty},
+                       {"get_weather", luaWorldGetWeather},
+                       {"set_weather", luaWorldSetWeather},
+                       {"get_biome", luaWorldGetBiome},
+                       {"set_spawn", luaWorldSetSpawn},
+                       {"get_spawn", luaWorldGetSpawn},
                    });
  api.setfield(state, -2, "world");
  pushFunctionTable(state, {{"spawn", luaParticlesSpawn}});

@@ -10,6 +10,18 @@ namespace net::minecraft {
 inline int floor_int(double value) {
  return static_cast<int>(std::floor(value));
 }
+inline int java_double_to_int(double value) {
+ if(std::isnan(value)) {
+  return 0;
+ }
+ if(value >= static_cast<double>(std::numeric_limits<int>::max())) {
+  return std::numeric_limits<int>::max();
+ }
+ if(value <= static_cast<double>(std::numeric_limits<int>::min())) {
+  return std::numeric_limits<int>::min();
+ }
+ return static_cast<int>(value);
+}
 inline int mod_16(int value) {
  int result = value % 16;
  return result < 0 ? result + 16 : result;

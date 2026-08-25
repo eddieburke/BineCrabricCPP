@@ -60,10 +60,10 @@ class InputSystem {
  void lockCursor();
  void unlockCursor();
  void pollMouseLook();
- [[nodiscard]] int mouseLookDeltaX() const noexcept {
+ [[nodiscard]] double mouseLookDeltaX() const noexcept {
   return mouseLookDeltaX_;
  }
- [[nodiscard]] int mouseLookDeltaY() const noexcept {
+ [[nodiscard]] double mouseLookDeltaY() const noexcept {
   return mouseLookDeltaY_;
  }
  [[nodiscard]] bool isMouseButtonDown(int button) const;
@@ -91,10 +91,10 @@ class InputSystem {
  std::array<bool, 3> mouseDown_{};
  int cursorX_ = 0;
  int cursorY_ = 0;
- int mouseLastX_ = 0;
- int mouseLastY_ = 0;
+ double mouseLastX_ = 0.0;
+ double mouseLastY_ = 0.0;
  bool mouseHasLastPoint_ = false;
- int mouseLookDeltaX_ = 0;
- int mouseLookDeltaY_ = 0;
+ double mouseLookDeltaX_ = 0.0;
+ double mouseLookDeltaY_ = 0.0;
 };
 } // namespace net::minecraft::client::input

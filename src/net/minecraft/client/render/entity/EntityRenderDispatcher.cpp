@@ -7,7 +7,6 @@
 #include <unordered_map>
 #include <vector>
 #include "net/minecraft/client/gl/GlConstants.hpp"
-#include "net/minecraft/client/debug/VTuneTrace.hpp"
 #include "net/minecraft/client/render/camera/FrameRenderCamera.hpp"
 #include "net/minecraft/client/render/RenderCore.hpp"
 #include "net/minecraft/client/render/RenderType.hpp"
@@ -212,7 +211,6 @@ void EntityRenderDispatcher::render(const net::minecraft::Entity& entity,
   }
  }
  if(EntityRenderer* renderer = get(entityType); renderer != nullptr) {
-  VT_TRACE_COUNTER("EntityRendererInvocations", 1);
   // The renderer composes entity poses onto `matrices` and publishes the
   // composed matrix to the draw camera state before its draws; restore the
   // frame base afterwards (renderers that draw without composing, e.g. the

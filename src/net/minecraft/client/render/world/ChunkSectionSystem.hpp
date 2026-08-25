@@ -2,6 +2,7 @@
 #include <cstdint>
 #include <deque>
 #include <limits>
+#include <array>
 #include <memory>
 #include <string>
 #include <unordered_map>
@@ -38,6 +39,23 @@ struct SectionPosHash {
   return h;
  }
 };
+// Sections only ever exist as whole columns, and a column key's y is always 0, so the
+// column is the unit that is keyed and the section index is a plain array offset.
+struct ColumnPos {
+ int x = 0;
+ int z = 0;
+ [[nodiscard]] bool operator==(const ColumnPos& other) const noexcept {
+  return x == other.x && z == other.z;
+ }
+};
+struct ColumnPosHash {
+ [[nodiscard]] std::size_t operator()(const ColumnPos& p) const noexcept {
+  std::size_t h = static_cast<std::uint32_t>(p.x) * 0x9E3779B1u;
+  h ^= static_cast<std::uint32_t>(p.z) * 0x85EBCA77u + (h << 6) + (h >> 2);
+  return h;
+ }
+};
+using SectionColumn = std::array<std::shared_ptr<chunk::ChunkBuilder>, kChunkSectionCountY>;
 inline constexpr int kRegionSectionsX = 8;
 inline constexpr int kRegionSectionsY = 4;
 inline constexpr int kRegionSectionsZ = 8;
@@ -47,6 +65,28 @@ inline constexpr int kRegionSectionsZ = 8;
                    MathHelper::floorDiv(section.y, kRegionSectionsY),
                    MathHelper::floorDiv(section.z, kRegionSectionsZ)};
 }
+using RegionMap =
+    std::unordered_map<SectionPos, std::unique_ptr<chunk::TerrainRegion>, SectionPosHash>;
+struct OcclusionQueueEntry {
+ chunk::ChunkBuilder* section = nullptr;
+ int entryFace = -1;
+};
+// The culling walks, as free functions over exactly what they read. They came out of
+// ChunkSectionSystem so a benchmark can drive the same code the frame does; standing
+// up the section system needs a live World, which culling has nothing to do with.
+//
+// Region-first: one plane test rejects up to kRegionSectionsX*Y*Z sections at once.
+void cullByFrustum(const RegionMap& regions,
+                   const Frustum& culler,
+                   int stamp,
+                   std::vector<chunk::ChunkBuilder*>& out);
+// Vanilla's visibility graph: breadth-first from the camera's section, following only
+// the face pairs its geometry lets you see through. `queue` is caller scratch.
+void cullByOcclusionWalk(chunk::ChunkBuilder* start,
+                         const Frustum& culler,
+                         int stamp,
+                         std::vector<OcclusionQueueEntry>& queue,
+                         std::vector<chunk::ChunkBuilder*>& out);
 } // namespace world
 class ChunkSectionSystem {
  public:
@@ -57,15 +97,8 @@ class ChunkSectionSystem {
  }
  void clearSections();
  void reloadIfViewDistanceChanged();
- void resetCameraSection() noexcept {
-  centerSectionX_ = std::numeric_limits<int>::min();
-  centerSectionZ_ = std::numeric_limits<int>::min();
- }
  void setLastViewDistance(int viewDistance) noexcept {
   lastViewDistance = viewDistance;
- }
- void setLastRenderScale(float renderScale) noexcept {
-  lastRenderScale = renderScale;
  }
  // The nested shadow/portal pass culls into its own list so it cannot clobber the
  // one the outer pass still has to draw from. There is exactly one nesting level
@@ -90,7 +123,7 @@ class ChunkSectionSystem {
  void updateBlockEntity(int x, int y, int z, net::minecraft::block::entity::BlockEntity* blockEntity);
  [[nodiscard]] std::string getChunkDebugInfo() const;
  [[nodiscard]] bool empty() const noexcept {
-  return sections_.empty();
+  return columns_.empty();
  }
  [[nodiscard]] const std::vector<chunk::ChunkBuilder*>& visibleSections() const noexcept {
   return scopedCull_ ? scopedVisibleSections_ : regularVisibleSections_;
@@ -104,15 +137,12 @@ class ChunkSectionSystem {
  void drainBorderRefresh();
 
  private:
- [[nodiscard]] const net::minecraft::entity::LivingEntity* frontierCamera() const;
- bool updateCameraSection();
+ void lightColumn(world::SectionColumn& column);
  void drainPendingColumns();
  void createColumn(int sectionX, int sectionZ);
  void removeColumn(int sectionX, int sectionZ);
  void enqueueColumn(int sectionX, int sectionZ);
- void rebuildSectionOrder(const net::minecraft::Vec3d& camPos);
  void updateDebugCounts();
- void updateProfileMetrics(bool shadowPass);
  // False when the camera section is absent, so the caller falls back to the plain
  // frustum sweep; nothing has been pushed to the visible list in that case.
  bool applyOcclusionCulling(const Frustum& culler, const net::minecraft::Vec3d& camPos, int stamp);
@@ -122,31 +152,30 @@ class ChunkSectionSystem {
  [[nodiscard]] chunk::ChunkBuilder* sectionAt(int sectionX, int sectionY, int sectionZ);
  TerrainScene& scene_;
  ChunkCompilePipeline* compilePipeline_ = nullptr;
- std::unordered_map<world::SectionPos, std::shared_ptr<chunk::ChunkBuilder>, world::SectionPosHash> sections_{};
- std::unordered_map<world::SectionPos, std::unique_ptr<chunk::TerrainRegion>, world::SectionPosHash> regions_{};
+ std::unordered_map<world::ColumnPos, world::SectionColumn, world::ColumnPosHash> columns_{};
+ world::RegionMap regions_{};
  std::vector<chunk::ChunkBuilder*> regularVisibleSections_{};
  std::vector<chunk::ChunkBuilder*> scopedVisibleSections_{};
- std::vector<chunk::ChunkBuilder*> sectionsByPriority_{};
  bool scopedCull_ = false;
- std::deque<world::SectionPos> pendingColumns_{};
- std::unordered_set<world::SectionPos, world::SectionPosHash> pendingSet_{};
- std::unordered_set<world::SectionPos, world::SectionPosHash> pendingBorderRefresh_{};
- std::unordered_set<world::SectionPos, world::SectionPosHash> pendingLit_{};
- int centerSectionX_ = std::numeric_limits<int>::min();
- int centerSectionZ_ = std::numeric_limits<int>::min();
+ std::deque<world::ColumnPos> pendingColumns_{};
+ std::unordered_set<world::ColumnPos, world::ColumnPosHash> pendingSet_{};
+ std::unordered_set<world::ColumnPos, world::ColumnPosHash> pendingBorderRefresh_{};
+ std::unordered_set<world::ColumnPos, world::ColumnPosHash> pendingLit_{};
  int lastViewDistance = -1;
- float lastRenderScale = -1.0f;
  int chunkCount = 0;
  int invisibleChunkCount = 0;
  int compiledChunkCount = 0;
  int emptyChunkCount = 0;
+ int builtChunkCount = 0;
+ int visibleBuiltChunkCount = 0;
+ int dirtyChunkCount = 0;
+ int inFlightChunkCount = 0;
+ int lightingPendingChunkCount = 0;
  int debugCountCooldown_ = 0;
  // One stamp for the whole cull: the occlusion walk and the frustum answer are
  // recorded on the same pass over the same sections, so two counters could only
  // ever disagree.
  int frustumStamp_ = 0;
- std::vector<chunk::ChunkBuilder*> occlusionQueue_{};
- int meshOrderStamp_ = 0;
- bool sectionsChanged_ = true;
+  std::vector<world::OcclusionQueueEntry> occlusionQueue_{};
 };
 } // namespace net::minecraft::client::render

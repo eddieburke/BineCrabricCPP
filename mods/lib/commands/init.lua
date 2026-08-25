@@ -54,22 +54,22 @@ local function split(message)
   return args
 end
 
-local function dispatch(event)
-  if event.canceled == true or event.remote == true then
-    return event
+local function execute(message, event)
+  if event ~= nil and (event.canceled == true or event.remote == true) then
+    return false
   end
-  local message = event.message or ""
+  message = message or ""
   if message:sub(1, 1) ~= "/" then
-    return event
+    return false
   end
   local args = split(message:sub(2))
   if #args == 0 then
-    return event
+    return false
   end
   local name = args[1]:lower()
   local entry = registry[name]
   if entry == nil then
-    return event
+    return false
   end
   table.remove(args, 1)
   local context = {
@@ -77,7 +77,7 @@ local function dispatch(event)
     args = args,
     raw = message,
     rest = message:sub(2):match("^%S+%s*(.-)%s*$") or "",
-    event = event,
+    event = event or {},
     entry = entry,
     reply = commands.reply,
   }
@@ -88,7 +88,13 @@ local function dispatch(event)
   if not ok then
     commands.reply(commands.RED .. tostring(err):gsub("^.-:%d+:%s*", ""))
   end
-  event.canceled = true
+  return true
+end
+
+local function dispatch(event)
+  if execute(event.message, event) then
+    event.canceled = true
+  end
   return event
 end
 
@@ -104,7 +110,7 @@ function commands.register(spec)
   assert(type(spec) == "table", "commands.register expects a table")
   assert(type(spec.run) == "function", "commands.register expects run to be a function")
   local name = tostring(spec.name or ""):lower()
-  assert(name:match("^[%a?][%w_%-]*$") ~= nil, "commands.register expects a name")
+  assert(name:match("^/?[%a?][%w_%-]*$") ~= nil, "commands.register expects a name")
   local entry = {
     name = name,
     params = spec.params or "",
@@ -120,6 +126,25 @@ function commands.register(spec)
     registry[tostring(alias):lower()] = entry
   end
   commands.install()
+  return true
+end
+
+function commands.execute(message, event)
+  return execute(message, event)
+end
+
+function commands.unregister(name)
+  name = tostring(name or ""):lower()
+  if registry[name] == nil then
+    return false
+  end
+  registry[name] = nil
+  for index, value in ipairs(order) do
+    if value == name then
+      table.remove(order, index)
+      break
+    end
+  end
   return true
 end
 

@@ -16,6 +16,7 @@
 #include "net/minecraft/client/render/TextureResolve.hpp"
 #include "net/minecraft/client/render/block/BlockFaceLighting.hpp"
 #include "net/minecraft/client/render/block/BlockRenderManager.hpp"
+#include "net/minecraft/client/render/block/BlockRenderType.hpp"
 #include "net/minecraft/client/render/item/ItemModelRenderer.hpp"
 #include "net/minecraft/item/ItemStack.hpp"
 #include "net/minecraft/mod/lua/LuaBlockRegistry.hpp"
@@ -42,14 +43,11 @@
 namespace net::minecraft::mod::model {
 namespace core = net::minecraft::client::render::core;
 namespace {
-constexpr int kFaceOffsets[kModelFaceCount][3] = {
-    {0, -1, 0},
-    {0, 1, 0},
-    {0, 0, -1},
-    {0, 0, 1},
-    {-1, 0, 0},
-    {1, 0, 0},
-};
+// Model faces are numbered the same way the block renderers number theirs, and this
+// file hands `quad.cullFace` straight to sampleCubeFaceCorners -- so it has to be the
+// same table, not a copy of it.
+using client::render::block::kFaceOffsets;
+static_assert(kModelFaceCount == 6, "model faces and block faces must be the same six");
 struct ModelStore {
  std::mutex mutex;
  std::vector<std::unique_ptr<const BakedModel>> models;

@@ -23,12 +23,6 @@ class LightingEngine {
  struct DirtyRegion {
   int minX, minY, minZ, maxX, maxY, maxZ;
  };
- struct TraceStats {
-  std::size_t stagedWork = 0;
-  std::size_t pendingWork = 0;
-  std::size_t pendingRegions = 0;
-  std::size_t publishedRegions = 0;
- };
  explicit LightingEngine(world::light::UnifiedLightRegistry& registry);
  ~LightingEngine() {
   stop();
@@ -51,7 +45,6 @@ class LightingEngine {
  void unregisterChunk(Chunk* chunk);
  [[nodiscard]] std::vector<DirtyRegion> drainDirtyRegions(std::size_t maxRegions);
  [[nodiscard]] bool hasDirtyRegions() const;
- [[nodiscard]] TraceStats traceStats() const;
  [[nodiscard]] bool busy() const noexcept {
   return pendingCount_.load(std::memory_order_relaxed) + stagedCount_.load(std::memory_order_relaxed) != 0;
  }

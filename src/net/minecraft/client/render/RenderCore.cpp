@@ -9,7 +9,6 @@
 #include <vector>
 #include "net/minecraft/block/material/Material.hpp"
 #include "net/minecraft/client/Minecraft.hpp"
-#include "net/minecraft/client/debug/VTuneTrace.hpp"
 #include "net/minecraft/client/gl/GLCore.hpp"
 #include "net/minecraft/client/gl/GlConstants.hpp"
 #include "net/minecraft/client/gl/GlResource.hpp"
@@ -196,8 +195,6 @@ bool ensureFullscreenResources() {
 void drawFullscreenTriangle() {
  gl::GLCore::bindVertexArray(g_fullscreenVao.handle());
  ::glDrawArrays(static_cast<GLenum>(0x0004), 0, 3);
- VT_TRACE_COUNTER("DrawCalls", 1);
- VT_TRACE_COUNTER("DrawVertices", 3);
  gl::GLCore::bindVertexArray(0);
  invalidateAttribCache();
 }
@@ -508,8 +505,6 @@ void submit(const RenderPass& pass) {
   if(mode == 0x000E && gl::GLCore::patchParameteri != nullptr) gl::GLCore::patchParameteri(0x8E72, 3);
   ::glDrawArrays(static_cast<GLenum>(mode), 0, static_cast<GLsizei>(pass.vertexCount));
  }
- VT_TRACE_COUNTER("DrawCalls", 1);
- VT_TRACE_COUNTER("DrawVertices", pass.vertexCount);
 }
 void submitIndexedQuads(const RenderPass& pass, unsigned indexBuffer, int indexCount) {
  if(!g_drawEnabled || !ensureReady() || pass.vertexCount == 0 || indexCount == 0 || pass.buffer == 0) {
@@ -528,8 +523,6 @@ void submitIndexedQuads(const RenderPass& pass, unsigned indexBuffer, int indexC
  constexpr unsigned kElementArrayBuffer = 0x8893;
  gl::GLCore::bindBuffer(kElementArrayBuffer, indexBuffer);
  ::glDrawElements(0x0004, indexCount, 0x1405, nullptr); // GL_TRIANGLES, GL_UNSIGNED_INT
- VT_TRACE_COUNTER("DrawCalls", 1);
- VT_TRACE_COUNTER("DrawVertices", static_cast<std::uint64_t>(indexCount));
 }
 bool configureIndexedVao(unsigned vao,
                          unsigned vertexBuffer,
@@ -599,9 +592,6 @@ int submitIndexedQuadsBatch(const RenderPass& pass,
  if(mode == 0x000E && gl::GLCore::patchParameteri != nullptr) {
   gl::GLCore::patchParameteri(0x8E72, 3);
  }
- // Sub-batches vs draw calls says which path ran: the multi-draw collapses a
- // whole region into one call, the fallback issues one per section.
- VT_TRACE_COUNTER("DrawSubBatches", static_cast<std::uint64_t>(indexCounts.size()));
  int submitted = 0;
  {
   if(gl::GLCore::multiDrawElementsBaseVertex != nullptr && indexCounts.size() > 1) {
@@ -621,16 +611,13 @@ int submitIndexedQuadsBatch(const RenderPass& pass,
    submitted = static_cast<int>(indexCounts.size());
   }
  }
- gl::GLCore::bindVertexArray(0);
- if(submitted > 0) {
-  std::uint64_t vertices = 0;
-  for(const int count : indexCounts) {
-   vertices += static_cast<std::uint64_t>(std::max(0, count));
-  }
-  VT_TRACE_COUNTER("DrawCalls", static_cast<std::uint64_t>(submitted));
-  VT_TRACE_COUNTER("DrawVertices", vertices);
- }
  return submitted;
+}
+void unbindVertexArray() {
+ if(gl::GLCore::vaoSupported && gl::GLCore::bindVertexArray != nullptr) {
+  gl::GLCore::bindVertexArray(0);
+ }
+ g_attribCache = AttribCache{};
 }
 void setActiveProgram(ShaderProgram* program, std::optional<WorldProgramId> worldProgram) {
  if(g_activeProgram == program && g_activeWorldProgram == worldProgram) {
@@ -1306,7 +1293,6 @@ void bindTexture(int target, int texture) {
   }
  }
  ::glBindTexture(static_cast<unsigned>(target), uTex);
- VT_TRACE_COUNTER("TextureBinds", 1);
 }
 void invalidateTextureBindCache() {
  for(unsigned int& bound : g_gl.boundTextures) {
@@ -1414,12 +1400,10 @@ void getIntegerv(int pname, int* params) {
   if(g_gl.viewportValid) {
    std::memcpy(params, g_gl.viewport, sizeof(int) * 4);
   } else {
-   VT_TRACE_COUNTER("RawGlQueries", 1);
    ::glGetIntegerv(static_cast<unsigned>(pname), params);
   }
   return;
  default:
-  VT_TRACE_COUNTER("RawGlQueries", 1);
   ::glGetIntegerv(static_cast<unsigned>(pname), params);
  }
 }

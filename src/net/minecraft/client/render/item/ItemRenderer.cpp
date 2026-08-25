@@ -100,6 +100,10 @@ void ItemRenderer::renderBlockItemInGui(client::texture::TextureManager& texture
  blockRenderManager.ctx.inventoryColorEnabled = useCustomDisplayColor;
  blockRenderManager.ctx.textureManager = &textureManager;
  blockRenderManager.ctx.faceState.useAo = false;
+ // An icon is lit by enableGuiItemLighting() alone -- no world light reaches the
+ // inventory. render() reads the light off the tessellator, so say fullbright
+ // rather than inheriting whatever the world pass left behind.
+ Tessellator::INSTANCE.light(15.0f, 15.0f);
  blockRenderManager.render(*block, stack.getDamage(), 1.0f);
  blockRenderManager.ctx.textureManager = previousTextureManager;
  blockRenderManager.ctx.inventoryColorEnabled = previousInventoryColorEnabled;

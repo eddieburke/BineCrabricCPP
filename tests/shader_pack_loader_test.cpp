@@ -1796,6 +1796,16 @@ TEST(PackSourcePreparation, CustomProgram120SourcesUseCoreDialect) {
  EXPECT_NE(out.find("in vec3 vaPosition;"), std::string::npos);
  EXPECT_EQ(out.find("chunkOffset"), std::string::npos);
 }
+TEST(PackSourcePreparation, SkyBasicKeepsPackOwnedFog) {
+ net::minecraft::test::installTestGlslSnippets();
+ PackDefinition pack;
+ const std::string source = R"(#version 120
+void main() { gl_FragData[0] = vec4(0.25, 0.5, 0.75, 1.0); }
+)";
+ const std::string out = prepareSource("gbuffers_skybasic", ShaderStage::Fragment, pack, source);
+ EXPECT_EQ(out.find("iris_skyFogVisibility"), std::string::npos);
+ EXPECT_EQ(out.find("projectionMatrixInverse"), std::string::npos);
+}
 TEST(PackSourcePreparation, SynthesizedRasterVertexIsNativeCoreSource) {
  net::minecraft::test::installTestGlslSnippets();
  PackDefinition pack;

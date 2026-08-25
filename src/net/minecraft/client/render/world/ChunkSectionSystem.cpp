@@ -7,7 +7,6 @@
 #include "net/minecraft/client/Minecraft.hpp"
 #include "net/minecraft/client/ClientLog.hpp"
 #include "net/minecraft/client/option/RenderSettings.hpp"
-#include "net/minecraft/client/debug/VTuneTrace.hpp"
 #include "net/minecraft/client/render/RenderCore.hpp"
 #include "net/minecraft/client/render/world/WorldRenderer.hpp"
 #include "net/minecraft/client/render/camera/FrameRenderCamera.hpp"
@@ -22,17 +21,15 @@
 namespace net::minecraft::client::render {
 namespace {
 template <class Fn>
-void forEachSection(
-    std::unordered_map<world::SectionPos, std::unique_ptr<chunk::TerrainRegion>, world::SectionPosHash>& regions,
-    Fn&& fn) {
- for(auto& entry : regions) {
+void forEachSection(const world::RegionMap& regions, Fn&& fn) {
+ for(const auto& entry : regions) {
   for(chunk::ChunkBuilder* chunk : entry.second->sections()) {
    fn(chunk);
   }
  }
 }
 // One plane test per region rejects up to kRegionSectionsX*Y*Z sections at once.
-// The padding matches ChunkBuilder's cullingBox padding so this box conservatively
+// The padding matches ChunkBuilder::kCullPadding so this box conservatively
 // contains every section box inside the region -- reject here and no section in it
 // could have passed.
 [[nodiscard]] net::minecraft::Box regionCullingBox(const chunk::TerrainRegion& region) {
@@ -50,23 +47,18 @@ constexpr int kFaceDirX[6] = {-1, 1, 0, 0, 0, 0};
 constexpr int kFaceDirY[6] = {0, 0, -1, 1, 0, 0};
 constexpr int kFaceDirZ[6] = {0, 0, 0, 0, -1, 1};
 } // namespace
-const net::minecraft::entity::LivingEntity* ChunkSectionSystem::frontierCamera() const {
- if(scene_.camera != nullptr) {
-  if(const auto* living = dynamic_cast<const net::minecraft::entity::LivingEntity*>(scene_.camera)) {
-   return living;
-  }
- }
- return scene_.client != nullptr ? scene_.client->camera : nullptr;
-}
 chunk::ChunkBuilder* ChunkSectionSystem::sectionAt(int sectionX, int sectionY, int sectionZ) {
- const auto it = sections_.find(world::SectionPos{sectionX, sectionY, sectionZ});
- return it == sections_.end() ? nullptr : it->second.get();
+ if(sectionY < 0 || sectionY >= kChunkSectionCountY) {
+  return nullptr;
+ }
+ const auto it = columns_.find(world::ColumnPos{sectionX, sectionZ});
+ return it == columns_.end() ? nullptr : it->second[static_cast<std::size_t>(sectionY)].get();
 }
 void ChunkSectionSystem::enqueueColumn(int sectionX, int sectionZ) {
  if(sectionAt(sectionX, 0, sectionZ) != nullptr) {
   return;
  }
- const world::SectionPos key{sectionX, 0, sectionZ};
+ const world::ColumnPos key{sectionX, sectionZ};
  if(pendingSet_.insert(key).second) {
   pendingColumns_.push_back(key);
  }
@@ -76,21 +68,31 @@ void ChunkSectionSystem::createColumn(int sectionX, int sectionZ) {
     !scene_.world->getChunkSource()->isChunkLoaded(sectionX, sectionZ)) {
   return;
  }
- const bool lightingReady = !pendingLit_.contains(world::SectionPos{sectionX, 0, sectionZ});
- chunk::ChunkBuilder* column[kChunkSectionCountY] = {};
+ const world::ColumnPos key{sectionX, sectionZ};
+ const bool lightingReady = !pendingLit_.contains(key);
+ ChunkSource* source = scene_.world->getChunkSource();
+ Chunk* sourceChunk = source->getChunkIfLoaded(sectionX, sectionZ);
+ if(sourceChunk == nullptr) {
+  return;
+ }
+ world::SectionColumn& column = columns_[key];
  for(int sectionY = 0; sectionY < kChunkSectionCountY; ++sectionY) {
-  const world::SectionPos pos{sectionX, sectionY, sectionZ};
-  if(sections_.contains(pos)) {
+  if(column[static_cast<std::size_t>(sectionY)] != nullptr) {
    continue;
   }
+  const world::SectionPos pos{sectionX, sectionY, sectionZ};
   auto builder = std::make_shared<chunk::ChunkBuilder>(scene_.world,
                                                        scene_.blockEntities,
                                                        sectionX * chunk::kSectionBlocks,
                                                        sectionY * chunk::kSectionBlocks,
-                                                       sectionZ * chunk::kSectionBlocks,
-                                                       chunk::kSectionBlocks);
-  builder->lightingReady = lightingReady;
-  builder->invalidate();
+                                                       sectionZ * chunk::kSectionBlocks);
+  const bool hasBlocks = sourceChunk->sectionHasBlocks(sectionY);
+  builder->lightingReady = lightingReady || !hasBlocks;
+  if(hasBlocks) {
+   builder->invalidate();
+  } else {
+   builder->built = true;
+  }
   chunk::ChunkBuilder* raw = builder.get();
   const world::SectionPos regionPos = world::regionOf(pos);
   auto& region = regions_[regionPos];
@@ -102,20 +104,21 @@ void ChunkSectionSystem::createColumn(int sectionX, int sectionZ) {
   }
   builder->setTerrainRegion(*region);
   region->addSection(raw);
-  column[sectionY] = raw;
-  sections_.emplace(pos, std::move(builder));
-  compilePipeline_->enqueueDirtyChunk(raw);
+  column[static_cast<std::size_t>(sectionY)] = std::move(builder);
+  if(hasBlocks) {
+   compilePipeline_->enqueueDirtyChunk(raw);
+  }
  }
  for(int sectionY = 0; sectionY < kChunkSectionCountY; ++sectionY) {
-  chunk::ChunkBuilder* raw = column[sectionY];
+  chunk::ChunkBuilder* raw = column[static_cast<std::size_t>(sectionY)].get();
   if(raw == nullptr) {
    continue;
   }
   if(sectionY > 0) {
-   raw->neighbors[2] = column[sectionY - 1];
+   raw->neighbors[2] = column[static_cast<std::size_t>(sectionY - 1)].get();
   }
   if(sectionY + 1 < kChunkSectionCountY) {
-   raw->neighbors[3] = column[sectionY + 1];
+   raw->neighbors[3] = column[static_cast<std::size_t>(sectionY + 1)].get();
   }
  }
  constexpr int horizontalFaces[] = {0, 1, 4, 5};
@@ -124,7 +127,7 @@ void ChunkSectionSystem::createColumn(int sectionX, int sectionZ) {
   const int neighborX = sectionX + kFaceDirX[face];
   const int neighborZ = sectionZ + kFaceDirZ[face];
   for(int sectionY = 0; sectionY < kChunkSectionCountY; ++sectionY) {
-   chunk::ChunkBuilder* self = column[sectionY];
+   chunk::ChunkBuilder* self = column[static_cast<std::size_t>(sectionY)].get();
    chunk::ChunkBuilder* neighbor = sectionAt(neighborX, sectionY, neighborZ);
    if(self == nullptr || neighbor == nullptr) {
     continue;
@@ -133,16 +136,20 @@ void ChunkSectionSystem::createColumn(int sectionX, int sectionZ) {
    neighbor->neighbors[otherFace] = self;
   }
  }
- sectionsChanged_ = true;
 }
 void ChunkSectionSystem::removeColumn(int sectionX, int sectionZ) {
+ const auto columnIt = columns_.find(world::ColumnPos{sectionX, sectionZ});
+ if(columnIt == columns_.end()) {
+  return;
+ }
+ const world::SectionColumn column = std::move(columnIt->second);
+ columns_.erase(columnIt);
  for(int sectionY = 0; sectionY < kChunkSectionCountY; ++sectionY) {
-  const world::SectionPos pos{sectionX, sectionY, sectionZ};
-  auto it = sections_.find(pos);
-  if(it == sections_.end()) {
+  const std::shared_ptr<chunk::ChunkBuilder>& section = column[static_cast<std::size_t>(sectionY)];
+  if(section == nullptr) {
    continue;
   }
-  std::shared_ptr<chunk::ChunkBuilder> section = std::move(it->second);
+  const world::SectionPos pos{sectionX, sectionY, sectionZ};
   for(int face = 0; face < 6; ++face) {
    chunk::ChunkBuilder* neighbor = section->neighbors[face];
    if(neighbor != nullptr) {
@@ -150,7 +157,6 @@ void ChunkSectionSystem::removeColumn(int sectionX, int sectionZ) {
     section->neighbors[face] = nullptr;
    }
   }
-  sections_.erase(it);
   for(net::minecraft::block::entity::BlockEntity* be : section->blockEntities_) {
    auto jt = std::find(scene_.blockEntities.begin(), scene_.blockEntities.end(), be);
    if(jt != scene_.blockEntities.end()) {
@@ -167,39 +173,6 @@ void ChunkSectionSystem::removeColumn(int sectionX, int sectionZ) {
   }
  }
 }
-void ChunkSectionSystem::rebuildSectionOrder(const net::minecraft::Vec3d& camPos) {
- ++meshOrderStamp_;
- sectionsByPriority_.clear();
- const int startX = centerSectionX_;
- const int startZ = centerSectionZ_;
- const int startY = std::clamp(MathHelper::floor(camPos.y) >> 4, 0, kChunkSectionCountY - 1);
- chunk::ChunkBuilder* start = sectionAt(startX, startY, startZ);
- if(start == nullptr) {
-  return;
- }
- start->meshOrderStamp = meshOrderStamp_;
- start->meshPriority = 0;
- sectionsByPriority_.push_back(start);
- for(std::size_t head = 0; head < sectionsByPriority_.size(); ++head) {
-  chunk::ChunkBuilder* node = sectionsByPriority_[head];
-  for(int face = 0; face < 6; ++face) {
-   chunk::ChunkBuilder* neighbor = node->neighbors[face];
-   if(neighbor == nullptr || neighbor->meshOrderStamp == meshOrderStamp_) {
-    continue;
-   }
-   neighbor->meshOrderStamp = meshOrderStamp_;
-   neighbor->meshPriority = node->meshPriority + 1;
-   sectionsByPriority_.push_back(neighbor);
-  }
- }
- forEachSection(regions_, [this](chunk::ChunkBuilder* chunk) {
-  if(chunk->meshOrderStamp != meshOrderStamp_) {
-   chunk->meshOrderStamp = meshOrderStamp_;
-   chunk->meshPriority = static_cast<int>(sectionsByPriority_.size());
-   sectionsByPriority_.push_back(chunk);
-  }
- });
-}
 void ChunkSectionSystem::updateDebugCounts() {
  if(!scene_.options->debugHud) {
   debugCountCooldown_ = 0;
@@ -214,28 +187,49 @@ void ChunkSectionSystem::updateDebugCounts() {
  invisibleChunkCount = 0;
  compiledChunkCount = 0;
  emptyChunkCount = 0;
+ builtChunkCount = 0;
+ visibleBuiltChunkCount = 0;
+ dirtyChunkCount = 0;
+ inFlightChunkCount = 0;
+ lightingPendingChunkCount = 0;
  forEachSection(regions_, [this](chunk::ChunkBuilder* chunk) {
   ++chunkCount;
+  if(chunk->built) {
+   ++builtChunkCount;
+  }
+  if(chunk->dirty) {
+   ++dirtyChunkCount;
+  }
+  if(chunk->meshJobInFlight) {
+   ++inFlightChunkCount;
+  }
+  if(!chunk->lightingReady) {
+   ++lightingPendingChunkCount;
+  }
   if(chunk->hasNoGeometry()) {
    ++emptyChunkCount;
   } else if(!chunk->visibleIn(frustumStamp_)) {
    ++invisibleChunkCount;
   } else {
    ++compiledChunkCount;
+   if(chunk->built) {
+    ++visibleBuiltChunkCount;
+   }
   }
  });
 }
 void ChunkSectionSystem::clearSections() {
  compilePipeline_->cancelAll();
- for(auto& entry : sections_) {
-  if(entry.second != nullptr) {
-   compilePipeline_->releaseSection(*entry.second);
+ for(auto& entry : columns_) {
+  for(const std::shared_ptr<chunk::ChunkBuilder>& section : entry.second) {
+   if(section != nullptr) {
+    compilePipeline_->releaseSection(*section);
+   }
   }
  }
- sections_.clear();
+ columns_.clear();
  regions_.clear();
  compilePipeline_->clearDirtyTracking();
- sectionsByPriority_.clear();
  regularVisibleSections_.clear();
  scopedVisibleSections_.clear();
  scopedCull_ = false;
@@ -244,41 +238,6 @@ void ChunkSectionSystem::clearSections() {
  pendingSet_.clear();
  pendingBorderRefresh_.clear();
  pendingLit_.clear();
- centerSectionX_ = std::numeric_limits<int>::min();
- centerSectionZ_ = std::numeric_limits<int>::min();
- sectionsChanged_ = true;
-}
-bool ChunkSectionSystem::updateCameraSection() {
- const auto& frameCam = core::cameraFrame();
- double camX = frameCam.x;
- double camZ = frameCam.z;
- if(camX == 0.0 && camZ == 0.0) {
-  const net::minecraft::entity::LivingEntity* camera = frontierCamera();
-  if(camera == nullptr) {
-   return false;
-  }
-  camX = camera->x;
-  camZ = camera->z;
- }
- const int camSectionX = MathHelper::floor(camX) >> 4;
- const int camSectionZ = MathHelper::floor(camZ) >> 4;
- if(camSectionX == centerSectionX_ && camSectionZ == centerSectionZ_) {
-  return false;
- }
- centerSectionX_ = camSectionX;
- centerSectionZ_ = camSectionZ;
- return true;
-}
-void ChunkSectionSystem::updateProfileMetrics(bool shadowPass) {
- if(shadowPass) {
-  VT_TRACE_COUNTER("ShadowSectionsVisible", visibleSections().size());
-  return;
- }
- VT_TRACE_COUNTER("ChunkColumnsPending", pendingColumns_.size());
- VT_TRACE_COUNTER("LightingColumnsPending", pendingLit_.size());
- VT_TRACE_COUNTER("BorderRefreshColumnsPending", pendingBorderRefresh_.size());
- VT_TRACE_COUNTER("ChunkSectionsResident", sections_.size());
- VT_TRACE_COUNTER("ChunkSectionsVisible", visibleSections().size());
 }
 void ChunkSectionSystem::drainPendingColumns() {
  if(scene_.world == nullptr) {
@@ -288,7 +247,7 @@ void ChunkSectionSystem::drainPendingColumns() {
      net::minecraft::util::concurrent::FrameBudget::fromSharedMs(2, 1);
  std::size_t inspected = 0;
  while(!pendingColumns_.empty() && budget.hasRemaining(static_cast<int>(inspected))) {
-  const world::SectionPos col = pendingColumns_.front();
+  const world::ColumnPos col = pendingColumns_.front();
   pendingColumns_.pop_front();
   pendingSet_.erase(col);
   ++inspected;
@@ -303,8 +262,7 @@ void ChunkSectionSystem::drainPendingColumns() {
 }
 void ChunkSectionSystem::reloadIfViewDistanceChanged() {
  const net::minecraft::client::option::GameOptions& opts = *scene_.options;
- const option::RenderSettings& resolved = *scene_.settings;
- if(opts.viewDistance != lastViewDistance || resolved.renderScale != lastRenderScale) {
+ if(opts.viewDistance != lastViewDistance) {
   if(scene_.reloadRequested) {
    scene_.reloadRequested();
   }
@@ -312,16 +270,10 @@ void ChunkSectionSystem::reloadIfViewDistanceChanged() {
 }
 void ChunkSectionSystem::cullChunks(Frustum* culler, bool updateGraph) {
  const FrameRenderCamera& renderCamera = core::cameraFrame();
- VT_TRACE_EVENT(renderCamera.shadowPass ? "terrain/shadow_cull" : "terrain/view_cull");
  const net::minecraft::Vec3d camPos = WorldRenderer::sectionOrigin();
  if(updateGraph) {
   reloadIfViewDistanceChanged();
-  const bool cameraSectionChanged = updateCameraSection();
   drainPendingColumns();
-  if(cameraSectionChanged || sectionsChanged_) {
-   sectionsChanged_ = false;
-   rebuildSectionOrder(camPos);
-  }
  }
  std::vector<chunk::ChunkBuilder*>& visibleSections = currentVisibleSections();
  visibleSections.clear();
@@ -339,12 +291,11 @@ void ChunkSectionSystem::cullChunks(Frustum* culler, bool updateGraph) {
     if(chunk->hasNoGeometry()) {
      continue;
     }
-    if(shadowFrustum == nullptr || shadowFrustum->isVisible(chunk->cullingBox)) {
+    if(shadowFrustum == nullptr || shadowFrustum->isVisible(chunk->cullingBounds())) {
      visibleSections.push_back(chunk);
     }
    }
   }
-  updateProfileMetrics(true);
   return;
  }
  if(culler == nullptr || !scene_.settings->frustumCulling) {
@@ -355,20 +306,9 @@ void ChunkSectionSystem::cullChunks(Frustum* culler, bool updateGraph) {
    }
   });
  } else if(!scene_.settings->occlusionCulling || !applyOcclusionCulling(*culler, camPos, stamp)) {
-  for(auto& entry : regions_) {
-   chunk::TerrainRegion& region = *entry.second;
-   if(!culler->isVisible(regionCullingBox(region))) {
-    continue;
-   }
-   for(chunk::ChunkBuilder* chunk : region.sections()) {
-    if(chunk->updateFrustum(*culler, stamp) && !chunk->hasNoGeometry()) {
-     visibleSections.push_back(chunk);
-    }
-   }
-  }
+  world::cullByFrustum(regions_, *culler, stamp, visibleSections);
  }
  updateDebugCounts();
- updateProfileMetrics(false);
 }
 bool ChunkSectionSystem::applyOcclusionCulling(const Frustum& culler,
                                               const net::minecraft::Vec3d& camPos,
@@ -380,41 +320,15 @@ bool ChunkSectionSystem::applyOcclusionCulling(const Frustum& culler,
  if(start == nullptr) {
   return false;
  }
- std::vector<chunk::ChunkBuilder*>& visibleSections = currentVisibleSections();
- occlusionQueue_.clear();
- // The camera's own section seeds the walk unconditionally: the eye is inside it,
- // so a plane test on it decides nothing and failing it would cull the world.
- start->occlusion.enter(stamp, -1);
- start->visibleStamp = stamp;
- occlusionQueue_.push_back(start);
- for(std::size_t head = 0; head < occlusionQueue_.size(); ++head) {
-  chunk::ChunkBuilder* node = occlusionQueue_[head];
-  if(!node->hasNoGeometry()) {
-   visibleSections.push_back(node);
-  }
-  for(int face = 0; face < 6; ++face) {
-   if(!node->occlusion.connects(face, node->built)) {
-    continue;
-   }
-   chunk::ChunkBuilder* neighbor = node->neighbors[face];
-   if(neighbor == nullptr || neighbor->occlusion.visitedIn(stamp)) {
-    continue;
-   }
-   // Mark visited even when culled: the plane test does not depend on which face
-   // we arrived through, so reaching it again from another face cannot change the
-   // answer and would only re-test it.
-   neighbor->occlusion.enter(stamp, face ^ 1);
-   if(neighbor->updateFrustum(culler, stamp)) {
-    occlusionQueue_.push_back(neighbor);
-   }
-  }
- }
+ world::cullByOcclusionWalk(start, culler, stamp, occlusionQueue_, currentVisibleSections());
  return true;
 }
 std::string ChunkSectionSystem::getChunkDebugInfo() const {
- return "Chunks drawn: " + std::to_string(compiledChunkCount) + " of " + std::to_string(chunkCount) +
-        ". Frustum-culled: " + std::to_string(invisibleChunkCount) + ", Empty: " +
-        std::to_string(emptyChunkCount) + ", Draw calls: " +
+ return "Chunks: vis " + std::to_string(compiledChunkCount) + "/" + std::to_string(chunkCount) +
+        ", built " + std::to_string(visibleBuiltChunkCount) + "/" + std::to_string(builtChunkCount) +
+        ", dirty " + std::to_string(dirtyChunkCount) + ", flight " + std::to_string(inFlightChunkCount) +
+        ", light " + std::to_string(lightingPendingChunkCount) + ", cull " +
+        std::to_string(invisibleChunkCount) + ", empty " + std::to_string(emptyChunkCount) + ", calls " +
         std::to_string(chunk::ChunkBuilder::frameDrawCalls);
 }
 void ChunkSectionSystem::markDirty(int minX, int minY, int minZ, int maxX, int maxY, int maxZ) {
@@ -446,47 +360,50 @@ void ChunkSectionSystem::chunkAvailable(int chunkX, int chunkZ) {
   return;
  }
  enqueueColumn(chunkX, chunkZ);
- pendingLit_.insert(world::SectionPos{chunkX, 0, chunkZ});
- pendingBorderRefresh_.insert(world::SectionPos{chunkX, 0, chunkZ});
+ const world::ColumnPos key{chunkX, chunkZ};
+ pendingLit_.insert(key);
+ pendingBorderRefresh_.insert(key);
 }
 void ChunkSectionSystem::chunkUnloaded(int chunkX, int chunkZ) {
  // Must erase: a stale key makes enqueueColumn a no-op when the chunk reloads.
- pendingSet_.erase(world::SectionPos{chunkX, 0, chunkZ});
- pendingLit_.erase(world::SectionPos{chunkX, 0, chunkZ});
- pendingBorderRefresh_.erase(world::SectionPos{chunkX, 0, chunkZ});
+ const world::ColumnPos key{chunkX, chunkZ};
+ pendingSet_.erase(key);
+ pendingLit_.erase(key);
+ pendingBorderRefresh_.erase(key);
  removeColumn(chunkX, chunkZ);
 }
+void ChunkSectionSystem::lightColumn(world::SectionColumn& column) {
+ for(const std::shared_ptr<chunk::ChunkBuilder>& section : column) {
+  if(section == nullptr) {
+   continue;
+  }
+  section->lightingReady = true;
+  if(section->dirty && !section->meshJobInFlight) {
+   compilePipeline_->enqueueDirtyChunk(section.get());
+  }
+ }
+}
 void ChunkSectionSystem::markChunkColumnLit(int chunkX, int chunkZ) {
- pendingLit_.erase(world::SectionPos{chunkX, 0, chunkZ});
- for(int sectionY = 0; sectionY < kChunkSectionCountY; ++sectionY) {
-  chunk::ChunkBuilder* section = sectionAt(chunkX, sectionY, chunkZ);
-  if(section != nullptr) {
-   section->lightingReady = true;
-  }
-  if(section != nullptr && section->dirty && !section->meshJobInFlight) {
-   compilePipeline_->enqueueDirtyChunk(section);
-  }
+ // A column enters pendingLit_ once, in chunkAvailable, and leaves it the first time its
+ // lighting lands; anything dirtied after that is re-enqueued by setBlocksDirty instead.
+ if(pendingLit_.erase(world::ColumnPos{chunkX, chunkZ}) == 0) {
+  return;
+ }
+ const auto it = columns_.find(world::ColumnPos{chunkX, chunkZ});
+ if(it != columns_.end()) {
+  lightColumn(it->second);
  }
 }
 void ChunkSectionSystem::markAllChunksLit() {
  if(pendingLit_.empty()) {
   return;
  }
- std::vector<world::SectionPos> columns;
- columns.reserve(pendingLit_.size());
- for(const world::SectionPos& column : pendingLit_) {
-  columns.push_back(column);
- }
+ const std::unordered_set<world::ColumnPos, world::ColumnPosHash> pending = std::move(pendingLit_);
  pendingLit_.clear();
- for(const world::SectionPos& column : columns) {
-  for(int sectionY = 0; sectionY < kChunkSectionCountY; ++sectionY) {
-   chunk::ChunkBuilder* section = sectionAt(column.x, sectionY, column.z);
-   if(section != nullptr) {
-    section->lightingReady = true;
-   }
-   if(section != nullptr && section->dirty && !section->meshJobInFlight) {
-    compilePipeline_->enqueueDirtyChunk(section);
-   }
+ for(const world::ColumnPos& column : pending) {
+  const auto it = columns_.find(column);
+  if(it != columns_.end()) {
+   lightColumn(it->second);
   }
  }
 }
@@ -497,7 +414,7 @@ void ChunkSectionSystem::drainBorderRefresh() {
  static constexpr int kNeighborX[8] = {-1, 1, 0, 0, -1, -1, 1, 1};
  static constexpr int kNeighborZ[8] = {0, 0, -1, 1, -1, 1, -1, 1};
  for(auto columnIt = pendingBorderRefresh_.begin(); columnIt != pendingBorderRefresh_.end();) {
-  const world::SectionPos column = *columnIt;
+  const world::ColumnPos column = *columnIt;
   if(pendingLit_.contains(column)) {
    ++columnIt;
    continue;
@@ -506,8 +423,12 @@ void ChunkSectionSystem::drainBorderRefresh() {
    const int neighborX = column.x + kNeighborX[dir];
    const int neighborZ = column.z + kNeighborZ[dir];
    for(int sectionY = 0; sectionY < kChunkSectionCountY; ++sectionY) {
-    chunk::ChunkBuilder* section = sectionAt(neighborX, sectionY, neighborZ);
+   chunk::ChunkBuilder* section = sectionAt(neighborX, sectionY, neighborZ);
     if(section == nullptr || (!section->built && !section->meshJobInFlight)) {
+     continue;
+    }
+    Chunk* sourceChunk = scene_.world->getChunkSource()->getChunkIfLoaded(neighborX, neighborZ);
+    if(sourceChunk != nullptr && !sourceChunk->sectionHasBlocks(sectionY) && section->hasNoGeometry()) {
      continue;
     }
     section->invalidate();
@@ -521,13 +442,14 @@ void ChunkSectionSystem::setBlocksDirty(int minX, int minY, int minZ, int maxX, 
  markDirty(minX - 1, minY - 1, minZ - 1, maxX + 1, maxY + 1, maxZ + 1);
 }
 void ChunkSectionSystem::notifyAmbientDarknessChanged() {
- for(auto& entry : sections_) {
-  chunk::ChunkBuilder& chunk = *entry.second;
-  if(!chunk.hasSkyLight || chunk.dirty) {
-   continue;
+ for(auto& entry : columns_) {
+  for(const std::shared_ptr<chunk::ChunkBuilder>& section : entry.second) {
+   if(section == nullptr || !section->hasSkyLight || section->dirty) {
+    continue;
+   }
+   section->invalidate();
+   compilePipeline_->enqueueDirtyChunk(section.get());
   }
-  chunk.invalidate();
-  compilePipeline_->enqueueDirtyChunk(&chunk);
  }
 }
 void ChunkSectionSystem::updateBlockEntity(int x,
@@ -536,4 +458,58 @@ void ChunkSectionSystem::updateBlockEntity(int x,
                                            net::minecraft::block::entity::BlockEntity* blockEntity) {
  markDirty(x - 1, y - 1, z - 1, x + 1, y + 1, z + 1);
 }
+namespace world {
+void cullByFrustum(const RegionMap& regions,
+                   const Frustum& culler,
+                   int stamp,
+                   std::vector<chunk::ChunkBuilder*>& out) {
+ for(const auto& entry : regions) {
+  chunk::TerrainRegion& region = *entry.second;
+  if(!culler.isVisible(regionCullingBox(region))) {
+   continue;
+  }
+  for(chunk::ChunkBuilder* chunk : region.sections()) {
+   if(chunk->updateFrustum(culler, stamp) && !chunk->hasNoGeometry()) {
+    out.push_back(chunk);
+   }
+  }
+ }
+}
+void cullByOcclusionWalk(chunk::ChunkBuilder* start,
+                         const Frustum& culler,
+                         int stamp,
+                         std::vector<OcclusionQueueEntry>& queue,
+                         std::vector<chunk::ChunkBuilder*>& out) {
+ queue.clear();
+ // The camera's own section seeds the walk unconditionally: the eye is inside it,
+ // so a plane test on it decides nothing and failing it would cull the world.
+ (void)start->occlusion.enter(stamp, -1);
+ start->visibleStamp = stamp;
+ queue.push_back({start, -1});
+ for(std::size_t head = 0; head < queue.size(); ++head) {
+  const OcclusionQueueEntry entry = queue[head];
+  chunk::ChunkBuilder* node = entry.section;
+  if(entry.entryFace < 0 && !node->hasNoGeometry()) {
+   out.push_back(node);
+  }
+  for(int face = 0; face < 6; ++face) {
+   if(!node->occlusion.claimExit(stamp, entry.entryFace, face, node->built)) {
+    continue;
+   }
+   chunk::ChunkBuilder* neighbor = node->neighbors[face];
+   const int neighborEntryFace = face ^ 1;
+   if(neighbor == nullptr || !neighbor->occlusion.enter(stamp, neighborEntryFace)) {
+    continue;
+   }
+   const bool alreadyVisible = neighbor->visibleIn(stamp);
+   if(alreadyVisible || neighbor->updateFrustum(culler, stamp)) {
+    if(!alreadyVisible && !neighbor->hasNoGeometry()) {
+     out.push_back(neighbor);
+    }
+    queue.push_back({neighbor, neighborEntryFace});
+   }
+  }
+ }
+}
+} // namespace world
 } // namespace net::minecraft::client::render

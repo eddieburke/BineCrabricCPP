@@ -13,6 +13,13 @@ class Frustum {
  [[nodiscard]] bool isVisible(const net::minecraft::Box& box) const noexcept {
   return isVisible(box.minX, box.minY, box.minZ, box.maxX, box.maxY, box.maxZ);
  }
+ [[nodiscard]] bool isVisibleIgnoringNearPlane(const net::minecraft::Box& box) const noexcept {
+  constexpr float kPlaneEpsilon = 1.0e-5f;
+  return planes_.intersectsAabbIgnoringPlane(
+      static_cast<float>(box.minX - x_), static_cast<float>(box.minY - y_), static_cast<float>(box.minZ - z_),
+      static_cast<float>(box.maxX - x_), static_cast<float>(box.maxY - y_), static_cast<float>(box.maxZ - z_),
+      kNearPlane, kPlaneEpsilon);
+ }
  [[nodiscard]] bool isVisible(double minX,
                               double minY,
                               double minZ,
@@ -28,6 +35,7 @@ class Frustum {
 
  private:
  static void normalize(float plane[4]);
+ static constexpr std::size_t kNearPlane = 5;
  PlaneSet<6> planes_{};
  double x_ = 0.0;
  double y_ = 0.0;

@@ -23,4 +23,16 @@ inline constexpr int REPEATER = 15;
 inline constexpr int PISTON = 16;
 inline constexpr int PISTON_HEAD = 17;
 } // namespace BlockRenderType
+// The six faces, in the order every render-side `side`/`face` index uses:
+// 0 = -Y (down), 1 = +Y (up), 2 = -Z (east), 3 = +Z (west), 4 = -X (north),
+// 5 = +X (south). Three copies of this table were written out separately -- the
+// surrounding-light sample, the cube face walk and the leaf-shell test -- which is
+// three chances for one of them to disagree about what face 2 means.
+//
+// Note this is NOT the order ChunkSectionSystem's visibility graph uses; that one is
+// -X,+X,-Y,+Y,-Z,+Z and indexes a different thing (section neighbours, not block
+// faces). The two are deliberately separate.
+inline constexpr int kFaceOffsets[6][3] = {
+    {0, -1, 0}, {0, 1, 0}, {0, 0, -1}, {0, 0, 1}, {-1, 0, 0}, {1, 0, 0},
+};
 } // namespace net::minecraft::client::render::block

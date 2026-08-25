@@ -14,14 +14,14 @@ toolchain/*
 .windsurf/
 .opencode/
 
-# Agent run output: loop/debug scratch, VTune collections, handoff state
+# Agent run output: loop/debug scratch, handoff state
 autoresearch/
-# VTune result dirs and their exported reports (scripts/vtune-profile.ps1 writes
-# both into the repo root). Multi-MB per run and meaningless off this machine.
+
+# Stale VTune collections and their exported reports, left in the repo root by the
+# profiling pass that was removed. Multi-MB per run and meaningless off this machine.
 vtune-*/
 vtune-*.tsv
 vtune-*.txt
-
 # Agent-generated instructions
 .github/copilot-instructions.md
 AGENTS.md

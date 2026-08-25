@@ -14,9 +14,8 @@ class World;
 class WorldRegion;
 } // namespace net::minecraft
 #include "net/minecraft/block/Block.hpp"
-namespace net::minecraft::client::render::chunk {
-class RegionSnapshot;
-}
+#include "net/minecraft/client/render/chunk/RegionSnapshot.hpp"
+#include "net/minecraft/world/chunk/Chunk.hpp"
 namespace net::minecraft::client::render::block {
 enum class SideFaceDirection { east,
                                west,
@@ -226,18 +225,87 @@ struct BlockRenderContext {
  // Absolute luminance of the block itself is no longer used to invent relative
  // AO — packs own lighting; C++ writes vanilla corner-averaged light into the
  // per-vertex lightmap coords and keeps the vertex colour tint-only.
+ // Set per block by BlockRenderManager::render; cleared by whichever of
+ // tessellator() / activeTess() comes first.
+ bool surroundingLightPending = false;
  void resolveLightSource();
- void sampleFaceLight(int x, int y, int z);
+ // Typed and inline for the mesher's snapshot: the build has no LTO, so the
+ // out-of-line virtual dispatch these replace was a real call per sample, and the
+ // AO sampler makes dozens per emitted block. Other views take the slow path.
+ [[nodiscard]] int blockIdAt(int x, int y, int z) const {
+  if(lightSnapshot != nullptr) {
+   return lightSnapshot->getBlockId(x, y, z);
+  }
+  return blockView != nullptr ? blockView->getBlockId(x, y, z) : 0;
+ }
+ // `blockIdHere` is the block standing at (x,y,z); it decides whether the sample
+ // spreads to its neighbours. A caller that already read it passes it rather than
+ // making this read it twice.
+ void sampleFaceLight(int x, int y, int z, int blockIdHere = -1) {
+  if(lightSnapshot == nullptr) {
+   sampleFaceLightGeneric(x, y, z);
+   return;
+  }
+  sampleFaceLightWith(
+      x, y, z, blockIdHere < 0 ? lightSnapshot->getBlockId(x, y, z) : blockIdHere,
+      [this](int sampleX, int sampleY, int sampleZ, int& blockLight, int& skyLight) {
+       blockLight = lightSnapshot->getBlockLight(sampleX, sampleY, sampleZ);
+       skyLight = lightSnapshot->getSkyLight(sampleX, sampleY, sampleZ);
+      });
+ }
+ // One body, two light sources: the mesher's snapshot binds it inline above, the
+ // region/world/no-view cases bind it out of line in sampleFaceLightGeneric. Only
+ // the two lines that read the light differ, and they were worth writing twice
+ // exactly once -- as a template argument, not as a second copy of the walk.
+ template <typename Sample>
+ void sampleFaceLightWith(int x, int y, int z, int blockIdHere, Sample&& read) {
+  const auto sample = [&read](int sampleX, int sampleY, int sampleZ, int& blockLight, int& skyLight) {
+   sampleY = sampleY < 0 ? 0 : (sampleY > net::minecraft::Chunk::height - 1 ? net::minecraft::Chunk::height - 1
+                                                                           : sampleY);
+   read(sampleX, sampleY, sampleZ, blockLight, skyLight);
+  };
+  sample(x, y, z, faceBlockLight, faceSkyLight);
+  if(net::minecraft::block::Block::usesNeighborLightSampling(blockIdHere)) {
+   static constexpr int kOffsets[5][3] = {{0, 1, 0}, {1, 0, 0}, {-1, 0, 0}, {0, 0, 1}, {0, 0, -1}};
+   for(const auto& offset : kOffsets) {
+    int blockLight = 0;
+    int skyLight = 0;
+    sample(x + offset[0], y + offset[1], z + offset[2], blockLight, skyLight);
+    faceBlockLight = faceBlockLight < blockLight ? blockLight : faceBlockLight;
+    faceSkyLight = faceSkyLight < skyLight ? skyLight : faceSkyLight;
+   }
+  }
+  faceBlockLight = faceBlockLight < blockEmission ? blockEmission : faceBlockLight;
+ }
+ void sampleFaceLightGeneric(int x, int y, int z);
  // Default for renderers that emit geometry without telling us which face they
  // are on — baked models and mod blocks. A solid block stores no light of its
  // own, so the surfaces take the brightest light reaching them from around it.
  void sampleSurroundingLight(int x, int y, int z);
  // Renderers that emit geometry without a per-face texture still need a
  // tessellator. The context always carries one (see the tess member comment).
- [[nodiscard]] Tessellator& tessellator() const noexcept {
+ // Renderers emitting straight into the tessellator need the block's
+ // surrounding-light default; ones going through activeTess() overwrite it with the
+ // face's own light before their first vertex, so for them its fourteen light reads
+ // were pure waste. Sampled on the first call that can observe it, not before.
+ [[nodiscard]] Tessellator& tessellator() {
+  if(surroundingLightPending) {
+   surroundingLightPending = false;
+   // blockX/Y/Z are the integer coordinates render() was called with.
+   const int x = static_cast<int>(blockX);
+   const int y = static_cast<int>(blockY);
+   const int z = static_cast<int>(blockZ);
+   sampleSurroundingLight(x, y, z);
+   blockLight = faceBlockLight;
+   skyLight = faceSkyLight;
+   tess->blockData(x, y, z, blockEmission, blockLight, skyLight, blockId, blockFluid, blockMetadata);
+  }
   return *tess;
  }
  [[nodiscard]] Tessellator& activeTess(int texture) {
+  // A face light supersedes the surrounding default, exactly as it did when the
+  // default was pushed eagerly and this call overwrote it.
+  surroundingLightPending = false;
   if(modMeshes != nullptr) {
    Tessellator& active = modMeshes->tessFor(texture, *tess);
    active.blockData(blockX, blockY, blockZ, blockEmission, faceBlockLight, faceSkyLight, blockId, blockFluid,

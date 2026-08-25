@@ -8,6 +8,14 @@
 #include "net/minecraft/client/render/VertexAbi.hpp"
 #include "net/minecraft/util/math/Matrix4f.hpp"
 namespace net::minecraft::client::render {
+// Chunk mesh vertex buffers are allocated on a mesh worker by Tessellator::takeMesh and
+// freed on the main thread once TerrainRegion::upload has copied them into the arena, so
+// every section paid a large malloc/free pair that crossed threads. Recycle them instead.
+class VertexBufferPool {
+ public:
+ [[nodiscard]] static std::vector<TessellatorVertex> acquire();
+ static void release(std::vector<TessellatorVertex>&& buffer);
+};
 struct TessellatorMesh {
  std::vector<TessellatorVertex> vertices;
  int mode = 7;
@@ -50,6 +58,16 @@ class Tessellator {
  void color(int rgb);
  void color(int rgb, int a);
  void light(float blockLight, float skyLight);
+ // The light survives draw() the same way the const colour does, so a producer
+ // that draws several parts under one light sets it once. Read back by the
+ // inventory block path, which has no world position to sample light from and
+ // takes whatever the caller established.
+ [[nodiscard]] float blockLight() const noexcept {
+  return blockLight_;
+ }
+ [[nodiscard]] float skyLight() const noexcept {
+  return skyLight_;
+ }
  void normal(float x, float y, float z);
  void blockData(double x,
                 double y,

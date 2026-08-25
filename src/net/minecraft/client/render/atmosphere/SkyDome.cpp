@@ -150,32 +150,33 @@ void drawCelestialQuad(Tessellator& tessellator, const float direction[3], doubl
  tessellator.vertex(center[0] - right[0] - up[0], center[1] - right[1] - up[1],
                     center[2] - right[2] - up[2], u0, 1.0);
 }
-void drawSunMoon(const AtmosphereContext& ctx, float starAlpha, const render::CelestialState& celestial) {
+void drawSun(const AtmosphereContext& ctx, float starAlpha, const render::CelestialState& celestial) {
  Tessellator& tessellator = Tessellator::INSTANCE;
- if(ctx.settings.renderSun) {
-  const core::RenderStageScope stage(core::RenderStage::Sun);
-  if(ctx.textureManager != nullptr) {
-   core::activeTexture(gl::tex::Texture0);
-   ctx.textureManager->bindTexture(ctx.textureManager->getTextureId("/terrain/sun.png"));
-  }
-  tessellator.startQuads();
-  tessellator.color(1.0f, 1.0f, 1.0f, starAlpha);
-  drawCelestialQuad(tessellator, celestial.sunDirectionWorld, 30.0, false);
-  tessellator.draw();
+ const core::RenderStageScope stage(core::RenderStage::Sun);
+ if(ctx.textureManager != nullptr) {
+  core::activeTexture(gl::tex::Texture0);
+  ctx.textureManager->bindTexture(ctx.textureManager->getTextureId("/terrain/sun.png"));
  }
- if(ctx.settings.renderMoon) {
-  const core::RenderStageScope stage(core::RenderStage::Moon);
-  if(ctx.textureManager != nullptr) {
-   core::activeTexture(gl::tex::Texture0);
-   ctx.textureManager->bindTexture(ctx.textureManager->getTextureId("/terrain/moon.png"));
-  }
-  tessellator.startQuads();
-  tessellator.color(1.0f, 1.0f, 1.0f, starAlpha);
-  drawCelestialQuad(tessellator, celestial.moonDirectionWorld, 20.0, true);
-  tessellator.draw();
+ tessellator.startQuads();
+ tessellator.color(1.0f, 1.0f, 1.0f, starAlpha);
+ drawCelestialQuad(tessellator, celestial.sunDirectionWorld, 30.0, false);
+ tessellator.draw();
+}
+void drawMoon(const AtmosphereContext& ctx, float starAlpha, const render::CelestialState& celestial) {
+ Tessellator& tessellator = Tessellator::INSTANCE;
+ const core::RenderStageScope stage(core::RenderStage::Moon);
+ if(ctx.textureManager != nullptr) {
+  core::activeTexture(gl::tex::Texture0);
+  ctx.textureManager->bindTexture(ctx.textureManager->getTextureId("/terrain/moon.png"));
  }
+ tessellator.startQuads();
+ tessellator.color(1.0f, 1.0f, 1.0f, starAlpha);
+ drawCelestialQuad(tessellator, celestial.moonDirectionWorld, 20.0, true);
+ tessellator.draw();
 }
 } // namespace
+void renderSkySun(const AtmosphereContext& ctx, float tickDelta);
+void renderSkyMoon(const AtmosphereContext& ctx, float tickDelta);
 void renderSkyDome(const AtmosphereContext& ctx, float tickDelta) {
  if(ctx.world == nullptr || ctx.world->dimension == nullptr || ctx.camera == nullptr ||
     ctx.world->dimension->isNether) {
@@ -199,6 +200,8 @@ void renderSkyDome(const AtmosphereContext& ctx, float tickDelta) {
  }
  const RenderPassScope skyPass(RenderType::sky());
  core::depthMask(false);
+ core::enableBlend();
+ core::blendFunc(gl::blend::SrcAlpha, gl::blend::One);
  SkyMeshes& meshes = skyMeshes();
  if(ctx.settings.renderSky) {
   core::setConstColor(skyR, skyG, skyB, 1.0f);
@@ -212,10 +215,32 @@ void renderSkyDome(const AtmosphereContext& ctx, float tickDelta) {
    }
   }
  }
- {
-  const RenderPassScope sunMoonPass(RenderType::skyTextured());
-  drawSunMoon(ctx, starAlpha, render::core::celestialState());
+ core::disableBlend();
+ core::depthMask(true);
+ renderSkySun(ctx, tickDelta);
+ renderSkyMoon(ctx, tickDelta);
+}
+void renderSkySun(const AtmosphereContext& ctx, float tickDelta) {
+ if(ctx.world == nullptr || ctx.world->dimension == nullptr || ctx.camera == nullptr ||
+    ctx.world->dimension->isNether || !ctx.settings.renderSun) {
+  return;
  }
+ const RenderPassScope sunPass(RenderType::skyTextured());
+ core::depthMask(false);
+ core::enableBlend();
+ drawSun(ctx, 1.0f - ctx.world->getRainGradient(tickDelta), render::core::celestialState());
+ core::disableBlend();
+ core::depthMask(true);
+}
+void renderSkyMoon(const AtmosphereContext& ctx, float tickDelta) {
+ if(ctx.world == nullptr || ctx.world->dimension == nullptr || ctx.camera == nullptr ||
+    ctx.world->dimension->isNether || !ctx.settings.renderMoon) {
+  return;
+ }
+ const RenderPassScope moonPass(RenderType::skyTextured());
+ core::depthMask(false);
+ core::enableBlend();
+ drawMoon(ctx, 1.0f - ctx.world->getRainGradient(tickDelta), render::core::celestialState());
  core::disableBlend();
  core::depthMask(true);
 }
@@ -239,6 +264,7 @@ void renderSkyStars(const AtmosphereContext& ctx, float, float starBrightness) {
  core::setDrawPose(starPose);
  core::setConstColor(starBrightness, starBrightness, starBrightness, starBrightness);
  Tessellator::drawMesh(meshes.stars, core::constColorPacked());
+ core::disableBlend();
  core::depthMask(true);
 }
 void renderSkyVoid(const AtmosphereContext& ctx, float tickDelta) {

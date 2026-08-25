@@ -45,30 +45,29 @@ class RenderPinGuard {
 // Flood-fills the section's non-opaque cells and records which face pairs a
 // component connects (bit a*6+b). Faces: 0:-X 1:+X 2:-Y 3:+Y 4:-Z 5:+Z.
 std::uint64_t computeVisibilityBits(const RegionSnapshot& snapshot, int minX, int minY, int minZ) {
+ // Column pointers and the baked opacity table, for the same reason the mesh loop
+ // uses them: 4,096 accessor calls and a per-id virtual isOpaque() cache, for an
+ // answer that is one byte load and one table lookup.
  std::array<bool, 4096> opaque{};
- std::array<std::int8_t, 256> opaqueForId{};
- opaqueForId.fill(-1);
  for(int x = 0; x < 16; ++x) {
   for(int z = 0; z < 16; ++z) {
+   const RegionSnapshot::ColumnNeighbourhood columns = snapshot.columnNeighbourhood(minX + x, minZ + z);
+   if(columns.self == nullptr) {
+    continue;
+   }
+   const int base = columns.rowFor(minY);
    for(int y = 0; y < 16; ++y) {
-    const int blockId = snapshot.getBlockId(minX + x, minY + y, minZ + z);
-    bool cellOpaque = false;
-    if(blockId > 0) {
-     std::int8_t& cached = opaqueForId[static_cast<std::size_t>(blockId & 0xFF)];
-     if(cached < 0) {
-      net::minecraft::block::Block* block =
-          net::minecraft::block::Block::BLOCKS[static_cast<std::size_t>(blockId)];
-      cached = (block != nullptr && block->isOpaque()) ? 1 : 0;
-     }
-     cellOpaque = cached == 1;
-    }
-    opaque[static_cast<std::size_t>((y << 8) | (z << 4) | x)] = cellOpaque;
+    opaque[static_cast<std::size_t>((y << 8) | (z << 4) | x)] =
+        net::minecraft::block::Block::BLOCKS_OPAQUE[columns.self[base + y]];
    }
   }
  }
  std::array<bool, 4096> visited{};
  std::uint64_t bits = 0;
- std::vector<int> stack;
+ // One flood fill per section, several sections a frame: the reserve was a heap
+ // allocation and a free every time.
+ static thread_local std::vector<int> stack;
+ stack.clear();
  stack.reserve(1024);
  for(int start = 0; start < 4096; ++start) {
   if(visited[static_cast<std::size_t>(start)] || opaque[static_cast<std::size_t>(start)]) {
@@ -251,12 +250,63 @@ void ChunkBuilder::buildMesh(ChunkMeshJob& job) {
   return;
  }
  job.result.visibilityBits = computeVisibilityBits(snapshot, minX, minY, minZ);
- Tessellator tessellator;
+ // One per mesh worker, not one per job. A fresh Tessellator starts with a 4 KB
+ // buffer and grows it to the section's real size through vector::insert, so every
+ // job paid the whole realloc ladder and then freed the result -- the malloc_base
+ // cost the look-around profile attributed to emitBlockVertex. Reused, the buffer
+ // reaches its high-water mark once and every later job appends into it. start()
+ // resets all of the per-part state below.
+ static thread_local Tessellator tessellator;
  tessellator.setCaptureOnly(true);
  block::BlockRenderManager blockRenderManager(tessellator, &snapshot, job.opts);
  ChunkMeshResult& result = job.result;
+ const TerrainLayerTable layerOf = buildTerrainLayerTable(job.blockRenderLayers);
+ // One walk over the section, bucketing each block into the layer that will draw it,
+ // instead of walking all 4096 once per layer. The old loop re-read every column,
+ // re-tested every enclosure and re-resolved every layer up to four times, and needed
+ // a hasOtherLayer flag to decide when it could stop early. Positions pack into the
+ // low twelve bits; the buckets live on the worker so no job allocates them.
+ static thread_local std::array<std::vector<std::uint16_t>, terrain_layer::Count> buckets;
+ for(std::vector<std::uint16_t>& bucket : buckets) {
+  bucket.clear();
+ }
+ for(int blockX = minX; blockX < maxX; ++blockX) {
+  for(int blockZ = minZ; blockZ < maxZ; ++blockZ) {
+   // One chunk lookup per column instead of one per voxel, and the block ids come
+   // straight off the snapshot's own storage. A column with no self pointer means
+   // the section's chunk is absent from the snapshot, which is the same thing as
+   // every block in it reading back as air.
+   const RegionSnapshot::ColumnNeighbourhood columns = snapshot.columnNeighbourhood(blockX, blockZ);
+   if(columns.self == nullptr) {
+    continue;
+   }
+   for(int blockY = minY; blockY < maxY; ++blockY) {
+    const int row = columns.rowFor(blockY);
+    const int blockId = columns.self[row];
+    if(blockId <= 0) {
+     continue;
+    }
+    net::minecraft::block::Block* block = net::minecraft::block::Block::BLOCKS[static_cast<std::size_t>(blockId)];
+    if(block == nullptr) {
+     continue;
+    }
+    if(Block::BLOCKS_WITH_ENTITY[static_cast<std::size_t>(blockId)]) {
+     result.blockEntityPositions.push_back(net::minecraft::Vec3i{blockX, blockY, blockZ});
+    }
+    if(columns.fullyEnclosed(row)) {
+     continue;
+    }
+    const auto packed = static_cast<std::uint16_t>((((blockX - minX) & 0xF) << 8) |
+                                                   (((blockY - minY) & 0xF) << 4) | ((blockZ - minZ) & 0xF));
+    buckets[static_cast<std::size_t>(layerOf[static_cast<std::size_t>(blockId)])].push_back(packed);
+    // A leaf block owns geometry in the interior layer as well as its own.
+    if(block::hasLeafInteriorFaces(*block, job.opts.leafInteriorFaces)) {
+     buckets[terrain_layer::CutoutInterior].push_back(packed);
+    }
+   }
+  }
+ }
  for(int layer = 0; layer < terrain_layer::Count; ++layer) {
-  bool hasOtherLayer = false;
   bool beganCompile = false;
   bool drewGeometry = false;
   ModMeshCollector modMeshes;
@@ -264,55 +314,31 @@ void ChunkBuilder::buildMesh(ChunkMeshJob& job) {
   modMeshes.chunkOffY = -static_cast<double>(job.y);
   modMeshes.chunkOffZ = -static_cast<double>(job.z);
   blockRenderManager.ctx.modMeshes = &modMeshes;
-  const bool interiorFacePass = layer == terrain_layer::CutoutInterior;
-  blockRenderManager.ctx.interiorFacePass = interiorFacePass;
-  for(int blockX = minX; blockX < maxX; ++blockX) {
-   for(int blockZ = minZ; blockZ < maxZ; ++blockZ) {
-    for(int blockY = minY; blockY < maxY; ++blockY) {
-     const int blockId = snapshot.getBlockId(blockX, blockY, blockZ);
-     if(blockId <= 0) {
-      continue;
-     }
-     net::minecraft::block::Block* block =
-         net::minecraft::block::Block::BLOCKS[static_cast<std::size_t>(blockId)];
-     if(block == nullptr) {
-      continue;
-     }
-     if(layer == 0 && Block::BLOCKS_WITH_ENTITY[static_cast<std::size_t>(blockId)]) {
-      result.blockEntityPositions.push_back(net::minecraft::Vec3i{blockX, blockY, blockZ});
-     }
-     const int blockLayer = resolveTerrainMeshLayer(*block, blockId, job.blockRenderLayers);
-     if(interiorFacePass) {
-      // The interior layer re-runs the leaf blocks the cutout layer already
-      // drew, this time emitting only their leaf<->leaf boundaries.
-      if(!block::hasLeafInteriorFaces(*block, job.opts.leafInteriorFaces)) {
-       continue;
-      }
-     } else if(blockLayer != layer) {
-      hasOtherLayer = true;
-      // A leaf block owns geometry in the interior layer as well as its own,
-      // so the early-out below must not stop before reaching it.
-      continue;
-     } else if(block::hasLeafInteriorFaces(*block, job.opts.leafInteriorFaces)) {
-      hasOtherLayer = true;
-     }
-     if(!beganCompile) {
-      beganCompile = true;
-      tessellator.startQuads();
-      constexpr int kRegionBlocksX = 8 * kSectionBlocks;
-      constexpr int kRegionBlocksY = 4 * kSectionBlocks;
-      constexpr int kRegionBlocksZ = 8 * kSectionBlocks;
-      tessellator.translate(
-          static_cast<double>(-net::minecraft::util::math::MathHelper::floorDiv(job.x, kRegionBlocksX) *
-                              kRegionBlocksX),
-          static_cast<double>(-net::minecraft::util::math::MathHelper::floorDiv(job.y, kRegionBlocksY) *
-                              kRegionBlocksY),
-          static_cast<double>(-net::minecraft::util::math::MathHelper::floorDiv(job.z, kRegionBlocksZ) *
-                              kRegionBlocksZ));
-     }
-     drewGeometry |= blockRenderManager.render(*block, blockX, blockY, blockZ);
-    }
+  blockRenderManager.ctx.interiorFacePass = layer == terrain_layer::CutoutInterior;
+  for(const std::uint16_t packed : buckets[static_cast<std::size_t>(layer)]) {
+   const int blockX = minX + ((packed >> 8) & 0xF);
+   const int blockY = minY + ((packed >> 4) & 0xF);
+   const int blockZ = minZ + (packed & 0xF);
+   net::minecraft::block::Block* block =
+       net::minecraft::block::Block::BLOCKS[static_cast<std::size_t>(snapshot.getBlockId(blockX, blockY, blockZ))];
+   if(block == nullptr) {
+    continue;
    }
+   if(!beganCompile) {
+    beganCompile = true;
+    tessellator.startQuads();
+    constexpr int kRegionBlocksX = 8 * kSectionBlocks;
+    constexpr int kRegionBlocksY = 4 * kSectionBlocks;
+    constexpr int kRegionBlocksZ = 8 * kSectionBlocks;
+    tessellator.translate(
+        static_cast<double>(-net::minecraft::util::math::MathHelper::floorDiv(job.x, kRegionBlocksX) *
+                            kRegionBlocksX),
+        static_cast<double>(-net::minecraft::util::math::MathHelper::floorDiv(job.y, kRegionBlocksY) *
+                            kRegionBlocksY),
+        static_cast<double>(-net::minecraft::util::math::MathHelper::floorDiv(job.z, kRegionBlocksZ) *
+                            kRegionBlocksZ));
+   }
+   drewGeometry |= blockRenderManager.render(*block, blockX, blockY, blockZ);
   }
   if(beganCompile) {
    result.layers[static_cast<std::size_t>(layer)] = tessellator.takeMesh();
@@ -327,16 +353,13 @@ void ChunkBuilder::buildMesh(ChunkMeshJob& job) {
   }
   result.layerEmpty[static_cast<std::size_t>(layer)] =
       !(beganCompile && drewGeometry) && result.modLayers[static_cast<std::size_t>(layer)].empty();
-  if(!hasOtherLayer) {
-   break;
-  }
  }
  result.hasSkyLight = snapshot.sawSkyLight();
 }
 void ChunkBuilder::uploadMesh(ChunkMeshJob& job) {
  ++chunkUpdates;
  for(int layer = 0; layer < terrain_layer::Count; ++layer) {
-  const TessellatorMesh& mesh = job.result.layers[static_cast<std::size_t>(layer)];
+  TessellatorMesh& mesh = job.result.layers[static_cast<std::size_t>(layer)];
   renderLayerEmpty[static_cast<std::size_t>(layer)] = job.result.layerEmpty[static_cast<std::size_t>(layer)];
   TerrainAllocation& allocation = terrainAllocations_[static_cast<std::size_t>(layer)];
   if(mesh.empty() || terrainRegion_ == nullptr) {
@@ -346,9 +369,13 @@ void ChunkBuilder::uploadMesh(ChunkMeshJob& job) {
    renderLayerEmpty[static_cast<std::size_t>(layer)] =
        job.result.modLayers[static_cast<std::size_t>(layer)].empty();
   }
+  // The arena owns the vertices now; hand the buffer back rather than letting the job
+  // destructor free it on this thread.
+  mesh.releaseCpuVertices();
  }
  // Resolve block-entity positions against the live world and apply the same
  // joined/removed diff the old synchronous rebuild kept.
+ const bool hadBlockEntities = !blockEntities_.empty();
  std::unordered_set<::net::minecraft::block::entity::BlockEntity*> previousBlockEntities;
  previousBlockEntities.insert(blockEntities_.begin(), blockEntities_.end());
  blockEntities_.clear();
@@ -361,7 +388,7 @@ void ChunkBuilder::uploadMesh(ChunkMeshJob& job) {
    }
   }
  }
- if(currentBlockEntities_ != nullptr) {
+ if(currentBlockEntities_ != nullptr && (hadBlockEntities || !blockEntities_.empty())) {
   std::unordered_set<::net::minecraft::block::entity::BlockEntity*> currentBlockEntities;
   currentBlockEntities.insert(blockEntities_.begin(), blockEntities_.end());
   for(::net::minecraft::block::entity::BlockEntity* blockEntity : currentBlockEntities) {

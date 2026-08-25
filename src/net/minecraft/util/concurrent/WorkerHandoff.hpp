@@ -54,6 +54,11 @@ class WorkerHandoff {
    drained.swap(completed_);
    return drained;
   }
+  void drainCompletedInto(std::vector<std::shared_ptr<Job>>& out) {
+   const std::lock_guard lock(completedMutex_);
+   out.clear();
+   out.swap(completed_);
+  }
   void cancelAll() {
    epoch_.fetch_add(1, std::memory_order::acq_rel);
    if(!poolLifetime_.expired()) pool_->cancelPending(this);

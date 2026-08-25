@@ -20,6 +20,11 @@ struct LightingMeshFixture {
  void load(int x, int z) {
   world.updateChunk(x, z, true);
   world.getChunkSource()->markChunkDataReady(x, z);
+  Chunk& chunk = world.getChunk(x, z);
+  for(int sectionY = 0; sectionY < client::render::kChunkSectionCountY; ++sectionY) {
+   chunk.blocks[static_cast<std::size_t>(sectionY * 16)] = 1;
+  }
+  chunk.populateHeightMapOnly();
  }
 };
 }
@@ -67,10 +72,10 @@ TEST(LightingMeshGate, BorderRefreshWaitsForArrivingColumnLighting) {
  fixture.sections.drainPendingColumns();
  fixture.sections.drainBorderRefresh();
  EXPECT_FALSE(neighbor->dirty);
- EXPECT_TRUE(fixture.sections.pendingBorderRefresh_.contains(client::render::world::SectionPos{1, 0, 0}));
+ EXPECT_TRUE(fixture.sections.pendingBorderRefresh_.contains(client::render::world::ColumnPos{1, 0}));
  fixture.sections.markChunkColumnLit(1, 0);
  fixture.sections.drainBorderRefresh();
  EXPECT_TRUE(neighbor->dirty);
- EXPECT_FALSE(fixture.sections.pendingBorderRefresh_.contains(client::render::world::SectionPos{1, 0, 0}));
+ EXPECT_FALSE(fixture.sections.pendingBorderRefresh_.contains(client::render::world::ColumnPos{1, 0}));
 }
 }

@@ -6,25 +6,6 @@ struct CornerSample {
  float skyLight = 15.0f;
  float occlusion = 1.0f;
 };
-bool edgeTransmitsLight(const net::minecraft::BlockView* blockView, int x, int y, int z);
-float cornerOcclusion(const net::minecraft::BlockView* blockView, int x, int y, int z);
-void readCornerLight(BlockRenderContext& ctx, int x, int y, int z, int& blockLight, int& skyLight);
-float averageCornerChannel(int diagonal, int side, int other, int center);
-void averageCornerLight(BlockRenderContext& ctx,
-                        int dx,
-                        int dy,
-                        int dz,
-                        int sx,
-                        int sy,
-                        int sz,
-                        int ox,
-                        int oy,
-                        int oz,
-                        int cx,
-                        int cy,
-                        int cz,
-                        bool closed,
-                        CornerSample& corner);
 // The four corners of one cube face, indexed GEOMETRICALLY as [uHigh][vHigh] in
 // the face's own plane. Both consumers read the same samples: CubeBlockRenderer
 // reorders them to its face renderers' winding, baked model quads interpolate

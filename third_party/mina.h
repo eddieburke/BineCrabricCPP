@@ -361,11 +361,19 @@ mina_u32    mina_synth_render(mina_synth *s, float *out, mina_u32 frames);
 
 /* ---- Output devices ---- */
 typedef struct mina_device mina_device;
+typedef struct {
+    char backend[16];
+    char id[128];
+    char name[128];
+    mina_bool is_default;
+} mina_output_device;
 /* Backend names: "alsa" "oss" "pulse" "coreaudio" "winmm" "pcspeaker"
  * "adlib" "midi" "wavfile" "null". NULL or "" selects the platform default,
  * falling back through the available backends to "null". */
 mina_device *mina_device_open(const char *backend, mina_u32 sample_rate,
                               mina_u32 channels);
+mina_device *mina_device_open_output(const char *backend, const char *id,
+                                     mina_u32 sample_rate, mina_u32 channels);
 mina_result  mina_device_write(mina_device *d, const float *interleaved,
                                mina_u32 frames);
 void         mina_device_close(mina_device *d);
@@ -374,6 +382,7 @@ const char  *mina_device_backend(const mina_device *d);
 mina_bool    mina_device_is_real(const mina_device *d);
 /* Destination path for the "wavfile" backend; defaults to "mina_out.wav". */
 void         mina_device_set_path(mina_device *d, const char *path);
+mina_u32     mina_device_enumerate(mina_output_device *out, mina_u32 capacity);
 
 /* ---- Codec registry ---- */
 void        mina_codec_register(mina_codec *c);
@@ -381,7 +390,7 @@ mina_codec *mina_codec_first(void);
 
 /* ---- Streaming decode ---- */
 /* A pull-mode decoder over an encoded image held in memory. Where the codec
- * allows it (WAV, MP3, Ogg Vorbis) frames are produced on demand, so a long
+ * allows it (WAV, MP3, Ogg Vorbis, FLAC, AAC) frames are produced on demand, so a long
  * track costs its encoded size plus one decoder's working set instead of the
  * whole decoded stream. Other codecs decode once on open and are served from
  * that buffer; mina_stream_incremental() says which happened. Every stream
@@ -401,6 +410,7 @@ mina_bool    mina_stream_incremental(const mina_stream *s);
 mina_u32     mina_stream_read(mina_stream *s, float *out, mina_u32 frames);
 /* Rewind to the first sample. Returns 0 if the stream could not be reset. */
 int          mina_stream_rewind(mina_stream *s);
+int          mina_stream_seek(mina_stream *s, mina_u64 frame);
 const char  *mina_stream_codec(const mina_stream *s);
 
 /* ---- Playback engine: named voices, mixing, panning, distance ---- */
@@ -410,6 +420,15 @@ const char  *mina_stream_codec(const mina_stream *s);
  * thread drives the control calls. */
 typedef struct mina_engine mina_engine;
 typedef struct mina_clip   mina_clip;
+typedef enum {
+    MINA_BUS_MUSIC,
+    MINA_BUS_AMBIENCE,
+    MINA_BUS_UI,
+    MINA_BUS_SFX,
+    MINA_BUS_RECORDS,
+    MINA_BUS_VOICE,
+    MINA_BUS_COUNT
+} mina_bus;
 
 typedef struct {
     int   loop;          /* restart at the end instead of stopping         */
@@ -419,6 +438,10 @@ typedef struct {
     float min_distance;  /* full volume at or inside this radius           */
     float max_distance;  /* silent at or beyond this radius                */
     float rolloff;       /* attenuation exponent; 1 = linear               */
+    mina_u64 loop_start;
+    mina_u64 loop_end;
+    int bus;
+    int duck_music;
 } mina_source_params;
 /* loop=0 spatial=0 pos=0 min=1 max=16 rolloff=1 */
 void mina_source_params_init(mina_source_params *p);
@@ -437,6 +460,9 @@ mina_u64   mina_clip_frames(const mina_clip *c);
 mina_engine *mina_engine_create(const char *backend, mina_u32 rate,
                                 mina_u32 channels, mina_u32 block,
                                 mina_u32 max_voices);
+mina_engine *mina_engine_create_output(const char *backend, const char *id,
+                                       mina_u32 rate, mina_u32 channels,
+                                       mina_u32 block, mina_u32 max_voices);
 void         mina_engine_destroy(mina_engine *e);
 mina_bool    mina_engine_is_real(const mina_engine *e);
 const char  *mina_engine_backend(const mina_engine *e);
@@ -447,6 +473,9 @@ mina_u32     mina_engine_block(const mina_engine *e);
 void mina_engine_set_lock(mina_engine *e, void (*lock)(void *),
                           void (*unlock)(void *), void *user);
 void mina_engine_set_master(mina_engine *e, float gain);
+void mina_engine_set_bus_gain(mina_engine *e, mina_bus bus, float gain);
+void mina_engine_set_bus_muted(mina_engine *e, mina_bus bus, int muted);
+void mina_engine_set_music_duck(mina_engine *e, float gain);
 void mina_engine_listener(mina_engine *e, float px, float py, float pz,
                           float fx, float fy, float fz,
                           float ux, float uy, float uz);
@@ -474,6 +503,8 @@ int  mina_engine_set_pitch   (mina_engine *e, const char *name, float pitch);
 int  mina_engine_set_position(mina_engine *e, const char *name,
                               float x, float y, float z);
 int  mina_engine_set_loop    (mina_engine *e, const char *name, int loop);
+int  mina_engine_set_loop_region(mina_engine *e, const char *name,
+                                 mina_u64 start_frame, mina_u64 end_frame);
 /* Ramp the voice's volume to `volume` over `seconds`. */
 int  mina_engine_fade(mina_engine *e, const char *name, float volume, float seconds);
 
@@ -483,6 +514,20 @@ mina_u32    mina_engine_render(mina_engine *e, float *out, mina_u32 frames);
 /* Render one block and hand it to the engine's device. MINA_ERR_UNSUPPORTED
  * when the engine was created without one. */
 mina_result mina_engine_pump(mina_engine *e);
+int mina_engine_reopen_output(mina_engine *e, const char *backend, const char *id);
+
+typedef struct {
+    mina_u64 underruns;
+    mina_u64 rejected;
+    mina_u64 dropped;
+    mina_u64 cache_hits;
+    mina_u64 cache_misses;
+    mina_u64 loads;
+    mina_u64 load_milliseconds;
+    mina_u32 active_voices;
+    size_t cache_bytes;
+} mina_engine_telemetry;
+void mina_engine_get_telemetry(const mina_engine *e, mina_engine_telemetry *out);
 
 /* ---- Threads ---- */
 /* 1 when this build has a threading layer (Win32 from Windows 95 on, or
@@ -8585,7 +8630,7 @@ static void mina_alsa_quiet(const char *file, int line, const char *fn,
     (void)file; (void)line; (void)fn; (void)err; (void)fmt;
 }
 
-static void *mina_alsa_open(mina_u32 rate, mina_u32 channels) {
+static void *mina_alsa_open(mina_u32 rate, mina_u32 channels, const char *id) {
     void *h;
     mina_alsa_ctx *c;
     int (*pcm_open)(void **, const char *, int, int);
@@ -8612,7 +8657,7 @@ static void *mina_alsa_open(mina_u32 rate, mina_u32 channels) {
     *(void **)(&c->drain)   = dlsym(h, "snd_pcm_drain");
     *(void **)(&c->close)   = dlsym(h, "snd_pcm_close");
     /* stream 0 = SND_PCM_STREAM_PLAYBACK, mode 0 = blocking */
-    if (pcm_open(&c->pcm, "default", 0, 0) < 0) {
+    if (pcm_open(&c->pcm, (id && id[0] && strcmp(id, "default")) ? id : "default", 0, 0) < 0) {
         dlclose(h); MINA_FREE(c); return NULL;
     }
     /* format 2 = SND_PCM_FORMAT_S16_LE, access 3 = RW_INTERLEAVED */
@@ -8668,7 +8713,7 @@ typedef struct {
     void (*simple_free)(void *);
 } mina_pulse_ctx;
 
-static void *mina_pulse_open(mina_u32 rate, mina_u32 channels) {
+static void *mina_pulse_open(mina_u32 rate, mina_u32 channels, const char *id) {
     void *h;
     mina_pulse_ctx *c;
     void *(*simple_new)(const char *, const char *, int, const char *,
@@ -8695,7 +8740,15 @@ static void *mina_pulse_open(mina_u32 rate, mina_u32 channels) {
     spec.rate = rate;
     spec.channels = (mina_u8)(channels > 255 ? 255 : channels);
     /* direction 1 = PA_STREAM_PLAYBACK */
-    c->pa = simple_new(NULL, "mina", 1, NULL, "playback", &spec, NULL, NULL, &err);
+    c->pa = simple_new(NULL,
+                       "mina",
+                       1,
+                       (id && id[0] && strcmp(id, "default")) ? id : NULL,
+                       "playback",
+                       &spec,
+                       NULL,
+                       NULL,
+                       &err);
     if (!c->pa || !c->simple_write) {
         if (c->pa && c->simple_free) c->simple_free(c->pa);
         dlclose(h); MINA_FREE(c); return NULL;
@@ -8727,7 +8780,8 @@ static void mina_pulse_close(mina_device *d) {
 
 /* OSS: /dev/dsp, configured through ioctl when the constants are known. */
 static int mina_oss_open(mina_device *d) {
-    int fd = open("/dev/dsp", O_WRONLY);
+    int fd = (d->path[0] && strcmp(d->path, "default")) ? open(d->path, O_WRONLY) : -1;
+    if (fd < 0) fd = open("/dev/dsp", O_WRONLY);
     if (fd < 0) fd = open("/dev/dsp0", O_WRONLY);
     if (fd < 0) fd = open("/dev/audio", O_WRONLY);
     if (fd < 0) return 0;
@@ -8790,10 +8844,11 @@ static void mina_winmm_await(mina_winmm_ctx *c, WAVEHDR *hdr) {
     }
 }
 
-static void *mina_winmm_open(mina_u32 rate, mina_u32 channels) {
+static void *mina_winmm_open(mina_u32 rate, mina_u32 channels, const char *id) {
     WAVEFORMATEX wf;
     mina_winmm_ctx *c;
     int i;
+    UINT device;
     c = (mina_winmm_ctx *)MINA_MALLOC(sizeof(mina_winmm_ctx));
     if (!c) return NULL;
     memset(c, 0, sizeof(*c));
@@ -8806,12 +8861,13 @@ static void *mina_winmm_open(mina_u32 rate, mina_u32 channels) {
     wf.nBlockAlign = (WORD)(channels * 2);
     wf.nAvgBytesPerSec = rate * channels * 2;
     c->done = CreateEventA(NULL, FALSE, FALSE, NULL);
-    if (waveOutOpen(&c->h, WAVE_MAPPER, &wf, (DWORD_PTR)c->done, 0,
+    device = (id && id[0] && strcmp(id, "default")) ? (UINT)strtoul(id, NULL, 10) : WAVE_MAPPER;
+    if (waveOutOpen(&c->h, device, &wf, (DWORD_PTR)c->done, 0,
                     c->done ? CALLBACK_EVENT : CALLBACK_NULL) != MMSYSERR_NOERROR) {
         if (c->done) {
             CloseHandle(c->done);
             c->done = NULL;
-            if (waveOutOpen(&c->h, WAVE_MAPPER, &wf, 0, 0,
+            if (waveOutOpen(&c->h, device, &wf, 0, 0,
                             CALLBACK_NULL) != MMSYSERR_NOERROR) {
                 MINA_FREE(c);
                 return NULL;
@@ -8919,12 +8975,15 @@ static OSStatus mina_ca_render(void *ref, AudioUnitRenderActionFlags *flags,
     return noErr;
 }
 
-static void *mina_coreaudio_open(mina_u32 rate, mina_u32 channels) {
+static void *mina_coreaudio_open(mina_u32 rate, mina_u32 channels, const char *id) {
     AudioComponentDescription desc;
     AudioComponent comp;
     AudioStreamBasicDescription fmt;
     AURenderCallbackStruct cb;
     mina_ca_ctx *c;
+    AudioDeviceID device = kAudioObjectUnknown;
+    UInt32 enabled = 1;
+    int selected = id && id[0] && strcmp(id, "default");
 
     c = (mina_ca_ctx *)MINA_MALLOC(sizeof(mina_ca_ctx));
     if (!c) return NULL;
@@ -8936,12 +8995,29 @@ static void *mina_coreaudio_open(mina_u32 rate, mina_u32 channels) {
 
     memset(&desc, 0, sizeof(desc));
     desc.componentType = kAudioUnitType_Output;
-    desc.componentSubType = kAudioUnitSubType_DefaultOutput;
+    desc.componentSubType = selected ? kAudioUnitSubType_HALOutput : kAudioUnitSubType_DefaultOutput;
     desc.componentManufacturer = kAudioUnitManufacturer_Apple;
     comp = AudioComponentFindNext(NULL, &desc);
     if (!comp) { MINA_FREE(c->ring); MINA_FREE(c); return NULL; }
     if (AudioComponentInstanceNew(comp, &c->au) != noErr) {
         MINA_FREE(c->ring); MINA_FREE(c); return NULL;
+    }
+    if (selected) {
+        device = (AudioDeviceID)strtoul(id, NULL, 10);
+        if (device == kAudioObjectUnknown ||
+            AudioUnitSetProperty(c->au,
+                                 kAudioOutputUnitProperty_EnableIO,
+                                 kAudioUnitScope_Output,
+                                 0,
+                                 &enabled,
+                                 sizeof(enabled)) != noErr ||
+            AudioUnitSetProperty(c->au,
+                                 kAudioOutputUnitProperty_CurrentDevice,
+                                 kAudioUnitScope_Global,
+                                 0,
+                                 &device,
+                                 sizeof(device)) != noErr)
+            goto fail;
     }
     memset(&fmt, 0, sizeof(fmt));
     fmt.mSampleRate = (Float64)rate;
@@ -9172,12 +9248,12 @@ static int mina_device_try(mina_device *d, const char *name) {
 
 #ifdef MINA_HAVE_POSIX_AUDIO
     if (!strcmp(name, "alsa")) {
-        d->impl = mina_alsa_open(d->sample_rate, d->channels);
+        d->impl = mina_alsa_open(d->sample_rate, d->channels, d->path);
         if (!d->impl) return 0;
         d->is_real = 1; return 1;
     }
     if (!strcmp(name, "pulse")) {
-        d->impl = mina_pulse_open(d->sample_rate, d->channels);
+        d->impl = mina_pulse_open(d->sample_rate, d->channels, d->path);
         if (!d->impl) return 0;
         d->is_real = 1; return 1;
     }
@@ -9188,14 +9264,14 @@ static int mina_device_try(mina_device *d, const char *name) {
 #endif
 #ifdef MINA_WINDOWS
     if (!strcmp(name, "winmm")) {
-        d->impl = mina_winmm_open(d->sample_rate, d->channels);
+        d->impl = mina_winmm_open(d->sample_rate, d->channels, d->path);
         if (!d->impl) return 0;
         d->is_real = 1; return 1;
     }
 #endif
 #ifdef MINA_MACOS
     if (!strcmp(name, "coreaudio")) {
-        d->impl = mina_coreaudio_open(d->sample_rate, d->channels);
+        d->impl = mina_coreaudio_open(d->sample_rate, d->channels, d->path);
         if (!d->impl) return 0;
         d->is_real = 1; return 1;
     }
@@ -9208,8 +9284,167 @@ static int mina_device_try(mina_device *d, const char *name) {
     return 0;
 }
 
-mina_device *mina_device_open(const char *backend, mina_u32 sample_rate,
-                              mina_u32 channels) {
+static void mina_device_info_put(mina_output_device *out, mina_u32 capacity,
+                                 mina_u32 index, const char *backend,
+                                 const char *id, const char *name, int is_default) {
+    if (!out || index >= capacity) return;
+    memset(&out[index], 0, sizeof(out[index]));
+    mina_strcpy_n(out[index].backend, sizeof(out[index].backend), backend);
+    mina_strcpy_n(out[index].id, sizeof(out[index].id), id);
+    mina_strcpy_n(out[index].name, sizeof(out[index].name), name);
+    out[index].is_default = is_default ? 1 : 0;
+}
+
+#ifdef MINA_MACOS
+static void mina_device_id_u32(char *out, size_t cap, mina_u32 value) {
+    size_t pos = 0, i;
+    if (!out || cap < 2) return;
+    do {
+        if (pos + 1 >= cap) break;
+        out[pos++] = (char)('0' + value % 10u);
+        value /= 10u;
+    } while (value);
+    out[pos] = '\0';
+    for (i = 0; i < pos / 2; i++) {
+        char swap = out[i];
+        out[i] = out[pos - i - 1];
+        out[pos - i - 1] = swap;
+    }
+}
+#endif
+
+#ifdef MINA_HAVE_POSIX_AUDIO
+static mina_u32 mina_alsa_enumerate(mina_output_device *out, mina_u32 capacity,
+                                     mina_u32 index) {
+    void *h;
+    void **hints = NULL;
+    int (*name_hint)(int, const char *, void ***);
+    char *(*get_hint)(const void *, const char *);
+    int (*free_hint)(void **);
+    int i;
+    h = dlopen("libasound.so.2", RTLD_LAZY);
+    if (!h) h = dlopen("libasound.so", RTLD_LAZY);
+    if (!h) return index;
+    *(void **)(&name_hint) = dlsym(h, "snd_device_name_hint");
+    *(void **)(&get_hint) = dlsym(h, "snd_device_name_get_hint");
+    *(void **)(&free_hint) = dlsym(h, "snd_device_name_free_hint");
+    if (!name_hint || !get_hint || !free_hint || name_hint(-1, "pcm", &hints) < 0 || !hints) {
+        dlclose(h);
+        return index;
+    }
+    for (i = 0; hints[i]; i++) {
+        char *name = get_hint(hints[i], "NAME");
+        char *desc = get_hint(hints[i], "DESC");
+        if (name && name[0] && strcmp(name, "default"))
+            mina_device_info_put(out, capacity, index++, "alsa", name,
+                                 desc && desc[0] ? desc : name, 0);
+        free(name);
+        free(desc);
+    }
+    free_hint(hints);
+    dlclose(h);
+    return index;
+}
+#endif
+
+#ifdef MINA_MACOS
+static mina_u32 mina_coreaudio_enumerate(mina_output_device *out, mina_u32 capacity,
+                                          mina_u32 index) {
+    AudioObjectPropertyAddress address;
+    AudioObjectPropertyAddress name_address;
+    AudioDeviceID *devices = NULL;
+    UInt32 size = 0, i, count;
+    address.mSelector = kAudioHardwarePropertyDevices;
+    address.mScope = kAudioObjectPropertyScopeGlobal;
+    address.mElement = kAudioObjectPropertyElementMain;
+    if (AudioObjectGetPropertyDataSize(kAudioObjectSystemObject, &address, 0, NULL, &size) != noErr ||
+        !size || size % sizeof(AudioDeviceID)) return index;
+    devices = (AudioDeviceID *)MINA_MALLOC(size);
+    if (!devices || AudioObjectGetPropertyData(kAudioObjectSystemObject,
+                                               &address,
+                                               0,
+                                               NULL,
+                                               &size,
+                                               devices) != noErr) {
+        MINA_FREE(devices);
+        return index;
+    }
+    count = size / sizeof(AudioDeviceID);
+    name_address.mSelector = kAudioObjectPropertyName;
+    name_address.mScope = kAudioObjectPropertyScopeGlobal;
+    name_address.mElement = kAudioObjectPropertyElementMain;
+    for (i = 0; i < count; i++) {
+        CFStringRef label = NULL;
+        UInt32 name_size = sizeof(label);
+        char id[32];
+        char name[128];
+        name[0] = '\0';
+        mina_device_id_u32(id, sizeof(id), (mina_u32)devices[i]);
+        if (AudioObjectGetPropertyData(devices[i],
+                                       &name_address,
+                                       0,
+                                       NULL,
+                                       &name_size,
+                                       &label) == noErr && label) {
+            CFStringGetCString(label, name, sizeof(name), kCFStringEncodingUTF8);
+            CFRelease(label);
+        }
+        mina_device_info_put(out, capacity, index++, "coreaudio", id,
+                             name[0] ? name : id, 0);
+    }
+    MINA_FREE(devices);
+    return index;
+}
+#endif
+
+mina_u32 mina_device_enumerate(mina_output_device *out, mina_u32 capacity) {
+    mina_u32 n = 0;
+#ifdef MINA_HAVE_POSIX_AUDIO
+    mina_device_info_put(out, capacity, n++, "alsa", "default", "System default (ALSA)", 1);
+    n = mina_alsa_enumerate(out, capacity, n);
+    mina_device_info_put(out, capacity, n++, "pulse", "default", "System default (PulseAudio)", 1);
+    mina_device_info_put(out, capacity, n++, "oss", "/dev/dsp", "System default (OSS)", 1);
+#endif
+#ifdef MINA_MACOS
+    mina_device_info_put(out, capacity, n++, "coreaudio", "default", "System default (CoreAudio)", 1);
+    n = mina_coreaudio_enumerate(out, capacity, n);
+#endif
+#ifdef MINA_WINDOWS
+    {
+        UINT i, count = waveOutGetNumDevs();
+        WAVEOUTCAPSA caps;
+        mina_device_info_put(out, capacity, n++, "winmm", "default", "System default", 1);
+        for (i = 0; i < count; i++) {
+            char id[32];
+            UINT value = i;
+            int pos = 0, digit;
+            do {
+                digit = (int)(value % 10u);
+                id[pos++] = (char)('0' + digit);
+                value /= 10u;
+            } while (value && pos < (int)sizeof(id) - 1);
+            id[pos] = '\0';
+            for (digit = 0; digit < pos / 2; digit++) {
+                char swap = id[digit];
+                id[digit] = id[pos - digit - 1];
+                id[pos - digit - 1] = swap;
+            }
+            if (waveOutGetDevCapsA(i, &caps, sizeof(caps)) == MMSYSERR_NOERROR)
+                mina_device_info_put(out, capacity, n++, "winmm", id, caps.szPname, 0);
+        }
+    }
+#endif
+#ifdef MINA_DOS
+    mina_device_info_put(out, capacity, n++, "pcspeaker", "default", "PC speaker", 1);
+    mina_device_info_put(out, capacity, n++, "adlib", "default", "AdLib", 1);
+    mina_device_info_put(out, capacity, n++, "midi", "default", "MPU-401 MIDI", 1);
+#endif
+    mina_device_info_put(out, capacity, n++, "null", "default", "No output", 1);
+    return n;
+}
+
+mina_device *mina_device_open_output(const char *backend, const char *id,
+                                     mina_u32 sample_rate, mina_u32 channels) {
     static const char *order[] = {
 #if defined(MINA_LINUX) || defined(MINA_BSD) || defined(MINA_UNIX) || \
     defined(MINA_POSIX_GENERIC)
@@ -9233,6 +9468,7 @@ mina_device *mina_device_open(const char *backend, mina_u32 sample_rate,
     d->sample_rate = sample_rate ? sample_rate : 44100u;
     d->channels = channels ? channels : 2u;
     d->fd = -1;
+    if (id) mina_strcpy_n(d->path, sizeof(d->path), id);
 
     if (backend && backend[0]) {
         if (mina_device_try(d, backend)) {
@@ -9252,6 +9488,11 @@ mina_device *mina_device_open(const char *backend, mina_u32 sample_rate,
     mina_strcpy_n(d->backend, sizeof(d->backend), "null");
     d->is_real = 0;
     return d;
+}
+
+mina_device *mina_device_open(const char *backend, mina_u32 sample_rate,
+                              mina_u32 channels) {
+    return mina_device_open_output(backend, NULL, sample_rate, channels);
 }
 
 void mina_device_set_path(mina_device *d, const char *path) {
@@ -9655,6 +9896,8 @@ mina_bool mina_have_threads(void) {
 #define MINA_ST_WAV 1
 #define MINA_ST_MP3 2
 #define MINA_ST_VRB 3
+#define MINA_ST_FLAC 4
+#define MINA_ST_AAC 5
 #define MINA_STREAM_CHUNK 4096u   /* frames one WAV step hands back */
 
 struct mina_stream {
@@ -9674,6 +9917,16 @@ struct mina_stream {
 #ifndef MINA_NO_VORBIS
     mina_ogg_packets ops; mina_vorbis_ctx *v;
     int *vclass; float *vlsp; size_t vpkt; mina_u64 vcount; int vgran;
+#endif
+#ifndef MINA_NO_FLAC
+    mina_flac_si fsi; mina_flac_dec fdec; mina_br fbr;
+#endif
+#ifndef MINA_NO_AAC
+    mina_aac_ctx aac; size_t apos;
+    int am4a, ause64;
+    const mina_u8 *astsz, *astsc, *aoffsets;
+    size_t astsz_n, astsc_n, aoffsets_n, aoff;
+    mina_u32 asample_size, asample_count, asample, asc, achunk, aspcleft;
 #endif
 };
 
@@ -9759,6 +10012,195 @@ static int mina_stream_step_vorbis(mina_stream *s) {
 }
 #endif
 
+#ifndef MINA_NO_FLAC
+static int mina_stream_step_flac(mina_stream *s) {
+    mina_br *b = &s->fbr;
+    const mina_u8 *fstart;
+    mina_u32 b0, b1, bsize_code, srate_code, chan_code, bps_code;
+    mina_u32 blocksize = 0, frame_rate = 0, chans, bps;
+    mina_u32 crc8_read, i, ch;
+    int bsx, srx;
+    size_t frame_bit_start;
+    float *dst;
+    double scale;
+
+    if (mina_br_left(b) < 40 || b->err || (b->pos & 7u) != 0) return 0;
+    fstart = b->p + (b->pos >> 3);
+    frame_bit_start = b->pos;
+    b0 = mina_br_u(b, 8);
+    b1 = mina_br_u(b, 8);
+    if (b0 != 0xFFu || (b1 & 0xFCu) != 0xF8u) {
+        b->pos = frame_bit_start;
+        return 0;
+    }
+
+    bsize_code = mina_br_u(b, 4);
+    srate_code = mina_br_u(b, 4);
+    chan_code = mina_br_u(b, 4);
+    bps_code = mina_br_u(b, 3);
+    if (mina_br_u(b, 1)) return 0;
+    {
+        mina_u32 fb0 = mina_br_u(b, 8);
+        int ulen = mina_utf8_len((mina_u8)fb0);
+        int k;
+        if (ulen < 0) return 0;
+        for (k = 1; k < ulen; k++) {
+            mina_u32 cb = mina_br_u(b, 8);
+            if ((cb & 0xC0u) != 0x80u) return 0;
+        }
+    }
+    bsx = mina_flac_bsize_code(&blocksize, (mina_u8)bsize_code);
+    srx = mina_flac_srate_code(&frame_rate, (mina_u8)srate_code);
+    if (bsx < 0 || srx < 0) return 0;
+    if (bsx == 1) blocksize = mina_br_u(b, 8) + 1u;
+    else if (bsx == 2) blocksize = mina_br_u(b, 16) + 1u;
+    if (srx == 1) frame_rate = mina_br_u(b, 8) * 1000u;
+    else if (srx == 2) {
+        mina_u32 v = mina_br_u(b, 16);
+        frame_rate = (srate_code == 14u) ? v * 10u : v;
+    } else if (srx == 3) frame_rate = s->fsi.sample_rate;
+    crc8_read = mina_br_u(b, 8);
+    if (b->err) return 0;
+    {
+        size_t hdr_bytes = (b->pos >> 3) - (size_t)(fstart - b->p);
+        if (mina_crc8(fstart, hdr_bytes - 1) != (mina_u8)crc8_read) return 0;
+    }
+    if (chan_code < 8) chans = chan_code + 1u;
+    else if (chan_code <= 10) chans = 2u;
+    else return 0;
+    bps = mina_flac_bps((mina_u8)bps_code);
+    if (bps == 0xFFFFFFFFUL) return 0;
+    if (bps == 0) bps = s->fsi.bits_per_sample;
+    if (!blocksize || !frame_rate || chans != s->ch || bps < 4 || bps > 32)
+        return 0;
+    if (!mina_flac_dec_grow(&s->fdec, (size_t)blocksize)) return 0;
+    for (ch = 0; ch < chans; ch++) {
+        mina_u32 ch_bps = bps;
+        if ((chan_code == 8u && ch == 1u) ||
+            (chan_code == 9u && ch == 0u) ||
+            (chan_code == 10u && ch == 1u)) ch_bps = bps + 1u;
+        mina_flac_subframe(b, &s->fdec, blocksize, ch_bps,
+                           s->fdec.chdata + (size_t)ch * s->fdec.blockcap);
+        if (b->err) return 0;
+    }
+    if (chan_code == 8u) {
+        mina_i32 *l = s->fdec.chdata, *side = s->fdec.chdata + s->fdec.blockcap;
+        for (i = 0; i < blocksize; i++)
+            side[i] = mina_u32_to_i32((mina_u32)l[i] - (mina_u32)side[i]);
+    } else if (chan_code == 9u) {
+        mina_i32 *side = s->fdec.chdata, *r = s->fdec.chdata + s->fdec.blockcap;
+        for (i = 0; i < blocksize; i++)
+            side[i] = mina_u32_to_i32((mina_u32)side[i] + (mina_u32)r[i]);
+    } else if (chan_code == 10u) {
+        mina_i32 *mid = s->fdec.chdata, *side = s->fdec.chdata + s->fdec.blockcap;
+        for (i = 0; i < blocksize; i++) {
+            mina_u32 m = (mina_u32)mid[i] << 1;
+            mina_i32 v = side[i];
+            m |= ((mina_u32)v & 1u);
+            mid[i] = mina_shr_i32(mina_u32_to_i32(m + (mina_u32)v), 1);
+            side[i] = mina_shr_i32(mina_u32_to_i32(m - (mina_u32)v), 1);
+        }
+    }
+    mina_br_align(b);
+    {
+        const mina_u8 *after = b->p + (b->pos >> 3);
+        if ((size_t)(after - b->p) + 2 > b->size ||
+            mina_be16(after) != mina_crc16(fstart, (size_t)(after - fstart)))
+            return 0;
+        b->pos += 16;
+    }
+    dst = mina_stream_pend(s, (size_t)blocksize);
+    if (!dst) return 0;
+    scale = 1.0 / (double)((mina_u32)1 << (bps - 1));
+    for (i = 0; i < blocksize; i++)
+        for (ch = 0; ch < chans; ch++)
+            dst[(size_t)i * chans + ch] =
+                (float)((double)s->fdec.chdata[(size_t)ch * s->fdec.blockcap + i] * scale);
+    s->pn = (size_t)blocksize;
+    return 1;
+}
+#endif
+
+#ifndef MINA_NO_AAC
+static int mina_stream_aac_next_m4a(mina_stream *s, const mina_u8 **data,
+                                    size_t *size) {
+    while (s->asample < s->asample_count) {
+        mina_u32 z;
+        if (!s->aspcleft) {
+            mina_u32 spc;
+            while (s->asc + 1 < mina_be32(s->astsc + 4) &&
+                   mina_be32(s->astsc + 8 + (size_t)(s->asc + 1) * 12) <= s->achunk + 1)
+                s->asc++;
+            if (s->achunk >= mina_be32(s->aoffsets + 4) ||
+                mina_be32(s->astsc + 8 + (size_t)s->asc * 12) > s->achunk + 1)
+                return 0;
+            spc = mina_be32(s->astsc + 12 + (size_t)s->asc * 12);
+            if (!spc) return 0;
+            s->aoff = s->ause64 ?
+                mina_u64_size(mina_be64(s->aoffsets + 8 + (size_t)s->achunk * 8), NULL) :
+                (size_t)mina_be32(s->aoffsets + 8 + (size_t)s->achunk * 4);
+            s->achunk++;
+            s->aspcleft = spc;
+        }
+        z = s->asample_size ? s->asample_size :
+            mina_be32(s->astsz + 12 + (size_t)s->asample * 4);
+        if (s->aoff > s->n || z > s->n - s->aoff) return 0;
+        *data = s->d + s->aoff;
+        *size = z;
+        s->aoff += z;
+        s->aspcleft--;
+        s->asample++;
+        return 1;
+    }
+    return 0;
+}
+
+static int mina_stream_step_aac(mina_stream *s) {
+    for (;;) {
+        const mina_u8 *payload;
+        size_t plen;
+        mina_aac_bits bits;
+        mina_u8 raw;
+        float *dst;
+        mina_u32 i, ch;
+        if (s->am4a) {
+            if (!mina_stream_aac_next_m4a(s, &payload, &plen)) return 0;
+        } else {
+            mina_aac_adts h;
+            size_t header_off;
+            if (s->apos + 7 > s->n) return 0;
+            if (mina_aac_adts_frame(s->d, s->n, s->apos, &h) != 0) {
+                s->apos++;
+                continue;
+            }
+            header_off = h.have_crc ? 9u : 7u;
+            payload = s->d + s->apos + header_off;
+            plen = (size_t)h.frame_len - header_off;
+            s->apos += h.frame_len;
+        }
+        if (plen > (size_t)0x7FFFFFFF) {
+            if (s->am4a) return 0;
+            continue;
+        }
+        mina_aac_bits_init(&bits, payload, plen);
+        raw = mina_aac_raw_data_block(&s->aac, &bits);
+        if (raw != 0) {
+            if (s->am4a) return 0;
+            continue;
+        }
+        dst = mina_stream_pend(s, 1024);
+        if (!dst) return 0;
+        for (i = 0; i < 1024; i++)
+            for (ch = 0; ch < s->ch; ch++)
+                dst[(size_t)i * s->ch + ch] =
+                    s->aac.time_out[ch][i] * (1.0f / 32768.0f);
+        s->aac.frame++;
+        s->pn = 1024;
+        return 1;
+    }
+}
+#endif
+
 /* Refill the pending buffer. 0 once the stream is exhausted. */
 static int mina_stream_step(mina_stream *s) {
     switch (s->kind) {
@@ -9786,6 +10228,12 @@ static int mina_stream_step(mina_stream *s) {
 #endif
 #ifndef MINA_NO_VORBIS
     case MINA_ST_VRB: return mina_stream_step_vorbis(s);
+#endif
+#ifndef MINA_NO_FLAC
+    case MINA_ST_FLAC: return mina_stream_step_flac(s);
+#endif
+#ifndef MINA_NO_AAC
+    case MINA_ST_AAC: return mina_stream_step_aac(s);
 #endif
     default: return 0;
     }
@@ -9884,6 +10332,113 @@ static int mina_stream_init_vorbis(mina_stream *s) {
 }
 #endif
 
+#ifndef MINA_NO_FLAC
+static int mina_stream_init_flac(mina_stream *s) {
+    size_t off, blockcap;
+    off = mina_flac_metadata(s->d, s->n, &s->fsi);
+    if (!off) return 0;
+    blockcap = s->fsi.max_blocksize ? (size_t)s->fsi.max_blocksize :
+                                      (size_t)MINA_FLAC_MAX_BLOCK;
+    if (blockcap < 16 || blockcap > MINA_FLAC_MAX_BLOCK)
+        blockcap = MINA_FLAC_MAX_BLOCK;
+    if (!mina_flac_dec_init(&s->fdec, s->fsi.channels, blockcap)) return 0;
+    mina_br_init(&s->fbr, s->d + off, s->n - off);
+    s->ch = s->fsi.channels;
+    s->sr = s->fsi.sample_rate;
+    s->total = s->fsi.total_samples;
+    s->limit = s->total;
+    s->have_limit = !mina_u64_zero(s->limit);
+    s->kind = MINA_ST_FLAC;
+    mina_strcpy_n(s->codec, sizeof(s->codec), "flac");
+    return 1;
+}
+#endif
+
+#ifndef MINA_NO_AAC
+static int mina_stream_aac_setup(mina_stream *s, mina_u8 sf_index,
+                                 mina_u8 chans_cfg) {
+    memset(&s->aac, 0, sizeof(s->aac));
+    s->aac.random_state = 0x1f2e3d4cu;
+    s->aac.sf_index = sf_index;
+    s->aac.chans_cfg = chans_cfg;
+    if (!mina_aac_fb_init(&s->aac)) {
+        mina_aac_fb_free(&s->aac);
+        return 0;
+    }
+    return 1;
+}
+
+static int mina_stream_init_aac(mina_stream *s) {
+    mina_aac_adts h;
+    mina_fileinfo fi;
+    if (s->n >= 12 && memcmp(s->d + 4, "ftyp", 4) == 0) {
+        mina_mp4_aac_track t;
+        mina_u32 rate_index = 13, chans_cfg = 0, i;
+        mina_u64 available;
+        if (!mina_mp4_aac_track_find(s->d, s->n, &t) ||
+            t.stsz_n < 12 || t.stsc_n < 8 || !t.object_type ||
+            t.object_type != 2 || t.channels > 7) return 0;
+        s->asample_size = mina_be32(t.stsz + 4);
+        s->asample_count = mina_be32(t.stsz + 8);
+        if (!s->asample_size &&
+            (size_t)s->asample_count > (t.stsz_n - 12) / 4) return 0;
+        if (s->asample_size > 8184) return 0;
+        if (!s->asample_size) {
+            for (i = 0; i < s->asample_count; i++)
+                if (mina_be32(t.stsz + 12 + (size_t)i * 4) > 8184) return 0;
+        }
+        if (!mina_be32(t.stsc + 4)) return 0;
+        s->ause64 = t.co64 != NULL;
+        s->aoffsets = s->ause64 ? t.co64 : t.stco;
+        s->aoffsets_n = s->ause64 ? t.co64_n : t.stco_n;
+        if (s->aoffsets_n < 8 ||
+            (size_t)mina_be32(s->aoffsets + 4) >
+                (s->aoffsets_n - 8) / (s->ause64 ? 8u : 4u) ||
+            (size_t)mina_be32(t.stsc + 4) > (t.stsc_n - 8) / 12) return 0;
+        for (i = 0; i < 13; i++)
+            if (g_mina_aac_rates[i] == t.rate) rate_index = i;
+        for (i = 1; i < 8; i++)
+            if (g_mina_aac_chans[i] == t.channels) chans_cfg = i;
+        if (t.channels == 7) chans_cfg = 7;
+        if (rate_index >= 13 || !chans_cfg ||
+            !mina_stream_aac_setup(s, (mina_u8)rate_index, (mina_u8)chans_cfg))
+            return 0;
+        s->am4a = 1;
+        s->astsz = t.stsz;
+        s->astsz_n = t.stsz_n;
+        s->astsc = t.stsc;
+        s->astsc_n = t.stsc_n;
+        s->ch = g_mina_aac_chans[chans_cfg];
+        s->sr = t.rate;
+        available = mina_u64_mul32(s->asample_count, 1024);
+        if (s->asample_count > 1) {
+            s->head = 1024;
+            available = mina_u64_sub(available, mina_u64_of(1024));
+        }
+        if (mina_aac_info(s->d, s->n, &fi) == MINA_OK &&
+            !mina_u64_zero(fi.total_frames) &&
+            mina_u64_lt(fi.total_frames, available))
+            available = fi.total_frames;
+        s->limit = s->total = available;
+        s->have_limit = 1;
+        s->kind = MINA_ST_AAC;
+        mina_strcpy_n(s->codec, sizeof(s->codec), "aac");
+        return 1;
+    }
+    if (mina_aac_adts_frame(s->d, s->n, 0, &h) != 0) return 0;
+    s->ch = g_mina_aac_chans[h.chans_cfg];
+    if (!s->ch) s->ch = 1;
+    if (!mina_stream_aac_setup(s, h.sf_index, h.chans_cfg)) return 0;
+    s->sr = g_mina_aac_rates[h.sf_index];
+    s->apos = 0;
+    s->kind = MINA_ST_AAC;
+    mina_strcpy_n(s->codec, sizeof(s->codec), "aac");
+    if (mina_aac_info(s->d, s->n, &fi) == MINA_OK)
+        s->total = fi.total_frames;
+    return 1;
+}
+#endif
+
 /* Release whatever back end is live, leaving the stream reusable. */
 static void mina_stream_teardown(mina_stream *s) {
 #ifndef MINA_NO_MP3
@@ -9896,6 +10451,15 @@ static void mina_stream_teardown(mina_stream *s) {
     MINA_FREE(s->vlsp);   s->vlsp = NULL;
     if (s->ops.arena || s->ops.pkt) mina_ogg_packets_free(&s->ops);
     memset(&s->ops, 0, sizeof(s->ops));
+#endif
+#ifndef MINA_NO_FLAC
+    mina_flac_dec_free(&s->fdec);
+    memset(&s->fsi, 0, sizeof(s->fsi));
+    memset(&s->fbr, 0, sizeof(s->fbr));
+#endif
+#ifndef MINA_NO_AAC
+    mina_aac_fb_free(&s->aac);
+    memset(&s->aac, 0, sizeof(s->aac));
 #endif
 }
 
@@ -9914,6 +10478,12 @@ static int mina_stream_start(mina_stream *s) {
 #endif
     mina_strcpy_n(s->codec, sizeof(s->codec), "pcm");
     if (mina_wav_probe(s->d, s->n)) got = mina_stream_init_wav(s);
+#ifndef MINA_NO_FLAC
+    else if (mina_flac_probe(s->d, s->n)) got = mina_stream_init_flac(s);
+#endif
+#ifndef MINA_NO_AAC
+    else if (mina_aac_probe(s->d, s->n)) got = mina_stream_init_aac(s);
+#endif
 #ifndef MINA_NO_MP3
     else if (mina_mp3_probe(s->d, s->n)) got = mina_stream_init_mp3(s);
 #endif
@@ -9976,6 +10546,26 @@ int mina_stream_rewind(mina_stream *s) {
     }
     mina_stream_teardown(s);
     return mina_stream_start(s);
+}
+
+int mina_stream_seek(mina_stream *s, mina_u64 frame) {
+    float *scratch;
+    mina_u64 left;
+    mina_u32 want, got, channels;
+    if (!s || !mina_stream_rewind(s)) return 0;
+    channels = s->ch;
+    if (!channels) return 0;
+    scratch = (float *)MINA_MALLOC((size_t)1024 * channels * sizeof(float));
+    if (!scratch) return 0;
+    left = frame;
+    while (mina_u64_to_size(left) > 0) {
+        want = mina_u64_to_size(left) > 1024 ? 1024u : (mina_u32)mina_u64_to_size(left);
+        got = mina_stream_read(s, scratch, want);
+        if (!got) { MINA_FREE(scratch); return 0; }
+        left = mina_u64_sub(left, mina_u64_from(got));
+    }
+    MINA_FREE(scratch);
+    return 1;
 }
 
 mina_u32 mina_stream_channels(const mina_stream *s) { return s ? s->ch : 0; }
@@ -10087,6 +10677,9 @@ struct mina_engine {
     mina_voice *v;
     float *mixbuf;
     float master;
+    float bus_gain[MINA_BUS_COUNT];
+    int bus_muted[MINA_BUS_COUNT];
+    float music_duck;
     float lx, ly, lz, rx, ry, rz;   /* listener position and right vector */
     void (*lock)(void *);
     void (*unlock)(void *);
@@ -10101,6 +10694,7 @@ struct mina_engine {
     mina_cache_ent *cache; mina_u32 ncache, cache_cap, cache_clock;
     size_t cache_bytes, cache_limit;
     int quit, dev_failed;
+    mina_engine_telemetry telemetry;
 #ifdef MINA_HAVE_THREADS
     mina_lock lk; mina_cond cv;
     mina_thread th_mix, th_load;
@@ -10116,6 +10710,8 @@ void mina_source_params_init(mina_source_params *p) {
     p->loop = 0; p->spatial = 0; p->stream = 0;
     p->x = p->y = p->z = 0.0f;
     p->min_distance = 1.0f; p->max_distance = 16.0f; p->rolloff = 1.0f;
+    p->loop_start = mina_u64_from(0); p->loop_end = mina_u64_from(0);
+    p->bus = MINA_BUS_SFX; p->duck_music = 0;
 }
 
 /* Map `frames` interleaved frames from sc channels to dc. Extra destination
@@ -10214,9 +10810,9 @@ static mina_u8 *mina_default_loader(const char *path, size_t *size, void *user) 
 
 /* ---- engine lifetime ---- */
 
-mina_engine *mina_engine_create(const char *backend, mina_u32 rate,
-                                mina_u32 channels, mina_u32 block,
-                                mina_u32 max_voices) {
+mina_engine *mina_engine_create_output(const char *backend, const char *id,
+                                       mina_u32 rate, mina_u32 channels,
+                                       mina_u32 block, mina_u32 max_voices) {
     mina_engine *e;
     if (!rate) rate = 44100;
     if (!channels) channels = 2;
@@ -10228,6 +10824,11 @@ mina_engine *mina_engine_create(const char *backend, mina_u32 rate,
     memset(e, 0, sizeof(*e));
     e->rate = rate; e->channels = channels; e->block = block;
     e->nvoice = max_voices; e->master = 1.0f;
+    {
+        mina_u32 i;
+        for (i = 0; i < MINA_BUS_COUNT; i++) e->bus_gain[i] = 1.0f;
+    }
+    e->music_duck = 0.45f;
     e->rx = 1.0f;                       /* +X right, -Z forward, +Y up */
     e->quality = MINA_QUALITY_SINC;
     e->deadline_ms = 250;
@@ -10240,8 +10841,14 @@ mina_engine *mina_engine_create(const char *backend, mina_u32 rate,
     if (!e->v || !e->mixbuf) { mina_engine_destroy(e); return NULL; }
     memset(e->v, 0, (size_t)max_voices * sizeof(mina_voice));
     if (backend && backend[0] == '\0') e->dev = NULL;
-    else e->dev = mina_device_open(backend, rate, channels);
+    else e->dev = mina_device_open_output(backend, id, rate, channels);
     return e;
+}
+
+mina_engine *mina_engine_create(const char *backend, mina_u32 rate,
+                                mina_u32 channels, mina_u32 block,
+                                mina_u32 max_voices) {
+    return mina_engine_create_output(backend, NULL, rate, channels, block, max_voices);
 }
 
 static void mina_voice_clear(mina_voice *v) {
@@ -10339,6 +10946,7 @@ static void mina_voice_begin(mina_engine *e, mina_voice *v, const char *name,
     v->gen = ++e->nextgen;
     mina_strcpy_n(v->name, sizeof(v->name), name);
     v->p = p ? *p : dflt;
+    if (v->p.bus < 0 || v->p.bus >= MINA_BUS_COUNT) v->p.bus = MINA_BUS_SFX;
     if (v->p.max_distance < 0.0f) v->p.max_distance = 0.0f;
     if (v->p.min_distance < 0.0f) v->p.min_distance = 0.0f;
     if (v->p.rolloff <= 0.0f) v->p.rolloff = 1.0f;
@@ -10360,6 +10968,8 @@ int mina_engine_play_clip(mina_engine *e, const char *name, mina_clip *c,
     if (v) {
         mina_voice_begin(e, v, name, p, volume, pitch);
         v->clip = mina_clip_retain(c);
+    } else {
+        e->telemetry.rejected = mina_u64_add(e->telemetry.rejected, mina_u64_from(1));
     }
     MINA_EUNLOCK(e);
     return v != NULL;
@@ -10412,6 +11022,7 @@ int mina_engine_play_stream(mina_engine *e, const char *name, mina_stream *s,
         ok = mina_voice_attach_stream(e, v, s);
     } else {
         mina_stream_close(s);
+        e->telemetry.rejected = mina_u64_add(e->telemetry.rejected, mina_u64_from(1));
     }
     MINA_EUNLOCK(e);
     return ok;
@@ -10536,6 +11147,39 @@ int mina_engine_set_loop(mina_engine *e, const char *name, int loop) {
     return v != NULL;
 }
 
+void mina_engine_set_bus_gain(mina_engine *e, mina_bus bus, float gain) {
+    if (!e || bus < 0 || bus >= MINA_BUS_COUNT) return;
+    MINA_ELOCK(e);
+    e->bus_gain[bus] = gain < 0.0f ? 0.0f : gain;
+    MINA_EUNLOCK(e);
+}
+
+void mina_engine_set_bus_muted(mina_engine *e, mina_bus bus, int muted) {
+    if (!e || bus < 0 || bus >= MINA_BUS_COUNT) return;
+    MINA_ELOCK(e);
+    e->bus_muted[bus] = muted ? 1 : 0;
+    MINA_EUNLOCK(e);
+}
+
+void mina_engine_set_music_duck(mina_engine *e, float gain) {
+    if (!e) return;
+    MINA_ELOCK(e);
+    e->music_duck = gain < 0.0f ? 0.0f : (gain > 1.0f ? 1.0f : gain);
+    MINA_EUNLOCK(e);
+}
+
+int mina_engine_set_loop_region(mina_engine *e, const char *name,
+                                mina_u64 start_frame, mina_u64 end_frame) {
+    mina_voice *v;
+    if (!e || !name || (mina_u64_to_size(end_frame) &&
+                        !mina_u64_lt(start_frame, end_frame))) return 0;
+    MINA_ELOCK(e);
+    v = mina_engine_find(e, name);
+    if (v) { v->p.loop_start = start_frame; v->p.loop_end = end_frame; }
+    MINA_EUNLOCK(e);
+    return v != NULL;
+}
+
 /* ---- rendering ---- */
 
 /* Distance attenuation and constant-power pan for one voice. */
@@ -10582,9 +11226,21 @@ static int mina_voice_fill(mina_engine *e, mina_voice *v) {
             }
         }
         if (v->rqpos >= v->rqn) {                 /* pull the next raw chunk */
-            got = mina_stream_read(v->st, v->raw, MINA_RAW_FRAMES);
+            mina_u64 loop_start = v->p.loop_start;
+            mina_u64 loop_end = v->p.loop_end;
+            mina_u32 request = MINA_RAW_FRAMES;
+            if (v->p.loop && mina_u64_to_size(loop_end) &&
+                !mina_u64_lt(v->st->emitted, loop_end)) {
+                if (!mina_stream_seek(v->st, loop_start)) return 0;
+            }
+            if (mina_u64_to_size(loop_end) && mina_u64_lt(v->st->emitted, loop_end)) {
+                mina_u64 remain = mina_u64_sub(loop_end, v->st->emitted);
+                if (mina_u64_to_size(remain) < request) request = (mina_u32)mina_u64_to_size(remain);
+            }
+            got = request ? mina_stream_read(v->st, v->raw, request) : 0;
             if (!got) {
-                if (v->p.loop && mina_stream_rewind(v->st))
+                if (v->p.loop && (mina_u64_to_size(loop_start) ? mina_stream_seek(v->st, loop_start)
+                                                                : mina_stream_rewind(v->st)))
                     got = mina_stream_read(v->st, v->raw, MINA_RAW_FRAMES);
                 if (!got) {                       /* flush the resampler tail */
                     v->drained = 1;
@@ -10626,10 +11282,18 @@ static void mina_lerp_frame(const float *src, size_t i, size_t last, double f,
     for (j = 0; j < ec; j++) dst[j] = a[j] + (float)((double)(b[j] - a[j]) * f);
 }
 
+static float mina_voice_bus_gain(const mina_engine *e, const mina_voice *v, int duck_music) {
+    float gain = e->bus_muted[v->p.bus] ? 0.0f : e->bus_gain[v->p.bus];
+    if (v->p.bus == MINA_BUS_MUSIC && duck_music) gain *= e->music_duck;
+    return gain;
+}
+
 /* Mix one voice. Returns 0 when the voice finished and should be freed. */
 static int mina_voice_render(mina_engine *e, mina_voice *v, float *out,
-                             mina_u32 frames) {
+                             mina_u32 frames, int duck_music) {
     mina_u32 ec = e->channels, n, j;
+    size_t loop_start = mina_u64_to_size(v->p.loop_start);
+    size_t loop_end = mina_u64_to_size(v->p.loop_end);
     float smp[64], gain = 1.0f, gl = 0.70710678f, gr = 0.70710678f;
     if (v->p.spatial) mina_voice_spatial(e, v, &gain, &gl, &gr);
 
@@ -10640,13 +11304,15 @@ static int mina_voice_render(mina_engine *e, mina_voice *v, float *out,
            v->cur == (double)(size_t)v->cur && frames) {
         size_t idx = (size_t)v->cur, run;
         const float *src;
-        float g = v->vol;
-        if (idx >= v->clip->frames) {
+        float g = v->vol * mina_voice_bus_gain(e, v, duck_music);
+        if (!loop_end || loop_end > v->clip->frames) loop_end = v->clip->frames;
+        if (loop_start >= loop_end) loop_start = 0;
+        if (idx >= loop_end) {
             if (!v->p.loop) return 0;
-            v->cur = 0.0;
+            v->cur = (double)loop_start;
             continue;
         }
-        run = v->clip->frames - idx;
+        run = loop_end - idx;
         if (run > (size_t)frames) run = (size_t)frames;
         src = v->clip->s + idx * (size_t)ec;
         for (n = 0; n < (mina_u32)run * ec; n++) out[n] += src[n] * g;
@@ -10661,9 +11327,12 @@ static int mina_voice_render(mina_engine *e, mina_voice *v, float *out,
         size_t idx, last;
         float g;
         if (v->clip) {
-            if (v->cur >= (double)v->clip->frames) {
+            if (!loop_end || loop_end > v->clip->frames) loop_end = v->clip->frames;
+            if (loop_start >= loop_end) loop_start = 0;
+            if (v->cur >= (double)loop_end) {
                 if (!v->p.loop) return 0;
-                v->cur = fmod(v->cur, (double)v->clip->frames);
+                v->cur = (double)loop_start + fmod(v->cur - (double)loop_start,
+                                                   (double)(loop_end - loop_start));
             }
             src = v->clip->s;
             last = v->clip->frames - 1;
@@ -10685,7 +11354,7 @@ static int mina_voice_render(mina_engine *e, mina_voice *v, float *out,
                 if (v->stop_at_ramp) return 0;
             }
         }
-        g = v->vol * gain;
+        g = v->vol * gain * mina_voice_bus_gain(e, v, duck_music);
         if (v->p.spatial && ec >= 2) {
             float mono = 0.0f;
             for (j = 0; j < ec; j++) mono += smp[j];
@@ -10702,14 +11371,18 @@ static int mina_voice_render(mina_engine *e, mina_voice *v, float *out,
 
 mina_u32 mina_engine_render(mina_engine *e, float *out, mina_u32 frames) {
     mina_u32 i, k, count;
+    int duck_music = 0;
     if (!e || !out || !frames) return 0;
     if (frames > e->block) frames = e->block;
     count = frames * e->channels;
     memset(out, 0, (size_t)count * sizeof(float));
     MINA_ELOCK(e);
     for (i = 0; i < e->nvoice; i++) {
+        if (e->v[i].used && !e->v[i].loading && e->v[i].p.duck_music) duck_music = 1;
+    }
+    for (i = 0; i < e->nvoice; i++) {
         if (!e->v[i].used || e->v[i].loading) continue;
-        if (!mina_voice_render(e, &e->v[i], out, frames)) mina_voice_clear(&e->v[i]);
+        if (!mina_voice_render(e, &e->v[i], out, frames, duck_music)) mina_voice_clear(&e->v[i]);
     }
     for (k = 0; k < count; k++) {               /* master gain and soft clip */
         float x = out[k] * e->master;
@@ -10724,10 +11397,31 @@ mina_u32 mina_engine_render(mina_engine *e, float *out, mina_u32 frames) {
 }
 
 mina_result mina_engine_pump(mina_engine *e) {
+    mina_result r;
     if (!e) return MINA_ERR_PARAM;
     if (!e->dev) return MINA_ERR_UNSUPPORTED;
     mina_engine_render(e, e->mixbuf, e->block);
-    return mina_device_write(e->dev, e->mixbuf, e->block);
+    r = mina_device_write(e->dev, e->mixbuf, e->block);
+    if (r != MINA_OK) {
+        MINA_ELOCK(e);
+        e->telemetry.underruns = mina_u64_add(e->telemetry.underruns, mina_u64_from(1));
+        MINA_EUNLOCK(e);
+    }
+    return r;
+}
+
+void mina_engine_get_telemetry(const mina_engine *e, mina_engine_telemetry *out) {
+    mina_engine *m = mina_engine_rw(e);
+    mina_u32 i, voices = 0;
+    if (!out) return;
+    memset(out, 0, sizeof(*out));
+    if (!e) return;
+    MINA_ELOCK(m);
+    *out = m->telemetry;
+    for (i = 0; i < m->nvoice; i++) if (m->v[i].used) voices++;
+    out->active_voices = voices;
+    out->cache_bytes = m->cache_bytes;
+    MINA_EUNLOCK(m);
 }
 
 /* ------------------------------------------------------------------ */
@@ -10792,9 +11486,11 @@ static mina_clip *mina_cache_get(mina_engine *e, const char *path) {
     for (i = 0; i < e->ncache; i++) {
         if (strcmp(e->cache[i].path, path) == 0) {
             e->cache[i].used = ++e->cache_clock;
+            e->telemetry.cache_hits = mina_u64_add(e->telemetry.cache_hits, mina_u64_from(1));
             return mina_clip_retain(e->cache[i].c);
         }
     }
+    e->telemetry.cache_misses = mina_u64_add(e->telemetry.cache_misses, mina_u64_from(1));
     return NULL;
 }
 
@@ -10875,6 +11571,9 @@ static void mina_engine_service(mina_engine *e, const mina_loadreq *rq) {
     mina_loader_fn fn;
     void *user;
     int live;
+    mina_u32 began = mina_now_ms();
+    int expired = 0;
+    int loaded = 0;
 
     MINA_ELOCK(e);
     fn = e->loader;
@@ -10884,7 +11583,7 @@ static void mina_engine_service(mina_engine *e, const mina_loadreq *rq) {
     /* A short effect that waited out its deadline is dropped rather than
      * played late: a backlog should not come back as an echo. */
     if (live && e->deadline_ms && !rq->keep &&
-        (mina_u32)(mina_now_ms() - rq->queued) > e->deadline_ms) live = 0;
+        (mina_u32)(mina_now_ms() - rq->queued) > e->deadline_ms) { live = 0; expired = 1; }
     if (live && !rq->stream) c = mina_cache_get(e, rq->path);
     MINA_EUNLOCK(e);
 
@@ -10907,7 +11606,15 @@ static void mina_engine_service(mina_engine *e, const mina_loadreq *rq) {
         }
     }
     MINA_FREE(img);
+    loaded = c != NULL || st != NULL;
     mina_engine_attach(e, rq, c, st);
+    MINA_ELOCK(e);
+    e->telemetry.loads = mina_u64_add(e->telemetry.loads, mina_u64_from(1));
+    e->telemetry.load_milliseconds = mina_u64_add(e->telemetry.load_milliseconds,
+                                                   mina_u64_from(mina_now_ms() - began));
+    if (expired || (live && !loaded))
+        e->telemetry.dropped = mina_u64_add(e->telemetry.dropped, mina_u64_from(1));
+    MINA_EUNLOCK(e);
 }
 
 /* ---- queueing ---- */
@@ -10918,17 +11625,29 @@ static int mina_engine_queue(mina_engine *e, const char *name, const char *path,
                              float pitch) {
     mina_voice *v;
     mina_loadreq *rq;
-    if (strlen(path) + 1 > MINA_PATH_MAX) return 0;
+    if (strlen(path) + 1 > MINA_PATH_MAX) {
+        e->telemetry.rejected = mina_u64_add(e->telemetry.rejected, mina_u64_from(1));
+        return 0;
+    }
     if (e->lqn == e->lqcap) {
         mina_u32 ncap = e->lqcap ? e->lqcap * 2 : 64;
         mina_loadreq *q;
-        if (ncap > 4096) return 0;                     /* the queue is the limit */
+        if (ncap > 4096) {
+            e->telemetry.rejected = mina_u64_add(e->telemetry.rejected, mina_u64_from(1));
+            return 0;
+        }
         q = (mina_loadreq *)MINA_REALLOC(e->lq, (size_t)ncap * sizeof(mina_loadreq));
-        if (!q) return 0;
+        if (!q) {
+            e->telemetry.rejected = mina_u64_add(e->telemetry.rejected, mina_u64_from(1));
+            return 0;
+        }
         e->lq = q; e->lqcap = ncap;
     }
     v = mina_engine_slot(e, name);
-    if (!v) return 0;
+    if (!v) {
+        e->telemetry.rejected = mina_u64_add(e->telemetry.rejected, mina_u64_from(1));
+        return 0;
+    }
     mina_voice_begin(e, v, name, p, volume, pitch);
     v->loading = 1;
     rq = &e->lq[e->lqn++];
@@ -10986,6 +11705,7 @@ MINA_THREADFN(mina_engine_mix_thread, arg) {
         if (mina_device_write(e->dev, e->mixbuf, e->block) != MINA_OK) {
             MINA_ELOCK(e);
             e->dev_failed = 1;
+            e->telemetry.underruns = mina_u64_add(e->telemetry.underruns, mina_u64_from(1));
             MINA_EUNLOCK(e);
             break;
         }
@@ -11068,6 +11788,18 @@ mina_bool mina_engine_device_failed(const mina_engine *e) {
     r = (mina_bool)(m->dev_failed ? 1 : 0);
     MINA_EUNLOCK(m);
     return r;
+}
+
+int mina_engine_reopen_output(mina_engine *e, const char *backend, const char *id) {
+    int restart;
+    if (!e) return 0;
+    restart = mina_engine_running(e) ? 1 : 0;
+    if (restart) mina_engine_stop_threads(e);
+    mina_device_close(e->dev);
+    e->dev = mina_device_open_output(backend, id, e->rate, e->channels);
+    e->dev_failed = 0;
+    if (restart && !mina_engine_start(e)) return 0;
+    return mina_engine_is_real(e) ? 1 : 0;
 }
 #endif /* MINA_IMPLEMENTATION */
 

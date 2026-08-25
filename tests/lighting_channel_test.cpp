@@ -64,5 +64,34 @@ TEST(LightingChannel, FarRegionsWaitUntilAllLightingWorkSettles) {
  EXPECT_FALSE(lighting.hasDirtyRegions());
  lighting.stop();
 }
+TEST(LightingChannel, CornerUpdateNeedsCardinalChunksOnly) {
+ util::concurrent::ThreadCoordinator::instance().configure(8, 2, {.maxComputeThreads = 8});
+ constexpr int emitterId = 250;
+ world::light::UnifiedLightRegistry::setBlockEmission(emitterId, 15);
+ world::light::UnifiedLightRegistry registry;
+ LightingEngine lighting(registry);
+ std::vector<Chunk> chunks;
+ chunks.reserve(3);
+ chunks.emplace_back(0, 0);
+ chunks.emplace_back(1, 0);
+ chunks.emplace_back(0, 1);
+ for(Chunk& chunk : chunks) {
+  lighting.registerChunk(&chunk);
+ }
+ chunks[0].setBlock(15, 64, 15, emitterId);
+ lighting.push(LightType::Block, 15, 64, 15, 15, 64, 15, false);
+ lighting.flushStaging();
+ const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(2);
+ while(lighting.busy() && std::chrono::steady_clock::now() < deadline) {
+  std::this_thread::yield();
+ }
+ EXPECT_FALSE(lighting.busy());
+ EXPECT_EQ(chunks[0].getLight(LightType::Block, 15, 64, 15), 15);
+ lighting.stop();
+ for(Chunk& chunk : chunks) {
+  lighting.unregisterChunk(&chunk);
+ }
+ world::light::UnifiedLightRegistry::setBlockEmission(emitterId, 0);
+}
 }
 }

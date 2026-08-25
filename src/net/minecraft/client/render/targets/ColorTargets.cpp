@@ -4,7 +4,6 @@
 #include "net/minecraft/client/gl/GLCore.hpp"
 #include "net/minecraft/client/gl/GlConstants.hpp"
 #include "net/minecraft/client/gl/GlResource.hpp"
-#include "net/minecraft/client/debug/VTuneTrace.hpp"
 #include "net/minecraft/client/render/RenderCore.hpp"
 #include "net/minecraft/util/logging/Logging.hpp"
 #include <algorithm>
@@ -74,7 +73,6 @@ bool ColorTargets::allocateSlot(Slot& slot, int width, int height, ColorFormat f
    return false;
   }
   slot.tex[i] = gl::GlTexture(h);
-  VT_TRACE_COUNTER("RenderTargetAllocations", 1);
   core::bindTexture(gl::cap::Texture2D, static_cast<int>(h));
   ::glTexImage2D(gl::cap::Texture2D, 0, spec.internal, width, height, 0, spec.format, spec.type, nullptr);
   setTexParams(linear);
@@ -154,7 +152,6 @@ bool ColorTargets::ensure(int width, int height, const std::vector<ColorFormat>&
   destroy();
   return false;
  }
- VT_TRACE_COUNTER("RenderTargetAllocations", 1);
  core::bindTexture(gl::cap::Texture2D, static_cast<int>(depth_.handle()));
  ::glTexImage2D(gl::cap::Texture2D, 0, gl::framebuffer::Depth24Stencil8, width, height, 0,
                 gl::pixel::DepthStencil, gl::pixel::UnsignedInt248, nullptr);
@@ -532,7 +529,6 @@ void ColorTargets::enableMipmaps(const std::string& name) {
  slot->mipmapsOn[slot->main] = true;
  applySlotFilter(*slot, slot->main);
  gl::GLCore::generateMipmap(gl::cap::Texture2D);
- VT_TRACE_COUNTER("MipmapGenerations", 1);
 }
 void ColorTargets::resetMipmaps() {
  // https://github.com/IrisShaders/Iris/blob/26.1/common/src/main/java/net/irisshaders/iris/pipeline/FinalPassRenderer.java

@@ -1,6 +1,7 @@
 #pragma once
 #include "net/minecraft/block/Block.hpp"
 #include "net/minecraft/block/material/Material.hpp"
+#include "net/minecraft/client/render/block/BlockRenderType.hpp"
 #include "net/minecraft/world/BlockView.hpp"
 
 namespace net::minecraft::client::render::block {
@@ -44,8 +45,7 @@ namespace leaf_interior_detail {
                                            int x,
                                            int y,
                                            int z) noexcept {
- static constexpr int kOffsets[6][3] = {{0, -1, 0}, {0, 1, 0}, {0, 0, -1}, {0, 0, 1}, {-1, 0, 0}, {1, 0, 0}};
- for(const auto& offset : kOffsets) {
+ for(const auto& offset : kFaceOffsets) {
   const int neighborId = blockView.getBlockId(x + offset[0], y + offset[1], z + offset[2]);
   if(neighborId == blockId) {
    continue;

@@ -8,6 +8,8 @@
 #include <unordered_set>
 #include <vector>
 #include "net/minecraft/client/render/chunk/ChunkBuilder.hpp"
+#include "net/minecraft/client/render/camera/FrameRenderCamera.hpp"
+#include "net/minecraft/client/render/culling/Frustum.hpp"
 #include "net/minecraft/client/render/culling/PlaneSet.hpp"
 #include "net/minecraft/client/render/world/TerrainScene.hpp"
 #include "net/minecraft/util/math/MathHelper.hpp"
@@ -23,6 +25,29 @@ TEST(CullBoundaryTest, PlaneKeepsTouchingSection) {
  planes.add({1.0f, 0.0f, 0.0f, 0.0f});
  EXPECT_TRUE(planes.intersectsAabb(-16.0f, 0.0f, 0.0f, 0.0f, 16.0f, 16.0f));
  EXPECT_FALSE(planes.intersectsAabb(-16.0f, 0.0f, 0.0f, -0.01f, 16.0f, 16.0f));
+}
+TEST(CullBoundaryTest, EntityNearPlaneDoesNotCpuCull) {
+ client::render::FrameRenderCamera camera;
+ camera.projectionX = 1.0f;
+ camera.projectionY = 1.0f;
+ camera.nearPlane = 0.05f;
+ camera.farPlane = 16.0f;
+ camera.viewForwardZ = 1.0f;
+
+ float projection[16]{};
+ float modelView[16]{};
+ client::render::buildCameraProjection(projection, camera);
+ client::render::buildCameraModelView(modelView, camera);
+ net::minecraft::util::math::Matrix4f projectionMatrix;
+ net::minecraft::util::math::Matrix4f modelViewMatrix;
+ projectionMatrix.set(projection);
+ modelViewMatrix.set(modelView);
+ client::render::Frustum frustum;
+ frustum.compute(projectionMatrix, modelViewMatrix, 0.0, 0.0, 0.0);
+
+ const Box justBeforeNearPlane{-0.01, -0.01, 0.0, 0.01, 0.01, 0.04};
+ EXPECT_FALSE(frustum.isVisible(justBeforeNearPlane));
+ EXPECT_TRUE(frustum.isVisibleIgnoringNearPlane(justBeforeNearPlane));
 }
 TEST(CullBoundaryTest, UnorderedColumnsKeepSectionGraphConnected) {
  ClientWorld world(nullptr, 12345ULL, 0);

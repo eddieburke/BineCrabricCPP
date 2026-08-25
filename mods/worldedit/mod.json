@@ -1,0 +1,9 @@
+{
+  "id": "worldedit",
+  "name": "WorldEdit",
+  "version": "1.0.0",
+  "description": "Classic SPC-style single-player WorldEdit with a dedicated selection wand.",
+  "enabled": true,
+  "side": "client",
+  "entry": "scripts/main.lua"
+}

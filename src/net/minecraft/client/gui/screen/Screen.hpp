@@ -64,8 +64,10 @@ class Screen {
   return keyCode == input::keys::kDown;
  }
  [[nodiscard]] static bool pasteChordPressed(int keyCode) noexcept;
+ [[nodiscard]] static bool copyChordPressed(int keyCode) noexcept;
  bool closeOnEscape(int keyCode);
  [[nodiscard]] static std::string getClipboard();
+ static void setClipboard(std::string text);
  virtual void mouseClicked(int mouseX, int mouseY, int button);
  virtual void mouseReleased(int mouseX, int mouseY, int button);
  virtual void mouseScrolled(int mouseX, int mouseY, int delta) {

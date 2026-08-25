@@ -324,6 +324,7 @@ int submitIndexedQuadsBatch(const RenderPass& pass,
                             unsigned vao,
                             std::span<const int> indexCounts,
                             std::span<const int> baseVertices);
+void unbindVertexArray();
 // Pending section-local terrain params for Tessellator / bound-buffer draws.
 void setPendingTerrainDraw(float chunkOffsetX, float chunkOffsetY, float chunkOffsetZ);
 void clearPendingTerrainDraw();

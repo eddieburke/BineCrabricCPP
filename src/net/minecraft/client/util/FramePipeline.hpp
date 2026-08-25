@@ -1,9 +1,6 @@
 #pragma once
-#include <chrono>
 #include <cstddef>
 #include <functional>
-#include <string_view>
-#include <vector>
 #include "net/minecraft/client/core/TaskMailbox.hpp"
 namespace net::minecraft::client::util {
 class FramePipeline {
@@ -24,27 +21,6 @@ class FramePipeline {
  [[nodiscard]] static constexpr std::size_t count() noexcept {
   return kPhaseCount;
  }
- [[nodiscard]] static constexpr std::string_view phaseName(Phase phase) noexcept {
-  switch(phase) {
-  case Phase::Drain: return "drain";
-  case Phase::Input: return "input";
-  case Phase::Ticks: return "ticks";
-  case Phase::Render: return "render";
-  case Phase::Present: return "present";
-  case Phase::Pace: return "pace";
-  case Phase::Diagnostics: return "diagnostics";
-  }
-  return "unknown";
- }
- struct Record {
-  Phase phase;
-  std::chrono::microseconds duration;
- };
- void beginFrame();
- void beginPhase(Phase phase);
- void endPhase();
- [[nodiscard]] std::size_t recordCount() const noexcept;
- [[nodiscard]] const std::vector<Record>& records() const noexcept;
  using PhaseTask = std::function<void(Phase)>;
  void run();
  void run(const PhaseTask& task);
@@ -54,8 +30,5 @@ class FramePipeline {
 
  private:
  core::TaskMailbox mailbox_;
- std::vector<Record> records_;
- Phase currentPhase_ = Phase::Drain;
- std::chrono::steady_clock::time_point phaseStart_{};
 };
 } // namespace net::minecraft::client::util

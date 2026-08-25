@@ -7,7 +7,6 @@
 #include <utility>
 #include "net/minecraft/client/gl/GLCore.hpp"
 #include "net/minecraft/client/gl/GlConstants.hpp"
-#include "net/minecraft/client/debug/VTuneTrace.hpp"
 #include "net/minecraft/client/render/VertexAbi.hpp"
 #include "net/minecraft/util/math/Matrix4f.hpp"
 namespace net::minecraft::client::gl {
@@ -316,11 +315,9 @@ void ShaderProgram::bind() const {
   // divergence, and a producer/consumer pair always straddles a program switch.
   if(GLCore::memoryBarrier != nullptr) {
    GLCore::memoryBarrier(kProgramBindBarrierBits);
-   VT_TRACE_COUNTER("MemoryBarriers", 1);
   }
   s_lastBoundProgram = program_;
   GLCore::useProgram(program_);
-  VT_TRACE_COUNTER("ProgramBinds", 1);
  }
 }
 void ShaderProgram::unbind() {
@@ -452,61 +449,51 @@ void ShaderProgram::reflectSamplers() {
 void ShaderProgram::set1iAt(int loc, int value) const {
  if(loc >= 0 && GLCore::uniform1i != nullptr) {
   GLCore::uniform1i(loc, value);
-  VT_TRACE_COUNTER("UniformUploads", 1);
  }
 }
 void ShaderProgram::set1fAt(int loc, float value) const {
  if(loc >= 0 && GLCore::uniform1f != nullptr) {
   GLCore::uniform1f(loc, value);
-  VT_TRACE_COUNTER("UniformUploads", 1);
  }
 }
 void ShaderProgram::set2fAt(int loc, const float* values) const {
  if(loc >= 0 && GLCore::uniform2f != nullptr) {
   GLCore::uniform2f(loc, values[0], values[1]);
-  VT_TRACE_COUNTER("UniformUploads", 1);
  }
 }
 void ShaderProgram::set3fAt(int loc, const float* values) const {
  if(loc >= 0 && GLCore::uniform3f != nullptr) {
   GLCore::uniform3f(loc, values[0], values[1], values[2]);
-  VT_TRACE_COUNTER("UniformUploads", 1);
  }
 }
 void ShaderProgram::set4fAt(int loc, const float* values) const {
  if(loc >= 0 && GLCore::uniform4f != nullptr) {
   GLCore::uniform4f(loc, values[0], values[1], values[2], values[3]);
-  VT_TRACE_COUNTER("UniformUploads", 1);
  }
 }
 void ShaderProgram::set2iAt(int loc, const int* values) const {
  if(loc >= 0 && GLCore::uniform2i != nullptr) {
   GLCore::uniform2i(loc, values[0], values[1]);
-  VT_TRACE_COUNTER("UniformUploads", 1);
  }
 }
 void ShaderProgram::set3iAt(int loc, const int* values) const {
  if(loc >= 0 && GLCore::uniform3i != nullptr) {
   GLCore::uniform3i(loc, values[0], values[1], values[2]);
-  VT_TRACE_COUNTER("UniformUploads", 1);
  }
 }
 void ShaderProgram::set4iAt(int loc, const int* values) const {
  if(loc >= 0 && GLCore::uniform4i != nullptr) {
   GLCore::uniform4i(loc, values[0], values[1], values[2], values[3]);
-  VT_TRACE_COUNTER("UniformUploads", 1);
  }
 }
 void ShaderProgram::setMatrix3At(int loc, const float* values) const {
  if(loc >= 0 && GLCore::uniformMatrix3fv != nullptr) {
   GLCore::uniformMatrix3fv(loc, 1, 0, values);
-  VT_TRACE_COUNTER("UniformUploads", 1);
  }
 }
 void ShaderProgram::setMatrix4At(int loc, const float* values) const {
  if(loc >= 0 && GLCore::uniformMatrix4fv != nullptr) {
   GLCore::uniformMatrix4fv(loc, 1, 0, values);
-  VT_TRACE_COUNTER("UniformUploads", 1);
  }
 }
 ShaderProgram::SamplerKind ShaderProgram::samplerKind(std::string_view name) const {
@@ -520,42 +507,36 @@ void ShaderProgram::set1i(std::string_view name, int value) const {
  const int loc = location(name);
  if(loc >= 0 && GLCore::uniform1i != nullptr) {
   GLCore::uniform1i(loc, value);
-  VT_TRACE_COUNTER("UniformUploads", 1);
  }
 }
 void ShaderProgram::set1f(std::string_view name, float value) const {
  const int loc = location(name);
  if(loc >= 0 && GLCore::uniform1f != nullptr) {
   GLCore::uniform1f(loc, value);
-  VT_TRACE_COUNTER("UniformUploads", 1);
  }
 }
 void ShaderProgram::set2f(std::string_view name, float x, float y) const {
  const int loc = location(name);
  if(loc >= 0 && GLCore::uniform2f != nullptr) {
   GLCore::uniform2f(loc, x, y);
-  VT_TRACE_COUNTER("UniformUploads", 1);
  }
 }
 void ShaderProgram::set3f(std::string_view name, float x, float y, float z) const {
  const int loc = location(name);
  if(loc >= 0 && GLCore::uniform3f != nullptr) {
   GLCore::uniform3f(loc, x, y, z);
-  VT_TRACE_COUNTER("UniformUploads", 1);
  }
 }
 void ShaderProgram::set4f(std::string_view name, float x, float y, float z, float w) const {
  const int loc = location(name);
  if(loc >= 0 && GLCore::uniform4f != nullptr) {
   GLCore::uniform4f(loc, x, y, z, w);
-  VT_TRACE_COUNTER("UniformUploads", 1);
  }
 }
 void ShaderProgram::setMatrix4(std::string_view name, const float* value, bool transpose) const {
  const int loc = location(name);
  if(loc >= 0 && GLCore::uniformMatrix4fv != nullptr) {
   GLCore::uniformMatrix4fv(loc, 1, transpose ? 1 : 0, value);
-  VT_TRACE_COUNTER("UniformUploads", 1);
  }
 }
 void ShaderProgram::setMatrix4(std::string_view name, const net::minecraft::util::math::Matrix4f& value) const {

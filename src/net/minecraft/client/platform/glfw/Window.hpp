@@ -26,8 +26,9 @@ class Window {
  [[nodiscard]] static DisplayMode getDisplayMode();
  [[nodiscard]] static DisplayMode getDesktopDisplayMode();
  static void setCursorLocked(bool locked);
- static void cursorPosition(int& x, int& y);
+ static void cursorPosition(double& x, double& y);
  [[nodiscard]] static std::string clipboardString();
+ static void setClipboardString(const std::string& text);
  static void notifyCloseRequested();
  static void notifyResize();
  static void setActive(bool active);

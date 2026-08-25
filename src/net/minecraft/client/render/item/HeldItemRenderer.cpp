@@ -36,6 +36,29 @@ constexpr float kPi = 3.14159265358979323846f;
 [[nodiscard]] float handSwingProgress(const net::minecraft::entity::LivingEntity& entity, float tickDelta) {
  return entity.getHandSwingProgress(tickDelta);
 }
+[[nodiscard]] bool usingUserShaderPack(render::GameRenderer* gameRenderer) {
+ auto* pipeline = gameRenderer != nullptr ? gameRenderer->shaderPipeline() : nullptr;
+ return pipeline != nullptr && pipeline->usingUserPack();
+}
+void applyVanillaHandLighting() {
+ constexpr float kLength = 1.2369317f;
+ constexpr float kSunX = 0.2f / kLength;
+ constexpr float kSunY = 1.0f / kLength;
+ constexpr float kSunZ = -0.7f / kLength;
+ render::core::WorldLightUniforms light = render::core::worldLight();
+ light.sunDirView[0] = kSunX;
+ light.sunDirView[1] = kSunY;
+ light.sunDirView[2] = kSunZ;
+ light.fillDirView[0] = -kSunX;
+ light.fillDirView[1] = kSunY;
+ light.fillDirView[2] = -kSunZ;
+ light.sunColor[0] = light.sunColor[1] = light.sunColor[2] = 1.0f;
+ light.sunIntensity = 0.6f;
+ light.fillIntensity = 0.6f;
+ light.ambient[0] = light.ambient[1] = light.ambient[2] = 0.4f;
+ render::core::setWorldLight(light);
+ render::core::setLightingEnabled(true);
+}
 void renderTexturedOverlay(int textureId) {
  Tessellator& tessellator = Tessellator::INSTANCE;
  constexpr float brightness = 0.1f;
@@ -210,14 +233,18 @@ void HeldItemRenderer::render(float tickDelta) {
  const float rawHandLight = minecraft->world->getLightBrightness(handX, handY, handZ);
  const int handBlockLight = minecraft->world->getBrightness(net::minecraft::LightType::Block, handX, handY, handZ);
  const int handSkyLight = minecraft->world->getBrightness(net::minecraft::LightType::Sky, handX, handY, handZ);
- const bool useOldHandLight = minecraft->gameRenderer == nullptr
+ auto* gameRenderer = minecraft->gameRenderer.get();
+ const bool useOldHandLight = gameRenderer == nullptr
                                   ? vanillaPackDefinition().oldHandLight
-                                  : minecraft->gameRenderer->packDefinition().oldHandLight;
+                                  : gameRenderer->packDefinition().oldHandLight;
   const float colorMult = useOldHandLight ? rawHandLight : 1.0f;
   Tessellator::INSTANCE.light(static_cast<float>(handBlockLight), static_cast<float>(handSkyLight));
   entity::EntityRenderer* entityRenderer = entity::EntityRenderDispatcher::instance().get(*clientPlayer);
   auto* playerRenderer = dynamic_cast<entity::PlayerEntityRenderer*>(entityRenderer);
   render::RenderPassScope firstPersonScope(render::RenderType::hand());
+  if(!usingUserShaderPack(gameRenderer)) {
+   applyVanillaHandLighting();
+  }
   if(selectedItem != nullptr && selectedItem->getItem() != nullptr) {
    const int tint = selectedItem->getItem()->getColorMultiplier(selectedItem->getDamage());
    const float red = static_cast<float>((tint >> 16) & 0xFF) / 255.0f;

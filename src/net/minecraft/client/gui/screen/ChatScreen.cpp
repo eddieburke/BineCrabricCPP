@@ -2,6 +2,7 @@
 #include "net/minecraft/client/Minecraft.hpp"
 #include "net/minecraft/client/gui/Draw2D.hpp"
 #include "net/minecraft/client/gui/hud/InGameHud.hpp"
+#include "net/minecraft/client/platform/Browser.hpp"
 #include "net/minecraft/client/render/RenderType.hpp"
 #include "net/minecraft/client/render/Tessellator.hpp"
 #include "net/minecraft/entity/player/ClientPlayerEntity.hpp"
@@ -10,6 +11,8 @@
 namespace net::minecraft::client::gui::screen {
 void ChatScreen::init() {
  text_.clear();
+ historyOffset_ = -1;
+ pendingText_.clear();
  enableTextInput();
 }
 void ChatScreen::removed() {
@@ -40,6 +43,7 @@ void ChatScreen::sendCurrentText() {
  if(event.canceled || event.message.empty()) {
   return;
  }
+ minecraft()->inGameHud.addSentChatMessage(event.message);
  minecraft()->player->sendChatMessage(event.message);
 }
 void ChatScreen::render(int mouseX, int mouseY, float tickDelta) {
@@ -58,6 +62,39 @@ void ChatScreen::render(int mouseX, int mouseY, float tickDelta) {
 }
 void ChatScreen::keyPressed(char character, int keyCode) {
  if(closeOnEscape(keyCode)) {
+  return;
+ }
+ if(arrowUpPressed(keyCode)) {
+  recallHistory(1);
+  return;
+ }
+ if(arrowDownPressed(keyCode)) {
+  recallHistory(-1);
+  return;
+ }
+ if(keyCode == input::keys::kPageUp && minecraft() != nullptr) {
+  minecraft()->inGameHud.scrollChat(19);
+  return;
+ }
+ if(keyCode == input::keys::kPageDown && minecraft() != nullptr) {
+  minecraft()->inGameHud.scrollChat(-19);
+  return;
+ }
+ if(copyChordPressed(keyCode)) {
+  setClipboard(text_);
+  return;
+ }
+ if(character == '\x16' || pasteChordPressed(keyCode)) {
+  const std::string clipboard = getClipboard();
+  const std::string& valid = CharacterUtils::validCharacters();
+  for(char value : clipboard) {
+   if(text_.length() >= 100) {
+    break;
+   }
+   if(valid.find(value) != std::string::npos) {
+    text_.push_back(value);
+   }
+  }
   return;
  }
  if(submitPressed(keyCode, character)) {
@@ -80,8 +117,24 @@ void ChatScreen::keyPressed(char character, int keyCode) {
  }
 }
 void ChatScreen::mouseClicked(int mouseX, int mouseY, int button) {
- if(button != 0 || minecraft() == nullptr) {
+ if(minecraft() == nullptr) {
   Screen::mouseClicked(mouseX, mouseY, button);
+  return;
+ }
+ if(button == 1) {
+  const std::string line = minecraft()->inGameHud.chatLineAt(mouseX, mouseY, height());
+  if(!line.empty()) {
+   setClipboard(line);
+   return;
+  }
+ }
+ if(button != 0) {
+  Screen::mouseClicked(mouseX, mouseY, button);
+  return;
+ }
+ const std::string link = minecraft()->inGameHud.chatLinkAt(mouseX, mouseY, height());
+ if(!link.empty()) {
+  (void)platform::openUrlInBrowser(link);
   return;
  }
  if(!minecraft()->inGameHud.selectedName.empty()) {
@@ -95,5 +148,30 @@ void ChatScreen::mouseClicked(int mouseX, int mouseY, int button) {
   return;
  }
  Screen::mouseClicked(mouseX, mouseY, button);
+}
+void ChatScreen::mouseScrolled(int mouseX, int mouseY, int delta) {
+ (void)mouseX;
+ (void)mouseY;
+ if(minecraft() != nullptr && delta != 0) {
+  minecraft()->inGameHud.scrollChat(delta < 0 ? 1 : -1);
+ }
+}
+void ChatScreen::recallHistory(int direction) {
+ if(minecraft() == nullptr || direction == 0) {
+  return;
+ }
+ const auto& history = minecraft()->inGameHud.sentChatMessages();
+ if(history.empty()) {
+  return;
+ }
+ if(historyOffset_ < 0 && direction > 0) {
+  pendingText_ = text_;
+ }
+ historyOffset_ = std::clamp(historyOffset_ + direction, -1, static_cast<int>(history.size()) - 1);
+ if(historyOffset_ < 0) {
+  text_ = pendingText_;
+ } else {
+  text_ = history[history.size() - 1 - static_cast<std::size_t>(historyOffset_)];
+ }
 }
 } // namespace net::minecraft::client::gui::screen

@@ -59,6 +59,13 @@ AdLib OPL2 / MPU-401 MIDI. `mina_device_open(NULL, …)` walks the platform's
 backends in order and falls through to the null sink, so a program still runs on
 a machine with no sound card. `mina_device_is_real()` says which happened.
 
+`mina_device_enumerate()` exposes selectable endpoints on every supported
+platform; `mina_device_open_output()` takes a backend and endpoint id. WinMM,
+ALSA, and CoreAudio enumerate their individual output endpoints, while Pulse
+and OSS retain a selectable system default. `mina_engine_reopen_output()` keeps
+the existing voice bank, loader, cache, and streaming state while replacing an
+unavailable or changed output device.
+
 ### Streaming decode — `mina_stream_*`
 
 Pull-mode decode over an image in memory.
@@ -70,15 +77,20 @@ mina_stream_rewind(s);
 mina_stream_close(s);
 ```
 
-WAV, MP3 and Ogg Vorbis decode **on demand**, a frame or packet at a time, so a
-long track costs its encoded size plus one decoder's working set rather than its
-whole decoded size — for a 3-minute stereo Ogg that is a few MB instead of about
-60 MB. Everything else (FLAC, AAC, registered custom codecs) is decoded once at
-open and served from that buffer; `mina_stream_incremental()` reports which.
+WAV, MP3, Ogg Vorbis, FLAC, and AAC decode **on demand**, a frame or packet at a
+time, so a long track costs its encoded size plus one decoder's working set rather
+than its whole decoded size — for a 3-minute stereo Ogg that is a few MB instead
+of about 60 MB. AAC supports both ADTS and MP4/M4A sample tables without first
+materializing an ADTS image. Registered custom codecs still decode once at open;
+`mina_stream_incremental()` reports which path was selected.
 
 Head and tail trims (LAME encoder delay/padding, Ogg granule) are applied
 incrementally, so a stream yields **the same samples as `mina_decode`** either
 way.
+
+`mina_stream_seek()` provides source-frame seeks for every stream. Looping
+sources accept `loop_start` and `loop_end` regions, including streamed music
+and ambience, rather than being limited to full-file loops.
 
 ### Playback engine — `mina_engine_*`
 
@@ -91,6 +103,9 @@ A fixed-capacity bank of named voices mixed into one interleaved block.
   own resampler when the rates differ.
 - Per-voice **volume, pitch, loop, position**; linear **volume ramps** and
   `mina_engine_stop_fade` (kills the click on a music cut).
+- Six live mixer buses — music, ambience, UI, SFX, records, and voice — each
+  with independent gain and mute. Sources marked important duck music by a
+  configurable gain while they are active.
 - **Distance attenuation** with `min_distance` / `max_distance` / `rolloff`, and
   **constant-power panning** off a real forward×up basis.
 - Master gain and soft clip.
@@ -133,6 +148,9 @@ while a load is pending.
 - **Load deadline** — a queued short effect that has waited longer than 250 ms is
   dropped rather than played late as an echo. Looping and streaming requests are
   never dropped.
+- **Telemetry** — `mina_engine_get_telemetry()` reports underruns, active
+  voices, cache bytes and hits/misses, decode/load counts and time, and rejected
+  or dropped playback requests.
 
 ### Threads
 
@@ -278,11 +296,9 @@ sits at 0.707 per side instead of 1.0.
 third_party/mina.h                                  the library
 third_party/MINA.md                                 this file
 src/net/minecraft/client/platform/audio/
-    AudioEngine.hpp                                 unchanged game-facing API
-    AudioEngine.cpp                                 MINA_IMPLEMENTATION lives here;
-                                                    registries, .mus loader hook,
-                                                    direct mina_engine_* calls
-tests/mina_audio_test.cpp                           gtest: decode + resample
+    AudioEngine.hpp                                 buses, output choice, telemetry API
+    AudioEngine.cpp                                 MINA_IMPLEMENTATION, registry and hot-swap bridge
+tests/mina_audio_test.cpp                           decode, seek, loop, telemetry coverage
 ```
 
 `src/net/minecraft/client/platform/audio/backend/` and `.../decode/` are gone.

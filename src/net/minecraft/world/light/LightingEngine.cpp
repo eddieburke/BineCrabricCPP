@@ -146,15 +146,6 @@ bool LightingEngine::hasDirtyRegions() const {
  const std::lock_guard lock(pendingMutex_);
  return !pending_.empty();
 }
-LightingEngine::TraceStats LightingEngine::traceStats() const {
- TraceStats stats;
- stats.stagedWork = stagedCount_.load(std::memory_order_relaxed);
- stats.pendingWork = pendingCount_.load(std::memory_order_relaxed);
- stats.publishedRegions = outbox_.size();
- const std::lock_guard lock(pendingMutex_);
- stats.pendingRegions = pending_.size();
- return stats;
-}
 void LightingEngine::stop() {
  {
   const std::lock_guard stagingLock(stagingMutex_);
@@ -391,50 +382,17 @@ void LightingEngine::runUpdate(const Box& update, WorkerState& state) {
  bool changed = true;
  while(changed) {
   changed = false;
-  int lastMinCx = 0;
-  int lastMaxCx = 0;
-  int lastMinCz = 0;
-  int lastMaxCz = 0;
-  bool lastLoaded = false;
-  bool hasLast = false;
   for(int x = update.minX; x <= update.maxX; ++x) {
    for(int z = update.minZ; z <= update.maxZ; ++z) {
-    const int minCx = (x - 1) >> 4;
-    const int maxCx = (x + 1) >> 4;
-    const int minCz = (z - 1) >> 4;
-    const int maxCz = (z + 1) >> 4;
-    bool loaded = false;
-    if(hasLast && minCx == lastMinCx && maxCx == lastMaxCx && minCz == lastMinCz && maxCz == lastMaxCz) {
-     loaded = lastLoaded;
-    } else {
-     loaded = true;
-     for(int cx = minCx; cx <= maxCx && loaded; ++cx) {
-      for(int cz = minCz; cz <= maxCz; ++cz) {
-       if(chunkAt(cx, cz, state) == nullptr) {
-        loaded = false;
-        break;
-       }
-      }
-     }
-     lastMinCx = minCx;
-     lastMaxCx = maxCx;
-     lastMinCz = minCz;
-     lastMaxCz = maxCz;
-     lastLoaded = loaded;
-     hasLast = true;
-    }
-    if(!loaded) {
-     continue;
-    }
-    // The `loaded` test above proved every chunk in [minCx,maxCx]x[minCz,maxCz]
-    // resolves non-null, and x/z are invariant across the whole y loop, so the
-    // six neighbour samples per voxel need five chunk lookups per column rather
-    // than nine per voxel.
     Chunk* const selfChunk = chunkAt(x >> 4, z >> 4, state);
     Chunk* const negXChunk = chunkAt((x - 1) >> 4, z >> 4, state);
     Chunk* const posXChunk = chunkAt((x + 1) >> 4, z >> 4, state);
     Chunk* const negZChunk = chunkAt(x >> 4, (z - 1) >> 4, state);
     Chunk* const posZChunk = chunkAt(x >> 4, (z + 1) >> 4, state);
+    if(selfChunk == nullptr || negXChunk == nullptr || posXChunk == nullptr || negZChunk == nullptr ||
+       posZChunk == nullptr) {
+     continue;
+    }
     const int lx = x & 15;
     const int lz = z & 15;
     const int negLx = (x - 1) & 15;

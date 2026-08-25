@@ -2,8 +2,8 @@
 #include <algorithm>
 #include <cmath>
 #include <cstring>
+#include <mutex>
 #include "net/minecraft/client/render/RenderCore.hpp"
-#include "net/minecraft/client/debug/VTuneTrace.hpp"
 #include "net/minecraft/client/gl/ShaderProgram.hpp"
 #include "net/minecraft/client/gl/GLCore.hpp"
 #include "net/minecraft/client/render/QuadIndexBuffer.hpp"
@@ -43,6 +43,34 @@ void fillUnsetAttribs(TessellatorVertex* vertices, std::size_t count, const math
  }
 }
 } // namespace
+namespace {
+std::mutex g_vertexPoolMutex;
+std::vector<std::vector<TessellatorVertex>> g_vertexPool;
+// A section mesh is bounded, so a buffer is always worth keeping; the cap only stops the
+// pool growing without bound when uploads outpace captures.
+constexpr std::size_t kVertexPoolMax = 256;
+} // namespace
+std::vector<TessellatorVertex> VertexBufferPool::acquire() {
+ const std::lock_guard<std::mutex> guard(g_vertexPoolMutex);
+ if(g_vertexPool.empty()) {
+  return {};
+ }
+ std::vector<TessellatorVertex> buffer = std::move(g_vertexPool.back());
+ g_vertexPool.pop_back();
+ buffer.clear();
+ return buffer;
+}
+void VertexBufferPool::release(std::vector<TessellatorVertex>&& buffer) {
+ if(buffer.capacity() == 0) {
+  return;
+ }
+ const std::lock_guard<std::mutex> guard(g_vertexPoolMutex);
+ if(g_vertexPool.size() >= kVertexPoolMax) {
+  return;
+ }
+ buffer.clear();
+ g_vertexPool.push_back(std::move(buffer));
+}
 TessellatorMesh::TessellatorMesh(const TessellatorMesh& other)
     : vertices(other.vertices),
       mode(other.mode),
@@ -105,7 +133,8 @@ bool TessellatorMesh::uploadToGpu() {
  return false;
 }
 void TessellatorMesh::releaseCpuVertices() {
- std::vector<TessellatorVertex>().swap(vertices);
+ VertexBufferPool::release(std::move(vertices));
+ vertices.clear();
 }
 void TessellatorMesh::freeGpuBuffer() {
  if(vbo_ != 0) {
@@ -409,9 +438,14 @@ void Tessellator::vertex(double x, double y, double z) {
  TessellatorVertex* vertex = vProxy.ptr;
  vertex->light = currentLight_;
  if(hasBlockData_) {
+  // Three of these per vertex, and std::lround is a libm call GCC will not fold
+  // away. Adding the half before truncating is the same round-half-away-from-zero
+  // for every value that reaches here, which is a block-local offset in [-2, 2].
   const auto component = [](double value) {
-   return static_cast<std::uint32_t>(static_cast<std::uint8_t>(
-       static_cast<std::int8_t>(std::clamp(std::lround(value * 64.0), -128L, 127L))));
+   const double scaled = value * 64.0;
+   const long rounded = static_cast<long>(scaled < 0.0 ? scaled - 0.5 : scaled + 0.5);
+   return static_cast<std::uint32_t>(
+       static_cast<std::uint8_t>(static_cast<std::int8_t>(std::clamp(rounded, -128L, 127L))));
   };
   vertex->midBlock = static_cast<std::int32_t>(
       component(blockCenterX_ - x) | (component(blockCenterY_ - y) << 8U) |
@@ -466,16 +500,9 @@ void Tessellator::draw() {
  if(batchDepth_ > 0) {
   return;
  }
- const std::size_t vertexCount = builder_.vertexCount();
  if(discarding_) {
-  VT_TRACE_COUNTER("FilteredGeometryBatches", 1);
-  VT_TRACE_COUNTER("FilteredVertices", static_cast<std::uint64_t>(discardedVertexCount_));
   reset();
   return;
- }
- if(vertexCount > 0) {
-  VT_TRACE_COUNTER("GeneratedGeometryBatches", 1);
-  VT_TRACE_COUNTER("GeneratedVertices", vertexCount);
  }
  if(builder_.vertexCount() > 0 && !captureOnly_) {
   auto& bytes = builder_.buffer();
@@ -499,9 +526,13 @@ void Tessellator::draw() {
 }
 TessellatorMesh Tessellator::takeMesh() {
  std::size_t count = builder_.vertexCount();
- std::vector<TessellatorVertex> verts(count);
+ // reserve+insert rather than vector(count): the latter value-initialises every
+ // vertex and the memcpy then overwrites all of it, so each mesh was written twice.
+ std::vector<TessellatorVertex> verts = VertexBufferPool::acquire();
  if(count > 0) {
-  std::memcpy(verts.data(), builder_.buffer().data(), count * sizeof(TessellatorVertex));
+  const auto* src = reinterpret_cast<const TessellatorVertex*>(builder_.buffer().data());
+  verts.reserve(count);
+  verts.insert(verts.end(), src, src + count);
   fillUnsetAttribs(verts.data(), count, &pose_, poseRotates_);
  }
  TessellatorMesh mesh(std::move(verts), mode_, hasTexture_, hasNormals_);

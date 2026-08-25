@@ -406,10 +406,8 @@ void ChunkCache::saveChunk(Chunk& chunk) {
  try {
   chunk.lastSaveTime = static_cast<long long>(world_->getTime());
   if(storage_->supportsAsyncWrites()) {
-   {
-    const Chunk::RenderWriteGuard guard(chunk);
-    chunk.meta.ensureSizeForBlockCount(chunk.blocks.size());
-   }
+   // Same reason as AlphaChunkStorage::writeRootChunk: the array is already the
+   // right size, and resizing a live one races the lock-free mesh capture.
    if(!chunk.tryAcquireRenderPin()) {
     // Chunk is already evicted; nothing to save (its data was saved before the
     // eviction tombstone was set).
@@ -427,10 +425,7 @@ void ChunkCache::decorate(ChunkSource* source, int chunkX, int chunkZ) {
  if(chunk.terrainPopulated) {
   return;
  }
- {
-  const Chunk::RenderWriteGuard guard(chunk);
-  chunk.terrainPopulated = true;
- }
+ chunk.terrainPopulated = true;
  if(generator_ != nullptr) {
   // Decoration is main-thread-only (adoptChunk is the sole caller) and touches
   // only main-thread state, so it needs no mutual exclusion of its own.
@@ -637,7 +632,8 @@ void ChunkCache::sweepGraveyard() {
 }
 void ChunkCache::pumpChunkPublish() {
  constexpr std::int64_t kPublishBudgetNs = 4'000'000;
- integrateFinishedLoads(32, kPublishBudgetNs);
+ integrateFinishedLoads(256, kPublishBudgetNs);
+ refillAsyncLoads();
  if(world_ != nullptr && !world_->isSavingDisabled()) {
   drainChunksToUnload(100);
  }
@@ -648,10 +644,24 @@ void ChunkCache::prefetchChunksNear(int centerChunkX, int centerChunkZ) {
  if(world_ == nullptr || (storage_ == nullptr && generator_ == nullptr)) {
   return;
  }
- const int maxLoadsPerCall = 16;
- int loaded = 0;
  integrateFinishedLoads(4);
- while(!residencyQueue_.empty() && loaded < maxLoadsPerCall) {
+ refillAsyncLoads();
+}
+void ChunkCache::refillAsyncLoads() {
+ if(world_ == nullptr || (storage_ == nullptr && generator_ == nullptr)) {
+  return;
+ }
+ const unsigned workerCount =
+     net::minecraft::util::concurrent::ThreadCoordinator::instance()
+         .pool(net::minecraft::util::concurrent::Domain::Compute)
+         .threadCount();
+ const std::size_t targetPending = asyncLoadWindow(workerCount);
+ if(pendingLoads_.size() >= targetPending) {
+  return;
+ }
+ const std::size_t maxLoads = targetPending - pendingLoads_.size();
+ std::size_t loaded = 0;
+ while(!residencyQueue_.empty() && loaded < maxLoads) {
   const ChunkPos position = residencyQueue_.front();
   residencyQueue_.pop_front();
   if(!isDesired(position) || chunksByPos_.contains(position) || pendingLoads_.contains(position)) {
@@ -677,6 +687,8 @@ void ChunkCache::forEachLoadedChunk(const LoadedChunkVisitor& visitor) {
 }
 std::string ChunkCache::getDebugInfo() const {
  return "Chunks loaded: " + std::to_string(chunksByPos_.size()) +
+        ", Pending load: " + std::to_string(pendingLoads_.size()) +
+        ", Queued: " + std::to_string(residencyQueue_.size()) +
         ", Pending unload: " + std::to_string(chunksToUnload_.size());
 }
 } // namespace net::minecraft::world::chunk

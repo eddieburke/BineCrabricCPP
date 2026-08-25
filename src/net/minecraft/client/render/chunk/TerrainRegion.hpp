@@ -40,6 +40,8 @@ class TerrainRegion {
   unsigned handle = 0;
   unsigned vao = 0;
   unsigned staging = 0;
+  // Grows only; see the orphan comment in upload().
+  std::size_t stagingVertices = 0;
   std::size_t capacityVertices = 0;
   std::size_t tailVertex = 0;
   std::array<std::unordered_set<std::size_t>, kSizeClasses> freeByClass{};

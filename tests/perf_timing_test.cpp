@@ -163,7 +163,7 @@ TEST(PerfTimingTest, LightingEnginePushAndDrainBenchmark) {
 
 TEST(PerfTimingTest, MeshLightingReadinessGateBenchmark) {
  std::vector<block::entity::BlockEntity*> blockEntities;
- client::render::chunk::ChunkBuilder builder(nullptr, blockEntities, 0, 0, 0, 16);
+ client::render::chunk::ChunkBuilder builder(nullptr, blockEntities, 0, 0, 0);
  constexpr int iterations = 2000000;
  volatile int legacyReadyCount = 0;
  const auto legacyStart = std::chrono::high_resolution_clock::now();

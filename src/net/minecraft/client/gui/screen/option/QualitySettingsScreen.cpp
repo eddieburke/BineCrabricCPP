@@ -27,7 +27,7 @@ std::array<OptionSpec, 9> kSpecs{{
                  d::saveIntMember<&GameOptions::viewDistance>),
     d::makeSlider("renderScale",
                   16,
-                  ApplyFlags::None,
+                  ApplyFlags::ApplyToWorld | ApplyFlags::ReloadWorld,
                   ApplyFlags::ApplyToWorld | ApplyFlags::ReloadWorld,
                   d::getRenderScaleSlider,
                   d::setRenderScaleSlider,

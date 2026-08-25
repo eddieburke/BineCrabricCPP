@@ -72,9 +72,6 @@ void ClientNetworkHandler::onPlayerMove(const PlayerMovePacket& packet) {
   player->prevZ = player->z;
   started = true;
   minecraft->setScreen(nullptr);
-  if(minecraft->worldRenderer != nullptr) {
-   minecraft->worldRenderer->sections().resetCameraSection();
-  }
   if(world != nullptr) {
    const int px = MathHelper::floor(player->x);
    const int pz = MathHelper::floor(player->z);

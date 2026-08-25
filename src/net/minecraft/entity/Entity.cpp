@@ -10,6 +10,7 @@
 #include "net/minecraft/item/ItemStack.hpp"
 #include "net/minecraft/mod/runtime/LuaDirectHooks.hpp"
 #include "net/minecraft/world/World.hpp"
+#include "net/minecraft/world/chunk/ChunkSource.hpp"
 namespace net::minecraft::entity {
 int Entity::nextId() {
  static int id = 0;
@@ -60,6 +61,14 @@ void Entity::teleport(double xIn, double yIn, double zIn, float yawIn, float pit
   return;
  }
  setPositionAndAngles(event.x, event.y, event.z, event.yaw, event.pitch);
+ if(world != nullptr && !world->isRemote() && dynamic_cast<PlayerEntity*>(this) != nullptr) {
+  const int blockX = MathHelper::floor(event.x);
+  const int blockZ = MathHelper::floor(event.z);
+  world->setChunkCacheCenterFromBlockPos(blockX, blockZ);
+  if(ChunkSource* source = world->getChunkSource(); source != nullptr) {
+   source->loadChunk(chunk_coord(blockX), chunk_coord(blockZ));
+  }
+ }
 }
 void Entity::changeLookDirection(float cursorDeltaX, float cursorDeltaY) {
  const float oldPitch = pitch;

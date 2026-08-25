@@ -101,13 +101,10 @@ bool CubeBlockRenderer::renderSmooth(
      &BlockFaceRenderer::renderEastFace,   &BlockFaceRenderer::renderWestFace,
      &BlockFaceRenderer::renderNorthFace,  &BlockFaceRenderer::renderSouthFace,
  };
- static constexpr int kNeighbour[6][3] = {
-     {0, -1, 0}, {0, 1, 0}, {0, 0, -1}, {0, 0, 1}, {-1, 0, 0}, {1, 0, 0},
- };
  for(int face = 0; face < 6; ++face) {
-  const int nx = x + kNeighbour[face][0];
-  const int ny = y + kNeighbour[face][1];
-  const int nz = z + kNeighbour[face][2];
+  const int nx = x + kFaceOffsets[face][0];
+  const int ny = y + kFaceOffsets[face][1];
+  const int nz = z + kFaceOffsets[face][2];
   if(!ctx_.skipFaceCulling && !ctx_.isSideVisible(block, nx, ny, nz, face)) {
    continue;
   }

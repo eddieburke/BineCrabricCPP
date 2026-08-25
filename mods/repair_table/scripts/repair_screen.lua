@@ -8,7 +8,7 @@ local screen = inventory_helper.slots({
   panel_width = 176,
   panel_height = 166,
   player_inventory = true,
-  background = "mods/repair_table/repair_table_gui.png",
+  background = "mods/repair_table/assets/repair_table_gui.png",
   positions = {
     { x = 44, y = 35 },
     { x = 62, y = 35 },

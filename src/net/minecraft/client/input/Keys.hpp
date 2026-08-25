@@ -6,6 +6,7 @@ inline constexpr int kHotbar1 = 2;
 inline constexpr int kHotbar9 = 10;
 inline constexpr int kBackspace = 14;
 inline constexpr int kLCtrl = 29;
+inline constexpr int kC = 46;
 inline constexpr int kS = 31;
 inline constexpr int kV = 47;
 inline constexpr int kEnter = 28;
@@ -24,7 +25,9 @@ inline constexpr int kF7 = 65;
 inline constexpr int kF8 = 66;
 inline constexpr int kF11 = 87;
 inline constexpr int kUp = 200;
+inline constexpr int kPageUp = 201;
 inline constexpr int kDown = 208;
+inline constexpr int kPageDown = 209;
 inline int hotbarSlotFromKey(int key) noexcept {
  if(key >= kHotbar1 && key <= kHotbar9) {
   return key - kHotbar1;

@@ -121,6 +121,9 @@ int LeavesBlock::getColorMultiplier(const BlockView* blockView, int x, int y, in
 void LeavesBlock::setFancyGraphics(bool fancy) {
  renderSides = fancy;
  textureId = spriteIndex + (fancy ? 0 : 1);
+ // BLOCKS_OPAQUE is baked at registration, before this runs; leaves are the one id
+ // whose isOpaque() is not constant.
+ Block::BLOCKS_OPAQUE[static_cast<std::size_t>(id)] = isOpaque();
 }
 void LeavesBlock::onBreak(World* world, int x, int y, int z) {
  if(world == nullptr || Block::LEAVES == nullptr) {

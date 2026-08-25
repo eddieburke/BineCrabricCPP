@@ -3,79 +3,6 @@
 #include "net/minecraft/block/Block.hpp"
 #include "net/minecraft/world/BlockView.hpp"
 namespace net::minecraft::client::render::block {
-bool edgeTransmitsLight(const net::minecraft::BlockView* blockView, int x, int y, int z) {
- if(blockView == nullptr) {
-  return true;
- }
- const int blockId = blockView->getBlockId(x, y, z);
- if(blockId <= 0 || blockId >= net::minecraft::block::Block::BLOCK_COUNT) {
-  return true;
- }
- return net::minecraft::block::Block::BLOCKS_LIGHT_OPACITY[static_cast<std::size_t>(blockId)] == 0;
-}
-float cornerOcclusion(const net::minecraft::BlockView* blockView, int x, int y, int z) {
- if(blockView == nullptr) {
-  return 1.0f;
- }
- const int blockId = blockView->getBlockId(x, y, z);
- if(blockId <= 0 || blockId >= net::minecraft::block::Block::BLOCK_COUNT) {
-  return 1.0f;
- }
- return net::minecraft::block::Block::BLOCKS_OPAQUE[static_cast<std::size_t>(blockId)] ? 0.2f : 1.0f;
-}
-void readCornerLight(BlockRenderContext& ctx, int x, int y, int z, int& blockLight, int& skyLight) {
- ctx.sampleFaceLight(x, y, z);
- blockLight = ctx.faceBlockLight;
- skyLight = ctx.faceSkyLight;
-}
-float averageCornerChannel(int diagonal, int side, int other, int center) {
- if(diagonal == 0) diagonal = center;
- if(side == 0) side = center;
- if(other == 0) other = center;
- return static_cast<float>(diagonal + side + other + center) / 4.0f;
-}
-void averageCornerLight(BlockRenderContext& ctx,
-                        int dx,
-                        int dy,
-                        int dz,
-                        int sx,
-                        int sy,
-                        int sz,
-                        int ox,
-                        int oy,
-                        int oz,
-                        int cx,
-                        int cy,
-                        int cz,
-                        bool closed,
-                        CornerSample& corner) {
- int bd = 0;
- int sd = 0;
- int bs = 0;
- int ss = 0;
- int bo = 0;
- int so = 0;
- int bc = 0;
- int sc = 0;
- readCornerLight(ctx, dx, dy, dz, bd, sd);
- readCornerLight(ctx, sx, sy, sz, bs, ss);
- readCornerLight(ctx, ox, oy, oz, bo, so);
- readCornerLight(ctx, cx, cy, cz, bc, sc);
- float od = cornerOcclusion(ctx.blockView, dx, dy, dz);
- const float os = cornerOcclusion(ctx.blockView, sx, sy, sz);
- const float oo = cornerOcclusion(ctx.blockView, ox, oy, oz);
- const float oc = cornerOcclusion(ctx.blockView, cx, cy, cz);
- if(closed) {
-  bd = bs;
-  sd = ss;
-  // The diagonal is unreachable behind a closed inner corner, so vanilla reads
-  // the edge in its place — for the occlusion average exactly as for the light.
-  od = os;
- }
- corner.blockLight = averageCornerChannel(bd, bs, bo, bc);
- corner.skyLight = averageCornerChannel(sd, ss, so, sc);
- corner.occlusion = (od + os + oo + oc) / 4.0f;
-}
 namespace {
 // Per face: the axis the face is offset along (0=x, 1=y, 2=z) and its two in-plane
 // axes u and v. Faces are the usual 0..5 (down, up, east, west, north, south).
@@ -103,6 +30,56 @@ constexpr int kWindingOrder[6][4][2] = {
     {{1, 1}, {0, 1}, {0, 0}, {1, 0}}, // north
     {{1, 0}, {0, 0}, {0, 1}, {1, 1}}, // south
 };
+// The face's own 3x3 neighbourhood, in the face's plane, one sample per cell.
+//
+// Every corner of a face averages four cells -- the face cell, the two edge cells
+// beside it and the diagonal -- and the four corners overlap heavily. Sampling per
+// corner read these same nine cells 24 times for block ids and 17 times for light,
+// for values that do not depend on which corner asked. Reading each once is where
+// most of the AO cost went.
+struct FaceNeighbourhood {
+ struct Cell {
+  int blockLight = 15;
+  int skyLight = 15;
+  float occlusion = 1.0f;
+  // Vanilla's inner-corner test: an edge stops closing the diagonal off only when
+  // its light opacity is zero. NOT material.blocksVision().
+  bool transmitsLight = true;
+ };
+ // Indexed [1 + du][1 + dv] along the face's own u and v axes.
+ Cell cells[3][3];
+ [[nodiscard]] const Cell& at(int du, int dv) const noexcept {
+  return cells[1 + du][1 + dv];
+ }
+};
+FaceNeighbourhood sampleFaceNeighbourhood(BlockRenderContext& ctx, const FaceAxes& axes, const int base[3]) {
+ using net::minecraft::block::Block;
+ FaceNeighbourhood out;
+ for(int du = -1; du <= 1; ++du) {
+  for(int dv = -1; dv <= 1; ++dv) {
+   int at[3] = {base[0], base[1], base[2]};
+   at[axes.uAxis] += du;
+   at[axes.vAxis] += dv;
+   FaceNeighbourhood::Cell& cell = out.cells[1 + du][1 + dv];
+   const int blockId = ctx.blockIdAt(at[0], at[1], at[2]);
+   ctx.sampleFaceLight(at[0], at[1], at[2], blockId);
+   cell.blockLight = ctx.faceBlockLight;
+   cell.skyLight = ctx.faceSkyLight;
+   const bool known = blockId > 0 && blockId < Block::BLOCK_COUNT;
+   cell.occlusion = known && Block::BLOCKS_OPAQUE[static_cast<std::size_t>(blockId)] ? 0.2f : 1.0f;
+   cell.transmitsLight = !known || Block::BLOCKS_LIGHT_OPACITY[static_cast<std::size_t>(blockId)] == 0;
+  }
+ }
+ return out;
+}
+// Vanilla's corner average: a zero channel means "no light recorded there", which
+// reads as the face cell's own value rather than as darkness.
+float averageCornerChannel(int diagonal, int side, int other, int center) {
+ if(diagonal == 0) diagonal = center;
+ if(side == 0) side = center;
+ if(other == 0) other = center;
+ return static_cast<float>(diagonal + side + other + center) / 4.0f;
+}
 } // namespace
 FaceCornerSamples sampleCubeFaceCorners(BlockRenderContext& ctx, int face, int faceX, int faceY, int faceZ) {
  FaceCornerSamples out;
@@ -110,25 +87,34 @@ FaceCornerSamples sampleCubeFaceCorners(BlockRenderContext& ctx, int face, int f
   return out;
  }
  out.face = face;
- const FaceAxes axes = kFaceAxes[face];
  const int base[3] = {faceX, faceY, faceZ};
- ctx.sampleFaceLight(faceX, faceY, faceZ);
- out.faceBlockLight = ctx.faceBlockLight;
- out.faceSkyLight = ctx.faceSkyLight;
+ const FaceNeighbourhood neighbourhood = sampleFaceNeighbourhood(ctx, kFaceAxes[face], base);
+ const FaceNeighbourhood::Cell& center = neighbourhood.at(0, 0);
+ out.faceBlockLight = center.blockLight;
+ out.faceSkyLight = center.skyLight;
  for(int uHigh = 0; uHigh < 2; ++uHigh) {
   for(int vHigh = 0; vHigh < 2; ++vHigh) {
-   int side[3] = {base[0], base[1], base[2]};
-   side[axes.uAxis] += uHigh == 0 ? -1 : 1;
-   int other[3] = {base[0], base[1], base[2]};
-   other[axes.vAxis] += vHigh == 0 ? -1 : 1;
-   const int diagonal[3] = {side[0] + other[0] - base[0], side[1] + other[1] - base[1],
-                            side[2] + other[2] - base[2]};
-   const bool closed = !(edgeTransmitsLight(ctx.blockView, side[0], side[1], side[2]) ||
-                         edgeTransmitsLight(ctx.blockView, other[0], other[1], other[2]));
-   averageCornerLight(ctx, diagonal[0], diagonal[1], diagonal[2], side[0], side[1], side[2], other[0],
-                      other[1], other[2], base[0], base[1], base[2], closed, out.corners[uHigh][vHigh]);
+   const int du = uHigh == 0 ? -1 : 1;
+   const int dv = vHigh == 0 ? -1 : 1;
+   const FaceNeighbourhood::Cell& side = neighbourhood.at(du, 0);
+   const FaceNeighbourhood::Cell& other = neighbourhood.at(0, dv);
+   // The diagonal is unreachable behind a closed inner corner, so vanilla reads
+   // the edge in its place -- for the occlusion average exactly as for the light.
+   const bool closed = !(side.transmitsLight || other.transmitsLight);
+   const FaceNeighbourhood::Cell& diagonal = closed ? side : neighbourhood.at(du, dv);
+   CornerSample& corner = out.corners[uHigh][vHigh];
+   corner.blockLight =
+       averageCornerChannel(diagonal.blockLight, side.blockLight, other.blockLight, center.blockLight);
+   corner.skyLight = averageCornerChannel(diagonal.skyLight, side.skyLight, other.skyLight, center.skyLight);
+   corner.occlusion = (diagonal.occlusion + side.occlusion + other.occlusion + center.occlusion) / 4.0f;
   }
  }
+ // The face renderers read ctx.faceBlockLight/faceSkyLight out of the context when
+ // they open their tessellator -- activeTess re-issues blockData with them -- and
+ // what they have to see is this face's own cell. The old sampler left it there by
+ // accident, its last corner average happening to read the centre last. Set it.
+ ctx.faceBlockLight = center.blockLight;
+ ctx.faceSkyLight = center.skyLight;
  return out;
 }
 void FaceCornerSamples::toWinding(CornerSample (&out)[4]) const {

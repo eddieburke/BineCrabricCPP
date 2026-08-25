@@ -1,6 +1,7 @@
 #include "net/minecraft/client/gui/hud/InGameHud.hpp"
 #include <array>
 #include <cmath>
+#include <string_view>
 #include <vector>
 #include "net/minecraft/block/Block.hpp"
 #include "net/minecraft/block/material/Material.hpp"
@@ -27,6 +28,30 @@ namespace core = net::minecraft::client::render::core;
 namespace {
 constexpr int kColorWhite = 0xFFFFFF;
 constexpr int kColorLightGray = 0xE0E0E0;
+constexpr int kColorLink = 0x55AAFF;
+std::pair<std::size_t, std::size_t> chatLinkRange(std::string_view text) {
+ const std::size_t secure = text.find("https://");
+ const std::size_t plain = text.find("http://");
+ std::size_t start = std::string_view::npos;
+ if(secure != std::string_view::npos && plain != std::string_view::npos) {
+  start = std::min(secure, plain);
+ } else if(secure != std::string_view::npos) {
+  start = secure;
+ } else {
+  start = plain;
+ }
+ if(start == std::string_view::npos) {
+  return {start, start};
+ }
+ std::size_t end = text.find_first_of(" \t\r\n", start);
+ if(end == std::string_view::npos) {
+  end = text.size();
+ }
+ while(end > start && std::string_view(".,!?;:)]}").find(text[end - 1]) != std::string_view::npos) {
+  --end;
+ }
+ return end > start ? std::pair{start, end} : std::pair{std::string_view::npos, std::string_view::npos};
+}
 int hsbToRgb(float hue, float saturation, float brightness) {
  hue = std::fmod(hue, 1.0f);
  if(hue < 0.0f) {
@@ -92,6 +117,8 @@ void InGameHud::tick() {
 }
 void InGameHud::clearChat() {
  messages.clear();
+ sentMessages_.clear();
+ chatScroll_ = 0;
 }
 void InGameHud::addChatMessage(const std::string& message) {
  net::minecraft::mod::ChatEvent event;
@@ -115,9 +142,66 @@ void InGameHud::addChatMessage(const std::string& message) {
   }
  }
  messages.insert(messages.begin(), ChatHudLine(remaining));
- if(messages.size() > 50) {
-  messages.resize(50);
+ if(messages.size() > 512) {
+  messages.resize(512);
  }
+ resetChatScroll();
+}
+void InGameHud::addSentChatMessage(std::string message) {
+ if(message.empty()) {
+  return;
+ }
+ if(sentMessages_.empty() || sentMessages_.back() != message) {
+  sentMessages_.push_back(std::move(message));
+ }
+ if(sentMessages_.size() > 100) {
+  sentMessages_.erase(sentMessages_.begin(), sentMessages_.begin() + 1);
+ }
+}
+void InGameHud::scrollChat(int lines) {
+ const int maxScroll = std::max(0, static_cast<int>(messages.size()) - 20);
+ chatScroll_ = std::clamp(chatScroll_ + lines, 0, maxScroll);
+}
+void InGameHud::resetChatScroll() {
+ chatScroll_ = 0;
+}
+std::optional<std::size_t> InGameHud::chatLineIndexAt(int mouseX, int mouseY, int scaledHeight) const {
+ if(mouseX < 2 || mouseX > 322) {
+  return std::nullopt;
+ }
+ const int baseY = scaledHeight - 48;
+ for(int displayed = 0; displayed < 20; ++displayed) {
+  const int y = baseY - displayed * 9;
+  if(mouseY >= y - 1 && mouseY <= y + 8) {
+   const std::size_t index = static_cast<std::size_t>(chatScroll_ + displayed);
+   if(index < messages.size()) {
+    return index;
+   }
+   return std::nullopt;
+  }
+ }
+ return std::nullopt;
+}
+std::string InGameHud::chatLineAt(int mouseX, int mouseY, int scaledHeight) const {
+ const std::optional<std::size_t> index = chatLineIndexAt(mouseX, mouseY, scaledHeight);
+ return index ? messages[*index].text : std::string{};
+}
+std::string InGameHud::chatLinkAt(int mouseX, int mouseY, int scaledHeight) const {
+ if(minecraft == nullptr || minecraft->textRenderer == nullptr) {
+  return {};
+ }
+ const std::optional<std::size_t> index = chatLineIndexAt(mouseX, mouseY, scaledHeight);
+ if(!index) {
+  return {};
+ }
+ const std::string& text = messages[*index].text;
+ const auto [start, end] = chatLinkRange(text);
+ if(start == std::string::npos) {
+  return {};
+ }
+ const int left = 2 + minecraft->textRenderer->getWidth(text.substr(0, start));
+ const int right = left + minecraft->textRenderer->getWidth(text.substr(start, end - start));
+ return mouseX >= left && mouseX < right ? text.substr(start, end - start) : std::string{};
 }
 void InGameHud::addTranslatedChatMessage(const std::string& text) {
  addChatMessage(resource::language::I18n::getTranslation(text));
@@ -260,7 +344,10 @@ void InGameHud::renderChat(font::TextRenderer& textRenderer, bool chatOpen, int 
   };
   std::vector<VisibleLine> visible;
   visible.reserve(static_cast<std::size_t>(maxLines));
-  for(int i = 0; i < static_cast<int>(messages.size()) && i < maxLines; ++i) {
+  const int start = chatOpen ? chatScroll_ : 0;
+  for(int i = start, displayed = 0;
+      i < static_cast<int>(messages.size()) && displayed < maxLines;
+      ++i) {
    if(messages[static_cast<std::size_t>(i)].age >= 200 && !chatOpen) {
     continue;
    }
@@ -276,7 +363,8 @@ void InGameHud::renderChat(font::TextRenderer& textRenderer, bool chatOpen, int 
    if(alpha <= 0) {
     continue;
    }
-   visible.push_back({-i * 9, alpha, static_cast<std::size_t>(i)});
+   visible.push_back({-displayed * 9, alpha, static_cast<std::size_t>(i)});
+   ++displayed;
   }
   if(!visible.empty()) {
    render::Tessellator& tessellator = render::Tessellator::INSTANCE;
@@ -288,7 +376,24 @@ void InGameHud::renderChat(font::TextRenderer& textRenderer, bool chatOpen, int 
    tessellator.draw();
   }
   for(const VisibleLine& line : visible) {
-   textRenderer.drawWithShadow(messages[line.index].text, 2, line.y, kColorWhite + (line.alpha << 24));
+   const std::string& text = messages[line.index].text;
+   const auto [linkStart, linkEnd] = chatLinkRange(text);
+   if(linkStart == std::string::npos) {
+    textRenderer.drawWithShadow(text, 2, line.y, kColorWhite + (line.alpha << 24));
+    continue;
+   }
+   int x = 2;
+   if(linkStart > 0) {
+    const std::string prefix = text.substr(0, linkStart);
+    textRenderer.drawWithShadow(prefix, x, line.y, kColorWhite + (line.alpha << 24));
+    x += textRenderer.getWidth(prefix);
+   }
+   const std::string link = text.substr(linkStart, linkEnd - linkStart);
+   textRenderer.drawWithShadow(link, x, line.y, kColorLink + (line.alpha << 24));
+   x += textRenderer.getWidth(link);
+   if(linkEnd < text.size()) {
+    textRenderer.drawWithShadow(text.substr(linkEnd), x, line.y, kColorWhite + (line.alpha << 24));
+   }
   }
  }
  core::disableBlend();

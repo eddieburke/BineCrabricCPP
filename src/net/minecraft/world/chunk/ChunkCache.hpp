@@ -1,4 +1,5 @@
 #pragma once
+#include <algorithm>
 #include <atomic>
 #include <condition_variable>
 #include <cstdint>
@@ -60,6 +61,10 @@ class ChunkCache : public ChunkSource {
  [[nodiscard]] std::size_t loadedChunkCount() const noexcept {
   return chunksByPos_.size();
  }
+ [[nodiscard]] static constexpr std::size_t asyncLoadWindow(unsigned workerCount) noexcept {
+  const std::size_t scaled = static_cast<std::size_t>(std::max(1U, workerCount)) * 32U;
+  return std::clamp<std::size_t>(scaled, 64U, 256U);
+ }
 
  private:
  struct PendingLoad {
@@ -94,6 +99,7 @@ class ChunkCache : public ChunkSource {
  void completeSerializedWrite();
  void waitForPendingLoads();
  void rebuildResidencyPlan();
+ void refillAsyncLoads();
  [[nodiscard]] bool isDesired(const ChunkPos& position) const noexcept;
  // Destroys graveyard entries whose render leases have drained. Tombstone
  // eviction: a chunk is removed from every map and parked here, and is freed

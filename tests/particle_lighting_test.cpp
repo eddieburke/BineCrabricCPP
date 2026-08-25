@@ -1,4 +1,5 @@
 #include <gtest/gtest.h>
+#include "net/minecraft/client/particle/FlameParticle.hpp"
 #include "net/minecraft/client/particle/Particle.hpp"
 #include "net/minecraft/client/render/Tessellator.hpp"
 
@@ -25,5 +26,11 @@ TEST(ParticleLighting, RenderDoesNotInheritStalePackedLight) {
  for(const render::TessellatorVertex& vertex : mesh.vertices) {
   EXPECT_EQ(vertex.light, 0x00F000F0);
  }
+}
+
+TEST(ParticleLighting, FlameParticlesStayFullBright) {
+ FlameParticle particle(nullptr, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0);
+ particle.particleAge = particle.maxParticleAge;
+ EXPECT_FLOAT_EQ(particle.getBrightnessAtEyes(0.5f), 1.0f);
 }
 }

@@ -104,6 +104,9 @@ void Screen::onKeyboardEvent(const input::KeyboardEvent& event) {
 bool Screen::pasteChordPressed(int keyCode) noexcept {
  return keyCode == input::keys::kV && input::InputSystem::instance().modifiers().ctrl;
 }
+bool Screen::copyChordPressed(int keyCode) noexcept {
+ return keyCode == input::keys::kC && input::InputSystem::instance().modifiers().ctrl;
+}
 bool Screen::closeOnEscape(int keyCode) {
  if(!escapePressed(keyCode) || minecraft_ == nullptr) {
   return false;
@@ -281,5 +284,8 @@ void Screen::handleTab() {
 }
 std::string Screen::getClipboard() {
  return platform::glfw::Window::clipboardString();
+}
+void Screen::setClipboard(std::string text) {
+ platform::glfw::Window::setClipboardString(text);
 }
 } // namespace net::minecraft::client::gui::screen

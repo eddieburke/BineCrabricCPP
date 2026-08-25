@@ -3,14 +3,15 @@
 #include <atomic>
 #include <cstring>
 #include <mutex>
+#include <thread>
 #include "net/minecraft/block/Block.hpp"
 #include "net/minecraft/block/material/Material.hpp"
 #include "net/minecraft/world/chunk/Chunk.hpp"
 namespace net::minecraft::client::render::chunk {
 namespace {
-// Every mesh capture allocated a fresh ~100 KB snapshot buffer and freed it again
-// once the worker was done -- on the main thread, several times a frame, and it was
-// the single largest allocator cost in the frame. The buffer holds nothing but bytes
+// Every mesh capture allocated a fresh snapshot buffer and freed it again once the
+// worker was done -- on the main thread, several times a frame, and it was the
+// single largest allocator cost in the frame. The buffer holds nothing but bytes
 // the constructor overwrites in full, so a finished one can simply be handed back.
 struct PooledBuffer {
  std::unique_ptr<std::uint8_t[]> bytes;
@@ -19,6 +20,7 @@ struct PooledBuffer {
 constexpr std::size_t kMaxPooledBuffers = 32;
 std::mutex gPoolMutex;
 std::vector<PooledBuffer> gPooledBuffers;
+std::atomic<std::uint64_t> gLockedCaptures{0};
 [[nodiscard]] PooledBuffer acquireSnapshotBuffer(std::size_t wanted) {
  {
   const std::lock_guard<std::mutex> guard(gPoolMutex);
@@ -45,95 +47,79 @@ void releaseSnapshotBuffer(PooledBuffer buffer) {
   gPooledBuffers.push_back(std::move(buffer));
  }
 }
-class ChunkRenderWriteLock {
- public:
- explicit ChunkRenderWriteLock(const Chunk& chunk) : chunk_(chunk) {
-  chunk_.lockRenderWrite();
- }
- ~ChunkRenderWriteLock() {
-  chunk_.unlockRenderWrite();
- }
- ChunkRenderWriteLock(const ChunkRenderWriteLock&) = delete;
- ChunkRenderWriteLock& operator=(const ChunkRenderWriteLock&) = delete;
-
- private:
- const Chunk& chunk_;
+// One column of the shell: the Y run of block ids, metadata, sky light and block
+// light for a single (x,z), copied straight out of the chunk's own arrays. Both
+// layouts are column-major with y contiguous, and the shell's minY is forced even
+// so the packed nibble runs line up byte for byte -- every one of these is a
+// memcpy, never a shift.
+struct ShellColumn {
+ std::uint8_t* blocks;
+ std::uint8_t* meta;
+ std::uint8_t* skyLight;
+ std::uint8_t* blockLight;
 };
-void copyNibbleColumn(std::uint8_t* dst,
-                      std::size_t dstColumn,
-                      int halfSpan,
-                      const std::vector<std::uint8_t>& src,
-                      std::size_t srcByteBase) {
- std::uint8_t* out = dst + dstColumn * static_cast<std::size_t>(halfSpan);
- if(srcByteBase + static_cast<std::size_t>(halfSpan) <= src.size()) {
-  std::memcpy(out, src.data() + srcByteBase, static_cast<std::size_t>(halfSpan));
-  return;
+void copyColumnOnce(const ShellColumn& dst,
+                    const Chunk& chunk,
+                    int localX,
+                    int localZ,
+                    int minY,
+                    int ySpan,
+                    int halfSpan) {
+ const std::size_t blockBase = static_cast<std::size_t>((localX << 11) | (localZ << 7) | minY);
+ const std::size_t nibbleBase = blockBase >> 1;
+ const auto blockBytes = static_cast<std::size_t>(ySpan);
+ const auto nibbleBytes = static_cast<std::size_t>(halfSpan);
+ if(chunk.blocks.size() < blockBase + blockBytes) {
+  std::memset(dst.blocks, 0, blockBytes);
+ } else {
+  std::memcpy(dst.blocks, chunk.blocks.data() + blockBase, blockBytes);
  }
- for(int i = 0; i < halfSpan; ++i) {
-  const std::size_t srcIdx = srcByteBase + static_cast<std::size_t>(i);
-  if(srcIdx < src.size()) {
-   out[i] = src[srcIdx];
-  } else {
-   out[i] = 0;
+ const auto copyNibbles = [nibbleBase, nibbleBytes](std::uint8_t* out, const std::vector<std::uint8_t>& src) {
+  if(src.size() < nibbleBase + nibbleBytes) {
+   std::memset(out, 0, nibbleBytes);
+   return;
   }
- }
+  std::memcpy(out, src.data() + nibbleBase, nibbleBytes);
+ };
+ copyNibbles(dst.meta, chunk.meta.bytes);
+ copyNibbles(dst.skyLight, chunk.skyLight.bytes);
+ copyNibbles(dst.blockLight, chunk.blockLight.bytes);
 }
-void copyChunkBand(std::uint8_t* dst,
-                   const Chunk& chunk,
-                   int minY,
-                   int ySpan,
-                   int halfSpan,
-                   bool& anyNonAir) {
- ChunkRenderWriteLock guard(chunk);
- anyNonAir = false;
- const std::size_t blockBytes = static_cast<std::size_t>(16 * 16 * ySpan);
- const std::size_t nibbleBytes = static_cast<std::size_t>(16 * 16 * halfSpan);
- std::uint8_t* blocks = dst;
- std::uint8_t* meta = blocks + blockBytes;
- std::uint8_t* skyLight = meta + nibbleBytes;
- std::uint8_t* blockLight = skyLight + nibbleBytes;
- const std::size_t blockNeed = static_cast<std::size_t>((15 << 11) | (15 << 7) | minY) + static_cast<std::size_t>(ySpan);
- if(chunk.blocks.size() < blockNeed) {
-  std::memset(dst, 0, blockBytes + 3 * nibbleBytes);
-  return;
- }
- // The three nibble arrays are sized per chunk, so the per-column bounds test
- // copyNibbleColumn does is loop-invariant; hoisting it lets the common case
- // memcpy 256 columns without reloading three vector sizes each time.
- const std::size_t nibbleNeed =
-     (static_cast<std::size_t>((15 << 11) | (15 << 7) | minY) >> 1) + static_cast<std::size_t>(halfSpan);
- const bool nibblesInRange = chunk.meta.bytes.size() >= nibbleNeed &&
-                             chunk.skyLight.bytes.size() >= nibbleNeed &&
-                             chunk.blockLight.bytes.size() >= nibbleNeed;
- for(int column = 0; column < 16 * 16; ++column) {
-  const int localX = column >> 4;
-  const int localZ = column & 0xF;
-  const std::size_t srcBlockBase = static_cast<std::size_t>((localX << 11) | (localZ << 7) | minY);
-  const std::size_t srcNibbleBase = srcBlockBase >> 1;
-  const std::size_t dstColumn = static_cast<std::size_t>((localX << 4) | localZ);
-  std::memcpy(blocks + dstColumn * static_cast<std::size_t>(ySpan),
-              chunk.blocks.data() + srcBlockBase,
-              static_cast<std::size_t>(ySpan));
-  if(!anyNonAir) {
-   for(int i = 0; i < ySpan; ++i) {
-    if(blocks[dstColumn * static_cast<std::size_t>(ySpan) + static_cast<std::size_t>(i)] != 0) {
-     anyNonAir = true;
-     break;
-    }
-   }
+void zeroColumn(const ShellColumn& dst, int ySpan, int halfSpan) {
+ std::memset(dst.blocks, 0, static_cast<std::size_t>(ySpan));
+ std::memset(dst.meta, 0, static_cast<std::size_t>(halfSpan));
+ std::memset(dst.skyLight, 0, static_cast<std::size_t>(halfSpan));
+ std::memset(dst.blockLight, 0, static_cast<std::size_t>(halfSpan));
+}
+// The capture runs on the main thread inside terrain/compile, and every chunk it
+// touches is one a light worker may be writing. Taking the chunk's write lock here
+// made looking around a hitch: each acquisition waited behind whichever worker held
+// the flag, and every light cell that worker wrote spun behind us in turn.
+//
+// So read optimistically instead. Per-cell writes are byte-atomic and are not in the
+// version protocol at all: racing one yields a stale value, never a torn one, and the
+// write that produced it publishes a dirty region that remeshes the section anyway.
+// Only a bulk section -- packet load, save serialise -- can leave the bytes actually
+// inconsistent, and those are exactly what an odd stamp reports. A capture that keeps
+// landing inside one falls back to the lock so it cannot spin forever.
+constexpr int kOptimisticAttempts = 4;
+template <typename CopyRect>
+void captureChunkRect(const Chunk& chunk, CopyRect&& copyRect) {
+ for(int attempt = 0; attempt < kOptimisticAttempts; ++attempt) {
+  const std::uint32_t stamp = chunk.renderVersion();
+  if((stamp & 1U) != 0) {
+   // A bulk section is in flight. Copying now would only be thrown away.
+   std::this_thread::yield();
+   continue;
   }
-  if(nibblesInRange) {
-   const std::size_t dstByte = dstColumn * static_cast<std::size_t>(halfSpan);
-   const std::size_t bytes = static_cast<std::size_t>(halfSpan);
-   std::memcpy(meta + dstByte, chunk.meta.bytes.data() + srcNibbleBase, bytes);
-   std::memcpy(skyLight + dstByte, chunk.skyLight.bytes.data() + srcNibbleBase, bytes);
-   std::memcpy(blockLight + dstByte, chunk.blockLight.bytes.data() + srcNibbleBase, bytes);
-  } else {
-   copyNibbleColumn(meta, dstColumn, halfSpan, chunk.meta.bytes, srcNibbleBase);
-   copyNibbleColumn(skyLight, dstColumn, halfSpan, chunk.skyLight.bytes, srcNibbleBase);
-   copyNibbleColumn(blockLight, dstColumn, halfSpan, chunk.blockLight.bytes, srcNibbleBase);
+  copyRect();
+  if(chunk.renderReadValid(stamp)) {
+   return;
   }
  }
+ gLockedCaptures.fetch_add(1, std::memory_order_relaxed);
+ const Chunk::RenderWriteGuard guard(chunk);
+ copyRect();
 }
 } // namespace
 RegionSnapshot::RegionSnapshot(std::span<const SourceChunk> sourceChunks,
@@ -146,57 +132,87 @@ RegionSnapshot::RegionSnapshot(std::span<const SourceChunk> sourceChunks,
                                int maxBlockX,
                                int maxBlockY,
                                int maxBlockZ) {
- chunkX_ = minBlockX >> 4;
- chunkZ_ = minBlockZ >> 4;
- const int maxChunkX = maxBlockX >> 4;
- const int maxChunkZ = maxBlockZ >> 4;
- chunkWidth_ = maxChunkX - chunkX_ + 1;
- chunkDepth_ = maxChunkZ - chunkZ_ + 1;
- chunks_.resize(static_cast<std::size_t>(chunkWidth_ * chunkDepth_));
+ minX_ = minBlockX;
+ minZ_ = minBlockZ;
+ spanX_ = std::max(maxBlockX - minBlockX + 1, 0);
+ spanZ_ = std::max(maxBlockZ - minBlockZ + 1, 0);
+ // Even minY and even span keep every nibble run byte-aligned against the chunk's,
+ // so the light copies stay memcpys.
  minY_ = std::clamp(minBlockY, 0, Chunk::height - 1) & ~1;
  const int maxY = std::clamp(maxBlockY, 0, Chunk::height - 1);
  int span = maxY >= minY_ ? maxY - minY_ + 1 : 0;
  span += span & 1;
  ySpan_ = std::min(span, Chunk::height - minY_);
  const int halfSpan = ySpan_ >> 1;
- blockBytesPerChunk_ = static_cast<std::size_t>(16 * 16 * ySpan_);
- nibbleBytesPerChunk_ = static_cast<std::size_t>(16 * 16 * halfSpan);
- const std::size_t perChunkBytes = blockBytesPerChunk_ + 3 * nibbleBytesPerChunk_;
- const std::size_t totalBytes = perChunkBytes * sourceChunks.size();
- // copyChunkBand fully overwrites every present chunk's span, so the buffer is
- // taken without the value-init memset resize() would do; absent chunks are
- // zeroed below so their bytes stay deterministic. That same "written in full"
+ const auto columns = static_cast<std::size_t>(spanX_ * spanZ_);
+ const std::size_t blockBytes = columns * static_cast<std::size_t>(ySpan_);
+ const std::size_t nibbleBytes = columns * static_cast<std::size_t>(halfSpan);
+ // Every column is written in full below -- copied or zeroed -- so the buffer is
+ // taken without the value-init a resize() would do. That same "written in full"
  // property is what makes a recycled buffer safe to take here.
- PooledBuffer taken = acquireSnapshotBuffer(totalBytes);
+ PooledBuffer taken = acquireSnapshotBuffer(blockBytes + 3 * nibbleBytes);
  buffer_ = std::move(taken.bytes);
  bufferCapacity_ = taken.capacity;
- std::size_t offset = 0;
- for(const SourceChunk& source : sourceChunks) {
-  if(source.chunk == nullptr || source.chunkX < chunkX_ || source.chunkZ < chunkZ_ ||
-     source.chunkX > maxChunkX || source.chunkZ > maxChunkZ) {
-   std::memset(buffer_.get() + offset, 0, perChunkBytes);
-   offset += perChunkBytes;
-   continue;
+ blocks_ = buffer_.get();
+ meta_ = blocks_ + blockBytes;
+ skyLight_ = meta_ + nibbleBytes;
+ blockLight_ = skyLight_ + nibbleBytes;
+ const auto columnAt = [this, halfSpan](int column) {
+  return ShellColumn{blocks_ + static_cast<std::size_t>(column * ySpan_),
+                     meta_ + static_cast<std::size_t>(column * halfSpan),
+                     skyLight_ + static_cast<std::size_t>(column * halfSpan),
+                     blockLight_ + static_cast<std::size_t>(column * halfSpan)};
+ };
+ // Walk the chunks rather than the columns: the seqlock stamp has to bracket a
+ // whole chunk's worth of copying for its retry to mean anything.
+ const int minChunkX = minX_ >> 4;
+ const int maxChunkX = (minX_ + spanX_ - 1) >> 4;
+ const int minChunkZ = minZ_ >> 4;
+ const int maxChunkZ = (minZ_ + spanZ_ - 1) >> 4;
+ for(int chunkX = minChunkX; chunkX <= maxChunkX; ++chunkX) {
+  for(int chunkZ = minChunkZ; chunkZ <= maxChunkZ; ++chunkZ) {
+   const Chunk* chunk = nullptr;
+   for(const SourceChunk& source : sourceChunks) {
+    if(source.chunkX == chunkX && source.chunkZ == chunkZ) {
+     chunk = source.chunk;
+     break;
+    }
+   }
+   const int fromX = std::max(minX_, chunkX * 16);
+   const int toX = std::min(minX_ + spanX_ - 1, chunkX * 16 + 15);
+   const int fromZ = std::max(minZ_, chunkZ * 16);
+   const int toZ = std::min(minZ_ + spanZ_ - 1, chunkZ * 16 + 15);
+   if(fromX > toX || fromZ > toZ) {
+    continue;
+   }
+   if(chunk == nullptr) {
+    for(int x = fromX; x <= toX; ++x) {
+     for(int z = fromZ; z <= toZ; ++z) {
+      zeroColumn(columnAt(columnIndex(x, z)), ySpan_, halfSpan);
+     }
+    }
+    continue;
+   }
+   captureChunkRect(*chunk, [&] {
+    for(int x = fromX; x <= toX; ++x) {
+     for(int z = fromZ; z <= toZ; ++z) {
+      copyColumnOnce(columnAt(columnIndex(x, z)), *chunk, x & 0xF, z & 0xF, minY_, ySpan_, halfSpan);
+     }
+    }
+   });
   }
-  const Chunk& chunk = *source.chunk;
-  ChunkInfo& info = chunks_[static_cast<std::size_t>((source.chunkX - chunkX_) + (source.chunkZ - chunkZ_) * chunkWidth_)];
-  info.offset = static_cast<std::uint32_t>(offset);
-  info.present = true;
-  copyChunkBand(buffer_.get() + offset, chunk, minY_, ySpan_, halfSpan, info.anyNonAir);
-  offset += perChunkBytes;
  }
  ambientDarkness_ = ambientDarkness;
  lightLevelToLuminance_ = lightLevelToLuminance;
  biomeSource_ = std::move(biomeSource);
 }
+std::uint64_t RegionSnapshot::lockedCaptureCount() noexcept {
+ return gLockedCaptures.load(std::memory_order_relaxed);
+}
 RegionSnapshot::~RegionSnapshot() {
  releaseSnapshotBuffer({std::move(buffer_), bufferCapacity_});
 }
 bool RegionSnapshot::columnHasBlocks(int blockX, int blockZ, int minY, int maxY) const {
- const ChunkInfo* info = chunkInfo(blockX, blockZ);
- if(info == nullptr || !info->anyNonAir) {
-  return false;
- }
  const int clampedMinY = std::max(minY, minY_);
  const int clampedMaxY = std::min(maxY, minY_ + ySpan_);
  if(clampedMinY >= clampedMaxY) {
@@ -204,45 +220,61 @@ bool RegionSnapshot::columnHasBlocks(int blockX, int blockZ, int minY, int maxY)
  }
  const std::size_t spanBytes = static_cast<std::size_t>(clampedMaxY - clampedMinY);
  constexpr std::size_t kWordBytes = sizeof(std::uint64_t);
- const std::uint8_t* blocks = chunkBlocks(*info);
- for(int column = 0; column < 16 * 16; ++column) {
-  const std::uint8_t* base =
-      blocks + static_cast<std::size_t>(column * ySpan_ + (clampedMinY - minY_));
-  std::size_t i = 0;
-  for(; i + kWordBytes <= spanBytes; i += kWordBytes) {
-   std::uint64_t word = 0;
-   std::memcpy(&word, base + i, kWordBytes);
-   if(word != 0) {
-    return true;
+ for(int x = blockX; x < blockX + 16; ++x) {
+  for(int z = blockZ; z < blockZ + 16; ++z) {
+   const int column = columnIndex(x, z);
+   if(column < 0) {
+    continue;
    }
-  }
-  for(; i < spanBytes; ++i) {
-   if(base[i] != 0) {
-    return true;
+   const std::uint8_t* base =
+       blocks_ + static_cast<std::size_t>(column * ySpan_ + (clampedMinY - minY_));
+   std::size_t i = 0;
+   for(; i + kWordBytes <= spanBytes; i += kWordBytes) {
+    std::uint64_t word = 0;
+    std::memcpy(&word, base + i, kWordBytes);
+    if(word != 0) {
+     return true;
+    }
+   }
+   for(; i < spanBytes; ++i) {
+    if(base[i] != 0) {
+     return true;
+    }
    }
   }
  }
  return false;
 }
+RegionSnapshot::ColumnNeighbourhood RegionSnapshot::columnNeighbourhood(int x, int z) const {
+ const auto columnPointer = [this](int columnX, int columnZ) -> const std::uint8_t* {
+  const int column = columnIndex(columnX, columnZ);
+  return column < 0 ? nullptr : blocks_ + static_cast<std::size_t>(column * ySpan_);
+ };
+ ColumnNeighbourhood columns;
+ columns.minY = minY_;
+ columns.span = ySpan_;
+ columns.self = columnPointer(x, z);
+ columns.negX = columnPointer(x - 1, z);
+ columns.posX = columnPointer(x + 1, z);
+ columns.negZ = columnPointer(x, z - 1);
+ columns.posZ = columnPointer(x, z + 1);
+ columns.complete = columns.self != nullptr && columns.negX != nullptr && columns.posX != nullptr &&
+                    columns.negZ != nullptr && columns.posZ != nullptr;
+ return columns;
+}
 int RegionSnapshot::getBlockId(int x, int y, int z) const {
- if(y < 0 || y >= Chunk::height) {
+ const int column = columnIndex(x, z);
+ if(column < 0 || !containsY(y)) {
   return 0;
  }
- const ChunkInfo* info = chunkInfo(x, z);
- if(info == nullptr || !containsY(y)) {
-  return 0;
- }
- return static_cast<int>(chunkBlocks(*info)[snapshotIndex(x & 0xF, y, z & 0xF)] & 0xFFU);
+ return static_cast<int>(blocks_[static_cast<std::size_t>(column * ySpan_ + (y - minY_))]);
 }
 int RegionSnapshot::getBlockMeta(int x, int y, int z) const {
- if(y < 0 || y >= Chunk::height) {
+ const int column = columnIndex(x, z);
+ if(column < 0 || !containsY(y)) {
   return 0;
  }
- const ChunkInfo* info = chunkInfo(x, z);
- if(info == nullptr || !containsY(y)) {
-  return 0;
- }
- return nibbleAt(chunkMeta(*info), x & 0xF, y, z & 0xF);
+ return nibbleAt(meta_, column, y);
 }
 float RegionSnapshot::getNaturalBrightness(int x, int y, int z, int blockLight) const {
  int brightness = getRawBrightness(x, y, z, true);
@@ -258,16 +290,14 @@ int RegionSnapshot::getRawBrightness(int x, int y, int z, bool useNeighborLight)
  if(y < 0) {
   return 0;
  }
- if(y >= Chunk::height) {
+ const int column = columnIndex(x, z);
+ if(y >= Chunk::height || column < 0 || !containsY(y)) {
   const int brightness = 15 - ambientDarkness_;
   return brightness < 0 ? 0 : brightness;
  }
- const ChunkInfo* info = chunkInfo(x, z);
- if(info == nullptr || !containsY(y)) {
-  const int brightness = 15 - ambientDarkness_;
-  return brightness < 0 ? 0 : brightness;
- }
- if(useNeighborLight && block::Block::usesNeighborLightSampling(getBlockId(x, y, z))) {
+ if(useNeighborLight &&
+    block::Block::usesNeighborLightSampling(
+        static_cast<int>(blocks_[static_cast<std::size_t>(column * ySpan_ + (y - minY_))]))) {
   int brightness = getRawBrightness(x, y + 1, z, false);
   brightness = std::max(brightness, getRawBrightness(x + 1, y, z, false));
   brightness = std::max(brightness, getRawBrightness(x - 1, y, z, false));
@@ -275,42 +305,39 @@ int RegionSnapshot::getRawBrightness(int x, int y, int z, bool useNeighborLight)
   brightness = std::max(brightness, getRawBrightness(x, y, z - 1, false));
   return brightness;
  }
- int sky = nibbleAt(chunkSkyLight(*info), x & 0xF, y, z & 0xF);
+ int sky = nibbleAt(skyLight_, column, y);
  if(sky > 0) {
   sawSkyLight_ = true;
  }
- const int block = nibbleAt(chunkBlockLight(*info), x & 0xF, y, z & 0xF);
+ const int block = nibbleAt(blockLight_, column, y);
  if(block > (sky -= ambientDarkness_)) {
   sky = block;
  }
  return sky < 0 ? 0 : sky;
 }
 int RegionSnapshot::getBlockLight(const int x, const int y, const int z) const {
- if(y < 0 || y >= Chunk::height) {
+ const int column = columnIndex(x, z);
+ if(column < 0 || !containsY(y)) {
   return 0;
  }
- const ChunkInfo* info = chunkInfo(x, z);
- if(info == nullptr || !containsY(y)) {
-  return 0;
- }
- return nibbleAt(chunkBlockLight(*info), x & 0xF, y, z & 0xF);
+ return nibbleAt(blockLight_, column, y);
 }
 int RegionSnapshot::getSkyLight(const int x, const int y, const int z) const {
  if(y < 0) {
   return 0;
  }
+ const int column = columnIndex(x, z);
  if(y >= Chunk::height) {
   return 15;
  }
- const ChunkInfo* info = chunkInfo(x, z);
- if(info == nullptr || !containsY(y)) {
+ if(column < 0 || !containsY(y)) {
   return 15;
  }
- int sky = nibbleAt(chunkSkyLight(*info), x & 0xF, y, z & 0xF);
+ const int sky = nibbleAt(skyLight_, column, y);
  if(sky > 0) {
   sawSkyLight_ = true;
  }
- return sky < 0 ? 0 : sky;
+ return sky;
 }
 net::minecraft::block::material::Material& RegionSnapshot::getMaterial(int x, int y, int z) const {
  const int blockId = getBlockId(x, y, z);
@@ -324,11 +351,10 @@ net::minecraft::block::material::Material& RegionSnapshot::getMaterial(int x, in
  return block->material;
 }
 bool RegionSnapshot::isBlockOpaqueCube(int x, int y, int z) const {
- block::Block* block = block::Block::BLOCKS[static_cast<std::size_t>(getBlockId(x, y, z))];
- if(block == nullptr) {
-  return false;
- }
- return block->isOpaque();
+ // BLOCKS_OPAQUE is isOpaque() baked per id at registration. Every visible face
+ // the mesher emits is decided by six of these, so the virtual call this replaces
+ // was one of the densest in the rebuild.
+ return block::Block::BLOCKS_OPAQUE[static_cast<std::size_t>(getBlockId(x, y, z))];
 }
 bool RegionSnapshot::shouldSuffocate(int x, int y, int z) const {
  block::Block* block = block::Block::BLOCKS[static_cast<std::size_t>(getBlockId(x, y, z))];

@@ -39,6 +39,10 @@ class ChunkCompilePipeline {
  void cancelAll() {
   meshHandoff_.cancelAll();
   pendingMeshUploads_.clear();
+  deferredMeshUploadQueue_.clear();
+  nearMeshUploads_.clear();
+  backgroundMeshUploads_.clear();
+  completedMeshUploads_.clear();
  }
  void clearDirtyTracking() {
   dirtyChunks_.clear();
@@ -46,6 +50,12 @@ class ChunkCompilePipeline {
  }
 
  private:
+  static void prioritizeCaptureCandidates(std::vector<chunk::ChunkBuilder*>& candidates,
+                                          int frustumStamp,
+                                          int cameraSectionX,
+                                          int cameraSectionY,
+                                          int cameraSectionZ,
+                                          std::size_t wanted);
  // Runs ChunkBuilder::buildMesh on the shared compute pool and hands finished
  // jobs back to the main thread. Near-camera edits and the distance backlog
  // share one priority queue so edits jump ahead of queued distant work.
@@ -59,6 +69,10 @@ class ChunkCompilePipeline {
  // Reused so the per-frame capture pass allocates nothing.
  std::vector<chunk::ChunkBuilder*> captureCandidates_{};
  std::vector<std::shared_ptr<chunk::ChunkMeshJob>> pendingMeshUploads_{};
+ std::vector<std::shared_ptr<chunk::ChunkMeshJob>> deferredMeshUploadQueue_{};
+ std::vector<std::shared_ptr<chunk::ChunkMeshJob>> nearMeshUploads_{};
+ std::vector<std::shared_ptr<chunk::ChunkMeshJob>> backgroundMeshUploads_{};
+ std::vector<std::shared_ptr<chunk::ChunkMeshJob>> completedMeshUploads_{};
  std::uint64_t staleMeshJobs_ = 0;
  std::uint64_t deferredMeshUploads_ = 0;
 };

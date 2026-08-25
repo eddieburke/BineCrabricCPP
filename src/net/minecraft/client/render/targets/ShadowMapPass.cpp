@@ -14,7 +14,6 @@
 #include "net/minecraft/client/render/world/WorldRenderer.hpp"
 #include "net/minecraft/client/render/shaderpack/Pack.hpp"
 #include "net/minecraft/client/render/GlState.hpp"
-#include "net/minecraft/client/debug/VTuneTrace.hpp"
 #include "net/minecraft/world/World.hpp"
 #include "net/minecraft/world/light/UnifiedLightRegistry.hpp"
 namespace net::minecraft::client::render::shadowmap {
@@ -252,8 +251,6 @@ void ShadowTargets::snapshotOpaqueDepth() {
   ::glCopyTexSubImage2D(gl::cap::Texture2D, 0, 0, 0, 0, 0, resolution, resolution);
  }
  core::bindTexture(previousTexture);
- VT_TRACE_COUNTER("Copies", 1);
- VT_TRACE_COUNTER("ShadowDepthCopies", 1);
 }
 FrameRenderCamera makeShadowCamera(const PackDefinition& definition,
                                    const FrameRenderCamera& camera,
@@ -311,8 +308,6 @@ ShadowMapResult update(ShadowMapState& state,
  const int colorBuffers = std::clamp(definition.shadowColorBuffers, 0, 8);
  const ShadowCullState cullState = definition.shadowCulling;
  const float voxelDistance = definition.effectiveVoxelDistance();
- VT_TRACE_COUNTER("ShadowVoxelDeclaredDistance", definition.voxelDistance);
- VT_TRACE_COUNTER("ShadowVoxelSafeZoneDistance", voxelDistance);
  const float shadowDistance = definition.shadowDistance;
  const float shadowDistanceRenderMul = definition.shadowDistanceRenderMul;
  const float entityDistanceMultiplier = definition.entityShadowDistanceMul;

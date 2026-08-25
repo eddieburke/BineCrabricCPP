@@ -27,42 +27,28 @@ void BlockRenderContext::resolveLightSource() {
                      ? dynamic_cast<const chunk::RegionSnapshot*>(blockView)
                      : nullptr;
 }
-void BlockRenderContext::sampleFaceLight(int x, int y, int z) {
- const auto sample = [this](int sampleX, int sampleY, int sampleZ, int& blockLight, int& skyLight) {
-  sampleY = std::clamp(sampleY, 0, net::minecraft::Chunk::height - 1);
-  if(lightRegion != nullptr) {
-   blockLight = lightRegion->getBlockLight(sampleX, sampleY, sampleZ);
-   skyLight = lightRegion->getSkyLight(sampleX, sampleY, sampleZ);
-  } else if(lightSnapshot != nullptr) {
-   blockLight = lightSnapshot->getBlockLight(sampleX, sampleY, sampleZ);
-   skyLight = lightSnapshot->getSkyLight(sampleX, sampleY, sampleZ);
-  } else if(lightWorld != nullptr) {
-   blockLight = lightWorld->getBrightness(net::minecraft::LightType::Block, sampleX, sampleY, sampleZ);
-   skyLight = lightWorld->getBrightness(net::minecraft::LightType::Sky, sampleX, sampleY, sampleZ);
-  } else {
-   blockLight = 15;
-   skyLight = 15;
-  }
- };
- sample(x, y, z, faceBlockLight, faceSkyLight);
- if(blockView != nullptr && net::minecraft::block::Block::usesNeighborLightSampling(blockView->getBlockId(x, y, z))) {
-  static constexpr int kOffsets[5][3] = {{0, 1, 0}, {1, 0, 0}, {-1, 0, 0}, {0, 0, 1}, {0, 0, -1}};
-  for(const auto& offset : kOffsets) {
-   int blockLight = 0;
-   int skyLight = 0;
-   sample(x + offset[0], y + offset[1], z + offset[2], blockLight, skyLight);
-   faceBlockLight = std::max(faceBlockLight, blockLight);
-   faceSkyLight = std::max(faceSkyLight, skyLight);
-  }
- }
- faceBlockLight = std::max(faceBlockLight, blockEmission);
+void BlockRenderContext::sampleFaceLightGeneric(int x, int y, int z) {
+ sampleFaceLightWith(x, y, z, blockIdAt(x, y, z),
+                     [this](int sampleX, int sampleY, int sampleZ, int& blockLight, int& skyLight) {
+                      if(lightRegion != nullptr) {
+                       blockLight = lightRegion->getBlockLight(sampleX, sampleY, sampleZ);
+                       skyLight = lightRegion->getSkyLight(sampleX, sampleY, sampleZ);
+                      } else if(lightWorld != nullptr) {
+                       blockLight =
+                           lightWorld->getBrightness(net::minecraft::LightType::Block, sampleX, sampleY, sampleZ);
+                       skyLight =
+                           lightWorld->getBrightness(net::minecraft::LightType::Sky, sampleX, sampleY, sampleZ);
+                      } else {
+                       blockLight = 15;
+                       skyLight = 15;
+                      }
+                     });
 }
 void BlockRenderContext::sampleSurroundingLight(int x, int y, int z) {
- static constexpr int kOffsets[6][3] = {{0, -1, 0}, {0, 1, 0}, {0, 0, -1}, {0, 0, 1}, {-1, 0, 0}, {1, 0, 0}};
  sampleFaceLight(x, y, z);
  int bestBlock = faceBlockLight;
  int bestSky = faceSkyLight;
- for(const auto& offset : kOffsets) {
+ for(const auto& offset : kFaceOffsets) {
   sampleFaceLight(x + offset[0], y + offset[1], z + offset[2]);
   bestBlock = std::max(bestBlock, faceBlockLight);
   bestSky = std::max(bestSky, faceSkyLight);
@@ -128,21 +114,15 @@ bool BlockRenderManager::render(net::minecraft::block::Block& block, int x, int 
  ctx.blockY = y;
  ctx.blockZ = z;
  ctx.blockEmission = block.emission();
- ctx.resolveLightSource();
- ctx.sampleSurroundingLight(x, y, z);
- ctx.blockLight = ctx.faceBlockLight;
- ctx.skyLight = ctx.faceSkyLight;
  ctx.blockId = resolveShaderBlockId(block.id);
- ctx.blockFluid = block.getRenderType() == BlockRenderType::FLUID;
+ const int renderType = block.getRenderType();
+ ctx.blockFluid = renderType == BlockRenderType::FLUID;
  ctx.blockMetadata = ctx.blockView->getBlockMeta(x, y, z);
- if(ctx.tess != nullptr)
-  ctx.tess->blockData(x, y, z, ctx.blockEmission, ctx.blockLight, ctx.skyLight, ctx.blockId, ctx.blockFluid,
-                      ctx.blockMetadata);
+ ctx.surroundingLightPending = ctx.tess != nullptr;
  ctx.renderBounds = block.getRenderBounds(ctx.blockView, x, y, z);
  if(ctx.textureOverride < 0 && net::minecraft::mod::drawBlockWorld(*this, block, x, y, z)) {
   return true;
  }
- const int renderType = block.getRenderType();
  switch(renderType) {
  case BlockRenderType::FULL_CUBE:
   return cube_.renderBlock(block, x, y, z);
@@ -211,6 +191,16 @@ void BlockRenderManager::renderPistonHeadWithoutCulling(
  piston_.renderPistonHeadWithoutCulling(block, x, y, z, extendedHalfway);
 }
 void BlockRenderManager::render(net::minecraft::block::Block& block, int metadata, float brightness) {
+ // An inventory-style block model has no world position, so it cannot sample a
+ // face light of its own: it takes the one the caller set with Tessellator::light().
+ // activeTess() pushes ctx.faceBlockLight/faceSkyLight into blockData() for every
+ // vertex, so leaving them at the (15, 15) default drew every held item, dropped
+ // stack, TNT entity and chest minecart at full BLOCK light -- pure torch colour
+ // under any pack, which at night is a yellow item in a blue world. The callers
+ // already publish the right light (EntityRenderDispatcher::render,
+ // HeldItemRenderer::render); GUI icons ask for (15, 15) explicitly.
+ ctx.faceBlockLight = static_cast<int>(std::lround(ctx.tess->blockLight()));
+ ctx.faceSkyLight = static_cast<int>(std::lround(ctx.tess->skyLight()));
  if(ctx.textureManager == nullptr && Minecraft::INSTANCE != nullptr) {
   ctx.textureManager = &Minecraft::INSTANCE->textureManager;
  }

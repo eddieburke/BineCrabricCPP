@@ -558,8 +558,8 @@ local function register()
     return event
   end)
 
-  minecraft.on("world_tick", { before = false }, function()
-    if not realtime_active() or not config.drive_sun then
+  minecraft.on("world_tick", { before = false }, function(event)
+    if event.shader_pack_active or not realtime_active() or not config.drive_sun then
       restore_expected_world_time()
       return
     end

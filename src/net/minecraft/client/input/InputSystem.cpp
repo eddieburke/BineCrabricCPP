@@ -1,5 +1,6 @@
 #include "net/minecraft/client/input/InputSystem.hpp"
 #include <chrono>
+#include <cmath>
 #include "net/minecraft/client/Minecraft.hpp"
 #include "net/minecraft/client/gui/screen/ChatScreen.hpp"
 #include "net/minecraft/client/gui/screen/ingame/InventoryScreen.hpp"
@@ -74,7 +75,11 @@ void InputSystem::compactQueues() {
                      mouseEvents_.begin() + static_cast<std::ptrdiff_t>(mouseReadIndex_));
   mouseReadIndex_ = 0;
  }
- display::Window::cursorPosition(cursorX_, cursorY_);
+ double cursorX = 0.0;
+ double cursorY = 0.0;
+ display::Window::cursorPosition(cursorX, cursorY);
+ cursorX_ = static_cast<int>(std::floor(cursorX));
+ cursorY_ = static_cast<int>(std::floor(cursorY));
 }
 void InputSystem::pushKeyEvent(int key, bool down) {
  if(key < 0 || key >= static_cast<int>(keyboardDown_.size())) {
@@ -130,26 +135,26 @@ void InputSystem::setCursorPosition(int x, int y) {
 }
 void InputSystem::lockCursor() {
  display::Window::setCursorLocked(true);
- mouseLookDeltaX_ = 0;
- mouseLookDeltaY_ = 0;
+ mouseLookDeltaX_ = 0.0;
+ mouseLookDeltaY_ = 0.0;
  mouseHasLastPoint_ = false;
 }
 void InputSystem::unlockCursor() {
  display::Window::setCursorLocked(false);
- mouseLookDeltaX_ = 0;
- mouseLookDeltaY_ = 0;
+ mouseLookDeltaX_ = 0.0;
+ mouseLookDeltaY_ = 0.0;
  mouseHasLastPoint_ = false;
 }
 void InputSystem::pollMouseLook() {
- int x = 0;
- int y = 0;
+ double x = 0.0;
+ double y = 0.0;
  display::Window::cursorPosition(x, y);
  if(!mouseHasLastPoint_) {
   mouseLastX_ = x;
   mouseLastY_ = y;
   mouseHasLastPoint_ = true;
-  mouseLookDeltaX_ = 0;
-  mouseLookDeltaY_ = 0;
+  mouseLookDeltaX_ = 0.0;
+  mouseLookDeltaY_ = 0.0;
   return;
  }
  mouseLookDeltaX_ = x - mouseLastX_;
@@ -346,7 +351,7 @@ void InputSystem::dispatchGameKey(Minecraft& client, int key) {
  if(key == static_cast<int>(client.options.dropKey.code)) {
   client.player->dropSelectedItem();
  }
- if(client.isWorldRemote() && key == static_cast<int>(client.options.chatKey.code)) {
+ if(key == static_cast<int>(client.options.chatKey.code)) {
   client.setScreen(std::make_unique<gui::screen::ChatScreen>());
  }
  if(const int slot = keys::hotbarSlotFromKey(key); slot >= 0) {

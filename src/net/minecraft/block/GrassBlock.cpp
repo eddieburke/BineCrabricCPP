@@ -46,7 +46,8 @@ void GrassBlock::onTick(World* world, int x, int y, int z, JavaRandom& random) {
  }
  const int lightAbove = world->getLightLevelAbove(x, y, z);
  const int blockAboveId = world->getBlockId(x, y + 1, z);
- if(lightAbove < 4 && Block::BLOCKS_LIGHT_OPACITY[static_cast<std::size_t>(blockAboveId)] > 2) {
+ const bool submerged = &world->getMaterial(x, y + 1, z) == &material::Material::WATER;
+ if(submerged || (lightAbove < 4 && Block::BLOCKS_LIGHT_OPACITY[static_cast<std::size_t>(blockAboveId)] > 2)) {
   if(random.nextInt(4) != 0) {
    return;
   }
@@ -57,6 +58,7 @@ void GrassBlock::onTick(World* world, int x, int y, int z, JavaRandom& random) {
   const int spreadZ = z + random.nextInt(3) - 1;
   const int aboveId = world->getBlockId(spreadX, spreadY + 1, spreadZ);
   if(world->getBlockId(spreadX, spreadY, spreadZ) == Block::DIRT->id &&
+     &world->getMaterial(spreadX, spreadY + 1, spreadZ) != &material::Material::WATER &&
      world->getLightLevelAbove(spreadX, spreadY, spreadZ) >= 4 &&
      Block::BLOCKS_LIGHT_OPACITY[static_cast<std::size_t>(aboveId)] <= 2) {
    world->setBlock(spreadX, spreadY, spreadZ, Block::GRASS_BLOCK->id);

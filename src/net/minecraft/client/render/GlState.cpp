@@ -43,6 +43,11 @@ unsigned int samplerObject(bool compare, bool linear, bool mipmap) {
  return samplers[index].handle();
 }
 static int g_highestSamplerUnit = -1;
+// NOT cached per unit. A shadow of the bound sampler object was tried and reverted:
+// WorldProgramBinder binds sampler objects through GLCore::bindSampler directly, so
+// the shadow went stale the moment a world program bound its own, and every later
+// bind for that unit was skipped as redundant when it was not. The scene lost its
+// shadow-compare samplers and went dark. Any cache here has to be the only writer.
 namespace {
 int shadowBufferIndex(std::string_view name, const PackDefinition& definition) {
  if(name == "shadowtex1" || name == "shadowtex1HW") return 1;

@@ -24,9 +24,9 @@ class PerlinNoiseSampler {
   double px = x + offsetX_;
   double py = y + offsetY_;
   double pz = z + offsetZ_;
-  int ix = static_cast<int>(px);
-  int iy = static_cast<int>(py);
-  int iz = static_cast<int>(pz);
+  int ix = java_double_to_int(px);
+  int iy = java_double_to_int(py);
+  int iz = java_double_to_int(pz);
   if(px < static_cast<double>(ix)) {
    --ix;
   }
@@ -88,7 +88,7 @@ class PerlinNoiseSampler {
    const double invAmplitude = 1.0 / amplitude;
    for(int i = 0; i < width; ++i) {
     double fracX = (x + static_cast<double>(i)) * scaleX + offsetX_;
-    int cellX = static_cast<int>(fracX);
+    int cellX = java_double_to_int(fracX);
     if(fracX < static_cast<double>(cellX)) {
      --cellX;
     }
@@ -97,7 +97,7 @@ class PerlinNoiseSampler {
     double fadeX = fracX * fracX * fracX * (fracX * (fracX * 6.0 - 15.0) + 10.0);
     for(int j = 0; j < depth; ++j) {
      double fracZ = (z + static_cast<double>(j)) * scaleZ + offsetZ_;
-     int cellZ = static_cast<int>(fracZ);
+     int cellZ = java_double_to_int(fracZ);
      if(fracZ < static_cast<double>(cellZ)) {
       --cellZ;
      }
@@ -134,7 +134,7 @@ class PerlinNoiseSampler {
   double edgeLerp11 = 0.0;
   for(int i = 0; i < width; ++i) {
    double fracX = (x + static_cast<double>(i)) * scaleX + offsetX_;
-   int cellX = static_cast<int>(fracX);
+   int cellX = java_double_to_int(fracX);
    if(fracX < static_cast<double>(cellX)) {
     --cellX;
    }
@@ -143,7 +143,7 @@ class PerlinNoiseSampler {
    double fadeX = fracX * fracX * fracX * (fracX * (fracX * 6.0 - 15.0) + 10.0);
    for(int j = 0; j < depth; ++j) {
     double fracZ = (z + static_cast<double>(j)) * scaleZ + offsetZ_;
-    int cellZ = static_cast<int>(fracZ);
+    int cellZ = java_double_to_int(fracZ);
     if(fracZ < static_cast<double>(cellZ)) {
      --cellZ;
     }
@@ -152,7 +152,7 @@ class PerlinNoiseSampler {
     double fadeZ = fracZ * fracZ * fracZ * (fracZ * (fracZ * 6.0 - 15.0) + 10.0);
     for(int k = 0; k < height; ++k) {
      double fracY = (y + static_cast<double>(k)) * scaleY + offsetY_;
-     int cellY = static_cast<int>(fracY);
+     int cellY = java_double_to_int(fracY);
      if(fracY < static_cast<double>(cellY)) {
       --cellY;
      }
