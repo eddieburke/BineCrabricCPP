@@ -104,10 +104,13 @@ void drawBackgroundFan(const AtmosphereContext& ctx, float tickDelta, const std:
  const core::RenderStageScope stage(core::RenderStage::Sunset);
  const float timeOfDay = ctx.world->getTime(tickDelta);
  const core::ScopedDrawCameraState fanGuard;
+ // beta renderSky: RX(90) * RZ(sin(celestialAngleRadians) < 0 ? 180 : 0) * RZ(90) on the
+ // plain sky modelview. sin(angle * 2pi) < 0 is exactly celestialAngle > 0.5. The fan is
+ // not in the celestial frame, so it does not carry celestialSkyMatrix' RY(-90) sky yaw.
  net::minecraft::util::math::Matrix4f fanPose = core::drawPose();
- fanPose.rotate(-90.0f, 0.0f, 1.0f, 0.0f);
  fanPose.rotate(90.0f, 1.0f, 0.0f, 0.0f);
  fanPose.rotate(timeOfDay > 0.5f ? 180.0f : 0.0f, 0.0f, 0.0f, 1.0f);
+ fanPose.rotate(90.0f, 0.0f, 0.0f, 1.0f);
  core::setDrawPose(fanPose);
  Tessellator& tessellator = Tessellator::INSTANCE;
  tessellator.start(gl::prim::TriangleFan);
@@ -150,33 +153,38 @@ void drawCelestialQuad(Tessellator& tessellator, const float direction[3], doubl
  tessellator.vertex(center[0] - right[0] - up[0], center[1] - right[1] - up[1],
                     center[2] - right[2] - up[2], u0, 1.0);
 }
-void drawSun(const AtmosphereContext& ctx, float starAlpha, const render::CelestialState& celestial) {
+void drawCelestialBody(const AtmosphereContext& ctx, float starAlpha,
+                       const render::CelestialState& celestial, bool moon) {
  Tessellator& tessellator = Tessellator::INSTANCE;
- const core::RenderStageScope stage(core::RenderStage::Sun);
+ const core::RenderStageScope stage(moon ? core::RenderStage::Moon : core::RenderStage::Sun);
  if(ctx.textureManager != nullptr) {
   core::activeTexture(gl::tex::Texture0);
-  ctx.textureManager->bindTexture(ctx.textureManager->getTextureId("/terrain/sun.png"));
+  ctx.textureManager->bindTexture(
+      ctx.textureManager->getTextureId(moon ? "/terrain/moon.png" : "/terrain/sun.png"));
  }
  tessellator.startQuads();
  tessellator.color(1.0f, 1.0f, 1.0f, starAlpha);
- drawCelestialQuad(tessellator, celestial.sunDirectionWorld, 30.0, false);
+ drawCelestialQuad(tessellator, moon ? celestial.moonDirectionWorld : celestial.sunDirectionWorld,
+                   moon ? 20.0 : 30.0, moon);
  tessellator.draw();
 }
-void drawMoon(const AtmosphereContext& ctx, float starAlpha, const render::CelestialState& celestial) {
- Tessellator& tessellator = Tessellator::INSTANCE;
- const core::RenderStageScope stage(core::RenderStage::Moon);
- if(ctx.textureManager != nullptr) {
-  core::activeTexture(gl::tex::Texture0);
-  ctx.textureManager->bindTexture(ctx.textureManager->getTextureId("/terrain/moon.png"));
+// beta draws the celestial bodies and the stars additively; without the explicit func they
+// inherit whatever the sunset fan left bound.
+void renderCelestialBody(const AtmosphereContext& ctx, float tickDelta, bool moon) {
+ if(ctx.world == nullptr || ctx.world->dimension == nullptr || ctx.camera == nullptr ||
+    ctx.world->dimension->isNether || !(moon ? ctx.settings.renderMoon : ctx.settings.renderSun)) {
+  return;
  }
- tessellator.startQuads();
- tessellator.color(1.0f, 1.0f, 1.0f, starAlpha);
- drawCelestialQuad(tessellator, celestial.moonDirectionWorld, 20.0, true);
- tessellator.draw();
+ const RenderPassScope bodyPass(RenderType::skyTextured());
+ core::depthMask(false);
+ core::enableBlend();
+ core::blendFunc(gl::blend::SrcAlpha, gl::blend::One);
+ drawCelestialBody(ctx, 1.0f - ctx.world->getRainGradient(tickDelta),
+                   render::core::celestialState(), moon);
+ core::disableBlend();
+ core::depthMask(true);
 }
 } // namespace
-void renderSkySun(const AtmosphereContext& ctx, float tickDelta);
-void renderSkyMoon(const AtmosphereContext& ctx, float tickDelta);
 void renderSkyDome(const AtmosphereContext& ctx, float tickDelta) {
  if(ctx.world == nullptr || ctx.world->dimension == nullptr || ctx.camera == nullptr ||
     ctx.world->dimension->isNether) {
@@ -200,8 +208,11 @@ void renderSkyDome(const AtmosphereContext& ctx, float tickDelta) {
  }
  const RenderPassScope skyPass(RenderType::sky());
  core::depthMask(false);
- core::enableBlend();
- core::blendFunc(gl::blend::SrcAlpha, gl::blend::One);
+ // beta draws glSkyList opaque; blending goes on only for the sunset fan. Additive is not
+ // equivalent: a pack forcing alpha to 1 (Complementary's skybasic) makes the dome
+ // `dest + sky` while the fan is `sky`, so a non-zero colortex0 left by the prepare passes
+ // shows the fan's 16-gon edge as a hard seam that rotates with the sun.
+ core::disableBlend();
  SkyMeshes& meshes = skyMeshes();
  if(ctx.settings.renderSky) {
   core::setConstColor(skyR, skyG, skyB, 1.0f);
@@ -217,32 +228,8 @@ void renderSkyDome(const AtmosphereContext& ctx, float tickDelta) {
  }
  core::disableBlend();
  core::depthMask(true);
- renderSkySun(ctx, tickDelta);
- renderSkyMoon(ctx, tickDelta);
-}
-void renderSkySun(const AtmosphereContext& ctx, float tickDelta) {
- if(ctx.world == nullptr || ctx.world->dimension == nullptr || ctx.camera == nullptr ||
-    ctx.world->dimension->isNether || !ctx.settings.renderSun) {
-  return;
- }
- const RenderPassScope sunPass(RenderType::skyTextured());
- core::depthMask(false);
- core::enableBlend();
- drawSun(ctx, 1.0f - ctx.world->getRainGradient(tickDelta), render::core::celestialState());
- core::disableBlend();
- core::depthMask(true);
-}
-void renderSkyMoon(const AtmosphereContext& ctx, float tickDelta) {
- if(ctx.world == nullptr || ctx.world->dimension == nullptr || ctx.camera == nullptr ||
-    ctx.world->dimension->isNether || !ctx.settings.renderMoon) {
-  return;
- }
- const RenderPassScope moonPass(RenderType::skyTextured());
- core::depthMask(false);
- core::enableBlend();
- drawMoon(ctx, 1.0f - ctx.world->getRainGradient(tickDelta), render::core::celestialState());
- core::disableBlend();
- core::depthMask(true);
+ renderCelestialBody(ctx, tickDelta, false);
+ renderCelestialBody(ctx, tickDelta, true);
 }
 void renderSkyStars(const AtmosphereContext& ctx, float, float starBrightness) {
  if(ctx.world == nullptr || ctx.world->dimension == nullptr || ctx.camera == nullptr ||
@@ -251,6 +238,8 @@ void renderSkyStars(const AtmosphereContext& ctx, float, float starBrightness) {
  }
  const RenderPassScope skyPass(RenderType::sky());
  core::depthMask(false);
+ core::enableBlend();
+ core::blendFunc(gl::blend::SrcAlpha, gl::blend::One);
  SkyMeshes& meshes = skyMeshes();
  const core::RenderStageScope stage(core::RenderStage::Stars);
  // The star sphere rides the same celestial frame as the sun and moon.
