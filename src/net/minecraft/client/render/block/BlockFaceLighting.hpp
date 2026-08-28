@@ -6,25 +6,18 @@ struct CornerSample {
  float skyLight = 15.0f;
  float occlusion = 1.0f;
 };
-// The four corners of one cube face, indexed GEOMETRICALLY as [uHigh][vHigh] in
-// the face's own plane. Both consumers read the same samples: CubeBlockRenderer
-// reorders them to its face renderers' winding, baked model quads interpolate
-// between them because their vertex order comes from the model JSON.
-// `face` is the usual 0..5 (down, up, east, west, north, south) and is carried in
-// the result so no consumer has to hand it back to look up the same axes again.
+// Corners are indexed geometrically as [uHigh][vHigh] in the face's own plane, not
+// in any renderer's winding. `face` is the usual 0..5 (down, up, east, west, north,
+// south).
 struct FaceCornerSamples {
  CornerSample corners[2][2];
  int face = 0;
- int faceBlockLight = 15;
- int faceSkyLight = 15;
- // Bilinear blend at a point given in block-local 0..1 coordinates.
+ // Bilinear blend at a block-local 0..1 point.
  [[nodiscard]] CornerSample blend(double lx, double ly, double lz) const;
- // The same four corners in the order the face renderer for `face` emits its
- // vertices, which is what assignAoCorners indexes.
+ // The same corners reordered to the winding the face renderer for `face` emits.
  void toWinding(CornerSample (&out)[4]) const;
 };
-// (faceX, faceY, faceZ) is the cell the face samples its light from — the caller
-// resolves it, because a partial block's face sits on its own cell rather than
-// the neighbour's (renderBounds), and only the caller knows its bounds.
+// (faceX, faceY, faceZ) is the cell the face samples its light from; only the caller
+// knows its renderBounds, so the caller resolves it.
 FaceCornerSamples sampleCubeFaceCorners(BlockRenderContext& ctx, int face, int faceX, int faceY, int faceZ);
 } // namespace net::minecraft::client::render::block

@@ -222,9 +222,6 @@ struct BlockRenderContext {
  const chunk::RegionSnapshot* lightSnapshot = nullptr;
  int faceBlockLight = 15;
  int faceSkyLight = 15;
- // Absolute luminance of the block itself is no longer used to invent relative
- // AO — packs own lighting; C++ writes vanilla corner-averaged light into the
- // per-vertex lightmap coords and keeps the vertex colour tint-only.
  // Set per block by BlockRenderManager::render; cleared by whichever of
  // tessellator() / activeTess() comes first.
  bool surroundingLightPending = false;
@@ -253,10 +250,8 @@ struct BlockRenderContext {
        skyLight = lightSnapshot->getSkyLight(sampleX, sampleY, sampleZ);
       });
  }
- // One body, two light sources: the mesher's snapshot binds it inline above, the
- // region/world/no-view cases bind it out of line in sampleFaceLightGeneric. Only
- // the two lines that read the light differ, and they were worth writing twice
- // exactly once -- as a template argument, not as a second copy of the walk.
+ // One body, two light sources: the snapshot binds it inline above, the
+ // region/world/no-view cases out of line in sampleFaceLightGeneric.
  template <typename Sample>
  void sampleFaceLightWith(int x, int y, int z, int blockIdHere, Sample&& read) {
   const auto sample = [&read](int sampleX, int sampleY, int sampleZ, int& blockLight, int& skyLight) {
@@ -282,12 +277,9 @@ struct BlockRenderContext {
  // are on — baked models and mod blocks. A solid block stores no light of its
  // own, so the surfaces take the brightest light reaching them from around it.
  void sampleSurroundingLight(int x, int y, int z);
- // Renderers that emit geometry without a per-face texture still need a
- // tessellator. The context always carries one (see the tess member comment).
- // Renderers emitting straight into the tessellator need the block's
- // surrounding-light default; ones going through activeTess() overwrite it with the
- // face's own light before their first vertex, so for them its fourteen light reads
- // were pure waste. Sampled on the first call that can observe it, not before.
+ // A renderer going straight to the tessellator needs the block's surrounding-light
+ // default; one going through activeTess() overwrites it with the face's own light
+ // first, so the sample is taken on the first call that can observe it, not before.
  [[nodiscard]] Tessellator& tessellator() {
   if(surroundingLightPending) {
    surroundingLightPending = false;
@@ -303,8 +295,7 @@ struct BlockRenderContext {
   return *tess;
  }
  [[nodiscard]] Tessellator& activeTess(int texture) {
-  // A face light supersedes the surrounding default, exactly as it did when the
-  // default was pushed eagerly and this call overwrote it.
+  // A face light supersedes the surrounding default.
   surroundingLightPending = false;
   if(modMeshes != nullptr) {
    Tessellator& active = modMeshes->tessFor(texture, *tess);

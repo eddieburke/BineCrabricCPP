@@ -1,6 +1,8 @@
 #include <gtest/gtest.h>
+#include <algorithm>
 #include <array>
 #include <cmath>
+#include <utility>
 #include <cstdint>
 #include <memory>
 #include <vector>
@@ -32,7 +34,8 @@ struct MeshedBlock {
  std::unique_ptr<RegionSnapshot> snapshot;
  TessellatorMesh mesh;
 };
-MeshedBlock meshBlock(std::unique_ptr<Chunk> chunk, block::Block& block, int x, int y, int z) {
+MeshedBlock meshBlock(std::unique_ptr<Chunk> chunk, block::Block& block, int x, int y, int z,
+                      float aoStrength = 1.0f) {
  MeshedBlock result;
  result.chunk = std::move(chunk);
  result.chunk->populateHeightMapOnly();
@@ -41,7 +44,7 @@ MeshedBlock meshBlock(std::unique_ptr<Chunk> chunk, block::Block& block, int x, 
                                                     kSectionSize + 1, kSectionSize, kSectionSize + 1);
  client::option::RenderSettings settings{};
  settings.ambientOcclusionActive = true;
- settings.ambientOcclusionStrength = 1.0f;
+ settings.ambientOcclusionStrength = aoStrength;
  Tessellator tessellator;
  tessellator.setCaptureOnly(true);
  client::render::block::BlockRenderManager manager(tessellator, result.snapshot.get(), settings);
@@ -106,4 +109,44 @@ TEST(BlockAoLighting, InsetStairTopSamplesItsOwnLightPlane) {
  }
  EXPECT_EQ(vertices, 4);
 }
+
+// see third_party/iris/common/src/main/java/net/irisshaders/iris/mixin/MixinBlockStateBehavior.java:44
+// ambientOcclusionLevel reaches Java only through getShadeBrightness, which feeds the
+// occlusion coefficient. Folding it into the lightmap too collapsed smooth lighting
+// toward the flat face value and drew a per-block grid wherever the light varied.
+TEST(BlockAoLighting, AoStrengthDoesNotFlattenTheLightmap) {
+ constexpr int x = 8;
+ constexpr int y = 8;
+ constexpr int z = 8;
+ const auto build = [] {
+  auto chunk = std::make_unique<Chunk>(nullptr, 0, 0);
+  chunk->blocks[blockIndex(x, y, z)] = static_cast<std::uint8_t>(block::Block::STONE->id);
+  for(int sampleX = x - 1; sampleX <= x + 1; ++sampleX) {
+   for(int sampleZ = z - 1; sampleZ <= z + 1; ++sampleZ) {
+    chunk->blockLight.set(sampleX, y + 1, sampleZ, 15);
+    chunk->skyLight.set(sampleX, y + 1, sampleZ, 15);
+   }
+  }
+  // One low corner, so the four top-face corners cannot all average the same.
+  // Non-zero: averageCornerChannel reads a zero channel as the face centre.
+  chunk->blockLight.set(x + 1, y + 1, z + 1, 3);
+  chunk->skyLight.set(x + 1, y + 1, z + 1, 3);
+  return chunk;
+ };
+ const auto topFaceLight = [](const MeshedBlock& scene) {
+  std::vector<std::pair<int, int>> light;
+  for(const auto& vertex : scene.mesh.vertices) {
+   if(std::fabs(vertex.y - 9.0f) > 0.01f || normalY(vertex) < 0.9f) continue;
+   light.emplace_back(blockLight(vertex), skyLight(vertex));
+  }
+  std::sort(light.begin(), light.end());
+  return light;
+ };
+ const std::vector<std::pair<int, int>> full = topFaceLight(meshBlock(build(), *block::Block::STONE, x, y, z, 1.0f));
+ const std::vector<std::pair<int, int>> half = topFaceLight(meshBlock(build(), *block::Block::STONE, x, y, z, 0.5f));
+ ASSERT_FALSE(full.empty());
+ EXPECT_NE(full.front(), full.back()) << "the fixture has to produce corners that actually differ";
+ EXPECT_EQ(half, full) << "ambientOcclusionLevel pulled the lightmap toward the flat face value";
+}
+
 }

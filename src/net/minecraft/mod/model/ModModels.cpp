@@ -444,12 +444,10 @@ void writeQuad(Tessellator& t,
    // comes from the model JSON, not from a face renderer's winding.
    const client::render::block::CornerSample corner =
        ao->blend(quad.vertices[i].x, quad.vertices[i].y, quad.vertices[i].z);
-   const float strength = opts->ambientOcclusionStrength;
-   const float occlusion = 1.0f - (1.0f - corner.occlusion) * strength;
-   const float faceBlock = static_cast<float>(ao->faceBlockLight);
-   const float faceSky = static_cast<float>(ao->faceSkyLight);
-   t.light(faceBlock + (corner.blockLight - faceBlock) * strength,
-           faceSky + (corner.skyLight - faceSky) * strength);
+   // see third_party/iris/common/src/main/java/net/irisshaders/iris/mixin/MixinBlockStateBehavior.java:44
+   // ambientOcclusionLevel scales occlusion only; the lightmap stays smooth.
+   const float occlusion = 1.0f - (1.0f - corner.occlusion) * opts->ambientOcclusionStrength;
+   t.light(corner.blockLight, corner.skyLight);
    // separateAo carries the occlusion in alpha and leaves rgb alone; the
    // directional face shade is already folded into rgb by forEachBakedQuad.
    const float rgb = opts->separateAo ? 1.0f : occlusion;

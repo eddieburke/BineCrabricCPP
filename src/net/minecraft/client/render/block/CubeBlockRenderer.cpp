@@ -13,6 +13,12 @@
 namespace net::minecraft::client::render::block {
 namespace option = net::minecraft::client::option;
 namespace {
+using FaceFn = void (BlockFaceRenderer::*)(net::minecraft::block::Block&, double, double, double, int);
+constexpr FaceFn kFaceRenderers[6] = {
+    &BlockFaceRenderer::renderBottomFace, &BlockFaceRenderer::renderTopFace,
+    &BlockFaceRenderer::renderEastFace,   &BlockFaceRenderer::renderWestFace,
+    &BlockFaceRenderer::renderNorthFace,  &BlockFaceRenderer::renderSouthFace,
+};
 float oldLightingFaceShade(int face) {
  switch(face) {
  case 0:
@@ -29,6 +35,10 @@ float oldLightingFaceShade(int face) {
 float flatFaceColor(const option::RenderSettings& resolved, int face, float channel) {
  return resolved.oldLighting ? channel * oldLightingFaceShade(face) : channel;
 }
+// see third_party/iris/common/src/main/java/net/irisshaders/iris/mixin/MixinBlockStateBehavior.java:44
+// ambientOcclusionLevel scales the occlusion coefficient and nothing else. Java
+// reaches it through getShadeBrightness, which never touches the lightmap, so the
+// per-corner smooth light stays smooth however far the slider is pulled down.
 void assignAoCorners(const option::RenderSettings& resolved,
                      BlockFaceRenderState& state,
                      int face,
@@ -36,8 +46,6 @@ void assignAoCorners(const option::RenderSettings& resolved,
                      float red,
                      float green,
                      float blue,
-                     int fBlock,
-                     int fSky,
                      const CornerSample (&corners)[4]) {
  const float tintRed = applyTint ? red : 1.0f;
  const float tintGreen = applyTint ? green : 1.0f;
@@ -45,16 +53,14 @@ void assignAoCorners(const option::RenderSettings& resolved,
  const float shade = resolved.oldLighting ? oldLightingFaceShade(face) : 1.0f;
  const float strength = resolved.ambientOcclusionStrength;
  for(int i = 0; i < 4; ++i) {
-  const float ao = 1.0f - (1.0f - corners[i].occlusion) * strength;
-  const float coefficient = ao * shade;
+  const float coefficient = (1.0f - (1.0f - corners[i].occlusion) * strength) * shade;
   const float rgbCoefficient = resolved.separateAo ? 1.0f : coefficient;
   state.colors.red[i] = tintRed * rgbCoefficient;
   state.colors.green[i] = tintGreen * rgbCoefficient;
   state.colors.blue[i] = tintBlue * rgbCoefficient;
   state.colors.alpha[i] = resolved.separateAo ? coefficient : 1.0f;
-  state.blockLight[i] =
-      static_cast<float>(fBlock) + (corners[i].blockLight - static_cast<float>(fBlock)) * strength;
-  state.skyLight[i] = static_cast<float>(fSky) + (corners[i].skyLight - static_cast<float>(fSky)) * strength;
+  state.blockLight[i] = corners[i].blockLight;
+  state.skyLight[i] = corners[i].skyLight;
  }
 }
 void multiplyVertexColors(BlockFaceRenderState& state, float red, float green, float blue) {
@@ -64,8 +70,97 @@ void multiplyVertexColors(BlockFaceRenderState& state, float red, float green, f
   state.colors.blue[i] *= blue;
  }
 }
-[[nodiscard]] bool grassSideTintActive(const option::RenderSettings& resolved) {
- return resolved.fancyGrass;
+struct FaceCell {
+ int x;
+ int y;
+ int z;
+};
+// A partial block keeps its face on its own cell; only a face flush with the block
+// boundary samples the neighbour. The top face additionally never pulls in for a
+// fluid, whose surface sits below 1.0 but still lights as a full block.
+FaceCell smoothFaceCell(const BlockRenderContext& ctx,
+                        net::minecraft::block::Block& block,
+                        int face,
+                        int x,
+                        int y,
+                        int z) {
+ switch(face) {
+ case 0:
+  return {x, ctx.renderBounds.minY > 0.0 ? y : y - 1, z};
+ case 1:
+  return {x, ctx.renderBounds.maxY < 1.0 && !block.material.isFluid() ? y : y + 1, z};
+ case 2:
+  return {x, y, ctx.renderBounds.minZ > 0.0 ? z : z - 1};
+ case 3:
+  return {x, y, ctx.renderBounds.maxZ < 1.0 ? z : z + 1};
+ case 4:
+  return {ctx.renderBounds.minX > 0.0 ? x : x - 1, y, z};
+ default:
+  return {ctx.renderBounds.maxX < 1.0 ? x : x + 1, y, z};
+ }
+}
+// The unlit path samples its bottom face one cell down unconditionally and tests
+// the top face's bound with != rather than <. Both differ from smoothFaceCell and
+// both are load-bearing for slabs and stairs.
+FaceCell flatFaceCell(const BlockRenderContext& ctx,
+                      net::minecraft::block::Block& block,
+                      int face,
+                      int x,
+                      int y,
+                      int z) {
+ switch(face) {
+ case 0:
+  return {x, y - 1, z};
+ case 1:
+  return {x, ctx.renderBounds.maxY != 1.0 && !block.material.isFluid() ? y : y + 1, z};
+ default:
+  return smoothFaceCell(ctx, block, face, x, y, z);
+ }
+}
+// Cactus draws the same six unlit faces as renderFlat; its inset render bounds are
+// the whole difference, and they collapse every side cell back onto the block's own.
+bool renderUnlitFaces(BlockRenderContext& ctx,
+                      BlockFaceRenderer& faces,
+                      net::minecraft::block::Block& block,
+                      int x,
+                      int y,
+                      int z,
+                      float red,
+                      float green,
+                      float blue) {
+ ctx.faceState.useAo = false;
+ Tessellator& tessellator = ctx.tessellator();
+ const bool grass = net::minecraft::block::Block::GRASS_BLOCK != nullptr &&
+                    &block == net::minecraft::block::Block::GRASS_BLOCK;
+ bool drewAnyFace = false;
+ for(int face = 0; face < 6; ++face) {
+  const int nx = x + kFaceOffsets[face][0];
+  const int ny = y + kFaceOffsets[face][1];
+  const int nz = z + kFaceOffsets[face][2];
+  if(!ctx.skipFaceCulling && !ctx.isSideVisible(block, nx, ny, nz, face)) {
+   continue;
+  }
+  const FaceCell cell = flatFaceCell(ctx, block, face, x, y, z);
+  ctx.sampleFaceLight(cell.x, cell.y, cell.z);
+  // Grass keeps its biome tint on the top face and draws the four sides white,
+  // with the tinted overlay layered on top of them.
+  const bool untinted = grass && face != 1;
+  const float faceRed = untinted ? 1.0f : red;
+  const float faceGreen = untinted ? 1.0f : green;
+  const float faceBlue = untinted ? 1.0f : blue;
+  tessellator.color(flatFaceColor(ctx.opts, face, faceRed), flatFaceColor(ctx.opts, face, faceGreen),
+                    flatFaceColor(ctx.opts, face, faceBlue));
+  const int textureId = block.getTextureId(ctx.blockView, x, y, z, face);
+  (faces.*kFaceRenderers[face])(block, x, y, z, textureId);
+  if(face >= 2 && ctx.opts.fancyGrass && textureId == 3 && ctx.textureOverride < 0) {
+   tessellator.color(flatFaceColor(ctx.opts, face, faceRed * red),
+                     flatFaceColor(ctx.opts, face, faceGreen * green),
+                     flatFaceColor(ctx.opts, face, faceBlue * blue));
+   (faces.*kFaceRenderers[face])(block, x, y, z, 38);
+  }
+  drewAnyFace = true;
+ }
+ return drewAnyFace;
 }
 } // namespace
 bool CubeBlockRenderer::renderBlock(net::minecraft::block::Block& block, int x, int y, int z) {
@@ -95,12 +190,6 @@ bool CubeBlockRenderer::renderSmooth(
   tint[4] = false;
   tint[5] = false;
  }
- using FaceFn = void (BlockFaceRenderer::*)(net::minecraft::block::Block&, double, double, double, int);
- static constexpr FaceFn kFaceRenderers[6] = {
-     &BlockFaceRenderer::renderBottomFace, &BlockFaceRenderer::renderTopFace,
-     &BlockFaceRenderer::renderEastFace,   &BlockFaceRenderer::renderWestFace,
-     &BlockFaceRenderer::renderNorthFace,  &BlockFaceRenderer::renderSouthFace,
- };
  for(int face = 0; face < 6; ++face) {
   const int nx = x + kFaceOffsets[face][0];
   const int ny = y + kFaceOffsets[face][1];
@@ -108,29 +197,15 @@ bool CubeBlockRenderer::renderSmooth(
   if(!ctx_.skipFaceCulling && !ctx_.isSideVisible(block, nx, ny, nz, face)) {
    continue;
   }
-  // A partial block keeps its face on its own cell; only a face flush with the
-  // block boundary samples the neighbour. The top face additionally never pulls
-  // in for a fluid, whose surface sits below 1.0 but still lights as a full block.
-  int faceX = x;
-  int faceY = y;
-  int faceZ = z;
-  switch(face) {
-  case 0: faceY = ctx_.renderBounds.minY > 0.0 ? y : y - 1; break;
-  case 1: faceY = ctx_.renderBounds.maxY < 1.0 && !block.material.isFluid() ? y : y + 1; break;
-  case 2: faceZ = ctx_.renderBounds.minZ > 0.0 ? z : z - 1; break;
-  case 3: faceZ = ctx_.renderBounds.maxZ < 1.0 ? z : z + 1; break;
-  case 4: faceX = ctx_.renderBounds.minX > 0.0 ? x : x - 1; break;
-  default: faceX = ctx_.renderBounds.maxX < 1.0 ? x : x + 1; break;
-  }
-  const FaceCornerSamples samples = sampleCubeFaceCorners(ctx_, face, faceX, faceY, faceZ);
+  const FaceCell cell = smoothFaceCell(ctx_, block, face, x, y, z);
+  const FaceCornerSamples samples = sampleCubeFaceCorners(ctx_, face, cell.x, cell.y, cell.z);
   CornerSample corners[4]{};
   samples.toWinding(corners);
-  assignAoCorners(ctx_.opts, ctx_.faceState, face, tint[face], red, green, blue, samples.faceBlockLight,
-                  samples.faceSkyLight, corners);
+  assignAoCorners(ctx_.opts, ctx_.faceState, face, tint[face], red, green, blue, corners);
   const int textureId = block.getTextureId(ctx_.blockView, x, y, z, face);
   (faces_.*kFaceRenderers[face])(block, x, y, z, textureId);
   // Grass keeps its side overlay on the four side faces only.
-  if(face >= 2 && grassSideTintActive(ctx_.opts) && textureId == 3 && ctx_.textureOverride < 0) {
+  if(face >= 2 && ctx_.opts.fancyGrass && textureId == 3 && ctx_.textureOverride < 0) {
    multiplyVertexColors(ctx_.faceState, red, green, blue);
    (faces_.*kFaceRenderers[face])(block, x, y, z, 38);
   }
@@ -139,108 +214,12 @@ bool CubeBlockRenderer::renderSmooth(
  ctx_.faceState.useAo = false;
  return drewAnyFace;
 }
-// Flat lighting: tint only in vertex colour; absolute light in the lightmap.
-// Face orientation shade is pack-owned (vanilla gbuffers).
 bool CubeBlockRenderer::renderFlat(
     net::minecraft::block::Block& block, int x, int y, int z, float red, float green, float blue) {
  if(ctx_.blockView == nullptr) {
   return false;
  }
- ctx_.faceState.useAo = false;
- Tessellator& tessellator = ctx_.tessellator();
- bool drewAnyFace = false;
- int textureId = 0;
- float downRed = red;
- float downGreen = green;
- float downBlue = blue;
- float upRed = red;
- float upGreen = green;
- float upBlue = blue;
- float horizRed = red;
- float horizGreen = green;
- float horizBlue = blue;
- float nsRed = red;
- float nsGreen = green;
- float nsBlue = blue;
- if(net::minecraft::block::Block::GRASS_BLOCK != nullptr && &block == net::minecraft::block::Block::GRASS_BLOCK) {
-  downRed = 1.0f;
-  downGreen = 1.0f;
-  downBlue = 1.0f;
-  horizRed = 1.0f;
-  horizGreen = 1.0f;
-  horizBlue = 1.0f;
-  nsRed = 1.0f;
-  nsGreen = 1.0f;
-  nsBlue = 1.0f;
- }
- if(ctx_.skipFaceCulling || ctx_.isSideVisible(block, x, y - 1, z, 0)) {
-  ctx_.sampleFaceLight(x, y - 1, z);
-  tessellator.color(flatFaceColor(ctx_.opts, 0, downRed), flatFaceColor(ctx_.opts, 0, downGreen),
-                    flatFaceColor(ctx_.opts, 0, downBlue));
-  faces_.renderBottomFace(block, x, y, z, block.getTextureId(ctx_.blockView, x, y, z, 0));
-  drewAnyFace = true;
- }
- if(ctx_.skipFaceCulling || ctx_.isSideVisible(block, x, y + 1, z, 1)) {
-  const bool self = ctx_.renderBounds.maxY != 1.0 && !block.material.isFluid();
-  ctx_.sampleFaceLight(x, self ? y : y + 1, z);
-  tessellator.color(flatFaceColor(ctx_.opts, 1, upRed), flatFaceColor(ctx_.opts, 1, upGreen),
-                    flatFaceColor(ctx_.opts, 1, upBlue));
-  faces_.renderTopFace(block, x, y, z, block.getTextureId(ctx_.blockView, x, y, z, 1));
-  drewAnyFace = true;
- }
- if(ctx_.skipFaceCulling || ctx_.isSideVisible(block, x, y, z - 1, 2)) {
-  ctx_.sampleFaceLight(x, y, ctx_.renderBounds.minZ > 0.0 ? z : z - 1);
-  tessellator.color(flatFaceColor(ctx_.opts, 2, horizRed), flatFaceColor(ctx_.opts, 2, horizGreen),
-                    flatFaceColor(ctx_.opts, 2, horizBlue));
-  textureId = block.getTextureId(ctx_.blockView, x, y, z, 2);
-  faces_.renderEastFace(block, x, y, z, textureId);
-  if(grassSideTintActive(ctx_.opts) && textureId == 3 && ctx_.textureOverride < 0) {
-   tessellator.color(flatFaceColor(ctx_.opts, 2, horizRed * red), flatFaceColor(ctx_.opts, 2, horizGreen * green),
-                     flatFaceColor(ctx_.opts, 2, horizBlue * blue));
-   faces_.renderEastFace(block, x, y, z, 38);
-  }
-  drewAnyFace = true;
- }
- if(ctx_.skipFaceCulling || ctx_.isSideVisible(block, x, y, z + 1, 3)) {
-  ctx_.sampleFaceLight(x, y, ctx_.renderBounds.maxZ < 1.0 ? z : z + 1);
-  tessellator.color(flatFaceColor(ctx_.opts, 3, horizRed), flatFaceColor(ctx_.opts, 3, horizGreen),
-                    flatFaceColor(ctx_.opts, 3, horizBlue));
-  textureId = block.getTextureId(ctx_.blockView, x, y, z, 3);
-  faces_.renderWestFace(block, x, y, z, textureId);
-  if(grassSideTintActive(ctx_.opts) && textureId == 3 && ctx_.textureOverride < 0) {
-   tessellator.color(flatFaceColor(ctx_.opts, 3, horizRed * red), flatFaceColor(ctx_.opts, 3, horizGreen * green),
-                     flatFaceColor(ctx_.opts, 3, horizBlue * blue));
-   faces_.renderWestFace(block, x, y, z, 38);
-  }
-  drewAnyFace = true;
- }
- if(ctx_.skipFaceCulling || ctx_.isSideVisible(block, x - 1, y, z, 4)) {
-  ctx_.sampleFaceLight(ctx_.renderBounds.minX > 0.0 ? x : x - 1, y, z);
-  tessellator.color(flatFaceColor(ctx_.opts, 4, nsRed), flatFaceColor(ctx_.opts, 4, nsGreen),
-                    flatFaceColor(ctx_.opts, 4, nsBlue));
-  textureId = block.getTextureId(ctx_.blockView, x, y, z, 4);
-  faces_.renderNorthFace(block, x, y, z, textureId);
-  if(grassSideTintActive(ctx_.opts) && textureId == 3 && ctx_.textureOverride < 0) {
-   tessellator.color(flatFaceColor(ctx_.opts, 4, nsRed * red), flatFaceColor(ctx_.opts, 4, nsGreen * green),
-                     flatFaceColor(ctx_.opts, 4, nsBlue * blue));
-   faces_.renderNorthFace(block, x, y, z, 38);
-  }
-  drewAnyFace = true;
- }
- if(ctx_.skipFaceCulling || ctx_.isSideVisible(block, x + 1, y, z, 5)) {
-  ctx_.sampleFaceLight(ctx_.renderBounds.maxX < 1.0 ? x : x + 1, y, z);
-  tessellator.color(flatFaceColor(ctx_.opts, 5, nsRed), flatFaceColor(ctx_.opts, 5, nsGreen),
-                    flatFaceColor(ctx_.opts, 5, nsBlue));
-  textureId = block.getTextureId(ctx_.blockView, x, y, z, 5);
-  faces_.renderSouthFace(block, x, y, z, textureId);
-  if(grassSideTintActive(ctx_.opts) && textureId == 3 && ctx_.textureOverride < 0) {
-   tessellator.color(flatFaceColor(ctx_.opts, 5, nsRed * red), flatFaceColor(ctx_.opts, 5, nsGreen * green),
-                     flatFaceColor(ctx_.opts, 5, nsBlue * blue));
-   faces_.renderSouthFace(block, x, y, z, 38);
-  }
-  drewAnyFace = true;
- }
- return drewAnyFace;
+ return renderUnlitFaces(ctx_, faces_, block, x, y, z, red, green, blue);
 }
 bool CubeBlockRenderer::renderCactus(net::minecraft::block::Block& block, int x, int y, int z) {
  int n = block.getColorMultiplier(ctx_.blockView, x, y, z);
@@ -251,54 +230,10 @@ bool CubeBlockRenderer::renderCactus(net::minecraft::block::Block& block, int x,
 }
 bool CubeBlockRenderer::renderCactus(
     net::minecraft::block::Block& block, int x, int y, int z, float red, float green, float blue) {
- ctx_.faceState.useAo = false;
- Tessellator& tessellator = ctx_.tessellator();
- bool drewAnyFace = false;
  const float inset = 0.0625f;
  const auto savedBounds = ctx_.renderBounds;
  ctx_.renderBounds = {inset, 0.0, inset, 1.0f - inset, 1.0, 1.0f - inset};
- if(ctx_.skipFaceCulling || ctx_.isSideVisible(block, x, y - 1, z, 0)) {
-  ctx_.sampleFaceLight(x, y - 1, z);
-  tessellator.color(flatFaceColor(ctx_.opts, 0, red), flatFaceColor(ctx_.opts, 0, green),
-                    flatFaceColor(ctx_.opts, 0, blue));
-  faces_.renderBottomFace(block, x, y, z, block.getTextureId(ctx_.blockView, x, y, z, 0));
-  drewAnyFace = true;
- }
- if(ctx_.skipFaceCulling || ctx_.isSideVisible(block, x, y + 1, z, 1)) {
-  ctx_.sampleFaceLight(ctx_.renderBounds.maxY < 1.0 && !block.material.isFluid() ? x : x, y + 1, z);
-  tessellator.color(flatFaceColor(ctx_.opts, 1, red), flatFaceColor(ctx_.opts, 1, green),
-                    flatFaceColor(ctx_.opts, 1, blue));
-  faces_.renderTopFace(block, x, y, z, block.getTextureId(ctx_.blockView, x, y, z, 1));
-  drewAnyFace = true;
- }
- if(ctx_.skipFaceCulling || ctx_.isSideVisible(block, x, y, z - 1, 2)) {
-  ctx_.sampleFaceLight(x, y, ctx_.renderBounds.minZ > 0.0 ? z : z - 1);
-  tessellator.color(flatFaceColor(ctx_.opts, 2, red), flatFaceColor(ctx_.opts, 2, green),
-                    flatFaceColor(ctx_.opts, 2, blue));
-  faces_.renderEastFace(block, x, y, z, block.getTextureId(ctx_.blockView, x, y, z, 2));
-  drewAnyFace = true;
- }
- if(ctx_.skipFaceCulling || ctx_.isSideVisible(block, x, y, z + 1, 3)) {
-  ctx_.sampleFaceLight(x, y, ctx_.renderBounds.maxZ < 1.0 ? z : z + 1);
-  tessellator.color(flatFaceColor(ctx_.opts, 3, red), flatFaceColor(ctx_.opts, 3, green),
-                    flatFaceColor(ctx_.opts, 3, blue));
-  faces_.renderWestFace(block, x, y, z, block.getTextureId(ctx_.blockView, x, y, z, 3));
-  drewAnyFace = true;
- }
- if(ctx_.skipFaceCulling || ctx_.isSideVisible(block, x - 1, y, z, 4)) {
-  ctx_.sampleFaceLight(ctx_.renderBounds.minX > 0.0 ? x : x - 1, y, z);
-  tessellator.color(flatFaceColor(ctx_.opts, 4, red), flatFaceColor(ctx_.opts, 4, green),
-                    flatFaceColor(ctx_.opts, 4, blue));
-  faces_.renderNorthFace(block, x, y, z, block.getTextureId(ctx_.blockView, x, y, z, 4));
-  drewAnyFace = true;
- }
- if(ctx_.skipFaceCulling || ctx_.isSideVisible(block, x + 1, y, z, 5)) {
-  ctx_.sampleFaceLight(ctx_.renderBounds.maxX < 1.0 ? x : x + 1, y, z);
-  tessellator.color(flatFaceColor(ctx_.opts, 5, red), flatFaceColor(ctx_.opts, 5, green),
-                    flatFaceColor(ctx_.opts, 5, blue));
-  faces_.renderSouthFace(block, x, y, z, block.getTextureId(ctx_.blockView, x, y, z, 5));
-  drewAnyFace = true;
- }
+ const bool drewAnyFace = renderUnlitFaces(ctx_, faces_, block, x, y, z, red, green, blue);
  ctx_.renderBounds = savedBounds;
  return drewAnyFace;
 }

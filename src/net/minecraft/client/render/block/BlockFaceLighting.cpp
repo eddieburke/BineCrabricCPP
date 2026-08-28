@@ -19,9 +19,7 @@ constexpr FaceAxes kFaceAxes[6] = {
     {2, 1}, // south (+X)
 };
 // Which geometric corner each face renderer emits as its 1st..4th vertex, as
-// {uHigh, vHigh}. Transcribed from the six sampling blocks CubeBlockRenderer used
-// to carry inline; that is the only reason this table is per-face rather than
-// derived, and getting a row wrong reshades every block of that facing.
+// {uHigh, vHigh}. A wrong row reshades every block of that facing.
 constexpr int kWindingOrder[6][4][2] = {
     {{0, 1}, {0, 0}, {1, 0}, {1, 1}}, // down
     {{1, 1}, {1, 0}, {0, 0}, {0, 1}}, // up
@@ -30,13 +28,9 @@ constexpr int kWindingOrder[6][4][2] = {
     {{1, 1}, {0, 1}, {0, 0}, {1, 0}}, // north
     {{1, 0}, {0, 0}, {0, 1}, {1, 1}}, // south
 };
-// The face's own 3x3 neighbourhood, in the face's plane, one sample per cell.
-//
-// Every corner of a face averages four cells -- the face cell, the two edge cells
-// beside it and the diagonal -- and the four corners overlap heavily. Sampling per
-// corner read these same nine cells 24 times for block ids and 17 times for light,
-// for values that do not depend on which corner asked. Reading each once is where
-// most of the AO cost went.
+// The face's own 3x3 neighbourhood, in the face's plane, one sample per cell. Every
+// corner averages the face cell, its two edge cells and the diagonal, so the four
+// corners overlap heavily; each cell is read once, not once per corner.
 struct FaceNeighbourhood {
  struct Cell {
   int blockLight = 15;
@@ -90,8 +84,6 @@ FaceCornerSamples sampleCubeFaceCorners(BlockRenderContext& ctx, int face, int f
  const int base[3] = {faceX, faceY, faceZ};
  const FaceNeighbourhood neighbourhood = sampleFaceNeighbourhood(ctx, kFaceAxes[face], base);
  const FaceNeighbourhood::Cell& center = neighbourhood.at(0, 0);
- out.faceBlockLight = center.blockLight;
- out.faceSkyLight = center.skyLight;
  for(int uHigh = 0; uHigh < 2; ++uHigh) {
   for(int vHigh = 0; vHigh < 2; ++vHigh) {
    const int du = uHigh == 0 ? -1 : 1;
@@ -109,10 +101,8 @@ FaceCornerSamples sampleCubeFaceCorners(BlockRenderContext& ctx, int face, int f
    corner.occlusion = (diagonal.occlusion + side.occlusion + other.occlusion + center.occlusion) / 4.0f;
   }
  }
- // The face renderers read ctx.faceBlockLight/faceSkyLight out of the context when
- // they open their tessellator -- activeTess re-issues blockData with them -- and
- // what they have to see is this face's own cell. The old sampler left it there by
- // accident, its last corner average happening to read the centre last. Set it.
+ // activeTess re-issues blockData with these, and what a face renderer has to see is
+ // this face's own cell, not whichever corner was averaged last.
  ctx.faceBlockLight = center.blockLight;
  ctx.faceSkyLight = center.skyLight;
  return out;
