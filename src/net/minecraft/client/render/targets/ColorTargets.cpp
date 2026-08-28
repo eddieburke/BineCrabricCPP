@@ -584,13 +584,6 @@ void ColorTargets::resetFlips() {
  gl::GLCore::bindFramebuffer(static_cast<unsigned>(gl::framebuffer::Framebuffer),
                              static_cast<unsigned>(previousFbo));
 }
-void ColorTargets::flipIfEnabled(const PackDefinition& definition, const std::string& passName,
-                                 const std::string& bufferName) {
- // A written buffer flips unless an explicit `false` blocks it (CompositeRenderer.java:174).
- if(!flipExplicitlyBlocked(definition, passName, bufferName)) {
-  this->flip(bufferName);
- }
-}
 bool ColorTargets::flipExplicitlyBlocked(const PackDefinition& definition,
                                          const std::string& passName, const std::string& bufferName) {
  // CompositeRenderer.java:174: only an explicit false blocks the flip.
@@ -616,14 +609,30 @@ int ColorTargets::renderTargetSamplerStartIndex(bool fullscreenPass) {
  // IrisSamplers.java:55: colortex0-3 are only sampleable from fullscreen passes.
  return fullscreenPass ? 0 : 4;
 }
-void ColorTargets::applyPassFlips(const PackDefinition& definition,
-                                  const std::string& passName, const std::vector<std::string>& outputs) {
- // CompositeRenderer.java:165-187: buffers the pass writes flip unless the pack
- // blocks it; buffers declared with an explicit true flip anyway.
+std::vector<std::string> ColorTargets::passFlipSequence(const PackDefinition& definition,
+                                                        const std::string& passName,
+                                                        const std::vector<std::string>& outputs) {
+ // CompositeRenderer.java:165-186: the drawBuffers loop flips every written buffer
+ // unless an explicit false blocks it, then the explicitFlips sweep flips every true
+ // buffer again. Java deduplicates neither, so a buffer that is both written and
+ // explicitly true flips TWICE and lands back on the side it started from. Skipping
+ // the second flip leaves it on the opposite side to Java for the whole rest of the
+ // frame, and every later pass then samples last frame's contents.
+ std::vector<std::string> sequence;
+ sequence.reserve(outputs.size() + 1);
  for(const std::string& name : outputs) {
-  flipIfEnabled(definition, passName, name);
+  if(!flipExplicitlyBlocked(definition, passName, name)) {
+   sequence.push_back(name);
+  }
  }
  for(const std::string& name : explicitTrueFlips(definition, passName)) {
+  sequence.push_back(name);
+ }
+ return sequence;
+}
+void ColorTargets::applyPassFlips(const PackDefinition& definition,
+                                  const std::string& passName, const std::vector<std::string>& outputs) {
+ for(const std::string& name : passFlipSequence(definition, passName, outputs)) {
   flip(name);
  }
 }

@@ -177,6 +177,15 @@ TEST(ColorTargetsTest, ExplicitTrueFlipAppliesToBuffersThePassDoesNotWrite) {
   // "composite_pre" is a different pass: its keys never leak into "composite".
   EXPECT_TRUE(ColorTargets::explicitTrueFlips(pack, "composite").empty());
   EXPECT_EQ(ColorTargets::explicitTrueFlips(pack, "composite4"), std::vector<std::string>({"colortex7"}));
+  // The application, not just the list. Java runs the drawBuffers loop and then the
+  // explicitFlips sweep with no deduplication, so a buffer that is written AND
+  // explicitly true flips twice and ends the pass where it started. Collapsing that
+  // to one flip parks it on the wrong side for the rest of the frame, which reads as
+  // last frame's contents bleeding into every later pass.
+  const std::vector<std::string> written = {"colortex4", "colortex5", "colortex7"};
+  EXPECT_EQ(ColorTargets::passFlipSequence(pack, "composite3", written),
+            std::vector<std::string>({"colortex4", "colortex7", "colortex4", "colortex6"}))
+      << "colortex4 is written and explicitly true: it must appear twice";
   // A pass with no directives at all sweeps nothing.
   EXPECT_TRUE(ColorTargets::explicitTrueFlips(pack, "composite0").empty());
 }

@@ -193,14 +193,15 @@ class ColorTargets {
  void fillImageBindings(std::unordered_map<std::string, int>& images) const;
  void flip(const std::string& name);
  void resetFlips();
- void flipIfEnabled(const PackDefinition& definition, const std::string& passName,
-                    const std::string& bufferName);
  // CompositeRenderer.java:165-187: buffers the pass writes flip unless the pack
  // blocks it; buffers declared with an explicit true flip anyway.
  void applyPassFlips(const PackDefinition& definition, const std::string& passName,
                      const std::vector<std::string>& outputs);
  [[nodiscard]] static bool flipExplicitlyBlocked(const PackDefinition& definition,
                                                  const std::string& passName, const std::string& bufferName);
+ [[nodiscard]] static std::vector<std::string> passFlipSequence(const PackDefinition& definition,
+                                                               const std::string& passName,
+                                                               const std::vector<std::string>& outputs);
  [[nodiscard]] static std::vector<std::string> explicitTrueFlips(const PackDefinition& definition,
                                                                  const std::string& passName);
  // IrisSamplers.java:55: startIndex = isFullscreenPass ? 0 : 4.
