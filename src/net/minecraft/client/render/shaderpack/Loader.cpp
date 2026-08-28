@@ -1681,15 +1681,13 @@ void loadProgramSet(PackDefinition& out,
    acceptedMetadataResources.insert(path);
   }
  }
- const std::string libraryPrefix = std::string(prefix) + "lib/";
- for(const std::string& path : resources) {
-  if(path.rfind(libraryPrefix, 0) != 0) continue;
-  if(path.ends_with(".vsh") || path.ends_with(".fsh") || path.ends_with(".glsl") ||
-     path.ends_with(".csh") || path.ends_with(".gsh") || path.ends_with(".tcs") ||
-     path.ends_with(".tes")) {
-   acceptedMetadataResources.insert(path);
-  }
- }
+ // see third_party/iris/common/src/main/java/net/irisshaders/iris/shaderpack/programs/ProgramSet.java:243
+ // Only program sources. A lib/ file scanned on its own carries none of the pack's
+ // #defines, so every #if in it takes the undefined-is-zero branch: RenderPearl's
+ // shadowtex0/1Nearest sit behind `#if SM_BLUR < 2` / `#if !SM_BLUR` with SM_BLUR = 2,
+ // and reading them there turned the sampler2DShadow comparison samplers NEAREST.
+ // The same files are already scanned with the defines in scope through the #includes
+ // of the programs that use them.
  std::unordered_map<std::string, std::string> activeFragments;
  std::unordered_set<std::size_t> scannedHashes;
  auto scanOnce = [&](const std::string& activeSource) {
@@ -2014,6 +2012,36 @@ bool PackLoader::load(const std::vector<std::string>& resources,
    out.shadowColorBuffers = std::max(out.shadowColorBuffers, seed->shadowColorBuffers);
    if(seed->shadowMapResolution > 0) out.shadowMapResolution = seed->shadowMapResolution;
    if(!seed->customUniforms.empty()) out.customUniforms = seed->customUniforms;
+   // A pack whose programs all live in world folders declares its const directives
+   // there too, so the root scan never sees them and keeps engine defaults. Iris has
+   // no root: the pipeline reads the selected dimension's ProgramSet. Adopt the seed's
+   // value for every scalar the root never learned, leaving anything it did scan alone.
+   const PackDefinition untouched;
+   const auto adopt = [](auto& target, const auto& seedValue, const auto& fallback) {
+    if(target == fallback) target = seedValue;
+   };
+   adopt(out.shadowDistance, seed->shadowDistance, untouched.shadowDistance);
+   adopt(out.shadowDistanceRenderMul, seed->shadowDistanceRenderMul, untouched.shadowDistanceRenderMul);
+   adopt(out.shadowNearPlane, seed->shadowNearPlane, untouched.shadowNearPlane);
+   adopt(out.shadowFarPlane, seed->shadowFarPlane, untouched.shadowFarPlane);
+   adopt(out.shadowIntervalSize, seed->shadowIntervalSize, untouched.shadowIntervalSize);
+   adopt(out.shadowMapFov, seed->shadowMapFov, untouched.shadowMapFov);
+   adopt(out.sunPathRotation, seed->sunPathRotation, untouched.sunPathRotation);
+   adopt(out.ambientOcclusionLevel, seed->ambientOcclusionLevel, untouched.ambientOcclusionLevel);
+   adopt(out.entityShadowDistanceMul, seed->entityShadowDistanceMul, untouched.entityShadowDistanceMul);
+   adopt(out.voxelDistance, seed->voxelDistance, untouched.voxelDistance);
+   adopt(out.noiseTextureResolution, seed->noiseTextureResolution, untouched.noiseTextureResolution);
+   adopt(out.wetnessHalflife, seed->wetnessHalflife, untouched.wetnessHalflife);
+   adopt(out.centerDepthHalflife, seed->centerDepthHalflife, untouched.centerDepthHalflife);
+   adopt(out.eyeBrightnessHalflife, seed->eyeBrightnessHalflife, untouched.eyeBrightnessHalflife);
+   for(std::size_t i = 0; i < std::size(out.shadowHardwareFiltering); ++i) {
+    adopt(out.shadowHardwareFiltering[i], seed->shadowHardwareFiltering[i],
+          untouched.shadowHardwareFiltering[i]);
+    adopt(out.shadowtexNearest[i], seed->shadowtexNearest[i], untouched.shadowtexNearest[i]);
+   }
+   for(std::size_t i = 0; i < std::size(out.shadowcolorNearest); ++i) {
+    adopt(out.shadowcolorNearest[i], seed->shadowcolorNearest[i], untouched.shadowcolorNearest[i]);
+   }
   }
  }
  auto scanCenterDepth = [](PackDefinition& definition) {

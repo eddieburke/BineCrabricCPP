@@ -150,4 +150,47 @@ TEST(RenderPearlShadowDirectives, DefaultsDifferFromThePackValuesSoTheTestsCanFa
  EXPECT_FALSE(fresh.shadowHardwareFiltering[1]);
  EXPECT_FLOAT_EQ(fresh.shadowDistanceRenderMul, -1.0f);
 }
+
+// RenderPearl builds its own shadow clip space in world_default/shadow.vsh
+// (`shadow_proj_scale` from shadowDistance / shadowNearPlane / shadowFarPlane) and
+// snaps its 9-tap PCF to `shadowMapResolution` texel centres in lib/sm/shadows.glsl.
+// Every one of those four numbers is a GLSL const the pack compiles in; the engine
+// allocates the shadow texture and builds the cull frustum from its own copy. If a
+// copy disagrees the raster and the lookup land on different grids.
+TEST_F(RenderPearlPack, ShadowGeometryMatchesTheCompiledConstants) {
+ std::string error;
+ const PackDefinition root = loadPack("RenderPearl v2.8.0-beta.4", error);
+ ASSERT_FALSE(root.dimensionDefinitions.empty());
+ printf("[diag] root shadowMapResolution=%d shadowDistance=%f near=%f far=%f\n",
+        root.shadowMapResolution, root.shadowDistance, root.shadowNearPlane, root.shadowFarPlane);
+ for(const auto& [key, definition] : root.dimensionDefinitions) {
+  printf("[diag] dim '%s' shadowMapResolution=%d shadowDistance=%f near=%f far=%f "
+         "renderMul=%f intervalSize=%f hw0=%d hw1=%d nearest0=%d nearest1=%d\n",
+         key.c_str(), definition->shadowMapResolution, definition->shadowDistance,
+         definition->shadowNearPlane, definition->shadowFarPlane,
+         definition->shadowDistanceRenderMul, definition->shadowIntervalSize,
+         definition->shadowHardwareFiltering[0] ? 1 : 0, definition->shadowHardwareFiltering[1] ? 1 : 0,
+         definition->shadowtexNearest[0] ? 1 : 0, definition->shadowtexNearest[1] ? 1 : 0);
+ }
+ const PackDefinition& pack = *root.dimensionDefinitions.begin()->second;
+ // shaders/prelude/config.glsl:15
+ EXPECT_EQ(pack.shadowMapResolution, 2048)
+     << "engine allocates a shadow texture of a different size than the sm_res the pack's "
+        "PCF taps are snapped to -- moire grid on every lit surface";
+ // shaders/prelude/directive.glsl:72-75, SM_DIST default 10
+ EXPECT_FLOAT_EQ(pack.shadowDistance, 160.0f);
+ EXPECT_FLOAT_EQ(pack.shadowNearPlane, -227.0f);
+ EXPECT_FLOAT_EQ(pack.shadowFarPlane, 227.0f);
+ // shaders/lib/light/shadows.glsl:36-42 declares shadowtex0/1Nearest inside a block
+ // comment, inside `#if SM_BLUR < 2` / `#if !SM_BLUR`, and SM_BLUR is 2. Honouring them
+ // makes the sampler2DShadow comparison samplers NEAREST, which drops hardware PCF and
+ // paints the shadow map's texel grid onto every lit surface.
+ EXPECT_FALSE(pack.shadowtexNearest[0])
+     << "picked up a shadowtex0Nearest that SM_BLUR = 2 preprocesses away -- no hardware PCF";
+ EXPECT_FALSE(pack.shadowtexNearest[1])
+     << "picked up a shadowtex1Nearest that SM_BLUR = 2 preprocesses away -- no hardware PCF";
+ EXPECT_FALSE(pack.shadowcolorNearest[0]);
+ EXPECT_TRUE(pack.shadowHardwareFiltering[0]);
+ EXPECT_TRUE(pack.shadowHardwareFiltering[1]);
+}
 } // namespace net::minecraft::test
