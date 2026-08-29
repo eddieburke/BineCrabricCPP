@@ -25,12 +25,28 @@ struct SkyMeshes {
  TessellatorMesh darkSky;
  TessellatorMesh stars;
  bool built = false;
+ float radius = 0.0f;
 };
-void buildSkyDomes(SkyMeshes& meshes);
-SkyMeshes& skyMeshes() {
+void buildStars(SkyMeshes& meshes);
+void buildSkyBox(SkyMeshes& meshes, float r);
+// The projection far plane is renderDistance * 2, so it is 512 only at the maximum
+// render distance and 256/128/64 below it. A sky sized to a fixed radius falls outside
+// the frustum there and is clipped away, which is what opened the horizon band up.
+float skyBoxRadius(const option::RenderSettings& settings) {
+ // A corner of the box lies sqrt(2) * r out, so stay under farPlane / sqrt(2).
+ const float fitted = settings.renderDistance.farPlane() * 0.7f;
+ const float quantised = std::floor(fitted / 16.0f) * 16.0f;
+ return quantised < 64.0f ? 64.0f : quantised;
+}
+SkyMeshes& skyMeshes(float radius) {
  static SkyMeshes meshes;
  if(!meshes.built) {
-  buildSkyDomes(meshes);
+  buildStars(meshes);
+  meshes.built = true;
+ }
+ if(meshes.radius != radius) {
+  buildSkyBox(meshes, radius);
+  meshes.radius = radius;
  }
  return meshes;
 }
@@ -76,18 +92,42 @@ void buildStarMesh(Tessellator& tessellator) {
   }
  }
 }
-void buildSkyDomes(SkyMeshes& meshes) {
+void buildStars(SkyMeshes& meshes) {
  Tessellator& tessellator = Tessellator::INSTANCE;
  tessellator.setCaptureOnly(true);
  buildStarMesh(tessellator);
  meshes.stars = tessellator.takeMesh();
  (void)meshes.stars.uploadToGpu();
- constexpr float r = 384.0f;
+ tessellator.setCaptureOnly(false);
+}
+// A lid at +16 and a floor at -16 leave a band of atan(16/r) either side of the horizon
+// with no sky geometry in it. A pack computes its sky per fragment from gbuffers_skybasic,
+// so it never runs there and the band keeps colortex0's flat clear colour -- a hard bar
+// wherever distant terrain does not cover the horizon. The sides close it.
+void buildSkyBox(SkyMeshes& meshes, float r) {
+ Tessellator& tessellator = Tessellator::INSTANCE;
+ tessellator.setCaptureOnly(true);
  tessellator.start(gl::prim::Quads);
  tessellator.vertex(-r, 16.0f, -r);
  tessellator.vertex(r, 16.0f, -r);
  tessellator.vertex(r, 16.0f, r);
  tessellator.vertex(-r, 16.0f, r);
+ tessellator.vertex(-r, 16.0f, -r);
+ tessellator.vertex(-r, -16.0f, -r);
+ tessellator.vertex(r, -16.0f, -r);
+ tessellator.vertex(r, 16.0f, -r);
+ tessellator.vertex(r, 16.0f, r);
+ tessellator.vertex(r, -16.0f, r);
+ tessellator.vertex(-r, -16.0f, r);
+ tessellator.vertex(-r, 16.0f, r);
+ tessellator.vertex(-r, 16.0f, r);
+ tessellator.vertex(-r, -16.0f, r);
+ tessellator.vertex(-r, -16.0f, -r);
+ tessellator.vertex(-r, 16.0f, -r);
+ tessellator.vertex(r, 16.0f, -r);
+ tessellator.vertex(r, -16.0f, -r);
+ tessellator.vertex(r, -16.0f, r);
+ tessellator.vertex(r, 16.0f, r);
  meshes.lightSky = tessellator.takeMesh();
  (void)meshes.lightSky.uploadToGpu();
  tessellator.start(gl::prim::Quads);
@@ -98,7 +138,6 @@ void buildSkyDomes(SkyMeshes& meshes) {
  meshes.darkSky = tessellator.takeMesh();
  (void)meshes.darkSky.uploadToGpu();
  tessellator.setCaptureOnly(false);
- meshes.built = true;
 }
 void drawBackgroundFan(const AtmosphereContext& ctx, float tickDelta, const std::array<float, 4>& bg) {
  const core::RenderStageScope stage(core::RenderStage::Sunset);
@@ -213,7 +252,7 @@ void renderSkyDome(const AtmosphereContext& ctx, float tickDelta) {
  // `dest + sky` while the fan is `sky`, so a non-zero colortex0 left by the prepare passes
  // shows the fan's 16-gon edge as a hard seam that rotates with the sun.
  core::disableBlend();
- SkyMeshes& meshes = skyMeshes();
+ SkyMeshes& meshes = skyMeshes(skyBoxRadius(ctx.settings));
  if(ctx.settings.renderSky) {
   core::setConstColor(skyR, skyG, skyB, 1.0f);
   Tessellator::drawMesh(meshes.lightSky, core::constColorPacked());
@@ -240,7 +279,7 @@ void renderSkyStars(const AtmosphereContext& ctx, float, float starBrightness) {
  core::depthMask(false);
  core::enableBlend();
  core::blendFunc(gl::blend::SrcAlpha, gl::blend::One);
- SkyMeshes& meshes = skyMeshes();
+ SkyMeshes& meshes = skyMeshes(skyBoxRadius(ctx.settings));
  const core::RenderStageScope stage(core::RenderStage::Stars);
  // The star sphere rides the same celestial frame as the sun and moon.
  // https://github.com/IrisShaders/Iris/blob/26.1/common/src/main/java/net/irisshaders/iris/uniforms/CelestialUniforms.java
@@ -267,7 +306,7 @@ void renderSkyVoid(const AtmosphereContext& ctx, float tickDelta) {
  const float skyB = static_cast<float>(sky.z);
  const RenderPassScope skyPass(RenderType::sky());
  core::depthMask(false);
- SkyMeshes& meshes = skyMeshes();
+ SkyMeshes& meshes = skyMeshes(skyBoxRadius(ctx.settings));
  const bool darkVoid = ctx.world->dimension->hasGround();
  const float voidR = darkVoid ? skyR * 0.2f + 0.04f : skyR;
  const float voidG = darkVoid ? skyG * 0.2f + 0.04f : skyG;
