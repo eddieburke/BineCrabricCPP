@@ -1,4 +1,5 @@
 #include <algorithm>
+#include <array>
 #include <chrono>
 #include <cmath>
 #include <cstdint>
@@ -6,17 +7,23 @@
 #include <deque>
 #include <gtest/gtest.h>
 #include <map>
+#include <memory>
 #include <string>
 #include <tuple>
+#include <typeinfo>
+#include <utility>
 #include <vector>
 
 #include "net/minecraft/block/Block.hpp"
 #include "net/minecraft/block/DoorBlock.hpp"
 #include "net/minecraft/block/material/Material.hpp"
 #include "net/minecraft/entity/LivingEntity.hpp"
+#include "net/minecraft/entity/Monster.hpp"
+#include "net/minecraft/entity/WaterCreatureEntity.hpp"
 #include "net/minecraft/entity/mob/GhastEntity.hpp"
 #include "net/minecraft/entity/mob/MonsterEntity.hpp"
 #include "net/minecraft/entity/passive/AnimalEntity.hpp"
+#include "net/minecraft/entity/passive/SquidEntity.hpp"
 #include "net/minecraft/entity/passive/WolfEntity.hpp"
 #include "net/minecraft/entity/ai/pathing/PathMinHeap.hpp"
 #include "net/minecraft/entity/ai/pathing/PathNode.hpp"
@@ -760,6 +767,105 @@ TEST(PathRegression, CacheStaysConsistentAcrossGrowthAndClears) {
     }
     cache.clear();
   }
+}
+
+// --- Benchmark: NaturalSpawner's creature-type classification ---
+//
+// countLiveMobsByCreatureType is file-local, so these mirror the two strategies rather
+// than calling it: the three cross-cast dynamic_casts it used to run per entity per
+// spawn tick, and the per-concrete-type memo it runs now.
+
+namespace {
+int classifyByCast(Entity* entity) {
+  if (dynamic_cast<entity::Monster*>(entity) != nullptr) {
+    return 0;
+  }
+  if (dynamic_cast<entity::passive::AnimalEntity*>(entity) != nullptr) {
+    return 1;
+  }
+  if (dynamic_cast<entity::WaterCreatureEntity*>(entity) != nullptr) {
+    return 2;
+  }
+  return -1;
+}
+
+using TypeMemo = std::vector<std::pair<const std::type_info*, int>>;
+
+int classifyByType(Entity* entity, TypeMemo& memo) {
+  const std::type_info* type = &typeid(*entity);
+  for (const std::pair<const std::type_info*, int>& entry : memo) {
+    if (entry.first == type) {
+      return entry.second;
+    }
+  }
+  const int creatureType = classifyByCast(entity);
+  memo.emplace_back(type, creatureType);
+  return creatureType;
+}
+
+// A world's entity list is mostly things that are none of the three - dropped items,
+// arrows, minecarts - and those are the casts that walk the whole hierarchy and fail.
+std::vector<Entity*> buildEntityPool(std::vector<std::unique_ptr<Entity>>& owned) {
+  std::vector<Entity*> pool;
+  for (int i = 0; i < 1000; ++i) {
+    if (i % 100 == 7) {
+      owned.push_back(std::make_unique<entity::mob::MonsterEntity>());
+    } else if (i % 100 == 23) {
+      owned.push_back(std::make_unique<entity::passive::WolfEntity>());
+    } else if (i % 100 == 61) {
+      owned.push_back(std::make_unique<entity::passive::SquidEntity>());
+    } else {
+      owned.push_back(std::make_unique<Entity>());
+    }
+    pool.push_back(owned.back().get());
+  }
+  return pool;
+}
+}  // namespace
+
+TEST(SpawnRegression, TypeMemoClassifiesLikeRepeatedDynamicCast) {
+  std::vector<std::unique_ptr<Entity>> owned;
+  const std::vector<Entity*> pool = buildEntityPool(owned);
+  TypeMemo memo;
+  for (Entity* entity : pool) {
+    ASSERT_EQ(classifyByType(entity, memo), classifyByCast(entity));
+  }
+  // Four concrete classes in the pool, so four entries and no more.
+  EXPECT_EQ(memo.size(), 4u);
+}
+
+TEST(SpawnBenchmark, TypeMemoBeatsRepeatedDynamicCast) {
+  std::vector<std::unique_ptr<Entity>> owned;
+  const std::vector<Entity*> pool = buildEntityPool(owned);
+  constexpr int kTicks = 200;
+  std::array<int, 4> castCounts{};
+  std::array<int, 4> memoCounts{};
+
+  const auto castStart = std::chrono::steady_clock::now();
+  for (int tick = 0; tick < kTicks; ++tick) {
+    for (Entity* entity : pool) {
+      ++castCounts[static_cast<std::size_t>(classifyByCast(entity) + 1)];
+    }
+  }
+  const double castMs =
+      std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - castStart).count();
+
+  TypeMemo memo;
+  const auto memoStart = std::chrono::steady_clock::now();
+  for (int tick = 0; tick < kTicks; ++tick) {
+    for (Entity* entity : pool) {
+      ++memoCounts[static_cast<std::size_t>(classifyByType(entity, memo) + 1)];
+    }
+  }
+  const double memoMs =
+      std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - memoStart).count();
+
+  EXPECT_EQ(castCounts, memoCounts);
+  RecordProperty("CastMs", castMs);
+  RecordProperty("MemoMs", memoMs);
+  std::printf("[bench] creature-type %d ticks x %zu entities: cast=%.3fms memo=%.3fms speedup=%.2fx\n",
+              kTicks, pool.size(), castMs, memoMs, castMs / memoMs);
+  EXPECT_LT(memoMs, castMs);
 }
 
 }  // namespace net::minecraft::test
