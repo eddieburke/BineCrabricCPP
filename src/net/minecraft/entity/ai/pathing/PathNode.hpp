@@ -1,4 +1,6 @@
 #pragma once
+#include <bit>
+#include <cstdint>
 #include "net/minecraft/util/math/MathHelper.hpp"
 namespace net::minecraft::entity::ai::pathing {
 class PathNode {
@@ -9,9 +11,18 @@ class PathNode {
  PathNode() = default;
  PathNode(int xIn, int yIn, int zIn) : x(xIn), y(yIn), z(zIn), hashCode_(hash(xIn, yIn, zIn)) {
  }
- static int hash(int x, int y, int z) {
-  return (y & 0xFF) | ((x & 0x7FFF) << 8) | ((z & 0x7FFF) << 24) | (x < 0 ? static_cast<int>(0x80000000U) : 0) |
-         (z < 0 ? 32768 : 0);
+ [[nodiscard]] static constexpr int hash(int x, int y, int z) noexcept {
+  // see third_party/mcp/net/minecraft/src/PathPoint.java:24
+  const std::uint32_t packed = (static_cast<std::uint32_t>(y) & 0xFFu) |
+                               ((static_cast<std::uint32_t>(x) & 0x7FFFu) << 8) |
+                               ((static_cast<std::uint32_t>(z) & 0x7FFFu) << 24) | (x < 0 ? 0x80000000u : 0u) |
+                               (z < 0 ? 0x8000u : 0u);
+  return std::bit_cast<int>(packed);
+ }
+ [[nodiscard]] static constexpr std::uint64_t keyOf(int x, int y, int z) noexcept {
+  return ((static_cast<std::uint64_t>(static_cast<std::uint32_t>(x)) + 0x2000000u) << 34) |
+         ((static_cast<std::uint64_t>(static_cast<std::uint32_t>(y)) & 0xFFu) << 26) |
+         ((static_cast<std::uint64_t>(static_cast<std::uint32_t>(z)) + 0x2000000u) & 0x3FFFFFFu);
  }
  [[nodiscard]] float getDistance(const PathNode& node) const {
   const float dx = static_cast<float>(node.x - x);

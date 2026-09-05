@@ -1,10 +1,9 @@
 #pragma once
 #include <array>
-#include <deque>
 #include "net/minecraft/entity/Entity.hpp"
 #include "net/minecraft/entity/ai/pathing/Path.hpp"
 #include "net/minecraft/entity/ai/pathing/PathMinHeap.hpp"
-#include "net/minecraft/util/IntHashMap.hpp"
+#include "net/minecraft/entity/ai/pathing/PathNodeCache.hpp"
 #include "net/minecraft/world/BlockView.hpp"
 namespace net::minecraft::entity::ai::pathing {
 class PathNodeNavigator {
@@ -26,8 +25,7 @@ class PathNodeNavigator {
  void resetSearch();
  BlockView* blockView_ = nullptr;
  PathMinHeap minHeap_{};
- util::IntHashMap<PathNode*> pathNodeCache_{};
+ PathNodeCache nodeCache_{};
  std::array<PathNode*, 4> successors_{};
- std::deque<PathNode> ownedNodes_{};
 };
 } // namespace net::minecraft::entity::ai::pathing

@@ -8,6 +8,13 @@ class PlayerEntity;
 }
 namespace net::minecraft {
 class World;
+struct SpawnRules {
+ int creatureType = 0;
+ int capacity = 0;
+ bool waterSpawn = false;
+ bool peaceful = false;
+};
+[[nodiscard]] bool isValidSpawnPos(const SpawnRules& rules, World* world, int x, int y, int z);
 class NaturalSpawner {
  public:
  static Vec3i getRandomPosInChunk(World* world, int chunkX, int chunkZ);

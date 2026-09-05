@@ -18,12 +18,22 @@
 #include "net/minecraft/world/biome/Biome.hpp"
 namespace net::minecraft {
 namespace {
-struct SpawnRules {
- int creatureType = 0;
- int capacity = 0;
- bool waterSpawn = false;
- bool peaceful = false;
+struct PlayerSpot {
+ double x;
+ double y;
+ double z;
 };
+[[nodiscard]] bool playerWithinRange(const std::vector<PlayerSpot>& spots, float x, float y, float z) {
+ for(const PlayerSpot& spot : spots) {
+  const double dx = static_cast<double>(x) - spot.x;
+  const double dy = static_cast<double>(y) - spot.y;
+  const double dz = static_cast<double>(z) - spot.z;
+  if(dx * dx + dy * dy + dz * dz < 576.0) {
+   return true;
+  }
+ }
+ return false;
+}
 constexpr SpawnRules kSpawnRules[] = {
     {0, 70, false, false},
     {1, 15, false, true},
@@ -31,16 +41,6 @@ constexpr SpawnRules kSpawnRules[] = {
 };
 [[nodiscard]] const block::material::Material& spawnMaterial(const SpawnRules& rules) {
  return rules.waterSpawn ? block::material::Material::WATER : block::material::Material::AIR;
-}
-[[nodiscard]] bool isValidSpawnPos(const SpawnRules& rules, World* world, int x, int y, int z) {
- if(world == nullptr) {
-  return false;
- }
- if(rules.waterSpawn) {
-  return world->getMaterial(x, y, z).isFluid() && !world->shouldSuffocate(x, y + 1, z);
- }
- return world->shouldSuffocate(x, y - 1, z) && !world->shouldSuffocate(x, y, z) &&
-        !world->getMaterial(x, y, z).isFluid() && !world->shouldSuffocate(x, y + 1, z);
 }
 [[nodiscard]] const SpawnListEntry* pickSpawnEntry(const std::vector<SpawnListEntry>& entries, JavaRandom& random) {
  int totalWeight = 0;
@@ -106,6 +106,45 @@ void postSpawnEntity(LivingEntity* entity, World* world, float x, float y, float
  return liveCount > capacity;
 }
 } // namespace
+// see third_party/mcp/net/minecraft/src/SpawnerAnimals.java:175
+bool isValidSpawnPos(const SpawnRules& rules, World* world, int x, int y, int z) {
+ if(world == nullptr) {
+  return false;
+ }
+ if(rules.waterSpawn) {
+  const int atId = world->getBlockId(x, y, z);
+  block::Block* const at =
+      atId > 0 && atId < block::Block::BLOCK_COUNT ? block::Block::BLOCKS[static_cast<std::size_t>(atId)] : nullptr;
+  if(at == nullptr || !at->material.isFluid()) {
+   return false;
+  }
+  const int aboveId = world->getBlockId(x, y + 1, z);
+  block::Block* const above = aboveId > 0 && aboveId < block::Block::BLOCK_COUNT
+                                  ? block::Block::BLOCKS[static_cast<std::size_t>(aboveId)]
+                                  : nullptr;
+  return above == nullptr || !(above->material.suffocates() && above->isFullCube());
+ }
+ const int belowId = world->getBlockId(x, y - 1, z);
+ block::Block* const below =
+     belowId > 0 && belowId < block::Block::BLOCK_COUNT ? block::Block::BLOCKS[static_cast<std::size_t>(belowId)] : nullptr;
+ if(below == nullptr || !(below->material.suffocates() && below->isFullCube())) {
+  return false;
+ }
+ const int atId = world->getBlockId(x, y, z);
+ block::Block* const at =
+     atId > 0 && atId < block::Block::BLOCK_COUNT ? block::Block::BLOCKS[static_cast<std::size_t>(atId)] : nullptr;
+ if(at != nullptr && at->material.suffocates() && at->isFullCube()) {
+  return false;
+ }
+ if(at != nullptr && at->material.isFluid()) {
+  return false;
+ }
+ const int aboveId = world->getBlockId(x, y + 1, z);
+ block::Block* const above = aboveId > 0 && aboveId < block::Block::BLOCK_COUNT
+                                 ? block::Block::BLOCKS[static_cast<std::size_t>(aboveId)]
+                                 : nullptr;
+ return above == nullptr || !(above->material.suffocates() && above->isFullCube());
+}
 Vec3i NaturalSpawner::getRandomPosInChunk(World* world, int chunkX, int chunkZ) {
  if(world == nullptr) {
   return Vec3i{chunkX, 64, chunkZ};
@@ -118,10 +157,13 @@ int NaturalSpawner::tick(World* world, bool spawnHostile, bool spawnPeaceful) {
   return 0;
  }
  mobSpawningChunks_.clear();
+ std::vector<PlayerSpot> playerSpots;
+ playerSpots.reserve(world->players.size());
  for(PlayerEntity* player : world->players) {
   if(player == nullptr) {
    continue;
   }
+  playerSpots.push_back(PlayerSpot{player->x, player->y, player->z});
   const int playerChunkX = MathHelper::floor(player->x / 16.0);
   const int playerChunkZ = MathHelper::floor(player->z / 16.0);
   constexpr int radius = 8;
@@ -137,14 +179,24 @@ int NaturalSpawner::tick(World* world, bool spawnHostile, bool spawnPeaceful) {
  int spawned = 0;
  const Vec3i spawnPos = world->getSpawnPos();
  const std::array<int, 3> liveCounts = countLiveMobsByCreatureType(*world);
+ struct ChunkBiome {
+  ChunkPos pos;
+  const Biome* biome;
+ };
+ std::vector<ChunkBiome> chunkBiomes;
+ chunkBiomes.reserve(mobSpawningChunks_.size());
+ for(const ChunkPos& chunkPos : mobSpawningChunks_) {
+  chunkBiomes.push_back(ChunkBiome{chunkPos, &world->getBiome(chunkPos.x * 16, chunkPos.z * 16)});
+ }
  for(int creatureType = 0; creatureType < 3; ++creatureType) {
   const SpawnRules& rules = kSpawnRules[creatureType];
   const block::material::Material& requiredMaterial = spawnMaterial(rules);
   if(shouldSkipCreatureType(rules, spawnHostile, spawnPeaceful, mobSpawningChunks_.size(), liveCounts)) {
    continue;
   }
-  for(const ChunkPos& chunkPos : mobSpawningChunks_) {
-   const Biome& biomeDef = world->getBiome(chunkPos.x * 16, chunkPos.z * 16);
+  for(const ChunkBiome& chunk : chunkBiomes) {
+   const ChunkPos& chunkPos = chunk.pos;
+   const Biome& biomeDef = *chunk.biome;
    const SpawnListEntry* chosen =
        pickSpawnEntry(biomeDef.getSpawnableEntities(rules.creatureType), world->random());
    if(chosen == nullptr) {
@@ -154,7 +206,14 @@ int NaturalSpawner::tick(World* world, bool spawnHostile, bool spawnPeaceful) {
    const int bx = blockPos.x;
    const int by = blockPos.y;
    const int bz = blockPos.z;
-   if(world->shouldSuffocate(bx, by, bz) || &world->getMaterial(bx, by, bz) != &requiredMaterial) {
+   const int preId = world->getBlockId(bx, by, bz);
+   block::Block* const preBlock =
+       preId > 0 && preId < block::Block::BLOCK_COUNT ? block::Block::BLOCKS[static_cast<std::size_t>(preId)] : nullptr;
+   const bool preSuffocates =
+       preBlock != nullptr && preBlock->material.suffocates() && preBlock->isFullCube();
+   block::material::Material& preMaterial =
+       preBlock != nullptr ? preBlock->material : block::material::Material::AIR;
+   if(preSuffocates || &preMaterial != &requiredMaterial) {
     continue;
    }
    int spawnedInChunk = 0;
@@ -174,7 +233,7 @@ int NaturalSpawner::tick(World* world, bool spawnHostile, bool spawnPeaceful) {
      const float fx = static_cast<float>(px) + 0.5f;
      const float fy = static_cast<float>(py);
      const float fz = static_cast<float>(pz) + 0.5f;
-     if(world->getClosestPlayer(fx, fy, fz, 24.0) != nullptr) {
+     if(playerWithinRange(playerSpots, fx, fy, fz)) {
       continue;
      }
      const double dx = static_cast<double>(fx - static_cast<float>(spawnPos.x));

@@ -7,8 +7,7 @@
 namespace net::minecraft::entity::ai::pathing {
 void PathNodeNavigator::resetSearch() {
  minHeap_.clear();
- pathNodeCache_.clear();
- ownedNodes_.clear();
+ nodeCache_.clear();
 }
 Path PathNodeNavigator::findPath(Entity* startEntity, Entity* endEntity, float distance) {
  if(startEntity == nullptr || endEntity == nullptr) {
@@ -137,20 +136,18 @@ PathNode* PathNodeNavigator::getNode(Entity* entity, int x, int y, int z, PathNo
  return node;
 }
 PathNode* PathNodeNavigator::getNode(int x, int y, int z) {
- const int hash = PathNode::hash(x, y, z);
- PathNode* cached = pathNodeCache_.get(hash);
- if(cached != nullptr) {
-  return cached;
- }
- ownedNodes_.emplace_back(x, y, z);
- auto* node = &ownedNodes_.back();
- pathNodeCache_.put(hash, node);
- return node;
+ return nodeCache_.findOrCreate(x, y, z);
 }
 int PathNodeNavigator::isPassable(Entity* /*entity*/, int x, int y, int z, PathNode& node) {
  if(blockView_ == nullptr) {
   return 0;
  }
+ block::Block* const doorWood = block::Block::DOOR;
+ block::Block* const doorIron = block::Block::IRON_DOOR;
+ const bool doorsLive = doorWood != nullptr && doorIron != nullptr;
+ const int doorWoodId = doorWood != nullptr ? doorWood->id : -1;
+ const int doorIronId = doorIron != nullptr ? doorIron->id : -1;
+ block::Block* const* const blocks = block::Block::BLOCKS.data();
  for(int ix = x; ix < x + node.x; ++ix) {
   for(int iy = y; iy < y + node.y; ++iy) {
    for(int iz = z; iz < z + node.z; ++iz) {
@@ -158,18 +155,17 @@ int PathNodeNavigator::isPassable(Entity* /*entity*/, int x, int y, int z, PathN
     if(blockId <= 0) {
      continue;
     }
-    if(block::Block::DOOR != nullptr && block::Block::IRON_DOOR != nullptr &&
-       (blockId == block::Block::IRON_DOOR->id || blockId == block::Block::DOOR->id)) {
+    if(doorsLive && (blockId == doorIronId || blockId == doorWoodId)) {
      const int meta = blockView_->getBlockMeta(ix, iy, iz);
      if(block::DoorBlock::getOpen(meta)) {
       continue;
      }
      return 0;
     }
-    if(blockId >= block::Block::BLOCK_COUNT || block::Block::BLOCKS[blockId] == nullptr) {
+    if(blockId >= block::Block::BLOCK_COUNT || blocks[blockId] == nullptr) {
      continue;
     }
-    block::material::Material& material = block::Block::BLOCKS[blockId]->material;
+    block::material::Material& material = blocks[blockId]->material;
     if(material.blocksMovement()) {
      return 0;
     }
