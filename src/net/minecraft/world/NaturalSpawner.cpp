@@ -20,13 +20,8 @@
 #include "net/minecraft/world/biome/Biome.hpp"
 namespace net::minecraft {
 namespace {
-struct PlayerSpot {
- double x;
- double y;
- double z;
-};
-[[nodiscard]] bool playerWithinRange(const std::vector<PlayerSpot>& spots, float x, float y, float z) {
- for(const PlayerSpot& spot : spots) {
+[[nodiscard]] bool playerWithinRange(const std::vector<Vec3d>& spots, float x, float y, float z) {
+ for(const Vec3d& spot : spots) {
   const double dx = static_cast<double>(x) - spot.x;
   const double dy = static_cast<double>(y) - spot.y;
   const double dz = static_cast<double>(z) - spot.z;
@@ -47,9 +42,6 @@ constexpr SpawnRules kSpawnRules[] = {
     {1, 15, false, true},
     {2, 5, true, true},
 };
-[[nodiscard]] const block::material::Material& spawnMaterial(const SpawnRules& rules) {
- return rules.waterSpawn ? block::material::Material::WATER : block::material::Material::AIR;
-}
 [[nodiscard]] const SpawnListEntry* pickSpawnEntry(const std::vector<SpawnListEntry>& entries, JavaRandom& random) {
  int totalWeight = 0;
  for(const SpawnListEntry& entry : entries) {
@@ -161,13 +153,13 @@ int NaturalSpawner::tick(World* world, bool spawnHostile, bool spawnPeaceful) {
   return 0;
  }
  mobSpawningChunks_.clear();
- std::vector<PlayerSpot> playerSpots;
+ std::vector<Vec3d> playerSpots;
  playerSpots.reserve(world->players.size());
  for(PlayerEntity* player : world->players) {
   if(player == nullptr) {
    continue;
   }
-  playerSpots.push_back(PlayerSpot{player->x, player->y, player->z});
+  playerSpots.push_back(Vec3d{player->x, player->y, player->z});
   const int playerChunkX = MathHelper::floor(player->x / 16.0);
   const int playerChunkZ = MathHelper::floor(player->z / 16.0);
   constexpr int radius = 8;
@@ -194,7 +186,8 @@ int NaturalSpawner::tick(World* world, bool spawnHostile, bool spawnPeaceful) {
  }
  for(int creatureType = 0; creatureType < 3; ++creatureType) {
   const SpawnRules& rules = kSpawnRules[creatureType];
-  const block::material::Material& requiredMaterial = spawnMaterial(rules);
+  const block::material::Material& requiredMaterial =
+      rules.waterSpawn ? block::material::Material::WATER : block::material::Material::AIR;
   if(shouldSkipCreatureType(rules, spawnHostile, spawnPeaceful, mobSpawningChunks_.size(), liveCounts)) {
    continue;
   }

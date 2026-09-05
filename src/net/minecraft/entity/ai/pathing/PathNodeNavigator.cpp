@@ -5,10 +5,6 @@
 #include "net/minecraft/block/material/Material.hpp"
 #include "net/minecraft/util/math/MathHelper.hpp"
 namespace net::minecraft::entity::ai::pathing {
-void PathNodeNavigator::resetSearch() {
- minHeap_.clear();
- nodeCache_.clear();
-}
 Path PathNodeNavigator::findPath(Entity* startEntity, Entity* endEntity, float distance) {
  if(startEntity == nullptr || endEntity == nullptr) {
   return Path{{}};
@@ -26,11 +22,12 @@ Path PathNodeNavigator::findPath(Entity* startEntity, double x, double y, double
  if(startEntity == nullptr || blockView_ == nullptr) {
   return Path{{}};
  }
- resetSearch();
- PathNode* startNode = getNode(MathHelper::floor(startEntity->boundingBox.minX),
+ minHeap_.clear();
+ nodeCache_.clear();
+ PathNode* startNode = nodeCache_.findOrCreate(MathHelper::floor(startEntity->boundingBox.minX),
                                MathHelper::floor(startEntity->boundingBox.minY),
                                MathHelper::floor(startEntity->boundingBox.minZ));
- PathNode* endNode = getNode(MathHelper::floor(x - static_cast<double>(startEntity->width / 2.0f)),
+ PathNode* endNode = nodeCache_.findOrCreate(MathHelper::floor(x - static_cast<double>(startEntity->width / 2.0f)),
                              MathHelper::floor(y),
                              MathHelper::floor(z - static_cast<double>(startEntity->width / 2.0f)));
  PathNode sizeNode{MathHelper::floor(startEntity->width + 1.0f),
@@ -45,7 +42,6 @@ Path PathNodeNavigator::findPath(
  }
  startNode->penalizedPathLength = 0.0f;
  startNode->heapWeight = startNode->distanceToNearestTarget = startNode->getDistance(*endNode);
- minHeap_.clear();
  minHeap_.push(startNode);
  PathNode* closestNode = startNode;
  float closestDistance = startNode->distanceToNearestTarget;
@@ -111,10 +107,10 @@ int PathNodeNavigator::getSuccessors(
 PathNode* PathNodeNavigator::getNode(Entity* entity, int x, int y, int z, PathNode& sizeNode, int stepHeight) {
  PathNode* node = nullptr;
  if(isPassable(entity, x, y, z, sizeNode) == 1) {
-  node = getNode(x, y, z);
+  node = nodeCache_.findOrCreate(x, y, z);
  }
  if(node == nullptr && stepHeight > 0 && isPassable(entity, x, y + stepHeight, z, sizeNode) == 1) {
-  node = getNode(x, y + stepHeight, z);
+  node = nodeCache_.findOrCreate(x, y + stepHeight, z);
   y += stepHeight;
  }
  if(node != nullptr) {
@@ -127,16 +123,13 @@ PathNode* PathNodeNavigator::getNode(Entity* entity, int x, int y, int z, PathNo
    if(--y <= 0) {
     continue;
    }
-   node = getNode(x, y, z);
+   node = nodeCache_.findOrCreate(x, y, z);
   }
   if(passableBelow == -2) {
    return nullptr;
   }
  }
  return node;
-}
-PathNode* PathNodeNavigator::getNode(int x, int y, int z) {
- return nodeCache_.findOrCreate(x, y, z);
 }
 int PathNodeNavigator::isPassable(Entity* /*entity*/, int x, int y, int z, PathNode& node) {
  if(blockView_ == nullptr) {

@@ -19,10 +19,8 @@ class PathNodeNavigator {
      Entity* startEntity, PathNode* startNode, PathNode* endNode, PathNode& sizeNode, float distance);
  int getSuccessors(Entity* startEntity, PathNode* startNode, PathNode& sizeNode, PathNode* endNode, float distance);
  PathNode* getNode(Entity* entity, int x, int y, int z, PathNode& sizeNode, int stepHeight);
- PathNode* getNode(int x, int y, int z);
  int isPassable(Entity* entity, int x, int y, int z, PathNode& node);
  [[nodiscard]] Path createPath(PathNode* endNode);
- void resetSearch();
  BlockView* blockView_ = nullptr;
  PathMinHeap minHeap_{};
  PathNodeCache nodeCache_{};
