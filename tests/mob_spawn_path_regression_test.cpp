@@ -1,6 +1,9 @@
 #include <algorithm>
+#include <chrono>
 #include <cmath>
 #include <cstdint>
+#include <cstdio>
+#include <deque>
 #include <gtest/gtest.h>
 #include <map>
 #include <string>
@@ -18,6 +21,7 @@
 #include "net/minecraft/entity/ai/pathing/PathMinHeap.hpp"
 #include "net/minecraft/entity/ai/pathing/PathNode.hpp"
 #include "net/minecraft/entity/ai/pathing/PathNodeNavigator.hpp"
+#include "net/minecraft/util/IntHashMap.hpp"
 #include "net/minecraft/world/BlockView.hpp"
 #include "net/minecraft/world/NaturalSpawner.hpp"
 #include "net/minecraft/world/World.hpp"
@@ -534,6 +538,160 @@ TEST(SpawnRegression, IsValidSpawnPosMatchesLegacyComposition) {
     }
   }
   EXPECT_FALSE(isValidSpawnPos(land, nullptr, 0, kFloorY + 1, 0));
+}
+
+// --- Benchmarks: old IntHashMap node cache vs PathNodeCache, same key stream ---
+
+namespace {
+struct BenchCoord {
+  int x;
+  int y;
+  int z;
+};
+std::vector<BenchCoord> buildBenchStream(int bound) {
+  std::vector<BenchCoord> stream;
+  stream.reserve(120000);
+  std::uint64_t state = 0x12345678u;
+  int x = 0;
+  int y = 64;
+  int z = 0;
+  for (int i = 0; i < 30000; ++i) {
+    state ^= state << 13;
+    state ^= state >> 7;
+    state ^= state << 17;
+    x += static_cast<int>(state % 3u) - 1;
+    state ^= state << 13;
+    y += static_cast<int>(state % 3u) - 1;
+    state ^= state >> 7;
+    z += static_cast<int>(state % 3u) - 1;
+    if (x < -bound) {
+      x = -bound;
+    }
+    if (x > bound) {
+      x = bound;
+    }
+    if (y < 1) {
+      y = 1;
+    }
+    if (y > 126) {
+      y = 126;
+    }
+    if (z < -bound) {
+      z = -bound;
+    }
+    if (z > bound) {
+      z = bound;
+    }
+    stream.push_back(BenchCoord{x, y, z});
+    if (i % 3 == 0 && i > 10) {
+      stream.push_back(stream[static_cast<std::size_t>(i - 10)]);
+    }
+  }
+  return stream;
+}
+}  // namespace
+
+TEST(PathRegression, LegacyHashAliasesAcross128WithNegativeX) {
+  EXPECT_EQ(PathNode::hash(-5, 64, -3), PathNode::hash(-5, 64, -131));
+  EXPECT_NE(PathNode::keyOf(-5, 64, -3), PathNode::keyOf(-5, 64, -131));
+  EXPECT_NE(PathNode::hash(5, 64, -3), PathNode::hash(5, 64, -131));
+}
+
+TEST(PathBenchmark, NewCacheMatchesOldNodeForNode) {
+  const std::vector<BenchCoord> stream = buildBenchStream(30);
+  util::IntHashMap<PathNode*> oldMap;
+  std::deque<PathNode> oldNodes;
+  entity::ai::pathing::PathNodeCache cache;
+  for (const BenchCoord& coord : stream) {
+    const int legacy = PathNode::hash(coord.x, coord.y, coord.z);
+    PathNode* oldNode = oldMap.get(legacy);
+    if (oldNode == nullptr) {
+      oldNodes.emplace_back(coord.x, coord.y, coord.z);
+      oldNode = &oldNodes.back();
+      oldMap.put(legacy, oldNode);
+    }
+    PathNode* node = cache.findOrCreate(coord.x, coord.y, coord.z);
+    ASSERT_NE(oldNode, nullptr);
+    ASSERT_NE(node, nullptr);
+    EXPECT_EQ(node->x, oldNode->x);
+    EXPECT_EQ(node->y, oldNode->y);
+    EXPECT_EQ(node->z, oldNode->z);
+  }
+}
+
+TEST(PathBenchmark, CacheInsertAndHitThroughput) {
+  const std::vector<BenchCoord> stream = buildBenchStream(200);
+  volatile const PathNode* sink = nullptr;
+  std::uint64_t check = 0;
+  for (int round = 0; round < 2; ++round) {
+    util::IntHashMap<PathNode*> oldMap;
+    std::deque<PathNode> oldNodes;
+    const auto oldStart = std::chrono::steady_clock::now();
+    for (const BenchCoord& coord : stream) {
+      const int legacy = PathNode::hash(coord.x, coord.y, coord.z);
+      PathNode* node = oldMap.get(legacy);
+      if (node == nullptr) {
+        oldNodes.emplace_back(coord.x, coord.y, coord.z);
+        node = &oldNodes.back();
+        oldMap.put(legacy, node);
+      }
+      sink = node;
+    }
+    const auto oldEnd = std::chrono::steady_clock::now();
+    entity::ai::pathing::PathNodeCache cache;
+    const auto newStart = std::chrono::steady_clock::now();
+    for (const BenchCoord& coord : stream) {
+      sink = cache.findOrCreate(coord.x, coord.y, coord.z);
+    }
+    const auto newEnd = std::chrono::steady_clock::now();
+    check += static_cast<std::uint64_t>(sink->x * 3 + sink->y * 5 + sink->z * 7) +
+             static_cast<std::uint64_t>(round);
+    if (round == 0) {
+      continue;
+    }
+    const double oldMs =
+        std::chrono::duration<double, std::milli>(oldEnd - oldStart).count();
+    const double newMs =
+        std::chrono::duration<double, std::milli>(newEnd - newStart).count();
+    RecordProperty("OldCacheMs", oldMs);
+    RecordProperty("NewCacheMs", newMs);
+    RecordProperty("Speedup", oldMs / newMs);
+    std::printf("[bench] old=%.3fms new=%.3fms speedup=%.2fx ops=%zu\n", oldMs, newMs,
+                oldMs / newMs, stream.size());
+    EXPECT_LT(newMs, oldMs);
+    EXPECT_NE(check, 0u);
+  }
+}
+
+TEST(PathBenchmark, MazeSearchWallTime) {
+  ScriptedBlockView view;
+  view.setFloor(0);
+  const int stone = stoneId();
+  for (int x = 0; x < 40; ++x) {
+    for (int z = 0; z < 40; ++z) {
+      if (x % 4 == 1 && z % 4 == 1) {
+        for (int y = 1; y <= 3; ++y) {
+          view.setCell(x - 20, y, z - 20, stone);
+        }
+      }
+    }
+  }
+  constexpr int kRuns = 200;
+  const auto start = std::chrono::steady_clock::now();
+  int totalLength = 0;
+  for (int i = 0; i < kRuns; ++i) {
+    PathNodeNavigator nav(&view);
+    Entity walker = makeWalker(-19.5, 1.0, -19.5);
+    Path path = nav.findPath(&walker, 19, 1, 19, 64.0f);
+    totalLength += path.length;
+  }
+  const double ms = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - start).count();
+  RecordProperty("MazeRuns", kRuns);
+  RecordProperty("MazeTotalMs", ms);
+  RecordProperty("MazeMeanLength", static_cast<double>(totalLength) / kRuns);
+  std::printf("[bench] maze %d runs %.3fms mean-length=%.1f\n", kRuns, ms,
+              static_cast<double>(totalLength) / kRuns);
+  EXPECT_GT(totalLength, 0);
 }
 
 }  // namespace net::minecraft::test
