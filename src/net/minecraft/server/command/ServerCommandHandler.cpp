@@ -13,7 +13,6 @@
 #include "net/minecraft/server/PlayerManager.hpp"
 #include "net/minecraft/server/ServerLog.hpp"
 #include "net/minecraft/server/ServerProperties.hpp"
-#include "net/minecraft/server/command/Command.hpp"
 #include "net/minecraft/server/command/CommandOutput.hpp"
 #include "net/minecraft/server/network/ServerPlayNetworkHandler.hpp"
 #include "net/minecraft/world/ServerWorld.hpp"
@@ -71,9 +70,7 @@ constexpr const char* kColorLightPurple =
 } // namespace
 ServerCommandHandler::ServerCommandHandler(MinecraftServer* server) : server_(server) {
 }
-void ServerCommandHandler::executeCommand(Command& command) {
- std::string line = command.commandAndArgs;
- CommandOutput& commandOutput = command.output;
+void ServerCommandHandler::executeCommand(const std::string& line, CommandOutput& commandOutput) {
  const std::string commandUser = commandOutput.getName();
  PlayerManager& playerManager = server_->playerManager;
  if(startsWithIgnoreCase(line, "help") || startsWithIgnoreCase(line, "?")) {

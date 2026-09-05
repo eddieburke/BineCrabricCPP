@@ -82,7 +82,7 @@ class Tessellator {
  void translate(float x, float y, float z);
  void vertex(double x, double y, double z, double u, double v);
  void vertex(double x, double y, double z);
- void draw();
+ void draw(bool depthPrepass = false);
  void beginBatch();
  void endBatch();
  class ScopedBatch {

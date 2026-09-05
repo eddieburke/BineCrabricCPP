@@ -1,180 +1,197 @@
--- Meteors Physics: Trajectory and collision calculations
 local config = require("config")
+local mathx = require("lib.mathx")
+
 local physics = {}
 
-local TAU = config.tau
+local clamp, length3, normalize3 = mathx.clamp, mathx.length3, mathx.normalize3
+local randomUnit, hash01 = mathx.randomUnit, mathx.hash01
+local sin, cos, exp, floor, max, min, random = math.sin, math.cos, math.exp, math.floor, math.max, math.min, math.random
+local DEG = mathx.deg_to_rad
 
--- Utility functions (should eventually move to lib.math_util)
-local function clamp(v, lo, hi)
-  if v < lo then return lo end
-  if v > hi then return hi end
-  return v
-end
+local TRAIL_CAP = 96
+local HEAT_REFERENCE = 5.0e-5
+local FRAGMENT_PRESSURE = 1.2e-5
+local FRAGMENT_COOLDOWN = 20
+local MAX_AGE_TICKS = 1200
+local COMET_HEAT_SCALE = 0.3
 
-local function length3(x, y, z)
-  return math.sqrt(x * x + y * y + z * z)
-end
-
-local function normalize3(x, y, z)
-  local len = length3(x, y, z)
-  if len < 0.000001 then return 0, 1, 0 end
-  return x / len, y / len, z / len
-end
-
-local function dot(ax, ay, az, bx, by, bz)
-  return ax * bx + ay * by + az * bz
-end
-
-local function randomUnit(seed, channel)
-  local hash01 = function(a, b, c, d)
-    local n = math.sin((a or 0) * 12.9898 + (b or 0) * 78.233 +
-      (c or 0) * 37.719 + (d or 0) * 19.913) * 43758.5453123
-    return n - math.floor(n)
-  end
-  local u = hash01(seed, channel, 1, 0)
-  local v = hash01(seed, channel, 2, 0)
-  local z = u * 2 - 1
-  local a = v * TAU
-  local r = math.sqrt(math.max(0, 1 - z * z))
-  return r * math.cos(a), z, r * math.sin(a)
-end
-
--- Meteor state
-local function createMeteor(id, kind, variant, x, y, z, vx, vy, vz, size)
+local function newMeteor(id, kind, variant, x, y, z, vx, vy, vz, size)
   return {
     id = id,
-    kind = kind, -- "meteor" or "comet"
+    kind = kind,
+    gravityScale = kind == "comet" and 0.12 or 1.0,
     variant = variant,
     x = x, y = y, z = z,
+    px = x, py = y, pz = z,
     vx = vx, vy = vy, vz = vz,
     size = size,
     mass = size * size * size * 2.5,
     alive = true,
-    fragments = {},
-    trail = {},
-    thermal = false,
     age = 0,
+    heat = 0,
+    prevHeat = 0,
+    spinX = hash01(id, 7, 0, 0) * 360,
+    spinY = hash01(id, 8, 0, 0) * 360,
+    spinZ = hash01(id, 9, 0, 0) * 360,
+    prevSpinX = 0, prevSpinY = 0, prevSpinZ = 0,
+    spinRateX = (hash01(id, 11, 0, 0) - 0.5) * 7,
+    spinRateY = (hash01(id, 12, 0, 0) - 0.5) * 7,
+    spinRateZ = (hash01(id, 13, 0, 0) - 0.5) * 7,
+    groundY = 0,
+    fragCooldown = FRAGMENT_COOLDOWN,
+    fragments = {},
+    tx = {}, ty = {}, tz = {},
+    trailCap = TRAIL_CAP,
+    trailHead = 0,
+    trailCount = 0,
   }
 end
 
--- Physics update step
-function physics.update(meteor, dt, cameraY)
-  if not meteor.alive then return end
-  
-  local gravity = config.get("gravity") or -0.04
-  local air_density = config.get("air_density") or 0.0012
-  local air_scale_height = config.get("air_scale_height") or 25.0
-  local stone_strength = config.get("stone_strength") or 8.0
-  local fragment_min_size = config.get("fragment_min_size") or 0.15
-  
-  -- Apply gravity
-  meteor.vy = meteor.vy + gravity * dt
-  
-  -- Apply atmospheric drag
-  local altitude = math.max(0, meteor.y)
-  local density = air_density * math.exp(-altitude / air_scale_height)
-  local speed = length3(meteor.vx, meteor.vy, meteor.vz)
-  
-  if speed > 0.01 then
-    local dragCoeff = 0.47 * density * meteor.size * meteor.size
-    local dragForce = dragCoeff * speed * speed
-    local dragX = -dragForce * (meteor.vx / speed) * dt / meteor.mass
-    local dragY = -dragForce * (meteor.vy / speed) * dt / meteor.mass
-    local dragZ = -dragForce * (meteor.vz / speed) * dt / meteor.mass
-    
-    meteor.vx = meteor.vx + dragX
-    meteor.vy = meteor.vy + dragY
-    meteor.vz = meteor.vz + dragZ
-    
-    -- Check for fragmentation due to aerodynamic stress
-    local dynamicPressure = 0.5 * density * speed * speed
-    if dynamicPressure > stone_strength and meteor.size > fragment_min_size then
-      physics.fragmentate(meteor, dynamicPressure / stone_strength)
-    end
-    
-    -- Check for thermal glow (re-entry heating)
-    if speed > 0.8 and altitude < 40 then
-      meteor.thermal = true
-    end
+local function pushTrail(meteor)
+  local head = meteor.trailHead + 1
+  if head > TRAIL_CAP then head = 1 end
+  meteor.trailHead = head
+  meteor.tx[head] = meteor.x
+  meteor.ty[head] = meteor.y
+  meteor.tz[head] = meteor.z
+  if meteor.trailCount < TRAIL_CAP then
+    meteor.trailCount = meteor.trailCount + 1
   end
-  
-  -- Update position
-  meteor.x = meteor.x + meteor.vx * dt
-  meteor.y = meteor.y + meteor.vy * dt
-  meteor.z = meteor.z + meteor.vz * dt
-  
-  -- Update trail
-  if #meteor.trail > (config.get("trail_length") or 54) then
-    table.remove(meteor.trail, 1)
-  end
-  meteor.trail[#meteor.trail + 1] = { x = meteor.x, y = meteor.y, z = meteor.z }
-  
-  -- Ground collision
-  if meteor.y < 0 then
-    meteor.alive = false
-    return "impact"
-  end
-  
-  meteor.age = meteor.age + dt
-  return nil
 end
 
--- Fragmentation logic
-function physics.fragmentate(parent, stressFactor)
-  local fragment_min_size = config.get("fragment_min_size") or 0.15
-  
-  if parent.size < fragment_min_size * 2 then return end
-  
-  local numFragments = math.min(5, math.floor(stressFactor))
-  local i
-  for i = 1, numFragments do
-    local fragmentSize = parent.size * (0.3 + math.random() * 0.4)
-    if fragmentSize < fragment_min_size then break end
-    
-    local spreadX, spreadY, spreadZ = randomUnit(parent.id * 100 + i, i)
-    local fragment = createMeteor(
-      parent.id * 1000 + i,
-      parent.kind,
-      parent.variant,
+local function sampleGround(meteor)
+  if meteor.y - meteor.groundY > 12 and (meteor.age + meteor.id) % 4 ~= 0 then
+    return
+  end
+  local top = minecraft.world.get_top_y(floor(meteor.x), floor(meteor.z))
+  if top >= 0 then
+    meteor.groundY = top
+  end
+end
+
+function physics.fragment(parent, stressFactor, nextId)
+  local minSize = config.get("fragment_min_size") or 0.15
+  if parent.size < minSize * 2 then return nextId end
+
+  local count = min(4, max(2, floor(stressFactor)))
+  for i = 1, count do
+    local size = parent.size * (0.28 + mathx.hash01(parent.id, i, 41, 0) * 0.34)
+    if size < minSize then break end
+    local sx, sy, sz = randomUnit(parent.id * 100 + i, i)
+    local fragment = newMeteor(nextId, parent.kind, (parent.variant + i) % 6,
       parent.x, parent.y, parent.z,
-      parent.vx + spreadX * 0.15,
-      parent.vy + spreadY * 0.15,
-      parent.vz + spreadZ * 0.15,
-      fragmentSize
-    )
-    fragment.thermal = parent.thermal
-    fragment.trail = {}
+      parent.vx + sx * 0.10,
+      parent.vy + sy * 0.06,
+      parent.vz + sz * 0.10,
+      size)
+    nextId = nextId + 1
+    fragment.heat = parent.heat
+    fragment.prevHeat = parent.heat
+    fragment.groundY = parent.groundY
     parent.fragments[#parent.fragments + 1] = fragment
   end
-  
-  -- Reduce parent size
-  parent.size = parent.size * 0.6
-  if parent.size < fragment_min_size then
+
+  parent.size = parent.size * 0.62
+  parent.mass = parent.size * parent.size * parent.size * 2.5
+  parent.fragCooldown = FRAGMENT_COOLDOWN
+  if parent.size < minSize then
     parent.alive = false
   end
+  return nextId
 end
 
--- Spawn helper
-function physics.spawn(kind, cameraX, cameraY, cameraZ, yaw, pitch)
-  local max_meteors = config.get("max_meteors") or 50
-  local spawnDistance = 80 + math.random() * 40
-  
-  -- Calculate spawn position in front of camera
-  local horizontalDist = spawnDistance * math.cos(pitch)
-  local x = cameraX + horizontalDist * math.sin(yaw)
-  local y = cameraY + spawnDistance * math.sin(pitch) + 20
-  local z = cameraZ + horizontalDist * math.cos(yaw)
-  
-  -- Initial velocity (downward and toward camera area)
-  local speed = 0.6 + math.random() * 0.4
-  local vx = -math.sin(yaw) * speed * 0.3
-  local vy = -0.3 - math.random() * 0.2
-  local vz = -math.cos(yaw) * speed * 0.3
-  
-  local size = 0.4 + math.random() * 0.8
-  local variant = math.random(0, 5)
-  
-  return createMeteor(nextId or 1, kind, variant, x, y, z, vx, vy, vz, size)
+function physics.update(meteor, nextId)
+  meteor.px, meteor.py, meteor.pz = meteor.x, meteor.y, meteor.z
+  meteor.prevSpinX, meteor.prevSpinY, meteor.prevSpinZ = meteor.spinX, meteor.spinY, meteor.spinZ
+  meteor.prevHeat = meteor.heat
+
+  local gravity = config.get("gravity") or -0.02
+  local airDensity = config.get("air_density") or 0.0012
+  local scaleHeight = config.get("air_scale_height") or 25.0
+  local strength = config.get("stone_strength") or 8.0
+  local minSize = config.get("fragment_min_size") or 0.15
+
+  meteor.vy = meteor.vy + gravity * meteor.gravityScale
+
+  local density = airDensity * exp(-max(0, meteor.y) / scaleHeight)
+  local speed = length3(meteor.vx, meteor.vy, meteor.vz)
+  local pressure = 0.5 * density * speed * speed
+
+  local heatTarget = clamp(pressure / HEAT_REFERENCE, 0, 1)
+  if meteor.kind == "comet" then
+    heatTarget = heatTarget * COMET_HEAT_SCALE
+  end
+  local blend = heatTarget > meteor.heat and 0.30 or 0.05
+  meteor.heat = meteor.heat + (heatTarget - meteor.heat) * blend
+
+  if speed > 1e-4 then
+    local accel = 0.47 * density * meteor.size * meteor.size * speed * speed / meteor.mass
+    local shed = min(accel / speed, 0.4)
+    meteor.vx = meteor.vx - meteor.vx * shed
+    meteor.vy = meteor.vy - meteor.vy * shed
+    meteor.vz = meteor.vz - meteor.vz * shed
+  end
+
+  meteor.fragCooldown = meteor.fragCooldown - 1
+  local fragmentThreshold = strength * FRAGMENT_PRESSURE
+  if pressure > fragmentThreshold and meteor.fragCooldown <= 0 and meteor.size > minSize * 2 then
+    nextId = physics.fragment(meteor, pressure / fragmentThreshold, nextId)
+  end
+
+  meteor.x = meteor.x + meteor.vx
+  meteor.y = meteor.y + meteor.vy
+  meteor.z = meteor.z + meteor.vz
+  meteor.spinX = meteor.spinX + meteor.spinRateX
+  meteor.spinY = meteor.spinY + meteor.spinRateY
+  meteor.spinZ = meteor.spinZ + meteor.spinRateZ
+  meteor.age = meteor.age + 1
+
+  pushTrail(meteor)
+  sampleGround(meteor)
+
+  if meteor.y <= meteor.groundY then
+    meteor.y = meteor.groundY
+    meteor.alive = false
+    return "impact", nextId
+  end
+  if meteor.age > MAX_AGE_TICKS then
+    meteor.alive = false
+    return "expired", nextId
+  end
+  if not meteor.alive then
+    return "burnout", nextId
+  end
+  return nil, nextId
+end
+
+function physics.spawn(kind, id, camX, camY, camZ, yawDeg, pitchDeg)
+  local yaw = yawDeg * DEG
+  local pitch = pitchDeg * DEG
+  local pitchCos = cos(pitch)
+  local forwardX = -sin(yaw) * pitchCos
+  local forwardZ = cos(yaw) * pitchCos
+  local rightX, rightZ = cos(yaw), sin(yaw)
+
+  local comet = kind == "comet"
+  local entryRange = comet and 190 or 160
+  local exitRange = comet and 200 or 140
+  local lateral = (random() * 2 - 1) * (comet and 95 or 80)
+  local altitude = camY + (comet and 78 or 46) + random() * 26
+
+  local x = camX + forwardX * entryRange + rightX * lateral
+  local z = camZ + forwardZ * entryRange + rightZ * lateral
+  local y = altitude
+
+  local targetX = camX - forwardX * exitRange - rightX * lateral * 0.85
+  local targetZ = camZ - forwardZ * exitRange - rightZ * lateral * 0.85
+  local targetY = camY - (comet and 2 or 6)
+
+  local dx, dy, dz = normalize3(targetX - x, targetY - y, targetZ - z)
+  local speed = comet and (0.75 + random() * 0.35) or (2.0 + random() * 0.8)
+  local size = comet and (1.6 + random() * 1.3) or (0.4 + random() * 0.8)
+
+  return newMeteor(id, kind, random(0, 5), x, y, z,
+    dx * speed, dy * speed, dz * speed, size)
 end
 
 return physics

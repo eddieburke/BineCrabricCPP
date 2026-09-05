@@ -209,7 +209,7 @@ void drawCelestialBody(const AtmosphereContext& ctx, float starAlpha,
 }
 // beta draws the celestial bodies and the stars additively; without the explicit func they
 // inherit whatever the sunset fan left bound.
-void renderCelestialBody(const AtmosphereContext& ctx, float tickDelta, bool moon) {
+void renderCelestialBody(const AtmosphereContext& ctx, bool moon) {
  if(ctx.world == nullptr || ctx.world->dimension == nullptr || ctx.camera == nullptr ||
     ctx.world->dimension->isNether || !(moon ? ctx.settings.renderMoon : ctx.settings.renderSun)) {
   return;
@@ -218,7 +218,7 @@ void renderCelestialBody(const AtmosphereContext& ctx, float tickDelta, bool moo
  core::depthMask(false);
  core::enableBlend();
  core::blendFunc(gl::blend::SrcAlpha, gl::blend::One);
- drawCelestialBody(ctx, 1.0f - ctx.world->getRainGradient(tickDelta),
+ drawCelestialBody(ctx, 1.0f - ctx.rainStrength,
                    render::core::celestialState(), moon);
  core::disableBlend();
  core::depthMask(true);
@@ -230,12 +230,11 @@ void renderSkyDome(const AtmosphereContext& ctx, float tickDelta) {
   return;
  }
  const float celestialAngle = render::core::celestialState().celestialAngle;
- const Vec3d sky = ctx.world->getSkyColor(ctx.camera, tickDelta);
+ const Vec3d& sky = ctx.skyColor;
  const float skyR = static_cast<float>(sky.x);
  const float skyG = static_cast<float>(sky.y);
  const float skyB = static_cast<float>(sky.z);
- const float starAlpha = 1.0f - ctx.world->getRainGradient(tickDelta);
- const float starBrightness = ctx.world->calculateSkyLightIntensity(tickDelta) * starAlpha;
+ const float starBrightness = ctx.starBrightness;
  {
   render::core::SkyUniforms su = render::core::skyUniforms();
   su.renderStars = ctx.settings.renderStars;
@@ -267,8 +266,8 @@ void renderSkyDome(const AtmosphereContext& ctx, float tickDelta) {
  }
  core::disableBlend();
  core::depthMask(true);
- renderCelestialBody(ctx, tickDelta, false);
- renderCelestialBody(ctx, tickDelta, true);
+ renderCelestialBody(ctx, false);
+ renderCelestialBody(ctx, true);
 }
 void renderSkyStars(const AtmosphereContext& ctx, float, float starBrightness) {
  if(ctx.world == nullptr || ctx.world->dimension == nullptr || ctx.camera == nullptr ||
@@ -281,26 +280,22 @@ void renderSkyStars(const AtmosphereContext& ctx, float, float starBrightness) {
  core::blendFunc(gl::blend::SrcAlpha, gl::blend::One);
  SkyMeshes& meshes = skyMeshes(skyBoxRadius(ctx.settings));
  const core::RenderStageScope stage(core::RenderStage::Stars);
- // The star sphere rides the same celestial frame as the sun and moon.
  // https://github.com/IrisShaders/Iris/blob/26.1/common/src/main/java/net/irisshaders/iris/uniforms/CelestialUniforms.java
- const render::CelestialState& celestial = render::core::celestialState();
  const core::ScopedDrawCameraState starGuard;
  net::minecraft::util::math::Matrix4f starPose = core::drawPose();
- net::minecraft::util::math::Matrix4f celestialFrame;
- celestialSkyMatrix(celestial.celestialAngle, celestial.sunPathRotation, celestialFrame);
- starPose.multiply(celestialFrame);
+ starPose.multiply(render::core::celestialState().starFrame);
  core::setDrawPose(starPose);
  core::setConstColor(starBrightness, starBrightness, starBrightness, starBrightness);
  Tessellator::drawMesh(meshes.stars, core::constColorPacked());
  core::disableBlend();
  core::depthMask(true);
 }
-void renderSkyVoid(const AtmosphereContext& ctx, float tickDelta) {
+void renderSkyVoid(const AtmosphereContext& ctx, float) {
  if(ctx.world == nullptr || ctx.world->dimension == nullptr || ctx.camera == nullptr ||
     ctx.world->dimension->isNether || !ctx.settings.renderSky) {
   return;
  }
- const Vec3d sky = ctx.world->getSkyColor(ctx.camera, tickDelta);
+ const Vec3d& sky = ctx.skyColor;
  const float skyR = static_cast<float>(sky.x);
  const float skyG = static_cast<float>(sky.y);
  const float skyB = static_cast<float>(sky.z);

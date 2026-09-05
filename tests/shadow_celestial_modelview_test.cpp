@@ -227,5 +227,45 @@ TEST(ShadowCelestialModelView, CelestialOverrideAnglesNormalizeAndRejectNonFinit
  EXPECT_FLOAT_EQ(normalizeCelestialAngle(-0.25f, 0.0f), 0.75f);
  EXPECT_FLOAT_EQ(normalizeCelestialAngle(std::numeric_limits<float>::infinity(), 0.4f), 0.4f);
 }
+// makeCelestialState built celestialSkyMatrix, kept three floats and threw the matrix
+// away; renderSkyStars then built the same matrix a second time from the same two
+// scalars. One matrix has to serve both, or a mod that moves the sun leaves the star
+// sphere on the vanilla path.
+TEST(ShadowCelestialModelView, StarFrameCarriesTheSunDirection) {
+ using net::minecraft::client::render::CelestialState;
+ using net::minecraft::client::render::makeCelestialState;
+ for(const float sunPathRotation : {0.0f, 25.0f, -30.0f, 90.0f}) {
+  for(int i = 0; i <= 24; ++i) {
+   const float celestial = static_cast<float>(i) / 24.0f;
+   const CelestialState state = makeCelestialState(celestial, sunPathRotation);
+   EXPECT_NEAR(state.starFrame.m[4], state.sunDirectionWorld[0], 1e-6f) << "celestial " << celestial;
+   EXPECT_NEAR(state.starFrame.m[5], state.sunDirectionWorld[1], 1e-6f) << "celestial " << celestial;
+   EXPECT_NEAR(state.starFrame.m[6], state.sunDirectionWorld[2], 1e-6f) << "celestial " << celestial;
+  }
+ }
+}
+// The overridden frame spins about the north celestial pole, which stands due north
+// (-Z) at an altitude equal to the observer's latitude, and carries a star on the
+// southern meridian (+Z) westward (-X) as sidereal time advances.
+TEST(ShadowCelestialModelView, StarFramePoleTracksLatitude) {
+ using net::minecraft::client::render::starFrameFromPole;
+ using net::minecraft::util::math::Matrix4f;
+ for(const float latitude : {0.0f, 48.86f, -33.9f, 90.0f}) {
+  const float radians = latitude * 3.14159265f / 180.0f;
+  for(const float sidereal : {0.0f, 0.25f, 0.5f, 0.9f}) {
+   Matrix4f frame;
+   starFrameFromPole(latitude, sidereal, frame);
+   EXPECT_NEAR(frame.m[4], 0.0f, 1e-5f) << "latitude " << latitude;
+   EXPECT_NEAR(frame.m[5], std::sin(radians), 1e-5f) << "latitude " << latitude;
+   EXPECT_NEAR(frame.m[6], -std::cos(radians), 1e-5f) << "latitude " << latitude;
+  }
+ }
+ Matrix4f meridian;
+ Matrix4f drifted;
+ starFrameFromPole(90.0f, 0.0f, meridian);
+ starFrameFromPole(90.0f, 0.01f, drifted);
+ EXPECT_NEAR(meridian.m[8], 0.0f, 1e-5f);
+ EXPECT_LT(drifted.m[8], -1e-4f);
+}
 }
 } // namespace net::minecraft::test

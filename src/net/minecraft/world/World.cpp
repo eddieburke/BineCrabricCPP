@@ -40,7 +40,6 @@ void requireBootstrap() {
 } // namespace
 World::World(std::string name, std::uint64_t seed, std::unordered_map<std::string, std::string> creationOptions)
     : events_(*this),
-      blockMutation_(*this),
       name_(std::move(name)),
       dimensionData_(nullptr),
       seed_(seed),
@@ -65,7 +64,6 @@ World::World(WorldStorage* dimensionData,
              bool deferSpawnInit,
              std::unordered_map<std::string, std::string> creationOptions)
     : events_(*this),
-      blockMutation_(*this),
       name_(name),
       dimensionData_(dimensionData),
       seed_(static_cast<std::uint64_t>(seed)),
@@ -115,7 +113,6 @@ World::World(World* parentWorld, std::unique_ptr<Dimension> dimensionIn)
     : properties_(parentWorld != nullptr ? parentWorld->properties_ : WorldProperties{}),
       hasStorageBackedProperties_(parentWorld != nullptr && parentWorld->hasStorageBackedProperties_),
       events_(*this),
-      blockMutation_(*this),
       name_(parentWorld != nullptr ? parentWorld->name_ : std::string{}),
       dimensionData_(parentWorld != nullptr ? parentWorld->dimensionData_ : nullptr),
       seed_(parentWorld != nullptr ? parentWorld->seed_ : 0),
@@ -423,7 +420,8 @@ void World::blockUpdateEvent(int x, int y, int z) {
  events_.blockUpdateEvent(x, y, z);
 }
 void World::blockUpdate(int x, int y, int z, int blockId) {
- blockMutation_.blockUpdate(x, y, z, blockId);
+ blockUpdateEvent(x, y, z);
+ notifyNeighbors(x, y, z, blockId);
 }
 void World::setBlockDirty(int x, int y, int z) {
  events_.setBlockDirty(x, y, z);
@@ -432,19 +430,81 @@ bool World::isRemote() const {
  return isRemote_;
 }
 bool World::setBlockMetaWithoutNotifyingNeighbors(int x, int y, int z, int meta) {
- return blockMutation_.setBlockMetaWithoutNotifyingNeighbors(x, y, z, meta);
+ if(y < 0 || y >= Chunk::height) {
+  return false;
+ }
+ ensureChunk(x, z).setBlockMeta(mod_16(x), y, mod_16(z), meta);
+ return true;
 }
 bool World::setBlockWithoutNotifyingNeighbors(int x, int y, int z, int blockId, int meta) {
- return blockMutation_.setBlockWithoutNotifyingNeighbors(x, y, z, blockId, meta);
+ if(y < 0 || y >= Chunk::height) {
+  return false;
+ }
+ return ensureChunk(x, z).setBlock(mod_16(x), y, mod_16(z), blockId, static_cast<std::uint8_t>(meta));
+}
+bool World::setBlock(int x, int y, int z, int blockId, std::uint8_t meta) {
+ if(y < 0 || y >= Chunk::height || !setBlockWithoutNotifyingNeighbors(x, y, z, blockId, meta)) {
+  return false;
+ }
+ blockUpdate(x, y, z, blockId);
+ return true;
+}
+void World::setBlockMeta(int x, int y, int z, int meta) {
+ if(!setBlockMetaWithoutNotifyingNeighbors(x, y, z, meta)) {
+  return;
+ }
+ const int blockId = getBlockId(x, y, z);
+ if(blockId <= 0 || blockId >= Block::BLOCK_COUNT) {
+  return;
+ }
+ if(Block::BLOCKS_IGNORE_META_UPDATE[static_cast<std::size_t>(blockId)]) {
+  blockUpdate(x, y, z, blockId);
+ } else {
+  notifyNeighbors(x, y, z, blockId);
+ }
 }
 bool World::canPlace(int blockId, int x, int y, int z, bool fallingBlock, int side) {
- return blockMutation_.canPlace(blockId, x, y, z, fallingBlock, side);
+ if(blockId <= 0 || blockId >= Block::BLOCK_COUNT) {
+  return false;
+ }
+ Block* blockAtPos = Block::BLOCKS[static_cast<std::size_t>(getBlockId(x, y, z))];
+ Block* blockToPlace = Block::BLOCKS[static_cast<std::size_t>(blockId)];
+ if(blockToPlace == nullptr) {
+  return false;
+ }
+ std::optional<Box> box = fallingBlock ? std::nullopt : blockToPlace->getCollisionShape(this, x, y, z);
+ if(box.has_value() && !canSpawnEntity(*box)) {
+  return false;
+ }
+ if(blockAtPos == Block::FLOWING_WATER || blockAtPos == Block::WATER ||
+    blockAtPos == Block::FLOWING_LAVA || blockAtPos == Block::LAVA ||
+    blockAtPos == Block::FIRE || blockAtPos == Block::SNOW) {
+  blockAtPos = nullptr;
+ }
+ return blockAtPos == nullptr && blockToPlace->canPlaceAt(this, x, y, z, side);
 }
 void World::neighborUpdate(int x, int y, int z, int sourceBlockId) {
- blockMutation_.neighborUpdate(x, y, z, sourceBlockId);
+ if(pauseTicking || isRemote()) {
+  return;
+ }
+ const int blockId = getBlockId(x, y, z);
+ if(blockId <= 0 || blockId >= Block::BLOCK_COUNT) {
+  return;
+ }
+ if(Block* block = Block::BLOCKS[static_cast<std::size_t>(blockId)]) {
+  block->neighborUpdate(this, x, y, z, sourceBlockId);
+ }
 }
 void World::notifyNeighbors(int x, int y, int z, int blockId) {
- blockMutation_.notifyNeighbors(x, y, z, blockId);
+ if(pauseTicking || isRemote()) {
+  return;
+ }
+ neighborUpdate(x - 1, y, z, blockId);
+ neighborUpdate(x + 1, y, z, blockId);
+ neighborUpdate(x, y - 1, z, blockId);
+ neighborUpdate(x, y + 1, z, blockId);
+ neighborUpdate(x, y, z - 1, blockId);
+ neighborUpdate(x, y, z + 1, blockId);
 }
 void World::playSound(double x, double y, double z, const std::string& name, float volume, float pitch) {
  events_.playSound(x, y, z, name, volume, pitch);

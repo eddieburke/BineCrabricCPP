@@ -68,6 +68,7 @@ struct WorldRenderEvent {
  float tickDelta = 0.0f;
  WorldRenderStage stage = WorldRenderStage::Sky;
  RenderHookMoment moment = RenderHookMoment::Before;
+ bool shadowPass = false;
  bool stageEnabled = true;
  bool cancelVanilla = false;
  bool vanillaStageRan = false;
@@ -161,7 +162,10 @@ struct CelestialStateEvent {
  float moonY = -1.0f;
  float moonZ = 0.0f;
  bool day = true;
+ float poleAltitudeDeg = 90.0f;
+ float siderealAngle = 0.0f;
  bool overrideDirections = false;
+ bool overrideStarFrame = false;
 };
 enum class LifecyclePhase {
  NotStarted,
@@ -175,19 +179,12 @@ struct LifecycleEvent {
 };
 } // namespace net::minecraft::mod
 namespace net::minecraft::mod::runtime {
-template <typename Fill, typename Read>
-void dispatchLuaHook(int eventIndex,
-                     Fill fill,
-                     Read read,
-                     std::uint16_t worldRenderStageBit = 0,
-                     std::uint8_t worldRenderMomentBit = 0,
-                     std::string_view entityType = {});
 [[nodiscard]] bool hasLuaHook(int eventIndex);
 [[nodiscard]] inline bool hasLuaHook(LuaEventId id) {
  return hasLuaHook(static_cast<int>(id));
 }
+[[nodiscard]] bool hasLuaWorldRenderHook(WorldRenderStage stage, RenderHookMoment moment);
 void invalidateLuaHookCache();
-[[nodiscard]] bool isSupportedLuaEvent(std::string_view event);
 using LifecycleListener = std::function<void(LifecyclePhase, LifecyclePhase)>;
 void registerLifecycleListener(int order, LifecycleListener listener);
 void fireLifecycle(LifecyclePhase previous, LifecyclePhase current);
@@ -212,6 +209,7 @@ void luaHookWorldTick(WorldTickEvent& event);
 void luaHookEntityTick(EntityTickEvent& event);
 void luaHookCreateWorld(CreateWorldEvent& event);
 void luaHookBlockInteract(BlockInteractEvent& event);
+void luaHookBlockAttack(BlockAttackEvent& event);
 void luaHookBlockBreak(BlockBreakEvent& event);
 void luaHookEntityInteract(EntityInteractEvent& event);
 void luaHookAttackDamage(AttackDamageEvent& event);

@@ -1,9 +1,11 @@
 #include "net/minecraft/client/render/pipeline/Instance.hpp"
+#include "net/minecraft/client/render/pipeline/FullscreenPass.hpp"
 #include <algorithm>
 #include "net/minecraft/client/gl/GLCore.hpp"
 #include "net/minecraft/client/render/RenderCore.hpp"
 #include "net/minecraft/client/render/shaders/ComputeDispatcher.hpp"
 #include "net/minecraft/client/render/shaders/PassIndex.hpp"
+#include "net/minecraft/client/render/shaderpack/Catalog.hpp"
 #include "net/minecraft/client/resource/pack/ZippedTexturePack.hpp"
 namespace net::minecraft::client::render {
 void PackInstance::clearGpuResources() {
@@ -100,8 +102,10 @@ bool PackInstance::buildExecutionPlan(std::string& error) {
   if(passIndex >= definition.passes.size()) continue;
   const std::string& name = definition.passes[passIndex].name;
   CompositeStage stage;
-  if(ComputeDispatcher::matchesStage(name, "begin"))
+ if(ComputeDispatcher::matchesStage(name, "begin"))
    stage = CompositeStage::Begin;
+  else if(ComputeDispatcher::matchesStage(name, "shadow"))
+   stage = CompositeStage::Shadow;
   else if(ComputeDispatcher::matchesStage(name, "shadowcomp"))
    stage = CompositeStage::ShadowComposite;
   else if(ComputeDispatcher::matchesStage(name, "prepare"))
@@ -169,6 +173,18 @@ bool PackInstance::buildExecutionPlan(std::string& error) {
    }
    RuntimeOperation rasterOperation;
    rasterOperation.pass = raster;
+   const PackPass& pass = definition.passes[raster.passIndex];
+   rasterOperation.outputs = pass.outputs;
+   if(rasterOperation.outputs.empty()) {
+    rasterOperation.outputs.emplace_back(stageIndex == static_cast<std::size_t>(CompositeStage::ShadowComposite)
+                                             ? "shadowcolor0" : "screen");
+   }
+   rasterOperation.toScreen = PackCatalog::lower(rasterOperation.outputs.front()) == "screen" ||
+                              pass.name == "final" || pass.program.rfind("final", 0) == 0;
+   rasterOperation.flips = ColorTargets::passFlipSequence(definition, pass.name, rasterOperation.outputs);
+   for(const std::string& output : rasterOperation.outputs) {
+    rasterOperation.shadowColorCount = std::max(rasterOperation.shadowColorCount, shadowColorIndex(output) + 1);
+   }
    operations.push_back(std::move(rasterOperation));
   }
   for(ComputeGroup& group : groups) {

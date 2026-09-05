@@ -158,20 +158,10 @@ void EntityRenderDispatcher::render(const net::minecraft::Entity& entity,
  // (no sun term to swamp it) rendered entities pure black.
  // see src/net/minecraft/client/render/block/CubeBlockRenderer.cpp renderSmooth
  // see src/net/minecraft/client/render/shaders/glsl/vanilla/shaders/gbuffers_entities.fsh
- float blockLight = 15.0f;
- float skyLight = 15.0f;
- if(entity.world != nullptr) {
-  const int lightX = MathHelper::floor(entity.x);
-  const double eyeSpan = (entity.boundingBox.maxY - entity.boundingBox.minY) * 0.66;
-  const int lightY =
-      MathHelper::floor(entity.y - static_cast<double>(entity.standingEyeHeight) + eyeSpan);
-  const int lightZ = MathHelper::floor(entity.z);
-  blockLight =
-      static_cast<float>(entity.world->getBrightness(net::minecraft::LightType::Block, lightX, lightY, lightZ));
-  skyLight =
-      static_cast<float>(entity.world->getBrightness(net::minecraft::LightType::Sky, lightX, lightY, lightZ));
- }
- Tessellator::INSTANCE.light(blockLight, skyLight);
+ int blockLight = 15;
+ int skyLight = 15;
+ entity.sampleLightLevels(blockLight, skyLight);
+ Tessellator::INSTANCE.light(static_cast<float>(blockLight), static_cast<float>(skyLight));
  render::core::setConstColor(1.0f, 1.0f, 1.0f, 1.0f);
     render(entity, x, y, z, yaw, tickDelta, matrices, projection);
  }

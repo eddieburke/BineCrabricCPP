@@ -48,12 +48,14 @@ inline void celestialSkyMatrix(float celestialAngle, float sunPathRotation,
  out.rotate(sunPathRotation, 0.0f, 0.0f, 1.0f);
  out.rotate(skyAngle * 360.0f, 1.0f, 0.0f, 0.0f);
 }
-inline void celestialDirectionWorld(float celestialAngle, float sunPathRotation, float out[3]) {
- net::minecraft::util::math::Matrix4f celestialMat;
- celestialSkyMatrix(celestialAngle, sunPathRotation, celestialMat);
- out[0] = celestialMat.m[4];
- out[1] = celestialMat.m[5];
- out[2] = celestialMat.m[6];
+// The north celestial pole stands due north at an altitude equal to the observer's
+// latitude, so RX(latitude - 90) carries +Y onto it; the sphere then spins about that
+// pole once per sidereal day, westward, which is -360 degrees per turn of siderealAngle.
+inline void starFrameFromPole(float poleAltitudeDeg, float siderealAngle,
+                              net::minecraft::util::math::Matrix4f& out) {
+ out.identity();
+ out.rotate(poleAltitudeDeg - 90.0f, 1.0f, 0.0f, 0.0f);
+ out.rotate(siderealAngle * -360.0f, 0.0f, 1.0f, 0.0f);
 }
 // The one answer to "where is the sun" for a frame. Built once per frame by
 // GameRenderer::updateSunLight and published through RenderCore; SunLight,
@@ -75,6 +77,10 @@ struct CelestialState {
  // This must stay parallel to the shadow map's own toward-light axis
  // (buildShadowCelestialModelView row 2) — see tests/shadow_celestial_modelview_test.cpp.
  float shadowLightDirectionWorld[3] = {0.0f, 1.0f, 0.0f};
+ // The star sphere's orientation, and in vanilla the frame sunDirectionWorld is read
+ // out of. renderSkyStars used to rebuild it from celestialAngle/sunPathRotation, which
+ // silently dropped any mod override of the sun.
+ net::minecraft::util::math::Matrix4f starFrame;
  bool directionOverride = false;
 };
 inline float normalizeCelestialAngle(float value, float fallback) {
@@ -90,7 +96,10 @@ inline CelestialState makeCelestialState(float celestialAngle, float sunPathRota
  state.shadowAngle = shadowAngleFromCelestial(celestialAngle);
  // Java CelestialUniforms.isDay(): getSunAngle(true) < 180.
  state.day = state.sunAngle < 0.5f;
- celestialDirectionWorld(celestialAngle, sunPathRotation, state.sunDirectionWorld);
+ celestialSkyMatrix(celestialAngle, sunPathRotation, state.starFrame);
+ state.sunDirectionWorld[0] = state.starFrame.m[4];
+ state.sunDirectionWorld[1] = state.starFrame.m[5];
+ state.sunDirectionWorld[2] = state.starFrame.m[6];
  for(int i = 0; i < 3; ++i) {
   state.moonDirectionWorld[i] = -state.sunDirectionWorld[i];
   state.shadowLightDirectionWorld[i] =

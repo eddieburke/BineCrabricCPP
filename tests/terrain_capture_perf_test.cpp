@@ -7,7 +7,6 @@
 // The contended run is the look-around hitch: light workers writing cells into the
 // chunks being captured. LockedCaptures must stay at zero -- if it moves, the capture
 // is blocking on the chunk write lock again. See
-// docs/handoff-vtune-lookaround-hitch.md.
 #include <gtest/gtest.h>
 #include <atomic>
 #include <chrono>

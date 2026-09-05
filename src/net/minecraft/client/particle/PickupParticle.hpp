@@ -19,6 +19,14 @@ class PickupParticle : public Particle {
        offsetY_(offsetY) {
   lifetime_ = 3;
  }
+ void applyLight(render::Tessellator& tessellator) const override {
+  int blockLight = 15;
+  int skyLight = 15;
+  if(entity_ != nullptr) {
+   entity_->sampleLightLevels(blockLight, skyLight);
+  }
+  tessellator.light(static_cast<float>(blockLight), static_cast<float>(skyLight));
+ }
  void render(render::Tessellator& /*tessellator*/,
              float partialTicks,
              float /*horizontalSize*/,
@@ -41,11 +49,7 @@ class PickupParticle : public Particle {
   double renderX = sourceX + (targetX - sourceX) * progress;
   double renderY = sourceY + (targetY - sourceY) * progress;
   double renderZ = sourceZ + (targetZ - sourceZ) * progress;
-  const int blockX = MathHelper::floor(renderX);
-  const int blockY = MathHelper::floor(renderY + static_cast<double>(standingEyeHeight / 2.0f));
-  const int blockZ = MathHelper::floor(renderZ);
-  const float brightness = world->getLightBrightness(blockX, blockY, blockZ);
- render::core::setConstColor(brightness, brightness, brightness, 1.0f);
+ render::core::setConstColor(1.0f, 1.0f, 1.0f, 1.0f);
  net::minecraft::util::math::MatrixStack pose;
  // Identity pose base: the dispatcher offsets are camera-eye relative, so the
  // renderer's own pushes produce the pure camera-relative pose (see setDrawPose).

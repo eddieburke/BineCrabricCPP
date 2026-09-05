@@ -25,12 +25,11 @@ inline ModHost::LoadedLuaMod* currentLuaMod(lua_State* state) {
  if(auto* mod = static_cast<ModHost::LoadedLuaMod*>(luaApi().touserdata(state, luaUpvalueIndex(1)))) {
   return mod;
  }
- for(const auto& mod : loadedLuaMods()) {
-  if(mod != nullptr && mod->state == state) {
-   return mod.get();
-  }
- }
- return nullptr;
+ LuaApi& api = luaApi();
+ api.getfield(state, kLuaRegistryIndex, "minecraft.mod_owner");
+ auto* mod = static_cast<ModHost::LoadedLuaMod*>(api.touserdata(state, -1));
+ pop(state, 1);
+ return mod;
 }
 void setWorldContextFields(lua_State* state, const World* world);
 void setLuaExecutionFields(lua_State* state, const World* world);

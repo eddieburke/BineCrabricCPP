@@ -27,6 +27,20 @@ struct BlockInteractEvent {
  bool handled = false;
  client::Minecraft* client = nullptr;
 };
+struct BlockAttackEvent {
+ entity::player::PlayerEntity* player = nullptr;
+ World* world = nullptr;
+ ItemStack* stack = nullptr;
+ int x = 0;
+ int y = 0;
+ int z = 0;
+ int side = 0;
+ int blockId = 0;
+ int blockMeta = 0;
+ bool initial = false;
+ bool canceled = false;
+ bool handled = false;
+};
 struct BlockBreakEvent {
  entity::player::PlayerEntity* player = nullptr;
  World* world = nullptr;
@@ -77,6 +91,8 @@ struct PlayerTravelEvent {
  float sideways = 0.0f;
  float forward = 0.0f;
  float speedMultiplier = 1.0f;
+ // Selects PlayerMovement::travelFlying -- no gravity, damping on all three axes.
+ bool flying = false;
 };
 struct CraftingTakeEvent {
  entity::player::PlayerEntity* player = nullptr;

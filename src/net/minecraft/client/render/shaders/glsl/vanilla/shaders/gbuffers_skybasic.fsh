@@ -1,12 +1,12 @@
 #version 430 core
 #include "/lib/common.glsl"
 in vec4 color;
-in float viewDistance;
+in vec3 viewPosition;
+uniform int renderStage;
 /* RENDERTARGETS: 0 */
 layout(location = 0) out vec4 outColor;
 void main() {
- // The sky is its own light source (never lightmapped), but vanilla draws the
- // sky dome with the world fog enabled so the horizon fades into the fog colour
- // and meets the fogged terrain seamlessly.
- outColor = vec4(applyFog(color.rgb, viewDistance), color.a);
+ float viewDistance = fogCoord(viewPosition);
+ bool foggedSky = renderStage == MC_RENDER_STAGE_SKY || renderStage == MC_RENDER_STAGE_VOID;
+ outColor = vec4(foggedSky ? applyFog(color.rgb, viewDistance) : color.rgb, color.a);
 }

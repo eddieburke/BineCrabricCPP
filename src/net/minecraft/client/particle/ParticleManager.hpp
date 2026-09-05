@@ -90,6 +90,7 @@ class ParticleManager {
       tessellator.startQuads();
      }
     }
+    particle->applyLight(tessellator);
     particle->render(tessellator, partialTicks, yawCos, verticalSize, yawSin, widthOffset, heightOffset);
    }
    tessellator.draw();
@@ -107,6 +108,7 @@ class ParticleManager {
   render::core::setDrawPose(net::minecraft::util::math::Matrix4f::identityMatrix());
   render::Tessellator& tessellator = render::Tessellator::INSTANCE;
   for(const auto& particle : bucket) {
+   particle->applyLight(tessellator);
    particle->render(tessellator, partialTicks, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f);
   }
  }

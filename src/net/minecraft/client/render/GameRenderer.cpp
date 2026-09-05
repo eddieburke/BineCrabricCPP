@@ -104,6 +104,10 @@ void updateSunLight(World* world, float tickDelta, ::net::minecraft::entity::Ent
   }
   state.directionOverride = true;
  }
+ if(celestialEvent.overrideStarFrame && std::isfinite(celestialEvent.poleAltitudeDeg) &&
+    std::isfinite(celestialEvent.siderealAngle)) {
+  starFrameFromPole(celestialEvent.poleAltitudeDeg, celestialEvent.siderealAngle, state.starFrame);
+ }
  state.moonPhase = std::clamp(celestialEvent.moonPhase, 0, 7);
  core::setCelestialState(state);
  const float sunX = state.sunDirectionWorld[0];
@@ -711,15 +715,38 @@ using atmosphere::AtmosphereContext;
 }
 [[nodiscard]] AtmosphereContext makeAtmosphereContext(Minecraft* client,
                                                       const option::RenderSettings& settings,
-                                                      int atmosphereTicks) {
- return AtmosphereContext{
+                                                      int atmosphereTicks,
+                                                      float tickDelta,
+                                                      const FrameRenderCamera& camera) {
+ AtmosphereContext context{
      .client = client,
      .world = client->world,
      .textureManager = &client->textureManager,
      .camera = client->camera,
      .settings = settings,
      .atmosphereTicks = atmosphereTicks,
+     .cameraX = camera.x,
+     .cameraZ = camera.z,
  };
+ if(context.world != nullptr) {
+  const bool worldRenderHooks = mod::runtime::hasLuaHook(mod::runtime::LuaEventId::WorldRender);
+  if(!camera.shadowPass || worldRenderHooks) {
+   context.rainStrength = option::rainGradient(settings, context.world, tickDelta);
+   context.skyLightIntensity = context.world->calculateSkyLightIntensity(tickDelta);
+   context.starBrightness = context.skyLightIntensity * (1.0f - context.rainStrength);
+  }
+  if(!camera.shadowPass) {
+   context.skyColor = context.world->getSkyColor(context.camera, tickDelta);
+  }
+  if((settings.renderClouds && !camera.shadowPass) || worldRenderHooks) {
+   context.cloudColor = context.world->getCloudColor(tickDelta);
+  }
+  if(context.world->dimension != nullptr) {
+   context.cloudBaseHeight = option::cloudHeightOffset(context.world->dimension->getCloudHeight(), settings);
+   context.cloudRenderHeight = context.cloudBaseHeight - static_cast<float>(camera.y) + 0.33f;
+  }
+ }
+ return context;
 }
 void applyEntityLightingRig(const FrameRenderCamera& camera, core::WorldLightUniforms rig) {
  constexpr float kLen = 1.2369317f;
@@ -802,7 +829,6 @@ bool renderWorldStage(const AtmosphereContext& context,
                       bool enabled,
                       bool shadowPass,
                       Draw&& draw) {
- (void)shadowPass;
  mod::WorldRenderEvent event{
      context.world,
      context.camera,
@@ -810,21 +836,20 @@ bool renderWorldStage(const AtmosphereContext& context,
      stage,
      mod::RenderHookMoment::Before,
  };
+ event.shadowPass = shadowPass;
  event.stageEnabled = enabled;
  event.renderDistance = context.settings.renderDistance.blocks;
- if(context.world != nullptr) {
-  event.rainStrength = context.world->getRainGradient(tickDelta);
-  event.starBrightness = context.world->calculateSkyLightIntensity(tickDelta) * (1.0f - event.rainStrength);
-  const Vec3d cloudColor = context.world->getCloudColor(tickDelta);
-  event.cloudRed = static_cast<float>(cloudColor.x);
-  event.cloudGreen = static_cast<float>(cloudColor.y);
-  event.cloudBlue = static_cast<float>(cloudColor.z);
-  if(context.world->dimension != nullptr) {
-   event.cloudBaseHeight = option::cloudHeightOffset(
-       context.world->dimension->getCloudHeight(), context.settings);
-  }
+ const bool beforeSubscribed = mod::runtime::hasLuaWorldRenderHook(stage, mod::RenderHookMoment::Before);
+ const bool afterSubscribed = mod::runtime::hasLuaWorldRenderHook(stage, mod::RenderHookMoment::After);
+ event.rainStrength = context.rainStrength;
+ event.starBrightness = context.starBrightness;
+ event.cloudRed = static_cast<float>(context.cloudColor.x);
+ event.cloudGreen = static_cast<float>(context.cloudColor.y);
+ event.cloudBlue = static_cast<float>(context.cloudColor.z);
+ event.cloudBaseHeight = context.cloudBaseHeight;
+ if(beforeSubscribed) {
+  mod::runtime::luaHookWorldRender(event);
  }
- mod::runtime::luaHookWorldRender(event);
  if(enabled && !event.cancelVanilla) {
   if constexpr(requires { draw(event); }) {
    draw(event);
@@ -834,7 +859,9 @@ bool renderWorldStage(const AtmosphereContext& context,
   event.vanillaStageRan = true;
  }
  event.moment = mod::RenderHookMoment::After;
- mod::runtime::luaHookWorldRender(event);
+ if(afterSubscribed) {
+  mod::runtime::luaHookWorldRender(event);
+ }
  return event.vanillaStageRan;
 }
 } // namespace
@@ -972,7 +999,11 @@ void GameRenderer::renderToCurrentTarget(float tickDelta,
  }
  const bool fancyGraphics = client->options.fancyGraphics;
  const int terrainTextureId = client->textureManager.getTextureId("/terrain.png");
- const AtmosphereContext atmosphereCtx = makeAtmosphereContext(client, frameSettings_, ticks);
+ if(!frameCamera_.shadowPass && client->world != nullptr) {
+  updateSunLight(client->world, tickDelta, client->camera);
+ }
+ const AtmosphereContext atmosphereCtx =
+     makeAtmosphereContext(client, frameSettings_, ticks, tickDelta, frameCamera_);
  core::fogUpdateFromWorld(client, tickDelta, frameSettings_);
  if(!frameCamera_.shadowPass) {
   core::setFogEnabled(true);
@@ -1020,23 +1051,36 @@ void GameRenderer::renderToCurrentTarget(float tickDelta,
  }
  core::setCameraFrame(frameCamera_);
  core::setDrawCameraStateFromCamera(frameCamera_);
- if(!frameCamera_.shadowPass && client->world != nullptr) {
-  updateSunLight(client->world, tickDelta, client->camera);
- }
  if(!frameCamera_.shadowPass && !renderCameraEntity) {
   shaderPipeline_->prepareFrame(client->world);
-  shaderPipeline_->setFrameUniforms(buildFrameUniforms(tickDelta));
- }
- if(!frameCamera_.shadowPass && !renderCameraEntity) {
-  frameShadow_ = shadowmap::update(shadowState_, *this, tickDelta, frameCamera_, definition);
- }
- if(!frameCamera_.shadowPass && !renderCameraEntity) {
-  shaderPipeline_->renderBegin(frameShadow_.depthTexture,
+ shaderPipeline_->setFrameUniforms(buildFrameUniforms(tickDelta));
+}
+if(!frameCamera_.shadowPass && !renderCameraEntity) {
+  frameShadow_ = shadowmap::prepare(shadowState_, client->world != nullptr, definition);
+}
+if(!frameCamera_.shadowPass && !renderCameraEntity) {
+ shaderPipeline_->renderBegin(frameShadow_.depthTexture,
                                frameShadow_.opaqueDepthTexture,
                                frameShadow_.colorTextures.data(),
                                frameShadow_.colorCount,
                                &shadowState_.targets,
                                frameShadow_.colorAltTextures.data());
+}
+ if(!frameCamera_.shadowPass && !renderCameraEntity && frameShadow_.resolution > 0) {
+  shadowState_.targets.fbo.bind();
+  core::depthMask(true);
+  core::clear(gl::attrib::DepthBufferBit);
+  shaderPipeline_->renderShadow(frameShadow_.depthTexture,
+                                frameShadow_.opaqueDepthTexture,
+                                frameShadow_.colorTextures.data(),
+                                frameShadow_.colorCount,
+                                &shadowState_.targets,
+                                frameShadow_.colorAltTextures.data());
+ }
+ if(!frameCamera_.shadowPass && !renderCameraEntity && frameShadow_.resolution > 0) {
+  if(!shadowmap::render(shadowState_, *this, tickDelta, frameCamera_, definition)) {
+   frameShadow_ = {};
+  }
  }
  Frustum viewFrustum;
  Frustum* activeCuller = nullptr;
@@ -1115,7 +1159,7 @@ void GameRenderer::renderToCurrentTarget(float tickDelta,
  worldLight.sunColor[1] = sun.green;
  worldLight.sunColor[2] = sun.blue;
  worldLight.sunIntensity = sun.intensity;
- const float skyIntensity = client->world->calculateSkyLightIntensity(tickDelta);
+ const float skyIntensity = atmosphereCtx.skyLightIntensity;
  worldLight.ambient[0] = worldLight.ambient[1] = worldLight.ambient[2] = 0.4f * (1.0f - skyIntensity * 1.5f);
  worldLight.worldTime = static_cast<float>(ticks) + tickDelta;
  core::setWorldLight(worldLight);
@@ -1156,29 +1200,32 @@ void GameRenderer::renderToCurrentTarget(float tickDelta,
   render::setDrawPhase(render::DrawPhase::All);
  });
  const auto renderLitParticles = [&] {
-  core::activeTexture(gl::tex::Texture0);
-  client->particleManager.renderLit(camera, tickDelta);
+  renderWorldStage(atmosphereCtx, tickDelta, mod::WorldRenderStage::LitParticles, !skipGbuffers, false, [&] {
+   core::activeTexture(gl::tex::Texture0);
+   client->particleManager.renderLit(camera, tickDelta);
+  });
  };
  const auto renderTranslucentParticles = [&] {
-  core::setLightingEnabled(false);
-  core::setWorldLight(worldLight);
-  core::enableBlend();
-  core::blendAlpha();
-  client->particleManager.render(camera, tickDelta);
+  renderWorldStage(atmosphereCtx, tickDelta, mod::WorldRenderStage::Particles, !skipGbuffers, false, [&] {
+   core::setLightingEnabled(false);
+   core::setWorldLight(worldLight);
+   core::enableBlend();
+   core::blendAlpha();
+   client->particleManager.render(camera, tickDelta);
+  });
  };
- if(!skipGbuffers && (particleOrder == "before" || particleOrder == "mixed")) {
+ if(particleOrder == "before" || particleOrder == "mixed") {
   renderLitParticles();
  }
  {
   shaderPipeline_->captureHandDepth();
  }
- if(zoom == 1.0 && !renderCameraEntity) {
-  renderFirstPersonHand(tickDelta);
- }
+ renderWorldStage(atmosphereCtx, tickDelta, mod::WorldRenderStage::Hand,
+                  zoom == 1.0 && !renderCameraEntity, false, [&] { renderFirstPersonHand(tickDelta); });
  {
   shaderPipeline_->captureOpaqueDepth();
  }
- if(!skipGbuffers && particleOrder == "before") {
+ if(particleOrder == "before") {
   renderTranslucentParticles();
  }
  if(hasDeferred) {
@@ -1202,8 +1249,8 @@ void GameRenderer::renderToCurrentTarget(float tickDelta,
   render::setDrawPhase(render::DrawPhase::All);
  }
  {
-  if(!skipGbuffers && particleOrder == "after") renderLitParticles();
-  if(!skipGbuffers && particleOrder != "before") renderTranslucentParticles();
+  if(particleOrder == "after") renderLitParticles();
+  if(particleOrder != "before") renderTranslucentParticles();
  }
  if(client->crosshairTarget.has_value()) {
   if(auto* player = dynamic_cast<PlayerEntity*>(camera)) {
@@ -1223,11 +1270,9 @@ void GameRenderer::renderToCurrentTarget(float tickDelta,
    renderBlockOverlay(*worldRenderer, client, *player, tickDelta);
   }
  }
- if(!skipGbuffers) {
-  if(frameSettings_.weatherEnabled) {
-   atmosphere::renderPrecipitation(atmosphereCtx, tickDelta);
-  }
- }
+ renderWorldStage(atmosphereCtx, tickDelta, mod::WorldRenderStage::Weather,
+                  !skipGbuffers && frameSettings_.weatherEnabled, false,
+                  [&] { atmosphere::renderPrecipitation(atmosphereCtx, tickDelta); });
  renderWorldStage(atmosphereCtx,
                   tickDelta,
                   mod::WorldRenderStage::Clouds,

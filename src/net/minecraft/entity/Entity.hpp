@@ -156,6 +156,8 @@ class Entity {
   return standingEyeHeight;
  }
  [[nodiscard]] virtual float getBrightnessAtEyes(float tickDelta) const;
+ void lightSamplePos(int& blockX, int& blockY, int& blockZ) const;
+ void sampleLightLevels(int& blockLight, int& skyLight) const;
  [[nodiscard]] virtual bool isSubmergedInWater() const {
   return submergedInWater;
  }

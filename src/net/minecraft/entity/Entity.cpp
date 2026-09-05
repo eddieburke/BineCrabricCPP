@@ -562,6 +562,26 @@ bool Entity::isInsideWall() const {
  }
  return false;
 }
+// MCP Entity.getEntityBrightness(float) samples one block for the whole entity; the
+// renderer, the particles and the brightness scalar all need that same block, so it is
+// derived once here instead of in each of them.
+void Entity::lightSamplePos(int& blockX, int& blockY, int& blockZ) const {
+ blockX = MathHelper::floor(x);
+ const double eyeSpan = (boundingBox.maxY - boundingBox.minY) * 0.66;
+ blockY = MathHelper::floor(y - static_cast<double>(standingEyeHeight) + eyeSpan);
+ blockZ = MathHelper::floor(z);
+}
+void Entity::sampleLightLevels(int& blockLight, int& skyLight) const {
+ if(world == nullptr) {
+  return;
+ }
+ int blockX = 0;
+ int blockY = 0;
+ int blockZ = 0;
+ lightSamplePos(blockX, blockY, blockZ);
+ blockLight = world->getBrightness(net::minecraft::LightType::Block, blockX, blockY, blockZ);
+ skyLight = world->getBrightness(net::minecraft::LightType::Sky, blockX, blockY, blockZ);
+}
 float Entity::getBrightnessAtEyes(float tickDelta) const {
  // MCP Entity.getEntityBrightness(float): partial-tick arg is unused. Sample the
  // entity's current pos (same on SP and MP) — mesh lerp uses tickDelta separately.
@@ -569,10 +589,10 @@ float Entity::getBrightnessAtEyes(float tickDelta) const {
  if(world == nullptr) {
   return minBrightness;
  }
- const int blockX = MathHelper::floor(x);
- const double eyeSpan = (boundingBox.maxY - boundingBox.minY) * 0.66;
- const int blockY = MathHelper::floor(y - static_cast<double>(standingEyeHeight) + eyeSpan);
- const int blockZ = MathHelper::floor(z);
+ int blockX = 0;
+ int blockY = 0;
+ int blockZ = 0;
+ lightSamplePos(blockX, blockY, blockZ);
  if(!world->isRegionLoaded(MathHelper::floor(boundingBox.minX),
                            MathHelper::floor(boundingBox.minY),
                            MathHelper::floor(boundingBox.minZ),

@@ -13,8 +13,8 @@ class LavaEmberParticle : public Particle {
   maxParticleAge = static_cast<int>(16.0f / (random.nextFloat() * 0.8f + 0.2f));
   textureId = 49;
  }
- float getBrightnessAtEyes(float /*tickDelta*/) const override {
-  return 1.0f;
+ void applyLight(render::Tessellator& tessellator) const override {
+  tessellator.light(15.0f, 15.0f);
  }
  void render(render::Tessellator& tessellator,
              float partialTicks,

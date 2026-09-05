@@ -1138,8 +1138,8 @@ void Minecraft::respawnPlayer(bool worldSpawn, int dimension) {
  }
  player->teleportTop();
  interactionManager->preparePlayer(player);
- world->addPlayer(player);
  player->id = playerId;
+ world->addPlayer(player);
  player->spawn();
  interactionManager->preparePlayerRespawn(player);
  worldSession_.prepareWorld(*this, "Respawning");

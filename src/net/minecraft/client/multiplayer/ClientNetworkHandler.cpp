@@ -67,7 +67,7 @@ void ClientNetworkHandler::onHello(std::uint64_t worldSeed, int dimensionId, int
  minecraft->setWorld(world);
  if(minecraft->player != nullptr) {
   minecraft->player->dimensionId = dimensionId;
-  minecraft->player->id = playerEntityId;
+  world->reassignEntityId(*minecraft->player, playerEntityId);
  }
  minecraft->setScreen(std::make_unique<client::gui::screen::DownloadingTerrainScreen>(this));
 }

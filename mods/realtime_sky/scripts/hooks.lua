@@ -52,27 +52,21 @@ local function track_expected_world_time(world_time)
 end
 
 local function normalize_time_zone_id(value)
-  if type(value) ~= "string" then return "GMT+0" end
-  value = value:gsub("%s+", "")
-  if value:match("^GMT[+-]%d%d?$") or value:match("^GMT[+-]%d%d?:%d%d$") then
-    return value
+  local text = type(value) == "string" and value:gsub("%s+", "") or ""
+  text = (text:gsub("^UTC", "GMT"))
+  local sign, hours, minutes = text:match("^GMT([%+%-])(%d%d?):(%d%d)$")
+  if sign == nil then
+    sign, hours = text:match("^GMT([%+%-])(%d%d?)$")
+    minutes = "00"
   end
-  local sign, h, m = value:match("^GMT([%+%-])(%d%d?):?(%d%d?)$")
-  if sign then
-    h = h or "0"
-    m = m or "0"
-    if #m == 1 then m = m .. "0" end
-    return "GMT" .. sign .. h .. ":" .. m
+  if sign == nil or tonumber(hours) * 60 + tonumber(minutes) > 14 * 60 then
+    minecraft.log("error", "realtime_sky: invalid time zone '" .. tostring(value) .. "', falling back to GMT+0")
+    return "GMT+0"
   end
-  local sign2, h2, m2 = value:match("^UTC([%+%-])(%d%d?):?(%d%d?)$")
-  if sign2 then
-    h2 = h2 or "0"
-    m2 = m2 or "0"
-    if #m2 == 1 then m2 = m2 .. "0" end
-    return "GMT" .. sign2 .. h2 .. ":" .. m2
+  if minutes == "00" then
+    return "GMT" .. sign .. hours
   end
-  minecraft.log("error", "realtime_sky: invalid time zone '" .. tostring(value) .. "', falling back to GMT+0")
-  return "GMT+0"
+  return "GMT" .. sign .. hours .. ":" .. minutes
 end
 
 local function save_settings()
@@ -345,7 +339,6 @@ local function register()
       return realtime_active() and config.drive_sun
     end,
   }, function(event)
-    if event.shader_pack_active then return event end
     local frame = current_solar_frame(event.tick_delta)
     local sun_angle = (frame.celestial + 0.25) % 1.0
     local shadow_angle = sun_angle
@@ -363,7 +356,10 @@ local function register()
     event.moon_z = frame.moon_direction_z
     event.moon_phase = math.floor(((frame.moon_phase + 0.5) % 1.0) * 8.0 + 0.5) % 8
     event.is_day = frame.is_daylight
+    event.pole_altitude_deg = config.latitude
+    event.sidereal_angle = frame.sidereal_turns
     event.override_directions = true
+    event.override_star_frame = true
   end)
 
   minecraft.on("world_color", {
@@ -546,20 +542,17 @@ local function register()
       return realtime_active()
     end,
   }, function(event)
-    if event.shader_pack_active then return event end
     local frame = current_solar_frame(event.tick_delta)
     event.star_brightness = sky_render.star_brightness(frame)
     event.astronomy_enabled = true
     event.astronomy_utc_millis = frame.utc_millis
     event.observer_latitude_deg = config.latitude
     event.observer_longitude_deg = config.longitude
-    event.cancel_vanilla = true
-    sky_render.draw_stars(event, frame)
     return event
   end)
 
-  minecraft.on("world_tick", { before = false }, function(event)
-    if event.shader_pack_active or not realtime_active() or not config.drive_sun then
+  minecraft.on("world_tick", { before = false }, function()
+    if not realtime_active() or not config.drive_sun then
       restore_expected_world_time()
       return
     end

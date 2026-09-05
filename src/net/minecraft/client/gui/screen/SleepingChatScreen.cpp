@@ -13,9 +13,6 @@ void SleepingChatScreen::init() {
                          resource::language::I18n::getTranslation("multiplayer.stopSleeping"),
                          [this] { stopSleeping(); });
 }
-void SleepingChatScreen::removed() {
- ChatScreen::removed();
-}
 void SleepingChatScreen::keyPressed(char character, int keyCode) {
  if(escapePressed(keyCode)) {
   stopSleeping();

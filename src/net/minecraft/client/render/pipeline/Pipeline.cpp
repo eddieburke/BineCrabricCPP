@@ -644,7 +644,10 @@ gl::ShaderProgram* Pipeline::worldProgram(WorldProgramId id, PackInstance* pack)
  const PackInstance::WorldProgramRuntime& runtime =
      pack->worldPrograms[static_cast<std::size_t>(id)][shadowPass ? 1u : 0u];
  gl::ShaderProgram* program = runtime.program;
- if(program != nullptr) program->setFogClass(!shadowPass && fogEnabled(id));
+ if(program != nullptr) {
+  const bool vanillaSky = pack->embedded && id == WorldProgramId::SkyBasic;
+  program->setFogClass(!shadowPass && (fogEnabled(id) || vanillaSky));
+ }
  return program;
 }
 bool Pipeline::renderBegin(PackInstance* activePack, int shadowDepthTextureId,
@@ -669,6 +672,17 @@ bool Pipeline::renderBegin(PackInstance* activePack, int shadowDepthTextureId,
                               shadowDepthTextureId, shadowOpaqueDepthTextureId,
                               shadowColorTextureIds, shadowColorTextureCount,
                               shadowTargets_, shadowColorAltTextures_);
+}
+bool Pipeline::renderShadow(PackInstance* activePack, int shadowDepthTextureId,
+                            int shadowOpaqueDepthTextureId, const int* shadowColorTextureIds,
+                            int shadowColorTextureCount, shadowmap::ShadowTargets* shadowTargets,
+                            const int* shadowColorAltTextureIds) {
+ if(activePack == nullptr || activePack->stagePlan(CompositeStage::Shadow).empty()) return false;
+ shadowTargets_ = shadowTargets;
+ return renderCompositePasses(*activePack, CompositeStage::Shadow, false,
+                              shadowDepthTextureId, shadowOpaqueDepthTextureId,
+                              shadowColorTextureIds, shadowColorTextureCount,
+                              shadowTargets_, shadowColorAltTextureIds);
 }
 bool Pipeline::renderShadowComposite(PackInstance* activePack, int shadowDepthTextureId,
                                      int shadowOpaqueDepthTextureId, const int* shadowColorTextureIds,

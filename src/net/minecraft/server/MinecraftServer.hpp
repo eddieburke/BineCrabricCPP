@@ -13,7 +13,6 @@
 #include <vector>
 #include "net/minecraft/server/PlayerManager.hpp"
 #include "net/minecraft/server/ServerProperties.hpp"
-#include "net/minecraft/server/command/Command.hpp"
 #include "net/minecraft/server/command/CommandOutput.hpp"
 #include "net/minecraft/server/command/ServerCommandHandler.hpp"
 #include "net/minecraft/server/entity/EntityTracker.hpp"

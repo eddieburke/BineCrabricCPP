@@ -26,11 +26,9 @@ class FootstepParticle : public Particle {
   const float px = static_cast<float>(x - xOffset);
   const float py = static_cast<float>(y - yOffset);
   const float pz = static_cast<float>(z - zOffset);
-  const float brightness =
-      world->getLightBrightness(MathHelper::floor(x), MathHelper::floor(y), MathHelper::floor(z));
   textureManager_->bindTexture(textureManager_->getTextureId("/misc/footprint.png"));
   tessellator.startQuads();
-  tessellator.color(brightness, brightness, brightness, alpha);
+  tessellator.color(1.0f, 1.0f, 1.0f, alpha);
   tessellator.vertex(px - size, py, pz + size, 0.0, 1.0);
   tessellator.vertex(px + size, py, pz + size, 1.0, 1.0);
   tessellator.vertex(px + size, py, pz - size, 1.0, 0.0);

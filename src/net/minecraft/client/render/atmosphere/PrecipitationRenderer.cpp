@@ -24,8 +24,7 @@ void renderPrecipitation(const AtmosphereContext& ctx, float tickDelta) {
  if(ctx.world == nullptr || ctx.camera == nullptr) {
   return;
  }
- const float rain = ctx.client != nullptr ? client::option::rainGradient(ctx.settings, ctx.world, tickDelta)
-                                          : ctx.world->getRainGradient(tickDelta);
+ const float rain = ctx.rainStrength;
  if(rain <= 0.0f) {
   return;
  }

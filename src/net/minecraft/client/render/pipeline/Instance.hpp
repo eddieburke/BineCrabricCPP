@@ -20,6 +20,7 @@ class ZippedTexturePack;
 namespace net::minecraft::client::render {
 enum class CompositeStage : std::uint8_t {
  Begin,
+ Shadow,
  ShadowComposite,
  Prepare,
  Deferred,
@@ -41,6 +42,10 @@ struct PackInstance {
  };
  struct RuntimeOperation {
   RuntimePass pass;
+  std::vector<std::string> outputs;
+  std::vector<std::string> flips;
+  bool toScreen = false;
+  int shadowColorCount = 1;
   bool compute = false;
   bool groupBegin = false;
   bool groupEnd = false;

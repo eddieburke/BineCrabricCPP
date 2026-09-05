@@ -3,7 +3,6 @@
 #include <random>
 #include <string>
 #include <vector>
-#include "net/minecraft/client/gui/hud/ChatHudLine.hpp"
 namespace net::minecraft::client {
 class Minecraft;
 }
@@ -14,6 +13,10 @@ namespace net::minecraft::client::font {
 class TextRenderer;
 }
 namespace net::minecraft::client::gui::hud {
+struct ChatHudLine {
+ std::string text{};
+ int age = 0;
+};
 class InGameHud {
  public:
  void setClient(Minecraft* client) {
@@ -22,30 +25,15 @@ class InGameHud {
  void tick();
  void clearChat();
  void addChatMessage(const std::string& message);
- void addTranslatedChatMessage(const std::string& text);
  void addSentChatMessage(std::string message);
  void scrollChat(int lines);
- void resetChatScroll();
  void setRecordPlayingOverlay(const std::string& record);
- [[nodiscard]] const std::vector<ChatHudLine>& chatLines() const {
-  return messages;
- }
  [[nodiscard]] const std::vector<std::string>& sentChatMessages() const {
   return sentMessages_;
  }
  [[nodiscard]] std::string chatLineAt(int mouseX, int mouseY, int scaledHeight) const;
  [[nodiscard]] std::string chatLinkAt(int mouseX, int mouseY, int scaledHeight) const;
- [[nodiscard]] const std::string& overlay() const {
-  return overlayMessage;
- }
- [[nodiscard]] int overlayTicks() const {
-  return overlayRemaining;
- }
- [[nodiscard]] bool isOverlayTinted() const {
-  return overlayTinted;
- }
  void render(float tickDelta, bool screenOpen, int mouseX, int mouseY);
- std::string selectedName{};
  int ticks = 0;
  std::string overlayMessage{};
  int overlayRemaining = 0;

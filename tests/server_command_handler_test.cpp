@@ -2,7 +2,6 @@
 #include <string>
 #include <vector>
 #include "net/minecraft/server/MinecraftServer.hpp"
-#include "net/minecraft/server/command/Command.hpp"
 #include "net/minecraft/server/command/CommandOutput.hpp"
 #include "net/minecraft/server/command/ServerCommandHandler.hpp"
 namespace {
@@ -30,8 +29,7 @@ TEST(ServerCommandHandler, HelpCommandListsKickSyntax) {
  net::minecraft::server::MinecraftServer server;
  net::minecraft::server::command::ServerCommandHandler handler(&server);
  RecordingCommandOutput output("Console");
- net::minecraft::server::command::Command command("help", output);
- handler.executeCommand(command);
+ handler.executeCommand("help", output);
  bool foundKick = false;
  for(const std::string& message : output.messages()) {
   if(message.find("kick <player>") != std::string::npos) {
@@ -45,8 +43,7 @@ TEST(ServerCommandHandler, QuestionMarkAliasShowsHelp) {
  net::minecraft::server::MinecraftServer server;
  net::minecraft::server::command::ServerCommandHandler handler(&server);
  RecordingCommandOutput output("Console");
- net::minecraft::server::command::Command command("?", output);
- handler.executeCommand(command);
+ handler.executeCommand("?", output);
  EXPECT_FALSE(output.messages().empty());
  bool foundHelpHeader = false;
  for(const std::string& message : output.messages()) {
@@ -61,23 +58,15 @@ TEST(ServerCommandHandler, GiveWithInvalidArityIsSilent) {
  net::minecraft::server::MinecraftServer server;
  net::minecraft::server::command::ServerCommandHandler handler(&server);
  RecordingCommandOutput output("Console");
- net::minecraft::server::command::Command command("give Player", output);
- handler.executeCommand(command);
+ handler.executeCommand("give Player", output);
  EXPECT_TRUE(output.messages().empty());
 }
 TEST(ServerCommandHandler, TpSyntaxErrorMessage) {
  net::minecraft::server::MinecraftServer server;
  net::minecraft::server::command::ServerCommandHandler handler(&server);
  RecordingCommandOutput output("Console");
- net::minecraft::server::command::Command command("tp onlyonearg", output);
- handler.executeCommand(command);
+ handler.executeCommand("tp onlyonearg", output);
  ASSERT_EQ(output.messages().size(), 1U);
  EXPECT_NE(output.messages().front().find("Syntax error"), std::string::npos);
-}
-TEST(ServerCommandHandler, CommandStoresCommandAndOutput) {
- RecordingCommandOutput output("Admin");
- net::minecraft::server::command::Command command("say hello", output);
- EXPECT_EQ(command.commandAndArgs, "say hello");
- EXPECT_EQ(&command.output, &output);
 }
 } // namespace net::minecraft::test

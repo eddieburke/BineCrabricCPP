@@ -299,19 +299,11 @@ FrameRenderCamera makeShadowCamera(const PackDefinition& definition,
  }
  return shadowCam;
 }
-ShadowMapResult update(ShadowMapState& state,
-                       GameRenderer& renderer,
-                       float tickDelta,
-                       const FrameRenderCamera& camera,
-                       const PackDefinition& definition) {
+ShadowMapResult prepare(ShadowMapState& state, bool worldAvailable, const PackDefinition& definition) {
  const int requestedResolution = definition.shadowMapResolution;
  const int colorBuffers = std::clamp(definition.shadowColorBuffers, 0, 8);
- const ShadowCullState cullState = definition.shadowCulling;
- const float voxelDistance = definition.effectiveVoxelDistance();
  const float shadowDistance = definition.shadowDistance;
- const float shadowDistanceRenderMul = definition.shadowDistanceRenderMul;
- const float entityDistanceMultiplier = definition.entityShadowDistanceMul;
- if(requestedResolution <= 0 || renderer.client == nullptr || renderer.client->world == nullptr) {
+ if(requestedResolution <= 0 || !worldAvailable) {
   state.targets.destroy();
   return {};
  }
@@ -325,6 +317,34 @@ ShadowMapResult update(ShadowMapState& state,
  if(!state.targets.ensure(resolution, colorBuffers, definition)) {
   return {};
  }
+ ShadowMapResult result;
+ result.depthTexture = static_cast<int>(state.targets.shadowtex0);
+ result.opaqueDepthTexture =
+     state.targets.shadowtex1 != 0 ? static_cast<int>(state.targets.shadowtex1) : result.depthTexture;
+ result.resolution = resolution;
+ result.colorCount = colorBuffers;
+ for(int i = 0; i < colorBuffers; ++i) {
+  result.colorTextures[static_cast<std::size_t>(i)] =
+      static_cast<int>(state.targets.shadowcolor[static_cast<std::size_t>(i)][0]);
+  result.colorAltTextures[static_cast<std::size_t>(i)] =
+      static_cast<int>(state.targets.shadowcolor[static_cast<std::size_t>(i)][1]);
+ }
+ return result;
+}
+bool render(ShadowMapState& state,
+            GameRenderer& renderer,
+            float tickDelta,
+            const FrameRenderCamera& camera,
+            const PackDefinition& definition) {
+ if(!state.targets.valid()) {
+  return false;
+ }
+ const ShadowCullState cullState = definition.shadowCulling;
+ const float voxelDistance = definition.effectiveVoxelDistance();
+ const float shadowDistance = definition.shadowDistance;
+ const float shadowDistanceRenderMul = definition.shadowDistanceRenderMul;
+ const float entityDistanceMultiplier = definition.entityShadowDistanceMul;
+ const int resolution = state.targets.resolution;
  const CelestialState& celestial = core::celestialState();
  const double centerX = camera.eyeX;
  const double centerY = camera.eyeY;
@@ -371,20 +391,8 @@ ShadowMapResult update(ShadowMapState& state,
  const float fov = shadowCam.orthographic ? 70.0f : definition.shadowMapFov;
  state.targets.prepareForShadowRender(definition);
  if(!renderer.renderWorldToFbo(state.targets.fbo.id(), resolution, resolution, tickDelta, shadowCam, fov)) {
-  return {};
+  return false;
  }
- ShadowMapResult result;
- result.depthTexture = static_cast<int>(state.targets.shadowtex0);
- result.opaqueDepthTexture =
-     state.targets.shadowtex1 != 0 ? static_cast<int>(state.targets.shadowtex1) : result.depthTexture;
- result.resolution = resolution;
- result.colorCount = colorBuffers;
- for(int i = 0; i < colorBuffers; ++i) {
-  result.colorTextures[static_cast<std::size_t>(i)] =
-      static_cast<int>(state.targets.shadowcolor[static_cast<std::size_t>(i)][0]);
-  result.colorAltTextures[static_cast<std::size_t>(i)] =
-      static_cast<int>(state.targets.shadowcolor[static_cast<std::size_t>(i)][1]);
- }
- return result;
+ return true;
 }
 } // namespace net::minecraft::client::render::shadowmap

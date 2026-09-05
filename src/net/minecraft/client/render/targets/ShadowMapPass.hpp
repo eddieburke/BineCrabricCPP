@@ -71,10 +71,11 @@ FrameRenderCamera makeShadowCamera(const PackDefinition& definition,
 
 void reset(ShadowMapState& state);
 void snapshotOpaqueDepth(ShadowMapState& state);
-ShadowMapResult update(ShadowMapState& state,
-                       GameRenderer& renderer,
-                       float tickDelta,
-                       const FrameRenderCamera& camera,
-                       const PackDefinition& definition);
+ShadowMapResult prepare(ShadowMapState& state, bool worldAvailable, const PackDefinition& definition);
+bool render(ShadowMapState& state,
+            GameRenderer& renderer,
+            float tickDelta,
+            const FrameRenderCamera& camera,
+            const PackDefinition& definition);
 } // namespace shadowmap
 } // namespace net::minecraft::client::render

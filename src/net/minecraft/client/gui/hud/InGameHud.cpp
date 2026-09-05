@@ -15,7 +15,6 @@
 #include "net/minecraft/client/render/RenderType.hpp"
 #include "net/minecraft/client/render/Tessellator.hpp"
 #include "net/minecraft/client/render/item/ItemRenderer.hpp"
-#include "net/minecraft/client/resource/language/I18n.hpp"
 #include "net/minecraft/client/util/UiScale.hpp"
 #include "net/minecraft/entity/player/ClientPlayerEntity.hpp"
 #include "net/minecraft/entity/player/PlayerEntity.hpp"
@@ -137,15 +136,15 @@ void InGameHud::addChatMessage(const std::string& message) {
      break;
     }
    }
-   messages.insert(messages.begin(), ChatHudLine(remaining.substr(0, splitAt)));
+   messages.insert(messages.begin(), ChatHudLine{remaining.substr(0, splitAt)});
    remaining = remaining.substr(static_cast<std::size_t>(splitAt));
   }
  }
- messages.insert(messages.begin(), ChatHudLine(remaining));
+ messages.insert(messages.begin(), ChatHudLine{remaining});
  if(messages.size() > 512) {
   messages.resize(512);
  }
- resetChatScroll();
+ chatScroll_ = 0;
 }
 void InGameHud::addSentChatMessage(std::string message) {
  if(message.empty()) {
@@ -155,15 +154,12 @@ void InGameHud::addSentChatMessage(std::string message) {
   sentMessages_.push_back(std::move(message));
  }
  if(sentMessages_.size() > 100) {
-  sentMessages_.erase(sentMessages_.begin(), sentMessages_.begin() + 1);
+  sentMessages_.erase(sentMessages_.begin());
  }
 }
 void InGameHud::scrollChat(int lines) {
  const int maxScroll = std::max(0, static_cast<int>(messages.size()) - 20);
  chatScroll_ = std::clamp(chatScroll_ + lines, 0, maxScroll);
-}
-void InGameHud::resetChatScroll() {
- chatScroll_ = 0;
 }
 std::optional<std::size_t> InGameHud::chatLineIndexAt(int mouseX, int mouseY, int scaledHeight) const {
  if(mouseX < 2 || mouseX > 322) {
@@ -202,9 +198,6 @@ std::string InGameHud::chatLinkAt(int mouseX, int mouseY, int scaledHeight) cons
  const int left = 2 + minecraft->textRenderer->getWidth(text.substr(0, start));
  const int right = left + minecraft->textRenderer->getWidth(text.substr(start, end - start));
  return mouseX >= left && mouseX < right ? text.substr(start, end - start) : std::string{};
-}
-void InGameHud::addTranslatedChatMessage(const std::string& text) {
- addChatMessage(resource::language::I18n::getTranslation(text));
 }
 void InGameHud::setRecordPlayingOverlay(const std::string& record) {
  overlayMessage = "Now playing: " + record;

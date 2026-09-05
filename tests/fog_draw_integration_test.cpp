@@ -1,4 +1,5 @@
 #include <gtest/gtest.h>
+#include <algorithm>
 #include <array>
 #include <cmath>
 #include <cstdint>
@@ -18,9 +19,11 @@
 #include "net/minecraft/client/render/RenderCore.hpp"
 #include "net/minecraft/client/render/camera/FrameRenderCamera.hpp"
 #include "net/minecraft/client/render/pipeline/Instance.hpp"
+#include "net/minecraft/client/render/pipeline/Pipeline.hpp"
 #include "net/minecraft/client/render/shaderpack/Loader.hpp"
 #include "net/minecraft/client/render/shaderpack/VanillaPackEmbed.hpp"
 #include "net/minecraft/client/render/shaders/Compiler.hpp"
+#include "net/minecraft/client/render/Tessellator.hpp"
 #include "net/minecraft/client/render/uniforms/FrameData.hpp"
 #include "net/minecraft/client/render/uniforms/Uniforms.hpp"
 #include "net/minecraft/util/logging/Logging.hpp"
@@ -70,6 +73,7 @@ class FogDrawIntegrationTest : public ::testing::Test {
      glfwMakeContextCurrent(window_);
     }
     core::setActiveProgram(nullptr);
+    while(::glGetError() != GL_NO_ERROR) {}
    }
    void TearDown() override {
     core::setActiveProgram(nullptr);
@@ -252,5 +256,104 @@ TEST_F(FogDrawIntegrationTest, ShadowProgramClassGatesFogOff) {
   terrain->setFogClass(true);
   submitQuad(terrain);
   EXPECT_EQ(readIntUniform(*terrain, "fogMode"), 0x2601);
+}
+TEST_F(FogDrawIntegrationTest, PipelineEnablesSkyFogOnlyForVanillaOutsideShadows) {
+ PackInstance pack;
+ ASSERT_TRUE(loadVanillaPack(pack));
+ ShaderProgram* fallback = compileProgram(pack, "gbuffers_basic");
+ ASSERT_NE(fallback, nullptr);
+ using client::render::WorldProgramId;
+ const std::array ids = {WorldProgramId::SkyBasic, WorldProgramId::SkyTextured,
+                         WorldProgramId::TerrainSolid, WorldProgramId::Gui};
+ for(const auto id : ids) {
+  for(auto& runtime : pack.worldPrograms[static_cast<std::size_t>(id)]) {
+   runtime.program = fallback;
+   runtime.resolvedKey = "gbuffers_basic";
+  }
+ }
+ client::render::Pipeline pipeline(nullptr);
+ const auto savedCamera = core::cameraFrame();
+ const auto savedFog = core::fog();
+ const core::RenderStageScope stage(core::RenderStage::None);
+ core::setFog(worldFog());
+ for(const bool embedded : {false, true}) {
+  pack.embedded = embedded;
+  for(const bool shadow : {false, true}) {
+   client::render::FrameRenderCamera camera;
+   camera.shadowPass = shadow;
+   core::setCameraFrame(camera);
+   for(const auto id : ids) {
+    SCOPED_TRACE(::testing::Message() << "embedded=" << embedded << " shadow=" << shadow
+                                     << " id=" << static_cast<int>(id));
+    ShaderProgram* program = pipeline.worldProgram(id, &pack);
+    EXPECT_EQ(program, fallback);
+    submitQuad(program);
+    const bool expected = !shadow && (id == WorldProgramId::TerrainSolid ||
+                                       (embedded && id == WorldProgramId::SkyBasic));
+    EXPECT_EQ(readIntUniform(*program, "fogMode"), expected ? 0x2601 : 0);
+   }
+  }
+ }
+ core::setFog(savedFog);
+ core::setCameraFrame(savedCamera);
+}
+TEST_F(FogDrawIntegrationTest, VanillaSkyBlendsAtHorizonWithoutFoggingStarsOrSunset) {
+ PackInstance pack;
+ ASSERT_TRUE(loadVanillaPack(pack));
+ ShaderProgram* sky = compileProgram(pack, "gbuffers_skybasic");
+ ASSERT_NE(sky, nullptr);
+ using client::render::WorldProgramId;
+ pack.worldPrograms[static_cast<std::size_t>(WorldProgramId::SkyBasic)][0].program = sky;
+ client::render::Pipeline pipeline(nullptr);
+ const auto savedCamera = core::cameraFrame();
+ const auto savedFog = core::fog();
+ const core::ScopedDrawCameraState drawCamera;
+ const core::RenderStageScope stage(core::RenderStage::None);
+ const core::DepthScope depth(false, false);
+ const core::BlendScope blend(false);
+ const core::CullScope cull(false);
+ client::render::FrameRenderCamera camera;
+ camera.viewForwardZ = -1.0f;
+ core::setCameraFrame(camera);
+ core::setDrawCameraStateFromCamera(camera);
+ GLCore::bindFramebuffer(GL_FRAMEBUFFER, 0);
+ core::viewport(0, 0, 64, 64);
+ ::glReadBuffer(GL_BACK);
+ FogUniforms fog = worldFog();
+ fog.start = 0.0f;
+ fog.end = 204.8f;
+ core::setFog(fog);
+ core::setActiveProgram(pipeline.worldProgram(WorldProgramId::SkyBasic, &pack));
+ const float skyColor[3] = {51.0f / 255.0f, 102.0f / 255.0f, 204.0f / 255.0f};
+ for(const auto renderStage : {core::RenderStage::Sky, core::RenderStage::Void,
+                               core::RenderStage::Stars, core::RenderStage::Sunset}) {
+  core::setRenderStage(renderStage);
+  ::glClearColor(0.0f, 0.0f, 0.0f, 0.0f);
+  ::glClear(GL_COLOR_BUFFER_BIT);
+  auto& tessellator = client::render::Tessellator::INSTANCE;
+  tessellator.startQuads();
+  tessellator.color(skyColor[0], skyColor[1], skyColor[2], 1.0f);
+  tessellator.vertex(-352.0, 16.0, -352.0);
+  tessellator.vertex(352.0, 16.0, -352.0);
+  tessellator.vertex(352.0, 16.0, 352.0);
+  tessellator.vertex(-352.0, 16.0, 352.0);
+  tessellator.draw();
+  for(const int y : {34, 48}) {
+   SCOPED_TRACE(::testing::Message() << "stage=" << static_cast<int>(renderStage) << " y=" << y);
+   float pixel[4]{};
+   ::glReadPixels(32, y, 1, 1, GL_RGBA, GL_FLOAT, pixel);
+   const float viewDistance = 16.0f / ((static_cast<float>(y) + 0.5f) / 32.0f - 1.0f);
+   const bool fogged = renderStage == core::RenderStage::Sky || renderStage == core::RenderStage::Void;
+   const float factor = fogged ? std::clamp((fog.end - viewDistance) / fog.end, 0.0f, 1.0f) : 1.0f;
+   for(int channel = 0; channel < 3; ++channel) {
+    EXPECT_NEAR(pixel[channel], fog.color[channel] * (1.0f - factor) + skyColor[channel] * factor,
+                2.0f / 255.0f);
+   }
+   EXPECT_NEAR(pixel[3], 1.0f, 1.0f / 255.0f);
+  }
+ }
+ EXPECT_EQ(::glGetError(), GL_NO_ERROR);
+ core::setFog(savedFog);
+ core::setCameraFrame(savedCamera);
 }
 } // namespace net::minecraft::test

@@ -17,12 +17,6 @@
 #include "net/minecraft/world/dimension/Dimension.hpp"
 namespace net::minecraft::client::render::atmosphere {
 namespace {
-[[nodiscard]] Vec3d cloudColorForWorld(net::minecraft::World* world, float tickDelta) {
- if(world == nullptr) {
-  return {1.0, 1.0, 1.0};
- }
- return world->getCloudColor(tickDelta);
-}
 class CloudMask {
  public:
  [[nodiscard]] bool opaque(int x, int z) const noexcept {
@@ -37,10 +31,13 @@ class CloudMask {
  [[nodiscard]] static const CloudMask& forTexture(net::minecraft::client::texture::TextureManager& textures, int textureId) {
   static CloudMask cached;
   static int cachedId = -1;
-  if(cachedId == textureId) {
+  static std::uint64_t cachedGeneration = 0;
+  const std::uint64_t generation = textures.resourceGeneration();
+  if(cachedId == textureId && cachedGeneration == generation) {
    return cached;
   }
   cachedId = textureId;
+  cachedGeneration = generation;
   cached = CloudMask();
   net::minecraft::client::texture::RasterImage decoded =
       textures.loadRasterForResource("/environment/clouds.png");
@@ -52,10 +49,8 @@ class CloudMask {
   }
   cached.size_ = image->width;
   cached.mask_.resize(image->argb.size());
-  std::size_t opaqueCells = 0;
   for(std::size_t i = 0; i < image->argb.size(); ++i) {
    cached.mask_[i] = (image->argb[i] >> 24) >= 128u ? 1 : 0;
-   opaqueCells += cached.mask_[i];
   }
   return cached;
  }
@@ -71,19 +66,15 @@ void renderFancyClouds(const AtmosphereContext& ctx, float tickDelta) {
   return;
  }
  core::disableCull();
- const float cameraY = static_cast<float>(ctx.camera->lastTickY +
-                                          (ctx.camera->y - ctx.camera->lastTickY) * static_cast<double>(tickDelta));
  Tessellator& tessellator = Tessellator::INSTANCE;
  constexpr float cloudScale = 12.0f;
  constexpr float cloudThickness = 4.0f;
- double cloudX = (ctx.camera->prevX + (ctx.camera->x - ctx.camera->prevX) * static_cast<double>(tickDelta) +
+ double cloudX = (ctx.cameraX +
                   static_cast<double>((static_cast<float>(ctx.atmosphereTicks) + tickDelta) * 0.03f)) /
                  static_cast<double>(cloudScale);
- double cloudZ = (ctx.camera->prevZ + (ctx.camera->z - ctx.camera->prevZ) * static_cast<double>(tickDelta)) /
-                     static_cast<double>(cloudScale) +
+ double cloudZ = ctx.cameraZ / static_cast<double>(cloudScale) +
                  0.33;
- const float cloudHeight = client::option::cloudHeightOffset(
-     ctx.world->dimension->getCloudHeight() - cameraY + 0.33f, ctx.settings);
+ const float cloudHeight = ctx.cloudRenderHeight;
  const int originX = MathHelper::floor(cloudX / 2048.0);
  const int originZ = MathHelper::floor(cloudZ / 2048.0);
  cloudX -= static_cast<double>(originX * 2048);
@@ -91,7 +82,7 @@ void renderFancyClouds(const AtmosphereContext& ctx, float tickDelta) {
  const int cloudTexture = ctx.textureManager->getTextureId("/environment/clouds.png");
  ctx.textureManager->bindTexture(cloudTexture);
  const CloudMask& mask = CloudMask::forTexture(*ctx.textureManager, cloudTexture);
- Vec3d cloudColor = cloudColorForWorld(ctx.world, tickDelta);
+ const Vec3d& cloudColor = ctx.cloudColor;
  float red = static_cast<float>(cloudColor.x);
  float green = static_cast<float>(cloudColor.y);
  float blue = static_cast<float>(cloudColor.z);
@@ -124,9 +115,6 @@ void renderFancyClouds(const AtmosphereContext& ctx, float tickDelta) {
   posedModelView.multiply(cloudPose);
   cellFrustum.compute(core::drawProjection(), posedModelView, 0.0, 0.0, 0.0);
  }
- for(int pass = 0; pass < 2; ++pass) {
-  const bool colorWrite = pass != 0;
-  core::colorMask(colorWrite, colorWrite, colorWrite, colorWrite);
   tessellator.startQuads();
   for(int cellX = cellMin; cellX < cellMax; ++cellX) {
    for(int cellZ = cellMin; cellZ < cellMax; ++cellZ) {
@@ -201,10 +189,7 @@ void renderFancyClouds(const AtmosphereContext& ctx, float tickDelta) {
     }
    }
   }
-  tessellator.draw();
- }
- core::disableBlend();
- core::enableCull();
+  tessellator.draw(true);
 }
 } // namespace
 void renderClouds(const AtmosphereContext& ctx, float tickDelta) {
@@ -221,26 +206,23 @@ void renderClouds(const AtmosphereContext& ctx, float tickDelta) {
   renderFancyClouds(ctx, tickDelta);
  } else {
   core::disableCull();
-  const float cameraY = static_cast<float>(ctx.camera->lastTickY + (ctx.camera->y - ctx.camera->lastTickY) *
-                                                                       static_cast<double>(tickDelta));
   constexpr int tile = 8;
   constexpr int radius = 256 / tile;
   Tessellator& tessellator = Tessellator::INSTANCE;
   const int cloudTexture = ctx.textureManager->getTextureId("/environment/clouds.png");
   ctx.textureManager->bindTexture(cloudTexture);
   const CloudMask& mask = CloudMask::forTexture(*ctx.textureManager, cloudTexture);
-  Vec3d cloudColor = cloudColorForWorld(ctx.world, tickDelta);
+  const Vec3d& cloudColor = ctx.cloudColor;
   float red = static_cast<float>(cloudColor.x);
   float green = static_cast<float>(cloudColor.y);
   float blue = static_cast<float>(cloudColor.z);
   constexpr float scrollScale = 4.8828125E-4f;
-  double cloudX = ctx.camera->prevX + (ctx.camera->x - ctx.camera->prevX) * static_cast<double>(tickDelta) +
+  double cloudX = ctx.cameraX +
                   static_cast<double>((static_cast<float>(ctx.atmosphereTicks) + tickDelta) * 0.03f);
-  double cloudZ = ctx.camera->prevZ + (ctx.camera->z - ctx.camera->prevZ) * static_cast<double>(tickDelta);
+  double cloudZ = ctx.cameraZ;
   const int originX = MathHelper::floor(cloudX / 2048.0);
   const int originZ = MathHelper::floor(cloudZ / 2048.0);
-  const float cloudHeight = client::option::cloudHeightOffset(
-      ctx.world->dimension->getCloudHeight() - cameraY + 0.33f, ctx.settings);
+  const float cloudHeight = ctx.cloudRenderHeight;
   cloudX -= static_cast<double>(originX * 2048);
   cloudZ -= static_cast<double>(originZ * 2048);
   const int texelOriginX = MathHelper::floor(cloudX / static_cast<double>(tile));

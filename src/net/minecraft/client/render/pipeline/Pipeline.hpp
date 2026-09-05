@@ -103,6 +103,10 @@ private:
                   const int* shadowColorTextureIds, int shadowColorTextureCount,
                   shadowmap::ShadowTargets* shadowTargets,
                   const int* shadowColorAltTextureIds);
+ bool renderShadow(int shadowDepthTextureId, int shadowOpaqueDepthTextureId,
+                   const int* shadowColorTextureIds, int shadowColorTextureCount,
+                   shadowmap::ShadowTargets* shadowTargets,
+                   const int* shadowColorAltTextureIds);
  bool renderShadowComposite(int shadowDepthTextureId, int shadowOpaqueDepthTextureId,
                             const int* shadowColorTextureIds, int shadowColorTextureCount,
                             shadowmap::ShadowTargets* shadowTargets,
@@ -147,6 +151,9 @@ private:
  bool renderBegin(PackInstance* activePack, int shadowDepthTextureId, int shadowOpaqueDepthTextureId,
                   const int* shadowColorTextureIds, int shadowColorTextureCount,
                   shadowmap::ShadowTargets* shadowTargets, const int* shadowColorAltTextureIds);
+ bool renderShadow(PackInstance* activePack, int shadowDepthTextureId, int shadowOpaqueDepthTextureId,
+                   const int* shadowColorTextureIds, int shadowColorTextureCount,
+                   shadowmap::ShadowTargets* shadowTargets, const int* shadowColorAltTextureIds);
  bool renderShadowComposite(PackInstance* activePack, int shadowDepthTextureId,
                             int shadowOpaqueDepthTextureId, const int* shadowColorTextureIds,
                             int shadowColorTextureCount, shadowmap::ShadowTargets* shadowTargets,

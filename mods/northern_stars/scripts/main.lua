@@ -191,7 +191,6 @@ minecraft.on("world_render", {
     blend = "additive",
     depth_test = false,
     depth_write = false,
-    layer = event.shader_pack_active and "basic" or nil,
     packed = compiled_billboards,
   })
 end)

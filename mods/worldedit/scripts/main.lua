@@ -1,4 +1,5 @@
 local commands = require("lib.commands")
+commands.help_title = "WorldEdit commands:"
 
 local WAND_ID = 30000
 local MAX_BLOCKS = 65536
@@ -875,6 +876,15 @@ end)
 
 minecraft.on("block_interact", { item_id = WAND_ID, right_click = true, remote = false, priority = 100 }, function(event)
   set_position(2, event.x, event.y, event.z, true)
+  event.canceled = true
+  event.handled = true
+  return event
+end)
+
+minecraft.on("block_attack", { item_id = WAND_ID, remote = false, priority = 100 }, function(event)
+  if event.initial then
+    set_position(1, event.x, event.y, event.z, true)
+  end
   event.canceled = true
   event.handled = true
   return event

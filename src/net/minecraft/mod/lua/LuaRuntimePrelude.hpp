@@ -15,128 +15,86 @@ package.cpath = ""
 package.loadlib = nil
 package.searchers[3], package.searchers[4] = nil, nil
 
-local function matches(event, options)
-  for key, expected in pairs(options) do
-    if key ~= "once" and key ~= "priority" and key ~= "when" then
-      local actual = event[key]
-      if type(expected) == "function" then
-        if not expected(actual) then return false end
-      elseif type(expected) == "table" then
-        local found = expected[actual] == true
-        if not found then
-          for _, value in ipairs(expected) do
-            if value == actual then found = true break end
-          end
-        end
-        if not found then return false end
-      elseif actual ~= expected then
-        return false
-      end
-    end
-  end
-  return options.when == nil or options.when(event) == true
-end
-
 function minecraft.on(event_name, options, callback)
   assert(type(options) == "table", "minecraft.on expects (event, options, callback)")
   assert(type(callback) == "function", "minecraft.on expects (event, options, callback)")
+  -- The filter is flattened once here, not walked with pairs() on every dispatch:
+  -- entity_render and world_render fire per entity per frame.
+  local keys, wanted, count = {}, {}, 0
+  for key, value in pairs(options) do
+    if key ~= "once" and key ~= "priority" and key ~= "when" then
+      count = count + 1
+      keys[count], wanted[count] = key, value
+    end
+  end
+  local when, once = options.when, options.once
   local active = true
   return subscribe(event_name, options, function(event)
-    if active and matches(event, options) then
-      local result = callback(event)
-      if options.once then active = false end
-      return result or event
+    if not active then return event end
+    for index = 1, count do
+      local want = wanted[index]
+      local actual = event[keys[index]]
+      if actual ~= want then
+        local kind = type(want)
+        if kind == "function" then
+          if not want(actual) then return event end
+        elseif kind == "table" then
+          if want[actual] ~= true then
+            local found = false
+            for _, value in ipairs(want) do
+              if value == actual then found = true break end
+            end
+            if not found then return event end
+          end
+        else
+          return event
+        end
+      end
     end
-    return event
+    if when ~= nil and when(event) ~= true then return event end
+    local result = callback(event)
+    if once then active = false end
+    return result or event
   end, tonumber(options.priority) or 0)
 end
 
-function minecraft.register_block(spec)
-  local ok, err = register_block(spec)
+local function checked(register, spec)
+  local ok, err = register(spec)
   assert(ok, err)
+  return true
+end
+
+function minecraft.register_block(spec)
+  checked(register_block, spec)
   if spec.on_use then
     minecraft.on("block_interact", {
       block_id = spec.id, right_click = true, priority = spec.behavior_priority or 0
-    }, function(event)
-      local result = spec.on_use(event)
-      return result
-    end)
+    }, spec.on_use)
   end
   return true
 end
 
 function minecraft.register_item(spec)
   assert(register_item, "item registration unavailable")
-  local ok, err = register_item(spec)
-  assert(ok, err)
-  return true
+  return checked(register_item, spec)
 end
 
 function minecraft.register_shaped_recipe(spec)
-  local ok, err = register_recipe(spec)
-  assert(ok, err)
-  return true
+  return checked(register_recipe, spec)
 end
 
 local util = minecraft.util
 function util.clamp(value, minimum, maximum) return math.max(minimum, math.min(maximum, value)) end
-function util.trim(value) return tostring(value or ""):match("^%s*(.-)%s*$") or "" end
 function util.in_rect(x, y, left, top, width, height)
   return x >= left and x < left + width and y >= top and y < top + height
 end
 function util.real_world(event) return event ~= nil and event.mod_generation ~= false end
 function util.parse_boolean(value)
-  value = util.trim(value):lower()
+  value = tostring(value or ""):match("^%s*(.-)%s*$"):lower()
   if value == "true" or value == "1" or value == "yes" or value == "on" then return true end
   if value == "false" or value == "0" or value == "no" or value == "off" then return false end
   return nil
 end
-function util.copy(values)
-  local result = {}
-  for key, value in pairs(values or {}) do result[key] = value end
-  return result
-end
-
-minecraft.config = {
-  load = function(path, defaults)
-    local values = util.copy(defaults)
-    local text = read_storage(path)
-    if text == nil or text == "" then return values, false end
-    for line in text:gmatch("[^\r\n]+") do
-      local raw_key, raw_value = line:match("^%s*([^#;][^=]-)%s*=%s*(.-)%s*$")
-      if raw_key ~= nil then
-        local key = util.trim(raw_key)
-        if defaults[key] ~= nil then
-          local expected_type = type(defaults[key])
-          if expected_type == "boolean" then
-            local parsed = util.parse_boolean(raw_value)
-            assert(parsed ~= nil, "invalid boolean config value for " .. key)
-            values[key] = parsed
-          elseif expected_type == "number" then
-            local parsed = tonumber(raw_value)
-            assert(parsed ~= nil, "invalid numeric config value for " .. key)
-            values[key] = parsed
-          else
-            values[key] = raw_value
-          end
-        end
-      end
-    end
-    return values, true
-  end,
-  save = function(path, values, keys)
-    keys = keys or {}
-    if #keys == 0 then
-      for key in pairs(values) do keys[#keys + 1] = key end
-      table.sort(keys)
-    end
-    local lines = {}
-    for _, key in ipairs(keys) do
-      lines[#lines + 1] = key .. "=" .. tostring(values[key])
-    end
-    return write_storage(path, table.concat(lines, "\n") .. "\n")
-  end,
-}
 
 minecraft.storage = { read = read_storage, write = write_storage }
 local root_dir = minecraft.asset_path("."):gsub("\\", "/")

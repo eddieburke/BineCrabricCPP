@@ -311,7 +311,7 @@ const SkyUniforms& skyUniforms();
 bool ensureReady();
 ShaderProgram* program();
 void bindAndUploadUniforms(const RenderPass& pass);
-void submit(const RenderPass& pass);
+void submit(const RenderPass& pass, bool depthPrepass = false);
 void submitIndexedQuads(const RenderPass& pass, unsigned indexBuffer, int indexCount);
 bool configureIndexedVao(unsigned vao,
                          unsigned vertexBuffer,

@@ -241,7 +241,6 @@ int luaWorldPlayer(lua_State* state) {
  pushEntityHandle(state, player);
  if(player != nullptr) {
   setField(state, "name", player->name);
-  setField(state, "health", player->health);
  }
  return 1;
 }

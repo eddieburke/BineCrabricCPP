@@ -37,12 +37,15 @@ class PortalParticle : public Particle {
   scale = initialScale * age;
   Particle::render(tessellator, partialTicks, horizontalSize, verticalSize, depthSize, widthOffset, heightOffset);
  }
- [[nodiscard]] float getBrightnessAtEyes(float tickDelta) const override {
-  const float base = Particle::getBrightnessAtEyes(tickDelta);
+ void applyLight(render::Tessellator& tessellator) const override {
+  int blockLight = 15;
+  int skyLight = 15;
+  sampleLightLevels(blockLight, skyLight);
   float age = maxParticleAge > 0 ? static_cast<float>(particleAge) / static_cast<float>(maxParticleAge) : 1.0f;
   age *= age;
   age *= age;
-  return base * (1.0f - age) + age;
+  tessellator.light(static_cast<float>(blockLight) * (1.0f - age) + 15.0f * age,
+                    static_cast<float>(skyLight) * (1.0f - age) + 15.0f * age);
  }
  void tick() override {
   prevX = x;

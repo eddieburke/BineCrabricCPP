@@ -493,7 +493,7 @@ void Tessellator::vertex(double x, double y, double z) {
   }
  }
 }
-void Tessellator::draw() {
+void Tessellator::draw(bool depthPrepass) {
  if(!drawing_)
   return;
  drawing_ = false;
@@ -520,7 +520,7 @@ void Tessellator::draw() {
   pass.glMode = builder_.drawMode();
   pass.hasTexture = hasTexture_;
   pass.hasNormals = hasNormals_;
-  render::core::submit(pass);
+  render::core::submit(pass, depthPrepass);
  }
  reset();
 }

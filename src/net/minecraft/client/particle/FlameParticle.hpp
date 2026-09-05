@@ -17,8 +17,8 @@ class FlameParticle : public Particle {
   noClip = true;
   textureId = 48;
  }
- float getBrightnessAtEyes(float) const override {
-  return 1.0f;
+ void applyLight(render::Tessellator& tessellator) const override {
+  tessellator.light(15.0f, 15.0f);
  }
  void render(render::Tessellator& tessellator,
              float partialTicks,

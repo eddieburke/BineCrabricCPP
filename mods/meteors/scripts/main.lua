@@ -1,95 +1,102 @@
--- Meteors: Stunning procedural meteor and comet renderer
--- Refactored with separation of concerns: config, physics, geology, rendering
-
 local config = require("config")
+local mathx = require("lib.mathx")
 local physics = require("scripts.physics.trajectory")
 local geology = require("scripts.geology.generator")
 local rendering = require("scripts.rendering.effects")
 
--- Module state
-local meteors = { list = {}, nextId = 1 }
-local explosions = {}
-local cometTimer = 0
-local nextCometTick = 3600
-local lastCamera = { x = 0, y = 70, z = 0, yaw = 0, pitch = 0, valid = false }
+local clamp = mathx.clamp
+local floor, min, random = math.floor, math.min, math.random
 
--- Register settings and keybinds
+local SHOWER_MIN_TICKS = 700
+local SHOWER_RANGE_TICKS = 1600
+local FLASH_TICKS = 14
+local DRAW_RANGE = 340
+local COMET_CHANCE = 0.12
+
+local meteors = {}
+local flashes = {}
+local camera = { x = 0, y = 70, z = 0, yaw = 0, pitch = 0, valid = false }
+local effectVertices = {}
+local effectFloats = 0
+local nextId = 1
+local showerTimer = SHOWER_MIN_TICKS
+
 config.register()
 
--- Keybind handlers
-local function spawnMeteor()
-  if not lastCamera.valid then return end
-  local meteor = physics.spawn("meteor", lastCamera.x, lastCamera.y, lastCamera.z, lastCamera.yaw, lastCamera.pitch)
-  meteor.id = meteors.nextId
-  meteors.nextId = meteors.nextId + 1
-  meteors.list[#meteors.list + 1] = meteor
+local function spawn(kind)
+  if not camera.valid then return end
+  if #meteors >= (config.get("max_meteors") or 50) then return end
+  local meteor = physics.spawn(kind, nextId, camera.x, camera.y, camera.z, camera.yaw, camera.pitch)
+  nextId = nextId + 1
+  meteors[#meteors + 1] = meteor
 end
 
-local function spawnComet()
-  if not lastCamera.valid then return end
-  local meteor = physics.spawn("comet", lastCamera.x, lastCamera.y, lastCamera.z, lastCamera.yaw, lastCamera.pitch)
-  meteor.id = meteors.nextId
-  meteors.nextId = meteors.nextId + 1
-  meteors.list[#meteors.list + 1] = meteor
+local function impactBurst(meteor)
+  local count = min(26, 8 + floor(meteor.size * 12))
+  local heat = clamp(meteor.heat, 0, 1)
+  local r, g, b = geology.ember(0.35 + heat * 0.65)
+  for i = 1, count do
+    local ux, uy, uz = mathx.randomUnit(meteor.id * 31 + i, i)
+    minecraft.particles.spawn({
+      x = meteor.x, y = meteor.y + 0.3, z = meteor.z,
+      vx = ux * 0.26, vy = math.abs(uy) * 0.40 + 0.05, vz = uz * 0.26,
+      scale = 2.2 + meteor.size,
+      r = r, g = g, b = b,
+      max_age = 18 + i % 16,
+      gravity = 0.06,
+    })
+  end
 end
 
--- Tick handler
 minecraft.on("client_tick", { after_world = true }, function(event)
-  if event.paused then return event end
-  local dt = 0.05
-  cometTimer = cometTimer + dt
-  if cometTimer > nextCometTick then
-    spawnComet()
-    cometTimer = 0
-    nextCometTick = 3600 + math.random() * 3600
-  end
-  
-  local max_meteors = config.get("max_meteors") or 50
-  local i = #meteors.list
-  while i >= 1 do
-    local meteor = meteors.list[i]
-    if meteor.alive then
-      local status = physics.update(meteor, dt, lastCamera.y)
-      
-      if status == "impact" then
-        geology.createImpactSite(meteor.x, 0, meteor.z, meteor.size, meteor.kind)
-        explosions[#explosions + 1] = {
-          x = meteor.x, y = 0, z = meteor.z,
-          size = meteor.size,
-          age = 0,
-        }
-        
-        for _, fragment in ipairs(meteor.fragments) do
-          fragment.id = meteors.nextId
-          meteors.nextId = meteors.nextId + 1
-          meteors.list[#meteors.list + 1] = fragment
-        end
+  if event.paused or not event.has_world then return event end
+
+  if minecraft.keybinds.consume("spawn_meteor") then spawn("meteor") end
+  if minecraft.keybinds.consume("spawn_comet") then spawn("comet") end
+
+  local cap = config.get("max_meteors") or 50
+  for i = #meteors, 1, -1 do
+    local meteor = meteors[i]
+    local status
+    status, nextId = physics.update(meteor, nextId)
+
+    if status == "impact" then
+      flashes[#flashes + 1] = {
+        x = meteor.x, y = meteor.y, z = meteor.z,
+        size = meteor.size, age = 0,
+      }
+      impactBurst(meteor)
+    end
+
+    local fragments = meteor.fragments
+    for k = #fragments, 1, -1 do
+      if #meteors < cap then
+        meteors[#meteors + 1] = fragments[k]
       end
-    else
-      table.remove(meteors.list, i)
+      fragments[k] = nil
     end
-    i = i - 1
-  end
-  
-  while #meteors.list > max_meteors do
-    table.remove(meteors.list, 1)
-  end
-  
-  i = #explosions
-  while i >= 1 do
-    explosions[i].age = explosions[i].age + dt
-    if explosions[i].age > 0.5 then
-      table.remove(explosions, i)
+
+    if not meteor.alive then
+      table.remove(meteors, i)
     end
-    i = i - 1
   end
-  
-  if minecraft.keybinds.consume("spawn_meteor") then
-    spawnMeteor()
+
+  for i = #flashes, 1, -1 do
+    local flash = flashes[i]
+    flash.age = flash.age + 1
+    if flash.age > FLASH_TICKS then
+      table.remove(flashes, i)
+    end
   end
-  if minecraft.keybinds.consume("spawn_comet") then
-    spawnComet()
+
+  showerTimer = showerTimer - 1
+  if showerTimer <= 0 then
+    showerTimer = SHOWER_MIN_TICKS + random(0, SHOWER_RANGE_TICKS)
+    if camera.valid and minecraft.world.is_night() then
+      spawn(random() < COMET_CHANCE and "comet" or "meteor")
+    end
   end
+
   return event
 end)
 
@@ -98,61 +105,57 @@ minecraft.on("world_render", {
   moment = "after",
   priority = 120,
 }, function(event)
-  if event.shadow_pass or not event.has_world then return event end
-  local camera = {
-    x = event.camera_x,
-    y = event.camera_y,
-    z = event.camera_z,
-    yaw = event.camera_yaw,
-    pitch = event.camera_pitch,
-  }
-  lastCamera.x, lastCamera.y, lastCamera.z = camera.x, camera.y, camera.z
-  lastCamera.yaw, lastCamera.pitch = camera.yaw, camera.pitch
-  lastCamera.valid = true
-  local vertices = {}
-  
-  -- Render all meteors
-  for _, meteor in ipairs(meteors.list) do
-    if meteor.alive then
-      local meteorVerts = rendering.renderMeteor(meteor, camera, geology)
-      for _, v in ipairs(meteorVerts) do
-        vertices[#vertices + 1] = v
-      end
-      
-      if meteor.kind == "comet" then
-        local cometVerts = rendering.renderCometEffects(meteor, camera, 0.016)
-        for _, v in ipairs(cometVerts) do
-          vertices[#vertices + 1] = v
-        end
-      end
+  if not event.has_world then return event end
+
+  camera.x, camera.y, camera.z = event.camera_x, event.camera_y, event.camera_z
+  camera.yaw, camera.pitch = event.camera_yaw, event.camera_pitch
+  camera.valid = true
+
+  if #meteors == 0 and #flashes == 0 then return event end
+
+  local tickDelta = clamp(event.tick_delta or 1, 0, 1)
+  local quality = floor(clamp(config.get("visual_quality") or 3, 1, 3))
+  local density = floor(clamp(config.get("effect_density") or 2, 1, 3))
+  local sunX, sunY, sunZ = event.sun_x or 0.42, event.sun_y or 0.82, event.sun_z or -0.38
+  local heatSteps = geology.heat_steps
+
+  effectFloats = 0
+
+  for i = 1, #meteors do
+    local meteor = meteors[i]
+    local hx = meteor.px + (meteor.x - meteor.px) * tickDelta
+    local hy = meteor.py + (meteor.y - meteor.py) * tickDelta
+    local hz = meteor.pz + (meteor.z - meteor.pz) * tickDelta
+    local dx, dy, dz = hx - camera.x, hy - camera.y, hz - camera.z
+
+    if dx * dx + dy * dy + dz * dz < DRAW_RANGE * DRAW_RANGE then
+      local heat = clamp(meteor.prevHeat + (meteor.heat - meteor.prevHeat) * tickDelta, 0, 1)
+      local step = floor(heat * (heatSteps - 1) + 0.5)
+      minecraft.render.quads({
+        world_space = true,
+        x = hx, y = hy, z = hz,
+        yaw = meteor.prevSpinY + (meteor.spinY - meteor.prevSpinY) * tickDelta,
+        pitch = meteor.prevSpinX + (meteor.spinX - meteor.prevSpinX) * tickDelta,
+        roll = meteor.prevSpinZ + (meteor.spinZ - meteor.prevSpinZ) * tickDelta,
+        scale = meteor.size,
+        blend = false,
+        cull = true,
+        depth_test = true,
+        depth_write = true,
+        packed = geology.body(meteor.kind, meteor.variant, quality, step),
+      })
+      effectFloats = rendering.meteor(effectVertices, effectFloats, meteor, camera, tickDelta,
+        sunX, sunY, sunZ, quality, density)
     end
   end
-  
-  -- Render explosions
-  for _, explosion in ipairs(explosions) do
-    local expVerts = rendering.renderExplosion(explosion.x, explosion.y, explosion.z,
-      explosion.size, explosion.age, camera)
-    for _, v in ipairs(expVerts) do
-      vertices[#vertices + 1] = v
-    end
+
+  for i = 1, #flashes do
+    effectFloats = rendering.flash(effectVertices, effectFloats, flashes[i], camera, tickDelta, quality)
   end
-  
-  -- Submit quads for rendering if any
-  if #vertices >= 4 then
-    local count = math.floor(#vertices / 4) * 4
-    local packed = {}
-    for i = 1, count do
-      local vertex = vertices[i]
-      local base = (i - 1) * 9
-      packed[base + 1] = vertex.x
-      packed[base + 2] = vertex.y
-      packed[base + 3] = vertex.z
-      packed[base + 4] = 0
-      packed[base + 5] = 0
-      packed[base + 6] = vertex.r
-      packed[base + 7] = vertex.g
-      packed[base + 8] = vertex.b
-      packed[base + 9] = vertex.a
+
+  if effectFloats >= 36 then
+    for k = #effectVertices, effectFloats + 1, -1 do
+      effectVertices[k] = nil
     end
     minecraft.render.quads({
       world_space = true,
@@ -160,10 +163,15 @@ minecraft.on("world_render", {
       cull = false,
       depth_test = true,
       depth_write = false,
-      packed = packed,
+      packed = effectVertices,
     })
+  elseif #effectVertices > 0 then
+    for k = #effectVertices, 1, -1 do
+      effectVertices[k] = nil
+    end
   end
+
   return event
 end)
 
-minecraft.log("info", "Meteors mod loaded (refactored)")
+minecraft.log("info", "Meteors mod loaded")

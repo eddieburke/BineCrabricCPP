@@ -345,6 +345,22 @@ void bindAndUploadUniforms(const RenderPass& pass) {
   g_matricesUploaded = false;
   return;
  }
+ Pipeline* pipeline = shaderPipeline();
+ const bool snapshotChanged = pipeline != nullptr && pass.programOverride == nullptr &&
+                              g_activeWorldProgram.has_value() &&
+                              active->needsUniformSnapshot(g_programUniformGeneration);
+ activeTexture(gl::tex::Texture0);
+ const int diffuseTexture = boundTexture();
+ const std::optional<WorldProgramId> worldProgram =
+     pass.programOverride == nullptr ? g_activeWorldProgram : std::nullopt;
+ const bool materialChanged = active != g_programUniformMaterialProgram ||
+                              worldProgram != g_programUniformMaterialWorldProgram ||
+                              diffuseTexture != g_programUniformDiffuseTexture;
+ if((snapshotChanged || programChanged) && pipeline != nullptr && worldProgram.has_value()) {
+  pipeline->bindWorldProgramState(*active, *worldProgram, snapshotChanged);
+  if(snapshotChanged) active->markUniformSnapshotPushed(g_programUniformGeneration);
+ }
+ const bool drawStateInvalidated = programChanged || snapshotChanged;
  const math::Matrix4f& modelView = pass.modelView;
  const math::Matrix4f& projection = pass.projection;
  const bool matricesChanged = !g_matricesUploaded || programChanged ||
@@ -365,7 +381,7 @@ void bindAndUploadUniforms(const RenderPass& pass) {
   g_uploadedProjection = projection;
   g_matricesUploaded = true;
  }
- const bool lightChanged = !g_passUniformsUploaded || programChanged ||
+ const bool lightChanged = !g_passUniformsUploaded || drawStateInvalidated ||
                            g_uploadedWorldLight.enabled != g_worldLight.enabled ||
                            g_uploadedWorldLight.sunIntensity != g_worldLight.sunIntensity ||
                            g_uploadedWorldLight.fillIntensity != g_worldLight.fillIntensity ||
@@ -373,7 +389,7 @@ void bindAndUploadUniforms(const RenderPass& pass) {
                            std::memcmp(g_uploadedWorldLight.sunColor, g_worldLight.sunColor, sizeof(float) * 3) != 0 ||
                            std::memcmp(g_uploadedWorldLight.ambient, g_worldLight.ambient, sizeof(float) * 3) != 0 ||
                            std::memcmp(g_uploadedWorldLight.fillDirView, g_worldLight.fillDirView, sizeof(float) * 3) != 0;
- const bool entityColorChanged = !g_passUniformsUploaded || programChanged ||
+ const bool entityColorChanged = !g_passUniformsUploaded || drawStateInvalidated ||
                                  std::memcmp(g_uploadedEntityColor, g_entityColor, sizeof(g_entityColor)) != 0;
  if(entityColorChanged) {
   active->set4f("entityColor", g_entityColor[0], g_entityColor[1], g_entityColor[2], g_entityColor[3]);
@@ -389,11 +405,11 @@ void bindAndUploadUniforms(const RenderPass& pass) {
   active->set1i("lightingEnabled", g_worldLight.enabled ? 1 : 0);
   g_uploadedWorldLight = g_worldLight;
  }
- if(!g_passUniformsUploaded || programChanged || g_uploadedAlphaTestRef != g_alphaTestRef) {
+ if(!g_passUniformsUploaded || drawStateInvalidated || g_uploadedAlphaTestRef != g_alphaTestRef) {
   active->set1f("alphaTestRef", g_alphaTestRef);
   g_uploadedAlphaTestRef = g_alphaTestRef;
  }
- const bool chunkOffsetChanged = !g_chunkOffsetUploaded || programChanged ||
+ const bool chunkOffsetChanged = !g_chunkOffsetUploaded || drawStateInvalidated ||
                                  g_uploadedChunkOffset[0] != pass.chunkOffset[0] || g_uploadedChunkOffset[1] != pass.chunkOffset[1] ||
                                  g_uploadedChunkOffset[2] != pass.chunkOffset[2];
  if(chunkOffsetChanged) {
@@ -404,17 +420,18 @@ void bindAndUploadUniforms(const RenderPass& pass) {
   g_chunkOffsetUploaded = true;
  }
  const int blendFunc[4] = {glBits.blendSrc, glBits.blendDst, glBits.blendSrcAlpha, glBits.blendDstAlpha};
- if(programChanged || g_uploadedTextureFilteringMode != g_textureFilteringMode) {
+ if(drawStateInvalidated || g_uploadedTextureFilteringMode != g_textureFilteringMode) {
   active->set1i("textureFilteringMode", g_textureFilteringMode);
   g_uploadedTextureFilteringMode = g_textureFilteringMode;
  }
- if(!g_passUniformsUploaded || programChanged ||
-    g_uploadedBlendFunc[0] != blendFunc[0] || g_uploadedBlendFunc[1] != blendFunc[1]) {
+ if(!g_passUniformsUploaded || drawStateInvalidated ||
+    g_uploadedBlendFunc[0] != blendFunc[0] || g_uploadedBlendFunc[1] != blendFunc[1] ||
+    g_uploadedBlendFunc[2] != blendFunc[2] || g_uploadedBlendFunc[3] != blendFunc[3]) {
   active->set4iAt(active->location("blendFunc"), blendFunc);
   std::memcpy(g_uploadedBlendFunc, blendFunc, sizeof(blendFunc));
  }
  g_passUniformsUploaded = true;
- if(programChanged || g_globalsPushed != g_globalsGeneration) {
+ if(drawStateInvalidated || g_globalsPushed != g_globalsGeneration) {
   active->set3f(
       "sunDirectionWorld", g_skyUniforms.sunDirection[0], g_skyUniforms.sunDirection[1], g_skyUniforms.sunDirection[2]);
   // Pack sunAngle comes only from FrameUniforms (ShaderDoc). Do not upload vanilla celestial here.
@@ -425,22 +442,6 @@ void bindAndUploadUniforms(const RenderPass& pass) {
   active->set1i("renderStars", g_skyUniforms.renderStars ? 1 : 0);
   g_globalsPushed = g_globalsGeneration;
  }
- const bool snapshotChanged = active->needsUniformSnapshot(g_programUniformGeneration);
- activeTexture(gl::tex::Texture0);
- const int diffuseTexture = boundTexture();
- const std::optional<WorldProgramId> worldProgram =
-     pass.programOverride == nullptr ? g_activeWorldProgram : std::nullopt;
- const bool materialChanged = active != g_programUniformMaterialProgram ||
-                              worldProgram != g_programUniformMaterialWorldProgram ||
-                              diffuseTexture != g_programUniformDiffuseTexture;
- Pipeline* pipeline = shaderPipeline();
- if((snapshotChanged || programChanged) && pipeline != nullptr && worldProgram.has_value()) {
-  // Rebinding still has to re-point the samplers -- texture units are global -- but
-  // re-uploading a snapshot the program already holds was the bulk of this call, and
-  // mod item draws that ping-pong between programs paid it on every single draw.
-  pipeline->bindWorldProgramState(*active, *worldProgram, snapshotChanged);
-  if(snapshotChanged) active->markUniformSnapshotPushed(g_programUniformGeneration);
- }
  if(materialChanged && pipeline != nullptr && worldProgram.has_value()) {
   pipeline->bindWorldProgramMaterial(*active, *worldProgram);
   g_programUniformMaterialProgram = active;
@@ -449,7 +450,7 @@ void bindAndUploadUniforms(const RenderPass& pass) {
  }
  // see third_party/mcp/iris/pipeline/programs/ShaderKey.java
  const bool fogOn = g_fog.enabled && active->fogClass();
- if(!g_fogUploaded || programChanged || fogOn != g_uploadedFogOn ||
+ if(!g_fogUploaded || drawStateInvalidated || fogOn != g_uploadedFogOn ||
     g_uploadedFog.mode != g_fog.mode || g_uploadedFog.shape != g_fog.shape ||
     g_uploadedFog.density != g_fog.density || g_uploadedFog.start != g_fog.start ||
     g_uploadedFog.end != g_fog.end ||
@@ -459,19 +460,19 @@ void bindAndUploadUniforms(const RenderPass& pass) {
   g_uploadedFogOn = fogOn;
   g_fogUploaded = true;
  }
- if(programChanged || g_uploadedEntityId != g_entityId) {
+ if(drawStateInvalidated || g_uploadedEntityId != g_entityId) {
   active->set1i("entityId", g_entityId);
   g_uploadedEntityId = g_entityId;
  }
- if(programChanged || g_uploadedBlockEntityId != g_blockEntityId) {
+ if(drawStateInvalidated || g_uploadedBlockEntityId != g_blockEntityId) {
   active->set1i("blockEntityId", g_blockEntityId);
   g_uploadedBlockEntityId = g_blockEntityId;
  }
- if(programChanged || g_uploadedRenderedItemId != g_renderedItemId) {
+ if(drawStateInvalidated || g_uploadedRenderedItemId != g_renderedItemId) {
   active->set1i("currentRenderedItemId", g_renderedItemId);
   g_uploadedRenderedItemId = g_renderedItemId;
  }
- if(programChanged || g_uploadedRenderStage != static_cast<int>(g_renderStage)) {
+ if(drawStateInvalidated || g_uploadedRenderStage != static_cast<int>(g_renderStage)) {
   active->set1i("renderStage", static_cast<int>(g_renderStage));
   g_uploadedRenderStage = static_cast<int>(g_renderStage);
  }
@@ -479,7 +480,7 @@ void bindAndUploadUniforms(const RenderPass& pass) {
  bindTexture(diffuseTexture);
  g_lastProgram = active;
 }
-void submit(const RenderPass& pass) {
+void submit(const RenderPass& pass, bool depthPrepass) {
  if(!g_drawEnabled || !ensureReady() || pass.vertexCount == 0) {
   return;
  }
@@ -491,20 +492,19 @@ void submit(const RenderPass& pass) {
  if(active == nullptr) {
   return;
  }
- if(pass.buffer != 0) {
-  configureAttribs(pass.buffer, pass.byteOffset, pass.stride, pass.hasTexture, pass.hasNormals,
-                   pass.overrideColor, pass.colorOverride);
-  const int mode = active != nullptr && active->tessellation() ? 0x000E : pass.glMode;
-  if(mode == 0x000E && gl::GLCore::patchParameteri != nullptr) gl::GLCore::patchParameteri(0x8E72, 3);
-  ::glDrawArrays(static_cast<GLenum>(mode), 0, static_cast<GLsizei>(pass.vertexCount));
- } else {
+ if(pass.buffer == 0) {
   uploadStreaming(pass.vertexData, pass.vertexCount * static_cast<std::size_t>(pass.stride));
-  configureAttribs(g_streamVbo.handle(), 0, pass.stride, pass.hasTexture, pass.hasNormals,
-                   pass.overrideColor, pass.colorOverride);
-  const int mode = active != nullptr && active->tessellation() ? 0x000E : pass.glMode;
-  if(mode == 0x000E && gl::GLCore::patchParameteri != nullptr) gl::GLCore::patchParameteri(0x8E72, 3);
+ }
+ configureAttribs(pass.buffer != 0 ? pass.buffer : g_streamVbo.handle(),
+                  pass.buffer != 0 ? pass.byteOffset : 0, pass.stride, pass.hasTexture, pass.hasNormals,
+                  pass.overrideColor, pass.colorOverride);
+ const int mode = active->tessellation() ? 0x000E : pass.glMode;
+ if(mode == 0x000E && gl::GLCore::patchParameteri != nullptr) gl::GLCore::patchParameteri(0x8E72, 3);
+ if(depthPrepass) {
+  const ColorMaskScope mask(false, false, false, false);
   ::glDrawArrays(static_cast<GLenum>(mode), 0, static_cast<GLsizei>(pass.vertexCount));
  }
+ ::glDrawArrays(static_cast<GLenum>(mode), 0, static_cast<GLsizei>(pass.vertexCount));
 }
 void submitIndexedQuads(const RenderPass& pass, unsigned indexBuffer, int indexCount) {
  if(!g_drawEnabled || !ensureReady() || pass.vertexCount == 0 || indexCount == 0 || pass.buffer == 0) {

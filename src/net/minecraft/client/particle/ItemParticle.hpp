@@ -30,8 +30,7 @@ class ItemParticle : public Particle {
   const float px = static_cast<float>(prevX + (x - prevX) * partialTicks - xOffset);
   const float py = static_cast<float>(prevY + (y - prevY) * partialTicks - yOffset);
   const float pz = static_cast<float>(prevZ + (z - prevZ) * partialTicks - zOffset);
-  const float brightness = getBrightnessAtEyes(partialTicks);
-  tessellator.color(brightness * red, brightness * green, brightness * blue);
+  tessellator.color(red, green, blue);
   tessellator.vertex(px - horizontalSize * size - widthOffset * size,
                      py - verticalSize * size,
                      pz - depthSize * size - heightOffset * size,

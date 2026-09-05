@@ -47,9 +47,6 @@ void ChatScreen::sendCurrentText() {
  minecraft()->player->sendChatMessage(event.message);
 }
 void ChatScreen::render(int mouseX, int mouseY, float tickDelta) {
- (void)mouseX;
- (void)mouseY;
- (void)tickDelta;
  {
   const render::RenderPassScope passScope(render::RenderType::gui());
   draw::coloredQuad(render::Tessellator::INSTANCE, width_ - 2, height_ - 2, 2, height_ - 14, 0, 0x80);
@@ -135,16 +132,6 @@ void ChatScreen::mouseClicked(int mouseX, int mouseY, int button) {
  const std::string link = minecraft()->inGameHud.chatLinkAt(mouseX, mouseY, height());
  if(!link.empty()) {
   (void)platform::openUrlInBrowser(link);
-  return;
- }
- if(!minecraft()->inGameHud.selectedName.empty()) {
-  if(!text_.empty() && text_.back() != ' ') {
-   text_.push_back(' ');
-  }
-  text_ += minecraft()->inGameHud.selectedName;
-  if(text_.length() > 100) {
-   text_.resize(100);
-  }
   return;
  }
  Screen::mouseClicked(mouseX, mouseY, button);

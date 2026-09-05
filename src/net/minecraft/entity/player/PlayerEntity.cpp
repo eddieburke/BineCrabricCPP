@@ -639,7 +639,11 @@ void PlayerEntity::travel(float sideways, float forward) {
  const double startZ = z;
  mod::PlayerTravelEvent event{this, sideways, forward};
  net::minecraft::mod::runtime::luaHookPlayerTravel(event);
- movement::PlayerMovement::travel(*this, event.sideways, event.forward, event.speedMultiplier);
+ if(event.flying) {
+  movement::PlayerMovement::travelFlying(*this, event.sideways, event.forward, event.speedMultiplier);
+ } else {
+  movement::PlayerMovement::travel(*this, event.sideways, event.forward, event.speedMultiplier);
+ }
  updateMovementStats(x - startX, y - startY, z - startZ);
 }
 void PlayerEntity::onKilledOther(LivingEntity* other) {

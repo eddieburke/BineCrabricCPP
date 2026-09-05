@@ -381,6 +381,24 @@ TEST_F(ShaderGlIntegrationTest, ComputeImageBindingsUseCurrentReadSide) {
  EXPECT_NE(targets.readTexture(0), first);
  targets.destroy();
 }
+TEST_F(ShaderGlIntegrationTest, ExplicitTrueFlipDoesNotCancelWrittenTargetFlip) {
+ client::render::ColorTargets targets;
+ ASSERT_TRUE(targets.ensure(4, 4,
+                            {client::render::ColorFormat::Rgba8,
+                             client::render::ColorFormat::Rgba8},
+                            2));
+ const unsigned int firstRead = targets.readTexture(0);
+ const unsigned int firstWrite = targets.writeTexture(0);
+ const unsigned int secondWrite = targets.writeTexture(1);
+ client::render::PackDefinition definition;
+ definition.flips["composite2.colortex0"] = true;
+ definition.flips["composite2.colortex1"] = true;
+ targets.applyPassFlips(definition, "composite2", {"colortex0"});
+ EXPECT_EQ(targets.readTexture(0), firstWrite);
+ EXPECT_NE(targets.readTexture(0), firstRead);
+ EXPECT_EQ(targets.readTexture(1), secondWrite);
+ targets.destroy();
+}
 TEST_F(ShaderGlIntegrationTest, GbufferRebindUsesPostPrepareReadSides) {
  client::render::ColorTargets targets;
  ASSERT_TRUE(targets.ensure(4, 4,

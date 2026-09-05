@@ -11,7 +11,6 @@
 #include "net/minecraft/network/packet/WorldPackets.hpp"
 #include "net/minecraft/registry/Registry.hpp"
 #include "net/minecraft/server/ServerLog.hpp"
-#include "net/minecraft/server/command/Command.hpp"
 #include "net/minecraft/server/network/ConnectionListener.hpp"
 #include "net/minecraft/server/world/ReadOnlyServerWorld.hpp"
 #include "net/minecraft/server/world/ServerWorldEventListener.hpp"
@@ -140,8 +139,7 @@ void MinecraftServer::runPendingCommands() {
   if(pending.output == nullptr) {
    continue;
   }
-  command::Command command(pending.commandAndArgs, *pending.output);
-  commandHandler_->executeCommand(command);
+  commandHandler_->executeCommand(pending.commandAndArgs, *pending.output);
  }
 }
 void MinecraftServer::addTickable(util::Tickable* tickable) {

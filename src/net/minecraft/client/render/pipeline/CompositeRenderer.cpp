@@ -47,24 +47,9 @@ void publishReadSide(std::unordered_map<std::string, int>& textures,
  }
  refreshTextureAliases(textures, pack.definition.usesWaterShadow);
 }
-void bindPassTargets(shadowmap::ShadowTargets* shadowTargets, const PackPass& pass,
-                     const std::array<bool, 8>& readFlips, int width, int height) {
- std::vector<std::string> outputs = pass.outputs.empty() ? std::vector<std::string>{"shadowcolor0"} : pass.outputs;
- int colorCount = 0;
- for(const std::string& name : outputs) {
-  const int index = shadowColorIndex(name);
-  if(index >= 0) colorCount = std::max(colorCount, index + 1);
- }
- if(colorCount <= 0) {
-  colorCount = 1;
- }
- shadowTargets->attachCompositeColors(readFlips, colorCount);
- shadowTargets->fbo.bind();
- core::viewport(0, 0, width, height);
-}
 const std::string& stageName(CompositeStage stage) {
  static const std::array<std::string, static_cast<std::size_t>(CompositeStage::Count)> names = {
-     "begin", "shadowcomp", "prepare", "deferred", "composite"};
+     "begin", "shadow", "shadowcomp", "prepare", "deferred", "composite"};
  return names[static_cast<std::size_t>(stage)];
 }
 } // namespace
@@ -76,8 +61,9 @@ bool Pipeline::renderCompositePasses(PackInstance& pack, CompositeStage stageId,
  const std::vector<PackInstance::RuntimeOperation>& operations = pack.stagePlan(stageId);
  render::ColorTargets& targets = pack.colorTargets;
  const int shadowMapResolution = static_cast<int>(worldUniforms_.shadowMapResolution);
- const int width = stage == "shadowcomp" && shadowMapResolution > 0 ? shadowMapResolution : targets.width();
- const int height = stage == "shadowcomp" && shadowMapResolution > 0 ? shadowMapResolution : targets.height();
+ const bool shadowStage = stage == "shadow" || stage == "shadowcomp";
+ const int width = shadowStage && shadowMapResolution > 0 ? shadowMapResolution : targets.width();
+ const int height = shadowStage && shadowMapResolution > 0 ? shadowMapResolution : targets.height();
  if(!pack.summary.valid || pack.programs == nullptr ||
     !pack.stagePlanValid[static_cast<std::size_t>(stageId)] ||
     (operations.empty() && pack.setupPlan.empty())) {
@@ -116,7 +102,6 @@ bool Pipeline::renderCompositePasses(PackInstance& pack, CompositeStage stageId,
  std::unordered_map<std::string, int> colorImages;
  textures.reserve(96);
  colorImages.reserve(48);
- refreshColorMaps(targets, textures, colorImages, true);
  textures["depthtex0"] = static_cast<int>(targets.depthTexture());
  textures["depthtex1"] = pack.opaqueDepthTexture(textures["depthtex0"]);
  textures["depthtex2"] = pack.handDepthTexture(textures["depthtex0"]);
@@ -151,7 +136,9 @@ bool Pipeline::renderCompositePasses(PackInstance& pack, CompositeStage stageId,
  const bool concurrent = pack.definition.allowConcurrentCompute;
  bool ranCompute = false;
  const auto prepareComputeBinds = [&]() {
-  if(gl::GLCore::bindFramebuffer != nullptr) gl::GLCore::bindFramebuffer(static_cast<unsigned>(gl::framebuffer::Framebuffer), 0);
+  if(!shadowStage && gl::GLCore::bindFramebuffer != nullptr) {
+   gl::GLCore::bindFramebuffer(static_cast<unsigned>(gl::framebuffer::Framebuffer), 0);
+  }
   refreshColorMaps(targets, textures, colorImages, true);
   refreshTextureAliases(textures, pack.definition.usesWaterShadow);
  };
@@ -201,6 +188,7 @@ bool Pipeline::renderCompositePasses(PackInstance& pack, CompositeStage stageId,
   gl::ShaderProgram* program = runtime.program;
   if(program == nullptr) return false;
   const PackPass& pass = pack.definition.passes[passIndex];
+  const std::vector<std::string>& outputs = operation.outputs;
   const bool shadowCompPass = stage == "shadowcomp" && shadowFlipsKnown &&
                               passPosition < shadowCompPassReadFlips_.size();
   if(shadowCompPass) {
@@ -209,12 +197,7 @@ bool Pipeline::renderCompositePasses(PackInstance& pack, CompositeStage stageId,
                    shadowColorTextureIds, shadowColorAltTextureIds,
                    shadowColorTextureCount, pack);
   }
-  const std::string output =
-      pass.outputs.empty() ? (stage == "shadowcomp" ? std::string("shadowcolor0") : std::string("screen"))
-                           : pass.outputs.front();
-  const bool toScreen =
-      PackCatalog::lower(output) == "screen" || pass.name == "final" ||
-      pass.program.rfind("final", 0) == 0;
+  const bool toScreen = operation.toScreen;
   // CompositeRenderer.java:307-312 setupMipmapping.
   for(const std::string& buffer : pass.mipmapBuffers) {
    core::activeTexture(gl::tex::Texture0);
@@ -222,10 +205,10 @@ bool Pipeline::renderCompositePasses(PackInstance& pack, CompositeStage stageId,
   }
   if(!toScreen) {
    if(shadowCompPass && shadowTargets != nullptr) {
-    bindPassTargets(shadowTargets, pass,
-                    shadowCompPassReadFlips_[passPosition], width, height);
+    shadowTargets->attachCompositeColors(shadowCompPassReadFlips_[passPosition], operation.shadowColorCount);
+    shadowTargets->fbo.bind();
+    core::viewport(0, 0, width, height);
    } else {
-    std::vector<std::string> outputs = pass.outputs.empty() ? std::vector<std::string>{output} : pass.outputs;
     for(const std::string& name : outputs) {
      const auto declared = pack.definition.targets.find(name);
      ColorFormat format = ColorFormat::Rgba8;
@@ -291,10 +274,8 @@ bool Pipeline::renderCompositePasses(PackInstance& pack, CompositeStage stageId,
   executed = true;
   if(toScreen) {
    wroteToScreen = fullViewport;
-  } else if(shadowCompPass) {
-  } else {
-   std::vector<std::string> outputs = pass.outputs.empty() ? std::vector<std::string>{output} : pass.outputs;
-   targets.applyPassFlips(pack.definition, pass.name, outputs);
+  } else if(!shadowCompPass) {
+   for(const std::string& name : operation.flips) targets.flip(name);
    if(stage == "shadowcomp" || stage == "prepare") {
     for(const std::string& name : outputs) {
      pack.publishedTextures[name] = static_cast<int>(targets.readTexture(name));

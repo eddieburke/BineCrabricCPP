@@ -3,10 +3,10 @@
 in vec3 vaPosition;
 in vec4 vaColor;
 out vec4 color;
-out float viewDistance;
+out vec3 viewPosition;
 void main() {
- vec4 viewPosition = modelViewMatrix * vec4(vaPosition, 1.0);
- gl_Position = projectionMatrix * viewPosition;
+ vec4 position = modelViewMatrix * vec4(vaPosition, 1.0);
+ gl_Position = projectionMatrix * position;
  color = vaColor;
- viewDistance = fogCoord(viewPosition.xyz);
+ viewPosition = position.xyz;
 }

@@ -17,15 +17,24 @@ void uploadDrawMatrixAliases(const gl::ShaderProgram& program, const float* mode
  program.setMatrix4At(program.location("projectionMatrix"), projection);
  program.setMatrix4At(program.location("modelViewMatrixInverse"), modelViewInverse);
  program.setMatrix4At(program.location("projectionMatrixInverse"), projectionInverse);
- net::minecraft::util::math::Matrix4f mv;
- mv.set(modelView);
- net::minecraft::util::math::Matrix4f proj;
- proj.set(projection);
- const net::minecraft::util::math::Matrix4f mvp = proj * mv;
- net::minecraft::util::math::Matrix4f mvpInverse = mvp;
- mvpInverse.invert();
- program.setMatrix4At(program.location("modelViewProjectionMatrix"), mvp.data());
- program.setMatrix4At(program.location("modelViewProjectionMatrixInverse"), mvpInverse.data());
+ const int mvpLocation = program.location("modelViewProjectionMatrix");
+ const int inverseLocation = program.location("modelViewProjectionMatrixInverse");
+ if(mvpLocation >= 0) {
+  net::minecraft::util::math::Matrix4f mv;
+  mv.set(modelView);
+  net::minecraft::util::math::Matrix4f proj;
+  proj.set(projection);
+  const auto mvp = proj * mv;
+  program.setMatrix4At(mvpLocation, mvp.data());
+ }
+ if(inverseLocation >= 0) {
+  net::minecraft::util::math::Matrix4f mvInverse;
+  mvInverse.set(modelViewInverse);
+  net::minecraft::util::math::Matrix4f projInverse;
+  projInverse.set(projectionInverse);
+  const auto mvpInverse = mvInverse * projInverse;
+  program.setMatrix4At(inverseLocation, mvpInverse.data());
+ }
  const float normal[9] = {modelViewInverse[0], modelViewInverse[4], modelViewInverse[8],
                           modelViewInverse[1], modelViewInverse[5], modelViewInverse[9],
                           modelViewInverse[2], modelViewInverse[6], modelViewInverse[10]};
@@ -40,9 +49,7 @@ void uploadGeometryDrawMatrices(const gl::ShaderProgram& program, const float* m
 }
 void uploadIdentityDrawMatrices(const gl::ShaderProgram& program) {
  static const float kIdentity[16] = {1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1};
- static const float kIdentityNormal[9] = {1, 0, 0, 0, 1, 0, 0, 0, 1};
  uploadDrawMatrixAliases(program, kIdentity, kIdentity, kIdentity, kIdentity);
- program.setMatrix3At(program.location("normalMatrix"), kIdentityNormal);
 }
 void uploadShaderUniforms(const gl::ShaderProgram& program, const PackUniformValues& values,
                           bool uploadGbufferCamera, const PackViewportValues* viewport) {

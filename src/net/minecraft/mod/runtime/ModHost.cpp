@@ -59,6 +59,8 @@ std::uint64_t directoryContentStamp(const std::filesystem::path& root) {
 }
 void installMinecraftTable(lua_State* state, ModHost::LoadedLuaMod& mod) {
  LuaApi& api = luaApi();
+ api.pushlightuserdata(state, &mod);
+ api.setfield(state, kLuaRegistryIndex, "minecraft.mod_owner");
  api.createtable(state, 0, 12);
  setField(state, "mod_id", mod.modId);
  installCoreApi(state, mod);
@@ -210,7 +212,6 @@ void ModHost::shutdown() {
     closeLoadedLuaMod(mod);
    }
   }
-  invalidateLuaHookCache();
   loadedLuaMods_.clear();
   invalidateLuaHookCache();
   packageMods_.clear();

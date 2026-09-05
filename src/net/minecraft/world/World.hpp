@@ -31,7 +31,6 @@
 #include "net/minecraft/world/gen/chunk/OverworldChunkGenerator.hpp"
 #include "net/minecraft/world/light/LightingEngine.hpp"
 #include "net/minecraft/world/light/UnifiedLightRegistry.hpp"
-#include "net/minecraft/world/mutation/BlockMutationModule.hpp"
 #include "net/minecraft/world/ports/IEntityWorld.hpp"
 #include "net/minecraft/world/storage/SavedDataStorage.hpp"
 #include "net/minecraft/world/tick/ScheduledTickQueue.hpp"
@@ -230,6 +229,8 @@ class World : public IEntityWorld {
  [[nodiscard]] const std::vector<Entity*>& entities() const noexcept {
   return entities_;
  }
+ [[nodiscard]] Entity* findEntity(int id) const noexcept;
+ void reassignEntityId(Entity& entity, int id);
  [[nodiscard]] std::vector<Entity*> getEntities(Entity* except, const Box& box);
  [[nodiscard]] std::vector<Box> getEntityCollisions(Entity* except, const Box& box);
  [[nodiscard]] std::vector<Box> getBlockCollisions(const Box& box) const;
@@ -248,12 +249,8 @@ class World : public IEntityWorld {
  [[nodiscard]] Chunk& getChunk(int chunkX, int chunkZ);
  [[nodiscard]] int getBlockId(int x, int y, int z) const override;
  [[nodiscard]] int getBlockMeta(int x, int y, int z) const override;
- bool setBlock(int x, int y, int z, int blockId, std::uint8_t meta = 0) override {
-  return blockMutation_.setBlock(x, y, z, blockId, meta);
- }
- void setBlockMeta(int x, int y, int z, int meta) override {
-  blockMutation_.setBlockMeta(x, y, z, meta);
- }
+ bool setBlock(int x, int y, int z, int blockId, std::uint8_t meta = 0) override;
+ void setBlockMeta(int x, int y, int z, int meta) override;
  bool setBlockMetaWithoutNotifyingNeighbors(int x, int y, int z, int meta) override;
  bool setBlockWithoutNotifyingNeighbors(int x, int y, int z, int blockId, int meta = 0) override;
  void addEventListener(GameEventListener* listener);
@@ -408,6 +405,8 @@ class World : public IEntityWorld {
  std::unique_ptr<ChunkSource> chunkGeneratorSource_;
 
  private:
+ void unloadPendingEntities();
+ std::unordered_map<int, Entity*> loadedEntitiesById_;
  void updateEntity(Entity* entity, bool requireLoaded, int depth);
  // Mode flags â€” exposed through accessors above; not for direct external poke.
  bool newWorld = false;
@@ -420,7 +419,6 @@ class World : public IEntityWorld {
  std::uint64_t worldTimeMask = 0xFFFFFFULL;
  bool allPlayersSleeping = false;
  WorldEvents events_;
- BlockMutationModule blockMutation_;
  std::string name_;
  WorldStorage* dimensionData_ = nullptr;
  std::uint64_t seed_ = 0;

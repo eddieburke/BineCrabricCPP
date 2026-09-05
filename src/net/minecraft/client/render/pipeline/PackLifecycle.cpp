@@ -664,6 +664,14 @@ bool Pipeline::renderBegin(int shadowDepthTextureId, int shadowOpaqueDepthTextur
                     shadowColorTextureIds, shadowColorTextureCount, shadowTargets,
                     shadowColorAltTextureIds);
 }
+bool Pipeline::renderShadow(int shadowDepthTextureId, int shadowOpaqueDepthTextureId,
+                            const int* shadowColorTextureIds, int shadowColorTextureCount,
+                            shadowmap::ShadowTargets* shadowTargets,
+                            const int* shadowColorAltTextureIds) {
+ return renderShadow(activePack(), shadowDepthTextureId, shadowOpaqueDepthTextureId,
+                     shadowColorTextureIds, shadowColorTextureCount, shadowTargets,
+                     shadowColorAltTextureIds);
+}
 bool Pipeline::renderShadowComposite(int shadowDepthTextureId, int shadowOpaqueDepthTextureId,
                                         const int* shadowColorTextureIds, int shadowColorTextureCount,
                                         shadowmap::ShadowTargets* shadowTargets,

@@ -47,6 +47,7 @@ class TextureManager {
   return textureId == missingTextureId_;
  }
  [[nodiscard]] bool resourceExists(const std::string& path) const;
+ [[nodiscard]] std::uint64_t resourceGeneration() const noexcept { return resourceGeneration_; }
  [[nodiscard]] const std::vector<int>& getColors(const std::string& path);
  void bindTexture(int id);
  void deleteTexture(int textureId);
@@ -93,6 +94,7 @@ class TextureManager {
  std::vector<net::minecraft::client::render::texture::DynamicTexture*> dynamicTextures_;
  int missingTextureId_ = 0;
  bool missingTextureReady_ = false;
+ std::uint64_t resourceGeneration_ = 0;
  bool clamp = false;
  bool blur = false;
 };

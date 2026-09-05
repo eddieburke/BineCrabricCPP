@@ -37,6 +37,17 @@ class Particle : public Entity {
   maxParticleAge = static_cast<int>(4.0f / (random.nextFloat() * 0.9f + 0.1f));
   particleAge = 0;
  }
+ // Particle light rides vaUV2 and the vertex colour stays tint-only, so the light is
+ // applied exactly once — the same convention terrain and entities already use. Folding
+ // it into the colour double-lit every particle: gbuffers_particles falls back to
+ // gbuffers_textured_lit, which multiplies by the lightmap again.
+ // see src/net/minecraft/client/render/entity/EntityRenderDispatcher.cpp
+ virtual void applyLight(render::Tessellator& tessellator) const {
+  int blockLight = 15;
+  int skyLight = 15;
+  sampleLightLevels(blockLight, skyLight);
+  tessellator.light(static_cast<float>(blockLight), static_cast<float>(skyLight));
+ }
  Particle* multiplyVelocity(float factor) {
   velocityX *= factor;
   velocityY = (velocityY - 0.1) * factor + 0.1;
@@ -80,9 +91,7 @@ class Particle : public Entity {
   const float px = static_cast<float>(prevX + (x - prevX) * partialTicks - xOffset);
   const float py = static_cast<float>(prevY + (y - prevY) * partialTicks - yOffset);
   const float pz = static_cast<float>(prevZ + (z - prevZ) * partialTicks - zOffset);
-  const float brightness = getBrightnessAtEyes(partialTicks);
-  tessellator.light(15.0f, 15.0f);
-  tessellator.color(red * brightness, green * brightness, blue * brightness);
+  tessellator.color(red, green, blue);
   tessellator.vertex(px - horizontalSize * size - widthOffset * size,
                      py - verticalSize * size,
                      pz - depthSize * size - heightOffset * size,

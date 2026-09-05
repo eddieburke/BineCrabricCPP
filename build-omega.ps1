@@ -381,7 +381,7 @@ if($MID -ne ""){$md=$md|?{$_.Name -eq $MID};if($md.Count -eq 0){throw "Mod '$MID
 Add-Type -AN System.IO.Compression;Add-Type -AN System.IO.Compression.FileSystem
 $pk=0;$deployedCount=0
 foreach($d in $md){
-if($d.Name -eq "lib"){$lo="$mo\lib";ED $lo;cp -Path "$($d.FullName)\*" -De $lo -R -Fo;Write-Host "  Packed shared library lib  ->  $lo";$pk++;if($DP){$ld="$dd\lib";ED $ld;cp -Path "$($d.FullName)\*" -De $ld -R -Fo;Write-Host "  Deployed shared library lib  ->  $ld";$deployedCount++};continue}
+if($d.Name -eq "lib"){$lo="$mo\lib";if(Test-Path -Li $lo){ri -Li $lo -R -Fo};ED $lo;cp -Path "$($d.FullName)\*" -De $lo -R -Fo;Write-Host "  Packed shared library lib  ->  $lo";$pk++;if($DP){$ld="$dd\lib";if(Test-Path -Li $ld){ri -Li $ld -R -Fo};ED $ld;cp -Path "$($d.FullName)\*" -De $ld -R -Fo;Write-Host "  Deployed shared library lib  ->  $ld";$deployedCount++};continue}
 $mf="$($d.FullName)\mod.json";if(!(Test-Path -Li $mf)){continue}
 $id=$d.Name;$zp="$mo\$id.zip";if(Test-Path -Li $zp){ri -Li $zp -Fo}
 $fl=gci -R -File -Li $d.FullName

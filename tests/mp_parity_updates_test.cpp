@@ -365,6 +365,7 @@ TEST(MultiplayerParityUpdates, AbortActionPacketUsesAction1) {
 }
 TEST(MultiplayerParityUpdates, HostedOwnerBreaksSpawnBlockAndReceivesDrop) {
  ServerEventFixture fixture;
+ fixture.server.playerManager.addTransientOperator("SpawnProtectionOwner");
  fixture.world.setSpawnPos(Vec3i{8, 64, 8});
  fixture.world.setEventProcessingEnabled(true);
  (void)fixture.world.getChunk(0, 0);

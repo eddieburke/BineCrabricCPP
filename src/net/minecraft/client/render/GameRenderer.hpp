@@ -24,11 +24,11 @@ namespace math = net::minecraft::util::math;
 class Pipeline;
 struct PackDefinition;
 class GameRenderer {
- friend shadowmap::ShadowMapResult shadowmap::update(shadowmap::ShadowMapState&,
-                                                     GameRenderer&,
-                                                     float,
-                                                     const FrameRenderCamera&,
-                                                     const PackDefinition&);
+ friend bool shadowmap::render(shadowmap::ShadowMapState&,
+                               GameRenderer&,
+                               float,
+                               const FrameRenderCamera&,
+                               const PackDefinition&);
 
  public:
  explicit GameRenderer(Minecraft* client);

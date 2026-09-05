@@ -1558,12 +1558,15 @@ void addComputePrograms(PackDefinition& pack,
                         std::string_view prefix,
                         const PackLoader::ReadText& metadataText) {
  const auto computePassStage = [](const std::string& name) -> const char* {
-  for(const std::string_view stage : kCompositeStagePrefixes) {
+ for(const std::string_view stage : kCompositeStagePrefixes) {
    if(ComputeDispatcher::matchesStage(name, stage)) {
     return stage.data();
-   }
   }
-  if(ComputeDispatcher::matchesStage(name, "setup")) {
+ }
+ if(ComputeDispatcher::matchesStage(name, "shadow")) {
+  return "shadow";
+ }
+ if(ComputeDispatcher::matchesStage(name, "setup")) {
    return "setup";
   }
   return nullptr;

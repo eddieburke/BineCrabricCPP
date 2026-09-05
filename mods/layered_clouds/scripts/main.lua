@@ -299,7 +299,7 @@ minecraft.on("world_render", {
   moment = "before",
   priority = 100,
 }, function(event)
-  if not config.enabled or event.stage_enabled == false or event.is_nether then
+  if not config.enabled or event.shader_pack_active or event.stage_enabled == false or event.is_nether then
     return event
   end
   if not sync_world(event) then return event end

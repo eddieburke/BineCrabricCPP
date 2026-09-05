@@ -27,6 +27,7 @@
 #endif
 #include <algorithm>
 #include <array>
+#include <bit>
 #include <cctype>
 #include <cmath>
 #include <functional>
@@ -42,6 +43,13 @@
 #include "net/minecraft/world/World.hpp"
 namespace net::minecraft::mod::runtime {
 using namespace net::minecraft::mod::lua;
+template <typename Fill, typename Read>
+void dispatchLuaHook(int eventIndex,
+                     Fill fill,
+                     Read read,
+                     std::uint16_t worldRenderStageBit = 0,
+                     std::uint8_t worldRenderMomentBit = 0,
+                     std::string_view entityType = {});
 namespace {
 template <typename Event>
 World* eventWorld(Event& event) {
@@ -179,7 +187,12 @@ struct LuaHookEntry {
  std::string entityTypeFilter;
 };
 using LuaHookEntries = std::vector<LuaHookEntry>;
+constexpr std::size_t kWorldRenderStageCount = static_cast<std::size_t>(WorldRenderStage::Framebuffer) + 1;
+constexpr std::size_t kWorldRenderMomentCount = static_cast<std::size_t>(RenderHookMoment::After) + 1;
+using WorldRenderHookBuckets =
+    std::array<std::array<std::shared_ptr<const LuaHookEntries>, kWorldRenderMomentCount>, kWorldRenderStageCount>;
 std::array<std::shared_ptr<const LuaHookEntries>, kLuaEventCount> gHookTable{};
+WorldRenderHookBuckets gWorldRenderHookBuckets{};
 std::array<bool, kLuaEventCount> gHasLuaHookArray{};
 bool gHookTableValid = false;
 void rebuildHookTable() {
@@ -215,6 +228,21 @@ void rebuildHookTable() {
   }
   gHasLuaHookArray[i] = !entries.empty();
   gHookTable[i] = std::make_shared<const LuaHookEntries>(std::move(entries));
+  if(i == static_cast<std::size_t>(LuaEventId::WorldRender)) {
+   for(std::size_t stage = 0; stage < kWorldRenderStageCount; ++stage) {
+    const std::uint16_t stageBit = static_cast<std::uint16_t>(1u << stage);
+    for(std::size_t moment = 0; moment < kWorldRenderMomentCount; ++moment) {
+     const std::uint8_t momentBit = static_cast<std::uint8_t>(1u << moment);
+     LuaHookEntries bucket;
+     for(const LuaHookEntry& entry : *gHookTable[i]) {
+      if((entry.worldRenderStageMask & stageBit) != 0 && (entry.worldRenderMomentMask & momentBit) != 0) {
+       bucket.push_back(entry);
+      }
+     }
+     gWorldRenderHookBuckets[stage][moment] = std::make_shared<const LuaHookEntries>(std::move(bucket));
+    }
+   }
+  }
  }
  gHookTableValid = true;
 }
@@ -224,12 +252,24 @@ void rebuildHookTable() {
  }
  return gHookTable[eventIndex];
 }
+[[nodiscard]] std::shared_ptr<const LuaHookEntries> luaWorldRenderHookEntries(WorldRenderStage stage,
+                                                                                RenderHookMoment moment) {
+ if(!gHookTableValid) {
+  rebuildHookTable();
+ }
+ return gWorldRenderHookBuckets[static_cast<std::size_t>(stage)][static_cast<std::size_t>(moment)];
+}
 } // namespace
 void invalidateLuaHookCache() {
  gHookTableValid = false;
  gHasLuaHookArray.fill(false);
  for(auto& entries : gHookTable) {
   entries.reset();
+ }
+ for(auto& stages : gWorldRenderHookBuckets) {
+  for(auto& entries : stages) {
+   entries.reset();
+  }
  }
 }
 bool hasLuaHook(int eventIndex) {
@@ -241,6 +281,15 @@ bool hasLuaHook(int eventIndex) {
  }
  return gHasLuaHookArray[static_cast<std::size_t>(eventIndex)];
 }
+bool hasLuaWorldRenderHook(WorldRenderStage stage, RenderHookMoment moment) {
+ if(!isLuaModExecutionEnabled()) {
+  return false;
+ }
+ const std::shared_ptr<const LuaHookEntries> entries = luaWorldRenderHookEntries(stage, moment);
+ return std::any_of(entries->begin(), entries->end(), [](const LuaHookEntry& entry) {
+  return entry.mod != nullptr && entry.mod->active;
+ });
+}
 template <typename Fill, typename Read>
 void dispatchLuaHook(int eventIndex,
                      Fill fill,
@@ -248,21 +297,19 @@ void dispatchLuaHook(int eventIndex,
                      std::uint16_t worldRenderStageBit,
                      std::uint8_t worldRenderMomentBit,
                      std::string_view entityType) {
- if(!isLuaModExecutionEnabled() || eventIndex < 0 || static_cast<std::size_t>(eventIndex) >= kLuaEventCount) {
+ // hasLuaHook is a bounds-checked array read; take the shared_ptr (an atomic
+ // increment) only once something is actually subscribed. Unsubscribed events
+ // fire per entity per frame from the render path.
+ if(!hasLuaHook(eventIndex) || !isLuaModExecutionEnabled()) {
   return;
  }
- const std::shared_ptr<const LuaHookEntries> entries = luaHookEntries(static_cast<std::size_t>(eventIndex));
- if(entries == nullptr) {
-  return;
- }
+ const std::shared_ptr<const LuaHookEntries> entries =
+     eventIndex == static_cast<int>(LuaEventId::WorldRender) && worldRenderStageBit != 0 && worldRenderMomentBit != 0
+         ? luaWorldRenderHookEntries(static_cast<WorldRenderStage>(std::countr_zero(worldRenderStageBit)),
+                                     static_cast<RenderHookMoment>(std::countr_zero(worldRenderMomentBit)))
+         : luaHookEntries(static_cast<std::size_t>(eventIndex));
  for(const LuaHookEntry& entry : *entries) {
   if(entry.mod == nullptr || !entry.mod->active) {
-   continue;
-  }
-  if(worldRenderStageBit != 0 && (entry.worldRenderStageMask & worldRenderStageBit) == 0) {
-   continue;
-  }
-  if(worldRenderMomentBit != 0 && (entry.worldRenderMomentMask & worldRenderMomentBit) == 0) {
    continue;
   }
   if(!entityType.empty() && !entry.entityTypeFilter.empty() && entry.entityTypeFilter != entityType) {
@@ -270,9 +317,6 @@ void dispatchLuaHook(int eventIndex,
   }
   callLuaEvent(entry.mod, entry.functionRef, fill, read);
  }
-}
-[[nodiscard]] bool isSupportedLuaEvent(std::string_view event) {
- return luaEventIndexOf(event) >= 0;
 }
 namespace {
 struct LifecycleListenerEntry {
@@ -503,6 +547,8 @@ void luaHookPlayerTravel(PlayerTravelEvent& e) {
                 ev.forward,
                 "speed_multiplier",
                 ev.speedMultiplier,
+                "flying",
+                ev.flying,
                 "has_player",
                 ev.player != nullptr);
 #ifdef MINECRAFT_NATIVE_EXPORTS
@@ -517,7 +563,15 @@ void luaHookPlayerTravel(PlayerTravelEvent& e) {
 #endif
      },
      [](lua_State* state, PlayerTravelEvent& ev) {
-      readFields(state, "sideways", ev.sideways, "forward", ev.forward, "speed_multiplier", ev.speedMultiplier);
+      readFields(state,
+                 "sideways",
+                 ev.sideways,
+                 "forward",
+                 ev.forward,
+                 "speed_multiplier",
+                 ev.speedMultiplier,
+                 "flying",
+                 ev.flying);
      });
 }
 void luaHookTickRate(TickRateEvent& e) {
@@ -707,6 +761,44 @@ void luaHookBlockInteract(BlockInteractEvent& e) {
       }
      });
 }
+void luaHookBlockAttack(BlockAttackEvent& e) {
+ runLuaHook(
+     LuaEventId::BlockAttack,
+     e,
+     [](lua_State* state, BlockAttackEvent& ev) {
+      setFields(state,
+                "x",
+                ev.x,
+                "y",
+                ev.y,
+                "z",
+                ev.z,
+                "side",
+                ev.side,
+                "block_id",
+                ev.blockId,
+                "block_meta",
+                ev.blockMeta,
+                "initial",
+                ev.initial,
+                "canceled",
+                ev.canceled,
+                "handled",
+                ev.handled,
+                "remote",
+                ev.world != nullptr && ev.world->isRemote(),
+                "has_player",
+                ev.player != nullptr,
+                "local_player",
+                isLocalPlayer(ev.player),
+                "has_item",
+                ev.stack != nullptr && !ev.stack->empty());
+      if(ev.stack != nullptr && !ev.stack->empty()) {
+       setFields(state, "item_id", ev.stack->itemId, "item_count", ev.stack->count, "item_damage", ev.stack->damage);
+      }
+     },
+     [](lua_State* state, BlockAttackEvent& ev) { readFields(state, "canceled", ev.canceled, "handled", ev.handled); });
+}
 void luaHookBlockBreak(BlockBreakEvent& e) {
  runLuaHook(
      LuaEventId::BlockBreak,
@@ -832,6 +924,9 @@ void luaHookAttackDamage(AttackDamageEvent& e) {
 }
 void luaHookEntityTeleport(EntityTeleportEvent& e) {
 #ifdef MINECRAFT_NATIVE_EXPORTS
+ if(!hasLuaHook(LuaEventId::EntityTeleport)) {
+  return;
+ }
  if(e.entity != nullptr && e.entity->world != nullptr && e.entity->world->isRemote()) {
   return;
  }
@@ -905,8 +1000,14 @@ void luaHookCelestialState(CelestialStateEvent& e) {
                 ev.moonZ,
                 "is_day",
                 ev.day,
+                "pole_altitude_deg",
+                ev.poleAltitudeDeg,
+                "sidereal_angle",
+                ev.siderealAngle,
                 "override_directions",
-                ev.overrideDirections);
+                ev.overrideDirections,
+                "override_star_frame",
+                ev.overrideStarFrame);
       setWorldContextFields(state, ev.world);
      },
      [](lua_State* state, CelestialStateEvent& ev) {
@@ -933,8 +1034,14 @@ void luaHookCelestialState(CelestialStateEvent& e) {
                  ev.moonZ,
                  "is_day",
                  ev.day,
+                 "pole_altitude_deg",
+                 ev.poleAltitudeDeg,
+                 "sidereal_angle",
+                 ev.siderealAngle,
                  "override_directions",
-                 ev.overrideDirections);
+                 ev.overrideDirections,
+                 "override_star_frame",
+                 ev.overrideStarFrame);
      });
 }
 void luaHookWorldColor(WorldColorEvent& e) {
@@ -1121,15 +1228,6 @@ void luaHookWorldRender(WorldRenderEvent& e) {
 #ifdef MINECRAFT_NATIVE_EXPORTS
  const std::uint16_t stageBit = static_cast<std::uint16_t>(1u << static_cast<unsigned int>(e.stage));
  const std::uint8_t momentBit = static_cast<std::uint8_t>(1u << static_cast<unsigned int>(e.moment));
- const std::shared_ptr<const LuaHookEntries> entries =
-     luaHookEntries(static_cast<std::size_t>(LuaEventId::WorldRender));
- if(entries == nullptr ||
-    std::none_of(entries->begin(), entries->end(), [stageBit, momentBit](const LuaHookEntry& entry) {
-     return entry.mod != nullptr && entry.mod->active && (entry.worldRenderStageMask & stageBit) != 0 &&
-            (entry.worldRenderMomentMask & momentBit) != 0;
-    })) {
-  return;
- }
  const ModDrawLayer drawLayer = e.stage == WorldRenderStage::Clouds
                                     ? ModDrawLayer::Clouds
                                     : e.stage == WorldRenderStage::Sky || e.stage == WorldRenderStage::Stars
@@ -1184,6 +1282,8 @@ void luaHookWorldRender(WorldRenderEvent& e) {
                 renderStageName(e.stage),
                 "moment",
                 renderMomentName(e.moment),
+                "shadow_pass",
+                e.shadowPass,
                 "stage_enabled",
                 e.stageEnabled,
                 "cancel_vanilla",
@@ -1219,14 +1319,14 @@ void luaHookWorldRender(WorldRenderEvent& e) {
       const double cameraY = frameCamera.y;
       const double cameraZ = frameCamera.z;
 #ifdef MINECRAFT_NATIVE_EXPORTS
+      const client::render::CelestialState& celestial = client::render::core::celestialState();
       if(e.world != nullptr) {
        setFields(state,
                  "world_time",
                  static_cast<double>(e.world->getTime() % 24000ULL),
                  "is_day",
-                 net::minecraft::client::render::core::celestialState().day);
+                 celestial.day);
       }
-      const client::render::CelestialState& celestial = client::render::core::celestialState();
       setFields(state,
                 "celestial_angle",
                 celestial.celestialAngle,
@@ -1328,6 +1428,9 @@ void luaHookChunkGeneration(world::gen::ChunkGenerationEvent& e) {
      [&e](lua_State* state) { readField(state, "cancel_vanilla", e.cancelVanilla); });
 }
 void luaHookScreenRegion(ScreenRegionEvent& e) {
+ if(!hasLuaHook(LuaEventId::ScreenRegion)) {
+  return;
+ }
 #ifdef MINECRAFT_NATIVE_EXPORTS
  const bool renderPhase = e.phase == ScreenRegionPhase::Render;
  if(renderPhase) {
@@ -1390,7 +1493,7 @@ void luaHookWorldSpawnSearch(WorldSpawnSearchEvent& e) {
 }
 void luaHookScreenUi(ScreenUiEvent& e) {
 #ifdef MINECRAFT_NATIVE_EXPORTS
- if(e.context == nullptr || e.context->screen == nullptr) {
+ if(!hasLuaHook(LuaEventId::ScreenUi) || e.context == nullptr || e.context->screen == nullptr) {
   return;
  }
  ScreenUiContext* previousScreenUi = g_activeScreenUi;
@@ -1412,7 +1515,7 @@ void luaHookScreenUi(ScreenUiEvent& e) {
 }
 void luaHookScreenEvent(LuaScreenEvent& e) {
 #ifdef MINECRAFT_NATIVE_EXPORTS
- if(g_activeLuaScreen == nullptr) {
+ if(!hasLuaHook(LuaEventId::ScreenEvent) || g_activeLuaScreen == nullptr) {
   return;
  }
  static constexpr const char* kPhaseNames[] = {"init", "render", "tick", "key", "mouse", "scroll", "close"};
@@ -1491,7 +1594,7 @@ void luaHookEntitySpawn(EntitySpawnEvent& e) {
       setFields(state, "entity_id", e.entityId, "entity_type", e.entityType);
       pushItemEntityFields(state, e.entity);
      },
-     [&e](lua_State* s) { kNoRead(s, e); });
+     [](lua_State*) {});
 #else
  (void)e;
 #endif
@@ -1505,7 +1608,7 @@ void luaHookEntityRemove(EntityRemoveEvent& e) {
       setFields(state, "entity_id", e.entityId, "entity_type", e.entityType);
       pushItemEntityFields(state, e.entity);
      },
-     [&e](lua_State* s) { kNoRead(s, e); });
+     [](lua_State*) {});
 #else
  (void)e;
 #endif

@@ -1,5 +1,6 @@
 #include <algorithm>
 #include <cmath>
+#include <stdexcept>
 #include "net/minecraft/block/entity/BlockEntity.hpp"
 #include "net/minecraft/entity/EntityRegistry.hpp"
 #include "net/minecraft/entity/LivingEntity.hpp"
@@ -30,27 +31,50 @@ std::vector<Entity*> World::getEntities(Entity* except, const Box& box) {
  }
  return result;
 }
-void World::updateEntityLists() {
- entities_.erase(std::remove_if(entities_.begin(),
-                                entities_.end(),
-                                [this](Entity* entity) {
-                                 return entity != nullptr &&
-                                        std::find(entitiesToUnload_.begin(), entitiesToUnload_.end(), entity) !=
-                                            entitiesToUnload_.end();
-                                }),
+Entity* World::findEntity(int id) const noexcept {
+ const auto it = loadedEntitiesById_.find(id);
+ return it == loadedEntitiesById_.end() ? nullptr : it->second;
+}
+void World::reassignEntityId(Entity& entity, int id) {
+ if(entity.id == id) {
+  return;
+ }
+ if(findEntity(id) != nullptr) {
+  throw std::logic_error("Entity id is already in use");
+ }
+ if(findEntity(entity.id) == &entity) {
+  auto entry = loadedEntitiesById_.extract(entity.id);
+  entry.key() = id;
+  loadedEntitiesById_.insert(std::move(entry));
+ }
+ entity.id = id;
+}
+void World::unloadPendingEntities() {
+ if(entitiesToUnload_.empty()) {
+  return;
+ }
+ std::vector<Entity*> unloading;
+ unloading.swap(entitiesToUnload_);
+ const std::unordered_set<Entity*> pending(unloading.begin(), unloading.end());
+ entities_.erase(std::remove_if(entities_.begin(), entities_.end(), [this, &pending](Entity* entity) {
+                   if(entity == nullptr || !pending.contains(entity)) {
+                    return false;
+                   }
+                   loadedEntitiesById_.erase(entity->id);
+                   return true;
+                  }),
                  entities_.end());
- for(Entity* entity : entitiesToUnload_) {
-  if(entity == nullptr) {
-   continue;
-  }
-  if(entity->isPersistent && hasChunk(entity->chunkX, entity->chunkZ)) {
+ for(Entity* entity : unloading) {
+  if(entity != nullptr && entity->isPersistent && hasChunk(entity->chunkX, entity->chunkZ)) {
    getChunk(entity->chunkX, entity->chunkZ).removeEntity(entity);
   }
  }
- for(Entity* entity : entitiesToUnload_) {
+ for(Entity* entity : unloading) {
   notifyEntityRemoved(entity);
  }
- entitiesToUnload_.clear();
+}
+void World::updateEntityLists() {
+ unloadPendingEntities();
  for(std::size_t i = 0; i < entities_.size(); ++i) {
   Entity* entity = entities_[i];
   if(entity == nullptr) {
@@ -70,6 +94,7 @@ void World::updateEntityLists() {
    getChunk(entity->chunkX, entity->chunkZ).removeEntity(entity);
   }
   entities_.erase(entities_.begin() + static_cast<std::ptrdiff_t>(i));
+  loadedEntitiesById_.erase(entity->id);
   notifyEntityRemoved(entity);
   --i;
  }
@@ -90,8 +115,8 @@ bool World::spawnEntity(Entity* entity) {
  if(entity == nullptr) {
   return false;
  }
- if(std::find(entities_.begin(), entities_.end(), entity) != entities_.end()) {
-  return true;
+ if(Entity* existing = findEntity(entity->id)) {
+  return existing == entity;
  }
  const int chunkX = MathHelper::floor(entity->x / 16.0);
  const int chunkZ = MathHelper::floor(entity->z / 16.0);
@@ -108,6 +133,7 @@ bool World::spawnEntity(Entity* entity) {
  }
  entity->world = this;
  entities_.push_back(entity);
+ loadedEntitiesById_.emplace(entity->id, entity);
  getChunk(chunkX, chunkZ).addEntity(entity);
  notifyEntityAdded(entity);
  return true;
@@ -140,6 +166,9 @@ void World::serverRemove(Entity* entity) {
  }
  entity->markDead();
  entities_.erase(std::remove(entities_.begin(), entities_.end(), entity), entities_.end());
+ if(findEntity(entity->id) == entity) {
+  loadedEntitiesById_.erase(entity->id);
+ }
  if(auto* player = dynamic_cast<PlayerEntity*>(entity)) {
   players.erase(std::remove(players.begin(), players.end(), player), players.end());
   updateSleepingPlayers();
@@ -163,6 +192,9 @@ void World::remove(Entity* entity) {
  }
  entity->markDead();
  entities_.erase(std::remove(entities_.begin(), entities_.end(), entity), entities_.end());
+ if(findEntity(entity->id) == entity) {
+  loadedEntitiesById_.erase(entity->id);
+ }
  if(auto* player = dynamic_cast<PlayerEntity*>(entity)) {
   players.erase(std::remove(players.begin(), players.end(), player), players.end());
   updateSleepingPlayers();
@@ -302,16 +334,17 @@ void World::updateEntity(Entity* entity, bool requireLoaded, int depth) {
  }
 }
 void World::addEntities(std::vector<Entity*>& entities) {
+ std::vector<Entity*> added;
+ added.reserve(entities.size());
  for(Entity* entity : entities) {
-  if(entity != nullptr) {
+  if(entity != nullptr && loadedEntitiesById_.try_emplace(entity->id, entity).second) {
    entity->world = this;
+   added.push_back(entity);
   }
  }
- entities_.insert(entities_.end(), entities.begin(), entities.end());
- for(Entity* entity : entities) {
-  if(entity != nullptr) {
-   notifyEntityAdded(entity);
-  }
+ entities_.insert(entities_.end(), added.begin(), added.end());
+ for(Entity* entity : added) {
+  notifyEntityAdded(entity);
  }
 }
 void World::unloadEntities(std::vector<Entity*>& entities) {
@@ -387,26 +420,7 @@ void World::tickEntities() {
   globalEntities.erase(globalEntities.begin() + static_cast<std::ptrdiff_t>(i));
   --i;
  }
- entities_.erase(std::remove_if(entities_.begin(),
-                                entities_.end(),
-                                [this](Entity* entity) {
-                                 return entity != nullptr &&
-                                        std::find(entitiesToUnload_.begin(), entitiesToUnload_.end(), entity) !=
-                                            entitiesToUnload_.end();
-                                }),
-                 entities_.end());
- for(Entity* entity : entitiesToUnload_) {
-  if(entity == nullptr) {
-   continue;
-  }
-  if(entity->isPersistent && hasChunk(entity->chunkX, entity->chunkZ)) {
-   getChunk(entity->chunkX, entity->chunkZ).removeEntity(entity);
-  }
- }
- for(Entity* entity : entitiesToUnload_) {
-  notifyEntityRemoved(entity);
- }
- entitiesToUnload_.clear();
+ unloadPendingEntities();
  for(std::size_t i = 0; i < entities_.size(); ++i) {
   Entity* entity = entities_[i];
   if(entity == nullptr) {
@@ -444,6 +458,7 @@ void World::tickEntities() {
    updateSleepingPlayers();
   }
   entities_.erase(entities_.begin() + static_cast<std::ptrdiff_t>(i));
+  loadedEntitiesById_.erase(entity->id);
   notifyEntityRemoved(entity);
   --i;
  }
@@ -488,7 +503,7 @@ void World::loadChunksNearEntity(Entity* entity) {
   chunkCache_->setActiveRadius(chunkResidentRadiusChunks_);
   chunkCache_->prefetchChunksNear(chunkX, chunkZ);
  }
- if(std::find(entities_.begin(), entities_.end(), entity) == entities_.end()) {
+ if(findEntity(entity->id) != entity) {
   spawnEntity(entity);
  }
 }

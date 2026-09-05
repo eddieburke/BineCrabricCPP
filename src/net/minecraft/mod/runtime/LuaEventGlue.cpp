@@ -44,8 +44,9 @@ void pushItemStackFields(lua_State* state, const ItemStack& stack) {
 #endif
 }
 void setWorldContextFields(lua_State* state, const World* world) {
+ static const std::string kNoWorldName;
  setField(state, "has_world", world != nullptr);
- setField(state, "world_name", world != nullptr ? world->name() : std::string());
+ setField(state, "world_name", world != nullptr ? world->name() : kNoWorldName);
  setField(state, "is_overworld", luaWorldIsOverworld(world));
  setField(state, "is_nether", world != nullptr && world->dimension != nullptr && world->dimension->isNether);
  setField(state,
@@ -58,14 +59,16 @@ void setLuaExecutionFields(lua_State* state, const World* world) {
  setField(state, "remote", remote);
  setField(state, "side", remote ? "client" : "server");
 #ifdef MINECRAFT_NATIVE_EXPORTS
+ static const std::string kVanilla("vanilla");
+ static const std::string kEmpty;
  const net::minecraft::client::Minecraft* minecraft = net::minecraft::client::Minecraft::INSTANCE;
- const std::string selectedPack = minecraft != nullptr ? minecraft->options.shaderPack : std::string();
+ const std::string& selectedPack = minecraft != nullptr ? minecraft->options.shaderPack : kEmpty;
  const bool shaderPackActive = !selectedPack.empty() && selectedPack != "vanilla" && selectedPack != "off";
  setField(state, "shader_pack_active", shaderPackActive);
- setField(state, "shader_pack_name", shaderPackActive ? selectedPack : std::string("vanilla"));
+ setField(state, "shader_pack_name", shaderPackActive ? selectedPack : kVanilla);
 #else
  setField(state, "shader_pack_active", false);
- setField(state, "shader_pack_name", std::string("vanilla"));
+ setField(state, "shader_pack_name", "vanilla");
 #endif
 }
 void setEntityIdentityFields(lua_State* state, const net::minecraft::entity::Entity& entity) {

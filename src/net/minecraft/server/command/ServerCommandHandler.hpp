@@ -4,12 +4,11 @@ namespace net::minecraft::server {
 class MinecraftServer;
 }
 namespace net::minecraft::server::command {
-class Command;
 class CommandOutput;
 class ServerCommandHandler {
  public:
  explicit ServerCommandHandler(MinecraftServer* server);
- void executeCommand(Command& command);
+ void executeCommand(const std::string& line, CommandOutput& output);
 
  private:
  void executeWhitelist(const std::string& commandUser, const std::string& message, CommandOutput& output);

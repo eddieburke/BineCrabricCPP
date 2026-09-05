@@ -492,6 +492,7 @@ std::string TextureManager::getCompanionTexturePath(int textureId, std::string_v
  return candidate;
 }
 void TextureManager::reload() {
+ ++resourceGeneration_;
  net::minecraft::registry::TextureRegistry::invalidateGlIds();
  if(texturePacks_ == nullptr) {
   return;

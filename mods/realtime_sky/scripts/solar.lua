@@ -723,6 +723,9 @@ function solar.build_frame(settings, partial_ticks, utc_millis)
   local moon_direction_x, moon_direction_y, moon_direction_z =
     direction_from_azimuth_altitude(moon_azimuth, moon_altitude)
 
+  local sidereal_turns = local_sidereal_time_rad(observer_millis, settings.longitude) / TWO_PI
+  sidereal_turns = sidereal_turns - math.floor(sidereal_turns)
+
   local solar_time_hours = (day_tick / 1000.0 + 6.0) % 24.0
   local zone = solar.time_zone_info(settings)
 
@@ -751,6 +754,7 @@ function solar.build_frame(settings, partial_ticks, utc_millis)
     moon_direction_y = moon_direction_y,
     moon_direction_z = moon_direction_z,
     solar_hour_angle_rad = hour_angle,
+    sidereal_turns = sidereal_turns,
     solar_time_hours = solar_time_hours,
     is_daylight = sun_altitude > -0.833,
     twilight = 1.0 - smoothstep(-18.0, 0.0, sun_altitude),

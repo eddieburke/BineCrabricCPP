@@ -1,8 +1,19 @@
+-- Single Player Commands for Beta 1.7.3.
+--
+-- Flight and noclip both ride the engine's player_travel hook. event.flying selects
+-- PlayerMovement::travelFlying, which has no gravity term, so the mod only has to drive
+-- velocityY; setting no_clip on its own just makes you sink through the floor forever.
+-- Vertical input is read from the player's own jumping/sneaking state rather than the raw
+-- keyboard, because the raw keys stay live while chat is open and a typed space would
+-- otherwise launch you.
+
 local commands = require("lib.commands")
 
 local AIR = 0
 local WATER = { [8] = true, [9] = true }
 local LAVA = { [10] = true, [11] = true }
+local WORLD_TOP = 127
+local FLIGHT_RATE = 0.42
 local hostile = {
   Creeper = true, Skeleton = true, Spider = true, Giant = true, Zombie = true,
   Slime = true, Ghast = true, PigZombie = true,
@@ -15,6 +26,9 @@ local key_codes = {
   f4 = 62, f5 = 63, f6 = 64, f7 = 65, f8 = 66, f9 = 67, f10 = 68,
   f11 = 87, f12 = 88,
 }
+local armor_slots = { helmet = 3, chestplate = 2, leggings = 1, boots = 0 }
+local named_times = { day = 0, noon = 6000, night = 13000, midnight = 18000 }
+local difficulties = { peaceful = 0, easy = 1, normal = 2, hard = 3 }
 
 local waypoints = {}
 local aliases = {}
@@ -32,6 +46,12 @@ local state = {
   instant_mine = false,
 }
 
+local category = "SPC"
+local function register(spec)
+  spec.category = spec.category or category
+  return commands.register(spec)
+end
+
 local function floor(value)
   return math.floor(tonumber(value) or 0)
 end
@@ -44,7 +64,12 @@ end
 
 local function position()
   local value = player()
-  return floor(value.x), floor(value.y), floor(value.z), value
+  return value.x, value.y, value.z, value
+end
+
+local function block_pos()
+  local x, y, z, value = position()
+  return floor(x), floor(y), floor(z), value
 end
 
 local function set_player(values)
@@ -55,6 +80,7 @@ local function teleport(x, y, z)
   local value = player()
   waypoints["return"] = { x = value.x, y = value.y, z = value.z }
   assert(value:teleport(x, y, z), "teleport failed")
+  minecraft.entities.set_state(value, { vx = 0, vy = 0, vz = 0, fall_distance = 0 })
 end
 
 local function toggle(value, current)
@@ -70,10 +96,23 @@ local function block_id(value)
   assert(value ~= nil, "expected a block")
   local id = tonumber(value)
   if id == nil then
-    id = minecraft.world.block_id(tostring(value):lower())
-    assert(id ~= 0 or tostring(value):lower() == "air", "unknown block: " .. tostring(value))
+    local name = tostring(value):lower()
+    id = minecraft.world.block_id(name)
+    assert(id ~= 0 or name == "air", "unknown block: " .. tostring(value))
   end
   return floor(id)
+end
+
+local function item_id(value)
+  assert(value ~= nil, "expected an item")
+  local id = tonumber(value)
+  if id == nil then
+    id = minecraft.world.block_id(tostring(value):lower())
+    assert(id ~= 0, "unknown item: " .. tostring(value))
+  end
+  id = floor(id)
+  assert(minecraft.items.describe(id) ~= nil, "unknown item: " .. tostring(value))
+  return id
 end
 
 local function facing_vector()
@@ -82,10 +121,17 @@ local function facing_vector()
   return -math.sin(angle), math.cos(angle)
 end
 
-local function clear_inventory()
-  for slot = 0, minecraft.inventory.slot_count() - 1 do
-    minecraft.inventory.set(slot, { id = 0, count = 0 })
-  end
+local function held_stack()
+  local slot = minecraft.inventory.selected_slot()
+  local stack = minecraft.inventory.get(slot)
+  assert(stack ~= nil and stack.id > 0, "hold an item")
+  return slot, stack
+end
+
+local function targeted_block()
+  local hit = assert(minecraft.raycast(), "nothing targeted")
+  assert(hit.type == "block", "target a block")
+  return hit.block_x, hit.block_y, hit.block_z, hit
 end
 
 local function entities(filter)
@@ -108,6 +154,65 @@ local function command_name(raw)
   return normalized
 end
 
+local function plural(count, noun)
+  return count .. " " .. noun .. (count == 1 and "" or "s")
+end
+
+-- Waypoints, aliases and keybinds outlive the session; SPC without that is a scratchpad.
+local STORE = "spc.txt"
+
+local function save()
+  local lines = {}
+  for name, point in pairs(waypoints) do
+    if name ~= "return" then
+      lines[#lines + 1] = string.format("waypoint %s %.3f %.3f %.3f", name, point.x, point.y, point.z)
+    end
+  end
+  for name, target in pairs(aliases) do
+    lines[#lines + 1] = "alias " .. name .. " " .. target
+  end
+  for _, binding in pairs(bindings) do
+    lines[#lines + 1] = "bind " .. binding.key .. " " .. binding.command
+  end
+  table.sort(lines)
+  minecraft.storage.write(STORE, table.concat(lines, "\n"))
+end
+
+local function bind_key(key, command)
+  local code = key_codes[key:lower()] or tonumber(key)
+  assert(code ~= nil, "unknown key: " .. key)
+  local id = "bind_" .. command_name(key)
+  minecraft.keybinds.register(id, { default = code, label = "SPC: " .. key:upper() })
+  bindings[id] = { id = id, key = key:lower(), command = command }
+  return id
+end
+
+local function load()
+  local text = minecraft.storage.read(STORE)
+  if text == nil then
+    return
+  end
+  for line in text:gmatch("[^\r\n]+") do
+    local kind, rest = line:match("^(%S+)%s+(.+)$")
+    if kind == "waypoint" then
+      local name, x, y, z = rest:match("^(%S+)%s+(%S+)%s+(%S+)%s+(%S+)$")
+      if name ~= nil and tonumber(z) ~= nil then
+        waypoints[name] = { x = tonumber(x), y = tonumber(y), z = tonumber(z) }
+      end
+    elseif kind == "alias" then
+      local name, target = rest:match("^(%S+)%s+(.+)$")
+      if name ~= nil then
+        aliases[name] = target
+      end
+    elseif kind == "bind" then
+      local key, command = rest:match("^(%S+)%s+(.+)$")
+      if key ~= nil then
+        pcall(bind_key, key, command)
+      end
+    end
+  end
+end
+
 local function alias_hook(event)
   if event.remote == true or event.canceled == true then
     return event
@@ -125,29 +230,49 @@ end
 
 minecraft.on("chat_send", { priority = 1000 }, alias_hook)
 
-minecraft.on("client_tick", {}, function()
+local function break_targeted_block()
+  local hit = minecraft.raycast()
+  if hit == nil or hit.type ~= "block" then
+    return false
+  end
+  return minecraft.world.harvest_block(hit.block_x, hit.block_y, hit.block_z) == true
+end
+
+minecraft.on("client_tick", { before = true }, function()
   for _, binding in pairs(bindings) do
     if minecraft.keybinds.consume(binding.id) then
       commands.execute(binding.command)
     end
   end
-  if state.fly then
-    local vertical = 0
-    if minecraft.is_key_down(key_codes.space) then
-      vertical = 0.45
-    elseif minecraft.is_key_down(key_codes.shift) then
-      vertical = -0.45
-    end
-    set_player({ no_clip = true, fall_distance = 0, vy = vertical })
-  elseif state.noclip then
-    set_player({ no_clip = true, fall_distance = 0 })
-  elseif state.fall_proof then
-    set_player({ fall_distance = 0 })
+  if state.instant_mine and minecraft.is_mouse_down(0) then
+    break_targeted_block()
   end
 end)
 
+-- The whole of flight: travelFlying drops gravity, and vy is re-driven every tick because
+-- travelFlyingAir damps it by the air slipperiness after each move.
 minecraft.on("player_travel", { is_local_player = true }, function(event)
-  event.speed_multiplier = state.speed
+  event.speed_multiplier = event.speed_multiplier * state.speed
+  local flying = state.fly or state.noclip
+  if not flying then
+    if state.fall_proof then
+      minecraft.entities.set_state(player(), { fall_distance = 0 })
+    end
+    return event
+  end
+  event.flying = true
+  local value = player()
+  local vertical = 0
+  if value.jumping then
+    vertical = FLIGHT_RATE * state.speed
+  elseif value.sneaking then
+    vertical = -FLIGHT_RATE * state.speed
+  end
+  minecraft.entities.set_state(value, {
+    vy = vertical,
+    fall_distance = 0,
+    no_clip = state.noclip,
+  })
   return event
 end)
 
@@ -157,8 +282,7 @@ minecraft.on("entity_tick", {}, function(event)
     if value ~= nil then
       minecraft.entities.set_state(value, { vx = 0, vy = 0, vz = 0 })
     end
-  end
-  if state.fire_proof and event.entity_type == "Player" then
+  elseif state.fire_proof and event.entity_type == "Player" then
     local value = minecraft.entities.get(event.entity_id)
     if value ~= nil then
       minecraft.entities.set_state(value, { fire_ticks = 0 })
@@ -184,81 +308,201 @@ minecraft.on("block_interact", { local_player = true }, function(event)
 end)
 
 minecraft.on("mouse_button", { button = 0, pressed = true, priority = 90 }, function(event)
-  if not state.instant_mine then return event end
-  local hit = minecraft.raycast()
-  if hit ~= nil and hit.type == "block" and minecraft.world.harvest_block(hit.block_x, hit.block_y, hit.block_z) then
+  if state.instant_mine and break_targeted_block() then
     event.handled = true
   end
   return event
 end)
 
-commands.register({
-  name = "alias",
-  params = "<name> <command>",
-  help = "creates a persistent session command alias",
+--------------------------------------------------------------------------------
+category = "SPC: movement"
+
+register({
+  name = "fly",
+  params = "[on|off]",
+  help = "flight with no gravity; jump rises, sneak drops",
+  details = "blocks still stop you -- use /noclip to pass through them",
   run = function(context)
-    local name, target = context.rest:match("^(%S+)%s+(.+)$")
-    assert(name ~= nil and target ~= nil, "expected an alias name and command")
-    assert(target:sub(1, 1) == "/", "the command must start with /")
-    aliases[command_name(name)] = target
-    context.reply("Alias " .. name .. " set")
+    state.fly = toggle(context.args[1], state.fly)
+    if not state.fly and not state.noclip then
+      set_player({ no_clip = false, fall_distance = 0 })
+    end
+    context.reply("Flight " .. (state.fly and "enabled" or "disabled"))
   end,
 })
 
-commands.register({
-  name = "ralias",
-  params = "<name>",
-  help = "removes a command alias",
+register({
+  name = "noclip",
+  aliases = { "nc" },
+  params = "[on|off]",
+  help = "flight that passes through blocks",
+  details = "implies flight, otherwise you would sink out of the world",
   run = function(context)
-    local name = command_name(context.args[1])
-    assert(aliases[name] ~= nil, "unknown alias")
-    aliases[name] = nil
-    context.reply("Alias " .. name .. " removed")
+    state.noclip = toggle(context.args[1], state.noclip)
+    set_player({ no_clip = state.noclip, fall_distance = 0 })
+    context.reply("Noclip " .. (state.noclip and "enabled" or "disabled"))
   end,
 })
 
-commands.register({
-  name = "bind",
-  params = "<key> <command>",
-  help = "binds a command to a Controls-menu keybind",
+register({
+  name = "setspeed",
+  aliases = { "speed" },
+  params = "<multiplier>",
+  help = "scales walking and flying speed",
   run = function(context)
-    local key, command = context.rest:match("^(%S+)%s+(.+)$")
-    assert(key ~= nil and command ~= nil, "expected a key and command")
-    local code = key_codes[key:lower()] or tonumber(key)
-    assert(code ~= nil, "unknown key")
-    assert(command:sub(1, 1) == "/", "the command must start with /")
-    local id = "bind_" .. command_name(key)
-    minecraft.keybinds.register(id, { default = code, label = "SPC: " .. key:upper() })
-    bindings[id] = { id = id, command = command }
-    context.reply("Bound " .. key:upper() .. " to " .. command)
+    state.speed = math.max(0.05, math.min(20, tonumber(context.args[1]) or 1))
+    context.reply("Speed set to " .. state.speed)
   end,
 })
 
-commands.register({
-  name = "unbind",
-  params = "<key>",
-  help = "disables an SPC command keybind",
+register({
+  name = "tele",
+  aliases = { "t" },
+  params = "<x> <y> <z>",
+  help = "teleports to coordinates",
   run = function(context)
-    local id = "bind_" .. command_name(context.args[1])
-    assert(bindings[id] ~= nil, "that key has no SPC command binding")
-    bindings[id] = nil
-    context.reply("SPC binding disabled")
+    assert(#context.args >= 3, "expected x y z")
+    local x = assert(tonumber(context.args[1]), "expected a number for x")
+    local y = assert(tonumber(context.args[2]), "expected a number for y")
+    local z = assert(tonumber(context.args[3]), "expected a number for z")
+    teleport(x, y, z)
+    context.reply(string.format("Teleported to %.1f %.1f %.1f", x, y, z))
   end,
 })
 
-commands.register({
+register({
+  name = "jump",
+  help = "teleports onto the block you are looking at",
+  run = function(context)
+    local x, y, z = targeted_block()
+    teleport(x + 0.5, y + 1, z + 0.5)
+    context.reply("Jumped to the targeted block")
+  end,
+})
+
+register({
+  name = "ascend",
+  help = "teleports to the next open floor above you",
+  run = function(context)
+    local x, y, z = block_pos()
+    for target = y + 1, WORLD_TOP - 1 do
+      if minecraft.world.get_block(x, target, z) == AIR and minecraft.world.get_block(x, target + 1, z) == AIR and
+          minecraft.world.get_block(x, target - 1, z) ~= AIR then
+        teleport(x + 0.5, target, z + 0.5)
+        context.reply("Ascended to y " .. target)
+        return
+      end
+    end
+    error("no open floor above")
+  end,
+})
+
+register({
+  name = "descend",
+  help = "teleports to the next open floor below you",
+  run = function(context)
+    local x, y, z = block_pos()
+    for target = y - 1, 1, -1 do
+      if minecraft.world.get_block(x, target, z) == AIR and minecraft.world.get_block(x, target + 1, z) == AIR and
+          minecraft.world.get_block(x, target - 1, z) ~= AIR then
+        teleport(x + 0.5, target, z + 0.5)
+        context.reply("Descended to y " .. target)
+        return
+      end
+    end
+    error("no open floor below")
+  end,
+})
+
+register({
+  name = "unstuck",
+  help = "teleports out of the blocks you are inside",
+  run = function(context)
+    local x, y, z = block_pos()
+    for target = y, WORLD_TOP - 1 do
+      if minecraft.world.get_block(x, target, z) == AIR and minecraft.world.get_block(x, target + 1, z) == AIR then
+        teleport(x + 0.5, target, z + 0.5)
+        context.reply("Unstuck at y " .. target)
+        return
+      end
+    end
+    error("no open space found")
+  end,
+})
+
+register({
+  name = "moveplayer",
+  params = "<distance> [up|down|forward|back|left|right]",
+  help = "shoves you a set distance",
+  run = function(context)
+    local distance = tonumber(context.args[1]) or 1
+    local direction = tostring(context.args[2] or "forward"):lower()
+    local x, y, z = position()
+    local dx, dz = facing_vector()
+    if direction == "up" then
+      teleport(x, y + distance, z)
+    elseif direction == "down" then
+      teleport(x, y - distance, z)
+    elseif direction == "back" then
+      teleport(x - dx * distance, y, z - dz * distance)
+    elseif direction == "left" then
+      teleport(x + dz * distance, y, z - dx * distance)
+    elseif direction == "right" then
+      teleport(x - dz * distance, y, z + dx * distance)
+    else
+      assert(direction == "forward", "expected up, down, forward, back, left, or right")
+      teleport(x + dx * distance, y, z + dz * distance)
+    end
+    context.reply("Moved " .. distance .. " " .. direction)
+  end,
+})
+
+register({
+  name = "platform",
+  params = "[block]",
+  help = "builds a 3x3 platform under your feet",
+  run = function(context)
+    local x, y, z = block_pos()
+    local id = context.args[1] and block_id(context.args[1]) or 20
+    for dx = -1, 1 do
+      for dz = -1, 1 do
+        minecraft.world.set_block(x + dx, y - 1, z + dz, id)
+      end
+    end
+    context.reply("Platform created")
+  end,
+})
+
+register({
+  name = "p",
+  aliases = { "position" },
+  help = "shows your exact position, facing, and biome",
+  run = function(context)
+    local x, y, z, value = position()
+    local bx, _, bz = block_pos()
+    context.reply(string.format("%.2f %.2f %.2f", x, y, z))
+    context.reply(string.format("yaw %.1f pitch %.1f, %s", value.yaw, value.pitch,
+        tostring(minecraft.world.get_biome(bx, bz))))
+  end,
+})
+
+--------------------------------------------------------------------------------
+category = "SPC: waypoints"
+
+register({
   name = "set",
   params = "<name>",
-  help = "stores a waypoint at your position",
+  help = "stores a waypoint where you stand",
   run = function(context)
     local name = command_name(context.args[1])
     local x, y, z = position()
-    waypoints[name] = { x = x + 0.5, y = y, z = z + 0.5 }
+    waypoints[name] = { x = x, y = y, z = z }
+    save()
     context.reply("Waypoint " .. name .. " set")
   end,
 })
 
-commands.register({
+register({
   name = "rem",
   params = "<name>",
   help = "removes a waypoint",
@@ -266,11 +510,24 @@ commands.register({
     local name = command_name(context.args[1])
     assert(waypoints[name] ~= nil, "unknown waypoint")
     waypoints[name] = nil
+    save()
     context.reply("Waypoint " .. name .. " removed")
   end,
 })
 
-commands.register({
+register({
+  name = "goto",
+  params = "<name>",
+  help = "teleports to a waypoint",
+  run = function(context)
+    local name = command_name(context.args[1])
+    local value = assert(waypoints[name], "unknown waypoint")
+    teleport(value.x, value.y, value.z)
+    context.reply("Went to " .. name)
+  end,
+})
+
+register({
   name = "listwaypoints",
   aliases = { "l" },
   help = "lists stored waypoints",
@@ -282,534 +539,108 @@ commands.register({
   end,
 })
 
-commands.register({
-  name = "goto",
-  params = "<name>",
-  help = "teleports to a waypoint",
-  run = function(context)
-    local value = waypoints[command_name(context.args[1])]
-    assert(value ~= nil, "unknown waypoint")
-    teleport(value.x, value.y, value.z)
-  end,
-})
-
-commands.register({
+register({
   name = "sethome",
   help = "sets your home waypoint",
   run = function(context)
     local x, y, z = position()
-    waypoints.home = { x = x + 0.5, y = y, z = z + 0.5 }
+    waypoints.home = { x = x, y = y, z = z }
+    save()
     context.reply("Home set")
   end,
 })
 
-commands.register({
+register({
   name = "home",
   help = "teleports home",
-  run = function()
-    local value = assert(waypoints.home, "home is not set")
+  run = function(context)
+    local value = assert(waypoints.home, "home is not set -- use /sethome")
     teleport(value.x, value.y, value.z)
+    context.reply("Went home")
   end,
 })
 
-commands.register({
+register({
+  name = "setjump",
+  help = "stores the jump waypoint where you stand",
+  run = function(context)
+    local x, y, z = position()
+    waypoints.jump = { x = x, y = y, z = z }
+    save()
+    context.reply("Jump waypoint set")
+  end,
+})
+
+register({
   name = "return",
-  help = "returns to your previous command teleport",
-  run = function()
+  help = "returns to where your last teleport started",
+  run = function(context)
     local value = assert(waypoints["return"], "no return position saved")
     teleport(value.x, value.y, value.z)
+    context.reply("Returned")
   end,
 })
 
-commands.register({
-  name = "jump",
-  help = "teleports to the block you are looking at",
-  run = function()
-    local hit = assert(minecraft.raycast(), "nothing targeted")
-    assert(hit.type == "block", "target a block")
-    teleport(hit.block_x + 0.5, hit.block_y + 1, hit.block_z + 0.5)
-  end,
-})
+--------------------------------------------------------------------------------
+category = "SPC: player"
 
-commands.register({
-  name = "ascend",
-  help = "moves to the first open floor above you",
-  run = function()
-    local x, y, z = position()
-    for target = y + 1, 126 do
-      if minecraft.world.get_block(x, target, z) == AIR and minecraft.world.get_block(x, target + 1, z) == AIR and
-          minecraft.world.get_block(x, target - 1, z) ~= AIR then
-        teleport(x + 0.5, target, z + 0.5)
-        return
-      end
-    end
-    error("no open floor above")
-  end,
-})
-
-commands.register({
-  name = "descend",
-  help = "moves to the first open floor below you",
-  run = function()
-    local x, y, z = position()
-    for target = y - 1, 1, -1 do
-      if minecraft.world.get_block(x, target, z) == AIR and minecraft.world.get_block(x, target + 1, z) == AIR and
-          minecraft.world.get_block(x, target - 1, z) ~= AIR then
-        teleport(x + 0.5, target, z + 0.5)
-        return
-      end
-    end
-    error("no open floor below")
-  end,
-})
-
-commands.register({
-  name = "platform",
-  help = "builds a glass platform below you",
-  run = function(context)
-    local x, y, z = position()
-    local id = context.args[1] and block_id(context.args[1]) or 20
-    for dx = -1, 1 do
-      for dz = -1, 1 do
-        minecraft.world.set_block(x + dx, y - 1, z + dz, id)
-      end
-    end
-    context.reply("Platform created")
-  end,
-})
-
-commands.register({
-  name = "moveplayer",
-  params = "<distance>",
-  help = "moves you forward by a distance",
-  run = function(context)
-    local distance = tonumber(context.args[1]) or 1
-    local x, y, z = position()
-    local dx, dz = facing_vector()
-    teleport(x + dx * distance, y, z + dz * distance)
-  end,
-})
-
-commands.register({
-  name = "setspawn",
-  help = "sets the world spawn at your position",
-  run = function(context)
-    local x, y, z = position()
-    assert(minecraft.world.set_spawn(x, y, z), "unable to set world spawn")
-    context.reply("World spawn set")
-  end,
-})
-
-commands.register({
-  name = "spawn",
-  params = "<entity> [count]",
-  help = "spawns entities at your position",
-  run = function(context)
-    local kind = assert(context.args[1], "expected an entity")
-    local count = math.max(1, math.min(64, floor(context.args[2] or 1)))
-    local x, y, z = position()
-    local spawned = 0
-    for _ = 1, count do
-      if minecraft.world.spawn_entity(kind, x, y, z) then spawned = spawned + 1 end
-    end
-    assert(spawned > 0, "unknown entity: " .. kind)
-    context.reply("Spawned " .. spawned .. " " .. kind)
-  end,
-})
-
-commands.register({
-  name = "bring",
-  params = "<entity>",
-  help = "brings matching entities to you",
-  run = function(context)
-    local wanted = assert(context.args[1], "expected an entity")
-    local x, y, z = position()
-    local moved = 0
-    for _, value in ipairs(entities()) do
-      if value.type:lower() == wanted:lower() and value:teleport(x, y, z) then moved = moved + 1 end
-    end
-    context.reply("Brought " .. moved .. " " .. wanted)
-  end,
-})
-
-commands.register({
-  name = "killall",
-  params = "[entity]",
-  help = "removes every non-player entity, or one type",
-  run = function(context)
-    local wanted = context.args[1] and context.args[1]:lower()
-    local removed = remove_entities(function(value) return wanted == nil or value.type:lower() == wanted end)
-    context.reply("Removed " .. removed .. " entities")
-  end,
-})
-
-commands.register({
-  name = "killnpc",
-  aliases = { "exterminate" },
-  params = "[entity]",
-  help = "removes hostile mobs, or a named entity type",
-  run = function(context)
-    local wanted = context.args[1] and context.args[1]:lower()
-    local removed = remove_entities(function(value)
-      return wanted ~= nil and value.type:lower() == wanted or wanted == nil and hostile[value.type] == true
-    end)
-    context.reply("Removed " .. removed .. " entities")
-  end,
-})
-
-commands.register({
-  name = "defuse",
-  help = "removes all primed TNT",
-  run = function(context)
-    local removed = remove_entities(function(value) return value.type == "Tnt" end)
-    context.reply("Defused " .. removed .. " TNT")
-  end,
-})
-
-commands.register({
-  name = "freeze",
-  params = "[on|off]",
-  help = "freezes or unfreezes non-player entities",
-  run = function(context)
-    state.freeze = toggle(context.args[1], state.freeze)
-    context.reply("Entity freeze " .. (state.freeze and "enabled" or "disabled"))
-  end,
-})
-
-commands.register({
+register({
   name = "heal",
   params = "[amount]",
-  help = "restores health and extinguishes fire",
+  help = "restores health and puts out fire",
   run = function(context)
-    local amount = context.args[1] and floor(context.args[1]) or 20
-    set_player({ health = math.max(1, math.min(20, amount)), fire_ticks = 0 })
-    context.reply("Health set to " .. math.max(1, math.min(20, amount)))
+    local amount = math.max(1, math.min(20, context.args[1] and floor(context.args[1]) or 20))
+    set_player({ health = amount, fire_ticks = 0 })
+    context.reply("Health set to " .. amount)
   end,
 })
 
-commands.register({
+register({
   name = "health",
-  help = "shows current health",
+  params = "[amount]",
+  help = "shows or sets your health",
   run = function(context)
-    context.reply("Health: " .. player().health)
+    if context.args[1] == nil then
+      context.reply("Health: " .. player().health .. "/20")
+      return
+    end
+    local amount = math.max(0, math.min(20, floor(context.args[1])))
+    set_player({ health = amount })
+    context.reply("Health set to " .. amount)
   end,
 })
 
-commands.register({
+register({
+  name = "damage",
+  params = "<amount>",
+  help = "takes health off you",
+  run = function(context)
+    local amount = math.max(0, floor(assert(context.args[1], "expected an amount")))
+    set_player({ health = math.max(0, player().health - amount) })
+    context.reply("Applied " .. plural(amount, "point") .. " of damage")
+  end,
+})
+
+register({
+  name = "kill",
+  help = "kills your player",
+  run = function(context)
+    set_player({ health = 0 })
+    context.reply("Killed player")
+  end,
+})
+
+register({
   name = "extinguish",
   aliases = { "ext" },
-  help = "extinguishes you",
+  help = "puts you out",
   run = function(context)
     set_player({ fire_ticks = 0 })
     context.reply("Extinguished")
   end,
 })
 
-commands.register({
-  name = "firedamage",
-  params = "[on|off]",
-  help = "toggles fire damage protection",
-  run = function(context)
-    state.fire_proof = not toggle(context.args[1], not state.fire_proof)
-    context.reply("Fire damage " .. (state.fire_proof and "disabled" or "enabled"))
-  end,
-})
-
-commands.register({
-  name = "fly",
-  params = "[on|off]",
-  help = "toggles noclip flight; Space rises and Shift descends",
-  run = function(context)
-    state.fly = toggle(context.args[1], state.fly)
-    if not state.fly and not state.noclip then set_player({ no_clip = false }) end
-    context.reply("Flight " .. (state.fly and "enabled" or "disabled"))
-  end,
-})
-
-commands.register({
-  name = "noclip",
-  params = "[on|off]",
-  help = "toggles walking through blocks",
-  run = function(context)
-    state.noclip = toggle(context.args[1], state.noclip)
-    set_player({ no_clip = state.noclip or state.fly, fall_distance = 0 })
-    context.reply("Noclip " .. (state.noclip and "enabled" or "disabled"))
-  end,
-})
-
-commands.register({
-  name = "setspeed",
-  aliases = { "speed" },
-  params = "<multiplier>",
-  help = "sets movement speed",
-  run = function(context)
-    state.speed = math.max(0.05, math.min(20, tonumber(context.args[1]) or 1))
-    context.reply("Speed set to " .. state.speed)
-  end,
-})
-
-commands.register({
-  name = "instantkill",
-  params = "[on|off]",
-  help = "toggles one-hit kills",
-  run = function(context)
-    state.instant_kill = toggle(context.args[1], state.instant_kill)
-    context.reply("Instant kill " .. (state.instant_kill and "enabled" or "disabled"))
-  end,
-})
-
-commands.register({
-  name = "superpunch",
-  params = "[on|off]",
-  help = "toggles powerful melee attacks",
-  run = function(context)
-    state.super_punch = toggle(context.args[1], state.super_punch)
-    context.reply("Super punch " .. (state.super_punch and "enabled" or "disabled"))
-  end,
-})
-
-commands.register({
-  name = "clear",
-  aliases = { "clearinventory" },
-  help = "clears your inventory",
-  run = function(context)
-    clear_inventory()
-    context.reply("Inventory cleared")
-  end,
-})
-
-commands.register({
-  name = "duplicate",
-  help = "duplicates the selected inventory stack",
-  run = function(context)
-    local stack = minecraft.inventory.get(minecraft.inventory.selected_slot())
-    assert(stack ~= nil and stack.id > 0, "hold an item")
-    assert(minecraft.inventory.give(stack), "inventory is full")
-    context.reply("Duplicated item " .. stack.id)
-  end,
-})
-
-commands.register({
-  name = "refill",
-  help = "refills the selected inventory stack",
-  run = function(context)
-    local slot = minecraft.inventory.selected_slot()
-    local stack = minecraft.inventory.get(slot)
-    assert(stack ~= nil and stack.id > 0, "hold an item")
-    stack.count = stack.max_count
-    assert(minecraft.inventory.set(slot, stack), "unable to refill item")
-    context.reply("Item refilled")
-  end,
-})
-
-commands.register({
-  name = "repair",
-  help = "repairs the selected inventory item",
-  run = function(context)
-    local slot = minecraft.inventory.selected_slot()
-    local stack = minecraft.inventory.get(slot)
-    assert(stack ~= nil and stack.id > 0, "hold an item")
-    stack.damage = 0
-    assert(minecraft.inventory.set(slot, stack), "unable to repair item")
-    context.reply("Item repaired")
-  end,
-})
-
-commands.register({
-  name = "item",
-  aliases = { "i" },
-  params = "<id> [count] [damage]",
-  help = "gives an item",
-  run = function(context)
-    local id = floor(assert(context.args[1], "expected an item id"))
-    local description = assert(minecraft.items.describe(id), "unknown item")
-    local count = math.max(1, math.min(description.max_count, floor(context.args[2] or 1)))
-    local damage = floor(context.args[3] or 0)
-    assert(minecraft.inventory.give({ id = id, count = count, damage = damage }), "inventory is full")
-    context.reply("Given " .. count .. " of item " .. id)
-  end,
-})
-
-commands.register({
-  name = "itemdamage",
-  params = "[damage]",
-  help = "shows or sets selected item damage",
-  run = function(context)
-    local slot = minecraft.inventory.selected_slot()
-    local stack = minecraft.inventory.get(slot)
-    assert(stack ~= nil and stack.id > 0, "hold an item")
-    if context.args[1] == nil then
-      context.reply("Item damage: " .. stack.damage)
-      return
-    end
-    stack.damage = math.max(0, floor(context.args[1]))
-    assert(minecraft.inventory.set(slot, stack), "unable to change item damage")
-    context.reply("Item damage set")
-  end,
-})
-
-commands.register({
-  name = "itemname",
-  help = "shows the selected item id",
-  run = function(context)
-    local stack = minecraft.inventory.get(minecraft.inventory.selected_slot())
-    assert(stack ~= nil and stack.id > 0, "hold an item")
-    context.reply("Item id: " .. stack.id)
-  end,
-})
-
-commands.register({
-  name = "helmet",
-  params = "<id> [damage]",
-  help = "equips an item in your helmet slot",
-  run = function(context)
-    local id = floor(assert(context.args[1], "expected an item id"))
-    assert(minecraft.items.describe(id) ~= nil, "unknown item")
-    assert(minecraft.inventory.set(minecraft.inventory.main_size() + 3, { id = id, count = 1, damage = floor(context.args[2] or 0) }), "unable to equip helmet")
-    context.reply("Helmet equipped")
-  end,
-})
-
-commands.register({
-  name = "drops",
-  aliases = { "removedrops" },
-  help = "removes dropped item entities",
-  run = function(context)
-    local removed = remove_entities(function(value) return value.type == "Item" end)
-    context.reply("Removed " .. removed .. " drops")
-  end,
-})
-
-commands.register({
-  name = "chest",
-  help = "places a chest at the targeted block",
-  run = function(context)
-    local hit = assert(minecraft.raycast(), "nothing targeted")
-    assert(hit.type == "block", "target a block")
-    assert(minecraft.world.set_block(hit.block_x, hit.block_y + 1, hit.block_z, 54), "unable to place chest")
-    context.reply("Chest placed")
-  end,
-})
-
-commands.register({
-  name = "clearwater",
-  params = "[radius]",
-  help = "removes water around you",
-  run = function(context)
-    local radius = math.max(1, math.min(32, floor(context.args[1] or 8)))
-    local x, y, z = position()
-    local removed = 0
-    for dy = -radius, radius do
-      for dz = -radius, radius do
-        for dx = -radius, radius do
-          if WATER[minecraft.world.get_block(x + dx, y + dy, z + dz)] then
-            if minecraft.world.set_block(x + dx, y + dy, z + dz, AIR) then removed = removed + 1 end
-          end
-        end
-      end
-    end
-    context.reply("Removed " .. removed .. " water blocks")
-  end,
-})
-
-commands.register({
-  name = "atlantis",
-  params = "[radius]",
-  help = "fills a sea-level area with water",
-  run = function(context)
-    local radius = math.max(1, math.min(32, floor(context.args[1] or 16)))
-    local x, _, z = position()
-    local changed = 0
-    for dz = -radius, radius do
-      for dx = -radius, radius do
-        if dx * dx + dz * dz <= radius * radius and minecraft.world.get_block(x + dx, 63, z + dz) == AIR then
-          if minecraft.world.set_block(x + dx, 63, z + dz, 8) then changed = changed + 1 end
-        end
-      end
-    end
-    context.reply("Atlantis filled " .. changed .. " blocks")
-  end,
-})
-
-commands.register({
-  name = "superheat",
-  params = "[radius]",
-  help = "turns nearby stone and sand into heated variants",
-  run = function(context)
-    local radius = math.max(1, math.min(16, floor(context.args[1] or 4)))
-    local x, y, z = position()
-    local changed = 0
-    for dy = -radius, radius do
-      for dz = -radius, radius do
-        for dx = -radius, radius do
-          local id = minecraft.world.get_block(x + dx, y + dy, z + dz)
-          local replacement = id == 1 and 4 or id == 12 and 20 or nil
-          if replacement ~= nil and minecraft.world.set_block(x + dx, y + dy, z + dz, replacement) then changed = changed + 1 end
-        end
-      end
-    end
-    context.reply("Superheated " .. changed .. " blocks")
-  end,
-})
-
-commands.register({
-  name = "weather",
-  params = "<clear|rain|thunder>",
-  help = "sets the weather",
-  run = function(context)
-    local value = assert(context.args[1], "expected clear, rain, or thunder")
-    assert(minecraft.world.set_weather(value), "unknown weather")
-    context.reply("Weather set to " .. value)
-  end,
-})
-
-commands.register({
-  name = "difficulty",
-  params = "<peaceful|easy|normal|hard>",
-  help = "sets world difficulty",
-  run = function(context)
-    local values = { peaceful = 0, easy = 1, normal = 2, hard = 3 }
-    local value = values[tostring(context.args[1] or ""):lower()] or tonumber(context.args[1])
-    assert(value ~= nil and minecraft.world.set_difficulty(value), "expected peaceful, easy, normal, or hard")
-    context.reply("Difficulty set")
-  end,
-})
-
-commands.register({
-  name = "biome",
-  help = "shows the biome at your position",
-  run = function(context)
-    local x, _, z = position()
-    context.reply("Biome: " .. tostring(minecraft.world.get_biome(x, z)))
-  end,
-})
-
-commands.register({
-  name = "cannon",
-  params = "[power]",
-  help = "fires a primed TNT cannonball",
-  run = function(context)
-    local power = math.max(0.1, math.min(10, tonumber(context.args[1]) or 2))
-    local x, y, z = position()
-    local dx, dz = facing_vector()
-    assert(minecraft.world.spawn_entity("Tnt", x + dx, y + 1, z + dz), "unable to spawn TNT")
-    local latest = nil
-    for _, value in ipairs(entities("Tnt")) do latest = value end
-    if latest ~= nil then minecraft.entities.set_state(latest, { vx = dx * power, vy = power * 0.35, vz = dz * power }) end
-    context.reply("Cannon fired")
-  end,
-})
-
-commands.register({
-  name = "explode",
-  params = "[power]",
-  help = "launches a primed TNT blast in front of you",
-  run = function(context)
-    commands.execute("/cannon " .. tostring(context.args[1] or 2))
-  end,
-})
-
-commands.register({
+register({
   name = "falldamage",
   params = "[on|off]",
   help = "toggles fall damage",
@@ -819,36 +650,212 @@ commands.register({
   end,
 })
 
-commands.register({
+register({
+  name = "firedamage",
+  params = "[on|off]",
+  help = "toggles burning",
+  run = function(context)
+    state.fire_proof = not toggle(context.args[1], not state.fire_proof)
+    context.reply("Fire damage " .. (state.fire_proof and "disabled" or "enabled"))
+  end,
+})
+
+register({
+  name = "instantkill",
+  params = "[on|off]",
+  help = "toggles one-hit kills",
+  run = function(context)
+    state.instant_kill = toggle(context.args[1], state.instant_kill)
+    context.reply("Instant kill " .. (state.instant_kill and "enabled" or "disabled"))
+  end,
+})
+
+register({
+  name = "superpunch",
+  params = "[on|off]",
+  help = "toggles ten times melee damage",
+  run = function(context)
+    state.super_punch = toggle(context.args[1], state.super_punch)
+    context.reply("Super punch " .. (state.super_punch and "enabled" or "disabled"))
+  end,
+})
+
+register({
   name = "instantmine",
   params = "[on|off]",
-  help = "toggles instant block mining",
+  help = "breaks blocks the moment you hit them",
   run = function(context)
     state.instant_mine = toggle(context.args[1], state.instant_mine)
     context.reply("Instant mine " .. (state.instant_mine and "enabled" or "disabled"))
   end,
 })
 
-commands.register({
-  name = "freecam",
+register({
+  name = "infiniteitems",
   params = "[on|off]",
-  help = "toggles free noclip flight controls",
+  help = "stops placed blocks and tool wear from using up stacks",
   run = function(context)
-    state.fly = toggle(context.args[1], state.fly)
-    context.reply("Freecam flight " .. (state.fly and "enabled" or "disabled"))
+    state.infinite_items = toggle(context.args[1], state.infinite_items)
+    context.reply("Infinite items " .. (state.infinite_items and "enabled" or "disabled"))
   end,
 })
 
-commands.register({
+--------------------------------------------------------------------------------
+category = "SPC: items"
+
+register({
+  name = "item",
+  aliases = { "i" },
+  params = "<id|block> [count] [damage]",
+  help = "puts an item in your inventory",
+  details = "block names work too: /item diamond_block 64",
+  run = function(context)
+    local id = item_id(context.args[1])
+    local description = minecraft.items.describe(id)
+    local count = math.max(1, math.min(description.max_count, floor(context.args[2] or 1)))
+    local damage = floor(context.args[3] or 0)
+    assert(minecraft.inventory.give({ id = id, count = count, damage = damage }), "inventory is full")
+    context.reply("Given " .. count .. " of item " .. id)
+  end,
+})
+
+register({
+  name = "clear",
+  aliases = { "clearinventory" },
+  help = "empties your inventory and armour",
+  run = function(context)
+    for slot = 0, minecraft.inventory.slot_count() - 1 do
+      minecraft.inventory.set(slot, { id = 0, count = 0 })
+    end
+    context.reply("Inventory cleared")
+  end,
+})
+
+register({
+  name = "duplicate",
+  aliases = { "dupe" },
+  help = "copies the stack you are holding",
+  run = function(context)
+    local _, stack = held_stack()
+    assert(minecraft.inventory.give(stack), "inventory is full")
+    context.reply("Duplicated item " .. stack.id)
+  end,
+})
+
+register({
+  name = "refill",
+  aliases = { "maxstack" },
+  help = "fills the held stack to its maximum",
+  run = function(context)
+    local slot, stack = held_stack()
+    stack.count = stack.max_count
+    assert(minecraft.inventory.set(slot, stack), "unable to refill item")
+    context.reply("Refilled to " .. stack.count)
+  end,
+})
+
+register({
+  name = "repair",
+  help = "repairs the held item",
+  run = function(context)
+    local slot, stack = held_stack()
+    stack.damage = 0
+    assert(minecraft.inventory.set(slot, stack), "unable to repair item")
+    context.reply("Item repaired")
+  end,
+})
+
+register({
+  name = "itemdamage",
+  params = "[damage]",
+  help = "shows or sets the held item's damage",
+  run = function(context)
+    local slot, stack = held_stack()
+    if context.args[1] == nil then
+      context.reply("Item damage: " .. stack.damage .. "/" .. stack.max_damage)
+      return
+    end
+    stack.damage = math.max(0, floor(context.args[1]))
+    assert(minecraft.inventory.set(slot, stack), "unable to change item damage")
+    context.reply("Item damage set to " .. stack.damage)
+  end,
+})
+
+register({
+  name = "itemname",
+  help = "shows the held item's id and stack size",
+  run = function(context)
+    local _, stack = held_stack()
+    context.reply("Item " .. stack.id .. " x" .. stack.count .. ", damage " .. stack.damage)
+  end,
+})
+
+register({
+  name = "armor",
+  aliases = { "armour" },
+  params = "<helmet|chestplate|leggings|boots> <id> [damage]",
+  help = "equips an item in an armour slot",
+  run = function(context)
+    local piece = tostring(context.args[1] or ""):lower()
+    local offset = assert(armor_slots[piece], "expected helmet, chestplate, leggings, or boots")
+    local id = item_id(context.args[2])
+    local slot = minecraft.inventory.main_size() + offset
+    assert(minecraft.inventory.set(slot, { id = id, count = 1, damage = floor(context.args[3] or 0) }),
+        "unable to equip " .. piece)
+    context.reply(piece:gsub("^%l", string.upper) .. " equipped")
+  end,
+})
+
+register({
+  name = "helmet",
+  params = "<id> [damage]",
+  help = "equips an item on your head",
+  run = function(context)
+    commands.execute("/armor helmet " .. table.concat(context.args, " "))
+  end,
+})
+
+register({
+  name = "drop",
+  help = "drops the stack you are holding",
+  run = function(context)
+    local slot, stack = held_stack()
+    local x, y, z = position()
+    assert(minecraft.drop_item(stack.id, stack.count, x, y + 1, z), "unable to drop item")
+    minecraft.inventory.set(slot, { id = 0, count = 0 })
+    context.reply("Dropped item stack")
+  end,
+})
+
+register({
+  name = "dropstore",
+  help = "drops your whole inventory at your feet",
+  run = function(context)
+    local x, y, z = position()
+    local dropped = 0
+    for slot = 0, minecraft.inventory.slot_count() - 1 do
+      local stack = minecraft.inventory.get(slot)
+      if stack ~= nil and stack.id > 0 and minecraft.drop_item(stack.id, stack.count, x, y + 1, z) then
+        minecraft.inventory.set(slot, { id = 0, count = 0 })
+        dropped = dropped + 1
+      end
+    end
+    context.reply("Dropped " .. plural(dropped, "stack"))
+  end,
+})
+
+--------------------------------------------------------------------------------
+category = "SPC: world"
+
+register({
   name = "time",
-  params = "<day|night|set|add> [ticks]",
-  help = "sets or adds world time",
+  params = "<day|noon|night|midnight|set|add> [ticks]",
+  help = "sets or advances the world time",
   run = function(context)
     local mode = tostring(context.args[1] or ""):lower()
-    local named = { day = 0, noon = 6000, night = 13000, midnight = 18000 }
-    if named[mode] ~= nil then
+    if named_times[mode] ~= nil then
       local now = minecraft.world.get_time()
-      assert(minecraft.world.set_time(now - now % 24000 + named[mode]), "unable to set time")
+      assert(minecraft.world.set_time(now - now % 24000 + named_times[mode]), "unable to set time")
       context.reply("Time set to " .. mode)
       return
     end
@@ -860,158 +867,247 @@ commands.register({
   end,
 })
 
-commands.register({
-  name = "timeschedule",
-  params = "<day|night|ticks>",
-  help = "sets the next scheduled world time",
+register({
+  name = "day",
+  help = "sets the time to sunrise",
+  run = function(context) commands.execute("/time day") end,
+})
+
+register({
+  name = "night",
+  help = "sets the time to nightfall",
+  run = function(context) commands.execute("/time night") end,
+})
+
+register({
+  name = "weather",
+  params = "<clear|rain|thunder>",
+  help = "sets the weather",
   run = function(context)
-    commands.execute("/time " .. assert(context.args[1], "expected a time"))
+    local value = tostring(assert(context.args[1], "expected clear, rain, or thunder")):lower()
+    assert(minecraft.world.set_weather(value), "expected clear, rain, or thunder")
+    context.reply("Weather set to " .. value)
   end,
 })
 
-commands.register({
-  name = "tele",
-  aliases = { "t" },
-  params = "<x> <y> <z>",
-  help = "teleports to coordinates",
+register({
+  name = "sun",
+  help = "clears the weather",
+  run = function(context) commands.execute("/weather clear") end,
+})
+
+register({
+  name = "storm",
+  help = "starts a thunderstorm",
+  run = function(context) commands.execute("/weather thunder") end,
+})
+
+register({
+  name = "difficulty",
+  params = "<peaceful|easy|normal|hard>",
+  help = "sets the world difficulty",
   run = function(context)
-    assert(#context.args >= 3, "expected x y z")
-    teleport(tonumber(context.args[1]), tonumber(context.args[2]), tonumber(context.args[3]))
+    local value = difficulties[tostring(context.args[1] or ""):lower()] or tonumber(context.args[1])
+    assert(value ~= nil and minecraft.world.set_difficulty(value), "expected peaceful, easy, normal, or hard")
+    context.reply("Difficulty set")
   end,
 })
 
-commands.register({
-  name = "p",
-  help = "shows your position",
+register({
+  name = "biome",
+  help = "shows the biome you are standing in",
   run = function(context)
-    local x, y, z = position()
-    context.reply(string.format("%.2f %.2f %.2f", x, y, z))
+    local x, _, z = block_pos()
+    context.reply("Biome: " .. tostring(minecraft.world.get_biome(x, z)))
   end,
 })
 
-commands.register({
-  name = "setjump",
-  help = "sets the jump return position",
+register({
+  name = "setspawn",
+  help = "moves the world spawn to your position",
   run = function(context)
-    local x, y, z = position()
-    waypoints.jump = { x = x + 0.5, y = y, z = z + 0.5 }
-    context.reply("Jump position set")
+    local x, y, z = block_pos()
+    assert(minecraft.world.set_spawn(x, y, z), "unable to set world spawn")
+    context.reply("World spawn set to " .. x .. " " .. y .. " " .. z)
   end,
 })
 
-commands.register({
-  name = "unstuck",
-  help = "moves you to the first open space above",
-  run = function()
-    local x, y, z = position()
-    for target = y, 126 do
-      if minecraft.world.get_block(x, target, z) == AIR and minecraft.world.get_block(x, target + 1, z) == AIR then
-        teleport(x + 0.5, target, z + 0.5)
-        return
-      end
-    end
-    error("no open space found")
-  end,
-})
-
-commands.register({
-  name = "kill",
-  help = "kills your player",
+register({
+  name = "worldspawn",
+  help = "teleports to the world spawn",
   run = function(context)
-    set_player({ health = 0 })
-    context.reply("Killed player")
+    local spawn = assert(minecraft.world.get_spawn(), "this world has no spawn")
+    teleport(spawn.x + 0.5, spawn.y, spawn.z + 0.5)
+    context.reply("Went to the world spawn")
   end,
 })
 
-commands.register({
-  name = "damage",
-  params = "<amount>",
-  help = "damages your player",
+register({
+  name = "destroy",
+  help = "breaks the block you are looking at",
   run = function(context)
-    local amount = math.max(0, floor(assert(context.args[1], "expected damage")))
-    set_player({ health = math.max(0, player().health - amount) })
-    context.reply("Applied " .. amount .. " damage")
+    local x, y, z = targeted_block()
+    assert(minecraft.world.harvest_block(x, y, z), "unable to break that block")
+    context.reply("Block destroyed")
   end,
 })
 
-commands.register({
-  name = "infiniteitems",
-  params = "[on|off]",
-  help = "restores used block stacks and item durability",
-  run = function(context)
-    state.infinite_items = toggle(context.args[1], state.infinite_items)
-    context.reply("Infinite items " .. (state.infinite_items and "enabled" or "disabled"))
-  end,
-})
-
-commands.register({
-  name = "maxstack",
-  help = "fills the selected item stack to its maximum",
-  run = function(context)
-    commands.execute("/refill")
-  end,
-})
-
-commands.register({
-  name = "drop",
-  help = "drops the selected inventory stack",
-  run = function(context)
-    local slot = minecraft.inventory.selected_slot()
-    local stack = minecraft.inventory.get(slot)
-    assert(stack ~= nil and stack.id > 0, "hold an item")
-    local x, y, z = position()
-    assert(minecraft.drop_item(stack.id, stack.count, x, y, z), "unable to drop item")
-    minecraft.inventory.set(slot, { id = 0, count = 0 })
-    context.reply("Dropped item stack")
-  end,
-})
-
-commands.register({
-  name = "dropstore",
-  help = "clears dropped items in the world",
-  run = function(context)
-    local removed = remove_entities(function(value) return value.type == "Item" end)
-    context.reply("Stored cleanup removed " .. removed .. " drops")
-  end,
-})
-
-commands.register({
+register({
   name = "light",
-  help = "places a torch above the targeted block",
+  help = "places a torch on top of the targeted block",
   run = function(context)
-    local hit = assert(minecraft.raycast(), "nothing targeted")
-    assert(hit.type == "block", "target a block")
-    assert(minecraft.world.set_block(hit.block_x, hit.block_y + 1, hit.block_z, 50), "unable to place torch")
+    local x, y, z = targeted_block()
+    assert(minecraft.world.set_block(x, y + 1, z, 50), "unable to place torch")
     context.reply("Torch placed")
   end,
 })
 
-commands.register({
-  name = "grow",
-  help = "fully grows the targeted crop",
+register({
+  name = "chest",
+  help = "places a chest on top of the targeted block",
   run = function(context)
-    local hit = assert(minecraft.raycast(), "nothing targeted")
-    assert(hit.type == "block", "target a block")
-    local id = minecraft.world.get_block(hit.block_x, hit.block_y, hit.block_z)
-    assert(id == 59, "target a crop")
-    assert(minecraft.world.set_block(hit.block_x, hit.block_y, hit.block_z, id, 7), "unable to grow crop")
+    local x, y, z = targeted_block()
+    assert(minecraft.world.set_block(x, y + 1, z, 54), "unable to place chest")
+    context.reply("Chest placed")
+  end,
+})
+
+register({
+  name = "grow",
+  aliases = { "instantplant" },
+  help = "brings the targeted crop to full growth",
+  run = function(context)
+    local x, y, z = targeted_block()
+    local id = minecraft.world.get_block(x, y, z)
+    assert(id == 59, "target a wheat crop")
+    assert(minecraft.world.set_block(x, y, z, id, 7), "unable to grow crop")
     context.reply("Crop grown")
   end,
 })
 
-commands.register({
-  name = "instantplant",
-  help = "grows the targeted crop immediately",
+register({
+  name = "search",
+  params = "<block> [radius]",
+  help = "finds the nearest matching block around you",
   run = function(context)
-    commands.execute("/grow")
+    local wanted = block_id(assert(context.args[1], "expected a block"))
+    local radius = math.max(1, math.min(24, floor(context.args[2] or 16)))
+    local px, py, pz = block_pos()
+    local found, best, count = nil, math.huge, 0
+    for dy = -radius, radius do
+      for dz = -radius, radius do
+        for dx = -radius, radius do
+          if minecraft.world.get_block(px + dx, py + dy, pz + dz) == wanted then
+            count = count + 1
+            local distance = dx * dx + dy * dy + dz * dz
+            if distance < best then
+              best = distance
+              found = { x = px + dx, y = py + dy, z = pz + dz }
+            end
+          end
+        end
+      end
+    end
+    assert(found ~= nil, "no block " .. wanted .. " within " .. radius .. " blocks")
+    context.reply(string.format("%d found, nearest at %d %d %d (%.1f away)",
+        count, found.x, found.y, found.z, math.sqrt(best)))
   end,
 })
 
-commands.register({
+register({
+  name = "clearwater",
+  aliases = { "cw" },
+  params = "[radius]",
+  help = "removes water around you",
+  run = function(context)
+    local radius = math.max(1, math.min(32, floor(context.args[1] or 8)))
+    local x, y, z = block_pos()
+    local removed = 0
+    for dy = -radius, radius do
+      for dz = -radius, radius do
+        for dx = -radius, radius do
+          if WATER[minecraft.world.get_block(x + dx, y + dy, z + dz)] and
+              minecraft.world.set_block(x + dx, y + dy, z + dz, AIR) then
+            removed = removed + 1
+          end
+        end
+      end
+    end
+    context.reply("Removed " .. plural(removed, "water block"))
+  end,
+})
+
+register({
+  name = "lava",
+  params = "[radius]",
+  help = "removes lava around you",
+  run = function(context)
+    local radius = math.max(1, math.min(32, floor(context.args[1] or 8)))
+    local x, y, z = block_pos()
+    local removed = 0
+    for dy = -radius, radius do
+      for dz = -radius, radius do
+        for dx = -radius, radius do
+          if LAVA[minecraft.world.get_block(x + dx, y + dy, z + dz)] and
+              minecraft.world.set_block(x + dx, y + dy, z + dz, AIR) then
+            removed = removed + 1
+          end
+        end
+      end
+    end
+    context.reply("Removed " .. plural(removed, "lava block"))
+  end,
+})
+
+register({
+  name = "atlantis",
+  params = "[radius]",
+  help = "floods sea level around you",
+  run = function(context)
+    local radius = math.max(1, math.min(32, floor(context.args[1] or 16)))
+    local x, _, z = block_pos()
+    local changed = 0
+    for dz = -radius, radius do
+      for dx = -radius, radius do
+        if dx * dx + dz * dz <= radius * radius and minecraft.world.get_block(x + dx, 63, z + dz) == AIR then
+          if minecraft.world.set_block(x + dx, 63, z + dz, 8) then changed = changed + 1 end
+        end
+      end
+    end
+    context.reply("Flooded " .. plural(changed, "block"))
+  end,
+})
+
+register({
+  name = "superheat",
+  params = "[radius]",
+  help = "smelts nearby cobblestone, sand, ice, and snow",
+  run = function(context)
+    local radius = math.max(1, math.min(16, floor(context.args[1] or 4)))
+    local x, y, z = block_pos()
+    -- Only conversions that land on another block: ore smelts to an item, which has
+    -- nowhere to go here.
+    local cooked = { [4] = 1, [12] = 20, [79] = 9, [78] = AIR, [80] = AIR }
+    local changed = 0
+    for dy = -radius, radius do
+      for dz = -radius, radius do
+        for dx = -radius, radius do
+          local replacement = cooked[minecraft.world.get_block(x + dx, y + dy, z + dz)]
+          if replacement ~= nil and minecraft.world.set_block(x + dx, y + dy, z + dz, replacement) then
+            changed = changed + 1
+          end
+        end
+      end
+    end
+    context.reply("Superheated " .. plural(changed, "block"))
+  end,
+})
+
+register({
   name = "spawnportal",
   help = "builds a nether portal in front of you",
   run = function(context)
-    local x, y, z = position()
+    local x, y, z = block_pos()
     local dx, dz = facing_vector()
     local sx = floor(x + dx * 3)
     local sz = floor(z + dz * 3)
@@ -1025,66 +1121,263 @@ commands.register({
   end,
 })
 
-commands.register({
-  name = "clearwater",
-  aliases = { "cw" },
-  params = "[radius]",
-  help = "removes water around you",
+--------------------------------------------------------------------------------
+category = "SPC: entities"
+
+register({
+  name = "spawn",
+  params = "<entity> [count]",
+  help = "spawns entities where you stand",
   run = function(context)
-    local radius = math.max(1, math.min(32, floor(context.args[1] or 8)))
+    local kind = assert(context.args[1], "expected an entity")
+    local count = math.max(1, math.min(64, floor(context.args[2] or 1)))
+    local x, y, z = block_pos()
+    local spawned = 0
+    for _ = 1, count do
+      if minecraft.world.spawn_entity(kind, x, y, z) then spawned = spawned + 1 end
+    end
+    assert(spawned > 0, "unknown entity: " .. kind)
+    context.reply("Spawned " .. spawned .. " " .. kind)
+  end,
+})
+
+register({
+  name = "bring",
+  params = "<entity>",
+  help = "pulls matching entities to you",
+  run = function(context)
+    local wanted = tostring(assert(context.args[1], "expected an entity")):lower()
     local x, y, z = position()
-    local removed = 0
-    for dy = -radius, radius do
-      for dz = -radius, radius do
-        for dx = -radius, radius do
-          if WATER[minecraft.world.get_block(x + dx, y + dy, z + dz)] and minecraft.world.set_block(x + dx, y + dy, z + dz, AIR) then
-            removed = removed + 1
-          end
-        end
+    local moved = 0
+    for _, value in ipairs(entities()) do
+      if value.type:lower() == wanted and value:teleport(x, y, z) then moved = moved + 1 end
+    end
+    context.reply("Brought " .. moved .. " " .. wanted)
+  end,
+})
+
+register({
+  name = "count",
+  params = "[entity]",
+  help = "counts loaded entities by type",
+  run = function(context)
+    local wanted = context.args[1] and tostring(context.args[1]):lower()
+    local tally, names = {}, {}
+    for _, value in ipairs(entities()) do
+      local kind = value.type
+      if wanted == nil or kind:lower() == wanted then
+        if tally[kind] == nil then names[#names + 1] = kind end
+        tally[kind] = (tally[kind] or 0) + 1
       end
     end
-    context.reply("Removed " .. removed .. " water blocks")
-  end,
-})
-
-commands.register({
-  name = "lava",
-  params = "[radius]",
-  help = "removes lava around you",
-  run = function(context)
-    local radius = math.max(1, math.min(32, floor(context.args[1] or 8)))
-    local x, y, z = position()
-    local removed = 0
-    for dy = -radius, radius do
-      for dz = -radius, radius do
-        for dx = -radius, radius do
-          if LAVA[minecraft.world.get_block(x + dx, y + dy, z + dz)] and minecraft.world.set_block(x + dx, y + dy, z + dz, AIR) then
-            removed = removed + 1
-          end
-        end
-      end
+    table.sort(names)
+    if #names == 0 then
+      context.reply("Nothing loaded")
+      return
     end
-    context.reply("Removed " .. removed .. " lava blocks")
+    local parts = {}
+    for _, name in ipairs(names) do parts[#parts + 1] = name .. " x" .. tally[name] end
+    context.reply(table.concat(parts, ", "))
   end,
 })
 
-commands.register({
-  name = "phelp",
-  params = "[command]",
-  help = "shows SPC command help",
+register({
+  name = "killall",
+  params = "[entity]",
+  help = "removes every non-player entity, or one type",
   run = function(context)
-    if context.args[1] == nil then
-      commands.execute("/help")
-    else
-      context.reply("Use /help and look for /" .. context.args[1]:gsub("^/", ""))
+    local wanted = context.args[1] and tostring(context.args[1]):lower()
+    local removed = remove_entities(function(value) return wanted == nil or value.type:lower() == wanted end)
+    context.reply("Removed " .. removed .. " entities")
+  end,
+})
+
+register({
+  name = "killnpc",
+  aliases = { "exterminate" },
+  params = "[entity]",
+  help = "removes hostile mobs, or one named type",
+  run = function(context)
+    local wanted = context.args[1] and tostring(context.args[1]):lower()
+    local removed = remove_entities(function(value)
+      if wanted ~= nil then return value.type:lower() == wanted end
+      return hostile[value.type] == true
+    end)
+    context.reply("Removed " .. removed .. " mobs")
+  end,
+})
+
+register({
+  name = "drops",
+  aliases = { "removedrops" },
+  help = "removes dropped items",
+  run = function(context)
+    local removed = remove_entities(function(value) return value.type == "Item" end)
+    context.reply("Removed " .. plural(removed, "drop"))
+  end,
+})
+
+register({
+  name = "defuse",
+  help = "removes all primed TNT",
+  run = function(context)
+    local removed = remove_entities(function(value) return value.type == "Tnt" end)
+    context.reply("Defused " .. removed .. " TNT")
+  end,
+})
+
+register({
+  name = "freeze",
+  params = "[on|off]",
+  help = "holds every non-player entity still",
+  run = function(context)
+    state.freeze = toggle(context.args[1], state.freeze)
+    context.reply("Entity freeze " .. (state.freeze and "enabled" or "disabled"))
+  end,
+})
+
+register({
+  name = "cannon",
+  params = "[power]",
+  help = "launches primed TNT the way you are facing",
+  run = function(context)
+    local power = math.max(0.1, math.min(10, tonumber(context.args[1]) or 2))
+    local x, y, z = block_pos()
+    local dx, dz = facing_vector()
+    assert(minecraft.world.spawn_entity("Tnt", x + dx, y + 1, z + dz), "unable to spawn TNT")
+    local latest = nil
+    for _, value in ipairs(entities("Tnt")) do latest = value end
+    if latest ~= nil then
+      minecraft.entities.set_state(latest, { vx = dx * power, vy = power * 0.35, vz = dz * power })
+    end
+    context.reply("Cannon fired")
+  end,
+})
+
+register({
+  name = "explode",
+  help = "drops primed TNT on the block you are looking at",
+  run = function(context)
+    local x, y, z = targeted_block()
+    assert(minecraft.world.spawn_entity("Tnt", x + 0.5, y + 1, z + 0.5), "unable to spawn TNT")
+    context.reply("TNT primed")
+  end,
+})
+
+--------------------------------------------------------------------------------
+category = "SPC: setup"
+
+register({
+  name = "alias",
+  params = "<name> <command>",
+  help = "makes one command stand for another",
+  details = "/alias k /killall  then /k runs it",
+  run = function(context)
+    local name, target = context.rest:match("^(%S+)%s+(.+)$")
+    assert(name ~= nil and target ~= nil, "expected an alias name and command")
+    assert(target:sub(1, 1) == "/", "the command must start with /")
+    aliases[command_name(name)] = target
+    save()
+    context.reply("Alias " .. name .. " set")
+  end,
+})
+
+register({
+  name = "ralias",
+  params = "<name>",
+  help = "removes an alias",
+  run = function(context)
+    local name = command_name(context.args[1])
+    assert(aliases[name] ~= nil, "unknown alias")
+    aliases[name] = nil
+    save()
+    context.reply("Alias " .. name .. " removed")
+  end,
+})
+
+register({
+  name = "listaliases",
+  help = "lists your aliases",
+  run = function(context)
+    local names = {}
+    for name in pairs(aliases) do names[#names + 1] = name end
+    table.sort(names)
+    if #names == 0 then
+      context.reply("No aliases set")
+      return
+    end
+    for _, name in ipairs(names) do
+      context.reply(commands.GRAY .. "/" .. name .. " -> " .. aliases[name])
     end
   end,
 })
 
-commands.register({
+register({
+  name = "bind",
+  params = "<key> <command>",
+  help = "runs a command from a key",
+  details = "rebindable afterwards in Options > Mod settings",
+  run = function(context)
+    local key, command = context.rest:match("^(%S+)%s+(.+)$")
+    assert(key ~= nil and command ~= nil, "expected a key and command")
+    assert(command:sub(1, 1) == "/", "the command must start with /")
+    bind_key(key, command)
+    save()
+    context.reply("Bound " .. key:upper() .. " to " .. command)
+  end,
+})
+
+register({
+  name = "unbind",
+  params = "<key>",
+  help = "stops a key running its command",
+  run = function(context)
+    local id = "bind_" .. command_name(context.args[1])
+    assert(bindings[id] ~= nil, "that key has no SPC command binding")
+    bindings[id] = nil
+    save()
+    context.reply("Binding removed")
+  end,
+})
+
+register({
+  name = "listbinds",
+  help = "lists your key bindings",
+  run = function(context)
+    local lines = {}
+    for _, binding in pairs(bindings) do
+      lines[#lines + 1] = commands.GRAY .. binding.key:upper() .. " -> " .. binding.command
+    end
+    table.sort(lines)
+    if #lines == 0 then
+      context.reply("No keys bound")
+      return
+    end
+    for _, line in ipairs(lines) do context.reply(line) end
+  end,
+})
+
+register({
   name = "config",
-  help = "shows active SPC toggles",
+  help = "shows which SPC toggles are on",
   run = function(context)
-    context.reply("fly=" .. tostring(state.fly) .. " noclip=" .. tostring(state.noclip) .. " speed=" .. state.speed .. " freeze=" .. tostring(state.freeze))
+    local names = {}
+    for name in pairs(state) do names[#names + 1] = name end
+    table.sort(names)
+    local parts = {}
+    for _, name in ipairs(names) do parts[#parts + 1] = name .. "=" .. tostring(state[name]) end
+    context.reply(table.concat(parts, " "))
   end,
 })
+
+register({
+  name = "phelp",
+  params = "[page|command]",
+  help = "shows the command help",
+  run = function(context)
+    commands.execute("/help " .. (context.args[1] or ""))
+  end,
+})
+
+load()
+minecraft.log("info", "SPC loaded")

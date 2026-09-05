@@ -17,10 +17,6 @@ local SUN_PULSE_AMOUNT = 0.010
 local MOON_MEAN_HALF_SIZE = 2.00
 local TWO_PI = math.pi * 2.0
 
-local STAR_COUNT = 200
-local STAR_SPHERE_RADIUS = 80.0
-local STAR_HALF_SIZE = 0.12
-
 sky_render.MOON_MEAN_HALF_SIZE = MOON_MEAN_HALF_SIZE
 
 local function normalize3(x, y, z)
@@ -37,11 +33,6 @@ end
 
 local function dot3(ax, ay, az, bx, by, bz)
   return ax * bx + ay * by + az * bz
-end
-
-local function hash01(seed)
-  local n = (seed * 1664525 + 1013904223) % 4294967296
-  return (n % 10000) / 10000.0
 end
 
 function sky_render.sky_rgb(frame)
@@ -117,7 +108,7 @@ local sky_dome_directions
 local function build_sky_dome_directions()
   if sky_dome_directions ~= nil then return sky_dome_directions end
   local vertices = {}
-  local latitude_steps = 12
+  local latitude_steps = 48
   local longitude_steps = 32
   for lat_index = 0, latitude_steps - 1 do
     local lat0 = -math.pi * 0.5 + math.pi * lat_index / latitude_steps
@@ -141,33 +132,55 @@ local function build_sky_dome_directions()
 end
 
 local sky_dome_packed = {}
+local sky_dome_packed_built = false
+local sky_dome_packed_altitude = 0.0
+-- The dome's positions are fixed and its colour tracks only frame.sun_altitude_deg,
+-- so 6144 vertices are packed once and recoloured only when the sun has moved.
+local SKY_DOME_ALTITUDE_STEP = 0.05
 
 function sky_render.draw_dome(event, frame)
   local directions = build_sky_dome_directions()
   local packed = sky_dome_packed
-  local cursor = 0
-  for index = 1, #directions do
-    local direction = directions[index]
-    local dx, dy, dz = direction.x, direction.y, direction.z
-    local r, g, b = sky_vertex_color(frame, dx, dy, dz)
-    packed[cursor + 1] = dx * SKY_DOME_RADIUS
-    packed[cursor + 2] = dy * SKY_DOME_RADIUS
-    packed[cursor + 3] = dz * SKY_DOME_RADIUS
-    packed[cursor + 4] = 0.0
-    packed[cursor + 5] = 0.0
-    packed[cursor + 6] = r
-    packed[cursor + 7] = g
-    packed[cursor + 8] = b
-    packed[cursor + 9] = 1.0
-    cursor = cursor + 9
-  end
-  for index = #packed, cursor + 1, -1 do
-    packed[index] = nil
+  local altitude = frame.sun_altitude_deg
+
+  if not sky_dome_packed_built then
+    local cursor = 0
+    for index = 1, #directions do
+      local direction = directions[index]
+      local dx, dy, dz = direction.x, direction.y, direction.z
+      local r, g, b = sky_vertex_color(frame, dx, dy, dz)
+      packed[cursor + 1] = dx * SKY_DOME_RADIUS
+      packed[cursor + 2] = dy * SKY_DOME_RADIUS
+      packed[cursor + 3] = dz * SKY_DOME_RADIUS
+      packed[cursor + 4] = 0.0
+      packed[cursor + 5] = 0.0
+      packed[cursor + 6] = r
+      packed[cursor + 7] = g
+      packed[cursor + 8] = b
+      packed[cursor + 9] = 1.0
+      cursor = cursor + 9
+    end
+    for index = #packed, cursor + 1, -1 do
+      packed[index] = nil
+    end
+    sky_dome_packed_built = true
+    sky_dome_packed_altitude = altitude
+  elseif math.abs(altitude - sky_dome_packed_altitude) >= SKY_DOME_ALTITUDE_STEP then
+    local cursor = 0
+    for index = 1, #directions do
+      local direction = directions[index]
+      local r, g, b = sky_vertex_color(frame, direction.x, direction.y, direction.z)
+      packed[cursor + 6] = r
+      packed[cursor + 7] = g
+      packed[cursor + 8] = b
+      cursor = cursor + 9
+    end
+    sky_dome_packed_altitude = altitude
   end
   minecraft.render.quads({
-    x = event.camera_x or 0.0,
-    y = event.camera_y or 0.0,
-    z = event.camera_z or 0.0,
+    x = event.eye_x or 0.0,
+    y = event.eye_y or 0.0,
+    z = event.eye_z or 0.0,
     world_space = true,
     blend = false,
     cull = false,
@@ -191,6 +204,20 @@ local function body_basis(direction_x, direction_y, direction_z)
   return dx, dy, dz, rx, ry, rz, ux, uy, uz
 end
 
+local function emit_pixel_vertex(packed, cursor, rx, ry, rz, ux, uy, uz,
+    x_scale, y_scale, red, green, blue, alpha)
+  packed[cursor + 1] = rx * x_scale + ux * y_scale
+  packed[cursor + 2] = ry * x_scale + uy * y_scale
+  packed[cursor + 3] = rz * x_scale + uz * y_scale
+  packed[cursor + 4] = 0.0
+  packed[cursor + 5] = 0.0
+  packed[cursor + 6] = red
+  packed[cursor + 7] = green
+  packed[cursor + 8] = blue
+  packed[cursor + 9] = alpha
+  return cursor + 9
+end
+
 local function add_pixel_quad(packed, cursor, rx, ry, rz, ux, uy, uz,
     half_size, grid_x, grid_y, red, green, blue, alpha)
   local pixel = (half_size * 2.0) / CELESTIAL_GRID
@@ -200,48 +227,10 @@ local function add_pixel_quad(packed, cursor, rx, ry, rz, ux, uy, uz,
   local top = half_size - grid_y * pixel + overlap
   local bottom = half_size - (grid_y + 1) * pixel - overlap
 
-  local function emit(x_scale, y_scale)
-    packed[cursor + 1] = rx * x_scale + ux * y_scale
-    packed[cursor + 2] = ry * x_scale + uy * y_scale
-    packed[cursor + 3] = rz * x_scale + uz * y_scale
-    packed[cursor + 4] = 0.0
-    packed[cursor + 5] = 0.0
-    packed[cursor + 6] = red
-    packed[cursor + 7] = green
-    packed[cursor + 8] = blue
-    packed[cursor + 9] = alpha
-    cursor = cursor + 9
-    return cursor
-  end
-
-  cursor = emit(left, bottom)
-  cursor = emit(right, bottom)
-  cursor = emit(right, top)
-  cursor = emit(left, top)
-  return cursor
-end
-
-local function add_billboard_quad(packed, cursor, dx, dy, dz, radius, half_size,
-    red, green, blue, alpha)
-  local _, _, _, rx, ry, rz, ux, uy, uz = body_basis(dx, dy, dz)
-  local px, py, pz = dx * radius, dy * radius, dz * radius
-  local function emit(x_scale, y_scale)
-    packed[cursor + 1] = px + rx * x_scale + ux * y_scale
-    packed[cursor + 2] = py + ry * x_scale + uy * y_scale
-    packed[cursor + 3] = pz + rz * x_scale + uz * y_scale
-    packed[cursor + 4] = 0.0
-    packed[cursor + 5] = 0.0
-    packed[cursor + 6] = red
-    packed[cursor + 7] = green
-    packed[cursor + 8] = blue
-    packed[cursor + 9] = alpha
-    cursor = cursor + 9
-    return cursor
-  end
-  cursor = emit(-half_size, -half_size)
-  cursor = emit(half_size, -half_size)
-  cursor = emit(half_size, half_size)
-  cursor = emit(-half_size, half_size)
+  cursor = emit_pixel_vertex(packed, cursor, rx, ry, rz, ux, uy, uz, left, bottom, red, green, blue, alpha)
+  cursor = emit_pixel_vertex(packed, cursor, rx, ry, rz, ux, uy, uz, right, bottom, red, green, blue, alpha)
+  cursor = emit_pixel_vertex(packed, cursor, rx, ry, rz, ux, uy, uz, right, top, red, green, blue, alpha)
+  cursor = emit_pixel_vertex(packed, cursor, rx, ry, rz, ux, uy, uz, left, top, red, green, blue, alpha)
   return cursor
 end
 
@@ -251,9 +240,9 @@ local function draw_pixel_vertices(event, dx, dy, dz, packed, cursor)
     packed[index] = nil
   end
   return minecraft.render.quads({
-    x = (event.camera_x or 0.0) + dx * SKY_BODY_RADIUS,
-    y = (event.camera_y or 0.0) + dy * SKY_BODY_RADIUS,
-    z = (event.camera_z or 0.0) + dz * SKY_BODY_RADIUS,
+    x = (event.eye_x or 0.0) + dx * SKY_BODY_RADIUS,
+    y = (event.eye_y or 0.0) + dy * SKY_BODY_RADIUS,
+    z = (event.eye_z or 0.0) + dz * SKY_BODY_RADIUS,
     world_space = true,
     blend = true,
     cull = false,
@@ -450,75 +439,6 @@ function sky_render.draw_moon(event, frame, alpha, half_size)
     end
   end
   draw_pixel_vertices(event, mdx, mdy, mdz, packed, cursor)
-end
-
-local star_directions
-
-local function build_star_directions()
-  if star_directions ~= nil then return star_directions end
-  local directions = {}
-  for index = 1, STAR_COUNT do
-    local u = hash01(index * 7 + 1)
-    local v = hash01(index * 13 + 3)
-    local lon = TWO_PI * u
-    local lat = math.asin(clamp(2.0 * v - 1.0, -1.0, 1.0))
-    local cos_lat = math.cos(lat)
-    directions[index] = {
-      x = cos_lat * math.sin(lon),
-      y = math.sin(lat),
-      z = -cos_lat * math.cos(lon),
-      tint = hash01(index * 31 + 7),
-      size = 0.70 + hash01(index * 47 + 11) * 0.60,
-    }
-  end
-  star_directions = directions
-  return directions
-end
-
-local stars_packed = {}
-
-function sky_render.draw_stars(event, frame)
-  local brightness = sky_render.star_brightness(frame)
-  if brightness <= 0.01 then return end
-
-  local directions = build_star_directions()
-  local packed = stars_packed
-  local cursor = 0
-  local cx = event.camera_x or 0.0
-  local cy = event.camera_y or 0.0
-  local cz = event.camera_z or 0.0
-
-  for index = 1, #directions do
-    local star = directions[index]
-    local dx, dy, dz = star.x, star.y, star.z
-    if dy > -0.05 then
-      local alpha = brightness * (0.45 + 0.55 * star.tint)
-      local half_size = STAR_HALF_SIZE * star.size
-      local warm = star.tint
-      local red = 0.85 + warm * 0.15
-      local green = 0.88 + warm * 0.10
-      local blue = 1.00 - warm * 0.08
-      cursor = add_billboard_quad(packed, cursor, dx, dy, dz, STAR_SPHERE_RADIUS, half_size,
-        red, green, blue, alpha)
-    end
-  end
-
-  if cursor < 36 then return end
-  for index = #packed, cursor + 1, -1 do
-    packed[index] = nil
-  end
-
-  minecraft.render.quads({
-    x = cx,
-    y = cy,
-    z = cz,
-    world_space = true,
-    blend = true,
-    cull = false,
-    depth_test = false,
-    depth_write = false,
-    packed = packed,
-  })
 end
 
 return sky_render

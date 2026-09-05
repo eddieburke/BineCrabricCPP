@@ -9,6 +9,25 @@
 #include "net/minecraft/mod/runtime/LuaDirectHooks.hpp"
 #include "net/minecraft/world/World.hpp"
 namespace net::minecraft::client {
+namespace {
+bool interceptBlockAttack(Minecraft* minecraft, int x, int y, int z, int side, bool initial) {
+ if(minecraft == nullptr || minecraft->world == nullptr || minecraft->player == nullptr) {
+  return false;
+ }
+ mod::BlockAttackEvent event{minecraft->player,
+                             minecraft->world,
+                             minecraft->player->inventory.getSelectedItem(),
+                             x,
+                             y,
+                             z,
+                             side,
+                             minecraft->world->getBlockId(x, y, z),
+                             minecraft->world->getBlockMeta(x, y, z),
+                             initial};
+ mod::runtime::luaHookBlockAttack(event);
+ return event.canceled || event.handled;
+}
+}
 SingleplayerInteractionManager::SingleplayerInteractionManager(Minecraft* minecraft) : InteractionManager(minecraft) {
 }
 void SingleplayerInteractionManager::preparePlayer(PlayerEntity* player) {
@@ -47,6 +66,10 @@ void SingleplayerInteractionManager::attackBlock(int x, int y, int z, int direct
  if(minecraft == nullptr || minecraft->world == nullptr || minecraft->player == nullptr) {
   return;
  }
+ if(interceptBlockAttack(minecraft, x, y, z, direction, true)) {
+  cancelBlockBreaking();
+  return;
+ }
  minecraft->world->extinguishFire(minecraft->player, x, y, z, direction);
  const int blockId = minecraft->world->getBlockId(x, y, z);
  if(blockId > 0 && blockBreakingProgress == 0.0f) {
@@ -70,7 +93,11 @@ void SingleplayerInteractionManager::processBlockBreakingAction(int x, int y, in
   return;
  }
  if(x == breakingPosX && y == breakingPosY && z == breakingPosZ) {
-  if(minecraft == nullptr || minecraft->world == nullptr || minecraft->player == nullptr) {
+ if(minecraft == nullptr || minecraft->world == nullptr || minecraft->player == nullptr) {
+   return;
+  }
+  if(interceptBlockAttack(minecraft, x, y, z, side, false)) {
+   cancelBlockBreaking();
    return;
   }
   const int blockId = minecraft->world->getBlockId(x, y, z);

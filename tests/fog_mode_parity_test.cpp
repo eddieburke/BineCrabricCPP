@@ -117,7 +117,7 @@ TEST(FogModeParity, VanillaProgramsUsePlanarFogCoordinate) {
  EXPECT_NE(common.find("return abs(viewPosition.z);"), std::string::npos);
  int programsWithFog = 0;
  for(const auto& entry : std::filesystem::directory_iterator(shaders)) {
-  if(entry.path().extension() != ".vsh") {
+  if(entry.path().extension() != ".vsh" && entry.path().extension() != ".fsh") {
    continue;
   }
   const std::string source = read(entry.path());
