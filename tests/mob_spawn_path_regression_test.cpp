@@ -663,6 +663,38 @@ TEST(PathBenchmark, CacheInsertAndHitThroughput) {
   }
 }
 
+// One navigator reused across searches - the shape NaturalSpawner drives it in - so the
+// per-search reset shows up instead of being hidden by a fresh cache every time.
+TEST(PathBenchmark, ReusedNavigatorMazeWallTime) {
+  ScriptedBlockView view;
+  view.setFloor(0);
+  const int stone = stoneId();
+  for (int x = 0; x < 40; ++x) {
+    for (int z = 0; z < 40; ++z) {
+      if (x % 4 == 1 && z % 4 == 1) {
+        for (int y = 1; y <= 3; ++y) {
+          view.setCell(x - 20, y, z - 20, stone);
+        }
+      }
+    }
+  }
+  constexpr int kRuns = 200;
+  PathNodeNavigator nav(&view);
+  Entity walker = makeWalker(-19.5, 1.0, -19.5);
+  int totalLength = 0;
+  const auto start = std::chrono::steady_clock::now();
+  for (int i = 0; i < kRuns; ++i) {
+    Path path = nav.findPath(&walker, 19, 1, 19, 64.0f);
+    totalLength += path.length;
+  }
+  const double ms =
+      std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - start).count();
+  RecordProperty("ReusedMazeTotalMs", ms);
+  std::printf("[bench] reused-nav maze %d runs %.3fms mean-length=%.1f\n", kRuns, ms,
+              static_cast<double>(totalLength) / kRuns);
+  EXPECT_GT(totalLength, 0);
+}
+
 TEST(PathBenchmark, MazeSearchWallTime) {
   ScriptedBlockView view;
   view.setFloor(0);
@@ -692,6 +724,42 @@ TEST(PathBenchmark, MazeSearchWallTime) {
   std::printf("[bench] maze %d runs %.3fms mean-length=%.1f\n", kRuns, ms,
               static_cast<double>(totalLength) / kRuns);
   EXPECT_GT(totalLength, 0);
+}
+
+TEST(PathRegression, CacheClearRetiresEveryEntry) {
+  entity::ai::pathing::PathNodeCache cache;
+  PathNode* first = cache.findOrCreate(3, 64, -7);
+  first->visited = true;
+  first->penalizedPathLength = 12.0f;
+  first->heapIndex = 5;
+  ASSERT_EQ(first, cache.findOrCreate(3, 64, -7));
+  cache.clear();
+  PathNode* second = cache.findOrCreate(3, 64, -7);
+  EXPECT_EQ(second->x, 3);
+  EXPECT_EQ(second->y, 64);
+  EXPECT_EQ(second->z, -7);
+  EXPECT_FALSE(second->visited);
+  EXPECT_EQ(second->penalizedPathLength, 0.0f);
+  EXPECT_EQ(second->heapIndex, -1);
+  EXPECT_EQ(second->previous, nullptr);
+}
+
+TEST(PathRegression, CacheStaysConsistentAcrossGrowthAndClears) {
+  entity::ai::pathing::PathNodeCache cache;
+  for (int round = 0; round < 3; ++round) {
+    std::vector<PathNode*> seen;
+    seen.reserve(2000);
+    for (int i = 0; i < 2000; ++i) {
+      seen.push_back(cache.findOrCreate(i % 50, 1 + i / 50, round));
+    }
+    for (int i = 0; i < 2000; ++i) {
+      ASSERT_EQ(seen[static_cast<std::size_t>(i)], cache.findOrCreate(i % 50, 1 + i / 50, round));
+      ASSERT_EQ(seen[static_cast<std::size_t>(i)]->x, i % 50);
+      ASSERT_EQ(seen[static_cast<std::size_t>(i)]->y, 1 + i / 50);
+      ASSERT_EQ(seen[static_cast<std::size_t>(i)]->z, round);
+    }
+    cache.clear();
+  }
 }
 
 }  // namespace net::minecraft::test

@@ -85,26 +85,17 @@ Path PathNodeNavigator::findPath(
 }
 int PathNodeNavigator::getSuccessors(
     Entity* startEntity, PathNode* startNode, PathNode& sizeNode, PathNode* endNode, float distance) {
+ const int stepHeight =
+     isPassable(startEntity, startNode->x, startNode->y + 1, startNode->z, sizeNode) == 1 ? 1 : 0;
+ // North, west, east, south - the visit order Pathfinder.java walks them in.
+ constexpr int kOffsets[4][2] = {{0, 1}, {-1, 0}, {1, 0}, {0, -1}};
  int count = 0;
- int stepHeight = 0;
- if(isPassable(startEntity, startNode->x, startNode->y + 1, startNode->z, sizeNode) == 1) {
-  stepHeight = 1;
- }
- PathNode* north = getNode(startEntity, startNode->x, startNode->y, startNode->z + 1, sizeNode, stepHeight);
- PathNode* west = getNode(startEntity, startNode->x - 1, startNode->y, startNode->z, sizeNode, stepHeight);
- PathNode* east = getNode(startEntity, startNode->x + 1, startNode->y, startNode->z, sizeNode, stepHeight);
- PathNode* south = getNode(startEntity, startNode->x, startNode->y, startNode->z - 1, sizeNode, stepHeight);
- if(north != nullptr && !north->visited && north->getDistance(*endNode) < distance) {
-  successors_[static_cast<std::size_t>(count++)] = north;
- }
- if(west != nullptr && !west->visited && west->getDistance(*endNode) < distance) {
-  successors_[static_cast<std::size_t>(count++)] = west;
- }
- if(east != nullptr && !east->visited && east->getDistance(*endNode) < distance) {
-  successors_[static_cast<std::size_t>(count++)] = east;
- }
- if(south != nullptr && !south->visited && south->getDistance(*endNode) < distance) {
-  successors_[static_cast<std::size_t>(count++)] = south;
+ for(const int(&offset)[2] : kOffsets) {
+  PathNode* node = getNode(
+      startEntity, startNode->x + offset[0], startNode->y, startNode->z + offset[1], sizeNode, stepHeight);
+  if(node != nullptr && !node->visited && node->getDistance(*endNode) < distance) {
+   successors_[static_cast<std::size_t>(count++)] = node;
+  }
  }
  return count;
 }

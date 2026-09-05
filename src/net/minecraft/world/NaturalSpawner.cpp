@@ -2,6 +2,8 @@
 #include <array>
 #include <cmath>
 #include <optional>
+#include <typeinfo>
+#include <utility>
 #include <unordered_set>
 #include <vector>
 #include "net/minecraft/block/BedBlock.hpp"
@@ -34,6 +36,12 @@ struct PlayerSpot {
  }
  return false;
 }
+[[nodiscard]] block::Block* blockOf(int id) {
+ return id > 0 && id < block::Block::BLOCK_COUNT ? block::Block::BLOCKS[static_cast<std::size_t>(id)] : nullptr;
+}
+[[nodiscard]] bool solidFullCube(block::Block* block) {
+ return block != nullptr && block->material.suffocates() && block->isFullCube();
+}
 constexpr SpawnRules kSpawnRules[] = {
     {0, 70, false, false},
     {1, 15, false, true},
@@ -63,8 +71,7 @@ void postSpawnEntity(LivingEntity* entity, World* world, float x, float y, float
  if(entity == nullptr || world == nullptr) {
   return;
  }
- if(auto* spider = dynamic_cast<entity::mob::SpiderEntity*>(entity)) {
-  (void)spider;
+ if(dynamic_cast<entity::mob::SpiderEntity*>(entity) != nullptr) {
   if(world->random().nextInt(100) == 0) {
    LivingEntity* skeleton = world->spawnMob("Skeleton", x, y, z, entity->yaw, 0.0f);
    if(skeleton == nullptr) {
@@ -74,18 +81,33 @@ void postSpawnEntity(LivingEntity* entity, World* world, float x, float y, float
   }
  }
 }
+[[nodiscard]] int creatureTypeOf(Entity* entity) {
+ // The three creature bases are cross-cast siblings, so every dynamic_cast here is a
+ // hierarchy walk and a miss is the slow path - which is every item, arrow and boat in
+ // the world, on every spawn tick. The answer depends only on the dynamic type, so pay
+ // for it once per concrete class.
+ static std::vector<std::pair<const std::type_info*, int>> classified;
+ const std::type_info* type = &typeid(*entity);
+ for(const std::pair<const std::type_info*, int>& entry : classified) {
+  if(entry.first == type) {
+   return entry.second;
+  }
+ }
+ const int creatureType = dynamic_cast<entity::Monster*>(entity) != nullptr                 ? 0
+                          : dynamic_cast<entity::passive::AnimalEntity*>(entity) != nullptr ? 1
+                          : dynamic_cast<entity::WaterCreatureEntity*>(entity) != nullptr   ? 2
+                                                                                            : -1;
+ classified.emplace_back(type, creatureType);
+ return creatureType;
+}
 [[nodiscard]] std::array<int, 3> countLiveMobsByCreatureType(const World& world) {
  std::array<int, 3> counts{};
  for(Entity* entity : world.entities()) {
   if(entity == nullptr || entity->dead) {
    continue;
   }
-  if(dynamic_cast<entity::Monster*>(entity) != nullptr) {
-   ++counts[0];
-  } else if(dynamic_cast<entity::passive::AnimalEntity*>(entity) != nullptr) {
-   ++counts[1];
-  } else if(dynamic_cast<entity::WaterCreatureEntity*>(entity) != nullptr) {
-   ++counts[2];
+  if(const int creatureType = creatureTypeOf(entity); creatureType >= 0) {
+   ++counts[static_cast<std::size_t>(creatureType)];
   }
  }
  return counts;
@@ -112,38 +134,20 @@ bool isValidSpawnPos(const SpawnRules& rules, World* world, int x, int y, int z)
   return false;
  }
  if(rules.waterSpawn) {
-  const int atId = world->getBlockId(x, y, z);
-  block::Block* const at =
-      atId > 0 && atId < block::Block::BLOCK_COUNT ? block::Block::BLOCKS[static_cast<std::size_t>(atId)] : nullptr;
+  block::Block* const at = blockOf(world->getBlockId(x, y, z));
   if(at == nullptr || !at->material.isFluid()) {
    return false;
   }
-  const int aboveId = world->getBlockId(x, y + 1, z);
-  block::Block* const above = aboveId > 0 && aboveId < block::Block::BLOCK_COUNT
-                                  ? block::Block::BLOCKS[static_cast<std::size_t>(aboveId)]
-                                  : nullptr;
-  return above == nullptr || !(above->material.suffocates() && above->isFullCube());
+  return !solidFullCube(blockOf(world->getBlockId(x, y + 1, z)));
  }
- const int belowId = world->getBlockId(x, y - 1, z);
- block::Block* const below =
-     belowId > 0 && belowId < block::Block::BLOCK_COUNT ? block::Block::BLOCKS[static_cast<std::size_t>(belowId)] : nullptr;
- if(below == nullptr || !(below->material.suffocates() && below->isFullCube())) {
+ if(!solidFullCube(blockOf(world->getBlockId(x, y - 1, z)))) {
   return false;
  }
- const int atId = world->getBlockId(x, y, z);
- block::Block* const at =
-     atId > 0 && atId < block::Block::BLOCK_COUNT ? block::Block::BLOCKS[static_cast<std::size_t>(atId)] : nullptr;
- if(at != nullptr && at->material.suffocates() && at->isFullCube()) {
+ block::Block* const at = blockOf(world->getBlockId(x, y, z));
+ if(at != nullptr && (solidFullCube(at) || at->material.isFluid())) {
   return false;
  }
- if(at != nullptr && at->material.isFluid()) {
-  return false;
- }
- const int aboveId = world->getBlockId(x, y + 1, z);
- block::Block* const above = aboveId > 0 && aboveId < block::Block::BLOCK_COUNT
-                                 ? block::Block::BLOCKS[static_cast<std::size_t>(aboveId)]
-                                 : nullptr;
- return above == nullptr || !(above->material.suffocates() && above->isFullCube());
+ return !solidFullCube(blockOf(world->getBlockId(x, y + 1, z)));
 }
 Vec3i NaturalSpawner::getRandomPosInChunk(World* world, int chunkX, int chunkZ) {
  if(world == nullptr) {
@@ -206,14 +210,10 @@ int NaturalSpawner::tick(World* world, bool spawnHostile, bool spawnPeaceful) {
    const int bx = blockPos.x;
    const int by = blockPos.y;
    const int bz = blockPos.z;
-   const int preId = world->getBlockId(bx, by, bz);
-   block::Block* const preBlock =
-       preId > 0 && preId < block::Block::BLOCK_COUNT ? block::Block::BLOCKS[static_cast<std::size_t>(preId)] : nullptr;
-   const bool preSuffocates =
-       preBlock != nullptr && preBlock->material.suffocates() && preBlock->isFullCube();
+   block::Block* const preBlock = blockOf(world->getBlockId(bx, by, bz));
    block::material::Material& preMaterial =
        preBlock != nullptr ? preBlock->material : block::material::Material::AIR;
-   if(preSuffocates || &preMaterial != &requiredMaterial) {
+   if(solidFullCube(preBlock) || &preMaterial != &requiredMaterial) {
     continue;
    }
    int spawnedInChunk = 0;
@@ -242,11 +242,11 @@ int NaturalSpawner::tick(World* world, bool spawnHostile, bool spawnPeaceful) {
      if(dx * dx + dy * dy + dz * dz < 576.0) {
       continue;
      }
-     entity::LivingEntity* living = world->spawnMob(chosen->entityType, std::function<bool(entity::LivingEntity&)>{[&](entity::LivingEntity& mob) {
-                                                     limitPerChunk = mob.getLimitPerChunk();
-                                                     mob.setPositionAndAnglesKeepPrevAngles(fx, fy, fz, world->random().nextFloat() * 360.0f, 0.0f);
-                                                     return mob.canSpawn() && (rules.creatureType != 2 || world->canSpawnEntity(mob.boundingBox));
-                                                    }});
+     entity::LivingEntity* living = world->spawnMob(chosen->entityType, [&](entity::LivingEntity& mob) {
+      limitPerChunk = mob.getLimitPerChunk();
+      mob.setPositionAndAnglesKeepPrevAngles(fx, fy, fz, world->random().nextFloat() * 360.0f, 0.0f);
+      return mob.canSpawn() && (rules.creatureType != 2 || world->canSpawnEntity(mob.boundingBox));
+     });
      if(living == nullptr) {
       continue;
      }

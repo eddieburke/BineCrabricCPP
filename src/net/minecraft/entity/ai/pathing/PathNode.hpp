@@ -9,7 +9,7 @@ class PathNode {
  int y = 0;
  int z = 0;
  PathNode() = default;
- PathNode(int xIn, int yIn, int zIn) : x(xIn), y(yIn), z(zIn), hashCode_(hash(xIn, yIn, zIn)) {
+ PathNode(int xIn, int yIn, int zIn) : x(xIn), y(yIn), z(zIn) {
  }
  [[nodiscard]] static constexpr int hash(int x, int y, int z) noexcept {
   // see third_party/mcp/net/minecraft/src/PathPoint.java:24
@@ -30,9 +30,6 @@ class PathNode {
   const float dz = static_cast<float>(node.z - z);
   return MathHelper::sqrt(dx * dx + dy * dy + dz * dz);
  }
- [[nodiscard]] bool equals(const PathNode& other) const {
-  return hashCode_ == other.hashCode_ && x == other.x && y == other.y && z == other.z;
- }
  [[nodiscard]] bool isInHeap() const {
   return heapIndex >= 0;
  }
@@ -42,8 +39,5 @@ class PathNode {
  float heapWeight = 0.0f;
  PathNode* previous = nullptr;
  bool visited = false;
-
- private:
- int hashCode_ = 0;
 };
 } // namespace net::minecraft::entity::ai::pathing

@@ -12,30 +12,28 @@ class PathNodeCache {
  }
  PathNode* findOrCreate(int x, int y, int z) {
   const std::uint64_t key = PathNode::keyOf(x, y, z);
-  if (count_ * 4 >= slots_.size() * 3) {
+  if(count_ * 4 >= slots_.size() * 3) {
    grow();
   }
   std::size_t index = mixKey(key) & mask();
-  while (true) {
+  while(true) {
    Slot& slot = slots_[index];
-   if (!slot.used) {
-    slot.used = true;
-    slot.key = key;
-    slot.node = createNode(x, y, z);
+   if(slot.generation != generation_) {
+    slot = Slot{key, generation_, createNode(x, y, z)};
     ++count_;
     return slot.node;
    }
-   if (slot.key == key) {
+   if(slot.key == key) {
     return slot.node;
    }
    index = (index + 1) & mask();
   }
  }
+ // Stamped, not swept: a search retires every slot by bumping the generation, so the
+ // reset stays O(1) no matter how far the table grew on the previous search.
  void clear() {
-  for (Slot& slot : slots_) {
-   slot.used = false;
-  }
-  for (std::vector<PathNode>& slab : slabs_) {
+  ++generation_;
+  for(std::vector<PathNode>& slab : slabs_) {
    slab.clear();
   }
   count_ = 0;
@@ -45,8 +43,8 @@ class PathNodeCache {
  private:
  struct Slot {
   std::uint64_t key = 0;
+  std::uint64_t generation = 0;
   PathNode* node = nullptr;
-  bool used = false;
  };
  static constexpr std::size_t kInitialCapacity = 512;
  static constexpr std::size_t kSlabSize = 512;
@@ -59,37 +57,34 @@ class PathNodeCache {
   return slots_.size() - 1;
  }
  PathNode* createNode(int x, int y, int z) {
-  if (slabIndex_ >= slabs_.size()) {
-   slabs_.emplace_back();
-   slabs_.back().reserve(kSlabSize);
+  if(slabIndex_ < slabs_.size() && slabs_[slabIndex_].size() == kSlabSize) {
+   ++slabIndex_;
+  }
+  if(slabIndex_ == slabs_.size()) {
+   slabs_.emplace_back().reserve(kSlabSize);
   }
   std::vector<PathNode>& slab = slabs_[slabIndex_];
-  if (slab.size() >= kSlabSize) {
-   ++slabIndex_;
-   return createNode(x, y, z);
-  }
   slab.emplace_back(x, y, z);
   return &slab.back();
  }
  void grow() {
   std::vector<Slot> grown(slots_.size() * 2);
   const std::size_t grownMask = grown.size() - 1;
-  for (Slot& slot : slots_) {
-   if (!slot.used) {
+  for(const Slot& slot : slots_) {
+   if(slot.generation != generation_) {
     continue;
    }
    std::size_t index = mixKey(slot.key) & grownMask;
-   while (grown[index].used) {
+   while(grown[index].generation == generation_) {
     index = (index + 1) & grownMask;
    }
-   grown[index].used = true;
-   grown[index].key = slot.key;
-   grown[index].node = slot.node;
+   grown[index] = slot;
   }
   slots_ = std::move(grown);
  }
  std::vector<Slot> slots_;
  std::vector<std::vector<PathNode>> slabs_;
+ std::uint64_t generation_ = 1;
  std::size_t slabIndex_ = 0;
  std::size_t count_ = 0;
 };
