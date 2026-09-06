@@ -159,7 +159,7 @@ void WorldRenderer::renderLastChunks(int layer, double /*tickDelta*/) {
 }
 Vec3d WorldRenderer::sectionOrigin() noexcept {
  if(core::drawCameraStateValid()) {
-  const float* eye = core::drawCameraPosition();
+  const double* eye = core::drawCameraPosition();
   return {eye[0], eye[1], eye[2]};
  }
  const FrameRenderCamera& cam = core::cameraFrame();

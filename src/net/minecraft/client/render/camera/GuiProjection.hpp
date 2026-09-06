@@ -20,7 +20,7 @@ inline void load(float rawW,
  modelViewInverse.invert();
  net::minecraft::util::math::Matrix4f projectionInverse = proj;
  projectionInverse.invert();
- const float cameraPosition[3] = {0.0f, 0.0f, 0.0f};
+ const double cameraPosition[3] = {0.0, 0.0, 0.0};
  core::setDrawCameraState(modelView.m, proj.m, modelViewInverse.m, projectionInverse.m, cameraPosition);
 }
 inline void load(const util::UiScale& scale,

@@ -76,7 +76,7 @@ int luaRenderDrawQuads(lua_State* state) {
  if(worldSpace) {
   // Anchor to the camera EYE — the one geometry origin (Camera.getPosition()).
   if(client::render::core::drawCameraStateValid()) {
-   const float* eye = client::render::core::drawCameraPosition();
+   const double* eye = client::render::core::drawCameraPosition();
    modelX -= eye[0];
    modelY -= eye[1];
    modelZ -= eye[2];

@@ -53,7 +53,7 @@ TEST(DrawCameraState, GuiOrthoLoadPublishesCameraState) {
  EXPECT_NEAR(y, 0.0f, 1e-4f);
  EXPECT_NEAR(z, 0.0f, 1e-4f);
  // GUI camera sits at the origin.
- const float* cameraPosition = core::drawCameraPosition();
+ const double* cameraPosition = core::drawCameraPosition();
  EXPECT_EQ(cameraPosition[0], 0.0f);
  EXPECT_EQ(cameraPosition[1], 0.0f);
  EXPECT_EQ(cameraPosition[2], 0.0f);
@@ -114,7 +114,7 @@ TEST(DrawCameraState, FromCameraBuildsGbufferModelViewAlone) {
  EXPECT_NEAR(projection.m[5], 1.1f, 1e-5f);
  EXPECT_NEAR(projection.m[11], -1.0f, 1e-5f);
  // The camera position published is Java's Camera.getPosition().
- const float* cameraPosition = core::drawCameraPosition();
+ const double* cameraPosition = core::drawCameraPosition();
  EXPECT_NEAR(cameraPosition[0], 112.0f, 1e-3f);
  EXPECT_NEAR(cameraPosition[1], 190.0f, 1e-3f);
  EXPECT_NEAR(cameraPosition[2], 315.0f, 1e-3f);
@@ -151,7 +151,7 @@ TEST(DrawCameraState, BobIsLeftMultipliedAndNeverMovesTheOrigin) {
  core::setDrawCameraStateFromCamera(camera);
  ASSERT_TRUE(core::drawCameraStateValid());
  // The published origin is Camera.getPosition(), bob or no bob.
- const float* cameraPosition = core::drawCameraPosition();
+ const double* cameraPosition = core::drawCameraPosition();
  EXPECT_NEAR(cameraPosition[0], 100.0f, 1e-3f);
  EXPECT_NEAR(cameraPosition[1], 201.62f, 1e-3f);
  EXPECT_NEAR(cameraPosition[2], 300.0f, 1e-3f);
@@ -223,7 +223,7 @@ TEST(DrawCameraState, ScopedDrawCameraStateRestoresBase) {
  gui_proj::load(854.0f, 480.0f);
  const Matrix4f savedModelView = core::drawModelView();
  const Matrix4f savedProjection = core::drawProjection();
- const float savedCameraPosition[3] = {core::drawCameraPosition()[0],
+ const double savedCameraPosition[3] = {core::drawCameraPosition()[0],
                                        core::drawCameraPosition()[1],
                                        core::drawCameraPosition()[2]};
  {
@@ -239,7 +239,7 @@ TEST(DrawCameraState, ScopedDrawCameraStateRestoresBase) {
  ASSERT_TRUE(core::drawCameraStateValid());
  EXPECT_TRUE(nearMatrix(core::drawModelView(), savedModelView));
  EXPECT_TRUE(nearMatrix(core::drawProjection(), savedProjection));
- const float* cameraPosition = core::drawCameraPosition();
+ const double* cameraPosition = core::drawCameraPosition();
  EXPECT_NEAR(cameraPosition[0], savedCameraPosition[0], 1e-6f);
  EXPECT_NEAR(cameraPosition[1], savedCameraPosition[1], 1e-6f);
  EXPECT_NEAR(cameraPosition[2], savedCameraPosition[2], 1e-6f);

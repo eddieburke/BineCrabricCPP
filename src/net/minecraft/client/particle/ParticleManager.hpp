@@ -195,7 +195,7 @@ class ParticleManager {
   // the draw camera state like every other world draw.
   static void syncCameraOffset() {
    if(render::core::drawCameraStateValid()) {
-    const float* eye = render::core::drawCameraPosition();
+    const double* eye = render::core::drawCameraPosition();
     Particle::xOffset = eye[0];
     Particle::yOffset = eye[1];
     Particle::zOffset = eye[2];

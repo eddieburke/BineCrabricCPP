@@ -319,7 +319,7 @@ void applyWorldDrawTransform(net::minecraft::util::math::MatrixStack& pose, cons
  double camY = 0.0;
  double camZ = 0.0;
  if(client::render::core::drawCameraStateValid()) {
-  const float* eye = client::render::core::drawCameraPosition();
+  const double* eye = client::render::core::drawCameraPosition();
   camX = eye[0];
   camY = eye[1];
   camZ = eye[2];

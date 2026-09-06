@@ -34,17 +34,16 @@ bool dispatch(PackInstance& pack,
                           pack.bufferObjects[indirect->second.buffer].handle() != 0 &&
                           pack.bufferBytes[indirect->second.buffer] >=
                               indirect->second.offset + sizeof(unsigned int) * 3;
+ const unsigned int barriers = (barrier ? kBarrierBits : 0u) | (useIndirect ? kCommandBarrierBit : 0u);
+ if(barriers != 0u) {
+  gl::GLCore::memoryBarrier(barriers);
+ }
  if(useIndirect) {
-  gl::GLCore::memoryBarrier(kCommandBarrierBit);
   gl::GLCore::bindBuffer(0x90EE, pack.bufferObjects[indirect->second.buffer].handle());
   gl::GLCore::dispatchComputeIndirect(static_cast<intptr_t>(indirect->second.offset));
   gl::GLCore::bindBuffer(0x90EE, 0);
  } else {
   gl::GLCore::dispatchCompute(groups[0], groups[1], groups[2]);
- }
- // CompositeRenderer.java renderAll: one barrier after a pass's computes, none before.
- if(barrier) {
-  gl::GLCore::memoryBarrier(kBarrierBits);
  }
  return true;
 }

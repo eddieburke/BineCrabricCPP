@@ -14,6 +14,7 @@
 #include <GL/gl.h>
 #define GL_GLEXT_PROTOTYPES
 #include <GL/glext.h>
+#include "net/minecraft/client/Minecraft.hpp"
 #include "net/minecraft/client/gl/GLCore.hpp"
 #include "net/minecraft/client/gl/GlConstants.hpp"
 #include "net/minecraft/client/gl/ProgramCache.hpp"
@@ -21,6 +22,8 @@
 #include "net/minecraft/client/resource/pack/ZippedTexturePack.hpp"
 #include "net/minecraft/client/render/shaderpack/Catalog.hpp"
 #include "net/minecraft/client/render/shaders/Compiler.hpp"
+#include "net/minecraft/client/render/shaders/ComputeDispatcher.hpp"
+#include "net/minecraft/client/render/uniforms/Uniforms.hpp"
 #include "net/minecraft/client/render/pipeline/Instance.hpp"
 #include "net/minecraft/client/render/pipeline/AsyncDepthSampler.hpp"
 #include "net/minecraft/client/render/pipeline/Pipeline.hpp"
@@ -47,6 +50,31 @@ using client::render::PackInstance;
 using client::render::PackLoader;
 using client::render::PackSetting;
 using client::render::PackCatalog::directoryResources;
+class PipelineTestMinecraft final : public client::Minecraft {
+ public:
+ using client::Minecraft::Minecraft;
+ void handleCrash(const net::minecraft::util::crash::CrashReport&) override {}
+};
+class ScopedMinecraftInstance final {
+ public:
+ ScopedMinecraftInstance() : previous_(client::Minecraft::INSTANCE) {}
+ ~ScopedMinecraftInstance() {
+  client::Minecraft::INSTANCE = previous_;
+ }
+
+ private:
+ client::Minecraft* previous_ = nullptr;
+};
+class ScopedCameraFrame final {
+ public:
+ ScopedCameraFrame() : previous_(client::render::core::cameraFrame()) {}
+ ~ScopedCameraFrame() {
+  client::render::core::setCameraFrame(previous_);
+ }
+
+ private:
+ client::render::FrameRenderCamera previous_;
+};
 class ShaderGlIntegrationTest : public ::testing::Test {
  protected:
  static void SetUpTestSuite() {
@@ -269,7 +297,7 @@ TEST_F(ShaderGlIntegrationTest, EntityBatchDoesNotInheritPreviousPrimitiveMode) 
  client::render::core::disableBlend();
  client::render::core::setActiveProgram(&program);
  const auto identity = net::minecraft::util::math::Matrix4f::identityMatrix();
- const float camera[3] = {0.0f, 0.0f, 0.0f};
+ const double camera[3] = {0.0, 0.0, 0.0};
  client::render::core::setDrawCameraState(identity.m, identity.m, identity.m, identity.m, camera);
  client::render::Tessellator& tessellator = client::render::Tessellator::INSTANCE;
  tessellator.start(0x0000);
@@ -555,6 +583,36 @@ TEST_F(ShaderGlIntegrationTest, GeometryBindsEveryAlbedoSamplerAliasToUnitZero) 
  }
  client::render::core::setActiveProgram(nullptr);
 }
+TEST_F(ShaderGlIntegrationTest, ComputeDispatcherSynchronizesBeforeReadingVoxelWrites) {
+ client::gl::ShaderProgram program;
+ ASSERT_TRUE(program.compileCompute("layout(local_size_x=1)in;void main(){}", "#version 430 core\n"))
+     << program.lastError();
+ program.bind();
+ struct DispatchTrace {
+  decltype(GLCore::memoryBarrier) savedBarrier = GLCore::memoryBarrier;
+  decltype(GLCore::dispatchCompute) savedDispatch = GLCore::dispatchCompute;
+  ~DispatchTrace() {
+   GLCore::memoryBarrier = savedBarrier;
+   GLCore::dispatchCompute = savedDispatch;
+  }
+ } trace;
+ static std::vector<unsigned int> calls;
+ calls.clear();
+ GLCore::memoryBarrier = [](unsigned int bits) { calls.push_back(bits); };
+ GLCore::dispatchCompute = [](unsigned int, unsigned int, unsigned int) { calls.push_back(0u); };
+ PackInstance pack;
+ client::render::PackPass pass;
+ pass.name = "shadowcomp";
+ client::render::PackUniformValues uniforms;
+ std::unordered_map<std::string, int> textures, images, volumes;
+ EXPECT_TRUE(client::render::ComputeDispatcher::dispatch(
+     pack, pass, program, uniforms, nullptr, textures, images, volumes, nullptr, 1, 1, true));
+ EXPECT_EQ(calls, (std::vector<unsigned int>{client::render::ComputeDispatcher::kBarrierBits, 0u}));
+ calls.clear();
+ EXPECT_TRUE(client::render::ComputeDispatcher::dispatch(
+     pack, pass, program, uniforms, nullptr, textures, images, volumes, nullptr, 1, 1, false));
+ EXPECT_EQ(calls, (std::vector<unsigned int>{0u}));
+}
 TEST_F(ShaderGlIntegrationTest, EntityTextureBindingOwnsUnitZero) {
  client::texture::TextureManager textureManager;
  client::texture::RasterImage image;
@@ -655,6 +713,41 @@ TEST_F(ShaderGlIntegrationTest, WorldProgramsBindSceneAndOpaqueDepthSamplers) {
  EXPECT_NE(readSampler("depthtex0"), readSampler("depthtex1"));
  EXPECT_NE(readSampler("depthtex1"), readSampler("depthtex2"));
  targets.destroy();
+}
+TEST_F(ShaderGlIntegrationTest, ShadowProgramsReceiveTerrainAtlasDimensions) {
+ ScopedMinecraftInstance restoreMinecraft;
+ PipelineTestMinecraft minecraft(64, 64, false);
+ client::texture::RasterImage atlas;
+ atlas.width = 256;
+ atlas.height = 128;
+ atlas.argb.assign(static_cast<std::size_t>(atlas.width * atlas.height), 0xFFFFFFFFu);
+ const int atlasTexture = minecraft.textureManager.getTextureId("shader_test_shadow_atlas", atlas);
+ ASSERT_GT(atlasTexture, 0);
+ client::render::core::activeTexture(client::gl::tex::Texture0);
+ client::render::core::bindTexture(atlasTexture);
+ client::render::Pipeline pipeline(std::filesystem::path(MINECRAFT_TEST_SOURCE_DIR), nullptr,
+                                   std::filesystem::temp_directory_path() / "rvox-shadow-atlas-cache");
+ ASSERT_TRUE(pipeline.select("rethinking-voxels_r0.1-beta9"));
+ ScopedCameraFrame restoreCamera;
+ client::render::FrameRenderCamera shadowCamera = client::render::core::cameraFrame();
+ shadowCamera.shadowPass = true;
+ client::render::core::setCameraFrame(shadowCamera);
+ client::render::Pipeline::PhaseScope phase(&pipeline, client::render::WorldPipelinePhase::Shadow);
+ client::gl::ShaderProgram program;
+ ASSERT_TRUE(program.compile("void main(){gl_Position=vec4(0.0);}",
+                             "uniform ivec2 atlasSize;layout(location=0)out vec4 color;"
+                             "void main(){color=vec4(float(atlasSize.x+atlasSize.y));}",
+                             "#version 430 core\n"));
+ program.bind();
+ client::render::core::activeTexture(client::gl::tex::Texture0);
+ client::render::core::bindTexture(atlasTexture);
+ pipeline.bindWorldProgramMaterial(program, client::render::WorldProgramId::TerrainSolid);
+ const auto getUniform = reinterpret_cast<PFNGLGETUNIFORMIVPROC>(glfwGetProcAddress("glGetUniformiv"));
+ ASSERT_NE(getUniform, nullptr);
+ int atlasSize[2] = {};
+ getUniform(program.handle(), program.location("atlasSize"), atlasSize);
+ EXPECT_EQ(atlasSize[0], atlas.width);
+ EXPECT_EQ(atlasSize[1], atlas.height);
 }
 TEST_F(ShaderGlIntegrationTest, PackDepthSnapshotsKeepOpaqueAndHandSemantics) {
  client::render::PackInstance pack;

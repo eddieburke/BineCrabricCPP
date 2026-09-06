@@ -122,8 +122,7 @@ WorldProgramBindContext Pipeline::makeWorldBindContext(WorldProgramId id) {
   ctx.opaqueDepthTexture = pack->opaqueDepthTexture(ctx.sceneDepthTexture);
   ctx.handDepthTexture = pack->handDepthTexture(ctx.sceneDepthTexture);
  }
- ctx.bindTextureAtlases = !interfaceProgram && !shadowPass && pack != nullptr &&
-                          bindsTextureAtlases(id);
+ ctx.bindTextureAtlases = !interfaceProgram && pack != nullptr && bindsTextureAtlases(id);
  ctx.normalTexture = normalFallbackTexture();
  ctx.specularTexture = specularFallbackTexture();
  if(ctx.bindTextureAtlases && net::minecraft::client::Minecraft::INSTANCE != nullptr) {

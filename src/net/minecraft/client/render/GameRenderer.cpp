@@ -572,7 +572,7 @@ void GameRenderer::renderFirstPersonHand(float tickDelta) {
  math::Matrix4f identityInverse = identity;
  math::Matrix4f projectionInverse = handProjection;
  projectionInverse.invert();
- const float zero[3] = {0.0f, 0.0f, 0.0f};
+ const double zero[3] = {0.0, 0.0, 0.0};
  core::setDrawCameraState(identity.m, handProjection.m, identityInverse.m, projectionInverse.m, zero);
  const core::DepthScope handDepth(true, true);
  auto* living = dynamic_cast<LivingEntity*>(client->camera);

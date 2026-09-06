@@ -245,11 +245,11 @@ void setDrawCameraState(const float* modelView,
                         const float* projection,
                         const float* modelViewInverse,
                         const float* projectionInverse,
-                        const float* cameraPosition);
+                        const double* cameraPosition);
 void setDrawCameraStateFromCamera(const FrameRenderCamera& camera);
 void clearDrawCameraState();
 [[nodiscard]] bool drawCameraStateValid() noexcept;
-[[nodiscard]] const float* drawCameraPosition() noexcept;
+[[nodiscard]] const double* drawCameraPosition() noexcept;
 // The pass base — for the world this is gbufferModelView (bob * MV_camera) and
 // nothing else, so `gbufferModelViewInverse * viewPos + cameraPosition` lands
 // back on worldPos.
@@ -272,7 +272,7 @@ class ScopedDrawCameraState {
  math::Matrix4f projection_{};
  math::Matrix4f modelViewInverse_{};
  math::Matrix4f projectionInverse_{};
- float cameraPosition_[3] = {0.0f, 0.0f, 0.0f};
+ double cameraPosition_[3] = {0.0, 0.0, 0.0};
  math::Matrix4f pose_{};
  bool valid_ = false;
 };

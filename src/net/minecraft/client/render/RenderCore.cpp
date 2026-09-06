@@ -107,7 +107,7 @@ math::Matrix4f g_drawProjection{};
 math::Matrix4f g_drawModelViewInverse{};
 math::Matrix4f g_drawProjectionInverse{};
 math::Matrix4f g_drawPose{};
-float g_drawCameraPosition[3] = {0.0f, 0.0f, 0.0f};
+double g_drawCameraPosition[3] = {0.0, 0.0, 0.0};
 bool g_drawCameraValid = false;
 float g_uploadedChunkOffset[3] = {0.0f, 0.0f, 0.0f};
 bool g_chunkOffsetUploaded = false;
@@ -221,7 +221,7 @@ void setDrawCameraState(const float* modelView,
                         const float* projection,
                         const float* modelViewInverse,
                         const float* projectionInverse,
-                        const float* cameraPosition) {
+                        const double* cameraPosition) {
  if(modelView == nullptr || projection == nullptr || modelViewInverse == nullptr ||
     projectionInverse == nullptr || cameraPosition == nullptr) {
   clearDrawCameraState();
@@ -255,8 +255,7 @@ void setDrawCameraStateFromCamera(const FrameRenderCamera& camera) {
  projectionInverseMatrix.set(projection);
  projectionInverseMatrix.invert();
  // https://github.com/IrisShaders/Iris/blob/26.1/common/src/main/java/net/irisshaders/iris/uniforms/CameraUniforms.java
- const float cameraPosition[3] = {static_cast<float>(camera.eyeX), static_cast<float>(camera.eyeY),
-                                  static_cast<float>(camera.eyeZ)};
+ const double cameraPosition[3] = {camera.eyeX, camera.eyeY, camera.eyeZ};
  setDrawCameraState(modelView.m, projection, modelViewInverse.m, projectionInverseMatrix.m, cameraPosition);
 }
 void clearDrawCameraState() {
@@ -266,7 +265,7 @@ void clearDrawCameraState() {
 bool drawCameraStateValid() noexcept {
  return g_drawCameraValid;
 }
-const float* drawCameraPosition() noexcept {
+const double* drawCameraPosition() noexcept {
  return g_drawCameraPosition;
 }
 const math::Matrix4f& drawModelView() noexcept {
