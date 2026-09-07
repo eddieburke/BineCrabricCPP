@@ -542,6 +542,7 @@ local function register()
       return realtime_active()
     end,
   }, function(event)
+    if event.shader_pack_active then return event end
     local frame = current_solar_frame(event.tick_delta)
     event.star_brightness = sky_render.star_brightness(frame)
     event.astronomy_enabled = true

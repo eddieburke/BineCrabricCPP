@@ -1,4 +1,4 @@
-param([string]$BuildDir="build-omega",[ValidateSet("Release","RelWithDebInfo","Debug")][string]$BuildType="Release",[int]$Jobs=0,[switch]$Clean,[switch]$Lto,[switch]$NoLto,[switch]$NoCcache,[switch]$NoNativeCpu,[switch]$RunTests,[string]$TestFilter="",[switch]$SkipModPackaging,[switch]$SkipResourceSync,[switch]$KeepDebugSymbols,[switch]$StripSymbols,[switch]$Log,[switch]$Gui,[switch]$Run,[switch]$NoGui,[switch]$CleanOnly,[switch]$Format,[string]$ModId="",[switch]$NoModDeploy,[ValidateSet("All","Client","Server")][string]$Target="All",[Parameter(ValueFromRemainingArguments=$true)][string[]]$RunArgs)
+param([string]$BuildDir="build-omega",[ValidateSet("Release","RelWithDebInfo","Debug")][string]$BuildType="Release",[int]$Jobs=0,[switch]$Clean,[switch]$Lto,[switch]$NoLto,[switch]$NoCcache,[switch]$NoNativeCpu,[switch]$RunTests,[switch]$BuildTests,[string]$TestFilter="",[switch]$SkipModPackaging,[switch]$SkipResourceSync,[switch]$KeepDebugSymbols,[switch]$StripSymbols,[switch]$Log,[switch]$Gui,[switch]$Run,[switch]$NoGui,[switch]$CleanOnly,[switch]$Format,[string]$ModId="",[switch]$NoModDeploy,[ValidateSet("All","Client","Server")][string]$Target="All",[Parameter(ValueFromRemainingArguments=$true)][string[]]$RunArgs)
 $ErrorActionPreference="Stop"
 $ScriptDir=Split-Path -Parent $MyInvocation.MyCommand.Path
 sl $ScriptDir
@@ -531,6 +531,7 @@ $buildTargets=@("minecraft_native","minecraft_server","minecraft_installer")
 $buildLabel="minecraft_native + minecraft_server + minecraft_installer"
 if($Target -eq "Client"){$buildTargets=@("minecraft_native");$buildLabel="minecraft_native (client)"}
 elseif($Target -eq "Server"){$buildTargets=@("minecraft_server");$buildLabel="minecraft_server"}
+if($BuildTests){$buildTargets+="minecraft_omega_tests";$buildLabel+=" + minecraft_omega_tests"}
 if($BuildType -eq "Release"){Write-Host "Omega build: $buildLabel (-j $Jobs) ..."}else{Write-Host "$BuildType build: $buildLabel (-j $Jobs) ..."}
 $relinkPaths=$buildTargets|%{"$ScriptDir\$BuildDir\$_.exe"}
 $relinkBackups=Prepare-Relink -Paths $relinkPaths

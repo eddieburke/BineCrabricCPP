@@ -35,12 +35,14 @@ void Matrix4f::invert() {
  inv[15] =
      m[0] * (m[5] * m[10] - m[9] * m[6]) - m[4] * (m[1] * m[10] - m[9] * m[2]) + m[8] * (m[1] * m[6] - m[5] * m[2]);
  det = m[0] * inv[0] + m[4] * inv[1] + m[8] * inv[2] + m[12] * inv[3];
- if(std::abs(det) < 1e-10f) {
+ if(det == 0.0f || !std::isfinite(det)) {
   identity();
   return;
  }
- det = 1.0f / det;
- for(int i = 0; i < 16; ++i)
-  m[i] = inv[i] * det;
+ const float reciprocal = 1.0f / det;
+ for(int i = 0; i < 16; ++i) {
+  m[i] = std::isfinite(reciprocal) ? inv[i] * reciprocal
+                                 : static_cast<float>(static_cast<double>(inv[i]) / static_cast<double>(det));
+ }
 }
 } // namespace net::minecraft::util::math

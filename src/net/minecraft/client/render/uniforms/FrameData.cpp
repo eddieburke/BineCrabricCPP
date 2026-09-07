@@ -156,7 +156,7 @@ void fillCameraState(PackUniformValues& values,
            values.gbufferPreviousProjection);
  std::copy(std::begin(g_frameState.previous.gbufferModelView), std::end(g_frameState.previous.gbufferModelView),
            values.gbufferPreviousModelView);
- render::directionToView(0.0f, 1.0f, 0.0f, camera, values.upPosition);
+ render::directionToView(0.0f, 100.0f, 0.0f, camera, values.upPosition);
  if(shadowAvailable) {
   buildCameraModelView(values.shadowModelView, shadowCamera);
   render::buildCameraProjection(values.shadowProjection, shadowCamera);

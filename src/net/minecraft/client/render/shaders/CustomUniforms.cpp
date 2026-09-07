@@ -1,7 +1,9 @@
 #include "net/minecraft/client/render/shaders/CustomUniforms.hpp"
 #include <algorithm>
+#include <bit>
 #include <cctype>
 #include <cmath>
+#include <cstdint>
 #include <cstdlib>
 #include <limits>
 #include <random>
@@ -12,6 +14,7 @@
 namespace net::minecraft::client::render {
 namespace {
 constexpr float kPi = 3.14159265358979323846f;
+constexpr float kLn2 = 0.69314718055994530942f;
 enum class TokenKind {
  End,
  Number,
@@ -38,7 +41,7 @@ enum class TokenKind {
 struct Token {
  TokenKind kind = TokenKind::End;
  std::string text;
- float number = 0.0f;
+ double number = 0.0;
 };
 struct Lexer {
  explicit Lexer(std::string_view source) : src_(source) {}
@@ -75,7 +78,7 @@ struct Lexer {
    }
    const std::string text(src_.substr(i_, end - i_));
    i_ = end;
-   return {TokenKind::Number, text, std::strtof(text.c_str(), nullptr)};
+   return {TokenKind::Number, text, std::strtod(text.c_str(), nullptr)};
   }
   if(std::isalpha(static_cast<unsigned char>(c)) || c == '_') {
    std::size_t end = i_ + 1;
@@ -132,7 +135,15 @@ struct ExprNode {
  NodeKind kind = NodeKind::Lit;
  CustomUniformType type = CustomUniformType::Float;
  std::string name;
- float number = 0.0f;
+ double number = 0.0;
+ CustomUniformType resultType = CustomUniformType::Float;
+ CustomUniformType operationType = CustomUniformType::Float;
+ const CustomUniformValue* customValue = nullptr;
+ bool numericLiteral = false;
+ bool smoothHasId = false;
+ float smoothValue[4]{};
+ bool smoothInitialized = false;
+ std::vector<CustomUniformValue> args;
  int component = 0;
  int matrixCol = 0;
  TokenKind op = TokenKind::End;
@@ -182,10 +193,7 @@ float componentOf(const CustomUniformValue& v, int index) {
 }
 struct EvalContext {
  const PackUniformValues* frame = nullptr;
- const std::unordered_map<std::string, CustomUniformValue>* customs = nullptr;
  const std::unordered_map<std::string, std::string>* options = nullptr;
- std::unordered_map<int, CustomUniformRuntime::SmoothState>* smooth = nullptr;
- int* autoSmoothId = nullptr;
  std::mt19937* rng = nullptr;
 };
 bool lookupConstant(const std::string& name, CustomUniformValue& out) {
@@ -463,13 +471,20 @@ CustomUniformValue applyBinary(TokenKind op, const CustomUniformValue& a, const 
   if(isVector(a.type) || isVector(b.type)) {
    const int n = std::max(vecLen(a.type), vecLen(b.type));
    for(int i = 0; i < n; ++i) {
-    if(std::fabs(componentOf(a, i) - componentOf(b, i)) > 1e-6f) return makeBool(false);
+    if(componentOf(a, i) != componentOf(b, i)) return makeBool(false);
    }
    return makeBool(true);
   }
-  return makeBool(std::fabs(a.asFloat() - b.asFloat()) <= 1e-6f);
+  if(a.type == CustomUniformType::Int && b.type == CustomUniformType::Int) return makeBool(a.i == b.i);
+  return makeBool(a.asFloat() == b.asFloat());
  }
  if(op == TokenKind::BangEq) return makeBool(!applyBinary(TokenKind::EqEq, a, b).asBool());
+ if(a.type == CustomUniformType::Int && b.type == CustomUniformType::Int) {
+  if(op == TokenKind::Lt) return makeBool(a.i < b.i);
+  if(op == TokenKind::Le) return makeBool(a.i <= b.i);
+  if(op == TokenKind::Gt) return makeBool(a.i > b.i);
+  if(op == TokenKind::Ge) return makeBool(a.i >= b.i);
+ }
  if(op == TokenKind::Lt) return makeBool(a.asFloat() < b.asFloat());
  if(op == TokenKind::Le) return makeBool(a.asFloat() <= b.asFloat());
  if(op == TokenKind::Gt) return makeBool(a.asFloat() > b.asFloat());
@@ -495,10 +510,10 @@ CustomUniformValue applyBinary(TokenKind op, const CustomUniformValue& a, const 
   const int x = a.asInt();
   const int y = b.asInt();
   switch(op) {
-  case TokenKind::Plus: return makeInt(x + y);
-  case TokenKind::Minus: return makeInt(x - y);
-  case TokenKind::Star: return makeInt(x * y);
-  case TokenKind::Percent: return makeInt(y != 0 ? x % y : 0);
+  case TokenKind::Plus: return makeInt(std::bit_cast<std::int32_t>(static_cast<std::uint32_t>(x) + static_cast<std::uint32_t>(y)));
+  case TokenKind::Minus: return makeInt(std::bit_cast<std::int32_t>(static_cast<std::uint32_t>(x) - static_cast<std::uint32_t>(y)));
+  case TokenKind::Star: return makeInt(std::bit_cast<std::int32_t>(static_cast<std::uint32_t>(x) * static_cast<std::uint32_t>(y)));
+  case TokenKind::Percent: return makeInt(y != 0 && y != -1 ? x % y : 0);
   default: break;
   }
  }
@@ -512,21 +527,6 @@ CustomUniformValue applyBinary(TokenKind op, const CustomUniformValue& a, const 
  case TokenKind::Percent: return makeFloat(y != 0.0f ? std::fmod(x, y) : 0.0f);
  default: return makeFloat(0.0f);
  }
-}
-float smoothScalar(float target, float fadeUpTicks, float fadeDownTicks, int id, EvalContext& ctx) {
- if(ctx.smooth == nullptr || ctx.frame == nullptr) return target;
- auto& state = (*ctx.smooth)[id];
- if(!state.initialized) {
-  state.value = target;
-  state.initialized = true;
-  return state.value;
- }
- const bool rising = target >= state.value;
- const float fadeTicks = std::max(0.001f, rising ? fadeUpTicks : fadeDownTicks);
- const float halfLifeSeconds = fadeTicks / 20.0f;
- const float alpha = 1.0f - std::exp(-std::max(0.0f, ctx.frame->frameTime) * 0.693147f / halfLifeSeconds);
- state.value += (target - state.value) * std::clamp(alpha, 0.0f, 1.0f);
- return state.value;
 }
 CustomUniformValue callFunction(const std::string& name, const std::vector<CustomUniformValue>& args, EvalContext& ctx) {
  auto need = [&](std::size_t n) { return args.size() >= n; };
@@ -569,7 +569,13 @@ CustomUniformValue callFunction(const std::string& name, const std::vector<Custo
   if(args[0].type == CustomUniformType::Int) return makeInt(static_cast<int>(fn(static_cast<float>(args[0].asInt()))));
   return makeFloat(fn(f0(0)));
  };
- if(name == "abs") return mapUnary([](float x) { return std::fabs(x); });
+ if(name == "abs") {
+  if(need(1) && args[0].type == CustomUniformType::Int) {
+   const int value = args[0].i;
+   return makeInt(value < 0 ? std::bit_cast<std::int32_t>(0u - static_cast<std::uint32_t>(value)) : value);
+  }
+  return mapUnary([](float x) { return std::fabs(x); });
+ }
  if(name == "sign" || name == "signum")
   return mapUnary([](float x) { return x < 0.0f ? -1.0f : x > 0.0f ? 1.0f
                                                                    : 0.0f; });
@@ -611,16 +617,30 @@ CustomUniformValue callFunction(const std::string& name, const std::vector<Custo
   return makeFloat(result);
  }
  if(name == "clamp" && need(3)) {
+  if(args[0].type == CustomUniformType::Int && args[1].type == CustomUniformType::Int &&
+     args[2].type == CustomUniformType::Int) return makeInt(std::max(i0(1), std::min(i0(2), i0(0))));
   if(isVector(args[0].type)) {
    float out[4]{};
-   for(int i = 0; i < vecLen(args[0].type); ++i) out[i] = std::clamp(componentOf(args[0], i), f0(1), f0(2));
+   for(int i = 0; i < vecLen(args[0].type); ++i) {
+    out[i] = std::max(componentOf(args[1], i), std::min(componentOf(args[2], i), componentOf(args[0], i)));
+   }
    return makeVec(args[0].type, out);
   }
   return makeFloat(std::clamp(f0(0), f0(1), f0(2)));
  }
  if(name == "mix" && need(3)) return makeFloat(f0(0) * (1.0f - f0(2)) + f0(1) * f0(2));
- if(name == "edge") return makeFloat(f0(1) < f0(0) ? 0.0f : 1.0f);
+ if(name == "edge") {
+  if(args[0].type == CustomUniformType::Int && args[1].type == CustomUniformType::Int) {
+   return makeInt(i0(1) < i0(0) ? 0 : 1);
+  }
+  return makeFloat(f0(1) < f0(0) ? 0.0f : 1.0f);
+ }
  if(name == "fmod" && need(2)) {
+  if(args[0].type == CustomUniformType::Int && args[1].type == CustomUniformType::Int) {
+   const int x = i0(0), y = i0(1);
+   const int remainder = y != 0 && y != -1 ? x % y : 0;
+   return makeInt(remainder != 0 && ((remainder < 0) != (y < 0)) ? remainder + y : remainder);
+  }
   const float y = f0(1);
   if(y == 0.0f) return makeFloat(0.0f);
   return makeFloat(f0(0) - y * std::floor(f0(0) / y));
@@ -632,6 +652,12 @@ CustomUniformValue callFunction(const std::string& name, const std::vector<Custo
   return makeFloat(u);
  }
  if(name == "randomInt") {
+  if(args.size() == 1) {
+   const int bound = i0(0);
+   if(bound <= 0) return makeInt(0);
+   std::uniform_int_distribution<int> dist(0, bound - 1);
+   return makeInt(ctx.rng != nullptr ? dist(*ctx.rng) : 0);
+  }
   if(args.size() >= 2) {
    const int lo = i0(0);
    const int hi = i0(1);
@@ -642,71 +668,39 @@ CustomUniformValue callFunction(const std::string& name, const std::vector<Custo
   std::uniform_int_distribution<int> dist(std::numeric_limits<int>::min(), std::numeric_limits<int>::max());
   return makeInt(ctx.rng != nullptr ? dist(*ctx.rng) : 0);
  }
- if(name == "if") {
-  if(args.size() < 3) return need(2) ? args[1] : makeFloat(0.0f);
-  for(std::size_t i = 0; i + 1 < args.size(); i += 2) {
-   if(i + 1 == args.size() - 1 && (args.size() % 2) == 1) break;
-   if(args[i].asBool()) return args[i + 1];
-  }
-  return args.back();
+ if(name == "between" && need(3)) {
+  if(args[0].type == CustomUniformType::Int && args[1].type == CustomUniformType::Int &&
+     args[2].type == CustomUniformType::Int) return makeBool(i0(0) >= i0(1) && i0(0) <= i0(2));
+  return makeBool(f0(0) >= f0(1) && f0(0) <= f0(2));
  }
- if(name == "between" && need(3)) return makeBool(f0(0) >= f0(1) && f0(0) <= f0(2));
+ if(name == "equals" && args.size() == 2) return applyBinary(TokenKind::EqEq, args[0], args[1]);
  if(name == "equals" && need(3)) return makeBool(std::fabs(f0(0) - f0(1)) <= f0(2));
  if(name == "in" && need(1)) {
   const float x = f0(0);
   for(std::size_t i = 1; i < args.size(); ++i) {
-   if(std::fabs(x - args[i].asFloat()) <= 1e-6f) return makeBool(true);
+   if(x == args[i].asFloat()) return makeBool(true);
   }
   return makeBool(false);
  }
- if(name == "smooth") {
-  float val = 0.0f;
-  float up = 1.0f;
-  float down = 1.0f;
-  int id = ctx.autoSmoothId != nullptr ? (*ctx.autoSmoothId)++ : 0;
-  if(args.size() == 1) {
-   val = f0(0);
-  } else if(args.size() == 2) {
-   val = f0(0);
-   up = down = f0(1);
-  } else if(args.size() == 3) {
-   val = f0(0);
-   up = f0(1);
-   down = f0(2);
-  } else if(args.size() >= 4) {
-   id = i0(0);
-   val = f0(1);
-   up = f0(2);
-   down = f0(3);
-  }
-  if(!args.empty() && isVector(args[args.size() >= 4 ? 1u : 0u].type)) {
-   const auto& src = args[args.size() >= 4 ? 1u : 0u];
-   float out[4]{};
-   for(int i = 0; i < vecLen(src.type); ++i) out[i] = smoothScalar(componentOf(src, i), up, down, id * 4 + i, ctx);
-   return makeVec(src.type, out);
-  }
-  return makeFloat(smoothScalar(val, up, down, id, ctx));
- }
  return makeFloat(0.0f);
 }
-CustomUniformValue eval(const ExprNode& node, EvalContext& ctx) {
+CustomUniformValue eval(ExprNode& node, EvalContext& ctx) {
+ const auto evaluate = [&]() -> CustomUniformValue {
  switch(node.kind) {
  case NodeKind::Lit:
   if(node.type == CustomUniformType::Bool) return makeBool(node.number != 0.0f);
   if(node.type == CustomUniformType::Int) return makeInt(static_cast<int>(node.number));
   return makeFloat(node.number);
  case NodeKind::Ident: {
+  if(node.customValue != nullptr) return *node.customValue;
   CustomUniformValue out;
-  if(ctx.customs != nullptr) {
-   if(const auto it = ctx.customs->find(node.name); it != ctx.customs->end()) return it->second;
-  }
   if(ctx.frame != nullptr && lookupBuiltin(node.name, *ctx.frame, out)) return out;
   if(ctx.options != nullptr) {
    if(const auto it = ctx.options->find(node.name); it != ctx.options->end()) {
     char* end = nullptr;
     const double parsed = std::strtod(it->second.c_str(), &end);
     if(end != it->second.c_str() && end != nullptr && *end == '\0') {
-     if(it->second.find('.') == std::string::npos) return makeInt(static_cast<int>(parsed));
+     if(node.type == CustomUniformType::Int) return makeInt(static_cast<int>(parsed));
      return makeFloat(static_cast<float>(parsed));
     }
     if(it->second == "true" || it->second == "1") return makeBool(true);
@@ -724,20 +718,58 @@ CustomUniformValue eval(const ExprNode& node, EvalContext& ctx) {
    for(int i = 0; i < vecLen(v.type); ++i) out[i] = -componentOf(v, i);
    return makeVec(v.type, out);
   }
-  if(v.type == CustomUniformType::Int) return makeInt(-v.asInt());
+  if(v.type == CustomUniformType::Int) return makeInt(std::bit_cast<std::int32_t>(0u - static_cast<std::uint32_t>(v.i)));
   return makeFloat(-v.asFloat());
  }
- case NodeKind::Binary: return applyBinary(node.op, eval(*node.kids[0], ctx), eval(*node.kids[1], ctx));
+ case NodeKind::Binary: {
+  const CustomUniformValue left = eval(*node.kids[0], ctx);
+  const CustomUniformValue right = eval(*node.kids[1], ctx);
+  return applyBinary(node.op, left, right);
+ }
  case NodeKind::Construct: {
   float out[4]{};
   for(std::size_t i = 0; i < node.kids.size() && i < 4; ++i) out[i] = eval(*node.kids[i], ctx).asFloat();
   return makeVec(node.type, out);
  }
  case NodeKind::Call: {
-  std::vector<CustomUniformValue> args;
-  args.reserve(node.kids.size());
-  for(const auto& kid : node.kids) args.push_back(eval(*kid, ctx));
-  return callFunction(node.name, args, ctx);
+  if(node.name == "if") {
+   CustomUniformValue result;
+   for(std::size_t i = 0; i + 1 < node.kids.size(); i += 2) {
+    if(eval(*node.kids[i], ctx).asBool()) return eval(*node.kids[i + 1], ctx);
+    result = eval(*node.kids.back(), ctx);
+   }
+   return result;
+  }
+  if(node.name == "in") {
+   const float value = eval(*node.kids[0], ctx).asFloat();
+   for(std::size_t i = 1; i < node.kids.size(); ++i) {
+    if(value == eval(*node.kids[i], ctx).asFloat()) return makeBool(true);
+   }
+   return makeBool(false);
+  }
+  for(std::size_t i = 0; i < node.kids.size(); ++i) node.args[i] = eval(*node.kids[i], ctx);
+  if(node.name == "smooth") {
+   const std::size_t first = node.smoothHasId ? 1 : 0;
+   const auto& target = node.args[first];
+   const float up = node.args.size() > first + 1 ? node.args[first + 1].asFloat() : 1.0f;
+   const float down = node.args.size() > first + 2 ? node.args[first + 2].asFloat() : up;
+   for(int i = 0; i < vecLen(target.type); ++i) {
+    const float value = componentOf(target, i);
+    float& previous = node.smoothValue[i];
+    const float fade = value > previous ? up : down;
+    if(!node.smoothInitialized || fade == 0.0f) {
+     previous = value;
+    } else {
+     const float halfLife = fade * 0.1f;
+     const float decay = kLn2 / halfLife;
+     const float alpha = 1.0f - std::exp(-decay * ctx.frame->frameTime);
+     previous = (1.0f - alpha) * previous + alpha * value;
+    }
+   }
+   node.smoothInitialized = true;
+   return isVector(target.type) ? makeVec(target.type, node.smoothValue) : makeFloat(node.smoothValue[0]);
+  }
+  return callFunction(node.name, node.args, ctx);
  }
  case NodeKind::Swizzle: return makeFloat(componentOf(eval(*node.kids[0], ctx), node.component));
  case NodeKind::MatrixElem:
@@ -752,6 +784,13 @@ CustomUniformValue eval(const ExprNode& node, EvalContext& ctx) {
   return makeFloat(0.0f);
  }
  return makeFloat(0.0f);
+ };
+ CustomUniformValue value = evaluate();
+ if(node.operationType == CustomUniformType::Int) value = makeInt(value.asInt());
+ if(node.resultType == CustomUniformType::Float) return makeFloat(value.asFloat());
+ if(node.resultType == CustomUniformType::Int) return makeInt(value.asInt());
+ if(node.resultType == CustomUniformType::Bool) return makeBool(value.asBool());
+ return value;
 }
 struct Parser {
  explicit Parser(std::string_view source) : lex_(source), cur_(lex_.next()) {}
@@ -974,7 +1013,9 @@ struct Parser {
    auto node = std::make_unique<ExprNode>();
    node->kind = NodeKind::Lit;
    node->number = cur_.number;
-   const bool integer = cur_.text.find('.') == std::string::npos;
+   node->numericLiteral = true;
+   const bool integer = cur_.text.find('.') == std::string::npos &&
+                        cur_.number <= std::numeric_limits<int>::max();
    node->type = integer ? CustomUniformType::Int : CustomUniformType::Float;
    advance();
    return node;
@@ -1036,6 +1077,120 @@ struct Parser {
   throw std::string("unexpected token '" + cur_.text + "'");
  }
 };
+bool resolveExpression(ExprNode& node, CustomUniformType target, bool direct = true, bool implicit = true) {
+ using Type = CustomUniformType;
+ const auto match = [&](bool casts) {
+  const auto child = [&](std::size_t index, Type type) {
+   return resolveExpression(*node.kids[index], type, !casts || node.kids.size() > 1, casts);
+  };
+  const auto arguments = [&](Type type) {
+   for(std::size_t i = 0; i < node.kids.size(); ++i) {
+    if(!child(i, type)) return false;
+   }
+   return true;
+  };
+  const auto condition = [&](std::size_t index) {
+   return child(index, Type::Bool) || child(index, Type::Int);
+  };
+  switch(node.kind) {
+  case NodeKind::Lit:
+  case NodeKind::Ident:
+   return node.type == target || (casts && node.type == Type::Int && target == Type::Float);
+  case NodeKind::Construct:
+   return target == node.type && node.kids.size() == static_cast<std::size_t>(vecLen(target)) && arguments(Type::Float);
+  case NodeKind::Swizzle:
+   return target == Type::Float && child(0, node.kids[0]->type);
+  case NodeKind::MatrixElem:
+   return target == Type::Float;
+  case NodeKind::Unary:
+   if(node.op == TokenKind::Bang) return target == Type::Bool && condition(0);
+   return target != Type::Bool && arguments(target);
+  case NodeKind::Binary:
+   if(node.op == TokenKind::AmpAmp || node.op == TokenKind::PipePipe) {
+    return target == Type::Bool && condition(0) && condition(1);
+   }
+   if(node.op == TokenKind::EqEq || node.op == TokenKind::BangEq || node.op == TokenKind::Lt ||
+      node.op == TokenKind::Le || node.op == TokenKind::Gt || node.op == TokenKind::Ge) {
+    if(target != Type::Bool) return false;
+    if(arguments(Type::Int) || arguments(Type::Float)) return true;
+    if(node.op == TokenKind::EqEq || node.op == TokenKind::BangEq) {
+     return arguments(Type::Bool) || arguments(Type::Vec2) || arguments(Type::Vec3) || arguments(Type::Vec4);
+    }
+    return false;
+   }
+   return target != Type::Bool && !(target == Type::Int && node.op == TokenKind::Slash) && arguments(target);
+  case NodeKind::Call:
+   if(node.name == "if") {
+    if(node.kids.size() < 3 || node.kids.size() > 33 || node.kids.size() % 2 == 0) return false;
+    if(node.kids.size() > 3 && isVector(target)) return false;
+    for(std::size_t i = 0; i + 1 < node.kids.size(); i += 2) {
+     if(!condition(i) || !child(i + 1, target)) return false;
+    }
+    return child(node.kids.size() - 1, target);
+   }
+   if(node.name == "smooth") {
+    if(target != Type::Float || node.kids.empty() || node.kids.size() > 4) return false;
+    node.smoothHasId = node.kids.size() > 1 && node.kids[0]->numericLiteral;
+    return (node.kids.size() < 4 || node.smoothHasId) && arguments(Type::Float);
+   }
+   if(node.name == "in") {
+    return target == Type::Bool && node.kids.size() >= 2 && node.kids.size() <= 32 && arguments(Type::Float);
+   }
+   if(node.name == "between") {
+    return target == Type::Bool && node.kids.size() == 3 && (arguments(Type::Int) || arguments(Type::Float));
+   }
+   if(node.name == "equals") {
+    if(target != Type::Bool) return false;
+    if(node.kids.size() == 2) return arguments(Type::Int) || arguments(Type::Float) || arguments(Type::Bool);
+    return node.kids.size() == 3 && arguments(Type::Float);
+   }
+   if(node.name == "floor" || node.name == "ceil") {
+    return node.kids.size() == 1 && target != Type::Bool && arguments(isVector(target) ? target : Type::Float);
+   }
+   if(node.name == "abs" || node.name == "min" || node.name == "max" || node.name == "clamp" ||
+      node.name == "edge" || node.name == "fmod") {
+    if(target == Type::Bool) return false;
+    const std::size_t count = node.kids.size();
+    if(node.name == "abs" && count != 1) return false;
+    if((node.name == "min" || node.name == "max") && (count < 2 || count > 16)) return false;
+    if(node.name == "clamp" && count != 3) return false;
+    if((node.name == "edge" || node.name == "fmod") && (count != 2 || isVector(target))) return false;
+    return arguments(target);
+   }
+   if(node.name == "randomInt") return target == Type::Int && node.kids.size() <= 2 && arguments(Type::Int);
+   if(target != Type::Float) return false;
+   static constexpr std::string_view unary[] = {
+       "torad", "radians", "todeg", "degrees", "sin", "cos", "tan", "asin", "acos", "exp",
+       "exp2", "exp10", "log2", "log10", "sqrt", "sign", "signum", "frac"};
+   if(std::find(std::begin(unary), std::end(unary), node.name) != std::end(unary)) {
+    return node.kids.size() == 1 && arguments(Type::Float);
+   }
+   if(node.name == "atan" || node.name == "atan2" || node.name == "log") {
+    return (node.kids.size() == 1 || node.kids.size() == 2) && arguments(Type::Float);
+   }
+   if(node.name == "pow") return node.kids.size() == 2 && arguments(Type::Float);
+   if(node.name == "mix") return node.kids.size() == 3 && arguments(Type::Float);
+   if(node.name == "random") return (node.kids.empty() || node.kids.size() == 2) && arguments(Type::Float);
+   return false;
+  }
+  return false;
+ };
+ if(direct && match(false)) {
+  node.operationType = node.resultType = target;
+  return true;
+ }
+ if(!implicit) return false;
+ if(target == Type::Float && node.kind != NodeKind::Lit && node.kind != NodeKind::Ident &&
+    resolveExpression(node, Type::Int)) {
+  node.resultType = target;
+  return true;
+ }
+ if(match(true)) {
+  node.operationType = node.resultType = target;
+  return true;
+ }
+ return false;
+}
 } // namespace
 float CustomUniformValue::asFloat() const noexcept {
  if(type == CustomUniformType::Int) return static_cast<float>(i);
@@ -1045,6 +1200,9 @@ float CustomUniformValue::asFloat() const noexcept {
 int CustomUniformValue::asInt() const noexcept {
  if(type == CustomUniformType::Bool) return b ? 1 : 0;
  if(type == CustomUniformType::Int) return i;
+ if(std::isnan(f[0])) return 0;
+ if(f[0] >= static_cast<float>(std::numeric_limits<int>::max())) return std::numeric_limits<int>::max();
+ if(f[0] <= static_cast<float>(std::numeric_limits<int>::min())) return std::numeric_limits<int>::min();
  return static_cast<int>(f[0]);
 }
 bool CustomUniformValue::asBool() const noexcept {
@@ -1092,17 +1250,36 @@ const char* customUniformTypeName(CustomUniformType type) noexcept {
 }
 CustomUniformRuntime::CustomUniformRuntime() = default;
 CustomUniformRuntime::~CustomUniformRuntime() = default;
-CustomUniformRuntime::CustomUniformRuntime(CustomUniformRuntime&&) noexcept = default;
-CustomUniformRuntime& CustomUniformRuntime::operator=(CustomUniformRuntime&&) noexcept = default;
 struct CustomUniformRuntime::Compiled {
  CustomUniformDecl decl;
  std::unique_ptr<ExprNode> root;
+ CustomUniformValue* value = nullptr;
 };
+CustomUniformRuntime::CustomUniformRuntime(CustomUniformRuntime&& other) noexcept
+    : compiled_(std::move(other.compiled_)), values_(std::move(other.values_)), options_(std::move(other.options_)) {
+ bindValues();
+}
+CustomUniformRuntime& CustomUniformRuntime::operator=(CustomUniformRuntime&& other) noexcept {
+ if(this == &other) return *this;
+ compiled_ = std::move(other.compiled_);
+ values_ = std::move(other.values_);
+ options_ = std::move(other.options_);
+ bindValues();
+ return *this;
+}
+void CustomUniformRuntime::bindValues() {
+ const auto bind = [&](auto&& self, ExprNode& node) -> void {
+  if(node.kind == NodeKind::Ident && node.customValue != nullptr) node.customValue = &values_.at(node.name);
+  for(auto& kid : node.kids) self(self, *kid);
+ };
+ for(const auto& compiled : compiled_) {
+  compiled->value = &values_.at(compiled->decl.name);
+  bind(bind, *compiled->root);
+ }
+}
 void CustomUniformRuntime::clear() {
  compiled_.clear();
  values_.clear();
- smoothStates_.clear();
- autoSmoothId_ = 100000;
 }
 void CustomUniformRuntime::setOptions(std::unordered_map<std::string, std::string> options) {
  options_ = std::move(options);
@@ -1110,8 +1287,6 @@ void CustomUniformRuntime::setOptions(std::unordered_map<std::string, std::strin
 bool CustomUniformRuntime::compile(const std::vector<CustomUniformDecl>& decls, std::string& error) {
  compiled_.clear();
  values_.clear();
- smoothStates_.clear();
- autoSmoothId_ = 100000;
  error.clear();
  for(const CustomUniformDecl& decl : decls) {
   if(decl.expression.empty()) {
@@ -1140,19 +1315,106 @@ bool CustomUniformRuntime::compile(const std::vector<CustomUniformDecl>& decls, 
             "." + decl.name + ": " + msg;
   }
  }
- return error.empty();
+ if(!error.empty()) {
+  clear();
+  return false;
+ }
+ std::unordered_map<std::string, std::size_t> indices;
+ std::vector<std::vector<std::size_t>> dependencies(compiled_.size());
+ try {
+  for(std::size_t i = 0; i < compiled_.size(); ++i) {
+   auto& compiled = *compiled_[i];
+   if(!indices.emplace(compiled.decl.name, i).second) throw std::string("duplicate custom variable: ") + compiled.decl.name;
+   auto& value = values_[compiled.decl.name];
+   value.type = compiled.decl.type;
+   compiled.value = &value;
+  }
+  const PackUniformValues frame{};
+  const auto bind = [&](auto&& self, ExprNode& node, std::size_t owner) -> void {
+   if(node.kind == NodeKind::Call) node.args.resize(node.kids.size());
+   if(node.kind == NodeKind::MatrixElem) {
+    const float* matrix = nullptr;
+    if(node.kids[0]->kind != NodeKind::Ident || !matrixNamed(node.kids[0]->name, frame, matrix)) {
+     throw std::string("unknown matrix: ") + node.kids[0]->name;
+    }
+    return;
+   }
+   for(auto& kid : node.kids) self(self, *kid, owner);
+   if(node.kind == NodeKind::Ident) {
+    if(const auto found = indices.find(node.name); found != indices.end()) {
+     dependencies[owner].push_back(found->second);
+     node.customValue = compiled_[found->second]->value;
+     node.type = node.customValue->type;
+    } else {
+     CustomUniformValue builtin;
+     if(lookupBuiltin(node.name, frame, builtin)) {
+      node.type = builtin.type;
+     } else if(const auto option = options_.find(node.name); option != options_.end()) {
+      if(option->second == "true" || option->second == "false") {
+       node.type = CustomUniformType::Bool;
+      } else {
+       char* end = nullptr;
+       const double number = std::strtod(option->second.c_str(), &end);
+       if(end == option->second.c_str() || *end != '\0') throw std::string("non-numeric option: ") + node.name;
+       node.type = option->second.find_first_of(".eE") == std::string::npos &&
+                           number >= std::numeric_limits<int>::min() && number <= std::numeric_limits<int>::max()
+                       ? CustomUniformType::Int : CustomUniformType::Float;
+      }
+     } else {
+      throw std::string("unknown custom variable: ") + node.name;
+     }
+    }
+   } else if(node.kind == NodeKind::Binary && node.type != CustomUniformType::Bool) {
+    node.type = node.kids[0]->type;
+    if(isVector(node.kids[1]->type)) node.type = node.kids[1]->type;
+    else if(!isVector(node.type) && (node.kids[1]->type == CustomUniformType::Float || node.op == TokenKind::Slash)) {
+     node.type = CustomUniformType::Float;
+    }
+   } else if(node.kind == NodeKind::Unary && node.op != TokenKind::Bang) {
+    node.type = node.kids[0]->type;
+   } else if(node.kind == NodeKind::Call && !node.kids.empty()) {
+    if(node.name == "if" && node.kids.size() > 1) node.type = node.kids[1]->type;
+    else if(node.name == "abs" || node.name == "min" || node.name == "max" || node.name == "clamp") {
+     node.type = node.kids[0]->type;
+    }
+   }
+  };
+  for(std::size_t i = 0; i < compiled_.size(); ++i) {
+   auto& compiled = *compiled_[i];
+   bind(bind, *compiled.root, i);
+   if(!resolveExpression(*compiled.root, compiled.decl.type)) {
+    throw std::string("cannot resolve custom ") + compiled.decl.name + " as " + customUniformTypeName(compiled.decl.type);
+   }
+  }
+  std::vector<unsigned char> visited(compiled_.size());
+  std::vector<std::size_t> order;
+  order.reserve(compiled_.size());
+  const auto visit = [&](auto&& self, std::size_t index) -> void {
+   if(visited[index] == 2) return;
+   if(visited[index] == 1) throw std::string("circular custom variable reference: ") + compiled_[index]->decl.name;
+   visited[index] = 1;
+   for(const std::size_t dependency : dependencies[index]) self(self, dependency);
+   visited[index] = 2;
+   order.push_back(index);
+  };
+  for(std::size_t i = 0; i < compiled_.size(); ++i) visit(visit, i);
+  std::vector<std::unique_ptr<Compiled>> sorted;
+  sorted.reserve(compiled_.size());
+  for(const std::size_t index : order) sorted.push_back(std::move(compiled_[index]));
+  compiled_ = std::move(sorted);
+ } catch(const std::string& message) {
+  error = message;
+  clear();
+  return false;
+ }
+ return true;
 }
 void CustomUniformRuntime::evaluate(const PackUniformValues& frame) {
- values_.clear();
  static thread_local std::mt19937 rng{std::random_device{}()};
  EvalContext ctx;
  ctx.frame = &frame;
- ctx.customs = &values_;
  ctx.options = &options_;
- ctx.smooth = &smoothStates_;
- ctx.autoSmoothId = &autoSmoothId_;
  ctx.rng = &rng;
- autoSmoothId_ = 100000;
  for(const auto& compiled : compiled_) {
   CustomUniformValue value = eval(*compiled->root, ctx);
   switch(compiled->decl.type) {
@@ -1170,15 +1432,13 @@ void CustomUniformRuntime::evaluate(const PackUniformValues& frame) {
    }
    break;
   }
-  values_[compiled->decl.name] = value;
+  *compiled->value = value;
  }
 }
 void CustomUniformRuntime::upload(const gl::ShaderProgram& program) const {
  for(const auto& compiled : compiled_) {
   if(!compiled->decl.upload) continue;
-  const auto it = values_.find(compiled->decl.name);
-  if(it == values_.end()) continue;
-  const CustomUniformValue& v = it->second;
+  const CustomUniformValue& v = *compiled->value;
   const int loc = program.location(compiled->decl.name);
   if(loc < 0) continue;
   switch(compiled->decl.type) {
