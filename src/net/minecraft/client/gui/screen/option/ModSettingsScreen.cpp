@@ -157,9 +157,16 @@ void ModSettingsScreen::rebuildLayout() {
  const auto allSettings = registry.getAllSettings();
  const auto allKeybinds = registry.getAllKeybinds();
  const auto& modNames = registry.getModNames();
+ const bool shaderPackActive = [] {
+  const auto* minecraft = net::minecraft::client::Minecraft::INSTANCE;
+  if(minecraft == nullptr) return false;
+  const std::string& pack = minecraft->options.shaderPack;
+  return !pack.empty() && pack != "vanilla" && pack != "off";
+ }();
  const int listTop = layout::OptionsListScroll::kModListTop;
  int contentY = 0;
  for(const auto& [modId, settings] : allSettings) {
+  if(shaderPackActive && registry.hideWithShaderPack(modId)) continue;
   const auto nameIt = modNames.find(modId);
   scroll_.addHeader(nameIt == modNames.end() ? modId : nameIt->second, contentY);
   contentY += layout::OptionsListScroll::kSectionLabelHeight;

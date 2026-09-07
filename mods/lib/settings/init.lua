@@ -98,7 +98,9 @@ function settings.define(mod_id, definition)
   end
 
   if #entries > 0 then
-    minecraft.settings.register(definition.name or mod_id, entries)
+    minecraft.settings.register(definition.name or mod_id, entries, {
+      hide_with_shader_pack = definition.hide_with_shader_pack == true,
+    })
   end
 
   local config = {}

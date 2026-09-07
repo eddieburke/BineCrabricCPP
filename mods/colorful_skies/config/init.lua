@@ -2,6 +2,7 @@ local settings = require("lib.settings")
 
 local config = settings.define("colorful_skies", {
   name = "Colorful Skies",
+  hide_with_shader_pack = true,
   fields = {
     enabled = {
       type = "bool",

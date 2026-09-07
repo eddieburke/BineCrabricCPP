@@ -70,7 +70,13 @@ void ModSettingsRegistry::registerKeybind(const std::string& modId, ModKeybindDe
  } else {
   keybinds_.push_back(std::move(keybind));
  }
- (void)modId;
+  (void)modId;
+}
+void ModSettingsRegistry::setHideWithShaderPack(const std::string& modId) {
+ hiddenWithShaderPack_.insert(modId);
+}
+bool ModSettingsRegistry::hideWithShaderPack(const std::string& modId) const {
+ return hiddenWithShaderPack_.find(modId) != hiddenWithShaderPack_.end();
 }
 const std::vector<ModSettingDef>& ModSettingsRegistry::getSettings(const std::string& modId) const {
  static const std::vector<ModSettingDef> kEmpty;

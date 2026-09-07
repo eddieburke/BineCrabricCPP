@@ -1,6 +1,7 @@
 local config = require("config")
 
 minecraft.on("fog_settings", {}, function(event)
+  if event.shader_pack_active then return event end
   event.enabled = config.enabled
   event.spherical = config.spherical
   event.start = config.start

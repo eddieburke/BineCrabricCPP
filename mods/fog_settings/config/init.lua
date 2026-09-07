@@ -2,6 +2,7 @@ local settings = require("lib.settings")
 
 local config = settings.define("fog_settings", {
   name = "Fog Settings",
+  hide_with_shader_pack = true,
   fields = {
     enabled = {
       type = "bool",

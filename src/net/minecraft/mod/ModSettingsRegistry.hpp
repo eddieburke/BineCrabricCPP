@@ -35,6 +35,8 @@ class ModSettingsRegistry {
  static ModSettingsRegistry& instance();
  void registerSetting(const std::string& modId, const std::string& modName, ModSettingDef setting);
  void registerKeybind(const std::string& modId, ModKeybindDef keybind);
+ void setHideWithShaderPack(const std::string& modId);
+ [[nodiscard]] bool hideWithShaderPack(const std::string& modId) const;
  [[nodiscard]] const std::vector<ModSettingDef>& getSettings(const std::string& modId) const;
  [[nodiscard]] const std::unordered_map<std::string, std::string>& getModNames() const;
  [[nodiscard]] std::vector<std::pair<std::string, std::vector<ModSettingDef*>>> getAllSettings();
@@ -57,6 +59,7 @@ class ModSettingsRegistry {
  ModSettingsRegistry() = default;
  std::unordered_map<std::string, std::vector<ModSettingDef>> settings_;
  std::unordered_map<std::string, std::string> modNames_;
+ std::unordered_set<std::string> hiddenWithShaderPack_;
  std::vector<ModKeybindDef> keybinds_;
  std::unordered_set<int> pendingKeys_;
  std::filesystem::path storagePath_ = "mod_settings.txt";

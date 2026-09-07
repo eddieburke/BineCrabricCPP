@@ -19,7 +19,11 @@ int luaSettingsRegister(lua_State* state) {
   runtimeLog(mod->modId, "warn", "settings.register(name, settingsTable) requires a string and a table");
   return 0;
  }
- const std::string modId = mod->modId;
+  const std::string modId = mod->modId;
+  if(args.count() >= 3 && api.type(state, 3) == kLuaTTable &&
+     luaBoolField(state, 3, "hide_with_shader_pack", false)) {
+   net::minecraft::mod::ModSettingsRegistry::instance().setHideWithShaderPack(modId);
+  }
  const int settingsTable = 2;
  int idx = 1;
  while(true) {

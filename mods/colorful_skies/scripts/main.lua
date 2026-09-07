@@ -116,12 +116,14 @@ end
 
 local function handle_sky_color(event)
   if not active() then return event end
+  if event.shader_pack_active then return event end
   event.r, event.g, event.b = sky_color(event.celestial_angle)
   return event
 end
 
 local function handle_fog_color(event)
   if not active() then return event end
+  if event.shader_pack_active then return event end
   local r, g, b = sky_color(event.celestial_angle)
   local blend = config.fog_blend
   event.r = lerp(event.r, r, blend)
