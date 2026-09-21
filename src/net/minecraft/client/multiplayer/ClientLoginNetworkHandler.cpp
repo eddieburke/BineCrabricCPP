@@ -129,8 +129,9 @@ void ClientLoginNetworkHandler::onHandshake(const HandshakePacket& packet) {
       pendingDownloadUrls_ = metadata.downloadUrls;
 
       bool canDownloadAll = metadata.nativeCppMods;
+      const mod::runtime::ModHost& modHost = mod::runtime::host();
       for(const std::string& modId : missing) {
-        if(!pendingDownloadUrls_.contains(modId)) {
+        if(!pendingDownloadUrls_.contains(modId) || modHost.findPackageMod(modId) != nullptr) {
           canDownloadAll = false;
           break;
         }
@@ -139,7 +140,8 @@ void ClientLoginNetworkHandler::onHandshake(const HandshakePacket& packet) {
       if(canDownloadAll) {
         waitingForModDownloadAcceptance_ = true;
         pendingServerId_ = metadata.serverId;
-        minecraft->setScreen(std::make_unique<client::gui::screen::ServerModDownloadScreen>(this, missing));
+        minecraft->setScreen(
+            std::make_unique<client::gui::screen::ServerModDownloadScreen>(this, missing, pendingDownloadUrls_));
         return;
       }
       
@@ -326,7 +328,7 @@ void ClientLoginNetworkHandler::downloadPendingMods(const std::shared_ptr<Pendin
       work->running = false;
       return;
     }
-    const std::filesystem::path temporary = temporaryDirectory / (mod::lua::sanitizeName(modId) + ".zip.tmp");
+    const std::filesystem::path temporary = temporaryDirectory / (modId + ".zip.tmp");
     std::vector<mod::runtime::ZipEntry> entries;
     if(!mod::runtime::buildZipIndex(response.body, entries)) {
       work->events.push(PendingModEvent{PendingModEvent::Kind::Failed,
@@ -360,7 +362,14 @@ void ClientLoginNetworkHandler::downloadPendingMods(const std::shared_ptr<Pendin
       work->running = false;
       return;
     }
-    files.push_back(PendingModFile{temporary, modsDirectory / (mod::lua::sanitizeName(modId) + ".zip")});
+    const std::filesystem::path destination = modsDirectory / (modId + ".zip");
+    if(std::filesystem::exists(destination)) {
+      work->events.push(PendingModEvent{PendingModEvent::Kind::Failed,
+                                        "Refusing to overwrite existing mod file " + destination.string(), {}});
+      work->running = false;
+      return;
+    }
+    files.push_back(PendingModFile{temporary, destination});
   }
   work->events.push(PendingModEvent{PendingModEvent::Kind::Complete, "Installing...", std::move(files)});
   work->running = false;

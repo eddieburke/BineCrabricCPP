@@ -73,22 +73,29 @@ inline std::vector<std::uint8_t> compressZlib(const std::vector<std::uint8_t>& i
  return output;
 #endif
 }
-inline std::vector<std::uint8_t> decompressZlib(const std::vector<std::uint8_t>& input, bool gzip) {
+inline constexpr std::size_t kMaxDecompressedBytes = 256U * 1024U * 1024U;
+inline std::vector<std::uint8_t> decompressZlib(const std::vector<std::uint8_t>& input,
+                                                bool gzip,
+                                                std::size_t maxOutput = kMaxDecompressedBytes) {
 #ifdef MINECRAFT_DISABLE_ZLIB
  (void)gzip;
+ (void)maxOutput;
  return input;
 #else
  const int windowBits = gzip ? (15 + 16) : 15;
  ZlibStream ownedStream(ZlibStream::Mode::Inflate, windowBits);
  zlibshim::z_stream& stream = ownedStream.get();
  std::vector<std::uint8_t> output;
- output.resize(4096);
+ output.resize(std::min<std::size_t>(4096, maxOutput));
  stream.next_in = const_cast<zlibshim::Bytef*>(reinterpret_cast<const zlibshim::Bytef*>(input.data()));
  stream.avail_in = static_cast<zlibshim::uInt>(input.size());
  int status = zlibshim::Z_OK;
  while(status != zlibshim::Z_STREAM_END) {
   if(stream.total_out >= output.size()) {
-   output.resize(output.size() * 2U);
+   if(output.size() >= maxOutput) {
+    throw std::runtime_error("Decompressed data exceeds limit");
+   }
+   output.resize(std::min(output.size() * 2U, maxOutput));
   }
   stream.next_out = reinterpret_cast<zlibshim::Bytef*>(output.data() + stream.total_out);
   stream.avail_out = static_cast<zlibshim::uInt>(output.size() - stream.total_out);
@@ -103,8 +110,8 @@ inline std::vector<std::uint8_t> decompressZlib(const std::vector<std::uint8_t>&
 #endif
 }
 // Raw DEFLATE (no zlib/gzip wrapper, windowBits -15) used by ZIP/JAR readers.
-// Returns an empty vector on failure rather than throwing; expectedSize seeds
-// the output buffer (the uncompressed size from the ZIP local header).
+// Returns an empty vector on failure rather than throwing; expectedSize is the
+// uncompressed size from the ZIP header and bounds the output.
 inline std::vector<std::uint8_t> decompressRawDeflate(const std::vector<std::uint8_t>& input,
                                                       std::uint32_t expectedSize) {
 #ifdef MINECRAFT_DISABLE_ZLIB
@@ -119,13 +126,13 @@ inline std::vector<std::uint8_t> decompressRawDeflate(const std::vector<std::uin
  }
  zlibshim::z_stream& stream = ownedStream->get();
  std::vector<std::uint8_t> output;
- output.resize(std::max<std::size_t>(4096, static_cast<std::size_t>(expectedSize)));
+ output.resize(static_cast<std::size_t>(expectedSize));
  stream.next_in = const_cast<zlibshim::Bytef*>(reinterpret_cast<const zlibshim::Bytef*>(input.data()));
  stream.avail_in = static_cast<zlibshim::uInt>(input.size());
  int status = zlibshim::Z_OK;
  while(status != zlibshim::Z_STREAM_END) {
   if(stream.total_out >= output.size()) {
-   output.resize(output.size() * 2U);
+   return {};
   }
   stream.next_out = reinterpret_cast<zlibshim::Bytef*>(output.data() + stream.total_out);
   stream.avail_out = static_cast<zlibshim::uInt>(output.size() - stream.total_out);
@@ -142,13 +149,15 @@ inline std::vector<std::uint8_t> decompressRawDeflate(const std::vector<std::uin
 inline std::vector<std::uint8_t> gzipCompress(const std::vector<std::uint8_t>& input) {
  return compressZlib(input, true);
 }
-inline std::vector<std::uint8_t> gzipDecompress(const std::vector<std::uint8_t>& input) {
- return decompressZlib(input, true);
+inline std::vector<std::uint8_t> gzipDecompress(const std::vector<std::uint8_t>& input,
+                                                std::size_t maxOutput = kMaxDecompressedBytes) {
+ return decompressZlib(input, true, maxOutput);
 }
 inline std::vector<std::uint8_t> zlibCompress(const std::vector<std::uint8_t>& input) {
  return compressZlib(input, false);
 }
-inline std::vector<std::uint8_t> zlibDecompress(const std::vector<std::uint8_t>& input) {
- return decompressZlib(input, false);
+inline std::vector<std::uint8_t> zlibDecompress(const std::vector<std::uint8_t>& input,
+                                                std::size_t maxOutput = kMaxDecompressedBytes) {
+ return decompressZlib(input, false, maxOutput);
 }
 } // namespace net::minecraft

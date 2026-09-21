@@ -122,6 +122,15 @@ void PlayerManager::disconnect(::net::minecraft::entity::player::ServerPlayerEnt
   return nullptr;
  }
  const std::string trimmedName = trimCopy(name);
+ const bool validName = !trimmedName.empty() && trimmedName.size() <= 16 &&
+                        std::all_of(trimmedName.begin(), trimmedName.end(), [](unsigned char ch) {
+                         return (ch >= 'a' && ch <= 'z') || (ch >= 'A' && ch <= 'Z') || (ch >= '0' && ch <= '9') ||
+                                ch == '_';
+                        });
+ if(!validName) {
+  loginNetworkHandler->disconnect("Invalid username!");
+  return nullptr;
+ }
  if(bannedPlayers_.contains(toLowerCopy(trimmedName))) {
   loginNetworkHandler->disconnect("You are banned from this server!");
   return nullptr;

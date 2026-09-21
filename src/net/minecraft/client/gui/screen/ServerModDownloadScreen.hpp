@@ -1,5 +1,6 @@
 #pragma once
 #include <string>
+#include <unordered_map>
 #include <vector>
 #include "net/minecraft/client/gui/screen/Screen.hpp"
 namespace net::minecraft::client::multiplayer {
@@ -8,7 +9,9 @@ class ClientLoginNetworkHandler;
 namespace net::minecraft::client::gui::screen {
 class ServerModDownloadScreen : public Screen {
  public:
- ServerModDownloadScreen(multiplayer::ClientLoginNetworkHandler* handler, std::vector<std::string> missingMods);
+ ServerModDownloadScreen(multiplayer::ClientLoginNetworkHandler* handler,
+                         std::vector<std::string> missingMods,
+                         std::unordered_map<std::string, std::string> downloadUrls);
  void init() override;
  void tick() override;
  void render(int mouseX, int mouseY, float tickDelta) override;
@@ -22,6 +25,7 @@ class ServerModDownloadScreen : public Screen {
  void cancel();
  multiplayer::ClientLoginNetworkHandler* handler_ = nullptr;
  std::vector<std::string> missingMods_;
+ std::unordered_map<std::string, std::string> downloadUrls_;
  std::string status_;
  bool busy_ = false;
 };

@@ -28,10 +28,10 @@ class Item {
  static std::array<Item*, ITEM_COUNT> ITEMS;
  static JavaRandom random;
  [[nodiscard]] static Item* byRawId(int rawId) {
-  return ITEMS[static_cast<std::size_t>(256 + rawId)];
+  return byId(256 + rawId);
  }
  [[nodiscard]] static Item* byId(int id) {
-  return ITEMS[static_cast<std::size_t>(id)];
+  return id >= 0 && id < ITEM_COUNT ? ITEMS[static_cast<std::size_t>(id)] : nullptr;
  }
  const int id;
  explicit Item(int rawId, RegistrationMode mode = RegistrationMode::Immediate) : id(256 + rawId) {

@@ -120,6 +120,7 @@ class ChunkSectionSystem {
  void markChunkColumnLit(int chunkX, int chunkZ);
  void markAllChunksLit();
  void notifyAmbientDarknessChanged();
+ void drainAmbientInvalidations(int maxSections);
  void updateBlockEntity(int x, int y, int z, net::minecraft::block::entity::BlockEntity* blockEntity);
  [[nodiscard]] std::string getChunkDebugInfo() const;
  [[nodiscard]] bool empty() const noexcept {
@@ -160,7 +161,9 @@ class ChunkSectionSystem {
  std::deque<world::ColumnPos> pendingColumns_{};
  std::unordered_set<world::ColumnPos, world::ColumnPosHash> pendingSet_{};
  std::unordered_set<world::ColumnPos, world::ColumnPosHash> pendingBorderRefresh_{};
- std::unordered_set<world::ColumnPos, world::ColumnPosHash> pendingLit_{};
+  std::unordered_set<world::ColumnPos, world::ColumnPosHash> pendingLit_{};
+  std::deque<world::ColumnPos> pendingAmbientColumns_{};
+  std::unordered_set<world::ColumnPos, world::ColumnPosHash> pendingAmbientSet_{};
  int lastViewDistance = -1;
  int chunkCount = 0;
  int invisibleChunkCount = 0;

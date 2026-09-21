@@ -66,7 +66,8 @@ Nbt readPayloadAtDepth(const std::uint8_t typeId,
    throw std::runtime_error("Unknown NBT list element type");
   }
   const std::int32_t size = binary::readI32BE(data, pos);
-  validateCount(size, kMaxContainerElements, "NBT list");
+  const std::size_t remaining = data.size() - std::min(pos, data.size());
+  validateCount(size, itemType == Nbt::Type::End ? 0 : std::min(remaining, kMaxContainerElements), "NBT list");
   Nbt tag = Nbt::list();
   auto& items = tag.asList();
   items.reserve(static_cast<std::size_t>(size));

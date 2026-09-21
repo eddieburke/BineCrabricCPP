@@ -54,7 +54,6 @@ class CustomUniformRuntime {
  std::vector<std::unique_ptr<Compiled>> compiled_;
  std::unordered_map<std::string, CustomUniformValue> values_;
  std::unordered_map<std::string, std::string> options_;
- void bindValues();
 };
 [[nodiscard]] bool parseCustomUniformType(std::string_view text, CustomUniformType& out) noexcept;
 [[nodiscard]] const char* customUniformTypeName(CustomUniformType type) noexcept;

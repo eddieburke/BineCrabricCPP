@@ -103,7 +103,7 @@ std::vector<std::uint8_t> readZipEntryData(const std::vector<std::uint8_t>& arch
    return inflated;
   }
   try {
-   return zlibDecompress(compressed);
+   return zlibDecompress(compressed, entry.uncompressedSize);
   } catch(...) {
    return {};
   }

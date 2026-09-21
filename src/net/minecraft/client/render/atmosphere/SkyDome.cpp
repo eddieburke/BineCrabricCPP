@@ -35,8 +35,7 @@ void buildSkyBox(SkyMeshes& meshes, float r);
 float skyBoxRadius(const option::RenderSettings& settings) {
  // A corner of the box lies sqrt(2) * r out, so stay under farPlane / sqrt(2).
  const float fitted = settings.renderDistance.farPlane() * 0.7f;
- const float quantised = std::floor(fitted / 16.0f) * 16.0f;
- return quantised < 64.0f ? 64.0f : quantised;
+ return std::floor(fitted / 16.0f) * 16.0f;
 }
 SkyMeshes& skyMeshes(float radius) {
  static SkyMeshes meshes;

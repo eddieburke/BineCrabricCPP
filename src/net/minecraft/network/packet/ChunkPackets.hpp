@@ -64,12 +64,20 @@ class ChunkDataS2CPacket : public Packet {
   sizeY = packetio::readU8(src, end) + 1;
   sizeZ = packetio::readU8(src, end) + 1;
   chunkDataSize = packetio::readI32BE(src, end);
+  const std::size_t expectedMax = static_cast<std::size_t>(sizeX * sizeY * sizeZ * 5 / 2);
+  if(chunkDataSize < 0 || static_cast<std::size_t>(chunkDataSize) > expectedMax + expectedMax / 1000 + 64) {
+   throw std::runtime_error("Chunk data size out of range");
+  }
   const std::vector<std::uint8_t> compressed =
       packetio::readBytes(src, end, static_cast<std::size_t>(chunkDataSize));
-  chunkData = zlibDecompress(compressed);
-  const std::size_t expectedMax = static_cast<std::size_t>(sizeX * sizeY * sizeZ * 5 / 2);
-  if(chunkData.size() > expectedMax) {
-   throw std::runtime_error("Chunk data decompression overflow");
+  chunkData = zlibDecompress(compressed, expectedMax);
+  const int minY = std::max(y, 0);
+  const int maxY = std::min(y + sizeY, 128);
+  const int columnHeight = std::max(maxY - minY, 0);
+  const std::size_t expectedMin =
+      static_cast<std::size_t>(sizeX * sizeZ * (columnHeight + 3 * (columnHeight / 2)));
+  if(chunkData.size() < expectedMin) {
+   throw std::runtime_error("Chunk data packet too short");
   }
  }
  void write(std::uint8_t*& dest, std::uint8_t* end) const override {
@@ -110,7 +118,11 @@ class ChunkDeltaUpdateS2CPacket : public Packet {
   blockRawIds.resize(static_cast<std::size_t>(entryCount));
   blockMetadata.resize(static_cast<std::size_t>(entryCount));
   for(int i = 0; i < entryCount; ++i) {
-   positions[static_cast<std::size_t>(i)] = packetio::readI16BE(src, end);
+   const std::int16_t position = packetio::readI16BE(src, end);
+   if((position & 0x80) != 0) {
+    throw std::runtime_error("Chunk delta position above world height");
+   }
+   positions[static_cast<std::size_t>(i)] = position;
   }
   for(int i = 0; i < entryCount; ++i) {
    blockRawIds[static_cast<std::size_t>(i)] = packetio::readI8(src, end);

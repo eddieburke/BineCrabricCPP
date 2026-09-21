@@ -14,7 +14,7 @@
 namespace net::minecraft::client::render {
 namespace {
 constexpr float kPi = 3.14159265358979323846f;
-constexpr float kLn2 = 0.69314718055994530942f;
+constexpr double kLn2 = 0.69314718055994530942;
 enum class TokenKind {
  End,
  Number,
@@ -141,7 +141,7 @@ struct ExprNode {
  const CustomUniformValue* customValue = nullptr;
  bool numericLiteral = false;
  bool smoothHasId = false;
- float smoothValue[4]{};
+ float smoothValue = 0.0f;
  bool smoothInitialized = false;
  std::vector<CustomUniformValue> args;
  int component = 0;
@@ -675,13 +675,6 @@ CustomUniformValue callFunction(const std::string& name, const std::vector<Custo
  }
  if(name == "equals" && args.size() == 2) return applyBinary(TokenKind::EqEq, args[0], args[1]);
  if(name == "equals" && need(3)) return makeBool(std::fabs(f0(0) - f0(1)) <= f0(2));
- if(name == "in" && need(1)) {
-  const float x = f0(0);
-  for(std::size_t i = 1; i < args.size(); ++i) {
-   if(x == args[i].asFloat()) return makeBool(true);
-  }
-  return makeBool(false);
- }
  return makeFloat(0.0f);
 }
 CustomUniformValue eval(ExprNode& node, EvalContext& ctx) {
@@ -750,24 +743,21 @@ CustomUniformValue eval(ExprNode& node, EvalContext& ctx) {
   for(std::size_t i = 0; i < node.kids.size(); ++i) node.args[i] = eval(*node.kids[i], ctx);
   if(node.name == "smooth") {
    const std::size_t first = node.smoothHasId ? 1 : 0;
-   const auto& target = node.args[first];
+   const float value = node.args[first].asFloat();
    const float up = node.args.size() > first + 1 ? node.args[first + 1].asFloat() : 1.0f;
    const float down = node.args.size() > first + 2 ? node.args[first + 2].asFloat() : up;
-   for(int i = 0; i < vecLen(target.type); ++i) {
-    const float value = componentOf(target, i);
-    float& previous = node.smoothValue[i];
-    const float fade = value > previous ? up : down;
-    if(!node.smoothInitialized || fade == 0.0f) {
-     previous = value;
-    } else {
-     const float halfLife = fade * 0.1f;
-     const float decay = kLn2 / halfLife;
-     const float alpha = 1.0f - std::exp(-decay * ctx.frame->frameTime);
-     previous = (1.0f - alpha) * previous + alpha * value;
-    }
+   const float fade = value > node.smoothValue ? up : down;
+   const float halfLife = fade * 0.1f;
+   const float decay = fade == 0.0f ? 0.0f : static_cast<float>(1.0 / (halfLife / kLn2));
+   if(!node.smoothInitialized || decay == 0.0f) {
+    node.smoothValue = value;
+   } else {
+    const float exponent = -decay * ctx.frame->frameTime;
+    const float alpha = 1.0f - static_cast<float>(std::exp(static_cast<double>(exponent)));
+    node.smoothValue = (1.0f - alpha) * node.smoothValue + alpha * value;
    }
    node.smoothInitialized = true;
-   return isVector(target.type) ? makeVec(target.type, node.smoothValue) : makeFloat(node.smoothValue[0]);
+   return makeFloat(node.smoothValue);
   }
   return callFunction(node.name, node.args, ctx);
  }
@@ -1165,7 +1155,8 @@ bool resolveExpression(ExprNode& node, CustomUniformType target, bool direct = t
    if(std::find(std::begin(unary), std::end(unary), node.name) != std::end(unary)) {
     return node.kids.size() == 1 && arguments(Type::Float);
    }
-   if(node.name == "atan" || node.name == "atan2" || node.name == "log") {
+   if(node.name == "atan2") return node.kids.size() == 2 && arguments(Type::Float);
+   if(node.name == "atan" || node.name == "log") {
     return (node.kids.size() == 1 || node.kids.size() == 2) && arguments(Type::Float);
    }
    if(node.name == "pow") return node.kids.size() == 2 && arguments(Type::Float);
@@ -1255,28 +1246,8 @@ struct CustomUniformRuntime::Compiled {
  std::unique_ptr<ExprNode> root;
  CustomUniformValue* value = nullptr;
 };
-CustomUniformRuntime::CustomUniformRuntime(CustomUniformRuntime&& other) noexcept
-    : compiled_(std::move(other.compiled_)), values_(std::move(other.values_)), options_(std::move(other.options_)) {
- bindValues();
-}
-CustomUniformRuntime& CustomUniformRuntime::operator=(CustomUniformRuntime&& other) noexcept {
- if(this == &other) return *this;
- compiled_ = std::move(other.compiled_);
- values_ = std::move(other.values_);
- options_ = std::move(other.options_);
- bindValues();
- return *this;
-}
-void CustomUniformRuntime::bindValues() {
- const auto bind = [&](auto&& self, ExprNode& node) -> void {
-  if(node.kind == NodeKind::Ident && node.customValue != nullptr) node.customValue = &values_.at(node.name);
-  for(auto& kid : node.kids) self(self, *kid);
- };
- for(const auto& compiled : compiled_) {
-  compiled->value = &values_.at(compiled->decl.name);
-  bind(bind, *compiled->root);
- }
-}
+CustomUniformRuntime::CustomUniformRuntime(CustomUniformRuntime&&) noexcept = default;
+CustomUniformRuntime& CustomUniformRuntime::operator=(CustomUniformRuntime&&) noexcept = default;
 void CustomUniformRuntime::clear() {
  compiled_.clear();
  values_.clear();

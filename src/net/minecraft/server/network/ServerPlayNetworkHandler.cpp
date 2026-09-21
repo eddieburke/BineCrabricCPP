@@ -69,6 +69,9 @@ std::size_t ServerPlayNetworkHandler::getBlockDataSendQueueSize() const {
  return connection_->getDelayedSendQueueSize();
 }
 void ServerPlayNetworkHandler::disconnect(const std::string& reason) {
+ if(disconnected) {
+  return;
+ }
  if(player_ != nullptr) {
   player_->onDisconnect();
  }
@@ -145,6 +148,11 @@ void ServerPlayNetworkHandler::onPlayerMove(const PlayerMovePacket& packet) {
   return;
  }
  moved_ = true;
+ if(!std::isfinite(packet.x) || !std::isfinite(packet.feetY) || !std::isfinite(packet.stance) ||
+    !std::isfinite(packet.z) || !std::isfinite(packet.yaw) || !std::isfinite(packet.pitch)) {
+  disconnect("Illegal position");
+  return;
+ }
  const double startY = player_->y;
  if(!teleported_) {
   const double deltaToTargetY = packet.feetY - teleportTargetY_;
@@ -373,13 +381,15 @@ void ServerPlayNetworkHandler::onPlayerInteractBlock(const PlayerInteractBlockC2
   if(std::abs(packet.z - serverWorld->getSpawnPos().z) > spawnDistance) {
    spawnDistance = std::abs(packet.z - serverWorld->getSpawnPos().z);
   }
-  if(teleported_ &&
-     player_->getSquaredDistance(static_cast<double>(packet.x) + 0.5,
-                                 static_cast<double>(packet.y) + 0.5,
-                                 static_cast<double>(packet.z) + 0.5) < 64.0 &&
-     (spawnDistance > 16 || bypassSpawnProtection)) {
+  const bool withinReach = player_->getSquaredDistance(static_cast<double>(packet.x) + 0.5,
+                                                       static_cast<double>(packet.y) + 0.5,
+                                                       static_cast<double>(packet.z) + 0.5) < 64.0;
+  if(teleported_ && withinReach && (spawnDistance > 16 || bypassSpawnProtection)) {
    player_->interactionManager.interactBlock(
        player_, serverWorld, itemStack, packet.x, packet.y, packet.z, packet.side);
+  }
+  if(!withinReach) {
+   return;
   }
   if(player_->networkHandler != nullptr) {
    BlockUpdateS2CPacket blockPacket;
@@ -443,6 +453,9 @@ void ServerPlayNetworkHandler::onPlayerInteractBlock(const PlayerInteractBlockC2
 }
 void ServerPlayNetworkHandler::onDisconnected(const std::string& reason, const std::vector<std::string>& args) {
  (void)args;
+ if(disconnected) {
+  return;
+ }
  if(player_ != nullptr) {
   ServerLog::LOGGER.info(player_->name + " lost connection: " + reason);
  }
@@ -556,7 +569,7 @@ void ServerPlayNetworkHandler::handleCommand(const std::string& message) {
  }
  if(server_->playerManager.isOperator(player_->name)) {
   ServerLog::LOGGER.info(player_->name + " issued server command: " + message.substr(1));
-  server_->queueCommands(message.substr(1), *this);
+  server_->runCommand(message.substr(1), *this);
  } else {
   ServerLog::LOGGER.info(player_->name + " tried command: " + message.substr(1));
  }

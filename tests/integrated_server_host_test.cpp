@@ -118,7 +118,7 @@ TEST(IntegratedServerHost, MissingRequiredModDoesNotWriteReadyFile) {
  EXPECT_EQ(server.lastError(), "Cannot load world \"IntegratedWorld\": missing required Lua mods: missing_ready_mod");
  EXPECT_FALSE(std::filesystem::exists(config.readyFile));
 }
-TEST(IntegratedServerHost, FirstManagedLoopbackLoginClaimsActualOwnerIdentity) {
+TEST(IntegratedServerHost, OnlyLaunchOwnerOnLoopbackClaimsOperator) {
  const std::filesystem::path root = makeTempWorldRoot("integrated_host_owner_claim");
  initializeEmptyServerModHost(root / "runtime");
  net::minecraft::server::host::ServerLaunchConfig config;
@@ -131,12 +131,13 @@ TEST(IntegratedServerHost, FirstManagedLoopbackLoginClaimsActualOwnerIdentity) {
  config.useGui = false;
  net::minecraft::server::MinecraftServer server(config);
  ASSERT_TRUE(server.startAsync()) << server.lastError();
- EXPECT_FALSE(server.registerManagedHostLogin("RemotePlayer", "192.168.1.5:45000"));
- EXPECT_FALSE(server.playerManager.isOperator("RemotePlayer"));
- EXPECT_TRUE(server.registerManagedHostLogin("JoinedIdentity", "127.0.0.1:45001"));
- EXPECT_TRUE(server.playerManager.isOperator("JoinedIdentity"));
- EXPECT_FALSE(server.registerManagedHostLogin("SecondLocalPlayer", "::1:45002"));
- EXPECT_FALSE(server.playerManager.isOperator("SecondLocalPlayer"));
+ EXPECT_FALSE(server.registerManagedHostLogin("LaunchIdentity", "192.168.1.5:45000"));
+ EXPECT_FALSE(server.playerManager.isOperator("LaunchIdentity"));
+ EXPECT_FALSE(server.registerManagedHostLogin("JoinedIdentity", "127.0.0.1:45001"));
+ EXPECT_FALSE(server.playerManager.isOperator("JoinedIdentity"));
+ EXPECT_TRUE(server.registerManagedHostLogin("LaunchIdentity", "127.0.0.1:45001"));
+ EXPECT_TRUE(server.playerManager.isOperator("LaunchIdentity"));
+ EXPECT_FALSE(server.registerManagedHostLogin("LaunchIdentity", "::1:45002"));
  server.stopAndJoin();
 }
 TEST(IntegratedServerHost, AcceptsIpv4MappedLoopbackOwner) {
@@ -152,8 +153,8 @@ TEST(IntegratedServerHost, AcceptsIpv4MappedLoopbackOwner) {
  config.useGui = false;
  net::minecraft::server::MinecraftServer server(config);
  ASSERT_TRUE(server.startAsync()) << server.lastError();
- EXPECT_TRUE(server.registerManagedHostLogin("JoinedIdentity", "::ffff:127.0.0.1:45001"));
- EXPECT_TRUE(server.playerManager.isOperator("JoinedIdentity"));
+ EXPECT_TRUE(server.registerManagedHostLogin("LaunchIdentity", "::ffff:127.0.0.1:45001"));
+ EXPECT_TRUE(server.playerManager.isOperator("LaunchIdentity"));
  server.stopAndJoin();
 }
 } // namespace net::minecraft::test

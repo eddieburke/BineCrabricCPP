@@ -9,11 +9,30 @@ local register_recipe = assert(minecraft._register_shaped_recipe)
 local read_storage = assert(minecraft._read_storage)
 local write_storage = assert(minecraft._write_storage)
 
+local raw_load, open_file, searchpath = load, io.open, package.searchpath
 os = { clock = os.clock, date = os.date, difftime = os.difftime, time = os.time }
 io, debug, dofile, loadfile = nil, nil, nil, nil
+package.loaded.os, package.loaded.io, package.loaded.debug = os, nil, nil
 package.cpath = ""
 package.loadlib = nil
 package.searchers[3], package.searchers[4] = nil, nil
+function load(chunk, name, _, ...)
+  if select("#", ...) == 0 then return raw_load(chunk, name, "t") end
+  return raw_load(chunk, name, "t", (...))
+end
+package.searchers[2] = function(name)
+  local path, err = searchpath(name, package.path)
+  if not path then return err end
+  local file, open_err = open_file(path, "rb")
+  if not file then return "\n\tcannot open " .. path .. ": " .. tostring(open_err) end
+  local source = file:read("a")
+  file:close()
+  local chunk, load_err = raw_load(source, "@" .. path, "t")
+  if not chunk then
+    error("error loading module '" .. name .. "' from file '" .. path .. "':\n\t" .. tostring(load_err), 0)
+  end
+  return chunk, path
+end
 
 function minecraft.on(event_name, options, callback)
   assert(type(options) == "table", "minecraft.on expects (event, options, callback)")

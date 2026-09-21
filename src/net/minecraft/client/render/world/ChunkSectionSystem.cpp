@@ -236,8 +236,10 @@ void ChunkSectionSystem::clearSections() {
  scene_.blockEntities.clear();
  pendingColumns_.clear();
  pendingSet_.clear();
- pendingBorderRefresh_.clear();
- pendingLit_.clear();
+  pendingBorderRefresh_.clear();
+  pendingLit_.clear();
+  pendingAmbientColumns_.clear();
+  pendingAmbientSet_.clear();
 }
 void ChunkSectionSystem::drainPendingColumns() {
  if(scene_.world == nullptr) {
@@ -442,13 +444,29 @@ void ChunkSectionSystem::setBlocksDirty(int minX, int minY, int minZ, int maxX, 
  markDirty(minX - 1, minY - 1, minZ - 1, maxX + 1, maxY + 1, maxZ + 1);
 }
 void ChunkSectionSystem::notifyAmbientDarknessChanged() {
- for(auto& entry : columns_) {
-  for(const std::shared_ptr<chunk::ChunkBuilder>& section : entry.second) {
+ for(const auto& entry : columns_) {
+  if(pendingAmbientSet_.insert(entry.first).second) {
+   pendingAmbientColumns_.push_back(entry.first);
+  }
+ }
+}
+void ChunkSectionSystem::drainAmbientInvalidations(int maxSections) {
+ int invalidated = 0;
+ while(!pendingAmbientColumns_.empty() && invalidated < maxSections) {
+  const world::ColumnPos column = pendingAmbientColumns_.front();
+  pendingAmbientColumns_.pop_front();
+  pendingAmbientSet_.erase(column);
+  const auto it = columns_.find(column);
+  if(it == columns_.end()) {
+   continue;
+  }
+  for(const std::shared_ptr<chunk::ChunkBuilder>& section : it->second) {
    if(section == nullptr || !section->hasSkyLight || section->dirty) {
     continue;
    }
    section->invalidate();
    compilePipeline_->enqueueDirtyChunk(section.get());
+   ++invalidated;
   }
  }
 }

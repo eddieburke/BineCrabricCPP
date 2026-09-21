@@ -41,6 +41,7 @@ class MinecraftServer : public command::CommandOutput {
  void stopAndJoin();
  void tick();
  void queueCommands(const std::string& string, command::CommandOutput& output);
+ void runCommand(const std::string& string, command::CommandOutput& output);
  void runPendingCommands();
  void addTickable(util::Tickable* tickable);
  [[nodiscard]] std::uint16_t boundPort() const;

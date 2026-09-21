@@ -160,9 +160,7 @@ void ConnectionListener::tick() {
   if(Connection* connection = active.connection.get()) {
    connection->clearDrainLimit();
   }
-  const bool disconnected = active.handler == nullptr || active.handler->disconnected ||
-                            active.connection == nullptr || !active.connection->isOpen();
-  if(disconnected) {
+  if(active.handler == nullptr || active.connection == nullptr || active.handler->disconnected) {
    playSnapshot.erase(playSnapshot.begin() + static_cast<std::ptrdiff_t>(index));
    continue;
   }

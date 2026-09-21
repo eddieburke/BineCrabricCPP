@@ -20,6 +20,8 @@
 namespace net::minecraft::client::render {
 namespace {
 constexpr int kMeshBias = 4;
+constexpr int kAmbientBacklogCeiling = 448;
+constexpr int kAmbientDrainPerFrame = 256;
 } // namespace
 void ChunkCompilePipeline::prioritizeCaptureCandidates(std::vector<chunk::ChunkBuilder*>& candidates,
                                                        int frustumStamp,
@@ -113,6 +115,16 @@ bool ChunkCompilePipeline::startMeshJob(chunk::ChunkBuilder* chunk,
 }
 bool ChunkCompilePipeline::compileChunks(net::minecraft::entity::LivingEntity& /*camera*/, bool force) {
  sectionSystem_->drainBorderRefresh();
+ if(force) {
+  sectionSystem_->drainAmbientInvalidations(std::numeric_limits<int>::max());
+ } else {
+  const std::size_t queued = dirtyChunks_.size() + pendingMeshUploads_.size() + meshHandoff_.pendingJobs();
+  const int ambientAllowance =
+      std::clamp(kAmbientBacklogCeiling - static_cast<int>(queued), 0, kAmbientDrainPerFrame);
+  if(ambientAllowance > 0) {
+   sectionSystem_->drainAmbientInvalidations(ambientAllowance);
+  }
+ }
  const client::option::RenderSettings& resolvedOpts = *scene_.settings;
  const std::size_t workerCount = meshHandoff_.workerCount();
  const std::size_t backlog = dirtyChunks_.size() + pendingMeshUploads_.size() + meshHandoff_.pendingJobs();

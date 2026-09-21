@@ -81,6 +81,12 @@ TEST(CustomUniformParity, ForwardDependenciesUpdateInTheSameFrame) {
  frame.rainStrength = 0.0f;
  moved.evaluate(frame);
  EXPECT_FLOAT_EQ(moved.values().at("answer").asFloat(), 2.0f);
+ CustomUniformRuntime assigned;
+ ASSERT_TRUE(assigned.compile({{"old", CustomUniformType::Float, true, "1.0"}}, error)) << error;
+ assigned = std::move(moved);
+ frame.rainStrength = 0.5f;
+ assigned.evaluate(frame);
+ EXPECT_FLOAT_EQ(assigned.values().at("answer").asFloat(), 3.0f);
 }
 
 TEST(CustomUniformParity, RejectsCyclesAndUnknownReferences) {
@@ -187,6 +193,48 @@ TEST(CustomUniformParity, BooleanOperatorsStillEvaluateBothOperands) {
  frame.rainStrength = 1.0f;
  runtime.evaluate(frame);
  EXPECT_FALSE(runtime.values().at("value").asBool());
+}
+
+TEST(CustomUniformParity, MultiConditionDefaultMatchesIrisEvaluationOrder) {
+ CustomUniformRuntime runtime;
+ std::string error;
+ ASSERT_TRUE(runtime.compile({{"value", CustomUniformType::Float, true,
+                               "if(false, 9.0, is_sprinting, 7.0, smooth(rainStrength, 1.0))"}}, error)) << error;
+ PackUniformValues frame{};
+ frame.frameTime = 0.05f;
+ frame.isSprinting = 1;
+ runtime.evaluate(frame);
+ EXPECT_FLOAT_EQ(runtime.values().at("value").asFloat(), 7.0f);
+ frame.isSprinting = 0;
+ frame.rainStrength = 1.0f;
+ runtime.evaluate(frame);
+ EXPECT_NEAR(runtime.values().at("value").asFloat(), 0.5f, 1e-6f);
+}
+
+TEST(CustomUniformParity, VectorClampAndIntegerEdgePreserveComponentsAndPrecision) {
+ CustomUniformRuntime runtime;
+ std::string error;
+ ASSERT_TRUE(runtime.compile({
+     {"clamped", CustomUniformType::Vec3, true,
+      "clamp(vec3(-1.0, 5.0, 20.0), vec3(0.0, 6.0, 10.0), vec3(2.0, 8.0, 15.0))"},
+     {"edgeValue", CustomUniformType::Int, true, "edge(16777217, 16777216)"}}, error)) << error;
+ runtime.evaluate({});
+ const auto& clamped = runtime.values().at("clamped");
+ EXPECT_FLOAT_EQ(clamped.f[0], 0.0f);
+ EXPECT_FLOAT_EQ(clamped.f[1], 6.0f);
+ EXPECT_FLOAT_EQ(clamped.f[2], 15.0f);
+ EXPECT_EQ(runtime.values().at("edgeValue").asInt(), 0);
+}
+
+TEST(CustomUniformParity, RejectsUnsupportedFunctionArities) {
+ CustomUniformRuntime runtime;
+ std::string error;
+ for(const char* expression : {"random(1.0)", "atan2(1.0)", "randomInt(1, 2, 3)"}) {
+  EXPECT_FALSE(runtime.compile({{"value", CustomUniformType::Float, true, expression}}, error)) << expression;
+ }
+ ASSERT_TRUE(runtime.compile({{"value", CustomUniformType::Int, true, "randomInt(1)"}}, error)) << error;
+ runtime.evaluate({});
+ EXPECT_EQ(runtime.values().at("value").asInt(), 0);
 }
 
 TEST(MatrixInverseParity, LargeOrthographicProjectionRoundTrips) {

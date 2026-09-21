@@ -125,7 +125,7 @@ std::vector<std::uint8_t> readZipEntryData(const std::vector<std::uint8_t>& arch
   }
   try {
    // Fallback for non-standard zip writers that embed zlib-wrapped deflate.
-   return zlibDecompress(compressed);
+   return zlibDecompress(compressed, entry.uncompressedSize);
   } catch(...) {
    return {};
   }

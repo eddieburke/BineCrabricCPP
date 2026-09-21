@@ -73,8 +73,8 @@ MinecraftServer::~MinecraftServer() {
  worlds[1] = nullptr;
 }
 bool MinecraftServer::registerManagedHostLogin(const std::string& username, const std::string& remoteAddress) {
- if(!launchConfig_.has_value() || launchConfig_->ownerName.empty() || managedOwnerClaimed_ || username.empty() ||
-    !isLoopbackAddress(remoteAddress)) {
+ if(!launchConfig_.has_value() || launchConfig_->ownerName.empty() || managedOwnerClaimed_ ||
+    username != launchConfig_->ownerName || !isLoopbackAddress(remoteAddress)) {
   return false;
  }
  playerManager.addTransientOperator(username);
@@ -124,22 +124,23 @@ void MinecraftServer::queueCommands(const std::string& string, command::CommandO
  std::lock_guard lock(pendingCommandsMutex_);
  pendingCommands_.push_back(PendingCommand{string, &output});
 }
+void MinecraftServer::runCommand(const std::string& string, command::CommandOutput& output) {
+ if(commandHandler_ != nullptr) {
+  commandHandler_->executeCommand(string, output);
+ }
+}
 void MinecraftServer::runPendingCommands() {
  std::deque<PendingCommand> commands;
  {
   std::lock_guard lock(pendingCommandsMutex_);
   commands.swap(pendingCommands_);
  }
- if(commandHandler_ == nullptr) {
-  return;
- }
  while(!commands.empty()) {
   PendingCommand pending = std::move(commands.front());
   commands.pop_front();
-  if(pending.output == nullptr) {
-   continue;
+  if(pending.output != nullptr) {
+   runCommand(pending.commandAndArgs, *pending.output);
   }
-  commandHandler_->executeCommand(pending.commandAndArgs, *pending.output);
  }
 }
 void MinecraftServer::addTickable(util::Tickable* tickable) {

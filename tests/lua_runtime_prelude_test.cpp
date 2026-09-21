@@ -129,6 +129,63 @@ TEST(LuaRuntimePrelude, RequireModuleResolution) {
  EXPECT_TRUE(err.find("internal failure") != std::string::npos) << err;
  api.close(state);
 }
+TEST(LuaRuntimePrelude, SandboxRejectsBinaryChunksAndHiddenLibraries) {
+ net::minecraft::mod::lua::LuaApi& api = net::minecraft::mod::lua::luaApi();
+ if(!api.ready()) {
+  GTEST_SKIP() << "Lua runtime unavailable";
+ }
+ lua_State* state = api.newstate();
+ ASSERT_NE(state, nullptr);
+ api.openlibs(state);
+ const std::string dump = "return string.dump(function() return 7 end)";
+ ASSERT_EQ(api.loadbufferx(state, dump.data(), dump.size(), "dump", "t"), net::minecraft::mod::lua::kLuaOk);
+ ASSERT_EQ(api.pcallk(state, 0, 1, 0, 0, nullptr), net::minecraft::mod::lua::kLuaOk);
+ std::size_t bytecodeLength = 0;
+ const char* bytecode = api.tolstring(state, -1, &bytecodeLength);
+ ASSERT_NE(bytecode, nullptr);
+ const std::filesystem::path moduleDir =
+     std::filesystem::temp_directory_path() / "minecraft_omega_prelude_sandbox_test";
+ std::filesystem::create_directories(moduleDir);
+ {
+  std::ofstream out(moduleDir / "bytecode_module.lua", std::ios::binary);
+  out.write(bytecode, static_cast<std::streamsize>(bytecodeLength));
+ }
+ net::minecraft::mod::lua::pop(state, 1);
+ api.createtable(state, 0, 8);
+ for(const char* name : {"_subscribe", "_register_block", "_register_item", "_register_shaped_recipe",
+                         "_read_storage", "_write_storage"}) {
+  api.pushcclosure(state, luaNoop, 0);
+  api.setfield(state, -2, name);
+ }
+ api.createtable(state, 0, 8);
+ api.setfield(state, -2, "util");
+ api.createtable(state, 0, 8);
+ api.setfield(state, -2, "world");
+ api.pushcclosure(state, luaCurrentDirectory, 0);
+ api.setfield(state, -2, "asset_path");
+ api.setglobal(state, "minecraft");
+ const std::string_view source = net::minecraft::mod::lua::kRuntimePrelude;
+ ASSERT_EQ(api.loadbufferx(state, source.data(), source.size(), "@minecraft/runtime.lua", "t"),
+           net::minecraft::mod::lua::kLuaOk);
+ ASSERT_EQ(api.pcallk(state, 0, 0, 0, 0, nullptr), net::minecraft::mod::lua::kLuaOk)
+     << net::minecraft::mod::lua::luaString(state, -1, "unknown Lua error");
+ std::string moduleDirLua = moduleDir.generic_string();
+ const std::string probe = "package.path = '" + moduleDirLua + "/?.lua'\n"
+                           "assert(io == nil and debug == nil and loadfile == nil and dofile == nil)\n"
+                           "assert(require('os').execute == nil, 'os.execute reachable through require')\n"
+                           "assert(not pcall(require, 'io'), 'io reachable through require')\n"
+                           "assert(not pcall(require, 'debug'), 'debug reachable through require')\n"
+                           "local chunk, err = load(string.dump(function() return 1 end))\n"
+                           "assert(chunk == nil and err:find('binary'), 'binary chunk accepted by load')\n"
+                           "local ok, message = pcall(require, 'bytecode_module')\n"
+                           "assert(not ok and tostring(message):find('binary'), 'binary chunk accepted by require')\n"
+                           "assert(load('return 2')() == 2)\n";
+ ASSERT_EQ(api.loadbufferx(state, probe.data(), probe.size(), "probe", "t"), net::minecraft::mod::lua::kLuaOk);
+ EXPECT_EQ(api.pcallk(state, 0, 0, 0, 0, nullptr), net::minecraft::mod::lua::kLuaOk)
+     << net::minecraft::mod::lua::luaString(state, -1, "unknown Lua error");
+ api.close(state);
+ std::filesystem::remove_all(moduleDir);
+}
 TEST(LayeredCloudsMod, ScriptParses) {
  net::minecraft::mod::lua::LuaApi& api = net::minecraft::mod::lua::luaApi();
  if(!api.ready()) {

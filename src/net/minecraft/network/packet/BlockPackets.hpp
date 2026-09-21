@@ -1,6 +1,7 @@
 #pragma once
 #include <cstddef>
 #include <cstdint>
+#include <stdexcept>
 #include <vector>
 #include "net/minecraft/network/NetworkHandler.hpp"
 #include "net/minecraft/network/Packet.hpp"
@@ -79,6 +80,10 @@ class ExplosionS2CPacket : public Packet {
   z = packetio::readDoubleBE(src, end);
   radius = packetio::readFloatBE(src, end);
   const int count = packetio::readI32BE(src, end);
+  if(count < 0) {
+   throw std::runtime_error("Negative explosion block count");
+  }
+  packetio::requireAvailable(src, end, static_cast<std::size_t>(count) * 3U);
   const int originX = static_cast<int>(x);
   const int originY = static_cast<int>(y);
   const int originZ = static_cast<int>(z);

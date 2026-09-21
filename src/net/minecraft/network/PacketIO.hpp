@@ -13,7 +13,7 @@ class PacketUnderflow : public std::runtime_error {
   }
 };
 inline void requireAvailable(const std::uint8_t* src, const std::uint8_t* end, std::size_t count) {
-  if(end - src < static_cast<std::ptrdiff_t>(count)) {
+  if(count > static_cast<std::size_t>(end - src)) {
    throw PacketUnderflow();
   }
 }

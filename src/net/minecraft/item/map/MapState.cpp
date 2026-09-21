@@ -191,16 +191,19 @@ void MapState::readUpdateData(const std::vector<std::uint8_t>& updateData) {
   if(updateData.size() < 3) {
    return;
   }
-  const int column = static_cast<int>(updateData[1] & 0xFF);
-  const int startZ = static_cast<int>(updateData[2] & 0xFF);
-  for(std::size_t i = 0; i + 3 < updateData.size(); ++i) {
-   colors[(i + static_cast<std::size_t>(startZ)) * static_cast<std::size_t>(kMapSize) +
-          static_cast<std::size_t>(column)] = updateData[i + 3];
+  const std::size_t column = updateData[1];
+  const std::size_t startZ = updateData[2];
+  if(column >= static_cast<std::size_t>(kMapSize) || startZ >= static_cast<std::size_t>(kMapSize)) {
+   return;
+  }
+  const std::size_t count = std::min(updateData.size() - 3, static_cast<std::size_t>(kMapSize) - startZ);
+  for(std::size_t i = 0; i < count; ++i) {
+   colors[(i + startZ) * static_cast<std::size_t>(kMapSize) + column] = updateData[i + 3];
   }
   markDirty();
  } else if(updateData[0] == 1) {
   icons.clear();
-  for(std::size_t i = 0; i + 1 < updateData.size(); i += 3) {
+  for(std::size_t i = 0; i + 3 < updateData.size(); i += 3) {
    MapIcon icon;
    icon.type = static_cast<std::uint8_t>(updateData[i + 1] % 16);
    icon.x = updateData[i + 2];
